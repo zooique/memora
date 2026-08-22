@@ -908,3 +908,63 @@ describe('chatView Follow-up 建议（T2，2026-08-17 回复后关联推荐）',
     expect(document.activeElement).toBe(input);
   });
 });
+
+describe('chatView 断点续跑提示条（G3，2026-08-23）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('checkpoint_available → 渲染提示条 + 「从断点续跑」按钮', () => {
+    mountChatView();
+    dispatch({ type: 'checkpoint_available' });
+    const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
+    expect(banner).not.toBeNull();
+    expect(banner.textContent).toContain('检测到上次暂停的会话');
+    expect(banner.querySelector('.checkpoint-banner-btn')?.textContent).toBe('从断点续跑');
+  });
+
+  it('点击「从断点续跑」→ postMessage checkpoint_restore', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'checkpoint_available' });
+    const btn = document.querySelector('.checkpoint-banner-btn') as HTMLButtonElement;
+    btn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'checkpoint_restore' });
+  });
+
+  it('checkpoint_result ok → 移除提示条', () => {
+    mountChatView();
+    dispatch({ type: 'checkpoint_available' });
+    expect(document.querySelector('.checkpoint-banner')).not.toBeNull();
+    dispatch({ type: 'checkpoint_result', ok: true, message: '已恢复' });
+    expect(document.querySelector('.checkpoint-banner')).toBeNull();
+  });
+
+  it('checkpoint_result 失败 → 展示错误文案 + 无续跑按钮（保留关闭）', () => {
+    mountChatView();
+    dispatch({ type: 'checkpoint_available' });
+    dispatch({ type: 'checkpoint_result', ok: false, message: '没有可恢复的暂停会话' });
+    const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
+    expect(banner.textContent).toContain('没有可恢复的暂停会话');
+    expect(banner.querySelector('.checkpoint-banner-btn')).toBeNull();
+    expect(banner.querySelector('.checkpoint-banner-close')).not.toBeNull();
+  });
+
+  it('点击关闭按钮 → 移除提示条', () => {
+    mountChatView();
+    dispatch({ type: 'checkpoint_available' });
+    const close = document.querySelector('.checkpoint-banner-close') as HTMLButtonElement;
+    close.click();
+    expect(document.querySelector('.checkpoint-banner')).toBeNull();
+  });
+
+  it('clear_ok → 移除断点续跑提示条（切换会话不残留）', () => {
+    mountChatView();
+    dispatch({ type: 'checkpoint_available' });
+    expect(document.querySelector('.checkpoint-banner')).not.toBeNull();
+    dispatch({ type: 'clear_ok' });
+    expect(document.querySelector('.checkpoint-banner')).toBeNull();
+  });
+});

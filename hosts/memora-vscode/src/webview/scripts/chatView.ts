@@ -124,6 +124,48 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let streamingActive = false;
   let streamingRaw = '';
 
+  // G3 断点续跑提示条：检测到持久化暂停检查点时展示，用户点击「从断点续跑」恢复
+  let restoreBanner: HTMLElement | null = null;
+
+  /** 移除断点续跑提示条（恢复成功 / 用户关闭 / 切换会话时调用） */
+  function removeRestoreBanner(): void {
+    restoreBanner?.remove();
+    restoreBanner = null;
+  }
+
+  /**
+   * 展示断点续跑提示条（checkpoint_available / checkpoint_result 失败时）
+   *
+   * @param text 提示文案
+   * @param withRestore 是否展示「从断点续跑」按钮（可恢复时 true；失败时仅展示错误 + 关闭）
+   */
+  function showRestoreBanner(text: string, withRestore: boolean): void {
+    removeRestoreBanner();
+    restoreBanner = document.createElement('div');
+    restoreBanner.className = 'checkpoint-banner';
+    restoreBanner.setAttribute('role', 'status');
+    const label = document.createElement('span');
+    label.className = 'checkpoint-banner-text';
+    label.textContent = text;
+    restoreBanner.appendChild(label);
+    if (withRestore) {
+      const restoreBtn = document.createElement('button');
+      restoreBtn.className = 'checkpoint-banner-btn';
+      restoreBtn.textContent = '从断点续跑';
+      restoreBtn.addEventListener('click', () => vscode.postMessage({ type: 'checkpoint_restore' }));
+      restoreBanner.appendChild(restoreBtn);
+    }
+    const closeBtn = document.createElement('button');
+    closeBtn.className = 'checkpoint-banner-close';
+    closeBtn.textContent = '✕';
+    closeBtn.title = '关闭';
+    closeBtn.setAttribute('aria-label', '关闭提示');
+    closeBtn.addEventListener('click', removeRestoreBanner);
+    restoreBanner.appendChild(closeBtn);
+    // 插到消息区顶部（emptyState 占位之前），与历史重放同步可见
+    messages.prepend(restoreBanner);
+  }
+
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
@@ -1034,6 +1076,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
+    } else if (msg.type === 'checkpoint_available') {
+      // G3 断点续跑：检测到持久化暂停检查点，展示「从断点续跑」提示条
+      showRestoreBanner('检测到上次暂停的会话，可继续', true);
+    } else if (msg.type === 'checkpoint_result') {
+      // G3 断点续跑结果：ok 移除提示条（host 已重放历史）；失败展示错误（保留关闭按钮）
+      if (msg.ok) {
+        removeRestoreBanner();
+      } else {
+        showRestoreBanner(msg.message ?? '断点恢复失败', false);
+      }
     } else if (msg.type === 'capability_badge') {
       // Phase 4 E2：角色能力徽章 → 更新工具权限展示
       updateCapabilityBadge(msg.toolMode, msg.capabilities);
@@ -1115,6 +1167,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
       messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider, .followup').forEach((el) => el.remove());
+      // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
+      removeRestoreBanner();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）

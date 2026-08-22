@@ -346,6 +346,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
+      } else if (msg.type === 'checkpoint_restore') {
+        // G3 断点续跑：从持久化暂停检查点恢复（跨实例/插件重启场景）
+        void this.handleCheckpointRestore();
       }
     });
   }
@@ -800,6 +803,61 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushRolePacks();
     // Phase 4 E2：补推工具权限徽章（replaySession 时角色信息已就绪）
     this.postCapabilityBadge();
+    // G3 断点续跑：检测当前会话是否有可恢复的持久化暂停检查点 → 推送断点续跑提示条
+    this.maybeOfferCheckpointRestore();
+  }
+
+  /**
+   * 检测当前会话是否存在可恢复的持久化「暂停」检查点（G3 断点续跑）
+   *
+   * 跨实例/插件重启场景：Agent 重装配后内存无检查点，但暂停检查点已由内核 flush 到
+   * sessionStore 持久化。仅当持久化检查点状态为 paused 时才提示续跑——
+   * 正常对话结束不落盘、running 检查点不属「断点」，避免误提示。
+   * 同进程暂停续跑（resume）已由 handleResumeFromPause 覆盖，不触发本提示。
+   */
+  private maybeOfferCheckpointRestore(): void {
+    const agent = this._agent;
+    if (!agent?.sessionManager) return;
+    try {
+      const checkpoint = agent.sessionManager.loadPersistedCheckpoint();
+      if (checkpoint?.status === 'paused') {
+        this.post({ type: 'checkpoint_available' });
+      }
+    } catch {
+      // 持久化检查点加载失败静默降级：不提示（不阻塞正常回放）
+    }
+  }
+
+  /**
+   * 从持久化暂停检查点续跑（checkpoint_restore，G3 断点续跑）
+   *
+   * 走内核完整恢复协议 Agent.restoreFromCheckpoint（热窗口载入 + 温记忆召回 + 契约重注入），
+   * 恢复后重放会话历史。小验证确认：恢复后状态为 paused（可经「继续」按钮 resumeExecution 续跑）。
+   * 加载失败/无检查点 → 推送 checkpoint_result ok=false。
+   */
+  private async handleCheckpointRestore(): Promise<void> {
+    const agent = await this.getAgentOrWarn();
+    if (!agent?.sessionManager) {
+      this.post({ type: 'checkpoint_result', ok: false, message: 'Agent 未就绪，无法恢复' });
+      return;
+    }
+    try {
+      const checkpoint = agent.sessionManager.loadPersistedCheckpoint();
+      if (!checkpoint || checkpoint.status !== 'paused') {
+        this.post({ type: 'checkpoint_result', ok: false, message: '没有可恢复的暂停会话' });
+        return;
+      }
+      const restored = await agent.restoreFromCheckpoint(checkpoint);
+      // 恢复成功：重放会话历史（含刚载入热窗口的消息），webview 依此清除断点续跑提示条
+      this.replayCurrentSession();
+      this.post({ type: 'checkpoint_result', ok: true, message: `已从断点恢复 ${restored} 条消息上下文` });
+    } catch (err) {
+      this.post({
+        type: 'checkpoint_result',
+        ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
   }
 
   /**

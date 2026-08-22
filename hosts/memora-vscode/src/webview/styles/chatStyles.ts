@@ -521,6 +521,46 @@ export const chatStyles = `
     background: var(--feedback-error-bg);
   }
 
+  /* ============ Components：断点续跑提示条（G3，2026-08-23） ============ */
+  /* 检测到持久化暂停检查点时插入消息区顶部的提示条：文本 + 「从断点续跑」按钮 + 关闭。
+   * 低扰 info 语义（同活动条），但常驻消息区顶部，用户可选择续跑或关闭。 */
+  .checkpoint-banner {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-3, 8px);
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    font-size: var(--font-md, 12px);
+    line-height: 1.5;
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--feedback-info-bg);
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  .checkpoint-banner-text { flex: 1; }
+  .checkpoint-banner-btn {
+    flex-shrink: 0;
+    padding: var(--sp-1, 4px) var(--sp-4, 10px);
+    font-size: var(--font-sm, 11px);
+    color: var(--accent-foreground, #ffffff);
+    background: var(--accent, #0e639c);
+    border: none;
+    border-radius: var(--radius, 6px);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .checkpoint-banner-btn:hover { filter: brightness(1.1); }
+  .checkpoint-banner-btn:focus-visible,
+  .checkpoint-banner-close:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+  .checkpoint-banner-close {
+    flex-shrink: 0;
+    padding: 0 var(--sp-1, 4px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+  }
+  .checkpoint-banner-close:hover { color: var(--text-primary, #cccccc); }
+
   /* ============ Components：思考折叠块（过程透明，ui-redesign.md §7.1） ============ */
   /* 生成中/自审查时展示的轻量折叠块：默认折叠，展开显示思考步骤。
    * 过程性反馈降级：灰字小字号 + 左细边框，与对话主体明显区分。不落库不重放。 */
