@@ -343,6 +343,41 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
     // 无 tool 结果可压缩 → compressContext 返回提示，工具链不抛错、对话正常收尾
     expect(chunks.some((c) => c.type === 'done')).toBe(true);
   });
+
+  it('新对话第一轮 compress_context：无旧轮次可压，当前输入（顶级锚点）不被压', async () => {
+    // 上下文仅当前一轮（无任何旧执行闭环）——LLM 首轮就主动压缩
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '上下文太长',
+          toolCalls: [
+            {
+              id: 'call_compress',
+              type: 'function',
+              function: { name: 'compress_context', arguments: '{"target":"earliest_round"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '最终回答' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('无敌长任务')) {
+      chunks.push(chunk);
+    }
+    // 对话正常收尾（无可压缩目标 → 提示，不破坏工具链）
+    expect(chunks.some((c) => c.type === 'done')).toBe(true);
+    // 当前输入（顶级锚点）原样保留，未被压成临时摘要
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('无敌长任务'))).toBe(true);
+    expect(messages.some((m) => m.content.includes('Compressed context'))).toBe(false);
+  });
 });
 
 describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保护）', () => {

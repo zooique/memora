@@ -1274,11 +1274,31 @@ export class AgentLoop {
     }
   }
 
-  /** 定位最早的执行闭环（第一个 user 轮次起的消息区间；顶级锚点之外的次级锚点允许压缩） */
+  /**
+   * 定位当前触发输入（顶级锚点）之前、最早的执行闭环。
+   *
+   * 语义边界（compress_context 只压"根之前的旧轮次"）：当前输入所在轮次永不压缩；
+   * 上下文无当前输入之前的旧轮次（新对话第一轮）时返回 null——compress_context 报
+   * 「无可压缩目标」，由软上限收尾闭环，而不是把触发输入压掉继续硬跑。
+   */
   private findEarliestRound(): Message[] | null {
+    // 最后一个 user = 当前触发输入（顶级锚点，永不压缩）
+    let lastUserIdx = -1;
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      if (this.messages[i]!.role === 'user') {
+        lastUserIdx = i;
+        break;
+      }
+    }
+    if (lastUserIdx === -1) return null;
+
+    // 第一个 user = 会话最早的执行闭环；与当前输入重合（仅一轮）→ 无旧轮次可压
     const firstUserIdx = this.messages.findIndex((m) => m.role === 'user');
-    if (firstUserIdx === -1) return null;
-    // 收集从第一个 user 到下一个 user 之前的所有消息（最早的执行闭环）
+    if (firstUserIdx === -1 || firstUserIdx >= lastUserIdx) {
+      return null;
+    }
+
+    // 收集最早执行闭环（第一个 user 到下一个 user 之前的所有消息）
     const out: Message[] = [];
     for (let i = firstUserIdx; i < this.messages.length; i++) {
       const m = this.messages[i]!;
