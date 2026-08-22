@@ -17,6 +17,7 @@ import type {
   AgentConfig,
   Role,
   Standard,
+  ToolExecutionRecord,
 } from '@/agent/types.js';
 import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
 import { Composer } from '@/agent/composer.js';
@@ -982,6 +983,27 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   getCheckpoint(): SessionCheckpoint | null {
     this.assertInitialized('getCheckpoint');
     return this.requireSessionManager.getCheckpoint();
+  }
+
+  /**
+   * 获取最近一次处理线程的工具执行历史（loop/执行闭环域聚合出口，补待办 #3）
+   *
+   * 数据源自 sessionManager 检查点的 completedToolCalls（已由
+   * AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX 做 FIFO 封顶）。本方法剥离「恢复/幂等」内部
+   * 语义，提供稳定的 execute 域只读契约——宿主可在透明面板/观测面消费本轮及历史的工具调用
+   * 明细（工具名 / 成败 / 结果摘要），与累计 AgentMetrics.tools 互补。
+   *
+   * @param limit 返回条数上限（默认取封顶上限，超界由调用方控制，取最近 limit 条）
+   * @returns 工具执行记录（记录顺序：时间正序即旧→新；无记录返回空数组；返回浅拷贝防宿主改动检查点）
+   */
+  getRecentToolExecutions(
+    limit: number = AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX,
+  ): ToolExecutionRecord[] {
+    this.assertInitialized('getRecentToolExecutions');
+    const calls = this.requireSessionManager.getCheckpoint()?.completedToolCalls;
+    if (!calls || calls.length === 0) return [];
+    // 取最近 limit 条并浅拷贝，避免宿主引用改动污染检查点（FIFO 封顶后 slice 安全）
+    return calls.slice(-limit).map((r) => ({ ...r }));
   }
 
   /**

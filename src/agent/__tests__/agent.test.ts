@@ -2637,3 +2637,114 @@ describe('Agent · L2 行为策略消费', () => {
     expect(rpm.activeName).toBe('翻译助手');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：getRecentToolExecutions() · loop 域工具执行历史聚合出口（补待办 #3）
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · getRecentToolExecutions() · 工具执行历史聚合出口', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-agent-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-agent-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-agent-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('无工具执行记录时返回空数组', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    expect(agent.getRecentToolExecutions()).toEqual([]);
+  });
+
+  it('返回最近记录（时间正序，旧→新）并剥离内容语义为稳定契约', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const sm = agent.sessionManager!;
+    // 建立会话检查点（chat 前 checkpoint 为 null，logToolExecution 会静默 no-op）
+    sm.createCheckpoint();
+    // 按时间顺序写入两条记录（模拟 read_file / write_file 相继执行）
+    sm.logToolExecution({
+      name: 'read_file',
+      argsSignature: '{"path":"a.ts"}',
+      executedAt: 1000,
+      resultSummary: 'OK a',
+      ok: true,
+      idempotent: 'idempotent',
+    });
+    sm.logToolExecution({
+      name: 'write_file',
+      argsSignature: '{"path":"b.ts","content":"x"}',
+      executedAt: 2000,
+      resultSummary: 'ok',
+      ok: false,
+      idempotent: 'non-idempotent',
+    });
+
+    const records = agent.getRecentToolExecutions();
+    expect(records).toHaveLength(2);
+    // 旧→新顺序
+    expect(records[0]!.name).toBe('read_file');
+    expect(records[1]!.name).toBe('write_file');
+    // 成败 + 结果摘要透出
+    expect(records[1]!.ok).toBe(false);
+    expect(records[1]!.resultSummary).toBe('ok');
+  });
+
+  it('limit 截断返回最近 N 条', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const sm = agent.sessionManager!;
+    sm.createCheckpoint();
+    for (let i = 0; i < 5; i++)
+      sm.logToolExecution({
+        name: 'read_file',
+        argsSignature: `{"path":"${i}"}`,
+        executedAt: i,
+        resultSummary: 'ok',
+        ok: true,
+        idempotent: 'idempotent',
+      });
+
+    const records = agent.getRecentToolExecutions(2);
+    expect(records).toHaveLength(2);
+    // 保留最近的 2 条（旧→新：name 为 path 3 / path 4）
+    expect(records[0]!.argsSignature).toContain('"path":"3"');
+    expect(records[1]!.argsSignature).toContain('"path":"4"');
+  });
+
+  it('返回浅拷贝，宿主改动不影响检查点', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    const sm = agent.sessionManager!;
+    sm.createCheckpoint();
+    sm.logToolExecution({
+      name: 'read_file',
+      argsSignature: '{}',
+      executedAt: 1,
+      resultSummary: 'ok',
+      ok: true,
+      idempotent: 'idempotent',
+    });
+
+    // 改返回值引用，检查点记录不受影响
+    const records = agent.getRecentToolExecutions();
+    records[0]!.resultSummary = '篡改';
+    const again = agent.getRecentToolExecutions();
+    expect(again[0]!.resultSummary).toBe('ok');
+  });
+});
