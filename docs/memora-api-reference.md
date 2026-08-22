@@ -99,18 +99,18 @@ configDir/
 
 选择依据：内容**不必区分来源**走 A（合并到同一 configDir）；**必须区分来源**（只读/可编辑、分组）走 B（多实例聚合展示）。内核两种都支持。
 
-### 〇.5 构造 `Agent` 的必传参数
+### 〇.5 构造 `Agent` 的参数
 
 ```ts
 new Agent({
   projectPath,            // ✅ 必选：工作区
   provider,               // ✅ 必选：前台 LLM
-  configDir,              // ✅ 必选：〇.2 的配置根目录
-  dataDir,                // ✅ 必选：记忆数据落地目录
-  storage,                // ✅ 必选：IMemoryStorage 实现
-  sessionStore,           // ✅ 必选：ISessionStore 实现
-  // 可选常用项
+  // 常用可选项
+  configDir,              // 配置根目录（role-packs / skills；缺省用内置默认）
+  dataDir,                // 记忆数据落地目录（缺省 ~/.memora）
   backgroundProvider,     // 后台 LLM
+  storage,                // IMemoryStorage 实现（缺省 InMemoryStorage）
+  sessionStore,           // ISessionStore 实现（缺省仅内存保存）
   webSearchProvider,      // 网络搜索
   vectorStore,            // 语义召回
   tracer,                 // 可观测
@@ -169,17 +169,18 @@ new Agent({
 | `projectPath` | `string` | ✅ | 项目路径（必须） |
 | `provider` | `LlmProvider` | ✅ | 前台 LLM Provider（必须） |
 | `backgroundProvider` | `LlmProvider` | ❌ | 后台 Provider（投影等后台操作） |
-| `configDir` | `string` | ❌ | 配置目录（personas/rules/skills） |
+| `providerRouter` | `ProviderRouter` | ❌ | 按任务类型返回 Provider 的路由器（不配时全部使用同一 Provider，向后兼容） |
+| `configDir` | `string` | ❌ | 配置目录（role-packs / skills，设定记忆唯一归角色包） |
 | `dataDir` | `string` | ❌ | 记忆数据目录（默认 ~/.memora） |
 | `registryDir` | `string` | ❌ | 项目注册表目录（默认与 dataDir 相同） |
 | `maxContextTokens` | `number` | ❌ | 上下文窗口上限（默认 120000） |
-| `persona` | `string` | ❌ | 默认角色名 |
+| `activeRolePack` | `string` | ❌ | 启动激活的角色包名（缺失/不存在回退默认激活首个） |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
 | `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索召回；内置实现 JsonVectorStore） |
-| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认 `['persona', 'rule', 'skill']`，设定记忆不参与语义召回，双重防御） |
+| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认空数组——设定记忆已归角色包、记忆库不再写入，不再参与召回排除） |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |
@@ -188,6 +189,8 @@ new Agent({
 | `webSearchProvider` | `IWebSearchProvider` | ❌ | 网络搜索提供者注入（提供时自动暴露 `web_search` 工具给 LLM，不传则不暴露） |
 | `fetchProvider` | `IFetchProvider` | ❌ | 网页抓取提供者注入（提供时自动暴露 `web_fetch` 工具给 LLM，与 `webSearchProvider` 成对构成「搜索→抓取」闭环，不传则不暴露） |
 | `codeExecutionProvider` | `ICodeExecutionProvider` | ❌ | 代码执行提供者注入（提供时自动暴露 `run_code` 工具给 LLM，沙箱执行能力完全由宿主 provider 决定，内核零运行时依赖，不传则不暴露） |
+| `fileConsistencyCheck` | `FileConsistencyCheck` | ❌ | 文件层前置条件断言回调（可选，未注入则完全降级为现状） |
+| `preExecutionCheck` | `(name, args) => PreExecutionResult` | ❌ | 工具执行前检查回调（宿主审批/审计/参数改写通道；装配时与内部幂等检查组合为单点入口） |
 
 > **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十七 类型导出），pino 升级为懒初始化（首次日志调用时触发，import 零副作用）。
 
@@ -418,7 +421,7 @@ agent.memory.getDeletedById(id: string): Memory | null;
 agent.memory.searchHybrid(query: string, limit?: number): Promise<AgentSearchHit[]>; // 语义 + 关键词双通道
 ```
 
-> **注意**：`suggest()` / `sourceHealth()` 已上移至 Agent 层（`agent.suggest()` / `agent.sourceHealth()`），不再挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。
+> **注意**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露（`.suggest()` / `.sourceHealth()`），不挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。
 
 ---
 
@@ -455,7 +458,7 @@ interface Memory {
 
 ### 5.2 `IMemoryStorage` 接口
 
-宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **15 方法**（含可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
+宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **18 方法**（含可选 `listFading` / `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
 
 ```typescript
 interface IMemoryStorage {
@@ -475,11 +478,14 @@ interface IMemoryStorage {
   getDeletedById(id: string): Memory | null;    // 按 ID 获取单条软删除记忆（restore/purge 前存在性校验）
   purgeExpired(before: Date): number;           // 清理过期回收站（物理删除 deletedAt 早于 before 的，返回清理数量）
 
-  // ─── 统计与维护（2 方法） ───
+  // ─── 统计与维护（4 方法） ───
   decayScores(sources: string[], now: Date): number;  // 批量衰减指定 source 的 score（宿主实现批量 SQL UPDATE）
+  incrementScore(id: string, delta: number, now: string): boolean;  // 原子递增 score（消除 read-modify-write 并发冲突）
+  setScore(id: string, newScore: number, now: string): boolean;     // 直接设置 score
   getAllSources(): Map<string, number>;               // 获取所有 source 标签及其活跃记忆数量
 
-  // ─── 可选（1 方法） ───
+  // ─── 可选（2 方法） ───
+  listFading?(before: string, limit?: number): Memory[];  // 列出指定时间前的记忆（衰减可观测，C1）
   close?(): void;
 }
 ```
@@ -585,21 +591,23 @@ export interface ForkResult {
 |------|------|------|
 | `rolePack.listMeta()` | `RolePackMeta[]` | 所有角色包元数据（name/description/keywords/...） |
 | `rolePack.activeName` | `string \| null`（getter） | 当前激活的角色包名（null = 未激活） |
-| `rolePack.currentMode` | `'auto' \| 'manual'`（getter） | 当前匹配模式 |
-| `rolePack.getActive()` | `RolePackAssembly \| null` | 当前激活的完整角色包对象 |
-| `rolePack.activate(name)` | 方法 → `boolean` | 手动切换到指定角色包 |
-| `rolePack.setMode(mode)` | 方法 | 设置匹配模式（`'auto'` / `'manual'`） |
+| `rolePack.getActive()` | `RolePackAssembly \| null` | 当前激活的完整角色包对象（含合并后策略） |
+| `rolePack.getActiveRules()` | `string[]` | 当前激活角色包的规则列表 |
+| `rolePack.getActiveTraits()` | `Record<string, number> \| undefined` | 当前激活角色包的 traits（clamp 0-1） |
+| `rolePack.activate(name)` | 方法 → `boolean` | 手动切换到指定角色包（30s 内超 5 次切换后锁 2 分钟防抖） |
+| `rolePack.getSwitchLockStatus()` | 方法 → `{ locked, unlockAt }` | 切换防抖锁定状态 |
+| `rolePack.autoMatch(input)` | 方法 → `string \| null` | 输入粘性匹配角色包（首命中锁定，仅互斥命中才切换） |
 | `rolePack.resetSticky()` | 方法 | 清空粘性匹配锁存 |
+| `rolePack.onRolePackActivated(handler)` | 方法 | 注册激活变更回调（`(from, to)`） |
 
 ```typescript
 // 使用示例
 const rp = agent.rolePack;
 if (!rp) throw new Error('rolePack 未就绪');
-const metas = rp.listMeta();     // 列出所有角色包
-rp.activate('作家');              // 切换角色包
-rp.setMode('manual');             // 锁定手动模式
-console.log(rp.activeName);       // 当前角色包名
-console.log(rp.currentMode);      // 当前模式
+const metas = rp.listMeta();           // 列出所有角色包
+rp.activate('作家');                    // 切换角色包
+console.log(rp.activeName);            // 当前角色包名
+const lock = rp.getSwitchLockStatus(); // 切换防抖状态
 ```
 
 ---
@@ -838,15 +846,16 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 分组 | 方法 |
 |------|------|
 | 生命周期 | `init(projectPathOverride?)` / `close()` |
-| 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `forceReleaseChatLock()` |
+| 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `processEvent(event)` / `resumeExecution()` / `forceReleaseChatLock()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
-| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` |
+| 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `canContinueWithoutInput()` |
+| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `restoreFromCheckpoint(checkpoint)` / `createCheckpoint(mainGoal?, role?, standard?)` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
-| 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `injectAffect(affectString)` |
-| 手动归档 | `archiveSessionContent(date, session, options?)` |
+| 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |
+| 手动归档 | `archiveSession(...)` |
 | 配置热更新 | `reloadConfig(source?)` |
-| 记忆治理 | `deduplicateMemories(signal?)` / `evaluateTimeliness(signal?)` / `runMemoryDecayOnce()` / `sourceHealth()` / `suggest(query?, options?)` / `detectConflicts(signal?)` |
+| 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.evaluateTimeliness()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` / `.decay()`，见下方 Manager 成员） |
 | 指标 | `getMetrics()` |
 
 ### Agent 面类只读访问器
@@ -857,7 +866,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 | 访问器 | 类型 | 公开成员 |
 |---------|---------|---------|
-| `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.currentMode` / `.getActive()` / `.activate()` / `.setMode()` / `.resetSticky()` |
+| `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.getActive()` / `.getActiveRules()` / `.activate()` / `.getSwitchLockStatus()` / `.getActiveTraits()` / `.autoMatch(input)` / `.resetSticky()` |
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.evaluateTimeliness()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` / `.decay()` |
@@ -865,7 +874,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
-> **说明**：`suggest()` / `sourceHealth()` 现为 Agent 层方法（`agent.suggest()` / `agent.sourceHealth()`），不再挂在 `agent.memory` 下。旧的 `memoryMutator` 访问器与 `MemoryMutator` 类已合并回 `MemoryInspector`，请勿再使用。
+> **说明**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露，不挂在 `agent.memory` 下。旧的 `memoryMutator` 访问器与 `MemoryMutator` 类已合并回 `MemoryInspector`，请勿再使用。
 
 ---
 

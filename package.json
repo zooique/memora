@@ -9,7 +9,9 @@
   "files": [
     "dist",
     "README.md",
+    "README.en.md",
     "LICENSE",
+    "config.example.json",
     "role-packs",
     "docs/memora-api-reference.md",
     "docs/memora-接入指南.md",

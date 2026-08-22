@@ -5,8 +5,8 @@
 [![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-1983%20passed-brightgreen)](https://vitest.dev)
+[![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2443%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -69,7 +69,7 @@ const provider = createLlmProvider({
 const agent = new Agent({
   projectPath: '/path/to/project',
   provider,
-  configDir: '/path/to/agent-config', // personas / rules / skills
+  configDir: '/path/to/agent-config', // role-packs / skills
   dataDir: '.memora',                 // memory data directory
 });
 
@@ -96,18 +96,15 @@ const reply = await agent.chatSync('What language do I like?');
 // Search memories (hybrid: semantic + keyword)
 const hits = await agent.memory.searchHybrid('TypeScript preference', { limit: 5 });
 
-// Governance: semantic deduplication
-const report = await agent.deduplicateMemories();
+// Governance (exposed via agent.governance facade, LLM-judged)
+const report = await agent.governance.deduplicate();
 console.log(`Deduplicated ${report.deduplicatedCount} memories`);
 
-// Governance: timeliness evaluation
-const timeliness = await agent.evaluateTimeliness();
+const timeliness = await agent.governance.evaluateTimeliness();
+const conflicts = await agent.governance.detectConflicts();
 
-// Governance: conflict detection
-const conflicts = await agent.detectConflicts();
-
-// Manual decay trigger
-await agent.runMemoryDecayOnce();
+// Manual decay trigger (pure score decrease, no LLM call)
+agent.governance.decay();
 ```
 
 ### Cleanup
@@ -130,10 +127,10 @@ await agent.close();
 │  │  Memora Kernel (Agent)                   │               │
 │  │  - chat(input) → streaming response      │               │
 │  │  - Dual-channel recall (semantic+keyword)│               │
-│  │  - Governance L1-L4 (dedup/age/conflict) │               │
-│  │  - Persona matching / Skill matching     │               │
+│  │  - Memory governance (decay/dedup/conflict) │            │
+│  │  - Role pack matching / Skill matching   │               │
 │  │  - Tool registration / execution         │               │
-│  │  - Session archive / Insight extraction  │               │
+│  │  - Session archive / external task loop  │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
 ```
@@ -154,49 +151,25 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 
 ```
 src/
-├── index.ts          # Library exports (pure types + interfaces, no CLI)
-├── agent/            # Agent facade + AgentLoop execution engine
+├── index.ts          # Library exports (types + interfaces + functions + classes, no CLI)
+├── agent/            # Agent facade + AgentLoop + seed/ (single-turn execution loop)
 │   ├── agent.ts      # Facade class (single entry point for hosts)
 │   ├── loop.ts       # Core loop (reason → tool call → reflection retry)
-│   ├── assembler.ts  # Component assembler (pure factory, stateless)
-│   ├── toolExecutor.ts    # Tool registration & execution
-│   ├── contextManager.ts  # Context window management (truncation + summary)
-│   ├── guardrail.ts       # Content guardrails (regex + block/warn)
-│   └── managers/          # 13 specialized Managers + helper modules
-│       ├── archiveCoordinator.ts   # Archive coordination
-│       ├── memoryInspector.ts      # Memory read/write (CRUD + search + stats)
-│       ├── memoryGovernance.ts     # Governance unified facade (L1-L4)
-│       ├── dedupManager.ts         # L1 semantic deduplication
-│       ├── memoryDecayScheduler.ts # L4 scheduled decay + L2 timeliness
-│       ├── memoryAdvisor.ts        # L3 conflict detection + health diagnosis
-│       ├── insightExtractor.ts     # Conversation insight extraction
-│       ├── sessionManager.ts       # Session management (fork/switch)
-│       ├── sessionArchiver.ts      # Session content archiving
-│       ├── configManager.ts        # Config management (hot-reload rules/skills)
-│       ├── autoConfigRefiner.ts    # Self-evolving config suggestions
-│       ├── workProjection.ts       # Work projection management
-│       ├── textPolishManager.ts    # Text polishing
-│       └── chatLockManager.ts      # Chat concurrency lock
-├── memory/           # Memory engine
-│   ├── types.ts          # Memory primitive (8 fields)
-│   ├── storageInterface.ts  # IMemoryStorage interface (16 methods)
-│   ├── recall.ts         # Dual-channel recall (semantic + keyword)
-│   ├── hybridMerge.ts    # Fusion ranking algorithm
-│   ├── vectorStore.ts    # IVectorStore + JsonVectorStore
-│   ├── governance.ts     # Governance shared constants (decay/boost/ceiling)
-│   └── projectManager.ts # Multi-project registry + lock management
-├── llm/              # LLM adapter layer
-│   ├── provider.ts       # LlmProvider abstract class
-│   ├── openaiCompatible.ts  # OpenAI-compatible protocol implementation
-│   ├── embedding.ts      # EmbeddingProvider (/embeddings endpoint)
-│   └── factory.ts        # createLlmProvider factory
-├── persona/          # Persona management (pure files + in-memory cache)
-├── skill/            # Skill management (keyword matching + per-turn injection)
-├── security/         # Security (two-level permissions + path whitelist + audit)
-├── config/           # Config loading (JSON + env variable interpolation)
-├── logging/          # Logging (ILogger interface + lazy initialization)
-├── eval/             # Eval framework (EvalScenario + EvalRunner, for CI)
-└── utils/            # Utilities (event emitter / segmenter / errors / timers)
+│   ├── assembler.ts  # Component assembler (pure factory)
+│   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts / checkpointRestoreCoordinator.ts ···
+│   ├── seed/         # Minimal execution loop (prepare → act/difficulty → reflect, incl. external task outer loop)
+│   └── managers/     # 16 specialized Managers/service classes (memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager, etc.)
+├── memory/           # Memory engine (IMemoryStorage + InMemoryStorage + recall / hybrid ranking / vector / governance constants)
+├── role-pack/        # Role packs (manifest parsing + validator + strategyResolver + capability mapping)
+├── skill/            # Skill management (global pool + role-pack binding, progressive disclosure + skillScriptRunner)
+├── llm/              # LLM adapter layer (provider + openaiCompatible + factory + embedding)
+├── security/         # Security (path guard / write confirmation)
+├── config/           # Config loading
+├── code-exec/        # Generic code execution abstraction (conditionally exposed)
+├── web-search/       # Web search abstraction (conditionally exposed)
+├── web-fetch/        # Web fetch abstraction (conditionally exposed)
+├── logging/          # Logging (ILogger interface + console fallback)
+└── utils/            # Utilities (scanner / segmenter / event system / atomic write)
 ```
 
 ## Tech Stack
@@ -217,14 +190,15 @@ src/
 
 | Metric | Value |
 |--------|-------|
-| Source | 82 files / 17,459 lines |
-| Tests | 75 files / 23,042 lines (test code > production code) |
-| Tests Passing | 1,715+ |
-| Statement Coverage | 89.3% |
-| Branch Coverage | 81.7% |
-| Function Coverage | 91.7% |
+| Source | 104 production files (src/, zero third-party runtime deps) |
+| Tests | 96 test files |
+| Tests Passing | 2,443 passed / 1 skipped |
+| Statement Coverage | 85.8% |
+| Branch Coverage | 79.6% |
+| Function Coverage | 88.5% |
+| Line Coverage | 87.4% |
 | Runtime Dependencies | **0** |
-| Architecture Decision Records | 25 ADRs |
+| Architecture Decision Records | 24 ADRs |
 
 ## Development
 

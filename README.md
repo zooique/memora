@@ -5,8 +5,8 @@
 [![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
-[![Coverage](https://img.shields.io/badge/coverage-86%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-2369%20passed-brightgreen)](https://vitest.dev)
+[![Coverage](https://img.shields.io/badge/coverage-87%25-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2443%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -40,7 +40,7 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 |------|------|
 | **长期记忆沉淀** | 跨会话、跨话题的记忆持久化与智能召回 |
 | **双通道召回** | 语义向量搜索 + 关键词搜索，hybridMerge 融合排序 |
-| **记忆治理框架（预留）** | L1-L4 治理（去重/时效/冲突/衰减）为多源记忆时代预留；当前单轨（round-summary）下治理层不参与运行时，去重由写路径 superseded 检测承担 |
+| **记忆治理** | L0 衰减 / L1 语义去重 / L2 时效评估 / L3 冲突检测，经 `agent.governance` 门面委托暴露（LLM 判断）；去重写路径由 superseded 检测承担 |
 | **Agent 与角色分离** | Agent 是纯记忆引擎，角色是人格载体。换角色不丢记忆 |
 | **统一记忆模型** | 一切统一为「记忆」，通过 `source` 开放字符串区分，无封闭枚举 |
 | **领域可插拔** | 同一套架构，加载不同记忆配置即可适配不同领域 |
@@ -73,7 +73,7 @@ const provider = createLlmProvider({
 const agent = new Agent({
   projectPath: '/path/to/project',
   provider,
-  configDir: '/path/to/agent-config', // personas / rules / skills
+  configDir: '/path/to/agent-config', // role-packs / skills
   dataDir: '.memora',                 // 记忆数据存储目录
 });
 
@@ -100,18 +100,15 @@ const reply = await agent.chatSync('我喜欢什么语言？');
 // 搜索记忆
 const hits = await agent.memory.searchHybrid('TypeScript 偏好', { limit: 5 });
 
-// 记忆治理：语义去重
-const report = await agent.deduplicateMemories();
+// 记忆治理（经 agent.governance 门面委托暴露，LLM 判断）
+const report = await agent.governance.deduplicate();
 console.log(`去重 ${report.deduplicatedCount} 条`);
 
-// 记忆治理：时效性评估
-const timeliness = await agent.evaluateTimeliness();
+const timeliness = await agent.governance.evaluateTimeliness();
+const conflicts = await agent.governance.detectConflicts();
 
-// 记忆治理：冲突检测
-const conflicts = await agent.detectConflicts();
-
-// 手动触发衰减
-await agent.runMemoryDecayOnce();
+// 手动触发一次记忆衰减（纯 score 递减，无 LLM 调用）
+agent.governance.decay();
 ```
 
 ### 关闭
@@ -197,15 +194,15 @@ src/
 
 | 指标 | 数值 |
 |------|------|
-| 源码 | 101 个生产文件（src/，零第三方运行时依赖） |
-| 测试 | 94 个测试文件 |
-| 测试通过 | 2,369 通过 / 1 skip |
-| 语句覆盖 | 85.4% |
-| 分支覆盖 | 79.2% |
-| 函数覆盖 | 88.3% |
-| 行覆盖 | 86.9% |
+| 源码 | 104 个生产文件（src/，零第三方运行时依赖） |
+| 测试 | 96 个测试文件 |
+| 测试通过 | 2,443 通过 / 1 skip |
+| 语句覆盖 | 85.8% |
+| 分支覆盖 | 79.6% |
+| 函数覆盖 | 88.5% |
+| 行覆盖 | 87.4% |
 | 运行时依赖 | **0** |
-| 架构决策记录 | 25 个 ADR |
+| 架构决策记录 | 24 个 ADR |
 
 ## 开发命令
 
