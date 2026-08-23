@@ -236,7 +236,14 @@ export type WebviewToExtensionMessage =
    *
    * host 调用 VS Code 命令在系统文件管理器中打开用户技能目录。
    */
-  | { type: 'skills_open_dir' };
+  | { type: 'skills_open_dir' }
+  /**
+   * 文本润色请求（H5 文本润色入口，2026-08-23）
+   *
+   * 由用户消息气泡「润色」按钮触发：host 调 agent.polish(text) 调用内核 TextPolishManager
+   * 润色文本，限制 2000 字上限和 15s 超时。润色完成后返回 polish_result 消息。
+   */
+  | { type: 'polish_text'; text: string; msgId: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -571,7 +578,15 @@ export type ExtensionToWebviewMessage =
    * 提示文案填入对话输入框（不自动发送，用户可编辑后回车）。复用 chat 面板 post 通道；
    * 对话视图未就绪时由 chatPanel 缓冲，待 webview ready 后补发（消除时序竞态）。
    */
-  | { type: 'prefill_input'; text: string };
+  | { type: 'prefill_input'; text: string }
+  /**
+   * 文本润色结果（对 polish_text 的应答，H5 文本润色入口）
+   *
+   * ok=true 时 text 为润色后文本，webview 替换原消息内容；
+   * ok=false 时 message 为失败原因（如超时、润色服务不可用）。
+   * msgId 对应原 polish_text 请求的 msgId，确保结果能正确回写到对应消息。
+   */
+  | { type: 'polish_result'; ok: boolean; msgId: string; text?: string; message?: string };
 
 /** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
 export interface MemoryRecallItemDto {

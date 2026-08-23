@@ -696,6 +696,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         copyBtn.title = '复制消息';
         copyBtn.addEventListener('click', () => copyText(text));
         footer.appendChild(copyBtn);
+        // H5 文本润色按钮：用户消息可触发内核 TextPolishManager 润色
+        const polishBtn = document.createElement('button');
+        polishBtn.className = 'msg-polish';
+        polishBtn.textContent = '润色';
+        polishBtn.title = '润色文本（调用内核润色服务）';
+        polishBtn.addEventListener('click', () => {
+          const msgId = div.dataset.msgId || String(Date.now());
+          div.dataset.msgId = msgId;
+          div.classList.add('polishing');
+          polishBtn.textContent = '润色中…';
+          vscode.postMessage({ type: 'polish_text', text, msgId });
+        });
+        footer.appendChild(polishBtn);
       }
       const t = fmtTime(ts);
       if (t) {
@@ -1224,6 +1237,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.steps);
+    } else if (msg.type === 'polish_result') {
+      // H5 文本润色结果：ok=true 替换消息内容；ok=false 提示失败
+      const msgEl = messages.querySelector(`.msg[data-msg-id="${msg.msgId}"]`) as HTMLElement | null;
+      if (msgEl) {
+        msgEl.classList.remove('polishing');
+        const body = msgEl.querySelector(':scope .msg-body');
+        if (body && msg.ok && msg.text) {
+          body.textContent = msg.text;
+          (msgEl as HTMLElement).dataset.rawText = msg.text;
+        }
+        // 恢复按钮状态
+        const polishBtn = msgEl.querySelector(':scope .msg-polish') as HTMLElement | null;
+        if (polishBtn) {
+          polishBtn.textContent = msg.ok ? '已润色' : '重试';
+          polishBtn.title = msg.ok ? '文本已润色' : (msg.message || '润色失败');
+        }
+      }
+      if (!msg.ok && msg.message) {
+        showActivity('info', `润色失败：${msg.message}`);
+      }
     } else if (msg.type === 'self_review') {
       appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {

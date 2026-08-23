@@ -426,9 +426,11 @@ export interface IMcpTransport {
 - ✅ 已开放：`prepare.memoryRecallPercent`（装配，角色感知高）、`global.taskLoopLimit`（装配，复杂任务需更多轮）、`prepare.summaryFocus`（内容提炼视角，角色提供）
 - ❌ 留全局：`replaceRoundsKeepRecent`（替换保留窗口，压缩机制、角色感知低——已固化 Agent 级选项 + 默认 5，见 §上下文预算装配）、`archiveMode`（会话归档机制）
 
-### 上下文预算装配（动态轮数，探索中）
+### 上下文预算装配（动态轮数，已冻结）
 
-> **状态**：探索中（可逆未定案）。完整对话进入量从「固定 N 轮（recentRounds）」改为「按上下文预算动态填充」，轮数为派生值、不显式声明。容量来自模型运行时，分配偏好来自角色包。
+> **状态**：已冻结（2026-08-23 固化）。完整对话进入量从「固定 N 轮（recentRounds）」改为「按上下文预算动态填充」，轮数为派生值、不显式声明。容量来自模型运行时，分配偏好来自角色包。
+> 
+> **固化依据**：代码已落地并被测试锁定（96 文件 / budget·loop·compaction·contextPreparer 专项测试），被 src 生产代码引用，经真实场景消费验证——满足 S2 触发条件（探索期决策沉淀机制）。
 
 #### A. 动机
 

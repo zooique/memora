@@ -362,6 +362,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'checkpoint_restore') {
         // G3 断点续跑：从持久化暂停检查点恢复（跨实例/插件重启场景）
         void this.handleCheckpointRestore();
+      } else if (msg.type === 'polish_text') {
+        // H5 文本润色：调 agent.polish(text) 润色用户消息
+        void this.handlePolishText(msg.text, msg.msgId);
       }
     });
   }
@@ -901,6 +904,44 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'checkpoint_result',
         ok: false,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * 文本润色处理（H5 文本润色入口）
+   *
+   * 调 agent.polish(text) 调用内核 TextPolishManager 润色用户消息。
+   * 内核已实现 2000 字上限和 15s 超时控制，润色完成后将结果回写到 webview。
+   *
+   * @param text 待润色的文本
+   * @param msgId 消息唯一标识，用于结果回写
+   */
+  private async handlePolishText(text: string, msgId: string): Promise<void> {
+    const agent = await this.getAgentOrWarn();
+    if (!agent) {
+      this.post({ type: 'polish_result', ok: false, msgId, message: 'Agent 未就绪' });
+      return;
+    }
+    const polisher = agent.polish;
+    if (!polisher) {
+      this.post({ type: 'polish_result', ok: false, msgId, message: '润色服务不可用' });
+      return;
+    }
+    try {
+      const result = await polisher.polish(text);
+      if (result.changed && result.polished) {
+        this.post({ type: 'polish_result', ok: true, msgId, text: result.polished });
+      } else {
+        // 文本未变化，直接返回原文
+        this.post({ type: 'polish_result', ok: true, msgId, text });
+      }
+    } catch (err) {
+      this.post({
+        type: 'polish_result',
+        ok: false,
+        msgId,
         message: err instanceof Error ? err.message : String(err),
       });
     }

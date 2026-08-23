@@ -297,6 +297,24 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-primary, #cccccc);
   }
+  /* 润色按钮（H5 文本润色入口，2026-08-23）：用户消息专属，调用内核润色服务。
+   * 与复制按钮同尺寸，用强调色区分（--accent），润色中态用 opacity 降提示。
+   * 复用现有语义令牌 --accent，不新增冗余 token。 */
+  .msg-polish {
+    padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
+    border: none; border-radius: var(--radius, 6px);
+    background: transparent; color: var(--accent, #007acc);
+    cursor: pointer;
+  }
+  .msg-polish:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--accent, #007acc);
+  }
+  .msg.polishing .msg-polish { opacity: .7; pointer-events: none; }
+  .msg-polish:focus-visible {
+    outline: 2px solid var(--border-focus, #0e639c);
+    outline-offset: 2px;
+  }
   /* 删除按钮（2026-08-16 对话闭环管理）：危险操作，文字用错误色标识破坏性。
    * 与复制同尺寸，hover 时错误色背景更明显；禁用态灰显（无 timestamp 锚点时不可删）。
    * 复用现有语义令牌 --status-fail（错误前景）+ --feedback-error-bg（错误背景），不新增冗余 token。 */
