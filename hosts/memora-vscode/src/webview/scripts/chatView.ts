@@ -169,6 +169,59 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 当前 Provider 列表（由 chat_providers 消息填充）
   let currentProviders: { name: string; displayName: string }[] = [];
   let currentActive: string | undefined;
+
+  /**
+   * 任务看板（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
+   *
+   * 动态创建并 prepend 到消息区顶部（与断点续跑提示条同点位模式）。收到 plan_update 时
+   * 创建/更新；清空/新会话时移除。只读展示内核 checkpoint.plan，不参与 LLM 执行。
+   */
+  let planBoard: HTMLElement | null = null;
+
+  /** 移除任务看板（清空/切换会话时调用，避免跨会话残留） */
+  function removePlanBoard(): void {
+    planBoard?.remove();
+    planBoard = null;
+  }
+
+  /** 渲染/刷新任务看板（收到 plan_update 消息时调用）
+   * @param steps 计划的步骤快照（按 order 已排序） */
+  function renderPlanBoard(steps: { id: string; description: string; status: 'pending' | 'active' | 'done' | 'blocked'; order: number }[]): void {
+    if (steps.length === 0) {
+      removePlanBoard();
+      return;
+    }
+    if (!planBoard) {
+      planBoard = document.createElement('div');
+      planBoard.className = 'plan-board';
+      planBoard.setAttribute('role', 'region');
+      planBoard.setAttribute('aria-label', '任务进度');
+      // 插到消息区顶部（emptyState 占位之前），与历史重放/新轮计划同步可见
+      messages.prepend(planBoard);
+    }
+    // 标题行：任务进度 N/M
+    const doneCount = steps.filter((s) => s.status === 'done').length;
+    let header = planBoard.querySelector(':scope .plan-board-header') as HTMLElement;
+    if (!header) {
+      header = document.createElement('div');
+      header.className = 'plan-board-header';
+      planBoard.appendChild(header);
+    }
+    header.textContent = `任务进度：${doneCount}/${steps.length}`;
+    // 步骤列表：全量重建（简单确定性——步骤量小，重建成本可忽略；避免增量 diff 复杂化）
+    const list = planBoard.querySelector(':scope .plan-board-list') as HTMLElement;
+    if (list) list.remove();
+    const ul = document.createElement('ul');
+    ul.className = 'plan-board-list';
+    for (const step of steps) {
+      const li = document.createElement('li');
+      li.className = `plan-step plan-step-${step.status}`;
+      // 步骤序号（order+1 展示为 1 起）+ 描述；textContent 防注入
+      li.textContent = `${step.order + 1}. ${step.description}`;
+      ul.appendChild(li);
+    }
+    planBoard.appendChild(ul);
+  }
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换已独立到「角色」视图（2026-08-17），本面板仅消费角色名用于展示，不再承载切换。
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
@@ -1168,6 +1221,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
     } else if (msg.type === 'tool_result') {
       ToolCard.update(messages, msg.toolCallId, msg.name, msg.ok, msg.summary);
+    } else if (msg.type === 'plan_update') {
+      // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
+      renderPlanBoard(msg.steps);
     } else if (msg.type === 'self_review') {
       appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
@@ -1178,6 +1234,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider, .followup').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
+      // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
+      removePlanBoard();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）

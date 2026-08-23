@@ -561,6 +561,34 @@ export const chatStyles = `
   }
   .checkpoint-banner-close:hover { color: var(--text-primary, #cccccc); }
 
+  /* ============ Components：任务看板（H4 任务驱动多步闭环，2026-08-23） ============ */
+  /* LLM 调用 task_table_write/update 建表时插入消息区顶部的计划进度看板：标题（N/M 完成）
+   * + 步骤列表。只读展示内核 checkpoint.plan，状态色复用 trace-step 约定
+   * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。 */
+  .plan-board {
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    font-size: var(--font-md, 12px);
+    line-height: 1.6;
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-card, #252526);
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  .plan-board-header {
+    font-weight: 600;
+    color: var(--text-primary, #cccccc);
+    margin-bottom: var(--sp-2, 6px);
+  }
+  .plan-board-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .plan-step { display: flex; align-items: baseline; gap: var(--sp-2, 6px); }
+  .plan-step-done { color: var(--status-pass, #4ec9b0); text-decoration: line-through; }
+  .plan-step-active { color: var(--accent, #0e639c); font-weight: 500; }
+  .plan-step-blocked { color: var(--status-fail, #b3261e); }
+  /* pending：默认次级灰（继承 .plan-board 的 text-secondary，无需额外规则） */
+
   /* ============ Components：思考折叠块（过程透明，ui-redesign.md §7.1） ============ */
   /* 生成中/自审查时展示的轻量折叠块：默认折叠，展开显示思考步骤。
    * 过程性反馈降级：灰字小字号 + 左细边框，与对话主体明显区分。不落库不重放。 */

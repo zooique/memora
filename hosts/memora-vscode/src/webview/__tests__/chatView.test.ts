@@ -1009,3 +1009,81 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
     expect(metricsEl.textContent).not.toContain('安全审计');
   });
 });
+
+describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('plan_update → 渲染任务看板（标题 N/M + 步骤列表）', () => {
+    mountChatView();
+    dispatch({
+      type: 'plan_update',
+      steps: [
+        { id: 's1', description: '收集需求', status: 'done', order: 0 },
+        { id: 's2', description: '设计方案', status: 'active', order: 1 },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2 },
+      ],
+    });
+    const board = document.querySelector('.plan-board') as HTMLElement;
+    expect(board).not.toBeNull();
+    // 标题：完成的 N/total
+    expect(board.querySelector('.plan-board-header')?.textContent).toBe('任务进度：1/3');
+    // 步骤：按 order 序号 + 描述；状态 class 按 status 映射
+    const steps = board.querySelectorAll('.plan-step');
+    expect(steps).toHaveLength(3);
+    expect(steps[0].textContent).toBe('1. 收集需求');
+    expect(steps[0].classList.contains('plan-step-done')).toBe(true);
+    expect(steps[1].textContent).toBe('2. 设计方案');
+    expect(steps[1].classList.contains('plan-step-active')).toBe(true);
+    expect(steps[2].textContent).toBe('3. 编写文档');
+    expect(steps[2].classList.contains('plan-step-pending')).toBe(true);
+  });
+
+  it('plan_update 覆盖旧看板（幂等更新，不堆叠）', () => {
+    mountChatView();
+    dispatch({
+      type: 'plan_update',
+      steps: [{ id: 's1', description: '第一步', status: 'active', order: 0 }],
+    });
+    dispatch({
+      type: 'plan_update',
+      steps: [
+        { id: 's1', description: '第一步', status: 'done', order: 0 },
+        { id: 's2', description: '第二步', status: 'active', order: 1 },
+      ],
+    });
+    const board = document.querySelector('.plan-board') as HTMLElement;
+    expect(board).not.toBeNull();
+    // 仅一个看板容器
+    expect(document.querySelectorAll('.plan-board')).toHaveLength(1);
+    // 步骤被新快照覆盖（3 步全替换为 2 步），标题同步
+    expect(board.querySelectorAll('.plan-step')).toHaveLength(2);
+    expect(board.querySelector('.plan-board-header')?.textContent).toBe('任务进度：1/2');
+  });
+
+  it('plan_update 空 steps → 移除看板', () => {
+    mountChatView();
+    dispatch({
+      type: 'plan_update',
+      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0 }],
+    });
+    expect(document.querySelector('.plan-board')).not.toBeNull();
+    dispatch({ type: 'plan_update', steps: [] });
+    expect(document.querySelector('.plan-board')).toBeNull();
+  });
+
+  it('clear_ok → 移除任务看板（切换会话不残留）', () => {
+    mountChatView();
+    dispatch({
+      type: 'plan_update',
+      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0 }],
+    });
+    expect(document.querySelector('.plan-board')).not.toBeNull();
+    dispatch({ type: 'clear_ok' });
+    expect(document.querySelector('.plan-board')).toBeNull();
+  });
+});

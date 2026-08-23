@@ -277,6 +277,15 @@ export type ExtensionToWebviewMessage =
       summary?: string;
     }
   /**
+   * 任务看板更新（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
+   *
+   * 由 extension host 在监听到 LLM 调用 task_table_write / task_table_update 工具时推送：
+   * 从 agent.getCheckpoint().plan 提取当前计划快照，webview 据此渲染/刷新任务进度看板。
+   * 仅当 plan 非空时推送（空计划不产生看板）。状态任一（pending/active/done/blocked）
+   * 映射由 webview 转为中文标签 + 配色。只读展示，不参与 LLM 执行（薄壳装配铁律）。
+   */
+  | { type: 'plan_update'; steps: PlanStepDto[] }
+  /**
    * Agent 自审查轮开始（活动透明，交叉审核观察 A）
    *
    * 内核在自审查轮开始前 emit `selfReview` chunk（round 从 1 起），宿主原样转发。
@@ -645,4 +654,16 @@ export interface SkillDto {
   filePath?: string;
   /** 技能层级来源：'agent'（内置）或 'user'（用户自定义） */
   layer?: 'agent' | 'user';
+}
+
+/** 任务看板步骤条目（H4，2026-08-23：对齐内核 PlanStep 扁平化） */
+export interface PlanStepDto {
+  /** 步骤唯一标识 */
+  id: string;
+  /** 步骤描述 */
+  description: string;
+  /** 步骤状态（pending/active/done/blocked，由 webview 映射为中文标签） */
+  status: 'pending' | 'active' | 'done' | 'blocked';
+  /** 执行顺序（从 0 开始） */
+  order: number;
 }

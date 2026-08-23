@@ -1340,6 +1340,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → webview 渲染「执行中」卡片
           this.post({ type: 'tool_start', toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
+          // H4 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
+          // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行）
+          if (chunk.name === 'task_table_write' || chunk.name === 'task_table_update') {
+            this.postPlanUpdate();
+          }
         } else if (chunk.type === 'tool_result') {
           // 工具调用结束 → 更新卡片状态
           this.post({
@@ -1421,6 +1426,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 本轮流式结束 → 推送活动指标快照（P2：指纹 + 累计指标，默认折叠展示）
     this.postMetrics();
+  }
+
+  /**
+   * 推送任务看板快照（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
+   *
+   * 从 agent.getCheckpoint().plan 提取当前计划步骤快照，推给 webview 渲染任务看板。
+   * 仅当 plan 非空时推送（空计划不产生看板）。薄壳装配：只读提取，不参与 LLM 执行，
+   * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
+   */
+  private postPlanUpdate(): void {
+    if (!this._agent) return;
+    const checkpoint = this._agent.getCheckpoint();
+    if (!checkpoint || !checkpoint.plan || checkpoint.plan.length === 0) return;
+    // 按 order 排序列化（内核 PlanStep 已含 order，防冗余中断序漂移）
+    const steps = [...checkpoint.plan]
+      .sort((a, b) => a.order - b.order)
+      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order }));
+    this.post({ type: 'plan_update', steps });
   }
 
   /**
