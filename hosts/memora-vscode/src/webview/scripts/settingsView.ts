@@ -135,10 +135,14 @@ function createSkillsView({
 
   if (!listEl || !countEl || !refreshBtn) return;
 
+  // L2 渐进披露：已加载正文的技能名集合（避免重复请求）
+  const loadedContents = new Set<string>();
+
   // 刷新按钮事件
   refreshBtn.addEventListener('click', () => {
     vscode.postMessage({ type: 'skills_load' });
     listEl.innerHTML = '<p class="hint">加载中…</p>';
+    loadedContents.clear();
   });
 
   // 打开目录按钮事件
@@ -148,11 +152,51 @@ function createSkillsView({
     });
   }
 
+  // L2：事件委托——点击「查看正文」按钮时请求内容
+  listEl.addEventListener('click', (ev) => {
+    const btn = (ev.target as HTMLElement).closest('.skill-toggle') as HTMLButtonElement | null;
+    if (!btn) return;
+    const skillName = btn.dataset.skillName;
+    if (!skillName) return;
+    const contentEl = btn.closest('.skill-item')?.querySelector('.skill-content') as HTMLElement | null;
+    if (!contentEl) return;
+    // 已加载 → 切换展开/折叠
+    if (loadedContents.has(skillName)) {
+      const isHidden = contentEl.style.display === 'none';
+      contentEl.style.display = isHidden ? 'block' : 'none';
+      btn.textContent = isHidden ? '收起正文' : '查看正文';
+      return;
+    }
+    // 未加载 → 请求内容
+    btn.textContent = '加载中…';
+    vscode.postMessage({ type: 'skills_read_content', skillName });
+  });
+
   // 监听 host 的 skills_loaded 消息
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'skills_loaded') {
       renderSkills(listEl, countEl, msg.skills);
+      loadedContents.clear();
+    } else if (msg.type === 'skill_content') {
+      // L2 渐进披露：渲染技能正文
+      const item = listEl.querySelector(`[data-skill-name="${CSS.escape(msg.skillName)}"]`);
+      if (item) {
+        const btn = item.querySelector('.skill-toggle') as HTMLButtonElement | null;
+        const contentEl = item.querySelector('.skill-content') as HTMLElement | null;
+        if (btn && contentEl) {
+          if (msg.content) {
+            contentEl.textContent = msg.content;
+            contentEl.style.display = 'block';
+            btn.textContent = '收起正文';
+            loadedContents.add(msg.skillName);
+          } else {
+            contentEl.textContent = '（未找到技能正文）';
+            contentEl.style.display = 'block';
+            btn.textContent = '查看正文';
+          }
+        }
+      }
     }
   });
 }
@@ -191,15 +235,16 @@ function renderSkills(
     return a.name.localeCompare(b.name);
   });
 
-  // 渲染技能卡片
+  // 渲染技能卡片（L1 元数据 + L2 按需加载正文的展开区）
   listEl.innerHTML = sorted
     .map(
       (s) => `
-    <div class="skill-item ${s.layer === 'user' ? 'skill-user' : 'skill-agent'}">
+    <div class="skill-item ${s.layer === 'user' ? 'skill-user' : 'skill-agent'}" data-skill-name="${escapeHtml(s.name)}">
       <div class="skill-header">
         <h3 class="skill-name">${escapeHtml(s.name)}</h3>
         <span class="skill-badge ${s.layer === 'user' ? 'badge-user' : 'badge-agent'}">${s.layer === 'user' ? '用户' : '内置'}</span>
         ${s.trigger ? `<code class="skill-trigger">${escapeHtml(s.trigger)}</code>` : ''}
+        <button class="skill-toggle" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
@@ -207,6 +252,7 @@ function renderSkills(
           ? `<div class="skill-keywords">${s.keywords.map((k) => `<span class="keyword-chip">${escapeHtml(k)}</span>`).join('')}</div>`
           : ''
       }
+      <div class="skill-content" style="display:none"></div>
     </div>
   `,
     )

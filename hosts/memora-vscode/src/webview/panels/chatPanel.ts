@@ -23,6 +23,7 @@ import {
   type AgentChunk,
   type ISessionStore,
   type SessionMeta,
+  type WriteConfirmationRequest,
 } from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
@@ -197,6 +198,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindAgentNoticeEvents();
     // G6：绑定路径守卫安全审计订阅（幂等，先取消旧订阅再绑新）
     this.bindSecurityAudit();
+    // H0：绑定写入确认回调（confirmWrites=true 时触发，默认 fail-closed）
+    this.bindWriteConfirmation();
     // 装配注入后补推角色信息（时序竞态修复，2026-08-15）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
@@ -389,6 +392,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.bindAgentNoticeEvents();
       // G6：绑定路径守卫安全审计订阅（幂等）
       this.bindSecurityAudit();
+      // H0：绑定写入确认回调（confirmWrites=true 时触发）
+      this.bindWriteConfirmation();
       // 装配完成后补推角色信息（时序竞态修复，2026-08-15）：
       // 与 setAgent 路径一致——ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
       // 装配完成即补推，避免输入区角色选择器永久缺失；面板未就绪时 post 静默，
@@ -450,6 +455,130 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** boostPersistFailed：boost score 持久化失败（记忆权重可能丢失） */
   private readonly onBoostPersistFailed = (info: { message: string }): void => {
     this.post({ type: 'notice', level: 'info', message: `记忆权重保存失败：${info.message}` });
+  };
+
+  // ─── H2 高价值事件（2026-08-23 第二轮生长） ───
+
+  /**
+   * inputTooLarge：装配前输入预算判负（剩余 token 不足以支撑至少一轮正文）
+   *
+   * 内核 ContextPreparer 在装配前检测输入是否超出预算，触发此事件时
+   * 通常意味着直接把大文件内容粘到了对话里，LLM 会因上下文不足报错。
+   * 展示 hint（如「建议用 read_file 分段读取」）给用户降级路径。
+   */
+  private readonly onInputTooLarge = (info: {
+    inputLength: number;
+    remainingTokens: number;
+    hint: string;
+  }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `输入过大（${info.inputLength} 字符），剩余预算不足。${info.hint}`,
+    });
+  };
+
+  /**
+   * goalDriftDetected：会话目标漂移检测（相似度低于阈值）
+   *
+   * 内核 GoalConsistencyChecker 在每轮对话后检测当前目标与初始目标的相似度，
+   * 触发此事件时说明会话可能已偏离用户初衷。推送给 webview 展示确认交互。
+   */
+  private readonly onGoalDriftDetected = (info: {
+    sessionId: string;
+    mainGoal: string;
+    newGoal: string;
+    similarity: number;
+    level: 'same' | 'confirm' | 'drift';
+    constraints: string[];
+    goalChangeSeq: number;
+  }): void => {
+    this.post({
+      type: 'goal_drift_detected',
+      mainGoal: info.mainGoal,
+      newGoal: info.newGoal,
+      similarity: info.similarity,
+      level: info.level,
+      constraints: info.constraints,
+    });
+  };
+
+  /**
+   * sessionForked：会话分叉成功（内核 SessionManager.forkSession 完成后触发）
+   *
+   * 补充通知路径：host 当前在 forkCurrentSession() 中直接处理分叉结果（同步切换+回放），
+   * 此事件监听作为安全网——任何未来不经过 forkCurrentSession 的分叉路径都能获得一致反馈。
+   */
+  private readonly onSessionForked = (info: {
+    from: string;
+    to: string;
+    messageCount: number;
+  }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `已分叉新会话「${info.to}」（${info.messageCount} 条消息）`,
+    });
+  };
+
+  /**
+   * dedupCompleted：L1 工具调用去重完成（连续重复工具调用被自动优化）
+   *
+   * 内核 Assembler 在 L1 层检测到连续多次相同工具+参数时自动去重，
+   * 完成后 emit 此事件让宿主透明化这一自动优化行为。
+   */
+  private readonly onDedupCompleted = (info: {
+    deduplicatedCount: number;
+    demotedIds: string[];
+  }): void => {
+    if (info.deduplicatedCount > 0) {
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: `已自动优化 ${info.deduplicatedCount} 次重复工具调用`,
+      });
+    }
+  };
+
+  /**
+   * needClarify：P4 任务槽位补全澄清（composer 路径，区别于 questionPending 的 [ASK] 路径）
+   *
+   * 内核 composer 在槽位无法自动补全（P4）时 emit 此事件，宿主渲染澄清输入条
+   * （与 need_clarify 协议消息类型对齐，webview 复用现有澄清 UI）。
+   */
+  private readonly onNeedClarify = (info: {
+    slot: string;
+    question: string;
+    options?: string[];
+  }[]): void => {
+    if (info.length > 0) {
+      this.post({ type: 'need_clarify', questions: info });
+    }
+  };
+
+  // ─── H2 低价值事件（状态冗余确认） ───
+
+  /** sessionPaused：对话被暂停（状态可视化补充） */
+  private readonly onSessionPaused = (info: {
+    reason: string;
+    source: string;
+    sessionId?: string;
+  }): void => {
+    this.post({ type: 'notice', level: 'info', message: `对话已暂停（${info.reason}）` });
+  };
+
+  /** sessionResumed：对话恢复执行（状态反馈补充） */
+  private readonly onSessionResumed = (info: { sessionId?: string }): void => {
+    this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
+  };
+
+  /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
+  private readonly onSessionRecovered = (info: { sessionId?: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: '对话已从异常中恢复，继续执行',
+    });
   };
 
   /**
@@ -571,6 +700,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('configReloaded', this.onConfigReloaded);
     a.off('archiveModeChanged', this.onArchiveModeChanged);
     a.on('archiveModeChanged', this.onArchiveModeChanged);
+    // H2 高价值事件：输入过大预警 + 目标漂移检测
+    a.off('inputTooLarge', this.onInputTooLarge);
+    a.on('inputTooLarge', this.onInputTooLarge);
+    a.off('goalDriftDetected', this.onGoalDriftDetected);
+    a.on('goalDriftDetected', this.onGoalDriftDetected);
+    // H2 中价值事件：分叉完成 + 去重完成 + 槽位澄清
+    a.off('sessionForked', this.onSessionForked);
+    a.on('sessionForked', this.onSessionForked);
+    a.off('dedupCompleted', this.onDedupCompleted);
+    a.on('dedupCompleted', this.onDedupCompleted);
+    a.off('needClarify', this.onNeedClarify);
+    a.on('needClarify', this.onNeedClarify);
+    // H2 低价值事件：会话状态冗余确认
+    a.off('sessionPaused', this.onSessionPaused);
+    a.on('sessionPaused', this.onSessionPaused);
+    a.off('sessionResumed', this.onSessionResumed);
+    a.on('sessionResumed', this.onSessionResumed);
+    a.off('sessionRecovered', this.onSessionRecovered);
+    a.on('sessionRecovered', this.onSessionRecovered);
   }
 
   /**
@@ -602,6 +750,40 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this._recentSecurityAudits.shift();
       }
     });
+  }
+
+  /**
+   * H0：绑定写入确认回调（安全增强可选项，confirmWrites=true 时触发）
+   *
+   * 默认 fail-closed：未启用 confirmWrites 时，内核直接 auto-approve 不触发回调；
+   * 启用后通过此回调弹出 VSCode 确认对话框，用户确认放行、拒绝则阻断写入。
+   * 不依赖 webview——写入确认是 VSCode 原生 UI 交互，避免 webview 不可达时卡死。
+   */
+  private bindWriteConfirmation(): void {
+    const agent = this._agent;
+    const guard = agent?.security;
+    if (!guard) return;
+    // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）
+    const handler: WriteConfirmationRequest = async (info) => {
+      const fileName = info.targetPath.split(/[\\/]/).pop() ?? info.targetPath;
+      const toolMap: Record<string, string> = {
+        write_file: '写文件',
+        edit_file: '编辑文件',
+        create_file: '创建文件',
+        append_file: '追加写入',
+      };
+      const toolLabel = toolMap[info.tool] ?? info.tool;
+      const message = `Memora 请求${toolLabel}：${fileName}`;
+      const detail = info.description || info.targetPath;
+      const choice = await vscode.window.showWarningMessage(
+        message,
+        { modal: true, detail },
+        '确认写入',
+        '拒绝',
+      );
+      return choice === '确认写入';
+    };
+    guard.onWriteConfirmation(handler);
   }
 
   /**
@@ -1400,6 +1582,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'self_review', round: chunk.round });
         } else if (chunk.type === 'handoff') {
           // Phase 4 E1：衔接决策 → loop 自动续跑（限 3 轮，防死循环）
+          // H3 · 补齐三种决策的显式反馈：loop 自动续跑 / wait 等待用户 / end 任务结束
           if (chunk.decision === 'loop') {
             this._loopCount++;
             this.post({ type: 'loop_count', current: this._loopCount, max: MAX_LOOP_COUNT });
@@ -1415,6 +1598,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
               // 重置计数，让用户介入后可重新自动续跑
               this._loopCount = 0;
             }
+          } else if (chunk.decision === 'wait') {
+            // H3 · wait 显式反馈：Agent 需要用户输入，提示可在输入框继续
+            this.post({ type: 'handoff', decision: 'wait', reason: chunk.reason || '等待用户输入' });
+          } else if (chunk.decision === 'end') {
+            // H3 · end 显式反馈：Agent 判断任务已完成，通知用户会话可收尾
+            this.post({ type: 'handoff', decision: 'end', reason: chunk.reason || '任务已完成' });
+            this._loopCount = 0; // 任务结束时重置循环计数
           }
         } else if (chunk.type === 'retry') {
           // LLM 失败重试 → 转发低扰提示条

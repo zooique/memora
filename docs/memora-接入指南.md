@@ -22,6 +22,7 @@
 - [八、工具错误反思（Reflection）](#八工具错误反思reflection)
 - [九、多步骤编排](#九多步骤编排)
 - [十、关键约束](#十关键约束)
+- [十一、用户档案实现指南（宿主扩展）](#十一用户档案实现指南宿主扩展)
 
 ---
 
@@ -602,6 +603,149 @@ for (const chapter of chapters) {
 11. **禁止**将配置直接写入 SQLite 作为持久化存储
 12. **项目切换** `switchProject()` 已自动 rebuild，通常无需手动调用 `rebuildComponents()`
 13. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
+
+---
+
+## 十一、用户档案实现指南（宿主扩展）
+
+> **为什么内核没有独立的用户档案模块？**
+
+### 设计哲学：偏好涌现 vs 配置驱动
+
+Memora 的记忆系统通过 `round-summary` 的 `type=preference` 类型承载"偏好涌现"的核心需求。用户在对话中的偏好（如"喜欢简洁回答"、"偏好中文沟通"）会自然沉淀为摘要记忆，并在后续对话中随召回注入上下文。
+
+这种"涌现驱动"的设计与传统"配置驱动"的用户档案方案有本质区别：
+
+| 维度 | WorkBuddy 类方案（配置驱动） | Memora 方案（涌现驱动） |
+|------|---------------------------|----------------------|
+| 更新方式 | 手动编辑档案文档 | 对话自然沉淀 |
+| 结构化程度 | 强（schema 约束） | 弱（LLM 理解） |
+| 内核侵入性 | 高（需新模块） | 低（复用现有机制） |
+
+**Memora 选择"涌现驱动"的核心理由**：
+1. **单一真理源**：偏好从对话中涌现，而非外部注入，避免双写冲突
+2. **自然生长**：不预埋用户画像结构，符合"种子决定长势、土壤决定养分"哲学
+3. **零新增模块**：复用现有记忆/召回/衰减机制
+
+### 宿主实现方案
+
+如果宿主确实需要"预配置用户身份"的场景（如"我叫张三、后端工程师、偏好 Go 语言"），可以通过以下两种方式扩展，**内核零改动**。
+
+#### 方案一：工具注册（LLM 按需查询）
+
+适合场景：用户身份信息在对话中被 LLM 按需查询。
+
+```typescript
+// 宿主实现用户档案读取逻辑
+async function loadUserProfile(): Promise<Record<string, unknown>> {
+  // 从文件、数据库或环境变量读取
+  return {
+    name: '张三',
+    role: '后端工程师',
+    preferredLanguage: 'zh-CN',
+    codingLanguage: 'Go',
+    // ...其他用户信息
+  };
+}
+
+// 注册为工具，LLM 需要时主动调用
+agent.tools.registerTool(
+  {
+    name: 'read_user_profile',
+    description: '读取当前用户的档案信息（姓名、角色、偏好等）',
+    parameters: {
+      type: 'object',
+      properties: {}, // 无参数
+    },
+  },
+  async () => {
+    const profile = await loadUserProfile();
+    return `用户档案：姓名=${profile.name}，角色=${profile.role}，偏好语言=${profile.preferredLanguage}`;
+  },
+);
+```
+
+#### 方案二：可选 Provider（自动注入 system prompt）
+
+适合场景：用户身份信息需要始终在上下文中。
+
+```typescript
+// 定义可选的用户档案 Provider 接口
+interface IUserProfileProvider {
+  getProfile(): Promise<{
+    name: string;
+    role?: string;
+    background?: string;
+    preferences?: string[];
+  } | null>;
+}
+
+// 宿主实现
+class FileUserProfileProvider implements IUserProfileProvider {
+  constructor(private filePath: string) {}
+  
+  async getProfile() {
+    if (!await fs.exists(this.filePath)) return null;
+    const content = await fs.readFile(this.filePath, 'utf-8');
+    return JSON.parse(content);
+  }
+}
+
+// 注入到 Agent（需内核预留扩展点，当前为宿主侧约定）
+const agent = new Agent({
+  // ...其他配置
+  // 宿主自行在 system prompt 构建阶段追加用户档案信息
+});
+
+// 宿主侧包装：在 buildSystemPrompt 后追加
+const profile = await userProfileProvider.getProfile();
+if (profile) {
+  agent.injectSystemMessage(
+    `关于用户：姓名=${profile.name}，角色=${profile.role ?? '未指定'}，` +
+    `背景=${profile.background ?? '未指定'}，偏好=${profile.preferences?.join(', ') ?? '无'}`
+  );
+}
+```
+
+### 两种方案对比
+
+| 维度 | 方案一：工具注册 | 方案二：Provider 注入 |
+|------|---------------|-------------------|
+| 触发方式 | LLM 按需调用 | 自动注入 |
+| Token 效率 | 高（仅需要时消耗） | 低（每轮都注入） |
+| 实现复杂度 | 低 | 中 |
+| 适用场景 | 身份信息偶尔被查询 | 身份信息必须始终可见 |
+
+### 用户档案文件格式示例
+
+宿主可以使用任意格式存储用户档案，推荐 JSON 或 Markdown：
+
+**`user-profile.json`**
+```json
+{
+  "name": "张三",
+  "role": "后端工程师",
+  "background": "5 年 Go 开发经验，熟悉微服务架构",
+  "preferences": ["简洁回答", "中文沟通", "代码优先"]
+}
+```
+
+**`user-profile.md`**
+```markdown
+# 用户档案
+
+- **姓名**：张三
+- **角色**：后端工程师
+- **背景**：5 年 Go 开发经验，熟悉微服务架构
+- **偏好**：简洁回答、中文沟通、代码优先
+```
+
+### 核心约束
+
+1. **用户档案完全由宿主管理**：存储、更新、版本管理
+2. **内核不感知档案存在**：不新增存储、不新增 API
+3. **不注入时零影响**：未实现用户档案的宿主，Agent 行为不变
+4. **偏好记忆仍走涌现路径**：对话中涌现的偏好（如"用户喜欢简洁回答"）仍通过 `preference` 摘要沉淀，用户档案仅承载**静态/半静态身份信息**
 
 ---
 

@@ -1319,6 +1319,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       updateRoleBadge();
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
+    } else if (msg.type === 'goal_drift_detected') {
+      // 目标漂移检测：展示原目标 vs 新目标 + 相似度，供用户确认或忽略
+      const pct = Math.round(msg.similarity * 100);
+      const levelLabel = msg.level === 'drift' ? '严重偏离' : '需要确认';
+      showActivity('info', `目标漂移（${levelLabel}，相似度 ${pct}%）：${msg.newGoal}`);
     }
   });
 

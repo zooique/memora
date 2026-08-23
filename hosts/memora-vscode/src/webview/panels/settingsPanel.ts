@@ -268,6 +268,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.openUserSkillsDir();
       return;
     }
+    // L2 渐进披露：按需读取技能正文（不预装载，用户点击展开时才读取）
+    if (msg.type === 'skills_read_content') {
+      await this.readSkillContent(msg.skillName);
+      return;
+    }
   }
 
   // ─── 角色子视图数据加载 ───
@@ -591,6 +596,40 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       layer: s.layer === 'project' ? 'user' : 'agent',
     }));
     this.post({ type: 'skills_loaded', skills });
+  }
+
+  /**
+   * L2 渐进披露：按需读取技能正文（不预装载到 L1 列表，用户点击展开时才读取）
+   *
+   * 从 SkillManager 或 RolePackManager 获取技能 content，返回给 webview 渲染。
+   * 优先从 SkillManager（全局技能）读取，回退到 RolePackManager（角色包内嵌技能）。
+   */
+  private async readSkillContent(skillName: string): Promise<void> {
+    const agent = await this.ensureAgent();
+    if (!agent) {
+      this.post({ type: 'skill_content', skillName, content: '' });
+      return;
+    }
+    // 1. 优先从全局 SkillManager 读取（内置 + 用户技能）
+    const sm = agent.skills;
+    if (sm) {
+      const skill = sm.get(skillName);
+      if (skill?.content) {
+        this.post({ type: 'skill_content', skillName, content: skill.content });
+        return;
+      }
+    }
+    // 2. 回退到 RolePackManager（角色包内嵌技能）
+    const rpm = agent.rolePackManager;
+    if (rpm) {
+      const content = await rpm.readSkillContent(skillName);
+      if (content) {
+        this.post({ type: 'skill_content', skillName, content });
+        return;
+      }
+    }
+    // 未找到 → 返回空内容
+    this.post({ type: 'skill_content', skillName, content: '' });
   }
 
   /** 打开用户技能目录（在系统文件管理器中显示） */

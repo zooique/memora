@@ -238,6 +238,13 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'skills_open_dir' }
   /**
+   * L2 渐进披露：请求读取技能正文（技能视图的「查看正文」按钮触发）
+   *
+   * host 调 SkillManager.get(name).content 或 RolePackManager.readSkillContent()
+   * 读取技能 markdown 正文，返回 skill_content 消息。
+   */
+  | { type: 'skills_read_content'; skillName: string }
+  /**
    * 文本润色请求（H5 文本润色入口，2026-08-23）
    *
    * 由用户消息气泡「润色」按钮触发：host 调 agent.polish(text) 调用内核 TextPolishManager
@@ -456,6 +463,21 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'need_clarify'; questions: { slot: string; question: string; options?: string[] }[] }
   /**
+   * 目标漂移检测提示（H2 事件：goalDriftDetected）
+   *
+   * 由 extension host 监听内核 goalDriftDetected 事件后转发，
+   * 当会话当前目标与初始目标相似度低于阈值时触发，webview 展示确认/忽略交互。
+   * level: 'confirm' 需用户确认目标变更；'drift' 提示可能已严重偏离。
+   */
+  | {
+      type: 'goal_drift_detected';
+      mainGoal: string;
+      newGoal: string;
+      similarity: number;
+      level: 'same' | 'confirm' | 'drift';
+      constraints: string[];
+    }
+  /**
    * 记忆活动提示（任务 D 可观测出口）
    *
    * 由 extension host 监听 Agent 的 memoryRecalled / memoryAdded 事件后转发，
@@ -562,6 +584,10 @@ export type ExtensionToWebviewMessage =
   // ─── 技能管理面板消息（2026-08-22 新增） ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
   | { type: 'skills_loaded'; skills: SkillDto[] }
+  /** L2 渐进披露：请求读取技能正文（按需加载，不预装载到 L1 列表） */
+  | { type: 'skills_read_content'; skillName: string }
+  /** L2 渐进披露：技能正文响应（对 skills_read_content 的应答） */
+  | { type: 'skill_content'; skillName: string; content: string }
   // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───
   /**
    * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）
