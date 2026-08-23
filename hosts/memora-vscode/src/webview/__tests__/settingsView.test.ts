@@ -14,13 +14,14 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createSettingsView } from '../scripts/settingsView.js';
 import type { MemoryItemDto } from '../../shared/protocol.js';
 
-/** 覆盖 createSettingsView 全部查询引用 + 四个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
+/** 覆盖 createSettingsView 全部查询引用 + 五个子视图骨架的最小 HTML（默认选项卡为「记忆」） */
 const HTML = `
   <div class="tabs">
     <button class="tab-btn active" data-tab="memory">记忆</button>
     <button class="tab-btn" data-tab="roles">角色</button>
     <button class="tab-btn" data-tab="config">大模型</button>
     <button class="tab-btn" data-tab="skills">技能</button>
+    <button class="tab-btn" data-tab="security">安全</button>
   </div>
   <div id="memory-root">
     <div class="header"><h2>记忆</h2><span id="statBar" class="stat-bar" hidden></span></div>
@@ -53,6 +54,16 @@ const HTML = `
   <div id="skills-root" hidden>
     <div class="header"><h2>全局技能</h2><span id="skillCount" class="stat-bar" hidden></span><button id="btnOpenSkillsDir" class="btn btn-secondary">📁 打开目录</button><button id="btnRefreshSkills" class="btn btn-secondary">刷新</button></div>
     <div id="skillsList"><p class="hint">加载中…</p></div>
+  </div>
+  <div id="security-root" hidden>
+    <div class="header"><h2>安全设置</h2></div>
+    <div class="security-section">
+      <label class="toggle-label">
+        <input type="checkbox" id="confirmWritesToggle" />
+        <span>写入二次确认</span>
+      </label>
+      <p id="securityStatus" class="security-status" hidden></p>
+    </div>
   </div>
 `;
 

@@ -1483,10 +1483,14 @@ export class AgentLoop {
    */
   private injectRecallAsSystem(memories: readonly Memory[]): void {
     const memoryBlock = memories
-      .map(
-        (m) =>
-          `- [${m.createdAt.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`,
-      )
+      .map((m) => {
+        // 兼容 createdAt 为 number（时间戳）或 string（ISO 8601）两种格式
+        const dateStr =
+          typeof m.createdAt === 'number'
+            ? new Date(m.createdAt).toISOString()
+            : m.createdAt;
+        return `- [${dateStr.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`;
+      })
       .join('\n');
 
     // 预算估算：召回块自身 token + 注入前上下文总量（尚未 push 本条召回消息）

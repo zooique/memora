@@ -747,3 +747,85 @@ export interface PlanStepDto {
   /** 执行顺序（从 0 开始） */
   order: number;
 }
+
+/**
+ * 协议消息类型常量表（运行时验证用）
+ *
+ * 与 WebviewToExtensionMessage / ExtensionToWebviewMessage 联合类型保持同步，
+ * 用于宿主和 webview 两侧的消息类型校验与测试。
+ */
+export const MESSAGE_TYPES = {
+  // ─── E→W（Extension → Webview） ───
+  // 对话输出
+  CHUNK: 'chunk',
+  RESPONSE_COMPLETE: 'response_complete',
+  // 状态/事件
+  SESSION_CREATED: 'session_created',
+  SESSION_UPDATED: 'session_updated',
+  SESSION_DELETED: 'session_deleted',
+  ROLE_SWITCHED: 'role_switched',
+  MEMORIES_UPDATED: 'memories_updated',
+  SKILLS_UPDATED: 'skills_updated',
+  GOVERNANCE_UPDATED: 'governance_updated',
+  PLAN_UPDATED: 'plan_updated',
+  STATUS_CHANGED: 'status_changed',
+  // 输入框
+  PREFILL_INPUT: 'prefill_input',
+  // 文本润色
+  POLISH_RESULT: 'polish_result',
+  // 安全/写入审批
+  WRITE_CONFIRM_REQUEST: 'write_confirm_request',
+  WRITE_CONFIRM_ANSWER: 'write_confirm_answer',
+  SECURITY_STATUS: 'security_status',
+  // 观察性数据
+  TRACE_UPDATE: 'trace_update',
+  METRICS_UPDATE: 'metrics_update',
+  ERROR: 'error',
+  // ─── W→E（Webview → Extension） ───
+  CHAT: 'chat',
+  CHAT_SYNC: 'chat_sync',
+  INTERRUPT: 'interrupt',
+  PAUSE: 'pause',
+  RESUME: 'resume',
+  FORCE_RELEASE: 'force_release',
+  // 设置/持久化
+  SET_CONFIG: 'set_config',
+  GET_CONFIG: 'get_config',
+  SET_SECURITY_TOGGLE: 'security_toggle',
+  // 会话管理
+  CREATE_SESSION: 'create_session',
+  SWITCH_SESSION: 'switch_session',
+  DELETE_SESSION: 'delete_session',
+  RENAME_SESSION: 'rename_session',
+  LIST_SESSIONS: 'list_sessions',
+  GET_SESSION: 'get_session',
+  // 记忆操作
+  SEARCH_MEMORIES: 'search_memories',
+  ADD_MEMORY: 'add_memory',
+  DELETE_MEMORY: 'delete_memory',
+  RESTORE_MEMORY: 'restore_memory',
+  PERMANENTLY_DELETE_MEMORY: 'permanently_delete_memory',
+  CLEAN_MEMORY: 'clean_memory',
+  GET_MEMORY_STATS: 'get_memory_stats',
+  GET_GOVERNANCE_STATS: 'get_governance_stats',
+  // 角色包
+  LIST_ROLE_PACKS: 'list_role_packs',
+  SET_ACTIVE_ROLE_PACK: 'set_active_role_pack',
+  GET_ACTIVE_ROLE_PACK: 'get_active_role_pack',
+  // 技能
+  LIST_SKILLS: 'list_skills',
+  EXECUTE_SKILL: 'execute_skill',
+  // 命令
+  EXECUTE_COMMAND: 'execute_command',
+  // 文本润色
+  POLISH_TEXT: 'polish_text',
+  // 任务
+  GET_PLAN: 'get_plan',
+  CREATE_PLAN: 'create_plan',
+  UPDATE_PLAN_STEP: 'update_plan_step',
+  // 其他
+  GET_STATUS: 'get_status',
+  GET_ROLE_PACK: 'get_role_pack',
+  SET_WORKSPACE: 'set_workspace',
+  OPEN_FILE: 'open_file',
+} as const;
