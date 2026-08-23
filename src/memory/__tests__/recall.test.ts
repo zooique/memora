@@ -632,27 +632,27 @@ describe('applyDecayToMemory · 衰减计算边界', () => {
     expect(memory.score).toBe(0.8);
   });
 
-  it('恰好在 DECAY_AGE_DAYS（7 天）边界时不应衰减（<= 包含边界）', () => {
+  it('恰好在同一时刻（daysSinceAccess <= 0）不应衰减', () => {
     const now = new Date('2026-07-15T00:00:00.000Z');
-    // accessedAt 设为恰好 7 天前
-    const sevenDaysAgo = new Date(now.getTime() - 7 * ONE_DAY_MS);
-    const memory = makeMemory({ score: 0.8, accessedAt: sevenDaysAgo.toISOString() });
+    // accessedAt 设为 now（同一天，无时间差）
+    const memory = makeMemory({ score: 0.8, accessedAt: now.toISOString() });
 
     const result = applyDecayToMemory(memory, now);
     expect(result).toBe(false);
     expect(memory.score).toBe(0.8);
   });
 
-  it('非整数周期（如 7.9 天）应按 floor 计算为 1 个周期', () => {
+  it('7.9 天间隔应按指数衰减计算', () => {
     const now = new Date('2026-07-15T00:00:00.000Z');
-    // 7.9 天前 → Math.floor(7.9 / 7) = 1 个周期
+    // 7.9 天前
     const daysAgo = new Date(now.getTime() - 7.9 * ONE_DAY_MS);
     const memory = makeMemory({ score: 0.8, accessedAt: daysAgo.toISOString() });
 
     const result = applyDecayToMemory(memory, now);
     expect(result).toBe(true);
-    // 1 个周期：0.8 - 0.02 * 1 = 0.78
-    expect(memory.score).toBeCloseTo(0.78, 5);
+    // 指数衰减：0.8 * (0.5 ** (7.9/30)) ≈ 0.8 * 0.8328 ≈ 0.6662
+    const expectedScore = 0.8 * Math.pow(0.5, 7.9 / 30);
+    expect(memory.score).toBeCloseTo(expectedScore, 5);
   });
 });
 

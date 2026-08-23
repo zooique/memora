@@ -23,26 +23,39 @@ import {
 
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
-    it('应为空（作品投影已移出记忆库，当前无治理对象）', () => {
-      // WORK_PROJECTION 已随作品投影落项目目录移出记忆库；记忆库仅剩 round-summary（不参与运行时治理）
-      expect(GOVERNANCE_SOURCES).toHaveLength(0);
+    it('应包含非 round-summary 的所有记忆类型', () => {
+      // 恢复治理源列表：包含 content/persona/rule/skill/work-projection/profile
+      // round-summary 不参与衰减（事实记录语义）
+      expect(GOVERNANCE_SOURCES).toHaveLength(6);
     });
 
-    it('应与 SOURCE_LABELS 无对齐（治理源为空）', () => {
-      // 锁定具体字符串值，防止 SOURCE_LABELS 重命名后治理范围漂移
-      expect([...GOVERNANCE_SOURCES]).toEqual([]);
+    it('应包含具体的治理源值', () => {
+      // 锁定具体字符串值，防止治理范围漂移
+      expect([...GOVERNANCE_SOURCES]).toEqual([
+        'content',
+        'persona',
+        'rule',
+        'skill',
+        'work-projection',
+        'profile',
+      ]);
     });
 
-    it('不应包含配置型 source（persona / rule / skill）', () => {
-      // 配置型记忆是启动时加载的永驻记忆，不参与运行时治理
-      expect(GOVERNANCE_SOURCES).not.toContain('persona');
-      expect(GOVERNANCE_SOURCES).not.toContain('rule');
-      expect(GOVERNANCE_SOURCES).not.toContain('skill');
+    it('应包含配置型 source（persona / rule / skill）', () => {
+      // 配置型记忆也参与衰减（长期不访问的设定记忆应自然沉底）
+      expect(GOVERNANCE_SOURCES).toContain('persona');
+      expect(GOVERNANCE_SOURCES).toContain('rule');
+      expect(GOVERNANCE_SOURCES).toContain('skill');
     });
 
     it('不应包含 unknown', () => {
       // unknown 是兜底来源，不参与 LLM 治理
       expect(GOVERNANCE_SOURCES).not.toContain('unknown');
+    });
+
+    it('不应包含 round-summary（事实记录不衰减）', () => {
+      // round-summary 是会话摘要，事实记录语义，不参与衰减
+      expect(GOVERNANCE_SOURCES).not.toContain('round-summary');
     });
   });
 

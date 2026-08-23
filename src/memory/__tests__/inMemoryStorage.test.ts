@@ -219,19 +219,19 @@ describe('InMemoryStorage · 内存存储契约', () => {
   // ─── decayScores 时间衰减 ──────────────────────────────
 
   describe('decayScores', () => {
-    it('7 天内的记忆不应衰减', () => {
+    it('当天访问的记忆不应衰减', () => {
       const now = new Date();
+      // accessedAt 设为 now（同一天，无时间差）
       storage.upsert(makeMemory('m1', 'content', 0.8));
-      // accessedAt 是 now，7 天内不衰减
 
       const decayed = storage.decayScores(['content'], now);
       expect(decayed).toBe(0);
       expect(storage.getById('m1')!.score).toBe(0.8);
     });
 
-    it('超过 7 天的记忆应衰减（每 7 天 -0.02）', () => {
+    it('超过一天的记忆应按指数衰减（30 天半衰期）', () => {
       const now = new Date();
-      // 14 天前访问的记忆（2 个周期）
+      // 14 天前访问的记忆
       const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
       storage.upsert({
         ...makeMemory('m1', 'content', 0.8),
@@ -240,13 +240,14 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
       const decayed = storage.decayScores(['content'], now);
       expect(decayed).toBe(1);
-      // 2 个周期：0.8 - 0.02 * 2 = 0.76
-      expect(storage.getById('m1')!.score).toBeCloseTo(0.76, 5);
+      // 指数衰减：0.8 * (0.5 ** (14/30)) ≈ 0.8 * 0.7227 ≈ 0.5781
+      const expectedScore = 0.8 * Math.pow(0.5, 14 / 30);
+      expect(storage.getById('m1')!.score).toBeCloseTo(expectedScore, 5);
     });
 
     it('衰减不应低于 DECAY_FLOOR（0.1）', () => {
       const now = new Date();
-      // 1000 天前访问的记忆（约 142 个周期）
+      // 1000 天前访问的记忆（远超过半衰期）
       const veryOldDate = new Date(now.getTime() - 1000 * ONE_DAY_MS);
       storage.upsert({
         ...makeMemory('m1', 'content', 0.8),
@@ -254,7 +255,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
       });
 
       storage.decayScores(['content'], now);
-      // 0.8 - 0.02 * 142 = -2.04，应被 floor 到 0.1
+      // 指数衰减：0.8 * (0.5 ** (1000/30)) ≈ 0.8 * 0.000... 极小，被 floor 到 0.1
       expect(storage.getById('m1')!.score).toBe(0.1);
     });
 
@@ -273,7 +274,8 @@ describe('InMemoryStorage · 内存存储契约', () => {
       // 只衰减 content，不衰减 rule
       const decayed = storage.decayScores(['content'], now);
       expect(decayed).toBe(1);
-      expect(storage.getById('m1')!.score).toBeCloseTo(0.76, 5);
+      const expectedScore = 0.8 * Math.pow(0.5, 14 / 30);
+      expect(storage.getById('m1')!.score).toBeCloseTo(expectedScore, 5);
       expect(storage.getById('m2')!.score).toBe(0.8); // rule 未衰减
     });
   });

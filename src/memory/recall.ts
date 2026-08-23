@@ -15,7 +15,7 @@ import type { HybridWeights } from '@/memory/hybridMerge.js';
 // 召回默认值 SSOT 跨层共享（保底下限 + 排除默认）
 import { DEFAULT_MIN_FALLBACK, DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 // 召回 score 提升/上限/下限 + 衰减：复用治理共享常量，与宿主 SqliteStorage.decayScores 同一真源
-import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
+import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, EXPONENTIAL_DECAY_HALF_LIFE_DAYS } from '@/memory/governance.js';
 
 // ─── 召回常量 ─────────────────────────────────────
 
@@ -238,7 +238,11 @@ function boostScore(memory: Memory, now?: string): void {
   memory.accessedAt = now ?? nowIso();
 }
 
-/** 对单条记忆执行衰减（超阈值天数后逐周期降低）；返回是否实际发生衰减 */
+/**
+ * 对单条记忆执行指数衰减（30 天半衰期）；返回是否实际发生衰减。
+ * 公式：finalScore = score * (0.5 ** (daysSinceAccess / HALF_LIFE_DAYS))
+ * 例：30 天 → 0.5x，60 天 → 0.25x，90 天 → 0.125x
+ */
 export function applyDecayToMemory(memory: Memory, now: Date): boolean {
   const accessedAt = new Date(memory.accessedAt);
   if (isNaN(accessedAt.getTime())) {
@@ -246,11 +250,19 @@ export function applyDecayToMemory(memory: Memory, now: Date): boolean {
   }
 
   const daysSinceAccess = (now.getTime() - accessedAt.getTime()) / ONE_DAY_MS;
-  if (daysSinceAccess <= DECAY_AGE_DAYS) {
+  if (daysSinceAccess <= 0) {
+    return false; // 刚访问过，无需衰减
+  }
+
+  // 指数衰减：30 天半衰期
+  const decayFactor = Math.pow(0.5, daysSinceAccess / EXPONENTIAL_DECAY_HALF_LIFE_DAYS);
+  const newScore = Math.max(DECAY_FLOOR, memory.score * decayFactor);
+
+  // 浮点精度检查：变化小于 0.0001 视为无变化
+  if (Math.abs(newScore - memory.score) < 0.0001) {
     return false;
   }
 
-  const periods = Math.floor(daysSinceAccess / DECAY_AGE_DAYS);
-  memory.score = Math.max(DECAY_FLOOR, memory.score - DECAY_AMOUNT * periods);
+  memory.score = newScore;
   return true;
 }
