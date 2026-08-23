@@ -25,7 +25,7 @@ import type {
 } from '../../shared/protocol.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
-import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
+import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY } from '../../shared/constants.js';
 
 /** 列表加载条数（MVP：只读浏览，先展示最常用的前 20 条） */
 const MEMORY_LIST_LIMIT = 20;
@@ -124,6 +124,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void this.loadConfig();
       void this.loadMemory();
       void this.loadSkills();
+      // 安全子视图：推送写入二次确认开关状态
+      this.loadSecurityStatus();
       return;
     }
 
@@ -271,6 +273,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // L2 渐进披露：按需读取技能正文（不预装载，用户点击展开时才读取）
     if (msg.type === 'skills_read_content') {
       await this.readSkillContent(msg.skillName);
+      return;
+    }
+
+    // ─── 安全子视图消息（H0 写入审批，2026-08-23） ───
+    if (msg.type === 'security_toggle') {
+      await this.toggleConfirmWrites(msg.enabled);
       return;
     }
   }
@@ -648,6 +656,49 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     );
   }
 
+  // ─── 安全子视图方法（H0 写入审批，2026-08-23） ───
+
+  /**
+   * 切换写入二次确认开关（security_toggle 消息处理）
+   *
+   * 持久化到 globalState + 热更新 agent.security.setConfirmWrites()。
+   * 无需重启 Agent——SecurityGuard 支持运行时切换。
+   */
+  private async toggleConfirmWrites(enabled: boolean): Promise<void> {
+    try {
+      // 1. 持久化到 globalState（用户级偏好）
+      this._globalState?.update(CONFIRM_WRITES_KEY, enabled);
+      // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
+      const agent = await this.ensureAgent();
+      if (agent?.security) {
+        agent.security.setConfirmWrites(enabled);
+      }
+      // 3. 推送最新状态给 webview
+      this.post({ type: 'security_status', confirmWrites: enabled });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: enabled ? '已开启写入二次确认（写文件前将弹出审批卡）' : '已关闭写入二次确认（写文件自动批准）',
+      });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `切换写入确认开关失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  /**
+   * 加载并推送安全设置状态（settings 视图 ready 时调用）
+   *
+   * 从 globalState 读取持久化开关值，推送给 webview 渲染初始状态。
+   */
+  private loadSecurityStatus(): void {
+    const enabled = this._globalState?.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
+    this.post({ type: 'security_status', confirmWrites: enabled });
+  }
+
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(msg);
@@ -722,12 +773,13 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
 </style>
 </head>
 <body>
-  <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 / 技能 -->
+  <!-- 选项卡栏：记忆（默认首页）/ 角色 / 大模型 / 技能 / 安全 -->
   <div class="tabs" role="tablist" aria-label="设置选项卡">
     <button class="tab-btn active" data-tab="memory" role="tab" aria-selected="true">记忆</button>
     <button class="tab-btn" data-tab="roles" role="tab" aria-selected="false">角色</button>
     <button class="tab-btn" data-tab="config" role="tab" aria-selected="false">大模型</button>
     <button class="tab-btn" data-tab="skills" role="tab" aria-selected="false">技能</button>
+    <button class="tab-btn" data-tab="security" role="tab" aria-selected="false">安全</button>
   </div>
 
   <!-- 记忆子视图（memory 选项卡，默认首页） -->
@@ -875,6 +927,26 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <p class="hint">加载中…</p>
     </div>
     <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>
+  </div>
+
+  <!-- 安全子视图（security 选项卡，2026-08-23 H0 新增） -->
+  <div id="security-root" role="tabpanel" aria-label="安全" hidden>
+    <div class="header">
+      <h2>安全</h2>
+    </div>
+    <div class="security-section">
+      <div class="security-item">
+        <div class="security-item-header">
+          <label for="confirmWritesToggle" class="security-label">写入二次确认</label>
+          <label class="toggle-switch">
+            <input id="confirmWritesToggle" type="checkbox" role="switch" aria-label="写入二次确认开关" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p class="security-desc">开启后，AI 写文件前会弹出审批卡，需确认放行。默认关闭（owner 模式自动批准）。</p>
+      </div>
+      <div id="securityStatus" class="security-status" hidden></div>
+    </div>
   </div>
 
   <script src="${scriptUri}"></script>

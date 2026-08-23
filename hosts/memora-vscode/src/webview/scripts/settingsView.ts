@@ -35,7 +35,7 @@ export interface SettingsViewDeps {
 }
 
 /** 子选项卡标识（与 HTML 中 data-tab / 根容器 id 对齐） */
-type SettingsTab = 'roles' | 'config' | 'memory' | 'skills';
+type SettingsTab = 'roles' | 'config' | 'memory' | 'skills' | 'security';
 
 /**
  * 初始化设置面板 webview 交互（选项卡切换 + 挂载三个子视图）
@@ -56,6 +56,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     config: document.getElementById('config-root') as HTMLElement,
     memory: document.getElementById('memory-root') as HTMLElement,
     skills: document.getElementById('skills-root') as HTMLElement,
+    security: document.getElementById('security-root') as HTMLElement,
   };
 
   /** 切换子选项卡：高亮对应按钮 + 显示对应根容器（其余隐藏；保留子视图 DOM 不重建，无闪烁） */
@@ -74,7 +75,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab;
-      if (tab === 'roles' || tab === 'config' || tab === 'memory' || tab === 'skills') switchTab(tab);
+      if (tab === 'roles' || tab === 'config' || tab === 'memory' || tab === 'skills' || tab === 'security') switchTab(tab);
     });
   });
 
@@ -105,6 +106,9 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
 
   // 技能子视图初始化（2026-08-22 新增）
   createSkillsView({ vscode, window, root: roots.skills });
+
+  // 安全子视图初始化（H0 写入审批）
+  createSecurityView({ vscode, window, root: roots.security });
 
   // ready 握手：三个子视图全部挂载（消息监听器已注册）后，由容器统一通知 host 就绪；
   // host 收到后统一推送三个子视图数据（对齐 chatPanel replaySession 的 ready 时序修复，
@@ -264,4 +268,48 @@ function escapeHtml(str: string): string {
   const div = document.createElement('div');
   div.textContent = str;
   return div.innerHTML;
+}
+
+/**
+ * 安全子视图初始化与渲染（H0 写入审批）
+ *
+ * 职责：
+ *   - 渲染「写入二次确认」toggle 开关
+ *   - 监听 host 的 security_status 消息更新开关状态
+ *   - 开关切换时发送 security_toggle 消息通知 host
+ */
+function createSecurityView({
+  vscode,
+  window,
+  root,
+}: {
+  vscode: { postMessage(msg: WebviewToExtensionMessage): void };
+  window: Window;
+  root: HTMLElement;
+}): void {
+  const toggle = root.querySelector<HTMLInputElement>('#confirmWritesToggle');
+  const statusEl = root.querySelector<HTMLElement>('#securityStatus');
+
+  if (!toggle) return;
+
+  // 开关切换事件：通知 host
+  toggle.addEventListener('change', () => {
+    vscode.postMessage({ type: 'security_toggle', enabled: toggle.checked });
+    if (statusEl) {
+      statusEl.textContent = toggle.checked ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
+      statusEl.hidden = false;
+    }
+  });
+
+  // 监听 host 的 security_status 消息（初始状态 / 切换后回显）
+  window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
+    const msg = event.data;
+    if (msg.type === 'security_status') {
+      toggle.checked = msg.confirmWrites;
+      if (statusEl) {
+        statusEl.textContent = msg.confirmWrites ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
+        statusEl.hidden = false;
+      }
+    }
+  });
 }

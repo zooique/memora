@@ -149,12 +149,14 @@ export class SecurityGuard {
   /** 允许访问的根目录列表（白名单） */
   private readonly allowedRoots: string[];
 
+  /** owner 是否启用写入二次确认；guest 强制开启（可运行时切换） */
+  public confirmWrites: boolean;
+
   constructor(
     projectPath: string,
     memoraDir: string,
     extraAllowedPaths: string[] = [],
-    /** owner 是否启用写入二次确认；guest 强制开启 */
-    public readonly confirmWrites: boolean = false,
+    confirmWrites: boolean = false,
     /** 权限模式 */
     public readonly permission: Permission = 'owner',
     /** Agent 级配置目录（personas/rules/skills 所在目录） */
@@ -173,6 +175,7 @@ export class SecurityGuard {
     if (agentDataDir) {
       this.allowedRoots.push(resolveRealpath(expandHome(agentDataDir)));
     }
+    this.confirmWrites = confirmWrites;
     for (const p of extraAllowedPaths) {
       this.allowedRoots.push(resolveRealpath(expandHome(p)));
     }
@@ -181,6 +184,17 @@ export class SecurityGuard {
   /** 注册自定义写入确认回调（宿主接入）；取消注册传入 null。WebUI/桌宠等无终端场景走此回调而非读 stdin */
   onWriteConfirmation(handler: WriteConfirmationRequest | null): void {
     this.confirmationHandler = handler;
+  }
+
+  /**
+   * 运行时切换写入二次确认开关（宿主设置面板热更新）
+   *
+   * 开启后：owner 模式下写文件前会触发 confirmationHandler 弹窗审批；
+   * 关闭后：owner 模式下写文件自动批准（审计仍会记录）。
+   * guest 模式不受影响——始终需要确认。
+   */
+  setConfirmWrites(value: boolean): void {
+    this.confirmWrites = value;
   }
 
   /** 订阅审计事件；@returns 取消订阅函数 */

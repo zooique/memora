@@ -147,6 +147,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 提示用户手动介入。每轮新对话 reset 为 0。
    */
   private _loopCount = 0;
+  /**
+   * 待处理写入确认请求（H0）
+   *
+   * 内核触发写入确认时，host 创建 requestId + pending Promise，向 webview 推送
+   * write_confirm_request 审批卡；用户确认/拒绝后 webview 回传 write_confirm_answer，
+   * host resolve 对应 pending Promise，回调内核 confirmationHandler。
+   * 超时或 webview 不可达时自动拒绝（fail-closed）。
+   */
+  private _pendingWriteConfirmations = new Map<string, { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -368,6 +377,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'polish_text') {
         // H5 文本润色：调 agent.polish(text) 润色用户消息
         void this.handlePolishText(msg.text, msg.msgId);
+      } else if (msg.type === 'write_confirm_answer') {
+        // H0 写入审批卡回传：用户确认/拒绝写入操作
+        const pending = this._pendingWriteConfirmations.get(msg.requestId);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this._pendingWriteConfirmations.delete(msg.requestId);
+          pending.resolve(msg.approved);
+        }
       }
     });
   }
@@ -756,8 +773,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * H0：绑定写入确认回调（安全增强可选项，confirmWrites=true 时触发）
    *
    * 默认 fail-closed：未启用 confirmWrites 时，内核直接 auto-approve 不触发回调；
-   * 启用后通过此回调弹出 VSCode 确认对话框，用户确认放行、拒绝则阻断写入。
-   * 不依赖 webview——写入确认是 VSCode 原生 UI 交互，避免 webview 不可达时卡死。
+   * 启用后通过 webview 审批卡（write_confirm_request/write_confirm_answer）交互，
+   * 用户确认放行、拒绝则阻断写入。webview 不可达或超时自动拒绝（fail-closed）。
    */
   private bindWriteConfirmation(): void {
     const agent = this._agent;
@@ -765,6 +782,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!guard) return;
     // 注入确认回调（幂等：onWriteConfirmation 内部覆盖赋值，无重复注册风险）
     const handler: WriteConfirmationRequest = async (info) => {
+      // 生成唯一请求 ID，用于匹配 write_confirm_answer
+      const requestId = `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const fileName = info.targetPath.split(/[\\/]/).pop() ?? info.targetPath;
       const toolMap: Record<string, string> = {
         write_file: '写文件',
@@ -773,15 +792,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         append_file: '追加写入',
       };
       const toolLabel = toolMap[info.tool] ?? info.tool;
-      const message = `Memora 请求${toolLabel}：${fileName}`;
-      const detail = info.description || info.targetPath;
-      const choice = await vscode.window.showWarningMessage(
-        message,
-        { modal: true, detail },
-        '确认写入',
-        '拒绝',
-      );
-      return choice === '确认写入';
+      // 超时保护：30 秒无响应自动拒绝（fail-closed）
+      const timeoutMs = 30000;
+      return new Promise<boolean>((resolve) => {
+        // 设置超时 timer
+        const timer = setTimeout(() => {
+          this._pendingWriteConfirmations.delete(requestId);
+          resolve(false); // 超时视为拒绝
+          this.post({ type: 'notice', level: 'error', message: `写入确认超时（${toolLabel} ${fileName}），已自动拒绝` });
+        }, timeoutMs);
+
+        // 存储 pending 回调
+        this._pendingWriteConfirmations.set(requestId, { resolve, timer });
+
+        // 推送审批请求到 webview
+        this.post({
+          type: 'write_confirm_request',
+          requestId,
+          targetPath: info.targetPath,
+          tool: info.tool,
+          description: info.description || `${toolLabel}：${fileName}`,
+          permission: info.permission,
+          beforeContent: info.beforeContent ?? null,
+          afterContent: info.afterContent,
+        });
+      });
     };
     guard.onWriteConfirmation(handler);
   }

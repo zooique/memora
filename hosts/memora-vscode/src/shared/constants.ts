@@ -11,3 +11,9 @@
  *  作用域为用户级（globalState，2026-08-17 由 workspaceState 升为用户级），
  *  符合"角色选择是用户偏好，跨项目共享"的语义（存储层级收敛）。 */
 export const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
+
+/** 写入二次确认开关的持久化键（vscode globalState）：
+ *  用户在设置面板开启/关闭时写入，Agent 装配时读取决定是否传 confirmWrites=true，
+ *  运行时切换时直接调 agent.security.setConfirmWrites() 热更新。
+ *  作用域为用户级（globalState）——安全偏好是用户级设置，跨项目共享。 */
+export const CONFIRM_WRITES_KEY = 'memora.confirmWrites';

@@ -244,13 +244,27 @@ export type WebviewToExtensionMessage =
    * 读取技能 markdown 正文，返回 skill_content 消息。
    */
   | { type: 'skills_read_content'; skillName: string }
-  /**
-   * 文本润色请求（H5 文本润色入口，2026-08-23）
+  /** 文本润色请求（H5 文本润色入口，2026-08-23）
    *
    * 由用户消息气泡「润色」按钮触发：host 调 agent.polish(text) 调用内核 TextPolishManager
    * 润色文本，限制 2000 字上限和 15s 超时。润色完成后返回 polish_result 消息。
    */
-  | { type: 'polish_text'; text: string; msgId: string };
+  | { type: 'polish_text'; text: string; msgId: string }
+  // ─── 安全/写入审批消息（H0：W→E 方向） ───
+  /**
+   * 切换写入二次确认开关（设置面板「安全」选项卡的 toggle 开关）
+   *
+   * 由设置面板「写入二次确认」开关触发：host 持久化到 globalState + 热更新
+   * agent.security.setConfirmWrites()。无需重启 Agent。
+   */
+  | { type: 'security_toggle'; enabled: boolean }
+  /**
+   * 写入审批应答（对 write_confirm_request 的应答）
+   *
+   * 用户在审批卡点击「确认写入」或「拒绝」后，webview 发送此消息。
+   * host 根据 approved 结果回调内核 confirmationHandler。
+   */
+  | { type: 'write_confirm_answer'; approved: boolean; requestId: string };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -612,7 +626,32 @@ export type ExtensionToWebviewMessage =
    * ok=false 时 message 为失败原因（如超时、润色服务不可用）。
    * msgId 对应原 polish_text 请求的 msgId，确保结果能正确回写到对应消息。
    */
-  | { type: 'polish_result'; ok: boolean; msgId: string; text?: string; message?: string };
+  | { type: 'polish_result'; ok: boolean; msgId: string; text?: string; message?: string }
+  // ─── 安全/写入审批消息（H0：E→W 方向） ───
+  /**
+   * 写入审批请求（E→W：内核触发写入确认时，由 host 推送到 chat webview）
+   *
+   * 当 confirmWrites=true 且发生文件写入操作时，host 生成审批请求推送给 webview。
+   * webview 渲染审批卡（显示目标文件、工具名、diff 预览），用户点击确认/拒绝后
+   * 发送 write_confirm_answer 回传结果。
+   */
+  | {
+      type: 'write_confirm_request';
+      requestId: string;
+      targetPath: string;
+      tool: string;
+      description?: string;
+      permission: string;
+      beforeContent?: string | null;
+      afterContent?: string;
+    }
+  /**
+   * 安全设置状态推送（设置面板加载时推送当前开关状态）
+   *
+   * 由 host 在 settings 视图 ready 时推送，webview 据此渲染 toggle 初始状态。
+   * enabled=true 时开关高亮开启。
+   */
+  | { type: 'security_status'; confirmWrites: boolean };
 
 /** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
 export interface MemoryRecallItemDto {

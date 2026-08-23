@@ -56,4 +56,39 @@ export const settingsStyles = `
   ${configStyles}
   ${memoryStyles}
   ${skillsStyles}
+
+  /* ============ Security：安全子视图（H0 写入审批） ============ */
+  #security-root { padding: var(--sp-3, 8px); }
+  .security-section { margin-top: var(--sp-3, 8px); }
+  .security-item {
+    padding: var(--sp-3, 8px) var(--sp-4, 12px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius, 6px);
+    background: var(--surface-hover, rgba(128,128,128,.1));
+  }
+  .security-item-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: var(--sp-2, 6px);
+  }
+  .security-label { font-size: var(--font-md, 12px); font-weight: 600; color: var(--text-primary); }
+  .security-desc { font-size: var(--font-sm, 11px); color: var(--text-secondary); margin: 0; line-height: 1.5; }
+  .security-status { margin-top: var(--sp-2, 6px); font-size: var(--font-sm, 11px); color: var(--text-secondary); }
+
+  /* Toggle Switch（写入二次确认开关） */
+  .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute; cursor: pointer; inset: 0;
+    background-color: var(--border-panel, rgba(128,128,128,.4));
+    transition: .2s; border-radius: 22px;
+  }
+  .toggle-slider:before {
+    position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px;
+    background-color: white; transition: .2s; border-radius: 50%;
+  }
+  .toggle-switch input:checked + .toggle-slider { background-color: var(--accent, #0e639c); }
+  .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
+  .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 `;

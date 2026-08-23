@@ -96,6 +96,13 @@ export interface AssembleOptions {
    * 设计决策见 extension.ts 中 userRolePacksDir 的完整注释
    */
   userRolePacksDir?: string;
+  /**
+   * 写入二次确认开关（H0）
+   *
+   * 用户级安全偏好：开启后 owner 模式写文件前触发审批确认（需宿主 UI 确认放行）；
+   * 关闭后 owner 模式写文件自动批准（审计仍记录）。由 extension 从 globalState 读取注入。
+   */
+  confirmWrites?: boolean;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -122,7 +129,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir } = options;
+  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites } = options;
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
@@ -180,6 +187,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     tracer: vscodeTracer,
     permission: 'owner',
     allowedPaths: [projectPath],
+    // 写入二次确认（H0：用户级安全偏好；开启后 owner 写文件前触发审批确认）
+    confirmWrites: confirmWrites ?? false,
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）
