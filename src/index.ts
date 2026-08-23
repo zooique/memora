@@ -78,8 +78,8 @@ export { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sour
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-// 治理共享常量：宿主 SqliteStorage 与核心库 recall.ts 共用同一真理源（clamp/衰减边界）
-export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@/memory/governance.js';
+// 治理共享常量：宿主 WorkspaceStorage 与核心库 recall.ts 共用同一真理源（clamp/衰减边界/半衰期）
+export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, EXPONENTIAL_DECAY_HALF_LIFE_DAYS, FADING_CUTOFF_DAYS } from '@/memory/governance.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎
@@ -128,7 +128,7 @@ export type { SessionCheckpoint, SessionEvent, DeltaPayload, SlotRef, ClarifyQue
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 召回函数：简化关键词搜索
-export { recall, extractKeywords } from '@/memory/recall.js';
+export { recall, extractKeywords, applyDecayToMemory } from '@/memory/recall.js';
 export type { RecallOptions } from '@/memory/recall.js';
 // 混合检索权重配置（RAG 管线增强）
 export type { HybridWeights } from '@/memory/hybridMerge.js';

@@ -23,18 +23,19 @@ export const BOOST_INCREMENT = 0.05;
 /** score 上限，防 boost 超过 1.0 */
 export const SCORE_CEILING = 1.0;
 
-/** 衰减/demote 下限（incrementScore clamp）；消费者：applyDecayToMemory、InMemory/SqliteStorage incrementScore */
+/** 衰减/demote 下限（incrementScore clamp）；消费者：applyDecayToMemory、InMemoryStorage/WorkspaceStorage incrementScore */
 export const DECAY_FLOOR = 0.1;
-
-/** 衰减未访问天数阈值（超此天数开始衰减）；消费者：applyDecayToMemory、SqliteStorage.decayScores——修改须同步两处 */
-export const DECAY_AGE_DAYS = 7;
-
-/** 每过一个周期 score 降低量；消费者：applyDecayToMemory、SqliteStorage.decayScores——修改须同步两处 */
-export const DECAY_AMOUNT = 0.02;
 
 /**
  * 指数衰减半衰期（天）。
  * 30 天半衰期意味着：记忆 30 天后 score 降为一半，60 天后降为 1/4，90 天后降为 1/8。
- * 消费者：applyDecayToMemory（指数衰减公式）
+ * 单一真理源：内核 applyDecayToMemory 和宿主 WorkspaceStorage.decayScores 均使用此常量。
  */
 export const EXPONENTIAL_DECAY_HALF_LIFE_DAYS = 30;
+
+/**
+ * 自然沉底判定天数（listFading cutoff）。
+ * 当记忆距上次访问超过此天数时，判定为"即将自然沉底"，供健康观测面板展示。
+ * 默认取半衰期的 2 倍（60 天）：此时 score 已降为 0.25，明显低于初始值。
+ */
+export const FADING_CUTOFF_DAYS = 60;

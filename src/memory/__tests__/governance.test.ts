@@ -5,10 +5,10 @@
  *   - GOVERNANCE_SOURCES 列表内容与 SOURCE_LABELS 一致
  *   - 不含配置型 source（persona / rule / skill）
  *   - score 边界常量数值正确（提升量 / 上限 / 下限）
- *   - 衰减常量数值正确（天数阈值 / 衰减量）
+ *   - 衰减常量数值正确（指数衰减半衰期 / 沉底判定天数）
  *   - 常量不可变（readonly 约束 + 值锁定）
  *
- * 这些常量是 recall.ts / sqliteStorage.ts / memoryInspector.ts 等多模块的
+ * 这些常量是 recall.ts / WorkspaceStorage / memoryInspector.ts 等多模块的
  * 共享真理源，值漂移会导致跨层行为不一致，需测试锁定契约。
  */
 import { describe, expect, it } from 'vitest';
@@ -17,8 +17,8 @@ import {
   BOOST_INCREMENT,
   SCORE_CEILING,
   DECAY_FLOOR,
-  DECAY_AGE_DAYS,
-  DECAY_AMOUNT,
+  EXPONENTIAL_DECAY_HALF_LIFE_DAYS,
+  FADING_CUTOFF_DAYS,
 } from '@/memory/governance.js';
 
 describe('memory/governance · 常量契约', () => {
@@ -86,23 +86,30 @@ describe('memory/governance · 常量契约', () => {
     });
   });
 
-  describe('衰减常量', () => {
-    it('DECAY_AGE_DAYS 应为 7（超过 7 天才开始衰减）', () => {
-      expect(DECAY_AGE_DAYS).toBe(7);
+  describe('衰减常量（指数衰减模型）', () => {
+    it('EXPONENTIAL_DECAY_HALF_LIFE_DAYS 应为 30（30 天半衰期）', () => {
+      // 30 天半衰期：记忆 30 天后 score 降为一半
+      expect(EXPONENTIAL_DECAY_HALF_LIFE_DAYS).toBe(30);
     });
 
-    it('DECAY_AMOUNT 应为 0.02（每周期衰减 2%）', () => {
-      expect(DECAY_AMOUNT).toBe(0.02);
+    it('EXPONENTIAL_DECAY_HALF_LIFE_DAYS 应为正整数（天数语义）', () => {
+      expect(EXPONENTIAL_DECAY_HALF_LIFE_DAYS).toBeGreaterThan(0);
+      expect(Number.isInteger(EXPONENTIAL_DECAY_HALF_LIFE_DAYS)).toBe(true);
     });
 
-    it('DECAY_AMOUNT 应小于 DECAY_FLOOR（单次衰减不会击穿下限）', () => {
-      // 契约约束：单周期衰减量应小于下限，否则首周期即触底
-      expect(DECAY_AMOUNT).toBeLessThan(DECAY_FLOOR);
+    it('FADING_CUTOFF_DAYS 应为 60（半衰期的 2 倍）', () => {
+      // 沉底判定天数取半衰期的 2 倍（60 天），此时 score 已降为 0.25
+      expect(FADING_CUTOFF_DAYS).toBe(60);
     });
 
-    it('DECAY_AGE_DAYS 应为正整数（天数语义）', () => {
-      expect(DECAY_AGE_DAYS).toBeGreaterThan(0);
-      expect(Number.isInteger(DECAY_AGE_DAYS)).toBe(true);
+    it('FADING_CUTOFF_DAYS 应大于 EXPONENTIAL_DECAY_HALF_LIFE_DAYS（沉底 > 半衰期）', () => {
+      // 沉底判定天数应大于半衰期，给记忆足够时间被访问提升
+      expect(FADING_CUTOFF_DAYS).toBeGreaterThan(EXPONENTIAL_DECAY_HALF_LIFE_DAYS);
+    });
+
+    it('FADING_CUTOFF_DAYS 应为正整数（天数语义）', () => {
+      expect(FADING_CUTOFF_DAYS).toBeGreaterThan(0);
+      expect(Number.isInteger(FADING_CUTOFF_DAYS)).toBe(true);
     });
   });
 });
