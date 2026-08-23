@@ -166,3 +166,27 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     expect(emit).not.toHaveBeenCalledWith(AGENT_EVENTS.inputTooLarge, expect.anything());
   });
 });
+
+describe('ContextPreparer · K6 fixed 模式跳过完整对话层注入', () => {
+  it('fixed 模式不应注入 recentConversationLabel 摘要块（避免与 loop.messages 双份）', async () => {
+    const { preparer, loop, injectSystemMessage } = makePreparer();
+    // fixed 模式下 getRecentHistoryWithinBudget 仍派生（互斥 exclude 需要），但注入必须跳过
+    loop.getRecentHistoryWithinBudget = vi.fn(
+      (): DialogueResult => ({
+        history: [
+          { role: 'user' as const, content: '上一轮问题' },
+          { role: 'assistant' as const, content: '上一轮回答' },
+        ],
+        recentRoundCount: 1,
+        firstRoundIncluded: true,
+      }),
+    );
+
+    await preparer.recallAndInject('新问题', 'full', 'fixed');
+
+    // fixed 模式下 loop.messages 已保留全部历史，再注入摘要块会造成双份、浪费 token
+    expect(injectSystemMessage).not.toHaveBeenCalledWith(expect.stringContaining('[Recent conversation]'));
+    // 派生仍发生（互斥 roundId 集合依赖 dialogue）
+    expect(loop.getRecentHistoryWithinBudget).toHaveBeenCalled();
+  });
+});

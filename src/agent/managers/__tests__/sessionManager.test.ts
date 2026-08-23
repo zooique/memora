@@ -210,6 +210,58 @@ describe('SessionManager', () => {
       manager.forkSession('custom-branch');
       expect(history.forkSession).toHaveBeenCalledWith('custom-branch');
     });
+
+    it('K2 分叉后应清空检查点（防新分支状态写回源会话）', () => {
+      // 先创建检查点，模拟源会话已有持久化检查点
+      manager.createCheckpoint('源会话目标');
+      expect(manager.getCheckpoint()).not.toBeNull();
+      expect(manager.getCheckpoint()?.sessionId).toBe('2026-06-27-main');
+
+      // 分叉后检查点必须被清空——否则 updateGoal→flushCheckpoint 会把新分支
+      // 的 plan/goal 状态写入源会话的持久化检查点（跨会话数据污染）
+      manager.forkSession();
+      expect(manager.getCheckpoint()).toBeNull();
+    });
+
+    it('K3 热记忆按轮截断应保持 tool_calls 与 tool 结果配对', () => {
+      // 构造 21 轮对话（HOT_MEMORY_MAX_ROUNDS=20，超 1 轮触发截断）
+      // 最后一轮含 assistant(tool_calls)→tool 结果，验证截断后配对保持
+      const messages = [];
+      for (let i = 1; i <= 20; i++) {
+        messages.push({ role: 'user', content: `u${i}` });
+        messages.push({ role: 'assistant', content: `a${i}` });
+      }
+      // 第 21 轮：用户 → assistant(tool_calls) → tool 结果 → assistant 回复
+      messages.push({ role: 'user', content: 'u21' });
+      messages.push({
+        role: 'assistant',
+        content: '',
+        toolCalls: [{ id: 'c21', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
+      });
+      messages.push({ role: 'tool', toolCallId: 'c21', content: 'tool21-result' });
+      messages.push({ role: 'assistant', content: 'a21' });
+      loop.getMessages = vi.fn().mockReturnValue(messages);
+
+      const cp = manager.createCheckpoint('目标');
+      const hot = cp.hotMemory;
+
+      // 第 1 轮（最早）应被截断
+      expect(hot.some((m) => m.content === 'u1')).toBe(false);
+      // 第 21 轮的 tool_calls 与其 tool 结果必须同留（配对）
+      const hasCall = hot.some(
+        (m) => m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.some((tc) => tc.id === 'c21'),
+      );
+      const hasResult = hot.some((m) => m.role === 'tool' && m.toolCallId === 'c21');
+      expect(hasCall).toBe(true);
+      expect(hasResult).toBe(true);
+      // 任何带 tool_calls 的 assistant 消息其后必须紧跟 tool 结果（无孤立 tool_calls）
+      for (let i = 0; i < hot.length; i++) {
+        const m = hot[i]!;
+        if (m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
+          expect(hot[i + 1]?.role).toBe('tool');
+        }
+      }
+    });
   });
 
   describe('restoreMostRecentSession', () => {

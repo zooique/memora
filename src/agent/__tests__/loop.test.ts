@@ -1899,6 +1899,48 @@ describe('AgentLoop · 执行中插话', () => {
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
     expect(texts).toContain('已处理排队插话');
   }, 15000);
+
+  it('K5 block 模式：纯文本结束轮期间排队插话不被静默丢弃', async () => {
+    // 场景：LLM 第一轮直接纯文本回复（done 结束轮），期间 block 插话排队。
+    // 修复前 done 分支直接 return false 终止，排队插话静默丢失；
+    // 修复后 done 分支消费插话并继续迭代。
+    let call = 0;
+    const loop = new AgentLoop({
+      provider: {
+        name: 'slow-block-mock',
+        async *chat() {
+          call++;
+          if (call === 1) {
+            // 第一轮延迟 50ms，给 setTimeout 的 interject 留触发窗口
+            await new Promise((r) => setTimeout(r, 50));
+            yield { content: '这是最终回答' };
+          } else {
+            // 第二轮：处理消费后的插话
+            yield { content: '收到你的补充，继续' };
+          }
+        },
+      } as unknown as LlmProvider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    loop.setStrategy({ inputInterrupt: 'block' });
+
+    // 第一轮 LLM 生成期间触发 block 插话（入队不打断）
+    setTimeout(() => loop.interject('补充说明'), 10);
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('提问')) {
+      chunks.push(chunk);
+    }
+
+    // 插话被消费为 user 消息（不静默丢失）
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('补充说明'))).toBe(true);
+    // 插话消费后应继续迭代，第二轮回复出现
+    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
+    expect(texts).toContain('收到你的补充，继续');
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+  }, 15000);
 });
 
 // ═══════════════════════════════════════════════════════════════

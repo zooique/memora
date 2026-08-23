@@ -757,6 +757,24 @@ describe('BuiltinToolHandlers.traceSummary', () => {
     expect(result).not.toContain('摘要：');
   });
 
+  it('K4 原始对话返回前应净化控制字符（对齐 sanitizeExternalText）', async () => {
+    // 用户历史含转义控制字符（ESC \x1b），trace_summary 拼入前必须净化，
+    // 否则隐藏指令/终端注入序列直通 LLM 上下文（与 toolExecutor 主路径一致）
+    const store: ISessionStore = {
+      appendMessage: () => {},
+      loadMessages: () => [
+        { role: 'user', content: '正常问题', timestamp: '2026-08-13T01:00:00Z', roundId: ROUND_A },
+        { role: 'assistant', content: '回答\x1b[2J带转义控制字符', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
+      ],
+      listSessions: () => [SESSION],
+    };
+    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, undefined, store);
+    const result = await h.traceSummary(SESSION, ROUND_A);
+    expect(result).toContain('原始对话');
+    // ESC 控制字符（\x1b）应被移除（sanitizeExternalText 去 \u0000-\u001F/\u007F）
+    expect(result).not.toContain('\x1b');
+  });
+
   it('sessionStore 未命中该轮次时回退为摘要文本（不报错）', async () => {
     // loadMessages 返回空 → loadRawRoundMessages 返回 null → 回退摘要
     const store: ISessionStore = {

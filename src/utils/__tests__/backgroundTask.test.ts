@@ -3,7 +3,7 @@
  * 门面用模块级单例状态，测试间用相对差值断言，避免用例间互相污染。
  */
 import { describe, it, expect, vi } from 'vitest';
-import { backgroundTask, getBackgroundTaskStats } from '@/utils/backgroundTask.js';
+import { backgroundTask, getBackgroundTaskStats, awaitBackgroundTasks } from '@/utils/backgroundTask.js';
 
 /** 取当前统计快照（相对差值基准） */
 function snapshot() {
@@ -38,5 +38,34 @@ describe('backgroundTask 后台任务收口', () => {
     await vi.waitFor(() => {
       expect(getBackgroundTaskStats().failed).toBe(before.failed + 1);
     });
+  });
+
+  it('K7 awaitBackgroundTasks 应等待在途任务完成后返回 pending 数', async () => {
+    const before = snapshot();
+    // 启动一个受控任务（不自动完成）
+    let resolveTask!: () => void;
+    backgroundTask('await-controlled', () => new Promise<void>((res) => { resolveTask = res; }));
+    expect(getBackgroundTaskStats().pending).toBe(before.pending + 1);
+
+    // 等待器应在任务完成时返回（返回等待开始时的在途任务数）
+    const waitPromise = awaitBackgroundTasks(5000);
+    resolveTask();
+    const awaited = await waitPromise;
+    expect(awaited).toBe(before.pending + 1);
+    // 等待后 pending 应回落到基线
+    await vi.waitFor(() => {
+      expect(getBackgroundTaskStats().pending).toBe(before.pending);
+    });
+  });
+
+  it('K7 awaitBackgroundTasks 超时应放弃剩余任务并返回在途数', async () => {
+    const before = snapshot();
+    // 永不完成的任务
+    backgroundTask('await-forever', () => new Promise<void>(() => {}));
+    const p = awaitBackgroundTasks(100); // 100ms 超时
+    const awaited = await p;
+    expect(awaited).toBe(before.pending + 1);
+    // 悬挂任务仍在途（未被强行取消，也不阻塞 close）
+    expect(getBackgroundTaskStats().pending).toBe(before.pending + 1);
   });
 });
