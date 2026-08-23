@@ -186,8 +186,13 @@ export class ContextManager {
   }
 
   /**
-   * 软上限判定：上下文逼近容量上限（≥ 缓冲阈值）且已出现摘要化产物时，注入收尾信号让 LLM 收敛。
+   * 软上限判定：上下文逼近容量上限（≥ 缓冲阈值）且摘要层 token 占比过高时，注入收尾信号让 LLM 收敛。
    * 从 AgentLoop._shouldInjectSoftLimitWrapup 迁入（与 estimateTokens/maxContextTokens 同属上下文预算层）。
+   *
+   * 精确检测摘要层 token 占用（替代原"存在标记即触发"的近似判断）：
+   *   - 过滤出标记为摘要的消息（Round summary / Compressed context）
+   *   - 计算摘要层 token 占用
+   *   - 当摘要层 token ≥ maxContextTokens × SUMMARY_LAYER_TOKEN_RATIO 时判定为"摘要层达容量上限"
    *
    * @param messages 当前工作记忆（读型判定，不修改）
    * @returns 是否应注入软上限收尾信号
@@ -198,12 +203,21 @@ export class ContextManager {
     if (currentTokens < this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
       return false;
     }
-    // 摘要化佐证：上下文存在替换/压缩摘要产物（正文已大量摘要化）
-    return messages.some(
+
+    // 精确检测：计算摘要层 token 占用（仅统计标记为摘要的消息）
+    const summaryMessages = messages.filter(
       (m) =>
         m.content.includes(SOFT_LIMIT_SUMMARY_MARKER_ROUND) ||
         m.content.includes(SOFT_LIMIT_SUMMARY_MARKER_COMPRESS),
     );
+
+    if (summaryMessages.length === 0) {
+      return false;
+    }
+
+    // 摘要层 token 占容量阈值比例（≥ SUMMARY_LAYER_TOKEN_RATIO = 30%）
+    const summaryTokens = this.estimateTokens(summaryMessages);
+    return summaryTokens >= this.maxContextTokens * LOOP_CONSTANTS.SUMMARY_LAYER_TOKEN_RATIO;
   }
 
   /**

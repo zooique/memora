@@ -123,6 +123,18 @@ export const LOOP_CONSTANTS = {
   /** 上下文截断时给 LLM 响应预留的缓冲比例。0.9 = 留 10% 给响应。 */
   CONTEXT_TOKENS_BUFFER_RATIO: 0.9,
 
+  /**
+   * 软上限检测：摘要层 token 占容量阈值比例。
+   *
+   * 当摘要层（含 Round summary / Compressed context 标记的消息）token 占用
+   * 超过 maxContextTokens × SUMMARY_LAYER_TOKEN_RATIO 时，判定为"摘要层达容量上限"，
+   * 触发软上限收尾信号让 LLM 收敛。
+   *
+   * 0.3 = 摘要层占 30% 容量即触发，配合 CONTEXT_TOKENS_BUFFER_RATIO=0.9
+   * 使用：总上下文逼近上限 + 摘要层占比过高 → 注入软上限。
+   */
+  SUMMARY_LAYER_TOKEN_RATIO: 0.3,
+
   /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
   SUMMARY_CACHE_TTL_MSGS: 10,
 

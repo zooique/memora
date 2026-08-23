@@ -87,6 +87,10 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     expect(LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO).toBe(0.9);
   });
 
+  it('软上限摘要层 token 占容量阈值应为 0.3（30%）', () => {
+    expect(LOOP_CONSTANTS.SUMMARY_LAYER_TOKEN_RATIO).toBe(0.3);
+  });
+
   it('摘要缓存 TTL 应为 10 条消息', () => {
     expect(LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS).toBe(10);
   });
@@ -113,12 +117,13 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    // 15 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
-    // LLM_TIMEOUT_MS / CONTEXT_TOKENS_BUFFER_RATIO / SUMMARY_CACHE_TTL_MSGS / RECALL_CONTENT_SLICE /
+    // 16 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
+    // LLM_TIMEOUT_MS / CONTEXT_TOKENS_BUFFER_RATIO / SUMMARY_LAYER_TOKEN_RATIO /
+    // SUMMARY_CACHE_TTL_MSGS / RECALL_CONTENT_SLICE /
     // TOKEN_BUDGET_REACHED_PLACEHOLDER / DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，2026-08-21 新增，
     // loop 与 orchestrator 共用）/
     // SUMMARY_MSG_COUNT / SUMMARY_CONTENT_SLICE / SUMMARY_MAX_TOKENS /
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(15);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(16);
   });
 });
