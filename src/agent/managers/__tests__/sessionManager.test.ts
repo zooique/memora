@@ -995,6 +995,7 @@ describe('SessionManager', () => {
 
       const checkpoint = {
         sessionId: '2026-06-27-main',
+        schemaVersion: 1,
         status: 'running' as const,
         mainGoal: '恢复测试',
         currentGoal: '恢复测试',
@@ -1032,6 +1033,7 @@ describe('SessionManager', () => {
 
       const checkpoint = {
         sessionId: '2026-06-27-main',
+        schemaVersion: 1,
         status: 'running' as const,
         mainGoal: '截断测试',
         currentGoal: '截断测试',
@@ -1064,6 +1066,7 @@ describe('SessionManager', () => {
 
       const checkpoint = {
         sessionId: '2026-06-27-main',
+        schemaVersion: 1,
         status: 'paused' as const,
         mainGoal: '暂停恢复',
         currentGoal: '暂停恢复',
@@ -1490,6 +1493,41 @@ describe('SessionManager', () => {
         disk.store.saveCheckpoint!('2026-06-27-main', '{"sessionId":');
         expect(manager.loadPersistedCheckpoint()).toBeNull();
         expect(manager.getCheckpoint()).toBeNull();
+      });
+
+      describe('版本路由（K1 持久化加固，2026-08-23）', () => {
+        it('schemaVersion 缺失（旧版本检查点）向后兼容，视为当前版本恢复', () => {
+          // intactCheckpoint 不带 schemaVersion —— 模拟未写版本字段的旧内核产物
+          seedDisk(intactCheckpoint());
+          const cp = manager.loadPersistedCheckpoint();
+          expect(cp).not.toBeNull();
+          expect(cp!.schemaVersion).toBe(AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION);
+        });
+
+        it('schemaVersion 为当前版本时正常恢复', () => {
+          const raw = intactCheckpoint();
+          raw.schemaVersion = AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION;
+          seedDisk(raw);
+          const cp = manager.loadPersistedCheckpoint();
+          expect(cp).not.toBeNull();
+          expect(cp!.schemaVersion).toBe(AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION);
+        });
+
+        it('schemaVersion 高于当前版本（未来内核）时拒绝恢复，不污染运行时检查点', () => {
+          const raw = intactCheckpoint();
+          raw.schemaVersion = AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION + 1;
+          seedDisk(raw);
+          expect(manager.loadPersistedCheckpoint()).toBeNull();
+          expect(manager.getCheckpoint()).toBeNull();
+        });
+
+        it('schemaVersion 非法（非正整数）时拒绝恢复，视为数据损坏', () => {
+          const raw = intactCheckpoint();
+          raw.schemaVersion = 'v1';
+          seedDisk(raw);
+          expect(manager.loadPersistedCheckpoint()).toBeNull();
+          expect(manager.getCheckpoint()).toBeNull();
+        });
       });
     });
 

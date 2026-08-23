@@ -406,6 +406,9 @@ export class SessionManager {
       ...(prev ?? {}),
 
       // 以下字段由本次快照重算，覆写基底
+      // schemaVersion 恒为当前版本：合并语义下 prev 可能出于旧版本无此字段，
+      // 须显式覆写（旧版本 createCheckpoint 未写 schemaVersion → 绝对版本路由）
+      schemaVersion: AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION,
       sessionId: history.currentSessionName,
       // 状态真理源是状态机，检查点只是其投影
       status: this.stateMachine.status,
@@ -557,6 +560,32 @@ export class SessionManager {
       }
       cp.sessionId = fallbackSessionId;
     }
+
+    // K1 版本路由：schemaVersion 缺失视为旧版本（向后兼容由未写版本的内核生成）；
+    // 缺失即旧版本签注为当前版本，使后续必需字段校验可用当前 schema 约束；
+    // 高于当前版本拒绝恢复（来自未来内核，结构可能不匹配，静默恢复比拒绝更危险）。
+    const declaredVersion =
+      cp.schemaVersion === undefined
+        ? AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION
+        : cp.schemaVersion;
+    if (typeof declaredVersion !== 'number' || !Number.isFinite(declaredVersion) || declaredVersion <= 0) {
+      logger.warn(
+        { sessionId: cp.sessionId, schemaVersion: cp.schemaVersion },
+        '检查点版本非法（非正整数），视为数据损坏拒绝恢复',
+      );
+      return null;
+    }
+    if (declaredVersion > AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION) {
+      logger.warn(
+        { sessionId: cp.sessionId, declaredVersion, currentVersion: AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION },
+        '检查点来自未来版本，结构可能不匹配，拒绝恢复（请升级内核或迁移检查点）',
+      );
+      return null;
+    }
+    // 掉入此处：declaredVersion === 当前版本（含缺失回退）。新创建路径由 createCheckpoint
+    // 写入当前版本；缺失回退在此未回写字段——恢复路径只读不写，回写交由 createCheckpoint
+    // 下次落盘时自然覆盖为新版本（单次恢复场景不重写磁盘，保持只读）。
+    cp.schemaVersion = declaredVersion;
 
     // 必需字段严格校验：任一缺失或类型错误即视为损坏，拒绝恢复（不静默补齐）
     const invalidFields: string[] = [];

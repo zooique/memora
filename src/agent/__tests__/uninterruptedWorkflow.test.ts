@@ -266,6 +266,7 @@ describe('SessionStateMachine · 三态流转', () => {
       sm.triggerError('LLM 超时');
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
+        schemaVersion: 1,
         status: 'error',
         error: { cause: 'LLM 超时', at: Date.now(), recovered: true },
         mainGoal: 'test',
@@ -288,6 +289,7 @@ describe('SessionStateMachine · 三态流转', () => {
       sm.triggerError('LLM 超时');
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
+        schemaVersion: 1,
         status: 'error',
         error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
         mainGoal: 'test',
@@ -308,6 +310,7 @@ describe('SessionStateMachine · 三态流转', () => {
     it('RUNNING 状态恢复应失败', () => {
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
+        schemaVersion: 1,
         status: 'running',
         mainGoal: 'test',
         currentGoal: 'test',
@@ -714,6 +717,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     it('恢复时无非幂等工具应正常完成', async () => {
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
+        schemaVersion: 1,
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',
@@ -734,6 +738,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       const warnSpy = vi.spyOn(logger, 'warn');
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
+        schemaVersion: 1,
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',
@@ -774,6 +779,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
 
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
+        schemaVersion: 1,
         status: 'error', // error 态但 error 字段缺失（旧版检查点 / 序列化丢字段）
         mainGoal: '测试',
         currentGoal: '测试',
@@ -800,6 +806,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
 
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
+        schemaVersion: 1,
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',
@@ -826,6 +833,7 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
 
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
+        schemaVersion: 1,
         status: 'running',
         mainGoal: '测试',
         currentGoal: '测试',
@@ -960,6 +968,7 @@ describe('SessionManager · 暂停/恢复/异常', () => {
       // 直接创建 paused 状态的检查点（最近心跳）
       const cp: SessionCheckpoint = {
         sessionId: '2026-08-08-main',
+        schemaVersion: 1,
         status: 'paused',
         mainGoal: '测试',
         currentGoal: '测试',

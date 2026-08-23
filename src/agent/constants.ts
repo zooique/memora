@@ -70,6 +70,14 @@ export const AGENT_CONSTANTS = {
   // 48 条 ≈ 多回合工具调用上限，远超单回合调用量。
   // 截断策略：优先丢弃幂等工具的最早记录，非幂等永不丢弃。
   COMPLETED_TOOL_CALLS_MAX: 48,
+
+  /**
+   * 检查点结构版本（K1 持久化加固，2026-08-23）。
+   *
+   * SessionCheckpoint 序列化/反序列化版本标识：当前 v1 为初始版本（无迁移映射，
+   * 未来结构演进升 v2 时补迁移函数）。版本路由见 sessionManager.parseCheckpoint。
+   */
+  CHECKPOINT_SCHEMA_VERSION: 1,
 } as const;
 
 /**

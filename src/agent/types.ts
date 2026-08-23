@@ -269,6 +269,15 @@ export interface DeltaPayload {
  * 恢复前须校验 error.recovered===true 且 cause 已解除）。
  */
 export interface SessionCheckpoint {
+  /**
+   * 检查点结构版本（K1 持久化加固，2026-08-23）
+   *
+   * 供跨版本/跨进程恢复时的版本路由：缺失视为最新版本（向后兼容旧检查点——由
+   * 未写版本的旧版本 createCheckpoint 生成）；等于当前版本正常恢复；高于当前版本
+   * （来自未来内核）拒绝恢复防结构不匹配。当前 v1 为初始版本，迁移映射为空是健康
+   * 状态——未来结构演进升 v2 时才需补迁移函数。勿用 goalChangeSeq 承担版本校验。
+   */
+  schemaVersion: number;
   /** 会话唯一标识 */
   sessionId: string;
   /** 三态状态（ERROR 独立可见） */

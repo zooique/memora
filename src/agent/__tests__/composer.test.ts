@@ -27,6 +27,7 @@ import type {
 function createCheckpoint(overrides?: Partial<SessionCheckpoint>): SessionCheckpoint {
   return {
     sessionId: 'test-session',
+    schemaVersion: 1,
     status: 'running',
     mainGoal: '测试主目标',
     currentGoal: '测试当前目标',

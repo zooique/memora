@@ -51,13 +51,14 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    // 12 个字段：CHAT_LOCK_TIMEOUT_MS / SHUTDOWN_ARCHIVE_TIMEOUT_MS / CHAT_INPUT_MAX_LENGTH /
+    // 13 个字段：CHAT_LOCK_TIMEOUT_MS / SHUTDOWN_ARCHIVE_TIMEOUT_MS / CHAT_INPUT_MAX_LENGTH /
     // DECAY_INTERVAL_MS / DEFAULT_MAX_CONTEXT_TOKENS / DEFAULT_RECALL_EXCLUDE_SOURCES /
     // DEFAULT_LOCALE / DEFAULT_RECALL_LIMIT /
     // PAUSE_TIMEOUT_MS（暂停超时自动归档）/
     // HOT_MEMORY_MAX_ROUNDS / HOT_MEMORY_CONTENT_SLICE（热记忆截断策略）/
-    // COMPLETED_TOOL_CALLS_MAX（FIFO 封顶）
-    expect(Object.keys(AGENT_CONSTANTS)).toHaveLength(12);
+    // COMPLETED_TOOL_CALLS_MAX（FIFO 封顶）/
+    // CHECKPOINT_SCHEMA_VERSION（K1 检查点结构版本）
+    expect(Object.keys(AGENT_CONSTANTS)).toHaveLength(13);
   });
 });
 
