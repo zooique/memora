@@ -1713,11 +1713,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 未初始化时返回全零指标，避免调用方判空
     if (!this.loop) {
       return {
-        llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0 },
+        llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0, actualInputTokens: 0, actualOutputTokens: 0 },
         recall: { totalCount: 0, hitCount: 0, hitRate: 0 },
         tools: { callCount: 0, failureCount: 0 },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
         decay: decayMetrics,
+        tasks: { totalCount: 0, successCount: 0, failureCount: 0, successRate: 0, avgDurationMs: 0 },
       };
     }
 

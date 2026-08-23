@@ -14,6 +14,15 @@ export interface LlmChunk {
   content?: string;
   toolCalls?: ToolCall[];
   finishReason?: 'stop' | 'tool_calls' | 'length' | 'error';
+  /** 实际 API 用量统计（仅在流结束时的最终 chunk 携带，部分 Provider 不支持） */
+  usage?: {
+    /** 输入 token 数（prompt_tokens） */
+    inputTokens: number;
+    /** 输出 token 数（completion_tokens） */
+    outputTokens: number;
+    /** 总 token 数（total_tokens） */
+    totalTokens?: number;
+  };
 }
 
 // ─── Provider 配置类型（来自 config/loader.ts，归入 LLM 领域） ───

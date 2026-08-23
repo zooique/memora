@@ -68,6 +68,9 @@ export class ToolRunner {
     });
 
     try {
+      // 记录工具调用参数到 Span（可观测性增强：宿主可通过 span 详情看到每次工具调用的完整参数）
+      span.setAttribute('args', tc.function.arguments);
+
       // 执行前检查：三重闸门输出三态决策（allow / skip / deny）
       const decision = this.applyPrechecks(tc);
       if (decision.kind === 'denied') {
@@ -84,6 +87,10 @@ export class ToolRunner {
       // 通知上层工具执行完成（供 outbox 幂等模式记录是否已执行）
       const ok = !result.startsWith('[ERR');
       this.deps.onToolExecuted?.(tc.function.name, decision.args, result, ok);
+
+      // 记录工具执行结果摘要到 Span（可观测性增强：宿主可追踪每次工具调用的结果）
+      span.setAttribute('result', result.slice(0, 200));
+      span.setAttribute('ok', ok);
       return result;
     } catch (err) {
       // 捕获异常转为结构化错误串回传 LLM 自行调整策略，避免传播中断对话

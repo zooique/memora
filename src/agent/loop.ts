@@ -108,13 +108,35 @@ class LoopMetrics {
   llmCallCount = 0;
   totalInputTokens = 0;
   totalOutputTokens = 0;
+  actualInputTokens = 0;
+  actualOutputTokens = 0;
   recallTotalCount = 0;
   recallHitCount = 0;
   toolCallCount = 0;
   toolFailureCount = 0;
 
+  // ─── 任务级 SLO 度量 ──────────────────────
+  /** 任务总执行次数（每次 processUserInput 算一次） */
+  taskTotalCount = 0;
+  /** 任务成功次数 */
+  taskSuccessCount = 0;
+  /** 任务失败次数（abort/超时/迭代耗尽） */
+  taskFailureCount = 0;
+  /** 任务累计耗时（毫秒，用于计算平均耗时） */
+  taskTotalDurationMs = 0;
+
   get hitRate(): number {
     return this.recallTotalCount > 0 ? this.recallHitCount / this.recallTotalCount : 0;
+  }
+
+  /** 任务成功率（0-1） */
+  get taskSuccessRate(): number {
+    return this.taskTotalCount > 0 ? this.taskSuccessCount / this.taskTotalCount : 0;
+  }
+
+  /** 平均任务耗时（毫秒） */
+  get taskAvgDurationMs(): number {
+    return this.taskTotalCount > 0 ? Math.round(this.taskTotalDurationMs / this.taskTotalCount) : 0;
   }
 }
 
@@ -313,6 +335,13 @@ export class AgentLoop {
     signal?: AbortSignal,
     roundId?: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 任务级 SLO 追踪：记录任务开始时间
+    const taskStartAt = Date.now();
+    // 标记任务进行中
+    this.metrics.taskTotalCount++;
+    // 任务是否成功（默认失败，runIterationLoop 正常完成后置为成功）
+    let taskSucceeded = false;
+
     // 创建顶层 response span，由 try/finally 统一管理生命周期
     const responseSpan = this.tracer.startSpan(TRACE_SPANS.RESPONSE, {
       inputLength: userInput.length,
@@ -346,8 +375,24 @@ export class AgentLoop {
       this.resetTurnState();
 
       // 外循环：单轮闭环的重复，直到 Handoff 决定终止
+      taskSucceeded = true;
       yield* this.runIterationLoop(signal);
+    } catch (err) {
+      // 任务级 SLO：捕获未处理异常，标记任务失败
+      taskSucceeded = false;
+      throw err;
     } finally {
+      // 任务级 SLO 度量：记录耗时与结果
+      const durationMs = Date.now() - taskStartAt;
+      this.metrics.taskTotalDurationMs += durationMs;
+      if (taskSucceeded) {
+        this.metrics.taskSuccessCount++;
+      } else {
+        this.metrics.taskFailureCount++;
+      }
+      // 记录任务耗时到 response span
+      responseSpan.setAttribute('taskDurationMs', durationMs);
+      responseSpan.setAttribute('taskSucceeded', taskSucceeded);
       responseSpan.end();
     }
   }
@@ -401,6 +446,11 @@ export class AgentLoop {
     input?: string,
     signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 任务级 SLO 追踪：记录任务开始时间
+    const taskStartAt = Date.now();
+    this.metrics.taskTotalCount++;
+    let taskSucceeded = false;
+
     // 补充输入作为新 user 消息进入上下文（仅当有文本）
     if (input && input.trim()) {
       // 先清执行期临时残留，再接续跑输入，保证续跑上下文干净（与 processUserInput 入口一致）
@@ -409,8 +459,24 @@ export class AgentLoop {
     }
     // 重置本轮运行计数状态（与 processUserInput 一致），确保续跑干净
     this.resetTurnState();
-    // 重新进入外循环，从保留的 this.messages 续跑
-    yield* this.runIterationLoop(signal);
+
+    try {
+      // 重新进入外循环，从保留的 this.messages 续跑
+      taskSucceeded = true;
+      yield* this.runIterationLoop(signal);
+    } catch (err) {
+      taskSucceeded = false;
+      throw err;
+    } finally {
+      // 任务级 SLO 度量：记录耗时与结果
+      const durationMs = Date.now() - taskStartAt;
+      this.metrics.taskTotalDurationMs += durationMs;
+      if (taskSucceeded) {
+        this.metrics.taskSuccessCount++;
+      } else {
+        this.metrics.taskFailureCount++;
+      }
+    }
   }
 
   /** 汇报系统提示：引导 LLM 对已完成的复杂任务产出自洽的结构化总结报告 */
@@ -1087,6 +1153,13 @@ export class AgentLoop {
             aborted = true;
             break;
           }
+          // 捕获实际 API token 用量（Provider 支持 usage 时）
+          if (chunk.usage) {
+            this.metrics.actualInputTokens += chunk.usage.inputTokens;
+            this.metrics.actualOutputTokens += chunk.usage.outputTokens;
+            llmSpan.setAttribute('actualInputTokens', chunk.usage.inputTokens);
+            llmSpan.setAttribute('actualOutputTokens', chunk.usage.outputTokens);
+          }
           if (chunk.content) {
             fullContent += chunk.content;
             yield { type: 'text', content: chunk.content };
@@ -1515,6 +1588,8 @@ export class AgentLoop {
         callCount: this.metrics.llmCallCount,
         totalInputTokens: this.metrics.totalInputTokens,
         totalOutputTokens: this.metrics.totalOutputTokens,
+        actualInputTokens: this.metrics.actualInputTokens,
+        actualOutputTokens: this.metrics.actualOutputTokens,
       },
       recall: {
         totalCount: this.metrics.recallTotalCount,
@@ -1532,6 +1607,13 @@ export class AgentLoop {
       },
       // 衰减指标由 Agent 层填充，AgentLoop 不持有衰减逻辑
       decay: null,
+      tasks: {
+        totalCount: this.metrics.taskTotalCount,
+        successCount: this.metrics.taskSuccessCount,
+        failureCount: this.metrics.taskFailureCount,
+        successRate: roundTo(this.metrics.taskSuccessRate, 3),
+        avgDurationMs: this.metrics.taskAvgDurationMs,
+      },
     };
   }
 

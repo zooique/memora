@@ -92,7 +92,7 @@ export const TRACE_SPANS = {
 /**
  * Agent 运行时指标快照——Agent.getMetrics() 聚合 AgentLoop+Agent 两层指标产出，供宿主做监控/健康度面板。
  * 只读快照（不修改状态）、同步返回（不触发 LLM/IO）、累计值（init 起累加，close() 后清零）。
- * 分 5 维度：LLM 调用、记忆召回、工具调用、上下文管理、记忆衰减。
+ * 分 6 维度：LLM 调用、记忆召回、工具调用、上下文管理、记忆衰减、任务级 SLO。
  */
 export interface AgentMetrics {
   /** LLM 调用指标 */
@@ -103,6 +103,10 @@ export interface AgentMetrics {
     totalInputTokens: number;
     /** 累计输出 token（estimateTokens 估算） */
     totalOutputTokens: number;
+    /** 实际 API 返回的输入 token 累计值（仅在 Provider 支持 usage 时填充，否则为 0） */
+    actualInputTokens: number;
+    /** 实际 API 返回的输出 token 累计值（仅在 Provider 支持 usage 时填充，否则为 0） */
+    actualOutputTokens: number;
   };
   /** 记忆召回指标 */
   recall: {
@@ -138,4 +142,17 @@ export interface AgentMetrics {
     /** 上次衰减时间（ISO 8601，null = 从未执行） */
     lastRunAt: string | null;
   } | null;
+  /** 任务级 SLO 度量（AgentLoop 层填充） */
+  tasks: {
+    /** 任务总执行次数（每次 processUserInput 算一次） */
+    totalCount: number;
+    /** 任务成功次数（正常完成，未被 abort/暂停） */
+    successCount: number;
+    /** 任务失败次数（被中止、超时、或迭代耗尽） */
+    failureCount: number;
+    /** 任务成功率（0-1，totalCount 为 0 时为 0） */
+    successRate: number;
+    /** 平均任务耗时（毫秒，0 表示尚无数据） */
+    avgDurationMs: number;
+  };
 }

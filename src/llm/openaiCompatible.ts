@@ -330,7 +330,36 @@ export class OpenAICompatibleProvider extends LlmProvider {
                 };
                 finish_reason?: string;
               }>;
+              usage?: {
+                prompt_tokens?: number;
+                completion_tokens?: number;
+                total_tokens?: number;
+              };
             };
+
+            // 提取 usage 数据（部分 Provider 在流式响应末尾携带 token 用量统计）
+            if (json.usage) {
+              const usage = json.usage;
+              // 构建带 usage 的 chunk，即使没有 choices 也 yield（纯 usage 事件）
+              const usageChunk: LlmChunk = {
+                usage: {
+                  inputTokens: usage.prompt_tokens ?? 0,
+                  outputTokens: usage.completion_tokens ?? 0,
+                  totalTokens: usage.total_tokens,
+                },
+              };
+              // 若同时有 choices，合并到同一 chunk
+              const choice = json.choices?.[0];
+              if (choice) {
+                if (choice.delta?.content) usageChunk.content = choice.delta.content;
+                if (choice.finish_reason) {
+                  usageChunk.finishReason = choice.finish_reason as LlmChunk['finishReason'];
+                }
+              }
+              yield usageChunk;
+              // 若只有 usage 无 choices，跳过后续 choices 处理
+              if (!json.choices || json.choices.length === 0) continue;
+            }
 
             const choice = json.choices?.[0];
             if (!choice) continue;
