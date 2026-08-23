@@ -439,7 +439,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** conflictDetected 事件已随内核记忆关系图谱收敛移除（2026-08-14） */
 
-  /** archiveFailed：记忆归档失败（insight / content 阶段） */
+  /** archiveFailed：记忆归档失败（内核 stage 现为 'session' 会话归档阶段；洞察层已移除，无 'insight' 阶段） */
   private readonly onArchiveFailed = (info: { stage: string; message: string }): void => {
     this.post({ type: 'notice', level: 'info', message: `记忆归档失败（${info.stage}）：${info.message}` });
   };
