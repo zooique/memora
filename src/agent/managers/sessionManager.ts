@@ -260,6 +260,15 @@ export class SessionManager {
     // 将消息恢复到 AgentLoop 工作记忆
     this.applySessionToLoop(result.messages);
 
+    // 关键修复：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话持久化检查点。
+    // 对比 switchSession（:180-184）有 flush+清空，forkSession 必须做同样的隔离处理。
+    // 否则 updateGoal→flushCheckpoint 会把新分支状态写入源会话，造成跨会话数据污染。
+    if (this.checkpoint) {
+      this.flushCheckpoint(true);
+      this.checkpoint = null;
+      this.checkpointDirty = false;
+    }
+
     this.emitEvent('sessionForked', {
       from: sourceSessionName,
       to: `${result.date}-${result.newSession}`,
@@ -1281,28 +1290,49 @@ export class SessionManager {
   }
 
   /**
-   * 从 AgentLoop 提取热记忆（FIFO 轮数截断 + 内容截断），仅保留 user/assistant/tool 排除 system。
+   * 从 AgentLoop 提取热记忆（按轮边界截断 + 内容截断），仅保留 user/assistant/tool 排除 system。
+   * 关键设计：**按轮边界截断**，而非按消息条数截断——保证 assistant(tool_calls) 与后续 tool 消息同留，
+   * 避免恢复上下文末尾出现孤立的 tool_calls 消息（OpenAI 协议下会导致 400 错误）。
    */
   private extractHotMemory(): { messages: ChatMessage[]; truncatedCount: number } {
     const loop = this.getLoop();
     const messages = loop.getMessages();
 
     // 排除 system prompt
-    let hotMessages = messages.filter((m) => m.role !== 'system');
-
+    const hotMessages = messages.filter((m) => m.role !== 'system');
     const originalCount = hotMessages.length;
 
-    // FIFO 轮数截断：每轮约 2 条消息，超限保留最近 N 轮
-    const maxMessages = AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS * 2;
-    if (hotMessages.length > maxMessages) {
-      hotMessages = hotMessages.slice(-maxMessages);
+    // 按轮边界分组：每个 user 消息开启一个新轮次，直到下一个 user 消息或数组末尾
+    // 每轮包含：user + assistant(+ tool_calls) + tool 结果 + assistant 回复
+    const rounds: ChatMessage[][] = [];
+    let currentRound: ChatMessage[] = [];
+    for (const msg of hotMessages) {
+      // user 消息开启新一轮（currentRound 非空时先保存当前轮）
+      if (msg.role === 'user' && currentRound.length > 0) {
+        rounds.push(currentRound);
+        currentRound = [];
+      }
+      currentRound.push(msg);
+    }
+    // 保存最后一轮
+    if (currentRound.length > 0) {
+      rounds.push(currentRound);
     }
 
-    const truncatedCount = originalCount - hotMessages.length;
+    // 保留最近 N 轮（HOT_MEMORY_MAX_ROUNDS），丢弃旧轮次
+    const maxRounds = AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS;
+    let keptRounds = rounds;
+    if (rounds.length > maxRounds) {
+      keptRounds = rounds.slice(-maxRounds);
+    }
+
+    // 展平为消息列表
+    const truncatedMessages = keptRounds.flat();
+    const truncatedCount = originalCount - truncatedMessages.length;
 
     // 内容截断：单条消息超阈值时截断并追加标记
     const contentSlice = AGENT_CONSTANTS.HOT_MEMORY_CONTENT_SLICE;
-    const result = hotMessages.map((m) => ({
+    const result = truncatedMessages.map((m) => ({
       role: m.role as ChatMessage['role'],
       content:
         m.content.length > contentSlice

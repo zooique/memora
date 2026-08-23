@@ -58,3 +58,32 @@ export function backgroundTask(
 export function getBackgroundTaskStats(): BackgroundTaskStats {
   return { ...stats };
 }
+
+/**
+ * 等待所有在途后台任务完成（带超时保护，防止任务永不返回阻塞 close）。
+ * Agent.close() 必须调用此函数——否则后台 boost/摘要生成等任务可能在 storage 关闭后 upsert 失效。
+ *
+ * @param timeoutMs 超时时间（毫秒），默认 5000ms
+ * @returns 实际等待到的 pending 任务数（0 表示无在途任务）
+ */
+export async function awaitBackgroundTasks(timeoutMs = 5000): Promise<number> {
+  const initialPending = stats.pending;
+  if (initialPending === 0) return 0;
+
+  logger.debug({ pending: initialPending }, '等待后台任务完成...');
+
+  const startTime = Date.now();
+  while (stats.pending > 0) {
+    if (Date.now() - startTime > timeoutMs) {
+      logger.warn(
+        { pending: stats.pending, timeoutMs },
+        '等待后台任务超时，放弃剩余任务',
+      );
+      break;
+    }
+    // 等待下一个微任务周期，让 pending 计数有机会被更新
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+
+  return initialPending;
+}

@@ -66,7 +66,7 @@ const RESOURCE_CONTENT_MAX_LEN = 50_000;
  * @param maxLen 最大长度
  * @returns 净化后的文本
  */
-function sanitizeExternalText(text: string, maxLen: number): string {
+export function sanitizeExternalText(text: string, maxLen: number): string {
   // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
   const cleaned = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
   return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen)}…` : cleaned;

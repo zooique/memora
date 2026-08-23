@@ -29,6 +29,7 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
+import { sanitizeExternalText } from '@/agent/toolExecutor.js';
 
 /** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
@@ -722,8 +723,10 @@ export class BuiltinToolHandlers {
       // 否则回退为摘要文本（保证工具始终可用、不因缺注入而报错）。
       const raw = this.loadRawRoundMessages(sessionId, roundId);
       if (raw) {
+        // 关键修复：原始对话文本注入前必须过 sanitizeExternalText，去控制字符 + 长度上限。
+        // 与 toolExecutor 主路径净化一致，防止用户历史中的控制字符/隐藏指令直通 LLM 上下文。
         const lines = raw.messages
-          .map((m) => `[${m.role}] ${truncate(m.content, TRACE_MESSAGE_CHAR_LIMIT)}`)
+          .map((m) => `[${m.role}] ${sanitizeExternalText(m.content, TRACE_MESSAGE_CHAR_LIMIT)}`)
           .join('\n');
         const truncNote = raw.truncated ? '\n（对话已截断，仍有更多消息）' : '';
         return `会话：${sessionId} | 轮次：${roundId} 原始对话：\n${lines}${truncNote}`;

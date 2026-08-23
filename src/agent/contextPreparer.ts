@@ -282,8 +282,11 @@ export class ContextPreparer {
       }
     }
 
-    // ── 完整对话层注入：contextAssembly !== 'query' 时执行（fixed / hybrid） ──
-    if (contextAssembly !== 'query') {
+    // ── 完整对话层注入：仅 hybrid 模式执行 ──
+    // 关键修复：fixed 模式下 loop.messages 已保留全部对话历史（cleanTemporary 只清 system），
+    // 再注入 conversation 摘要会造成双份出现、浪费 token。hybrid 模式下对话按预算截断，
+    // 注入的最近轮次摘要提供结构化视图，避免 LLM 丢失上下文连续性。
+    if (contextAssembly === 'hybrid') {
       const recentHistory = dialogue.history;
       if (recentHistory.length > 0) {
         const msgs = deps.config.messages;

@@ -684,6 +684,17 @@ export class AgentLoop {
       );
       return true;
     }
+    // 关键修复：done 终止前检查 block-mode 排队插话。
+    // 场景：LLM 返回 done（纯文本完成），但用户在上一轮 LLM 处理期间调用了 interject(content, 'block')。
+    // 此时 pendingInterjections 非空，若直接 return false，插话内容被静默丢弃。
+    // 修复：消费排队插话并继续迭代，保证 block 模式语义（不打断当前轮，但下一轮必须处理）。
+    if (this.pendingInterjections.length > 0) {
+      const contents = this.pendingInterjections.splice(0);
+      for (const content of contents) {
+        this.appendUserMessage(content);
+      }
+      return true;
+    }
     return false;
   }
 

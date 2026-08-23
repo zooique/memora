@@ -69,6 +69,7 @@ import type { AgentMetrics } from '@/agent/tracer.js';
 import {
   backgroundTask,
   getBackgroundTaskStats as readBackgroundTaskStats,
+  awaitBackgroundTasks,
 } from '@/utils/backgroundTask.js';
 import type { BackgroundTaskStats } from '@/utils/backgroundTask.js';
 
@@ -1538,6 +1539,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       } catch (err) {
         logger.warn({ err: toError(err) }, 'close: workProjection.awaitInflight 失败');
       }
+    }
+    // 关键修复：等待 backgroundTask 全局在途任务完成（如 boostScores）。
+    // 否则 close 后后台任务仍可能 upsert 已关闭的 storage，触发写失效或异常。
+    try {
+      const awaited = await awaitBackgroundTasks(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
+      if (awaited > 0) {
+        logger.debug({ awaited }, 'close: 已等待背景任务完成');
+      }
+    } catch (err) {
+      logger.warn({ err: toError(err) }, 'close: awaitBackgroundTasks 失败');
     }
     // 处理 pending 暂停残留：关闭前确保状态机与检查点一致
     const sm = this._sessionManager;
