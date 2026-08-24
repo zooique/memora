@@ -389,7 +389,7 @@ export type ExtensionToWebviewMessage =
       securityAudit?: {
         total: number;
         denied: number;
-        recent: { type: string; path: string; tool?: string }[];
+        recent: { type: string; path: string; tool?: string; reason?: string }[];
       };
     }
   /**

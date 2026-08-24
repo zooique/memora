@@ -988,14 +988,15 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
         denied: 1,
         recent: [
           { type: 'path-allow', path: 'foo.ts' },
-          { type: 'path-deny', path: 'out.js' },
+          { type: 'path-deny', path: 'out.js', reason: '路径越界，不在白名单内' },
         ],
       },
     });
     const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
     expect(metricsEl.textContent).toContain('安全审计 4 次 · 拒绝 1');
     expect(metricsEl.textContent).toContain('path-allow foo.ts');
-    expect(metricsEl.textContent).toContain('path-deny out.js');
+    // G11：拒绝原因须透出（此前仅显示 type+path，丢弃 reason）
+    expect(metricsEl.textContent).toContain('path-deny out.js (路径越界，不在白名单内)');
   });
 
   it('metrics 无 securityAudit → 不显示安全审计行', () => {

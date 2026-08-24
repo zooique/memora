@@ -126,7 +126,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _securityAuditTotal = 0;
   private _securityAuditDenied = 0;
-  private _recentSecurityAudits: { type: string; path: string; tool?: string }[] = [];
+  private _recentSecurityAudits: { type: string; path: string; tool?: string; reason?: string }[] = [];
   /** 安全审计订阅取消函数（幂等管理，防重复绑定） */
   private _securityAuditUnsub: (() => void) | undefined;
   /**
@@ -769,13 +769,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const type = (event as { type?: string }).type ?? 'audit';
       const path = (event as { path?: string }).path ?? '';
       const tool = (event as { tool?: string }).tool;
+      // G11：透出内核拒绝原因（pathGuard path-deny 含 reason 如「命中黑名单」「路径越界」）；
+      // 此前仅取 type/path/tool 丢弃 reason，导致用户看到「拒绝」却不知为何。
+      const reason = (event as { reason?: string }).reason;
       this._securityAuditTotal += 1;
       if (type === 'path-deny' || type === 'write-decline') {
         this._securityAuditDenied += 1;
       }
       // 路径取 basename 防折叠区冗长（可读且不泄露完整目录结构）
       const base = path.split(/[\\/]/).pop() ?? path;
-      this._recentSecurityAudits.push({ type, path: base, tool });
+      this._recentSecurityAudits.push({ type, path: base, tool, reason });
       if (this._recentSecurityAudits.length > 3) {
         this._recentSecurityAudits.shift();
       }

@@ -1055,7 +1055,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         ? [
             '安全审计 ' + msg.securityAudit.total + ' 次 · 拒绝 ' + msg.securityAudit.denied +
               (msg.securityAudit.recent.length > 0
-                ? ' · 最近：' + msg.securityAudit.recent.map((r) => r.type + ' ' + r.path).join(', ')
+                ? ' · 最近：' + msg.securityAudit.recent
+                    .map((r) => r.type + ' ' + r.path + (r.reason ? ' (' + r.reason + ')' : ''))
+                    .join(', ')
                 : ''),
           ]
         : []),
