@@ -11,9 +11,11 @@
  *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
  *   - 功能定位：configDir 下的内置角色包（role-packs/doc-review）承载
+ *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
-import { Agent, FetchWebSearchProvider, FetchWebFetchProvider } from '@zooique/memora';
+import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger } from '@zooique/memora';
 import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
+import type { ILogger } from '@zooique/memora';
 import { join } from 'node:path';
 import { createProvider, createBackgroundProvider, createVectorStore } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
@@ -47,6 +49,33 @@ const CHINESE_MESSAGES: UIMessages = {
   selfReviewPrompt: (round: number, total: number) =>
     `\n\n[请审查你上一轮的回答质量（第 ${round}/${total} 轮自审查），如发现问题请修正后重新输出]`,
 };
+
+/**
+ * VSCode OutputChannel → ILogger 适配器
+ *
+ * 接受一个 vscode.OutputChannel 实例，将内核 ILogger 的调用
+ * （支持 `info(msg)` 与 `info(obj, msg)` 两种形式）转换为 OutputChannel.appendLine。
+ */
+export function createVscodeLogger(output: vscode.OutputChannel): ILogger {
+  return {
+    info: (objOrMsg, msg?) => {
+      const line = msg ? `[INFO] ${msg} ${JSON.stringify(objOrMsg)}` : `[INFO] ${objOrMsg}`;
+      output.appendLine(line);
+    },
+    warn: (objOrMsg, msg?) => {
+      const line = msg ? `[WARN] ${msg} ${JSON.stringify(objOrMsg)}` : `[WARN] ${objOrMsg}`;
+      output.appendLine(line);
+    },
+    error: (objOrMsg, msg?) => {
+      const line = msg ? `[ERROR] ${msg} ${JSON.stringify(objOrMsg)}` : `[ERROR] ${objOrMsg}`;
+      output.appendLine(line);
+    },
+    debug: (objOrMsg, msg?) => {
+      const line = msg ? `[DEBUG] ${msg} ${JSON.stringify(objOrMsg)}` : `[DEBUG] ${objOrMsg}`;
+      output.appendLine(line);
+    },
+  };
+}
 
 /** 装配参数 */
 export interface AssembleOptions {
@@ -103,6 +132,13 @@ export interface AssembleOptions {
    * 关闭后 owner 模式写文件自动批准（审计仍记录）。由 extension 从 globalState 读取注入。
    */
   confirmWrites?: boolean;
+  /**
+   * VSCode 输出通道（G7：日志对接）
+   *
+   * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
+   * 未传入时内核日志默认输出到 stdout（生产环境建议始终注入）。
+   */
+  outputChannel?: vscode.OutputChannel;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
@@ -129,7 +165,13 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites } = options;
+  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites, outputChannel } = options;
+
+  // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
+  if (outputChannel) {
+    const logger = createVscodeLogger(outputChannel);
+    setLogger(logger);
+  }
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);

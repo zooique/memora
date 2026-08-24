@@ -277,6 +277,8 @@ async function readContentSafe(filePath: string, maxLen = MAX_CONTENT_FILE_LEN):
 export class RolePackManager extends ConfigResourceManager<RolePack> {
   /** 激活角色包变更回调（首次参数为变前，第二参数为变后；宿主据此同步 UI/记忆标题） */
   private onActiveChanged: ((from: string | null, to: string | null) => void) | null = null;
+  /** 切换锁定触发回调（宿主据此展示「角色切换已锁定 2 分钟」提示） */
+  private onSwitchLocked: ((reason: string, lockedSeconds: number) => void) | null = null;
   /** 当前激活的角色包名 */
   private activePackName: string | null = null;
   /**
@@ -554,6 +556,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     this.onActiveChanged = handler;
   }
 
+  /**
+   * 注册切换锁定触发监听：30s 内超过 5 次切换触发锁定时回调（2 分钟自动恢复）。
+   * @param handler 收到（reason, lockedSeconds）；reason 为锁定原因描述
+   */
+  onRolePackSwitchLocked(handler: (reason: string, lockedSeconds: number) => void): void {
+    this.onSwitchLocked = handler;
+  }
+
   /** 返回 parseManifestPack 时预缓存的 Assembly，避免重复 mergeStrategy + personaPrompt 构建；无激活返回 null */
   getActive(): RolePackAssembly | null {
     if (!this.activePackName) return null;
@@ -603,6 +613,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (this.switchTimestamps.length >= RolePackManager.MAX_SWITCHES_IN_WINDOW) {
       this.switchLocked = true;
       this.unlockAt = now + RolePackManager.AUTO_UNLOCK_MS;
+      const lockedSeconds = Math.round(RolePackManager.AUTO_UNLOCK_MS / 1000);
+      const lockReason = `30s 内 ${this.switchTimestamps.length} 次切换，限流锁定 ${lockedSeconds}s`;
       this.unlockTimer = setTimeout(() => {
         this.switchLocked = false;
         this.unlockAt = null;
@@ -611,6 +623,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         logger.info('角色包切换锁已自动恢复');
       }, RolePackManager.AUTO_UNLOCK_MS);
       logger.warn('角色包切换过于频繁，已锁定 2 分钟');
+      // 触发锁定回调：宿主据此展示锁定提示
+      this.onSwitchLocked?.(lockReason, lockedSeconds);
     }
 
     this.setActivePackName(name);

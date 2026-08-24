@@ -27,8 +27,6 @@ export const AGENT_EVENTS = {
   sessionResumeBlocked: 'sessionResumeBlocked',
   /** 订阅时宿主据此判断重要事件并 toast 提示 */
   sessionResumeFailed: 'sessionResumeFailed',
-  /** LLM 生成完任务表，宿主可展示接受/丢弃入口 */
-  taskTableGenerated: 'taskTableGenerated',
   /** 装配前判负（洞 3）：触发输入过大，剩余预算无法支撑至少一轮正文——与软上限不同失败原因 */
   inputTooLarge: 'inputTooLarge',
   needClarify: 'needClarify',

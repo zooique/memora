@@ -924,9 +924,8 @@ export function initIpcListeners(uiManager: UIManager, callbacks: IpcListenerCal
   // 工具调用结果：更新工具调用卡片状态（成功/失败 + 摘要）
   window.electronAPI.onStreamToolResult((msg) => {
     uiManager.updateToolResult(msg.messageId, msg.toolCallId, msg.name, msg.ok, msg.summary);
-    // 长任务闭环（2026-08-10 实测纠偏）：task_table_write/update 工具执行后
-    // plan 已变更，但内核只有 taskTableGenerated（首次生成）事件，无 plan 更新事件。
-    // 在工具执行完成点按工具名前缀精准刷新任务清单面板，展示逐步推进的任务列表。
+    // 长任务闭环：task_table_write/update 工具执行后 plan 已变更，
+    // 内核无独立的 plan 更新事件，在工具执行完成点按工具名前缀精准刷新任务清单面板。
     if (msg.name?.startsWith('task_table')) {
       uiManager.chatCoordinator.taskTablePanelManager?.loadData();
     }

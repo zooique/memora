@@ -177,4 +177,7 @@ export const memoryStyles = `
     color: var(--text-secondary, #9aa0a6);
   }
   #memory-root .governance-detail.gov-error { color: var(--vscode-errorForeground, #f48771); }
+
+  /* 记忆诊断区样式已移除（2026-08-24 第一性原理复盘：诊断粒度无终端用户场景，
+     内核治理机制强制自动跑，相关 #diagnostic 容器/DTO 一并删除） */
 `;

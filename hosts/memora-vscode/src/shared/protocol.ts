@@ -829,3 +829,10 @@ export const MESSAGE_TYPES = {
   SET_WORKSPACE: 'set_workspace',
   OPEN_FILE: 'open_file',
 } as const;
+
+// ─── 诊断 DTO 类型已移除（2026-08-24 第一性原理复盘） ───
+// 源健康/冲突检测/语义去重/时效性评估的诊断粒度超越主流（ChatGPT 仅暴露「记住了什么+删改」），
+// 且记忆明文存于 .memora/memories.json 用户可直接读；内核治理机制强制自动跑，无终端用户场景。
+// 相关消息类型（governance_source_health / governance_detect_conflicts / governance_deduplicate /
+// governance_evaluate_timeliness / source_health_loaded / conflict_detection_loaded /
+// dedup_result / timeliness_result）及 DTO 一并删除，避免 orphaned 协议类型与死代码。

@@ -462,6 +462,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     });
   };
 
+  /** contextCompressed：LLM 主动压缩上下文（第二级压缩，与内核自动截断区分） */
+  private readonly onContextCompressed = (info: { target: string; replacedCount: number; summaryLength: number }): void => {
+    const targetText = info.target === 'earliest_round' ? '最早轮次摘要' : '最大工具结果摘要';
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `上下文已压缩：${targetText}，替换 ${info.replacedCount} 条消息，摘要 ${info.summaryLength} token`,
+    });
+  };
+
   /** conflictDetected 事件已随内核记忆关系图谱收敛移除（2026-08-14） */
 
   /** archiveFailed：记忆归档失败（内核 stage 现为 'session' 会话归档阶段；洞察层已移除，无 'insight' 阶段） */
@@ -695,9 +705,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('sessionResumeBlocked', this.onSessionResumeBlocked);
     a.off('sessionPauseTimedOut', this.onSessionPauseTimedOut);
     a.on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
-    // P1 后续波：低扰信息（截断/归档失败/权重保存失败）→ info 级提示条
+    // P1 后续波：低扰信息（截断/压缩/归档失败/权重保存失败）→ info 级提示条
     a.off('contextTruncated', this.onContextTruncated);
     a.on('contextTruncated', this.onContextTruncated);
+    // G3：LLM 主动压缩事件订阅（与 contextTruncated 的内核自动截断区分）
+    a.off('contextCompressed', this.onContextCompressed);
+    a.on('contextCompressed', this.onContextCompressed);
     a.off('archiveFailed', this.onArchiveFailed);
     a.on('archiveFailed', this.onArchiveFailed);
     a.off('boostPersistFailed', this.onBoostPersistFailed);

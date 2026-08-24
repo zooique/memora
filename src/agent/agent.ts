@@ -1167,6 +1167,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.toolExec = result.toolExec;
     this.skillManager = result.skillManager;
     this.rolePackManager_ = result.rolePackManager;
+    // 角色包切换锁定事件：rolePackManager 触发锁定时，Agent 向宿主发射 rolePackSwitchLocked 事件
+    this.rolePackManager_.onRolePackSwitchLocked((reason, lockedSeconds) => {
+      this.emit(AGENT_EVENTS.rolePackSwitchLocked, { reason, lockedSeconds });
+    });
     this.memoryInspector = result.memoryInspector;
     this.internals.dedupManager = result.dedupManager;
     this.internals.memoryAdvisor = result.memoryAdvisor;
