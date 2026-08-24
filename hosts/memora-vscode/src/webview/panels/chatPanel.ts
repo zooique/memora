@@ -1885,26 +1885,38 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </div>
   </div>
   <div id="inputBar">
+    <!-- Grok 式：选中 Skill 后在输入框上方以「名称 + × 可移除」chip 展示（chatView renderSkillChip 动态构建）；
+         entry 仍是 Row1 的 ⚡ 触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
+    <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        <!-- Row 1 · 一级直面：模型选择 + 发送操作（Actions 独占一行，窄窗口不被角色信息挤压） -->
-        <div class="composer-row composer-row--actions">
-          <div class="composer-actions">
-            ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
-            <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
-              <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-            <!-- 生成中切换为停止方块（loading 类驱动）：点击 = 停止当前生成（mvp-scope 打断能力） -->
-            <svg class="stop-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
-          </button>
+        <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->
+        <div class="composer-row composer-row--main">
+          <!-- 左侧功能群：Skill + 模型选择 + 润色（次级功能，弱化展示） -->
+          <div class="composer-left">
+            <!-- Skill 选择器：单图标（⚡）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
+                 Skill 名不常显（节省窄窗横向空间），当前项由菜单内 is-active 高亮 + 触发器 accent 边框 + title 兜底 -->
+            ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', onSelect: '__skillPickerOnSelect', triggerLabel: '⚡', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
+            <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制 -->
+            ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
+            <!-- 文本润色按钮：图标化，降低视觉权重 -->
+            <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色">
+              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+          </div>
+          <!-- 右侧：唯一发送按钮（单图标突出化；生成中切换为停止，两者均无文字以省空间） -->
+          <div class="composer-right">
+            <button id="send" class="send-btn-primary" title="发送 (Enter)" aria-label="发送">
+              <svg class="send-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+              <svg class="stop-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+            </button>
           </div>
         </div>
-        <!-- Row 2 · 次级收纳：角色徽章 + 能力徽章（Context 独立一行，不抢操作焦点；
-             对齐 visual-design-philosopher 三层分类法：操作=一级直面，身份=次级收纳） -->
-        <div class="composer-row composer-row--context">
-          <div class="composer-context">
+        <!-- Row 2 · 状态行：角色徽章 + 能力徽章（最弱化的状态信息；Skill 名唯一归属 Row1 选择器，避免双轨） -->
+        <div class="composer-row composer-row--status">
+          <div class="composer-status">
             <span id="currentRoleBadge" class="role-badge"></span>
-            <!-- Phase 4 E2：工具权限徽章（角色能力面可见性，角色切换时自动更新） -->
             <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
           </div>
         </div>

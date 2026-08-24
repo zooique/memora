@@ -86,6 +86,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const historyMenu = document.getElementById('historyMenu') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
+  // 润色按钮（输入框旁，对当前输入内容进行润色）
+  const polishBtn = document.getElementById('polishBtn') as HTMLButtonElement | null;
+  // Skill 选择器（输入框旁，选择后作为提示词传给 LLM）
+  const skillPicker = document.querySelector<HTMLElement>('.skill-picker');
+  const skillPickerMenu = skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__menu') : null;
+  const skillPickerTrigger = skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
+  // Grok 式技能 chip 行：输入框上方展示当前已选 Skill（名称 + × 可移除）
+  const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
+  let currentSkill: { name: string; systemPrompt: string } | null = null;
   // 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
@@ -709,8 +718,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       div.appendChild(body);
       const footer = document.createElement('div');
       footer.className = 'msg-footer';
-      // 用户消息复制按钮（2026-08-16 对话闭环管理）：与 AI 消息一致，复制用户原始输入。
-      // 仅 user 角色提供；error 提示无复制意义，不冗余。
+      // 用户消息复制按钮：复制历史消息文本
       if (role === 'user') {
         const copyBtn = document.createElement('button');
         copyBtn.className = 'msg-copy';
@@ -718,19 +726,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         copyBtn.title = '复制消息';
         copyBtn.addEventListener('click', () => copyText(text));
         footer.appendChild(copyBtn);
-        // H5 文本润色按钮：用户消息可触发内核 TextPolishManager 润色
-        const polishBtn = document.createElement('button');
-        polishBtn.className = 'msg-polish';
-        polishBtn.textContent = '润色';
-        polishBtn.title = '润色文本（调用内核润色服务）';
-        polishBtn.addEventListener('click', () => {
-          const msgId = div.dataset.msgId || String(Date.now());
-          div.dataset.msgId = msgId;
-          div.classList.add('polishing');
-          polishBtn.textContent = '润色中…';
-          vscode.postMessage({ type: 'polish_text', text, msgId });
-        });
-        footer.appendChild(polishBtn);
       }
       const t = fmtTime(ts);
       if (t) {
@@ -1293,12 +1288,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
           body.textContent = msg.text;
           (msgEl as HTMLElement).dataset.rawText = msg.text;
         }
-        // 恢复按钮状态
-        const polishBtn = msgEl.querySelector(':scope .msg-polish') as HTMLElement | null;
-        if (polishBtn) {
-          polishBtn.textContent = msg.ok ? '已润色' : '重试';
-          polishBtn.title = msg.ok ? '文本已润色' : (msg.message || '润色失败');
-        }
+      }
+      if (!msg.ok && msg.message) {
+        showActivity('info', `润色失败：${msg.message}`);
+      }
+    } else if (msg.type === 'polish_input_result') {
+      // 输入框润色结果：ok=true 替换输入框内容；ok=false 提示失败
+      if (msg.ok && msg.text) {
+        input.value = msg.text;
+        autoResize();
+      }
+      // 恢复润色按钮状态（图标按钮，无需恢复文本）
+      if (polishBtn) {
+        polishBtn.classList.remove('loading');
       }
       if (!msg.ok && msg.message) {
         showActivity('info', `润色失败：${msg.message}`);
@@ -1401,7 +1403,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
-    vscode.postMessage({ type: 'send', text });
+    // 构建消息：如果选择了 Skill，将其作为 systemPrompt 传递
+    const payload: WebviewToExtensionMessage = { type: 'send' as const, text };
+    if (currentSkill) {
+      (payload as { systemPrompt?: string }).systemPrompt = currentSkill.systemPrompt;
+    }
+    vscode.postMessage(payload);
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
   // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行，Phase 4 暂停/恢复）。
@@ -1507,7 +1514,119 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
+    // Skill 下拉：选择 skill 后设置为当前 skill（发送时作为 system prompt 传递）
+    __skillPickerOnSelect: (id) => {
+      const skill = SKILL_PRESETS.find((s) => s.name === id);
+      if (skill) {
+        currentSkill = skill;
+        updateSkillPickerLabel();
+      } else if (id === '__clear_skill') {
+        currentSkill = null;
+        updateSkillPickerLabel();
+      }
+    },
   });
+
+  /** 更新 Skill 选择器标签 + 输入框上方 chip（Grok 式）：
+   * 入口触发器 ⚡（accent 边框表示已启用）+ 菜单内 is-active 高亮 + title/aria 兜底；
+   * 输入框上方由 renderSkillChip 呈现「名称 + × 可移除」的状态 chip。 */
+  function updateSkillPickerLabel(): void {
+    if (skillPickerTrigger) {
+      if (currentSkill) {
+        skillPickerTrigger.setAttribute('title', '当前 Skill：' + currentSkill.name);
+        skillPickerTrigger.setAttribute('aria-label', '当前 Skill：' + currentSkill.name);
+      } else {
+        skillPickerTrigger.setAttribute('title', '选择 Skill');
+        skillPickerTrigger.setAttribute('aria-label', '选择 Skill');
+      }
+      skillPicker?.classList.toggle('active', !!currentSkill);
+    }
+    if (skillPickerMenu) {
+      skillPickerMenu.querySelectorAll<HTMLElement>('.treedd__item').forEach((it) => {
+        // 无 Skill 时高亮「不使用 Skill」（__clear_skill），选中时高亮对应项
+        const on = currentSkill ? it.dataset.treeddId === currentSkill.name : it.dataset.treeddId === '__clear_skill';
+        it.classList.toggle('is-active', on);
+      });
+    }
+    renderSkillChip();
+  }
+
+  /** Grok 式：在输入框上方构建/清空「名称 + × 可移除」的技能 chip。
+   * 用 textContent 逐节点构建（skill 名来自 SKILL_PRESETS 常量，天然安全）；
+   * × 点击移除 = 清空 currentSkill 并刷新（保持与菜单触发器同源，单一真理源）。 */
+  function renderSkillChip(): void {
+    if (!skillChipRow) return;
+    skillChipRow.textContent = '';
+    if (!currentSkill) {
+      skillChipRow.hidden = true;
+      return;
+    }
+    skillChipRow.hidden = false;
+    const chip = document.createElement('span');
+    chip.className = 'skill-chip';
+    const icon = document.createElement('span');
+    icon.className = 'skill-chip__icon';
+    icon.textContent = '⚡';
+    icon.setAttribute('aria-hidden', 'true');
+    chip.appendChild(icon);
+    const name = document.createElement('span');
+    name.className = 'skill-chip__name';
+    name.textContent = currentSkill.name;
+    chip.appendChild(name);
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'skill-chip__remove';
+    remove.textContent = '×';
+    remove.setAttribute('title', '移除 Skill');
+    remove.setAttribute('aria-label', '移除 Skill：' + currentSkill.name);
+    remove.addEventListener('click', () => {
+      currentSkill = null;
+      updateSkillPickerLabel();
+    });
+    chip.appendChild(remove);
+    skillChipRow.appendChild(chip);
+  }
+
+  /** 润色按钮事件绑定：对输入框内容进行润色（图标按钮，无文本） */
+  if (polishBtn) {
+    polishBtn.addEventListener('click', () => {
+      const text = input.value.trim();
+      if (!text) return;
+      polishBtn.classList.add('loading');
+      vscode.postMessage({ type: 'polish_input', text });
+    });
+  }
+
+  /** Skill 预设列表（可扩展）：选择后作为 system prompt 传递给 LLM */
+  const SKILL_PRESETS: { name: string; systemPrompt: string }[] = [
+    { name: '代码审查', systemPrompt: '你是一位代码审查专家。请仔细审查用户的代码，指出潜在问题并提供改进建议。' },
+    { name: '文档撰写', systemPrompt: '你是一位技术文档撰写专家。请帮助用户撰写清晰、准确的技术文档。' },
+    { name: '架构设计', systemPrompt: '你是一位系统架构设计专家。请帮助用户设计合理的系统架构。' },
+    { name: '测试生成', systemPrompt: '你是一位测试专家。请为用户的代码生成全面的测试用例。' },
+  ];
+  // 初始化 Skill 选择器选项
+  if (skillPickerMenu) {
+    skillPickerMenu.innerHTML = '';
+    // 清除选项
+    const clearItem = document.createElement('div');
+    clearItem.className = 'treedd__item';
+    clearItem.textContent = '不使用 Skill';
+    clearItem.dataset.treeddId = '__clear_skill';
+    skillPickerMenu.appendChild(clearItem);
+    // 分隔线
+    const divider = document.createElement('div');
+    divider.className = 'treedd__divider';
+    skillPickerMenu.appendChild(divider);
+    // Skill 列表
+    for (const skill of SKILL_PRESETS) {
+      const item = document.createElement('div');
+      item.className = 'treedd__item';
+      item.textContent = skill.name;
+      item.dataset.treeddId = skill.name;
+      skillPickerMenu.appendChild(item);
+    }
+    updateSkillPickerLabel();
+  }
 
   // 主动提问回答：提交并续跑
   function sendClarifyAnswer(): void {

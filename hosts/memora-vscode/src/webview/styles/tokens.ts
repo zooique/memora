@@ -96,6 +96,10 @@ export const tokens = `
      * --accent-subtle 此前被 skillsStyles 引用但未定义（回退裸值），此处补定义收口。 */
     --skill-agent-accent: var(--accent, #0e639c);
     --skill-user-accent: var(--status-pass, #4ec9b0);
+    /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用） */
+    --accent-bg-hover: rgba(14, 99, 156, 0.06);   /* 轻交互悬停 */
+    --accent-bg-subtle: rgba(14, 99, 156, 0.08);  /* 徽章/次级背景 */
+    --accent-bg-active: rgba(14, 99, 156, 0.1);   /* 选中/激活态 */
     --accent-subtle: rgba(14, 99, 156, 0.15);
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
@@ -106,7 +110,6 @@ export const tokens = `
     --input-max-h: 180px;      /* textarea 展开上限（~7 行，超限显示滚动条） */
     /* 注：--input-footer-h 已退役（Footer 现由 flex column 自适应高度，不再用固定 min-height）。
      * 参考值：56px (Actions 28 + Context 24 + gap 4) */
-    --composer-context-h: 24px; /* Context 行最小高度（角色徽章单行） */
     --control-h: 28px;         /* 输入区控制件统一高度 */
   }
 `;

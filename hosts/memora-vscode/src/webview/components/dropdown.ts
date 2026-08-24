@@ -23,11 +23,19 @@ export interface DropdownItem {
   danger?: boolean;
 }
 
-/** 生成下拉组件 HTML（默认触发器「⋯」；onSelect 指定该项点击后调用的全局回调名） */
-export function buildDropdownHtml(items: DropdownItem[], opts?: { extraClass?: string; onSelect?: string }): string {
+/** 生成下拉组件 HTML（默认触发器「⋯」；onSelect 指定该项点击后调用的全局回调名）
+ *  SSOT 优化：触发器文本/title/aria-label 可通过 opts 自定义，避免硬编码「更多操作」
+ *  对选择器场景（Skill/Model picker）语义不当。未指定时保持向后兼容默认值。 */
+export function buildDropdownHtml(
+  items: DropdownItem[],
+  opts?: { extraClass?: string; onSelect?: string; triggerLabel?: string; triggerTitle?: string; triggerAriaLabel?: string },
+): string {
   const extra = opts?.extraClass ? ` ${opts.extraClass}` : '';
   // 实例级回调：data-on-select 指向全局回调名；缺省回退 __treeddOnSelect
   const onSelectAttr = opts?.onSelect ? ` data-on-select="${opts.onSelect}"` : '';
+  const triggerLabel = opts?.triggerLabel ?? '⋯';
+  const triggerTitle = opts?.triggerTitle ?? '更多操作';
+  const triggerAriaLabel = opts?.triggerAriaLabel ?? '更多操作';
   const itemHtml = items
     .map(
       (it) =>
@@ -36,7 +44,7 @@ export function buildDropdownHtml(items: DropdownItem[], opts?: { extraClass?: s
     .join('');
   return `
     <div class="treedd${extra}" data-treedd${onSelectAttr}>
-      <button class="treedd__trigger" title="更多操作" aria-label="更多操作" aria-haspopup="menu">⋯</button>
+      <button class="treedd__trigger" title="${triggerTitle}" aria-label="${triggerAriaLabel}" aria-haspopup="menu">${triggerLabel}</button>
       <div class="treedd__menu" role="menu">${itemHtml}</div>
     </div>`;
 }

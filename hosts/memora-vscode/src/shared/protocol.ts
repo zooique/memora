@@ -53,7 +53,7 @@ export interface EmbeddingInfoDto {
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
-  | { type: 'send'; text: string }
+  | { type: 'send'; text: string; systemPrompt?: string }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
   /**
@@ -250,6 +250,11 @@ export type WebviewToExtensionMessage =
    * 润色文本，限制 2000 字上限和 15s 超时。润色完成后返回 polish_result 消息。
    */
   | { type: 'polish_text'; text: string; msgId: string }
+  /** 输入框文本润色请求（输入框旁「润色」按钮触发，2026-08-27）
+   *
+   * 由输入框旁的「润色」按钮触发：对当前输入框内容进行润色，润色完成后返回 polish_input_result 消息。
+   */
+  | { type: 'polish_input'; text: string }
   // ─── 安全/写入审批消息（H0：W→E 方向） ───
   /**
    * 切换写入二次确认开关（设置面板「安全」选项卡的 toggle 开关）
@@ -635,6 +640,13 @@ export type ExtensionToWebviewMessage =
    * msgId 对应原 polish_text 请求的 msgId，确保结果能正确回写到对应消息。
    */
   | { type: 'polish_result'; ok: boolean; msgId: string; text?: string; message?: string }
+  /**
+   * 输入框文本润色结果（对 polish_input 的应答，2026-08-27）
+   *
+   * ok=true 时 text 为润色后文本，webview 替换输入框内容；
+   * ok=false 时 message 为失败原因（如超时、润色服务不可用）。
+   */
+  | { type: 'polish_input_result'; ok: boolean; text?: string; message?: string }
   // ─── 安全/写入审批消息（H0：E→W 方向） ───
   /**
    * 写入审批请求（E→W：内核触发写入确认时，由 host 推送到 chat webview）

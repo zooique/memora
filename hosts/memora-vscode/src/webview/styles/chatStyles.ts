@@ -395,8 +395,8 @@ export const chatStyles = `
   }
   #input:focus { outline: none; }
   #input:disabled { opacity: 0.6; }
-  /* 工具条（两行布局）：Actions 行（模型+发送）+ Context 行（角色+能力徽章）
-   * 对齐 visual-design-philosopher 三层分类法：一级直面 vs 次级收纳物理隔离。 */
+  /* 输入区布局：左侧功能群 + 右侧发送按钮 + 状态行
+   * 对齐 visual-design-philosopher：发送按钮突出化（最大最亮），其他功能弱化。 */
   #inputFooter {
     display: flex;
     flex-direction: column;
@@ -405,29 +405,41 @@ export const chatStyles = `
     flex-shrink: 0;
     box-sizing: border-box;
   }
-  /* Composer Row 基类：两行共享的 padding/spacing 契约 */
+  /* Composer Row 基类：共享布局契约 */
   .composer-row {
     display: flex;
     align-items: center;
     width: 100%;
   }
-  /* Row 1 · 一级直面：Actions 行 — 右对齐，操作独占整行 */
-  .composer-row--actions { justify-content: flex-end; }
-  /* Row 2 · 次级收纳：Context 行 — 左对齐，身份信息弱化展示 */
-  .composer-row--context { min-height: var(--composer-context-h, 24px); }
-  /* Composer Actions：模型选择器 + 发送按钮 */
-  .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
-  /* Composer Context：角色徽章 + 能力徽章容器（从旧 .composer-left 重命名，保持语义） */
-  .composer-context {
+  /* Row 1 · 主操作行：左侧功能群 + 右侧发送按钮（两端对齐） */
+  .composer-row--main {
+    justify-content: space-between;
+    align-items: center;
+  }
+  /* Row 2 · 状态行：弱化显示角色/能力信息 */
+  .composer-row--status {
+    min-height: 18px;
+  }
+  /* 左侧功能群：Skill ⚡ + 模型 + 润色（次级弱化组）。
+   * 允许本组收缩（flex-shrink:1 + min-width:0），窄窗下由内部触发器省略号兜底，
+   * 仅右侧发送按钮保持不可收缩，保证「主操作」永远不被挤压消失。 */
+  .composer-left {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    flex-shrink: 1;
+    min-width: 0;
+  }
+  /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定） */
+  .composer-right {
+    flex-shrink: 0;
+  }
+  /* 状态信息容器 */
+  .composer-status {
     display: flex;
     align-items: center;
     gap: var(--sp-2, 6px);
     min-width: 0;
-  }
-  /* Composer 键盘提示（已独立到 composer-row--context 行，保留样式供未来扩展） */
-  .composer-hint {
-    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
-    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   /* Composer 当前角色只读徽章：胶囊 + accent 圆点，展示当前角色名让用户感知定位。
    * 只读不承载切换（切换入口在「角色」视图）；textContent 赋值防注入（chatView 更新）。 */
@@ -462,7 +474,7 @@ export const chatStyles = `
     padding: 1px var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     color: var(--accent, #0e639c);
-    background: rgba(14, 99, 156, 0.08);
+    background: var(--accent-bg-subtle);
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
     overflow: hidden;
@@ -471,13 +483,110 @@ export const chatStyles = `
   }
   .capability-badge[hidden] { display: none; }
 
+  /* 润色按钮（图标化，弱化样式） */
+  .polish-btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 24px;
+    padding: 0;
+    background: transparent;
+    border: 1px solid var(--border-subtle, rgba(128,128,128,.2));
+    border-radius: var(--radius-sm, 4px);
+    color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+  }
+  .polish-btn-icon:hover {
+    color: var(--accent, #0e639c);
+    background: var(--accent-bg-hover);
+    border-color: var(--accent, #0e639c);
+  }
+  .polish-btn-icon:active { transform: scale(0.95); }
+  .polish-btn-icon.loading {
+    opacity: 0.6;
+    pointer-events: none;
+  }
+  .polish-btn-icon.loading svg { animation: spin 0.8s linear infinite; }
+
+  /* Skill 选择器胶囊差异（共用 .treedd--capsule 外壳，见 dropdown.ts）：
+   * 单图标（⚡）触发器。胶囊底色/箭头/尺寸全复用 capsule；此处仅：
+   * 1) 选中态 accent 边框回显（.active 由 chatView toggle）；2) 菜单左对齐
+   * （左起触发器若沿用 capsule 的 right:0 会往左溢出面板边缘）；
+   * 3) 菜单内当前项高亮（icon-only 下，这是「我用了哪个 Skill」的唯一常驻入口）。 */
+  .skill-picker { --dd-trigger-max-w: 120px; }
+  .skill-picker.active .treedd__trigger {
+    border-color: var(--accent, #0e639c);
+    color: var(--accent, #0e639c);
+  }
+  .skill-picker.treedd--capsule .treedd__menu { left: 0; right: auto; }
+  .skill-picker .treedd__item.is-active {
+    color: var(--accent, #0e639c);
+    font-weight: 600;
+  }
+
+  /* Grok 式技能 chip 行：选中 Skill 后显示在输入框上方（消息区之下、composer 之上）。
+   * 与入口触发器（Row1 ⚡）分离——此处只呈现「已挂载的技能状态」，保证透明 + 可移除。 */
+  .skill-chip-row {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    flex-wrap: wrap;
+    padding: 0 var(--sp-3, 8px) var(--sp-2, 6px);
+    flex-shrink: 0;
+  }
+  .skill-chip-row[hidden] { display: none; }
+  .skill-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    max-width: 220px;
+    padding: 2px var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    line-height: 1.5;
+    color: var(--accent, #0e639c);
+    background: var(--accent-bg-subtle);
+    border: 1px solid var(--accent, #0e639c);
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+  }
+  .skill-chip__icon { font-size: 11px; line-height: 1; flex-shrink: 0; }
+  .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  .skill-chip__remove {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 15px;
+    height: 15px;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
+    color: inherit;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .skill-chip__remove:hover {
+    background: var(--accent-bg-active);
+    color: var(--accent, #0e639c);
+  }
+
+  /* 动画：spin for loading state */
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
    * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
    * 消除面板各自覆写组件默认样式带来的重复 + !important（对抗评估 P2-2/P2-4）。
    * 本区块只做差异定制：宽度自适应模型名（对齐 Trae）+ 菜单尺寸 + 激活项高亮。
    * 面板通过 extraClass="model-picker treedd--capsule" 启用变体。 */
   .model-picker {
-    flex: 0 0 auto; /* 宽度由内容决定，不撑满 footer */
+    flex: 1 1 auto; /* 窄窗下与左组其余项一起收缩，交给内部 max-width 省略 */
     min-width: 0;
     /* 差异定制变量（capsule 变体读取）：超长模型名兜底省略 + 菜单尺寸 */
     --dd-trigger-max-w: 200px;
@@ -488,6 +597,8 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
+  /* 模型触发器位于左组（非右缘），菜单左对齐往右展开，避免向右溢出面板裁切 */
+  .model-picker.treedd--capsule .treedd__menu { left: 0; right: auto; }
   .treedd__empty {
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     font-size: var(--font-md, 12px);
@@ -495,31 +606,41 @@ export const chatStyles = `
     text-align: center;
   }
 
-  /* ============ Components：发送按钮 ============ */
-  .send-btn {
+  /* ============ Components：发送按钮（单图标突出化） ============
+   * 右侧唯一主操作：固定 32px 方钮，仅图标（发/停两态），视觉焦点恒定、窄窗省空间。
+   * 文字已收敛为 title/aria-label 可访问性兜底（panel 标记 + chatView 事件）。 */
+  .send-btn-primary {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: var(--control-h, 28px); /* 与模型触发器同高，基线对齐 */
-    height: var(--control-h, 28px);
-    border-radius: 50%;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-md, 6px);
     border: none;
     background: var(--accent, #0e639c);
     color: var(--accent-foreground, #ffffff);
     cursor: pointer;
-    transition: opacity 0.15s ease, filter 0.15s ease, transform 0.1s ease;
+    transition: background 0.15s ease, filter 0.15s ease, transform 0.1s ease;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
   }
-  .send-btn:hover:not(.loading) { opacity: 0.92; filter: brightness(1.08); }
-  .send-btn:active:not(.loading) { transform: scale(0.95); }
-  /* 生成中：按钮切换为「停止」方块（点击 = 停止当前生成，mvp-scope 打断能力）。
-   * cursor 保持 pointer（可点击的停止语义），不再用 not-allowed 误导「不可点」 */
-  .send-btn.loading { opacity: 0.9; }
-  .send-btn .send-icon { display: block; }
-  .send-btn .stop-icon { display: none; }
-  /* loading 时图标切换：隐藏发送箭头，显示停止方块（语义：生成中此按钮 = 停止） */
-  .send-btn.loading .send-icon { display: none; }
-  .send-btn.loading .stop-icon { display: block; }
+  .send-btn-primary:hover:not(.loading) {
+    filter: brightness(1.08);
+    background: var(--accent-hover, #1177bb);
+  }
+  .send-btn-primary:active:not(.loading) { transform: scale(0.97); }
+  .send-btn-primary .send-icon { display: block; }
+  .send-btn-primary .stop-icon { display: none; }
+  /* 生成中：切换为停止按钮（同尺寸方钮，视觉重心同步，不跳动） */
+  .send-btn-primary.loading {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
+  }
+  .send-btn-primary.loading .send-icon { display: none; }
+  .send-btn-primary.loading .stop-icon { display: block; }
+  .send-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
   /* ============ Components：活动状态区 · 主状态条（P0 错误 / P1 低扰） ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
@@ -778,7 +899,7 @@ export const chatStyles = `
   /* 所有可交互控件：键盘 Tab 聚焦时显示品牌色外环。
    * 仅对 :focus-visible 生效（鼠标点击不显示，避免干扰）。
    * 下拉菜单项已在 dropdown.ts 用背景色替换 outline，不在此重复。 */
-  .send-btn:focus-visible,
+  .send-btn-primary:focus-visible,
   .msg-copy:focus-visible,
   .msg-delete:focus-visible,
   .opt-btn:focus-visible,
