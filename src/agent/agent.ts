@@ -915,6 +915,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 设置运行时插话模式（无缝 vs 打断）。
+   * - 'block'（无缝）：interject() 将输入排队，在下一迭代边界统一注入为 user 消息，不中断当前执行；
+   * - 'allow'（默认）：interject() 立即中断当前 LLM/工具调用、注入后继续循环。
+   * 宿主若要实现「loop 中直接输入补充内容、不打断执行」的无缝注入，应在发起 chat 前设为 'block'。
+   */
+  setInputInterrupt(mode: 'allow' | 'block'): void {
+    this.assertInitialized('setInputInterrupt');
+    this.requireLoop.setStrategy({ inputInterrupt: mode });
+  }
+
+  /**
    * 追加计划步骤（SESSION_APPEND_TASK 落点）：在现有 plan 末尾追加新步骤
    */
   appendPlanStep(description: string): number {

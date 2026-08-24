@@ -86,6 +86,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const historyMenu = document.getElementById('historyMenu') as HTMLElement;
   const input = document.getElementById('input') as HTMLTextAreaElement;
   const send = document.getElementById('send') as HTMLButtonElement;
+  // 暂停按钮（Gap A：用户主动暂停入口，仅生成中可见，与「停止」并列的软暂停控制）
+  const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement | null;
   // 润色按钮（输入框旁，对当前输入内容进行润色）
   const polishBtn = document.getElementById('polishBtn') as HTMLButtonElement | null;
   // Skill 选择器（输入框旁，选择后作为提示词传给 LLM）
@@ -460,19 +462,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
     if (state === 'thinking') {
       send.classList.add('loading');
+      send.classList.remove('paused');
       send.setAttribute('title', '停止生成');
       send.setAttribute('aria-label', '停止生成');
-      // 生成中不禁用输入框：用户可输入新消息 → Enter 插话（打断当前生成并重发，
-      // mvp-scope 打断能力）。发送按钮此时承担「停止」职责，插话走 Enter 发送。
+      // Gap A：生成中暴露「暂停」软控制，与「停止」并列（暂停落检查点可恢复，停止丢弃）
+      if (pauseBtn) pauseBtn.hidden = false;
+      // 生成中不禁用输入框：用户可输入新消息 → Enter 插话（不打断当前生成）。
+      // 发送按钮此时承担「停止」职责，插话走 Enter 发送。
     } else if (state === 'paused') {
-      // 暂停中：按钮切为「继续」语义——用户点击即 post resume 消息恢复执行
+      // 暂停中：按钮切为「继续」语义（▶ 图标）——用户点击即 post resume 消息恢复执行
       send.classList.remove('loading');
+      send.classList.add('paused');
       send.setAttribute('title', '继续生成');
       send.setAttribute('aria-label', '继续生成');
+      if (pauseBtn) pauseBtn.hidden = true; // 已暂停，收回暂停入口
     } else {
       send.classList.remove('loading');
+      send.classList.remove('paused');
       send.setAttribute('title', '发送 (Enter)');
       send.setAttribute('aria-label', '发送');
+      if (pauseBtn) pauseBtn.hidden = true;
       // 输入框全程不禁用，无需恢复；仅当用户焦点已回落到 body（如刚完成其他操作）
       // 时才恢复输入焦点，避免 done 时强制 focus 打断用户正在进行的操作（对抗评估 P1-4）
       if (document.activeElement === document.body) input.focus();
@@ -1157,6 +1166,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (msg.phase === 'archiving') scheduleArchivingFallback();
       else clearArchivingFallback();
     } else if (msg.type === 'user') {
+      // 无缝插话（缺口 B）：生成中收到用户补充 → 结束当前流式助手块（复位锚点与流式态），
+      // 使后续 chunk 经 beginStreaming 开新助手块、置于本用户消息之后，保证消息排序正确。
+      if (streamingActive) {
+        streamingActive = false;
+        activeAssistantEl = null;
+        streamingRaw = '';
+      }
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts);
@@ -1423,6 +1439,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else {
       sendMessage();
     }
+  });
+  // 暂停按钮（Gap A）：仅生成中可见，点击发 pause 消息——host 调 agent.pause() 软暂停
+  // 当前流（落检查点、可经「继续」恢复），区别于「停止」的丢弃语义。
+  pauseBtn?.addEventListener('click', () => {
+    vscode.postMessage({ type: 'pause' });
   });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

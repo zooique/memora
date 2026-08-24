@@ -52,6 +52,7 @@ const HTML = `
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+            <button id="pauseBtn" hidden></button>
             <button id="send"></button>
           </div>
         </div>
@@ -185,6 +186,26 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(assistants[0].querySelector('.msg-body')?.textContent?.trim()).toBe('重放后');
   });
 
+  it('无缝插话：流式中收到 user 复位锚点，下条 chunk 开新助手块且排在用户消息之后（缺口 B 排序）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // 生成中用户 Enter 补充（宿主 handleSend → agent.interject → UI 上屏 user）
+    dispatch({ type: 'chunk', content: '第一段' }); // 开始流式：assistant 锚点
+    dispatch({ type: 'user', text: '补充要求', ts: '2026-08-14T10:00:00.000Z' }); // 插话复位锚点
+    dispatch({ type: 'chunk', content: '第二段' }); // 下一条 chunk：开新助手块
+    dispatch({ type: 'done' }); // 结束流式（幂等）
+
+    // 应拆成「两块助手 + 一条用户插话」，顺序：assistant → user → assistant
+    const order = Array.from(messages.querySelectorAll('.msg')).map((m) => m.className);
+    expect(order).toEqual(['msg assistant', 'msg user', 'msg assistant']);
+    // 插话后内容落在新的助手块（不与「第一段」拼接）
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(2);
+    expect(assistants[0].querySelector('.msg-body')?.textContent?.trim()).toBe('第一段');
+    expect(assistants[1].querySelector('.msg-body')?.textContent?.trim()).toBe('第二段');
+  });
+
   it('历史切换重建：clear_ok 后重放 user/assistant 消息正常渲染（ui-redesign 历史加载链路）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
@@ -316,6 +337,38 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     send.click();
     // 生成中点击按钮 = 停止（不是发送），发 stop 消息由 host 中断当前流
     expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
+  });
+
+  it('生成中暴露暂停按钮，点击发 pause 消息（缺口 A · 用户主动暂停）', () => {
+    const { postMessage } = mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    // 初始（空闲）暂停按钮收回
+    expect(pauseBtn.hidden).toBe(true);
+    dispatch({ type: 'status', state: 'thinking' });
+    // 生成中：暂停按钮暴露（软暂停入口），发送按钮仍为「停止」
+    expect(pauseBtn.hidden).toBe(false);
+    expect(send.title).toBe('停止生成');
+    pauseBtn.click();
+    // 点击暂停 → 发 pause 消息，host 调 agent.pause() 软暂停（不丢弃、可恢复）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'pause' });
+  });
+
+  it('暂停态隐藏暂停按钮、发送按钮切「继续」▶，点击发 resume（缺口 A 恢复）', () => {
+    const { postMessage } = mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    // 生成中暂停 → host 回 status paused
+    dispatch({ type: 'status', state: 'paused' });
+    // 已暂停：暂停入口收回，发送按钮切「继续生成」语义（▶ 图标由 .paused 类驱动）
+    expect(pauseBtn.hidden).toBe(true);
+    expect(send.classList.contains('paused')).toBe(true);
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.title).toBe('继续生成');
+    send.click();
+    // 点击继续 → 发 resume 消息恢复暂停点之后的执行
+    expect(postMessage).toHaveBeenCalledWith({ type: 'resume' });
   });
 
   it('done 恢复发送态（loading 移除 + 发送提示）', () => {

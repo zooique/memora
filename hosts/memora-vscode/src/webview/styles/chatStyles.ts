@@ -430,9 +430,13 @@ export const chatStyles = `
     flex-shrink: 1;
     min-width: 0;
   }
-  /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定） */
+  /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定）。
+   * Gap A：生成中并列「暂停」按钮（.pause-btn），故容器改 flex 横向排列两钮 */
   .composer-right {
     flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
   }
   /* 状态信息容器 */
   .composer-status {
@@ -632,6 +636,7 @@ export const chatStyles = `
   .send-btn-primary:active:not(.loading) { transform: scale(0.97); }
   .send-btn-primary .send-icon { display: block; }
   .send-btn-primary .stop-icon { display: none; }
+  .send-btn-primary .play-icon { display: none; }
   /* 生成中：切换为停止按钮（同尺寸方钮，视觉重心同步，不跳动） */
   .send-btn-primary.loading {
     background: var(--surface-hover, rgba(128,128,128,.2));
@@ -640,7 +645,37 @@ export const chatStyles = `
   }
   .send-btn-primary.loading .send-icon { display: none; }
   .send-btn-primary.loading .stop-icon { display: block; }
+  /* 暂停中：按钮切为「继续」语义（▶ 播放图标）——用户点击恢复执行（Gap A 暂停/恢复） */
+  .send-btn-primary.paused .send-icon { display: none; }
+  .send-btn-primary.paused .stop-icon { display: none; }
+  .send-btn-primary.paused .play-icon { display: block; }
   .send-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* 暂停按钮（Gap A）：生成中与「停止」并列的软暂停入口。
+   * 次级控制，视觉弱化（同加载态灰调），与主发送按钮共列于右缘；
+   * hidden 由 chatView.setStatus 控制——仅生成中暴露，暂停/空闲态收回。 */
+  .pause-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: var(--radius-md, 6px);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease, transform 0.1s ease;
+  }
+  .pause-btn:hover {
+    background: var(--surface-code, rgba(0, 0, 0, 0.08));
+    color: var(--text-primary, #cccccc);
+  }
+  .pause-btn:active { transform: scale(0.97); }
+  /* display:inline-flex 会覆盖 HTML hidden 属性，需显式恢复隐藏 */
+  .pause-btn[hidden] { display: none; }
 
   /* ============ Components：活动状态区 · 主状态条（P0 错误 / P1 低扰） ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，

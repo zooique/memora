@@ -1410,21 +1410,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写）
    *
-   * 插话语义（mvp-scope 打断能力）：生成中用户发送新消息 = 中断当前流 + 作为新消息重发。
-   * 必须 await 旧流彻底结束（chatLock 释放）再发起新 chat，否则触发 busy 冲突；等待期间
-   * 旧流 consumeFlow 会发送 interrupted 通知 webview（恢复输入框 + 渲染「已停止」提示）。 */
+   * 插话语义（无缝注入，缺口 B）：生成中用户 Enter 输入补充 → 不中断 loop，调 agent.interject()
+   * 排队，内核在下一迭代边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。 */
   private async handleSend(input: string): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
       return;
     }
-    // 插话：生成中发送 → 中断当前流（abort() 同步置 signal.aborted，供 consumeFlow
-    // 判定并发送 interrupted），待旧流结束后走正常发送路径（此时 _streaming 已复位，
-    // 不会再次进入本分支）
+    // 无缝插话（缺口 B）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
+    // 内核在下一迭代边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
+    // 正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
     if (this._streaming && this._abortController) {
-      this._abortController.abort();
-      await this._currentFlow;
+      this.post({ type: 'user', text: input, ts: new Date().toISOString() });
+      this._agent.interject(input);
+      return;
     }
     // 确保 Agent 对齐到当前会话（ADR-024）：用户可能打开面板后直接发送，未显式
     // 切换会话。若 Agent 内部会话与 _currentSessionId 不一致，先 switchToSession 对齐，
@@ -1905,11 +1905,18 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
               <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
             </button>
           </div>
-          <!-- 右侧：唯一发送按钮（单图标突出化；生成中切换为停止，两者均无文字以省空间） -->
+          <!-- 右侧：主发送按钮（单图标三态：发送↑ / 停止■ / 继续▶，均无文字省空间）
+               + 生成中另行暴露「暂停」软控制（Gap A），与「停止」并列、可经「继续」恢复 -->
           <div class="composer-right">
+            <!-- 暂停按钮（Gap A）：仅生成中显隐（setStatus 控制 hidden），软暂停当前 Agent 执行。
+                 「停止」丢弃本次流、「暂停」落检查点可恢复，二者语义区分、视觉同级弱化展示 -->
+            <button id="pauseBtn" class="pause-btn" title="暂停生成" aria-label="暂停生成" hidden>
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="4" x2="10" y2="20"/><line x1="14" y1="4" x2="14" y2="20"/></svg>
+            </button>
             <button id="send" class="send-btn-primary" title="发送 (Enter)" aria-label="发送">
               <svg class="send-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
               <svg class="stop-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+              <svg class="play-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20"/></svg>
             </button>
           </div>
         </div>

@@ -240,6 +240,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）
   await agent.init();
 
+  // 4.1 无缝插话策略（缺口 B）：宿主「生成中 Enter 输入补充」走 agent.interject()，
+  // 设 inputInterrupt='block' 使其排队、在下一迭代边界并入，不中断当前 loop 执行
+  //（默认 'allow' 会中断当前调用，达不到「补充内容不打断 loop」的效果）。
+  agent.setInputInterrupt('block');
+
   // 5. 加载用户技能（可选，宿主扩展内置技能池）
   // 用户技能与内置技能分离：内置从 configDir/skills/ 扫描，用户从 userSkillsDir 扫描
   if (userSkillsDir) {
