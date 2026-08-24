@@ -595,12 +595,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /** sessionResumed：对话恢复执行（状态反馈补充） */
-  private readonly onSessionResumed = (info: { sessionId?: string }): void => {
+  private readonly onSessionResumed = (_info: { sessionId?: string }): void => {
     this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
   };
 
   /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
-  private readonly onSessionRecovered = (info: { sessionId?: string }): void => {
+  private readonly onSessionRecovered = (_info: { sessionId?: string }): void => {
     this.post({
       type: 'notice',
       level: 'info',
@@ -1577,7 +1577,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 置位生成态：会话切换/新建据此拒绝（P1-3，避免重放与进行中流混血）
     this._streaming = true;
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
-    let firstChunkTs = new Date().toISOString();
+    const firstChunkTs = new Date().toISOString();
     // Phase 4：暂停标记——当轮是否收到 paused chunk（软暂停状态）
     let pausedOnPurpose = false;
     try {
