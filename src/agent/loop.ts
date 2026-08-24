@@ -68,6 +68,8 @@ export interface AgentLoopOptions {
   enableContextSummary?: boolean;
   /** 上下文截断回调（传被裁剪/保留消息数），宿主可据此发 contextTruncated 事件；未注入静默忽略 */
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
+  /** LLM 主动压缩完成回调（第二级压缩，传压缩目标/被替换消息数/摘要长度）；未注入静默忽略 */
+  onContextCompressed?: (target: 'earliest_round' | 'largest_tool_result', replacedCount: number, summaryLength: number) => void;
   /** 会话事件回调（处理 SessionEvent 时通知上层状态机变化，如 pause/resume/error 触发）；未注入静默忽略 */
   onSessionEvent?: (eventType: SessionEvent['type'], detail: string) => void;
   /** 工具执行完成回调（供 outbox 模式恢复时判断工具是否已执行过，避免重复执行）；未注入静默忽略 */
@@ -207,6 +209,8 @@ export class AgentLoop {
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
   private readonly enableContextSummary: boolean;
+  /** LLM 主动压缩完成回调（第二级压缩，在 compressContext 成功后触发） */
+  private readonly onContextCompressed: AgentLoopOptions['onContextCompressed'];
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
   private readonly contextManager: ContextManager;
   /** 轮次 id 序列（每轮外部输入一个 roundId，替换式压缩按尾部对齐最近轮映射已存摘要） */
@@ -293,6 +297,7 @@ export class AgentLoop {
           `[DUPLICATE_TOOL_CALL_WARNING] 你已连续 ${threshold} 次调用相同工具 + 相同参数，可能陷入死循环。请分析工具结果，改变策略：调整参数、换用其他工具，或直接给出文本回复。`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
+    this.onContextCompressed = opts.onContextCompressed;
 
     // 上下文管理器（token 估算 + 截断 + 摘要，注入 tracer/providerRouter 供摘要走 summary 路由）
     this.contextManager = new ContextManager({
@@ -1313,9 +1318,10 @@ export class AgentLoop {
   private async compressContext(args: string, signal?: AbortSignal): Promise<string> {
     try {
       // 解析目标（非法/缺失降级 earliest_round）
-      let target: string;
+      let target: 'earliest_round' | 'largest_tool_result';
       try {
-        target = (JSON.parse(args) as { target?: string }).target ?? 'earliest_round';
+        const parsed = (JSON.parse(args) as { target?: string }).target;
+        target = parsed === 'largest_tool_result' ? 'largest_tool_result' : 'earliest_round';
       } catch {
         target = 'earliest_round';
       }
@@ -1352,6 +1358,8 @@ export class AgentLoop {
         { target, replacedCount: targetMsgs.length },
         'compress_context 已压缩为临时摘要（loop 收尾即弃）',
       );
+      // 回调宿主：LLM 主动压缩完成（第二级压缩，与 contextTruncated 的内核自动截断区分）
+      this.onContextCompressed?.(target, targetMsgs.length, summary.length);
       return `[compress_context] 已把目标压缩为临时摘要（${summary.length} 字，loop 收尾即弃）：${summary.slice(0, 80)}`;
     } catch (err) {
       logger.warn({ err: toError(err).message }, 'compress_context 压缩失败，已跳过');

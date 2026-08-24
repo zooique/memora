@@ -378,6 +378,81 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
     expect(messages.some((m) => m.content.includes('无敌长任务'))).toBe(true);
     expect(messages.some((m) => m.content.includes('Compressed context'))).toBe(false);
   });
+
+  it('compress_context 成功后触发 onContextCompressed 回调（传递 target / replacedCount / summaryLength）', async () => {
+    const onContextCompressed = vi.fn();
+    const provider = mockMultiTurnProvider([
+      [{ content: '第一轮回答' }],
+      [
+        {
+          content: '上下文过长',
+          toolCalls: [
+            {
+              id: 'call_compress',
+              type: 'function',
+              function: { name: 'compress_context', arguments: '{"target":"earliest_round"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '临时摘要：首轮内容' }],
+      [{ content: '第二轮回答' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onContextCompressed,
+    });
+
+    // 首轮：建立历史
+    for await (const {} of loop.processUserInput('第一个任务')) {
+      // drain
+    }
+    // 二轮：LLM 触发 compress_context
+    for await (const {} of loop.processUserInput('当前任务')) {
+      // drain
+    }
+
+    expect(onContextCompressed).toHaveBeenCalledTimes(1);
+    expect(onContextCompressed).toHaveBeenCalledWith('earliest_round', expect.any(Number), expect.any(Number));
+    const [target, replacedCount, summaryLength] = onContextCompressed.mock.calls[0]!;
+    expect(target).toBe('earliest_round');
+    expect(replacedCount).toBeGreaterThan(0);
+    expect(summaryLength).toBeGreaterThan(0);
+  });
+
+  it('compress_context 压缩失败时不触发 onContextCompressed 回调', async () => {
+    const onContextCompressed = vi.fn();
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '压缩',
+          toolCalls: [
+            {
+              id: 'call_compress',
+              type: 'function',
+              // largest_tool_result 无可压目标 → 走失败分支
+              function: { name: 'compress_context', arguments: '{"target":"largest_tool_result"}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '无工具结果的提示' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onContextCompressed,
+    });
+
+    for await (const {} of loop.processUserInput('测试')) {
+      // drain
+    }
+
+    expect(onContextCompressed).not.toHaveBeenCalled();
+  });
 });
 
 describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保护）', () => {

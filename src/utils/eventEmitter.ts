@@ -15,6 +15,8 @@ export const AGENT_EVENTS = {
   projectSwitched: 'projectSwitched',
   archiveFailed: 'archiveFailed',
   contextTruncated: 'contextTruncated',
+  /** LLM 主动压缩完成（第二级压缩，与 contextTruncated 的内核自动截断区分） */
+  contextCompressed: 'contextCompressed',
   configReloaded: 'configReloaded',
   archiveModeChanged: 'archiveModeChanged',
   rolePackSwitchLocked: 'rolePackSwitchLocked',
@@ -55,6 +57,12 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   projectSwitched: { from: string | null; to: string; projectName: string };
   archiveFailed: { stage: 'session'; message: string };
   contextTruncated: { skippedCount: number; keptCount: number };
+  /** LLM 主动压缩完成载荷：压缩目标 + 被替换消息数 + 摘要长度 */
+  contextCompressed: {
+    target: 'earliest_round' | 'largest_tool_result';
+    replacedCount: number;
+    summaryLength: number;
+  };
   configReloaded: { source: string };
   archiveModeChanged: { from: string; to: string };
   rolePackSwitchLocked: { reason: string; lockedSeconds: number };

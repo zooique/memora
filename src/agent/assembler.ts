@@ -495,6 +495,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     onContextTruncated: (skippedCount, keptCount) => {
       hooks?.emit(AGENT_EVENTS.contextTruncated, { skippedCount, keptCount });
     },
+    // LLM 主动压缩完成 → 广播 contextCompressed 事件（宿主可提示"为保持专注已压缩"）
+    onContextCompressed: (target, replacedCount, summaryLength) => {
+      hooks?.emit(AGENT_EVENTS.contextCompressed, { target, replacedCount, summaryLength });
+    },
     // 会话事件 → 分发到会话管理器（状态机转换/心跳，接线下沉后内联）
     onSessionEvent: (eventType, detail) => dispatchSessionEvent(sessionManager, eventType, detail),
     // 工具执行完成回调（幂等 outbox 落点）：记录执行到检查点供恢复排重
