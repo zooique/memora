@@ -40,6 +40,11 @@ const HTML = `
       <p id="govDetail" class="governance-detail" hidden></p>
     </div>
     <p class="footer-hint">记忆按重要度排序，点击条目查看全文。</p>
+    <details id="recycle" class="recycle" role="region" aria-label="回收站">
+      <summary>回收站</summary>
+      <div id="recycleList"><p class="hint">回收站为空。</p></div>
+    </details>
+    <p id="memHint" class="mem-hint" hidden></p>
   </div>
 `;
 
@@ -279,5 +284,79 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const detail = document.getElementById('govDetail') as HTMLElement;
     expect(detail.hidden).toBe(false);
     expect(detail.classList.contains('gov-error')).toBe(true);
+  });
+
+  // ─── G19 单条删除 / 回收站（2026-08-25） ───
+
+  it('memory_loaded 渲染的卡片含删除按钮（✕），点击 → postMessage memory_delete 且阻止卡片展开', () => {
+    const { postMessage } = mountMemoryView();
+    dispatchLoaded({ total: 1, bySource: { 'round-summary': 1 } }, [makeMemory()]);
+    const card = document.querySelector('#list .mem-card') as HTMLElement;
+    const delBtn = card.querySelector('.mem-del-btn') as HTMLButtonElement;
+    expect(delBtn).not.toBeNull();
+    expect(delBtn.getAttribute('aria-label')).toBe('删除记忆');
+    // 点击删除：发消息 + stopPropagation（卡片不应展开）
+    delBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_delete', id: 'round-summary:设计决策' });
+    expect(card.classList.contains('expanded')).toBe(false);
+  });
+
+  it('回收站展开（toggle）→ postMessage memory_recycle_load', () => {
+    const { postMessage } = mountMemoryView();
+    const recycle = document.getElementById('recycle') as HTMLDetailsElement;
+    recycle.open = true;
+    recycle.dispatchEvent(new Event('toggle'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
+  });
+
+  it('memory_recycle_loaded 渲染回收站卡片（含删除时间 + 恢复按钮），点击恢复 → postMessage memory_restore', () => {
+    const { postMessage } = mountMemoryView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'memory_recycle_loaded',
+          items: [makeMemory({ id: 'round-summary:设计决策', deletedAt: '2026-08-25T08:00:00.000Z' })],
+        },
+      }),
+    );
+    const cards = document.querySelectorAll('#recycleList .mem-recycle-card');
+    expect(cards).toHaveLength(1);
+    // 删除时间被消费（deletedAt 非死字段）
+    expect(cards[0]?.querySelector('.mem-recycle-meta')?.textContent).toContain('删除于');
+    const restoreBtn = cards[0]?.querySelector('.mem-restore-btn') as HTMLButtonElement;
+    expect(restoreBtn).not.toBeNull();
+    restoreBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_restore', id: 'round-summary:设计决策' });
+  });
+
+  it('memory_recycle_loaded 空列表 → 渲染空态引导', () => {
+    mountMemoryView();
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'memory_recycle_loaded', items: [] } }),
+    );
+    expect(document.querySelector('#recycleList .empty-title')?.textContent).toBe('回收站为空');
+  });
+
+  it('memory_deleted 失败（ok:false）→ 显示错误提示 memHint（error 样式）', () => {
+    mountMemoryView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'memory_deleted', ok: false, id: 'x', message: '内核拒绝删除' },
+      }),
+    );
+    const hint = document.getElementById('memHint') as HTMLElement;
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toBe('内核拒绝删除');
+    expect(hint.classList.contains('mem-hint-error')).toBe(true);
+  });
+
+  it('memory_restored 成功且回收站已展开 → 重新拉取回收站列表', () => {
+    const { postMessage } = mountMemoryView();
+    const recycle = document.getElementById('recycle') as HTMLDetailsElement;
+    recycle.open = true;
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'memory_restored', ok: true, id: 'x' } }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
   });
 });

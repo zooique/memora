@@ -180,6 +180,85 @@ export const memoryStyles = `
   }
   #memory-root .governance-detail.gov-error { color: var(--vscode-errorForeground, #f48771); }
 
+  /* ============ Components：单条删除 / 回收站（G19，2026-08-25） ============ */
+  /* 卡片头部删除按钮：低扰，hover 才显形，避免与展开区抢视觉、不与「清理过期」红色危险按钮撞色 */
+  #memory-root .mem-del-btn {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+    margin-left: var(--sp-1, 4px);
+    border: none;
+    border-radius: var(--radius-pill, 999px);
+    background: transparent;
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-md, 12px);
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, background 0.1s, color 0.1s;
+  }
+  #memory-root .mem-card:hover .mem-del-btn,
+  #memory-root .mem-del-btn:focus-visible { opacity: 1; }
+  #memory-root .mem-del-btn:hover { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
+  #memory-root .mem-del-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
+
+  /* 回收站：可折叠分区，与治理区同视觉重量 */
+  #memory-root .recycle {
+    margin: var(--sp-3, 8px) 0 0;
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  #memory-root .recycle > summary {
+    cursor: pointer;
+    font-size: var(--font-md, 12px);
+    color: var(--text-primary, #cccccc);
+    user-select: none;
+  }
+  #memory-root .recycle > summary::-webkit-details-marker { color: var(--text-secondary, #9aa0a6); }
+  #memory-root .recycle > summary::marker { color: var(--text-secondary, #9aa0a6); }
+  #memory-root #recycleList { padding: var(--sp-2, 6px) 0; }
+
+  /* 回收站条目：复用卡片外观，强调「可恢复」 */
+  #memory-root .mem-recycle-card {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    margin-bottom: var(--sp-2, 6px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius, 6px);
+    background: var(--surface-sidebar);
+  }
+  #memory-root .mem-recycle-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--sp-1, 4px);
+  }
+  #memory-root .mem-recycle-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  #memory-root .mem-restore-btn {
+    flex-shrink: 0;
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    border: none;
+    border-radius: var(--radius, 6px);
+    cursor: pointer;
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-fg);
+    font-size: var(--font-sm, 11px);
+  }
+  #memory-root .mem-restore-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+
+  /* 删除 / 恢复结果反馈（无状态机，纯占位修饰） */
+  #memory-root .mem-hint {
+    margin: var(--sp-2, 6px) 0 0;
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  #memory-root .mem-hint.mem-hint-error { color: var(--vscode-errorForeground, #f48771); }
+
   /* 记忆诊断区样式已移除（2026-08-24 第一性原理复盘：诊断粒度无终端用户场景，
      内核治理机制强制自动跑，相关 #diagnostic 容器/DTO 一并删除） */
 `;

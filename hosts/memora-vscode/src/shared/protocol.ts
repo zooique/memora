@@ -202,6 +202,22 @@ export type WebviewToExtensionMessage =
    * 返回带 score/similarity 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
   | { type: 'memory_search'; query: string; limit?: number }
+  // ─── 记忆治理：单条删除 / 恢复 / 回收站（G19，2026-08-25 新增） ───
+  /**
+   * 删除单条记忆（记忆列表「删除」按钮）
+   *
+   * host 弹确认框后调 agent.memory.delete(id) 软删除（进入回收站，可恢复），
+   * 完成后推送 memory_deleted + 刷新记忆列表与治理统计。
+   */
+  | { type: 'memory_delete'; id: string }
+  /**
+   * 恢复单条记忆（回收站「恢复」按钮）
+   *
+   * host 调 agent.memory.restore(id) 从回收站恢复，完成后推送 memory_restored + 刷新。
+   */
+  | { type: 'memory_restore'; id: string }
+  /** 加载回收站列表（回收站展开时触发） */
+  | { type: 'memory_recycle_load' }
   // ─── 记忆治理面板消息（G4，2026-08-23 新增） ───
   /**
    * 请求加载记忆治理数据（记忆视图挂载/治理操作后触发）
@@ -588,6 +604,21 @@ export type ExtensionToWebviewMessage =
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
+  // ─── 记忆治理：删除/恢复结果 + 回收站列表（G19，2026-08-25 新增） ───
+  /**
+   * 删除记忆结果（对 memory_delete 的应答）
+   *
+   * ok=true 时 host 已删除并刷新记忆列表 + 治理统计；webview 据此刷新回收站（若展开）。
+   */
+  | { type: 'memory_deleted'; ok: boolean; id: string; message?: string }
+  /**
+   * 恢复记忆结果（对 memory_restore 的应答）
+   *
+   * ok=true 时 host 已恢复并刷新；webview 据此重新拉取回收站列表（若展开）。
+   */
+  | { type: 'memory_restored'; ok: boolean; id: string; message?: string }
+  /** 回收站列表加载完成（对 memory_recycle_load 的应答） */
+  | { type: 'memory_recycle_loaded'; items: MemoryItemDto[] }
   // ─── 记忆治理面板消息（G4，2026-08-23 新增） ───
   /**
    * 记忆治理数据加载完成（对 governance_load 的应答）
@@ -738,6 +769,8 @@ export interface MemoryItemDto {
   content: string;
   /** 创建时间（ISO 8601，可选） */
   createdAt?: string;
+  /** 软删除时间（ISO 8601，仅回收站条目携带，可选） */
+  deletedAt?: string;
 }
 
 /** 全局技能条目（技能视图列表，2026-08-22 新增） */

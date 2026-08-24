@@ -246,6 +246,19 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.searchMemory(msg.query, msg.limit);
       return;
     }
+    // ─── 记忆单条删除 / 恢复 / 回收站（G19，2026-08-25） ───
+    if (msg.type === 'memory_delete') {
+      await this.deleteMemory(msg.id);
+      return;
+    }
+    if (msg.type === 'memory_restore') {
+      await this.restoreMemory(msg.id);
+      return;
+    }
+    if (msg.type === 'memory_recycle_load') {
+      await this.loadRecycle();
+      return;
+    }
 
     // ─── 记忆治理消息（G4，2026-08-23） ───
     if (msg.type === 'governance_load') {
@@ -466,6 +479,84 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage(`Memora 记忆搜索失败：${message}`);
       this.post({ type: 'memory_search_result', query, hits: [] });
     }
+  }
+
+  // ─── 记忆单条删除 / 恢复 / 回收站（G19，2026-08-25） ───
+
+  /**
+   * 删除单条记忆（memory_delete，G19）
+   *
+   * 软删除：弹确认框后调 agent.memory.writeDelete(id)（进入回收站，可恢复），
+   * 完成后推送 memory_deleted + 刷新记忆列表与治理统计。取消确认不推送。
+   */
+  private async deleteMemory(id: string): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory) {
+      this.post({ type: 'memory_deleted', ok: false, id, message: 'Agent 未就绪，无法删除记忆' });
+      return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      '确定删除这条记忆？它将进入回收站，可随时恢复。',
+      { modal: true },
+      '删除',
+    );
+    if (choice !== '删除') return;
+    try {
+      memory.writeDelete(id);
+      this.post({ type: 'memory_deleted', ok: true, id });
+      await this.loadMemory();
+      await this.loadGovernance();
+    } catch (err) {
+      this.post({
+        type: 'memory_deleted',
+        ok: false,
+        id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * 恢复单条记忆（memory_restore，G19）
+   *
+   * 调 agent.memory.writeRestore(id) 从回收站恢复，完成后推送 memory_restored + 刷新
+   * 记忆列表与治理统计；webview 收到 ok 后自行重新拉取回收站列表（若展开）。
+   */
+  private async restoreMemory(id: string): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory) {
+      this.post({ type: 'memory_restored', ok: false, id, message: 'Agent 未就绪，无法恢复记忆' });
+      return;
+    }
+    try {
+      memory.writeRestore(id);
+      this.post({ type: 'memory_restored', ok: true, id });
+      await this.loadMemory();
+      await this.loadGovernance();
+    } catch (err) {
+      this.post({
+        type: 'memory_restored',
+        ok: false,
+        id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * 加载回收站列表（memory_recycle_load，G19）
+   *
+   * 复用 MemoryInspector.listDeleted()（内核软删除契约，已含 writeDelete/writeRestore/listDeleted），
+   * 映射为 MemoryItemDto[] 推送；agent.memory 未就绪时返回空列表。
+   */
+  private async loadRecycle(): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory) {
+      this.post({ type: 'memory_recycle_loaded', items: [] });
+      return;
+    }
+    const items = memory.listDeleted(1000).map(toItemDto);
+    this.post({ type: 'memory_recycle_loaded', items });
   }
 
   // ─── 记忆治理数据加载（G4，2026-08-23） ───
@@ -719,7 +810,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
-/** 内核 Memory → 记忆条目 DTO */
+/** 内核 Memory → 记忆条目 DTO（deletedAt 仅回收站条目携带） */
 function toItemDto(m: {
   id: string;
   name: string;
@@ -727,6 +818,7 @@ function toItemDto(m: {
   score: number;
   content: string;
   createdAt?: string;
+  deletedAt?: string;
 }): MemoryItemDto {
   return {
     id: m.id,
@@ -735,6 +827,7 @@ function toItemDto(m: {
     score: m.score,
     content: m.content,
     createdAt: m.createdAt,
+    deletedAt: m.deletedAt,
   };
 }
 
@@ -794,6 +887,13 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="list">
       <p class="loading-hint">加载中…</p>
     </div>
+
+    <!-- 回收站（G19，2026-08-25：软删除记忆的可恢复暂存区） -->
+    <details id="recycle" class="recycle" role="region" aria-label="回收站">
+      <summary>回收站</summary>
+      <div id="recycleList"><p class="hint">回收站为空。</p></div>
+    </details>
+    <p id="memHint" class="mem-hint" hidden></p>
 
     <!-- 记忆治理区（G4，2026-08-23：统计卡 + 衰减/清理操作） -->
     <div id="governance" class="governance" role="region" aria-label="记忆治理">

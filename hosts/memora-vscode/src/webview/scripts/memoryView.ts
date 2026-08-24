@@ -76,6 +76,11 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   const btnDecay = root.querySelector('#btnDecay') as HTMLButtonElement | null;
   const btnCleanup = root.querySelector('#btnCleanup') as HTMLButtonElement | null;
 
+  // 回收站 + 提示（G19，2026-08-25：软删除记忆的可恢复暂存区 + 操作反馈）
+  const recycle = root.querySelector('#recycle') as HTMLDetailsElement | null;
+  const recycleList = root.querySelector('#recycleList') as HTMLElement | null;
+  const memHint = root.querySelector('#memHint') as HTMLElement | null;
+
   /** 当前搜索词（非空表示处于搜索模式，列表模式为空串） */
   let activeQuery = '';
 
@@ -134,6 +139,18 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     scoreDot.title = `重要度 ${m.score.toFixed(2)}`;
     scoreDot.setAttribute('aria-hidden', 'true');
     head.appendChild(scoreDot);
+
+    // 删除按钮（G19）：stopPropagation 避免触发卡片展开，独立走 memory_delete
+    const delBtn = document.createElement('button');
+    delBtn.className = 'mem-del-btn';
+    delBtn.textContent = '✕';
+    delBtn.title = '删除这条记忆（进入回收站，可恢复）';
+    delBtn.setAttribute('aria-label', '删除记忆');
+    delBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      vscode.postMessage({ type: 'memory_delete', id: m.id });
+    });
+    head.appendChild(delBtn);
     card.appendChild(head);
 
     // 内容预览：单行截断（快速扫读）
@@ -195,6 +212,86 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     }
   }
 
+  /** 渲染回收站列表（G19，2026-08-25：软删除记忆的可恢复暂存区） */
+  function renderRecycle(items: MemoryItemDto[]): void {
+    if (!recycleList) return;
+    if (!items || items.length === 0) {
+      recycleList.textContent = '';
+      recycleList.appendChild(
+        createEmptyState(document, {
+          title: '回收站为空',
+          hint: '被删除的记忆会出现在这里，可随时恢复。',
+        }),
+      );
+      return;
+    }
+    recycleList.textContent = '';
+    items.forEach((m) => recycleList.appendChild(buildRecycleCard(m)));
+  }
+
+  /** 构建单个回收站条目（名称 + source 徽章 + 预览 + 删除时间 + 恢复按钮） */
+  function buildRecycleCard(m: MemoryItemDto): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'mem-card mem-recycle-card';
+    card.title = '点击卡片或「恢复」按钮还原这条记忆';
+
+    const textWrap = document.createElement('div');
+    textWrap.className = 'mem-recycle-text';
+
+    const head = document.createElement('div');
+    head.className = 'mem-card-head';
+    const name = document.createElement('span');
+    name.className = 'mem-card-name';
+    name.textContent = m.name;
+    name.title = m.name;
+    head.appendChild(name);
+
+    const sourceBadge = document.createElement('span');
+    sourceBadge.className = 'source-badge ' + (SOURCE_BADGE_CLASS[m.source] ?? '');
+    sourceBadge.textContent = m.source;
+    sourceBadge.title = m.id;
+    head.appendChild(sourceBadge);
+    textWrap.appendChild(head);
+
+    const preview = document.createElement('div');
+    preview.className = 'mem-card-preview';
+    preview.textContent = m.content;
+    textWrap.appendChild(preview);
+
+    // 删除时间：帮助判断恢复优先级（deletedAt 由内核软删时写入，须被消费而非死字段）
+    if (m.deletedAt) {
+      const meta = document.createElement('div');
+      meta.className = 'mem-recycle-meta';
+      meta.textContent = `删除于 ${formatTime(m.deletedAt)}`;
+      textWrap.appendChild(meta);
+    }
+    card.appendChild(textWrap);
+
+    // 恢复按钮：独立走 memory_restore（卡片整体亦可点击，按钮 stopPropagation 防双触发）
+    const restoreBtn = document.createElement('button');
+    restoreBtn.className = 'mem-restore-btn btn btn-secondary';
+    restoreBtn.textContent = '恢复';
+    restoreBtn.title = '从回收站恢复这条记忆';
+    restoreBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      vscode.postMessage({ type: 'memory_restore', id: m.id });
+    });
+    card.appendChild(restoreBtn);
+
+    card.addEventListener('click', () => {
+      vscode.postMessage({ type: 'memory_restore', id: m.id });
+    });
+    return card;
+  }
+
+  /** 操作反馈提示（G19：删除/恢复失败等错误，成功不显示） */
+  function showMemHint(message: string, isError: boolean): void {
+    if (!memHint) return;
+    memHint.textContent = message;
+    memHint.hidden = message.length === 0;
+    memHint.classList.toggle('mem-hint-error', isError);
+  }
+
   /**
    * 展示治理操作结果（governance_result）并刷新数据
    *
@@ -218,6 +315,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       const payload = msg as MemoryLoadedPayload;
       renderStats(payload.stats);
       activeQuery = '';
+      showMemHint('', false);
       render(payload.memories);
     } else if (msg.type === 'memory_search_result') {
       const payload = msg as SearchResultPayload;
@@ -229,6 +327,19 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       renderGovernance(msg.stats);
     } else if (msg.type === 'governance_result') {
       showGovernanceResult(msg);
+    } else if (msg.type === 'memory_recycle_loaded') {
+      // 渲染回收站列表（G19）
+      renderRecycle(msg.items);
+    } else if (msg.type === 'memory_deleted') {
+      // 成功由 host 推送 memory_loaded 刷新列表；仅失败显示提示
+      if (!msg.ok && msg.message) showMemHint(msg.message, true);
+    } else if (msg.type === 'memory_restored') {
+      if (msg.ok) {
+        // 重新拉取回收站（若展开）移除已恢复项；列表由 host 推送 memory_loaded 刷新
+        if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
+      } else if (msg.message) {
+        showMemHint(msg.message, true);
+      }
     }
   });
 
@@ -238,6 +349,11 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   });
   btnCleanup?.addEventListener('click', () => {
     vscode.postMessage({ type: 'governance_cleanup' });
+  });
+
+  // 回收站：展开时拉取列表（G19，2026-08-25）
+  recycle?.addEventListener('toggle', () => {
+    if (recycle.open) vscode.postMessage({ type: 'memory_recycle_load' });
   });
 
   // 搜索：非空提交搜索，清空回列表（防抖避免每击键都触发 IPC）
