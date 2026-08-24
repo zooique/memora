@@ -1069,6 +1069,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     for (const m of history) {
       this.post({ type: m.role, text: m.content, ts: m.ts });
     }
+    // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
+    // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
+    this.post({ type: 'history_loaded' });
     // 推送当前会话标题 → webview 顶部展示（主动可见，便于识别当前会话）
     this.post({ type: 'session_title', title: this.currentSessionTitle() });
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。

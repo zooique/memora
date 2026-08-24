@@ -56,3 +56,20 @@ export function scrollToBottom(container: HTMLElement): void {
     container.scrollTop = container.scrollHeight;
   });
 }
+
+/**
+ * 强制滚动到底部 — 忽略吸底状态（历史加载完成时使用）
+ *
+ * 当宿主回放历史会话时，多条消息逐条渲染，由于 rAF 节流和吸底逻辑，
+ * 可能导致最终滚动位置不正确（显示历史顶部而非最新消息）。
+ * 此函数强制滚到底部，确保打开会话时默认显示最新消息。
+ *
+ * @param container 滚动容器（如消息区）
+ */
+export function forceScrollToBottom(container: HTMLElement): void {
+  container.ownerDocument.defaultView?.requestAnimationFrame(() => {
+    // 重置吸底状态为 true（强制吸底后，后续新内容仍会自动滚到底部）
+    stickyMap.set(container, true);
+    container.scrollTop = container.scrollHeight;
+  });
+}

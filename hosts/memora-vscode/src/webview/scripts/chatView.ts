@@ -17,7 +17,7 @@ import type {
 // ThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 import type { ThinkingPhase } from '@zooique/memora';
 import { fmtTime } from '../helpers/fmtTime.js';
-import { scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
+import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { ToolCard } from '../components/toolCard.js';
 import { initDropdowns } from '../components/dropdown.js';
@@ -1333,6 +1333,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // Phase 1：清空活动详情「本次召回」明细区（切会话/清空后不残留上轮召回来源）
       renderRecallDetail([]);
       updateEmptyState();
+    } else if (msg.type === 'history_loaded') {
+      // 历史消息加载完成 → 强制滚到底部（不走吸底逻辑）
+      // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
+      forceScrollToBottom(messages);
     } else if (msg.type === 'session_title') {
       // 更新会话标题条（ADR-024 会话标题层）：textContent 防注入；
       // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。

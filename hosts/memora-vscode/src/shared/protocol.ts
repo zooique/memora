@@ -442,6 +442,14 @@ export type ExtensionToWebviewMessage =
   /** 清空会话完成（webview 收到后清空消息区） */
   | { type: 'clear_ok' }
   /**
+   * 历史消息加载完成（宿主回放会话历史后推送，2026-08-24 新增）
+   *
+   * 宿主在 replaySession() 中发送完所有历史消息后推送此信号，
+   * webview 收到后强制滚到底部（不走吸底逻辑），确保打开会话时
+   * 默认显示最新消息而非历史顶部。
+   */
+  | { type: 'history_loaded' }
+  /**
    * 当前会话标题（ADR-024 会话标题层）
    *
    * host 在会话回放/新建/切换/改名时推送当前会话标题，webview 顶部展示，
