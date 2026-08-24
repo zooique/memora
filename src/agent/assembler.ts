@@ -35,6 +35,7 @@ import { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinat
 import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
 // 任务表渲染（接线下沉：loop.getTaskTable 依赖）
 import { renderTaskTable } from '@/agent/taskTableRenderer.js';
+import { logger } from '@/logging/logger.js';
 
 /** 截断优先复用 round-summary 的最大条数 */
 const ROUND_SUMMARY_LOADER_MAX = 5;
@@ -49,7 +50,7 @@ import type {
 } from '@/agent/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
-import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
+import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { configError } from '@/utils/errors.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
@@ -114,7 +115,7 @@ export interface AgentHooks {
    * 载荷放宽为 unknown：事件数据形状由 AgentEventMap 定（多数为对象，questionPending 为数组），
    * 桥接侧负责强类型断言。
    */
-  emit: (event: string, data: unknown) => void;
+  emit: (event: AgentEventName, data: unknown) => void;
   /** 会话忙状态查询（SessionManager 守卫） */
   isChatBusy: () => boolean;
   /** 主动提问/澄清时请求软暂停（与 needClarify 共享暂停/恢复机制） */
@@ -460,8 +461,9 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
         .slice(0, ROUND_SUMMARY_LOADER_MAX);
       if (summaries.length === 0) return '';
       return `[Earlier conversation summaries]\n${summaries.map((s) => `- ${s.content}`).join('\n')}`;
-    } catch {
+    } catch (err) {
       // 记忆索引异常时降级为空（回退 LLM 摘要生成），不阻断截断
+      logger.debug({ err }, 'roundSummaryLoader：记忆索引异常，降级为空');
       return '';
     }
   };
@@ -486,8 +488,9 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
           .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
           .find((s) => s.metadata?.roundId === roundId);
         return found ? found.content : null;
-      } catch {
+      } catch (err) {
         // 记忆索引异常时降级为 null（替换层 no-op），不阻断压缩链
+        logger.debug({ err, roundId }, 'getRoundSummary：记忆索引异常，降级为 null');
         return null;
       }
     },
@@ -516,8 +519,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
       };
       sessionManager.logToolExecution(record);
     },
-    // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查；
-    // 未注入宿主回调时完全降级为仅内部幂等检查（sessionManager 已就绪，无需就绪守卫）
+    // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查。
+    // ⚠️ 宿主未注入 preExecutionCheck 时 → 完全降级为仅内部幂等检查。
+    // 这是单用户信任模型下的显式决策（intentionally left blank），
+    // 多用户/服务端部署必须在宿主层注入真实审批策略（权限/路径/只读等）。
     preExecutionCheck: (name, args): PreExecutionResult => {
       // 1. 宿主审批（审批/审计/参数改写/白名单/只读拦截）
       const hostResult = hooks?.preExecutionCheck?.(name, args);

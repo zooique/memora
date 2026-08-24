@@ -31,7 +31,7 @@ import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { UIMessages } from '@/agent/types.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
-import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
+import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
@@ -70,7 +70,7 @@ export interface ContextPreparerDeps {
     maxContextTokens: number;
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
-  emit: (event: string, data: unknown) => void;
+  emit: (event: AgentEventName, data: unknown) => void;
   /** 角色切换回调（Agent 生命周期：激活 → 事件 → 刷新前缀 → 工具暴露） */
   switchRolePack: (name: string) => boolean;
 }

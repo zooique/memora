@@ -10,7 +10,12 @@
 import type { Memory } from '@/memory/types.js';
 
 /**
- * 记忆存储接口 — 所有方法同步（对齐 better-sqlite3），可后续新增 IAsyncMemoryStorage 支持异步后端
+ * 记忆存储接口 — 所有方法同步（对齐 better-sqlite3），可后续新增 IAsyncMemoryStorage 支持异步后端。
+ *
+ * ⚠️ 契约隐含假设（宿主实现须知）：同步语义要求单次调用低延迟。JSON 文件落地实现（如 vscode 宿主
+ * workspaceStorage）在记忆量增长时，upsert/decayScores 等写路径会触发全量 `JSON.stringify` 重写，
+ * 1 万条规模即达 MB 级单次同步 I/O，会阻塞事件循环。因此：**生产宿主必须用真正的 DB 实现
+ * （如 better-sqlite3），InMemoryStorage / JSON 文件落地仅适用于测试与小规模场景**。
  */
 export interface IMemoryStorage {
   /** 插入或更新记忆；source 为开放字符串，无校验限制 */

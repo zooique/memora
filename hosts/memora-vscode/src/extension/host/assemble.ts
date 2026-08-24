@@ -222,8 +222,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
-    // 执行前检查（P3：激进对齐 §7.2.1 统一检查点；收敛版仅放行——
-    // 工具审计已由 tool_start/tool_result chunk + tool.execute span 承担，不重复记录）
+    // 执行前检查：单用户桌面场景恒放行（intentionally left blank）。
+    // 理由：1) VSCode 插件运行在用户本地，天然信任模型；2) 工具审计已由
+    // tool_start/tool_result chunk + tool.execute span 承担，不重复记录。
+    // ⚠️ 若未来接多用户/服务端部署，必须替换为真实审批策略（权限/路径/只读）。
     preExecutionCheck: () => ({ skip: false }),
     // 可观测性 Tracer（P2：§5.2.1 指纹由 ITracer 承载，宿主采集不落盘）
     tracer: vscodeTracer,

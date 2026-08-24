@@ -14,6 +14,7 @@ import type { SessionMessage } from '@/memory/sessionStore.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
+import { type AgentEventName } from '@/utils/eventEmitter.js';
 import type {
   SessionCheckpoint,
   SessionStatus,
@@ -49,7 +50,7 @@ export class SessionManager {
   private sessionStore: ISessionStore | undefined;
   private isChatBusy: () => boolean;
   /** 发射事件（委托给 Agent 的 TypedEventEmitter） */
-  private emitEvent: (event: string, data: Record<string, unknown>) => void;
+  private emitEvent: (event: AgentEventName, data: Record<string, unknown>) => void;
 
   // ─── 不中断工作模型（检查点 + 状态机） ─────────────────
   /** 会话状态机（三态流转，经有界代理方法访问） */
@@ -85,7 +86,7 @@ export class SessionManager {
     getLoop: () => AgentLoop,
     sessionStore: ISessionStore | undefined,
     isChatBusy: () => boolean,
-    emitEvent: (event: string, data: Record<string, unknown>) => void,
+    emitEvent: (event: AgentEventName, data: Record<string, unknown>) => void,
   ) {
     this.getHistory = getHistory;
     this.getLoop = getLoop;

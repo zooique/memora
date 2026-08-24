@@ -46,4 +46,5 @@
 
 ## 长期观察
 - UI-MIXIN-OBS：ui.ts 行数阈值 1500。
-- 检查点未来兼容：SQLite 单 TEXT 存全 JSON、无 schemaVersion/CAS，长上下文或多 Agent 并发会击穿，建议先加 schemaVersion。
+- 检查点未来兼容：已于 2026-08-23 K1 落实 `SessionCheckpoint.schemaVersion`（v1，迁移映射空）+ `VectorStoreFile.version:1` 校验，旧「无 schemaVersion」判断已过时。仍缺 CAS（并发乐观锁），但内核 `IMemoryStorage` 接口不强制 SQLite，宿主同步实现下 CAS 非紧迫；多 Agent 并发写同一会话时才是真风险。
+- recall 超时：双通道（vectorStore.search 异步 + storage.search 同步）已 try/catch 降级；JsonVectorStore.search 在内存跑余弦无 I/O 阻塞，embedding 层 EmbeddingOptions 已透传 signal/timeoutMs。O3「recall 超时保护」在同步存储+内存向量场景下基本不成立，可移出任务清单。

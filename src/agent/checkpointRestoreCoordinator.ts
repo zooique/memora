@@ -24,7 +24,7 @@ import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { SessionCheckpoint, SessionEvent } from '@/agent/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
-import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
+import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -54,7 +54,7 @@ export interface CheckpointRestoreDeps {
     recallExcludeSources: string[] | undefined;
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
-  emit: (event: string, data: unknown) => void;
+  emit: (event: AgentEventName, data: unknown) => void;
   /** 角色包激活后应用工具暴露面（Agent 生命周期回调） */
   applyRolePackToolExposure: () => void;
   /** 角色包激活后刷新 loop 前缀（Agent 生命周期回调） */

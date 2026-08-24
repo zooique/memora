@@ -33,6 +33,8 @@ export const AGENT_EVENTS = {
   /** 回答中 LLM 输出 [ASK] 时主动提问（与 needClarify 共享暂停/恢复机制） */
   questionPending: 'questionPending',
   goalDriftDetected: 'goalDriftDetected',
+  /** 目标被主动更新（用户/系统直接改写 currentGoal，与 goalDriftDetected 的 LLM 漂移检测区分） */
+  goalUpdated: 'goalUpdated',
   sessionPaused: 'sessionPaused',
   sessionResumed: 'sessionResumed',
   sessionError: 'sessionError',
@@ -92,6 +94,11 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     constraints: string[];
     /** 原名 goalVersion，仅载荷不承担校验 */
     goalChangeSeq: number;
+  };
+  goalUpdated: {
+    newGoal: string;
+    goalChangeSeq: number;
+    sessionId: string;
   };
   sessionPaused: { reason: string; source: string; sessionId?: string };
   sessionResumed: { sessionId?: string };

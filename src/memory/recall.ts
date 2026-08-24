@@ -25,6 +25,19 @@ const DEFAULT_MIN_SIMILARITY = 0.3;
 /** 召回返回条数上限：100 已远超任何真实召回需求，防止 limit × RECALL_LIMIT_MULTIPLIER 放大底层搜索 */
 const MAX_RECALL_LIMIT = 100;
 
+/** 召回各通道超时：超时后降级为已收集的结果，不阻塞 prepare 流程 */
+const RECALL_SEARCH_TIMEOUT_MS = 5000;
+
+/** 给异步操作加超时保护：超时后 reject，调用方 catch 降级 */
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((_, reject) => {
+      setTimeout(() => reject(new Error(`${label} 超时（${timeoutMs}ms）`)), timeoutMs);
+    }),
+  ]);
+}
+
 /**
  * 从文本提取关键词：segmentText 精确分词 + 停用词过滤 + 英文词补充 + 去重。
  */
@@ -93,10 +106,14 @@ export async function recall(
   // ── 通道 1：语义搜索（VectorStore 可用时） ──
   if (vectorStore && vectorStore.size > 0) {
     try {
-      const vectorResults = await vectorStore.search(
-        query,
-        limit * RECALL_LIMIT_MULTIPLIER,
-        minSimilarity,
+      const vectorResults = await withTimeout(
+        vectorStore.search(
+          query,
+          limit * RECALL_LIMIT_MULTIPLIER,
+          minSimilarity,
+        ),
+        RECALL_SEARCH_TIMEOUT_MS,
+        '语义搜索',
       );
       for (const vr of vectorResults) {
         const memory = storage.getById(vr.id);
@@ -115,7 +132,11 @@ export async function recall(
     // 失败时降级返回已收集的语义结果，与通道 1 对称
     try {
       // 用提取后的关键词组合搜索，避免 query 中停用词/噪声影响匹配
-      const keywordResults = storage.search(keywords.join(' '), limit * RECALL_LIMIT_MULTIPLIER);
+      const keywordResults = await withTimeout(
+        Promise.resolve(storage.search(keywords.join(' '), limit * RECALL_LIMIT_MULTIPLIER)),
+        RECALL_SEARCH_TIMEOUT_MS,
+        '关键词搜索',
+      );
       for (const m of keywordResults) {
         if (!excludeSources.includes(m.source) && !merged.has(m.id)) {
           merged.set(m.id, { memory: m, vectorScore: 0 });
@@ -146,11 +167,15 @@ export async function recall(
 
     // ── 重排序：reranker 二次精排（可选） ──
     let reranked = reranker
-      ? await reranker.rerank(
-          query,
-          sorted.map((e) => e.memory),
-          { limit },
-        )
+      ? await withTimeout(
+          reranker.rerank(
+            query,
+            sorted.map((e) => e.memory),
+            { limit },
+          ),
+          RECALL_SEARCH_TIMEOUT_MS,
+          '重排序',
+        ).catch(() => sorted.map((e) => e.memory))
       : sorted.map((e) => e.memory);
 
     // 记忆有效性由 superseded（写时取代）+ score 衰减判定，不在读路径按时间过滤
@@ -181,7 +206,11 @@ export async function recall(
     // 防御：空查询补足通道失败时静默跳过，不阻塞主流程
     let recent: Memory[] = [];
     try {
-      const raw = storage.search('', shortfall * RECALL_LIMIT_MULTIPLIER);
+      const raw = await withTimeout(
+        Promise.resolve(storage.search('', shortfall * RECALL_LIMIT_MULTIPLIER)),
+        RECALL_SEARCH_TIMEOUT_MS,
+        '召回保底',
+      );
       recent = Array.isArray(raw) ? raw : [];
     } catch (err) {
       logger.debug({ err }, '召回保底：空查询补足失败，跳过');

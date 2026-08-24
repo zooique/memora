@@ -346,7 +346,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.internals.archiveCoordinator = new ArchiveCoordinator({
       getSessionArchiver: () => this.internals.sessionArchiver,
       getArchiveMode: () => this.#config.archiveMode,
-      emit: (event, payload) => this.emit(event, payload as never),
+      emit: (event, payload) => this.emit(event, payload),
     });
 
     // 会话命名器：新建会话首次问答自动命名标题；惰性获取当前 provider（切换后仍命中最新模型）

@@ -534,7 +534,13 @@ export interface AgentOptions {
   codeExecutionProvider?: ICodeExecutionProvider;
   /** 文件层前置条件断言回调（可选，未注入则完全降级为现状） */
   fileConsistencyCheck?: FileConsistencyCheck;
-  /** 工具执行前检查回调（宿主审批/审计/参数改写通道）：装配时与内部幂等检查组合为单点入口 */
+  /**
+   * 工具执行前检查回调（宿主审批/审计/参数改写通道）：装配时与内部幂等检查组合为单点入口。
+   *
+   * ⚠️ 单用户桌面场景可省略（内核自动降级为仅内部幂等检查），
+   * 多用户/服务端部署 **必须注入** 真实审批策略（基于权限、路径白名单、只读模式等做 denied/skip 判定）。
+   * 省略不是「忘记实现」——是「单用户信任模型下不需要」的显式决策。
+   */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
 }
 

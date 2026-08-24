@@ -956,6 +956,45 @@ describe('SessionManager', () => {
         level: 'drift',
       }));
     });
+
+    it('confirm 级别目标变更应发射 goalUpdated 事件（含完整载荷）', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const newGoal = '编写一个计算器应用程序支持加减乘除运算';
+
+      setupCheckpointWithGoal(mainGoal);
+      emitEvent.mockClear();
+
+      manager.updateGoal(newGoal);
+
+      expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
+        newGoal,
+        goalChangeSeq: 1,
+        sessionId: expect.any(String),
+      }));
+      // confirm 级别同时发射 goalUpdated 和 goalDriftDetected
+      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
+        level: 'confirm',
+      }));
+    });
+
+    it('drift 级别目标变更应同时发射 goalUpdated 和 goalDriftDetected', () => {
+      const mainGoal = '编写一个计算器应用程序支持基本数学运算';
+      const driftedGoal = '今天纽约的天气怎么样适合出行吗';
+
+      setupCheckpointWithGoal(mainGoal);
+      emitEvent.mockClear();
+
+      manager.updateGoal(driftedGoal);
+
+      // drift 级别应同时发射两个事件：goalUpdated（目标变更通知）+ goalDriftDetected（漂移告警）
+      expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
+        newGoal: driftedGoal,
+        goalChangeSeq: 1,
+      }));
+      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
+        level: 'drift',
+      }));
+    });
   });
 
   // ── consecutivePauseCount 时间衰减 ────────────────
