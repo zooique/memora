@@ -88,7 +88,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
         createEmptyState(document, {
           title: searchSummary ? '没有匹配的记忆' : '暂无记忆',
           hint: searchSummary
-            ? `未找到与「${searchSummary}」相关的记忆`
+            ? `未找到与「${searchSummary}」相关的记忆。换个关键词，或开始一段新对话让 Agent 生成记忆`
             : '对话沉淀的 round-summary 记忆会出现在这里',
         }),
       );

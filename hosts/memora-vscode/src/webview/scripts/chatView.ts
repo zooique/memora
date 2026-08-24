@@ -362,6 +362,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       row.appendChild(label);
       trace.appendChild(row);
     });
+    // A3（2026-08-24）：summary 行追加 Phase X/3 进度计数——用户一眼知道 Agent 执行到第几阶段
+    // 先剥离旧计数再追加，防止重复追加（同一段轨迹多次 render 时）
+    const total = steps.length;
+    const current = Math.min(idx, total - 1) + 1;
+    const labelEl = tb.querySelector('.thought-block__label') as HTMLElement | null;
+    if (labelEl) {
+      const baseText = labelEl.textContent?.replace(/\s*\(\d+\/\d+\)\s*$/, '') || '';
+      labelEl.textContent = `${baseText} (${current}/${total})`;
+    }
     // 轨迹默认折叠：执行进度不是对话主体，不默认撑开挤压内容（对齐 VS Code Chat
     // 「Completed N steps」折叠惯例 + 大厂 AI Chat「默认不展开思考」）。
     // 用户可点击 summary 展开查看三阶段进度（主动可见仍保留，仅不强制展开）。
@@ -1004,8 +1013,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    *
    * 优先级：P0 显示期间 P1 不覆盖（错误优先保护，P1 仅记历史）；新 P0 覆盖旧 P0。
    * 停留时长按档位分级——error 醒目停留更久，info 低扰短暂（对齐排雷雷-4 语义分离）。
+   *
+   * A2（2026-08-24）：支持可选 action 按钮——当宿主标记错误为「可重试」时，
+   * action.label 显示按钮文案，action.onClick 绑定重试回调。当前宿主暂未接入，
+   * 框架先行就绪，保持 backward compatible：不传 action 时行为与原实现完全一致。
    */
-  function showActivity(level: 'error' | 'info', text: string): void {
+  function showActivity(
+    level: 'error' | 'info',
+    text: string,
+    action?: { label: string; onClick: () => void },
+  ): void {
     // 全部活动先入历史（被覆盖的提示不丢失，详情可回溯）
     const record: ActivityRecord = {
       level,
@@ -1021,7 +1038,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
     activityBar.dataset.level = level;
     activityBar.className = 'activity-bar ' + level;
-    activityBar.textContent = text;
+    // 文本 + 可选操作按钮：action 存在时用 span 包裹文本 + button，否则纯 textContent
+    if (action) {
+      activityBar.textContent = '';
+      const textSpan = document.createElement('span');
+      textSpan.className = 'activity-bar__text';
+      textSpan.textContent = text;
+      activityBar.appendChild(textSpan);
+      const btn = document.createElement('button');
+      btn.className = 'activity-bar__action';
+      btn.textContent = action.label;
+      btn.addEventListener('click', action.onClick);
+      activityBar.appendChild(btn);
+    } else {
+      activityBar.textContent = text;
+    }
     activityBar.hidden = false;
     if (activityTimer) window.clearTimeout(activityTimer);
     activityTimer = window.setTimeout(() => {

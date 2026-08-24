@@ -134,6 +134,19 @@
 
 **质量门**：宿主 `tsc --noEmit` 错误全部为 pre-existing（hostIntegration.test / writeConfirm.test / assemble.ts vscode 命名空间），本次改动文件零新增；webview 三测试文件 89 用例全过（chatView 69 / settingsView 5 / memoryView 15）。
 
+**trae 跟进修复（commit 2e0f8355，2026-08-24，已推送 gitee main）**：
+| # | 修复项 | 落地 | 质量评估 |
+|---|---|---|---|
+| P1 | 设置面板加载态 | 5 子视图 `<p class="hint">加载中…</p>` → `.loading-hint`（spinner + accent 左边框 + info 底），settingsStyles.ts:55-82 | ✅ 优秀——补真实四态缺口（加载与空态此前同视觉）；令牌零裸值；reduced-motion 覆盖 |
+| P2-A | 看板 vs 思考块 | `.plan-board` 加 `border-left: 3px solid var(--accent)` | ✅ 合理——进度可感知（D.3 检查项 10）；与 checkpoint 按钮焦点不冲突 |
+| P2-B | 自审查信任信号 | `.self-review` `transparent` → `var(--feedback-info-bg)` | ✅ 方向对——透明背景浪费信任信号，低对比 info 底"看得见不抢"；与 activity-bar.info 同底但靠圆点+文本区分 |
+| P3 | 卡片外壳对齐 | `.skill-item` 背景 `surface-hover→surface-sidebar` + 边框 0.2→0.4 | ✅ 比预期更完整（背景一并并入 A 类语言）；**未动 security-item 是正确边界**（低频设置项形态不同，浅底是"设置项 vs 数据卡片"层级区分，非遗漏） |
+
+**第三轮审查新发现（2026-08-24 续）**：
+- 🟡 **搜索无结果空态无引导**（memoryView.ts:89）：'没有匹配的记忆' 是高频场景（用户搜不存在的词），缺"换个关键词"引导——违反四态空态要求（告诉用户怎么让它出现）。
+- 🟡 **roles/memory 空态无动作**（rolesView.ts:66 / memoryView.ts:89）：'暂无角色包'/'暂无记忆' 只有标题（低频：角色包出厂自带、记忆聊天即生成，但一句话可补）。
+- 🟢 **P2-1 收敛时机已到**：P3 后 `.skill-item` 与 `.card` 视觉一致，代码 4 处同构重复（roles/config/memory/skills）——"三次以上重复才提取"触发线已过，可收敛公共卡片外壳到 settingsStyles（保留前缀隔离与内容布局差异）。
+
 **纪律红线**（对齐 ui-engineering-mindset-rules + tokens.ts）：
 - 本轮只做**布局编排与视觉优化**，不改协议、不引入框架、不重写架构（延续 ui-redesign.md §十）。
 - 所有裸值改动必须回到 `tokens.ts` 单一真理源；组件层只引用令牌。
@@ -143,4 +156,4 @@
 
 ## 六、结论
 
-memora 种子完善、插件基于种子生长完毕这一前提成立——**功能与视觉骨架都已到位**。首版审查的"四条灰线稀释主焦点"（P0-1）经渲染逻辑复核修正为"checkpoint/plan 抢占消息区同一点位"（P1-0），并已通过插入顺序协议修复；skills 令牌裸值（P0-2）已收敛；G1/G5 分区（P1-1）、清理按钮危险降级（P2-2）已落地。剩余 P2-1（三子视图公共块收敛）为开放项，留待实际改动需求出现时再收敛。修复全部经过质量门（tsc 零新增错误 + 89 用例全过）。
+memora 种子完善、插件基于种子生长完毕这一前提成立——**功能与视觉骨架都已到位**。首版审查的"四条灰线稀释主焦点"（P0-1）经渲染逻辑复核修正为"checkpoint/plan 抢占消息区同一点位"（P1-0），并已通过插入顺序协议修复；skills 令牌裸值（P0-2）已收敛；G1/G5 分区（P1-1）、清理按钮危险降级（P2-2）已落地。trae 第二轮修复（P1 加载态 / P2-A 看板区分 / P2-B 自审查可见 / P3 卡片外壳）经实锤评估质量良好、零裸值零回归。剩余：P2-1（卡片外壳代码收敛，时机已到）、记忆搜索空态引导（高频，待补）。

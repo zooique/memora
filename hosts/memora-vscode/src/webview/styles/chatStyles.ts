@@ -538,6 +538,21 @@ export const chatStyles = `
     color: var(--feedback-error-fg);
     background: var(--feedback-error-bg);
   }
+  /* A2（2026-08-24）：activityBar 操作按钮（框架就绪，宿主暂未接入可重试错误） */
+  .activity-bar__text { flex: 1 1 auto; }
+  .activity-bar__action {
+    flex-shrink: 0;
+    padding: 1px var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px);
+    color: var(--accent, #0e639c);
+    background: transparent;
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius, 6px);
+    cursor: pointer;
+  }
+  .activity-bar__action:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+  }
 
   /* ============ Components：断点续跑提示条（G3，2026-08-23） ============ */
   /* 检测到持久化暂停检查点时插入消息区顶部的提示条：文本 + 「从断点续跑」按钮 + 关闭。
