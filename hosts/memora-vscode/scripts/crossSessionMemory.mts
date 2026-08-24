@@ -63,8 +63,8 @@ async function createAgent(
   const agent = new Agent({
     projectPath: workspace,
     dataDir: join(workspace, '.memora'),
-    // configDir 指向插件根目录以扫描 role-packs（doc-review 角色包自动激活，与插件一致）
-    configDir: join(process.cwd(), 'src', 'extension'),
+    // 单一真理源（2026-08-24）：宿主不再自持角色包，configDir 指向内核 role-packs
+    configDir: join(process.cwd(), '..', '..', 'role-packs'),
     provider: await createProvider(undefined, { MEMORA_BASE_URL: baseUrl, MEMORA_MODEL: model, MEMORA_API_KEY: apiKey }),
     storage,
     sessionStore,

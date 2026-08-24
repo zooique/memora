@@ -10,7 +10,7 @@
  *   - 记忆存储：WorkspaceStorage（.memora/memories.json）
  *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
- *   - 功能定位：configDir 下的内置角色包（role-packs/doc-review）承载
+ *   - 功能定位：内核同步的内置角色包承载（role-packs/ 构建期复制到 dist）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
 import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger } from '@zooique/memora';
@@ -202,7 +202,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     projectPath,
     // 记忆数据目录 = 工作区 .memora（注册表/锁文件落盘处，与存储同目录）
     dataDir: join(projectPath, '.memora'),
-    // 配置目录 = 插件内置配置（role-packs/doc-review 角色包承载文档打磨定位；
+    // 配置目录 = 插件内置配置（dist/extension，含构建期从内核同步的 role-packs；
     // 内核 init 自动扫描 <configDir>/role-packs/ 并激活 activeRolePack 或首个角色包）
     configDir,
     // 启动时激活的角色包（用户上次选择，由 extension 从 globalState 注入持久化值）

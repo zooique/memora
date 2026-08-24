@@ -65,8 +65,10 @@ async function createAgent(
   const agent = new Agent({
     projectPath: workspace,
     dataDir: join(workspace, '.memora'),
-    // configDir 指向插件源码目录以扫描 role-packs（doc-review 自动激活，handoff=wait）
-    configDir: join(process.cwd(), 'src', 'extension'),
+    // 单一真理源（2026-08-24）：宿主不再自持角色包，configDir 指向内核 role-packs，
+    // 显式激活 handoff=wait 的「文档设计师」以承载暂停检查点契约（与宿主一致）
+    configDir: join(process.cwd(), '..', '..', 'role-packs'),
+    activeRolePack: '文档设计师',
     provider,
     storage,
     sessionStore,

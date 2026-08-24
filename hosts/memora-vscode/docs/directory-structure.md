@@ -29,11 +29,7 @@ hosts/memora-vscode/
 │   │   │   ├── tracer.ts           # ✅ VscodeTracer：ITracer 采集（指纹/指标，有界内存）
 │   │   │   ├── workspaceStorage.ts # IMemoryStorage（.memora/memories.json）
 │   │   │   └── sessionStore.ts     # ISessionStore（.memora/sessions.json）
-│   │   └── role-packs/        # 内置角色包（定位由角色包承载，非插件硬编码）
-│   │       └── doc-review/    # ✅ 出厂自带：文档打磨角色（审阅 + 骨架生成）
-│   │           ├── manifest.json   # 角色包元数据/策略/触发词
-│   │           ├── persona.md      # 角色身份设定
-│   │           └── rules.md        # 角色行为规则
+│   │   └── role-packs/        # 内置角色包（构建期从内核同步，宿主持源目录不自持副本）
 │   │
 │   ├── webview/               # Webview UI（浏览器环境，仅 postMessage，禁 node API）
 │   │   ├── panels/            # 面板（每面板一个文件，UI 渲染）
@@ -63,7 +59,7 @@ hosts/memora-vscode/
 | `extension/` 根 | Node | 入口 + 生命周期 | 业务逻辑（委托 commands/） |
 | `extension/commands/` | Node | 命令处理器（通用命令，无特定功能硬编码） | 直接操作 DOM/Webview 渲染 |
 | `extension/host/` | Node | 装配 memora 内核 + 持久化注入 | 重复实现内核能力 |
-| `extension/role-packs/` | Node | 内置角色包（manifest + persona + rules，定位由角色包承载） | 插件内硬编码功能定位 |
+| `extension/role-packs/` | Node | 内置角色包（构建期从内核 `role-packs/` 同步，产出在 `dist/extension/role-packs/`） | 插件内硬编码功能定位 / 自持可写角色包源 |
 | `webview/panels/` | 浏览器 | 面板 UI 渲染 + postMessage 收发 | 直接 import node 模块 |
 | `webview/components/` | 浏览器 | 可复用 UI 组件 | 面板独有逻辑 |
 | `webview/helpers/` | 浏览器 | 纯函数（可测试） | 可变状态 |
@@ -76,15 +72,16 @@ hosts/memora-vscode/
 2. **薄壳装配**（ADR-VC-001 决策 2）：host/ 只 `new Agent()` + 注入，不重复实现内核能力。
 3. **单 Agent 串行**：内核保持单 Agent；多面板共享同一 Agent 实例（getOrCreateAgent 懒加载单例）。
 4. **消息协议单一真理源**：`shared/protocol.ts` 定义所有 postMessage 载荷，两侧共用，防漂移。
-5. **定位由角色包承载**：插件不自定性，不硬编码功能定位；定位由 `role-packs/` 下的角色包通过 manifest 声明，内核 RolePackManager 自动扫描激活。
+5. **定位由角色包承载（单一真理源）**：插件不自定性，不硬编码功能定位；角色包维护于内核 `role-packs/`，宿主构建期从内核同步至 `dist/extension/role-packs/`，由内核 RolePackManager 自动扫描激活。宿主不自持可写副本，避免与内核分叉漂移。
 
 ## 四、角色包架构
 
 | 角色包 | 定位 | 状态 |
 |--------|------|------|
-| `doc-review` | 文档打磨（自洽审阅 + 代码骨架生成） | ✅ 出厂自带 |
-| `方案设计师` | 基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）设计自洽项目方案 | ✅ 出厂自带 |
-| （未来扩展） | 由 manifest.json 声明的定位 | 预留 |
+| `文档设计师` | 从需求到结构化文档（API / 教程 / 架构说明） | ✅ 出厂自带（内核同步） |
+| `方案设计师` | 基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）设计自洽项目方案 | ✅ 出厂自带（内核同步） |
+| `小说助手` | 小说创作：人物设定 / 情节结构 / 对白与文风打磨 | ✅ 出厂自带（内核同步） |
+| （未来扩展） | 维护于内核 `role-packs/`，宿主构建期自动同步 | 预留 |
 
 角色包结构：
 ```

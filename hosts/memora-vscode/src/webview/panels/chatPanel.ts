@@ -11,7 +11,7 @@
  *   - 文档属「当前任务上下文」注入 chat 输入，不进入记忆召回；
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM 操作；
  *   - 持久化复用内核 sessionStore 机制（date-session 组织消息）；
- *   - 面板为通用对话宿主，功能定位由内置角色包（role-packs/doc-review）承载，
+ *   - 面板为通用对话宿主，功能定位由内核同步的内置角色包承载，
  *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换已独立到「角色」视图，2026-08-17）。
  */
 import * as vscode from 'vscode';
@@ -223,7 +223,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 同一体验原则）。displayName 缺省时回退内部名（name）——显示名单一来源 =
    * `displayName ?? name`，替代原 UI 层硬编码 `rolePackDisplayName` 映射。
    *
-   * @param rolePack 角色包内部名（如 'doc-review'）
+   * @param rolePack 角色包内部名（如 '文档设计师'）
    * @returns UI 展示名（displayName 或回退 name）
    */
   private roleDisplayName(rolePack: string): string {
@@ -268,7 +268,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 对话面板为通用宿主，定位由内置角色包承载；角色包名在就绪回放时推送给
    * webview 的 AI 消息头部标签 + 空状态标题（角色切换入口已独立到「角色」视图，2026-08-17）。
    *
-   * @param rolePack 角色包内部名（如 'doc-review'）
+   * @param rolePack 角色包内部名（如 '文档设计师'）
    */
   public setRolePack(rolePack: string): void {
     this._activeRolePack = rolePack;

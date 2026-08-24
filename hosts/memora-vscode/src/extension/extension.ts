@@ -8,7 +8,7 @@
  * 结构（通用化设计，功能定位由内置角色包承载）：
  *   - commands/   命令处理器（薄壳：装配 + 聚焦，核心逻辑全部由内核 + 角色包承载）
  *   - host/       薄壳装配（注入 memora 内核）
- *   - role-packs/ 内置角色包（出厂自带 doc-review 定位，可后续支持导入）
+ *   - role-packs/ 内置角色包（构建期从内核 role-packs/ 同步，见 esbuild.config.mjs）
  *   - webview/    面板 UI（仅 postMessage）
  *   - shared/     extension ↔ webview 消息协议
  */
@@ -118,7 +118,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 用户角色包目录（2026-08-22 新增，预留扩展点）：
   // 
   // ⚠️ 当前状态：角色包**不开放给用户**，仅支持内置角色包
-  // - 内置角色包：由插件开发者提供，存储在插件安装目录的 dist/extension/role-packs/
+  // - 内置角色包：构建期从内核 role-packs/ 同步，存储在插件安装目录的 dist/extension/role-packs/
   // - 用户角色包：当前禁止创建/加载，目录仅为未来开放预留
   //
   // 设计决策（2026-08-22）：

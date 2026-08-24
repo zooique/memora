@@ -18,8 +18,9 @@ import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
  *
  * 兜底值：装配后以 agent 实际激活角色为准（由持久化的用户选择或内核默认首个决定），
  * 仅当 agent 未装配/无角色包时回退此默认值。
+ * 单一真理源（2026-08-24）：宿主不再自持角色包，使用内核 role-packs 的一员。
  */
-const BUILTIN_ROLE_PACK = 'doc-review';
+const BUILTIN_ROLE_PACK = '文档设计师';
 
 /**
  * 打开对话面板（聚焦侧边栏视图）

@@ -13,6 +13,10 @@
  *   ├── webview (各面板)          ← webview 侧代码（不打包，不依赖内核）
  *   ├── extension/role-packs      ← 内置角色包（manifest.json + persona/rules/skills .md，copy 处理）
  *   └── extension/skills          ← 全局技能池（.md，所有角色共享，SkillManager 扫描）
+ *
+ * 角色包单一真理源（2026-08-24 机制化同步）：
+ *   宿主不再自持角色包源，dist/extension/role-packs 从内核 role-packs/（仓库根）
+ *   构建期复制生成——内核改一处即全量同步，消除复制分叉漂移。
  */
 import * as esbuild from 'esbuild';
 import { copyFileSync, mkdirSync, readdirSync, existsSync, renameSync, statSync } from 'node:fs';
@@ -24,12 +28,12 @@ const DIST = join(__dirname, 'dist');
 const SRC = join(__dirname, 'src');
 
 /**
- * 递归复制资产目录（esbuild 不处理 .md/.json，插件内置角色包和全局技能需随 dist 分发）
+ * 复制规划：递归复制资产目录（esbuild 不处理 .md/.json，插件内置角色包和全局技能需随 dist 分发）
  *
- * 角色包目录（src/extension/role-packs/<名>/）由内核 RolePackManager 从
- * configDir/role-packs/ 扫描装载（manifest.json + persona.md + rules.md + skills/）。
- * 全局技能目录（src/extension/skills/）由内核 SkillManager 从
- * configDir/skills/ 扫描装载（所有角色共享的通用技能）。
+ * 角色包目录由内核 RolePackManager 从 configDir/role-packs/ 扫描装载
+ * （manifest.json + persona.md + rules.md + skills/）。
+ * 全局技能目录（src/extension/skills/）由内核 SkillManager 从 configDir/skills/
+ * 扫描装载（所有角色共享的通用技能）。
  *
  * @param srcDir 源资产目录
  * @param outDir 输出资产目录
@@ -48,9 +52,17 @@ function copyAssetsRecursive(srcDir, outDir) {
   }
 }
 
-/** 复制内置角色包目录（manifest.json + persona.md + rules.md + skills/） */
+/**
+ * 复制内置角色包目录（manifest.json + persona.md + rules.md + skills/）
+ *
+ * 单一真理源（机制化同步，2026-08-24）：宿主不持有角色包源，改从内核
+ * role-packs/（仓库根）复制到 dist。宿主自持副本已删除，避免与内核分叉漂移——
+ * 内核改一处，宿主构建期全量跟上。
+ */
 function copyRolePacks() {
-  copyAssetsRecursive(join(SRC, 'extension', 'role-packs'), join(DIST, 'extension', 'role-packs'));
+  // 仓库根 role-packs/（内核角色包，随 npm 发布，兼作宿主生产角色包源）
+  const kernelRolePacks = join(__dirname, '..', '..', 'role-packs');
+  copyAssetsRecursive(kernelRolePacks, join(DIST, 'extension', 'role-packs'));
 }
 
 /** 复制全局技能池（.md 文件，所有角色共享） */

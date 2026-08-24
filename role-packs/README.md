@@ -1,23 +1,23 @@
-# role-packs 示例库
+# role-packs 角色包库
 
-> **声明**：本目录下的角色包是 **示例 / 参考实现**，用于展示角色包目录结构、字段用法和内核支持能力。**随 @zooique/memora npm 包发布，仅作示例 / 参考，不作生产使用**（不进入宿主运行时产物）。
+> **声明**：本目录是 memora 的角色包**唯一内容源**——既随 @zooique/memora npm 包发布供示例 / 参考，亦作 memora-vscode 宿主的**生产角色包源（构建期同步）**。内容在此维护、一处改处处生效，消除复制分叉漂移（2026-08-24 机制化单一真理源）。
 
 ## 身份
 
-本示例库归属 memora 内核仓库，随内核版本演进，**随 npm 包发布、不进入宿主运行时产物**：
+本目录归属 memora 内核仓库，随内核版本演进，**是角色包内容的单一真理源**：
 
 | 项 | 说明 |
 |----|------|
-| 身份 | 示例 / 参考 |
-| 归属 | memora 内核示例库 |
-| 分发 | 随 @zooique/memora npm 包发布（见 `package.json` files）；不进入宿主运行时产物（VSIX 等） |
-| 生命周期 | 随内核能力演进，独立于宿主角色包 |
+| 身份 | 唯一内容源（示例 / 参考 + memora-vscode 生产源） |
+| 归属 | memora 内核仓库 |
+| 分发 | 随 @zooique/memora npm 包发布（见 `package.json` files）；memora-vscode 构建期经 esbuild `copyRolePacks()` 复制到 `dist/extension/role-packs/` 进 VSIX |
+| 生命周期 | 随内核能力演进；已接入宿主不再自持副本，构建期全量同步 |
 
 ## 接入者指引
 
-- 宿主（如 VS Code 插件）应使用**宿主内置角色包**作为生产配置，参阅中立规范 [role-pack-spec.md](../docs/architecture/role-pack-spec.md) §9.1 示例库 vs 宿主生产库（仓库内文档；随包发布的使用入口见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)）。
-- 本目录仅作**结构参考**和**字段 / 能力用法示例**，修改本目录内容不影响任何宿主运行时行为。
-- 新增宿主时，可复制本目录角色包到宿主内置目录，复制后即"分叉"——各自独立演进，不回写本目录。
+- 宿主（如 VS Code 插件）应将本目录作为**角色包唯一源**：构建期从 `role-packs/` 复制到自己的 `dist/<configDir>/role-packs/`，不要复制后再手工维护副本（否则重新引入分叉漂移）。参阅中立规范 [role-pack-spec.md](../docs/architecture/role-pack-spec.md) §9.1。
+- 新增 / 修改角色包：直接改本目录 → npm 包更新 + 宿主构建期自动同步，一处改处处生效。
+- 宿主如需 VS Code 专属角色包（非通用，需注入宿主专属工具），应明确约定归属；一旦进入共享范畴即移回本目录统一维护。
 
 ## 角色包清单
 
