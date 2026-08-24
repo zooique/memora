@@ -99,7 +99,7 @@
     "watch": "tsc -watch -p ./",
     "typecheck": "tsc --noEmit -p ./",
     "package": "npm run compile && vsce package --out memora-vscode.vsix",
-    "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts"
+    "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

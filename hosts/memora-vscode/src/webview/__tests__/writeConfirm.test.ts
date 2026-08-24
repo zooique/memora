@@ -11,9 +11,9 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import type { SecurityGuard } from '@zooique/memora';
-import type { WriteConfirmationRequest } from '../../shared/protocol.js';
-import type { MemoraChatViewProvider } from '../panels/chatPanel.js';
+// WriteConfirmationRequest 从内核 import（与 chatPanel.ts 同源）；内核不导出 SecurityGuard 类，
+// 测试用本地结构桩（SecurityGuardStub）替代，避免依赖私有/未导出类型。
+import type { WriteConfirmationRequest } from '@zooique/memora';
 
 // ─── mock vscode（最小 API 集）──────────────────────────────
 vi.mock('vscode', async () => {
@@ -37,51 +37,59 @@ vi.mock('vscode', async () => {
   };
 });
 
-import * as vscode from 'vscode';
+/** SecurityGuard 本地结构桩（内核不导出 SecurityGuard 类，仅测试用到的两个方法） */
+interface SecurityGuardStub {
+  onWriteConfirmation: (handler: WriteConfirmationRequest) => void;
+  requestWriteConfirmation: () => Promise<boolean>;
+}
+
+/** Provider 本地结构桩（不引用 chatPanel 私有类型；通过 post/handleMessage 协议消息断言） */
+interface ProviderStub {
+  post: (msg: Record<string, unknown>) => void;
+  handleMessage: (msg: Record<string, unknown>) => void;
+  bindWriteConfirmation: () => void;
+}
 
 /** 构造 security guard mock */
 function createMockGuard(): {
-  guard: SecurityGuard;
+  guard: SecurityGuardStub;
   registeredHandler: WriteConfirmationRequest | null;
 } {
   let registeredHandler: WriteConfirmationRequest | null = null;
-  const guard = {
+  const guard: SecurityGuardStub = {
     onWriteConfirmation: vi.fn((handler: WriteConfirmationRequest) => {
       registeredHandler = handler;
     }),
     requestWriteConfirmation: vi.fn().mockResolvedValue(true),
-  } as unknown as SecurityGuard;
+  };
   return { guard, get registeredHandler() { return registeredHandler; } };
 }
 
 /** 构造 provider 桩 */
-function createMockProvider(guard: SecurityGuard): {
-  provider: MemoraChatViewProvider;
+function createMockProvider(guard: SecurityGuardStub): {
+  provider: ProviderStub;
   postedMessages: Array<{ type: string; [k: string]: unknown }>;
-  setWebviewReady: (ready: boolean) => void;
   handleMessage: (msg: { type: string; [k: string]: unknown }) => void;
 } {
   const postedMessages: Array<{ type: string; [k: string]: unknown }> = [];
-  let webviewReady = true;
-  const pendingConfirmations = new Map<string, { resolve: (v: boolean) => void; timer: NodeJS.Timeout }>();
+  const pendingConfirmations = new Map<string, { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
 
   const provider = {
     _agent: { security: guard, on: vi.fn(), off: vi.fn() },
     _pendingWriteConfirmations: pendingConfirmations,
-    post: vi.fn((msg: { type: string }) => {
+    post: vi.fn((msg: { type: string; [k: string]: unknown }) => {
       postedMessages.push(msg);
     }),
     bindWriteConfirmation: function () {
-      // 内联实现（与 chatPanel.ts 一致，但不依赖完整类初始化）
+      // 内联实现（与 chatPanel.ts bindWriteConfirmation 语义一致：注册 → 发请求 → 等待应答）
       const handler: WriteConfirmationRequest = async (info) => {
         const requestId = `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        const fileName = info.targetPath.split(/[\\/]/).pop() ?? info.targetPath;
         const timeoutMs = 30000;
         return new Promise<boolean>((resolve) => {
           const timer = setTimeout(() => {
             pendingConfirmations.delete(requestId);
             resolve(false);
-            provider.post({ type: 'notice', level: 'error', message: `写入确认超时，已自动拒绝` });
+            provider.post({ type: 'notice', level: 'error', message: '写入确认超时，已自动拒绝' });
           }, timeoutMs);
           pendingConfirmations.set(requestId, { resolve, timer });
           provider.post({
@@ -98,9 +106,9 @@ function createMockProvider(guard: SecurityGuard): {
       };
       guard.onWriteConfirmation(handler);
     },
-    handleMessage: function (msg: { type: string }) {
+    handleMessage: function (msg: { type: string; [k: string]: unknown }) {
       if (msg.type === 'write_confirm_answer') {
-        const { requestId, approved } = msg as { requestId: string; approved: boolean };
+        const { requestId, approved } = msg as unknown as { requestId: string; approved: boolean };
         const pending = pendingConfirmations.get(requestId);
         if (pending) {
           clearTimeout(pending.timer);
@@ -109,12 +117,11 @@ function createMockProvider(guard: SecurityGuard): {
         }
       }
     },
-  } as unknown as MemoraChatViewProvider;
+  } as unknown as ProviderStub;
 
   return {
     provider,
     postedMessages,
-    setWebviewReady: (ready: boolean) => { webviewReady = ready; },
     handleMessage: provider.handleMessage,
   };
 }
@@ -150,11 +157,13 @@ describe('H0 写入审批流程', () => {
       tool: 'write_file',
       description: '修改入口文件',
       permission: 'owner' as const,
+      needsConfirm: true,
       beforeContent: '旧内容',
       afterContent: '新内容',
     };
 
-    const resultPromise = handler(info);
+    // 触发写入请求（不 await：本用例只验证请求已发送，应答由后续用例覆盖）
+    handler(info);
 
     // 等待微任务队列清空
     await vi.waitFor(() => {
@@ -180,6 +189,7 @@ describe('H0 写入审批流程', () => {
       tool: 'write_file',
       description: '测试写入',
       permission: 'owner' as const,
+      needsConfirm: true,
     };
 
     // 触发写入请求
@@ -211,6 +221,7 @@ describe('H0 写入审批流程', () => {
       tool: 'write_file',
       description: '测试写入',
       permission: 'owner' as const,
+      needsConfirm: true,
     };
 
     const resultPromise = handler(info);
@@ -241,6 +252,7 @@ describe('H0 写入审批流程', () => {
       tool: 'write_file',
       description: '测试写入',
       permission: 'owner' as const,
+      needsConfirm: true,
     };
 
     const resultPromise = handler(info);
@@ -269,6 +281,7 @@ describe('H0 写入审批流程', () => {
       tool: 'edit_file',
       description: '编辑按钮组件',
       permission: 'owner' as const,
+      needsConfirm: true,
       beforeContent: 'const btn = <button>Click</button>;',
       afterContent: 'const btn = <button onClick={handler}>Click</button>;',
     };
@@ -291,8 +304,8 @@ describe('H0 写入审批流程', () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
 
-    const info1 = { targetPath: '/project/a.ts', tool: 'write_file', description: 'A', permission: 'owner' as const };
-    const info2 = { targetPath: '/project/b.ts', tool: 'edit_file', description: 'B', permission: 'owner' as const };
+    const info1 = { targetPath: '/project/a.ts', tool: 'write_file', description: 'A', permission: 'owner' as const, needsConfirm: true };
+    const info2 = { targetPath: '/project/b.ts', tool: 'edit_file', description: 'B', permission: 'owner' as const, needsConfirm: true };
 
     const result1Promise = handler(info1);
     const result2Promise = handler(info2);

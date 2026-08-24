@@ -39,16 +39,14 @@ vi.mock('vscode', () => ({
 import { VscodeTracer } from '../tracer.js';
 import { WorkspaceStorage } from '../workspaceStorage.js';
 import { WorkspaceSessionStore } from '../sessionStore.js';
-import { createProvider, createBackgroundProvider } from '../llmConfig.js';
+import { createProvider } from '../llmConfig.js';
 import { Agent, TRACE_SPANS } from '@zooique/memora';
-import type { ISpan } from '@zooique/memora';
 
 describe('宿主集成端到端测试', () => {
   let tmpDir: string;
   let tmpHome: string;
   let configDir: string;
   let memoraDir: string;
-  let agent: Agent | null = null;
 
   beforeAll(async () => {
     // 创建临时目录
@@ -80,9 +78,6 @@ describe('宿主集成端到端测试', () => {
   });
 
   afterAll(async () => {
-    if (agent) {
-      await agent.close();
-    }
     if (tmpDir) rmSync(tmpDir, { recursive: true, force: true });
     if (tmpHome) rmSync(tmpHome, { recursive: true, force: true });
   });
@@ -202,8 +197,8 @@ describe('宿主集成端到端测试', () => {
         content: '这是一条测试记忆内容',
         source: 'user',
         score: 1,
-        createdAt: Date.now(),
-        updatedAt: Date.now(),
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
       });
 
       const results = storage.search('测试');
@@ -252,10 +247,10 @@ describe('宿主集成端到端测试', () => {
       // 测试 confirmWrites: false（默认，直通）
       const agentNoConfirm = await createAgentWithConfirm(false);
       if (agentNoConfirm) {
-        // 安全组件应存在
+        // 安全组件应存在（Agent.security 可空，测试场景断言非空）
         expect(agentNoConfirm.security).toBeDefined();
         // confirmWrites 应为 false
-        expect(agentNoConfirm.security.confirmWrites).toBe(false);
+        expect(agentNoConfirm.security!.confirmWrites).toBe(false);
         await agentNoConfirm.close();
       }
 
@@ -263,7 +258,7 @@ describe('宿主集成端到端测试', () => {
       const agentWithConfirm = await createAgentWithConfirm(true);
       if (agentWithConfirm) {
         expect(agentWithConfirm.security).toBeDefined();
-        expect(agentWithConfirm.security.confirmWrites).toBe(true);
+        expect(agentWithConfirm.security!.confirmWrites).toBe(true);
         await agentWithConfirm.close();
       }
     });
@@ -306,21 +301,20 @@ describe('宿主集成端到端测试', () => {
       await a.init();
 
       // 验证 onWriteConfirmation 可注册回调
-      let callbackInvoked = false;
-      a.security.onWriteConfirmation(async () => {
-        callbackInvoked = true;
+      const guard = a.security!;
+      guard.onWriteConfirmation(async () => {
         return true; // 批准写入
       });
 
       // 验证 security 组件已初始化且支持 onWriteConfirmation
-      expect(a.security).toBeDefined();
-      expect(typeof a.security.onWriteConfirmation).toBe('function');
+      expect(guard).toBeDefined();
+      expect(typeof guard.onWriteConfirmation).toBe('function');
 
       // 验证 setConfirmWrites 动态切换
-      a.security.setConfirmWrites(false);
-      expect(a.security.confirmWrites).toBe(false);
-      a.security.setConfirmWrites(true);
-      expect(a.security.confirmWrites).toBe(true);
+      guard.setConfirmWrites(false);
+      expect(guard.confirmWrites).toBe(false);
+      guard.setConfirmWrites(true);
+      expect(guard.confirmWrites).toBe(true);
 
       await a.close();
     });

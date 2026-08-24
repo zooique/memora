@@ -16,6 +16,8 @@
 import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger } from '@zooique/memora';
 import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
+// vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
+import type { OutputChannel } from 'vscode';
 import { join } from 'node:path';
 import { createProvider, createBackgroundProvider, createVectorStore } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
@@ -56,7 +58,7 @@ const CHINESE_MESSAGES: UIMessages = {
  * 接受一个 vscode.OutputChannel 实例，将内核 ILogger 的调用
  * （支持 `info(msg)` 与 `info(obj, msg)` 两种形式）转换为 OutputChannel.appendLine。
  */
-export function createVscodeLogger(output: vscode.OutputChannel): ILogger {
+export function createVscodeLogger(output: OutputChannel): ILogger {
   return {
     info: (objOrMsg, msg?) => {
       const line = msg ? `[INFO] ${msg} ${JSON.stringify(objOrMsg)}` : `[INFO] ${objOrMsg}`;
@@ -138,7 +140,7 @@ export interface AssembleOptions {
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
    * 未传入时内核日志默认输出到 stdout（生产环境建议始终注入）。
    */
-  outputChannel?: vscode.OutputChannel;
+  outputChannel?: OutputChannel;
   /** 环境变量（默认 process.env，便于测试注入） */
   env?: NodeJS.ProcessEnv;
 }
