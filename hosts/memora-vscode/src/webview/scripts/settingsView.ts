@@ -145,7 +145,7 @@ function createSkillsView({
   // 刷新按钮事件
   refreshBtn.addEventListener('click', () => {
     vscode.postMessage({ type: 'skills_load' });
-    listEl.innerHTML = '<p class="hint">加载中…</p>';
+    listEl.innerHTML = '<p class="loading-hint">加载中…</p>';
     loadedContents.clear();
   });
 

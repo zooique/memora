@@ -53,8 +53,10 @@ export const skillsStyles = `
   #skills-root .skill-item {
     padding: var(--sp-3, 8px);
     margin-bottom: var(--sp-2, 6px);
-    background: var(--surface-hover, rgba(128,128,128,.1));
-    border: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    /* P2-1：统一卡片外壳语言——surface-hover → surface-sidebar，与角色卡/Provider 卡/记忆卡 A 类对齐
+       P3：边框不透明度 0.2→0.4，与 A 类卡片（角色/Provider/记忆）完全对齐 */
+    background: var(--surface-sidebar);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius, 6px);
   }
 

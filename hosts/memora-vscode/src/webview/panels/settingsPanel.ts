@@ -792,7 +792,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <input id="searchInput" class="search-input" type="text" placeholder="搜索记忆…" aria-label="搜索记忆" />
     </div>
     <div id="list">
-      <p class="hint">加载中…</p>
+      <p class="loading-hint">加载中…</p>
     </div>
 
     <!-- 记忆治理区（G4，2026-08-23：统计卡 + 衰减/清理操作） -->
@@ -828,7 +828,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span id="statBar" class="stat-bar" hidden></span>
     </div>
     <div id="list">
-      <p class="hint">加载中…</p>
+      <p class="loading-hint">加载中…</p>
     </div>
     <p class="footer-hint">「设为当前」仅切换默认角色；「带入对话」还会跳到对话并预填一句过渡语（不自动发送，可编辑后再发）。</p>
   </div>
@@ -874,7 +874,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </div>
     </details>
     <div id="list">
-      <p class="hint">加载中…</p>
+      <p class="loading-hint">加载中…</p>
     </div>
     <!-- 新增/编辑弹窗 -->
     <div id="modal" class="modal-mask">
@@ -926,7 +926,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </div>
     <div class="hint">全局技能是所有角色包共享的能力。支持单文件 <code>.md</code> 和文件夹 <code>SKILL.md</code> 两种格式。</div>
     <div id="skillsList">
-      <p class="hint">加载中…</p>
+      <p class="loading-hint">加载中…</p>
     </div>
     <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>
   </div>

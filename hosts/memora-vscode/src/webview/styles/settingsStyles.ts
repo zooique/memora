@@ -52,6 +52,35 @@ export const settingsStyles = `
   }
   .tab-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 
+  /* ============ Utilities：加载态指示器（P1，2026-08-24 状态四态补齐） ============ */
+  /* 与空态 .hint 区分：带旋转 spinner 图标 + 左侧细边框，让用户一眼识别「在加载」而非「无数据」 */
+  .loading-hint {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    border-left: 2px solid var(--accent, #0e639c);
+    background: var(--feedback-info-bg);
+    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+    margin: 0;
+  }
+  .loading-hint::before {
+    content: '';
+    display: inline-block;
+    width: 12px; height: 12px;
+    border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
+    border-top-color: var(--accent, #0e639c);
+    border-radius: 50%;
+    animation: loadingSpin 0.8s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes loadingSpin { to { transform: rotate(360deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .loading-hint::before { animation: none; }
+  }
+
   ${rolesStyles}
   ${configStyles}
   ${memoryStyles}

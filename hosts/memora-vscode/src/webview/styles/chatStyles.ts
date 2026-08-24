@@ -582,7 +582,9 @@ export const chatStyles = `
   /* ============ Components：任务看板（H4 任务驱动多步闭环，2026-08-23） ============ */
   /* LLM 调用 task_table_write/update 建表时插入消息区顶部的计划进度看板：标题（N/M 完成）
    * + 步骤列表。只读展示内核 checkpoint.plan，状态色复用 trace-step 约定
-   * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。 */
+   * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。
+   * P2-A（2026-08-24）：加 accent 左边框，与 thought-block（纯背景）形成视觉区分——
+   * 用户一眼区分「任务进度」和「思考过程」，避免过程透明升级为内容主体。 */
   .plan-board {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-md, 12px);
@@ -590,6 +592,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     background: var(--surface-card, #252526);
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: 3px solid var(--accent, #0e639c);
   }
   .plan-board-header {
     font-weight: 600;
@@ -654,13 +657,15 @@ export const chatStyles = `
   /* ============ Components：活动状态区 · 自审查轮提示（活动透明，交叉审核观察 A） ============ */
   /* Agent 自审查开始时插入的过程性反馈：轻量灰字 + 呼吸圆点，让用户看见
    * 正在复核产出（agent-design-philosophy §13.x 可观察契约）。仅运行时显示。
-   * 过程性反馈降级（编排对齐）：无背景色，字号更小更灰，与对话主体明显区分。 */
+   * P2-B（2026-08-24）：加 feedback-info-bg 背景锚点——透明背景让自审查指示在消息流中
+   * 几乎不可见，用户错过「AI 正在复核」的信任信号。低对比度 info 背景刚好：
+   * 有视觉锚点但不抢对话主体，与错误态/成功态拉开强度差。 */
   .self-review {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     font-size: var(--font-sm, 11px); line-height: 1.5;
     color: var(--text-secondary, #9aa0a6);
-    background: transparent;
+    background: var(--feedback-info-bg);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4)); /* 中性细边框，不抢视觉 */
   }
   .self-review__dot {
