@@ -360,7 +360,7 @@ export const chatStyles = `
   #inputWrap {
     display: flex;
     flex-direction: column;
-    min-height: var(--input-wrap-min-h, 96px);
+    min-height: var(--input-wrap-min-h, 128px);
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
     border-radius: var(--radius-xl, 14px);
     background: var(--surface-input, #3c3c3c);
@@ -385,36 +385,46 @@ export const chatStyles = `
     font-size: var(--font-base, 13px);
     line-height: 1.6;
     resize: none;
-    /* 高度由 JS autoResize() 控制；内容超过 --input-max-h 时内部滚动查看，
-     * 避免 overflow hidden 把超限内容裁掉导致长输入不可见（对抗评估 P0-1） */
-    overflow-y: auto;
-    min-height: var(--input-min-h, 64px);
-    max-height: var(--input-max-h, 140px);
+    /* 高度由 JS autoResize() 控制；默认 hidden 避免空内容时显示滚动条轨道，
+     * 内容超过 --input-max-h 时 JS 切换为 auto 才显示滚动条（大厂惯例） */
+    overflow-y: hidden;
+    min-height: var(--input-min-h, 72px);
+    max-height: var(--input-max-h, 180px);
     box-sizing: border-box;
     width: 100%;
   }
   #input:focus { outline: none; }
   #input:disabled { opacity: 0.6; }
-  /* 工具条：模型选择 + 发送按钮 */
+  /* 工具条（两行布局）：Actions 行（模型+发送）+ Context 行（角色+能力徽章）
+   * 对齐 visual-design-philosopher 三层分类法：一级直面 vs 次级收纳物理隔离。 */
   #inputFooter {
     display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--sp-3, 8px);
-    padding: 0 var(--sp-5, 12px) var(--sp-4, 10px);
-    min-height: var(--input-footer-h, 32px);
+    flex-direction: column;
+    gap: var(--sp-1, 4px);
+    padding: var(--sp-2, 6px) var(--sp-5, 12px) var(--sp-3, 8px);
     flex-shrink: 0;
     box-sizing: border-box;
   }
-  /* Composer 左侧组：键盘提示 + 当前角色徽章（与右侧操作组 space-between 分组） */
-  .composer-left {
+  /* Composer Row 基类：两行共享的 padding/spacing 契约 */
+  .composer-row {
     display: flex;
     align-items: center;
-    gap: var(--sp-3, 8px);
+    width: 100%;
+  }
+  /* Row 1 · 一级直面：Actions 行 — 右对齐，操作独占整行 */
+  .composer-row--actions { justify-content: flex-end; }
+  /* Row 2 · 次级收纳：Context 行 — 左对齐，身份信息弱化展示 */
+  .composer-row--context { min-height: var(--composer-context-h, 24px); }
+  /* Composer Actions：模型选择器 + 发送按钮 */
+  .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
+  /* Composer Context：角色徽章 + 能力徽章容器（从旧 .composer-left 重命名，保持语义） */
+  .composer-context {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
     min-width: 0;
   }
-  /* Composer 键盘提示：footer 左侧弱化提示 Enter 发送 / Shift+Enter 换行。
-   * 对齐大厂 composer 的「轻提示」惯例，不喧宾夺主（ui-redesign.md §7.3）。 */
+  /* Composer 键盘提示（已独立到 composer-row--context 行，保留样式供未来扩展） */
   .composer-hint {
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -460,8 +470,6 @@ export const chatStyles = `
     user-select: none;
   }
   .capability-badge[hidden] { display: none; }
-  /* Composer 右侧操作组：模型选择器 + 发送按钮，与左侧提示分组（space-between 布局） */
-  .composer-actions { display: flex; align-items: center; gap: var(--sp-2, 6px); flex-shrink: 0; }
 
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
    * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），

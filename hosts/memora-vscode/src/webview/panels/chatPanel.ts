@@ -1885,21 +1885,25 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
-        <!-- Composer 左侧组：键盘提示 + 当前角色只读徽章 + 工具权限徽章（让用户感知当前定位；切换入口独立在「角色」视图） -->
-        <div class="composer-left">
-          <span id="currentRoleBadge" class="role-badge"></span>
-          <!-- Phase 4 E2：工具权限徽章（角色能力面可见性，角色切换时自动更新） -->
-          <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
-        </div>
-        <!-- Composer 右侧操作组：模型选择 + 发送（SSOT 收敛：角色切换已移至独立角色视图，
-             输入区只保留高频操作——模型切换与发送） -->
-        <div class="composer-actions">
-          ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
-          <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
-            <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
+        <!-- Row 1 · 一级直面：模型选择 + 发送操作（Actions 独占一行，窄窗口不被角色信息挤压） -->
+        <div class="composer-row composer-row--actions">
+          <div class="composer-actions">
+            ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect' })}
+            <button id="send" class="send-btn" title="发送 (Enter)" aria-label="发送">
+              <svg class="send-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
             <!-- 生成中切换为停止方块（loading 类驱动）：点击 = 停止当前生成（mvp-scope 打断能力） -->
             <svg class="stop-icon" viewBox="0 0 24 24" width="14" height="14" fill="currentColor" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2"/></svg>
           </button>
+          </div>
+        </div>
+        <!-- Row 2 · 次级收纳：角色徽章 + 能力徽章（Context 独立一行，不抢操作焦点；
+             对齐 visual-design-philosopher 三层分类法：操作=一级直面，身份=次级收纳） -->
+        <div class="composer-row composer-row--context">
+          <div class="composer-context">
+            <span id="currentRoleBadge" class="role-badge"></span>
+            <!-- Phase 4 E2：工具权限徽章（角色能力面可见性，角色切换时自动更新） -->
+            <span id="currentCapabilityBadge" class="capability-badge" hidden></span>
+          </div>
         </div>
       </div>
     </div>

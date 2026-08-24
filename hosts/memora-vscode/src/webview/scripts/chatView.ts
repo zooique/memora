@@ -1376,10 +1376,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
   // SSOT：高度上限单一真理源 — 从 CSS 令牌(--input-max-h)的计算值读取，
   // JS 与 CSS 共用同一上限，杜绝双源漂移。
-  const inputMaxHeight = parseInt(window.getComputedStyle(input).maxHeight, 10) || 140;
+  // overflow 动态切换：空内容/未满高时 hidden（无滚动条轨道），超限才 auto
+  const inputMaxHeight = parseInt(window.getComputedStyle(input).maxHeight, 10) || 180;
   function autoResize(): void {
     input.style.height = 'auto';
-    input.style.height = Math.min(input.scrollHeight, inputMaxHeight) + 'px';
+    const h = Math.min(input.scrollHeight, inputMaxHeight);
+    input.style.height = h + 'px';
+    // 仅当内容超过最大高度时才显示滚动条
+    input.style.overflowY = input.scrollHeight > inputMaxHeight ? 'auto' : 'hidden';
   }
   function sendMessage(): void {
     const text = input.value.trim();
@@ -1392,6 +1396,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (!text) return;
     input.value = '';
     input.style.height = 'auto';
+    input.style.overflowY = 'hidden';
     vscode.postMessage({ type: 'send', text });
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，

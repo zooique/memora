@@ -99,10 +99,14 @@ export const tokens = `
     --accent-subtle: rgba(14, 99, 156, 0.15);
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
-    --input-wrap-min-h: 96px;  /* 输入卡片最小总高（textarea 64 + footer 32） */
-    --input-min-h: 64px;       /* textarea 单行舒适高度（占总高 65%） */
-    --input-max-h: 140px;      /* textarea 展开上限（多行不憋屈） */
-    --input-footer-h: 32px;    /* 工具条高度（占总高 33%） */
-    --control-h: 28px;         /* 输入区控制件统一高度（模型选择器 / 发送按钮） */
+    /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚
+     * Footer 改为两行布局：Actions 行(模型+发送) + Context 行(角色+能力徽章) */
+    --input-wrap-min-h: 128px; /* 输入卡片最小总高（textarea 72 + footer ~56） */
+    --input-min-h: 72px;       /* textarea 默认双行舒适高度（内容区 ~48px = 2.3 行） */
+    --input-max-h: 180px;      /* textarea 展开上限（~7 行，超限显示滚动条） */
+    /* 注：--input-footer-h 已退役（Footer 现由 flex column 自适应高度，不再用固定 min-height）。
+     * 参考值：56px (Actions 28 + Context 24 + gap 4) */
+    --composer-context-h: 24px; /* Context 行最小高度（角色徽章单行） */
+    --control-h: 28px;         /* 输入区控制件统一高度 */
   }
 `;

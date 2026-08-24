@@ -49,11 +49,17 @@ const HTML = `
     <div id="inputWrap">
       <textarea id="input"></textarea>
       <div id="inputFooter">
-        <div class="composer-actions">
-          <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
-          <button id="send"></button>
+        <div class="composer-row composer-row--actions">
+          <div class="composer-actions">
+            <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+            <button id="send"></button>
+          </div>
         </div>
-        <span id="currentRoleBadge" class="role-badge"></span>
+        <div class="composer-row composer-row--context">
+          <div class="composer-context">
+            <span id="currentRoleBadge" class="role-badge"></span>
+          </div>
+        </div>
       </div>
     </div>
   </div>
