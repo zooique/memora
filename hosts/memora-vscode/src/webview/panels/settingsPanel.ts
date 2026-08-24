@@ -813,7 +813,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </div>
       <div class="governance-actions">
         <button id="btnDecay" class="btn btn-secondary" title="触发一次记忆权重衰减（自然遗忘）">触发衰减</button>
-        <button id="btnCleanup" class="btn btn-secondary" title="永久删除 30 天前的软删除记忆（不可撤销）">清理过期</button>
+        <button id="btnCleanup" class="btn btn-danger" title="永久删除 30 天前的软删除记忆（不可撤销）">清理过期</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>
     </div>
@@ -840,6 +840,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span id="statBar" class="stat-bar" hidden></span>
       <button id="btnAdd" class="btn">添加 API</button>
     </div>
+    <!-- 模型通道分区（P1-1，2026-08-24：G5 后台 + G1 检索归入显式分区，与 Provider 列表的 group-title 语言一致） -->
+    <div class="group-title">模型通道</div>
     <!-- 后台模型通道（G5 多 Provider 路由，2026-08-23）：后台任务（摘要/归档/润色）独立轻量模型 -->
     <div class="cfg-bg">
       <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>

@@ -35,7 +35,7 @@ const HTML = `
       </div>
       <div class="governance-actions">
         <button id="btnDecay" class="btn btn-secondary">触发衰减</button>
-        <button id="btnCleanup" class="btn btn-secondary">清理过期</button>
+        <button id="btnCleanup" class="btn btn-danger">清理过期</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>
     </div>

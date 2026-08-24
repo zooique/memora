@@ -127,6 +127,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // G3 断点续跑提示条：检测到持久化暂停检查点时展示，用户点击「从断点续跑」恢复
   let restoreBanner: HTMLElement | null = null;
 
+  /** 消息区顶部状态块插入协议（P1-0，2026-08-24）：
+   * 需用户决策的检查点横幅（restoreBanner）恒在需感知的任务看板（planBoard）之上，
+   * 避免后 prepend 者盖住先者导致「续跑」入口被遮挡。 */
+  function prependStatusBlock(el: HTMLElement): void {
+    if (restoreBanner && el !== restoreBanner) {
+      messages.insertBefore(el, restoreBanner.nextSibling);
+    } else if (planBoard && el !== planBoard) {
+      messages.insertBefore(el, planBoard);
+    } else {
+      messages.prepend(el);
+    }
+  }
+
   /** 移除断点续跑提示条（恢复成功 / 用户关闭 / 切换会话时调用） */
   function removeRestoreBanner(): void {
     restoreBanner?.remove();
@@ -162,8 +175,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     closeBtn.setAttribute('aria-label', '关闭提示');
     closeBtn.addEventListener('click', removeRestoreBanner);
     restoreBanner.appendChild(closeBtn);
-    // 插到消息区顶部（emptyState 占位之前），与历史重放同步可见
-    messages.prepend(restoreBanner);
+    // 插到消息区顶部状态栈（P1-0 协议：检查点横幅恒在任务看板之上），与历史重放同步可见
+    prependStatusBlock(restoreBanner);
   }
 
   // 当前 Provider 列表（由 chat_providers 消息填充）
@@ -196,8 +209,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       planBoard.className = 'plan-board';
       planBoard.setAttribute('role', 'region');
       planBoard.setAttribute('aria-label', '任务进度');
-      // 插到消息区顶部（emptyState 占位之前），与历史重放/新轮计划同步可见
-      messages.prepend(planBoard);
+      // 插到消息区顶部状态栈（P1-0 协议：任务看板恒在检查点横幅之下），与历史重放/新轮计划同步可见
+      prependStatusBlock(planBoard);
     }
     // 标题行：任务进度 N/M
     const doneCount = steps.filter((s) => s.status === 'done').length;

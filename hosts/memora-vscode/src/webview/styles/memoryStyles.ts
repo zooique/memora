@@ -169,6 +169,8 @@ export const memoryStyles = `
     font-size: var(--font-md, 12px);
   }
   #memory-root .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
+  /* 危险操作（P2-2，2026-08-24 危险降噪）：清理过期 = 永久删除不可撤销，红色底与可逆的「触发衰减」拉开强度差 */
+  #memory-root .btn-danger { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
   #memory-root .btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
   /* 结果提示：默认次要色，失败时错误色 */
   #memory-root .governance-detail {

@@ -91,6 +91,13 @@ export const tokens = `
     --surface-ai-avatar: var(--vscode-badge-background, rgba(14, 99, 156, 0.25));
     --surface-thought: var(--vscode-editorWidget-background, #252526);
 
+    /* === L2 语义令牌：技能来源（skillsStyles 引用，2026-08-24 收敛裸值） ===
+     * 复用已有语义令牌，不造裸色：内置技能 = accent（品牌/当前），用户技能 = status-pass（个人/通过）。
+     * --accent-subtle 此前被 skillsStyles 引用但未定义（回退裸值），此处补定义收口。 */
+    --skill-agent-accent: var(--accent, #0e639c);
+    --skill-user-accent: var(--status-pass, #4ec9b0);
+    --accent-subtle: rgba(14, 99, 156, 0.15);
+
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     --input-wrap-min-h: 96px;  /* 输入卡片最小总高（textarea 64 + footer 32） */
     --input-min-h: 64px;       /* textarea 单行舒适高度（占总高 65%） */

@@ -1087,4 +1087,31 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     dispatch({ type: 'clear_ok' });
     expect(document.querySelector('.plan-board')).toBeNull();
   });
+
+  it('planBoard + restoreBanner 同时存在 → 检查点横幅恒在任务看板之上（P1-0 插入顺序协议）', () => {
+    mountChatView();
+    // 先创建任务看板
+    dispatch({
+      type: 'plan_update',
+      steps: [{ id: 's1', description: '收集需求', status: 'active', order: 0 }],
+    });
+    const board = document.querySelector('.plan-board') as HTMLElement;
+    expect(board).not.toBeNull();
+    // 再创建检查点横幅（需决策），应插入到 planBoard 之前
+    dispatch({ type: 'checkpoint_available' });
+    const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
+    expect(banner).not.toBeNull();
+    // 检查点横幅应在任务看板之前（DOM 中 banner 是 board 的 previousSibling 或更前）
+    expect(banner.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    // 反向验证：先建 banner 再建 board，board 应在 banner 之后
+    dispatch({ type: 'clear_ok' });
+    dispatch({ type: 'checkpoint_available' });
+    const banner2 = document.querySelector('.checkpoint-banner') as HTMLElement;
+    dispatch({
+      type: 'plan_update',
+      steps: [{ id: 's1', description: '设计方案', status: 'pending', order: 0 }],
+    });
+    const board2 = document.querySelector('.plan-board') as HTMLElement;
+    expect(board2.compareDocumentPosition(banner2) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
 });

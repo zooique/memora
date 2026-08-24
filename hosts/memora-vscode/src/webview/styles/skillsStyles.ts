@@ -33,20 +33,20 @@ export const skillsStyles = `
   }
 
   #skills-root .header-actions .btn {
-    font-size: var(--font-sm, 12px);
-    padding: 4px 10px;
+    font-size: var(--font-sm, 11px);
+    padding: var(--sp-2, 6px) var(--sp-4, 10px);
   }
 
   #skills-root .hint {
     color: var(--text-secondary, #9aa0a6);
-    font-size: var(--font-sm, 12px);
+    font-size: var(--font-sm, 11px);
     margin-bottom: var(--sp-3, 8px);
   }
 
   #skills-root .hint code {
     background: var(--surface-hover, rgba(128,128,128,.2));
     padding: 1px 4px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm, 2px);
     font-size: var(--font-sm, 11px);
   }
 
@@ -58,14 +58,14 @@ export const skillsStyles = `
     border-radius: var(--radius, 6px);
   }
 
-  /* 用户技能：左侧绿色边框标识 */
+  /* 用户技能：左侧绿色边框标识（语义令牌 --skill-user-accent，复用 status-pass 系） */
   #skills-root .skill-item.skill-user {
-    border-left: 3px solid #4caf50;
+    border-left: 3px solid var(--skill-user-accent);
   }
 
-  /* 内置技能：左侧蓝色边框标识 */
+  /* 内置技能：左侧蓝色边框标识（语义令牌 --skill-agent-accent = accent） */
   #skills-root .skill-item.skill-agent {
-    border-left: 3px solid #0e639c;
+    border-left: 3px solid var(--skill-agent-accent);
   }
 
   #skills-root .skill-header {
@@ -77,40 +77,42 @@ export const skillsStyles = `
 
   #skills-root .skill-name {
     margin: 0;
-    font-size: var(--font-md, 13px);
+    font-size: var(--font-base, 13px);
     color: var(--text-primary, #cccccc);
   }
 
   /* 来源徽章 */
   #skills-root .skill-badge {
-    font-size: 10px;
+    font-size: var(--font-xs, 10px);
     font-weight: 500;
-    padding: 1px 6px;
-    border-radius: 8px;
+    padding: var(--sp-0, 2px) var(--sp-2, 6px);
+    border-radius: var(--radius-lg, 8px);
     line-height: 1.4;
   }
 
+  /* 内置徽章：surface-ai-avatar 底 + accent-foreground 字（与 cfg-icon 同语言） */
   #skills-root .skill-badge.badge-agent {
-    color: #90caf9;
-    background: rgba(14, 99, 156, 0.2);
+    color: var(--accent-foreground, #ffffff);
+    background: var(--surface-ai-avatar);
   }
 
+  /* 用户徽章：skill-user-accent 字 + 灰底 */
   #skills-root .skill-badge.badge-user {
-    color: #81c784;
-    background: rgba(76, 175, 80, 0.15);
+    color: var(--skill-user-accent);
+    background: var(--surface-hover, rgba(128,128,128,.2));
   }
 
   #skills-root .skill-trigger {
     font-size: var(--font-sm, 11px);
     color: var(--accent, #0e639c);
-    background: var(--accent-subtle, rgba(14,99,156,.15));
+    background: var(--accent-subtle);
     padding: 1px 4px;
-    border-radius: 3px;
+    border-radius: var(--radius-sm, 2px);
   }
 
   #skills-root .skill-desc {
     margin: 0 0 var(--sp-2, 6px) 0;
-    font-size: var(--font-sm, 12px);
+    font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     line-height: 1.4;
   }
@@ -126,6 +128,6 @@ export const skillsStyles = `
     color: var(--text-secondary, #9aa0a6);
     background: var(--surface-hover, rgba(128,128,128,.2));
     padding: 1px 6px;
-    border-radius: 10px;
+    border-radius: var(--radius-pill, 999px);
   }
 `;
