@@ -105,6 +105,37 @@ export const settingsStyles = `
   .security-desc { font-size: var(--font-sm, 11px); color: var(--text-secondary); margin: 0; line-height: 1.5; }
   .security-status { margin-top: var(--sp-2, 6px); font-size: var(--font-sm, 11px); color: var(--text-secondary); }
 
+  /* 白名单额外路径（G8） */
+  .allowed-paths-list { list-style: none; margin: var(--sp-2, 6px) 0 0; padding: 0; }
+  .allowed-path-row {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
+    padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.3));
+    border-radius: var(--radius-sm, 4px);
+    margin-bottom: var(--sp-1, 4px);
+    background: var(--surface-sidebar, rgba(128,128,128,.06));
+  }
+  .allowed-path-base { color: var(--text-secondary); font-style: italic; }
+  .allowed-path-text { font-size: var(--font-sm, 11px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .allowed-path-tag { font-size: var(--font-xs, 10px); color: var(--text-secondary); flex-shrink: 0; margin-left: var(--sp-2, 6px); }
+  .allowed-path-remove {
+    flex-shrink: 0; cursor: pointer; border: none; background: transparent;
+    color: var(--text-secondary); font-size: var(--font-md, 12px); line-height: 1; padding: 2px 6px; border-radius: 4px;
+  }
+  .allowed-path-remove:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-error, #f14c4c); }
+  .allowed-paths-add { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
+  .allowed-paths-input {
+    flex: 1; min-width: 0; padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
+    background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
+  }
+  .allowed-paths-add-btn {
+    flex-shrink: 0; cursor: pointer; padding: var(--sp-1, 4px) var(--sp-3, 10px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
+    background: var(--surface-hover, rgba(128,128,128,.12)); color: var(--text-primary); font-size: var(--font-sm, 11px);
+  }
+  .allowed-paths-add-btn:hover { background: var(--accent, #0e639c); color: #fff; }
+
   /* Toggle Switch（写入二次确认开关） */
   .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
   .toggle-switch input { opacity: 0; width: 0; height: 0; }

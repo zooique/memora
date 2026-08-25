@@ -135,6 +135,14 @@ export interface AssembleOptions {
    */
   confirmWrites?: boolean;
   /**
+   * 白名单额外允许路径（G8）
+   *
+   * 用户级项目白名单（不含 projectPath 基准根），由 extension 从 workspace 设置
+   * memora.allowedPaths 读取注入。Agent 装配时合并为 [projectPath, ...extras]。
+   * 运行时经 agent.security.setAllowedPaths() 热更新（设置面板），无需重启。
+   */
+  allowedPaths?: string[];
+  /**
    * VSCode 输出通道（G7：日志对接）
    *
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
@@ -167,7 +175,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites, outputChannel } = options;
+  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
 
   // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
@@ -232,7 +240,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 可观测性 Tracer（P2：§5.2.1 指纹由 ITracer 承载，宿主采集不落盘）
     tracer: vscodeTracer,
     permission: 'owner',
-    allowedPaths: [projectPath],
+    // 白名单 = 基准根 projectPath + 用户额外允许目录（G8：运行时可热更新，基准根不可移除）
+    allowedPaths: [projectPath, ...(allowedPaths ?? [])],
     // 写入二次确认（H0：用户级安全偏好；开启后 owner 写文件前触发审批确认）
     confirmWrites: confirmWrites ?? false,
   });

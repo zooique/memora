@@ -124,8 +124,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void this.loadConfig();
       void this.loadMemory();
       void this.loadSkills();
-      // 安全子视图：推送写入二次确认开关状态
+      // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径（G8）
       this.loadSecurityStatus();
+      this.loadAllowedPathsStatus();
       return;
     }
 
@@ -293,9 +294,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    // ─── 安全子视图消息（H0 写入审批，2026-08-23） ───
+    // ─── 安全子视图消息（H0 写入审批 + G8 白名单，2026-08-23 / 2026-08-25） ───
     if (msg.type === 'security_toggle') {
       await this.toggleConfirmWrites(msg.enabled);
+      return;
+    }
+    if (msg.type === 'allowed_paths_set') {
+      await this.setAllowedPaths(msg.paths);
       return;
     }
   }
@@ -827,6 +832,52 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'security_status', confirmWrites: enabled });
   }
 
+  /**
+   * 设置白名单额外允许路径（allowed_paths_set 消息处理，G8）
+   *
+   * 持久化到 workspace 设置（memora.allowedPaths，落 .vscode/settings.json）+ 热更新
+   * agent.security.setAllowedPaths()。无需重启 Agent——SecurityGuard 支持运行时热更新。
+   * paths = 完整用户额外数组（不含 projectPath 基准根）。
+   */
+  private async setAllowedPaths(paths: string[]): Promise<void> {
+    try {
+      // 1. 持久化到 workspace 设置（项目级；projectPath 基准根恒在，不在此数组内）
+      await vscode.workspace
+        .getConfiguration('memora')
+        .update('allowedPaths', paths, vscode.ConfigurationTarget.Workspace);
+      // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
+      const agent = await this.ensureAgent();
+      if (agent?.security) {
+        agent.security.setAllowedPaths(paths);
+      }
+      // 3. 推送最新状态给 webview（含只读基准根 projectPath）
+      const projectPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+      this.post({ type: 'allowed_paths_status', projectPath, paths });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: paths.length > 0 ? `已更新允许路径白名单（${paths.length} 项）` : '已清空额外允许路径（仅保留项目目录）',
+      });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `设置允许路径失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  /**
+   * 加载并推送白名单额外路径状态（settings 视图 ready 时调用，G8）
+   *
+   * 从 workspace 设置读取持久化的额外路径数组，推送给 webview 渲染初始列表。
+   */
+  private loadAllowedPathsStatus(): void {
+    const paths = vscode.workspace.getConfiguration('memora').get<string[]>('allowedPaths', []);
+    const projectPath = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? '';
+    this.post({ type: 'allowed_paths_status', projectPath, paths });
+  }
+
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(msg);
@@ -1085,6 +1136,17 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <p class="security-desc">开启后，AI 写文件前会弹出审批卡，需确认放行。默认关闭（owner 模式自动批准）。</p>
       </div>
       <div id="securityStatus" class="security-status" hidden></div>
+      <div class="security-item">
+        <div class="security-item-header">
+          <label class="security-label">允许路径白名单</label>
+        </div>
+        <p class="security-desc">项目目录始终允许访问。可添加项目之外的可信目录（如个人笔记、文档），Agent 即可读写；增删即时生效，重启后仍保留。敏感文件（.env/.ssh 等）黑名单仍强制拦截。</p>
+        <ul id="allowedPathsList" class="allowed-paths-list"></ul>
+        <div class="allowed-paths-add">
+          <input id="allowedPathsInput" type="text" class="allowed-paths-input" placeholder="输入目录绝对路径，如 D:/我的笔记" aria-label="新增允许路径" />
+          <button id="allowedPathsAdd" class="allowed-paths-add-btn" type="button">添加</button>
+        </div>
+      </div>
     </div>
   </div>
 

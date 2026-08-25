@@ -293,7 +293,15 @@ export type WebviewToExtensionMessage =
    * 用户在审批卡点击「确认写入」或「拒绝」后，webview 发送此消息。
    * host 根据 approved 结果回调内核 confirmationHandler。
    */
-  | { type: 'write_confirm_answer'; approved: boolean; requestId: string };
+  | { type: 'write_confirm_answer'; approved: boolean; requestId: string }
+  /**
+   * 设置白名单额外允许路径（allowed_paths_set 消息处理）
+   *
+   * 由设置面板「允许路径白名单」增删后整体下发：host 持久化到 workspace 设置（memora.allowedPaths）
+   * + 热更新 agent.security.setAllowedPaths()。无需重启 Agent。
+   * paths = 完整用户额外数组（不含 projectPath 基准根），host 为真理源。
+   */
+  | { type: 'allowed_paths_set'; paths: string[] };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -717,7 +725,14 @@ export type ExtensionToWebviewMessage =
    * 由 host 在 settings 视图 ready 时推送，webview 据此渲染 toggle 初始状态。
    * enabled=true 时开关高亮开启。
    */
-  | { type: 'security_status'; confirmWrites: boolean };
+  | { type: 'security_status'; confirmWrites: boolean }
+  /**
+   * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
+   *
+   * 由 host 在 settings 视图 ready / 增删后推送，webview 据此渲染列表。
+   * projectPath 用于渲染只读基准行；paths 为用户额外目录数组（不含基准根）。
+   */
+  | { type: 'allowed_paths_status'; projectPath: string; paths: string[] };
 
 /** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
 export interface MemoryRecallItemDto {
@@ -845,6 +860,7 @@ export const MESSAGE_TYPES = {
   WRITE_CONFIRM_REQUEST: 'write_confirm_request',
   WRITE_CONFIRM_ANSWER: 'write_confirm_answer',
   SECURITY_STATUS: 'security_status',
+  ALLOWED_PATHS_STATUS: 'allowed_paths_status',
   // 观察性数据
   TRACE_UPDATE: 'trace_update',
   METRICS_UPDATE: 'metrics_update',
@@ -860,6 +876,7 @@ export const MESSAGE_TYPES = {
   SET_CONFIG: 'set_config',
   GET_CONFIG: 'get_config',
   SET_SECURITY_TOGGLE: 'security_toggle',
+  SET_ALLOWED_PATHS: 'allowed_paths_set',
   // 会话管理
   CREATE_SESSION: 'create_session',
   SWITCH_SESSION: 'switch_session',

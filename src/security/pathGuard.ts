@@ -75,6 +75,9 @@ const BLOCKED_PATTERNS = [
   /^\/(proc|sys|boot)([\\/]|$)/i,
 ];
 
+/** 运行时动态白名单（setAllowedPaths）最大条数，与 config/loader.ts 同值，防白名单膨胀 */
+const MAX_EXTRA_ALLOWED_PATHS = 50;
+
 export type Permission = 'owner' | 'guest';
 export type WriteDecision = 'confirmed' | 'declined' | 'auto-approved' | 'auto-denied';
 
@@ -146,8 +149,12 @@ export class SecurityGuard {
    */
   private confirmationHandler: WriteConfirmationRequest | null = null;
 
-  /** 允许访问的根目录列表（白名单） */
-  private readonly allowedRoots: string[];
+  /** 基准信任根（projectPath/memoraDir/configDir/agentDataDir，构造器固化，运行时不可移除） */
+  private readonly baseRoots: string[];
+  /** 用户额外白名单（运行时经 setAllowedPaths 热更新） */
+  private extraRoots: string[];
+  /** 允许访问的根目录列表（白名单）= baseRoots + extraRoots（派生，断言时遍历） */
+  private allowedRoots: string[];
 
   /** owner 是否启用写入二次确认；guest 强制开启（可运行时切换） */
   public confirmWrites: boolean;
@@ -164,21 +171,21 @@ export class SecurityGuard {
     /** Agent 级数据目录（memora.db/vectors 所在目录） */
     agentDataDir?: string,
   ) {
-    // 白名单基准用真实路径（resolveRealpath），与 assertPathAllowed 对齐，避免前缀匹配错位
-    this.allowedRoots = [
+    // 基准信任根用真实路径（resolveRealpath），与 assertPathAllowed 对齐，避免前缀匹配错位
+    this.baseRoots = [
       resolveRealpath(expandHome(projectPath)),
       resolveRealpath(expandHome(memoraDir)),
     ];
     if (configDir) {
-      this.allowedRoots.push(resolveRealpath(expandHome(configDir)));
+      this.baseRoots.push(resolveRealpath(expandHome(configDir)));
     }
     if (agentDataDir) {
-      this.allowedRoots.push(resolveRealpath(expandHome(agentDataDir)));
+      this.baseRoots.push(resolveRealpath(expandHome(agentDataDir)));
     }
     this.confirmWrites = confirmWrites;
-    for (const p of extraAllowedPaths) {
-      this.allowedRoots.push(resolveRealpath(expandHome(p)));
-    }
+    // 用户额外白名单（构造器注入），基准根与额外项分离以便 setAllowedPaths 仅改额外项
+    this.extraRoots = extraAllowedPaths.map((p) => resolveRealpath(expandHome(p)));
+    this.allowedRoots = [...this.baseRoots, ...this.extraRoots];
   }
 
   /** 注册自定义写入确认回调（宿主接入）；取消注册传入 null。WebUI/桌宠等无终端场景走此回调而非读 stdin */
@@ -195,6 +202,30 @@ export class SecurityGuard {
    */
   setConfirmWrites(value: boolean): void {
     this.confirmWrites = value;
+  }
+
+  /**
+   * 运行时设置「用户额外白名单」（宿主设置面板热更新）
+   *
+   * 仅操作额外项（extraRoots），基准信任根（baseRoots）永不被触碰——守住 D5 安全显式性：
+   * 项目目录、memora 数据目录、配置/数据目录始终允许访问，用户无法误删。
+   * 传空数组 = 清空额外项（仅留基准根，等价「重置」）。
+   * 黑名单（BLOCKED_PATTERNS）对新增路径仍强制生效——白名单是允许列表，非绕过黑名单的通行证。
+   */
+  setAllowedPaths(extraPaths: string[]): void {
+    if (!Array.isArray(extraPaths)) {
+      throw securityError('allowedPaths 必须为数组', 'setAllowedPaths 入参不是数组', ['请传入字符串数组']);
+    }
+    const normalized: string[] = [];
+    for (let i = 0; i < extraPaths.length && normalized.length < MAX_EXTRA_ALLOWED_PATHS; i++) {
+      const p = extraPaths[i];
+      if (typeof p !== 'string') {
+        throw securityError('allowedPaths 每项必须为字符串', `allowedPaths[${i}] 不是字符串`, ['allowedPaths 每项必须为字符串路径']);
+      }
+      normalized.push(resolveRealpath(expandHome(p)));
+    }
+    this.extraRoots = normalized;
+    this.allowedRoots = [...this.baseRoots, ...this.extraRoots];
   }
 
   /** 订阅审计事件；@returns 取消订阅函数 */

@@ -290,26 +290,80 @@ function createSecurityView({
   const toggle = root.querySelector<HTMLInputElement>('#confirmWritesToggle');
   const statusEl = root.querySelector<HTMLElement>('#securityStatus');
 
-  if (!toggle) return;
+  // ─── G8 白名单额外路径 ───
+  let currentProjectPath = '';
+  let currentPaths: string[] = [];
 
-  // 开关切换事件：通知 host
-  toggle.addEventListener('change', () => {
-    vscode.postMessage({ type: 'security_toggle', enabled: toggle.checked });
-    if (statusEl) {
-      statusEl.textContent = toggle.checked ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
-      statusEl.hidden = false;
+  const listEl = root.querySelector<HTMLUListElement>('#allowedPathsList');
+  const inputEl = root.querySelector<HTMLInputElement>('#allowedPathsInput');
+  const addBtn = root.querySelector<HTMLButtonElement>('#allowedPathsAdd');
+
+  function renderAllowedPaths(): void {
+    if (!listEl) return;
+    const rows: string[] = [];
+    // 基准根（只读、灰显，不可删除）
+    if (currentProjectPath) {
+      rows.push(
+        `<li class="allowed-path-row allowed-path-base">` +
+          `<span class="allowed-path-text" title="${escapeHtml(currentProjectPath)}">${escapeHtml(currentProjectPath)}</span>` +
+          `<span class="allowed-path-tag">基准（始终允许）</span>` +
+        `</li>`,
+      );
     }
+    // 用户额外目录（可删除，按索引定位避免路径含引号破坏属性）
+    currentPaths.forEach((p, i) => {
+      rows.push(
+        `<li class="allowed-path-row">` +
+          `<span class="allowed-path-text" title="${escapeHtml(p)}">${escapeHtml(p)}</span>` +
+          `<button class="allowed-path-remove" type="button" data-index="${i}" aria-label="删除 ${escapeHtml(p)}">✕</button>` +
+        `</li>`,
+      );
+    });
+    listEl.innerHTML = rows.join('');
+    listEl.querySelectorAll<HTMLButtonElement>('.allowed-path-remove').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const idx = Number(btn.dataset.index);
+        if (!Number.isNaN(idx)) currentPaths.splice(idx, 1);
+        renderAllowedPaths();
+        vscode.postMessage({ type: 'allowed_paths_set', paths: currentPaths });
+      });
+    });
+  }
+
+  addBtn?.addEventListener('click', () => {
+    const p = inputEl?.value.trim();
+    if (!p) return;
+    if (!currentPaths.includes(p)) currentPaths.push(p);
+    if (inputEl) inputEl.value = '';
+    renderAllowedPaths();
+    vscode.postMessage({ type: 'allowed_paths_set', paths: currentPaths });
   });
 
-  // 监听 host 的 security_status 消息（初始状态 / 切换后回显）
+  // 开关切换事件：通知 host（仅当 toggle 存在时）
+  if (toggle) {
+    toggle.addEventListener('change', () => {
+      vscode.postMessage({ type: 'security_toggle', enabled: toggle.checked });
+      if (statusEl) {
+        statusEl.textContent = toggle.checked ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
+        statusEl.hidden = false;
+      }
+    });
+  }
+
+  // 监听 host 的 security_status / allowed_paths_status 消息
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
-    if (msg.type === 'security_status') {
+    if (msg.type === 'security_status' && toggle) {
       toggle.checked = msg.confirmWrites;
       if (statusEl) {
         statusEl.textContent = msg.confirmWrites ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
         statusEl.hidden = false;
       }
+    }
+    if (msg.type === 'allowed_paths_status') {
+      currentProjectPath = msg.projectPath;
+      currentPaths = msg.paths ?? [];
+      renderAllowedPaths();
     }
   });
 }

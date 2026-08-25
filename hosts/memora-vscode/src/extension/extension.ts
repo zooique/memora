@@ -69,6 +69,11 @@ function getOrCreateAgent(
     const activeRolePack = globalState.get<string>(ACTIVE_ROLE_PACK_KEY);
     // 读取写入二次确认开关（用户安全偏好；默认 false → owner 写文件自动批准）
     const confirmWrites = globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
+    // 读取工作区白名单额外路径（G8：项目级设置，落 .vscode/settings.json）；
+    // 项目目录基准根恒在，此处仅含用户额外目录
+    const allowedPaths = vscode.workspace
+      .getConfiguration('memora')
+      .get<string[]>('allowedPaths', []);
     agentPromise = assembleAgent({
       projectPath,
       providerStore,
@@ -78,6 +83,7 @@ function getOrCreateAgent(
       userSkillsDir,
       userRolePacksDir,
       confirmWrites,
+      allowedPaths,
       outputChannel,
     }).catch(
       (err) => {

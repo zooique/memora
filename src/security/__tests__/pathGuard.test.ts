@@ -291,6 +291,52 @@ describe('SecurityGuard · 路径白名单', () => {
   });
 });
 
+describe('SecurityGuard · 动态 allowedPaths（G8）', () => {
+  let projectPath: string;
+  let dataDir: string;
+  let guard: SecurityGuard;
+
+  beforeEach(() => {
+    projectPath = mkdtempSync(join(tmpdir(), 'memora-dyn-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'memora-data-'));
+    guard = new SecurityGuard(projectPath, dataDir, []);
+  });
+
+  it('setAllowedPaths 新增额外目录后应允许其内路径', () => {
+    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    guard.setAllowedPaths([extra]);
+    expect(() => guard.assertPathAllowed(join(extra, 'docs.md'))).not.toThrow();
+  });
+
+  it('setAllowedPaths([]) 应清空额外项，原额外目录越界', () => {
+    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    guard.setAllowedPaths([extra]);
+    expect(() => guard.assertPathAllowed(join(extra, 'docs.md'))).not.toThrow();
+    guard.setAllowedPaths([]);
+    expect(() => guard.assertPathAllowed(join(extra, 'docs.md'))).toThrow(/越界/);
+  });
+
+  it('setAllowedPaths 不应移除基准根（基准目录仍放行）', () => {
+    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    guard.setAllowedPaths([extra]);
+    // 基准根（projectPath）内路径仍应放行
+    expect(() => guard.assertPathAllowed(join(projectPath, 'src', 'index.ts'))).not.toThrow();
+    // 基准根（dataDir）内路径仍应放行
+    expect(() => guard.assertPathAllowed(join(dataDir, 'sessions', '2026.md'))).not.toThrow();
+  });
+
+  it('黑名单对额外目录内敏感文件仍生效', () => {
+    const extra = mkdtempSync(join(tmpdir(), 'memora-extra-'));
+    guard.setAllowedPaths([extra]);
+    // 额外目录内若含 .env，仍应被黑名单拦截（白名单非绕过黑名单的通行证）
+    expect(() => guard.assertPathAllowed(join(extra, '.env'))).toThrow(/黑名单/);
+  });
+
+  it('setAllowedPaths 非字符串元素应 fail-closed 抛错', () => {
+    expect(() => guard.setAllowedPaths([123 as unknown as string])).toThrow(/字符串/);
+  });
+});
+
 describe('SecurityGuard · 审计日志', () => {
   let projectPath: string;
   let dataDir: string;
