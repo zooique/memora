@@ -14,10 +14,6 @@ export const configStyles = `
   #config-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
   /* 顶栏统计：已配置 N 个 API（ui-redesign.md §4.2 ①） */
   #config-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
-  #config-root .btn { padding: var(--sp-2, 6px) var(--sp-5, 12px); border-radius: var(--radius, 6px); border: none; cursor: pointer; background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); }
-  #config-root .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
-  #config-root .btn-danger { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
-  #config-root .btn:disabled { opacity: 0.5; cursor: not-allowed; }
   #config-root #list { padding: var(--sp-3, 8px); }
   /* 分区标题：「激活 Provider」/「其他 Provider」（ui-redesign.md §4.2 ②③） */
   #config-root .group-title { font-size: var(--font-xs, 10px); letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary, #9aa0a6); margin: var(--sp-3, 8px) 0 var(--sp-1, 4px); }

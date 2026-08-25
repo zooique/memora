@@ -224,8 +224,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
     // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
     this.refreshRoleInfoAfterAssemble();
-    // 技能清单与角色信息同步推送（composer 动态下拉与设置面板同一清单来源）
-    this.pushSkillList();
   }
 
   /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */
@@ -1116,6 +1114,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushRolePacks();
     // Phase 4 E2：补推工具权限徽章（replaySession 时角色信息已就绪）
     this.postCapabilityBadge();
+    // 视图重解析时补推三源技能清单（与 refreshRoleInfoAfterAssemble 输出同构，
+    // 避免 agent 已装配时 ensureAgent 提前返回导致技能下拉为空）
+    this.pushSkillList();
     // G3 断点续跑：检测当前会话是否有可恢复的持久化暂停检查点 → 推送断点续跑提示条
     this.maybeOfferCheckpointRestore();
   }
@@ -1260,6 +1261,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushRolePacks();
     // Phase 4 E2：装配完成即补推工具权限徽章
     this.postCapabilityBadge();
+    // 装配完成统一补推三源技能清单（SSOT 收紧：setAgent 与 ensureAgent 懒装配共用本入口，
+    // 角色信息与技能清单同一"装配后刷新"逻辑，杜绝某条路径漏推 → composer 下拉为空）
+    this.pushSkillList();
   }
 
   /**

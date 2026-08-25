@@ -1140,7 +1140,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <ul id="allowedPathsList" class="allowed-paths-list"></ul>
         <div class="allowed-paths-add">
           <input id="allowedPathsInput" type="text" class="allowed-paths-input" placeholder="输入目录绝对路径，如 D:/我的笔记" aria-label="新增允许路径" />
-          <button id="allowedPathsAdd" class="allowed-paths-add-btn" type="button">添加</button>
+          <button id="allowedPathsAdd" class="btn btn-secondary" type="button">添加</button>
         </div>
       </div>
     </div>

@@ -33,8 +33,6 @@ export const rolesStyles = `
   #roles-root .card-detail { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); }
   #roles-root .badge { font-size: var(--font-sm, 11px); padding: 1px var(--sp-2, 6px); border-radius: var(--radius-pill, 999px); background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); margin-left: var(--sp-1, 4px); }
   #roles-root .card-actions { display: flex; gap: var(--sp-1, 4px); flex-shrink: 0; align-self: center; }
-  #roles-root .btn { padding: var(--sp-2, 6px) var(--sp-5, 12px); border-radius: var(--radius, 6px); border: none; cursor: pointer; background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); }
-  #roles-root .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
   #roles-root .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
   #roles-root .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
   #roles-root .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }

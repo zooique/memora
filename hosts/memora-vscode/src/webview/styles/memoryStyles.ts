@@ -158,20 +158,8 @@ export const memoryStyles = `
   #memory-root .gov-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   /* 操作按钮：衰减（低扰次按钮）+ 清理（强调不可逆性） */
   #memory-root .governance-actions { display: flex; gap: var(--sp-2, 6px); }
-  #memory-root .btn {
-    flex: 1;
-    padding: var(--sp-2, 6px) var(--sp-5, 12px);
-    border-radius: var(--radius, 6px);
-    border: none;
-    cursor: pointer;
-    background: var(--accent, #0e639c);
-    color: var(--accent-foreground, #ffffff);
-    font-size: var(--font-md, 12px);
-  }
-  #memory-root .btn-secondary { background: var(--btn-secondary-bg); color: var(--btn-secondary-fg); }
-  /* 危险操作（P2-2，2026-08-24 危险降噪）：清理过期 = 永久删除不可撤销，红色底与可逆的「触发衰减」拉开强度差 */
-  #memory-root .btn-danger { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
-  #memory-root .btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+  /* 政区按钮撑满等宽（布局性差异不混入通用 .btn 基类，SSOT 收敛 2026-08-25） */
+  #memory-root .governance-actions .btn { flex: 1; }
   /* 结果提示：默认次要色，失败时错误色 */
   #memory-root .governance-detail {
     margin-top: var(--sp-2, 6px);

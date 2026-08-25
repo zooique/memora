@@ -260,7 +260,7 @@ function renderSkills(
         <h3 class="skill-name">${escapeHtml(s.name)}</h3>
         <span class="skill-badge ${metaOf(s).badge}">${metaOf(s).label}</span>
         ${s.trigger ? `<code class="skill-trigger">${escapeHtml(s.trigger)}</code>` : ''}
-        <button class="skill-toggle" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
+        <button class="skill-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
@@ -327,7 +327,7 @@ function createSecurityView({
       rows.push(
         `<li class="allowed-path-row">` +
           `<span class="allowed-path-text" title="${escapeHtml(p)}">${escapeHtml(p)}</span>` +
-          `<button class="allowed-path-remove" type="button" data-index="${i}" aria-label="删除 ${escapeHtml(p)}">✕</button>` +
+          `<button class="allowed-path-remove btn btn-ghost" type="button" data-index="${i}" aria-label="删除 ${escapeHtml(p)}">✕</button>` +
         `</li>`,
       );
     });

@@ -52,6 +52,48 @@ export const settingsStyles = `
   }
   .tab-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 
+  /* ============ Components：通用按钮变体（SSOT 收敛，2026-08-25） ============
+   * 设置面板按钮形态单一真理源：primary / secondary / danger / ghost 四种变体。
+   * 取代原 roles/config/memory 三处重复的 .btn 基类（不一致即 SSOT 违规），并补齐 skills/security 缺失。
+   * ITCSS 分层：变体=class 层；布局性差异（如 memory 政区按钮 flex:1）由具体子视图覆盖，不混入基类。 */
+  #roles-root .btn, #config-root .btn, #memory-root .btn, #skills-root .btn, #security-root .btn {
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    border-radius: var(--radius, 6px);
+    border: none;
+    cursor: pointer;
+    background: var(--accent, #0e639c);
+    color: var(--accent-foreground, #ffffff);
+    font-size: var(--font-md, 12px);
+  }
+  #roles-root .btn-secondary, #config-root .btn-secondary, #memory-root .btn-secondary, #skills-root .btn-secondary, #security-root .btn-secondary {
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-fg);
+  }
+  #roles-root .btn-danger, #config-root .btn-danger, #memory-root .btn-danger, #skills-root .btn-danger, #security-root .btn-danger {
+    background: var(--btn-danger-bg);
+    color: var(--accent-foreground, #ffffff);
+  }
+  #roles-root .btn:disabled, #config-root .btn:disabled, #memory-root .btn:disabled, #skills-root .btn:disabled, #security-root .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  #roles-root .btn:focus-visible, #config-root .btn:focus-visible, #memory-root .btn:focus-visible, #skills-root .btn:focus-visible,
+  #security-root .btn:focus-visible {
+    outline: 2px solid var(--border-focus, #0e639c);
+    outline-offset: 2px;
+  }
+  #roles-root .btn-ghost, #config-root .btn-ghost, #memory-root .btn-ghost, #skills-root .btn-ghost, #security-root .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    color: var(--text-secondary, #9aa0a6);
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    font-size: var(--font-sm, 11px);
+  }
+  #roles-root .btn-ghost:hover, #config-root .btn-ghost:hover, #memory-root .btn-ghost:hover, #skills-root .btn-ghost:hover, #security-root .btn-ghost:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-primary, #cccccc);
+  }
+
   /* ============ Utilities：加载态指示器（P1，2026-08-24 状态四态补齐） ============ */
   /* 与空态 .hint 区分：带旋转 spinner 图标 + 左侧细边框，让用户一眼识别「在加载」而非「无数据」 */
   .loading-hint {
@@ -118,23 +160,15 @@ export const settingsStyles = `
   .allowed-path-base { color: var(--text-secondary); font-style: italic; }
   .allowed-path-text { font-size: var(--font-sm, 11px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .allowed-path-tag { font-size: var(--font-xs, 10px); color: var(--text-secondary); flex-shrink: 0; margin-left: var(--sp-2, 6px); }
-  .allowed-path-remove {
-    flex-shrink: 0; cursor: pointer; border: none; background: transparent;
-    color: var(--text-secondary); font-size: var(--font-md, 12px); line-height: 1; padding: 2px 6px; border-radius: 4px;
-  }
-  .allowed-path-remove:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-error, #f14c4c); }
+  /* 移除按钮：行内图标操作复用 .btn-ghost 基类；hover 保留危险红（语义差异 context 覆盖，SSOT 收敛 2026-08-25） */
+  .allowed-path-remove { flex-shrink: 0; }
+  .allowed-path-remove:hover { color: var(--text-error, #f14c4c); border-color: var(--text-error, #f14c4c); }
   .allowed-paths-add { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
   .allowed-paths-input {
     flex: 1; min-width: 0; padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
     background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
   }
-  .allowed-paths-add-btn {
-    flex-shrink: 0; cursor: pointer; padding: var(--sp-1, 4px) var(--sp-3, 10px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
-    background: var(--surface-hover, rgba(128,128,128,.12)); color: var(--text-primary); font-size: var(--font-sm, 11px);
-  }
-  .allowed-paths-add-btn:hover { background: var(--accent, #0e639c); color: #fff; }
 
   /* Toggle Switch（写入二次确认开关） */
   .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }
