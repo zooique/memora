@@ -515,8 +515,12 @@ export class ToolExecutor {
         if (results.length === 0) {
           return `（未找到与 "${query}" 相关的搜索结果）`;
         }
+        // 搜索来源透出（G5，2026-08-25）：同批次结果来自同一后端，取首条 endpoint 告知用户实际使用的搜索源
+        // （降级到 DuckDuckGo 时即透出「搜索来源：DuckDuckGo」），提升 in-flow 信任；宿主渲染工具结果文本即可见。
+        const endpoint = results[0]?.endpoint;
+        const sourceLine = endpoint ? `（搜索来源：${endpoint}）` : '';
         // 返回净化：外部内容去控制字符 + 长度上限，防长上下文注入
-        return results
+        const body = results
           .map((r, i) => {
             const title = sanitizeExternalText(r.title, WEB_SEARCH_RESULT_MAX_LEN);
             const url = sanitizeExternalText(r.url || '(无链接)', WEB_SEARCH_RESULT_MAX_LEN);
@@ -527,6 +531,7 @@ export class ToolExecutor {
             return `${i + 1}. ${title}\n   URL: ${url}\n   ${snippet}`;
           })
           .join('\n\n');
+        return sourceLine ? `${sourceLine}\n\n${body}` : body;
       }
       case 'web_fetch': {
         // web_fetch 由 ToolExecutor 直接处理（与 web_search 同侧，均为外部信息获取）

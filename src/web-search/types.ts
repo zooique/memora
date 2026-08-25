@@ -10,6 +10,12 @@ export interface SearchResult {
   url: string;
   /** 搜索结果摘要 */
   snippet: string;
+  /**
+   * 实际服务的搜索后端名称（如 'Bing' / 'DuckDuckGo'）。
+   * 降级发生时由 FetchWebSearchProvider 打标，供宿主/工具结果透出「已降级」提示；
+   * 可选：自定义 IWebSearchProvider 可不填（向后兼容，现有调用方忽略此字段）。
+   */
+  endpoint?: string;
 }
 
 /** 搜索选项 */

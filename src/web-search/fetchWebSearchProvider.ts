@@ -144,7 +144,8 @@ export class FetchWebSearchProvider implements IWebSearchProvider {
         const results = endpoint.parse(html, limit);
         // 空结果（该端点无命中）继续尝试下一端点
         if (results.length > 0) {
-          return results;
+          // 打标实际服务的后端名称，供降级透出（G5，2026-08-25）：同批次结果来自同一端点
+          return results.map((r) => ({ ...r, endpoint: endpoint.name }));
         }
       } catch (err) {
         errors.push(`${endpoint.name}: ${err instanceof Error ? err.message : String(err)}`);

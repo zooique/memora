@@ -182,6 +182,19 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('web_search（G5 降级端点透出）', () => {
+    it('降级结果应透出「搜索来源：<endpoint>」头部', async () => {
+      const mockProvider = {
+        search: async () => [
+          { title: '标题一', url: 'https://example.com/1', snippet: '摘要一', endpoint: 'DuckDuckGo' },
+        ],
+      };
+      const exec = new ToolExecutor(tmpProject, security, index, mockProvider);
+      const result = await exec.execute('web_search', JSON.stringify({ query: 'test' }));
+      expect(result).toContain('（搜索来源：DuckDuckGo）');
+    });
+  });
+
   describe('web_fetch / run_code（未注入提供者）', () => {
     it('list 不应包含 web_fetch 与 run_code 工具', () => {
       const names = executor.list.map((t) => t.name);

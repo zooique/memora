@@ -312,4 +312,42 @@ describe('FetchWebSearchProvider', () => {
       await expect(provider.search('')).resolves.toEqual([]);
     });
   });
+
+  // ─── G5 降级端点透出（endpoint 打标，2026-08-25） ───
+  describe('G5 降级端点透出（endpoint 打标）', () => {
+    it('Bing 首选命中 → 结果打标 endpoint: "Bing"', async () => {
+      const fetchMock = createUrlDispatchFetch(
+        () => htmlResponse(MOCK_BING_HTML),
+        () => htmlResponse(MOCK_DDG_HTML),
+      );
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await provider.search('测试');
+      expect(results[0]!.endpoint).toBe('Bing');
+      expect(results[1]!.endpoint).toBe('Bing');
+    });
+
+    it('Bing 无命中降级 DDG → 结果打标 endpoint: "DuckDuckGo"', async () => {
+      const fetchMock = createUrlDispatchFetch(
+        () => htmlResponse(MOCK_EMPTY_HTML),
+        () => htmlResponse(MOCK_DDG_HTML),
+      );
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await provider.search('测试');
+      expect(results).toHaveLength(2);
+      expect(results[0]!.endpoint).toBe('DuckDuckGo');
+    });
+
+    it('Bing 网络失败降级 DDG → 结果打标 endpoint: "DuckDuckGo"', async () => {
+      const fetchMock = createUrlDispatchFetch(
+        () => Promise.reject(new Error('ENOTFOUND bing')),
+        () => htmlResponse(MOCK_DDG_HTML),
+      );
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await provider.search('测试');
+      expect(results[0]!.endpoint).toBe('DuckDuckGo');
+    });
+  });
 });
