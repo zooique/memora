@@ -26,7 +26,6 @@ import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText } from '@/agent/toolExecutor.js';
@@ -118,7 +117,6 @@ export class BuiltinToolHandlers {
    * @param projectPath 项目根路径（用于相对路径解析）
    * @param security 安全守卫（路径白名单 + 写入确认）
    * @param memoryIndex 记忆索引（用于 search_memories 工具）
-   * @param workProjection 作品投影管理器（可选，读取文件时自动生成投影）
    * @param configDir 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置）
    * @param sessionStore 会话存储（可选，trace_summary 溯源原始对话用；未注入时回退为摘要文本）
    */
@@ -126,7 +124,6 @@ export class BuiltinToolHandlers {
     private readonly projectPath: string,
     private readonly security: SecurityGuard,
     private readonly memoryIndex: IMemoryStorage,
-    private readonly workProjection?: WorkProjectionManager,
     private readonly configDir?: string,
     private readonly sessionStore?: ISessionStore,
   ) {}
@@ -206,13 +203,8 @@ export class BuiltinToolHandlers {
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
-      // 读取文件时自动触发生成/更新作品投影（fire-and-forget，不阻塞读取；投影用原始内容，不净化）
-      if (this.workProjection) {
-        this.workProjection.ensureProjection(absolutePath, content, relativePath).catch((err) => {
-          logger.warn({ err, path: absolutePath }, '作品投影生成失败');
-        });
-      }
       // 返回净化：工具结果同哲学"长度上限 + 去控制字符"（超大文件不整段进上下文，防注入/撑爆）
+      // 注：作品投影改为用户主动触发（register_work 工具），read_file 不再自动生成
       return sanitizeToolResult(content, FILE_READ_MAX_LEN);
     } catch (err) {
       const e = toError(err);

@@ -75,6 +75,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   read_skill: 'idempotent',
   read_resource: 'idempotent',
   run_skill_script: 'non-idempotent',
+  // register_work：写索引卡片（同 path+description → 同卡片），以业务键（slug 文件名）实现幂等
+  register_work: 'idempotent-key',
   // 条件工具（宿主注入对应 provider 才暴露）：
   // web_fetch：读操作，天然幂等 ✅
   // run_code：任意代码执行，有副作用（计算/IO），如实标记非幂等（重复执行结果不可预期）
@@ -432,6 +434,20 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       type: 'object',
       properties: {},
       required: [],
+    },
+  },
+  // ── 作品投影：用户主动登记作品索引卡片 ──────────────────
+  {
+    name: 'register_work',
+    description:
+      '登记作品索引卡片（作品投影）：把用户的一件作品（文档/代码/笔记）登记为项目级索引，写入 <memoraDir>/projections/ 下的 markdown 卡片。当用户说「记住这个文件」「把这份文档登记为作品」时使用。path 为相对项目根的源文件路径，description 为作品的一句话说明（用户后续可在卡片文件中手改）。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '相对项目根目录的源文件路径（如 docs/architecture.md）' },
+        description: { type: 'string', description: '作品的一句话说明（LLM 总结，用户可后续手改）' },
+      },
+      required: ['path', 'description'],
     },
   },
 ];

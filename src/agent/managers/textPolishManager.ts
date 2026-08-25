@@ -57,7 +57,7 @@ export class TextPolishManager {
   }
 
   /**
-   * 润色文本（语法修正 + 表达优化），流式累积模式（与 WorkProjectionManager.generate 一致）。
+   * 润色文本（语法修正 + 表达优化），流式累积模式。
    * 输入截断 2000 字符控 token；15s 超时（润色应快速完成）。
    */
   async polish(text: string, signal?: AbortSignal): Promise<PolishResult> {

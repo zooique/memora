@@ -22,8 +22,8 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 13 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(13);
+  it('应包含 14 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(14);
   });
 
   it('应包含 read_file / write_file / list_dir / search_memories / trace_summary', () => {
@@ -47,6 +47,12 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(names).toContain('run_skill_script');
     expect(names).toContain('list_resources');
     expect(names).toContain('list_skills');
+  });
+
+  it('应包含作品投影登记工具 register_work（用户主动触发登记索引卡片）', () => {
+    const names = BUILTIN_TOOLS.map((t) => t.name);
+    expect(names).toContain('register_work');
+    expect(BUILTIN_TOOL_IDEMPOTENCY.register_work).toBe('idempotent-key');
   });
 
   it('read_skill 应注册为内置工具且标记幂等（渐进披露 L2）', () => {

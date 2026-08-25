@@ -74,16 +74,16 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 13 个工具', () => {
+    it('应注册 14 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(13);
+      expect(names.length).toBe(14);
     });
 
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 13 + 条件 3（web_search / web_fetch / run_code）
-      expect(names.length).toBe(16);
+      // 始终内置 14 + 条件 3（web_search / web_fetch / run_code）
+      expect(names.length).toBe(17);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
@@ -137,6 +137,34 @@ describe('工具执行器（6 个工具）', () => {
       await expect(executor.execute('read_skill', JSON.stringify({}))).rejects.toThrow(
         '工具参数缺失',
       );
+    });
+  });
+
+  describe('register_work（作品投影登记）', () => {
+    it('未注入 registerWork 回调时返回不可用提示', async () => {
+      const result = await executor.execute(
+        'register_work',
+        JSON.stringify({ path: 'docs/a.md', description: '说明' }),
+      );
+      expect(result).toContain('register_work 不可用');
+    });
+
+    it('注入 registerWork 回调后返回登记结果', async () => {
+      executor.registerWork = async (path, description) =>
+        `✅ 已登记作品索引：${path}（${description}）`;
+      const result = await executor.execute(
+        'register_work',
+        JSON.stringify({ path: 'docs/a.md', description: '说明' }),
+      );
+      expect(result).toContain('✅ 已登记作品索引');
+      expect(result).toContain('docs/a.md');
+    });
+
+    it('缺少必填参数（path/description）时应抛 MemoraError', async () => {
+      executor.registerWork = async () => 'ok';
+      await expect(
+        executor.execute('register_work', JSON.stringify({ path: 'docs/a.md' })),
+      ).rejects.toThrow('工具参数缺失');
     });
   });
 
@@ -233,7 +261,6 @@ describe('工具执行器（6 个工具）', () => {
         undefined,
         undefined,
         undefined,
-        undefined,
         mockFetchProvider,
       );
     });
@@ -282,7 +309,6 @@ describe('工具执行器（6 个工具）', () => {
         tmpProject,
         security,
         index,
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -801,7 +827,7 @@ describe('工具执行器（6 个工具）', () => {
     it('注入 fetchProvider 后，注册 web_fetch 应抛错', () => {
       const mockFetch = { fetch: async () => ({ url: '', title: '', content: '' }) };
       const executorWithFetch = new ToolExecutor(
-        tmpProject, security, index, undefined, undefined, undefined, undefined, mockFetch,
+        tmpProject, security, index, undefined, undefined, undefined, mockFetch,
       );
       const fetchDef = {
         name: 'web_fetch',
@@ -822,7 +848,7 @@ describe('工具执行器（6 个工具）', () => {
         },
       };
       const executorWithCode = new ToolExecutor(
-        tmpProject, security, index, undefined, undefined, undefined, undefined, undefined, mockCode,
+        tmpProject, security, index, undefined, undefined, undefined, undefined, mockCode,
       );
       const codeDef = {
         name: 'run_code',

@@ -63,8 +63,9 @@ import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
  *   2. 全局技能 L1 清单（globalSkillList）
- *   3. 当前时间戳
- *   4. 分隔线
+ *   3. 作品投影装配注入块（workProjectionContext，可选：L1 清单 + L2 always 正文）
+ *   4. 当前时间戳
+ *   5. 分隔线
  *
  * 历史：refreshPersonaPrefixOnLoop 此前只拼接 rolePackPrompt，
  * 丢失全局技能清单和时间戳——首次角色切换后全局技能永久不可见。
@@ -73,14 +74,16 @@ import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js
  * @param rolePackPrompt 角色包构建的 prompt（含 L1 persona + 角色包技能清单）
  * @param globalSkillList 全局技能清单（SkillManager.buildSkillList()）
  * @param locale 时间格式化 locale
+ * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.contextBlock() 产出）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
   rolePackPrompt: string,
   globalSkillList: string,
   locale?: string,
+  workProjectionContext?: string,
 ): string {
-  const systemPrefixParts = [rolePackPrompt, globalSkillList].filter(Boolean);
+  const systemPrefixParts = [rolePackPrompt, globalSkillList, workProjectionContext].filter(Boolean);
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric',
@@ -220,6 +223,8 @@ type LoopAndDepsParams = Pick<
   toolExec: ToolExecutor;
   /** 会话管理器（先于 loop 创建，工具执行回调可直接写入，消除暂存队列补丁） */
   sessionManager: SessionManager;
+  /** 作品投影装配注入块（L1 name+description 清单 + L2 always 正文，两级渐进披露） */
+  workProjectionContext: string;
 };
 
 /**
@@ -436,12 +441,18 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     locale,
     sessionManager,
     hooks,
+    workProjectionContext,
   } = params;
 
   // 系统前缀：使用共享函数构建（SSOT：buildSystemPromptPrefix）
-  // 包含角色包 L1 persona + 全局技能清单 + 当前时间戳
+  // 包含角色包 L1 persona + 全局技能清单 + 作品投影装配块（L1 清单 + L2 always 正文）+ 当前时间戳
   const globalSkillList = skillManager.buildSkillList();
-  const systemPromptPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList, locale);
+  const systemPromptPrefix = buildSystemPromptPrefix(
+    rolePackPrompt,
+    globalSkillList,
+    locale,
+    workProjectionContext,
+  );
 
   // 后台组件统一使用 backgroundProvider，降级到前台 provider（SSOT：与 textPolisher 同模式）
   const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, sessionStore);
@@ -605,22 +616,18 @@ export async function assembleComponents(
 
   const history = new MessageHistory(sessionStore);
 
-  // 作品投影生成/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
+  // 作品投影登记/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
   // 投影落项目级目录（pctx.memoraDir/projections/）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
-  const workProjection = new WorkProjectionManager(
-    pctx.memoraDir,
-    backgroundProvider ?? provider,
-    (sourcePath, summary) => {
-      hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary });
-    },
-  );
+  // 方案 C（2026-08-25）：作品投影 = 用户主动触发的索引卡片（markdown frontmatter），不再依赖 LLM Provider
+  const workProjection = new WorkProjectionManager(pctx.memoraDir, (sourcePath, description) => {
+    hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary: description });
+  }, projectPath);
 
   const toolExec = new ToolExecutor(
     projectPath,
     pctx.security,
     pctx.index,
     input.webSearchProvider,
-    workProjection,
     configDir,
     sessionStore,
     input.fetchProvider,
@@ -754,7 +761,23 @@ export async function assembleComponents(
     return lines.join('\n');
   };
 
+  // 作品投影登记：注入 register_work 工具回调（用户主动触发，写 projections/<slug>.md 索引卡片）
+  // 复用 read_skill 的注入回调模式——ToolExecutor 不持有 WorkProjectionManager，装配层解耦时序
+  toolExec.registerWork = async (sourcePath: string, description: string) => {
+    const entry = await workProjection.registerWork(sourcePath, description);
+    return entry
+      ? `✅ 已登记作品索引：${entry.name}（${entry.description}）\n投影文件：${entry.filePath}（用户可直接编辑/删除）`
+      : '[ERR:REGISTER_FAILED] 作品索引登记失败';
+  };
+
   // ── AgentLoop + 其直接依赖 ──
+
+  // 作品投影装配注入：先刷新缓存（扫描 projections/ 目录），再取 L1 清单 + L2 always 正文块
+  // 刷新失败不阻断装配——contextBlock 返回空串即不注入（投影是可选项，非装配硬依赖）
+  await workProjection.refresh().catch((err) => {
+    logger.warn({ err }, '作品投影装配前刷新失败，跳过注入');
+  });
+  const workProjectionContext = workProjection.contextBlock();
 
   const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
@@ -772,6 +795,7 @@ export async function assembleComponents(
       locale,
       sessionManager,
       hooks,
+      workProjectionContext,
     });
   loopRef = loop;
 

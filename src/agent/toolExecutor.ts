@@ -14,7 +14,6 @@ import { logger } from '@/logging/logger.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
@@ -231,14 +230,22 @@ export class ToolExecutor {
    */
   listSkills?: () => Promise<string>;
 
+  /**
+   * register_work 作品索引登记回调（由 agent 装配时注入，处理 register_work）
+   *
+   * 作品投影（方案 C，2026-08-25）：用户主动触发登记一件作品（文档/代码/笔记）
+   * 为项目级索引卡片，写 <memoraDir>/projections/<slug>.md（markdown frontmatter）。
+   * 委托装配层注入的回调，避免 ToolExecutor 与 WorkProjectionManager 强耦合
+   * （与 read_skill 同款注入模式）。未注入时 register_work 返回不可用提示。
+   */
+  registerWork?: (sourcePath: string, description: string) => Promise<string>;
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
     memoryIndex: IMemoryStorage,
     /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
     webSearchProvider?: IWebSearchProvider,
-    /** 作品投影管理器（可选，读取文件时自动生成投影） */
-    workProjection?: WorkProjectionManager,
     /** 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置） */
     configDir?: string,
     /** 会话存储（可选，trace_summary 溯源原始对话用） */
@@ -257,7 +264,6 @@ export class ToolExecutor {
       projectPath,
       security,
       memoryIndex,
-      workProjection,
       configDir,
       sessionStore,
     );
@@ -727,6 +733,18 @@ export class ToolExecutor {
           return '[ERR:TOOL:NOT_AVAILABLE] list_skills 不可用';
         }
         return await this.listSkills();
+      }
+      case 'register_work': {
+        // 作品投影登记（registerWork 回调由 agent 装配注入；用户主动触发写索引卡片）
+        if (!this.registerWork) {
+          return '[ERR:TOOL:NOT_AVAILABLE] register_work 不可用：未装配作品投影登记回调';
+        }
+        const path = strArg('path');
+        const description = strArg('description');
+        if (!path || !description) {
+          return '[ERR:INVALID_ARG] register_work 需要 path（相对项目根）与 description（一句话说明）参数';
+        }
+        return await this.registerWork(path, description);
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map

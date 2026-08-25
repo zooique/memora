@@ -1274,7 +1274,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!this.loop) return;
     const rolePackPrompt = this.rolePackManager_?.buildSystemPrompt() ?? '';
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
-    const newPrefix = buildSystemPromptPrefix(rolePackPrompt, globalSkillList);
+    // 作品投影装配块：缓存于 manager（装配时刷新 + register_work 更新），同步读取即可
+    const workProjectionContext = this.workProjection?.contextBlock() ?? '';
+    const newPrefix = buildSystemPromptPrefix(
+      rolePackPrompt,
+      globalSkillList,
+      undefined,
+      workProjectionContext,
+    );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit / streaming）
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
@@ -1547,14 +1554,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       this.internals.memoryDecayScheduler = null;
     }
-    // 等待 WorkProjection inflight 生成完成，防止 close 后 upsert 已关闭的 storage
-    if (this.workProjection) {
-      try {
-        await this.workProjection.awaitInflight();
-      } catch (err) {
-        logger.warn({ err: toError(err) }, 'close: workProjection.awaitInflight 失败');
-      }
-    }
+    // 等待 WorkProjection 无 inflight 概念（作品投影改为用户主动触发同步写，无后台 LLM 任务）
+    // 背景任务统一由下方 awaitBackgroundTasks 兜底
     // 关键修复：等待 backgroundTask 全局在途任务完成（如 boostScores）。
     // 否则 close 后后台任务仍可能 upsert 已关闭的 storage，触发写失效或异常。
     try {
@@ -1794,7 +1795,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.pctx?.security ?? null;
   }
 
-  /** 作品投影管理器（文件内容 → 概要+结构+决策；`ensureProjection`/`loadAll`） */
+  /** 作品投影管理器（用户主动登记的作品索引卡片；`registerWork`/`listWorks`/`contextBlock`） */
   get works(): WorkProjectionManager | null {
     return this.workProjection;
   }

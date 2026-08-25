@@ -3,13 +3,14 @@
  *
  * 覆盖范围：
  *   - 路径安全：resolveSafePath（绝对/相对路径解析）+ guardPathOrThrow（白名单校验 + 错误包装）
- *   - readFile：参数校验 + 路径校验 + 读取成功 + workProjection 触发 + ENOENT + 其他错误
+ *   - readFile：参数校验 + 路径校验 + 读取成功 + ENOENT + 其他错误（作品投影自动链已斩断，不再登记）
  *   - writeFile：参数校验（path/content/mode/insert_line）+ 3 模式（overwrite/append/insert）+ 确认流程（extensions.onBeforeWrite + security 回退）+ 父目录创建 + 返回格式
  *   - listDir：路径校验 + recursive + maxDepth + 忽略列表 + 空目录 + ENOENT + 非目录
  *   - searchMemories：参数校验 + limit + mode（match/near）+ 空结果 + 格式化
  *
  * 测试范式：真实临时目录（mkdtemp）+ 真实 SecurityGuard + InMemoryStorage + 真实文件 I/O，
- * 避免 mock fs 导致测试与实现耦合。workProjection 用 mock 对象验证 fire-and-forget 调用。
+ * 避免 mock fs 导致测试与实现耦合。作品投影改为用户主动触发（register_work 工具），
+ * BuiltinToolHandlers 不再持有投影管理器，read_file 不再自动登记。
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -22,7 +23,6 @@ import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -32,8 +32,6 @@ let projectPath: string;
 let security: SecurityGuard;
 /** InMemoryStorage（searchMemories 数据源） */
 let storage: InMemoryStorage;
-/** mock workProjection（验证 fire-and-forget 调用） */
-let workProjection: { ensureProjection: ReturnType<typeof vi.fn> };
 /** 被测对象 */
 let handlers: BuiltinToolHandlers;
 
@@ -43,14 +41,8 @@ beforeEach(async () => {
   // 真实 SecurityGuard：projectPath 在白名单内，confirmWrites=false 自动确认
   security = new SecurityGuard(projectPath, projectPath);
   storage = new InMemoryStorage();
-  // mock workProjection：ensureProjection 返回 resolved Promise（fire-and-forget）
-  workProjection = { ensureProjection: vi.fn().mockResolvedValue(undefined) };
-  handlers = new BuiltinToolHandlers(
-    projectPath,
-    security,
-    storage,
-    workProjection as unknown as WorkProjectionManager,
-  );
+  // 注：作品投影改为用户主动触发（register_work 工具），read_file 不再自动登记——BuiltinToolHandlers 不再持有投影管理器
+  handlers = new BuiltinToolHandlers(projectPath, security, storage);
 });
 
 afterEach(async () => {
@@ -144,29 +136,10 @@ describe('BuiltinToolHandlers.readFile', () => {
     expect(result).toBe('hello world');
   });
 
-  it('读取成功触发 workProjection.ensureProjection', async () => {
-    await createFileInProject('novel.md', '第一章内容');
-    await handlers.readFile('novel.md');
-    expect(workProjection.ensureProjection).toHaveBeenCalledTimes(1);
-    // 验证参数：absolutePath, content, relativePath
-    const callArgs = workProjection.ensureProjection.mock.calls[0];
-    expect(callArgs).toBeDefined();
-    expect(callArgs![1]).toBe('第一章内容');
-    expect(callArgs![2]).toBe('novel.md');
-  });
-
   it('ENOENT 抛 FILE_NOT_FOUND', async () => {
     await expect(handlers.readFile('not-exist.txt')).rejects.toMatchObject({
       errorCode: ToolErrorCode.FILE_NOT_FOUND,
     });
-  });
-
-  it('无 workProjection 时不抛错', async () => {
-    // 构造无 workProjection 的 handler
-    const handlerNoProj = new BuiltinToolHandlers(projectPath, security, storage);
-    await createFileInProject('no-proj.txt', '内容');
-    const result = await handlerNoProj.readFile('no-proj.txt');
-    expect(result).toBe('内容');
   });
 });
 
@@ -290,7 +263,6 @@ describe('BuiltinToolHandlers.writeFile', () => {
       projectPath,
       security,
       storage,
-      undefined,
       mockConfigDir,
     );
 
@@ -427,7 +399,6 @@ describe('BuiltinToolHandlers.writeFile', () => {
         projectPath,
         confirmGuard,
         storage,
-        workProjection as unknown as WorkProjectionManager,
       );
 
       // 先创建已有文件（beforeContent 非 null）
@@ -453,7 +424,6 @@ describe('BuiltinToolHandlers.writeFile', () => {
         projectPath,
         confirmGuard,
         storage,
-        workProjection as unknown as WorkProjectionManager,
       );
 
       // 写入新文件（不存在 → beforeContent = null）
@@ -749,7 +719,7 @@ describe('BuiltinToolHandlers.traceSummary', () => {
       ],
       listSessions: () => [SESSION],
     };
-    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, undefined, store);
+    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);
     // 返回原始对话消息，而非摘要文本
     expect(result).toContain('原始对话');
@@ -768,7 +738,7 @@ describe('BuiltinToolHandlers.traceSummary', () => {
       ],
       listSessions: () => [SESSION],
     };
-    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, undefined, store);
+    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);
     expect(result).toContain('原始对话');
     // ESC 控制字符（\x1b）应被移除（sanitizeExternalText 去 \u0000-\u001F/\u007F）
@@ -782,7 +752,7 @@ describe('BuiltinToolHandlers.traceSummary', () => {
       loadMessages: () => [],
       listSessions: () => [SESSION],
     };
-    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, undefined, store);
+    const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);
     expect(result).toContain('可溯源');
     expect(result).toContain('TypeScript');

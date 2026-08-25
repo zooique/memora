@@ -1,260 +1,214 @@
 /**
- * 作品投影管理 — 用户作品的文件级感知：Agent 读取用户作品时生成"作品投影"（概要+结构+关键决策）。
- * 基于文件 hash 判断是否重生成，不复制作品全文（只存概要，文件本体归用户）。
- * 触发规则：首次读取（无 hash 记录）→生成；hash 变更→重新生成；hash 未变→跳过。
+ * 作品投影管理 — 用户作品的「索引卡片」（markdown + frontmatter）
  *
- * 存储：项目级目录（<memoraDir>/projections/<slug>.json），独立于记忆库——
- * 投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。
- * 随项目隔离：memora.db 全局共享，投影若存库里会跨项目残留且无意义；落项目目录后换项目即消失。
- * 不参与记忆召回与治理（记忆系统纯化，召回面只剩 round-summary）。
- * 分层：位于 agent/ 层（依赖 LlmProvider 做生成）。
+ * 定案（2026-08-25 方案 C，见 docs/architecture/work-projection.md）：
+ * 从「read_file 自动生成浓缩摘要（JSON + hash）」改为「用户主动触发的索引
+ * （name + description + 可选 source + mode 必读开关）」。
+ *
+ * 存储：项目级目录（<memoraDir>/projections/<slug>.md），markdown frontmatter，
+ * 对齐 skill 存储格式——复用 scanMarkdownDir + parseFrontmatter，用户可用
+ * VSCode 直接编辑/删除（不做专属 UI 视图，VSCode 编辑器即 UI）。
+ *
+ * source 约定：显式值 = 相对项目根的源文件路径（指向外部文件）；缺省 = 自指
+ * （这份投影文件本身就是被投影的文档，正文即内容）。投影始终是「一份文档的
+ * 入口」——指向外部或指向自己之别，不引入规则/设定等新语义类别
+ * （因此不触碰 role-pack boundary 的「设定记忆唯一归角色包」纪律）。
+ *
+ * 装配注入（两级渐进披露，与 skills 同构）：
+ *   - L1：所有卡片 name + description 清单常驻（contextBlock）
+ *   - L2：mode:always 卡片额外出正文；source 指向的外部原文不灌入
+ * registerWork 写卡片后刷新缓存，contextBlock 同步读取缓存。
  */
-import { mkdir, readdir, readFile } from 'node:fs/promises';
+import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
-import type { LlmProvider, Message } from '@/llm/provider.js';
 import { logger } from '@/logging/logger.js';
 import { slugify } from '@/utils/strings.js';
-import { sha256Fingerprint } from '@/utils/hash.js';
 import { getBaseName } from '@/utils/path.js';
-import { toError } from '@/utils/toError.js';
-import { parseLlmJson } from '@/utils/json.js';
-import { nowIso } from '@/utils/time.js';
-import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
+import { scanMarkdownDir, resolveSafePath } from '@/utils/scanner.js';
+import { serializeFrontmatter } from '@/utils/frontmatter.js';
 import { atomicWriteFile } from '@/utils/atomicWrite.js';
-
-/** 作品投影生成时内容截断长度（字符），控 LLM token 消耗 */
-const CONTENT_TRUNCATE_CHARS = 3000;
-
-/** 投影文件扩展名（loadAll 扫描过滤用） */
-const PROJECTION_EXT = '.json';
 
 /** 投影文件子目录名（位于 memoraDir 下，与 rules/skills 并列） */
 const PROJECTIONS_SUBDIR = 'projections';
 
-/** 作品投影的持久化结构 */
+/** 必读开关：always = 必读（装配时注入正文）/ on-demand = 按需（默认） */
+export type ProjectionMode = 'always' | 'on-demand';
+
+/**
+ * 作品投影的持久化结构（markdown frontmatter 映射）
+ *
+ * name/description/source/mode 与 frontmatter 四字段一一对应；
+ * body/filePath 为加载时派生的读取态字段（不落 frontmatter）。
+ */
 export interface WorkProjectionEntry {
-  /** 唯一 ID（work-proj-<slug>） */
-  id: string;
-  /** 文件路径 */
-  sourcePath: string;
-  /** 文件 hash（用于变更检测） */
-  fileHash: string;
-  /** 概要 */
-  summary: string;
-  /** 结构（章节/模块/段落等结构化列表） */
-  structure: string[];
-  /** 关键决策 */
-  keyDecisions: string[];
-  /** 最后更新时间 */
-  updatedAt: string;
+  /** 作品名（默认取源文件名去扩展名；用户可手改） */
+  name: string;
+  /** 一句话说明（LLM 生成，用户可手改；兼「按需拉取的匹配依据」） */
+  description: string;
+  /** 源文件路径（可选，相对项目根；缺省 = 自指，正文即内容） */
+  source?: string;
+  /** 必读开关（always 必读 / on-demand 按需，默认 on-demand） */
+  mode?: ProjectionMode;
+  /** 正文（source 缺省时即文档内容；L2 装配注入用，加载时派生） */
+  body: string;
+  /** 投影文件绝对路径（加载时派生，宿主「打开作品文件」入口用） */
+  filePath: string;
 }
 
-/** 作品投影管理器：agent/ 层，经 LLM 生成投影内容并以 JSON 文件写入项目目录（作品→项目内投影桥梁） */
+/**
+ * 作品投影管理器：用户主动触发的作品索引（写 md 卡片 + 扫描读取 + 装配注入块）
+ *
+ * 定位：agent/ 层，但**不再依赖 LLM Provider**——description 由 LLM 经
+ * register_work 工具参数传入，管理器只做纯文件索引读写（用户主动登记 +
+ * 用户直接改文件，双层用户控制面）。
+ */
 export class WorkProjectionManager {
   /** 投影文件目录（<memoraDir>/projections），项目级、随项目隔离 */
   private readonly projectionsDir: string;
-  /** 生成投影用的 LLM Provider（后台优先，降级到默认） */
-  private readonly provider: LlmProvider;
-  /** 投影生成/更新回调（宿主据此发射事件） */
-  private readonly onGenerated?: (sourcePath: string, summary: string) => void;
-
-  /** in-flight Promise 缓存（key: sourcePath），防同文件并发读取时重复调 LLM */
-  private readonly inflight: Map<string, Promise<WorkProjectionEntry | null>> = new Map();
+  /** 项目根目录（用于路径穿越防御，可选） */
+  private readonly projectDir?: string;
+  /** 投影登记回调（宿主据此发射事件，可选） */
+  private readonly onGenerated?: (sourcePath: string, description: string) => void;
+  /** 已加载投影缓存（contextBlock 同步读取；registerWork/refresh 时更新） */
+  private entries: WorkProjectionEntry[] = [];
 
   /**
    * @param memoraDir 项目级 .memora/ 目录（投影存 <memoraDir>/projections/，随项目隔离）
-   * @param provider 生成投影的 LLM Provider
-   * @param onGenerated 投影生成/更新回调（宿主通知用，可选）
+   * @param onGenerated 投影登记回调（宿主通知用，可选）
+   * @param projectDir 项目根目录（用于路径穿越防御，可选）
    */
-  constructor(
-    memoraDir: string,
-    provider: LlmProvider,
-    onGenerated?: (sourcePath: string, summary: string) => void,
-  ) {
+  constructor(memoraDir: string, onGenerated?: (sourcePath: string, description: string) => void, projectDir?: string) {
     this.projectionsDir = join(memoraDir, PROJECTIONS_SUBDIR);
-    this.provider = provider;
     this.onGenerated = onGenerated;
+    this.projectDir = projectDir;
   }
 
   /**
-   * 检查并更新作品投影：计算 hash → 查询已有投影文件 → 无则生成 / hash 不同则重新生成 / hash 相同则跳过。
-   * 同文件并发复用同一 in-flight Promise 避免重复 LLM 调用。跳过生成时返回已有投影。
+   * 登记作品索引卡片（register_work 工具数据源）
+   *
+   * 写 <projectionsDir>/<slug>.md：name 取源文件名去扩展名、带 source、
+   * mode 默认 on-demand（指向外部文件的索引卡片）。同名 slug 后写覆盖。
+   * 写成功后刷新缓存并触发 onGenerated；失败降级返回 null（不抛错）。
+   *
+   * @param sourcePath 源文件路径（相对项目根）
+   * @param description 作品的一句话说明（LLM 总结，用户可后续手改）
+   * @returns 登记成功的投影条目；失败返回 null
    */
-  async ensureProjection(
-    filePath: string,
-    content: string,
-    fileName?: string,
-  ): Promise<WorkProjectionEntry | null> {
-    const inflight = this.inflight.get(filePath);
-    if (inflight) {
-      return inflight;
+  async registerWork(sourcePath: string, description: string): Promise<WorkProjectionEntry | null> {
+    // 路径穿越防御：若 projectDir 可用，验证 sourcePath 不越界
+    if (this.projectDir && resolveSafePath(this.projectDir, sourcePath) === null) {
+      logger.warn({ sourcePath }, '作品投影登记失败：source 路径越界');
+      return null;
     }
+    // 源文件名去扩展名 → 作品名 → slug 文件名（frontmatter 值单行化防注入格式）
+    const baseName = getBaseName(sourcePath).replace(/\.[^.]+$/, '') || 'unknown';
+    const name = toSingleLine(baseName);
+    const safeDescription = toSingleLine(description);
+    const filePath = join(this.projectionsDir, `${slugify(name)}.md`);
 
-    const promise = this.doEnsureProjection(filePath, content, fileName);
-    this.inflight.set(filePath, promise);
-    try {
-      return await promise;
-    } finally {
-      this.inflight.delete(filePath);
-    }
-  }
-
-  /** 实际生成投影核心逻辑：hash 未变跳过，hash 变了或首次则重新生成（同 id 文件原子覆盖） */
-  private async doEnsureProjection(
-    filePath: string,
-    content: string,
-    fileName?: string,
-  ): Promise<WorkProjectionEntry | null> {
-    const hash = this.computeHash(content);
-    const name = fileName ?? (getBaseName(filePath) || 'unknown');
-    const projectionPath = this.projectionPath(name);
-
-    // 已有投影且 hash 未变 → 跳过（不重新调 LLM）
-    const existing = await this.readProjection(projectionPath);
-    if (existing && existing.fileHash === hash) {
-      return existing;
-    }
+    // frontmatter 序列化：source/mode 显式写入（缺省 = 自指由用户手写时省略）
+    const frontmatter = serializeFrontmatter({
+      name,
+      description: safeDescription,
+      source: toSingleLine(sourcePath),
+      mode: 'on-demand',
+    });
+    const md = `---\n${frontmatter}\n---\n`;
 
     try {
-      const projection = await this.generate(name, content);
-      const entry: WorkProjectionEntry = {
-        id: `work-proj-${slugify(name)}`,
-        sourcePath: filePath,
-        fileHash: hash,
-        summary: projection.summary,
-        structure: projection.structure,
-        keyDecisions: projection.keyDecisions,
-        updatedAt: nowIso(),
-      };
-
-      // 目录保证存在 + 原子写覆盖（rename 原子替换，防写半截损坏投影）
+      // 目录保证存在 + 原子写（rename 原子替换，防写半截损坏卡片）
       await mkdir(this.projectionsDir, { recursive: true });
-      await atomicWriteFile(projectionPath, JSON.stringify(entry, null, 2));
-      logger.info(
-        { file: filePath, hash, summaryLen: projection.summary.length },
-        '作品投影已生成',
-      );
-
-      this.onGenerated?.(filePath, projection.summary);
-      return entry;
+      await atomicWriteFile(filePath, md);
+      // 刷新缓存（并入新登记卡片，contextBlock 立即生效）
+      await this.refresh();
+      logger.info({ file: sourcePath, name }, '作品投影已登记');
+      // 回调接收已净化（单行化）的 description，防止换行注入
+      this.onGenerated?.(sourcePath, safeDescription);
+      // 返回登记结果（filePath 供工具结果告知用户编辑位置）
+      return { name, description: safeDescription, source: sourcePath, mode: 'on-demand', body: '', filePath };
     } catch (err) {
-      logger.warn({ err, file: filePath }, '作品投影生成失败');
+      logger.warn({ err, file: sourcePath }, '作品投影登记失败');
       return null;
     }
-  }
-
-  /** 获取已有作品投影（不触发生成）；不存在返回 null */
-  async getProjection(filePath: string): Promise<WorkProjectionEntry | null> {
-    const name = getBaseName(filePath) || 'unknown';
-    return this.readProjection(this.projectionPath(name));
   }
 
   /**
-   * 等待所有 inflight 投影生成完成（Agent.close 调用），防 close 后写文件失败。
-   * 不 abort LLM——作品投影是用户主动触发的高价值操作，让其完成优于快速失败。
+   * 重新扫描投影目录并刷新缓存
+   *
+   * registerWork 自动调用；用户直接编辑/删除卡片后也可显式调用。
+   * 目录不存在（尚未登记任何作品）→ 视为空，不阻塞。
+   *
+   * @returns 当前全部投影条目
    */
-  async awaitInflight(): Promise<void> {
-    if (this.inflight.size === 0) return;
-    const promises = Array.from(this.inflight.values());
-    await Promise.allSettled(promises);
-  }
-
-  /** 加载项目目录下所有作品投影（扫描 projections/ 子目录） */
-  async loadAll(): Promise<WorkProjectionEntry[]> {
+  async refresh(): Promise<WorkProjectionEntry[]> {
     try {
-      const names = await readdir(this.projectionsDir);
-      const entries: WorkProjectionEntry[] = [];
-      for (const name of names) {
-        if (!name.endsWith(PROJECTION_EXT)) continue;
-        const entry = await this.readProjection(join(this.projectionsDir, name));
-        if (entry) entries.push(entry);
-      }
-      return entries;
+      const scanned = await scanMarkdownDir(this.projectionsDir);
+      this.entries = scanned.map((s) => ({
+        name: s.frontmatter['name'] ?? s.name,
+        description: s.frontmatter['description'] ?? '',
+        source: s.frontmatter['source'] || undefined,
+        mode: s.frontmatter['mode'] === 'always' ? 'always' : 'on-demand',
+        body: s.body,
+        filePath: s.filePath,
+      }));
     } catch (err) {
-      // 目录不存在（项目尚未生成任何投影）→ 视为无投影，不阻塞
-      logger.debug({ err: toError(err).message }, '作品投影目录不存在，返回空');
-      return [];
+      // 目录不存在（项目尚未登记任何作品）→ 视为无投影，不阻塞
+      logger.debug({ err }, '作品投影目录不存在，返回空');
+      this.entries = [];
     }
+    return this.entries;
   }
 
-  // ── 私有方法 ──────────────────────────────────────
-
-  /** 投影文件绝对路径（<projectionsDir>/<slug>.json） */
-  private projectionPath(name: string): string {
-    return join(this.projectionsDir, `${slugify(name)}${PROJECTION_EXT}`);
+  /**
+   * 加载项目目录下所有作品投影（扫描 projections/ 子目录）
+   *
+   * 宿主「列作品清单」入口的数据源；等价于 refresh()——**每次调用都触发磁盘扫描**。
+   * 若仅需读取当前缓存（不触发扫描），应先调用 refresh() 再使用 entries。
+   *
+   * @returns 全部投影条目
+   */
+  async listWorks(): Promise<WorkProjectionEntry[]> {
+    return this.refresh();
   }
 
-  /** 读取投影文件；文件不存在 / JSON 损坏 / 缺关键字段 → 返回 null */
-  private async readProjection(path: string): Promise<WorkProjectionEntry | null> {
-    try {
-      const raw = await readFile(path, 'utf-8');
-      const parsed = JSON.parse(raw) as WorkProjectionEntry;
-      if (!parsed || typeof parsed.summary !== 'string' || typeof parsed.fileHash !== 'string') {
-        return null;
+  /**
+   * 装配注入块（两级渐进披露，同步读取缓存）
+   *
+   * L1：所有卡片 name + description 清单常驻（超轻量「指针索引」，让 LLM 知道
+   * 「有哪些作品、各自是什么」）；L2：mode:always 卡片额外出正文。
+   * source 指向的外部原文不灌入（按需 read_file 读取，保证单一真理源）。
+   * 缓存为空（尚未 refresh）时返回空串。
+   *
+   * @returns 装配注入文本块；无投影时为空串
+   */
+  contextBlock(): string {
+    if (this.entries.length === 0) return '';
+    const parts: string[] = ['【作品投影】'];
+    // L1：所有卡片 name + description 清单
+    for (const e of this.entries) {
+      const sourceHint = e.source ? `（源：${e.source}）` : '';
+      const modeHint = e.mode === 'always' ? ' [必读]' : '';
+      parts.push(`- ${e.name}：${e.description}${sourceHint}${modeHint}`);
+    }
+    // L2：always 卡片额外出正文（轻量；不灌 source 指向的外部原文）
+    const always = this.entries.filter((e) => e.mode === 'always' && e.body);
+    if (always.length > 0) {
+      parts.push('');
+      for (const e of always) {
+        parts.push(`[必读作品：${e.name}]`);
+        parts.push(e.body);
       }
-      return parsed;
-    } catch (err) {
-      // ENOENT（无投影）与解析失败（损坏）统一按无投影处理
-      logger.debug({ err: toError(err).message, path }, '读取作品投影失败');
-      return null;
     }
+    return parts.join('\n');
   }
-
-  /** 调用 LLM 生成作品投影（summary/structure/keyDecisions） */
-  private async generate(
-    name: string,
-    content: string,
-  ): Promise<{ summary: string; structure: string[]; keyDecisions: string[] }> {
-    // 截断内容（控制 token 消耗）
-    const truncated = content.slice(0, CONTENT_TRUNCATE_CHARS);
-
-    const promptMessages: Message[] = [
-      {
-        role: 'system',
-        content: `你是作品分析助手。阅读用户的作品，生成一个"投影"——完整的作品概要、结构和关键决策。
-
-输出格式（严格 JSON，不含 markdown 代码块标记）：
-{
-  "summary": "50-100字的作品概要",
-  "structure": ["模块1", "模块2", "..."],
-  "keyDecisions": ["关键决策1", "关键决策2", "..."]
 }
 
-要求：
-- summary 控制在 50-100 字
-- structure 列出 2-8 个模块名称
-- keyDecisions 列出 1-3 个关键决策（如有）
-- 不评价优劣，只客观描述`,
-      },
-      { role: 'user', content: `# ${name}\n\n${truncated}` },
-    ];
-
-    const result = await accumulateStream(this.provider, promptMessages, { maxTokens: 400 });
-
-    const parsed = parseLlmJson<{
-      summary: string;
-      structure: string[];
-      keyDecisions: string[];
-    }>(result.trim());
-
-    if (parsed) {
-      return {
-        summary: parsed.summary ?? `${name}（无法获取概要）`,
-        structure: parsed.structure ?? [],
-        keyDecisions: parsed.keyDecisions ?? [],
-      };
-    }
-
-    // JSON 解析失败，降级为全文摘要
-    return {
-      summary: result.trim().slice(0, 100),
-      structure: [name],
-      keyDecisions: [],
-    };
-  }
-
-  /** 计算文件 SHA-256 hash（复用 utils/hash.ts 通用指纹函数） */
-  private computeHash(content: string): string {
-    return sha256Fingerprint(content);
-  }
+/**
+ * frontmatter 值单行化：折叠换行为空格，防换行注入破坏 `key: value` 结构
+ *
+ * @param value 原始值
+ * @returns 单行化后的值
+ */
+function toSingleLine(value: string): string {
+  return value.replace(/\r?\n/g, ' ').trim();
 }
