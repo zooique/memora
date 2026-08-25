@@ -18,7 +18,7 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionManager } from '@/agent/managers/sessionManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import { recall } from '@/memory/recall.js';
+import { recall, boostScores } from '@/memory/recall.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { ITracer } from '@/agent/tracer.js';
@@ -111,6 +111,15 @@ export class CheckpointRestoreCoordinator {
         logger.debug({ query }, '温记忆按需召回：无相关记忆');
         return;
       }
+
+      // 与正常 prepare 路径（contextPreparer）对称：召回命中的温记忆需持久化 boost，
+      // 更新 score/accessedAt 维持热度曲线一致。恢复路径低频（恢复一次），fire-and-forget 不阻塞恢复读路径。
+      void boostScores(
+        deps.getIndex(),
+        recalledMemories.map((m) => m.id),
+      ).catch((err: unknown) => {
+        logger.warn({ query, err }, '温记忆召回 boost 持久化失败');
+      });
 
       // 将召回的温记忆 ID 去重合并到资源槽 memories
       const sm = deps.sessionManager;
