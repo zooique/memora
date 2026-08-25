@@ -135,4 +135,33 @@ export const skillsStyles = `
     flex-wrap: wrap;
     gap: var(--sp-1, 4px);
   }
+
+  /* G22 写→验→用（2026-08-25）：健康徽章 + 问题列表（error=未生效 / warn=可优化） */
+  #skills-root .health-badge {
+    font-size: var(--font-xs, 10px);
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill, 999px);
+    flex-shrink: 0;
+  }
+  #skills-root .health-badge.health-error {
+    color: #ffffff;
+    background: var(--skill-health-error);
+  }
+  #skills-root .health-badge.health-warn {
+    color: var(--skill-health-warn);
+    background: var(--surface-hover, rgba(128,128,128,.2));
+  }
+  #skills-root .skill-problems {
+    list-style: none;
+    margin: 0 0 var(--sp-2, 6px);
+    padding: 0;
+  }
+  #skills-root .skill-problems li {
+    font-size: var(--font-sm, 11px);
+    margin-bottom: 2px;
+    line-height: 1.4;
+  }
+  #skills-root .skill-problems .prob-error { color: var(--skill-health-error); }
+  #skills-root .skill-problems .prob-warning { color: var(--skill-health-warn); }
 `;

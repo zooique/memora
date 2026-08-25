@@ -73,3 +73,21 @@ export interface SkillMatch {
   /** 匹配得分（0-1，用于排序） */
   score: number;
 }
+
+/** 技能校验单条问题（G22 写→验→用闭环，2026-08-25） */
+export interface SkillIssue {
+  /** 级别：error=不可生效 / warning=可加载但变弱 */
+  level: 'error' | 'warning';
+  /** 问题归属字段（frontmatter/description/keywords/layer/trigger/body/file） */
+  field?: string;
+  /** 人类可读问题描述（说明影响，供 UI 错误定位） */
+  message: string;
+}
+
+/** 技能校验结果（单一入口 validateFile 返回；UI 据此叠加健康徽章 + 错误定位） */
+export interface SkillValidation {
+  /** 是否可用（无 error 即 true；warning 不阻断） */
+  ok: boolean;
+  /** 问题清单（error + warning） */
+  issues: SkillIssue[];
+}

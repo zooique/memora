@@ -40,6 +40,47 @@ describe('SkillManager', () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
+  describe('validateFile（G22 写→验→用闭环）', () => {
+    const m = new SkillManager();
+
+    it('正常技能（有 name/description/keywords）→ ok=true，无 error', async () => {
+      const p = join(skillsDir, 'good.md');
+      createSkillFile(skillsDir, 'good.md', '---\nname: good\ndescription: 描述\nkeywords: a,b\n---\n正文');
+      const v = await m.validateFile(p);
+      expect(v.ok).toBe(true);
+      expect(v.issues.filter((i) => i.level === 'error')).toHaveLength(0);
+    });
+
+    it('缺 description → error（未生效，渐进披露不暴露）', async () => {
+      const p = join(skillsDir, 'node.md');
+      createSkillFile(skillsDir, 'node.md', '---\nname: node\nkeywords: a\n---\n正文');
+      const v = await m.validateFile(p);
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'description' }));
+    });
+
+    it('无 frontmatter 结构（纯正文）→ error frontmatter', async () => {
+      const p = join(skillsDir, 'raw.md');
+      createSkillFile(skillsDir, 'raw.md', '# 纯正文，无 frontmatter');
+      const v = await m.validateFile(p);
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'frontmatter' }));
+    });
+
+    it('缺 keywords → warning（可加载但触发弱）', async () => {
+      const p = join(skillsDir, 'warn.md');
+      createSkillFile(skillsDir, 'warn.md', '---\nname: warn\ndescription: d\n---\n正文');
+      const v = await m.validateFile(p);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'warning', field: 'keywords' }));
+    });
+
+    it('无法读取文件 → error file', async () => {
+      const v = await m.validateFile(join(skillsDir, 'missing.md'));
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'file' }));
+    });
+  });
+
   describe('load', () => {
     it('应该加载单个技能文件', async () => {
       createSkillFile(

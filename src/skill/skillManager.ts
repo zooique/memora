@@ -7,8 +7,9 @@
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import type { SkillEntry, SkillMatch, SkillLayer3 } from '@/skill/types.js';
+import type { SkillEntry, SkillMatch, SkillLayer3, SkillIssue, SkillValidation } from '@/skill/types.js';
 import { parseTrigger, parseKeywords, discoverLayer3, resolveSafePath, scanMarkdownDir } from '@/utils/scanner.js';
+import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
@@ -139,10 +140,59 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 含 resources/scripts 的技能附加 "(含资源/脚本)" 标记。
    */
   buildSkillList(): string {
-    const listed = this.items.map((skill) => SkillManager.formatSkillForPrompt(skill));
+    // 可用性过滤（G22）：缺 description 的技能在后手来源与渐进披露层面不可用（模型不知何时激活），
+    // 不进入 LLM 可用清单（「未生效」由宿主 UI 以健康徽章显式标注，而非静默隐藏）。
+    const listed = this.items
+      .filter((s) => s.description?.trim())
+      .map((skill) => SkillManager.formatSkillForPrompt(skill));
     return listed.filter(Boolean).length > 0
       ? `【通用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}`
       : '';
+  }
+
+  /**
+   * 校验单技能文件（G22 写→验→用闭环，宿主 UI 校验入口）。
+   * 复用 parser frontmatter 解析做单一真理源，不重写解析；只做确定性结构检查，不做语义 schema。
+   * 判级（三点强化，2026-08-25 吸收社区养分）：
+   *   - error：无 frontmatter / description 缺失/空（渐进披露唯一依据，缺则技能不可用）/ 正文空 / trigger 正则非法
+   *   - warning：缺 keywords（触发弱）/ layer 非法（回退 project）
+   */
+  async validateFile(filePath: string): Promise<SkillValidation> {
+    const issues: SkillIssue[] = [];
+    let raw: string;
+    try {
+      raw = await readFile(filePath, 'utf-8');
+    } catch {
+      return { ok: false, issues: [{ level: 'error', field: 'file', message: '无法读取技能文件' }] };
+    }
+    const { frontmatter, body } = parseFrontmatter(raw);
+
+    // 无 frontmatter 结构（fallback：整体落入 body 且无任何键值）→ 不被识别
+    if (Object.keys(frontmatter).length === 0 && body === raw) {
+      issues.push({ level: 'error', field: 'frontmatter', message: '缺少 frontmatter（文件需以 --- 开头声明 name/description）' });
+    }
+    const desc = frontmatter['description'];
+    if (!desc || !desc.trim()) {
+      issues.push({ level: 'error', field: 'description', message: '缺少 description：渐进披露不暴露，模型不知何时激活此技能' });
+    }
+    if (!body.trim()) {
+      issues.push({ level: 'error', field: 'body', message: '技能正文为空，无可执行指令' });
+    }
+    if (!frontmatter['keywords']) {
+      issues.push({ level: 'warning', field: 'keywords', message: '缺少 keywords：触发匹配偏弱（可补充触发关键词或 trigger 正则）' });
+    }
+    const layer = frontmatter['layer'];
+    if (layer && layer !== 'agent' && layer !== 'project') {
+      issues.push({ level: 'warning', field: 'layer', message: `layer 值「${layer}」非法，将回退为 project` });
+    }
+    if (frontmatter['trigger'] !== undefined) {
+      try {
+        parseTrigger(frontmatter);
+      } catch {
+        issues.push({ level: 'error', field: 'trigger', message: 'trigger 正则表达式非法' });
+      }
+    }
+    return { ok: issues.every((i) => i.level !== 'error'), issues };
   }
 
   // ── L3 资源/脚本访问 ──────────────────────────────────

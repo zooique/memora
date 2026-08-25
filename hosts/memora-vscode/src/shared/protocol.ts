@@ -804,6 +804,12 @@ export interface MemoryItemDto {
 }
 
 /** 全局技能条目（技能视图列表，2026-08-22 新增） */
+export interface SkillIssueDto {
+  /** 级别：error=不可生效 / warning=可加载但变弱 */
+  level: 'error' | 'warning';
+  /** 问题描述（含影响说明，供 UI 错误定位） */
+  message: string;
+}
 export interface SkillDto {
   /** 技能名称 */
   name: string;
@@ -817,6 +823,10 @@ export interface SkillDto {
   filePath?: string;
   /** 技能来源三分类（SSOT 收紧，2026-08-25）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
   layer?: 'builtin' | 'rolepack' | 'user';
+  /** 健康状态（G22 写→验→用，2026-08-25）：error=未生效（不进 LLM 清单）/ warn=可加载但可优化 / 缺省=角色包等未校验项按可用处理 */
+  health?: 'ok' | 'warn' | 'error';
+  /** 校验问题清单（health!=='ok' 时携带，供列表/展开区错误定位） */
+  issues?: SkillIssueDto[];
 }
 
 /** 任务看板步骤条目（H4，2026-08-23：对齐内核 PlanStep 扁平化） */

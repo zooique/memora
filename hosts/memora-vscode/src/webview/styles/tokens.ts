@@ -98,6 +98,9 @@ export const tokens = `
     --skill-user-accent: var(--status-pass, #4ec9b0);
     /* 角色包技能来源（2026-08-25 三分类新增）：紫色语义区分内置(蓝)/用户(绿) */
     --skill-rolepack-accent: #a78bfa;
+    /* 技能健康色（G22 写→验→用，2026-08-25）：error 未生效 / warn 可优化 */
+    --skill-health-error: var(--text-error, #f14c4c);
+    --skill-health-warn: #d9a22b;
     /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用） */
     --accent-bg-hover: rgba(14, 99, 156, 0.06);   /* 轻交互悬停 */
     --accent-bg-subtle: rgba(14, 99, 156, 0.08);  /* 徽章/次级背景 */

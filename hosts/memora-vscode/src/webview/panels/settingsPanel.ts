@@ -720,19 +720,37 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   // ─── 技能子视图数据加载 ───
 
-  /** 加载并推送三源技能清单（系统内置 / 启用角色包 / 用户目录，统一由 skillAggregation 聚合） */
+  /** 加载并推送三源技能清单（系统内置 / 启用角色包 / 用户目录，统一由 skillAggregation 聚合；含 G22 健康校验） */
   private async loadSkills(): Promise<void> {
     const agent = await this.ensureAgent();
     if (!agent || !this._configDir) {
       this.post({ type: 'skills_loaded', skills: [] });
       return;
     }
-    const skills: SkillDto[] = listVisibleSkills({
+    const skills = listVisibleSkills({
       agent,
       configDir: this._configDir,
       userSkillsDir: this._userSkillsDir ?? '',
     });
-    this.post({ type: 'skills_loaded', skills });
+    // G22 写→验→用（2026-08-25）：对带 filePath 的技能（builtin/user）逐项健康校验叠加 health/issues；
+    // 角色包技能无绝对路径，本轮不校验（按可用处理）。error 技能 UI 标「未生效」且内核 buildSkillList 已过滤不注入 LLM。
+    const sm = agent.skills;
+    const validated: SkillDto[] = await Promise.all(
+      skills.map(async (s) => {
+        if (!s.filePath || !sm) return { ...s };
+        try {
+          const v = await sm.validateFile(s.filePath);
+          return {
+            ...s,
+            health: v.ok ? (v.issues.length > 0 ? 'warn' : 'ok') : 'error',
+            issues: v.issues.map((i) => ({ level: i.level, message: i.message })),
+          };
+        } catch {
+          return { ...s };
+        }
+      }),
+    );
+    this.post({ type: 'skills_loaded', skills: validated });
   }
 
   /**
