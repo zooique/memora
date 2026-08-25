@@ -28,7 +28,12 @@ const MAX_RECALL_LIMIT = 100;
 /** 召回各通道超时：超时后降级为已收集的结果，不阻塞 prepare 流程 */
 const RECALL_SEARCH_TIMEOUT_MS = 5000;
 
-/** 给异步操作加超时保护：超时后 reject，调用方 catch 降级 */
+/**
+ * 给异步操作加超时保护：超时后 reject，调用方 catch 降级。
+ * 契约边界（2026-08-25 澄清）：仅丢弃本次读结果，不取消底层 Promise——
+ * JSON 内存存储下由调用方 fire-and-forget 无碍；宿主若注入阻塞型存储（如大 SQLite 检索），
+ * 超时后底层任务仍占用资源，须宿主侧限流（内核不做 Promise 级 abort）。
+ */
 function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   return Promise.race([
     promise,

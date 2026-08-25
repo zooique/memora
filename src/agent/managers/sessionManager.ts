@@ -546,6 +546,8 @@ export class SessionManager {
    * 为什么：反序列化此前各写各的，残缺数据或静默丢整会话（loadPersistedCheckpoint 断言无运行时效力被 catch 吞）或崩进程（restore 直接信任外部对象 map() 抛 TypeError）。
    * 严格模式：检查点由当前版本 createCheckpoint 全量写入，任一必需字段缺失或类型错误即视为数据损坏，拒绝恢复（返回 null），
    * 不做静默补齐——兜底填充掩盖根因（缺字段=写入 bug 或存储损坏，应暴露而非糊过去）。
+   * 版本策略＝「版本门控」而非「字段迁移」：当前仅 CHECKPOINT_SCHEMA_VERSION（v1）。高于本版本拒绝恢复；
+   * 若未来引入 v2 新增必需字段，旧 checkpoint 须在下方版本路由处实现显式迁移，否则按损坏拒绝——绝不静默补字段。
    * 原地改写入参而非返回副本（restore 本就改写同一引用，返回副本会制造双份并列副本）。
    */
   private static normalizeCheckpoint(
