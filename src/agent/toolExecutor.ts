@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 工具执行器
  *
  * 4 个内置工具：read_file / write_file / list_dir / search_memories
@@ -233,8 +233,8 @@ export class ToolExecutor {
   /**
    * register_work 作品索引登记回调（由 agent 装配时注入，处理 register_work）
    *
-   * 作品投影（方案 C，2026-08-25）：用户主动触发登记一件作品（文档/代码/笔记）
-   * 为项目级索引卡片，写 <memoraDir>/projections/<slug>.md（markdown frontmatter）。
+   * 作品投影（2026-08-26 剪枝）：用户主动触发登记一件作品（文档/代码/笔记）
+   * 为项目级 JSON 索引，写 <memoraDir>/work-projections.json（纯元数据指针）。
    * 委托装配层注入的回调，避免 ToolExecutor 与 WorkProjectionManager 强耦合
    * （与 read_skill 同款注入模式）。未注入时 register_work 返回不可用提示。
    */

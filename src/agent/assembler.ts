@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent 组件组装器 — 从 Agent 门面类拆出的工厂逻辑
  *
  * 职责：
@@ -617,8 +617,8 @@ export async function assembleComponents(
   const history = new MessageHistory(sessionStore);
 
   // 作品投影登记/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
-  // 投影落项目级目录（pctx.memoraDir/projections/）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
-  // 方案 C（2026-08-25）：作品投影 = 用户主动触发的索引卡片（markdown frontmatter），不再依赖 LLM Provider
+  // 投影落项目级目录（pctx.memoraDir/work-projections.json）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
+  // 方案（2026-08-26 剪枝）：作品投影 = 用户主动触发的极简索引（JSON 单文件），AI 按需 read_file 读取原文
   const workProjection = new WorkProjectionManager(pctx.memoraDir, (sourcePath, description) => {
     hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary: description });
   }, projectPath);
@@ -761,18 +761,18 @@ export async function assembleComponents(
     return lines.join('\n');
   };
 
-  // 作品投影登记：注入 register_work 工具回调（用户主动触发，写 projections/<slug>.md 索引卡片）
+  // 作品投影登记：注入 register_work 工具回调（用户主动触发，写 JSON 索引）
   // 复用 read_skill 的注入回调模式——ToolExecutor 不持有 WorkProjectionManager，装配层解耦时序
   toolExec.registerWork = async (sourcePath: string, description: string) => {
     const entry = await workProjection.registerWork(sourcePath, description);
     return entry
-      ? `✅ 已登记作品索引：${entry.name}（${entry.description}）\n投影文件：${entry.filePath}（用户可直接编辑/删除）`
+      ? `✅ 已登记作品索引：${entry.name}（${entry.description}）\n源文件：${entry.source}`
       : '[ERR:REGISTER_FAILED] 作品索引登记失败';
   };
 
   // ── AgentLoop + 其直接依赖 ──
 
-  // 作品投影装配注入：先刷新缓存（扫描 projections/ 目录），再取 L1 清单 + L2 always 正文块
+  // 作品投影装配注入：先刷新缓存（读取 work-projections.json），再注入极简索引清单
   // 刷新失败不阻断装配——contextBlock 返回空串即不注入（投影是可选项，非装配硬依赖）
   await workProjection.refresh().catch((err) => {
     logger.warn({ err }, '作品投影装配前刷新失败，跳过注入');

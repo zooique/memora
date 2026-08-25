@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent 门面类 — Memora 宿主项目接入入口
  *
  * 宿主通过 `import { Agent } from '@zooique/memora'` 一行接入。
@@ -113,7 +113,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private textPolisher: TextPolishManager | null = null;
   /** 会话管理器（从 Agent 拆分出的会话管理职责） */
   private _sessionManager: SessionManager | null = null;
-  /** WorkProjectionManager（作品投影生成/更新，宿主经 works getter 消费） */
+  /** WorkProjectionManager（作品投影极简 JSON 索引，宿主经 works getter 消费） */
   private workProjection: WorkProjectionManager | null = null;
 
   // ─── 纯内部组件聚合（无宿主 getter 契约，init 后填充、close 统一清空） ───
@@ -1795,7 +1795,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.pctx?.security ?? null;
   }
 
-  /** 作品投影管理器（用户主动登记的作品索引卡片；`registerWork`/`listWorks`/`contextBlock`） */
+  /** 作品投影管理器（用户主动登记的 JSON 极简索引；`registerWork`/`listWorks`/`contextBlock`） */
   get works(): WorkProjectionManager | null {
     return this.workProjection;
   }

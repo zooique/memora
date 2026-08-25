@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 内置工具定义 + 工具幂等契约（补偿机制）
  *
  * 工具定义（schema/参数描述）与工具执行逻辑分离：
@@ -75,7 +75,7 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   read_skill: 'idempotent',
   read_resource: 'idempotent',
   run_skill_script: 'non-idempotent',
-  // register_work：写索引卡片（同 path+description → 同卡片），以业务键（slug 文件名）实现幂等
+  // register_work：写 JSON 索引（同 path+description → 同记录），以 source 为业务键实现幂等
   register_work: 'idempotent-key',
   // 条件工具（宿主注入对应 provider 才暴露）：
   // web_fetch：读操作，天然幂等 ✅
@@ -440,7 +440,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'register_work',
     description:
-      '登记作品索引卡片（作品投影）：把用户的一件作品（文档/代码/笔记）登记为项目级索引，写入 <memoraDir>/projections/ 下的 markdown 卡片。当用户说「记住这个文件」「把这份文档登记为作品」时使用。path 为相对项目根的源文件路径，description 为作品的一句话说明（用户后续可在卡片文件中手改）。',
+      '登记作品索引：把用户的一件作品（文档/代码/笔记）登记为项目级文件索引，追加到 <memoraDir>/work-projections.json 清单中。当用户说「记住这个文件」「把这份文档登记为作品」时使用。path 为相对项目根的源文件路径，description 为作品的一句话说明。登记后 AI 在后续对话中会看到此索引，根据描述自主决定是否读取原文。',
     parameters: {
       type: 'object',
       properties: {
