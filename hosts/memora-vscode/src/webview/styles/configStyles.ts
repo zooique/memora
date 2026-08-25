@@ -56,20 +56,14 @@ export const configStyles = `
   #config-root .embedding-status { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin: var(--sp-2, 6px) 0 0; }
 
   /* ============ Components：Provider 卡片 ============ */
-  #config-root .card { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 8px); padding: var(--sp-4, 10px); margin-bottom: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-lg, 8px); background: var(--surface-sidebar); }
-  #config-root .card.active { border-color: var(--accent, #0e639c); }
+  /* Card 基类见 settingsStyles 通用块；此处保留对齐差异（center + space-between） */
+  #config-root .card { align-items: center; justify-content: space-between; }
   /* 卡片图标：Provider 首字块（ui-redesign.md §6.2），装饰性元素 aria-hidden */
   #config-root .cfg-icon { width: 26px; height: 26px; border-radius: var(--radius, 6px); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-ai-avatar); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); font-weight: 600; flex-shrink: 0; user-select: none; }
   #config-root .card-info { display: flex; flex-direction: column; gap: var(--sp-0, 2px); min-width: 0; flex: 1; }
   #config-root .card-name { font-weight: 600; }
   #config-root .card-detail { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  #config-root .badge { font-size: var(--font-sm, 11px); padding: 1px var(--sp-2, 6px); border-radius: var(--radius-pill, 999px); background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); margin-left: var(--sp-1, 4px); }
   #config-root .card-actions { display: flex; gap: var(--sp-1, 4px); flex-shrink: 0; }
-  #config-root .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
-  /* 空态引导：复刻对话面板 empty-state（ui-redesign.md §6.2） */
-  #config-root .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
-  #config-root .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }
-  #config-root .empty-hint { font-size: var(--font-md, 12px); }
 
   /* ============ Components：表单弹窗 ============ */
   #config-root .modal-mask { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 10; align-items: flex-start; justify-content: center; padding-top: 40px; }

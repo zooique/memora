@@ -131,8 +131,8 @@ export const chatStyles = `
     font-size: var(--font-base, 13px); line-height: 1.7;
     padding: var(--sp-6, 16px);
   }
-  .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 500; margin-bottom: var(--sp-1, 4px); }
-  .empty-hint { margin-bottom: var(--sp-5, 12px); }
+  .empty-title { font-size: var(--font-lg, 14px); color: var(--text-primary, #cccccc); font-weight: 600; margin-bottom: var(--sp-2, 6px); }
+  .empty-hint { font-size: var(--font-md, 12px); margin-bottom: var(--sp-5, 12px); }
   /* 示例提问 chips：点击填入输入框（ui-redesign.md §6.1 空状态引导），主动引导新用户 */
   .empty-suggestions { display: flex; flex-wrap: wrap; justify-content: center; gap: var(--sp-2, 6px); }
   .suggestion-chip {

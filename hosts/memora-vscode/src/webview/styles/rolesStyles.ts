@@ -15,39 +15,17 @@ export const rolesStyles = `
   #roles-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
   #roles-root #list { padding: var(--sp-3, 8px); }
   #roles-root .group-title { font-size: var(--font-xs, 10px); letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary, #9aa0a6); margin: var(--sp-3, 8px) 0 var(--sp-1, 4px); }
-  #roles-root .footer-hint {
-    padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    text-align: center;
-  }
 
   /* ============ Components：角色包卡片 ============ */
-  #roles-root .card { display: flex; align-items: flex-start; gap: var(--sp-3, 8px); padding: var(--sp-4, 10px); margin-bottom: var(--sp-3, 8px); border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-lg, 8px); background: var(--surface-sidebar); }
-  #roles-root .card.active { border-color: var(--accent, #0e639c); }
+  /* Card 基类见 settingsStyles 通用块；此处保留对齐差异（flex-start） */
+  #roles-root .card { align-items: flex-start; }
   /* 卡片图标：首字块（装饰性，aria-hidden） */
   #roles-root .role-icon { width: 26px; height: 26px; border-radius: var(--radius, 6px); display: inline-flex; align-items: center; justify-content: center; background: var(--surface-ai-avatar); color: var(--accent-foreground, #ffffff); font-size: var(--font-md, 12px); font-weight: 600; flex-shrink: 0; user-select: none; }
   #roles-root .card-info { display: flex; flex-direction: column; gap: var(--sp-1, 4px); min-width: 0; flex: 1; }
   #roles-root .card-name { font-weight: 600; }
   #roles-root .card-detail { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); }
-  #roles-root .badge { font-size: var(--font-sm, 11px); padding: 1px var(--sp-2, 6px); border-radius: var(--radius-pill, 999px); background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); margin-left: var(--sp-1, 4px); }
   #roles-root .card-actions { display: flex; gap: var(--sp-1, 4px); flex-shrink: 0; align-self: center; }
-  #roles-root .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
-  #roles-root .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
-  #roles-root .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }
-  #roles-root .empty-hint { font-size: var(--font-md, 12px); }
 
   /* ============ Components：能力标签 chips ============ */
   #roles-root .cap-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-1, 4px); }
-  #roles-root .cap-chip {
-    display: inline-block;
-    padding: 1px var(--sp-2, 6px);
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-code, rgba(128,128,128,.12));
-    border-radius: var(--radius-pill, 999px);
-    white-space: nowrap;
-    user-select: none;
-  }
 `;

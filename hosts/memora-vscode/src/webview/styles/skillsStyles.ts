@@ -135,12 +135,4 @@ export const skillsStyles = `
     flex-wrap: wrap;
     gap: var(--sp-1, 4px);
   }
-
-  #skills-root .keyword-chip {
-    font-size: var(--font-sm, 11px);
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-hover, rgba(128,128,128,.2));
-    padding: 1px 6px;
-    border-radius: var(--radius-pill, 999px);
-  }
 `;

@@ -15,17 +15,6 @@ export const memoryStyles = `
   #memory-root .header h2 { font-size: var(--font-lg, 14px); margin: 0; }
   #memory-root .stat-bar { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-left: auto; }
   #memory-root #list { padding: var(--sp-3, 8px); }
-  #memory-root .hint { text-align: center; color: var(--text-secondary, #9aa0a6); padding: var(--sp-6, 16px); font-size: var(--font-md, 12px); }
-  #memory-root .empty-state { text-align: center; padding: var(--sp-8, 24px) var(--sp-5, 12px); color: var(--text-secondary, #9aa0a6); }
-  #memory-root .empty-title { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); margin-bottom: var(--sp-2, 6px); }
-  #memory-root .empty-hint { font-size: var(--font-md, 12px); }
-  #memory-root .footer-hint {
-    padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    text-align: center;
-  }
 
   /* ============ Components：搜索框 ============ */
   #memory-root .search-wrap { padding: var(--sp-3, 8px); }

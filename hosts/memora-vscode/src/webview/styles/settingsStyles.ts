@@ -94,6 +94,70 @@ export const settingsStyles = `
     color: var(--text-primary, #cccccc);
   }
 
+  /* ============ Components：通用卡片/徽章/空态/chip（SSOT 收敛，2026-08-25） ============
+   * 收敛 roles/config/memory/skills 重复定义（与按钮同理上提为单一真理源）。
+   * 布局/对齐差异由各子视图 context 覆盖，不混入基类。 */
+  #roles-root .card, #config-root .card, #memory-root .card, #skills-root .card, #security-root .card {
+    display: flex;
+    gap: var(--sp-3, 8px);
+    padding: var(--sp-4, 10px);
+    margin-bottom: var(--sp-3, 8px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius-lg, 8px);
+    background: var(--surface-sidebar);
+  }
+  #roles-root .card.active, #config-root .card.active, #memory-root .card.active, #skills-root .card.active, #security-root .card.active {
+    border-color: var(--accent, #0e639c);
+  }
+  #roles-root .badge, #config-root .badge {
+    font-size: var(--font-sm, 11px);
+    padding: 1px var(--sp-2, 6px);
+    border-radius: var(--radius-pill, 999px);
+    background: var(--accent, #0e639c);
+    color: var(--accent-foreground, #ffffff);
+    margin-left: var(--sp-1, 4px);
+  }
+  #roles-root .empty-state, #memory-root .empty-state, #config-root .empty-state {
+    text-align: center;
+    padding: var(--sp-8, 24px) var(--sp-5, 12px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  #roles-root .empty-title, #memory-root .empty-title, #config-root .empty-title {
+    font-size: var(--font-lg, 14px);
+    font-weight: 600;
+    color: var(--text-primary, #cccccc);
+    margin-bottom: var(--sp-2, 6px);
+  }
+  #roles-root .empty-hint, #memory-root .empty-hint, #config-root .empty-hint {
+    font-size: var(--font-md, 12px);
+  }
+  /* Chip：小胶囊标签（cap-chip/keyword-chip 形态收敛；交互型 skill-chip 另行评估） */
+  #roles-root .cap-chip, #skills-root .keyword-chip {
+    display: inline-block;
+    padding: 1px var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+    user-select: none;
+  }
+  /* Hint：居中占位提示（roles/memory/config 收敛；skills 为带 code 的说明文字、语义不同故保留） */
+  #roles-root .hint, #memory-root .hint, #config-root .hint {
+    text-align: center;
+    color: var(--text-secondary, #9aa0a6);
+    padding: var(--sp-6, 16px);
+    font-size: var(--font-md, 12px);
+  }
+  /* FooterHint：列表底部说明脚注（roles/memory 收敛） */
+  #roles-root .footer-hint, #memory-root .footer-hint {
+    padding: var(--sp-3, 8px) var(--sp-5, 12px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    text-align: center;
+  }
+
   /* ============ Utilities：加载态指示器（P1，2026-08-24 状态四态补齐） ============ */
   /* 与空态 .hint 区分：带旋转 spinner 图标 + 左侧细边框，让用户一眼识别「在加载」而非「无数据」 */
   .loading-hint {
