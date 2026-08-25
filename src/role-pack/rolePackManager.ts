@@ -757,6 +757,22 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 枚举激活角色包的内嵌技能（渐进披露 L1 清单来源，供宿主技能三源聚合展示）。
+   * name 缺省时按文件名去扩展名推导；无激活角色包返回空数组。SSOT：技能清单只由
+   * 角色包自身持有，宿主不重复扫描目录。
+   */
+  listSkills(): Array<{ name: string; description?: string }> {
+    const pack = this.items.find((p) => p.meta.name === this.activePackName);
+    if (!pack) return [];
+    return pack.skills
+      .map((s) => ({
+        name: s.name ?? this.deriveSkillNameFromFile(s.file ?? ''),
+        description: s.description,
+      }))
+      .filter((s) => s.name.length > 0);
+  }
+
+  /**
    * 读激活角色包内嵌技能正文（渐进披露 L2，read_skill 数据源）。优先返回 parseManifestPack
    * 时缓存的正文；路径相对角色包目录天然受限，无需额外白名单校验。
    */

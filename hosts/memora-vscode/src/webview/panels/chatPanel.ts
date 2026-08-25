@@ -37,6 +37,7 @@ import { chatStyles } from '../styles/chatStyles.js';
 import { toolCardStyles } from '../styles/toolCard.js';
 import { stripDocContextPrefix } from '../helpers/docContext.js';
 import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
+import { listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
@@ -90,6 +91,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _pendingPrefill?: string;
   /** 当前装配的 Agent（由 extension 装配后注入） */
   private _agent: Agent | undefined;
+  /** 系统内置配置目录 + 用户技能目录（extension 注入，composer 动态技能清单来源判定） */
+  private _configDir: string | undefined;
+  private _userSkillsDir: string | undefined;
+
+  /** 注入技能聚合所需目录（composer 动态技能下拉与设置面板同一清单来源） */
+  public setSkillDirs(configDir: string, userSkillsDir: string): void {
+    this._configDir = configDir;
+    this._userSkillsDir = userSkillsDir;
+  }
   /** 当前打磨文档上下文（2026-08-17 A 层：实时跟随活动编辑器，非一次性快照） */
   private _docContext: string | undefined;
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
@@ -214,6 +224,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
     // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
     this.refreshRoleInfoAfterAssemble();
+    // 技能清单与角色信息同步推送（composer 动态下拉与设置面板同一清单来源）
+    this.pushSkillList();
+  }
+
+  /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */
+  private pushSkillList(): void {
+    const agent = this._agent;
+    if (!agent || !this._configDir) return;
+    this.post({
+      type: 'skills_loaded',
+      skills: listVisibleSkills({
+        agent,
+        configDir: this._configDir,
+        userSkillsDir: this._userSkillsDir ?? '',
+      }),
+    });
   }
 
   /**
@@ -333,7 +359,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this._pendingPrefill = undefined;
         }
       } else if (msg.type === 'send' && msg.text.trim()) {
-        void this.handleSend(msg.text.trim());
+        void this.handleSend(msg.text.trim(), msg.skillName);
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
         void this.handleResume(msg.text.trim());
       } else if (msg.type === 'new_session') {
@@ -629,6 +655,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to) });
     // Phase 4 E2：同步推送工具权限徽章（角色切换后能力面随之变化）
     this.postCapabilityBadge();
+    // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
+    this.pushSkillList();
   };
 
   /**
@@ -1412,7 +1440,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 插话语义（无缝注入，缺口 B）：生成中用户 Enter 输入补充 → 不中断 loop，调 agent.interject()
    * 排队，内核在下一迭代边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。 */
-  private async handleSend(input: string): Promise<void> {
+  private async handleSend(input: string, skillName?: string): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
@@ -1452,9 +1480,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // Phase 4 E1：新用户对话开始 → 重置自动续跑计数（新一轮闭环计数独立）
     this._loopCount = 0;
 
+    // 注入选中技能提示（SSOT 收紧，2026-08-25：技能名 → 内核技能正文，替代原前端硬编码 systemPrompt）
+    let skillBlock = '';
+    if (skillName) {
+      try {
+        skillBlock = await skillPromptFor(this._agent, skillName);
+      } catch {
+        skillBlock = '';
+      }
+    }
     // 注入文档上下文（当前任务上下文，不进入记忆召回）
-    const chatInput = this._docContext
-      ? `[当前打磨文档内容]\n${this._docContext}\n[/当前打磨文档内容]\n\n用户请求：${input}`
+    const docBlock = this._docContext
+      ? `[当前打磨文档内容]\n${this._docContext}\n[/当前打磨文档内容]`
+      : '';
+    const chatInput = skillBlock || docBlock
+      ? `${[skillBlock, docBlock].filter(Boolean).join('\n\n')}\n\n用户请求：${input}`
       : input;
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底

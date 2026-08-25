@@ -53,7 +53,7 @@ export interface EmbeddingInfoDto {
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
-  | { type: 'send'; text: string; systemPrompt?: string }
+  | { type: 'send'; text: string; skillName?: string }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
   /**
@@ -815,8 +815,8 @@ export interface SkillDto {
   trigger?: string;
   /** 技能文件路径（用于定位来源） */
   filePath?: string;
-  /** 技能层级来源：'agent'（内置）或 'user'（用户自定义） */
-  layer?: 'agent' | 'user';
+  /** 技能来源三分类（SSOT 收紧，2026-08-25）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
+  layer?: 'builtin' | 'rolepack' | 'user';
 }
 
 /** 任务看板步骤条目（H4，2026-08-23：对齐内核 PlanStep 扁平化） */

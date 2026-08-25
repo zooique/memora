@@ -148,6 +148,8 @@ export function activate(context: vscode.ExtensionContext): void {
   const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);
   // 注入 globalState 供角色包切换时持久化激活态（用户级，跨项目共享，2026-08-17）
   chatProvider.setGlobalState(context.globalState);
+  // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT 收紧 2026-08-25）
+  chatProvider.setSkillDirs(configDir, userSkillsDir);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
@@ -168,8 +170,9 @@ export function activate(context: vscode.ExtensionContext): void {
     getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
   );
   settingsProvider.setGlobalState(context.globalState);
-  // 注入用户技能目录（用于「打开目录」按钮功能）
+  // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
+  settingsProvider.setConfigDir(configDir);
   // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
   context.subscriptions.push(

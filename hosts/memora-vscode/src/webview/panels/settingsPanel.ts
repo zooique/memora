@@ -24,6 +24,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
+import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY } from '../../shared/constants.js';
 
@@ -54,6 +55,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _chatProvider: MemoraChatViewProvider | undefined;
   /** 用户技能目录路径（由 extension 注入，用于打开目录功能） */
   private _userSkillsDir: string | undefined;
+  /** 系统内置配置目录（configDir/skills/ 所在父目录，extension 注入，用于技能来源判定） */
+  private _configDir: string | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -82,6 +85,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 注入用户技能目录路径（用于打开目录功能） */
   public setUserSkillsDir(dir: string): void {
     this._userSkillsDir = dir;
+  }
+
+  /** 注入系统内置配置目录（技能来源判定需要） */
+  public setConfigDir(dir: string): void {
+    this._configDir = dir;
   }
 
   /** 视图被解析（侧边栏展开）时初始化 */
@@ -712,30 +720,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   // ─── 技能子视图数据加载 ───
 
-  /** 加载全局技能列表 */
+  /** 加载并推送三源技能清单（系统内置 / 启用角色包 / 用户目录，统一由 skillAggregation 聚合） */
   private async loadSkills(): Promise<void> {
     const agent = await this.ensureAgent();
-    const sm = agent?.skills;
-    if (!sm) {
+    if (!agent || !this._configDir) {
       this.post({ type: 'skills_loaded', skills: [] });
       return;
     }
-    const skills: SkillDto[] = sm.list.map((s: {
-      name: string;
-      description?: string;
-      keywords: string[];
-      trigger?: RegExp;
-      filePath: string;
-      layer?: 'agent' | 'project';
-    }) => ({
-      name: s.name,
-      description: s.description ?? '',
-      keywords: s.keywords,
-      trigger: s.trigger?.source,
-      filePath: s.filePath,
-      // 内置技能（configDir/skills/）标记为 'agent'，用户技能（userSkillsDir）标记为 'user'
-      layer: s.layer === 'project' ? 'user' : 'agent',
-    }));
+    const skills: SkillDto[] = listVisibleSkills({
+      agent,
+      configDir: this._configDir,
+      userSkillsDir: this._userSkillsDir ?? '',
+    });
     this.post({ type: 'skills_loaded', skills });
   }
 

@@ -70,6 +70,11 @@ export const skillsStyles = `
     border-left: 3px solid var(--skill-agent-accent);
   }
 
+  /* 角色包技能：左侧紫色边框标识（语义令牌 --skill-rolepack-accent，2026-08-25 三分类新增） */
+  #skills-root .skill-item.skill-rolepack {
+    border-left: 3px solid var(--skill-rolepack-accent);
+  }
+
   #skills-root .skill-header {
     display: flex;
     align-items: center;
@@ -101,6 +106,12 @@ export const skillsStyles = `
   /* 用户徽章：skill-user-accent 字 + 灰底 */
   #skills-root .skill-badge.badge-user {
     color: var(--skill-user-accent);
+    background: var(--surface-hover, rgba(128,128,128,.2));
+  }
+
+  /* 角色包徽章：skill-rolepack-accent 字 + 灰底（2026-08-25 三分类新增） */
+  #skills-root .skill-badge.badge-rolepack {
+    color: var(--skill-rolepack-accent);
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
 

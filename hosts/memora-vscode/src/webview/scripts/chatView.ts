@@ -96,7 +96,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const skillPickerTrigger = skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
   // Grok 式技能 chip 行：输入框上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
-  let currentSkill: { name: string; systemPrompt: string } | null = null;
+  let currentSkill: { name: string } | null = null;
   // 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
@@ -1385,6 +1385,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       }
       // 回退补齐后同步徽章（chat_role_packs 可能先于 chat_role_pack 到达）
       updateRoleBadge();
+    } else if (msg.type === 'skills_loaded') {
+      // 动态技能清单（SSOT 收紧，2026-08-25）：与设置面板同一来源，重建下拉列表
+      skillOptions = msg.skills.map((s) => ({ name: s.name }));
+      if (skillPickerMenu) {
+        skillPickerMenu.innerHTML = '';
+        const clearItem = document.createElement('div');
+        clearItem.className = 'treedd__item';
+        clearItem.textContent = '不使用 Skill';
+        clearItem.dataset.treeddId = '__clear_skill';
+        skillPickerMenu.appendChild(clearItem);
+        const divider = document.createElement('div');
+        divider.className = 'treedd__divider';
+        skillPickerMenu.appendChild(divider);
+        for (const s of skillOptions) {
+          const item = document.createElement('div');
+          item.className = 'treedd__item';
+          item.textContent = s.name;
+          item.dataset.treeddId = s.name;
+          skillPickerMenu.appendChild(item);
+        }
+      }
+      updateSkillPickerLabel();
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     } else if (msg.type === 'goal_drift_detected') {
@@ -1419,10 +1441,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
-    // 构建消息：如果选择了 Skill，将其作为 systemPrompt 传递
+    // 构建消息：选中技能传技能名（SSOT 收紧，host 按名走内核 buildSystemPrompt，取消前端硬编码提示）
     const payload: WebviewToExtensionMessage = { type: 'send' as const, text };
     if (currentSkill) {
-      (payload as { systemPrompt?: string }).systemPrompt = currentSkill.systemPrompt;
+      (payload as { skillName?: string }).skillName = currentSkill.name;
     }
     vscode.postMessage(payload);
   }
@@ -1535,11 +1557,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
-    // Skill 下拉：选择 skill 后设置为当前 skill（发送时作为 system prompt 传递）
+    // Skill 下拉：选择真实技能名后设为当前 skill（SSOT 收紧，与设置面板同一清单；发送时传技能名走内核）
     __skillPickerOnSelect: (id) => {
-      const skill = SKILL_PRESETS.find((s) => s.name === id);
-      if (skill) {
-        currentSkill = skill;
+      const found = skillOptions.some((s) => s.name === id);
+      if (found) {
+        currentSkill = { name: id };
         updateSkillPickerLabel();
       } else if (id === '__clear_skill') {
         currentSkill = null;
@@ -1618,34 +1640,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     });
   }
 
-  /** Skill 预设列表（可扩展）：选择后作为 system prompt 传递给 LLM */
-  const SKILL_PRESETS: { name: string; systemPrompt: string }[] = [
-    { name: '代码审查', systemPrompt: '你是一位代码审查专家。请仔细审查用户的代码，指出潜在问题并提供改进建议。' },
-    { name: '文档撰写', systemPrompt: '你是一位技术文档撰写专家。请帮助用户撰写清晰、准确的技术文档。' },
-    { name: '架构设计', systemPrompt: '你是一位系统架构设计专家。请帮助用户设计合理的系统架构。' },
-    { name: '测试生成', systemPrompt: '你是一位测试专家。请为用户的代码生成全面的测试用例。' },
-  ];
-  // 初始化 Skill 选择器选项
+  /** 动态技能清单（SSOT 收紧，2026-08-25）：不再硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源 */
+  let skillOptions: { name: string }[] = [];
+  // 初始化 Skill 选择器选项：先放「不使用 Skill + 分隔线」，具体清单由 skills_loaded 动态填充
   if (skillPickerMenu) {
     skillPickerMenu.innerHTML = '';
-    // 清除选项
     const clearItem = document.createElement('div');
     clearItem.className = 'treedd__item';
     clearItem.textContent = '不使用 Skill';
     clearItem.dataset.treeddId = '__clear_skill';
     skillPickerMenu.appendChild(clearItem);
-    // 分隔线
     const divider = document.createElement('div');
     divider.className = 'treedd__divider';
     skillPickerMenu.appendChild(divider);
-    // Skill 列表
-    for (const skill of SKILL_PRESETS) {
-      const item = document.createElement('div');
-      item.className = 'treedd__item';
-      item.textContent = skill.name;
-      item.dataset.treeddId = skill.name;
-      skillPickerMenu.appendChild(item);
-    }
     updateSkillPickerLabel();
   }
 

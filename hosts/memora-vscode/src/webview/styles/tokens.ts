@@ -96,6 +96,8 @@ export const tokens = `
      * --accent-subtle 此前被 skillsStyles 引用但未定义（回退裸值），此处补定义收口。 */
     --skill-agent-accent: var(--accent, #0e639c);
     --skill-user-accent: var(--status-pass, #4ec9b0);
+    /* 角色包技能来源（2026-08-25 三分类新增）：紫色语义区分内置(蓝)/用户(绿) */
+    --skill-rolepack-accent: #a78bfa;
     /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用） */
     --accent-bg-hover: rgba(14, 99, 156, 0.06);   /* 轻交互悬停 */
     --accent-bg-subtle: rgba(14, 99, 156, 0.08);  /* 徽章/次级背景 */
