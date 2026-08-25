@@ -150,6 +150,17 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       e.stopPropagation();
       vscode.postMessage({ type: 'memory_delete', id: m.id });
     });
+    // 编辑按钮（G19 内联 edit，2026-08-25）：stopPropagation 避免触发卡片展开，独立走 memory_edit
+    const editBtn = document.createElement('button');
+    editBtn.className = 'mem-edit-btn';
+    editBtn.textContent = '✎';
+    editBtn.title = '编辑这条记忆的内容';
+    editBtn.setAttribute('aria-label', '编辑记忆');
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      enterEditMode();
+    });
+    head.appendChild(editBtn);
     head.appendChild(delBtn);
     card.appendChild(head);
 
@@ -158,6 +169,56 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     preview.className = 'mem-card-preview';
     preview.textContent = m.content;
     card.appendChild(preview);
+
+    // 内联编辑（G19 内联 edit 收尾，2026-08-25）：进入编辑态——隐藏预览、注入 textarea
+    // + 保存/取消按钮；编辑区 stopPropagation 防卡片展开误触。保存 postMessage memory_edit，
+    // 取消退出编辑态；成功时 host 推 memory_loaded 重建卡片使编辑态自然消失。
+    function enterEditMode(): void {
+      if (card.querySelector('.mem-edit-wrap')) return; // 已在编辑态，幂等
+      // 收起可能展开的全文详情，避免与编辑区叠加
+      const detail = card.querySelector('.mem-card-detail');
+      if (detail) {
+        detail.remove();
+        card.classList.remove('expanded');
+        card.setAttribute('aria-expanded', 'false');
+      }
+      preview.hidden = true;
+      const wrap = document.createElement('div');
+      wrap.className = 'mem-edit-wrap';
+      const ta = document.createElement('textarea');
+      ta.className = 'mem-edit-area';
+      ta.value = m.content;
+      wrap.appendChild(ta);
+      const actions = document.createElement('div');
+      actions.className = 'mem-edit-actions';
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'btn btn-primary';
+      saveBtn.textContent = '保存';
+      saveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        vscode.postMessage({ type: 'memory_edit', id: m.id, content: ta.value });
+      });
+      const cancelBtn = document.createElement('button');
+      cancelBtn.className = 'btn btn-secondary';
+      cancelBtn.textContent = '取消';
+      cancelBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        exitEditMode();
+      });
+      actions.appendChild(saveBtn);
+      actions.appendChild(cancelBtn);
+      wrap.appendChild(actions);
+      // 编辑区内部点击不冒泡到卡片（防触发展开切换）
+      wrap.addEventListener('click', (e) => e.stopPropagation());
+      card.appendChild(wrap);
+      ta.focus();
+    }
+
+    function exitEditMode(): void {
+      const wrap = card.querySelector('.mem-edit-wrap');
+      if (wrap) wrap.remove();
+      preview.hidden = false;
+    }
 
     // 展开/收起：点击切换，显示全文 + 创建时间（textContent 赋值防注入）
     card.addEventListener('click', () => {
@@ -340,6 +401,10 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       } else if (msg.message) {
         showMemHint(msg.message, true);
       }
+    } else if (msg.type === 'memory_edited') {
+      // 成功时 host 已推 memory_loaded 重建列表（编辑态随卡片销毁自然消失）；
+      // 仅失败显示错误提示（编辑态保留，用户可重试 / 取消）
+      if (!msg.ok && msg.message) showMemHint(msg.message, true);
     }
   });
 

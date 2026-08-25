@@ -259,6 +259,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.loadRecycle();
       return;
     }
+    if (msg.type === 'memory_edit') {
+      await this.editMemory(msg.id, msg.content);
+      return;
+    }
 
     // ─── 记忆治理消息（G4，2026-08-23） ───
     if (msg.type === 'governance_load') {
@@ -536,6 +540,39 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     } catch (err) {
       this.post({
         type: 'memory_restored',
+        ok: false,
+        id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * 编辑单条记忆内容（memory_edit，G19 内联 edit 收尾，2026-08-25）
+   *
+   * read-modify-write：经 agent.memory.getById(id) 取真实 Memory，仅改 content 并标记
+   * isModified（人工修改），writeUpsert 落盘（保留 accessedAt/metadata 等字段，避免从
+   * 损失性 DTO 重建丢字段）。完成后推送 memory_edited + 刷新记忆列表与治理统计。
+   */
+  private async editMemory(id: string, content: string): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory) {
+      this.post({ type: 'memory_edited', ok: false, id, message: 'Agent 未就绪，无法编辑记忆' });
+      return;
+    }
+    const existing = memory.getById(id);
+    if (!existing) {
+      this.post({ type: 'memory_edited', ok: false, id, message: '记忆不存在或已被删除' });
+      return;
+    }
+    try {
+      memory.writeUpsert({ ...existing, content, isModified: true });
+      this.post({ type: 'memory_edited', ok: true, id });
+      await this.loadMemory();
+      await this.loadGovernance();
+    } catch (err) {
+      this.post({
+        type: 'memory_edited',
         ok: false,
         id,
         message: err instanceof Error ? err.message : String(err),

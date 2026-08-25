@@ -203,6 +203,55 @@ export const memoryStyles = `
   #memory-root .mem-del-btn:hover { background: var(--btn-danger-bg); color: var(--accent-foreground, #ffffff); }
   #memory-root .mem-del-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
 
+  /* 卡片头部编辑按钮：低扰，hover 才显形，与删除按钮同视觉重量（编辑=中性、删除=danger 拉开强度差） */
+  #memory-root .mem-edit-btn {
+    flex-shrink: 0;
+    width: 18px; height: 18px;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0;
+    margin-left: var(--sp-1, 4px);
+    border: none;
+    border-radius: var(--radius-pill, 999px);
+    background: transparent;
+    color: var(--text-secondary, #9aa0a6);
+    font-size: var(--font-md, 12px);
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.1s, background 0.1s, color 0.1s;
+  }
+  #memory-root .mem-card:hover .mem-edit-btn,
+  #memory-root .mem-edit-btn:focus-visible { opacity: 1; }
+  #memory-root .mem-edit-btn:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
+  #memory-root .mem-edit-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
+
+  /* 内联编辑区（G19 内联 edit，2026-08-25）：textarea + 操作按钮 */
+  #memory-root .mem-edit-wrap {
+    margin-top: var(--sp-2, 6px);
+    padding-top: var(--sp-2, 6px);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  #memory-root .mem-edit-area {
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 72px;
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    font-size: var(--font-sm, 11px);
+    font-family: inherit;
+    line-height: 1.5;
+    color: var(--text-input, #cccccc);
+    background: var(--surface-input, #3c3c3c);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border-radius: var(--radius, 6px);
+    outline: none;
+    resize: vertical;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #memory-root .mem-edit-area:focus { border-color: var(--border-focus, #0e639c); }
+  #memory-root .mem-edit-actions { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
+  #memory-root .mem-edit-actions .btn { flex: 0 0 auto; }
+
   /* 回收站：可折叠分区，与治理区同视觉重量 */
   #memory-root .recycle {
     margin: var(--sp-3, 8px) 0 0;

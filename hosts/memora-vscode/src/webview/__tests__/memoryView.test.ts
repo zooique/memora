@@ -301,6 +301,64 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(card.classList.contains('expanded')).toBe(false);
   });
 
+  // ─── G19 内联 edit（2026-08-25） ───
+
+  it('memory_loaded 卡片含编辑按钮（✎），点击 → 进入编辑态（textarea 预填 content + 卡片不展开）', () => {
+    const { postMessage } = mountMemoryView();
+    dispatchLoaded({ total: 1, bySource: { 'round-summary': 1 } }, [makeMemory()]);
+    const card = document.querySelector('#list .mem-card') as HTMLElement;
+    const editBtn = card.querySelector('.mem-edit-btn') as HTMLButtonElement;
+    expect(editBtn).not.toBeNull();
+    expect(editBtn.getAttribute('aria-label')).toBe('编辑记忆');
+    // 点击编辑：进入编辑态，stopPropagation 防卡片展开
+    editBtn.click();
+    expect(card.classList.contains('expanded')).toBe(false);
+    const wrap = card.querySelector('.mem-edit-wrap');
+    expect(wrap).not.toBeNull();
+    const ta = card.querySelector('.mem-edit-area') as HTMLTextAreaElement;
+    expect(ta.value).toBe('确认采用独立记忆视图承载资产全貌。');
+    // 预览在编辑态隐藏
+    expect((card.querySelector('.mem-card-preview') as HTMLElement | null)?.hidden).toBe(true);
+    // 进入编辑态本身不发消息（保存才发 memory_edit）
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'memory_edit' }));
+  });
+
+  it('编辑态点击「保存」→ postMessage memory_edit {id, content}；点击「取消」→ 退出编辑态', () => {
+    const { postMessage } = mountMemoryView();
+    dispatchLoaded({ total: 1, bySource: { 'round-summary': 1 } }, [makeMemory()]);
+    const card = document.querySelector('#list .mem-card') as HTMLElement;
+    (card.querySelector('.mem-edit-btn') as HTMLButtonElement).click();
+    // 改内容后保存
+    const ta = card.querySelector('.mem-edit-area') as HTMLTextAreaElement;
+    ta.value = '已修正的内容。';
+    (card.querySelector('.mem-edit-actions .btn-primary') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_edit', id: 'round-summary:设计决策', content: '已修正的内容。' });
+    // 取消路径：编辑态内点取消 → 退出编辑态、预览恢复
+    postMessage.mockClear();
+    (card.querySelector('.mem-edit-actions .btn-secondary') as HTMLButtonElement).click();
+    expect(card.querySelector('.mem-edit-wrap')).toBeNull();
+    expect((card.querySelector('.mem-card-preview') as HTMLElement | null)?.hidden).toBe(false);
+    expect(postMessage).not.toHaveBeenCalled();
+  });
+
+  it('memory_edited 失败（ok:false）→ 显示错误提示 memHint（error 样式），编辑态保留', () => {
+    mountMemoryView();
+    dispatchLoaded({ total: 1, bySource: { 'round-summary': 1 } }, [makeMemory()]);
+    const card = document.querySelector('#list .mem-card') as HTMLElement;
+    (card.querySelector('.mem-edit-btn') as HTMLButtonElement).click();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'memory_edited', ok: false, id: 'round-summary:设计决策', message: '内核拒绝写入' },
+      }),
+    );
+    const hint = document.getElementById('memHint') as HTMLElement;
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toBe('内核拒绝写入');
+    expect(hint.classList.contains('mem-hint-error')).toBe(true);
+    // 编辑态保留（用户可重试 / 取消）
+    expect(card.querySelector('.mem-edit-wrap')).not.toBeNull();
+  });
+
   it('回收站展开（toggle）→ postMessage memory_recycle_load', () => {
     const { postMessage } = mountMemoryView();
     const recycle = document.getElementById('recycle') as HTMLDetailsElement;

@@ -218,6 +218,14 @@ export type WebviewToExtensionMessage =
   | { type: 'memory_restore'; id: string }
   /** 加载回收站列表（回收站展开时触发） */
   | { type: 'memory_recycle_load' }
+  /**
+   * 编辑记忆内容（记忆列表「编辑」按钮，G19 内联 edit 收尾，2026-08-25 新增）
+   *
+   * host 经 agent.memory.getById(id) 取真实 Memory 做 read-modify-write，仅改 content
+   * 并标记 isModified（人工修改），再 writeUpsert 落盘，推送 memory_edited + 刷新列表/治理。
+   * 零内核改动：复用既有 writeUpsert。
+   */
+  | { type: 'memory_edit'; id: string; content: string }
   // ─── 记忆治理面板消息（G4，2026-08-23 新增） ───
   /**
    * 请求加载记忆治理数据（记忆视图挂载/治理操作后触发）
@@ -619,6 +627,13 @@ export type ExtensionToWebviewMessage =
   | { type: 'memory_restored'; ok: boolean; id: string; message?: string }
   /** 回收站列表加载完成（对 memory_recycle_load 的应答） */
   | { type: 'memory_recycle_loaded'; items: MemoryItemDto[] }
+  /**
+   * 编辑记忆结果（对 memory_edit 的应答，G19 内联 edit 收尾，2026-08-25 新增）
+   *
+   * ok=true 时 host 已 writeUpsert 并刷新记忆列表 + 治理统计（webview 收到后编辑态随
+   * 卡片重建自然消失）；ok=false 时 webview 显示 message 错误提示。
+   */
+  | { type: 'memory_edited'; ok: boolean; id: string; message?: string }
   // ─── 记忆治理面板消息（G4，2026-08-23 新增） ───
   /**
    * 记忆治理数据加载完成（对 governance_load 的应答）
