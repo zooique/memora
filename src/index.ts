@@ -48,6 +48,8 @@ export type {
 export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 export { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
+// accumulateStream: 宿主可复用的 LLM 流式响应累积工具（用于生成标题、描述等短文本）
+export { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 // agent.polish getter 返回值类型，消费者可独立标注变量类型
 export type { PolishResult } from '@/agent/managers/textPolishManager.js';
 // 记忆即摘要架构：轮次摘要生成器
