@@ -46,6 +46,7 @@ export type {
   FadingMemory,
 } from '@/agent/managers/memoryInspector.js';
 export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
+export { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 export type { WorkProjectionEntry } from '@/agent/managers/workProjection.js';
 // agent.polish getter 返回值类型，消费者可独立标注变量类型
 export type { PolishResult } from '@/agent/managers/textPolishManager.js';

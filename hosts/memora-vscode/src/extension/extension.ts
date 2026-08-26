@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Memora — VS Code 插件入口（memora 通用落地宿主）
  *
  * 职责：
@@ -300,6 +300,50 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
+  // 命令：登记作品投影（极简触发器——将当前文件登记到索引）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.registerWork', async () => {
+      const editor = vscode.window.activeTextEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage('请先打开一个文件再登记');
+        return;
+      }
+      
+      const fullPath = editor.document.uri.fsPath;
+      // 计算相对工作区路径（如果文件在工作区内）
+      const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+      const relativePath = workspaceFolder 
+        ? vscode.workspace.asRelativePath(editor.document.uri)
+        : fullPath; // 不在工作区内时使用绝对路径
+      
+      // 询问用户一句话说明（可选，AI 可自行读取文件理解）
+      const userDesc = await vscode.window.showInputBox({
+        prompt: '给这个文件写一句话说明（可选，AI 会根据此判断相关性）',
+        placeHolder: '例如：项目的核心配置文件',
+      });
+      
+      // 用户取消则退出
+      if (userDesc === undefined) return;
+      
+      const agent = await getAgentForCommand();
+      if (!agent?.works) {
+        vscode.window.showWarningMessage('Memora Agent 未就绪，无法登记作品');
+        return;
+      }
+      
+      try {
+        // 登记投影，使用用户描述或默认占位符
+        const result = await agent.works.registerWork(relativePath, userDesc || '（无说明，AI 需自行读取判断）');
+        if (result) {
+          vscode.window.showInformationMessage(`作品登记成功：${result.name} (${result.source})`);
+        } else {
+          vscode.window.showErrorMessage('作品登记失败，路径可能越界或发生其他错误');
+        }
+      } catch (err) {
+        vscode.window.showErrorMessage(`登记失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
   // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：
   //   - 新建会话「＋」/ 历史记录（模态浮层）/ 改名笔 均由 webview 内按钮触发（W→E 消息）
   //   - 原「清空对话」（clearChat）为伪需求，由「删除会话记录」覆盖（用户决策 2026-08-17）
@@ -311,3 +355,6 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   // Agent 由宿主持有；如需优雅关闭可在后续阶段补充 agent.close()
 }
+
+
+

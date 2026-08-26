@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "memora-vscode",
   "displayName": "Memora",
   "description": "Memora 内核的 VS Code 落地宿主：通用对话 + 记忆 + 角色包定位（出厂自带文档打磨角色）",
@@ -47,6 +47,11 @@
       {
         "command": "memora.demo",
         "title": "Memora: 运行能力演示（隔离演示区）"
+      },
+      {
+        "command": "memora.registerWork",
+        "title": "Memora: 登记作品投影",
+        "icon": "$(file-text)"
       }
     ],
     "configuration": {
@@ -120,3 +125,4 @@
     "marked": "^18.0.9"
   }
 }
+
