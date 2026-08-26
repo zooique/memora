@@ -330,7 +330,13 @@ export function activate(context: vscode.ExtensionContext): void {
         const text = Buffer.from(fileContent).toString('utf-8').substring(0, 2000);
 
         // 调用 LLM 自动生成一句话描述（使用 accumulateStream 累积流式响应）
-        const prompt = '请用一句话描述这个文件的用途（不超过 30 字）：\n\n' + text;
+        // prompt 显式传入文件名并禁止复述标题，迫使模型提炼内容要点而非偷懒回声（见作品投影"找茬"复盘）
+        const baseNameHint = relativePath.split(/[\\/]/).pop() ?? '';
+        const prompt =
+          `文件名：${baseNameHint}\n` +
+          `请用一句话（不超过 25 字）概括该文件的核心内容或用途，` +
+          `不要简单重复文件名，要提炼它具体讲了什么、解决什么问题或包含哪些要点：\n\n` +
+          text;
         let description = '';
         try {
           description = (await accumulateStream(agent.provider, [
