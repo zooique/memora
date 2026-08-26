@@ -228,21 +228,16 @@ export const RUN_CODE_TOOL: ToolDefinition = {
 };
 
 /**
- * 工具注册表（8 个始终可用的内置工具）
+ * 始终可用的内置工具注册表（单一真理源 = 下方 `BUILTIN_TOOLS` 数组）。
  *
- * - read_file：读取文件
- * - write_file：写入/创建文件（受写入二次确认保护）
- * - list_dir：列出目录内容
- * - search_memories：在记忆索引中搜索关键词
- * - trace_summary：追溯轮次摘要的原始对话
- * - task_table_write：写入/更新任务表行（幂等键保护）
- * - task_table_update：更新任务表行（幂等保护）
- * - read_skill：读取激活角色包内嵌技能正文（渐进披露 L2，按需装载）
+ * - 增删内置工具只改数组，勿在此复述清单：手工维护的工具列表会随数组演化而腐坏
+ *   （本注释曾长期写为"8 个"，实际已增至 14 个，正是这一腐坏的体现）。
+ * - 每个工具的 `description` 即其对外契约，以数组内定义为准。
  *
- * 另有 WEB_SEARCH_TOOL（条件性暴露，仅注入了 IWebSearchProvider 时可用），见下方独立定义。
- * 另有 WEB_FETCH_TOOL（条件性暴露，仅注入了 IFetchProvider 时可用，与 web_search 构成搜索→抓取闭环）。
- * 另有 RUN_CODE_TOOL（条件性暴露，仅注入了 ICodeExecutionProvider 时可用）。
- * 另有 TRACE_SUMMARY_TOOL（始终可用，与 BUILTIN_TOOLS 中的 trace_summary 定义相同）。
+ * 条件性工具（不在此数组，由 toolExecutor 按宿主注入的 Provider 拼接）：
+ * - web_search / web_fetch：注入 IWebSearchProvider / IFetchProvider 时暴露，构成搜索→抓取闭环
+ * - run_code：注入 ICodeExecutionProvider 时暴露
+ * - TRACE_SUMMARY_TOOL：trace_summary 的别名导出（定义与数组内条目相同），供外部消费
  */
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
