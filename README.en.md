@@ -62,7 +62,7 @@ import { Agent, createProviderFromConfig } from '@zooique/memora';
 const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
-  baseUrl: 'https://api.deepseek.com/v1',
+  baseUrl: 'https://api.xiaomimimo.com/v1',
   model: 'deepseek-chat',
 });
 

@@ -24,7 +24,7 @@ Memora Sprite 是一个**完全运行在你本机**的 AI 记忆伴侣。你的�
 ## 2. 联网行为（唯一出网 = 你的 LLM）
 
 - 仅当你发起对话 / 输入补全时，应用调用**你在设置中填写的** LLM API。
-- 常见端点（由你配置，非硬编码外传）：`https://api.deepseek.com`、`https://api.openai.com/v1` 等。
+- 常见端点（由你配置，非硬编码外传）：`https://api.xiaomimimo.com/v1`、`https://api.openai.com/v1` 等。
 - 除 LLM 域名外，应用**没有任何其它外联**：
   - ❌ 无遥测 / 埋点上报
   - ❌ 无崩溃上报（Sentry / Bugly 等）

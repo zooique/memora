@@ -54,7 +54,7 @@ npm run compile
 插件回退读取环境变量，设好后**重启 VS Code** 生效：
 
 ```bash
-set MEMORA_BASE_URL=https://api.deepseek.com/v1
+set MEMORA_BASE_URL=https://api.xiaomimimo.com/v1
 set MEMORA_MODEL=deepseek-chat
 set MEMORA_API_KEY=你的key
 ```

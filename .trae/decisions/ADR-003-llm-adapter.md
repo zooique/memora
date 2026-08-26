@@ -67,8 +67,8 @@ export interface LlmProvider {
   "llm": {
     "provider": "deepseek",
     "model": "deepseek-chat",
-    "apiKey": "${MEMORA_LLM_API_KEY}",
-    "baseUrl": "https://api.deepseek.com/v1"
+    "apiKey": "${MEMORA_API_KEY}",
+    "baseUrl": "https://api.xiaomimimo.com/v1"
   }
 }
 ```

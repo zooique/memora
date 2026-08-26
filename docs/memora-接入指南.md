@@ -97,7 +97,7 @@ import type { IMemoryStorage, ILogger, EmbeddingService } from '@zooique/memora'
 const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
-  baseUrl: 'https://api.deepseek.com/v1',
+  baseUrl: 'https://api.xiaomimimo.com/v1',
   model: 'deepseek-chat',
 });
 
@@ -105,7 +105,7 @@ const provider = createProviderFromConfig('primary', {
 const backgroundProvider = createProviderFromConfig('background', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,
-  baseUrl: 'https://api.deepseek.com/v1',
+  baseUrl: 'https://api.xiaomimimo.com/v1',
   model: 'deepseek-chat', // 可用更便宜的模型
 });
 

@@ -762,7 +762,7 @@ async function initMemoraHost(): Promise<{ agent: Agent; bridge: AgentEventBridg
     provider: 'deepseek',
     model: 'deepseek-chat',
     apiKey: process.env.DEEPSEEK_API_KEY,
-    baseUrl: 'https://api.deepseek.com/v1',
+    baseUrl: 'https://api.xiaomimimo.com/v1',
   });
 
   // ── 3. 创建 Agent ──

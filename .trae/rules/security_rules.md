@@ -46,8 +46,8 @@ description: 安全规范（最小权限、显式允许、审计可追溯）
 
 **正确做法**：
 
-- ✅ 用环境变量 `MEMORA_LLM_API_KEY`
-- ✅ 配置文件中用占位符 `"apiKey": "${MEMORA_LLM_API_KEY}"`
+- ✅ 用环境变量 `MEMORA_API_KEY`
+- ✅ 配置文件中用占位符 `"apiKey": "${MEMORA_API_KEY}"`
 - ✅ `.gitignore` 必须包含 `.env` / `*.key`
 
 ## 4. 工具调用校验
