@@ -1,11 +1,12 @@
 /**
  * 作品投影管理器测试（JSON 单文件极简版）
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { WorkProjectionManager } from '../workProjection.js';
+import { logger } from '@/logging/logger.js';
 
 describe('WorkProjectionManager (JSON 单文件)', () => {
   let memoraDir: string;
@@ -19,6 +20,8 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
   });
 
   afterEach(async () => {
+    // 恢复 mock（如 logger.warn spy）
+    vi.restoreAllMocks();
     // 清理临时目录
     if (memoraDir) await rm(memoraDir, { recursive: true, force: true });
     if (projectDir) await rm(projectDir, { recursive: true, force: true });
@@ -120,6 +123,20 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const list = await manager.listWorks();
       expect(list).toHaveLength(1);
       expect(list[0]!.source).toBe('valid.md');
+    });
+
+    it('非数组根（如 {"entries":[...]} 错形态）被忽略并告警，不静默吞入', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      // 模拟照旧文档手写出的错形态
+      await fs.writeFile(filePath, JSON.stringify({ entries: [{ name: 'x', description: 'y', source: 'z.md' }] }));
+
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const list = await manager.listWorks();
+
+      expect(list).toHaveLength(0); // 错形态不被当作有效索引
+      expect(warnSpy).toHaveBeenCalled(); // 且显式告警，而非静默清空（防覆盖丢数据）
     });
   });
 

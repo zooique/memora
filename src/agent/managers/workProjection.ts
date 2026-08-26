@@ -113,10 +113,16 @@ export class WorkProjectionManager {
     try {
       const content = await readFile(this.filePath, 'utf-8');
       const parsed = JSON.parse(content);
-      // 验证数据格式（必须是数组）
+      // 验证数据格式（必须是顶层数组，与设计文档 docs/architecture/work-projection.md 一致）
       if (Array.isArray(parsed)) {
         this.entries = parsed.filter(e => e && e.source && e.name);
       } else {
+        // 非数组根（如 {"entries":[...]} 错形态）→ 不静默清空，显式告警以暴露格式错误，
+        // 避免用户手写的索引被后续 register_work 覆盖丢失（见作品投影"找茬"复盘）
+        logger.warn(
+          { file: this.filePath },
+          '作品投影文件根节点非数组，已忽略（预期顶层 JSON 数组；若照旧文档手写请改为 [...]，详见 docs/architecture/work-projection.md）',
+        );
         this.entries = [];
       }
     } catch (err) {
