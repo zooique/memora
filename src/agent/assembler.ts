@@ -529,6 +529,13 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
         idempotent,
       };
       sessionManager.logToolExecution(record);
+      // D1-②：非只读工具（有写副作用）完成后立即落盘其 completedToolCalls——使「工具重跑排重」
+      // 在进程崩溃/重启后仍生效（幂等契约跨重启可靠），而非依赖闭环边界/关闭 flush。
+      // 只读幂等工具可安全重跑，故不落盘以省 IO。
+      if (idempotent !== 'idempotent') {
+        // 可选调用：兼容测试 mock 未暴露 flushNow 的场景（生产实为 SessionManager 恒有）
+        sessionManager.flushNow?.();
+      }
     },
     // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查。
     // ⚠️ 宿主未注入 preExecutionCheck 时 → 完全降级为仅内部幂等检查。

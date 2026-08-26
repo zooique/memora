@@ -1086,6 +1086,30 @@ describe('SessionManager', () => {
       expect(() => JSON.parse(savedJson)).not.toThrow();
     });
 
+    it('flushNow 应强制落盘当前脏检查点（D1-②：工具副作用后持久化 completedToolCalls）', () => {
+      const loop = createMockLoopWithMessages([]);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        sessionStore,
+        isChatBusy as unknown as () => boolean,
+        emitEvent as unknown as (event: string, data: Record<string, unknown>) => void,
+      );
+
+      // 建立检查点 + 模拟 logToolExecution 标脏（写副作用工具）
+      mgr.createCheckpoint();
+      mgr.logToolExecution({ name: 'write_file', argsSignature: '{}', executedAt: Date.now(), resultSummary: 'ok', ok: true, idempotent: 'non-idempotent' });
+      const saveSpy = sessionStore!.saveCheckpoint as ReturnType<typeof vi.fn>;
+      const callsAfterDirty = saveSpy.mock.calls.length;
+
+      // flushNow 强制落盘（不依赖 completeRound）
+      mgr.flushNow();
+      expect(saveSpy.mock.calls.length).toBeGreaterThan(callsAfterDirty);
+      // 落盘内容含刚记录的 completedToolCalls（幂等标记可跨重启排重）
+      const latest = saveSpy.mock.calls[saveSpy.mock.calls.length - 1]![1] as string;
+      expect(latest).toContain('write_file');
+    });
+
     it('loadPersistedCheckpoint 应正常加载并恢复状态机', () => {
       const loop = createMockLoopWithMessages([
         { role: 'user', content: '历史消息' },

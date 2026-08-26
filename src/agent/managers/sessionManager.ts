@@ -1278,6 +1278,12 @@ export class SessionManager {
     this.flushCheckpoint(true);
   }
 
+  /** 立即 flush 脏检查点落盘（D1-②，2026-08-26）：非只读工具完成后调用，持久化其 completedToolCalls
+   *  幂等标记，使「工具重跑排重」在进程崩溃/重启后仍生效（逼近事件溯源），而非仅依赖闭环边界/关闭 */
+  flushNow(): void {
+    this.flushCheckpoint(true);
+  }
+
   /** 销毁 SessionManager，清理所有定时器（防阻止进程退出或悬空回调） */
   destroy(): void {
     this.stopPauseTimeoutTimer();
