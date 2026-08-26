@@ -70,12 +70,12 @@ export class WorkProjectionManager {
       return null;
     }
 
-    // 提取作品名（文件名去扩展名）
+    // 提取作品名（文件名去扩展名；getBaseName 返回带扩展名末段，故需补一次去扩展名）
     const baseName = getBaseName(sourcePath).replace(/\.[^.]+$/, '') || 'unknown';
-    
+
     const newEntry: WorkProjectionEntry = {
       name: baseName,
-      description: toSingleLine(description),
+      description: normalizeDescription(description),
       source: toSingleLine(sourcePath),
     };
 
@@ -169,4 +169,19 @@ export class WorkProjectionManager {
  */
 function toSingleLine(value: string): string {
   return value.replace(/\r?\n/g, ' ').trim();
+}
+
+/**
+ * 描述归一化：折叠换行 + 限长截断（一句话上限）
+ *
+ * 两条登记路径（右键宿主 LLM 生成 / register_work 工具 LLM 自填）description 质量方差较大，
+ * 内核统一在此归一层——过长的描述会膨胀 system prompt，违背「一句话说明」设计（见作品投影复盘）。
+ * 不在此调用 LLM（内核零三方依赖、不持有 provider），超长仅硬截断并加省略号，由调用方保证语义完整。
+ */
+const MAX_DESCRIPTION_LENGTH = 100;
+
+function normalizeDescription(value: string): string {
+  const single = toSingleLine(value);
+  if (single.length <= MAX_DESCRIPTION_LENGTH) return single;
+  return single.slice(0, MAX_DESCRIPTION_LENGTH) + '…';
 }

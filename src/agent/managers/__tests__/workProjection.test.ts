@@ -72,6 +72,17 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       
       expect(result!.description).toBe('第一行 第二行');
     });
+
+    it('过长描述被截断到上限并加省略号（防 system prompt 膨胀）', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const longDesc = '关'.repeat(150); // 远超 100 字上限
+      const result = await manager.registerWork('long.md', longDesc);
+
+      expect(result!.description.length).toBe(101); // 100 字 + '…'
+      expect(result!.description.endsWith('…')).toBe(true);
+      // 截断后不应再包含超长原文尾部特征
+      expect(result!.description).not.toBe(longDesc);
+    });
   });
 
   describe('路径穿越防御', () => {
