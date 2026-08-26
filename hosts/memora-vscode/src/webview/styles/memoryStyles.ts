@@ -275,6 +275,34 @@ export const memoryStyles = `
     font-size: var(--font-sm, 11px);
   }
   #memory-root .mem-restore-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+  /* 回收站条目「永久删除」按钮（2026-08-26）：危险色，与「恢复」并排、间距对齐 */
+  #memory-root .mem-purge-btn {
+    flex-shrink: 0;
+    margin-left: var(--sp-2, 6px);
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    border: none;
+    border-radius: var(--radius, 6px);
+    cursor: pointer;
+    font-size: var(--font-sm, 11px);
+  }
+  #memory-root .mem-purge-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+  /* 回收站操作行（2026-08-26）：清空回收站按钮右对齐，置于条目之上 */
+  #memory-root .mem-recycle-tools {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: var(--sp-2, 6px);
+  }
+  #memory-root .mem-recycle-tools .mem-recycle-clear {
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    border: none;
+    border-radius: var(--radius, 6px);
+    cursor: pointer;
+    font-size: var(--font-sm, 11px);
+  }
+  #memory-root .mem-recycle-tools .mem-recycle-clear:focus-visible {
+    outline: 2px solid var(--border-focus, #0e639c);
+    outline-offset: 2px;
+  }
 
   /* 删除 / 恢复结果反馈（无状态机，纯占位修饰） */
   #memory-root .mem-hint {

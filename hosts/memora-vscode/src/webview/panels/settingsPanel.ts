@@ -268,6 +268,14 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.loadRecycle();
       return;
     }
+    if (msg.type === 'memory_purge') {
+      await this.purgeMemory(msg.id);
+      return;
+    }
+    if (msg.type === 'memory_recycle_clear') {
+      await this.clearRecycle();
+      return;
+    }
     if (msg.type === 'memory_edit') {
       await this.editMemory(msg.id, msg.content);
       return;
@@ -555,6 +563,79 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         type: 'memory_restored',
         ok: false,
         id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * 永久删除回收站单条记忆（memory_purge，2026-08-26）
+   *
+   * 弹确认框后调 agent.memory.writePurge(id) 物理删除（不可恢复），完成后推送 memory_purged
+   * + 刷新回收站/记忆列表/治理统计。
+   */
+  private async purgeMemory(id: string): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory) {
+      this.post({ type: 'memory_purged', ok: false, id, message: 'Agent 未就绪，无法永久删除记忆' });
+      return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      '永久删除这条记忆？此操作不可恢复。',
+      { modal: true },
+      '永久删除',
+    );
+    if (choice !== '永久删除') return;
+    try {
+      memory.writePurge(id);
+      this.post({ type: 'memory_purged', ok: true, id });
+      // 刷新回收站 + 列表（可能删的是活跃记忆外的回收条目，仅 count/回收站变化）
+      await this.loadRecycle();
+      await this.loadGovernance();
+    } catch (err) {
+      this.post({
+        type: 'memory_purged',
+        ok: false,
+        id,
+        message: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * 清空回收站（memory_recycle_clear，2026-08-26）
+   *
+   * 弹确认框后遍历 listDeleted() 逐个 writePurge 物理删除全部软删记忆（不可恢复），
+   * 完成后推送 memory_recycle_cleared + 刷新回收站/治理统计。
+   */
+  private async clearRecycle(): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory) {
+      this.post({ type: 'memory_recycle_cleared', ok: false, count: 0, message: 'Agent 未就绪，无法清空回收站' });
+      return;
+    }
+    // 空回收站：无需确认，直接回报 0
+    const deleted = memory.listDeleted(1000);
+    if (deleted.length === 0) {
+      this.post({ type: 'memory_recycle_cleared', ok: true, count: 0 });
+      return;
+    }
+    const choice = await vscode.window.showWarningMessage(
+      `确定清空回收站？将永久删除 ${deleted.length} 条记忆，此操作不可恢复。`,
+      { modal: true },
+      '清空回收站',
+    );
+    if (choice !== '清空回收站') return;
+    try {
+      for (const m of deleted) memory.writePurge(m.id);
+      this.post({ type: 'memory_recycle_cleared', ok: true, count: deleted.length });
+      await this.loadRecycle();
+      await this.loadGovernance();
+    } catch (err) {
+      this.post({
+        type: 'memory_recycle_cleared',
+        ok: false,
+        count: 0,
         message: err instanceof Error ? err.message : String(err),
       });
     }

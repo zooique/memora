@@ -219,6 +219,20 @@ export type WebviewToExtensionMessage =
   /** 加载回收站列表（回收站展开时触发） */
   | { type: 'memory_recycle_load' }
   /**
+   * 永久删除回收站单条记忆（回收站条目「永久删除」按钮，2026-08-26）
+   *
+   * host 弹确认框后调 agent.memory.writePurge(id) 物理删除（不可恢复），
+   * 完成后推送 memory_purged + 刷新回收站/列表/治理统计。
+   */
+  | { type: 'memory_purge'; id: string }
+  /**
+   * 清空回收站（回收站「清空回收站」按钮，2026-08-26）
+   *
+   * host 弹确认框后遍历 listDeleted() 逐个 writePurge 物理删除全部软删记忆（不可恢复），
+   * 完成后推送 memory_recycle_cleared + 刷新回收站/列表/治理统计。
+   */
+  | { type: 'memory_recycle_clear' }
+  /**
    * 编辑记忆内容（记忆列表「编辑」按钮，G19 内联 edit 收尾，2026-08-25 新增）
    *
    * host 经 agent.memory.getById(id) 取真实 Memory 做 read-modify-write，仅改 content
@@ -626,6 +640,18 @@ export type ExtensionToWebviewMessage =
   | { type: 'memory_restored'; ok: boolean; id: string; message?: string }
   /** 回收站列表加载完成（对 memory_recycle_load 的应答） */
   | { type: 'memory_recycle_loaded'; items: MemoryItemDto[] }
+  /**
+   * 永久删除回收站单条记忆结果（对 memory_purge 的应答，2026-08-26）
+   *
+   * ok=true 时 host 已 writePurge（不可恢复）并刷新回收站/列表/治理；ok=false 显示错误。
+   */
+  | { type: 'memory_purged'; ok: boolean; id: string; message?: string }
+  /**
+   * 清空回收站结果（对 memory_recycle_clear 的应答，2026-08-26）
+   *
+   * ok=true 时 host 已物理删除全部软删记忆（不可恢复）；count 为清除数量。
+   */
+  | { type: 'memory_recycle_cleared'; ok: boolean; count: number; message?: string }
   /**
    * 编辑记忆结果（对 memory_edit 的应答，G19 内联 edit 收尾，2026-08-25 新增）
    *

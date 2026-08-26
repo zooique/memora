@@ -387,6 +387,66 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_restore', id: 'round-summary:设计决策' });
   });
 
+  it('回收站卡片「永久删除」按钮 → postMessage memory_purge（stopPropagation 防触发展开）', () => {
+    const { postMessage } = mountMemoryView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'memory_recycle_loaded',
+          items: [makeMemory({ id: 'round-summary:废弃', deletedAt: '2026-08-25T08:00:00.000Z' })],
+        },
+      }),
+    );
+    const purgeBtn = document.querySelector('.mem-purge-btn') as HTMLButtonElement;
+    expect(purgeBtn).not.toBeNull();
+    purgeBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_purge', id: 'round-summary:废弃' });
+  });
+
+  it('回收站有条目时渲染「清空回收站」操作行，点击 → postMessage memory_recycle_clear', () => {
+    const { postMessage } = mountMemoryView();
+    // 空列表 → 无清空行
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'memory_recycle_loaded', items: [] } }),
+    );
+    expect(document.querySelector('.mem-recycle-tools')).toBeNull();
+    // 有条目 → 渲染清空行，点击发送 memory_recycle_clear
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: {
+          type: 'memory_recycle_loaded',
+          items: [makeMemory({ id: 'round-summary:a', deletedAt: '2026-08-25T08:00:00.000Z' })],
+        },
+      }),
+    );
+    const clearBtn = document.querySelector('.mem-recycle-clear') as HTMLButtonElement;
+    expect(clearBtn).not.toBeNull();
+    clearBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_clear' });
+  });
+
+  it('memory_purged 成功 → 重拉回收站 + 提示已永久删除', () => {
+    const { postMessage } = mountMemoryView();
+    const recycle = document.getElementById('recycle') as HTMLDetailsElement;
+    recycle.open = true;
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'memory_purged', ok: true, id: 'round-summary:x' } }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
+    expect(document.getElementById('memHint')?.textContent).toBe('已永久删除');
+  });
+
+  it('memory_recycle_cleared 成功 → 重拉回收站 + 提示条数', () => {
+    const { postMessage } = mountMemoryView();
+    const recycle = document.getElementById('recycle') as HTMLDetailsElement;
+    recycle.open = true;
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'memory_recycle_cleared', ok: true, count: 3 } }),
+    );
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
+    expect(document.getElementById('memHint')?.textContent).toContain('已清空回收站（3 条）');
+  });
+
   it('memory_recycle_loaded 空列表 → 渲染空态引导', () => {
     mountMemoryView();
     window.dispatchEvent(
@@ -406,6 +466,42 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(hint.hidden).toBe(false);
     expect(hint.textContent).toBe('内核拒绝删除');
     expect(hint.classList.contains('mem-hint-error')).toBe(true);
+  });
+
+  it('memory_deleted 成功（ok:true）→ 自动展开回收站 + 拉取列表 + 提示可在回收站恢复', () => {
+    const { postMessage } = mountMemoryView();
+    const recycle = document.getElementById('recycle') as HTMLDetailsElement;
+    expect(recycle.open).toBe(false);
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'memory_deleted', ok: true, id: 'x' } }),
+    );
+    // 程序性展开（不依赖手点 summary）+ 拉取回收站条目
+    expect(recycle.open).toBe(true);
+    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
+    // 清晰提示"已移入回收站可恢复"
+    const hint = document.getElementById('memHint') as HTMLElement;
+    expect(hint.hidden).toBe(false);
+    expect(hint.textContent).toContain('已移入回收站');
+  });
+
+  it('governance_loaded 回收站条数同步到标题徽标（回收站（N））', () => {
+    mountMemoryView();
+    dispatchGovernanceLoaded({
+      active: 5,
+      deleted: 3,
+      bySource: { 'round-summary': 5 },
+      decay: { runCount: 0, totalDecayedCount: 0, lastRunAt: null },
+    });
+    const summary = document.querySelector('#recycle > summary') as HTMLElement;
+    expect(summary.textContent).toBe('回收站（3）');
+    // 清空后回退纯文案
+    dispatchGovernanceLoaded({
+      active: 5,
+      deleted: 0,
+      bySource: { 'round-summary': 5 },
+      decay: { runCount: 0, totalDecayedCount: 0, lastRunAt: null },
+    });
+    expect(summary.textContent).toBe('回收站');
   });
 
   it('memory_restored 成功且回收站已展开 → 重新拉取回收站列表', () => {

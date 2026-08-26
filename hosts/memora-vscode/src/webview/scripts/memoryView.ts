@@ -79,6 +79,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   // 回收站 + 提示（G19，2026-08-25：软删除记忆的可恢复暂存区 + 操作反馈）
   const recycle = root.querySelector('#recycle') as HTMLDetailsElement | null;
   const recycleList = root.querySelector('#recycleList') as HTMLElement | null;
+  const recycleSummary = root.querySelector('#recycle > summary') as HTMLElement | null;
   const memHint = root.querySelector('#memHint') as HTMLElement | null;
 
   /** 当前搜索词（非空表示处于搜索模式，列表模式为空串） */
@@ -259,11 +260,19 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     statBar.textContent = `共 ${stats.total} 条` + (parts.length > 0 ? ` · ${parts.join(' · ')}` : '');
   }
 
+  /** 回收站标题条数徽标：有回收站条目时在「回收站」后显示 (N)，提高可发现性 */
+  function updateRecycleCount(n: number): void {
+    if (!recycleSummary) return;
+    recycleSummary.textContent = n > 0 ? `回收站（${n}）` : '回收站';
+  }
+
   /** 渲染治理统计（活跃 / 回收站 / 衰减次数 + 累计衰减条数详情） */
   function renderGovernance(stats: GovernanceStatsDto): void {
     if (govActive) govActive.textContent = String(stats.active);
     if (govDeleted) govDeleted.textContent = String(stats.deleted);
     if (govDecayRun) govDecayRun.textContent = String(stats.decay?.runCount ?? 0);
+    // 回收站标题同步条数（软删记忆可发现，非死字段）
+    updateRecycleCount(stats.deleted);
     if (govDetail && stats.decay && stats.decay.totalDecayedCount > 0) {
       govDetail.hidden = false;
       govDetail.classList.remove('gov-error');
@@ -273,11 +282,12 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     }
   }
 
-  /** 渲染回收站列表（G19，2026-08-25：软删除记忆的可恢复暂存区） */
+  /** 渲染回收站列表（G19，2026-08-25：软删除记忆的可恢复暂存区；2026-08-26 加清空操作） */
   function renderRecycle(items: MemoryItemDto[]): void {
+    updateRecycleCount(items?.length ?? 0);
     if (!recycleList) return;
+    recycleList.textContent = '';
     if (!items || items.length === 0) {
-      recycleList.textContent = '';
       recycleList.appendChild(
         createEmptyState(document, {
           title: '回收站为空',
@@ -286,7 +296,18 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       );
       return;
     }
-    recycleList.textContent = '';
+    // 操作行：清空回收站（物理删除全部，不可恢复）
+    const toolRow = document.createElement('div');
+    toolRow.className = 'mem-recycle-tools';
+    const clearBtn = document.createElement('button');
+    clearBtn.className = 'btn btn-danger mem-recycle-clear';
+    clearBtn.textContent = '清空回收站';
+    clearBtn.title = '永久删除回收站全部记忆，不可恢复';
+    clearBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'memory_recycle_clear' });
+    });
+    toolRow.appendChild(clearBtn);
+    recycleList.appendChild(toolRow);
     items.forEach((m) => recycleList.appendChild(buildRecycleCard(m)));
   }
 
@@ -338,6 +359,17 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       vscode.postMessage({ type: 'memory_restore', id: m.id });
     });
     card.appendChild(restoreBtn);
+
+    // 永久删除按钮（2026-08-26）：独立走 memory_purge，物理删除不可恢复
+    const purgeBtn = document.createElement('button');
+    purgeBtn.className = 'mem-purge-btn btn btn-danger';
+    purgeBtn.textContent = '永久删除';
+    purgeBtn.title = '物理删除这条记忆，不可恢复';
+    purgeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      vscode.postMessage({ type: 'memory_purge', id: m.id });
+    });
+    card.appendChild(purgeBtn);
 
     card.addEventListener('click', () => {
       vscode.postMessage({ type: 'memory_restore', id: m.id });
@@ -392,12 +424,37 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       // 渲染回收站列表（G19）
       renderRecycle(msg.items);
     } else if (msg.type === 'memory_deleted') {
-      // 成功由 host 推送 memory_loaded 刷新列表；仅失败显示提示
-      if (!msg.ok && msg.message) showMemHint(msg.message, true);
+      // 成功：host 已推 memory_loaded 刷新活跃列表；此处自动展开回收站并拉取，
+      // 让"软删的记忆去哪了、如何撤销"一目了然（恢复按钮立即可点）。
+      if (msg.ok) {
+        if (recycle) {
+          recycle.open = true; // 程序性展开，不依赖手点 summary
+          vscode.postMessage({ type: 'memory_recycle_load' });
+        }
+        showMemHint('已移入回收站，可在下方「回收站」中恢复', false);
+      } else if (msg.message) {
+        showMemHint(msg.message, true);
+      }
     } else if (msg.type === 'memory_restored') {
       if (msg.ok) {
         // 重新拉取回收站（若展开）移除已恢复项；列表由 host 推送 memory_loaded 刷新
         if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
+      } else if (msg.message) {
+        showMemHint(msg.message, true);
+      }
+    } else if (msg.type === 'memory_purged') {
+      // 永久删除单条（2026-08-26）：成功重拉回收站 + 活跃列表；失败显示错误
+      if (msg.ok) {
+        if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
+        showMemHint('已永久删除', false);
+      } else if (msg.message) {
+        showMemHint(msg.message, true);
+      }
+    } else if (msg.type === 'memory_recycle_cleared') {
+      // 清空回收站（2026-08-26）：成功重拉回收站；失败显示错误
+      if (msg.ok) {
+        if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
+        showMemHint(msg.count > 0 ? `已清空回收站（${msg.count} 条）` : '回收站已是空的', false);
       } else if (msg.message) {
         showMemHint(msg.message, true);
       }
