@@ -237,6 +237,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 注册暂停超时归档；必须先于 loadPersistedCheckpoint()，否则启动路径的超时事件无人接收
     this.registerPauseTimeoutArchiver();
+    this.registerWorkProjectionRefresh();
 
     // 加载持久化的会话检查点；若上次会话在暂停/异常中关闭，加载后恢复状态机；
     // 若为 paused 还需恢复热记忆 + 温记忆召回 + 契约重注入（重启后上下文完整）
@@ -246,6 +247,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     }
 
     return pctx;
+  }
+
+  /**
+   * 登记作品投影实时刷新处理器：register_work 工具 / 右键登记成功后，
+   * 内核 WorkProjectionManager 触发 workProjectionGenerated 事件（携带已写入内存 entries 的投影），
+   * 立即重建 AgentLoop 的 systemPromptPrefix，使 AI 在下一轮对话即可感知新索引——
+   * 否则需切角色包 / reloadConfig / 开新会话才生效（见作品投影复盘 P1）。
+   * 与 registerPauseTimeoutArchiver 同生命周期（init 内注册，close 的 removeAllListeners 兜底）。
+   */
+  private registerWorkProjectionRefresh(): void {
+    this.on(AGENT_EVENTS.workProjectionGenerated, () => {
+      this.refreshRolePackPrefixOnLoop();
+    });
   }
 
   /**

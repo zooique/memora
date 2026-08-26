@@ -27,6 +27,8 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 import { todayDate } from '@/utils/time.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
+import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
+import { AgentLoop } from '@/agent/loop.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
@@ -86,6 +88,40 @@ function makeAgent(
   archiveMode?: 'full' | 'manual',
 ): Agent {
   return new Agent({
+    projectPath,
+    provider: new MockProvider(),
+    configDir,
+    dataDir,
+    permission: 'owner',
+    allowedPaths: [dataDir],
+    archiveMode,
+    messages: {
+      abortedByUser: '用户取消了对话',
+      maxIterationsReached: '\n\n[已达到最大迭代次数]',
+      recentConversationLabel: '[最近对话]',
+      userLabel: '用户',
+      assistantLabel: '助手',
+    },
+  });
+}
+
+/**
+ * 测试桥接：暴露受保护的 emit，用于验证 workProjectionGenerated 事件订阅接线。
+ * 子类访问继承的 protected 成员是合法 TS，不破坏零 any 规则（project-rules §7.1）。
+ */
+class TestableAgent extends Agent {
+  emitWorkProjectionGenerated(): void {
+    this.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath: 'x.md', summary: 'y' });
+  }
+}
+
+function makeTestableAgent(
+  projectPath: string,
+  configDir: string,
+  dataDir: string,
+  archiveMode?: 'full' | 'manual',
+): TestableAgent {
+  return new TestableAgent({
     projectPath,
     provider: new MockProvider(),
     configDir,
@@ -2746,5 +2782,44 @@ describe('Agent · getRecentToolExecutions() · 工具执行历史聚合出口',
     records[0]!.resultSummary = '篡改';
     const again = agent.getRecentToolExecutions();
     expect(again[0]!.resultSummary).toBe('ok');
+  });
+});
+
+describe('Agent · 作品投影实时刷新（workProjectionGenerated → loop 前缀重建）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: TestableAgent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-agent-wp-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-agent-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-agent-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpData, { recursive: true, force: true });
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+  });
+
+  it('内核广播 workProjectionGenerated 后，立即重建 loop 的 systemPromptPrefix', async () => {
+    // 监听 ① 修复的最终落点：AgentLoop.refreshRolePackPrefix
+    const refreshSpy = vi.spyOn(AgentLoop.prototype, 'refreshRolePackPrefix');
+    agent = makeTestableAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    // 清除 init 期间（角色包装配等）触发的调用，仅验证本次事件驱动的刷新
+    refreshSpy.mockClear();
+
+    // 模拟内核 registerWork 成功后广播的事件（assembler 经 hooks.emit 发出）
+    agent.emitWorkProjectionGenerated();
+
+    expect(refreshSpy).toHaveBeenCalled();
+    refreshSpy.mockRestore();
   });
 });
