@@ -301,25 +301,41 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // 命令：登记作品投影（极简触发器——将当前文件登记到索引）
+  // 支持从右键菜单（explorer/context, editor/context）传入文件路径
   context.subscriptions.push(
-    vscode.commands.registerCommand('memora.registerWork', async () => {
-      const editor = vscode.window.activeTextEditor;
-      if (!editor) {
-        vscode.window.showWarningMessage('请先打开一个文件再登记');
-        return;
-      }
+    vscode.commands.registerCommand('memora.registerWork', async (uri?: vscode.Uri | vscode.Uri[]) => {
+      // 从右键菜单传入的 uri 参数中提取第一个文件路径
+      const targetUri = Array.isArray(uri) ? uri[0] : uri;
       
-      const fullPath = editor.document.uri.fsPath;
-      // 计算相对工作区路径（如果文件在工作区内）
-      const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
-      const relativePath = workspaceFolder 
-        ? vscode.workspace.asRelativePath(editor.document.uri)
-        : fullPath; // 不在工作区内时使用绝对路径
+      let targetPath: string;
+      let relativePath: string;
+      
+      if (targetUri) {
+        // 从右键菜单触发：使用传入的文件 URI
+        targetPath = targetUri.fsPath;
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(targetUri);
+        relativePath = workspaceFolder 
+          ? vscode.workspace.asRelativePath(targetUri)
+          : targetPath;
+      } else {
+        // 从命令面板触发：使用当前活动编辑器的文件
+        const editor = vscode.window.activeTextEditor;
+        if (!editor) {
+          vscode.window.showWarningMessage('请先打开一个文件再登记');
+          return;
+        }
+        targetPath = editor.document.uri.fsPath;
+        const workspaceFolder = vscode.workspace.getWorkspaceFolder(editor.document.uri);
+        relativePath = workspaceFolder 
+          ? vscode.workspace.asRelativePath(editor.document.uri)
+          : targetPath;
+      }
       
       // 询问用户一句话说明（可选，AI 可自行读取文件理解）
       const userDesc = await vscode.window.showInputBox({
         prompt: '给这个文件写一句话说明（可选，AI 会根据此判断相关性）',
         placeHolder: '例如：项目的核心配置文件',
+        value: '',
       });
       
       // 用户取消则退出
@@ -343,8 +359,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showErrorMessage(`登记失败：${err instanceof Error ? err.message : String(err)}`);
       }
     }),
-  );
-  // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：
+  );  // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：
   //   - 新建会话「＋」/ 历史记录（模态浮层）/ 改名笔 均由 webview 内按钮触发（W→E 消息）
   //   - 原「清空对话」（clearChat）为伪需求，由「删除会话记录」覆盖（用户决策 2026-08-17）
   //   - 原「会话列表」（switchSession，QuickPick 三合一）被标题条按钮 + 历史浮层取代
@@ -355,6 +370,8 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   // Agent 由宿主持有；如需优雅关闭可在后续阶段补充 agent.close()
 }
+
+
 
 
 

@@ -102,6 +102,21 @@
           "name": "设置"
         }
       ]
+    },
+    "menus": {
+      "explorer/context": [
+        {
+          "command": "memora.registerWork",
+          "when": "!explorerResourceIsRoot",
+          "group": "navigation@9"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "memora.registerWork",
+          "group": "navigation@9"
+        }
+      ]
     }
   },
   "scripts": {
@@ -125,4 +140,5 @@
     "marked": "^18.0.9"
   }
 }
+
 
