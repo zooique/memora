@@ -388,6 +388,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     tb.open = false;
   }
 
+  /** 轮次收尾：把三阶段轨迹全部标记为「完成 ✓」并停止呼吸动画。
+   *  归档记忆是内核后台动作，renderTrace 只在 thinking phase 事件时更新，archiving 后无 phase 事件
+   *  把第 3 步推向 done，导致「归档记忆」停留在 active 无限脉冲闪烁。done/interrupted 即本轮闭环
+   *  收尾，在此统一收敛为全程 ✓（对齐「Recalled ✓ / Acted ✓ / Archived ✓」的真实完成态）。 */
+  function finalizeTrace(): void {
+    if (!thoughtEl || !thoughtEl.isConnected) return;
+    thoughtEl.querySelectorAll('.trace-step').forEach((row) => {
+      row.classList.remove('active', 'done', 'pending');
+      row.classList.add('done');
+      const mark = row.querySelector('.trace-step__mark');
+      if (mark) mark.textContent = '✓';
+    });
+  }
+
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
   // 仅当本条消息日期与上一条不同才插入；divider 先于消息追加，形成「日期 → 消息」分组。
   function renderDateDivider(ts?: string): void {
@@ -1200,8 +1214,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       }
       scrollToBottom(messages);
     } else if (msg.type === 'handoff') {
-      // 衔接决策：仅 loop 渲染「自动续跑」提示条（wait/end 静默；雷-4 低频）
-      showActivity('info', 'Agent 将自动续跑…');
+      // 衔接决策（SSOT 收紧后 loop 已由宿主归一为 wait，语意让位用户）：
+      // wait 静默（等用户输入，输入框已随 done 恢复）；end 低扰提示任务已收尾。
+      // 不渲染"将自动续跑"——自主循环由内核在单次 chat() 内消费预算，宿主不再二次进入。
+      if (msg.decision === 'end') {
+        showActivity('info', '任务已完成，可开始下一项');
+      }
+      // loop / wait 均静默处理
     } else if (msg.type === 'retry') {
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
       showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
@@ -1221,9 +1240,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'capability_badge') {
       // Phase 4 E2：角色能力徽章 → 更新工具权限展示
       updateCapabilityBadge(msg.toolMode, msg.capabilities);
-    } else if (msg.type === 'loop_count') {
-      // Phase 4 E1：自动续跑计数 → 提示条显示当前轮次
-      showActivity('info', `Agent 自动续跑 ${msg.current}/${msg.max}`);
     } else if (msg.type === 'metrics') {
       // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
@@ -1233,6 +1249,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 本轮流式结束：清除归档停滞兜底定时器 + 兜底终结所有残留「执行中」工具卡片，
       // 避免 tool_start 后流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。
       clearArchivingFallback();
+      // 本轮闭环收尾：轨迹归档步由 breathing 收敛为 ✓（归档为后台动作，done 即视为已落盘）
+      finalizeTrace();
       // error 后必跟 done，此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
       ToolCard.settleRunning(messages, '已中断');
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
@@ -1241,6 +1259,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 兜底终结残留
       // 「执行中」工具卡片 + 低扰提示「已停止生成」，区分于正常 done。
       clearArchivingFallback();
+      // 打断即本轮结束：轨迹停止呼吸（未完成步骤灰化，避免误导仍在执行）
+      finalizeTrace();
       // 兜底终结残留「执行中」工具卡片（P1-1）+ 流式收尾（取消 ≠ 丢弃，保留已生成内容）
       ToolCard.settleRunning(messages, '已中断');
       finalizeStreaming();

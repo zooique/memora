@@ -370,9 +370,9 @@ export type ExtensionToWebviewMessage =
   /**
    * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
    *
-   * 内核回答后阶段基于 L2 策略产出 handoff（decision: wait/loop/end）。
-   * webview 仅对 decision='loop' 渲染「自动续跑」提示条（活动透明，雷-4 低频）；
-   * wait/end 为默认/终止语义，静默不渲染。
+   * 内核已把角色包 reflect.handoff 的 'loop' 在内部消化为 'wait'，对外 handoff 恒吐 wait/end（SSOT：
+   * 角色包参数只进内核，宿主只是插座，绝不二次进入 chat）。'loop' 保留在类型并集仅为与其他宿主
+   * 协议对齐的防御冗度；宿主收到 loop 时按 wait 语义让位用户即可。
    */
   | { type: 'handoff'; decision: 'wait' | 'loop' | 'end'; reason?: string }
   /**
@@ -443,15 +443,6 @@ export type ExtensionToWebviewMessage =
       toolMode: 'allow' | 'block';
       capabilities: { capability: string; label: string }[];
     }
-  /**
-   * Agent Loop 续跑计数（Phase 4 自动续跑，E1 Loop 增强）
-   *
-   * handoff{decision:'loop'} 自动续跑时推送当前轮次与上限：
-   *   - current：已续跑次数（从 1 起）
-   *   - max：续跑上限（默认 3）
-   * webview 在提示条显示「自动续跑 N/M」，超过上限后提示用户手动介入。
-   */
-  | { type: 'loop_count'; current: number; max: number }
   /**
    * Agent 运行状态（P0-2 状态可视化 + Phase 4 暂停/恢复）
    *

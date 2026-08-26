@@ -46,9 +46,6 @@ const MAX_HISTORY_MESSAGES = 200;
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
 const MAX_DOC_CONTEXT_CHARS = 12000;
 
-/** Agent Loop 自动续跑上限（默认 3 轮，防止死循环）——文件级常量，ChatPanel 内部使用 */
-const MAX_LOOP_COUNT = 3;
-
 /**
  * 从活动编辑器快照「当前文档上下文」（2026-08-17 A 层：实时跟随活动编辑器）
  *
@@ -150,13 +147,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前进行中流的 promise：生成中插话需 await 旧流彻底结束再发新流，
    *  避免 chatLock 未释放导致「发起新对话」busy 冲突 */
   private _currentFlow: Promise<void> | undefined;
-  /**
-   * Agent Loop 自动续跑计数（Phase 4 E1 Loop 增强）
-   *
-   * handoff{decision:'loop'} 自动续跑时累加，达到 MAX_LOOP_COUNT 后停止自动续跑，
-   * 提示用户手动介入。每轮新对话 reset 为 0。
-   */
-  private _loopCount = 0;
   /**
    * 待处理写入确认请求（H0）
    *
@@ -1481,8 +1471,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 用户消息持久化由内核 chat() → appendUser 完成（写入当前会话 _currentSessionId），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
     this.post({ type: 'user', text: input, ts: now });
-    // Phase 4 E1：新用户对话开始 → 重置自动续跑计数（新一轮闭环计数独立）
-    this._loopCount = 0;
 
     // 注入选中技能提示（SSOT 收紧，2026-08-25：技能名 → 内核技能正文，替代原前端硬编码 systemPrompt）
     let skillBlock = '';
@@ -1679,31 +1667,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 自审查轮开始 → 转发为过程性提示（活动透明，交叉审核观察 A）
           this.post({ type: 'self_review', round: chunk.round });
         } else if (chunk.type === 'handoff') {
-          // Phase 4 E1：衔接决策 → loop 自动续跑（限 3 轮，防死循环）
-          // H3 · 补齐三种决策的显式反馈：loop 自动续跑 / wait 等待用户 / end 任务结束
-          if (chunk.decision === 'loop') {
-            this._loopCount++;
-            this.post({ type: 'loop_count', current: this._loopCount, max: MAX_LOOP_COUNT });
-            this.post({ type: 'handoff', decision: chunk.decision, reason: chunk.reason });
-            // 未达上限 → 300ms 后自动发起下一轮；达上限 → 提示用户手动介入
-            if (this._loopCount < MAX_LOOP_COUNT) {
-              setTimeout(() => {
-                if (!this._agent || controller.signal.aborted) return;
-                void this.runFlow((signal) => this._agent!.chat('继续任务', signal));
-              }, 300);
-            } else {
-              this.post({ type: 'notice', level: 'info', message: '已达自动续跑上限，请手动指示下一步' });
-              // 重置计数，让用户介入后可重新自动续跑
-              this._loopCount = 0;
-            }
-          } else if (chunk.decision === 'wait') {
-            // H3 · wait 显式反馈：Agent 需要用户输入，提示可在输入框继续
-            this.post({ type: 'handoff', decision: 'wait', reason: chunk.reason || '等待用户输入' });
-          } else if (chunk.decision === 'end') {
-            // H3 · end 显式反馈：Agent 判断任务已完成，通知用户会话可收尾
-            this.post({ type: 'handoff', decision: 'end', reason: chunk.reason || '任务已完成' });
-            this._loopCount = 0; // 任务结束时重置循环计数
-          }
+          // 宿主是插座的纯转发：不解释、不决策 handoff，原样投递给 webview。
+          // 内核已把角色包 reflect.handoff 的 loop 在内部消化，对外恒吐 wait/end，
+          // 宿主绝不据此"再进一轮 chat"（否则内核循环引擎漏到宿主层，属反模式）。
+          this.post({ type: 'handoff', decision: chunk.decision, reason: chunk.reason });
         } else if (chunk.type === 'retry') {
           // LLM 失败重试 → 转发低扰提示条
           this.post({

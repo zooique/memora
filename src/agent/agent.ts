@@ -730,12 +730,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private async *consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
-  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean }, unknown> {
+  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean; iterationLimitReached?: boolean }, unknown> {
     let content = '';
     let aborted = false;
     // 软暂停标记：loop 在迭代边界挂起（用户 requestPause / [ASK] 主动提问）时置真，
     // 供编排器据此推迟摘要——回合未完成不产摘要，保摘要与外部输入 1:1
     let paused = false;
+    // 迭代上限标志：loop 因 maxIterations/stepBudget 上限而终止时置真
+    let iterationLimitReached = false;
 
     try {
       for await (const chunk of source) {
@@ -765,7 +767,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       } else {
         yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
       }
-      return { content, aborted, paused, failed: true };
+      return { content, aborted, paused, failed: true, iterationLimitReached };
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求
       this._sessionManager?.cancelPendingPause();
@@ -773,7 +775,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.requireLoop.clearPauseRequest();
     }
 
-    return { content, aborted, paused, failed: false };
+    // 检查 loop 是否因迭代/步数上限而终止（兼容 mock）
+    iterationLimitReached = this.requireLoop.isIterationLimitReached?.() ?? false;
+
+    return { content, aborted, paused, failed: false, iterationLimitReached };
   }
 
   /**

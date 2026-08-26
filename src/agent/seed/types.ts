@@ -32,13 +32,16 @@ import type { ITracer } from '@/agent/tracer.js';
  *
  * content = 累积的文本；aborted = 是否被中断（含 appendAssistant 中断标记前置）；
  * paused = 是否在迭代边界软暂停挂起（回合未完成，摘要应推迟到续跑最终轮，保摘要 1:1）；
- * failed = 是否执行出错（错误 chunk 已 yield 给调用方，本结果为提前返回信号）。
+ * failed = 是否执行出错（错误 chunk 已 yield 给调用方，本结果为提前返回信号）；
+ * iterationLimitReached = 是否因 maxIterations/stepBudget 上限而终止（非正常完成，需强制 wait）。
  */
 export interface StreamConsumeResult {
   content: string;
   aborted: boolean;
   paused: boolean;
   failed: boolean;
+  /** 是否因迭代/步数上限而终止（非正常完成，handoff 应强制返回 wait） */
+  iterationLimitReached?: boolean;
 }
 
 /**

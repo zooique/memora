@@ -415,12 +415,20 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     vi.restoreAllMocks();
   });
 
-  it('handoff(loop) 渲染「自动续跑」低扰提示条（活动透明，雷-4 低频）', () => {
+  it('handoff(loop) 静默不渲染（SSOT 收紧：loop 由内核消费预算，宿主不再自动续跑）', () => {
     mountChatView();
     dispatch({ type: 'handoff', decision: 'loop', reason: '后续步骤' });
     const activityBar = document.getElementById('activityBar') as HTMLElement;
+    // loop 不再渲染任何"自动续跑"提示（避免误导），活动条保持隐藏
+    expect(activityBar.hidden).toBe(true);
+  });
+
+  it('handoff(end) 渲染「任务已完成」低扰提示条', () => {
+    mountChatView();
+    dispatch({ type: 'handoff', decision: 'end', reason: '任务已完成' });
+    const activityBar = document.getElementById('activityBar') as HTMLElement;
     expect(activityBar.hidden).toBe(false);
-    expect(activityBar.textContent).toContain('自动续跑');
+    expect(activityBar.textContent).toContain('任务已完成');
   });
 
   it('retry 渲染「LLM 重试 n/m」低扰提示条', () => {
@@ -713,6 +721,13 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     dispatch({ type: 'thinking', phase: 'archiving' });
     expect(marks()[1]).toContain('done');
     expect(marks()[2]).toContain('active');
+    // 轮次收尾 done：抓轨迹全部收敛为 ✓（归档步不再停留在 active 呼吸闪烁）
+    dispatch({ type: 'done' });
+    for (const m of marks()) expect(m).toContain('done');
+    expect(marks().every((m) => m.includes('done'))).toBe(true);
+    // 轨迹 mark 文本全部为 ✓
+    const markTexts = [...tb.querySelectorAll('.trace-step__mark')].map((el) => el.textContent);
+    expect(markTexts).toEqual(['✓', '✓', '✓']);
   });
 
   it('P3：空状态标题/提示随激活角色包动态生成（切换角色不错位）', () => {

@@ -154,22 +154,24 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 读取会话标题元数据（ADR-024）：无元数据时按消息推断占位元数据
+   * 读取会话标题元数据（ADR-024）：无元数据但存在消息时按消息推断占位元数据
    *
    * 兼容旧数据：早期会话无 metas 记录，依据消息列表实时推导（updatedAt 取末条时间戳）。
    * 这样历史列表仍能列出旧会话，不必强制迁移。
+   * 仅当会话仍存在消息时才推导占位——无消息且无 meta 视为会话不存在（如已删除），返回 undefined，
+   * 避免删除后又被占位元数据「复活」（deleteSession 契约：删除后 getSessionMeta 应为 undefined）。
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
     const meta = this.metas.get(sessionId);
     if (meta) return meta;
-    // 旧会话兜底：从消息列表推导占位元数据（不落盘，仅展示用）
+    // 旧会话兜底：仅当存在消息时推导占位元数据（不落盘，仅展示用）
     const msgs = this.store.get(sessionId);
     if (!msgs || msgs.length === 0) return undefined;
     const last = msgs[msgs.length - 1];
     return {
       sessionId,
       displayName: defaultSessionTitle(),
-      updatedAt: last?.timestamp ?? new Date(0).toISOString(),
+      updatedAt: last?.timestamp ?? new Date().toISOString(),
       messageCount: msgs.length,
     };
   }

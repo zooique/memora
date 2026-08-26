@@ -96,7 +96,10 @@ export class SeedOrchestrator {
     );
     if (difficulty === 'complex' && taskLoopLimit > 0) {
       yield* this.externalTaskLoop(input, prepared, signal);
-      yield* this.handoff(true);
+      // 外部任务循环完成后，检查 loop 是否因迭代上限而终止（兼容 mock）
+      const parts = this.deps.getParts();
+      const forceWait = parts.loop.isIterationLimitReached?.() ?? false;
+      yield* this.handoff(true, forceWait);
       return;
     }
 
@@ -117,7 +120,8 @@ export class SeedOrchestrator {
     this.backgroundReflect(input, acted.content);
 
     // Handoff：对外产出衔接决策
-    yield* this.handoff();
+    // 迭代上限时强制返回 wait，防止宿主自动续跑导致连续回答
+    yield* this.handoff(false, acted.iterationLimitReached);
   }
 
   /**
@@ -162,7 +166,8 @@ export class SeedOrchestrator {
     yield* this.settle(difficulty, input, acted.content, signal);
 
     // Handoff：对外产出衔接决策
-    yield* this.handoff();
+    // 迭代上限时强制返回 wait，防止宿主自动续跑导致连续回答
+    yield* this.handoff(false, acted.iterationLimitReached);
   }
 
   /**
@@ -305,22 +310,33 @@ export class SeedOrchestrator {
     }
   }
 
-  /** Handoff 衔接决策：产出闭环出口 chunk（对话等待 / 自动衔接）。
+  /** Handoff 衔接决策：产出闭环出口 chunk（对话等待 / 任务结束）。
+   *  SSOT：角色包参数（reflect.handoff 等）仅由内核消费——'loop' 是内核内部的自主续跑许可信号，
+   *  已由 loop 的 stepBudget/maxIterations 在单次 chat() 内消费完，绝不外泄给宿主（宿主只是插座，
+   *  不应被要求"再跑一轮"。宿主看到的 loop 意味着内核循环引擎漏到宿主层，属反模式）。
+   *  故对外 handoff 恒为 'wait'（把控制权交还用户）或 'end'（任务完成）。
    *  @param externalTaskReported 本闭环是否为外部任务收尾（runChat 外循环路径传 true，
-   *    供宿主区分"普通答完"与"外部任务收敛汇报完"，以对齐 poll-round-summary 时机） */
+   *    供宿主区分"普通答完"与"外部任务收敛汇报完"，以对齐 poll-round-summary 时机）
+   *  @param forceWait 是否强制返回 wait（迭代上限时启用，防止误导宿主自动续跑） */
   private async *handoff(
     externalTaskReported = false,
+    forceWait = false,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager);
-    const handoffStrategy = resolveHandoff(strategy);
+    // 迭代上限时强制 wait，忽略角色包的 loop 策略；否则读取角色包策略的 handoff 意图
+    const mode = forceWait ? 'wait' : resolveHandoff(strategy);
+    // 'loop' 在此被内核内部消化为 'wait'：自主续跑由内核循环预算承载，宿主只需等待用户
+    const decision = mode === 'end' ? 'end' : 'wait';
     yield {
       type: 'handoff',
-      decision: handoffStrategy,
+      decision,
       reason: externalTaskReported
         ? '外部任务收尾汇报'
-        : handoffStrategy === 'wait'
-          ? undefined
-          : 'L2 策略自动衔接',
+        : forceWait
+          ? '迭代上限已达，等待用户介入'
+          : mode === 'loop'
+            ? '本轮自主执行已完成，等待你的指示'
+            : undefined,
     };
   }
 

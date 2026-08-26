@@ -193,6 +193,7 @@ export class SessionManager {
   /**
    * 打开指定会话（新建空/切换已有）= switchSession 的完整版：切换身份后同步 loadSessionMessages + restoreHistory。
    * 已有会话恢复历史到工作记忆；新建空会话 restoreHistory([]) 清空（保留 system prompt），避免旧会话上下文残留注入首条消息。
+   * 使用正则 /^(\d{4}-\d{2}-\d{2})-(.+)$/ 解析，正确处理包含连字符的会话名（如 2024-01-15-my-session）。
    * @returns 恢复的消息数（0 表示新建空会话）
    */
   async switchToSession(sessionId: string): Promise<number> {
@@ -200,14 +201,14 @@ export class SessionManager {
     if (this.isChatBusy()) {
       throw chatBusyError('打开会话');
     }
-    const idx = sessionId.lastIndexOf('-');
-    if (idx <= 0) {
+    // 使用正则解析 sessionId：日期段（YYYY-MM-DD）+ 会话名（可含连字符）
+    const match = sessionId.match(SessionManager.SESSION_ID_PATTERN);
+    if (!match || !match[1] || !match[2]) {
       throw configError('打开会话', `会话标识格式错误：${sessionId}`, [
         '格式应为 YYYY-MM-DD-sessionName',
       ]);
     }
-    const date = sessionId.slice(0, idx);
-    const session = sessionId.slice(idx + 1);
+    const [, date, session] = match;
     // 切换会话身份（内部含 busy/状态守卫 + 作废派生缓存）
     this.switchSession(session);
     // 加载/清空工作记忆：空会话 → restoreHistory([]) 清空（缓存已作废，无陈旧注入）
@@ -745,10 +746,10 @@ export class SessionManager {
     // 切换到检查点记录的会话。await loadSessionMessages 消除 void 悬空的 unhandledRejection；
     // 单 Agent 单线程下期间无其他写入者，切换失败时降级继续（热记忆已由 restoreHistory 恢复）。
     const history = this.getHistory();
-    const sessionParts = checkpoint.sessionId.split('-');
-    if (sessionParts.length >= 4) {
-      const date = sessionParts.slice(0, 3).join('-');
-      const session = sessionParts.slice(3).join('-');
+    // 使用统一正则解析 sessionId，与 switchToSession 保持一致（SSOT 单一真理源）
+    const match = checkpoint.sessionId.match(SessionManager.SESSION_ID_PATTERN);
+    if (match && match[1] && match[2]) {
+      const [, date, session] = match;
       try {
         await history.loadSessionMessages(date, session);
       } catch (err) {

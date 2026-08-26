@@ -515,24 +515,24 @@ async function handleUserInput(input: string) {
 }
 ```
 
-### 6.3 Handoff 决策（宿主控制循环）
+### 6.3 Handoff 决策（宿主纯插座转发，不控制循环）
+
+> **SSOT 边界（2026-08-26 收紧）：角色包参数只进内核，宿主只是插座。** `reflect.handoff: loop`
+> 是内核内部的自主续跑许可信号，已由内核循环（stepBudget/maxIterations）在**单次 `chat()` 内消费完**，
+> 内核对外 handoff 恒吐 `wait` / `end`。宿主绝不依据 `loop` 二次进入 `chat()`——那会形成第二套循环引擎，
+> 且伪造输入（如「继续任务」）会被 prepare 当作真实用户轮，污染会话历史与命名（appendUser / ensureSessionTitle）。
 
 ```typescript
-function handleHandoffDecision(decision: HandoffDecision) {
+function handleHandoffDecision(decision: HandoffDecision, reason?: string) {
   switch (decision) {
     case 'wait':
-      // 默认行为：等待用户输入
+    case 'loop':
+      // 默认行为：等待用户输入（loop 已被内核内部消化为 wait，宿主无需续跑）
       ui.enableInput();
       break;
 
-    case 'loop':
-      // 自动续跑：宿主自动触发下一轮
-      // 场景：批量任务（"修复所有 lint 错误"）
-      setTimeout(() => agent.chat('继续'), 100);
-      break;
-
     case 'end':
-      // 终止会话
+      // 内核判定任务完成：终止会话
       ui.showEndOfSession();
       break;
   }
@@ -551,7 +551,7 @@ function handleHandoffDecision(decision: HandoffDecision) {
 | `tool_start` | 工具调用开始 | 显示工具执行指示器 |
 | `tool_result` | 工具调用完成 | 隐藏指示器 |
 | `question_pending` | LLM 主动提问 | 渲染提问 UI |
-| `handoff` | 回合衔接决策 | 决定是否自动续跑 |
+| `handoff` | 回合衔接决策 | 展示衔接决策（wait/end；loop 由内核内部消化，宿主不续跑） |
 | `error` | 执行出错 | 错误提示 |
 | `aborted` | 被用户中止 | 中止提示 |
 | `retry` | LLM 调用重试 | 重试计数展示 |
