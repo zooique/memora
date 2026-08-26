@@ -324,10 +324,19 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       
+      // 文件内容裁切上限（字符数）：超长文件只取头部，避免把几十 KB 整文件喂给模型做一句话描述
+      const DESCRIPTION_MAX_INPUT_CHARS = 8000;
+      // 答案空间上限（输出 token）：给推理模型（R1/QwQ 类）留出 reasoning_content 思考预算，
+      // 过小（如 256）会导致 content 答案被饿空——此前在强 reasoning 模型下系统性返回空，已实锤
+      const DESCRIPTION_MAX_TOKENS = 4096;
+
       try {
-        // 读取文件内容（前 2000 字符）用于 LLM 生成描述
+        // 读取文件内容（按上限裁切，超长文件仅取头部并标注，保持上下文足够且成本可控）
         const fileContent = await vscode.workspace.fs.readFile(targetUri);
-        const text = Buffer.from(fileContent).toString('utf-8').substring(0, 2000);
+        const fullText = Buffer.from(fileContent).toString('utf-8');
+        const truncated = fullText.length > DESCRIPTION_MAX_INPUT_CHARS;
+        const text = (truncated ? fullText.substring(0, DESCRIPTION_MAX_INPUT_CHARS) : fullText)
+          + (truncated ? `\n\n（以下仅文件开头前 ${DESCRIPTION_MAX_INPUT_CHARS} 字符，内容可能不完整）` : '');
 
         // 调用 LLM 自动生成一句话描述（使用 accumulateStream 累积流式响应）
         // prompt 显式传入文件名并禁止复述标题，迫使模型提炼内容要点而非偷懒回声（见作品投影"找茬"复盘）
@@ -339,9 +348,11 @@ export function activate(context: vscode.ExtensionContext): void {
           text;
         let description = '';
         try {
+          // 诊断：记录原始返回长度与内容，区分"模型返回空"与"返回纯空白被 trim 掉"
           const raw = await accumulateStream(agent.provider, [
+            { role: 'system', content: '你是文件描述生成器，只输出一句中文描述，不要解释。' },
             { role: 'user', content: prompt },
-          ], { maxTokens: 256 });
+          ], { maxTokens: DESCRIPTION_MAX_TOKENS });
           // 诊断：记录原始返回长度与内容，区分"模型返回空"与"返回纯空白被 trim 掉"
           memoraOutput.appendLine(`[作品投影] LLM 原始返回 len=${raw.length} content=${JSON.stringify(raw)}`);
           description = raw.trim();
