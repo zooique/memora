@@ -1,6 +1,6 @@
 # Memora
 
-> Universal Agent Memory Kernel — Local-first, Private, Domain-agnostic. Everything is Memory.
+> **Agent Memory Kernel with Governance** — Local-first, Private, Zero-dep. Not a framework, a kernel.
 
 [![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
@@ -14,13 +14,67 @@
 
 ---
 
-## What is this?
+## What problem are you facing?
 
-Memora is an **Agent memory infrastructure** — it gives your AI Agent persistent, cross-session long-term memory.
+- **LLM forgets everything between sessions** — Your users remember what they said, your agent doesn't
+- **Existing memory solutions are either too heavy (framework-bound) or too shallow (CRUD only)** — No dedup, decay, conflict detection, or timeliness evaluation
+- **Memory and persona are tangled** — Switch personas and lose your history
+- **You don't want to send data to the cloud** — Need a local, private memory layer with zero external dependencies
 
-It solves one core problem: **LLMs are stateless, but user tasks are continuous.**
+## How Memora solves this
 
-Memora builds continuous evolution on top of stateless inference: memory persistence, intelligent recall, natural decay, semantic deduplication, conflict detection — a complete memory lifecycle, all running locally. Your data never leaves your machine.
+Memora is an **Agent memory kernel** — framework-agnostic, cloud-independent, focused on one thing: **giving your agent cross-session, cross-topic long-term memory that stays clean.**
+
+"Clean" means: automatic deduplication, natural decay, conflict detection, timeliness evaluation — not just stuffing history into the context window.
+
+```typescript
+import { Agent, createProviderFromConfig } from '@zooique/memora';
+
+const agent = new Agent({
+  projectPath: '/your/project',
+  provider: createProviderFromConfig('primary', {
+    provider: 'openaiCompatible',
+    apiKey: process.env.LLM_API_KEY!,
+    baseUrl: 'https://api.openai.com/v1',
+    model: 'gpt-4o',
+  }),
+});
+await agent.init();
+
+// Chat — memories persist automatically
+for await (const chunk of agent.chat('I love TypeScript')) {
+  process.stdout.write(chunk.content);
+}
+
+// Next session — agent recalls automatically
+const reply = await agent.chatSync('What language do I like?');
+
+// Memory governance — dedup / conflict / timeliness / decay
+await agent.governance.deduplicate();
+await agent.governance.detectConflicts();
+agent.governance.decay();
+
+await agent.close();
+```
+
+> **Boundary**: Memora is a **non-standalone pure logic kernel** — persistence, sandbox, observability, CLI/UI are all injected by the host. The kernel guarantees **interface contracts + unit-tested logic correctness**; agent-level behavior evaluation is the host's responsibility.
+
+---
+
+## Why Memora?
+
+| | Memora | Vector memory libs (agent-memory, MemStack) | Framework-builtin memory (Mastra, LangGraph) |
+|---|---|---|---|
+| **Memory governance** | ✅ Dedup+decay+conflict+timeliness | ⚠️ Decay only or none | ⚠️ Partial |
+| **Framework lock-in** | ✅ Zero — pure kernel | ✅ Standalone | ❌ Tied to framework |
+| **Data privacy** | ✅ 100% local | ✅ Local | ⚠️ Partially cloud |
+| **Runtime deps** | ✅ Zero (node:* only) | ❌ SQLite / better-sqlite3 | ❌ Heavy |
+| **Persona/memory separation** | ✅ Role-pack boundary discipline | ❌ No persona concept | ⚠️ Simple prompt |
+| **Embeddable** | ✅ Any Node.js host | ✅ Standalone lib | ❌ Framework-internal |
+
+**One-line positioning**: If you want a **framework-agnostic, governance-capable, zero-dependency** memory layer, Memora is currently the only option on npm.
+
+---
 
 ## Design Philosophy
 
@@ -30,18 +84,23 @@ Memora builds continuous evolution on top of stateless inference: memory persist
 
 Memora is a **brain kernel that cannot run standalone** — it has interfaces but no "form." A CLI, WebUI, desktop sprite, or novel generator can be its "host." The host gives it a body (UI), blood vessels (Provider), and neural circuits (event loops).
 
+> **Version positioning (v3.0.0)**: **Node.js-only · Zero third-party runtime deps Agent kernel**. v3.0.0 is the first stable baseline after architecture convergence.
+
+---
+
 ## Core Capabilities
 
 | Capability | Description |
 |-----------|-------------|
 | **Long-term Memory** | Cross-session, cross-topic memory persistence with intelligent recall |
 | **Dual-channel Recall** | Semantic vector search + keyword search, hybridMerge fusion ranking |
-| **Memory Governance L1-L4** | L1 semantic dedup → L2 timeliness eval → L3 conflict detection → L4 scheduled decay |
+| **Memory Governance** | L0 decay / L1 semantic dedup / L2 timeliness / L3 conflict detection via `agent.governance` facade |
 | **Agent-Persona Separation** | Agent is a pure memory engine; persona is a personality vessel. Switch personas without losing memories |
 | **Unified Memory Model** | Everything is a "Memory" primitive, distinguished by open-string `source` — no closed enums |
 | **Domain-agnostic** | Same architecture, different memory configs → different domains |
-| **Node.js-only · Zero third-party runtime deps** | Depends on Node built-ins (`node:*`); no third-party runtime dependencies / native / host APIs. Persistence injected by host via interfaces |
+| **Zero third-party runtime deps** | Depends on Node built-ins (`node:*`); persistence injected by host via interfaces |
 | **Observability** | ITracer interface + structured spans, plug into any APM |
+| **External tools** | Conditionally exposed `web_search` / `web_fetch` / `run_code` — enabled only when host injects the corresponding provider |
 
 ## Quick Start
 
