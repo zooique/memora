@@ -328,13 +328,30 @@ export function activate(context: vscode.ExtensionContext): void {
         // 读取文件内容（前 2000 字符）用于 LLM 生成描述
         const fileContent = await vscode.workspace.fs.readFile(targetUri);
         const text = Buffer.from(fileContent).toString('utf-8').substring(0, 2000);
-        
+
         // 调用 LLM 自动生成一句话描述（使用 accumulateStream 累积流式响应）
         const prompt = '请用一句话描述这个文件的用途（不超过 30 字）：\n\n' + text;
-        const description = (await accumulateStream(agent.provider, [
-          { role: 'user', content: prompt }
-        ], { maxTokens: 60 })).trim();
-        
+        let description = '';
+        try {
+          description = (await accumulateStream(agent.provider, [
+            { role: 'user', content: prompt },
+          ], { maxTokens: 60 })).trim();
+        } catch (llmErr) {
+          // LLM 调用异常（鉴权/网络/超时）→ 不静默吞：打到输出通道 + 告警，留文件名兜底
+          const msg = llmErr instanceof Error ? llmErr.message : String(llmErr);
+          memoraOutput.appendLine(`[作品投影] LLM 生成描述失败：${msg}`);
+          vscode.window.showWarningMessage('LLM 生成描述失败（详见 Memora 输出通道），已用文件名兜底：' + msg);
+        }
+
+        // 优雅降级：LLM 未返回有效描述时，用文件名（去扩展名）兜底，避免写空 description
+        if (!description) {
+          description = relativePath.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? 'unknown';
+          memoraOutput.appendLine(`[作品投影] LLM 未返回描述，已用文件名兜底：${description}`);
+          vscode.window.showWarningMessage('LLM 未返回描述，已用文件名「' + description + '」兜底');
+        } else {
+          memoraOutput.appendLine(`[作品投影] LLM 生成描述：${description}`);
+        }
+
         // 登记投影
         const result = await agent.works.registerWork(relativePath, description);
         if (result) {
