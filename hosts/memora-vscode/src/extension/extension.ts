@@ -339,9 +339,12 @@ export function activate(context: vscode.ExtensionContext): void {
           text;
         let description = '';
         try {
-          description = (await accumulateStream(agent.provider, [
+          const raw = await accumulateStream(agent.provider, [
             { role: 'user', content: prompt },
-          ], { maxTokens: 60 })).trim();
+          ], { maxTokens: 256 });
+          // 诊断：记录原始返回长度与内容，区分"模型返回空"与"返回纯空白被 trim 掉"
+          memoraOutput.appendLine(`[作品投影] LLM 原始返回 len=${raw.length} content=${JSON.stringify(raw)}`);
+          description = raw.trim();
         } catch (llmErr) {
           // LLM 调用异常（鉴权/网络/超时）→ 不静默吞：打到输出通道 + 告警，留文件名兜底
           const msg = llmErr instanceof Error ? llmErr.message : String(llmErr);
