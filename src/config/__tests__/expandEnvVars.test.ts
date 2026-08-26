@@ -88,6 +88,28 @@ describe('expandEnvVars — Providers 映射表', () => {
     expect(result.llm.providers!['provider2']!.baseUrl!).toBe('https://p2.example.com');
   });
 
+  it('展开 Provider 的 model（D-2026-08-26：model 也支持环境变量）', () => {
+    process.env.TEST_PROVIDER1_MODEL = 'mimo-v2.5';
+    const config: Config = {
+      ...createConfigWithPlaceholders(),
+      embedding: undefined,
+      llm: {
+        ...createConfigWithPlaceholders().llm,
+        providers: {
+          provider1: {
+            provider: 'deepseek',
+            apiKey: 'sk-x',
+            baseUrl: 'https://x.example.com',
+            model: '${TEST_PROVIDER1_MODEL}',
+          },
+        },
+      },
+    };
+    const result = expandEnvVars(config);
+    expect(result.llm.providers!['provider1']!.model).toBe('mimo-v2.5');
+    delete process.env.TEST_PROVIDER1_MODEL;
+  });
+
   it('providers 为 undefined 时应保留 undefined', () => {
     const config: Config = {
       ...createConfigWithPlaceholders(),

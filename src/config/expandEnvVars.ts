@@ -12,7 +12,7 @@ import type { ProviderEntryConfig } from '@/llm/types.js';
 /**
  * 展开 ${ENV_VAR} 占位符
  *
- * 配置文件可写 "apiKey": "${MEMORA_LLM_API_KEY}"，
+ * 配置文件可写 "apiKey": "${MEMORA_API_KEY}"，
  * 实际读取时展开为环境变量值。
  *
  * 展开范围覆盖所有可能包含敏感信息的通道：
@@ -34,7 +34,7 @@ export function expandEnvVars(config: Config): Config {
     ? Object.fromEntries(
         Object.entries(config.llm.providers).map(([key, p]) => [
           key,
-          { ...p, apiKey: expand(p.apiKey), baseUrl: expand(p.baseUrl) },
+          { ...p, apiKey: expand(p.apiKey), baseUrl: expand(p.baseUrl), model: expand(p.model) ?? p.model },
         ]),
       )
     : undefined;
