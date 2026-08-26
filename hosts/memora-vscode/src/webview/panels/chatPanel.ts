@@ -1112,11 +1112,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 检测当前会话是否存在可恢复的持久化「暂停」检查点（G3 断点续跑）
+   * 判定持久化检查点是否可断点续跑（单一真理源：与 agent.canContinueWithoutInput 的判据一致）
    *
-   * 跨实例/插件重启场景：Agent 重装配后内存无检查点，但暂停检查点已由内核 flush 到
-   * sessionStore 持久化。仅当持久化检查点状态为 paused 时才提示续跑——
-   * 正常对话结束不落盘、running 检查点不属「断点」，避免误提示。
+   * 状态机非 running（paused/error 由检查点恢复进入）恒可续跑；running 态仅在存在未完成
+   * 可推进计划步骤（pending/active）时才算「进行中的任务」——纯单轮问答（plan 为空/已完成）
+   * 不提示，避免正常会话误弹「从断点继续」。
+   */
+  private isRestorableCheckpoint(
+    cp: { status?: string; plan?: { status?: string }[] } | null | undefined,
+  ): boolean {
+    if (!cp) return false;
+    if (cp.status !== 'running') return true;
+    return (cp.plan ?? []).some((s) => s.status === 'pending' || s.status === 'active');
+  }
+
+  /**
+   * 检测当前会话是否存在可恢复的持久化「断点」（G3 断点续跑）
+   *
+   * 跨实例/插件重启场景：Agent 重装配后内存无检查点，但检查点已由内核在闭环边界 flush 到
+   * sessionStore 持久化。凡是「进行中的任务」（paused/error，或 running 且有未完成计划步骤）
+   * 都提示续跑——恢复 plan + hotMemory，任务原地接着做；纯单轮问答不提示。
    * 同进程暂停续跑（resume）已由 handleResumeFromPause 覆盖，不触发本提示。
    */
   private maybeOfferCheckpointRestore(): void {
@@ -1124,7 +1139,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!agent?.sessionManager) return;
     try {
       const checkpoint = agent.sessionManager.loadPersistedCheckpoint();
-      if (checkpoint?.status === 'paused') {
+      if (this.isRestorableCheckpoint(checkpoint)) {
         this.post({ type: 'checkpoint_available' });
       }
     } catch {
@@ -1147,11 +1162,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     try {
       const checkpoint = agent.sessionManager.loadPersistedCheckpoint();
-      if (!checkpoint || checkpoint.status !== 'paused') {
-        this.post({ type: 'checkpoint_result', ok: false, message: '没有可恢复的暂停会话' });
+      if (!this.isRestorableCheckpoint(checkpoint)) {
+        this.post({ type: 'checkpoint_result', ok: false, message: '没有可恢复的进行中会话' });
         return;
       }
-      const restored = await agent.restoreFromCheckpoint(checkpoint);
+      // restoreFromCheckpoint 对 running/paused/error 均走完整恢复协议：载入热窗口 + 计划 +
+      // 温记忆召回 + 契约重注入，任务原地续跑（paused 恢复后由「继续」按钮 resume 续跑，
+      // running/error 恢复后可直接下发下一条消息推进）
+      const restored = await agent.restoreFromCheckpoint(checkpoint!);
       // 恢复成功：重放会话历史（含刚载入热窗口的消息），webview 依此清除断点续跑提示条
       this.replayCurrentSession();
       this.post({ type: 'checkpoint_result', ok: true, message: `已从断点恢复 ${restored} 条消息上下文` });

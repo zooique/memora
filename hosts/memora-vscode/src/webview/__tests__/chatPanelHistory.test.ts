@@ -262,4 +262,36 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     cb?.(undefined);
     expect((provider as unknown as { _docContext: string | undefined })._docContext).toBeUndefined();
   });
+
+  // ─── 断点续跑提示判定（G3，2026-08-26 SSOT 收紧：running 进行中任务也可恢复 plan+hotMemory） ───
+  function setupCheckpointOffer(checkpoint: unknown): { provider: MemoraChatViewProvider; posted: unknown[] } {
+    const agent = agentStub().agent as unknown as { sessionManager: { loadPersistedCheckpoint: () => unknown } };
+    // 注入持久化检查点桩：loadPersistedCheckpoint 返回夹具
+    (agent.sessionManager as { loadPersistedCheckpoint: ReturnType<typeof vi.fn> }).loadPersistedCheckpoint =
+      vi.fn(() => checkpoint);
+    const { provider, posted } = setup();
+    provider.setAgent(agent as never);
+    return { provider, posted };
+  }
+
+  it('断点提示·paused 检查点仍可恢复（回归：不破坏原暂停续跑）', () => {
+    const { provider, posted } = setupCheckpointOffer({ status: 'paused' });
+    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
+    expect(ofType(posted, 'checkpoint_available').length).toBe(1);
+  });
+
+  it('断点提示·running 且有未完成计划步骤 → 提示恢复 plan+hotMemory（本轮新增）', () => {
+    const { provider, posted } = setupCheckpointOffer({
+      status: 'running',
+      plan: [{ id: 's1', status: 'pending' }, { id: 's2', status: 'active' }],
+    });
+    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
+    expect(ofType(posted, 'checkpoint_available').length).toBe(1);
+  });
+
+  it('断点提示·running 且纯单轮问答（空计划）→ 不提示，避免误弹', () => {
+    const { provider, posted } = setupCheckpointOffer({ status: 'running', plan: [] });
+    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
+    expect(ofType(posted, 'checkpoint_available').length).toBe(0);
+  });
 });
