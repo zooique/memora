@@ -175,17 +175,39 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 修改会话标题（ADR-024）：手动改名不改 updatedAt（改名非活跃事件）
+   * 更新 LLM 生成只读元数据（ADR-024 双层命名单一写点，2026-08-26 排雷复盘）：
+   * autoName/keyTopics/summary 由内核 SessionNamer/SessionArchiver 写入；displayName
+   * 由用户手动改名（renameSession）写入。setSessionTitle 亦收口于此，避免双路径分叉
+   * （此前漏实现导致内核 updateSessionMeta 调用静默 no-op，自动命名/改名失效）。
+   *
+   * 合并语义：以既有 meta 为基底展开 Partial 覆盖——
+   *   - autoName 不覆盖（手动改名保留 LLM 只读名，双层命名解耦）
+   *   - displayName 优先用传入值，否则保留既有（含占位）
+   *   - updatedAt/messageCount 保留（改名非活跃事件、命名不重置计数）
+   *
+   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   * @param meta 部分元数据（autoName/displayName/keyTopics/summary）
    */
-  setSessionTitle(sessionId: string, title: string): void {
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
     const existing = this.metas.get(sessionId);
-    this.metas.set(sessionId, {
+    const updated: SessionMeta = {
       sessionId,
-      displayName: title,
+      autoName: meta.autoName ?? existing?.autoName,
+      displayName: meta.displayName ?? existing?.displayName ?? defaultSessionTitle(),
+      keyTopics: meta.keyTopics ?? existing?.keyTopics,
+      summary: meta.summary ?? existing?.summary,
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       messageCount: existing?.messageCount ?? 0,
-    });
+    };
+    this.metas.set(sessionId, updated);
     this.save();
+  }
+
+  /**
+   * 修改会话标题（ADR-024）：手动改名不改 updatedAt，收口到 updateSessionMeta 单一写点
+   */
+  setSessionTitle(sessionId: string, title: string): void {
+    this.updateSessionMeta(sessionId, { displayName: title });
   }
 
   /**

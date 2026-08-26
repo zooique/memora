@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { SessionMessage } from '@zooique/memora';
+import { getSessionDisplayName } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 
 /** 构造一条会话消息（role/content/timestamp） */
@@ -212,5 +213,82 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(() => s.load()).not.toThrow();
     expect(s.listSessions()).toEqual([]);
     expect(s.loadCheckpoint?.('2026-08-17-main')).toBeNull();
+  });
+});
+
+describe('WorkspaceSessionStore.updateSessionMeta（ADR-024 双层命名写点，2026-08-26 排雷）', () => {
+  /** 临时工作区路径（每用例独立） */
+  let dir: string;
+  let store: WorkspaceSessionStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'memora-session-updateMeta-'));
+    store = new WorkspaceSessionStore(dir);
+    store.load();
+  });
+
+  it('SessionNamer 首轮自动命名：写入 autoName+displayName，历史列表显示真实名', () => {
+    store.appendMessage('2026-08-26', 'main', msg('user', '帮我写排序算法', 't1'));
+    // 模拟内核 SessionNamer.ensureSessionTitle 首轮写入（autoName 与 displayName 同值）
+    store.updateSessionMeta('2026-08-26-main', {
+      autoName: '排序算法实现',
+      displayName: '排序算法实现',
+    });
+    const meta = store.getSessionMeta('2026-08-26-main');
+    expect(meta?.autoName).toBe('排序算法实现');
+    expect(meta?.displayName).toBe('排序算法实现');
+    // 历史列表标题（getSessionDisplayName 优先 displayName）
+    expect(getSessionDisplayName(meta)).toBe('排序算法实现');
+    // 推送历史列表时透出真实名（复刻 pushSessionList 的 title 取值）
+    expect(
+      store
+        .listSessionMetas()
+        .some((m) => m.sessionId === '2026-08-26-main' && getSessionDisplayName(m) === '排序算法实现'),
+    ).toBe(true);
+  });
+
+  it('首轮自动命名覆盖占位 displayName（解决"历史不显示名字"）', () => {
+    // appendMessage 写入占位「新会话 HH:MM」
+    store.appendMessage('2026-08-26', 'main', msg('user', 'x', 't1'));
+    expect(getSessionDisplayName(store.getSessionMeta('2026-08-26-main'))).toMatch(/^新会话 /);
+    // 首轮对话后 SessionNamer 写入真实名 → 覆盖占位
+    store.updateSessionMeta('2026-08-26-main', {
+      autoName: '真实标题',
+      displayName: '真实标题',
+    });
+    expect(getSessionDisplayName(store.getSessionMeta('2026-08-26-main'))).toBe('真实标题');
+  });
+
+  it('手动改名（renameSession）：仅改 displayName，保留 autoName（双层解耦）', () => {
+    store.appendMessage('2026-08-26', 'main', msg('user', 'x', 't1'));
+    store.updateSessionMeta('2026-08-26-main', {
+      autoName: '自动名',
+      displayName: '自动名',
+    });
+    // 用户手动改名：只传 displayName
+    store.updateSessionMeta('2026-08-26-main', { displayName: '我改的名' });
+    const meta = store.getSessionMeta('2026-08-26-main');
+    expect(meta?.autoName).toBe('自动名'); // 保留 LLM 只读名
+    expect(meta?.displayName).toBe('我改的名'); // 覆盖
+    expect(getSessionDisplayName(meta)).toBe('我改的名'); // 显示名优先用户改的
+  });
+
+  it('setSessionTitle 仍工作且保留 autoName（单一写点回归，改名不 wipe 只读名）', () => {
+    store.appendMessage('2026-08-26', 'main', msg('user', 'x', 't1'));
+    store.updateSessionMeta('2026-08-26-main', {
+      autoName: '自动名',
+      displayName: '自动名',
+    });
+    store.setSessionTitle('2026-08-26-main', '改名');
+    const meta = store.getSessionMeta('2026-08-26-main');
+    expect(meta?.displayName).toBe('改名');
+    expect(meta?.autoName).toBe('自动名'); // 改名经 updateSessionMeta 收口，不抹除 autoName
+  });
+
+  it('改名不改 updatedAt（与 setSessionTitle 旧契约一致）', () => {
+    store.appendMessage('2026-08-26', 'main', msg('user', 'x', '2026-08-26T00:00:00.000Z'));
+    const before = store.getSessionMeta('2026-08-26-main')?.updatedAt;
+    store.updateSessionMeta('2026-08-26-main', { displayName: '改名' });
+    expect(store.getSessionMeta('2026-08-26-main')?.updatedAt).toBe(before);
   });
 });
