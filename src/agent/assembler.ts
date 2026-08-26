@@ -497,7 +497,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
       try {
         const found = pctx.index
           .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
-          .find((s) => s.metadata?.roundId === roundId);
+          .find((s) => s.roundId === roundId);
         return found ? found.content : null;
       } catch (err) {
         // 记忆索引异常时降级为 null（替换层 no-op），不阻断压缩链

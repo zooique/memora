@@ -15,7 +15,7 @@ import type { ISqliteDatabase } from './sqliteDatabaseTypes.js';
 import { StorageError } from './storageError.js';
 import { ErrorCode } from '../shared/errorCodes.js';
 
-/** 建表 SQL（含 deleted_at 列支持软删除 + superseded_by 支持写路径取代检测） */
+/** 建表 SQL（含 deleted_at 列支持软删除 + superseded_by 支持写路径取代检测 + 摘要溯源三列支撑分层分轨） */
 const CREATE_TABLE_SQL = `
 CREATE TABLE IF NOT EXISTS memories (
   id            TEXT PRIMARY KEY,
@@ -26,7 +26,12 @@ CREATE TABLE IF NOT EXISTS memories (
   accessedAt    TEXT NOT NULL,
   score         REAL NOT NULL DEFAULT 0.5,
   deleted_at    TEXT,
-  superseded_by TEXT
+  superseded_by TEXT,
+  -- 摘要溯源/分类列（2026-08-26 提升自 metadata，A1 边界定案：宿主不持久化 metadata，
+  -- 而分层分轨/会话优先须跨会话生效，故提升为顶层列，仅 round-summary 使用）
+  summary_type   TEXT,
+  session_name   TEXT,
+  round_id       TEXT
 );
 `;
 
@@ -57,7 +62,10 @@ CREATE TABLE memories_new (
   accessedAt    TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   score         REAL NOT NULL DEFAULT 0.5,
   deleted_at    TEXT,
-  superseded_by TEXT
+  superseded_by TEXT,
+  summary_type   TEXT,
+  session_name   TEXT,
+  round_id       TEXT
 );
 INSERT INTO memories_new (id, content)
   SELECT id, content FROM memories;
@@ -117,6 +125,20 @@ export class SqliteStorage implements IMemoryStorage {
       logger.warn('[SqliteStorage] 补齐 superseded_by 列（写路径取代检测）');
       this.db.exec('ALTER TABLE memories ADD COLUMN superseded_by TEXT');
     }
+    // 若缺失摘要溯源三列（summary_type/session_name/round_id，2026-08-26 自 metadata 提升），轻量补齐
+    // 旧数据无法回填（metadata 已丢弃），仅新增列供新写入 round-summary 使用
+    if (!existingColumns.has('summary_type')) {
+      logger.warn('[SqliteStorage] 补齐 summary_type 列（摘要分轨）');
+      this.db.exec('ALTER TABLE memories ADD COLUMN summary_type TEXT');
+    }
+    if (!existingColumns.has('session_name')) {
+      logger.warn('[SqliteStorage] 补齐 session_name 列（摘要会话溯源）');
+      this.db.exec('ALTER TABLE memories ADD COLUMN session_name TEXT');
+    }
+    if (!existingColumns.has('round_id')) {
+      logger.warn('[SqliteStorage] 补齐 round_id 列（摘要轮次溯源）');
+      this.db.exec('ALTER TABLE memories ADD COLUMN round_id TEXT');
+    }
   }
 
   /**
@@ -136,11 +158,9 @@ export class SqliteStorage implements IMemoryStorage {
       logger.warn({ id: memory.id, source: memory.source, warning: result.warning }, 'source 校验警告');
     }
 
-    // 仅绑定 schema 既有列，忽略 Memory.metadata 等扩展字段。
-    // Memory 类型约定 metadata 仅用于 FileStore 写回 frontmatter，SQLite index 不存储
-    // （见 memory/types.ts Memory.metadata 注释）。若直接 { ...memory } 展开，
-    // 含 metadata 的记忆（如从配置文件加载、含额外 frontmatter 的 persona/rule/skill）
-    // 会让 node:sqlite 报 Unknown named parameter 'metadata' 而崩溃。
+    // 绑定 schema 既有列；metadata 为配置文件 frontmatter 专用（Memory.metadata 注释），不入库
+    // 摘要溯源/分类字段（summary_type/session_name/round_id）为顶层持久化列，随 round-summary 写入
+    // （2026-08-26 提升自 metadata，A1 边界定案：宿主不持久化 metadata，而分层分轨/会话优先须跨会话生效）
     const params = {
       id: memory.id,
       content: memory.content,
@@ -151,10 +171,13 @@ export class SqliteStorage implements IMemoryStorage {
       score: memory.score,
       deletedAt: memory.deletedAt ?? null,
       supersededBy: memory.supersededBy ?? null,
+      summaryType: memory.summaryType ?? null,
+      sessionName: memory.sessionName ?? null,
+      roundId: memory.roundId ?? null,
     };
     this.db.prepare(`
-      INSERT INTO memories (id, content, source, name, createdAt, accessedAt, score, deleted_at, superseded_by)
-      VALUES (@id, @content, @source, @name, @createdAt, @accessedAt, @score, @deletedAt, @supersededBy)
+      INSERT INTO memories (id, content, source, name, createdAt, accessedAt, score, deleted_at, superseded_by, summary_type, session_name, round_id)
+      VALUES (@id, @content, @source, @name, @createdAt, @accessedAt, @score, @deletedAt, @supersededBy, @summaryType, @sessionName, @roundId)
       ON CONFLICT(id) DO UPDATE SET
         content = @content,
         source = @source,
@@ -163,7 +186,10 @@ export class SqliteStorage implements IMemoryStorage {
         accessedAt = @accessedAt,
         score = @score,
         deleted_at = @deletedAt,
-        superseded_by = @supersededBy
+        superseded_by = @supersededBy,
+        summary_type = @summaryType,
+        session_name = @sessionName,
+        round_id = @roundId
     `).run(params);
   }
 
@@ -488,6 +514,10 @@ export class SqliteStorage implements IMemoryStorage {
       deletedAt: row.deleted_at ?? undefined,
       // superseded_by 为 NULL 时映射为 undefined（未被取代），非 NULL 时为取代它的新摘要 id
       supersededBy: row.superseded_by ?? undefined,
+      // 摘要溯源/分类三列（NULL 映射为 undefined，仅 round-summary 有值）
+      summaryType: (row.summary_type as Memory['summaryType']) ?? undefined,
+      sessionName: row.session_name ?? undefined,
+      roundId: row.round_id ?? undefined,
     };
   }
 }
@@ -505,4 +535,10 @@ interface MemoryRow {
   deleted_at: string | null;
   /** 写路径取代标记：取代本摘要的新摘要 id（NULL=未被取代，ADR-021） */
   superseded_by: string | null;
+  /** 摘要类型（NULL=非 round-summary，ADR/分轨使用） */
+  summary_type: string | null;
+  /** 摘要归属会话（NULL=非 round-summary） */
+  session_name: string | null;
+  /** 摘要归属轮次（NULL=非 round-summary） */
+  round_id: string | null;
 }

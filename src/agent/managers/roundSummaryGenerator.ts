@@ -40,7 +40,7 @@ const LLM_TEMPERATURE = 0.3;
 
 /**
  * 摘要 JSON 输出契约（内核硬契约，角色包不可替换）：输出格式与 SummaryType 分类必须稳定
- * （摘要写路径读取 metadata.summaryType 且宿主依赖），角色包只可替换「提炼视角」（判断值得记什么）。
+ * （摘要写路径读取 summaryType 顶层字段且宿主依赖），角色包只可替换「提炼视角」（判断值得记什么）。
  */
 const SUMMARY_JSON_CONTRACT = `请以 JSON 格式输出：
 {
@@ -148,6 +148,8 @@ export class RoundSummaryGenerator {
         : 'general';
 
       // 构建带溯源标记的记忆条目（round-summary + sessionName + roundId）
+      // 溯源/分类字段走顶层持久化字段（summaryType/sessionName/roundId），不塞 metadata：
+      // 宿主 SQLite 不持久化 metadata，而分轨召回/会话优先须跨会话可靠读取（A1 边界定案，见 types.ts）
       const memoryId = `round-summary:${sessionName}:${roundId}`;
       const now = nowIso();
       const memory: Memory = {
@@ -159,11 +161,9 @@ export class RoundSummaryGenerator {
         accessedAt: now,
         score: DEFAULT_SUMMARY_SCORE,
         isTraceable: true,
-        metadata: {
-          summaryType,
-          sessionName,
-          roundId,
-        },
+        summaryType,
+        sessionName,
+        roundId,
       };
 
       this.storage.upsert(memory);
@@ -186,7 +186,7 @@ export class RoundSummaryGenerator {
    * @returns 候选摘要列表（倒序取最近 N 条，供 supersedeSimilar 逐一判定）
    */
   private getSessionCandidates(newMemory: Memory): Memory[] {
-    const sessionName = newMemory.metadata?.sessionName;
+    const sessionName = newMemory.sessionName;
     if (!sessionName) return [];
     const sessionPrefix = `round-summary:${sessionName}:`;
 
@@ -203,9 +203,10 @@ export class RoundSummaryGenerator {
    * 对给定的同 session 近窗口候选（candidates）逐一判定主题重叠——重叠率≥阈值则给旧摘要打 supersededBy 指向本摘要（非删除，可回溯）。
    *
    * 设计取舍：
-   * - 不依赖 metadata.type（宿主不持久化 metadata），改用可从 id 解析的 session 前缀 + 关键词重叠判定（跨宿主可用）；type 是纯语义标签，
-   *   旁路 == "同一主题不同类（如 preference 覆盖 decision）可能被取代" 的已知取舍（见 memory-as-summary §5.4 说明）。
-   * - 升级条件：若未来宿主持久化 metadata（getBySource 读回含 summaryType），可升级为"type 相同"前置过滤，进一步收紧取代面——当前不预埋。
+   * - 不依赖 summaryType 做前置过滤：sessionName 已提升为顶层持久化字段（跨宿主可用），但 type 过滤
+   *   属"进一步收紧取代面"的行为增强（同一主题不同类型如 preference 覆盖 decision 是否算取代，需语义定夺）。
+   *   type 是纯语义标签，旁路 == "同一主题不同类可能被取代" 的已知取舍（见 memory-as-summary §5.4 说明）。
+   * - 升级条件：若实测出现"跨类型误取代"困扰，可加"type 相同"前置过滤——当前不预埋（符合验证后固化纪律）。
    * - 确定性启发式代替额外 LLM 判断（零成本可测，符合"写一次定、读时确定性过滤" SSOT 纪律）；仅同 session 内判定避免误取代。
    *
    * @param newMemory 新生成的摘要

@@ -13,6 +13,7 @@ import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { recall } from '@/memory/recall.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
+import type { SummaryType } from '@/memory/types.js';
 import type { LlmProvider } from '@/llm/provider.js';
 
 /** 造一个 mock provider：chat 产出固定 JSON 摘要 */
@@ -32,7 +33,7 @@ function seedSummary(
   sessionName: string,
   roundId: string,
   content: string,
-  type: string,
+  type: SummaryType,
 ): void {
   const now = new Date().toISOString();
   storage.upsert({
@@ -44,7 +45,9 @@ function seedSummary(
     accessedAt: now,
     score: 0.5,
     isTraceable: true,
-    metadata: { summaryType: type, sessionName, roundId },
+    summaryType: type,
+    sessionName,
+    roundId,
   });
 }
 
@@ -61,7 +64,7 @@ describe('RoundSummaryGenerator', () => {
 
     const all = storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
     expect(all).toHaveLength(1);
-    expect(all[0]!.metadata?.summaryType).toBe('preference');
+    expect(all[0]!.summaryType).toBe('preference');
     expect(all[0]!.source).toBe(SOURCE_LABELS.ROUND_SUMMARY);
   });
 
@@ -83,7 +86,7 @@ describe('RoundSummaryGenerator', () => {
     expect(systemContent).toContain('角色包提炼视角');
     // 通用归纳框架不应叠加残留（完整下沉=替换，非追加）
     expect(systemContent).not.toContain('摘要应包含：');
-    // JSON 硬契约（SummaryType 分类）固定保留，保证写路径 metadata 稳定
+    // JSON 硬契约（SummaryType 分类）固定保留，保证写路径 summaryType 稳定
     expect(systemContent).toContain('请以 JSON 格式输出');
     expect(systemContent).toContain('preference|fact|decision|intent|general');
   });

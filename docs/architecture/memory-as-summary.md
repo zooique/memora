@@ -261,7 +261,7 @@ export interface SessionMessage {
 
 | 层 | 选择条件 | 召回策略 | 排序规则 | 设计意图 |
 |---|---------|---------|---------|---------|
-| **L1 会话内** | `metadata.sessionName === 当前sessionId` | 语义召回（走 hybridMerge） | `createdAt` 升序 | 用户搁置后回来，先看到那个会话的上下文 |
+| **L1 会话内** | `sessionName === 当前sessionId`（顶层持久化字段，A1 提升） | 语义召回（走 hybridMerge） | `createdAt` 升序 | 用户搁置后回来，先看到那个会话的上下文 |
 | **L2 会话外** | 其余所有记忆 | 按轨道独立召回（见 §4.3） | 语义相关性降序 | 跨会话的全局知识 |
 
 **层间关系**：L1 召回结果全部排在 L2 前面，然后合并截断。
@@ -304,6 +304,8 @@ minSemanticSharePercent（0.0~1.0，默认 0）
   设 0 = 关闭（最简形态：分轨只是开关，分配全靠排序）。
 ```
 
+> **命名对齐（2026-08-27）**：当前内核实现参数名为 `minSemanticShare`（`RecallOptions` 字段，`recall()` 传参），默认 `0`；`minSemanticSharePercent` 是"若未来升格为角色包 `prepare` 键"时的潜在键名——**当前未开放**（见下方开放边界）。文档讨论统一用潜在键名指代同一机制，实现侧以 `minSemanticShare` 为准。
+
 **为何不设每轨百分比**：每轨一个键（preferenceShare/factShare/...）会让配置面随类型数线性膨胀，且参数耦合难维护。`minSemanticSharePercent` 只在竞争成为实测瓶颈时开——符合"不预埋接口、验证后再固化"的哲学。
 
 **开放边界（是否进角色包）**：`minSemanticSharePercent` **作为内核默认值，暂不开放为角色包 `prepare` 键**。判断标准：开放 = 角色"想要什么"（意图），不开放 = 召回"内部怎么做"（机制）。
@@ -324,67 +326,46 @@ minSemanticSharePercent（0.0~1.0，默认 0）
 ### 4.4 召回算法（伪代码）
 
 ```typescript
-async function recall(options: RecallOptions): Promise<Memory[]> {
-  const {
-    query, sessionId, limit, storage, vectorStore,
-    cap, minSemanticShare = 0,
-  } = options;
+async function recall(storage, query, options: RecallOptions): Promise<Memory[]> {
+  const { limit, sessionId, excludeSources, excludeRoundIds, capTokens, minSemanticShare = 0 } = options;
 
-  // 1. 获取所有未删除、未被取代的记忆
-  const allMemories = await storage.getAll();
-  const active = allMemories.filter(m => !m.deletedAt && !m.supersededBy);
+  // 0. 双通道收集候选（语义 vectorStore + 关键词 storage.search）
+  const merged = new Map(); // id → { memory, vectorScore }
 
-  // 2. 分层
-  const l1 = active.filter(m => m.metadata?.sessionName === sessionId);
-  const l2 = active.filter(m => m.metadata?.sessionName !== sessionId);
+  // 1. 分轨进池策略（applyTrackPolicy）——仅具备 sessionId 分层上下文时生效
+  //    1a. L2 intent 排除：跨会话（sessionName !== sessionId）的 intent 移出候选池
+  //    1b. L2 preference 无条件进池：getBySource('round-summary') 枚举，仅补跨会话 preference（无查询意图不补）
+  applyTrackPolicy(merged, storage, { sessionId, excludeSources, hasQueryIntent });
 
-  // 3. L1 会话内：全部轨道走语义召回，结果按 createdAt 升序
-  const l1Result = await recallWithSemantic(query, l1, limit);
-  l1Result.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-
-  // 4. L2 会话外：各轨进候选池（分轨 = 进池开关）
-  // 4a. 偏好轨：无条件进池（不经检索），组内按 createdAt 升序
-  const l2Preference = l2
-    .filter(m => m.metadata?.summaryType === 'preference')
-    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
-
-  // 4b. 意图轨：不进池（跨会话无意义）
-  // 跳过 intent 类型
-
-  // 4c. 其余轨道（fact/decision/general）：语义召回进池
-  const l2Semantic = l2.filter(m => {
-    const type = m.metadata?.summaryType;
-    return type === 'fact' || type === 'decision' || type === 'general' || !type;
-  });
-  const l2SemanticResult = await recallWithSemantic(query, l2Semantic, limit);
-
-  // 5. cap 内分配：排序决定份额，minSemanticShare 兜底防 preference 挤占
-  //    semanticFloor = 语义轨道至少占 cap 的比例（默认 0 = 关闭）
-  const semanticFloor = Math.min(cap, Math.floor(cap * minSemanticShare));
-  const preferenceAllowance = previewTakePreference(l2Preference, cap - semanticFloor);
-  const semanticTake = takeByRelevance(l2SemanticResult, semanticFloor);
-
-  // 6. 合并：L1 全部 + L2 选拔，L1 排在 L2 前面
-  const merged = [...l1Result, ...preferenceAllowance, ...semanticTake];
-
-  // 7. 互斥排除：排除正文已加载的轮次摘要
-  const filtered = merged.filter(m => !excludeRoundIds.has(m.metadata?.roundId));
-
-  // 8. 截断
-  const result = filtered.slice(0, limit);
-
-  // 9. Boost（读路径副本，不改存储）
-  return result.map(m => ({ ...m, score: Math.min(1.0, m.score + 0.05) }));
+  // 2. 互斥排除：excludeRoundIds（正文已加载轮次）在融合排序前过滤
+  // 3. 综合排序：hybridMerge 融合排序（vectorScore*0.6 + score*0.4）选拔候选，可选 reranker 二次精排
+  //    候选超集裁剪（2026-08-27 修复）：hybridMerge / reranker 用 limit × RECALL_LIMIT_MULTIPLIER 保留候选超集，
+  //    不在 cap 分配前裁到最终 limit——否则排序靠前的 L2 preference 独占 top-limit、语义轨被挤出，
+  //    minSemanticShare 兜底失效；最终条数由 applyCapAllocation 的 limit 槽位预算兜底（无 cap 时退化 slice 同旧行为）
+  const sorted = hybridMerge(candidates, limit * RECALL_LIMIT_MULTIPLIER, weights);
+  // 4. 分层排序（sortByLayer）：L1 会话内 createdAt 升序 → L2 preference createdAt 升序 → L2 其余保持相关性序
+  let active = sortByLayer(sorted, sessionId).filter(m => !m.supersededBy);
+  // 5. 召回保底：active < minFallback 时用空查询补最近记忆（排语义命中后、同过滤）
+  // 6. cap 内分配（applyCapAllocation）：
+  //    capTokens 缺省/≤0 → 纯 limit 条数截断（退化旧形态）
+  //    semanticFloor = min(capTokens, ⌊capTokens × minSemanticShare⌋)（默认 0 = 关闭）
+  //    L1 全量注入 → L2 preference 最多占 (capTokens - semanticFloor)（createdAt 升序）
+  //    → L2 语义轨保底 semanticFloor（相关性序，preference 未用满的余量让给语义轨）
+  const allocated = applyCapAllocation(active, sessionId, { capTokens, minSemanticShare, limit });
+  // 7. Boost（读路径副本，不改存储；持久化由调用方 fire-and-forget 调 boostScores）
+  return allocated.map(m => ({ ...m, score: Math.min(1.0, m.score + 0.05) }));
 }
 ```
 
-> **说明**：`previewTakePreference` / `takeByRelevance` 是分配逻辑的示意函数——前者按 cap 余量取最近的偏好，后者按相关性取语义轨道（且保证至少拿到 `semanticFloor`）。实际实现可内联到单次填充循环，不引入独立函数。
+> **说明（落地状态，2026-08-27）**：以上伪代码已由 `src/memory/recall.ts` 落地——`applyTrackPolicy()`（分轨进池）、`sortByLayer()`（分层排序）、`applyCapAllocation()`（cap 内分配）三函数与伪代码一一对应；分配示意函数 `previewTakePreference` / `takeByRelevance` 不引入独立函数，内联在 `applyCapAllocation` 单次填充循环中。`metadata?.summaryType / sessionName / roundId` 已提升为**顶层持久化字段**（A1 边界定案，宿主 SQLite 已加列），伪代码与实现均使用顶层字段。**候选超集裁剪**（§4.4 第 3 步）为 2026-08-27 修复：hybridMerge/reranker 不再提前裁到最终 `limit`，保证分轨语义轨在 cap 分配前保留候选，测试见 `recall.test.ts`「cap 分配」套件。
 
 ### 4.5 hybridMerge 融合排序（保留）
 
 语义召回内部仍使用 `hybridMerge`（`vectorScore*0.6 + memory.score*0.4`）选拔候选，但**不再做第二次排序覆盖**。`hybridMerge` 的结果直接返回，由外层按分层分轨规则合并排序。
 
 **与 v2 的区别**：v2 中 `hybridMerge` 的排序被"会话优先 + 时间"完全覆盖（双重排序问题）。v3 中 `hybridMerge` 只负责"选拔候选"，排序由分层分轨规则统一处理。
+
+> **边界标注（D2，2026-08-27）**：`memoryInspector.searchHybrid()` 与 `recall()` **共享** `hybridMerge` 融合排序，但 searchHybrid 是「记忆搜索工具」**不是召回管线**——保持融合排序**不分层分轨**（不应用 L1/L2 分层、不进池策略、不做 cap 内分配）。分层分轨仅属 `recall()` 召回编排（contextPreparer 调用）；搜索工具暴露纯融合相关性结果，供宿主/上层按需自取。两者不互调用，边界清晰（见 `memoryInspector.ts` searchHybrid 注释）。
 
 ### 4.6 差异化召回（按 type）的历史与演进
 
@@ -582,7 +563,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 - **算法本身智能化**：通过权重设计让核心动作词和实体词在相似度计算中贡献更大，而非叠加外部判断规则
 - **下沉到工具层**：关键词提取和相似度计算统一在 `segmenter.ts` 工具层实现，避免业务逻辑层重复实现
 
-> **说明（设计约束）**：取代检测的意图是"type 相同且主题相关"，但实际按**主题相关**（加权 Jaccard 重叠率的确定性判定）执行，type 不参与。原因：宿主持久化层不持久化 `metadata`，`getBySource` 读回的摘要无 `metadata.summaryType`，type 无法作为**持久化**判定条件（仅 id 是持久化字段）。若未来宿主持久化 metadata，可升级为"type 相同"前置过滤。
+> **说明（设计约束，2026-08-27 随 A1 更新）**：取代检测的意图是"type 相同且主题相关"，但实际按**主题相关**（加权 Jaccard 重叠率的确定性判定）执行，type 不参与。早期原因是宿主持久化层不持久化 `metadata`，type 无法作为**持久化**判定条件；A1 已把 `summaryType` 提升为**顶层持久化字段**（宿主 SQLite 已加 `summary_type` 列），type 现可读——但**取代检测仍保持主题相关判定**，因为"type 相同 ≠ 主题相关"：同一主题不同类（如 preference 覆盖 decision）是否算取代需语义定夺，当前"主题相关"是已知取舍（跨类型可能被取代）。升级条件：若实测出现"跨类型误取代"困扰，再加"type 相同"前置过滤——当前不预埋（符合验证后固化纪律，与 `roundSummaryGenerator.ts` 旁路注释一致）。
 
 **SSOT 自检**：此设计**不新增存储层**（仍复用 round-summary）、**不新增后台系统**（是 Reflect 的一步，与"生成摘要"同构，fire-and-forget）、**不新增记忆关系图**（仅一个布尔标记 + 指针）。它是**效率挪移**——冲突消解从读路径（高频、每次召回都猜）移到写路径（低频、每轮一次判断），写一次定、读时确定性过滤，比"读时靠 LLM 聚合猜"更符合"确定性优先"。
 
@@ -678,14 +659,14 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | **记忆模型** | 摘要单轨（round-summary + content） |
 | **召回方式** | 单一召回入口（recall 函数） |
 | **分层** | L1 会话内优先于 L2 会话外 |
-| **分轨** | preference 无条件进池、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticSharePercent` 可选防挤占（默认 0） |
+| **分轨** | preference 无条件进池、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticShare` 可选防挤占（默认 0） |
 | **排序** | 时间顺序（createdAt 升序） |
 | **治理** | supersede（写时取代）+ boost（召回+0.05） |
 
 **详细说明**：
 
 - **摘要即记忆本体**：写入（RoundSummaryGenerator + type 标签）→ 召回（分层分轨 + 互斥过滤）→ 治理（superseded 取代）闭环成立，无独立洞察提炼层。
-- **分层分轨召回**：会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（preference 无条件进池、intent 不进池、其余语义召回进池），L1 全部优先于 L2；cap 内分配靠排序，`minSemanticSharePercent` 可选防挤占。
+- **分层分轨召回**：会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（preference 无条件进池、intent 不进池、其余语义召回进池），L1 全部优先于 L2；cap 内分配靠排序，`minSemanticShare` 可选防挤占（默认 0，未开放为角色包键，见 §4.3.1）。
 - **type = 语义标签 + 召回策略**：type 参与召回策略（决定哪些轨道进池/不进池），但不参与排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）决定。
 - **治理简化**：去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
 - **memoryAdded 事件由 round-summary 发射**——作为"新记忆产生必通知"的出口契约。

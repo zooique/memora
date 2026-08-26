@@ -35,8 +35,22 @@ export interface Memory {
   score: number;
   /** 软删除时间；非 undefined 表示已删除，回收站保留 30 天后物理清理 */
   deletedAt?: string;
-  /** 写配置文件时的 frontmatter 额外元数据；SQLite index 不存储此字段 */
+  /**
+   * 配置文件 frontmatter 额外元数据。仅用于 FileStore 写回 frontmatter（persona/rule/skill 等配置记忆）。
+   * ⚠️ 不再承载 round-summary 的溯源/分类字段——summaryType/sessionName/roundId 已提升为顶层
+   * 持久化字段（宿主 SQLite 不存储 metadata，而分层分轨/会话优先须跨会话生效，见 supersededBy 同款先例）。
+   */
   metadata?: Record<string, string>;
+  /**
+   * round-summary 摘要类型（preference/fact/decision/intent/general）。
+   * 顶层持久化字段（2026-08-26 自 metadata 提升，A1 边界定案）：宿主 SQLite 不持久化 metadata，
+   * 而分轨召回须跨会话可靠读取，故提升为顶层列。仅 round-summary 有意义。
+   */
+  summaryType?: SummaryType;
+  /** round-summary 归属会话标识（${date}-${session}）。顶层持久化字段，供会话内/外分层召回。仅 round-summary 有意义 */
+  sessionName?: string;
+  /** round-summary 归属轮次标识。顶层持久化字段，供互斥轮次排除与 traceSummary 回溯。仅 round-summary 有意义 */
+  roundId?: string;
   /** 是否可经 sessionId（+ roundId）回溯到原始对话；round-summary 有意义，其余默认 false */
   isTraceable?: boolean;
   /** 摘要是否已被人工修改，可能与原始对话不一致；仅 round-summary 有意义 */
@@ -131,6 +145,10 @@ export function parseMemory(raw: unknown): Memory {
     accessedAt: obj.accessedAt as string,
     score: (obj.score as number) ?? DEFAULT_MEMORY_SCORE,
     deletedAt: obj.deletedAt as string | undefined,
+    metadata: obj.metadata as Record<string, string> | undefined,
+    summaryType: obj.summaryType as SummaryType | undefined,
+    sessionName: obj.sessionName as string | undefined,
+    roundId: obj.roundId as string | undefined,
     isTraceable: obj.isTraceable as boolean | undefined,
     isModified: obj.isModified as boolean | undefined,
     supersededBy: obj.supersededBy as string | undefined,

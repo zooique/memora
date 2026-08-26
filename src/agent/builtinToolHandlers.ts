@@ -723,7 +723,7 @@ export class BuiltinToolHandlers {
         const truncNote = raw.truncated ? '\n（对话已截断，仍有更多消息）' : '';
         return `会话：${sessionId} | 轮次：${roundId} 原始对话：\n${lines}${truncNote}`;
       }
-      const summaryType = exact.metadata?.summaryType ?? 'general';
+      const summaryType = exact.summaryType ?? 'general';
       const traceInfo = exact.isTraceable ? '（可溯源）' : '（不可溯源，原始对话已删除）';
       const modifiedInfo = exact.isModified ? '（已手动修改）' : '';
       return `会话：${sessionId} | 轮次：${roundId} | 类型：${summaryType} ${traceInfo}${modifiedInfo}\n摘要：${exact.content}\n`;
@@ -738,8 +738,8 @@ export class BuiltinToolHandlers {
     const top = matched.slice(0, limit);
 
     const lines = top.map((m, i) => {
-      const roundIdFromMeta = m.metadata?.roundId ?? 'unknown';
-      const summaryType = m.metadata?.summaryType ?? 'general';
+      const roundIdFromMeta = m.roundId ?? 'unknown';
+      const summaryType = m.summaryType ?? 'general';
       const traceInfo = m.isTraceable ? '可溯源' : '不可溯源';
       const preview = truncate(m.content, 120);
       return `${i + 1}. [${summaryType}] 轮次 ${roundIdFromMeta} (${traceInfo})\n   ${preview.replace(/\n/g, ' ')}`;

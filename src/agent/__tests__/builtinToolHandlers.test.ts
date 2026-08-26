@@ -639,7 +639,7 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         name: `轮次摘要 ${SESSION} ${ROUND_A}`,
         score: 0.5,
         isTraceable: true,
-        metadata: { summaryType: 'fact', sessionName: SESSION, roundId: ROUND_A },
+        summaryType: 'fact', sessionName: SESSION, roundId: ROUND_A,
       }),
     );
     storage.upsert(
@@ -651,7 +651,7 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         score: 0.5,
         isTraceable: true,
         isModified: true,
-        metadata: { summaryType: 'preference', sessionName: SESSION, roundId: ROUND_B },
+        summaryType: 'preference', sessionName: SESSION, roundId: ROUND_B,
       }),
     );
   });

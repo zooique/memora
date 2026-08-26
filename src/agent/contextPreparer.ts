@@ -30,7 +30,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { UIMessages } from '@/agent/types.js';
-import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer } from '@/agent/tracer.js';
@@ -142,7 +142,8 @@ export class ContextPreparer {
    * 记忆召回 + 固定轮次注入
    *
    * 策略控制：'none' 模式跳过实际召回；contextAssembly 决定语义召回（query/hybrid）与
-   * 固定轮次注入（fixed/hybrid）的组合；limited 模式按 token 配额换算字符预算裁剪。
+   * 固定轮次注入（fixed/hybrid）的组合；limited 模式把记忆摘要层 token cap 传入 recall
+   * 做 cap 内分配（分轨：preference 取余量、语义轨保底）。
    * 前置互斥排除当前会话最近 N 轮 round-summary，避免挤占 top-limit 预算。
    *
    * @param input 用户输入（作为召回 query）
@@ -219,7 +220,8 @@ export class ContextPreparer {
 
       try {
         // 条数上限统一 DEFAULT_RECALL_LIMIT（full/limited 共用有界条数）；
-        // limited 模式在返回后按记忆摘要层 cap（剩余预算 × memoryRecallPercent）换算的字符预算裁剪
+        // limited 模式把记忆摘要层 cap（剩余预算 × memoryRecallPercent，token）传入 recall
+        // 做 cap 内分配（§4.3.1：preference 取余量、语义轨保底），替代返回后的纯字符截断
         recalledMemories = await recall(deps.getIndex(), input, {
           limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
           // null（deps 关闭语义）收窄为 recall 的可选参数 undefined
@@ -233,24 +235,10 @@ export class ContextPreparer {
           excludeRoundIds: recentRoundIds,
           // 召回置信度阈值（0.0-1.0）
           minSimilarity: resolveRecallConfidence(strategy),
+          // cap 内分配（C1）：limited 模式传记忆摘要层 token 上限，由 recall 分轨分配；
+          // full 模式不传（退化为 limit 条数），minSemanticShare 走内核默认 0（C2 不进角色包）
+          capTokens: memoryRecallMode === 'limited' ? budget.memoryLayerCapTokens : undefined,
         });
-
-        // limited 裁剪：记忆摘要层 cap = 剩余预算 × memoryRecallPercent（cap 非 quota，只封顶不挤占对话层）
-        if (memoryRecallMode === 'limited') {
-          const tokenBudget = budget.memoryLayerCapTokens;
-          if (tokenBudget > 0) {
-            const charBudget = tokenBudget * LOOP_CONSTANTS.CHARS_PER_TOKEN;
-            let usedChars = 0;
-            const trimmed: Memory[] = [];
-            for (const m of recalledMemories) {
-              const cost = m.content.length + 1;
-              if (usedChars + cost > charBudget) break;
-              usedChars += cost;
-              trimmed.push(m);
-            }
-            recalledMemories = trimmed;
-          }
-        }
       } catch (err) {
         recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
         throw err;

@@ -247,6 +247,11 @@ export class MemoryInspector {
   /**
    * 混合搜索记忆（语义 + 关键词双通道）。VectorStore 可用时补强语义缺口，向量搜索失败静默降级到关键词。
    * 融合排序委托 hybridMerge（与 recall() 共享，避免跨模块常量依赖）。
+   *
+   * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——保持融合排序
+   * **不分层分轨**：不应用 L1/L2 分层、不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配
+   * （capTokens / minSemanticShare）。分层分轨属「召回编排」（recall()，contextPreparer 调用），搜索工具
+   * 只暴露融合相关性结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
    */
   async searchHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
     if (!query || query.trim() === '') {

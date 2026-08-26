@@ -678,13 +678,13 @@ describe('recall · 会话窗口优先 + 组内时间排序', () => {
     const cross = makeMemory({
       id: 'round-summary:cross',
       source: 'round-summary',
-      metadata: { summaryType: 'fact', sessionName: 'other-session', roundId: 'r1' },
+      summaryType: 'fact', sessionName: 'other-session', roundId: 'r1',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
     const same = makeMemory({
       id: 'round-summary:same',
       source: 'round-summary',
-      metadata: { summaryType: 'fact', sessionName: 'current-session', roundId: 'r2' },
+      summaryType: 'fact', sessionName: 'current-session', roundId: 'r2',
       createdAt: '2026-01-02T00:00:00.000Z',
     });
     vi.mocked(mockStorage.search).mockReturnValue([cross, same]);
@@ -700,13 +700,13 @@ describe('recall · 会话窗口优先 + 组内时间排序', () => {
     const older = makeMemory({
       id: 'round-summary:older',
       source: 'round-summary',
-      metadata: { summaryType: 'fact', sessionName: 'cur', roundId: 'r1' },
+      summaryType: 'fact', sessionName: 'cur', roundId: 'r1',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
     const newer = makeMemory({
       id: 'round-summary:newer',
       source: 'round-summary',
-      metadata: { summaryType: 'fact', sessionName: 'cur', roundId: 'r2' },
+      summaryType: 'fact', sessionName: 'cur', roundId: 'r2',
       createdAt: '2026-01-03T00:00:00.000Z',
     });
     vi.mocked(mockStorage.search).mockReturnValue([newer, older]);
@@ -722,13 +722,13 @@ describe('recall · 会话窗口优先 + 组内时间排序', () => {
     const older = makeMemory({
       id: 'round-summary:older',
       source: 'round-summary',
-      metadata: { summaryType: 'fact', sessionName: 'a', roundId: 'r1' },
+      summaryType: 'fact', sessionName: 'a', roundId: 'r1',
       createdAt: '2026-01-01T00:00:00.000Z',
     });
     const newer = makeMemory({
       id: 'round-summary:newer',
       source: 'round-summary',
-      metadata: { summaryType: 'fact', sessionName: 'b', roundId: 'r2' },
+      summaryType: 'fact', sessionName: 'b', roundId: 'r2',
       createdAt: '2026-01-02T00:00:00.000Z',
     });
     vi.mocked(mockStorage.search).mockReturnValue([newer, older]);
@@ -761,11 +761,11 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
         id: 'round:A', source: 'round-summary', score: 0.9,
-        metadata: { roundId: 'r1', sessionName: 'cur', summaryType: 'fact' },
+        roundId: 'r1', sessionName: 'cur', summaryType: 'fact',
       }),
       makeMemory({
         id: 'round:B', source: 'round-summary', score: 0.8,
-        metadata: { roundId: 'r2', sessionName: 'cur', summaryType: 'fact' },
+        roundId: 'r2', sessionName: 'cur', summaryType: 'fact',
       }),
       makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
     ]);
@@ -789,7 +789,7 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
         id: 'round:A', source: 'round-summary', score: 0.9,
-        metadata: { roundId: 'r1', sessionName: 'cur', summaryType: 'fact' },
+        roundId: 'r1', sessionName: 'cur', summaryType: 'fact',
       }),
       makeMemory({ id: 'content:1', source: 'content', score: 0.7 }),
     ]);
@@ -813,7 +813,7 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
         id: 'round:A', source: 'round-summary', score: 0.5,
-        metadata: { roundId: 'r1', sessionName: 'cur', summaryType: 'fact' },
+        roundId: 'r1', sessionName: 'cur', summaryType: 'fact',
       }),
       makeMemory({ id: 'cross:1', source: 'content', score: 0.3 }),
     ]);
@@ -828,5 +828,258 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
     expect(ids).not.toContain('round:A');
     // 跨会话记忆被补足
     expect(ids).toContain('cross:1');
+  });
+});
+
+// ─── v3 分层分轨召回（§4.3 分轨策略 + §4.3.1 cap 内分配） ─────────────────────
+
+describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap 分配）', () => {
+  let mockStorage: IMemoryStorage;
+
+  beforeEach(() => {
+    mockStorage = {
+      upsert: vi.fn(),
+      delete: vi.fn(),
+      getById: vi.fn(),
+      getBySource: vi.fn(),
+      search: vi.fn(),
+      count: vi.fn(() => 0),
+      countBySource: vi.fn(() => 0),
+      close: vi.fn(),
+    } as unknown as IMemoryStorage;
+  });
+
+  it('L2 preference 无条件进池：语义/关键词未命中时仍补入跨会话偏好', async () => {
+    // 关键词搜索返回空（无相关记忆命中）
+    vi.mocked(mockStorage.search).mockReturnValueOnce([]);
+    // 枚举 round-summary 返回一条跨会话 preference
+    vi.mocked(mockStorage.getBySource).mockReturnValue([
+      makeMemory({
+        id: 'pref:1', source: 'round-summary', summaryType: 'preference',
+        sessionName: 'other-session', roundId: 'p1',
+        content: '用户偏好 TypeScript', createdAt: '2026-01-01T00:00:00.000Z',
+      }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0, // 关闭保底，隔离无条件进池逻辑
+    });
+
+    // preference 无条件进池，即便检索未命中
+    expect(memories.map((m) => m.id)).toContain('pref:1');
+  });
+
+  it('L2 preference 无条件进池：只补跨会话偏好，当前会话（L1）偏好不被重复补入', async () => {
+    // 当前会话偏好已由关键词通道命中 → 不应被 getBySource 重复补入（去重）
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({
+        id: 'pref:l1', source: 'round-summary', summaryType: 'preference',
+        sessionName: 'current-session', roundId: 'p1', score: 0.9,
+      }),
+    ]);
+    // 枚举里同时有 L1 偏好与 L2 偏好
+    vi.mocked(mockStorage.getBySource).mockReturnValue([
+      makeMemory({
+        id: 'pref:l1', source: 'round-summary', summaryType: 'preference',
+        sessionName: 'current-session', roundId: 'p1',
+      }),
+      makeMemory({
+        id: 'pref:l2', source: 'round-summary', summaryType: 'preference',
+        sessionName: 'other-session', roundId: 'p2',
+      }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+    });
+
+    const ids = memories.map((m) => m.id);
+    // L1 偏好走语义召回命中（1 条），L2 偏好补入（1 条），无重复
+    expect(ids).toContain('pref:l1');
+    expect(ids).toContain('pref:l2');
+    expect(ids.filter((id) => id === 'pref:l1')).toHaveLength(1);
+  });
+
+  it('L2 intent 排除：跨会话意图摘要不进候选池', async () => {
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({
+        id: 'intent:1', source: 'round-summary', summaryType: 'intent',
+        sessionName: 'other-session', roundId: 'i1', score: 0.9,
+      }),
+      makeMemory({
+        id: 'fact:1', source: 'round-summary', summaryType: 'fact',
+        sessionName: 'other-session', roundId: 'f1', score: 0.8,
+      }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+    });
+
+    const ids = memories.map((m) => m.id);
+    // 跨会话 intent 被排除，fact 保留
+    expect(ids).not.toContain('intent:1');
+    expect(ids).toContain('fact:1');
+  });
+
+  it('L1 intent 保留：当前会话意图摘要仍走语义召回进池（4.3 表）', async () => {
+    vi.mocked(mockStorage.search).mockReturnValueOnce([
+      makeMemory({
+        id: 'intent:1', source: 'round-summary', summaryType: 'intent',
+        sessionName: 'current-session', roundId: 'i1', score: 0.9,
+      }),
+    ]);
+
+    const memories = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+    });
+
+    // L1 intent 不被排除
+    expect(memories.map((m) => m.id)).toContain('intent:1');
+  });
+
+  it('cap 分配：preference 取余量、语义轨保底 semanticFloor（minSemanticShare 防挤占）', async () => {
+    // 6 条 preference + 6 条 fact，content 40 字符 → 约 10 token/条
+    const makePool = () => {
+      const prefs = Array.from({ length: 6 }, (_, i) =>
+        makeMemory({
+          id: `pref:${i}`, source: 'round-summary', summaryType: 'preference',
+          sessionName: 'other', roundId: `p${i}`, content: 'x'.repeat(40),
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.6,
+        }),
+      );
+      const facts = Array.from({ length: 6 }, (_, i) =>
+        makeMemory({
+          id: `fact:${i}`, source: 'round-summary', summaryType: 'fact',
+          sessionName: 'other', roundId: `f${i}`, content: 'y'.repeat(40),
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.5,
+        }),
+      );
+      return [...prefs, ...facts];
+    };
+
+    // 对照组：minSemanticShare=0（默认）→ preference 可占满 prefAllowance，语义轨被挤出到余量 4 条
+    // limit=10 提供足够条数预算（10 条 ≥ cap=100 允许的 10 条），隔离观察 cap 内 token 分配份额
+    vi.mocked(mockStorage.search).mockReturnValueOnce(makePool());
+    const withShare0 = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+      capTokens: 100,
+      minSemanticShare: 0,
+      limit: 10,
+    });
+    expect(withShare0.filter((m) => m.summaryType === 'preference')).toHaveLength(6);
+    expect(withShare0.filter((m) => m.summaryType === 'fact')).toHaveLength(4);
+
+    // 实验组：minSemanticShare=0.5 → semanticFloor=50 token（5 条），语义轨保底生效，preference 让出 1 条
+    vi.mocked(mockStorage.search).mockReturnValueOnce(makePool());
+    const withShare = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+      capTokens: 100,
+      minSemanticShare: 0.5,
+      limit: 10,
+    });
+    expect(withShare.filter((m) => m.summaryType === 'preference')).toHaveLength(5);
+    expect(withShare.filter((m) => m.summaryType === 'fact')).toHaveLength(5);
+  });
+
+  it('cap 分配：limit 条数主导时语义保底仍在条数层面生效（防止 slice 截断破坏）', async () => {
+    // limit=5 远小于 cap=100 允许条数（contextPreparer 场景：limit=5 << cap token）——
+    // 修复前 cap 分配后 slice(0,5) 按分层顺序截断，preference 排前全保留、语义轨被挤出；
+    // 修复后 limit 作为分配内条数约束，minSemanticShare=0.5 保证语义轨至少占剩余条数一半
+    const makePool = () => {
+      const prefs = Array.from({ length: 6 }, (_, i) =>
+        makeMemory({
+          id: `pref:${i}`, source: 'round-summary', summaryType: 'preference',
+          sessionName: 'other', roundId: `p${i}`, content: 'x'.repeat(40),
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.6,
+        }),
+      );
+      const facts = Array.from({ length: 6 }, (_, i) =>
+        makeMemory({
+          id: `fact:${i}`, source: 'round-summary', summaryType: 'fact',
+          sessionName: 'other', roundId: `f${i}`, content: 'y'.repeat(40),
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.5,
+        }),
+      );
+      return [...prefs, ...facts];
+    };
+
+    // minSemanticShare=0.5、limit=5：语义保底条数=ceil(5×0.5)=3 → preference 最多 2 条、语义轨至少 3 条
+    vi.mocked(mockStorage.search).mockReturnValueOnce(makePool());
+    const withShare = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+      capTokens: 100,
+      minSemanticShare: 0.5,
+      limit: 5,
+    });
+    expect(withShare).toHaveLength(5); // limit 条数封顶生效
+    expect(withShare.filter((m) => m.summaryType === 'preference')).toHaveLength(2);
+    expect(withShare.filter((m) => m.summaryType === 'fact')).toHaveLength(3);
+
+    // 对照组：minSemanticShare=0（默认）→ preference 可占满 5 条（语义保底关闭）
+    vi.mocked(mockStorage.search).mockReturnValueOnce(makePool());
+    const withShare0 = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+      capTokens: 100,
+      minSemanticShare: 0,
+      limit: 5,
+    });
+    expect(withShare0.filter((m) => m.summaryType === 'preference')).toHaveLength(5);
+    expect(withShare0.filter((m) => m.summaryType === 'fact')).toHaveLength(0);
+  });
+
+  it('cap 分配：L1 会话内全量注入，不受 cap 内 pref/语义预算挤占', async () => {
+    // 当前会话 2 条（L1）+ 跨会话 6 条 preference + 6 条 fact（L2）
+    const l1 = [
+      makeMemory({
+        id: 'l1:1', source: 'round-summary', summaryType: 'fact',
+        sessionName: 'current-session', roundId: 'c1', content: 'a'.repeat(40),
+        createdAt: '2026-01-01T00:00:00.000Z', score: 0.5,
+      }),
+      makeMemory({
+        id: 'l1:2', source: 'round-summary', summaryType: 'decision',
+        sessionName: 'current-session', roundId: 'c2', content: 'b'.repeat(40),
+        createdAt: '2026-01-02T00:00:00.000Z', score: 0.5,
+      }),
+    ];
+    const prefs = Array.from({ length: 6 }, (_, i) =>
+      makeMemory({
+        id: `pref:${i}`, source: 'round-summary', summaryType: 'preference',
+        sessionName: 'other', roundId: `p${i}`, content: 'x'.repeat(40),
+        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.6,
+      }),
+    );
+    const facts = Array.from({ length: 6 }, (_, i) =>
+      makeMemory({
+        id: `fact:${i}`, source: 'round-summary', summaryType: 'fact',
+        sessionName: 'other', roundId: `f${i}`, content: 'y'.repeat(40),
+        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.5,
+      }),
+    );
+    vi.mocked(mockStorage.search).mockReturnValueOnce([...l1, ...prefs, ...facts]);
+
+    const memories = await recall(mockStorage, '测试', {
+      sessionId: 'current-session',
+      minFallback: 0,
+      capTokens: 100,
+      minSemanticShare: 0.5,
+      limit: 10,
+    });
+
+    const ids = memories.map((m) => m.id);
+    // L1 全量注入（cap=100 时 L1 2 条 = 20 token 全进，不参与 pref/语义预算争抢）
+    expect(ids).toContain('l1:1');
+    expect(ids).toContain('l1:2');
+    // L1 排在 L2 前面
+    expect(ids.indexOf('l1:1')).toBeLessThan(ids.indexOf('pref:0'));
+    expect(ids.indexOf('l1:2')).toBeLessThan(ids.indexOf('fact:0'));
   });
 });

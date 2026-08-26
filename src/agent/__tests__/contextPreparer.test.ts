@@ -93,7 +93,7 @@ describe('ContextPreparer · 互斥锁定（被替换轮不被二次召回）', 
         id: 'round-summary:s1:round-replaced-1',
         source: 'round-summary',
         score: 0.95,
-        metadata: { roundId: 'round-replaced-1', sessionName: '2026-08-22-main', summaryType: 'fact' },
+        roundId: 'round-replaced-1', sessionName: '2026-08-22-main', summaryType: 'fact',
       }),
       makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
     ]);
@@ -114,7 +114,7 @@ describe('ContextPreparer · 互斥锁定（被替换轮不被二次召回）', 
         id: 'round-summary:s1:round-other',
         source: 'round-summary',
         score: 0.9,
-        metadata: { roundId: 'round-other', sessionName: '2026-08-22-main', summaryType: 'fact' },
+        roundId: 'round-other', sessionName: '2026-08-22-main', summaryType: 'fact',
       }),
     ]);
 

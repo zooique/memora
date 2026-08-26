@@ -1,9 +1,9 @@
 # Memora 内核 CI 流水线
 #
 # 触发条件：
-#   - 推送到 main/master 分支
-#   - 拉取请求（PR）
-#   - 手动触发（workflow_dispatch）
+#   - 推送到 main/master 分支  ← 大改期间暂停（2026-08-27），见下方注释
+#   - 拉取请求（PR）            ← 大改期间暂停（2026-08-27），见下方注释
+#   - 手动触发（workflow_dispatch） ← 保留，随时可恢复 CI
 #
 # 检查项：
 #   - TypeScript 类型检查（tsc --noEmit）
@@ -19,14 +19,16 @@
 name: Kernel CI
 
 on:
-  push:
-    branches:
-      - main
-      - master
-  pull_request:
-    branches:
-      - main
-      - master
+  # 大改期间暂停自动触发（2026-08-27）：内核分层分轨重构进行中，避免 CI 频繁红；
+  # 恢复时取消注释下方两段即可（保留 workflow_dispatch 手动触发随时可用）。
+  # push:
+  #   branches:
+  #     - main
+  #     - master
+  # pull_request:
+  #   branches:
+  #     - main
+  #     - master
   workflow_dispatch:
 
 jobs:
