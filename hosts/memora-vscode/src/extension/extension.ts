@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Memora — VS Code 插件入口（memora 通用落地宿主）
  *
  * 职责：
@@ -324,10 +324,9 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       
-      // 文件内容裁切上限（字符数）：超长文件只取头部，避免把几十 KB 整文件喂给模型做一句话描述
+      // 文件内容裁切上限：超长文件只取头部
       const DESCRIPTION_MAX_INPUT_CHARS = 8000;
-      // 答案空间上限（输出 token）：给推理模型（R1/QwQ 类）留出 reasoning_content 思考预算，
-      // 过小（如 256）会导致 content 答案被饿空——此前在强 reasoning 模型下系统性返回空，已实锤
+      // 输出 token 上限：推理模型（R1/QwQ）需预留 reasoning_content 预算，过小会导致 content 空
       const DESCRIPTION_MAX_TOKENS = 4096;
 
       try {
@@ -338,8 +337,8 @@ export function activate(context: vscode.ExtensionContext): void {
         const text = (truncated ? fullText.substring(0, DESCRIPTION_MAX_INPUT_CHARS) : fullText)
           + (truncated ? `\n\n（以下仅文件开头前 ${DESCRIPTION_MAX_INPUT_CHARS} 字符，内容可能不完整）` : '');
 
-        // 调用 LLM 自动生成一句话描述（使用 accumulateStream 累积流式响应）
-        // prompt 显式传入文件名并禁止复述标题，迫使模型提炼内容要点而非偷懒回声（见作品投影"找茬"复盘）
+        // 调用 LLM 生成一句话描述
+        // prompt 显式传入文件名 + 禁止复述标题，迫使模型提炼要点而非回声文件名
         const baseNameHint = relativePath.split(/[\\/]/).pop() ?? '';
         const prompt =
           `文件名：${baseNameHint}\n` +
@@ -348,12 +347,11 @@ export function activate(context: vscode.ExtensionContext): void {
           text;
         let description = '';
         try {
-          // 诊断：记录原始返回长度与内容，区分"模型返回空"与"返回纯空白被 trim 掉"
           const raw = await accumulateStream(agent.provider, [
             { role: 'system', content: '你是文件描述生成器，只输出一句中文描述，不要解释。' },
             { role: 'user', content: prompt },
           ], { maxTokens: DESCRIPTION_MAX_TOKENS });
-          // 诊断：记录原始返回长度与内容，区分"模型返回空"与"返回纯空白被 trim 掉"
+          // 诊断日志：区分"模型返回空"与"返回纯空白被 trim 掉"
           memoraOutput.appendLine(`[作品投影] LLM 原始返回 len=${raw.length} content=${JSON.stringify(raw)}`);
           description = raw.trim();
         } catch (llmErr) {

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent 门面类 — Memora 宿主项目接入入口
  *
  * 宿主通过 `import { Agent } from '@zooique/memora'` 一行接入。
@@ -1809,7 +1809,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this.pctx?.security ?? null;
   }
 
-  /** 作品投影管理器（用户主动登记的 JSON 极简索引；`registerWork`/`listWorks`/`contextBlock`） */
+  /** 作品投影管理器（用户主动登记的 JSON 极简索引；`registerWork`/`listWorks`/`loadAndGetContextBlock`/`isFileMalformed`） */
   get works(): WorkProjectionManager | null {
     return this.workProjection;
   }

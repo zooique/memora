@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent 组件组装器 — 从 Agent 门面类拆出的工厂逻辑
  *
  * 职责：
@@ -74,7 +74,7 @@ import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js
  * @param rolePackPrompt 角色包构建的 prompt（含 L1 persona + 角色包技能清单）
  * @param globalSkillList 全局技能清单（SkillManager.buildSkillList()）
  * @param locale 时间格式化 locale
- * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.contextBlock() 产出）
+ * @param workProjectionContext 作品投影装配注入块（可选；由 WorkProjectionManager.loadAndGetContextBlock() 产出）
  * @returns 完整的 systemPromptPrefix
  */
 export function buildSystemPromptPrefix(
@@ -772,12 +772,9 @@ export async function assembleComponents(
 
   // ── AgentLoop + 其直接依赖 ──
 
-  // 作品投影装配注入：先刷新缓存（读取 work-projections.json），再注入极简索引清单
-  // 刷新失败不阻断装配——contextBlock 返回空串即不注入（投影是可选项，非装配硬依赖）
-  await workProjection.refresh().catch((err) => {
-    logger.warn({ err }, '作品投影装配前刷新失败，跳过注入');
-  });
-  const workProjectionContext = workProjection.contextBlock();
+  // 作品投影装配注入：使用 SSOT 读取路径（刷新 + 读取合为单一操作）
+  // 刷新失败不阻断装配——loadAndGetContextBlock 内部已容错，返回空串即不注入（投影是可选项，非装配硬依赖）
+  const workProjectionContext = await workProjection.loadAndGetContextBlock();
 
   const { loop, sessionArchiver, textPolisher, roundSummaryGenerator } =
     await createAgentLoopAndDeps({
