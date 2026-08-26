@@ -306,6 +306,21 @@ minSemanticSharePercent（0.0~1.0，默认 0）
 
 **为何不设每轨百分比**：每轨一个键（preferenceShare/factShare/...）会让配置面随类型数线性膨胀，且参数耦合难维护。`minSemanticSharePercent` 只在竞争成为实测瓶颈时开——符合"不预埋接口、验证后再固化"的哲学。
 
+**开放边界（是否进角色包）**：`minSemanticSharePercent` **作为内核默认值，暂不开放为角色包 `prepare` 键**。判断标准：开放 = 角色"想要什么"（意图），不开放 = 召回"内部怎么做"（机制）。
+
+| 键 | 表达的是 | 开放？ |
+|----|---------|--------|
+| `memoryRecallPercent` | 角色想要摘要占多少上下文 | ✅ 角色包层（意图） |
+| `memoryRecall` / `summaryRecall` / `recallConfidence` | 角色想不想召回、多严格 | ✅ 角色包层（意图） |
+| `minSemanticSharePercent` | 为避免偏好挤占、语义轨道保底多少 | ❌ 内核（机制） |
+
+理由：
+1. **防挤占是技术手段，非角色意图**——角色关心"召回哪些/多少/多严"，不关心 cap 内语义轨道的保底坑位；暴露成角色键会向用户传导实现细节。
+2. **默认 0 关闭，属备用参数**——进角色包需过 `strategyKeys.ts` 四件套（校验/解析/合并/文档/测试），为一个默认 0 的键不值。
+3. **分层不冲突**——`memoryRecallPercent` 管总量 cap（角色包层），`minSemanticSharePercent` 管 cap 内语义保底（内核召回实现层），不越界。
+
+若未来确凿出现"客服角色应多给事实、轻偏好"这类真实诉求，再将其升为角色包 `prepare` 键，与 `memoryRecallPercent` 同区间（0~1）同默认值（0）。在那之前留内核、不进 schema。
+
 ### 4.4 召回算法（伪代码）
 
 ```typescript
