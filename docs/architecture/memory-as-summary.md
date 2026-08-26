@@ -236,20 +236,24 @@ export interface SessionMessage {
     ↓
 2. 分轨：每层内按 summaryType 分为独立轨道
     ↓
-3. 各轨独立召回：
+3. 各轨独立进候选池：
    - L1 会话内：全部轨道走语义召回，结果按 createdAt 升序
-   - L2 会话外：preference 全量注入；intent 不注入；其余走语义召回
+   - L2 会话外：preference 无条件进池；intent 不进池；其余按语义召回进池
     ↓
-4. 合并：L1 全部 + L2 选拔，L1 排在 L2 前面
+4. cap 内分配：各轨道在 memoryRecallPercent 兜底下，靠排序自然形成份额
+   （preference 时间升序、语义轨道按相关性；可选 minSemanticSharePercent 防挤占）
     ↓
-5. 互斥排除：排除正文已加载的轮次摘要
+5. 合并：L1 全部 + L2 选拔，L1 排在 L2 前面
     ↓
-6. 截断：取前 limit 条返回
+6. 互斥排除：排除正文已加载的轮次摘要
+    ↓
+7. 截断：取前 limit 条返回
 ```
 
 **核心原则**：
 - **分层**：会话内（L1）和会话外（L2）是两个独立的召回层
-- **分轨**：每个 summaryType 是独立轨道，有各自的召回策略
+- **分轨**：每个 summaryType 是独立轨道，决定"是否进候选池"（召回策略开关），不决定"占多少配额"
+- **分配靠排序**：cap 内的份额由时间/相关性排序自然形成，不手工切百分比（§4.3.1）
 - **会话优先**：L1 全部排在 L2 前面（不是全量注入，是召回后优先排序）
 - **语义相关性**：L1 和 L2 都走召回路线（用户输入可能漂移，不全量注入）
 
@@ -266,26 +270,50 @@ export interface SessionMessage {
 
 ### 4.3 分轨策略（summaryType）
 
-每种 summaryType 有独立的召回策略：
+每种 summaryType 决定**是否进候选池**（召回策略开关），而非分配配额：
 
-| 轨道 | 类型 | L1 会话内策略 | L2 会话外策略 | 设计理由 |
+| 轨道 | 类型 | L1 会话内进池 | L2 会话外进池 | 设计理由 |
 |------|------|-------------|-------------|---------|
-| **偏好轨** | `preference` | 语义召回 | **全量注入**（无条件） | 偏好是长期有效的，应该总是被召回 |
-| **事实轨** | `fact` | 语义召回 | 语义召回 | 事实可能过时，需要相关性筛选 |
-| **决策轨** | `decision` | 语义召回 | 语义召回 | 决策可能被推翻，需要相关性筛选 |
-| **意图轨** | `intent` | 语义召回 | **不注入** | 意图是临时的，跨会话无意义 |
-| **通用轨** | `general` | 语义召回 | 语义召回 | 兜底，什么都能装 |
+| **偏好轨** | `preference` | 语义召回进池 | **无条件进池**（不经检索） | 偏好是长期有效的，应该总是被召回 |
+| **事实轨** | `fact` | 语义召回进池 | 语义召回进池 | 事实可能过时，需要相关性筛选 |
+| **决策轨** | `decision` | 语义召回进池 | 语义召回进池 | 决策可能被推翻，需要相关性筛选 |
+| **意图轨** | `intent` | 语义召回进池 | **不进池** | 意图是临时的，跨会话无意义 |
+| **通用轨** | `general` | 语义召回进池 | 语义召回进池 | 兜底，什么都能装 |
 
 **关键设计**：
+- **进池 ≠ 全量注入**：`preference` 无条件进池，但进池后仍受 `memoryRecallPercent` 总 cap 约束，且组内按 `createdAt` 升序——只取 cap 内最近的偏好，旧的偏好自然排在 cap 外，不会无限膨胀上下文（§4.3.1）
 - **L1 会话内**：所有轨道都走语义召回（不全量注入）
-- **L2 会话外**：preference 全量注入（无条件），intent 不注入（跨会话无意义），其余按语义匹配
-- **分轨独立计算**：每轨独立选出候选，最后合并
+- **L2 会话外**：preference 无条件进池，intent 不进池（跨会话无意义），其余按语义匹配进池
+
+#### 4.3.1 cap 内分配规则
+
+**原则**：总上限（`memoryRecallPercent`）管"总量封顶"，cap 内的份额由**排序自然形成**，不引入每轨百分比键。（避免 5 个配额参数的机制膨胀，违背简洁哲学。）
+
+**分配逻辑**：
+1. **总量封顶**：召回的摘要总 token 受 `memoryRecallPercent`（角色包 L2，cap 百分比）约束。
+2. **偏好轨**：组内按 `createdAt` 升序（最近偏好优先），塞满即止。
+3. **语义轨**（fact/decision/general）：按 `hybridMerge` 语义相关性排序。
+4. **合并**：偏好 + 语义按各自排序填充 cap，L1 优先于 L2。
+
+**竞争兜底（可选，默认关闭）**：当 `preference` 挤满 cap 时，语义轨道可能被完全挤出。如需避免，提供单个软参数 `minSemanticSharePercent`（默认 `0`），保证语义轨道至少占 cap 的该比例：
+
+```
+minSemanticSharePercent（0.0~1.0，默认 0）
+→ 语义轨道（fact/decision/general）保证至少拿 cap 的该比例，
+  preference 最多占 (1 - minSemanticSharePercent)。
+  设 0 = 关闭（最简形态：分轨只是开关，分配全靠排序）。
+```
+
+**为何不设每轨百分比**：每轨一个键（preferenceShare/factShare/...）会让配置面随类型数线性膨胀，且参数耦合难维护。`minSemanticSharePercent` 只在竞争成为实测瓶颈时开——符合"不预埋接口、验证后再固化"的哲学。
 
 ### 4.4 召回算法（伪代码）
 
 ```typescript
 async function recall(options: RecallOptions): Promise<Memory[]> {
-  const { query, sessionId, limit, storage, vectorStore } = options;
+  const {
+    query, sessionId, limit, storage, vectorStore,
+    cap, minSemanticShare = 0,
+  } = options;
 
   // 1. 获取所有未删除、未被取代的记忆
   const allMemories = await storage.getAll();
@@ -299,37 +327,43 @@ async function recall(options: RecallOptions): Promise<Memory[]> {
   const l1Result = await recallWithSemantic(query, l1, limit);
   l1Result.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 
-  // 4. L2 会话外：分轨独立计算
-  const l2Result: Memory[] = [];
+  // 4. L2 会话外：各轨进候选池（分轨 = 进池开关）
+  // 4a. 偏好轨：无条件进池（不经检索），组内按 createdAt 升序
+  const l2Preference = l2
+    .filter(m => m.metadata?.summaryType === 'preference')
+    .sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt));
 
-  // 4a. 偏好轨：全量注入（无条件）
-  const l2Preference = l2.filter(m => m.metadata?.summaryType === 'preference');
-  l2Result.push(...l2Preference);
-
-  // 4b. 意图轨：不注入（跨会话无意义）
+  // 4b. 意图轨：不进池（跨会话无意义）
   // 跳过 intent 类型
 
-  // 4c. 其余轨道（fact/decision/general）：语义召回
+  // 4c. 其余轨道（fact/decision/general）：语义召回进池
   const l2Semantic = l2.filter(m => {
     const type = m.metadata?.summaryType;
     return type === 'fact' || type === 'decision' || type === 'general' || !type;
   });
   const l2SemanticResult = await recallWithSemantic(query, l2Semantic, limit);
-  l2Result.push(...l2SemanticResult);
 
-  // 5. 合并：L1 全部 + L2 选拔，L1 排在 L2 前面
-  const merged = [...l1Result, ...l2Result];
+  // 5. cap 内分配：排序决定份额，minSemanticShare 兜底防 preference 挤占
+  //    semanticFloor = 语义轨道至少占 cap 的比例（默认 0 = 关闭）
+  const semanticFloor = Math.min(cap, Math.floor(cap * minSemanticShare));
+  const preferenceAllowance = previewTakePreference(l2Preference, cap - semanticFloor);
+  const semanticTake = takeByRelevance(l2SemanticResult, semanticFloor);
 
-  // 6. 互斥排除：排除正文已加载的轮次摘要
+  // 6. 合并：L1 全部 + L2 选拔，L1 排在 L2 前面
+  const merged = [...l1Result, ...preferenceAllowance, ...semanticTake];
+
+  // 7. 互斥排除：排除正文已加载的轮次摘要
   const filtered = merged.filter(m => !excludeRoundIds.has(m.metadata?.roundId));
 
-  // 7. 截断
+  // 8. 截断
   const result = filtered.slice(0, limit);
 
-  // 8. Boost（读路径副本，不改存储）
+  // 9. Boost（读路径副本，不改存储）
   return result.map(m => ({ ...m, score: Math.min(1.0, m.score + 0.05) }));
 }
 ```
+
+> **说明**：`previewTakePreference` / `takeByRelevance` 是分配逻辑的示意函数——前者按 cap 余量取最近的偏好，后者按相关性取语义轨道（且保证至少拿到 `semanticFloor`）。实际实现可内联到单次填充循环，不引入独立函数。
 
 ### 4.5 hybridMerge 融合排序（保留）
 
@@ -394,7 +428,7 @@ v2 排序由**两个正交维度**构成，任何维度都不被类型覆盖：
 
 **为什么不按"类型价值"排序**：若让 `decision`/`preference` 因价值高而强制排在前面，就会让类型重新参与排序，破坏上述两个正交维度，并导致"远古高价值"压过"近期低价值"的呈现失真。类型价值通过相关性召回（hybridMerge）与 superseded/衰减（自然遗忘）自然表达，不参与呈现顺序。
 
-**v3 的改进**：分层分轨设计中，类型**参与**召回策略（preference 全量注入、intent 不注入），但**不参与**排序。排序由分层规则（L1 优先于 L2）和组内时间（createdAt 升序）决定。
+**v3 的改进**：分层分轨设计中，类型**参与**召回策略（preference 无条件进池、intent 不进池），但**不参与**排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）共同决定。
 
 ### 4.9 LLM 溯源工具
 
@@ -629,15 +663,15 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | **记忆模型** | 摘要单轨（round-summary + content） |
 | **召回方式** | 单一召回入口（recall 函数） |
 | **分层** | L1 会话内优先于 L2 会话外 |
-| **分轨** | preference 全量注入、intent 不注入、其余语义召回 |
+| **分轨** | preference 无条件进池、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticSharePercent` 可选防挤占（默认 0） |
 | **排序** | 时间顺序（createdAt 升序） |
 | **治理** | supersede（写时取代）+ boost（召回+0.05） |
 
 **详细说明**：
 
 - **摘要即记忆本体**：写入（RoundSummaryGenerator + type 标签）→ 召回（分层分轨 + 互斥过滤）→ 治理（superseded 取代）闭环成立，无独立洞察提炼层。
-- **分层分轨召回**：会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（preference 全量注入、intent 不注入、其余语义召回），L1 全部优先于 L2。
-- **type = 语义标签 + 召回策略**：type 参与召回策略（决定哪些轨道全量注入/不注入），但不参与排序。排序由分层规则（L1 优先于 L2）和组内时间（createdAt 升序）决定。
+- **分层分轨召回**：会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（preference 无条件进池、intent 不进池、其余语义召回进池），L1 全部优先于 L2；cap 内分配靠排序，`minSemanticSharePercent` 可选防挤占。
+- **type = 语义标签 + 召回策略**：type 参与召回策略（决定哪些轨道进池/不进池），但不参与排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）决定。
 - **治理简化**：去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
 - **memoryAdded 事件由 round-summary 发射**——作为"新记忆产生必通知"的出口契约。
 - **SessionArchiver（content 会话级摘要）保留**——它是**会话 id 对应的摘要记忆**：承载会话级综合提炼（关键决策/未解决问题/plan 快照），粒度（会话级）与 round-summary（轮次级）不同，非冗余；带 `summaryType` 标签 + `sessionName` 结构化溯源 + `isTraceable`。
