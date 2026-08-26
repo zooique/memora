@@ -21,10 +21,8 @@
 
 import { contextBridge, ipcRenderer } from 'electron';
 import type { IpcRendererEvent } from 'electron';
-// SerializedAppError / WorkProjectionPayload 真理源在 ipc/types.ts
-import type { SerializedAppError, WorkProjectionPayload } from './ipc/types.js';
-// 重新导出 WorkProjectionPayload，使渲染层统一从 preload 导入
-export type { WorkProjectionPayload };
+// SerializedAppError 真理源在 ipc/types.ts
+import type { SerializedAppError } from './ipc/types.js';
 // 从业务层导入 IPC 契约类型，消除 preload 与 memoryController 的重复定义（DRY）。
 // 使用 import type：编译时擦除，不引入运行时耦合；electron 层依赖 sprite 层是合理依赖方向。
 import type {
@@ -1189,12 +1187,6 @@ export interface ElectronAPI {
   /** 清空审计日志 */
   clearAuditLog: () => Promise<void>;
 
-  // 作品投影（WorkProjectionManager 查看）
-  /** 列出所有作品投影 */
-  listWorkProjections: () => Promise<WorkProjectionPayload[]>;
-  /** 查看单个作品投影详情（API 已就绪，UI 暂用内联展开替代，供未来宿主集成使用） */
-  showWorkProjection: (filePath: string) => Promise<WorkProjectionPayload | null>;
-
   // ─── 使用统计（AUDIT-5-3，默认关闭，需显式开启） ────────
   /** 导出使用统计 JSON 文件，返回文件路径。采集器未就绪时返回 null */
   usageStatsExport: () => Promise<string | null>;
@@ -1569,10 +1561,6 @@ const electronAPI: ElectronAPI = {
   // M2：审计日志（路径白名单的审计事件持久化与查询）
   listAuditLog: (limit) => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_LIST, limit),
   clearAuditLog: () => ipcRenderer.invoke(IPC_CHANNELS.AUDIT_LOG_CLEAR),
-
-  // 作品投影（WorkProjectionManager 查看）
-  listWorkProjections: () => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_LIST),
-  showWorkProjection: (filePath: string) => ipcRenderer.invoke(IPC_CHANNELS.WORK_PROJECTION_SHOW, filePath),
 
   // 渲染进程日志上报（fire-and-forget，日志无需等待）
   rendererLog: (level, context, message) => ipcRenderer.send(IPC_CHANNELS.RENDERER_LOG, { level, context, message }),

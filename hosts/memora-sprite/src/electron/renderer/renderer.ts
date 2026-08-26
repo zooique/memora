@@ -401,10 +401,6 @@ async function bootstrapRenderer(): Promise<void> {
     onPresenceChanged: (payload) => {
       memoryController.updatePresenceDisplay(payload);
     },
-    // 作品投影更新 → 刷新作品投影面板
-    onWorkProjectionUpdated: (_payload) => {
-      void settingsController.loadWorkProjections();
-    },
     // 会话分叉完成 → 切换到新会话（payload.to 为完整的新会话 ID）
     // 内核 forkSession 已切换 Agent 内部状态，switchSession 会幂等同步并加载消息
     onSessionForked: async (payload) => {
@@ -731,8 +727,6 @@ async function bootstrapRenderer(): Promise<void> {
   void memoryController.loadDashboard();
   // 预加载用户画像数据（用户切换到"画像"tab 时即可见）
   void settingsController.loadUserProfile();
-  // 预加载作品投影数据（用户切换到"作品"tab 时即可见）
-  void settingsController.loadWorkProjections();
   // M2 预加载审计日志数据（用户切换到"审计"tab 时即可见）
   void settingsController.loadAuditLog();
 }

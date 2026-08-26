@@ -12,7 +12,7 @@
  *   事件清单见 setupSpriteEventListeners 实现（memoryNoticed / insightGained /
  *   conflictDetected / personaChanged / projectSwitched / skillMatched /
  *   memoryRecalled / decayCompleted / sessionForked / affectUpdated /
- *   rapportUpdated / contextUpdated / workProjectionUpdated / patternsUpdated /
+ *   rapportUpdated / contextUpdated / patternsUpdated /
  *   trashPurged / archiveFailed）。
  *
  *   proactivePrompt 保留显式处理（含托盘脉冲 + 系统通知 + 未读计数等副作用）。
@@ -264,11 +264,6 @@ export function setupSpriteEventListeners(deps: SpriteEventBridgeDeps): void {
     depth: e.depth,
     dominantSource: e.dominantSource,
     description: e.description,
-  }));
-  // 作品投影更新 → 渲染层刷新作品投影面板
-  forwardSimpleEvent(deps, 'workProjectionUpdated', (e) => ({
-    sourcePath: e.sourcePath,
-    summary: e.summary,
   }));
   // Phase 2+：用户模式更新 → 渲染层洞察面板展示
   forwardSimpleEvent(deps, 'patternsUpdated', (e) => ({

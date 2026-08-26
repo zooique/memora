@@ -5,7 +5,6 @@
  * - 构造函数 + start/stop 生命周期（triggerBus/agent 事件订阅/回收站定时器）
  * - handleTrigger 主路径（fileWatcher/timer 分发 + tracer span + 异常兜底）
  * - generateSmartSuggestions 间接测试（重复/过时/画像缺失三分支 + 异常静默）
- * - tryUpdateWorkProjection 异步（reason 正则匹配 + works 投影更新 + 异常 catch）
  * - 10 种 Agent 事件转发（memoryAdded/insightExtracted/conflictDetected/.../archiveFailed）
  * - purgeExpiredMemories（回收站清理 + threshold 计算 + 异常 catch）
  * - registerFileWatcher / rebuildFileWatcher（路径解析 + 触发器重建 + running 守卫）
@@ -116,7 +115,6 @@ interface Setup {
   mockSpan: MockSpan | null;
   mockEmit: SpriteEventEmitter;
   agentHandlers: Map<string, AgentEventHandler>;
-  mockWorks: { getProjection: ReturnType<typeof vi.fn>; ensureProjection: ReturnType<typeof vi.fn> } | null;
   /** memory 为 null 意味着读写都不可用 */
   mockMemory: { writePurgeExpired: ReturnType<typeof vi.fn> } | null;
 }
@@ -125,16 +123,10 @@ interface Setup {
 function createSetup(opts?: {
   configOverrides?: Partial<Required<SpriteConfig>>;
   tracer?: ITracer | null;
-  works?: { getProjection: ReturnType<typeof vi.fn>; ensureProjection: ReturnType<typeof vi.fn> } | null;
   /** memory 为 null 意味着读写都不可用 */
   memory?: { writePurgeExpired: ReturnType<typeof vi.fn> } | null;
 }): Setup {
   const agentHandlers = new Map<string, AgentEventHandler>();
-
-  const mockWorks = opts?.works ?? {
-    getProjection: vi.fn().mockResolvedValue(null),
-    ensureProjection: vi.fn().mockResolvedValue(null),
-  };
 
   const mockMemory = opts?.memory ?? {
     writePurgeExpired: vi.fn().mockReturnValue(0),
@@ -149,7 +141,6 @@ function createSetup(opts?: {
     }),
     // memory 统一读写入口
     memory: mockMemory,
-    works: mockWorks,
   } as unknown as Agent;
 
   const mockTriggerBus = {
@@ -226,7 +217,6 @@ function createSetup(opts?: {
     mockSpan,
     mockEmit,
     agentHandlers,
-    mockWorks,
     mockMemory,
   };
 }
@@ -251,8 +241,6 @@ describe('SpriteLifecycleManager start/stop 生命周期', () => {
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
   });
 
   it('start 后 triggerBus.on 和 triggerBus.start 被调用', () => {
@@ -339,13 +327,11 @@ describe('SpriteLifecycleManager handleTrigger 主路径', () => {
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
   });
 
   it("source='fileWatcher' → proactiveEngine.addNotice('file', reason) 被调用", () => {
     const setup = createSetup();
-    // reason 不匹配正则，避免触发 tryUpdateWorkProjection 异步分支
+    // reason 使用简单文本
     setup.manager.handleTrigger({ source: 'fileWatcher', reason: '文件变化触发' });
 
     expect(setup.mockProactiveEngine.addNotice).toHaveBeenCalledWith('file', '文件变化触发');
@@ -409,8 +395,6 @@ describe('SpriteLifecycleManager generateSmartSuggestions（通过 handleTrigger
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
   });
 
   it('duplicates > 0 → addNotice("suggestion", 含"重复")', () => {
@@ -499,120 +483,6 @@ describe('SpriteLifecycleManager generateSmartSuggestions（通过 handleTrigger
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 4. tryUpdateWorkProjection 异步（通过 handleTrigger 间接触发）
-// ═══════════════════════════════════════════════════════════════
-
-describe('SpriteLifecycleManager tryUpdateWorkProjection（异步作品投影更新）', () => {
-  beforeEach(() => {
-    setLogger(mockLogger);
-    mockLogger.info.mockClear();
-    mockLogger.warn.mockClear();
-    mockLogger.error.mockClear();
-    mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
-  });
-
-  /** 构造匹配 tryUpdateWorkProjection 正则的 reason */
-  const FILE_WATCHER_REASON = '文件变化：src/test.ts（已修改）';
-
-  it('reason 不匹配正则 → 直接 return（works.getProjection 不被调用）', async () => {
-    const setup = createSetup();
-    // reason 不含 "文件变化：xxx（" 格式
-    setup.manager.handleTrigger({ source: 'fileWatcher', reason: '不匹配的reason' });
-
-    // 等待可能的后台异步操作（不应有任何调用）
-    await vi.waitFor(() => {
-      expect(setup.mockWorks!.getProjection).not.toHaveBeenCalled();
-    });
-  });
-
-  it('agent.works 为 null → 直接 return（works.getProjection 不被调用）', async () => {
-    const setup = createSetup({ works: null });
-    setup.manager.handleTrigger({ source: 'fileWatcher', reason: FILE_WATCHER_REASON });
-
-    await vi.waitFor(() => {
-      // works 为 null 时 tryUpdateWorkProjection 直接 return
-      expect(setup.mockEmit).not.toHaveBeenCalledWith('workProjectionUpdated', expect.anything());
-    });
-  });
-
-  it('文件不存在（existsSync=false）→ return（works.getProjection 不被调用）', async () => {
-    const setup = createSetup();
-    vi.mocked(existsSync).mockReturnValue(false);
-
-    setup.manager.handleTrigger({ source: 'fileWatcher', reason: FILE_WATCHER_REASON });
-
-    await vi.waitFor(() => {
-      expect(setup.mockWorks!.getProjection).not.toHaveBeenCalled();
-    });
-  });
-
-  it('existing 投影为 null → return（ensureProjection 不被调用）', async () => {
-    const setup = createSetup();
-    vi.mocked(existsSync).mockReturnValue(true);
-    setup.mockWorks!.getProjection.mockResolvedValue(null);
-
-    setup.manager.handleTrigger({ source: 'fileWatcher', reason: FILE_WATCHER_REASON });
-
-    await vi.waitFor(() => {
-      expect(setup.mockWorks!.ensureProjection).not.toHaveBeenCalled();
-    });
-  });
-
-  it('ensureProjection 返回 entry → emit("workProjectionUpdated") 被调用', async () => {
-    const setup = createSetup();
-    vi.mocked(existsSync).mockReturnValue(true);
-    setup.mockWorks!.getProjection.mockResolvedValue({
-      id: 'work-proj-test',
-      sourcePath: '/test/project/src/test.ts',
-      fileHash: 'old-hash',
-      summary: '旧摘要',
-    });
-    vi.mocked(readFile).mockResolvedValue('文件内容');
-    setup.mockWorks!.ensureProjection.mockResolvedValue({
-      id: 'work-proj-test',
-      sourcePath: '/test/project/src/test.ts',
-      fileHash: 'new-hash',
-      summary: '新摘要',
-    });
-
-    setup.manager.handleTrigger({ source: 'fileWatcher', reason: FILE_WATCHER_REASON });
-
-    await vi.waitFor(() => {
-      expect(setup.mockEmit).toHaveBeenCalledWith('workProjectionUpdated', {
-        sourcePath: resolve('/test/project', 'src/test.ts'),
-        summary: '新摘要',
-      });
-    });
-  });
-
-  it('ensureProjection 抛错 → catch + logger.warn，不抛出', async () => {
-    const setup = createSetup();
-    vi.mocked(existsSync).mockReturnValue(true);
-    setup.mockWorks!.getProjection.mockResolvedValue({
-      id: 'work-proj-test',
-      sourcePath: '/test/project/src/test.ts',
-      fileHash: 'old-hash',
-      summary: '旧摘要',
-    });
-    vi.mocked(readFile).mockResolvedValue('文件内容');
-    setup.mockWorks!.ensureProjection.mockRejectedValue(new Error('mock: ensureProjection 失败'));
-
-    // handleTrigger 本身不抛错（异步 IIFE 内部 catch）
-    expect(() => setup.manager.handleTrigger({ source: 'fileWatcher', reason: FILE_WATCHER_REASON })).not.toThrow();
-
-    // 等待异步 IIFE 完成后验证 logger.warn 被调用
-    await vi.waitFor(() => {
-      expect(mockLogger.warn).toHaveBeenCalled();
-    });
-
-    // emit 不应被调用（ensureProjection 失败）
-    expect(setup.mockEmit).not.toHaveBeenCalledWith('workProjectionUpdated', expect.anything());
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
 // 5. 10 种 Agent 事件转发
 // ═══════════════════════════════════════════════════════════════
 
@@ -625,8 +495,6 @@ describe('SpriteLifecycleManager Agent 事件转发', () => {
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
     setup = createSetup();
     setup.manager.start();
   });
@@ -797,8 +665,6 @@ describe('SpriteLifecycleManager purgeExpiredMemories（回收站清理）', () 
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
   });
 
   it('purgedCount > 0 → emit("trashPurged") + logger.info', () => {
@@ -867,8 +733,6 @@ describe('SpriteLifecycleManager registerFileWatcher / rebuildFileWatcher', () =
     mockLogger.warn.mockClear();
     mockLogger.error.mockClear();
     mockLogger.debug.mockClear();
-    vi.mocked(existsSync).mockReset();
-    vi.mocked(readFile).mockReset();
   });
 
   it('registerFileWatcher 调用 triggerBus.register', () => {

@@ -1,5 +1,5 @@
 /**
- * Settings / Profile / WorkProjection / Audit / Modal / PanelError / SkillDrop 委托群
+ * Settings / Profile / Audit / Modal / PanelError / SkillDrop 委托群
  *
  * 从 ui.ts 提取的薄委托方法群，通过 mixin 模式注入 UIManager.prototype。
  * 所有方法均为纯透传，不夹带业务逻辑（ADR-SP-015 §4）。
@@ -13,10 +13,9 @@
 import type { UIManager } from '../../ui.js';
 import type { SpriteConfigForm, ConfirmDialogOptions } from '../../types.js';
 
-/** Settings / Profile / Modal / PanelError / SkillDrop 委托群方法签名（供 UIManager interface extends 类型合并） */
+/** Settings / Profile / Audit / Modal / PanelError / SkillDrop 委托群方法签名（供 UIManager interface extends 类型合并） */
 export interface SettingsModalDelegations {
   loadUserProfile(): Promise<void>;
-  loadWorkProjections(): Promise<void>;
   loadAuditLog(): Promise<void>;
   setClearAuditLogCallback(cb: () => Promise<void>): void;
   setConfirmProfileCallback(cb: (id: string) => Promise<void>): void;
@@ -51,9 +50,6 @@ export interface SettingsModalDelegations {
 export const settingsModalDelegations: SettingsModalDelegations = {
   async loadUserProfile(this: UIManager): Promise<void> {
     await this.memoryCoordinator.profilePanel.load();
-  },
-  async loadWorkProjections(this: UIManager): Promise<void> {
-    await this.memoryCoordinator.workProjectionPanel.load();
   },
   async loadAuditLog(this: UIManager): Promise<void> {
     await this.memoryCoordinator.auditPanel.load();

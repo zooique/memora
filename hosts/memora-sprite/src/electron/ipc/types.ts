@@ -234,30 +234,6 @@ export interface SerializedAppError {
   timestamp: string;
 }
 
-/**
- * 作品投影 IPC 传输形态（WorkProjectionManager 查看）
- *
- * 内核 WorkProjectionEntry 的 sourcePath 为服务端绝对路径，
- * 通过 IPC 传输后渲染进程仅用于展示，不反解析。
- * 与 WorkProjectionEntry 结构对齐，但确保所有字段可序列化。
- */
-export interface WorkProjectionPayload {
-  /** 唯一 ID（work-proj-<slug>） */
-  id: string;
-  /** 文件路径（服务端绝对路径，仅展示用） */
-  sourcePath: string;
-  /** 文件 hash（用于变更检测） */
-  fileHash: string;
-  /** 概要（50-100 字） */
-  summary: string;
-  /** 结构（章节/模块列表） */
-  structure: string[];
-  /** 关键决策 */
-  keyDecisions: string[];
-  /** 最后更新时间（ISO 8601） */
-  updatedAt: string;
-}
-
 // ─── 最小化 IPC 处理器类型 ────────────────────────────────
 // 区段说明：Agent 未就绪时仍需响应的配置/状态/LLM 测试等通道所需的
 // 可变状态与回调契约，由 main.ts 注入，minimalHandlers.ts 消费。

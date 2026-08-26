@@ -63,7 +63,7 @@ import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
  *   1. 角色包 L1 persona + 技能清单（rolePackPrompt）
  *   2. 全局技能 L1 清单（globalSkillList）
- *   3. 作品投影装配注入块（workProjectionContext，可选：L1 清单 + L2 always 正文）
+ *   3. 作品投影装配注入块（workProjectionContext，可选：极简元数据清单，AI 按需 read_file）
  *   4. 当前时间戳
  *   5. 分隔线
  *

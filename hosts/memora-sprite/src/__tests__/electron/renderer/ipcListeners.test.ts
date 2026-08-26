@@ -1056,7 +1056,7 @@ describe('initIpcListeners · 精灵事件分发', () => {
     expect(spies.showToast).not.toHaveBeenCalled();
   });
 
-  // ─── 感知数据事件（affectUpdated / presenceChanged / rapportUpdated / contextUpdated / patternsUpdated / workProjectionUpdated / sessionForked） ───
+  // ─── 感知数据事件（affectUpdated / presenceChanged / rapportUpdated / contextUpdated / patternsUpdated / sessionForked） ───
 
   it('affectUpdated 有效 payload → 触发 onAffectUpdated 回调', () => {
     const payload = { warmth: 0.8, playfulness: 0.5, directness: 0.7, initiative: 0.6 };
@@ -1092,12 +1092,6 @@ describe('initIpcListeners · 精灵事件分发', () => {
     const payload = { patterns: [{ type: 'topic', summary: '编程话题', confidence: 0.8 }] };
     triggerSpriteEvent(captured, 'patternsUpdated', payload, false);
     expect(cb.onPatternsUpdated).toHaveBeenCalledWith(payload);
-  });
-
-  it('workProjectionUpdated 有效 payload → 触发 onWorkProjectionUpdated 回调', () => {
-    const payload = { sourcePath: '/tmp/test.md', summary: '测试文件' };
-    triggerSpriteEvent(captured, 'workProjectionUpdated', payload, false);
-    expect(cb.onWorkProjectionUpdated).toHaveBeenCalledWith(payload);
   });
 
   it('sessionForked 有效 payload → 触发 onSessionForked 回调', () => {

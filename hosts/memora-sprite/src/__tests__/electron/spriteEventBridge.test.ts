@@ -44,7 +44,7 @@ import type { ILogger } from 'memora';
  * 使得工厂函数可以访问这些变量。
  */
 /** 精灵事件总数（1 个主动提示 + 16 个简单转发事件 + 1 个 presenceChanged + 1 个 configFilesChanged，含 conflictDetected + memoryRecalled + decayCompleted + affectUpdated + rapportUpdated + contextUpdated + workProjectionUpdated + patternsUpdated + sessionForked + trashPurged + archiveFailed） */
-const SPRITE_EVENT_COUNT = 23;
+const SPRITE_EVENT_COUNT = 22;
 
 const { mockNotificationInstances, getIsSupported, setIsSupported } = vi.hoisted(() => {
   const instances: Array<{
@@ -272,7 +272,6 @@ describe('SpriteEventBridge', () => {
       expect(calledEvents).toContain('affectUpdated');
       expect(calledEvents).toContain('rapportUpdated');
       expect(calledEvents).toContain('contextUpdated');
-      expect(calledEvents).toContain('workProjectionUpdated');
       expect(calledEvents).toContain('patternsUpdated');
       expect(calledEvents).toContain('dedupCompleted');
       expect(calledEvents).toContain('boostPersistFailed');

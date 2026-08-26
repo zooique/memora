@@ -245,21 +245,6 @@ export function createSettingsOrchestrator(uiManager: UIManager) {
   }
 
   /**
-   * 加载作品投影数据到设置面板
-   *
-   * 调用 uiManager.loadWorkProjections 代理到 WorkProjectionPanelManager，
-   * 从主进程拉取所有作品投影条目并渲染到"作品"tab。
-   * 失败时由 WorkProjectionPanelManager 内部处理错误提示，不阻塞其他面板功能。
-   */
-  async function loadWorkProjections(): Promise<void> {
-    try {
-      await uiManager.loadWorkProjections();
-    } catch (error) {
-      reportError('loadWorkProjections', error);
-    }
-  }
-
-  /**
    * M2 加载审计日志数据到设置面板
    *
    * 调用 uiManager.loadAuditLog 代理到 AuditPanelManager，
@@ -291,7 +276,6 @@ export function createSettingsOrchestrator(uiManager: UIManager) {
     loadConfig,
     loadLlmConfig,
     loadUserProfile,
-    loadWorkProjections,
     loadAuditLog,
     updateAgentStatus,
     /** 暴露静默恢复回调注册方法 */

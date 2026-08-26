@@ -32,7 +32,6 @@ import { ThemeManager } from './components/themeManager.js';
 import { ProactiveBanner } from './components/proactiveBanner.js';
 import { SuggestionCardManager } from './components/suggestionCard.js';
 import { ProfilePanelManager } from './panels/profilePanelManager.js';
-import { WorkProjectionPanelManager } from './panels/workProjectionPanelManager.js';
 import { AuditPanelManager } from './panels/auditPanelManager.js';
 import { SettingsPanelManager } from './panels/settingsPanelManager.js';
 import type { SettingsPanelHost } from './panels/settingsPanelManager.js';
@@ -118,7 +117,7 @@ import type { MiscDelegations } from './helpers/ui-delegations/miscDelegations.j
 import { PerceptionCoordinator } from './coordination/perceptionCoordinator.js';
 // Chat 域二级协调器（封装 chatPanel + inputAreaManager + proactiveBanner + suggestionCard + streamingMessages）
 import { ChatCoordinator } from './coordination/chatCoordinator.js';
-// Memory 域二级协调器（封装 memoryPanel + profilePanel + workProjectionPanel + auditPanel）
+// Memory 域二级协调器（封装 memoryPanel + profilePanel + auditPanel）
 import { MemoryCoordinator } from './coordination/memoryCoordinator.js';
 // Settings 域二级协调器（封装 settingsPanelManager + settingsManagerPanel + currentConfig）
 import { SettingsCoordinator } from './coordination/settingsCoordinator.js';
@@ -161,9 +160,9 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
    */
   chatCoordinator!: ChatCoordinator;
   /**
-   * Memory 域协调器（封装 memoryPanel + profilePanel + workProjectionPanel + auditPanel）
+   * Memory 域协调器（封装 memoryPanel + profilePanel + auditPanel）
    *
-   * HEAL-16 Phase 3：将 4 个 Memory 域字段收敛为单一协调器（模式 A 纯状态容器）。
+   * HEAL-16 Phase 3：将 3 个 Memory 域字段收敛为单一协调器（模式 A 纯状态容器）。
    */
   memoryCoordinator!: MemoryCoordinator;
   /**
@@ -281,11 +280,10 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.chatCoordinator.proactiveBanner = new ProactiveBanner();
     this.chatCoordinator.streamingMessages = new Map();
 
-    // Memory 域协调器（HEAL-16 Phase 3：4 字段收敛为单一协调器）
+    // Memory 域协调器（HEAL-16 Phase 3：3 字段收敛为单一协调器）
     // 必须在 profilePanel/auditPanel/memoryPanel 使用前创建
     this.memoryCoordinator = new MemoryCoordinator();
     this.memoryCoordinator.profilePanel = new ProfilePanelManager();
-    this.memoryCoordinator.workProjectionPanel = new WorkProjectionPanelManager();
     this.memoryCoordinator.auditPanel = new AuditPanelManager();
 
     // 初始化配置建议卡片容器（动态创建 #suggestion-container 或复用 HTML 预定义元素）
@@ -293,8 +291,6 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   this.chatCoordinator.suggestionCard.init((msg, type) => this.showToast(msg, type));
   // 初始化用户画像面板（绑定刷新按钮事件，注入确认对话框用于删除已确认画像的二次确认）
   this.memoryCoordinator.profilePanel.init((opts) => this.showConfirmDialog(opts));
-  // 初始化作品投影面板（绑定刷新按钮事件）
-  this.memoryCoordinator.workProjectionPanel.init();
     // M2 初始化审计日志面板（绑定刷新/清空按钮事件，注入确认对话框用于清空二次确认）
     this.memoryCoordinator.auditPanel.init((opts) => this.showConfirmDialog(opts));
 
@@ -468,7 +464,7 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
     this.events.cleanup();
     // Chat 域协调器集中清理（6 子模块：chatPanel + inputAreaManager + taskTablePanelManager + proactiveBanner + suggestionCard + streamingMessages）
     this.chatCoordinator.cleanup();
-    // Memory 域协调器集中清理（4 子模块：memoryPanel + profilePanel + workProjectionPanel + auditPanel）
+    // Memory 域协调器集中清理（3 子模块：memoryPanel + profilePanel + auditPanel）
     this.memoryCoordinator.cleanup();
     // Settings 域协调器集中清理（2 子模块：settingsPanelManager + settingsManagerPanel）
     this.settingsCoordinator.cleanup();
@@ -1129,9 +1125,8 @@ export class UIManager implements ChatPanelHost, MemoryPanelHost, DashboardPanel
   onSettingsTabSwitch(tab: string): void {
     switch (tab) {
       case 'profile':
-        // 作品 tab 已合并到画像与作品 tab，切换时同时刷新画像和作品数据
+        // 画像 tab 切换时刷新画像数据
         void this.memoryCoordinator.profilePanel.load();
-        void this.memoryCoordinator.workProjectionPanel.load();
         break;
       case 'audit':
         void this.memoryCoordinator.auditPanel.load();

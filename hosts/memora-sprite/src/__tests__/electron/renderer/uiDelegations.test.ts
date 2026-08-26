@@ -940,13 +940,6 @@ describe('settingsModalDelegations', () => {
     expect(mock.memoryCoordinator.profilePanel.load).toHaveBeenCalled();
   });
 
-  it('loadWorkProjections 应 async 委托到 workProjectionPanel.load', async () => {
-    const mock = createMockThis();
-    asMock(mock.memoryCoordinator.workProjectionPanel.load).mockResolvedValue(undefined);
-    await settingsModalDelegations.loadWorkProjections.call(mock as UIManager);
-    expect(mock.memoryCoordinator.workProjectionPanel.load).toHaveBeenCalled();
-  });
-
   it('loadAuditLog 应 async 委托到 auditPanel.load', async () => {
     const mock = createMockThis();
     asMock(mock.memoryCoordinator.auditPanel.load).mockResolvedValue(undefined);

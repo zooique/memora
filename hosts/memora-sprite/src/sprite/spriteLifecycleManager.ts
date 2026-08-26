@@ -7,13 +7,10 @@
  *   3. 触发器处理（handleTrigger + generateSmartSuggestions）
  *   4. 文件监听注册/重建
  *   5. 回收站自动清理（定时器 + 过期清理）
- *   6. 作品投影更新（文件变化触发）
  *
  * 不持有 Sprite 状态（spriteHandlers、emitSprite 等通过回调注入）。
  */
 import { resolve } from 'node:path';
-import { existsSync } from 'node:fs';
-import { readFile } from 'node:fs/promises';
 import type { Agent, AgentEventMap, ITracer } from 'memora';
 import { logger, toError } from 'memora';
 import type { TriggerBus } from './triggers.js';
@@ -492,7 +489,6 @@ export class SpriteLifecycleManager {
       if (payload.source === 'fileWatcher') {
         this.proactiveEngine.addNotice('file', payload.reason);
         logger.info({ reason: payload.reason, source: payload.source }, '文件变化触发');
-        this.tryUpdateWorkProjection(payload.reason);
       } else {
         logger.info({ reason: payload.reason, source: payload.source }, '触发唤醒');
         this.proactiveEngine.setLastTriggerReason(payload.reason);
@@ -505,47 +501,5 @@ export class SpriteLifecycleManager {
     } finally {
       span?.end();
     }
-  }
-
-  /**
-   * 尝试更新作品投影（文件变化触发）
-   * 只更新已有投影的文件，避免对无关文件做 LLM 调用。
-   */
-  private tryUpdateWorkProjection(reason: string): void {
-    const works = this.agent.works;
-    if (!works) return;
-
-    const match = reason.match(/文件变化：(.+?)（/);
-    if (!match || !match[1]) return;
-
-    const filename = match[1];
-    const fullPath = resolve(this.projectPath, filename);
-
-    (async () => {
-      try {
-        if (!existsSync(fullPath)) {
-          return;
-        }
-
-        const existing = await works.getProjection(fullPath);
-        if (!existing) {
-          return;
-        }
-
-        const content = await readFile(fullPath, 'utf-8');
-        const entry = await works.ensureProjection(fullPath, content, filename);
-
-        if (entry) {
-          logger.info({ sourcePath: fullPath, summary: entry.summary }, '作品投影已更新');
-          this.emit('workProjectionUpdated', {
-            sourcePath: fullPath,
-            summary: entry.summary,
-          });
-        }
-      } catch (err) {
-        logger.warn({ err: toError(err).message, filePath: fullPath }, '作品投影更新失败');
-        this.proactiveEngine.addNotice('suggestion', `作品投影更新失败（${filename}），可尝试手动刷新`);
-      }
-    })();
   }
 }

@@ -22,7 +22,6 @@ import { registerMemoryHandlers } from './memoryHandlers.js';
 import { registerConfigHandlers } from './configHandlers.js';
 import { registerSystemHandlers } from './systemHandlers.js';
 import { registerSuggestionHandlers } from './suggestionHandlers.js';
-import { registerWorkProjectionHandlers } from './workProjectionHandlers.js';
 import { IPC_CHANNELS } from './channels.js';
 
 /**
@@ -59,5 +58,4 @@ export function registerIpcHandlers(ctx: IpcContext): void {
   registerConfigHandlers(ctx);
   registerSystemHandlers(ctx);
   registerSuggestionHandlers(ctx);
-  registerWorkProjectionHandlers(ctx);
 }

@@ -1,10 +1,9 @@
 /**
  * Memory 域二级协调器
  *
- * 封装记忆相关的 4 个子模块：
+ * 封装记忆相关的 3 个子模块：
  * - memoryPanel（记忆列表、搜索过滤、详情弹窗、图谱视图）
  * - profilePanel（用户画像 tab：已确认/待处理）
- * - workProjectionPanel（作品投影 tab）
  * - auditPanel（审计日志 tab）
  *
  * 设计原则（对齐 ChatCoordinator / PerceptionCoordinator 模式）：
@@ -20,13 +19,12 @@
 
 import type { MemoryPanelManager } from '../panels/memoryPanelManager.js';
 import type { ProfilePanelManager } from '../panels/profilePanelManager.js';
-import type { WorkProjectionPanelManager } from '../panels/workProjectionPanelManager.js';
 import type { AuditPanelManager } from '../panels/auditPanelManager.js';
 
 /**
  * Memory 域二级协调器类
  *
- * 集中管理记忆相关的 4 个子模块，避免分散在 UIManager 中。
+ * 集中管理记忆相关的 3 个子模块，避免分散在 UIManager 中。
  * 退出时通过 cleanup() 集中调用各子模块的清理方法，确保防抖定时器、
  * 事件监听器等正确释放。
  */
@@ -35,20 +33,17 @@ export class MemoryCoordinator {
   memoryPanel!: MemoryPanelManager;
   /** 用户画像面板管理器（已确认/待处理），UIManager 构造函数初始化 */
   profilePanel!: ProfilePanelManager;
-  /** 作品投影面板管理器，UIManager 构造函数初始化 */
-  workProjectionPanel!: WorkProjectionPanelManager;
   /** 审计日志面板管理器，UIManager 构造函数初始化 */
   auditPanel!: AuditPanelManager;
 
   /**
-   * 集中清理 4 个子模块资源
+   * 集中清理 3 个子模块资源
    *
    * UIManager.cleanup() 调用，确保防抖定时器、事件监听器等正确释放。
    */
   cleanup(): void {
     this.memoryPanel.cleanup(); // 清理防抖定时器
     this.profilePanel.cleanup(); // 清理用户画像面板事件监听器
-    this.workProjectionPanel.cleanup(); // 清理作品投影面板事件监听器
     this.auditPanel.cleanup(); // 清理审计日志面板事件监听器
   }
 }

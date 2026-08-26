@@ -248,17 +248,6 @@ export function isPatternsPayload(value: unknown): value is PatternsPayload {
   );
 }
 
-/** 作品投影更新载荷 */
-export interface WorkProjectionUpdatedPayload {
-  sourcePath: string;
-  summary: string;
-}
-
-/** 作品投影更新载荷类型守卫 */
-export function isWorkProjectionUpdatedPayload(value: unknown): value is WorkProjectionUpdatedPayload {
-  return isObject(value) && typeof value.sourcePath === 'string' && typeof value.summary === 'string';
-}
-
 /**
  * 归档失败 stage 合法枚举值
  *
@@ -797,14 +786,6 @@ function createSpriteEventHandlers(
       }
       callbacks.onPatternsUpdated?.(msg.payload);
     },
-    // 作品投影更新 → 刷新作品投影面板
-    workProjectionUpdated: (msg) => {
-      if (!isWorkProjectionUpdatedPayload(msg.payload)) {
-        reportError('handleWorkProjectionUpdated', msg.payload);
-        return;
-      }
-      callbacks.onWorkProjectionUpdated?.(msg.payload);
-    },
     // 角色切换 → 顶栏 + 下拉菜单 active + 感知面板刷新
     // auto 模式自动匹配与手动切换都走同一事件链路（统一由 Agent.switchPersona 发射）
     personaChanged: (msg) => {
@@ -833,8 +814,6 @@ export interface IpcListenerCallbacks {
   onRapportUpdated?: (payload: RapportPayload) => void;
   /** 对话上下文更新时回调（更新仪表盘上下文卡片） */
   onContextUpdated?: (payload: ContextPayload) => void;
-  /** 作品投影更新时回调（刷新作品投影面板） */
-  onWorkProjectionUpdated?: (payload: WorkProjectionUpdatedPayload) => void;
   /** 用户模式更新时回调（刷新洞察面板） */
   onPatternsUpdated?: (payload: PatternsPayload) => void;
   /** 会话分叉完成时回调（切换到新会话，payload.to 为完整的新会话 ID） */
