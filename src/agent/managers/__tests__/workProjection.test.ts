@@ -170,4 +170,37 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(block).toContain('read_file');
     });
   });
+
+  describe('registerWork 写路径容错（防覆盖丢失）', () => {
+    it('预存 {"entries":[...]} 错形态时 registerWork 不覆盖原文件且返回 null', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      const original = { entries: [{ name: 'x', description: 'y', source: 'z.md' }] };
+      await fs.writeFile(filePath, JSON.stringify(original));
+
+      const warnSpy = vi.spyOn(logger, 'warn');
+      const result = await manager.registerWork('new.md', '新描述');
+
+      expect(result).toBeNull(); // fail-safe 中止，不写盘
+      expect(warnSpy).toHaveBeenCalled();
+      // 原文件未被覆盖
+      const after = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+      expect(after).toEqual(original);
+    });
+
+    it('预存损坏 JSON 时 registerWork 同样不覆盖原文件', async () => {
+      manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
+      const fs = await import('node:fs/promises');
+      const filePath = join(memoraDir, 'work-projections.json');
+      const original = '{ this is not valid json';
+      await fs.writeFile(filePath, original);
+
+      const result = await manager.registerWork('new.md', '新描述');
+
+      expect(result).toBeNull();
+      const after = await fs.readFile(filePath, 'utf-8');
+      expect(after).toBe(original); // 原损坏内容保留，不擅自改写
+    });
+  });
 });

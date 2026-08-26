@@ -42,6 +42,8 @@ export class WorkProjectionManager {
   private readonly onGenerated?: (sourcePath: string, description: string) => void;
   /** 已加载投影缓存 */
   private entries: WorkProjectionEntry[] = [];
+  /** 最近一次 refresh 是否检出「文件存在但格式错误」（非数组根/损坏），用于 registerWork fail-safe 防覆盖 */
+  private fileWasMalformed = false;
 
   /**
    * @param memoraDir 项目级 .memora/ 目录
@@ -82,7 +84,17 @@ export class WorkProjectionManager {
     try {
       // 读取现有数据（如果文件存在）
       await this.refresh();
-      
+
+      // fail-safe：预存文件格式错误（非数组根/损坏）时不覆盖写盘，避免丢失用户原索引
+      // （与路径越界守卫同构：不可解析的文件不擅自改写）
+      if (this.fileWasMalformed) {
+        logger.warn(
+          { file: this.filePath },
+          '作品投影登记中止：预存文件格式错误，已跳过以免覆盖原索引；请修正为顶层 JSON 数组后重试',
+        );
+        return null;
+      }
+
       // 检查是否已存在相同 source，存在则更新，不存在则追加
       const existingIndex = this.entries.findIndex(e => e.source === newEntry.source);
       if (existingIndex >= 0) {
@@ -115,19 +127,28 @@ export class WorkProjectionManager {
       const parsed = JSON.parse(content);
       // 验证数据格式（必须是顶层数组，与设计文档 docs/architecture/work-projection.md 一致）
       if (Array.isArray(parsed)) {
+        this.fileWasMalformed = false;
         this.entries = parsed.filter(e => e && e.source && e.name);
       } else {
-        // 非数组根（如 {"entries":[...]} 错形态）→ 不静默清空，显式告警以暴露格式错误，
-        // 避免用户手写的索引被后续 register_work 覆盖丢失（见作品投影"找茬"复盘）
+        // 非数组根（如 {"entries":[...]} 错形态）→ 读路径不静默清空、显式告警以暴露格式错误；
+        // 写路径由 registerWork 经 fileWasMalformed 标志 fail-safe 中止，不再覆盖用户原索引（见作品投影"找茬"复盘）
         logger.warn(
           { file: this.filePath },
           '作品投影文件根节点非数组，已忽略（预期顶层 JSON 数组；若照旧文档手写请改为 [...]，详见 docs/architecture/work-projection.md）',
         );
+        this.fileWasMalformed = true;
         this.entries = [];
       }
     } catch (err) {
-      // 文件不存在（尚未登记任何作品）→ 视为空
-      logger.debug({ err }, '作品投影文件不存在或解析失败，返回空');
+      const code = (err as { code?: string })?.code;
+      if (code === 'ENOENT') {
+        // 文件不存在（尚未登记任何作品）→ 视为空，可安全写入
+        logger.debug({ err }, '作品投影文件不存在，返回空');
+      } else {
+        // 文件存在但读取/解析失败（损坏或非法 JSON）→ 标记错形态，交 registerWork fail-safe 拦截，不覆盖原文件
+        logger.warn({ err, file: this.filePath }, '作品投影文件读取或解析失败，暂不加载原内容');
+        this.fileWasMalformed = true;
+      }
       this.entries = [];
     }
     return this.entries;
