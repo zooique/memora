@@ -1,4 +1,4 @@
----
+﻿---
 alwaysApply: false
 description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs 宿主项目边界）
 ---
@@ -62,6 +62,26 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 - ❌ 核心库依赖宿主项目的任何代码或配置
 - ❌ 在核心库中硬编码工具列表（工具定义由 `BUILTIN_TOOLS` + `registerTool()` 动态组合）
 
+
+## 宿主状态声明（2026-08-26 定案）
+
+> **一句话**：**当前唯一活跃宿主为 VSCode 插件（hosts/memora-vscode），Sprite 桌面宿主（hosts/memora-sprite）已搁置。**
+
+### 宿主清单与状态
+
+| 宿主 | 路径 | 状态 | 说明 |
+|------|------|------|------|
+| **VSCode 插件** | hosts/memora-vscode | 🟢 **活跃开发中** | 核心目标宿主，所有新功能优先在此实现和验证 |
+| Sprite 桌面宿主 | hosts/memora-sprite | 🔴 **已搁置** | 不再进行功能迭代，仅保留基础框架，待未来有明确需求时重启 |
+
+### 开发约束
+
+1.  **功能实现优先级**：所有新功能、UI 变更、插件 API 调整，**优先在 hosts/memora-vscode 中实现**。
+2.  **Sprite 宿主清理**：若内核功能调整导致 Sprite 宿主代码失效（如移除了其专属的复杂逻辑），**直接清理废弃代码**，无需为其维护兼容性。
+3.  **跨宿主设计**：当设计新机制时，仍需考虑通用性（因为核心库必须领域无关），但**实现和验证只需确保 VSCode 宿主可用**。
+
+---
+
 ## 依赖方向
 
 ```
@@ -116,3 +136,4 @@ utils/      →  logging/（errors.ts 使用 logger）, 无其他外部依赖
 ## 新增模块流程
 
 > 详见 [new-module-guide.md](./new-module-guide.md)
+
