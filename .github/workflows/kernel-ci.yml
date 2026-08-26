@@ -13,6 +13,8 @@
 #
 # 说明：内核是纯逻辑库，零 native 依赖，
 #   仅需 ubuntu-latest + Node.js 22 LTS 即可完成全部检查。
+#   CI 验证不需要上传产物（节省 Actions 存储配额），
+#   如需发布请使用专门的 Release 工作流。
 
 name: Kernel CI
 
@@ -67,10 +69,3 @@ jobs:
 
       - name: 生产构建验证
         run: npm run build
-
-      - name: 上传构建产物（验证用，非发布）
-        uses: actions/upload-artifact@v4
-        with:
-          name: kernel-dist
-          path: dist/
-          retention-days: 3
