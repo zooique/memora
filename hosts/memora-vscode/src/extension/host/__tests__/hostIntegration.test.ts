@@ -71,7 +71,7 @@ describe('宿主集成端到端测试', () => {
     mkdirSync(skillsDir, { recursive: true });
 
     // 验证环境变量
-    const hasKey = !!(process.env.MEMORA_API_KEY || process.env.MEMORA_API_KEY);
+    const hasKey = !!(process.env.MEMORA_API_KEY);
     if (!hasKey) {
       console.warn('跳过：未配置 MEMORA_API_KEY 环境变量');
     }
@@ -85,7 +85,7 @@ describe('宿主集成端到端测试', () => {
   // ─── T1：宿主 LLM Provider 创建 ────────────────────────────────
   describe('LLM Provider 创建', () => {
     it('createProvider 从环境变量创建 Provider', async () => {
-      const apiKey = process.env.MEMORA_API_KEY || process.env.MEMORA_API_KEY;
+      const apiKey = process.env.MEMORA_API_KEY;
       if (!apiKey) {
         console.warn('跳过：无 API Key');
         return;
@@ -217,7 +217,7 @@ describe('宿主集成端到端测试', () => {
       store.load();
 
       const createAgentWithConfirm = async (confirmWrites: boolean) => {
-        const apiKey = process.env.MEMORA_API_KEY || process.env.MEMORA_API_KEY;
+        const apiKey = process.env.MEMORA_API_KEY;
         if (!apiKey) return null;
 
         const env = {
@@ -271,7 +271,7 @@ describe('宿主集成端到端测试', () => {
       store.load();
 
       // 创建 agent 并设置 confirmWrites
-      const apiKey = process.env.MEMORA_API_KEY || process.env.MEMORA_API_KEY;
+      const apiKey = process.env.MEMORA_API_KEY;
       if (!apiKey) {
         console.warn('跳过：无 API Key');
         return;
@@ -352,7 +352,7 @@ describe('宿主集成端到端测试', () => {
   // ─── T6：宿主 Agent 真实对话集成 ────────────────────────────────
   describe('宿主 Agent 真实对话', () => {
     it('完整对话流程（初始化 → chat → close）', async () => {
-      const apiKey = process.env.MEMORA_API_KEY || process.env.MEMORA_API_KEY;
+      const apiKey = process.env.MEMORA_API_KEY;
       if (!apiKey) {
         console.warn('跳过：无 API Key');
         return;
@@ -422,7 +422,7 @@ describe('宿主集成端到端测试', () => {
     }, 30000);
 
     it('多轮对话 + Tracer 累积', async () => {
-      const apiKey = process.env.MEMORA_API_KEY || process.env.MEMORA_API_KEY;
+      const apiKey = process.env.MEMORA_API_KEY;
       if (!apiKey) {
         console.warn('跳过：无 API Key');
         return;

@@ -23,29 +23,27 @@ import {
 
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
-    it('应包含非 round-summary 的所有记忆类型', () => {
-      // 恢复治理源列表：包含 content/persona/rule/skill/work-projection/profile
-      // round-summary 不参与衰减（事实记录语义）
-      expect(GOVERNANCE_SOURCES).toHaveLength(6);
+    it('应只包含 content（唯一治理对象）', () => {
+      // 设计演进（2026-08-26 对齐 ADR-025 + 架构收敛）：
+      //   - persona / rule / skill 已归角色包管理，不写入记忆库
+      //   - work-projection 已移出记忆库（2026-08-20）
+      //   - profile 已收敛为 round-summary 的 type=preference 召回
+      //   - round-summary 不参与衰减（事实记录语义）
+      expect(GOVERNANCE_SOURCES).toHaveLength(1);
     });
 
-    it('应包含具体的治理源值', () => {
-      // 锁定具体字符串值，防止治理范围漂移
-      expect([...GOVERNANCE_SOURCES]).toEqual([
-        'content',
-        'persona',
-        'rule',
-        'skill',
-        'work-projection',
-        'profile',
-      ]);
+    it('应包含 content 治理源', () => {
+      // content 是用户主动添加的记忆，唯一治理对象
+      expect(GOVERNANCE_SOURCES).toContain('content');
     });
 
-    it('应包含配置型 source（persona / rule / skill）', () => {
-      // 配置型记忆也参与衰减（长期不访问的设定记忆应自然沉底）
-      expect(GOVERNANCE_SOURCES).toContain('persona');
-      expect(GOVERNANCE_SOURCES).toContain('rule');
-      expect(GOVERNANCE_SOURCES).toContain('skill');
+    it('不应包含已废弃的 source（persona / rule / skill / work-projection / profile）', () => {
+      // 这些 source 已随架构收敛移出记忆库，不应出现在治理源中
+      expect(GOVERNANCE_SOURCES).not.toContain('persona');
+      expect(GOVERNANCE_SOURCES).not.toContain('rule');
+      expect(GOVERNANCE_SOURCES).not.toContain('skill');
+      expect(GOVERNANCE_SOURCES).not.toContain('work-projection');
+      expect(GOVERNANCE_SOURCES).not.toContain('profile');
     });
 
     it('不应包含 unknown', () => {

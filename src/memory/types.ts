@@ -141,15 +141,24 @@ export function parseMemory(raw: unknown): Memory {
 
 /**
  * 当前使用的 source 标签约定；source 是开放字符串，新增来源无需改代码，存储时指定即可
+ *
+ * 设计演进（2026-08-26 对齐 ADR-025 + 架构收敛）：
+ *   - persona / rule / skill 已归角色包管理，不写入记忆库
+ *   - work-projection 已移出记忆库（2026-08-20，落项目目录 projections/）
+ *   - 这些标签仍保留在 SOURCE_LABELS 中，用于：
+ *     1. 文件路径解析（sourcePaths.ts：从 source 标签映射到目录名）
+ *     2. 文件路径推断（sourceValidation.ts：从文件路径推断 source 标签）
+ *     3. typo 检测（sourceValidation.ts：KNOWN_SOURCES 集合）
+ *   - 它们不再出现在 GOVERNANCE_SOURCES 中（治理系统只治理实际写入记忆库的 source）
  */
 export const SOURCE_LABELS = {
-  /** 角色人格（角色包 content/persona.md） */
+  /** 角色人格（角色包 content/persona.md）— 文件路径解析用，不写入记忆库 */
   PERSONA: 'persona',
-  /** 创作规则（角色包 content/rules.md + .memora/rules/*.md） */
+  /** 创作规则（角色包 content/rules.md + .memora/rules/*.md）— 文件路径解析用，不写入记忆库 */
   RULE: 'rule',
-  /** 技能定义（角色包 skills/ 目录） */
+  /** 技能定义（角色包 skills/ 目录）— 文件路径解析用，不写入记忆库 */
   SKILL: 'skill',
-  /** 作品投影（读取用户作品时生成的概要） */
+  /** 作品投影（读取用户作品时生成的概要）— 已移出记忆库（2026-08-20），文件路径解析用 */
   WORK_PROJECTION: 'work-projection',
   /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
   ROUND_SUMMARY: 'round-summary',

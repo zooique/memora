@@ -103,7 +103,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // 新模块
   private skillManager: SkillManager | null = null;
   /** 角色包管理器（角色+技能+规则的唯一真理源） */
-  private rolePackManager_: RolePackManager | null = null;
+  private _rolePackManager: RolePackManager | null = null;
 
   // 拆分出的专职 Manager
   private memoryInspector: MemoryInspector | null = null;
@@ -413,7 +413,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         loop: this.loop!,
         history: this.history!,
         sessionManager: this._sessionManager,
-        rolePackManager: this.rolePackManager_,
+        rolePackManager: this._rolePackManager,
         contextPreparer: this.internals.contextPreparer!,
         sessionNamer: this.internals.sessionNamer,
         roundSummaryGenerator: this.internals.roundSummaryGenerator,
@@ -1196,9 +1196,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop = result.loop;
     this.toolExec = result.toolExec;
     this.skillManager = result.skillManager;
-    this.rolePackManager_ = result.rolePackManager;
+    this._rolePackManager = result.rolePackManager;
     // 角色包切换锁定事件：rolePackManager 触发锁定时，Agent 向宿主发射 rolePackSwitchLocked 事件
-    this.rolePackManager_.onRolePackSwitchLocked((reason, lockedSeconds) => {
+    this._rolePackManager.onRolePackSwitchLocked((reason, lockedSeconds) => {
       this.emit(AGENT_EVENTS.rolePackSwitchLocked, { reason, lockedSeconds });
     });
     this.memoryInspector = result.memoryInspector;
@@ -1269,8 +1269,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   getRolePackSwitchLockStatus(): { locked: boolean; unlockAt: number | null } {
     this.assertInitialized('getRolePackSwitchLockStatus');
-    if (!this.rolePackManager_) return { locked: false, unlockAt: null };
-    return this.rolePackManager_.getSwitchLockStatus();
+    if (!this._rolePackManager) return { locked: false, unlockAt: null };
+    return this._rolePackManager.getSwitchLockStatus();
   }
 
   /**
@@ -1279,7 +1279,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * @returns traits 键值对，无激活角色包或无 traits 时返回 undefined
    */
   getActiveTraits(): Record<string, number> | undefined {
-    return this.rolePackManager_?.getActiveTraits();
+    return this._rolePackManager?.getActiveTraits();
   }
 
   /**
@@ -1291,7 +1291,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private refreshRolePackPrefixOnLoop(): void {
     if (!this.loop) return;
-    const rolePackPrompt = this.rolePackManager_?.buildSystemPrompt() ?? '';
+    const rolePackPrompt = this._rolePackManager?.buildSystemPrompt() ?? '';
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
     // 作品投影装配块：缓存于 manager（装配时刷新 + register_work 更新），同步读取即可
     const workProjectionContext = this.workProjection?.contextBlock() ?? '';
@@ -1351,7 +1351,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   switchRolePack(name: string): boolean {
     this.assertInitialized('switchRolePack');
-    const rpm = this.rolePackManager_;
+    const rpm = this._rolePackManager;
     if (!rpm) return false;
     const prevName = rpm.activeName;
     if (prevName === name) return true;
@@ -1427,9 +1427,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     }
 
-    if (shouldReloadRolePack && this.rolePackManager_) {
+    if (shouldReloadRolePack && this._rolePackManager) {
       try {
-        result.rolePack = await this.rolePackManager_.reload();
+        result.rolePack = await this._rolePackManager.reload();
         // 角色重载后刷新 AgentLoop 前缀
         if (this.loop) {
           this.refreshRolePackPrefixOnLoop();
@@ -1527,14 +1527,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 获取角色包管理器（system prompt 的唯一注入源，返回 null 表示 Agent 未初始化）
    */
   get rolePackManager(): RolePackManager | null {
-    return this.rolePackManager_;
+    return this._rolePackManager;
   }
 
   /**
    * 获取当前激活的 L2 行为策略：从激活角色包读取，未激活时用全局默认值；供各阶段按策略调整行为
    */
   getActiveStrategy(): BehaviorStrategy {
-    return this.rolePackManager_?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
+    return this._rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
   }
 
   /**
@@ -1544,7 +1544,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private applyRolePackToolExposure(): void {
     if (!this.toolExec) return;
-    const active = this.rolePackManager_?.getActive();
+    const active = this._rolePackManager?.getActive();
     const capabilities = active?.capabilities;
     const whitelist =
       capabilities && capabilities.length > 0 ? resolveCapabilityTools(capabilities) : null;
@@ -1610,8 +1610,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // ArchiveCoordinator 无定时器，仅释放引用
     this.internals.archiveCoordinator = null;
     // 清理 RolePackManager 切换防抖锁计时器，防止关闭后回调触发
-    if (this.rolePackManager_) {
-      this.rolePackManager_.close();
+    if (this._rolePackManager) {
+      this._rolePackManager.close();
     }
 
     // 顺序敏感：先等后台归档完成再移除监听器，否则 await 期间归档 reject 的 emit 变 no-op、事件丢失
@@ -1647,7 +1647,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop = null;
     this.toolExec = null;
     this.skillManager = null;
-    this.rolePackManager_ = null;
+    this._rolePackManager = null;
     this.memoryInspector = null;
     this._governance = null;
     this.workProjection = null;
@@ -1781,7 +1781,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /** 角色包管理器（角色+技能+规则的唯一真理源，system prompt 的唯一注入源） */
   get rolePack(): RolePackManager | null {
-    return this.rolePackManager_;
+    return this._rolePackManager;
   }
 
   /** 工具执行器（返回 null 表示 Agent 未初始化） */
@@ -1796,7 +1796,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /** 角色包管理器（返回 null 表示未初始化或角色包系统未加载） */
   get rolePacks(): RolePackManager | null {
-    return this.rolePackManager_;
+    return this._rolePackManager;
   }
 
   /** 记忆查看器（快照 + 搜索 + 统计；宿主常用 `const mem = agent.memory; if (!mem) return []`） */

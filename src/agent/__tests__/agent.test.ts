@@ -1551,7 +1551,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
   it('reloadConfig(persona) 应重载角色并保持激活角色', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
-    const initialActive = agent['rolePackManager_']!.activeName;
+    const initialActive = agent['_rolePackManager']!.activeName;
 
     // 新增角色包文件（角色包文件夹形态）
     const reviewerDir = join(tmpConfig, 'role-packs', '审查员');
@@ -1575,7 +1575,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     const result = await agent.reloadConfig('rolePack');
     expect(result.rolePack).toBeGreaterThanOrEqual(0);
     // 激活角色应保持不变
-    expect(agent['rolePackManager_']!.activeName).toBe(initialActive);
+    expect(agent['_rolePackManager']!.activeName).toBe(initialActive);
   });
 
   it('reloadConfig(rule) 应触发角色包重载（rule 是角色包的一部分）', async () => {

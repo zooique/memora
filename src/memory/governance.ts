@@ -5,16 +5,18 @@
  */
 /**
  * 参与去重 / 冲突检测 / 时效性评估 / 衰减的 source 集合。
- * 衰减对象：非 round-summary 类型的记忆（content/persona/rule/skill/work-projection/profile 等）。
- * 不衰减：round-summary（会话摘要，事实记录语义）。
+ *
+ * 设计演进（2026-08-26 对齐 ADR-025 + 架构收敛）：
+ *   - persona / rule / skill 已归角色包管理，不写入记忆库（ADR-025）
+ *   - work-projection 已移出记忆库（2026-08-20，落项目目录 projections/）
+ *   - profile 已收敛为 round-summary 的 type=preference 召回
+ *   - round-summary 不参与衰减（事实记录语义，由 superseded + score 自然沉底）
+ *
+ * 当前唯一治理对象：content（用户主动添加的记忆）。
+ * 空治理源时衰减/去重/冲突检测空转但保留机制，未来新增治理源从此处声明即可。
  */
 export const GOVERNANCE_SOURCES: readonly string[] = [
-  'content',       // 用户主动添加的记忆
-  'persona',       // 角色设定记忆
-  'rule',          // 规则记忆
-  'skill',         // 技能记忆
-  'work-projection', // 作品投影记忆
-  'profile',       // 用户画像记忆
+  'content',       // 用户主动添加的记忆（唯一治理对象）
 ];
 
 /** score 提升量——「越常用越重要」；消费者：recall.ts boostScore（被动）、memoryInspector.writeBoost（主动） */
