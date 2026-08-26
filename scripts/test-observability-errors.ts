@@ -91,7 +91,7 @@ async function main(): Promise<void> {
       const msg = error instanceof Error ? error.message : String(error);
       check(msg.includes('API Key 无效'), `认证失败：错误消息含「API Key 无效」（实际: ${msg.slice(0, 60)}）`);
       const hint = error instanceof MemoraError ? error.suggestions : undefined;
-      check(Array.isArray(hint) && hint.some((h) => h.includes('${MEMORA_LLM_API_KEY}')), '认证失败：hint 提示环境变量占位符展开');
+      check(Array.isArray(hint) && hint.some((h) => h.includes('${MEMORA_API_KEY}')), '认证失败：hint 提示环境变量占位符展开');
     }
   }
 

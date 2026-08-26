@@ -59,7 +59,7 @@ function makeMockConfig(overrides: Partial<Config> = {}): Config {
   return {
     llm: {
       // 配置文件已收敛为 providers+active 单一格式（v1.x 扁平兼容已移除）
-      providers: { default: { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1', apiKey: 'sk-test-key', temperature: 0.7 } },
+      providers: { default: { provider: 'deepseek', model: 'deepseek-chat', baseUrl: 'https://api.xiaomimimo.com/v1', apiKey: 'sk-test-key', temperature: 0.7 } },
       active: 'default',
     },
     memory: { dataDir: '~/.memora-sprite/data', maxContextTokens: 120000 },

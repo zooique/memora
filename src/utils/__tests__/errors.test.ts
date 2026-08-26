@@ -18,9 +18,9 @@ import {
 
 describe('MemoraError · 错误信息友好化', () => {
   it('应该构造带标题/详情/建议的错误', () => {
-    const err = configError('API Key 缺失', 'MEMORA_LLM_API_KEY 未设置', ['设置环境变量']);
+    const err = configError('API Key 缺失', 'MEMORA_API_KEY 未设置', ['设置环境变量']);
     expect(err.title).toBe('API Key 缺失');
-    expect(err.detail).toBe('MEMORA_LLM_API_KEY 未设置');
+    expect(err.detail).toBe('MEMORA_API_KEY 未设置');
     expect(err.suggestions).toEqual(['设置环境变量']);
     expect(err.category).toBe('config');
   });

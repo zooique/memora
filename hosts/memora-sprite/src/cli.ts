@@ -50,7 +50,7 @@ async function setupWizard(): Promise<void> {
   // 用户决策已确认：LLM Provider configuration must use a single custom entry
   const provider = await ask(rl, '\n提供商名称（如 openai、deepseek、自定义）：');
   const model = await ask(rl, '模型名称（如 deepseek-chat、gpt-4o、claude-3-opus）：');
-  const baseUrl = await ask(rl, 'API 地址（如 https://api.deepseek.com）：');
+  const baseUrl = await ask(rl, 'API 地址（如 https://api.xiaomimimo.com/v1）：');
 
   const providerConfig = { provider, model, baseUrl };
   console.log(`\n已选择：${providerConfig.provider} / ${providerConfig.model}`);

@@ -4,7 +4,7 @@
  * Smoke test 验证端到端链路：chat → 归档 → 召回 → 角色切换
  *
  * 自动从项目级 .memora/config.json 读取 LLM 配置（loadConfig() 无参数时的查找路径）
- * apiKey 支持 ${ENV_VAR} 格式从环境变量展开（如 ${MEMORA_LLM_API_KEY}），避免明文落盘
+ * apiKey 支持 ${ENV_VAR} 格式从环境变量展开（如 ${MEMORA_API_KEY}），避免明文落盘
  *
  * 运行方式：
  *   npx vitest run src/llm/__tests__/llmIntegration.test.ts

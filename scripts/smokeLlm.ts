@@ -2,7 +2,7 @@
  * 真实 LLM 端到端烟测
  *
  * 用法：
- *   $env:MEMORA_LLM_API_KEY = "sk-xxx"
+ *   $env:MEMORA_API_KEY = "sk-xxx"
  *   npx tsx scripts/smokeLlm.ts
  *
  * 验证项（M-001）：
@@ -58,9 +58,9 @@ async function main(): Promise<void> {
   logger.info({ provider: config.llm.provider, model: config.llm.model }, '配置加载完成');
 
   if (!config.llm.apiKey) {
-    console.error('❌ 未设置 MEMORA_LLM_API_KEY 环境变量');
-    console.error('   PowerShell: $env:MEMORA_LLM_API_KEY = "sk-xxx"');
-    console.error('   Bash:       export MEMORA_LLM_API_KEY="sk-xxx"');
+    console.error('❌ 未设置 MEMORA_API_KEY 环境变量');
+    console.error('   PowerShell: $env:MEMORA_API_KEY = "sk-xxx"');
+    console.error('   Bash:       export MEMORA_API_KEY="sk-xxx"');
     process.exit(1);
   }
 

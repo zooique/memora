@@ -65,7 +65,7 @@ const ONBOARDING_HTML = `
       <p id="onboarding-provider-error" class="onboarding-error hidden" role="alert"></p>
       <input id="onboarding-model" type="text" placeholder="如 deepseek-chat" />
       <p id="onboarding-model-error" class="onboarding-error hidden" role="alert"></p>
-      <input id="onboarding-base-url" type="text" placeholder="https://api.deepseek.com/v1" />
+      <input id="onboarding-base-url" type="text" placeholder="https://api.xiaomimimo.com/v1" />
       <p id="onboarding-base-url-error" class="onboarding-error hidden" role="alert"></p>
       <input id="onboarding-api-key" type="password" placeholder="sk-..." />
       <p id="onboarding-api-key-error" class="onboarding-error hidden" role="alert"></p>
@@ -258,7 +258,7 @@ describe('步骤 2：通用表单校验', () => {
     // 填写所有必填字段
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
-    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.xiaomimimo.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-test';
 
     const saveBtn = document.getElementById('btn-onboarding-save-key') as HTMLButtonElement;
@@ -271,7 +271,7 @@ describe('步骤 2：通用表单校验', () => {
     expect(electronAPI.saveLlmProvider).toHaveBeenCalledWith('default', {
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
       temperature: 0.7,
     });
@@ -295,7 +295,7 @@ describe('步骤 2：通用表单校验', () => {
     nextBtn.click();
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
-    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.xiaomimimo.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-wrong';
 
     const saveBtn = document.getElementById('btn-onboarding-save-key') as HTMLButtonElement;
@@ -325,7 +325,7 @@ describe('步骤 2：测试连接按钮', () => {
     // 填写完整字段
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
-    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.xiaomimimo.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-test';
 
     const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;
@@ -337,7 +337,7 @@ describe('步骤 2：测试连接按钮', () => {
     expect(electronAPI.testLlmConfig).toHaveBeenCalledWith({
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com/v1',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
     });
 
@@ -359,7 +359,7 @@ describe('步骤 2：测试连接按钮', () => {
     nextBtn.click();
     (document.getElementById('onboarding-provider') as HTMLInputElement).value = 'deepseek';
     (document.getElementById('onboarding-model') as HTMLInputElement).value = 'deepseek-chat';
-    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.deepseek.com/v1';
+    (document.getElementById('onboarding-base-url') as HTMLInputElement).value = 'https://api.xiaomimimo.com/v1';
     (document.getElementById('onboarding-api-key') as HTMLInputElement).value = 'sk-wrong';
 
     const testBtn = document.getElementById('btn-onboarding-test') as HTMLButtonElement;

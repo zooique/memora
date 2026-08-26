@@ -129,7 +129,7 @@ const {
         default: {
           provider: 'deepseek',
           model: 'deepseek-chat',
-          baseUrl: 'https://api.deepseek.com',
+          baseUrl: 'https://api.xiaomimimo.com/v1',
           apiKey: 'sk-test-key',
           temperature: 0.7,
         },
@@ -173,7 +173,7 @@ const {
           default: {
             provider: 'deepseek',
             model: 'deepseek-chat',
-            baseUrl: 'https://api.deepseek.com',
+            baseUrl: 'https://api.xiaomimimo.com/v1',
             apiKey: 'sk-test-key',
             temperature: 0.7,
           },
@@ -208,7 +208,7 @@ const {
           name: '默认',
           provider: 'deepseek',
           model: 'deepseek-chat',
-          baseUrl: 'https://api.deepseek.com',
+          baseUrl: 'https://api.xiaomimimo.com/v1',
           apiKey: 'sk-test',
           temperature: 0.7,
         },
@@ -521,7 +521,7 @@ describe('handleSystemRoute', () => {
     expect(body.config.apiKey).toBe('***'); // 脱敏
     expect(body.config.provider).toBe('deepseek');
     expect(body.config.model).toBe('deepseek-chat');
-    expect(body.config.baseUrl).toBe('https://api.deepseek.com');
+    expect(body.config.baseUrl).toBe('https://api.xiaomimimo.com/v1');
     expect(body.config.temperature).toBe(0.7);
     // embedding 也应脱敏
     expect(body.embedding.apiKey).toBe('***');
@@ -631,7 +631,7 @@ describe('handleSystemRoute', () => {
     const req = createMockReq('POST', '/api/llm-config/test', {
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
     });
     const res = createMockRes();
@@ -693,7 +693,7 @@ describe('handleSystemRoute', () => {
     const req = createMockReq('POST', '/api/llm-config/test', {
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
     });
     const res = createMockRes();
@@ -717,7 +717,7 @@ describe('handleSystemRoute', () => {
     const req = createMockReq('POST', '/api/llm-config/test', {
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
     });
     const res = createMockRes();
@@ -738,7 +738,7 @@ describe('handleSystemRoute', () => {
     const req = createMockReq('POST', '/api/llm-config', {
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-new',
     });
     const res = createMockRes();
@@ -1403,7 +1403,7 @@ describe('handleSystemRoute', () => {
     mockResolveProviderConfig.mockReturnValue({
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
       temperature: 0.7,
     });
@@ -1433,7 +1433,7 @@ describe('handleSystemRoute', () => {
     mockResolveProviderConfig.mockReturnValue({
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
       temperature: 0.7,
     });
@@ -1444,7 +1444,7 @@ describe('handleSystemRoute', () => {
           default: {
             provider: 'deepseek',
             model: 'deepseek-chat',
-            baseUrl: 'https://api.deepseek.com',
+            baseUrl: 'https://api.xiaomimimo.com/v1',
             apiKey: 'sk-test',
             temperature: 0.7,
           },
@@ -1508,7 +1508,7 @@ describe('handleSystemRoute', () => {
     mockResolveProviderConfig.mockReturnValue({
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
       temperature: 0.7,
     });
@@ -1842,7 +1842,7 @@ describe('handleSystemRoute', () => {
     const req = createMockReq('POST', '/api/llm-config/test', {
       provider: 'deepseek',
       model: 'deepseek-chat',
-      baseUrl: 'https://api.deepseek.com',
+      baseUrl: 'https://api.xiaomimimo.com/v1',
       apiKey: 'sk-test',
     });
     const res = createMockRes();

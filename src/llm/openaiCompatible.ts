@@ -185,7 +185,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
         'LLM API Key 无效',
         `HTTP ${status}：${errorText.slice(0, MAX_ERROR_BODY_LEN)}`,
         [
-          '检查 API Key 是否正确（注意 ${MEMORA_LLM_API_KEY} 占位符是否已展开）',
+          '检查 API Key 是否正确（注意 ${MEMORA_API_KEY} 占位符是否已展开）',
           '确认 Key 未过期',
           '如使用 DeepSeek/豆包，确认 Key 来自对应平台',
         ],

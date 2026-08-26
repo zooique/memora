@@ -1178,7 +1178,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </div>
           <div class="field">
             <label for="f-baseurl">API Base URL</label>
-            <input id="f-baseurl" name="baseUrl" type="url" placeholder="https://api.deepseek.com/v1" autocomplete="url" />
+            <input id="f-baseurl" name="baseUrl" type="url" placeholder="https://api.xiaomimimo.com/v1" autocomplete="url" />
           </div>
           <div class="field">
             <label for="f-apikey">API Key（编辑时留空保持不变）</label>

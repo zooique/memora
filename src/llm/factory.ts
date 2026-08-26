@@ -41,7 +41,7 @@ export function createProviderFromConfig(
     throw configError(
       'LLM baseUrl 未配置',
       `provider "${name}" 缺少 baseUrl`,
-      ['在宿主层填充 baseUrl（如 "https://api.deepseek.com/v1"）'],
+      ['在宿主层填充 baseUrl（如 "https://api.xiaomimimo.com/v1"）'],
     );
   }
   if (!model) {
