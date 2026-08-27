@@ -33,13 +33,18 @@ import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
 import type { PauseSource } from '@/agent/sessionStateMachine.js';
 
 /**
- * Agent.forkSession() 返回值类型（相对 MessageHistory 内部 ForkResult 的简化封装，只暴露宿主需要字段）。
+ * 分叉操作结果（round-based 模式）
+ *
+ * Agent.forkSession() 返回值类型，相对 MessageHistory 内部 ForkResult 的简化封装，
+ * 只暴露宿主需要字段。
  */
 export interface AgentForkResult {
-  /** 新分支会话名（不含日期前缀，可直接传给 switchSession()） */
+  /** 新会话名（不含日期前缀，平等普通会话） */
   newSession: string;
-  /** 分叉时复制的消息数量 */
-  messageCount: number;
+  /** 新会话的 Round ID 数量（问答闭环个数） */
+  roundCount: number;
+  /** 新会话的 Round ID 列表 */
+  roundIds: string[];
 }
 
 /** 会话管理器：经回调访问 Agent 当前组件状态，支持 Agent 重建后自动取最新引用 */
@@ -243,10 +248,16 @@ export class SessionManager {
   }
 
   /**
-   * 分叉当前会话：复制完整消息历史到新分支并切过去继续。原会话完整保留可切回；新分支消息历史独立互不干扰。
-   * ⚠ fork 不隔离记忆——分支 A 的 round-summary 会在分支 B 召回中出现。需完全独立记忆空间（如多用户）应创建独立 Agent+dataDir，而非 fork。
+   * 从指定 Round 位置分叉当前会话（round-based 模式唯一分叉方式）。
+   *
+   * 分叉后：新会话包含分叉点及之前的所有 Round ID，是完全平等的普通会话。
+   * 原会话完整保留可切回；新会话的问答闭环独立互不干扰。
+   * ⚠ fork 不隔离记忆——分支 A 的 round-summary 会在分支 B 召回中出现。
+   *
+   * @param roundId - 分叉点的 Round ID（可选；不传默认使用最后一个 Round）
+   * @param targetSession - 可选，自定义新会话名；不传则自动生成
    */
-  forkSession(targetSession?: string): AgentForkResult {
+  forkSession(roundId?: string, targetSession?: string): AgentForkResult {
     if (this.isChatBusy()) {
       throw chatBusyError('分叉');
     }
@@ -256,15 +267,15 @@ export class SessionManager {
     // 记录源会话名（含日期前缀完整名，用于事件）
     const sourceSessionName = history.currentSessionName;
 
-    // 委托 MessageHistory 完成分叉
-    const result = history.forkSession(targetSession);
+    // 委托 MessageHistory 完成分叉（round-based：复制 Round ID 列表）
+    const result = history.forkSession(roundId, targetSession);
 
-    // 将消息恢复到 AgentLoop 工作记忆
-    this.applySessionToLoop(result.messages);
+    // 将新会话的问答闭环加载到 AgentLoop 工作记忆
+    // round-based 模式：通过 roundIds 加载消息并应用到 loop
+    const sessionMessages = history.loadRoundBasedMessages(result.roundIds);
+    this.applySessionToLoop(sessionMessages);
 
     // 关键修复：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话持久化检查点。
-    // 对比 switchSession（:180-184）有 flush+清空，forkSession 必须做同样的隔离处理。
-    // 否则 updateGoal→flushCheckpoint 会把新分支状态写入源会话，造成跨会话数据污染。
     if (this.checkpoint) {
       this.flushCheckpoint(true);
       this.checkpoint = null;
@@ -274,12 +285,13 @@ export class SessionManager {
     this.emitEvent('sessionForked', {
       from: sourceSessionName,
       to: `${result.date}-${result.newSession}`,
-      messageCount: result.messages.length,
+      roundCount: result.roundIds.length,
     });
 
     return {
       newSession: result.newSession,
-      messageCount: result.messages.length,
+      roundCount: result.roundIds.length,
+      roundIds: result.roundIds,
     };
   }
 

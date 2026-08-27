@@ -25,7 +25,6 @@ import type {
 } from '@/memory/sessionViewLoader.js';
 import {
   createRoundBasedSessionMeta,
-  generateForkSessionId,
 } from '@/memory/sessionStore.js';
 import { logger } from '@/logging/logger.js';
 
@@ -295,11 +294,15 @@ export class DefaultSessionManager implements ISessionManager {
   /**
    * 会话分叉（核心功能）
    *
-   * 流程：
-   * 1. 获取源会话的 Round ID 列表
-   * 2. 截断到分叉点
-   * 3. 创建新会话，复制截断后的 Round ID 列表
-   * 4. 增加这些 Round 的引用计数
+   * 从指定 Round 位置创建新会话：
+   * 1. 复制源会话在分叉点之前的 Round ID 列表
+   * 2. 增加这些 Round 的引用计数
+   * 3. 创建新的平等会话（无分叉标记，与普通会话完全平等）
+   *
+   * @param sourceSessionId - 源会话 ID
+   * @param forkPointRoundId - 分叉点 Round ID
+   * @param newSessionId - 新会话 ID（可选，不传则自动生成）
+   * @returns 新会话元数据
    */
   forkSession(
     sourceSessionId: string,
@@ -321,27 +324,43 @@ export class DefaultSessionManager implements ISessionManager {
     // 3. 截断 Round ID 列表（包含分叉点）
     const forkedRoundIds = sourceRoundIds.slice(0, forkPointIdx + 1);
 
-    // 4. 生成新会话 ID
-    const targetSessionId = newSessionId || generateForkSessionId(sourceSessionId);
+    // 4. 生成新会话 ID（平等普通会话，无分叉标记）
+    const targetSessionId = newSessionId || this.generateEqualSessionId(sourceSessionId);
 
-    // 5. 创建新会话
+    // 5. 创建新会话（平等普通会话）
     const forkedMeta = this.createSession(targetSessionId, forkedRoundIds);
-
-    // 6. 更新元数据（标记分叉来源）
-    const sourceMeta = this.getSessionMeta(sourceSessionId);
-    if (sourceMeta?.autoName) {
-      // 复制源会话的标题
-      this.updateSessionMeta(targetSessionId, {
-        autoName: `${sourceMeta.autoName} (分叉)`,
-      });
-    }
 
     logger.info(
       { source: sourceSessionId, target: targetSessionId, forkPoint: forkPointRoundId },
-      '会话分叉完成',
+      '会话分叉完成（平等会话）',
     );
 
     return forkedMeta;
+  }
+
+  /**
+   * 生成平等的会话 ID（无分叉标记）
+   *
+   * 格式：{date}-{baseName}-{sequence}
+   * 与普通会话完全平等，不暴露分叉身份
+   *
+   * @param sourceSessionId - 源会话 ID（用于提取基础名）
+   * @returns 新会话 ID
+   */
+  private generateEqualSessionId(sourceSessionId: string): string {
+    const now = new Date();
+    const dateStr = now.toISOString().slice(0, 10);
+
+    // 提取源会话的基础名（去掉日期前缀）
+    const namePart = sourceSessionId.includes('-')
+      ? sourceSessionId.slice(sourceSessionId.indexOf('-') + 1)
+      : sourceSessionId;
+
+    // 时间戳 + 随机后缀确保唯一性（防止极短时间内连续调用产生相同 ID）
+    const timestamp = now.getTime().toString(36).slice(-4);
+    const randomSuffix = Math.random().toString(36).slice(2, 6);
+
+    return `${dateStr}-${namePart}-${timestamp}${randomSuffix}`;
   }
 
   /**

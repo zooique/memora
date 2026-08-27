@@ -168,7 +168,7 @@ agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
 agent.on('personaSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
 agent.on('decayCompleted', (e) => console.log(`衰减 ${e.decayedCount} 条记忆`));
 agent.on('memoryRecalled', (e) => console.log(`想起 ${e.count} 条记忆`));
-agent.on('sessionForked', (e) => console.log(`分叉: ${e.from} → ${e.to}，${e.messageCount} 条消息`));
+agent.on('sessionForked', (e) => console.log(`分叉: ${e.from} → ${e.to}，${e.roundCount} 个问答闭环`));
 
 // close() 自动移除所有监听器
 ```
@@ -326,26 +326,28 @@ const agent = new Agent({
 
 ## 四.5、会话分叉（Fork Session）
 
-Memora 支持会话分叉功能，允许用户从当前对话创建独立分支，继承完整消息历史后各自独立发展。
+Memora 支持从任意问答闭环（Round）位置创建会话分叉。分叉后，新会话只包含分叉点及之前的问答闭环，后续的问答闭环在原会话中保持不变。
 
 **使用场景**：
-- 用户在对话中建立了丰富的上下文后，可以分叉到多个并行任务
-- 每个分支继承已建立的共识，避免从零开始
+- 用户在对话中决定从某个关键点分叉探索不同方向
+- 每个分支只继承到分叉点为止的上下文，避免无关历史干扰
 - 分支完全独立，互不干扰
 
 ```typescript
-// 自动生成分支名（main-b1, main-b2, ...）
-const result = agent.forkSession();
-console.log(`已分叉到: ${result.newSession}，复制了 ${result.messageCount} 条消息`);
+// 从指定 Round 位置分叉（唯一分叉方式，roundId 可选）
+const result = agent.forkSession(roundId);
+console.log(`已分叉到: ${result.newSession}，复制了 ${result.roundCount} 个问答闭环`);
+
+// 不传 roundId → 默认使用最后一个 Round（等效全量分叉）
+const fullResult = agent.forkSession();
 
 // 自定义分支名
-const result2 = agent.forkSession('experiment');
+const result2 = agent.forkSession(roundId, 'experiment');
 ```
 
 **命名规则**：
-- 自动生成：`{原始会话名}-b{序号}`（如 `main-b1`、`main-b2`）
-- 支持分叉的分叉：`main-b1-b1`
-- 自定义名称：直接传入目标名称
+- 自动生成：平等普通会话名（与手动创建的会话一致，无 `main-b1` 等分叉标记）
+- 自定义名称：直接传入目标名称作为第二参数
 
 **记忆处理策略**：
 - 已有记忆：全局共享（记忆是全局知识库，不属于单个会话）
@@ -355,12 +357,13 @@ const result2 = agent.forkSession('experiment');
 ```typescript
 agent.on('sessionForked', (event) => {
   console.log(`从 ${event.from} 分叉到 ${event.to}`);
-  console.log(`复制了 ${event.messageCount} 条消息`);
+  console.log(`复制了 ${event.roundCount} 个问答闭环`);
 });
 ```
 
 **边界情况**：
-- 当前会话无消息时抛出错误
+- 当前会话无问答闭环时抛出错误
+- 传入的 `roundId` 不存在于当前会话时抛出错误
 - `ISessionStore` 未注入时抛出错误
 - 对话正在进行中（`chatBusy`）时抛出错误
 - 自定义名称已存在时抛出错误

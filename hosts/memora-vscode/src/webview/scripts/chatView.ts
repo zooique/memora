@@ -763,7 +763,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 返回创建的 .msg 元素，供调用方作为流式锚点（排雷 P0-1）。
   // 跨天合并时先插入日期分隔线（ui-redesign.md §4.1 ②）；AI 消息带头像身份。
 
-  function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string): HTMLElement {
+  function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string, roundId?: string): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
     renderDateDivider(ts);
     if (role === 'assistant') {
@@ -771,7 +771,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       div.className = 'msg ' + role;
       // AI 消息：复用骨架构建（label + content + body + footer），
       // 一次性消息（历史回放）直接渲染 Markdown（吸收养分，代码块/列表/表格可读）
-      const { body } = buildAssistantShell(div, ts);
+      const { body } = buildAssistantShell(div, ts, roundId);
       // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
       div.dataset.rawText = text;
       body.innerHTML = renderMarkdown(text);
@@ -826,7 +826,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * @param ts 消息时间戳
    * @returns body 元素（供调用方填充内容）
    */
-  function buildAssistantShell(div: HTMLElement, ts?: string): { body: HTMLElement } {
+  function buildAssistantShell(div: HTMLElement, ts?: string, roundId?: string): { body: HTMLElement } {
     // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
@@ -854,6 +854,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 复制按钮读取 .msg.dataset.rawText（原始 Markdown 源）；流式结束更新后即复制完整文本
     copyBtn.addEventListener('click', () => copyText(div.dataset.rawText ?? ''));
     footer.appendChild(copyBtn);
+    // 分叉按钮（round-based 模式）：从当前问答闭环位置创建新会话
+    // 仅在 roundId 可用时启用（round-based 会话），legacy 会话禁用
+    const forkBtn = createIcon('fork', '从此处分叉创建新会话', 'msg-fork-icon');
+    forkBtn.disabled = !roundId;
+    if (roundId) {
+      forkBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'fork_session', roundId });
+      });
+    }
+    footer.appendChild(forkBtn);
     // 删除按钮（2026-08-16 对话闭环管理）：AI 消息承载「删除问答闭环」入口——删了答也删问。
     // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
     // 无 ts（如流式未完成即被清空）时禁用，避免删除锚点失效。
@@ -872,8 +882,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
     content.appendChild(footer);
     div.appendChild(content);
-    // 记录消息 timestamp 供删除锚点（dataset.ts 供删除按钮读取）
+    // 记录消息 timestamp 供删除锚点；roundId 供分叉按钮读取
     div.dataset.ts = ts ?? '';
+    div.dataset.roundId = roundId ?? '';
     return { body };
   }
 
@@ -1236,7 +1247,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       }
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
-      append('assistant', msg.text, msg.ts);
+      append('assistant', msg.text, msg.ts, msg.roundId);
     } else if (msg.type === 'chunk') {
       // 流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
       // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。

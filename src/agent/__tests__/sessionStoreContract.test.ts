@@ -17,13 +17,19 @@ import { todayDate } from '@/utils/time.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 
 /**
- * 创建 Mock ISessionStore
+ * 创建 Mock ISessionStore（支持 round-based 操作）
  */
 const createMockSessionStore = (): ISessionStore => ({
   appendMessage: vi.fn(),
   loadMessages: vi.fn().mockReturnValue([]),
   listSessions: vi.fn().mockReturnValue([]),
   copySession: vi.fn(),
+  // Round-based 方法
+  getRoundIds: vi.fn().mockReturnValue([]),
+  setRoundIds: vi.fn(),
+  appendRoundId: vi.fn(),
+  updateSessionMeta: vi.fn(),
+  getSessionMeta: vi.fn(),
 });
 
 describe('ISessionStore 契约 · appendMessage', () => {
@@ -164,88 +170,77 @@ describe('ISessionStore 契约 · listSessions', () => {
   });
 });
 
-describe('ISessionStore 契约 · copySession', () => {
+describe('ISessionStore 契约 · forkSession (round-based)', () => {
   let mockSessionStore: ISessionStore;
   let history: MessageHistory;
 
   beforeEach(() => {
     mockSessionStore = createMockSessionStore();
     history = new MessageHistory(mockSessionStore);
+    // 默认 mock：当前会话有 2 个 roundIds
+    vi.mocked(mockSessionStore.getRoundIds!).mockReturnValue(['round-1', 'round-2']);
+    vi.mocked(mockSessionStore.getSessionMeta!).mockReturnValue({
+      sessionId: `${todayDate()}-main`,
+      updatedAt: new Date().toISOString(),
+      messageCount: 2,
+    });
+    vi.mocked(mockSessionStore.listSessions!).mockReturnValue([]);
   });
 
-  it('forkSession 应调用 sessionStore.copySession', async () => {
-    const mockMessages: SessionMessage[] = [
-      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
-      { role: 'assistant', content: '你好！', timestamp: '2026-01-01T00:00:01.000Z' },
-    ];
-    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
-    vi.mocked(mockSessionStore.listSessions).mockReturnValue([]);
+  it('forkSession 应调用 setRoundIds 和 updateSessionMeta（而非 copySession）', () => {
+    history.forkSession();
 
-    await history.forkSession();
-
-    expect(mockSessionStore.copySession).toHaveBeenCalledTimes(1);
-    expect(mockSessionStore.copySession).toHaveBeenCalledWith(
-      expect.any(String), // sourceDate
-      'main', // sourceSession
-      expect.any(String), // targetDate
-      'main-b1', // targetSession
-    );
+    // round-based 分叉：应调用 setRoundIds（而非 copySession）
+    expect(mockSessionStore.setRoundIds).toHaveBeenCalledTimes(1);
+    expect(mockSessionStore.updateSessionMeta).toHaveBeenCalledTimes(1);
+    // legacy copySession 不应被调用
+    expect(mockSessionStore.copySession).not.toHaveBeenCalled();
   });
 
-  it('forkSession 应正确递增分支序号', async () => {
-    const mockMessages: SessionMessage[] = [
-      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
-    ];
-    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
-    vi.mocked(mockSessionStore.listSessions).mockReturnValue([
-      '2026-01-01-main-b1',
-      '2026-01-01-main-b2',
-    ]);
+  it('forkSession 应使用最后一个 Round 作为默认分叉点', () => {
+    vi.mocked(mockSessionStore.getRoundIds!).mockReturnValue(['round-1', 'round-2', 'round-3']);
 
-    await history.forkSession();
+    history.forkSession();
 
-    expect(mockSessionStore.copySession).toHaveBeenCalledWith(
-      expect.any(String),
-      'main',
-      expect.any(String),
-      'main-b3',
-    );
+    // 应复制全部 3 个 roundIds（默认最后一个为分叉点）
+    const setRoundIdsCall = vi.mocked(mockSessionStore.setRoundIds!).mock.calls[0]!;
+    expect(setRoundIdsCall[1]!).toEqual(['round-1', 'round-2', 'round-3']);
   });
 
-  it('forkSession 应支持自定义目标会话名', async () => {
-    const mockMessages: SessionMessage[] = [
-      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
-    ];
-    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
-    vi.mocked(mockSessionStore.listSessions).mockReturnValue([]);
+  it('forkSession 指定 roundId 时应截取到该 Round', () => {
+    vi.mocked(mockSessionStore.getRoundIds!).mockReturnValue(['round-1', 'round-2', 'round-3']);
 
-    await history.forkSession('experiment');
+    history.forkSession('round-2');
 
-    expect(mockSessionStore.copySession).toHaveBeenCalledWith(
-      expect.any(String),
-      'main',
-      expect.any(String),
-      'experiment',
-    );
+    // 应只复制到 round-2（含）
+    const setRoundIdsCall = vi.mocked(mockSessionStore.setRoundIds!).mock.calls[0]!;
+    expect(setRoundIdsCall[1]!).toEqual(['round-1', 'round-2']);
+  });
+
+  it('forkSession 应支持自定义目标会话名', () => {
+    history.forkSession(undefined, 'experiment');
+
+    // 新会话 ID 应为 {date}-experiment
+    const setRoundIdsCall = vi.mocked(mockSessionStore.setRoundIds!).mock.calls[0]!;
+    expect(setRoundIdsCall[0]!).toBe(`${todayDate()}-experiment`);
   });
 
   it('forkSession 应切换到新会话', () => {
-    const mockMessages: SessionMessage[] = [
-      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
-    ];
-    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
-    vi.mocked(mockSessionStore.listSessions).mockReturnValue([]);
-
     const result = history.forkSession();
 
-    expect(history.session).toBe('main-b1');
-    expect(result.newSession).toBe('main-b1');
+    expect(result.newSession).toBeDefined();
+    expect(result.newSession).not.toBe('main');
+    expect(result.roundIds.length).toBeGreaterThan(0);
   });
 
-  it('forkSession 当前会话无消息时应抛出错误', () => {
-    vi.mocked(mockSessionStore.loadMessages).mockReturnValue([]);
+  it('forkSession 当前会话无 Round 时应抛错', () => {
+    vi.mocked(mockSessionStore.getRoundIds!).mockReturnValue([]);
 
     expect(() => history.forkSession()).toThrow('无法分叉会话');
+  });
+
+  it('forkSession 指定 roundId 不存在时应抛错', () => {
+    expect(() => history.forkSession('non-existent-round')).toThrow('无法分叉会话');
   });
 
   it('forkSession sessionStore 未注入时应抛出错误', () => {
@@ -255,14 +250,9 @@ describe('ISessionStore 契约 · copySession', () => {
   });
 
   it('forkSession 自定义名称已存在时应抛出错误', () => {
-    const mockMessages: SessionMessage[] = [
-      { role: 'user', content: '你好', timestamp: '2026-01-01T00:00:00.000Z' },
-    ];
-    vi.mocked(mockSessionStore.loadMessages).mockReturnValue(mockMessages);
-    // 使用 todayDate()（本地日期）与 forkSession 内部一致，避免 UTC vs 本地日期跨日窗口不一致
     const today = todayDate();
     vi.mocked(mockSessionStore.listSessions).mockReturnValue([`${today}-experiment`]);
 
-    expect(() => history.forkSession('experiment')).toThrow('无法分叉会话');
+    expect(() => history.forkSession(undefined, 'experiment')).toThrow('无法分叉会话');
   });
 });

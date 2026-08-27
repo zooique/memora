@@ -7,7 +7,6 @@ import {
   createRoundBasedSessionMeta,
   isRoundBasedMode,
   calculateMessageCount,
-  generateForkSessionId,
 } from '@/memory/sessionStore.js';
 import type { SessionMeta } from '@/memory/sessionStore.js';
 
@@ -89,35 +88,6 @@ describe('会话存储 Round-based 模式', () => {
     it('应该处理空列表', () => {
       const count = calculateMessageCount([]);
       expect(count).toBe(0);
-    });
-  });
-
-  describe('generateForkSessionId', () => {
-    it('应该生成唯一的分叉会话 ID', () => {
-      const forkId1 = generateForkSessionId('2026-08-27-original');
-      const forkId2 = generateForkSessionId('2026-08-27-original');
-
-      // 格式检查
-      expect(forkId1).toContain('-fork-');
-      expect(forkId2).toContain('-fork-');
-
-      // 唯一性（时间戳不同）
-      expect(forkId1).not.toBe(forkId2);
-    });
-
-    it('应该保留原始会话名', () => {
-      const forkId = generateForkSessionId('2026-08-27-my-conversation');
-
-      // 应该保留会话名部分
-      expect(forkId).toContain('my-conversation');
-    });
-
-    it('应该包含当前日期', () => {
-      const now = new Date();
-      const dateStr = now.toISOString().slice(0, 10);
-      const forkId = generateForkSessionId('test');
-
-      expect(forkId.startsWith(dateStr)).toBe(true);
     });
   });
 });

@@ -1071,11 +1071,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 分叉当前会话（委托至 SessionManager）：原会话完整保留，新分支独立消息历史；记忆索引全局共享不受影响
+   * 从指定 Round 位置分叉当前会话（委托至 SessionManager）：
+   * round-based 模式唯一分叉方式——创建新会话，复制 Round ID 列表（指针复制），
+   * 新会话是完全平等的普通会话。记忆索引全局共享不受影响。
+   *
+   * @param roundId - 分叉点的 Round ID（可选；不传默认使用最后一个 Round）
+   * @param targetSession - 可选，自定义新会话名
    */
-  forkSession(targetSession?: string): AgentForkResult {
+  forkSession(roundId?: string, targetSession?: string): AgentForkResult {
     this.assertInitialized('forkSession');
-    return this.requireSessionManager.forkSession(targetSession);
+    return this.requireSessionManager.forkSession(roundId, targetSession);
   }
 
   /**

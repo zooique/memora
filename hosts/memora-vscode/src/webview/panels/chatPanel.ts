@@ -392,8 +392,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史（2026-08-17 会话管理重构）
         void this.newSessionFromCommand();
       } else if (msg.type === 'fork_session') {
-        // 标题条「分叉」→ 当前对话复制为新分支并切入（B3 会话生命周期补齐）
-        void this.forkCurrentSession();
+        // AI 回复底部「分叉」按钮 → 从指定 Round 位置分叉新会话
+        void this.forkCurrentSession(msg.roundId);
       } else if (msg.type === 'session_list') {
         // 标题条「历史」按钮 → 返回非当前会话列表供 webview 渲染模态浮层
         this.pushSessionList();
@@ -591,12 +591,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly onSessionForked = (info: {
     from: string;
     to: string;
-    messageCount: number;
+    roundCount: number;
   }): void => {
     this.post({
       type: 'notice',
       level: 'info',
-      message: `已分叉新会话「${info.to}」（${info.messageCount} 条消息）`,
+      message: `已分叉新会话「${info.to}」（${info.roundCount} 个问答闭环）`,
     });
   };
 
@@ -1019,19 +1019,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * fork 不分叉记忆——记忆索引全局共享，仅对话历史分叉；空会话/对话繁忙由内核拒绝，
    * host 兜底转错误通知。
    */
-  public async forkCurrentSession(): Promise<void> {
+  public async forkCurrentSession(roundId?: string): Promise<void> {
     if (this._streaming) {
       this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再分叉会话' });
       return;
     }
     const agent = await this.getAgentOrWarn();
     if (!agent) return;
+
     try {
-      // forkSession() 返回新分支名（不含日期前缀），切换并回放由本方法统一收口
-      const { newSession } = agent.forkSession();
+      // 获取当前会话的最后一个 roundId 作为默认分叉点
+      const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
+      const sessionRoundIds = meta?.roundIds ?? [];
+      const forkRoundId = roundId ?? sessionRoundIds[sessionRoundIds.length - 1];
+
+      if (!forkRoundId) {
+        this.post({ type: 'notice', level: 'warning', message: '当前会话无可分叉的问答闭环' });
+        return;
+      }
+
+      // round-based 分叉：从指定 Round 位置创建新会话
+      const { newSession, roundCount } = agent.forkSession(forkRoundId);
       this._currentSessionId = `${formatDateKey(new Date())}-${newSession}`;
       this.replayCurrentSession();
-      this.post({ type: 'notice', level: 'info', message: `已分叉新会话「${newSession}」` });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: `已从第 ${roundCount} 个问答闭环节点分叉新会话「${newSession}」`,
+      });
     } catch (err) {
       this.post({
         type: 'notice',
@@ -1101,7 +1116,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'clear_ok' });
     const history = this.loadHistory();
     for (const m of history) {
-      this.post({ type: m.role, text: m.content, ts: m.ts });
+      this.post({ type: m.role, text: m.content, ts: m.ts, roundId: m.roundId });
     }
     this.post({ type: 'session_title', title: this.currentSessionTitle() });
   }
@@ -1445,9 +1460,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   - assistant 消息：回放上一次流式输出的完整内容（避免拼接不完整流）。
    *   - 内核注入的 `<user_input>` 系统消息跳过（由内核 appendUser 持久化的 user 消息替代）。
    *
-   * @returns 带 role/timestamp 标记的会话消息列表（按时间升序）
+   * @returns 带 role/timestamp/roundId 标记的会话消息列表（按时间升序）
    */
-  private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+  private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
     try {
       // 获取会话元数据，判断存储模式
       const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
@@ -1471,7 +1486,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 从消息列表加载，用于旧格式会话
    */
-  private loadLegacyHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+  private loadLegacyHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
     const { date, session } = this.parseSessionId(this._currentSessionId);
     const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
     const msgs = this.sessionStore.loadMessages(date, session) as {
@@ -1500,7 +1515,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 使用 SessionViewLoader 从 Round ID 列表加载完整对话视图
    */
-  private loadRoundBasedHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+  private loadRoundBasedHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
     if (!this._viewLoader) {
       // 没有 viewLoader 时返回空数组
       console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
@@ -1509,18 +1524,30 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const view: SessionView = this._viewLoader.loadView(this._currentSessionId);
-      const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
+      const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] = [];
 
-      // 从 SessionView 中提取消息
-      for (const msg of view.messages) {
-        if (!msg.content || msg.content.startsWith('<user_input>')) continue;
-        result.push({
-          role: (msg.role === 'user' || msg.role === 'assistant' ? msg.role : 'user') as
-            | 'user'
-            | 'assistant',
-          content: msg.role === 'user' ? stripDocContextPrefix(msg.content) : msg.content,
-          ts: msg.timestamp,
-        });
+      // 从 SessionView 中提取消息，并关联 roundId
+      // 遍历 rounds，提取每个 round 的 user + assistant 消息
+      for (const round of view.rounds) {
+        const roundId = round.id;
+        // User message
+        if (round.userMessage?.content) {
+          result.push({
+            role: round.userMessage.role === 'user' ? 'user' : 'user',
+            content: round.userMessage.role === 'user' ? stripDocContextPrefix(round.userMessage.content) : round.userMessage.content,
+            ts: round.userMessage.timestamp,
+            roundId,
+          });
+        }
+        // Assistant message（仅 complete 状态）
+        if (round.assistantMessage?.content && round.status === 'complete') {
+          result.push({
+            role: 'assistant',
+            content: round.assistantMessage.content,
+            ts: round.assistantMessage.timestamp,
+            roundId,
+          });
+        }
       }
 
       // 按时间升序

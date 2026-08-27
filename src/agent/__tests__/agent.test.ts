@@ -833,7 +833,12 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
 
   /** Mock ISessionStore，支持 forkSession 所需的 copySession */
   function createMockSessionStore(): ISessionStore {
+    // Legacy 消息存储
     const store = new Map<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>();
+    // Round-based 存储：sessionId → roundId[]
+    const roundIdsMap = new Map<string, string[]>();
+    // 元数据存储
+    const metas = new Map<string, { sessionId: string; storageMode?: 'legacy' | 'round-based'; createdAt?: string; updatedAt: string; messageCount: number }>();
 
     return {
       appendMessage(date: string, session: string, message: { role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }) {
@@ -846,11 +851,33 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
         return store.get(`${date}-${session}`) ?? [];
       },
       listSessions() {
-        return Array.from(store.keys());
+        const sessions = new Set<string>(Array.from(store.keys()));
+        for (const id of roundIdsMap.keys()) sessions.add(id);
+        for (const id of metas.keys()) sessions.add(id);
+        return Array.from(sessions);
       },
       copySession(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string) {
         const source = store.get(`${sourceDate}-${sourceSession}`) ?? [];
         store.set(`${targetDate}-${targetSession}`, [...source]);
+      },
+      // Round-based 方法
+      getRoundIds(sessionId: string): string[] {
+        return roundIdsMap.get(sessionId) ?? [];
+      },
+      setRoundIds(sessionId: string, roundIds: string[]) {
+        roundIdsMap.set(sessionId, [...roundIds]);
+      },
+      appendRoundId(sessionId: string, roundId: string) {
+        const ids = roundIdsMap.get(sessionId) ?? [];
+        ids.push(roundId);
+        roundIdsMap.set(sessionId, ids);
+      },
+      updateSessionMeta(sessionId: string, meta: Record<string, unknown>) {
+        const existing = metas.get(sessionId) ?? { sessionId, updatedAt: new Date().toISOString(), messageCount: 0 };
+        metas.set(sessionId, { ...existing, ...meta, updatedAt: new Date().toISOString() });
+      },
+      getSessionMeta(sessionId: string) {
+        return metas.get(sessionId);
       },
     };
   }
@@ -891,7 +918,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
     const result = agent.forkSession();
     expect(result.newSession).toBeDefined();
     expect(typeof result.newSession).toBe('string');
-    expect(result.messageCount).toBeGreaterThan(0);
+    expect(result.roundCount).toBeGreaterThan(0);
   });
 
   it('分叉会话应发射 sessionForked 事件', async () => {

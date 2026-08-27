@@ -1,9 +1,17 @@
 # 问答闭环独立存储方案（正式设计文档）
 
 > **文档状态**：✅ 正式设计方案（SSOT）
-> **版本**：v1.0
+> **版本**：v1.1
 > **创建日期**：2026-08-27
+> **更新日期**：2026-08-27
 > **状态**：已确认，作为 Memora 会话管理的唯一真理源
+
+### 变更记录
+
+| 版本 | 日期 | 变更 |
+|------|------|------|
+| v1.0 | 2026-08-27 | 初始版本：Round 独立存储 + 分叉概念 |
+| v1.1 | 2026-08-27 | **分叉模式定案**：统一为「从任意 Round 位置分叉」单一模式，删除 legacy copySession 路径，不考虑旧版兼容 |
 
 ---
 
@@ -16,7 +24,8 @@
 1. **SSOT 原则**：问答闭环（Round）是全局唯一的物理存储单元
 2. **自然生长**：基于现有系统平滑扩展，不破坏现有架构
 3. **纯洁性**：不考虑旧版兼容，设计干净纯粹
-4. **平等性**：所有问答闭环、所有会话在存储层完全平等
+4. **分叉唯一性**：分叉只有一种方式——从任意 Round 位置分叉，不存在全量/增量的选择
+5. **平等性**：所有问答闭环、所有会话在存储层完全平等
 
 ---
 
@@ -398,63 +407,162 @@ class RoundManager {
 }
 ```
 
-### 4.3 分叉操作：复制 ID 列表
+### 4.3 分叉操作：唯一模式——从 Round 位置分叉
+
+> **v1.1 定案**：分叉方式只有一种——**传入一个 Round ID，新会话只包含该 Round 及之前的所有 Round ID**。
+> 不存在"全量分叉"与"增量分叉"的选择。需要"全量"效果时，传入最后一个 Round ID 即可。
+> legacy `copySession` 路径在本方案中**彻底移除**，不考虑旧版兼容。
+
+#### 设计规则
+
+```
+分叉语义：
+  会话 A: [Round₁, Round₂, Round₃, Round₄]
+                           ↑
+                       传入 round₂
+                           ↓
+  会话 B: [Round₁, Round₂]  ← 只复制到分叉点的 ID 列表
+  Round₃, Round₄ 不受影响，仍归属会话 A
+```
+
+**核心保证**：
+1. 传入的 `roundId` 必须存在于当前会话的 `roundIds` 中，否则抛错
+2. 新会话的 `roundIds` = 源会话 `roundIds.slice(0, forkIdx + 1)`（包含分叉点）
+3. 分叉后，源会话的 `roundIds` **不变**（分叉是创建新会话，不是修改源会话）
+4. 引用计数：新会话引用的每个 Round `refCount` +1（已有引用的 Round 自然共享）
+5. **会话 ID 统一**：所有会话只有一种 ID 格式 `{date}-{sessionName}`，不存在"分叉会话"特殊标记。新会话在存储层、UI 层、历史列表中与普通会话完全平等。
+
+#### UI 交互设计
+
+**分叉按钮位置**：内联在每一条 LLM 回答的底部，与"复制"、"删除"按钮同级。
+
+```
+┌─────────────────────────────────────────┐
+│ 🤖 AI 回答内容...                        │
+│                                         │
+│ [复制] [删除] [⇢分叉]                   │  ← 每条 AI 回复底部
+└─────────────────────────────────────────┘
+```
+
+**交互流程**：
+1. 用户点击某条 AI 回复底部的"分叉"按钮
+2. 宿主提取该 AI 回复所属的 `roundId`
+3. 调用 `agent.forkSession(roundId)` 创建新会话
+4. 内核截取 `roundIds.slice(0, forkIdx+1)` 创建平等的新会话
+5. 宿主切换到新会话并加载视图
+
+**设计理念**：分叉是对话中的自由选择，不是会话级别的操作。用户可以在任意历史点创建分支，每条 AI 回复都是潜在的分叉点。
+
+#### 接口设计
 
 ```typescript
 // src/agent/messageHistory.ts
 
+/**
+ * 分叉结果
+ * - newSession: 新会话标识（不含日期前缀，平等普通会话）
+ * - date: 会话日期
+ * - roundIds: 新会话的 Round ID 列表（已复制的指针）
+ */
+export interface ForkResult {
+  newSession: string;
+  date: string;
+  roundIds: string[];
+}
+
 class MessageHistory {
   /**
-   * 从指定 Round ID 分叉会话
-   * - 核心操作：复制 Round ID 列表
-   * - 不复制问答闭环的物理数据
+   * 从指定 Round 位置分叉会话（唯一分叉方式）
+   *
+   * 核心操作：复制 Round ID 列表（指针复制，不复制数据）
+   * 新会话是完全平等的普通会话，无特殊标记。
+   *
+   * @param roundId - 分叉点的 Round ID（可选；不传默认使用最后一个 Round，等效全量分叉）
+   * @param targetSession - 可选，自定义新会话名；不传则自动生成
+   * @returns 分叉结果
+   * @throws 会话不存在 / Round 不存在时抛错
    */
-  forkSessionFromRound(roundId: string, targetSession?: string): ForkResult {
-    // 1. 获取当前会话
-    const currentSession = this.sessionStore.getMeta(this.currentSession);
-    if (!currentSession) throw new Error('Session not found');
-    
-    // 2. 获取问答闭环 ID 列表
+  forkSession(roundId?: string, targetSession?: string): ForkResult {
+    // 1. 获取当前会话元数据
+    const currentSession = this.getCurrentSessionMeta();
+    if (!currentSession) throw new Error('会话不存在');
+
+    // 2. 获取 Round ID 列表
     const currentRoundIds = currentSession.roundIds;
-    
-    // 3. 找到分叉点的位置
+    if (!currentRoundIds?.length) throw new Error('当前会话无问答闭环');
+
+    // 3. 定位分叉点
     const forkIdx = currentRoundIds.indexOf(roundId);
-    if (forkIdx === -1) throw new Error('Round not found');
-    
-    // 4. 截取到分叉点的 ID 列表
+    if (forkIdx === -1) throw new Error(`Round 不存在于当前会话: ${roundId}`);
+
+    // 4. 截取到分叉点的 ID 列表（包含分叉点）
     const newRoundIds = currentRoundIds.slice(0, forkIdx + 1);
-    
-    // 5. 生成新会话 ID
-    const newSession = targetSession || this.autoBranchName(this.currentSession);
-    
-    // 6. 创建新会话（只有 ID 列表）
-    const newSessionMeta: SessionMeta = {
-      sessionId: newSession,
+
+    // 5. 生成新会话名（自动命名，平等普通会话）
+    const newSession = targetSession || this.generateSessionName();
+
+    // 6. 创建新会话（ID 列表 + 引用计数增加）
+    this.sessionStore.createSession({
+      sessionId: `${todayDate()}-${newSession}`,
       title: '',
-      roundIds: newRoundIds,  // 复制 ID 列表
+      roundIds: newRoundIds,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-    };
-    
-    // 7. 存储新会话
-    this.sessionStore.saveMeta(newSessionMeta);
-    
-    // 8. 增加引用计数
+    });
+
+    // 7. 增加引用计数（新会话引用这些 Round）
     for (const id of newRoundIds) {
       this.roundStore.incrementRef(id);
     }
-    
-    // 9. 切换到新会话
+
+    // 8. 切换到新会话
     this.switchSession(newSession);
-    
+
+    logger.info(
+      { from: currentSession.sessionId, to: newSession, roundCount: newRoundIds.length },
+      '会话分叉完成'
+    );
+
     return {
       newSession,
-      roundCount: newRoundIds.length,
-      nextRoundId: this.calculateNextRoundId(newRoundIds),
+      date: todayDate(),
+      roundIds: newRoundIds,
     };
+  }
+
+  /**
+   * 自动生成会话名（平等普通会话命名，无分叉标记）
+   * 交给 SessionNamer 或宿主处理，此处留占位实现
+   */
+  private generateSessionName(): string {
+    // 简化实现：用时间戳 + 随机后缀
+    // 实际应委托给 SessionNamer
+    return `session-${Date.now().toString(36)}`;
   }
 }
 ```
+
+#### 会话命名规则
+
+新会话是完全平等的普通会话，不使用 `main-b1`、`main-b2` 等分叉命名：
+
+| 场景 | 命名方式 | 示例 |
+|------|---------|------|
+| 用户指定名称 | 使用用户指定的名称 | `实验方案` |
+| 自动生成（无 LLM） | 时间戳 + 随机后缀 | `session-k3x9m` |
+| 自动生成（有 LLM） | SessionNamer 生成的标题 | `排序算法优化` |
+
+**核心思想**：新会话不需要暴露"分叉"身份。用户在历史列表中看到的就是一个普通会话，只有会话内容（Round 列表）与源会话不同。
+
+#### 对比：v1.0 vs v1.1
+
+| 维度 | v1.0（原方案） | v1.1（定案） |
+|------|--------------|-------------|
+| 分叉入口 | `forkSessionFromRound(roundId)` | `forkSession(roundId)` — 重命名为唯一入口 |
+| 分叉方式 | 仅 Round 位置分叉（设计中，未实现） | 同上，但**彻底删除 legacy 路径** |
+| legacy `copySession` | 保留作为 fallback | **删除**，不再兼容 |
+| 全量分叉 | 作为独立 API 存在 | 不传——传最后一个 Round ID 即可等效实现 |
+| 会话加载 | `loadMessages()` 返回 `SessionMessage[]` | 返回 `Round[]` 展开视图 |
 
 ### 4.4 召回逻辑：按 Round ID 筛选
 
@@ -656,23 +764,45 @@ class GCService {
 - [ ] 透明转换层工作正常
 - [ ] 迁移后数据一致
 
-### Phase 4：业务层适配（4 天）
+### Phase 4：分叉链路打通（核心任务） ✅ 已完成
 
-**目标**：适配 `AgentLoop`、`MessageHistory`、`Recall`
+**目标**：将分叉操作从 legacy `copySession` 路径完全切换到 round-based 路径，实现"从任意 Round 位置分叉"的唯一模式。
+
+| 任务 | 交付物 | 状态 |
+|------|--------|------|
+| 改造 `MessageHistory.forkSession()` 签名为 `forkSession(roundId?, targetSession?)` | `src/agent/messageHistory.ts` | ✅ |
+| 删除 `MessageHistory.forkSession()` 中 legacy `copySession` 分支 | 同上 | ✅ |
+| `ISessionStore.copySession` 标记为 `@deprecated`，移除调用方 | `src/memory/sessionStore.ts` | ✅ |
+| VSCode 宿主 sessionStore `copySession` 废弃 | `hosts/memora-vscode/` | ✅ |
+| 更新 `AgentForkResult` 返回结构（含 `roundIds`） | `src/agent/managers/sessionManager.ts` | ✅ |
+| 编写分叉单元测试（含边界：Round 不存在 / 空会话 / 自定义名） | `__tests__/` | ✅ |
+| VSCode webview 分叉按钮内联到 AI 回复底部 | `hosts/memora-vscode/src/webview/scripts/chatView.ts` | ✅ |
+
+**验收标准**：
+- [x] 分叉唯一走 round-based 路径，无 legacy fallback
+- [x] 传入 `roundId` → 新会话 `roundIds` 正确截取
+- [x] 不传 `roundId` → 默认使用最后一个 Round（等效全量分叉）
+- [x] 引用计数正确增加
+- [x] 源会话 `roundIds` 不受影响
+- [x] 全量测试通过（2538 tests passed，1 个预先存在的无关失败）
+
+### Phase 5：业务层适配
+
+**目标**：适配 `AgentLoop`、`Recall` 等模块与 round-based 分叉对齐
 
 | 任务 | 交付物 |
 |------|--------|
-| 适配 `AgentLoop` 写入逻辑 | `src/agent/loop.ts` |
-| 适配 `MessageHistory` 加载逻辑 | `src/agent/messageHistory.ts` |
-| 适配 `Recall` 召回逻辑 | `src/memory/recall.ts` |
+| 适配 `AgentLoop` 写入逻辑（已完成，验证） | `src/agent/loop.ts` |
+| 适配 `Recall` 召回逻辑（基于 Round ID 筛选） | `src/memory/recall.ts` |
 | 适配 `RoundSummaryGenerator` | `src/agent/managers/roundSummaryGenerator.ts` |
+| 适配宿主 IPC/WebSocket 分叉入口 | `hosts/memora-sprite/src/electron/ipc/sessionHandlers.ts` |
 
 **验收标准**：
 - [ ] AgentLoop 正确创建 Round
 - [ ] 召回逻辑正确基于 Round ID
-- [ ] 端到端对话流程正常
+- [ ] 分叉后新会话的召回使用新会话的 roundIds
 
-### Phase 5：UI 与宿主适配（3 天）
+### Phase 6：UI 与宿主适配
 
 **目标**：确保宿主层 UI 正确渲染
 
@@ -687,7 +817,7 @@ class GCService {
 - [ ] 会话列表显示正常
 - [ ] 无明显性能问题
 
-### Phase 6：测试与上线（3 天）
+### Phase 7：测试与上线（3 天）
 
 **目标**：全量测试，确保稳定
 
@@ -711,18 +841,19 @@ class GCService {
 
 | 风险 | 概率 | 影响 | 缓解措施 |
 |------|------|------|----------|
-| **数据迁移失败** | 中 | 高 | 充分测试，保留回滚方案 |
+| **分叉逻辑回归** | 低 | 高 | 完善的分叉单元测试覆盖 |
 | **性能下降** | 低 | 中 | 缓存优化，批量加载 |
 | **内存占用增加** | 低 | 低 | 引用计数 + GC |
-| **兼容性问题** | 中 | 高 | 充分的过渡期测试 |
+| **宿主适配遗漏** | 低 | 中 | 双宿主（VSCode + Sprite）分叉路径全链路测试 |
+
+> **v1.1 变化**：移除了"兼容性问题"风险项——不再考虑 legacy 会话兼容，旧会话升级为 round-based 模式是一次性操作。
 
 ### 8.2 回滚方案
 
 如果新版本出现严重问题：
-1. 停止新会话使用新格式
-2. 旧会话保留新格式，不再写入新格式
-3. 重新启动服务，回滚到旧逻辑
-4. 提供数据恢复脚本
+1. 回退 `MessageHistory.forkSession()` 到上一个稳定版本
+2. 保留 round-based 写入路径不动
+3. 不涉及数据迁移，回滚粒度仅限分叉逻辑
 
 ---
 

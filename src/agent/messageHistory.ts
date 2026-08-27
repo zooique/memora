@@ -6,7 +6,7 @@
  * - round-based 模式：通过 appendUser/appendAssistant 同步写入 RoundStore + SessionStore 的 roundIds
  * 两种模式可共存：当 roundStore 注入时自动启用 round-based 模式，同时保持 legacy 写入以兼容
  */
-import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 import type {
   IRoundStore,
   Round,
@@ -17,14 +17,14 @@ import { configError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { nowIso, todayDate } from '@/utils/time.js';
 
-/** 分叉结果 */
+/** 分叉结果（round-based 模式） */
 export interface ForkResult {
-  /** 新会话标识（不含日期前缀，如 "main-b1"） */
+  /** 新会话标识（不含日期前缀，平等普通会话） */
   newSession: string;
   /** 会话日期 */
   date: string;
-  /** 从源会话复制的消息列表 */
-  messages: SessionMessage[];
+  /** 新会话的 Round ID 列表（已复制的指针） */
+  roundIds: string[];
 }
 
 /** 消息历史类 */
@@ -131,47 +131,104 @@ export class MessageHistory {
     return this.currentSessionName;
   }
 
-  /** 自动生成分支名：扫描已有 `sourceSession-bN` 会话，返回最大序号 +1（如 "main-b1"） */
-  private autoBranchName(sourceSession: string): string {
-    if (!this.sessionStore) return `${sourceSession}-b1`;
-    const allSessions = this.sessionStore.listSessions();
-    const prefix = `${sourceSession}-b`;
-    const existingNumbers: number[] = [];
-    for (const fullSession of allSessions) {
-      // fullSession 格式为 YYYY-MM-DD-session
-      const parts = fullSession.split('-');
-      if (parts.length >= 4) {
-        const sessionPart = parts.slice(3).join('-');
-        if (sessionPart.startsWith(prefix)) {
-          const numStr = sessionPart.slice(prefix.length);
-          const num = parseInt(numStr, 10);
-          if (!isNaN(num)) {
-            existingNumbers.push(num);
-          }
-        }
-      }
-    }
-    const nextNumber = existingNumbers.length > 0 ? Math.max(...existingNumbers) + 1 : 1;
-    return `${prefix}${nextNumber}`;
+  /**
+   * 自动生成会话名（平等普通会话命名，无分叉标记）。
+   * 使用时间戳生成唯一名称，实际应委托给 SessionNamer 生成有意义的标题。
+   */
+  private generateSessionName(): string {
+    return `session-${Date.now().toString(36)}`;
   }
 
   /**
-   * 分叉当前会话：加载消息 → 生成唯一新会话名 → copySession 复制 → 切换当前会话。
-   * sessionStore 未注入 / copySession 未实现 / 无消息时抛错误；targetSession 当天不可与已有会话重名。
+   * 获取当前会话的 Round ID 列表
+   *
+   * 优先通过 sessionStore.getRoundIds()（round-based 模式）获取；
+   * 降级：遍历 loadMessages() 收集 roundId（legacy 模式仍可工作）。
    */
-  forkSession(targetSession?: string): ForkResult {
+  private getCurrentRoundIds(): string[] {
+    if (!this.sessionStore) return [];
+    const sessionId = this.currentSessionName;
+
+    // 优先使用 getRoundIds（round-based 模式）
+    const getRoundIdsFn = this.sessionStore.getRoundIds;
+    if (getRoundIdsFn) {
+      const ids = getRoundIdsFn.call(this.sessionStore, sessionId);
+      if (ids && ids.length > 0) return ids;
+    }
+
+    // 降级：从 SessionMeta 获取
+    const getMetaFn = this.sessionStore.getSessionMeta;
+    if (getMetaFn) {
+      const meta = getMetaFn.call(this.sessionStore, sessionId);
+      if (meta?.roundIds?.length) return [...meta.roundIds];
+    }
+
+    // 最终降级：从消息列表收集 roundId
+    try {
+      const messages = this.sessionStore.loadMessages(this.currentDate, this.currentSession);
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      for (const m of messages) {
+        if (m.roundId && !seen.has(m.roundId)) {
+          seen.add(m.roundId);
+          ids.push(m.roundId);
+        }
+      }
+      return ids;
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * 获取当前会话的元数据
+   */
+  private getCurrentSessionMeta(): SessionMeta | undefined {
+    if (!this.sessionStore) return undefined;
+    const getMetaFn = this.sessionStore.getSessionMeta;
+    if (!getMetaFn) return undefined;
+    return getMetaFn.call(this.sessionStore, this.currentSessionName);
+  }
+
+  /**
+   * 从指定 Round 位置分叉会话（唯一分叉方式，round-based）
+   *
+   * 核心操作：复制 Round ID 列表（指针复制，不复制数据）
+   * 新会话是完全平等的普通会话，无特殊标记。
+   *
+   * @param roundId - 分叉点的 Round ID（必须存在于当前会话）
+   * @param targetSession - 可选，自定义新会话名；不传则自动生成
+   * @returns 分叉结果（含新会话 ID 和 roundIds）
+   * @throws 会话不存在 / Round 不存在 / 对话繁忙时抛错
+   */
+  forkSession(roundId?: string, targetSession?: string): ForkResult {
     if (!this.sessionStore) {
       throw configError('无法分叉会话', 'ISessionStore 未注入', ['在创建 Agent 时注入 sessionStore 参数']);
     }
-    if (!this.sessionStore.copySession) {
-      throw configError('无法分叉会话', 'ISessionStore.copySession 未实现', ['升级宿主项目的 ISessionStore 实现，添加 copySession() 方法']);
+
+    // 1. 获取当前会话元数据
+    const currentSession = this.getCurrentSessionMeta();
+    if (!currentSession) {
+      throw configError('无法分叉会话', '当前会话不存在', ['确认当前会话是否已正确创建']);
     }
-    const sourceDate = this.currentDate;
-    const sourceSession = this.currentSession;
-    const messages = this.sessionStore.loadMessages(sourceDate, sourceSession);
-    if (messages.length === 0) {
-      throw configError('无法分叉会话', '当前会话无消息', ['先进行一些对话后再尝试分叉']);
+
+    // 2. 获取 Round ID 列表
+    const currentRoundIds = this.getCurrentRoundIds();
+    if (!currentRoundIds.length) {
+      throw configError('无法分叉会话', '当前会话无问答闭环', ['先进行一些对话后再尝试分叉']);
     }
+
+    // 3. 定位分叉点（不传 roundId 则默认使用最后一个）
+    const effectiveRoundId = roundId ?? currentRoundIds[currentRoundIds.length - 1]!;
+    const forkIdx = currentRoundIds.indexOf(effectiveRoundId);
+    if (forkIdx === -1) {
+      throw configError('无法分叉会话', `Round 不存在于当前会话: ${effectiveRoundId}`, ['确认分叉点是当前会话中的问答闭环']);
+    }
+
+    // 4. 截取到分叉点的 ID 列表（包含分叉点）
+    const newRoundIds = currentRoundIds.slice(0, forkIdx + 1);
+
+    // 5. 生成新会话名（平等普通会话，无分叉标记）
     let newSession: string;
     if (targetSession) {
       // 检查目标会话当天是否已存在
@@ -182,13 +239,38 @@ export class MessageHistory {
       }
       newSession = targetSession;
     } else {
-      newSession = this.autoBranchName(sourceSession);
+      newSession = this.generateSessionName();
     }
-    const targetDate = todayDate();
-    this.sessionStore.copySession(sourceDate, sourceSession, targetDate, newSession);
+
+    // 6. 创建新会话（Round ID 列表 + 引用计数增加）
+    const newSessionId = `${todayDate()}-${newSession}`;
+
+    // 6a. 设置 Round ID 列表（setRoundIds 会同步更新 meta）
+    const setRoundIdsFn = this.sessionStore.setRoundIds;
+    if (setRoundIdsFn) {
+      setRoundIdsFn.call(this.sessionStore, newSessionId, newRoundIds);
+    }
+
+    // 6b. 保存会话元数据
+    const updateMetaFn = this.sessionStore.updateSessionMeta;
+    if (updateMetaFn) {
+      updateMetaFn.call(this.sessionStore, newSessionId, {
+        storageMode: 'round-based',
+        createdAt: new Date().toISOString(),
+      });
+    }
+
+    // 7. 增加引用计数（新会话引用这些 Round）
+    for (const id of newRoundIds) {
+      this.roundStore?.incrementRef(id);
+    }
+
+    // 8. 切换到新会话
     this.switchSession(newSession);
-    logger.info({ from: sourceSession, to: newSession, messageCount: messages.length }, '会话分叉完成');
-    return { newSession, date: targetDate, messages };
+
+    logger.info({ from: currentSession.sessionId, to: newSession, roundCount: newRoundIds.length }, '会话分叉完成');
+
+    return { newSession, date: todayDate(), roundIds: newRoundIds };
   }
 
   /**
@@ -342,6 +424,45 @@ export class MessageHistory {
     }
     const messages = this.sessionStore.loadMessages(date, session);
     logger.info({ date, session, count: messages.length }, 'loadSessionMessages');
+    return messages;
+  }
+
+  /**
+   * 从 Round ID 列表加载会话消息（round-based 模式）
+   *
+   * 将 Round ID 列表展开为扁平的 SessionMessage[]，
+   * 供 AgentLoop 加载上下文使用。
+   *
+   * @param roundIds - Round ID 列表
+   * @returns 展开后的消息列表（user + assistant 成对）
+   */
+  loadRoundBasedMessages(roundIds: string[]): SessionMessage[] {
+    if (!this.roundStore || !roundIds.length) return [];
+
+    const messages: SessionMessage[] = [];
+    for (const roundId of roundIds) {
+      const round = this.roundStore.getById(roundId);
+      if (!round) {
+        logger.warn({ roundId }, 'loadRoundBasedMessages: Round 不存在，跳过');
+        continue;
+      }
+      // User message
+      messages.push({
+        role: round.userMessage.role,
+        content: round.userMessage.content,
+        roundId: round.id,
+        timestamp: round.userMessage.timestamp,
+      });
+      // Assistant message（如果存在）
+      if (round.assistantMessage) {
+        messages.push({
+          role: round.assistantMessage.role,
+          content: round.assistantMessage.content,
+          roundId: round.id,
+          timestamp: round.assistantMessage.timestamp,
+        });
+      }
+    }
     return messages;
   }
 

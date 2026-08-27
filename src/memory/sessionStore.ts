@@ -240,23 +240,3 @@ export function calculateMessageCount(
   return roundIds.length * 2;
 }
 
-/**
- * 生成分叉会话的 ID
- *
- * @param sourceSessionId - 源会话 ID
- * @returns 分叉会话 ID（格式：${source}-fork-${timestamp}-${random}）
- */
-export function generateForkSessionId(sourceSessionId: string): string {
-  const now = new Date();
-  const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
-  const timestamp = now.getTime().toString(36);
-  // 加入随机后缀确保唯一性
-  const randomSuffix = Math.random().toString(36).slice(2, 6);
-
-  // 提取源会话名（去掉日期前缀）
-  const namePart = sourceSessionId.includes('-')
-    ? sourceSessionId.slice(sourceSessionId.indexOf('-') + 1)
-    : sourceSessionId;
-
-  return `${dateStr}-${namePart}-fork-${timestamp}-${randomSuffix}`;
-}

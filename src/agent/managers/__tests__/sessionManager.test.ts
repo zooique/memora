@@ -33,11 +33,13 @@ function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHist
     forkSession: vi.fn().mockReturnValue({
       newSession: 'main-b1',
       date: '2026-06-27',
-      messages: [
-        { role: 'user', content: 'hello', timestamp: '2026-06-27T10:00:00Z' },
-        { role: 'assistant', content: 'hi', timestamp: '2026-06-27T10:00:01Z' },
-      ],
+      roundIds: ['round-1', 'round-2'],
     }),
+    // round-based：根据 roundIds 加载消息列表
+    loadRoundBasedMessages: vi.fn().mockReturnValue([
+      { role: 'user', content: 'hello', timestamp: '2026-06-27T10:00:00Z' },
+      { role: 'assistant', content: 'hi', timestamp: '2026-06-27T10:00:01Z' },
+    ]),
     loadSessionMessages: vi.fn().mockResolvedValue([]),
     currentSessionName: '2026-06-27-main',
     ...overrides,
@@ -176,7 +178,7 @@ describe('SessionManager', () => {
 
     it('非繁忙时应委托 history.forkSession', () => {
       manager.forkSession();
-      expect(history.forkSession).toHaveBeenCalledWith(undefined);
+      expect(history.forkSession).toHaveBeenCalledWith(undefined, undefined);
     });
 
     it('应将分叉消息恢复到 AgentLoop 工作记忆', () => {
@@ -189,26 +191,24 @@ describe('SessionManager', () => {
       expect(restored[1]).toEqual({ role: 'assistant', content: 'hi' });
     });
 
-    it('应发射 sessionForked 事件，包含 from/to/messageCount', () => {
+    it('应发射 sessionForked 事件，包含 from/to/roundCount', () => {
       manager.forkSession();
       expect(emitEvent).toHaveBeenCalledWith('sessionForked', {
         from: '2026-06-27-main',
         to: '2026-06-27-main-b1',
-        messageCount: 2,
+        roundCount: 2,
       });
     });
 
-    it('应返回 { newSession, messageCount } 简化封装', () => {
+    it('应返回 { newSession, roundCount } 简化封装', () => {
       const result: AgentForkResult = manager.forkSession();
-      expect(result).toEqual({
-        newSession: 'main-b1',
-        messageCount: 2,
-      });
+      expect(result.newSession).toBe('main-b1');
+      expect(result.roundCount).toBe(2);
     });
 
     it('自定义 targetSession 应透传给 history.forkSession', () => {
       manager.forkSession('custom-branch');
-      expect(history.forkSession).toHaveBeenCalledWith('custom-branch');
+      expect(history.forkSession).toHaveBeenCalledWith('custom-branch', undefined);
     });
 
     it('K2 分叉后应清空检查点（防新分支状态写回源会话）', () => {

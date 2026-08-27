@@ -290,6 +290,10 @@ export class WorkspaceSessionStore implements ISessionStore {
     return [...all.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
+  /**
+   * @deprecated legacy 路径，已弃用。分叉功能改为 round-based 模式，通过复制 Round ID 列表实现。
+   * 此方法仅为向后兼容保留，将在未来版本移除。
+   */
   copySession?(
     sourceDate: string,
     sourceSession: string,
