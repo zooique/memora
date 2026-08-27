@@ -18,15 +18,15 @@ export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 // 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
-  RolePack, RolePackMeta, RolePackAssembly, RolePackManifest,
-  RolePackCapability, RolePackManifestSkill, RolePackManifestFile,
+  RolePack, RolePackMeta, RolePackAssembly,
+  RolePackCapability, RolePackManifestSkill,
   BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
   UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
   ToolApproval, ToolReadonly, StreamingMode,
   ProviderRouting, MultiStepReasoning, InputInterrupt,
   LoopContinue,
   UserFollowup,
-  ErrorHandling, SafetyRuleMode,
+  ErrorHandling,
 } from '@/role-pack/types.js';
 export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/strategyResolver.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';

@@ -24,6 +24,7 @@ import {
   MAX_STEP_BUDGET,
   MAX_TASK_LOOP_LIMIT,
   MAX_SUMMARY_FOCUS_LENGTH,
+  MAX_COST_BUDGET,
   type KeyRule,
 } from '../strategyKeys.js';
 
@@ -176,6 +177,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'autoSwitch',
       'recallConfidence',
       'summaryRecall',
+      'understandingConfirm',
     ],
     act: [
       'toolMode',
@@ -195,7 +197,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'loopContinue',
       'userFollowup',
     ],
-    global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget', 'taskLoopLimit'],
+    global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget', 'taskLoopLimit', 'costBudget'],
   };
 
   it('四个阶段都存在', () => {
@@ -280,6 +282,11 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       const rule = STRATEGY_KEY_RULES.global!.errorHandling!;
       expect(rule).toEqual({ kind: 'enum', values: ['retry', 'degrade', 'stop'] });
     });
+
+    it('prepare.understandingConfirm 枚举值正确', () => {
+      const rule = STRATEGY_KEY_RULES.prepare!.understandingConfirm!;
+      expect(rule).toEqual({ kind: 'enum', values: ['off', 'echo', 'confirm'] });
+    });
   });
 
   // ── 具体校验函数验证 ──
@@ -335,6 +342,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       { key: 'global.tokenBudget', rule: STRATEGY_KEY_RULES.global!.tokenBudget!, min: 0, max: MAX_TOKEN_BUDGET, probe: MAX_TOKEN_BUDGET + 1 },
       { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: 0, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
       { key: 'global.taskLoopLimit', rule: STRATEGY_KEY_RULES.global!.taskLoopLimit!, min: 0, max: MAX_TASK_LOOP_LIMIT, probe: MAX_TASK_LOOP_LIMIT + 1 },
+      { key: 'global.costBudget', rule: STRATEGY_KEY_RULES.global!.costBudget!, min: 0, max: MAX_COST_BUDGET, probe: MAX_COST_BUDGET + 1 },
     ];
 
     it('所有数值键都带 range 元数据（上下限齐全）', () => {

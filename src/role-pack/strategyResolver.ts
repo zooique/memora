@@ -14,6 +14,7 @@ import {
   MAX_TASK_LOOP_LIMIT,
   MAX_TOKEN_BUDGET,
   MAX_TOOL_STEP_LIMIT,
+  MAX_COST_BUDGET,
 } from './strategyKeys.js';
 import type {
   BehaviorStrategy,
@@ -29,6 +30,7 @@ import type {
   ToolApproval,
   ToolReadonly,
   ToolMode,
+  UnderstandingConfirm,
   RolePack,
   RolePackAssembly,
   RolePackCapability,
@@ -87,7 +89,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     minFallback: DEFAULT_MIN_FALLBACK,
     summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
     recallConfidence: 0.6,
-    taskClassification: 'keyword',
     autoSwitch: 'on',
   },
   act: {
@@ -113,7 +114,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     stepBudget: DEFAULT_STEP_BUDGET,
     costBudget: 0,
     errorHandling: 'retry',
-    safetyRule: 'inherit',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 3,
     taskLoopLimit: DEFAULT_TASK_LOOP_LIMIT,
@@ -345,6 +345,30 @@ export function resolveToolApproval(strategy: BehaviorStrategy | undefined): Too
   return normalizeEnum(strategy?.act?.toolApproval, ['auto', 'confirm'], 'auto');
 }
 
+/**
+ * 解析理解确认模式（内核已消费）：非法值归位 'off'
+ * —— off=直接生成 / echo=复述用户意图但不等待 / confirm=预检复述并等待确认。
+ * 消费点在 assembleRolePack，将模式转为 persona prompt 行为指令。
+ */
+export function resolveUnderstandingConfirm(strategy: BehaviorStrategy | undefined): UnderstandingConfirm {
+  return normalizeEnum(strategy?.prepare?.understandingConfirm, ['off', 'echo', 'confirm'], 'off');
+}
+
+/**
+ * 解析单任务总成本上限（内核已接入，money 执行由宿主侧负责）：整数且 ∈ [0, MAX_COST_BUDGET] 才采用，
+ * 非法/越界回退 0（0=不限制）。内核无定价能力，仅做声明校验与解析；真实成本拦截由宿主侧按定价表执行
+ * （遵循 kernel/host 边界：内核只承载确定性逻辑，模型/价格不确定性归宿主）。
+ */
+export function resolveCostBudget(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.costBudget;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 0 &&
+    candidate <= MAX_COST_BUDGET;
+  return valid ? candidate : 0;
+}
+
 // ════════════════════════════════════════════════════════════
 // L2 运行时策略（loop 运行态）装配
 // ════════════════════════════════════════════════════════════
@@ -484,6 +508,16 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
         `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每轮最多提问 ${askLimit} 次`,
       );
     }
+  }
+
+  // 理解确认指令注入：understandingConfirm 非 off 时，将确认模式转为 LLM 行为指令
+  const understandingConfirm = resolveUnderstandingConfirm(strategy);
+  if (understandingConfirm !== 'off') {
+    const confirmInstruction =
+      understandingConfirm === 'echo'
+        ? '回答前，先用一句话复述你对用户意图的理解（仅复述、不等待用户确认），再正式作答。'
+        : '回答前，先用一句话复述你对用户意图的理解并向用户确认；待用户确认后再正式作答。';
+    promptParts.push(`## 理解确认\n${confirmInstruction}`);
   }
 
   const personaPrompt = promptParts.join('\n\n');

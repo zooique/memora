@@ -21,9 +21,6 @@ export type MemoryRecallMode = 'full' | 'limited' | 'none';
 /** 摘要召回开关 */
 export type SummaryRecall = 'on' | 'off';
 
-/** 任务分类方式：keyword=关键词匹配 / semantic=语义分析 / llm=LLM 判断 */
-export type TaskClassification = 'keyword' | 'semantic' | 'llm';
-
 /** 角色自动匹配开关 */
 export type AutoSwitch = 'on' | 'off';
 
@@ -69,9 +66,6 @@ export type UserFollowup = 'ask' | 'silent';
 /** 错误处理策略：retry=重试 / degrade=降级 / stop=终止 */
 export type ErrorHandling = 'retry' | 'degrade' | 'stop';
 
-/** 安全规则覆盖策略：inherit=不可被角色覆盖 / override=允许覆盖 */
-export type SafetyRuleMode = 'inherit' | 'override';
-
 /** 主动提问触发场景：ambiguity=模糊 / decision=需决策 / missing_info=缺信息 / confirm=确认 */
 export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm';
 
@@ -82,7 +76,7 @@ export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm'
  * 所有字段可选，未配置的维度使用全局默认值；角色只"选择"不"定义"。
  */
 export interface PrepareStrategy {
-  /** 理解确认模式（默认 off；预留键，内核不消费） */
+  /** 理解确认模式（默认 off；内核已消费：assembleRolePack 注入 persona prompt 行为指令） */
   readonly understandingConfirm?: UnderstandingConfirm;
   /** 上下文装配策略（默认 hybrid） */
   readonly contextAssembly?: ContextAssembly;
@@ -100,8 +94,6 @@ export interface PrepareStrategy {
   readonly minFallback?: number;
   /** 召回结果相似度阈值 0.0~1.0（默认 0.6；内核已消费） */
   readonly recallConfidence?: number;
-  /** 任务分类方式（默认 keyword；预留键，内核不消费） */
-  readonly taskClassification?: TaskClassification;
   /** 角色包提炼视角（默认 undefined=通用浓缩；供 round-summary 生成判断「值得记什么」，内核已消费） */
   readonly summaryFocus?: string;
   /** 自动匹配开关（默认 on；内核已消费） */
@@ -150,12 +142,10 @@ export interface GlobalStrategy {
   readonly tokenBudget?: number;
   /** 每轮工具步数上限（默认 50；内核已消费） */
   readonly stepBudget?: number;
-  /** 单任务总成本上限，0=不限制（默认 0；预留键，内核不消费） */
+  /** 单任务总成本上限，0=不限制（默认 0；内核已接入：validator 校验 + resolveCostBudget 解析，money 执行由宿主侧负责，内核无定价能力） */
   readonly costBudget?: number;
   /** 异常时的处理策略（默认 retry） */
   readonly errorHandling?: ErrorHandling;
-  /** 是否允许角色覆盖全局安全规则（默认 inherit=不可覆盖；预留键，内核不消费） */
-  readonly safetyRule?: SafetyRuleMode;
   /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
   /** 每轮主动提问次数上限（默认 3） */
@@ -168,10 +158,10 @@ export interface GlobalStrategy {
  * L2 行为策略全集
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
- * prepare 的 memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
+ * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
- * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
- * 预留键（prepare.understandingConfirm/taskClassification、global.costBudget/safetyRule）内核不消费，声明不生效。
+ * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/costBudget。
+ * 边界纪律：understandingConfirm 内核已消费；costBudget 内核已接入（validator 校验 + resolveCostBudget 解析）但 money 执行由宿主侧负责（内核无定价能力，遵循 kernel/host 边界）；二者均已闭环，非预留死键。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */
@@ -238,11 +228,6 @@ export interface RolePackMeta {
   readonly version?: string;
   /** 触发关键词（用于自动匹配） */
   readonly keywords?: readonly string[];
-  /**
-   * 触发词（字符串数组，精确/包含匹配，非正则）。与 keywords 互补：解析时合并进匹配词，
-   * 消费方统一读 keywords（单一真理源）。正则匹配仅在 Skill 系统存在；角色包切换需关键词匹配已足够。
-   */
-  readonly trigger?: readonly string[];
   /** 可选：作者/来源 */
   readonly author?: string;
   /** 格式版本（缺省按 1.0.0 处理） */
@@ -317,15 +302,6 @@ export interface RolePackAssembly {
   readonly strategy: BehaviorStrategy;
 }
 
-/** 角色包清单（装配层抽象）：装配层只认"清单"不认"来源"，由 RolePackManager + SkillManager 聚合实现 */
-export interface RolePackManifest {
-  /** 当前激活的角色包 */
-  readonly active: RolePackAssembly | null;
-  /** 所有可用角色包列表 */
-  readonly available: readonly RolePackAssembly[];
-  /** 当前装载的卡槽数量（多卡槽预留） */
-  readonly slotCount: number;
-}
 
 // manifest.json 内容注册（文件夹形态核心控制文件）
 
@@ -350,15 +326,3 @@ export interface RolePackManifestSkill {
   readonly content?: string | null;
 }
 
-/**
- * manifest.json 解析结果——文件夹形态角色包的唯一权威：承载元数据 + L2 策略。
- * 内容文件约定俗成（persona.md / rules.md），manifest 不注册内容路径；persona 允许缺省（仅靠策略驱动行为）。
- */
-export interface RolePackManifestFile {
-  /** 元数据（名称 / 版本 / 关键词 / 合规字段等） */
-  readonly meta: RolePackMeta;
-  /** 行为策略声明（L2，未配置维度由 mergeStrategy 补默认值） */
-  readonly strategy?: BehaviorStrategy;
-  /** 内嵌技能注册（对象数组，支持多个添加） */
-  readonly skills: readonly RolePackManifestSkill[];
-}

@@ -464,6 +464,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       formatVersion: str(manifest['formatVersion']) ?? DEFAULT_FORMAT_VERSION,
       interactionType: manifest['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
       aiIdentityDisclosure: manifest['aiIdentityDisclosure'] === false ? false : true,
+      // 未成年人保护为强制项（非可配置）：恒为 'required'，与 validator「仅支持 required」一致；
+      // 若 manifest 声明其他值，validator 会拒绝装载，故此处无需读取声明值。
       minorProtection: 'required',
       exclusiveWith: parseExclusiveWith(manifest['exclusiveWith']),
       // 接手衔接提示词（自洽声明，宿主 prefill；空白视为未声明）
@@ -474,15 +476,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const strategy = parseStrategyNode(manifest['strategy']);
 
     // 内容文件约定俗成固定文件名（消除 manifest 路径声明，避免路径写错静默丢内容）
-    const personaPath = DEFAULT_PERSONA_FILENAME;
-    const rulesPath = DEFAULT_RULES_FILENAME;
-
     // persona 需解析 frontmatter 提取 traits，正文仅取 body 部分
-    const rawPersonaContent = personaPath ? await readContentSafe(join(packDir, personaPath)) : '';
+    const rawPersonaContent = await readContentSafe(join(packDir, DEFAULT_PERSONA_FILENAME));
     const { body: personaBody } = parseFrontmatter(rawPersonaContent);
     const personaContent = personaBody;
     const traits = parseTraits(rawPersonaContent);
-    const rulesContent = rulesPath ? await readContentSafe(join(packDir, rulesPath)) : '';
+    const rulesContent = await readContentSafe(join(packDir, DEFAULT_RULES_FILENAME));
     const rules = parseRules(rulesContent);
 
     // 内嵌技能：目录动态扫描 + frontmatter（manifest.skills 可选过滤；新增技能只写文件）

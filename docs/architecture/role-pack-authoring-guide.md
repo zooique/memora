@@ -79,6 +79,7 @@
 | 键 | 类型 / 枚举 | 合法区间 | 默认 | 含义 | 示例 |
 |----|------------|---------|------|------|------|
 | `memoryRecall` | `full` / `limited` / `none` | — | `full` | 记忆召回模式 | `"limited"` |
+| `understandingConfirm` | `off` / `echo` / `confirm` | — | `off` | 理解确认模式：off=直接生成 / echo=复述不等待 / confirm=预检停顿后确认 | `"confirm"` |
 | `memoryRecallPercent` | number | `0.0 ~ 1.0` | `0.4` | 记忆摘要层占剩余预算上限百分比（cap 非 quota） | `0.3` |
 | `minFallback` | 整数 | `0 ~ 100`（0=关闭） | `2` | 语义召回不足时补足最近记忆的条数 | `5` |
 | `summaryFocus` | string | `1 ~ 500` 字符 | 无 | 提炼视角：决定 round-summary「值得记什么」 | `"聚焦架构决策与接口契约"` |
@@ -121,6 +122,7 @@
 | `tokenBudget` | 整数 | `0 ~ 200000`（0=不限制） | `8000` | 每轮总 token 上限 | `12000` |
 | `stepBudget` | 整数 | `0 ~ 500`（0=不限制） | `50` | 每轮工具步数上限（软上限） | `60` |
 | `taskLoopLimit` | 整数 | `0 ~ 100`（0=关闭） | `10` | 外部任务驱动循环步数上限 | `20` |
+| `costBudget` | 整数 | `0 ~ 1000`（0=不限制） | `0` | 单任务总成本上限（money 执行由宿主侧负责，内核仅识别/校验/解析） | `100` |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。
@@ -146,6 +148,7 @@
 | `tokenBudget` | 0 | 200000 | error | 回退默认 `8000` |
 | `stepBudget` | 0 | 500 | error | 回退默认 `50` |
 | `taskLoopLimit` | 0 | 100 | error | 回退默认 `10` |
+| `costBudget` | 0 | 1000 | error | 回退 `0`（不限制） |
 
 ---
 
@@ -172,10 +175,9 @@
 
 | 状态 | 含义 | 键 |
 |------|------|----|
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 28 键 |
-| **预留键（声明不生效）** | 设计空间预留，内核当前不消费；填写会被当作未知键 warning | `prepare.understandingConfirm`、`prepare.taskClassification`、`global.costBudget`、`global.safetyRule` |
+| **已消费（冻结）** | 内核真实读取并影响行为；`costBudget` 为内核识别+校验+解析、money 执行委托宿主侧（kernel/host 边界，内核无定价能力） | 上述 §三 全部 30 键 |
 
-> 预留键**不承诺当前生效**——请勿依赖它们改变行为；它们仅为未来扩展占位（诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释）。
+> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）；`costBudget` 由 validator 校验 + `resolveCostBudget` 解析，money 执行由宿主侧按定价负责。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 
 ---
 

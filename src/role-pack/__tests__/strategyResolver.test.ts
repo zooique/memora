@@ -31,6 +31,8 @@ import {
   resolveSummaryRecall,
   resolveToolReadonly,
   resolveToolApproval,
+  resolveUnderstandingConfirm,
+  resolveCostBudget,
   mergeStrategy,
   assembleRolePack,
   resolveL2Strategy,
@@ -46,6 +48,7 @@ import {
   MAX_STEP_BUDGET,
   MAX_TASK_LOOP_LIMIT,
   MAX_SUMMARY_FOCUS_LENGTH,
+  MAX_COST_BUDGET,
 } from '@/role-pack/strategyKeys.js';
 import type {
   BehaviorStrategy,
@@ -103,7 +106,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(p.summaryRecall).toBe('on');
     expect(p.minFallback).toBe(DEFAULT_MIN_FALLBACK);
     expect(p.recallConfidence).toBe(0.6);
-    expect(p.taskClassification).toBe('keyword');
     expect(p.autoSwitch).toBe('on');
   });
 
@@ -135,7 +137,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(g.stepBudget).toBe(50);
     expect(g.costBudget).toBe(0);
     expect(g.errorHandling).toBe('retry');
-    expect(g.safetyRule).toBe('inherit');
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
     expect(g.askLimit).toBe(3);
   });
@@ -313,6 +314,20 @@ describe('resolve* 函数 — 基础策略解析', () => {
     it('非法/缺失值回退默认 auto', () => {
       expect(resolveToolApproval({ act: { toolApproval: 'bad' as never } })).toBe('auto');
       expect(resolveToolApproval(undefined)).toBe('auto');
+    });
+  });
+
+  // ── resolveUnderstandingConfirm ──
+  describe('resolveUnderstandingConfirm', () => {
+    it('合法值透传', () => {
+      expect(resolveUnderstandingConfirm({ prepare: { understandingConfirm: 'echo' } })).toBe('echo');
+      expect(resolveUnderstandingConfirm({ prepare: { understandingConfirm: 'confirm' } })).toBe('confirm');
+    });
+
+    it('非法/缺失值回退默认 off', () => {
+      expect(resolveUnderstandingConfirm({ prepare: { understandingConfirm: 'bad' as never } })).toBe('off');
+      expect(resolveUnderstandingConfirm(undefined)).toBe('off');
+      expect(resolveUnderstandingConfirm({})).toBe('off');
     });
   });
 });
@@ -513,6 +528,30 @@ describe('resolve* 函数 — 数值解析', () => {
     });
   });
 
+  // ── resolveCostBudget（内核识别/校验/解析，money 执行由宿主负责）──
+  describe('resolveCostBudget', () => {
+    it('合法非负整数采用', () => {
+      expect(resolveCostBudget({ global: { costBudget: 5 } })).toBe(5);
+      expect(resolveCostBudget({ global: { costBudget: 0 } })).toBe(0);
+    });
+
+    it('负数回退默认 0（0=不限制）', () => {
+      expect(resolveCostBudget({ global: { costBudget: -1 } })).toBe(0);
+    });
+
+    it('小数回退默认 0', () => {
+      expect(resolveCostBudget({ global: { costBudget: 1.5 } })).toBe(0);
+    });
+
+    it('越上界回退默认 0（防无条件填写）', () => {
+      expect(resolveCostBudget({ global: { costBudget: MAX_COST_BUDGET + 1 } })).toBe(0);
+    });
+
+    it('缺失回退默认 0', () => {
+      expect(resolveCostBudget(undefined)).toBe(0);
+    });
+  });
+
   // ── resolveRecallConfidence ──
   describe('resolveRecallConfidence', () => {
     it('0.0~1.0 范围内采用', () => {
@@ -676,6 +715,37 @@ describe('assembleRolePack — 角色包装配', () => {
     const result = assembleRolePack(pack);
 
     expect(result.personaPrompt).not.toContain('主动提问规则');
+  });
+
+  it('understandingConfirm=off 时不注入理解确认指令', () => {
+    const pack = makeRolePackWithStrategy({ prepare: { understandingConfirm: 'off' } });
+    const result = assembleRolePack(pack);
+
+    expect(result.personaPrompt).not.toContain('## 理解确认');
+  });
+
+  it('understandingConfirm=echo 时注入"复述但不等待"指令', () => {
+    const pack = makeRolePackWithStrategy({ prepare: { understandingConfirm: 'echo' } });
+    const result = assembleRolePack(pack);
+
+    expect(result.personaPrompt).toContain('## 理解确认');
+    expect(result.personaPrompt).toContain('复述你对用户意图的理解');
+    expect(result.personaPrompt).toContain('不等待用户确认');
+  });
+
+  it('understandingConfirm=confirm 时注入"复述并等待确认"指令', () => {
+    const pack = makeRolePackWithStrategy({ prepare: { understandingConfirm: 'confirm' } });
+    const result = assembleRolePack(pack);
+
+    expect(result.personaPrompt).toContain('## 理解确认');
+    expect(result.personaPrompt).toContain('待用户确认后再正式作答');
+  });
+
+  it('默认（未声明）不注入理解确认指令', () => {
+    const pack = makeRolePack();
+    const result = assembleRolePack(pack);
+
+    expect(result.personaPrompt).not.toContain('## 理解确认');
   });
 
   it('装配后的 strategy 所有维度都有值', () => {

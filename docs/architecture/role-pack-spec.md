@@ -364,7 +364,7 @@ export interface IMcpTransport {
 
 **僵尸键与预留键原则**：
 - **僵尸键（实现内部技术债）**：参考实现内部的已定义但零消费字段（如 memora `types.ts` 中的 `toolWhitelist`/`toolBlacklist` 等）。**只标注不动，不剪枝、不进标准**；不得因"定义过"就主张其进入标准。
-- **预留键（设计空间预留）**：为未来行为分支预留的字段（如 `understandingConfirm`、`costBudget` 等）。这些字段在代码中会明确标记为「预留键，不承诺当前生效」。预留键**承载设计空间全景**，但在当前版本**内核不消费，声明不生效**，仅作为未来扩展的占位符。消费方应参照 `types.ts` `BehaviorStrategy` 接口的「诚实化声明」清单，区分实际生效键与预留键，避免误以为"声明即生效"。
+- **预留键（设计空间预留）**：为未来行为分支预留的字段。这些字段在代码中会明确标记为「预留键，不承诺当前生效」。预留键**承载设计空间全景**，但在当前版本**内核不消费，声明不生效**，仅作为未来扩展的占位符。消费方应参照 `types.ts` `BehaviorStrategy` 接口的「诚实化声明」清单，区分实际生效键与预留键，避免误以为"声明即生效"。（注：早期 `understandingConfirm`/`costBudget` 曾属此类，现已分别落地为「内核消费」与「内核识别+宿主执行」；`taskClassification`/`safetyRule` 经审查已清除。当前标准无纯预留键。）
 
 **命名归标准原则**：实现内部旧命名（如 memora 旧 `act.toolCalls` / `reflect.endingHandoff`）通过解析层**别名迁移**到标准键名（旧键 → 新键，warn 降级提示），消费方一律读标准键——实现向标准看齐，而非标准向实现看齐（§九）。
 
@@ -575,7 +575,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 | [mvp-scope.md §二](mvp-scope.md) | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集 |
 | 演进状态 | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（执行闭环 / 记忆系统）定型后——见本文档定位宣言 |
 
-> 标准优先于实现（P0 键集对齐）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部已定义但零消费的字段（如 `understandingConfirm`/`taskClassification` 等）为**僵尸键，只标注不动**，不进入标准（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
+> 标准优先于实现（P0 键集对齐）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部曾定义但零消费的字段（如历史上的 `understandingConfirm`/`taskClassification`）经审计已分别落地消费 / 清除，不再作为僵尸键保留（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 
 ### 9.1 来源边界声明
 
