@@ -250,7 +250,7 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'done' });
   });
 
-  it('metrics 渲染 token 用量与记忆衰减字段（alignment-iteration.md D）', () => {
+  it('metrics 渲染 token 用量与记忆治理字段（alignment-iteration.md D）', () => {
     mountChatView();
     const metrics = document.getElementById('activityMetrics') as HTMLElement;
     dispatch({

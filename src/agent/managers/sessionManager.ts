@@ -62,13 +62,13 @@ export class SessionManager {
   /** 目标一致性校验器（目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
-   * 连续暂停时间戳数组（时间衰减机制）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降级 P3。
-   * ⚠ 进程内状态，不入 SessionCheckpoint——重启归零是设计（反滥用卫生状态，非执行状态）；1h 窗口衰减为自愈防线，勿引入持久化。
+   * 连续暂停时间戳数组（防滥用窗口）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降级 P3。
+   * ⚠ 进程内状态，不入 SessionCheckpoint——重启归零是设计（反滥用卫生状态，非执行状态）；1h 窗口自愈防线，勿引入持久化。
    */
   private consecutivePauseTimestamps: number[] = [];
 
-  /** 连续暂停时间衰减窗口（毫秒），1 小时前的暂停不计入连续计数 */
-  private static readonly CONSECUTIVE_PAUSE_DECAY_MS = 3_600_000;
+  /** 连续暂停时间窗口（毫秒），1 小时前的暂停不计入连续计数 */
+  private static readonly CONSECUTIVE_PAUSE_WINDOW_MS = 3_600_000;
 
   /** 会话标识解析模式 `YYYY-MM-DD-<会话名>`：日期段定长，正则无歧义还原二元组，会话名含连字符也不误切 */
   private static readonly SESSION_ID_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
@@ -870,27 +870,27 @@ export class SessionManager {
 
   // ── 防滥用：连续暂停计数 ───────────────────────────────
 
-  /** 清理过期暂停时间戳（时间衰减）：移除超过窗口（1 小时）的旧时间戳，仅保留窗口内暂停；每次查询计数时自动调用 */
+  /** 清理过期暂停时间戳（窗口过滤）：移除超过窗口（1 小时）的旧时间戳，仅保留窗口内暂停；每次查询计数时自动调用 */
   private pruneStalePauseTimestamps(): void {
-    const cutoff = Date.now() - SessionManager.CONSECUTIVE_PAUSE_DECAY_MS;
+    const cutoff = Date.now() - SessionManager.CONSECUTIVE_PAUSE_WINDOW_MS;
     const before = this.consecutivePauseTimestamps.length;
     this.consecutivePauseTimestamps = this.consecutivePauseTimestamps.filter((ts) => ts > cutoff);
     const pruned = before - this.consecutivePauseTimestamps.length;
     if (pruned > 0) {
       logger.debug(
         { pruned, remaining: this.consecutivePauseTimestamps.length },
-        '过期暂停时间戳已衰减',
+        '过期暂停时间戳已清理',
       );
     }
   }
 
-  /** 检查连续暂停是否已达上限（防滥用）：先衰减过期时间戳，再查窗口内暂停≥2 次则强制降级 P3。低风险不计数 */
+  /** 检查连续暂停是否已达上限（防滥用）：先清理窗口外时间戳，再查窗口内暂停≥2 次则强制降级 P3。低风险不计数 */
   isPauseLimitReached(): boolean {
     this.pruneStalePauseTimestamps();
     return this.consecutivePauseTimestamps.length >= 2;
   }
 
-  /** 获取当前连续暂停计数：先衰减过期时间戳，返回窗口内有效暂停数 */
+  /** 获取当前连续暂停计数：先清理窗口外时间戳，返回窗口内有效暂停数 */
   getConsecutivePauseCount(): number {
     this.pruneStalePauseTimestamps();
     return this.consecutivePauseTimestamps.length;

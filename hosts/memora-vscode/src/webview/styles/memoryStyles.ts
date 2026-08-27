@@ -154,7 +154,7 @@ export const memoryStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  /* 统计卡：三列（活跃 / 回收站 / 衰减次数） */
+  /* 统计卡：三列（活跃 / 回收站 / 加权次数） */
   #memory-root .governance-stats {
     display: flex;
     gap: var(--sp-3, 8px);
@@ -173,7 +173,7 @@ export const memoryStyles = `
   }
   #memory-root .gov-num { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); }
   #memory-root .gov-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  /* 操作按钮：衰减（低扰次按钮）+ 清理（强调不可逆性） */
+  /* 操作按钮：取代/加权（低扰次按钮）+ 清理（强调不可逆性） */
   #memory-root .governance-actions { display: flex; gap: var(--sp-2, 6px); }
   /* 政区按钮撑满等宽（布局性差异不混入通用 .btn 基类，SSOT 收敛 2026-08-25） */
   #memory-root .governance-actions .btn { flex: 1; }

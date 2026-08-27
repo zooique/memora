@@ -431,7 +431,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   /**
    * 展示治理操作结果（governance_result）并刷新数据
    *
-   * 治理操作会改变记忆库（衰减改 score 顺序 / 清理删条目）→ 重新拉取治理数据 + 列表，
+   * 治理操作会改变记忆库（取代/加权改 score 排序 / 清理删条目）→ 重新拉取治理数据 + 列表，
    * 保证治理区统计与列表实时一致。
    */
   function showGovernanceResult(msg: { ok: boolean; message?: string; action: 'cleanup' }): void {

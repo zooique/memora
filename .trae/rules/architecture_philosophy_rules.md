@@ -166,17 +166,16 @@ domain），其余在 Agent Loop 中按需检索。
 
 ## 8. 自然遗忘优于完美记忆
 
-**原则**：接受"部分遗忘"是工程现实。剪枝、归档、权重衰减是核心机制，不是补丁。
+**原则**：接受"部分遗忘"是工程现实。剪枝、归档、自然沉底是核心机制，不是补丁。
 
 **在代码中的体现**：
 
-- `decayScores()` 按 `GOVERNANCE_SOURCES` 衰减记忆 score（治理源由 [governance.ts](../../src/memory/governance.ts) 统一维护；由内核 Agent 定时调度，宿主经 `decayCompleted` 事件确认）。当前治理源为空——profile 已随角色包边界收敛移除、work-projection 已随移出记忆库（2026-08-20），衰减循环空转但机制保留，未来新增治理源从 `GOVERNANCE_SOURCES` 声明即可
-- **round-summary 不参与 score 衰减**（2026-08-17 对齐实现）：其"遗忘"由两条机制承担——① 写路径取代检测（`superseded` 标记，ADR-021 + 加权 Jaccard 算法）压制被覆盖的旧摘要；② score 衰减自然沉底（长期未访问的记忆分数衰减，相关性排序自然排不到前面）。**类型时间窗口已废弃**（2026-08-17 定论）：type 不设时效，记忆是否有效由 superseded + score 衰减判定，不由时间流逝判定。score 衰减只作用于治理源声明的长期沉淀记忆，避免对轮次级记忆重复施加衰减机制
-- 减法式衰减 + 下限保留：score 降至下限后不再继续衰减，保留最低权重（公式细节详见 `MemoryDecayScheduler` 实现与 [ADR-015](../decisions/ADR-015-archive-mode.md)）
-- `init()` 时首次衰减 + 定时衰减（由内核 `MemoryDecayScheduler` 调度）
+- **主动衰减机制已移除**（2026-08-27 收敛）：内核不再主动调度 score 衰减，`MemoryDecayScheduler` 已移除；治理简化为**supersede（写时取代）+ boost（召回加权）**。记忆的"自然沉底"由 `MemoryInspector.listFading` 提供健康观测（只读），不修改记忆本身
+- **round-summary 不参与 score 衰减**：其"遗忘"由两条机制承担——① 写路径取代检测（`superseded` 标记，ADR-021 + 加权 Jaccard 算法）压制被覆盖的旧摘要；② 召回 boost 加权让活跃记忆分数提升，长期未访问记忆自然排到后面。**类型时间窗口已废弃**（2026-08-17 定论）：type 不设时效，记忆是否有效由 superseded + 召回相关性判定，不由时间流逝判定
 - 物理清理：`purgeExpiredMemories(before)` 清理过期软删除记忆；回收站定时器默认保留 30 天
+- `listFading` 健康观测：`MemoryInspector.listFading()` 返回超过 `INACTIVITY_SINK_DAYS`（60 天）未访问的记忆，供宿主做可视化告警或归档决策；内核不做主动清理
 
-**设计取舍**：减法式衰减 + 下限保留保证记忆不会完全消失（可被召回但权重极低），与"永不删除"不同——物理清理由回收站机制负责，权重衰减仅影响召回优先级。
+**设计取舍**：移除主动衰减（score 减法），保留被动治理（supersede + boost + 自然沉底观测）。记忆不会被"定时减分"，而是被"新摘要取代"或"长期未访问自然沉底"——与"永不删除"不同，物理清理由回收站机制负责，治理仅影响召回优先级。
 
 **禁止**：
 

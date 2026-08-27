@@ -1056,7 +1056,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </details>
     <p id="memHint" class="mem-hint" hidden></p>
 
-    <!-- 记忆治理区（G4，2026-08-23：统计卡 + 衰减/清理操作） -->
+    <!-- 记忆治理区（G4，2026-08-23：统计卡 + 加权/清理操作） -->
     <div id="governance" class="governance" role="region" aria-label="记忆治理">
       <div class="governance-stats">
         <div class="governance-stat">
