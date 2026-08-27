@@ -58,9 +58,11 @@ export const tokens = `
     --accent: var(--vscode-button-background, #0e639c);
     --accent-foreground: var(--vscode-button-foreground, #ffffff);
 
-    /* === L2 语义令牌：品牌主色（角色标签/强调标识） === */
+    /* === L2 语义令牌：品牌主色（角色标签/强调标识） ===
+   * --brand 保留自定义（产品品牌设定，不跟随主题）；
+   * --brand-subtle 改用 VSCode 变量（交互淡背景，跟随主题）。 */
     --brand: #4a9eff;
-    --brand-subtle: rgba(74, 158, 255, 0.08);
+    --brand-subtle: var(--vscode-list-hoverBackground, rgba(74, 158, 255, 0.08));
 
     /* === L2 语义令牌：反馈状态色（校验/信息/错误/警告） ===
      * 供提示条 / 记忆条 / 主动提问条 / 测试结果 / 错误消息使用。
@@ -118,16 +120,22 @@ export const tokens = `
      * --accent-subtle 此前被 skillsStyles 引用但未定义（回退裸值），此处补定义收口。 */
     --skill-agent-accent: var(--accent, #0e639c);
     --skill-user-accent: var(--status-pass, #4ec9b0);
-    /* 角色包技能来源（2026-08-25 三分类新增）：紫色语义区分内置(蓝)/用户(绿) */
-    --skill-rolepack-accent: #a78bfa;
-    /* 技能健康色（G22 写→验→用，2026-08-25）：error 未生效 / warn 可优化 */
+    /* 角色包技能来源（2026-08-25 三分类新增）：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)
+     * 改用 VSCode charts.purple，跟随主题 */
+    --skill-rolepack-accent: var(--vscode-charts-purple, #a78bfa);
+    /* 技能健康色（G22 写→验→用，2026-08-25）：error 未生效 / warn 可优化
+     * 改用 VSCode charts.yellow，跟随主题 */
     --skill-health-error: var(--text-error, #f14c4c);
-    --skill-health-warn: #d9a22b;
-    /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用） */
-    --accent-bg-hover: rgba(14, 99, 156, 0.06);   /* 轻交互悬停 */
-    --accent-bg-subtle: rgba(14, 99, 156, 0.08);  /* 徽章/次级背景 */
-    --accent-bg-active: rgba(14, 99, 156, 0.1);   /* 选中/激活态 */
-    --accent-subtle: rgba(14, 99, 156, 0.15);
+    --skill-health-warn: var(--vscode-charts-yellow, #d9a22b);
+    /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用）
+     * 改用 VSCode 语义变量，跟随主题自动适配亮/暗模式：
+     *   hover = listHoverBackground（列表悬停态）
+     *   subtle = inactiveSelectionBackground（非活跃选区背景）
+     *   active = button-secondaryHoverBackground（按钮激活态） */
+    --accent-bg-hover: var(--vscode-list-hoverBackground, rgba(14, 99, 156, 0.06));
+    --accent-bg-subtle: var(--vscode-editor-inactiveSelectionBackground, rgba(14, 99, 156, 0.08));
+    --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(14, 99, 156, 0.1));
+    --accent-subtle: var(--vscode-inputValidation-infoBackground, rgba(14, 99, 156, 0.15));
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚
