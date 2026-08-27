@@ -83,8 +83,8 @@ export const settingsStyles = `
     outline-offset: 2px;
   }
   #roles-root .btn-ghost, #config-root .btn-ghost, #memory-root .btn-ghost, #skills-root .btn-ghost, #security-root .btn-ghost {
-    background: transparent;
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    background: rgba(128, 128, 128, 0.08);
+    border: 1px solid rgba(128, 128, 128, 0.6);
     color: var(--text-secondary, #9aa0a6);
     padding: var(--sp-1, 4px) var(--sp-3, 8px);
     font-size: var(--font-sm, 11px);

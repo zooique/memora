@@ -78,7 +78,7 @@ export const tokens = `
     --status-fail: var(--vscode-errorForeground, #b3261e);
 
     /* === L2 语义令牌：控件（次级按钮/危险按钮/Toast/代码块底） === */
-    --btn-secondary-bg: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.3));
+    --btn-secondary-bg: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.5));
     --btn-secondary-fg: var(--vscode-button-secondaryForeground, #cccccc);
     --btn-danger-bg: var(--vscode-statusBarItem-errorBackground, #b3261e);
     --toast-ok-bg: var(--vscode-statusBarItem-prominentBackground, #2e7d32);
