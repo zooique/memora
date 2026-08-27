@@ -31,6 +31,7 @@ const HTML = `
       <div class="governance-stats">
         <div class="governance-stat"><span id="govActive" class="gov-num">0</span><span class="gov-label">活跃</span></div>
         <div class="governance-stat"><span id="govDeleted" class="gov-num">0</span><span class="gov-label">回收站</span></div>
+        <div class="governance-stat"><span id="govSuperseded" class="gov-num">0</span><span class="gov-label">已被取代</span></div>
       </div>
       <div class="governance-actions">
         <button id="btnCleanup" class="btn btn-danger">清理过期</button>
@@ -229,14 +230,16 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       active: 5,
       deleted: 2,
       bySource: { 'round-summary': 5 },
+      superseded: 1,
     });
     expect(document.getElementById('govActive')?.textContent).toBe('5');
     expect(document.getElementById('govDeleted')?.textContent).toBe('2');
+    expect(document.getElementById('govSuperseded')?.textContent).toBe('1');
   });
 
   it('governance_loaded 空统计 → 治理区全零且详情隐藏', () => {
     mountMemoryView();
-    dispatchGovernanceLoaded({ active: 0, deleted: 0, bySource: {} });
+    dispatchGovernanceLoaded({ active: 0, deleted: 0, bySource: {}, superseded: 0 });
     expect(document.getElementById('govActive')?.textContent).toBe('0');
     expect(document.getElementById('govDeleted')?.textContent).toBe('0');
     expect(document.getElementById('govDetail')?.hidden).toBe(true);
@@ -477,6 +480,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       active: 5,
       deleted: 3,
       bySource: { 'round-summary': 5 },
+      superseded: 2,
     });
     const summary = document.querySelector('#recycle > summary') as HTMLElement;
     expect(summary.textContent).toBe('回收站（3）');
@@ -485,6 +489,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       active: 5,
       deleted: 0,
       bySource: { 'round-summary': 5 },
+      superseded: 0,
     });
     expect(summary.textContent).toBe('回收站');
   });

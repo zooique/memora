@@ -707,16 +707,20 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           active: 0,
           deleted: 0,
           bySource: {},
+          superseded: 0,
         },
       });
       return;
     }
     const stats = memory.stats();
     const deleted = memory.listDeleted(1000).length;
+    // supersede 治理模型：统计已被取代的活跃记忆（supersededBy 非空），对齐内核写路径取代语义
+    const superseded = memory.list(1000).filter((m) => m.supersededBy !== undefined).length;
     const governance: GovernanceStatsDto = {
       active: stats.total,
       deleted,
       bySource: stats.bySource,
+      superseded,
     };
     this.post({ type: 'governance_loaded', stats: governance });
   }
@@ -955,7 +959,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 }
 
-/** 内核 Memory → 记忆条目 DTO（deletedAt 仅回收站条目携带） */
+/** 内核 Memory → 记忆条目 DTO（deletedAt 仅回收站条目携带；round-summary 顶层字段透传） */
 function toItemDto(m: {
   id: string;
   name: string;
@@ -964,6 +968,12 @@ function toItemDto(m: {
   content: string;
   createdAt?: string;
   deletedAt?: string;
+  summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
+  sessionName?: string;
+  roundId?: string;
+  isTraceable?: boolean;
+  isModified?: boolean;
+  supersededBy?: string;
 }): MemoryItemDto {
   return {
     id: m.id,
@@ -973,6 +983,12 @@ function toItemDto(m: {
     content: m.content,
     createdAt: m.createdAt,
     deletedAt: m.deletedAt,
+    summaryType: m.summaryType,
+    sessionName: m.sessionName,
+    roundId: m.roundId,
+    isTraceable: m.isTraceable,
+    isModified: m.isModified,
+    supersededBy: m.supersededBy,
   };
 }
 
@@ -1050,6 +1066,10 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <div class="governance-stat">
           <span id="govDeleted" class="gov-num">0</span>
           <span class="gov-label">回收站</span>
+        </div>
+        <div class="governance-stat">
+          <span id="govSuperseded" class="gov-num">0</span>
+          <span class="gov-label">已被取代</span>
         </div>
       </div>
       <div class="governance-actions">

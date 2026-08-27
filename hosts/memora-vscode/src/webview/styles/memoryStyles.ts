@@ -79,6 +79,34 @@ export const memoryStyles = `
   #memory-root .source-badge-profile { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
   #memory-root .source-badge-work-projection { background: var(--surface-card, #252526); color: var(--text-secondary, #9aa0a6); }
 
+  /* 类型徽章：round-summary 子类型（SummaryType），与 source 徽章互补 */
+  #memory-root .type-badge {
+    display: inline-block;
+    padding: 0 var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    border-radius: var(--radius-pill, 999px);
+    white-space: nowrap;
+    flex-shrink: 0;
+    background: var(--surface-code, rgba(128,128,128,.12));
+    color: var(--text-secondary, #9aa0a6);
+    border: 1px solid var(--surface-hover, rgba(128,128,128,.3));
+  }
+
+  /* 取代态 / 编辑态：round-summary 治理语义的视觉提示 */
+  #memory-root .mem-card-superseded { border-style: dashed; border-color: var(--text-secondary, #9aa0a6); opacity: 0.85; }
+  #memory-root .mem-card-modified { border-left: 3px solid var(--warn, #cca700); }
+
+  #memory-root .mem-card-tags { display: flex; gap: var(--sp-1, 4px); margin-top: var(--sp-1, 4px); flex-wrap: wrap; }
+  #memory-root .tag {
+    display: inline-block;
+    padding: 0 var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    border-radius: var(--radius-pill, 999px);
+    line-height: 1.6;
+  }
+  #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
+  #memory-root .tag-modified { background: rgba(204,167,0,.15); color: var(--warn, #cca700); }
+
   /* score 点：圆点指示记忆权重（越高越实心） */
   #memory-root .score-dot {
     width: 6px; height: 6px;

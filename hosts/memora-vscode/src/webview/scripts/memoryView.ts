@@ -52,6 +52,15 @@ const SOURCE_BADGE_CLASS: Record<string, string> = {
   'work-projection': 'source-badge-work-projection',
 };
 
+/** SummaryType → 中文徽章文案（round-summary 子类型，对齐内核 SummaryType 硬契约） */
+const TYPE_BADGE_LABEL: Record<string, string> = {
+  preference: '偏好',
+  fact: '事实',
+  decision: '决策',
+  intent: '意图',
+  general: '通用',
+};
+
 /** score 阈值：高于该值视为「重要记忆」（score 圆点亮 accent） */
 const SCORE_HIGH = 0.6;
 
@@ -71,6 +80,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   // 治理区元素（G4，2026-08-23：统计卡 + 清理按钮 + 结果提示）
   const govActive = root.querySelector('#govActive') as HTMLElement | null;
   const govDeleted = root.querySelector('#govDeleted') as HTMLElement | null;
+  const govSuperseded = root.querySelector('#govSuperseded') as HTMLElement | null;
   const govDetail = root.querySelector('#govDetail') as HTMLElement | null;
   const btnCleanup = root.querySelector('#btnCleanup') as HTMLButtonElement | null;
 
@@ -113,6 +123,9 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   function buildCard(m: MemoryItemDto): HTMLElement {
     const card = document.createElement('div');
     card.className = 'mem-card';
+    // 治理状态：取代态 / 编辑态（仅 round-summary 且满足条件时标记）
+    if (m.supersededBy) card.classList.add('mem-card-superseded');
+    if (m.isModified) card.classList.add('mem-card-modified');
     card.setAttribute('role', 'button');
     card.setAttribute('aria-expanded', 'false');
     card.title = '点击展开 / 收起详情';
@@ -131,6 +144,15 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     sourceBadge.textContent = m.source;
     sourceBadge.title = m.id;
     head.appendChild(sourceBadge);
+
+    // 类型徽章：round-summary 的子类型（SummaryType），与 source 徽章互补展示语义分类
+    if (m.summaryType) {
+      const typeBadge = document.createElement('span');
+      typeBadge.className = 'type-badge';
+      typeBadge.textContent = TYPE_BADGE_LABEL[m.summaryType] ?? m.summaryType;
+      typeBadge.title = `摘要类型：${m.summaryType}`;
+      head.appendChild(typeBadge);
+    }
 
     // score 圆点：高重要度点亮 accent（视觉辅助，主动可见）
     const scoreDot = document.createElement('span');
@@ -168,6 +190,25 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     preview.className = 'mem-card-preview';
     preview.textContent = m.content;
     card.appendChild(preview);
+    // 取代/编辑状态标记（仅命中对应字段时渲染，非 round-summary 自然无）
+    if (m.supersededBy || m.isModified) {
+      const tags = document.createElement('div');
+      tags.className = 'mem-card-tags';
+      if (m.supersededBy) {
+        const t = document.createElement('span');
+        t.className = 'tag tag-superseded';
+        t.textContent = '已取代';
+        t.title = `已被 ${m.supersededBy} 取代`;
+        tags.appendChild(t);
+      }
+      if (m.isModified) {
+        const t = document.createElement('span');
+        t.className = 'tag tag-modified';
+        t.textContent = '已编辑';
+        tags.appendChild(t);
+      }
+      card.appendChild(tags);
+    }
 
     // 内联编辑（G19 内联 edit 收尾，2026-08-25）：进入编辑态——隐藏预览、注入 textarea
     // + 保存/取消按钮；编辑区 stopPropagation 防卡片展开误触。保存 postMessage memory_edit，
@@ -236,6 +277,16 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
           meta.textContent = formatTime(m.createdAt);
           detail.appendChild(meta);
         }
+        // 双溯源：会话 / 轮次（仅 round-summary 携带 sessionName/roundId）
+        const traceParts: string[] = [];
+        if (m.sessionName) traceParts.push(`会话 ${m.sessionName}`);
+        if (m.roundId) traceParts.push(`轮次 ${m.roundId}`);
+        if (traceParts.length > 0) {
+          const trace = document.createElement('div');
+          trace.className = 'mem-card-meta';
+          trace.textContent = traceParts.join(' · ');
+          detail.appendChild(trace);
+        }
       } else if (!expanded && detail) {
         detail.remove();
       }
@@ -268,6 +319,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   function renderGovernance(stats: GovernanceStatsDto): void {
     if (govActive) govActive.textContent = String(stats.active);
     if (govDeleted) govDeleted.textContent = String(stats.deleted);
+    if (govSuperseded) govSuperseded.textContent = String(stats.superseded ?? 0);
     // 回收站标题同步条数（软删记忆可发现，非死字段）
     updateRecycleCount(stats.deleted);
     if (govDetail) govDetail.hidden = true;

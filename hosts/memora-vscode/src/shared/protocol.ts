@@ -782,6 +782,8 @@ export interface GovernanceStatsDto {
   deleted: number;
   /** 按来源标签分组的活跃记忆数量（供治理区展示分布） */
   bySource: Record<string, number>;
+  /** 已被取代的记忆数（supersededBy 非空的活跃记忆，对齐内核 supersede 治理模型） */
+  superseded: number;
 }
 
 /** 记忆条目（记忆视图列表/搜索结果，host 从内核 Memory/AgentSearchHit 归一化） */
@@ -800,6 +802,18 @@ export interface MemoryItemDto {
   createdAt?: string;
   /** 软删除时间（ISO 8601，仅回收站条目携带，可选） */
   deletedAt?: string;
+  /** round-summary 摘要类型（preference/fact/decision/intent/general），仅 round-summary 有意义；对齐内核 SummaryType */
+  summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
+  /** round-summary 归属会话标识（${date}-${session}），供会话内/外分层召回 */
+  sessionName?: string;
+  /** round-summary 归属轮次标识，供互斥轮次排除与回溯 */
+  roundId?: string;
+  /** 是否可经 sessionId（+roundId）回溯到原始对话；round-summary 有意义，其余默认 false */
+  isTraceable?: boolean;
+  /** 摘要是否已被人工修改（可能与原始对话不一致）；仅 round-summary 有意义 */
+  isModified?: boolean;
+  /** 写路径取代标记：非 undefined 表示已被更新的摘要覆盖（值为取代它的新摘要 id） */
+  supersededBy?: string;
 }
 
 /** 全局技能条目（技能视图列表，2026-08-22 新增） */
