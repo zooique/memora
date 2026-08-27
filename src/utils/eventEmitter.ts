@@ -9,7 +9,6 @@ import { toError } from '@/utils/toError.js';
 export const AGENT_EVENTS = {
   memoryAdded: 'memoryAdded',
   rolePackSwitched: 'rolePackSwitched',
-  decayCompleted: 'decayCompleted', // [DEPRECATED] 衰减已移除，事件保留占位以避免跨版本误用
   memoryRecalled: 'memoryRecalled',
   sessionForked: 'sessionForked',
   projectSwitched: 'projectSwitched',
@@ -51,7 +50,6 @@ export const AGENT_EVENT_SET: ReadonlySet<string> = new Set(Object.values(AGENT_
 export interface AgentEventMap extends Record<AgentEventName, unknown> {
   memoryAdded: { id: string; source: string; name: string };
   rolePackSwitched: { from: string | null; to: string };
-  decayCompleted: { decayedCount: number }; // [DEPRECATED] 衰减已移除
   memoryRecalled: { count: number; query: string };
   sessionForked: { from: string; to: string; messageCount: number };
   projectSwitched: { from: string | null; to: string; projectName: string };

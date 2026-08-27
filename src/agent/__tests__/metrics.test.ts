@@ -6,7 +6,6 @@
  *   - 记忆召回命中率指标（totalCount、hitCount、hitRate）
  *   - 工具调用指标（callCount、failureCount）
  *   - 上下文管理指标（truncationCount、messageCount、estimatedTokens）
- *   - 衰减指标（runCount、totalDecayedCount、lastRunAt）
  *   - Agent.getMetrics() 聚合行为
  */
 import { describe, it, expect, vi } from 'vitest';

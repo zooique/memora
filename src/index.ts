@@ -81,8 +81,8 @@ export { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sour
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-// 治理共享常量：宿主 WorkspaceStorage 与核心库 recall.ts 共用同一真理源（clamp/衰减边界/半衰期）
-export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, FADING_CUTOFF_DAYS } from '@/memory/governance.js';
+// 治理共享常量：宿主 WorkspaceStorage 与核心库 recall.ts 共用同一真理源（clamp/沉底边界）
+export { BOOST_INCREMENT, SCORE_CEILING, SCORE_FLOOR, INACTIVITY_SINK_DAYS } from '@/memory/governance.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎

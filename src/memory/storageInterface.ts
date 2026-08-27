@@ -80,7 +80,7 @@ export interface IMemoryStorage {
   countBySource(source: string): number;
 
   /**
-   * 原子增加记忆 score：score = clamp(score + delta, DECAY_FLOOR, SCORE_CEILING)，
+   * 原子增加记忆 score：score = clamp(score + delta, SCORE_FLOOR, SCORE_CEILING)，
    * 同时更新 accessedAt 为 now；消除 boost 路径 read-modify-write 并发冲突，
    * 宿主用一条 SQL UPDATE 完成
    * @returns 记忆不存在/软删除时返回 false，成功返回 true

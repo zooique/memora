@@ -1607,7 +1607,6 @@ export class AgentLoop {
 
   /**
    * 获取 AgentLoop 运行时指标快照（纯只读、零副作用，适合宿主轮询构建监控面板）。
-   * 衰减指标（decay）由 Agent 层填充，此处返回 null。
    */
   getMetrics(): AgentMetrics {
     return {

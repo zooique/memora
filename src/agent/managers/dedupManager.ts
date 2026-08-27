@@ -261,7 +261,7 @@ export class DedupManager {
 
   /** 降级重复记忆（score → DEDUP_LOW_SCORE）。不物理删除仅降分保留可恢复；合并内容由 keepMerged 单独写回 a。 */
   private demoteMemory(memory: Memory): void {
-    // 用 setScore 原子操作，避免 spread 旧快照覆盖期间被 boost/decay 改动的字段
+    // 用 setScore 原子操作，避免 spread 旧快照覆盖期间被 boost 改动的字段
     this.index.setScore(memory.id, DEDUP_LOW_SCORE, nowIso());
   }
 

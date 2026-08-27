@@ -27,7 +27,7 @@ export function byScoreDesc<T extends { score: number }>(a: T, b: T): number {
  * 按"沉底顺序"升序排序的比较函数：accessedAt 升序（最久未访问在前），
  * 相同再按 score 升序（分数最低 = 最接近自然沉底）。
  *
- * 用于记忆健康观测（MemoryInspector.listFading）与衰减候选的排序。
+ * 用于记忆健康观测（MemoryInspector.listFading）与沉底候选的排序。
  *
  * @param a 前一个元素
  * @param b 后一个元素

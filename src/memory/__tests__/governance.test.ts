@@ -15,7 +15,7 @@ import {
   GOVERNANCE_SOURCES,
   BOOST_INCREMENT,
   SCORE_CEILING,
-  DECAY_FLOOR,
+  SCORE_FLOOR,
 } from '@/memory/governance.js';
 
 describe('memory/governance · 常量契约', () => {
@@ -63,8 +63,8 @@ describe('memory/governance · 常量契约', () => {
       expect(SCORE_CEILING).toBe(1.0);
     });
 
-    it('DECAY_FLOOR 应为 0.1（衰减下限）', () => {
-      expect(DECAY_FLOOR).toBe(0.1);
+    it('SCORE_FLOOR 应为 0.1（score 下限）', () => {
+      expect(SCORE_FLOOR).toBe(0.1);
     });
 
     it('BOOST_INCREMENT 应小于 SCORE_CEILING（提升量不会一步到顶）', () => {
@@ -72,12 +72,12 @@ describe('memory/governance · 常量契约', () => {
       expect(BOOST_INCREMENT).toBeLessThan(SCORE_CEILING);
     });
 
-    it('DECAY_FLOOR 应小于 SCORE_CEILING（下限低于上限）', () => {
-      expect(DECAY_FLOOR).toBeLessThan(SCORE_CEILING);
+    it('SCORE_FLOOR 应小于 SCORE_CEILING（下限低于上限）', () => {
+      expect(SCORE_FLOOR).toBeLessThan(SCORE_CEILING);
     });
 
-    it('DECAY_FLOOR 应为正数（score 不会衰减到负数）', () => {
-      expect(DECAY_FLOOR).toBeGreaterThan(0);
+    it('SCORE_FLOOR 应为正数（score 不会降到负数）', () => {
+      expect(SCORE_FLOOR).toBeGreaterThan(0);
     });
   });
 });

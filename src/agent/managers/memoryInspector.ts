@@ -18,7 +18,7 @@ import { backgroundTask } from '@/utils/backgroundTask.js';
 // 融合排序算法 + 常量从 hybridMerge 导入（消除对 recall.ts 内部常量的依赖）
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 // LLM 治理共享常量（统一由 governance.ts 维护）
-import { BOOST_INCREMENT, FADING_CUTOFF_DAYS } from '@/memory/governance.js';
+import { BOOST_INCREMENT, INACTIVITY_SINK_DAYS } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -119,7 +119,7 @@ export interface FadingMemory {
   createdAt?: string;
   /** 上次访问时间（ISO 8601） */
   accessedAt: string;
-  /** 距上次访问天数（对齐 FADING_CUTOFF_DAYS 语义，即 60 天沉底判定） */
+  /** 距上次访问天数（对齐 INACTIVITY_SINK_DAYS 语义，即 60 天沉底判定） */
   daysSinceAccess: number;
 }
 
@@ -311,7 +311,7 @@ export class MemoryInspector {
   // ─── 健康观测 ─────────────────────────────────────────
 
   /**
-   * 列出"即将自然沉底"的记忆：仅返回距今超过 FADING_CUTOFF_DAYS（60 天，半衰期 2 倍）未访问的活跃记忆，
+   * 列出"即将自然沉底"的记忆：仅返回距今超过 INACTIVITY_SINK_DAYS（60 天）未访问的活跃记忆，
    * 按沉底顺序（最久未访问在前、同天分数最低在前）取前 limit 条。纯只读健康观测，
    * 不触发任何写操作（superseded 写时取代 / boost 被动提升均在各自路径），仅展示自然沉底候选。
    *
@@ -333,7 +333,7 @@ export class MemoryInspector {
     }
 
     const now = Date.now();
-    const cutoff = new Date(now - FADING_CUTOFF_DAYS * ONE_DAY_MS).toISOString();
+    const cutoff = new Date(now - INACTIVITY_SINK_DAYS * ONE_DAY_MS).toISOString();
     // 优先走存储实现 listFading（宿主可用 SQL 优化）；存储未实现时回退 search+本地过滤。
     // 两路径返回均为沉底顺序（accessedAt 升序 → score 升序），语义一致。
     const candidates: Memory[] = this.index.listFading

@@ -11,7 +11,7 @@ import { byScoreDesc, byFadingAsc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
-import { DECAY_FLOOR, SCORE_CEILING } from '@/memory/governance.js';
+import { SCORE_FLOOR, SCORE_CEILING } from '@/memory/governance.js';
 
 /**
  * 内存存储：Map 存储，核心操作 O(1)~O(log n)。
@@ -179,11 +179,11 @@ export class InMemoryStorage implements IMemoryStorage {
     return this.sourceCountCache.get(source) ?? 0;
   }
 
-  /** 原子 score+=delta，clamp 到 [DECAY_FLOOR, SCORE_CEILING]，同步存储下天然原子；不存在/软删返回 false */
+  /** 原子 score+=delta，clamp 到 [SCORE_FLOOR, SCORE_CEILING]，同步存储下天然原子；不存在/软删返回 false */
   incrementScore(id: string, delta: number, now: string): boolean {
     const memory = this.memories.get(id);
     if (!memory || memory.deletedAt !== undefined) return false;
-    memory.score = Math.max(DECAY_FLOOR, Math.min(SCORE_CEILING, memory.score + delta));
+    memory.score = Math.max(SCORE_FLOOR, Math.min(SCORE_CEILING, memory.score + delta));
     memory.accessedAt = now;
     return true;
   }

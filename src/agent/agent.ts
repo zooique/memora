@@ -1713,7 +1713,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 获取 Agent 运行时指标快照（可观测性）：聚合 AgentLoop 指标与 Agent 层衰减指标；
+   * 获取 Agent 运行时指标快照（可观测性）：聚合 AgentLoop 指标与 Agent 层治理指标；
    * 未初始化返回全零默认值（不抛异常），纯只读同步零副作用，适合宿主定期轮询监控面板。
    */
   getMetrics(): AgentMetrics {

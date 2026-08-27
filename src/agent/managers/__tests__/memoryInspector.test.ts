@@ -583,7 +583,7 @@ describe('MemoryInspector', () => {
   // ════════════════════════════════════════════════════════
 
   describe('listFading', () => {
-    it('只返回超过 FADING_CUTOFF_DAYS 未访问的记忆（近期访问的被过滤）', () => {
+    it('只返回超过 INACTIVITY_SINK_DAYS 未访问的记忆（近期访问的被过滤）', () => {
       storage.upsert(
         createMemory({ id: 'content:fading', name: 'fading', accessedAt: '2020-01-01T00:00:00.000Z' }),
       );

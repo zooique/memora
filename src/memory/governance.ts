@@ -14,14 +14,14 @@ export const BOOST_INCREMENT = 0.05;
 export const SCORE_CEILING = 1.0;
 
 /** score 下限（incrementScore clamp）；消费者：InMemoryStorage/WorkspaceStorage incrementScore（demote 场景向下 clamp） */
-export const DECAY_FLOOR = 0.1;
+export const SCORE_FLOOR = 0.1;
 
 /**
  * 自然沉底判定天数（listFading cutoff）。
  * 当记忆距上次访问超过此天数时，判定为"即将自然沉底"，供健康观测面板展示。
  * 默认取保守阈值 60 天：久未访问且低分的记忆在观测面板标记，由 superseded/低相关排序自然退出召回面。
  */
-export const FADING_CUTOFF_DAYS = 60;
+export const INACTIVITY_SINK_DAYS = 60;
 
 /**
  * 治理源列表：实际写入记忆库的 source 才参与去重 / 冲突治理；
