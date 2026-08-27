@@ -168,7 +168,7 @@ export async function recall(
   }
 
   // ── v3 分层分轨候选池整理（§4.3 分轨策略） ──
-  // L2 意图轨排除（跨会话 intent 无意义）+ L2 偏好轨无条件进池（长期有效，即便未命中检索）。
+  // L2 意图轨排除（跨会话 intent 无意义）+ L2 偏好轨进池（长期有效，即便未命中检索；仅在有查询意图时补入）。
   // 仅在具备分层上下文（sessionId）且存在查询意图时生效；无 sessionId 走旧路径，避免无分层基础时误伤。
   applyTrackPolicy(merged, storage, {
     sessionId,
@@ -280,7 +280,8 @@ export async function recall(
  *
  * 进池开关（不决定配额，配额由 cap 内分配决定）：
  *   1. L2 意图轨排除——跨会话 intent 摘要不进候选池（意图是临时的，跨会话无意义）；
- *   2. L2 偏好轨无条件进池——preference 长期有效，即便语义/关键词未命中也补入候选池（必经检索筛选）。
+ *   2. L2 偏好轨进池——preference 长期有效，即便语义/关键词未命中也补入候选池（必经检索筛选）；
+ *      仅在有查询意图（hasQueryIntent）时补入，无查询意图（空/噪声输入）不注入，防御偏好强塞无关查询。
  * 仅在具备分层上下文（sessionId）且存在查询意图（hasQueryIntent）时生效；无 sessionId 走旧路径。
  *
  * @param merged 双通道已收集的候选池（id → 记忆+向量分），本函数就地增删
@@ -304,7 +305,7 @@ function applyTrackPolicy(
     }
   }
 
-  // 2) L2 偏好轨无条件进池：仅当存在查询意图时补入（无查询意图时 preference 不单独注入）
+  // 2) L2 偏好轨进池：仅当存在查询意图时补入（无查询意图时 preference 不单独注入）
   //    无意图时保持"纯噪声输入返回空"的防御行为，避免偏好摘要强塞入无关查询。
   if (!hasQueryIntent) return;
   let summaries: Memory[] = [];
@@ -313,7 +314,7 @@ function applyTrackPolicy(
     const raw = storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
     summaries = Array.isArray(raw) ? raw : [];
   } catch (err) {
-    logger.debug({ err }, '分轨：preference 无条件进池枚举失败，跳过');
+    logger.debug({ err }, '分轨：preference 进池枚举失败，跳过');
     return;
   }
   for (const m of summaries) {

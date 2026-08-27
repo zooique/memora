@@ -238,7 +238,7 @@ export interface SessionMessage {
     ↓
 3. 各轨独立进候选池：
    - L1 会话内：全部轨道走语义召回，结果按 createdAt 升序
-   - L2 会话外：preference 无条件进池；intent 不进池；其余按语义召回进池
+   - L2 会话外：preference 进池（有查询意图时）；intent 不进池；其余按语义召回进池
     ↓
 4. cap 内分配：各轨道在 memoryRecallPercent 兜底下，靠排序自然形成份额
    （preference 时间升序、语义轨道按相关性；可选 minSemanticSharePercent 防挤占）
@@ -274,16 +274,17 @@ export interface SessionMessage {
 
 | 轨道 | 类型 | L1 会话内进池 | L2 会话外进池 | 设计理由 |
 |------|------|-------------|-------------|---------|
-| **偏好轨** | `preference` | 语义召回进池 | **无条件进池**（不经检索） | 偏好是长期有效的，应该总是被召回 |
+| **偏好轨** | `preference` | 语义召回进池 | **进池**（不经检索，有查询意图时） | 偏好长期有效应被召回；无查询意图（空/噪声输入）不注入 |
 | **事实轨** | `fact` | 语义召回进池 | 语义召回进池 | 事实可能过时，需要相关性筛选 |
 | **决策轨** | `decision` | 语义召回进池 | 语义召回进池 | 决策可能被推翻，需要相关性筛选 |
 | **意图轨** | `intent` | 语义召回进池 | **不进池** | 意图是临时的，跨会话无意义 |
 | **通用轨** | `general` | 语义召回进池 | 语义召回进池 | 兜底，什么都能装 |
 
 **关键设计**：
-- **进池 ≠ 全量注入**：`preference` 无条件进池，但进池后仍受 `memoryRecallPercent` 总 cap 约束，且组内按 `createdAt` 升序——只取 cap 内最近的偏好，旧的偏好自然排在 cap 外，不会无限膨胀上下文（§4.3.1）
+- **进池 ≠ 全量注入**：`preference` 进池（不经检索），但进池后仍受 `memoryRecallPercent` 总 cap 约束，且组内按 `createdAt` 升序——只取 cap 内最近的偏好，旧的偏好自然排在 cap 外，不会无限膨胀上下文（§4.3.1）
+- **查询意图 gate**：L2 preference **仅在有查询意图（关键词非空）时补入**候选池，无查询意图（空/噪声输入）不注入——防御偏好强塞无关查询（代码 `applyTrackPolicy` 的 `hasQueryIntent` 判定，与文档一致）
 - **L1 会话内**：所有轨道都走语义召回（不全量注入）
-- **L2 会话外**：preference 无条件进池，intent 不进池（跨会话无意义），其余按语义匹配进池
+- **L2 会话外**：preference 进池（不经检索，仅在有查询意图时补入），intent 不进池（跨会话无意义），其余按语义匹配进池
 
 #### 4.3.1 cap 内分配规则
 
@@ -334,7 +335,7 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 
   // 1. 分轨进池策略（applyTrackPolicy）——仅具备 sessionId 分层上下文时生效
   //    1a. L2 intent 排除：跨会话（sessionName !== sessionId）的 intent 移出候选池
-  //    1b. L2 preference 无条件进池：getBySource('round-summary') 枚举，仅补跨会话 preference（无查询意图不补）
+  //    1b. L2 preference 进池：getBySource('round-summary') 枚举，仅补跨会话 preference（仅在有查询意图时补入）
   applyTrackPolicy(merged, storage, { sessionId, excludeSources, hasQueryIntent });
 
   // 2. 互斥排除：excludeRoundIds（正文已加载轮次）在融合排序前过滤
@@ -424,7 +425,7 @@ v2 排序由**两个正交维度**构成，任何维度都不被类型覆盖：
 
 **为什么不按"类型价值"排序**：若让 `decision`/`preference` 因价值高而强制排在前面，就会让类型重新参与排序，破坏上述两个正交维度，并导致"远古高价值"压过"近期低价值"的呈现失真。类型价值通过相关性召回（hybridMerge）与 superseded/衰减（自然遗忘）自然表达，不参与呈现顺序。
 
-**v3 的改进**：分层分轨设计中，类型**参与**召回策略（preference 无条件进池、intent 不进池），但**不参与**排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）共同决定。
+**v3 的改进**：分层分轨设计中，类型**参与**召回策略（preference 进池（有查询意图时）、intent 不进池），但**不参与**排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）共同决定。
 
 ### 4.9 LLM 溯源工具
 
@@ -659,14 +660,14 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | **记忆模型** | 摘要单轨（round-summary + content） |
 | **召回方式** | 单一召回入口（recall 函数） |
 | **分层** | L1 会话内优先于 L2 会话外 |
-| **分轨** | preference 无条件进池、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticShare` 可选防挤占（默认 0） |
+| **分轨** | preference 进池（不经检索，有查询意图时）、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticShare` 可选防挤占（默认 0） |
 | **排序** | 时间顺序（createdAt 升序） |
 | **治理** | supersede（写时取代）+ boost（召回+0.05） |
 
 **详细说明**：
 
 - **摘要即记忆本体**：写入（RoundSummaryGenerator + type 标签）→ 召回（分层分轨 + 互斥过滤）→ 治理（superseded 取代）闭环成立，无独立洞察提炼层。
-- **分层分轨召回**：会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（preference 无条件进池、intent 不进池、其余语义召回进池），L1 全部优先于 L2；cap 内分配靠排序，`minSemanticShare` 可选防挤占（默认 0，未开放为角色包键，见 §4.3.1）。
+- **分层分轨召回**：会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（preference 进池（不经检索，有查询意图时）、intent 不进池、其余语义召回进池），L1 全部优先于 L2；cap 内分配靠排序，`minSemanticShare` 可选防挤占（默认 0，未开放为角色包键，见 §4.3.1）。
 - **type = 语义标签 + 召回策略**：type 参与召回策略（决定哪些轨道进池/不进池），但不参与排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）决定。
 - **治理简化**：去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
 - **memoryAdded 事件由 round-summary 发射**——作为"新记忆产生必通知"的出口契约。

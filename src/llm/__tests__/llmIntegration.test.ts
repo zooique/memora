@@ -10,12 +10,41 @@
  *   npx vitest run src/llm/__tests__/llmIntegration.test.ts
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { Agent, createLlmProvider, loadConfig } from '@/index.js';
 
-describe('真实 LLM 集成测试', () => {
+/**
+ * 同步探测是否有可用的 LLM API key（模块加载期求值，供 describe.skipIf 使用）。
+ * 与 loadConfig() 无参时的项目级查找路径一致（<cwd>/.memora/config.json）；
+ * apiKey 支持 ${ENV_VAR} 展开——环境变量存在才算有 key。
+ * @returns 存在有效 apiKey 返回 true，否则 false
+ */
+function detectHasApiKey(): boolean {
+  try {
+    const configPath = resolve(process.cwd(), '.memora/config.json');
+    if (!existsSync(configPath)) return false;
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as {
+      llm?: { providers?: Record<string, { apiKey?: string } | undefined> };
+    };
+    const providers = config?.llm?.providers ?? {};
+    return Object.values(providers).some((p) => {
+      const key = p?.apiKey;
+      if (!key) return false;
+      // ${ENV_VAR} 格式：环境变量存在才算有 key（与 loadConfig expandEnvVars 语义一致）
+      const m = /^\$\{([A-Z0-9_]+)\}$/.exec(key);
+      return m ? !!process.env[m[1]!] : true;
+    });
+  } catch {
+    return false;
+  }
+}
+
+/** 是否有可用的 LLM API key（离线/未配置时整套件 skip，避免空转 pass 污染"全绿"口径） */
+const hasApiKey = detectHasApiKey();
+
+describe.skipIf(!hasApiKey)('真实 LLM 集成测试', () => {
   let tmpDir: string;
   let tmpHome: string;
   let agent: Agent;
