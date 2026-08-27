@@ -258,19 +258,15 @@ describe('estimateTokens', () => {
 });
 
 describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
-  /** 构造 N 轮问答消息（system + 每轮 user/assistant） */
+  /** 构造 N 轮问答消息（system + 每轮 user/assistant），每轮 user/assistant 自带 roundId */
   function createRoundMessages(roundCount: number): Message[] {
     const messages: Message[] = [{ role: 'system', content: 'System prompt' }];
     for (let i = 1; i <= roundCount; i++) {
-      messages.push({ role: 'user', content: `提问${i}` });
-      messages.push({ role: 'assistant', content: `回答${i}` });
+      const rid = `round-${i}`;
+      messages.push({ role: 'user', content: `提问${i}`, roundId: rid });
+      messages.push({ role: 'assistant', content: `回答${i}`, roundId: rid });
     }
     return messages;
-  }
-
-  /** 构造与轮次对齐的 roundId 序列 */
-  function makeSeq(roundCount: number): string[] {
-    return Array.from({ length: roundCount }, (_, i) => `round-${i + 1}`);
   }
 
   /** 构造摘要映射：round-1/round-2 有摘要，其余无 */
@@ -283,7 +279,6 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 2,
       getSummary: () => null,
-      roundIds: () => makeSeq(3),
     });
     expect(strategy.shouldCompact(createRoundMessages(3))).toBe(true);
   });
@@ -292,7 +287,6 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 5,
       getSummary: () => null,
-      roundIds: () => makeSeq(3),
     });
     expect(strategy.shouldCompact(createRoundMessages(3))).toBe(false);
   });
@@ -301,7 +295,6 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 2,
       getSummary: (rid) => summaryMap.get(rid) ?? null,
-      roundIds: () => makeSeq(4),
     });
     const messages = createRoundMessages(4);
     strategy.compact(messages);
@@ -321,7 +314,6 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
       keepRecentRounds: 1,
       // 只有 round-1 有摘要，round-2 无
       getSummary: (rid) => (rid === 'round-1' ? '摘要一' : null),
-      roundIds: () => makeSeq(3),
     });
     const messages = createRoundMessages(3);
     strategy.compact(messages);
@@ -333,28 +325,36 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     expect(contents).toContain('回答2');
   });
 
-  it('compact：序列尾部对齐（截断丢旧轮后，最近轮仍映射正确）', () => {
-    // 消息只剩 2 轮（对应 round-2、round-3），但序列保留 3 个 id（round-1 已被截断）
+  it('compact：roundId 取自消息自身（不依赖任何外部序列），正确映射各轮摘要', () => {
+    // 非顺序 roundId，验证替换按每轮 user 消息自带 roundId 取摘要，而非任何外部序列的尾部对齐
+    const messages: Message[] = [
+      { role: 'system', content: 'System prompt' },
+      { role: 'user', content: '提问A', roundId: 'alpha' },
+      { role: 'assistant', content: '回答A', roundId: 'alpha' },
+      { role: 'user', content: '提问B', roundId: 'beta' },
+      { role: 'assistant', content: '回答B', roundId: 'beta' },
+      { role: 'user', content: '提问C', roundId: 'gamma' },
+      { role: 'assistant', content: '回答C', roundId: 'gamma' },
+    ];
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 1,
-      getSummary: (rid) => (rid === 'round-2' ? '摘要二' : null),
-      roundIds: () => makeSeq(3),
+      getSummary: (rid) => (rid === 'alpha' ? '摘要A' : null),
     });
-    const messages = createRoundMessages(2);
     strategy.compact(messages);
 
-    // 越界轮（消息第 0 轮）映射到序列尾部对齐 → round-2（有摘要）被替换；
-    // 最近轮（消息第 1 轮 → round-3）正文保留
     const contents = messages.map((m) => m.content).join('\n');
-    expect(contents).toContain('Round summary · roundId: round-2');
-    expect(contents).toContain('提问2');
+    // 最旧轮 alpha 有摘要 → 按消息自带 roundId 取「摘要A」替换（非错位取 beta/gamma 的摘要）
+    expect(contents).toContain('Round summary · roundId: alpha');
+    expect(contents).toContain('摘要A');
+    // 最近轮 beta/gamma 正文保留
+    expect(contents).toContain('提问B');
+    expect(contents).toContain('提问C');
   });
 
   it('compact：轮次未越界时不修改', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 5,
       getSummary: (rid) => summaryMap.get(rid) ?? null,
-      roundIds: () => makeSeq(3),
     });
     const messages = createRoundMessages(3);
     const before = messages.map((m) => m.content).join('|');
@@ -372,7 +372,6 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 2,
       getSummary: (rid) => summaryMap.get(rid) ?? null,
-      roundIds: () => makeSeq(4),
       onReplaced: (roundId) => {
         replacedIds.push(roundId);
       },
@@ -380,7 +379,7 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const messages = createRoundMessages(4);
     strategy.compact(messages);
 
-    // 越界 2 轮（round-1、round-2）有摘要 → 均上报 roundId
+    // 越界 2 轮（round-1、round-2）有摘要 → 均上报其消息自带 roundId
     expect(replacedIds).toContain('round-1');
     expect(replacedIds).toContain('round-2');
   });
@@ -390,12 +389,11 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 1,
       getSummary: (rid) => summaryMap.get(rid) ?? null,
-      roundIds: () => makeSeq(4),
       onReplaced,
       isContextTruncated: () => true,
     });
     const messages = createRoundMessages(4);
-    // 截断重排后 roundId 尾部对齐映射失效 → 跳过替换，避免错位替换正文
+    // 截断重排后视图不稳定 → 跳过替换，避免错位替换正文
     expect(strategy.shouldCompact(messages)).toBe(false);
     strategy.compact(messages);
     expect(onReplaced).not.toHaveBeenCalled();
@@ -407,7 +405,6 @@ describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
     const strategy = new ReplaceRoundsStrategy({
       keepRecentRounds: 1,
       getSummary: (rid) => summaryMap.get(rid) ?? null,
-      roundIds: () => makeSeq(4),
       isContextTruncated: () => false,
     });
     const messages = createRoundMessages(4);
