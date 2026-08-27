@@ -112,6 +112,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
+  // 当前模型名（AI 消息头部标签显示；由模型选择变化时更新）
+  let currentModelName = '';
   // 当前角色性格特征（traits，可选；由 chat_role_pack 填充，供徽章/顶栏展示）
   let currentRoleTraits: Record<string, number> | undefined;
   // 底部模型下拉框（用 extraClass=model-picker 修饰）
@@ -814,13 +816,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * @returns body 元素（供调用方填充内容）
    */
   function buildAssistantShell(div: HTMLElement, ts?: string): { body: HTMLElement } {
-    // 顶部身份标签（角色/模型名）：展示加载角色包的显示名（currentRoleName），未加载时默认「AI」
+    // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
-    const labelText = document.createElement('span');
-    labelText.className = 'msg-ai-label__name';
-    labelText.textContent = currentRoleName || 'AI';
-    label.appendChild(labelText);
+    // 角色名：品牌色 + 小圆点
+    const roleEl = document.createElement('span');
+    roleEl.className = 'msg-ai-label__role';
+    roleEl.textContent = currentRoleName || 'AI';
+    label.appendChild(roleEl);
+    // 模型名：灰色小字（可选）
+    if (currentModelName) {
+      const modelEl = document.createElement('span');
+      modelEl.className = 'msg-ai-label__model';
+      modelEl.textContent = currentModelName;
+      label.appendChild(modelEl);
+    }
     div.appendChild(label);
     const content = document.createElement('div');
     content.className = 'msg-content';
@@ -1417,6 +1427,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
       currentActive = msg.activeName;
+      // 更新当前模型名（用于 AI 消息头部标签展示）
+      if (currentActive) {
+        const activeProvider = currentProviders.find(p => p.name === currentActive);
+        currentModelName = activeProvider?.displayName || currentActive;
+      }
       renderModelPicker();
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {

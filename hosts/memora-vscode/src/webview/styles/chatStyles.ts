@@ -177,13 +177,37 @@ export const chatStyles = `
     background: transparent; color: var(--text-primary, #cccccc);
     padding-top: var(--sp-2, 6px);
   }
-  /* AI 身份标签：顶部一行，展示角色显示名（加载角色包时）或默认「AI」；
-   * 灰字小字号，弱于正文，仅作「谁在说」的轻量标注（对齐大厂 AI 消息头部）。 */
+  /* AI 身份标签：顶部一行，极简风格
+   * 结构：[小圆点]角色名[·]模型名
+   * 角色名用品牌色，模型名用灰色小字
+   * 参考 Trae Work 设计：无头像、无装饰、纯文本标识 */
   .msg-ai-label {
-    display: flex; align-items: center; gap: var(--sp-1, 4px);
-    font-size: var(--font-sm, 11px); font-weight: 500;
-    color: var(--text-secondary, #9aa0a6);
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px);
     user-select: none;
+  }
+  /* 角色名：品牌色 + 小圆点标识 */
+  .msg-ai-label__role {
+    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
+    font-weight: 500;
+    color: var(--brand, #4a9eff);
+  }
+  .msg-ai-label__role::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--brand, #4a9eff);
+  }
+  /* 模型名：灰色小字，前面加分隔点 */
+  .msg-ai-label__model {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .msg-ai-label__model::before {
+    content: '·';
+    margin-right: var(--sp-1, 4px);
+    color: var(--border-panel, rgba(128,128,128,.4));
   }
   /* AI 正文容器：承接正文 + 底部操作行，铺满宽度 */
   .msg-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }

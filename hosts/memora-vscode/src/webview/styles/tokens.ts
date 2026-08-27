@@ -57,6 +57,10 @@ export const tokens = `
     --accent: var(--vscode-button-background, #0e639c);
     --accent-foreground: var(--vscode-button-foreground, #ffffff);
 
+    /* === L2 语义令牌：品牌主色（角色标签/强调标识） === */
+    --brand: #4a9eff;
+    --brand-subtle: rgba(74, 158, 255, 0.08);
+
     /* === L2 语义令牌：反馈状态色（校验/信息/错误/警告） ===
      * 供提示条 / 记忆条 / 主动提问条 / 测试结果 / 错误消息使用。
      * 语义令牌集中映射 --vscode-*，样式文件只引用语义令牌（对抗评估 P2-3 层边界恢复） */

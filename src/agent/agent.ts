@@ -359,9 +359,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     });
 
     // 会话命名器：新建会话首次问答自动命名标题；惰性获取当前 provider（切换后仍命中最新模型）
+    // 注入 onTitleUpdated 回调：标题生成后发射 sessionTitleUpdated 事件，宿主据此刷新 UI
     this.internals.sessionNamer = new SessionNamer({
       getProvider: () => this.#provider,
       sessionStore: this.#config.sessionStore,
+      onTitleUpdated: (sessionId, title) => {
+        this.emit(AGENT_EVENTS.sessionTitleUpdated, { sessionId, title });
+      },
     });
 
     // 记忆治理统一门面（去重 / 冲突 / 诊断）

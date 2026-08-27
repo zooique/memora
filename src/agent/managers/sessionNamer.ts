@@ -19,15 +19,20 @@ export class SessionNamer {
   private getProvider: () => LlmProvider;
   /** 会话存储（读取/写入会话标题元数据） */
   private sessionStore: ISessionStore | undefined;
+  /** 标题更新回调（可选，用于通知 Agent 发射事件） */
+  private onTitleUpdated?: (sessionId: string, title: string) => void;
 
   constructor(options: {
     /** 惰性获取当前 LLM Provider */
     getProvider: () => LlmProvider;
     /** 会话存储（可选，未注入则标题层静默失效） */
     sessionStore?: ISessionStore;
+    /** 标题更新回调（可选，标题生成后触发） */
+    onTitleUpdated?: (sessionId: string, title: string) => void;
   }) {
     this.getProvider = options.getProvider;
     this.sessionStore = options.sessionStore;
+    this.onTitleUpdated = options.onTitleUpdated;
   }
 
   /**
@@ -68,6 +73,15 @@ export class SessionNamer {
       displayName: title,
     });
     logger.info({ sessionId, autoName: title }, 'SessionNamer: 会话 autoName 已生成');
+
+    // 触发标题更新回调（通知 Agent 发射事件，宿主据此刷新 UI）
+    if (this.onTitleUpdated) {
+      try {
+        this.onTitleUpdated(sessionId, title);
+      } catch (err) {
+        logger.warn({ err, sessionId }, 'SessionNamer: onTitleUpdated 回调异常，已忽略');
+      }
+    }
   }
 
   /** 调用 LLM 生成一句话标题：复用 accumulateStream + parseLlmJson（与 SessionArchiver 一致）；无价值（空消息/打招呼）返回 null 由调用方降级 */

@@ -38,6 +38,8 @@ export const AGENT_EVENTS = {
   sessionResumed: 'sessionResumed',
   sessionError: 'sessionError',
   sessionRecovered: 'sessionRecovered',
+  /** 会话标题被 LLM 自动更新（SessionNamer 完成后触发，宿主据此刷新 UI） */
+  sessionTitleUpdated: 'sessionTitleUpdated',
 } as const;
 
 /** 事件名联合类型（由 AGENT_EVENTS 推导，新增事件只需在此加一项） */
@@ -102,6 +104,8 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   sessionResumed: { sessionId?: string };
   sessionError: { cause: string; sessionId?: string };
   sessionRecovered: { sessionId?: string };
+  /** 会话标题更新载荷：会话 ID + 新标题 */
+  sessionTitleUpdated: { sessionId: string; title: string };
 }
 
 /** 事件处理器类型 */

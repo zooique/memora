@@ -642,6 +642,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
+   * sessionTitleUpdated：会话标题被 LLM 自动更新（SSOT 同步）
+   *
+   * 当 SessionNamer 完成标题生成后，Agent 发射此事件。
+   * 宿主检查是否为当前会话，若是则推送 session_title 到 webview 刷新顶部标题。
+   * 这确保了"对话记录已更新，但顶部未同步"的问题得到解决。
+   */
+  private readonly onSessionTitleUpdated = (info: {
+    sessionId: string;
+    title: string;
+  }): void => {
+    // 仅当更新的是当前会话时才推送（其他会话的标题更新不影响当前 UI）
+    if (info.sessionId === this._currentSessionId) {
+      this.post({ type: 'session_title', title: info.title });
+    }
+  };
+
+  /**
    * rolePackSwitched：角色包切换（内核 emit：粘性匹配自动切换 / 显式 activate）
    *
    * 三层对齐断点 A1：内核在粘性匹配或显式激活切换角色包时
@@ -773,6 +790,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('sessionResumed', this.onSessionResumed);
     a.off('sessionRecovered', this.onSessionRecovered);
     a.on('sessionRecovered', this.onSessionRecovered);
+    // SSOT 会话标题同步：LLM 自动生成标题后，刷新 webview 顶部标题
+    a.off('sessionTitleUpdated', this.onSessionTitleUpdated);
+    a.on('sessionTitleUpdated', this.onSessionTitleUpdated);
   }
 
   /**
