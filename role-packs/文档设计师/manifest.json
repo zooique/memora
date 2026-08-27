@@ -16,29 +16,7 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
-  "strategy": {
-    "prepare": {
-      "contextAssembly": "fixed",
-      "memoryRecall": "limited",
-      "summaryRecall": "on"
-    },
-    "act": {
-      "toolMode": "allow",
-      "temperature": 0.3
-    },
-    "reflect": {
-      "summary": "on",
-      "handoff": "wait",
-      "userFollowup": "ask"
-    },
-    "global": {
-      "askOn": [
-        "ambiguity",
-        "missing_info"
-      ],
-      "askLimit": 3
-    }
-  },
+  "exclusiveWith": ["方案设计师"],
   "handoffPrompt": "我已准备好开始文档设计。请告诉我：文档受众是谁、要覆盖什么主题、期望的交付形态（API 参考 / 教程 / 架构说明）。若承接上文，请先概述当前已定的文档结构与待补内容。",
   "capabilities": [
     {
@@ -53,5 +31,44 @@
       "capability": "web:search",
       "description": "搜索技术资料与最佳实践"
     }
-  ]
+  ],
+  "strategy": {
+    "prepare": {
+      "memoryRecall": "limited",
+      "understandingConfirm": "confirm",
+      "memoryRecallPercent": 0.3,
+      "minFallback": 2,
+      "summaryFocus": "以文档设计视角判断本轮值得记的维度：①文档受众与目标 ②结构与章节规划 ③术语与规范约定 ④代码/API 真实来源引用",
+      "contextAssembly": "fixed",
+      "autoSwitch": "on",
+      "recallConfidence": 0.7,
+      "summaryRecall": "on"
+    },
+    "act": {
+      "toolMode": "allow",
+      "temperature": 0.3,
+      "outputLimit": 65536,
+      "streaming": "streaming",
+      "toolStepLimit": 100,
+      "providerRouting": "auto",
+      "inputInterrupt": "block",
+      "multiStepReasoning": "auto",
+      "toolReadonly": "readonly",
+      "toolApproval": "auto"
+    },
+    "reflect": {
+      "summary": "on",
+      "handoff": "wait",
+      "loopContinue": 2,
+      "userFollowup": "ask"
+    },
+    "global": {
+      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askLimit": 3,
+      "errorHandling": "retry",
+      "tokenBudget": 32000,
+      "stepBudget": 100,
+      "taskLoopLimit": 20
+    }
+  }
 }

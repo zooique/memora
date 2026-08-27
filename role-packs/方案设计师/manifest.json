@@ -20,6 +20,7 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
+  "exclusiveWith": ["文档设计师"],
   "handoffPrompt": "我已准备好开始方案设计。请告诉我：要解决什么模糊想法或痛点、有什么已知约束（技术栈 / 资源 / 时间）？若承接上文，请先概述当前已定的方案骨架、关键决策与待对齐的部分。",
   "capabilities": [
     {
@@ -45,27 +46,41 @@
   ],
   "strategy": {
     "prepare": {
-      "contextAssembly": "hybrid",
       "memoryRecall": "full",
-      "summaryRecall": "on",
-      "summaryFocus": "以方案设计视角判断本轮值得记的维度：①用户核心诉求 ②技术选型与理由 ③关键约束 ④规格参数与决策依据；用编号列表/表格保留结构化要点（摘要仍控制在 500 字内）"
+      "understandingConfirm": "confirm",
+      "memoryRecallPercent": 0.4,
+      "minFallback": 2,
+      "summaryFocus": "以方案设计视角判断本轮值得记的维度：①用户核心诉求 ②技术选型与理由 ③关键约束 ④规格参数与决策依据；用编号列表/表格保留结构化要点",
+      "contextAssembly": "hybrid",
+      "autoSwitch": "on",
+      "recallConfidence": 0.6,
+      "summaryRecall": "on"
     },
     "act": {
       "toolMode": "allow",
       "temperature": 0.5,
-      "streaming": "streaming"
+      "outputLimit": 8192,
+      "streaming": "streaming",
+      "toolStepLimit": 50,
+      "providerRouting": "auto",
+      "inputInterrupt": "allow",
+      "multiStepReasoning": "auto",
+      "toolReadonly": "full",
+      "toolApproval": "auto"
     },
     "reflect": {
       "summary": "on",
-      "handoff": "loop"
+      "handoff": "loop",
+      "loopContinue": 3,
+      "userFollowup": "ask"
     },
     "global": {
-      "askOn": [
-        "ambiguity",
-        "decision",
-        "missing_info"
-      ],
-      "askLimit": 3
+      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askLimit": 3,
+      "errorHandling": "retry",
+      "tokenBudget": 16000,
+      "stepBudget": 80,
+      "taskLoopLimit": 30
     }
   }
 }
