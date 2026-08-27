@@ -167,6 +167,7 @@ type AssembleRuntimeParams = Pick<
   | 'activeRolePack'
   | 'maxContextTokens'
   | 'sessionStore'
+  | 'roundStore'
   | 'tracer'
   | 'messages'
   | 'enableContextSummary'
@@ -602,6 +603,7 @@ export async function assembleComponents(
     activeRolePack,
     maxContextTokens,
     sessionStore,
+    roundStore,
     tracer,
     messages,
     enableContextSummary,
@@ -621,7 +623,7 @@ export async function assembleComponents(
     ]);
   }
 
-  const history = new MessageHistory(sessionStore);
+  const history = new MessageHistory(sessionStore, undefined, undefined, roundStore);
 
   // 作品投影登记/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
   // 投影落项目级目录（pctx.memoraDir/work-projections.json）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）

@@ -416,6 +416,7 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { IRoundStore } from '@/memory/roundStore.js';
 import type { ITracer } from '@/agent/tracer.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
 import type { MessageRole } from '@/memory/types.js';
@@ -518,6 +519,8 @@ export interface AgentOptions {
   storage?: IMemoryStorage;
   /** 外部注入的会话存储（不传则仅内存保存） */
   sessionStore?: ISessionStore;
+  /** 外部注入的问答闭环存储（不传则仅 legacy 模式，传则启用 round-based 模式） */
+  roundStore?: IRoundStore;
   /** 可观测性 Tracer（不传则 NoopTracer 静默丢弃） */
   tracer?: ITracer;
   /** 宿主可覆盖的 UI 消息文本（默认英文） */

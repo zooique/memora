@@ -16,10 +16,12 @@ import * as vscode from 'vscode';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { mkdir } from 'node:fs/promises';
-import type { Agent } from '@zooique/memora';
+import type { Agent, IRoundStore } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
 import { assembleAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
+import { WorkspaceRoundStore } from './host/workspaceRoundStore.js';
+import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
@@ -59,6 +61,7 @@ function getOrCreateAgent(
   projectPath: string,
   providerStore: ProviderStore,
   sessionStore: WorkspaceSessionStore,
+  roundStore: IRoundStore,
   globalState: vscode.Memento,
   configDir: string,
   userSkillsDir?: string,
@@ -79,6 +82,7 @@ function getOrCreateAgent(
       projectPath,
       providerStore,
       sessionStore,
+      roundStore,
       activeRolePack,
       configDir,
       userSkillsDir,
@@ -146,16 +150,28 @@ export function activate(context: vscode.ExtensionContext): void {
   const workspacePath = resolveWorkspacePath();
   const sessionStore = new WorkspaceSessionStore(workspacePath);
   sessionStore.load();
+
+  // Round-based 存储层（Phase 3：问答闭环独立存储）
+  // - WorkspaceRoundStore：存储 Round 数据到文件系统（rounds/{roundId}.json）
+  // - WorkspaceSessionViewLoader：将 Session（Round ID 列表）+ RoundStore 组合为完整视图
+  // 这些组件是 round-based 模式的基础设施，当前作为可选注入（向后兼容 legacy 模式）
+  const roundStore = new WorkspaceRoundStore(workspacePath);
+  roundStore.load();
+  const viewLoader = new WorkspaceSessionViewLoader(roundStore, sessionStore);
+
   const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);
   // 注入 globalState 供角色包切换时持久化激活态（用户级，跨项目共享，2026-08-17）
   chatProvider.setGlobalState(context.globalState);
+  // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
+  // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）
+  chatProvider.setViewLoader(viewLoader);
   // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT 收紧 2026-08-25）
   chatProvider.setSkillDirs(configDir, userSkillsDir);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
   chatProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
+    getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
   );
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
@@ -168,7 +184,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
   settingsProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
+    getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
   );
   settingsProvider.setGlobalState(context.globalState);
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
@@ -185,7 +201,7 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () =>
       openChatCommand(
         (projectPath) =>
-          getOrCreateAgent(projectPath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
+          getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
         chatProvider,
       ),
     ),
@@ -214,7 +230,7 @@ export function activate(context: vscode.ExtensionContext): void {
   /** 获取当前工作区的 Agent 实例（懒装配，已装配则直接返回缓存） */
   const getAgentForCommand = async (): Promise<Agent | null> => {
     try {
-      return await getOrCreateAgent(workspacePath, providerStore, sessionStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput);
+      return await getOrCreateAgent(workspacePath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput);
     } catch {
       return null;
     }

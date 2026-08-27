@@ -14,7 +14,7 @@
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
 import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger } from '@zooique/memora';
-import type { ISessionStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
+import type { ISessionStore, IRoundStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
@@ -93,6 +93,13 @@ export interface AssembleOptions {
    * 会导致「UI 加载的会话记录不完整 / 互相覆盖丢消息」（无法加载会话记录根因）。
    */
   sessionStore?: ISessionStore;
+  /**
+   * 问答闭环存储（Phase 4：round-based 模式注入）
+   *
+   * 传入后内核启用 round-based 写入模式：每个问答闭环独立存储，
+   * 会话通过 Round ID 列表组装。不传则仅 legacy 模式（向后兼容）。
+   */
+  roundStore?: IRoundStore;
   /**
    * 插件内置配置目录（configDir，SSOT 修复 2026-08-15）
    *
@@ -175,7 +182,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
+  const { projectPath, providerStore, sessionStore, roundStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
 
   // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
@@ -222,6 +229,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     backgroundProvider,
     storage,
     sessionStore: store,
+    // 问答闭环存储（Phase 4：round-based 模式，传入后内核启用独立 Round 存储）
+    roundStore,
     // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）
     webSearchProvider: new FetchWebSearchProvider(),
     // 网页抓取（B8 首发生长：补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）

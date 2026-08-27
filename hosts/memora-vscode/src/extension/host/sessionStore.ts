@@ -5,8 +5,9 @@
  *   - 将 memora 原始对话消息持久化到工作区 `.memora/sessions.json`
  *   - 实现 ISessionStore 接口，注入 Agent，让跨会话对话记录可回溯（traceSummary 依赖）
  *   - 原子写入：save() 使用 atomicWriteFileSync 防崩溃损坏
+ *   - 支持双模式：legacy 模式（消息列表）和 round-based 模式（Round ID 列表）
  *
- * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
+ * 阶段 1：扩展支持 Round-based 存储模式（问答闭环独立存储）。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -20,12 +21,14 @@ import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /** 工作区会话存储 */
 export class WorkspaceSessionStore implements ISessionStore {
-  /** 会话消息主存储：`date-session` → SessionMessage[] */
+  /** 会话消息主存储：`date-session` → SessionMessage[]（legacy 模式） */
   private store = new Map<string, SessionMessage[]>();
   /** 检查点存储：sessionId → checkpoint 字符串 */
   private checkpoints = new Map<string, string>();
   /** 会话标题元数据（ADR-024）：sessionId → SessionMeta */
   private metas = new Map<string, SessionMeta>();
+  /** Round ID 列表存储：sessionId → roundId[]（round-based 模式） */
+  private roundIdsStore = new Map<string, string[]>();
   /** 会话文件绝对路径 */
   private readonly filePath: string;
 
@@ -42,16 +45,20 @@ export class WorkspaceSessionStore implements ISessionStore {
         sessions: Record<string, SessionMessage[]>;
         checkpoints: Record<string, string>;
         metas: Record<string, SessionMeta>;
+        roundIdsStore: Record<string, string[]>;
       };
       for (const [k, v] of Object.entries(data.sessions ?? {})) this.store.set(k, v);
       for (const [k, v] of Object.entries(data.checkpoints ?? {})) this.checkpoints.set(k, v);
       for (const [k, v] of Object.entries(data.metas ?? {})) this.metas.set(k, v);
+      // 加载 round-based 模式的 Round ID 列表
+      for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
       // 注意：sessions 与 checkpoints 一并清空，避免跨会话回溯（trace_summary）读到脏检查点
       console.warn('Memora 会话文件读取失败，降级为空', err);
       this.store.clear();
       this.checkpoints.clear();
+      this.roundIdsStore.clear();
     }
   }
 
@@ -61,6 +68,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       sessions: Object.fromEntries(this.store),
       checkpoints: Object.fromEntries(this.checkpoints),
       metas: Object.fromEntries(this.metas),
+      roundIdsStore: Object.fromEntries(this.roundIdsStore),
     };
     atomicWriteFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
@@ -97,8 +105,21 @@ export class WorkspaceSessionStore implements ISessionStore {
    *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
    */
+  /**
+   * 删除指定会话记录
+   *
+   * 支持 legacy 模式和 round-based 模式：
+   * - legacy 模式：删除消息 + 元数据 + 检查点
+   * - round-based 模式：删除 Round ID 列表 + 元数据 + 检查点
+   *
+   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   */
   deleteSession(sessionId: string): void {
+    // legacy 模式清理
     this.store.delete(sessionId);
+    // round-based 模式清理
+    this.roundIdsStore.delete(sessionId);
+    // 通用清理
     this.metas.delete(sessionId);
     this.checkpoints.delete(sessionId);
     this.save();
@@ -150,7 +171,17 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   listSessions(): string[] {
-    return [...this.store.keys()];
+    // 收集 legacy 模式的会话
+    const sessions = new Set<string>(this.store.keys());
+    // 收集 round-based 模式的会话
+    for (const sessionId of this.roundIdsStore.keys()) {
+      sessions.add(sessionId);
+    }
+    // 收集有元数据的会话（可能没有消息但有 meta）
+    for (const sessionId of this.metas.keys()) {
+      sessions.add(sessionId);
+    }
+    return [...sessions];
   }
 
   /**
@@ -163,7 +194,27 @@ export class WorkspaceSessionStore implements ISessionStore {
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
     const meta = this.metas.get(sessionId);
-    if (meta) return meta;
+    if (meta) {
+      // 如果有 roundIds 存储但 meta 中没有，同步更新
+      if (this.roundIdsStore.has(sessionId) && (!meta.roundIds || meta.roundIds.length === 0)) {
+        const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+        meta.roundIds = roundIds;
+        this.metas.set(sessionId, meta);
+      }
+      return meta;
+    }
+    // round-based 会话兜底：如果有 Round ID 列表，创建占位元数据
+    const roundIds = this.roundIdsStore.get(sessionId);
+    if (roundIds && roundIds.length > 0) {
+      return {
+        sessionId,
+        storageMode: 'round-based',
+        roundIds: [...roundIds],
+        displayName: defaultSessionTitle(),
+        updatedAt: new Date().toISOString(),
+        messageCount: roundIds.length * 2,
+      };
+    }
     // 旧会话兜底：仅当存在消息时推导占位元数据（不落盘，仅展示用）
     const msgs = this.store.get(sessionId);
     if (!msgs || msgs.length === 0) return undefined;
@@ -215,11 +266,22 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 列出全部会话标题元数据（ADR-024）：按 updatedAt 降序（最新在前）
    *
-   * 覆盖所有已持久化会话：先取 metas，再补全无 metas 的旧会话（getSessionMeta 推导）。
+   * 覆盖所有已持久化会话：
+   * 1. 先取 metas（有元数据的会话）
+   * 2. 补全 legacy 模式的会话（getSessionMeta 推导）
+   * 3. 补全 round-based 模式的会话（getSessionMeta 推导）
    */
   listSessionMetas(): SessionMeta[] {
     const all = new Map(this.metas);
+    // 补全 legacy 模式的会话
     for (const key of this.store.keys()) {
+      if (!all.has(key)) {
+        const derived = this.getSessionMeta(key);
+        if (derived) all.set(key, derived);
+      }
+    }
+    // 补全 round-based 模式的会话
+    for (const key of this.roundIdsStore.keys()) {
       if (!all.has(key)) {
         const derived = this.getSessionMeta(key);
         if (derived) all.set(key, derived);
@@ -252,5 +314,125 @@ export class WorkspaceSessionStore implements ISessionStore {
   deleteCheckpoint?(sessionId: string): void {
     this.checkpoints.delete(sessionId);
     this.save();
+  }
+
+  // ─── Round-based 模式方法 ─────────────────────────────────
+
+  /**
+   * 追加 Round ID 到会话（round-based 模式）
+   *
+   * @param sessionId - 会话 ID
+   * @param roundId - 要追加的 Round ID
+   */
+  appendRoundId(sessionId: string, roundId: string): void {
+    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+    roundIds.push(roundId);
+    this.roundIdsStore.set(sessionId, roundIds);
+
+    // 同步更新 meta 中的 roundIds 字段
+    this.syncMetaRoundIds(sessionId);
+
+    // 更新元数据
+    this.updateRoundBasedMessageCount(sessionId);
+    this.save();
+  }
+
+  /**
+   * 批量追加 Round ID 到会话（round-based 模式）
+   *
+   * @param sessionId - 会话 ID
+   * @param roundIds - 要追加的 Round ID 数组
+   */
+  appendRoundIds(sessionId: string, roundIds: string[]): void {
+    const existing = this.roundIdsStore.get(sessionId) ?? [];
+    const merged = [...existing, ...roundIds];
+    this.roundIdsStore.set(sessionId, merged);
+
+    // 同步更新 meta 中的 roundIds 字段
+    this.syncMetaRoundIds(sessionId);
+
+    // 更新元数据
+    this.updateRoundBasedMessageCount(sessionId);
+    this.save();
+  }
+
+  /**
+   * 获取会话的 Round ID 列表（round-based 模式）
+   *
+   * @param sessionId - 会话 ID
+   * @returns Round ID 数组（按顺序）
+   */
+  getRoundIds(sessionId: string): string[] {
+    return this.roundIdsStore.get(sessionId) ?? [];
+  }
+
+  /**
+   * 设置会话的 Round ID 列表（round-based 模式）
+   *
+   * 用于创建新会话或完整替换（如分叉操作）
+   *
+   * @param sessionId - 会话 ID
+   * @param roundIds - 新的 Round ID 列表
+   */
+  setRoundIds(sessionId: string, roundIds: string[]): void {
+    this.roundIdsStore.set(sessionId, [...roundIds]);
+
+    // 同步更新 meta 中的 roundIds 字段
+    this.syncMetaRoundIds(sessionId);
+
+    // 更新元数据
+    this.updateRoundBasedMessageCount(sessionId);
+    this.save();
+  }
+
+  /**
+   * 创建新会话元数据（round-based 模式）
+   *
+   * @param meta - 会话元数据
+   */
+  createSession(meta: SessionMeta): void {
+    this.metas.set(meta.sessionId, { ...meta });
+
+    // 如果有 roundIds，同时存储到 roundIdsStore
+    if (meta.roundIds && meta.roundIds.length > 0) {
+      this.roundIdsStore.set(meta.sessionId, [...meta.roundIds]);
+    }
+
+    this.save();
+  }
+
+  // ─── 私有辅助方法 ─────────────────────────────────────
+
+  /**
+   * 同步 meta 中的 roundIds 字段
+   *
+   * 确保 meta.roundIds 和 roundIdsStore 保持一致
+   */
+  private syncMetaRoundIds(sessionId: string): void {
+    const meta = this.metas.get(sessionId);
+    if (!meta) return;
+
+    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+    this.metas.set(sessionId, {
+      ...meta,
+      roundIds: [...roundIds],
+    });
+  }
+
+  /**
+   * 更新 round-based 会话的消息计数
+   */
+  private updateRoundBasedMessageCount(sessionId: string): void {
+    const meta = this.metas.get(sessionId);
+    if (!meta) return;
+
+    const roundIds = this.roundIdsStore.get(sessionId) ?? meta.roundIds ?? [];
+    const messageCount = roundIds.length * 2; // 每个 Round 包含 User + AI
+
+    this.metas.set(sessionId, {
+      ...meta,
+      messageCount,
+      updatedAt: new Date().toISOString(),
+    });
   }
 }

@@ -1,7 +1,17 @@
 /**
  * 消息历史：封装用户输入/Agent 回复的会话持久化，维护当前会话（date+session），经 ISessionStore 落库。
+ *
+ * 存储模式演进（2026-08-27）：
+ * - legacy 模式：通过 appendMessage 写入消息列表（SessionMessage[]）
+ * - round-based 模式：通过 appendUser/appendAssistant 同步写入 RoundStore + SessionStore 的 roundIds
+ * 两种模式可共存：当 roundStore 注入时自动启用 round-based 模式，同时保持 legacy 写入以兼容
  */
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import type {
+  IRoundStore,
+  Round,
+  RoundMessage,
+} from '@/memory/roundStore.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
@@ -25,12 +35,16 @@ export class MessageHistory {
   private currentSession: string;
   /** 挂起的 fire-and-forget 归档集合，Agent.close() 等待其完成 */
   private pendingArchives: Set<Promise<unknown>> = new Set();
+  /** Round-based 模式下当前轮次的 pending Round 缓存（roundId → Round） */
+  private pendingRounds: Map<string, Round> = new Map();
 
   constructor(
     /** 会话存储（可选）；注入则持久化，否则仅在内存保存（AgentLoop.messages[]） */
     private readonly sessionStore?: ISessionStore,
     initialDate?: string,
     initialSession = 'main',
+    /** 问答闭环存储（可选）；注入则启用 round-based 模式，同时保留 legacy 写入 */
+    private readonly roundStore?: IRoundStore,
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentSession = initialSession;
@@ -49,6 +63,14 @@ export class MessageHistory {
   /** 当前会话标识 */
   get currentSessionValue(): string {
     return this.currentSession;
+  }
+
+  /**
+   * 是否启用 round-based 模式
+   * 当 roundStore 注入且 sessionStore 支持 appendRoundId 时启用
+   */
+  private get isRoundBasedEnabled(): boolean {
+    return !!this.roundStore && !!this.sessionStore?.appendRoundId;
   }
 
   /**
@@ -104,6 +126,8 @@ export class MessageHistory {
   /** 切换会话，返回新会话全名 */
   switchSession(newSession: string): string {
     this.currentSession = newSession;
+    // 清空 pending rounds（会话切换后旧 pending round 不再有效）
+    this.pendingRounds.clear();
     return this.currentSessionName;
   }
 
@@ -172,6 +196,9 @@ export class MessageHistory {
    * 日期用 todayDate() 动态获取，确保跨日后写入当天目录；roundId 用于 sessionStore 溯源。
    * 同步 currentDate：实际写入的日期即会话当下归属（SSOT），跨日后 currentDateValue/currentSessionName
    * 与持久化一致——摘要/标题/互斥排除的日期锚点不错位。
+   *
+   * Round-based 模式：当 roundStore 注入且 roundId 存在时，额外创建 pending Round 并保存到 RoundStore，
+   * 同时将 roundId 追加到会话的 roundIds 列表。
    */
   async appendUser(content: string, roundId?: string): Promise<void> {
     const message: SessionMessage = {
@@ -191,10 +218,44 @@ export class MessageHistory {
         logger.warn({ err, session: this.currentSessionName }, 'appendUser: 会话持久化失败');
       }
     }
+
+    // Round-based 模式：创建 pending Round 并关联到会话
+    if (this.isRoundBasedEnabled && roundId) {
+      try {
+        const sessionId = this.currentSessionName;
+        // 创建 pending Round
+        const pendingRound: Round = {
+          id: roundId,
+          userMessage: {
+            id: `msg-${roundId}-user`,
+            role: 'user',
+            content,
+            timestamp: message.timestamp,
+          } as RoundMessage,
+          status: 'pending',
+          createdAt: message.timestamp,
+          refCount: 1,
+        };
+        // 保存到 RoundStore
+        this.roundStore!.save(pendingRound);
+        // 缓存 pending Round 供 appendAssistant 使用
+        this.pendingRounds.set(roundId, pendingRound);
+        // 将 roundId 追加到会话的 roundIds 列表
+        this.sessionStore!.appendRoundId!(sessionId, roundId);
+        logger.debug({ roundId, sessionId }, 'appendUser: Round-based pending Round created');
+      } catch (err) {
+        logger.warn({ err, roundId }, 'appendUser: Round-based 写入失败，降级为 legacy 模式');
+      }
+    }
+
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendUser');
   }
 
-  /** 追加 assistant 消息到当前会话（持久化失败不抛出）。日期动态获取保跨日；roundId 溯源 */
+  /**
+   * 追加 assistant 消息到当前会话（持久化失败不抛出）。日期动态获取保跨日；roundId 溯源。
+   *
+   * Round-based 模式：当 roundStore 注入且 roundId 存在时，查找 pending Round 并完成它（设置 AI 消息和状态）。
+   */
   async appendAssistant(content: string, roundId?: string): Promise<void> {
     if (!content.trim()) return;
     const message: SessionMessage = {
@@ -214,6 +275,51 @@ export class MessageHistory {
         logger.warn({ err, session: this.currentSessionName }, 'appendAssistant: 会话持久化失败');
       }
     }
+
+    // Round-based 模式：完成 pending Round
+    if (this.isRoundBasedEnabled && roundId) {
+      try {
+        const pendingRound = this.pendingRounds.get(roundId);
+        if (pendingRound) {
+          // 完成 Round：设置 AI 消息和状态
+          const completedRound: Round = {
+            ...pendingRound,
+            assistantMessage: {
+              id: `msg-${roundId}-assistant`,
+              role: 'assistant',
+              content,
+              timestamp: message.timestamp,
+            } as RoundMessage,
+            status: 'complete',
+            completedAt: message.timestamp,
+          };
+          // 保存完成的 Round
+          this.roundStore!.save(completedRound);
+          // 清除缓存
+          this.pendingRounds.delete(roundId);
+          logger.debug({ roundId }, 'appendAssistant: Round-based Round completed');
+        } else {
+          // pending Round 不存在（可能是跨会话或异常），创建一个新的 complete Round
+          const round = this.roundStore!.getById(roundId);
+          if (round) {
+            round.assistantMessage = {
+              id: `msg-${roundId}-assistant`,
+              role: 'assistant',
+              content,
+              timestamp: message.timestamp,
+            } as RoundMessage;
+            round.status = 'complete';
+            round.completedAt = message.timestamp;
+            this.roundStore!.save(round);
+          } else {
+            logger.warn({ roundId }, 'appendAssistant: Round not found in RoundStore, skipping round-based write');
+          }
+        }
+      } catch (err) {
+        logger.warn({ err, roundId }, 'appendAssistant: Round-based 写入失败');
+      }
+    }
+
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendAssistant');
   }
 

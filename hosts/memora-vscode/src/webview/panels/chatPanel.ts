@@ -24,6 +24,8 @@ import {
   type ISessionStore,
   type SessionMeta,
   type WriteConfirmationRequest,
+  type SessionView,
+  isRoundBasedMode,
 } from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
@@ -38,6 +40,7 @@ import { toolCardStyles } from '../styles/toolCard.js';
 import { stripDocContextPrefix } from '../helpers/docContext.js';
 import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
 import { listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
+import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
@@ -156,6 +159,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 超时或 webview 不可达时自动拒绝（fail-closed）。
    */
   private _pendingWriteConfirmations = new Map<string, { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
+  /**
+   * 会话视图加载器（round-based 模式专用，可选）
+   *
+   * 注入后支持加载 round-based 会话的历史消息。
+   * 未注入时仅支持 legacy 模式（向后兼容）。
+   */
+  private _viewLoader: WorkspaceSessionViewLoader | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -180,6 +190,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._docContext = snapshotDocContext(editor);
     });
     this._docContext = snapshotDocContext(vscode.window.activeTextEditor);
+  }
+
+  /**
+   * 注入会话视图加载器（用于 round-based 模式会话的历史加载）
+   *
+   * @param viewLoader 工作区会话视图加载器实例
+   */
+  public setViewLoader(viewLoader: WorkspaceSessionViewLoader): void {
+    this._viewLoader = viewLoader;
   }
 
   /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
@@ -1416,8 +1435,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 从 sessionStore 恢复当前会话的完整历史（user + assistant）
    *
-   * 多会话模型（ADR-024）下只加载「当前会话 _currentSessionId」的消息，不再遍历
-   * main 会话跨天合并——每个会话独立展示，切换会话即替换回放视图。
+   * 支持双存储模式：
+   * - legacy 模式：从消息列表加载（当前默认）
+   * - round-based 模式：从 Round ID 列表加载（新设计）
    *
    * 恢复策略：
    *   - user 消息：回放剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
@@ -1429,31 +1449,86 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
     try {
-      const { date, session } = this.parseSessionId(this._currentSessionId);
-      const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
-      const msgs = this.sessionStore.loadMessages(date, session) as {
-        role?: string;
-        content?: string;
-        timestamp?: string;
-      }[];
-      for (const m of msgs) {
-        if (!m.content || m.content.startsWith('<user_input>')) continue;
-        result.push({
-          role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
-            | 'user'
-            | 'assistant',
-          content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
-          ts: m.timestamp,
-        });
+      // 获取会话元数据，判断存储模式
+      const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
+      
+      // 如果是 round-based 模式且有 viewLoader，使用视图加载器
+      if (isRoundBasedMode(meta) && this._viewLoader) {
+        return this.loadRoundBasedHistory();
       }
-      // 按时间升序（消息存储顺序可能因多次回放而乱序）
-      result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
-      // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条（按时间升序取末段）。
-      // 避免超长会话逐条建 DOM 拖慢切换（对抗评估 P1-7）
-      return result.slice(-MAX_HISTORY_MESSAGES);
+      
+      // 否则使用 legacy 模式
+      return this.loadLegacyHistory();
     } catch (err) {
       // 读取失败不阻塞面板展示，但需记录（SSOT 不藏错，避免「历史空白」静默吞因）
       console.warn('Memora 加载会话历史失败', err);
+      return [];
+    }
+  }
+
+  /**
+   * 加载 legacy 模式的会话历史
+   *
+   * 从消息列表加载，用于旧格式会话
+   */
+  private loadLegacyHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+    const { date, session } = this.parseSessionId(this._currentSessionId);
+    const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
+    const msgs = this.sessionStore.loadMessages(date, session) as {
+      role?: string;
+      content?: string;
+      timestamp?: string;
+    }[];
+    for (const m of msgs) {
+      if (!m.content || m.content.startsWith('<user_input>')) continue;
+      result.push({
+        role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
+          | 'user'
+          | 'assistant',
+        content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
+        ts: m.timestamp,
+      });
+    }
+    // 按时间升序（消息存储顺序可能因多次回放而乱序）
+    result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
+    // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条
+    return result.slice(-MAX_HISTORY_MESSAGES);
+  }
+
+  /**
+   * 加载 round-based 模式的会话历史
+   *
+   * 使用 SessionViewLoader 从 Round ID 列表加载完整对话视图
+   */
+  private loadRoundBasedHistory(): { role: 'user' | 'assistant'; content: string; ts?: string }[] {
+    if (!this._viewLoader) {
+      // 没有 viewLoader 时返回空数组
+      console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
+      return [];
+    }
+
+    try {
+      const view: SessionView = this._viewLoader.loadView(this._currentSessionId);
+      const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
+
+      // 从 SessionView 中提取消息
+      for (const msg of view.messages) {
+        if (!msg.content || msg.content.startsWith('<user_input>')) continue;
+        result.push({
+          role: (msg.role === 'user' || msg.role === 'assistant' ? msg.role : 'user') as
+            | 'user'
+            | 'assistant',
+          content: msg.role === 'user' ? stripDocContextPrefix(msg.content) : msg.content,
+          ts: msg.timestamp,
+        });
+      }
+
+      // 按时间升序
+      result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
+      // 上限保护
+      return result.slice(-MAX_HISTORY_MESSAGES);
+    } catch (err) {
+      console.warn('Memora 加载 round-based 会话历史失败', err);
       return [];
     }
   }

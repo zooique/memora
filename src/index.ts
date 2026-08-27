@@ -119,9 +119,32 @@ export { EmbeddingProvider } from '@/llm/embedding.js';
 export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
 export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
-export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
+export type { ISessionStore, SessionMessage, SessionMeta, SessionStorageMode } from '@/memory/sessionStore.js';
+// Round-based 模式辅助函数
+export { createRoundBasedSessionMeta, isRoundBasedMode, generateForkSessionId } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现
 export { getSessionDisplayName } from '@/memory/sessionStore.js';
+
+// ─── 问答闭环（Round）存储导出 ─────────────────────────────
+// Round 数据结构和存储接口
+export type { Round, RoundMessage, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
+// Round 辅助函数
+export { generateRoundId, generateMessageId, createPendingRound, completeRound } from '@/memory/roundStore.js';
+
+// ─── 会话视图加载器导出 ─────────────────────────────────────
+// SessionViewLoader：将 Round ID 列表展开为完整对话视图
+export type { ISessionViewLoader, SessionView, SessionSummary } from '@/memory/sessionViewLoader.js';
+export { flattenRoundsToMessages, truncateRoundsUpTo, countMessagesInRounds } from '@/memory/sessionViewLoader.js';
+// 内存版实现（用于测试和开发）
+export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
+
+// ─── Round-based 会话管理器导出 ─────────────────────────────
+// DefaultSessionManager：Round-based 存储模式的会话管理器
+export type { ISessionManager } from '@/memory/sessionManager.js';
+export { DefaultSessionManager, createDefaultSessionManager } from '@/memory/sessionManager.js';
+// 内存版实现（用于测试和开发）
+export { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+export { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 // 会话占位标题单一真理源，避免宿主重复实现
 export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNamer.js';
 // 宿主可条件性控制 trace_summary 工具的可见性
