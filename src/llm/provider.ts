@@ -4,6 +4,13 @@ import type { LlmChunk } from '@/llm/types.js';
 export interface Message {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
+  /**
+   * 轮次 ID（可选）：标识该消息归属的「问答轮次」。
+   * 由 loop 在写入 user/assistant/tool 消息时附上当前 currentRoundId，
+   * 作为替换式压缩（第一级 LRU）取 round-summary 的单一真理源——
+   * roundId 随消息携带，不依赖任何外部序列的尾部对齐，杜绝错位替换。
+   */
+  roundId?: string;
   // 消息来源名称（可选，用于 function 调用结果标识，与 OpenAI API 对齐）
   name?: string;
   toolCalls?: Array<{

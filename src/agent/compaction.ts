@@ -106,26 +106,25 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
   private readonly keepRecentRounds: number;
   /** 取该轮 roundId 对应的已存 round-summary（无摘要返回 null，该轮不替换） */
   private readonly getSummary: (roundId: string) => string | null;
-  /** 取当前轮次 id 序列（与消息中 user 轮次顺序一致，loop 维护）；从尾部对齐最近轮 */
-  private readonly roundIds: () => readonly string[];
-  /** 上下文是否刚被截断重排（roundIdSequence 与消息轮次无法可靠对齐时跳过替换，交截断机制兜底） */
+  /** 上下文是否刚被截断重排（截断会提取 key messages 重插中间，此处跳过替换，交截断机制兜底） */
   private readonly isContextTruncated: () => boolean;
 
   /**
    * @param options keepRecentRounds 保留最近正文轮数 / getSummary 按 roundId 取摘要 /
-   *   roundIds 轮次 id 序列 / onReplaced 被替换轮的 roundId 回调（供装配 exclude 记账，防二次召回）/
-   *   isContextTruncated 上下文是否被截断重排（截断会提取 key messages 重插中间，尾部对齐映射失效，跳过替换）
+   *   onReplaced 被替换轮的 roundId 回调（供装配 exclude 记账，防二次召回）/
+   *   isContextTruncated 上下文是否被截断重排（截断会提取 key messages 重插中间，跳过替换）
+   *
+   * 轮次 roundId 不再依赖外部序列的「尾部对齐」——各消息在 loop 写入时已自带 roundId
+   * （见 Message.roundId），groupRounds 直接从每轮 user 消息读取，单一真理源、无错位风险。
    */
   constructor(options: {
     keepRecentRounds: number;
     getSummary: (roundId: string) => string | null;
-    roundIds: () => readonly string[];
     onReplaced?: (roundId: string) => void;
     isContextTruncated?: () => boolean;
   }) {
     this.keepRecentRounds = options.keepRecentRounds;
     this.getSummary = options.getSummary;
-    this.roundIds = options.roundIds;
     this.onReplaced = options.onReplaced;
     this.isContextTruncated = options.isContextTruncated ?? (() => false);
   }
@@ -133,27 +132,29 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
   /** 被替换轮 roundId 回调（装配时间线互斥：该轮摘要已随替换注入上下文，下次装配须 exclude 防双写） */
   private readonly onReplaced?: (roundId: string) => void;
 
-  /** 按 user 消息边界分组为轮次（返回每轮 [start,end] 索引）；系统 prompt 与非 user 消息归入所在轮 */
-  private groupRounds(messages: readonly Message[]): Array<{ start: number; end: number }> {
-    const rounds: Array<{ start: number; end: number }> = [];
+  /** 按 user 消息边界分组为轮次；直接从每轮 user 消息读取自带 roundId（无外部序列、无尾部对齐） */
+  private groupRounds(
+    messages: readonly Message[],
+  ): Array<{ start: number; end: number; roundId?: string }> {
+    const rounds: Array<{ start: number; end: number; roundId?: string }> = [];
     let start = -1;
     for (let i = 0; i < messages.length; i++) {
       if (messages[i]!.role === 'user') {
         if (start !== -1) {
-          rounds.push({ start, end: i - 1 });
+          rounds.push({ start, end: i - 1, roundId: messages[start]?.roundId });
         }
         start = i;
       }
     }
     if (start !== -1) {
-      rounds.push({ start, end: messages.length - 1 });
+      rounds.push({ start, end: messages.length - 1, roundId: messages[start]?.roundId });
     }
     return rounds;
   }
 
   /** @inheritdoc 上下文未被截断重排且存在越界轮次（超出保留轮数）时需替换 */
   shouldCompact(messages: readonly Message[]): boolean {
-    // 截断会提取 key messages 重插中间，roundIdSequence 尾部对齐映射失效——
+    // 截断会提取 key messages 重插中间，作用于裁剪后视图风险较高——
     // 此时跳过替换（错位替换正文比不替换危害更大），空间维护交回截断机制的摘要注入
     if (this.isContextTruncated()) return false;
     return this.groupRounds(messages).length > this.keepRecentRounds;
@@ -161,31 +162,28 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
 
   /**
    * 执行替换：最早先换（LRU），把越界轮次正文替换成它自己的已存记忆摘要。
-   * 轮次 id 从序列**尾部**对齐最近轮（截断丢弃旧轮后仍与最近轮保持对齐）；
-   * 从后往前替换，避免索引位移。无摘要的轮次保持不动（交第二级压缩）。
+   * 轮次 roundId 直接取自该轮 user 消息自带字段（Message.roundId），不再依赖尾部对齐序列；
+   * 从后往前替换，避免索引位移。无摘要 / 无 roundId 的轮次保持不动（交第二级压缩）。
    */
   compact(messages: Message[]): void {
-    // 双保险：截断重排后 roundId 尾部对齐失效 → 即使被直接调用也不替换（空间维护交回截断机制）
+    // 双保险：截断重排后视图不稳定 → 即使被直接调用也不替换（空间维护交回截断机制）
     if (this.isContextTruncated()) return;
     const rounds = this.groupRounds(messages);
     // 越界轮次：保留最近 keepRecentRounds 轮，其余为可替换区（LRU 最早先换）
     const replaceableCount = Math.max(0, rounds.length - this.keepRecentRounds);
     if (replaceableCount === 0) return;
 
-    const seq = this.roundIds();
-    // 从尾部对齐：round[i] 的 roundId = seq[seq.length - rounds.length + i]（仅当索引有效）
     const replaceable = rounds.slice(0, replaceableCount);
 
     // 从后往前替换，保证早于它的轮次索引不受位移影响
     for (let k = replaceable.length - 1; k >= 0; k--) {
       const round = replaceable[k]!;
-      const seqIndex = seq.length - rounds.length + k;
-      const roundId = seqIndex >= 0 && seqIndex < seq.length ? seq[seqIndex] : undefined;
-      if (!roundId) continue;
+      const roundId = round.roundId;
+      if (!roundId) continue; // 该轮消息未携带 roundId（异常态）→ 跳过，交第二级压缩
       const summary = this.getSummary(roundId);
       if (!summary) continue; // 无已存摘要 → 该轮不替换（交第二级压缩）
 
-      // 整轮正文替换为一条摘要 system 消息（保留 roundId 供 trace_summary 回溯）
+      // 整轮正文替换为一条摘要 system 消息（roundId 经 onReplaced 上报供 trace_summary 回溯）
       const replacement: Message = {
         role: 'system',
         content:

@@ -213,8 +213,6 @@ export class AgentLoop {
   private readonly onContextCompressed: AgentLoopOptions['onContextCompressed'];
   /** 上下文管理器（从 loop 提取的 token 估算 + 截断 + 摘要职责） */
   private readonly contextManager: ContextManager;
-  /** 轮次 id 序列（每轮外部输入一个 roundId，替换式压缩按尾部对齐最近轮映射已存摘要） */
-  private readonly roundIdSequence: string[] = [];
   /** 被替换轮 roundId 集合（第一级替换把越界轮正文换成已存摘要；装配 exclude 据此防二次召回） */
   private readonly replacedRoundIds: Set<string> = new Set();
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
@@ -242,12 +240,12 @@ export class AgentLoop {
         keepRecentRounds: opts.replaceRoundsKeepRecent ?? DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
         // 未注入 getRoundSummary 时降级为 no-op（返回 null，替换层不生效）
         getSummary: opts.getRoundSummary ?? (() => null),
-        roundIds: () => this.roundIdSequence,
         // 被替换轮记账：装配 exclude 据此防二次召回（装配时间线互斥）
         onReplaced: (roundId) => {
           this.replacedRoundIds.add(roundId);
         },
-        // 截断重排后 roundId 尾部对齐失效 → 替换层跳过（空间维护交回截断机制）
+        // 截断重排后上下文已被摘要/关键消息重组 → 替换层跳过（空间维护交回截断机制；
+        // roundId 现已随消息携带，跳过仅为作用于裁剪视图时的安全冗余）
         isContextTruncated: () => this.isLastContextTruncated,
       }),
       this.compactionStrategy,
@@ -357,8 +355,6 @@ export class AgentLoop {
     try {
       // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
       this.currentRoundId = roundId ?? this.allocRoundId();
-      // 记录轮次 id 序列（替换式压缩第一级按尾部对齐最近轮，映射已存摘要；截断时同步修剪）
-      this.roundIdSequence.push(this.currentRoundId);
 
       // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
       this.providerRouteCache.clear();
@@ -381,7 +377,8 @@ export class AgentLoop {
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
 
-      // 外循环：单轮闭环的重复，直到 Handoff 决定终止
+      // 单轮迭代循环（runIterationLoop）：本闭环的执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
+      // 真正的「外循环」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
       taskSucceeded = true;
       yield* this.runIterationLoop(signal);
     } catch (err) {
@@ -839,13 +836,11 @@ export class AgentLoop {
       contextSummary = await this.contextManager.getOrCreateSummary(this.messages, effectiveSignal);
     }
     const safeMessages = this.contextManager.truncateMessages(this.messages, contextSummary);
-    // 记录本次是否截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效）
+    // 记录本次是否截断重排（替换层据此跳过——截断提取 key messages 重插中间，作用于裁剪视图风险较高）
     this.isLastContextTruncated = safeMessages !== this.messages;
-    // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）；
-    // 同时按剩余 user 轮数修剪 roundIdSequence 前端（被截断的旧轮 id 不再参与替换映射，保持尾部对齐）
+    // 截断后同步替换工作记忆，防 messages 无限增长（持久化由 MessageHistory 负责）
     if (this.isLastContextTruncated) {
       this.replaceContext([...safeMessages]);
-      this.trimRoundIdSequenceToMessages();
     }
 
     // ─── 两级空间管理压缩链 ─────────────────────────────────────
@@ -1728,6 +1723,9 @@ export class AgentLoop {
    * 失效动作与替换动作同处（SSOT）。
    */
   restoreHistory(historyMessages: readonly Message[]): void {
+    // 历史整体替换（跨日重置/切会话/恢复检查点）：旧的「已被第一级替换」记账归属上一会话，
+    // 须一并清空，避免 stale roundId 污染新会话的召回互斥集（与 resetSummary 同属恢复 chokepoint）
+    this.replacedRoundIds.clear();
     // 过滤掉 system 消息（已有初始化的 system prompt）
     const nonSystemMessages = historyMessages.filter((m) => m.role !== 'system');
 
@@ -1802,9 +1800,13 @@ export class AgentLoop {
   // 收敛全部裸 push/replace 写点：每类消息的固定约束（如 <user_input> 包裹）
   // 内聚在对应写方法内，禁止外部散落裸写 this.messages，杜绝"漏包裹/乱设 role"风险面。
 
-  /** 追加一条 user 消息（统一 <user_input> 标签包裹，防注入攻击） */
+  /** 追加一条 user 消息（统一 <user_input> 标签包裹，防注入攻击）；附当前轮次 roundId（替换式压缩单一真理源） */
   private appendUserMessage(content: string): void {
-    this.messages.push({ role: 'user', content: `<user_input>${content}</user_input>` });
+    this.messages.push({
+      role: 'user',
+      content: `<user_input>${content}</user_input>`,
+      roundId: this.currentRoundId,
+    });
   }
 
   /** 追加一条 system 消息（技能注入、召回、任务表、自审查提示等通用注入通道） */
@@ -1817,40 +1819,32 @@ export class AgentLoop {
     }
   }
 
-  /** 追加一条 assistant 纯文本消息（正常 LLM 回复或兜底文本） */
+  /** 追加一条 assistant 纯文本消息（正常 LLM 回复或兜底文本）；附当前轮次 roundId */
   private appendAssistantText(content: string): void {
-    this.messages.push({ role: 'assistant', content });
+    this.messages.push({ role: 'assistant', content, roundId: this.currentRoundId });
   }
 
-  /** 追加一条带 toolCalls 的 assistant 消息（executeToolCalls 前导） */
+  /** 追加一条带 toolCalls 的 assistant 消息（executeToolCalls 前导）；附当前轮次 roundId */
   private appendAssistantToolCall(
     fullContent: string,
     toolCalls: NonNullable<Message['toolCalls']>,
   ): void {
-    this.messages.push({ role: 'assistant', content: fullContent, toolCalls });
+    this.messages.push({
+      role: 'assistant',
+      content: fullContent,
+      toolCalls,
+      roundId: this.currentRoundId,
+    });
   }
 
-  /** 追加一条 tool 消息（executeToolCalls 结果回填） */
+  /** 追加一条 tool 消息（executeToolCalls 结果回填）；附当前轮次 roundId */
   private appendToolMessage(content: string, toolCallId: string): void {
-    this.messages.push({ role: 'tool', content, toolCallId });
+    this.messages.push({ role: 'tool', content, toolCallId, roundId: this.currentRoundId });
   }
 
   /** 整体替换执行上下文（截断落盘 / 恢复历史 / 装配重排：传入的数组已是完整上下文） */
   private replaceContext(next: Message[]): void {
     this.messages = next;
-  }
-
-  /**
-   * 截断后按剩余 user 轮数修剪 roundIdSequence 前端。
-   * 被截断丢弃的旧轮 id 不再参与替换映射——保持「序列尾部 ↔ 消息最近轮」对齐，
-   * 替换式压缩（第一级 LRU）据尾部对齐取已存摘要，避免把摘要错配到错误轮次。
-   */
-  private trimRoundIdSequenceToMessages(): void {
-    // user 消息数 = 轮次数（system prompt / tool / 注入的装配性 system 块不计）
-    const userCount = this.messages.filter((m) => m.role === 'user').length;
-    if (this.roundIdSequence.length > userCount) {
-      this.roundIdSequence.splice(0, this.roundIdSequence.length - userCount);
-    }
   }
 
   // ─── Reflection 辅助方法 ────────────────────────────────
