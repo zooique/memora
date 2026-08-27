@@ -13,13 +13,13 @@ import { createChatView } from '../scripts/chatView.js';
 const HTML = `
   <div id="sessionTitleBar" class="session-title-bar">
     <span id="sessionTitleText"></span>
-    <button id="renameSessionBtn"></button>
+    <button id="renameSessionBtn"><span class="btn-icon" data-icon="edit"></span></button>
     <span class="session-title-bar__spacer"></span>
-    <button id="forkSessionBtn"></button>
-    <button id="newSessionBtn"></button>
+    <button id="forkSessionBtn"><span class="btn-icon" data-icon="fork"></span></button>
+    <button id="newSessionBtn"><span class="btn-icon" data-icon="plus"></span></button>
   </div>
   <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
-    <button id="historyBtn" class="treedd__trigger"></button>
+    <button id="historyBtn" class="treedd__trigger"><span class="btn-icon" data-icon="history"></span></button>
     <div id="historyMenu" class="treedd__menu"></div>
   </div>
   <div id="activityBar" class="activity-bar" hidden></div>
@@ -35,7 +35,7 @@ const HTML = `
       <div id="emptyHint" class="empty-hint"></div>
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
-    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden></button>
+    <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden><span class="btn-icon" data-icon="scroll-bottom"></span></button>
   </div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -835,7 +835,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     // 完整原始文本存在消息 dataset（复制按钮据此复制完整 Markdown 源）
     expect(assistant.dataset.rawText).toBe('第一段 第二段');
     // 复制按钮存在（主动可见）
-    expect(assistant.querySelector('.msg-copy')).not.toBeNull();
+    expect(assistant.querySelector('.msg-copy-icon')).not.toBeNull();
   });
 
   it('interrupted 同样 finalize：渲染 Markdown + 移除光标 + 代码块增强', () => {
@@ -881,17 +881,17 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('用户消息底部有复制按钮（复制用户原始输入）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '你好，帮我打磨文档', ts: '2026-08-14T09:00:00.000Z' });
-    const copyBtn = document.querySelector('.msg.user .msg-copy') as HTMLButtonElement;
+    const copyBtn = document.querySelector('.msg-user-actions .msg-copy-icon') as HTMLButtonElement;
     expect(copyBtn).not.toBeNull();
-    expect(copyBtn.textContent).toBe('复制');
+    expect(copyBtn.getAttribute('aria-label')).toBe('复制消息');
   });
 
   it('AI 消息底部有复制 + 删除按钮（删除问答闭环入口）', () => {
     mountChatView();
     dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
     const msg = document.querySelector('.msg.assistant') as HTMLElement;
-    expect(msg.querySelector('.msg-copy')).not.toBeNull();
-    const del = msg.querySelector('.msg-delete') as HTMLButtonElement;
+    expect(msg.querySelector('.msg-copy-icon')).not.toBeNull();
+    const del = msg.querySelector('.msg-delete-icon') as HTMLButtonElement;
     expect(del).not.toBeNull();
     // 有 timestamp 锚点时删除按钮可用
     expect(del.disabled).toBe(false);
@@ -900,7 +900,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('AI 消息删除按钮：携带该消息 ts 发送 delete_turn（host 确认后截断）', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
-    const del = document.querySelector('.msg.assistant .msg-delete') as HTMLButtonElement;
+    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     del.click();
     // 点删除 → 发 delete_turn（携带渲染时存的 dataset.ts 锚点）
     expect(postMessage).toHaveBeenCalledWith({ type: 'delete_turn', ts: '2026-08-14T09:00:30.000Z' });
@@ -910,7 +910,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     mountChatView();
     // 流式未完成即被清空：assistant 无 ts
     dispatch({ type: 'chunk', content: '半截' });
-    const del = document.querySelector('.msg.assistant .msg-delete') as HTMLButtonElement;
+    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     expect(del.disabled).toBe(true);
   });
 });

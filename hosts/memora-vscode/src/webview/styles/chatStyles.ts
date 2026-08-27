@@ -77,8 +77,8 @@ export const chatStyles = `
    * 会话导航全量收敛到标题条；spacer 把按钮组推向右端（对齐 Trae 右上角历史入口） */
   .session-title-bar__btn {
     display: inline-flex; align-items: center; justify-content: center;
-    width: 20px; height: 20px; margin-left: var(--sp-1, 4px);
-    padding: 0; border: none; border-radius: var(--radius-sm, 2px);
+    width: 22px; height: 22px; margin-left: var(--sp-1, 4px);
+    padding: 0; border: none; border-radius: var(--radius-sm, 4px);
     background: transparent; color: var(--text-secondary, #9aa0a6);
     cursor: pointer;
   }
@@ -86,6 +86,11 @@ export const chatStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
     color: var(--text-primary, #cccccc);
   }
+  /* 标题栏按钮内的图标容器 */
+  .session-title-bar__btn .btn-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .session-title-bar__btn .btn-icon svg { display: block; }
   .session-title-bar__spacer { flex: 1 1 auto; }
 
   /* ============ Components：历史记录下拉（2026-08-17 会话管理重构 v2） ============ */
@@ -94,8 +99,17 @@ export const chatStyles = `
    * 紧挨标题条历史按钮下方弹出（treedd 绝对定位浮层），无遮罩、轻量；
    * 条目富内容：标题 + 相对时间 + 悬浮垃圾桶（删除 hover 复用 --status-fail 令牌）。 */
   .session-history .treedd__trigger {
-    width: 20px; height: 20px; margin-left: var(--sp-1, 4px); /* 对齐标题条按钮组尺寸 */
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; margin-left: var(--sp-1, 4px);
+    padding: 0; border: none; border-radius: var(--radius-sm, 4px);
+    background: transparent; color: var(--text-secondary, #9aa0a6);
+    cursor: pointer;
   }
+  .session-history .treedd__trigger:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-primary, #cccccc);
+  }
+  .session-history .treedd__trigger .btn-icon svg { display: block; }
   .session-history .treedd__menu {
     min-width: 240px; max-width: min(280px, calc(100vw - 24px));
     max-height: 280px; overflow-y: auto;
@@ -159,6 +173,11 @@ export const chatStyles = `
   .date-divider::before, .date-divider::after { content: ''; flex: 1; height: 1px; background: var(--border-panel, rgba(128,128,128,.4)); }
   /* 消息基类：默认无气泡（AI 铺满），正文与底部操作行分离 */
   .msg { display: flex; flex-direction: column; white-space: pre-wrap; word-break: break-word; line-height: 1.6; }
+  /* 用户消息外层包裹：气泡 + hover 操作按钮 */
+  .msg-wrapper {
+    display: flex; flex-direction: column; align-items: flex-end;
+    position: relative;
+  }
   /* 用户消息：右侧浅灰气泡（轻量身份标记） */
   .msg.user {
     align-self: flex-end; max-width: 85%;
@@ -167,6 +186,43 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px) var(--radius-lg, 8px) var(--radius-sm, 2px) var(--radius-lg, 8px);
   }
+  /* 用户消息 hover 操作区：气泡外底部，默认隐藏，hover 显示 */
+  .msg-user-actions {
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: var(--sp-2, 6px); margin-top: var(--sp-1, 4px);
+    opacity: 0; transform: translateY(-2px);
+    transition: opacity 0.15s ease, transform 0.15s ease;
+  }
+  .msg-wrapper:hover .msg-user-actions,
+  .msg-user-actions:focus-within {
+    opacity: 1; transform: translateY(0);
+  }
+  .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  /* 图标按钮通用样式 */
+  .msg-icon-btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 22px; height: 22px; padding: 0;
+    border: none; border-radius: var(--radius, 6px);
+    background: transparent; color: var(--text-secondary, #9aa0a6);
+    cursor: pointer; transition: all 0.15s ease;
+  }
+  .msg-icon-btn:hover {
+    background: var(--surface-hover, rgba(128,128,128,.2));
+    color: var(--text-primary, #cccccc);
+  }
+  .msg-icon-btn svg { display: block; }
+
+  /* 全局图标容器：通过 data-icon 属性注入 SVG 的 span 容器 */
+  .btn-icon {
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+  .btn-icon svg { display: block; }
+  /* 删除图标危险态 */
+  .msg-delete-icon:hover:not(:disabled) {
+    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
+    color: var(--status-fail, #b3261e);
+  }
+  .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
   /* AI 回答：顶部身份标签 + 正文铺满（对齐主流大厂 AI 对话设计）。
    * 结构：.msg.assistant → 纵向 [.msg-ai-label[角色/模型名]][.msg-content[正文+footer]]。
    * 不再用侧边头像（避免每条回复都挤占一行），改为顶部弱标签标「谁在说」，
@@ -229,7 +285,8 @@ export const chatStyles = `
     animation: streamCaret 1s step-end infinite;
   }
   @keyframes streamCaret { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
-  .msg.assistant .msg-body p { margin: 0 0 var(--sp-3, 8px); }
+  /* AI 正文段落间距（增加阅读舒适度） */
+  .msg.assistant .msg-body p { margin: 0 0 var(--sp-4, 10px); line-height: 1.75; }
   .msg.assistant .msg-body > :last-child { margin-bottom: 0; }
   .msg.assistant .msg-body h1,
   .msg.assistant .msg-body h2,
@@ -305,22 +362,12 @@ export const chatStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-radius: var(--radius-lg, 8px);
   }
-  /* 消息底部操作行：复制（主动可见）+ 时间戳 */
+  /* 消息底部操作行：图标按钮 + 时间戳 */
   .msg-footer {
     display: flex; align-items: center; justify-content: flex-end;
-    gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px);
+    gap: var(--sp-1, 4px); margin-top: var(--sp-2, 6px);
   }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  .msg-copy {
-    padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
-    border: none; border-radius: var(--radius, 6px);
-    background: transparent; color: var(--text-secondary, #9aa0a6);
-    cursor: pointer;
-  }
-  .msg-copy:hover {
-    background: var(--surface-hover, rgba(128,128,128,.2));
-    color: var(--text-primary, #cccccc);
-  }
   /* 润色按钮（H5 文本润色入口，2026-08-23）：用户消息专属，调用内核润色服务。
    * 与复制按钮同尺寸，用强调色区分（--accent），润色中态用 opacity 降提示。
    * 复用现有语义令牌 --accent，不新增冗余 token。 */
@@ -339,20 +386,6 @@ export const chatStyles = `
     outline: 2px solid var(--border-focus, #0e639c);
     outline-offset: 2px;
   }
-  /* 删除按钮（2026-08-16 对话闭环管理）：危险操作，文字用错误色标识破坏性。
-   * 与复制同尺寸，hover 时错误色背景更明显；禁用态灰显（无 timestamp 锚点时不可删）。
-   * 复用现有语义令牌 --status-fail（错误前景）+ --feedback-error-bg（错误背景），不新增冗余 token。 */
-  .msg-delete {
-    padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
-    border: none; border-radius: var(--radius, 6px);
-    background: transparent; color: var(--status-fail, #b3261e);
-    cursor: pointer;
-  }
-  .msg-delete:hover:not(:disabled) {
-    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
-    color: var(--status-fail, #b3261e);
-  }
-  .msg-delete:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
   /* P1（2026-08-15 记忆附着可见）：AI 回复底部「基于 N 条记忆」弱标签。
    * 灰字小字号 + 左侧细竖线（记忆语义），主动可见不打扰；
    * margin-right:auto 使其靠左（信息性标签），复制/时间戳保持靠右（footer 为 flex-end）。 */
@@ -658,6 +691,14 @@ export const chatStyles = `
     background: var(--accent-hover, #1177bb);
   }
   .send-btn-primary:active:not(.loading) { transform: scale(0.97); }
+  /* 发送按钮三态图标：通过 data-icon 注入 SVG，用 display 切换显隐 */
+  .send-btn-primary .send-icon,
+  .send-btn-primary .stop-icon,
+  .send-btn-primary .play-icon {
+    display: block;
+    width: 16px;
+    height: 16px;
+  }
   .send-btn-primary .send-icon { display: block; }
   .send-btn-primary .stop-icon { display: none; }
   .send-btn-primary .play-icon { display: none; }
@@ -959,8 +1000,7 @@ export const chatStyles = `
    * 仅对 :focus-visible 生效（鼠标点击不显示，避免干扰）。
    * 下拉菜单项已在 dropdown.ts 用背景色替换 outline，不在此重复。 */
   .send-btn-primary:focus-visible,
-  .msg-copy:focus-visible,
-  .msg-delete:focus-visible,
+  .msg-icon-btn:focus-visible,
   .opt-btn:focus-visible,
   .suggestion-chip:focus-visible,
   .treedd__trigger:focus-visible,

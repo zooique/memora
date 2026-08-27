@@ -1898,20 +1898,20 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <div id="sessionTitleBar" class="session-title-bar" title="当前会话">
     <span id="sessionTitleText" class="session-title-bar__text"></span>
     <button id="renameSessionBtn" class="session-title-bar__btn" title="重命名会话" aria-label="重命名会话">
-      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 3a2.828 2.828 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg>
+      <span class="btn-icon" data-icon="edit"></span>
     </button>
     <span class="session-title-bar__spacer"></span>
     <button id="forkSessionBtn" class="session-title-bar__btn" title="分叉当前会话为新分支" aria-label="分叉当前会话为新分支">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>
+      <span class="btn-icon" data-icon="fork"></span>
     </button>
     <button id="newSessionBtn" class="session-title-bar__btn" title="新建会话" aria-label="新建会话">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      <span class="btn-icon" data-icon="plus"></span>
     </button>
     <!-- 历史记录下拉（SSOT 剪枝 v2，2026-08-17）：复用 treedd 组件——trigger=历史按钮，
          菜单紧挨按钮下方弹出（无遮罩、轻量），开合/外部关闭/Escape 由 initDropdowns 管理 -->
     <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
       <button id="historyBtn" class="treedd__trigger" title="历史记录" aria-label="历史记录" aria-haspopup="menu">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+        <span class="btn-icon" data-icon="history"></span>
       </button>
       <div id="historyMenu" class="treedd__menu" role="menu"></div>
     </div>
@@ -1930,7 +1930,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
          用户上滚阅读离开底部时浮现，点击回到最新消息位置；吸底时隐藏 -->
     <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden
       title="回到底部" aria-label="回到底部">
-      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg>
+      <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
   </div>
 
@@ -1971,7 +1971,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
             <!-- 文本润色按钮：图标化，降低视觉权重 -->
             <button id="polishBtn" class="polish-btn-icon" title="润色输入内容" aria-label="润色">
-              <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              <span class="btn-icon" data-icon="edit"></span>
             </button>
           </div>
           <!-- 右侧：主发送按钮（单图标三态：发送↑ / 停止■ / 继续▶，均无文字省空间）
@@ -1980,12 +1980,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <!-- 暂停按钮（Gap A）：仅生成中显隐（setStatus 控制 hidden），软暂停当前 Agent 执行。
                  「停止」丢弃本次流、「暂停」落检查点可恢复，二者语义区分、视觉同级弱化展示 -->
             <button id="pauseBtn" class="pause-btn" title="暂停生成" aria-label="暂停生成" hidden>
-              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="10" y1="4" x2="10" y2="20"/><line x1="14" y1="4" x2="14" y2="20"/></svg>
+              <span class="btn-icon" data-icon="pause"></span>
             </button>
             <button id="send" class="send-btn-primary" title="发送 (Enter)" aria-label="发送">
-              <svg class="send-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="19" x2="12" y2="5"/><polyline points="5 12 12 5 19 12"/></svg>
-              <svg class="stop-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-              <svg class="play-icon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="6 4 20 12 6 20"/></svg>
+              <span class="send-icon" data-icon="send"></span>
+              <span class="stop-icon" data-icon="stop"></span>
+              <span class="play-icon" data-icon="play"></span>
             </button>
           </div>
         </div>

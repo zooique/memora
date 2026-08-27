@@ -52,7 +52,7 @@ const HTML = `
     <div id="toast"></div>
   </div>
   <div id="skills-root" hidden>
-    <div class="header"><h2>全局技能</h2><span id="skillCount" class="stat-bar" hidden></span><button id="btnOpenSkillsDir" class="btn btn-secondary">📁 打开目录</button><button id="btnRefreshSkills" class="btn btn-secondary">刷新</button></div>
+    <div class="header"><h2>全局技能</h2><span id="skillCount" class="stat-bar" hidden></span><div class="header-actions"><button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-text"><span class="btn-icon" data-icon="folder"></span><span>打开目录</span></button><button id="btnRefreshSkills" class="btn btn-secondary btn-icon-text"><span class="btn-icon" data-icon="refresh"></span><span>刷新</span></button></div></div>
     <div id="skillsList"><p class="hint">加载中…</p></div>
   </div>
   <div id="security-root" hidden>

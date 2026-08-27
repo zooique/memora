@@ -37,6 +37,22 @@ export const skillsStyles = `
     padding: var(--sp-2, 6px) var(--sp-4, 10px);
   }
 
+  /* 图标按钮通用样式 */
+  #skills-root .btn-icon-text {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+  }
+  #skills-root .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: currentColor;
+  }
+  #skills-root .btn-icon svg {
+    display: block;
+  }
+
   #skills-root .hint {
     color: var(--text-secondary, #9aa0a6);
     font-size: var(--font-sm, 11px);

@@ -25,6 +25,7 @@ import type {
 import { createConfigView } from './configView.js';
 import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
+import { populateIcons } from './icons.js';
 
 /** settingsView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface SettingsViewDeps {
@@ -47,6 +48,9 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   // SSOT：acquireVsCodeApi 每个 webview 只能调用一次，此处获取一次并注入三个子视图，
   // 避免子视图各自调用导致后续调用返回失效对象、postMessage 静默失败（角色/记忆卡加载根因）
   const vscode = acquireVsCodeApi();
+
+  // 填充 HTML 中的图标容器（统一 SVG 图标管理）
+  populateIcons(document.body);
 
   // 选项卡按钮 + 四个子视图根容器（HTML 骨架固定 id，查询走全局 getElementById——
   // 根容器本身是唯一 id，只有根容器【内部】的子元素才做 root 内查询隔离）

@@ -21,6 +21,7 @@ import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scr
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { ToolCard } from '../components/toolCard.js';
 import { initDropdowns } from '../components/dropdown.js';
+import { createIcon, getIconSvg, populateIcons } from './icons.js';
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -68,6 +69,10 @@ const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
 export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void {
   const document = window.document;
   const vscode = acquireVsCodeApi();
+
+  // 统一图标填充：将 HTML 中 data-icon 属性的元素替换为 Trae 风格 SVG 图标
+  populateIcons(document.body);
+
   const messages = document.getElementById('messages') as HTMLElement;
   const emptyState = document.getElementById('emptyState') as HTMLElement;
   // 空状态标题/提示（P3，2026-08-15 空状态角色化）：随激活角色包动态生成，切换角色不产生定位错位
@@ -757,12 +762,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
   // 返回创建的 .msg 元素，供调用方作为流式锚点（排雷 P0-1）。
   // 跨天合并时先插入日期分隔线（ui-redesign.md §4.1 ②）；AI 消息带头像身份。
+
   function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
     renderDateDivider(ts);
-    const div = document.createElement('div');
-    div.className = 'msg ' + role;
     if (role === 'assistant') {
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
       // AI 消息：复用骨架构建（label + content + body + footer），
       // 一次性消息（历史回放）直接渲染 Markdown（吸收养分，代码块/列表/表格可读）
       const { body } = buildAssistantShell(div, ts);
@@ -771,37 +777,42 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       body.innerHTML = renderMarkdown(text);
       // 历史回放同样做代码块增强（语言标签 + 复制按钮）
       enhanceCodeBlocks(body);
+      // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
+      activeAssistantEl = div;
+      messages.appendChild(div);
+      scrollToBottom(messages);
+      updateEmptyState();
+      return div;
     } else {
+      // 用户消息：外层包裹（气泡 + hover 操作按钮）
+      const wrapper = document.createElement('div');
+      wrapper.className = 'msg-wrapper';
+      const div = document.createElement('div');
+      div.className = 'msg ' + role;
       const body = document.createElement('div');
       body.className = 'msg-body';
       body.textContent = text;
       div.appendChild(body);
-      const footer = document.createElement('div');
-      footer.className = 'msg-footer';
-      // 用户消息复制按钮：复制历史消息文本
-      if (role === 'user') {
-        const copyBtn = document.createElement('button');
-        copyBtn.className = 'msg-copy';
-        copyBtn.textContent = '复制';
-        copyBtn.title = '复制消息';
-        copyBtn.addEventListener('click', () => copyText(text));
-        footer.appendChild(copyBtn);
-      }
+      wrapper.appendChild(div);
+      // 用户消息 hover 操作区：复制图标 + 时间戳
+      const actions = document.createElement('div');
+      actions.className = 'msg-user-actions';
+      const copyBtn = createIcon('copy', '复制消息', 'msg-copy-icon');
+      copyBtn.addEventListener('click', () => copyText(text));
+      actions.appendChild(copyBtn);
       const t = fmtTime(ts);
       if (t) {
         const timeEl = document.createElement('span');
         timeEl.className = 'msg-time';
         timeEl.textContent = t;
-        footer.appendChild(timeEl);
+        actions.appendChild(timeEl);
       }
-      div.appendChild(footer);
+      wrapper.appendChild(actions);
+      messages.appendChild(wrapper);
+      scrollToBottom(messages);
+      updateEmptyState();
+      return wrapper;
     }
-    // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
-    if (role === 'assistant') activeAssistantEl = div;
-    messages.appendChild(div);
-    scrollToBottom(messages);
-    updateEmptyState();
-    return div;
   }
 
   /**
@@ -839,20 +850,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     content.appendChild(body);
     const footer = document.createElement('div');
     footer.className = 'msg-footer';
-    const copyBtn = document.createElement('button');
-    copyBtn.className = 'msg-copy';
-    copyBtn.textContent = '复制';
-    copyBtn.title = '复制消息';
+    const copyBtn = createIcon('copy', '复制消息', 'msg-copy-icon');
     // 复制按钮读取 .msg.dataset.rawText（原始 Markdown 源）；流式结束更新后即复制完整文本
     copyBtn.addEventListener('click', () => copyText(div.dataset.rawText ?? ''));
     footer.appendChild(copyBtn);
     // 删除按钮（2026-08-16 对话闭环管理）：AI 消息承载「删除问答闭环」入口——删了答也删问。
     // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
     // 无 ts（如流式未完成即被清空）时禁用，避免删除锚点失效。
-    const deleteBtn = document.createElement('button');
-    deleteBtn.className = 'msg-delete';
-    deleteBtn.textContent = '删除';
-    deleteBtn.title = '删除该问答及之后所有对话';
+    const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
     deleteBtn.disabled = !ts;
     deleteBtn.addEventListener('click', () => {
       if (div.dataset.ts) vscode.postMessage({ type: 'delete_turn', ts: div.dataset.ts });
@@ -1587,8 +1592,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       delBtn.title = '删除会话';
       delBtn.setAttribute('role', 'button');
       delBtn.setAttribute('aria-label', '删除会话');
-      delBtn.innerHTML =
-        '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      delBtn.innerHTML = getIconSvg('trash', 14, 14);
       delBtn.addEventListener('click', (e) => {
         e.stopPropagation(); // 阻断冒泡到 menu 的选择委托，仅触发删除（菜单保持展开可连续删）
         vscode.postMessage({ type: 'delete_session', sessionId: s.sessionId });

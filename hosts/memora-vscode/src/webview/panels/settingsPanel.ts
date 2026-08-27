@@ -1206,8 +1206,14 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <h2>全局技能</h2>
       <span id="skillCount" class="stat-bar" hidden></span>
       <div class="header-actions">
-        <button id="btnOpenSkillsDir" class="btn btn-secondary" title="打开用户技能目录">📁 打开目录</button>
-        <button id="btnRefreshSkills" class="btn btn-secondary">刷新</button>
+        <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-text" title="打开用户技能目录">
+          <span class="btn-icon" data-icon="folder"></span>
+          <span>打开目录</span>
+        </button>
+        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-text">
+          <span class="btn-icon" data-icon="refresh"></span>
+          <span>刷新</span>
+        </button>
       </div>
     </div>
     <div class="hint">全局技能是所有角色包共享的能力。支持单文件 <code>.md</code> 和文件夹 <code>SKILL.md</code> 两种格式。</div>
