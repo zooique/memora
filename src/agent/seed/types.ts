@@ -22,8 +22,6 @@ import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerat
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
-import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
-import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ITracer } from '@/agent/tracer.js';
 
@@ -102,17 +100,4 @@ export interface SeedPrepareResult {
   input: string;
   recalledMemories: Memory[];
   aborted: boolean;
-}
-
-/**
- * 从角色包管理器推导当前激活的 L2 行为策略（SSOT）
- *
- * 与 ContextPreparer.getActiveStrategy 同源：激活角色包策略优先，未激活/无管理器回退全局默认。
- * seed 各阶段经此统一取策略，避免各自硬编码默认值。
- *
- * @param rolePackManager 角色包管理器（可为空）
- * @returns 当前激活行为策略
- */
-export function resolveActiveStrategy(rolePackManager: RolePackManager | null): BehaviorStrategy {
-  return rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
 }

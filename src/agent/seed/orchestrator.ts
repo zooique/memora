@@ -16,9 +16,8 @@
 import type { AgentChunk, SessionEvent } from '@/agent/types.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
-import { resolveTaskLoopLimit } from '@/role-pack/strategyResolver.js';
+import { resolveTaskLoopLimit, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import {
-  resolveActiveStrategy,
   type StreamConsumeResult,
   type SeedDeps,
   type SeedParts,

@@ -35,6 +35,8 @@ import type {
   Summary,
   L2RuntimeStrategy,
 } from './types.js';
+// 类型级引用（type-only，运行时无环）：resolveActiveStrategy 需读取激活角色包策略
+import type { RolePackManager } from './rolePackManager.js';
 
 // ════════════════════════════════════════════════════════════
 // 默认值常量
@@ -121,6 +123,20 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
 // ════════════════════════════════════════════════════════════
 // 辅助函数
 // ════════════════════════════════════════════════════════════
+
+/**
+ * 从角色包管理器推导当前激活的 L2 行为策略（SSOT 单一真理源）。
+ *
+ * 激活角色包策略优先，未激活/无管理器回退全局默认。本函数是「激活策略」推导的
+ * 唯一实现，contextPreparer 与 seed 编排器经此统一取策略，杜绝跨模块镜像重复。
+ *
+ * @param rolePackManager 角色包管理器（可为空）
+ * @returns 当前激活行为策略
+ */
+export function resolveActiveStrategy(rolePackManager: RolePackManager | null): BehaviorStrategy {
+  return rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
+}
+
 
 /**
  * 枚举值合法性收窄（SSOT 兜底）：角色包 L2 键是枚举开关，非法拼写不应静默透传

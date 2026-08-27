@@ -16,13 +16,13 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import {
-  DEFAULT_BEHAVIOR_STRATEGY,
   resolveMinFallback,
   resolveRecallConfidence,
   resolveMemoryRecallPercent,
   resolveSummaryRecall,
+  resolveActiveStrategy,
 } from '@/role-pack/strategyResolver.js';
-import type { BehaviorStrategy, MemoryRecallMode } from '@/role-pack/types.js';
+import type { MemoryRecallMode } from '@/role-pack/types.js';
 import { computeContextBudget, isInputTooLarge } from '@/agent/budget.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
@@ -101,14 +101,6 @@ export class ContextPreparer {
   }
 
   /**
-   * 当前激活的 L2 行为策略（SSOT：与 Agent.getActiveStrategy 同源推导）
-   * @returns 激活角色包策略，未激活/无管理器时回退全局默认
-   */
-  private getActiveStrategy(): BehaviorStrategy {
-    return this.deps.rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
-  }
-
-  /**
    * 角色包自动匹配（粘性，角色包唯一入口）：在 chat() 回答前经 RolePackManager.autoMatch 粘性语义匹配——
    * 首次外部输入命中即锁定当前会话，后续仅互斥包命中才切换；命中后经 switchRolePack 激活并刷新前缀。
    * 关键词未命中时尝试 LLM 辅助语义匹配（低置信度兜底）。
@@ -158,7 +150,7 @@ export class ContextPreparer {
   ): Promise<Memory[]> {
     const { deps } = this;
     // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
-    const strategy = this.getActiveStrategy();
+    const strategy = resolveActiveStrategy(this.deps.rolePackManager);
     let recalledMemories: Memory[] = [];
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
