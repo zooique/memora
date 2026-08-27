@@ -377,6 +377,25 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       .filter((m) => m.name)
       .map((m) => {
         const pack = rpm.get(m.name);
+        // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
+        const strategy = pack?.strategy;
+        // 温度分组：基于 temperature 值动态计算
+        const temp = strategy?.act?.temperature ?? 0.7;
+        const tempGroup = temp >= 0.8 ? 'high' : temp <= 0.4 ? 'low' : 'mid';
+        // 推理模式：基于 multiStepReasoning 字段
+        const reasoningMode = strategy?.act?.multiStepReasoning;
+        
+        const strategyHint = strategy
+          ? {
+              toolReadonly: strategy.act?.toolReadonly,
+              toolApproval: strategy.act?.toolApproval,
+              tempGroup: tempGroup as 'high' | 'mid' | 'low',
+              reasoningMode: reasoningMode as 'auto' | 'manual' | undefined,
+              summaryFocus: strategy.prepare?.summaryFocus,
+              outputLimit: strategy.act?.outputLimit,
+            }
+          : undefined;
+
         return {
           name: m.name,
           displayName: m.displayName ?? m.name,
@@ -385,6 +404,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
             capability: c.capability,
             label: capabilityLabel(c.capability),
           })),
+          // 新增：从装配结果中传递 traits/exclusiveWith/handoffPrompt 等字段
+          traits: pack?.traits,
+          exclusiveWith: pack?.meta.exclusiveWith,
+          handoffPrompt: pack?.meta.handoffPrompt,
+          strategyHint,
+          interactionType: pack?.meta.interactionType,
+          version: pack?.meta.version,
         };
       });
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');

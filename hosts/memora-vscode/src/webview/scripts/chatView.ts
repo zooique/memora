@@ -112,6 +112,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
+  // 当前角色性格特征（traits，可选；由 chat_role_pack 填充，供徽章/顶栏展示）
+  let currentRoleTraits: Record<string, number> | undefined;
   // 底部模型下拉框（用 extraClass=model-picker 修饰）
   const modelPicker = document.querySelector<HTMLElement>('.model-picker');
   const modelPickerMenu = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__menu') : null;
@@ -523,6 +525,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * 更新输入区左侧「当前角色」只读徽章（SSOT：角色名与 AI 消息头/空状态共用 currentRoleName）。
    *
    * 角色切换入口已独立到「角色」视图，此处仅做只读状态展示——让用户在输入前感知当前定位。
+   * 可附加展示性格特征（traits）简要（取最高分 trait 的中文标签），让角色气质一眼可见。
    * 无角色名时隐藏徽章（保持输入区干净）；textContent 赋值防注入。
    */
   function updateRoleBadge(): void {
@@ -532,6 +535,38 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       return;
     }
     roleBadge.hidden = false;
+    // 附加最高分 trait 简要（可选），让角色气质一眼可见
+    const traits = currentRoleTraits;
+    if (traits && Object.keys(traits).length > 0) {
+      // 选择得分最高的 trait 展示，避免徽章过长
+      let topKey = '';
+      let topScore = -1;
+      for (const [key, score] of Object.entries(traits)) {
+        if (score > topScore) {
+          topScore = score;
+          topKey = key;
+        }
+      }
+      if (topKey) {
+        const traitLabelMap: Record<string, string> = {
+          precision: '精准',
+          creativity: '创意',
+          rigor: '严谨',
+          empathy: '共情',
+          speed: '迅捷',
+          stability: '沉稳',
+          assertiveness: '果断',
+          curiosity: '好奇',
+        };
+        const label = traitLabelMap[topKey] ?? topKey;
+        roleBadge.textContent = `${currentRoleName} · ${label}`;
+        roleBadge.title = `角色：${currentRoleName}\n性格特征：${Object.entries(traits)
+          .map(([k, v]) => `${traitLabelMap[k] ?? k} ${Math.round(v * 100)}%`)
+          .join('、')}`;
+        return;
+      }
+    }
+    // 无 trait 时仅显示角色名
     roleBadge.textContent = currentRoleName;
   }
 
@@ -1388,6 +1423,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题 + 输入区角色徽章共用
       // （角色切换已独立到「角色」视图，2026-08-17）
       currentRoleName = msg.rolePack;
+      currentRoleTraits = msg.traits;
       // 输入区左侧徽章：展示当前角色（只读状态，让用户感知当前定位）
       updateRoleBadge();
       // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）

@@ -531,5 +531,6 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     skills: pack.skills,
     capabilities,
     strategy,
+    traits: pack.traits,
   };
 }

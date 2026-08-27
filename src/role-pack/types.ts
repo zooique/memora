@@ -300,6 +300,8 @@ export interface RolePackAssembly {
   readonly capabilities: readonly RolePackCapability[];
   /** 完整行为策略（所有维度都有值，未声明维度用默认值，异于 RolePack.strategy） */
   readonly strategy: BehaviorStrategy;
+  /** 角色性格特征（traits），从 persona.md frontmatter 解析（traits.xxx = 0-1 数值），供宿主情感计算 */
+  readonly traits?: Record<string, number>;
 }
 
 

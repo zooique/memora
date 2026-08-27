@@ -36,6 +36,19 @@ interface RolesPayload {
     displayName: string;
     description?: string;
     capabilities: { capability: string; label: string }[];
+    traits?: Record<string, number>;
+    exclusiveWith?: readonly string[];
+    handoffPrompt?: string;
+    strategyHint?: {
+      toolReadonly?: 'readonly' | 'full';
+      toolApproval?: 'confirm' | 'auto';
+      tempGroup?: 'high' | 'mid' | 'low';
+      reasoningMode?: 'auto' | 'manual';
+      summaryFocus?: string;
+      outputLimit?: number;
+    };
+    interactionType?: 'tool_assistant' | 'companion';
+    version?: string;
   }[];
   activeName: string;
 }
@@ -129,6 +142,127 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       });
       info.appendChild(caps);
     }
+
+    // 性格特征 (Traits)：可视化展示角色人格维度
+    if (p.traits && Object.keys(p.traits).length > 0) {
+      const traits = document.createElement('div');
+      traits.className = 'role-traits';
+      Object.entries(p.traits).forEach(([key, value]) => {
+        const trait = document.createElement('div');
+        trait.className = 'trait';
+        const label = document.createElement('span');
+        label.className = 'trait-label';
+        // 性格特征中文映射
+        const labelMap: Record<string, string> = {
+          precision: '精准',
+          creativity: '创意',
+          rigor: '严谨',
+          empathy: '共情',
+          speed: '速度',
+        };
+        label.textContent = labelMap[key] ?? key;
+        const bar = document.createElement('div');
+        bar.className = 'trait-bar';
+        const fill = document.createElement('div');
+        fill.className = 'trait-fill';
+        // 值范围 0-1，转为百分比
+        fill.style.width = `${Math.round(value * 100)}%`;
+        fill.title = `${label.textContent}: ${value.toFixed(2)}`;
+        bar.appendChild(fill);
+        trait.appendChild(label);
+        trait.appendChild(bar);
+        traits.appendChild(trait);
+      });
+      info.appendChild(traits);
+    }
+
+    // 互斥关系 (Exclusive With)：提示哪些角色包与此角色互斥
+    if (p.exclusiveWith && p.exclusiveWith.length > 0) {
+      const exclusive = document.createElement('div');
+      exclusive.className = 'role-exclusive';
+      const label = document.createElement('span');
+      label.className = 'exclusive-label';
+      label.textContent = '互斥：';
+      exclusive.appendChild(label);
+      p.exclusiveWith.forEach((name) => {
+        const tag = document.createElement('span');
+        tag.className = 'exclusive-tag';
+        tag.textContent = name;
+        tag.title = `与此角色包互斥：当输入命中「${name}」的关键词时，将自动切换为该角色`;
+        exclusive.appendChild(tag);
+      });
+      info.appendChild(exclusive);
+    }
+
+    // 策略指示器 (Strategy Hint)：展示关键行为策略
+    if (p.strategyHint) {
+      const strategy = document.createElement('div');
+      strategy.className = 'role-strategy';
+      const hint = p.strategyHint;
+
+      // 工具只读模式
+      if (hint.toolReadonly) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip ' + (hint.toolReadonly === 'readonly' ? 'readonly' : 'full');
+        chip.textContent = hint.toolReadonly === 'readonly' ? '只读模式' : '完整工具';
+        strategy.appendChild(chip);
+      }
+
+      // 工具审批模式
+      if (hint.toolApproval) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip ' + (hint.toolApproval === 'confirm' ? 'confirm' : 'auto');
+        chip.textContent = hint.toolApproval === 'confirm' ? '需审批' : '自动执行';
+        strategy.appendChild(chip);
+      }
+
+      // 生成温度分组
+      if (hint.tempGroup) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip temp-' + hint.tempGroup;
+        const tempLabel = { high: '高创意', mid: '平衡', low: '低温度' };
+        chip.textContent = tempLabel[hint.tempGroup] ?? hint.tempGroup;
+        strategy.appendChild(chip);
+      }
+
+      // 推理模式
+      if (hint.reasoningMode) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip reasoning-' + hint.reasoningMode;
+        chip.textContent = hint.reasoningMode === 'auto' ? '自动推理' : '手动推理';
+        strategy.appendChild(chip);
+      }
+
+      // 摘要聚焦方向
+      if (hint.summaryFocus) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip';
+        chip.textContent = `聚焦: ${hint.summaryFocus}`;
+        strategy.appendChild(chip);
+      }
+
+      // 输出限制
+      if (hint.outputLimit && hint.outputLimit > 0) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip output-limit';
+        chip.textContent = `输出上限: ${hint.outputLimit}k`;
+        strategy.appendChild(chip);
+      }
+
+      // 只有当存在至少一个策略指示器时才添加到 info
+      if (strategy.children.length > 0) {
+        info.appendChild(strategy);
+      }
+    }
+
+    // 版本号
+    if (p.version) {
+      const ver = document.createElement('div');
+      ver.className = 'card-version';
+      ver.textContent = `v${p.version}`;
+      info.appendChild(ver);
+    }
+
     card.appendChild(icon);
     card.appendChild(info);
 

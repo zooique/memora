@@ -437,16 +437,19 @@ export type ExtensionToWebviewMessage =
   /**
    * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）
    *
-   * 角色包激活时由 host 推送：工具模式（allow/block）+ 能力标签列表。
+   * 角色包激活时由 host 推送：工具模式（allow/block）+ 能力标签列表 + 策略指示器。
    * webview 据此在输入区角色徽章旁追加工具权限徽章，让用户直观感知「当前角色能做什么」：
    *   - block：纯 LLM 模式，无工具暴露
    *   - allow + capabilities：按能力白名单暴露工具（如只读/可读写+联网）
    *   - allow + 空 capabilities：全工具暴露
+   * 新增 strategyHint 提供策略级提示（只读模式/审批模式/温度），让用户感知角色行为偏好。
    */
   | {
       type: 'capability_badge';
       toolMode: 'allow' | 'block';
       capabilities: { capability: string; label: string }[];
+      /** 关键策略指示器（新增，供渲染只读/审批/温度等策略徽章） */
+      strategyHint?: RoleStrategyIndicatorDto;
     }
   /**
    * Agent 运行状态（P0-2 状态可视化 + Phase 4 暂停/恢复）
@@ -559,7 +562,12 @@ export type ExtensionToWebviewMessage =
    * webview 据此在消息区顶部渲染角色徽章——主动可见：用户始终知道当前用哪个角色
    * （不依赖角色匹配事件，避免普通对话不匹配时徽章永远不显示）。
    */
-  | { type: 'chat_role_pack'; rolePack: string }
+  | {
+      type: 'chat_role_pack';
+      rolePack: string;
+      /** 角色性格特征简要，用于徽章/顶栏展示（可选，无 trait 时不展示） */
+      traits?: Record<string, number>;
+    }
   /**
    * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）
    *
@@ -582,6 +590,18 @@ export type ExtensionToWebviewMessage =
         displayName: string;
         description?: string;
         capabilities: { capability: string; label: string }[];
+        /** 角色性格特征（从 persona.md frontmatter traits 解析，0-1 数值） */
+        traits?: Record<string, number>;
+        /** 互斥角色包列表（当输入命中互斥包关键词时触发切换） */
+        exclusiveWith?: readonly string[];
+        /** 接手衔接提示词（带入对话时预填的特色话术） */
+        handoffPrompt?: string;
+        /** 关键策略指示器（从内核完整策略提取的 UI 友好摘要） */
+        strategyHint?: RoleStrategyIndicatorDto;
+        /** 拟人化类型（tool_assistant=工具型 / companion=陪伴型） */
+        interactionType?: 'tool_assistant' | 'companion';
+        /** 版本号 */
+        version?: string;
       }[];
       activeName: string;
     }
@@ -741,6 +761,22 @@ export type ExtensionToWebviewMessage =
    * projectPath 用于渲染只读基准行；paths 为用户额外目录数组（不含基准根）。
    */
   | { type: 'allowed_paths_status'; projectPath: string; paths: string[] };
+
+/** 角色策略指示器（从内核 BehaviorStrategy 提取的关键策略摘要，供 UI 渲染图标/徽章） */
+export interface RoleStrategyIndicatorDto {
+  /** 工具只读模式（readonly=仅只读操作 / full=完整权限） */
+  toolReadonly?: 'readonly' | 'full';
+  /** 工具审批模式（confirm=执行前确认 / auto=自动执行） */
+  toolApproval?: 'confirm' | 'auto';
+  /** 生成温度分组（high=0.8+ / low=0.4- / mid=之间） */
+  tempGroup?: 'high' | 'mid' | 'low';
+  /** 多步推理模式 */
+  reasoningMode?: 'auto' | 'manual';
+  /** 摘要聚焦方向（如 'code' / 'creative' / 'general'） */
+  summaryFocus?: string;
+  /** 单轮输出上限（token，0=不限制） */
+  outputLimit?: number;
+}
 
 /** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
 export interface MemoryRecallItemDto {

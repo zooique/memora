@@ -28,4 +28,33 @@ export const rolesStyles = `
 
   /* ============ Components：能力标签 chips ============ */
   #roles-root .cap-chips { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-1, 4px); }
+
+  /* ============ Components：性格特征 (Traits) ============ */
+  #roles-root .role-traits { display: flex; flex-direction: column; gap: var(--sp-1, 4px); margin-top: var(--sp-2, 6px); }
+  #roles-root .trait { display: flex; align-items: center; gap: var(--sp-2, 6px); }
+  #roles-root .trait-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); min-width: 32px; }
+  #roles-root .trait-bar { flex: 1; height: 4px; background: var(--border-panel, rgba(128,128,128,.2)); border-radius: 2px; overflow: hidden; }
+  #roles-root .trait-fill { height: 100%; background: var(--accent, #007acc); border-radius: 2px; transition: width 0.3s ease; }
+
+  /* ============ Components：互斥关系 (Exclusive) ============ */
+  #roles-root .role-exclusive { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-2, 6px); }
+  #roles-root .exclusive-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  #roles-root .exclusive-tag { font-size: var(--font-xs, 10px); padding: 2px 6px; background: var(--surface-hover, rgba(128,128,128,.15)); border-radius: 3px; color: var(--text-secondary, #9aa0a6); }
+
+  /* ============ Components：策略指示器 (Strategy) ============ */
+  #roles-root .role-strategy { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); margin-top: var(--sp-2, 6px); }
+  #roles-root .strategy-chip { font-size: var(--font-xs, 10px); padding: 2px 8px; border-radius: 3px; background: var(--surface-hover, rgba(128,128,128,.1)); color: var(--text-secondary, #9aa0a6); }
+  #roles-root .strategy-chip.readonly { background: rgba(255, 165, 0, 0.2); color: #ffa500; }
+  #roles-root .strategy-chip.full { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+  #roles-root .strategy-chip.confirm { background: rgba(244, 67, 54, 0.2); color: #f44336; }
+  #roles-root .strategy-chip.auto { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
+  #roles-root .strategy-chip.temp-high { background: rgba(156, 39, 176, 0.2); color: #9c27b0; }
+  #roles-root .strategy-chip.temp-mid { background: rgba(0, 150, 136, 0.2); color: #009688; }
+  #roles-root .strategy-chip.temp-low { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
+  #roles-root .strategy-chip.reasoning-auto { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
+  #roles-root .strategy-chip.reasoning-manual { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
+  #roles-root .strategy-chip.output-limit { background: rgba(158, 158, 158, 0.2); color: #9e9e9e; }
+
+  /* ============ Components：版本号 ============ */
+  #roles-root .card-version { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin-top: var(--sp-1, 4px); }
 `;

@@ -251,6 +251,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 从内核 RolePackManager.getActive() 读取当前角色包的 capabilities 与 toolMode，
    * 映射为可读标签（如 file:read → 只读、web:search → 联网），推送给 webview 渲染徽章。
    * 能力面标签映射为中文（简单映射，避免前端硬编码）。
+   * 新增策略指示器（strategyHint）：提供只读模式/审批模式/温度分组等关键策略提示。
    */
   private postCapabilityBadge(): void {
     const agent = this._agent;
@@ -273,7 +274,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         label: domainText,
       };
     });
-    this.post({ type: 'capability_badge', toolMode, capabilities: labels });
+
+    // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
+    const strategy = active.strategy;
+    // 温度分组：基于 temperature 值动态计算
+    const temp = strategy.act?.temperature ?? 0.7;
+    const tempGroup = temp >= 0.8 ? 'high' : temp <= 0.4 ? 'low' : 'mid';
+    // 推理模式：基于 multiStepReasoning 字段
+    const reasoningMode = strategy.act?.multiStepReasoning;
+
+    const strategyHint = {
+      toolReadonly: strategy.act?.toolReadonly,
+      toolApproval: strategy.act?.toolApproval,
+      tempGroup: tempGroup as 'high' | 'mid' | 'low',
+      reasoningMode: reasoningMode as 'auto' | 'manual' | undefined,
+      summaryFocus: strategy.prepare?.summaryFocus,
+      outputLimit: strategy.act?.outputLimit,
+    };
+
+    this.post({ type: 'capability_badge', toolMode, capabilities: labels, strategyHint });
   }
 
   /**
@@ -289,7 +308,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图已就绪时立即推送（而非等待下次 replaySession），保证角色选择器即时刷新；
     // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeRolePack 推送）。
     if (this._view) {
-      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(rolePack) });
+      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(rolePack), traits: this.getActiveTraits() });
     }
   }
 
@@ -640,7 +659,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 两视图真相源分叉即 SSOT 违反。现由同一事件驱动状态，重解析即推正确角色。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
-    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to) });
+    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to), traits: this.getActiveTraits() });
     // Phase 4 E2：同步推送工具权限徽章（角色切换后能力面随之变化）
     this.postCapabilityBadge();
     // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
@@ -1082,10 +1101,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
-      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack) });
+      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits() });
     } else {
       // 无激活角色包：推送空信息，让 webview 清除角色标签
-      this.post({ type: 'chat_role_pack', rolePack: '' });
+      this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
     }
     // 推送 Provider 列表到 webview（底部模型下拉框）
     void this.pushProviders();
@@ -1248,10 +1267,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
     if (this._view) {
       if (this._activeRolePack) {
-        this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack) });
+        this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits() });
       } else {
         // 无激活角色包时推送空信息，让 webview 清除角色标签
-        this.post({ type: 'chat_role_pack', rolePack: '' });
+        this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
       }
     }
     // 角色切换入口数据（webview 收到后自动显示输入区内下拉）
@@ -1291,6 +1310,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // activeName 缺省时回退首个（与内核「默认激活首个」一致），无角色包时为空串
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
     this.post({ type: 'chat_role_packs', packs, activeName });
+  }
+
+  /**
+   * 获取当前激活角色包的性格特征（traits）
+   *
+   * 从 RolePackManager.getActive() 读取装配后的 traits，用于 chat_role_pack
+   * 协议消息的徽章/顶栏展示。无激活角色或无 traits 时返回 undefined。
+   */
+  private getActiveTraits(): Record<string, number> | undefined {
+    const rpm = this._agent?.rolePackManager;
+    if (!rpm) return undefined;
+    const assembly = rpm.getActive();
+    return assembly?.traits;
   }
 
   /**
