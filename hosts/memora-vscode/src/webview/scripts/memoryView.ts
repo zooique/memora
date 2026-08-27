@@ -68,12 +68,10 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   const statBar = root.querySelector('#statBar') as HTMLElement;
   const searchInput = root.querySelector('#searchInput') as HTMLInputElement;
 
-  // 治理区元素（G4，2026-08-23：统计卡 + 衰减/清理按钮 + 结果提示）
+  // 治理区元素（G4，2026-08-23：统计卡 + 清理按钮 + 结果提示）
   const govActive = root.querySelector('#govActive') as HTMLElement | null;
   const govDeleted = root.querySelector('#govDeleted') as HTMLElement | null;
-  const govDecayRun = root.querySelector('#govDecayRun') as HTMLElement | null;
   const govDetail = root.querySelector('#govDetail') as HTMLElement | null;
-  const btnDecay = root.querySelector('#btnDecay') as HTMLButtonElement | null;
   const btnCleanup = root.querySelector('#btnCleanup') as HTMLButtonElement | null;
 
   // 回收站 + 提示（G19，2026-08-25：软删除记忆的可恢复暂存区 + 操作反馈）
@@ -266,20 +264,13 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     recycleSummary.textContent = n > 0 ? `回收站（${n}）` : '回收站';
   }
 
-  /** 渲染治理统计（活跃 / 回收站 / 衰减次数 + 累计衰减条数详情） */
+  /** 渲染治理统计（活跃 / 回收站 + 结果提示） */
   function renderGovernance(stats: GovernanceStatsDto): void {
     if (govActive) govActive.textContent = String(stats.active);
     if (govDeleted) govDeleted.textContent = String(stats.deleted);
-    if (govDecayRun) govDecayRun.textContent = String(stats.decay?.runCount ?? 0);
     // 回收站标题同步条数（软删记忆可发现，非死字段）
     updateRecycleCount(stats.deleted);
-    if (govDetail && stats.decay && stats.decay.totalDecayedCount > 0) {
-      govDetail.hidden = false;
-      govDetail.classList.remove('gov-error');
-      govDetail.textContent = `累计衰减 ${stats.decay.totalDecayedCount} 条记忆`;
-    } else if (govDetail) {
-      govDetail.hidden = true;
-    }
+    if (govDetail) govDetail.hidden = true;
   }
 
   /** 渲染回收站列表（G19，2026-08-25：软删除记忆的可恢复暂存区；2026-08-26 加清空操作） */
@@ -391,7 +382,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
    * 治理操作会改变记忆库（衰减改 score 顺序 / 清理删条目）→ 重新拉取治理数据 + 列表，
    * 保证治理区统计与列表实时一致。
    */
-  function showGovernanceResult(msg: { ok: boolean; message?: string; action: 'decay' | 'cleanup' }): void {
+  function showGovernanceResult(msg: { ok: boolean; message?: string; action: 'cleanup' }): void {
     if (govDetail) {
       govDetail.hidden = false;
       govDetail.textContent = msg.message ?? (msg.ok ? '操作完成' : '操作失败');
@@ -465,10 +456,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     }
   });
 
-  // 治理按钮：触发衰减 / 清理过期（确认由 host 侧弹窗，webview 只发消息）
-  btnDecay?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'governance_decay' });
-  });
+  // 治理按钮：清理过期（确认由 host 侧弹窗，webview 只发消息）
   btnCleanup?.addEventListener('click', () => {
     vscode.postMessage({ type: 'governance_cleanup' });
   });

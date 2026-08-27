@@ -220,31 +220,6 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  // 命令：触发记忆衰减（agent.governance.decay()）
-  context.subscriptions.push(
-    vscode.commands.registerCommand('memora.triggerDecay', async () => {
-      const agent = await getAgentForCommand();
-      if (!agent?.governance) {
-        vscode.window.showWarningMessage('Memora Agent 未就绪，无法触发记忆衰减');
-        return;
-      }
-      try {
-        agent.governance.decay();
-        // 衰减指标从 getMetrics() 读取（decay() 本身无返回值，指标由 MemoryDecayScheduler 持有）
-        const decayMetrics = agent.getMetrics().decay;
-        if (decayMetrics) {
-          vscode.window.showInformationMessage(
-            `记忆衰减已触发（累计运行 ${decayMetrics.runCount} 次，共衰减 ${decayMetrics.totalDecayedCount} 条）`,
-          );
-        } else {
-          vscode.window.showInformationMessage('记忆衰减已触发');
-        }
-      } catch (err) {
-        vscode.window.showErrorMessage(`记忆衰减失败：${err instanceof Error ? err.message : String(err)}`);
-      }
-    }),
-  );
-
   // 命令：查看记忆统计（agent.memory + agent.getMetrics()）
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.memoryStats', async () => {
@@ -254,7 +229,6 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const mem = agent.memory;
-      const metrics = agent.getMetrics();
       const activeCount = mem?.list(1000).length ?? 0;
       const deletedCount = mem?.listDeleted(1000).length ?? 0;
       // 来源分布：从 list() 结果自行统计（MemoryInspector 未暴露 getAllSources 公开方法）
@@ -265,12 +239,8 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       }
       const sourceSummary = [...sourceMap.entries()].map(([src, cnt]) => `${src}: ${cnt}`).join(', ') || '—';
-      const decayInfo = metrics.decay;
-      const decayText = decayInfo
-        ? `已运行 ${decayInfo.runCount} 次，共衰减 ${decayInfo.totalDecayedCount} 条`
-        : '暂无衰减记录';
       vscode.window.showInformationMessage(
-        `记忆统计：活跃 ${activeCount} 条，回收站 ${deletedCount} 条 | 衰减：${decayText} | 来源分布：${sourceSummary}`,
+        `记忆统计：活跃 ${activeCount} 条，回收站 ${deletedCount} 条 | 来源分布：${sourceSummary}`,
       );
     }),
   );

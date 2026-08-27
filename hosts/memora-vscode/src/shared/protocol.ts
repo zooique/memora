@@ -245,16 +245,9 @@ export type WebviewToExtensionMessage =
    * 请求加载记忆治理数据（记忆视图挂载/治理操作后触发）
    *
    * host 返回 GovernanceStatsDto：活跃数 + 回收站（软删除）数 + 来源分布 +
-   * 衰减记录（getMetrics().decay）。agent.memory 未就绪时返回全零统计。
+   * 活跃数 + 回收站（软删除）数 + 来源分布。agent.memory 未就绪时返回全零统计。
    */
   | { type: 'governance_load' }
-  /**
-   * 触发一次记忆衰减（治理区「触发衰减」按钮）
-   *
-   * host 调 agent.governance.decay()（自然遗忘：按来源衰减 score，DecayScheduler 同路径），
-   * 完成后推送 governance_result + 重新推送 governance_loaded 刷新统计。
-   */
-  | { type: 'governance_decay' }
   /**
    * 清理过期软删除记忆（治理区「清理过期」按钮）
    *
@@ -422,8 +415,6 @@ export type ExtensionToWebviewMessage =
         /** D（alignment-iteration.md）：LLM token 用量（输入/输出） */
         llmTokenIn?: number;
         llmTokenOut?: number;
-        /** D（alignment-iteration.md）：记忆衰减运行次数 */
-        decayRunCount?: number;
       };
       /**
        * 最近操作流（B9 可观测补齐）：透明面板渲染的操作序列 span 标签（新→旧）。
@@ -663,17 +654,17 @@ export type ExtensionToWebviewMessage =
   /**
    * 记忆治理数据加载完成（对 governance_load 的应答）
    *
-   * 含活跃数 / 回收站（软删除）数 / 来源分布 / 衰减记录。agent.memory 未就绪时
-   * active/deleted 为 0、bySource 为空、decay 缺省，webview 渲染全零统计。
+   * 含活跃数 / 回收站（软删除）数 / 来源分布。agent.memory 未就绪时
+   * active/deleted 为 0、bySource 为空，webview 渲染全零统计。
    */
   | { type: 'governance_loaded'; stats: GovernanceStatsDto }
   /**
-   * 记忆治理操作结果（对 governance_decay / governance_cleanup 的应答）
+   * 记忆治理操作结果（对 governance_cleanup 的应答）
    *
-   * ok=false 时 message 为失败原因；成功时 message 为操作摘要（如「已衰减 N 条」）。
+   * ok=false 时 message 为失败原因；成功时 message 为操作摘要。
    * webview 据此在治理区展示结果提示，并重新拉取治理数据与记忆列表。
    */
-  | { type: 'governance_result'; ok: boolean; message?: string; action: 'decay' | 'cleanup' }
+  | { type: 'governance_result'; ok: boolean; message?: string; action: 'cleanup' }
 
   // ─── 设置视图消息（2026-08-17 选项卡合并） ───
   /** 切换设置视图的子选项卡（host → webview 指令） */
@@ -783,7 +774,7 @@ export interface MemoryStatsDto {
   total: number;
 }
 
-/** 记忆治理统计（治理区，G4 2026-08-23：对齐 memory.stats + listDeleted + metrics.decay） */
+/** 记忆治理统计（治理区，G4 2026-08-23：对齐 memory.stats + listDeleted） */
 export interface GovernanceStatsDto {
   /** 活跃记忆数（未软删除） */
   active: number;
@@ -791,15 +782,6 @@ export interface GovernanceStatsDto {
   deleted: number;
   /** 按来源标签分组的活跃记忆数量（供治理区展示分布） */
   bySource: Record<string, number>;
-  /** 记忆衰减记录（对齐内核 AgentMetrics.decay，缺省表示尚未衰减） */
-  decay?: {
-    /** 衰减累计运行次数 */
-    runCount: number;
-    /** 衰减累计处理的记忆条数 */
-    totalDecayedCount: number;
-    /** 最近一次衰减运行时间（ISO，可能为空） */
-    lastRunAt: string | null;
-  };
 }
 
 /** 记忆条目（记忆视图列表/搜索结果，host 从内核 Memory/AgentSearchHit 归一化） */

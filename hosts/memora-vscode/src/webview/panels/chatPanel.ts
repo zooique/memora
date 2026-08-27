@@ -677,15 +677,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   // ─── 后台事件（G4 缺口修复，2026-08-18 调试可观测性） ───
 
-  /** decayCompleted：记忆衰减完成（后台定时任务） */
-  private readonly onDecayCompleted = (info: { decayedCount: number }): void => {
-    this.post({
-      type: 'notice',
-      level: 'info',
-      message: `记忆衰减完成：${info.decayedCount} 条已更新权重`,
-    });
-  };
-
   /** configReloaded：配置热重载完成 */
   private readonly onConfigReloaded = (info: { source: string }): void => {
     this.post({
@@ -740,8 +731,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.off('workProjectionGenerated', this.onWorkProjectionGenerated);
     a.on('workProjectionGenerated', this.onWorkProjectionGenerated);
     // G4：后台事件 → info 级提示条（调试可观测性）
-    a.off('decayCompleted', this.onDecayCompleted);
-    a.on('decayCompleted', this.onDecayCompleted);
     a.off('configReloaded', this.onConfigReloaded);
     a.on('configReloaded', this.onConfigReloaded);
     a.off('archiveModeChanged', this.onArchiveModeChanged);
@@ -1796,10 +1785,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         recallHitRate: m.recall.hitRate,
         toolFailureCount: m.tools.failureCount,
         truncationCount: m.context.truncationCount,
-        // D（alignment-iteration.md）：补齐 token 用量 + 记忆衰减运行次数（decay 可能为 null）
+        // D（alignment-iteration.md）：补齐 token 用量
         llmTokenIn: m.llm.totalInputTokens,
         llmTokenOut: m.llm.totalOutputTokens,
-        decayRunCount: m.decay?.runCount,
       },
       trace: traces,
       ...(securityAudit ? { securityAudit } : {}),

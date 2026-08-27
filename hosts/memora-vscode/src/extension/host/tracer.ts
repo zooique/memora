@@ -119,8 +119,6 @@ export class VscodeTracer implements ITracer {
         return '压缩摘要';
       case TRACE_SPANS.POST_PROCESS:
         return '会话归档';
-      case TRACE_SPANS.DECAY:
-        return '记忆衰减';
       case TRACE_SPANS.DIFFICULTY:
         return '难度分级';
       case TRACE_SPANS.REPORT:

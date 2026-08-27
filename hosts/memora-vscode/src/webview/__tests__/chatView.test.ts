@@ -263,13 +263,11 @@ describe('chatView clear_ok 消息区清理', () => {
         truncationCount: 0,
         llmTokenIn: 1000,
         llmTokenOut: 500,
-        decayRunCount: 4,
       },
     });
     expect(metrics.hidden).toBe(false);
     expect(metrics.textContent).toContain('入 1000');
     expect(metrics.textContent).toContain('出 500');
-    expect(metrics.textContent).toContain('记忆衰减 4 次');
   });
 
   it('metrics 渲染最近操作流（B9 透明面板 trace 展示）', () => {

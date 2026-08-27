@@ -286,10 +286,6 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.loadGovernance();
       return;
     }
-    if (msg.type === 'governance_decay') {
-      await this.runDecay();
-      return;
-    }
     if (msg.type === 'governance_cleanup') {
       await this.runCleanup();
       return;
@@ -698,65 +694,31 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /**
    * 加载记忆治理统计（governance_load 应答）
    *
-   * 活跃数取自 memory.stats()，回收站数取自 listDeleted()，衰减记录取自 getMetrics().decay。
+   * 活跃数取自 memory.stats()，回收站数取自 listDeleted()。
    * agent.memory 未就绪时推送全零统计（webview 渲染空治理区）。
    */
   private async loadGovernance(): Promise<void> {
     const agent = await this.ensureAgent();
     const memory = agent?.memory;
     if (!memory) {
-      const decay = agent?.getMetrics().decay ?? undefined;
       this.post({
         type: 'governance_loaded',
         stats: {
           active: 0,
           deleted: 0,
           bySource: {},
-          ...(decay ? { decay } : {}),
         },
       });
       return;
     }
     const stats = memory.stats();
     const deleted = memory.listDeleted(1000).length;
-    const decay = agent?.getMetrics().decay ?? undefined;
     const governance: GovernanceStatsDto = {
       active: stats.total,
       deleted,
       bySource: stats.bySource,
-      ...(decay ? { decay } : {}),
     };
     this.post({ type: 'governance_loaded', stats: governance });
-  }
-
-  /**
-   * 触发一次记忆衰减（governance_decay）
-   *
-   * 走内核单入口 agent.governance.decay()（与 memora.triggerDecay 命令同路径），
-   * 完成后从 getMetrics().decay 读取最新计数推给 webview，并刷新治理统计。
-   */
-  private async runDecay(): Promise<void> {
-    const agent = await this.ensureAgent();
-    if (!agent?.governance) {
-      this.post({ type: 'governance_result', ok: false, message: 'Agent 未就绪，无法触发记忆衰减', action: 'decay' });
-      return;
-    }
-    try {
-      agent.governance.decay();
-      const decay = agent.getMetrics().decay;
-      const message = decay
-        ? `记忆衰减完成（累计运行 ${decay.runCount} 次，共衰减 ${decay.totalDecayedCount} 条）`
-        : '记忆衰减完成';
-      this.post({ type: 'governance_result', ok: true, message, action: 'decay' });
-      await this.loadGovernance();
-    } catch (err) {
-      this.post({
-        type: 'governance_result',
-        ok: false,
-        message: err instanceof Error ? err.message : String(err),
-        action: 'decay',
-      });
-    }
   }
 
   /**
@@ -1089,13 +1051,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           <span id="govDeleted" class="gov-num">0</span>
           <span class="gov-label">回收站</span>
         </div>
-        <div class="governance-stat">
-          <span id="govDecayRun" class="gov-num">0</span>
-          <span class="gov-label">衰减次数</span>
-        </div>
       </div>
       <div class="governance-actions">
-        <button id="btnDecay" class="btn btn-secondary" title="触发一次记忆权重衰减（自然遗忘）">触发衰减</button>
         <button id="btnCleanup" class="btn btn-danger" title="永久删除 30 天前的软删除记忆（不可撤销）">清理过期</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>

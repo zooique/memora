@@ -1100,14 +1100,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 召回命中 ' +
         Math.round(msg.metrics.recallHitRate * 100) + '% · 工具失败 ' +
         msg.metrics.toolFailureCount + ' · 截断 ' + msg.metrics.truncationCount,
-      // D（alignment-iteration.md）：token 用量 + 记忆衰减（可选字段，缺省不显示）
+      // D（alignment-iteration.md）：token 用量（可选字段，缺省不显示）
       'Tokens：' +
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
         ' / ' +
-        (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -') +
-        (typeof msg.metrics.decayRunCount === 'number'
-          ? ' · 记忆衰减 ' + msg.metrics.decayRunCount + ' 次'
-          : ''),
+        (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -'),
       // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
       ...(msg.trace && msg.trace.length > 0
         ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]

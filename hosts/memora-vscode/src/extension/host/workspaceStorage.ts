@@ -12,7 +12,7 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { segmentLower, validateSource, applyDecayToMemory, type IMemoryStorage, type Memory } from '@zooique/memora';
+import { segmentLower, validateSource, type IMemoryStorage, type Memory } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /** 工作区记忆存储 */
@@ -158,26 +158,6 @@ export class WorkspaceStorage implements IMemoryStorage {
 
   countBySource(source: string): number {
     return [...this.store.values()].filter((m) => this.isActive(m) && m.source === source).length;
-  }
-
-  /**
-   * 对指定 source 的记忆执行指数衰减（30 天半衰期）。
-   * 复用内核 applyDecayToMemory 函数，确保宿主与内核使用同一衰减算法。
-   * 注意：衰减只降分，不重置 accessedAt——否则衰减后记忆又变回"刚访问过"，
-   * 导致衰减永远重新计时，实际效果 ≈ 没有自然遗忘。
-   */
-  decayScores(sources: string[], now: Date): number {
-    let count = 0;
-    for (const m of this.store.values()) {
-      if (!this.isActive(m)) continue;
-      if (!sources.includes(m.source)) continue;
-      // 使用内核统一的指数衰减算法（30 天半衰期）
-      if (applyDecayToMemory(m, now)) {
-        count++;
-      }
-    }
-    if (count > 0) this.save();
-    return count;
   }
 
   incrementScore(id: string, delta: number, now: string): boolean {

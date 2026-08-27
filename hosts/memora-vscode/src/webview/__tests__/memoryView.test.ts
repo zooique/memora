@@ -31,10 +31,8 @@ const HTML = `
       <div class="governance-stats">
         <div class="governance-stat"><span id="govActive" class="gov-num">0</span><span class="gov-label">活跃</span></div>
         <div class="governance-stat"><span id="govDeleted" class="gov-num">0</span><span class="gov-label">回收站</span></div>
-        <div class="governance-stat"><span id="govDecayRun" class="gov-num">0</span><span class="gov-label">衰减次数</span></div>
       </div>
       <div class="governance-actions">
-        <button id="btnDecay" class="btn btn-secondary">触发衰减</button>
         <button id="btnCleanup" class="btn btn-danger">清理过期</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>
@@ -225,34 +223,23 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'governance_load' });
   });
 
-  it('governance_loaded 渲染治理统计（活跃/回收站/衰减次数 + 累计详情）', () => {
+  it('governance_loaded 渲染治理统计（活跃/回收站）', () => {
     mountMemoryView();
     dispatchGovernanceLoaded({
       active: 5,
       deleted: 2,
       bySource: { 'round-summary': 5 },
-      decay: { runCount: 3, totalDecayedCount: 12, lastRunAt: '2026-08-23T00:00:00.000Z' },
     });
     expect(document.getElementById('govActive')?.textContent).toBe('5');
     expect(document.getElementById('govDeleted')?.textContent).toBe('2');
-    expect(document.getElementById('govDecayRun')?.textContent).toBe('3');
-    // 累计衰减详情可见（totalDecayedCount > 0）
-    const detail = document.getElementById('govDetail');
-    expect(detail?.hidden).toBe(false);
-    expect(detail?.textContent).toContain('12 条');
   });
 
-  it('governance_loaded 无衰减记录 → 衰减次数 0 且详情隐藏', () => {
+  it('governance_loaded 空统计 → 治理区全零且详情隐藏', () => {
     mountMemoryView();
     dispatchGovernanceLoaded({ active: 0, deleted: 0, bySource: {} });
-    expect(document.getElementById('govDecayRun')?.textContent).toBe('0');
+    expect(document.getElementById('govActive')?.textContent).toBe('0');
+    expect(document.getElementById('govDeleted')?.textContent).toBe('0');
     expect(document.getElementById('govDetail')?.hidden).toBe(true);
-  });
-
-  it('点击「触发衰减」→ postMessage governance_decay', () => {
-    const { postMessage } = mountMemoryView();
-    (document.getElementById('btnDecay') as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'governance_decay' });
   });
 
   it('点击「清理过期」→ postMessage governance_cleanup', () => {
@@ -278,7 +265,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     mountMemoryView();
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'governance_result', ok: false, message: 'Agent 未就绪', action: 'decay' },
+        data: { type: 'governance_result', ok: false, message: 'Agent 未就绪', action: 'cleanup' },
       }),
     );
     const detail = document.getElementById('govDetail') as HTMLElement;
@@ -490,7 +477,6 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       active: 5,
       deleted: 3,
       bySource: { 'round-summary': 5 },
-      decay: { runCount: 0, totalDecayedCount: 0, lastRunAt: null },
     });
     const summary = document.querySelector('#recycle > summary') as HTMLElement;
     expect(summary.textContent).toBe('回收站（3）');
@@ -499,7 +485,6 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       active: 5,
       deleted: 0,
       bySource: { 'round-summary': 5 },
-      decay: { runCount: 0, totalDecayedCount: 0, lastRunAt: null },
     });
     expect(summary.textContent).toBe('回收站');
   });

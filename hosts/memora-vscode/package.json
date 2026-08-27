@@ -33,10 +33,6 @@
         "icon": "$(gear)"
       },
       {
-        "command": "memora.triggerDecay",
-        "title": "Memora: 触发记忆衰减"
-      },
-      {
         "command": "memora.memoryStats",
         "title": "Memora: 查看记忆统计"
       },
