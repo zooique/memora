@@ -1,6 +1,6 @@
 /**
  * LLM Judge 高阶辅助函数：封装"流式累积 → parseLlmJson → 判 null → 抛 configError"三件套。
- * 由 memoryInspector / memoryDecayScheduler / memoryAdvisor 复用，消除 3 处重复。
+ * 由 memoryInspector / memoryAdvisor 复用，消除重复。
  * 统一异常：解析失败抛 configError（MemoraError 体系）；类型参数化，调用方指定返回类型 T。
  */
 

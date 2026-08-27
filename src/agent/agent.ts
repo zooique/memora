@@ -50,7 +50,6 @@ import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
 import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
 import { ChatLockManager } from '@/agent/managers/chatLockManager.js';
-import { MemoryDecayScheduler } from '@/agent/managers/memoryDecayScheduler.js';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import {
   ArchiveCoordinator,
@@ -67,7 +66,6 @@ import type { ProviderRouter } from '@/llm/types.js';
 import { logger } from '@/logging/logger.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
 import {
-  backgroundTask,
   getBackgroundTaskStats as readBackgroundTaskStats,
   awaitBackgroundTasks,
 } from '@/utils/backgroundTask.js';
@@ -140,8 +138,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     composer: Composer | null;
     /** chat() 并发锁管理器（并发锁 + token 校验 + 超时保护 + 外部 signal 合并，init 时创建、close 时销毁） */
     chatLockManager: ChatLockManager | null;
-    /** 记忆衰减调度器（init 时创建，close 时销毁） */
-    memoryDecayScheduler: MemoryDecayScheduler | null;
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
     archiveCoordinator: ArchiveCoordinator | null;
     /**
@@ -160,7 +156,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     checkpointRestoreCoordinator: null,
     composer: null,
     chatLockManager: null,
-    memoryDecayScheduler: null,
     archiveCoordinator: null,
     seedOrchestrator: null,
   };
@@ -349,7 +344,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 创建 init() 后期组件（初始化完成后才需要的组件）
    */
-  private createPostInitComponents(pctx: ProjectContext): void {
+  private createPostInitComponents(_pctx: ProjectContext): void {
     // chat() 并发锁管理器（生命周期与 Agent 实例一致）
     this.internals.chatLockManager = new ChatLockManager();
 
@@ -369,25 +364,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       sessionStore: this.#config.sessionStore,
     });
 
-    // 记忆衰减职责委托给 MemoryDecayScheduler
-    this.internals.memoryDecayScheduler = new MemoryDecayScheduler({
-      tracer: this.#config.tracer,
-      onDecayCompleted: (payload) => {
-        this.emit(AGENT_EVENTS.decayCompleted, payload);
-        // 衰减循环完成时触发 L2 时效性评估
-        backgroundTask('timeliness', () =>
-          this._governance ? this._governance.evaluateTimeliness() : Promise.resolve(),
-        );
-      },
-      backgroundProvider: this.#backgroundProvider,
-      index: pctx.index,
-    });
-    this.internals.memoryDecayScheduler.start(pctx.index, AGENT_CONSTANTS.DECAY_INTERVAL_MS);
-
-    // 记忆治理统一门面（L0/L1/L2/L3 + 诊断）
+    // 记忆治理统一门面（去重 / 冲突 / 诊断）
     this._governance = new MemoryGovernance(
       this.internals.dedupManager,
-      this.internals.memoryDecayScheduler,
       this.internals.memoryAdvisor,
     );
 
@@ -1552,7 +1531,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
-  // 记忆衰减由 MemoryDecayScheduler 负责；Agent 侧无自有周期逻辑。
 
   // ─── 关闭 ─────────────────────────────────────────────
 
@@ -1563,16 +1541,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清理 chat 锁管理器（递增 token 使进行中 chat() 的 finally 跳过清理，close 已接管）
     this.internals.chatLockManager?.dispose();
     this.internals.chatLockManager = null;
-    // 先 stop() abort L2 LLM 调用再 awaitInflight()，防止 close 后 LLM 回调 upsert 已关闭的 storage
-    if (this.internals.memoryDecayScheduler) {
-      this.internals.memoryDecayScheduler.stop();
-      try {
-        await this.internals.memoryDecayScheduler.awaitInflight();
-      } catch (err) {
-        logger.warn({ err: toError(err) }, 'close: memoryDecayScheduler.awaitInflight 失败');
-      }
-      this.internals.memoryDecayScheduler = null;
-    }
     // 等待 WorkProjection 无 inflight 概念（作品投影改为用户主动触发同步写，无后台 LLM 任务）
     // 背景任务统一由下方 awaitBackgroundTasks 兜底
     // 关键修复：等待 backgroundTask 全局在途任务完成（如 boostScores）。
@@ -1666,7 +1634,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       checkpointRestoreCoordinator: null,
       composer: null,
       chatLockManager: null,
-      memoryDecayScheduler: null,
       archiveCoordinator: null,
       seedOrchestrator: null,
     };
@@ -1750,12 +1717,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 未初始化返回全零默认值（不抛异常），纯只读同步零副作用，适合宿主定期轮询监控面板。
    */
   getMetrics(): AgentMetrics {
-    // 衰减指标从 MemoryDecayScheduler 读取
-    const decayMetrics = this.internals.memoryDecayScheduler?.getMetrics() ?? {
-      runCount: 0,
-      totalDecayedCount: 0,
-      lastRunAt: null,
-    };
     // 未初始化时返回全零指标，避免调用方判空
     if (!this.loop) {
       return {
@@ -1763,7 +1724,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         recall: { totalCount: 0, hitCount: 0, hitRate: 0 },
         tools: { callCount: 0, failureCount: 0 },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
-        decay: decayMetrics,
         tasks: { totalCount: 0, successCount: 0, failureCount: 0, successRate: 0, avgDurationMs: 0 },
       };
     }
@@ -1771,7 +1731,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const loopMetrics = this.loop.getMetrics();
     return {
       ...loopMetrics,
-      decay: decayMetrics,
     };
   }
 

@@ -29,9 +29,6 @@ export const AGENT_CONSTANTS = {
   /** chat() 输入最大长度（字节）。128KB。 */
   CHAT_INPUT_MAX_LENGTH: 128 * 1024,
 
-  /** 记忆衰减执行间隔（毫秒）。1 小时。 */
-  DECAY_INTERVAL_MS: 3_600_000,
-
   /** AgentConfig.maxContextTokens 默认值。120K tokens。 */
   DEFAULT_MAX_CONTEXT_TOKENS: 120_000,
 

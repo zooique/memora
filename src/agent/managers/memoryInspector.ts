@@ -313,7 +313,7 @@ export class MemoryInspector {
   /**
    * 列出"即将自然沉底"的记忆：仅返回距今超过 FADING_CUTOFF_DAYS（60 天，半衰期 2 倍）未访问的活跃记忆，
    * 按沉底顺序（最久未访问在前、同天分数最低在前）取前 limit 条。纯只读健康观测，
-   * 不触发衰减（decayScores/applyDecayToMemory 均不调用），不改治理空转现状。
+   * 不触发任何写操作（superseded 写时取代 / boost 被动提升均在各自路径），仅展示自然沉底候选。
    *
    * 空库 / 无候选（全部活跃记忆均在阈值内）→ 返回 []。
    *

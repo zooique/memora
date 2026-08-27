@@ -10,13 +10,13 @@ import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { IReranker } from '@/memory/reranker.js';
 import { logger } from '@/logging/logger.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
-import { nowIso, ONE_DAY_MS } from '@/utils/time.js';
+import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { HybridWeights } from '@/memory/hybridMerge.js';
 // 召回默认值 SSOT 跨层共享（保底下限 + 排除默认）
 import { DEFAULT_MIN_FALLBACK, DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
-// 召回 score 提升/上限/下限 + 衰减：复用治理共享常量，与宿主 SqliteStorage.decayScores 同一真源
-import { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, EXPONENTIAL_DECAY_HALF_LIFE_DAYS } from '@/memory/governance.js';
+// 召回 score 提升/上限/下限：复用治理共享常量（boost/clamp），与宿主存储 incrementScore 同一 clamp 真源
+import { BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
 
 // ─── 召回常量 ─────────────────────────────────────
 
@@ -476,7 +476,7 @@ export async function boostScores(
   now: string = nowIso(),
 ): Promise<void> {
   for (const id of ids) {
-    // incrementScore 原子操作，消除 read-modify-write 并发冲突，与 decayScores 同模式
+    // incrementScore 原子操作，消除 read-modify-write 并发冲突
     storage.incrementScore(id, BOOST_INCREMENT, now);
   }
 }
@@ -490,31 +490,3 @@ function boostScore(memory: Memory, now?: string): void {
   memory.accessedAt = now ?? nowIso();
 }
 
-/**
- * 对单条记忆执行指数衰减（30 天半衰期）；返回是否实际发生衰减。
- * 公式：finalScore = score * (0.5 ** (daysSinceAccess / HALF_LIFE_DAYS))
- * 例：30 天 → 0.5x，60 天 → 0.25x，90 天 → 0.125x
- */
-export function applyDecayToMemory(memory: Memory, now: Date): boolean {
-  const accessedAt = new Date(memory.accessedAt);
-  if (isNaN(accessedAt.getTime())) {
-    return false; // 跳过无效日期
-  }
-
-  const daysSinceAccess = (now.getTime() - accessedAt.getTime()) / ONE_DAY_MS;
-  if (daysSinceAccess <= 0) {
-    return false; // 刚访问过，无需衰减
-  }
-
-  // 指数衰减：30 天半衰期
-  const decayFactor = Math.pow(0.5, daysSinceAccess / EXPONENTIAL_DECAY_HALF_LIFE_DAYS);
-  const newScore = Math.max(DECAY_FLOOR, memory.score * decayFactor);
-
-  // 浮点精度检查：变化小于 0.0001 视为无变化
-  if (Math.abs(newScore - memory.score) < 0.0001) {
-    return false;
-  }
-
-  memory.score = newScore;
-  return true;
-}

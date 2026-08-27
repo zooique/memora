@@ -95,35 +95,6 @@ describe('降级策略 · P2 归档降级', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// P3: 衰减降级（通过 mock storage 验证）
-// ═══════════════════════════════════════════════════════════════
-
-describe('降级策略 · P3 衰减降级', () => {
-  it('decayScores 抛错时 Agent 不崩溃（通过 try-catch 降级）', () => {
-    // 验证降级模式：runMemoryDecay 内部 try-catch 包裹 decayScores 调用
-    // 如果 decayScores 抛错，catch 块记录 warn 日志，不向上传播
-    // 此测试验证 try-catch 模式的正确性
-    const mockStorage = {
-      decayScores: vi.fn((_sources: string[], _now: Date) => {
-        throw new Error('存储不可用');
-      }),
-    };
-
-    // 模拟 runMemoryDecay 的降级逻辑
-    let caught = false;
-    try {
-      mockStorage.decayScores(['content'], new Date());
-    } catch {
-      caught = true;
-    }
-
-    // 降级模式：错误被捕获，不向上传播
-    expect(caught).toBe(true);
-    expect(mockStorage.decayScores).toHaveBeenCalledOnce();
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
 // P4: 降级日志格式验证
 // ═══════════════════════════════════════════════════════════════
 

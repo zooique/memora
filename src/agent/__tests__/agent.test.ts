@@ -586,20 +586,6 @@ describe('Agent · Manager 委托模式', () => {
     expect(report.skippedReason).toBeTruthy();
   });
 
-  it('L2 时效性评估：evaluateTimeliness 委托应返回 TimelinessReport 结构（未注入 backgroundProvider 降级）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    // 委托到 MemoryDecayScheduler.evaluateTimeliness，未注入 backgroundProvider 时降级
-    // 从 agent.evaluateTimeliness() 迁移到 governance.evaluateTimeliness()
-    const report = await agent.governance!.evaluateTimeliness();
-    expect(report).toHaveProperty('scannedCount');
-    expect(report).toHaveProperty('outdatedCount');
-    expect(report).toHaveProperty('demotedIds');
-    expect(Array.isArray(report.demotedIds)).toBe(true);
-    expect(report.skippedReason).toBeTruthy();
-  });
-
   it('L3 冲突检测：detectConflicts 委托应返回 ConflictReport 结构（未注入 backgroundProvider 降级）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();

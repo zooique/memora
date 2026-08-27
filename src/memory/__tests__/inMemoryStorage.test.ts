@@ -5,11 +5,10 @@
  *   - upsert/delete 的 sourceCountCache 增量维护
  *   - getById/getBySource 的读取隔离（浅拷贝）
  *   - search 的分词匹配与空查询降级
- *   - decayScores 的时间衰减
  *   - source 校验失败抛 configError
  *   - 软删除机制：delete/restore/purge/listDeleted/purgeExpired
  *
- * 本文件测 InMemoryStorage（内存级），聚焦 sourceCountCache 与衰减逻辑。
+ * 本文件测 InMemoryStorage（内存级），聚焦 sourceCountCache 与软删除逻辑。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
@@ -216,70 +215,6 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
   });
 
-  // ─── decayScores 时间衰减 ──────────────────────────────
-
-  describe('decayScores', () => {
-    it('当天访问的记忆不应衰减', () => {
-      const now = new Date();
-      // accessedAt 设为 now（同一天，无时间差）
-      storage.upsert(makeMemory('m1', 'content', 0.8));
-
-      const decayed = storage.decayScores(['content'], now);
-      expect(decayed).toBe(0);
-      expect(storage.getById('m1')!.score).toBe(0.8);
-    });
-
-    it('超过一天的记忆应按指数衰减（30 天半衰期）', () => {
-      const now = new Date();
-      // 14 天前访问的记忆
-      const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
-      storage.upsert({
-        ...makeMemory('m1', 'content', 0.8),
-        accessedAt: oldDate.toISOString(),
-      });
-
-      const decayed = storage.decayScores(['content'], now);
-      expect(decayed).toBe(1);
-      // 指数衰减：0.8 * (0.5 ** (14/30)) ≈ 0.8 * 0.7227 ≈ 0.5781
-      const expectedScore = 0.8 * Math.pow(0.5, 14 / 30);
-      expect(storage.getById('m1')!.score).toBeCloseTo(expectedScore, 5);
-    });
-
-    it('衰减不应低于 DECAY_FLOOR（0.1）', () => {
-      const now = new Date();
-      // 1000 天前访问的记忆（远超过半衰期）
-      const veryOldDate = new Date(now.getTime() - 1000 * ONE_DAY_MS);
-      storage.upsert({
-        ...makeMemory('m1', 'content', 0.8),
-        accessedAt: veryOldDate.toISOString(),
-      });
-
-      storage.decayScores(['content'], now);
-      // 指数衰减：0.8 * (0.5 ** (1000/30)) ≈ 0.8 * 0.000... 极小，被 floor 到 0.1
-      expect(storage.getById('m1')!.score).toBe(0.1);
-    });
-
-    it('decayScores 应只衰减指定 source 的记忆', () => {
-      const now = new Date();
-      const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
-      storage.upsert({
-        ...makeMemory('m1', 'content', 0.8),
-        accessedAt: oldDate.toISOString(),
-      });
-      storage.upsert({
-        ...makeMemory('m2', SOURCE_LABELS.RULE, 0.8),
-        accessedAt: oldDate.toISOString(),
-      });
-
-      // 只衰减 content，不衰减 rule
-      const decayed = storage.decayScores(['content'], now);
-      expect(decayed).toBe(1);
-      const expectedScore = 0.8 * Math.pow(0.5, 14 / 30);
-      expect(storage.getById('m1')!.score).toBeCloseTo(expectedScore, 5);
-      expect(storage.getById('m2')!.score).toBe(0.8); // rule 未衰减
-    });
-  });
-
   // ─── source 校验 ──────────────────────────────────────
 
   describe('source 校验', () => {
@@ -378,17 +313,6 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(storage.listDeleted()).toHaveLength(0);
     });
 
-    it('软删除后 decayScores 应跳过已软删除的', () => {
-      const now = new Date();
-      const oldDate = new Date(now.getTime() - 14 * ONE_DAY_MS);
-      storage.upsert({ ...makeMemory('m1', 'content', 0.8), accessedAt: oldDate.toISOString() });
-      storage.upsert({ ...makeMemory('m2', 'content', 0.8), accessedAt: oldDate.toISOString() });
-      storage.delete('m1');
-
-      const decayed = storage.decayScores(['content'], now);
-      // 只有 m2 被衰减，m1 已软删除跳过
-      expect(decayed).toBe(1);
-    });
   });
 
   describe('软删除：restore（恢复）', () => {

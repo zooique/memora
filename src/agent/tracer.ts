@@ -73,8 +73,6 @@ export const TRACE_SPANS = {
   TOOL_EXEC: 'tool.execute',
   /** 最终响应生成 */
   RESPONSE: 'response.generate',
-  /** 记忆衰减执行 */
-  DECAY: 'memory.decay',
   /** 上下文摘要生成——消息超 maxContextTokens 触发截断时调 LLM 生成"遗忘补偿"摘要；观察截断频率/耗时/失败率 */
   CONTEXT_SUMMARY: 'context.summary',
   /** 对话后归档处理——每轮 chat() 后 postProcess（round-summary 生成、角色/技能匹配）；观察归档耗时/失败率 */
@@ -133,15 +131,6 @@ export interface AgentMetrics {
     /** 当前估算 token 数（estimateTokens） */
     estimatedTokens: number;
   };
-  /** 记忆衰减指标（Agent 层填充；AgentLoop 层此字段为 null） */
-  decay: {
-    /** 衰减执行次数 */
-    runCount: number;
-    /** 累计衰减记忆数（score 被调低的记忆条数） */
-    totalDecayedCount: number;
-    /** 上次衰减时间（ISO 8601，null = 从未执行） */
-    lastRunAt: string | null;
-  } | null;
   /** 任务级 SLO 度量（AgentLoop 层填充） */
   tasks: {
     /** 任务总执行次数（每次 processUserInput 算一次） */

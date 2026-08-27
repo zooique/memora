@@ -109,8 +109,6 @@ describe('AgentLoop · getMetrics 初始状态', () => {
     expect(metrics.context.messageCount).toBe(1);
     // estimatedTokens > 0（system prompt 有内容）
     expect(metrics.context.estimatedTokens).toBeGreaterThan(0);
-    // decay 由 Agent 层填充，AgentLoop 层为 null
-    expect(metrics.decay).toBeNull();
     // tasks 初始状态全零
     expect(metrics.tasks.totalCount).toBe(0);
     expect(metrics.tasks.successCount).toBe(0);
@@ -370,7 +368,7 @@ describe('AgentLoop · 上下文管理指标', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentMetrics · 类型结构', () => {
-  it('getMetrics 返回的对象应包含所有 6 个维度', () => {
+  it('getMetrics 返回的对象应包含所有 5 个维度', () => {
     const loop = new AgentLoop({
       provider: mockProvider([]),
       bootstrapMemories: [],
@@ -379,12 +377,11 @@ describe('AgentMetrics · 类型结构', () => {
 
     const metrics: AgentMetrics = loop.getMetrics();
 
-    // 验证 6 个维度都存在
+    // 验证 5 个维度都存在
     expect(metrics).toHaveProperty('llm');
     expect(metrics).toHaveProperty('recall');
     expect(metrics).toHaveProperty('tools');
     expect(metrics).toHaveProperty('context');
-    expect(metrics).toHaveProperty('decay');
     expect(metrics).toHaveProperty('tasks');
 
     // 验证 LLM 维度字段
@@ -414,9 +411,6 @@ describe('AgentMetrics · 类型结构', () => {
     expect(metrics.tasks).toHaveProperty('failureCount');
     expect(metrics.tasks).toHaveProperty('successRate');
     expect(metrics.tasks).toHaveProperty('avgDurationMs');
-
-    // 验证 decay 维度（AgentLoop 层为 null）
-    expect(metrics.decay).toBeNull();
   });
 
   it('hitRate 应在 0-1 范围内', async () => {

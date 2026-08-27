@@ -10,7 +10,6 @@ import { segmentLower } from '@/utils/segmenter.js';
 import { byScoreDesc, byFadingAsc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
-import { applyDecayToMemory } from '@/memory/recall.js';
 import { nowIso } from '@/utils/time.js';
 import { DECAY_FLOOR, SCORE_CEILING } from '@/memory/governance.js';
 
@@ -178,19 +177,6 @@ export class InMemoryStorage implements IMemoryStorage {
   /** 按 source 统计活跃数量，O(1) 读 sourceCountCache */
   countBySource(source: string): number {
     return this.sourceCountCache.get(source) ?? 0;
-  }
-
-  /** 衰减匹配 source 的活跃记忆 score（跳过软删除）；生产宿主应重写为 SQL UPDATE */
-  decayScores(sources: string[], now: Date): number {
-    let count = 0;
-    for (const m of this.memories.values()) {
-      if (m.deletedAt !== undefined) continue;
-      if (!sources.includes(m.source)) continue;
-      if (applyDecayToMemory(m, now)) {
-        count++;
-      }
-    }
-    return count;
   }
 
   /** 原子 score+=delta，clamp 到 [DECAY_FLOOR, SCORE_CEILING]，同步存储下天然原子；不存在/软删返回 false */

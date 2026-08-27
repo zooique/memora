@@ -1632,8 +1632,6 @@ export class AgentLoop {
         messageCount: this.messages.length,
         estimatedTokens: this.contextManager.estimateTokens(this.messages),
       },
-      // 衰减指标由 Agent 层填充，AgentLoop 不持有衰减逻辑
-      decay: null,
       tasks: {
         totalCount: this.metrics.taskTotalCount,
         successCount: this.metrics.taskSuccessCount,

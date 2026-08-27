@@ -1,10 +1,9 @@
 /**
  * 记忆召回测试
- * 覆盖关键词提取 + recall 函数 + boostScore 上限 + applyDecayToMemory 衰减边界
+ * 覆盖关键词提取 + recall 函数 + boostScore 上限
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { recall, extractKeywords, applyDecayToMemory, boostScores } from '@/memory/recall.js';
-import { ONE_DAY_MS } from '@/utils/time.js';
+import { recall, extractKeywords, boostScores } from '@/memory/recall.js';
 import { RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
@@ -312,7 +311,6 @@ describe('boostScores · 批量持久化 boost', () => {
       // boostScores 改用 incrementScore 原子操作（替代 read-modify-write）
       incrementScore: vi.fn(() => true),
       setScore: vi.fn(() => true),
-      decayScores: vi.fn(() => 0),
       getAllSources: vi.fn(() => new Map()),
       close: vi.fn(),
     } as unknown as IMemoryStorage;
@@ -618,41 +616,6 @@ describe('recall · 降级策略', () => {
 
     // minSimilarity=0.5 应透传到 vectorStore.search 第三参数
     expect(mockVectorStore.search).toHaveBeenCalledWith('测试', 10, 0.5);
-  });
-});
-
-// ─── applyDecayToMemory 衰减边界 ──────────────────────
-
-describe('applyDecayToMemory · 衰减计算边界', () => {
-  it('无效日期（NaN）应跳过并返回 false', () => {
-    const memory = makeMemory({ accessedAt: 'invalid-date' });
-    const result = applyDecayToMemory(memory, new Date());
-    expect(result).toBe(false);
-    // score 不应被修改
-    expect(memory.score).toBe(0.8);
-  });
-
-  it('恰好在同一时刻（daysSinceAccess <= 0）不应衰减', () => {
-    const now = new Date('2026-07-15T00:00:00.000Z');
-    // accessedAt 设为 now（同一天，无时间差）
-    const memory = makeMemory({ score: 0.8, accessedAt: now.toISOString() });
-
-    const result = applyDecayToMemory(memory, now);
-    expect(result).toBe(false);
-    expect(memory.score).toBe(0.8);
-  });
-
-  it('7.9 天间隔应按指数衰减计算', () => {
-    const now = new Date('2026-07-15T00:00:00.000Z');
-    // 7.9 天前
-    const daysAgo = new Date(now.getTime() - 7.9 * ONE_DAY_MS);
-    const memory = makeMemory({ score: 0.8, accessedAt: daysAgo.toISOString() });
-
-    const result = applyDecayToMemory(memory, now);
-    expect(result).toBe(true);
-    // 指数衰减：0.8 * (0.5 ** (7.9/30)) ≈ 0.8 * 0.8328 ≈ 0.6662
-    const expectedScore = 0.8 * Math.pow(0.5, 7.9 / 30);
-    expect(memory.score).toBeCloseTo(expectedScore, 5);
   });
 });
 

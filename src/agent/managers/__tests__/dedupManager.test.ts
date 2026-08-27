@@ -53,7 +53,6 @@ const createMockStorage = (): IMemoryStorage => {
       memory.accessedAt = now;
       return true;
     },
-    decayScores: () => 0,
     getAllSources: () => new Map(),
     close: () => {},
   } as unknown as IMemoryStorage;
