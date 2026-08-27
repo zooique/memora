@@ -83,14 +83,13 @@ export const settingsStyles = `
     outline-offset: 2px;
   }
   #roles-root .btn-ghost, #config-root .btn-ghost, #memory-root .btn-ghost, #skills-root .btn-ghost, #security-root .btn-ghost {
-    background: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.15));
-    border: 1px solid var(--vscode-button-border, rgba(128, 128, 128, 0.5));
-    color: var(--text-secondary, #9aa0a6);
-    padding: var(--sp-1, 4px) var(--sp-3, 8px);
-    font-size: var(--font-sm, 11px);
+    background: var(--btn-secondary-bg);
+    color: var(--btn-secondary-fg);
+    padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    font-size: var(--font-md, 12px);
   }
   #roles-root .btn-ghost:hover, #config-root .btn-ghost:hover, #memory-root .btn-ghost:hover, #skills-root .btn-ghost:hover, #security-root .btn-ghost:hover {
-    background: var(--surface-hover, rgba(128,128,128,.2));
+    background: var(--vscode-list-hoverBackground, rgba(128,128,128,.3));
     color: var(--text-primary, #cccccc);
   }
 

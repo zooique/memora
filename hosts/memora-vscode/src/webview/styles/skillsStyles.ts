@@ -32,11 +32,6 @@ export const skillsStyles = `
     gap: var(--sp-2, 6px);
   }
 
-  #skills-root .header-actions .btn {
-    font-size: var(--font-sm, 11px);
-    padding: var(--sp-2, 6px) var(--sp-4, 10px);
-  }
-
   /* 图标按钮通用样式 */
   #skills-root .btn-icon-text {
     display: inline-flex;
