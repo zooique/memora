@@ -53,7 +53,8 @@ export const tokens = `
     --text-secondary: var(--vscode-descriptionForeground, #9aa0a6);
     --text-input: var(--vscode-input-foreground, #cccccc);
 
-    /* === L2 语义令牌：品牌色（accent） === */
+    /* === L2 语义令牌：品牌色（accent） ===
+   * 跟随 VSCode 主题，自动适配亮/暗/高对比度模式。 */
     --accent: var(--vscode-button-background, #0e639c);
     --accent-foreground: var(--vscode-button-foreground, #ffffff);
 
@@ -77,9 +78,26 @@ export const tokens = `
     --status-pass: var(--vscode-testing-iconPassed, #4ec9b0);
     --status-fail: var(--vscode-errorForeground, #b3261e);
 
-    /* === L2 语义令牌：控件（次级按钮/危险按钮/Toast/代码块底） === */
-    --btn-secondary-bg: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.5));
-    --btn-secondary-fg: var(--vscode-button-secondaryForeground, #cccccc);
+    /* === L2 语义令牌：控件（按钮/Toast/代码块底） ===
+   * 设计决策：选择"可靠的 VSCode 变量"而非"可能 transparent 的变量"。
+   *
+   *   变量选择指南（VSCode 官方 Theme Color API）：
+   *   ┌──────────────────────────────────────┬──────────┬────────────────────────────────────┐
+   *   │ 变量                                  │ 可靠性   │ 说明                                 │
+   *   ├──────────────────────────────────────┼──────────┼────────────────────────────────────┤
+   *   │ --vscode-button-background            │ ✅ 始终  │ 主按钮背景，必有颜色                  │
+   *   │ --vscode-button-foreground           │ ✅ 始终  │ 主按钮文字，必有颜色                  │
+   *   │ --vscode-button-secondaryBackground   │ ⚠️ 可能  │ 次级按钮，某些主题为 transparent     │
+   *   │ --vscode-button-secondaryHoverBackground │ ✅ 始终 │ 次级按钮 hover，必有对比度           │
+   *   │ --vscode-button-border                │ ✅ 始终  │ 按钮边框，必有颜色                    │
+   *   │ --vscode-list-hoverBackground         │ ✅ 始终  │ 列表 hover，必有颜色                  │
+   *   └──────────────────────────────────────┴──────────┴────────────────────────────────────┘
+   *
+   *   策略：次级按钮用 secondaryHoverBackground（设计为可见的交互色），
+   *         而不用 secondaryBackground（某些主题下为 transparent）。
+   *   所有变量均带 fallback 值，确保极端情况下仍有可用颜色。 */
+    --btn-secondary-bg: var(--vscode-button-secondaryHoverBackground, var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.35)));
+    --btn-secondary-fg: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground, #ffffff));
     --btn-danger-bg: var(--vscode-statusBarItem-errorBackground, #b3261e);
     --toast-ok-bg: var(--vscode-statusBarItem-prominentBackground, #2e7d32);
     --surface-sidebar: var(--vscode-sideBar-background, #252526);
