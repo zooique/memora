@@ -284,7 +284,7 @@
 |----------|------|----------|----------|
 | `agent/checkpointRestoreCoordinator.ts` | 🟢 已打磨 | 间接测试（agent.test.ts） | 检查点恢复协议：温记忆召回 / 契约重注入 / restore 编排 / 任务表预判 |
 | `managers/sessionManager.ts` | 🟢 已打磨 | `__tests__/sessionManager.test.ts` (98 tests) | 会话生命周期管理：切换、分叉、恢复、消息加载 + 检查点生命周期 |
-| `memory/sessionStore.ts` | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + 全部可选方法（copySession/checkpoint/meta）+ 双层命名（autoName/displayName）类型验证 |
+| `memory/sessionStore.ts` | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + 全部可选方法（checkpoint/meta）+ 双层命名（autoName/displayName）类型验证 |
 
 > **生长说明**：
 > - **Loop 外循环本体在 L0**：`loop.ts` 的 `processUserInput` 即单轮闭环最小复用单元，对话/Loop/续跑共用同一闭环（[loop-design.md](./loop-design.md)）。

@@ -141,7 +141,6 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
     appendMessage: vi.fn(),
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
-    copySession: vi.fn(),
     saveCheckpoint: vi.fn((sessionId: string, json: string) => {
       store.set(sessionId, json);
     }),
@@ -1364,10 +1363,6 @@ function createPersistentSessionStore(): ISessionStore {
       return messageStore.get(`${date}-${session}`) ?? [];
     }),
     listSessions: vi.fn(() => Array.from(messageStore.keys())),
-    copySession: vi.fn((sourceDate: string, sourceSession: string, targetDate: string, targetSession: string) => {
-      const source = messageStore.get(`${sourceDate}-${sourceSession}`) ?? [];
-      messageStore.set(`${targetDate}-${targetSession}`, [...source]);
-    }),
     saveCheckpoint: vi.fn((sessionId: string, json: string) => {
       checkpointStore.set(sessionId, json);
     }),

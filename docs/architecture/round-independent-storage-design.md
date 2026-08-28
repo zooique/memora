@@ -22,7 +22,7 @@
 ### 设计原则
 
 1. **SSOT 原则**：问答闭环（Round）是全局唯一的物理存储单元
-2. **自然生长**：基于现有系统平滑扩展，不破坏现有架构
+2. **自然生长**：基于现有模块平滑扩展（如引入 `RoundStore`），不破坏架构边界；扩展不等于保留旧数据格式并存
 3. **纯洁性**：不考虑旧版兼容，设计干净纯粹
 4. **分叉唯一性**：分叉只有一种方式——从任意 Round 位置分叉，不存在全量/增量的选择
 5. **平等性**：所有问答闭环、所有会话在存储层完全平等
@@ -261,6 +261,8 @@ export interface SessionMeta {
     tags?: string[];
   };
 }
+
+> **设计约束（SSOT）**：会话存储仅有 round-based 单一模式。`SessionMeta` 不含任何模式标识字段（如 `storageMode`）——**不存在 legacy 与 round-based 双模式并存**（产品未投入使用，无存量数据需迁移/兼容）。运行时所有会话一律以 `roundIds` 为唯一内容来源（消息内容只存于 `RoundStore`）。任何实现不得为"区分存储模式"引入 `storageMode` 之类字段或双写路径。
 ```
 
 ### 3.3 记忆（Memory）
@@ -750,19 +752,17 @@ class GCService {
 
 ### Phase 3：会话层重构（5 天）
 
-**目标**：将 `SessionStore` 从消息列表改为 ID 列表
+**目标**：将 `SessionStore` 落地为 round-based 单一模型（仅 `roundIds` 列表，无 legacy 消息列表）。产品尚未投入使用、无任何存量对话记录，故**无需任何迁移或兼容层**
 
 | 任务 | 交付物 |
 |------|--------|
-| 实现 `SessionViewLoader`（透明转换层） | `src/memory/sessionViewLoader.ts` |
-| 重构 `SessionStore` 使用 ID 列表 | `src/memory/sessionStore.ts` |
-| 实现旧会话迁移逻辑 | 同上 |
-| 编写迁移测试 | `__tests__/` |
+| 实现 `SessionViewLoader`（round-based 会话视图加载：从 `roundIds` 批量读 `RoundStore` 展开消息） | `src/memory/sessionViewLoader.ts` |
+| 重构 `SessionStore` 使用 ID 列表（`roundIds` 为唯一内容字段） | `src/memory/sessionStore.ts` |
+| 编写存储层单元测试 | `__tests__/` |
 
 **验收标准**：
-- [ ] 旧会话可正确迁移
-- [ ] 透明转换层工作正常
-- [ ] 迁移后数据一致
+- [ ] 运行时仅 round-based 单路径，无 legacy 读取路径、无模式标识字段
+- [ ] 会话加载正确（消息条数 = `roundIds.length * 2`）
 
 ### Phase 4：分叉链路打通（核心任务） ✅ 已完成
 
@@ -772,8 +772,9 @@ class GCService {
 |------|--------|------|
 | 改造 `MessageHistory.forkSession()` 签名为 `forkSession(roundId?, targetSession?)` | `src/agent/messageHistory.ts` | ✅ |
 | 删除 `MessageHistory.forkSession()` 中 legacy `copySession` 分支 | 同上 | ✅ |
-| `ISessionStore.copySession` 标记为 `@deprecated`，移除调用方 | `src/memory/sessionStore.ts` | ✅ |
-| VSCode 宿主 sessionStore `copySession` 废弃 | `hosts/memora-vscode/` | ✅ |
+| `ISessionStore.copySession` 彻底删除（接口与实现），不保留 `@deprecated` 桩 | `src/memory/sessionStore.ts` | ✅ |
+| VSCode 宿主 sessionStore `copySession` 删除 | `hosts/memora-vscode/` | ✅ |
+| 删除 `DefaultSessionManager` 平行 `forkSession` 实现（SSOT：分叉唯一走 `MessageHistory.forkSession`） | `src/memory/sessionManager.ts` | ✅ |
 | 更新 `AgentForkResult` 返回结构（含 `roundIds`） | `src/agent/managers/sessionManager.ts` | ✅ |
 | 编写分叉单元测试（含边界：Round 不存在 / 空会话 / 自定义名） | `__tests__/` | ✅ |
 | VSCode webview 分叉按钮内联到 AI 回复底部 | `hosts/memora-vscode/src/webview/scripts/chatView.ts` | ✅ |
@@ -784,7 +785,7 @@ class GCService {
 - [x] 不传 `roundId` → 默认使用最后一个 Round（等效全量分叉）
 - [x] 引用计数正确增加
 - [x] 源会话 `roundIds` 不受影响
-- [x] 全量测试通过（2538 tests passed，1 个预先存在的无关失败）
+- [x] 全量测试通过（分叉相关测试全绿；`llmIntegration` 真实 LLM 用例需可用 API key，否则 skip）
 
 ### Phase 5：业务层适配
 
@@ -846,13 +847,13 @@ class GCService {
 | **内存占用增加** | 低 | 低 | 引用计数 + GC |
 | **宿主适配遗漏** | 低 | 中 | 双宿主（VSCode + Sprite）分叉路径全链路测试 |
 
-> **v1.1 变化**：移除了"兼容性问题"风险项——不再考虑 legacy 会话兼容，旧会话升级为 round-based 模式是一次性操作。
+> **v1.1 变化**：移除了"兼容性问题"风险项——产品尚未投入使用，无任何存量对话记录，无需任何迁移或 legacy 兼容层。运行时从首版起即为 round-based 单一模式；`SessionStore` 不存在 legacy/round-based 双模式并存，亦不含任何模式标识字段（如 `storageMode`）。
 
 ### 8.2 回滚方案
 
 如果新版本出现严重问题：
 1. 回退 `MessageHistory.forkSession()` 到上一个稳定版本
-2. 保留 round-based 写入路径不动
+2. 存储保持 round-based 单路径不变（不回退为 legacy 双写）
 3. 不涉及数据迁移，回滚粒度仅限分叉逻辑
 
 ---

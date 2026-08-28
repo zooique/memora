@@ -501,15 +501,8 @@ interface ISessionStore {
   appendMessage(date: string, session: string, message: SessionMessage): void;
   loadMessages(date: string, session: string): SessionMessage[];
   listSessions(): string[];
-  copySession?(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string): void;
 }
 ```
-
-**`copySession` 实现要求**：
-- 原子操作：要么全部复制成功，要么不产生副作用
-- 保留时间戳：消息的 timestamp 不修改
-- 幂等：若目标会话已存在，覆盖（而非追加）
-- 若源会话不存在，静默返回（不抛出）
 
 ---
 

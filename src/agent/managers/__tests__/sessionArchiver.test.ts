@@ -70,6 +70,7 @@ class MockProvider extends LlmProvider {
 class MockSessionStore implements ISessionStore {
   private messages: SessionMessage[];
   private metaMap: Map<string, SessionMeta> = new Map();
+  private roundIdsMap: Map<string, string[]> = new Map();
   /** 记录 updateSessionMeta 调用次数和参数 */
   updateCalls: Array<{ sessionId: string; meta: Record<string, unknown> }> = [];
 
@@ -94,8 +95,35 @@ class MockSessionStore implements ISessionStore {
     return this.messages.length > 0 ? ['2026-07-03-main'] : [];
   }
 
-  copySession(): void {
-    // 测试不需要实现复制逻辑
+  // ── Round-based 方法 ──
+
+  appendRoundId(sessionId: string, roundId: string): void {
+    const ids = this.roundIdsMap.get(sessionId) ?? [];
+    ids.push(roundId);
+    this.roundIdsMap.set(sessionId, ids);
+  }
+
+  appendRoundIds(sessionId: string, roundIds: string[]): void {
+    const ids = this.roundIdsMap.get(sessionId) ?? [];
+    ids.push(...roundIds);
+    this.roundIdsMap.set(sessionId, ids);
+  }
+
+  getRoundIds(sessionId: string): string[] {
+    return this.roundIdsMap.get(sessionId) ?? [];
+  }
+
+  setRoundIds(sessionId: string, roundIds: string[]): void {
+    this.roundIdsMap.set(sessionId, [...roundIds]);
+  }
+
+  createSession(meta: SessionMeta): void {
+    this.metaMap.set(meta.sessionId, { ...meta });
+  }
+
+  deleteSession(sessionId: string): void {
+    this.metaMap.delete(sessionId);
+    this.roundIdsMap.delete(sessionId);
   }
 
   /** 实现 getSessionMeta（返回预设元数据，默认空） */
@@ -122,6 +150,11 @@ class MockSessionStore implements ISessionStore {
   /** 实现 setSessionTitle（记录调用） */
   setSessionTitle(sessionId: string, title: string): void {
     this.updateSessionMeta(sessionId, { displayName: title });
+  }
+
+  /** 实现 listSessionMetas（返回全部元数据） */
+  listSessionMetas(): SessionMeta[] {
+    return Array.from(this.metaMap.values());
   }
 
   /** 获取调用记录 */

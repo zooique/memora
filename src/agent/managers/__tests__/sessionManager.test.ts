@@ -67,7 +67,6 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
     appendMessage: vi.fn(),
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
-    copySession: vi.fn(),
     saveCheckpoint: vi.fn(),
     loadCheckpoint: vi.fn().mockReturnValue(null),
     deleteCheckpoint: vi.fn(),
@@ -75,6 +74,12 @@ function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessio
     setSessionTitle: vi.fn(),
     updateSessionMeta: vi.fn(),
     listSessionMetas: vi.fn().mockReturnValue([]),
+    getRoundIds: vi.fn().mockReturnValue([]),
+    setRoundIds: vi.fn(),
+    appendRoundId: vi.fn(),
+    appendRoundIds: vi.fn(),
+    createSession: vi.fn(),
+    deleteSession: vi.fn(),
     ...overrides,
   };
 }
@@ -1514,7 +1519,6 @@ describe('SessionManager', () => {
       appendMessage: vi.fn(),
       loadMessages: vi.fn().mockReturnValue([]),
       listSessions: vi.fn().mockReturnValue([]),
-      copySession: vi.fn(),
       saveCheckpoint: (sessionId: string, json: string) => {
         writes += 1;
         disk.set(sessionId, json);
@@ -1523,6 +1527,15 @@ describe('SessionManager', () => {
       deleteCheckpoint: (sessionId: string) => {
         disk.delete(sessionId);
       },
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
 
     return {

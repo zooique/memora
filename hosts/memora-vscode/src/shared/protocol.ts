@@ -70,7 +70,7 @@ export type WebviewToExtensionMessage =
    * 当前会话为空或对话繁忙时内核会拒绝并通知（host 兜底提示）。记忆索引全局共享，
    * fork 仅分叉对话历史不隔离记忆空间。
    */
-  | { type: 'fork_session' }
+  | { type: 'fork_session'; roundId?: string }
   /**
    * 请求历史会话列表（标题条「历史」按钮触发，2026-08-17 会话管理重构）
    *
@@ -312,9 +312,9 @@ export type WebviewToExtensionMessage =
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
-  | { type: 'user'; text: string; ts?: string }
+  | { type: 'user'; text: string; ts?: string; roundId?: string }
   /** 历史/流式 assistant 消息（历史回放用 text 完整段） */
-  | { type: 'assistant'; text: string; ts?: string }
+  | { type: 'assistant'; text: string; ts?: string; roundId?: string }
   /**
    * 流式 assistant 消息（流式输出经 chunk 拼接）
    *

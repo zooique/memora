@@ -15,6 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import { todayDate } from '@/utils/time.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
+import type { IRoundStore } from '@/memory/roundStore.js';
 
 /**
  * 创建 Mock ISessionStore（支持 round-based 操作）
@@ -23,84 +24,78 @@ const createMockSessionStore = (): ISessionStore => ({
   appendMessage: vi.fn(),
   loadMessages: vi.fn().mockReturnValue([]),
   listSessions: vi.fn().mockReturnValue([]),
-  copySession: vi.fn(),
   // Round-based 方法
   getRoundIds: vi.fn().mockReturnValue([]),
   setRoundIds: vi.fn(),
   appendRoundId: vi.fn(),
+  appendRoundIds: vi.fn(),
+  createSession: vi.fn(),
+  deleteSession: vi.fn(),
   updateSessionMeta: vi.fn(),
   getSessionMeta: vi.fn(),
+  listSessionMetas: vi.fn().mockReturnValue([]),
 });
 
-describe('ISessionStore 契约 · appendMessage', () => {
+describe('ISessionStore 契约 · round-based 写入', () => {
   let mockSessionStore: ISessionStore;
+  let mockRoundStore: IRoundStore;
   let history: MessageHistory;
 
   beforeEach(() => {
     mockSessionStore = createMockSessionStore();
-    history = new MessageHistory(mockSessionStore);
+    mockRoundStore = {
+      save: vi.fn(),
+      getById: vi.fn().mockReturnValue(null),
+      getByIds: vi.fn().mockReturnValue([]),
+      listAll: vi.fn().mockReturnValue([]),
+      incrementRef: vi.fn(),
+      decrementRef: vi.fn(),
+      delete: vi.fn().mockReturnValue(true),
+    } as unknown as IRoundStore;
+    history = new MessageHistory(mockSessionStore, undefined, 'main', mockRoundStore);
   });
 
-  it('appendUser 应调用 sessionStore.appendMessage', async () => {
+  it('appendUser 应写入 RoundStore 并登记 roundId', async () => {
+    await history.appendUser('测试消息', 'round-1');
+
+    expect(mockRoundStore.save).toHaveBeenCalledTimes(1);
+    expect(mockSessionStore.appendRoundId).toHaveBeenCalledWith(
+      expect.stringContaining('-main'),
+      'round-1',
+    );
+  });
+
+  it('appendAssistant 应完成对应 Round', async () => {
+    mockRoundStore.getById = vi.fn().mockReturnValue({
+      id: 'round-1',
+      userMessage: { id: 'm1', role: 'user', content: 'q', timestamp: 't' },
+      status: 'pending',
+      createdAt: 't',
+      refCount: 1,
+    });
+    await history.appendAssistant('回复消息', 'round-1');
+
+    expect(mockRoundStore.save).toHaveBeenCalledTimes(1);
+    const saved = vi.mocked(mockRoundStore.save).mock.calls[0]![0];
+    expect(saved.assistantMessage?.content).toBe('回复消息');
+    expect(saved.status).toBe('complete');
+  });
+
+  it('未传入 roundId 时不写入 RoundStore', async () => {
     await history.appendUser('测试消息');
 
-    expect(mockSessionStore.appendMessage).toHaveBeenCalledTimes(1);
-    expect(mockSessionStore.appendMessage).toHaveBeenCalledWith(
-      expect.any(String), // date (YYYY-MM-DD)
-      'main', // session
-      expect.objectContaining({
-        role: 'user',
-        content: '测试消息',
-        timestamp: expect.any(String),
-      }),
-    );
+    expect(mockRoundStore.save).not.toHaveBeenCalled();
+    expect(mockSessionStore.appendRoundId).not.toHaveBeenCalled();
   });
 
-  it('appendAssistant 应调用 sessionStore.appendMessage', async () => {
-    await history.appendAssistant('回复消息');
-
-    expect(mockSessionStore.appendMessage).toHaveBeenCalledTimes(1);
-    expect(mockSessionStore.appendMessage).toHaveBeenCalledWith(
-      expect.any(String),
-      'main',
-      expect.objectContaining({
-        role: 'assistant',
-        content: '回复消息',
-        timestamp: expect.any(String),
-      }),
-    );
-  });
-
-  it('appendAssistant 空内容不应调用 sessionStore', async () => {
-    await history.appendAssistant('');
-
-    expect(mockSessionStore.appendMessage).not.toHaveBeenCalled();
-  });
-
-  it('appendAssistant 空白内容不应调用 sessionStore', async () => {
-    await history.appendAssistant('   ');
-
-    expect(mockSessionStore.appendMessage).not.toHaveBeenCalled();
-  });
-
-  it('切换会话后应使用新会话名', async () => {
+  it('切换会话后应使用新会话名登记 roundId', async () => {
     history.switchSession('new-session');
-    await history.appendUser('新会话消息');
+    await history.appendUser('新会话消息', 'round-2');
 
-    expect(mockSessionStore.appendMessage).toHaveBeenCalledWith(
-      expect.any(String),
-      'new-session',
-      expect.objectContaining({ role: 'user', content: '新会话消息' }),
+    expect(mockSessionStore.appendRoundId).toHaveBeenCalledWith(
+      expect.stringContaining('-new-session'),
+      'round-2',
     );
-  });
-
-  it('sessionStore.appendMessage 失败不应抛出异常', async () => {
-    vi.mocked(mockSessionStore.appendMessage).mockImplementation(() => {
-      throw new Error('写入失败');
-    });
-
-    // 不应抛出异常
-    await expect(history.appendUser('测试')).resolves.toBeUndefined();
   });
 });
 
@@ -187,14 +182,12 @@ describe('ISessionStore 契约 · forkSession (round-based)', () => {
     vi.mocked(mockSessionStore.listSessions!).mockReturnValue([]);
   });
 
-  it('forkSession 应调用 setRoundIds 和 updateSessionMeta（而非 copySession）', () => {
+  it('forkSession 应调用 setRoundIds 和 updateSessionMeta', () => {
     history.forkSession();
 
-    // round-based 分叉：应调用 setRoundIds（而非 copySession）
+    // round-based 分叉：应调用 setRoundIds 与 updateSessionMeta
     expect(mockSessionStore.setRoundIds).toHaveBeenCalledTimes(1);
     expect(mockSessionStore.updateSessionMeta).toHaveBeenCalledTimes(1);
-    // legacy copySession 不应被调用
-    expect(mockSessionStore.copySession).not.toHaveBeenCalled();
   });
 
   it('forkSession 应使用最后一个 Round 作为默认分叉点', () => {

@@ -21,7 +21,6 @@ import type {
   SessionView,
   SessionSummary,
 } from '@/memory/sessionViewLoader.js';
-import { logger } from '@/logging/logger.js';
 
 /**
  * 内存会话视图加载器
@@ -250,14 +249,7 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
       return [...meta.roundIds];
     }
 
-    // legacy 模式：从消息列表推断（简化处理，返回空数组）
-    if (meta.storageMode !== 'round-based') {
-      logger.debug(
-        { sessionId: meta.sessionId },
-        '会话使用 legacy 模式，roundIds 为空',
-      );
-    }
-
+    // 单一 round-based 模式：无 roundIds 则无消息可加载
     return [];
   }
 }

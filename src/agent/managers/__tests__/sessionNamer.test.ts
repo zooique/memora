@@ -70,6 +70,7 @@ class MockProvider extends LlmProvider {
 class MockSessionStore implements ISessionStore {
   private messages: SessionMessage[];
   private metas: Map<string, SessionMeta>;
+  private roundIdsMap: Map<string, string[]> = new Map();
 
   constructor(messages: SessionMessage[] = [], metas: SessionMeta[] = []) {
     this.messages = messages;
@@ -98,8 +99,35 @@ class MockSessionStore implements ISessionStore {
     return [...this.metas.keys()];
   }
 
-  copySession(): void {
-    // 测试不需要实现复制逻辑
+  // ── Round-based 方法 ──
+
+  appendRoundId(sessionId: string, roundId: string): void {
+    const ids = this.roundIdsMap.get(sessionId) ?? [];
+    ids.push(roundId);
+    this.roundIdsMap.set(sessionId, ids);
+  }
+
+  appendRoundIds(sessionId: string, roundIds: string[]): void {
+    const ids = this.roundIdsMap.get(sessionId) ?? [];
+    ids.push(...roundIds);
+    this.roundIdsMap.set(sessionId, ids);
+  }
+
+  getRoundIds(sessionId: string): string[] {
+    return this.roundIdsMap.get(sessionId) ?? [];
+  }
+
+  setRoundIds(sessionId: string, roundIds: string[]): void {
+    this.roundIdsMap.set(sessionId, [...roundIds]);
+  }
+
+  createSession(meta: SessionMeta): void {
+    this.metas.set(meta.sessionId, { ...meta });
+  }
+
+  deleteSession(sessionId: string): void {
+    this.metas.delete(sessionId);
+    this.roundIdsMap.delete(sessionId);
   }
 
   getSessionMeta(sessionId: string): SessionMeta | undefined {

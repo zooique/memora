@@ -119,9 +119,9 @@ export { EmbeddingProvider } from '@/llm/embedding.js';
 export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
 export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
-export type { ISessionStore, SessionMessage, SessionMeta, SessionStorageMode } from '@/memory/sessionStore.js';
+export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 // Round-based 模式辅助函数
-export { createRoundBasedSessionMeta, isRoundBasedMode } from '@/memory/sessionStore.js';
+export { createRoundBasedSessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现
 export { getSessionDisplayName } from '@/memory/sessionStore.js';
 
@@ -138,10 +138,8 @@ export { flattenRoundsToMessages, truncateRoundsUpTo, countMessagesInRounds } fr
 // 内存版实现（用于测试和开发）
 export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 
-// ─── Round-based 会话管理器导出 ─────────────────────────────
-// DefaultSessionManager：Round-based 存储模式的会话管理器
+// ─── 会话管理器接口导出（单一分叉真理源见 MessageHistory.forkSession） ──
 export type { ISessionManager } from '@/memory/sessionManager.js';
-export { DefaultSessionManager, createDefaultSessionManager } from '@/memory/sessionManager.js';
 // 内存版实现（用于测试和开发）
 export { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 export { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';

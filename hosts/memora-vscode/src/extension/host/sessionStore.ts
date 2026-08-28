@@ -1,39 +1,59 @@
 /**
  * 工作区会话存储 — ISessionStore 实现（JSON 文件落盘）
  *
+ * 存储模型（round-based 单一模式，SSOT）：
+ *   - 会话仅持有 Round ID 列表（roundIdsStore）；消息内容只存在于 RoundStore（物理真相源）
+ *   - 消息读写经 roundIds → RoundStore 展开 / 成 Round 写入，绝无 legacy 扁平消息列表
+ *   - 与设计文档 §3.2 对齐：SessionMeta 不含 storageMode 之类的模式标识字段
+ *
  * 职责：
- *   - 将 memora 原始对话消息持久化到工作区 `.memora/sessions.json`
+ *   - 将 memora 对话 Round ID 列表持久化到工作区 `.memora/sessions.json`
  *   - 实现 ISessionStore 接口，注入 Agent，让跨会话对话记录可回溯（traceSummary 依赖）
  *   - 原子写入：save() 使用 atomicWriteFileSync 防崩溃损坏
- *   - 支持双模式：legacy 模式（消息列表）和 round-based 模式（Round ID 列表）
- *
- * 阶段 1：扩展支持 Round-based 存储模式（问答闭环独立存储）。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   defaultSessionTitle,
+  generateRoundId,
+  generateMessageId,
+  type IRoundStore,
   type ISessionStore,
+  type Round,
   type SessionMessage,
   type SessionMeta,
 } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
+import { WorkspaceRoundStore } from './workspaceRoundStore.js';
 
 /** 工作区会话存储 */
 export class WorkspaceSessionStore implements ISessionStore {
-  /** 会话消息主存储：`date-session` → SessionMessage[]（legacy 模式） */
-  private store = new Map<string, SessionMessage[]>();
   /** 检查点存储：sessionId → checkpoint 字符串 */
   private checkpoints = new Map<string, string>();
   /** 会话标题元数据（ADR-024）：sessionId → SessionMeta */
   private metas = new Map<string, SessionMeta>();
-  /** Round ID 列表存储：sessionId → roundId[]（round-based 模式） */
+  /** Round ID 列表存储：sessionId → roundId[]（round-based 唯一真相源） */
   private roundIdsStore = new Map<string, string[]>();
+  /** sessionId → 当前 pending Round ID（appendMessage 成对补全用） */
+  private pendingRoundIds = new Map<string, string>();
+  /** 问答闭环物理存储（IRoundStore 实现，文件落盘） */
+  private readonly roundStore: IRoundStore;
   /** 会话文件绝对路径 */
   private readonly filePath: string;
 
-  constructor(workspacePath: string) {
+  /**
+   * @param workspacePath 工作区路径（落盘目录 `.memora`）
+   * @param roundStore 问答闭环存储；缺省时在同工作区新建文件级 WorkspaceRoundStore 并 load()
+   */
+  constructor(workspacePath: string, roundStore?: IRoundStore) {
     this.filePath = join(workspacePath, '.memora', 'sessions.json');
+    if (roundStore) {
+      this.roundStore = roundStore;
+    } else {
+      const rs = new WorkspaceRoundStore(workspacePath);
+      rs.load();
+      this.roundStore = rs;
+    }
   }
 
   /** 从文件加载会话（文件不存在则空） */
@@ -42,30 +62,27 @@ export class WorkspaceSessionStore implements ISessionStore {
     try {
       const raw = readFileSync(this.filePath, 'utf8');
       const data = JSON.parse(raw) as {
-        sessions: Record<string, SessionMessage[]>;
         checkpoints: Record<string, string>;
         metas: Record<string, SessionMeta>;
         roundIdsStore: Record<string, string[]>;
       };
-      for (const [k, v] of Object.entries(data.sessions ?? {})) this.store.set(k, v);
       for (const [k, v] of Object.entries(data.checkpoints ?? {})) this.checkpoints.set(k, v);
       for (const [k, v] of Object.entries(data.metas ?? {})) this.metas.set(k, v);
-      // 加载 round-based 模式的 Round ID 列表
+      // 加载 round-based 模式的 Round ID 列表（唯一内容来源）
       for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
-      // 注意：sessions 与 checkpoints 一并清空，避免跨会话回溯（trace_summary）读到脏检查点
       console.warn('Memora 会话文件读取失败，降级为空', err);
-      this.store.clear();
       this.checkpoints.clear();
+      this.metas.clear();
       this.roundIdsStore.clear();
+      this.pendingRoundIds.clear();
     }
   }
 
   /** 将内存原子写回文件（先写 .tmp 再 rename，防崩溃损坏） */
   private save(): void {
     const data = {
-      sessions: Object.fromEntries(this.store),
       checkpoints: Object.fromEntries(this.checkpoints),
       metas: Object.fromEntries(this.metas),
       roundIdsStore: Object.fromEntries(this.roundIdsStore),
@@ -73,110 +90,177 @@ export class WorkspaceSessionStore implements ISessionStore {
     atomicWriteFileSync(this.filePath, JSON.stringify(data, null, 2));
   }
 
-  appendMessage(date: string, session: string, message: SessionMessage): void {
-    const key = `${date}-${session}`;
-    const list = this.store.get(key) ?? [];
-    list.push(message);
-    this.store.set(key, list);
-    // 同步维护会话标题元数据：updatedAt 刷新 + messageCount 递增（ADR-024）
-    const existing = this.metas.get(key);
-    this.metas.set(key, {
-      sessionId: key,
-      displayName: existing?.displayName ?? defaultSessionTitle(),
-      updatedAt: new Date().toISOString(),
-      messageCount: list.length,
-    });
-    this.save();
-  }
-
-  loadMessages(date: string, session: string): SessionMessage[] {
-    const key = `${date}-${session}`;
-    return (this.store.get(key) ?? []).map((m) => ({ ...m }));
-  }
-
   /**
-   * 删除指定会话记录（历史浮层垃圾桶触发，2026-08-17 会话管理重构）
-   *
-   * 删除整条会话：消息 + 标题元数据 + 检查点（连带清检查点，防脏检查点残留污染
-   * trace_summary）。替代原 clearSession（清空当前会话）——清空为伪需求，由
-   * 「删除会话记录」覆盖（用户决策 2026-08-17）。
-   *
-   * 非内核 ISessionStore 标准接口，仅在宿主侧使用。
-   *
-   * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   * 追加一条消息到指定会话（round-based 唯一真相源）。
+   * 底层写入 RoundStore 并登记 roundId；user/assistant 成对组成同一 Round。
+   * 同步维护占位会话标题元数据（ADR-024：显示「新会话 HH:MM」直至内核自动命名）。
    */
+  appendMessage(date: string, session: string, message: SessionMessage): void {
+    const sessionId = `${date}-${session}`;
+    const now = message.timestamp;
+
+    // 确保占位元数据存在（无则新建「新会话」占位）
+    if (!this.metas.has(sessionId)) {
+      this.metas.set(sessionId, {
+        sessionId,
+        displayName: defaultSessionTitle(),
+        updatedAt: now,
+        messageCount: 0,
+      });
+    }
+
+    if (message.role === 'user') {
+      const roundId = message.roundId ?? generateRoundId();
+      const round: Round = {
+        id: roundId,
+        userMessage: {
+          id: generateMessageId(),
+          role: 'user',
+          content: message.content,
+          timestamp: now,
+        },
+        status: 'pending',
+        createdAt: now,
+        refCount: 1,
+      };
+      this.roundStore.save(round);
+      this.pendingRoundIds.set(sessionId, roundId);
+      this.appendRoundId(sessionId, roundId);
+      return;
+    }
+
+    // assistant：补全当前 pending Round
+    const pendingRoundId = this.pendingRoundIds.get(sessionId);
+    if (pendingRoundId) {
+      const round = this.roundStore.getById(pendingRoundId);
+      if (round) {
+        const completed: Round = {
+          ...round,
+          assistantMessage: {
+            id: generateMessageId(),
+            role: 'assistant',
+            content: message.content,
+            timestamp: now,
+          },
+          status: 'complete',
+          completedAt: now,
+        };
+        this.roundStore.save(completed);
+        this.pendingRoundIds.delete(sessionId);
+        return;
+      }
+    }
+
+    // 无 pending（异常场景兜底）：独立 complete Round
+    const roundId = generateRoundId();
+    const round: Round = {
+      id: roundId,
+      userMessage: {
+        id: generateMessageId(),
+        role: 'user',
+        content: message.content,
+        timestamp: now,
+      },
+      assistantMessage: {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: message.content,
+        timestamp: now,
+      },
+      status: 'complete',
+      createdAt: now,
+      completedAt: now,
+      refCount: 1,
+    };
+    this.roundStore.save(round);
+    this.appendRoundId(sessionId, roundId);
+  }
+
+  /** 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开） */
+  loadMessages(date: string, session: string): SessionMessage[] {
+    const sessionId = `${date}-${session}`;
+    const roundIds = this.getRoundIds(sessionId);
+    if (roundIds.length === 0) return [];
+    const rounds = this.roundStore.getByIds(roundIds);
+    const messages: SessionMessage[] = [];
+    for (const round of rounds) {
+      messages.push({
+        role: round.userMessage.role,
+        content: round.userMessage.content,
+        timestamp: round.userMessage.timestamp,
+        roundId: round.id,
+      });
+      if (round.assistantMessage && round.status === 'complete') {
+        messages.push({
+          role: round.assistantMessage.role,
+          content: round.assistantMessage.content,
+          timestamp: round.assistantMessage.timestamp,
+          roundId: round.id,
+        });
+      }
+    }
+    return messages;
+  }
+
   /**
-   * 删除指定会话记录
+   * 删除指定会话记录（历史浮层垃圾桶触发）
    *
-   * 支持 legacy 模式和 round-based 模式：
-   * - legacy 模式：删除消息 + 元数据 + 检查点
-   * - round-based 模式：删除 Round ID 列表 + 元数据 + 检查点
+   * 删除整条会话：Round ID 列表 + 元数据 + 检查点。
    *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
    */
   deleteSession(sessionId: string): void {
-    // legacy 模式清理
-    this.store.delete(sessionId);
-    // round-based 模式清理
+    // 清理：移除 Round ID 指针 + 元数据 + 检查点（物理 Round 由 RoundStore 管理）
     this.roundIdsStore.delete(sessionId);
-    // 通用清理
     this.metas.delete(sessionId);
     this.checkpoints.delete(sessionId);
+    this.pendingRoundIds.delete(sessionId);
     this.save();
   }
 
   /**
-   * 截断指定会话（truncate-from-turn，宿主扩展方法，供「删除单个问答闭环」调用）
+   * 截断指定会话（truncate-from-turn，宿主扩展方法）
    *
-   * 语义（对齐市面主流 ChatGPT 编辑重跑 / personal-ai）：删除【目标问答闭环及其之后所有
-   * 消息】，保证剩余上下文自洽（避免中间删除一个闭环导致后续 assistant 回复的上文断裂）。
+   * 删除【目标问答闭环及其之后所有 Round】，保证剩余上下文自洽。
    *
-   * 锚点：删除按钮携带的 fromTs 有两种来源（SSOT 归一）：
-   *   - 流式：chatPanel 的 firstChunkTs（流开始时刻，早于该答存储时间戳）；
-   *   - 历史回放：存储的 assistant timestamp（精确值）。
-   * 故用「下界匹配」定位第一条 `role='assistant' && timestamp >= fromTs` 的消息，两种来源
-   * 都能命中目标答；再向前回退到最近一条 role='user' 的消息视为该问答的「问」，
-   * 删除从该「问」到会话末尾的全部消息。找不到锚点返回 false（no-op）。
-   *
-   * 非内核 ISessionStore 标准接口（内核接口坚持最小化），仅在宿主侧使用，与 deleteSession 同模式。
+   * 锚点（下界匹配）：定位第一条 `assistant timestamp >= fromTs` 的 Round。
+   * Round 边界即问答的 user 起点，删除该 Round 及之后。
    *
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识
-   * @param fromTs 删除按钮携带的 timestamp（webview 渲染时存的 dataset.ts）
-   * @returns 是否截断成功（锚点消息未找到时返回 false）
+   * @param fromTs 删除按钮携带的 timestamp
+   * @returns 是否截断成功（锚点未找到时返回 false）
    */
   truncateFrom(date: string, session: string, fromTs: string): boolean {
-    const key = `${date}-${session}`;
-    const list = this.store.get(key);
-    if (!list || list.length === 0) return false;
-    // 下界匹配定位第一条「timestamp >= fromTs 的 assistant」——兼容流式（fromTs=流开始时刻）
-    // 与历史回放（fromTs=精确 timestamp）两种锚点来源，根治「源不一致导致删除失效」。
-    const idx = list.findIndex((m) => m.role === 'assistant' && m.timestamp >= fromTs);
+    const sessionId = `${date}-${session}`;
+    const roundIds = this.roundIdsStore.get(sessionId);
+    if (!roundIds || roundIds.length === 0) return false;
+    const rounds = this.roundStore.getByIds(roundIds);
+    // 下界匹配：第一条 assistant 时间戳 >= fromTs 的 Round 作为截断起点
+    const idx = rounds.findIndex(
+      (r: Round) => r.assistantMessage?.timestamp !== undefined && r.assistantMessage.timestamp >= fromTs,
+    );
     if (idx === -1) return false;
-    // 向前回退到最近一条 user 消息作为本轮起点（该问答的「问」）：
-    // 从 anchor 自身开始，只要当前不是 user 就前移，直到停在 user 或 0。
-    // 这样 anchor 对应的「问」也被一并删除（删了答也删问）。
-    let start = idx;
-    while (start > 0 && list[start].role !== 'user') start--;
-    // 删除 [start, list.length) 之后的全部消息（含本轮问答）
-    const truncated = list.slice(0, start);
-    this.store.set(key, truncated);
-    // 同步会话标题元数据：messageCount 更新为截断后条数（updatedAt 不变，非新增活跃事件）
-    const existing = this.metas.get(key);
+    // 删除 [idx, 末尾) 的全部 Round（含目标问答）
+    const removed = roundIds.slice(idx);
+    for (const id of removed) {
+      this.roundStore.decrementRef(id);
+      this.roundStore.delete(id); // refCount 归零才真删文件；若被分叉引用则安全保留
+    }
+    const kept = roundIds.slice(0, idx);
+    this.roundIdsStore.set(sessionId, kept);
+    // 同步元数据
+    const existing = this.metas.get(sessionId);
     if (existing) {
-      this.metas.set(key, { ...existing, messageCount: truncated.length });
+      this.metas.set(sessionId, { ...existing, roundIds: [...kept], messageCount: kept.length * 2 });
     }
     this.save();
     return true;
   }
 
   listSessions(): string[] {
-    // 收集 legacy 模式的会话
-    const sessions = new Set<string>(this.store.keys());
     // 收集 round-based 模式的会话
-    for (const sessionId of this.roundIdsStore.keys()) {
-      sessions.add(sessionId);
-    }
+    const sessions = new Set<string>(this.roundIdsStore.keys());
     // 收集有元数据的会话（可能没有消息但有 meta）
     for (const sessionId of this.metas.keys()) {
       sessions.add(sessionId);
@@ -185,11 +269,10 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 读取会话标题元数据（ADR-024）：无元数据但存在消息时按消息推断占位元数据
+   * 读取会话标题元数据（ADR-024）
    *
-   * 兼容旧数据：早期会话无 metas 记录，依据消息列表实时推导（updatedAt 取末条时间戳）。
-   * 这样历史列表仍能列出旧会话，不必强制迁移。
-   * 仅当会话仍存在消息时才推导占位——无消息且无 meta 视为会话不存在（如已删除），返回 undefined，
+   * round-based 单一模式：会话仅持 roundIds，无 legacy 扁平消息；占位元数据按 roundIds 推导。
+   * 仅当会话存在 roundIds 或 meta 时才返回，否则视为会话不存在（如已删除）返回 undefined，
    * 避免删除后又被占位元数据「复活」（deleteSession 契约：删除后 getSessionMeta 应为 undefined）。
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
@@ -208,23 +291,13 @@ export class WorkspaceSessionStore implements ISessionStore {
     if (roundIds && roundIds.length > 0) {
       return {
         sessionId,
-        storageMode: 'round-based',
         roundIds: [...roundIds],
         displayName: defaultSessionTitle(),
         updatedAt: new Date().toISOString(),
         messageCount: roundIds.length * 2,
       };
     }
-    // 旧会话兜底：仅当存在消息时推导占位元数据（不落盘，仅展示用）
-    const msgs = this.store.get(sessionId);
-    if (!msgs || msgs.length === 0) return undefined;
-    const last = msgs[msgs.length - 1];
-    return {
-      sessionId,
-      displayName: defaultSessionTitle(),
-      updatedAt: last?.timestamp ?? new Date().toISOString(),
-      messageCount: msgs.length,
-    };
+    return undefined;
   }
 
   /**
@@ -266,21 +339,11 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 列出全部会话标题元数据（ADR-024）：按 updatedAt 降序（最新在前）
    *
-   * 覆盖所有已持久化会话：
-   * 1. 先取 metas（有元数据的会话）
-   * 2. 补全 legacy 模式的会话（getSessionMeta 推导）
-   * 3. 补全 round-based 模式的会话（getSessionMeta 推导）
+   * 覆盖所有已持久化会话：先取 metas，再补全有 roundIds 但无 meta 的会话。
    */
   listSessionMetas(): SessionMeta[] {
     const all = new Map(this.metas);
-    // 补全 legacy 模式的会话
-    for (const key of this.store.keys()) {
-      if (!all.has(key)) {
-        const derived = this.getSessionMeta(key);
-        if (derived) all.set(key, derived);
-      }
-    }
-    // 补全 round-based 模式的会话
+    // 补全 round-based 模式的会话（有 roundIds 但无 meta）
     for (const key of this.roundIdsStore.keys()) {
       if (!all.has(key)) {
         const derived = this.getSessionMeta(key);
@@ -288,22 +351,6 @@ export class WorkspaceSessionStore implements ISessionStore {
       }
     }
     return [...all.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }
-
-  /**
-   * @deprecated legacy 路径，已弃用。分叉功能改为 round-based 模式，通过复制 Round ID 列表实现。
-   * 此方法仅为向后兼容保留，将在未来版本移除。
-   */
-  copySession?(
-    sourceDate: string,
-    sourceSession: string,
-    targetDate: string,
-    targetSession: string,
-  ): void {
-    const source = this.loadMessages(sourceDate, sourceSession);
-    if (source.length === 0) return;
-    this.store.set(`${targetDate}-${targetSession}`, source);
-    this.save();
   }
 
   saveCheckpoint?(sessionId: string, checkpoint: string): void {

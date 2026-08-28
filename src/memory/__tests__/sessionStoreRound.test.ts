@@ -5,18 +5,15 @@
 import { describe, expect, it } from 'vitest';
 import {
   createRoundBasedSessionMeta,
-  isRoundBasedMode,
   calculateMessageCount,
 } from '@/memory/sessionStore.js';
-import type { SessionMeta } from '@/memory/sessionStore.js';
 
 describe('会话存储 Round-based 模式', () => {
   describe('createRoundBasedSessionMeta', () => {
-    it('应该创建带有 round-based 模式的会话元数据', () => {
+    it('应该创建以 roundIds 为唯一内容来源的会话元数据', () => {
       const meta = createRoundBasedSessionMeta('2026-08-27-test-session');
 
       expect(meta.sessionId).toBe('2026-08-27-test-session');
-      expect(meta.storageMode).toBe('round-based');
       expect(meta.roundIds).toEqual([]);
       expect(meta.createdAt).toBeDefined();
       expect(meta.updatedAt).toBeDefined();
@@ -36,44 +33,6 @@ describe('会话存储 Round-based 模式', () => {
       const meta2 = createRoundBasedSessionMeta('session2');
 
       expect(meta1.createdAt).not.toBe(meta2.createdAt);
-    });
-  });
-
-  describe('isRoundBasedMode', () => {
-    it('应该识别显式声明的 round-based 模式', () => {
-      const meta: SessionMeta = {
-        sessionId: 'test',
-        storageMode: 'round-based',
-        updatedAt: new Date().toISOString(),
-        messageCount: 0,
-      };
-
-      expect(isRoundBasedMode(meta)).toBe(true);
-    });
-
-    it('应该识别有 roundIds 字段的模式', () => {
-      const meta: SessionMeta = {
-        sessionId: 'test',
-        roundIds: ['round-1'],
-        updatedAt: new Date().toISOString(),
-        messageCount: 0,
-      };
-
-      expect(isRoundBasedMode(meta)).toBe(true);
-    });
-
-    it('应该识别 legacy 模式', () => {
-      const meta: SessionMeta = {
-        sessionId: 'test',
-        updatedAt: new Date().toISOString(),
-        messageCount: 0,
-      };
-
-      expect(isRoundBasedMode(meta)).toBe(false);
-    });
-
-    it('应该处理 undefined 输入', () => {
-      expect(isRoundBasedMode(undefined)).toBe(false);
     });
   });
 

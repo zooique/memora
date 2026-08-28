@@ -30,9 +30,35 @@ function createFailingSessionStore(): ISessionStore {
     listSessions: vi.fn(() => {
       throw new Error('模拟存储不可用');
     }),
+    getRoundIds: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    setRoundIds: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    appendRoundId: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    appendRoundIds: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    createSession: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    deleteSession: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    getSessionMeta: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    updateSessionMeta: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
+    listSessionMetas: vi.fn(() => {
+      throw new Error('模拟存储不可用');
+    }),
   };
 }
-
 // ═══════════════════════════════════════════════════════════════
 // P1: 消息持久化降级
 // ═══════════════════════════════════════════════════════════════
@@ -40,27 +66,55 @@ function createFailingSessionStore(): ISessionStore {
 describe('降级策略 · P1 消息持久化', () => {
   it('appendUser 存储失败时不抛出异常', async () => {
     const failingStore = createFailingSessionStore();
-    const history = new MessageHistory(failingStore);
+    // 注入一个最小 roundStore mock 使 round-based 路径生效
+    const mockRoundStore = {
+      save: vi.fn(),
+      getById: vi.fn(),
+      getByIds: vi.fn(),
+      listAll: vi.fn(),
+      delete: vi.fn(),
+      decrementRef: vi.fn(),
+      incrementRef: vi.fn(),
+    };
+    const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
     // 应正常返回，不抛出
-    await expect(history.appendUser('测试消息')).resolves.toBeUndefined();
-    expect(failingStore.appendMessage).toHaveBeenCalledOnce();
+    await expect(history.appendUser('测试消息', 'round-1')).resolves.toBeUndefined();
+    expect(failingStore.appendRoundId).toHaveBeenCalledOnce();
   });
 
   it('appendAssistant 存储失败时不抛出异常', async () => {
     const failingStore = createFailingSessionStore();
-    const history = new MessageHistory(failingStore);
+    const mockRoundStore = {
+      save: vi.fn(),
+      getById: vi.fn(),
+      getByIds: vi.fn(),
+      listAll: vi.fn(),
+      delete: vi.fn(),
+      decrementRef: vi.fn(),
+      incrementRef: vi.fn(),
+    };
+    const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
-    await expect(history.appendAssistant('AI 回复')).resolves.toBeUndefined();
-    expect(failingStore.appendMessage).toHaveBeenCalledOnce();
+    await expect(history.appendAssistant('AI 回复', 'round-1')).resolves.toBeUndefined();
+    // appendAssistant 在无 pending Round 时查 RoundStore，不会调用 sessionStore 方法
   });
 
   it('空内容 assistant 消息不触发持久化', async () => {
     const failingStore = createFailingSessionStore();
-    const history = new MessageHistory(failingStore);
+    const mockRoundStore = {
+      save: vi.fn(),
+      getById: vi.fn(),
+      getByIds: vi.fn(),
+      listAll: vi.fn(),
+      delete: vi.fn(),
+      decrementRef: vi.fn(),
+      incrementRef: vi.fn(),
+    };
+    const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
     await history.appendAssistant('   ');
-    expect(failingStore.appendMessage).not.toHaveBeenCalled();
+    expect(mockRoundStore.save).not.toHaveBeenCalled();
   });
 
   it('未注入 sessionStore 时不崩溃（内存模式）', async () => {
@@ -101,13 +155,21 @@ describe('降级策略 · P2 归档降级', () => {
 describe('降级策略 · 日志格式一致性', () => {
   it('P1 降级日志包含 source 和 action 字段', async () => {
     const failingStore = createFailingSessionStore();
-    const history = new MessageHistory(failingStore);
+    const mockRoundStore = {
+      save: vi.fn(),
+      getById: vi.fn(),
+      getByIds: vi.fn(),
+      listAll: vi.fn(),
+      delete: vi.fn(),
+      decrementRef: vi.fn(),
+      incrementRef: vi.fn(),
+    };
+    const history = new MessageHistory(failingStore, undefined, 'main', mockRoundStore);
 
-    // 触发降级
-    await history.appendUser('触发降级的消息');
+    // 触发降级（roundStore 注入使 round-based 路径生效）
+    await history.appendUser('触发降级的消息', 'round-1');
 
-    // 验证 mock 被调用（实际日志格式由 logger.warn 输出）
-    // 这里验证降级行为本身，日志格式的正确性由 logger.test.ts 覆盖
-    expect(failingStore.appendMessage).toHaveBeenCalledOnce();
+    // 验证 round-based 路径被调用
+    expect(failingStore.appendRoundId).toHaveBeenCalledOnce();
   });
 });

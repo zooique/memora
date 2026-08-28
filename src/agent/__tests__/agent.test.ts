@@ -24,6 +24,7 @@ import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import { todayDate } from '@/utils/time.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
@@ -831,7 +832,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
   let tmpData: string;
   let agent: Agent | null = null;
 
-  /** Mock ISessionStore，支持 forkSession 所需的 copySession */
+  /** Mock ISessionStore */
   function createMockSessionStore(): ISessionStore {
     // Legacy 消息存储
     const store = new Map<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>();
@@ -856,10 +857,6 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
         for (const id of metas.keys()) sessions.add(id);
         return Array.from(sessions);
       },
-      copySession(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string) {
-        const source = store.get(`${sourceDate}-${sourceSession}`) ?? [];
-        store.set(`${targetDate}-${targetSession}`, [...source]);
-      },
       // Round-based 方法
       getRoundIds(sessionId: string): string[] {
         return roundIdsMap.get(sessionId) ?? [];
@@ -872,12 +869,61 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
         ids.push(roundId);
         roundIdsMap.set(sessionId, ids);
       },
+      appendRoundIds(sessionId: string, roundIds: string[]) {
+        const ids = roundIdsMap.get(sessionId) ?? [];
+        ids.push(...roundIds);
+        roundIdsMap.set(sessionId, ids);
+      },
+      createSession(meta: { sessionId: string; updatedAt: string; messageCount: number }) {
+        metas.set(meta.sessionId, { ...meta });
+      },
+      deleteSession(sessionId: string) {
+        roundIdsMap.delete(sessionId);
+        metas.delete(sessionId);
+      },
       updateSessionMeta(sessionId: string, meta: Record<string, unknown>) {
         const existing = metas.get(sessionId) ?? { sessionId, updatedAt: new Date().toISOString(), messageCount: 0 };
         metas.set(sessionId, { ...existing, ...meta, updatedAt: new Date().toISOString() });
       },
       getSessionMeta(sessionId: string) {
         return metas.get(sessionId);
+      },
+      listSessionMetas() {
+        return Array.from(metas.values());
+      },
+    };
+  }
+
+  /** Mock IRoundStore - 存储 Round 对象的内存实现 */
+  function createMockRoundStore(): IRoundStore {
+    const rounds = new Map<string, Round>();
+    return {
+      save(round: Round) {
+        rounds.set(round.id, round);
+      },
+      getById(roundId: string): Round | null {
+        return rounds.get(roundId) ?? null;
+      },
+      getByIds(roundIds: string[]): Round[] {
+        return roundIds.map(id => rounds.get(id)).filter((r): r is Round => r !== undefined);
+      },
+      listAll(): Round[] {
+        return Array.from(rounds.values());
+      },
+      incrementRef(roundId: string) {
+        const round = rounds.get(roundId);
+        if (round) {
+          rounds.set(roundId, { ...round, refCount: round.refCount + 1 });
+        }
+      },
+      decrementRef(roundId: string) {
+        const round = rounds.get(roundId);
+        if (round && round.refCount > 0) {
+          rounds.set(roundId, { ...round, refCount: round.refCount - 1 });
+        }
+      },
+      delete(roundId: string): boolean {
+        return rounds.delete(roundId);
       },
     };
   }
@@ -901,6 +947,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
 
   it('分叉会话应返回 newSession 和 messageCount', async () => {
     const sessionStore = createMockSessionStore();
+    const roundStore = createMockRoundStore();
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -909,6 +956,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       permission: 'owner',
       allowedPaths: [tmpData],
       sessionStore,
+      roundStore,
     });
     await agent.init();
 
@@ -923,6 +971,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
 
   it('分叉会话应发射 sessionForked 事件', async () => {
     const sessionStore = createMockSessionStore();
+    const roundStore = createMockRoundStore();
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -931,6 +980,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       permission: 'owner',
       allowedPaths: [tmpData],
       sessionStore,
+      roundStore,
     });
     await agent.init();
 
@@ -958,6 +1008,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
 
   it('chat 忙碌时调用 forkSession 应抛出 configError', async () => {
     const sessionStore = createMockSessionStore();
+    const roundStore = createMockRoundStore();
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -966,6 +1017,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
       permission: 'owner',
       allowedPaths: [tmpData],
       sessionStore,
+      roundStore,
     });
     await agent.init();
 
@@ -1000,6 +1052,33 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       },
       listSessions() {
         return sessions;
+      },
+      getRoundIds() {
+        return [];
+      },
+      setRoundIds() {
+        // no-op
+      },
+      appendRoundId() {
+        // no-op
+      },
+      appendRoundIds() {
+        // no-op
+      },
+      createSession() {
+        // no-op
+      },
+      deleteSession() {
+        // no-op
+      },
+      getSessionMeta() {
+        return undefined;
+      },
+      updateSessionMeta() {
+        // no-op
+      },
+      listSessionMetas() {
+        return [];
       },
     };
   }
@@ -2423,10 +2502,18 @@ describe('Agent · 暂停超时自动归档', () => {
       appendMessage: () => {},
       loadMessages: () => [],
       listSessions: () => [],
-      copySession: () => {},
       saveCheckpoint: () => {},
       loadCheckpoint: (id: string) => (id === sessionId ? JSON.stringify(checkpoint) : null),
       deleteCheckpoint: () => {},
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
   }
 

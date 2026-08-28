@@ -718,6 +718,15 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         { role: 'assistant', content: '接口用于定义对象的形状', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
       ],
       listSessions: () => [SESSION],
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
     const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);
@@ -737,6 +746,15 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         { role: 'assistant', content: '回答\x1b[2J带转义控制字符', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
       ],
       listSessions: () => [SESSION],
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
     const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);
@@ -751,6 +769,15 @@ describe('BuiltinToolHandlers.traceSummary', () => {
       appendMessage: () => {},
       loadMessages: () => [],
       listSessions: () => [SESSION],
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
     const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);

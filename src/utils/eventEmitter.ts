@@ -53,7 +53,7 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   memoryAdded: { id: string; source: string; name: string };
   rolePackSwitched: { from: string | null; to: string };
   memoryRecalled: { count: number; query: string };
-  sessionForked: { from: string; to: string; messageCount: number };
+  sessionForked: { from: string; to: string; roundCount: number };
   projectSwitched: { from: string | null; to: string; projectName: string };
   archiveFailed: { stage: 'session'; message: string };
   contextTruncated: { skippedCount: number; keptCount: number };

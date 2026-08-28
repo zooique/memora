@@ -4,29 +4,20 @@ import type { MessageRole } from '@/memory/types.js';
  * 会话存储接口：宿主注入的会话消息持久化能力，内核不直接依赖文件 I/O。
  * IMemoryStorage 存记忆索引（round-summary），这里存原始对话消息。零依赖内核、接口最小化、不实现则走内存模式。
  *
- * 存储模式演进（2026-08-27）：
- * - legacy 模式：存储消息列表（SessionMessage[]），当前默认
- * - round-based 模式：存储 Round ID 列表（string[]），新设计
- *
- * 两种模式可共存：会话通过 SessionMeta.storageMode 字段标识使用哪种模式
+ * 存储模型（round-based 单一模式，SSOT）：
+ * - 会话仅以 Round ID 列表（roundIds）为内容来源
+ * - 消息内容只存于 RoundStore（物理存储唯一真相源）
  */
 export interface ISessionStore {
-  // ── Legacy 模式方法（消息列表存储） ──────────────────
-  /** 追加消息到指定会话（legacy 模式） */
+  // ── 会话消息读写（round-based 单一真相源） ───────────
+  /** 追加一条消息到指定会话（底层写入 RoundStore 并登记 roundId） */
   appendMessage(date: string, session: string, message: SessionMessage): void;
-  /** 加载指定会话消息列表（legacy 模式），不存在返回空数组 */
+  /** 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开），不存在返回空数组 */
   loadMessages(date: string, session: string): SessionMessage[];
 
   // ── 通用方法 ─────────────────────────────────────────
   /** 列出所有会话标识（YYYY-MM-DD-session） */
   listSessions(): string[];
-  /** 复制源会话消息到目标会话（原子、保留时间戳；目标已存在则覆盖，源不存在则静默） */
-  copySession?(
-    sourceDate: string,
-    sourceSession: string,
-    targetDate: string,
-    targetSession: string,
-  ): void;
   /** 覆盖保存会话检查点（存储层序列化 JSON，不关心内部结构） */
   saveCheckpoint?(sessionId: string, checkpoint: string): void;
   /** 加载会话检查点，不存在返回 null */
@@ -34,75 +25,28 @@ export interface ISessionStore {
   /** 删除会话检查点，不实现为 no-op */
   deleteCheckpoint?(sessionId: string): void;
   /** 读取会话标题元数据，不存在返回 undefined */
-  getSessionMeta?(sessionId: string): SessionMeta | undefined;
+  getSessionMeta(sessionId: string): SessionMeta | undefined;
   /** 设置用户可修改的显示名（displayName）；首轮自动命名走 updateSessionMeta 写 autoName */
   setSessionTitle?(sessionId: string, title: string): void;
-  /** 更新 LLM 生成只读元数据（autoName/keyTopics/summary），与 setSessionTitle 分开 */
-  updateSessionMeta?(sessionId: string, meta: Partial<SessionMeta>): void;
-  /** 列出全部会话标题元数据，供历史列表按 updatedAt 排序；不实现则降级为 listSessions() */
-  listSessionMetas?(): SessionMeta[];
+  /** 更新元数据（autoName/keyTopics/summary/createdAt 等） */
+  updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void;
+  /** 列出全部会话标题元数据，供历史列表按 updatedAt 排序 */
+  listSessionMetas(): SessionMeta[];
 
-  // ── Round-based 模式方法（问答闭环独立存储） ──────────
-  /**
-   * 追加 Round ID 到会话（round-based 模式）
-   *
-   * @param sessionId - 会话 ID
-   * @param roundId - 要追加的 Round ID
-   */
-  appendRoundId?(sessionId: string, roundId: string): void;
-
-  /**
-   * 批量追加 Round ID 到会话（round-based 模式）
-   *
-   * 用于分叉操作：一次性复制多个 Round ID
-   *
-   * @param sessionId - 会话 ID
-   * @param roundIds - 要追加的 Round ID 数组
-   */
-  appendRoundIds?(sessionId: string, roundIds: string[]): void;
-
-  /**
-   * 获取会话的 Round ID 列表（round-based 模式）
-   *
-   * @param sessionId - 会话 ID
-   * @returns Round ID 数组（按顺序）
-   */
-  getRoundIds?(sessionId: string): string[];
-
-  /**
-   * 设置会话的 Round ID 列表（round-based 模式）
-   *
-   * 用于创建新会话或完整替换（如分叉操作）
-   *
-   * @param sessionId - 会话 ID
-   * @param roundIds - 新的 Round ID 列表
-   */
-  setRoundIds?(sessionId: string, roundIds: string[]): void;
-
-  /**
-   * 创建新会话元数据（round-based 模式）
-   *
-   * @param meta - 会话元数据
-   */
-  createSession?(meta: SessionMeta): void;
-
-  /**
-   * 删除会话（round-based 模式）
-   *
-   * 同时减少引用计数（由上层调用 RoundStore.decrementRef）
-   *
-   * @param sessionId - 会话 ID
-   */
-  deleteSession?(sessionId: string): void;
+  // ── Round-based 方法（问答闭环独立存储，唯一模式） ──────────
+  /** 追加 Round ID 到会话 */
+  appendRoundId(sessionId: string, roundId: string): void;
+  /** 批量追加 Round ID 到会话（分叉操作用） */
+  appendRoundIds(sessionId: string, roundIds: string[]): void;
+  /** 获取会话的 Round ID 列表 */
+  getRoundIds(sessionId: string): string[];
+  /** 设置会话的 Round ID 列表（创建/完整替换，如分叉） */
+  setRoundIds(sessionId: string, roundIds: string[]): void;
+  /** 创建新会话元数据 */
+  createSession(meta: SessionMeta): void;
+  /** 删除会话（同时清理 Round ID 引用） */
+  deleteSession(sessionId: string): void;
 }
-
-/**
- * 会话存储模式：标识会话使用哪种存储方式
- *
- * - 'legacy'：存储消息列表（SessionMessage[]），当前默认
- * - 'round-based'：存储 Round ID 列表（string[]），新设计
- */
-export type SessionStorageMode = 'legacy' | 'round-based';
 
 /**
  * 会话元数据：会话身份（date-session）与展示标题解耦。
@@ -124,11 +68,8 @@ export interface SessionMeta {
   /** 会话摘要（SessionArchiver 归档时生成，用于搜索/预览） */
   summary?: string;
 
-  // ── 存储模式 ──
-  /** 存储模式（默认 'legacy'，新会话使用 'round-based'） */
-  storageMode?: SessionStorageMode;
   /**
-   * Round ID 列表（仅 round-based 模式使用）
+   * Round ID 列表（round-based 模式唯一内容来源）
    *
    * 问答闭环 ID 的有序列表，替代 legacy 模式的消息列表
    * 分叉操作时直接复制此列表（指针复制）
@@ -198,26 +139,11 @@ export function createRoundBasedSessionMeta(
 
   return {
     sessionId,
-    storageMode: 'round-based',
     roundIds: [...initialRoundIds],
     createdAt: uniqueNow,
     updatedAt: uniqueNow,
     messageCount: initialRoundIds.length * 2, // 每个 Round 包含 User + AI 两条消息
   };
-}
-
-/**
- * 从 SessionMeta 判断是否为 round-based 模式
- *
- * @param meta - 会话元数据
- * @returns 是否为 round-based 模式
- */
-export function isRoundBasedMode(meta: SessionMeta | undefined): boolean {
-  if (!meta) return false;
-  // 显式声明为 round-based，或有 roundIds 字段
-  if (meta.storageMode === 'round-based') return true;
-  if (meta.storageMode === undefined && meta.roundIds !== undefined) return true;
-  return false;
 }
 
 /**

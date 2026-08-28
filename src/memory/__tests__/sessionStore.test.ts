@@ -34,6 +34,8 @@ class InMemorySessionStore implements ISessionStore {
   private readonly checkpoints = new Map<string, string>();
   /** 会话元数据存储 */
   private readonly metas = new Map<string, SessionMeta>();
+  /** Round ID 存储：key = sessionId，value = roundId[] */
+  private readonly roundIdsMap = new Map<string, string[]>();
 
   /** 追加消息 */
   appendMessage(date: string, session: string, message: SessionMessage): void {
@@ -68,23 +70,6 @@ class InMemorySessionStore implements ISessionStore {
       sessions.add(`${date}-${session}`);
     }
     return Array.from(sessions).sort();
-  }
-
-  /** 复制会话（可选方法实现） */
-  copySession(
-    sourceDate: string,
-    sourceSession: string,
-    targetDate: string,
-    targetSession: string,
-  ): void {
-    const sourceKey = `${sourceDate}/${sourceSession}`;
-    const targetKey = `${targetDate}/${targetSession}`;
-
-    const messages = this.messages.get(sourceKey);
-    if (!messages) return; // 源不存在静默返回
-
-    // 覆盖写入（幂等）
-    this.messages.set(targetKey, messages.map((m) => ({ ...m })));
   }
 
   /** 保存检查点（可选方法实现） */
@@ -165,6 +150,43 @@ class InMemorySessionStore implements ISessionStore {
     const session = parts.slice(3).join('-');
     const key = `${date}/${session}`;
     return this.messages.get(key)?.length ?? 0;
+  }
+
+  // ── Round-based 方法 ──
+
+  /** 追加 Round ID 到会话 */
+  appendRoundId(sessionId: string, roundId: string): void {
+    const ids = this.roundIdsMap.get(sessionId) ?? [];
+    ids.push(roundId);
+    this.roundIdsMap.set(sessionId, ids);
+  }
+
+  /** 批量追加 Round ID 到会话 */
+  appendRoundIds(sessionId: string, roundIds: string[]): void {
+    const ids = this.roundIdsMap.get(sessionId) ?? [];
+    ids.push(...roundIds);
+    this.roundIdsMap.set(sessionId, ids);
+  }
+
+  /** 获取会话的 Round ID 列表 */
+  getRoundIds(sessionId: string): string[] {
+    return this.roundIdsMap.get(sessionId) ?? [];
+  }
+
+  /** 设置会话的 Round ID 列表 */
+  setRoundIds(sessionId: string, roundIds: string[]): void {
+    this.roundIdsMap.set(sessionId, [...roundIds]);
+  }
+
+  /** 创建新会话元数据 */
+  createSession(meta: SessionMeta): void {
+    this.metas.set(meta.sessionId, { ...meta });
+  }
+
+  /** 删除会话（同时清理 Round ID 引用） */
+  deleteSession(sessionId: string): void {
+    this.metas.delete(sessionId);
+    this.roundIdsMap.delete(sessionId);
   }
 }
 
@@ -283,50 +305,6 @@ describe('ISessionStore — 可选方法契约', () => {
 
   beforeEach(() => {
     store = new InMemorySessionStore();
-  });
-
-  describe('copySession', () => {
-    it('复制会话成功', () => {
-      // 先写入源会话
-      store.appendMessage('2026-08-18', 'source', {
-        role: 'user', content: '源消息', timestamp: 't1',
-      });
-      store.appendMessage('2026-08-18', 'source', {
-        role: 'assistant', content: '源回复', timestamp: 't2',
-      });
-
-      // 复制
-      store.copySession('2026-08-18', 'source', '2026-08-18', 'target');
-
-      const targetMsgs = store.loadMessages('2026-08-18', 'target');
-      expect(targetMsgs).toHaveLength(2);
-      expect(targetMsgs[0]!.content).toBe('源消息');
-      expect(targetMsgs[1]!.content).toBe('源回复');
-    });
-
-    it('源不存在时静默返回（不抛错）', () => {
-      expect(() => {
-        store.copySession('2026-08-18', 'nonexistent', '2026-08-18', 'target');
-      }).not.toThrow();
-    });
-
-    it('覆盖目标（幂等）', () => {
-      // 先写入目标已有内容
-      store.appendMessage('2026-08-18', 'target', {
-        role: 'user', content: '旧内容', timestamp: 't1',
-      });
-      // 写入源
-      store.appendMessage('2026-08-18', 'source', {
-        role: 'user', content: '新内容', timestamp: 't2',
-      });
-
-      // 复制覆盖
-      store.copySession('2026-08-18', 'source', '2026-08-18', 'target');
-
-      const targetMsgs = store.loadMessages('2026-08-18', 'target');
-      expect(targetMsgs).toHaveLength(1);
-      expect(targetMsgs[0]!.content).toBe('新内容');
-    });
   });
 
   describe('saveCheckpoint + loadCheckpoint + deleteCheckpoint', () => {

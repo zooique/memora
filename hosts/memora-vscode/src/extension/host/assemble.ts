@@ -203,11 +203,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   const storage = new WorkspaceStorage(projectPath);
   storage.load();
   // SSOT：复用 extension 单例 sessionStore（与 UI 面板共享同一实例，杜绝双实例覆盖写）；
-  // 未注入时（独立用途/测试）才内部新建并加载。
+  // 未注入时（独立用途/测试）才内部新建并加载，且共享同一 roundStore 实例。
   const store: ISessionStore =
     sessionStore ??
     (() => {
-      const s = new WorkspaceSessionStore(projectPath);
+      const s = new WorkspaceSessionStore(projectPath, roundStore);
       s.load();
       return s;
     })();

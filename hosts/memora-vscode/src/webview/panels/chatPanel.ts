@@ -25,7 +25,6 @@ import {
   type SessionMeta,
   type WriteConfirmationRequest,
   type SessionView,
-  isRoundBasedMode,
 } from '@zooique/memora';
 import type {
   ExtensionToWebviewMessage,
@@ -1034,7 +1033,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const forkRoundId = roundId ?? sessionRoundIds[sessionRoundIds.length - 1];
 
       if (!forkRoundId) {
-        this.post({ type: 'notice', level: 'warning', message: '当前会话无可分叉的问答闭环' });
+        this.post({ type: 'notice', level: 'info', message: '当前会话无可分叉的问答闭环' });
         return;
       }
 
@@ -1452,7 +1451,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 支持双存储模式：
    * - legacy 模式：从消息列表加载（当前默认）
-   * - round-based 模式：从 Round ID 列表加载（新设计）
+   * - round-based 模式（唯一模式）：从 Round ID 列表经 RoundStore 展开加载（新设计）
    *
    * 恢复策略：
    *   - user 消息：回放剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
@@ -1464,16 +1463,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
     try {
-      // 获取会话元数据，判断存储模式
-      const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
-      
-      // 如果是 round-based 模式且有 viewLoader，使用视图加载器
-      if (isRoundBasedMode(meta) && this._viewLoader) {
+      // 优先用视图加载器（聚合 SessionView + RoundStore，信息最全）
+      if (this._viewLoader) {
         return this.loadRoundBasedHistory();
       }
-      
-      // 否则使用 legacy 模式
-      return this.loadLegacyHistory();
+      // 无 viewLoader 时回退到 ISessionStore.loadMessages（round-based 展开 roundIds→Rounds）
+      return this.loadMessagesHistory();
     } catch (err) {
       // 读取失败不阻塞面板展示，但需记录（SSOT 不藏错，避免「历史空白」静默吞因）
       console.warn('Memora 加载会话历史失败', err);
@@ -1482,17 +1477,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 加载 legacy 模式的会话历史
+   * 回退路径：经 ISessionStore.loadMessages 加载（round-based 展开 roundIds→Rounds）
    *
-   * 从消息列表加载，用于旧格式会话
+   * 与 loadRoundBasedHistory 语义一致，仅在 viewLoader 未注入时启用。
    */
-  private loadLegacyHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
+  private loadMessagesHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
     const { date, session } = this.parseSessionId(this._currentSessionId);
-    const result: { role: 'user' | 'assistant'; content: string; ts?: string }[] = [];
+    const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] = [];
     const msgs = this.sessionStore.loadMessages(date, session) as {
       role?: string;
       content?: string;
       timestamp?: string;
+      roundId?: string;
     }[];
     for (const m of msgs) {
       if (!m.content || m.content.startsWith('<user_input>')) continue;
@@ -1502,6 +1498,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           | 'assistant',
         content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
         ts: m.timestamp,
+        roundId: m.roundId,
       });
     }
     // 按时间升序（消息存储顺序可能因多次回放而乱序）

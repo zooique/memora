@@ -3,56 +3,145 @@
  *
  * 设计理念：
  * - 零依赖零 IO，用于单元测试、临时占位
- * - 同时支持 legacy 模式和 round-based 模式
- * - 不持久化（进程退出即丢失），仅限测试/开发
+ * - 单一存储模型：round-based（会话仅持 roundIds，消息内容在 RoundStore）
  *
  * 存储结构：
- * - messages: Map（date/session → SessionMessage[]）— legacy 模式
  * - metas: Map（sessionId → SessionMeta）— 元数据
- * - roundIds: Map（sessionId → string[]）— round-based 模式
+ * - roundIdsMap: Map（sessionId → string[]）— 会话的 Round ID 列表（唯一内容来源）
+ * - roundStore: IRoundStore — 问答闭环物理存储（真相源）
  */
 
+import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import type {
   ISessionStore,
   SessionMessage,
   SessionMeta,
 } from '@/memory/sessionStore.js';
+import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+import { generateRoundId, generateMessageId } from '@/memory/roundStore.js';
 
 /**
  * 内存会话存储
  */
 export class InMemorySessionStore implements ISessionStore {
-  /** 消息存储：key = `${date}/${session}`，value = 消息数组（legacy 模式） */
-  private readonly messages = new Map<string, SessionMessage[]>();
+  private readonly roundStore: IRoundStore;
   /** 检查点存储：key = sessionId，value = checkpoint JSON 字符串 */
   private readonly checkpoints = new Map<string, string>();
   /** 会话元数据存储 */
   private readonly metas = new Map<string, SessionMeta>();
   /** Round ID 列表存储：key = sessionId，value = roundId 数组（round-based 模式） */
   private readonly roundIdsMap = new Map<string, string[]>();
+  /** sessionId → 当前 pending Round ID（用于 appendMessage 成对补全） */
+  private readonly pendingRoundIds = new Map<string, string>();
 
-  // ─── Legacy 模式方法 ───────────────────────────────────
+  constructor(roundStore?: IRoundStore) {
+    this.roundStore = roundStore ?? new InMemoryRoundStore();
+  }
+
+  // ─── 会话消息读写（round-based 唯一真相源） ──────────
 
   /**
-   * 追加消息到指定会话（legacy 模式）
+   * 追加一条消息到指定会话。
+   * 底层写入 RoundStore 并登记 roundId；user/assistant 成对组成同一 Round。
    */
   appendMessage(date: string, session: string, message: SessionMessage): void {
-    const key = `${date}/${session}`;
-    const messages = this.messages.get(key) ?? [];
-    messages.push(message);
-    this.messages.set(key, messages);
-
-    // 更新元数据
     const sessionId = `${date}-${session}`;
-    this.updateMessageCount(sessionId);
+    const now = message.timestamp;
+
+    if (message.role === 'user') {
+      const roundId = generateRoundId();
+      const round: Round = {
+        id: roundId,
+        userMessage: {
+          id: generateMessageId(),
+          role: 'user',
+          content: message.content,
+          timestamp: now,
+        },
+        status: 'pending',
+        createdAt: now,
+        refCount: 1,
+      };
+      this.roundStore.save(round);
+      this.pendingRoundIds.set(sessionId, roundId);
+      this.appendRoundId(sessionId, roundId);
+      return;
+    }
+
+    // assistant：补全当前 pending Round
+    const pendingRoundId = this.pendingRoundIds.get(sessionId);
+    if (pendingRoundId) {
+      const round = this.roundStore.getById(pendingRoundId);
+      if (round) {
+        const completed: Round = {
+          ...round,
+          assistantMessage: {
+            id: generateMessageId(),
+            role: 'assistant',
+            content: message.content,
+            timestamp: now,
+          },
+          status: 'complete',
+          completedAt: now,
+        };
+        this.roundStore.save(completed);
+        this.pendingRoundIds.delete(sessionId);
+        return;
+      }
+    }
+
+    // 无 pending（异常场景兜底）：独立 complete Round
+    const roundId = generateRoundId();
+    const round: Round = {
+      id: roundId,
+      userMessage: {
+        id: generateMessageId(),
+        role: 'user',
+        content: message.content,
+        timestamp: now,
+      },
+      assistantMessage: {
+        id: generateMessageId(),
+        role: 'assistant',
+        content: message.content,
+        timestamp: now,
+      },
+      status: 'complete',
+      createdAt: now,
+      completedAt: now,
+      refCount: 1,
+    };
+    this.roundStore.save(round);
+    this.appendRoundId(sessionId, roundId);
   }
 
   /**
-   * 加载指定会话消息列表（legacy 模式）
+   * 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开）。
    */
   loadMessages(date: string, session: string): SessionMessage[] {
-    const key = `${date}/${session}`;
-    return this.messages.get(key) ?? [];
+    const sessionId = `${date}-${session}`;
+    const roundIds = this.getRoundIds(sessionId);
+    if (roundIds.length === 0) return [];
+
+    const rounds = this.roundStore.getByIds(roundIds);
+    const messages: SessionMessage[] = [];
+    for (const round of rounds) {
+      messages.push({
+        role: round.userMessage.role,
+        content: round.userMessage.content,
+        timestamp: round.userMessage.timestamp,
+        roundId: round.id,
+      });
+      if (round.assistantMessage && round.status === 'complete') {
+        messages.push({
+          role: round.assistantMessage.role,
+          content: round.assistantMessage.content,
+          timestamp: round.assistantMessage.timestamp,
+          roundId: round.id,
+        });
+      }
+    }
+    return messages;
   }
 
   // ─── 通用方法 ─────────────────────────────────────────
@@ -61,43 +150,16 @@ export class InMemorySessionStore implements ISessionStore {
    * 列出所有会话标识
    */
   listSessions(): string[] {
-    // 从 legacy 模式的消息中收集
-    const legacySessions = new Set<string>();
-    for (const key of this.messages.keys()) {
-      const [date, session] = key.split('/');
-      legacySessions.add(`${date}-${session}`);
-    }
-
-    // 从 round-based 模式的 roundIds 中收集
+    const sessions = new Set<string>();
+    // 从 roundIds 中收集
     for (const sessionId of this.roundIdsMap.keys()) {
-      legacySessions.add(sessionId);
+      sessions.add(sessionId);
     }
-
     // 从 metas 中收集
     for (const sessionId of this.metas.keys()) {
-      legacySessions.add(sessionId);
+      sessions.add(sessionId);
     }
-
-    return Array.from(legacySessions).sort();
-  }
-
-  /**
-   * 复制源会话消息到目标会话
-   */
-  copySession(
-    sourceDate: string,
-    sourceSession: string,
-    targetDate: string,
-    targetSession: string,
-  ): void {
-    const sourceKey = `${sourceDate}/${sourceSession}`;
-    const targetKey = `${targetDate}/${targetSession}`;
-
-    const messages = this.messages.get(sourceKey);
-    if (!messages) return; // 源不存在静默返回
-
-    // 覆盖写入（幂等）
-    this.messages.set(targetKey, messages.map((m) => ({ ...m })));
+    return Array.from(sessions).sort();
   }
 
   /**
@@ -140,8 +202,7 @@ export class InMemorySessionStore implements ISessionStore {
         updatedAt: new Date().toISOString(),
       });
     } else {
-      // 创建新的元数据
-      const messageCount = this.countMessagesForSession(sessionId);
+      const messageCount = this.countMessages(sessionId);
       this.metas.set(sessionId, {
         sessionId,
         displayName: title,
@@ -163,7 +224,7 @@ export class InMemorySessionStore implements ISessionStore {
         updatedAt: new Date().toISOString(),
       });
     } else {
-      const messageCount = this.countMessagesForSession(sessionId);
+      const messageCount = this.countMessages(sessionId);
       this.metas.set(sessionId, {
         sessionId,
         updatedAt: new Date().toISOString(),
@@ -253,16 +314,7 @@ export class InMemorySessionStore implements ISessionStore {
     this.metas.delete(sessionId);
     this.roundIdsMap.delete(sessionId);
     this.checkpoints.delete(sessionId);
-
-    // 同时清理 legacy 模式的消息
-    // sessionId 格式：YYYY-MM-DD-sessionName
-    const parts = sessionId.split('-');
-    if (parts.length >= 4) {
-      const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
-      const session = parts.slice(3).join('-');
-      const key = `${date}/${session}`;
-      this.messages.delete(key);
-    }
+    this.pendingRoundIds.delete(sessionId);
   }
 
   // ─── 私有辅助方法 ─────────────────────────────────────
@@ -284,23 +336,14 @@ export class InMemorySessionStore implements ISessionStore {
   }
 
   /**
-   * 更新会话的消息计数
+   * 更新会话的消息计数（round-based：每个 Round 估算为 2 条消息）
    */
   private updateMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);
     if (!meta) return;
 
-    // 计算消息数
-    let messageCount = 0;
-
-    if (meta.storageMode === 'round-based' || this.roundIdsMap.has(sessionId)) {
-      // round-based 模式：每个 Round 估算为 2 条消息
-      const roundIds = this.roundIdsMap.get(sessionId) ?? meta.roundIds ?? [];
-      messageCount = roundIds.length * 2;
-    } else {
-      // legacy 模式：从消息列表统计
-      messageCount = this.countMessagesForSession(sessionId);
-    }
+    const roundIds = this.roundIdsMap.get(sessionId) ?? meta.roundIds ?? [];
+    const messageCount = roundIds.length * 2;
 
     this.metas.set(sessionId, {
       ...meta,
@@ -310,26 +353,23 @@ export class InMemorySessionStore implements ISessionStore {
   }
 
   /**
-   * 统计会话消息数（legacy 模式）
+   * 统计会话消息数（round-based：roundIds.length * 2）
    */
-  private countMessagesForSession(sessionId: string): number {
-    // sessionId 格式：YYYY-MM-DD-sessionName
-    const parts = sessionId.split('-');
-    if (parts.length < 4) return 0;
-
-    const date = `${parts[0]}-${parts[1]}-${parts[2]}`;
-    const session = parts.slice(3).join('-');
-    const key = `${date}/${session}`;
-    return this.messages.get(key)?.length ?? 0;
+  private countMessages(sessionId: string): number {
+    const roundIds = this.roundIdsMap.get(sessionId);
+    if (roundIds) return roundIds.length * 2;
+    const meta = this.metas.get(sessionId);
+    if (meta?.roundIds) return meta.roundIds.length * 2;
+    return 0;
   }
 
   /**
    * 清空所有存储（测试用）
    */
   clear(): void {
-    this.messages.clear();
     this.metas.clear();
     this.checkpoints.clear();
     this.roundIdsMap.clear();
+    this.pendingRoundIds.clear();
   }
 }

@@ -3,7 +3,7 @@
  *
  * 覆盖两类：
  *   - ISessionStore 契约（2026-08-17 排雷 P4 补充）：appendMessage/loadMessages 往返、
- *     checkpoints 三件套、metas 三件套、copySession、落盘持久化往返、损坏降级
+ *     checkpoints 三件套、metas 三件套、落盘持久化往返、损坏降级
  *   - truncate-from-turn 语义（2026-08-16 对话闭环管理）：
  *     - 删除目标问答闭环（anchor assistant 向前最近的 user 消息起）到会话末尾
  *     - 目标为最后一条时只删该问答
@@ -107,7 +107,8 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(list[0]?.role).toBe('user');
     expect(list[0]?.content).toBe('你好');
     const meta = store.getSessionMeta('2026-08-17-main');
-    expect(meta?.messageCount).toBe(1);
+    // round-based 估算：单个 pending Round 计为 2 条（内核同款 roundIds.length*2）
+    expect(meta?.messageCount).toBe(2);
     expect(meta?.displayName).toBeTruthy();
   });
 
@@ -146,26 +147,6 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(store.getSessionMeta('2026-08-17-main')?.displayName).toBe('改名');
   });
 
-  it('getSessionMeta 无 meta 的旧会话 → 从消息推导占位（updatedAt=末条时间戳）', () => {
-    // 手工构造只有 sessions 无 metas 的旧数据文件（早期版本落盘格式）
-    mkdirSync(join(dir, '.memora'), { recursive: true });
-    writeFileSync(
-      join(dir, '.memora', 'sessions.json'),
-      JSON.stringify({
-        sessions: {
-          '2026-07-01-main': [{ role: 'user', content: '旧', timestamp: '2026-07-01T00:00:00.000Z' }],
-        },
-        checkpoints: {},
-      }),
-      'utf8',
-    );
-    const s = new WorkspaceSessionStore(dir);
-    s.load();
-    const meta = s.getSessionMeta('2026-07-01-main');
-    expect(meta?.messageCount).toBe(1);
-    expect(meta?.updatedAt).toBe('2026-07-01T00:00:00.000Z');
-  });
-
   it('listSessionMetas 按 updatedAt 降序（最新在前）', () => {
     // updatedAt = 写入时刻（new Date().toISOString()），非消息 timestamp——
     // 用 fake timers 确定性制造两次写入的时间差，避免毫秒级竞态导致排序不稳定
@@ -181,19 +162,6 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it('copySession：复制源会话到目标；目标已存在覆盖；源为空静默返回', () => {
-    store.appendMessage('2026-08-17', 'src', msg('user', '源', 't1'));
-    store.copySession?.('2026-08-17', 'src', '2026-08-17', 'dst');
-    expect(store.loadMessages('2026-08-17', 'dst')).toHaveLength(1);
-    // 目标已存在 → 覆盖（非追加）
-    store.appendMessage('2026-08-17', 'dst', msg('user', '覆盖', 't2'));
-    store.copySession?.('2026-08-17', 'src', '2026-08-17', 'dst');
-    expect(store.loadMessages('2026-08-17', 'dst').map((m) => m.content)).toEqual(['源']);
-    // 源为空 → 静默返回（不抛错）
-    expect(() => store.copySession?.('2026-08-17', 'empty', '2026-08-17', 'dst2')).not.toThrow();
-    expect(store.listSessions()).not.toContain('2026-08-17-dst2');
   });
 
   it('deleteSession：删除消息 + meta + 检查点（连带清检查点防脏残留）', () => {

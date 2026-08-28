@@ -148,15 +148,15 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
   const workspacePath = resolveWorkspacePath();
-  const sessionStore = new WorkspaceSessionStore(workspacePath);
-  sessionStore.load();
 
-  // Round-based 存储层（Phase 3：问答闭环独立存储）
-  // - WorkspaceRoundStore：存储 Round 数据到文件系统（rounds/{roundId}.json）
-  // - WorkspaceSessionViewLoader：将 Session（Round ID 列表）+ RoundStore 组合为完整视图
-  // 这些组件是 round-based 模式的基础设施，当前作为可选注入（向后兼容 legacy 模式）
+  // Round-based 存储层（SSOT：WorkspaceSessionStore 与 Agent 共享同一 WorkspaceRoundStore 实例，
+  // 杜绝双实例覆盖写 / 缓存漂移——否则 UI 重载历史读不到 Agent 刚写入的 Round）
   const roundStore = new WorkspaceRoundStore(workspacePath);
   roundStore.load();
+  const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
+  sessionStore.load();
+
+  // 视图加载器：将 Session（Round ID 列表）+ RoundStore 组合为完整视图
   const viewLoader = new WorkspaceSessionViewLoader(roundStore, sessionStore);
 
   const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);

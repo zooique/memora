@@ -117,7 +117,7 @@ interface IMemoryStorage {
 }
 ```
 
-### 2.3 `ISessionStore` 接口（3 必需 + 6 可选）
+### 2.3 `ISessionStore` 接口（3 必需 + 5 可选）
 
 ```typescript
 interface ISessionStore {
@@ -127,7 +127,6 @@ interface ISessionStore {
   listSessions(): string[];
 
   // ── 可选（宿主按需实现）──
-  copySession?(sourceDate: string, sourceSession: string, targetDate: string, targetSession: string): void;
   saveCheckpoint?(sessionId: string, checkpoint: string): void;
   loadCheckpoint?(sessionId: string): string | null;
   deleteCheckpoint?(sessionId: string): void;

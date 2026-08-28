@@ -10,6 +10,7 @@
 import { describe, it, expect } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
+import { todayDate } from '@/utils/time.js';
 
 describe('MessageHistory · 基本操作', () => {
   it('构造函数应初始化默认日期和会话', () => {
@@ -48,26 +49,31 @@ describe('MessageHistory · 基本操作', () => {
   });
 
   it('跨日追加后 currentDateValue 同步为实际写入日期（写入是与读侧锚点一致）', async () => {
-    // mock sessionStore 捕获写入的 date
-    let capturedDate: string | undefined;
+    // round-based 单一模型下，appendUser 不再写 legacy 扁平列表，
+    // 但会话日期锚点仍须随当天日期同步（摘要/标题/互斥排除锚点不错位）
     const mockStore = {
-      appendMessage: (date: string) => {
-        capturedDate = date;
-      },
+      appendMessage: () => {},
       loadMessages: () => [],
       listSessions: () => [],
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
     // 构造一个"昨天"的初始化日期，模拟跨日后第一次追加
     const history = new MessageHistory(mockStore, '2000-01-01', 'main');
     expect(history.currentDateValue).toBe('2000-01-01');
 
     await history.appendUser('跨日后消息');
-    // 写入日期应是今天（todayDate，与 currentDate 同步）
-    expect(capturedDate).toBeDefined();
-    // currentDate 已同步到写入日期（非昨天的初始化值）
-    expect(history.currentDateValue).toBe(capturedDate);
-    // currentSessionName 与写入 date 一致（摘要/标题/互斥锚点不错位）
-    expect(history.currentSessionName).toBe(`${capturedDate}-main`);
+    // currentDate 已同步到今天（与写入锚点一致）
+    expect(history.currentDateValue).toBe(todayDate());
+    // currentSessionName 与写入 date 一致
+    expect(history.currentSessionName).toBe(`${todayDate()}-main`);
   });
 });
 
@@ -143,6 +149,15 @@ describe('MessageHistory · getFirstRoundId（会话起点背景互斥排除）'
       loadMessages: () =>
         messages.map((m) => ({ timestamp: '2026-01-01T00:00:00.000Z', ...m }) as SessionMessage),
       listSessions: () => [],
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => undefined,
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
     };
   }
 

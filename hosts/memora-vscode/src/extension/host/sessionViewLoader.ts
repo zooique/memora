@@ -4,11 +4,9 @@
  * 设计理念：
  * - 复用内核 InMemorySessionViewLoader 的通用逻辑（仅依赖接口）
  * - 注入 WorkspaceRoundStore 和 WorkspaceSessionStore 作为底层存储
- * - 提供文件系统初始化方法
  *
  * 职责：
- * - 将 Session（Round ID 列表）+ RoundStore（物理存储）组合成完整视图
- * - 支持 legacy 模式和 round-based 模式的会话加载
+ * - 将 Session（Round ID 列表）+ RoundStore（物理存储）组合成完整视图（round-based 单一模式）
  */
 
 import type {
@@ -17,7 +15,6 @@ import type {
   SessionSummary,
   ISessionStore,
   IRoundStore,
-  SessionMeta,
 } from '@zooique/memora';
 import { InMemorySessionViewLoader } from '@zooique/memora';
 
@@ -84,15 +81,4 @@ export class WorkspaceSessionViewLoader implements ISessionViewLoader {
   loadViewUpTo(sessionId: string, upToRoundId: string): SessionView {
     return this.delegate.loadViewUpTo(sessionId, upToRoundId);
   }
-}
-
-/**
- * 判断会话是否为 round-based 模式
- *
- * @param meta - 会话元数据
- * @returns 是否为 round-based 模式
- */
-export function isRoundBasedSession(meta: SessionMeta | undefined): boolean {
-  if (!meta) return false;
-  return meta.storageMode === 'round-based' || (meta.roundIds !== undefined && meta.roundIds.length > 0);
 }
