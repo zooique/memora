@@ -160,11 +160,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const viewLoader = new WorkspaceSessionViewLoader(roundStore, sessionStore);
 
   const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);
-  // 注入 globalState 供角色包切换时持久化激活态（用户级，跨项目共享，2026-08-17）
-  chatProvider.setGlobalState(context.globalState);
   // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
   // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）
   chatProvider.setViewLoader(viewLoader);
+  // 注入过程事件落盘目标（v1.5）：与 viewLoader 同一 WorkspaceRoundStore 单例，生命周期原子一致
+  chatProvider.setRoundStore(roundStore);
   // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT 收紧 2026-08-25）
   chatProvider.setSkillDirs(configDir, userSkillsDir);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；

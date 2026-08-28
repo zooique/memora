@@ -8,7 +8,7 @@
  *     → Components（消息 / 输入卡片 / 模型选择器 / 发送按钮 / 状态条）；
  *     顶部标题栏已剪枝（视图标题栏 native 承载「对话」标题 + 清空/历史按钮）；
  *   - 操作按钮（复制等）「主动可见」，避免 hover-only；
- *   - 下拉菜单样式见 dropdown.ts（scoped 到 .treedd），工具卡片见 toolCard.ts。
+ *   - 下拉菜单样式见 dropdown.ts（scoped 到 .treedd），过程事件块见本文件 round-block 段。
  */
 import { tokens } from './tokens.js';
 
@@ -825,10 +825,9 @@ export const chatStyles = `
 
   /* ============ Components：任务看板（H4 任务驱动多步闭环，2026-08-23） ============ */
   /* LLM 调用 task_table_write/update 建表时插入消息区顶部的计划进度看板：标题（N/M 完成）
-   * + 步骤列表。只读展示内核 checkpoint.plan，状态色复用 trace-step 约定
+   * + 步骤列表。只读展示内核 checkpoint.plan，状态色约定
    * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。
-   * P2-A（2026-08-24）：加 accent 左边框，与 thought-block（纯背景）形成视觉区分——
-   * 用户一眼区分「任务进度」和「思考过程」，避免过程透明升级为内容主体。 */
+   * 属于 checkpoint 执行态展示，不参与 round-block 过程事件复原（v1.5）。 */
   .plan-board {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-md, 12px);
@@ -854,93 +853,58 @@ export const chatStyles = `
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-board 的 text-secondary，无需额外规则） */
 
-  /* ============ Components：思考折叠块（过程透明，ui-redesign.md §7.1） ============ */
-  /* 生成中/自审查时展示的轻量折叠块：默认折叠，展开显示思考步骤。
-   * 过程性反馈降级：灰字小字号 + 左细边框，与对话主体明显区分。不落库不重放。 */
-  .thought-block {
-    margin-top: var(--sp-2, 6px);
+  /* ============ Components：round-block 过程块（v1.5 单形态） ============ */
+  /* 每轮回答的单一折叠元信息块：summary 默认可见（弱标签计数 + 耗时），details 展开后
+   * 按小节呈现过程轨迹/召回/已沉淀/工具/自审查/已停止/执行指标。彻底取代 tool-card /
+   * review-block / thought-block / recall-detail 独立卡片外壳（SSOT 展示收敛）。
+   * 视觉延续过程性降级：灰字小字号 + 左细边框，不抢对话主体。 */
+  .round-block {
+    margin: var(--sp-1, 4px) var(--sp-5, 12px) 0;
     font-size: var(--font-sm, 11px); line-height: 1.5;
     color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-thought, #252526);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
-    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
   }
-  .thought-block summary {
+  .round-block summary {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     cursor: pointer; user-select: none; outline: none;
+    font-size: var(--font-xs, 10px);
   }
-  .thought-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .thought-block__dot {
-    width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0;
+  .round-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block__dot {
+    width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
     background: var(--text-secondary, #9aa0a6);
   }
-  /* 思考中：圆点转品牌色 + 呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
-  .thought-block.is-thinking .thought-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
-  .thought-block__body { margin-top: var(--sp-1, 4px); white-space: pre-wrap; word-break: break-word; }
-  .thought-block[hidden] { display: none; }
-  /* P2（2026-08-15 执行轨迹）：思考折叠块 body 内的三阶段轨迹（✓ 完成 / ● 进行中 / ○ 待执行）。
-   * 完成(--status-pass) / 进行中(--accent 品牌色呼吸) / 待执行(次级灰)。
-   * 轻量行式列表，延续思考块的降级视觉（灰字小字号、不抢主体）。 */
-  .thought-block__trace {
-    margin-top: var(--sp-2, 6px);
-    display: flex; flex-direction: column; gap: var(--sp-1, 4px);
+  /* 流式中：圆点品牌色呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
+  .round-block.is-running .round-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
+  .round-block__stats { word-break: break-all; }
+  .round-block__details {
+    margin-top: var(--sp-1, 4px);
+    display: flex; flex-direction: column; gap: var(--sp-2, 6px);
   }
-  .trace-step {
-    display: flex; align-items: center; gap: var(--sp-2, 6px);
-    font-size: var(--font-sm, 11px); line-height: 1.5;
+  .round-block__section-title {
+    font-size: var(--font-xs, 10px); letter-spacing: 0.3px;
     color: var(--text-secondary, #9aa0a6);
+    margin-bottom: var(--sp-1, 2px);
   }
-  .trace-step__mark { display: inline-flex; width: 12px; justify-content: center; flex-shrink: 0; font-size: var(--font-sm, 11px); }
-  .trace-step.done { color: var(--status-pass, #4ec9b0); }
-  .trace-step.done .trace-step__mark { color: var(--status-pass, #4ec9b0); }
-  .trace-step.active { color: var(--text-primary, #cccccc); }
-  .trace-step.active .trace-step__mark { color: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
-  .trace-step.pending { color: var(--text-secondary, #9aa0a6); }
-
-  /* ============ Components：活动状态区 · 自审查轮提示（活动透明，交叉审核观察 A） ============ */
-  /* Agent 自审查开始时插入的过程性反馈：轻量灰字 + 呼吸圆点，让用户看见
-   * 正在复核产出（agent-design-philosophy §13.x 可观察契约）。仅运行时显示。
-   * P2-B（2026-08-24）：加 feedback-info-bg 背景锚点——透明背景让自审查指示在消息流中
-   * 几乎不可见，用户错过「AI 正在复核」的信任信号。低对比度 info 背景刚好：
-   * 有视觉锚点但不抢对话主体，与错误态/成功态拉开强度差。 */
-  .self-review {
-    display: flex; align-items: center; gap: var(--sp-2, 6px);
-    padding: var(--sp-1, 4px) var(--sp-3, 8px);
-    font-size: var(--font-sm, 11px); line-height: 1.5;
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--feedback-info-bg);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4)); /* 中性细边框，不抢视觉 */
+  .round-block__row {
+    display: flex; align-items: baseline; gap: var(--sp-2, 6px);
+    padding: var(--sp-1, 2px) 0; line-height: 1.6;
+    word-break: break-all;
   }
-  .self-review__dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--text-secondary, #9aa0a6); /* 灰点替代品牌蓝，降级为次要反馈 */
-    flex-shrink: 0;
-    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
+  .round-block__pre {
+    margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);
+    background: var(--surface-code, rgba(0,0,0,.2));
+    border-radius: var(--radius, 6px);
+    font-size: var(--font-xs, 10px); line-height: 1.5;
+    white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
   }
+  .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }
-  }
-
-  /* ============ Components：自审查输出分段（协议 stage='self_review'） ============ */
-  /* 审查应答文本（满意确认/修订输出）渲染到独立分段，与最终回答分离展示：
-   * 头部「✦ 自审查」明确标识阶段，正文沿用次要 info 视觉（低对比不抢对话主体）。 */
-  .review-block {
-    margin: 0 var(--sp-5, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    font-size: var(--font-sm, 11px); line-height: 1.6;
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--feedback-info-bg, rgba(0, 0, 0, .02));
-    border-left: 2px solid var(--border-panel, rgba(128, 128, 128, .4));
-  }
-  .review-block__header {
-    font-weight: 600; margin-bottom: var(--sp-1, 4px);
-    color: var(--text-secondary, #9aa0a6);
-  }
-  .review-block__body {
-    word-break: break-word;
-    /* 审查内容即使含代码也不允许横向撑破容器 */
-    overflow-wrap: anywhere;
   }
 
   /* ============ Components：活动状态区 · 详情折叠（历史 + 指标） ============ */
@@ -972,24 +936,6 @@ export const chatStyles = `
     padding: 0 var(--sp-3, 8px) var(--sp-2, 6px); line-height: 1.7;
     white-space: pre-wrap; word-break: break-all;
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
-  }
-  /* Phase 1（2026-08-17 召回可展开）：本次召回明细区（活动详情内，source/score 弱化） */
-  .recall-detail {
-    padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
-  }
-  .recall-detail__title {
-    font-size: var(--font-xs, 10px); letter-spacing: 0.3px; margin-bottom: var(--sp-1, 4px);
-  }
-  .recall-detail__row {
-    display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3, 8px);
-    padding: var(--sp-1, 4px) 0; line-height: 1.6;
-  }
-  .recall-detail__name {
-    color: var(--text-primary, #cccccc); word-break: break-all;
-  }
-  .recall-detail__meta {
-    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0;
   }
 
   /* 主动提问条 */

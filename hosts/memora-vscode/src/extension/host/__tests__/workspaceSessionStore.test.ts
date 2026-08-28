@@ -309,3 +309,78 @@ describe('WorkspaceSessionStore.updateSessionMeta（ADR-024 双层命名写点�
     expect(store.getSessionMeta('2026-08-26-main')?.updatedAt).toBe(before);
   });
 });
+
+describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（v1.5 单文件内聚）', () => {
+  /** 临时工作区路径 */
+  let dir: string;
+  /** 问答闭环物理存储（JSON 落盘） */
+  let roundStore: WorkspaceRoundStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'memora-roundstore-events-'));
+    roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+  });
+
+  it('processEvents 随 Round JSON 落盘：save → 新实例重载 → 完整找回（磁盘透传）', () => {
+    const round: Round = {
+      id: 'round-e1',
+      userMessage: { id: 'u1', role: 'user', content: '问题', timestamp: 't1' },
+      assistantMessage: { id: 'a1', role: 'assistant', content: '回答', timestamp: 't2' },
+      status: 'complete',
+      createdAt: 't1',
+      completedAt: 't2',
+      refCount: 1,
+      processEvents: [
+        { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+        { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '设计约束', source: 'round-summary', score: 0.8 }] } },
+        { type: 'aborted', seq: 3, ts: 't2', payload: { reason: 'User cancelled the conversation' } },
+      ],
+    };
+    roundStore.save(round);
+
+    // 模拟重启：新实例从磁盘 load（JSON.stringify/parse 往返）
+    roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+    const retrieved = roundStore.getById('round-e1');
+    expect(retrieved?.processEvents).toEqual(round.processEvents);
+    expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'recall', 'aborted']);
+  });
+
+  it('删除 round 即删 processEvents（生命周期原子，无独立文件需联动）', () => {
+    const round: Round = {
+      id: 'round-e2',
+      userMessage: { id: 'u1', role: 'user', content: '问题', timestamp: 't1' },
+      status: 'pending',
+      createdAt: 't1',
+      refCount: 0,
+      processEvents: [
+        { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+      ],
+    };
+    roundStore.save(round);
+
+    // refCount=0 可直接删除（GC 孤儿回收 / 宿主主动删除同路径）
+    expect(roundStore.delete('round-e2')).toBe(true);
+    expect(roundStore.getById('round-e2')).toBeNull();
+  });
+
+  it('分叉共享 roundId 即共享 processEvents（指针复制，任一引用存在则不删）', () => {
+    const round: Round = {
+      id: 'round-e3',
+      userMessage: { id: 'u1', role: 'user', content: '问题', timestamp: 't1' },
+      assistantMessage: { id: 'a1', role: 'assistant', content: '回答', timestamp: 't2' },
+      status: 'complete',
+      createdAt: 't1',
+      completedAt: 't2',
+      refCount: 2, // 两个会话引用（分叉后）
+      processEvents: [
+        { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+      ],
+    };
+    roundStore.save(round);
+    // refCount>0 → 不可删除（任一会话仍引用），事件随文件保留
+    expect(roundStore.delete('round-e3')).toBe(false);
+    expect(roundStore.getById('round-e3')?.processEvents).toBeDefined();
+  });
+});

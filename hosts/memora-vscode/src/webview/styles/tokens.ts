@@ -8,7 +8,7 @@
  *
  * 铁律：
  *   - 裸值只能出现在本文件（令牌定义处）；
- *   - 其余所有样式文件（chatStyles / configStyles / dropdown / toolCard）
+ *   - 其余所有样式文件（chatStyles / configStyles / dropdown）
  *     只能引用令牌，禁止裸值；
  *   - 令牌即契约：间距必须落在刻度上，不存在 margin: 17px；
  *   - 例外：动画位移（入场 translateY 等）、边框宽度、SVG 描边等

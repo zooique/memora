@@ -18,6 +18,7 @@ import { join } from 'node:path';
 import type { Agent, Round } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
+import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
@@ -271,6 +272,67 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(renameSession).toHaveBeenCalledWith('2026-08-14-other', '我的新标题');
     const title = ofType<{ type: string; title: string }>(posted, 'session_title');
     expect(title[0]?.title).toBe('我的新标题');
+  });
+
+  // ─── v1.5 交织重放（processEvents 与正文同源同轮） ───
+  it('round-based 交织重放：user → meta(process_event) → replay_events → assistant（§3.7 时序）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    // 生产装配路径：extension 注入同一 viewLoader + roundStore 单例
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: 't1' },
+      { role: 'assistant', content: '回答A', ts: 't2' },
+    ]);
+    // 为第一轮补过程事件（meta 首条 + recall + metrics 末条）
+    const round = roundStore.getById('round-1')!;
+    round.processEvents = [
+      { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+      { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '记忆', source: 'round-summary', score: 0.8 }] } },
+      { type: 'metrics', seq: 3, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 1, success: true } },
+    ];
+    roundStore.save(round);
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    // 关键时序：session_title 收尾；user → meta 单独先行（该轮标签挂对）→ 其余整批 → assistant 正文
+    const ordered = posted.map((m) => (m as { type: string }).type);
+    const idxMeta = posted.findIndex((m) => (m as { type: string }).type === 'process_event');
+    const idxReplay = ordered.indexOf('replay_events');
+    const idxAssistant = ordered.indexOf('assistant');
+    expect(ordered.indexOf('user')).toBeGreaterThanOrEqual(0);
+    expect(idxMeta).toBeGreaterThan(ordered.indexOf('user')); // meta 在 user 之后
+    expect(idxReplay).toBeGreaterThan(idxMeta); // 其余事件在 meta 之后
+    expect(idxAssistant).toBeGreaterThan(idxReplay); // 正文在事件之后（块可挂载）
+    expect(idxAssistant).toBeLessThan(ordered.indexOf('session_title'));
+    // meta 内容 = 该轮身份（角色/模型显示名）
+    const metaMsg = posted[idxMeta] as { event: { payload: { role: string; llm: string } } };
+    expect(metaMsg.event.payload).toEqual({ role: '文档设计师', llm: 'deepseek-chat' });
+    // replay_events：roundId 关联正确，且不含 meta（meta 已单独发送）
+    const replay = posted[idxReplay] as { roundId: string; events: { type: string }[] };
+    expect(replay.roundId).toBe('round-1');
+    expect(replay.events.map((e) => e.type)).toEqual(['recall', 'metrics']);
+  });
+
+  it('round-based 纯问答轮（无 processEvents）退化为仅正文，不发 process_event/replay_events', () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: 't1' },
+      { role: 'assistant', content: '回答A', ts: 't2' },
+    ]);
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    const types = posted.map((m) => (m as { type: string }).type);
+    expect(types).not.toContain('process_event');
+    expect(types).not.toContain('replay_events');
+    expect(types).toContain('user');
+    expect(types).toContain('assistant');
   });
 
   it('跟随活动编辑器：编辑器变化实时更新文档上下文（A 层，2026-08-17）', () => {

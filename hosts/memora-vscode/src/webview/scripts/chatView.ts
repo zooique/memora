@@ -3,7 +3,7 @@
  *
  * 由 chatPanel.ts 的 buildHtml 内联 <script> 迁移而来：以工厂函数 createChatView
  * 接收依赖（acquireVsCodeApi / window）并初始化全部交互，替代原「字符串注入脚本」。
- * 消除全局污染（window.ToolCard / __xxx 全局回调 → 模块 import + 显式回调映射），
+ * 消除全局污染（window.__xxx 全局回调 → 模块 import + 显式回调映射），
  * 同时具备可测性（依赖注入，可传入 mock window/jsdom）。
  *
  * 由 esbuild 以 browser/iife 打包为 dist/webview/scripts/chatView.js，经
@@ -11,15 +11,13 @@
  */
 import type {
   ExtensionToWebviewMessage,
-  MemoryRecallItemDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
-// ThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
-import type { ThinkingPhase } from '@zooique/memora';
+// ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
+import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
-import { ToolCard } from '../components/toolCard.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { createIcon, getIconSvg, populateIcons } from './icons.js';
 
@@ -107,8 +105,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
   const activityList = document.getElementById('activityList') as HTMLElement;
   const activityMetrics = document.getElementById('activityMetrics') as HTMLElement;
-  // Phase 1（2026-08-17 召回可展开）：活动详情内「本次召回」明细区（name/source/score 列表）
-  const recallDetail = document.getElementById('recallDetail') as HTMLElement;
   const inputBar = document.getElementById('inputBar') as HTMLElement;
   const clarifyBar = document.getElementById('clarifyBar') as HTMLElement;
   const clarifyText = document.getElementById('clarifyText') as HTMLElement;
@@ -262,9 +258,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 流式结束后给 AI 回复补「基于 N 条记忆」弱标签，让记忆附着主动可见（memora 差异化价值）。
   let lastAttachedMemoryCount: number | undefined;
 
-  // 思考折叠块（ui-redesign.md §7.1）：生成中/自审查的过程性反馈，不落库不重放
-  // details 元素：以 HTMLDetailsElement 承载 open 属性（折叠/展开态）
-  let thoughtEl: HTMLDetailsElement | null = null;
+  // ─── 过程事件（ProcessEvent）渲染（v1.5 单形态）──────────────
+  // 渲染真理源 = 当前轮 events[]（currentEvents）：运行时 process_event 增量与重放
+  // replay_events 整批都汇入同一数组，由 renderRoundBlock 统一渲染（SSOT：无第二套卡片 DOM）。
+  // round-block 挂在本轮首个 assistant 块上（插话产生的后续同 roundId 块不再挂）。
+
+  /** 本轮过程事件缓冲（渲染唯一真相源，运行时与重放同源） */
+  let currentEvents: ProcessEvent[] = [];
+  /** 本轮身份（meta 事件写入）：该轮 AI 消息挂的角色/模型标签（与会话级 chat_role_pack 分离） */
+  let currentRoundMeta: { role: string; llm: string } | undefined;
+  /** 当前轮 round-block 容器（挂在本轮首个 assistant 块；null = 正文块尚未创建） */
+  let roundBlockEl: HTMLDetailsElement | null = null;
+  /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
+  let roundBlockHostEl: HTMLElement | null = null;
   // 一键到底按钮（2026-08-17 吸底优化）：用户上滚阅读时浮现，点击回到底部
   const scrollToBottomBtn = document.getElementById('scrollToBottomBtn') as HTMLButtonElement;
   // 消息区滚动监听：更新吸底状态 + 一键到底按钮显隐
@@ -287,128 +293,250 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     ).padStart(2, '0')}`;
   }
 
-  /** 确保思考折叠块存在并返回（过程透明，不落库不重放） */
-  function ensureThoughtBlock(): HTMLDetailsElement {
-    if (thoughtEl && thoughtEl.isConnected) return thoughtEl;
-    const tb = document.createElement('details');
-    tb.className = 'thought-block';
-    const summary = document.createElement('summary');
-    const dot = document.createElement('span');
-    dot.className = 'thought-block__dot';
-    const label = document.createElement('span');
-    label.className = 'thought-block__label';
-    summary.appendChild(dot);
-    summary.appendChild(label);
-    tb.appendChild(summary);
-    messages.appendChild(tb);
-    thoughtEl = tb;
-    scrollToBottom(messages);
-    return tb;
+  /** thinking 阶段 → 中文标签（对齐内核 ThinkingPhase，Webview 展示面） */
+  function phaseLabel(phase: ProcessThinkingPhase): string {
+    const map: Record<ProcessThinkingPhase, string> = {
+      recalling: '召回记忆中…',
+      llm_calling: '调用模型中…',
+      processing: '处理中…',
+      planning: '规划中…',
+      step: '分步执行中…',
+      reporting: '收尾汇报中…',
+      archiving: '归档记忆中…',
+    };
+    return map[phase] ?? '思考中…';
   }
 
-  /** 更新思考折叠块：label 标题 + 可选 body 内容 + 思考中/展开态 */
-  function setThoughtLabel(
-    label: string,
-    opts: { thinking?: boolean; open?: boolean; body?: string } = {},
-  ): void {
-    const tb = ensureThoughtBlock();
-    tb.classList.toggle('is-thinking', opts.thinking ?? false);
-    tb.open = opts.open ?? false;
-    const labelEl = tb.querySelector('.thought-block__label') as HTMLElement;
-    if (labelEl) labelEl.textContent = label;
-    if (opts.body !== undefined) {
-      let bodyEl = tb.querySelector('.thought-block__body') as HTMLElement | null;
-      if (!bodyEl) {
-        bodyEl = document.createElement('div');
-        bodyEl.className = 'thought-block__body';
-        tb.appendChild(bodyEl);
-      }
-      bodyEl.textContent = opts.body;
+  /** 耗时格式化：≥60s 显示「x m y s」，否则「x.x s」 */
+  function fmtDuration(ms: number): string {
+    const sec = Math.round(ms / 100) / 10;
+    if (sec < 60) return `${sec}s`;
+    const m = Math.floor(sec / 60);
+    const s = Math.round(sec % 60);
+    return `${m}m ${s}s`;
+  }
+
+  /** 事件统计：工具×N / 记忆×N / 审查×N（运行时与重放同一函数，SSOT 杜绝两处算法） */
+  function countEvents(events: ProcessEvent[]): { tools: number; memories: number; reviews: number } {
+    return {
+      tools: events.filter((e) => e.type === 'tool_start').length,
+      memories: events.reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
+      reviews: events.filter((e) => e.type === 'self_review').length,
+    };
+  }
+
+  /**
+   * 确保当前轮 round-block 容器存在并挂在本轮首个 assistant 块上
+   *
+   * 挂载规则（插话场景）：同一 roundId 可能对应多个 assistant 块（生成中插话），
+   * round-block 只挂首个——roundBlockHostEl 记录已挂载宿主，host 变更（新轮次）才重建。
+   *
+   * @returns 存在则返回 round-block 容器；正文块未创建（meta 已到）时返回 null
+   */
+  function ensureRoundBlock(): HTMLDetailsElement | null {
+    if (roundBlockEl && roundBlockEl.isConnected) return roundBlockEl;
+    const host = activeAssistantEl;
+    // 无过程事件（纯问答轮 / 无 processEvents 的老数据）不产生空块；无助手块也暂不挂载
+    if (!host || roundBlockHostEl === host || currentEvents.length === 0) return null;
+    // 移除旧的（如上一轮残留），再挂到当前 assistant 块（label 之后、正文之前）
+    roundBlockEl?.remove();
+    const rb = document.createElement('details');
+    rb.className = 'round-block';
+    rb.open = false;
+    const summary = document.createElement('summary');
+    summary.className = 'round-block__summary';
+    rb.appendChild(summary);
+    const body = document.createElement('div');
+    body.className = 'round-block__details';
+    rb.appendChild(body);
+    host.insertBefore(rb, host.querySelector(':scope .msg-content'));
+    roundBlockEl = rb;
+    roundBlockHostEl = host;
+    return rb;
+  }
+
+  /** 在 details 中创建/复用小节容器（标题 + 内容行容器，textContent 构建防注入） */
+  function sectionOf(
+    details: HTMLElement,
+    title: string,
+  ): { titleEl: HTMLElement; listEl: HTMLElement } {
+    let section = details.querySelector<HTMLElement>(`[data-section="${title}"]`);
+    if (!section) {
+      section = document.createElement('div');
+      section.className = 'round-block__section';
+      section.dataset.section = title;
+      const titleEl = document.createElement('div');
+      titleEl.className = 'round-block__section-title';
+      section.appendChild(titleEl);
+      const listEl = document.createElement('div');
+      listEl.className = 'round-block__section-list';
+      section.appendChild(listEl);
+      details.appendChild(section);
+    } else {
+      // 复用：清掉旧列表重排（全量重建简单确定性——事件量小）
+      section.querySelectorAll('.round-block__row, .round-block__pre').forEach((el) => el.remove());
+    }
+    const titleEl = section.querySelector('.round-block__section-title') as HTMLElement;
+    const listEl = section.querySelector('.round-block__section-list') as HTMLElement;
+    const count = listEl.children.length;
+    titleEl.textContent = `${title}${count > 0 ? ` (${count})` : ''}`;
+    return { titleEl, listEl };
+  }
+
+  /** 工具调用行（tool_start 配对 tool_result）：名称(状态) + args 代码块 + result 摘要 */
+  function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
+    const row = document.createElement('div');
+    row.className = 'round-block__row';
+    const result = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
+    );
+    const status = result ? (result.payload.ok ? '成功' : '失败') : '进行中';
+    const name = document.createElement('span');
+    name.className = 'round-block__tool-name';
+    name.textContent = `${start.payload.name} (${status})`;
+    row.appendChild(name);
+    listEl.appendChild(row);
+    if (start.payload.args) {
+      const pre = document.createElement('pre');
+      pre.className = 'round-block__pre';
+      pre.textContent = start.payload.args;
+      listEl.appendChild(pre);
+    }
+    if (result?.payload.summary) {
+      const sum = document.createElement('div');
+      sum.className = 'round-block__tool-summary';
+      sum.textContent = result.payload.summary;
+      listEl.appendChild(sum);
     }
   }
 
   /**
-   * P2（2026-08-15 执行轨迹）：把思考折叠块从单行文案升级为三阶段执行轨迹
+   * 渲染当前轮 round-block（运行时增量 / 重放整批共用，输入只有 events[]）
    *
-   * Agent 闭环 = Prepare(召回) → Act(打磨，含工具) → Reflect(归档)，三阶段即天然轨迹。
-   * 用 ✓ 完成 / ● 进行中 / ○ 待执行 呈现，让用户一眼看懂 Agent 当前执行到哪一步
-   * （对齐 Agent UI「执行过程可见」趋势）。纯前端从 thinking phase 聚合，不改内核协议。
-   * 工具调用保持独立卡片（Tertiary 层级），不塞进轨迹，避免信息过载。
+   * @param events 当前轮全部过程事件
+   * @param finalize 是否为本轮收尾（渲染完整 details + 执行指标；false = 流式中仅 summary）
    */
-  function renderTrace(phase: ThinkingPhase): void {
-    // 三阶段轨迹：召回记忆 → 理解打磨 → 归档记忆（对应闭环 Prepare/Act/Reflect）
-    // llm_calling 归属于 Act 阶段（理解打磨），与 processing 共享同一轨迹位置
-    const steps: { label: string; state: 'done' | 'active' | 'pending' }[] = [
-      { label: '召回记忆', state: 'pending' },
-      { label: '理解打磨', state: 'pending' },
-      { label: '归档记忆', state: 'pending' },
-    ];
-    // 外循环阶段（planning/step/reporting）归入 Act 阶段展示，避免出现未知阶段占位
-    const phaseIndex: Record<string, number> = {
-      recalling: 0,
-      llm_calling: 1,
-      processing: 1,
-      planning: 1,
-      step: 1,
-      reporting: 1,
-      archiving: 2,
-    };
-    const idx = phaseIndex[phase];
-    steps.forEach((s, i) => {
-      // 当前阶段之前的步骤已完成，当前进行中，之后待执行
-      s.state = i < idx ? 'done' : i === idx ? 'active' : 'pending';
-    });
-    const tb = ensureThoughtBlock();
-    // 轨迹容器：首次创建挂到思考块，之后复用（textContent 构建防注入）
-    let trace = tb.querySelector('.thought-block__trace') as HTMLElement | null;
-    if (!trace) {
-      trace = document.createElement('div');
-      trace.className = 'thought-block__trace';
-      tb.appendChild(trace);
-    }
-    trace.textContent = '';
-    steps.forEach((s) => {
-      const row = document.createElement('div');
-      row.className = 'trace-step ' + s.state;
-      const mark = document.createElement('span');
-      mark.className = 'trace-step__mark';
-      mark.setAttribute('aria-hidden', 'true');
-      // ✓ 完成 / ● 进行中（呼吸）/ ○ 待执行
-      mark.textContent = s.state === 'done' ? '✓' : s.state === 'active' ? '●' : '○';
+  function renderRoundBlock(events: ProcessEvent[], finalize: boolean): void {
+    const rb = ensureRoundBlock();
+    if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
+    // summary：实时计数 + 耗时（metrics 到达后）；流式中带呼吸点
+    const summary = rb.querySelector('.round-block__summary') as HTMLElement;
+    if (summary) {
+      summary.textContent = '';
+      const dot = document.createElement('span');
+      dot.className = 'round-block__dot';
+      dot.setAttribute('aria-hidden', 'true');
+      summary.appendChild(dot);
+      const stats = countEvents(events);
+      const parts: string[] = [];
+      if (stats.tools > 0) parts.push(`工具×${stats.tools}`);
+      if (stats.memories > 0) parts.push(`记忆×${stats.memories}`);
+      if (stats.reviews > 0) parts.push(`审查×${stats.reviews}`);
+      const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
+      if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
       const label = document.createElement('span');
-      label.className = 'trace-step__label';
-      label.textContent = s.label;
-      row.appendChild(mark);
-      row.appendChild(label);
-      trace.appendChild(row);
-    });
-    // A3（2026-08-24）：summary 行追加 Phase X/3 进度计数——用户一眼知道 Agent 执行到第几阶段
-    // 先剥离旧计数再追加，防止重复追加（同一段轨迹多次 render 时）
-    const total = steps.length;
-    const current = Math.min(idx, total - 1) + 1;
-    const labelEl = tb.querySelector('.thought-block__label') as HTMLElement | null;
-    if (labelEl) {
-      const baseText = labelEl.textContent?.replace(/\s*\(\d+\/\d+\)\s*$/, '') || '';
-      labelEl.textContent = `${baseText} (${current}/${total})`;
+      label.className = 'round-block__stats';
+      label.textContent = parts.length > 0 ? parts.join(' · ') : '执行过程';
+      summary.appendChild(label);
+      rb.classList.toggle('is-running', !finalize);
     }
-    // 轨迹默认折叠：执行进度不是对话主体，不默认撑开挤压内容（对齐 VS Code Chat
-    // 「Completed N steps」折叠惯例 + 大厂 AI Chat「默认不展开思考」）。
-    // 用户可点击 summary 展开查看三阶段进度（主动可见仍保留，仅不强制展开）。
-    tb.open = false;
-  }
-
-  /** 轮次收尾：把三阶段轨迹全部标记为「完成 ✓」并停止呼吸动画。
-   *  归档记忆是内核后台动作，renderTrace 只在 thinking phase 事件时更新，archiving 后无 phase 事件
-   *  把第 3 步推向 done，导致「归档记忆」停留在 active 无限脉冲闪烁。done/interrupted 即本轮闭环
-   *  收尾，在此统一收敛为全程 ✓（对齐「Recalled ✓ / Acted ✓ / Archived ✓」的真实完成态）。 */
-  function finalizeTrace(): void {
-    if (!thoughtEl || !thoughtEl.isConnected) return;
-    thoughtEl.querySelectorAll('.trace-step').forEach((row) => {
-      row.classList.remove('active', 'done', 'pending');
-      row.classList.add('done');
-      const mark = row.querySelector('.trace-step__mark');
-      if (mark) mark.textContent = '✓';
-    });
+    // details：收尾后完整渲染（展开态由用户控制，open 保持 false）
+    const details = rb.querySelector('.round-block__details') as HTMLElement;
+    if (!details) return;
+    // 全量重建前先移除旧小节（简单确定性，事件量小）
+    details.querySelectorAll('.round-block__section').forEach((el) => el.remove());
+    if (!finalize) return;
+    // § 过程轨迹（thinking 阶段时间线）
+    const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');
+    if (thinking.length > 0) {
+      const { listEl } = sectionOf(details, '过程轨迹');
+      thinking.forEach((e) => {
+        const row = document.createElement('div');
+        row.className = 'round-block__row';
+        row.textContent = phaseLabel(e.payload.phase);
+        listEl.appendChild(row);
+      });
+    }
+    // § 召回记忆 (N)
+    const recalls = events.filter((e): e is Extract<ProcessEvent, { type: 'recall' }> => e.type === 'recall');
+    const recallItems = recalls.flatMap((e) => e.payload.memories);
+    if (recallItems.length > 0) {
+      const { listEl } = sectionOf(details, '召回记忆');
+      recallItems.forEach((m) => {
+        const row = document.createElement('div');
+        row.className = 'round-block__row';
+        const name = document.createElement('span');
+        name.className = 'round-block__recall-name';
+        name.textContent = m.name || m.id;
+        const metaEl = document.createElement('span');
+        metaEl.className = 'round-block__recall-meta';
+        metaEl.textContent = `${m.source} · ${Math.round(m.score * 100)}%`;
+        row.append(name, metaEl);
+        listEl.appendChild(row);
+      });
+    }
+    // § 已沉淀 (N)
+    const added = events.filter((e): e is Extract<ProcessEvent, { type: 'memory_added' }> => e.type === 'memory_added');
+    if (added.length > 0) {
+      const { listEl } = sectionOf(details, '已沉淀');
+      added.forEach((e) => {
+        const row = document.createElement('div');
+        row.className = 'round-block__row';
+        row.textContent = e.payload.name || e.payload.id;
+        listEl.appendChild(row);
+      });
+    }
+    // § 工具调用 (N)
+    const toolStarts = events.filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start');
+    if (toolStarts.length > 0) {
+      const { listEl } = sectionOf(details, '工具调用');
+      toolStarts.forEach((s) => renderToolRow(listEl, s, events));
+    }
+    // § 自审查输出
+    const reviews = events.filter((e): e is Extract<ProcessEvent, { type: 'self_review' }> => e.type === 'self_review');
+    const reviewTexts = events.filter((e): e is Extract<ProcessEvent, { type: 'text_self_review' }> => e.type === 'text_self_review');
+    if (reviews.length > 0 || reviewTexts.length > 0) {
+      const { listEl } = sectionOf(details, '自审查输出');
+      reviews.forEach((e) => {
+        const row = document.createElement('div');
+        row.className = 'round-block__row';
+        row.textContent = `自审查轮 ${e.payload.round}`;
+        listEl.appendChild(row);
+      });
+      reviewTexts.forEach((e) => {
+        const row = document.createElement('div');
+        row.className = 'round-block__row';
+        row.textContent = e.payload.content;
+        listEl.appendChild(row);
+      });
+    }
+    // § 已停止（aborted 标记）
+    const aborted = events.find((e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted');
+    if (aborted) {
+      const { listEl } = sectionOf(details, '已停止');
+      const row = document.createElement('div');
+      row.className = 'round-block__row';
+      row.textContent = aborted.payload.reason;
+      listEl.appendChild(row);
+    }
+    // § 执行指标（metrics 事件）
+    const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
+    if (metrics) {
+      const { listEl } = sectionOf(details, '执行指标');
+      const lines = [
+        `耗时：${fmtDuration(metrics.payload.durationMs)}`,
+        `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
+        `召回记忆：${metrics.payload.recallCount} 条`,
+        `工具失败：${metrics.payload.toolFailureCount} 次`,
+        `完成：${metrics.payload.success ? '是' : '否（中断/失败）'}`,
+      ];
+      lines.forEach((line) => {
+        const row = document.createElement('div');
+        row.className = 'round-block__row';
+        row.textContent = line;
+        listEl.appendChild(row);
+      });
+    }
   }
 
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
@@ -449,38 +577,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
-  /** 调度归档停滞兜底：超时后折叠思考块并停止呼吸（与 setStatus('done') 同构） */
+  /** 调度归档停滞兜底：超时后收起 round-block 呼吸点（与 done 收尾同构，v1.5） */
   function scheduleArchivingFallback(): void {
     clearArchivingFallback();
     archivingFallbackTimer = setTimeout(() => {
       archivingFallbackTimer = undefined;
-      if (thoughtEl && thoughtEl.isConnected) {
-        thoughtEl.classList.remove('is-thinking');
-        thoughtEl.open = false;
+      if (roundBlockEl && roundBlockEl.isConnected) {
+        roundBlockEl.classList.remove('is-running');
       }
     }, ARCHIVING_STALL_MS);
   }
 
   // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
   // 输入框保持可用（支持插话）；done 恢复发送按钮；paused 切换为「继续」按钮。
-  // SSOT 收敛：身份条已删，生成中状态由思考折叠块（过程可见）+ 发送按钮（可操作）承载。
+  // SSOT 收敛：身份条已删，生成中状态由 round-block（过程可见）+ 发送按钮（可操作）承载。
   function setStatus(state: 'thinking' | 'done' | 'paused'): void {
     if (state === 'thinking') {
-      // 生成中：展示「思考中…」折叠块（过程透明，ui-redesign.md §7.1）
-      setThoughtLabel('思考中…', { thinking: true });
+      // 生成中：round-block summary 呼吸点 + 计数实时刷新（renderRoundBlock 驱动，无需额外文案）
     } else if (state === 'paused') {
-      // 暂停中：折叠思考块并提示已暂停（可通过「继续」按钮恢复）
+      // 暂停中：停止呼吸（可通过「继续」按钮恢复）
       clearArchivingFallback();
-      if (thoughtEl && thoughtEl.isConnected) {
-        thoughtEl.classList.remove('is-thinking');
-        thoughtEl.open = false;
+      if (roundBlockEl && roundBlockEl.isConnected) {
+        roundBlockEl.classList.remove('is-running');
       }
     } else {
-      // 结束：折叠思考块并停止呼吸（保留折叠态，不落库不重放）
+      // 结束：停止呼吸（保留折叠态，不落库不重放）
       clearArchivingFallback();
-      if (thoughtEl && thoughtEl.isConnected) {
-        thoughtEl.classList.remove('is-thinking');
-        thoughtEl.open = false;
+      if (roundBlockEl && roundBlockEl.isConnected) {
+        roundBlockEl.classList.remove('is-running');
       }
     }
     if (state === 'thinking') {
@@ -682,7 +806,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
   // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
-  // 此处统一以 messages 为滚动容器，与 toolCard 共用同一 helper（SSOT 剪枝去重）。
+  // 此处统一以 messages 为滚动容器（SSOT 剪枝去重）。
   // 原局部 scrollToBottom + scrollRafPending 已收敛到 helpers。
 
   // ─── 下拉选择器渲染工厂（SSOT，剪枝收敛） ───
@@ -830,16 +954,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
-    // 角色名：品牌色 + 小圆点
+    // 角色名：优先级 = 本轮身份（meta）→ 会话级角色（chat_role_pack），品牌色 + 小圆点
+    const roleName = currentRoundMeta?.role || currentRoleName || 'AI';
     const roleEl = document.createElement('span');
     roleEl.className = 'msg-ai-label__role';
-    roleEl.textContent = currentRoleName || 'AI';
+    roleEl.textContent = roleName;
     label.appendChild(roleEl);
-    // 模型名：灰色小字（可选）
-    if (currentModelName) {
+    // 模型名：灰色小字（可选），优先级 = 本轮身份（meta）→ 会话级模型
+    const modelName = currentRoundMeta?.llm || currentModelName;
+    if (modelName) {
       const modelEl = document.createElement('span');
       modelEl.className = 'msg-ai-label__model';
-      modelEl.textContent = currentModelName;
+      modelEl.textContent = modelName;
       label.appendChild(modelEl);
     }
     div.appendChild(label);
@@ -905,6 +1031,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
+    // 挂载本轮 round-block（meta 已先到）：过程事件块挂在本轮首个 assistant 块上
+    renderRoundBlock(currentEvents, false);
     scrollToBottom(messages);
     updateEmptyState();
   }
@@ -920,10 +1048,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let streamRenderTimer: ReturnType<typeof setTimeout> | undefined;
   /** 本轮是否已渲染过 body（首个 chunk 立即渲染的标志） */
   let streamBodyRendered = false;
-  /** 自审查分段内容体（stage='self_review' 的 chunk 渲染目标；null = 尚无分段） */
-  let reviewBodyEl: HTMLElement | null = null;
-  /** 自审查分段累积原始文本（分段增量 markdown 渲染的数据源） */
-  let reviewRaw = '';
 
   /** 把当前累积的流式原文渲染为 Markdown（写 body.innerHTML，消毒后安全） */
   function renderStreamBody(): void {
@@ -1020,54 +1144,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (forkBtn) forkBtn.disabled = false;
   }
 
-  // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
-  // 渲染进「思考折叠块」让用户看见 Agent 正在复核产出（ui-redesign.md §7.1）。
-  // 仅运行时显示，不持久化、不重放；结束后保留折叠态（setStatus done 收敛）。
-  function appendSelfReview(round: number): void {
-    setThoughtLabel(`思考过程 · ${round} 步`, {
-      thinking: true,
-      open: true, // 自审查时展开显示步骤
-      body: `自审查轮 ${round}：正在复核本轮产出…`,
-    });
-  }
-
-  // ─── 自审查输出独立分段（分阶段协议 stage='self_review'） ───
-  // 审查应答文本（满意确认或修订输出）不再混入主回答流，而是渲染进独立的
-  // 「自审查」分段（头部标识 + 内容体），透明呈现"这是审查产出"（对齐用户诉求：
-  // 自审查输出需明确分段标识）。仅运行时展示，不持久化、不随历史重放。
-
-  /**
-   * 新建「自审查」独立分段容器：后续 stage='self_review' 的 chunk 文本渲染到此段。
-   * 主回答流若仍在流式则先定稿（finalizeStreaming 幂等），保证分段插入位于主回答之后。
-   */
-  function beginReviewBlock(): void {
-    // 主回答流定稿（幂等：未流式时直接返回），避免审查文本与未收尾主回答交错
-    finalizeStreaming();
-    const wrap = document.createElement('div');
-    wrap.className = 'review-block';
-    const header = document.createElement('div');
-    header.className = 'review-block__header';
-    header.textContent = '✦ 自审查';
-    const body = document.createElement('div');
-    body.className = 'review-block__body';
-    wrap.append(header, body);
-    messages.appendChild(wrap);
-    reviewBodyEl = body;
-    reviewRaw = '';
-    scrollToBottom(messages);
-    updateEmptyState();
-  }
-
-  /**
-   * 追加自审查应答文本到分段内容体（增量 markdown 渲染：审查输出很短，直接重渲成本可接受）
-   */
-  function appendReviewContent(content: string): void {
-    if (!reviewBodyEl) beginReviewBlock();
-    if (!reviewBodyEl) return;
-    reviewRaw += content;
-    reviewBodyEl.innerHTML = renderMarkdown(reviewRaw);
-  }
-
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
   // 单一主状态条（#activityBar）同时只显示一条；被覆盖的提示不丢失，
   // 全部进「▾ 活动详情」历史（最近 MAX_ACTIVITY_HISTORY 条，带时间戳）。
@@ -1102,42 +1178,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       row.appendChild(time);
       activityList.appendChild(row);
     }
-    // 详情折叠区有内容即显示（含指标）；无历史但仅有指标时也显示
-    activityDetail.hidden =
-      activityHistory.length === 0 && activityMetrics.hidden && recallDetail.hidden;
-  }
-
-  /** Phase 1（2026-08-17 召回可展开）：渲染活动详情「本次召回」明细区
-   *
-   * 主状态条「已召回 N 条」仅即时反馈，具体来源进活动详情折叠区（不占主条、
-   * 不打断 P0 错误保护）；每条展示 name + source + score。空数组隐藏明细区
-   * （新轮 recalled 清空上轮，避免跨轮残留）。
-   */
-  function renderRecallDetail(items: MemoryRecallItemDto[]): void {
-    recallDetail.textContent = '';
-    recallDetail.hidden = items.length === 0;
-    if (items.length === 0) {
-      renderActivityDetail();
-      return;
-    }
-    const title = document.createElement('div');
-    title.className = 'recall-detail__title';
-    title.textContent = '本次召回 ' + items.length + ' 条';
-    recallDetail.appendChild(title);
-    for (const it of items) {
-      const row = document.createElement('div');
-      row.className = 'recall-detail__row';
-      const name = document.createElement('span');
-      name.className = 'recall-detail__name';
-      name.textContent = it.name || it.id;
-      const meta = document.createElement('span');
-      meta.className = 'recall-detail__meta';
-      meta.textContent = it.source + ' · ' + Math.round(it.score * 100) + '%';
-      row.appendChild(name);
-      row.appendChild(meta);
-      recallDetail.appendChild(row);
-    }
-    renderActivityDetail();
+    // 详情折叠区有内容即显示（含指标）
+    activityDetail.hidden = activityHistory.length === 0 && activityMetrics.hidden;
   }
 
   /**
@@ -1266,30 +1308,45 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     footer.prepend(tag); // 信息性标签靠左（margin-right:auto），复制/时间戳保持靠右
   }
 
-  // 处理 extension → webview 消息（流式渲染 / 状态机 / 工具卡片 / 下拉数据）
+  // 处理 extension → webview 消息（流式渲染 / 状态机 / 单一过程事件 / 下拉数据）
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
-    } else if (msg.type === 'thinking') {
-      // B（alignment-iteration.md）：思考阶段 → 更新思考折叠块文案（真实 phase，非笼统"思考中"）
-      // 阶段文案映射：recalling=召回 / llm_calling=调用模型 / processing=处理 / planning=规划 /
-      // step=分步执行 / reporting=收尾汇报 / archiving=归档（外循环阶段重放收敛到主标签）
-      const thoughtLabels: Record<ThinkingPhase, string> = {
-        recalling: '召回记忆中…',
-        llm_calling: '调用模型中…',
-        processing: '处理中…',
-        planning: '规划中…',
-        step: '分步执行中…',
-        reporting: '收尾汇报中…',
-        archiving: '归档记忆中…',
-      };
-      setThoughtLabel(thoughtLabels[msg.phase] ?? '思考中…', { thinking: true });
-      // P2（2026-08-15 执行轨迹）：同步渲染三阶段执行轨迹（✓/●/○），执行过程可见
-      renderTrace(msg.phase);
-      // 归档停滞兜底：archiving 激活即调度超时折叠；其他 phase（新轮次/回溯）清除定时器
-      if (msg.phase === 'archiving') scheduleArchivingFallback();
-      else clearArchivingFallback();
+    } else if (msg.type === 'process_event') {
+      // 运行时单形态渲染投影（v1.5）：一律汇入当前轮 events[] 由 renderRoundBlock 渲染。
+      // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
+      const ev = msg.event;
+      if (ev.type === 'meta') {
+        // 新轮开始：清空当前轮缓冲与 round-block 引用（上一轮已在 done 定型，本轮从头积累）
+        currentEvents = [];
+        roundBlockEl = null;
+        roundBlockHostEl = null;
+        clearArchivingFallback();
+        currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
+      } else {
+        if (ev.type === 'recall') {
+          // 瞬时反馈：本轮召回 N 条（与折叠区 § 召回记忆同一数据源）
+          showActivity('info', `已召回 ${ev.payload.memories.length} 条记忆`);
+        } else if (ev.type === 'memory_added') {
+          showActivity('info', `已沉淀：${ev.payload.name || ev.payload.id}`);
+        } else if (ev.type === 'thinking' && ev.payload.phase === 'archiving') {
+          // 归档停滞兜底：archiving 激活即调度超时收起呼吸点
+          scheduleArchivingFallback();
+        }
+        currentEvents.push(ev);
+        // 流式中实时刷新 summary（details 待流结束（done）统一收尾）
+        renderRoundBlock(currentEvents, false);
+      }
+    } else if (msg.type === 'replay_events') {
+      // 重放整批（v1.5）：同一渲染路径——整批汇入 events[]，一次性渲染 summary + details
+      currentEvents = [...msg.events];
+      // meta 优先写入本轮身份（供该轮 assistant 正文标签；host 已保证 meta 先于正文到达）
+      const metaEv = msg.events.find((e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta');
+      if (metaEv) {
+        currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
+      }
+      renderRoundBlock(currentEvents, true);
     } else if (msg.type === 'user') {
       // 无缝插话（缺口 B）：生成中收到用户补充 → 结束当前流式助手块（复位锚点与流式态），
       // 使后续 chunk 经 beginStreaming 开新助手块、置于本用户消息之后，保证消息排序正确。
@@ -1301,36 +1358,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
+      // 历史回放正文块创建后补挂 round-block（meta/replay_events 若先于正文到达，此处才挂得上）
+      renderRoundBlock(currentEvents, true);
     } else if (msg.type === 'chunk') {
-      // 自审查应答文本（stage='self_review'）：渲染进「自审查」独立分段，
-      // 与最终回答分离展示（透明呈现审查输出，不再混入主回答流）
-      if (msg.stage === 'self_review') {
-        if (msg.content) appendReviewContent(msg.content);
-        scrollToBottom(messages);
-      } else {
-        // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
-        // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
-        // guardrailBlocked 标记：护栏阻断文案已由内核 content 承载（[输入/输出被护栏阻断：rule]），
-        // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
-        // 字段仍随 chunk 透传，供未来结构化消费（eval / 日志）。
-        // 首个 chunk：开始一轮新流式（beginStreaming 创建新消息 + 置 streamingActive），
-        // 避免追加到上一条历史 AI 消息（activeAssistantEl 可能仍指向旧锚点）
-        if (!streamingActive) {
-          beginStreaming(msg.ts);
-          streamingActive = true;
-          streamingRaw = '';
-        }
-        const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') : null;
-        if (target) {
-          streamingRaw += msg.content;
-          // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
-          // 相比旧的「纯文本节点追加 + 结束一次性渲染」，用户实时看到 markdown 成形
-          // （列表/代码块不再显示 **、``` 原始记号），对齐 TraeWork 对话流。
-          if (!streamBodyRendered) renderStreamBody();
-          else scheduleStreamRender();
-        }
-        scrollToBottom(messages);
+      // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
+      // 自审查输出不再走 chunk（host 已按 text_self_review 过程事件转发，渲染进折叠区）。
+      // guardrailBlocked 标记：护栏阻断文案已由内核 content 承载（[输入/输出被护栏阻断：rule]），
+      // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
+      // 首个 chunk：开始一轮新流式（beginStreaming 创建新消息 + 置 streamingActive），
+      // 避免追加到上一条历史 AI 消息（activeAssistantEl 可能仍指向旧锚点）
+      if (!streamingActive) {
+        beginStreaming(msg.ts);
+        streamingActive = true;
+        streamingRaw = '';
       }
+      const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') : null;
+      if (target) {
+        streamingRaw += msg.content;
+        // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
+        // 相比旧的「纯文本节点追加 + 结束一次性渲染」，用户实时看到 markdown 成形
+        // （列表/代码块不再显示 **、``` 原始记号），对齐 TraeWork 对话流。
+        if (!streamBodyRendered) renderStreamBody();
+        else scheduleStreamRender();
+      }
+      scrollToBottom(messages);
     } else if (msg.type === 'handoff') {
       // 衔接决策（SSOT 收紧后 loop 已由宿主归一为 wait，语意让位用户）：
       // wait 静默（等用户输入，输入框已随 done 恢复）；end 低扰提示任务已收尾。
@@ -1364,25 +1415,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'error') {
       append('error', msg.message);
     } else if (msg.type === 'done') {
-      // 本轮流式结束：清除归档停滞兜底定时器 + 兜底终结所有残留「执行中」工具卡片，
-      // 避免 tool_start 后流异常/中断时卡片永远停在 spinner（对抗评估 P1-1）。
+      // 本轮流式结束：清除归档停滞兜底定时器
       clearArchivingFallback();
-      // 本轮闭环收尾：轨迹归档步由 breathing 收敛为 ✓（归档为后台动作，done 即视为已落盘）
-      finalizeTrace();
-      // error 后必跟 done，此处统一收敛；切换日期清空消息区后无 is-running 卡片，调用幂等无副作用。
-      ToolCard.settleRunning(messages, '已中断');
+      // 本轮过程事件收尾：完整渲染 round-block（含 § 执行指标等 details 小节，折叠态保持）
+      renderRoundBlock(currentEvents, true);
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
       finalizeStreaming();
       // 回填本轮 roundId（启用该回答的分叉按钮；host done 消息携带）
       commitRoundId(msg.roundId);
     } else if (msg.type === 'interrupted') {
-      // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 兜底终结残留
-      // 「执行中」工具卡片 + 低扰提示「已停止生成」，区分于正常 done。
+      // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 低扰提示「已停止生成」
       clearArchivingFallback();
-      // 打断即本轮结束：轨迹停止呼吸（未完成步骤灰化，避免误导仍在执行）
-      finalizeTrace();
-      // 兜底终结残留「执行中」工具卡片（P1-1）+ 流式收尾（取消 ≠ 丢弃，保留已生成内容）
-      ToolCard.settleRunning(messages, '已中断');
+      // 打断即本轮结束：完整收尾 round-block（aborted 标记已进事件流）
+      renderRoundBlock(currentEvents, true);
+      // 流式收尾（取消 ≠ 丢弃，保留已生成内容）
       finalizeStreaming();
       // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
       commitRoundId(msg.roundId);
@@ -1416,23 +1462,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       clarifyBar.classList.add('visible');
       inputBar.hidden = true;
       clarifyInput.focus();
-    } else if (msg.type === 'memory') {
-      if (msg.action === 'recalled') {
-        // 新轮召回开始：清空上轮明细并隐藏（避免跨轮残留），再给即时反馈
-        renderRecallDetail([]);
-        showActivity('info', '已召回 ' + msg.count + ' 条记忆');
-      } else if (msg.action === 'recalled_items') {
-        // Phase 1（2026-08-17 召回可展开）：明细到达 → 渲染活动详情「本次召回」区
-        renderRecallDetail(msg.items);
-      } else if (msg.action === 'added') {
-        // 利用协议已携带的 detail.name 展示具体沉淀项（对抗评估 P2-6），
-        // 避免数据跨进程传输后在 UI 层被丢弃；无 name 时回退通用文案
-        showActivity('info', '已沉淀：' + (msg.detail?.name || '1 条记忆'));
-      }
-    } else if (msg.type === 'tool_start') {
-      ToolCard.show(messages, msg.toolCallId, msg.name, msg.args);
-    } else if (msg.type === 'tool_result') {
-      ToolCard.update(messages, msg.toolCallId, msg.name, msg.ok, msg.summary);
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.steps);
@@ -1463,16 +1492,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (!msg.ok && msg.message) {
         showActivity('info', `润色失败：${msg.message}`);
       }
-    } else if (msg.type === 'self_review') {
-      // 自审查开始：新建「自审查」独立分段（后续审查应答文本渲染目标），再更新思考块提示
-      beginReviewBlock();
-      appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
-      // 清空消息区须同时清 type=msg 消息、.tool-card 工具卡片、.self-review 自审查提示、
-      // .review-block 自审查分段、.thought-block 思考折叠块、.date-divider 日期分隔线与 .followup 建议块
+      // 清空消息区须同时清 type=msg 消息、.round-block 过程块、.date-divider 日期分隔线与 .followup 建议块
       // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .tool-card, .self-review, .review-block, .thought-block, .date-divider, .followup').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .round-block, .date-divider, .followup').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
@@ -1487,16 +1511,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         streamRenderTimer = undefined;
       }
       streamBodyRendered = false;
-      // 自审查分段状态复位：节点已随上方选择器移除，引用置空 + 累积文本清空防脏写
-      reviewBodyEl = null;
-      reviewRaw = '';
-      // 过程性状态复位：归档兜底定时器清除 + 思考块引用失效 + 日期分隔线重新计算
-      // （重放从新日期开始）
+      // 过程事件状态复位：归档兜底定时器清除 + round-block 引用失效 + 本轮缓冲清空 +
+      // 本轮身份保留给会话级标签回退（chat_role_pack 随后推送）+ 日期分隔线重新计算
       clearArchivingFallback();
-      thoughtEl = null;
+      roundBlockEl = null;
+      roundBlockHostEl = null;
+      currentEvents = [];
       lastShownDate = undefined;
-      // Phase 1：清空活动详情「本次召回」明细区（切会话/清空后不残留上轮召回来源）
-      renderRecallDetail([]);
       updateEmptyState();
     } else if (msg.type === 'history_loaded') {
       // 历史消息加载完成 → 强制滚到底部（不走吸底逻辑）

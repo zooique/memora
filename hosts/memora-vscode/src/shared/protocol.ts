@@ -1,4 +1,4 @@
-import type { ThinkingPhase } from '@zooique/memora';
+import type { ProcessEvent } from '@zooique/memora';
 
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
@@ -103,13 +103,6 @@ export type WebviewToExtensionMessage =
   | { type: 'delete_turn'; ts: string }
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
-  /**
-   * Chat Panel 切换激活角色包（历史遗留协议，2026-08-17 起无 webview 发送方）
-   *
-   * 输入区角色选择器已独立为「角色」管理视图（roles_set_active），本消息保留仅作
-   * 旧版 webview 实例的兼容兜底；新前端不再发送。
-   */
-  | { type: 'chat_set_role_pack'; name: string }
   /**
    * 角色管理面板切换激活角色包（2026-08-17 独立视图）
    *
@@ -317,8 +310,10 @@ export type ExtensionToWebviewMessage =
   /** 历史/流式 assistant 消息（历史回放用 text 完整段） */
   | { type: 'assistant'; text: string; ts?: string; roundId?: string }
   /**
-   * 流式 assistant 消息（流式输出经 chunk 拼接）
+   * 流式 assistant 消息（流式输出经 chunk 拼接，仅承载主回答正文）
    *
+   * 注（v1.5）：自审查文本不再走本通道（host 已按 text_self_review 过程事件转发，
+   * 渲染进 round-block § 自审查输出）——chunk 只负责最终答案正文。
    * guardrailBlocked：对齐内核 text chunk 的护栏阻断标记（§7.2.1 结构化信号）。
    * 仅护栏阻断的那一条 chunk 携带 true；webview 据此渲染「护栏阻断」提示条。
    */
@@ -327,12 +322,6 @@ export type ExtensionToWebviewMessage =
       content: string;
       ts?: string;
       guardrailBlocked?: boolean;
-      /**
-       * 文本阶段标识（对齐内核 TextChunkStage，宿主侧本地字面量避免跨包类型耦合）：
-       * 'self_review' = 自审查应答文本，webview 据此渲染进「自审查」独立分段，
-       * 与最终回答分离展示（透明呈现审查输出）；缺省/'answer' 为正常回答流。
-       */
-      stage?: 'answer' | 'self_review';
     }
   | {
       type: 'done';
@@ -353,21 +342,20 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'interrupted'; roundId?: string }
   /**
-   * 工具调用开始（Agent 循环的步骤，手动具象化）
+   * 过程事件（运行时单形态渲染投影，v1.5 协议纯化）
    *
-   * 由 extension host 转发内核 tool_start chunk，webview 渲染「执行中」工具卡片。
-   * 卡片默认折叠，减少视觉干扰；toolCallId 用于和 tool_result 匹配更新。
+   * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；
+   * webview 一律 append 到当前轮 events[] 由 renderRoundBlock 统一渲染（与 replay_events 同路径）。
+   * 取代原 thinking / tool_start / tool_result / self_review / memory 渲染类消息。
    */
-  | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
+  | { type: 'process_event'; event: ProcessEvent }
   /**
-   * 工具调用结束（成功/失败 + 结果摘要），更新对应卡片状态 */
-  | {
-      type: 'tool_result';
-      toolCallId: string;
-      name: string;
-      ok: boolean;
-      summary?: string;
-    }
+   * 重放批次（对 loadRoundBasedHistory 的 processEvents 整批投递，v1.5）
+   *
+   * 与 process_event 同路径：webview 把 events 一次性塞入当前轮 events[] 渲染。
+   * 按 round 交织发送（meta 先于该轮 assistant 正文写入 currentRoundMeta）。
+   */
+  | { type: 'replay_events'; roundId: string; events: ProcessEvent[] }
   /**
    * 任务看板更新（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
    *
@@ -375,25 +363,9 @@ export type ExtensionToWebviewMessage =
    * 从 agent.getCheckpoint().plan 提取当前计划快照，webview 据此渲染/刷新任务进度看板。
    * 仅当 plan 非空时推送（空计划不产生看板）。状态任一（pending/active/done/blocked）
    * 映射由 webview 转为中文标签 + 配色。只读展示，不参与 LLM 执行（薄壳装配铁律）。
+   * 任务看板归 checkpoint 执行态，不参与 processEvents 复原（见设计文档 §四）。
    */
   | { type: 'plan_update'; steps: PlanStepDto[] }
-  /**
-   * Agent 自审查轮开始（活动透明，交叉审核观察 A）
-   *
-   * 内核在自审查轮开始前 emit `selfReview` chunk（round 从 1 起），宿主原样转发。
-   * webview 渲染一条过程性提示，让用户看见 Agent 正在复核本轮产出（真实信号校验，
-   * 对齐 agent-design-philosophy §13.x 可观察契约）。仅运行时显示，不持久化、不重放，
-   * 与 tool 卡片同一"过程性反馈"语义。
-   */
-  | { type: 'self_review'; round: number }
-  /**
-   * Agent 思考阶段（对齐内核 thinking chunk，alignment-iteration.md B）
-   *
-   * 内核在回答前/后阶段产出 thinking{phase}（recalling/llm_calling/processing/archiving），
-   * 标识 Agent 正在做什么。webview 据此更新思考折叠块文案（"召回记忆中/调用模型中/处理中/归档记忆中"），
-   * 是对 status"进行中"的细化——status 管状态机，thinking 管阶段，二者职责分离。
-   */
-  | { type: 'thinking'; phase: ThinkingPhase }
   /**
    * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
    *
@@ -556,23 +528,14 @@ export type ExtensionToWebviewMessage =
       constraints: string[];
     }
   /**
-   * 记忆活动提示（任务 D 可观测出口）
-   *
-   * 由 extension host 监听 Agent 的 memoryRecalled / memoryAdded 事件后转发，
-   * 让开发者「看见」跨会话记忆在工作（主动可见，非黑盒）。
-   * action: 'recalled' 表示本轮召回 N 条记忆；'added' 表示本轮沉淀记忆。
-   */
-  | { type: 'memory'; action: 'recalled'; count: number }
-  /** 召回明细（recall chunk 转发）：补充 recalled 的即时反馈，展示本轮召回的具体记忆来源 */
-  | { type: 'memory'; action: 'recalled_items'; items: MemoryRecallItemDto[] }
-  | { type: 'memory'; action: 'added'; count: number; detail?: { id: string; source: string; name: string } }
-  /**
    * 通用提示条（低扰 info / 错误级 error）
    *
    * 由 extension host 转发的非消息区通知，webview 用同一提示条分级呈现：
    *   - info：记忆召回/沉淀、上下文截断、记忆冲突等低扰信息（短暂显示）
    *   - error：会话异常/恢复失败/guardrail 失败等错误级反馈（醒目、停留更久）
    * 统一走提示条而不插入消息区，避免污染对话历史（功能→UI 对齐排雷的雷-4 修正）。
+   * 注（v1.5）：运行时的「已召回 N 条 / 已沉淀：xx」提示由 webview 解析 process_event 本地派生，
+   * 不经本消息通道（记忆活动已收口到 ProcessEvent 单源）。
    */
   | { type: 'notice'; level: 'info' | 'error'; message: string }
   /**
@@ -796,18 +759,6 @@ export interface RoleStrategyIndicatorDto {
   summaryFocus?: string;
   /** 单轮输出上限（token，0=不限制） */
   outputLimit?: number;
-}
-
-/** 召回记忆条目（Phase 1，2026-08-17：召回可展开，对齐内核 RecalledMemorySummary） */
-export interface MemoryRecallItemDto {
-  /** 记忆唯一标识（source:name 格式） */
-  id: string;
-  /** 记忆可读名称 */
-  name: string;
-  /** 来源标签（如 'round-summary'、'profile'、'rule'） */
-  source: string;
-  /** 相似度分数（0-1） */
-  score: number;
 }
 
 /** Follow-up 建议条目（T2，2026-08-17：回复后关联推荐）

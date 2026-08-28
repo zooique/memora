@@ -1,9 +1,10 @@
 /**
- * chatView 测试 — clear_ok 消息区清理（对抗评估 P1-1 锁定）
+ * chatView 测试 — clear_ok 消息区清理 + 过程事件单形态（v1.5）
  *
- * clear_ok 必须同时清 type=msg 消息与 .tool-card 工具卡片，否则切换历史/清空后
- * 旧工具卡片残留 DOM（P1-1 修复）。本测试用 jsdom 环境 + 注入 mock acquireVsCodeApi，
- * 直接通过 createChatView 工厂驱动真实消息分发，锁定清理行为。
+ * clear_ok 必须同时清 type=msg 消息与 .round-block 过程块，否则切换历史/清空后
+ * 旧过程块残留 DOM（P1-1 修复）。渲染层已收敛为单一形态：process_event（运行时增量）
+ * 与 replay_events（重放整批）汇入同一 events[]，由 renderRoundBlock 统一渲染
+ * （SSOT：不再有 tool-card / review-block / thought-block 独立卡片）。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
@@ -25,7 +26,6 @@ const HTML = `
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
     <div id="activityList" class="activity-list"></div>
-    <div id="recallDetail" class="recall-detail" hidden></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
   <div id="messages">
@@ -112,24 +112,24 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.hidden).toBe(true);
   });
 
-  it('clear_ok 同时清空 .msg 与 .tool-card 残留，并恢复空状态', () => {
+  it('clear_ok 同时清空 .msg 与 .round-block 残留，并恢复空状态', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
     const emptyState = document.getElementById('emptyState') as HTMLElement;
 
-    // 预先塞入一条消息 + 一张工具卡片（模拟历史回放后的残留）
+    // 预先塞入一条消息 + 一个过程块（模拟历史回放后残留）
     const msg = document.createElement('div');
     msg.className = 'msg assistant';
     messages.appendChild(msg);
-    const card = document.createElement('div');
-    card.className = 'tool-card is-failed';
-    messages.appendChild(card);
-    expect(messages.querySelectorAll('.msg, .tool-card')).toHaveLength(2);
+    const block = document.createElement('details');
+    block.className = 'round-block';
+    messages.appendChild(block);
+    expect(messages.querySelectorAll('.msg, .round-block')).toHaveLength(2);
 
     dispatch({ type: 'clear_ok' });
 
-    // P1-1 修复锁定：两类节点都必须被清空，且空状态提示恢复显示
-    expect(messages.querySelectorAll('.msg, .tool-card')).toHaveLength(0);
+    // 两类节点都必须被清空，且空状态提示恢复显示
+    expect(messages.querySelectorAll('.msg, .round-block')).toHaveLength(0);
     expect(emptyState.hidden).toBe(false);
   });
 
@@ -141,23 +141,28 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(messages.querySelector('#emptyState')).not.toBeNull();
   });
 
-  it('self_review 渲染过程性提示到思考折叠块（自审查轮可见性，ui-redesign.md §7.1）', () => {
+  it('self_review 过程事件进入 round-block § 自审查输出（v1.5 单形态）', () => {
     mountChatView();
-    dispatch({ type: 'self_review', round: 1 });
-    const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
-    expect(tb).not.toBeNull();
-    expect(tb.textContent).toContain('自审查轮 1');
-    expect(tb.open).toBe(true);
+    // meta 开新轮 → 正文块（挂载 round-block）→ 自审查过程事件 → 收尾渲染
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '回答' });
+    dispatch({ type: 'process_event', event: { type: 'self_review', seq: 2, ts: '', payload: { round: 1 } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(rb.textContent).toContain('自审查轮 1');
+    // summary 也有审查计数
+    expect(rb.textContent).toContain('审查×1');
   });
 
-  it('流式 chunk 在工具卡片插入后仍追加到同一条 assistant 消息（P0-1 锚点）', () => {
+  it('流式 chunk 与 process_event 交错后仍追加到同一条 assistant 消息（P0-1 锚点）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
-    // 模拟「文本 → 工具卡 → 文本」循环：工具卡片插入不应拆散同一条回复
+    // 模拟「文本 → 工具过程事件 → 文本」循环：过程事件到达不应拆散同一条回复
     dispatch({ type: 'chunk', content: '思考第一段' });
-    dispatch({ type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}' });
-    dispatch({ type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 1, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' } } });
     dispatch({ type: 'chunk', content: '思考第二段' });
     dispatch({ type: 'chunk', content: '思考第三段' });
     // 流式结束（触发最终收敛渲染，节流渲染未到时也由 done 兜底）
@@ -226,27 +231,26 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(emptyState.hidden).toBe(true);
   });
 
-  it('thinking 阶段更新思考折叠块文案 + 轨迹默认折叠（alignment-iteration.md B）', () => {
+  it('thinking 过程事件进入 round-block § 过程轨迹且 summary 默认可见（alignment-iteration.md B）', () => {
     mountChatView();
-    // 生成中先有 thinking 折叠块（默认折叠，不撑开挤压内容——对齐 VS Code Chat 折叠惯例）
-    dispatch({ type: 'thinking', phase: 'recalling' });
-    const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
-    expect(tb).not.toBeNull();
-    expect(tb.textContent).toContain('召回记忆中');
-    expect(tb.open).toBe(false);
-    // llm_calling 阶段切换文案（内核 P2 优化：LLM 调用前 emit thinking）
-    dispatch({ type: 'thinking', phase: 'llm_calling' });
-    expect(tb.textContent).toContain('调用模型中');
-    expect(tb.open).toBe(false);
-    // 处理阶段切换文案
-    dispatch({ type: 'thinking', phase: 'processing' });
-    expect(tb.textContent).toContain('处理中');
-    expect(tb.open).toBe(false);
-    dispatch({ type: 'thinking', phase: 'archiving' });
-    expect(tb.textContent).toContain('归档记忆中');
-    expect(tb.open).toBe(false);
-    // 归档停滞兜底定时器由 done 清除（避免测试残留 15s 定时器）
+    // 生成中先有 meta → 正文块挂载 round-block；thinking 事件流式中仅刷新 summary（is-running）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '回答' });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
+    let rb = document.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rb).not.toBeNull();
+    // 流式中：summary 显示执行过程标记，details 未渲染
+    expect(rb.classList.contains('is-running')).toBe(true);
+    // 收尾后完整渲染 § 过程轨迹（阶段文案按序排列），summary 默认折叠
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'archiving' } } });
     dispatch({ type: 'done' });
+    rb = document.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rb.classList.contains('is-running')).toBe(false);
+    expect(rb.open).toBe(false);
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('召回记忆中');
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('调用模型中');
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('归档记忆中');
   });
 
   it('metrics 渲染 token 用量与记忆治理字段（alignment-iteration.md D）', () => {
@@ -488,7 +492,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(activityBar.textContent).toContain('会话异常');
     expect(activityBar.className).toContain('error');
     // 错误显示期间来低扰 info → 不覆盖主条，仅进历史
-    dispatch({ type: 'memory', action: 'recalled', count: 2 });
+    dispatch({ type: 'process_event', event: { type: 'recall', seq: 1, ts: '', payload: { memories: [{ id: 'a', name: 'm1', source: 'round-summary', score: 0.9 }, { id: 'b', name: 'm2', source: 'profile', score: 0.5 }] } } });
     expect(activityBar.textContent).toContain('会话异常'); // 主条仍保持错误
     expect(activityBar.className).toContain('error');
     // 低扰信息进入详情历史（不丢失）
@@ -502,7 +506,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     mountChatView();
     const list = document.getElementById('activityList') as HTMLElement;
     dispatch({ type: 'retry', attempt: 1, maxRetries: 3, delayMs: 200, error: 'ECONNRESET' });
-    dispatch({ type: 'memory', action: 'added', count: 1, detail: { id: 'm1', source: 'round-summary', name: '决策：数据库用 PG' } });
+    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 1, ts: '', payload: { id: 'm1', source: 'round-summary', name: '决策：数据库用 PG' } } });
     dispatch({ type: 'paused' });
     // 历史累积三条，全部可见（不互相覆盖丢失）
     expect(list.textContent).toContain('重试 1/3');
@@ -513,58 +517,83 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
   });
 });
 
-describe('chatView 召回可展开（Phase 1，2026-08-17：明细进活动详情）', () => {
-  it('recalled_items 渲染活动详情「本次召回」明细区（name/source/score，textContent 防注入）', () => {
+describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛）', () => {
+  /** 构造一个 meta（开新轮，随后 round-block 挂载） */
+  function beginRound(): void {
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+  }
+
+  it('process_event 增量渲染 round-block：summary 计数 + details 各小节（召回/工具/已沉淀/执行指标）', () => {
     mountChatView();
-    const detail = document.getElementById('activityDetail') as HTMLElement;
-    const recall = document.getElementById('recallDetail') as HTMLElement;
-    expect(recall.hidden).toBe(true);
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '记忆A', source: 'round-summary', score: 0.9 }] } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
+    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 5, ts: '', payload: { id: 'm1', source: 'round-summary', name: '设计约束' } } });
+    dispatch({ type: 'process_event', event: { type: 'metrics', seq: 6, ts: '', payload: { durationMs: 62000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, recallCount: 1, success: true } } });
+    dispatch({ type: 'done' });
+
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    // round-block 挂在本轮 assistant 块内（label 之后、正文之前）
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(assistant.contains(rb)).toBe(true);
+    // summary：耗时（metrics）+ 计数（工具×1 · 记忆×1）
+    const summary = rb.querySelector('.round-block__summary') as HTMLElement;
+    expect(summary.textContent).toContain('耗时 1m 2s');
+    expect(summary.textContent).toContain('工具×1');
+    expect(summary.textContent).toContain('记忆×1');
+    // details 各小节
+    const details = rb.querySelector('.round-block__details') as HTMLElement;
+    expect(details.textContent).toContain('记忆A');
+    expect(details.textContent).toContain('round-summary · 90%');
+    expect(details.textContent).toContain('read_file (成功)');
+    expect(details.textContent).toContain('读取成功');
+    expect(details.textContent).toContain('设计约束');
+    expect(details.textContent).toContain('Tokens：入 100 / 出 200');
+    expect(details.textContent).toContain('完成：是');
+  });
+
+  it('meta 驱动本轮身份：该轮 assistant 消息挂对应角色/模型标签（与会话级 chat_role_pack 分离）', () => {
+    mountChatView();
+    // 会话级角色（顶栏）先推一个"当前角色"
+    dispatch({ type: 'chat_role_pack', rolePack: '代码审查员' });
+    beginRound(); // meta.role = 文档设计师
+    const label = document.querySelector('.msg.assistant .msg-ai-label') as HTMLElement;
+    expect(label.textContent).toContain('文档设计师');
+    expect(label.textContent).toContain('deepseek-chat');
+    // 会话级顶栏不被 meta 覆盖（仍是 chat_role_pack 推的角色）
+    const badge = document.getElementById('currentRoleBadge') as HTMLElement;
+    expect(badge.textContent).toBe('代码审查员');
+  });
+
+  it('replay_events 整批渲染与 process_event 同路径（重放 = 运行时同一渲染函数）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '历史回答' });
     dispatch({
-      type: 'memory',
-      action: 'recalled_items',
-      items: [
-        { id: 'round-summary:记忆A', name: '记忆A', source: 'round-summary', score: 0.9 },
-        { id: 'profile:记忆B', name: '记忆B', source: 'profile', score: 0.42 },
+      type: 'replay_events',
+      roundId: 'r1',
+      events: [
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧记忆', source: 'round-summary', score: 0.6 }] } },
+        { type: 'aborted', seq: 3, ts: '', payload: { reason: 'User cancelled the conversation' } },
       ],
     });
-    // 明细区可见 + 展开标题 + 每条 name/source/score
-    expect(recall.hidden).toBe(false);
-    expect(recall.textContent).toContain('本次召回 2 条');
-    const rows = recall.querySelectorAll('.recall-detail__row');
-    expect(rows).toHaveLength(2);
-    expect(rows[0].textContent).toContain('记忆A');
-    expect(rows[0].textContent).toContain('round-summary · 90%');
-    expect(rows[1].textContent).toContain('记忆B');
-    expect(rows[1].textContent).toContain('profile · 42%');
-    // 活动详情折叠区因明细而显示
-    expect(detail.hidden).toBe(false);
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb?.textContent).toContain('旧记忆');
+    expect(rb?.textContent).toContain('已停止');
+    expect(rb?.textContent).toContain('记忆×1');
   });
 
-  it('新轮 recalled 清空上轮明细（不跨轮残留）', () => {
+  it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
-    dispatch({ type: 'memory', action: 'recalled_items', items: [{ id: 'a:1', name: '旧', source: 'a', score: 0.8 }] });
-    expect((document.getElementById('recallDetail') as HTMLElement).hidden).toBe(false);
-    // 新一轮召回开始（仅 count，明细未到）→ 明细区隐藏
-    dispatch({ type: 'memory', action: 'recalled', count: 1 });
-    const recall = document.getElementById('recallDetail') as HTMLElement;
-    expect(recall.hidden).toBe(true);
-    expect(recall.textContent).toBe('');
-  });
-
-  it('recalled_items 空数组不显示明细区（零残留）', () => {
-    mountChatView();
-    dispatch({ type: 'memory', action: 'recalled_items', items: [] });
-    expect((document.getElementById('recallDetail') as HTMLElement).hidden).toBe(true);
-  });
-
-  it('clear_ok 清空活动详情「本次召回」明细区（切换会话不残留）', () => {
-    mountChatView();
-    dispatch({ type: 'memory', action: 'recalled_items', items: [{ id: 'a:1', name: '旧', source: 'a', score: 0.8 }] });
-    const recall = document.getElementById('recallDetail') as HTMLElement;
-    expect(recall.hidden).toBe(false);
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧', source: 'a', score: 0.8 }] } } });
+    expect(document.querySelector('.round-block')).not.toBeNull();
     dispatch({ type: 'clear_ok' });
-    expect(recall.hidden).toBe(true);
-    expect(recall.textContent).toBe('');
+    // DOM 与引用状态同步清空（下一轮 meta 重新挂载）
+    expect(document.querySelector('.round-block')).toBeNull();
   });
 });
 
@@ -693,36 +722,21 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     expect(document.querySelectorAll('.msg.assistant .memory-tag').length).toBe(1);
   });
 
-  it('P2：thinking 阶段渲染三阶段执行轨迹，phase 推进状态正确（执行过程可见）', () => {
+  it('interrupted（aborted 事件）→ round-block § 已停止 标记渲染，半截正文保留', () => {
     mountChatView();
-    // 阶段 1：召回进行中，打磨/归档待执行
-    dispatch({ type: 'thinking', phase: 'recalling' });
-    const tb = document.querySelector('.thought-block') as HTMLDetailsElement;
-    expect(tb).not.toBeNull();
-    const marks = () => [...tb.querySelectorAll('.trace-step')].map((el) => el.className);
-    expect(marks()[0]).toContain('active');
-    expect(marks()[1]).toContain('pending');
-    expect(marks()[2]).toContain('pending');
-    // 阶段 1.5：召回完成、llm_calling 归属于 Act 阶段（与 processing 同轨迹位置）
-    dispatch({ type: 'thinking', phase: 'llm_calling' });
-    expect(marks()[0]).toContain('done');
-    expect(marks()[1]).toContain('active');
-    expect(marks()[2]).toContain('pending');
-    // 阶段 2：召回完成、打磨进行中
-    dispatch({ type: 'thinking', phase: 'processing' });
-    expect(marks()[0]).toContain('done');
-    expect(marks()[1]).toContain('active');
-    // 阶段 3：打磨完成、归档进行中
-    dispatch({ type: 'thinking', phase: 'archiving' });
-    expect(marks()[1]).toContain('done');
-    expect(marks()[2]).toContain('active');
-    // 轮次收尾 done：抓轨迹全部收敛为 ✓（归档步不再停留在 active 呼吸闪烁）
-    dispatch({ type: 'done' });
-    for (const m of marks()) expect(m).toContain('done');
-    expect(marks().every((m) => m.includes('done'))).toBe(true);
-    // 轨迹 mark 文本全部为 ✓
-    const markTexts = [...tb.querySelectorAll('.trace-step__mark')].map((el) => el.textContent);
-    expect(markTexts).toEqual(['✓', '✓', '✓']);
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '半截回答' });
+    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'User cancelled the conversation' } } });
+    dispatch({ type: 'interrupted', roundId: 'r1' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(rb.textContent).toContain('已停止');
+    expect(rb.textContent).toContain('User cancelled the conversation');
+    // 收尾即停止呼吸（is-running 收敛）
+    expect(rb.classList.contains('is-running')).toBe(false);
+    // 半截正文保留（取消 ≠ 丢弃）
+    const body = document.querySelector('.msg.assistant .msg-body');
+    expect(body?.textContent?.trim()).toBe('半截回答');
   });
 
   it('P3：空状态标题/提示随激活角色包动态生成（切换角色不错位）', () => {

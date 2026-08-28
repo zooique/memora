@@ -21,7 +21,9 @@ import {
   getSessionDisplayName,
   type Agent,
   type AgentChunk,
+  type IRoundStore,
   type ISessionStore,
+  type ProcessEvent,
   type SessionMeta,
   type WriteConfirmationRequest,
   type SessionView,
@@ -35,15 +37,33 @@ import { createProvider } from '../../extension/host/llmConfig.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
-import { toolCardStyles } from '../styles/toolCard.js';
 import { stripDocContextPrefix } from '../helpers/docContext.js';
-import { ACTIVE_ROLE_PACK_KEY } from '../../shared/constants.js';
 import { listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM（对抗评估 P1-7） */
 const MAX_HISTORY_MESSAGES = 200;
+
+/** 历史回放最大轮数（round-based 模式，v1.5）：按完整 round 截断，杜绝「正文有、过程无」的半轮不对称 */
+const MAX_HISTORY_ROUNDS = 60;
+
+/**
+ * 单轮重放视图（v1.5 交织重放）
+ *
+ * 正文（user/assistant）与过程事件（processEvents）同源同轮——同一 Round 文件内读取，
+ * 由 sendRoundView 按 §3.7 时序发送（user → meta → 其余 replay_events → assistant）。
+ */
+interface ReplayRound {
+  /** 问答闭环 ID */
+  roundId: string;
+  /** 用户消息（缺省 = 该轮无用户正文，如 resume 轮） */
+  user?: { content: string; ts?: string };
+  /** AI 消息（仅 complete 轮有） */
+  assistant?: { content: string; ts?: string };
+  /** 该轮过程事件（Round.processEvents；无过程数据则空数组，只回放正文） */
+  processEvents: ProcessEvent[];
+}
 
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
 const MAX_DOC_CONTEXT_CHARS = 12000;
@@ -110,13 +130,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 当前激活角色包（对话面板承载的定位角色；装配时由 extension 注入，切换时持久化） */
   private _activeRolePack: string | undefined;
   /**
-   * vscode 全局状态（2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
-   *
-   * 由 extension 注入（setGlobalState）。角色包切换成功后写入，重启后恢复用户选择。
-   * 未注入时静默跳过（降级为不持久化，保持向后兼容）。
-   */
-  private _globalState: vscode.Memento | undefined;
-  /**
    * 当前活跃会话标识（YYYY-MM-DD-sessionName，ADR-024 会话标题层）
    *
    * 宿主从「按天 main 归档」升级为「手动创建会话」后，当前会话不再固定为
@@ -165,6 +178,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 未注入时仅支持 legacy 模式（向后兼容）。
    */
   private _viewLoader: WorkspaceSessionViewLoader | undefined;
+  /**
+   * 过程事件落盘目标（Round 存储，v1.5 单文件内聚）
+   *
+   * 由 extension 注入（与 viewLoader 同一 WorkspaceRoundStore 单例）。
+   * 流结束后「读 Round → 附加 processEvents → save」，生命周期随 Round 原子一致
+   * （删 round 即删事件、分叉即共享、截断即覆盖）。
+   */
+  private _eventLogRoundStore: IRoundStore | undefined;
+  /** 当前激活 Provider 的显示名（meta 事件 llm 字段来源，随 pushProviders 刷新，SSOT 与模型下拉同源） */
+  private _activeProviderDisplayName = '';
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -200,21 +223,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._viewLoader = viewLoader;
   }
 
+  /**
+   * 注入过程事件落盘目标（Round 存储，v1.5）
+   *
+   * @param roundStore 工作区 Round 存储实例（extension 与 sessionStore/viewLoader 共享同一单例）
+   */
+  public setRoundStore(roundStore: IRoundStore): void {
+    this._eventLogRoundStore = roundStore;
+  }
+
   /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
   public setAgentFactory(getAgent: (projectPath: string) => Promise<Agent>): void {
     this._getAgent = getAgent;
-  }
-
-  /**
-   * 注入 vscode 全局状态（2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
-   *
-   * 由 extension.ts 注入 context.globalState，供角色包切换时持久化激活态。
-   * 用户级而非工作区级：角色选择是用户偏好，跨项目共享（存储层级收敛）。
-   *
-   * @param globalState vscode 全局状态 Memento
-   */
-  public setGlobalState(globalState: vscode.Memento): void {
-    this._globalState = globalState;
   }
 
   /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
@@ -410,9 +430,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         void this.deleteTurnFrom(msg.ts);
       } else if (msg.type === 'chat_set_provider') {
         void this.handleSetProvider(msg.name);
-      } else if (msg.type === 'chat_set_role_pack') {
-        // 兼容兜底：旧版 webview 实例（含角色选择器）仍可能发送；新前端已走 roles_set_active
-        void this.handleSetRolePack(msg.name);
       } else if (msg.type === 'stop') {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
         this.handleStop();
@@ -1113,11 +1130,30 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 清空 webview 消息区并重放当前会话历史 + 刷新会话标题 */
   private replayCurrentSession(): void {
     this.post({ type: 'clear_ok' });
-    const history = this.loadHistory();
-    for (const m of history) {
-      this.post({ type: m.role, text: m.content, ts: m.ts, roundId: m.roundId });
-    }
+    this.replayHistory();
     this.post({ type: 'session_title', title: this.currentSessionTitle() });
+  }
+
+  /**
+   * 重放会话消息（round-based 交织 / legacy 扁平，统一入口，v1.5）
+   *
+   * round-based 模式按轮交织发送：正文与过程事件同源同轮（§3.7 时序：user →
+   * meta → 其余 replay_events → assistant），webview 与运行时共用同一渲染函数。
+   * 读取失败不阻塞面板展示（SSOT 不藏错，避免「历史空白」静默吞因）。
+   */
+  private replayHistory(): void {
+    try {
+      if (this._viewLoader) {
+        this.sendRoundView(this.loadRoundBasedHistory());
+        return;
+      }
+      const history = this.loadMessagesHistory();
+      for (const m of history) {
+        this.post({ type: m.role, text: m.content, ts: m.ts });
+      }
+    } catch (err) {
+      console.warn('Memora 加载会话历史失败', err);
+    }
   }
 
   /** 仅渲染 HTML 骨架（历史/Provider 在 webview 就绪后经 replaySession 回放）；
@@ -1141,11 +1177,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private replaySession(): void {
     if (!this._view) return;
-    // 恢复当前会话历史消息（ADR-024：只回放 _currentSessionId）
-    const history = this.loadHistory();
-    for (const m of history) {
-      this.post({ type: m.role, text: m.content, ts: m.ts });
-    }
+    // 恢复当前会话历史消息（ADR-024：只回放 _currentSessionId；round-based 按轮交织重放，v1.5）
+    this.replayHistory();
     // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
     // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
     this.post({ type: 'history_loaded' });
@@ -1291,6 +1324,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const providers = await this._providerStore.listMasked();
       const activeName = this._providerStore.getActiveName();
       const list = providers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }));
+      // meta 事件 llm 字段同源：活跃 Provider 显示名（SSOT 与模型下拉同一来源）
+      this._activeProviderDisplayName = list.find((p) => p.name === activeName)?.displayName ?? activeName ?? '';
       this.post({ type: 'chat_providers', providers: list, activeName });
     } catch {
       // 推送失败不阻塞主流程
@@ -1379,34 +1414,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 处理用户切换激活角色包（输入区角色下拉，alignment-iteration.md A3）
-   *
-   * 走内核「单一切换入口」agent.switchRolePack(name)：内部完成
-   * RolePackManager.activate + 发射 rolePackSwitched（onRolePackSwitched 已绑定，
-   * 同步 _activeRolePack + 转发 chat_role_pack，UI 徽章 / AI 消息标签即时刷新）
-   * + 刷新 AgentLoop 前缀（下一次对话即用新角色包 prompt）。切换失败（角色不存在）
-   * 时仅低扰提示，不误导用户。
-   *
-   * 切换成功且已注入 globalState 时，将激活角色包写入持久化（用户级，重启后恢复用户选择，
-   * 2026-08-15 角色包状态持久化，2026-08-17 由 workspaceState 升为用户级）；未注入则静默跳过。
-   *
-   * @param name 用户选中的角色包名
-   */
-  private handleSetRolePack(name: string): void {
-    const agent = this._agent;
-    if (!agent) return;
-    const ok = agent.switchRolePack(name);
-    // 刷新角色包列表（active 高亮；切换成功时 personaSwitched 已刷新徽章文案）
-    this.pushRolePacks();
-    if (ok) {
-      // 持久化激活角色包（用户级偏好，跨项目共享）
-      this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
-    } else {
-      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
-    }
-  }
-
-  /**
    * 处理用户切换激活 Provider（底部模型下拉框）
    *
    * 除持久化激活态外，还做「热生效」：复用装配工厂 createProvider（SSOT，
@@ -1447,32 +1454,73 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 从 sessionStore 恢复当前会话的完整历史（user + assistant）
+   * 从 sessionStore 恢复当前会话的完整历史（round-based 模式，v1.5 交织重放）
    *
-   * 支持双存储模式：
-   * - legacy 模式：从消息列表加载（当前默认）
-   * - round-based 模式（唯一模式）：从 Round ID 列表经 RoundStore 展开加载（新设计）
-   *
-   * 恢复策略：
-   *   - user 消息：回放剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
+   * 每轮恢复策略：
+   *   - user 消息：剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
    *     不属于用户实际输入，仅用于 LLM 上下文，不应回显）。
-   *   - assistant 消息：回放上一次流式输出的完整内容（避免拼接不完整流）。
+   *   - assistant 消息：完整内容（避免拼接不完整流；仅 complete 状态恢复）。
+   *   - processEvents：该轮过程事件（正文与过程同源同轮，与运行时同一渲染数据源）。
    *   - 内核注入的 `<user_input>` 系统消息跳过（由内核 appendUser 持久化的 user 消息替代）。
    *
-   * @returns 带 role/timestamp/roundId 标记的会话消息列表（按时间升序）
+   * @returns 按轮分组的重放视图（按完整 round 截断，杜绝半轮不对称）
    */
-  private loadHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
-    try {
-      // 优先用视图加载器（聚合 SessionView + RoundStore，信息最全）
-      if (this._viewLoader) {
-        return this.loadRoundBasedHistory();
-      }
-      // 无 viewLoader 时回退到 ISessionStore.loadMessages（round-based 展开 roundIds→Rounds）
-      return this.loadMessagesHistory();
-    } catch (err) {
-      // 读取失败不阻塞面板展示，但需记录（SSOT 不藏错，避免「历史空白」静默吞因）
-      console.warn('Memora 加载会话历史失败', err);
+  private loadRoundBasedHistory(): ReplayRound[] {
+    if (!this._viewLoader) {
+      // 没有 viewLoader 时返回空数组
+      console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
       return [];
+    }
+
+    try {
+      const view: SessionView = this._viewLoader.loadView(this._currentSessionId);
+      const rounds: ReplayRound[] = [];
+
+      // 从 SessionView 中提取消息并按轮分组（正文与过程事件同源同轮，v1.5 单文件内聚）
+      for (const round of view.rounds) {
+        rounds.push({
+          roundId: round.id,
+          user: round.userMessage?.content
+            ? { content: stripDocContextPrefix(round.userMessage.content), ts: round.userMessage.timestamp }
+            : undefined,
+          assistant:
+            round.assistantMessage?.content && round.status === 'complete'
+              ? { content: round.assistantMessage.content, ts: round.assistantMessage.timestamp }
+              : undefined,
+          // 过程事件从 Round 同文件读取；无 processEvents（纯问答轮/异常轮）为空数组
+          processEvents: this._eventLogRoundStore?.getById(round.id)?.processEvents ?? [],
+        });
+      }
+
+      // 按完整 round 截断（杜绝「正文有、过程无」半轮不对称，v1.5）
+      return rounds.slice(-MAX_HISTORY_ROUNDS);
+    } catch (err) {
+      console.warn('Memora 加载 round-based 会话历史失败', err);
+      return [];
+    }
+  }
+
+  /**
+   * 按轮交织发送重放视图（v1.5，§3.7 时序）
+   *
+   * 每轮：user → meta（process_event 单独先行，写入本轮身份）→ 其余 replay_events →
+   * assistant 正文（此块挂 round-block）。meta 先于正文到达，保证该轮 AI 消息标签挂对角色/模型；
+   * 无过程事件（纯问答轮/旧数据）则仅回放正文（不产生 round-block）。
+   */
+  private sendRoundView(rounds: ReplayRound[]): void {
+    for (const r of rounds) {
+      if (r.user) this.post({ type: 'user', text: r.user.content, ts: r.user.ts });
+      const metaEv = r.processEvents[0]?.type === 'meta' ? r.processEvents[0] : undefined;
+      if (metaEv) {
+        this.post({ type: 'process_event', event: metaEv });
+        const rest = r.processEvents.slice(1);
+        if (rest.length > 0) this.post({ type: 'replay_events', roundId: r.roundId, events: rest });
+      } else if (r.processEvents.length > 0) {
+        this.post({ type: 'replay_events', roundId: r.roundId, events: r.processEvents });
+      }
+      if (r.assistant) {
+        this.post({ type: 'assistant', text: r.assistant.content, ts: r.assistant.ts, roundId: r.roundId });
+      }
     }
   }
 
@@ -1505,56 +1553,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
     // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条
     return result.slice(-MAX_HISTORY_MESSAGES);
-  }
-
-  /**
-   * 加载 round-based 模式的会话历史
-   *
-   * 使用 SessionViewLoader 从 Round ID 列表加载完整对话视图
-   */
-  private loadRoundBasedHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
-    if (!this._viewLoader) {
-      // 没有 viewLoader 时返回空数组
-      console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
-      return [];
-    }
-
-    try {
-      const view: SessionView = this._viewLoader.loadView(this._currentSessionId);
-      const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] = [];
-
-      // 从 SessionView 中提取消息，并关联 roundId
-      // 遍历 rounds，提取每个 round 的 user + assistant 消息
-      for (const round of view.rounds) {
-        const roundId = round.id;
-        // User message
-        if (round.userMessage?.content) {
-          result.push({
-            role: round.userMessage.role === 'user' ? 'user' : 'user',
-            content: round.userMessage.role === 'user' ? stripDocContextPrefix(round.userMessage.content) : round.userMessage.content,
-            ts: round.userMessage.timestamp,
-            roundId,
-          });
-        }
-        // Assistant message（仅 complete 状态）
-        if (round.assistantMessage?.content && round.status === 'complete') {
-          result.push({
-            role: 'assistant',
-            content: round.assistantMessage.content,
-            ts: round.assistantMessage.timestamp,
-            roundId,
-          });
-        }
-      }
-
-      // 按时间升序
-      result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
-      // 上限保护
-      return result.slice(-MAX_HISTORY_MESSAGES);
-    } catch (err) {
-      console.warn('Memora 加载 round-based 会话历史失败', err);
-      return [];
-    }
   }
 
   /**
@@ -1741,15 +1739,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'need_clarify', questions });
     };
     this._agent.on('questionPending', onPendingQuestion);
-    // 监听记忆事件 → 转发到 webview 展示记忆条（recalled：「想起」/ added：「已沉淀」）
-    // 对齐 kernel 对称事件：memoryRecalled {count,query} / memoryAdded {id,source,name}
-    const onMemoryRecalled = (info: { count: number }) => {
-      this.post({ type: 'memory', action: 'recalled', count: info.count });
-    };
+    // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（v1.5 单源，
+    // 渲染/落盘同一份 ProcessEvent；「已召回 N 条」由 webview 解析 recall 事件本地派生，不再单发消息）
     const onMemoryAdded = (info: { id: string; source: string; name: string }) => {
-      this.post({ type: 'memory', action: 'added', count: 1, detail: info });
+      emitEvent('memory_added', { id: info.id, name: info.name, source: info.source });
     };
-    this._agent.on('memoryRecalled', onMemoryRecalled);
     this._agent.on('memoryAdded', onMemoryAdded);
 
     // P0-2：进入生成状态（webview 展示加载动画 + 禁用输入）
@@ -1758,6 +1752,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this._streaming = true;
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
     const firstChunkTs = new Date().toISOString();
+    // 流开始时刻与 token 累计快照（metrics 事件需本轮增量：结束减开始）
+    const flowStartMs = Date.now();
+    const metricsBefore = {
+      in: this._agent.getMetrics().llm.totalInputTokens,
+      out: this._agent.getMetrics().llm.totalOutputTokens,
+    };
+    // 过程事件缓冲 + 单形态投影（v1.5 协议纯化）：流式期间攒内存、逐条 post process_event，
+    // 流结束附到 Round.processEvents 落盘（宿主流式期间拿不到当前 roundId，见设计文档 §3.5）
+    const events: ProcessEvent[] = [];
+    let seq = 0;
+    /** 构造过程事件：进缓冲（落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
+    const emitEvent = (typeKey: ProcessEvent['type'], payload: ProcessEvent['payload']): void => {
+      seq += 1;
+      const event = { type: typeKey, seq, ts: new Date().toISOString(), payload } as ProcessEvent;
+      events.push(event);
+      this.post({ type: 'process_event', event });
+    };
+    // 首条 meta：本轮回答身份（角色/模型显示名，从 host 状态读取，SSOT 与消息标签同源）
+    {
+      const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
+      const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
+      emitEvent('meta', { role, llm });
+    }
     // Phase 4：暂停标记——当轮是否收到 paused chunk（软暂停状态）
     let pausedOnPurpose = false;
     try {
@@ -1770,15 +1787,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 导致内核 act() 的中断保存（appendAssistant 半截内容 + roundId 登记）永不执行，
           // 表现为「中断后的问答闭环不落盘」。必须让流自然走完（aborted 是末块，后续无 text）。
           // 中断通知统一由本方法末尾按 controller.signal.aborted 发出。
+          emitEvent('aborted', { reason: chunk.reason });
           continue;
         }
-        // Phase 1：召回明细转发（recall chunk 不走 memoryRecalled 事件，chunk 通道携带
-        // 完整的 id/name/score/source，映射为 recalled_items 可展开展示）
+        // 召回明细 → 过程事件（webview 据此渲染 § 召回记忆 + 瞬时「已召回 N 条」提示）
         if (chunk.type === 'recall' && chunk.memories.length > 0) {
-          this.post({
-            type: 'memory',
-            action: 'recalled_items',
-            items: chunk.memories.map((m) => ({
+          emitEvent('recall', {
+            memories: chunk.memories.map((m) => ({
               id: m.id,
               name: m.name,
               source: m.source,
@@ -1788,34 +1803,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           continue;
         }
         if (chunk.type === 'text' && chunk.content) {
-          // 转发 chunk（护栏已移除，chunk 不再携带 guardrailBlocked 标记）。
-          // stage 透传：'self_review' 自审查应答 → webview 独立分段渲染（审查输出与最终回答分离）
-          this.post({
-            type: 'chunk',
-            content: chunk.content,
-            ts: firstChunkTs,
-            stage: chunk.stage,
-          });
+          // 自审查输出（stage='self_review'）→ 过程事件（渲染进折叠区 § 自审查输出，不进正文流）
+          if (chunk.stage === 'self_review') {
+            emitEvent('text_self_review', { content: chunk.content });
+            continue;
+          }
+          // 主回答正文 → 照常走 chunk 消息（markdown 渲染，属内容轨，不属于过程事件）
+          this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs });
         } else if (chunk.type === 'tool_start') {
-          // 工具调用开始 → webview 渲染「执行中」卡片
-          this.post({ type: 'tool_start', toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
+          // 工具调用开始 → 过程事件（webview 渲染 § 工具调用）
+          emitEvent('tool_start', { toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
           // H4 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
-          // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行）
+          // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行。
+          //  任务看板归 checkpoint 执行态，不进过程事件）
           if (chunk.name === 'task_table_write' || chunk.name === 'task_table_update') {
             this.postPlanUpdate();
           }
         } else if (chunk.type === 'tool_result') {
-          // 工具调用结束 → 更新卡片状态
-          this.post({
-            type: 'tool_result',
-            toolCallId: chunk.toolCallId,
-            name: chunk.name,
-            ok: chunk.ok,
-            summary: chunk.summary,
-          });
+          // 工具调用结束 → 过程事件（§ 工具调用 完成态；失败计入 metrics.toolFailureCount）
+          emitEvent('tool_result', { toolCallId: chunk.toolCallId, name: chunk.name, ok: chunk.ok, summary: chunk.summary });
         } else if (chunk.type === 'selfReview') {
-          // 自审查轮开始 → 转发为过程性提示（活动透明，交叉审核观察 A）
-          this.post({ type: 'self_review', round: chunk.round });
+          // 自审查轮开始 → 过程事件（§ 自审查输出 头部）
+          emitEvent('self_review', { round: chunk.round });
         } else if (chunk.type === 'handoff') {
           // 宿主是插座的纯转发：不解释、不决策 handoff，原样投递给 webview。
           // 内核已把角色包 reflect.handoff 的 loop 在内部消化，对外恒吐 wait/end，
@@ -1835,8 +1844,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'paused' });
           pausedOnPurpose = true;
         } else if (chunk.type === 'thinking') {
-          // B（alignment-iteration.md）：思考阶段 → 转发真实 phase（召回/处理/归档）
-          this.post({ type: 'thinking', phase: chunk.phase });
+          // 思考阶段 → 过程事件（webview 渲染 § 过程轨迹）
+          emitEvent('thinking', { phase: chunk.phase });
         } else if (chunk.type === 'error') {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）
           this.post({ type: 'error', message: chunk.message });
@@ -1848,7 +1857,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'error', message: err instanceof Error ? err.message : String(err) });
     } finally {
       this._agent.off('questionPending', onPendingQuestion);
-      this._agent.off('memoryRecalled', onMemoryRecalled);
       this._agent.off('memoryAdded', onMemoryAdded);
       // 无论成败均清除生成态（恢复历史切换能力，P1-3）
       this._streaming = false;
@@ -1862,6 +1870,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
     const sessionRoundIds = meta?.roundIds ?? [];
     const latestRoundId = sessionRoundIds[sessionRoundIds.length - 1];
+    // 过程事件落盘（v1.5）：metrics 末条 + 读最新 round → 附加 processEvents → save。
+    // fire-and-forget：失败仅记日志，不阻塞展示（对齐 P1 消息持久化降级语义，SSOT 不藏错）
+    if (latestRoundId && this._eventLogRoundStore && events.length > 0) {
+      const metricsNow = this._agent.getMetrics();
+      emitEvent('metrics', {
+        durationMs: Date.now() - flowStartMs,
+        tokenIn: Math.max(0, metricsNow.llm.totalInputTokens - metricsBefore.in),
+        tokenOut: Math.max(0, metricsNow.llm.totalOutputTokens - metricsBefore.out),
+        toolFailureCount: events.filter((e) => e.type === 'tool_result' && !e.payload.ok).length,
+        recallCount: events.reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
+        success: !controller.signal.aborted && !pausedOnPurpose,
+      });
+      try {
+        const round = this._eventLogRoundStore.getById(latestRoundId);
+        if (round) {
+          // 整轮覆盖（Write-once：processEvents 与 assistantMessage 同在流结束定型）
+          round.processEvents = events;
+          this._eventLogRoundStore.save(round);
+        }
+      } catch (err) {
+        console.warn('Memora 过程事件落盘失败', err);
+      }
+    }
     if (controller.signal.aborted) {
       this.post({ type: 'interrupted', roundId: latestRoundId });
       this.post({ type: 'status', state: 'done' });
@@ -1977,7 +2008,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
 <style>
   ${chatStyles}
   ${dropdownStyles}
-  ${toolCardStyles}
 </style>
 </head>
 <body>
@@ -2033,8 +2063,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   <details id="activityDetail" class="activity-detail" hidden>
     <summary>活动详情</summary>
     <div id="activityList" class="activity-list"></div>
-    <!-- Phase 1（2026-08-17 召回可展开）：本次召回明细区，默认隐藏，recalled_items 到达时渲染 -->
-    <div id="recallDetail" class="recall-detail" hidden></div>
     <div id="activityMetrics" class="activity-metrics" hidden></div>
   </details>
   <div id="clarifyBar">

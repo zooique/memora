@@ -2,8 +2,8 @@
  * 工具名中文映射 — 纯函数（webview 运行时脚本直接 import 使用）
  *
  * 阶段 B（对抗评估 P2-1）：原「字符串注入脚本」已由外部脚本 chatView.js + 模块
- * 导入取代，getToolDisplayName 作为纯函数被 toolCard/chatView import，可直接
- * vitest 测试。
+ * 导入取代，getToolDisplayName 作为纯函数被 chatView import（round-block § 工具调用
+ * 中文名来源），可直接 vitest 测试。
  */
 
 /**

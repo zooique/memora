@@ -15,7 +15,7 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、文档
   侧面板服务，也可被 webview 脚本 import（无 DOM 副作用，esbuild 各端安全）。
 - `docContext.ts` — 剥离宿主注入的「当前打磨文档内容」前缀，导出 `stripDocContextPrefix`。
 - `scrollToBottom.ts` — 智能吸底滚动（rAF 节流，仅吸底时滚动，上滚阅读不被拽走），
-  chatView / toolCard 共用；导出 `scrollToBottom` + `trackScroll`（滚动事件处理器，更新吸底状态）。
+  chatView 共用；导出 `scrollToBottom` + `trackScroll`（滚动事件处理器，更新吸底状态）。
 - `cardList.ts` — 列表分区渲染纯函数（`createGroupTitle` + `createEmptyState`），
   SSOT 收敛 configView 与 rolesView 的列表级同构 DOM 构建（分组标题 + 空态引导）。
 
