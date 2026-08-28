@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 工具执行器
  *
  * 4 个内置工具：read_file / write_file / list_dir / search_memories
@@ -246,8 +246,6 @@ export class ToolExecutor {
     memoryIndex: IMemoryStorage,
     /** 网络搜索提供者（可选，不传则不启用网络搜索能力） */
     webSearchProvider?: IWebSearchProvider,
-    /** 配置目录路径（可选，拦截提示中告知 LLM 正确的写入位置） */
-    configDir?: string,
     /** 会话存储（可选，trace_summary 溯源原始对话用） */
     sessionStore?: ISessionStore,
     /** 网页抓取提供者（可选，不传则不启用 web_fetch 工具） */
@@ -264,7 +262,6 @@ export class ToolExecutor {
       projectPath,
       security,
       memoryIndex,
-      configDir,
       sessionStore,
     );
   }

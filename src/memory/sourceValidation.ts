@@ -2,7 +2,6 @@
  * Source 校验工具 — 从 memory/types.ts 提取的运行时函数
  *
  * 职责：
- * - inferSource：从文件路径自动推断 source 标签
  * - escapeLike：转义 SQL LIKE 通配符
  * - validateSource：校验 source 字段安全性和拼写
  * - levenshtein：简单编辑距离计算（仅用于短字符串 typo 检测）
@@ -30,26 +29,6 @@ export type SourceValidationSeverity = 'block' | 'warn';
  * 不是枚举——只用于 typo 检测，不阻止写入。
  */
 const KNOWN_SOURCES: Set<string> = new Set(Object.values(SOURCE_LABELS));
-
-/**
- * 从文件路径自动推断 source（目录映射 + frontmatter 覆盖）
- *
- * @param filePath - 文件路径
- * @param frontmatterSource - frontmatter 中显式声明的 source（可选）
- * @returns source 字符串
- */
-export function inferSource(filePath: string, frontmatterSource?: string): string {
-  // 优先：frontmatter 中显式声明的 source
-  if (frontmatterSource) return frontmatterSource;
-
-  // 回退：目录路径映射（使用路径分隔符匹配，避免 'other-personas/' 误匹配）
-  if (/[\\/]personas[\\/]/.test(filePath)) return SOURCE_LABELS.PERSONA;
-  if (/[\\/]rules[\\/]/.test(filePath)) return SOURCE_LABELS.RULE;
-  if (/[\\/]skills[\\/]/.test(filePath)) return SOURCE_LABELS.SKILL;
-
-  // 默认：未知来源（SOURCE_LABELS.UNKNOWN 显式声明，避免字符串字面量分散）
-  return SOURCE_LABELS.UNKNOWN;
-}
 
 /**
  * 转义 LIKE 通配符，防止注入

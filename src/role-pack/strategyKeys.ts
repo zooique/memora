@@ -40,8 +40,6 @@ export const MAX_TOKEN_BUDGET = 200000;
 export const MAX_STEP_BUDGET = 500;
 /** 外部任务驱动循环步数上限：任务表每步一个闭环，100 步防死循环烧 token */
 export const MAX_TASK_LOOP_LIMIT = 100;
-/** 单任务总成本上限（money，单位与宿主定价一致，如美元）：1000 已是极端单任务预算，整数 + 上界防资源失控 */
-export const MAX_COST_BUDGET = 1000;
 /** 提炼视角（summaryFocus）字符串长度上限（字符）：防止巨型字符串注入 prompt */
 export const MAX_SUMMARY_FOCUS_LENGTH = 500;
 
@@ -151,7 +149,5 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     stepBudget: intRange(0, MAX_STEP_BUDGET),
     // 外部任务驱动循环步数（0~MAX_TASK_LOOP_LIMIT，0=关闭）
     taskLoopLimit: intRange(0, MAX_TASK_LOOP_LIMIT),
-    // 单任务总成本上限（0~MAX_COST_BUDGET，0=不限制；内核仅识别/校验/解析，money 执行由宿主侧负责）
-    costBudget: intRange(0, MAX_COST_BUDGET),
   },
 };

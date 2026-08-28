@@ -74,10 +74,8 @@ export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 export { SOURCE_LABELS } from '@/memory/types.js';
 // 冲突检测基于 supersededBy 判定，无需记忆关系图谱
 export type { Memory, SummaryType } from '@/memory/types.js';
-export { inferSource, escapeLike, validateSource } from '@/memory/sourceValidation.js';
+export { escapeLike, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
-// source → 子目录映射单一真理源：宿主 configFileManager 等消费方共享，消灭 TYPE_TO_SUBDIR/硬编码多处表达
-export { SOURCE_TO_DIR, sourceToDir, resolveSourceFilePath } from '@/memory/sourcePaths.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';

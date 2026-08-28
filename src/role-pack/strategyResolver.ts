@@ -14,7 +14,6 @@ import {
   MAX_TASK_LOOP_LIMIT,
   MAX_TOKEN_BUDGET,
   MAX_TOOL_STEP_LIMIT,
-  MAX_COST_BUDGET,
 } from './strategyKeys.js';
 import type {
   BehaviorStrategy,
@@ -112,7 +111,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   global: {
     tokenBudget: DEFAULT_TOKEN_BUDGET,
     stepBudget: DEFAULT_STEP_BUDGET,
-    costBudget: 0,
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 3,
@@ -352,21 +350,6 @@ export function resolveToolApproval(strategy: BehaviorStrategy | undefined): Too
  */
 export function resolveUnderstandingConfirm(strategy: BehaviorStrategy | undefined): UnderstandingConfirm {
   return normalizeEnum(strategy?.prepare?.understandingConfirm, ['off', 'echo', 'confirm'], 'off');
-}
-
-/**
- * 解析单任务总成本上限（内核已接入，money 执行由宿主侧负责）：整数且 ∈ [0, MAX_COST_BUDGET] 才采用，
- * 非法/越界回退 0（0=不限制）。内核无定价能力，仅做声明校验与解析；真实成本拦截由宿主侧按定价表执行
- * （遵循 kernel/host 边界：内核只承载确定性逻辑，模型/价格不确定性归宿主）。
- */
-export function resolveCostBudget(strategy: BehaviorStrategy | undefined): number {
-  const candidate = strategy?.global?.costBudget;
-  const valid =
-    typeof candidate === 'number' &&
-    Number.isInteger(candidate) &&
-    candidate >= 0 &&
-    candidate <= MAX_COST_BUDGET;
-  return valid ? candidate : 0;
 }
 
 // ════════════════════════════════════════════════════════════

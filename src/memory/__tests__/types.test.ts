@@ -2,7 +2,7 @@
  * 单元测试：记忆类型定义
  * 验证基元驱动模型的 schema 有效性
  *
- * 注：inferSource / escapeLike / validateSource 的纯函数测试已迁移至
+ * 注：escapeLike / validateSource 的纯函数测试已迁移至
  * sourceValidation.test.ts（与 sourceValidation.ts 1:1 镜像）。
  * 本文件保留类型 schema 测试 + InMemoryStorage source block 集成测试。
  */
@@ -15,7 +15,7 @@ import type { Memory } from '@/memory/types.js';
 describe('记忆类型定义', () => {
   it('应该暴露 6 种 source 标签约定', () => {
     // source 是开放字符串，SOURCE_LABELS 仅为当前约定
-    // 含 UNKNOWN（inferSource 兜底值，文件路径未匹配已知目录时的默认标签）
+    // 含 UNKNOWN（未被已知标签覆盖时的兜底值）
     expect(Object.keys(SOURCE_LABELS)).toHaveLength(6);
     expect(SOURCE_LABELS.PERSONA).toBe('persona');
     expect(SOURCE_LABELS.RULE).toBe('rule');

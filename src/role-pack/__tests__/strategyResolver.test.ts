@@ -32,7 +32,6 @@ import {
   resolveToolReadonly,
   resolveToolApproval,
   resolveUnderstandingConfirm,
-  resolveCostBudget,
   mergeStrategy,
   assembleRolePack,
   resolveL2Strategy,
@@ -48,7 +47,6 @@ import {
   MAX_STEP_BUDGET,
   MAX_TASK_LOOP_LIMIT,
   MAX_SUMMARY_FOCUS_LENGTH,
-  MAX_COST_BUDGET,
 } from '@/role-pack/strategyKeys.js';
 import type {
   BehaviorStrategy,
@@ -135,7 +133,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     const g = DEFAULT_BEHAVIOR_STRATEGY.global!;
     expect(g.tokenBudget).toBe(8000);
     expect(g.stepBudget).toBe(50);
-    expect(g.costBudget).toBe(0);
     expect(g.errorHandling).toBe('retry');
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
     expect(g.askLimit).toBe(3);
@@ -525,30 +522,6 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('缺失回退默认 10', () => {
       expect(resolveTaskLoopLimit(undefined)).toBe(10);
-    });
-  });
-
-  // ── resolveCostBudget（内核识别/校验/解析，money 执行由宿主负责）──
-  describe('resolveCostBudget', () => {
-    it('合法非负整数采用', () => {
-      expect(resolveCostBudget({ global: { costBudget: 5 } })).toBe(5);
-      expect(resolveCostBudget({ global: { costBudget: 0 } })).toBe(0);
-    });
-
-    it('负数回退默认 0（0=不限制）', () => {
-      expect(resolveCostBudget({ global: { costBudget: -1 } })).toBe(0);
-    });
-
-    it('小数回退默认 0', () => {
-      expect(resolveCostBudget({ global: { costBudget: 1.5 } })).toBe(0);
-    });
-
-    it('越上界回退默认 0（防无条件填写）', () => {
-      expect(resolveCostBudget({ global: { costBudget: MAX_COST_BUDGET + 1 } })).toBe(0);
-    });
-
-    it('缺失回退默认 0', () => {
-      expect(resolveCostBudget(undefined)).toBe(0);
     });
   });
 

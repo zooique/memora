@@ -548,8 +548,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
       // 在进程崩溃/重启后仍生效（幂等契约跨重启可靠），而非依赖闭环边界/关闭 flush。
       // 只读幂等工具可安全重跑，故不落盘以省 IO。
       if (idempotent !== 'idempotent') {
-        // 可选调用：兼容测试 mock 未暴露 flushNow 的场景（生产实为 SessionManager 恒有）
-        sessionManager.flushNow?.();
+        // 非只读工具完成后立即落盘 completedToolCalls（SessionManager 恒实现，强调用不设可选链）
+        sessionManager.flushNow();
       }
     },
     // 工具执行前检查（统一执行入口·单点聚合）：宿主审批优先（denied 短路返回），放行后再做内部幂等检查。
@@ -651,7 +651,6 @@ export async function assembleComponents(
     pctx.security,
     pctx.index,
     input.webSearchProvider,
-    configDir,
     sessionStore,
     input.fetchProvider,
     input.codeExecutionProvider,

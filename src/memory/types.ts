@@ -161,22 +161,22 @@ export function parseMemory(raw: unknown): Memory {
  *   - persona / rule / skill 已归角色包管理，不写入记忆库
  *   - work-projection 已移出记忆库（2026-08-20，落项目目录 projections/）
  *   - 这些标签仍保留在 SOURCE_LABELS 中，用于：
- *     1. 文件路径解析（sourcePaths.ts：从 source 标签映射到目录名）
- *     2. 文件路径推断（sourceValidation.ts：从文件路径推断 source 标签）
- *     3. typo 检测（sourceValidation.ts：KNOWN_SOURCES 集合）
+ *     1. typo 检测（sourceValidation.ts：KNOWN_SOURCES 集合）
+ *     2. 历史兼容（存量行/外部导入的 source 标签仍可被识别）
  *   - 它们不再出现在 GOVERNANCE_SOURCES 中（治理系统只治理实际写入记忆库的 source）
+ *   - 文件路径映射/推断（sourcePaths.ts / inferSource）已于 2026-08-28 随角色包收敛移除
  */
 export const SOURCE_LABELS = {
-  /** 角色人格（角色包 content/persona.md）— 文件路径解析用，不写入记忆库 */
+  /** 角色人格（角色包 content/persona.md）— 残留兼容标签，不写入记忆库 */
   PERSONA: 'persona',
-  /** 创作规则（角色包 content/rules.md + .memora/rules/*.md）— 文件路径解析用，不写入记忆库 */
+  /** 创作规则（角色包 content/rules.md + .memora/rules/*.md）— 残留兼容标签，不写入记忆库 */
   RULE: 'rule',
-  /** 技能定义（角色包 skills/ 目录）— 文件路径解析用，不写入记忆库 */
+  /** 技能定义（角色包 skills/ 目录）— 残留兼容标签，不写入记忆库 */
   SKILL: 'skill',
-  /** 作品投影（读取用户作品时生成的概要）— 已移出记忆库（2026-08-20），文件路径解析用 */
+  /** 作品投影（读取用户作品时生成的概要）— 已移出记忆库（2026-08-20，落项目目录） */
   WORK_PROJECTION: 'work-projection',
   /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
   ROUND_SUMMARY: 'round-summary',
-  /** 未知来源（inferSource 兜底值） */
+  /** 未知来源（未被已知标签覆盖时的兜底值） */
   UNKNOWN: 'unknown',
 } as const;

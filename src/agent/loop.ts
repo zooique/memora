@@ -1472,13 +1472,23 @@ export class AgentLoop {
         .join('\n');
       prompt += `\n\n## 可用工具\n\n你可以通过 tool_call 调用以下工具：\n${toolDescs}`;
 
-      // 重建 roles/persona、rule、skill 的优先级提示
-      prompt +=
-        `\n\n## 工具选择规则（必须遵守）\n\n` +
-        `- 创建/修改角色（Persona）→ 必须使用 create_persona，禁止使用 write_file\n` +
-        `- 创建/修改技能（Skill）→ 必须使用 create_skill，禁止使用 write_file\n` +
-        `- 创建/修改规则（Rule）→ 必须使用 create_rule，禁止使用 write_file\n` +
-        `- 以上三种配置文件的任何操作，永远不要使用 write_file 工具`;
+      // 工具选择规则：仅对工具清单中实际存在的 create_* 工具生成指引；
+      // 无 create_* 工具时（编辑类宿主直接管理角色/技能/规则配置）整个规则节不输出，
+      // 避免指引 LLM 调用不存在的工具（2026-08-28 健康度诊断 H-A）
+      const createTools = tools.filter((t) => /^create_/.test(t.name));
+      if (createTools.length > 0) {
+        const CONFIG_LABELS: Readonly<Record<string, string>> = {
+          persona: '角色（Persona）',
+          skill: '技能（Skill）',
+          rule: '规则（Rule）',
+        };
+        const createLines = createTools.map((t) => {
+          const suffix = t.name.replace(/^create_/, '');
+          const label = CONFIG_LABELS[suffix] ?? suffix;
+          return `- 创建/修改${label} → 必须使用 ${t.name}，禁止使用 write_file`;
+        });
+        prompt += `\n\n## 工具选择规则（必须遵守）\n\n${createLines.join('\n')}\n- 以上配置文件的任何操作，永远不要使用 write_file 工具`;
+      }
     }
 
     return prompt;

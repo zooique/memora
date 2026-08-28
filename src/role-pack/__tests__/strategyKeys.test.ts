@@ -24,7 +24,6 @@ import {
   MAX_STEP_BUDGET,
   MAX_TASK_LOOP_LIMIT,
   MAX_SUMMARY_FOCUS_LENGTH,
-  MAX_COST_BUDGET,
   type KeyRule,
 } from '../strategyKeys.js';
 
@@ -197,7 +196,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'loopContinue',
       'userFollowup',
     ],
-    global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget', 'taskLoopLimit', 'costBudget'],
+    global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget', 'taskLoopLimit'],
   };
 
   it('四个阶段都存在', () => {
@@ -342,7 +341,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       { key: 'global.tokenBudget', rule: STRATEGY_KEY_RULES.global!.tokenBudget!, min: 0, max: MAX_TOKEN_BUDGET, probe: MAX_TOKEN_BUDGET + 1 },
       { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: 0, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
       { key: 'global.taskLoopLimit', rule: STRATEGY_KEY_RULES.global!.taskLoopLimit!, min: 0, max: MAX_TASK_LOOP_LIMIT, probe: MAX_TASK_LOOP_LIMIT + 1 },
-      { key: 'global.costBudget', rule: STRATEGY_KEY_RULES.global!.costBudget!, min: 0, max: MAX_COST_BUDGET, probe: MAX_COST_BUDGET + 1 },
     ];
 
     it('所有数值键都带 range 元数据（上下限齐全）', () => {

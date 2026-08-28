@@ -21,7 +21,6 @@ export function getToolDisplayName(name: string): string {
     web_search: '网络搜索',
     memory_search: '记忆搜索',
     web_fetch: '抓取网页',
-    create_persona: '创建角色',
     create_skill: '创建技能',
     create_rule: '创建规则',
   };
@@ -46,7 +45,6 @@ export function getToolIcon(name: string): string {
     web_search: '🌐',
     memory_search: '🧠',
     web_fetch: '🌍',
-    create_persona: '👤',
     create_skill: '🛠️',
     create_rule: '📏',
   };

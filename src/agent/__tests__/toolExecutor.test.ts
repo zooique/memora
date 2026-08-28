@@ -260,7 +260,6 @@ describe('工具执行器（6 个工具）', () => {
         index,
         undefined,
         undefined,
-        undefined,
         mockFetchProvider,
       );
     });
@@ -309,7 +308,6 @@ describe('工具执行器（6 个工具）', () => {
         tmpProject,
         security,
         index,
-        undefined,
         undefined,
         undefined,
         undefined,
@@ -827,7 +825,7 @@ describe('工具执行器（6 个工具）', () => {
     it('注入 fetchProvider 后，注册 web_fetch 应抛错', () => {
       const mockFetch = { fetch: async () => ({ url: '', title: '', content: '' }) };
       const executorWithFetch = new ToolExecutor(
-        tmpProject, security, index, undefined, undefined, undefined, mockFetch,
+        tmpProject, security, index, undefined, undefined, mockFetch,
       );
       const fetchDef = {
         name: 'web_fetch',
@@ -848,7 +846,7 @@ describe('工具执行器（6 个工具）', () => {
         },
       };
       const executorWithCode = new ToolExecutor(
-        tmpProject, security, index, undefined, undefined, undefined, undefined, mockCode,
+        tmpProject, security, index, undefined, undefined, undefined, mockCode,
       );
       const codeDef = {
         name: 'run_code',

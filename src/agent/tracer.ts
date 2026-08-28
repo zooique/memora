@@ -90,7 +90,7 @@ export const TRACE_SPANS = {
 /**
  * Agent 运行时指标快照——Agent.getMetrics() 聚合 AgentLoop+Agent 两层指标产出，供宿主做监控/健康度面板。
  * 只读快照（不修改状态）、同步返回（不触发 LLM/IO）、累计值（init 起累加，close() 后清零）。
- * 分 6 维度：LLM 调用、记忆召回、工具调用、上下文管理、记忆衰减、任务级 SLO。
+ * 分 5 维度：LLM 调用、记忆召回、工具调用、上下文管理、任务级 SLO（显式衰减维度已随衰减子系统移除，2026-08-27）。
  */
 export interface AgentMetrics {
   /** LLM 调用指标 */

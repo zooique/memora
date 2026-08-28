@@ -142,8 +142,6 @@ export interface GlobalStrategy {
   readonly tokenBudget?: number;
   /** 每轮工具步数上限（默认 50；内核已消费） */
   readonly stepBudget?: number;
-  /** 单任务总成本上限，0=不限制（默认 0；内核已接入：validator 校验 + resolveCostBudget 解析，money 执行由宿主侧负责，内核无定价能力） */
-  readonly costBudget?: number;
   /** 异常时的处理策略（默认 retry） */
   readonly errorHandling?: ErrorHandling;
   /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
@@ -160,8 +158,8 @@ export interface GlobalStrategy {
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
- * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/costBudget。
- * 边界纪律：understandingConfirm 内核已消费；costBudget 内核已接入（validator 校验 + resolveCostBudget 解析）但 money 执行由宿主侧负责（内核无定价能力，遵循 kernel/host 边界）；二者均已闭环，非预留死键。
+ * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
+ * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */

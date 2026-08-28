@@ -1806,7 +1806,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this._lastInteractionAt;
   }
 
-  /** 记忆治理统一门面（L0 衰减 / L1 去重 / L2 时效性 / L3 冲突 / 诊断 / 推荐），统一替代 Agent 上散落的 6 个方法 */
+  /** 记忆治理统一门面（语义去重 / 来源健康诊断 / 冲突检测 / 建议推荐），统一替代 Agent 上散落的管理方法（显式衰减层面已移除，2026-08-27） */
   get governance(): MemoryGovernance | null {
     return this._governance;
   }
