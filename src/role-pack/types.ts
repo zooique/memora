@@ -96,7 +96,10 @@ export interface PrepareStrategy {
   readonly recallConfidence?: number;
   /** 角色包提炼视角（默认 undefined=通用浓缩；供 round-summary 生成判断「值得记什么」，内核已消费） */
   readonly summaryFocus?: string;
-  /** 自动匹配开关（默认 on；内核已消费） */
+  /**
+   * 自动匹配开关（默认 on；**宿主装配级键**，角色包不可写——STRATEGY_KEY_RULES 不含它，
+   * 角色包声明会被 validator 按未知键忽略）。内核默认 on，宿主经 strategyOverride 覆盖最终解析值。
+   */
   readonly autoSwitch?: AutoSwitch;
 }
 

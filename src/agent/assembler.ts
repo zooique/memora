@@ -176,6 +176,7 @@ type AssembleRuntimeParams = Pick<
   | 'codeExecutionProvider'
   | 'vectorStore'
   | 'recallExcludeSources'
+  | 'strategyOverride'
 >;
 
 /** 组装器输入参数 */

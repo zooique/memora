@@ -10,7 +10,13 @@ import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import { COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
-import type { AgentChunk, UIMessages, SessionEvent, PreExecutionResult } from '@/agent/types.js';
+import type {
+  AgentChunk,
+  UIMessages,
+  SessionEvent,
+  PreExecutionResult,
+  TextChunkStage,
+} from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
@@ -189,6 +195,11 @@ export class AgentLoop {
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
   private selfReviewRound = 0;
+  /** 本问答闭环（processUserInput）内是否实际执行过工具步。
+   *  自审查的唯一触发门槛：只有多轮执行闭环（发生过工具调用）才审查，
+   *  一遍过的纯文本问答不触发。由 processUserInput 入口重置（续跑 continueAfterPause 保留）。
+   */
+  private toolExecutedThisTurn = false;
   /** 当前轮次 ID（processUserInput 入口分配一次，各 iteration 共享），用于溯源式摘要 */
   private currentRoundId = '';
   /** 是否正处于自主工具步执行中（供宿主决定暂停按钮显隐，内核→宿主"可续跑"信号） */
@@ -289,8 +300,10 @@ export class AgentLoop {
 4. 如有可运行项（格式/测试/语法），是否通过？
 
 只有存在可验证判据时才审查；无明确判据时不强行修改。
-如果满意，请确认并输出最终版本。
-如果需要改进，请直接输出改进后的完整回复。`),
+
+输出格式（必须遵守）：
+- 满意：只输出一句简短确认（如"无需修改"），**严禁重复输出完整回答**。
+- 存在必须改进的判据：才输出改进后的**一版**完整回复，不要附加说明。`),
       duplicateToolCallWarning:
         opts.messages?.duplicateToolCallWarning ??
         ((threshold: number) =>
@@ -376,6 +389,8 @@ export class AgentLoop {
 
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
+      // 新问答闭环入口重置"工具步发生"标记（自审查触发门槛）；续跑 continueAfterPause 同闭环延续不在此重置
+      this.toolExecutedThisTurn = false;
 
       // 单轮迭代循环（runIterationLoop）：本闭环的执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
       // 真正的「外循环」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
@@ -644,13 +659,9 @@ export class AgentLoop {
       }
 
       const result = yield* this.handleIteration(iteration, signal);
-      // 自审查轮开始前 emit selfReview chunk，供宿主展示视觉反馈
-      if (
-        result === 'done' &&
-        this.strategy.maxSelfReviewRounds > 0 &&
-        this.selfReviewRound < this.strategy.maxSelfReviewRounds &&
-        !this.strategy.toolCallsBlocked
-      ) {
+      // 自审查轮开始前 emit selfReview chunk，供宿主展示视觉反馈（与注入判定共用单一真理源，
+      // 保证 UI 通知与实际注入一致：纯文本问答/满意确认终止时不发通知）
+      if (result === 'done' && this.shouldInjectSelfReview()) {
         yield { type: 'selfReview', round: this.selfReviewRound + 1 };
       }
       // 共享的迭代结果处理；返回 false 表示终止循环
@@ -681,13 +692,10 @@ export class AgentLoop {
       }
       return false;
     }
-    // result === 'done'：纯文本回复后若启用了自审查且未达上限，注入提示继续 1 轮
-    // toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复，跳过自审查
-    if (
-      this.strategy.maxSelfReviewRounds > 0 &&
-      this.selfReviewRound < this.strategy.maxSelfReviewRounds &&
-      !this.strategy.toolCallsBlocked
-    ) {
+    // result === 'done'：仅当满足自审查注入条件时才注入提示继续 1 轮。
+    // 注入判定收敛在 shouldInjectSelfReview（单一真理源，供 emit 通知与注入共用）：
+    // 多轮执行闭环（本问答发生过工具步）+ 未达上限 + 非工具屏蔽 + 审查应答不是满意确认（满意即停）。
+    if (this.shouldInjectSelfReview()) {
       this.selfReviewRound++;
       this.appendSystemMessage(
         this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds),
@@ -707,6 +715,39 @@ export class AgentLoop {
       return true;
     }
     return false;
+  }
+
+  /**
+   * 自审查注入判定（emit selfReview 通知与注入 SELF_REVIEW 提示共用单一真理源）。
+   *
+   * 需同时满足：
+   * 1. 启用自审查（maxSelfReviewRounds > 0）；
+   * 2. 未达审查轮数上限；
+   * 3. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
+   * 4. **多轮执行闭环门槛**：本问答闭环内实际执行过工具步（一遍过的纯文本问答不审查）；
+   * 5. **满意即停**：审查应答若为"确认/无需修改"类短句 → 不再追问下一轮审查。
+   */
+  private shouldInjectSelfReview(): boolean {
+    if (this.strategy.maxSelfReviewRounds <= 0) return false;
+    if (this.selfReviewRound >= this.strategy.maxSelfReviewRounds) return false;
+    if (this.strategy.toolCallsBlocked) return false;
+    if (!this.toolExecutedThisTurn) return false;
+    // 审查应答（selfReviewRound>0）为满意确认短句 → 直接终止，不再安排下一轮
+    if (this.selfReviewRound > 0 && isSatisfactionConfirmText(this.lastAssistantText())) {
+      return false;
+    }
+    return true;
+  }
+
+  /** 取最近一条 assistant 消息的文本内容（自审查满意确认判定用；done 时最后一条 assistant 即本轮回复） */
+  private lastAssistantText(): string {
+    for (let i = this.messages.length - 1; i >= 0; i--) {
+      const m = this.messages[i];
+      if (m && (m.role as string) === 'assistant') {
+        return (m.content as string) ?? '';
+      }
+    }
+    return '';
   }
 
   /** 处理 correction/clarify 事件：以 system 消息注入元信息到上下文（两者结构相同，仅文案不同） */
@@ -788,11 +829,16 @@ export class AgentLoop {
     // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
     yield { type: 'thinking', phase: 'llm_calling' };
 
+    // 文本阶段标识：自审查应答（selfReviewRound>0）标注为 'self_review'，供宿主独立分段展示；
+    // 正常回答/工具步文本为 'answer'。全流 text chunk 统一携带，保证审查输出与最终回答可区分。
+    const textStage: TextChunkStage = this.selfReviewRound > 0 ? 'self_review' : 'answer';
+
     const llmResult: LlmCallResult = yield* this.callLlmWithRetry(
       prep.safeMessages,
       prep.chatOpts,
       effectiveSignal,
       iteration,
+      textStage,
     );
 
     if (llmResult.aborted) {
@@ -1091,6 +1137,8 @@ export class AgentLoop {
     chatOpts: ChatOptions,
     signal: AbortSignal | undefined,
     iteration: number,
+    /** 流式文本阶段标识（默认正常交付 'answer'；自审查应答由调用方传 'self_review'） */
+    stage: TextChunkStage = 'answer',
   ): AsyncGenerator<AgentChunk, LlmCallResult, unknown> {
     let fullContent = '';
     let toolCalls: Message['toolCalls'] = undefined;
@@ -1182,7 +1230,8 @@ export class AgentLoop {
           }
           if (chunk.content) {
             fullContent += chunk.content;
-            yield { type: 'text', content: chunk.content };
+            // 携带文本阶段标识（'answer'/'self_review'），宿主据此决定渲染进主回答还是自审查分段
+            yield { type: 'text', content: chunk.content, stage };
           }
           if (chunk.toolCalls) {
             toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
@@ -1261,6 +1310,9 @@ export class AgentLoop {
     if (signal?.aborted) {
       return { aborted: true };
     }
+
+    // 实际执行工具步：标记"本问答闭环发生过工具调用"，作为自审查触发门槛（多轮执行闭环才审查）
+    this.toolExecutedThisTurn = true;
 
     // 标记进入自主工具步（供内核向宿主暴露"可续跑"信号）
     this.inAutonomousStep = true;
@@ -2006,4 +2058,36 @@ function formatTokens(n: number): string {
     return Number.isInteger(k) ? `${k}K` : `${k.toFixed(1)}K`;
   }
   return String(Math.round(n));
+}
+
+/**
+ * 自审查满意确认的识别模式集：命中任一即视为"审查满意，无需修改"。
+ * 仅匹配短响应（配合长度上限 ≤50 字符），长文本视为修订输出而非确认。
+ */
+const SELF_REVIEW_SATISFIED_PATTERNS: readonly RegExp[] = [
+  /无需修改/,
+  /不用修改/,
+  /无需调整/,
+  /没有问题/,
+  /一切正常/,
+  /审查通过/,
+  /确认无误/,
+  /确认通过/,
+  /^确认[。！？!?\s]*$/,
+  /^满意[。！？!?\s]*$/,
+  /^OK$/i,
+  /^可以[。！？!?\s]*$/,
+];
+
+/**
+ * 判定自审查应答是否为"满意/无需修改"类简短确认。
+ * 命中返回 true → 自审查流程立即终止（满意即停，不再追问后续审查轮）。
+ * 长度上限防止把修订输出（长文本）误判为确认。
+ *
+ * @param content - LLM 本轮审查应答文本
+ */
+function isSatisfactionConfirmText(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed.length === 0 || trimmed.length > 50) return false;
+  return SELF_REVIEW_SATISFIED_PATTERNS.some((re) => re.test(trimmed));
 }

@@ -91,7 +91,7 @@ export class SeedOrchestrator {
     // 难度分级（回答前）：复杂且启用外部任务循环 → 外循环（规划 + 每步一闭环 + 汇报）；否则单闭环直接答
     const difficulty = await this.difficulty.classify(input);
     const taskLoopLimit = resolveTaskLoopLimit(
-      resolveActiveStrategy(this.deps.getParts().rolePackManager),
+      resolveActiveStrategy(this.deps.getParts().rolePackManager, this.deps.strategyOverride),
     );
     if (difficulty === 'complex' && taskLoopLimit > 0) {
       yield* this.externalTaskLoop(input, prepared, signal);
@@ -299,13 +299,15 @@ export class SeedOrchestrator {
       // reflect.summary='off' 时跳过（一次性对话不沉淀）
       if (
         roundSummaryGenerator &&
-        resolveSummary(resolveActiveStrategy(rolePackManager)) === 'on'
+        resolveSummary(resolveActiveStrategy(rolePackManager, this.deps.strategyOverride)) === 'on'
       ) {
         try {
           const roundId = loop.getCurrentRoundId();
           const sessionName = history.currentSessionName;
           // 提炼视角：激活角色包 prepare.summaryFocus → 注入摘要生成（无则通用归纳框架）
-          const summaryFocus = resolveSummaryFocus(resolveActiveStrategy(rolePackManager));
+          const summaryFocus = resolveSummaryFocus(
+            resolveActiveStrategy(rolePackManager, this.deps.strategyOverride),
+          );
           const summaryPromise = roundSummaryGenerator.generate(
             input,
             assistantContent,
@@ -335,7 +337,7 @@ export class SeedOrchestrator {
     externalTaskReported = false,
     forceWait = false,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager);
+    const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager, this.deps.strategyOverride);
     // 迭代上限时强制 wait，忽略角色包的 loop 策略；否则读取角色包策略的 handoff 意图
     const mode = forceWait ? 'wait' : resolveHandoff(strategy);
     // 'loop' 在此被内核内部消化为 'wait'：自主续跑由内核循环预算承载，宿主只需等待用户
@@ -451,7 +453,7 @@ export class SeedOrchestrator {
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, { continueFinalize: boolean; stepsRun: number }, unknown> {
     const parts = this.deps.getParts();
-    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
+    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager, this.deps.strategyOverride));
 
     let stepsRun = 0;
     while (stepsRun < limit) {
@@ -498,7 +500,7 @@ export class SeedOrchestrator {
     stepsRun: number,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
-    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager));
+    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager, this.deps.strategyOverride));
 
     // 收尾：收敛 → 汇报闭环 + 汇报单源摘要；硬上限触顶且有未完成步骤 → 汇报进度 + 列未完成
     // （触顶不是硬止损，等用户输入按记忆递归续接）；其余未收敛 → 以 planFallback 走普通单条摘要（保证恒 1:1）

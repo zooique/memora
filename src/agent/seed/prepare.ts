@@ -68,14 +68,19 @@ export class SeedPrepare {
       this.lastStickySessionId = sessionId;
     }
 
-    // autoSwitch 决定是否允许角色自动匹配（'off' 时锁定当前角色包）
-    const preMatchStrategy = resolveActiveStrategy(rolePackManager);
+    // autoSwitch 决定是否允许角色自动匹配（'off' 时锁定当前角色包）。
+    // 宿主装配级策略覆盖（strategyOverride）压过角色包声明——VSCode 插件只用手动切换，
+    // 注入 { prepare: { autoSwitch: 'off' } } 后全局关闭自动匹配（单一语义键 autoSwitch）。
+    const preMatchStrategy = resolveActiveStrategy(
+      rolePackManager,
+      this.deps.strategyOverride,
+    );
     const autoSwitch = resolveAutoSwitch(preMatchStrategy);
     if (autoSwitch === 'on') {
       await contextPreparer.tryAutoMatchRolePack(input);
     }
 
-    const strategy = resolveActiveStrategy(rolePackManager);
+    const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
     // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
     const memoryRecallMode = resolveMemoryRecallMode(strategy);
     // 上下文装配策略：fixed=仅固定轮次 / query=仅语义召回 / hybrid=混合

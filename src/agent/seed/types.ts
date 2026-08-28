@@ -24,6 +24,7 @@ import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import type { ITracer } from '@/agent/tracer.js';
+import type { BehaviorStrategy } from '@/role-pack/types.js';
 
 /**
  * 流消费结果（consumeExecutionStream 的返回约定）
@@ -87,6 +88,11 @@ export interface SeedDeps {
    * 为 null 表示后台不可用 → 判定降级为 unknown，不影响主回答。
    */
   getBackgroundProvider(): LlmProvider | null;
+  /**
+   * 宿主装配级策略覆盖（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
+   * 如 VSCode 插件只允许手动切换角色包 → `{ prepare: { autoSwitch: 'off' } }`（唯一语义键 autoSwitch）。
+   */
+  strategyOverride?: Partial<BehaviorStrategy>;
 }
 
 /**

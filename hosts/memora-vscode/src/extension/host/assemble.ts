@@ -49,7 +49,10 @@ const CHINESE_MESSAGES: UIMessages = {
   reflectionHint: (remaining: number) =>
     `\n\n[工具调用失败，剩余 ${remaining} 次反思机会，请聚焦修正而非放弃]`,
   selfReviewPrompt: (round: number, total: number) =>
-    `\n\n[请审查你上一轮的回答质量（第 ${round}/${total} 轮自审查），如发现问题请修正后重新输出]`,
+    `\n\n[请审查你上一轮的回答质量（第 ${round}/${total} 轮自审查）]` +
+    `\n输出格式（必须遵守）：` +
+    `\n- 满意：只输出一句简短确认（如"无需修改"），严禁重复输出完整回答。` +
+    `\n- 存在必须改进的判据：才输出改进后的完整回复，不要附加说明。`,
 };
 
 /**
@@ -241,6 +244,10 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
+    // 角色包**只用手动切换**（产品定位）：宿主装配级策略覆盖压过角色包声明，关闭内核
+    // 自动匹配（关键词/LLM 语义粘性切换）；切换入口唯一走角色管理视图的 agent.switchRolePack。
+    // 唯一语义键为角色包策略 autoSwitch（SSOT），此处仅覆盖其最终解析值，不新增独立开关。
+    strategyOverride: { prepare: { autoSwitch: 'off' } },
     // 执行前检查：单用户桌面场景恒放行（intentionally left blank）。
     // 理由：1) VSCode 插件运行在用户本地，天然信任模型；2) 工具审计已由
     // tool_start/tool_result chunk + tool.execute span 承担，不重复记录。

@@ -81,7 +81,6 @@ export interface SeedMocks {
  */
 export function makeStrategy(
   p: {
-    autoSwitch?: 'on' | 'off';
     summary?: 'on' | 'off';
     handoff?: 'wait' | 'loop' | 'end';
     summaryFocus?: string;
@@ -92,7 +91,6 @@ export function makeStrategy(
     ...DEFAULT_BEHAVIOR_STRATEGY,
     prepare: {
       ...DEFAULT_BEHAVIOR_STRATEGY.prepare,
-      ...(p.autoSwitch !== undefined ? { autoSwitch: p.autoSwitch } : {}),
       ...(p.summaryFocus !== undefined ? { summaryFocus: p.summaryFocus } : {}),
     },
     act: { ...DEFAULT_BEHAVIOR_STRATEGY.act },

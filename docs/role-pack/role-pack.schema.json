@@ -137,11 +137,6 @@
               "enum": ["fixed", "query", "hybrid"],
               "description": "上下文装配策略（默认 hybrid）"
             },
-            "autoSwitch": {
-              "type": "string",
-              "enum": ["on", "off"],
-              "description": "允许自动匹配切换角色包（默认 on）"
-            },
             "recallConfidence": {
               "type": "number",
               "minimum": 0,

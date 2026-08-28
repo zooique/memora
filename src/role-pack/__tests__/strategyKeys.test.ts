@@ -173,7 +173,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'minFallback',
       'summaryFocus',
       'contextAssembly',
-      'autoSwitch',
       'recallConfidence',
       'summaryRecall',
       'understandingConfirm',
@@ -223,6 +222,12 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
         expect(actualKeys.has(expectedKey), `阶段 ${phase} 应包含键 ${expectedKey}`).toBe(true);
       }
     }
+  });
+
+  it('autoSwitch 不在角色包可写键集（宿主装配级键，SSOT 守卫）', () => {
+    // 自动切换开关归宿主（内核默认 on + strategyOverride 覆盖），角色包不参与决策。
+    // 若未来误加回键集，说明角色包再次获得自我切换控制权——此处守卫阻止回归。
+    expect(STRATEGY_KEY_RULES.prepare!.autoSwitch).toBeUndefined();
   });
 
   it('每个规则都是合法的 KeyRule 类型', () => {

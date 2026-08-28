@@ -48,7 +48,7 @@ description:
 
 设定记忆（persona / rules / skills）**唯一归角色包**（`role-packs/<名>/manifest.json` 核心控制 + 内容文件 persona.md / rules.md / skills/），**纯文件 + 内存缓存装载，不写 SQLite / 记忆库**（见 [memory-role-pack-boundary-rules.md](./memory-role-pack-boundary-rules.md) R1/R3/R7，ADR-025）。旧 `configDir/personas|rules|skills + SQLite 索引` 模型及其 API（`PersonaManager` / `ConfigManager` / `matchAndInjectSkill` / `bootstrapMemories getBySource('rule')`）已全部随收敛移除，不再作为设定记忆入口。
 
-- **Persona**：`persona.md` 约定名（未声明即回退）；确定性注入 systemPromptPrefix；粘性触发词匹配（`autoSwitch` + `exclusiveWith` 互斥，确定性信号而非语义匹配）；能力声明在 manifest 顶层 `capabilities`（C2）。不写 SQLite / 记忆库。
+- **Persona**：`persona.md` 约定名（未声明即回退）；确定性注入 systemPromptPrefix；粘性触发词匹配（`trigger` 触发词 + `exclusiveWith` 互斥，确定性信号而非语义匹配；匹配开关 `autoSwitch` 是**宿主装配级键**——角色包不可写，默认 on，由宿主 `strategyOverride` 覆盖门控）；能力声明在 manifest 顶层 `capabilities`（C2）。不写 SQLite / 记忆库。
 - **Skill**：全局技能池 `configDir/skills/`（全局激活）+ 角色包 `skills/`（角色激活才激活），两级统一**渐进披露**——L1 元数据常驻 system prompt、L2 `read_skill` 按需读正文、L3 `read_resource`/`run_skill_script`，目录动态扫描（C3）。不写 SQLite / 记忆库。
 - **Rule**：`rules.md` 约定名；确定性注入、始终在线。不写 SQLite / 记忆库。
 

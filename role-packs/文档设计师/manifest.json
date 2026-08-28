@@ -40,7 +40,6 @@
       "minFallback": 2,
       "summaryFocus": "以文档设计视角判断本轮值得记的维度：①文档受众与目标 ②结构与章节规划 ③术语与规范约定 ④代码/API 真实来源引用",
       "contextAssembly": "fixed",
-      "autoSwitch": "on",
       "recallConfidence": 0.7,
       "summaryRecall": "on"
     },

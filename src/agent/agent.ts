@@ -210,6 +210,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fileConsistencyCheck: opts.fileConsistencyCheck,
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
+      // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy），
+      // 压过角色包声明；语义键仍唯一（如 autoSwitch），此处仅改变其最终解析值
+      strategyOverride: opts.strategyOverride,
     };
     this.#provider = opts.provider;
     this.#backgroundProvider = opts.backgroundProvider ?? null;
@@ -433,6 +436,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
       consumeExecutionStream: (source) => this.consumeExecutionStream(source),
       getBackgroundProvider: () => this.#backgroundProvider,
+      // 宿主装配级策略覆盖（能力边界）：传给策略解析链，压过角色包声明（单一语义键不变）
+      strategyOverride: this.#config.strategyOverride,
     });
   }
 
@@ -1230,6 +1235,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       vectorStore: this.#config.vectorStore,
       recallExcludeSources: this.#config.recallExcludeSources,
       existingSkillManager: this.skillManager,
+      // 宿主装配级策略覆盖（能力边界）：透传组装器 → ContextPreparer（策略解析唯一链）
+      strategyOverride: this.#config.strategyOverride,
       // Agent 稳定能力（emit/守卫/暂停/角色切换）：接线下沉后仅传能力，接线语义在组装器唯一实现
       hooks: {
         // 桥接 SessionManager 宽类型事件到 Agent 强类型 emit（校验事件名在 AgentEventMap 内，避免不安全断言）

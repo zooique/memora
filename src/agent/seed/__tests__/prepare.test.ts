@@ -15,8 +15,6 @@ import type { Memory } from '@/memory/types.js';
 import {
   createHarness,
   collectGen,
-  makeStrategy,
-  useStrategy,
   type SeedMocks,
 } from './harness.js';
 
@@ -65,9 +63,12 @@ describe('SeedPrepare 回答前', () => {
     });
   });
 
-  it('autoSwitch=off：锁定当前角色包，不触发角色自动匹配', async () => {
+  it('strategyOverride 压过角色包声明：宿主全局关闭自动匹配（即使 autoSwitch=on 也跳过）', async () => {
     const { mocks, deps } = createHarness();
-    useStrategy(mocks, makeStrategy({ autoSwitch: 'off' }));
+    // 角色包策略保持默认 autoSwitch=on（未覆盖），但宿主装配级策略覆盖关闭自动匹配
+    // （VSCode 插件产品定位：角色包只用手动切换，不接入自动切换能力）。
+    // SSOT：语义键唯一为 autoSwitch（宿主层），strategyOverride 只改变其最终解析值。
+    deps.strategyOverride = { prepare: { autoSwitch: 'off' } };
 
     await collectGen(new SeedPrepare(deps).run('输入', new AbortController().signal));
 

@@ -427,7 +427,7 @@ export interface IMcpTransport {
 
 > 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.contextAssembly`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
 >
-> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` / `prepare.autoSwitch` / `prepare.recallConfidence` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。
+> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` / `prepare.recallConfidence` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。自动匹配键 `autoSwitch` **不属于角色包策略**——它是宿主装配级键（默认 on，宿主 `strategyOverride` 覆盖），角色包不可写。
 >
 > **状态列含义（P0 键集对齐）**：
 >

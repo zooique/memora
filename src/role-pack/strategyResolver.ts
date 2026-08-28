@@ -88,6 +88,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     minFallback: DEFAULT_MIN_FALLBACK,
     summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
     recallConfidence: 0.6,
+    // 自动匹配开关（宿主装配级键，SSOT 默认）：角色包不可写（STRATEGY_KEY_RULES 不含它），
+    // 最终值 = 默认 on 被宿主 strategyOverride 覆盖后的结果
     autoSwitch: 'on',
   },
   act: {
@@ -128,11 +130,24 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
  * 激活角色包策略优先，未激活/无管理器回退全局默认。本函数是「激活策略」推导的
  * 唯一实现，contextPreparer 与 seed 编排器经此统一取策略，杜绝跨模块镜像重复。
  *
- * @param rolePackManager 角色包管理器（可为空）
- * @returns 当前激活行为策略
+ * @param rolePackManager 角色包管理器（可为 null）
+ * @param override 宿主装配级策略覆盖（可选）：**压过角色包声明**，表达宿主产品能力边界
+ *  （如 VSCode 插件只允许手动切换角色包 → `{ prepare: { autoSwitch: 'off' } }`）。
+ *  只影响 override 声明过的键；SSOT：自动匹配键仍唯一为 autoSwitch，此处仅改变其最终解析值。
+ * @returns 当前激活行为策略（含装配级覆盖）
  */
-export function resolveActiveStrategy(rolePackManager: RolePackManager | null): BehaviorStrategy {
-  return rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
+export function resolveActiveStrategy(
+  rolePackManager: RolePackManager | null,
+  override?: Partial<BehaviorStrategy>,
+): BehaviorStrategy {
+  const base = rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
+  if (!override) return base;
+  return {
+    prepare: { ...base.prepare, ...override.prepare },
+    act: { ...base.act, ...override.act },
+    reflect: { ...base.reflect, ...override.reflect },
+    global: { ...base.global, ...(override.global ?? {}) },
+  };
 }
 
 
@@ -230,7 +245,11 @@ export function resolveErrorHandling(strategy: BehaviorStrategy | undefined): Er
   return normalizeEnum(strategy?.global?.errorHandling, ['retry', 'degrade', 'stop'], 'retry');
 }
 
-/** 解析角色自动匹配开关（内核已消费）：非法值归位 'on'——on=允许自动匹配切换 / off=锁定当前角色包 */
+/**
+ * 解析角色自动匹配开关（内核已消费）：非法值归位 'on'——on=允许自动匹配切换 / off=锁定当前角色包。
+ * **宿主装配级键**：值只可能来自内核默认（on）或宿主 strategyOverride 覆盖，角色包无法声明
+ * （STRATEGY_KEY_RULES 不含 autoSwitch，写了也被 validator 忽略）。
+ */
 export function resolveAutoSwitch(strategy: BehaviorStrategy | undefined): AutoSwitch {
   return normalizeEnum(strategy?.prepare?.autoSwitch, ['on', 'off'], 'on');
 }

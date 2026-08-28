@@ -1785,11 +1785,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           continue;
         }
         if (chunk.type === 'text' && chunk.content) {
-          // 转发 chunk（护栏已移除，chunk 不再携带 guardrailBlocked 标记）
+          // 转发 chunk（护栏已移除，chunk 不再携带 guardrailBlocked 标记）。
+          // stage 透传：'self_review' 自审查应答 → webview 独立分段渲染（审查输出与最终回答分离）
           this.post({
             type: 'chunk',
             content: chunk.content,
             ts: firstChunkTs,
+            stage: chunk.stage,
           });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → webview 渲染「执行中」卡片

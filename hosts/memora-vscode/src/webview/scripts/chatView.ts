@@ -921,6 +921,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let streamRenderTimer: ReturnType<typeof setTimeout> | undefined;
   /** 本轮是否已渲染过 body（首个 chunk 立即渲染的标志） */
   let streamBodyRendered = false;
+  /** 自审查分段内容体（stage='self_review' 的 chunk 渲染目标；null = 尚无分段） */
+  let reviewBodyEl: HTMLElement | null = null;
+  /** 自审查分段累积原始文本（分段增量 markdown 渲染的数据源） */
+  let reviewRaw = '';
 
   /** 把当前累积的流式原文渲染为 Markdown（写 body.innerHTML，消毒后安全） */
   function renderStreamBody(): void {
@@ -1013,6 +1017,43 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       open: true, // 自审查时展开显示步骤
       body: `自审查轮 ${round}：正在复核本轮产出…`,
     });
+  }
+
+  // ─── 自审查输出独立分段（分阶段协议 stage='self_review'） ───
+  // 审查应答文本（满意确认或修订输出）不再混入主回答流，而是渲染进独立的
+  // 「自审查」分段（头部标识 + 内容体），透明呈现"这是审查产出"（对齐用户诉求：
+  // 自审查输出需明确分段标识）。仅运行时展示，不持久化、不随历史重放。
+
+  /**
+   * 新建「自审查」独立分段容器：后续 stage='self_review' 的 chunk 文本渲染到此段。
+   * 主回答流若仍在流式则先定稿（finalizeStreaming 幂等），保证分段插入位于主回答之后。
+   */
+  function beginReviewBlock(): void {
+    // 主回答流定稿（幂等：未流式时直接返回），避免审查文本与未收尾主回答交错
+    finalizeStreaming();
+    const wrap = document.createElement('div');
+    wrap.className = 'review-block';
+    const header = document.createElement('div');
+    header.className = 'review-block__header';
+    header.textContent = '✦ 自审查';
+    const body = document.createElement('div');
+    body.className = 'review-block__body';
+    wrap.append(header, body);
+    messages.appendChild(wrap);
+    reviewBodyEl = body;
+    reviewRaw = '';
+    scrollToBottom(messages);
+    updateEmptyState();
+  }
+
+  /**
+   * 追加自审查应答文本到分段内容体（增量 markdown 渲染：审查输出很短，直接重渲成本可接受）
+   */
+  function appendReviewContent(content: string): void {
+    if (!reviewBodyEl) beginReviewBlock();
+    if (!reviewBodyEl) return;
+    reviewRaw += content;
+    reviewBodyEl.innerHTML = renderMarkdown(reviewRaw);
   }
 
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
@@ -1249,28 +1290,35 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
     } else if (msg.type === 'chunk') {
-      // 流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
-      // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
-      // guardrailBlocked 标记：护栏阻断文案已由内核 content 承载（[输入/输出被护栏阻断：rule]），
-      // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
-      // 字段仍随 chunk 透传，供未来结构化消费（eval / 日志）。
-      // 首个 chunk：开始一轮新流式（beginStreaming 创建新消息 + 置 streamingActive），
-      // 避免追加到上一条历史 AI 消息（activeAssistantEl 可能仍指向旧锚点）
-      if (!streamingActive) {
-        beginStreaming(msg.ts);
-        streamingActive = true;
-        streamingRaw = '';
+      // 自审查应答文本（stage='self_review'）：渲染进「自审查」独立分段，
+      // 与最终回答分离展示（透明呈现审查输出，不再混入主回答流）
+      if (msg.stage === 'self_review') {
+        if (msg.content) appendReviewContent(msg.content);
+        scrollToBottom(messages);
+      } else {
+        // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
+        // 工具卡片等节点插入不改变锚点，保证同一条回复不被拆成多段。
+        // guardrailBlocked 标记：护栏阻断文案已由内核 content 承载（[输入/输出被护栏阻断：rule]），
+        // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
+        // 字段仍随 chunk 透传，供未来结构化消费（eval / 日志）。
+        // 首个 chunk：开始一轮新流式（beginStreaming 创建新消息 + 置 streamingActive），
+        // 避免追加到上一条历史 AI 消息（activeAssistantEl 可能仍指向旧锚点）
+        if (!streamingActive) {
+          beginStreaming(msg.ts);
+          streamingActive = true;
+          streamingRaw = '';
+        }
+        const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') : null;
+        if (target) {
+          streamingRaw += msg.content;
+          // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
+          // 相比旧的「纯文本节点追加 + 结束一次性渲染」，用户实时看到 markdown 成形
+          // （列表/代码块不再显示 **、``` 原始记号），对齐 TraeWork 对话流。
+          if (!streamBodyRendered) renderStreamBody();
+          else scheduleStreamRender();
+        }
+        scrollToBottom(messages);
       }
-      const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') : null;
-      if (target) {
-        streamingRaw += msg.content;
-        // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
-        // 相比旧的「纯文本节点追加 + 结束一次性渲染」，用户实时看到 markdown 成形
-        // （列表/代码块不再显示 **、``` 原始记号），对齐 TraeWork 对话流。
-        if (!streamBodyRendered) renderStreamBody();
-        else scheduleStreamRender();
-      }
-      scrollToBottom(messages);
     } else if (msg.type === 'handoff') {
       // 衔接决策（SSOT 收紧后 loop 已由宿主归一为 wait，语意让位用户）：
       // wait 静默（等用户输入，输入框已随 done 恢复）；end 低扰提示任务已收尾。
@@ -1400,13 +1448,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         showActivity('info', `润色失败：${msg.message}`);
       }
     } else if (msg.type === 'self_review') {
+      // 自审查开始：新建「自审查」独立分段（后续审查应答文本渲染目标），再更新思考块提示
+      beginReviewBlock();
       appendSelfReview(msg.round);
     } else if (msg.type === 'clear_ok') {
       // 清空消息区须同时清 type=msg 消息、.tool-card 工具卡片、.self-review 自审查提示、
-      // .thought-block 思考折叠块、.date-divider 日期分隔线与 .followup 建议块
+      // .review-block 自审查分段、.thought-block 思考折叠块、.date-divider 日期分隔线与 .followup 建议块
       // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .tool-card, .self-review, .thought-block, .date-divider, .followup').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .tool-card, .self-review, .review-block, .thought-block, .date-divider, .followup').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
@@ -1421,6 +1471,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         streamRenderTimer = undefined;
       }
       streamBodyRendered = false;
+      // 自审查分段状态复位：节点已随上方选择器移除，引用置空 + 累积文本清空防脏写
+      reviewBodyEl = null;
+      reviewRaw = '';
       // 过程性状态复位：归档兜底定时器清除 + 思考块引用失效 + 日期分隔线重新计算
       // （重放从新日期开始）
       clearArchivingFallback();

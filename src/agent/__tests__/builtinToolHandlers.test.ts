@@ -141,6 +141,15 @@ describe('BuiltinToolHandlers.readFile', () => {
       errorCode: ToolErrorCode.FILE_NOT_FOUND,
     });
   });
+
+  it('路径指向目录（EISDIR 场景）→ 抛可执行指引错误，而非原生 EISDIR', async () => {
+    // read_file 语义是读文件：目标是目录时给出明确指引（LLM 据此改用 list_dir）
+    await expect(handlers.readFile('.')).rejects.toMatchObject({
+      errorCode: ToolErrorCode.ARGUMENT_ERROR,
+    });
+    // 错误 message 明确指明"目标是目录"（区别于原生 EISDIR，语义可执行）
+    await expect(handlers.readFile('.')).rejects.toThrow(/目标是目录/);
+  });
 });
 
 // ─── writeFile ───────────────────────────────────────────

@@ -148,6 +148,24 @@ export class BuiltinToolHandlers {
     this.guardPathOrThrow(absolutePath, 'read_file');
 
     try {
+      // 读前预检：目标是目录时给出可执行指引（read_file 语义是读文件；
+      // EISDIR 原生错误对 LLM 无意义，直接提示改用 list_dir）
+      const stats = await stat(absolutePath);
+      if (stats.isDirectory()) {
+        throw toolError(
+          'read_file 目标是目录',
+          `${relativePath}：这是目录，不是文件`,
+          ['改用 list_dir 列出该目录下的内容'],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
+      }
+    } catch (err) {
+      // stat 失败（如 ENOENT/权限）移交下方 readFile 异常路径统一报错；工具错误直接抛出
+      if (err instanceof MemoraError) throw err;
+    }
+
+    try {
       const content = await readFile(absolutePath, 'utf-8');
       // 返回净化：工具结果同哲学"长度上限 + 去控制字符"（超大文件不整段进上下文，防注入/撑爆）
       // 注：作品投影改为用户主动触发（register_work 工具），read_file 不再自动生成

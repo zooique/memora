@@ -52,7 +52,6 @@
       "minFallback": 2,
       "summaryFocus": "以方案设计视角判断本轮值得记的维度：①用户核心诉求 ②技术选型与理由 ③关键约束 ④规格参数与决策依据；用编号列表/表格保留结构化要点",
       "contextAssembly": "hybrid",
-      "autoSwitch": "on",
       "recallConfidence": 0.6,
       "summaryRecall": "on"
     },

@@ -45,6 +45,12 @@ export type AgentChunk =
   | {
       type: 'text';
       content: string;
+      /**
+       * 文本阶段标识：'self_review' 为自审查应答（机制层区分，供宿主分段渲染——
+       * 自审查输出与最终回答分离展示，不再混入同一消息流）；缺省/'answer' 为正常交付。
+       * 仅标识不改变内容语义，历史落库仍按整轮拼接。
+       */
+      stage?: TextChunkStage;
     }
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
@@ -66,6 +72,13 @@ export type AgentChunk =
    */
   | { type: 'selfReview'; round: number }
   | { type: 'done' };
+
+/**
+ * 文本块阶段标识（text chunk 携带）：供宿主区分正常交付与自审查应答，做独立分段展示。
+ * - 'answer'：正常回答（缺省值）
+ * - 'self_review'：自审查轮应答（满意确认或修订输出）
+ */
+export type TextChunkStage = 'answer' | 'self_review';
 
 // ─── 宿主可覆盖的 UI 文本 ────────────────────────────────
 
@@ -424,6 +437,8 @@ import type { IWebSearchProvider } from '@/web-search/types.js';
 import type { IFetchProvider } from '@/web-fetch/types.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { ProviderRouter } from '@/llm/types.js';
+// 宿主装配级策略覆盖类型（AgentOptions.strategyOverride）：引用角色包行为策略类型
+import type { BehaviorStrategy } from '@/role-pack/types.js';
 
 /**
  * 文件层前置条件断言回调：注入时 deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成
@@ -499,6 +514,14 @@ export interface AgentOptions {
   configDir?: string;
   /** 启动时激活的角色包名：优先激活该包，未配置或不存在时回退默认激活首个 */
   activeRolePack?: string;
+  /**
+   * 宿主装配级**策略覆盖**（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
+   * 只影响 override 声明过的键；是「宿主策略层」通用覆盖，不新增任何独立开关。
+   *
+   * 例：VSCode 插件只允许手动切换角色包（不接入自动匹配能力）→ `{ prepare: { autoSwitch: 'off' } }`
+   *（自动匹配的语义键唯一为角色包 autoSwitch，此处仅覆盖其最终解析值）。
+   */
+  strategyOverride?: Partial<BehaviorStrategy>;
   /** 记忆数据目录（由宿主显式注入） */
   dataDir?: string;
   /** 项目注册表目录（默认与 dataDir 相同；设为用户级路径可避免每项目重复存储） */

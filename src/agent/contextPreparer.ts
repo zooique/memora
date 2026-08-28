@@ -22,7 +22,7 @@ import {
   resolveSummaryRecall,
   resolveActiveStrategy,
 } from '@/role-pack/strategyResolver.js';
-import type { MemoryRecallMode } from '@/role-pack/types.js';
+import type { MemoryRecallMode, BehaviorStrategy } from '@/role-pack/types.js';
 import { computeContextBudget, isInputTooLarge } from '@/agent/budget.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
@@ -73,6 +73,8 @@ export interface ContextPreparerDeps {
   emit: (event: AgentEventName, data: unknown) => void;
   /** 角色切换回调（Agent 生命周期：激活 → 事件 → 刷新前缀 → 工具暴露） */
   switchRolePack: (name: string) => boolean;
+  /** 宿主装配级策略覆盖（可选）：压过角色包声明（如 VSCode 关闭自动切换 → { prepare: { autoSwitch: 'off' } }） */
+  strategyOverride?: Partial<BehaviorStrategy>;
 }
 
 /**
@@ -150,7 +152,7 @@ export class ContextPreparer {
   ): Promise<Memory[]> {
     const { deps } = this;
     // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
-    const strategy = resolveActiveStrategy(this.deps.rolePackManager);
+    const strategy = resolveActiveStrategy(this.deps.rolePackManager, this.deps.strategyOverride);
     let recalledMemories: Memory[] = [];
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──

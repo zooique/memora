@@ -321,7 +321,18 @@ export type ExtensionToWebviewMessage =
    * guardrailBlocked：对齐内核 text chunk 的护栏阻断标记（§7.2.1 结构化信号）。
    * 仅护栏阻断的那一条 chunk 携带 true；webview 据此渲染「护栏阻断」提示条。
    */
-  | { type: 'chunk'; content: string; ts?: string; guardrailBlocked?: boolean }
+  | {
+      type: 'chunk';
+      content: string;
+      ts?: string;
+      guardrailBlocked?: boolean;
+      /**
+       * 文本阶段标识（对齐内核 TextChunkStage，宿主侧本地字面量避免跨包类型耦合）：
+       * 'self_review' = 自审查应答文本，webview 据此渲染进「自审查」独立分段，
+       * 与最终回答分离展示（透明呈现审查输出）；缺省/'answer' 为正常回答流。
+       */
+      stage?: 'answer' | 'self_review';
+    }
   | { type: 'done' }
   | { type: 'error'; message: string }
   /**

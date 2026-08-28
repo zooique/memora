@@ -923,6 +923,26 @@ export const chatStyles = `
     50% { opacity: 0.35; }
   }
 
+  /* ============ Components：自审查输出分段（协议 stage='self_review'） ============ */
+  /* 审查应答文本（满意确认/修订输出）渲染到独立分段，与最终回答分离展示：
+   * 头部「✦ 自审查」明确标识阶段，正文沿用次要 info 视觉（低对比不抢对话主体）。 */
+  .review-block {
+    margin: 0 var(--sp-5, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    font-size: var(--font-sm, 11px); line-height: 1.6;
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--feedback-info-bg, rgba(0, 0, 0, .02));
+    border-left: 2px solid var(--border-panel, rgba(128, 128, 128, .4));
+  }
+  .review-block__header {
+    font-weight: 600; margin-bottom: var(--sp-1, 4px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .review-block__body {
+    word-break: break-word;
+    /* 审查内容即使含代码也不允许横向撑破容器 */
+    overflow-wrap: anywhere;
+  }
+
   /* ============ Components：活动状态区 · 详情折叠（历史 + 指标） ============ */
   /* 活动详情折叠区：历史记录（error 标红 / info 灰显，带时间戳）+ 指标块。
    * 被主状态条覆盖的提示不丢失，全部在此回溯（有界 MAX_ACTIVITY_HISTORY 条）。 */
