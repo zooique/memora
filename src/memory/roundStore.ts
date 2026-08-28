@@ -61,6 +61,104 @@ export interface RoundMessage {
  */
 export type RoundStatus = 'pending' | 'complete' | 'error';
 
+// ─── 过程事件（ProcessEvent）────────────────────────────
+// 每轮「过程事件」= UI 状态重建的最小信息（运行时与重放共用同一份数据，
+// 见 docs/architecture/process-event-log-replay-design.md §3.3）。
+// 落位决策：ProcessEvent 是 Round 的组成部分（存储面），故定义于 memory/；
+// thinking 阶段用本地字面量 ProcessThinkingPhase（与 agent/types.ts ThinkingPhase 同值），
+// 避免 memory → agent 反向依赖（对齐 protocol.ts「宿主侧本地字面量避免跨包类型耦合」先例）。
+
+/**
+ * 思考阶段值（与 agent ThinkingPhase 同值的本地字面量，解耦依赖方向）
+ *
+ * 阶段与 Agent 闭环对应：recalling=召回 / llm_calling=调用模型 / processing=处理 /
+ * planning,step,reporting=外部任务外循环 / archiving=归档。
+ */
+export type ProcessThinkingPhase =
+  | 'recalling'
+  | 'processing'
+  | 'archiving'
+  | 'llm_calling'
+  | 'planning'
+  | 'step'
+  | 'reporting';
+
+/** meta 事件载荷：该轮回答身份（角色/模型均为显示名，重放不依赖 ProviderStore/RolePackManager） */
+export interface ProcessMetaPayload {
+  /** 角色显示名（displayName ?? name） */
+  role: string;
+  /** 模型显示名（displayName ?? name） */
+  llm: string;
+}
+
+/** recall 事件条目：召回记忆摘要（不含全文，指针不带内容，与作品投影同构） */
+export interface ProcessRecallItem {
+  /** 记忆唯一标识（source:name） */
+  id: string;
+  /** 记忆可读名称 */
+  name: string;
+  /** 来源标签（如 'round-summary'） */
+  source: string;
+  /** 相似度分数（0-1） */
+  score: number;
+}
+
+/** metrics 事件载荷：每轮执行汇总（流结束后写一条） */
+export interface ProcessMetricsPayload {
+  /** 本轮耗时（毫秒） */
+  durationMs: number;
+  /** 输入 token 用量 */
+  tokenIn: number;
+  /** 输出 token 用量 */
+  tokenOut: number;
+  /** 工具调用失败次数 */
+  toolFailureCount: number;
+  /** 召回记忆条数 */
+  recallCount: number;
+  /** 本轮是否成功完成（false = 中断/失败） */
+  success: boolean;
+}
+
+/**
+ * 过程事件（过程轨最小信息，Round 内顺序存储）
+ *
+ * 由宿主在 consumeFlow 旁路从 AgentChunk / 主机事件派生，流结束时附到 Round.processEvents
+ * 一次性落盘；重放时按 seq 有序重建 UI（运行时与重放共用同一渲染数据源）。
+ *
+ * 事件类型全量：
+ * - meta：每轮首条，该轮回答身份
+ * - thinking / recall / memory_added / tool_start / tool_result：过程明细
+ * - self_review / text_self_review：自审查过程与输出
+ * - aborted：中断标记
+ * - metrics：每轮末条，执行汇总
+ */
+export type ProcessEvent =
+  | { type: 'meta'; seq: number; ts: string; payload: ProcessMetaPayload }
+  | { type: 'thinking'; seq: number; ts: string; payload: { phase: ProcessThinkingPhase } }
+  | { type: 'recall'; seq: number; ts: string; payload: { memories: ProcessRecallItem[] } }
+  | {
+      type: 'memory_added';
+      seq: number;
+      ts: string;
+      payload: { id: string; name: string; source: string };
+    }
+  | {
+      type: 'tool_start';
+      seq: number;
+      ts: string;
+      payload: { toolCallId: string; name: string; args?: string };
+    }
+  | {
+      type: 'tool_result';
+      seq: number;
+      ts: string;
+      payload: { toolCallId: string; name: string; ok: boolean; summary?: string };
+    }
+  | { type: 'self_review'; seq: number; ts: string; payload: { round: number } }
+  | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
+  | { type: 'aborted'; seq: number; ts: string; payload: { reason: string } }
+  | { type: 'metrics'; seq: number; ts: string; payload: ProcessMetricsPayload };
+
 // ─── 问答闭环 ───────────────────────────────────────────
 
 /**
@@ -115,6 +213,15 @@ export interface Round {
    * - 引用计数为 0 时可被 GC 清理
    */
   refCount: number;
+
+  /**
+   * 过程事件（每轮 UI 状态重建真相源，可选）
+   *
+   * 与 assistantMessage 同在闭环完成时刻定型（Write-once），存储于同一 Round 文件——
+   * 删 round 即删事件、分叉即共享、截断即覆盖（v1.5 单文件内聚，见
+   * process-event-log-replay-design.md §3.4）。缺省仅因 pending/error 轮无过程数据。
+   */
+  processEvents?: ProcessEvent[];
 }
 
 // ─── 问答闭环存储接口 ───────────────────────────────────

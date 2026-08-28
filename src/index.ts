@@ -126,6 +126,14 @@ export { getSessionDisplayName } from '@/memory/sessionStore.js';
 // ─── 问答闭环（Round）存储导出 ─────────────────────────────
 // Round 数据结构和存储接口
 export type { Round, RoundMessage, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
+// 过程事件（每轮 UI 状态重建真相源，v1.5 单文件内聚，见 process-event-log-replay-design）
+export type {
+  ProcessEvent,
+  ProcessThinkingPhase,
+  ProcessMetaPayload,
+  ProcessRecallItem,
+  ProcessMetricsPayload,
+} from '@/memory/roundStore.js';
 // Round 辅助函数
 export { generateRoundId, generateMessageId, createPendingRound, completeRound } from '@/memory/roundStore.js';
 
