@@ -1501,21 +1501,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 按轮交织发送重放视图（v1.5，§3.7 时序）
+   * 按轮交织发送重放视图（v1.6，§3.7 时序）
    *
-   * 每轮：user → meta（process_event 单独先行，写入本轮身份）→ 其余 replay_events →
-   * assistant 正文（此块挂 round-block）。meta 先于正文到达，保证该轮 AI 消息标签挂对角色/模型；
+   * 每轮：user → replay_events（含 meta，整批统一重放）→ assistant 正文（此块挂 round-block）。
+   * 严禁拆分 meta 走 process_event：process_event(meta) 在 webview 端被当作「运行时新轮开始」，
+   * 会调用 prepareFlowShell() 建骨架 assistant 块，导致后续 assistant 正文又 append 第二个块
+   * （同一轮出现两条独立消息块的 bug）。replay_events 处理自行从数组提取 meta 设身份，无骨架副作用。
    * 无过程事件（纯问答轮/旧数据）则仅回放正文（不产生 round-block）。
    */
   private sendRoundView(rounds: ReplayRound[]): void {
     for (const r of rounds) {
       if (r.user) this.post({ type: 'user', text: r.user.content, ts: r.user.ts });
-      const metaEv = r.processEvents[0]?.type === 'meta' ? r.processEvents[0] : undefined;
-      if (metaEv) {
-        this.post({ type: 'process_event', event: metaEv });
-        const rest = r.processEvents.slice(1);
-        if (rest.length > 0) this.post({ type: 'replay_events', roundId: r.roundId, events: rest });
-      } else if (r.processEvents.length > 0) {
+      // 整批统一发 replay_events（含 meta）：拆分 meta 走 process_event 会让 webview 端把
+      // 该轮当「运行时新轮」触发骨架创建，产生重复消息块（原因见方法注释，勿再拆分）
+      if (r.processEvents.length > 0) {
         this.post({ type: 'replay_events', roundId: r.roundId, events: r.processEvents });
       }
       if (r.assistant) {

@@ -275,7 +275,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   // ─── v1.5 交织重放（processEvents 与正文同源同轮） ───
-  it('round-based 交织重放：user → meta(process_event) → replay_events → assistant（§3.7 时序）', () => {
+  it('round-based 交织重放：user → replay_events（含 meta，整批）→ assistant（v1.6 时序）', () => {
     const { store, roundStore, provider, posted } = setup();
     // 生产装配路径：extension 注入同一 viewLoader + roundStore 单例
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
@@ -297,23 +297,25 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    // 关键时序：session_title 收尾；user → meta 单独先行（该轮标签挂对）→ 其余整批 → assistant 正文
+    // 关键时序（v1.6）：session_title 收尾；user → replay_events（meta 并入整批，不单独发 process_event，
+    // 避免 webview 端把 meta 当「运行时新轮」建骨架块导致同一轮出现两条独立消息）→ assistant 正文
     const ordered = posted.map((m) => (m as { type: string }).type);
-    const idxMeta = posted.findIndex((m) => (m as { type: string }).type === 'process_event');
     const idxReplay = ordered.indexOf('replay_events');
     const idxAssistant = ordered.indexOf('assistant');
+    // meta 不再单独走 process_event 通道（进程事件整批归一，SSOT）
+    expect(ordered).not.toContain('process_event');
     expect(ordered.indexOf('user')).toBeGreaterThanOrEqual(0);
-    expect(idxMeta).toBeGreaterThan(ordered.indexOf('user')); // meta 在 user 之后
-    expect(idxReplay).toBeGreaterThan(idxMeta); // 其余事件在 meta 之后
+    expect(idxReplay).toBeGreaterThan(ordered.indexOf('user')); // 整批事件在 user 之后
     expect(idxAssistant).toBeGreaterThan(idxReplay); // 正文在事件之后（块可挂载）
     expect(idxAssistant).toBeLessThan(ordered.indexOf('session_title'));
-    // meta 内容 = 该轮身份（角色/模型显示名）
-    const metaMsg = posted[idxMeta] as { event: { payload: { role: string; llm: string } } };
-    expect(metaMsg.event.payload).toEqual({ role: '文档设计师', llm: 'deepseek-chat' });
-    // replay_events：roundId 关联正确，且不含 meta（meta 已单独发送）
+    // replay_events：roundId 关联正确，且 meta 为整批首条（webview 端自行提取身份，不再单独发）
     const replay = posted[idxReplay] as { roundId: string; events: { type: string }[] };
     expect(replay.roundId).toBe('round-1');
-    expect(replay.events.map((e) => e.type)).toEqual(['recall', 'metrics']);
+    expect(replay.events.map((e) => e.type)).toEqual(['meta', 'recall', 'metrics']);
+    expect((replay.events[0] as unknown as { payload: { role: string; llm: string } }).payload).toEqual({
+      role: '文档设计师',
+      llm: 'deepseek-chat',
+    });
   });
 
   it('round-based 纯问答轮（无 processEvents）退化为仅正文，不发 process_event/replay_events', () => {

@@ -1,14 +1,15 @@
 # 过程事件日志 + 重放重建（规范化设计文档）
 
 > **文档状态**：✅ 正式设计方案（SSOT）
-> **版本**：v1.5
+> **版本**：v1.6
 > **创建日期**：2026-08-28
-> **状态**：SSOT 纯度复审修订（v1.5，待实施）
+> **状态**：SSOT 纯度复审修订（v1.5）→ TTFT 骨架即时反馈（v1.6，已实施）
 
 ### 变更记录
 
 | 版本   | 日期         | 变更                                                                                                                                                                                                                                                                               |
 | ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v1.6 | 2026-08-28 | **TTFT 骨架即时反馈（用户实测 + 主流对齐）**：meta 到达即建「流式骨架块」（空正文 assistant 块：角色·模型标签 + round-block 运行状态），首 token 前不再白屏——吸收 Claude Code #81659 提交后无指示投诉 / 骨架屏（skeleton）与预期性动画最佳实践；summary 流式中显示最新 thinking 阶段文案（召回记忆中/调用模型中…）与呼吸点；首个 text chunk 复用骨架块（不新建第二条消息）。运行时与重放路径不变（同一 round-block 渲染）。**v1.6.1 修复**：重放原拆分 meta 单独发 `process_event` → webview 端把它当「运行时新轮」触发骨架创建，与正文块重复成两条独立消息；收敛为整批 `replay_events`（含 meta）统一重放，webview 端自提取 meta 设身份，无骨架副作用 |
 | v1.5 | 2026-08-28 | **SSOT 纯度复审（开发期，不做兼容包袱）**：① 每轮消息身份单源——新增「本轮身份」`currentRoundMeta`（由 meta 事件写入），消息标签一律读它，运行时与重放同一机制；废除「meta 更新全局 currentRoleName」与「顶栏=最后重放轮 meta」（伪真理源，与 `chat_role_pack` 冲突）② webview 渲染真相源收口为「当前轮 `processEvents[]`」，渲染类消息统一为 `process_event` 增量 + `replay_events` 整批，二者汇入同一数组、同一 `renderRoundBlock` ③ § 执行指标一律从 `ProcessEvent.metrics` 渲染；trace/securityAudit 划为调试面板（showMetrics）不参与 diff ④ 重放截断改按 round 粒度，杜绝半轮 ⑤ 删除兼容旧会话措辞（`processEvents` 可选仅因 pending 轮天然无事件） |
 | v1.4 | 2026-08-28 | **存储形态合案（用户设计指针）**：过程事件从独立 JSONL **并入 Round 文件**（`Round.processEvents?: ProcessEvent[]` 可选字段）——删 round 即删事件、分叉即共享、截断即覆盖，生命周期天然原子，废除独立 EventLog 存储 + 宿主双路径 GC 联动（撤销 v1.3 B1 复杂度）；正文与过程同文件同轮，重放交织天然成立（撤销 v1.3 C1 的 host 编排负担）。事件条目类型统一命名 `ProcessEvent`。S1 从「新接口 IEventLogStore」降为「Round 类型 + 事件类型定义」 |
 | v1.3 | 2026-08-28 | **评审修订收口（159 审查）**：① 写入路径改「流式期间内存缓冲 → 流结束一次性以 latestRoundId 落盘」（宿主流式期间无 roundId 可写，A1）；② 事件模型补 `memory_added`（对齐全 §1.1 现象清单，A2）与 `metrics` 聚合事件（§3.8.1 耗时/token 数据来源，A3）；③ GC 联动改宿主双路径清理（B1）；④ 重放改「按 round 交织发送」（C1）；⑤ 补 round-block 挂载规则（插话场景，A4）、plan-board 归属（C3）、受影响文件清单（B2） |
@@ -178,7 +179,7 @@ ProcessEvent = {
 
 * 宿主实际加载路径为 `loadHistory → loadRoundBasedHistory()`（[chatPanel.ts](../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）：每个 round 读出时**正文与 `processEvents` 天然同源同轮**（同一对象），不再有"两个存储凑一份视图"的问题
 
-* **按 round 交织重放**（数据源同一）：每轮先发该轮 user + assistant 正文（携带 roundId），再发该轮 `replay_events`；第一条 `meta` 事件**先于**该轮 assistant 正文写入「本轮身份」`currentRoundMeta`（独立于会话级 `currentRoleName`），`buildAssistantShell` 渲染该轮 AI 消息时读 `currentRoundMeta` 挂角色/模型标签——运行时与重放同一机制（v1.5 单源修正）
+* **按 round 交织重放**（数据源同一，v1.6.1 收敛时序）：每轮 `user` → `replay_events`（整批含 meta，webview 端自行提取 meta 写入「本轮身份」`currentRoundMeta`）→ `assistant` 正文（携带 roundId）。严禁拆分 meta 单独发 `process_event`——webview 端会把该轮当「运行时新轮」触发骨架块创建，与正文块重复成两条独立消息（v1.6.1 实测回归根因）。`buildAssistantShell` 渲染该轮 AI 消息时读 `currentRoundMeta` 挂角色/模型标签——运行时与重放同一机制（v1.5 单源修正）
 
 * 按 `seq` 有序重放 → 产出「状态重建指令」→ host 复用现有 `post` 协议推给 webview
 
@@ -194,16 +195,18 @@ replay_events: { roundId: string; events: ProcessEvent[] }
 
 webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk 转发同路径）。
 
-**发送时序（与 §3.6 交织规则配合）**：
+**发送时序（v1.6.1 收敛，与 §3.6 交织规则配合）**：
 
 ```
-每轮发送序列：
-  1. user 消息（append，携带 roundId）
-  2. replay_events 中的 meta 先写入 currentRoundMeta（本轮身份）
+每轮发送序列（sendRoundView 实现，勿拆分 meta）：
+  1. user 消息（append）
+  2. replay_events（整批：meta 首条 + thinking/recall/memory_added/tool_*/self_review/aborted/metrics）
+     → webview 端提取 meta 写入 currentRoundMeta（本轮身份），其余事件 append 到当前轮 events[]
+     → 由 renderRoundBlock 统一渲染
   3. assistant 正文（append，携带 roundId，标签读 currentRoundMeta）
-  4. 其余 replay_events（thinking/recall/memory_added/tool_*/self_review/aborted/metrics）
-     → 全部 append 到当前轮 events[]，由 renderRoundBlock 统一渲染
 ```
+
+> **为什么 meta 必须并入整批（v1.6.1）**：旧时序把 meta 单独以 `process_event` 发送，webview 端 `process_event(meta)` 分支会调用 `prepareFlowShell()` 建「运行时新轮」骨架块（TTFT 即时反馈专用）；重放时正文随后到达又 append 第二条消息 → 同一轮出现两条独立消息块。整批 `replay_events` 走重放分支，仅提取 meta 设身份、不触发骨架创建，时序与运行时新轮语义正确分离。
 
 **身份单源（v1.5 定案）**：`meta` 事件唯一职责 = 写入「本轮身份」`currentRoundMeta`（该轮 AI 消息挂的角色/模型标签）。会话级「当前角色」**唯一真理源 = `chat_role_pack` 消息**（顶栏/输入区徽章/空状态），由宿主在重放末尾（及实时切换时）推送——**删除「顶栏 = 最后重放轮 meta」表述**：那是与 `chat_role_pack` 冲突的伪真理源（用户切角色后未再发消息时，最后 meta 与当前激活角色不同）。两者职责分离：meta 管"每条消息谁答的"，chat_role_pack 管"现在是谁"。
 
@@ -250,6 +253,8 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 #### 3.8.3 保留的最小运行时反馈（流式过程中）
 
 流式生成期间，为了用户能感知"AI 在工作"，保留以下**极简指示器**，回答完成后自动并入折叠区：
+
+* **流式骨架块（v1.6，TTFT 前即时反馈）**：`meta` 到达即创建「空正文 assistant 块」——标签（角色·模型）+ round-block 运行状态立即可见；summary 显示最新 thinking 阶段文案（召回记忆中/调用模型中…）+ 呼吸点。首个 `text` chunk 复用此块（正文流入同一块，不新建第二条消息）。根因：TTFT（首 token）前 webview 无任何可见反馈，表现为「发送后空白」——吸收 Claude Code [#81659](https://github.com/anthropics/claude-code/issues/81659)（提交后无工作指示投诉）与骨架屏/预期性动画最佳实践
 
 * **一行胶囊**：`⚡ 正在调用 read_file` / `✓ 读取文件成功`（与现有 tool-card--capsule 同构，但不展开独立卡片，完成后收进折叠区）
 

@@ -595,6 +595,96 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // DOM 与引用状态同步清空（下一轮 meta 重新挂载）
     expect(document.querySelector('.round-block')).toBeNull();
   });
+
+  it('meta 到达即建流式骨架：角色·模型标签 + round-block 运行状态立即可见（TTFT 前即时反馈）', () => {
+    mountChatView();
+    // 仅 meta（LLM 首 token 未到时）：应已有「谁在回答 + 正在做什么」
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '代码专家', llm: 'deepseek-chat' } } });
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(assistant).not.toBeNull();
+    // 消息标签显示本轮身份
+    const label = assistant.querySelector('.msg-ai-label') as HTMLElement;
+    expect(label.textContent).toContain('代码专家');
+    expect(label.textContent).toContain('deepseek-chat');
+    // round-block 已挂载并处于运行中，summary 显示处理状态
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(rb.classList.contains('is-running')).toBe(true);
+    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('处理中…');
+  });
+
+  it('thinking 到达后骨架 summary 实时显示运行阶段（召唤中 → 调用模型中…）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
+    let summary = document.querySelector('.round-block__summary') as HTMLElement;
+    expect(summary.textContent).toContain('召回记忆中');
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
+    summary = document.querySelector('.round-block__summary') as HTMLElement;
+    expect(summary.textContent).toContain('调用模型中');
+  });
+
+  it('首个 chunk 复用餐架块：正文流入同一块，不新建第二条 assistant 消息', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // 骨架已存在（meta 建立）
+    expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
+    dispatch({ type: 'chunk', content: '正文内容' });
+    dispatch({ type: 'chunk', content: '继续' });
+    dispatch({ type: 'done' });
+    // 仍是一条消息，正文完整流入骨架
+    const assistants = document.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(assistants[0].querySelector('.msg-body')?.textContent?.trim()).toBe('正文内容继续');
+  });
+
+  it('重放路径：replay_events（含 meta）+ assistant 只产生 1 个 assistant 块（重启不重复块）', () => {
+    mountChatView();
+    // 模拟重启后 sendRoundView 的新时序：先 user，再 replay_events（整批含 meta），再 assistant
+    dispatch({ type: 'user', text: '介绍下自己', ts: '2026-08-28T20:15:00Z' });
+    dispatch({
+      type: 'replay_events',
+      roundId: 'r:100',
+      events: [
+        { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo-v2.5-pro' } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', score: 0.9 }] } },
+        { type: 'metrics', seq: 3, ts: '', payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 } },
+      ],
+    });
+    dispatch({ type: 'assistant', text: '我是Memora Agent，专注于将模糊想法设计为可落地的项目方案。', ts: '2026-08-28T20:16:00Z', roundId: 'r:100' });
+    // 核心断言：只有一条 assistant 消息块（不能出现"运行状态一条 + 正文一条"的双线 bug）
+    const assistants = document.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    // 该块同时承载：身份标签 + 正文 + round-block（三合一，不分裂）
+    const el = assistants[0] as HTMLElement;
+    expect(el.querySelector('.msg-ai-label')?.textContent).toContain('方案设计师');
+    expect(el.querySelector('.msg-ai-label')?.textContent).toContain('mimo-v2.5-pro');
+    expect(el.querySelector('.msg-body')?.textContent).toContain('Memora Agent');
+    const rb = el.querySelector('.round-block') as HTMLElement | null;
+    expect(rb).not.toBeNull();
+    expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('耗时 9.6s');
+    expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('记忆×1');
+  });
+
+  it('重放路径不会创建流式骨架引用（flowShellEl 保持 null，无残留副作用）', () => {
+    mountChatView();
+    // 模拟重启：直接走 replay_events（含 meta），不经过 process_event(meta)
+    dispatch({
+      type: 'replay_events',
+      roundId: 'r:200',
+      events: [
+        { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+      ],
+    });
+    dispatch({ type: 'assistant', text: '回答', ts: 't', roundId: 'r:200' });
+    // 现在模拟用户发送下一轮新消息（先 user）——user 消息处理会尝试清 flowShellEl，
+    // 如果重放时错误地留下了 flowShellEl 残留，这里会把正文块当作骨架删掉，
+    // 从而产生 bug。验证：发送 user 后上一条 assistant 正文块仍健在。
+    const before = document.querySelectorAll('.msg.assistant').length;
+    dispatch({ type: 'user', text: '下一个问题', ts: 't2' });
+    expect(document.querySelectorAll('.msg.assistant')).toHaveLength(before);
+    expect(document.querySelectorAll('.msg.assistant')[0].querySelector('.msg-body')?.textContent).toContain('回答');
+  });
 });
 
 describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 重构）', () => {
