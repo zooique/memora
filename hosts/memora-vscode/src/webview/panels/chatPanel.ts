@@ -1012,7 +1012,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 分叉当前会话（标题条「分叉」触发，B3 会话生命周期补齐，2026-08-22）
+   * 分叉当前会话（AI 回复底部「分叉」按钮触发，B3 会话生命周期补齐，2026-08-22）
    *
    * 薄壳消费内核 forkSession()：把当前对话复制为新分支并切入（工作记忆同步到新分支）。
    * fork 不分叉记忆——记忆索引全局共享，仅对话历史分叉；空会话/对话繁忙由内核拒绝，
@@ -1855,14 +1855,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 结束状态：用户打断（abort() 已置 signal.aborted）→ interrupted（webview 渲染
     // 「已停止」并恢复输入框）；软暂停 → status:paused（按钮切为「继续」）；
     // 正常结束 → done。三者均恢复/切换按钮态，仅提示语义不同。
+    // 附带当前会话最新 roundId：webview 据此回填消息分叉按钮（任意 LLM 回答可分叉）。
+    const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
+    const sessionRoundIds = meta?.roundIds ?? [];
+    const latestRoundId = sessionRoundIds[sessionRoundIds.length - 1];
     if (controller.signal.aborted) {
-      this.post({ type: 'interrupted' });
+      this.post({ type: 'interrupted', roundId: latestRoundId });
       this.post({ type: 'status', state: 'done' });
     } else if (pausedOnPurpose) {
       // 软暂停：不推送 done/interrupted，切换为 paused 状态（允许用户继续）
       this.post({ type: 'status', state: 'paused' });
     } else {
-      this.post({ type: 'done' });
+      this.post({ type: 'done', roundId: latestRoundId });
       this.post({ type: 'status', state: 'done' });
       // T2 Follow-up 建议：仅正常结束时推送（零 LLM、纯计算；打断/异常不给不完整回复挂建议）
       this.postSuggestions();
@@ -1989,9 +1993,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span class="btn-icon" data-icon="edit"></span>
     </button>
     <span class="session-title-bar__spacer"></span>
-    <button id="forkSessionBtn" class="session-title-bar__btn" title="分叉当前会话为新分支" aria-label="分叉当前会话为新分支">
-      <span class="btn-icon" data-icon="fork"></span>
-    </button>
     <button id="newSessionBtn" class="session-title-bar__btn" title="新建会话" aria-label="新建会话">
       <span class="btn-icon" data-icon="plus"></span>
     </button>

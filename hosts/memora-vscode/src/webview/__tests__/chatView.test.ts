@@ -15,7 +15,6 @@ const HTML = `
     <span id="sessionTitleText"></span>
     <button id="renameSessionBtn"><span class="btn-icon" data-icon="edit"></span></button>
     <span class="session-title-bar__spacer"></span>
-    <button id="forkSessionBtn"><span class="btn-icon" data-icon="fork"></span></button>
     <button id="newSessionBtn"><span class="btn-icon" data-icon="plus"></span></button>
   </div>
   <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
@@ -598,12 +597,10 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     vi.restoreAllMocks();
   });
 
-  it('标题条按钮：改名/分叉/新建 发送对应消息；历史按钮请求列表', () => {
+  it('标题条按钮：改名/新建 发送对应消息；历史按钮请求列表', () => {
     const { postMessage } = mountChatView();
     (document.getElementById('renameSessionBtn') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'rename_request' });
-    (document.getElementById('forkSessionBtn') as HTMLElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'fork_session' });
     (document.getElementById('newSessionBtn') as HTMLElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'new_session' });
     (document.getElementById('historyBtn') as HTMLElement).click();
@@ -895,6 +892,34 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     expect(del).not.toBeNull();
     // 有 timestamp 锚点时删除按钮可用
     expect(del.disabled).toBe(false);
+  });
+
+  it('流式回答 done 携带 roundId → 分叉按钮启用（任意 LLM 回答可分叉）', () => {
+    const { postMessage } = mountChatView();
+    // 流式期间：roundId 未知 → 分叉按钮初始禁用（灰色）
+    dispatch({ type: 'chunk', content: '第一段' });
+    const msg = document.querySelector('.msg.assistant') as HTMLElement;
+    const forkBtn = msg.querySelector('.msg-fork-icon') as HTMLButtonElement;
+    expect(forkBtn).not.toBeNull();
+    expect(forkBtn.disabled).toBe(true);
+    // 本轮闭环结束：host done 携带 roundId → 回填 dataset 并启用按钮
+    dispatch({ type: 'done', roundId: 'round-42' });
+    expect(msg.dataset.roundId).toBe('round-42');
+    expect(forkBtn.disabled).toBe(false);
+    // 点击 → 携带该 roundId 发 fork_session（从本轮位置分叉新会话）
+    forkBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'fork_session', roundId: 'round-42' });
+  });
+
+  it('interrupted 携带 roundId → 打断产生的部分回答也可分叉', () => {
+    mountChatView();
+    dispatch({ type: 'chunk', content: '半截回答' });
+    const msg = document.querySelector('.msg.assistant') as HTMLElement;
+    const forkBtn = msg.querySelector('.msg-fork-icon') as HTMLButtonElement;
+    expect(forkBtn.disabled).toBe(true);
+    dispatch({ type: 'interrupted', roundId: 'round-7' });
+    expect(msg.dataset.roundId).toBe('round-7');
+    expect(forkBtn.disabled).toBe(false);
   });
 
   it('AI 消息删除按钮：携带该消息 ts 发送 delete_turn（host 确认后截断）', () => {

@@ -64,9 +64,10 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'new_session' }
   /**
-   * 分叉当前会话（标题条「分叉」按钮触发，B3 会话生命周期补齐，2026-08-22）
+   * 分叉当前会话（AI 回答底部「分叉」按钮触发，B3 会话生命周期补齐，2026-08-22）
    *
-   * host 调 agent.forkSession() 将当前对话复制为新分支会话并切入，UI 回放新分支；
+   * webview 从目标消息 dataset.roundId 携带本轮 id；host 调 agent.forkSession() 将当前对话
+   * 复制为新分支会话并切入，UI 回放新分支；无 roundId 时回退当前会话最后一个 round（兜底）。
    * 当前会话为空或对话繁忙时内核会拒绝并通知（host 兜底提示）。记忆索引全局共享，
    * fork 仅分叉对话历史不隔离记忆空间。
    */
@@ -333,16 +334,24 @@ export type ExtensionToWebviewMessage =
        */
       stage?: 'answer' | 'self_review';
     }
-  | { type: 'done' }
+  | {
+      type: 'done';
+      /**
+       * 本轮问答闭环的 roundId（round-based 会话消息底部分叉按钮回填用）：
+       * webview 据此启用刚完成回答的分叉按钮；无 roundId（异常/空会话）时可缺省。
+       */
+      roundId?: string;
+    }
   | { type: 'error'; message: string }
   /**
    * 流被用户中断（stop 的应答）
    *
    * host 在 AbortController.abort() 后发送：告知 webview 本轮输出已中止，
    * 用于：(1) 恢复输入框/停止按钮状态；(2) 渲染「已停止」提示；
-   * (3) 区分「正常结束(done)」与「用户主动打断(interrupted)」。
+   * (3) 区分「正常结束(done)」与「用户主动打断(interrupted)」。同时携带本轮
+   * roundId（与 done 同语义）：打断也可能产生部分回答，允许从该轮分叉。
    */
-  | { type: 'interrupted' }
+  | { type: 'interrupted'; roundId?: string }
   /**
    * 工具调用开始（Agent 循环的步骤，手动具象化）
    *

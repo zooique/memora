@@ -854,15 +854,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 复制按钮读取 .msg.dataset.rawText（原始 Markdown 源）；流式结束更新后即复制完整文本
     copyBtn.addEventListener('click', () => copyText(div.dataset.rawText ?? ''));
     footer.appendChild(copyBtn);
-    // 分叉按钮（round-based 模式）：从当前问答闭环位置创建新会话
-    // 仅在 roundId 可用时启用（round-based 会话），legacy 会话禁用
+    // 分叉按钮（round-based 模式）：从当前问答闭环位置创建新会话。
+    // 流式期间 roundId 未知 → 初始禁用；轮结束（done/interrupted）由 commitRoundId 回填并启用。
+    // SSOT：点击始终读 dataset.roundId（单一读取点），回填即生效，无需重建事件。
     const forkBtn = createIcon('fork', '从此处分叉创建新会话', 'msg-fork-icon');
     forkBtn.disabled = !roundId;
-    if (roundId) {
-      forkBtn.addEventListener('click', () => {
-        vscode.postMessage({ type: 'fork_session', roundId });
-      });
-    }
+    forkBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'fork_session', roundId: div.dataset.roundId || undefined });
+    });
     footer.appendChild(forkBtn);
     // 删除按钮（2026-08-16 对话闭环管理）：AI 消息承载「删除问答闭环」入口——删了答也删问。
     // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
@@ -1006,6 +1005,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     streamingActive = false;
     streamingRaw = '';
     streamBodyRendered = false;
+  }
+
+  /**
+   * 本轮问答闭环结束后回填 roundId：启用该条 AI 消息的分叉按钮（任意 LLM 回答可分叉）。
+   *
+   * 流式创建时 roundId 未知 → 按钮初始禁用；host 在 done / interrupted 消息上携带本轮 roundId，
+   * 此处写入 dataset.roundId 并解除禁用。分叉按钮点击读 dataset（SSOT 单一读取点），回填即生效。
+   */
+  function commitRoundId(roundId?: string): void {
+    if (!roundId || !activeAssistantEl) return;
+    activeAssistantEl.dataset.roundId = roundId;
+    const forkBtn = activeAssistantEl.querySelector<HTMLButtonElement>('.msg-fork-icon');
+    if (forkBtn) forkBtn.disabled = false;
   }
 
   // 自审查轮过程性提示：内核在自审查开始前 emit selfReview（交叉审核观察 A），
@@ -1361,6 +1373,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       ToolCard.settleRunning(messages, '已中断');
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
       finalizeStreaming();
+      // 回填本轮 roundId（启用该回答的分叉按钮；host done 消息携带）
+      commitRoundId(msg.roundId);
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 兜底终结残留
       // 「执行中」工具卡片 + 低扰提示「已停止生成」，区分于正常 done。
@@ -1370,6 +1384,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 兜底终结残留「执行中」工具卡片（P1-1）+ 流式收尾（取消 ≠ 丢弃，保留已生成内容）
       ToolCard.settleRunning(messages, '已中断');
       finalizeStreaming();
+      // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
+      commitRoundId(msg.roundId);
       showActivity('info', '已停止生成');
     } else if (msg.type === 'suggestions') {
       // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
@@ -1665,10 +1681,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       historyMenu.appendChild(item);
     }
   }
-  // 标题条按钮：改名笔 / 分叉 / 新建「＋」
+  // 标题条按钮：改名笔 / 新建「＋」（分叉统一收敛到消息底部——任意 LLM 回答处可分叉，标题条不再冗余入口）
   renameSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'rename_request' }));
-  const forkSessionBtn = document.getElementById('forkSessionBtn') as HTMLButtonElement;
-  forkSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'fork_session' }));
   newSessionBtn.addEventListener('click', () => vscode.postMessage({ type: 'new_session' }));
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时请求最新列表」——
   // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）
