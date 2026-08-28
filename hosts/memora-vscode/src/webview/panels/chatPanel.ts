@@ -1765,9 +1765,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 显式忽略的 chunk（取舍声明，排雷 2026-08-17）：
         //   - question_pending：已由 questionPending 事件驱动 need_clarify，chunk 通道不重复消费。
         if (chunk.type === 'aborted') {
-          // 用户 stop/插话 → 内核 abort 应答：提前退出，不再转发后续 chunk
-          //（中断通知统一由本方法末尾按 controller.signal.aborted 发出）
-          break;
+          // 用户 stop/插话 → 内核 abort 应答。⚠ 不要 break：break 会触发 async iterator 的
+          // return() 提前终止整条 yield* 链（chat → runChat → act → consumeExecutionStream），
+          // 导致内核 act() 的中断保存（appendAssistant 半截内容 + roundId 登记）永不执行，
+          // 表现为「中断后的问答闭环不落盘」。必须让流自然走完（aborted 是末块，后续无 text）。
+          // 中断通知统一由本方法末尾按 controller.signal.aborted 发出。
+          continue;
         }
         // Phase 1：召回明细转发（recall chunk 不走 memoryRecalled 事件，chunk 通道携带
         // 完整的 id/name/score/source，映射为 recalled_items 可展开展示）
