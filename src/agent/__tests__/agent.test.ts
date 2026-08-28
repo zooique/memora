@@ -963,6 +963,57 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
     expect(result.roundCount).toBeGreaterThan(0);
   });
 
+  it('分叉自动命名（未传 targetSession）应触发 SessionNamer 写入标题', async () => {
+    const sessionStore = createMockSessionStore();
+    const roundStore = createMockRoundStore();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+      roundStore,
+    });
+    await agent.init();
+
+    await agent.chatSync('你好');
+
+    const result = agent.forkSession();
+    // fire-and-forget：等异步命名完成（best-effort，LLM 失败/无价值会降级占位标题，autoName 始终有值）
+    await new Promise((r) => setTimeout(r, 30));
+
+    const meta = sessionStore.getSessionMeta(`${result.date}-${result.newSession}`);
+    expect(meta?.autoName).toBeTruthy();
+  });
+
+  it('分叉自定义命名（传 targetSession）应尊重用户命名，不触发 autoName 覆盖', async () => {
+    const sessionStore = createMockSessionStore();
+    const roundStore = createMockRoundStore();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new MockProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+      roundStore,
+    });
+    await agent.init();
+
+    await agent.chatSync('你好');
+
+    agent.forkSession(undefined, '我的实验分支');
+    // 用户显式命名场景：不触发 LLM autoName 覆盖（等异步窗口验证不会凭空出现 autoName）
+    await new Promise((r) => setTimeout(r, 30));
+    const now = new Date();
+    const dateKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const meta = sessionStore.getSessionMeta(`${dateKey}-我的实验分支`);
+    expect(meta?.autoName).toBeFalsy();
+  });
+
   it('分叉会话应发射 sessionForked 事件', async () => {
     const sessionStore = createMockSessionStore();
     const roundStore = createMockRoundStore();

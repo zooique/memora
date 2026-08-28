@@ -41,6 +41,8 @@ import type { PauseSource } from '@/agent/sessionStateMachine.js';
 export interface AgentForkResult {
   /** 新会话名（不含日期前缀，平等普通会话） */
   newSession: string;
+  /** 新会话日期（YYYY-MM-DD，供分叉会话命名等按会话键定位的场景使用） */
+  date: string;
   /** 新会话的 Round ID 数量（问答闭环个数） */
   roundCount: number;
   /** 新会话的 Round ID 列表 */
@@ -290,6 +292,8 @@ export class SessionManager {
 
     return {
       newSession: result.newSession,
+      // 透传分叉创建的会话日期（供分叉会话命名等场景按完整会话键定位）
+      date: result.date,
       roundCount: result.roundIds.length,
       roundIds: result.roundIds,
     };

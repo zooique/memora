@@ -41,6 +41,11 @@
         "title": "Memora: 清理过期记忆"
       },
       {
+        "command": "memora.runGc",
+        "title": "Memora: 立即执行孤儿回收",
+        "icon": "$(trash)"
+      },
+      {
         "command": "memora.demo",
         "title": "Memora: 运行能力演示（隔离演示区）"
       },

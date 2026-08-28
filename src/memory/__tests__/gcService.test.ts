@@ -2,7 +2,7 @@
  * 单元测试：垃圾回收服务（GC Service）
  * 验证引用计数和孤立 Round 清理机制
  */
-import { describe, expect, it, beforeEach } from 'vitest';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { GCService, createDefaultGCService } from '@/memory/gcService.js';
@@ -12,6 +12,7 @@ import {
   generateSummaryId,
 } from '@/memory/roundStore.js';
 import type { Memory } from '@/memory/types.js';
+import type { IVectorStore } from '@/memory/vectorStore.js';
 
 describe('垃圾回收服务', () => {
   let roundStore: InMemoryRoundStore;
@@ -258,7 +259,82 @@ describe('垃圾回收服务', () => {
       expect(config.minAgeMs).toBe(5 * 60 * 1000);
       expect(config.batchSize).toBe(100);
       expect(config.cleanUpMemory).toBe(true);
+      expect(config.syncVectorDelete).toBe(true);
       expect(config.verbose).toBe(false);
+    });
+
+    it('shouldSkip 忙碌时应跳过本次 GC（长任务保护）', () => {
+      // shouldSkip=true 模拟 chatLock busy
+      const busyGC = new GCService(roundStore, memoryStorage, {
+        minAgeMs: 0,
+        batchSize: 10,
+        cleanUpMemory: true,
+        verbose: false,
+        shouldSkip: () => true,
+      });
+
+      // 孤立 Round 已就绪（超龄、refCount=0）
+      const round = createPendingRound('忙时的孤儿');
+      round.refCount = 0;
+      roundStore.save(round);
+
+      const result = busyGC.run();
+      expect(result.deleted).toBe(0); // 跳过，不清理
+      expect(result.orphaned).toBe(0); // 未扫描
+      expect(roundStore.size()).toBe(1); // Round 保留
+
+      // 释放忙后正常执行
+      const idleGC = new GCService(roundStore, memoryStorage, {
+        minAgeMs: 0,
+        batchSize: 10,
+        cleanUpMemory: true,
+        verbose: false,
+        shouldSkip: () => false,
+      });
+      const idleResult = idleGC.run();
+      expect(idleResult.deleted).toBe(1);
+      expect(roundStore.size()).toBe(0);
+    });
+
+    it('purge 摘要时同步删除向量索引', async () => {
+      // 注入 mock vectorStore
+      const mockVectorStore = {
+        delete: vi.fn().mockResolvedValue(undefined),
+      } as unknown as IVectorStore;
+
+      const gcWithVector = new GCService(
+        roundStore,
+        memoryStorage,
+        {
+          minAgeMs: 0,
+          batchSize: 10,
+          cleanUpMemory: true,
+          syncVectorDelete: true,
+          verbose: false,
+        },
+        mockVectorStore,
+      );
+
+      // 孤立的 complete Round + 关联摘要
+      const round = createPendingRound('向量同步');
+      const completed = completeRound(round, '回答');
+      completed.refCount = 0;
+      roundStore.save(completed);
+      const summaryId = generateSummaryId(round.id);
+      memoryStorage.upsert({
+        id: summaryId,
+        content: '摘要',
+        source: 'round-summary',
+        name: round.id,
+        createdAt: new Date().toISOString(),
+        score: 0.5,
+      } as Memory);
+
+      gcWithVector.run();
+      expect(mockVectorStore.delete).toHaveBeenCalledWith(summaryId);
+
+      // 等待 fire-and-forget 的 catch 链完成（无断言，仅防未处理 rejection）
+      await new Promise((r) => setTimeout(r, 10));
     });
   });
 });

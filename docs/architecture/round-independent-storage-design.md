@@ -1,7 +1,7 @@
 # 问答闭环独立存储方案（正式设计文档）
 
 > **文档状态**：✅ 正式设计方案（SSOT）
-> **版本**：v1.2
+> **版本**：v1.3
 > **创建日期**：2026-08-27
 > **更新日期**：2026-08-28
 > **状态**：已确认，作为 Memora 会话管理的唯一真理源
@@ -13,6 +13,7 @@
 | v1.0 | 2026-08-27 | 初始版本：Round 独立存储 + 分叉概念 |
 | v1.1 | 2026-08-27 | **分叉模式定案**：统一为「从任意 Round 位置分叉」单一模式，删除 legacy copySession 路径，不考虑旧版兼容 |
 | v1.2 | 2026-08-28 | **实现对齐**：§4.2 pending Round refCount=0 且 complete 才登记会话；§4.4 召回对齐 excludeRoundIds+sessionId+sortByLayer 实现；§5.2 GC 不再按状态过滤（pending/error 同样可回收）；§6.1 补充 refCount 原子性；新增 §4.5 roundSummaryLoader 按会话 roundIds 过滤；新增 §5.3 Agent 接线 GCService 定时任务 |
+| v1.3 | 2026-08-28 | **GC 加固对齐**：§5.2 GC 新增 shouldSkip 忙碌检查（对话进行中跳过）、摘要 purge 物理删除（不进回收站）、purge 同步删向量索引；§5.3 接线传 shouldSkip+vectorStore、暴露 gcNow() 手动入口 + 宿主 memora.runGc 命令；§4.3 分叉自动命名触发 SessionNamer（LG 对齐） |
 
 ---
 
@@ -536,9 +537,15 @@ class MessageHistory {
 
 | 场景 | 命名方式 | 示例 |
 |------|---------|------|
-| 用户指定名称 | 使用用户指定的名称 | `实验方案` |
+| 用户指定名称 | 使用用户指定的名称（`forkSession` 传 `targetSession`） | `实验方案` |
 | 自动生成（无 LLM） | 时间戳 + 随机后缀 | `session-k3x9m` |
 | 自动生成（有 LLM） | SessionNamer 生成的标题 | `排序算法优化` |
+
+**v1.3 分叉自动命名**：自动生成会话名（未传 `targetSession`）时，分叉入口（`Agent.forkSession`）
+异步触发 `SessionNamer.ensureSessionTitle`（best-effort，不阻塞分叉返回）——以分叉点首轮用户消息
+为标题依据（分叉点即新会话起点，语义 = 首轮问答），生成 `autoName` 并通知宿主刷新 UI；
+用户显式指定 `targetSession` 时尊重用户命名，不触发 LLM 覆盖。该命名与新会话首次问答命名共享
+同一 `SessionNamer` 单点（autoName 已存在即跳过，幂等），不引入第二套命名机制。
 
 **核心思想**：新会话不需要暴露"分叉"身份。用户在历史列表中看到的就是一个普通会话，只有会话内容（Round 列表）与源会话不同。
 
@@ -691,9 +698,19 @@ class GCService {
 （§6.1，`refCount=0` 且从未登记会话）同样是孤儿，须可回收；进行中轮由 `minAgeMs` 判龄保护，
 "状态过滤"既非必要也可能漏清崩溃残留（pending 永不 complete 则永不清理）。
 
+**v1.3 加固**（`src/memory/gcService.ts` 实际实现）：
+1. **忙碌检查（shouldSkip）**：对话/长任务进行中（chatLock busy）跳过本次 GC——minAgeMs 判龄
+   对跨分钟长任务不可靠，防进行中 pending Round 被误清。定时与手动触发均生效
+2. **摘要 purge 物理删除**：孤儿摘要是系统治理决定，走 `memoryStorage.purge`（硬删除），不进用户回收站
+3. **向量索引同步删除**：摘要 purge 时 fire-and-forget 同步删向量（失败仅记录，读侧由 recall 通道 1
+   `getById` 兜底过滤脏索引，见 §4.4）
+4. **启动即执行**：`startPeriodic` 启动时立即 `run()` 一次清存量孤儿——VSCode 窗口生命周期通常远小于
+   定时周期（24h），不能干等首个周期
+
 **触发时机**：
 - 会话删除时，减少引用计数（内核 `inMemorySessionStore` 与宿主 `WorkspaceSessionStore` 的 `deleteSession` 已落地）
 - 定时任务（如每天一次）执行 GC（Agent 接线，见 §5.3）
+- 宿主手动触发（`agent.gcNow()` → VSCode 命令 `memora.runGc`，见 §5.3）
 
 ### 5.3 Agent 接线 GCService 定时任务
 
@@ -702,17 +719,29 @@ class GCService {
 ```typescript
 // createPostInitComponents（init 内调用）：roundStore+storage 为构造期稳定注入时创建并启动
 if (this.#config.roundStore && this.#config.storage) {
-  this.internals.gcService = createDefaultGCService(this.#config.roundStore, this.#config.storage);
+  this.internals.gcService = createDefaultGCService(
+    this.#config.roundStore,
+    this.#config.storage,
+    // 忙碌检查：chatLock busy = 对话/长任务进行中，跳过本次 GC
+    () => this.internals.chatLockManager?.isBusy ?? false,
+    // 摘要 purge 时同步删向量索引
+    this.#config.vectorStore ?? undefined,
+  );
   this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS); // 24h
 }
+
+// 手动触发入口（宿主经其调用）
+gcNow(): GCResult { ... return this.internals.gcService.run(); }
 
 // close()：须先于 projectManager.shutdown（其会关闭 storage）
 this.internals.gcService?.stopPeriodic();
 ```
 
-- GCService 属 `internals` 聚合对象（nullifyAllComponents 统一重置），不对外暴露
+- GCService 属 `internals` 聚合对象（nullifyAllComponents 统一重置），不对外暴露内部引用；
+  对外仅暴露 `gcNow()` 手动触发入口（roundStore/storage 未注入时降级为空转，不报错）
 - 周期常量 `GC_INTERVAL_MS = 24h` 收口于 `AGENT_CONSTANTS`
 - 宿主未注入 `roundStore`/`storage` 时不创建（降级为空转，不报错）
+- VSCode 宿主注册命令 `memora.runGc`（`hosts/memora-vscode`），命令面板可手动触发并回传统计
 
 ---
 

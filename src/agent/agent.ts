@@ -43,6 +43,7 @@ import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
 import {
   createDefaultGCService,
   type GCService,
+  type GCResult,
 } from '@/memory/gcService.js';
 import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
@@ -357,11 +358,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.internals.chatLockManager = new ChatLockManager();
 
     // 孤儿 Round 垃圾回收服务：roundStore+storage 均为构造期稳定注入（不随 rebuildComponents 变化），
-    // 每日周期清理 refCount=0 且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留），防止存储膨胀
+    // 每日周期清理 refCount=0 且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留），防止存储膨胀。
+    // shouldSkip：对话进行中跳过本次（minAgeMs 判龄对长任务不可靠，防进行中轮被误清）
     if (this.#config.roundStore && this.#config.storage) {
       this.internals.gcService = createDefaultGCService(
         this.#config.roundStore,
         this.#config.storage,
+        // 忙碌检查：chatLock busy = 对话/长任务进行中，跳过本次 GC
+        () => this.internals.chatLockManager?.isBusy ?? false,
+        // 摘要 purge 时同步删向量索引
+        this.#config.vectorStore ?? undefined,
       );
       this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
     }
@@ -1092,12 +1098,59 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * round-based 模式唯一分叉方式——创建新会话，复制 Round ID 列表（指针复制），
    * 新会话是完全平等的普通会话。记忆索引全局共享不受影响。
    *
+   * 自动命名场景（未传 targetSession）：分叉后异步触发 SessionNamer 为新会话生成标题
+   * （best-effort，不阻塞分叉返回）；用户显式指定会话名时尊重用户命名，不触发 LLM 覆盖。
+   *
    * @param roundId - 分叉点的 Round ID（可选；不传默认使用最后一个 Round）
    * @param targetSession - 可选，自定义新会话名
    */
   forkSession(roundId?: string, targetSession?: string): AgentForkResult {
     this.assertInitialized('forkSession');
-    return this.requireSessionManager.forkSession(roundId, targetSession);
+    const result = this.requireSessionManager.forkSession(roundId, targetSession);
+
+    // 分叉会话首轮命名：仅自动命名（未传 targetSession）时触发，
+    // 以分叉点首轮用户消息为标题依据（与新会话首次问答命名同源语义）
+    if (!targetSession) {
+      void this.ensureForkSessionTitle(result).catch((err) => {
+        logger.debug(
+          { err, session: result.newSession },
+          '分叉会话首轮命名失败（best-effort，不影响分叉结果）',
+        );
+      });
+    }
+
+    return result;
+  }
+
+  /**
+   * 分叉会话首轮命名（best-effort，fire-and-forget）
+   *
+   * 分叉新会话是平等普通会话，自动命名（未提供 targetSession）时应拥有 LLM 生成的语义标题。
+   * 取新会话第一个 Round 的用户消息作为命名输入（分叉点即新会话起点，语义=首轮问答）；
+   * SessionNamer 内部已有 autoName 存在即跳过（幂等），LLM 失败/无价值降级占位标题。
+   *
+   * @param result - 分叉结果（含新会话名/日期/Round 列表）
+   */
+  private async ensureForkSessionTitle(result: AgentForkResult): Promise<void> {
+    const namer = this.internals.sessionNamer;
+    if (!namer) {
+      logger.debug('ensureForkSessionTitle: sessionNamer 未创建，跳过分叉会话命名');
+      return;
+    }
+    const roundStore = this.#config.roundStore;
+    const firstRoundId = result.roundIds[0];
+    if (!roundStore || !firstRoundId) {
+      logger.debug({ hasRoundStore: !!roundStore }, 'ensureForkSessionTitle: 无 RoundStore/新会话为空，跳过');
+      return;
+    }
+    // 分叉点首轮用户消息 = 新会话的"首条消息"，作为标题生成输入
+    const firstRound = roundStore.getById(firstRoundId);
+    const firstUserContent = firstRound?.userMessage?.content;
+    if (!firstUserContent) {
+      logger.debug({ roundId: firstRoundId }, 'ensureForkSessionTitle: 首轮无用户消息，跳过');
+      return;
+    }
+    await namer.ensureSessionTitle(result.date, result.newSession, firstUserContent);
   }
 
   /**
@@ -1559,6 +1612,30 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   // ─── 记忆生命周期 ───────────────────────────────────────
+
+  /**
+   * 立即执行一次孤儿 Round 垃圾回收（宿主手动触发入口）。
+   *
+   * roundStore+storage 未注入时返回空统计（降级不报错）；
+   * 对话进行中（chatLock busy）经 shouldSkip 跳过并返回空统计。
+   *
+   * @returns GC 结果统计（scanned/deleted/memoryCleaned 等）
+   */
+  gcNow(): GCResult {
+    const gc = this.internals.gcService;
+    if (!gc) {
+      logger.debug('gcNow: roundStore/storage 未注入，GCService 未创建（降级为空转）');
+      return {
+        scanned: 0,
+        orphaned: 0,
+        deleted: 0,
+        failedDueToRefCount: 0,
+        memoryCleaned: 0,
+        elapsedMs: 0,
+      };
+    }
+    return gc.run();
+  }
 
   // ─── 关闭 ─────────────────────────────────────────────
 

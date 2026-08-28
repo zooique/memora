@@ -287,7 +287,26 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-﻿  // 命令：登记作品投影（极简触发器——右键文件即登记，LLM 自动生成描述）
+﻿  // 命令：立即执行孤儿 Round 垃圾回收（agent.gcNow() 手动触发入口）
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.runGc', async () => {
+      const agent = await getAgentForCommand();
+      if (!agent) {
+        vscode.window.showWarningMessage('Memora Agent 未就绪，无法执行垃圾回收');
+        return;
+      }
+      try {
+        const stats = agent.gcNow();
+        vscode.window.showInformationMessage(
+          `孤儿回收完成：扫描 ${stats.scanned} 个问答闭环，清理 ${stats.deleted} 个孤立 Round + ${stats.memoryCleaned} 条摘要`,
+        );
+      } catch (err) {
+        vscode.window.showErrorMessage(`垃圾回收失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    }),
+  );
+
+  // 命令：登记作品投影（极简触发器——右键文件即登记，LLM 自动生成描述）
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.registerWork', async (uri) => {
       // 仅支持从右键菜单触发（必须带 uri 参数）
