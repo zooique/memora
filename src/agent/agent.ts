@@ -775,10 +775,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     } catch (err) {
       if (isAbortError(err)) {
+        // 用户主动取消：非失败——置 aborted 供 act() 走「中断保留已产出文本」分支。
+        // ⚠ 真实 LLM 流式 abort 抛 AbortError（fetch stream 中断），必须返回 aborted:true + failed:false，
+        //   否则 act() 的 failed 短路会跳过中断保存，半截回答不落盘（顺手修复 F-1 分叉点错位同源根因）。
         yield { type: 'aborted', reason: 'User cancelled the conversation' };
-      } else {
-        yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+        return { content, aborted: true, paused, failed: false, iterationLimitReached };
       }
+      yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
       return { content, aborted, paused, failed: true, iterationLimitReached };
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求

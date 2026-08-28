@@ -2033,6 +2033,44 @@ class AbortableMockProvider extends LlmProvider {
   }
 }
 
+/**
+ * 可中断且抛 AbortError 的 Mock LLM Provider（测试专用）
+ *
+ * 与 AbortableMockProvider 的差异：本 provider 在 chunk 间**主动检查 signal**，一旦 aborted
+ * 就抛 DOMException('AbortError')——模拟真实 LLM 流式中断（fetch stream 被 abort 后的行为）。
+ *
+ * 关键：真实中断路径是 provider 抛 AbortError → consumeExecutionStream 的 catch 分支，
+ * 而非 loop 迭代边界的 yield aborted（AbortableMockProvider 路径）。两条路径都要覆盖。
+ */
+class AbortThrowingProvider extends LlmProvider {
+  readonly name = 'abort-throwing';
+  /** 分块输出的文本片段 */
+  private readonly chunks: string[];
+  /** chunk 间延迟（ms），让外部有机会在 chunk 之间触发 abort */
+  private readonly delayMs: number;
+
+  constructor(chunks: string[], delayMs = 30) {
+    super();
+    this.chunks = chunks;
+    this.delayMs = delayMs;
+  }
+
+  async *chat(
+    _messages: Message[],
+    opts?: ChatOptions,
+  ): AsyncIterable<LlmChunk> {
+    for (const chunk of this.chunks) {
+      if (opts?.signal?.aborted) {
+        // 模拟 fetch stream 被 abort：抛 AbortError（isAbortError 判定 name==='AbortError'）
+        throw new DOMException('The operation was aborted', 'AbortError');
+      }
+      yield { content: chunk };
+      await new Promise((r) => setTimeout(r, this.delayMs));
+    }
+    yield { finishReason: 'stop' };
+  }
+}
+
 describe('Agent · chat() 中断保留文本', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2088,6 +2126,40 @@ describe('Agent · chat() 中断保留文本', () => {
     const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
     expect(lastAssistant).toBeDefined();
     expect(lastAssistant!.content).toContain('你好');
+    expect(lastAssistant!.content).toContain('[已中断]');
+  }, 15000);
+
+  it('真实流式 abort 抛 AbortError（fetch stream 中断）→ 已产出文本仍保留 + [已中断] 标记', async () => {
+    // 与 AbortableMockProvider 的差异：本 provider 在 chunk 间检测 signal.aborted 后主动抛 AbortError，
+    // 模拟真实 LLM 流式中断（fetch stream 被 abort）——走 consumeExecutionStream 的 catch 分支。
+    // 回归：此前 catch 分支返回 aborted:false + failed:true，act() 的 failed 短路跳过中断保存，
+    // 半截回答不落盘（用户实测「停止回答后闭环未保存」根因）。
+    const provider = new AbortThrowingProvider(['第一段', '第二段'], 30);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    const ctrl = new AbortController();
+    let sawAbortedChunk = false;
+    for await (const chunk of agent.chat('测试', ctrl.signal)) {
+      if (chunk.type === 'text') {
+        ctrl.abort(); // 触发 provider 在下一次 chunk 前抛 AbortError
+      }
+      if (chunk.type === 'aborted') sawAbortedChunk = true;
+    }
+    expect(sawAbortedChunk).toBe(true);
+
+    // 验证 history 中最后一条 assistant 消息保留已产出文本 + 中断标记（半截回答不丢）
+    const messages = agent.getMessages();
+    const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant');
+    expect(lastAssistant).toBeDefined();
+    expect(lastAssistant!.content).toContain('第一段');
     expect(lastAssistant!.content).toContain('[已中断]');
   }, 15000);
 
