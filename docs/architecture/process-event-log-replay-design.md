@@ -1,17 +1,20 @@
 # 过程事件日志 + 重放重建（规范化设计文档）
 
 > **文档状态**：✅ 正式设计方案（SSOT）
-> **版本**：v1.2
+> **版本**：v1.5
 > **创建日期**：2026-08-28
-> **状态**：已评审（业界对齐：Claude Code JSONL 事件日志模型），待落地
+> **状态**：SSOT 纯度复审修订（v1.5，待实施）
 
 ### 变更记录
 
-| 版本   | 日期         | 变更                                                                                                                                              |
-| ---- | ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| v1.2 | 2026-08-28 | **展示层统一形态**：将工具卡/记忆卡/自审查卡等多类卡片外壳，收紧为每轮回答一个「单一折叠文本块」——顶栏一行摘要（角色+LLM+耗时+事件统计），展开后按小节（过程轨迹/召回记忆/工具调用/自审查/执行指标）呈现结构化文本，彻底移除独立卡片样式（对齐 TraeWork 展示哲学） |
-| v1.1 | 2026-08-28 | **meta 粒度修正**：`meta` 事件从「会话首轮」改为「每轮首条」——用户可在同一会话内随时切换 LLM 与角色包，首轮快照无法还原后续轮次顶部状态；重放时该轮 meta 覆盖顶栏 + 该轮应答挂对应角色/模型标签                                |
-| v1.0 | 2026-08-28 | 初始版本：运行时状态与重载状态分叉问题定案，过程事件日志（round 级 per-round 文件）+ 重放重建                                                                                        |
+| 版本   | 日期         | 变更                                                                                                                                                                                                                                                                               |
+| ---- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| v1.5 | 2026-08-28 | **SSOT 纯度复审（开发期，不做兼容包袱）**：① 每轮消息身份单源——新增「本轮身份」`currentRoundMeta`（由 meta 事件写入），消息标签一律读它，运行时与重放同一机制；废除「meta 更新全局 currentRoleName」与「顶栏=最后重放轮 meta」（伪真理源，与 `chat_role_pack` 冲突）② webview 渲染真相源收口为「当前轮 `processEvents[]`」，渲染类消息统一为 `process_event` 增量 + `replay_events` 整批，二者汇入同一数组、同一 `renderRoundBlock` ③ § 执行指标一律从 `ProcessEvent.metrics` 渲染；trace/securityAudit 划为调试面板（showMetrics）不参与 diff ④ 重放截断改按 round 粒度，杜绝半轮 ⑤ 删除兼容旧会话措辞（`processEvents` 可选仅因 pending 轮天然无事件） |
+| v1.4 | 2026-08-28 | **存储形态合案（用户设计指针）**：过程事件从独立 JSONL **并入 Round 文件**（`Round.processEvents?: ProcessEvent[]` 可选字段）——删 round 即删事件、分叉即共享、截断即覆盖，生命周期天然原子，废除独立 EventLog 存储 + 宿主双路径 GC 联动（撤销 v1.3 B1 复杂度）；正文与过程同文件同轮，重放交织天然成立（撤销 v1.3 C1 的 host 编排负担）。事件条目类型统一命名 `ProcessEvent`。S1 从「新接口 IEventLogStore」降为「Round 类型 + 事件类型定义」 |
+| v1.3 | 2026-08-28 | **评审修订收口（159 审查）**：① 写入路径改「流式期间内存缓冲 → 流结束一次性以 latestRoundId 落盘」（宿主流式期间无 roundId 可写，A1）；② 事件模型补 `memory_added`（对齐全 §1.1 现象清单，A2）与 `metrics` 聚合事件（§3.8.1 耗时/token 数据来源，A3）；③ GC 联动改宿主双路径清理（B1）；④ 重放改「按 round 交织发送」（C1）；⑤ 补 round-block 挂载规则（插话场景，A4）、plan-board 归属（C3）、受影响文件清单（B2） |
+| v1.2 | 2026-08-28 | **展示层统一形态**：将工具卡/记忆卡/自审查卡等多类卡片外壳，收紧为每轮回答一个「单一折叠文本块」——顶栏一行摘要（角色+LLM+耗时+事件统计），展开后按小节（过程轨迹/召回记忆/工具调用/自审查/执行指标）呈现结构化文本，彻底移除独立卡片样式（对齐 TraeWork 展示哲学）                                                                                                                                  |
+| v1.1 | 2026-08-28 | **meta 粒度修正**：`meta` 事件从「会话首轮」改为「每轮首条」——用户可在同一会话内随时切换 LLM 与角色包，首轮快照无法还原后续轮次顶部状态；重放时该轮 meta 覆盖顶栏 + 该轮应答挂对应角色/模型标签                                                                                                                                                                 |
+| v1.0 | 2026-08-28 | 初始版本：运行时状态与重载状态分叉问题定案，过程事件日志（round 级 per-round 文件）+ 重放重建                                                                                                                                                                                                                         |
 
 ***
 
@@ -22,7 +25,7 @@
 ### 设计原则
 
 1. **SSOT 原则**：运行时展示的一切内容，都是落盘内容的**投影**；不存在「内存态 vs 落盘态」两份状态
-2. **分轨原则**：对话正文（RoundStore）与过程事件（EventLog）分轨存储，只以 `roundId` 关联，互不污染
+2. **单文件内聚原则（v1.4 合案取代原「分轨」）**：一个问答闭环（Round）的全部组成部分——用户消息、AI 正文、过程事件——**同住一个 Round 文件**（`Round.processEvents?` 字段）。正文不塞进事件、事件不含正文全文，但共享同一生命周期：删 round 即删事件、分叉即共享、截断即覆盖，无独立存储需联动
 3. **自然生长**：基于现有 round 生命周期扩展，不引入新的存储后端、不破坏 Agent Loop
 4. **可重放**：任何时间和状态，都能由落盘日志按序重放重建出与运行时一致的 UI 状态
 5. **降级优先**：日志写入 fire-and-forget + catch-only-log，落盘失败绝不影响实时展示
@@ -88,91 +91,121 @@ Memora 对话过程中，webview 展示大量**运行时状态**：
 │     │ recall / thinking / tool_* / selfReview / text  │
 │     ▼                                                  │
 │ 宿主 consumeFlow（统一消费点）                          │
-│     ├──▶ 实时转发 webview（展示投影，不变）             │
-│     └──▶ 旁路追加 EventLog（fire-and-forget 落盘）      │
+│     ├──▶ 实时 post process_event（单形态展示投影）       │
+│     └──▶ 旁路缓冲事件到内存 events[]                   │
+│            流结束 → 附到 Round.processEvents 落盘      │
 └──────────────────────────────────────────────────────┘
 
 ┌─ 重载时 ─────────────────────────────────────────────┐
-│ host loadSession → session.roundIds                  │
-│     → 逐 round 读 EventLog（per-round 文件）           │
-│     → 按序重放事件 → 重建全部卡片与状态                 │
+│ host loadRoundBasedHistory → 逐 round 读               │
+│     → round.processEvents（与正文同源同轮）             │
+│     → 按序重放事件 → 重建 round-block 折叠区            │
 │     → webview 渲染（与运行时同一渲染函数）              │
 └──────────────────────────────────────────────────────┘
 ```
 
-### 3.2 分轨存储
+### 3.2 单文件内聚（Round 文件 = 闭环全部组成）
 
-| 轨       | 存储                        | 内容                                                                                  | 真理源角色      |
-| ------- | ------------------------- | ----------------------------------------------------------------------------------- | ---------- |
-| **内容轨** | RoundStore（现状不变）          | `userMessage` / `assistantMessage` 正文                                               | 对话内容物理真相源  |
-| **过程轨** | EventLog（新增，per-round 文件） | `thinking/recall/tool_start/tool_result/selfReview/aborted` + 首轮 `meta`（角色 + LLM 名） | UI 状态重建真相源 |
+| 组成部分    | 存储                        | 内容                                                                                                      | 真理源角色      |
+| ------- | ------------------------- | ------------------------------------------------------------------------------------------------------- | ---------- |
+| 内容    | RoundStore（现状不变）          | `userMessage` / `assistantMessage` 正文                                                                   | 对话内容物理真相源  |
+| 过程    | **Round 文件内新增 `processEvents?`** | `thinking/recall/memory_added/tool_start/tool_result/text_self_review/aborted` + 每轮首条 `meta`（角色 + LLM 显示名）+ 每轮末条 `metrics`（耗时/token/成败） | UI 状态重建真相源 |
 
-两轨以 `roundId` 关联：正文不塞过程、过程不塞正文。
+两轨**同文件、同生命周期**：正文不塞进事件、事件不含正文全文；删 round 即删事件、分叉即共享、截断即覆盖，无独立 EventLog 存储需联动（v1.4 合案）。
 
 ### 3.3 事件模型（持久化子集）
 
 不落全部 chunk，只落「可重建 UI 的最小信息」：
 
 ```
-EventLogEntry = {
+ProcessEvent = {
   seq: number;          // 轮内序号（保证重放顺序）
   ts: string;           // ISO 时间戳
-  type: 'meta' | 'thinking' | 'recall' | 'tool_start' | 'tool_result'
-      | 'self_review' | 'aborted' | 'text_self_review';
+  type: 'meta' | 'thinking' | 'recall' | 'memory_added' | 'tool_start' | 'tool_result'
+      | 'self_review' | 'text_self_review' | 'aborted' | 'metrics';
   payload: {...};
 }
 ```
 
-| type               | payload                                              | 重建什么                  |
-| ------------------ | ---------------------------------------------------- | --------------------- |
-| `meta`（每轮首条）       | `role`（角色名+trait）+ `llm`（模型名）                        | 顶部角色徽章 + LLM 名称（该轮应答） |
-| `thinking`         | `phase`（recalling/llm\_calling/processing/archiving） | 思考折叠块                 |
-| `recall`           | 记忆 `id/name/source/score` 摘要                         | 召回记忆卡片                |
-| `tool_start`       | `toolCallId/name/args`                               | 工具执行卡片                |
-| `tool_result`      | `toolCallId/ok/summary`                              | 卡片完成态                 |
-| `self_review`      | `round` + 自审查文本                                      | 自审查过程块                |
-| `aborted`          | `reason`                                             | 「已停止」标记               |
-| `text_self_review` | 自审查段内容                                               | 自审查输出分段               |
+| type               | payload                                                            | 重建什么                  |
+| ------------------ | ------------------------------------------------------------------ | --------------------- |
+| `meta`（每轮首条）       | `role`（角色显示名）+ `llm`（模型显示名）                                        | 顶部角色徽章 + LLM 名称（该轮应答） |
+| `thinking`         | `phase`（recalling/llm\_calling/processing/archiving）               | 思考折叠块                 |
+| `recall`           | 记忆 `id/name/source/score` 摘要                                       | 召回记忆列表                |
+| `memory_added`     | `id/name/source`（对应内核 `memoryAdded` 事件）                            | 「已沉淀：xx」提示条           |
+| `tool_start`       | `toolCallId/name/args`（args 超长截断）                                  | 工具执行记录                |
+| `tool_result`      | `toolCallId/ok/summary`                                            | 工具完成态                 |
+| `self_review`      | `round` + 自审查文本                                                    | 自审查过程块                |
+| `text_self_review` | 自审查段内容（`text` chunk `stage='self_review'` 分段）                      | 自审查输出分段               |
+| `aborted`          | `reason`                                                           | 「已停止」标记               |
+| `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/recallCount/success` | 顶栏耗时 + § 执行指标         |
 
-> **meta 粒度定案（2026-08-28 评审修正）**：`meta` 是 **round 级**而非会话首轮——用户可在同一会话内随时切换 LLM 与角色包（`chat_set_provider` / `roles_set_active`），首轮快照无法还原后续轮次的顶部状态。每轮首条写 `meta`，重放时该轮 meta 覆盖顶栏、且该轮 AI 消息挂对应角色/模型标签（与现有 `chat_role_pack` 按消息挂标签的运行时行为一致）；会话级"当前顶栏" = 最后重放轮的 meta。
+> **meta 粒度定案（2026-08-28 评审修正，v1.5 单源收紧）**：`meta` 是 **round 级**而非会话首轮——用户可在同一会话内随时切换 LLM 与角色包（`chat_set_provider` / `roles_set_active`），首轮快照无法还原后续轮次的状态。每轮首条写 `meta`，重放时该轮 meta 写入**本轮身份** `currentRoundMeta`、该轮 AI 消息按它挂对应角色/模型标签；**不覆盖会话级顶栏**（顶栏唯一真理源 = `chat_role_pack`，见 §3.7——删除「顶栏 = 最后重放轮 meta」的伪真理源表述）。`meta.role` 存角色**显示名**（displayName ?? name，与 AI 消息标签同源）、`meta.llm` 存模型**显示名**（displayName ?? name）——重放不依赖 ProviderStore / RolePackManager 即可渲染。
+>
+> **metrics 聚合事件（2026-08-28 评审补充）**：`metrics` 是每轮**流结束时写一条的聚合事件**（数据源 = `agent.getMetrics()` + vscodeTracer 指纹），承载 §3.8.1 summary 行的耗时与 § 执行指标。事件型计数（工具×N / 记忆×N / 审查×N）不落 metrics，由重放时对 `tool_start` / `recall` / `self_review` 事件直接统计（SSOT：明细即计数源，避免双写）。
 
-**取舍**：`tool_args` 截断（超长截断，防膨胀）；`recall` 只存摘要不存记忆全文（与作品投影同构：指针不带内容）。
+**取舍**：`tool_args` 截断（超长截断，防膨胀）；`recall` 只存摘要不存记忆全文（与作品投影同构：指针不带内容）；`metrics` 只存本轮汇总不存逐 span 明细（明细仍由 vscodeTracer 内存提供，重放不做深度可观测复原）。
 
-### 3.4 存储形态：per-round 文件（已评审定案）
+### 3.4 存储形态：并入 Round 文件（v1.4 合案定案）
 
-* 位置：`<dataDir>/round-events/<roundId>.jsonl`（与 RoundStore 同生命周期）
+* **事件存于 Round 文件内**：`rounds/{roundId}.json` 的新增可选字段 `processEvents?: ProcessEvent[]`（[Round 类型](../src/memory/roundStore.ts) 现有 `Round` 结构追加；`IRoundStore` 接口不变，宿主/内核存储的 JSON 透传天然保留该字段）
 
-* 每轮一个 JSONL，append-only 追加写
+* **生命周期天然原子**（合案核心收益，撤销 v1.3 双路径 GC 联动的复杂度）：
 
-* **生命周期绑定 Round**：GC 清理 round（refCount=0）时连同事件文件删除——天然复用现有 round 引用/回收站机制，分叉会话共享 roundId 即共享事件文件（指针复制，零拷贝一致）
+  * **删 round 即删事件**：GC 孤儿回收（refCount=0 + 超龄）与宿主主动删除都走 `roundStore.delete()`，事件随文件一并消失，无需任何额外清理
+  * **分叉即共享**：分叉会话引用同一 roundId → 读到同一 `processEvents`（指针复制，零拷贝一致），refCount 保证任一会话仍引用时不删除
+  * **截断即覆盖**：`truncateFrom`（删除问答闭环）与 `deleteSession` 移除 round 引用后，事件随 round 自然离开禁用范围（不在 roundIds 即不重放），GC 超龄后物理回收
 
-### 3.5 写入路径（宿主 consumeFlow 旁路）
+* **Write-once 语义**：`processEvents` 与 `assistantMessage` 同在闭环完成时刻定型（详见 §3.5），写入后不再修改——与 Round「完成后不可修改」的既有约束对齐
 
-* 宿主在统一消费点 [consumeFlow](../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `for await` 内，对上述类型事件追加写当前 round 的 EventLog
+### 3.5 写入路径（宿主 consumeFlow 旁路，v1.4 修订）
+
+**核心约束**：宿主流式期间拿不到当前 roundId（roundId 由内核 `loop.allocRoundId()` 在 Prepare 阶段生成，无宿主导出通道；仅流结束后可从 `sessionStore.getSessionMeta().roundIds` 取到）。故写入采用**「流式期间内存缓冲 → 流结束后附到 Round 一次性落盘」**：
+
+* 宿主在统一消费点 [consumeFlow](../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `for await` 内，对上述类型事件**追加到内存 `events[]` 缓冲**（不逐 chunk 写盘，天然免节流）
+
+* **缓冲首条 = `meta`**（当前角色**显示名** + 激活 LLM **显示名**，从 host 状态读取：`_activeRolePack` + `providerStore.getActiveName()`）——不依赖「首轮快照即会话全程」的错误假设，同一会话中途切模型/切角色包也能逐轮还原
+
+* `memory_added` 来自宿主监听的 `memoryAdded` 事件（非 AgentChunk 流，consumeFlow 已监听），同样进缓冲
+
+* 流结束（done / interrupted / paused 判定后）以 **`latestRoundId`** 执行「读 Round（getById）→ 附加 `processEvents` → 写回（save）」一次原子整写；中断轮同点落 `aborted` 事件（复用中断保存修复成果：内核 act 已在流结束时写入半截正文并登记 roundId）
 
 * fire-and-forget：失败 catch-only-log，不阻塞转发（对齐 P1 消息持久化降级语义）
 
-* **每轮首条写** **`meta`**（当前角色 + 激活 LLM 名，从 host 状态读取）——不依赖「首轮快照即会话全程」的错误假设，同一会话中途切模型/切角色包也能逐轮还原
+* **丢失窗口**：流式中途插件崩溃 → 本轮事件不落盘（缓冲丢弃）。与现状「事件永不落盘」相比属净改善，符合降级优先；正文轨不受影响。
 
-* 流结束（done/interrupted）时 flush；中断同样落 `aborted` 事件（复用上一轮中断保存修复成果）
+### 3.6 重放路径（加载会话，v1.4 修订）
 
-### 3.6 重放路径（加载会话）
+* 宿主实际加载路径为 `loadHistory → loadRoundBasedHistory()`（[chatPanel.ts](../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）：每个 round 读出时**正文与 `processEvents` 天然同源同轮**（同一对象），不再有"两个存储凑一份视图"的问题
 
-* `loadSessionMessages(date, session)` 已按 roundIds 展开正文 → 扩展为同时读每轮 EventLog
+* **按 round 交织重放**（数据源同一）：每轮先发该轮 user + assistant 正文（携带 roundId），再发该轮 `replay_events`；第一条 `meta` 事件**先于**该轮 assistant 正文写入「本轮身份」`currentRoundMeta`（独立于会话级 `currentRoleName`），`buildAssistantShell` 渲染该轮 AI 消息时读 `currentRoundMeta` 挂角色/模型标签——运行时与重放同一机制（v1.5 单源修正）
 
-* 按 `seq` 有序重放 → 产出「状态重建指令」列表 → host 复用现有 `post` 协议推给 webview
+* 按 `seq` 有序重放 → 产出「状态重建指令」→ host 复用现有 `post` 协议推给 webview
 
-* **关键**：webview 重放渲染与运行时渲染走**同一渲染函数**（chatView\.ts 的 dispatch 分支），保证"运行时所见 = 重放所见"
+* **关键**：webview 重放渲染与运行时渲染走**同一渲染函数**（chatView\.ts 的 dispatch 分支 + `renderRoundBlock()`），保证"运行时所见 = 重放所见"
 
 ### 3.7 协议扩展
 
 新增 host → webview 重放批次消息（复用现有消息类型，仅改变来源）：
 
 ```
-replay_events: { roundId: string; events: EventLogEntry[] }
+replay_events: { roundId: string; events: ProcessEvent[] }
 ```
 
-webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk 转发同路径），`meta` 事件更新顶部角色/LLM 徽章（该轮应答挂对应角色/模型标签，与运行时一致）。
+webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk 转发同路径）。
+
+**发送时序（与 §3.6 交织规则配合）**：
+
+```
+每轮发送序列：
+  1. user 消息（append，携带 roundId）
+  2. replay_events 中的 meta 先写入 currentRoundMeta（本轮身份）
+  3. assistant 正文（append，携带 roundId，标签读 currentRoundMeta）
+  4. 其余 replay_events（thinking/recall/memory_added/tool_*/self_review/aborted/metrics）
+     → 全部 append 到当前轮 events[]，由 renderRoundBlock 统一渲染
+```
+
+**身份单源（v1.5 定案）**：`meta` 事件唯一职责 = 写入「本轮身份」`currentRoundMeta`（该轮 AI 消息挂的角色/模型标签）。会话级「当前角色」**唯一真理源 = `chat_role_pack` 消息**（顶栏/输入区徽章/空状态），由宿主在重放末尾（及实时切换时）推送——**删除「顶栏 = 最后重放轮 meta」表述**：那是与 `chat_role_pack` 冲突的伪真理源（用户切角色后未再发消息时，最后 meta 与当前激活角色不同）。两者职责分离：meta 管"每条消息谁答的"，chat_role_pack 管"现在是谁"。
 
 ### 3.8 展示层统一形态（单一折叠文本块，v1.2 收紧决策）
 
@@ -182,19 +215,25 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 
 ```
 .msg.msg--assistant                        // AI 回答容器（沿用外层）
+├── .msg-ai-label                          // [角色 · 模型] 头部标签（读本轮身份 currentRoundMeta ← meta）
 ├── .round-block                           // 新增：该轮过程事件的统一折叠块
 │   ├── .round-block__summary              // 默认可见一行摘要
-│   │   ├── [角色徽章 · LLM 名]            // 来自 meta
-│   │   ├── · 耗时 1m 56s                  // 来自 trace
-│   │   └── · 工具×2 · 记忆×3 · 审查×1     // 事件类型统计（胶囊）
+│   │   ├── · 耗时 1m 56s                  // 来自 metrics.durationMs
+│   │   └── · 工具×2 · 记忆×3 · 审查×1     // 事件统计（对 events[] 过滤计数）
 │   └── .round-block__details              // 默认折叠，展开后才显示
 │       ├── § 过程轨迹                     // thinking 阶段的时间线
 │       ├── § 召回记忆 (3)                 // 每条：名称 + source/score 标签 + 单行预览
+│       ├── § 已沉淀 (1)                   // 每条：name（memory_added）
 │       ├── § 工具调用 (2)                 // 每个：名称(状态) + args 代码块 + result 摘要
-│       ├── § 自审查输出                   // 审查分段正文
-│       └── § 执行指标                     // token 用量 / 召回数 / 成功率（trace）
+│       ├── § 自审查输出                   // 审查分段正文（text_self_review）
+│       ├── § 已停止                       // aborted 标记（reason）
+│       └── § 执行指标                     // durationMs / token 用量 / 召回数 / 成功率（均从 metrics 事件渲染）
 └── .msg__body                             // AI 正文（不变，markdown 渲染）
 ```
+
+> **round-block 挂载规则（插话场景）**：一个 roundId 可能对应多个 assistant DOM 块（生成中插话 `interject` 会开新的 assistant 块，但内核不新建 round）。**round-block 只在该 roundId 首次出现的 assistant 块上挂载**，同 roundId 后续块不再挂（避免重复过程块）；重放时 host 按 roundId 去重判定首现。
+>
+> **身份单源（v1.5）**：`.msg-ai-label` 渲染时读「本轮身份」`currentRoundMeta`（由 meta 事件写入，运行时与重放同一路径）——**不**读会话级 `currentRoleName`（那由 `chat_role_pack` 维护，只管顶栏/输入区）。round-block summary 行不再重复放角色徽章，只放耗时与事件统计，避免双标签冗余。
 
 #### 3.8.2 被淘汰的旧形态（渲染路径删除/降级）
 
@@ -206,61 +245,76 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 | `.activity-detail / .recall-detail` | **合并**：历史/指标/召回明细统一并入折叠区对应小节，不再有两张独立折叠面板                               |
 | `memory recalled` 独立记忆卡             | **并入**：`§ 召回记忆` 结构化列表，不渲染独立卡片外壳                                        |
 
+**受影响文件清单（S2/S3 涉及，2026-08-28 评审补充）**：`chatPanel.ts`（注入 toolCardStyles、consumeFlow 转发）、`chatView.ts`（ToolCard/thought-block/review-block/recall-detail 渲染分支 → `renderRoundBlock()`）、`components/toolCard.ts` + `styles/toolCard.ts`（删除或降级为胶囊）、`chatView.test.ts` / `chatPanelHistory.test.ts`（同步改断言）、`protocol.ts`（`replay_events` 消息类型）。
+
 #### 3.8.3 保留的最小运行时反馈（流式过程中）
 
 流式生成期间，为了用户能感知"AI 在工作"，保留以下**极简指示器**，回答完成后自动并入折叠区：
 
 * **一行胶囊**：`⚡ 正在调用 read_file` / `✓ 读取文件成功`（与现有 tool-card--capsule 同构，但不展开独立卡片，完成后收进折叠区）
 
-* **顶栏摘要实时刷新**：`工具×2 · 记忆×3` 的计数随事件到达实时更新
+* **顶栏摘要实时刷新**：`工具×2 · 记忆×3` 的计数随事件到达实时更新（events\[] 缓冲驱动，与重放同源）
 
 * **思考呼吸点**：折叠区 summary 的圆点在 LLM 调用时呼吸（与现有 `.thought-block.is-thinking` 同构，但降级为小点不抢主体）
 
-#### 3.8.4 渲染路径 SSOT
+> **瞬时提示条 vs 折叠区（2026-08-28 评审补充）**：`showActivity` 系运行时提示条（「已召回 N 条」「已沉淀：xx」「已停止生成」等）是**流式专用瞬时反馈**，重放时不渲染（重放只渲染 round-block 折叠区）——运行时与重放在「提示条」上存在有意差异，不参与 §3.8.4 的 diff 对齐（该对齐仅约束 round-block 折叠区本身）。
 
-**运行时 = 重放时 = 同一渲染函数**（`chatView.ts / renderRoundBlock()`），输入都是「一组 EventLogEntry + meta + trace metrics」：
+#### 3.8.4 渲染路径 SSOT（v1.5 收口）
+
+**webview 渲染真理源 = 当前轮 `processEvents[]` 数组**（仅此一份输入）。运行时与重放都汇入该数组，由同一 `renderRoundBlock(events)` 渲染：
 
 ```
-运行时：consumeFlow 旁路 appendEvent → 更新内存 events[] → 实时 re-render summary
-重放时：读 JSONL → 一次性 events[] → 一次性 render summary + details
+运行时：host 逐事件 post process_event → webview append 到 events[]
+        → 实时 re-render summary（流式中）→ 流结束收进折叠区（完整 details）
+重放时：host post replay_events（整批 ProcessEvent，不用 process_event 逐条）
+        → webview 一次性塞入 events[] → 一次性 render summary + details
 ```
+
+**协议纯化（v1.5）**：渲染类消息统一为单一形态——`process_event: { event: ProcessEvent }`（增量，运行时用）+ `replay_events: { roundId, events: ProcessEvent[] }`（整批，重放用）。原 thinking / tool_start / tool_result / memory(recalled_items|added) / self_review 渲染分支**全部删除**，由 process_event 承载同一笔数据；status / notice / handoff / retry / paused / interrupted / done 等控制类消息保留不变（非渲染输入）。webview 收到 process_event 时先解析 meta 写入 `currentRoundMeta`、再 append 到 events[] 触发渲染——运行时与重放处理同构。
 
 好处：
 
-* 不再有「运行时卡片 DOM」和「重放时 DOM」两套代码
+* 不再有「运行时事件消息类型」和「重放批量消息」两套渲染输入——全量收敛为 ProcessEvent 一种数据结构、一种渲染函数
 
-* 新增事件类型只需扩展折叠区的一个小节模板
+* 新增事件类型只需扩展折叠区的一个小节模板 + ProcessEvent union 成员
 
 * 样式从 5 套（toolCard / thoughtBlock / reviewBlock / activityDetail / recallDetail）收敛为 1 套（roundBlock），维护成本骤降
+
+* 计数（工具×N / 记忆×N / 审查×N）在运行时与重放**同一统计函数**（对 events[] 过滤计数），杜绝两处算法漂移
+
+**执行指标单源（v1.5）**：§ 执行指标小节一律从 `ProcessEvent.metrics` 渲染；`postMetrics` 的 trace 列表与安全审计摘要属**开发者调试面板（`memora.showMetrics` 配置，默认关闭）**，明确不进入 round-block、不参与 diff 对齐（与 §3.8.3 瞬时提示条同类豁免）——round-block 不依赖调试面板存在。
+
+**重放截断按 round 粒度（v1.5）**：历史回放上限（现 MAX_HISTORY_MESSAGES 按消息数）改为**按完整 round 截断**（保留最近 N 个完整 round），杜绝"正文有、过程无"或反之的半轮不对称。
 
 ***
 
 ## 四、边界与取舍
 
-| 边界              | 决策                                            |
-| --------------- | --------------------------------------------- |
-| 事件日志膨胀          | 只存最小重建信息；`args`/记忆正文截断；GC 随 round 清理          |
-| 写盘频率            | 流式期间按防抖节流（复用 opskat 模式），不逐 chunk 写            |
-| 兼容旧会话           | EventLog 缺失 → 重放退化为仅正文（现状），不阻断恢复              |
-| 宿主迁移            | Sprite 宿主已搁置，不维护兼容（按宿主状态声明）                   |
-| 与 checkpoint 关系 | 检查点继续管 plan/goal 等执行态；EventLog 只管 UI 展示态，职责分离 |
+| 边界              | 决策                                                                                                                                                      |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 事件日志膨胀          | 只存最小重建信息；`args`/记忆正文截断；删除跟随 round（同文件，天然原子：删 round 即删事件）                                                                                                 |
+| 写盘频率            | 流式期间内存缓冲，流结束附到 Round 整写一次（免节流；不逐 chunk 写）                                                                                                                       |
+| 无 processEvents 的轮（pending/error） | 不渲染 round-block（无过程数据），正文照常；字段可选仅为轮状态语义，不做任何回退/兼容分支（开发期，v1.5 纯度） |
+| 宿主迁移            | Sprite 宿主已搁置，不维护兼容（按宿主状态声明）                                                                                                                             |
+| 与 checkpoint 关系 | 检查点继续管 plan/goal 等执行态；`processEvents` 只管 UI 展示态，职责分离。**任务看板（plan\_update / plan-board）归 checkpoint 执行态，不在 processEvents 复原范围**（完成定义 2 的 diff 对齐仅约束 round-block 折叠区） |
 
 ***
 
 ## 五、分步实施
 
-| 步骤     | 内容                                                                                                                                           | 预估影响                     |
-| ------ | -------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **S1** | 内核：EventLog 类型定义 + per-round 存储接口（`IEventLogStore`，宿主注入）+ 测试                                                                                 | 内核小改，纯加法                 |
-| **S2** | 宿主：consumeFlow 旁路写入（meta/thinking/recall/tool/aborted）+ `replay_events` 重放 **+ 切换到单一折叠块渲染（删除 tool-card / review-block 等旧外壳，新增 round-block）** | 宿主中等，覆盖 90% 痛点 + 展示层统一收敛 |
-| **S3** | 宿主：自审查分段并入折叠区 § 自审查输出 + 流式过程中极简胶囊指示器（完成后收进折叠）                                                                                                | 宿主小改                     |
-| **S4** | GC 联动：事件文件随 round 清理 + 全量回归                                                                                                                  | 收尾验证                     |
+| 步骤     | 内容                                                                                                                                                                                                                     | 预估影响                     |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| **S1** | 内核：`ProcessEvent` 事件类型定义 + `Round.processEvents?` 可选字段（[roundStore.ts](../src/memory/roundStore.ts)）+ 类型/透传测试。**落位修正（实施定案）**：ProcessEvent 是 Round 的组成部分（存储面），定义于 memory/roundStore.ts（thinking 阶段用本地字面量 `ProcessThinkingPhase`，与 agent ThinkingPhase 同值，避免 memory → agent 反向依赖） | 内核小改，纯加法                 |
+| **S2** | 宿主：① 渲染类消息协议纯化——consumeFlow 缓冲 ProcessEvent（meta 首条/thinking/recall/memory\_added/tool/aborted/text\_self\_review/metrics 末条），流结束读 Round→附加 `processEvents`→save；实时转发改 post `process_event` 单形态消息；② 重放读 `round.processEvents` 按 round 交织发 `replay_events`（meta 先写 currentRoundMeta），截断按 round 粒度；③ webview `renderRoundBlock()`（渲染真相源=当前轮 events[]）+ 删除 tool-card/review-block/activity-detail/recall-detail 旧外壳与 thinking/tool\_start/memory 等旧渲染分支 | 宿主中等，覆盖 90% 痛点 + 展示层统一收敛 |
+| **S3** | 宿主：自审查分段并入折叠区 § 自审查输出 + 流式过程中极简胶囊指示器（完成后收进折叠）                                                                                                                                                                          | 宿主小改                     |
+| **S4** | 收尾验证：round 删除/分叉/截断时 `processEvents` 随动（单测）+ 全量回归（完成定义 1-5）                                                                                                                                                              | 收尾验证                     |
 
 ## 六、完成定义
 
-1. 对话过程中中断 / 切会话 / 重启插件 → 重新加载后：角色徽章、LLM 名、召回记忆、思考阶段、工具详情、自审查输出、已停止标记、执行指标全部复原在折叠区内
-2. 复原的 UI 与运行时逐一对应（diff 为空），不存在「运行时有独立卡片，重启后只剩正文」的分叉
-3. 正文与过程分轨：RoundStore 无新字段，EventLog 无正文全文
-4. 写盘失败时对话仍正常展示（降级不降功能）
-5. **展示形态约束（v1.2）**：每轮回答只有一个折叠元信息头 + 一块正文；页面 DOM 中不再出现 `.tool-card` / `.review-block` / `.thought-block` / `.activity-detail` 旧组件类名（流式过程中临时胶囊除外，完成后必须收进折叠区）
+1. 对话过程中中断 / 切会话 / 重启插件 → 重新加载后：角色徽章、LLM 名、召回记忆、思考阶段、工具详情、自审查输出、已停止标记、执行指标（耗时 / token / 计数）全部复原在折叠区内
+2. 复原的 UI 与运行时逐一对应（折叠区 diff 为空），不存在「运行时有独立卡片，重启后只剩正文」的分叉；运行时瞬时提示条（showActivity）与调试面板（showMetrics 的 trace/安全审计）为运行时专用，不参与本对齐（见 §3.8.3 / §3.8.4）；任务看板（plan-board）归 checkpoint 执行态，不参与本对齐（见 §四）；每轮消息身份标签运行时与重放同读 `currentRoundMeta`（meta 事件单源，见 §3.7）
+3. 正文与过程同文件但内容隔离：Round 仅新增 `processEvents` 可选字段，事件条目不含正文全文、正文不含事件明细
+4. 写盘失败时对话仍正常展示（降级不降功能）；流式中途崩溃仅损失本轮事件缓冲，正文与已落盘历史不受影响
+5. **展示形态约束（v1.2 修订，v1.3 澄清范围）**：每轮回答只有一个折叠元信息头 + 一块正文；**完成 / 重放状态**下页面 DOM 不再出现 `.tool-card` / `.review-block` / `.activity-detail` / `.recall-detail` 旧组件类名（流式过程中临时胶囊 / 呼吸指示器除外，完成后必须收进折叠区）
 
+<br />
