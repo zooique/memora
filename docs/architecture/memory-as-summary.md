@@ -100,7 +100,7 @@ content（会话级摘要）
 
 > **当前形态**：记忆收敛为**摘要单轨**——唯一记忆单元是 round-summary（轮次级）+ content（会话级），无独立的用户画像层与洞察提炼层。用户画像（UserProfile / userFactExtractor / archiveProfileFacts）与洞察层（InsightExtractor / archiveInsight）不独立存在，其能力并入 round-summary 的 `summaryType` 标签分类（§3.2）。`traceSummary` 溯源接对话记录（§4/§4.5），对话记录作为展示层 + 溯源兜底的运行依赖（§5.2）。
 
-> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源），带 `summaryType` 标签 + `sessionName` 结构化字段 + `isTraceable`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
+> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源），带 `summaryType` 标签 + `sessionName` 结构化字段，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 2.4 Round 边界
 
@@ -161,7 +161,6 @@ postProcess → 使用 round-5 生成摘要
 │  createdAt:   string        // 创建时间（组内排序键）│
 │  accessedAt:  string        // 最后访问时间       │
 │  score:       number        // 权重（0-1）       │
-│  isTraceable: boolean       // 可溯源标记        │
 │  isModified:  boolean       // 手动修改标记      │
 └──────────────────────────────────────────────────┘
 ```
@@ -195,12 +194,9 @@ postProcess → 使用 round-5 生成摘要
   │         │
   │    sessionName 定位到窗口
   │    roundId     定位到具体轮次
-  │
-  └── 可溯源：isTraceable = true，完整对话可回溯
-  └── 不可溯源：isTraceable = false，原对话已删除
 ```
 
-溯源是**软链接**——对话记录删除时，摘要保留，仅标记 `isTraceable = false`。
+溯源是**软链接**——`trace_summary` 工具按 `sessionName + roundId` 查原始对话；查得到就输出原文，查不到（摘要尚在但原文已删等异常路径）则**按本次查找结果降级渲染**"（原始对话已删除，仅剩摘要）"。溯源是否可达成由**读时事实**判定，不依赖字段标记（`isTraceable` 字段已删除，2026-08-28：无行为消费者）。
 
 ### 3.4 对话记录的 roundId 扩展
 
@@ -451,14 +447,13 @@ LLM 获得完整上下文
     { "role": "user", "content": "..." },
     { "role": "assistant", "content": "..." },
   ],
-  "isTruncated": true,
-  "isTraceable": true
+  "isTruncated": true
 }
 ```
 
 **限制**：最多 5 条消息，单条 2000 字符。
 
-**降级**：无 roundId 时返回整个会话摘要；对话已删除时返回"不可追溯"。
+**降级**：无 roundId 时返回整个会话摘要；原始对话已删时返回摘要并标注"（原始对话已删除，仅剩摘要）"。
 
 ### 4.11 检索侧工程（rerank / 召回深度 / 格式）
 
@@ -472,7 +467,7 @@ LLM 获得完整上下文
 - **召回深度（top-k）调优**：按场景调整召回条数上限。
 - **召回格式微调**：调整摘要注入上下文的呈现格式。
 - **上下文检索（contextual retrieval）**：召回命中某摘要后，若其**相邻轮次**（同 `sessionName`、`roundId` 前后 ±N 条）存在高相关摘要，在预算内一并召回，缓解"孤立摘要导致上下文断裂"。边界约束：① 不新增存储层（复用 round-summary 按 roundId 邻接查询）；② 扩展条数设上限（±2 条）；③ 总召回仍受增量召回 token 预算约束（≤10% 上下文窗口）；④ 与互斥排除（§4.7）兼容——相邻但正文已加载的轮次仍排除。
-- **superseded 摘要物理清理**：被取代的摘要（`supersededBy` 标记）当前只被 recall 过滤（§5.4）、可经 `traceSummary` 回溯，**无物理清理**——长期会话会累积被覆盖的历史摘要。若未来需要回收存储，设计方向：按 superseded 时长（如 30 天）周期性软删除 → 回收站保留期 → 物理清理；边界约束：① 保留 `traceSummary` 回溯能力至清理前；② 清理不影响活跃摘要的取代链；③ 复用现有 `purgeExpired` 回收站机制，不新增清理管线。当前不实现（存储累积非瓶颈，属"软删除 + 可回溯"的既有设计权衡）。
+- **superseded 摘要物理清理**：被取代的摘要（`supersededBy` 标记）当前只被 recall 过滤（§5.3）、可经 `traceSummary` 回溯，**无物理清理**——长期会话会累积被覆盖的历史摘要。若未来需要回收存储，设计方向：按 superseded 时长（如 30 天）周期性软删除 → 回收站保留期 → 物理清理；边界约束：① 保留 `traceSummary` 回溯能力至清理前；② 清理不影响活跃摘要的取代链；③ 复用现有 `purgeExpired` 回收站机制，不新增清理管线。当前不实现（存储累积非瓶颈，属"软删除 + 可回溯"的既有设计权衡）。
 - **召回保底（recall fallback）**：当语义召回结果过少（低于 `minFallback`）时，用最近记忆补足，保证 LLM 每轮至少获得阈值数量的记忆，避免"零召回/极少召回"导致完全无记忆可依。**定位是不可删除的**下限保障，非"项目延续"特化。设计要点：① **条件触发**——仅 `recall()` 结果不足 `minFallback` 才补，语义召回充足时不动作；② **数据源复用现有空查询通道**——`storage.search('', shortfall)` 按 score 降序取最近记忆（score 已含 boost（无时间衰减），天然=最近常用），零新增存储接口；③ **补足项排语义命中之后**，不抢占相关性结果；④ 参数 `prepare.minFallback`（默认 2），宿主可设 0 彻底关闭；⑤ 与互斥排除（§4.7）兼容——补足项同样去 `superseded`。**语义边界锁定**：本键只作用于**外部输入触发的运行前装配**召回保底，不管辖 loop 自循环阶段的压缩摘要上限（后者由内核预算检测 + 软上限决定，不经过 minFallback）。区别于"无条件固定注入最近会话摘要"（该方案绕过相关性过滤必然污染，已否决），本机制是**召回不足才兜底**，符合单一真理源。
 
 写作等轻量场景当前用默认即可，待检索质量成为实测瓶颈再评估。
@@ -488,7 +483,7 @@ LLM 获得完整上下文
 | 操作 | 对摘要的影响 | 说明 |
 |------|------------|------|
 | 删除问答闭环（Round） | **摘要随 Round 连坐 purge** | 引用归零 → GC 物理删 Round + 同步 purge 其 round-summary（不进回收站，系统治理决定）。跨会话的知识沉淀由 **content 会话级摘要**（不依附轮）承担，不由 round-summary 滞留承担 |
-| 摘要手动修改 | `isModified = true` | 标记已修改，`isTraceable` 保持不变 |
+| 摘要手动修改 | `isModified = true` | 标记已修改，不影响溯源精确性 |
 | 摘要删除 | 该轮记忆从召回视野消失 | 语义即"删记忆"。源对话记录仅作为展示保留，供用户回溯，不再参与运行召回 |
 
 ### 5.2 设计理由
@@ -498,7 +493,7 @@ LLM 获得完整上下文
 - **连坐删除的正当性（α）**：Round 是物理唯一真理源，摘要只是它的"浓缩影子"。**本源消融则影子消融**——不产生悬空溯源（roundId 指向不存在的 Round）、无孤儿状态、全链路零特化分支，这是状态最小的根本原因。若删 Round 却留摘要，会引入"无主记忆"状态：读路径（召回/roundSummaryLoader/trace_summary）都要为"Round 没了摘要还在"加兜底，且**删除的纠错语义失效**——用户删掉一段错误/隐私讨论，其结论仍以摘要形态影响未来回答。
 - **跨会话价值不靠滞留兜底**：轮次流水速记（fact/general）随轮消融，符合"流水记录低独立价值"的定位；需要长期沉淀的知识走 **content 会话级摘要**（独立于 Round 存活）或用户显式沉淀（作品投影/文档）。被动滞留是弱设计，显式沉淀才符合"种子自然生长"哲学。
 - **打标而非硬删**：保留数据完整性，防止误删可通过恢复标记找回（软删除 30 天回收期）。
-- **`isModified` 与 `isTraceable` 独立**：修改摘要不代表原始对话不存在，两者不应耦合。`isTraceable` 保留为**健壮性展示字段**——正常情况下摘要与其 Round 同生共死恒为 `true`；仅在"摘要存在但 Round 已删"的异常路径（如宿主差异实现、手工改存储）下为 `false`，`trace_summary` 展示"（不可溯源，原始对话已删除）"降级而非崩溃。
+- **只留必要标记**：`isModified`（人工修改过，提示与原文可能不一致）是唯一保留的摘要标记。溯源可行与否**不设字段**——`trace_summary` 读时按 `sessionName + roundId` 查找，找到即原文、找不到即"（原始对话已删除，仅剩摘要）"，以事实为准（`isTraceable` 字段已删，2026-08-28：写死 true 无行为消费者，删后读侧无分支变化 + 修掉"可溯源却无原文"的展示瑕疵）。
 
 #### 5.2.1 可追溯性边界
 
@@ -521,13 +516,9 @@ LLM 获得完整上下文
 - **附着记忆指纹**：`recall.recall` span 的 `attachedMemoryCount` / `attachedMemoryFingerprint` = 附着进上下文的记忆条数 + 记忆 ID 集合指纹（[loop.ts](../../src/agent/loop.ts) 注入点埋点）。
 - **边界保持**：只记录 hash、不记录内容；宿主未注入 Tracer（NOOP）时不计算指纹（零开销边界）；span 属性由宿主自行采集/落盘/展示，内核不新增任何存储。
 
-**与 §5.1 删除规则的衔接**：定案后 `isTraceable` **不再承诺**"删对话自动转不可溯源保留"——Round 物理删时摘要连坐 purge（§5.1），不存在"Round 没了摘要还在"的常态。`isTraceable=false` 仅在异常/宿主差异路径作为展示健壮性兜底（`trace_summary` 降级文案"（不可溯源，原始对话已删除）"）。**memora 的追溯是软追溯（允许失效降级），不是 Harness 式的强事件溯源（永不删除）**——这是有意取舍，非缺陷。
+**与 §5.1 删除规则的衔接**：Round 物理删时摘要连坐 purge（§5.1），正常无"Round 没了摘要还在"的常态；即便异常路径（摘要尚在、原文已删），`trace_summary` 也按读时查找结果渲染"（原始对话已删除，仅剩摘要）"，不依赖任何字段标记。**memora 的追溯是软追溯（允许失效降级），不是 Harness 式的强事件溯源（永不删除）**——这是有意取舍，非缺陷。
 
-### 5.3 溯源标记不可逆
-
-`isTraceable = false` 后不恢复，保证数据一致性。
-
-### 5.4 记忆维护（写路径取代检测）
+### 5.3 记忆维护（写路径取代检测）
 
 **问题**："摘要即记忆"是 append-only——每轮一条摘要。长期运行会出现三类"记忆腐烂"：同一事实重复表达、旧决策被新决策覆盖、过时事实仍被召回。**时间排序解决"呈现顺序"，解决不了"哪个决策覆盖哪个"**（覆盖是结构信息，不是时序信息）——若全靠 LLM 在召回时按时间序猜，冲突消解依赖运行时判断，违反"确定性优先"。
 
@@ -609,7 +600,8 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | `recall()` | 上下文注入无记忆，系统每轮都是"全新对话" | ❌ 不可删除 |
 | `trace_summary` 工具 | LLM 无法追溯摘要来源，但核心循环不受影响 | ✅ 可删除（体验降级，非功能断裂） |
 | 互斥排除 | 正文与摘要可能重复进入上下文，浪费 token | ✅ 可删除（体验降级，非功能断裂） |
-| `isTraceable`/`isModified` | 摘要失去溯源/修改标记，但与核心召回无关 | ✅ 可删除（信息降级，非功能断裂） |
+| `isModified` | 人工修改标记无法提示"与原文可能不一致"，仅体验降级 | ✅ 理论上可删（当前保留，成本低） |
+| `isTraceable` | ~~溯源/不可溯源标记~~（2026-08-28 已删除：写死 `true` 无行为消费者） | ✅ 已删除 |
 
 **核心依赖链**：`RoundSummaryGenerator → IMemoryStorage → recall() → prepareChatContext`
 
@@ -644,13 +636,12 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 1. **摘要生成在 Reflect 阶段完成**——不阻塞主流程，异步写入。
 2. **摘要类型由 LLM 在生成时自动判断**——不引入独立分类器，不增加额外 LLM 调用。
 3. **分层分轨召回**——会话内（L1）和会话外（L2）分层，每个 summaryType 独立轨道（§4.1-§4.3）。type 参与召回策略，但不参与排序。
-4. **溯源标记不可逆**——`isTraceable = false` 后不恢复。
-5. **`traceSummary` 工具可选调用**——上下文组装时自动注入最相关摘要，不强制 LLM 使用。
-6. **`traceSummary` 返回内容受规模控制**——最多 5 条消息，单条 2000 字符。
-7. **召回上限有界**——保证 token 有界，无需聚合机制。
-8. **互斥窗口 N ≡ 上下文加载轮数**——正文与摘要不重复进上下文（§4.7）。当前以 `recentRounds` 固定 N 轮落地；目标态「动态轮数」（轮数按上下文预算派生、互斥窗口跟随实际注入轮数），`recentRounds` 键**直接删除**——见 [role-pack-spec.md §上下文预算装配](role-pack-spec.md)。
-9. **配额分层**：记忆与摘要分别有 token 配额，避免一方挤占另一方。`prepare.memoryRecallQuota`（绝对 token 配额）**直接移除**，由 `memoryRecallPercent`（角色包 L2，cap 百分比）取代——见 [role-pack-spec.md §上下文预算装配](role-pack-spec.md)。摘要配额键为草案，MVP 阶段摘要复用同配额或由内核默认上限约束，角色包后置时再以独立键定型。
-10. **治理简化**——去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
+4. **`traceSummary` 工具可选调用**——上下文组装时自动注入最相关摘要，不强制 LLM 使用。
+5. **`traceSummary` 返回内容受规模控制**——最多 5 条消息，单条 2000 字符。
+6. **召回上限有界**——保证 token 有界，无需聚合机制。
+7. **互斥窗口 N ≡ 上下文加载轮数**——正文与摘要不重复进上下文（§4.7）。当前以 `recentRounds` 固定 N 轮落地；目标态「动态轮数」（轮数按上下文预算派生、互斥窗口跟随实际注入轮数），`recentRounds` 键**直接删除**——见 [role-pack-spec.md §上下文预算装配](role-pack-spec.md)。
+8. **配额分层**：记忆与摘要分别有 token 配额，避免一方挤占另一方。`prepare.memoryRecallQuota`（绝对 token 配额）**直接移除**，由 `memoryRecallPercent`（角色包 L2，cap 百分比）取代——见 [role-pack-spec.md §上下文预算装配](role-pack-spec.md)。摘要配额键为草案，MVP 阶段摘要复用同配额或由内核默认上限约束，角色包后置时再以独立键定型。
+9. **治理简化**——去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
 
 ---
 
@@ -674,7 +665,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 - **type = 语义标签 + 召回策略**：type 参与召回策略（决定哪些轨道进池/不进池），但不参与排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）决定。
 - **治理简化**：去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
 - **memoryAdded 事件由 round-summary 发射**——作为"新记忆产生必通知"的出口契约。
-- **SessionArchiver（content 会话级摘要）保留**——它是**会话 id 对应的摘要记忆**：承载会话级综合提炼（关键决策/未解决问题/plan 快照），粒度（会话级）与 round-summary（轮次级）不同，非冗余；带 `summaryType` 标签 + `sessionName` 结构化溯源 + `isTraceable`。
+- **SessionArchiver（content 会话级摘要）保留**——它是**会话 id 对应的摘要记忆**：承载会话级综合提炼（关键决策/未解决问题/plan 快照），粒度（会话级）与 round-summary（轮次级）不同，非冗余；带 `summaryType` 标签 + `sessionName` 结构化溯源。
 
 ---
 
@@ -683,7 +674,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 > - [mvp-scope.md](mvp-scope.md) —— MVP 能力边界
 > - [role-pack-spec.md](role-pack-spec.md) —— 角色包标准（L2 召回键作为**后置覆盖**，不阻塞本模块）
 > - [memory-role-pack-boundary.md](memory-role-pack-boundary.md) —— 记忆系统 × 角色包边界收敛（设定记忆归角色包，记忆库 = 摘要记忆本体）
-> - [ADR-021](../../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.4）
+> - [ADR-021](../../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.3）
 > - [ADR-023](../../.trae/decisions/ADR-023-context-cost-injection-defense-loop-convergence.md) —— 摘要成本重构（截断优先用 round-summary）+ 即时注入防御
 > - `src/agent/managers/roundSummaryGenerator.ts` —— RoundSummaryGenerator 实现
 >

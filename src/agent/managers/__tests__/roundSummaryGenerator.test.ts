@@ -44,7 +44,6 @@ function seedSummary(
     createdAt: now,
     accessedAt: now,
     score: 0.5,
-    isTraceable: true,
     summaryType: type,
     sessionName,
     roundId,

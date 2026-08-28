@@ -37,7 +37,7 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 > 收敛分档执行（档 0 定案 → 档 1 停写 → 档 2 切读 → 档 3 语义对齐），**先停写后切读**，任何一步不得跳过；存量设定记忆行保留（软删兼容），宿主一次性迁移清理。
 
 ### content 融入纪律（R5）
-> content 是**会话 id 对应的摘要记忆**（会话级）——必须带 `summaryType` 标签 + 结构化 `sessionName` + `isTraceable=true`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。禁止新增无标签、无溯源的第二轨道记忆源。
+> content 是**会话 id 对应的摘要记忆**（会话级）——必须带 `summaryType` 标签 + 结构化 `sessionName`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。禁止新增无标签、无溯源的第二轨道记忆源。（`isTraceable` 已移除（2026-08-28）：无行为消费者，溯源降级改按读时查找结果渲染，见 memory-as-summary §5.2）
 
 ### type 不设时效（R6）
 > `summaryType` 是**纯语义标签**，不携带时效性。禁止新增 type→时间窗口的过滤逻辑；记忆是否有效由 superseded（写时取代）+ score 衰减（自然沉底）判定，不由时间流逝判定。

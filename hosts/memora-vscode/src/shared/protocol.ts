@@ -844,8 +844,6 @@ export interface MemoryItemDto {
   sessionName?: string;
   /** round-summary 归属轮次标识，供互斥轮次排除与回溯 */
   roundId?: string;
-  /** 是否可经 sessionId（+roundId）回溯到原始对话；round-summary 有意义，其余默认 false */
-  isTraceable?: boolean;
   /** 摘要是否已被人工修改（可能与原始对话不一致）；仅 round-summary 有意义 */
   isModified?: boolean;
   /** 写路径取代标记：非 undefined 表示已被更新的摘要覆盖（值为取代它的新摘要 id） */

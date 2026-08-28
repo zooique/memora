@@ -72,7 +72,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 
 ### 4.2 content 融入与 type 去时效（D6/D7 定案）
 
-> **D6 · content 是「会话 id 对应的摘要记忆」**：`SessionArchiver` 写入的会话级摘要本就是摘要模型的一部分——粒度=会话级（无 roundId，仅 sessionName 溯源），与 round-summary（轮次级，sessionName+roundId 双溯源）同为「摘要 + 标签 + 粒度」统一模型。融入方式：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName` + `isTraceable=true`。
+> **D6 · content 是「会话 id 对应的摘要记忆」**：`SessionArchiver` 写入的会话级摘要本就是摘要模型的一部分——粒度=会话级（无 roundId，仅 sessionName 溯源），与 round-summary（轮次级，sessionName+roundId 双溯源）同为「摘要 + 标签 + 粒度」统一模型。融入方式：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName`。（`isTraceable` 已删除，2026-08-28：无行为消费者，见 ADR-025 修订与 memory-as-summary §5.2）
 >
 > **D7 · type 不设时效性**：记忆是否有效由**语义状态**判定（superseded 写时取代 + score 衰减自然沉底），不由时间流逝判定——用户久未使用不构成记忆过期的理由。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃（见 memory-as-summary.md §4.2）。
 

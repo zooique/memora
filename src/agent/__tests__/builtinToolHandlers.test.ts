@@ -638,7 +638,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         source: SOURCE_LABELS.ROUND_SUMMARY,
         name: `轮次摘要 ${SESSION} ${ROUND_A}`,
         score: 0.5,
-        isTraceable: true,
         summaryType: 'fact', sessionName: SESSION, roundId: ROUND_A,
       }),
     );
@@ -649,7 +648,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         source: SOURCE_LABELS.ROUND_SUMMARY,
         name: `轮次摘要 ${SESSION} ${ROUND_B}`,
         score: 0.5,
-        isTraceable: true,
         isModified: true,
         summaryType: 'preference', sessionName: SESSION, roundId: ROUND_B,
       }),
@@ -667,7 +665,8 @@ describe('BuiltinToolHandlers.traceSummary', () => {
     expect(result).toContain(SESSION);
     expect(result).toContain(ROUND_A);
     expect(result).toContain('TypeScript');
-    expect(result).toContain('可溯源');
+    // 无 sessionStore（溯源失败降级）：标注"仅剩摘要"
+    expect(result).toContain('仅剩摘要');
     // isModified 未设置，不应显示
     expect(result).not.toContain('已手动修改');
   });
@@ -778,7 +777,8 @@ describe('BuiltinToolHandlers.traceSummary', () => {
     };
     const h = new BuiltinToolHandlers(projectPath, security, storage, undefined, store);
     const result = await h.traceSummary(SESSION, ROUND_A);
-    expect(result).toContain('可溯源');
+    // 注入 sessionStore 可溯源到原文 → 输出原始对话
+    expect(result).toContain('原始对话');
     expect(result).toContain('TypeScript');
   });
 });

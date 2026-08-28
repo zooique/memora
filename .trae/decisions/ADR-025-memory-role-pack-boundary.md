@@ -34,7 +34,9 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 
 ### 配套决策 D6：content = 会话级摘要记忆（2026-08-17 定案）
 
-> `SessionArchiver` 写入的会话级摘要（`source='content'`）本就是摘要模型的一部分——**它是「会话 id 对应的摘要记忆」**（粒度=会话级，无 roundId，仅 sessionName 溯源）。融入统一模型：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName` + `isTraceable=true`。与 round-summary（轮次级，sessionName+roundId 双溯源）构成「摘要 + 标签 + 粒度」两级结构。
+> `SessionArchiver` 写入的会话级摘要（`source='content'`）本就是摘要模型的一部分——**它是「会话 id 对应的摘要记忆」**（粒度=会话级，无 roundId，仅 sessionName 溯源）。融入统一模型：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName`。与 round-summary（轮次级，sessionName+roundId 双溯源）构成「摘要 + 标签 + 粒度」两级结构。
+>
+> **修订（2026-08-28）**：原 D6 要求 content 带 `isTraceable=true`——字段已删除（无行为消费者：渲染侧按读时溯源结果工作，见 [memory-as-summary.md](../docs/architecture/memory-as-summary.md) §5.2）。D6 其余定案不变。
 
 ### 配套决策 D7：type 不设时效性（2026-08-17 定案）
 

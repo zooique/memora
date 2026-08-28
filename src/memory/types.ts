@@ -51,8 +51,6 @@ export interface Memory {
   sessionName?: string;
   /** round-summary 归属轮次标识。顶层持久化字段，供互斥轮次排除与 traceSummary 回溯。仅 round-summary 有意义 */
   roundId?: string;
-  /** 是否可经 sessionId（+ roundId）回溯到原始对话；round-summary 有意义，其余默认 false */
-  isTraceable?: boolean;
   /** 摘要是否已被人工修改，可能与原始对话不一致；仅 round-summary 有意义 */
   isModified?: boolean;
   /**
@@ -149,7 +147,6 @@ export function parseMemory(raw: unknown): Memory {
     summaryType: obj.summaryType as SummaryType | undefined,
     sessionName: obj.sessionName as string | undefined,
     roundId: obj.roundId as string | undefined,
-    isTraceable: obj.isTraceable as boolean | undefined,
     isModified: obj.isModified as boolean | undefined,
     supersededBy: obj.supersededBy as string | undefined,
   };

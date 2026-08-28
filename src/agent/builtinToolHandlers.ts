@@ -724,9 +724,9 @@ export class BuiltinToolHandlers {
         return `会话：${sessionId} | 轮次：${roundId} 原始对话：\n${lines}${truncNote}`;
       }
       const summaryType = exact.summaryType ?? 'general';
-      const traceInfo = exact.isTraceable ? '（可溯源）' : '（不可溯源，原始对话已删除）';
       const modifiedInfo = exact.isModified ? '（已手动修改）' : '';
-      return `会话：${sessionId} | 轮次：${roundId} | 类型：${summaryType} ${traceInfo}${modifiedInfo}\n摘要：${exact.content}\n`;
+      // 溯源失败降级：按本次查找结果渲染（原始对话已删），不依赖字段标记
+      return `会话：${sessionId} | 轮次：${roundId} | 类型：${summaryType}${modifiedInfo}\n摘要：${exact.content}\n（原始对话已删除，仅剩摘要）\n`;
     }
 
     // 未指定 roundId，返回最近 N 条（按 createdAt 降序）
@@ -740,9 +740,8 @@ export class BuiltinToolHandlers {
     const lines = top.map((m, i) => {
       const roundIdFromMeta = m.roundId ?? 'unknown';
       const summaryType = m.summaryType ?? 'general';
-      const traceInfo = m.isTraceable ? '可溯源' : '不可溯源';
       const preview = truncate(m.content, 120);
-      return `${i + 1}. [${summaryType}] 轮次 ${roundIdFromMeta} (${traceInfo})\n   ${preview.replace(/\n/g, ' ')}`;
+      return `${i + 1}. [${summaryType}] 轮次 ${roundIdFromMeta}\n   ${preview.replace(/\n/g, ' ')}`;
     });
 
     return `会话 "${sessionId}" 的轮次摘要（最近 ${top.length} 条）：\n${lines.join('\n')}`;

@@ -997,7 +997,6 @@ function toItemDto(m: {
   summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
   sessionName?: string;
   roundId?: string;
-  isTraceable?: boolean;
   isModified?: boolean;
   supersededBy?: string;
 }): MemoryItemDto {
@@ -1012,7 +1011,6 @@ function toItemDto(m: {
     summaryType: m.summaryType,
     sessionName: m.sessionName,
     roundId: m.roundId,
-    isTraceable: m.isTraceable,
     isModified: m.isModified,
     supersededBy: m.supersededBy,
   };

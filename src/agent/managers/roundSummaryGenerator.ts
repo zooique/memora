@@ -1,6 +1,6 @@
 /**
  * 轮次摘要生成器 — 每轮对话后生成溯源式摘要（记忆即摘要架构）。
- * 在 postProcess 阶段调用，生成 source='round-summary' 的记忆，含 SummaryType + isTraceable，
+ * 在 postProcess 阶段调用，生成 source='round-summary' 的记忆，含 SummaryType，
  * 用 sessionName + roundId 精确溯源；异步 fire-and-forget，不阻塞主对话流程。
  */
 
@@ -160,7 +160,6 @@ export class RoundSummaryGenerator {
         createdAt: now,
         accessedAt: now,
         score: DEFAULT_SUMMARY_SCORE,
-        isTraceable: true,
         summaryType,
         sessionName,
         roundId,
