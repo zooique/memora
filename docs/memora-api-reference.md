@@ -452,7 +452,7 @@ interface Memory {
 | `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义 |
 | `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
 | `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（写入型 source 之一，另含 `content` 会话归档） |
-| `SOURCE_LABELS.UNKNOWN` | `'unknown'` | 未知来源（inferSource 兜底值） |
+| `SOURCE_LABELS.UNKNOWN` | `'unknown'` | 未知来源（未被已知标签覆盖时的兜底值） |
 
 > source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
 
@@ -1005,7 +1005,7 @@ export type { WorkProjectionEntry } from '@zooique/memora';
 // 记忆
 export { SOURCE_LABELS } from '@zooique/memora';
 export type { Memory } from '@zooique/memora';
-export { inferSource, escapeLike, validateSource } from '@zooique/memora';
+export { escapeLike, validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';

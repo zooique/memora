@@ -82,7 +82,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 2. **`evictOrphanRules` 对账**（`projectManager.ts`）：基准变化后，删规则要改以角色包文件集为基准，否则规则删除后重启「复活」。
 3. **`closeProject` 跨项目隔离**（`projectManager.ts`）：项目级记忆撤销语义改为角色包激活/失活。
 4. **`reloadConfig('persona'/'skill')`**（`agent.ts`）：目录迁走后热重载「假成功」，宿主 UI 需适配。
-5. **LLM 工具链提示**：`loop.ts` 引导 LLM 用宿主的 `create_persona/create_rule` 工具，本体在宿主，需同步改造写入目标。
+5. **LLM 工具链提示**：`loop.ts` 曾引导 LLM 用 `create_persona/create_rule` 专用工具（本体在宿主）。**已解决（2026-08-28）**：create_* 工具已移除，工具选择规则节改为按实际工具动态生成，write_file 配置目录拦截亦已删除——不再存在该提示链。
 6. **测试基线**：大量测试直接构造 `source:'rule'` 记忆，搬迁后需同步迁移。
 
 ## 六、与其他文档的关系

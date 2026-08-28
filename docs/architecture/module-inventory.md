@@ -102,7 +102,7 @@
 | `agent/messageHistory.ts` | 🟢 已打磨 | `__tests__/messageHistory.test.ts` | 消息历史管理 |
 | `agent/composer.ts` | 🟢 已打磨 | `__tests__/composer.test.ts` | 上下文组装 |
 | `agent/assembler.ts` | 🟢 已打磨 | `__tests__/assembler.test.ts` | 组件装配（AgentHooks + 接线回调 + sessionManager + ContextPreparer + CheckpointRestoreCoordinator 分阶段组装） |
-| `agent/tracer.ts` | 🟢 已打磨 | `__tests__/tracer.test.ts` + `__tests__/metrics.test.ts` | 可观测性追踪（闭环可观察属性的载体）+ AgentMetrics 运行时指标（AgentLoop/Agent.getMetrics：LLM 调用 / 记忆召回命中率 / 工具调用 / 上下文管理 / 衰减） |
+| `agent/tracer.ts` | 🟢 已打磨 | `__tests__/tracer.test.ts` + `__tests__/metrics.test.ts` | 可观测性追踪（闭环可观察属性的载体）+ AgentMetrics 运行时指标（AgentLoop/Agent.getMetrics：LLM 调用 / 记忆召回 / 工具调用 / 上下文管理 / 任务级 SLO，5 维度） |
 | `agent/constants.ts` | 🟢 已打磨 | `__tests__/constants.test.ts` | 常量定义 |
 | `agent/types.ts` | 🟢 已打磨 | 间接测试 | 36 个导出类型定义 |
 
@@ -237,12 +237,11 @@
 | `memory/vectorStore.ts` | 🟢 已打磨 | `__tests__/vectorStore.test.ts` | 向量存储 |
 | `memory/reranker.ts` | ⚪ 接口 | `__tests__/reranker.test.ts` (3 tests) | 重排序接口（IReranker，仅类型；默认实现已剪枝移除） |
 | `memory/types.ts` | 🟢 已打磨 | `__tests__/types.test.ts` | 记忆类型定义 |
-| `memory/governance.ts` | 🟢 已打磨 | `__tests__/governance.test.ts` | 分数衰减、clamp 边界 |
+| `memory/governance.ts` | 🟢 已打磨 | `__tests__/governance.test.ts` | 治理常量（supersede/boost/沉底 cutoff） |
 | `memory/inMemoryStorage.ts` | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts` | 内存存储实现 |
 | `memory/storageInterface.ts` | ⚪ 接口 | 无独立测试 | IMemoryStorage 接口定义 |
 | `memory/lockManager.ts` | 🟢 已打磨 | `__tests__/lockManager.test.ts` | 锁文件管理 |
 | `memory/sourceValidation.ts` | 🟢 已打磨 | `__tests__/sourceValidation.test.ts` | Source 校验 |
-| `memory/sourcePaths.ts` | 🟢 已打磨 | `__tests__/sourcePaths.test.ts` | Source → 路径映射 SSOT |
 | `memory/projectManager.ts` | 🟢 已打磨 | `__tests__/projectManager.test.ts` | 项目管理 |
 | `memory/projectRegistry.ts` | 🟢 已打磨 | `__tests__/projectRegistry.test.ts` | 项目注册表 |
 
@@ -250,14 +249,13 @@
 
 ### 4.3 记忆治理（managers/ · 记忆维护）
 
-> **生长来源**：记忆系统长期运行会产生"记忆腐烂"（重复/覆盖/过时）。治理层是回答后沉淀的**维护侧**——去重、衰减、冲突检测、快照诊断，保证记忆自然沉底、不污染召回面。
+> **生长来源**：记忆系统长期运行会产生"记忆腐烂"（重复/覆盖/过时）。治理层是回答后沉淀的**维护侧**——语义去重、冲突检测（supersede 写时取代 + boost 越用越重要）、快照诊断，保证记忆自然沉底、不污染召回面（显式 score 衰减调度已于 2026-08-27 移除）。
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
-| `managers/memoryGovernance.ts` | 🟢 已打磨 | `__tests__/memoryGovernance.test.ts` | 记忆治理统一门面 |
-| `managers/dedupManager.ts` | 🟢 已打磨 | `__tests__/dedupManager.test.ts` | L1 语义去重 |
-| `managers/memoryDecayScheduler.ts` | 🟢 已打磨 | `__tests__/memoryDecayScheduler.test.ts` | L2 时效性评估 |
-| `managers/memoryAdvisor.ts` | 🟢 已打磨 | `__tests__/memoryAdvisor.test.ts` | L3 冲突检测 |
+| `managers/memoryGovernance.ts` | 🟢 已打磨 | `__tests__/memoryGovernance.test.ts` | 记忆治理统一门面（聚合去重 + 建议委托） |
+| `managers/dedupManager.ts` | 🟢 已打磨 | `__tests__/dedupManager.test.ts` | 语义去重（LLM 判断） |
+| `managers/memoryAdvisor.ts` | 🟢 已打磨 | `__tests__/memoryAdvisor.test.ts` | 来源健康诊断 / 冲突检测 / 关联推荐（sourceHealth 只读） |
 | `managers/memoryInspector.ts` | 🟢 已打磨 | `__tests__/memoryInspector.test.ts` | 记忆快照/诊断 |
 | `managers/goalConsistencyChecker.ts` | 🟢 已打磨 | `__tests__/goalConsistencyChecker.test.ts` (51 tests) | 约束提取/文本相似度（bigram+Jaccard）/漂移三级判定/约束一致性检查 |
 | `managers/chatLockManager.ts` | 🟢 已打磨 | `__tests__/chatLockManager.test.ts` | 聊天锁管理 |

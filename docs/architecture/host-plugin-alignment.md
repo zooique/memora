@@ -2,12 +2,14 @@
 
 > **定位**：memora 是一个"无法独立运行的智能大脑内核"，宿主（Trae/IDE/CLI）负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。本文档定义宿主与 memora 内核的完整对齐方案。
 >
-> **设计哲学**：
+> **原理**：
 > - **内核零越界**：memora 不调用 `console.*`、不写用户文件、不管理 API Key、不读 `process.stdin`
 > - **接口契约**：宿主通过实现标准接口注入能力，内核只依赖接口不依赖宿主
 > - **单一真理源**：配置文件是真理源，对话走 SQLite 索引，角色包是设定的唯一注入源
 >
-> **版本**：v1.0
+> **⚠️ 历史快照（2026-08-28 标注）**：本文是早期「宿主对齐方案」的快照版本，其中记录的接口契约（含 `IMemoryStorage` 治理方法、`runMemoryDecayOnce` 等 Agent 记忆 API、部分事件）**已随内核演进变化**——显式衰减已移除、治理收敛为 supersede+boost、`PersonaManager` 已删。本文**仅作历史脉络参考，不作为现行实现依据**。现行内核 API 以 [memora-api-reference.md](../../../docs/memora-api-reference.md)、[module-inventory.md](./module-inventory.md) 与 `src/` 源码为准；宿主对接以 [memora-接入指南](../../../docs/memora-接入指南.md) 为准。
+>
+> **版本**：v1.0（历史快照）
 
 ---
 

@@ -477,7 +477,6 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
-| `inferSource(content)` | 从内容推断 source 标签 |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
