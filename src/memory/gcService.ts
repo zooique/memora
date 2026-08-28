@@ -3,7 +3,7 @@
  *
  * 设计理念：
  * - 基于引用计数的自动清理机制
- * - 只清理 refCount === 0 且已完成的 Round
+ * - 只清理 refCount === 0 且超龄的 Round（不分状态：pending/error 崩溃残留同样可回收）
  * - 同时清理关联的记忆摘要（round-summary）
  * - 支持定时执行和手动触发
  *

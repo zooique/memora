@@ -1,9 +1,9 @@
 # 问答闭环独立存储方案（正式设计文档）
 
 > **文档状态**：✅ 正式设计方案（SSOT）
-> **版本**：v1.1
+> **版本**：v1.2
 > **创建日期**：2026-08-27
-> **更新日期**：2026-08-27
+> **更新日期**：2026-08-28
 > **状态**：已确认，作为 Memora 会话管理的唯一真理源
 
 ### 变更记录
@@ -12,6 +12,7 @@
 |------|------|------|
 | v1.0 | 2026-08-27 | 初始版本：Round 独立存储 + 分叉概念 |
 | v1.1 | 2026-08-27 | **分叉模式定案**：统一为「从任意 Round 位置分叉」单一模式，删除 legacy copySession 路径，不考虑旧版兼容 |
+| v1.2 | 2026-08-28 | **实现对齐**：§4.2 pending Round refCount=0 且 complete 才登记会话；§4.4 召回对齐 excludeRoundIds+sessionId+sortByLayer 实现；§5.2 GC 不再按状态过滤（pending/error 同样可回收）；§6.1 补充 refCount 原子性；新增 §4.5 roundSummaryLoader 按会话 roundIds 过滤；新增 §5.3 Agent 接线 GCService 定时任务 |
 
 ---
 
@@ -351,63 +352,48 @@ class SessionViewLoader {
 
 ### 4.2 写入流程：创建问答闭环
 
-```typescript
-// src/agent/managers/roundManager.ts
+**实际实现**（对齐 §6.1 原子性）：
+1. `appendUser`：创建 `pending` Round → 写入 `RoundStore` → **不立即追加到会话**
+   - `refCount` 初始值为 `0`（未完成轮不被任何会话引用）
+   - 程序崩溃后 `pending` Round 成为孤儿（`refCount=0`），可被 GC 清理
+2. `appendAssistant`：完成 Round → 设置 `complete` → `refCount 0→1` → **才追加到会话**
+   - 如果程序在 `appendUser` 之后 `appendAssistant` 之前崩溃，只有 `pending` Round 残留，不污染会话视图
+   - `pending` 轮因 `refCount=0` 可被 GC 回收，不残留僵尸数据
 
-class RoundManager {
-  /**
-   * 创建新的问答闭环
-   * - 确保 Round 的原子性
-   * - 支持状态机：pending → complete
-   */
-  async createRound(
-    sessionId: string,
-    userMessage: RoundMessage,
-  ): Promise<Round> {
-    // 1. 创建 pending 状态的 Round
-    const round: Round = {
-      id: generateRoundId(),  // 生成全局唯一 ID
+```typescript
+// src/agent/messageHistory.ts
+
+async appendUser(content: string, roundId?: string): Promise<void> {
+  // ...
+  if (roundId && this.roundStore) {
+    const pendingRound: Round = {
+      id: roundId,
       userMessage,
-      assistantMessage: null as any,
       status: 'pending',
-      createdAt: new Date().toISOString(),
-      refCount: 1,
+      createdAt: message.timestamp,
+      // 未完成轮不被任何会话引用（complete 时 incrementRef + appendRoundId）
+      refCount: 0,
     };
-    
-    // 2. 存储 Round
-    await this.roundStore.save(round);
-    
-    // 3. 将 Round ID 追加到会话
-    await this.sessionStore.appendRoundId(sessionId, round.id);
-    
-    return round;
+    this.roundStore.save(pendingRound);
+    // 不立即 appendRoundId — 崩溃残留 pending 保持孤儿可由 GC 清理
   }
-  
-  /**
-   * 完成问答闭环
-   */
-  async completeRound(
-    roundId: string,
-    assistantMessage: RoundMessage,
-    summaryId?: string,
-  ): Promise<Round> {
-    // 1. 获取 Round
-    const round = await this.roundStore.get(roundId);
-    if (!round) throw new Error('Round not found');
-    
-    // 2. 更新 Round 为 complete 状态
-    round.assistantMessage = assistantMessage;
-    round.status = 'complete';
-    round.completedAt = new Date().toISOString();
-    round.summaryId = summaryId;
-    
-    // 3. 存储更新后的 Round
-    await this.roundStore.save(round);
-    
-    return round;
+}
+
+async appendAssistant(content: string, roundId?: string): Promise<void> {
+  // ...
+  if (completed) {
+    this.roundStore.save(completed);
+    // complete 才登记会话引用（refCount 0→1 + 列表登记）
+    this.roundStore.incrementRef(roundId);
+    this.sessionStore?.appendRoundId(sessionId, roundId);
   }
 }
 ```
+
+**关键设计点**：
+- 原子性保证：`appendUser` → `appendAssistant` 两步，只有 `complete` 后才登记会话引用
+- 崩溃残留处理：`pending` 轮不登记引用，崩溃后 `refCount=0` 可被 GC 自然清理，不影响会话视图
+- 引用计数原子性：每次引用变更都同步更新 `refCount`，GC 只清理 `refCount=0` 且超龄的 Round
 
 ### 4.3 分叉操作：唯一模式——从 Round 位置分叉
 
@@ -568,50 +554,76 @@ class MessageHistory {
 
 ### 4.4 召回逻辑：按 Round ID 筛选
 
-```typescript
-// src/memory/recall.ts
+**实际实现**（v3 分层分轨，`src/memory/recall.ts`）：
 
-class RecallEngine {
-  /**
-   * 记忆召回
-   * - 同会话优先：按当前会话的 roundIds 筛选
-   * - 全局补充：召回其他重要记忆
-   */
-  async recall(sessionId: string, query: string): Promise<Memory[]> {
-    // 1. 获取当前会话的 roundIds
-    const sessionMeta = this.sessionStore.getMeta(sessionId);
-    if (!sessionMeta) throw new Error('Session not found');
-    const { roundIds } = sessionMeta;
-    
-    // 2. 召回同会话的记忆（权重高）
-    const sessionMemories = await this.memoryStorage.search({
-      roundIds,  // 按 roundId 筛选
-      importanceThreshold: 0.5,
-    });
-    
-    // 3. 召回全局记忆（权重低）
-    const globalMemories = await this.memoryStorage.search({
-      excludeRoundIds: roundIds,  // 排除当前会话的，避免重复
-      importanceThreshold: 0.7,  // 更高的重要性阈值
-    });
-    
-    // 4. 合并，同会话的记忆排序靠前
-    return this.mergeWithPriority(sessionMemories, globalMemories);
-  }
-  
-  /**
-   * 合并记忆，带优先级
-   */
-  private mergeWithPriority(
-    sessionMemories: Memory[],
-    globalMemories: Memory[],
-  ): Memory[] {
-    // 同会话的记忆排在前面
-    return [...sessionMemories, ...globalMemories]
-      .sort((a, b) => b.importance - a.importance)
-      .slice(0, MAX_MEMORY_COUNT);
-  }
+同会话优先通过**三层机制**组合落地，而非文档早期设想的"按 roundIds 正向筛选 + 全局补充"双通道：
+
+1. **`sessionId` 会话窗口标识**：recall 接收当前会话窗口 id（与 round-summary 写侧 `sessionName` 同源同值 `${date}-${session}`），`sortByLayer` 将**当前会话的摘要（L1）排在 preference（L2）与其余轨之前**——同窗口优先
+2. **`excludeRoundIds` 前置互斥排除**：调用侧把**上下文已实际注入轮次的 roundIds**（完整对话层 + 显式补首轮 + 替换产物）集合传入，recall 在 `hybridMerge` 取 limit **前**过滤这些轮次的 round-summary——避免正文已加载的摘要二次注入挤占预算
+3. **`minFallback` 保底通道**：语义/关键词命中不足时，空查询按 score 降序补最近记忆（排语义命中后、去 superseded），置 0 关闭
+
+```typescript
+// src/memory/recall.ts（调用侧透传：contextPreparer / checkpointRestoreCoordinator）
+
+recalledMemories = await recall(storage, input, {
+  limit: DEFAULT_RECALL_LIMIT,
+  vectorStore: config.vectorStore ?? undefined,
+  excludeSources: config.recallExcludeSources,
+  // 会话窗口标识与写入侧 sessionName 同源同值——同窗口摘要排最前（L1）
+  sessionId: history.currentSessionName,
+  // 前置互斥排除：取 limit 前过滤完整对话层实际注入轮次的 round-summary
+  excludeRoundIds: recentRoundIds,
+  // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
+  minFallback: resolveMinFallback(strategy),
+});
+
+// excludeRoundIds 来源（contextPreparer）：实际注入轮次集合，因果闭合
+const recentRoundIds = new Set(history.getRecentRoundIds(dialogue.recentRoundCount));
+if (dialogue.firstRoundIncluded) {
+  const firstRoundId = history.getFirstRoundId();
+  if (firstRoundId) recentRoundIds.add(firstRoundId);
 }
+for (const replacedRoundId of loop.getReplacedRoundIds()) {
+  recentRoundIds.add(replacedRoundId);
+}
+```
+
+**恢复路径对称**：`checkpointRestoreCoordinator.warmRecall`（暂停恢复的温记忆召回）同样透传
+`sessionId`（restoreFromCheckpoint 已 loadSessionMessages 同步）与 `excludeRoundIds`
+（热窗口 `HOT_MEMORY_MAX_ROUNDS` 轮正文已载入 loop，其摘要不重复注入）。
+
+**分叉后召回**：分叉产生的新会话拥有自己的 `roundIds` 切片，其 `sessionName` 与源会话不同；
+任何一侧的召回都只透传本会话的 roundIds/excludeRoundIds——分支 A 的 round-summary 不会在原会话窗口层面对分支 B 生效（记忆库全局共享，但装配时间线各自互斥）。
+
+### 4.5 上下文截断回退：roundSummaryLoader 按会话过滤
+
+**实际实现**（`src/agent/assembler.ts`）：
+
+上下文截断时**优先复用已存 round-summary**（避免现调 LLM 生成摘要）。回退文本**只取当前会话
+roundIds 对应的摘要**——round-based 下会话由 roundIds 列表定义、摘要以 roundId 溯源，
+其他会话（分叉分支/切换遗留）的摘要不得渗入当前上下文"遗忘补偿"。
+
+```typescript
+const roundSummaryLoader = (): string => {
+  // 惰性求取当前会话 roundIds；sessionStore 缺失时降级全量（保底可用性）
+  let allowedRoundIds: ReadonlySet<string> | null = null;
+  const sessionId = sessionManager?.getCheckpoint()?.sessionId ?? '';
+  if (sessionStore && sessionId) {
+    const ids = sessionStore.getRoundIds(sessionId);
+    allowedRoundIds = new Set(Array.isArray(ids) ? ids : []);
+  }
+  return pctx.index
+    .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
+    .filter(
+      (s) =>
+        allowedRoundIds === null ||
+        (s.roundId !== undefined && allowedRoundIds.has(s.roundId)),
+    )
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+    .slice(0, ROUND_SUMMARY_LOADER_MAX)  // 5 条
+    .map((s) => `- ${s.content}`)
+    .join('\n');
+};
 ```
 
 ---
@@ -652,35 +664,55 @@ class RoundStore {
 class GCService {
   /**
    * 垃圾回收
-   * - 清理孤立的问答闭环（refCount === 0）
-   * - 只清理 complete 状态的闭环
+   * - 清理孤立的问答闭环（refCount === 0 且超龄）
+   * - 不分状态：pending/error 崩溃残留同样回收（§6.1：pending 不登记引用）
+   * - 同时清理关联的记忆摘要（round-summary）
+   * - 支持定时执行（startPeriodic/stopPeriodic）和手动触发（run）
    */
-  async gc(): Promise<void> {
-    const orphanedRounds: string[] = [];
+  run(): GCResult {
+    // 1. 列出孤立 Round（refCount === 0 且超龄，不区分状态）
+    //    进行中轮由 minAgeMs（默认 5 分钟）兜底保护——创建后短暂期内不清
+    const orphanedRounds = this.roundStore.listOrphaned(minAgeMs);
     
-    for (const [roundId, round] of this.roundStore.all()) {
-      // 孤立的、已完成的问答闭环可以被清理
-      if (round.refCount === 0 && round.status === 'complete') {
-        orphanedRounds.push(roundId);
+    // 2. 分批删除（batchSize 默认 100，避免单次清理过多导致性能问题）
+    for (const batch of chunk(orphanedRounds, batchSize)) {
+      for (const round of batch) {
+        const deleted = this.roundStore.delete(round.id);
+        if (deleted && cleanUpMemory) {
+          this.cleanUpRoundSummary(round);  // 按 summaryId / 默认格式定位并删除关联摘要
+        }
       }
     }
-    
-    // 删除孤立的问答闭环
-    for (const roundId of orphanedRounds) {
-      await this.roundStore.deleteRound(roundId);
-      // 同时删除关联的摘要
-      await this.memoryStore.deleteByRoundId(roundId);
-    }
-    
-    logger.info(`GC completed: deleted ${orphanedRounds.length} orphaned rounds`);
   }
 }
 ```
 
+**v1.2 变更**：原初稿「只清理 `complete` 状态」已被移除——`pending`/`error` 崩溃残留
+（§6.1，`refCount=0` 且从未登记会话）同样是孤儿，须可回收；进行中轮由 `minAgeMs` 判龄保护，
+"状态过滤"既非必要也可能漏清崩溃残留（pending 永不 complete 则永不清理）。
+
 **触发时机**：
-- 会话删除时，减少引用计数
-- 定时任务（如每天一次）执行 GC
-- 系统空闲时执行 GC
+- 会话删除时，减少引用计数（内核 `inMemorySessionStore` 与宿主 `WorkspaceSessionStore` 的 `deleteSession` 已落地）
+- 定时任务（如每天一次）执行 GC（Agent 接线，见 §5.3）
+
+### 5.3 Agent 接线 GCService 定时任务
+
+**实际实现**（`src/agent/agent.ts`）：GC 定时任务由 Agent 门面持有，生命周期与实例一致。
+
+```typescript
+// createPostInitComponents（init 内调用）：roundStore+storage 为构造期稳定注入时创建并启动
+if (this.#config.roundStore && this.#config.storage) {
+  this.internals.gcService = createDefaultGCService(this.#config.roundStore, this.#config.storage);
+  this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS); // 24h
+}
+
+// close()：须先于 projectManager.shutdown（其会关闭 storage）
+this.internals.gcService?.stopPeriodic();
+```
+
+- GCService 属 `internals` 聚合对象（nullifyAllComponents 统一重置），不对外暴露
+- 周期常量 `GC_INTERVAL_MS = 24h` 收口于 `AGENT_CONSTANTS`
+- 宿主未注入 `roundStore`/`storage` 时不创建（降级为空转，不报错）
 
 ---
 
@@ -690,10 +722,11 @@ class GCService {
 
 **问题**：如果 User 消息写入后，AI 消息还没生成，程序崩溃了怎么办？
 
-**解决方案**：
+**解决方案**（已落地于 `appendUser`/`appendAssistant`，§4.2）：
 1. Round 的状态机：`pending` → `complete`
-2. 只在 `complete` 状态下，才将 Round ID 追加到会话列表
-3. `pending` 状态的 Round 定期清理（GC 时处理）
+2. 只在 `complete` 状态下，才将 Round ID 追加到会话列表（`appendRoundId` + `incrementRef` 成对发生）
+3. `pending` 状态 Round 的 `refCount` 初始为 `0`（未登记即无引用）——崩溃残留是孤儿，GC 定期清理
+4. 引用计数原子性：会话增删与分叉都同步走 `incrementRef`/`decrementRef` 单点，不绕过引用直接物理删 Round
 
 ### 6.2 并发控制
 
@@ -708,10 +741,10 @@ class GCService {
 
 **问题**：删除会话时，引用的 Round 是否删除？
 
-**解决方案**：
-1. 只减少引用计数，不物理删除
-2. 当引用计数为 0 时，GC 自动清理
-3. 摘要随 Round 一起清理
+**解决方案**（已落地：内核 `inMemorySessionStore` + 宿主 `WorkspaceSessionStore` 的 `deleteSession` 对称实现）：
+1. 只减少引用计数（遍历 roundIds 逐一 `decrementRef`），不物理删除
+2. 当引用计数为 0 时，GC 自动清理（§5.2/§5.3）
+3. 摘要随 Round 一起清理（GC `cleanUpMemory`）
 
 ---
 
@@ -787,21 +820,22 @@ class GCService {
 - [x] 源会话 `roundIds` 不受影响
 - [x] 全量测试通过（分叉相关测试全绿；`llmIntegration` 真实 LLM 用例需可用 API key，否则 skip）
 
-### Phase 5：业务层适配
+### Phase 5：业务层适配 ✅ 已完成
 
 **目标**：适配 `AgentLoop`、`Recall` 等模块与 round-based 分叉对齐
 
-| 任务 | 交付物 |
-|------|--------|
-| 适配 `AgentLoop` 写入逻辑（已完成，验证） | `src/agent/loop.ts` |
-| 适配 `Recall` 召回逻辑（基于 Round ID 筛选） | `src/memory/recall.ts` |
-| 适配 `RoundSummaryGenerator` | `src/agent/managers/roundSummaryGenerator.ts` |
-| 适配宿主 IPC/WebSocket 分叉入口 | `hosts/memora-sprite/src/electron/ipc/sessionHandlers.ts` |
+| 任务 | 交付物 | 状态 |
+|------|--------|------|
+| 适配 `AgentLoop` 写入逻辑（已验证） | `src/agent/loop.ts` | ✅ |
+| 适配 `Recall` 召回逻辑（§4.4：sessionId 分层 + excludeRoundIds 前置互斥 + minFallback 保底；调用侧 contextPreparer / checkpointRestoreCoordinator 透传） | `src/memory/recall.ts` | ✅ |
+| `roundSummaryLoader` 按当前会话 roundIds 过滤（§4.5，防跨会话摘要渗入） | `src/agent/assembler.ts` | ✅ |
+| `deleteSession` 递减 refCount + Agent 接线 GCService 定时任务（§5.2/§5.3） | `src/memory/inMemorySessionStore.ts` / `src/agent/agent.ts` | ✅ |
+| 角色包粘性复位到会话切换/分叉出口（§4.4 同会话优先前置：粘性不跨会话） | `src/agent/seed/prepare.ts` | ✅ |
 
 **验收标准**：
-- [ ] AgentLoop 正确创建 Round
-- [ ] 召回逻辑正确基于 Round ID
-- [ ] 分叉后新会话的召回使用新会话的 roundIds
+- [x] AgentLoop 正确创建 Round（pending → complete 才登记会话，§4.2）
+- [x] 召回逻辑正确基于 Round ID（excludeRoundIds 互斥排除 + sessionId 同窗口优先）
+- [x] 分叉后新会话的召回使用新会话的 roundIds（sessionName 各自互斥）
 
 ### Phase 6：UI 与宿主适配
 

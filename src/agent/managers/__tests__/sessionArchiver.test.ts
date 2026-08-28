@@ -83,10 +83,6 @@ class MockSessionStore implements ISessionStore {
     this.messages = messages;
   }
 
-  appendMessage(): void {
-    // 测试不需要实现追加逻辑
-  }
-
   loadMessages(): SessionMessage[] {
     return this.messages;
   }

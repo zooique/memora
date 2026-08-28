@@ -138,7 +138,6 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
 function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessionStore {
   const store = new Map<string, string>();
   return {
-    appendMessage: vi.fn(),
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
     saveCheckpoint: vi.fn((sessionId: string, json: string) => {
@@ -1350,19 +1349,9 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
  */
 function createPersistentSessionStore(): ISessionStore {
   const checkpointStore = new Map<string, string>();
-  const messageStore = new Map<string, Array<{ role: string; content: string; timestamp: string }>>();
-
   return {
-    appendMessage: vi.fn((date: string, session: string, message: { role: string; content: string; timestamp: string }) => {
-      const key = `${date}-${session}`;
-      const list = messageStore.get(key) ?? [];
-      list.push(message);
-      messageStore.set(key, list);
-    }),
-    loadMessages: vi.fn((date: string, session: string) => {
-      return messageStore.get(`${date}-${session}`) ?? [];
-    }),
-    listSessions: vi.fn(() => Array.from(messageStore.keys())),
+    loadMessages: () => [],
+    listSessions: () => [],
     saveCheckpoint: vi.fn((sessionId: string, json: string) => {
       checkpointStore.set(sessionId, json);
     }),

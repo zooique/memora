@@ -517,9 +517,9 @@ export interface AgentOptions {
   recallExcludeSources?: string[];
   /** 外部注入的存储实例（不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
-  /** 外部注入的会话存储（不传则仅内存保存） */
+  /** 外部注入的会话存储（round-based 唯一模式；未注入则消息仅内存保存） */
   sessionStore?: ISessionStore;
-  /** 外部注入的问答闭环存储（不传则仅 legacy 模式，传则启用 round-based 模式） */
+  /** 外部注入的问答闭环存储（round-based 唯一模式；与 sessionStore 成对注入，未注入则消息仅内存保存） */
   roundStore?: IRoundStore;
   /** 可观测性 Tracer（不传则 NoopTracer 静默丢弃） */
   tracer?: ITracer;

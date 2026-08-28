@@ -37,8 +37,8 @@ class InMemorySessionStore implements ISessionStore {
   /** Round ID 存储：key = sessionId，value = roundId[] */
   private readonly roundIdsMap = new Map<string, string[]>();
 
-  /** 追加消息 */
-  appendMessage(date: string, session: string, message: SessionMessage): void {
+  /** 测试播种：注入已展开的消息视图（round-based 下会话视图由 roundIds → RoundStore 展开，此处直接用展开结果模拟） */
+  seedMessages(date: string, session: string, message: SessionMessage): void {
     const key = `${date}/${session}`;
     const messages = this.messages.get(key) ?? [];
     messages.push(message);
@@ -202,14 +202,14 @@ describe('ISessionStore — 必需方法契约', () => {
     store = new InMemorySessionStore();
   });
 
-  describe('appendMessage + loadMessages', () => {
+  describe('seedMessages（会话视图播种） + loadMessages', () => {
     it('追加后可加载', () => {
       const msg: SessionMessage = {
         role: 'user',
         content: '你好',
         timestamp: '2026-08-18T10:00:00.000Z',
       };
-      store.appendMessage('2026-08-18', 'test-session', msg);
+      store.seedMessages('2026-08-18', 'test-session', msg);
 
       const loaded = store.loadMessages('2026-08-18', 'test-session');
       expect(loaded).toHaveLength(1);
@@ -223,7 +223,7 @@ describe('ISessionStore — 必需方法契约', () => {
         { role: 'user', content: '问题2', timestamp: '2026-08-18T10:00:02.000Z' },
       ];
       for (const m of msgs) {
-        store.appendMessage('2026-08-18', 'test', m);
+        store.seedMessages('2026-08-18', 'test', m);
       }
 
       const loaded = store.loadMessages('2026-08-18', 'test');
@@ -239,10 +239,10 @@ describe('ISessionStore — 必需方法契约', () => {
     });
 
     it('不同会话隔离', () => {
-      store.appendMessage('2026-08-18', 'session-A', {
+      store.seedMessages('2026-08-18', 'session-A', {
         role: 'user', content: 'A的消息', timestamp: 't1',
       });
-      store.appendMessage('2026-08-18', 'session-B', {
+      store.seedMessages('2026-08-18', 'session-B', {
         role: 'user', content: 'B的消息', timestamp: 't2',
       });
 
@@ -255,10 +255,10 @@ describe('ISessionStore — 必需方法契约', () => {
     });
 
     it('不同日期隔离', () => {
-      store.appendMessage('2026-08-18', 'test', {
+      store.seedMessages('2026-08-18', 'test', {
         role: 'user', content: '今天', timestamp: 't1',
       });
-      store.appendMessage('2026-08-17', 'test', {
+      store.seedMessages('2026-08-17', 'test', {
         role: 'user', content: '昨天', timestamp: 't2',
       });
 
@@ -271,13 +271,13 @@ describe('ISessionStore — 必需方法契约', () => {
 
   describe('listSessions', () => {
     it('列出所有会话', () => {
-      store.appendMessage('2026-08-18', 'session-1', {
+      store.seedMessages('2026-08-18', 'session-1', {
         role: 'user', content: 'test1', timestamp: 't1',
       });
-      store.appendMessage('2026-08-18', 'session-2', {
+      store.seedMessages('2026-08-18', 'session-2', {
         role: 'user', content: 'test2', timestamp: 't2',
       });
-      store.appendMessage('2026-08-17', 'session-3', {
+      store.seedMessages('2026-08-17', 'session-3', {
         role: 'user', content: 'test3', timestamp: 't3',
       });
 
@@ -340,7 +340,7 @@ describe('ISessionStore — 可选方法契约', () => {
 
   describe('getSessionMeta + setSessionTitle + listSessionMetas', () => {
     it('设置标题后可获取', () => {
-      store.appendMessage('2026-08-18', 'test', {
+      store.seedMessages('2026-08-18', 'test', {
         role: 'user', content: 'test', timestamp: 't1',
       });
       store.setSessionTitle('2026-08-18-test', '我的会话');
@@ -358,8 +358,8 @@ describe('ISessionStore — 可选方法契约', () => {
     });
 
     it('列出所有元数据', () => {
-      store.appendMessage('2026-08-18', 's1', { role: 'user', content: 'a', timestamp: 't1' });
-      store.appendMessage('2026-08-18', 's2', { role: 'user', content: 'b', timestamp: 't2' });
+      store.seedMessages('2026-08-18', 's1', { role: 'user', content: 'a', timestamp: 't1' });
+      store.seedMessages('2026-08-18', 's2', { role: 'user', content: 'b', timestamp: 't2' });
       store.setSessionTitle('2026-08-18-s1', '会话一');
       store.setSessionTitle('2026-08-18-s2', '会话二');
 

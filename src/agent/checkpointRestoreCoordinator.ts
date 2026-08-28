@@ -97,6 +97,12 @@ export class CheckpointRestoreCoordinator {
     }
 
     try {
+      // 热窗口互斥排除（与 contextPreparer 对称）：恢复时热窗口（HOT_MEMORY_MAX_ROUNDS 轮）
+      // 正文已载入 loop，其 round-summary 不应再被温召回二次注入（装配时间线互斥，防止重复）
+      const recentRoundIds = new Set(
+        deps.history.getRecentRoundIds(AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS),
+      );
+
       const recalledMemories = await recall(
         deps.getIndex(),
         query,
@@ -104,6 +110,11 @@ export class CheckpointRestoreCoordinator {
           limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
           vectorStore: deps.config.vectorStore ?? undefined,
           excludeSources: deps.config.recallExcludeSources,
+          // 会话窗口标识与写入侧 sessionName 同源同值（restoreFromCheckpoint 已 loadSessionMessages 同步），
+          // 保证恢复的早期上下文在当前会话窗口优先（round-summary 层级 L1）
+          sessionId: deps.history.currentSessionName,
+          // 前置互斥排除：热窗口已注入轮次的 round-summary 不重复召回
+          excludeRoundIds: recentRoundIds,
         },
       );
 

@@ -10,8 +10,6 @@ import type { MessageRole } from '@/memory/types.js';
  */
 export interface ISessionStore {
   // ── 会话消息读写（round-based 单一真相源） ───────────
-  /** 追加一条消息到指定会话（底层写入 RoundStore 并登记 roundId） */
-  appendMessage(date: string, session: string, message: SessionMessage): void;
   /** 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开），不存在返回空数组 */
   loadMessages(date: string, session: string): SessionMessage[];
 
@@ -69,9 +67,9 @@ export interface SessionMeta {
   summary?: string;
 
   /**
-   * Round ID 列表（round-based 模式唯一内容来源）
+   * Round ID 列表（会话唯一内容来源）
    *
-   * 问答闭环 ID 的有序列表，替代 legacy 模式的消息列表
+   * 问答闭环 ID 的有序列表（消息内容只存于 RoundStore）
    * 分叉操作时直接复制此列表（指针复制）
    */
   roundIds?: string[];

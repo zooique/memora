@@ -176,10 +176,9 @@ export class InMemoryRoundStore implements IRoundStore {
         const ageSec = (now - createdAtMs) / 1000;
         if (ageSec < minAgeMsSec) return false;
 
-        // 只清理 complete 状态的 Round
-        // pending/error 状态的 Round 可能还在处理中
-        if (r.status !== 'complete') return false;
-
+        // 孤儿 = 无引用且超龄：
+        // complete 轮在删会话归零后回收；pending/error 轮（崩溃残留 refCount=0）同样回收，
+        // 进行中轮由 minAgeMs 兜底保护，不被误清
         return true;
       })
       .map((r) => ({ ...r }));

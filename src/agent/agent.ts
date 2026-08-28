@@ -40,6 +40,10 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
+import {
+  createDefaultGCService,
+  type GCService,
+} from '@/memory/gcService.js';
 import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
@@ -146,6 +150,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
      * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
      */
     seedOrchestrator: SeedOrchestrator | null;
+    /** 孤儿 Round 垃圾回收服务（引用计数归零 + 超龄才清理，init 时启动周期任务、close 时停止） */
+    gcService: GCService | null;
   } = {
     dedupManager: null,
     memoryAdvisor: null,
@@ -158,6 +164,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     chatLockManager: null,
     archiveCoordinator: null,
     seedOrchestrator: null,
+    gcService: null,
   };
 
   private _initialized = false;
@@ -348,6 +355,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private createPostInitComponents(_pctx: ProjectContext): void {
     // chat() 并发锁管理器（生命周期与 Agent 实例一致）
     this.internals.chatLockManager = new ChatLockManager();
+
+    // 孤儿 Round 垃圾回收服务：roundStore+storage 均为构造期稳定注入（不随 rebuildComponents 变化），
+    // 每日周期清理 refCount=0 且超龄的孤立问答闭环（崩溃残留 pending / 已删会话遗留），防止存储膨胀
+    if (this.#config.roundStore && this.#config.storage) {
+      this.internals.gcService = createDefaultGCService(
+        this.#config.roundStore,
+        this.#config.storage,
+      );
+      this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
+    }
 
     // 四级补全器（不中断工作模型 v2.0）
     this.internals.composer = new Composer();
@@ -1552,6 +1569,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 清理 chat 锁管理器（递增 token 使进行中 chat() 的 finally 跳过清理，close 已接管）
     this.internals.chatLockManager?.dispose();
     this.internals.chatLockManager = null;
+    // 孤儿 Round GC 停止定时任务（须先于下方 projectManager.shutdown——其会关闭 storage）
+    this.internals.gcService?.stopPeriodic();
+    this.internals.gcService = null;
     // 等待 WorkProjection 无 inflight 概念（作品投影改为用户主动触发同步写，无后台 LLM 任务）
     // 背景任务统一由下方 awaitBackgroundTasks 兜底
     // 关键修复：等待 backgroundTask 全局在途任务完成（如 boostScores）。
@@ -1647,6 +1667,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       chatLockManager: null,
       archiveCoordinator: null,
       seedOrchestrator: null,
+      gcService: null,
     };
   }
 

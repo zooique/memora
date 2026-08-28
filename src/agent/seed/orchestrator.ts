@@ -184,6 +184,20 @@ export class SeedOrchestrator {
     signal: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
+    // 用户回答作为新问答闭环落盘（SSOT：消息历史唯一写点 MessageHistory）。
+    // 续跑与 chat 的唯一差异是无回答前——但用户回答（input）不能只活在 loop 内存，
+    // 必须写入历史轮才能跨重启可回溯、摘要可溯源。当前轮 ID 提前分配并与 loop 对齐，
+    // 使 continueAfterPause 的内存注入与 act 尾的 appendAssistant 落在同一轮上。
+    // 外循环续跑（completeExternalTask）有自己的组合溯源轮，不在此干预。
+    if (input?.trim() && !parts.loop.isWithinExternalTask) {
+      const roundId = parts.loop.allocRoundId();
+      parts.loop.setCurrentRoundId(roundId);
+      try {
+        await parts.history.appendUser(input, roundId);
+      } catch (err) {
+        logger.warn({ err }, '续跑用户回答历史写入失败');
+      }
+    }
     // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
     const produce = () => parts.loop.continueAfterPause(input, signal);
     const acted = yield* this.act(produce);

@@ -712,7 +712,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
 
   it('sessionStore 可用时返回该轮次的原始对话', async () => {
     const store: ISessionStore = {
-      appendMessage: () => {},
       loadMessages: () => [
         { role: 'user', content: '帮我解释 TypeScript 接口', timestamp: '2026-08-13T01:00:00Z', roundId: ROUND_A },
         { role: 'assistant', content: '接口用于定义对象的形状', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
@@ -740,7 +739,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
     // 用户历史含转义控制字符（ESC \x1b），trace_summary 拼入前必须净化，
     // 否则隐藏指令/终端注入序列直通 LLM 上下文（与 toolExecutor 主路径一致）
     const store: ISessionStore = {
-      appendMessage: () => {},
       loadMessages: () => [
         { role: 'user', content: '正常问题', timestamp: '2026-08-13T01:00:00Z', roundId: ROUND_A },
         { role: 'assistant', content: '回答\x1b[2J带转义控制字符', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
@@ -766,7 +764,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
   it('sessionStore 未命中该轮次时回退为摘要文本（不报错）', async () => {
     // loadMessages 返回空 → loadRawRoundMessages 返回 null → 回退摘要
     const store: ISessionStore = {
-      appendMessage: () => {},
       loadMessages: () => [],
       listSessions: () => [SESSION],
       getRoundIds: () => [],

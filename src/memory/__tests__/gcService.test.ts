@@ -65,17 +65,30 @@ describe('垃圾回收服务', () => {
       expect(roundStore.size()).toBe(1);
     });
 
-    it('不应该清理 pending 状态的 Round', () => {
-      // 创建 pending 状态的 Round
+    it('应该清理 pending 状态的孤立 Round（崩溃残留）', () => {
+      // 创建 pending 状态的 Round（refCount=0 = 从未登记会话，如 appendUser 后崩溃残留）。
+      // GC 不按状态过滤——pending 残留同样是孤儿，超龄（minAgeMs=0）即可回收，
+      // 进行中轮由超龄判龄保护而非状态保护。
       const round = createPendingRound('待处理的问题');
       round.refCount = 0;
       roundStore.save(round);
 
       // 执行 GC
       const result = gc.run();
-      expect(result.deleted).toBe(0);
+      expect(result.deleted).toBe(1);
 
-      // 验证仍存在
+      // 验证已清理
+      expect(roundStore.size()).toBe(0);
+    });
+
+    it('不应该清理 refCount>0 的 pending Round（进行中轮）', () => {
+      // 进行中轮被会话持有引用（refCount=1）：仅由删除会话/分叉释放引用，GC 不动
+      const round = createPendingRound('进行中的问题');
+      roundStore.save(round); // createPendingRound 默认 refCount=1
+
+      const result = gc.run();
+      expect(result.deleted).toBe(0);
+      expect(result.orphaned).toBe(0);
       expect(roundStore.size()).toBe(1);
     });
 

@@ -1567,20 +1567,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return { date: sessionId.slice(0, idx), session: sessionId.slice(idx + 1) };
   }
 
-  /** 当前会话的 date/session（单真理源：始终解析 _currentSessionId，复用内核会话组织） */
-  private sessionInfo(): { date: string; session: string; store: HostSessionStore } {
-    return { ...this.parseSessionId(this._currentSessionId), store: this.sessionStore };
-  }
-
   /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */
   private currentSessionTitle(): string {
     return getSessionDisplayName(this.sessionStore.getSessionMeta(this._currentSessionId)) || defaultSessionTitle();
-  }
-
-  /** 持久化一条消息 */
-  private persist(role: 'user' | 'assistant', content: string): void {
-    const { date, session, store } = this.sessionInfo();
-    store.appendMessage(date, session, { role, content, timestamp: new Date().toISOString() });
   }
 
   /** 向 webview 发送消息 */
@@ -1651,13 +1640,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
   }
 
-  /** 处理用户对主动提问的回答：persist + resumeExecution 续跑 */
+  /** 处理用户对主动提问的回答：resumeExecution 续跑（用户回答落盘由内核 runResume 完成，SSOT 不双写） */
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
-    // resumeExecution 内核路径不写 user 消息（仅 appendAssistant），
-    // 此处由 UI 补写，避免回答丢失（内核 resume 能力缺口，宿主补丁）
-    this.persist('user', input);
+    // 回答上屏；持久化由内核 resumeExecution 按新问答闭环写入（见 runResume）
     this.post({ type: 'user', text: input, ts: now });
     await this.runFlow((signal) => this._agent!.resumeExecution(input, signal));
   }

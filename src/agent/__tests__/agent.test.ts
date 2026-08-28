@@ -834,20 +834,14 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
 
   /** Mock ISessionStore */
   function createMockSessionStore(): ISessionStore {
-    // Legacy 消息存储
+    // 消息存储（ISessionStore.loadMessages 契约：roundIds → RoundStore 展开）
     const store = new Map<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>();
     // Round-based 存储：sessionId → roundId[]
     const roundIdsMap = new Map<string, string[]>();
     // 元数据存储
-    const metas = new Map<string, { sessionId: string; storageMode?: 'legacy' | 'round-based'; createdAt?: string; updatedAt: string; messageCount: number }>();
+    const metas = new Map<string, { sessionId: string; createdAt?: string; updatedAt: string; messageCount: number }>();
 
     return {
-      appendMessage(date: string, session: string, message: { role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }) {
-        const key = `${date}-${session}`;
-        const list = store.get(key) ?? [];
-        list.push(message);
-        store.set(key, list);
-      },
       loadMessages(date: string, session: string) {
         return store.get(`${date}-${session}`) ?? [];
       },
@@ -1046,7 +1040,6 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   /** Mock ISessionStore，用于测试 restoreMostRecentSession */
   function createMockSessionStore(sessions: string[], messagesBySession: Record<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>): ISessionStore {
     return {
-      appendMessage() {},
       loadMessages(date: string, session: string) {
         return messagesBySession[`${date}-${session}`] ?? [];
       },
@@ -2499,7 +2492,6 @@ describe('Agent · 暂停超时自动归档', () => {
       lastHeartbeat: Date.now() - AGENT_CONSTANTS.PAUSE_TIMEOUT_MS - 60_000,
     };
     return {
-      appendMessage: () => {},
       loadMessages: () => [],
       listSessions: () => [],
       saveCheckpoint: () => {},

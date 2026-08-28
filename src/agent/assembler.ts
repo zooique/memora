@@ -464,11 +464,25 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   );
 
   // 截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
-  // 从记忆索引取最近 N 条 round-summary（按 createdAt 降序），拼接为历史摘要回退文本。
+  // 仅取当前会话 roundIds 对应的摘要（round-based：会话由 roundIds 列表定义，摘要以 roundId 溯源）——
+  // 防止其他会话（分叉分支/会话切换遗留）的摘要渗入当前上下文"遗忘补偿"。
+  // sessionStore 缺失（未注入）时降级为全量最近摘要（保底可用性），不阻断截断。
   const roundSummaryLoader = (): string => {
     try {
+      // 惰性求取当前会话 roundIds：checkpoint 未就绪时降级全量（新会话无历史摘要可复用）
+      let allowedRoundIds: ReadonlySet<string> | null = null;
+      const sessionId = sessionManager?.getCheckpoint()?.sessionId ?? '';
+      if (sessionStore && sessionId) {
+        const ids = sessionStore.getRoundIds(sessionId);
+        allowedRoundIds = new Set(Array.isArray(ids) ? ids : []);
+      }
       const summaries = pctx.index
         .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
+        .filter(
+          (s) =>
+            allowedRoundIds === null ||
+            (s.roundId !== undefined && allowedRoundIds.has(s.roundId)),
+        )
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, ROUND_SUMMARY_LOADER_MAX);
       if (summaries.length === 0) return '';

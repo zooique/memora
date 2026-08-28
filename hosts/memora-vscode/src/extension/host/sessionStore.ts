@@ -15,8 +15,6 @@ import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
   defaultSessionTitle,
-  generateRoundId,
-  generateMessageId,
   type IRoundStore,
   type ISessionStore,
   type Round,
@@ -34,8 +32,6 @@ export class WorkspaceSessionStore implements ISessionStore {
   private metas = new Map<string, SessionMeta>();
   /** Round ID 列表存储：sessionId → roundId[]（round-based 唯一真相源） */
   private roundIdsStore = new Map<string, string[]>();
-  /** sessionId → 当前 pending Round ID（appendMessage 成对补全用） */
-  private pendingRoundIds = new Map<string, string>();
   /** 问答闭环物理存储（IRoundStore 实现，文件落盘） */
   private readonly roundStore: IRoundStore;
   /** 会话文件绝对路径 */
@@ -76,7 +72,6 @@ export class WorkspaceSessionStore implements ISessionStore {
       this.checkpoints.clear();
       this.metas.clear();
       this.roundIdsStore.clear();
-      this.pendingRoundIds.clear();
     }
   }
 
@@ -88,92 +83,6 @@ export class WorkspaceSessionStore implements ISessionStore {
       roundIdsStore: Object.fromEntries(this.roundIdsStore),
     };
     atomicWriteFileSync(this.filePath, JSON.stringify(data, null, 2));
-  }
-
-  /**
-   * 追加一条消息到指定会话（round-based 唯一真相源）。
-   * 底层写入 RoundStore 并登记 roundId；user/assistant 成对组成同一 Round。
-   * 同步维护占位会话标题元数据（ADR-024：显示「新会话 HH:MM」直至内核自动命名）。
-   */
-  appendMessage(date: string, session: string, message: SessionMessage): void {
-    const sessionId = `${date}-${session}`;
-    const now = message.timestamp;
-
-    // 确保占位元数据存在（无则新建「新会话」占位）
-    if (!this.metas.has(sessionId)) {
-      this.metas.set(sessionId, {
-        sessionId,
-        displayName: defaultSessionTitle(),
-        updatedAt: now,
-        messageCount: 0,
-      });
-    }
-
-    if (message.role === 'user') {
-      const roundId = message.roundId ?? generateRoundId();
-      const round: Round = {
-        id: roundId,
-        userMessage: {
-          id: generateMessageId(),
-          role: 'user',
-          content: message.content,
-          timestamp: now,
-        },
-        status: 'pending',
-        createdAt: now,
-        refCount: 1,
-      };
-      this.roundStore.save(round);
-      this.pendingRoundIds.set(sessionId, roundId);
-      this.appendRoundId(sessionId, roundId);
-      return;
-    }
-
-    // assistant：补全当前 pending Round
-    const pendingRoundId = this.pendingRoundIds.get(sessionId);
-    if (pendingRoundId) {
-      const round = this.roundStore.getById(pendingRoundId);
-      if (round) {
-        const completed: Round = {
-          ...round,
-          assistantMessage: {
-            id: generateMessageId(),
-            role: 'assistant',
-            content: message.content,
-            timestamp: now,
-          },
-          status: 'complete',
-          completedAt: now,
-        };
-        this.roundStore.save(completed);
-        this.pendingRoundIds.delete(sessionId);
-        return;
-      }
-    }
-
-    // 无 pending（异常场景兜底）：独立 complete Round
-    const roundId = generateRoundId();
-    const round: Round = {
-      id: roundId,
-      userMessage: {
-        id: generateMessageId(),
-        role: 'user',
-        content: message.content,
-        timestamp: now,
-      },
-      assistantMessage: {
-        id: generateMessageId(),
-        role: 'assistant',
-        content: message.content,
-        timestamp: now,
-      },
-      status: 'complete',
-      createdAt: now,
-      completedAt: now,
-      refCount: 1,
-    };
-    this.roundStore.save(round);
-    this.appendRoundId(sessionId, roundId);
   }
 
   /** 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开） */
@@ -210,11 +119,15 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
    */
   deleteSession(sessionId: string): void {
-    // 清理：移除 Round ID 指针 + 元数据 + 检查点（物理 Round 由 RoundStore 管理）
+    // 引用递减：被删除会话放弃其 Round 引用（refCount 归零的轮由 GC 回收）
+    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+    for (const roundId of roundIds) {
+      this.roundStore.decrementRef(roundId);
+    }
+    // 清理：移除 Round ID 指针 + 元数据 + 检查点（物理 Round 由 RoundStore 引用计数 + GC 管理）
     this.roundIdsStore.delete(sessionId);
     this.metas.delete(sessionId);
     this.checkpoints.delete(sessionId);
-    this.pendingRoundIds.delete(sessionId);
     this.save();
   }
 

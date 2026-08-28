@@ -21,9 +21,6 @@ import type { ISessionStore } from '@/memory/sessionStore.js';
 /** 创建一个总是抛错的 ISessionStore mock */
 function createFailingSessionStore(): ISessionStore {
   return {
-    appendMessage: vi.fn(() => {
-      throw new Error('模拟存储不可用');
-    }),
     loadMessages: vi.fn(() => {
       throw new Error('模拟存储不可用');
     }),
@@ -80,7 +77,9 @@ describe('降级策略 · P1 消息持久化', () => {
 
     // 应正常返回，不抛出
     await expect(history.appendUser('测试消息', 'round-1')).resolves.toBeUndefined();
-    expect(failingStore.appendRoundId).toHaveBeenCalledOnce();
+    // appendUser 只写 pending Round，不登记会话（complete 才 appendRoundId）
+    expect(mockRoundStore.save).toHaveBeenCalledOnce();
+    expect(failingStore.appendRoundId).not.toHaveBeenCalled();
   });
 
   it('appendAssistant 存储失败时不抛出异常', async () => {
@@ -169,7 +168,8 @@ describe('降级策略 · 日志格式一致性', () => {
     // 触发降级（roundStore 注入使 round-based 路径生效）
     await history.appendUser('触发降级的消息', 'round-1');
 
-    // 验证 round-based 路径被调用
-    expect(failingStore.appendRoundId).toHaveBeenCalledOnce();
+    // 验证 round-based 路径生效且不登记会话（complete 才 appendRoundId）
+    expect(mockRoundStore.save).toHaveBeenCalledOnce();
+    expect(failingStore.appendRoundId).not.toHaveBeenCalled();
   });
 });

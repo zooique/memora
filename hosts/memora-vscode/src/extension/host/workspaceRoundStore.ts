@@ -358,8 +358,8 @@ export class WorkspaceRoundStore implements IRoundStore {
       const ageSec = (now - createdAtMs) / 1000;
       if (ageSec < minAgeMsSec) continue;
 
-      // 只清理 complete 状态的 Round
-      if (entry.status !== 'complete') continue;
+      // 孤儿 = 无引用且超龄：pending/error 崩溃残留同样回收，
+      // 进行中轮由 minAgeMs 兜底保护（minAgeMsSec 判龄已在上方过滤）
 
       // 加载完整数据
       const round = this.getById(id);

@@ -11,14 +11,13 @@
  * - roundStore: IRoundStore — 问答闭环物理存储（真相源）
  */
 
-import type { IRoundStore, Round } from '@/memory/roundStore.js';
+import type { IRoundStore } from '@/memory/roundStore.js';
 import type {
   ISessionStore,
   SessionMessage,
   SessionMeta,
 } from '@/memory/sessionStore.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
-import { generateRoundId, generateMessageId } from '@/memory/roundStore.js';
 
 /**
  * 内存会话存储
@@ -31,89 +30,12 @@ export class InMemorySessionStore implements ISessionStore {
   private readonly metas = new Map<string, SessionMeta>();
   /** Round ID 列表存储：key = sessionId，value = roundId 数组（round-based 模式） */
   private readonly roundIdsMap = new Map<string, string[]>();
-  /** sessionId → 当前 pending Round ID（用于 appendMessage 成对补全） */
-  private readonly pendingRoundIds = new Map<string, string>();
 
   constructor(roundStore?: IRoundStore) {
     this.roundStore = roundStore ?? new InMemoryRoundStore();
   }
 
   // ─── 会话消息读写（round-based 唯一真相源） ──────────
-
-  /**
-   * 追加一条消息到指定会话。
-   * 底层写入 RoundStore 并登记 roundId；user/assistant 成对组成同一 Round。
-   */
-  appendMessage(date: string, session: string, message: SessionMessage): void {
-    const sessionId = `${date}-${session}`;
-    const now = message.timestamp;
-
-    if (message.role === 'user') {
-      const roundId = generateRoundId();
-      const round: Round = {
-        id: roundId,
-        userMessage: {
-          id: generateMessageId(),
-          role: 'user',
-          content: message.content,
-          timestamp: now,
-        },
-        status: 'pending',
-        createdAt: now,
-        refCount: 1,
-      };
-      this.roundStore.save(round);
-      this.pendingRoundIds.set(sessionId, roundId);
-      this.appendRoundId(sessionId, roundId);
-      return;
-    }
-
-    // assistant：补全当前 pending Round
-    const pendingRoundId = this.pendingRoundIds.get(sessionId);
-    if (pendingRoundId) {
-      const round = this.roundStore.getById(pendingRoundId);
-      if (round) {
-        const completed: Round = {
-          ...round,
-          assistantMessage: {
-            id: generateMessageId(),
-            role: 'assistant',
-            content: message.content,
-            timestamp: now,
-          },
-          status: 'complete',
-          completedAt: now,
-        };
-        this.roundStore.save(completed);
-        this.pendingRoundIds.delete(sessionId);
-        return;
-      }
-    }
-
-    // 无 pending（异常场景兜底）：独立 complete Round
-    const roundId = generateRoundId();
-    const round: Round = {
-      id: roundId,
-      userMessage: {
-        id: generateMessageId(),
-        role: 'user',
-        content: message.content,
-        timestamp: now,
-      },
-      assistantMessage: {
-        id: generateMessageId(),
-        role: 'assistant',
-        content: message.content,
-        timestamp: now,
-      },
-      status: 'complete',
-      createdAt: now,
-      completedAt: now,
-      refCount: 1,
-    };
-    this.roundStore.save(round);
-    this.appendRoundId(sessionId, roundId);
-  }
 
   /**
    * 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开）。
@@ -311,10 +233,14 @@ export class InMemorySessionStore implements ISessionStore {
    * 删除会话
    */
   deleteSession(sessionId: string): void {
+    // 引用递减：被删除会话放弃其 Round 引用（refCount 归零的轮由 GC 回收）
+    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
+    for (const roundId of roundIds) {
+      this.roundStore.decrementRef(roundId);
+    }
     this.metas.delete(sessionId);
     this.roundIdsMap.delete(sessionId);
     this.checkpoints.delete(sessionId);
-    this.pendingRoundIds.delete(sessionId);
   }
 
   // ─── 私有辅助方法 ─────────────────────────────────────
@@ -370,6 +296,5 @@ export class InMemorySessionStore implements ISessionStore {
     this.metas.clear();
     this.checkpoints.clear();
     this.roundIdsMap.clear();
-    this.pendingRoundIds.clear();
   }
 }

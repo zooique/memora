@@ -64,7 +64,6 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
  */
 function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessionStore {
   return {
-    appendMessage: vi.fn(),
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
     saveCheckpoint: vi.fn(),
@@ -1516,7 +1515,6 @@ describe('SessionManager', () => {
     let writes = 0;
 
     const store: ISessionStore = {
-      appendMessage: vi.fn(),
       loadMessages: vi.fn().mockReturnValue([]),
       listSessions: vi.fn().mockReturnValue([]),
       saveCheckpoint: (sessionId: string, json: string) => {

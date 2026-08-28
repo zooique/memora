@@ -229,7 +229,9 @@ export class MessageHistory {
   /**
    * 追加 user 消息到当前会话（持久化失败不抛出，不阻塞对话）。
    *
-   * Round-based 路径：roundStore 注入且 roundId 存在时，创建 pending Round 写入 RoundStore。
+   * Round-based 路径：roundStore 注入且 roundId 存在时，创建 pending Round
+   * 写入 RoundStore（refCount=0，未完成不登记会话）。**仅 complete 才 appendRoundId**——
+   * 崩溃残留的 pending 轮是孤儿（refCount=0），可由 GC 清理，不污染会话视图。
    */
   async appendUser(content: string, roundId?: string): Promise<void> {
     const message: SessionMessage = {
@@ -243,7 +245,6 @@ export class MessageHistory {
     // Round-based 路径：roundStore 注入且有 roundId 时写入
     if (roundId && this.roundStore) {
       try {
-        const sessionId = this.currentSessionName;
         const pendingRound: Round = {
           id: roundId,
           userMessage: {
@@ -254,12 +255,12 @@ export class MessageHistory {
           } as RoundMessage,
           status: 'pending',
           createdAt: message.timestamp,
-          refCount: 1,
+          // 未完成轮不被任何会话引用（complete 时 incrementRef + appendRoundId）
+          refCount: 0,
         };
         this.roundStore.save(pendingRound);
         this.pendingRounds.set(roundId, pendingRound);
-        this.sessionStore!.appendRoundId(sessionId, roundId);
-        logger.debug({ roundId, sessionId }, 'appendUser: Round-based pending Round created');
+        logger.debug({ roundId }, 'appendUser: Round-based pending Round created');
       } catch (err) {
         logger.warn({ err, roundId }, 'appendUser: Round-based 写入失败');
       }
@@ -271,7 +272,10 @@ export class MessageHistory {
   /**
    * 追加 assistant 消息到当前会话（持久化失败不抛出）。
    *
-   * Round-based 路径：roundStore 注入且 roundId 存在时，完成 pending Round。
+   * Round-based 路径：完成 pending Round 时**才登记会话引用**——
+   * incrementRef（refCount 0→1）+ appendRoundId。pending 缓存丢失（跨重启）时从
+   * RoundStore 取回补全；Round 不存在（异常兜底）时创建独立 complete Round 并登记，
+   * 保证用户消息不丢失。
    */
   async appendAssistant(content: string, roundId?: string): Promise<void> {
     if (!content.trim()) return;
@@ -285,9 +289,10 @@ export class MessageHistory {
 
     // Round-based 路径：roundStore 注入且有 roundId 时完成 pending Round
     if (roundId && this.roundStore) {
+      let completed: Round | null = null;
       const pendingRound = this.pendingRounds.get(roundId);
       if (pendingRound) {
-        const completedRound: Round = {
+        completed = {
           ...pendingRound,
           assistantMessage: {
             id: `msg-${roundId}-assistant`,
@@ -298,24 +303,64 @@ export class MessageHistory {
           status: 'complete',
           completedAt: message.timestamp,
         };
-        this.roundStore.save(completedRound);
         this.pendingRounds.delete(roundId);
-        logger.debug({ roundId }, 'appendAssistant: Round-based Round completed');
       } else {
-        // pending Round 不存在，查找并补全
+        // pending 缓存丢失（跨重启等）：从 RoundStore 取回补全
         const round = this.roundStore.getById(roundId);
         if (round) {
-          round.assistantMessage = {
+          completed = {
+            ...round,
+            assistantMessage: {
+              id: `msg-${roundId}-assistant`,
+              role: 'assistant',
+              content,
+              timestamp: message.timestamp,
+            } as RoundMessage,
+            status: 'complete',
+            completedAt: message.timestamp,
+          };
+        } else {
+          logger.warn({ roundId }, 'appendAssistant: Round not found in RoundStore');
+        }
+      }
+
+      if (completed) {
+        this.roundStore.save(completed);
+        // complete 才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理
+        this.roundStore.incrementRef(roundId);
+        const sessionId = this.currentSessionName;
+        try {
+          this.sessionStore?.appendRoundId(sessionId, roundId);
+        } catch (err) {
+          logger.warn({ err, sessionId, roundId }, 'appendAssistant: appendRoundId 失败');
+        }
+        logger.debug({ roundId }, 'appendAssistant: Round-based Round completed');
+      } else {
+        // Round 不存在（异常兜底）：独立 complete Round，不让用户消息丢失
+        const fallback: Round = {
+          id: roundId,
+          userMessage: {
+            id: `msg-${roundId}-user`,
+            role: 'user',
+            content: '<历史消息>',
+            timestamp: message.timestamp,
+          } as RoundMessage,
+          assistantMessage: {
             id: `msg-${roundId}-assistant`,
             role: 'assistant',
             content,
             timestamp: message.timestamp,
-          } as RoundMessage;
-          round.status = 'complete';
-          round.completedAt = message.timestamp;
-          this.roundStore.save(round);
-        } else {
-          logger.warn({ roundId }, 'appendAssistant: Round not found in RoundStore');
+          } as RoundMessage,
+          status: 'complete',
+          createdAt: message.timestamp,
+          completedAt: message.timestamp,
+          refCount: 1,
+        };
+        this.roundStore.save(fallback);
+        try {
+          this.sessionStore!.appendRoundId(this.currentSessionName, roundId);
+        } catch (err) {
+          logger.warn({ err, roundId }, 'appendAssistant: 兜底 appendRoundId 失败');
         }
       }
     }

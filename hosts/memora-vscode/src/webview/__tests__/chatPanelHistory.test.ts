@@ -15,8 +15,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Agent } from '@zooique/memora';
+import type { Agent, Round } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
+import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
@@ -61,12 +62,15 @@ function agentStub(): { agent: Agent; switchToSession: ReturnType<typeof vi.fn>;
 /** 构造一个 sessionStore + provider 的最小桩，返回可驱动的 provider 实例 */
 function setup(): {
   store: WorkspaceSessionStore;
+  roundStore: WorkspaceRoundStore;
   provider: MemoraChatViewProvider;
   posted: unknown[];
   resolveWebview: () => void;
 } {
   const dir = mkdtempSync(join(tmpdir(), 'memora-chatpanel-'));
-  const store = new WorkspaceSessionStore(dir);
+  const roundStore = new WorkspaceRoundStore(dir);
+  roundStore.load();
+  const store = new WorkspaceSessionStore(dir, roundStore);
   store.load();
 
   // providerStore 桩：仅需 listMasked / getActiveName（pushProviders 用）
@@ -100,18 +104,42 @@ function setup(): {
 
   return {
     store,
+    roundStore,
     provider,
     posted,
     resolveWebview: () => {},
   };
 }
 
-/** 内存中直接写入会话消息（模拟内核 appendUser/appendAssistant 落盘结构） */
-function seedSession(store: WorkspaceSessionStore, sessionId: string, msgs: { role: string; content: string; ts: string }[]): void {
+/** 内存中直接写入会话消息（round-based：user/assistant 成对写入 RoundStore 并登记 roundId） */
+function seedSession(
+  store: WorkspaceSessionStore,
+  roundStore: WorkspaceRoundStore,
+  sessionId: string,
+  msgs: { role: string; content: string; ts: string }[],
+): void {
   const idx = sessionId.lastIndexOf('-');
   const date = sessionId.slice(0, idx);
   const session = sessionId.slice(idx + 1);
-  for (const m of msgs) store.appendMessage(date, session, m as never);
+  // user/assistant 成对聚为问答闭环（奇数组末条为 pending user 轮）
+  for (let i = 0; i < msgs.length; i += 2) {
+    const u = msgs[i]!;
+    const a = msgs[i + 1];
+    const roundId = `round-${roundStore.size() + 1}`;
+    const round: Round = {
+      id: roundId,
+      userMessage: { id: `${roundId}-user`, role: 'user', content: u.content, timestamp: u.ts },
+      ...(a
+        ? { assistantMessage: { id: `${roundId}-assistant`, role: 'assistant', content: a.content, timestamp: a.ts } }
+        : {}),
+      status: a ? 'complete' : 'pending',
+      createdAt: u.ts,
+      ...(a ? { completedAt: a.ts } : {}),
+      refCount: 1,
+    };
+    roundStore.save(round);
+    store.appendRoundId(`${date}-${session}`, roundId);
+  }
 }
 
 /** 从 posted 中按 type 过滤消息 */
@@ -125,9 +153,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   it('pushSessionList：只返回非当前会话，按 updatedAt 降序', () => {
-    const { store, provider, posted } = setup();
-    seedSession(store, '2026-08-15-s1', [{ role: 'user', content: 'x', ts: 't1' }]);
-    seedSession(store, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
+    const { store, roundStore, provider, posted } = setup();
+    seedSession(store, roundStore, '2026-08-15-s1', [{ role: 'user', content: 'x', ts: 't1' }]);
+    seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
     store.setSessionTitle('2026-08-15-s1', '今天会话');
     store.setSessionTitle('2026-08-14-s2', '昨天会话');
     // 当前会话 = s1 → s1 不进历史（设计收敛），只剩 s2
@@ -150,8 +178,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   it('handleDeleteSession：确认后删除会话记录（消息 + meta）+ 重推列表', async () => {
-    const { store, provider, posted } = setup();
-    seedSession(store, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
+    const { store, roundStore, provider, posted } = setup();
+    seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
     store.setSessionTitle('2026-08-14-s2', '昨天会话');
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
     await (provider as unknown as { handleDeleteSession(s: string): Promise<void> }).handleDeleteSession(
@@ -166,8 +194,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   it('handleDeleteSession：确认取消则不删除', async () => {
-    const { store, provider } = setup();
-    seedSession(store, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
+    const { store, roundStore, provider } = setup();
+    seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
     await (provider as unknown as { handleDeleteSession(s: string): Promise<void> }).handleDeleteSession(
       '2026-08-14-s2',
@@ -176,8 +204,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   it('handleDeleteSession：目标为当前会话时拒绝（防御保护，防未来 UI 变动误删）', async () => {
-    const { store, provider, posted } = setup();
-    seedSession(store, '2026-08-15-s1', [{ role: 'user', content: 'x', ts: 't1' }]);
+    const { store, roundStore, provider, posted } = setup();
+    seedSession(store, roundStore, '2026-08-15-s1', [{ role: 'user', content: 'x', ts: 't1' }]);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
     await (provider as unknown as { handleDeleteSession(s: string): Promise<void> }).handleDeleteSession(
@@ -207,10 +235,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   it('切换会话 → 调内核 switchToSession + 重放该会话历史 + 推送标题', async () => {
-    const { store, provider, posted } = setup();
+    const { store, roundStore, provider, posted } = setup();
     const { agent, switchToSession } = agentStub();
     provider.setAgent(agent);
-    seedSession(store, '2026-08-15-s1', [
+    seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '问题A', ts: '2026-08-15T10:00:00.000Z' },
       { role: 'assistant', content: '回答A', ts: '2026-08-15T10:00:30.000Z' },
     ]);
@@ -231,10 +259,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   it('改名当前会话 → 写入元数据 + 推送新标题', async () => {
-    const { store, provider, posted } = setup();
+    const { store, roundStore, provider, posted } = setup();
     const { agent, renameSession } = agentStub();
     provider.setAgent(agent);
-    seedSession(store, '2026-08-14-other', [{ role: 'user', content: 'x', ts: '2026-08-14T09:00:00.000Z' }]);
+    seedSession(store, roundStore, '2026-08-14-other', [{ role: 'user', content: 'x', ts: '2026-08-14T09:00:00.000Z' }]);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
 
     vi.mocked(vscode.window.showInputBox).mockResolvedValue('我的新标题');

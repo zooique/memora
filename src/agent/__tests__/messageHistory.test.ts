@@ -52,7 +52,6 @@ describe('MessageHistory · 基本操作', () => {
     // round-based 单一模型下，appendUser 不再写 legacy 扁平列表，
     // 但会话日期锚点仍须随当天日期同步（摘要/标题/互斥排除锚点不错位）
     const mockStore = {
-      appendMessage: () => {},
       loadMessages: () => [],
       listSessions: () => [],
       getRoundIds: () => [],
@@ -145,7 +144,6 @@ describe('MessageHistory · getFirstRoundId（会话起点背景互斥排除）'
     messages: Array<Pick<SessionMessage, 'role' | 'content' | 'roundId'>>,
   ) {
     return {
-      appendMessage: () => {},
       loadMessages: () =>
         messages.map((m) => ({ timestamp: '2026-01-01T00:00:00.000Z', ...m }) as SessionMessage),
       listSessions: () => [],
