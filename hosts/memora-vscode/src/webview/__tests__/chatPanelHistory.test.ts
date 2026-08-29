@@ -47,17 +47,26 @@ vi.mock('vscode', async () => {
 
 import * as vscode from 'vscode';
 
-/** agent 桩：仅提供会话管理相关方法（switchToSession / renameSession） */
-function agentStub(): { agent: Agent; switchToSession: ReturnType<typeof vi.fn>; renameSession: ReturnType<typeof vi.fn> } {
+/** agent 桩：仅提供会话管理相关方法（switchToSession / renameSession）+ 记忆联动（⑥） */
+function agentStub(): {
+  agent: Agent;
+  switchToSession: ReturnType<typeof vi.fn>;
+  renameSession: ReturnType<typeof vi.fn>;
+  softDeleteRoundSummaries: ReturnType<typeof vi.fn>;
+  softDeleteSessionContents: ReturnType<typeof vi.fn>;
+} {
   const switchToSession = vi.fn().mockResolvedValue(0);
   const renameSession = vi.fn();
-  // 最小 agent：仅暴露会话管理子对象 + 事件订阅空实现（bindAgentNoticeEvents 需要），其余方法留空
+  const softDeleteRoundSummaries = vi.fn().mockReturnValue(0);
+  const softDeleteSessionContents = vi.fn().mockReturnValue(0);
+  // 最小 agent：仅暴露会话管理子对象 + 记忆联动 + 事件订阅空实现（bindAgentNoticeEvents 需要），其余方法留空
   const agent = {
     sessionManager: { switchToSession, renameSession },
+    memory: { softDeleteRoundSummaries, softDeleteSessionContents },
     on: vi.fn(),
     off: vi.fn(),
   } as unknown as Agent;
-  return { agent, switchToSession, renameSession };
+  return { agent, switchToSession, renameSession, softDeleteRoundSummaries, softDeleteSessionContents };
 }
 
 /** 构造一个 sessionStore + provider 的最小桩，返回可驱动的 provider 实例 */
@@ -178,8 +187,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(data[0]?.sessions).toEqual([]);
   });
 
-  it('handleDeleteSession：确认后删除会话记录（消息 + meta）+ 重推列表', async () => {
+  it('handleDeleteSession：确认后删除会话记录（消息 + meta）+ 联动软删记忆摘要（⑥）+ 重推列表', async () => {
     const { store, roundStore, provider, posted } = setup();
+    const { agent, softDeleteRoundSummaries, softDeleteSessionContents } = agentStub();
+    provider.setAgent(agent);
     seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
     store.setSessionTitle('2026-08-14-s2', '昨天会话');
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
@@ -189,6 +200,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 会话记录已删除：meta + 消息均消失
     expect(store.getSessionMeta('2026-08-14-s2')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-14-s2');
+    // ⑥ 联动：被回收轮（round-1）的轮次摘要 + 该会话 content 会话级摘要软删（进回收站）
+    expect(softDeleteRoundSummaries).toHaveBeenCalledWith(['round-1']);
+    expect(softDeleteSessionContents).toHaveBeenCalledWith('2026-08-14-s2');
     // 删除后重推列表（此时空）
     const data = ofType<{ type: string; sessions: unknown[] }>(posted, 'session_list_data');
     expect(data[0]?.sessions).toEqual([]);

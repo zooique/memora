@@ -576,6 +576,67 @@ describe('MemoryInspector', () => {
       expect(purgedCount).toBe(0);
       expect(inspector.getDeletedById('rule:1')).not.toBeNull();
     });
+
+    it('softDeleteRoundSummaries：命中轮次摘要软删 + 清空溯源（脱钩）', () => {
+      // 两个命中轮（r1/r2）+ 一个无关轮（r3）
+      inspector.writeUpsert(
+        createMemory({ id: 'round-summary:2026-08-28-main:r1', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r1', name: '摘要1' }),
+      );
+      inspector.writeUpsert(
+        createMemory({ id: 'round-summary:2026-08-28-main:r2', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r2', name: '摘要2' }),
+      );
+      inspector.writeUpsert(
+        createMemory({ id: 'round-summary:2026-08-29-main:r3', source: 'round-summary', sessionName: '2026-08-29-main', roundId: 'r3', name: '摘要3' }),
+      );
+
+      const count = inspector.softDeleteRoundSummaries(['r1', 'r2']);
+      expect(count).toBe(2);
+
+      // 命中者进入回收站且溯源已脱钩（恢复后即为独立记忆）
+      const d1 = inspector.getDeletedById('round-summary:2026-08-28-main:r1')!;
+      expect(d1.deletedAt).toBeTruthy();
+      expect(d1.sessionName).toBeUndefined();
+      expect(d1.roundId).toBeUndefined();
+      // 未命中（r3）保持活跃
+      expect(inspector.getById('round-summary:2026-08-29-main:r3')).not.toBeNull();
+    });
+
+    it('softDeleteRoundSummaries：空数组回归 0，不触碰任何记忆', () => {
+      inspector.writeUpsert(
+        createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1' }),
+      );
+      expect(inspector.softDeleteRoundSummaries([])).toBe(0);
+      expect(inspector.getById('round-summary:s:r1')).not.toBeNull();
+    });
+
+    it('随轮软删恢复后即为无溯源独立记忆', () => {
+      inspector.writeUpsert(
+        createMemory({ id: 'round-summary:s:r9', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r9', name: '轮次九' }),
+      );
+      inspector.softDeleteRoundSummaries(['r9']);
+      inspector.writeRestore('round-summary:s:r9');
+      // 恢复成功：活跃、deletedAt 清除、溯源已脱钩（独立记忆）
+      const restored = inspector.getById('round-summary:s:r9')!;
+      expect(restored.deletedAt).toBeUndefined();
+      expect(restored.sessionName).toBeUndefined();
+      expect(restored.roundId).toBeUndefined();
+    });
+
+    it('softDeleteSessionContents：整会话删除时联动软删会话级 content 摘要（脱钩 sessionName）', () => {
+      inspector.writeUpsert(
+        createMemory({ id: 'content:1', source: 'content', sessionName: '2026-08-28-main', name: '会话摘要甲' }),
+      );
+      inspector.writeUpsert(
+        createMemory({ id: 'content:2', source: 'content', sessionName: '2026-08-29-other', name: '会话摘要乙' }),
+      );
+      const count = inspector.softDeleteSessionContents('2026-08-28-main');
+      expect(count).toBe(1);
+      // 命中者软删 + 脱钩；无关会话保持活跃
+      const d1 = inspector.getDeletedById('content:1')!;
+      expect(d1.deletedAt).toBeTruthy();
+      expect(d1.sessionName).toBeUndefined();
+      expect(inspector.getById('content:2')).not.toBeNull();
+    });
   });
 
   // ════════════════════════════════════════════════════════

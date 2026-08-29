@@ -24,7 +24,18 @@ import {
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import { WorkspaceRoundStore } from './workspaceRoundStore.js';
 
-/** 工作区会话存储 */
+/**
+ * 截断结果（truncateFrom 返回值）：ok = 锚点命中并完成截断；
+ * removedIds = 被物理删除（引用归零的孤儿）的 Round 列表，供调用方联动软删其记忆摘要（⑥）
+ */
+export interface RoundTruncateResult {
+  ok: boolean;
+  removedIds: string[];
+}
+
+/**
+ * 工作区会话存储
+ */
 export class WorkspaceSessionStore implements ISessionStore {
   /** 检查点存储：sessionId → checkpoint 字符串 */
   private checkpoints = new Map<string, string>();
@@ -112,26 +123,28 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 删除指定会话记录（历史浮层垃圾桶触发）
-   *
-   * 删除整条会话：Round ID 列表 + 元数据 + 检查点。
+   * 删除整条会话（历史浮层垃圾桶触发）：Round ID 列表 + 元数据 + 检查点。
    *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
+   * @returns 被物理删除（引用归零）的 Round ID 列表，供调用方联动软删其记忆摘要（⑥）
    */
-  deleteSession(sessionId: string): void {
+  deleteSession(sessionId: string): string[] {
     // 引用递减 + 物理回收：被删除会话放弃其 Round 引用后，refCount 归零的轮
     // 立即物理删除（SSOT：Round 物理生命周期归 RoundStore，引用归 SessionStore；
     // 分叉共享轮由 RoundStore.delete 内部 refCount>0 护栏安全保留）
     const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+    const removedIds: string[] = [];
     for (const roundId of roundIds) {
       this.roundStore.decrementRef(roundId);
-      this.roundStore.delete(roundId);
+      // 物理删除成功（引用归零）→ 记录被回收的 Round，供调用方联动软删其记忆摘要（⑥）
+      if (this.roundStore.delete(roundId)) removedIds.push(roundId);
     }
     // 清理：移除 Round ID 指针 + 元数据 + 检查点（物理 Round 由 RoundStore 引用计数 + GC 管理）
     this.roundIdsStore.delete(sessionId);
     this.metas.delete(sessionId);
     this.checkpoints.delete(sessionId);
     this.save();
+    return removedIds;
   }
 
   /**
@@ -145,23 +158,24 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @param date 会话日期 YYYY-MM-DD
    * @param session 会话标识
    * @param fromTs 删除按钮携带的 timestamp
-   * @returns 是否截断成功（锚点未找到时返回 false）
+   * @returns 截断结果（ok = 锚点命中并完成；removedIds = 引用归零被物理删除的 Round，供联动软删记忆摘要）
    */
-  truncateFrom(date: string, session: string, fromTs: string): boolean {
+  truncateFrom(date: string, session: string, fromTs: string): RoundTruncateResult {
     const sessionId = `${date}-${session}`;
     const roundIds = this.roundIdsStore.get(sessionId);
-    if (!roundIds || roundIds.length === 0) return false;
+    if (!roundIds || roundIds.length === 0) return { ok: false, removedIds: [] };
     const rounds = this.roundStore.getByIds(roundIds);
     // 下界匹配：第一条 assistant 时间戳 >= fromTs 的 Round 作为截断起点
     const idx = rounds.findIndex(
       (r: Round) => r.assistantMessage?.timestamp !== undefined && r.assistantMessage.timestamp >= fromTs,
     );
-    if (idx === -1) return false;
+    if (idx === -1) return { ok: false, removedIds: [] };
     // 删除 [idx, 末尾) 的全部 Round（含目标问答）
     const removed = roundIds.slice(idx);
+    const removedIds: string[] = [];
     for (const id of removed) {
       this.roundStore.decrementRef(id);
-      this.roundStore.delete(id); // refCount 归零才真删文件；若被分叉引用则安全保留
+      if (this.roundStore.delete(id)) removedIds.push(id); // refCount 归零才真删文件；若被分叉引用则安全保留
     }
     const kept = roundIds.slice(0, idx);
     this.roundIdsStore.set(sessionId, kept);
@@ -171,7 +185,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       this.metas.set(sessionId, { ...existing, roundIds: [...kept], messageCount: kept.length * 2 });
     }
     this.save();
-    return true;
+    return { ok: true, removedIds };
   }
 
   listSessions(): string[] {

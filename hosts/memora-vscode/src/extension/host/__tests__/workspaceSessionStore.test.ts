@@ -85,21 +85,26 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
   it('删除中间问答闭环：截断该问答（anchor 向前最近 user）到会话末尾', () => {
     seedThreeTurns(store, roundStore);
     // 删「回答二 a2」→ 起点为最近 user（u2），截断 u2 及之后 → 剩 [u1,a1]
-    expect(store.truncateFrom('2026-08-16', 'main', 'a2')).toBe(true);
+    const res = store.truncateFrom('2026-08-16', 'main', 'a2');
+    expect(res.ok).toBe(true);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
+    // 被回收（引用归零）的 Round 列表返回，供联动软删记忆摘要（⑥）：round-2/round-3 全删
+    expect(res.removedIds).toEqual(['round-2', 'round-3']);
   });
 
   it('删除最后一条问答闭环：只删该问答（u3,a3），保留前两轮', () => {
     seedThreeTurns(store, roundStore);
-    expect(store.truncateFrom('2026-08-16', 'main', 'a3')).toBe(true);
+    const res = store.truncateFrom('2026-08-16', 'main', 'a3');
+    expect(res.ok).toBe(true);
+    expect(res.removedIds).toEqual(['round-3']);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一', '问题二', '回答二']);
   });
 
   it('锚点 ts 不存在 → no-op 返回 false，会话不变', () => {
     seedThreeTurns(store, roundStore);
-    expect(store.truncateFrom('2026-08-16', 'main', 'not-exist')).toBe(false);
+    expect(store.truncateFrom('2026-08-16', 'main', 'not-exist').ok).toBe(false);
     expect(store.loadMessages('2026-08-16', 'main')).toHaveLength(6);
   });
 
@@ -112,13 +117,13 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
       { content: '问二', ts: '2026-08-16T09:00:04.000Z' },
       { content: '答二', ts: '2026-08-16T09:00:10.000Z' });
     // 删除按钮携带的锚点是流开始时刻（09:00:05，早于答二存储时间 09:00:10）
-    expect(store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z')).toBe(true);
+    expect(store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z').ok).toBe(true);
     const left = store.loadMessages('2026-08-16', 'main');
     expect(left.map((m) => m.content)).toEqual(['问一', '答一']);
   });
 
   it('空会话 → false 不抛错', () => {
-    expect(store.truncateFrom('2026-08-16', 'main', 'x')).toBe(false);
+    expect(store.truncateFrom('2026-08-16', 'main', 'x').ok).toBe(false);
   });
 
   it('截断后同步会话标题 messageCount（ADR-024 元数据一致）', () => {
@@ -213,12 +218,14 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
     store.setSessionTitle?.('2026-08-17-main', '会话一');
     store.saveCheckpoint?.('2026-08-17-main', '{"status":"paused"}');
-    store.deleteSession('2026-08-17-main');
+    const removedIds = store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-17-main');
     expect(store.loadCheckpoint?.('2026-08-17-main')).toBeNull();
     // refCount 归零 → Round 物理文件同步回收（2026-08-29：deleteSession 减引用后立即物理删除）
     expect(roundStore.getById(roundId)).toBeNull();
+    // 返回值 = 被物理回收的 Round 列表（供调用方联动软删记忆摘要，⑥）
+    expect(removedIds).toEqual([roundId]);
   });
 
   it('deleteSession：分叉共享轮（refCount>0）安全保留，不被物理删除', () => {
@@ -226,9 +233,11 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     // 模拟分叉引用：另一会话共享同一 Round（refCount 1→3）
     roundStore.incrementRef(roundId);
     roundStore.incrementRef(roundId);
-    store.deleteSession('2026-08-17-main');
+    const removedIds = store.deleteSession('2026-08-17-main');
     // Round 仍被分叉会话引用 → 物理保留（RoundStore.delete 的 refCount>0 护栏）
     expect(roundStore.getById(roundId)).not.toBeNull();
+    // 返回值不含共享轮（未物理删除 → 不联动记忆，共享会话摘要保留）
+    expect(removedIds).toEqual([]);
     // 会话侧指针已清除
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
   });

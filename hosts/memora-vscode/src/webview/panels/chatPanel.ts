@@ -15,6 +15,7 @@
  *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换已独立到「角色」视图，2026-08-17）。
  */
 import * as vscode from 'vscode';
+import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 import {
   defaultSessionTitle,
   formatDateKey,
@@ -92,10 +93,12 @@ function snapshotDocContext(editor: vscode.TextEditor | undefined): string | und
 /** 宿主会话存储类型：内核 ISessionStore + 宿主扩展能力（删除会话记录 + 会话标题元数据）。
  *  用交集类型收窄，替代 handleClear 中的 as unknown as 双重断言（对抗评估 P2-5）。
  *  listSessionMetas/getSessionMeta 为 ADR-024 会话标题层的宿主实现（会话列表导航依赖）。
- *  deleteSession 为 2026-08-17 会话管理重构（历史浮层删除会话记录，替代原 clearSession）。 */
-type HostSessionStore = ISessionStore & {
-  deleteSession: (sessionId: string) => void;
-  truncateFrom: (date: string, session: string, fromTs: string) => boolean;
+ *  deleteSession 为 2026-08-17 会话管理重构（历史浮层删除会话记录，替代原 clearSession）。
+ *  返回被物理回收的 Round 列表（⑥ 记忆联动），truncateFrom 返回 RoundTruncateResult。
+ *  Omit<ISessionStore,'deleteSession'>：避免内核契约 void 签名与宿主扩展 string[] 签名做方法交集导致返回类型坍缩。 */
+type HostSessionStore = Omit<ISessionStore, 'deleteSession'> & {
+  deleteSession: (sessionId: string) => string[];
+  truncateFrom: (date: string, session: string, fromTs: string) => RoundTruncateResult;
   listSessionMetas: () => SessionMeta[];
   getSessionMeta: (sessionId: string) => SessionMeta | undefined;
 };
@@ -935,7 +938,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (choice !== '删除') return;
     try {
       const { date, session } = this.parseSessionId(this._currentSessionId);
-      this.sessionStore.truncateFrom(date, session, ts);
+      const result = this.sessionStore.truncateFrom(date, session, ts);
+      // ⑥ 联动（2026-08-29）：被回收问答闭环（引用归零）的轮次摘要软删进回收站；
+      // 会话级 content 摘要不联动——会话本身仍在
+      if (result.ok) this.softDeleteSessionMemories(result.removedIds);
     } catch (err) {
       // 删除失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
       console.warn('Memora 删除问答闭环失败', err);
@@ -989,12 +995,39 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      this.sessionStore.deleteSession(sessionId);
+      // ⑥ 联动（2026-08-29）：整删会话 → 被回收 Round（引用归零）的轮次摘要 +
+      // 该会话 content 会话级摘要一并软删进回收站（脱钩溯源，可恢复为独立记忆）。
+      // 分叉共享轮由 deleteSession 返回值天然排除——不影响仍在使用的关联会话记忆。
+      const removedIds = this.sessionStore.deleteSession(sessionId);
+      this.softDeleteSessionMemories(removedIds, sessionId);
     } catch (err) {
       // 删除失败不阻塞（重推列表仍可用），但需记录（SSOT 不藏错）
       console.warn('Memora 删除会话记录失败', err);
     }
     this.pushSessionList();
+  }
+
+  /**
+   * 随问答闭环物理删除联动软删记忆摘要（⑥，2026-08-29）。
+   *
+   * 触发语义：Round 引用归 0 被物理回收 → 该轮 round-summary 软删；整会话删除时
+   * 额外联动会话级 content 摘要。软删除走现有回收站（deletedAt），恢复后为无溯源
+   * 独立记忆（脱钩在删除时完成）。降级优先：Agent 未就绪 / 记忆操作异常不阻塞删除主流程。
+   *
+   * @param removedIds 被物理删除的 Round ID 列表（可空）
+   * @param sessionName 整会话删除时的会话完整标识（YYYY-MM-DD-sessionName，可空 = 单轮删除）
+   */
+  private softDeleteSessionMemories(removedIds: string[], sessionName?: string): void {
+    if (removedIds.length === 0 && !sessionName) return;
+    const memory = this._agent?.memory;
+    if (!memory) return; // Agent 未就绪：降级跳过（记忆遗留不影响会话删除主流程）
+    try {
+      if (removedIds.length > 0) memory.softDeleteRoundSummaries(removedIds);
+      if (sessionName) memory.softDeleteSessionContents(sessionName);
+    } catch (err) {
+      // 联动失败仅记录：记忆软删属后台治理，不阻断会话删除（SSOT 不藏错）
+      console.warn('Memora 联动软删会话记忆失败（降级：记忆遗留，可在记忆治理页手动处理）', err);
+    }
   }
 
   /**
