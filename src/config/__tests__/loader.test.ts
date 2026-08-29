@@ -750,8 +750,8 @@ describe('config/loader · 配置边界校验', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('maxContextTokens');
   });
 
-  it('maxContextTokens 超过上限（> 200000）应抛错', async () => {
-    const configPath = writeConfig(withProviders({ memory: { maxContextTokens: 999999 } }));
+  it('maxContextTokens 超过上限（> 2000000）应抛错', async () => {
+    const configPath = writeConfig(withProviders({ memory: { maxContextTokens: 2000001 } }));
     await expect(loadConfig(configPath)).rejects.toThrow('maxContextTokens');
   });
 

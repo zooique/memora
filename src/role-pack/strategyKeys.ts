@@ -34,8 +34,8 @@ export const MAX_TOOL_STEP_LIMIT = 100;
 export const MAX_LOOP_CONTINUE = 10;
 /** 每轮主动提问次数上限：每轮最多 askLimit 次提问，10 次防打扰失控 */
 export const MAX_ASK_LIMIT = 10;
-/** 每轮总 token 预算上限：200000 覆盖 128k 上下文窗口的两倍冗余 */
-export const MAX_TOKEN_BUDGET = 200000;
+/** 每轮总 token 预算上限：1_000_000 覆盖 1M 上下文窗口（mimo-v2.5-pro 等旗舰模型） */
+export const MAX_TOKEN_BUDGET = 1_000_000;
 /** 每轮工具步数预算上限：500 步足够任何长任务 */
 export const MAX_STEP_BUDGET = 500;
 /** 外部任务驱动循环步数上限：任务表每步一个闭环，100 步防死循环烧 token */

@@ -25,8 +25,8 @@ const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 
 /** maxContextTokens 下限：低于此无法承载最小上下文装配 */
 const MIN_MAX_CONTEXT_TOKENS = 1000;
-/** maxContextTokens 上限：200000 覆盖 128k 上下文窗口的两倍冗余（与 strategyKeys.MAX_TOKEN_BUDGET 同量级） */
-const MAX_MAX_CONTEXT_TOKENS = 200_000;
+/** maxContextTokens 上限：2_000_000 覆盖 2M 上下文窗口（与 MAX_CONTEXT_WINDOW 同量级，对齐 Gemini/MiMo 等旗舰模型） */
+const MAX_MAX_CONTEXT_TOKENS = 2_000_000;
 /** contextWindow 下限：低于此无意义（provider 上下文窗口声明） */
 const MIN_CONTEXT_WINDOW = 1000;
 /** contextWindow 上限：2M 覆盖当前所有模型上下文窗口 */

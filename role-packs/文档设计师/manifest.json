@@ -64,7 +64,7 @@
       "askOn": ["ambiguity", "decision", "missing_info"],
       "askLimit": 3,
       "errorHandling": "retry",
-      "tokenBudget": 32000,
+      "tokenBudget": 1000000,
       "stepBudget": 100,
       "taskLoopLimit": 20
     }

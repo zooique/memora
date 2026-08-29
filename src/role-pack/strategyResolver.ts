@@ -48,7 +48,7 @@ import type { RolePackManager } from './rolePackManager.js';
  * `resolveTokenBudget` 的非法/缺失回退、`DEFAULT_L2_STRATEGY.tokenBudget`（loop 构造期惰性初始）。
  * 0 = 不限制。
  */
-export const DEFAULT_TOKEN_BUDGET = 8000;
+export const DEFAULT_TOKEN_BUDGET = 200_000;
 
 /**
  * 步数预算内核默认值（SSOT 单一来源）。

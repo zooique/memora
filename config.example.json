@@ -30,7 +30,7 @@
   },
   "memory": {
     "dataDir": "~/.memora",
-    "maxContextTokens": 120000
+    "maxContextTokens": 1000000
   },
   "security": {
     "permission": "owner",

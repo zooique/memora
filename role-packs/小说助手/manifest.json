@@ -60,7 +60,7 @@
       "askOn": ["ambiguity", "decision", "confirm"],
       "askLimit": 5,
       "errorHandling": "degrade",
-      "tokenBudget": 8000,
+      "tokenBudget": 1000000,
       "stepBudget": 40,
       "taskLoopLimit": 10
     }

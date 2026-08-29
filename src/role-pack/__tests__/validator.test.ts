@@ -287,7 +287,7 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
 
   it('tokenBudget 越上界（> MAX_TOKEN_BUDGET）→ error', () => {
     const result = validate({
-      strategy: { ...validStrategy, global: { ...validStrategy.global, tokenBudget: 1000000 } },
+      strategy: { ...validStrategy, global: { ...validStrategy.global, tokenBudget: 1000001 } },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
@@ -315,12 +315,12 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
 
   it('越界错误消息带合法区间提示（指导填写）', () => {
     const result = validate({
-      strategy: { ...validStrategy, global: { ...validStrategy.global, tokenBudget: 999999 } },
+      strategy: { ...validStrategy, global: { ...validStrategy.global, tokenBudget: 1000001 } },
     });
     const issue = findByCode(result.issues, 'INVALID_STRATEGY_VALUE')[0];
     expect(issue).toBeDefined();
     expect(issue!.message).toContain('合法区间');
-    expect(issue!.message).toContain('[0, 200000]');
+    expect(issue!.message).toContain('[0, 1000000]');
   });
 
   it('userFollowup 枚举合法（ask/silent）且非枚举 error（雷-3b）', () => {
