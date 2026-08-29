@@ -273,6 +273,48 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(metrics.textContent).toContain('出 500');
   });
 
+  it('metrics 渲染预算分配构成（④ 策略可视化，可选字段缺省不显示）', () => {
+    mountChatView();
+    const metrics = document.getElementById('activityMetrics') as HTMLElement;
+    dispatch({
+      type: 'metrics',
+      fingerprints: {},
+      metrics: {
+        llmCallCount: 1,
+        recallHitRate: 0.5,
+        toolFailureCount: 0,
+        truncationCount: 0,
+        llmTokenIn: 1000,
+        llmTokenOut: 500,
+        budget: {
+          availableTokens: 97_000,
+          anchorTokens: 200,
+          remainingTokens: 96_800,
+          dialogueBudgetTokens: 87_120,
+          memoryLayerCapTokens: 38_720,
+        },
+      },
+    });
+    expect(metrics.hidden).toBe(false);
+    // 预算行展示：可用/锚点/对话层/记忆 cap/剩余（k 缩写）
+    expect(metrics.textContent).toContain('预算：可用 97k');
+    expect(metrics.textContent).toContain('锚点 200');
+    expect(metrics.textContent).toContain('对话层 87k');
+    expect(metrics.textContent).toContain('记忆 cap 39k');
+    expect(metrics.textContent).toContain('剩余 97k');
+  });
+
+  it('metrics 缺省 budget 时不显示预算行（可选字段非必填）', () => {
+    mountChatView();
+    const metrics = document.getElementById('activityMetrics') as HTMLElement;
+    dispatch({
+      type: 'metrics',
+      fingerprints: {},
+      metrics: { llmCallCount: 0, recallHitRate: 0, toolFailureCount: 0, truncationCount: 0 },
+    });
+    expect(metrics.textContent).not.toContain('预算：');
+  });
+
   it('metrics 渲染最近操作流（B9 透明面板 trace 展示）', () => {
     mountChatView();
     const metrics = document.getElementById('activityMetrics') as HTMLElement;

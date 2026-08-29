@@ -2013,6 +2013,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // D（alignment-iteration.md）：补齐 token 用量
         llmTokenIn: m.llm.totalInputTokens,
         llmTokenOut: m.llm.totalOutputTokens,
+        // ④（2026-08-29）：透出最近一次装配的上下文预算构成（prepare 计算，指标快照携带）
+        ...(m.context.budget ? { budget: m.context.budget } : {}),
       },
       trace: traces,
       ...(securityAudit ? { securityAudit } : {}),

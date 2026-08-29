@@ -1331,6 +1331,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (typeof fp.attachedMemoryCount === 'number') {
       lastAttachedMemoryCount = fp.attachedMemoryCount;
     }
+    /** 千分展示（>=1000 用 k 缩写，预算可视化行用，④） */
+    function fmtK(n: number): string {
+      return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
+    }
     const lines = [
       // 指纹行：只显示 hash 与计数，不显示内容（可追溯性边界）
       '本轮指纹：' +
@@ -1345,6 +1349,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
         ' / ' +
         (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -'),
+      // ④（2026-08-29）：预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层/记忆 cap 瓜分
+      ...(msg.metrics.budget
+        ? [
+            '预算：可用 ' + fmtK(msg.metrics.budget.availableTokens) +
+              ' · 锚点 ' + fmtK(msg.metrics.budget.anchorTokens) +
+              ' · 对话层 ' + fmtK(msg.metrics.budget.dialogueBudgetTokens) +
+              ' · 记忆 cap ' + fmtK(msg.metrics.budget.memoryLayerCapTokens) +
+              ' · 剩余 ' + fmtK(msg.metrics.budget.remainingTokens),
+          ]
+        : []),
       // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
       ...(msg.trace && msg.trace.length > 0
         ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]

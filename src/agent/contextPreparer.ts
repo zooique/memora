@@ -122,6 +122,8 @@ export class ContextPreparer {
       inputTokens,
       memoryRecallPercent: resolveMemoryRecallPercent(strategy),
     });
+    // 预算透出（④ 预算可视化）：暂存最近一轮预算供指标快照展示"预算花到哪"
+    deps.loop.recordBudget?.(budget);
 
     // ── 装配前判负（洞 3 独立路径） ──
     // 顶级锚点划走后剩余预算低于最小可运行阈值 → 该输入无法支撑至少一轮正文，

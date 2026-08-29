@@ -412,6 +412,30 @@ describe('AgentMetrics · 类型结构', () => {
     expect(metrics.tasks).toHaveProperty('avgDurationMs');
   });
 
+  it('recordBudget 后 getMetrics().context.budget 透出（④ 预算可视化）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 未记录时 budget 缺省
+    expect(loop.getMetrics().context.budget).toBeUndefined();
+
+    // prepare 期 recordBudget → 快照透出最近一轮预算构成
+    loop.recordBudget({
+      availableTokens: 97_000,
+      anchorTokens: 200,
+      remainingTokens: 96_800,
+      dialogueBudgetTokens: 87_120,
+      memoryLayerCapTokens: 38_720,
+    });
+    const budget = loop.getMetrics().context.budget;
+    expect(budget).toBeDefined();
+    expect(budget!.dialogueBudgetTokens).toBe(87_120);
+    expect(budget!.memoryLayerCapTokens).toBe(38_720);
+  });
+
   it('hitRate 应在 0-1 范围内', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),

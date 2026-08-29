@@ -4,6 +4,8 @@
  * 约束：只留 span 名契约（宿主按名过滤建监控面板）；Span 收集 fire-and-forget 不阻塞主流程；未注入时自动降级不抛异常。
  */
 
+import type { ContextBudget } from '@/agent/budget.js';
+
 // ─── 类型定义 ───────────────────────────────────────────
 
 /** Span 属性值类型 */
@@ -130,6 +132,8 @@ export interface AgentMetrics {
     messageCount: number;
     /** 当前估算 token 数（estimateTokens） */
     estimatedTokens: number;
+    /** 最近一次输入装配的上下文预算构成（可选：prepare 计算并透出，供宿主展示预算分配，④） */
+    budget?: ContextBudget;
   };
   /** 任务级 SLO 度量（AgentLoop 层填充） */
   tasks: {

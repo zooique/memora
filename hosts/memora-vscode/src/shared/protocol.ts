@@ -417,6 +417,14 @@ export type ExtensionToWebviewMessage =
         /** D（alignment-iteration.md）：LLM token 用量（输入/输出） */
         llmTokenIn?: number;
         llmTokenOut?: number;
+        /** ④（2026-08-29）：最近一次输入装配的上下文预算构成（可选：内核 AgentMetrics.context.budget 透传，缺省不显示） */
+        budget?: {
+          availableTokens: number;
+          anchorTokens: number;
+          remainingTokens: number;
+          dialogueBudgetTokens: number;
+          memoryLayerCapTokens: number;
+        };
       };
       /**
        * 最近操作流（B9 可观测补齐）：透明面板渲染的操作序列 span 标签（新→旧）。
