@@ -31,7 +31,7 @@
 
 | 层 | 消费方 | 键 | 用途 |
 |----|--------|-----|------|
-| **① 内核直接消费** | memora 内核 | `keywords` / `trigger` / `exclusiveWith` / `skills` / `strategy` | 自动匹配、互斥判定、技能扫描、行为策略 |
+| **① 内核直接消费** | memora 内核 | `keywords` / `trigger` / `skills` / `strategy` | 匹配词源、技能扫描、行为策略 |
 | **② 中立接口（宿主接入点）** | 宿主 / 其他实现 | `capabilities` / `handoffPrompt` | 能力映射、接手话术 |
 | **③ 元数据（UI 展示）** | 宿主 UI | `name` / `displayName` / `description` / `author` | 标识与展示 |
 
@@ -39,8 +39,7 @@
 
 这些键由 memora 内核自己跑逻辑，**宿主不需要处理**：
 
-- `keywords` / `trigger`：合并为**匹配词源**，供 `autoMatch` 自动匹配角色包（`trigger` 兼容 `keywords` 双写法，字符串数组或逗号串，**非正则**）。
-- `exclusiveWith`：互斥角色包名列表，用于粘性切换判定（A 声明排除 B，B 应反向声明 A）。
+- `keywords` / `trigger`：合并为**匹配词源**（`trigger` 兼容 `keywords` 双写法，字符串数组或逗号串，**非正则**），供匹配使用。
 - `skills`：内嵌技能白名单（目录动态扫描，声明项仅作白名单过滤；不声明则全量扫描 `skills/`）。
 - `strategy`：L2 行为策略（`prepare` / `act` / `reflect` / `global` 四组），控制记忆召回、工具、衔接、预算等行为偏好。
 
@@ -66,7 +65,7 @@
 
 **无论最终消费方是谁，`manifest.json` 的解析入口都在 memora 内核**（`validator.ts` 校验 + `rolePackManager.ts` 装载）。内核作为装载器在入口守门——对所有开放字段统一限长：
 
-- 对**内核字段**：防资源失控（匹配词列表膨胀拖慢 autoMatch、巨型内容占内存/上下文）；
+- 对**内核字段**：防资源失控（匹配词列表膨胀拖慢匹配、巨型内容占内存/上下文）；
 - 对**宿主字段**：防巨型数据透传给宿主（宿主收到的是已被内核约束过的安全数据）。
 
 这正是「零依赖内核」哲学：**内核做守门，宿主做消费**。所以上表中所有字段的上限，全部由内核入口统一控制（见 §三），不区分消费方。
@@ -100,9 +99,8 @@
 
 | 键 | 类型 | 消费方 | 上限 | 说明 |
 |----|------|--------|------|------|
-| `keywords` | string[] 或逗号串 | ① 内核匹配 | 最多 20 个，单个 ≤50 字符 | 自动匹配关键词 |
-| `trigger` | string[] 或逗号串 | ① 内核匹配 | 最多 20 个，单个 ≤50 字符 | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并 |
-| `exclusiveWith` | string[] 或逗号串 | ① 内核互斥 | 最多 20 个 | 互斥角色包名（粘性切换判定） |
+| `keywords` | string[] 或逗号串 | ① 内核 | 最多 20 个，单个 ≤50 字符 | 匹配词源 |
+| `trigger` | string[] 或逗号串 | ① 内核 | 最多 20 个，单个 ≤50 字符 | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并 |
 | `skills` | 对象数组 | ① 内核扫描 | ≤50 项 | 技能白名单（`{ file, name?, description? }`） |
 | `strategy` | 嵌套对象 | ① 内核行为 | 各数值键有上下限（见 authoring-guide §四） | L2 行为策略（prepare/act/reflect/global） |
 

@@ -37,8 +37,9 @@ description: Memora 关键决策年轮
 | [ADR-023](./ADR-023-context-cost-injection-defense-loop-convergence.md) | 上下文成本重构、即时注入防御与最小闭环收敛 | ✅ 已接受 | 架构 |
 | [ADR-024](./ADR-024-session-title-layer.md) | 会话标题层：身份与展示标题解耦，首轮闭环自动命名 + 手动改名透传 | ✅ 已接受 | 架构 |
 | [ADR-025](./ADR-025-memory-role-pack-boundary.md) | 记忆系统 × 角色包边界收敛：设定记忆归角色包，记忆库 = 摘要记忆本体 | ✅ 已接受 | 架构 |
-| [ADR-026](./ADR-026-auto-switch-host-assembly.md) | 角色自动匹配开关归宿主装配层（autoSwitch 宿主级键 + strategyOverride 通用覆盖通道） | ✅ 已接受 | 架构 |
+| [ADR-026](./ADR-026-auto-switch-host-assembly.md) | 角色自动匹配开关归宿主装配层（autoSwitch 宿主级键 + strategyOverride 通用覆盖通道） | 🔄 替代（2026-08-29） | 架构 |
 | [ADR-027](./ADR-027-process-event-log.md) | 过程事件日志 + 重放重建（Round.processEvents 单文件内聚 + 展示层 process_event 单形态 + currentRoundMeta 身份单源） | ✅ 已接受 | 架构 |
+| [ADR-028](./ADR-028-role-pack-manual-switch-teams-meeting.md) | 角色包体系：手动切换 + 组（组长+组员）+ 小组会议（任务表应用，内核零会议代码） | ✅ 已接受 | 架构 |
 
 ### 插件宿主（VC 系列）
 
@@ -61,7 +62,7 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001 |
 | 数据层 | 2    | ADR-002, ADR-016 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 13   | ADR-004, ADR-010~015, ADR-021~027 |
+| 架构   | 14   | ADR-004, ADR-010~015, ADR-021~028 |
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
 | 工程   | 3    | ADR-008, ADR-017, ADR-020 |

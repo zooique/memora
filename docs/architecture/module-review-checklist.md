@@ -66,7 +66,7 @@
 - `capabilities` 是否只在 manifest 顶层声明（不塞技能文件 / skills 项）？
 - 两级渐进披露：L1 元数据清单常驻 + L2 `read_skill` 按需读正文？技能是否带 frontmatter 才有 description？
 - 边界纪律：记忆库是否禁写设定记忆（`source: persona/rule/skill`）？角色包是否禁写对话记忆？
-- 粘性匹配：首次锁定 + 显式切换通道，是否不因无关输入重新匹配？
+- 手动切换唯一入口：是否只经 `agent.switchRolePack` / `rpm.activate` 切换（无 autoSwitch/自动匹配）？
 - 循环依赖：角色包匹配依赖输入、深度理解依赖角色包 → 是否用**确定性触发词匹配**打破？
 
 ---

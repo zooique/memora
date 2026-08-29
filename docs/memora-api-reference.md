@@ -262,7 +262,7 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 | 事件名 | 载荷 | 触发时机 |
 |--------|------|----------|
 | `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（round-summary 沉淀、rule 注入等） |
-| `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（自动匹配或手动指定） |
+| `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（手动指定） |
 | `decayCompleted` | `{ decayedCount }` | 记忆衰减完成（init 首次 + 每小时定时） |
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
 | `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
@@ -589,8 +589,6 @@ export interface ForkResult {
 | `rolePack.getActiveTraits()` | `Record<string, number> \| undefined` | 当前激活角色包的 traits（clamp 0-1） |
 | `rolePack.activate(name)` | 方法 → `boolean` | 手动切换到指定角色包（30s 内超 5 次切换后锁 2 分钟防抖） |
 | `rolePack.getSwitchLockStatus()` | 方法 → `{ locked, unlockAt }` | 切换防抖锁定状态 |
-| `rolePack.autoMatch(input)` | 方法 → `string \| null` | 输入粘性匹配角色包（首命中锁定，仅互斥命中才切换） |
-| `rolePack.resetSticky()` | 方法 | 清空粘性匹配锁存 |
 | `rolePack.onRolePackActivated(handler)` | 方法 | 注册激活变更回调（`(from, to)`） |
 
 ```typescript
@@ -859,7 +857,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 
 | 访问器 | 类型 | 公开成员 |
 |---------|---------|---------|
-| `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.getActive()` / `.getActiveRules()` / `.activate()` / `.getSwitchLockStatus()` / `.getActiveTraits()` / `.autoMatch(input)` / `.resetSticky()` |
+| `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.getActive()` / `.getActiveRules()` / `.activate()` / `.getSwitchLockStatus()` / `.getActiveTraits()` |
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.evaluateTimeliness()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` / `.decay()` |

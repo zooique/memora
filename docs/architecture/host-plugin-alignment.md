@@ -187,7 +187,6 @@ interface LlmProvider {
   "name": "工程师",
   "formatVersion": "1.0.0",
   "keywords": ["代码", "bug", "功能", "重构", "测试"],
-  "exclusiveWith": ["翻译助手"],
   "strategy": {
     "prepare": {
       "memoryRecall": "full",
@@ -226,23 +225,18 @@ if (rp) {
   rp.listMeta();            // 列出所有角色包元数据（name/description/...）
   rp.activeName;            // 当前激活的角色包名（null = 未激活）
   rp.activate('工程师');     // 按名字手动切换/激活角色包
-  rp.autoMatch('写代码');    // 输入粘性匹配角色包（首次命中锁定）
-  rp.resetSticky();          // 清空粘性匹配锁存
+  rp.activate('翻译助手');   // 手动切换角色包
 }
 
 // 3. 重新加载角色包配置
 agent.reloadConfig('role-pack-changed');
 ```
 
-### 3.4 角色包粘性匹配纪律
+### 3.4 角色包切换纪律
 
 ```
-用户输入 → 触发词/语义匹配 → 角色包匹配
-  │                            │
-  ├─ 首次输入 → 全量匹配 → 锁定角色包
-  ├─ 后续输入 → 不重匹配 → 沿用已锁定角色包
-  ├─ 显式切换 → 替换 → 新角色包锁定
-  └─ 互斥触发 → 命中 → 自动切换（如工程师 → 翻译助手）
+用户手动切换（activate(name)）→ 目标角色包装载
+已激活角色包在当前会话保持固定 —— 角色包仅支持手动切换，无自动匹配
 ```
 
 **宿主 UI 应展示当前激活角色**：通过 `agent.rolePack?.activeName` 获取，在对话面板顶部显示角色徽章。
@@ -894,7 +888,7 @@ Memora 内核是纯粹的“对话与记忆”引擎，不负责管理用户的�
 |------|------|------|
 | 实现事件桥接 | `AgentEventBridge` | Phase 1 |
 | 实现工具权限控制 | UI 徽章 + 过滤 | 角色包 capabilities |
-| 实现角色包自动匹配 | 粘性切换逻辑 | UI 角色选择器 |
+| 实现角色包切换 | 手动切换逻辑 | UI 角色选择器 |
 | 实现记忆管理 UI | 记忆查看/编辑面板 | Phase 1 storage |
 | 实现会话持久化 UI | 会话列表/恢复/分叉 | Phase 2 storage |
 | 注入 `IWebSearchProvider` | 网络搜索能力 | — |

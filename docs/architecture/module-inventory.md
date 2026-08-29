@@ -118,7 +118,7 @@
 
 | 模块文件 | 状态 | 测试文件 | 质量说明 |
 |----------|------|----------|----------|
-| `agent/contextPreparer.ts` | 🟢 已打磨 | 间接测试（agent.test.ts） | 输入增强管线：角色自动匹配（粘性+LLM 兜底）/ 记忆召回+固定轮次注入 / 技能当轮注入（「触发源决定召回」哲学的实体） |
+| `agent/contextPreparer.ts` | 🟢 已打磨 | 间接测试（agent.test.ts） | 输入增强管线：记忆召回+固定轮次注入（v0.13 起角色仅手动切换，无自动匹配；「触发源决定召回」哲学的实体） |
 
 > **生长说明**：`contextPreparer` 是回答前的**统一入口管线**（[agent-facade-convergence.md](./agent-facade-convergence.md) Step 2），其内部依次消费下面的角色包（视角框架）、技能（能力清单）与记忆召回（知识内容）。
 

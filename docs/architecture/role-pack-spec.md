@@ -110,7 +110,7 @@
 
 * **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 目录声明 + capabilities 注册全部在此，无第二份权威，同字段永不双写；
 
-* **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `exclusiveWith`（互斥声明，§13 粘性匹配）/ `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；**均缺省回退约定名** **`persona.md`/`rules.md`，零声明**，§2.3）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）；
+* **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；**均缺省回退约定名** **`persona.md`/`rules.md`，零声明**，§2.3）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）；
 
 * **内容文件零声明**：`persona.md` / `rules.md` / `skills/` 全部**约定俗成**——persona 与 rules 不声明即回退约定名，skills 目录动态扫描。manifest 只承载「非约定内容」：capabilities、strategy、handoffPrompt、元数据与合规字段；
 
@@ -427,7 +427,7 @@ export interface IMcpTransport {
 
 > 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.contextAssembly`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
 >
-> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` / `prepare.recallConfidence` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。自动匹配键 `autoSwitch` **不属于角色包策略**——它是宿主装配级键（默认 on，宿主 `strategyOverride` 覆盖），角色包不可写。
+> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` / `prepare.recallConfidence` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。
 >
 > **状态列含义（P0 键集对齐）**：
 >

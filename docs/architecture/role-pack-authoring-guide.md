@@ -54,13 +54,12 @@
 | `description`          | string                         | 否  | 无                | 角色包描述；≤200 字符                                           |
 | `version`              | string                         | 否  | 无                | 建议 semver（`1.0.0`）                                      |
 | `formatVersion`        | string                         | 否  | `1.0.0`          | 声明则须 semver；版本迁移见规范 §五                                  |
-| `keywords`             | string\[] 或逗号串                 | 否  | 无                | 自动匹配关键词；最多 20 个，单个 ≤50 字符                               |
+| `keywords`             | string\[] 或逗号串                 | 否  | 无                | 匹配词源（与 trigger 合并去重）；最多 20 个，单个 ≤50 字符                 |
 | `trigger`              | string\[] 或逗号串                 | 否  | 无                | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并；最多 20 个，单个 ≤50 字符    |
 | `author`               | string                         | 否  | 无                | 作者/来源；≤200 字符                                           |
 | `interactionType`      | `tool_assistant` / `companion` | 否  | `tool_assistant` | companion 触发全量强校验                                       |
 | `aiIdentityDisclosure` | boolean                        | 否  | `true`           | companion 必须显式 `true`                                   |
 | `minorProtection`      | `required`                     | 否  | `required`       | 未成年人保护钩子，仅支持 `required`                                 |
-| `exclusiveWith`        | string\[] 或逗号串                 | 否  | 无                | 互斥角色包名（粘性切换判定）；最多 20 个                                  |
 | `handoffPrompt`        | string                         | 否  | 无                | 被带入对话时预填的接手话术；≤2000 字符                                  |
 | `skills`               | 对象数组                           | 否  | 无                | 技能白名单（`{ file, name?, description? }`）；不声明则全量扫描；最多 50 项 |
 | `capabilities`         | 对象数组                           | 否  | `[]`             | 能力声明（`{ capability, description? }`）；最多 50 项            |
@@ -68,7 +67,7 @@
 
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
 >
-> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MATCH_WORDS` / `MAX_MATCH_WORD_LEN` / `MAX_EXCLUSIVE_WITH` / `MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
+> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MATCH_WORDS` / `MAX_MATCH_WORD_LEN` / `MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
 
 ***
 
@@ -84,9 +83,6 @@
 | `minFallback`          | 整数                           | `0 ~ 100`（0=关闭） | `2`      | 语义召回不足时补足最近记忆的条数                               | `5`             |
 | `summaryFocus`         | string                       | `1 ~ 500` 字符    | 无        | 提炼视角：决定 round-summary「值得记什么」                   | `"聚焦架构决策与接口契约"` |
 | `contextAssembly`      | `fixed` / `query` / `hybrid` | —               | `hybrid` | 上下文装配策略                                        | `"hybrid"`      |
-
-> `autoSwitch`（自动匹配开关）是**宿主装配级键**——默认 `on`，由宿主经 `strategyOverride` 覆盖（如 VSCode 插件只用手动切换 → `off`）。角色包**不可写**：写它会按未知键 warning + 忽略，不参与决策。
-
 | `recallConfidence`     | number                       | `0.0 ~ 1.0`     | `0.6`    | 召回相似度阈值（越大越严格）                                 | `0.7`           |
 | `summaryRecall`        | `on` / `off`                 | —               | `on`     | 摘要是否参与召回                                       | `"off"`         |
 
@@ -161,7 +157,6 @@
 | 数值键越界（超出上下限）                          | error   | 校验不通过；运行时回退内核默认/忽略     |
 | 未知顶层键 / 未知策略阶段 / 未知策略键                | warning | 警告并忽略，不阻塞装载（键级渐进）      |
 | `capabilities` 格式非法（非 `域:动作`）         | error   | 校验不通过                  |
-| `exclusiveWith` 非字符串数组                | error   | 校验不通过                  |
 | `trigger` 误用正则语法（`/pattern/i`）        | warning | 会被当字面关键词，无法匹配任何输入      |
 | companion 缺 AI 身份/未声明 minorProtection | error   | 校验不通过                  |
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |

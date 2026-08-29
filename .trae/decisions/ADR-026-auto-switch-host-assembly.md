@@ -5,7 +5,7 @@ description: 角色自动匹配开关 autoSwitch 收敛为宿主装配级键（�
 
 # ADR-026 · 角色自动匹配开关归宿主装配层（autoSwitch 宿主级键 + strategyOverride 通用覆盖通道）
 
-> **状态**：✅ 已接受
+> **状态**：🔄 替代（2026-08-29，被 [ADR-028](./ADR-028-role-pack-manual-switch-teams-meeting.md) 替代）
 > **日期**：2026-08-28
 > **来源**：用户 SSOT 审查（角色包"为什么要管自己能不能被自动切换？"——内容供给方不该管理宿主运行时行为）
 > **依赖**：[ADR-025](./ADR-025-memory-role-pack-boundary.md)（角色包只承载设定，边界一刀切）、[role-pack-spec.md §六](../../docs/architecture/role-pack-spec.md)（L2 策略键集）、[memory-role-pack-boundary-rules.md](../rules/memory-role-pack-boundary-rules.md)

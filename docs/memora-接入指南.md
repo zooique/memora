@@ -261,10 +261,6 @@ if (rp) {
   // 手动切换角色包
   rp.activate('作家');
 
-  // 输入粘性匹配角色包（首次命中锁定，仅互斥命中才切换）
-  const matched = rp.autoMatch('写一段小说开篇');
-  console.log('匹配到:', matched);
-
   // 查询当前状态
   console.log(rp.activeName);    // '作家'
   console.log(rp.getActiveTraits());
@@ -445,7 +441,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | 构造 | `new Agent({ projectPath, provider, configDir, dataDir })` | §二 · AgentOptions |
 | 对话 | `agent.chat(input)`（流式）/ `agent.chatSync(input)` | §三 |
 | 记忆 | `agent.memory.snapshot()/search()/writeXxx()` | §四 |
-| 角色包 | `agent.rolePack.listMeta()/activate()/autoMatch()` | §七 |
+| 角色包 | `agent.rolePack.listMeta()/activate()` | §七 |
 | 工具 | `agent.tools.registerTool()/execute()` | §八 |
 | 会话 | `agent.forkSession()` / `agent.sessionManager.*` | §六 |
 

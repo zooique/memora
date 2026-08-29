@@ -94,12 +94,6 @@
       "default": "required",
       "description": "未成年人保护模式（仅支持 required）"
     },
-    "exclusiveWith": {
-      "type": "array",
-      "maxItems": 20,
-      "items": { "type": "string" },
-      "description": "互斥角色包名列表（粘性匹配切换裁决，最多 20 个）"
-    },
 
     "strategy": {
       "type": "object",

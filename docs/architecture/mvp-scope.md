@@ -39,7 +39,7 @@
 
 **MVP 落地范围（重点打磨，不裁剪核心）**：
 1. **结构**：L1（persona/rule/skill）+ L2 策略层完整实现（§README 9.1）；L3 代码层远期；
-2. **匹配**：触发词确定性匹配 + 默认兜底（§README 4.2）+ 会话粘性锁定；
+2. **切换**：手动切换单一角色包（唯一入口，完整切换含键，v0.13 定案）；默认兜底 = 内核兜底契约包（§4.1 单链）；
 3. **装载**：persona/rule/skill → system prompt 组装（§README 4.4）；`skill` 决定工具暴露——MVP 三工具（writeFile/readFile/web_search）**挂在角色包上，而非全局注册**；
 4. **rule 生效**：角色包 rule 段 → SecurityGuard 最小集（输入/输出过滤，§runtime 13.8）；
 5. **L2 生效**：已冻结核心维度随角色包生效——主动提问（askOn/askLimit）、工具允许（toolMode）、记忆召回（memoryRecall）等；草案维度（如 temperature）MVP 不承诺随包生效（spec §六 状态列）。
