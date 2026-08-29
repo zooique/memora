@@ -37,6 +37,8 @@ const L1_LIST_TOOL_THRESHOLD = 50;
 
 /** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
+/** 组员数量上限（队长 1 + 组员 ≤ 4 = 5 人组上限，② UI 组队功能对应用户约定） */
+const MAX_TEAM_MEMBERS = 4;
 
 /** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
 const EXCLUDED_FILES = new Set(['manifest.json']);
@@ -345,6 +347,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
             '组员引用的角色包不存在（悬空引用，会议时缺员跳过）',
           );
         }
+      }
+      if (team.members.length > MAX_TEAM_MEMBERS) {
+        getLogger().warn(
+          { leader: team.leader, count: team.members.length, max: MAX_TEAM_MEMBERS },
+          '组员数量超上限（队长 1 + 组员 ≤ 4 = 5 人组）：超出部分不参与会议（仅影响会议）',
+        );
       }
       leaderCount.set(team.leader, (leaderCount.get(team.leader) ?? 0) + 1);
     }

@@ -200,43 +200,59 @@ export const rolesStyles = `
     transition: width 0.3s ease;
   }
 
-  /* ============ Components：小组会议区（v0.13 S7） ============ */
-  #roles-root .team-section {
+  /* ============ Components：卡片级组队（② 2026-08-29） ============ */
+  /* 小组条：卡片底部队伍阵容 + 创建/编辑队伍入口 */
+  #roles-root .team-ribbon {
+    display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    padding: var(--sp-2, 6px) 0;
+    margin: var(--sp-1, 2px) var(--sp-3, 8px) 0;
+  }
+  #roles-root .team-ribbon-label {
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
+  }
+  #roles-root .team-ribbon-btn { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); flex-shrink: 0; }
+  /* 组员标注（卡片信息区，保留） */
+  #roles-root .team-member-role { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); }
+  /* 组队弹窗：遮罩 + 电话本式多选 + 反馈区 */
+  #roles-root .team-modal-overlay {
+    position: fixed; inset: 0; z-index: 1000;
+    background: rgba(0, 0, 0, 0.45);
+    display: flex; align-items: center; justify-content: center;
+    animation: roles-fade-in 0.15s ease;
+  }
+  #roles-root .team-modal {
+    background: var(--surface-sidebar);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius-lg, 8px);
+    box-shadow: var(--shadow-modal, 0 4px 16px rgba(0, 0, 0, 0.3));
     padding: var(--sp-3, 8px);
-    margin-bottom: var(--sp-4, 10px);
-    background: var(--surface-sidebar);
+    width: min(360px, calc(100vw - 48px));
+    max-height: 80vh; display: flex; flex-direction: column;
   }
-  #roles-root .team-header { display: flex; align-items: center; gap: var(--sp-2, 6px); margin-bottom: var(--sp-2, 6px); }
-  #roles-root .team-title { font-weight: 600; font-size: var(--font-md, 12px); }
-  #roles-root .team-hint { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  #roles-root .team-empty { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-bottom: var(--sp-2, 6px); line-height: 1.5; }
-  #roles-root .team-card {
-    display: flex; flex-direction: column; gap: var(--sp-1, 4px);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.25));
+  #roles-root .team-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2, 6px); }
+  #roles-root .team-modal-title { font-weight: 600; font-size: var(--font-md, 12px); }
+  #roles-root .team-modal-close { padding: 0 6px; font-size: var(--font-md, 12px); line-height: 1; }
+  #roles-root .team-modal-list { display: flex; flex-direction: column; gap: var(--sp-1, 3px); overflow-y: auto; min-height: 60px; }
+  #roles-root .team-modal-item {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    font-size: var(--font-sm, 11px);
+    padding: var(--sp-1, 4px);
     border-radius: var(--radius, 6px);
-    padding: var(--sp-2, 6px);
-    margin-bottom: var(--sp-2, 6px);
+    cursor: pointer;
   }
-  #roles-root .team-card-head { display: flex; align-items: center; justify-content: space-between; }
-  #roles-root .team-leader { font-size: var(--font-sm, 11px); font-weight: 600; }
-  #roles-root .team-del { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); }
-  #roles-root .team-members { display: flex; flex-wrap: wrap; gap: var(--sp-1, 3px); }
-  #roles-root .team-member-tag {
-    font-size: var(--font-xs, 10px); padding: 1px 5px;
-    background: rgba(156, 39, 176, 0.15); color: #9c27b0;
-    border-radius: 3px;
+  #roles-root .team-modal-item:hover { background: rgba(128,128,128,.08); }
+  #roles-root .team-modal-item.checked { background: rgba(156, 39, 176, 0.12); }
+  #roles-root .team-modal-hint { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); margin: var(--sp-2, 6px) 0; }
+  #roles-root .team-modal-actions { display: flex; justify-content: flex-end; gap: var(--sp-2, 6px); }
+  #roles-root .team-modal-actions .btn { padding: 2px var(--sp-2, 6px); font-size: var(--font-xs, 10px); }
+  #roles-root .team-modal-del { margin-right: auto; }
+  @media (prefers-reduced-motion: reduce) {
+    #roles-root .team-modal-overlay { animation: none; }
   }
-  #roles-root .team-member-role { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); }
-  #roles-root .team-create { margin-top: var(--sp-1, 2px); }
-  #roles-root .team-form { display: flex; flex-direction: column; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
-  #roles-root .team-form-row { display: flex; align-items: flex-start; gap: var(--sp-2, 6px); font-size: var(--font-sm, 11px); }
-  #roles-root .team-select { flex: 1; min-width: 0; }
-  #roles-root .team-members-pick { flex-direction: column; }
-  #roles-root .team-pick-list { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); max-height: 120px; overflow-y: auto; }
-  #roles-root .team-pick-item { display: flex; align-items: center; gap: var(--sp-1, 4px); font-size: var(--font-xs, 10px); }
-  #roles-root .team-form-actions { display: flex; justify-content: flex-end; }
+  @keyframes roles-fade-in { from { opacity: 0; } to { opacity: 1; } }
 
   /* ============ Components：版本号 ============ */
   #roles-root .card-version {

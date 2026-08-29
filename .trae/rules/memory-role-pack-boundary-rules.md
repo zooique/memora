@@ -45,6 +45,8 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 ### content 融入纪律（R5）
 
 > content 是**会话 id 对应的摘要记忆**（会话级）——必须带 `summaryType` 标签 + 结构化 `sessionName`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。禁止新增无标签、无溯源的第二轨道记忆源。（`isTraceable` 已移除（2026-08-28）：无行为消费者，溯源降级改按读时查找结果渲染，见 memory-as-summary §5.2）
+>
+> **例外（⑥ 治理操作，2026-08-29）**：随会话/问答闭环删除而软删的摘要记忆（`softDeleteRoundSummaries` / `softDeleteSessionContents`），其溯源字段（`sessionName`/`roundId`）在删除时即清空——原会话/轮已物理回收，溯源悬空无意义；回收站恢复后即为**无溯源的独立记忆**。这是治理操作的脱钩行为，非新增无溯源记忆源（治理页单条软删 `writeDelete` 仍保留溯源，误删恢复保留关联）。
 
 ### type 不设时效（R6）
 

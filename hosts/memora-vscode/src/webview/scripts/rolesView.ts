@@ -77,8 +77,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     statBar.hidden = false;
     statBar.textContent = `已加载 ${data.packs?.length ?? 0} 个角色`;
     list.textContent = '';
-    // 小组会议区（组 = 组长角色包的会议名单，v0.13 S7）——置顶展示 + 建组入口
-    list.appendChild(buildTeamSection(data));
+    // ② 卡片级组队（2026-08-29）：小组信息以角色包卡片为单位呈现（卡片底部 team-ribbon），
+    // 不再有独立顶部小组会议区——组队入口/阵容/删除均落在各角色包卡片上（SSOT：组数据契约不变）
     if (!data.packs || data.packs.length === 0) {
       // 空态引导：无角色包时提示（SSOT：createEmptyState 纯函数，对齐 configView 列表级同构）
       list.appendChild(
@@ -94,168 +94,155 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     const active = data.packs.filter((p) => p.name === activeName);
     if (active.length > 0) {
       list.appendChild(createGroupTitle(document, '当前角色'));
-      active.forEach((p) => list.appendChild(buildCard(p)));
+      active.forEach((p) => list.appendChild(buildCard(p, data)));
     }
     const others = data.packs.filter((p) => p.name !== activeName);
     if (others.length > 0) {
       list.appendChild(createGroupTitle(document, '其他角色'));
-      others.forEach((p) => list.appendChild(buildCard(p)));
+      others.forEach((p) => list.appendChild(buildCard(p, data)));
     }
   }
 
   /**
-   * 小组会议区（v0.13 S7）：组 = 组长角色包的会议名单（非选择对象）。
-   * 展示既有小组（组长 + 组员名单，成员标注「小组会议用」）+ 建组/删除入口；
-   * 会议定位提示：用户发起"小组会议"后，LLM 用任务表组织逐成员发言（内核已注入组清单）。
+   * ② 卡片级小组条（以角色包为单位组队）：卡片底部展示该角色包的队伍阵容 + 组队/编辑入口。
+   * 缺省显示「暂无队伍」；组数据契约 { leader, members } 不变（复用 roles_team_save/delete）。
    */
-  function buildTeamSection(data: RolesPayload): HTMLElement {
-    const section = document.createElement('section');
-    section.className = 'team-section';
-
-    const header = document.createElement('div');
-    header.className = 'team-header';
-    const title = document.createElement('span');
-    title.className = 'team-title';
-    title.textContent = '小组会议';
-    header.appendChild(title);
-    const hint = document.createElement('span');
-    hint.className = 'team-hint';
-    hint.textContent = '组员仅作会议参与者（表层装配发言），不用于日常切换';
-    header.appendChild(hint);
-    section.appendChild(header);
-
-    const teams = data.teams ?? [];
-    if (teams.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'team-empty';
-      empty.textContent = '暂无小组。建组后，以组长为当前角色时说「小组会议，讨论 XX」，即可让组员从各自视角发言。';
-      section.appendChild(empty);
-    } else {
-      for (const team of teams) {
-        section.appendChild(buildTeamCard(team, data));
-      }
-    }
-
-    // 建组入口：选择组长 + 勾选组员 → 保存
-    const createBtn = document.createElement('button');
-    createBtn.className = 'btn btn-secondary team-create';
-    createBtn.textContent = '＋ 新建小组';
-    createBtn.addEventListener('click', () => {
-      if (section.querySelector('.team-form')) {
-        section.querySelector('.team-form')?.remove();
-        return;
-      }
-      section.appendChild(buildTeamForm(data));
-    });
-    section.appendChild(createBtn);
-    return section;
-  }
-
-  /** 单个小组卡片：组长 + 组员名单（组员标注「会议参与」）+ 删除 */
-  function buildTeamCard(
-    team: { leader: string; members: string[] },
-    data: RolesPayload,
-  ): HTMLElement {
-    const card = document.createElement('div');
-    card.className = 'team-card';
-    const leaderName = data.packs.find((p) => p.name === team.leader)?.displayName ?? team.leader;
-    const head = document.createElement('div');
-    head.className = 'team-card-head';
+  function buildTeamRibbon(p: RolesPayload['packs'][number], data: RolesPayload): HTMLElement {
+    const ribbon = document.createElement('div');
+    ribbon.className = 'team-ribbon';
     const label = document.createElement('span');
-    label.className = 'team-leader';
-    label.textContent = `组长：${leaderName}`;
-    head.appendChild(label);
-    const del = document.createElement('button');
-    del.className = 'btn btn-danger team-del';
-    del.textContent = '删除';
-    del.title = '删除该小组（仅影响会议名单，不影响角色日常使用）';
-    del.addEventListener('click', () => {
-      vscode.postMessage({ type: 'roles_team_delete', leader: team.leader });
-    });
-    head.appendChild(del);
-    card.appendChild(head);
-    const members = document.createElement('div');
-    members.className = 'team-members';
-    team.members.forEach((m) => {
-      const name = data.packs.find((p) => p.name === m)?.displayName ?? m;
-      const tag = document.createElement('span');
-      tag.className = 'team-member-tag';
-      tag.textContent = name;
-      tag.title = `${name}（小组会议参与者）`;
-      members.appendChild(tag);
-    });
-    card.appendChild(members);
-    return card;
+    label.className = 'team-ribbon-label';
+    const leadTeam = data.teams?.find((t) => t.leader === p.name);
+    if (leadTeam) {
+      const names = leadTeam.members
+        .map((m) => data.packs.find((x) => x.name === m)?.displayName ?? m)
+        .join(' / ');
+      label.textContent = `队伍：${names}`;
+      label.title = `${leadTeam.members.length} 名组员参与小组会议（表层装配发言）`;
+    } else {
+      label.textContent = '暂无队伍';
+    }
+    const action = document.createElement('button');
+    action.className = 'btn btn-secondary team-ribbon-btn';
+    action.textContent = leadTeam ? '编辑队伍' : '创建队伍';
+    action.title = leadTeam
+      ? '修改队伍组员（5 人组上限：队长 1 + 组员 ≤ 4）'
+      : '以当前角色为队长创建队伍（5 人组上限：队长 + 组员 ≤ 5）';
+    action.addEventListener('click', () => launchTeamModal(p, data));
+    ribbon.appendChild(label);
+    ribbon.appendChild(action);
+    return ribbon;
   }
 
-  /** 建组表单：组长下拉 + 组员多选（UI 层排除组长 + host 层硬校验兜底，双层防护） */
-  function buildTeamForm(data: RolesPayload): HTMLElement {
-    const form = document.createElement('div');
-    form.className = 'team-form';
-    const packs = data.packs ?? [];
+  /**
+   * ② 卡片组队弹窗（以卡片为单位）：电话本式勾选除当前队长外的所有角色（最多 4 名组员，5 人组上限）。
+   * 编辑既有队伍时回显已选组员；复用 roles_team_save 保存契约。
+   * 默认保留「当前角色已是别队成员」的共享说明（内核当前无互斥限制，组员可复用）。
+   */
+  function launchTeamModal(p: RolesPayload['packs'][number], data: RolesPayload): void {
+    const overlay = document.createElement('div');
+    overlay.className = 'team-modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'team-modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', `为「${p.displayName}」创建队伍`);
 
-    // 组长选择
-    const leaderRow = document.createElement('label');
-    leaderRow.className = 'team-form-row';
-    leaderRow.textContent = '组长：';
-    const leaderSel = document.createElement('select');
-    leaderSel.className = 'team-select';
-    packs.forEach((p) => {
-      const opt = document.createElement('option');
-      opt.value = p.name;
-      opt.textContent = p.displayName + (p.isFallback ? '（兜底）' : '');
-      leaderSel.appendChild(opt);
-    });
-    leaderRow.appendChild(leaderSel);
-    form.appendChild(leaderRow);
+    const head = document.createElement('div');
+    head.className = 'team-modal-head';
+    const title = document.createElement('span');
+    title.className = 'team-modal-title';
+    title.textContent = `创建队伍 · 队长 ${p.displayName}`;
+    const close = document.createElement('button');
+    close.className = 'btn team-modal-close';
+    close.textContent = '×';
+    close.title = '关闭';
+    close.addEventListener('click', () => overlay.remove());
+    head.appendChild(title);
+    head.appendChild(close);
+    modal.appendChild(head);
 
-    // 组员多选（checkbox 列表）：排除当前组长，组长切换时动态刷新
-    const membersRow = document.createElement('div');
-    membersRow.className = 'team-form-row team-members-pick';
-    membersRow.textContent = '组员：';
-    const pickList = document.createElement('div');
-    pickList.className = 'team-pick-list';
+    const current = data.teams?.find((t) => t.leader === p.name);
+    const selected = new Set(current?.members ?? []);
+    const LIMIT = 4; // 5 人组上限的组员部分
 
-    /** 渲染组员 pick 列表，排除指定组长 */
-    function renderMemberPick(excludeLeader: string): void {
-      pickList.innerHTML = '';
-      packs
-        .filter((p) => p.name !== excludeLeader)
-        .forEach((p) => {
-          const item = document.createElement('label');
-          item.className = 'team-pick-item';
-          const cb = document.createElement('input');
-          cb.type = 'checkbox';
-          cb.value = p.name;
-          item.appendChild(cb);
-          const txt = document.createElement('span');
-          txt.textContent = p.displayName + (p.isFallback ? '（兜底）' : '');
-          item.appendChild(txt);
-          pickList.appendChild(item);
-        });
+    const list = document.createElement('div');
+    list.className = 'team-modal-list';
+    const picks = data.packs.filter((x) => x.name !== p.name);
+    for (const x of picks) {
+      const item = document.createElement('label');
+      item.className = 'team-modal-item' + (selected.has(x.name) ? ' checked' : '');
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = x.name;
+      cb.checked = selected.has(x.name);
+      const txt = document.createElement('span');
+      txt.textContent = x.displayName + (x.isFallback ? '（兜底）' : '');
+      item.appendChild(cb);
+      item.appendChild(txt);
+      // 已达 5 人上限（4 名组员）时禁止继续勾选；取消勾选始终允许
+      cb.addEventListener('change', () => {
+        if (cb.checked && list.querySelectorAll('input:checked').length > LIMIT) {
+          cb.checked = false;
+          return;
+        }
+        item.classList.toggle('checked', cb.checked);
+      });
+      // 整行点击切换（行为对齐 checkbox 语义，可访问性由原 checkbox 承担）
+      item.addEventListener('click', (ev) => {
+        if ((ev.target as HTMLElement).tagName !== 'INPUT') cb.click();
+      });
+      list.appendChild(item);
     }
-    renderMemberPick(leaderSel.value);
-    // 组长切换 → 组员列表排除新组长，已勾选旧组长的项不会出现（被过滤掉）
-    leaderSel.addEventListener('change', () => renderMemberPick(leaderSel.value));
+    modal.appendChild(list);
 
-    membersRow.appendChild(pickList);
-    form.appendChild(membersRow);
+    // 反馈区：5 人上限提示（默认）+ 当前角色已是别队成员时的共享说明
+    const hint = document.createElement('div');
+    hint.className = 'team-modal-hint';
+    const sharedLeader = data.teams?.find((t) => t.leader !== p.name && t.members.includes(p.name));
+    hint.textContent = !sharedLeader
+      ? '5 人组上限：队长 1 + 组员 ≤ 4（勾选超过 4 名自动拒绝）'
+      : `当前角色已作为「${sharedLeader.leader}」的队伍成员参与会议；创建自己队伍后仍保留原参与。`;
+    modal.appendChild(hint);
 
     const actions = document.createElement('div');
-    actions.className = 'team-form-actions';
+    actions.className = 'team-modal-actions';
+    const cancel = document.createElement('button');
+    cancel.className = 'btn btn-secondary';
+    cancel.textContent = '取消';
+    cancel.addEventListener('click', () => overlay.remove());
     const save = document.createElement('button');
     save.className = 'btn btn-primary';
-    save.textContent = '保存小组';
+    save.textContent = current ? '保存队伍' : '创建队伍';
     save.addEventListener('click', () => {
-      const leader = leaderSel.value;
-      const members = Array.from(pickList.querySelectorAll('input:checked')).map(
+      const members = Array.from(list.querySelectorAll('input:checked')).map(
         (el) => (el as HTMLInputElement).value,
       );
-      vscode.postMessage({ type: 'roles_team_save', leader, members });
+      vscode.postMessage({ type: 'roles_team_save', leader: p.name, members });
+      overlay.remove();
     });
+    actions.appendChild(cancel);
     actions.appendChild(save);
-    form.appendChild(actions);
-    return form;
+    // ② 编辑态删除队伍：仅当已有队伍时提供（解散队伍 = 移除会议名单，不影响角色日常）
+    if (current) {
+      const del = document.createElement('button');
+      del.className = 'btn btn-danger team-modal-del';
+      del.textContent = '删除队伍';
+      del.title = '解散该队伍（移除会议名单，不影响任何角色日常使用）';
+      del.addEventListener('click', () => {
+        vscode.postMessage({ type: 'roles_team_delete', leader: p.name });
+        overlay.remove();
+      });
+      actions.appendChild(del);
+    }
+    modal.appendChild(actions);
+
+    // 点击遮罩空白处关闭
+    overlay.addEventListener('click', (ev) => {
+      if (ev.target === overlay) overlay.remove();
+    });
+    overlay.appendChild(modal);
+    document.getElementById('roles-root')?.appendChild(overlay);
   }
 
   /**
@@ -264,9 +251,10 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
    * 布局结构（三层分类法）：
    *   - 顶部标题行（一级直面）：图标 + 名称 + 当前/兜底标签 + 操作按钮
    *   - 中部信息区（次级信息）：描述 + 能力标签 + 策略指示器 + 组员标注
+   *   - 卡片级小组条（二级信息）：队伍阵容 + 创建/编辑队伍入口
    *   - 底部折叠区（专家挖掘）：性格特征 + 版本号
    */
-  function buildCard(p: RolesPayload['packs'][number]): HTMLElement {
+  function buildCard(p: RolesPayload['packs'][number], data: RolesPayload): HTMLElement {
     const card = document.createElement('div');
     card.className = 'card' + (p.name === activeName ? ' active' : '');
 
@@ -418,6 +406,9 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     }
 
     card.appendChild(info);
+
+    // ② 卡片级小组条（队伍状态 + 组队入口；复用小组成员标注的信息层级）
+    card.appendChild(buildTeamRibbon(p, data));
 
     // ===== 底部折叠区（专家挖掘）=====
     const hasTraits = p.traits && Object.keys(p.traits).length > 0;

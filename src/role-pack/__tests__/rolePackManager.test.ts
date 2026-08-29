@@ -452,6 +452,24 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       // 会议解析时：组长自身按组员处理 → 落入组长视角（键恒为 activePack）
       expect(manager.resolveRoundAssemblyRole('组长A')).toBe('组长A');
     });
+
+    it('组员数量超上限（队长 1 + 组员 > 4）→ warning（不阻塞装载）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
+      // 5 个组员（超上限 4）
+      for (let i = 1; i <= 5; i++) {
+        await writePack(packsDir, `组员${i}`, { name: `组员${i}`, formatVersion: '1.0.0' }, {});
+      }
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([
+        { leader: '组长A', members: ['组员1', '组员2', '组员3', '组员4', '组员5'] },
+      ]);
+      // warning 不阻塞装载；会议解析仍按名单前 4 人有效（超限仅告警不裁切）
+      expect(await manager.load('组长A')).toBe(6);
+      expect(manager.activeName).toBe('组长A');
+      expect(manager.resolveRoundAssemblyRole('组员1')).toBe('组员1');
+    });
   });
 
   describe('会议机制：resolveRoundAssemblyRole 范围校验 + 表层装配视角（S5）', () => {

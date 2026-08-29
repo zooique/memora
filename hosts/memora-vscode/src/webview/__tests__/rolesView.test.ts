@@ -78,8 +78,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // badge 内嵌于 .card-name（文本节点 + 徽章 span），名称部分包含「文档打磨」
     expect(cards[0]?.querySelector('.card-name')?.textContent).toContain('文档打磨');
     expect(cards[0]?.querySelector('.badge')?.textContent).toBe('当前');
-    // 激活角色无「设为当前」（仅有「带入对话」），其他角色两者都有
-    expect(cards[0]?.querySelector('.btn-secondary')).toBeNull();
+    // 激活角色无「设为当前」（仅「带入对话」+ 卡片级组队入口），其他角色两者都有
+    expect(
+      Array.from(cards[0]!.querySelectorAll('.btn-secondary')).some((b) => b.textContent === '设为当前'),
+    ).toBe(false);
     expect(cards[1]?.querySelector('.card-name')?.textContent).toBe('翻译助手');
     expect(cards[1]?.querySelector('.btn-secondary')?.textContent).toBe('设为当前');
     // 每张卡片都有「带入对话」按钮
@@ -147,7 +149,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(document.querySelector('.empty-hint')?.textContent).toContain('打开一个工作区');
   });
 
-  it('小组会议区（v0.13 S7）：展示组长+组员名单 + 建组/删除入口', () => {
+  it('② 卡片级组队：无队伍 → ribbon「暂无队伍」+ 创建按钮 → 弹窗排除自身、勾选保存', () => {
     const { postMessage } = mountRolesView();
     const packs = [
       { name: '小说助手', displayName: '小说助手', capabilities: [] },
@@ -155,36 +157,91 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       { name: '评论家', displayName: '评论家', capabilities: [] },
       { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
     ];
-    dispatchLoaded(
-      packs,
-      '小说助手',
-      [{ leader: '小说助手', members: ['编辑', '评论家'] }],
+    dispatchLoaded(packs, '小说助手', []); // 无队伍
+
+    // 无队伍 → 「暂无队伍」+ 「创建队伍」入口
+    const card = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
     );
-    // 小组标题 + 组长 + 组员标签
-    expect(document.querySelector('.team-title')?.textContent).toBe('小组会议');
-    expect(document.querySelector('.team-leader')?.textContent).toContain('小说助手');
-    const memberTags = document.querySelectorAll('.team-member-tag');
-    expect(memberTags).toHaveLength(2);
-    expect(memberTags[0]?.textContent).toBe('编辑');
+    expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('暂无队伍');
+    (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
+
     // 兜底契约包定位 chip（能力标签区，2026-08-29 实测反馈）：顶部 badge 已移除，仅保留策略区 chip
     const fallbackCard = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
     );
     expect(fallbackCard?.querySelector('.strategy-chip.fallback')?.textContent).toContain('系统兜底');
-    // 删除小组 → postMessage roles_team_delete
-    (document.querySelector('.team-del') as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_team_delete', leader: '小说助手' });
-    // 新建小组 → 表单出现 → 保存 → postMessage roles_team_save
-    (document.querySelector('.team-create') as HTMLButtonElement).click();
-    expect(document.querySelector('.team-form')).not.toBeNull();
-    const cbs = Array.from(document.querySelectorAll('.team-pick-item input[type=checkbox]')) as HTMLInputElement[];
-    cbs.find((cb) => cb.value === '编辑')!.checked = true;
-    cbs.find((cb) => cb.value === '评论家')!.checked = true;
-    (document.querySelector('.team-form .btn-primary') as HTMLButtonElement).click();
+
+    // 弹窗：显示队长（当前卡片角色）+ 排除自身后的其余角色
+    const modal = document.querySelector('.team-modal');
+    expect(modal).not.toBeNull();
+    expect(modal?.querySelector('.team-modal-title')?.textContent).toContain('小说助手');
+    const items = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
+    expect(items).toHaveLength(3); // 编辑 / 评论家 / memora 助手（排除队长自身）
+    items.find((cb) => cb.value === '编辑')!.checked = true;
+    items.find((cb) => cb.value === '评论家')!.checked = true;
+    (modal?.querySelector('.btn-primary') as HTMLButtonElement).click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'roles_team_save',
       leader: '小说助手',
       members: ['编辑', '评论家'],
     });
+  });
+
+  it('② 卡片级组队：既有队伍 → ribbon 显示阵容 + 编辑态回显 + 删除队伍入口', () => {
+    const { postMessage } = mountRolesView();
+    const packs = [
+      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '编辑', displayName: '编辑', capabilities: [] },
+      { name: '评论家', displayName: '评论家', capabilities: [] },
+      { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
+    ];
+    dispatchLoaded(packs, '小说助手', [{ leader: '小说助手', members: ['编辑', '评论家'] }]);
+
+    const card = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+    );
+    // ribbon 显示阵容（成员 displayName 拼接）
+    expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('队伍：编辑 / 评论家');
+    const btn = card?.querySelector('.team-ribbon-btn') as HTMLButtonElement;
+    expect(btn.textContent).toBe('编辑队伍');
+    btn.click();
+
+    // 编辑态回显：已有组员勾选
+    const modal = document.querySelector('.team-modal');
+    const cbs = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
+    expect(cbs.find((cb) => cb.value === '编辑')?.checked).toBe(true);
+    // 删除队伍（仅编辑态提供）→ postMessage roles_team_delete
+    (modal?.querySelector('.team-modal-del') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_team_delete', leader: '小说助手' });
+  });
+
+  it('② 卡片组队弹窗：5 人组上限（队长 1 + 组员 ≤ 4），第 5 名勾选被拒绝', () => {
+    mountRolesView();
+    const packs = [
+      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '编辑', displayName: '编辑', capabilities: [] },
+      { name: '评论家', displayName: '评论家', capabilities: [] },
+      { name: '校对', displayName: '校对', capabilities: [] },
+      { name: '排版', displayName: '排版', capabilities: [] },
+      { name: '发行', displayName: '发行', capabilities: [] },
+    ];
+    dispatchLoaded(packs, '小说助手', []);
+    const card = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+    );
+    (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
+
+    const modal = document.querySelector('.team-modal');
+    const cbs = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
+    // 依次勾选全部（5 名可选）→ 第 5 名被上限拒绝（勾满 4 即封顶）
+    let checked = 0;
+    for (const cb of cbs) {
+      cb.click();
+      if (cb.checked) checked++;
+    }
+    expect(checked).toBe(4);
+    expect(modal?.querySelectorAll('.team-modal-item input:checked')).toHaveLength(4);
+    expect(modal?.querySelector('.team-modal-hint')?.textContent).toContain('5 人组上限');
   });
 });
