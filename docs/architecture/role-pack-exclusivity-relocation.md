@@ -229,7 +229,7 @@ interface PlanStep {
 | S2 | **删除自动匹配全链**（autoSwitch / autoMatch / LLM 匹配 / 粘性 / 阈值常量）；接管 `load()/reload()` 默认激活路径为 §4.1 单链 | 默认路径不接管则单链被绕过 |
 | S3 | 新增 `rolePackTeams` / `builtinFallbackRole` 装配参数；**`activeRolePack` 语义扩展为解析链第一层**（§4.0-4.4：activePack 唯一状态 + 单链解析 + 组数据校验） | |
 | S4 | 装载后校验：组悬空 / 组长唯一 / 引用悬空 → warning（不阻塞装载）；兜底包存在性校验 | |
-| S5 | **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + prepare 期**表层装配**分支（skills 加载跟随装配视角）+ 范围校验 + **checkpoint schemaVersion 升版** | 内核到此无"会议"概念 |
+| S5 | **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + prepare 期**表层装配**分支（skills 加载跟随装配视角）+ 范围校验 + **checkpoint schemaVersion 升版** | 内核到此无"会议"概念。**步粒度补强（2026-08-29）**：装配源从「active 步」扩为「prepare 期 + `runStepSequence` 每步入口读 pending 步 `rolePack`」——一次会议各步按本步角色真灌成员文档；工具面恒锁组长（`setChatOptions` 恒读 activePack），loop 零改动。详见 [方案-会议步粒度硬切换](../tasks/方案-会议步粒度硬切换-20260829.md) |
 | S6 | 示例角色包清理（移除 `exclusiveWith`） | |
 | S7 | 宿主接入：组管理 UI（建组/拉组员/成员排序）+ 组员名单展示（"小组会议用"标注）+ 选择持久化（沿用 globalState）+ 会议入口（提示 LLM 可用任务表组织会议） | **门面 `switchRolePack` 与 IPC 协议不变**（选择对象只有角色包） |
 | S8 | 测试与文档 + 规则对齐：删自动匹配/exclusiveWith 用例，增单链兜底/表层装配/skills 跟随/范围校验用例；`role-pack-spec.md` 字段清理；§11.2 删除 + ADR；README 同步 | |

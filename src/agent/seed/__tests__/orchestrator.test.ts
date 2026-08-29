@@ -711,6 +711,12 @@ describe('会议机制（S5 补强）：步粒度硬切换', () => {
     expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('成员A');
     // 组长/汇总步（无 rolePack）→ 回落 activePack 前缀（null）
     expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith(null);
+    // 步粒度契约（B2「仅步入口换前缀」）：
+    // 总调用恰 4 次 = runChat 入口 prepare.run 1 次（active 步无 → null）+ 步序列 3 次（null / 成员A / null）。
+    // 锁总数 + 按参数细分：成员A 恰 1 次（仅步2）、null 恰 3 次——防「步内每轮多调」与「步入口漏调/多调」。
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledTimes(4);
+    expect(mocks.refreshRolePackPrefixForRound.mock.calls.filter((c) => c[0] === '成员A')).toHaveLength(1);
+    expect(mocks.refreshRolePackPrefixForRound.mock.calls.filter((c) => c[0] === null)).toHaveLength(3);
     // 工具面恒归组长：applyRolePackToolExposure 仅 prepare 调一次，不被步序列重调（B1 边界）
     expect(mocks.applyRolePackToolExposure).toHaveBeenCalledTimes(1);
   });
