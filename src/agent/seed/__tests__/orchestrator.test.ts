@@ -669,3 +669,49 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     );
   });
 });
+
+describe('会议机制（S5 补强）：步粒度硬切换', () => {
+  it('外部任务循环：每步入口按 rolePack 刷新装配（成员文档真进上下文），工具面锁死组长', async () => {
+    // 复杂任务 + 启用外循环（taskLoopLimit>0）
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    useStrategy(mocks, makeStrategy({ taskLoopLimit: 3 }));
+
+    // 预置任务表：步1(组长/无 rolePack) + 步2(成员A) + 步3(汇总/无 rolePack)
+    const plan = [
+      { id: 's1', description: '组长评估', status: 'pending', order: 0 },
+      { id: 's2', description: '程序员实现', status: 'pending', order: 1, rolePack: '成员A' },
+      { id: 's3', description: '汇总', status: 'pending', order: 2 },
+    ];
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan, roundLog: [] });
+
+    // 范围校验桩：成员声明有效、未声明→null（与 resolveRoundAssemblyRole 语义一致）
+    mocks.rolePackManager.resolveRoundAssemblyRole.mockImplementation(
+      (declared: string | undefined) => (declared ? declared : null),
+    );
+
+    // 模拟 LLM 每完成一步（步入口 prompt 含「【执行任务步骤】」）将对应 pending 步标 done，推进外循环
+    mocks.loop.processUserInput.mockImplementation((input: string) => {
+      if (typeof input === 'string' && input.includes('【执行任务步骤】')) {
+        const next = plan.find((s) => s.status === 'pending');
+        if (next) next.status = 'done';
+      }
+      return textStream('完成');
+    });
+    // 收敛后走汇报分支（loop.runReport），harness 默认 undefined → 补空生成器桩
+    mocks.loop.runReport.mockReturnValue(textStream('汇报'));
+    consumeControl.result = { content: '完成', aborted: false, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('开会', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 步2（rolePack=成员A）触发成员装配：前缀刷新以成员A、装配视角设为成员A（成员文档真进上下文）
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员A');
+    expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('成员A');
+    // 组长/汇总步（无 rolePack）→ 回落 activePack 前缀（null）
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith(null);
+    // 工具面恒归组长：applyRolePackToolExposure 仅 prepare 调一次，不被步序列重调（B1 边界）
+    expect(mocks.applyRolePackToolExposure).toHaveBeenCalledTimes(1);
+  });
+});

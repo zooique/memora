@@ -23,7 +23,7 @@ import {
   type SeedParts,
   type SeedPrepareResult,
 } from './types.js';
-import { SeedPrepare } from './prepare.js';
+import { SeedPrepare, refreshAssemblyForRolePack } from './prepare.js';
 import { DifficultyJudge, type Difficulty } from './difficulty.js';
 import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
@@ -462,6 +462,9 @@ export class SeedOrchestrator {
       stepsRun++;
       // 步级进度标记（供宿主区分「正在执行第几步」）：index=当前步序号，limit=步数上限
       yield { type: 'thinking', phase: 'step', index: stepsRun, limit };
+      // 会议机制（S5 补强）：步入口按本步 rolePack 刷新表层装配（逐成员硬切换系统人格；
+      // 工具面恒归组长——refreshRolePackPrefixForRound 内部按 activePack 策略构建 ChatOptions 锁死）
+      refreshAssemblyForRolePack(this.deps, next.rolePack);
       // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
       // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId
       const stepAct = yield* this.act(() =>
@@ -560,10 +563,10 @@ export class SeedOrchestrator {
    * 读取任务表下一个 pending 步骤（外循环步闭环的驱动信号）。
    * @returns 下一个待执行步骤（description 供步闭环提示）；无则返回 null（收敛）
    */
-  private getNextPendingStep(): { id: string; description: string } | null {
+  private getNextPendingStep(): { id: string; description: string; rolePack?: string } | null {
     const steps = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
     const next = steps.find((s) => s.status === 'pending');
-    return next ? { id: next.id, description: next.description } : null;
+    return next ? { id: next.id, description: next.description, rolePack: next.rolePack } : null;
   }
 
   /**
