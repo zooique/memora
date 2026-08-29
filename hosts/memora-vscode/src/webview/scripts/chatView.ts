@@ -671,6 +671,54 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   }
 
+  // ─── 回答等待指示器（③ 等待反馈，2026-08-29）─────────────────
+  // 缺口：prepare 阶段（meta 到达前的召回/装配/首 token 等待）仅有 thinking 事件、
+  // 无骨架（骨架由 meta 建立）承接 → UI 静默「发送后无反应」。此指示器在该窗口内提
+  // 供「相位文案 + 等待秒数」可见反馈；meta 到达（骨架接管）/ 正文开启 / 收尾即移除。
+  let pendingWaitEl: HTMLElement | null = null;
+  /** 等待起算时间戳（发送后首个 thinking 事件置位，跨相位不重置） */
+  let pendingWaitStart = 0;
+  /** 等待计时器（1s 刷新秒数） */
+  let pendingWaitTimer: ReturnType<typeof setInterval> | undefined;
+  /** 当前等待相位文案（最新 thinking 阶段，缺省准备中） */
+  let pendingWaitPhase = '正在准备回答…';
+
+  /** 建立/复用回答等待指示器（挂到消息区末尾，role=status 供读屏） */
+  function ensurePendingWait(): void {
+    if (pendingWaitEl && pendingWaitEl.isConnected) {
+      updatePendingWait();
+      return;
+    }
+    if (pendingWaitStart === 0) pendingWaitStart = Date.now();
+    pendingWaitEl = document.createElement('div');
+    pendingWaitEl.className = 'pending-wait';
+    pendingWaitEl.setAttribute('role', 'status');
+    messages.appendChild(pendingWaitEl);
+    updatePendingWait();
+    if (pendingWaitTimer === undefined) {
+      pendingWaitTimer = setInterval(updatePendingWait, 1000);
+    }
+  }
+
+  /** 刷新等待指示器文案（相位 + 已等待秒数） */
+  function updatePendingWait(): void {
+    if (!pendingWaitEl || !pendingWaitEl.isConnected) return;
+    const elapsed = Math.floor((Date.now() - pendingWaitStart) / 1000);
+    pendingWaitEl.textContent = `${pendingWaitPhase} · 已等待 ${elapsed}s`;
+  }
+
+  /** 清除等待指示器（幂等；meta 建骨架 / chunk 开正文 / done·error / 切轮时调用） */
+  function clearPendingWait(): void {
+    if (pendingWaitTimer !== undefined) {
+      clearInterval(pendingWaitTimer);
+      pendingWaitTimer = undefined;
+    }
+    pendingWaitEl?.remove();
+    pendingWaitEl = null;
+    pendingWaitStart = 0;
+    pendingWaitPhase = '正在准备回答…';
+  }
+
   // 复制消息文本到剪贴板
   function copyText(text: string): void {
     window.navigator.clipboard.writeText(text).catch(() => {
@@ -1355,6 +1403,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const ev = msg.event;
       if (ev.type === 'meta') {
         // 新轮开始：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）
+        clearPendingWait(); // 骨架接管：移除 meta 前的回答等待指示器
         currentEvents = [];
         roundBlockEl = null;
         roundBlockHostEl = null;
@@ -1368,9 +1417,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
           showActivity('info', `已召回 ${ev.payload.memories.length} 条记忆`);
         } else if (ev.type === 'memory_added') {
           showActivity('info', `已沉淀：${ev.payload.name || ev.payload.id}`);
-        } else if (ev.type === 'thinking' && ev.payload.phase === 'archiving') {
+        } else if (ev.type === 'thinking') {
           // 归档停滞兜底：archiving 激活即调度超时收起呼吸点
-          scheduleArchivingFallback();
+          if (ev.payload.phase === 'archiving') {
+            scheduleArchivingFallback();
+          }
+          // 回答等待指示器（③ 等待反馈）：meta 前（无骨架）补可见反馈——文案随
+          // 相位更新（召回/处理/规划…）+ 等待秒数，避免「发送后无反应」
+          if (!roundBlockEl && ev.payload.phase !== 'archiving') {
+            pendingWaitPhase = phaseLabel(ev.payload.phase);
+            ensurePendingWait();
+          }
         }
         currentEvents.push(ev);
         // 流式中实时刷新 summary（details 待流结束（done）统一收尾）
@@ -1378,6 +1435,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       }
     } else if (msg.type === 'replay_events') {
       // 重放整批（v1.5）：同一渲染路径——整批汇入 events[]，一次性渲染 summary + details
+      clearPendingWait(); // 重放为历史渲染，等待指示器不适用
       currentEvents = [...msg.events];
       // meta 优先写入本轮身份（供该轮 assistant 正文标签；host 已保证 meta 先于正文到达）
       const metaEv = msg.events.find((e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta');
@@ -1393,9 +1451,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         activeAssistantEl = null;
         streamingRaw = '';
       }
-      // 骨架残留（meta 已到但正文未开始）：跟随插话丢弃，正文会 beginStreaming 建于本消息之后
+      // 插话开新轮：清残留骨架 + 等待指示器（下一批 thinking/meta 将重建）
       flowShellEl?.remove();
       flowShellEl = null;
+      clearPendingWait();
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -1408,6 +1467,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
       // 首个 chunk：若骨架已由 meta 建立（TTFT 前即时反馈）→ 复用该块开启正文流，否则新建
       if (!streamingActive) {
+        clearPendingWait(); // 正文开启：等待指示器退场（骨架已接管）
         if (flowShellEl) {
           // 复用骨架：正文流入同一块（不新建第二条 assistant 消息）
           streamingActive = true;
@@ -1462,9 +1522,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
     } else if (msg.type === 'error') {
+      clearPendingWait(); // 失败即收尾，等待指示器退场
       append('error', msg.message);
     } else if (msg.type === 'done') {
       // 本轮流式结束：清除归档停滞兜底定时器 + 骨架引用（已定型为正文/异常块）
+      clearPendingWait();
       clearArchivingFallback();
       flowShellEl = null;
       // 本轮过程事件收尾：完整渲染 round-block（含 § 执行指标等 details 小节，折叠态保持）

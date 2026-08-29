@@ -1316,3 +1316,67 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     expect(board2.compareDocumentPosition(banner2) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
   });
 });
+
+describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('meta 前 thinking 事件 → 显示相位 + 等待秒数；meta 到达骨架接管后移除', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // prepare 阶段：recalling（meta 未到、无骨架）
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'recalling' } } });
+    let wait = messages.querySelector('.pending-wait') as HTMLElement | null;
+    expect(wait).not.toBeNull();
+    expect(wait!.textContent).toContain('召回记忆中');
+    expect(wait!.textContent).toMatch(/已等待 \d+s/);
+
+    // 相位推进 → 文案随 thinking 更新
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } } });
+    expect(messages.querySelector('.pending-wait')!.textContent).toContain('调用模型中');
+
+    // meta 到达（建流式骨架）→ 等待条移除，round-block 接管
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    expect(messages.querySelector('.pending-wait')).toBeNull();
+    expect(messages.querySelector('.round-block')).not.toBeNull();
+  });
+
+  it('正文开启（chunk 首段）后等待指示器退场', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'processing' } } });
+    expect(messages.querySelector('.pending-wait')).not.toBeNull();
+    // chunk 首段（无骨架路径 beginStreaming）→ 等待条移除
+    dispatch({ type: 'chunk', content: '回答' });
+    expect(messages.querySelector('.pending-wait')).toBeNull();
+  });
+
+  it('done / error 收尾后等待指示器移除（不留残留定时器渲染）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'recalling' } } });
+    expect(messages.querySelector('.pending-wait')).not.toBeNull();
+    dispatch({ type: 'done' });
+    expect(messages.querySelector('.pending-wait')).toBeNull();
+
+    // error 分支同样清理
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } } });
+    expect(messages.querySelector('.pending-wait')).not.toBeNull();
+    dispatch({ type: 'error', message: 'boom' });
+    expect(messages.querySelector('.pending-wait')).toBeNull();
+  });
+
+  it('纯 user 消息（历史回放路径）不触发等待指示器，防止误报', () => {
+    // 纯 user 消息（历史回放 path）不建等待条——等待条只由运行时 thinking 事件驱动
+    mountChatView();
+    dispatch({ type: 'user', text: '旧消息', ts: 't' });
+    expect(document.querySelector('.pending-wait')).toBeNull();
+  });
+});

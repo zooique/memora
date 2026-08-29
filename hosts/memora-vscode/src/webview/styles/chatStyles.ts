@@ -879,6 +879,25 @@ export const chatStyles = `
   /* 流式中：圆点品牌色呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
   .round-block.is-running .round-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
   .round-block__stats { word-break: break-all; }
+  /* 回答等待指示器（③ 等待反馈，2026-08-29）：meta 前 prepare 阶段的可见反馈——
+     呼吸圆点 + 相位文案 + 等待秒数；胶囊形态弱化打扰，role=status 尊重 reduced-motion */
+  .pending-wait {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 10px);
+    margin: var(--sp-2, 4px) 0;
+    border-radius: 999px;
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-thought, rgba(128,128,128,.08));
+  }
+  .pending-wait::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    background: var(--accent, #0e639c);
+    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .pending-wait::before { animation: none; }
+  }
   .round-block__details {
     margin-top: var(--sp-1, 4px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
