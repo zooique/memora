@@ -209,14 +209,28 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     }
   });
 
-  it('deleteSession：删除消息 + meta + 检查点（连带清检查点防脏残留）', () => {
-    seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
+  it('deleteSession：删除消息 + meta + 检查点 + 物理回收无引用 Round（0 引用孤儿不留滞）', () => {
+    const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
     store.setSessionTitle?.('2026-08-17-main', '会话一');
     store.saveCheckpoint?.('2026-08-17-main', '{"status":"paused"}');
     store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-17-main');
     expect(store.loadCheckpoint?.('2026-08-17-main')).toBeNull();
+    // refCount 归零 → Round 物理文件同步回收（2026-08-29：deleteSession 减引用后立即物理删除）
+    expect(roundStore.getById(roundId)).toBeNull();
+  });
+
+  it('deleteSession：分叉共享轮（refCount>0）安全保留，不被物理删除', () => {
+    const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: 'x', ts: 't1' });
+    // 模拟分叉引用：另一会话共享同一 Round（refCount 1→3）
+    roundStore.incrementRef(roundId);
+    roundStore.incrementRef(roundId);
+    store.deleteSession('2026-08-17-main');
+    // Round 仍被分叉会话引用 → 物理保留（RoundStore.delete 的 refCount>0 护栏）
+    expect(roundStore.getById(roundId)).not.toBeNull();
+    // 会话侧指针已清除
+    expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
   });
 
   it('会话文件损坏 → load 降级为空不抛错', () => {
@@ -382,5 +396,52 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
     // refCount>0 → 不可删除（任一会话仍引用），事件随文件保留
     expect(roundStore.delete('round-e3')).toBe(false);
     expect(roundStore.getById('round-e3')?.processEvents).toBeDefined();
+  });
+});
+
+describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）', () => {
+  /** 临时工作区路径（每用例独立） */
+  let dir: string;
+  /** 问答闭环物理存储（仅 roundStore，模拟无引用残留场景） */
+  let roundStore: WorkspaceRoundStore;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'memora-round-sweep-'));
+    roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+  });
+
+  /** 直接落一个自定义 refCount 的 Round（绕过 SessionStore 登记，模拟历史残留孤儿） */
+  function seedRawRound(roundId: string, refCount: number, createdAt: string): void {
+    const round: Round = {
+      id: roundId,
+      userMessage: { id: `${roundId}-u`, role: 'user', content: 'x', timestamp: createdAt },
+      status: 'complete',
+      createdAt,
+      refCount,
+    };
+    roundStore.save(round);
+  }
+
+  it('清理 refCount=0 的孤儿并返回数量；被引用轮保留', () => {
+    seedRawRound('round-loss', 0, '2026-08-20T00:00:00.000Z');
+    seedRawRound('round-keep', 1, '2026-08-20T00:00:00.000Z');
+    expect(roundStore.sweepOrphans()).toBe(1);
+    expect(roundStore.getById('round-loss')).toBeNull();
+    expect(roundStore.getById('round-keep')).not.toBeNull();
+  });
+
+  it('minAgeMs 存活保护：刚创建/进行中的轮不被误删', () => {
+    seedRawRound('round-fresh', 0, new Date().toISOString());
+    // 超短存活内不清（暂存保护区）
+    expect(roundStore.sweepOrphans(60 * 60 * 1000)).toBe(0);
+    expect(roundStore.getById('round-fresh')).not.toBeNull();
+    // 无保护立即回收
+    expect(roundStore.sweepOrphans(0)).toBe(1);
+    expect(roundStore.getById('round-fresh')).toBeNull();
+  });
+
+  it('无孤儿时 no-op 返回 0', () => {
+    expect(roundStore.sweepOrphans()).toBe(0);
   });
 });

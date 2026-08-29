@@ -156,6 +156,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // 杜绝双实例覆盖写 / 缓存漂移——否则 UI 重载历史读不到 Agent 刚写入的 Round）
   const roundStore = new WorkspaceRoundStore(workspacePath);
   roundStore.load();
+  // 孤儿清扫（0 引用 Round 统一回收，2026-08-29）：删除会话/截断后遗留的无引用轮
+  // 在启动时物理清理，防磁盘膨胀与「0 引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）
+  const swept = roundStore.sweepOrphans();
+  if (swept > 0) {
+    console.info(`Memora 启动清扫无引用问答闭环 ${swept} 条`);
+  }
   const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
   sessionStore.load();
 

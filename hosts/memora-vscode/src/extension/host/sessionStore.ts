@@ -119,10 +119,13 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
    */
   deleteSession(sessionId: string): void {
-    // 引用递减：被删除会话放弃其 Round 引用（refCount 归零的轮由 GC 回收）
+    // 引用递减 + 物理回收：被删除会话放弃其 Round 引用后，refCount 归零的轮
+    // 立即物理删除（SSOT：Round 物理生命周期归 RoundStore，引用归 SessionStore；
+    // 分叉共享轮由 RoundStore.delete 内部 refCount>0 护栏安全保留）
     const roundIds = this.roundIdsStore.get(sessionId) ?? [];
     for (const roundId of roundIds) {
       this.roundStore.decrementRef(roundId);
+      this.roundStore.delete(roundId);
     }
     // 清理：移除 Round ID 指针 + 元数据 + 检查点（物理 Round 由 RoundStore 引用计数 + GC 管理）
     this.roundIdsStore.delete(sessionId);

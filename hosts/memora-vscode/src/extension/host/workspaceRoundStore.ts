@@ -372,6 +372,23 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
+   * 清扫无引用孤儿 Round（refCount=0）：删除会话/截断后遗留的物理文件统一回收。
+   *
+   * SSOT：Round 物理生命周期归 RoundStore（引用归 SessionStore）——deleteSession/truncate
+   * 只负责减引用，物理回收统一收敛到本方法与 deleteSession 内联删除，不做第二套清理逻辑。
+   *
+   * @param minAgeMs 存活保护（毫秒）：仅清理创建超过该时长的孤儿，防误删进行中/刚崩溃的轮
+   * @returns 清理数量
+   */
+  sweepOrphans(minAgeMs: number = 0): number {
+    const orphans = this.listOrphaned(minAgeMs);
+    for (const round of orphans) {
+      this.delete(round.id);
+    }
+    return orphans.length;
+  }
+
+  /**
    * 获取 Round 数量
    */
   size(): number {
