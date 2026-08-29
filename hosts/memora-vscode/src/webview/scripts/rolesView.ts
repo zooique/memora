@@ -345,47 +345,57 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       info.appendChild(caps);
     }
 
-    // 策略指示器（紧凑单行）
-    if (p.strategyHint) {
+    // 策略指示器 + 兜底定位（紧凑单行）：完整工具/自动执行/平衡等策略 chips + 「系统兜底」chip（isFallback）
+    if (p.strategyHint || p.isFallback) {
       const strategy = document.createElement('div');
       strategy.className = 'role-strategy';
       const hint = p.strategyHint;
 
-      if (hint.toolReadonly) {
+      if (hint?.toolReadonly) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip ' + (hint.toolReadonly === 'readonly' ? 'readonly' : 'full');
         chip.textContent = hint.toolReadonly === 'readonly' ? '只读模式' : '完整工具';
         strategy.appendChild(chip);
       }
-      if (hint.toolApproval) {
+      if (hint?.toolApproval) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip ' + (hint.toolApproval === 'confirm' ? 'confirm' : 'auto');
         chip.textContent = hint.toolApproval === 'confirm' ? '需审批' : '自动执行';
         strategy.appendChild(chip);
       }
-      if (hint.tempGroup) {
+      if (hint?.tempGroup) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip temp-' + hint.tempGroup;
         const tempLabel = { high: '高创意', mid: '平衡', low: '低温度' };
         chip.textContent = tempLabel[hint.tempGroup] ?? hint.tempGroup;
         strategy.appendChild(chip);
       }
-      if (hint.reasoningMode) {
+      if (hint?.reasoningMode) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip reasoning-' + hint.reasoningMode;
         chip.textContent = hint.reasoningMode === 'auto' ? '自动推理' : '手动推理';
         strategy.appendChild(chip);
       }
-      if (hint.summaryFocus) {
+      if (hint?.summaryFocus) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip';
         chip.textContent = `聚焦: ${hint.summaryFocus}`;
         strategy.appendChild(chip);
       }
-      if (hint.outputLimit && hint.outputLimit > 0) {
+      if (hint?.outputLimit && hint.outputLimit > 0) {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip output-limit';
         chip.textContent = `输出上限: ${hint.outputLimit}k`;
+        strategy.appendChild(chip);
+      }
+      // 兜底契约包定位（能力标签区，2026-08-29 实测反馈）：以 chip 呈现系统兜底，
+      // 替代描述区的长开发说明（manifest.description 已精简，机制说明移入 title）
+      if (p.isFallback) {
+        const chip = document.createElement('span');
+        chip.className = 'strategy-chip fallback';
+        chip.textContent = '系统兜底';
+        chip.title =
+          '内核兜底契约包（BUILTIN_FALLBACK_PACK）：领域无关通用助手，名字锁定、系统内置不可删除、构建期校验';
         strategy.appendChild(chip);
       }
 

@@ -171,6 +171,8 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
     );
     expect(fallbackCard?.querySelector('.badge-fallback')?.textContent).toContain('兜底');
+    // 兜底定位 chip（能力标签区，2026-08-29 实测反馈）：无 strategyHint 时「系统兜底」chip 仍渲染
+    expect(fallbackCard?.querySelector('.strategy-chip.fallback')?.textContent).toContain('系统兜底');
     // 删除小组 → postMessage roles_team_delete
     (document.querySelector('.team-del') as HTMLButtonElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'roles_team_delete', leader: '小说助手' });

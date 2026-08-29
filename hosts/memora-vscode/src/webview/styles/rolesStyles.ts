@@ -134,6 +134,8 @@ export const rolesStyles = `
   #roles-root .strategy-chip.reasoning-auto { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
   #roles-root .strategy-chip.reasoning-manual { background: rgba(255, 152, 0, 0.2); color: #ff9800; }
   #roles-root .strategy-chip.output-limit { background: rgba(158, 158, 158, 0.2); color: #9e9e9e; }
+  /* 兜底契约包定位 chip（与 badge-fallback 同灰色系，能力标签区） */
+  #roles-root .strategy-chip.fallback { background: rgba(96, 125, 139, 0.2); color: #607d8b; }
 
   /* ============ Components：折叠详情区（专家挖掘） ============ */
   #roles-root .card-details {
