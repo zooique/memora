@@ -22,6 +22,7 @@ import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import { GCService } from '@/memory/gcService.js';
 import { generateRoundId, generateSummaryId } from '@/memory/roundStore.js';
+import { todayDate } from '@/utils/time.js';
 import type { Memory } from '@/memory/types.js';
 
 /** 模拟 LLM 已生成的 round-summary（以 roundId 溯源） */
@@ -57,9 +58,13 @@ async function appendRound(history: MessageHistory, content: string): Promise<st
 /**
  * 创建 MessageHistory + 初始会话 meta（forkSession 的 getCurrentSessionMeta 要求 meta 存在，
  * 与 Agent switchToSession 的空会话建 meta 语义对齐）
+ *
+ * 日期锚点取 `todayDate()` 而非硬编码日期：`forkSession` 按设计会把 currentDate 同步为今天
+ * （分叉键 = todayDate()-newSession，防跨天后写入错位），硬编码日期会让「分叉后切回源会话」
+ * 落到「今天-同名」的新会话上，使本测试成为日期敏感用例（仅写入当天能过）。
  */
 function createHistory(roundStore: InMemoryRoundStore, sessionStore: InMemorySessionStore): MessageHistory {
-  const history = new MessageHistory(sessionStore, '2026-08-28', 'main', roundStore);
+  const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
   sessionStore.createSession({
     sessionId: history.currentSessionName,
     roundIds: [],
@@ -139,7 +144,9 @@ describe('Round 引用生命周期端到端', () => {
     expect(fork.roundIds).toEqual([rA, rB]);
     expect(roundStore.getById(rA)!.refCount).toBe(2); // 源会话 + 分叉会话
 
-    // 切回源会话续聊新轮：新轮只属于源会话，分叉会话 roundIds 不变
+    // 切回源会话续聊新轮：新轮只属于源会话，分叉会话 roundIds 不变。
+    // 注：switchSession 只切 session 名、保持日期锚点；本用例锚点即 todayDate()，与 forkSession
+    // 同步后的日期一致故可直接切回（跨日期切回须走 openSession 的 loadSessionMessages 路径）。
     history.switchSession('main');
     const rNew = await appendRound(history, '问题C');
     const sourceSessionId = history.currentSessionName;
