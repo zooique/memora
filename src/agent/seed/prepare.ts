@@ -64,6 +64,16 @@ export class SeedPrepare {
       loop.injectSystemMessage(teamContext);
     }
 
+    // 会议机制（S5）确定性触发：用户消息含「小组会议」且 activePack 是组长 →
+    // 经既有 writePlan 泛型能力预置任务表（组员各一步 + 汇总一步，复用 PlanStep.rolePack 表层覆盖），
+    // 并标记 meetingPreset 强制 orchestrator 进入外部任务闭环直跑步序列（不引入会议引擎，见 ADR-028 收敛补记）。
+    const meetingSteps = rolePackManager?.tryBuildMeetingPlan?.(input) ?? null;
+    let meetingPreset = false;
+    if (meetingSteps && sessionManager) {
+      sessionManager.writePlan('overwrite', meetingSteps);
+      meetingPreset = true;
+    }
+
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
     // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
     const memoryRecallMode = resolveMemoryRecallMode(strategy);
@@ -85,7 +95,7 @@ export class SeedPrepare {
     );
 
     if (signal.aborted) {
-      return { input, recalledMemories, aborted: true } satisfies SeedPrepareResult;
+      return { input, recalledMemories, aborted: true, meetingPreset: false } satisfies SeedPrepareResult;
     }
 
     // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
@@ -106,7 +116,7 @@ export class SeedPrepare {
       );
     }
 
-    return { input, recalledMemories, aborted: false } satisfies SeedPrepareResult;
+    return { input, recalledMemories, aborted: false, meetingPreset } satisfies SeedPrepareResult;
   }
 }
 

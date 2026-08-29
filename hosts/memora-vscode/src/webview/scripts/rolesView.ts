@@ -188,7 +188,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     return card;
   }
 
-  /** 建组表单：组长下拉 + 组员多选（防重复/防自组循环由 host 校验兜底） */
+  /** 建组表单：组长下拉 + 组员多选（UI 层排除组长 + host 层硬校验兜底，双层防护） */
   function buildTeamForm(data: RolesPayload): HTMLElement {
     const form = document.createElement('div');
     form.className = 'team-form';
@@ -209,24 +209,35 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     leaderRow.appendChild(leaderSel);
     form.appendChild(leaderRow);
 
-    // 组员多选（checkbox 列表）
+    // 组员多选（checkbox 列表）：排除当前组长，组长切换时动态刷新
     const membersRow = document.createElement('div');
     membersRow.className = 'team-form-row team-members-pick';
     membersRow.textContent = '组员：';
     const pickList = document.createElement('div');
     pickList.className = 'team-pick-list';
-    packs.forEach((p) => {
-      const item = document.createElement('label');
-      item.className = 'team-pick-item';
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.value = p.name;
-      item.appendChild(cb);
-      const txt = document.createElement('span');
-      txt.textContent = p.displayName + (p.isFallback ? '（兜底）' : '');
-      item.appendChild(txt);
-      pickList.appendChild(item);
-    });
+
+    /** 渲染组员 pick 列表，排除指定组长 */
+    function renderMemberPick(excludeLeader: string): void {
+      pickList.innerHTML = '';
+      packs
+        .filter((p) => p.name !== excludeLeader)
+        .forEach((p) => {
+          const item = document.createElement('label');
+          item.className = 'team-pick-item';
+          const cb = document.createElement('input');
+          cb.type = 'checkbox';
+          cb.value = p.name;
+          item.appendChild(cb);
+          const txt = document.createElement('span');
+          txt.textContent = p.displayName + (p.isFallback ? '（兜底）' : '');
+          item.appendChild(txt);
+          pickList.appendChild(item);
+        });
+    }
+    renderMemberPick(leaderSel.value);
+    // 组长切换 → 组员列表排除新组长，已勾选旧组长的项不会出现（被过滤掉）
+    leaderSel.addEventListener('change', () => renderMemberPick(leaderSel.value));
+
     membersRow.appendChild(pickList);
     form.appendChild(membersRow);
 
@@ -282,14 +293,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       badge.textContent = '当前';
       header.appendChild(badge);
     }
-    // 兜底契约包标记（宿主 UI 禁删）
-    if (p.isFallback) {
-      const badge = document.createElement('span');
-      badge.className = 'badge badge-fallback';
-      badge.textContent = '兜底（禁删）';
-      badge.title = '内核兜底契约包（BUILTIN_FALLBACK_PACK），系统内置不可删除';
-      header.appendChild(badge);
-    }
+    // 兜底标记已合并至下方策略区的「系统兜底」chip（避免重复，2026-08-29 实测反馈）
 
     // 操作按钮（右侧，margin-left: auto）
     const actions = document.createElement('div');

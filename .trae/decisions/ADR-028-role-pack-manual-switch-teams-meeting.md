@@ -48,6 +48,19 @@
 - **宿主**：组管理 UI（建组/拉组员/成员排序）+ 组员名单展示（「小组会议用」标注）+ 选择持久化（沿用 globalState）+ 会议入口（提示 LLM 可用任务表组织会议）。门面 `switchRolePack` 与 IPC 协议不变（选择对象只有角色包）。
 - **ADR-026 被替代**：autoSwitch 宿主装配级键已随 v0.13 整体移除（无自动匹配可关）。
 
+## 收敛补记（2026-08-29）：确定性输入触发
+
+前文决策 5 把会议触发放在「LLM 见软指令后自愿调 `task_table_write`」。实测该触发是 LLM 自由裁量，简单提示词「小组会议：讨论xxx」时灵时不灵，可靠性不达标。
+
+收口为**确定性输入触发**（最小内核 affordance，不引入会议引擎）：
+
+1. **触发判定（SSOT 单一入口）**：`RolePackManager.tryBuildMeetingPlan(input)` —— 输入含「小组会议」**且** `activePack` 是某组组长 → 返回预置步骤（组员各一步 `rolePack=成员` + 一步汇总 `无 rolePack=组长视角`）；否则返回 `null`。
+2. **预置（复用既有泛型）**：`SeedPrepare.run` 命中即经 `SessionManager.writePlan`（既有任务表写点，与 `task_table_write` 同机）预置，不新写会议专属写路径。
+3. **强制外循环**：`orchestrator.runChat` 读 `SeedPrepareResult.meetingPreset` → 跳过规划闭环、直调 `completeExternalTask` 跑步序列（复用既有步闭环 + `refreshAssemblyForRolePack` 逐成员硬切换）。
+4. **软指令退役**：`buildTeamContextBlock` 原「须立即用 task_table_write」软触发删除，改为描述系统编排、仅要求 LLM 用 `task_table_update` 标记完成——消除「确定性预置」与「LLM 自建表」双写竞争。
+
+**为何不违反决策 5「内核零会议代码」**：未引入会议执行引擎（无独立循环 / 键切换 / 重入）；确定性触发仅用既有 `PlanStep.rolePack` 表层覆盖能力 + 既有步闭环执行，是决策 5 允许能力的延伸，内核零会议执行引擎底线不变。
+
 ## 何时回顾
 
 - 出现「需要某角色完整能力（键+工具）参与会议」的诉求时——当前方案要求手动切换该角色（完整切换），而非会议内切键；若该诉求成高频，重新评估会议内键切换的代价。

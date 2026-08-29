@@ -166,12 +166,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const memberTags = document.querySelectorAll('.team-member-tag');
     expect(memberTags).toHaveLength(2);
     expect(memberTags[0]?.textContent).toBe('编辑');
-    // 兜底契约包徽章（禁删标记）
+    // 兜底契约包定位 chip（能力标签区，2026-08-29 实测反馈）：顶部 badge 已移除，仅保留策略区 chip
     const fallbackCard = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
     );
-    expect(fallbackCard?.querySelector('.badge-fallback')?.textContent).toContain('兜底');
-    // 兜底定位 chip（能力标签区，2026-08-29 实测反馈）：无 strategyHint 时「系统兜底」chip 仍渲染
     expect(fallbackCard?.querySelector('.strategy-chip.fallback')?.textContent).toContain('系统兜底');
     // 删除小组 → postMessage roles_team_delete
     (document.querySelector('.team-del') as HTMLButtonElement).click();

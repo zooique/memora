@@ -88,6 +88,19 @@ export class SeedOrchestrator {
       return;
     }
 
+    // 会议机制（S5）确定性触发：系统已预置任务表 → 跳过规划闭环，直调 completeExternalTask 跑步序列 + 收尾。
+    // 复用既有外部任务执行机（步闭环 + refreshAssemblyForRolePack 逐成员硬切换），不引入会议引擎（ADR-028 收敛补记）。
+    if (prepared.meetingPreset) {
+      const parts = this.deps.getParts();
+      const headRoundId = parts.loop.getCurrentRoundId();
+      parts.loop.setExternalTaskHeadRoundId(headRoundId);
+      parts.loop.setWithinExternalTask(true);
+      yield* this.completeExternalTask(signal, input, '');
+      const forceWait = parts.loop.isIterationLimitReached?.() ?? false;
+      yield* this.handoff(true, forceWait);
+      return;
+    }
+
     // 难度分级（回答前）：复杂且启用外部任务循环 → 外循环（规划 + 每步一闭环 + 汇报）；否则单闭环直接答
     const difficulty = await this.difficulty.classify(input);
     const taskLoopLimit = resolveTaskLoopLimit(

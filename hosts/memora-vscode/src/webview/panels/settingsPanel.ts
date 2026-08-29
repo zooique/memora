@@ -391,10 +391,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     if (!rpm || !leader) return false;
     const validPacks = new Set(rpm.listMeta().map((m) => m.name));
     const deduped = [...new Set(members)];
-    // 校验：组长存在、组员存在且非空、组员不重复（组长可为自身角色的并列确认）
+    // 校验：组长存在、组员存在、组员非空且不重复、组长与组员身份互斥（组长不能同时是组员）
     if (!validPacks.has(leader)) return false;
     if (deduped.length === 0) return false;
     if (deduped.some((m) => !validPacks.has(m))) return false;
+    if (deduped.includes(leader)) return false;
     // 组长身份唯一：同一组长不允许两处建组
     const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     const others = teams.filter((t) => t.leader !== leader);

@@ -1189,6 +1189,8 @@ export class AgentLoop {
         .filter((m) => m.role === 'system')
         .map((m) => m.content)
         .join('\n');
+      // [临时诊断 2026-08-29] 打印完整 system prompt，排查小组会议组清单是否注入
+      logger.info({ systemPrompt }, 'DIAG system prompt content');
       llmSpan.setAttribute('systemPromptHash', sha256Fingerprint(systemPrompt));
     }
 

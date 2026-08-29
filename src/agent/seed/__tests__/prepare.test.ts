@@ -57,6 +57,7 @@ describe('SeedPrepare 回答前', () => {
       input: '用户输入',
       recalledMemories: [expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'b' })],
       aborted: false,
+      meetingPreset: false,
     });
   });
 

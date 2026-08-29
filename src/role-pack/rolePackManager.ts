@@ -409,7 +409,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /**
    * 构建「组长 + 组员名单」上下文块（会议机制实施前提②：组/成员清单暴露给 LLM，防编造角色名）。
    * 仅当 activePack 是某个组的组长且名单非空时产出；非组长返回空串（不注入）。
-   * 内容供 LLM 用 task_table_write 的 steps[].rolePack 声明任务发言角色（越界被忽略）。
+   *
+   * 内容只描述系统编排的会议机制，不指挥 LLM 自建任务表（确定性触发由 tryBuildMeetingPlan 承担，
+   * 见 ADR-028 收敛补记）：LLM 在每步只需按当前步骤角色视角作答，并用 task_table_update 标记完成。
    */
   buildTeamContextBlock(): string {
     if (!this.activePackName) return '';
@@ -417,11 +419,37 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!team || team.members.length === 0) return '';
     return (
       `【小组会议角色（组长：${team.leader}；组员：${team.members.join(' / ')}）】` +
-      `组织小组会议时，可用 task_table_write 在步骤中声明 rolePack（∈ {组长} ∪ {组员}，越界会被忽略）` +
-      `，使该步骤以对应成员视角发言；汇总步骤可不声明（默认按组长视角）。` +
-      `当用户消息提及「小组会议」时，须立即用 task_table_write 组织会议，组员即上方清单、无需用户点名；` +
-      `各成员依次发言后，设一步汇总（可不声明 rolePack）。`
+      `用户以「小组会议：主题」发起时，系统自动预置任务表（组员各一步发言 + 一步汇总），` +
+      `无需你自建任务表；你只需按当前步骤角色视角作答，并用 task_table_update 将该步标记为 done 或 blocked。`
     );
+  }
+
+  /**
+   * 会议机制：确定性输入触发（SSOT 单一入口，ADR-028 收敛补记）。
+   *
+   * 用户消息含「小组会议」**且** activePack 是某组组长 → 复用既有任务表泛型能力，
+   * 程序化预置步骤：组员各一步（`rolePack=成员`，触发表层装配硬切换）+ 一步汇总（无 rolePack = 组长视角）。
+   * 不引入会议引擎：仅用 PlanStep.rolePack 表层覆盖 + 既有步闭环执行（orchestrator 直调 completeExternalTask）。
+   *
+   * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则步骤仅标「发言/汇总」由 LLM 见用户消息展开。
+   * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。
+   *
+   * @param input 用户输入
+   * @returns 预置步骤（description + 可选 rolePack）；不触发返回 null
+   */
+  tryBuildMeetingPlan(input: string): Array<{ description: string; rolePack?: string }> | null {
+    if (!this.activePackName) return null;
+    if (!/小组会议/.test(input)) return null;
+    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
+    if (!team || team.members.length === 0) return null;
+    const topic = input.replace(/^\s*小组会议\s*[:：,，]?\s*/, '').trim();
+    const suffix = topic ? `：${topic}` : '';
+    const steps: Array<{ description: string; rolePack?: string }> = team.members.map((m) => ({
+      description: `${m} 发言${suffix}`,
+      rolePack: m,
+    }));
+    steps.push({ description: `汇总各方观点${suffix}` });
+    return steps;
   }
 
   // ── 生命周期 ──────────────────────────────────────

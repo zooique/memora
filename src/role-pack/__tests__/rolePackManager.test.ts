@@ -521,23 +521,65 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const block = manager.buildTeamContextBlock();
       expect(block).toContain('组长A');
       expect(block).toContain('组员1');
-      expect(block).toContain('rolePack');
+      expect(block).toContain('task_table_update');
       // 切到非组长 → 空串（不注入）
       manager.activate('组员1');
       expect(manager.buildTeamContextBlock()).toBe('');
     });
 
-    it('buildTeamContextBlock：注入确定性触发指令（提及「小组会议」须立即开会、组员从清单取无需点名）', async () => {
+    it('buildTeamContextBlock：描述系统编排的会议（自动预置、LLM 仅用 task_table_update 标记）', async () => {
       await writeTeamPacks();
       const manager = new RolePackManager(dir);
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
       await manager.load('组长A');
       const block = manager.buildTeamContextBlock();
-      // 确定性触发：用户提及「小组会议」即须调用 task_table_write，而非被动描述能力
-      expect(block).toContain('须立即');
-      expect(block).toContain('task_table_write');
-      // UX 诉求：组员取自上方清单，无需用户在提示词中点名
-      expect(block).toContain('无需用户点名');
+      // 系统确定性预置任务表，不指挥 LLM 自建表（软触发已退役，见 ADR-028 收敛补记）
+      expect(block).toContain('小组会议');
+      expect(block).toContain('自动预置');
+      expect(block).toContain('task_table_update');
+      expect(block).not.toContain('须立即');
+      expect(block).not.toContain('task_table_write');
+    });
+
+    it('tryBuildMeetingPlan：组长 + 「小组会议」→ 组员各一步(带 rolePack) + 汇总一步(无 rolePack)', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
+      await manager.load('组长A');
+      const steps = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
+      expect(steps).not.toBeNull();
+      // 组员各一步，rolePack = 成员（触发表层装配硬切换）
+      expect(steps![0]).toEqual({ description: '组员1 发言：讨论叙事平台', rolePack: '组员1' });
+      expect(steps![1]).toEqual({ description: '组员2 发言：讨论叙事平台', rolePack: '组员2' });
+      // 末步汇总，无 rolePack（组长视角）
+      expect(steps![2]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
+      expect(steps).toHaveLength(3);
+    });
+
+    it('tryBuildMeetingPlan：无「小组会议」keyword → null（回落普通闭环）', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组长A');
+      expect(manager.tryBuildMeetingPlan('请评审这份文档')).toBeNull();
+    });
+
+    it('tryBuildMeetingPlan：activePack 非组长 → null', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组员1'); // 激活的是组员，非组长
+      expect(manager.tryBuildMeetingPlan('小组会议：讨论xxx')).toBeNull();
+    });
+
+    it('tryBuildMeetingPlan：主题可缺省（仅「小组会议」）→ 步骤不带主题后缀', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组长A');
+      const steps = manager.tryBuildMeetingPlan('小组会议');
+      expect(steps![0]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
+      expect(steps![1]).toEqual({ description: '汇总各方观点' });
     });
   });
 
