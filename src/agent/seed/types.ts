@@ -79,6 +79,12 @@ export interface SeedDeps {
   messages?: UIMessages;
   /** 门面能力：应用当前角色包的工具暴露面（回答前换角色后工具集切换） */
   applyRolePackToolExposure(): void;
+  /**
+   * 门面能力：按本轮表层装配视角刷新 loop 前缀（会议机制）。
+   * roundRole=null（日常态）→ 回落 activePack 前缀；roundRole 为任务项角色 → 该角色 persona/rules/skills。
+   * 键（strategy/ChatOptions）恒为 activePack，不随视角变。缺省 no-op（纯工厂单测）。
+   */
+  refreshRolePackPrefixForRound?(roundRole: string | null): void;
   /** 门面能力：统一流收口协议（消费 loop 执行流 → AgentChunk；物理实现在 Agent） */
   consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
@@ -90,7 +96,7 @@ export interface SeedDeps {
   getBackgroundProvider(): LlmProvider | null;
   /**
    * 宿主装配级策略覆盖（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
-   * 如 VSCode 插件只允许手动切换角色包 → `{ prepare: { autoSwitch: 'off' } }`（唯一语义键 autoSwitch）。
+   *（v0.13 后无内置示例键；机制保留供宿主能力边界使用）
    */
   strategyOverride?: Partial<BehaviorStrategy>;
 }

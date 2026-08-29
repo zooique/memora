@@ -59,9 +59,14 @@ export interface SeedMocks {
     registerPendingArchive: ReturnType<typeof vi.fn>;
   };
   sessionManager: { getCheckpoint: ReturnType<typeof vi.fn> };
-  rolePackManager: { getActive: ReturnType<typeof vi.fn>; resetSticky: ReturnType<typeof vi.fn> };
+  rolePackManager: {
+    getActive: ReturnType<typeof vi.fn>;
+    // 会议机制（S5）：范围校验 / 本轮装配视角 / 组上下文块
+    resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
+    setRoundAssemblyRole: ReturnType<typeof vi.fn>;
+    buildTeamContextBlock: ReturnType<typeof vi.fn>;
+  };
   contextPreparer: {
-    tryAutoMatchRolePack: ReturnType<typeof vi.fn>;
     recallAndInject: ReturnType<typeof vi.fn>;
   };
   sessionNamer: { ensureSessionTitle: ReturnType<typeof vi.fn> };
@@ -70,6 +75,8 @@ export interface SeedMocks {
   tracer: { startSpan: ReturnType<typeof vi.fn> };
   span: { end: ReturnType<typeof vi.fn> };
   applyRolePackToolExposure: ReturnType<typeof vi.fn>;
+  /** 会议机制（S5）：按本轮装配视角刷新 loop 前缀（prepare 每轮调用；缺省 no-op 测试不断言） */
+  refreshRolePackPrefixForRound: ReturnType<typeof vi.fn>;
   /** 流收口桩（AsyncGenerator，forward 后返回注入的 consumeResult） */
   consumeExecutionStream: ReturnType<typeof vi.fn>;
 }
@@ -194,9 +201,13 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       registerPendingArchive: vi.fn(),
     },
     sessionManager: { getCheckpoint: vi.fn(() => null) },
-    rolePackManager: { getActive: vi.fn(() => null), resetSticky: vi.fn() },
+    rolePackManager: {
+      getActive: vi.fn(() => null),
+      resolveRoundAssemblyRole: vi.fn(() => null),
+      setRoundAssemblyRole: vi.fn(),
+      buildTeamContextBlock: vi.fn(() => ''),
+    },
     contextPreparer: {
-      tryAutoMatchRolePack: vi.fn(async () => false),
       recallAndInject: vi.fn(async () => [] as Memory[]),
     },
     sessionNamer: { ensureSessionTitle: vi.fn(async () => {}) },
@@ -205,6 +216,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     tracer: { startSpan: vi.fn() },
     span: { end: vi.fn() },
     applyRolePackToolExposure: vi.fn(),
+    refreshRolePackPrefixForRound: vi.fn(),
     consumeExecutionStream: vi.fn(async function* (source: AsyncGenerator<AgentChunk, void, unknown>) {
       for await (const chunk of source) yield chunk;
       return consumeControl.result;
@@ -218,6 +230,8 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     archiveMode: 'full',
     messages: undefined,
     applyRolePackToolExposure: mocks.applyRolePackToolExposure as unknown as SeedDeps['applyRolePackToolExposure'],
+    // 会议机制（S5）：按本轮装配视角刷新 loop 前缀（prepare 每轮调用）
+    refreshRolePackPrefixForRound: mocks.refreshRolePackPrefixForRound as unknown as SeedDeps['refreshRolePackPrefixForRound'],
     consumeExecutionStream: mocks.consumeExecutionStream as unknown as SeedDeps['consumeExecutionStream'],
     // 难度分级后台 Provider（默认 NULL → 判定 unknown，不影响既有测试主回答摘要）
     getBackgroundProvider: () => null,

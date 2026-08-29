@@ -18,7 +18,7 @@ export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 // 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
-  RolePack, RolePackMeta, RolePackAssembly,
+  RolePack, RolePackMeta, RolePackAssembly, RolePackTeam,
   RolePackCapability, RolePackManifestSkill,
   BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
   UnderstandingConfirm, ContextAssembly, MemoryRecallMode,

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * 内置工具定义 + 工具幂等契约（补偿机制）
  *
  * 工具定义（schema/参数描述）与工具执行逻辑分离：
@@ -328,6 +328,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     description:
       '写入或更新任务表。overwrite 与 append 均为追加新步骤（overwrite 不再限制 plan 必须为空）；' +
       'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
+      '每个步骤可声明可选 rolePack 字段（小组会议用：该步骤的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
       '输出格式为 Markdown 表格，包含进度行和状态标记。',
     parameters: {
       type: 'object',
@@ -338,11 +339,15 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         },
         steps: {
           type: 'array',
-          description: '步骤列表，每个步骤包含 description 字段',
+          description: '步骤列表，每个步骤包含 description 字段，可选项 rolePack（会议表层装配角色，须 ∈ {组长} ∪ {组员}）',
           items: {
             type: 'object',
             properties: {
               description: { type: 'string', description: '步骤描述' },
+              rolePack: {
+                type: 'string',
+                description: '可选：该步骤的表层装配角色（小组会议用，组长或组员；越界会被忽略，省略按当前生效角色）',
+              },
             },
             required: ['description'],
           },

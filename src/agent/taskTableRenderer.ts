@@ -43,9 +43,12 @@ export function renderTaskTable(
 
   for (const step of plan) {
     const orderStr = String(step.order).padEnd(3);
-    const desc = step.description.length > 38
-      ? step.description.slice(0, 35) + '...'
-      : step.description;
+    // 会议步骤标注装配角色（rolePack），供 LLM 识别「该步骤由谁发言」
+    const roleTag = step.rolePack ? `【${step.rolePack}】` : '';
+    const raw = `${roleTag}${step.description}`;
+    const desc = raw.length > 38
+      ? raw.slice(0, 35) + '...'
+      : raw;
     const descPadded = desc.padEnd(40);
     const statusLabel = statusToLabel(step.status);
     lines.push(`│ ${orderStr}│ ${descPadded}│ ${statusLabel.padEnd(8)}│`);

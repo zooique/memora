@@ -75,6 +75,15 @@ function seedProject(_projectPath: string, configDir: string, _dataDir: string):
     '你是一个通用助手。',
     'utf-8',
   );
+  // 兜底契约包（§4.1 单链：无 activePack 注入时落兜底包，非 items[0]）
+  const fallbackDir = join(configDir, 'role-packs', 'memora助手');
+  mkdirSync(fallbackDir, { recursive: true });
+  writeFileSync(
+    join(fallbackDir, 'manifest.json'),
+    JSON.stringify({ name: 'memora助手', formatVersion: '1.0.0' }),
+    'utf-8',
+  );
+  writeFileSync(join(fallbackDir, 'persona.md'), '你是一个通用助手。', 'utf-8');
   // skills 目录保持结构完整
   mkdirSync(join(configDir, 'skills'), { recursive: true });
 }
@@ -692,6 +701,16 @@ function seedProjectWithPersonasAndSkills(
     'utf-8',
   );
 
+  // 兜底契约包（§4.1 单链：无 activePack 注入时落兜底包，非 items[0]）
+  const fallbackDir = join(configDir, 'role-packs', 'memora助手');
+  mkdirSync(fallbackDir, { recursive: true });
+  writeFileSync(
+    join(fallbackDir, 'manifest.json'),
+    JSON.stringify({ name: 'memora助手', formatVersion: '1.0.0' }),
+    'utf-8',
+  );
+  writeFileSync(join(fallbackDir, 'persona.md'), '你是一个通用助手。', 'utf-8');
+
   // 规则文件（保持目录结构完整）
   mkdirSync(join(configDir, 'rules'), { recursive: true });
 }
@@ -719,13 +738,13 @@ describe('Agent · postProcess() · 对话后处理', () => {
     rmSync(tmpData, { recursive: true, force: true });
   });
 
-  it('角色自动匹配：输入匹配关键词后应触发 personaSwitched 事件', async () => {
+  it('角色手动切换：switchRolePack 触发 personaSwitched 事件（自动匹配已移除）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 初始角色为扫描顺序第一个（编程专家）
+    // §4.1 单链：无 activePack 注入 → 落兜底包（memora助手，非 items[0]）
     const initialName = agent.rolePack!.activeName;
-    expect(initialName).toBe('编程专家');
+    expect(initialName).toBe('memora助手');
 
     // 监听 personaSwitched 事件
     let switchedFrom: string | null = null;
@@ -735,10 +754,11 @@ describe('Agent · postProcess() · 对话后处理', () => {
       switchedTo = e.to;
     });
 
-    // 输入包含写作关键词，应触发角色自动切换到"写作助手"
-    await agent.chatSync('帮我写一篇关于小说创作的故事');
+    // 手动切换是唯一入口（自动匹配已随 v0.13 移除）：切到写作助手
+    const ok = agent.switchRolePack('写作助手');
 
     // 验证事件已触发
+    expect(ok).toBe(true);
     expect(switchedFrom).toBe(initialName);
     expect(switchedTo).toBe('写作助手');
 
@@ -1427,9 +1447,9 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 初始角色为扫描顺序第一个（编程专家）
+    // 初始角色为兜底包（§4.1 单链：无 activePack 注入 → 落兜底包）
     const initialName = agent.rolePack!.activeName;
-    expect(initialName).toBe('编程专家');
+    expect(initialName).toBe('memora助手');
 
     // 监听 rolePackSwitched 事件
     let switchedFrom: string | null = null;
@@ -1606,7 +1626,7 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     agent.off('memoryAdded', () => {});
   });
 
-  it('manual 模式：角色匹配/技能匹配仍执行（非归档行为不受影响）', async () => {
+  it('manual 模式：角色手动切换仍执行（非归档行为不受影响）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
     await agent.init();
 
@@ -1616,9 +1636,10 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
       personaSwitched = true;
     });
 
-    // 输入包含写作关键词，应触发角色自动切换
-    await agent.chatSync('帮我写一篇关于小说创作的故事');
+    // 手动切换是唯一入口（自动匹配已随 v0.13 移除）
+    const ok = agent.switchRolePack('写作助手');
 
+    expect(ok).toBe(true);
     expect(personaSwitched).toBe(true);
 
     agent.off('rolePackSwitched', () => {});
@@ -2792,6 +2813,8 @@ describe('Agent · L2 行为策略消费', () => {
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
+    // §4.1 单链：默认激活兜底包；手动切到精算师以消费其 memoryRecallPercent 策略
+    expect(agent.switchRolePack('精算师')).toBe(true);
 
     // 角色包被激活，getActiveStrategy 返回其策略（消费入口：recallAndInject 读取此值）
     const strategy = agent.getActiveStrategy();
@@ -2838,9 +2861,8 @@ describe('Agent · L2 行为策略消费', () => {
     expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
   });
 
-  it('角色包优先匹配：粘性 + 互斥切换', async () => {
-    // 写一对互斥角色包（翻译助手 ↔ 代码助手，manifest.json 文件夹形态），
-    // 验证角色包优先于 persona 匹配
+  it('角色包手动切换（唯一入口）：activate → 前缀刷新 → 立即生效（无需重启）', async () => {
+    // 写两个角色包（非互斥——v0.13 已移除 exclusiveWith/自动匹配），验证手动切换语义
     const packsDir = join(tmpConfig, 'role-packs');
     const writePack = (dirName: string, manifest: object, persona: string) => {
       const packDir = join(packsDir, dirName);
@@ -2854,7 +2876,6 @@ describe('Agent · L2 行为策略消费', () => {
         name: '翻译助手',
         formatVersion: '1.0.0',
         keywords: ['翻译', '英译中'],
-        exclusiveWith: ['代码助手'],
       },
       '你是翻译。',
     );
@@ -2864,28 +2885,31 @@ describe('Agent · L2 行为策略消费', () => {
         name: '代码助手',
         formatVersion: '1.0.0',
         keywords: ['编程', '写代码'],
-        exclusiveWith: ['翻译助手'],
       },
       '你是程序员。',
+    );
+    // 兜底契约包（§4.1 单链兜底需要：无 activePack 注入时落兜底包而非 items[0]）
+    writePack(
+      'memora助手',
+      { name: 'memora助手', formatVersion: '1.0.0' },
+      '你是通用助手。',
     );
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
     const rpm = agent.rolePackManager!;
-    // 显式设定会话初始激活（不依赖扫描顺序）
-    rpm.activate('翻译助手');
+    // §4.1 单链：无 activePack 注入 → 落兜底包（不再回退 items[0]）
+    expect(rpm.activeName).toBe('memora助手');
 
-    // 首次外部输入命中代码助手 → 粘性匹配切换
-    for await (const {} of agent.chat('帮我写代码')) {}
+    // 手动切换是唯一入口：切换后立即生效（无需重启，完整切换含键）
+    expect(agent.switchRolePack('翻译助手')).toBe(true);
+    expect(rpm.activeName).toBe('翻译助手');
+    expect(agent.switchRolePack('代码助手')).toBe(true);
     expect(rpm.activeName).toBe('代码助手');
-
-    // 已锁定：命中互斥角色包 → 切换
-    for await (const {} of agent.chat('翻译这段话')) {}
-    expect(rpm.activeName).toBe('翻译助手');
-
-    // 已锁定：再次命中已激活角色包 → 不切换（粘性）
-    for await (const {} of agent.chat('翻译别的内容')) {}
-    expect(rpm.activeName).toBe('翻译助手');
+    // 同名切换幂等（true）
+    expect(agent.switchRolePack('代码助手')).toBe(true);
+    // 不存在的包返回 false（不抛错）
+    expect(agent.switchRolePack('不存在的包')).toBe(false);
   });
 });
 

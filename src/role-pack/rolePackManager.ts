@@ -15,9 +15,9 @@ import {
   validateManifest,
   checkCompanionContentRedline,
   MAX_MATCH_WORDS,
-  MAX_EXCLUSIVE_WITH,
   MAX_HANDOFF_PROMPT_LEN,
 } from '@/role-pack/validator.js';
+import { BUILTIN_FALLBACK_PACK } from '@/role-pack/constants.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import type {
   RolePack,
@@ -25,6 +25,7 @@ import type {
   RolePackManifestSkill,
   RolePackCapability,
   RolePackAssembly,
+  RolePackTeam,
   BehaviorStrategy,
 } from '@/role-pack/types.js';
 import { assembleRolePack } from '@/role-pack/strategyResolver.js';
@@ -36,9 +37,6 @@ const L1_LIST_TOOL_THRESHOLD = 50;
 
 /** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
-
-/** 角色包自动匹配关键词置信度阈值（scoredByKeywords） */
-const AUTO_MATCH_THRESHOLD = 0.3;
 
 /** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
 const EXCLUDED_FILES = new Set(['manifest.json']);
@@ -83,7 +81,7 @@ function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined 
 /**
  * 解析 keywords（数组/逗号串）并合并 trigger 去重（匹配词单一真理源）。
  * 角色包 trigger 为字符串数组（精确/包含匹配）而非正则——正则仅 Skill 系统存在。
- * 数量上限运行时兜底：validator 报错，此处截断保证运行时安全值（防匹配词列表膨胀拖慢 autoMatch）。
+ * 数量上限运行时兜底：validator 报错，此处截断保证运行时安全值（防匹配词列表膨胀拖慢匹配）。
  */
 function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefined {
   const parseField = (key: string): string[] | undefined => {
@@ -117,23 +115,6 @@ function parseTraits(personaContent: string): Record<string, number> | undefined
     }
   }
   return Object.keys(traits).length > 0 ? traits : undefined;
-}
-
-/** 解析互斥声明 exclusiveWith（支持数组与逗号串），未声明返回 undefined；数量上限运行时兜底（validator 报错，此处截断） */
-function parseExclusiveWith(raw: unknown): string[] | undefined {
-  let result: string[] | undefined;
-  if (Array.isArray(raw)) {
-    result = raw.map((k) => String(k)).filter(Boolean);
-  } else if (typeof raw === 'string') {
-    result = raw
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  }
-  if (result && result.length > MAX_EXCLUSIVE_WITH) {
-    result = result.slice(0, MAX_EXCLUSIVE_WITH);
-  }
-  return result;
 }
 
 /** 解析接手衔接提示词（宿主带入对话时预填的话术）；非空字符串，否则 undefined。角色包只描述自己（插卡解耦）。长度上限运行时兜底（validator 报错，此处截断）。 */
@@ -281,11 +262,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   private onSwitchLocked: ((reason: string, lockedSeconds: number) => void) | null = null;
   /** 当前激活的角色包名 */
   private activePackName: string | null = null;
-  /**
-   * 粘性锁定：会话内首次 autoMatch 命中置 true，后续外部输入不再全量重匹配，
-   * 仅当命中与当前激活包互斥（exclusiveWith）的包时才切换；resetSticky 复位，不跨会话。
-   */
-  private stickyLocked = false;
   /** 角色切换时间戳列表（用于时间窗口缓冲） */
   private switchTimestamps: number[] = [];
   /** 缓冲区开关（30s 内 5 次切换后锁定） */
@@ -302,6 +278,18 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /** 锁定后自动恢复时间：2 分钟 */
   private static readonly AUTO_UNLOCK_MS = 120_000;
 
+  /** 宿主装配级兜底角色覆盖（§4.6：覆盖值须存在，否则回退内核常量 BUILTIN_FALLBACK_PACK） */
+  private builtinFallbackRole: string | null = null;
+
+  /** 组（宿主装配级）：组长角色包 + 组员名单（会议名单容器，非选择对象） */
+  private rolePackTeams: readonly RolePackTeam[] = [];
+
+  /**
+   * 本轮表层装配视角（会议机制）：任务项级临时覆盖（persona/rules/skills 换、键不换）。
+   * 仅在本轮 prepare 生效，用完即回——非会议/越界时置 null 回落 activePack；不改 activePack。
+   */
+  private roundAssemblyRole: string | null = null;
+
   /**
    * @param configDir 配置目录（角色包在 <configDir>/role-packs/ 下）
    */
@@ -309,44 +297,190 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     super(configDir, 'role-packs');
   }
 
+  /**
+   * 设置宿主装配级兜底角色覆盖（可选）：须指向存在的角色包，覆盖值不存在时回退内核常量。
+   * 由装配层在 load() 前调用（AgentOptions.builtinFallbackRole）。
+   */
+  setBuiltinFallbackRole(role: string | null): void {
+    this.builtinFallbackRole = role;
+  }
+
+  /**
+   * 设置组数据（宿主装配级，会议名单容器）：组长角色包 + 组员名单。
+   * 数据归宿主（用户级持久化），内核仅装配时校验（validateTeams）；组员仅会议参与，不用于日常。
+   */
+  setRolePackTeams(teams: readonly RolePackTeam[]): void {
+    this.rolePackTeams = teams;
+  }
+
+  /**
+   * 组数据校验（S4，装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 → warning（不阻塞装载）。
+   * 组员失效 → 会议时缺员跳过（resolveRoundAssemblyRole 内判定）；组长失效 → 该组失效（仅影响会议）。
+   */
+  private validateTeams(): void {
+    const leaderCount = new Map<string, number>();
+    for (const team of this.rolePackTeams) {
+      if (team.members.length === 0) {
+        getLogger().warn(
+          { leader: team.leader },
+          '组员名单为空，组不成立（仅影响会议，不影响日常）',
+        );
+      }
+      if (!this.items.some((p) => p.meta.name === team.leader)) {
+        getLogger().warn(
+          { leader: team.leader },
+          '组组长引用的角色包不存在（悬空引用，该组失效仅影响会议）',
+        );
+      }
+      for (const member of team.members) {
+        if (!this.items.some((p) => p.meta.name === member)) {
+          getLogger().warn(
+            { leader: team.leader, member },
+            '组员引用的角色包不存在（悬空引用，会议时缺员跳过）',
+          );
+        }
+      }
+      leaderCount.set(team.leader, (leaderCount.get(team.leader) ?? 0) + 1);
+    }
+    for (const [leader, count] of leaderCount) {
+      if (count > 1) {
+        getLogger().warn({ leader, count }, '组长身份不唯一：一个角色包只能是一个组的组长');
+      }
+    }
+  }
+
+  /**
+   * 设置本轮表层装配视角（会议机制）：任务项级临时覆盖。
+   * 由 prepare 期按 active 步骤 rolePack 解析结果设置；非会议/越界 → null（回落 activePack）。
+   */
+  setRoundAssemblyRole(role: string | null): void {
+    this.roundAssemblyRole = role;
+  }
+
+  /** 本轮表层装配视角（会议机制）：非会议返回 null（回落 activePack） */
+  get roundAssemblyPerspective(): string | null {
+    return this.roundAssemblyRole;
+  }
+
+  /**
+   * 会议机制：解析本轮表层装配角色（范围校验前置，防 LLM 幻觉角色名）。
+   * rolePack 必须 ∈ {组长(activePack)} ∪ {组员}；越界 → 忽略该覆盖 + warning 返回 null；
+   * 组员角色包不存在（缺员）→ 跳过 + warning 返回 null。
+   *
+   * @param declared 任务项声明的 rolePack（无声明 = 非会议，返回 null）
+   * @returns 有效覆盖角色名；无覆盖/越界/缺员返回 null
+   */
+  resolveRoundAssemblyRole(declared: string | undefined): string | null {
+    if (!declared) return null;
+    // 组长（activePack）恒有效
+    if (declared === this.activePackName) return declared;
+    // 组员：须在「组长 == activePack」的组名单内，且角色包存在
+    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
+    const isMember = team?.members.includes(declared) ?? false;
+    if (isMember) {
+      if (this.items.some((p) => p.meta.name === declared)) return declared;
+      getLogger().warn(
+        { declared, active: this.activePackName },
+        '会议任务项声明的组员角色包不存在（缺员），忽略该覆盖',
+      );
+      return null;
+    }
+    getLogger().warn(
+      { declared, active: this.activePackName },
+      '会议任务项声明越界：rolePack 必须 ∈ {组长} ∪ {组员}，忽略该覆盖',
+    );
+    return null;
+  }
+
+  /**
+   * 技能加载目标角色（会议机制）：packName 显式指定优先 → 本轮装配视角（会议）→ 激活角色包。
+   * 会议内 skills 加载跟随任务项角色（组员技能正文读得到），键/工具面仍恒为 activePack。
+   */
+  private resolveSkillTarget(packName?: string): string | null {
+    return packName ?? this.roundAssemblyRole ?? this.activePackName;
+  }
+
+  /**
+   * 构建「组长 + 组员名单」上下文块（会议机制实施前提②：组/成员清单暴露给 LLM，防编造角色名）。
+   * 仅当 activePack 是某个组的组长且名单非空时产出；非组长返回空串（不注入）。
+   * 内容供 LLM 用 task_table_write 的 steps[].rolePack 声明任务发言角色（越界被忽略）。
+   */
+  buildTeamContextBlock(): string {
+    if (!this.activePackName) return '';
+    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
+    if (!team || team.members.length === 0) return '';
+    return (
+      `【小组会议角色（组长：${team.leader}；组员：${team.members.join(' / ')}）】` +
+      `组织小组会议时，可用 task_table_write 在步骤中声明 rolePack（∈ {组长} ∪ {组员}，越界会被忽略）` +
+      `，使该步骤以对应成员视角发言；汇总步骤可不声明（默认按组长视角）。`
+    );
+  }
+
   // ── 生命周期 ──────────────────────────────────────
 
-  /** 启动加载：扫描含 manifest.json 的角色包文件夹（覆盖基类 loadItems——基类只支持单文件扫描，生命周期其余仍复用基类） */
+  /**
+   * 启动加载：扫描含 manifest.json 的角色包文件夹（覆盖基类 loadItems——基类只支持单文件扫描，生命周期其余仍复用基类）。
+   * 默认激活路径 = §4.1 单链：activePack（宿主注入）→ 兜底包（builtinFallbackRole ?? BUILTIN_FALLBACK_PACK）。
+   */
   async load(activePack?: string): Promise<number> {
     const count = await this.scanRolePacks();
-    if (activePack) {
-      this.activate(activePack);
-    } else if (this.items.length > 0) {
-      // 默认激活第一个角色包
-      this.setActivePackName(this.items[0]!.name);
+    this.validateTeams();
+    if (activePack && this.items.some((p) => p.meta.name === activePack)) {
+      this.setActivePackName(activePack);
+    } else {
+      if (activePack) {
+        logger.warn({ activePack }, '激活角色包不存在，落兜底包');
+      }
+      this.activateFallback();
     }
     logger.info({ count, active: this.activePackName }, '角色包加载完成');
     return count;
   }
 
-  /** 重载角色包：重新扫描 + 保持激活态（覆盖基类 reload，基类扫描无法覆盖文件夹包形态） */
+  /** 重载角色包：重新扫描 + 保持激活态（覆盖基类 reload，基类扫描无法覆盖文件夹包形态）；激活包被删 → 落兜底包（§4.1 单链） */
   async reload(): Promise<number> {
     const oldActiveName = this.activePackName;
     const count = await this.scanRolePacks();
+    this.validateTeams();
 
-    // 保持当前激活角色包（若仍存在）
+    // 保持当前激活角色包（若仍存在）；否则落兜底包
     if (oldActiveName) {
       const found = this.items.find((p) => p.meta.name === oldActiveName);
       if (found) {
         this.setActivePackName(found.meta.name);
-      } else if (this.items.length > 0) {
-        this.setActivePackName(this.items[0]!.meta.name);
+      } else {
+        this.activateFallback();
         logger.warn(
           { oldActive: oldActiveName, newActive: this.activePackName },
-          '激活角色包已被删除，回退到第一个',
+          '激活角色包已被删除，落兜底包',
         );
-      } else {
-        this.setActivePackName(null);
       }
+    } else {
+      this.activateFallback();
     }
 
     logger.info({ count, active: this.activePackName }, '角色包已重载');
     return count;
+  }
+
+  /**
+   * §4.1 单链兜底：激活兜底包（builtinFallbackRole ?? BUILTIN_FALLBACK_PACK）。
+   * 兜底包运行时缺失（用户手动删文件）→ 无 persona 继续运行 + warning（§7 降级优先，不装配失败）。
+   */
+  private activateFallback(): void {
+    const fallback =
+      this.builtinFallbackRole && this.items.some((p) => p.meta.name === this.builtinFallbackRole)
+        ? this.builtinFallbackRole
+        : BUILTIN_FALLBACK_PACK;
+    if (this.items.some((p) => p.meta.name === fallback)) {
+      this.setActivePackName(fallback);
+    } else {
+      getLogger().warn(
+        { fallback },
+        '兜底角色包运行时缺失（构建期应拦截），无 persona 继续运行（降级优先）',
+      );
+      this.setActivePackName(null);
+    }
   }
 
   /** 扫描角色包目录：每个子目录为一个角色包，须含 manifest.json；manifest.name 优先于文件夹名 */
@@ -357,34 +491,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       return 0;
     }
     this.items = await this.buildFromDir(dir);
-    this.checkExclusiveSymmetry(this.items);
     return this.items.length;
-  }
-
-  /**
-   * 集合级互斥声明对称性检查：互斥是双向关系（A 声明排除 B，B 应反向声明 A）。
-   * 非对称不会导致运行时错误（isExclusiveBetween 单边命中即互斥），但削弱粘性切换确定性，故 warning 提示补全。
-   */
-  private checkExclusiveSymmetry(packs: readonly RolePack[]): void {
-    const byName = new Map(packs.map((p) => [p.meta.name, p.meta.exclusiveWith ?? []]));
-    for (const pack of packs) {
-      const target = pack.meta.exclusiveWith;
-      if (!target || target.length === 0) continue;
-      for (const name of target) {
-        const peer = byName.get(name);
-        if (!peer) {
-          getLogger().warn(
-            { pack: pack.meta.name, target: name },
-            '角色包互斥声明指向不存在的角色包（悬空引用）',
-          );
-        } else if (!peer.includes(pack.meta.name)) {
-          getLogger().warn(
-            { pack: pack.meta.name, target: name },
-            '角色包互斥声明非对称：目标未反向声明本包，建议补全',
-          );
-        }
-      }
-    }
   }
 
   /** 从角色包目录构建条目列表（仅文件夹形态） */
@@ -467,7 +574,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       // 未成年人保护为强制项（非可配置）：恒为 'required'，与 validator「仅支持 required」一致；
       // 若 manifest 声明其他值，validator 会拒绝装载，故此处无需读取声明值。
       minorProtection: 'required',
-      exclusiveWith: parseExclusiveWith(manifest['exclusiveWith']),
       // 接手衔接提示词（自洽声明，宿主 prefill；空白视为未声明）
       handoffPrompt: parseHandoffPrompt(manifest['handoffPrompt']),
     };
@@ -656,33 +762,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return pack?.traits;
   }
 
-  /**
-   * 输入粘性匹配角色包：首次外部输入全量匹配命中即锁定当前会话；
-   * 已锁定后仅当命中与当前激活包互斥（exclusiveWith）时才切换；显式切换走 activate()。
-   */
-  autoMatch(userInput: string): string | null {
-    if (this.items.length === 0) return null;
-
-    const best = this.findBestKeywordMatch(userInput, AUTO_MATCH_THRESHOLD);
-    if (!best) return null;
-    const matchedName = best.item.meta.name;
-
-    // 首次匹配：命中即锁定当前会话（即使命中当前激活包，也标记已锁定）
-    if (!this.stickyLocked) {
-      this.stickyLocked = true;
-      return this.activePackName === matchedName ? null : matchedName;
-    }
-
-    // 已锁定：仅当命中包与当前激活包互斥时才切换，否则保持当前
-    if (!this.activePackName || this.activePackName === matchedName) return null;
-    return this.isExclusiveBetween(this.activePackName, matchedName) ? matchedName : null;
-  }
-
-  /** 复位粘性锁定（会话切换由宿主调用，幂等——粘性不跨会话） */
-  resetSticky(): void {
-    this.stickyLocked = false;
-  }
-
   /** 清理资源：清除切换防抖锁计时器，防止关闭后回调触发 */
   close(): void {
     if (this.unlockTimer) {
@@ -692,15 +771,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       this.unlockAt = null;
       this.switchTimestamps = [];
     }
-  }
-
-  /** 判断两角色包是否互斥：exclusiveWith 双向声明其一即互斥 */
-  private isExclusiveBetween(a: string, b: string): boolean {
-    const packA = this.items.find((p) => p.meta.name === a);
-    const packB = this.items.find((p) => p.meta.name === b);
-    const aExcludesB = packA?.meta.exclusiveWith?.includes(b) ?? false;
-    const bExcludesA = packB?.meta.exclusiveWith?.includes(a) ?? false;
-    return aExcludesB || bExcludesA;
   }
 
   /** 所有角色包元数据摘要列表 */
@@ -757,11 +827,14 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /**
    * 枚举激活角色包的内嵌技能（渐进披露 L1 清单来源，供宿主技能三源聚合展示）。
-   * name 缺省时按文件名去扩展名推导；无激活角色包返回空数组。SSOT：技能清单只由
+   * 技能加载跟随本轮装配视角（会议内 = 任务项角色；非会议 = activePack）。
+   * name 缺省时按文件名去扩展名推导；无装配角色返回空数组。SSOT：技能清单只由
    * 角色包自身持有，宿主不重复扫描目录。
    */
   listSkills(): Array<{ name: string; description?: string }> {
-    const pack = this.items.find((p) => p.meta.name === this.activePackName);
+    const target = this.resolveSkillTarget();
+    if (!target) return [];
+    const pack = this.items.find((p) => p.meta.name === target);
     if (!pack) return [];
     return pack.skills
       .map((s) => ({
@@ -811,12 +884,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return last.replace(/\.(md|markdown)$/i, ''); // 单文件形式
   }
 
-  /** 按技能名在角色包中查找技能条目：frontmatter name 精确匹配优先，其次 file 路径推导；未找到返回 null */
+  /** 按技能名在装配视角角色包中查找技能条目（跟随本轮装配视角）；frontmatter name 精确匹配优先，其次 file 路径推导；未找到返回 null */
   private findSkillByName(
     skillName: string,
     packName: string | undefined,
   ): { pack: RolePack; skill: RolePackManifestSkill } | null {
-    const targetName = packName ?? this.activePackName;
+    const targetName = this.resolveSkillTarget(packName);
     if (!targetName) return null;
     const pack = this.items.find((p) => p.meta.name === targetName);
     if (!pack) return null;
@@ -955,9 +1028,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         }
         this.registerRuntimeItem(pack);
         count++;
-      }
-      if (count > 0) {
-        this.checkExclusiveSymmetry(this.items);
       }
     } catch (err) {
       logger.warn({ dir, err }, '加载用户角色包失败');

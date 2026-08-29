@@ -20,7 +20,6 @@ import {
   resolveContextAssembly,
   resolveToolStepLimit,
   resolveErrorHandling,
-  resolveAutoSwitch,
   resolveProviderRouting,
   resolveInputInterrupt,
   resolveTokenBudget,
@@ -104,7 +103,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(p.summaryRecall).toBe('on');
     expect(p.minFallback).toBe(DEFAULT_MIN_FALLBACK);
     expect(p.recallConfidence).toBe(0.6);
-    expect(p.autoSwitch).toBe('on');
   });
 
   it('act 维度包含全部必需字段', () => {
@@ -227,18 +225,6 @@ describe('resolve* 函数 — 基础策略解析', () => {
     it('非法/缺失值回退默认 retry', () => {
       expect(resolveErrorHandling({ global: { errorHandling: 'bad' as never } })).toBe('retry');
       expect(resolveErrorHandling(undefined)).toBe('retry');
-    });
-  });
-
-  // ── resolveAutoSwitch ──
-  describe('resolveAutoSwitch', () => {
-    it('合法值透传', () => {
-      expect(resolveAutoSwitch({ prepare: { autoSwitch: 'off' } })).toBe('off');
-    });
-
-    it('非法/缺失值回退默认 on', () => {
-      expect(resolveAutoSwitch({ prepare: { autoSwitch: 'bad' as never } })).toBe('on');
-      expect(resolveAutoSwitch(undefined)).toBe('on');
     });
   });
 
@@ -586,18 +572,16 @@ describe('mergeStrategy — 策略合并', () => {
     expect(result.act!.providerRouting).toBe('fixed');
     expect(result.reflect!.handoff).toBe('end');
     // 未覆盖的字段保留默认值
-    expect(result.prepare!.autoSwitch).toBe('on');
     expect(result.act!.temperature).toBe(0.7);
   });
 
   it('空值覆盖不影响已有字段', () => {
     const result = mergeStrategy(base, {
-      prepare: { autoSwitch: 'off' },
+      prepare: { memoryRecall: 'none' },
     });
-    // autoSwitch 被覆盖
-    expect(result.prepare!.autoSwitch).toBe('off');
     // 其他 prepare 字段保持默认
-    expect(result.prepare!.memoryRecall).toBe('full');
+    expect(result.prepare!.memoryRecall).toBe('none');
+    expect(result.prepare!.contextAssembly).toBe('hybrid');
   });
 });
 

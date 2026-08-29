@@ -64,18 +64,16 @@ const MANIFEST_HANDOFF_PROMPT = {
   handoffPrompt: '我已准备好开始写作任务，请告诉我主题与要求；若承接上文，请先概述当前进度。',
 };
 
-/** 互斥角色包对（翻译助手 ↔ 代码助手） */
+/** 角色包对（翻译助手 / 代码助手，非互斥——v0.13 已移除 exclusiveWith 机制） */
 const MANIFEST_TRANSLATOR = {
   name: '翻译助手',
   formatVersion: '1.0.0',
   keywords: ['翻译', '英译中'],
-  exclusiveWith: ['代码助手'],
 };
 const MANIFEST_CODER = {
   name: '代码助手',
   formatVersion: '1.0.0',
   keywords: ['编程', '写代码'],
-  exclusiveWith: ['翻译助手'],
 };
 
 /** 便捷构造：写一个 folder 形态角色包（manifest.json + 可选内容文件） */
@@ -130,7 +128,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
 
     const manager = new RolePackManager(dir);
-    const count = await manager.load();
+    // §4.1 单链第一层：显式激活 activePack 参数指定包
+    const count = await manager.load('技术文档工程师');
     expect(count).toBe(1);
 
     const active = manager.getActive();
@@ -208,7 +207,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
 
     const manager = new RolePackManager(dir);
-    expect(await manager.load()).toBe(1);
+    expect(await manager.load('全能写手')).toBe(1);
 
     const active = manager.getActive();
     expect(active!.meta.name).toBe('全能写手');
@@ -232,7 +231,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
 
     const manager = new RolePackManager(dir);
-    expect(await manager.load()).toBe(1);
+    expect(await manager.load('项目总监')).toBe(1);
 
     const active = manager.getActive();
     expect(active!.meta.name).toBe('项目总监');
@@ -281,7 +280,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
 
     const manager = new RolePackManager(dir);
-    expect(await manager.load()).toBe(1);
+    expect(await manager.load('写作助手')).toBe(1);
 
     const meta = manager.getActive()!.meta;
     expect(meta.handoffPrompt).toBe(
@@ -295,7 +294,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
 
     const manager = new RolePackManager(dir);
-    expect(await manager.load()).toBe(1);
+    expect(await manager.load('翻译助手')).toBe(1);
     expect(manager.getActive()!.meta.handoffPrompt).toBeUndefined();
   });
 
@@ -325,7 +324,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     await writePack(packsDir, '代码助手', MANIFEST_CODER, { persona: '你是程序员。' });
 
     const manager = new RolePackManager(dir);
-    await manager.load();
+    await manager.load('翻译助手');
     manager.activate('代码助手');
     expect(manager.activeName).toBe('代码助手');
 
@@ -349,105 +348,167 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(await manager.load()).toBe(0);
   });
 
-  describe('粘性匹配', () => {
-    async function writeExclusivePacks(): Promise<void> {
+  describe('§4.1 选择解析单链（activeRolePack → 兜底包）', () => {
+    /** 写一组角色包 + 兜底契约包（模拟内核分发形态） */
+    async function writePacksWithFallback(): Promise<string> {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
       await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
       await writePack(packsDir, '代码助手', MANIFEST_CODER, { persona: '你是程序员。' });
+      await writePack(packsDir, 'memora助手', { name: 'memora助手', formatVersion: '1.0.0' }, {
+        persona: '你是通用助手。',
+      });
+      return packsDir;
     }
 
-    it('exclusiveWith 解析进 meta', async () => {
-      await writeExclusivePacks();
+    it('无 activePack → 落兜底包（默认激活 memora助手，不再回退 items[0]）', async () => {
+      await writePacksWithFallback();
       const manager = new RolePackManager(dir);
       await manager.load();
-      expect(manager.get('翻译助手')!.meta.exclusiveWith).toEqual(['代码助手']);
-      expect(manager.get('代码助手')!.meta.exclusiveWith).toEqual(['翻译助手']);
+      expect(manager.activeName).toBe('memora助手');
     });
 
-    it('首次 autoMatch 命中即锁定当前会话，命中已激活包不重复切换', async () => {
-      await writeExclusivePacks();
+    it('activePack 有效 → 激活该包（解析链第一层）', async () => {
+      await writePacksWithFallback();
       const manager = new RolePackManager(dir);
-      await manager.load();
-      manager.activate('翻译助手');
-
-      expect(manager.autoMatch('写代码')).toBe('代码助手');
-      manager.activate('代码助手');
+      await manager.load('代码助手');
       expect(manager.activeName).toBe('代码助手');
-
-      expect(manager.autoMatch('我有个编程需求')).toBeNull();
     });
 
-    it('已锁定后仅互斥包命中才切换，非互斥命中不切换', async () => {
-      await writeExclusivePacks();
-      const packsDir = join(dir, 'role-packs');
-      await writePack(packsDir, '通用助手', {
-        name: '通用助手',
-        formatVersion: '1.0.0',
-        keywords: ['通用', '闲聊'],
-      }, { persona: '你是通用助手。' });
-
+    it('activePack 不存在 → 落兜底包（warning 不抛错）', async () => {
+      await writePacksWithFallback();
       const manager = new RolePackManager(dir);
+      await manager.load('不存在的包');
+      expect(manager.activeName).toBe('memora助手');
+    });
+
+    it('builtinFallbackRole 覆盖存在 → 用覆盖包；覆盖不存在 → 回退内核常量', async () => {
+      const packsDir = await writePacksWithFallback();
+      const manager = new RolePackManager(dir);
+      // 覆盖存在 → 用覆盖
+      manager.setBuiltinFallbackRole('翻译助手');
       await manager.load();
-      manager.activate('代码助手');
-
-      // 已锁定（代码助手）：命中互斥的翻译助手 → 切换
-      expect(manager.autoMatch('翻译一些内容')).toBe('翻译助手');
-      manager.activate('翻译助手');
-
-      // 已锁定（翻译助手）：命中非互斥的通用助手 → 不切换
-      expect(manager.autoMatch('来闲聊两句')).toBeNull();
       expect(manager.activeName).toBe('翻译助手');
+      // 覆盖不存在 → 回退内核常量（memora助手）：删除当前激活包触发单链兜底
+      manager.setBuiltinFallbackRole('幻影助手');
+      await rm(join(packsDir, '翻译助手'), { recursive: true, force: true });
+      await manager.reload();
+      expect(manager.activeName).toBe('memora助手');
     });
 
-    it('resetSticky 复位后重新全量匹配（粘性不跨会话）', async () => {
-      await writeExclusivePacks();
-      const manager = new RolePackManager(dir);
-      await manager.load();
-      manager.activate('翻译助手');
-
-      expect(manager.autoMatch('写代码')).toBe('代码助手');
-      manager.activate('代码助手');
-
-      manager.resetSticky();
-      expect(manager.autoMatch('翻译')).toBe('翻译助手');
-    });
-
-    it('互斥声明非对称/悬空不阻塞装载，仍可正常激活', async () => {
+    it('兜底包运行时缺失 → 无 persona 继续运行（activeName=null + warning，不装配失败）', async () => {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
-      // 翻译助手声明互斥代码助手，但代码助手未反向声明（非对称）
-      await writePack(packsDir, '翻译助手', {
-        name: '翻译助手',
-        formatVersion: '1.0.0',
-        keywords: ['翻译'],
-        exclusiveWith: ['代码助手'],
-      }, { persona: '你是翻译。' });
-      // 代码助手声明互斥不存在的"幻影助手"（悬空引用）
-      await writePack(packsDir, '代码助手', {
-        name: '代码助手',
-        formatVersion: '1.0.0',
-        keywords: ['编程'],
-        exclusiveWith: ['幻影助手'],
-      }, { persona: '你是程序员。' });
-
-      const manager = new RolePackManager(dir);
-      // 对称性检查仅告警，不拒绝装载
-      expect(await manager.load()).toBe(2);
-      manager.activate('代码助手');
-      expect(manager.activeName).toBe('代码助手');
-      // 单边声明仍视为互斥（isExclusiveBetween 单边命中即互斥）
-      expect(manager.autoMatch('翻译内容')).toBe('翻译助手');
-    });
-
-    it('未命中任何角色包时返回 null 且不锁定', async () => {
-      await writeExclusivePacks();
+      // 只有翻译/代码，无兜底契约包（模拟用户手动删了兜底文件）
+      await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
       const manager = new RolePackManager(dir);
       await manager.load();
-      manager.activate('翻译助手');
+      expect(manager.activeName).toBeNull();
+    });
 
-      expect(manager.autoMatch('今天天气不错')).toBeNull();
-      expect(manager.autoMatch('写代码')).toBe('代码助手');
+    it('reload 激活包被删 → 落兜底包（不再回退 items[0]）', async () => {
+      const packsDir = await writePacksWithFallback();
+      const manager = new RolePackManager(dir);
+      await manager.load('代码助手');
+      await rm(join(packsDir, '代码助手'), { recursive: true, force: true });
+      await manager.reload();
+      expect(manager.activeName).toBe('memora助手');
+    });
+  });
+
+  describe('组数据校验（S4，装载后）', () => {
+    it('组长身份唯一 / 名单非空 / 引用悬空 → warning（不阻塞装载）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
+      await writePack(packsDir, '组长B', { name: '组长B', formatVersion: '1.0.0' }, {});
+      await writePack(packsDir, '组员1', { name: '组员1', formatVersion: '1.0.0' }, {});
+
+      const manager = new RolePackManager(dir);
+      // 组长A 两处任组长（不唯一）+ 组长B 名单为空 + 组员引用悬空（幻影组员）
+      manager.setRolePackTeams([
+        { leader: '组长A', members: ['组员1'] },
+        { leader: '组长A', members: ['组员1'] },
+        { leader: '组长B', members: [] },
+        { leader: '组长B', members: ['幻影组员'] },
+      ]);
+      // warning 不阻塞装载
+      expect(await manager.load('组长A')).toBe(3);
+      expect(manager.activeName).toBe('组长A');
+    });
+  });
+
+  describe('会议机制：resolveRoundAssemblyRole 范围校验 + 表层装配视角（S5）', () => {
+    /** 组长 = 组长A，组员 = 组员1 */
+    async function writeTeamPacks(): Promise<void> {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
+      await writePack(packsDir, '组员1', { name: '组员1', formatVersion: '1.0.0' }, {});
+    }
+
+    it('组长（activePack）恒有效；组员在名单内且存在 → 有效', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组长A');
+      expect(manager.resolveRoundAssemblyRole('组长A')).toBe('组长A');
+      expect(manager.resolveRoundAssemblyRole('组员1')).toBe('组员1');
+    });
+
+    it('越界 rolePack（非组长/组员）→ 忽略覆盖返回 null（防 LLM 幻觉角色名）', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组长A');
+      expect(manager.resolveRoundAssemblyRole('幻觉角色')).toBeNull();
+    });
+
+    it('组员角色包不存在（缺员）→ 跳过返回 null', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '缺员'] }]);
+      await manager.load('组长A');
+      expect(manager.resolveRoundAssemblyRole('缺员')).toBeNull();
+      expect(manager.resolveRoundAssemblyRole('组员1')).toBe('组员1');
+    });
+
+    it('无声明 → 非会议（null）；会议视角设置后 skills 加载跟随装配视角', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {
+        skills: { 'skills/lead.md': '## 组长技能\n' },
+      });
+      await writePack(packsDir, '组员1', { name: '组员1', formatVersion: '1.0.0' }, {
+        skills: { 'skills/member.md': '## 组员技能\n' },
+      });
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组长A');
+      expect(manager.resolveRoundAssemblyRole(undefined)).toBeNull();
+      // 日常态（无会议视角）：读组长技能
+      expect(await manager.readSkillContent('lead')).toContain('组长技能');
+      expect(await manager.readSkillContent('member')).toBeNull();
+      // 会议视角 = 组员1 → skills 加载跟随装配视角（键仍恒为 activePack）
+      manager.setRoundAssemblyRole('组员1');
+      expect(await manager.readSkillContent('member')).toContain('组员技能');
+      // 回到日常态 → 回落组长
+      manager.setRoundAssemblyRole(null);
+      expect(await manager.readSkillContent('member')).toBeNull();
+    });
+
+    it('buildTeamContextBlock：activePack 是组长时产出组/成员清单，否则空串', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+      await manager.load('组长A');
+      const block = manager.buildTeamContextBlock();
+      expect(block).toContain('组长A');
+      expect(block).toContain('组员1');
+      expect(block).toContain('rolePack');
+      // 切到非组长 → 空串（不注入）
+      manager.activate('组员1');
+      expect(manager.buildTeamContextBlock()).toBe('');
     });
   });
 
@@ -476,8 +537,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
 
       const manager = new RolePackManager(dir);
-      await manager.load();
-      // load 默认激活第一个（未注册回调故不记录），后再注册回调验证同名幂等
+      await manager.load('技术文档工程师');
+      // load 默认激活 activePack 参数指定包（未注册回调故不记录），后再注册回调验证同名幂等
       const calls: Array<[string | null, string | null]> = [];
       manager.onRolePackActivated((from, to) => calls.push([from, to]));
       manager.activate('技术文档工程师');
@@ -504,11 +565,12 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(manager.activeName).toBe('全能写手');
     });
 
-    it('reload 激活包被删除时回退触发回调', async () => {
+    it('reload 激活包被删除时回退触发回调（落兜底包）', async () => {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
       await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
       await writePack(packsDir, '全能写手', MANIFEST_MULTI_SKILL_NO_PERSONA);
+      await writePack(packsDir, 'memora助手', { name: 'memora助手', formatVersion: '1.0.0' });
 
       const manager = new RolePackManager(dir);
       const calls: Array<[string | null, string | null]> = [];
@@ -518,11 +580,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       manager.activate('全能写手');
       calls.length = 0; // 清掉前置回调，聚焦 reload 回退
 
-      // 删除当前激活的角色包后 reload → 回退第一个
+      // 删除当前激活的角色包后 reload → §4.1 单链落兜底包（不再回退 items[0]）
       await rm(join(packsDir, '全能写手'), { recursive: true, force: true });
       await manager.reload();
-      expect(manager.activeName).toBe('技术文档工程师');
-      expect(calls.at(-1)).toEqual(['全能写手', '技术文档工程师']);
+      expect(manager.activeName).toBe('memora助手');
+      expect(calls.at(-1)).toEqual(['全能写手', 'memora助手']);
     });
   });
 
@@ -537,7 +599,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       });
 
       const manager = new RolePackManager(dir);
-      await manager.load();
+      await manager.load('技术文档工程师');
 
       // 按 name（manifest.skills[].name）读取激活角色包技能正文
       const content = await manager.readSkillContent('summarize');
@@ -559,7 +621,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       }, { persona: '你是项目总监。', skills: { 'skills/review.md': '## 审查流程\n' } });
 
       const manager = new RolePackManager(dir);
-      await manager.load();
+      await manager.load('项目总监');
 
       const content = await manager.readSkillContent('review');
       expect(content).toContain('审查流程');
@@ -573,7 +635,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       });
 
       const manager = new RolePackManager(dir);
-      await manager.load();
+      await manager.load('技术文档工程师');
 
       expect(await manager.readSkillContent('不存在的技能')).toBeNull();
     });
@@ -587,7 +649,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       });
 
       const manager = new RolePackManager(dir);
-      await manager.load();
+      await manager.load('技术文档工程师');
 
       const prompt = manager.buildSystemPrompt();
       // L1 元数据：技能名 + 描述常驻

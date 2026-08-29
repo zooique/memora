@@ -132,13 +132,6 @@ export interface AgentHooks {
   /** 文件层前置条件断言回调（可选，两段式契约结构化；预留键，暂未被消费） */
   fileConsistencyCheck?: FileConsistencyCheck;
   /**
-   * 角色切换回调（输入增强管线角色匹配命中时触发）
-   *
-   * 走 Agent 生命周期（activate → rolePackSwitched 事件 → 刷新前缀 → 工具暴露）；
-   * 缺省 no-op（纯工厂单测不触发切换）。
-   */
-  switchRolePack?: (name: string) => boolean;
-  /**
    * 角色包激活后应用工具暴露面（检查点恢复协议角色契约重注入触发）
    *
    * 走 Agent 生命周期（toolMode/能力白名单 → setToolWhitelist → loop 快照 + system prompt 同步）；
@@ -165,6 +158,8 @@ type AssembleRuntimeParams = Pick<
   | 'projectPath'
   | 'configDir'
   | 'activeRolePack'
+  | 'rolePackTeams'
+  | 'builtinFallbackRole'
   | 'maxContextTokens'
   | 'sessionStore'
   | 'roundStore'
@@ -397,7 +392,7 @@ function wireRuntimeCallbacks(
       // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
       const newPlan = sessionManager.writePlan(mode, steps);
       return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${newPlan
-        .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}`)
+        .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}${s.rolePack ? `（角色：${s.rolePack}）` : ''}`)
         .join('\n')}`;
     },
     updateStep: (stepId, status) => {
@@ -418,6 +413,7 @@ function wireRuntimeCallbacks(
         description: s.description,
         status: s.status,
         order: s.order,
+        rolePack: s.rolePack,
       }));
     },
   };
@@ -616,6 +612,8 @@ export async function assembleComponents(
     projectPath,
     configDir,
     activeRolePack,
+    rolePackTeams,
+    builtinFallbackRole,
     maxContextTokens,
     sessionStore,
     roundStore,
@@ -679,8 +677,11 @@ export async function assembleComponents(
   await skillManager.load();
 
   // M1 角色包清单：创建角色包管理器，角色相关功能的唯一真理源
-  // activeRolePack：宿主注入持久化的用户角色包选择，优先激活；未配置/包不存在回退首个
+  // activeRolePack：宿主注入持久化的用户角色包选择，§4.1 单链优先激活；未配置/包不存在落兜底包（不再回退 items[0]）
   const rolePackManager = new RolePackManager(configDir);
+  // 宿主装配级参数注入：兜底角色覆盖（须存在，否则回退内核常量）+ 组数据（会议名单容器）
+  rolePackManager.setBuiltinFallbackRole(builtinFallbackRole ?? null);
+  rolePackManager.setRolePackTeams(rolePackTeams ?? []);
   await rolePackManager.load(activeRolePack);
 
   // 激活角色包的 L1 persona（角色包唯一；无激活角色包时为空串）
@@ -766,12 +767,13 @@ export async function assembleComponents(
       const formatted = SkillManager.formatSkillForPrompt(skill);
       if (formatted) lines.push(formatted);
     }
-    const activePackName = rolePackManager.activeName;
-    if (activePackName) {
+    // 技能清单跟随本轮装配视角（会议内 = 任务项角色；非会议 = activePack）
+    const perspectiveName = rolePackManager.roundAssemblyPerspective ?? rolePackManager.activeName;
+    if (perspectiveName) {
       lines.push('');
-      lines.push(`【激活角色包技能（${activePackName}）】`);
+      lines.push(`【装配角色技能（${perspectiveName}）】`);
       // Bug 6 修复：直接用结构化数据（RolePackAssembly.skills），不再正则解析 prompt 文本
-      const assembly = rolePackManager.getActive();
+      const assembly = rolePackManager.get(perspectiveName);
       const skills = assembly?.skills ?? [];
       for (const skill of skills) {
         const fallbackName = skill.file
@@ -843,14 +845,12 @@ export async function assembleComponents(
 
   // ── 输入增强管线 ──
 
-  // ContextPreparer 依赖已装配的 loop/history/rolePackManager；
-  // 策略推导走 rolePackManager（SSOT），背景 Provider 后续经 Agent.setBackgroundProvider 同步。
+  // ContextPreparer 依赖已装配的 loop/history/rolePackManager；策略推导走 rolePackManager（SSOT）。
   const contextPreparer = new ContextPreparer({
     history,
     loop,
     rolePackManager,
     getIndex: () => pctx.index,
-    backgroundProvider,
     config: {
       // 组装器可选字段（undefined）收窄为 deps 的显式 null（关闭语义）
       tracer: tracer ?? null,
@@ -862,8 +862,6 @@ export async function assembleComponents(
     },
     // 事件发射桥接到 Agent 强类型 emit（Agent 侧按 AGENT_EVENT_SET 校验）
     emit: (event, data) => hooks?.emit(event, data),
-    // 角色匹配命中时走 Agent 生命周期切换（缺省 no-op，供纯工厂单测）
-    switchRolePack: hooks?.switchRolePack ?? (() => false),
   });
 
   // ── 检查点恢复协议 ──

@@ -224,10 +224,13 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     }
   });
 
-  it('autoSwitch 不在角色包可写键集（宿主装配级键，SSOT 守卫）', () => {
-    // 自动切换开关归宿主（内核默认 on + strategyOverride 覆盖），角色包不参与决策。
-    // 若未来误加回键集，说明角色包再次获得自我切换控制权——此处守卫阻止回归。
+  it('autoSwitch 已随 v0.13 整体移除（不在任何策略键集，防回归）', () => {
+    // v0.13 移除自动匹配全链（角色包只能手动切换），autoSwitch 不应存在于任何阶段键集。
+    // 若未来误加回键集，说明自动切换死灰复燃——此处守卫阻止回归。
     expect(STRATEGY_KEY_RULES.prepare!.autoSwitch).toBeUndefined();
+    expect(STRATEGY_KEY_RULES.act!.autoSwitch).toBeUndefined();
+    expect(STRATEGY_KEY_RULES.reflect!.autoSwitch).toBeUndefined();
+    expect(STRATEGY_KEY_RULES.global!.autoSwitch).toBeUndefined();
   });
 
   it('每个规则都是合法的 KeyRule 类型', () => {

@@ -45,7 +45,7 @@ const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
   'minKernelVersion', 'extensions',
-  'interactionType', 'aiIdentityDisclosure', 'minorProtection', 'exclusiveWith',
+  'interactionType', 'aiIdentityDisclosure', 'minorProtection',
   'strategy', 'skills', 'capabilities', 'handoffPrompt',
 ]);
 
@@ -67,12 +67,10 @@ const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 // 策略键数值区间在 strategyKeys.ts；此处管策略键之外的开放字段，防止无条件填写导致资源失控
 // ════════════════════════════════════════════════════════════
 
-/** 匹配词（keywords/trigger）最大数量：防止匹配词列表膨胀拖慢 autoMatch */
+/** 匹配词（keywords/trigger）最大数量：防止匹配词列表膨胀拖慢匹配 */
 export const MAX_MATCH_WORDS = 20;
 /** 单个匹配词最大长度（字符）：防止巨型关键词注入匹配词源 */
 export const MAX_MATCH_WORD_LEN = 50;
-/** 互斥声明（exclusiveWith）最大数量：防止互斥关系图膨胀 */
-export const MAX_EXCLUSIVE_WITH = 20;
 /** skills 白名单最大数量：与 L1 列表工具阈值同量级，防止白名单膨胀 */
 export const MAX_MANIFEST_SKILLS = 50;
 /** capabilities 最大数量：防止能力声明面膨胀 */
@@ -320,33 +318,6 @@ function validateStrategy(
         });
       }
     }
-  }
-}
-
-/** 校验互斥声明格式（exclusiveWith 须为字符串数组，空数组合法）；集合级对称性见 validateExclusiveSymmetry */
-function validateExclusiveWith(
-  manifest: Record<string, unknown>,
-  issues: RolePackValidationIssue[],
-): void {
-  const value = manifest['exclusiveWith'];
-  if (value === undefined) return;
-  if (!Array.isArray(value) || value.some((v) => typeof v !== 'string' || v.trim() === '')) {
-    issues.push({
-      severity: 'error',
-      code: 'INVALID_EXCLUSIVE_WITH',
-      path: 'exclusiveWith',
-      message: 'exclusiveWith 必须是字符串数组（互斥角色包名列表）',
-    });
-    return;
-  }
-  // 数量上限：互斥关系图防膨胀（粘性切换遍历按包数×声明数放大）
-  if (value.length > MAX_EXCLUSIVE_WITH) {
-    issues.push({
-      severity: 'error',
-      code: 'EXCLUSIVE_WITH_TOO_MANY',
-      path: 'exclusiveWith',
-      message: `exclusiveWith 最多 ${MAX_EXCLUSIVE_WITH} 个互斥角色包（当前 ${value.length}）`,
-    });
   }
 }
 
@@ -616,7 +587,6 @@ export function validateManifest(
   validateMetaFields(manifest, issues);
   validateComplianceFields(manifest, issues);
   validateStrategy(manifest['strategy'], issues);
-  validateExclusiveWith(manifest, issues);
   validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
   validateManifestCapabilities(manifest['capabilities'], issues);

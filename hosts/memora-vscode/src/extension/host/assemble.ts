@@ -244,10 +244,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
-    // 角色包**只用手动切换**（产品定位）：宿主装配级策略覆盖压过角色包声明，关闭内核
-    // 自动匹配（关键词/LLM 语义粘性切换）；切换入口唯一走角色管理视图的 agent.switchRolePack。
-    // 唯一语义键为角色包策略 autoSwitch（SSOT），此处仅覆盖其最终解析值，不新增独立开关。
-    strategyOverride: { prepare: { autoSwitch: 'off' } },
+    // 角色包**只用手动切换**（v0.13：内核已移除自动匹配全链，无需 strategyOverride 覆盖——
+    // 切换入口唯一走角色管理视图的 agent.switchRolePack；保留既有键语义扩展为 §4.1 解析链第一层）
     // 执行前检查：单用户桌面场景恒放行（intentionally left blank）。
     // 理由：1) VSCode 插件运行在用户本地，天然信任模型；2) 工具审计已由
     // tool_start/tool_result chunk + tool.execute span 承担，不重复记录。

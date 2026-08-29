@@ -198,8 +198,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       sessionStore: opts.sessionStore,
       roundStore: opts.roundStore,
       configDir: opts.configDir,
-      // 启动时激活的角色包名（宿主注入持久化值，init 时优先激活）
+      // 启动时激活的角色包名（宿主注入持久化值，init 时优先激活——§4.1 单链第一层）
       activeRolePack: opts.activeRolePack,
+      // 组（宿主装配级）：组长角色包 + 组员名单（会议名单容器，非选择对象；组员仅会议参与）
+      rolePackTeams: opts.rolePackTeams,
+      // 程序级内置兜底角色（可选）：覆盖内核常量 BUILTIN_FALLBACK_PACK；须指向存在的包，否则回退内核常量
+      builtinFallbackRole: opts.builtinFallbackRole,
       tracer: opts.tracer,
       messages: opts.messages,
       enableContextSummary: opts.enableContextSummary ?? true,
@@ -211,7 +215,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
       // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy），
-      // 压过角色包声明；语义键仍唯一（如 autoSwitch），此处仅改变其最终解析值
+      // 压过角色包声明（v0.13 后无宿主注入默认值；机制保留供宿主产品能力边界使用）
       strategyOverride: opts.strategyOverride,
     };
     this.#provider = opts.provider;
@@ -434,6 +438,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       messages: this.#config.messages,
       // 门面私有能力经回调注入 seed（物理实现仍在门面）
       applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
+      // 会议机制：按本轮表层装配视角刷新 loop 前缀（roundRole=null 回落 activePack）
+      refreshRolePackPrefixForRound: (roundRole) => this.refreshRolePackPrefixForRound(roundRole),
       consumeExecutionStream: (source) => this.consumeExecutionStream(source),
       getBackgroundProvider: () => this.#backgroundProvider,
       // 宿主装配级策略覆盖（能力边界）：传给策略解析链，压过角色包声明（单一语义键不变）
@@ -1254,8 +1260,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         },
         preExecutionCheck: this.#config.preExecutionCheck,
         fileConsistencyCheck: this.#config.fileConsistencyCheck,
-        // 输入增强管线角色匹配命中 → Agent 生命周期切换（activate → 事件 → 刷新前缀 → 工具暴露）
-        switchRolePack: (name) => this.switchRolePack(name),
         // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
@@ -1355,13 +1359,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 刷新 AgentLoop 的 systemPromptPrefix（SSOT：buildSystemPromptPrefix）
    *
-   * 角色包是 system prompt 的唯一注入源。调用时机：自动/手动切换成功后、reloadConfig 重载后；
+   * 角色包是 system prompt 的唯一注入源。调用时机：手动切换成功后、reloadConfig 重载后；
    * loop 为 null 时静默跳过（init 前或 close 后边界）。统一走 buildSystemPromptPrefix 真理源，
-   * 避免此前只拼 rolePackPrompt 丢失全局技能清单。
+   * 避免此前只拼 rolePackPrompt 丢失全局技能清单。等价于「按 activePack 视角刷新」（roundRole=null）。
    */
   private refreshRolePackPrefixOnLoop(): void {
+    this.refreshRolePackPrefixForRound(null);
+  }
+
+  /**
+   * 按本轮表层装配视角刷新 AgentLoop 前缀（会议机制）
+   *
+   * roundRole=null（日常态）→ 回落 activePack 前缀；roundRole 为任务项角色 → 该角色
+   * persona/rules/skills 全量表层装配（buildSystemPrompt(name)）。策略键恒为 activePack：
+   * ChatOptions（temperature/outputLimit/streaming）由 activePack 策略构建，不随视角变（键不换防抖动）。
+   * 由 seed prepare 每轮调用（`refreshRolePackPrefixForRound` 契约），保证前缀始终匹配本轮装配角色。
+   */
+  private refreshRolePackPrefixForRound(roundRole: string | null): void {
     if (!this.loop) return;
-    const rolePackPrompt = this._rolePackManager?.buildSystemPrompt() ?? '';
+    const assemblyName = roundRole ?? this._rolePackManager?.activeName ?? undefined;
+    const rolePackPrompt = this._rolePackManager?.buildSystemPrompt(assemblyName) ?? '';
     const globalSkillList = this.skillManager?.buildSkillList() ?? '';
     // 作品投影装配块：缓存于 manager（装配时刷新 + register_work 更新），同步读取即可
     const workProjectionContext = this.workProjection?.contextBlock() ?? '';
@@ -1373,6 +1390,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit / streaming）
+    // 键恒为 activePack：buildChatOptionsFromStrategy 读激活包策略，不随本轮装配视角变
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
   }
 

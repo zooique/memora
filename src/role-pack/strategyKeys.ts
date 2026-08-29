@@ -113,9 +113,6 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     // 领域无关机制，内容由角色包提供（≤ MAX_SUMMARY_FOCUS_LENGTH 字符）
     summaryFocus: { kind: 'check', check: isSummaryFocus, range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH } },
     contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] },
-    // 注意：autoSwitch（自动匹配开关）不在此列——它是宿主装配级键（默认 on + 宿主
-    // strategyOverride 覆盖），角色包不参与自动切换决策（SSOT：单一控制源归宿主）。
-    // 角色包若写入将被按未知键 warning + 忽略。
     recallConfidence: { kind: 'check', check: isRecallConfidence, range: { min: 0, max: 1 } },
     summaryRecall: { kind: 'enum', values: ['on', 'off'] },
   },

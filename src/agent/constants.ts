@@ -75,12 +75,14 @@ export const AGENT_CONSTANTS = {
   COMPLETED_TOOL_CALLS_MAX: 48,
 
   /**
-   * 检查点结构版本（K1 持久化加固，2026-08-23）。
+   * 检查点结构版本（K1 持久化加固，2026-08-23；v2 2026-08-29）。
    *
-   * SessionCheckpoint 序列化/反序列化版本标识：当前 v1 为初始版本（无迁移映射，
-   * 未来结构演进升 v2 时补迁移函数）。版本路由见 sessionManager.parseCheckpoint。
+   * SessionCheckpoint 序列化/反序列化版本标识。版本路由见 sessionManager.normalizeCheckpoint。
+   * - v1：初始版本（无迁移映射）。
+   * - v2：PlanStep 新增可选 rolePack（会议表层装配角色）——可选字段对旧检查点天然兼容
+   *   （缺失即 undefined = 非会议），v1→v2 迁移为无操作（结构保持）。
    */
-  CHECKPOINT_SCHEMA_VERSION: 1,
+  CHECKPOINT_SCHEMA_VERSION: 2,
 } as const;
 
 /**

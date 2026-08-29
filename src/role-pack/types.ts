@@ -21,9 +21,6 @@ export type MemoryRecallMode = 'full' | 'limited' | 'none';
 /** 摘要召回开关 */
 export type SummaryRecall = 'on' | 'off';
 
-/** 角色自动匹配开关 */
-export type AutoSwitch = 'on' | 'off';
-
 // ── 回答中（Act）：行动策略 ──
 
 /** 工具调用模式：allow=允许 / block=只回答不执行（标准键 act.toolMode） */
@@ -96,11 +93,6 @@ export interface PrepareStrategy {
   readonly recallConfidence?: number;
   /** 角色包提炼视角（默认 undefined=通用浓缩；供 round-summary 生成判断「值得记什么」，内核已消费） */
   readonly summaryFocus?: string;
-  /**
-   * 自动匹配开关（默认 on；**宿主装配级键**，角色包不可写——STRATEGY_KEY_RULES 不含它，
-   * 角色包声明会被 validator 按未知键忽略）。内核默认 on，宿主经 strategyOverride 覆盖最终解析值。
-   */
-  readonly autoSwitch?: AutoSwitch;
 }
 
 /** 回答中（Act）行动策略集合 */
@@ -159,7 +151,7 @@ export interface GlobalStrategy {
  * L2 行为策略全集
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
- * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/autoSwitch/recallConfidence/summaryRecall；
+ * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
  * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
@@ -217,6 +209,18 @@ export interface RolePackCapability {
   readonly description?: string;
 }
 
+/**
+ * 组（宿主装配级）：组长角色包 + 组员名单。会议名单容器，非选择对象。
+ * 组长身份唯一（一个角色包只能是一个组的组长，宿主校验）；组员可被多组引用（引用共享）；
+ * 成员名单非空（组员被删光 → 该组失效，仅影响会议不影响日常）；组员仅作小组会议参与者，不用于日常。
+ */
+export interface RolePackTeam {
+  /** 组长角色包名（组的定义者；会议默认汇总者 = activePack） */
+  readonly leader: string;
+  /** 组员角色包名列表（非空；会议参与者） */
+  readonly members: readonly string[];
+}
+
 /** 角色包元数据（manifest.json 解析结果），用于匹配、传播、版本管理 */
 export interface RolePackMeta {
   /** 角色包名称（唯一标识） */
@@ -239,8 +243,6 @@ export interface RolePackMeta {
   readonly aiIdentityDisclosure?: boolean;
   /** 未成年人保护（默认 required） */
   readonly minorProtection?: 'required';
-  /** 互斥角色包名列表：粘性锁定时仅当输入命中当前包互斥包（双向声明其一）才自动切换 */
-  readonly exclusiveWith?: readonly string[];
   /** 接手衔接提示词：被宿主「带入对话」时预填的特色话术；角色包只描述自己，缺省由宿主回退通用话术 */
   readonly handoffPrompt?: string;
 }

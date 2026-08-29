@@ -1,20 +1,17 @@
 /**
  * 回答前（Prepare）— 种子闭环第一阶段
  *
- * 收敛原 Agent.prepareChatContext 的编排骨架：会话粘性复位 → 策略装配 → 角色
- * 匹配 → 记忆召回 → roundId → appendUser → 会话命名。
+ * 收敛原 Agent.prepareChatContext 的编排骨架：策略装配 → 角色 → 记忆召回 → roundId
+ * → appendUser → 会话命名。会议机制（S5）：任务项表层装配视角经本模块读取并驱动前缀刷新。
  *
  * 设计原则：
- *   - 叶子逻辑（tryAutoMatchRolePack / recallAndInject）在
- *     ContextPreparer 唯一实现，本模块只保留编排骨架（与 ContextPreparer 文档一致）。
- *   - lastStickySessionId（会话切换时复位角色包粘性）随本模块收进——它是"回答前"
- *     职责（注释原文：由 prepareChatContext 驱动），不是门面归属。
+ *   - 叶子逻辑（recallAndInject）在 ContextPreparer 唯一实现，本模块只保留编排骨架
+ *     （与 ContextPreparer 文档一致）。
  */
 
 import type { AgentChunk } from '@/agent/types.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 import {
-  resolveAutoSwitch,
   resolveContextAssembly,
   resolveL2Strategy,
   resolveMemoryRecallMode,
@@ -33,9 +30,6 @@ import {
  * @remarks 异步生成器：运行期 yield AgentChunk（thinking 各阶段），返回 SeedPrepareResult。
  */
 export class SeedPrepare {
-  /** 最近一次角色包粘性匹配的会话 ID（粘性不跨会话，会话切换时复位） */
-  private lastStickySessionId: string | null = null;
-
   /** 依赖注入（门面稳定能力窄面） */
   private readonly deps: SeedDeps;
 
@@ -44,8 +38,7 @@ export class SeedPrepare {
   }
 
   /**
-   * 执行回答前：会话粘性复位 → 策略装配 → 角色自动匹配 → 记忆召回 → 技能注入 →
-   * roundId → 用户消息入史 → 会话命名。
+   * 执行回答前：策略装配 → 角色 → 记忆召回 → 技能注入 → roundId → 用户消息入史 → 会话命名。
    *
    * @param input 用户输入
    * @param signal 中止信号（回答前中断则在技能注入前返回 aborted）
@@ -61,23 +54,20 @@ export class SeedPrepare {
     // 每次回答前先清临时 system 消息（技能/最近对话 prompt 是当轮注入，不跨轮累积）
     loop.cleanTemporarySystemMessages();
 
-    // 会话切换时复位角色包粘性（粘性不跨会话）
-    const sessionId = sessionManager?.getCheckpoint()?.sessionId ?? '';
-    if (sessionId !== this.lastStickySessionId) {
-      rolePackManager?.resetSticky();
-      this.lastStickySessionId = sessionId;
-    }
+    // 会议机制（S5）：读取当前 active 步骤声明的 rolePack，解析本轮表层装配角色（范围校验 + warning）。
+    // 表层装配只换 persona/rules/skills（buildSystemPrompt(role)），策略键恒为 activePack——不改 activePack、无切换。
+    const activeStep = sessionManager?.getCheckpoint()?.plan.find((s) => s.status === 'active');
+    const roundAssemblyRole =
+      rolePackManager?.resolveRoundAssemblyRole(activeStep?.rolePack) ?? null;
+    // 通知 RolePackManager 本轮装配视角（skills 加载跟随；非会议/越界 → null 回落 activePack）
+    rolePackManager?.setRoundAssemblyRole(roundAssemblyRole);
+    // 刷新 loop 前缀为本轮装配视角（日常态 roundAssemblyRole=null → 回落 activePack 前缀）
+    this.deps.refreshRolePackPrefixForRound?.(roundAssemblyRole);
 
-    // autoSwitch 决定是否允许角色自动匹配（'off' 时锁定当前角色包）。
-    // 宿主装配级策略覆盖（strategyOverride）压过角色包声明——VSCode 插件只用手动切换，
-    // 注入 { prepare: { autoSwitch: 'off' } } 后全局关闭自动匹配（单一语义键 autoSwitch）。
-    const preMatchStrategy = resolveActiveStrategy(
-      rolePackManager,
-      this.deps.strategyOverride,
-    );
-    const autoSwitch = resolveAutoSwitch(preMatchStrategy);
-    if (autoSwitch === 'on') {
-      await contextPreparer.tryAutoMatchRolePack(input);
+    // 会议机制实施前提②：组/成员清单暴露给 LLM（防编造角色名）——仅当 activePack 是某组组长时注入
+    const teamContext = rolePackManager?.buildTeamContextBlock() ?? '';
+    if (teamContext) {
+      loop.injectSystemMessage(teamContext);
     }
 
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
@@ -89,6 +79,7 @@ export class SeedPrepare {
     loop.setStrategy(resolveL2Strategy(strategy));
 
     // 换角色 → 按激活角色包的 capabilities 应用工具暴露面（toolMode=block 全禁与此正交）
+    // 会议机制：工具面恒为 activePack（组员只"说"不执行，需完整能力应手动切换）——此处不走 roundAssemblyRole
     this.deps.applyRolePackToolExposure();
 
     yield { type: 'thinking', phase: 'recalling' };

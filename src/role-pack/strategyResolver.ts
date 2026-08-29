@@ -19,7 +19,6 @@ import type {
   BehaviorStrategy,
   Handoff,
   MemoryRecallMode,
-  AutoSwitch,
   ContextAssembly,
   ErrorHandling,
   InputInterrupt,
@@ -88,9 +87,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     minFallback: DEFAULT_MIN_FALLBACK,
     summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
     recallConfidence: 0.6,
-    // 自动匹配开关（宿主装配级键，SSOT 默认）：角色包不可写（STRATEGY_KEY_RULES 不含它），
-    // 最终值 = 默认 on 被宿主 strategyOverride 覆盖后的结果
-    autoSwitch: 'on',
   },
   act: {
     toolMode: 'allow',
@@ -131,9 +127,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
  * 唯一实现，contextPreparer 与 seed 编排器经此统一取策略，杜绝跨模块镜像重复。
  *
  * @param rolePackManager 角色包管理器（可为 null）
- * @param override 宿主装配级策略覆盖（可选）：**压过角色包声明**，表达宿主产品能力边界
- *  （如 VSCode 插件只允许手动切换角色包 → `{ prepare: { autoSwitch: 'off' } }`）。
- *  只影响 override 声明过的键；SSOT：自动匹配键仍唯一为 autoSwitch，此处仅改变其最终解析值。
+ * @param override 宿主装配级策略覆盖（可选）：**压过角色包声明**，表达宿主产品能力边界。
+ *  只影响 override 声明过的键（v0.13 后无内置示例键；自动匹配全链已移除，机制保留）。
  * @returns 当前激活行为策略（含装配级覆盖）
  */
 export function resolveActiveStrategy(
@@ -246,15 +241,8 @@ export function resolveErrorHandling(strategy: BehaviorStrategy | undefined): Er
 }
 
 /**
- * 解析角色自动匹配开关（内核已消费）：非法值归位 'on'——on=允许自动匹配切换 / off=锁定当前角色包。
- * **宿主装配级键**：值只可能来自内核默认（on）或宿主 strategyOverride 覆盖，角色包无法声明
- * （STRATEGY_KEY_RULES 不含 autoSwitch，写了也被 validator 忽略）。
+ * 解析 Provider 路由策略（内核已消费）：非法值归位 'auto'——auto=按任务类型路由 / fixed=固定当前 Provider
  */
-export function resolveAutoSwitch(strategy: BehaviorStrategy | undefined): AutoSwitch {
-  return normalizeEnum(strategy?.prepare?.autoSwitch, ['on', 'off'], 'on');
-}
-
-/** 解析 Provider 路由策略（内核已消费）：非法值归位 'auto'——auto=按任务类型路由 / fixed=固定当前 Provider */
 export function resolveProviderRouting(strategy: BehaviorStrategy | undefined): ProviderRouting {
   return normalizeEnum(strategy?.act?.providerRouting, ['auto', 'fixed'], 'auto');
 }

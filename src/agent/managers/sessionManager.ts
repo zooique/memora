@@ -611,6 +611,16 @@ export class SessionManager {
       );
       return null;
     }
+    // K1 迁移映射：declaredVersion < 当前版本 → 逐级迁移至当前版本。
+    // v1 → v2（2026-08-29）：PlanStep 新增可选 rolePack（会议表层装配角色）——可选字段对旧检查点
+    // 天然兼容（缺失即 undefined = 非会议），迁移为无操作（结构保持）。此处为显式迁移挂载点，
+    // 未来 v2→v3 新增必需字段时在此实现字段变换，绝不静默补字段。
+    if (declaredVersion < AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION) {
+      logger.info(
+        { sessionId: cp.sessionId, from: declaredVersion, to: AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION },
+        '检查点结构迁移（v1→v2：PlanStep.rolePack 可选字段，无操作）',
+      );
+    }
     // 掉入此处：declaredVersion === 当前版本（含缺失回退）。新创建路径由 createCheckpoint
     // 写入当前版本；缺失回退在此未回写字段——恢复路径只读不写，回写交由 createCheckpoint
     // 下次落盘时自然覆盖为新版本（单次恢复场景不重写磁盘，保持只读）。
@@ -1034,8 +1044,8 @@ export class SessionManager {
 
   // ── 执行计划管理：SSOT 写点 ──────────────────────────────
 
-  /** 追加计划步骤：在 plan 末尾追加新步骤，不重排已有 order */
-  appendPlanStep(description: string): number {
+  /** 追加计划步骤：在 plan 末尾追加新步骤，不重排已有 order。rolePack 为会议表层装配角色（可选） */
+  appendPlanStep(description: string, rolePack?: string): number {
     if (!this.checkpoint) return 0;
     const newOrder = this.checkpoint.plan.length;
     const step: PlanStep = {
@@ -1043,6 +1053,7 @@ export class SessionManager {
       order: newOrder,
       description,
       status: 'pending',
+      ...(rolePack ? { rolePack } : {}),
     };
     this.checkpoint.plan.push(step);
     this.touchCheckpoint();
@@ -1051,18 +1062,18 @@ export class SessionManager {
 
   /**
    * 写入执行计划（计划写入口唯一分发点）。模式：'overwrite'|'append' 按追加逐条 appendPlanStep；
-   * 'update' 全量替换现有 plan（保留已有 id/status 仅覆盖 description）；其它 mode 兜底 no-op。
+   * 'update' 全量替换现有 plan（保留已有 id/status/rolePack，仅覆盖 description）。其它 mode 兜底 no-op。
    * 分发逻辑原嵌 Agent 闭包无法单测，归位本类后由 sessionCheckpointLifecycle.test.ts 覆盖。
    */
   writePlan(
     mode: 'overwrite' | 'append' | 'update',
-    steps: Array<{ description: string }>,
+    steps: Array<{ description: string; rolePack?: string }>,
   ): PlanStep[] {
     if (!this.checkpoint) return [];
     const existingPlan = this.checkpoint.plan;
     if (mode === 'overwrite' || mode === 'append') {
       for (const step of steps) {
-        this.appendPlanStep(step.description);
+        this.appendPlanStep(step.description, step.rolePack);
       }
     } else if (mode === 'update') {
       const updatedPlan = steps.map((s, i) => {
@@ -1074,6 +1085,7 @@ export class SessionManager {
               order: i,
               description: s.description,
               status: 'pending' as const,
+              ...(s.rolePack ? { rolePack: s.rolePack } : {}),
             };
       });
       this.updatePlan(updatedPlan);

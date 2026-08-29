@@ -1,9 +1,9 @@
 /**
- * Agent 输入增强管线 — 外部输入 → 角色/记忆/技能增强
+ * Agent 输入增强管线 — 外部输入 → 记忆/技能增强
  *
  * 职责：
- *   - tryAutoMatchRolePack / matchRolePackByLlm：角色包自动匹配（关键词粘性 + LLM 语义兜底）
  *   - recallAndInject：语义召回 + limited 配额裁剪 + 固定轮次注入
+ *   - （角色自动匹配已随 v0.13 移除：角色包只能手动切换，无 autoMatch / LLM 语义兜底）
  *
  * 设计原则：
  *   - 只依赖 Agent 注入的稳定能力（deps），不反向依赖 Agent 私有状态（与 AgentHooks 同构）
@@ -28,7 +28,6 @@ import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
-import type { LlmProvider } from '@/llm/provider.js';
 import type { UIMessages } from '@/agent/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
@@ -41,21 +40,18 @@ import { backgroundTask } from '@/utils/backgroundTask.js';
 /**
  * 输入增强管线的依赖注入接口（Agent 稳定能力的窄面）
  *
- * 边界：只传 Agent 的稳定能力（组件引用 / 配置 / 事件发射 / 角色切换回调），
- * 不传可变私有状态；backgroundProvider 采用可变字段 + setBackgroundProvider 同步
- * （与 roundSummaryGenerator / sessionArchiver 统一消费模式一致）。
+ * 边界：只传 Agent 的稳定能力（组件引用 / 配置 / 事件发射），
+ * 不传可变私有状态。
  */
 export interface ContextPreparerDeps {
   /** 消息历史（固定轮次注入 / 互斥 roundId 排除） */
   history: MessageHistory;
   /** AgentLoop（最近对话注入） */
   loop: AgentLoop;
-  /** 角色包管理器（角色匹配 / LLM 兜底列表；可为空） */
+  /** 角色包管理器（策略来源；可为空） */
   rolePackManager: RolePackManager | null;
   /** 懒取项目记忆索引（requirePctx.index 等价物，避免持有可变 ProjectContext 引用） */
   getIndex: () => IMemoryStorage;
-  /** 后台 Provider（初始值；运行时经 setBackgroundProvider 切换） */
-  backgroundProvider: LlmProvider | null;
   /** 宿主可观测性 / 存储 / 文案配置 */
   config: {
     /** 可观测性 Tracer（可选，缺省 Noop） */
@@ -71,65 +67,22 @@ export interface ContextPreparerDeps {
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
   emit: (event: AgentEventName, data: unknown) => void;
-  /** 角色切换回调（Agent 生命周期：激活 → 事件 → 刷新前缀 → 工具暴露） */
-  switchRolePack: (name: string) => boolean;
-  /** 宿主装配级策略覆盖（可选）：压过角色包声明（如 VSCode 关闭自动切换 → { prepare: { autoSwitch: 'off' } }） */
+  /** 宿主装配级策略覆盖（可选）：压过角色包声明 */
   strategyOverride?: Partial<BehaviorStrategy>;
 }
 
 /**
  * 输入增强管线协调器
  *
- * 承载 chat() 回答前的外部输入增强三件套：角色包自动匹配（粘性）、记忆召回 + 固定轮次注入、
- * 技能当轮注入。Agent.prepareChatContext 保留编排骨架，本类唯一实现叶子逻辑。
+ * 承载 chat() 回答前的输入增强：记忆召回 + 固定轮次注入。Agent.prepareChatContext
+ * 保留编排骨架，本类唯一实现叶子逻辑。
  */
 export class ContextPreparer {
   /** 依赖注入集合（Agent 稳定能力窄面） */
   private readonly deps: ContextPreparerDeps;
-  /** 后台 Provider（可变，setBackgroundProvider 运行时切换） */
-  private backgroundProvider: LlmProvider | null;
 
   constructor(deps: ContextPreparerDeps) {
     this.deps = deps;
-    this.backgroundProvider = deps.backgroundProvider;
-  }
-
-  /**
-   * 同步后台 Provider（与 roundSummaryGenerator / sessionArchiver 统一消费模式）
-   * @param provider 新后台 Provider（可 null 表示关闭）
-   */
-  setBackgroundProvider(provider: LlmProvider | null): void {
-    this.backgroundProvider = provider;
-  }
-
-  /**
-   * 角色包自动匹配（粘性，角色包唯一入口）：在 chat() 回答前经 RolePackManager.autoMatch 粘性语义匹配——
-   * 首次外部输入命中即锁定当前会话，后续仅互斥包命中才切换；命中后经 switchRolePack 激活并刷新前缀。
-   * 关键词未命中时尝试 LLM 辅助语义匹配（低置信度兜底）。
-   *
-   * @param input 用户输入
-   * @returns 是否发生角色切换
-   */
-  async tryAutoMatchRolePack(input: string): Promise<boolean> {
-    const rpm = this.deps.rolePackManager;
-    if (!rpm) return false;
-
-    // 第一层：关键词高置信度匹配（含粘性锁定副作用）
-    const matched = rpm.autoMatch(input);
-    if (matched) {
-      return this.deps.switchRolePack(matched);
-    }
-
-    // 第二层：LLM 辅助语义匹配（低置信度兜底，需 backgroundProvider）
-    const bgProvider = this.backgroundProvider;
-    if (bgProvider && rpm.activeName) {
-      const llmMatched = await this.matchRolePackByLlm(input);
-      if (llmMatched && llmMatched !== rpm.activeName) {
-        return this.deps.switchRolePack(llmMatched);
-      }
-    }
-
-    return false;
   }
 
   /**
@@ -289,51 +242,5 @@ export class ContextPreparer {
     recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     return recalledMemories;
-  }
-
-  /**
-   * LLM 辅助角色包语义匹配
-   *
-   * 构建角色清单提示，让 backgroundProvider 流式输出最匹配的角色包名；仅接受列表内确切名称。
-   *
-   * @param input 用户输入
-   * @returns 匹配到的角色包名，无匹配返回 null
-   */
-  private async matchRolePackByLlm(input: string): Promise<string | null> {
-    const rpm = this.deps.rolePackManager;
-    if (!rpm) return null;
-    const bgProvider = this.backgroundProvider;
-    if (!bgProvider) return null;
-
-    try {
-      const metaList = rpm.listMeta();
-      if (metaList.length === 0) return null;
-
-      // 构建提示：让 LLM 选择最匹配的角色包
-      const roleList = metaList
-        .map((m) => `${m.name}：${m.description ?? m.displayName ?? ''}`)
-        .join('\n');
-      const messages = [
-        {
-          role: 'system' as const,
-          content: `根据用户输入，从以下角色中选择最合适的角色（只输出角色名，不要其他内容）：\n\n${roleList}`,
-        },
-        { role: 'user' as const, content: input },
-      ];
-
-      // 流式获取 LLM 响应
-      const stream = bgProvider.chat(messages, { maxTokens: 10, temperature: 0.1 });
-      let response = '';
-      for await (const chunk of stream) {
-        if (chunk.content) response += chunk.content;
-      }
-      const matchedName = response.trim();
-      if (matchedName && metaList.some((m) => m.name === matchedName)) {
-        return matchedName;
-      }
-    } catch (err) {
-      logger.warn({ err }, 'LLM 辅助角色包匹配失败');
-    }
-    return null;
   }
 }

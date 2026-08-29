@@ -66,7 +66,6 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     loop: loop as unknown as ContextPreparerDeps['loop'],
     rolePackManager: null,
     getIndex: () => storage,
-    backgroundProvider: null,
     config: {
       tracer: null,
       vectorStore: null,
@@ -75,7 +74,6 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
       maxContextTokens: 120_000,
     },
     emit,
-    switchRolePack: () => false,
     ...overrides,
   };
   const preparer = new ContextPreparer(deps);

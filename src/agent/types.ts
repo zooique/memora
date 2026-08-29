@@ -186,6 +186,12 @@ export interface PlanStep {
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;
+  /**
+   * 会议用：该任务项的表层装配角色（组长或组员）。仅会议内临时生效，不改 activePack——
+   * prepare 期经 RolePackManager.resolveRoundAssemblyRole 范围校验（∈ {组长} ∪ {组员}，越界忽略 + warning）。
+   * 进 checkpoint（schemaVersion 升版 + 迁移映射）；缺失/旧检查点走缺省 undefined（非会议）。
+   */
+  rolePack?: string;
 }
 
 /** 一次完整 LLM 调用回合的执行结果，注入时标「非当前指令」防 LLM 误执行 */
@@ -439,6 +445,7 @@ import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import type { ProviderRouter } from '@/llm/types.js';
 // 宿主装配级策略覆盖类型（AgentOptions.strategyOverride）：引用角色包行为策略类型
 import type { BehaviorStrategy } from '@/role-pack/types.js';
+import type { RolePackTeam } from '@/role-pack/types.js';
 
 /**
  * 文件层前置条件断言回调：注入时 deleteRule/deleteSkill/updateRule 入口先校验宿主是否已完成
@@ -512,14 +519,24 @@ export interface AgentOptions {
   providerRouter?: ProviderRouter;
   /** 配置目录（personas/rules/skills） */
   configDir?: string;
-  /** 启动时激活的角色包名：优先激活该包，未配置或不存在时回退默认激活首个 */
+  /**
+   * 启动时激活的角色包名（宿主装配级，既有键，语义扩展）：宿主持久化的用户选择。
+   * §4.1 解析链第一层——有效则生效；失效（包不存在）落兜底包（builtinFallbackRole ?? BUILTIN_FALLBACK_PACK），
+   * 不再回退 items[0]。
+   */
   activeRolePack?: string;
+  /**
+   * 组（宿主装配级）：组长角色包 + 组员名单。会议名单容器，非选择对象。
+   * 组长身份唯一（一个角色包只能是一个组的组长）；组员可被多组引用；成员名单非空；
+   * 组员仅作小组会议参与者（会议内表层装配），不用于日常。
+   */
+  rolePackTeams?: RolePackTeam[];
+  /** 程序级内置兜底角色（可选）：覆盖内核常量 BUILTIN_FALLBACK_PACK；覆盖值须指向存在的包，否则回退内核常量 */
+  builtinFallbackRole?: string;
   /**
    * 宿主装配级**策略覆盖**（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
    * 只影响 override 声明过的键；是「宿主策略层」通用覆盖，不新增任何独立开关。
-   *
-   * 例：VSCode 插件只允许手动切换角色包（不接入自动匹配能力）→ `{ prepare: { autoSwitch: 'off' } }`
-   *（自动匹配的语义键唯一为角色包 autoSwitch，此处仅覆盖其最终解析值）。
+   *（v0.13 后无内置示例键；角色包自动匹配全链已移除，本机制保留供宿主能力边界使用）
    */
   strategyOverride?: Partial<BehaviorStrategy>;
   /** 记忆数据目录（由宿主显式注入） */

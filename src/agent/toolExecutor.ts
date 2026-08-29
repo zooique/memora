@@ -179,10 +179,10 @@ export class ToolExecutor {
   planManager?: {
     writePlan: (
       mode: 'overwrite' | 'append' | 'update',
-      steps: Array<{ description: string }>,
+      steps: Array<{ description: string; rolePack?: string }>,
     ) => string;
     updateStep: (stepId: string, status: 'done' | 'blocked') => string;
-    getPlan: () => Array<{ id: string; description: string; status: string; order: number }>;
+    getPlan: () => Array<{ id: string; description: string; status: string; order: number; rolePack?: string }>;
   };
 
   /**
@@ -644,7 +644,7 @@ export class ToolExecutor {
         return stderr ? `${output}\n[stderr] ${stderr}` : output;
       }
       case 'task_table_write': {
-        // 写入任务表（overwrite / append / update）
+        // 写入任务表（overwrite / append / update）；steps 每项可选 rolePack（会议表层装配角色）
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
@@ -653,9 +653,15 @@ export class ToolExecutor {
           return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/update`;
         }
         const stepsRaw = args.steps;
-        const steps = Array.isArray(stepsRaw) ? (stepsRaw as Array<{ description: string }>) : [];
-        if (steps.length === 0) {
-          return '[ERR:INVALID_ARG] steps 参数不能为空';
+        const steps = Array.isArray(stepsRaw)
+          ? (stepsRaw as Array<{ description: string; rolePack?: string }>).map((s) => ({
+              description: String(s?.description ?? ''),
+              // rolePack 可选：仅接受非空字符串；范围校验在 prepare 期（越界忽略 + warning）
+              ...(s?.rolePack && typeof s.rolePack === 'string' ? { rolePack: s.rolePack } : {}),
+            }))
+          : [];
+        if (steps.length === 0 || steps.some((s) => s.description.trim() === '')) {
+          return '[ERR:INVALID_ARG] steps 参数不能为空，且每项须含非空 description';
         }
         return this.planManager.writePlan(writeMode, steps);
       }

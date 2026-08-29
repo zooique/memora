@@ -106,8 +106,8 @@ describe('validateManifest：键名合法性', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('已知键（strategy/skills/trigger/exclusiveWith）不报未知键', () => {
-    const result = validate({ trigger: ['测试'], exclusiveWith: ['其他包'] });
+  it('已知键（strategy/skills/trigger/handoffPrompt）不报未知键', () => {
+    const result = validate({ trigger: ['测试'], handoffPrompt: '开始吧' });
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
   });
 
@@ -130,24 +130,11 @@ describe('validateManifest：键名合法性', () => {
     }
   });
 
-  it('exclusiveWith 非法形状（字符串/数值）→ INVALID_EXCLUSIVE_WITH error', () => {
-    const asString = validate({ exclusiveWith: '代码助手' });
-    const asNumber = validate({ exclusiveWith: 12 });
-    expect(asString.valid).toBe(false);
-    expect(asNumber.valid).toBe(false);
-    expect(
-      [...asString.issues, ...asNumber.issues].filter(
-        (i) => i.code === 'INVALID_EXCLUSIVE_WITH',
-      ),
-    ).toHaveLength(2);
-  });
-
-  it('exclusiveWith 合法字符串数组 / 空数组 → 通过', () => {
-    const validArr = validate({ exclusiveWith: ['代码助手', '翻译助手'] });
-    const emptyArr = validate({ exclusiveWith: [] });
-    expect(validArr.valid).toBe(true);
-    expect(emptyArr.valid).toBe(true);
-    expect(findByCode(validArr.issues, 'INVALID_EXCLUSIVE_WITH')).toHaveLength(0);
+  it('exclusiveWith 已废弃：作为未知键 warning 忽略（不阻塞装载）', () => {
+    // v0.13 移除 exclusiveWith 机制（§6.1），存量字段按未知键 warning + 忽略
+    const result = validate({ exclusiveWith: ['其他包'] });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(1);
   });
 
   it('未知策略阶段 → UNKNOWN_STRATEGY_STAGE warning', () => {
@@ -501,11 +488,6 @@ describe('validateManifest：非策略键字段上限（开放字段防无条件
   it('trigger 超过 20 个 → INVALID_TRIGGER error', () => {
     const result = validate({ trigger: Array.from({ length: 21 }, (_, i) => `触发${i}`) });
     expect(findByCode(result.issues, 'INVALID_TRIGGER').length).toBeGreaterThan(0);
-  });
-
-  it('exclusiveWith 超过 20 个 → EXCLUSIVE_WITH_TOO_MANY error', () => {
-    const result = validate({ exclusiveWith: Array.from({ length: 21 }, (_, i) => `包${i}`) });
-    expect(findByCode(result.issues, 'EXCLUSIVE_WITH_TOO_MANY')).toHaveLength(1);
   });
 
   it('skills 白名单超过 50 项 → SKILLS_TOO_MANY error', () => {
