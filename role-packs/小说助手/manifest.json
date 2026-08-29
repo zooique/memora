@@ -16,7 +16,6 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
-  "exclusiveWith": ["文档设计师", "方案设计师"],
   "handoffPrompt": "我已准备好开始小说创作。请告诉我：要写什么题材与篇幅、已有故事雏形吗？若承接上文，请先概述当前情节进度、主要人物与待推进的冲突。",
   "capabilities": [
     {

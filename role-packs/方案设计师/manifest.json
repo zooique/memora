@@ -20,7 +20,6 @@
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
-  "exclusiveWith": ["文档设计师"],
   "handoffPrompt": "我已准备好开始方案设计。请告诉我：要解决什么模糊想法或痛点、有什么已知约束（技术栈 / 资源 / 时间）？若承接上文，请先概述当前已定的方案骨架、关键决策与待对齐的部分。",
   "capabilities": [
     {
