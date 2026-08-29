@@ -62,6 +62,8 @@ export interface SeedMocks {
     getCheckpoint: ReturnType<typeof vi.fn>;
     // 会议机制（S5 确定性触发）：prepare 预置任务表写点（默认为空，测试可注入）
     writePlan: ReturnType<typeof vi.fn>;
+    // 任务链收尾/硬中止清场（⑦ 排雷 2026-08-29）：防残留 plan 影响下一次输入
+    clearPlan: ReturnType<typeof vi.fn>;
   };
   rolePackManager: {
     getActive: ReturnType<typeof vi.fn>;
@@ -206,7 +208,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       appendAssistant: vi.fn(async () => {}),
       registerPendingArchive: vi.fn(),
     },
-    sessionManager: { getCheckpoint: vi.fn(() => null), writePlan: vi.fn(() => []) },
+    sessionManager: { getCheckpoint: vi.fn(() => null), writePlan: vi.fn(() => []), clearPlan: vi.fn() },
     rolePackManager: {
       getActive: vi.fn(() => null),
       resolveRoundAssemblyRole: vi.fn(() => null),

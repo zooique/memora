@@ -353,6 +353,8 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     expect(mocks.loop.isWithinExternalTask).toBe(true); // 任务链未收尾，保留现场
     expect(mocks.loop.runReport).not.toHaveBeenCalled();
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
+    // 软暂停保留现场：不清任务表（⑦ 排雷——清场仅限硬中止/收尾，暂停供续跑从下一 pending 继续）
+    expect(mocks.sessionManager.clearPlan).not.toHaveBeenCalled();
 
     // ── 第 2 段：runResume 续跑 → 补完剩余 pending 步（s3）并收尾汇报（摘要恒 1:1）
     stubContinue(mocks, '续跑');
@@ -367,6 +369,8 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     // 汇报单源摘要，摘要↔外部输入恒 1:1（暂停轮 0 条 + 收尾汇报 1 条）
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
     expect(mocks.loop.isWithinExternalTask).toBe(false); // 收尾后清除上下文
+    // 收尾清场：任务表不残留（⑦ 排雷——已收尾链不留 pending，防下一次输入误入旧链）
+    expect(mocks.sessionManager.clearPlan).toHaveBeenCalledTimes(1);
     expect(chunks).toContainEqual({ type: 'thinking', phase: 'reporting' });
   });
 
@@ -777,6 +781,8 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
     expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('成员B');
     // ④ 汇总步（无 rolePack）→ 回落 activePack 前缀（null）
     expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith(null);
+    // ⑤ 收尾清场：任务表不残留（⑦ 排雷——防下一次输入误入已结束会议链）
+    expect(mocks.sessionManager.clearPlan).toHaveBeenCalledTimes(1);
   });
 
   it('runChat：非会议输入（tryBuildMeetingPlan=null）→ meetingPreset 不命中，走普通闭环', async () => {
@@ -790,5 +796,27 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
     // 未命中：不预置任务表、不进入外部任务闭环
     expect(mocks.sessionManager.writePlan).not.toHaveBeenCalled();
     expect(mocks.loop.setWithinExternalTask).not.toHaveBeenCalledWith(true);
+  });
+
+  it('runChat：步执行硬中止 → 清残留任务表（防下一次输入误入旧链，⑦ 排雷）', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    useStrategy(mocks, makeStrategy({ taskLoopLimit: 5 }));
+    const steps = [{ description: '成员A 发言', rolePack: '成员A' }];
+    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
+    mocks.sessionManager.writePlan.mockReturnValue([{ id: 'm0', description: '成员A 发言', status: 'pending', order: 0, rolePack: '成员A' }]);
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan: [{ id: 'm0', description: '成员A 发言', status: 'pending', order: 0, rolePack: '成员A' }], roundLog: [] });
+    mocks.rolePackManager.resolveRoundAssemblyRole.mockImplementation((d: string | undefined) => (d ? d : null));
+    // 步执行中止（用户中断 / 失败）→ 硬中止即清场
+    mocks.loop.processUserInput.mockReturnValue(textStream('半成品'));
+    consumeControl.result = { content: '半成品', aborted: true, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('小组会议：讨论', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 硬中止：退出外循环上下文 + 清残留任务表（软暂停不清、硬中止清）
+    expect(mocks.loop.setWithinExternalTask).toHaveBeenCalledWith(false);
+    expect(mocks.sessionManager.clearPlan).toHaveBeenCalledTimes(1);
   });
 });

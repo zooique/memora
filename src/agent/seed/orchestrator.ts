@@ -419,6 +419,8 @@ export class SeedOrchestrator {
       // 规划中断/失败：清 PLAN_ONLY 防残留跨下一次输入；残缺半成品不入记忆（同主路径 act 语义）
       parts.loop.cleanTemporarySystemMessages();
       parts.loop.setWithinExternalTask(false);
+      // 规划失败同样清任务表（⑦ 排雷 2026-08-29）：防半写 plan 影响下一次输入误入旧链
+      parts.sessionManager?.clearPlan?.();
       return;
     }
     // 规划成功：清 PLAN_ONLY（装配控制提示，非执行期临时，需显式清理），进入步序列 + 收尾
@@ -490,10 +492,13 @@ export class SeedOrchestrator {
       if (stepAct.failed || stepAct.aborted) {
         // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」），任务链终止
         parts.loop.setWithinExternalTask(false);
+        // 清残留任务表（⑦ 排雷 2026-08-29）：硬中止即清场——否则残留 pending 步会被下一次
+        // 输入误当作「续跑旧链」执行（与软暂停保留现场相对；软暂停不清，供 runResume 续跑从下一 pending 继续）
+        parts.sessionManager?.clearPlan?.();
         return { continueFinalize: false, stepsRun };
       }
       if (stepAct.paused) {
-        // 本闭环自然结束后软暂停：保留现场，续跑从下一 pending 步继续整链
+        // 本闭环自然结束后软暂停：保留现场（含任务表），续跑从下一 pending 步继续整链
         return { continueFinalize: false, stepsRun };
       }
       // 步闭环不产摘要（摘要 1:1 只由收尾汇报产出）
@@ -535,6 +540,9 @@ export class SeedOrchestrator {
     }
     // 任务链已收尾：清除外循环上下文（供后续续跑不误入已结束链）
     parts.loop.setWithinExternalTask(false);
+    // 清空任务表（收尾清场，⑦ 排雷 2026-08-29）：已执行完的 plan 不残留——
+    // 否则残留 pending 步会被下一次复杂输入误当「续跑旧链」，出现非会议却跑会议链的错乱
+    parts.sessionManager?.clearPlan?.();
   }
 
   /**
