@@ -198,24 +198,44 @@ export const rolesStyles = `
     transition: width 0.3s ease;
   }
 
-  /* ============ Components：互斥关系 (Exclusive) ============ */
-  #roles-root .role-exclusive {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--sp-1, 3px);
+  /* ============ Components：小组会议区（v0.13 S7） ============ */
+  #roles-root .badge-fallback { background: var(--text-tertiary, #666); }
+  #roles-root .team-section {
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius-lg, 8px);
+    padding: var(--sp-3, 8px);
+    margin-bottom: var(--sp-4, 10px);
+    background: var(--surface-sidebar);
   }
-  #roles-root .exclusive-label {
-    font-size: var(--font-xs, 10px);
-    color: var(--text-tertiary, #666);
+  #roles-root .team-header { display: flex; align-items: center; gap: var(--sp-2, 6px); margin-bottom: var(--sp-2, 6px); }
+  #roles-root .team-title { font-weight: 600; font-size: var(--font-md, 12px); }
+  #roles-root .team-hint { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  #roles-root .team-empty { font-size: var(--font-sm, 11px); color: var(--text-secondary, #9aa0a6); margin-bottom: var(--sp-2, 6px); line-height: 1.5; }
+  #roles-root .team-card {
+    display: flex; flex-direction: column; gap: var(--sp-1, 4px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.25));
+    border-radius: var(--radius, 6px);
+    padding: var(--sp-2, 6px);
+    margin-bottom: var(--sp-2, 6px);
   }
-  #roles-root .exclusive-tag {
-    font-size: var(--font-xs, 10px);
-    padding: 1px 5px;
-    background: var(--surface-hover, rgba(128,128,128,.15));
+  #roles-root .team-card-head { display: flex; align-items: center; justify-content: space-between; }
+  #roles-root .team-leader { font-size: var(--font-sm, 11px); font-weight: 600; }
+  #roles-root .team-del { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); }
+  #roles-root .team-members { display: flex; flex-wrap: wrap; gap: var(--sp-1, 3px); }
+  #roles-root .team-member-tag {
+    font-size: var(--font-xs, 10px); padding: 1px 5px;
+    background: rgba(156, 39, 176, 0.15); color: #9c27b0;
     border-radius: 3px;
-    color: var(--text-tertiary, #666);
   }
+  #roles-root .team-member-role { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); }
+  #roles-root .team-create { margin-top: var(--sp-1, 2px); }
+  #roles-root .team-form { display: flex; flex-direction: column; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
+  #roles-root .team-form-row { display: flex; align-items: flex-start; gap: var(--sp-2, 6px); font-size: var(--font-sm, 11px); }
+  #roles-root .team-select { flex: 1; min-width: 0; }
+  #roles-root .team-members-pick { flex-direction: column; }
+  #roles-root .team-pick-list { display: flex; flex-wrap: wrap; gap: var(--sp-1, 4px); max-height: 120px; overflow-y: auto; }
+  #roles-root .team-pick-item { display: flex; align-items: center; gap: var(--sp-1, 4px); font-size: var(--font-xs, 10px); }
+  #roles-root .team-form-actions { display: flex; justify-content: flex-end; }
 
   /* ============ Components：版本号 ============ */
   #roles-root .card-version {

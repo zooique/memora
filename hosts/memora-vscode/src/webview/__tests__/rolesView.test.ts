@@ -40,10 +40,10 @@ function mountRolesView(): { postMessage: ReturnType<typeof vi.fn> } {
 }
 
 /** 向 webview 分发一条 roles_loaded 消息，驱动 render */
-function dispatchLoaded(packs: unknown[], activeName: string): void {
+function dispatchLoaded(packs: unknown[], activeName: string, teams: unknown[] = []): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type: 'roles_loaded', packs, activeName },
+      data: { type: 'roles_loaded', packs, activeName, teams },
     }),
   );
 }
@@ -145,5 +145,46 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     dispatchLoaded([], '');
     expect(document.querySelector('.empty-title')?.textContent).toBe('暂无角色包');
     expect(document.querySelector('.empty-hint')?.textContent).toContain('打开一个工作区');
+  });
+
+  it('小组会议区（v0.13 S7）：展示组长+组员名单 + 建组/删除入口', () => {
+    const { postMessage } = mountRolesView();
+    const packs = [
+      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '编辑', displayName: '编辑', capabilities: [] },
+      { name: '评论家', displayName: '评论家', capabilities: [] },
+      { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
+    ];
+    dispatchLoaded(
+      packs,
+      '小说助手',
+      [{ leader: '小说助手', members: ['编辑', '评论家'] }],
+    );
+    // 小组标题 + 组长 + 组员标签
+    expect(document.querySelector('.team-title')?.textContent).toBe('小组会议');
+    expect(document.querySelector('.team-leader')?.textContent).toContain('小说助手');
+    const memberTags = document.querySelectorAll('.team-member-tag');
+    expect(memberTags).toHaveLength(2);
+    expect(memberTags[0]?.textContent).toBe('编辑');
+    // 兜底契约包徽章（禁删标记）
+    const fallbackCard = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
+    );
+    expect(fallbackCard?.querySelector('.badge-fallback')?.textContent).toContain('兜底');
+    // 删除小组 → postMessage roles_team_delete
+    (document.querySelector('.team-del') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_team_delete', leader: '小说助手' });
+    // 新建小组 → 表单出现 → 保存 → postMessage roles_team_save
+    (document.querySelector('.team-create') as HTMLButtonElement).click();
+    expect(document.querySelector('.team-form')).not.toBeNull();
+    const cbs = Array.from(document.querySelectorAll('.team-pick-item input[type=checkbox]')) as HTMLInputElement[];
+    cbs.find((cb) => cb.value === '编辑')!.checked = true;
+    cbs.find((cb) => cb.value === '评论家')!.checked = true;
+    (document.querySelector('.team-form .btn-primary') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'roles_team_save',
+      leader: '小说助手',
+      members: ['编辑', '评论家'],
+    });
   });
 });

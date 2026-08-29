@@ -121,6 +121,16 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_handoff'; name: string }
   /**
+   * 保存角色包组（会议名单，v0.13 S7）：组长 + 组员名单。
+   *
+   * 由角色管理视图的小组管理触发。host 校验后（组长唯一 / 名单非空 / 引用存在）持久化
+   * 用户级 globalState（ROLE_PACK_TEAMS_KEY）+ 热更新 agent.rolePackManager.setRolePackTeams。
+   * 组 = 组长角色包的会议名单（非选择对象）；组员仅作小组会议参与者，不用于日常。
+   */
+  | { type: 'roles_team_save'; leader: string; members: string[] }
+  /** 删除角色包组（会议名单）：host 持久化移除 + 热更新内核组数据。 */
+  | { type: 'roles_team_delete'; leader: string }
+  /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
    * 由 webview 停止按钮触发，host 调用 AbortController.abort() 中断进行中的
@@ -575,8 +585,6 @@ export type ExtensionToWebviewMessage =
         capabilities: { capability: string; label: string }[];
         /** 角色性格特征（从 persona.md frontmatter traits 解析，0-1 数值） */
         traits?: Record<string, number>;
-        /** 互斥角色包列表（当输入命中互斥包关键词时触发切换） */
-        exclusiveWith?: readonly string[];
         /** 接手衔接提示词（带入对话时预填的特色话术） */
         handoffPrompt?: string;
         /** 关键策略指示器（从内核完整策略提取的 UI 友好摘要） */
@@ -585,7 +593,13 @@ export type ExtensionToWebviewMessage =
         interactionType?: 'tool_assistant' | 'companion';
         /** 版本号 */
         version?: string;
+        /** 该角色包作为组员被哪些组引用（v0.13 S7：仅小组会议用，标注展示） */
+        teamMembers?: readonly string[];
+        /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
+        isFallback?: boolean;
       }[];
+      /** 组（会议名单）：组长 + 组员（v0.13 S7，宿主用户级数据） */
+      teams: { leader: string; members: string[] }[];
       activeName: string;
     }
   // ─── 大模型配置面板消息 ───

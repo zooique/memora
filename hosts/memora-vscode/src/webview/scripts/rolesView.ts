@@ -37,7 +37,6 @@ interface RolesPayload {
     description?: string;
     capabilities: { capability: string; label: string }[];
     traits?: Record<string, number>;
-    exclusiveWith?: readonly string[];
     handoffPrompt?: string;
     strategyHint?: {
       toolReadonly?: 'readonly' | 'full';
@@ -49,7 +48,13 @@ interface RolesPayload {
     };
     interactionType?: 'tool_assistant' | 'companion';
     version?: string;
+    /** 该角色包作为组员被哪些组引用（仅小组会议用，标注展示） */
+    teamMembers?: readonly string[];
+    /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
+    isFallback?: boolean;
   }[];
+  /** 组（会议名单）：组长 + 组员（v0.13 S7） */
+  teams: { leader: string; members: string[] }[];
   activeName: string;
 }
 
@@ -71,9 +76,11 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   function render(data: RolesPayload): void {
     statBar.hidden = false;
     statBar.textContent = `已加载 ${data.packs?.length ?? 0} 个角色`;
+    list.textContent = '';
+    // 小组会议区（组 = 组长角色包的会议名单，v0.13 S7）——置顶展示 + 建组入口
+    list.appendChild(buildTeamSection(data));
     if (!data.packs || data.packs.length === 0) {
       // 空态引导：无角色包时提示（SSOT：createEmptyState 纯函数，对齐 configView 列表级同构）
-      list.textContent = '';
       list.appendChild(
         createEmptyState(document, {
           title: '暂无角色包',
@@ -83,7 +90,6 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       return;
     }
     activeName = data.activeName;
-    list.textContent = '';
     // 激活角色置顶（主动可见：用户一眼看到当前定位）
     const active = data.packs.filter((p) => p.name === activeName);
     if (active.length > 0) {
@@ -98,12 +104,156 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   }
 
   /**
+   * 小组会议区（v0.13 S7）：组 = 组长角色包的会议名单（非选择对象）。
+   * 展示既有小组（组长 + 组员名单，成员标注「小组会议用」）+ 建组/删除入口；
+   * 会议定位提示：用户发起"小组会议"后，LLM 用任务表组织逐成员发言（内核已注入组清单）。
+   */
+  function buildTeamSection(data: RolesPayload): HTMLElement {
+    const section = document.createElement('section');
+    section.className = 'team-section';
+
+    const header = document.createElement('div');
+    header.className = 'team-header';
+    const title = document.createElement('span');
+    title.className = 'team-title';
+    title.textContent = '小组会议';
+    header.appendChild(title);
+    const hint = document.createElement('span');
+    hint.className = 'team-hint';
+    hint.textContent = '组员仅作会议参与者（表层装配发言），不用于日常切换';
+    header.appendChild(hint);
+    section.appendChild(header);
+
+    const teams = data.teams ?? [];
+    if (teams.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'team-empty';
+      empty.textContent = '暂无小组。建组后，以组长为当前角色时说「小组会议，讨论 XX」，即可让组员从各自视角发言。';
+      section.appendChild(empty);
+    } else {
+      for (const team of teams) {
+        section.appendChild(buildTeamCard(team, data));
+      }
+    }
+
+    // 建组入口：选择组长 + 勾选组员 → 保存
+    const createBtn = document.createElement('button');
+    createBtn.className = 'btn btn-secondary team-create';
+    createBtn.textContent = '＋ 新建小组';
+    createBtn.addEventListener('click', () => {
+      if (section.querySelector('.team-form')) {
+        section.querySelector('.team-form')?.remove();
+        return;
+      }
+      section.appendChild(buildTeamForm(data));
+    });
+    section.appendChild(createBtn);
+    return section;
+  }
+
+  /** 单个小组卡片：组长 + 组员名单（组员标注「会议参与」）+ 删除 */
+  function buildTeamCard(
+    team: { leader: string; members: string[] },
+    data: RolesPayload,
+  ): HTMLElement {
+    const card = document.createElement('div');
+    card.className = 'team-card';
+    const leaderName = data.packs.find((p) => p.name === team.leader)?.displayName ?? team.leader;
+    const head = document.createElement('div');
+    head.className = 'team-card-head';
+    const label = document.createElement('span');
+    label.className = 'team-leader';
+    label.textContent = `组长：${leaderName}`;
+    head.appendChild(label);
+    const del = document.createElement('button');
+    del.className = 'btn btn-danger team-del';
+    del.textContent = '删除';
+    del.title = '删除该小组（仅影响会议名单，不影响角色日常使用）';
+    del.addEventListener('click', () => {
+      vscode.postMessage({ type: 'roles_team_delete', leader: team.leader });
+    });
+    head.appendChild(del);
+    card.appendChild(head);
+    const members = document.createElement('div');
+    members.className = 'team-members';
+    team.members.forEach((m) => {
+      const name = data.packs.find((p) => p.name === m)?.displayName ?? m;
+      const tag = document.createElement('span');
+      tag.className = 'team-member-tag';
+      tag.textContent = name;
+      tag.title = `${name}（小组会议参与者）`;
+      members.appendChild(tag);
+    });
+    card.appendChild(members);
+    return card;
+  }
+
+  /** 建组表单：组长下拉 + 组员多选（防重复/防自组循环由 host 校验兜底） */
+  function buildTeamForm(data: RolesPayload): HTMLElement {
+    const form = document.createElement('div');
+    form.className = 'team-form';
+    const packs = data.packs ?? [];
+
+    // 组长选择
+    const leaderRow = document.createElement('label');
+    leaderRow.className = 'team-form-row';
+    leaderRow.textContent = '组长：';
+    const leaderSel = document.createElement('select');
+    leaderSel.className = 'team-select';
+    packs.forEach((p) => {
+      const opt = document.createElement('option');
+      opt.value = p.name;
+      opt.textContent = p.displayName + (p.isFallback ? '（兜底）' : '');
+      leaderSel.appendChild(opt);
+    });
+    leaderRow.appendChild(leaderSel);
+    form.appendChild(leaderRow);
+
+    // 组员多选（checkbox 列表）
+    const membersRow = document.createElement('div');
+    membersRow.className = 'team-form-row team-members-pick';
+    membersRow.textContent = '组员：';
+    const pickList = document.createElement('div');
+    pickList.className = 'team-pick-list';
+    packs.forEach((p) => {
+      const item = document.createElement('label');
+      item.className = 'team-pick-item';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.value = p.name;
+      item.appendChild(cb);
+      const txt = document.createElement('span');
+      txt.textContent = p.displayName + (p.isFallback ? '（兜底）' : '');
+      item.appendChild(txt);
+      pickList.appendChild(item);
+    });
+    membersRow.appendChild(pickList);
+    form.appendChild(membersRow);
+
+    const actions = document.createElement('div');
+    actions.className = 'team-form-actions';
+    const save = document.createElement('button');
+    save.className = 'btn btn-primary';
+    save.textContent = '保存小组';
+    save.addEventListener('click', () => {
+      const leader = leaderSel.value;
+      const members = Array.from(pickList.querySelectorAll('input:checked')).map(
+        (el) => (el as HTMLInputElement).value,
+      );
+      vscode.postMessage({ type: 'roles_team_save', leader, members });
+    });
+    actions.appendChild(save);
+    form.appendChild(actions);
+    return form;
+  }
+
+  /**
    * 构建单个角色包卡片（紧凑堆叠布局）
    *
    * 布局结构（三层分类法）：
-   *   - 顶部标题行（一级直面）：图标 + 名称 + 当前标签 + 操作按钮
-   *   - 中部信息区（次级信息）：描述 + 能力标签 + 策略指示器
-   *   - 底部折叠区（专家挖掘）：性格特征 + 互斥关系 + 版本号
+   *   - 顶部标题行（一级直面）：图标 + 名称 + 当前/兜底标签 + 操作按钮
+   *   - 中部信息区（次级信息）：描述 + 能力标签 + 策略指示器 + 组员标注
+   *   - 底部折叠区（专家挖掘）：性格特征 + 版本号
    */
   function buildCard(p: RolesPayload['packs'][number]): HTMLElement {
     const card = document.createElement('div');
@@ -130,6 +280,14 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       const badge = document.createElement('span');
       badge.className = 'badge';
       badge.textContent = '当前';
+      header.appendChild(badge);
+    }
+    // 兜底契约包标记（宿主 UI 禁删）
+    if (p.isFallback) {
+      const badge = document.createElement('span');
+      badge.className = 'badge badge-fallback';
+      badge.textContent = '兜底（禁删）';
+      badge.title = '内核兜底契约包（BUILTIN_FALLBACK_PACK），系统内置不可删除';
       header.appendChild(badge);
     }
 
@@ -236,14 +394,22 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       }
     }
 
+    // 组员标注（v0.13 S7）：该角色包被哪些组引用为组员——仅小组会议参与者，不用于日常切换
+    if (p.teamMembers && p.teamMembers.length > 0) {
+      const memberTag = document.createElement('div');
+      memberTag.className = 'team-member-role';
+      memberTag.textContent = `小组会议用（组员：${p.teamMembers.join(' / ')}）`;
+      memberTag.title = '作为组员参与小组会议（会议内表层装配发言），不参与日常切换';
+      info.appendChild(memberTag);
+    }
+
     card.appendChild(info);
 
     // ===== 底部折叠区（专家挖掘）=====
     const hasTraits = p.traits && Object.keys(p.traits).length > 0;
-    const hasExclusive = p.exclusiveWith && p.exclusiveWith.length > 0;
     const hasVersion = !!p.version;
 
-    if (hasTraits || hasExclusive || hasVersion) {
+    if (hasTraits || hasVersion) {
       const details = document.createElement('details');
       details.className = 'card-details';
 
@@ -283,24 +449,6 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
           traits.appendChild(trait);
         });
         content.appendChild(traits);
-      }
-
-      // 互斥关系 (Exclusive With)
-      if (hasExclusive) {
-        const exclusive = document.createElement('div');
-        exclusive.className = 'role-exclusive';
-        const label = document.createElement('span');
-        label.className = 'exclusive-label';
-        label.textContent = '互斥：';
-        exclusive.appendChild(label);
-        p.exclusiveWith!.forEach((name) => {
-          const tag = document.createElement('span');
-          tag.className = 'exclusive-tag';
-          tag.textContent = name;
-          tag.title = `与此角色包互斥：当输入命中「${name}」的关键词时，将自动切换为该角色`;
-          exclusive.appendChild(tag);
-        });
-        content.appendChild(exclusive);
       }
 
       // 版本号

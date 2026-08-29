@@ -26,7 +26,9 @@ import type {
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY } from '../../shared/constants.js';
+import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
+// 兜底契约包名（内核常量，宿主 UI 禁删标记）：随内核包分发，经 index 导出
+import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
 
 /** 列表加载条数（MVP：只读浏览，先展示最常用的前 20 条） */
 const MEMORY_LIST_LIMIT = 20;
@@ -157,6 +159,19 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         const fallback = `继续以「${displayName}」的视角处理以上任务`;
         this._chatProvider?.prefillInput(meta?.handoffPrompt?.trim() ? meta.handoffPrompt : fallback);
       }
+      return;
+    }
+    // 保存角色包组（会议名单）：校验 → 持久化 globalState → 热更新内核 → 重推角色视图
+    if (msg.type === 'roles_team_save') {
+      const ok = await this.saveRolePackTeam(msg.leader, msg.members);
+      this.post({ type: 'notice', level: ok ? 'info' : 'error', message: ok ? '小组已保存' : '小组保存失败，请检查组长与组员是否有效' });
+      if (ok) await this.loadRoles();
+      return;
+    }
+    // 删除角色包组（会议名单）
+    if (msg.type === 'roles_team_delete') {
+      await this.deleteRolePackTeam(msg.leader);
+      await this.loadRoles();
       return;
     }
 
@@ -365,12 +380,57 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     return ok;
   }
 
+  /**
+   * 保存角色包组（会议名单）：校验 → 持久化用户级 globalState → 热更新内核组数据。
+   * 组 = 组长角色包的会议名单（非选择对象）；组员仅作小组会议参与者，不用于日常。
+   * 校验：组长/组员须为存在的角色包、名单非空、组长身份唯一（一个角色包只能是一个组的组长）。
+   */
+  private async saveRolePackTeam(leader: string, members: string[]): Promise<boolean> {
+    const agent = await this.ensureAgent();
+    const rpm = agent?.rolePackManager;
+    if (!rpm || !leader) return false;
+    const validPacks = new Set(rpm.listMeta().map((m) => m.name));
+    const deduped = [...new Set(members)];
+    // 校验：组长存在、组员存在且非空、组员不重复（组长可为自身角色的并列确认）
+    if (!validPacks.has(leader)) return false;
+    if (deduped.length === 0) return false;
+    if (deduped.some((m) => !validPacks.has(m))) return false;
+    // 组长身份唯一：同一组长不允许两处建组
+    const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const others = teams.filter((t) => t.leader !== leader);
+    const next = [...others, { leader, members: deduped }];
+    await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
+    // 热更新内核组数据（运行时立即生效，无需重启）
+    rpm.setRolePackTeams(next);
+    return true;
+  }
+
+  /** 删除角色包组（会议名单）：持久化移除 + 热更新内核组数据。 */
+  private async deleteRolePackTeam(leader: string): Promise<void> {
+    const agent = await this.ensureAgent();
+    const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const next = teams.filter((t) => t.leader !== leader);
+    await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
+    agent?.rolePackManager?.setRolePackTeams(next);
+  }
+
   private async loadRoles(): Promise<void> {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
     if (!rpm) {
-      this.post({ type: 'roles_loaded', packs: [], activeName: '' });
+      this.post({ type: 'roles_loaded', packs: [], teams: [], activeName: '' });
       return;
+    }
+    // 组（会议名单）用户级数据：组员仅作小组会议参与者
+    const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    // 组员名单索引：角色包 → 引用它的组长集合（供「小组会议用」标注）
+    const memberOf = new Map<string, string[]>();
+    for (const team of teams) {
+      for (const member of team.members) {
+        const list = memberOf.get(member) ?? [];
+        if (!list.includes(team.leader)) list.push(team.leader);
+        memberOf.set(member, list);
+      }
     }
     const packs = rpm
       .listMeta()
@@ -384,7 +444,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         const tempGroup = temp >= 0.8 ? 'high' : temp <= 0.4 ? 'low' : 'mid';
         // 推理模式：基于 multiStepReasoning 字段
         const reasoningMode = strategy?.act?.multiStepReasoning;
-        
+
         const strategyHint = strategy
           ? {
               toolReadonly: strategy.act?.toolReadonly,
@@ -404,17 +464,19 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
             capability: c.capability,
             label: capabilityLabel(c.capability),
           })),
-          // 新增：从装配结果中传递 traits/exclusiveWith/handoffPrompt 等字段
+          // 从装配结果中传递 traits/handoffPrompt 等字段
           traits: pack?.traits,
-          exclusiveWith: pack?.meta.exclusiveWith,
           handoffPrompt: pack?.meta.handoffPrompt,
           strategyHint,
           interactionType: pack?.meta.interactionType,
           version: pack?.meta.version,
+          // v0.13 S7：该包作为组员被哪些组引用（仅小组会议用）+ 兜底契约包禁删标记
+          teamMembers: memberOf.get(m.name),
+          isFallback: m.name === BUILTIN_FALLBACK_PACK,
         };
       });
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
-    this.post({ type: 'roles_loaded', packs, activeName });
+    this.post({ type: 'roles_loaded', packs, teams, activeName });
   }
 
   // ─── 大模型配置子视图数据加载 ───

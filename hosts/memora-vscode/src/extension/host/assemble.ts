@@ -116,9 +116,14 @@ export interface AssembleOptions {
    * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
    *
    * 宿主从 vscode globalState 读取用户上次选择的角色包注入，
-   * Agent init 时优先激活；未配置/包不存在回退首个角色包。
+   * Agent init 时优先激活（§4.1 解析链第一层）；未配置/包不存在落兜底包。
    */
   activeRolePack?: string;
+  /**
+   * 角色包组（会议名单，v0.13 S7）：组长 + 组员名单。用户级数据（globalState），
+   * 注入 AgentOptions.rolePackTeams 供内核装配；组员仅作小组会议参与者，不用于日常。
+   */
+  rolePackTeams?: { leader: string; members: string[] }[];
   /**
    * 用户技能目录（可选，2026-08-22 新增）
    *
@@ -185,7 +190,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, roundStore, env, activeRolePack, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
+  const { projectPath, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
 
   // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
@@ -223,8 +228,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 配置目录 = 插件内置配置（dist/extension，含构建期从内核同步的 role-packs；
     // 内核 init 自动扫描 <configDir>/role-packs/ 并激活 activeRolePack 或首个角色包）
     configDir,
-    // 启动时激活的角色包（用户上次选择，由 extension 从 globalState 注入持久化值）
+    // 启动时激活的角色包（用户上次选择，由 extension 从 globalState 注入持久化值；
+    // §4.1 解析链第一层，失效落兜底包）
     activeRolePack,
+    // 角色包组（会议名单，用户级数据；内核 buildTeamContextBlock 注入组/成员清单供 LLM 组织会议）
+    rolePackTeams,
     provider,
     // Provider 路由策略（激活 AgentLoop 路由缓存优化；按任务类型返回对应 Provider）
     providerRouter,

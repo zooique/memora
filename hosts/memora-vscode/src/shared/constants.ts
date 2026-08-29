@@ -12,6 +12,12 @@
  *  符合"角色选择是用户偏好，跨项目共享"的语义（存储层级收敛）。 */
 export const ACTIVE_ROLE_PACK_KEY = 'memora.activeRolePack';
 
+/** 角色包组（会议名单）的持久化键（vscode globalState）：
+ *  组 = 组长角色包 + 组员名单（{leader, members[]}[]），用户级数据（会议名单容器）。
+ *  用户在建组/改组成员时写入，Agent 装配时经 AgentOptions.rolePackTeams 注入内核；
+ *  运行时修改经 agent.rolePackManager.setRolePackTeams 热更新。 */
+export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
+
 /** 写入二次确认开关的持久化键（vscode globalState）：
  *  用户在设置面板开启/关闭时写入，Agent 装配时读取决定是否传 confirmWrites=true，
  *  运行时切换时直接调 agent.security.setConfirmWrites() 热更新。
