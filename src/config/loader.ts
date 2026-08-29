@@ -90,8 +90,6 @@ export interface Config {
   security: SecurityConfig;
   /** 允许的路径白名单（绝对路径） */
   allowedPaths: string[];
-  /** 默认角色包名 */
-  rolePack?: string;
   /** Embedding 配置（可选） */
   embedding?: EmbeddingConfig;
 }
@@ -153,8 +151,6 @@ export function parseConfig(raw: unknown): Config {
 
   const allowedPaths = validateAllowedPaths(input.allowedPaths);
 
-  const rolePack = typeof input.rolePack === 'string' ? input.rolePack : undefined;
-
   const embedding = parseEmbedding(input.embedding);
 
   return {
@@ -162,7 +158,6 @@ export function parseConfig(raw: unknown): Config {
     memory,
     security,
     allowedPaths,
-    rolePack,
     embedding,
   };
 }
