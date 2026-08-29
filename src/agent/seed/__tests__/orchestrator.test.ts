@@ -721,3 +721,74 @@ describe('会议机制（S5 补强）：步粒度硬切换', () => {
     expect(mocks.applyRolePackToolExposure).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序列直跑', () => {
+  it('runChat：prepare 命中会议预置 → 跳过规划闭环，直调 completeExternalTask 逐成员步序列', async () => {
+    const { mocks, deps, consumeControl } = createHarness({
+      getBackgroundProvider: () => mockProvider('complex'),
+    });
+    useStrategy(mocks, makeStrategy({ taskLoopLimit: 5 }));
+
+    // 真实 SeedPrepare 经 rolePackManager.tryBuildMeetingPlan 命中会议 → sessionManager.writePlan 预置
+    const steps = [
+      { description: '成员A 发言：讨论', rolePack: '成员A' },
+      { description: '成员B 发言：讨论', rolePack: '成员B' },
+      { description: '汇总各方观点：讨论' },
+    ];
+    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
+    // writePlan 写入后 checkpoint 反映预置任务表（getNextPendingStep 从 checkpoint.plan 读取）
+    const plan = steps.map((s, i) => ({
+      id: `m${i}`,
+      description: s.description,
+      status: 'pending',
+      order: i,
+      ...(s.rolePack ? { rolePack: s.rolePack } : {}),
+    }));
+    mocks.sessionManager.writePlan.mockReturnValue(plan);
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan, roundLog: [] });
+    // 范围校验桩：成员声明有效、未声明→null
+    mocks.rolePackManager.resolveRoundAssemblyRole.mockImplementation(
+      (declared: string | undefined) => (declared ? declared : null),
+    );
+    // 模拟 LLM 每完成一步（步入口 prompt 含「【执行任务步骤】」）将对应 pending 步标 done
+    mocks.loop.processUserInput.mockImplementation((input: string) => {
+      if (typeof input === 'string' && input.includes('【执行任务步骤】')) {
+        const next = plan.find((s) => s.status === 'pending');
+        if (next) next.status = 'done';
+      }
+      return textStream('完成');
+    });
+    mocks.loop.runReport.mockReturnValue(textStream('汇报'));
+    consumeControl.result = { content: '完成', aborted: false, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('小组会议：讨论', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // ① prepare 已按会议步骤预置任务表（overwrite），而非等待 LLM 自建
+    expect(mocks.sessionManager.writePlan).toHaveBeenCalledWith('overwrite', steps);
+    // ② 跳过规划闭环：不注入 PLAN_ONLY 提示（planning 阶段不发生）
+    expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalledWith(
+      expect.stringContaining('外部任务规划闭环'),
+    );
+    // ③ 步序列直跑：成员步触发表层装配硬切换（rolePack=成员）
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员A');
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员B');
+    expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('成员A');
+    expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('成员B');
+    // ④ 汇总步（无 rolePack）→ 回落 activePack 前缀（null）
+    expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith(null);
+  });
+
+  it('runChat：非会议输入（tryBuildMeetingPlan=null）→ meetingPreset 不命中，走普通闭环', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '普通回复');
+    consumeControl.result = { content: '普通回复', aborted: false, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('普通问题', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 未命中：不预置任务表、不进入外部任务闭环
+    expect(mocks.sessionManager.writePlan).not.toHaveBeenCalled();
+    expect(mocks.loop.setWithinExternalTask).not.toHaveBeenCalledWith(true);
+  });
+});

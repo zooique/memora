@@ -26,6 +26,7 @@ import {
 import { SeedPrepare, refreshAssemblyForRolePack } from './prepare.js';
 import { DifficultyJudge, type Difficulty } from './difficulty.js';
 import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
+import { renderTaskTable } from '@/agent/taskTableRenderer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 
@@ -95,7 +96,10 @@ export class SeedOrchestrator {
       const headRoundId = parts.loop.getCurrentRoundId();
       parts.loop.setExternalTaskHeadRoundId(headRoundId);
       parts.loop.setWithinExternalTask(true);
-      yield* this.completeExternalTask(signal, input, '');
+      // 兜底摘要来源 = 预置任务表渲染文本（等价于规划闭环的规划产出，避免触顶未收敛时摘要为空）
+      const plan = parts.sessionManager?.getCheckpoint()?.plan ?? [];
+      const planFallback = renderTaskTable(plan);
+      yield* this.completeExternalTask(signal, input, planFallback);
       const forceWait = parts.loop.isIterationLimitReached?.() ?? false;
       yield* this.handoff(true, forceWait);
       return;

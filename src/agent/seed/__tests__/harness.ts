@@ -58,13 +58,19 @@ export interface SeedMocks {
     appendAssistant: ReturnType<typeof vi.fn>;
     registerPendingArchive: ReturnType<typeof vi.fn>;
   };
-  sessionManager: { getCheckpoint: ReturnType<typeof vi.fn> };
+  sessionManager: {
+    getCheckpoint: ReturnType<typeof vi.fn>;
+    // 会议机制（S5 确定性触发）：prepare 预置任务表写点（默认为空，测试可注入）
+    writePlan: ReturnType<typeof vi.fn>;
+  };
   rolePackManager: {
     getActive: ReturnType<typeof vi.fn>;
     // 会议机制（S5）：范围校验 / 本轮装配视角 / 组上下文块
     resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
     setRoundAssemblyRole: ReturnType<typeof vi.fn>;
     buildTeamContextBlock: ReturnType<typeof vi.fn>;
+    // 会议机制（S5 确定性触发）：输入含「小组会议」且组长 → 预置步骤（默认为空，测试可注入）
+    tryBuildMeetingPlan: ReturnType<typeof vi.fn>;
   };
   contextPreparer: {
     recallAndInject: ReturnType<typeof vi.fn>;
@@ -200,12 +206,13 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       appendAssistant: vi.fn(async () => {}),
       registerPendingArchive: vi.fn(),
     },
-    sessionManager: { getCheckpoint: vi.fn(() => null) },
+    sessionManager: { getCheckpoint: vi.fn(() => null), writePlan: vi.fn(() => []) },
     rolePackManager: {
       getActive: vi.fn(() => null),
       resolveRoundAssemblyRole: vi.fn(() => null),
       setRoundAssemblyRole: vi.fn(),
       buildTeamContextBlock: vi.fn(() => ''),
+      tryBuildMeetingPlan: vi.fn(() => null),
     },
     contextPreparer: {
       recallAndInject: vi.fn(async () => [] as Memory[]),

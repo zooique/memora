@@ -16,6 +16,7 @@ import {
   resolveL2Strategy,
   resolveMemoryRecallMode,
   resolveActiveStrategy,
+  resolveTaskLoopLimit,
 } from '@/role-pack/strategyResolver.js';
 import {
   type SeedDeps,
@@ -70,7 +71,16 @@ export class SeedPrepare {
     const meetingSteps = rolePackManager?.tryBuildMeetingPlan?.(input) ?? null;
     let meetingPreset = false;
     if (meetingSteps && sessionManager) {
-      sessionManager.writePlan('overwrite', meetingSteps);
+      // 步数截断保护：会议步骤总数（组员 + 汇总）不能超过 taskLoopLimit，
+      // 否则 runStepSequence 会被步数上限截断，末尾组员/汇总步骤永远不执行（会议不完整）。
+      // 自然生长：预置即截断——保证「预置什么就执行什么」，不产生必然被截断的步骤。
+      const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
+      const taskLoopLimit = resolveTaskLoopLimit(strategy);
+      const capped =
+        taskLoopLimit > 0 && meetingSteps.length > taskLoopLimit
+          ? meetingSteps.slice(0, taskLoopLimit)
+          : meetingSteps;
+      sessionManager.writePlan('overwrite', capped);
       meetingPreset = true;
     }
 
