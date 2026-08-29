@@ -694,9 +694,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * rolePackSwitched：角色包切换（内核 emit：粘性匹配自动切换 / 显式 activate）
+   * rolePackSwitched：角色包切换（内核 emit：手动切换 activate / 检查点恢复激活）
    *
-   * 三层对齐断点 A1：内核在粘性匹配或显式激活切换角色包时
+   * 三层对齐断点 A1：内核在手动切换或恢复激活角色包时
    * emit rolePackSwitched，此处转发为现有 chat_role_pack 协议消息（复用，不新增类型），webview 即时刷新。
    *
    * Phase 4 E2：同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。

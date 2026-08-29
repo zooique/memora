@@ -23,9 +23,8 @@ user_profile.md 与 project_memory.md 均明确记载硬约束：
 
 每轮对话后无差别执行：
 1. **profile facts 归档**（`UserProfile.archiveFacts`）—— 从用户输入提取画像事实
-2. **角色自动匹配**（`PersonaManager.autoMatch`）—— 不涉及归档
-3. **技能关键词匹配**（`SkillManager.match`）—— 不涉及归档
-4. **Insight 提取**（`InsightExtractor.extract`）—— LLM 提取洞察
+2. **技能关键词匹配**（`SkillManager.match`）—— 不涉及归档
+3. **Insight 提取**（`InsightExtractor.extract`）—— LLM 提取洞察
 
 无任何模式开关，所有用户都被强制全量自动归档。
 
