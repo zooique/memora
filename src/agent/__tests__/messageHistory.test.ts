@@ -7,7 +7,7 @@
  *   - listAllSessions 返回空数组
  *   - registerPendingArchive / awaitPendingArchives
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { todayDate } from '@/utils/time.js';
@@ -48,9 +48,10 @@ describe('MessageHistory · 基本操作', () => {
     await expect(history.appendAssistant('   ')).resolves.toBeUndefined();
   });
 
-  it('跨日追加后 currentDateValue 同步为实际写入日期（写入是与读侧锚点一致）', async () => {
-    // round-based 单一模型下，appendUser 不再写 legacy 扁平列表，
-    // 但会话日期锚点仍须随当天日期同步（摘要/标题/互斥排除锚点不错位）
+  it('跨天追加不漂移：currentDateValue 保持会话锚定日期（延续会话，不自动新建）', async () => {
+    // round-based 单一模型下，append 不写 legacy 扁平列表；会话日期锚点由
+    // 构造/loadSessionMessages/forkSession 决定，绝不随输入漂移到"今天"（2026-08-29
+    // 剪枝「跨天自动新建」残留：跨天继续对话 = 延续当前会话，用户显式新建才切会话）
     const mockStore = {
       loadMessages: () => [],
       listSessions: () => [],
@@ -64,15 +65,18 @@ describe('MessageHistory · 基本操作', () => {
       updateSessionMeta: () => {},
       listSessionMetas: () => [],
     };
-    // 构造一个"昨天"的初始化日期，模拟跨日后第一次追加
+    // 构造一个"昨天"的初始化日期，模拟跨日后继续同一会话
     const history = new MessageHistory(mockStore, '2000-01-01', 'main');
     expect(history.currentDateValue).toBe('2000-01-01');
 
-    await history.appendUser('跨日后消息');
-    // currentDate 已同步到今天（与写入锚点一致）
-    expect(history.currentDateValue).toBe(todayDate());
-    // currentSessionName 与写入 date 一致
-    expect(history.currentSessionName).toBe(`${todayDate()}-main`);
+    await history.appendUser('跨日后继续对话');
+    // 会话日期锚点保持不变：跨天 = 延续「昨天-main」，不漂移到今天自动新建
+    expect(history.currentDateValue).toBe('2000-01-01');
+    expect(history.currentSessionName).toBe('2000-01-01-main');
+
+    await history.appendAssistant('继续回复');
+    expect(history.currentDateValue).toBe('2000-01-01');
+    expect(history.currentSessionName).toBe('2000-01-01-main');
   });
 });
 
@@ -91,6 +95,43 @@ describe('MessageHistory · loadSessionMessages', () => {
     expect(messages).toEqual([]);
     // 应更新当前会话为请求的会话
     expect(history.session).toBe('old-session');
+  });
+});
+
+describe('MessageHistory · forkSession', () => {
+  it('分叉后切换身份不能卡在旧日期：currentDate 锚定今天（与建键一致）', () => {
+    // forkSession 走 getSessionMeta / getRoundIds / setRoundIds / updateSessionMeta
+    const store = {
+      loadMessages: () => [],
+      listSessions: () => [],
+      getRoundIds: () => ['r1', 'r2'],
+      setRoundIds: vi.fn(),
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: () => ({
+        sessionId: '2000-01-01-main',
+        roundIds: ['r1', 'r2'],
+        updatedAt: '2000-01-01T00:00:00Z',
+        messageCount: 4,
+      }),
+      updateSessionMeta: vi.fn(),
+      listSessionMetas: () => [],
+    };
+    // "昨天"会话内发起分叉：源会话日期 2000-01-01
+    const history = new MessageHistory(store, '2000-01-01', 'main');
+    const result = history.forkSession('r2');
+
+    // 分叉键与当前身份同锚今天：写入不会漂到源会话旧日期（输入不再自动刷新日期后，
+    // fork 显式锚定即唯一新建路径，2026-08-29 剪枝）
+    expect(result.date).toBe(todayDate());
+    expect(history.currentDateValue).toBe(todayDate());
+    expect(history.currentSessionName).toBe(`${todayDate()}-${result.newSession}`);
+    expect(store.setRoundIds).toHaveBeenCalledWith(
+      `${todayDate()}-${result.newSession}`,
+      ['r1', 'r2'],
+    );
   });
 });
 

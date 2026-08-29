@@ -453,57 +453,47 @@ describe('SessionManager', () => {
       expect(count).toBe(0);
     });
 
-    it('sessions 为空应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessions = vi.fn().mockReturnValue([]);
+    it('listSessionMetas 为空应返回 0', async () => {
+      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([]);
       const count = await manager.restoreMostRecentSession();
       expect(count).toBe(0);
     });
 
-    it('preferredSession 匹配今天应优先选择', async () => {
-      vi.setSystemTime(new Date('2026-06-27T15:00:00Z'));
-      (sessionStore as ISessionStore).listSessions = vi
-        .fn()
-        .mockReturnValue(['2026-06-26-main', '2026-06-27-main']);
-      (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([
-        { role: 'user', content: 'msg1', timestamp: '2026-06-27T10:00:00Z' },
+    it('按 updatedAt 降序恢复最近活跃会话（SSOT：listSessionMetas[0]）', async () => {
+      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
+        // updatedAt 降序：最近活跃在前（mock 语义 = listSessionMetas 契约时序）
+        { sessionId: '2026-06-27-fork-a', updatedAt: '2026-06-27T10:00:00Z', messageCount: 4 },
+        { sessionId: '2026-06-26-main', updatedAt: '2026-06-26T10:00:00Z', messageCount: 2 },
       ]);
-      const count = await manager.restoreMostRecentSession('main');
-      expect(count).toBe(1);
-      expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-27', 'main');
-    });
-
-    it('preferredSession 不匹配时应取最后一个会话', async () => {
-      (sessionStore as ISessionStore).listSessions = vi
-        .fn()
-        .mockReturnValue(['2026-06-26-main', '2026-06-27-other']);
       (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([
-        { role: 'user', content: 'fallback', timestamp: '2026-06-27T10:00:00Z' },
+        { role: 'user', content: 'recent', timestamp: '2026-06-27T10:00:00Z' },
       ]);
-      const count = await manager.restoreMostRecentSession('main');
+      const count = await manager.restoreMostRecentSession();
       expect(count).toBe(1);
-      expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-27', 'other');
+      expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-27', 'fork-a');
     });
 
     it('会话标识格式不匹配（无日期前缀）应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessions = vi.fn().mockReturnValue(['invalid-name']);
+      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
+        { sessionId: 'invalid-name', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
+      ]);
       const count = await manager.restoreMostRecentSession();
       expect(count).toBe(0);
     });
 
-    it('加载的消息为空应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessions = vi
-        .fn()
-        .mockReturnValue(['2026-06-27-main']);
+    it('最近活跃会话的消息为空应返回 0', async () => {
+      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
+        { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
+      ]);
       (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([]);
       const count = await manager.restoreMostRecentSession();
       expect(count).toBe(0);
     });
 
     it('正常恢复应将消息恢复到 AgentLoop', async () => {
-      vi.setSystemTime(new Date('2026-06-27T15:00:00Z'));
-      (sessionStore as ISessionStore).listSessions = vi
-        .fn()
-        .mockReturnValue(['2026-06-27-main']);
+      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
+        { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 6 },
+      ]);
       const messages: SessionMessage[] = [
         { role: 'user', content: 'u1', timestamp: '2026-06-27T10:00:00Z' },
         { role: 'assistant', content: 'a1', timestamp: '2026-06-27T10:00:01Z' },
@@ -517,30 +507,6 @@ describe('SessionManager', () => {
       const restored = (loop.restoreHistory as ReturnType<typeof vi.fn>).mock.calls[0]![0];
       expect(restored).toHaveLength(3);
       expect(restored[0]).toEqual({ role: 'user', content: 'u1' });
-    });
-
-    it('默认 preferredSession 应为 main', async () => {
-      vi.setSystemTime(new Date('2026-06-27T15:00:00Z'));
-      (sessionStore as ISessionStore).listSessions = vi
-        .fn()
-        .mockReturnValue(['2026-06-27-main']);
-      (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([
-        { role: 'user', content: 'x', timestamp: '2026-06-27T10:00:00Z' },
-      ]);
-      await manager.restoreMostRecentSession(); // 不传参
-      expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-27', 'main');
-    });
-
-    it('跨日场景：preferredSession 匹配今天的会话优先于昨天的', async () => {
-      vi.setSystemTime(new Date('2026-06-28T03:00:00Z')); // UTC 6/28 凌晨
-      (sessionStore as ISessionStore).listSessions = vi
-        .fn()
-        .mockReturnValue(['2026-06-27-main', '2026-06-28-main']);
-      (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([
-        { role: 'user', content: 'today', timestamp: '2026-06-28T03:00:00Z' },
-      ]);
-      await manager.restoreMostRecentSession('main');
-      expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-28', 'main');
     });
   });
 

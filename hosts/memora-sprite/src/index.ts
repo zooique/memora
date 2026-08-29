@@ -557,7 +557,7 @@ async function setupAgentPostInit(
   if (!agent.sessionManager) {
     logger.warn('SessionManager 未初始化，跳过会话恢复');
   } else {
-    const restored = await agent.sessionManager.restoreMostRecentSession('main');
+    const restored = await agent.sessionManager.restoreMostRecentSession();
     if (restored > 0) {
       logger.info(`已恢复上次会话（${restored} 条消息）`);
     }

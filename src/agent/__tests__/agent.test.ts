@@ -1142,7 +1142,12 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
         // no-op
       },
       listSessionMetas() {
-        return [];
+        // SSOT mock：保持传入顺序（[0] = 最近活跃，调用方负责控制降序时序）
+        return sessions.map((sessionId) => ({
+          sessionId,
+          updatedAt: new Date().toISOString(),
+          messageCount: (messagesBySession[sessionId] ?? []).length,
+        }));
       },
     };
   }
@@ -1211,11 +1216,11 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    const count = await agent.sessionManager!.restoreMostRecentSession('main');
+    const count = await agent.sessionManager!.restoreMostRecentSession();
     expect(count).toBe(2);
   });
 
-  it('preferredSession 不匹配时取最后一个会话', async () => {
+  it('有会话时按 listSessionMetas[0]（updatedAt 降序最近活跃）恢复', async () => {
     const today = todayDate();
     const sessionKey = `${today}-other`;
     const messages = [
@@ -1236,8 +1241,8 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    // preferredSession='main' 不匹配，fallback 到最后一个
-    const count = await agent.sessionManager!.restoreMostRecentSession('main');
+    // listSessionMetas[0] 即最近活跃会话（SSOT），与会话名是否 main 无关
+    const count = await agent.sessionManager!.restoreMostRecentSession();
     expect(count).toBe(1);
   });
 
@@ -1279,7 +1284,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     });
     await agent.init();
 
-    const count = await agent.sessionManager!.restoreMostRecentSession('main');
+    const count = await agent.sessionManager!.restoreMostRecentSession();
     expect(count).toBe(0);
   });
 });

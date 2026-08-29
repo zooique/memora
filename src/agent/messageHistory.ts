@@ -218,7 +218,9 @@ export class MessageHistory {
       this.roundStore?.incrementRef(id);
     }
 
-    // 8. 切换到新会话
+    // 8. 切换到新会话（同步日期锚点为今天：分叉键 = todayDate()-newSession，
+    //    切换身份必须与建键一致，防跨天后 currentDate 停在源会话旧日期导致写入错位）
+    this.currentDate = todayDate();
     this.switchSession(newSession);
 
     logger.info({ from: currentSession.sessionId, to: newSession, roundCount: newRoundIds.length }, '会话分叉完成');
@@ -240,8 +242,7 @@ export class MessageHistory {
       timestamp: nowIso(),
       ...(roundId ? { roundId } : {}),
     };
-    this.currentDate = todayDate();
-
+    // 会话日期锚点不随输入漂移：currentDate 由显式加载/新建决定，跨天续聊沿用原会话日期
     // Round-based 路径：roundStore 注入且有 roundId 时写入
     if (roundId && this.roundStore) {
       try {
@@ -285,7 +286,7 @@ export class MessageHistory {
       timestamp: nowIso(),
       ...(roundId ? { roundId } : {}),
     };
-    this.currentDate = todayDate();
+    // 会话日期锚点不随输入漂移（同 appendUser 上方注释）
 
     // Round-based 路径：roundStore 注入且有 roundId 时完成 pending Round
     if (roundId && this.roundStore) {

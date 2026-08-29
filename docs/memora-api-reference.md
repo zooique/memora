@@ -536,7 +536,7 @@ interface ISessionStore {
 | `sessionManager.switchSession(newName)` → `string` | 切换到指定会话（chatBusy 时抛 configError） |
 | `sessionManager.forkSession(targetSession?)` → `AgentForkResult` | 分叉当前会话 |
 | `sessionManager.loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
-| `sessionManager.restoreMostRecentSession(preferredSession='main')` → `Promise<number>` | 启动时恢复最近一次会话 |
+| `sessionManager.restoreMostRecentSession()` → `Promise<number>` | 恢复最近活跃会话（SSOT：listSessionMetas[0]，updatedAt 降序；绝不隐式创建——新建会话唯一入口为宿主手动按钮） |
 | `sessionManager.restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
 | `sessionManager.createCheckpoint(mainGoal?)` → `SessionCheckpoint \| null` | 创建当前会话检查点（含热记忆、目标、计划、状态机快照），首次调用返回完整检查点，后续调用合并增量 |
 | `sessionManager.restoreFromCheckpoint(checkpoint)` → `Promise<number>` | 从检查点恢复会话（恢复消息历史、状态机状态、截断时注入提示消息） |

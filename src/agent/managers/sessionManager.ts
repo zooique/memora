@@ -6,8 +6,6 @@
 
 import { logger } from '@/logging/logger.js';
 import { chatBusyError, configError } from '@/utils/errors.js';
-// todayDate() 按本地时区取会话日期键；toISOString().slice(0,10) 是 UTC 日期，本地跨天会产生错位
-import { todayDate } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
@@ -299,8 +297,16 @@ export class SessionManager {
     };
   }
 
-  /** 恢复最近会话：经 ISessionStore 加载最近消息到工作记忆；宿主未注入则返回 0 */
-  async restoreMostRecentSession(preferredSession = 'main'): Promise<number> {
+  /**
+   * 恢复最近活跃会话：经 ISessionStore 加载最近消息到工作记忆；宿主未注入则返回 0。
+   *
+   * 会话管理纯度（2026-08-29 剪枝）：会话一律手动创建（宿主标题条「＋」唯一入口），
+   * 本方法只做「恢复」、绝不隐式创建会话——旧「今天-main 优先」按天归档语义与
+   * preferredSession 参数已移除。最近活跃的唯一时间序真理源 = listSessionMetas[0]（updatedAt 降序）。
+   *
+   * @returns 恢复的消息条数（0 = 无可恢复会话）
+   */
+  async restoreMostRecentSession(): Promise<number> {
     // 对话进行中恢复会导致 loop 工作记忆被替换
     if (this.isChatBusy()) {
       throw chatBusyError('恢复会话');
@@ -311,28 +317,24 @@ export class SessionManager {
       return 0;
     }
 
-    // 从 sessionStore 列出所有会话，找到最近的
-    const sessions = this.sessionStore.listSessions();
-    if (sessions.length === 0) {
-      logger.debug({ sessionCount: 0 }, '没有找到可恢复的历史会话');
+    // SSOT：listSessionMetas 依 updatedAt 降序，[0] 即最近活跃会话（唯一时间序真理源）
+    const metas = this.sessionStore.listSessionMetas();
+    const target = metas[0]?.sessionId;
+    if (!target) {
+      logger.debug({ sessionCount: metas.length }, '没有可恢复的历史会话');
       return 0;
     }
 
-    // 优先匹配 preferredSession，否则取最后一个；用 todayDate()（本地时区）避免 UTC 跨天写"昨天"
-    const today = todayDate();
-    const preferred =
-      sessions.find((s) => s === `${today}-${preferredSession}`) ?? sessions[sessions.length - 1];
-
     // 解析 "YYYY-MM-DD-session" 格式（正则已保证两捕获组存在，仅用于类型收窄）
-    const match = (preferred ?? '').match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
+    const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
     if (!match) {
-      logger.debug({ session: preferred }, '会话标识格式不匹配');
+      logger.debug({ session: target }, '会话标识格式不匹配');
       return 0;
     }
 
     const [, date, session] = match;
     if (!date || !session) {
-      logger.debug({ session: preferred }, '会话标识解析失败');
+      logger.debug({ session: target }, '会话标识解析失败');
       return 0;
     }
     const sessionMessages = this.sessionStore.loadMessages(date, session);

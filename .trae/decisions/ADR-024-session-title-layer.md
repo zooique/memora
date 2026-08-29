@@ -91,3 +91,13 @@ renameSession(date: string, session: string, title: string): void;
 
 - 当宿主需要"会话标题搜索/筛选"或"会话级标签"等进阶能力时，需评估 `SessionMeta` 是否扩展；
 - 当要求"重命名后跨会话统一"或"标题本地化"时，需重新评估 title 的归属与存储。
+
+## 演进备注（2026-08-29 · 会话管理纯度定案）
+
+> **收敛**：§5「按天自动归档全部原样保留」语义作废。会话创建收敛为**唯一手动入口**（宿主标题条「＋」）：
+>
+> - `restoreMostRecentSession()` 去除 `preferredSession='main'` 与「今天-main 优先」按天归档残留——最近活跃的唯一时间序真理源 = `listSessionMetas[0]`（`updatedAt` 降序），方法只恢复、绝不隐式创建；
+> - `MessageHistory.appendUser/appendAssistant` 不再把 `currentDate` 刷新为当天——跨天续聊沿用会话锚定日期，杜绝输入触发「跨天自动新建会话」；
+> - 宿主初始化移除「今天-main」兜底：无历史会话时不自动创建，首次发送引导手动新建。
+>
+> 与 §1/§5 的张力说明：ADR 主体保留 2026-08-15 定案（标题层与身份解耦、手动会话可行）不变，仅"按天自动归档并存"的过渡语义在本轮剪除。

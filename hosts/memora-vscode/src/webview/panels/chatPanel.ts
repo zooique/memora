@@ -200,10 +200,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     providerStore: ProviderStore,
   ) {
     this._providerStore = providerStore;
-    // 初始会话：最近活跃会话（有历史时），否则当天 main 空会话（ADR-024）
-    this._currentSessionId =
-      this.sessionStore.listSessionMetas()[0]?.sessionId ??
-      `${formatDateKey(new Date())}-main`;
+    // 初始会话：最近活跃会话（SSOT：listSessionMetas 按 updatedAt 降序，[0] 即最近）；
+    // 无任何历史会话时不自动创建——新建会话唯一入口为标题条「＋」
+    //（2026-08-29 剪枝：移除旧「今天-main」按天归档兜底，杜绝跨天游离出新会话的残留）
+    this._currentSessionId = this.sessionStore.listSessionMetas()[0]?.sessionId ?? '';
     // 跟随当前活动编辑器：实时注入「当前打开文档」为对话上下文（2026-08-17 A 层）
     // 原 docContext 仅在 memora.open 命令路径注入一次快照，点活动栏图标打开面板完全
     // 不注入 → Agent 看不到当前文档（bug 根因）。此处持续跟随 activeTextEditor，
@@ -1142,6 +1142,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 读取失败不阻塞面板展示（SSOT 不藏错，避免「历史空白」静默吞因）。
    */
   private replayHistory(): void {
+    // 会话管理纯度：无当前会话（初始空态）→ 清空消息区并返回，不进入任何会话回放路径
+    if (!this._currentSessionId) {
+      this.post({ type: 'clear_ok' });
+      return;
+    }
     try {
       if (this._viewLoader) {
         this.sendRoundView(this.loadRoundBasedHistory());
@@ -1182,8 +1187,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
     // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
     this.post({ type: 'history_loaded' });
-    // 推送当前会话标题 → webview 顶部展示（主动可见，便于识别当前会话）
-    this.post({ type: 'session_title', title: this.currentSessionTitle() });
+    // 推送当前会话标题 → webview 顶部展示（主动可见，便于识别当前会话）。
+    // 无当前会话（初始空态）→ 推送引导文案而非「新会话 HH:MM」占位，避免误认存在会话
+    this.post({
+      type: 'session_title',
+      title: this._currentSessionId ? this.currentSessionTitle() : '暂无会话（点击上方「＋」新建）',
+    });
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
@@ -1582,6 +1591,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
+      return;
+    }
+    // 会话管理纯度（2026-08-29 剪枝）：无当前会话（无历史时的初始空态）→ 引导手动
+    // 新建，绝不隐式创建会话。新建会话唯一入口 = 标题条「＋」（回归主流，手动唯一）。
+    if (!this._currentSessionId) {
+      this.post({ type: 'notice', level: 'info', message: '请先点击上方「＋」新建会话再开始对话' });
       return;
     }
     // 无缝插话（缺口 B）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
