@@ -58,10 +58,22 @@ function copyAssetsRecursive(srcDir, outDir) {
  * 单一真理源（机制化同步，2026-08-24）：宿主不持有角色包源，改从内核
  * role-packs/（仓库根）复制到 dist。宿主自持副本已删除，避免与内核分叉漂移——
  * 内核改一处，宿主构建期全量跟上。
+ *
+ * 兜底契约包构建期校验（S0，2026-08-29）：`BUILTIN_FALLBACK_PACK` 锁定的兜底包
+ * 是机制底线（随内核分发、宿主 UI 禁删），缺失即构建失败——校验前移，失败尽早
+ * （运行时缺失则退化为「无 persona 运行 + warning」，不装配失败）。
  */
 function copyRolePacks() {
   // 仓库根 role-packs/（内核角色包，随 npm 发布，兼作宿主生产角色包源）
   const kernelRolePacks = join(__dirname, '..', '..', 'role-packs');
+  // 内核常量 BUILTIN_FALLBACK_PACK 锁定名（与 src/role-pack/constants.ts 对齐，构建期契约）
+  const fallbackPackDir = 'memora助手';
+  if (!existsSync(join(kernelRolePacks, fallbackPackDir))) {
+    throw new Error(
+      `[BUILD:ROLE_PACK] 兜底契约包缺失：role-packs/${fallbackPackDir}/ 不存在，` +
+        `无法构建（BUILTIN_FALLBACK_PACK 锁定，改名须走 ADR）`,
+    );
+  }
   copyAssetsRecursive(kernelRolePacks, join(DIST, 'extension', 'role-packs'));
 }
 

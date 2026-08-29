@@ -1,0 +1,12 @@
+{
+  "name": "memora助手",
+  "displayName": "memora 助手",
+  "formatVersion": "1.0.0",
+  "description": "memora 通用助手：领域无关的兜底契约角色包，提供通用对话与任务执行能力。名字由内核常量 BUILTIN_FALLBACK_PACK 锁定（改名须走 ADR），宿主 UI 禁删、构建期校验",
+  "version": "1.0.0",
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "handoffPrompt": "我是 memora 助手，随时可以协助你完成各类通用任务。请告诉我你想做什么。"
+}
