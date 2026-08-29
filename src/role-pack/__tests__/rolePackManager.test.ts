@@ -436,6 +436,22 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(await manager.load('组长A')).toBe(3);
       expect(manager.activeName).toBe('组长A');
     });
+
+    it('组长与组员身份互斥：成员名单含组长 → warning（不阻塞装载）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
+      await writePack(packsDir, '组员1', { name: '组员1', formatVersion: '1.0.0' }, {});
+
+      const manager = new RolePackManager(dir);
+      // 组长A 同时出现在自己的成员名单里（身份互斥被破坏）
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组长A', '组员1'] }]);
+      // warning 不阻塞装载
+      expect(await manager.load('组长A')).toBe(2);
+      expect(manager.activeName).toBe('组长A');
+      // 会议解析时：组长自身按组员处理 → 落入组长视角（键恒为 activePack）
+      expect(manager.resolveRoundAssemblyRole('组长A')).toBe('组长A');
+    });
   });
 
   describe('会议机制：resolveRoundAssemblyRole 范围校验 + 表层装配视角（S5）', () => {
@@ -509,6 +525,19 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       // 切到非组长 → 空串（不注入）
       manager.activate('组员1');
       expect(manager.buildTeamContextBlock()).toBe('');
+    });
+
+    it('buildTeamContextBlock：注入确定性触发指令（提及「小组会议」须立即开会、组员从清单取无需点名）', async () => {
+      await writeTeamPacks();
+      const manager = new RolePackManager(dir);
+      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
+      await manager.load('组长A');
+      const block = manager.buildTeamContextBlock();
+      // 确定性触发：用户提及「小组会议」即须调用 task_table_write，而非被动描述能力
+      expect(block).toContain('须立即');
+      expect(block).toContain('task_table_write');
+      // UX 诉求：组员取自上方清单，无需用户在提示词中点名
+      expect(block).toContain('无需用户点名');
     });
   });
 

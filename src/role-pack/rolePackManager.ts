@@ -314,7 +314,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 组数据校验（S4，装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 → warning（不阻塞装载）。
+   * 组数据校验（S4，装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 / 组长组员互斥 → warning（不阻塞装载）。
    * 组员失效 → 会议时缺员跳过（resolveRoundAssemblyRole 内判定）；组长失效 → 该组失效（仅影响会议）。
    */
   private validateTeams(): void {
@@ -330,6 +330,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         getLogger().warn(
           { leader: team.leader },
           '组组长引用的角色包不存在（悬空引用，该组失效仅影响会议）',
+        );
+      }
+      if (team.members.includes(team.leader)) {
+        getLogger().warn(
+          { leader: team.leader },
+          '组长与组员身份互斥：组长不能同时是组员（该组成员名单含组长，会议时按组员跳过）',
         );
       }
       for (const member of team.members) {
@@ -412,7 +418,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return (
       `【小组会议角色（组长：${team.leader}；组员：${team.members.join(' / ')}）】` +
       `组织小组会议时，可用 task_table_write 在步骤中声明 rolePack（∈ {组长} ∪ {组员}，越界会被忽略）` +
-      `，使该步骤以对应成员视角发言；汇总步骤可不声明（默认按组长视角）。`
+      `，使该步骤以对应成员视角发言；汇总步骤可不声明（默认按组长视角）。` +
+      `当用户消息提及「小组会议」时，须立即用 task_table_write 组织会议，组员即上方清单、无需用户点名；` +
+      `各成员依次发言后，设一步汇总（可不声明 rolePack）。`
     );
   }
 
