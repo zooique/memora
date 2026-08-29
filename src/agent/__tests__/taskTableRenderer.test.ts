@@ -70,6 +70,22 @@ describe('taskTableRenderer — 基本渲染', () => {
 
     expect(result).toContain('已阻塞');
   });
+
+  it('会议步骤（rolePack）标注装配角色（v0.13 S5）', () => {
+    const plan: PlanStep[] = [
+      { id: 's1', order: 0, description: '从编辑视角审稿', status: 'active', rolePack: '编辑' },
+      { id: 's2', order: 1, description: '从评论家视角点评', status: 'pending', rolePack: '评论家' },
+      { id: 's3', order: 2, description: '汇总会议结论', status: 'pending' },
+    ];
+    const result = renderTaskTable(plan);
+
+    // 声明 rolePack 的步骤带【角色】标注，供 LLM 识别「该步骤由谁发言」
+    expect(result).toContain('【编辑】从编辑视角审稿');
+    expect(result).toContain('【评论家】从评论家视角点评');
+    // 未声明 rolePack 的步骤（汇总）无标注
+    expect(result).toContain('汇总会议结论');
+    expect(result).not.toContain('【】');
+  });
 });
 
 // ══════════════════════════════════════════════════════════════

@@ -1931,6 +1931,24 @@ describe('SessionManager', () => {
         );
         expect(bare.writePlan('append', [{ description: 'x' }])).toEqual([]);
       });
+
+      it("'append' 步骤携带 rolePack（会议表层装配角色）应透传进 PlanStep（v0.13 S5）", () => {
+        const result = mgr.writePlan('append', [
+          { description: '从编辑视角审稿', rolePack: '编辑' },
+          { description: '汇总会议结论' },
+        ]);
+        expect(result).toHaveLength(2);
+        expect(result[0]!.rolePack).toBe('编辑');
+        // 未声明 rolePack 的步骤保持 undefined（非会议）
+        expect(result[1]!.rolePack).toBeUndefined();
+      });
+
+      it("'update' 保留既有步骤 rolePack（仅覆盖 description）", () => {
+        mgr.appendPlanStep('旧步骤', '编辑');
+        const result = mgr.writePlan('update', [{ description: '新描述' }]);
+        expect(result[0]!.description).toBe('新描述');
+        expect(result[0]!.rolePack).toBe('编辑');
+      });
     });
   });
 });

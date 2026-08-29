@@ -7,7 +7,7 @@
 >
 > **现状（已落地）**：三个横向切面已下沉为专职模块——
 > - **Step 1 装配回填** → `assembler.ts` 新增 `AgentHooks`，Agent.assembleComponents 退化为一行委托
-> - **Step 2 输入增强** → `contextPreparer.ts`（tryAutoMatchRolePack / recallAndInject / matchAndInjectSkill），Agent 留编排调用点
+> - **Step 2 输入增强** → `contextPreparer.ts`（recallAndInject，v0.13 起角色仅手动切换、无自动匹配），Agent 留编排调用点
 > - **Step 3 检查点恢复** → `checkpointRestoreCoordinator.ts`（warmRecall / reinject / restore / shouldGenerateTaskTable），Agent.restoreFromCheckpoint 委托
 >
 > **体量**：agent.ts 2255 → 1721 行（-534）；新增 assembler 694 / contextPreparer 298 / checkpointRestoreCoordinator 246
@@ -59,10 +59,10 @@
 
 ### 切面 2：输入增强管线 → ContextPreparer（Step 2）
 
-**现状**：[recallAndInject](../../src/agent/agent.ts)（108 行：语义召回 + limited 配额 + 固定轮次注入）
-+ matchAndInjectSkill + tryAutoMatchRolePack / matchRolePackByLlm，约 180 行。
+**现状**：[recallAndInject](../../src/agent/contextPreparer.ts)（语义召回 + limited 配额 + 固定轮次注入；
+v0.13 起角色自动匹配已移除，管线仅剩记忆/技能增强）。
 
-**本质**：一条完整的「外部输入 → 召回/技能/角色增强」管线，正是「触发源决定召回」哲学的实体。
+**本质**：一条完整的「外部输入 → 记忆增强」管线，正是「触发源决定召回」哲学的实体。
 
 **接口**：`prepare(input) → { memories }`；内部依赖（emit 回调、getActiveStrategy、requirePctx）以 options 注入，Agent 只留调用点。
 记忆召回 / 摘要配额 / 保底阈值等策略解析随管线一起走。

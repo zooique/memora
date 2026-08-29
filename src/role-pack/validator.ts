@@ -513,7 +513,7 @@ function parseMatchField(
     return null;
   }
 
-  // 数量上限：匹配词列表防膨胀（autoMatch 按 包数×词数 全量遍历）
+  // 数量上限：匹配词列表防膨胀（匹配按 包数×词数 全量遍历）
   if (values.length > MAX_MATCH_WORDS) {
     issues.push({
       severity: 'error',
