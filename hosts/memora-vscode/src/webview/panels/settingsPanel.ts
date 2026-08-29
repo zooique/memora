@@ -27,8 +27,10 @@ import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
-// 兜底契约包名（内核常量，宿主 UI 禁删标记）：随内核包分发，经 index 导出
-import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
+// 内核常量（宿主不复制字面量，SSOT 单一来源）：
+//   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
+//   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview。
+import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@zooique/memora';
 
 /** 列表加载条数（MVP：只读浏览，先展示最常用的前 20 条） */
 const MEMORY_LIST_LIMIT = 20;
@@ -163,9 +165,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
     // 保存角色包组（会议名单）：校验 → 持久化 globalState → 热更新内核 → 重推角色视图
     if (msg.type === 'roles_team_save') {
-      const ok = await this.saveRolePackTeam(msg.leader, msg.members);
-      this.post({ type: 'notice', level: ok ? 'info' : 'error', message: ok ? '小组已保存' : '小组保存失败，请检查组长与组员是否有效' });
-      if (ok) await this.loadRoles();
+      const result = await this.saveRolePackTeam(msg.leader, msg.members);
+      this.post({
+        type: 'notice',
+        level: result.ok ? 'info' : 'error',
+        message: result.ok ? '小组已保存' : result.reason,
+      });
+      if (result.ok) await this.loadRoles();
       return;
     }
     // 删除角色包组（会议名单）
@@ -385,19 +391,30 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 组 = 组长角色包的会议名单（非选择对象）；组员仅作小组会议参与者，不用于日常。
    * 校验：组长/组员须为存在的角色包、名单非空、组长身份唯一（一个角色包只能是一个组的组长）。
    */
-  private async saveRolePackTeam(leader: string, members: string[]): Promise<boolean> {
+  private async saveRolePackTeam(
+    leader: string,
+    members: string[],
+  ): Promise<{ ok: true } | { ok: false; reason: string }> {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
-    if (!rpm || !leader) return false;
+    if (!rpm || !leader) return { ok: false, reason: '小组保存失败：内核未就绪' };
     const validPacks = new Set(rpm.listMeta().map((m) => m.name));
     const deduped = [...new Set(members)];
-    // 校验：组长存在、组员存在、组员非空且不重复、组长与组员身份互斥（组长不能同时是组员）
-    if (!validPacks.has(leader)) return false;
-    if (deduped.length === 0) return false;
-    if (deduped.some((m) => !validPacks.has(m))) return false;
-    if (deduped.includes(leader)) return false;
-    // 5 人组上限（队长 1 + 组员 ≤ 4，② 组队功能用户约定）：超限拒绝保存
-    if (deduped.length > 4) return false;
+    // 校验（全部分支在此收口，失败均带可直接展示的原因，调用方不再猜测）：
+    // 组长存在、组员存在、组员非空且不重复、组长与组员身份互斥、组员数量不超上限
+    if (!validPacks.has(leader)) return { ok: false, reason: `小组保存失败：组长「${leader}」不存在` };
+    if (deduped.length === 0) return { ok: false, reason: '小组保存失败：至少选择 1 名组员' };
+    if (deduped.some((m) => !validPacks.has(m))) {
+      return { ok: false, reason: '小组保存失败：存在不存在的组员角色包' };
+    }
+    if (deduped.includes(leader)) return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
+    // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，② 组队功能用户约定）：超限拒绝保存
+    if (deduped.length > MAX_TEAM_MEMBERS) {
+      return {
+        ok: false,
+        reason: `小组保存失败：组员最多 ${MAX_TEAM_MEMBERS} 名（队长 1 + 组员 ≤ ${MAX_TEAM_MEMBERS} = ${MAX_TEAM_MEMBERS + 1} 人组上限）`,
+      };
+    }
     // 组长身份唯一：同一组长不允许两处建组
     const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     const others = teams.filter((t) => t.leader !== leader);
@@ -405,7 +422,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
     // 热更新内核组数据（运行时立即生效，无需重启）
     rpm.setRolePackTeams(next);
-    return true;
+    return { ok: true };
   }
 
   /** 删除角色包组（会议名单）：持久化移除 + 热更新内核组数据。 */
@@ -421,7 +438,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
     if (!rpm) {
-      this.post({ type: 'roles_loaded', packs: [], teams: [], activeName: '' });
+      this.post({ type: 'roles_loaded', packs: [], teams: [], activeName: '', maxTeamMembers: MAX_TEAM_MEMBERS });
       return;
     }
     // 组（会议名单）用户级数据：组员仅作小组会议参与者
@@ -479,7 +496,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         };
       });
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
-    this.post({ type: 'roles_loaded', packs, teams, activeName });
+    // maxTeamMembers：内核常量透传给 webview（浏览器沙箱不可直连内核，UI 侧禁止另写字面量）
+    this.post({ type: 'roles_loaded', packs, teams, activeName, maxTeamMembers: MAX_TEAM_MEMBERS });
   }
 
   // ─── 大模型配置子视图数据加载 ───

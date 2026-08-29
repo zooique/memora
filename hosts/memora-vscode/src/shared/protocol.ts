@@ -609,6 +609,12 @@ export type ExtensionToWebviewMessage =
       /** 组（会议名单）：组长 + 组员（v0.13 S7，宿主用户级数据） */
       teams: { leader: string; members: string[] }[];
       activeName: string;
+      /**
+       * 小组会议组员数量上限（SSOT 下发，② 组队规格）：由宿主从内核常量
+       * `MAX_TEAM_MEMBERS` 透传——webview 运行在浏览器沙箱，不可直连内核包，
+       * 故经本字段下发，UI 侧禁止另写字面量。
+       */
+      maxTeamMembers: number;
     }
   // ─── 大模型配置面板消息 ───
   /** Provider 列表加载完成（apiKey 为脱敏值，供展示） */

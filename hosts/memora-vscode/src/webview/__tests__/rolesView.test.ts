@@ -39,11 +39,19 @@ function mountRolesView(): { postMessage: ReturnType<typeof vi.fn> } {
   return { postMessage };
 }
 
-/** 向 webview 分发一条 roles_loaded 消息，驱动 render */
-function dispatchLoaded(packs: unknown[], activeName: string, teams: unknown[] = []): void {
+/**
+ * 向 webview 分发一条 roles_loaded 消息，驱动 render。
+ * maxTeamMembers 模拟宿主下发的内核常量（MAX_TEAM_MEMBERS）。
+ */
+function dispatchLoaded(
+  packs: unknown[],
+  activeName: string,
+  teams: unknown[] = [],
+  maxTeamMembers = 4,
+): void {
   window.dispatchEvent(
     new MessageEvent('message', {
-      data: { type: 'roles_loaded', packs, activeName, teams },
+      data: { type: 'roles_loaded', packs, activeName, teams, maxTeamMembers },
     }),
   );
 }
@@ -243,5 +251,33 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(checked).toBe(4);
     expect(modal?.querySelectorAll('.team-modal-item input:checked')).toHaveLength(4);
     expect(modal?.querySelector('.team-modal-hint')?.textContent).toContain('5 人组上限');
+  });
+
+  it('② 存量超限队伍：卡片标注实际参会人数，不虚报（名单原样展示）', () => {
+    mountRolesView();
+    const packs = [
+      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '编辑', displayName: '编辑', capabilities: [] },
+      { name: '评论家', displayName: '评论家', capabilities: [] },
+      { name: '校对', displayName: '校对', capabilities: [] },
+      { name: '排版', displayName: '排版', capabilities: [] },
+      { name: '发行', displayName: '发行', capabilities: [] },
+    ];
+    // 存量数据：5 名组员（超上限 4）
+    dispatchLoaded(
+      packs,
+      '小说助手',
+      [{ leader: '小说助手', members: ['编辑', '评论家', '校对', '排版', '发行'] }],
+    );
+    const card = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+    );
+    const label = card?.querySelector('.team-ribbon-label') as HTMLElement;
+    // 名单原样展示（用户可自行删减）
+    expect(label.textContent).toBe('队伍：编辑 / 评论家 / 校对 / 排版 / 发行');
+    // 实际只有 4 名参会，且明确告知超出 1 名不参与
+    expect(label.title).toContain('4 名组员参与小组会议');
+    expect(label.title).toContain('名单共 5 名');
+    expect(label.title).toContain('超出上限的 1 名不参与');
   });
 });

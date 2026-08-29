@@ -56,6 +56,8 @@ interface RolesPayload {
   /** 组（会议名单）：组长 + 组员（v0.13 S7） */
   teams: { leader: string; members: string[] }[];
   activeName: string;
+  /** 组员数量上限（内核常量 MAX_TEAM_MEMBERS，由宿主随 roles_loaded 下发；UI 侧禁止写死） */
+  maxTeamMembers: number;
 }
 
 /**
@@ -118,16 +120,23 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         .map((m) => data.packs.find((x) => x.name === m)?.displayName ?? m)
         .join(' / ');
       label.textContent = `队伍：${names}`;
-      label.title = `${leadTeam.members.length} 名组员参与小组会议（表层装配发言）`;
+      // 超限组（存量/外部数据）：内核会议消费端截断至前 maxTeamMembers 名，
+      // 标注须与实际参会人数一致，不虚报（名单原样展示，用户可自行删减）。
+      const active = Math.min(leadTeam.members.length, data.maxTeamMembers);
+      label.title =
+        leadTeam.members.length > data.maxTeamMembers
+          ? `${active} 名组员参与小组会议（名单共 ${leadTeam.members.length} 名，超出上限的 ${leadTeam.members.length - data.maxTeamMembers} 名不参与）`
+          : `${active} 名组员参与小组会议（表层装配发言）`;
     } else {
       label.textContent = '暂无队伍';
     }
     const action = document.createElement('button');
     action.className = 'btn btn-secondary team-ribbon-btn';
     action.textContent = leadTeam ? '编辑队伍' : '创建队伍';
+    // 上限值统一取宿主下发的内核常量（两处文案口径对齐：队长 1 + 组员 ≤ maxTeamMembers）
     action.title = leadTeam
-      ? '修改队伍组员（5 人组上限：队长 1 + 组员 ≤ 4）'
-      : '以当前角色为队长创建队伍（5 人组上限：队长 + 组员 ≤ 5）';
+      ? `修改队伍组员（${data.maxTeamMembers + 1} 人组上限：队长 1 + 组员 ≤ ${data.maxTeamMembers}）`
+      : `以当前角色为队长创建队伍（${data.maxTeamMembers + 1} 人组上限：队长 1 + 组员 ≤ ${data.maxTeamMembers}）`;
     action.addEventListener('click', () => launchTeamModal(p, data));
     ribbon.appendChild(label);
     ribbon.appendChild(action);
@@ -135,7 +144,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   }
 
   /**
-   * ② 卡片组队弹窗（以卡片为单位）：电话本式勾选除当前队长外的所有角色（最多 4 名组员，5 人组上限）。
+   * ② 卡片组队弹窗（以卡片为单位）：电话本式勾选除当前队长外的所有角色
+   * （最多 maxTeamMembers 名组员，上限值由宿主下发，本地不写死）。
    * 编辑既有队伍时回显已选组员；复用 roles_team_save 保存契约。
    * 默认保留「当前角色已是别队成员」的共享说明（内核当前无互斥限制，组员可复用）。
    */
@@ -164,7 +174,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
 
     const current = data.teams?.find((t) => t.leader === p.name);
     const selected = new Set(current?.members ?? []);
-    const LIMIT = 4; // 5 人组上限的组员部分
+    // 组员上限：内核常量 MAX_TEAM_MEMBERS 经宿主从 roles_loaded 下发（SSOT 单一来源，禁止本地字面量）
+    const LIMIT = data.maxTeamMembers;
 
     const list = document.createElement('div');
     list.className = 'team-modal-list';
@@ -201,7 +212,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     hint.className = 'team-modal-hint';
     const sharedLeader = data.teams?.find((t) => t.leader !== p.name && t.members.includes(p.name));
     hint.textContent = !sharedLeader
-      ? '5 人组上限：队长 1 + 组员 ≤ 4（勾选超过 4 名自动拒绝）'
+      ? `${LIMIT + 1} 人组上限：队长 1 + 组员 ≤ ${LIMIT}（勾选超过 ${LIMIT} 名自动拒绝）`
       : `当前角色已作为「${sharedLeader.leader}」的队伍成员参与会议；创建自己队伍后仍保留原参与。`;
     modal.appendChild(hint);
 

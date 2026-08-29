@@ -17,7 +17,7 @@ import {
   MAX_MATCH_WORDS,
   MAX_HANDOFF_PROMPT_LEN,
 } from '@/role-pack/validator.js';
-import { BUILTIN_FALLBACK_PACK } from '@/role-pack/constants.js';
+import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import type {
   RolePack,
@@ -37,8 +37,6 @@ const L1_LIST_TOOL_THRESHOLD = 50;
 
 /** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';
-/** 组员数量上限（队长 1 + 组员 ≤ 4 = 5 人组上限，② UI 组队功能对应用户约定） */
-const MAX_TEAM_MEMBERS = 4;
 
 /** 角色包扫描需排除的非包文件（如 README 等允许放在包根） */
 const EXCLUDED_FILES = new Set(['manifest.json']);
@@ -377,6 +375,20 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 会议组员的**唯一消费入口**（SSOT 收口）：当前激活角色作为组长时的会议组员名单，超限截断至
+   * `MAX_TEAM_MEMBERS` 名。
+   *
+   * 截断只发生在消费端——`rolePackTeams` 存储保持原样（超限数据不裁切，用户可自行修正），
+   * 因此「超限仅影响会议、不影响日常」的语义成立。所有会议消费点（装配角色解析 / 上下文块 /
+   * 会议步骤）必须走本 getter，禁止直连 `team.members`，否则「超出部分不参与会议」即成假契约。
+   */
+  private get activeTeamMembers(): readonly string[] {
+    if (!this.activePackName) return [];
+    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
+    return team ? team.members.slice(0, MAX_TEAM_MEMBERS) : [];
+  }
+
+  /**
    * 会议机制：解析本轮表层装配角色（范围校验前置，防 LLM 幻觉角色名）。
    * rolePack 必须 ∈ {组长(activePack)} ∪ {组员}；越界 → 忽略该覆盖 + warning 返回 null；
    * 组员角色包不存在（缺员）→ 跳过 + warning 返回 null。
@@ -388,9 +400,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!declared) return null;
     // 组长（activePack）恒有效
     if (declared === this.activePackName) return declared;
-    // 组员：须在「组长 == activePack」的组名单内，且角色包存在
-    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
-    const isMember = team?.members.includes(declared) ?? false;
+    // 组员：须在「组长 == activePack」的会议名单内（超限部分已被截断，不参与会议），且角色包存在
+    const isMember = this.activeTeamMembers.includes(declared);
     if (isMember) {
       if (this.items.some((p) => p.meta.name === declared)) return declared;
       getLogger().warn(
@@ -423,10 +434,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    */
   buildTeamContextBlock(): string {
     if (!this.activePackName) return '';
-    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
-    if (!team || team.members.length === 0) return '';
+    const members = this.activeTeamMembers;
+    if (members.length === 0) return '';
     return (
-      `【小组会议角色（组长：${team.leader}；组员：${team.members.join(' / ')}）】` +
+      `【小组会议角色（组长：${this.activePackName}；组员：${members.join(' / ')}）】` +
       `用户以「小组会议：主题」发起时，系统自动预置任务表（组员各一步发言 + 一步汇总），` +
       `无需你自建任务表；你只需按当前步骤角色视角作答，并用 task_table_update 将该步标记为 done 或 blocked。`
     );
@@ -448,11 +459,11 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   tryBuildMeetingPlan(input: string): Array<{ description: string; rolePack?: string }> | null {
     if (!this.activePackName) return null;
     if (!/小组会议/.test(input)) return null;
-    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
-    if (!team || team.members.length === 0) return null;
+    const members = this.activeTeamMembers;
+    if (members.length === 0) return null;
     const topic = input.replace(/^\s*小组会议\s*[:：,，]?\s*/, '').trim();
     const suffix = topic ? `：${topic}` : '';
-    const steps: Array<{ description: string; rolePack?: string }> = team.members.map((m) => ({
+    const steps: Array<{ description: string; rolePack?: string }> = members.map((m) => ({
       description: `${m} 发言${suffix}`,
       rolePack: m,
     }));

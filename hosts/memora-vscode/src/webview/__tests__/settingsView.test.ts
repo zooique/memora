@@ -136,6 +136,8 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
           type: 'roles_loaded',
           packs: [{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }],
           activeName: 'doc-review',
+          teams: [],
+          maxTeamMembers: 4,
         },
       }),
     );

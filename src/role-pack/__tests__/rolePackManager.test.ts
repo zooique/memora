@@ -465,10 +465,9 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       manager.setRolePackTeams([
         { leader: '组长A', members: ['组员1', '组员2', '组员3', '组员4', '组员5'] },
       ]);
-      // warning 不阻塞装载；会议解析仍按名单前 4 人有效（超限仅告警不裁切）
+      // warning 不阻塞装载（超限数据不裁切存储，仅会议消费端截断，见下方截断用例）
       expect(await manager.load('组长A')).toBe(6);
       expect(manager.activeName).toBe('组长A');
-      expect(manager.resolveRoundAssemblyRole('组员1')).toBe('组员1');
     });
   });
 
@@ -598,6 +597,56 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const steps = manager.tryBuildMeetingPlan('小组会议');
       expect(steps![0]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
       expect(steps![1]).toEqual({ description: '汇总各方观点' });
+    });
+
+    describe('组员数量上限：超限部分不参与会议（截断收口，② 组队规格）', () => {
+      /** 组长 = 组长A，组员 = 组员1~5（超上限 4） */
+      async function writeOverLimitPacks(): Promise<void> {
+        const packsDir = join(dir, 'role-packs');
+        await mkdir(packsDir, { recursive: true });
+        await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {});
+        for (let i = 1; i <= 5; i++) {
+          await writePack(packsDir, `组员${i}`, { name: `组员${i}`, formatVersion: '1.0.0' }, {});
+        }
+      }
+
+      it('resolveRoundAssemblyRole：第 5 名组员声明 → 越界返回 null（不参与会议）', async () => {
+        await writeOverLimitPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([
+          { leader: '组长A', members: ['组员1', '组员2', '组员3', '组员4', '组员5'] },
+        ]);
+        await manager.load('组长A');
+        // 前 4 名有效
+        expect(manager.resolveRoundAssemblyRole('组员4')).toBe('组员4');
+        // 第 5 名被截断 → 视作越界
+        expect(manager.resolveRoundAssemblyRole('组员5')).toBeNull();
+      });
+
+      it('buildTeamContextBlock：只暴露前 4 名组员，不含超限的第 5 名', async () => {
+        await writeOverLimitPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([
+          { leader: '组长A', members: ['组员1', '组员2', '组员3', '组员4', '组员5'] },
+        ]);
+        await manager.load('组长A');
+        const block = manager.buildTeamContextBlock();
+        expect(block).toContain('组员4');
+        expect(block).not.toContain('组员5');
+      });
+
+      it('tryBuildMeetingPlan：只预置前 4 名发言步骤 + 1 步汇总（共 5 步）', async () => {
+        await writeOverLimitPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([
+          { leader: '组长A', members: ['组员1', '组员2', '组员3', '组员4', '组员5'] },
+        ]);
+        await manager.load('组长A');
+        const steps = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
+        expect(steps).toHaveLength(5); // 4 发言 + 1 汇总
+        expect(steps!.map((s) => s.rolePack)).not.toContain('组员5');
+        expect(steps![4]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
+      });
     });
   });
 
