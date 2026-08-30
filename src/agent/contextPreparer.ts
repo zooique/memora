@@ -62,7 +62,7 @@ export interface ContextPreparerDeps {
     recallExcludeSources: string[] | undefined;
     /** 界面文案（最近对话 / 用户 / 助手标签） */
     messages: UIMessages | undefined;
-    /** 上下文窗口容量（token）——动态预算装配的容量来源（优先 provider contextWindow，缺失降级 maxContextTokens） */
+    /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退默认 120K）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */
     maxContextTokens: number;
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
@@ -241,41 +241,41 @@ export class ContextPreparer {
       }
     }
 
-  // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
-  recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
+    recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-  // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
-  // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
-  //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
-  //   dialogue     = 实际进窗的完整对话 token：
-  //                  hybrid 模式注入最近轮次摘要块 → 计量 dialogue.history；
-  //                  fixed/query 模式全量保留在 loop.messages（cleanTemporary 只清 system，
-  //                  不注入摘要）→ 计量全部 user/assistant 对话，避免低估。
-  //   memory       = 注入的 recalled 记忆 token
-  //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
-  //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
-  //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
-  const dialogueTokens =
-    contextAssembly === 'hybrid'
-      ? loop.estimateTokens(dialogue.history)
-      : loop.estimateTokens(loop.getConversationMessages());
-  const memoryTokens = recalledMemories.length
-    ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
-    : 0;
-  const outputReserveTokens = Math.floor(deps.config.maxContextTokens * DEFAULT_OUTPUT_RESERVE_RATIO);
-  const usedBeforeFree =
-    fixedOverheadTokens + dialogueTokens + memoryTokens + budget.anchorTokens + outputReserveTokens;
-  const freeTokens = Math.max(0, deps.config.maxContextTokens - usedBeforeFree);
-  deps.loop.recordOccupancy({
-    totalTokens: deps.config.maxContextTokens,
-    rolePackBaseTokens: fixedOverheadTokens,
-    dialogueTokens,
-    memoryTokens,
-    inputAnchorTokens: budget.anchorTokens,
-    outputReserveTokens,
-    freeTokens,
-  });
+    // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
+    // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
+    //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
+    //   dialogue     = 实际进窗的完整对话 token：
+    //                  hybrid 模式注入最近轮次摘要块 → 计量 dialogue.history；
+    //                  fixed/query 模式全量保留在 loop.messages（cleanTemporary 只清 system，
+    //                  不注入摘要）→ 计量全部 user/assistant 对话，避免低估。
+    //   memory       = 注入的 recalled 记忆 token
+    //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
+    //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
+    //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
+    const dialogueTokens =
+      contextAssembly === 'hybrid'
+        ? loop.estimateTokens(dialogue.history)
+        : loop.estimateTokens(loop.getConversationMessages());
+    const memoryTokens = recalledMemories.length
+      ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
+      : 0;
+    const outputReserveTokens = Math.floor(deps.config.maxContextTokens * DEFAULT_OUTPUT_RESERVE_RATIO);
+    const usedBeforeFree =
+      fixedOverheadTokens + dialogueTokens + memoryTokens + budget.anchorTokens + outputReserveTokens;
+    const freeTokens = Math.max(0, deps.config.maxContextTokens - usedBeforeFree);
+    deps.loop.recordOccupancy({
+      totalTokens: deps.config.maxContextTokens,
+      rolePackBaseTokens: fixedOverheadTokens,
+      dialogueTokens,
+      memoryTokens,
+      inputAnchorTokens: budget.anchorTokens,
+      outputReserveTokens,
+      freeTokens,
+    });
 
-  return recalledMemories;
+    return recalledMemories;
   }
 }

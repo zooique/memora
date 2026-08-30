@@ -31,7 +31,7 @@ export const MIN_RUNNABLE_DIALOGUE_TOKENS = 128;
 
 /** 预算计算入参 */
 export interface ContextBudgetInput {
-  /** Provider 窗口容量（token）——优先 provider contextWindow，缺失降级 maxContextTokens */
+  /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退默认 120K）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */
   readonly windowTokens: number;
   /** 固定开销（system+persona+rules+技能L1+工具schema，token） */
   readonly fixedOverheadTokens: number;

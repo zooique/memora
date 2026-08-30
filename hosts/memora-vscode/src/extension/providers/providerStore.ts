@@ -431,6 +431,10 @@ export class ProviderStore {
    * 收敛为 per-LLM 配置（LlmProviderConfig.contextWindow）后，全局设置不再是真理源。
    * 为不丢用户已填值：激活时把旧全局值并入首个尚未配置 contextWindow 的 Provider；
    * 随后清除旧全局键（消除双真理源残留）。无旧值 / 无 Provider 时 → 无动作。
+   *
+   * 生命周期（收敛卫生项，2026-08-30 标注）：内建守卫让函数幂等空转（旧键清空后每次 early-return），
+   * 长期保留零成本，故不强制移除；如需瘦身，须确认全量用户已迁移（无评估手段）后再于版本门槛内下线，
+   * 下线前删除本函数 + extension.activate 调用 + providerStore.test.ts 对应用例。
    */
   async migrateMaxContextTokens(): Promise<void> {
     const cfg = vscode.workspace.getConfiguration(CFG_SECTION);

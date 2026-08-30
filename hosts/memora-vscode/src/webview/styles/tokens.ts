@@ -137,6 +137,15 @@ export const tokens = `
     --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(14, 99, 156, 0.1));
     --accent-subtle: var(--vscode-inputValidation-infoBackground, rgba(14, 99, 156, 0.15));
 
+    /* === L2 语义令牌：上下文占用分段色（chatStyles 引用，2026-08-30 收敛裸值） ===
+     * 输入区占用条 5 个数据层（角色包设定/记忆/对话/输入锚点/输出预留）各自独立着色。
+     * 改用 VSCode charts.* 系列，跟随主题自动适配亮/暗模式（对齐 --skill-rolepack-accent 先例）。 */
+    --occ-rolepack: var(--vscode-charts-purple, #a78bfa);
+    --occ-memory: var(--vscode-charts-teal, #4ec9b0);
+    --occ-dialogue: var(--vscode-charts-blue, #3794ff);
+    --occ-input: var(--vscode-charts-orange, #caa23b);
+    --occ-output: var(--vscode-charts-red, #f14c4c);
+
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚
      * Footer 改为两行布局：Actions 行(模型+发送) + Context 行(角色+能力徽章) */

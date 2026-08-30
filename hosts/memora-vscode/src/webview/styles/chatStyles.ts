@@ -435,11 +435,11 @@ export const chatStyles = `
     min-width: 0;
     transition: width 0.2s ease;
   }
-  .occ-seg--rolepack { background: #7c6cf0; }
-  .occ-seg--memory   { background: #2aa9a0; }
-  .occ-seg--dialogue { background: #3b82f6; }
-  .occ-seg--input    { background: #e0a13c; }
-  .occ-seg--output   { background: #d97757; }
+  .occ-seg--rolepack { background: var(--occ-rolepack); }
+  .occ-seg--memory   { background: var(--occ-memory); }
+  .occ-seg--dialogue { background: var(--occ-dialogue); }
+  .occ-seg--input    { background: var(--occ-input); }
+  .occ-seg--output   { background: var(--occ-output); }
   .occ-seg--free     { background: transparent; }
   .occ-meta {
     font-size: 11px;
