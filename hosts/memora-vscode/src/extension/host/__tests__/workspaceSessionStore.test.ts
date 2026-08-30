@@ -420,12 +420,21 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
     roundStore.load();
   });
 
-  /** 直接落一个自定义 refCount 的 Round（绕过 SessionStore 登记，模拟历史残留孤儿） */
-  function seedRawRound(roundId: string, refCount: number, createdAt: string): void {
+  /**
+   * 直接落一个自定义 refCount 的 Round（绕过 SessionStore 登记，模拟历史残留孤儿）。
+   * status 可指定为 'pending' 以复现「用户已提问、LLM 未回答」的进行中轮
+   * ——该状态 refCount 恒为 0（MessageHistory.appendUser 写入时即 0）。
+   */
+  function seedRawRound(
+    roundId: string,
+    refCount: number,
+    createdAt: string,
+    status: Round['status'] = 'complete',
+  ): void {
     const round: Round = {
       id: roundId,
       userMessage: { id: `${roundId}-u`, role: 'user', content: 'x', timestamp: createdAt },
-      status: 'complete',
+      status,
       createdAt,
       refCount,
     };
@@ -452,5 +461,13 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
 
   it('无孤儿时 no-op 返回 0', () => {
     expect(roundStore.sweepOrphans()).toBe(0);
+  });
+
+  it('默认调用（不传参）不删进行中轮——启动清扫路径的安全默认', () => {
+    // 复现生产路径：extension 启动装配点调 sweepOrphans() 不传参。
+    // 进行中轮（pending）refCount 恒为 0，若默认值无存活保护即被误删 → 用户提问丢失。
+    seedRawRound('round-inflight', 0, new Date().toISOString(), 'pending');
+    expect(roundStore.sweepOrphans()).toBe(0);
+    expect(roundStore.getById('round-inflight')).not.toBeNull();
   });
 });

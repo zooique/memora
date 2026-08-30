@@ -20,7 +20,7 @@ import type { Agent, IRoundStore } from '@zooique/memora';
 import { accumulateStream } from '@zooique/memora';
 import { assembleAgent } from './host/assemble.js';
 import { WorkspaceSessionStore } from './host/sessionStore.js';
-import { WorkspaceRoundStore } from './host/workspaceRoundStore.js';
+import { WorkspaceRoundStore, DEFAULT_SWEEP_MIN_AGE_MS } from './host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from './host/sessionViewLoader.js';
 import { ProviderStore } from './providers/providerStore.js';
 import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
@@ -158,7 +158,9 @@ export function activate(context: vscode.ExtensionContext): void {
   roundStore.load();
   // 孤儿清扫（0 引用 Round 统一回收，2026-08-29）：删除会话/截断后遗留的无引用轮
   // 在启动时物理清理，防磁盘膨胀与「0 引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）
-  const swept = roundStore.sweepOrphans();
+  // 存活保护必须显式带上：进行中轮（pending）refCount 恒为 0，无保护会删掉
+  // 「用户已提问、LLM 尚未作答」的轮（重载/崩溃重启时静默丢失用户提问）。
+  const swept = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
   if (swept > 0) {
     console.info(`Memora 启动清扫无引用问答闭环 ${swept} 条`);
   }

@@ -46,6 +46,19 @@ interface RoundIndexEntry {
 }
 
 /**
+ * 孤儿清扫的默认存活保护（24h）。
+ *
+ * 进行中轮（pending）的 refCount 恒为 0——MessageHistory.appendUser 写入时即 0，
+ * complete 时才 incrementRef。因此清扫必须带存活保护，否则会删掉「用户已提问、
+ * LLM 尚未作答」的轮（窗口重载 / 崩溃重启时静默丢失）。
+ *
+ * 24h 是保守取值：孤儿回收属后台维护，延迟一天无副作用；远大于任何正常对话的等待时长。
+ * 本常量是 listOrphaned / sweepOrphans 的默认参数——危险 API 必须有安全默认值，
+ * 调用方想关闭保护须显式传 0。
+ */
+export const DEFAULT_SWEEP_MIN_AGE_MS = 24 * 60 * 60 * 1000;
+
+/**
  * 工作区问答闭环存储
  */
 export class WorkspaceRoundStore implements IRoundStore {
@@ -343,8 +356,11 @@ export class WorkspaceRoundStore implements IRoundStore {
 
   /**
    * 获取孤立的问答闭环
+   *
+   * @param minAgeMs 仅回收存活超过该时长的孤儿，**默认 24h**（见 DEFAULT_SWEEP_MIN_AGE_MS）。
+   *   传 0 = 关闭存活保护，会连带删除**进行中**轮（pending 的 refCount 恒为 0），属数据丢失风险。
    */
-  listOrphaned(minAgeMs: number = 0): Round[] {
+  listOrphaned(minAgeMs: number = DEFAULT_SWEEP_MIN_AGE_MS): Round[] {
     const now = Date.now();
     const minAgeMsSec = minAgeMs / 1000;
     const results: Round[] = [];
@@ -377,10 +393,13 @@ export class WorkspaceRoundStore implements IRoundStore {
    * SSOT：Round 物理生命周期归 RoundStore（引用归 SessionStore）——deleteSession/truncate
    * 只负责减引用，物理回收统一收敛到本方法与 deleteSession 内联删除，不做第二套清理逻辑。
    *
-   * @param minAgeMs 存活保护（毫秒）：仅清理创建超过该时长的孤儿，防误删进行中/刚崩溃的轮
+   * @param minAgeMs 存活保护（毫秒）：仅清理创建超过该时长的孤儿，防误删进行中/刚崩溃的轮。
+   *   **默认 24h**（见 DEFAULT_SWEEP_MIN_AGE_MS）——默认值必须是安全值：进行中轮（pending）的
+   *   refCount 恒为 0（MessageHistory.appendUser 写入时即 0，complete 才 incrementRef），
+   *   若默认为 0 则启动清扫会删掉用户已提问、LLM 尚未作答的轮，属静默数据丢失。
    * @returns 清理数量
    */
-  sweepOrphans(minAgeMs: number = 0): number {
+  sweepOrphans(minAgeMs: number = DEFAULT_SWEEP_MIN_AGE_MS): number {
     const orphans = this.listOrphaned(minAgeMs);
     for (const round of orphans) {
       this.delete(round.id);
