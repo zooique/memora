@@ -519,13 +519,13 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveRecallConfidence({ prepare: { recallConfidence: 1.0 } })).toBe(1.0);
     });
 
-    it('超出范围回退 0.3', () => {
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: 1.5 } })).toBe(0.3);
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: -0.1 } })).toBe(0.3);
+    it('超出范围回退全局默认（DEFAULT_BEHAVIOR_STRATEGY 0.6）', () => {
+      expect(resolveRecallConfidence({ prepare: { recallConfidence: 1.5 } })).toBe(0.6);
+      expect(resolveRecallConfidence({ prepare: { recallConfidence: -0.1 } })).toBe(0.6);
     });
 
-    it('缺失回退 0.3', () => {
-      expect(resolveRecallConfidence(undefined)).toBe(0.3);
+    it('缺失回退全局默认（DEFAULT_BEHAVIOR_STRATEGY 0.6）', () => {
+      expect(resolveRecallConfidence(undefined)).toBe(0.6);
     });
   });
 });

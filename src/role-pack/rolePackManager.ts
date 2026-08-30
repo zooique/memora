@@ -5,7 +5,7 @@
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
 import { existsSync, statSync } from 'node:fs';
-import { join, dirname, resolve } from 'node:path';
+import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
@@ -175,9 +175,8 @@ async function scanPackSkills(
     const config = item as Record<string, unknown>;
     const file = config['file'];
     if (typeof file === 'string' && file.trim() !== '') {
-      // 路径穿越防护：file 拼接 + resolve 规范化，确保结果仍在 packDir 内
-      const resolvedPath = resolve(packDir, file);
-      if (!resolvedPath.startsWith(resolve(packDir))) {
+      // 路径穿越防护：复用 resolveSafePath（边界前缀 + sep，防兄弟目录前缀绕过），确保结果仍在 packDir 内
+      if (!resolveSafePath(packDir, file)) {
         logger.warn({ file, packDir }, 'manifest.skills.file 路径穿越被阻止，已忽略');
         continue;
       }
@@ -497,8 +496,12 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   /** 重载角色包：重新扫描 + 保持激活态（覆盖基类 reload，基类扫描无法覆盖文件夹包形态）；激活包被删 → 落兜底包（§4.1 单链） */
   async reload(): Promise<number> {
     const oldActiveName = this.activePackName;
-    const count = await this.scanRolePacks();
+    // 磁盘扫描 + 保留 loadExtraDir 注入的运行时项（retainRuntimeItems 记账合并，同名以磁盘为准）——
+    // 与基类 reload 语义一致：重载不抹除无磁盘真理源的运行时注入用户角色包
+    const scanned = await this.scanRolePacksForReload();
+    this.items = this.retainRuntimeItems(scanned);
     this.validateTeams();
+    const count = this.items.length;
 
     // 保持当前激活角色包（若仍存在）；否则落兜底包
     if (oldActiveName) {
@@ -549,6 +552,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     }
     this.items = await this.buildFromDir(dir);
     return this.items.length;
+  }
+
+  /**
+   * 扫描角色包目录但只返回扫描结果（不改写 items）：供 reload 复用 retainRuntimeItems 合并逻辑。
+   * 与 scanRolePacks 的差异：scanRolePacks 直接替换 items（load 场景），本方法返回纯扫描数组
+   * （reload 场景还需与运行时注入项合并，不能整体覆盖）。
+   */
+  private async scanRolePacksForReload(): Promise<RolePack[]> {
+    const dir = resolveSubdir(this.configDir, this.subdir);
+    if (!dir) return [];
+    return this.buildFromDir(dir);
   }
 
   /** 从角色包目录构建条目列表（仅文件夹形态） */

@@ -293,11 +293,11 @@ export function resolveMultiStepReasoning(
 }
 
 /**
- * 解析召回置信度阈值：非法值归位 0.3
+ * 解析召回置信度阈值：非法值回退全局默认（DEFAULT_BEHAVIOR_STRATEGY.prepare.recallConfidence = 0.6）
  *
  * 控制语义召回的相似度过滤阈值：
  * - 0.0~1.0 浮点数，越大越严格
- * - 默认 0.3（语义召回保底下限）
+ * - 缺失/非法值回退全局默认，保证"非法即失效"归位一致（SSOT：与默认层引用同一常量）
  *
  * @param strategy 合并后的行为策略
  * @returns 合法的召回置信度阈值
@@ -305,7 +305,8 @@ export function resolveMultiStepReasoning(
 export function resolveRecallConfidence(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.prepare?.recallConfidence;
   const valid = typeof candidate === 'number' && candidate >= 0 && candidate <= 1;
-  return valid ? candidate : 0.3;
+  // 回退引用 DEFAULT 常量（而非独立字面量），避免默认值双写漂移
+  return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.prepare!.recallConfidence!;
 }
 
 /**

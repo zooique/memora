@@ -272,6 +272,33 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(summarize?.description).toBe('提炼要点');
   });
 
+  it('manifest.skills.file 路径穿越被拒绝（resolveSafePath 边界防护）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 恶意 manifest：file 指向包外（../ 逃逸）
+    const manifestEvil = {
+      ...MANIFEST_TECH,
+      skills: [
+        { file: '../outside.md', name: 'escape' },
+        { file: '../skills-外/secret.md', name: 'prefix-bypass' },
+      ],
+    };
+    // 在包外放一个会被扫描到的兄弟目录（若是前缀检查缺失，../skills-外 会被误当包内技能）
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+    const packDir = join(packsDir, '技术文档工程师');
+    await mkdir(packDir, { recursive: true });
+    await writeFile(join(packDir, 'manifest.json'), JSON.stringify(manifestEvil, null, 2), 'utf-8');
+
+    const manager = new RolePackManager(dir);
+    // 两个包：翻译助手 + 技术文档工程师（恶意 manifest）
+    expect(await manager.load('技术文档工程师')).toBe(2);
+
+    const active = manager.getActive();
+    // 穿越项被忽略：白名单为空 → skills 退回目录扫描（包内无 skills 目录 → 空）
+    expect(active!.meta.name).toBe('技术文档工程师');
+    expect(active!.skills).toHaveLength(0);
+  });
+
   it('handoffPrompt 自洽声明透传（角色包只描述自己，无跨包引用）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
@@ -331,6 +358,61 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     await manager.reload();
     expect(manager.activeName).toBe('代码助手');
     expect(manager.getActive()!.meta.name).toBe('代码助手');
+  });
+
+  it('reload 保留 loadExtraDir 注入的用户角色包（运行时注入项无磁盘真理源）', async () => {
+    // 内置角色包目录（configDir/role-packs/，扫描真理源）
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
+
+    // 用户角色包目录（独立目录，宿主经 loadExtraDir 运行态注入）
+    const userPacksDir = join(dir, 'user-role-packs');
+    await writePack(userPacksDir, '用户打磨', {
+      name: '用户打磨',
+      formatVersion: '1.0.0',
+      keywords: ['打磨'],
+    }, { persona: '你是用户自建角色。' });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('翻译助手');
+    // 用户包注入（与宿主 assemble.ts loadExtraDir(userRolePacksDir) 同路径）
+    const injected = await manager.loadExtraDir(userPacksDir);
+    expect(injected).toBe(1);
+    expect(manager.listMeta().map((m) => m.name).sort()).toEqual(['用户打磨', '翻译助手']);
+
+    // reload 后用户包必须保留（与 SkillManager 行为一致：注入项不随磁盘重扫抹除）
+    await manager.reload();
+    const names = manager.listMeta().map((m) => m.name).sort();
+    expect(names).toEqual(['用户打磨', '翻译助手']);
+    // 激活态保持
+    expect(manager.activeName).toBe('翻译助手');
+  });
+
+  it('reload 后内置包保持磁盘真理源（磁盘包不被用户包覆盖）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '内置翻译。' });
+
+    const userPacksDir = join(dir, 'user-role-packs');
+    // 用户包与内置同名——loadExtraDir 重名跳过（内置优先），确认设备磁盘真理源不被稀释
+    await writePack(userPacksDir, '翻译助手', { name: '翻译助手', formatVersion: '1.0.0' }, {
+      persona: '用户版本翻译。',
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('翻译助手');
+    expect(manager.activeName).toBe('翻译助手');
+    // loadExtraDir 重名跳过（内置优先）
+    expect(await manager.loadExtraDir(userPacksDir)).toBe(0);
+
+    // reload 后磁盘包仍为真理源（内置版本 persona 生效）
+    await manager.reload();
+    expect(manager.activeName).toBe('翻译助手');
+    expect(manager.listMeta()).toHaveLength(1);
+    const active = manager.getActive();
+    expect(active!.meta.name).toBe('翻译助手');
+    expect(active!.personaPrompt).toContain('内置翻译');
   });
 
   it('companion 角色包触发内容红线 → 拒绝装载', async () => {

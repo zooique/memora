@@ -75,6 +75,29 @@ export abstract class ConfigResourceManager<
   async reload(): Promise<number> {
     const oldCount = this.items.length;
     const scanned = await this.scanAndBuild();
+    this.items = this.retainRuntimeItems(scanned);
+    this.onAfterReload(this.items);
+    logger.info(
+      {
+        oldCount,
+        newCount: this.items.length,
+        retainedRuntime: this.items.length - scanned.length,
+        subdir: this.subdir,
+      },
+      `${this.subdir} 资源已重载`,
+    );
+    return this.items.length;
+  }
+
+  /**
+   * 将磁盘扫描结果与运行时注入项合并（子类自定义扫描的 reload 也应复用本方法）：
+   * 重新扫描磁盘后，保留无磁盘真理源的运行时注入项（如 loadExtraDir 注入的用户资源），
+   * 同名冲突以磁盘（更强真理源）为准并注销运行时记账——否则注入项会被当作"磁盘上已删除"而抹掉。
+   *
+   * @param scanned 本次磁盘扫描得到的资源列表
+   * @returns 合并后的完整资源列表（磁盘在前、运行时注入在后）
+   */
+  protected retainRuntimeItems(scanned: T[]): T[] {
     const scannedNames = new Set(scanned.map((i) => i.name));
     const runtimeInjected = this.items.filter(
       (i) => this.runtimeNames.has(i.name) && !scannedNames.has(i.name),
@@ -82,18 +105,7 @@ export abstract class ConfigResourceManager<
     for (const name of this.runtimeNames) {
       if (scannedNames.has(name)) this.runtimeNames.delete(name);
     }
-    this.items = [...scanned, ...runtimeInjected];
-    this.onAfterReload(this.items);
-    logger.info(
-      {
-        oldCount,
-        newCount: this.items.length,
-        retainedRuntime: runtimeInjected.length,
-        subdir: this.subdir,
-      },
-      `${this.subdir} 资源已重载`,
-    );
-    return this.items.length;
+    return [...scanned, ...runtimeInjected];
   }
 
   /** 从内存缓存删除资源（含注销运行时记账） */
