@@ -58,7 +58,7 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 | 0 | 设计定案（本 ADR + 设计文档） | 零 | ✅ 2026-08-17 |
 | 1 | loader 停扫三类 + configManager 停写索引（存量行保留） | 低 | ✅ 2026-08-17 |
 | 2 | assembler 移除 persona 兜底 + configManager 注入面切角色包（getBootstrapMemories 恒空，双轨消除） | 中 | ✅ 2026-08-18 |
-| 3 | rule 语义对齐（parseRules 扩展 markdown 解析） | 高 | ⏳ |
+| 3 | rule 语义对齐（parseRules 扩展 markdown 解析） | 高 | ✅ 2026-08-30（parseRules 多格式：列表逐条 + 段落合并 + 引用块 + 标题/代码块/注释/表格排除；authoring-guide §2.4 补写法说明；新增混合格式端到端测试） |
 
 **档 1 实现说明（2026-08-17）**：
 - `loader.ts` `STARTUP_SCAN_SOURCES` 清空 + `bootstrap()` 返回空数组；

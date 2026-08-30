@@ -194,6 +194,60 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.personaPrompt).toContain('术语保持一致');
   });
 
+  it('规则解析支持多格式（ADR-025 档 3：列表/段落/引用/标题/代码块/注释）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 混合 markdown 写法：列表（历史格式）+ 段落合并 + 引用块去 > + 标题/代码块/注释/表格排除
+    const rulesContent = [
+      '# 安全规则', // 标题：不产出规则
+      '',
+      '- 不泄露用户密钥', // 无序列表：逐条
+      '- 不编造 API',
+      '',
+      '## 质量要求', // 标题：不产出规则
+      '',
+      '所有输出必须基于文档事实，不得虚构引用。', // 段落开头
+      '引用列表须标注来源。', // 连续段落行 → 合并为一条规则
+      '',
+      '> 重要：修改文件前先询问用户。', // 引用块 → 去 > 并入段落
+      '',
+      '<!-- 这是注释，不应成为规则 -->', // 注释：排除
+      '',
+      '| 列A | 列B |', // 表格行：排除
+      '| --- | --- |',
+      '| x | y |',
+      '',
+      '```', // 代码块：排除围栏内容
+      'const fake = 123;',
+      '```',
+    ].join('\n');
+    await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
+      persona: '你是一位技术文档工程师。',
+      rules: rulesContent,
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('技术文档工程师');
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    const prompt = active!.personaPrompt;
+
+    // 列表逐条解析（历史行为保留）
+    expect(prompt).toContain('不泄露用户密钥');
+    expect(prompt).toContain('不编造 API');
+    // 连续段落合并为一条规则（多行以空格拼接；中文句子间存在拼接空格，分两段断言）
+    expect(prompt).toContain('所有输出必须基于文档事实，不得虚构引用。');
+    expect(prompt).toContain('引用列表须标注来源。');
+    expect(prompt).toMatch(/所有输出必须基于文档事实，不得虚构引用。\s*引用列表须标注来源。/);
+    // 引用块去 > 作为独立规则
+    expect(prompt).toContain('重要：修改文件前先询问用户。');
+    // 标题/注释/表格/代码块不作为规则注入
+    expect(prompt).not.toContain('# 安全规则');
+    expect(prompt).not.toContain('质量要求');
+    expect(prompt).not.toContain('这是注释');
+    expect(prompt).not.toContain('const fake');
+  });
+
   it('多技能注册 + persona 缺省（无 persona.md）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });

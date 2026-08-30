@@ -14,7 +14,7 @@
 角色包名/
 ├── manifest.json        # ★ 元数据 + strategy 策略 + capabilities + skills 白名单
 ├── persona.md           # 角色身份设定（可缺省，缺省则无身份仅靠策略驱动）
-├── rules.md             # 确定性规则（逐行解析）
+├── rules.md             # 确定性规则（列表逐条 / 段落合并一条，见 §二.4）
 └── skills/              # 技能目录（动态扫描，新增技能只写文件即可）
 ```
 
@@ -68,6 +68,19 @@
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
 >
 > **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MATCH_WORDS` / `MAX_MATCH_WORD_LEN` / `MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
+
+### 2.4 rules.md 写法（ADR-025 档 3：规则语义对齐）
+
+`rules.md` 是**确定性规则**——装载时全量注入 system prompt，不可丢失。解析支持常见 Markdown 写法（见 `rolePackManager.ts parseRules`）：
+
+| 写法 | 解析结果 | 示例 |
+| ---- | ---- | ---- |
+| **列表行**（`-` / `*` / `1.`） | 逐条成为规则（推荐写法） | `- 不泄露用户密钥` |
+| **连续段落文本** | 整段合并为**一条**规则 | 两行普通文字 → 一条完整规则 |
+| **引用块**（`>`） | 去 `>` 后按段落处理 | `> 修改前先询问用户` |
+| **标题**（`#`）/ **代码块** / **HTML 注释** / **表格** / **分隔线** | 不作为规则（段落边界） | — |
+
+**推荐**：规则用**列表写**（每条一行，语义独立、可读性强）；长段说明自然写成段落，会被合并为一条完整规则。写作时避免把示例代码/表格塞进 rules.md（会被忽略）——需要代码/资源放 `skills/` 目录（渐进披露 L3）。
 
 ***
 

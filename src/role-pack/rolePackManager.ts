@@ -217,19 +217,72 @@ function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapabilit
   return capabilities;
 }
 
-/** 解析 rules 内容：支持无序（- / *）与有序（n. ）Markdown 列表，返回规则字符串列表 */
+/**
+ * 解析 rules 内容为规则字符串列表（ADR-025 档 3：rule 语义对齐，支持常见 markdown 写法）。
+ *
+ * 拆规则标准（保守、可预测、向前兼容）：
+ *   - 列表行（- / * / 数字. ）→ 逐条规则（保留历史行为）；
+ *   - 连续普通段落文本 → 整段合并为一条规则（段落是一个完整规则语义）；
+ *   - 引用块（> ）→ 去 > 前缀后按段落处理（无空行分隔则并入相邻段落）；
+ *   - 排除非规则内容：标题（# ）、代码块（``` 围栏）、HTML 注释、空行、分隔线、表格行。
+ *
+ * 确定性注入、装载时全量，不允许丢规则——无法识别的内容宁可并入最近的段落也不静默丢弃。
+ */
 function parseRules(content: string): string[] {
   if (!content) return [];
   const rules: string[] = [];
-  for (const line of content.split('\n')) {
-    const trimmed = line.trim();
-    // 优先匹配无序列表（- 或 *），再匹配有序列表（数字.）
-    const match = /^[-*]\s+(.+)$/.exec(trimmed) || /^\d+\.\s+(.+)$/.exec(trimmed);
-    if (match) {
-      const rule = match[1]?.trim() ?? '';
+  // 段落累积缓冲：连续普通文本行合并为一条规则（保序）
+  let paraBuffer: string[] = [];
+  // 代码块围栏状态：围栏内的行跳过（不是规则）
+  let inCodeBlock = false;
+
+  /** 段落收尾：把累积的段落作为一条规则推入（保证"能识别的都不丢"） */
+  const flushPara = (): void => {
+    if (paraBuffer.length > 0) {
+      // 段落内部多行用空格连接、压缩连续空白，保持单条语义
+      const rule = paraBuffer.join(' ').replace(/\s+/g, ' ').trim();
       if (rule) rules.push(rule);
+      paraBuffer = [];
     }
+  };
+
+  const lines = content.split('\n');
+  for (const raw of lines) {
+    const trimmed = raw.trim();
+
+    // 代码块围栏：切换状态并收尾当前段落（围栏内行不作为规则）
+    if (/^```/.test(trimmed)) {
+      inCodeBlock = !inCodeBlock;
+      flushPara();
+      continue;
+    }
+    if (inCodeBlock) continue;
+
+    // 非规则内容：空行 / HTML 注释 / 分隔线 / 表格行 → 段落边界
+    if (trimmed === '' || /^<!--/.test(trimmed) || /^---+$/.test(trimmed) || trimmed.startsWith('|')) {
+      flushPara();
+      continue;
+    }
+
+    // 列表行（无序 -/* 或有序 n.）→ 逐条规则
+    const listMatch = /^[-*]\s+(.+)$/.exec(trimmed) || /^\d+\.\s+(.+)$/.exec(trimmed);
+    if (listMatch) {
+      flushPara(); // 列表项前后是独立规则边界
+      const rule = listMatch[1]?.trim() ?? '';
+      if (rule) rules.push(rule);
+      continue;
+    }
+
+    // 标题（# 至 ######）→ 段落边界（标题本身不是规则，其下内容继续解析）
+    if (/^#{1,6}\s+/.test(trimmed)) {
+      flushPara();
+      continue;
+    }
+
+    // 普通段落 / 引用块：累积进段落缓冲（引用块去 > 前缀）
+    paraBuffer.push(trimmed.replace(/^>\s?/, ''));
   }
+  flushPara();
   return rules;
 }
 
