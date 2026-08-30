@@ -441,10 +441,11 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
     roundStore.save(round);
   }
 
-  it('清理 refCount=0 的孤儿并返回数量；被引用轮保留', () => {
+  it('清理 refCount=0 的孤儿并返回被清扫 Round ID；被引用轮保留', () => {
     seedRawRound('round-loss', 0, '2026-08-20T00:00:00.000Z');
     seedRawRound('round-keep', 1, '2026-08-20T00:00:00.000Z');
-    expect(roundStore.sweepOrphans()).toBe(1);
+    // 返回值 = 清扫产物（Round ID 列表），供调用方延迟联动软删 round-summary
+    expect(roundStore.sweepOrphans()).toEqual(['round-loss']);
     expect(roundStore.getById('round-loss')).toBeNull();
     expect(roundStore.getById('round-keep')).not.toBeNull();
   });
@@ -452,22 +453,22 @@ describe('WorkspaceRoundStore.sweepOrphans（孤儿统一回收，2026-08-29）'
   it('minAgeMs 存活保护：刚创建/进行中的轮不被误删', () => {
     seedRawRound('round-fresh', 0, new Date().toISOString());
     // 超短存活内不清（暂存保护区）
-    expect(roundStore.sweepOrphans(60 * 60 * 1000)).toBe(0);
+    expect(roundStore.sweepOrphans(60 * 60 * 1000)).toEqual([]);
     expect(roundStore.getById('round-fresh')).not.toBeNull();
     // 无保护立即回收
-    expect(roundStore.sweepOrphans(0)).toBe(1);
+    expect(roundStore.sweepOrphans(0)).toEqual(['round-fresh']);
     expect(roundStore.getById('round-fresh')).toBeNull();
   });
 
-  it('无孤儿时 no-op 返回 0', () => {
-    expect(roundStore.sweepOrphans()).toBe(0);
+  it('无孤儿时 no-op 返回空数组', () => {
+    expect(roundStore.sweepOrphans()).toEqual([]);
   });
 
   it('默认调用（不传参）不删进行中轮——启动清扫路径的安全默认', () => {
     // 复现生产路径：extension 启动装配点调 sweepOrphans() 不传参。
     // 进行中轮（pending）refCount 恒为 0，若默认值无存活保护即被误删 → 用户提问丢失。
     seedRawRound('round-inflight', 0, new Date().toISOString(), 'pending');
-    expect(roundStore.sweepOrphans()).toBe(0);
+    expect(roundStore.sweepOrphans()).toEqual([]);
     expect(roundStore.getById('round-inflight')).not.toBeNull();
   });
 });

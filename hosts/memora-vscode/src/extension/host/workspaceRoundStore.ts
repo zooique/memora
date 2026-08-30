@@ -397,14 +397,18 @@ export class WorkspaceRoundStore implements IRoundStore {
    *   **默认 24h**（见 DEFAULT_SWEEP_MIN_AGE_MS）——默认值必须是安全值：进行中轮（pending）的
    *   refCount 恒为 0（MessageHistory.appendUser 写入时即 0，complete 才 incrementRef），
    *   若默认为 0 则启动清扫会删掉用户已提问、LLM 尚未作答的轮，属静默数据丢失。
-   * @returns 清理数量
+   * @returns 本次清扫（物理删除）的 Round ID 列表——清扫产物交给调用方，
+   *   供延迟联动（如 Agent 装配后软删其 round-summary 摘要）；空数组 = 无孤儿
    */
-  sweepOrphans(minAgeMs: number = DEFAULT_SWEEP_MIN_AGE_MS): number {
+  sweepOrphans(minAgeMs: number = DEFAULT_SWEEP_MIN_AGE_MS): string[] {
     const orphans = this.listOrphaned(minAgeMs);
+    // 先收集后删：返回值即清扫产物（Round ID），调用方据此做「对称的另一半」联动——
+    // 被清扫轮的 round-summary 需同步软删，否则成为可召回却溯源不到的悬空记忆。
+    const sweptIds = orphans.map((round) => round.id);
     for (const round of orphans) {
       this.delete(round.id);
     }
-    return orphans.length;
+    return sweptIds;
   }
 
   /**

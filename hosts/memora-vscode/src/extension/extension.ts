@@ -152,6 +152,13 @@ export function activate(context: vscode.ExtensionContext): void {
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
   const workspacePath = resolveWorkspacePath();
 
+  // 启动清扫暂存的孤儿 Round ID（② 清扫 → 摘要软删的「对称的另一半」，2026-08-30）：
+  // 清扫发生在 activate（Agent 尚未装配），此处暂存被清扫 Round，待 Agent 首次就绪后
+  // 延迟联动软删其 round-summary 摘要。单进程内一次性消费（splice 清空）；进程退出前
+  // 未消费则暂存丢失——物理轮已被删、摘要保持「无溯源独立记忆」，不构成数据错误
+  // （73d61daa 已定义该形态为合法降级，且下一轮启动清扫/GC 无重复对象）。
+  const pendingSweptRoundIds: string[] = [];
+
   // Round-based 存储层（SSOT：WorkspaceSessionStore 与 Agent 共享同一 WorkspaceRoundStore 实例，
   // 杜绝双实例覆盖写 / 缓存漂移——否则 UI 重载历史读不到 Agent 刚写入的 Round）
   const roundStore = new WorkspaceRoundStore(workspacePath);
@@ -160,9 +167,13 @@ export function activate(context: vscode.ExtensionContext): void {
   // 在启动时物理清理，防磁盘膨胀与「0 引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）
   // 存活保护必须显式带上：进行中轮（pending）refCount 恒为 0，无保护会删掉
   // 「用户已提问、LLM 尚未作答」的轮（重载/崩溃重启时静默丢失用户提问）。
-  const swept = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
-  if (swept > 0) {
-    console.info(`Memora 启动清扫无引用问答闭环 ${swept} 条`);
+  const sweptIds = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
+  if (sweptIds.length > 0) {
+    console.info(`Memora 启动清扫无引用问答闭环 ${sweptIds.length} 条`);
+    // 对称的另一半（⑥ P0 收口，2026-08-30）：被清扫轮的 round-summary 摘要暂存，
+    // 待 Agent 装配后延迟联动软删——清扫发生在启动时 Agent 尚未装配，无法直接访问记忆库。
+    // 详见 setAgentFactory 处的消费逻辑。
+    pendingSweptRoundIds.push(...sweptIds);
   }
   const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
   sessionStore.load();
@@ -181,9 +192,38 @@ export function activate(context: vscode.ExtensionContext): void {
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
   // 装配路径与 sessionStore 同源（resolveWorkspacePath），保证读写的文件一致
-  chatProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
-  );
+  chatProvider.setAgentFactory((projectPath) => {
+    const agentPromise = getOrCreateAgent(
+      projectPath,
+      providerStore,
+      sessionStore,
+      roundStore,
+      context.globalState,
+      configDir,
+      userSkillsDir,
+      userRolePacksDir,
+      memoraOutput,
+    );
+    // 孤儿轮摘要延迟联动（⑥ P0 收口，2026-08-30）：启动清扫发生 Agent 尚未装配，
+    // Agent 首次就绪后补做「对称的另一半」——软删被清扫轮的 round-summary
+    // （与手动删会话同语义：脱钩溯源 + 进回收站，可恢复为无溯源独立记忆）。
+    // 消费语义：**软删成功后才清空 pending**——失败/未就绪保留待下次装配重试，
+    // 避免「清空了却未删」导致的永久悬空（软删由存储端 deletedAt 过滤，幂等，重复消费无害）。
+    if (pendingSweptRoundIds.length > 0) {
+      void agentPromise.then((agent) => {
+        const memory = agent.memory;
+        if (!memory) return; // memory 未就绪：不消费，pending 保留待下次装配
+        try {
+          memory.softDeleteRoundSummaries(pendingSweptRoundIds);
+          pendingSweptRoundIds.length = 0;
+        } catch (err) {
+          // 联动失败仅记录并保留 pending（降级优先：记忆治理不阻塞 Agent 装配/对话）
+          console.warn('Memora 孤儿清扫摘要联动失败（保留待重试；也可在记忆治理页手动处理）', err);
+        }
+      });
+    }
+    return agentPromise;
+  });
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
