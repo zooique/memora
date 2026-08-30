@@ -24,7 +24,7 @@ import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText } from '@/agent/toolExecutor.js';
@@ -33,6 +33,12 @@ import { sanitizeExternalText } from '@/agent/toolExecutor.js';
 const TRACE_MESSAGE_LIMIT = 5;
 /** trace_summary 单条消息的最大字符数（防长上下文注入） */
 const TRACE_MESSAGE_CHAR_LIMIT = 2000;
+/** list_sessions 默认返回条数（会话路标，token 可控优先） */
+const LIST_SESSIONS_DEFAULT = 10;
+/** list_sessions 最大返回条数（防历史会话过多撑爆上下文） */
+const LIST_SESSIONS_MAX = 30;
+/** list_sessions 单条路标摘要的最大字符数（LLM 生成，过 sanitize 防注入） */
+const LIST_SESSIONS_SUMMARY_CHARS = 200;
 
 /**
  * 文件读取返回的最大字符数（防长上下文注入）
@@ -722,5 +728,73 @@ export class BuiltinToolHandlers {
       logger.warn({ err, sessionId, roundId }, 'trace_summary 读取原始对话失败，降级为摘要');
       return null;
     }
+  }
+
+  /**
+   * list_sessions：列出历史会话**路标**（会话级摘要），供 LLM 粗定位后再用 trace_summary 下钻。
+   *
+   * 会话级摘要是「路标」而非记忆——存于 SessionMeta（summary/keyTopics），不进记忆召回池
+   * （见 R5：会话级路标不进记忆库）。本工具是「粗定位 → 细取证」闭环的第一环：
+   * 返回最近 N 个会话的路标，LLM 据此挑目标，再用 trace_summary(sessionId) 取该会话轮次摘要。
+   *
+   * 路标滞后说明：SessionArchiver 在**会话切换前**触发，故当前会话的摘要可能落后于最新对话。
+   * 本工具按 updatedAt 降序返回，历史会话路标准确；当前会话以实际上下文为准，不依赖路标。
+   *
+   * @param limitStr 返回条数上限（默认 "10"，最大 "30"）
+   * @returns 格式化的会话路标列表；无会话存储 / 无会话时返回说明文本（不抛错）
+   */
+  async listSessions(limitStr?: string): Promise<string> {
+    const parsed = Number.parseInt(limitStr ?? String(LIST_SESSIONS_DEFAULT), 10);
+    let limit = Number.isNaN(parsed) || parsed < 1 ? LIST_SESSIONS_DEFAULT : parsed;
+    if (limit > LIST_SESSIONS_MAX) limit = LIST_SESSIONS_MAX;
+
+    // 未注入会话存储：降级为说明文本（与 trace_summary 的降级哲学一致，不阻塞对话）
+    if (!this.sessionStore) return '（未配置会话存储，无法列出历史会话）';
+
+    let ids: string[];
+    try {
+      ids = this.sessionStore.listSessions();
+    } catch (err) {
+      logger.warn({ err }, 'list_sessions 列举会话失败，降级为空结果');
+      return '（读取历史会话失败，请稍后重试）';
+    }
+    if (ids.length === 0) return '（暂无历史会话）';
+
+    const metas: SessionMeta[] = [];
+    for (const id of ids) {
+      try {
+        const meta = this.sessionStore.getSessionMeta(id);
+        if (meta) metas.push(meta);
+      } catch (err) {
+        // 单个会话 meta 损坏不影响整体列举（降级优先，跳过该条）
+        logger.warn({ err, sessionId: id }, 'list_sessions 读取会话元数据失败，跳过该条');
+      }
+    }
+    // 按最近活跃降序（历史会话列表的直觉顺序）
+    metas.sort((a, b) => (a.updatedAt < b.updatedAt ? 1 : a.updatedAt > b.updatedAt ? -1 : 0));
+    const shown = metas.slice(0, limit);
+    if (shown.length === 0) return '（暂无历史会话）';
+
+    const lines = shown.map((m, i) => {
+      const name = m.displayName || m.autoName || m.sessionId;
+      // 路标文本由 LLM 生成自用户内容 → 过 sanitize 防注入，并限长
+      const summary = m.summary
+        ? `\n   ${sanitizeExternalText(m.summary, LIST_SESSIONS_SUMMARY_CHARS)}`
+        : '';
+      const topics =
+        m.keyTopics && m.keyTopics.length > 0
+          ? `\n   主题：${sanitizeExternalText(m.keyTopics.join(' / '), LIST_SESSIONS_SUMMARY_CHARS)}`
+          : '';
+      return `${i + 1}. ${m.sessionId} · ${sanitizeExternalText(name, 100)}${topics}${summary}`;
+    });
+
+    const moreNote =
+      metas.length > shown.length
+        ? `\n（共 ${metas.length} 个会话，仅显示最近 ${shown.length} 个；需要更多请调大 limit）`
+        : '';
+    return (
+      `历史会话路标（按最近活跃降序，共 ${metas.length} 个）：\n${lines.join('\n')}${moreNote}\n\n` +
+      '如需查看某个会话的问答摘要，用 trace_summary 并传入该会话的 sessionId（不传 roundId 即返回该会话最近若干轮）。'
+    );
   }
 }

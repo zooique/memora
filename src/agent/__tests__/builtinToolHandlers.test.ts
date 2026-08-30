@@ -22,7 +22,7 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
-import type { ISessionStore } from '@/memory/sessionStore.js';
+import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -520,6 +520,108 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     const result = await handlers.searchMemories('A', '10', 'match');
     // preview 应为 80 字符 + …
     expect(result).toContain('A'.repeat(80) + '…');
+  });
+});
+
+// ─── listSessions 测试（会话路标，2026-08-30） ─────────────
+
+describe('BuiltinToolHandlers.listSessions', () => {
+  /** 构造会话存储桩：listSessions 只依赖 listSessions / getSessionMeta */
+  function storeStub(
+    metas: SessionMeta[],
+    opts: { brokenId?: string } = {},
+  ): ISessionStore {
+    return {
+      loadMessages: () => [],
+      listSessions: () => metas.map((m) => m.sessionId),
+      getRoundIds: () => [],
+      setRoundIds: () => {},
+      appendRoundId: () => {},
+      appendRoundIds: () => {},
+      createSession: () => {},
+      deleteSession: () => {},
+      getSessionMeta: (id) => {
+        // 单个会话 meta 损坏：仅该条抛错，用于验证降级跳过而非整体失败
+        if (opts.brokenId && id === opts.brokenId) throw new Error('meta 读取失败');
+        return metas.find((m) => m.sessionId === id);
+      },
+      updateSessionMeta: () => {},
+      listSessionMetas: () => [],
+    };
+  }
+
+  const META_A: SessionMeta = {
+    sessionId: '2026-08-01-older',
+    autoName: '早期的会话',
+    summary: '讨论 memora 的角色包设计',
+    keyTopics: ['角色包', '架构'],
+    updatedAt: '2026-08-01T10:00:00.000Z',
+    messageCount: 8,
+  };
+  const META_B: SessionMeta = {
+    sessionId: '2026-08-29-newer',
+    displayName: '我改过的名字',
+    summary: '排查小组会议上限问题',
+    updatedAt: '2026-08-29T10:00:00.000Z',
+    messageCount: 12,
+  };
+
+  it('列出会话路标：显示名 + 主题 + 摘要，按最近活跃降序', async () => {
+    const h = new BuiltinToolHandlers(projectPath, security, storage, storeStub([META_A, META_B]));
+    const result = await h.listSessions();
+    // 新的在前
+    expect(result.indexOf('2026-08-29-newer')).toBeLessThan(result.indexOf('2026-08-01-older'));
+    expect(result).toContain('我改过的名字'); // displayName 优先
+    expect(result).toContain('排查小组会议上限问题');
+    expect(result).toContain('早期的会话'); // 无 displayName 回落 autoName
+    expect(result).toContain('角色包 / 架构'); // keyTopics
+    // 引导 LLM 下钻
+    expect(result).toContain('trace_summary');
+  });
+
+  it('limit 生效：只显示最近 1 个并提示总数', async () => {
+    const h = new BuiltinToolHandlers(projectPath, security, storage, storeStub([META_A, META_B]));
+    const result = await h.listSessions('1');
+    expect(result).toContain('2026-08-29-newer');
+    expect(result).not.toContain('2026-08-01-older');
+    expect(result).toContain('共 2 个会话');
+  });
+
+  it('limit 非法/越界回退默认值与上限', async () => {
+    const h = new BuiltinToolHandlers(projectPath, security, storage, storeStub([META_A, META_B]));
+    // 非法 → 默认 10（两个都列出）
+    expect(await h.listSessions('abc')).toContain('2026-08-01-older');
+    // 越界 → 限 30（仍全部列出，不报错）
+    expect(await h.listSessions('999')).toContain('2026-08-01-older');
+  });
+
+  it('无 sessionStore 注入 → 降级说明文本，不抛错', async () => {
+    // handlers 夹具未注入 sessionStore（与 traceSummary 的降级哲学一致）
+    await expect(handlers.listSessions()).resolves.toContain('未配置会话存储');
+  });
+
+  it('空会话列表 → 暂无历史会话', async () => {
+    const h = new BuiltinToolHandlers(projectPath, security, storage, storeStub([]));
+    await expect(h.listSessions()).resolves.toContain('暂无历史会话');
+  });
+
+  it('单个会话 meta 损坏 → 跳过该条，其余照常列出（降级优先）', async () => {
+    const h = new BuiltinToolHandlers(
+      projectPath,
+      security,
+      storage,
+      storeStub([META_A, META_B], { brokenId: '2026-08-29-newer' }),
+    );
+    const result = await h.listSessions();
+    expect(result).toContain('2026-08-01-older');
+    expect(result).not.toContain('2026-08-29-newer');
+  });
+
+  it('路标文本过 sanitize：控制字符被移除（防注入）', async () => {
+    const dirty: SessionMeta = { ...META_A, summary: '摘要带\x1b[2J转义控制字符' };
+    const h = new BuiltinToolHandlers(projectPath, security, storage, storeStub([dirty]));
+    const result = await h.listSessions();
+    expect(result).not.toContain('\x1b');
   });
 });
 

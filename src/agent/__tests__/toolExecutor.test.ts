@@ -74,16 +74,16 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 14 个工具', () => {
+    it('应注册 15 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(14);
+      expect(names.length).toBe(15);
     });
 
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 14 + 条件 3（web_search / web_fetch / run_code）
-      expect(names.length).toBe(17);
+      // 始终内置 15 + 条件 3（web_search / web_fetch / run_code）
+      expect(names.length).toBe(18);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');

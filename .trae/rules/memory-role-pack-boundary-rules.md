@@ -51,6 +51,11 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 >
 > **会话级摘要不进记忆库**：它是**路标**而非记忆——存于 `SessionMeta`（`summary` / `keyTopics`，
 > 与双层命名 `autoName`/`displayName` 并存），随 `deleteSession` 一并删除。
+>
+> **路标检索闭环（2026-08-30）**：`list_sessions`（粗定位：列出会话路标，最近活跃降序，默认 10 上限 30）
+> → `trace_summary(sessionId)`（细取证：取该会话轮次摘要/原始对话）。二者均在 `BUILTIN_TOOLS`，始终暴露。
+> 已知约束：SessionArchiver 在会话切换前触发，故**当前会话路标滞后**——历史会话路标准确，
+> 当前会话以实际上下文为准，不依赖路标。
 > 历史沿革：`SessionArchiver` 曾将其写入 `content` 记忆，R3 排雷后改为只更新 SessionMeta；
 > 旧版 R5 仍按改动前描述，导致 ⑥ 误实现 `softDeleteSessionContents`（无生产者，恒空转，已删）。
 >

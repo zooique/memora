@@ -487,6 +487,8 @@ export class ToolExecutor {
           strArg('roundId') || undefined,
           strArg('limit', '5'),
         );
+      case 'list_sessions':
+        return this.builtinHandlers.listSessions(strArg('limit', '10'));
       case 'web_search': {
         // web_search 由 ToolExecutor 直接处理，不经过 BuiltinToolHandlers（文件系统导向）
         // 使用注入的 webSearchProvider 执行网络搜索，带超时保护

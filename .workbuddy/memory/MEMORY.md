@@ -4,6 +4,11 @@
 - 内核 `src/`（零 native/三方依赖，仅暴露 `"."`，不可深导入）；宿主 `hosts/memora-sprite/`（Electron 40 + electron-builder 26）。
 - 内核同步铁律：改内核后从 sprite 目录跑 `npm run sync-memora`（`hosts/memora-sprite/scripts/sync-memora.mjs`）编译并 cpSync 进 `node_modules/memora`（非软链）。EPERM 偶发（残留句柄）重试即过；以「同步完成 ✓」或 exit code 判成败，`| tail` 吞退出码。
 - 质量门 = `tsc --noEmit` + `eslint --max-warnings 0` + `vitest run`。版本：宿主/内核独立，发版只升宿主。
+- **测试并行度不对称（2026-08-30 实测）**：宿主 `npm test` 带 `--no-file-parallelism`，内核 `npm test` **不带**。
+  后果：内核并发跑会随机 flake（已见 `agent.test.ts > memory.snapshot().working`），单独跑或加 flag 均绿。
+  判 flake 的标准动作：先单独重跑该文件；仍不稳再 `--no-file-parallelism` 跑全量（耗时 4m→9m，翻倍）。
+  **不要在并发跑出的红灯上直接归因代码**，也不要为了让并发过而改代码。
+- 已知环境性红灯：`src/llm/__tests__/llmIntegration.test.ts` 3 例（真实网络 LLM，`describe.skipIf(!hasApiKey)` 判定有 key 但调用失败），非代码缺陷。
 
 ## 内核/宿主边界
 - kernel 仅 `{baseUrl, model, apiKey}`；provider 名解析、默认值、local/cloud 策略全归宿主。拒绝 preset 表。

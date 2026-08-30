@@ -68,6 +68,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   search_memories: 'idempotent',
   web_search: 'idempotent',
   trace_summary: 'idempotent',
+  // list_sessions：读操作（列举会话路标），天然幂等 ✅
+  list_sessions: 'idempotent',
   // 第二级压缩：由 loop 拦截执行（现场压临时摘要，loop 收尾即弃），幂等
   compress_context: 'idempotent',
   task_table_write: 'non-idempotent',
@@ -318,6 +320,21 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
       },
       required: ['sessionId'],
+    },
+  },
+  {
+    name: 'list_sessions',
+    description:
+      '列出历史会话的路标（每个会话的主题与摘要），用于定位"之前聊过某件事"具体在哪个会话。' +
+      '先用它找到目标 sessionId，再用 trace_summary 深入查看该会话的问答摘要。' +
+      '注意：当前会话的摘要可能滞后，历史会话的路标准确。',
+    readonly: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: { type: 'string', description: '返回条数上限，默认 "10"，最大 "30"' },
+      },
+      required: [],
     },
   },
   // ── 两级空间管理·第二级压缩（LLM 主动触发兜底）──────
