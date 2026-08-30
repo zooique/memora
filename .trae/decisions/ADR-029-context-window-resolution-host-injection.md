@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 前经内核 resolveContextWindow(providerWindow, userMax) 解析后注入的 maxContextTokens；内核预算路径只消费单一数字，不认 provider/用户双层来源；角色包不声明绝对 token 配额
+description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 前经内核 resolveContextWindow(window?) 解析（per-LLM 窗口即唯一真理源，未配置回退内核默认 120K）后注入的 maxContextTokens；内核预算路径只消费单一数字，不认 provider/用户双层来源；角色包不声明绝对 token 配额
 ---
 
 # ADR-029 · 上下文窗口解析归宿主注入（内核只消费、不解析）
@@ -23,13 +23,13 @@ description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 
 ### 核心决策：窗口数字的唯一真理源 = 「宿主解析后注入内核的 maxContextTokens」
 
 1. **内核只消费、不解析**：`computeContextBudget` 继续只吃单一数字 `windowTokens`（= `deps.config.maxContextTokens`），不认 provider、不硬编码窗口量级。内核零改动即可落地。
-2. **解析公式收口内核**：新增 `src/agent/budget.ts` 纯函数 `resolveContextWindow(providerWindow, userMax)` 作为**唯一 min 公式**，经 `src/index.ts` 导出供宿主调用：
-   - `providerWindow` 未配置（undefined/null）→ 回退 `userMax`（再回退内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS = 120_000`）；
-   - `providerWindow` 已配置 → `min(providerWindow, userMax)`，绝不超过用户全局上限。
-   - 宿主不在本地镜像 `min` 逻辑（避免跨宿主两份副本）。
-3. **宿主在构造 Agent 前注入**：`new Agent({ maxContextTokens: resolveContextWindow(activeProvider.contextWindow, userMaxSetting) })`。
-   - **vscode 宿主（本 ADR 落地范围）**：`LlmProviderConfig` 当前不含 provider 级 `contextWindow`，故 `providerWindow` 恒传 `undefined`；窗口完全由用户设置 `memora.maxContextTokens`（package.json 声明 `default 120000 / min 1000 / max 2000000`）决定。`assemble.ts` 调 `resolveContextWindow(undefined, userMax)`，`extension.ts` 从 workspace 设置读取透传。
-   - **sprite 宿主（本 ADR 暂不实现，留作对称扩展点）**：读 `config.llm.providers[active].contextWindow` 作为 `providerWindow`，与 `config.memory.maxContextTokens` 取 min。
+2. **解析公式收口内核**：新增 `src/agent/budget.ts` 纯函数 `resolveContextWindow(window?: number)` 作为**唯一窗口公式**（单参：传 per-LLM 窗口，未配置回退内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS = 120_000`），经 `src/index.ts` 导出供宿主调用：
+   - 传 per-LLM `contextWindow` → 直接采用（唯一真理源，**无全局封顶**）；
+   - 未配置（undefined）→ 回退内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS = 120_000`；
+   - 宿主不在本地镜像任何 `min`/封顶逻辑（复杂度守恒，单一公式收口）。
+3. **宿主在构造 Agent 前注入**：`new Agent({ maxContextTokens: resolveContextWindow(activeProvider.contextWindow) })`（单参：per-LLM 窗口即唯一真理源，未配置回退内核默认 120K）。
+   - **vscode 宿主（本 ADR 落地范围）**：`LlmProviderConfig.contextWindow` 即 per-LLM 窗口真理源（详见「决策演进」）。`assemble.ts` 调 `resolveContextWindow(activeProviderCfg?.contextWindow)`，未配置回落内核默认 120K；`extension.ts` 仅做旧全局 `memora.maxContextTokens` 的一次性迁移清理。
+   - **sprite 宿主（本 ADR 暂不实现，留作对称扩展点）**：读 `config.llm.providers[active].contextWindow` 直接作为 `resolveContextWindow` 的入参（无全局封顶）。
 4. **角色包不再声明绝对 token 配额**：废除角色包 schema 的 `global.tokenBudget`（违反 strategyKeys 初衷且绝对量级耦合模型窗口）。内核「上下文近满则跳过召回」语义若保留须改为比例 `recallSkipAbovePercent`（默认对齐 90% 硬帽，行为不变），不暴露绝对 token。3 个内置 manifest 的 `tokenBudget:1000000` 迁回依赖 `memoryRecallPercent`（模型无关的正确抽象，已接线 `budget.ts`）。
 
 ### 配套决策（复杂度守恒，避免过度抽象）
@@ -58,12 +58,50 @@ description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 
 ## 影响
 
 - **内核**：新增 `resolveContextWindow` 纯函数 + `index.ts` 导出（已落地）；`contextPreparer.ts:112` 注释改正；`computeContextBudget` 零改动。新增 `resolveContextWindow` 单测（`budget.test.ts`）。
-- **vscode 宿主**：`package.json` 新增 `memora.maxContextTokens`；`AssembleOptions.maxContextTokens?: number`；`assemble.ts` 调 `resolveContextWindow(undefined, userMax)` 注入；`extension.ts` 读取透传（已落地）。sprite 不改（用户明确「只聚焦 vscode 宿主」）。
+- **vscode 宿主（原文，已被「决策演进」取代）**：原设计 `package.json` 新增全局 `memora.maxContextTokens` + `AssembleOptions.maxContextTokens` + `assemble.ts` 调 `resolveContextWindow(undefined, userMax)`（旧两参签名，已废弃）。**已于 2026-08-30 按「决策演进」落地为 per-LLM 方案**（见下「影响（已实现）」）：全局 `memora.maxContextTokens` 废弃 + 一次性迁移；窗口真理源改为 `LlmProviderConfig.contextWindow`。sprite 不改（用户明确「只聚焦 vscode 宿主」）。
 - **角色包**：`global.tokenBudget` 废除 + 3 manifest 迁移（**卫生项，本 ADR 不实现，发包前或发包后处理**）。
 - **发包前必办**：内核 `npm run build` 重新产出 `dist/`，vscode 的 `file:../..` 依赖方能拿到 `resolveContextWindow` 导出；否则发布包契约与源码不一致。
 
 ## 何时回顾
 
-- 若 vscode 后续为单 Provider 增加 per-provider `contextWindow` 配置（`LlmProviderConfig` 加字段），`assemble.ts` 将 `providerWindow` 由 `undefined` 改为读取活跃 provider 值即可，公式不变。
+- ~~若 vscode 后续为单 Provider 增加 per-provider `contextWindow` 配置（`LlmProviderConfig` 加字段），`assemble.ts` 将 `providerWindow` 由 `undefined` 改为读取活跃 provider 值即可，公式不变。~~ **✅ 已于 2026-08-30 落地**：`LlmProviderConfig` 已加 `contextWindow?: number`，`assemble.ts` 经 `providerStore.getActive()?.contextWindow` 读取并 `resolveContextWindow(…)`（单参）注入；公式收敛为单源。
 - 若实施角色包 `recallSkipAbovePercent` 比例化，需同步更新 role-pack-spec 与 `budget.ts`。
-- 若接入 Gemini/Ollama/OpenAI 动态窗口 API，在宿主 `ModelContextResolver` 顶层扩展（非地基改动）。
+- 若接入 Gemini/Ollama/OpenAI 动态窗口 API，在宿主 `ModelContextResolver` 顶层扩展（非地基改动；可选「自动探测预填」见演进第 5 点，推迟）。
+
+---
+
+## 决策演进（2026-08-30 续 · per-model 独立上限 + 分层动态获取）
+
+> **驱动**：用户给定两前提——① vscode 仅用户自添个人 LLM、无内置 LLM（宿主不知用户用哪些）；② 每 LLM 须独立开放上下文上限配置。并挑战「为何需维护静态表 / 能否从 LLM API 取上限」。本节能取代原 vscode 落地节（第 31 行）的「全局单值」表述；解析公式同步收敛为单参 `resolveContextWindow(window?)`（per-LLM 即唯一真理源，无全局封顶）。
+
+### 事实裁定（对抗式核实）
+
+上下文上限能否运行时获取，**取决于 provider，无统一标准**：
+
+- **能取真值**：Ollama `/api/show` 返回 `model_info.*.context_length`（hermes-agent#23949 / openclaw#73515 / vscode#302475 实测）；Gemini `Model` 资源带 `inputTokenLimit`/`outputTokenLimit`；OpenRouter `/api/v1/models` 每模型带 `context_length`。
+- **不能取**：OpenAI-compatible 基线（`/v1/chat/completions`，内核核心契约 `{baseUrl, model, apiKey}`）——`/v1/models` 响应 schema 仅含 `id/owned_by/permission/...`，**无 context window 字段**；上限只写在模型卡/定价网页。故任意 `base_url`（vLLM / LM Studio / DeepSeek·通义·月之暗面 OpenAI 兼容端点）均无标准端点可查。
+
+→ 但「静态表 / 动态 API 作校验」在**前提 1（无内置 LLM、不知用户用哪些 LLM）**下整体作废：宿主无任何宿主持有的「模型真上限」权威。→ **静态表删除**；动态获取降级为可选「自动探测」预填（非 SSOT、推迟）。唯一真理源 = 用户 per-LLM `contextWindow`。
+
+### 演进决策
+
+1. **窗口数字 SSOT 不变**（宿主解析后注入 `maxContextTokens`），但 vscode 由「全局单值 `memora.maxContextTokens`」演进为 **per-model `LlmProviderConfig.contextWindow`**：每个 provider 条目独立上限，切换激活 provider（模型）即切换上限。
+2. **前提 1（无内置 LLM）推翻「静态表 / 动态 API 作校验」的必要性**：宿主不知道用户添加了哪些 LLM（任意 OpenAI-compatible / Ollama / Gemini / vLLM / LM Studio…），故**不存在任何宿主持有的「模型真上限」权威**——静态表覆盖不全且需维护、动态 API 对未知 endpoint 无效。→ **删除静态表；动态获取降级为可选预填（见第 5 点），不进入 SSOT**。
+3. **唯一真理源 = 用户 per-LLM `contextWindow`**：每个用户添加的 LLM 配置项一个 `contextWindow` 数字即真理；宿主注入 `resolveContextWindow(llmEntry.contextWindow)`（单参：per-LLM 窗口为唯一真理源，未配置回退 120K）→ `maxContextTokens`。内核零改动。未填 → 内核默认 120K 兜底（默认非真理源）。
+4. **仅有的护栏 = schema `minimum`/`maximum`**（防 0 / 防天文数字撑爆预算）：这是 sanity bound，不是模型上限，不构成第二真理源。
+5. **废弃全局 `memora.maxContextTokens`**（避免双源）；存量用户设置经一次性迁移落到首个 provider 条目的 `contextWindow`。
+
+### 理由（对齐用户铁律）
+
+- 「一份真理源」：用户 per-LLM `contextWindow` 是唯一真相；宿主不知用户用了哪些 LLM（前提 1），无任何宿主持有的 ceiling 权威，故不引入任何第二来源（静态表 / 动态 API 均不进 SSOT）。
+- 回应「能否从 API 取」：能（Ollama/Gemini/OpenRouter），但前提 1 下宿主不知用户 LLM、且未知 endpoint 无标准端点 → 动态获取仅作**可选预填**（推迟），不进真理链。
+- 复杂度守恒：不新造窗口管线、不维护静态表；复用 ADR-029 既有 `resolveContextWindow(window?)` 单参插槽，内核零改动。
+
+### 影响（已实现 · 2026-08-30）
+
+- ✅ vscode `LlmProviderConfig` 加 `contextWindow?: number`（`protocol.ts`，SSOT 注释锁定「用户真理源」）；设置 UI 每 provider 条目可编辑（弹窗 `#f-contextwindow` + 卡片详情 ` · N ctx` 透明可见）。
+- ✅ 保存校验 = 仅 sanity bound（`providerStore.save`：正整数 + 1024–10_000_000 范围），**不校验「是否超过模型真上限」**（宿主不知该上限）；非第二真理源。
+- ✅ `assemble.ts`：`resolveContextWindow(activeProviderCfg?.contextWindow)`（单参：per-LLM 窗口即真理源，未配置回退 120K；`AssembleOptions.maxContextTokens` 已删除）。内核零改动。
+- ✅ `memora.maxContextTokens` 废弃（`package.json` 配置段删除）+ 一次性迁移（`providerStore.migrateMaxContextTokens`：旧全局值并入首个未配 contextWindow 的 provider 并清除旧键；`extension.activate` 调用）。
+- ⏸ 可选「自动探测上限」预填按钮（**非 SSOT、推迟**）：仅当用户显式选 Ollama/Gemini 类型且 `base_url` 可达时，探测结果写入用户 `contextWindow` 字段（仍由用户值作真理，不另立来源）。属 ADR-029 原规划的顶层加分项，非核心 SSOT。
+- 质量门：vscode `tsc --noEmit` 0 错、`eslint --max-warnings 0` 0 警告（src）、host 全量测试 272 通过（含新增 `providerStore.test.ts` 9 + `configView.test.ts` 扩展 4）。

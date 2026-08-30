@@ -35,6 +35,16 @@ export interface LlmProviderConfig {
   maskedKey?: string;
   /** Provider 标识（'cloud' | 'local'） */
   provider?: string;
+  /**
+   * 上下文窗口上限（token）—— 该 LLM 唯一真理源
+   *
+   * 每个用户添加的 LLM 独立配置自己的上下文上限（如 deepseek-chat 64K、gpt-4o 128K、
+   * 本地模型 8K）。宿主无「模型真上限」权威（用户可能添加任意 OpenAI 兼容 endpoint，
+   * 宿主不预置静态表、不动态探测），故本字段即窗口真相源，由用户在配置面板填写。
+   * 未填（undefined）→ 装配时经内核 resolveContextWindow 回落默认 120K（默认非真理源）。
+   * 仅护栏 = 宿主 save 校验正整数 + 合理范围（防 0 / 防天文数字撑爆预算），不构成第二真理源。
+   */
+  contextWindow?: number;
 }
 
 /** 向量检索（Embedding）配置回显（G1 记忆语义检索，2026-08-23） */

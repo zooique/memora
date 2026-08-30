@@ -46,26 +46,14 @@ export interface ContextBudgetInput {
 }
 
 /**
- * 解析有效上下文窗口（单一真理源公式，宿主在构造内核 Agent 前调用）。
+ * 解析有效上下文窗口（SSOT 单源公式，宿主在构造内核 Agent 前调用）。
  *
- * 入参：
- *  - providerWindow：活跃 provider 的 contextWindow（来自宿主 Config / Provider 配置）；未配置为 undefined。
- *  - userMax：用户设定的全局窗口上限（sprite 的 memory.maxContextTokens / vscode 的
- *    memora.maxContextTokens）；未配置为 undefined。
- *
- * 语义（对齐 ProviderEntryConfig.contextWindow「未配置时回退到 memory.maxContextTokens」）：
- *  - providerWindow 未配置 → 回退 userMax（再回退内核默认 DEFAULT_MAX_CONTEXT_TOKENS）；
- *  - providerWindow 已配置 → min(providerWindow, userMax)，绝不超过用户全局上限。
- *
- * 内核预算路径只吃单一数字 maxContextTokens（computeContextBudget 的 windowTokens 入参），
- * 解析公式收口于此，避免跨宿主镜像两份 min 逻辑。
+ * 唯一真理源 = 用户 per-LLM 配置的上下文上限（宿主装配时传入）；未配置 → 回退内核默认
+ * DEFAULT_MAX_CONTEXT_TOKENS（120_000）。内核预算路径只吃单一数字 maxContextTokens，
+ * 不认 provider/用户双来源、不施加全局封顶——用户对自己填写的参数负责（见 ADR-029）。
  */
-export function resolveContextWindow(
-  providerWindow: number | undefined,
-  userMax: number | undefined,
-): number {
-  const base = userMax ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
-  return providerWindow === undefined ? base : Math.min(providerWindow, base);
+export function resolveContextWindow(window?: number): number {
+  return window ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
 }
 
 /** 预算计算结果 */

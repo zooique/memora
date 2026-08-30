@@ -35,6 +35,10 @@ const SECRET_PREFIX = 'memora.provider';
 
 /** 脱敏占位符（apiKey 为空或已配置时展示） */
 const MASK = '••••••••';
+/** contextWindow 合法下限（token）：低于此无意义（防 0 / 极小值撑不起任何对话） */
+const CONTEXT_WINDOW_MIN = 1024;
+/** contextWindow 合法上限（token）：防天文数字撑爆预算分配 */
+const CONTEXT_WINDOW_MAX = 10_000_000;
 
 /**
  * 生成 API Key 的脱敏展示串（仅用于编辑回显，绝不回传真实值）
@@ -164,6 +168,21 @@ export class ProviderStore {
    */
   async save(config: LlmProviderConfig, isEditing: boolean): Promise<{ ok: boolean; message?: string }> {
     const trimmed = { ...config, name: config.name.trim(), model: config.model.trim(), baseUrl: config.baseUrl.trim() };
+
+    // contextWindow 护栏（sanity bound，非模型真上限）：正整数 + 合理范围，
+    // 防 0 / 防天文数字撑爆预算。仅此一道护栏，不构成第二真理源（真理源 = 用户填写值本身）。
+    if (trimmed.contextWindow !== undefined) {
+      if (
+        !Number.isInteger(trimmed.contextWindow) ||
+        trimmed.contextWindow < CONTEXT_WINDOW_MIN ||
+        trimmed.contextWindow > CONTEXT_WINDOW_MAX
+      ) {
+        return {
+          ok: false,
+          message: `上下文上限需为 ${CONTEXT_WINDOW_MIN}–${CONTEXT_WINDOW_MAX} 之间的整数 token`,
+        };
+      }
+    }
 
     // 新增模式：apiKey 必填
     if (!isEditing && !trimmed.apiKey.trim()) {
@@ -403,5 +422,29 @@ export class ProviderStore {
     // 清除工作区级残留（避免覆盖 Global 新配置）
     await cfg.update(CFG_PROVIDERS, undefined, vscode.ConfigurationTarget.Workspace);
     await cfg.update(CFG_ACTIVE, undefined, vscode.ConfigurationTarget.Workspace);
+  }
+
+  /**
+   * 一次性迁移：旧全局 memora.maxContextTokens → per-LLM contextWindow（2026-08-29 窗口模型收敛）
+   *
+   * 背景：上下文窗口上限原为用户级全局设置 memora.maxContextTokens（单一值作用于所有 LLM）。
+   * 收敛为 per-LLM 配置（LlmProviderConfig.contextWindow）后，全局设置不再是真理源。
+   * 为不丢用户已填值：激活时把旧全局值并入首个尚未配置 contextWindow 的 Provider；
+   * 随后清除旧全局键（消除双真理源残留）。无旧值 / 无 Provider 时 → 无动作。
+   */
+  async migrateMaxContextTokens(): Promise<void> {
+    const cfg = vscode.workspace.getConfiguration(CFG_SECTION);
+    const old = cfg.inspect<number | undefined>('maxContextTokens')?.globalValue;
+    if (old === undefined) return;
+    const providers = this.readConfig();
+    if (providers.length > 0) {
+      const target = providers.find((p) => p.contextWindow === undefined);
+      if (target) {
+        target.contextWindow = old;
+        await this.writeConfig(providers);
+      }
+    }
+    // 清除旧全局设置（不再作为真理源，避免与 per-LLM contextWindow 双源）
+    await cfg.update('maxContextTokens', undefined, vscode.ConfigurationTarget.Global);
   }
 }

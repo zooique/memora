@@ -66,6 +66,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fModel = root.querySelector('#f-model') as HTMLInputElement;
   const fBaseUrl = root.querySelector('#f-baseurl') as HTMLInputElement;
   const fApiKey = root.querySelector('#f-apikey') as HTMLInputElement;
+  // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K）
+  const fContextWindow = root.querySelector('#f-contextwindow') as HTMLInputElement;
   const apikeyHint = root.querySelector('#apikeyHint') as HTMLElement;
   const testResult = root.querySelector('#testResult') as HTMLElement;
   const btnTest = root.querySelector('#btnTest') as HTMLButtonElement;
@@ -92,13 +94,16 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     model: string;
     baseUrl: string;
     apiKey: string;
+    contextWindow: number | undefined;
   } {
+    const cw = fContextWindow.value.trim();
     return {
       name: fName.value.trim(),
       displayName: fDisplay.value.trim(),
       model: fModel.value.trim(),
       baseUrl: fBaseUrl.value.trim(),
       apiKey: fApiKey.value,
+      contextWindow: cw ? Number(cw) : undefined,
     };
   }
 
@@ -126,6 +131,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       const masked = target?.maskedKey || '';
       apikeyHint.hidden = !masked;
       apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
+      // 上下文窗口上限回填（per-LLM 真理源；编辑时如实回显，未配留空）
+      fContextWindow.value = target?.contextWindow?.toString() ?? '';
     } else {
       fName.value = '';
       fName.disabled = false;
@@ -136,6 +143,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       fApiKey.placeholder = 'sk-…';
       apikeyHint.hidden = true;
       apikeyHint.textContent = '';
+      fContextWindow.value = '';
     }
     modal.classList.add('visible');
     fName.focus();
@@ -239,7 +247,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     }
     const detail = document.createElement('div');
     detail.className = 'card-detail';
-    detail.textContent = p.model + ' · ' + p.baseUrl;
+    detail.textContent = p.model + ' · ' + p.baseUrl + (p.contextWindow ? ` · ${p.contextWindow} ctx` : '');
     info.appendChild(nameRow);
     info.appendChild(detail);
 

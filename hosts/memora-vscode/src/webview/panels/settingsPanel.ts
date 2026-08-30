@@ -1269,6 +1269,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <input id="f-apikey" name="apiKey" type="password" placeholder="sk-…" autocomplete="new-password" />
             <div id="apikeyHint" class="key-hint" hidden></div>
           </div>
+          <div class="field">
+            <label for="f-contextwindow">上下文上限（token，可选）</label>
+            <input id="f-contextwindow" name="contextWindow" type="number" min="1024" max="10000000" step="1024" placeholder="如 128000（留空用默认 120K）" autocomplete="off" />
+            <div class="key-hint">每个模型独立配置上下文窗口上限；留空回落内核默认 120K。</div>
+          </div>
           <div id="testResult" class="test-result" hidden></div>
           <div class="modal-actions">
             <button id="btnTest" type="button" class="btn btn-secondary">测试连接</button>

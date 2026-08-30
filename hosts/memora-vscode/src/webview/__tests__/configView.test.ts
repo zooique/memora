@@ -46,6 +46,7 @@ const HTML = `
           <input id="f-model" />
           <input id="f-baseurl" />
           <input id="f-apikey" />
+          <input id="f-contextwindow" type="number" />
           <div id="apikeyHint" hidden></div>
           <div id="testResult" hidden></div>
           <button id="btnTest" type="button"></button>
@@ -81,13 +82,14 @@ function dispatchLoaded(providers: unknown[], activeName?: string, backgroundNam
 }
 
 /** 构造一个 Provider 对象 */
-function makeProvider(name: string, opts: { displayName?: string; model?: string; baseUrl?: string } = {}) {
+function makeProvider(name: string, opts: { displayName?: string; model?: string; baseUrl?: string; contextWindow?: number } = {}) {
   return {
     name,
     displayName: opts.displayName || name,
     model: opts.model || name + '-model',
     baseUrl: opts.baseUrl || 'https://api.example.com/v1',
     provider: 'remote',
+    contextWindow: opts.contextWindow,
   };
 }
 
@@ -162,6 +164,61 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     const list = document.getElementById('list') as HTMLElement;
     const detail = list.querySelector('.card-detail') as HTMLElement;
     expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1');
+  });
+
+  // ─── 2026-08-29 per-LLM 上下文上限（contextWindow） ───
+
+  it('详情报文：带 contextWindow 时附加「 · N ctx」标注（透明可见）', () => {
+    mountConfigView();
+    dispatchLoaded([makeProvider('deepseek', { contextWindow: 128000 })], 'deepseek');
+    const detail = document.querySelector('.card-detail') as HTMLElement;
+    expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1 · 128000 ctx');
+  });
+
+  it('详情报文：未配置 contextWindow 时不附加 ctx 标注（回落默认 120K）', () => {
+    mountConfigView();
+    dispatchLoaded([makeProvider('deepseek')], 'deepseek');
+    const detail = document.querySelector('.card-detail') as HTMLElement;
+    expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1');
+  });
+
+  it('编辑打开弹窗：回填 contextWindow 到表单', () => {
+    mountConfigView();
+    dispatchLoaded([makeProvider('deepseek', { contextWindow: 64000 })], 'deepseek');
+    // 激活卡仅有「编辑」按钮（.btn-secondary）
+    (document.querySelector('.card .btn-secondary') as HTMLButtonElement).click();
+    const cw = document.getElementById('f-contextwindow') as HTMLInputElement;
+    expect(cw.value).toBe('64000');
+  });
+
+  it('保存提交：表单 contextWindow 随 cfg_save 上报（填值）', () => {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('f-display') as HTMLInputElement).value = 'DeepSeek';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
+    (document.getElementById('f-contextwindow') as HTMLInputElement).value = '128000';
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } };
+    expect(sent.config.contextWindow).toBe(128000);
+  });
+
+  it('保存提交：contextWindow 留空 → 上报 undefined（回落默认 120K）', () => {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('f-display') as HTMLInputElement).value = 'DeepSeek';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
+    (document.getElementById('f-contextwindow') as HTMLInputElement).value = '';
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } };
+    expect(sent.config.contextWindow).toBeUndefined();
   });
 
   it('卡片按钮 tooltip：解释各操作语义（可发现性，对齐角色卡）', () => {

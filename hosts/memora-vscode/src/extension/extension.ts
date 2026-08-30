@@ -80,10 +80,6 @@ function getOrCreateAgent(
     const allowedPaths = vscode.workspace
       .getConfiguration('memora')
       .get<string[]>('allowedPaths', []);
-    // 读取上下文窗口上限（用户级预算旋钮；缺失回退内核默认 120K，由内核 resolveContextWindow 统一处理）
-    const maxContextTokens = vscode.workspace
-      .getConfiguration('memora')
-      .get<number>('maxContextTokens', 120_000);
     agentPromise = assembleAgent({
       projectPath,
       providerStore,
@@ -96,7 +92,6 @@ function getOrCreateAgent(
       userRolePacksDir,
       confirmWrites,
       allowedPaths,
-      maxContextTokens,
       outputChannel,
     }).catch(
       (err) => {
@@ -120,6 +115,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // 一次性迁移：工作区 settings.json 旧 Provider 配置 → 用户级（2026-08-17 存储层级收敛，
   // 避免 Workspace 优先级覆盖 Global 新配置导致不生效）
   void providerStore.migrateFromWorkspace();
+  // 一次性迁移：旧全局 memora.maxContextTokens → 首个 Provider 的 contextWindow（2026-08-29
+  // 窗口上限改为 per-LLM 配置，全局设置废弃；详见 ADR-029 演进）
+  void providerStore.migrateMaxContextTokens();
 
   // 插件内置配置目录（SSOT 修复 2026-08-15）：从 extensionUri 显式定位，
   // 指向 dist/extension（role-packs 等资源所在）。替代 assemble 内 import.meta.url
