@@ -18,7 +18,7 @@ import {
   MAX_HANDOFF_PROMPT_LEN,
 } from '@/role-pack/validator.js';
 import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
-import { SkillManager } from '@/skill/skillManager.js';
+import { SkillManager, L1_COMPRESSED_THRESHOLD, L1_LIST_TOOL_THRESHOLD } from '@/skill/skillManager.js';
 import type {
   RolePack,
   RolePackMeta,
@@ -29,11 +29,6 @@ import type {
   BehaviorStrategy,
 } from '@/role-pack/types.js';
 import { assembleRolePack } from '@/role-pack/strategyResolver.js';
-
-/** L1 阈值保护：技能数超过此值时压缩 L1 描述为 20 字摘要 */
-const L1_COMPRESSED_THRESHOLD = 30;
-/** L1 阈值保护：技能数超过此值时切换为 list_skills 工具动态查询 */
-const L1_LIST_TOOL_THRESHOLD = 50;
 
 /** formatVersion 缺省值（未声明时按 1.0.0） */
 const DEFAULT_FORMAT_VERSION = '1.0.0';

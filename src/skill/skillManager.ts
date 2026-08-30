@@ -15,10 +15,18 @@ import { readFile } from 'node:fs/promises';
 import { join, dirname } from 'node:path';
 
 /**
- * 技能匹配最低激活阈值：score 低于此不激活，避免低匹配度噪音
- * （与角色包管理器 KEYWORD_HIGH_CONFIDENCE_THRESHOLD 0.3 一致）
+ * 技能匹配最低激活阈值：score 低于此不激活，避免低匹配度噪音。
+ * 该阈值是技能系统的独立语义（keyword 命中比例 ≥ 1/3 才会 ≥ 0.3）。
  */
 const SKILL_MATCH_MIN_SCORE = 0.3;
+
+/**
+ * L1 阈值保护：技能数超过此值时压缩 L1 描述为 20 字摘要。
+ * SSOT：全局技能（SkillManager）与角色包内嵌技能（RolePackManager）共用同一渐进披露阈值。
+ */
+export const L1_COMPRESSED_THRESHOLD = 30;
+/** L1 阈值保护：技能数超过此值时切换为 list_skills 工具动态查询（SSOT 同一来源） */
+export const L1_LIST_TOOL_THRESHOLD = 50;
 
 /**
  * 解析来源层（agent / project）：SSOT 收口——仅接受合法枚举值，
@@ -138,16 +146,33 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 构建全局技能清单块（渐进披露 L1），与角色包技能清单同格式。
    * 两级技能同构：通用技能全局激活，角色包技能随角色激活；LLM 按需调 read_skill 读正文（L2）。
    * 含 resources/scripts 的技能附加 "(含资源/脚本)" 标记。
+   *
+   * L1 阈值保护（与角色包 buildSystemPrompt 同构）：
+   *   ≤ 30 技能：完整 L1（name + full description）
+   *   31-50 技能：压缩 L1（name + 20 字摘要）
+   *   > 50 技能：切换 list_skills 工具动态查询，不在 system prompt 枚举
    */
   buildSkillList(): string {
     // 可用性过滤（G22）：缺 description 的技能在后手来源与渐进披露层面不可用（模型不知何时激活），
     // 不进入 LLM 可用清单（「未生效」由宿主 UI 以健康徽章显式标注，而非静默隐藏）。
-    const listed = this.items
-      .filter((s) => s.description?.trim())
-      .map((skill) => SkillManager.formatSkillForPrompt(skill));
-    return listed.filter(Boolean).length > 0
-      ? `【通用技能（渐进披露 L1，按需调用 read_skill 读取正文）】\n${listed.join('\n')}`
-      : '';
+    const candidates = this.items.filter((s) => s.description?.trim());
+    if (candidates.length === 0) return '';
+    const skillCount = candidates.length;
+
+    // L1 阈值保护：超上限不枚举，提示用 list_skills 工具动态查询
+    if (skillCount > L1_LIST_TOOL_THRESHOLD) {
+      return `【通用技能（${skillCount} 个，数量较多，使用 list_skills 工具查询具体清单）】`;
+    }
+
+    const compressed = skillCount > L1_COMPRESSED_THRESHOLD;
+    const listed = candidates
+      .map((skill) => SkillManager.formatSkillForPrompt(skill, undefined, compressed))
+      .filter(Boolean);
+    if (listed.length === 0) return '';
+    const modeNote = compressed
+      ? '（技能较多，描述已压缩至 20 字，可用 read_skill 读取完整正文）'
+      : '（渐进披露 L1，按需调用 read_skill 读取正文）';
+    return `【通用技能${modeNote}】\n${listed.join('\n')}`;
   }
 
   /**

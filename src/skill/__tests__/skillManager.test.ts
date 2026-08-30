@@ -397,6 +397,54 @@ keywords: 搜索,查询
 
       expect(skillManager.buildSkillList()).toBe('');
     });
+
+    it('技能数 31-50：L1 压缩档（描述截断 20 字 + 压缩提示）', async () => {
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      // 注入 31 个有描述技能，触发压缩档（L1_COMPRESSED_THRESHOLD=30 之上）
+      for (let i = 0; i < 31; i++) {
+        skillManager.register({
+          name: `技能${i}`,
+          content: `正文${i}`,
+          keywords: [`k${i}`],
+          trigger: undefined,
+          description: `这是第 ${i} 号技能的完整描述，长度超过二十字用于验证压缩截断行为`,
+          layer: 'agent',
+          filePath: '',
+        });
+      }
+
+      const list = skillManager.buildSkillList();
+      // 压缩提示语
+      expect(list).toContain('描述已压缩至 20 字');
+      // 单个技能描述被截断（20 字 + …）
+      expect(list).toContain('…');
+      // 未出现完整描述全文（首个技能描述被压缩）
+      expect(list).not.toContain('这是第 0 号技能的完整描述，长度超过二十字用于验证压缩截断行为');
+    });
+
+    it('技能数 > 50：切换 list_skills 工具动态查询（不枚举技能）', async () => {
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      // 注入 51 个有描述技能，触发 list_skills 档（L1_LIST_TOOL_THRESHOLD=50 之上）
+      for (let i = 0; i < 51; i++) {
+        skillManager.register({
+          name: `技能${i}`,
+          content: `正文${i}`,
+          keywords: [`k${i}`],
+          trigger: undefined,
+          description: `描述 ${i}`,
+          layer: 'agent',
+          filePath: '',
+        });
+      }
+
+      const list = skillManager.buildSkillList();
+      expect(list).toContain('使用 list_skills 工具查询具体清单');
+      // 不再逐条枚举技能
+      expect(list).not.toContain('- 技能0');
+      expect(list).not.toContain('- 技能50');
+    });
   });
 
   // ─── reload（事件驱动热重载） ─────────────────────
