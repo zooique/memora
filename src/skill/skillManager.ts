@@ -8,7 +8,7 @@ import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillMatch, SkillLayer3, SkillIssue, SkillValidation } from '@/skill/types.js';
-import { parseTrigger, parseKeywords, discoverLayer3, resolveSafePath, scanMarkdownDir } from '@/utils/scanner.js';
+import { parseTrigger, parseKeywords, discoverLayer3, resolveSafePath, scanMarkdownDir, isFolderFormSkill } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { readFile } from 'node:fs/promises';
@@ -283,22 +283,27 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
-    // 发现 L3 资源和脚本（folder 形式技能目录或单文件 skill 同级目录都会扫描）
+    // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流）：仅「文件夹形态」（入口为 SKILL.md）才发现
+    // resources/ scripts/。顶层裸 .md 单文件技能目录 = 技能池共享根，同级扫描会把别的技能的
+    // resources/scripts 误归给自己 → 污染。故裸 .md 为纯 L1/L2，需要 L3 资源/脚本必须用文件夹+SKILL.md。
     let layer3: SkillLayer3 | undefined;
-    const skillDir = dirname(entry.filePath);
-    const discovered = await discoverLayer3(skillDir);
-    if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
-      layer3 = {
-        resources: discovered.resources.map((r) => ({
-          path: r.path,
-          size: r.size,
-        })),
-        scripts: discovered.scripts.map((s) => ({
-          path: s.path,
-          runtime: s.runtime,
-          size: s.size,
-        })),
-      };
+    const isFolderForm = isFolderFormSkill(entry.filePath);
+    if (isFolderForm) {
+      const skillDir = dirname(entry.filePath);
+      const discovered = await discoverLayer3(skillDir);
+      if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
+        layer3 = {
+          resources: discovered.resources.map((r) => ({
+            path: r.path,
+            size: r.size,
+          })),
+          scripts: discovered.scripts.map((s) => ({
+            path: s.path,
+            runtime: s.runtime,
+            size: s.size,
+          })),
+        };
+      }
     }
 
     return {

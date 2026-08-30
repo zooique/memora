@@ -44,7 +44,7 @@ export interface RolePackValidateInput {
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
   'author', 'homepage', 'repository', 'license',
-  'minKernelVersion', 'extensions',
+  'minKernelVersion',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection',
   'strategy', 'skills', 'capabilities', 'handoffPrompt',
 ]);

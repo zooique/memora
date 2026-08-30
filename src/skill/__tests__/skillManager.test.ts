@@ -616,4 +616,62 @@ keywords: 搜索,查询
       expect(skillManager.get('越权注入')).toBeNull();
     });
   });
+
+  // ─── L3 隔离纪律（2026-08-30 对齐 Agent Skills 主流） ────────
+  // 主流标准：技能=文件夹+强制 SKILL.md，辅助目录 scripts/ references/ assets/ 归 SKILL.md 所有。
+  // 顶层裸 .md 是旧版自定义命令的扁平兼容形态，若同级扫描其 resources/scripts 会把别的技能的资源误归自己。
+
+  describe('L3 隔离纪律（仅文件夹形态发现 resources/scripts）', () => {
+    it('顶层裸 .md 技能不扫描 L3 资源', async () => {
+      // 顶层裸 .md：纯 L1/L2，即使同级存在 resources/ 也不归属它
+      createSkillFile(skillsDir, 'foo.md', '---\nname: foo\nkeywords: a\n---\n# Foo 技能');
+      // 同级创建 resources/：模拟「共享技能根」场景，验证不并入裸 .md
+      mkdirSync(join(skillsDir, 'resources'), { recursive: true });
+      writeFileSync(join(skillsDir, 'resources', 'api.md'), 'API 参考', 'utf-8');
+      mkdirSync(join(skillsDir, 'scripts'), { recursive: true });
+      writeFileSync(join(skillsDir, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const skill = skillManager.get('foo');
+      expect(skill).not.toBeNull();
+      // 裸 .md 为纯 L1/L2：layer3 为空，即使同级存在 resources/scripts
+      expect(skill!.layer3).toBeUndefined();
+    });
+
+    it('顶层裸 .md 技能不扫描 L3 脚本', async () => {
+      createSkillFile(skillsDir, 'bar.md', '---\nname: bar\nkeywords: b\n---\n# Bar 技能');
+      // 同级 scripts/：验证不并归裸 .md（避免脚本池相互污染）
+      mkdirSync(join(skillsDir, 'scripts'), { recursive: true });
+      writeFileSync(join(skillsDir, 'scripts', 'helper.sh'), 'echo bar', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const barSkill = skillManager.get('bar');
+      expect(barSkill!.layer3).toBeUndefined();
+    });
+
+    it('文件夹形态（SKILL.md）正常扫描 L3 资源/脚本', async () => {
+      // 文件夹形态：目录下 SKILL.md 为唯一入口，其 directories 内的 resources/ scripts/ 归本合同
+      const skillDir = join(skillsDir, 'baz');
+      mkdirSync(join(skillDir, 'resources'), { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: baz\nkeywords: c\n---\n# Baz 技能', 'utf-8');
+      writeFileSync(join(skillDir, 'resources', 'ref.md'), '参考文档', 'utf-8');
+      mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+      writeFileSync(join(skillDir, 'scripts', 'run.sh'), 'echo baz', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const skillDirSkill = skillManager.get('baz');
+      expect(skillDirSkill).not.toBeNull();
+      // 文件夹形态：layer3 正常发现 resources + scripts
+      expect(skillDirSkill!.layer3?.resources).toHaveLength(1);
+      expect(skillDirSkill!.layer3?.resources[0]!.path).toBe('ref.md');
+      expect(skillDirSkill!.layer3?.scripts).toHaveLength(1);
+      expect(skillDirSkill!.layer3?.scripts[0]!.path).toBe('run.sh');
+    });
+  });
 });

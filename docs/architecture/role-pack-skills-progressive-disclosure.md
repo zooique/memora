@@ -2,6 +2,7 @@
 
 > **定位**：Skills 系统采用三级渐进披露模式，对齐 Claude Skills / Agent Skills 行业标准。
 > **状态**：L1/L2/L3 渐进披露已落地——L1 元数据清单、L2 `read_skill` 按需读正文、L3 `read_resource`/`run_skill_script`（实现见 [skillManager.ts](../../src/skill/skillManager.ts) `read_resource`/`listResources`、`skillScriptRunner.ts` 沙箱脚本，assembler 注入 L3 回调）
+> **形态定案（2026-08-30）**：**以主流文件夹形式为标准**（`<名>/SKILL.md` 为唯一入口，Agent Skills 开放标准），**兼容轻量单文件形式**（顶层裸 `.md`，纯 L1/L2）；L3（`resources/` `scripts/`）**仅归属文件夹形式**——L3 隔离纪律（详见 §2.1，判定单一真理源 `isFolderFormSkill`，见 [scanner.ts](../../src/utils/scanner.ts)）。
 > **关联**：[role-pack-spec.md](./role-pack-spec.md)、[memory-role-pack-boundary.md](./memory-role-pack-boundary.md)
 
 ---
@@ -66,11 +67,19 @@ Skills 系统的核心设计是**渐进披露（Progressive Disclosure）**—�
 
 ## 二、L3 资源/代码分离规范
 
-### 2.1 技能目录结构（三级完整形态）
+### 2.1 技能目录结构（三形态定位）
 
+> **L3 隔离纪律（2026-08-30 定案，对齐 Agent Skills 主流）**：仅「文件夹形式」（入口为 `SKILL.md`）发现 `resources/` `scripts/`。顶层裸 `.md` 的单文件技能所在目录 = 技能池共享根，如果对它做同级扫描，会把**别的技能的** `resources/` `scripts/` 误归给自己 → 污染。因此：
+>
+> - **文件夹形式（标准）**：拥有完整 L1/L2/L3；
+> - **单文件形式（轻量兼容）**：纯 L1/L2，不拥有 L3——需要资源/脚本必须升级为文件夹形式。
+>
+> 判定单一真理源：`isFolderFormSkill(filePath)`（[scanner.ts](../../src/utils/scanner.ts)），`skillManager` / `rolePackManager` 复用，杜绝重复硬编码。
+
+**文件夹形式（标准，三级完整形态）**：
 ```
-<skill-name>/
-  ├── SKILL.md              # L1 + L2：frontmatter 元数据 + 指令正文
+<skill-name>/                # 技能文件夹（层级可嵌套，如 <pool-root>/<skill-name>/）
+  ├── SKILL.md              # L1 + L2：frontmatter 元数据 + 指令正文（唯一入口，约定名强制）
   ├── resources/            # L3：参考资料（供 read_resource 读取）
   │   ├── api-spec.md       #   API 规范文档
   │   └── reference.json    #   结构化参考数据
@@ -80,11 +89,13 @@ Skills 系统的核心设计是**渐进披露（Progressive Disclosure）**—�
       └── transform.ts      #   TypeScript 脚本
 ```
 
-**也支持单文件形式**（简化版，无 L3）：
+**单文件形式（轻量兼容，纯 L1/L2）**：
 ```
 skills/
-  └── 代码审查.md           # 单文件 SKILL.md 格式（无 resources/scripts）
+  └── 代码审查.md           # 顶层裸 .md：纯 L1/L2（无 resources/scripts）
 ```
+
+> **用户视角取舍**：主流开放标准（Claude Code / Codex / Cursor）只认文件夹形式；memora 作为落地项目，额外兼容单文件形式降低轻量技能的使用门槛——一条快忘的指令写成裸 `.md` 即可生效。二者加载语义一致（L1/L2），差异仅在 L3 归属，不会造成双标准割裂。
 
 ### 2.2 L3 资源（resources/）
 

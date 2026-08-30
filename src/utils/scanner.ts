@@ -27,8 +27,22 @@ export interface ScannedMarkdownEntry {
   filePath: string;
 }
 
-/** SKILL.md 文件名（Claude Code 标准，大小写敏感） */
-const SKILL_MAIN_FILE = 'SKILL.md';
+/** 技能主文件约定名（文件夹形态的唯一入口，SSOT：scanner 校验 + skillManager/rolePackManager 据此判定 L3 归属） */
+export const SKILL_MAIN_FILE = 'SKILL.md';
+
+/**
+ * 判定技能是否「文件夹形态」（入口为 SKILL.md）——单一真理源（SSOT）。
+ *
+ * 主流（Agent Skills 开放标准）：技能 = 文件夹 + 强制 SKILL.md，L3（resources/ scripts/）
+ * 仅归属于文件夹形态；顶层裸 .md 是轻量单文件兼容形态（纯 L1/L2），不拥有 L3。
+ * skillManager / rolePackManager 均复用此判定，杜绝重复硬编码 `basename === SKILL_MAIN_FILE`。
+ *
+ * @param filePath 技能文件绝对路径（SKILL.md 或裸 .md）
+ * @returns true 表示文件夹形态（拥有 L3 资源/脚本归属权）
+ */
+export function isFolderFormSkill(filePath: string): boolean {
+  return basename(filePath) === SKILL_MAIN_FILE;
+}
 
 /**
  * 扫描目录下的 Markdown 文件，解析 frontmatter

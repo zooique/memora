@@ -9,7 +9,7 @@ import { join, dirname, resolve } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, isFolderFormSkill, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import {
   validateManifest,
@@ -143,10 +143,12 @@ async function scanPackSkills(
     if (relPath.startsWith('/') || relPath.startsWith('\\')) relPath = relPath.slice(1);
     relPath = relPath.replace(/\\/g, '/');
 
-    // L3 发现：扫描技能目录下的 resources/ 和 scripts/
-    // 技能目录：SKILL.md 在文件夹内 → 文件夹根；单文件 .md → 文件所在目录
+    // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流，与 skillManager.createEntry 同源）：
+    // 仅「文件夹形态」（入口为 SKILL.md）发现 resources/ scripts/；顶层裸 .md 的目录 = 技能池共享根，
+    // 同级扫描会误并入其他技能的资源/脚本 → 污染。故裸 .md 为纯 L1/L2，带 L3 必须用文件夹+SKILL.md。
     const skillDir = dirname(absPath);
-    const l3 = await discoverLayer3(skillDir);
+    const isFolderForm = isFolderFormSkill(absPath);
+    const l3 = isFolderForm ? await discoverLayer3(skillDir) : { resources: [], scripts: [] };
     const hasL3 = l3.resources.length > 0 || l3.scripts.length > 0;
 
     return {
@@ -933,7 +935,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   deriveSkillNameFromFile(file: string): string {
     const parts = file.split(/[\\/]/);
     const last = parts.pop() ?? '';
-    if (last === 'SKILL.md' || last === 'SKILL.MD') {
+    // 判定「文件夹形态」复用 SKILL_MAIN_FILE 常量（SSOT），兼容 Windows 大小写变体（SKILL.MD）
+    if (last.toLowerCase() === SKILL_MAIN_FILE.toLowerCase()) {
       return parts.pop() ?? ''; // 文件夹形式
     }
     return last.replace(/\.(md|markdown)$/i, ''); // 单文件形式
