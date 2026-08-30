@@ -11,6 +11,7 @@ import {
   computeContextBudget,
   deriveDialogueRounds,
   isInputTooLarge,
+  resolveContextWindow,
   MIN_RUNNABLE_DIALOGUE_TOKENS,
   DEFAULT_OUTPUT_RESERVE_RATIO,
   DEFAULT_DIALOGUE_FILL_RATIO,
@@ -161,5 +162,29 @@ describe('isInputTooLarge · 装配前判负（洞 3 独立路径）', () => {
     });
     expect(budget.remainingTokens).toBeGreaterThan(MIN_RUNNABLE_DIALOGUE_TOKENS);
     expect(isInputTooLarge(budget)).toBe(false);
+  });
+});
+
+describe('resolveContextWindow · 上下文窗口解析（SSOT 公式，宿主构造 Agent 前调用）', () => {
+  it('providerWindow 与 userMax 均未配置 → 回退内核默认 120K', () => {
+    expect(resolveContextWindow(undefined, undefined)).toBe(120_000);
+  });
+
+  it('仅 userMax → 采用用户上限', () => {
+    expect(resolveContextWindow(undefined, 64_000)).toBe(64_000);
+  });
+
+  it('仅 providerWindow（无 userMax）→ 回退默认 120K 为上限，min 取小', () => {
+    // provider 200K 超过内核默认 120K → 取默认 120K（用户未显式放宽则不超过默认）
+    expect(resolveContextWindow(200_000, undefined)).toBe(120_000);
+    // provider 80K 低于默认 → 取 provider 80K
+    expect(resolveContextWindow(80_000, undefined)).toBe(80_000);
+  });
+
+  it('两者都有 → min 取小，绝不超过用户全局上限', () => {
+    // provider 200K 但用户限 120K → 取 120K
+    expect(resolveContextWindow(200_000, 120_000)).toBe(120_000);
+    // provider 32K 低于用户限 120K → 取 provider 32K
+    expect(resolveContextWindow(32_000, 120_000)).toBe(32_000);
   });
 });

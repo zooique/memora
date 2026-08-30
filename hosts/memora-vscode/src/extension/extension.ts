@@ -80,6 +80,10 @@ function getOrCreateAgent(
     const allowedPaths = vscode.workspace
       .getConfiguration('memora')
       .get<string[]>('allowedPaths', []);
+    // 读取上下文窗口上限（用户级预算旋钮；缺失回退内核默认 120K，由内核 resolveContextWindow 统一处理）
+    const maxContextTokens = vscode.workspace
+      .getConfiguration('memora')
+      .get<number>('maxContextTokens', 120_000);
     agentPromise = assembleAgent({
       projectPath,
       providerStore,
@@ -92,6 +96,7 @@ function getOrCreateAgent(
       userRolePacksDir,
       confirmWrites,
       allowedPaths,
+      maxContextTokens,
       outputChannel,
     }).catch(
       (err) => {

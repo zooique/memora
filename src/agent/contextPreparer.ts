@@ -109,8 +109,9 @@ export class ContextPreparer {
     let recalledMemories: Memory[] = [];
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
-    // 容量来源：maxContextTokens（优先 provider contextWindow，缺失降级）；固定开销取 system prompt；
-    // 顶级锚点 = 触发输入 + 首个回答预留（独立划块，永不压缩）；完整对话层从最近往回塞到 ~90% 止
+    // 容量来源：windowTokens = deps.config.maxContextTokens —— 单一数字，已由宿主在构造内核 Agent 前
+    // 经内核 resolveContextWindow(providerWindow, userMax) 解析（min 取小 + 缺失回退默认）后注入；内核预算路径不再认 provider/用户双层来源。
+    // 固定开销取 system prompt；顶级锚点 = 触发输入 + 首个回答预留（独立划块，永不压缩）；完整对话层从最近往回塞到 ~90% 止
     const loop = deps.loop;
     const loopMessages = loop.getMessages();
     const fixedOverheadTokens =

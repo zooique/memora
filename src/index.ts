@@ -12,6 +12,9 @@ export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode, RecalledMemory
 export type { DuplicateCallInterceptor, DuplicateCheckVerdict, DuplicateCheckContext } from '@/agent/types.js';
 export { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
+// 上下文窗口解析（单一真理源公式）：宿主在构造 Agent 前将 provider.contextWindow 与
+// 用户全局上限解析为单一 maxContextTokens 数字，避免跨宿主镜像 min 逻辑
+export { resolveContextWindow } from '@/agent/budget.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';

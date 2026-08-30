@@ -13,7 +13,7 @@
  *   - 功能定位：内核同步的内置角色包承载（role-packs/ 构建期复制到 dist）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
-import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger } from '@zooique/memora';
+import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger, resolveContextWindow } from '@zooique/memora';
 import type { ISessionStore, IRoundStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
@@ -158,6 +158,15 @@ export interface AssembleOptions {
    */
   allowedPaths?: string[];
   /**
+   * 上下文窗口上限（token，用户级预算旋钮）
+   *
+   * 由 extension 从 workspace 设置 memora.maxContextTokens 读取注入。
+   * 注入 Agent 前经内核 resolveContextWindow(undefined, maxContextTokens) 解析：
+   * vscode 的 LlmProviderConfig 当前不含 provider 级 contextWindow，故 providerWindow 恒为
+   * undefined，窗口完全由本值决定；内核统一处理 undefined → 默认 120K 回退（单一真理源）。
+   */
+  maxContextTokens?: number;
+  /**
    * VSCode 输出通道（G7：日志对接）
    *
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
@@ -220,9 +229,15 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
       return s;
     })();
 
+  // 上下文窗口解析（SSOT 公式）：vscode 无 provider 级 contextWindow，providerWindow 传 undefined，
+  // 窗口完全由用户设置 memora.maxContextTokens 决定；内核 resolveContextWindow 统一处理默认回退。
+  const maxContextTokens = resolveContextWindow(undefined, options.maxContextTokens);
+
   // 3. 装配 Agent（薄壳，全部复用内核）
   const agent = new Agent({
     projectPath,
+    // 上下文窗口上限（token）：宿主注入，内核预算路径唯一容量输入
+    maxContextTokens,
     // 记忆数据目录 = 工作区 .memora（注册表/锁文件落盘处，与存储同目录）
     dataDir: join(projectPath, '.memora'),
     // 配置目录 = 插件内置配置（dist/extension，含构建期从内核同步的 role-packs；

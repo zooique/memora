@@ -78,6 +78,13 @@
           "items": { "type": "string" },
           "default": [],
           "description": "白名单额外允许目录（项目目录之外的可信目录，Agent 可读取/写入）。项目目录始终允许，无需添加。修改即时生效，重启后仍保留。"
+        },
+        "memora.maxContextTokens": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 1000,
+          "maximum": 2000000,
+          "description": "上下文窗口上限（token）。Agent 预算路径据此分配对话与记忆空间；设置过小会导致长对话被更早截断。修改即时生效，重启后仍保留。"
         }
       }
     },

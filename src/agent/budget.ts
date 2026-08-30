@@ -1,6 +1,8 @@
 /**
  * 上下文预算计算——动态预算装配（role-pack-spec §上下文预算装配 C）
  *
+ * @module
+ *
  * 预算公式（容量来源 × 分配偏好 → 派生轮数）：
  *   可用预算 = Provider窗口 − 固定开销(system+persona+rules+技能L1+工具schema) − 输出预留(15~20%)
  *   顶级锚点空间 = 本轮用户输入 + 首个回答预留（独立划块，暂以输入长度估算，永不压缩）
@@ -12,6 +14,7 @@
  * 纯函数、零依赖：token 估算由调用方（AgentLoop/ContextManager）提供，本模块只做数值派生。
  * 装配前判负（洞 3）亦基于本模块的剩余预算阈值判定。
  */
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 
 /** 输出预留比例默认值（可用预算 = 窗口 × (1 − 该值) − 固定开销） */
 export const DEFAULT_OUTPUT_RESERVE_RATIO = 0.15;
@@ -40,6 +43,29 @@ export interface ContextBudgetInput {
   readonly dialogueFillRatio?: number;
   /** 记忆召回百分比 cap（默认 0.4；cap 非 quota） */
   readonly memoryRecallPercent?: number;
+}
+
+/**
+ * 解析有效上下文窗口（单一真理源公式，宿主在构造内核 Agent 前调用）。
+ *
+ * 入参：
+ *  - providerWindow：活跃 provider 的 contextWindow（来自宿主 Config / Provider 配置）；未配置为 undefined。
+ *  - userMax：用户设定的全局窗口上限（sprite 的 memory.maxContextTokens / vscode 的
+ *    memora.maxContextTokens）；未配置为 undefined。
+ *
+ * 语义（对齐 ProviderEntryConfig.contextWindow「未配置时回退到 memory.maxContextTokens」）：
+ *  - providerWindow 未配置 → 回退 userMax（再回退内核默认 DEFAULT_MAX_CONTEXT_TOKENS）；
+ *  - providerWindow 已配置 → min(providerWindow, userMax)，绝不超过用户全局上限。
+ *
+ * 内核预算路径只吃单一数字 maxContextTokens（computeContextBudget 的 windowTokens 入参），
+ * 解析公式收口于此，避免跨宿主镜像两份 min 逻辑。
+ */
+export function resolveContextWindow(
+  providerWindow: number | undefined,
+  userMax: number | undefined,
+): number {
+  const base = userMax ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
+  return providerWindow === undefined ? base : Math.min(providerWindow, base);
 }
 
 /** 预算计算结果 */
