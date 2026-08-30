@@ -1383,6 +1383,48 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   /**
+   * ④ 预算可视化：更新输入区常驻上下文占用条。
+   *
+   * 各段为 prepare 期**真实用量**（token），按占比设条宽；整条 hover 出完整分层明细
+   * （原生 title，零额外 DOM）。UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。
+   */
+  function updateContextOccupancy(
+    occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
+  ): void {
+    const el = document.getElementById('contextOccupancy');
+    if (!el) return;
+    el.hidden = false;
+    const total = Math.max(1, occ.totalTokens);
+    const segs: Array<[string, number, string]> = [
+      ['rolepack', occ.rolePackBaseTokens, '角色包/系统基础设定'],
+      ['memory', occ.memoryTokens, '记忆摘要'],
+      ['dialogue', occ.dialogueTokens, '完整对话'],
+      ['input', occ.inputAnchorTokens, '当前输入锚点'],
+      ['output', occ.outputReserveTokens, '输出预留'],
+      ['free', occ.freeTokens, '剩余可用'],
+    ];
+    for (const [suffix, val, label] of segs) {
+      const pct = Math.max(0, Math.min(100, (val / total) * 100));
+      const node = el.querySelector<HTMLElement>(`.occ-seg--${suffix}`);
+      if (node) {
+        node.style.width = pct + '%';
+        node.title = `${label}：${val} tokens（${pct.toFixed(1)}%）`;
+      }
+    }
+    const usedPct = Math.max(0, Math.min(100, ((total - occ.freeTokens) / total) * 100));
+    const percentEl = document.getElementById('occPercent');
+    if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
+    const usedEl = document.getElementById('occUsed');
+    if (usedEl) usedEl.textContent = String(total - occ.freeTokens);
+    const totalEl = document.getElementById('occTotal');
+    if (totalEl) totalEl.textContent = String(occ.totalTokens);
+    // 整条 hover 出完整分层明细
+    el.title =
+      `上下文占用（总容量 ${occ.totalTokens} tokens）\n` +
+      segs.map(([, val, label]) => `· ${label}：${val}`).join('\n');
+  }
+
+  /**
    * P1（2026-08-15 记忆附着可见）：在最后一条 AI 回复底部补「基于 N 条记忆」弱标签
    *
    * memora 的差异化价值是记忆，但「附着记忆 N 条」此前只出现在活动详情折叠区（低可见）。
@@ -1535,6 +1577,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'metrics') {
       // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
+    } else if (msg.type === 'context_occupancy') {
+      // ④ 预算可视化：更新输入区常驻上下文占用条
+      updateContextOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
       append('error', msg.message);

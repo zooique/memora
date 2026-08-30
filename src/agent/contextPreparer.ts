@@ -23,7 +23,7 @@ import {
   resolveActiveStrategy,
 } from '@/role-pack/strategyResolver.js';
 import type { MemoryRecallMode, BehaviorStrategy } from '@/role-pack/types.js';
-import { computeContextBudget, isInputTooLarge } from '@/agent/budget.js';
+import { computeContextBudget, isInputTooLarge, DEFAULT_OUTPUT_RESERVE_RATIO } from '@/agent/budget.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -241,9 +241,35 @@ export class ContextPreparer {
       }
     }
 
-    // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
-    recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
+  recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
-    return recalledMemories;
+  // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
+  // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
+  //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
+  //   dialogue     = 实际注入的最近轮次正文 token
+  //   memory       = 注入的 recalled 记忆 token
+  //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
+  //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
+  //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
+  const dialogueTokens = loop.estimateTokens(dialogue.history);
+  const memoryTokens = recalledMemories.length
+    ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
+    : 0;
+  const outputReserveTokens = Math.floor(deps.config.maxContextTokens * DEFAULT_OUTPUT_RESERVE_RATIO);
+  const usedBeforeFree =
+    fixedOverheadTokens + dialogueTokens + memoryTokens + budget.anchorTokens + outputReserveTokens;
+  const freeTokens = Math.max(0, deps.config.maxContextTokens - usedBeforeFree);
+  deps.loop.recordOccupancy({
+    totalTokens: deps.config.maxContextTokens,
+    rolePackBaseTokens: fixedOverheadTokens,
+    dialogueTokens,
+    memoryTokens,
+    inputAnchorTokens: budget.anchorTokens,
+    outputReserveTokens,
+    freeTokens,
+  });
+
+  return recalledMemories;
   }
 }

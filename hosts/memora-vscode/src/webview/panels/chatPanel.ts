@@ -1955,6 +1955,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // 本轮流式结束 → 推送活动指标快照（P2：指纹 + 累计指标，默认折叠展示）
     this.postMetrics();
+    // ④ 预算可视化：推送上下文占用快照（输入区常驻指示器，脱离 showMetrics 独立常驻）
+    this.postContextOccupancy();
   }
 
   /**
@@ -2020,6 +2022,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       trace: traces,
       ...(securityAudit ? { securityAudit } : {}),
     });
+  }
+
+  /**
+   * 推送上下文占用快照（④ 预算可视化 · 输入区常驻指示器）
+   *
+   * 与 postMetrics 不同：本推送**脱离 memora.showMetrics 开关**，每轮流式结束必推，
+   * 供输入区常驻渲染「上下文占用比例条 + hover 明细」。数据来自内核
+   * AgentMetrics.context.occupancy（prepare 期真实用量），宿主只透传、不重算。
+   */
+  private postContextOccupancy(): void {
+    if (!this._agent) return;
+    const occ = this._agent.getMetrics().context.occupancy;
+    if (!occ) return;
+    this.post({ type: 'context_occupancy', occupancy: occ });
   }
 
   /**
@@ -2124,6 +2140,18 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </div>
   </div>
   <div id="inputBar">
+    <!-- ④ 预算可视化：输入区常驻上下文占用条（隐藏直至首轮流式结束收到 context_occupancy；hover 出分层明细） -->
+    <div id="contextOccupancy" class="context-occupancy" hidden>
+      <div class="occ-bar" id="occBar">
+        <span class="occ-seg occ-seg--rolepack" data-seg="rolePack"></span>
+        <span class="occ-seg occ-seg--memory" data-seg="memory"></span>
+        <span class="occ-seg occ-seg--dialogue" data-seg="dialogue"></span>
+        <span class="occ-seg occ-seg--input" data-seg="input"></span>
+        <span class="occ-seg occ-seg--output" data-seg="output"></span>
+        <span class="occ-seg occ-seg--free" data-seg="free"></span>
+      </div>
+      <div class="occ-meta"><span id="occPercent">0%</span> · <span id="occUsed">0</span>/<span id="occTotal">0</span> tokens</div>
+    </div>
     <!-- Grok 式：选中 Skill 后在输入框上方以「名称 + × 可移除」chip 展示（chatView renderSkillChip 动态构建）；
          entry 仍是 Row1 的 ⚡ 触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
     <div id="skillChips" class="skill-chip-row" hidden></div>

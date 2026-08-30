@@ -4,7 +4,7 @@
  * 约束：只留 span 名契约（宿主按名过滤建监控面板）；Span 收集 fire-and-forget 不阻塞主流程；未注入时自动降级不抛异常。
  */
 
-import type { ContextBudget } from '@/agent/budget.js';
+import type { ContextBudget, ContextOccupancy } from '@/agent/budget.js';
 
 // ─── 类型定义 ───────────────────────────────────────────
 
@@ -134,6 +134,8 @@ export interface AgentMetrics {
     estimatedTokens: number;
     /** 最近一次输入装配的上下文预算构成（可选：prepare 计算并透出，供宿主展示预算分配，④） */
     budget?: ContextBudget;
+    /** 上下文占用快照（可选：prepare 期真实用量，供输入区指示器展示，④ 预算可视化） */
+    occupancy?: ContextOccupancy;
   };
   /** 任务级 SLO 度量（AgentLoop 层填充） */
   tasks: {

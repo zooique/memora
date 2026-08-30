@@ -18,7 +18,7 @@ import type {
   TextChunkStage,
 } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
-import type { ContextBudget } from '@/agent/budget.js';
+import type { ContextBudget, ContextOccupancy } from '@/agent/budget.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { ContextManager } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
@@ -229,6 +229,8 @@ export class AgentLoop {
   private readonly replacedRoundIds: Set<string> = new Set();
   /** 最近一次输入装配的上下文预算（prepare 期写入，供指标快照透出做预算可视化，④） */
   private lastBudget: ContextBudget | undefined;
+  /** 最近一次输入装配的上下文占用快照（④ 预算可视化，真实用量） */
+  private lastOccupancy: ContextOccupancy | undefined;
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
   private isLastContextTruncated = false;
   /** 是否因迭代/步数上限而终止（非正常完成，供 orchestrator 检查） */
@@ -1679,6 +1681,14 @@ export class AgentLoop {
   }
 
   /**
+   * 记录最近一次输入装配的上下文占用快照（prepare 期调用，④ 预算可视化）。
+   * 存最新一轮真实用量供指标快照/输入区指示器透出，不跨轮累积。
+   */
+  recordOccupancy(occupancy: ContextOccupancy): void {
+    this.lastOccupancy = occupancy;
+  }
+
+  /**
    * 获取 AgentLoop 运行时指标快照（纯只读、零副作用，适合宿主轮询构建监控面板）。
    */
   getMetrics(): AgentMetrics {
@@ -1704,6 +1714,7 @@ export class AgentLoop {
         messageCount: this.messages.length,
         estimatedTokens: this.contextManager.estimateTokens(this.messages),
         ...(this.lastBudget ? { budget: this.lastBudget } : {}),
+        ...(this.lastOccupancy ? { occupancy: this.lastOccupancy } : {}),
       },
       tasks: {
         totalCount: this.metrics.taskTotalCount,

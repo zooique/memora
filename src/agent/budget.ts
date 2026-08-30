@@ -71,6 +71,31 @@ export interface ContextBudget {
 }
 
 /**
+ * 上下文占用快照（真实用量，供输入区指示器展示；与 `ContextBudget` 的「预算上限」互补）。
+ *
+ * 设计：各段为 prepare 期**实际占用** token，互斥分段拼满整个窗口容量 `totalTokens`：
+ *   角色包基础设定(system) | 记忆摘要 | 完整对话 | 当前输入锚点 | 输出预留 | 剩余。
+ * 单一真理源 = 内核 prepare 计算（contextPreparer 经 loop.recordOccupancy 写入），
+ * 宿主/webview 只渲染、不重算。free 非负收敛（窗口过小/输入过大时各段归零，free 不出现负值）。
+ */
+export interface ContextOccupancy {
+  /** 窗口总容量（token）= maxContextTokens（SSOT 容量来源，见 resolveContextWindow） */
+  readonly totalTokens: number;
+  /** 角色包/系统基础设定占用（system prompt：persona + rules + 技能 L1 + 工具 schema） */
+  readonly rolePackBaseTokens: number;
+  /** 完整对话层实际占用（最近轮次注入正文 token） */
+  readonly dialogueTokens: number;
+  /** 记忆摘要层实际占用（注入的 recalled 记忆 token） */
+  readonly memoryTokens: number;
+  /** 当前输入锚点（触发输入 + 首个回答预留估算，独立划块） */
+  readonly inputAnchorTokens: number;
+  /** 输出预留（窗口 × 输出预留比例，留给模型回答的容量，非已用） */
+  readonly outputReserveTokens: number;
+  /** 剩余可用（total − 各段，≥ 0 收敛） */
+  readonly freeTokens: number;
+}
+
+/**
  * 计算上下文预算（SSOT 数值派生）。
  *
  * 百分比是 cap 不是 quota：完整对话层无条件优先，记忆摘要层是剩余空间的拾遗填充，

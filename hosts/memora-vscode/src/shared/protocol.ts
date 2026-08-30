@@ -455,6 +455,32 @@ export type ExtensionToWebviewMessage =
       };
     }
   /**
+   * 上下文占用快照（④ 预算可视化 · 输入区常驻指示器数据源）
+   *
+   * 每轮流式结束后由 extension host 推送（脱离 memora.showMetrics 独立常驻）：内核
+   * AgentMetrics.context.occupancy 透传，各段为 prepare 期**真实用量** token，互斥分段拼满
+   * 窗口总容量 totalTokens。webview 在输入区渲染比例条 + hover 明细。
+   */
+  | {
+      type: 'context_occupancy';
+      occupancy: {
+        /** 窗口总容量（token）= maxContextTokens */
+        totalTokens: number;
+        /** 角色包/系统基础设定占用（system prompt） */
+        rolePackBaseTokens: number;
+        /** 完整对话层实际占用（最近轮次注入正文） */
+        dialogueTokens: number;
+        /** 记忆摘要层实际占用（注入的 recalled 记忆） */
+        memoryTokens: number;
+        /** 当前输入锚点（触发输入 + 首个回答预留） */
+        inputAnchorTokens: number;
+        /** 输出预留（窗口 × 输出预留比例，留作模型回答容量） */
+        outputReserveTokens: number;
+        /** 剩余可用（total − 各段，≥ 0） */
+        freeTokens: number;
+      };
+    }
+  /**
    * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）
    *
    * 角色包激活时由 host 推送：工具模式（allow/block）+ 能力标签列表 + 策略指示器。

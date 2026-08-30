@@ -413,6 +413,40 @@ export const chatStyles = `
     background: transparent;
     position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
+  /* ④ 预算可视化：输入区常驻上下文占用条（hover 出分层明细，原生 title） */
+  .context-occupancy {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 6px);
+    padding: 0 var(--sp-5, 12px) var(--sp-2, 6px);
+    box-sizing: border-box;
+  }
+  .occ-bar {
+    display: flex;
+    flex: 1;
+    height: 6px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--surface-track, #2a2a2a);
+    min-width: 0;
+  }
+  .occ-seg {
+    height: 100%;
+    min-width: 0;
+    transition: width 0.2s ease;
+  }
+  .occ-seg--rolepack { background: #7c6cf0; }
+  .occ-seg--memory   { background: #2aa9a0; }
+  .occ-seg--dialogue { background: #3b82f6; }
+  .occ-seg--input    { background: #e0a13c; }
+  .occ-seg--output   { background: #d97757; }
+  .occ-seg--free     { background: transparent; }
+  .occ-meta {
+    font-size: 11px;
+    color: var(--text-muted, #9a9a9a);
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
   /* 唯一视觉卡片：边框 + 圆角 + 阴影 + 背景（全部集中在此） */
   #inputWrap {
     display: flex;

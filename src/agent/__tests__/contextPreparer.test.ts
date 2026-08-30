@@ -44,6 +44,8 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
       (): DialogueResult => ({ history: [], recentRoundCount: 0, firstRoundIncluded: false }),
     ),
     getReplacedRoundIds: (): readonly string[] => [],
+    recordBudget: vi.fn(),
+    recordOccupancy: vi.fn(),
     injectSystemMessage,
   };
   const history = {
@@ -162,6 +164,46 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     expect(loop.getRecentHistoryWithinBudget).toHaveBeenCalledTimes(1);
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('第一条'));
     expect(emit).not.toHaveBeenCalledWith(AGENT_EVENTS.inputTooLarge, expect.anything());
+  });
+
+  it('④ 预算可视化：prepare 期记录真实上下文占用（各段互斥、free 非负收敛）', async () => {
+    const { preparer, loop, storage } = makePreparer();
+    loop.getRecentHistoryWithinBudget = vi.fn(
+      (): DialogueResult => ({
+        history: [{ role: 'user' as const, content: '第一条' }],
+        recentRoundCount: 1,
+        firstRoundIncluded: false,
+      }),
+    );
+    vi.mocked(storage.search).mockReturnValue([
+      makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
+    ]);
+
+    await preparer.recallAndInject('正常问题', 'full', 'hybrid');
+
+    expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
+    const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
+    // 总容量 = maxContextTokens（SSOT 容量来源）
+    expect(occ.totalTokens).toBe(120_000);
+    // 角色包基础设定 = system prompt 固定开销（'sys' 长度 3）
+    expect(occ.rolePackBaseTokens).toBe(3);
+    // 完整对话 = 注入历史正文（'第一条' 长度 3）
+    expect(occ.dialogueTokens).toBe(3);
+    // 记忆摘要 = 注入记忆正文（'测试内容' 长度 4）
+    expect(occ.memoryTokens).toBe(4);
+    // 当前输入锚点 = 输入长度(4) × 2
+    expect(occ.inputAnchorTokens).toBe(8);
+    // 输出预留 = 窗口 × 0.15
+    expect(occ.outputReserveTokens).toBe(18_000);
+    // 各段互斥拼满总量：free = total − 其余各段，且非负
+    const used =
+      occ.rolePackBaseTokens +
+      occ.dialogueTokens +
+      occ.memoryTokens +
+      occ.inputAnchorTokens +
+      occ.outputReserveTokens;
+    expect(occ.freeTokens).toBe(occ.totalTokens - used);
+    expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
   });
 });
 

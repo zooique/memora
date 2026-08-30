@@ -436,6 +436,32 @@ describe('AgentMetrics · 类型结构', () => {
     expect(budget!.memoryLayerCapTokens).toBe(38_720);
   });
 
+  it('recordOccupancy 后 getMetrics().context.occupancy 透出（④ 预算可视化·真实占用）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 未记录时 occupancy 缺省
+    expect(loop.getMetrics().context.occupancy).toBeUndefined();
+
+    // prepare 期 recordOccupancy → 快照透出最近一轮真实占用
+    loop.recordOccupancy({
+      totalTokens: 120_000,
+      rolePackBaseTokens: 3_000,
+      dialogueTokens: 12_000,
+      memoryTokens: 4_000,
+      inputAnchorTokens: 800,
+      outputReserveTokens: 18_000,
+      freeTokens: 82_200,
+    });
+    const occ = loop.getMetrics().context.occupancy;
+    expect(occ).toBeDefined();
+    expect(occ!.totalTokens).toBe(120_000);
+    expect(occ!.dialogueTokens).toBe(12_000);
+  });
+
   it('hitRate 应在 0-1 范围内', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
