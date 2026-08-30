@@ -1551,6 +1551,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       commitRoundId(msg.roundId);
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 低扰提示「已停止生成」
+      // 等待指示器同步收尾（③ 排雷补漏 2026-08-30）：done/error 均清，唯独中断漏清——
+      // 残留的 pending-wait 会悬挂「已等待 Ns」且 1s 定时器空转，直到下次用户输入才被清掉。
+      clearPendingWait();
       clearArchivingFallback();
       flowShellEl = null;
       // 打断即本轮结束：完整收尾 round-block（aborted 标记已进事件流）

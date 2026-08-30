@@ -1421,4 +1421,14 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     dispatch({ type: 'user', text: '旧消息', ts: 't' });
     expect(document.querySelector('.pending-wait')).toBeNull();
   });
+
+  it('interrupted 后等待指示器退场（③ 排雷补漏：done/error 均清，中断也不能漏）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'llm_calling' } } });
+    expect(messages.querySelector('.pending-wait')).not.toBeNull();
+    // 用户点停止 → interrupted（无 meta/chunk/done/error 的收尾通道）→ 等待条必须移除
+    dispatch({ type: 'interrupted' });
+    expect(messages.querySelector('.pending-wait')).toBeNull();
+  });
 });
