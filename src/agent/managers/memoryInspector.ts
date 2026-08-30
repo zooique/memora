@@ -28,8 +28,6 @@ const WORKING_PREVIEW = 5;
 const CONTENT_PREVIEW_LEN = 80;
 /** 搜索结果内容预览字符数（比快照层略长，便于用户判断相关性） */
 const SEARCH_PREVIEW_LEN = 120;
-/** content 会话级摘要的 source 标签（SOURCE_LABELS 未收录，沿用内核写入字面量，见 memory-as-summary） */
-const CONTENT_SOURCE = 'content';
 
 // ─── 类型 ────────────────────────────────────────────────
 
@@ -415,28 +413,6 @@ export class MemoryInspector {
       if (memory.roundId && idSet.has(memory.roundId)) {
         // 脱钩溯源（覆盖写为无溯源副本，仅清除顶层字段不动内容/权重）→ 软删进回收站
         this.index.upsert({ ...memory, sessionName: undefined, roundId: undefined });
-        this.index.delete(memory.id);
-        count++;
-      }
-    }
-    return count;
-  }
-
-  /**
-   * 随整会话删除的会话级 content 摘要软删（⑥ 补充，2026-08-29）：直接删除会话时额外联动。
-   *
-   * 语义同 softDeleteRoundSummaries：软删即清 sessionName 脱钩。content 为会话级（无 roundId），
-   * 仅整删会话时随会话一起回收；单独删除问答闭环不触发本方法。
-   *
-   * @param sessionName 被删除会话的完整标识（YYYY-MM-DD-sessionName，与记忆溯源字段一致）
-   * @returns 软删的会话级摘要数量（0 = 无可联动记忆）
-   */
-  softDeleteSessionContents(sessionName: string): number {
-    if (!sessionName) return 0;
-    let count = 0;
-    for (const memory of this.index.getBySource(CONTENT_SOURCE)) {
-      if (memory.sessionName === sessionName) {
-        this.index.upsert({ ...memory, sessionName: undefined });
         this.index.delete(memory.id);
         count++;
       }

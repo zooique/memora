@@ -44,9 +44,19 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 
 ### content 融入纪律（R5）
 
-> content 是**会话 id 对应的摘要记忆**（会话级）——必须带 `summaryType` 标签 + 结构化 `sessionName`，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。禁止新增无标签、无溯源的第二轨道记忆源。（`isTraceable` 已移除（2026-08-28）：无行为消费者，溯源降级改按读时查找结果渲染，见 memory-as-summary §5.2）
+> **记忆库双轨**（2026-08-30 更正，勿再按旧描述实现）：
+> - `round-summary` — **自动轨**。每轮对话生成，带 `summaryType` / `sessionName` / `roundId` 溯源。
+> - `content` — **用户手动轨**。仅由治理页经 `writeUpsert` 写入，**不由内核自动生成**。
+>   注：`content` 不在 `SOURCE_LABELS` 内（属 `GOVERNANCE_SOURCES`），勿误当作「会话级摘要记忆」。
 >
-> **例外（⑥ 治理操作，2026-08-29）**：随会话/问答闭环删除而软删的摘要记忆（`softDeleteRoundSummaries` / `softDeleteSessionContents`），其溯源字段（`sessionName`/`roundId`）在删除时即清空——原会话/轮已物理回收，溯源悬空无意义；回收站恢复后即为**无溯源的独立记忆**。这是治理操作的脱钩行为，非新增无溯源记忆源（治理页单条软删 `writeDelete` 仍保留溯源，误删恢复保留关联）。
+> **会话级摘要不进记忆库**：它是**路标**而非记忆——存于 `SessionMeta`（`summary` / `keyTopics`，
+> 与双层命名 `autoName`/`displayName` 并存），随 `deleteSession` 一并删除。
+> 历史沿革：`SessionArchiver` 曾将其写入 `content` 记忆，R3 排雷后改为只更新 SessionMeta；
+> 旧版 R5 仍按改动前描述，导致 ⑥ 误实现 `softDeleteSessionContents`（无生产者，恒空转，已删）。
+>
+> **禁止新增无标签、无溯源的第二轨道自动记忆源**。（`isTraceable` 已移除（2026-08-28）：无行为消费者，溯源降级改按读时查找结果渲染，见 memory-as-summary §5.2）
+>
+> **例外（⑥ 治理操作，2026-08-29）**：随会话/问答闭环删除而软删的轮次摘要（`softDeleteRoundSummaries`），其溯源字段（`sessionName`/`roundId`）在删除时即清空——原会话/轮已物理回收，溯源悬空无意义；回收站恢复后即为**无溯源的独立记忆**。这是治理操作的脱钩行为，非新增无溯源记忆源（治理页单条软删 `writeDelete` 仍保留溯源，误删恢复保留关联）。
 
 ### type 不设时效（R6）
 

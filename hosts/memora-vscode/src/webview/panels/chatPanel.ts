@@ -995,11 +995,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     try {
-      // ⑥ 联动（2026-08-29）：整删会话 → 被回收 Round（引用归零）的轮次摘要 +
-      // 该会话 content 会话级摘要一并软删进回收站（脱钩溯源，可恢复为独立记忆）。
-      // 分叉共享轮由 deleteSession 返回值天然排除——不影响仍在使用的关联会话记忆。
+      // ⑥ 联动（2026-08-29）：整删会话 → 被回收 Round（引用归零）的轮次摘要软删进回收站
+      // （脱钩溯源，可恢复为独立记忆）。分叉共享轮由 deleteSession 返回值天然排除——
+      // 不影响仍在使用的关联会话记忆。会话级路标存于 SessionMeta，随本调用一并删除。
       const removedIds = this.sessionStore.deleteSession(sessionId);
-      this.softDeleteSessionMemories(removedIds, sessionId);
+      this.softDeleteSessionMemories(removedIds);
     } catch (err) {
       // 删除失败不阻塞（重推列表仍可用），但需记录（SSOT 不藏错）
       console.warn('Memora 删除会话记录失败', err);
@@ -1010,20 +1010,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 随问答闭环物理删除联动软删记忆摘要（⑥，2026-08-29）。
    *
-   * 触发语义：Round 引用归 0 被物理回收 → 该轮 round-summary 软删；整会话删除时
-   * 额外联动会话级 content 摘要。软删除走现有回收站（deletedAt），恢复后为无溯源
-   * 独立记忆（脱钩在删除时完成）。降级优先：Agent 未就绪 / 记忆操作异常不阻塞删除主流程。
+   * 触发语义：Round 引用归 0 被物理回收 → 该轮 round-summary 软删。软删除走现有回收站
+   * （deletedAt），恢复后为无溯源独立记忆（脱钩在删除时完成）。
+   *
+   * 会话级摘要不在此列：它不进记忆库，而存于 SessionMeta（summary/keyTopics），
+   * 随 deleteSession 一并删除，无需联动（2026-08-30 收敛）。
+   * 降级优先：Agent 未就绪 / 记忆操作异常不阻塞删除主流程。
    *
    * @param removedIds 被物理删除的 Round ID 列表（可空）
-   * @param sessionName 整会话删除时的会话完整标识（YYYY-MM-DD-sessionName，可空 = 单轮删除）
    */
-  private softDeleteSessionMemories(removedIds: string[], sessionName?: string): void {
-    if (removedIds.length === 0 && !sessionName) return;
+  private softDeleteSessionMemories(removedIds: string[]): void {
+    if (removedIds.length === 0) return;
     const memory = this._agent?.memory;
     if (!memory) return; // Agent 未就绪：降级跳过（记忆遗留不影响会话删除主流程）
     try {
-      if (removedIds.length > 0) memory.softDeleteRoundSummaries(removedIds);
-      if (sessionName) memory.softDeleteSessionContents(sessionName);
+      memory.softDeleteRoundSummaries(removedIds);
     } catch (err) {
       // 联动失败仅记录：记忆软删属后台治理，不阻断会话删除（SSOT 不藏错）
       console.warn('Memora 联动软删会话记忆失败（降级：记忆遗留，可在记忆治理页手动处理）', err);

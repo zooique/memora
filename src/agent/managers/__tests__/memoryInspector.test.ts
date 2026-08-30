@@ -622,21 +622,6 @@ describe('MemoryInspector', () => {
       expect(restored.roundId).toBeUndefined();
     });
 
-    it('softDeleteSessionContents：整会话删除时联动软删会话级 content 摘要（脱钩 sessionName）', () => {
-      inspector.writeUpsert(
-        createMemory({ id: 'content:1', source: 'content', sessionName: '2026-08-28-main', name: '会话摘要甲' }),
-      );
-      inspector.writeUpsert(
-        createMemory({ id: 'content:2', source: 'content', sessionName: '2026-08-29-other', name: '会话摘要乙' }),
-      );
-      const count = inspector.softDeleteSessionContents('2026-08-28-main');
-      expect(count).toBe(1);
-      // 命中者软删 + 脱钩；无关会话保持活跃
-      const d1 = inspector.getDeletedById('content:1')!;
-      expect(d1.deletedAt).toBeTruthy();
-      expect(d1.sessionName).toBeUndefined();
-      expect(inspector.getById('content:2')).not.toBeNull();
-    });
   });
 
   // ════════════════════════════════════════════════════════
