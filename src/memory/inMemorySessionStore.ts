@@ -157,11 +157,14 @@ export class InMemorySessionStore implements ISessionStore {
   }
 
   /**
-   * 列出所有会话元数据
+   * 列出所有会话元数据（按 updatedAt **降序**，最近活跃在前——ISessionStore 排序契约）
+   *
+   * 方向必须与宿主实现一致：SessionManager.restoreMostRecentSession 视 [0] 为「最近活跃
+   * 唯一真理源」，升规则会恢复成最旧会话。
    */
   listSessionMetas(): SessionMeta[] {
     return Array.from(this.metas.values()).sort((a, b) =>
-      a.updatedAt.localeCompare(b.updatedAt),
+      b.updatedAt.localeCompare(a.updatedAt),
     );
   }
 

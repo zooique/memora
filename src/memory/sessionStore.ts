@@ -28,7 +28,12 @@ export interface ISessionStore {
   setSessionTitle?(sessionId: string, title: string): void;
   /** 更新元数据（autoName/keyTopics/summary/createdAt 等） */
   updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void;
-  /** 列出全部会话标题元数据，供历史列表按 updatedAt 排序 */
+  /**
+   * 列出全部会话标题元数据，**必须按 updatedAt 降序**（最近活跃在前）。
+   *
+   * 排序方向是本接口契约的一部分，不是各实现自由：`SessionManager.restoreMostRecentSession`
+   * 视 `[0]` 为「最近活跃会话」的唯一真理源；升序实现会让「恢复最近会话」恢复成最旧会话。
+   */
   listSessionMetas(): SessionMeta[];
 
   // ── Round-based 方法（问答闭环独立存储，唯一模式） ──────────

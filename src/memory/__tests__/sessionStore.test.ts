@@ -16,6 +16,9 @@ import type {
   SessionMessage,
   SessionMeta,
 } from '../sessionStore.js';
+// 内核真实实现（本文件顶部的同名 InMemorySessionStore 是测试替身，故此处取别名区分）
+import { InMemorySessionStore as KernelSessionStore } from '../inMemorySessionStore.js';
+import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
 
 // ══════════════════════════════════════════════════════════════
 // 1. 最小内存实现（用于验证接口契约）
@@ -133,10 +136,15 @@ class InMemorySessionStore implements ISessionStore {
     }
   }
 
-  /** 列出所有会话元数据（可选方法实现） */
+  /**
+   * 列出所有会话元数据（可选方法实现）
+   *
+   * 遵循 ISessionStore 排序契约：**按 updatedAt 降序**（最近活跃在前），
+   * 与宿主 WorkspaceSessionStore / 内核 InMemorySessionStore 同向。
+   */
   listSessionMetas(): SessionMeta[] {
     return Array.from(this.metas.values()).sort((a, b) =>
-      a.updatedAt.localeCompare(b.updatedAt),
+      b.updatedAt.localeCompare(a.updatedAt),
     );
   }
 
@@ -369,6 +377,23 @@ describe('ISessionStore — 可选方法契约', () => {
       expect(metas[1]!.displayName).toBeDefined();
     });
 
+    it('listSessionMetas 按 updatedAt 降序（最近活跃在前）——ISessionStore 排序契约', () => {
+      // 故意乱序插入，确保验证的是「实现真的排序」而非「碰巧等于插入顺序」
+      store.createSession({ sessionId: '2026-08-01-a', updatedAt: '2026-08-01T00:00:00.000Z', messageCount: 0 });
+      store.createSession({ sessionId: '2026-08-03-b', updatedAt: '2026-08-03T00:00:00.000Z', messageCount: 0 });
+      store.createSession({ sessionId: '2026-08-02-c', updatedAt: '2026-08-02T00:00:00.000Z', messageCount: 0 });
+
+      // 契约：降序，[0] = 最近活跃。
+      // SessionManager.restoreMostRecentSession 视 listSessionMetas[0] 为「最近活跃唯一真理源」，
+      // 若本实现升规则该契约崩塌（恢复到最旧会话）。宿主 WorkspaceSessionStore 已是降序，
+      // 两实现必须同向——排序方向属 ISessionStore 契约，非各实现自由。
+      expect(store.listSessionMetas().map((m) => m.sessionId)).toEqual([
+        '2026-08-03-b',
+        '2026-08-02-c',
+        '2026-08-01-a',
+      ]);
+    });
+
     it('更新标题时 updatedAt 更新', async () => {
       store.setSessionTitle('session-1', '原标题');
       const meta1 = store.getSessionMeta('session-1')!;
@@ -464,5 +489,21 @@ describe('ISessionStore — SessionMeta 类型', () => {
     };
     expect(meta2.autoName).toBe('自动名称');
     expect(meta2.displayName).toBe('用户自定义');
+  });
+});
+
+describe('内核 InMemorySessionStore（真实实现）· listSessionMetas 排序契约', () => {
+  it('按 updatedAt 降序（最近活跃在前）——与宿主实现同向', () => {
+    const store = new KernelSessionStore(new InMemoryRoundStore());
+    // 乱序插入：确保验证的是「实现真的排序」而非插入顺序
+    store.createSession({ sessionId: '2026-08-01-a', updatedAt: '2026-08-01T00:00:00.000Z', messageCount: 0 });
+    store.createSession({ sessionId: '2026-08-03-b', updatedAt: '2026-08-03T00:00:00.000Z', messageCount: 0 });
+    store.createSession({ sessionId: '2026-08-02-c', updatedAt: '2026-08-02T00:00:00.000Z', messageCount: 0 });
+
+    expect(store.listSessionMetas().map((m) => m.sessionId)).toEqual([
+      '2026-08-03-b',
+      '2026-08-02-c',
+      '2026-08-01-a',
+    ]);
   });
 });
