@@ -116,6 +116,27 @@ export const settingsStyles = `
     color: var(--accent-foreground, #ffffff);
     margin-left: var(--sp-1, 4px);
   }
+  /* 用户角色包来源徽章（2026-08-30）：区别于激活「当前」徽章（accent 蓝），用户来源用中性格调 */
+  #roles-root .badge.badge-source-user {
+    background: var(--vscode-tag-background, rgba(90, 93, 94, 0.31));
+    color: var(--vscode-tag-foreground, #cccccc);
+  }
+  /* 角色区头部操作组（「打开目录」按钮，2026-08-30 对齐技能区 header-actions） */
+  #roles-root .header-actions {
+    display: flex;
+    gap: var(--sp-2, 6px);
+  }
+  #roles-root .btn-icon-text {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+  }
+  #roles-root .btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: currentColor;
+  }
   #roles-root .empty-state, #memory-root .empty-state, #config-root .empty-state {
     text-align: center;
     padding: var(--sp-8, 24px) var(--sp-5, 12px);

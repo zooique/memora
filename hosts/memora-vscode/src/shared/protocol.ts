@@ -141,6 +141,11 @@ export type WebviewToExtensionMessage =
   /** 删除角色包组（会议名单）：host 持久化移除 + 热更新内核组数据。 */
   | { type: 'roles_team_delete'; leader: string }
   /**
+   * 打开用户角色包目录（2026-08-30 对齐技能系统）：host 调用 VS Code 命令在系统文件
+   * 管理器中显示用户角色包目录（globalStorageUri/role-packs/），便于用户放置自定义角色包。
+   */
+  | { type: 'roles_open_dir' }
+  /**
    * 停止生成：用户主动中断当前流式输出（mvp-scope 打断能力）
    *
    * 由 webview 停止按钮触发，host 调用 AbortController.abort() 中断进行中的
@@ -626,6 +631,8 @@ export type ExtensionToWebviewMessage =
         name: string;
         displayName: string;
         description?: string;
+        /** 来源层（2026-08-30）：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
+        source?: 'builtin' | 'user';
         capabilities: { capability: string; label: string }[];
         /** 角色性格特征（从 persona.md frontmatter traits 解析，0-1 数值） */
         traits?: Record<string, number>;

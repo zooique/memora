@@ -295,6 +295,8 @@ export interface RolePack {
 export interface RolePackAssembly {
   /** 角色包元数据 */
   readonly meta: RolePackMeta;
+  /** 来源文件路径（manifest.json 绝对路径，2026-08-30 透传，供宿主区分内置/用户来源） */
+  readonly filePath: string;
   /** 合并后的 persona prompt（含规则注入与主动提问指令） */
   readonly personaPrompt: string;
   /** 内嵌技能注册（manifest.skills，对象数组，支持多个） */

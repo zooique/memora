@@ -54,7 +54,7 @@ let agentPromise: Promise<Agent> | null = null;
  * @param configDir 插件内置配置目录（SSOT 修复：由 extension.extensionUri 显式定位，
  *   而非 assemble 内 import.meta.url 相对推断——esbuild bundle 后路径漂移导致角色包加载失败）
  * @param userSkillsDir 用户技能目录（可选，2026-08-22 新增）
- * @param userRolePacksDir 用户角色包目录（可选，2026-08-22 新增，预留扩展）
+ * @param userRolePacksDir 用户角色包目录（2026-08-22 新增，2026-08-30 已开放，与内置包同池注入）
  * @param outputChannel VSCode 输出通道（G7：日志对接）
  */
 function getOrCreateAgent(
@@ -132,21 +132,13 @@ export function activate(context: vscode.ExtensionContext): void {
     // 目录创建失败不阻塞插件启动，用户技能功能不可用而已
   });
 
-  // 用户角色包目录（2026-08-22 新增，预留扩展点）：
-  // 
-  // ⚠️ 当前状态：角色包**不开放给用户**，仅支持内置角色包
-  // - 内置角色包：构建期从内核 role-packs/ 同步，存储在插件安装目录的 dist/extension/role-packs/
-  // - 用户角色包：当前禁止创建/加载，目录仅为未来开放预留
+  // 用户角色包目录（2026-08-22 新增，2026-08-30 已开放，对齐技能系统）
   //
-  // 设计决策（2026-08-22）：
-  // - 与技能系统不同，角色包包含更复杂的 persona.md + rules.md + skills/ 结构
-  // - 开放用户角色包需要设计校验机制、安全检查和版本兼容策略
-  // - 当前阶段优先验证内置角色包的价值，待用户场景明确后再开放
+  // ✅ 当前状态：角色包已开放给用户 —— 内置角色包（dist/extension/role-packs/，构建期从内核同步）
+  //   + 用户角色包（globalStorageUri/role-packs/，运行态经内核 loadExtraDir() 注入同池切换）。
   //
-  // 若未来开放用户角色包：
-  // 1. 宿主侧新增角色包管理 UI（创建/导入/删除）
-  // 2. 内核侧 loadExtraDir() 已就绪，可直接复用
-  // 3. 参考用户技能的 globalStorage 方案，路径统一管理
+  // 开放机制：用户在此目录放置角色包文件夹（manifest.json + persona.md/rules.md/skills/）即生效；
+  //   同名冲突内置优先（内核 loadExtraDir 跳过重名用户包）。目录创建失败不阻塞插件启动。
   const userRolePacksDir = join(context.globalStorageUri.fsPath, 'role-packs');
   void mkdir(userRolePacksDir, { recursive: true }).catch(() => {
     // 目录创建失败不阻塞插件启动
@@ -244,6 +236,8 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
   settingsProvider.setConfigDir(configDir);
+  // 注入用户角色包目录（打开目录按钮 + 角色来源判定，2026-08-30 对齐技能系统）
+  settingsProvider.setUserRolePacksDir(userRolePacksDir);
   // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
   context.subscriptions.push(

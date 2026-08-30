@@ -517,6 +517,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
 
   return {
     meta: pack.meta,
+    filePath: pack.filePath,
     personaPrompt,
     skills: pack.skills,
     capabilities,

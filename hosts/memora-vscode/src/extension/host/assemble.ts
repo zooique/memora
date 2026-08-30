@@ -10,7 +10,7 @@
  *   - 记忆存储：WorkspaceStorage（.memora/memories.json）
  *   - 会话存储：WorkspaceSessionStore（.memora/sessions.json）
  *   - 网络搜索：FetchWebSearchProvider（Bing→DuckDuckGo 降级）
- *   - 功能定位：内核同步的内置角色包承载（role-packs/ 构建期复制到 dist）
+ *   - 功能定位：内置角色包（dist/extension/role-packs/ 构建期同步）+ 用户角色包（globalStorageUri/role-packs 运行态注入）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
 import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger, resolveContextWindow } from '@zooique/memora';
@@ -133,13 +133,11 @@ export interface AssembleOptions {
    */
   userSkillsDir?: string;
   /**
-   * 用户角色包目录（可选，2026-08-22 新增，预留扩展点）
+   * 用户角色包目录（2026-08-22 新增，2026-08-30 已开放）
    *
-   * ⚠️ 当前状态：角色包**不开放给用户**，仅支持内置角色包
-   * - 此参数仅为未来扩展预留，当前宿主不会传入有效值
-   * - 内核 loadExtraDir() 方法已就绪，宿主开放时直接调用即可
-   *
-   * 设计决策见 extension.ts 中 userRolePacksDir 的完整注释
+   * extension.ts 从 globalStorageUri/role-packs 传入有效路径，本装配处实际加载：
+   * 用户角色包经内核 RolePackManager.loadExtraDir() 运行态注入，与内置包同池可切换。
+   * 同名冲突内置优先（loadExtraDir 跳过重名用户包）。
    */
   userRolePacksDir?: string;
   /**
@@ -290,11 +288,12 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     await agent.skills?.loadExtraDir(userSkillsDir);
   }
 
-  // 6. 加载用户角色包（⚠️ 当前禁用，预留扩展点）
+  // 6. 加载用户角色包（已开放，2026-08-30 对齐技能系统）
   //
-  // 当前角色包不开放给用户（详见 AssembleOptions.userRolePacksDir 注释）
-  // userRolePacksDir 参数当前为 undefined，此分支不会执行
-  // 未来开放时：宿主传入用户目录 → 内核 loadExtraDir() 加载
+  // extension.ts 经 globalStorageUri/role-packs 传入有效目录，本分支实际执行：
+  // 用户可在该目录放置自己的角色包（manifest.json + persona.md/rules.md/skills/），
+  // 经内核 RolePackManager.loadExtraDir() 以运行态注入，与内置包同池可切换。
+  // 同名冲突时「内置优先」（loadExtraDir 内部跳过重名用户包）。
   if (userRolePacksDir) {
     await agent.rolePacks?.loadExtraDir(userRolePacksDir);
   }

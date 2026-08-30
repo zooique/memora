@@ -61,6 +61,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _userSkillsDir: string | undefined;
   /** 系统内置配置目录（configDir/skills/ 所在父目录，extension 注入，用于技能来源判定） */
   private _configDir: string | undefined;
+  /** 用户角色包目录路径（extension 注入，用于打开目录功能 + 角色来源判定） */
+  private _userRolePacksDir: string | undefined;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -94,6 +96,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 注入系统内置配置目录（技能来源判定需要） */
   public setConfigDir(dir: string): void {
     this._configDir = dir;
+  }
+
+  /** 注入用户角色包目录路径（用于打开目录功能 + 角色来源判定） */
+  public setUserRolePacksDir(dir: string): void {
+    this._userRolePacksDir = dir;
   }
 
   /** 视图被解析（侧边栏展开）时初始化 */
@@ -178,6 +185,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     if (msg.type === 'roles_team_delete') {
       await this.deleteRolePackTeam(msg.leader);
       await this.loadRoles();
+      return;
+    }
+    // 打开用户角色包目录（对齐技能系统，2026-08-30）
+    if (msg.type === 'roles_open_dir') {
+      this.openUserRolePacksDir();
       return;
     }
 
@@ -457,6 +469,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       .filter((m) => m.name)
       .map((m) => {
         const pack = rpm.get(m.name);
+        // 来源层判定（2026-08-30）：用户目录命中 → user，否则内置（内置优先语义；
+        // 与技能 sourceOf 同思路，用 filePath 前缀，configDir 与用户目录天然不重叠）
+        const source: 'builtin' | 'user' =
+          this._userRolePacksDir && pack?.filePath?.startsWith(this._userRolePacksDir) ? 'user' : 'builtin';
         // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
         const strategy = pack?.strategy;
         // 温度分组：基于 temperature 值动态计算
@@ -479,6 +495,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         return {
           name: m.name,
           displayName: m.displayName ?? m.name,
+          source,
           description: m.description ?? '',
           capabilities: (pack?.capabilities ?? []).map((c) => ({
             capability: c.capability,
@@ -943,13 +960,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'skill_content', skillName, content: '' });
   }
 
-  /** 打开用户技能目录（在系统文件管理器中显示） */
-  private openUserSkillsDir(): void {
-    if (!this._userSkillsDir) {
-      void vscode.window.showWarningMessage('用户技能目录未配置');
+  /** 在系统文件管理器中打开指定目录（revealFileInOS 失败回退 showItemInFolder；供技能/角色包目录共用，SSOT 消除重复） */
+  private openDirInOs(dir: string | undefined, label: string): void {
+    if (!dir) {
+      void vscode.window.showWarningMessage(`${label}目录未配置`);
       return;
     }
-    const uri = vscode.Uri.file(this._userSkillsDir);
+    const uri = vscode.Uri.file(dir);
     void vscode.commands.executeCommand('revealFileInOS', uri).then(
       () => {},
       () => {
@@ -957,6 +974,16 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('showItemInFolder', uri);
       },
     );
+  }
+
+  /** 打开用户技能目录（在系统文件管理器中显示） */
+  private openUserSkillsDir(): void {
+    this.openDirInOs(this._userSkillsDir, '用户技能');
+  }
+
+  /** 打开用户角色包目录（在系统文件管理器中显示，对齐技能目录入口，2026-08-30） */
+  private openUserRolePacksDir(): void {
+    this.openDirInOs(this._userRolePacksDir, '用户角色包');
   }
 
   // ─── 安全子视图方法（H0 写入审批，2026-08-23） ───
@@ -1193,6 +1220,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div class="header">
       <h2>角色</h2>
       <span id="statBar" class="stat-bar" hidden></span>
+      <div class="header-actions">
+        <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-text" title="打开用户角色包目录">
+          <span class="btn-icon" data-icon="folder"></span>
+          <span>打开目录</span>
+        </button>
+      </div>
     </div>
     <div id="list">
       <p class="loading-hint">加载中…</p>

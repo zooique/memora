@@ -35,6 +35,8 @@ interface RolesPayload {
     name: string;
     displayName: string;
     description?: string;
+    /** 来源层（2026-08-30）：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
+    source?: 'builtin' | 'user';
     capabilities: { capability: string; label: string }[];
     traits?: Record<string, number>;
     handoffPrompt?: string;
@@ -71,6 +73,14 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   // 各自根内都有 #list/#statBar，不做根内查询会冲突）
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;
+
+  // 「打开用户角色包目录」入口（对齐技能目录入口，2026-08-30）
+  const openDirBtn = root.querySelector<HTMLButtonElement>('#btnOpenRolePacksDir');
+  if (openDirBtn) {
+    openDirBtn.addEventListener('click', () => {
+      vscode.postMessage({ type: 'roles_open_dir' });
+    });
+  }
 
   let activeName: string | undefined;
 
@@ -285,6 +295,15 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     nameEl.className = 'card-name';
     nameEl.textContent = p.displayName;
     header.appendChild(nameEl);
+
+    // 来源徽章（2026-08-30 对齐技能层徽章）：用户角色包标「用户」，内置角色包不标（内置为默认）
+    if (p.source === 'user') {
+      const srcBadge = document.createElement('span');
+      srcBadge.className = 'badge badge-source-user';
+      srcBadge.textContent = '用户';
+      srcBadge.title = '用户自建角色包：位于用户角色包目录，可编辑';
+      header.appendChild(srcBadge);
+    }
 
     if (p.name === activeName) {
       const badge = document.createElement('span');
