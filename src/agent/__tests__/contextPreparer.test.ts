@@ -43,6 +43,8 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     getRecentHistoryWithinBudget: vi.fn(
       (): DialogueResult => ({ history: [], recentRoundCount: 0, firstRoundIncluded: false }),
     ),
+    // 完整对话消息（fixed/query 模式占用计量源；默认空，测试可覆写）
+    getConversationMessages: (): Array<{ role: 'user' | 'assistant'; content: string }> => [],
     getReplacedRoundIds: (): readonly string[] => [],
     recordBudget: vi.fn(),
     recordOccupancy: vi.fn(),
@@ -194,6 +196,39 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     // 当前输入锚点 = 输入长度(4) × 2
     expect(occ.inputAnchorTokens).toBe(8);
     // 输出预留 = 窗口 × 0.15
+    expect(occ.outputReserveTokens).toBe(18_000);
+    // 各段互斥拼满总量：free = total − 其余各段，且非负
+    const used =
+      occ.rolePackBaseTokens +
+      occ.dialogueTokens +
+      occ.memoryTokens +
+      occ.inputAnchorTokens +
+      occ.outputReserveTokens;
+    expect(occ.freeTokens).toBe(occ.totalTokens - used);
+    expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
+  });
+
+  it('④ 预算可视化：fixed 模式计量全量对话（loop.messages 全量 user/assistant，非注入摘要）', async () => {
+    const { preparer, loop, storage } = makePreparer();
+    // fixed 模式不注入最近轮次摘要块，实际进窗对话 = loop.messages 全量 user/assistant
+    loop.getConversationMessages = () => [
+      { role: 'user', content: '上一轮问题' }, // 长度 5
+      { role: 'assistant', content: '上一轮回答' }, // 长度 5
+    ];
+
+    await preparer.recallAndInject('正常问题', 'full', 'fixed');
+
+    // fixed 模式无语义召回 → 记忆摘要段归零，storage.search 不被调用
+    expect(storage.search).not.toHaveBeenCalled();
+    expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
+    const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
+    // 完整对话 = 全量对话 token（10），而非派生 history（避免低估）
+    expect(occ.dialogueTokens).toBe(10);
+    // 其余段语义与 hybrid 一致
+    expect(occ.totalTokens).toBe(120_000);
+    expect(occ.rolePackBaseTokens).toBe(3);
+    expect(occ.memoryTokens).toBe(0);
+    expect(occ.inputAnchorTokens).toBe(8);
     expect(occ.outputReserveTokens).toBe(18_000);
     // 各段互斥拼满总量：free = total − 其余各段，且非负
     const used =

@@ -2,7 +2,7 @@
 
 ## 架构与质量基线
 - 内核 `src/`（零 native/三方依赖，仅暴露 `"."`，不可深导入）；宿主 `hosts/memora-sprite/`（Electron 40 + electron-builder 26）。
-- 内核同步铁律：改内核后从 sprite 目录跑 `npm run sync-memora`（`hosts/memora-sprite/scripts/sync-memora.mjs`）编译并 cpSync 进 `node_modules/memora`（非软链）。EPERM 偶发（残留句柄）重试即过；以「同步完成 ✓」或 exit code 判成败，`| tail` 吞退出码。
+- 内核同步铁律：改内核后从 sprite 目录跑 `npm run sync-memora`（`hosts/memora-sprite/scripts/sync-memora.mjs`）编译并 cpSync 进 `node_modules/memora`（非软链）。EPERM 偶发（残留句柄）重试即过；以「同步完成 ✓」或 exit code 判成败，`| tail` 吞退出码。另：内核根 `npm run build`（tsc 并发写盘）亦偶发同类 EPERM，每次不同随机文件（疑实时扫描持锁），Defender 排除项因无管理员权限不生效；改用**有界重试循环**（`for i in $(seq 1 15); do npm run build; if grep -q EPERM 则 sleep 2 重试; done`）可破——已验证第 2 次即过。
 - 质量门 = `tsc --noEmit` + `eslint --max-warnings 0` + `vitest run`。版本：宿主/内核独立，发版只升宿主。
 - **测试并行度不对称（2026-08-30 实测）**：宿主 `npm test` 带 `--no-file-parallelism`，内核 `npm test` **不带**。
   后果：内核并发跑会随机 flake（已见 `agent.test.ts > memory.snapshot().working`），单独跑或加 flag 均绿。
@@ -12,6 +12,19 @@
 
 ## 内核/宿主边界
 - kernel 仅 `{baseUrl, model, apiKey}`；provider 名解析、默认值、local/cloud 策略全归宿主。拒绝 preset 表。
+
+## 上下文窗口真理源（2026-08-30 萧然定案，勿回改）
+- **唯一真理源 = 用户每个 LLM 配置里填的 `LlmProviderConfig.contextWindow`**（vscode 宿主）。不填 → 内核兜底 `DEFAULT_MAX_CONTEXT_TOKENS = 120_000`。**无全局封顶**，用户对自己填的数负责。
+- **设计铁律**：窗口解析归宿主（内核契约不含 provider 配置），内核只消费单一数字 `maxContextTokens`，不认 provider/用户双层来源。
+- 内核公式已收口为单参 `resolveContextWindow(window?: number)`：传 per-LLM 值即采用（无封顶），`undefined` 回退 120K。**原两参 `(providerWindow, userMax)` + `min` 封顶分支已删除**（2026-08-30 收口提交 `1647ed1d`）。
+- ADR-029 已全量收口：frontmatter、决策点3、L31、L61 旧设计均已改为单源表述（旧两参签名加「已废弃」注），与代码一致（2026-08-30 收口提交 `1647ed1d`）。
+
+## 上下文占用指示器（④ 预算可视化，2026-08-30 定案，契约勿回改）
+- **单一真理源 = 内核 `ContextOccupancy`**（contextPreparer 经 `loop.recordOccupancy` 在 prepare 期写入，tracer 经 `getMetrics().context.occupancy` 透出）。宿主 `protocol.ts context_occupancy` 仅透传，webview `updateContextOccupancy` 仅渲数，**两端永不重算**。
+- `ContextOccupancy`（真实用量）与 `ContextBudget`（caps 预算）**同源于 prepare、互补不重复**：前者各段实际 used（角色包基础/对话/记忆/输入锚/输出预留/空闲），后者上限。
+- 占位条常驻输入区（隐藏至首轮流式结束收到 `context_occupancy`），hover 出分层明细；`free = max(0, total − Σ各段)`，非负收敛。
+- `chatPanel.postContextOccupancy` 每轮**无条件**推（独立于 dev 开关 `memora.showMetrics`）。
+- ADR-030 锁定契约「内核算 → 宿主传 → webview 渲」。改动须保持此边界：新增段只在内核加字段 + protocol 转发 + webview 渲，不在宿主/webview 算。
 
 ## SSOT 单一真理源约定（收敛结论，勿回改）
 - source→子目录映射：`src/memory/sourcePaths.ts` 唯一（SOURCE_TO_DIR/sourceToDir/resolveSourceFilePath）。宿主严禁硬编码 `'personas'/'rules'/'skills'`。

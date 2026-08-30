@@ -1737,6 +1737,19 @@ export class AgentLoop {
   }
 
   /**
+   * 获取当前窗口中的完整对话消息（仅 user + assistant，排除 system/tool）。
+   * 供 contextPreparer 计量 fixed/query 模式下实际进窗的完整对话占用
+   * （区别于 hybrid 模式注入的最近轮次摘要块，见 getRecentHistoryWithinBudget）。
+   */
+  getConversationMessages(): Array<{ role: 'user' | 'assistant'; content: string }> {
+    // 过滤出 user + assistant 消息（排除 system 和 tool）
+    return this.messages.filter(
+      (m): m is { role: 'user' | 'assistant'; content: string } =>
+        m.role === 'user' || m.role === 'assistant',
+    );
+  }
+
+  /**
    * 按预算容量派生完整对话层轮次集合（动态轮数，role-pack-spec §C/§D）。
    * 从最近往回塞到预算止，会话第一条问答闭环必然在场（次级锚点：默认在场，压缩可让位）。
    *
@@ -1748,11 +1761,8 @@ export class AgentLoop {
     recentRoundCount: number;
     firstRoundIncluded: boolean;
   } {
-    // 过滤出 user + assistant 消息（排除 system 和 tool）
-    const conversationMessages = this.messages.filter(
-      (m): m is { role: 'user' | 'assistant'; content: string } =>
-        m.role === 'user' || m.role === 'assistant',
-    );
+    // 复用 getConversationMessages 过滤逻辑（单一来源，避免双份过滤）
+    const conversationMessages = this.getConversationMessages();
 
     // 按 user 消息切分为轮次（每轮 = 该 user 起至下一个 user 前的所有消息）
     const rounds: Array<{ role: 'user' | 'assistant'; content: string }[]> = [];

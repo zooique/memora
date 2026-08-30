@@ -247,12 +247,18 @@ export class ContextPreparer {
   // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
   // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
   //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
-  //   dialogue     = 实际注入的最近轮次正文 token
+  //   dialogue     = 实际进窗的完整对话 token：
+  //                  hybrid 模式注入最近轮次摘要块 → 计量 dialogue.history；
+  //                  fixed/query 模式全量保留在 loop.messages（cleanTemporary 只清 system，
+  //                  不注入摘要）→ 计量全部 user/assistant 对话，避免低估。
   //   memory       = 注入的 recalled 记忆 token
   //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
   //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
   //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
-  const dialogueTokens = loop.estimateTokens(dialogue.history);
+  const dialogueTokens =
+    contextAssembly === 'hybrid'
+      ? loop.estimateTokens(dialogue.history)
+      : loop.estimateTokens(loop.getConversationMessages());
   const memoryTokens = recalledMemories.length
     ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
     : 0;

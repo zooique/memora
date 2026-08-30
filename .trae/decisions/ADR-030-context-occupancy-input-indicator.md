@@ -23,7 +23,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 
 1. **内核算**：`contextPreparer` 在 prepare 期算 `ContextOccupancy`（互斥分段拼满窗口总容量 `totalTokens`）：
    - `rolePackBaseTokens` = `fixedOverheadTokens`（system prompt：persona + rules + 技能 L1 + 工具 schema）
-   - `dialogueTokens` = `estimateTokens(注入的最近轮次正文)`
+   - `dialogueTokens` = 实际进窗完整对话：hybrid 模式计量注入的最近轮次摘要块；fixed/query 模式不注入摘要（对话全量保留在 loop.messages），计量全部 user/assistant 对话
    - `memoryTokens` = `estimateTokens(注入的 recalled 记忆)`
    - `inputAnchorTokens` = `budget.anchorTokens`（触发输入 + 首个回答预留）
    - `outputReserveTokens` = 窗口 × 输出预留比例（留给模型回答的容量，非已用）
@@ -46,10 +46,10 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 
 ## 影响（已实现 · 2026-08-30）
 
-- **内核**：新增 `ContextOccupancy` 类型（`budget.ts`）+ `loop.recordOccupancy` + `getMetrics().context.occupancy`；`contextPreparer` 在 prepare 末尾算各层真实用量并记录。单测（`metrics.test` / `contextPreparer.test`）覆盖透出与分段非负收敛。
+- **内核**：新增 `ContextOccupancy` 类型（`budget.ts`）+ `loop.recordOccupancy` + `getMetrics().context.occupancy`；`contextPreparer` 在 prepare 末尾算各层真实用量并记录（dialogue 按装配模式分支：hybrid 计量注入摘要、fixed/query 计量全量对话，经 `loop.getConversationMessages()` 取数）。单测（`metrics.test` / `contextPreparer.test`）覆盖透出、分段非负收敛与 fixed 全量计量。
 - **宿主**：`protocol.ts` 加 `context_occupancy` 消息；`chatPanel.ts` 加 `postContextOccupancy()`（脱离 `showMetrics` 常驻）+ 输入区 `#contextOccupancy` DOM。
 - **webview**：`chatView.ts` 加 `updateContextOccupancy` 处理器与渲染；`chatStyles.ts` 加分段配色。
-- **质量门**：内核 test 23（metrics + contextPreparer）/ 宿主 `tsc --noEmit` 0 错、`eslint --max-warnings 0` 0 警告、全量测试 272 全绿。
+- **质量门**：内核 test 24（metrics + contextPreparer）/ 宿主 `tsc --noEmit` 0 错、`eslint --max-warnings 0` 0 警告、全量测试 272 全绿。
 
 ## 何时回顾
 
