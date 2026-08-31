@@ -46,7 +46,8 @@ const HTML = `
           <input id="f-model" />
           <input id="f-baseurl" />
           <input id="f-apikey" />
-          <input id="f-contextwindow" type="number" />
+          <input id="f-contextwindow" type="text" />
+          <div id="f-contextwindow-feedback" hidden></div>
           <div id="apikeyHint" hidden></div>
           <div id="testResult" hidden></div>
           <button id="btnTest" type="button"></button>
@@ -168,14 +169,14 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
 
   // ─── 2026-08-29 per-LLM 上下文上限（contextWindow） ───
 
-  it('详情报文：带 contextWindow 时附加「 · N ctx」标注（透明可见）', () => {
+  it('详情报文：带 contextWindow 时附加「 · N tokens」标注（单位显式，缩写 K）', () => {
     mountConfigView();
     dispatchLoaded([makeProvider('deepseek', { contextWindow: 128000 })], 'deepseek');
     const detail = document.querySelector('.card-detail') as HTMLElement;
-    expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1 · 128000 ctx');
+    expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1 · 128K tokens');
   });
 
-  it('详情报文：未配置 contextWindow 时不附加 ctx 标注（回落默认 120K）', () => {
+  it('详情报文：未配置 contextWindow 时不附加 tokens 标注（回落默认 120K）', () => {
     mountConfigView();
     dispatchLoaded([makeProvider('deepseek')], 'deepseek');
     const detail = document.querySelector('.card-detail') as HTMLElement;
@@ -188,7 +189,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     // 激活卡仅有「编辑」按钮（.btn-secondary）
     (document.querySelector('.card .btn-secondary') as HTMLButtonElement).click();
     const cw = document.getElementById('f-contextwindow') as HTMLInputElement;
-    expect(cw.value).toBe('64000');
+    expect(cw.value).toBe('64K');
   });
 
   it('保存提交：表单 contextWindow 随 cfg_save 上报（填值）', () => {
@@ -219,6 +220,77 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
     const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } };
     expect(sent.config.contextWindow).toBeUndefined();
+  });
+
+  // ─── 2026-08-31 上下文上限简写输入（K/M 换算，对齐 fmtTokens 显示同规） ───
+
+  /** 打开「添加 API」弹窗并提交，返回 cfg_save 载荷（null = 未发出保存） */
+  function submitWithContextWindow(raw: string) {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('f-display') as HTMLInputElement).value = 'DeepSeek';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
+    (document.getElementById('f-contextwindow') as HTMLInputElement).value = raw;
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } } | undefined;
+    return sent?.config.contextWindow;
+  }
+
+  it('保存「200K」→ 上报 200000（K=×1000，对齐 LLM 生态口径）', () => {
+    expect(submitWithContextWindow('200K')).toBe(200000);
+  });
+
+  it('保存「1M」→ 上报 1000000（M=×1,000,000）', () => {
+    expect(submitWithContextWindow('1M')).toBe(1000000);
+  });
+
+  it('保存小写「64k」→ 上报 64000（后缀大小写不敏感）', () => {
+    expect(submitWithContextWindow('64k')).toBe(64000);
+  });
+
+  it('保存「1024K」→ 上报 1024000（K 恒为 ×1000，不因数值近似 M 而歧义）', () => {
+    expect(submitWithContextWindow('1024K')).toBe(1024000);
+  });
+
+  it('保存小数「1.5K」→ 上报 1500（支持小数简写）', () => {
+    expect(submitWithContextWindow('1.5K')).toBe(1500);
+  });
+
+  it('保存「65,536」（编辑回显千分位形式）→ 上报 65536（容忍千分位/下划线/空格）', () => {
+    expect(submitWithContextWindow('65,536')).toBe(65536);
+  });
+
+  it('非法输入「abc」→ 就地报错并阻断提交（不发出 cfg_save，防静默回落默认值）', () => {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('f-display') as HTMLInputElement).value = 'DeepSeek';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
+    (document.getElementById('f-contextwindow') as HTMLInputElement).value = 'abc';
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_save' }));
+    const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
+    expect(feedback.hidden).toBe(false);
+    expect(feedback.textContent).toContain('无法识别');
+  });
+
+  it('输入合法简写时实时反馈换算（200K → = 200,000 tokens）', () => {
+    mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    const cw = document.getElementById('f-contextwindow') as HTMLInputElement;
+    const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
+    cw.value = '200K';
+    cw.dispatchEvent(new Event('input'));
+    expect(feedback.hidden).toBe(false);
+    expect(feedback.textContent).toContain('200,000 tokens');
   });
 
   it('卡片按钮 tooltip：解释各操作语义（可发现性，对齐角色卡）', () => {

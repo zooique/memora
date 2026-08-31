@@ -45,6 +45,18 @@ const HTML = `
     </div>
   </div>
   <div id="inputBar">
+    <!-- ④ 预算可视化：上下文占用条（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
+    <div id="contextOccupancy" class="context-occupancy" hidden>
+      <div class="occ-bar" id="occBar">
+        <span class="occ-seg occ-seg--rolepack" data-seg="rolePack"></span>
+        <span class="occ-seg occ-seg--memory" data-seg="memory"></span>
+        <span class="occ-seg occ-seg--dialogue" data-seg="dialogue"></span>
+        <span class="occ-seg occ-seg--input" data-seg="input"></span>
+        <span class="occ-seg occ-seg--output" data-seg="output"></span>
+        <span class="occ-seg occ-seg--free" data-seg="free"></span>
+      </div>
+      <div class="occ-meta"><span id="occPercent">0%</span> · <span id="occUsed">0</span>/<span id="occTotal">0</span> tokens</div>
+    </div>
     <div id="inputWrap">
       <textarea id="input"></textarea>
       <div id="inputFooter">
@@ -1430,5 +1442,128 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     // 用户点停止 → interrupted（无 meta/chunk/done/error 的收尾通道）→ 等待条必须移除
     dispatch({ type: 'interrupted' });
     expect(messages.querySelector('.pending-wait')).toBeNull();
+  });
+});
+
+describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ 预算可视化，2026-08-31）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('chat_providers 到达（含选中模型）→ 占用条显示该模型上限且未隐藏（首轮对话前即有真实容量）', () => {
+    mountChatView();
+    const bar = document.getElementById('contextOccupancy') as HTMLElement;
+    const totalEl = document.getElementById('occTotal') as HTMLElement;
+    // 无 Provider 前：默认隐藏，避免展示误导性的 0/0
+    expect(bar.hidden).toBe(true);
+
+    dispatch({
+      type: 'chat_providers',
+      providers: [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 },
+        { name: 'local', displayName: '本地', contextWindow: 8192, limitTokens: 8192 },
+      ],
+      activeName: 'deepseek',
+    });
+
+    // 展示所选模型上限（fmtTokens 缩写 128K），已用 0
+    expect(bar.hidden).toBe(false);
+    expect(totalEl.textContent).toBe('128K');
+    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('0');
+    expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
+  });
+
+  it('无选中 Provider 时占用条保持隐藏（无「当前模型」可依赖，不展示缺省值）', () => {
+    mountChatView();
+    dispatch({ type: 'chat_providers', providers: [{ name: 'a', displayName: 'A', limitTokens: 64000 }], activeName: undefined });
+    const bar = document.getElementById('contextOccupancy') as HTMLElement;
+    expect(bar.hidden).toBe(true);
+  });
+
+  it('同一上限的 chat_providers 重复推送不重置已用数字（保留 context_occupancy 真实占用）', () => {
+    mountChatView();
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 }],
+      activeName: 'deepseek',
+    });
+    // 首轮流式结束 → 真实占用到达（占用 24,000）
+    dispatch({
+      type: 'context_occupancy',
+      occupancy: {
+        totalTokens: 128000,
+        rolePackBaseTokens: 20000,
+        memoryTokens: 2000,
+        dialogueTokens: 2000,
+        inputAnchorTokens: 0,
+        outputReserveTokens: 19200,
+        freeTokens: 84800,
+      },
+    });
+    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('43,200');
+    // 同款 chat_providers 再推送（如面板刷新）→ 上限未变 → 不把已用清回 0
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 }],
+      activeName: 'deepseek',
+    });
+    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('43,200');
+  });
+
+  it('切换到其他模型（上限不同）→ 上限与已用同步更新为新模型（实时跟随选中 LLM）', () => {
+    mountChatView();
+    dispatch({
+      type: 'chat_providers',
+      providers: [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 },
+        { name: 'local', displayName: '本地', contextWindow: 8192, limitTokens: 8192 },
+      ],
+      activeName: 'deepseek',
+    });
+    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('128K');
+
+    // 用户切换模型（底部模型下拉）→ host 重推 chat_providers（activeName 变化）
+    dispatch({
+      type: 'chat_providers',
+      providers: [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 },
+        { name: 'local', displayName: '本地', contextWindow: 8192, limitTokens: 8192 },
+      ],
+      activeName: 'local',
+    });
+    // 上限切换为本地模型 8K，占用清零（旧模型占用数据对新模型无意义）
+    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('8,192');
+    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('0');
+  });
+
+  it('context_occupancy 真实占用覆盖首屏容量（内核为总容量唯一真理源）', () => {
+    mountChatView();
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 64000, limitTokens: 64000 }],
+      activeName: 'deepseek',
+    });
+    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('64K');
+
+    // 内核 prepare 后回推真实占用
+    dispatch({
+      type: 'context_occupancy',
+      occupancy: {
+        totalTokens: 64000,
+        rolePackBaseTokens: 15000,
+        memoryTokens: 1000,
+        dialogueTokens: 1000,
+        inputAnchorTokens: 50,
+        outputReserveTokens: 9600,
+        freeTokens: 37350,
+      },
+    });
+    // 更新：百分比 + 已用/总量（fmtTokens：千分位分隔非整千数）
+    expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('42%');
+    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('26,650');
+    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('64K');
   });
 });

@@ -20,6 +20,7 @@ import {
   defaultSessionTitle,
   formatDateKey,
   getSessionDisplayName,
+  resolveContextWindow,
   type Agent,
   type AgentChunk,
   type IRoundStore,
@@ -1366,7 +1367,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     try {
       const providers = await this._providerStore.listMasked();
       const activeName = this._providerStore.getActiveName();
-      const list = providers.map((p) => ({ name: p.name, displayName: p.displayName || p.name }));
+      // limitTokens = 每 Provider 的上下文窗口上限（SSOT：经内核 resolveContextWindow 解析，
+      // 用户填的 contextWindow 落回内核默认 120K），供 webview 首轮对话前实时渲染占用条容量
+      const list = providers.map((p) => ({
+        name: p.name,
+        displayName: p.displayName || p.name,
+        contextWindow: p.contextWindow,
+        limitTokens: resolveContextWindow(p.contextWindow),
+      }));
       // meta 事件 llm 字段同源：活跃 Provider 显示名（SSOT 与模型下拉同一来源）
       this._activeProviderDisplayName = list.find((p) => p.name === activeName)?.displayName ?? activeName ?? '';
       this.post({ type: 'chat_providers', providers: list, activeName });
@@ -1475,6 +1483,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 热生效：Agent.setProvider 在对话进行中会抛 assertNotBusy，需捕获
       if (this._agent) {
         await this._agent.setProvider(await createProvider(this._providerStore));
+        // 随模型热切换同步上下文窗口上限（per-LLM contextWindow 唯一真理源；
+        // resolveContextWindow 回落内核默认 120K，与装配期口径一致），
+        // 让内核预算/截断/占用快照与所选模型窗口对齐
+        const active = await this._providerStore.getActive();
+        this._agent.setContextWindow(resolveContextWindow(active?.contextWindow));
       }
       await this.pushProviders();
     } catch (err) {
@@ -2140,7 +2153,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </div>
   </div>
   <div id="inputBar">
-    <!-- ④ 预算可视化：输入区常驻上下文占用条（隐藏直至首轮流式结束收到 context_occupancy；hover 出分层明细） -->
+    <!-- ④ 预算可视化：输入区常驻上下文占用条（首帧起由 chat_providers 渲染所选模型容量上限；真实分层占用由首轮后 context_occupancy 覆盖；hover 出分层明细） -->
     <div id="contextOccupancy" class="context-occupancy" hidden>
       <div class="occ-bar" id="occBar">
         <span class="occ-seg occ-seg--rolepack" data-seg="rolePack"></span>

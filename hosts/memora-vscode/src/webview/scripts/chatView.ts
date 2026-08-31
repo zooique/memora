@@ -16,6 +16,7 @@ import type {
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
 import { fmtTime } from '../helpers/fmtTime.js';
+import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { initDropdowns } from '../components/dropdown.js';
@@ -196,7 +197,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   // 当前 Provider 列表（由 chat_providers 消息填充）
-  let currentProviders: { name: string; displayName: string }[] = [];
+  // limitTokens = 宿主经内核 resolveContextWindow 解析的上下文窗口上限
+  // （用户 per-LLM 配置的 contextWindow，未配置回落内核默认 120K）
+  interface ChatProviderItem {
+    name: string;
+    displayName: string;
+    contextWindow?: number;
+    limitTokens: number;
+  }
+  let currentProviders: ChatProviderItem[] = [];
   let currentActive: string | undefined;
 
   /**
@@ -1331,10 +1340,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (typeof fp.attachedMemoryCount === 'number') {
       lastAttachedMemoryCount = fp.attachedMemoryCount;
     }
-    /** 千分展示（>=1000 用 k 缩写，预算可视化行用，④） */
-    function fmtK(n: number): string {
-      return n >= 1000 ? `${Math.round(n / 1000)}k` : String(n);
-    }
     const lines = [
       // 指纹行：只显示 hash 与计数，不显示内容（可追溯性边界）
       '本轮指纹：' +
@@ -1352,11 +1357,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // ④（2026-08-29）：预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层/记忆 cap 瓜分
       ...(msg.metrics.budget
         ? [
-            '预算：可用 ' + fmtK(msg.metrics.budget.availableTokens) +
-              ' · 锚点 ' + fmtK(msg.metrics.budget.anchorTokens) +
-              ' · 对话层 ' + fmtK(msg.metrics.budget.dialogueBudgetTokens) +
-              ' · 记忆 cap ' + fmtK(msg.metrics.budget.memoryLayerCapTokens) +
-              ' · 剩余 ' + fmtK(msg.metrics.budget.remainingTokens),
+            '预算：可用 ' + fmtCompactTokens(msg.metrics.budget.availableTokens) +
+              ' · 锚点 ' + fmtCompactTokens(msg.metrics.budget.anchorTokens) +
+              ' · 对话层 ' + fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens) +
+              ' · 记忆 cap ' + fmtCompactTokens(msg.metrics.budget.memoryLayerCapTokens) +
+              ' · 剩余 ' + fmtCompactTokens(msg.metrics.budget.remainingTokens),
           ]
         : []),
       // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
@@ -1382,6 +1387,48 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     applyMemoryTag();
   }
 
+  // 当前占用条已展示的容量上限（token）——Provider 列表推送（含上限）时据此判断
+  // 「上限未变则保留已展示的真实占用」，避免面板数据刷新把已用数字误清零
+  let contextLimitShown: number | undefined;
+
+  /**
+   * ④ 预算可视化：首轮对话前，按当前选中 LLM 的上下文上限渲染占用条容量。
+   *
+   * chat_providers 到达时调用：真实占用（context_occupancy）要等首轮流式结束才有，
+   * 在此之前占用条展示「0% · 0/{上限}」，让用户即时感知所选模型的窗口容量。
+   * 无选中 Provider 时不展示（无「当前模型」可依赖，避免展示误导性的缺省值）。
+   * 上限与已展示值相同 → 跳过（保留真实占用，不重复清零）。
+   */
+  function renderOccupancyLimit(providers: ChatProviderItem[], activeName: string | undefined): void {
+    const el = document.getElementById('contextOccupancy');
+    if (!el) return;
+    if (!activeName) return;
+    const active = providers.find((p) => p.name === activeName);
+    if (!active || typeof active.limitTokens !== 'number') return;
+    // 上限未变化 → 保留已展示的真实占用（同一模型，无重置必要）
+    if (contextLimitShown === active.limitTokens) return;
+    contextLimitShown = active.limitTokens;
+    // 展示容量上限 + 清零各占用段（真实占用待 context_occupancy 覆盖）
+    el.hidden = false;
+    document.getElementById('occBar')?.querySelectorAll('.occ-seg').forEach((seg) => {
+      (seg as HTMLElement).style.width = '0%';
+    });
+    const percentEl = document.getElementById('occPercent');
+    const usedEl = document.getElementById('occUsed');
+    const totalEl = document.getElementById('occTotal');
+    if (percentEl) percentEl.textContent = '0%';
+    if (usedEl) usedEl.textContent = '0';
+    if (totalEl) totalEl.textContent = fmtTokens(active.limitTokens);
+    el.title = `上下文占用（总容量 ${active.limitTokens} tokens）\n` + [
+      '角色包/系统基础设定：0',
+      '记忆摘要：0',
+      '完整对话：0',
+      '当前输入锚点：0',
+      '输出预留：0',
+      `剩余可用：${active.limitTokens}`,
+    ].map((t) => `· ${t}`).join('\n');
+  }
+
   /**
    * ④ 预算可视化：更新输入区常驻上下文占用条。
    *
@@ -1394,6 +1441,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const el = document.getElementById('contextOccupancy');
     if (!el) return;
     el.hidden = false;
+    // 记录内核真实总容量：后续同款 chat_providers 推送不再重置已用数字
+    contextLimitShown = occ.totalTokens;
     const total = Math.max(1, occ.totalTokens);
     const segs: Array<[string, number, string]> = [
       ['rolepack', occ.rolePackBaseTokens, '角色包/系统基础设定'],
@@ -1415,9 +1464,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const percentEl = document.getElementById('occPercent');
     if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
     const usedEl = document.getElementById('occUsed');
-    if (usedEl) usedEl.textContent = String(total - occ.freeTokens);
+    if (usedEl) usedEl.textContent = fmtTokens(total - occ.freeTokens);
     const totalEl = document.getElementById('occTotal');
-    if (totalEl) totalEl.textContent = String(occ.totalTokens);
+    if (totalEl) totalEl.textContent = fmtTokens(occ.totalTokens);
     // 整条 hover 出完整分层明细
     el.title =
       `上下文占用（总容量 ${occ.totalTokens} tokens）\n` +
@@ -1715,6 +1764,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         currentModelName = activeProvider?.displayName || currentActive;
       }
       renderModelPicker();
+      // ④ 预算可视化：按当前选中 LLM 的上下文上限实时渲染占用条容量（首轮对话前即有真实上限）
+      renderOccupancyLimit(currentProviders, currentActive);
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
       // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题 + 输入区角色徽章共用

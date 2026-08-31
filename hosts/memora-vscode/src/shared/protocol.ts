@@ -558,8 +558,15 @@ export type ExtensionToWebviewMessage =
    *
    * 扩展侧在渲染/切换时推送最新 Provider 列表及激活状态，
    * webview 下拉框据此刷新选项。
+   * limitTokens = 该 Provider 的上下文窗口上限（宿主经内核 resolveContextWindow 解析：
+   * 用户 per-LLM 配置的 contextWindow，未配置回落内核默认 120K）——webview 据此在
+   * 首轮对话前实时渲染输入区上下文占用条的容量上限，不重复引入内核默认值。
    */
-  | { type: 'chat_providers'; providers: { name: string; displayName: string }[]; activeName?: string }
+  | {
+      type: 'chat_providers';
+      providers: { name: string; displayName: string; contextWindow?: number; limitTokens: number }[];
+      activeName?: string;
+    }
   /**
    * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
    *

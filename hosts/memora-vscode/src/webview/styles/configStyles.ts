@@ -81,6 +81,7 @@ export const configStyles = `
   #config-root .field input { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
   #config-root .field input:disabled { opacity: 0.6; }
   #config-root .key-hint { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); margin-top: var(--sp-1, 4px); }
+  #config-root .key-hint.err { color: var(--feedback-error-fg); }
   #config-root .test-result { font-size: var(--font-md, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); margin-bottom: var(--sp-4, 10px); word-break: break-all; }
   #config-root .test-result.ok { background: var(--feedback-info-bg); color: var(--feedback-info-fg); }
   #config-root .test-result.err { background: var(--feedback-error-bg); color: var(--feedback-error-fg); }

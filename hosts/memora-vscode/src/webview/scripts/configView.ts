@@ -15,6 +15,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
+import { fmtTokens, TOKENS_PER_K, TOKENS_PER_M } from '../helpers/fmtTokens.js';
 
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ConfigViewDeps {
@@ -66,8 +67,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fModel = root.querySelector('#f-model') as HTMLInputElement;
   const fBaseUrl = root.querySelector('#f-baseurl') as HTMLInputElement;
   const fApiKey = root.querySelector('#f-apikey') as HTMLInputElement;
-  // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K）
+  // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K；支持 K/M 简写输入）
   const fContextWindow = root.querySelector('#f-contextwindow') as HTMLInputElement;
+  // 上下文上限输入的即时报错/换算提示（输入非法时展示就地错误，不依赖 host 往返）
+  const cwFeedback = root.querySelector('#f-contextwindow-feedback') as HTMLElement;
   const apikeyHint = root.querySelector('#apikeyHint') as HTMLElement;
   const testResult = root.querySelector('#testResult') as HTMLElement;
   const btnTest = root.querySelector('#btnTest') as HTMLButtonElement;
@@ -88,6 +91,35 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     }, 2500);
   }
 
+  /**
+   * 解析上下文上限输入串（支持纯数字 / K / M 简写）
+   *
+   * 换算倍数 K=×1000、M=×1,000,000 的唯一真理源 = fmtTokens.ts 的 TOKENS_PER_K /
+   * TOKENS_PER_M 常量（与显示同规，见该文件注释）。容忍千分位 / 下划线 / 空格
+   * （配合编辑回显 fmtTokens 的 "65,536" 形式）与小数（如 1.5M）。
+   *
+   * @param raw 表单原始输入（未 trim）
+   * @returns token 数；空串 → undefined（未配置）；无法识别 → NaN
+   */
+  function parseTokenInput(raw: string): number | undefined {
+    const cleaned = raw.replace(/[,＿_\s\u3000]/g, '');
+    if (!cleaned) return undefined;
+    const m = /^(\d+(?:\.\d+)?)([km]?)$/i.exec(cleaned);
+    if (!m) return NaN;
+    const base = Number(m[1]);
+    const suffix = m[2].toLowerCase();
+    const tokens =
+      suffix === 'k' ? base * TOKENS_PER_K : suffix === 'm' ? base * TOKENS_PER_M : base;
+    return Math.round(tokens);
+  }
+
+  /** 就地设置上下文上限输入提示（text 为空则隐藏；isError 标记错误态样式） */
+  function setCwFeedback(text: string, isError: boolean): void {
+    cwFeedback.textContent = text;
+    cwFeedback.hidden = !text;
+    cwFeedback.classList.toggle('err', isError && !!text);
+  }
+
   function readForm(): {
     name: string;
     displayName: string;
@@ -96,14 +128,15 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     apiKey: string;
     contextWindow: number | undefined;
   } {
-    const cw = fContextWindow.value.trim();
+    const parsed = parseTokenInput(fContextWindow.value);
     return {
       name: fName.value.trim(),
       displayName: fDisplay.value.trim(),
       model: fModel.value.trim(),
       baseUrl: fBaseUrl.value.trim(),
       apiKey: fApiKey.value,
-      contextWindow: cw ? Number(cw) : undefined,
+      // 无法识别（NaN）由 submit 前置校验阻断，此处不落 undefined（避免静默回落默认值）
+      contextWindow: Number.isNaN(parsed) ? undefined : parsed,
     };
   }
 
@@ -115,6 +148,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     testResult.textContent = '';
     testResult.className = 'test-result';
     btnTest.disabled = false;
+    // 重置上下文上限输入的就地反馈（开新表单时清空上一条错误）
+    setCwFeedback('', false);
     if (editName) {
       // 编辑：从内存中的 providers 列表回填（单一真理源：cfg_loaded 数据，
       // 而非从渲染结果 DOM dataset 读取，避免 DOM 作为数据源的数据流反向，
@@ -131,8 +166,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       const masked = target?.maskedKey || '';
       apikeyHint.hidden = !masked;
       apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
-      // 上下文窗口上限回填（per-LLM 真理源；编辑时如实回显，未配留空）
-      fContextWindow.value = target?.contextWindow?.toString() ?? '';
+      // 上下文窗口上限回填（per-LLM 真理源；fmtTokens 友好简写回显，如 200K，换算 M 级同理）
+      fContextWindow.value = target?.contextWindow ? fmtTokens(target.contextWindow) : '';
     } else {
       fName.value = '';
       fName.disabled = false;
@@ -247,7 +282,9 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     }
     const detail = document.createElement('div');
     detail.className = 'card-detail';
-    detail.textContent = p.model + ' · ' + p.baseUrl + (p.contextWindow ? ` · ${p.contextWindow} ctx` : '');
+    // 上下文上限单位显式标注（token 缩写 K 由 fmtTokens 输出，如 128K），呼应表单同单位提示
+    detail.textContent =
+      p.model + ' · ' + p.baseUrl + (p.contextWindow ? ` · ${fmtTokens(p.contextWindow)} tokens` : '');
     info.appendChild(nameRow);
     info.appendChild(detail);
 
@@ -326,9 +363,31 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     vscode.postMessage({ type: 'cfg_clear_embedding' });
   });
   btnCancel.addEventListener('click', closeModal);
+  // 上下文上限输入改键时实时反馈：换算提示（如 200K → = 200000 tokens）或非法就地报错
+  fContextWindow.addEventListener('input', () => {
+    setCwFeedback('', false);
+    const raw = fContextWindow.value.trim();
+    if (!raw) return;
+    const parsed = parseTokenInput(raw);
+    if (parsed !== undefined && !Number.isNaN(parsed)) {
+      setCwFeedback(`= ${parsed.toLocaleString('en-US')} tokens（${fmtTokens(parsed)}）`, false);
+    } else {
+      setCwFeedback('无法识别：请填整数，或带 K/M 简写（如 200K、1M）', true);
+    }
+  });
   // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
   cfgForm.addEventListener('submit', (e) => {
     e.preventDefault();
+    // 前置校验：上下文上限输入无法识别时就地报错并阻断提交（防静默回落默认值）
+    const cwRaw = fContextWindow.value.trim();
+    if (cwRaw) {
+      const parsed = parseTokenInput(cwRaw);
+      if (parsed === undefined || Number.isNaN(parsed)) {
+        setCwFeedback('无法识别：请填整数，或带 K/M 简写（如 200K、1M）', true);
+        fContextWindow.focus();
+        return;
+      }
+    }
     const config = readForm();
     vscode.postMessage({ type: 'cfg_save', config, isEditing: editName !== '' });
   });

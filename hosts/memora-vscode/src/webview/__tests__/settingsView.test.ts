@@ -44,6 +44,8 @@ const HTML = `
         <h3 id="modalTitle"></h3>
         <form id="cfgForm">
           <input id="f-name" /><input id="f-display" /><input id="f-model" /><input id="f-baseurl" /><input id="f-apikey" />
+          <input id="f-contextwindow" type="text" />
+          <div id="f-contextwindow-feedback" hidden></div>
           <div id="apikeyHint" hidden></div><div id="testResult" hidden></div>
           <button id="btnTest" type="button"></button><button id="btnCancel" type="button"></button><button id="btnSave" type="submit"></button>
         </form>
