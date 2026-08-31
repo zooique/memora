@@ -152,8 +152,9 @@ class LoopMetrics {
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
-  /** 上下文窗口 token 上限（默认 120_000，对齐 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS） */
-  private readonly maxContextTokens: number;
+  /** 上下文窗口 token 上限（默认 120_000，对齐 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）。
+   *  非 readonly：模型热切换（Agent.setContextWindow）经 setContextWindow 同步。 */
+  private maxContextTokens: number;
   /** 可观测性 Tracer（默认 NOOP_TRACER 零开销） */
   private readonly tracer: ITracer;
   /** Reflection 最大重试次数（默认 2） */
@@ -1627,6 +1628,19 @@ export class AgentLoop {
   /** 运行时切换 LLM Provider（多 Provider 路由场景，后续调用使用新 Provider） */
   setProvider(provider: LlmProvider): void {
     this.opts.provider = provider;
+  }
+
+  /**
+   * 运行时更新上下文窗口上限（token）
+   *
+   * 与 setProvider 配套：模型热切换时同步窗口，令截断 / 软上限 / 召回注入警戒线
+   * （装配期值拷贝字段）随新模型窗口调整。只改窗口数字，不重建对话/不触碰消息。
+   *
+   * @param tokens 新窗口 token 数
+   */
+  setContextWindow(tokens: number): void {
+    this.maxContextTokens = tokens;
+    this.contextManager.setMaxContextTokens(tokens);
   }
 
   /** 刷新角色包 prompt（角色切换时只替换 prefix，保留 bootstrapMemories 与 toolDefinitions） */

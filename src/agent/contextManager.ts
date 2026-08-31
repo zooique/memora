@@ -127,7 +127,9 @@ function countCjkAndOther(str: string): { cjkChars: number; otherChars: number }
  */
 export class ContextManager {
   // 组合 root 统一注入为字段，类内不承担 Provider 选址逻辑。
-  private readonly maxContextTokens: number;
+  // 非 readonly：模型热切换（Agent.setContextWindow）后经 setMaxContextTokens 更新，
+  // 截断阈值 / 软上限 / 召回注入警戒线随新窗口同步重算。
+  private maxContextTokens: number;
   private readonly provider: LlmProvider;
   private readonly providerRouter: ProviderRouter | undefined;
   private readonly contextTruncatedFn: (skipped: number, kept: number) => string;
@@ -149,6 +151,17 @@ export class ContextManager {
     this.roundSummaryLoader = opts.roundSummaryLoader;
     this.minRecentRounds = Math.max(0, Math.floor(opts.minRecentRounds ?? 0));
     this.tracer = opts.tracer ?? NOOP_TRACER;
+  }
+
+  /**
+   * 运行时更新上下文窗口上限（token）
+   *
+   * 截断判定 / 软上限 / 召回注入警戒线均内读本字段，更新即刻生效。
+   *
+   * @param tokens 新窗口 token 数
+   */
+  setMaxContextTokens(tokens: number): void {
+    this.maxContextTokens = tokens;
   }
 
   get truncationCount(): number {

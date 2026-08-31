@@ -186,6 +186,16 @@ describe('ContextManager.shouldTruncate()', () => {
     ];
     expect(manager.shouldTruncate(messages)).toBe(false);
   });
+
+  it('setMaxContextTokens 放大窗口后：超阈判定随新窗口同步（模型热切换）', () => {
+    const smallManager = createContextManager(50);
+    const messages = createLongMessages(4, 100); // 每条 ~34 token，4 条 > 50
+    // 小窗口：触发截断
+    expect(smallManager.shouldTruncate(messages)).toBe(true);
+    // 热切换到 200K 大窗口：同一批消息不再触发截断（setMaxContextTokens 立即生效）
+    smallManager.setMaxContextTokens(200_000);
+    expect(smallManager.shouldTruncate(messages)).toBe(false);
+  });
 });
 
 // ─── truncateMessages() ──────────────────────────────────

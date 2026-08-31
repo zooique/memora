@@ -1372,6 +1372,66 @@ describe('Agent · setProvider() / setBackgroundProvider() · 切换 Provider', 
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：setContextWindow() · 上下文窗口上限热更新
+// ═══════════════════════════════════════════════════════════════
+
+describe('Agent · setContextWindow() · 上下文窗口上限热更新', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-cw-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-cw-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-cw-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('setContextWindow 后：下一轮 prepare 占用快照总容量按新窗口计算（ContextPreparer 同步）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+    // 先跑一轮：占用快照按构造期默认窗口（120K）落定
+    await agent.chatSync('你好');
+    expect(agent.getMetrics().context.occupancy?.totalTokens).toBe(120_000);
+
+    // 热更新到 200K → 下一轮 prepare 预算与占用快照随新窗口重算
+    agent.setContextWindow(200_000);
+    await agent.chatSync('继续');
+    expect(agent.getMetrics().context.occupancy?.totalTokens).toBe(200_000);
+  });
+
+  it('setContextWindow 对话进行中禁止更新（与 setProvider 同守卫）', async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    // 启动流式生成，消费首个 chunk 确保进入 busy 状态
+    const gen = agent.chat('第一轮');
+    expect((await gen.next()).done).toBe(false);
+    expect(agent.isBusy).toBe(true);
+
+    // busy 期间调用 → 同步抛「对话繁忙」
+    expect(() => agent!.setContextWindow(200_000)).toThrow(/对话繁忙/);
+
+    // 收尾：drain 释放锁
+    for await (const {} of gen) {
+      // 消费 generator
+    }
+    expect(agent.isBusy).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：archiveMode · 二态归档模式
 // ═══════════════════════════════════════════════════════════════
 

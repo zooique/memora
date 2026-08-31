@@ -1302,6 +1302,27 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     logger.info({ provider: this.#provider.name }, 'Provider 已切换');
   }
 
+  /**
+   * 运行时更新上下文窗口上限（token）
+   *
+   * 模型热切换配套：同步三处装配期值拷贝（loop 截断/软上限、ContextManager 阈值、
+   * ContextPreparer 预算与占用快照），全部对新窗口即刻生效。对话进行中禁止更新
+   * （与 setProvider 同守卫）。
+   *
+   * @param tokens 新窗口 token 数
+   */
+  setContextWindow(tokens: number): void {
+    this.assertNotBusy('切换上下文窗口');
+    this.#config.maxContextTokens = tokens;
+    if (this.loop) {
+      this.loop.setContextWindow(tokens);
+    }
+    if (this.internals.contextPreparer) {
+      this.internals.contextPreparer.setMaxContextTokens(tokens);
+    }
+    logger.info({ maxContextTokens: tokens }, '上下文窗口上限已更新');
+  }
+
   setBackgroundProvider(provider: LlmProvider | null): void {
     // 与 setProvider 一致，对话进行中禁止切换后台 Provider
     this.assertNotBusy('切换后台 Provider');

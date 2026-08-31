@@ -86,6 +86,19 @@ export class ContextPreparer {
   }
 
   /**
+   * 运行时更新上下文窗口上限（token）
+   *
+   * 模型热切换（Agent.setContextWindow）后调用：deps.config.maxContextTokens 为装配期
+   * 值拷贝，须显式同步——否则每轮 prepare 的预算派生（computeContextBudget）与占用快照
+   * （recordOccupancy 的 totalTokens / outputReserve / free）仍用旧窗口。
+   *
+   * @param tokens 新窗口 token 数
+   */
+  setMaxContextTokens(tokens: number): void {
+    this.deps.config.maxContextTokens = tokens;
+  }
+
+  /**
    * 记忆召回 + 固定轮次注入
    *
    * 策略控制：'none' 模式跳过实际召回；contextAssembly 决定语义召回（query/hybrid）与
