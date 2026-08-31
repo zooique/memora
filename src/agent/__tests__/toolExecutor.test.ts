@@ -553,6 +553,38 @@ describe('工具执行器（6 个工具）', () => {
         const lines = result.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('（'));
         expect(lines.length).toBe(50);
       });
+
+      // K-1 档位跳变边界回归（2026-08-31）：逐个锁定 SEARCH_BUDGET_TIERS 的 minRemaining 边界及其下沿。
+      // 用例取相对值而非 100：manyFilesProvider 仅生成 50 个文件，故「充裕档 cap100」不额外下探时有效结果恒为 min(50, cap)=50，
+      // 用 50 与下探档（30/10/3）在结果行数上区分开，验证档位切换真实触发且阈值精确。
+      it.each([
+        // [剩余预算, 期望生效的结果条数上限] —— 对应档位（充裕100 / 中30 / 紧10 / 极紧3）
+        [40_000, 50], // 恰好充裕档 minRemaining：cap100 > 50 文件，不额外下探
+        [39_999, 30], // 跌破 40000 → 中档 cap30
+        [16_000, 30], // 恰好中档 minRemaining：cap30
+        [15_999, 10], // 跌破 16000 → 紧档 cap10
+        [6_000, 10], // 恰好紧档 minRemaining：cap10
+        [5_999, 3], // 跌破 6000 → 极紧档 cap3
+      ])('预算档位跳变边界：剩余 %s 时结果条数上限为 %s', async (budget, expected) => {
+        const exec = new ToolExecutor(
+          tmpProject,
+          security,
+          index,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          manyFilesProvider,
+        );
+        exec.setBudgetProvider(() => budget);
+        const result = await exec.execute(
+          'search_project',
+          JSON.stringify({ mode: 'name', query: '**/*.ts', maxResults: '50' }),
+        );
+        // 结果行 = 路径行（排除截断诚实化提示行「（结果可能已截断…）」）
+        const lines = result.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('（'));
+        expect(lines.length).toBe(expected);
+      });
     });
   });
 
