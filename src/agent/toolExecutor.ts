@@ -14,7 +14,7 @@ import { logger } from '@/logging/logger.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
+import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
@@ -22,6 +22,8 @@ import type { IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
+import type { IProjectSearchProvider } from '@/project-search/types.js';
+import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
@@ -48,6 +50,14 @@ const RUN_CODE_RESULT_MAX_LEN = 20_000;
 // ─── run_skill_script 注入防御常量 ─────────────────
 /** run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN） */
 const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
+
+// ─── search_project 注入防御常量 ─────────────────
+/** search_project 的 query 最大长度（防超长 glob/关键词滥用） */
+const PROJECT_SEARCH_QUERY_MAX_LEN = 500;
+/** search_project 的 include/exclude glob 最大长度（防超长模式滥用） */
+const PROJECT_SEARCH_GLOB_MAX_LEN = 1000;
+/** search_project 单次返回最大条数（防结果刷屏撑爆上下文；对齐 list_dir 的条目上限） */
+const PROJECT_SEARCH_RESULT_MAX_LEN = 100;
 
 // ─── read_skill / read_resource 注入防御常量 ─────────────────
 /** read_skill 技能正文单次返回最大长度（防超长技能正文注入上下文；静态文档对齐 read_file 的 FILE_READ_MAX_LEN） */
@@ -175,6 +185,9 @@ export class ToolExecutor {
   /** 代码执行提供者（可选，注入时启用 run_code 工具） */
   private readonly codeExecutionProvider?: ICodeExecutionProvider;
 
+  /** 项目搜索提供者（可选，注入时启用 search_project 工具；等价 IDE 全局搜索） */
+  private readonly projectSearchProvider?: IProjectSearchProvider;
+
   /** 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
   planManager?: {
     writePlan: (
@@ -252,10 +265,13 @@ export class ToolExecutor {
     fetchProvider?: IFetchProvider,
     /** 代码执行提供者（可选，不传则不启用 run_code 工具） */
     codeExecutionProvider?: ICodeExecutionProvider,
+    /** 项目搜索提供者（可选，不传则不启用 search_project 工具） */
+    projectSearchProvider?: IProjectSearchProvider,
   ) {
     this.webSearchProvider = webSearchProvider;
     this.fetchProvider = fetchProvider;
     this.codeExecutionProvider = codeExecutionProvider;
+    this.projectSearchProvider = projectSearchProvider;
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
     // 构造参数仅用于初始化 BuiltinToolHandlers，ToolExecutor 自身不再持有这些引用
     this.builtinHandlers = new BuiltinToolHandlers(
@@ -385,10 +401,12 @@ export class ToolExecutor {
     // - web_search：webSearchProvider 注入时
     // - web_fetch：fetchProvider 注入时（与 web_search 构成搜索→抓取闭环）
     // - run_code：codeExecutionProvider 注入时
+    // - search_project：projectSearchProvider 注入时（项目内搜索，等价 IDE 全局搜索）
     let baseTools = BUILTIN_TOOLS;
     if (this.webSearchProvider) baseTools = [...baseTools, WEB_SEARCH_TOOL];
     if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
     if (this.codeExecutionProvider) baseTools = [...baseTools, RUN_CODE_TOOL];
+    if (this.projectSearchProvider) baseTools = [...baseTools, SEARCH_PROJECT_TOOL];
 
     // 白名单过滤（仅内置/条件工具受控；自定义工具不受限）
     const whitelisted = this.toolWhitelist
@@ -407,7 +425,7 @@ export class ToolExecutor {
    * 但 readonly 语义应覆盖全部内置写操作）。工具定义知识归本类，装配层经此取值而非重复 import。
    */
   get builtinDefinitions(): ToolDefinition[] {
-    return [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL];
+    return [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL];
   }
 
   /**
@@ -644,6 +662,68 @@ export class ToolExecutor {
         }
         const output = stdout || '(无输出)';
         return stderr ? `${output}\n[stderr] ${stderr}` : output;
+      }
+      case 'search_project': {
+        // search_project 由 ToolExecutor 直接处理（与 web_search/run_code 同侧，均为宿主注入能力）
+        // 使用注入的 projectSearchProvider 执行项目内搜索，带超时保护；失败由 safe* 降级
+        if (!this.projectSearchProvider) {
+          return '[ERR:TOOL:NOT_AVAILABLE] 错误：项目搜索功能未配置，请先注入 IProjectSearchProvider';
+        }
+        const query = strArg('query');
+        const mode = strArg('mode', 'name');
+        const exclude = strArg('exclude') || undefined;
+        const maxResults = Math.min(
+          Number.parseInt(strArg('maxResults', '20'), 10) || 20,
+          PROJECT_SEARCH_RESULT_MAX_LEN,
+        );
+        // 参数校验：query/exclude 当不可信输入，做长度上限（防超长 glob/关键词滥用）
+        if (query.length > PROJECT_SEARCH_QUERY_MAX_LEN) {
+          throw toolError(
+            'search_project query 参数过长',
+            `query 超过 ${PROJECT_SEARCH_QUERY_MAX_LEN} 字符上限`,
+            ['缩短搜索词'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if ((exclude?.length ?? 0) > PROJECT_SEARCH_GLOB_MAX_LEN) {
+          throw toolError(
+            'search_project exclude 参数过长',
+            `exclude 超过 ${PROJECT_SEARCH_GLOB_MAX_LEN} 字符上限`,
+            ['缩短 exclude 模式'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if (mode !== 'name' && mode !== 'content') {
+          return `[ERR:INVALID_ARG] 不支持的搜索模式 "${mode}"，仅支持 name/content`;
+        }
+        if (mode === 'content') {
+          if (!query) {
+            return '[ERR:INVALID_ARG] content 模式需要 query 内容关键词';
+          }
+          const textMatches = await safeSearchProjectText(this.projectSearchProvider, {
+            pattern: query,
+            exclude,
+            maxResults,
+          });
+          if (textMatches.length === 0) {
+            return `（未在项目中找到包含 "${query}" 的文件）`;
+          }
+          return textMatches
+            .map((m, i) => `${i + 1}. ${m.path}${m.line ? `:${m.line}` : ''}${m.preview ? ` — ${m.preview}` : ''}`)
+            .join('\n');
+        }
+        // name 模式：query 为文件名 glob（省略时列出项目全部文件）
+        const fileMatches = await safeSearchProjectFiles(this.projectSearchProvider, {
+          query: query || '**/*',
+          exclude,
+          maxResults,
+        });
+        if (fileMatches.length === 0) {
+          return `（未在项目中找到匹配 "${query || '**/*'}" 的文件）`;
+        }
+        return fileMatches.map((m, i) => `${i + 1}. ${m.path}`).join('\n');
       }
       case 'task_table_write': {
         // 写入任务表（overwrite / append / update）；steps 每项可选 rolePack（会议表层装配角色）

@@ -442,6 +442,7 @@ import type { MessageRole } from '@/memory/types.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 import type { IFetchProvider } from '@/web-fetch/types.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
+import type { IProjectSearchProvider } from '@/project-search/types.js';
 import type { ProviderRouter } from '@/llm/types.js';
 // 宿主装配级策略覆盖类型（AgentOptions.strategyOverride）：引用角色包行为策略类型
 import type { BehaviorStrategy } from '@/role-pack/types.js';
@@ -575,6 +576,8 @@ export interface AgentOptions {
   fetchProvider?: IFetchProvider;
   /** 代码执行提供者（可选，不配则不启用 run_code；执行器与隔离等级由宿主实现） */
   codeExecutionProvider?: ICodeExecutionProvider;
+  /** 项目搜索提供者（可选，不配则不启用 search_project；等价 IDE 全局搜索，由宿主实现） */
+  projectSearchProvider?: IProjectSearchProvider;
   /** 文件层前置条件断言回调（可选，未注入则完全降级为现状） */
   fileConsistencyCheck?: FileConsistencyCheck;
   /**

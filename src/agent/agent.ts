@@ -211,6 +211,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       webSearchProvider: opts.webSearchProvider,
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
+      projectSearchProvider: opts.projectSearchProvider,
       fileConsistencyCheck: opts.fileConsistencyCheck,
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
@@ -1241,6 +1242,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       webSearchProvider: this.#config.webSearchProvider,
       fetchProvider: this.#config.fetchProvider,
       codeExecutionProvider: this.#config.codeExecutionProvider,
+      projectSearchProvider: this.#config.projectSearchProvider,
       vectorStore: this.#config.vectorStore,
       recallExcludeSources: this.#config.recallExcludeSources,
       existingSkillManager: this.skillManager,

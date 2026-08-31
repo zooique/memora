@@ -84,6 +84,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   // run_code：任意代码执行，有副作用（计算/IO），如实标记非幂等（重复执行结果不可预期）
   web_fetch: 'idempotent',
   run_code: 'non-idempotent',
+  // search_project：读操作（只读搜索），天然幂等 ✅
+  search_project: 'idempotent',
 };
 
 /**
@@ -226,6 +228,33 @@ export const RUN_CODE_TOOL: ToolDefinition = {
       code: { type: 'string', description: '要执行的代码内容' },
     },
     required: ['language', 'code'],
+  },
+};
+
+/**
+ * search_project 工具定义（独立导出，条件性包含）
+ *
+ * 与 BUILTIN_TOOLS 分离的原因同 web_search：仅在宿主注入了 IProjectSearchProvider 时才暴露给 LLM。
+ * 项目内搜索（等价 IDE 全局搜索）：按文件名 glob 或按内容全文关键词定位项目文件，
+ * 命中路径后再用 read_file 精读。这是「LLM 感知当前项目」的入口——回答「项目里有什么/某文件在哪/哪里用到某词」。
+ */
+export const SEARCH_PROJECT_TOOL: ToolDefinition = {
+  name: 'search_project',
+  description:
+    '在当前项目（当前工作区文件夹）中搜索文件。支持按文件名 glob（如 "**/*.ts"）或按内容全文关键词' +
+    '（如 "TODO"）搜索，返回匹配文件列表。当用户问「项目里有什么/有多少文件/某文件在哪/哪里用到了某个词」时使用；' +
+    '拿到文件路径后可再用 read_file 读取内容。省略 query 时列出项目全部文件（受 maxResults 限制）。',
+  // 读操作：readonly 模式下保留（对齐 read_file / list_dir）
+  readonly: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: '文件名 glob（mode=name，如 "**/*.ts"）或内容关键词（mode=content，如 "TODO"）；省略时列出项目文件清单' },
+      mode: { type: 'string', description: '"name"（按文件名搜索，默认）或 "content"（按内容全文搜索）' },
+      exclude: { type: 'string', description: '排除 glob/路径（可选，如 "**/node_modules/**" 或 "docs"）' },
+      maxResults: { type: 'string', description: '返回结果数量上限，默认 "20"，最大 "100"' },
+    },
+    required: [],
   },
 };
 

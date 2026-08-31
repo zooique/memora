@@ -15,6 +15,7 @@ import {
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
   RUN_CODE_TOOL,
+  SEARCH_PROJECT_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
@@ -290,6 +291,60 @@ describe('builtinTools · RUN_CODE_TOOL（通用计算/验证底座）', () => {
       },
     };
     expect(isValid.name).toBe(RUN_CODE_TOOL.name);
+  });
+});
+
+describe('builtinTools · SEARCH_PROJECT_TOOL（项目内搜索，等价 IDE 全局搜索）', () => {
+  it('应定义 search_project 工具', () => {
+    expect(SEARCH_PROJECT_TOOL).toBeDefined();
+    expect(SEARCH_PROJECT_TOOL.name).toBe('search_project');
+  });
+
+  it('应标记为只读工具（readonly=true，只读搜索不修改文件）', () => {
+    expect(SEARCH_PROJECT_TOOL.readonly).toBe(true);
+  });
+
+  it('应有非空 description 且提及项目/搜索语义', () => {
+    expect(SEARCH_PROJECT_TOOL.description).toBeTruthy();
+    expect(SEARCH_PROJECT_TOOL.description.length).toBeGreaterThan(10);
+    expect(SEARCH_PROJECT_TOOL.description).toContain('搜索');
+    expect(SEARCH_PROJECT_TOOL.description).toContain('read_file');
+  });
+
+  it('parameters.type 应为 "object"', () => {
+    expect(SEARCH_PROJECT_TOOL.parameters.type).toBe('object');
+  });
+
+  it('应定义 query/mode/exclude/maxResults 参数', () => {
+    const props = SEARCH_PROJECT_TOOL.parameters.properties;
+    expect(props.query).toBeDefined();
+    expect(props.mode).toBeDefined();
+    expect(props.exclude).toBeDefined();
+    expect(props.maxResults).toBeDefined();
+    expect(props.query!.type).toBe('string');
+    expect(props.mode!.type).toBe('string');
+  });
+
+  it('所有参数均应可选（不在 required 中，query 省略时列出项目文件清单）', () => {
+    expect(SEARCH_PROJECT_TOOL.parameters.required).toHaveLength(0);
+  });
+
+  it('search_project 应为幂等（读操作，天然幂等）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.search_project).toBe('idempotent');
+  });
+
+  it('应符合 ToolDefinition 类型约束', () => {
+    const isValid: ToolDefinition = {
+      name: SEARCH_PROJECT_TOOL.name,
+      description: SEARCH_PROJECT_TOOL.description,
+      readonly: SEARCH_PROJECT_TOOL.readonly,
+      parameters: {
+        type: SEARCH_PROJECT_TOOL.parameters.type,
+        properties: SEARCH_PROJECT_TOOL.parameters.properties,
+        required: SEARCH_PROJECT_TOOL.parameters.required,
+      },
+    };
+    expect(isValid.name).toBe(SEARCH_PROJECT_TOOL.name);
   });
 });
 

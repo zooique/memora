@@ -31,6 +31,8 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'web:fetch': ['web_fetch'],
   // 通用计算域（宿主注入 ICodeExecutionProvider 才真正暴露，能力声明本身只控制暴露面）
   'code:execute': ['run_code'],
+  // 项目搜索域（宿主注入 IProjectSearchProvider 才真正暴露，等价 IDE 全局搜索）
+  'project:search': ['search_project'],
   // 记忆域
   'memory:recall': ['search_memories'],
   // 任务域

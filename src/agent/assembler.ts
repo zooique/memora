@@ -169,6 +169,7 @@ type AssembleRuntimeParams = Pick<
   | 'webSearchProvider'
   | 'fetchProvider'
   | 'codeExecutionProvider'
+  | 'projectSearchProvider'
   | 'vectorStore'
   | 'recallExcludeSources'
   | 'strategyOverride'
@@ -653,6 +654,7 @@ export async function assembleComponents(
     sessionStore,
     input.fetchProvider,
     input.codeExecutionProvider,
+    input.projectSearchProvider,
   );
 
   // ── 会话管理器（先于 loop 创建）──

@@ -109,6 +109,20 @@ export type {
 } from '@/code-exec/types.js';
 // safeExecuteCode：带超时保护的执行包装（宿主可复用）
 export { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
+
+// ─── 项目搜索导出（等价 IDE 全局搜索） ─────────────────────────
+// IProjectSearchProvider 接口：宿主项目可实现此接口注入项目内搜索（VS Code 用 workspace.findFiles/findTextInFiles）
+export type {
+  IProjectSearchProvider,
+  ProjectFileMatch,
+  ProjectFileSearchOptions,
+  ProjectTextMatch,
+  ProjectTextSearchOptions,
+} from '@/project-search/types.js';
+// safeSearchProjectFiles/safeSearchProjectText：带超时保护的项目搜索包装（宿主可复用）
+export { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
+// SEARCH_PROJECT_TOOL：条件性工具定义（宿主注入 IProjectSearchProvider 后暴露给 LLM）
+export { SEARCH_PROJECT_TOOL } from '@/agent/builtinTools.js';
 // 项目注册表 + 锁文件管理：宿主可直接使用或通过 ProjectManager 间接委托
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';

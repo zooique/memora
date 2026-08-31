@@ -82,18 +82,21 @@ describe('工具执行器（6 个工具）', () => {
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 15 + 条件 3（web_search / web_fetch / run_code）
-      expect(names.length).toBe(18);
+      // 始终内置 15 + 条件 4（web_search / web_fetch / run_code / search_project）
+      expect(names.length).toBe(19);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
       expect(names).toContain('run_code');
+      expect(names).toContain('search_project');
       expect(names).toContain('compress_context');
       // 只读闸语义完整性：写/执行工具非只读（falsy），读工具只读（含 web_search 4-2 修复）
       expect(defs.find((t) => t.name === 'write_file')!.readonly).toBeFalsy();
       expect(defs.find((t) => t.name === 'run_code')!.readonly).toBeFalsy();
       expect(defs.find((t) => t.name === 'web_search')!.readonly).toBe(true);
       expect(defs.find((t) => t.name === 'web_fetch')!.readonly).toBe(true);
+      // search_project 只读搜索，readonly 语义覆盖
+      expect(defs.find((t) => t.name === 'search_project')!.readonly).toBe(true);
     });
 
     it('每个工具应有 name + description + parameters（含 required 数组）', () => {
@@ -341,6 +344,133 @@ describe('工具执行器（6 个工具）', () => {
       await expect(execWithCode.execute('run_code', JSON.stringify({ language: 'node' }))).rejects.toThrow(
         '工具参数缺失',
       );
+    });
+  });
+
+  describe('search_project（项目内搜索，等价 IDE 全局搜索）', () => {
+    const mockProjectProvider = {
+      async searchFiles(options: { query?: string; maxResults?: number }) {
+        // name 模式：按 query 过滤（省略 query 时列出全部）；返回 { path } 对象数组
+        const all = [
+          { path: 'src/index.ts' },
+          { path: 'src/utils.ts' },
+          { path: 'README.md' },
+        ];
+        if (!options.query || options.query === '**/*') return all.slice(0, options.maxResults);
+        if (options.query === '**/*.ts') return [all[0]!, all[1]!];
+        return [];
+      },
+      async searchText(options: { pattern: string; maxResults?: number }) {
+        if (options.pattern === 'export') {
+          return [
+            { path: 'src/index.ts', line: 1, preview: 'export const x = 1;' },
+            { path: 'src/utils.ts', line: 1, preview: 'export const y = 2;' },
+          ];
+        }
+        return [];
+      },
+    };
+
+    describe('未注入提供者', () => {
+      it('list 不应包含 search_project 工具', () => {
+        const names = executor.list.map((t) => t.name);
+        expect(names).not.toContain('search_project');
+      });
+
+      it('执行 search_project 应返回不可用提示', async () => {
+        const result = await executor.execute('search_project', JSON.stringify({}));
+        expect(result).toContain('NOT_AVAILABLE');
+      });
+    });
+
+    describe('注入提供者', () => {
+      let execWithProject: ToolExecutor;
+
+      beforeAll(() => {
+        execWithProject = new ToolExecutor(
+          tmpProject,
+          security,
+          index,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          mockProjectProvider,
+        );
+      });
+
+      it('注入 projectSearchProvider 后 list 应包含 search_project 工具', () => {
+        const names = execWithProject.list.map((t) => t.name);
+        expect(names).toContain('search_project');
+      });
+
+      it('name 模式按文件名 glob 搜索返回路径列表', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: '**/*.ts', mode: 'name' }),
+        );
+        expect(result).toContain('src/index.ts');
+        expect(result).toContain('src/utils.ts');
+        expect(result).not.toContain('README.md');
+      });
+
+      it('省略 query 时列出项目全部文件（受 maxResults 限制）', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ mode: 'name', maxResults: '2' }),
+        );
+        const lines = result.split('\n').filter((l) => l.trim() !== '');
+        expect(lines.length).toBe(2);
+        expect(result).toContain('src/index.ts');
+      });
+
+      it('content 模式按内容关键词搜索返回 路径:行号 定位', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: 'export', mode: 'content' }),
+        );
+        expect(result).toContain('src/index.ts:1');
+        expect(result).toContain('export const x = 1;');
+      });
+
+      it('content 模式未命中返回空结果提示', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: '不存在词', mode: 'content' }),
+        );
+        expect(result).toContain('未在项目中找到');
+      });
+
+      it('content 模式缺少 query 应返回 INVALID_ARG', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ mode: 'content' }),
+        );
+        expect(result).toContain('INVALID_ARG');
+      });
+
+      it('无效 mode 应返回 INVALID_ARG', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ mode: 'regex' }),
+        );
+        expect(result).toContain('INVALID_ARG');
+      });
+
+      it('超长 query 应抛 MemoraError（防超长 glob/关键词滥用）', async () => {
+        await expect(
+          execWithProject.execute('search_project', JSON.stringify({ query: 'x'.repeat(501) })),
+        ).rejects.toThrow('query 参数过长');
+      });
+
+      it('超长 exclude 应抛 MemoraError（防超长模式滥用）', async () => {
+        await expect(
+          execWithProject.execute(
+            'search_project',
+            JSON.stringify({ mode: 'name', exclude: 'e'.repeat(1001) }),
+          ),
+        ).rejects.toThrow('exclude 参数过长');
+      });
     });
   });
 
