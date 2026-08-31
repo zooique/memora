@@ -196,9 +196,9 @@
 | `web-search/webSearchProvider.ts`      | 🟢 已打磨 | `__tests__/webSearchProvider.test.ts`      | 搜索包装            |
 | `web-search/types.ts`                  | ⚪ 接口   | 无独立测试                                      | 搜索类型定义          |
 
-### 3.5 网页抓取 + 代码执行（web-fetch/ · code-exec/ · 外部世界工具族）
+### 3.5 网页抓取 + 代码执行 + 项目搜索（web-fetch/ · code-exec/ · project-search/ · 外部世界工具族）
 
-> **生长来源**：与 web-search 同属「连接外部世界」工具族（[tool-surface-roadmap.md](./tool-surface-roadmap.md)）——经 `IFetchProvider` / `ICodeExecutionProvider` 接口宿主注入、条件性暴露；web\_fetch 与 web\_search 成对构成「搜索→抓取」闭环，run\_code 提供通用计算/验证底座。内核零运行时依赖（沙箱由宿主 provider 决定）。
+> **生长来源**：与 web-search 同属「连接外部世界」工具族（[tool-surface-roadmap.md](./tool-surface-roadmap.md)）——经 `IFetchProvider` / `ICodeExecutionProvider` / `IProjectSearchProvider` 接口宿主注入、条件性暴露；web\_fetch 与 web\_search 成对构成「搜索→抓取」闭环，run\_code 提供通用计算/验证底座，search\_project 提供项目内搜索（等价 IDE 全局搜索，VS Code 宿主用 findFiles + Node fs 受限实现）。内核零运行时依赖（沙箱由宿主 provider 决定）。
 
 | 模块文件                                 | 状态     | 测试文件                                      | 质量说明                                               |
 | ------------------------------------ | ------ | ----------------------------------------- | -------------------------------------------------- |
@@ -207,8 +207,10 @@
 | `web-fetch/webFetchProvider.ts`      | 🟢 已打磨 | `__tests__/webFetchProvider.test.ts`      | safeFetch 超时保护包装                                   |
 | `code-exec/types.ts`                 | ⚪ 接口   | 无独立测试                                     | 执行类型定义（CodeExecutionResult/ICodeExecutionProvider） |
 | `code-exec/codeExecutionProvider.ts` | 🟢 已打磨 | `__tests__/codeExecutionProvider.test.ts` | safeExecuteCode 超时保护包装                             |
+| `project-search/types.ts`                 | ⚪ 接口   | 无独立测试                                     | 项目搜索类型定义（ProjectFileMatch/IProjectSearchProvider） |
+| `project-search/projectSearchProvider.ts` | 🟢 已打磨 | `__tests__/projectSearchProvider.test.ts`  | safeSearchProjectFiles/Text 超时保护包装                |
 
-> 集成侧：两模块工具定义（`WEB_FETCH_TOOL` / `RUN_CODE_TOOL`）登记在 `agent/builtinTools.ts`，条件暴露/执行分支在 `agent/toolExecutor.ts`（含 7 组注入/执行/冲突测试），接口注入链经 `agent/types.ts` → `agent/assembler.ts` → `agent/agent.ts` → `index.ts` 导出打通。
+> 集成侧：工具定义（`WEB_FETCH_TOOL` / `RUN_CODE_TOOL` / `SEARCH_PROJECT_TOOL`）登记在 `agent/builtinTools.ts`，条件暴露/执行分支在 `agent/toolExecutor.ts`（含注入/执行/冲突测试），接口注入链经 `agent/types.ts` → `agent/assembler.ts` → `agent/agent.ts` → `index.ts` 导出打通。
 
 ***
 
