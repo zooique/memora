@@ -95,6 +95,10 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
 /**
  * 递归遍历项目目录，对文本文件做内容匹配（受限：忽略目录 + 扫描文件数上限 + 单文件读取上限）
  *
+ * 忽略语义（G5 合并规则）：默认忽略（IGNORED_DIR_NAMES，如 node_modules）与调用方 exclude
+ * 是独立叠加关系（AND）——默认忽略目录无条件跳过，调用方无法通过 exclude 取消忽略；
+ * exclude 只额外过滤（匹配相对路径，支持 ** / * / ?，目录命中即跳整棵子树）。
+ *
  * @param root 项目根（用于相对路径 + 子目录递归）
  * @param current 当前遍历目录
  * @param re 内容匹配正则

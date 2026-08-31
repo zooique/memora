@@ -245,7 +245,7 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
     '（如 "TODO"）搜索，返回匹配文件列表。回答与项目代码/文件结构相关的问题前，若不确定答案，' +
     '应优先调用本工具定位相关文件，再用 read_file 精读内容——不要凭空猜测项目路径或内容。' +
     '典型场景：用户问「项目里有什么/有多少文件/某文件在哪/哪里用到了某个词」；' +
-    '省略 query 时列出项目全部文件（受 maxResults 限制）。',
+    '省略 query 时列出项目全部文件（受 maxResults 限制）。命中路径为相对项目根的路径，可直接传给 read_file 精读（勿拼绝对路径）。',
   // 读操作：readonly 模式下保留（对齐 read_file / list_dir）
   readonly: true,
   parameters: {

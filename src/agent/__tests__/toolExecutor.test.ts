@@ -479,6 +479,81 @@ describe('工具执行器（6 个工具）', () => {
         ).rejects.toThrow('exclude 参数过长');
       });
     });
+
+    describe('预算下探联动（G4）', () => {
+      // 模拟宿主返回大量结果（超预算档位 cap），用于验证下探截断
+      const manyFilesProvider = {
+        async searchFiles(options: { query?: string; maxResults?: number }) {
+          const all = Array.from({ length: 50 }, (_, i) => ({ path: `src/file${i}.ts` }));
+          return all.slice(0, options.maxResults);
+        },
+        async searchText() {
+          return [];
+        },
+      };
+
+      it('极紧预算（3000）时结果条数下探到 3 并提示截断', async () => {
+        const exec = new ToolExecutor(
+          tmpProject,
+          security,
+          index,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          manyFilesProvider,
+        );
+        exec.setBudgetProvider(() => 3000);
+        const result = await exec.execute(
+          'search_project',
+          JSON.stringify({ mode: 'name', query: '**/*.ts', maxResults: '100' }),
+        );
+        // 结果行 = 路径行（排除截断诚实化提示行「（结果可能已截断…）」）
+        const lines = result.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('（'));
+        expect(lines.length).toBe(3);
+        expect(result).toContain('结果可能已截断');
+      });
+
+      it('充裕预算（50000）时维持 LLM 请求的 maxResults（不额外下探）', async () => {
+        const exec = new ToolExecutor(
+          tmpProject,
+          security,
+          index,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          manyFilesProvider,
+        );
+        exec.setBudgetProvider(() => 50_000);
+        const result = await exec.execute(
+          'search_project',
+          JSON.stringify({ mode: 'name', query: '**/*.ts', maxResults: '50' }),
+        );
+        const lines = result.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('（'));
+        expect(lines.length).toBe(50);
+      });
+
+      it('未注入预算提供者时维持硬上限行为（无下探）', async () => {
+        const exec = new ToolExecutor(
+          tmpProject,
+          security,
+          index,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          manyFilesProvider,
+        );
+        // 不调用 setBudgetProvider：无预算信息，保持原行为
+        const result = await exec.execute(
+          'search_project',
+          JSON.stringify({ mode: 'name', query: '**/*.ts', maxResults: '50' }),
+        );
+        const lines = result.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('（'));
+        expect(lines.length).toBe(50);
+      });
+    });
   });
 
   describe('read_file', () => {

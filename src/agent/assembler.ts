@@ -580,6 +580,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
 
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
 
+  // G4 预算联动（2026-08-31）：search_project 执行期读取 loop 最近一轮 prepare 的剩余预算，
+  // 预算紧张时自动下探结果条数上限（loop 创建后注入，与 read_skill 同款时序解耦）
+  toolExec.setBudgetProvider(() => loop.getLastBudget()?.remainingTokens);
+
   return { loop, sessionArchiver, textPolisher, roundSummaryGenerator };
 }
 

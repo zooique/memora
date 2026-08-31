@@ -136,6 +136,18 @@ describe('VscodeProjectSearchProvider', () => {
       expect(result.some((m) => m.path.startsWith('node_modules'))).toBe(false);
     });
 
+    it('默认忽略 + exclude 独立叠加：exclude 无法取消默认忽略（G5 合并语义）', async () => {
+      // 即使显式用 exclude 试图"取消忽略" node_modules，默认忽略仍无条件生效（AND 叠加）
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'TODO', exclude: '!node_modules' });
+      expect(result.some((m) => m.path.startsWith('node_modules'))).toBe(false);
+      // 非默认忽略目录不受影响：docs 仍可通过 exclude 命中排除
+      mkdirSync(join(tmp, 'docs'), { recursive: true });
+      writeFileSync(join(tmp, 'docs/guide.md'), 'TODO guide\n', 'utf-8');
+      const filtered = await provider.searchText({ pattern: 'TODO', exclude: 'docs' });
+      expect(filtered.some((m) => m.path.startsWith('docs'))).toBe(false);
+    });
+
     it('无命中时返回空数组', async () => {
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: '绝不存在的关键词xyz' });

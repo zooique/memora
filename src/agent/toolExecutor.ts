@@ -59,6 +59,33 @@ const PROJECT_SEARCH_GLOB_MAX_LEN = 1000;
 /** search_project 单次返回最大条数（防结果刷屏撑爆上下文；对齐 list_dir 的条目上限；导出供宿主实现方对齐） */
 export const PROJECT_SEARCH_RESULT_MAX_LEN = 100;
 
+/**
+ * search_project 预算下探档位（G4 预算联动，2026-08-31）
+ *
+ * 剩余对话预算（token）越紧，结果条数上限越低——防止搜索结果撑爆上下文。
+ * 与 builtinTools 的 maxResults「默认 20 / 最大 100」语义叠加（取更小者）：
+ * LLM 传入的 maxResults 仍按其意愿生效，但不得超过当前预算档位的 cap。
+ * 档位从高到低遍历，首个满足 remaining >= minRemaining 的档位生效。
+ */
+const SEARCH_BUDGET_TIERS: ReadonlyArray<{ minRemaining: number; cap: number }> = [
+  { minRemaining: 40_000, cap: 100 }, // 预算充裕：维持内核硬上限
+  { minRemaining: 16_000, cap: 30 }, // 中等：降档，结果仍在可精读范围
+  { minRemaining: 6_000, cap: 10 }, // 偏紧：只保留最高价值命中
+  { minRemaining: 0, cap: 3 }, // 极紧：仅兜底条数
+];
+
+/**
+ * 按剩余对话预算下探 search_project 结果条数上限
+ *
+ * @param remainingTokens 剩余对话预算（token）；undefined 表示无预算信息（未装配 loop / 未 prepare）
+ * @returns 预算档位 cap；无预算信息时返回硬上限（保持原行为，不做下探）
+ */
+function computeBudgetCappedMaxResults(remainingTokens: number | undefined): number {
+  if (remainingTokens === undefined) return PROJECT_SEARCH_RESULT_MAX_LEN;
+  const tier = SEARCH_BUDGET_TIERS.find((t) => remainingTokens >= t.minRemaining);
+  return tier?.cap ?? SEARCH_BUDGET_TIERS.at(-1)!.cap;
+}
+
 // ─── read_skill / read_resource 注入防御常量 ─────────────────
 /** read_skill 技能正文单次返回最大长度（防超长技能正文注入上下文；静态文档对齐 read_file 的 FILE_READ_MAX_LEN） */
 const SKILL_CONTENT_MAX_LEN = 50_000;
@@ -187,6 +214,21 @@ export class ToolExecutor {
 
   /** 项目搜索提供者（可选，注入时启用 search_project 工具；等价 IDE 全局搜索） */
   private readonly projectSearchProvider?: IProjectSearchProvider;
+
+  /**
+   * 剩余对话预算提供者（可选，G4 预算联动，2026-08-31）
+   *
+   * 由 agent 装配时注入（读取 loop 最近一轮 prepare 的剩余预算），
+   * 供 search_project 在预算紧张时下探结果条数上限。
+   * undefined / 返回 undefined = 无预算信息，保持原行为（不做下探）。
+   * 与 read_skill 等回调同款注入模式（装配时序解耦：loop 创建后才可注入）。
+   */
+  private budgetProvider?: () => number | undefined;
+
+  /** 注入剩余对话预算提供者（装配时由 loop 创建后注入，见 assembler） */
+  setBudgetProvider(provider: () => number | undefined): void {
+    this.budgetProvider = provider;
+  }
 
   /** 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
   planManager?: {
@@ -676,9 +718,11 @@ export class ToolExecutor {
         const query = strArg('query');
         const mode = strArg('mode', 'name');
         const exclude = strArg('exclude') || undefined;
+        // 预算下探（G4）：LLM 传入的 maxResults 仍按其意愿生效，但不得超过预算档位 cap（防结果撑爆上下文）
         const maxResults = Math.min(
           Number.parseInt(strArg('maxResults', '20'), 10) || 20,
           PROJECT_SEARCH_RESULT_MAX_LEN,
+          computeBudgetCappedMaxResults(this.budgetProvider?.()),
         );
         // 参数校验：query/exclude 当不可信输入，做长度上限（防超长 glob/关键词滥用）
         if (query.length > PROJECT_SEARCH_QUERY_MAX_LEN) {

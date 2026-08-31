@@ -1703,6 +1703,16 @@ export class AgentLoop {
   }
 
   /**
+   * 获取最近一轮输入装配的上下文预算（G4 预算联动，2026-08-31）
+   *
+   * 供工具执行器在工具执行期读取剩余预算（search_project 预算下探）。
+   * 未 prepare 时返回 undefined（如纯工具单元测试场景）。
+   */
+  getLastBudget(): ContextBudget | undefined {
+    return this.lastBudget;
+  }
+
+  /**
    * 记录最近一次输入装配的上下文占用快照（prepare 期调用，④ 预算可视化）。
    * 存最新一轮真实用量供指标快照/输入区指示器透出，不跨轮累积。
    */
