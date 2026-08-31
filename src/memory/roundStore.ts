@@ -72,7 +72,7 @@ export type RoundStatus = 'pending' | 'complete' | 'error';
  * 思考阶段值（与 agent ThinkingPhase 同值的本地字面量，解耦依赖方向）
  *
  * 阶段与 Agent 闭环对应：recalling=召回 / llm_calling=调用模型 / processing=处理 /
- * planning,step,reporting=外部任务外循环 / archiving=归档。
+ * planning,step,reporting=Loop 编排（档2 externalTaskLoop）/ archiving=归档。
  */
 export type ProcessThinkingPhase =
   | 'recalling'

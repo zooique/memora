@@ -1,9 +1,13 @@
 /**
- * Agent Loop — Agent 的核心执行引擎
+ * 执行闭环 act 引擎（AgentLoop）— 单轮执行闭环「回答中」阶段的 LLM↔工具迭代引擎
  *
- * 模型自主决定何时推理、何时调用工具，循环直到输出纯文本。
- * 上下文 = 用户输入 + Agent 记忆召回结果 + Loop 工作记忆（召回结果
- * 由 Agent 层通过 processUserInput 的 recalledMemories 参数注入）。
+ * 概念定位（三层模型，见 [agent-design-philosophy.md §4.4](../../docs/architecture/agent-design-philosophy.md)）：
+ *   - 本类承载【档1 执行闭环】的 act 内部迭代（runIterationLoop：LLM 自主决定推理/调用工具，
+ *     循环直到输出纯文本）——是闭环的身体引擎，不构成独立层级；
+ *   - 【档2 Loop 编排】（多个执行闭环的编排：规划 → 步序列 → 收尾）由
+ *     seed/orchestrator 的 externalTaskLoop 承载，本类只是它逐轮驱动的 act 引擎。
+ *   - 上下文 = 用户输入 + Agent 记忆召回结果 + Loop 工作记忆（召回结果
+ *     由 Agent 层通过 processUserInput 的 recalledMemories 参数注入）。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
@@ -185,9 +189,10 @@ export class AgentLoop {
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
-  /** 外部任务循环上下文标志：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
+  /** Loop 编排上下文标志（档2 externalTaskLoop）：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
   private withinExternalTask = false;
-  /** 外循环组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
+
+  /** Loop 编排组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
   private externalTaskHeadRoundId = '';
   /** 主动提问回调（检测到 `[ASK]` 时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
@@ -486,7 +491,7 @@ export class AgentLoop {
     this.resetTurnState();
 
     try {
-      // 重新进入外循环，从保留的 this.messages 续跑
+      // 重新进入迭代引擎，从保留的 this.messages 续跑
       taskSucceeded = true;
       yield* this.runIterationLoop(signal);
     } catch (err) {
@@ -579,22 +584,22 @@ export class AgentLoop {
     this.pauseRequested = false;
   }
 
-  /** 标记当前是否处于外部任务循环上下文（规划/步开启，编排器收尾后清除） */
+  /** 标记当前是否处于 Loop 编排上下文（档2 externalTaskLoop：规划/步开启，编排器收尾后清除） */
   setWithinExternalTask(v: boolean): void {
     this.withinExternalTask = v;
   }
 
-  /** 查询是否处于外部任务循环上下文（续跑入口判断"是否继续推进任务链"的唯一依据） */
+  /** 查询是否处于 Loop 编排上下文（续跑入口判断"是否继续推进任务链"的唯一依据） */
   get isWithinExternalTask(): boolean {
     return this.withinExternalTask;
   }
 
-  /** 设置外循环组合溯源 head roundId（编排器规划后写入，续跑读取回指收尾摘要） */
+  /** 设置 Loop 编排组合溯源 head roundId（编排器规划后写入，续跑读取回指收尾摘要） */
   setExternalTaskHeadRoundId(roundId: string): void {
     this.externalTaskHeadRoundId = roundId;
   }
 
-  /** 读取外循环组合溯源 head roundId（续跑收尾时回指，保证摘要锚定"这次外部输入"） */
+  /** 读取 Loop 编排组合溯源 head roundId（续跑收尾时回指，保证摘要锚定"这次外部输入"） */
   get externalTaskHeadId(): string {
     return this.externalTaskHeadRoundId;
   }
@@ -622,7 +627,7 @@ export class AgentLoop {
     return AbortSignal.any(valid);
   }
 
-  /** 输出"达到最大迭代/步数预算"提示并结束（外循环兜底，多入口共享） */
+  /** 输出"达到最大迭代/步数预算"提示并结束（执行闭环 act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
     this._iterationLimitReached = true;
     yield { type: 'text', content: this.ui.maxIterationsReached };
@@ -646,8 +651,10 @@ export class AgentLoop {
   }
 
   /**
-   * 外循环主体：单轮闭环的重复（processUserInput/continueAfterPause 共享）。
-   * 每轮 = 一次 handleIteration；stepBudget 软上限与 maxIterations 兜底在此统一收敛。
+   * 单轮迭代引擎（执行闭环 act 内工具循环）：一轮 = 一次 handleIteration（processUserInput/continueAfterPause 共享）。
+   * stepBudget 软上限与 maxIterations 兜底在此统一收敛。
+   * 注：真正的「Loop 编排」（档2：多个执行闭环的编排，规划→步序列→收尾）由 seed/orchestrator 的
+   * externalTaskLoop 承载，不在本引擎内——本方法只服务单个执行闭环的 act 阶段。
    */
   private async *runIterationLoop(
     signal: AbortSignal | undefined,
@@ -786,7 +793,8 @@ export class AgentLoop {
     return yield* this._callAndRoute(iteration, gate);
   }
 
-  /** 中断检查：软暂停（pauseRequested，边界挂起保留 messages）与硬中止（signal aborted）统一在此裁决。
+  /** 中断检查：软暂停（迭口边界挂起，可续跑）、硬中止（signal aborted）与 block 插话消费在此裁决。
+   *  暂停统一在迭代边界挂起，由 consumeExecutionStream 统一收口翻态写 pauseMeta。
    *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
   private async *_handleInterrupt(
     signal: AbortSignal | undefined,

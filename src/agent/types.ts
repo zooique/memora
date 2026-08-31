@@ -11,7 +11,7 @@ export type ThinkingPhase =
   | 'processing'
   | 'archiving'
   | 'llm_calling'
-  // 外部任务外循环阶段标记：规划 / 第 N 步 / 汇报
+  // Loop 编排（档2 externalTaskLoop）阶段标记：规划 / 第 N 步 / 汇报
   | 'planning'
   | 'step'
   | 'reporting';
@@ -553,7 +553,7 @@ export interface AgentOptions {
   confirmWrites?: boolean;
   /** 向量存储（可选，提供时启用语义召回；宿主可注入任意实现） */
   vectorStore?: IVectorStore;
-  /** 召回排除的 source 标签（默认 ['persona','rule','skill']，已由 bootstrap 注入） */
+  /** 召回排除的 source 标签（默认 []：设定记忆已归角色包、不进记忆库，无需召回排除；SSOT 见 recallDefaults.DEFAULT_RECALL_EXCLUDE_SOURCES） */
   recallExcludeSources?: string[];
   /** 外部注入的存储实例（不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;

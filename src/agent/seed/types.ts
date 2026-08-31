@@ -107,7 +107,7 @@ export interface SeedDeps {
  * input = 原始输入；recalledMemories = 召回记忆（注入 loop 为 system 消息）；
  * aborted = 回答前阶段已中断（调用方应 yield aborted chunk 并返回，不进回答中）；
  * meetingPreset = 本次会议触发已由系统确定性预置任务表（见 ADR-028 收敛补记），
- *   调用方（orchestrator）据此强制进入外部任务闭环直跑步序列，跳过规划闭环。
+ *   调用方（orchestrator）据此强制进入 Loop 编排（档2）直跑步序列，跳过规划闭环。
  * roundId 不在此结果中——round 归属以 loop 的 currentRoundId 为单一真理源。
  */
 export interface SeedPrepareResult {

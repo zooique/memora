@@ -1,5 +1,5 @@
 /**
- * 种子闭环编排器 — 最小执行闭环的唯一编排真理源（prepare → act → reflect → handoff）
+ * 种子闭环编排器 — 三层模型的结构真理源（执行闭环 ⊂ Loop ⊂ 目标模式，见 [agent-design-philosophy.md §4.4](../../../docs/architecture/agent-design-philosophy.md)）
  *
  * 「如何串联一个执行闭环」全部收在此处，门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
  *
@@ -7,6 +7,12 @@
  *   - runChat   （对话 Trigger）   完整闭环：prepare → act(processUserInput) → reflect → handoff
  *   - runEvent  （SessionEvent）   prepare → 任务表预判注入 → act(processEvent) → reflect → handoff
  *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
+ *
+ * 概念澄清（注释历史错位的收敛，零逻辑变更）：
+ *   - 本文件的 externalTaskLoop / completeExternalTask / runStepSequence 是【档2 Loop 编排】
+ *    （复杂输入 → 规划闭环 + 每步一执行闭环序列 + 收尾汇报）。"外部任务/外循环"是历史命名残留，
+ *    语义等价于"Loop 编排"；不涉及档3 目标模式（远期，未实现）。
+ *   - 档1 执行闭环的 act 阶段内部迭代由 loop.ts 的 runIterationLoop 承载（内循环），不在此文件。
  *
  * 刻意不做「单 run() + mode 标志」——三条路径的真实差异（runEvent 有任务表注入、runResume
  * 无 prepare/无 handoff）若硬塞进一个开关，会落入场景特化补丁反模式。
@@ -39,15 +45,15 @@ const TASK_TABLE_HINT =
   '任务表仅作参考，LLM 可自行决定执行顺序。';
 
 /**
- * 外部任务规划闭环提示（完整外循环）：复杂任务第一步只调查 + 建任务表，不执行步骤。
- * 规划后由 orchestrator 外循环按 pending 步骤逐个拉起独立闭环，避免规划与执行在一次闭环内挤在一起。
+ * Loop 编排规划闭环提示（档2）：复杂任务第一步只调查 + 建任务表，不执行步骤。
+ * 规划后由 orchestrator 的 Loop 编排按 pending 步骤逐个拉起独立执行闭环，避免规划与执行在一次闭环内挤在一起。
  */
 const PLAN_ONLY_HINT =
   '这是一个需要多步完成的复杂任务。请先充分调查并建立任务表（task_table_write），' +
   '明确列出待完成的步骤，但【暂时不要执行任何步骤】。本回合只做规划与建表。';
 
 /**
- * 单任务步骤闭环的提示（完整外循环）：给定当前待执行步骤，让该闭环专注解这一步骤。
+ * Loop 编排单步执行闭环的提示（档2）：给定当前待执行步骤，让该闭环专注解这一步骤。
  * @param description 步骤描述（从任务表 pending 步骤读取）
  */
 function stepPrompt(description: string): string {
@@ -90,7 +96,7 @@ export class SeedOrchestrator {
     }
 
     // 会议机制（S5）确定性触发：系统已预置任务表 → 跳过规划闭环，直调 completeExternalTask 跑步序列 + 收尾。
-    // 复用既有外部任务执行机（步闭环 + refreshAssemblyForRolePack 逐成员硬切换），不引入会议引擎（ADR-028 收敛补记）。
+    // 复用既有 Loop 编排执行机（步闭环 + refreshAssemblyForRolePack 逐成员硬切换），不引入会议引擎（ADR-028 收敛补记）。
     if (prepared.meetingPreset) {
       const parts = this.deps.getParts();
       const headRoundId = parts.loop.getCurrentRoundId();
@@ -105,14 +111,15 @@ export class SeedOrchestrator {
       return;
     }
 
-    // 难度分级（回答前）：复杂且启用外部任务循环 → 外循环（规划 + 每步一闭环 + 汇报）；否则单闭环直接答
+    // 难度分级（回答前，档2 能力）：复杂且启用 Loop 编排 → externalTaskLoop（规划 + 每步一闭环 + 汇报）；否则单闭环直接答。
+    // 【注意】档2 Loop 编排天然包含档1：简单输入直接走下方 runChat 单闭环路径，无需宿主额外开关。
     const difficulty = await this.difficulty.classify(input);
     const taskLoopLimit = resolveTaskLoopLimit(
       resolveActiveStrategy(this.deps.getParts().rolePackManager, this.deps.strategyOverride),
     );
     if (difficulty === 'complex' && taskLoopLimit > 0) {
       yield* this.externalTaskLoop(input, prepared, signal);
-      // 外部任务循环完成后，检查 loop 是否因迭代上限而终止（兼容 mock）
+      // Loop 编排完成后，检查 loop 是否因迭代上限而终止（兼容 mock）
       const parts = this.deps.getParts();
       const forceWait = parts.loop.isIterationLimitReached?.() ?? false;
       yield* this.handoff(true, forceWait);
@@ -205,7 +212,7 @@ export class SeedOrchestrator {
     // 续跑与 chat 的唯一差异是无回答前——但用户回答（input）不能只活在 loop 内存，
     // 必须写入历史轮才能跨重启可回溯、摘要可溯源。当前轮 ID 提前分配并与 loop 对齐，
     // 使 continueAfterPause 的内存注入与 act 尾的 appendAssistant 落在同一轮上。
-    // 外循环续跑（completeExternalTask）有自己的组合溯源轮，不在此干预。
+    // Loop 编排续跑（completeExternalTask）有自己的组合溯源轮，不在此干预。
     if (input?.trim() && !parts.loop.isWithinExternalTask) {
       const roundId = parts.loop.allocRoundId();
       parts.loop.setCurrentRoundId(roundId);
@@ -220,13 +227,13 @@ export class SeedOrchestrator {
     const acted = yield* this.act(produce);
     if (acted.failed || acted.aborted || acted.paused) return;
 
-    // 外部任务循环续跑整链：续完当前循环后，若仍处于外循环上下文 → 推进剩余步 + 收尾汇报
+    // Loop 编排续跑整链：续完当前闭环后，若仍处于 Loop 编排上下文（withinExternalTask）→ 推进剩余步 + 收尾汇报
     // （摘要统一由 completeExternalTask 收尾产出，保持摘要↔外部输入恒 1:1，不在此重复产摘要）
     if (parts.loop.isWithinExternalTask) {
       yield* this.completeExternalTask(signal, input ?? '', acted.content);
       return;
     }
-    // 普通续跑（非外循环）：答后摘要
+    // 普通续跑（非 Loop 编排）：答后摘要
     void this.backgroundReflect(input ?? '', acted.content);
   }
 
@@ -347,8 +354,8 @@ export class SeedOrchestrator {
    *  已由 loop 的 stepBudget/maxIterations 在单次 chat() 内消费完，绝不外泄给宿主（宿主只是插座，
    *  不应被要求"再跑一轮"。宿主看到的 loop 意味着内核循环引擎漏到宿主层，属反模式）。
    *  故对外 handoff 恒为 'wait'（把控制权交还用户）或 'end'（任务完成）。
-   *  @param externalTaskReported 本闭环是否为外部任务收尾（runChat 外循环路径传 true，
-   *    供宿主区分"普通答完"与"外部任务收敛汇报完"，以对齐 poll-round-summary 时机）
+   *  @param externalTaskReported 本闭环是否为 Loop 编排收尾（runChat 复杂路径传 true，
+   *    供宿主区分"普通答完"与"复杂任务收敛汇报完"，以对齐 poll-round-summary 时机）
    *  @param forceWait 是否强制返回 wait（迭代上限时启用，防止误导宿主自动续跑） */
   private async *handoff(
     externalTaskReported = false,
@@ -373,13 +380,13 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 外部任务驱动外循环（完整外循环）：单个复杂输入 → 多闭环组合。
+   * 档2 Loop 编排（externalTaskLoop）：单个复杂输入 → 多闭环组合。
    *
    * 序列：规划闭环（只建任务表）→ [completeExternalTask] 步序列 + 收尾汇报。
    *   - 规划闭环：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步闭环重复执行）；
    *     规划在迭代边界软暂停 → 现场保留，续跑完规划后继续整链。
    *   - 步序列 + 收尾由 [completeExternalTask] 承担（可重入，runChat 规划后与 runResume 续跑共用）。
-   *   - 进入外循环上下文时持久 head roundId（loop），续跑收尾摘要回指——组合溯源跨暂停保留。
+   *   - 进入 Loop 编排上下文时持久 head roundId（loop），续跑收尾摘要回指——组合溯源跨暂停保留。
    *
    * @param input 用户输入
    * @param prepared 回答前结果（recalledMemories 供规划闭环注入）
@@ -397,7 +404,7 @@ export class SeedOrchestrator {
     // 确保 round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源，跨暂停-续跑保留）。
     const headRoundId = parts.loop.getCurrentRoundId();
     parts.loop.setExternalTaskHeadRoundId(headRoundId);
-    // 进入外循环上下文（规划 + 步序列 + 收尾）——续跑入口据此决定是否继续推进任务链
+    // 进入 Loop 编排上下文（规划 + 步序列 + 收尾）——续跑入口据此决定是否继续推进任务链
     parts.loop.setWithinExternalTask(true);
 
     // 1) 规划闭环：只调查 + 建任务表，不执行
@@ -429,7 +436,7 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 可重入推进外部任务链（runChat 复杂路径规划后 / runResume 续跑共用）。
+   * 可重入推进 Loop 编排任务链（runChat 复杂路径规划后 / runResume 续跑共用）。
    *
    * 从下一个 pending 步执行步闭环序列直至收敛收尾汇报：
    *   - 每个步闭环独立 roundId（消息溯源/互斥排除隔离），不产摘要（摘要恒 1:1 只由收尾汇报产出）；
@@ -458,7 +465,7 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 顺序执行任务表待办步骤的步闭环序列（每步独立 roundId，不产摘要）。
+   * 顺序执行任务表待办步骤的步闭环序列（Loop 编排档2；每步独立 roundId，不产摘要）。
    *
    * 三个出口（收敛/中止/软暂停）收进一个布尔返回语义，调用方据此决定是否进入收尾：
    *   - 无 pending 步骤 → break（收敛），返回 true；
@@ -508,10 +515,10 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 外部任务链收尾决策 + 清场（步序列正常走完后调用）。
+   * Loop 编排任务链收尾决策 + 清场（步序列正常走完后调用，档2）。
    *
    * 收敛/触顶 → 汇报闭环 + 汇报单源摘要；未收敛 → 普通单条摘要（保证摘要恒 1:1）。
-   * 两种收尾后均清外循环上下文（供后续续跑不误入已结束链）。
+   * 两种收尾后均清 Loop 编排上下文（供后续续跑不误入已结束链）。
    *
    * @param signal 中止信号
    * @param input 用户输入（未收敛兜底摘要的输入侧）
@@ -538,7 +545,7 @@ export class SeedOrchestrator {
     } else {
       this.backgroundReflect(input, planFallback);
     }
-    // 任务链已收尾：清除外循环上下文（供后续续跑不误入已结束链）
+    // 任务链已收尾：清除 Loop 编排上下文（供后续续跑不误入已结束链）
     parts.loop.setWithinExternalTask(false);
     // 清空任务表（收尾清场，⑦ 排雷 2026-08-29）：已执行完的 plan 不残留——
     // 否则残留 pending 步会被下一次复杂输入误当「续跑旧链」，出现非会议却跑会议链的错乱
@@ -585,7 +592,7 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 读取任务表下一个 pending 步骤（外循环步闭环的驱动信号）。
+   * 读取任务表下一个 pending 步骤（Loop 编排步闭环的驱动信号，档2）。
    * @returns 下一个待执行步骤（description 供步闭环提示）；无则返回 null（收敛）
    */
   private getNextPendingStep(): { id: string; description: string; rolePack?: string } | null {
