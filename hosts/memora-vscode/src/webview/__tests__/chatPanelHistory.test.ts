@@ -470,4 +470,32 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     await (provider as unknown as { ensureInitialSession(): Promise<void> }).ensureInitialSession();
     expect(switchToSession).not.toHaveBeenCalled();
   });
+
+  it('新建会话：clear_ok 之后不应重放旧会话历史（防顶部残留空白块）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    // seed 会话 A：2 轮有内容的历史
+    seedSession(store, roundStore, '2026-08-31-a', [
+      { role: 'user', content: '问题1', ts: 't1' },
+      { role: 'assistant', content: '回答1', ts: 't2' },
+      { role: 'user', content: '问题2', ts: 't3' },
+      { role: 'assistant', content: '回答2', ts: 't4' },
+    ]);
+    const { agent } = agentStub();
+    provider.setAgent(agent);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-31-a';
+    // 新建会话 B（空）→ 触发 clear_ok + replay(B 空) + session_title
+    await (provider as unknown as { newSessionFromCommand(): Promise<void> }).newSessionFromCommand();
+    // B 切入后 _currentSessionId 应更新为新的 date-sxxx
+    const newId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
+    expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
+    // clear_ok 之后的 post 中不应有消息类事件（B 是空会话，replay 不重放 A 的历史）
+    const clearIdx = posted.findIndex((m) => (m as { type: string }).type === 'clear_ok');
+    expect(clearIdx).toBeGreaterThanOrEqual(0);
+    const afterClear = posted.slice(clearIdx);
+    const msgTypes = ['user', 'assistant', 'process_event', 'replay_events', 'chunk', 'tool_start', 'tool_result'];
+    const leaked = afterClear.filter((m) => msgTypes.includes((m as { type: string }).type));
+    expect(leaked).toHaveLength(0);
+  });
 });

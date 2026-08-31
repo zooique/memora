@@ -1717,10 +1717,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         showActivity('info', `润色失败：${msg.message}`);
       }
     } else if (msg.type === 'clear_ok') {
-      // 清空消息区须同时清 type=msg 消息、.round-block 过程块、.date-divider 日期分隔线与 .followup 建议块
-      // （对抗评估 P1-1/P1-4）：不仅挑 .msg 会让切换历史/清空后旧过程性节点残留 DOM，污染重放视图。
+      // 清空消息区须同时清 .msg、.msg-wrapper（用户消息外层壳）、.round-block、.date-divider、.followup
+      // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .round-block, .date-divider, .followup').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）

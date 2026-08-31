@@ -202,6 +202,24 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(assistants[0].querySelector('.msg-body')?.textContent?.trim()).toBe('重放后');
   });
 
+  it('对话后新建会话：clear_ok 清空全部消息与空骨架（无顶部空白残留）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    // 会话 A 对话：用户消息（包 .msg-wrapper）+ AI 回答 + 空骨架轮
+    dispatch({ type: 'user', text: '问题A', ts: '2026-08-14T10:00:00.000Z' });
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '回答A' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    dispatch({ type: 'user', text: '问题B', ts: '2026-08-14T10:01:00.000Z' });
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'done', roundId: 'r2' });
+    // 断言：清空前用户消息外层 .msg-wrapper 存在
+    expect(messages.querySelectorAll('.msg-wrapper').length).toBe(2);
+    // 新建会话 B：clear_ok 应清空全部（.msg 与 .msg-wrapper 外层都不残留）
+    dispatch({ type: 'clear_ok' });
+    expect(messages.querySelectorAll('.msg, .msg-wrapper').length).toBe(0);
+  });
+
   it('无缝插话：流式中收到 user 复位锚点，下条 chunk 开新助手块且排在用户消息之后（缺口 B 排序）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
