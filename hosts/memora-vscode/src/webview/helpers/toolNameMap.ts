@@ -23,6 +23,7 @@ export function getToolDisplayName(name: string): string {
     web_fetch: '抓取网页',
     create_skill: '创建技能',
     create_rule: '创建规则',
+    search_project: '项目搜索',
   };
   return map[name] || name;
 }
@@ -47,6 +48,7 @@ export function getToolIcon(name: string): string {
     web_fetch: '🌍',
     create_skill: '🛠️',
     create_rule: '📏',
+    search_project: '🗂️',
   };
   return iconMap[name] || '⚙️';
 }

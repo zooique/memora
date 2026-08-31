@@ -21,6 +21,7 @@ import type { OutputChannel } from 'vscode';
 import { join } from 'node:path';
 import { createProvider, createBackgroundProvider, createVectorStore } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
+import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
 import { WorkspaceSessionStore } from './sessionStore.js';
 import { vscodeTracer } from './tracer.js';
@@ -254,6 +255,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（G2：local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
+    // 项目搜索（2026-08-31：等价 IDE 全局搜索）——注入后内核暴露 search_project 工具给 LLM
+    // VS Code 原生 findFiles（按文件名）+ findTextInFiles（按内容全文，同 Ctrl+Shift+F）
+    projectSearchProvider: createVscodeProjectSearchProvider(projectPath),
     // 向量存储（G1：配置 Embedding 时启用语义召回；undefined 则 searchHybrid 回退关键词）
     vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
