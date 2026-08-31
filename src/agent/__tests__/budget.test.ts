@@ -12,6 +12,7 @@ import {
   deriveDialogueRounds,
   isInputTooLarge,
   resolveContextWindow,
+  estimateOccupancy,
   MIN_RUNNABLE_DIALOGUE_TOKENS,
   DEFAULT_OUTPUT_RESERVE_RATIO,
   DEFAULT_DIALOGUE_FILL_RATIO,
@@ -174,5 +175,70 @@ describe('resolveContextWindow · 上下文窗口解析（SSOT 单源公式，�
     expect(resolveContextWindow(64_000)).toBe(64_000);
     // 超过默认 120K 也照用，绝不被静默砍到默认（用户对自己填写的参数负责）
     expect(resolveContextWindow(200_000)).toBe(200_000);
+  });
+});
+
+describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运行时与宿主历史会话重算共用）', () => {
+  it('默认输出预留 15%：各段互斥拼满窗口，free 正确收敛', () => {
+    const occ = estimateOccupancy({
+      totalTokens: 120_000,
+      rolePackBaseTokens: 3_000,
+      dialogueTokens: 12_000,
+      dialogueCount: 3,
+      memoryTokens: 4_000,
+      memoryCount: 2,
+      inputAnchorTokens: 800,
+    });
+    expect(occ.outputReserveTokens).toBe(18_000); // 120000 × 0.15
+    // free = total − (rolepack + dialogue + memory + input + reserve)
+    expect(occ.freeTokens).toBe(120_000 - (3_000 + 12_000 + 4_000 + 800 + 18_000));
+    // 条数透传
+    expect(occ.dialogueCount).toBe(3);
+    expect(occ.memoryCount).toBe(2);
+  });
+
+  it('自定义输出预留比例生效', () => {
+    const occ = estimateOccupancy({
+      totalTokens: 10_000,
+      rolePackBaseTokens: 1_000,
+      dialogueTokens: 2_000,
+      dialogueCount: 1,
+      memoryTokens: 0,
+      memoryCount: 0,
+      inputAnchorTokens: 0,
+      outputReserveRatio: 0.2,
+    });
+    expect(occ.outputReserveTokens).toBe(2_000); // 10000 × 0.2
+    expect(occ.freeTokens).toBe(10_000 - (1_000 + 2_000 + 2_000));
+  });
+
+  it('各段超窗口 → free 非负收敛为 0（窗口过小/输入过大时各段归零）', () => {
+    const occ = estimateOccupancy({
+      totalTokens: 5_000,
+      rolePackBaseTokens: 3_000,
+      dialogueTokens: 3_000,
+      dialogueCount: 2,
+      memoryTokens: 1_000,
+      memoryCount: 1,
+      inputAnchorTokens: 500,
+    });
+    // used = 3000+3000+1000+500+750 = 8250 > 5000 → free 收敛为 0（不出现负值）
+    expect(occ.freeTokens).toBe(0);
+  });
+
+  it('历史会话重算语义：inputAnchor=0、memory=0 时仅算对话 + 角色包 + 预留', () => {
+    const occ = estimateOccupancy({
+      totalTokens: 64_000,
+      rolePackBaseTokens: 15_000,
+      dialogueTokens: 10_000,
+      dialogueCount: 4,
+      memoryTokens: 0,
+      memoryCount: 0,
+      inputAnchorTokens: 0,
+    });
+    expect(occ.inputAnchorTokens).toBe(0);
+    expect(occ.memoryTokens).toBe(0);
+    // free = 64000 − (15000 + 10000 + 0 + 0 + 9600)
+    expect(occ.freeTokens).toBe(64_000 - (15_000 + 10_000 + 9_600));
   });
 });

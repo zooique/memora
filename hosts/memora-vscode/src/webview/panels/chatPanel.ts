@@ -21,6 +21,8 @@ import {
   formatDateKey,
   getSessionDisplayName,
   resolveContextWindow,
+  estimateOccupancy,
+  estimateTokensText,
   type Agent,
   type AgentChunk,
   type IRoundStore,
@@ -1188,11 +1190,82 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     return this._agent;
   }
 
-  /** 清空 webview 消息区并重放当前会话历史 + 刷新会话标题 */
+  /** 清空 webview 消息区并重放当前会话历史 + 刷新会话标题 + 推送历史会话占用 */
   private replayCurrentSession(): void {
     this.post({ type: 'clear_ok' });
     this.replayHistory();
     this.post({ type: 'session_title', title: this.currentSessionTitle() });
+    // 历史会话占用：切会话后圆环即时展示该会话真实占用（而非空态 0%），
+    // 与对话记录对齐；对话层从持久化消息重算，记忆层历史会话无法预测故如实置 0
+    this.postHistoryOccupancy();
+  }
+
+  /**
+   * 推送历史会话上下文占用（轻量版方案，2026-08-31）
+   *
+   * 切到历史会话（含首次启动回放）时调用：圆环从「空态 0%」纠正为「该会话真实占用」——
+   *   对话层  = 持久化消息逐条 estimateTokensText 求和（与内核估算口径一致）
+   *   角色包  = 当前 agent 最近一次装配的 rolePackBaseTokens（角色包全局跨会话一致）
+   *   输入锚点= 0（历史会话无当前输入）
+   *   记忆层  = 0（历史会话无法预测"下一条消息会召回哪些记忆"，如实标注不虚报）
+   * 组装复用内核 estimateOccupancy（SSOT 单点，free 收敛口径与运行时 prepare 一致）。
+   * 异步仅用于读取当前 Provider 窗口（listMasked），失败静默（圆环维持 chat_providers 空态）。
+   */
+  private async postHistoryOccupancy(): Promise<void> {
+    const agent = this._agent;
+    if (!agent) return;
+    try {
+      // 窗口容量：当前选中 LLM 的上下文上限（SSOT：与 pushProviders 同源 resolveContextWindow）
+      const providers = await this._providerStore.listMasked();
+      const activeName = this._providerStore.getActiveName();
+      const active = providers.find((p) => p.name === activeName);
+      const totalTokens = resolveContextWindow(active?.contextWindow);
+      // 对话消息序列：round-based（viewLoader）或 legacy 扁平路径统一提取
+      const history = this.collectHistoryMessages();
+      let dialogueTokens = 0;
+      for (const m of history) {
+        dialogueTokens += estimateTokensText(m.content);
+      }
+      // 角色包固定开销：取内核最近一次装配的真实值（无装配记录时为 0，冷启动空态）
+      const rolePackBaseTokens = agent.getMetrics().context.occupancy?.rolePackBaseTokens ?? 0;
+      const occ = estimateOccupancy({
+        totalTokens,
+        rolePackBaseTokens,
+        dialogueTokens,
+        dialogueCount: history.length,
+        memoryTokens: 0,
+        memoryCount: 0,
+        inputAnchorTokens: 0,
+      });
+      this.post({ type: 'context_occupancy', occupancy: occ });
+    } catch {
+      // 读取 Provider 失败不阻塞会话切换（圆环维持空态，非关键路径）
+    }
+  }
+
+  /**
+   * 提取当前会话全部消息序列（统一 round-based / legacy 两路径，供占用重算）。
+   *
+   * 与 replayHistory 的展示路径同源：round-based 走 viewLoader 按轮取正文，
+   * legacy 走 sessionStore.loadMessages。两路径归一为 {role, content}[]。
+   */
+  private collectHistoryMessages(): Array<{ role: 'user' | 'assistant'; content: string }> {
+    const msgs: Array<{ role: 'user' | 'assistant'; content: string }> = [];
+    if (this._viewLoader) {
+      // 会话无轮次记录（新建/空会话）→ 直接返回空，避免触发 loadView「会话不存在」噪音
+      const { date, session } = this.parseSessionId(this._currentSessionId);
+      if (this.sessionStore.getRoundIds(`${date}-${session}`).length === 0) {
+        return msgs;
+      }
+      const rounds = this.loadRoundBasedHistory();
+      for (const r of rounds) {
+        if (r.user) msgs.push({ role: 'user', content: r.user.content });
+        if (r.assistant) msgs.push({ role: 'assistant', content: r.assistant.content });
+      }
+      return msgs;
+    }
+    const history = this.loadMessagesHistory();
+    return history.map((m) => ({ role: m.role, content: m.content }));
   }
 
   /**

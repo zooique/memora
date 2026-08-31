@@ -23,7 +23,7 @@ import {
   resolveActiveStrategy,
 } from '@/role-pack/strategyResolver.js';
 import type { MemoryRecallMode, BehaviorStrategy } from '@/role-pack/types.js';
-import { computeContextBudget, isInputTooLarge, DEFAULT_OUTPUT_RESERVE_RATIO } from '@/agent/budget.js';
+import { computeContextBudget, isInputTooLarge, estimateOccupancy } from '@/agent/budget.js';
 import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -278,23 +278,18 @@ export class ContextPreparer {
     const memoryTokens = recalledMemories.length
       ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
       : 0;
-    const outputReserveTokens = Math.floor(deps.config.maxContextTokens * DEFAULT_OUTPUT_RESERVE_RATIO);
-    const usedBeforeFree =
-      fixedOverheadTokens + dialogueTokens + memoryTokens + budget.anchorTokens + outputReserveTokens;
-    const freeTokens = Math.max(0, deps.config.maxContextTokens - usedBeforeFree);
-    deps.loop.recordOccupancy({
-      totalTokens: deps.config.maxContextTokens,
-      rolePackBaseTokens: fixedOverheadTokens,
-      dialogueTokens,
-      // 注入对话条数（与 dialogueTokens 同源：同一数组的 length）
-      dialogueCount,
-      memoryTokens,
-      // 注入记忆条数（与 memoryTokens 同源：recalledMemories.length）
-      memoryCount: recalledMemories.length,
-      inputAnchorTokens: budget.anchorTokens,
-      outputReserveTokens,
-      freeTokens,
-    });
+    // 占用组装复用 estimateOccupancy（SSOT 单点：free 收敛 + 拼满 + 输出预留，宿主历史会话重算共用）
+    deps.loop.recordOccupancy(
+      estimateOccupancy({
+        totalTokens: deps.config.maxContextTokens,
+        rolePackBaseTokens: fixedOverheadTokens,
+        dialogueTokens,
+        dialogueCount,
+        memoryTokens,
+        memoryCount: recalledMemories.length,
+        inputAnchorTokens: budget.anchorTokens,
+      }),
+    );
 
     return recalledMemories;
   }

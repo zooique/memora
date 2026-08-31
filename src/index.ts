@@ -15,6 +15,10 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 // 上下文窗口解析（单一真理源公式）：宿主在构造 Agent 前将 provider.contextWindow 与
 // 用户全局上限解析为单一 maxContextTokens 数字，避免跨宿主镜像 min 逻辑
 export { resolveContextWindow } from '@/agent/budget.js';
+// 上下文占用快照组装（SSOT 单点）：宿主历史会话重算占用时与内核 prepare 共用同一收敛口径
+export { estimateOccupancy, type EstimateOccupancyInput } from '@/agent/budget.js';
+// 单段文本 token 估算（CJK 感知，零状态）：宿主历史会话重算对话层 token 时与内核估算口径一致
+export { estimateTokensText } from '@/agent/contextManager.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';

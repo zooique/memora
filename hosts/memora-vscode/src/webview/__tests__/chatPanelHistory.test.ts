@@ -398,6 +398,50 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(ofType(posted, 'checkpoint_available').length).toBe(0);
   });
 
+  // ─── 历史会话占用重算（轻量版方案，2026-08-31）：切会话后圆环展示真实占用而非空态 0% ───
+  it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值 + 记忆层置 0', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    // viewLoader + roundStore：round-based 消息路径
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: 't1' },
+      { role: 'assistant', content: '回答A', ts: 't2' },
+    ]);
+    // agent stub：getMetrics 返回含 rolePackBaseTokens 的 occupancy（角色包全局跨会话一致）
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      getMetrics: () => ({
+        context: { occupancy: { rolePackBaseTokens: 15000 } },
+      }),
+    } as unknown as Agent;
+    provider.setAgent(agent);
+    // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认 120K
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    // 等待 fire-and-forget 的 postHistoryOccupancy（async）落定
+    await vi.waitFor(() => {
+      const occs = ofType<{ type: string; occupancy: { dialogueCount: number; rolePackBaseTokens: number; memoryCount: number } }>(
+        posted,
+        'context_occupancy',
+      );
+      expect(occs.length).toBe(1);
+      // 对话层 = 2 条消息（user+assistant）重算；角色包 = 当前装配值；记忆层历史会话置 0
+      expect(occs[0]!.occupancy.dialogueCount).toBe(2);
+      expect(occs[0]!.occupancy.rolePackBaseTokens).toBe(15000);
+      expect(occs[0]!.occupancy.memoryCount).toBe(0);
+    });
+  });
+
+  it('无 agent（未装配）→ 历史会话占用不推送（静默跳过，非关键路径）', () => {
+    const { provider, posted } = setup();
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+    // _agent 为 undefined → postHistoryOccupancy 直接 return，不推 context_occupancy
+    expect(ofType(posted, 'context_occupancy').length).toBe(0);
+  });
+
   // ─── Phase 4 软暂停入口：生成中暂停走迭口边界挂起 requestPause（与内核迭口软暂停语义一致） ───
   function pauseAgentStub(): {
     agent: Agent;

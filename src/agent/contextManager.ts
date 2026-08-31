@@ -120,6 +120,23 @@ function countCjkAndOther(str: string): { cjkChars: number; otherChars: number }
 }
 
 /**
+ * 估算单段文本 token 数（CJK 感知，零状态纯函数）。
+ *
+ * 单一真理源：`ContextManager.estimateTokens` 逐条消息复用本函数；
+ * 宿主侧（历史会话占用重算）亦调本函数对持久化消息求和估算，
+ * 与内核估算口径完全一致，避免宿主另写一份低估/高估的估算逻辑。
+ *
+ * @param text 待估算文本
+ * @returns token 数（按 CJK/其他字符分轨估算后向上取整）
+ */
+export function estimateTokensText(text: string): number {
+  const { cjkChars, otherChars } = countCjkAndOther(text);
+  return Math.ceil(
+    cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN + otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
+  );
+}
+
+/**
  * 上下文窗口管理器
  *
  * 管理 token 估算、消息截断、摘要生成与缓存。
@@ -179,6 +196,8 @@ export class ContextManager {
     let cjkChars = 0;
     let otherChars = 0;
     for (const m of messages) {
+      // 逐条复用 countCjkAndOther（单一统计真理源），仍按「先累计后 ceil」原语义，
+      // 与 estimateTokensText 同口径但避免逐条取整导致的偏差
       const contentCounts = countCjkAndOther(m.content);
       cjkChars += contentCounts.cjkChars;
       otherChars += contentCounts.otherChars;

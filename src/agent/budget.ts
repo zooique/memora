@@ -99,6 +99,57 @@ export interface ContextOccupancy {
   readonly freeTokens: number;
 }
 
+/** 上下文占用估算入参（各层 token/条数为已算好的实际值，本函数只做收敛 + 组装） */
+export interface EstimateOccupancyInput {
+  /** 窗口总容量（token） */
+  readonly totalTokens: number;
+  /** 角色包/系统基础设定占用（system prompt 固定开销） */
+  readonly rolePackBaseTokens: number;
+  /** 完整对话层 token */
+  readonly dialogueTokens: number;
+  /** 完整对话层条数 */
+  readonly dialogueCount: number;
+  /** 记忆摘要层 token */
+  readonly memoryTokens: number;
+  /** 记忆摘要层条数 */
+  readonly memoryCount: number;
+  /** 当前输入锚点 token（运行时 = budget.anchorTokens；历史会话 = 0） */
+  readonly inputAnchorTokens: number;
+  /** 输出预留比例（默认 0.15） */
+  readonly outputReserveRatio?: number;
+}
+
+/**
+ * 组装上下文占用快照（SSOT 数值派生）。
+ *
+ * 纯函数：入参为各层已算好的 token/条数，本函数只做
+ * 输出预留 + 各段互斥拼满 + free 非负收敛，再组装为 `ContextOccupancy`。
+ * 运行时（contextPreparer）与宿主历史会话重算共用——占用组装逻辑单点定义，
+ * 宿主不另写一份（避免 free 收敛口径漂移）。
+ */
+export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupancy {
+  const outputReserveRatio = input.outputReserveRatio ?? DEFAULT_OUTPUT_RESERVE_RATIO;
+  const outputReserveTokens = Math.floor(input.totalTokens * outputReserveRatio);
+  const usedBeforeFree =
+    input.rolePackBaseTokens +
+    input.dialogueTokens +
+    input.memoryTokens +
+    input.inputAnchorTokens +
+    outputReserveTokens;
+  const freeTokens = Math.max(0, input.totalTokens - usedBeforeFree);
+  return {
+    totalTokens: input.totalTokens,
+    rolePackBaseTokens: input.rolePackBaseTokens,
+    dialogueTokens: input.dialogueTokens,
+    dialogueCount: input.dialogueCount,
+    memoryTokens: input.memoryTokens,
+    memoryCount: input.memoryCount,
+    inputAnchorTokens: input.inputAnchorTokens,
+    outputReserveTokens,
+    freeTokens,
+  };
+}
+
 /**
  * 计算上下文预算（SSOT 数值派生）。
  *
