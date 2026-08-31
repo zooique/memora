@@ -604,6 +604,96 @@ for (const chapter of chapters) {
 
 ---
 
+## 十.5、执行前检查决策（preExecutionCheck）⚠️ 安全基线
+
+`preExecutionCheck` 是工具执行前的统一闸门（内核 `ToolExecutor` 单点聚合检查：只读 → 审批 → 执行三态）。宿主经 `AgentOptions.preExecutionCheck` 注入，返回 `allow` / `skip` / `confirm` 三态。
+
+### 单用户桌面场景（可恒放行）
+
+本地运行的单用户宿主（VS Code 插件 / 桌面应用）可注入恒放行：
+
+```ts
+preExecutionCheck: () => ({ skip: false }),  // 放行，等价于 allow
+```
+
+**理由**（见 `hosts/memora-vscode/src/extension/host/assemble.ts` L264-267）：
+1. 宿主运行在用户本地，天然信任模型；
+2. 工具审计已由 `tool_start` / `tool_result` chunk + `tool.execute` span 承担，不重复记录。
+
+### 多用户 / 服务端部署（必须替换）⚠️
+
+**恒放行仅限单用户本地场景。** 一旦接入多用户或服务端部署，必须替换为真实审批策略，否则任意用户可经工具读写任意文件 / 执行任意命令。最小实现要点：
+
+- **权限分级**：返回 `confirm` 触发宿主 UI 审批（对接 `onToolApproval` 回调），高危操作（写文件 / 执行命令）默认 confirm 而非 auto；
+- **路径守卫**：结合内核 `SecurityGuard` 的 `allowedPaths` 白名单 + 28 类禁止规则做硬性拦截，返回 `skip` 阻断越权调用；
+- **只读策略**：角色包 `toolReadonly: 'readonly'` 时，preExecutionCheck 须拒绝一切写操作。
+
+> 本决策同时受 `tasks/待完成任务.md` 设计纪律 **D5** 约束：恒放行属单用户场景可接受，但必须显式标注，未来多用户/服务端再接入真实策略。
+
+---
+
+## 十.6、存储单例约束（sessionStore / roundStore）⚠️ 契约基线
+
+`sessionStore`（会话元数据）与 `roundStore`（问答闭环 / round 落盘）**必须全局唯一单例，且 UI 面板与 Agent 装配共享同一实例**。
+
+### 为什么是硬约束（双实例覆盖写）
+
+会话与 round 落盘的最终载体是同一份磁盘文件（`*.memora/sessions.json` + 各 round 文件）。若 UI 面板与 Agent 各自 `new` 一份 store：
+
+- 两侧各自 `load()` 后内存状态分叉；
+- 任一侧 `save()` 都只写自己内存视角，**后写覆盖先写** → 另一侧已追加的会话 / 消息丢失；
+- 典型症状：重启后"会话记录加载不全"、跨面板操作互相吞掉对方写入。
+
+这是数据正确性 bug，**不是性能或风格问题**，任何宿主对接都会踩。
+
+### 规范模式（VS Code 宿主实证）
+
+在 `activate()` 中创建一次，注入两侧（见 `hosts/memora-vscode/src/extension/extension.ts` L51 / L173 / L194-195）：
+
+```ts
+// 单例：activate 中创建一次
+const sessionStore = new WorkspaceSessionStore(workspacePath, roundStore);
+sessionStore.load();
+
+// 注入 UI 面板：面板经 setAgentFactory 复用同一 agentPromise → 同一份 store
+chatProvider.setAgentFactory((projectPath) =>
+  getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, /* ... */));
+
+// 注入 Agent 装配：assembleAgent 透传同一 sessionStore / roundStore 进内核
+```
+
+`sessionStore` 经 `getOrCreateAgent` → `assembleAgent` 透传进内核；UI 面板经 `chatProvider.setAgentFactory` 复用同一 `agentPromise`，从而共用同一份 store。**两侧的 store 引用必须指向同一对象**，禁止各建各的。
+
+### 单例 / 原子写各防什么（边界辨析）
+
+- **单例**防**同进程内**两个代码路径各 `new` 一份 store → 内存分叉 → 互相覆盖写。VS Code 单宿主下，单例已彻底封死这条路。
+- **原子写**（`atomicWriteFileSync`：先写 `.tmp` 再 `renameSync`）防**写一半进程崩了**导致文件损坏——落盘要么旧内容、要么完整新内容，不会半截。memora 已实现（`sessionStore.ts:96` 等）。
+- **两者都不防"跨进程双开"**：同工作区开两个窗口 / 两个宿主进程 = 两个 `sessionStore` 单例 = 两个进程各原子写同一 `*.memora/sessions.json`。原子写保"不损坏"但不保"不丢更新"（后 rename 覆盖先 rename）。此场景须靠**进程锁 / 单实例守卫**兜底（参考 grida 对 `sessions.db` 加进程锁、重复启动直接拒绝）。
+
+### 新宿主接入检查清单
+
+- [ ] `sessionStore` / `roundStore` 在宿主生命周期内只 `new` 一次；
+- [ ] UI 面板（对话视图 / 会话树 / 设置）与 Agent 装配引用**同一个** store 实例；
+- [ ] 落盘走**原子写**（`tmp` + `rename`），禁止裸 `writeFile` 覆盖（防崩溃损坏）；
+- [ ] **跨进程 / 多窗口宿主须加文件锁或单实例守卫**：单例只防同进程双实例，不防同工作区双开各自写同一 `sessions.json`；原子写保证不损坏但不保证不丢更新，须进程锁兜底；
+- [ ] 测试覆盖：模拟"面板先写、Agent 后写"或反之，断言最终落盘含两侧写入（防回归双实例覆盖写）。
+
+> 本约束对应 `tasks/待完成任务.md` **T1**：原仅存于 `extension.ts` 注释（L51 / L188 "杜绝双实例覆盖写"），现提升为宿主接入契约基线，避免新宿主对接踩坑。原子写实锤已具备（`atomicWriteFileSync`），单例 + 原子写已对齐主流硬化做法（grida / Chatbox 同款 tmp+rename）；唯一真实残留为跨进程锁，已列入检查清单第 4 项。
+
+## 十.7、策略键消费矩阵（28 键 SSOT 落点）📌 参考
+
+> 完整 28 键 × 内核消费位置 × UI 侧消费的逐键矩阵见 **[`docs/策略键消费矩阵.md`](../策略键消费矩阵.md)**（SSOT：`src/role-pack/strategyKeys.ts`）。此处只给新宿主对接必知的结论与边界。
+
+- **28 键全部被内核真实消费、零 `[草案]`**（prepare 8 / act 10 / reflect 4 / global 6）。解析层 `rolePackManager` + `strategyResolver` 84 项测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
+- **三类流向，单一收口无镜像**：
+  1. act 8 键（除 `temperature`/`outputLimit`/`streaming` 由 `agent.ts` 直映射 `ChatOptions`）+ `loopContinue` + global 3 键，统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；
+  2. prepare 键经 `resolveActiveStrategy()` 单一真理源流入 `contextPreparer` / `recall` / `roundSummaryGenerator`；
+  3. persona 指令类（`understandingConfirm`/`userFollowup`/`askOn`/`askLimit`）由 `assembleRolePack()` 单收口注入。
+- **⚠️ 边界纠正：`toolReadonly` / `toolApproval` 内核已执行，非「无宿主执行方」**。`toolRunner.ts:119-152` 三重闸中，闸①（只读闸）与闸②（审批闸 `onToolApproval` 通知）**由内核执行**；VS Code 宿主 `preExecutionCheck` 恒放行（`assemble.ts:267`）只是单用户信任模型下的**第三重闸让行**（关联 十.5 / 设计纪律 D5），未来多用户/服务端须替换真实审批。**新宿主切勿误以为这两键无执行方而自行在宿主侧重复实现拦截**——内核已兜底，宿主恒放行是显式决策而非缺位。
+- **UI 侧仅 6 键有呈现**（`rolesView.ts` 策略 chip）：`toolReadonly` / `toolApproval` / `summaryFocus` / `outputLimit` / `temperature` / `multiStepReasoning`。`capabilityLabels.ts` 是能力名映射，**与策略键无关**，勿混淆。
+
+---
+
 ## 十一、用户档案实现指南（宿主扩展）
 
 > **为什么内核没有独立的用户档案模块？**

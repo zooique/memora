@@ -11,6 +11,12 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
+    // ── 并发确定性策略（SSOT：见 docs/测试并发确定性与flake判定SOP.md）──
+    // 文件级并发保持开启（fileParallelism=true 即 vitest 默认，此处显式声明策略意图）：
+    // 跨文件并发加速本地/CI，代价是已知跨文件共享态 flake（agent.test.ts > memory.snapshot().working）。
+    // 团队既定立场：并发红不归因代码、不靠禁用并发让测试过；flake 走判定 SOP（单独重跑该文件 → 必要时 --no-file-parallelism 全量）。
+    // 切勿为消除 flake 改代码或默认禁用并发（2x 慢），详见 SOP 文档「禁区」。
+    fileParallelism: true,
     // 强制 picocolors 输出 ANSI 颜色码（系统 NO_COLOR=1 会禁用颜色，测试环境需覆盖）
     // 禁用 pino 文件日志：避免 vitest 进程退出时 pino 写入已销毁的文件描述符导致 EBADF
     env: {

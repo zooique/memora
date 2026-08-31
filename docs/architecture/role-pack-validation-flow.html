@@ -2,7 +2,7 @@
 <!--
   文件：role-pack-validation-flow.html
   用途：角色包校验闭环时序图（role-pack-spec §八 配套文档）
-  内容：manifest.json 单一校验（validateManifest：元数据 + 策略 + 内容路径 + skills）
+  内容：manifest.json 单一校验（validateManifest：顶层键 + 元数据 + 合规分档 + 策略 + handoffPrompt + skills + capabilities + trigger/keywords，共 9 项子校验，见 validator.ts validateManifest）
         + companion 内容红线检测（checkCompanionContentRedline，正文在独立内容文件），
         突出 content 注入关键节点（§七 第 5 条 红线闭环）。
   关联：validator.ts validateManifest / validateComplianceFields / checkCompanionContentRedline
@@ -496,7 +496,7 @@
           <div>
             <div class="messageRoute">调用方 → validateManifest</div>
             <div class="messageName">校验 manifest.json</div>
-            <div class="messageType">必填字段 + semver + 合规分档 + 策略 + 内容路径 + skills</div>
+            <div class="messageType">顶层键 + 元数据 + 合规分档 + 策略 + handoffPrompt + skills + capabilities + trigger/keywords（共 9 项子校验）</div>
           </div>
         </div>
         <div class="mobileMessage" data-type="return">
