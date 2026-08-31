@@ -539,8 +539,12 @@ export const chatStyles = `
     justify-content: space-between;
     align-items: center;
   }
-  /* Row 2 · 状态行：弱化显示角色/能力信息 */
+  /* Row 2 · 状态行：弱化显示角色/能力信息；两端分布——左徽章 + 右上下文占用圆环
+   * （占用属状态信息归本行，不干扰 Row 1 主操作；圆环在行最右，向上弹出不挤压面板） */
   .composer-row--status {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     min-height: 18px;
   }
   /* 左侧功能群：Skill ⚡ + 模型 + 润色（次级弱化组）。
