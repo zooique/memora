@@ -258,6 +258,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
     // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
     this.refreshRoleInfoAfterAssemble();
+    // 历史会话占用兜底：replaySession 时若 agent 未装配完成（占用静默跳过），
+    // 装配完成后补推一次——此时 agent.getMetrics 的 rolePackBaseTokens 方为真实值
+    void this.postHistoryOccupancy();
   }
 
   /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */
@@ -1346,6 +1349,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushSkillList();
     // G3 断点续跑：检测当前会话是否有可恢复的持久化暂停检查点 → 推送断点续跑提示条
     this.maybeOfferCheckpointRestore();
+    // 历史会话占用（轻量版）：首次启动回放即推真实占用（而非空态 0%）。
+    // _agent 未装配完成时 postHistoryOccupancy 静默跳过，由 setAgent 装配后兜底再推
+    this.postHistoryOccupancy();
   }
 
   /**

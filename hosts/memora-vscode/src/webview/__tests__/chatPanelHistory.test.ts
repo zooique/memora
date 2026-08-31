@@ -426,11 +426,13 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         posted,
         'context_occupancy',
       );
-      expect(occs.length).toBe(1);
+      // setAgent 装配兜底推 1 次 + replayCurrentSession 推 1 次（幂等，取最后一次验证）
+      expect(occs.length).toBeGreaterThanOrEqual(1);
+      const occ = occs[occs.length - 1]!.occupancy;
       // 对话层 = 2 条消息（user+assistant）重算；角色包 = 当前装配值；记忆层历史会话置 0
-      expect(occs[0]!.occupancy.dialogueCount).toBe(2);
-      expect(occs[0]!.occupancy.rolePackBaseTokens).toBe(15000);
-      expect(occs[0]!.occupancy.memoryCount).toBe(0);
+      expect(occ.dialogueCount).toBe(2);
+      expect(occ.rolePackBaseTokens).toBe(15000);
+      expect(occ.memoryCount).toBe(0);
     });
   });
 
