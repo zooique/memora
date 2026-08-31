@@ -1,6 +1,6 @@
 ---
 alwaysApply: false
-description: 对抗性审查架构决策收敛——核心：设定记忆（persona/rules/skills）唯一归角色包内容层；记忆系统 = 摘要记忆本体（round-summary 轮次级 + content 会话级，summaryType 语义标签分类，type 不设时效），记忆库停止写入设定记忆
+description: 对抗性审查架构决策收敛——核心：设定记忆（persona/rules/skills）唯一归角色包内容层；记忆系统 = 摘要记忆单轨（round-summary 唯一自动轨，summaryType 语义标签分类，type 不设时效），会话级摘要归 SessionMeta 会话记录存储，content 为治理页手动轨；记忆库停止写入设定记忆
 ---
 
 # ADR-025 · 记忆系统 × 角色包边界收敛（设定记忆归角色包，记忆系统 = 摘要记忆本体）
@@ -32,11 +32,13 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 4. **存量兼容**：已写入记忆库的存量设定记忆行保留（软删兼容），不再新写入；宿主提供一次性迁移即可清理。
 5. **guardrail 空转链已摘除**（2026-08-17，档 1 一并落地）：guardrail 为「零规则、无扫描映射、无消费者」的空转机制（输入/输出检查 + 索引读取），与目标态冲突，已移除。原「guardrail 归宿待定」决策作废。
 
-### 配套决策 D6：content = 会话级摘要记忆（2026-08-17 定案）
+### 配套决策 D6：content = 用户手动轨，会话级摘要归 SessionMeta（2026-08-17 初定 · 2026-08-31 修订）
 
-> `SessionArchiver` 写入的会话级摘要（`source='content'`）本就是摘要模型的一部分——**它是「会话 id 对应的摘要记忆」**（粒度=会话级，无 roundId，仅 sessionName 溯源）。融入统一模型：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName`。与 round-summary（轮次级，sessionName+roundId 双溯源）构成「摘要 + 标签 + 粒度」两级结构。
+> **初定（2026-08-17）**：曾主张 `SessionArchiver` 写入 `source='content'` 会话级摘要，构成「摘要 + 标签 + 粒度」两级结构。
 >
-> **修订（2026-08-28）**：原 D6 要求 content 带 `isTraceable=true`——字段已删除（无行为消费者：渲染侧按读时溯源结果工作，见 [memory-as-summary.md](../docs/architecture/memory-as-summary.md) §5.2）。D6 其余定案不变。
+> **修订（2026-08-28）**：原 D6 要求 content 带 `isTraceable=true`——字段已删除（无行为消费者，见 [memory-as-summary.md](../docs/architecture/memory-as-summary.md) §5.2）。
+>
+> **修订（2026-08-31）**：会话级摘要不再写记忆库——`SessionArchiver` 只更新 `SessionMeta.summary/keyTopics`（会话记录存储，随 `deleteSession` 删除）；`content` 收敛为**用户手动轨**（仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`）。记忆库唯一自动轨 = `round-summary`（摘要单轨，见 [memory-role-pack-boundary-rules.md 规则 R5](../rules/memory-role-pack-boundary-rules.md)）。
 
 ### 配套决策 D7：type 不设时效性（2026-08-17 定案）
 

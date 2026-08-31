@@ -1,6 +1,6 @@
 # 记忆系统 × 角色包 边界收敛设计
 
-> **一句话**：设定记忆（persona / rules / skills）收进角色包内容层；记忆系统 = 摘要记忆本体（round-summary 轮次级 + content 会话级，按 summaryType 语义标签分类）。两者一刀切，各管各的。
+> **一句话**：设定记忆（persona / rules / skills）收进角色包内容层；记忆系统 = 摘要记忆单轨（round-summary 轮次级，唯一自动轨，按 summaryType 语义标签分类；会话级摘要归 SessionMeta 会话记录存储）。两者一刀切，各管各的。
 
 ## 一、问题
 
@@ -34,7 +34,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 
 ### 2.3 目标态存储形态
 
-- **记忆库**：只有**摘要记忆**——`round-summary`（轮次级）+ `content`（会话级，同模型不同粒度，见 [memory-as-summary.md §2.2](memory-as-summary.md)）。profile / work-projection 已随收敛移出记忆库（作品投影落项目级目录 `<memoraDir>/projections/`，见 [memora-api-reference.md §九](../memora-api-reference.md)）。guardrail 空转链已摘除（零规则、无扫描映射、无消费者）。
+- **记忆库**：只有**摘要记忆单轨**——`round-summary`（轮次级，唯一自动轨，见 [memory-as-summary.md §2.2](memory-as-summary.md)）。会话级摘要归会话记录存储 `SessionMeta`（summary/keyTopics，不写记忆库）；`content` 仅治理页手动写入轨（非自动生产，见规则 R5）。profile / work-projection 已随收敛移出记忆库（作品投影落项目级目录 `<memoraDir>/projections/`，见 [memora-api-reference.md §九](../memora-api-reference.md)）。guardrail 空转链已摘除（零规则、无扫描映射、无消费者）。
 - **角色包**：`<configDir>/role-packs/<名>/`，`manifest.json` 唯一权威 + `persona.md` / `rules.md` / `skills/*` 内容文件（见 [role-pack-spec.md §2.2](role-pack-spec.md)）。
 - **召回**：只对摘要记忆生效（双通道相关性召回 + 会话窗口/时间排序，见 [memory-as-summary.md §4](memory-as-summary.md)）；type 是纯语义标签，不设时效。设定记忆不再进召回面。
 
@@ -59,7 +59,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 | D1 | guardrail 归宿 | **作废**——guardrail 空转链已摘除，无此物无需归宿 |
 | D2 | 存量设定记忆数据 | 由宿主提供一次性迁移脚本；文件已在角色包/agent-config 中，SQLite 索引行清空或标记兼容 |
 | D3 | skills 正文展示 | **渐进披露**（readSkillContent 按需读），不在记忆库镜像保留 |
-| D4 | content 会话归档 | **保留**——粒度（会话级）与 round-summary（轮次级）不同，非冗余，无需再议 |
+| D4 | content 会话归档 | **重定**——会话级摘要不再写记忆库：SessionArchiver 只更新 `SessionMeta`（summary/keyTopics），content 降为治理页手动写入轨（`memoryInspector.writeUpsert`），保留粒度（会话级）与 round-summary（轮次级）差异但非自动生产 |
 | D5 | **默认角色包归属** | **宿主职责**。memora 内核不设计「默认角色包」，也不内置默认卡。「默认激活哪张卡」是宿主决策；内核只保证「零角色包激活时系统可运行」。零角色包时**空角色包态**运行（persona 兜底已移除，无角色设定注入） |
 
 ### 4.1 默认角色包边界（D5 定案）
@@ -70,9 +70,9 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 - **宿主职责**：默认卡 = 领域决策（通用助手宿主放通用卡、文档宿主放文档卡），经 `<configDir>/role-packs/` 注入（role-pack-spec §9.1 多实例模式）。
 - **对齐哲学**：memora 是纯逻辑库（ADR-002）+ 领域无关（哲学§5），内置默认卡 = 内核耦合领域偏见。
 
-### 4.2 content 融入与 type 去时效（D6/D7 定案）
+### 4.2 会话级摘要归属与 type 去时效（D6/D7 定案）
 
-> **D6 · content 是「会话 id 对应的摘要记忆」**：`SessionArchiver` 写入的会话级摘要本就是摘要模型的一部分——粒度=会话级（无 roundId，仅 sessionName 溯源），与 round-summary（轮次级，sessionName+roundId 双溯源）同为「摘要 + 标签 + 粒度」统一模型。融入方式：补 `summaryType` 标签（会话级综合多为 `decision`）+ 结构化 `sessionName`。（`isTraceable` 已删除，2026-08-28：无行为消费者，见 ADR-025 修订与 memory-as-summary §5.2）
+> **D6 · 会话级摘要归会话记录存储（重定 2026-08-31）**：`SessionArchiver` 只更新 `SessionMeta.summary/keyTopics`（见 [sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)），不再写入 `source='content'` 记忆。 「content = 用户手动轨」：仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`，非内核自动生产（`isTraceable` 已删除，2026-08-28：无行为消费者，见 ADR-025 修订与 memory-as-summary §5.2）
 >
 > **D7 · type 不设时效性**：记忆是否有效由**语义状态**判定（superseded 写时取代 + score 衰减自然沉底），不由时间流逝判定——用户久未使用不构成记忆过期的理由。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃（见 memory-as-summary.md §4.2）。
 

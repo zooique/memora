@@ -54,7 +54,7 @@
 ```
 摘要就是记忆本体。
 一切"记忆"都是摘要，而非独立的提炼层。
-记忆系统 = 摘要 + 标签（summaryType）+ 粒度（轮次级/会话级）+ 溯源（roundId/sessionId）
+记忆系统 = 摘要 + 标签（summaryType）+ 粒度（轮次级）+ 溯源（roundId/sessionId）
 ```
 
 **设计定论**：记忆系统**不是**"只剩 round-summary"的妥协产物，而是**设计本体**——记忆系统就是摘要记忆。摘要生成时自动打标签（`summaryType`），标签**平替**掉旧记忆系统的分类体系（insight/profile/work-projection 多类并存 → 一种摘要 + 五类标签）。标签是**纯语义分类**，不携带时效性（见 §3.2）。
@@ -71,36 +71,31 @@
 
 每次外部输入完成后，Reflect 阶段自然生成轮次摘要（1-2 句话）。这个摘要就是该次输入产生的**唯一记忆**。没有独立的提炼层——记忆不是"从摘要中提炼出来的"，而是**摘要本身就是记忆**。
 
-**两级粒度（摘要模型的完整形态）**：
+**两级粒度**：**对话记忆仅 round-summary 一个自动轨**（轮次级）。会话级摘要不进记忆库——归会话记录存储 `SessionMeta`（summary/keyTopics），随 `deleteSession` 删除。
 
 ```
 记忆系统 = 摘要记忆
 │
-├─ round-summary  轮次级摘要（每一轮对话一条）
-│    ├─ sessionName   会话 id（YYYY-MM-DD-会话名）
-│    ├─ roundId       执行闭环 id（本轮唯一）
-│    ├─ summaryType   标签（preference/decision/fact/intent/general）
-│    └─ 溯源：roundId + sessionId → 回溯本轮原始对话
-│
-└─ content  会话级摘要（整段会话提炼一条）
-     ├─ sessionName   会话 id（溯源到整段会话）
-     ├─ summaryType   标签（会话级综合多为 decision）
-     └─ 溯源：sessionName → 回溯整段会话
-```
+└─ round-summary  轮次级摘要（每一轮对话一条，唯一自动轨）
+     ├─ sessionName   会话 id（YYYY-MM-DD-会话名）
+     ├─ roundId       执行闭环 id（本轮唯一）
+     ├─ summaryType   标签（preference/decision/fact/intent/general）
+     └─ 溯源：roundId + sessionId → 回溯本轮原始对话
 
-round-summary 与 content **同属摘要模型、粒度不同**（轮次级 vs 会话级），不是两套系统。`traceSummary` 双标识溯源（`builtinToolHandlers.ts`）让每条摘要可回溯到原始对话。
+会话级摘要（SessionMeta.summary/keyTopics）→ 会话记录存储，不参与记忆召回
+```
 
 ### 2.3 架构（当前形态）
 
 ```
 对话记录（窗口级，仅展示 + 溯源兜底）
 round-summary（轮次级，唯一记忆单元）
-content（会话级摘要）
+会话级摘要（SessionMeta.summary/keyTopics，随会话删除）
 ```
 
-> **当前形态**：记忆收敛为**摘要单轨**——唯一记忆单元是 round-summary（轮次级）+ content（会话级），无独立的用户画像层与洞察提炼层。用户画像（UserProfile / userFactExtractor / archiveProfileFacts）与洞察层（InsightExtractor / archiveInsight）不独立存在，其能力并入 round-summary 的 `summaryType` 标签分类（§3.2）。`traceSummary` 溯源接对话记录（§4/§4.5），对话记录作为展示层 + 溯源兜底的运行依赖（§5.2）。
+> **当前形态**：记忆收敛为**摘要单轨**——唯一记忆单元是 round-summary（轮次级），无独立的用户画像层与洞察提炼层。用户画像（UserProfile / userFactExtractor / archiveProfileFacts）与洞察层（InsightExtractor / archiveInsight）不独立存在，其能力并入 round-summary 的 `summaryType` 标签分类（§3.2）。`traceSummary` 溯源接对话记录（§4/§4.5），对话记录作为展示层 + 溯源兜底的运行依赖（§5.2）。
 
-> **content 融入**：`SessionArchiver` 写入的会话级摘要（`source='content'`）是摘要模型的一部分——它是**会话 id 对应的摘要记忆**（粒度=会话级，无 roundId，仅 sessionName 溯源），带 `summaryType` 标签 + `sessionName` 结构化字段，与 round-summary 同为「摘要 + 标签 + 粒度」统一模型。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
+> **会话级摘要不进记忆库**：`SessionArchiver` 只更新会话记录存储 `SessionMeta`（summary/keyTopics/autoName，见 [sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)），不再写入 `source='content'` 记忆（「content = 用户手动轨」：仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`）。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 2.4 Round 边界
 
@@ -165,7 +160,7 @@ postProcess → 使用 round-5 生成摘要
 └──────────────────────────────────────────────────┘
 ```
 
-写入 `IMemoryStorage`，`source='round-summary'`。这是系统**轮次级**的记忆产生层；`content` 会话归档（[sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)）承载会话级综合提炼（见 §7）。**写入型 source 共两类**：`round-summary`（轮次摘要，本层）+ `content`（会话归档）。
+写入 `IMemoryStorage`，`source='round-summary'`。这是系统**唯一自动**的记忆产生层（轮次级）；会话级归档只更新 `SessionMeta`（不写记忆库，见 §2.3）；`content` 为治理页手动写入轨（`memoryInspector.writeUpsert`），非自动生产。
 
 ### 3.2 摘要类型（SummaryType）— 语义标签
 
@@ -482,7 +477,7 @@ LLM 获得完整上下文
 
 | 操作 | 对摘要的影响 | 说明 |
 |------|------------|------|
-| 删除问答闭环（Round） | **摘要随 Round 连坐 purge** | 引用归零 → GC 物理删 Round + 同步 purge 其 round-summary（不进回收站，系统治理决定）。跨会话的知识沉淀由 **content 会话级摘要**（不依附轮）承担，不由 round-summary 滞留承担 |
+| 删除问答闭环（Round） | **摘要随 Round 连坐 purge** | 引用归零 → GC 物理删 Round + 同步 purge 其 round-summary（不进回收站，系统治理决定）。长期知识沉淀由用户显式沉淀（作品投影/文档/治理页手动 content 记忆）承担，不由 round-summary 滞留承担 |
 | 摘要手动修改 | `isModified = true` | 标记已修改，不影响溯源精确性 |
 | 摘要删除 | 该轮记忆从召回视野消失 | 语义即"删记忆"。源对话记录仅作为展示保留，供用户回溯，不再参与运行召回 |
 
@@ -491,7 +486,7 @@ LLM 获得完整上下文
 - **对话记录是"展示层 + 溯源兜底的运行依赖"**：给用户翻看历史用；同时被 `traceSummary` 工具读取用于回溯原始对话（溯源保真）。**召回/聚合不依赖它**（摘要即记忆），但溯源工具依赖它——两者不冲突。
 - **摘要是"记忆层"**：是系统召回/聚合的核心依赖。因此**删除摘要 = 删除记忆**，源对话记录仅作为展示 + 溯源保留供用户回溯，不再参与运行召回。
 - **连坐删除的正当性（α）**：Round 是物理唯一真理源，摘要只是它的"浓缩影子"。**本源消融则影子消融**——不产生悬空溯源（roundId 指向不存在的 Round）、无孤儿状态、全链路零特化分支，这是状态最小的根本原因。若删 Round 却留摘要，会引入"无主记忆"状态：读路径（召回/roundSummaryLoader/trace_summary）都要为"Round 没了摘要还在"加兜底，且**删除的纠错语义失效**——用户删掉一段错误/隐私讨论，其结论仍以摘要形态影响未来回答。
-- **跨会话价值不靠滞留兜底**：轮次流水速记（fact/general）随轮消融，符合"流水记录低独立价值"的定位；需要长期沉淀的知识走 **content 会话级摘要**（独立于 Round 存活）或用户显式沉淀（作品投影/文档）。被动滞留是弱设计，显式沉淀才符合"种子自然生长"哲学。
+- **跨会话价值不靠滞留兜底**：轮次流水速记（fact/general）随轮消融，符合"流水记录低独立价值"的定位；需要长期沉淀的知识走**用户显式沉淀**（作品投影/文档/治理页手动 content 记忆）。被动滞留是弱设计，显式沉淀才符合"种子自然生长"哲学。
 - **打标而非硬删**：保留数据完整性，防止误删可通过恢复标记找回（软删除 30 天回收期）。
 - **只留必要标记**：`isModified`（人工修改过，提示与原文可能不一致）是唯一保留的摘要标记。溯源可行与否**不设字段**——`trace_summary` 读时按 `sessionName + roundId` 查找，找到即原文、找不到即"（原始对话已删除，仅剩摘要）"，以事实为准（`isTraceable` 字段已删，2026-08-28：写死 true 无行为消费者，删后读侧无分支变化 + 修掉"可溯源却无原文"的展示瑕疵）。
 
@@ -651,7 +646,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 | 维度 | 设计 |
 |------|------|
-| **记忆模型** | 摘要单轨（round-summary + content） |
+| **记忆模型** | 摘要单轨（round-summary，唯一自动轨；会话级摘要归 SessionMeta） |
 | **召回方式** | 单一召回入口（recall 函数） |
 | **分层** | L1 会话内优先于 L2 会话外 |
 | **分轨** | preference 进池（不经检索，有查询意图时）、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticShare` 可选防挤占（默认 0） |
@@ -665,7 +660,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 - **type = 语义标签 + 召回策略**：type 参与召回策略（决定哪些轨道进池/不进池），但不参与排序。排序由分层规则（L1 优先于 L2）、组内时间（createdAt 升序）与语义相关性（cap 内分配）决定。
 - **治理简化**：去掉 L0-L3 四层治理，只保留 supersede（写时取代）+ boost（召回+0.05）。摘要已压缩，衰减收益低。
 - **memoryAdded 事件由 round-summary 发射**——作为"新记忆产生必通知"的出口契约。
-- **SessionArchiver（content 会话级摘要）保留**——它是**会话 id 对应的摘要记忆**：承载会话级综合提炼（关键决策/未解决问题/plan 快照），粒度（会话级）与 round-summary（轮次级）不同，非冗余；带 `summaryType` 标签 + `sessionName` 结构化溯源。
+- **会话级摘要归会话记录存储**：SessionArchiver 只更新 `SessionMeta`（summary/keyTopics/autoName），不写 `source='content'` 记忆；content 为治理页手动写入轨（`memoryInspector.writeUpsert`），非自动生产（见 §2.3）。
 
 ---
 

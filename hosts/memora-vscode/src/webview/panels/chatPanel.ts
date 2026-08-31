@@ -941,7 +941,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const { date, session } = this.parseSessionId(this._currentSessionId);
       const result = this.sessionStore.truncateFrom(date, session, ts);
       // ⑥ 联动（2026-08-29）：被回收问答闭环（引用归零）的轮次摘要软删进回收站；
-      // 会话级 content 摘要不联动——会话本身仍在
+      // 会话级摘要（SessionMeta.summary/keyTopics）不联动——会话本身仍在
       if (result.ok) this.softDeleteSessionMemories(result.removedIds);
     } catch (err) {
       // 删除失败不阻塞展示（仅清理 UI），但需记录（SSOT 不藏错）
