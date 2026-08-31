@@ -272,6 +272,9 @@ export class ContextPreparer {
       contextAssembly === 'hybrid'
         ? loop.estimateTokens(dialogue.history)
         : loop.estimateTokens(loop.getConversationMessages());
+    // 条数与 token 同源：同一数组取 length（供宿主 hover 明细展示「完整对话 N 条」）
+    const dialogueCount =
+      contextAssembly === 'hybrid' ? dialogue.history.length : loop.getConversationMessages().length;
     const memoryTokens = recalledMemories.length
       ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
       : 0;
@@ -283,7 +286,11 @@ export class ContextPreparer {
       totalTokens: deps.config.maxContextTokens,
       rolePackBaseTokens: fixedOverheadTokens,
       dialogueTokens,
+      // 注入对话条数（与 dialogueTokens 同源：同一数组的 length）
+      dialogueCount,
       memoryTokens,
+      // 注入记忆条数（与 memoryTokens 同源：recalledMemories.length）
+      memoryCount: recalledMemories.length,
       inputAnchorTokens: budget.anchorTokens,
       outputReserveTokens,
       freeTokens,

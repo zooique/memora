@@ -416,39 +416,67 @@ export const chatStyles = `
     background: transparent;
     position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
-  /* ④ 预算可视化：输入区常驻上下文占用条（hover 出分层明细，原生 title） */
-  .context-occupancy {
+  /* ④ 预算可视化：输入框内上下文占用圆环充能图标（常驻不占行；hover/聚焦弹窗出分层明细文字） */
+  .context-ring {
+    position: absolute;
+    top: var(--sp-3, 8px);
+    right: var(--sp-3, 8px);
+    width: 22px;
+    height: 22px;
+    z-index: 25; /* 高于输入卡片层级：弹窗可覆盖输入区而非被裁 */
+  }
+  .context-ring__svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg); /* 充能弧从正上方起画，顺时针填充 */
+  }
+  .context-ring__track {
+    fill: none;
+    stroke: var(--surface-track, #2a2a2a);
+    stroke-width: 3;
+  }
+  .context-ring__fill {
+    fill: none;
+    stroke: var(--occ-dialogue, #3794ff); /* 充能色：占用越高弧越满 */
+    stroke-width: 3;
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.2s ease;
+  }
+  .context-ring__percent {
+    position: absolute;
+    inset: 0;
     display: flex;
     align-items: center;
-    gap: var(--sp-2, 6px);
-    padding: 0 var(--sp-5, 12px) var(--sp-2, 6px);
-    box-sizing: border-box;
-  }
-  .occ-bar {
-    display: flex;
-    flex: 1;
-    height: 6px;
-    border-radius: 3px;
-    overflow: hidden;
-    background: var(--surface-track, #2a2a2a);
-    min-width: 0;
-  }
-  .occ-seg {
-    height: 100%;
-    min-width: 0;
-    transition: width 0.2s ease;
-  }
-  .occ-seg--rolepack { background: var(--occ-rolepack); }
-  .occ-seg--memory   { background: var(--occ-memory); }
-  .occ-seg--dialogue { background: var(--occ-dialogue); }
-  .occ-seg--input    { background: var(--occ-input); }
-  .occ-seg--output   { background: var(--occ-output); }
-  .occ-seg--free     { background: transparent; }
-  .occ-meta {
-    font-size: 11px;
+    justify-content: center;
+    font-size: 8px;
+    line-height: 1;
     color: var(--text-muted, #9a9a9a);
-    white-space: nowrap;
     font-variant-numeric: tabular-nums;
+    pointer-events: none;
+  }
+  /* hover/聚焦弹窗：白底浮层多行文字明细（含条数 · token · 占比 · 角色包比例） */
+  .context-ring__tip {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 220px;
+    padding: var(--sp-3, 8px) var(--sp-4, 10px);
+    background: var(--surface-tip, #2d2d2d);
+    border: 1px solid var(--border-input, rgba(128,128,128,.5));
+    border-radius: var(--radius-md, 8px);
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0, 0, 0, 0.15));
+    font-size: 11px;
+    line-height: 1.7;
+    color: var(--text-input, #cccccc);
+    white-space: pre-line; /* 保留 buildOccupancyTipText 的多行 \n */
+    font-variant-numeric: tabular-nums;
+    z-index: 30;
+  }
+  .context-ring:hover .context-ring__tip,
+  .context-ring:focus-within .context-ring__tip { display: block; }
+  @media (prefers-reduced-motion: reduce) {
+    .context-ring__fill { transition: none; }
   }
   /* 唯一视觉卡片：边框 + 圆角 + 阴影 + 背景（全部集中在此） */
   #inputWrap {
@@ -468,10 +496,10 @@ export const chatStyles = `
     border-color: var(--border-focus, #0e639c);
     box-shadow: var(--shadow-card-focus, 0 4px 14px rgba(0, 0, 0, 0.25));
   }
-  /* textarea：占主空间，无独立边框，与卡片融合 */
+  /* textarea：占主空间，无独立边框，与卡片融合（右侧留出圆环角标空间） */
   #input {
     flex: 1;
-    padding: var(--sp-6, 16px) var(--sp-6, 16px) var(--sp-3, 8px);
+    padding: var(--sp-6, 16px) var(--sp-10, 34px) var(--sp-3, 8px);
     border: none;
     background: transparent;
     color: var(--text-input, #cccccc);

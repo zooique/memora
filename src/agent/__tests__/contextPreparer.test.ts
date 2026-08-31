@@ -193,6 +193,9 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     expect(occ.dialogueTokens).toBe(3);
     // 记忆摘要 = 注入记忆正文（'测试内容' 长度 4）
     expect(occ.memoryTokens).toBe(4);
+    // 条数与 token 同源：recalled 1 条记忆、注入 1 条对话
+    expect(occ.memoryCount).toBe(1);
+    expect(occ.dialogueCount).toBe(1);
     // 当前输入锚点 = 输入长度(4) × 2
     expect(occ.inputAnchorTokens).toBe(8);
     // 输出预留 = 窗口 × 0.15
@@ -224,6 +227,9 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
     // 完整对话 = 全量对话 token（10），而非派生 history（避免低估）
     expect(occ.dialogueTokens).toBe(10);
+    // fixed 模式计量 loop.messages 全量 user/assistant：2 条
+    expect(occ.dialogueCount).toBe(2);
+    expect(occ.memoryCount).toBe(0);
     // 其余段语义与 hybrid 一致
     expect(occ.totalTokens).toBe(120_000);
     expect(occ.rolePackBaseTokens).toBe(3);

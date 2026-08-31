@@ -1419,11 +1419,50 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 「上限未变则保留已展示的真实占用」，避免面板数据刷新把已用数字误清零
   let contextLimitShown: number | undefined;
 
+  // 圆环充能几何：SVG r=16 → 周长 2π×16 ≈ 100.53（stroke-dasharray/dashoffset 单位统一）
+  const RING_CIRCUMFERENCE = 2 * Math.PI * 16;
+
   /**
-   * ④ 预算可视化：首轮对话前，按当前选中 LLM 的上下文上限渲染占用条容量。
+   * 圆环充能填充：按占用比例（0-100）设置 stroke-dashoffset，比例越高弧越满。
+   *
+   * @param el      圆环 SVG 容器（找 #occFill 圆）
+   * @param usedPct 占用百分比（0-100）
+   */
+  function setRingFill(el: HTMLElement, usedPct: number): void {
+    const fill = el.querySelector<SVGCircleElement>('#occFill');
+    if (!fill) return;
+    const pct = Math.max(0, Math.min(100, usedPct));
+    // dasharray = 周长（满环）；dashoffset = 周长 × (1 − 占比) → 占比越高可见弧越长
+    fill.style.strokeDasharray = String(RING_CIRCUMFERENCE);
+    fill.style.strokeDashoffset = String(RING_CIRCUMFERENCE * (1 - pct / 100));
+  }
+
+  /**
+   * 组装占用明细弹窗文字（纯文字，多行；供 hover/聚焦浮层展示）。
+   *
+   * 每行「标签：数量 · token（占比）」；rolePack 额外给「占窗口比例」；
+   * UI 只渲染宿主透传的数字与条数，不重算（守内核/宿主边界）。
+   */
+  function buildOccupancyTipText(
+    occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
+  ): string {
+    const total = Math.max(1, occ.totalTokens);
+    const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
+    const lines: string[] = [`上下文占用（总容量 ${fmtTokens(occ.totalTokens)}）`];
+    lines.push(`角色包/系统设定：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`);
+    lines.push(`记忆摘要：${occ.memoryCount} 条 · ${fmtTokens(occ.memoryTokens)}（${pctOf(occ.memoryTokens)}）`);
+    lines.push(`完整对话：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`);
+    lines.push(`当前输入锚点：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`);
+    lines.push(`输出预留：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`);
+    lines.push(`剩余可用：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`);
+    return lines.join('\n');
+  }
+
+  /**
+   * ④ 预算可视化：首轮对话前，按当前选中 LLM 的上下文上限渲染圆环空态。
    *
    * chat_providers 到达时调用：真实占用（context_occupancy）要等首轮流式结束才有，
-   * 在此之前占用条展示「0% · 0/{上限}」，让用户即时感知所选模型的窗口容量。
+   * 在此之前圆环展示「0% 空环 + 总容量」，让用户即时感知所选模型的窗口容量。
    * 无选中 Provider 时不展示（无「当前模型」可依赖，避免展示误导性的缺省值）。
    * 上限与已展示值相同 → 跳过（保留真实占用，不重复清零）。
    */
@@ -1436,32 +1475,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 上限未变化 → 保留已展示的真实占用（同一模型，无重置必要）
     if (contextLimitShown === active.limitTokens) return;
     contextLimitShown = active.limitTokens;
-    // 展示容量上限 + 清零各占用段（真实占用待 context_occupancy 覆盖）
+    // 展示容量上限 + 空环（真实占用待 context_occupancy 覆盖）
     el.hidden = false;
-    document.getElementById('occBar')?.querySelectorAll('.occ-seg').forEach((seg) => {
-      (seg as HTMLElement).style.width = '0%';
-    });
+    setRingFill(el, 0);
     const percentEl = document.getElementById('occPercent');
-    const usedEl = document.getElementById('occUsed');
-    const totalEl = document.getElementById('occTotal');
     if (percentEl) percentEl.textContent = '0%';
-    if (usedEl) usedEl.textContent = '0';
-    if (totalEl) totalEl.textContent = fmtTokens(active.limitTokens);
-    el.title = `上下文占用（总容量 ${active.limitTokens} tokens）\n` + [
-      '角色包/系统基础设定：0',
-      '记忆摘要：0',
-      '完整对话：0',
-      '当前输入锚点：0',
-      '输出预留：0',
-      `剩余可用：${active.limitTokens}`,
-    ].map((t) => `· ${t}`).join('\n');
+    const tipEl = document.getElementById('occTip');
+    if (tipEl) {
+      tipEl.textContent =
+        `上下文占用（总容量 ${fmtTokens(active.limitTokens)}）\n` +
+        '角色包/系统设定：0（0%）\n' +
+        '记忆摘要：0 条 · 0（0%）\n' +
+        '完整对话：0 条 · 0（0%）\n' +
+        '当前输入锚点：0（0%）\n' +
+        '输出预留：0（0%）\n' +
+        `剩余可用：${fmtTokens(active.limitTokens)}（100%）`;
+    }
   }
 
   /**
-   * ④ 预算可视化：更新输入区常驻上下文占用条。
+   * ④ 预算可视化：更新输入框内圆环充能图标。
    *
-   * 各段为 prepare 期**真实用量**（token），按占比设条宽；整条 hover 出完整分层明细
-   * （原生 title，零额外 DOM）。UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。
+   * 各段为 prepare 期**真实用量**（token）+ 条数，圆环按占用比例充能；
+   * hover/聚焦弹窗出完整分层明细（含条数、token、占比、角色包比例）。
+   * UI 只渲染宿主透传的数字，不重算（守内核/宿主边界）。
    */
   function updateContextOccupancy(
     occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
@@ -1472,33 +1509,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 记录内核真实总容量：后续同款 chat_providers 推送不再重置已用数字
     contextLimitShown = occ.totalTokens;
     const total = Math.max(1, occ.totalTokens);
-    const segs: Array<[string, number, string]> = [
-      ['rolepack', occ.rolePackBaseTokens, '角色包/系统基础设定'],
-      ['memory', occ.memoryTokens, '记忆摘要'],
-      ['dialogue', occ.dialogueTokens, '完整对话'],
-      ['input', occ.inputAnchorTokens, '当前输入锚点'],
-      ['output', occ.outputReserveTokens, '输出预留'],
-      ['free', occ.freeTokens, '剩余可用'],
-    ];
-    for (const [suffix, val, label] of segs) {
-      const pct = Math.max(0, Math.min(100, (val / total) * 100));
-      const node = el.querySelector<HTMLElement>(`.occ-seg--${suffix}`);
-      if (node) {
-        node.style.width = pct + '%';
-        node.title = `${label}：${val} tokens（${pct.toFixed(1)}%）`;
-      }
-    }
+    // 圆环充能比例 = 已用占比（total − free）/ total
     const usedPct = Math.max(0, Math.min(100, ((total - occ.freeTokens) / total) * 100));
+    setRingFill(el, usedPct);
     const percentEl = document.getElementById('occPercent');
     if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
-    const usedEl = document.getElementById('occUsed');
-    if (usedEl) usedEl.textContent = fmtTokens(total - occ.freeTokens);
-    const totalEl = document.getElementById('occTotal');
-    if (totalEl) totalEl.textContent = fmtTokens(occ.totalTokens);
-    // 整条 hover 出完整分层明细
-    el.title =
-      `上下文占用（总容量 ${occ.totalTokens} tokens）\n` +
-      segs.map(([, val, label]) => `· ${label}：${val}`).join('\n');
+    const tipEl = document.getElementById('occTip');
+    if (tipEl) tipEl.textContent = buildOccupancyTipText(occ);
   }
 
   /**

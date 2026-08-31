@@ -3,7 +3,7 @@
  *
  * 主题单一真理源：webview 侧所有「token 数量可读展示/换算」统一收敛于此，
  * 避免各页面各自内联缩写逻辑（configView 卡片详情与表单反馈、chatView 上下文
- * 占用条 occUsed / occTotal、预算可视化行 fmtCompactTokens）。
+ * 圆环明细 occTip、预算可视化行 fmtCompactTokens）。
  *
  * 换算规约（唯一真理源）：K = ×1000 供配置表单输入与展示共用；
  * M = ×1,000,000 仅展示缩写用（表单已收紧为单一 K 单位输入）。

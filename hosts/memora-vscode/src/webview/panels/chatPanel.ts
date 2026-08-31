@@ -2179,22 +2179,20 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     </div>
   </div>
   <div id="inputBar">
-    <!-- ④ 预算可视化：输入区常驻上下文占用条（首帧起由 chat_providers 渲染所选模型容量上限；真实分层占用由首轮后 context_occupancy 覆盖；hover 出分层明细） -->
-    <div id="contextOccupancy" class="context-occupancy" hidden>
-      <div class="occ-bar" id="occBar">
-        <span class="occ-seg occ-seg--rolepack" data-seg="rolePack"></span>
-        <span class="occ-seg occ-seg--memory" data-seg="memory"></span>
-        <span class="occ-seg occ-seg--dialogue" data-seg="dialogue"></span>
-        <span class="occ-seg occ-seg--input" data-seg="input"></span>
-        <span class="occ-seg occ-seg--output" data-seg="output"></span>
-        <span class="occ-seg occ-seg--free" data-seg="free"></span>
-      </div>
-      <div class="occ-meta"><span id="occPercent">0%</span> · <span id="occUsed">0</span>/<span id="occTotal">0</span> tokens</div>
-    </div>
     <!-- Grok 式：选中 Skill 后在输入框上方以「名称 + × 可移除」chip 展示（chatView renderSkillChip 动态构建）；
          entry 仍是 Row1 的 ⚡ 触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
     <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
+      <!-- 上下文占用：输入框卡片内圆环充能图标（常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
+           真实分层占用由首轮后 context_occupancy 覆盖；hover/聚焦弹窗出分层明细文字——含条数与占比） -->
+      <div id="contextOccupancy" class="context-ring" hidden>
+        <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
+          <circle class="context-ring__track" cx="20" cy="20" r="16" />
+          <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
+        </svg>
+        <span class="context-ring__percent" id="occPercent">0%</span>
+        <div class="context-ring__tip" id="occTip" role="tooltip"></div>
+      </div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->

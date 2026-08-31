@@ -45,19 +45,17 @@ const HTML = `
     </div>
   </div>
   <div id="inputBar">
-    <!-- ④ 预算可视化：上下文占用条（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
-    <div id="contextOccupancy" class="context-occupancy" hidden>
-      <div class="occ-bar" id="occBar">
-        <span class="occ-seg occ-seg--rolepack" data-seg="rolePack"></span>
-        <span class="occ-seg occ-seg--memory" data-seg="memory"></span>
-        <span class="occ-seg occ-seg--dialogue" data-seg="dialogue"></span>
-        <span class="occ-seg occ-seg--input" data-seg="input"></span>
-        <span class="occ-seg occ-seg--output" data-seg="output"></span>
-        <span class="occ-seg occ-seg--free" data-seg="free"></span>
-      </div>
-      <div class="occ-meta"><span id="occPercent">0%</span> · <span id="occUsed">0</span>/<span id="occTotal">0</span> tokens</div>
-    </div>
+    <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
+      <!-- ④ 预算可视化：上下文占用圆环（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
+      <div id="contextOccupancy" class="context-ring" hidden>
+        <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
+          <circle class="context-ring__track" cx="20" cy="20" r="16" />
+          <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
+        </svg>
+        <span class="context-ring__percent" id="occPercent">0%</span>
+        <div class="context-ring__tip" id="occTip" role="tooltip"></div>
+      </div>
       <textarea id="input"></textarea>
       <div id="inputFooter">
         <div class="composer-row composer-row--actions">
@@ -1542,10 +1540,10 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     vi.restoreAllMocks();
   });
 
-  it('chat_providers 到达（含选中模型）→ 占用条显示该模型上限且未隐藏（首轮对话前即有真实容量）', () => {
+  it('chat_providers 到达（含选中模型）→ 圆环显示该模型容量且未隐藏（首轮对话前即有真实容量）', () => {
     mountChatView();
     const bar = document.getElementById('contextOccupancy') as HTMLElement;
-    const totalEl = document.getElementById('occTotal') as HTMLElement;
+    const tipEl = document.getElementById('occTip') as HTMLElement;
     // 无 Provider 前：默认隐藏，避免展示误导性的 0/0
     expect(bar.hidden).toBe(true);
 
@@ -1560,12 +1558,14 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
 
     // 展示所选模型上限（fmtTokens 缩写 128K），已用 0
     expect(bar.hidden).toBe(false);
-    expect(totalEl.textContent).toBe('128K');
-    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('0');
+    expect(tipEl.textContent).toContain('总容量 128K');
     expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
+    // 空环：dashoffset = 周长（无可见充能弧）
+    const fill = document.getElementById('occFill') as unknown as SVGCircleElement;
+    expect(Number(fill.style.strokeDashoffset)).toBeCloseTo(2 * Math.PI * 16, 1);
   });
 
-  it('无选中 Provider 时占用条保持隐藏（无「当前模型」可依赖，不展示缺省值）', () => {
+  it('无选中 Provider 时圆环保持隐藏（无「当前模型」可依赖，不展示缺省值）', () => {
     mountChatView();
     dispatch({ type: 'chat_providers', providers: [{ name: 'a', displayName: 'A', limitTokens: 64000 }], activeName: undefined });
     const bar = document.getElementById('contextOccupancy') as HTMLElement;
@@ -1587,22 +1587,25 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
         rolePackBaseTokens: 20000,
         memoryTokens: 2000,
         dialogueTokens: 2000,
+        dialogueCount: 3,
+        memoryCount: 2,
         inputAnchorTokens: 0,
         outputReserveTokens: 19200,
         freeTokens: 84800,
       },
     });
-    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('43,200');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('完整对话：3 条');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('记忆摘要：2 条');
     // 同款 chat_providers 再推送（如面板刷新）→ 上限未变 → 不把已用清回 0
     dispatch({
       type: 'chat_providers',
       providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 }],
       activeName: 'deepseek',
     });
-    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('43,200');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('完整对话：3 条');
   });
 
-  it('切换到其他模型（上限不同）→ 上限与已用同步更新为新模型（实时跟随选中 LLM）', () => {
+  it('切换到其他模型（上限不同）→ 容量与已用同步更新为新模型（实时跟随选中 LLM）', () => {
     mountChatView();
     dispatch({
       type: 'chat_providers',
@@ -1612,7 +1615,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       ],
       activeName: 'deepseek',
     });
-    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('128K');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 128K');
 
     // 用户切换模型（底部模型下拉）→ host 重推 chat_providers（activeName 变化）
     dispatch({
@@ -1623,9 +1626,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       ],
       activeName: 'local',
     });
-    // 上限切换为本地模型 8K，占用清零（旧模型占用数据对新模型无意义）
-    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('8,192');
-    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('0');
+    // 容量切换为本地模型 8K，占用清零（旧模型占用数据对新模型无意义）
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 8,192');
+    expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
   });
 
   it('context_occupancy 真实占用覆盖首屏容量（内核为总容量唯一真理源）', () => {
@@ -1635,7 +1638,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 64000, limitTokens: 64000 }],
       activeName: 'deepseek',
     });
-    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('64K');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 64K');
 
     // 内核 prepare 后回推真实占用
     dispatch({
@@ -1645,14 +1648,24 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
         rolePackBaseTokens: 15000,
         memoryTokens: 1000,
         dialogueTokens: 1000,
+        dialogueCount: 2,
+        memoryCount: 1,
         inputAnchorTokens: 50,
         outputReserveTokens: 9600,
         freeTokens: 37350,
       },
     });
-    // 更新：百分比 + 已用/总量（fmtTokens：千分位分隔非整千数）
+    // 更新：百分比取整显示 42%（41.64% → toFixed(0)）
     expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('42%');
-    expect((document.getElementById('occUsed') as HTMLElement).textContent).toBe('26,650');
-    expect((document.getElementById('occTotal') as HTMLElement).textContent).toBe('64K');
+    // 圆环充能：dashoffset 用精确比例 (64000−37350)/64000 = 0.4164（弧线精确、显示取整）
+    const fill = document.getElementById('occFill') as unknown as SVGCircleElement;
+    const expectedOffset = 2 * Math.PI * 16 * (37350 / 64000);
+    expect(Number(fill.style.strokeDashoffset)).toBeCloseTo(expectedOffset, 1);
+    // 明细弹窗：含角色包比例 + 条数 + token（fmtTokens 整千缩写 15K/1K）
+    const tip = (document.getElementById('occTip') as HTMLElement).textContent ?? '';
+    expect(tip).toContain('总容量 64K');
+    expect(tip).toContain('完整对话：2 条 · 1K');
+    expect(tip).toContain('记忆摘要：1 条 · 1K');
+    expect(tip).toContain('角色包/系统设定：15K（占窗口 23.4%）');
   });
 });
