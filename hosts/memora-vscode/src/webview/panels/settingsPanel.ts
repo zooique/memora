@@ -1303,9 +1303,9 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <div id="apikeyHint" class="key-hint" hidden></div>
           </div>
           <div class="field">
-            <label for="f-contextwindow">上下文窗口上限（token）</label>
-            <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 64K 或 65536（留空用默认 120K）" autocomplete="off" />
-            <div class="key-hint">单位是 token（约 1 个英文单词 / 1.5 个汉字）。支持简写：K=千、M=百万——如 128K=128000、200K=200000、1M=1000000，也可直接填纯数字。填该模型文档标注的上下文长度；留空使用默认 120000。</div>
+            <label for="f-contextwindow">上下文窗口上限（K）</label>
+            <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 128（留空用默认 120K）" autocomplete="off" />
+            <div class="key-hint">填千单位（K），如 128 表示 128K = 128,000 tokens；支持小数（如 1.5）；留空使用默认 120K。</div>
             <div id="f-contextwindow-feedback" class="key-hint" hidden></div>
           </div>
           <div id="testResult" class="test-result" hidden></div>

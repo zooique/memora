@@ -2,13 +2,13 @@
  * fmtTokens 单元测试 — token 数量人类可读格式化（K/M 缩写与千分位）
  *
  * 该 helper 是 webview「token 数量展示/换算」主题的单一真理源：精确展示 fmtTokens、
- * 紧凑近似 fmtCompactTokens、换算常量 TOKENS_PER_K/TOKENS_PER_M（配置表单解析消费），
+ * 紧凑近似 fmtCompactTokens、换算常量 TOKENS_PER_K（配置表单 K 输入消费）/ TOKENS_PER_M（仅展示缩写），
  * 三者须保持与显示/解析一致的单向确定性。
  */
 import { describe, it, expect } from 'vitest';
 import { fmtTokens, fmtCompactTokens, TOKENS_PER_K, TOKENS_PER_M } from '../fmtTokens.js';
 
-describe('fmtTokens 换算常量（配置表单解析与展示共用，K/M 唯一倍数源）', () => {
+describe('fmtTokens 换算常量（K 供表单输入与展示共用，M 仅展示缩写，唯一倍数源）', () => {
   it('K=×1000、M=×1,000,000（LLM 生态口径，非二进制倍数）', () => {
     expect(TOKENS_PER_K).toBe(1000);
     expect(TOKENS_PER_M).toBe(1_000_000);

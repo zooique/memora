@@ -15,7 +15,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
-import { fmtTokens, TOKENS_PER_K, TOKENS_PER_M } from '../helpers/fmtTokens.js';
+import { fmtTokens, TOKENS_PER_K } from '../helpers/fmtTokens.js';
 
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ConfigViewDeps {
@@ -67,7 +67,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fModel = root.querySelector('#f-model') as HTMLInputElement;
   const fBaseUrl = root.querySelector('#f-baseurl') as HTMLInputElement;
   const fApiKey = root.querySelector('#f-apikey') as HTMLInputElement;
-  // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K；支持 K/M 简写输入）
+  // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K；单一 K 单位输入）
   const fContextWindow = root.querySelector('#f-contextwindow') as HTMLInputElement;
   // 上下文上限输入的即时报错/换算提示（输入非法时展示就地错误，不依赖 host 往返）
   const cwFeedback = root.querySelector('#f-contextwindow-feedback') as HTMLElement;
@@ -92,25 +92,26 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   }
 
   /**
-   * 解析上下文上限输入串（支持纯数字 / K / M 简写）
+   * 解析上下文上限输入串（单一 K 单位：纯数字 = K 值，可选 k 后缀）
    *
-   * 换算倍数 K=×1000、M=×1,000,000 的唯一真理源 = fmtTokens.ts 的 TOKENS_PER_K /
-   * TOKENS_PER_M 常量（与显示同规，见该文件注释）。容忍千分位 / 下划线 / 空格
-   * （配合编辑回显 fmtTokens 的 "65,536" 形式）与小数（如 1.5M）。
+   * K 倍数唯一真理源 = fmtTokens.ts 的 TOKENS_PER_K（×1000，LLM 生态口径）。
+   * 收紧自 K/M/纯数字多格式：用户只需填 K 数（如 128 = 128K = 128000），支持小数（如 1.5 = 1500）。
    *
-   * @param raw 表单原始输入（未 trim）
+   * @param raw 表单原始输入
    * @returns token 数；空串 → undefined（未配置）；无法识别 → NaN
    */
   function parseTokenInput(raw: string): number | undefined {
-    const cleaned = raw.replace(/[,＿_\s\u3000]/g, '');
+    const cleaned = raw.trim().toLowerCase();
     if (!cleaned) return undefined;
-    const m = /^(\d+(?:\.\d+)?)([km]?)$/i.exec(cleaned);
+    // 数字（含小数）+ 可选 k 后缀；M/千分位/裸 token 不再识别（K 语义下是混淆源）
+    const m = /^(\d+(?:\.\d+)?)k?$/i.exec(cleaned);
     if (!m) return NaN;
-    const base = Number(m[1]);
-    const suffix = m[2].toLowerCase();
-    const tokens =
-      suffix === 'k' ? base * TOKENS_PER_K : suffix === 'm' ? base * TOKENS_PER_M : base;
-    return Math.round(tokens);
+    return Math.round(Number(m[1]) * TOKENS_PER_K);
+  }
+
+  /** token → K 值输入串（整千整数、非整千保留小数；与 parseTokenInput 的 K 语义对称） */
+  function tokensToKValue(tokens: number): string {
+    return String(tokens / TOKENS_PER_K);
   }
 
   /** 就地设置上下文上限输入提示（text 为空则隐藏；isError 标记错误态样式） */
@@ -166,8 +167,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       const masked = target?.maskedKey || '';
       apikeyHint.hidden = !masked;
       apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
-      // 上下文窗口上限回填（per-LLM 真理源；fmtTokens 友好简写回显，如 200K，换算 M 级同理）
-      fContextWindow.value = target?.contextWindow ? fmtTokens(target.contextWindow) : '';
+      // 上下文窗口上限回填（per-LLM 真理源；K 值回显，整千整数/非整千小数，label 已标 K 单位）
+      fContextWindow.value = target?.contextWindow ? tokensToKValue(target.contextWindow) : '';
     } else {
       fName.value = '';
       fName.disabled = false;
@@ -370,9 +371,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     if (!raw) return;
     const parsed = parseTokenInput(raw);
     if (parsed !== undefined && !Number.isNaN(parsed)) {
-      setCwFeedback(`= ${parsed.toLocaleString('en-US')} tokens（${fmtTokens(parsed)}）`, false);
+      // 下方实时展示转换后的 token 数（单一 K 输入 → 具体 token）
+      setCwFeedback(`= ${parsed.toLocaleString('en-US')} tokens`, false);
     } else {
-      setCwFeedback('无法识别：请填整数，或带 K/M 简写（如 200K、1M）', true);
+      setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
     }
   });
   // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
@@ -383,7 +385,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     if (cwRaw) {
       const parsed = parseTokenInput(cwRaw);
       if (parsed === undefined || Number.isNaN(parsed)) {
-        setCwFeedback('无法识别：请填整数，或带 K/M 简写（如 200K、1M）', true);
+        setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
         fContextWindow.focus();
         return;
       }

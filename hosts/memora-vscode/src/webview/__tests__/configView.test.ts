@@ -189,7 +189,16 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     // 激活卡仅有「编辑」按钮（.btn-secondary）
     (document.querySelector('.card .btn-secondary') as HTMLButtonElement).click();
     const cw = document.getElementById('f-contextwindow') as HTMLInputElement;
-    expect(cw.value).toBe('64K');
+    // K 值回显（label 已标 K 单位，输入框填 K 数字）
+    expect(cw.value).toBe('64');
+  });
+
+  it('编辑打开弹窗：非整千 contextWindow 回显为小数 K（保精度）', () => {
+    mountConfigView();
+    dispatchLoaded([makeProvider('deepseek', { contextWindow: 65536 })], 'deepseek');
+    (document.querySelector('.card .btn-secondary') as HTMLButtonElement).click();
+    const cw = document.getElementById('f-contextwindow') as HTMLInputElement;
+    expect(cw.value).toBe('65.536');
   });
 
   it('保存提交：表单 contextWindow 随 cfg_save 上报（填值）', () => {
@@ -201,7 +210,8 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
     (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
     (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
-    (document.getElementById('f-contextwindow') as HTMLInputElement).value = '128000';
+    // K 值输入：128（= 128K）→ 上报 128000
+    (document.getElementById('f-contextwindow') as HTMLInputElement).value = '128';
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
     const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } };
     expect(sent.config.contextWindow).toBe(128000);
@@ -222,7 +232,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(sent.config.contextWindow).toBeUndefined();
   });
 
-  // ─── 2026-08-31 上下文上限简写输入（K/M 换算，对齐 fmtTokens 显示同规） ───
+  // ─── 上下文上限输入（单一 K 单位：纯数字 = K 值，可选 k 后缀） ───
 
   /** 打开「添加 API」弹窗并提交，返回 cfg_save 载荷（null = 未发出保存） */
   function submitWithContextWindow(raw: string) {
@@ -236,16 +246,21 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
     (document.getElementById('f-contextwindow') as HTMLInputElement).value = raw;
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
-    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } } | undefined;
-    return sent?.config.contextWindow;
+    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[] | undefined;
+    // 非法输入被阻断不发出 cfg_save → call 为 undefined → 返回 undefined
+    return (call?.[0] as { config: { contextWindow?: number } } | undefined)?.config.contextWindow;
   }
 
   it('保存「200K」→ 上报 200000（K=×1000，对齐 LLM 生态口径）', () => {
     expect(submitWithContextWindow('200K')).toBe(200000);
   });
 
-  it('保存「1M」→ 上报 1000000（M=×1,000,000）', () => {
-    expect(submitWithContextWindow('1M')).toBe(1000000);
+  it('保存「200」（纯数字 = K 值）→ 上报 200000（单一 K 单位：用户只填 K 数）', () => {
+    expect(submitWithContextWindow('200')).toBe(200000);
+  });
+
+  it('保存「1M」→ 不再识别（M 单位已移除，收紧为单一 K）', () => {
+    expect(submitWithContextWindow('1M')).toBeUndefined();
   });
 
   it('保存小写「64k」→ 上报 64000（后缀大小写不敏感）', () => {
@@ -256,12 +271,16 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(submitWithContextWindow('1024K')).toBe(1024000);
   });
 
-  it('保存小数「1.5K」→ 上报 1500（支持小数简写）', () => {
+  it('保存小数「1.5K」→ 上报 1500（支持小数 K）', () => {
     expect(submitWithContextWindow('1.5K')).toBe(1500);
   });
 
-  it('保存「65,536」（编辑回显千分位形式）→ 上报 65536（容忍千分位/下划线/空格）', () => {
-    expect(submitWithContextWindow('65,536')).toBe(65536);
+  it('保存「65.536」（非整千小数 K）→ 上报 65536（回显/提交往返保精度）', () => {
+    expect(submitWithContextWindow('65.536')).toBe(65536);
+  });
+
+  it('保存「65,536」→ 不再识别（K 语义下千分位是混淆源，应填 K 值如 65.5）', () => {
+    expect(submitWithContextWindow('65,536')).toBeUndefined();
   });
 
   it('非法输入「abc」→ 就地报错并阻断提交（不发出 cfg_save，防静默回落默认值）', () => {
@@ -278,7 +297,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_save' }));
     const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
     expect(feedback.hidden).toBe(false);
-    expect(feedback.textContent).toContain('无法识别');
+    expect(feedback.textContent).toContain('请填 K 单位数字');
   });
 
   it('输入合法简写时实时反馈换算（200K → = 200,000 tokens）', () => {
