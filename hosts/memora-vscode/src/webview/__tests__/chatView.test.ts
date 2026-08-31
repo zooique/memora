@@ -405,7 +405,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(pauseBtn.hidden).toBe(false);
     expect(send.title).toBe('停止生成');
     pauseBtn.click();
-    // 点击暂停 → 发 pause 消息，host 调 agent.pause() 软暂停（不丢弃、可恢复）
+    // 点击暂停 → 发 pause 消息，host 调 agent.requestPause() 迭口边界软暂停（可经「继续」恢复）
     expect(postMessage).toHaveBeenCalledWith({ type: 'pause' });
   });
 

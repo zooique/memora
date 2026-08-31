@@ -397,4 +397,52 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
     expect(ofType(posted, 'checkpoint_available').length).toBe(0);
   });
+
+  // ─── Phase 4 软暂停入口：生成中暂停走迭口边界挂起 requestPause（与内核迭口软暂停语义一致） ───
+  function pauseAgentStub(): {
+    agent: Agent;
+    requestPause: ReturnType<typeof vi.fn>;
+    pause: ReturnType<typeof vi.fn>;
+  } {
+    const requestPause = vi.fn(() => true);
+    const pause = vi.fn(() => true);
+    const agent = { requestPause, pause, on: vi.fn(), off: vi.fn() } as unknown as Agent;
+    return { agent, requestPause, pause };
+  }
+
+  it('handlePause：生成中软暂停走 requestPause（迭口边界挂起），不用立即翻态的 pause', () => {
+    const { provider, posted } = setup();
+    const { agent, requestPause, pause } = pauseAgentStub();
+    provider.setAgent(agent);
+    // 生成中（流进行中）暂停按钮才可见 → _streaming=true
+    (provider as unknown as { _streaming: boolean })._streaming = true;
+    (provider as unknown as { handlePause(): void }).handlePause();
+    // 应调迭口边界软暂停入口 requestPause，而非立即翻态的 pause
+    expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
+    expect(pause).not.toHaveBeenCalled();
+    // 无失败提示
+    expect(ofType(posted, 'notice')).toHaveLength(0);
+  });
+
+  it('handlePause：requestPause 失败（幂等/异常态）→ 提示暂停失败', () => {
+    const { provider, posted } = setup();
+    const { agent, requestPause } = pauseAgentStub();
+    requestPause.mockReturnValue(false);
+    provider.setAgent(agent);
+    (provider as unknown as { _streaming: boolean })._streaming = true;
+    (provider as unknown as { handlePause(): void }).handlePause();
+    const notice = ofType<{ type: string; message: string }>(posted, 'notice');
+    expect(notice.some((n) => n.message.includes('暂停失败'))).toBe(true);
+  });
+
+  it('handlePause：空闲态（非生成中）→ 提示无可暂停', () => {
+    const { provider, posted } = setup();
+    const { agent, requestPause } = pauseAgentStub();
+    provider.setAgent(agent);
+    (provider as unknown as { _streaming: boolean })._streaming = false;
+    (provider as unknown as { handlePause(): void }).handlePause();
+    expect(requestPause).not.toHaveBeenCalled();
+    const notice = ofType<{ type: string; message: string }>(posted, 'notice');
+    expect(notice.some((n) => n.message.includes('没有可暂停'))).toBe(true);
+  });
 });

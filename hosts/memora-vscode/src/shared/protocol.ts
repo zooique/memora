@@ -156,7 +156,7 @@ export type WebviewToExtensionMessage =
   /**
    * 暂停生成：用户暂停当前 Agent 执行（Phase 4 暂停/恢复）
    *
-   * 由 webview 暂停按钮触发，host 调 agent.pause() 暂停当前流，
+   * 由 webview 暂停按钮触发，host 调 agent.requestPause()（迭口边界软暂停），
    * 发送 status:'paused' 通知 webview。
    */
   | { type: 'pause' }

@@ -438,7 +438,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
         this.handleStop();
       } else if (msg.type === 'pause') {
-        // Phase 4：暂停生成：调 agent.pause() 暂停当前流
+        // Phase 4：暂停生成：调 agent.requestPause()（迭口边界软暂停）暂停当前流
         this.handlePause();
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
@@ -1751,8 +1751,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 暂停生成：用户软暂停当前 Agent 执行（Phase 4 暂停/恢复）
    *
-   * 调 agent.pause('user-pause') 将状态机翻至 paused，当前流在下一 await 点 yield paused chunk，
-   * 随后 consumeFlow 正常收尾并发送 status:'paused'。无进行中流时提示无可暂停。
+   * 调 agent.requestPause() 迭口边界软暂停（状态机翻 PAUSED 由内核收口，非申请即翻转）；
+   * 空闲态（无进行中流）提前拦截给明确提示。
    */
   private handlePause(): void {
     if (!this._agent) return;
@@ -1760,7 +1760,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'info', message: '当前没有可暂停的生成' });
       return;
     }
-    const ok = this._agent.pause('user-pause', 'user');
+    const ok = this._agent.requestPause('user-pause', 'user');
     if (!ok) {
       this.post({ type: 'notice', level: 'error', message: '暂停失败，请重试' });
     }
