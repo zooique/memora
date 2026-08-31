@@ -416,13 +416,13 @@ export const chatStyles = `
     background: transparent;
     position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
-  /* ④ 预算可视化：输入框内上下文占用圆环充能图标（常驻不占行；hover/聚焦弹窗出分层明细文字） */
+  /* ④ 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
+   * 避免向下展开挤压面板底部出现外部滚动条） */
   .context-ring {
-    position: absolute;
-    top: var(--sp-3, 8px);
-    right: var(--sp-3, 8px);
+    position: relative; /* 弹窗以本元素为基准向上定位 */
     width: 22px;
     height: 22px;
+    flex-shrink: 0;
     z-index: 25; /* 高于输入卡片层级：弹窗可覆盖输入区而非被裁 */
   }
   .context-ring__svg {
@@ -454,11 +454,12 @@ export const chatStyles = `
     font-variant-numeric: tabular-nums;
     pointer-events: none;
   }
-  /* hover/聚焦弹窗：白底浮层多行文字明细（含条数 · token · 占比 · 角色包比例） */
+  /* hover/聚焦弹窗：白底浮层多行文字明细（含条数 · token · 占比 · 角色包比例）。
+   * 向上弹出（bottom 贴圆环上沿）：底部是输入区/面板边界，向下展开会撑出外部滚动条 */
   .context-ring__tip {
     display: none;
     position: absolute;
-    top: calc(100% + 6px);
+    bottom: calc(100% + 6px);
     right: 0;
     min-width: 220px;
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
@@ -496,10 +497,10 @@ export const chatStyles = `
     border-color: var(--border-focus, #0e639c);
     box-shadow: var(--shadow-card-focus, 0 4px 14px rgba(0, 0, 0, 0.25));
   }
-  /* textarea：占主空间，无独立边框，与卡片融合（右侧留出圆环角标空间） */
+  /* textarea：占主空间，无独立边框，与卡片融合 */
   #input {
     flex: 1;
-    padding: var(--sp-6, 16px) var(--sp-10, 34px) var(--sp-3, 8px);
+    padding: var(--sp-6, 16px) var(--sp-6, 16px) var(--sp-3, 8px);
     border: none;
     background: transparent;
     color: var(--text-input, #cccccc);

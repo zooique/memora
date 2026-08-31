@@ -47,15 +47,6 @@ const HTML = `
   <div id="inputBar">
     <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
-      <!-- ④ 预算可视化：上下文占用圆环（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
-      <div id="contextOccupancy" class="context-ring" hidden>
-        <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
-          <circle class="context-ring__track" cx="20" cy="20" r="16" />
-          <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
-        </svg>
-        <span class="context-ring__percent" id="occPercent">0%</span>
-        <div class="context-ring__tip" id="occTip" role="tooltip"></div>
-      </div>
       <textarea id="input"></textarea>
       <div id="inputFooter">
         <div class="composer-row composer-row--actions">
@@ -63,6 +54,15 @@ const HTML = `
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
             <button id="pauseBtn" hidden></button>
             <button id="send"></button>
+            <!-- ④ 预算可视化：发送按钮旁上下文占用圆环（容量上限由 chat_providers 实时渲染，真实占用由 context_occupancy 覆盖） -->
+            <div id="contextOccupancy" class="context-ring" hidden>
+              <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
+                <circle class="context-ring__track" cx="20" cy="20" r="16" />
+                <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
+              </svg>
+              <span class="context-ring__percent" id="occPercent">0%</span>
+              <div class="context-ring__tip" id="occTip" role="tooltip"></div>
+            </div>
           </div>
         </div>
         <div class="composer-row composer-row--context">

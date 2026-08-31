@@ -2183,16 +2183,6 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
          entry 仍是 Row1 的 ⚡ 触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
     <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
-      <!-- 上下文占用：输入框卡片内圆环充能图标（常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
-           真实分层占用由首轮后 context_occupancy 覆盖；hover/聚焦弹窗出分层明细文字——含条数与占比） -->
-      <div id="contextOccupancy" class="context-ring" hidden>
-        <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
-          <circle class="context-ring__track" cx="20" cy="20" r="16" />
-          <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
-        </svg>
-        <span class="context-ring__percent" id="occPercent">0%</span>
-        <div class="context-ring__tip" id="occTip" role="tooltip"></div>
-      </div>
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
       <div id="inputFooter">
         <!-- Row 1 · 一级直面：左侧功能群 + 右侧唯一发送按钮（发送突出化） -->
@@ -2222,6 +2212,17 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
               <span class="stop-icon" data-icon="stop"></span>
               <span class="play-icon" data-icon="play"></span>
             </button>
+            <!-- 上下文占用：发送按钮隔壁的圆环充能图标（常驻不占行，非噪点；首帧由 chat_providers 渲染所选模型容量上限，
+                 真实分层占用由首轮后 context_occupancy 覆盖；hover/聚焦**向上**弹窗出分层明细文字——含条数与占比，
+                 避免向下展开挤压面板底部） -->
+            <div id="contextOccupancy" class="context-ring" hidden>
+              <svg class="context-ring__svg" viewBox="0 0 40 40" aria-hidden="true">
+                <circle class="context-ring__track" cx="20" cy="20" r="16" />
+                <circle class="context-ring__fill" id="occFill" cx="20" cy="20" r="16" />
+              </svg>
+              <span class="context-ring__percent" id="occPercent">0%</span>
+              <div class="context-ring__tip" id="occTip" role="tooltip"></div>
+            </div>
           </div>
         </div>
         <!-- Row 2 · 状态行：角色徽章 + 能力徽章（最弱化的状态信息；Skill 名唯一归属 Row1 选择器，避免双轨） -->
