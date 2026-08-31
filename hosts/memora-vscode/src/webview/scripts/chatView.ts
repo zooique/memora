@@ -353,7 +353,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     flowShellEl?.remove();
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    buildAssistantShell(div, new Date().toISOString());
+    // 流式未完成：footer 初始隐藏（is-pending 由 buildAssistantShell 加类），finalize 时展示
+    buildAssistantShell(div, new Date().toISOString(), undefined, { pending: true });
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
@@ -678,6 +679,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 时才恢复输入焦点，避免 done 时强制 focus 打断用户正在进行的操作（对抗评估 P1-4）
       if (document.activeElement === document.body) input.focus();
     }
+    // 状态切换影响发送按钮可用性（生成中/暂停语义下恒可用，见 syncSendEnabled）
+    syncSendEnabled();
+  }
+
+  /**
+   * 同步发送按钮可用态：仅「发送」语义（空闲态）下输入为空则禁用；
+   * 「停止」（loading）/「继续」（paused）承担其他职责，始终可用（支持空输入继续/停止）。
+   * 调用点 = 一切输入内容/按钮状态变化处：input 事件、程序化预填/清空（不触发 input 事件）、setStatus。
+   */
+  function syncSendEnabled(): void {
+    if (send.classList.contains('loading') || send.classList.contains('paused')) {
+      send.disabled = false;
+      return;
+    }
+    send.disabled = !input.value.trim();
   }
 
   // ─── 回答等待指示器（③ 等待反馈，2026-08-29）─────────────────
@@ -1041,9 +1057,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    *
    * @param div 已创建的空 .msg.assistant 元素
    * @param ts 消息时间戳
-   * @returns body 元素（供调用方填充内容）
+   * @param roundId 本轮问答闭环 ID（流式结束回填启用分叉）
+   * @param opts.pending 流式回答未完成 → footer 初始隐藏（is-pending），finalizeStreaming 展示
+   * @returns body 元素 + footer 元素
    */
-  function buildAssistantShell(div: HTMLElement, ts?: string, roundId?: string): { body: HTMLElement } {
+  function buildAssistantShell(
+    div: HTMLElement,
+    ts?: string,
+    roundId?: string,
+    opts?: { pending?: boolean },
+  ): { body: HTMLElement; footer: HTMLElement } {
     // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
@@ -1100,10 +1123,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
     content.appendChild(footer);
     div.appendChild(content);
+    // 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳）——操作在内容定稿前无意义；
+    // 回答完毕（finalizeStreaming）移除 is-pending 再展示。历史回放的一次性消息不传 pending。
+    if (opts?.pending) footer.classList.add('is-pending');
     // 记录消息 timestamp 供删除锚点；roundId 供分叉按钮读取
     div.dataset.ts = ts ?? '';
     div.dataset.roundId = roundId ?? '';
-    return { body };
+    return { body, footer };
   }
 
   /**
@@ -1118,7 +1144,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     renderDateDivider(ts);
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    const { body } = buildAssistantShell(div, ts);
+    const { body } = buildAssistantShell(div, ts, undefined, { pending: true });
     // 流式期间：is-streaming 类驱动 CSS ::after 闪烁光标（markdown 由增量渲染填充）
     body.classList.add('is-streaming');
     activeAssistantEl = div;
@@ -1217,6 +1243,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 最终渲染后做代码块增强（语言标签 + 复制按钮）
       enhanceCodeBlocks(body);
     }
+    // 回答完毕：展示底部操作行（复制/分叉/删除 + 时间戳）——完整内容已定稿，操作才有效
+    activeAssistantEl.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
     // 复制源更新为完整原始文本（.msg.dataset.rawText 供复制按钮读取）
     activeAssistantEl.dataset.rawText = streamingRaw;
     streamingActive = false;
@@ -1666,6 +1694,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       input.style.height = 'auto';
       input.focus();
       autoResize();
+      syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步
     } else if (msg.type === 'need_clarify') {
       clarifyText.textContent =
         'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
@@ -1708,6 +1737,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (msg.ok && msg.text) {
         input.value = msg.text;
         autoResize();
+        syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步
       }
       // 恢复润色按钮状态（图标按钮，无需恢复文本）
       if (polishBtn) {
@@ -1842,6 +1872,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
+    syncSendEnabled(); // 宿主可能早退（Agent 未就绪/无会话）不转 thinking，清空后须立即禁用
     // 构建消息：选中技能传技能名（SSOT 收紧，host 按名走内核 buildSystemPrompt，取消前端硬编码提示）
     const payload: WebviewToExtensionMessage = { type: 'send' as const, text };
     if (currentSkill) {
@@ -1874,7 +1905,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       sendMessage();
     }
   });
-  input.addEventListener('input', autoResize);
+  input.addEventListener('input', () => {
+    autoResize();
+    syncSendEnabled(); // 用户输入实时重算发送按钮可用性（空输入禁用）
+  });
 
   // ─── 会话管理（2026-08-17 会话管理重构 v2，标题条收敛全部入口）───
   // 相对时间（历史列表副标题，本地辅助；重复 3 次再提取 helper）
@@ -1946,6 +1980,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     input.style.height = 'auto';
     input.focus();
     autoResize();
+    syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步
   });
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
@@ -2073,6 +2108,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   updateRoleBadge(); // 输入区角色徽章（首屏可能有历史推送的角色名）
   updateEmptyStateRole(); // P3：空状态文案随当前角色生长（首屏可能已有角色推送）
   renderModelPicker();
+  syncSendEnabled(); // 初始输入为空 → 发送按钮禁用（输入后经 input 事件恢复）
 
   // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
   // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）

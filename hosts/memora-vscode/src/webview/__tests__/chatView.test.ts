@@ -458,6 +458,8 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const input = document.getElementById('input') as HTMLTextAreaElement;
     const send = document.getElementById('send') as HTMLButtonElement;
     input.value = '打磨这段';
+    input.dispatchEvent(new Event('input', { bubbles: true })); // 输入后按钮解除禁用
+    expect(send.disabled).toBe(false);
     send.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '打磨这段' });
   });
@@ -477,6 +479,36 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const activityBar = document.getElementById('activityBar') as HTMLElement;
     expect(activityBar.hidden).toBe(false);
     expect(activityBar.textContent).toContain('已停止生成');
+  });
+
+  it('输入为空时发送按钮禁用（空闲态），输入后解除禁用', () => {
+    mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    const send = document.getElementById('send') as HTMLButtonElement;
+    // 初始输入为空 → 禁用
+    expect(send.disabled).toBe(true);
+    // 输入内容 → 解除禁用
+    input.value = '打磨这段';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(send.disabled).toBe(false);
+    // 清空 → 重新禁用
+    input.value = '';
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+    expect(send.disabled).toBe(true);
+  });
+
+  it('生成中/暂停态发送按钮不因输入为空禁用（停止/继续语义始终可用）', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    // 生成中（loading）：即使输入为空，停止按钮仍可点击
+    dispatch({ type: 'status', state: 'thinking' });
+    expect(send.disabled).toBe(false);
+    // 暂停态（paused）：继续按钮仍可点击（空输入继续恢复执行）
+    dispatch({ type: 'status', state: 'paused' });
+    expect(send.disabled).toBe(false);
+    // 回到空闲：输入为空 → 恢复禁用
+    dispatch({ type: 'status', state: 'done' });
+    expect(send.disabled).toBe(true);
   });
 });
 
@@ -1113,6 +1145,45 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     dispatch({ type: 'chunk', content: '半截' });
     const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     expect(del.disabled).toBe(true);
+  });
+
+  it('流式回答期间底部操作行隐藏，done 后才展示（按钮 + 时间戳）', () => {
+    mountChatView();
+    // 首个 chunk：footer 处于 pending（隐藏）态
+    dispatch({ type: 'chunk', content: '第一段' });
+    const msg = document.querySelector('.msg.assistant') as HTMLElement;
+    const footer = msg.querySelector('.msg-footer') as HTMLElement;
+    expect(footer).not.toBeNull();
+    expect(footer.classList.contains('is-pending')).toBe(true);
+    // 流式持续：仍隐藏
+    dispatch({ type: 'chunk', content: '第二段' });
+    expect(footer.classList.contains('is-pending')).toBe(true);
+    // 回答完毕：展示 footer
+    dispatch({ type: 'done', roundId: 'r1' });
+    expect(footer.classList.contains('is-pending')).toBe(false);
+  });
+
+  it('meta 骨架（prepareFlowShell）期间 footer 隐藏，interrupted 打断后展示', () => {
+    mountChatView();
+    // meta 到达 → 骨架建立（footer pending）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    const msg = document.querySelector('.msg.assistant') as HTMLElement;
+    const footer = msg.querySelector('.msg-footer') as HTMLElement;
+    expect(footer.classList.contains('is-pending')).toBe(true);
+    // 正文流入骨架
+    dispatch({ type: 'chunk', content: '回答' });
+    expect(footer.classList.contains('is-pending')).toBe(true);
+    // 打断（interrupted 同样 finalize）：展示 footer
+    dispatch({ type: 'interrupted', roundId: 'r2' });
+    expect(footer.classList.contains('is-pending')).toBe(false);
+  });
+
+  it('历史回放的一次性 assistant 消息 footer 直接展示（已完成消息）', () => {
+    mountChatView();
+    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    const footer = document.querySelector('.msg.assistant .msg-footer') as HTMLElement;
+    expect(footer).not.toBeNull();
+    expect(footer.classList.contains('is-pending')).toBe(false);
   });
 });
 

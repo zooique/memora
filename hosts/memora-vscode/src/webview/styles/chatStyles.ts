@@ -367,6 +367,9 @@ export const chatStyles = `
     display: flex; align-items: center; justify-content: flex-end;
     gap: var(--sp-1, 4px); margin-top: var(--sp-2, 6px);
   }
+  /* 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳），回答完毕后才展示。
+   * 状态类 is-pending 由 buildAssistantShell（pending 选项）加类、finalizeStreaming 移除。 */
+  .msg-footer.is-pending { display: none; }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   /* 润色按钮（H5 文本润色入口，2026-08-23）：用户消息专属，调用内核润色服务。
    * 与复制按钮同尺寸，用强调色区分（--accent），润色中态用 opacity 降提示。
