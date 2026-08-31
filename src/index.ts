@@ -123,6 +123,10 @@ export type {
 export { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
 // SEARCH_PROJECT_TOOL：条件性工具定义（宿主注入 IProjectSearchProvider 后暴露给 LLM）
 export { SEARCH_PROJECT_TOOL } from '@/agent/builtinTools.js';
+// PROJECT_SEARCH_RESULT_MAX_LEN / IGNORED_DIR_NAMES：search_project 调用面与宿主实现方共享的单一真理源
+// （宿主 projectSearchProvider import 对齐，避免结果上限 / 忽略目录数值漂移）
+export { PROJECT_SEARCH_RESULT_MAX_LEN } from '@/agent/toolExecutor.js';
+export { IGNORED_DIR_NAMES } from '@/agent/builtinToolHandlers.js';
 // 项目注册表 + 锁文件管理：宿主可直接使用或通过 ProjectManager 间接委托
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';

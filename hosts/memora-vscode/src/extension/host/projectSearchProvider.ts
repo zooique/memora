@@ -4,7 +4,7 @@
  * 将 VS Code 原生全局搜索能力注入内核，供 LLM 的 search_project 工具使用：
  *   - name 模式：workspace.findFiles（stable API，底层 ripgrep，按文件名 glob，高效可靠）
  *   - content 模式：宿主 Node fs 受限实现（workspace.findTextInFiles 为 proposed API，非 stable，
- *     不可用于生产；故用受控递归扫描 + 正则匹配，对齐内核 list_dir 的忽略规则与上限保护）
+ *     不可用于生产；故用受控递归扫描 + 正则匹配；忽略目录与结果上限 import 自内核单一真理源）
  *
  * 相对路径约定：返回相对项目根的 posix 路径（正斜杠），与 read_file / list_dir 的相对路径
  * 语义对齐——LLM 拿到搜索命中路径后可无缝 read_file 精读。
@@ -12,18 +12,16 @@
 import * as vscode from 'vscode';
 import { readdir, readFile, stat } from 'node:fs/promises';
 import { relative, join } from 'node:path';
-import type {
-  IProjectSearchProvider,
-  ProjectFileMatch,
-  ProjectFileSearchOptions,
-  ProjectTextMatch,
-  ProjectTextSearchOptions,
+import {
+  IGNORED_DIR_NAMES,
+  PROJECT_SEARCH_RESULT_MAX_LEN,
+  type IProjectSearchProvider,
+  type ProjectFileMatch,
+  type ProjectFileSearchOptions,
+  type ProjectTextMatch,
+  type ProjectTextSearchOptions,
 } from '@zooique/memora';
 
-/** search_files 单次返回上限（对齐内核 PROJECT_SEARCH_RESULT_MAX_LEN=100） */
-const MAX_RESULTS = 100;
-/** content 搜索忽略的目录/文件名（对齐内核 BuiltinToolHandlers.IGNORED_DIR_NAMES） */
-const IGNORED_DIR_NAMES = new Set(['.git', 'node_modules', '.memora', 'dist', 'coverage', '.next']);
 /** content 搜索最大扫描文件数（防超大项目遍历失控卡死主循环） */
 const MAX_FILES_SCANNED = 500;
 /** content 搜索单文件读取上限（字节，防大文件/二进制读爆内存） */
@@ -48,7 +46,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
     async searchFiles(options?: ProjectFileSearchOptions): Promise<ProjectFileMatch[]> {
       const include = options?.query || '**/*';
       const exclude = options?.exclude || null;
-      const maxResults = Math.min(options?.maxResults ?? MAX_RESULTS, MAX_RESULTS);
+      const maxResults = Math.min(options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN, PROJECT_SEARCH_RESULT_MAX_LEN);
       const uris = await vscode.workspace.findFiles(include, exclude, maxResults);
       return uris.map((u) => ({ path: toProjectRelative(root, u.fsPath) }));
     },
@@ -61,7 +59,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
      */
     async searchText(options: ProjectTextSearchOptions): Promise<ProjectTextMatch[]> {
       const matches: ProjectTextMatch[] = [];
-      const maxResults = Math.min(options.maxResults ?? 20, MAX_RESULTS);
+      const maxResults = Math.min(options.maxResults ?? 20, PROJECT_SEARCH_RESULT_MAX_LEN);
       // 关键词按正则（escape 后精确匹配；大小写不敏感对齐全局搜索缺省）
       const re = new RegExp(escapeRegExp(options.pattern), 'i');
       const excludeSegments = (options.exclude ?? '').split('/').filter(Boolean);
@@ -112,8 +110,8 @@ async function walkText(
 
   for (const name of names) {
     if (matches.length >= maxResults || counter.scanned >= MAX_FILES_SCANNED) return;
-    // 忽略标准目录（对齐内核 list_dir）
-    if (IGNORED_DIR_NAMES.has(name)) continue;
+    // 忽略标准目录（import 自内核单一真理源 IGNORED_DIR_NAMES，与 list_dir 规则一致）
+    if (IGNORED_DIR_NAMES.includes(name)) continue;
     // exclude 路径段过滤（路径任意段命中即跳过）
     if (excludeSegments.length > 0 && excludeSegments.some((seg) => name.includes(seg))) continue;
 

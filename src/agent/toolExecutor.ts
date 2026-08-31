@@ -56,8 +56,8 @@ const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
 const PROJECT_SEARCH_QUERY_MAX_LEN = 500;
 /** search_project 的 include/exclude glob 最大长度（防超长模式滥用） */
 const PROJECT_SEARCH_GLOB_MAX_LEN = 1000;
-/** search_project 单次返回最大条数（防结果刷屏撑爆上下文；对齐 list_dir 的条目上限） */
-const PROJECT_SEARCH_RESULT_MAX_LEN = 100;
+/** search_project 单次返回最大条数（防结果刷屏撑爆上下文；对齐 list_dir 的条目上限；导出供宿主实现方对齐） */
+export const PROJECT_SEARCH_RESULT_MAX_LEN = 100;
 
 // ─── read_skill / read_resource 注入防御常量 ─────────────────
 /** read_skill 技能正文单次返回最大长度（防超长技能正文注入上下文；静态文档对齐 read_file 的 FILE_READ_MAX_LEN） */

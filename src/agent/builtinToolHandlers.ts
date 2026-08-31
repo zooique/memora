@@ -66,21 +66,29 @@ function sanitizeToolResult(text: string, maxLen: number): string {
 }
 
 /**
+ * 内置文件工具忽略的目录/文件名（模块级单一真理源）
+ *
+ * list_dir 忽略规则与宿主项目内容搜索（search_project content 模式）共享；
+ * 宿主通过主入口 import 此常量对齐忽略目录，避免数值/规则漂移。
+ */
+export const IGNORED_DIR_NAMES: readonly string[] = [
+  '.git',
+  'node_modules',
+  '.memora',
+  'dist',
+  'coverage',
+  '.next',
+];
+
+/**
  * 内置工具处理器
  *
  * 管理 4 个内置工具的实际实现 + 路径安全校验。
  * 从 ToolExecutor 提取，保持无状态设计（不持有 customTools 注册表）。
  */
 export class BuiltinToolHandlers {
-  /** list_dir 默认忽略的目录/文件名 */
-  static readonly IGNORED_DIR_NAMES: readonly string[] = [
-    '.git',
-    'node_modules',
-    '.memora',
-    'dist',
-    'coverage',
-    '.next',
-  ];
+  /** list_dir 默认忽略的目录/文件名（引用模块级单一真理源，保持类静态 API 兼容） */
+  static readonly IGNORED_DIR_NAMES: readonly string[] = IGNORED_DIR_NAMES;
 
   /**
    * @param projectPath 项目根路径（用于相对路径解析）
