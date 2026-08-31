@@ -1480,16 +1480,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     setRingFill(el, 0);
     const percentEl = document.getElementById('occPercent');
     if (percentEl) percentEl.textContent = '0%';
+    // 空态明细复用 buildOccupancyTipText（同一份明细拼装，不手写第二份）：
+    // 全 0 占用 + free=total（100% 剩余），与真实态共用同一行结构与格式
     const tipEl = document.getElementById('occTip');
     if (tipEl) {
-      tipEl.textContent =
-        `上下文占用（总容量 ${fmtTokens(active.limitTokens)}）\n` +
-        '角色包/系统设定：0（0%）\n' +
-        '记忆摘要：0 条 · 0（0%）\n' +
-        '完整对话：0 条 · 0（0%）\n' +
-        '当前输入锚点：0（0%）\n' +
-        '输出预留：0（0%）\n' +
-        `剩余可用：${fmtTokens(active.limitTokens)}（100%）`;
+      tipEl.textContent = buildOccupancyTipText({
+        totalTokens: active.limitTokens,
+        rolePackBaseTokens: 0,
+        dialogueTokens: 0,
+        dialogueCount: 0,
+        memoryTokens: 0,
+        memoryCount: 0,
+        inputAnchorTokens: 0,
+        outputReserveTokens: 0,
+        freeTokens: active.limitTokens,
+      });
     }
   }
 
