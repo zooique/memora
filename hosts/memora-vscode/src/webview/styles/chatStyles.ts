@@ -455,13 +455,15 @@ export const chatStyles = `
     pointer-events: none;
   }
   /* hover/聚焦弹窗：白底浮层多行文字明细（含条数 · token · 占比 · 角色包比例）。
-   * 向上弹出（bottom 贴圆环上沿）：底部是输入区/面板边界，向下展开会撑出外部滚动条 */
+   * 向上弹出（bottom 贴圆环上沿）：底部是输入区/面板边界，向下展开会撑出外部滚动条。
+   * 宽度弹性：max-content 由最长一行自然决定（贴合内容不留白），max-width 兜底防极端长数撑太宽 */
   .context-ring__tip {
     display: none;
     position: absolute;
     bottom: calc(100% + 6px);
     right: 0;
-    min-width: 220px;
+    width: max-content;
+    max-width: 320px;
     padding: var(--sp-3, 8px) var(--sp-4, 10px);
     background: var(--surface-tip, #2d2d2d);
     border: 1px solid var(--border-input, rgba(128,128,128,.5));
