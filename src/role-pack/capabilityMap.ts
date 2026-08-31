@@ -32,6 +32,9 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   // 通用计算域（宿主注入 ICodeExecutionProvider 才真正暴露，能力声明本身只控制暴露面）
   'code:execute': ['run_code'],
   // 项目搜索域（宿主注入 IProjectSearchProvider 才真正暴露，等价 IDE 全局搜索）
+  // 例外：search_project 是本地只读工具，宿主注入即暴露（toolExecutor.list 追加在自定义工具之后），
+  // 不受角色包能力声明过滤。本映射仅保留中立能力声明面（角色包可声明「支持项目搜索」），
+  // 不控制工具可见性——与 file:read 等受白名单控制的映射语义不同。
   'project:search': ['search_project'],
   // 记忆域
   'memory:recall': ['search_memories'],

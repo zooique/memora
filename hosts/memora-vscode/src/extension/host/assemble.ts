@@ -87,6 +87,14 @@ export function createVscodeLogger(output: OutputChannel): ILogger {
 export interface AssembleOptions {
   /** 工作区路径（memora projectPath） */
   projectPath: string;
+  /**
+   * 项目搜索根（可选）
+   *
+   * 仅当存在真实工作区文件夹时注入（= workspaceFolders[0].fsPath）；
+   * 未打开工作区时为 undefined → 不注入 projectSearchProvider，LLM 不暴露 search_project 工具，
+   * 避免搜索落到 projectPath 兜底根（~/.memora）答非所问。
+   */
+  projectSearchRoot?: string;
   /** 大模型配置存储（配置面板装配后注入） */
   providerStore?: ProviderStore;
   /**
@@ -189,7 +197,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
+  const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
 
   // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
@@ -255,9 +263,12 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（G2：local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
-    // 项目搜索（2026-08-31：等价 IDE 全局搜索）——注入后内核暴露 search_project 工具给 LLM
-    // VS Code 原生 findFiles（按文件名）+ findTextInFiles（按内容全文，同 Ctrl+Shift+F）
-    projectSearchProvider: createVscodeProjectSearchProvider(projectPath),
+    // 项目搜索（等价 IDE 全局搜索）——注入后内核暴露 search_project 工具给 LLM；
+    // 仅真实工作区注入（无 folder 时 projectSearchRoot 为 undefined → 不注入、工具隐藏，
+    // 避免搜索落到 projectPath 兜底根 ~/.memora 答非所问）
+    projectSearchProvider: projectSearchRoot
+      ? createVscodeProjectSearchProvider(projectSearchRoot)
+      : undefined,
     // 向量存储（G1：配置 Embedding 时启用语义召回；undefined 则 searchHybrid 回退关键词）
     vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）

@@ -141,5 +141,50 @@ describe('VscodeProjectSearchProvider', () => {
       const result = await provider.searchText({ pattern: '绝不存在的关键词xyz' });
       expect(result).toEqual([]);
     });
+
+    it('glob exclude 通配（**）跳过整棵子树', async () => {
+      mkdirSync(join(tmp, 'src/sub'), { recursive: true });
+      writeFileSync(join(tmp, 'src/sub/a.ts'), 'TODO in nested\n', 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'TODO', exclude: 'src/**' });
+      const paths = result.map((m) => m.path);
+      // src 整棵子树被排除（含嵌套），README 仍命中
+      expect(paths).not.toContain('src/index.ts');
+      expect(paths).not.toContain('src/sub/a.ts');
+      expect(paths).toContain('README.md');
+    });
+
+    it('达到结果上限时携带 truncated 标记（截断诚实化）', async () => {
+      // 造 5 个命中文件，请求上限 3 → 达上限提前停止并置 truncated
+      for (let i = 0; i < 5; i++) {
+        writeFileSync(join(tmp, `src/file${i}.ts`), `TODO item ${i}\n`, 'utf-8');
+      }
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'TODO', maxResults: 3 });
+      expect(result.length).toBe(3);
+      // 每条结果携带全局截断标记，供内核提示 LLM 勿误判「项目仅此这些」
+      expect(result.every((m) => m.truncated)).toBe(true);
+    });
+
+    it('单文件命中数上限（MAX_MATCHES_PER_FILE=3，防单文件刷屏）', async () => {
+      const many = 'TODO a\nTODO b\nTODO c\nTODO d\nTODO e\n';
+      writeFileSync(join(tmp, 'src/many.ts'), many, 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'TODO' });
+      const manyHits = result.filter((m) => m.path === 'src/many.ts');
+      expect(manyHits.length).toBe(3);
+    });
+
+    it('mtime 快照缓存：文件修改后重新搜索返回新内容（缓存按 mtime 失效）', async () => {
+      const provider = createVscodeProjectSearchProvider(tmp);
+      // 首次扫描：填充缓存（当前内容无 NEW_FLAG）
+      await provider.searchText({ pattern: '缓存前' });
+      // 修改文件内容后再次搜索：mtime 变化使缓存失效，应读到新内容
+      writeFileSync(join(tmp, 'src/index.ts'), 'export const NEW_FLAG = 1;\n', 'utf-8');
+      // 等待 mtime 变化（同毫秒写入可能 mtimeMs 相同导致缓存漏检）
+      await new Promise((r) => setTimeout(r, 20));
+      const result = await provider.searchText({ pattern: 'NEW_FLAG' });
+      expect(result.some((m) => m.path === 'src/index.ts' && m.preview?.includes('NEW_FLAG'))).toBe(true);
+    });
   });
 });

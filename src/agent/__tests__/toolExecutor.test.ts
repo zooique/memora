@@ -367,6 +367,10 @@ describe('工具执行器（6 个工具）', () => {
             { path: 'src/utils.ts', line: 1, preview: 'export const y = 2;' },
           ];
         }
+        if (options.pattern === 'truncated') {
+          // 模拟宿主扫描达上限：结果携带 truncated 标记（截断诚实化）
+          return [{ path: 'src/index.ts', line: 1, preview: 'export const x = 1;', truncated: true }];
+        }
         return [];
       },
     };
@@ -419,9 +423,12 @@ describe('工具执行器（6 个工具）', () => {
           'search_project',
           JSON.stringify({ mode: 'name', maxResults: '2' }),
         );
-        const lines = result.split('\n').filter((l) => l.trim() !== '');
+        // 结果行 = 路径行（排除截断诚实化提示行「（结果可能已截断…）」）
+        const lines = result.split('\n').filter((l) => l.trim() !== '' && !l.startsWith('（'));
         expect(lines.length).toBe(2);
         expect(result).toContain('src/index.ts');
+        // 达上限时诚实化提示（防 LLM 误判项目仅此 2 个文件）
+        expect(result).toContain('结果可能已截断');
       });
 
       it('content 模式按内容关键词搜索返回 路径:行号 定位', async () => {

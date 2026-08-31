@@ -395,6 +395,8 @@ export class ToolExecutor {
    * - toolWhitelist === null：全部暴露（内置 + web_search 条件 + 自定义工具）；
    * - toolWhitelist === string[]：内置 + web_search 只保留名单内工具，自定义工具始终暴露
    *   （自定义工具由宿主注册，属宿主能力面，角色包能力声明不越权过滤宿主工具）。
+   * - search_project：宿主注入即暴露（方案乙）——本地只读工具，等价 read_file 的只读语义，
+   *   不受角色包能力声明过滤（是否具备 project:search 能力不决定其可见性）。
    */
   get list(): ToolDefinition[] {
     // 条件性包含外部信息工具：仅当注入了对应 provider 时才暴露给 LLM
@@ -406,14 +408,16 @@ export class ToolExecutor {
     if (this.webSearchProvider) baseTools = [...baseTools, WEB_SEARCH_TOOL];
     if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
     if (this.codeExecutionProvider) baseTools = [...baseTools, RUN_CODE_TOOL];
-    if (this.projectSearchProvider) baseTools = [...baseTools, SEARCH_PROJECT_TOOL];
 
     // 白名单过滤（仅内置/条件工具受控；自定义工具不受限）
     const whitelisted = this.toolWhitelist
       ? baseTools.filter((t) => this.toolWhitelist?.includes(t.name))
       : baseTools;
 
-    return [...whitelisted, ...[...this.customTools.values()].map((e) => e.definition)];
+    // search_project 作为宿主注入工具（方案乙）：注入即暴露，追加在自定义工具之后，不受白名单过滤
+    const projectSearchTool = this.projectSearchProvider ? [SEARCH_PROJECT_TOOL] : [];
+
+    return [...whitelisted, ...[...this.customTools.values()].map((e) => e.definition), ...projectSearchTool];
   }
 
   /**
@@ -710,9 +714,14 @@ export class ToolExecutor {
           if (textMatches.length === 0) {
             return `（未在项目中找到包含 "${query}" 的文件）`;
           }
-          return textMatches
+          const textLines = textMatches
             .map((m, i) => `${i + 1}. ${m.path}${m.line ? `:${m.line}` : ''}${m.preview ? ` — ${m.preview}` : ''}`)
             .join('\n');
+          // 截断诚实化：结果达上限或宿主标记截断时，提示 LLM 勿误判"项目仅此这些"（避免缩小范围后漏答）
+          const truncated = textMatches.length >= maxResults || textMatches.some((m) => m.truncated);
+          return truncated
+            ? `${textLines}\n（结果可能已截断：仅返回前 ${textMatches.length} 条，项目可能仍有更多匹配；如需精确定位请换更具体的关键词）`
+            : textLines;
         }
         // name 模式：query 为文件名 glob（省略时列出项目全部文件）
         const fileMatches = await safeSearchProjectFiles(this.projectSearchProvider, {
@@ -723,7 +732,11 @@ export class ToolExecutor {
         if (fileMatches.length === 0) {
           return `（未在项目中找到匹配 "${query || '**/*'}" 的文件）`;
         }
-        return fileMatches.map((m, i) => `${i + 1}. ${m.path}`).join('\n');
+        const fileLines = fileMatches.map((m, i) => `${i + 1}. ${m.path}`).join('\n');
+        // name 模式由宿主 findFiles 按 maxResults 截断：返回数达上限即提示可能截断
+        return fileMatches.length >= maxResults
+          ? `${fileLines}\n（结果可能已截断：仅返回前 ${fileMatches.length} 条，项目可能仍有更多匹配；如需精确定位请换更具体的 glob）`
+          : fileLines;
       }
       case 'task_table_write': {
         // 写入任务表（overwrite / append / update）；steps 每项可选 rolePack（会议表层装配角色）

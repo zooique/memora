@@ -40,6 +40,17 @@ function resolveWorkspacePath(): string {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath ?? join(homedir(), '.memora');
 }
 
+/**
+ * 解析项目搜索根（仅真实工作区注入）
+ *
+ * 存在真实工作区文件夹时返回其路径（workspaceFolders[0].fsPath），
+ * 否则返回 undefined —— 未打开工作区时无「当前项目」可搜，不注入 search_project 工具
+ * （避免搜索落到 resolveWorkspacePath 的兜底根 ~/.memora，答非所问）。
+ */
+function resolveProjectSearchRoot(): string | undefined {
+  return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+}
+
 /** 懒加载的 Agent 单例（跨命令复用） */
 let agentPromise: Promise<Agent> | null = null;
 
@@ -82,6 +93,8 @@ function getOrCreateAgent(
       .get<string[]>('allowedPaths', []);
     agentPromise = assembleAgent({
       projectPath,
+      // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
+      projectSearchRoot: resolveProjectSearchRoot(),
       providerStore,
       sessionStore,
       roundStore,

@@ -19,6 +19,8 @@ export interface ProjectTextMatch {
   line?: number;
   /** 命中行预览片段（去控制字符 + 限长，防上下文注入） */
   preview?: string;
+  /** 本次搜索结果是否被截断（宿主扫描达文件/结果上限时置 true，诚实化提示 LLM 勿误判"项目仅此这些"） */
+  truncated?: boolean;
 }
 
 /** 按文件名搜索的选项 */
