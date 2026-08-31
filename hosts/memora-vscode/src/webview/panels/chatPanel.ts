@@ -468,7 +468,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 会导致发送无反应。此方法在打开面板时自动装配，失败时给出明确提示。
    */
   private async ensureAgent(): Promise<void> {
-    if (this._agent || this._agentResolving || !this._getAgent) return;
+    // Agent 已注入（open 命令路径先装配）：仍兜底首次无会话自动创建（幂等，仅面板打开触发）
+    if (this._agent) {
+      void this.ensureInitialSession();
+      return;
+    }
+    if (this._agentResolving || !this._getAgent) return;
     this._agentResolving = true;
     try {
       const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -488,6 +493,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 装配完成即补推，避免输入区角色选择器永久缺失；面板未就绪时 post 静默，
       // 由 replaySession 兜底。
       this.refreshRoleInfoAfterAssemble();
+      // 首次启动兜底：装配成功后若无任何会话记录，自动创建首个会话（用户可直接输入）
+      void this.ensureInitialSession();
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       void vscode.window.showErrorMessage(`Memora 装配失败：${msg}`);
@@ -1041,26 +1048,45 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再新建会话' });
       return;
     }
-    const agent = await this.getAgentOrWarn();
-    if (!agent) return;
     // 生成唯一会话名（字母前缀，避免与数字日期混淆；标题层才是用户可读身份）
-    const name = `s${Date.now().toString(36)}`;
-    const sessionId = `${formatDateKey(new Date())}-${name}`;
+    await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
+  }
+
+  /**
+   * 切入指定会话（新建/首次自动创建共用）：调内核 switchToSession + 更新当前会话 + 回放
+   *
+   * @param sessionId 目标会话 id（date-name 格式）
+   * @returns 是否切入成功
+   */
+  private async createSession(sessionId: string): Promise<boolean> {
+    const agent = await this.getAgentOrWarn();
+    if (!agent) return false;
+    if (!agent.sessionManager) {
+      this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
+      return false;
+    }
     try {
-      if (!agent.sessionManager) {
-        this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
-        return;
-      }
       await agent.sessionManager.switchToSession(sessionId);
       this._currentSessionId = sessionId;
       this.replayCurrentSession();
+      return true;
     } catch (err) {
       this.post({
         type: 'notice',
         level: 'error',
         message: err instanceof Error ? err.message : String(err),
       });
+      return false;
     }
+  }
+
+  /**
+   * 首次启动兜底：无任何会话记录时自动创建首个会话，用户可直接输入（免手动点「＋」）。
+   * 仅空态触发（_currentSessionId 为空 = 从未有过会话），有历史/已创建后不再自动创建（幂等）。
+   */
+  private async ensureInitialSession(): Promise<void> {
+    if (this._currentSessionId || this._streaming) return;
+    await this.createSession(`${formatDateKey(new Date())}-s${Date.now().toString(36)}`);
   }
 
   /**

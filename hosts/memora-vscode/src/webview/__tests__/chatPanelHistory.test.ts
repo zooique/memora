@@ -445,4 +445,29 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const notice = ofType<{ type: string; message: string }>(posted, 'notice');
     expect(notice.some((n) => n.message.includes('没有可暂停'))).toBe(true);
   });
+
+  // ─── 首次启动自动创建首会话（2026-08-31 体验改进：无记录时免手动点「＋」） ───
+  it('无历史会话：ensureInitialSession 自动创建首个会话（用户可直接输入）', async () => {
+    const { provider, posted } = setup();
+    const { agent, switchToSession } = agentStub();
+    provider.setAgent(agent);
+    // 首次启动：无任何会话记录 → _currentSessionId 为空
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '';
+    await (provider as unknown as { ensureInitialSession(): Promise<void> }).ensureInitialSession();
+    // 自动创建：switchToSession 被调用，会话 id 为 date-sxxx 格式，_currentSessionId 已更新
+    expect(switchToSession).toHaveBeenCalledTimes(1);
+    const createdId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
+    expect(createdId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
+    // UI 推送新会话标题
+    expect(ofType(posted, 'session_title').length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('已有会话（历史恢复）：ensureInitialSession 不自动创建', async () => {
+    const { provider } = setup();
+    const { agent, switchToSession } = agentStub();
+    provider.setAgent(agent);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-31-s1';
+    await (provider as unknown as { ensureInitialSession(): Promise<void> }).ensureInitialSession();
+    expect(switchToSession).not.toHaveBeenCalled();
+  });
 });
