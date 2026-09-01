@@ -40,7 +40,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 |---|---|---|
 | `totalTokens` | `resolveContextWindow(当前 Provider.contextWindow)` | 真值，与 `pushProviders` 同源 |
 | `dialogueTokens` / `dialogueCount` | 持久化消息经 `estimateTokensMessages` 求和 / `length` | 真值（与运行时同口径） |
-| `rolePackBaseTokens` | 内核最近一次 prepare 的值；**无 prepare 记录时降级为 0** | 降级（已知低估，见下） |
+| `rolePackBaseTokens` | 装配/切换角色包时由内核算定真值（`assembler` 拼完 systemPromptPrefix 即 `estimateTokensMessages`；切换走 `agent.setRolePackBaseTokens`），**冷启动即真值、不降级为 0**（2026-09-01 T5/T6 落地，见「装配期真值前移」增补段） | 真值 |
 | `memoryTokens` / `memoryCount` | `0` | 诚实置 0（不可预测，不虚报） |
 | `inputAnchorTokens` | `0` | 真值（历史会话无当前输入） |
 | `outputReserveTokens` / `freeTokens` | `estimateOccupancy` 派生 | 真值 |
@@ -48,7 +48,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 **约束（本增补的核心，守 SSOT）**：
 
 1. **不另写估算逻辑**：宿主重算只做「取数 + 求和」，token 估算调内核导出纯函数 `estimateTokensMessages`，占用组装调 `estimateOccupancy`——与运行时 prepare 共用同一份代码，free 收敛口径不漂移。
-2. **降级项必须诚实**：`rolePackBaseTokens` 冷启动为 0 属**已知低估**（system prompt 是每次请求动态注入的固定开销，内核未对外暴露其 token，需新增内核 API 才能取真值——留作独立决策，不在此扩张）。首轮 prepare 后自动修正为真实值。
+2. **降级项已根除（2026-09-01 T5/T6）**：原「`rolePackBaseTokens` 冷启动降级为 0（system prompt 是动态注入固定开销、内核未暴露其 token）」的已知低估，已由「装配/切换角色包时内核算定真值」彻底消除——`assembler` 拼完 systemPromptPrefix 即 `estimateTokensMessages`，切换走 `agent.setRolePackBaseTokens`，均早于 prepare，冷启动首屏即真实值，无需等待首轮 prepare，也**无需新增内核 API**。本约束保留作历史注记。
 3. **推送落点唯一**：补推必须挂在「装配后统一刷新」的收口点（`chatPanel.refreshAfterAssemble`），不得在 `setAgent` / `ensureAgent` 各钉一份——两条装配入口（`memora.open` 命令 / 重启与侧栏图标的懒装配）都要覆盖。
 
 ### 配套（复杂度守恒）
@@ -76,8 +76,21 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 - **宿主**：`chatPanel.postHistoryOccupancy()`（轻量版重算）；补推落点收口进 `refreshAfterAssemble`（由原 `refreshRoleInfoAfterAssemble` 改名，因不再只管角色信息），覆盖 `setAgent` 与 `ensureAgent` 两条装配入口。
 - 修复：重启 / 侧栏图标懒装配路径下圆环恒 0%（补推此前只钉在 `setAgent`，懒装配走 `ensureAgent` 漏推）。
 
+### 增补：角色包底盘占用真值前移（装配/切换即确定，2026-09-01 T5/T6 落地）
+
+原设计 `rolePackBaseTokens` 只在 prepare 期经 `ContextOccupancy` 透出，冷启动无快照时历史会话轻量版只能降级为 0（已知低估）。对抗式审查判定该低估**非必要**：system prompt 前缀（persona+rules+技能 L1+工具 schema）在装配/切换角色包时即已拼定，可立即 `estimateTokensMessages` 算得真值，早于任何一轮 prepare。故将真值真相源前移：
+
+- **装配期**：`assembler.ts` 拼完 `systemPromptPrefix` 即 `estimateTokensMessages([{content}])` 得 `rolePackBaseTokens`，经 `AgentLoopOptions.rolePackBaseTokens` 注入 `loop`。
+- **切换期**：`agent.ts` `refreshRolePackPrefixForRound` 内 `setRolePackBaseTokens` 重算（用户/宿主显式切换角色包时即刷新，不待下一轮）。
+- **透出**：`loop.getMetrics().context.rolePackBaseTokens?` + `tracer.ts` `AgentMetrics.context.rolePackBaseTokens?`（doc 标注「装配/切换时确定，冷启动可用」）。
+- **宿主**：`chatPanel.ts` `onRolePackSwitched` 末尾补推 `postContextOccupancy`（切角色包即刷新）；`postContextOccupancy` 若见 `ctx.rolePackBaseTokens` 与快照不符，用真值覆盖（解决冷启动快照 0% 残留）。
+
+收益（SSOT + 自然生长）：复用既有 `estimateTokensMessages` + 既有 `postContextOccupancy` 收口点 + 既有 `rolePackSwitched` 事件链路，**无新增协议类型、无第二份计算**。冷启动首屏圆环即真实角色包底盘占比，不再显示假 0%。
+
+> 注：此增补使上文第 43/51/83 行的「冷启动降级为 0 / 需新增内核 API」表述作废，已就地改为历史注记。
+
 ## 何时回顾
 
 - 若内核预算装配引入新分段（如工具 schema 单列、思考预算），须同步扩 `ContextOccupancy` 字段并补 webview 分段，保持分段互斥拼满总量。
 - 若宿主要支持"切角色包/改窗口即刷新占用"（无需等到下一轮）：**已有 prepare 快照**时调 `postContextOccupancy()` 透传即可，不动内核；**无快照（切换/冷启动的历史会话）**时走 `postHistoryOccupancy()` 降级重算。
-- 若内核暴露 system prompt token 的只读口，历史会话的 `rolePackBaseTokens` 应改用真值，撤销「冷启动降级为 0」的已知低估。
+- ~~若内核暴露 system prompt token 的只读口，历史会话的 `rolePackBaseTokens` 应改用真值，撤销「冷启动降级为 0」的已知低估。~~ **已落地（2026-09-01 T5/T6）**：`rolePackBaseTokens` 真值在装配/切换时即由 `estimateTokensMessages` 算定（取 system prompt 前缀 token），不依赖「内核暴露新只读口」，冷启动不再降级为 0；本回顾项作废。
