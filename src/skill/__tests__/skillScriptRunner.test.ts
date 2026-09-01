@@ -14,6 +14,7 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import {
   runSkillScript,
   formatScriptResult,
+  formatExecutionResult,
   type ScriptExecutionResult,
 } from '../skillScriptRunner.js';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -181,6 +182,54 @@ describe('skillScriptRunner — formatScriptResult', () => {
       const formatted = formatScriptResult(result);
       expect(formatted).toBe('🌍 café résumé\nline2\tword');
     });
+  });
+});
+
+// ── formatExecutionResult 共享格式化（SSOT：run_skill_script 与 run_code 同一真理源）──
+describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
+  // CODE 标签：run_code 工具链路使用（前缀/文案由调用方定制）
+  const codeLabels = { kind: 'CODE', timeoutDetail: '代码执行超时', errorDetail: '代码执行失败' } as const;
+
+  it('timedOut 时输出 [CODE_TIMEOUT] + 自定义超时文案', () => {
+    const formatted = formatExecutionResult(
+      { stdout: 'partial', stderr: 'err', exitCode: -1, timedOut: true },
+      codeLabels,
+    );
+    expect(formatted).toContain('[CODE_TIMEOUT]');
+    expect(formatted).toContain('代码执行超时');
+    expect(formatted).toContain('partial');
+    expect(formatted).toContain('err');
+  });
+
+  it('非零退出码时输出 [CODE_ERROR] + 退出码', () => {
+    const formatted = formatExecutionResult(
+      { stdout: '', stderr: 'boom', exitCode: 1, timedOut: false },
+      codeLabels,
+    );
+    expect(formatted).toContain('[CODE_ERROR]');
+    expect(formatted).toContain('代码执行失败');
+    expect(formatted).toContain('退出码: 1');
+    expect(formatted).toContain('boom');
+  });
+
+  it('成功分支与 formatScriptResult 同构（无输出兜底 + stderr 附加）', () => {
+    expect(
+      formatExecutionResult({ stdout: '', stderr: '', exitCode: 0, timedOut: false }, codeLabels),
+    ).toBe('(无输出)');
+    const withStderr = formatExecutionResult(
+      { stdout: 'out', stderr: 'warn', exitCode: 0, timedOut: false },
+      codeLabels,
+    );
+    expect(withStderr).toBe('out\n[stderr] warn');
+  });
+
+  it('formatScriptResult 薄封装等价（SCRIPT 变体回归锁定）', () => {
+    const viaShared = formatExecutionResult(
+      { stdout: 'Hello', stderr: '', exitCode: 0, timedOut: false },
+      { kind: 'SCRIPT', timeoutDetail: '脚本执行超时（超过 120s）', errorDetail: '脚本执行失败' },
+    );
+    const viaWrapper = formatScriptResult({ stdout: 'Hello', stderr: '', exitCode: 0, timedOut: false });
+    expect(viaShared).toBe(viaWrapper);
   });
 });
 

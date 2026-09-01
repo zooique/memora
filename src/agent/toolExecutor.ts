@@ -22,6 +22,7 @@ import type { IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
+import { formatExecutionResult } from '@/skill/skillScriptRunner.js';
 import type { IProjectSearchProvider } from '@/project-search/types.js';
 import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
@@ -762,15 +763,11 @@ export class ToolExecutor {
         // 结果净化：stdout/stderr 当外部内容去控制字符 + 长度上限，防长上下文注入
         const stdout = sanitizeExternalText(result.stdout, RUN_CODE_RESULT_MAX_LEN);
         const stderr = sanitizeExternalText(result.stderr, RUN_CODE_RESULT_MAX_LEN);
-        // 格式化：超时/失败/成功三态，语义对齐 formatScriptResult
-        if (result.timedOut) {
-          return `[CODE_TIMEOUT] 代码执行超时\nstdout: ${stdout}\nstderr: ${stderr}`;
-        }
-        if (result.exitCode !== 0) {
-          return `[CODE_ERROR] 代码执行失败（退出码: ${result.exitCode}）\nstdout: ${stdout}\nstderr: ${stderr}`;
-        }
-        const output = stdout || '(无输出)';
-        return stderr ? `${output}\n[stderr] ${stderr}` : output;
+        // 格式化：与 run_skill_script 共用 formatExecutionResult（同一真理源，改格式契约须两链路同步）
+        return formatExecutionResult(
+          { stdout, stderr, exitCode: result.exitCode, timedOut: result.timedOut },
+          { kind: 'CODE', timeoutDetail: '代码执行超时', errorDetail: '代码执行失败' },
+        );
       }
       case 'search_project': {
         // search_project 由 ToolExecutor 直接处理（与 web_search/run_code 同侧，均为宿主注入能力）

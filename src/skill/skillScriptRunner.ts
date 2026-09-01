@@ -6,19 +6,11 @@
  * 注：当前为简单子进程执行，非完整沙箱（文件系统/网络隔离由宿主在生产环境实现）。
  */
 import { spawn, type ChildProcess } from 'node:child_process';
+import type { CodeExecutionResult } from '@/code-exec/types.js';
 import { logger } from '@/logging/logger.js';
 
-/** 脚本执行结果 */
-export interface ScriptExecutionResult {
-  /** 标准输出 */
-  stdout: string;
-  /** 标准错误 */
-  stderr: string;
-  /** 退出码（0 = 成功） */
-  exitCode: number;
-  /** 是否超时 */
-  timedOut: boolean;
-}
+/** 脚本执行结果（= CodeExecutionResult，复用代码执行结果形态，SSOT 不重复定义） */
+export type ScriptExecutionResult = CodeExecutionResult;
 
 /** 默认执行超时（毫秒） */
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -119,15 +111,35 @@ function resolveCommand(
   }
 }
 
+/** formatExecutionResult 的三态标签配置：前缀与详情文案（run_skill_script / run_code 各自定制） */
+export interface ExecutionResultFormatLabels {
+  /** 三态前缀标签（'SCRIPT' → [SCRIPT_TIMEOUT]/[SCRIPT_ERROR]；'CODE' → [CODE_TIMEOUT]/[CODE_ERROR]） */
+  kind: 'SCRIPT' | 'CODE';
+  /** 超时详情文案（如「脚本执行超时（超过 120s）」） */
+  timeoutDetail: string;
+  /** 失败详情文案（如「代码执行失败」） */
+  errorDetail: string;
+}
+
 /**
- * 格式化脚本执行结果为可读字符串（供 tool 返回值）：超时/失败前缀标记 + stdout/stderr
+ * 执行结果三态格式化（run_skill_script 与 run_code 共用的格式化真理源）
+ *
+ * 超时 / 非零退出码 / 成功三态；前缀与文案由 labels 定制，成功分支统一
+ * 「无输出兜底 + stderr 附加」。stdout/stderr 须由调用方先行净化。
+ *
+ * @param result 执行结果
+ * @param labels 三态前缀标签与详情文案
+ * @returns 格式化后的可读字符串（供工具返回值注入 LLM 上下文）
  */
-export function formatScriptResult(result: ScriptExecutionResult): string {
+export function formatExecutionResult(
+  result: CodeExecutionResult,
+  labels: ExecutionResultFormatLabels,
+): string {
   if (result.timedOut) {
-    return `[SCRIPT_TIMEOUT] 脚本执行超时（超过 ${MAX_TIMEOUT_MS / 1000}s）\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
+    return `[${labels.kind}_TIMEOUT] ${labels.timeoutDetail}\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
   }
   if (result.exitCode !== 0) {
-    return `[SCRIPT_ERROR] 脚本执行失败（退出码: ${result.exitCode}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
+    return `[${labels.kind}_ERROR] ${labels.errorDetail}（退出码: ${result.exitCode}）\nstdout: ${result.stdout}\nstderr: ${result.stderr}`;
   }
   // 成功：优先 stdout，stderr 附加
   const output = result.stdout || '(无输出)';
@@ -135,4 +147,15 @@ export function formatScriptResult(result: ScriptExecutionResult): string {
     return `${output}\n[stderr] ${result.stderr}`;
   }
   return output;
+}
+
+/**
+ * 格式化脚本执行结果为可读字符串（供 tool 返回值）：formatExecutionResult 的 SCRIPT 变体
+ */
+export function formatScriptResult(result: ScriptExecutionResult): string {
+  return formatExecutionResult(result, {
+    kind: 'SCRIPT',
+    timeoutDetail: `脚本执行超时（超过 ${MAX_TIMEOUT_MS / 1000}s）`,
+    errorDetail: '脚本执行失败',
+  });
 }
