@@ -46,6 +46,8 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     // 完整对话消息（fixed/query 模式占用计量源；默认空，测试可覆写）
     getConversationMessages: (): Array<{ role: 'user' | 'assistant'; content: string }> => [],
     getReplacedRoundIds: (): readonly string[] => [],
+    // 视图内实际保留轮次（T1：截断提炼轮/正文在视图的轮次须 exclude；默认空，测试可覆写）
+    getVisibleRoundIds: (): ReadonlySet<string> => new Set(),
     recordBudget: vi.fn(),
     recordOccupancy: vi.fn(),
     injectSystemMessage,
@@ -124,6 +126,29 @@ describe('ContextPreparer · 互斥锁定（被替换轮不被二次召回）', 
     const ids = memories.map((m) => m.id);
     // 未替换的轮次摘要正常召回（exclude 不含它）
     expect(ids).toContain('round-summary:s1:round-other');
+  });
+
+  it('T1：截断重排提炼保留的中间轮（正文已在视图）其摘要不被二次召回', async () => {
+    const { preparer, loop, storage } = makePreparer();
+    // 截断重排后：中间轮正文被提炼重插（roundId 随消息保留），视图 = 最近轮 + 该中间轮
+    loop.getVisibleRoundIds = () => new Set(['round-middle-1']);
+    // 语义召回命中：中间轮的摘要（roundId 命中视图 exclude）+ 跨会话记忆
+    vi.mocked(storage.search).mockReturnValue([
+      makeMemory({
+        id: 'round-summary:s1:round-middle-1',
+        source: 'round-summary',
+        score: 0.95,
+        roundId: 'round-middle-1', sessionName: '2026-08-22-main', summaryType: 'fact',
+      }),
+      makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
+    ]);
+
+    const memories = await preparer.recallAndInject('查询', 'full', 'hybrid');
+    const ids = memories.map((m) => m.id);
+    // 中间轮正文已在视图 → 其摘要不被召回（因果闭合，绝不双写）
+    expect(ids).not.toContain('round-summary:s1:round-middle-1');
+    // 跨会话记忆正常召回（视图 exclude 只挡视图内轮次，不伤跨会话补充）
+    expect(ids).toContain('cross:1');
   });
 });
 

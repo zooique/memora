@@ -544,6 +544,36 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
   });
 });
 
+describe('AgentLoop · getVisibleRoundIds（T1 视图内轮次集合，装配 exclude 用）', () => {
+  it('返回工作记忆中 user 消息自带 roundId 的集合（跳过非 user / 无 roundId 消息）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 恢复历史：system 被过滤保留为 messages[0]，其余全部进工作记忆
+    loop.restoreHistory([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: '第一轮提问', roundId: 'round-1' },
+      { role: 'assistant', content: '第一轮回答' },
+      { role: 'user', content: '第二轮提问', roundId: 'round-2' },
+      { role: 'tool', content: 'tool 结果', toolCallId: 'tc-1' },
+      { role: 'user' as const, content: '无 roundId 的轮次' },
+    ]);
+
+    expect(Array.from(loop.getVisibleRoundIds()).sort()).toEqual(['round-1', 'round-2']);
+  });
+
+  it('空工作记忆 / 无带 roundId 消息时返回空集合', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    expect(loop.getVisibleRoundIds().size).toBe(0);
+  });
+});
+
 describe('AgentLoop · 软上限终止（摘要层达容量上限 → 收尾信号）', () => {
   it('上下文逼近容量上限且正文已摘要化 → 注入 SOFT_LIMIT 收尾信号', async () => {
     const loop = new AgentLoop({

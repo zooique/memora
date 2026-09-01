@@ -1818,6 +1818,20 @@ export class AgentLoop {
     return Array.from(this.replacedRoundIds);
   }
 
+  /** 当前工作记忆中实际保留的轮次 roundId 集合（装配 exclude 用，T1 2026-09-01）。
+   *  扫描视图内 user 消息自带 roundId（与 ReplaceRoundsStrategy.groupRounds 同源，
+   *  无外部序列/尾部对齐依赖）。覆盖截断重排后按重要性提炼保留的中间轮——其正文已在
+   *  视图，round-summary 须排除防与该正文双写；被完全裁掉的旧轮不在集合内，其摘要仍可召回。 */
+  getVisibleRoundIds(): ReadonlySet<string> {
+    const ids = new Set<string>();
+    for (const msg of this.messages) {
+      if (msg.role === 'user' && msg.roundId) {
+        ids.add(msg.roundId);
+      }
+    }
+    return ids;
+  }
+
   /**
    * 获取当前窗口中的完整对话消息（仅 user + assistant，排除 system/tool）。
    * 供 contextPreparer 计量 fixed/query 模式下实际进窗的完整对话占用

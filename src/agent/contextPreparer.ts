@@ -171,6 +171,14 @@ export class ContextPreparer {
     for (const replacedRoundId of loop.getReplacedRoundIds()) {
       recentRoundIds.add(replacedRoundId);
     }
+    // T1（2026-09-01）：loop 视图内实际保留轮次并入 exclude——截断重排后按重要性提炼保留的
+    // 中间轮正文已在视图（roundId 随消息保留，contextManager.extractKeyMessages 重插），其
+    // round-summary 须排除防与该正文双写；该中间轮不在 history 最近 N 内（也非首轮/替换产物），
+    // 仅靠「正文注入 → exclude」的装配时间线互斥无法覆盖，须读视图真相补齐（因果闭合）。
+    // 被完全裁掉的旧轮不在视图、不在集合，其摘要仍可召回补充上下文。
+    for (const visibleRoundId of loop.getVisibleRoundIds()) {
+      recentRoundIds.add(visibleRoundId);
+    }
 
     // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──
     if (contextAssembly !== 'fixed' && memoryRecallMode !== 'none') {
