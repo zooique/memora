@@ -63,3 +63,44 @@ export function formatDateKey(date: Date): string {
 export function todayDate(): string {
   return formatDateKey(new Date());
 }
+
+// ── 会话标识格式契约（SSOT 单一真理源）────────────────────
+// sessionId 统一格式：`${date}-${session}`，date 固定 YYYY-MM-DD（10 位）。
+// session 名允许含连字符（如分叉产生的 main-b1），故拆解必须按「前 10 位日期」切、
+// 不能用 split('-')（会把含连字符的 session 名拆断，或把 'proj-alpha-beta' 误当日期）。
+// 此前内核/vscode/其他宿主各自手写 slice/split/正则实现，行为有细微差异；
+// 现收敛为下方两个纯函数并统一从此导出，宿主经 src/index.ts 引入，禁止再手写解析。
+//
+// 契约边界（本函数为纯拆解，不校验合法性）：
+//   - session 为空串：buildSessionId 返回纯 date（不产生尾 '-'）；
+//   - 输入不足 11 位：splitSessionId 的 date 取整个串、session 为空串（不抛错，供调用方自判）。
+//   需要严格合法性校验的场景（如存储写侧）应在调用方基于本函数返回值追加校验，
+//   不在本层内置（保持纯函数零状态、零哨兵语义）。
+
+/**
+ * 组装会话标识：`date + "-" + session`
+ *
+ * @param date 日期键（YYYY-MM-DD，经 formatDateKey/todayDate 产生）
+ * @param session 会话名（允许含连字符）
+ * @returns 完整会话标识；session 为空串时返回纯 date（不产生尾 '-'）
+ */
+export function buildSessionId(date: string, session: string): string {
+  if (!session) return date;
+  return `${date}-${session}`;
+}
+
+/**
+ * 拆解会话标识 → {date, session}
+ *
+ * 按「日期固定 10 位」切割（非 split，session 名可含连字符）。
+ * 不校验、不抛错、不返回 null——本函数只做格式拆解，假定输入由 buildSessionId 生成；
+ * 非法输入（不足 11 位）时 date 取整个串、session 为空串，由调用方按需处理。
+ *
+ * @param sessionId 完整会话标识（YYYY-MM-DD-sessionName）
+ * @returns 拆解后的 {date, session}
+ */
+export function splitSessionId(sessionId: string): { date: string; session: string } {
+  const date = sessionId.slice(0, 10);
+  const session = sessionId.length > 11 ? sessionId.slice(11) : '';
+  return { date, session };
+}

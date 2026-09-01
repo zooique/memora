@@ -8,7 +8,7 @@
  *   - 多次调用返回值单调非递减
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { nowIso, formatDateKey, todayDate } from '@/utils/time.js';
+import { nowIso, formatDateKey, todayDate, buildSessionId, splitSessionId } from '@/utils/time.js';
 
 describe('utils/time', () => {
   afterEach(() => {
@@ -100,6 +100,57 @@ describe('utils/time', () => {
       // 精灵版逻辑：getFullYear + padStart month/day（与内核实现完全一致）
       const expected = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
       expect(kernelResult).toBe(expected);
+    });
+  });
+
+  describe('buildSessionId', () => {
+    it('应组装 date + "-" + session', () => {
+      expect(buildSessionId('2026-06-21', 'main')).toBe('2026-06-21-main');
+    });
+
+    it('session 含连字符时不丢失分段（分叉名 main-b1）', () => {
+      expect(buildSessionId('2026-06-27', 'main-fork-1')).toBe('2026-06-27-main-fork-1');
+    });
+
+    it('session 为空串时返回纯 date（不产生尾 -）', () => {
+      expect(buildSessionId('2026-06-21', '')).toBe('2026-06-21');
+    });
+
+    it('与 splitSessionId 互为反操作（往返一致）', () => {
+      const id = buildSessionId('2026-06-27', 'main-fork-1');
+      const { date, session } = splitSessionId(id);
+      expect(date).toBe('2026-06-27');
+      expect(session).toBe('main-fork-1');
+      expect(buildSessionId(date, session)).toBe(id);
+    });
+  });
+
+  describe('splitSessionId', () => {
+    it('应拆解标准 sessionId', () => {
+      expect(splitSessionId('2026-06-21-main')).toEqual({ date: '2026-06-21', session: 'main' });
+    });
+
+    it('session 名含连字符时按前 10 位切（main-fork-1 不被拆断）', () => {
+      expect(splitSessionId('2026-06-27-main-fork-1')).toEqual({
+        date: '2026-06-27',
+        session: 'main-fork-1',
+      });
+    });
+
+    it('date 后连字符多于 1 位时（非标准输入）session 取 slice(11) 之后全部', () => {
+      // 契约：固定 10 位日期 + slice(11)，即 date 与 session 之间仅 1 个 '-' 分隔
+      expect(splitSessionId('2026-06-21-a-b')).toEqual({ date: '2026-06-21', session: 'a-b' });
+    });
+
+    it('不足 11 位时 date 取整个串、session 为空串（不抛错，由调用方自判）', () => {
+      expect(splitSessionId('2026-06-21')).toEqual({ date: '2026-06-21', session: '' });
+      expect(splitSessionId('proj-alpha')).toEqual({ date: 'proj-alpha', session: '' });
+    });
+
+    it('非日期开头的串不会被误认有 session（防 split 盲区）', () => {
+      expect(splitSessionId('proj-alpha-beta-gamma').session).toBe('beta-gamma');
+      // 调用方需自行校验日期格式（本函数纯拆解，不校验）
+      expect(/^\d{4}-\d{2}-\d{2}$/.test(splitSessionId('proj-alpha-beta-gamma').date)).toBe(false);
     });
   });
 });

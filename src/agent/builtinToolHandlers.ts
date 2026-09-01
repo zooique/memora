@@ -25,6 +25,7 @@ import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
+import { splitSessionId } from '@/utils/time.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText } from '@/agent/toolExecutor.js';
@@ -719,11 +720,11 @@ export class BuiltinToolHandlers {
   ): { messages: Array<{ role: string; content: string }>; truncated: boolean } | null {
     if (!this.sessionStore) return null;
     // 解析 date（前 10 位 YYYY-MM-DD）与 session（去掉 "YYYY-MM-DD-" 前缀）
-    const date = sessionId.slice(0, 10);
-    const session = sessionId.length > 11 ? sessionId.slice(11) : '';
-    if (!session) return null;
+    // 用内核 splitSessionId（SSOT 契约，防 session 名含连字符时切错）
+    const parsed = splitSessionId(sessionId);
+    if (!parsed.session) return null;
     try {
-      const all = this.sessionStore.loadMessages(date, session);
+      const all = this.sessionStore.loadMessages(parsed.date, parsed.session);
       const roundMsgs = all.filter((m) => m.roundId === roundId);
       if (roundMsgs.length === 0) return null;
       const truncated = roundMsgs.length > TRACE_MESSAGE_LIMIT;

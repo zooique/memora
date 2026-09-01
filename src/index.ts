@@ -79,6 +79,8 @@ export type { Config } from '@/config/loader.js';
 // 事件系统
 export { TypedEventEmitter, AGENT_EVENTS } from '@/utils/eventEmitter.js';
 export type { AgentEventMap, AgentEventName, AgentEventHandler } from '@/utils/eventEmitter.js';
+// 会话标识格式契约（SSOT 单点）：date/session 双向转换唯一真理源，宿主导入后不再手写 slice/split
+export { buildSessionId, splitSessionId } from '@/utils/time.js';
 
 // ─── 可观测性导出 ────────────────────────────────────────
 export type { ITracer, ISpan, AgentMetrics } from '@/agent/tracer.js';

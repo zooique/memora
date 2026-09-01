@@ -6,6 +6,8 @@
 
 import { logger } from '@/logging/logger.js';
 import { chatBusyError, configError } from '@/utils/errors.js';
+// 会话标识格式契约（SSOT）：恢复最近会话时把 sessionId 拆成 (date, session) 供 loadMessages
+import { splitSessionId } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
@@ -325,19 +327,14 @@ export class SessionManager {
       return 0;
     }
 
-    // 解析 "YYYY-MM-DD-session" 格式（正则已保证两捕获组存在，仅用于类型收窄）
-    const match = target.match(/^(\d{4}-\d{2}-\d{2})-(.+)$/);
-    if (!match) {
+    // 解析 "YYYY-MM-DD-session"（sessionId 格式契约真理源 = splitSessionId，session 名可含连字符）
+    const parsed = splitSessionId(target);
+    if (!parsed.session) {
       logger.debug({ session: target }, '会话标识格式不匹配');
       return 0;
     }
 
-    const [, date, session] = match;
-    if (!date || !session) {
-      logger.debug({ session: target }, '会话标识解析失败');
-      return 0;
-    }
-    const sessionMessages = this.sessionStore.loadMessages(date, session);
+    const sessionMessages = this.sessionStore.loadMessages(parsed.date, parsed.session);
     if (sessionMessages.length === 0) {
       logger.debug({ messageCount: 0 }, '没有找到可恢复的历史会话');
       return 0;
