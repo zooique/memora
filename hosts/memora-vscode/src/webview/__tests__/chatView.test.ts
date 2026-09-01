@@ -399,6 +399,35 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(input.disabled).toBe(false);
   });
 
+  it('运行时（thinking）禁用会话导航类控件：新建/历史/删除按钮全 disabled', () => {
+    mountChatView();
+    dispatch({ type: 'status', state: 'thinking' });
+    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(true);
+    // 已渲染的 AI 消息删除按钮同样被锁
+    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
+    expect(del.disabled).toBe(true);
+  });
+
+  it('非运行时（done）恢复会话导航类控件：新建/历史/删除按钮全 enabled', () => {
+    mountChatView();
+    dispatch({ type: 'status', state: 'thinking' });
+    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    dispatch({ type: 'status', state: 'done' });
+    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(false);
+    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(false);
+    const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
+    expect(del.disabled).toBe(false);
+  });
+
+  it('暂停态（paused）同样禁用会话导航类控件（运行时挂起从严）', () => {
+    mountChatView();
+    dispatch({ type: 'status', state: 'paused' });
+    expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(true);
+    expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(true);
+  });
+
   it('生成中发送按钮切换为停止态，点击发送 stop 消息', () => {
     const { postMessage } = mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;

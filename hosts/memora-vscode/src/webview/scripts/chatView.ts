@@ -681,6 +681,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
     // 状态切换影响发送按钮可用性（生成中/暂停语义下恒可用，见 syncSendEnabled）
     syncSendEnabled();
+    // 会话导航类控件运行时锁：thinking/paused（运行时）禁用，done（非运行时）恢复
+    updateSessionControlsLock(state !== 'done');
   }
 
   /**
@@ -694,6 +696,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       return;
     }
     send.disabled = !input.value.trim();
+  }
+
+  /**
+   * 会话导航类控件运行时锁（SSOT 收口点）：运行时（thinking/paused）禁用「新建会话 /
+   * 切换历史 / 删除问答闭环」三类改变会话结构的操作，仅非运行时（done）可用。
+   *
+   * 单一真相源 = 宿主 `status` 事件（经 setStatus 驱动），webview 不另维护 isRunning 标志。
+   * 删除按钮按消息实例存在（每条 AI 消息一个），故批量 querySelectorAll 统一置态；
+   * locked 态优先（运行时强制禁用），unlock 时还原为「无锚点 ts 则禁用」的原始语义。
+   */
+  let sessionControlsLocked = false;
+  function updateSessionControlsLock(locked: boolean): void {
+    sessionControlsLocked = locked;
+    newSessionBtn.disabled = locked;
+    historyBtn.disabled = locked;
+    document
+      .querySelectorAll<HTMLButtonElement>('.msg-delete-icon')
+      .forEach((b) => {
+        b.disabled = locked || !b.dataset.ts;
+      });
   }
 
   // ─── 回答等待指示器（③ 等待反馈，2026-08-29）─────────────────
@@ -1109,7 +1131,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
     // 无 ts（如流式未完成即被清空）时禁用，避免删除锚点失效。
     const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
-    deleteBtn.disabled = !ts;
+    // 存锚点供运行时锁批量读取；disabled 继承全局锁态（运行时强制禁用）或「无锚点则禁用」
+    deleteBtn.dataset.ts = ts ?? '';
+    deleteBtn.disabled = sessionControlsLocked || !ts;
     deleteBtn.addEventListener('click', () => {
       if (div.dataset.ts) vscode.postMessage({ type: 'delete_turn', ts: div.dataset.ts });
     });
