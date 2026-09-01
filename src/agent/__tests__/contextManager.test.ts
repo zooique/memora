@@ -894,3 +894,67 @@ describe('ContextManager.estimateTokens() · CJK 中文适配', () => {
     expect(summarySpan!.ended).toBe(true);
   });
 });
+
+// ─── T2 实证：装配注入的记忆 system 消息在截断中的存留与位置（预算分层平面化量化） ───
+// 来源：2026-09-01 上下文管理体系排雷 A 缝隙（T2）。量化「装配预算分层的系统/记忆/正文/锚点，
+// 在运行截断层是否被平面化」的真实严重度——结论由本测试固化，据结论立项与否。
+describe('T2 实证 · 记忆 system 消息在截断中的存留（平面化量化）', () => {
+  it('T2-1 窗口充足（对照基线）：记忆块与正文原样保留，截断不触发', () => {
+    const wide = createContextManager(1000);
+    const messages: Message[] = [
+      createMessage('S'.repeat(30), { role: 'system' }),
+      createMessage('U1', { roundId: 'r1' }),
+      createMessage('A1', { role: 'assistant' }),
+      createMessage('[MEM] 记忆一'),
+      createMessage('U2', { roundId: 'r2' }),
+    ];
+    const result = wide.truncateMessages(messages);
+    expect(result).toBe(messages); // 未超阈值 → 原引用
+    expect(result.some((m) => m.content.includes('[MEM]'))).toBe(true);
+  });
+
+  it('T2-2 窗口收紧：记忆块与正文按「最晚优先」平面竞争——最近记忆存活、更早轮记忆让位（LRU 性质）', () => {
+    // 40 字符 = 13~14 token；窗口 60 → available ≈ 60*0.9 − system(10) ≈ 44 → tail 只收最近两条
+    const narrow = createContextManager(60);
+    const messages: Message[] = [
+      createMessage('S'.repeat(30), { role: 'system' }), // ~10t
+      createMessage('M'.repeat(60), { roundId: 'r1' }), // 轮1 输入 ~20t
+      createMessage('M'.repeat(60), { role: 'assistant' }), // 轮1 答
+      createMessage('[MEM] ' + 'M'.repeat(60)), // 更早轮注入的记忆块（已随对话推进到中间）
+      createMessage('N'.repeat(60), { roundId: 'r2' }), // 轮2 输入
+      createMessage('M'.repeat(60), { role: 'assistant' }), // 轮2 答
+      createMessage('[MEM2] ' + 'M'.repeat(60)), // 本轮新注入的记忆块（紧贴当前输入前）
+      createMessage('P'.repeat(60), { roundId: 'r3' }), // 当前输入
+    ];
+    const result = narrow.truncateMessages(messages);
+    expect(result).not.toBe(messages); // 触发截断
+    const flat = result.map((m) => m.content).join('|');
+    // 最近注入的记忆块存活（紧贴当前输入前，被 tail 收住）
+    expect(flat).toContain('[MEM2]');
+    // 更早轮注入的记忆块让位（与旧正文同级竞争，无「记忆层优先」保护）
+    expect(flat).not.toContain('[MEM]');
+    // 当前输入必然存活
+    expect(flat).toContain('P'.repeat(60));
+    // 记忆块的注入顺序（紧贴输入前）被保持
+    expect(flat.indexOf('[MEM2]')).toBeLessThan(flat.indexOf('P'.repeat(60)));
+  });
+
+  it('T2-3 单块过大：记忆块整块让位（单条消息不部分保留）——窗口紧张时 LLM 拿到零记忆', () => {
+    // 超大记忆块 600 字符 ≈ 200t >> available ≈ 44 → 当前输入收住后，整块被裁
+    const narrow = createContextManager(60);
+    const messages: Message[] = [
+      createMessage('S'.repeat(30), { role: 'system' }),
+      createMessage('M'.repeat(60), { roundId: 'r1' }),
+      createMessage('M'.repeat(60), { role: 'assistant' }),
+      createMessage('[BIG] ' + 'M'.repeat(600)), // 超大记忆块
+      createMessage('P'.repeat(60), { roundId: 'r2' }), // 当前输入
+    ];
+    const result = narrow.truncateMessages(messages);
+    const flat = result.map((m) => m.content).join('|');
+    // 超大记忆块整块让位（无部分保留）
+    expect(flat).not.toContain('[BIG]');
+    // 当前输入 + 截断占位仍在（兜底不破坏正常运行）
+    expect(flat).toContain('P'.repeat(60));
+    expect(flat).toContain('截断');
+  });
+});

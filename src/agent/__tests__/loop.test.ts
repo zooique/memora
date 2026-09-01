@@ -3281,3 +3281,46 @@ describe('AgentLoop · thinking 事件 llm_calling 阶段', () => {
     expect(thinkingCount).toBeGreaterThanOrEqual(2);
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// T2 实证：召回记忆端到端注入（配套 contextManager.test.ts 的截断层量化）
+// 存留链路：装配注入（recalledMemories）→ injectRecallAsSystem → 运行帧 LLM 实际收到
+// ═══════════════════════════════════════════════════════════════
+
+describe('T2 实证 · 召回记忆端到端注入（LLM 收到记忆块）', () => {
+  it('窗口充足：注入的召回记忆块完整到达 LLM（装配 → 运行帧存留链路打通）', async () => {
+    // 捕获型 provider：记录 LLM 实际收到的消息序列
+    const calls: Message[][] = [];
+    const provider = {
+      name: 't2-capture',
+      async *chat(messages: Message[]) {
+        calls.push(messages);
+        yield { content: '收到记忆' };
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const recalledMemories = [
+      makeMemory({ id: 'mem:t2-1', name: '记忆A', content: '上次定的架构决策' }),
+      makeMemory({ id: 'mem:t2-2', name: '记忆B', content: '用户偏好简洁' }),
+    ];
+
+    for await (const chunk of loop.processUserInput('这次的方案', recalledMemories)) {
+      void chunk;
+    }
+
+    // LLM 调用帧收到记忆块（含「召回的相关记忆」系统消息）
+    expect(calls).toHaveLength(1);
+    const sent = calls[0]!;
+    const memoryMsg = sent.find(
+      (m) => m.role === 'system' && m.content.includes('召回的相关记忆'),
+    );
+    expect(memoryMsg).toBeDefined();
+    expect(memoryMsg!.content).toContain('上次定的架构决策');
+    expect(memoryMsg!.content).toContain('用户偏好简洁');
+  });
+});
