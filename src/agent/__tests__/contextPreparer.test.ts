@@ -177,7 +177,8 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
         firstRoundIncluded: false,
       }),
     );
-    // hybrid 对话进窗与 loop.messages 同源：getConversationMessages 与 dialogue.history 一致（真实架构）
+    // hybrid 对话与 loop.messages 同源：getConversationMessages 与 dialogue.history 一致
+    // （真实架构下两模式统一取 loop.messages 全量计量，SSOT 同源）
     loop.getConversationMessages = () => [{ role: 'user' as const, content: '第一条' }];
     vi.mocked(storage.search).mockReturnValue([
       makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
@@ -191,7 +192,7 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     expect(occ.totalTokens).toBe(120_000);
     // 角色包基础设定 = system prompt 固定开销（'sys' 长度 3）
     expect(occ.rolePackBaseTokens).toBe(3);
-    // 完整对话 = 注入历史正文（'第一条' 长度 3）
+    // 完整对话 = 问答闭环全量（'第一条' 长度 3，统一取 getConversationMessages，与装配模式无关）
     expect(occ.dialogueTokens).toBe(3);
     // 记忆摘要 = 注入记忆正文（'测试内容' 长度 4）
     expect(occ.memoryTokens).toBe(4);
@@ -215,7 +216,7 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
 
   it('④ 预算可视化：fixed 模式计量全量对话（loop.messages 全量 user/assistant，非注入摘要）', async () => {
     const { preparer, loop, storage } = makePreparer();
-    // fixed 模式不注入最近轮次摘要块，实际进窗对话 = loop.messages 全量 user/assistant
+    // fixed 模式不注入最近轮次摘要块，对话统一按 loop.messages 全量 user/assistant 计量
     loop.getConversationMessages = () => [
       { role: 'user', content: '上一轮问题' }, // 长度 5
       { role: 'assistant', content: '上一轮回答' }, // 长度 5

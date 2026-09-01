@@ -23,7 +23,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 
 1. **内核算**：`contextPreparer` 在 prepare 期算 `ContextOccupancy`（互斥分段拼满窗口总容量 `totalTokens`）：
    - `rolePackBaseTokens` = `fixedOverheadTokens`（system prompt：persona + rules + 技能 L1 + 工具 schema）
-   - `dialogueTokens` = 实际进窗完整对话：hybrid 模式计量注入的最近轮次摘要块；fixed/query 模式不注入摘要（对话全量保留在 loop.messages），计量全部 user/assistant 对话
+   - `dialogueTokens` = **问答闭环完整对话（全量 user+assistant token，与装配模式无关）**：统一取 `loop.getConversationMessages()` 全量估算（容量诚实统计问答闭环总和，非注入摘要、非进窗截断）；hybrid 模式注入的最近轮次摘要块不参与计量，避免与 loop 侧实时刷新口径漂移（2026-09-01 拍板统一，见「对话占用实时刷新」增补段）。
    - `dialogueCount` = **问答闭环数（user 消息条数）**，非对话消息总数。计数标准以「用户输入」为准：一个 user 消息计 1 条，哪怕对应 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 消息不计入条数，但计入 `dialogueTokens` 容量。此口径 2026-09-01 定案，解「发一条消息后圆环不刷新」体感（详见「对话占用实时刷新」增补段）。
    - `memoryTokens` = `estimateTokens(注入的 recalled 记忆)`
    - `inputAnchorTokens` = `budget.anchorTokens`（触发输入 + 首个回答预留）
@@ -66,7 +66,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 
 ## 影响（已实现 · 2026-08-30）
 
-- **内核**：新增 `ContextOccupancy` 类型（`budget.ts`）+ `loop.recordOccupancy` + `getMetrics().context.occupancy`；`contextPreparer` 在 prepare 末尾算各层真实用量并记录（dialogue 按装配模式分支：hybrid 计量注入摘要、fixed/query 计量全量对话，经 `loop.getConversationMessages()` 取数）。单测（`metrics.test` / `contextPreparer.test`）覆盖透出、分段非负收敛与 fixed 全量计量。
+- **内核**：新增 `ContextOccupancy` 类型（`budget.ts`）+ `loop.recordOccupancy` + `getMetrics().context.occupancy`；`contextPreparer` 在 prepare 末尾算各层真实用量并记录（dialogue 统一计量全量问答闭环 user/assistant，经 `loop.getConversationMessages()` 取数，与装配模式无关）。单测（`metrics.test` / `contextPreparer.test`）覆盖透出、分段非负收敛与全量计量。
 - **宿主**：`protocol.ts` 加 `context_occupancy` 消息；`chatPanel.ts` 加 `postContextOccupancy()`（脱离 `showMetrics` 常驻）+ 输入区 `#contextOccupancy` DOM。
 - **webview**：`chatView.ts` 加 `updateContextOccupancy` 处理器与渲染；`chatStyles.ts` 加分段配色。
 - **质量门**：内核 test 24（metrics + contextPreparer）/ 宿主 `tsc --noEmit` 0 错、`eslint --max-warnings 0` 0 警告、全量测试 272 全绿。
@@ -103,7 +103,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 
 收益：发消息即时 +1、assistant 落盘容量补上，无需切会话即可看到正确占用；条数语义直白（问答闭环数），残缺回复如实计入容量。
 
-**修正（2026-09-01 实测复盘）**：初版 `dialogueCount` 在 hybrid 分支取 `dialogue.history.filter(role==='user')`，而 `dialogue.history` 由 `getRecentHistoryWithinBudget` 按预算截取「最近 N 轮」——发一条新消息时最新轮挤掉最旧轮、轮数守恒，导致「发一条后完整对话数不涨」（用户实测）。修正为统一取 `loop.getConversationMessages().filter(role==='user')`（会话累计全量 user 数，不受预算截断），hybrid/fixed 两分支合并为一。注意由此产生的语义分裂：`dialogueCount`=累计问答闭环数（全量），`dialogueTokens`=进窗容量（hybrid 仍按 dialogue.history 截断）；若需容量也按「问答闭环所有占用」全量统计，须另行调整 ADR-030 的进窗用量设计（独立决策，不在此扩张）。
+**修正（2026-09-01 实测复盘）**：初版 `dialogueCount` 在 hybrid 分支取 `dialogue.history.filter(role==='user')`，而 `dialogue.history` 由 `getRecentHistoryWithinBudget` 按预算截取「最近 N 轮」——发一条新消息时最新轮挤掉最旧轮、轮数守恒，导致「发一条后完整对话数不涨」（用户实测）。修正并定案（拍板）：`dialogueCount` 与 `dialogueTokens` **统一取 `loop.getConversationMessages()` 全量**（user 计数 + user+assistant 全量 token），hybrid/fixed 分支合并为一，与「进窗用量」的旧分支语义分叉即告消除——prepare 与 loop 侧 `refreshOccupancyDialogue` 同一估算器、同一数据源（SSOT），容量诚实统计问答闭环所有占用。
 
 ## 何时回顾
 

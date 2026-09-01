@@ -260,24 +260,21 @@ export class ContextPreparer {
     // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
     // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
     //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
-    //   dialogue     = 实际进窗的完整对话 token：
-    //                  hybrid 模式注入最近轮次摘要块 → 计量 dialogue.history；
-    //                  fixed/query 模式全量保留在 loop.messages（cleanTemporary 只清 system，
-    //                  不注入摘要）→ 计量全部 user/assistant 对话，避免低估。
+    //   dialogue     = 问答闭环完整对话 token（全量 user+assistant，与装配模式无关——容量诚实
+    //                  统计问答闭环总和，ADR-030 口径；loop.append 侧 refreshOccupancyDialogue 以
+    //                  同一估算器重算覆盖，prepare 与实时刷新同源同数据，无口径漂移）
     //   memory       = 注入的 recalled 记忆 token
     //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
     //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
     //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
-    const dialogueTokens =
-      contextAssembly === 'hybrid'
-        ? loop.estimateTokens(dialogue.history)
-        : loop.estimateTokens(loop.getConversationMessages());
+    const dialogueTokens = loop.estimateTokens(loop.getConversationMessages());
     // 条数语义（2026-09-01 定案）：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
     // 哪怕 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 不计入条数，但计入 dialogueTokens 容量。
-    // 关键：dialogueCount = 会话累计 user 消息数（不受预算截断），与装配模式无关——否则 hybrid 模式
-    // 下 getRecentHistoryWithinBudget 按预算截取「最近 N 轮」会把最新轮挤掉最旧轮、轮数守恒，
-    // 导致「发一条消息后完整对话数不涨」（用户实测 bug）。故统一取 loop.messages 全量 user 数，
-    // 不再依赖截断后的 dialogue.history。dialogueTokens 仍按各模式口径（进窗容量，ADR-030 既有设计）。
+    // 关键：dialogueCount 与 dialogueTokens 统一取 loop.messages 全量（user 计数 + 全量 token），
+    // 与装配模式无关——否则 hybrid 模式下 getRecentHistoryWithinBudget 按预算截取「最近 N 轮」
+    // 会把最新轮挤掉最旧轮、轮数守恒，导致「发一条消息后完整对话数不涨」（用户实测 bug），
+    // 且进窗口径与 loop 侧实时刷新（refreshOccupancyDialogue 按全量重算）产生语义漂移。
+    // 统一全量后 prepare 与刷新共用同一估算器、同一数据源（SSOT），杜绝口径分叉。
     const dialogueCount = loop.getConversationMessages().filter((m) => m.role === 'user').length;
     const memoryTokens = recalledMemories.length
       ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
