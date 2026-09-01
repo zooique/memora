@@ -721,5 +721,29 @@ keywords: 搜索,查询
       expect(skillDirSkill!.layer3?.scripts).toHaveLength(1);
       expect(skillDirSkill!.layer3?.scripts[0]!.path).toBe('run.sh');
     });
+
+    it('文件夹形态（SKILL.md）扫描 references/ 且 read_resource 可读（B1 兼容主流）', async () => {
+      // B1：references/ 是 TRAE / Agent Skills 主流辅助文档目录，纳入 L3 资源索引
+      const skillDir = join(skillsDir, 'tree');
+      mkdirSync(join(skillDir, 'references'), { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: tree\nkeywords: d\n---\n# Tree 技能', 'utf-8');
+      writeFileSync(join(skillDir, 'references', 'modes.md'), 'Modes 参考文档', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      const treeSkill = skillManager.get('tree');
+      expect(treeSkill).not.toBeNull();
+      // references/ 文件进入 layer3.resources，并标注 subdir=references
+      expect(treeSkill!.layer3?.resources).toHaveLength(1);
+      expect(treeSkill!.layer3?.resources[0]!.path).toBe('modes.md');
+      expect(treeSkill!.layer3?.resources[0]!.subdir).toBe('references');
+      // read_resource 按 subdir 选择 references/ 基目录读取成功
+      const content = await skillManager.readResource('tree', 'modes.md');
+      expect(content).toBe('Modes 参考文档');
+      // 未登记的路径仍被拒绝（layer3 白名单）
+      const bad = await skillManager.readResource('tree', '../secret.txt');
+      expect(bad).toBeNull();
+    });
   });
 });

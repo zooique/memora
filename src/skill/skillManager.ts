@@ -223,16 +223,19 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   // ── L3 资源/脚本访问 ──────────────────────────────────
 
   /**
-   * 读取技能的 L3 资源文件（渐进披露 L3）；资源须在 layer3 中且路径不逃逸 resources/ 目录
+   * 读取技能的 L3 资源文件（渐进披露 L3）；资源须在 layer3 中且路径不逃逸其来源子目录
+   * （resources/ 或 references/，B1 兼容主流 references/ 辅助文档目录）
    */
   async readResource(skillName: string, resourcePath: string): Promise<string | null> {
     const skill = this.get(skillName);
     if (!skill) return null;
 
-    // 确认资源在 layer3 中 + 路径穿越防护
-    if (skill.layer3?.resources.some((r) => r.path === resourcePath)) {
+    // 确认资源在 layer3 中 + 按条目来源子目录选择读取基目录 + 路径穿越防护
+    const res = skill.layer3?.resources.find((r) => r.path === resourcePath);
+    if (res) {
       const skillDir = dirname(skill.filePath);
-      const resourceFullPath = resolveSafePath(join(skillDir, 'resources'), resourcePath);
+      const baseDir = res.subdir ?? 'resources';
+      const resourceFullPath = resolveSafePath(join(skillDir, baseDir), resourcePath);
       if (!resourceFullPath) {
         logger.warn({ skill: skillName, resourcePath }, 'read_resource 路径穿越被阻止');
         return null;
@@ -321,6 +324,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
           resources: discovered.resources.map((r) => ({
             path: r.path,
             size: r.size,
+            // 资源来源子目录（resources/references），read_resource 据此选择读取基目录
+            subdir: r.subdir,
           })),
           scripts: discovered.scripts.map((s) => ({
             path: s.path,

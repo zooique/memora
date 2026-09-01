@@ -202,10 +202,13 @@ export function resolveSubdir(configDir: string | undefined, sub: string): strin
   return resolve(configDir, sub);
 }
 
+/** L3 资源来源子目录：resources/（memora 自有约定）+ references/（TRAE / Agent Skills 主流辅助文档目录） */
+export type ResourceSubdir = 'resources' | 'references';
+
 /** L3 资源/脚本发现结果 */
 export interface DiscoveredLayer3 {
-  /** 资源列表（resources/ 目录下的文件） */
-  resources: Array<{ path: string; size: number }>;
+  /** 资源列表（resources/ 与 references/ 两个目录合并，条目带来源子目录） */
+  resources: Array<{ path: string; size: number; subdir: ResourceSubdir }>;
   /** 脚本列表（scripts/ 目录下的文件） */
   scripts: Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }>;
 }
@@ -229,52 +232,71 @@ const RESOURCE_EXTENSIONS = new Set([
 ]);
 
 /**
- * 发现技能目录下的 L3 资源（resources/）和脚本（scripts/）
+ * 发现技能目录下的 L3 资源（resources/ + references/）和脚本（scripts/）
  *
  * 三级渐进披露 L3 层扫描：
- *   - resources/ 目录下的文件 → 资源列表
+ *   - resources/ 目录下的文件 → 资源列表（memora 自有约定）
+ *   - references/ 目录下的文件 → 资源列表（TRAE / Agent Skills 主流辅助文档目录，B1 兼容）
  *   - scripts/ 目录下的可执行文件 → 脚本列表（按扩展名推断 runtime）
+ * 资源条目统一带 subdir 来源，read_resource 据此选择读取基目录。
  *
  * @param skillDir 技能目录路径（如 configDir/skills/my-skill/）
  * @returns 发现的资源和脚本列表
  */
 export async function discoverLayer3(skillDir: string): Promise<DiscoveredLayer3> {
-  const result: DiscoveredLayer3 = { resources: [], scripts: [] };
-
-  // 扫描 resources/ 目录
-  const resourcesDir = join(skillDir, 'resources');
-  try {
-    await access(resourcesDir);
-    const files = await readResourceFiles(resourcesDir);
-    result.resources = files;
-  } catch {
-    // resources/ 目录不存在，跳过
-  }
+  // resources/ 与 references/ 均纳入资源索引，条目标注来源子目录
+  const resources = [
+    ...(await scanResourceSubdir(skillDir, 'resources')),
+    ...(await scanResourceSubdir(skillDir, 'references')),
+  ];
 
   // 扫描 scripts/ 目录
   const scriptsDir = join(skillDir, 'scripts');
+  let scripts: DiscoveredLayer3['scripts'] = [];
   try {
     await access(scriptsDir);
-    const files = await readScriptFiles(scriptsDir);
-    result.scripts = files;
+    scripts = await readScriptFiles(scriptsDir);
   } catch {
     // scripts/ 目录不存在，跳过
   }
 
-  return result;
+  return { resources, scripts };
 }
 
 /**
- * 递归扫描 resources/ 目录下的资源文件
+ * 扫描单个资源子目录（resources/ 或 references/），目录不存在时返回空数组
  *
- * @param dir resources 目录路径
+ * @param skillDir 技能目录路径
+ * @param subdir 资源来源子目录
+ * @returns 该子目录下的资源列表（条目带来源 subdir）
+ */
+async function scanResourceSubdir(
+  skillDir: string,
+  subdir: ResourceSubdir,
+): Promise<Array<{ path: string; size: number; subdir: ResourceSubdir }>> {
+  const dir = join(skillDir, subdir);
+  try {
+    await access(dir);
+    return await readResourceFiles(dir, '', subdir);
+  } catch {
+    // 目录不存在，跳过
+    return [];
+  }
+}
+
+/**
+ * 递归扫描资源子目录下的资源文件
+ *
+ * @param dir 资源子目录路径（resources/ 或 references/）
  * @param basePath 相对路径前缀（用于递归）
+ * @param subdir 资源来源子目录（透传给条目）
  */
 async function readResourceFiles(
   dir: string,
   basePath = '',
-): Promise<Array<{ path: string; size: number }>> {
-  const results: Array<{ path: string; size: number }> = [];
+  subdir: ResourceSubdir,
+): Promise<Array<{ path: string; size: number; subdir: ResourceSubdir }>> {
+  const results: Array<{ path: string; size: number; subdir: ResourceSubdir }> = [];
   const entries = await readdir(dir);
 
   for (const entry of entries) {
@@ -285,10 +307,10 @@ async function readResourceFiles(
     const statInfo = await stat(fullPath);
 
     if (statInfo.isDirectory()) {
-      const subResults = await readResourceFiles(fullPath, relPath);
+      const subResults = await readResourceFiles(fullPath, relPath, subdir);
       results.push(...subResults);
     } else if (RESOURCE_EXTENSIONS.has(getExt(entry))) {
-      results.push({ path: relPath, size: statInfo.size });
+      results.push({ path: relPath, size: statInfo.size, subdir });
     }
   }
 

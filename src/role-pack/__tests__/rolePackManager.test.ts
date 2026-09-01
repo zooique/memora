@@ -967,5 +967,33 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const bad = await manager.readSkillResource('文档生成', '../doc-gen-evil/secret.txt');
       expect(bad).toBeNull();
     });
+
+    it('readSkillResource：references/ 目录资源可读（B1 兼容主流辅助文档目录）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      const skillPack = join(packsDir, '文档专家2', 'skills', 'doc-gen');
+      // 构造文件夹式技能：SKILL.md + references/modes.md（B1 后 references/ 纳入 layer3）
+      await mkdir(join(skillPack, 'references'), { recursive: true });
+      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 文档生成2\n---\n# 文档生成2\n', 'utf-8');
+      await writeFile(join(skillPack, 'references', 'modes.md'), 'Modes 参考文档内容', 'utf-8');
+      await writeFile(
+        join(packsDir, '文档专家2', 'manifest.json'),
+        JSON.stringify({
+          name: '文档专家2',
+          keywords: ['文档2'],
+          skills: { 'skills/doc-gen/SKILL.md': {} },
+        }),
+        'utf-8',
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('文档专家2');
+
+      // references/ 下资源进入 layer3 并可读（subdir=references）
+      const ref = await manager.readSkillResource('文档生成2', 'modes.md');
+      expect(ref).toBe('Modes 参考文档内容');
+      // 未登记的穿越路径仍被拒绝
+      const bad = await manager.readSkillResource('文档生成2', '../secret.txt');
+      expect(bad).toBeNull();
+    });
   });
 });

@@ -437,12 +437,12 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_resource',
     description:
-      '读取技能的参考资源文件（渐进披露 L3，按需调用）。当技能含 resources/ 目录时，可通过此工具读取参考资料。资源路径相对技能的 resources/ 目录。',
+      '读取技能的参考资源文件（渐进披露 L3，按需调用）。技能含 resources/ 或 references/ 目录时，可通过此工具读取参考资料。资源路径相对技能的 resources/ 或 references/ 目录。',
     parameters: {
       type: 'object',
       properties: {
         skill_name: { type: 'string', description: '技能名' },
-        resource_path: { type: 'string', description: '相对 resources/ 的路径（如 "api-spec.md"）' },
+        resource_path: { type: 'string', description: '相对 resources/ 或 references/ 的路径（如 "api-spec.md"）' },
       },
       required: ['skill_name', 'resource_path'],
     },
@@ -468,7 +468,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'list_resources',
     description:
-      '列出技能的 L3 资源清单（渐进披露 L3）。返回 resources/ 目录下所有资源文件列表。',
+      '列出技能的 L3 资源清单（渐进披露 L3）。返回 resources/ 与 references/ 目录下所有资源文件列表。',
     parameters: {
       type: 'object',
       properties: {

@@ -151,7 +151,7 @@ async function scanPackSkills(
       name: entry.name,
       description: entry.frontmatter['description'] ?? undefined,
       layer3: hasL3 ? {
-        resources: l3.resources.map((r) => ({ path: r.path, size: r.size })),
+        resources: l3.resources.map((r) => ({ path: r.path, size: r.size, subdir: r.subdir })),
         scripts: l3.scripts.map((s) => ({ path: s.path, runtime: s.runtime, size: s.size })),
       } : undefined,
     };
@@ -1044,14 +1044,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // layer3 白名单前置检查：资源必须已由 scanPackSkills 发现并登记（与全局 SkillManager 同标准），
     // 防止未在清单内的路径（含兄弟目录前缀、escape 符）被 resolveSafePath 误放行
     const found = this.findSkillByName(skillName, packName);
-    const registered = found && found.skill.layer3?.resources.some((r) => r.path === resourcePath);
-    if (!registered) return null;
+    const resourceMeta = found?.skill.layer3?.resources.find((r) => r.path === resourcePath);
+    if (!resourceMeta) return null;
 
     const skillDir = this.resolveSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（确保 resourcePath 不逃逸技能 resources/ 目录）
-    const resourceFullPath = resolveSafePath(join(skillDir, 'resources'), resourcePath);
+    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀。
+    // 读取基目录按条目来源 subdir 选择（resources/ 或 references/，B1 兼容主流 references/ 目录）
+    const baseDir = resourceMeta.subdir ?? 'resources';
+    const resourceFullPath = resolveSafePath(join(skillDir, baseDir), resourcePath);
     if (!resourceFullPath) {
       getLogger().warn(
         { skill: skillName, resourcePath },

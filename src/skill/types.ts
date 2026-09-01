@@ -1,12 +1,13 @@
 /**
  * 技能模块类型定义 — 三级渐进披露
  *
- * L1 元数据：name + description + keywords → 常驻 system prompt
+ * L1 元数据：name + description（必填，渐进披露唯一激活依据）→ 常驻 system prompt；
+ *   keywords/trigger 为可选增强（本地匹配 + UI 标签），不进 L1 清单输出（B1 对齐主流：仅两字段）
  * L2 正文：content（SKILL.md 全文）→ read_skill 按需加载
- * L3 资源/脚本：resources + scripts → read_resource / run_skill_script 按需调用
+ * L3 资源/脚本：resources + references + scripts → read_resource / run_skill_script 按需调用
  */
 
-/** L3 资源条目（resources/ 目录下的参考文件） */
+/** L3 资源条目（resources/ 或 references/ 目录下的参考文件） */
 export interface SkillResource {
   /** 资源相对路径（相对技能目录根，如 "resources/api-spec.md"） */
   path: string;
@@ -14,6 +15,11 @@ export interface SkillResource {
   description?: string;
   /** 文件大小（字节），用于判断是否需要分块读取 */
   size?: number;
+  /**
+   * 资源来源子目录（resources / references）。
+   * references/ 为 TRAE / Agent Skills 主流辅助文档目录（B1 兼容），read_resource 据此选择读取基目录。
+   */
+  subdir?: 'resources' | 'references';
 }
 
 /** L3 脚本条目（scripts/ 目录下的可执行脚本） */

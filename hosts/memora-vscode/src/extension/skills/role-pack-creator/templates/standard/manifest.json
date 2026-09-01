@@ -1,0 +1,50 @@
+{
+  "name": "{{PACK_NAME}}",
+  "displayName": "{{PACK_DISPLAY_NAME}}",
+  "formatVersion": "1.0.0",
+  "version": "0.1.0",
+  "description": "{{PACK_DESCRIPTION}}",
+  "keywords": {{PACK_KEYWORDS}},
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "handoffPrompt": "{{PACK_HANDOFF}}",
+  "strategy": {
+    "prepare": {
+      "memoryRecall": "full",
+      "understandingConfirm": "off",
+      "memoryRecallPercent": 0.4,
+      "minFallback": 2,
+      "contextAssembly": "hybrid",
+      "recallConfidence": 0.6,
+      "summaryRecall": "on"
+    },
+    "act": {
+      "toolMode": "allow",
+      "temperature": 0.7,
+      "outputLimit": 4096,
+      "streaming": "streaming",
+      "toolStepLimit": 20,
+      "providerRouting": "auto",
+      "inputInterrupt": "allow",
+      "multiStepReasoning": "auto",
+      "toolReadonly": "full",
+      "toolApproval": "auto"
+    },
+    "reflect": {
+      "summary": "on",
+      "handoff": "wait",
+      "loopContinue": 0,
+      "userFollowup": "silent"
+    },
+    "global": {
+      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askLimit": 3,
+      "errorHandling": "retry",
+      "tokenBudget": 200000,
+      "stepBudget": 50,
+      "taskLoopLimit": 10
+    }
+  }
+}

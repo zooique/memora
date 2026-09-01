@@ -322,7 +322,12 @@ export interface RolePackManifestSkill {
   readonly description?: string;
   /** L3 层数据（资源 + 脚本）：由 scanPackSkills 装载时自动发现；L3 不进 system prompt，按需调用 */
   readonly layer3?: {
-    readonly resources: ReadonlyArray<{ readonly path: string; readonly size: number }>;
+    readonly resources: ReadonlyArray<{
+      readonly path: string;
+      readonly size: number;
+      /** 资源来源子目录（resources/references，B1 兼容主流 references/ 辅助文档目录），read_resource 据此选择读取基目录 */
+      readonly subdir?: 'resources' | 'references';
+    }>;
     readonly scripts: ReadonlyArray<{
       readonly path: string;
       readonly runtime: 'node' | 'python' | 'shell';
