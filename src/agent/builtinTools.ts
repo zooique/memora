@@ -325,7 +325,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'search_memories',
     description:
-      '在记忆索引中搜索关键词。支持 match（任一命中，默认）和 near（全部命中）两种模式。',
+      '在记忆索引中搜索关键词。支持 match（任一命中，默认）和 near（全部命中）两种模式。' +
+      '执行多步任务（复杂任务分步推进）过程中需要历史决策或既有记忆时，主动调用本工具按需召回' +
+      '（回答前仅注入一次召回记忆，运行中不自动补充）。',
     readonly: true,
     parameters: {
       type: 'object',

@@ -142,6 +142,14 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(searchMemories!.parameters.properties.mode).toBeDefined();
   });
 
+  it('search_memories 描述含多步任务按需召回的引导（档案2 步序列记忆策略 (b)）', () => {
+    const searchMemories = BUILTIN_TOOLS.find((t) => t.name === 'search_memories');
+    // 引导：多步任务中需要历史决策/既有记忆时主动调用（回答前仅注入一次、运行中不自动补充）
+    expect(searchMemories!.description).toContain('多步任务');
+    expect(searchMemories!.description).toContain('主动调用本工具按需召回');
+    expect(searchMemories!.description).toContain('不自动补充');
+  });
+
   // ─── ToolDefinition 类型守卫 ──────────────────────────────
 
   it('所有工具应符合 ToolDefinition 类型约束', () => {
