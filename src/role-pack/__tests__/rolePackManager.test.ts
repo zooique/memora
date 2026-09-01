@@ -194,6 +194,51 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.personaPrompt).toContain('术语保持一致');
   });
 
+  it('persona frontmatter traits 扁平点路径解析（traits.xxx = 0-1，clamp，缺省 undefined）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 官方示例包写法：扁平点路径键（对齐 parseFrontmatter 按行解析，非嵌套 YAML）
+    await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
+      persona:
+        '---\n' +
+        'traits.precision: 0.95\n' +
+        'traits.creativity: 0.6\n' +
+        'traits.rigor: 1.5\n' + // 越界 → clamp 到 1
+        'traits.empathy: -0.2\n' + // 越界 → clamp 到 0
+        '---\n\n' +
+        '你是一位技术文档工程师。',
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('技术文档工程师');
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    // 扁平 traits.* 键被解析为数值（供宿主情感计算 / UI 徽章）
+    expect(active!.traits).toEqual({
+      precision: 0.95,
+      creativity: 0.6,
+      rigor: 1, // clamp 上限
+      empathy: 0, // clamp 下限
+    });
+    // frontmatter 不注入 personaPrompt（仅正文进 system prompt）
+    expect(active!.personaPrompt).not.toContain('traits.');
+    expect(active!.personaPrompt).toContain('技术文档工程师');
+  });
+
+  it('persona 无 traits frontmatter → traits 为 undefined（非空对象）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, {
+      persona: '你是翻译。',
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('翻译助手');
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    expect(active!.traits).toBeUndefined();
+  });
+
   it('规则解析支持多格式（ADR-025 档 3：列表/段落/引用/标题/代码块/注释）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });

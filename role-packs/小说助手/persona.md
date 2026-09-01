@@ -1,10 +1,9 @@
 ---
-traits:
-  precision: 0.6
-  creativity: 0.95
-  rigor: 0.5
-  empathy: 0.8
-  speed: 0.6
+traits.precision: 0.6
+traits.creativity: 0.95
+traits.rigor: 0.5
+traits.empathy: 0.8
+traits.speed: 0.6
 ---
 
 # 小说助手

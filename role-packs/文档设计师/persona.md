@@ -1,10 +1,9 @@
 ---
-traits:
-  precision: 0.95
-  creativity: 0.6
-  rigor: 0.9
-  empathy: 0.7
-  speed: 0.7
+traits.precision: 0.95
+traits.creativity: 0.6
+traits.rigor: 0.9
+traits.empathy: 0.7
+traits.speed: 0.7
 ---
 
 # 文档设计师
