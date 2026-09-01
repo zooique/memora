@@ -176,8 +176,9 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
 export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
   name: 'compress_context',
   description:
-    '当上下文过长时压缩空间（第二级压缩，LLM 主动触发兜底）：把最早的执行闭环或超大工具结果' +
-    '现场压成临时摘要替换，loop 收尾即弃。当无法通过替换释放空间（无已存摘要）时使用。',
+    '当上下文接近容量上限或空间紧张时主动压缩空间（第二级压缩，LLM 触发兜底）：把最早的执行闭环' +
+    '或超大工具结果现场压成临时摘要替换，loop 收尾即弃。当替换无法释放空间（无已存摘要）时、或存在' +
+    '超大工具结果 / 较多旧执行闭环时使用；压缩内容仍可经 trace_summary 回溯。',
   parameters: {
     type: 'object',
     properties: {

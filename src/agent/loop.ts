@@ -936,6 +936,16 @@ export class AgentLoop {
         { estimatedTokens: this.contextManager.estimateTokens(this.messages), max: this.maxContextTokens },
         '软上限：摘要层达容量上限，注入收尾信号，LLM 收敛产出最终交付',
       );
+    } else if (this.contextManager.shouldInjectContextPressureHint(this.messages)) {
+      // T3（2026-09-01）预算预警档：容量到线但摘要层未饱和（软上限的前一级）→ 注入温和压缩/收敛提示，
+      // 引导 LLM 主动压缩而非直接到收尾。内容幂等：仅一轮内注入一次，防迭代累积刷屏（executionTemp 入口即弃）
+      if (!this.messages.some((m) => m.role === 'system' && m.content.includes('上下文空间提示'))) {
+        this.appendSystemMessage(LOOP_CONSTANTS.CONTEXT_PRESSURE_HINT, { executionTemp: true });
+      }
+      logger.debug(
+        { estimatedTokens: this.contextManager.estimateTokens(this.messages), max: this.maxContextTokens },
+        '上下文预算预警：容量到线未饱和，注入压缩/收敛提示',
+      );
     }
 
     // tokenBudget 软上限检查（0=不限制）

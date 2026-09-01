@@ -271,6 +271,30 @@ export class ContextManager {
   }
 
   /**
+   * 上下文压力预警判定（T3 2026-09-01）：容量表达警戒线（≥ CONTEXT_TOKENS_BUFFER_RATIO）但
+   * 摘要层未饱和（低于 SUMMARY_LAYER_TOKEN_RATIO）时 → 可注入温和提示（压缩/收敛引导）。
+   *
+   * 与 shouldInjectSoftLimitWrapup 互补——同一容量闸的两级：
+   *   摘要层饱和       → shouldInjectSoftLimitWrapup（收尾信号）
+   *   容量到线但摘要健康 → shouldInjectContextPressureHint（软上限的前一级预警）
+   *
+   * @param messages 当前工作记忆（读型判定，不修改）
+   * @returns 是否应注入上下文空间预警提示
+   */
+  shouldInjectContextPressureHint(messages: readonly Message[]): boolean {
+    // 容量阈值：上下文逼警戒线（≥ CONTEXT_TOKENS_BUFFER_RATIO）
+    const currentTokens = this.estimateTokens(messages);
+    if (currentTokens < this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
+      return false;
+    }
+    // 摘要层已达饱和 → 归软上限收尾路径，不重复预警（避免与收尾信号叠加）
+    if (this.shouldInjectSoftLimitWrapup(messages)) {
+      return false;
+    }
+    return true;
+  }
+
+  /**
    * 截断消息数组以适配上下文窗口。
    *
    * 策略：保留下方（最近）、裁中间、头部折叠成占位消息。

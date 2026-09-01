@@ -958,3 +958,38 @@ describe('T2 实证 · 记忆 system 消息在截断中的存留（平面化量�
     expect(flat).toContain('截断');
   });
 });
+
+// ─── T3 实证：上下文压力预警判定（软上限的前一级） ───
+describe('ContextManager.shouldInjectContextPressureHint（T3 预算预警前一级）', () => {
+  it('容量未到警戒线：false', () => {
+    const m = createContextManager(1000);
+    const messages = [
+      createMessage('S'.repeat(30), { role: 'system' }),
+      createMessage('短消息'),
+    ];
+    expect(m.shouldInjectContextPressureHint(messages)).toBe(false);
+  });
+
+  it('容量到线（≥90%）但摘要层未饱和：true（软上限前一级预警）', () => {
+    const small = createContextManager(100);
+    // 330 latin 字符 ≈ 110t + system 10t → 总 120 ≥ 90 警戒线；无摘要标记 → 摘要层 0 < 30%
+    const messages = [
+      createMessage('S'.repeat(30), { role: 'system' }),
+      createMessage('M'.repeat(330)),
+    ];
+    expect(small.shouldInjectContextPressureHint(messages)).toBe(true);
+    // 互补：软上限此刻不触发（摘要层未饱和）
+    expect(small.shouldInjectSoftLimitWrapup(messages)).toBe(false);
+  });
+
+  it('容量到线且摘要层饱和：false（归软上限收尾，不重复预警）', () => {
+    const small = createContextManager(100);
+    // 摘要标记消息（Round summary marker）≈ 100t → 摘要层 ≥ 30% → 收尾路径
+    const messages = [
+      createMessage('S'.repeat(30), { role: 'system' }),
+      createMessage('[Round summary · roundId: r1] ' + 'M'.repeat(300)),
+    ];
+    expect(small.shouldInjectContextPressureHint(messages)).toBe(false);
+    expect(small.shouldInjectSoftLimitWrapup(messages)).toBe(true);
+  });
+});

@@ -3324,3 +3324,50 @@ describe('T2 实证 · 召回记忆端到端注入（LLM 收到记忆块）', ()
     expect(memoryMsg!.content).toContain('用户偏好简洁');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// T3 预算预警档：容量到线但摘要层未饱和 → 注入压缩/收敛提示（软上限前一级）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · T3 预算预警档（上下文空间提示）', () => {
+  it('容量到线且无法截断（消息数 ≤3）时注入压缩提示，而非直接软上限收尾', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '收敛回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 100, // 极小窗口：单条大消息即达警戒线
+    });
+    // 预置大消息推高容量（latin 300 字符 ≈ 100t），消息数保持 ≤3 → shouldTruncate 保护不截断
+    (loop as unknown as { messages: Message[] }).messages.push({
+      role: 'user',
+      content: 'M'.repeat(300),
+    } as Message);
+
+    for await (const chunk of loop.processUserInput('测试')) {
+      void chunk;
+    }
+
+    const messages = loop.getMessages();
+    // 注入上下文空间提示（预警档）
+    expect(messages.some((m) => m.role === 'system' && m.content.includes('上下文空间提示'))).toBe(true);
+    // 未注入软上限收尾信号（摘要层未饱和，预警是前一级）
+    expect(messages.some((m) => m.role === 'system' && m.content.includes('SOFT_LIMIT'))).toBe(false);
+  });
+
+  it('摘要层饱和时仍走软上限收尾（预警不覆盖收尾路径）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '收敛回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 10, // 极窗口
+    });
+    // 注入摘要化产物（第一级替换标记）→ 摘要层达 30% → 软上限收尾
+    loop.injectSystemMessage('Round summary · roundId: round-1\n摘要内容');
+    for await (const chunk of loop.processUserInput('测试')) {
+      void chunk;
+    }
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.content.includes('SOFT_LIMIT'))).toBe(true);
+    // 预警不叠加（else-if 分支互斥；此处容量与摘要层双达 → 走收尾）
+  });
+});

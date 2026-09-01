@@ -152,13 +152,22 @@ export const LOOP_CONSTANTS = {
    */
   TOKEN_BUDGET_REACHED_PLACEHOLDER: '[Token budget reached]',
 
-  /**
-   * 流式中断的默认追加标记（SSOT）：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"。
+  /** 流式中断的默认追加标记（SSOT）：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"。
    * loop（流式响应中断）与 orchestrator（历史写入中断标记）必须用同一份默认文案，
    * 避免宿主未注入 messages 时两条路径降级出不同文案（此前 orchestrator 回退为短" [已中断]"）。
    */
   DEFAULT_INTERRUPTED_MARK:
     '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
+
+  /**
+   * 上下文预算预警提示（T3 2026-09-01）：容量逼近警戒线但摘要层未饱和时注入的温和提示，
+   * 引导 LLM 主动压缩 / 收敛——软上限（收尾信号）的前一级。低压通用文案不走 UIMessages 覆盖层，
+   * 如需宿主定制可后续升级（与 softLimitWrapup 同族，但非高频行为文案）。
+   */
+  CONTEXT_PRESSURE_HINT:
+    '## 上下文空间提示\n' +
+    '当前上下文已接近容量上限。若后续步骤需要更多空间，可调用 compress_context 压缩较早执行闭环' +
+    '或超大工具结果；同时注意收敛回答篇幅，避免无谓展开。',
 
   /** 上下文摘要：参与摘要的最近消息条数。 */
   SUMMARY_MSG_COUNT: 6,
