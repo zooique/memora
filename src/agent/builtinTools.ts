@@ -64,6 +64,8 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   read_file: 'idempotent',
   write_file: 'idempotent-key',
+  // delete_file：目标态幂等（重复删除同一文件意图一致，仅一次语义拦截 LLM 反复删同一文件）
+  delete_file: 'idempotent',
   list_dir: 'idempotent',
   search_memories: 'idempotent',
   web_search: 'idempotent',
@@ -217,18 +219,34 @@ export const WEB_FETCH_TOOL: ToolDefinition = {
  *
  * 通用代码执行（计算/数据处理/验证底座）。源码不进入 LLM 上下文，仅执行结果返回。
  * 仅在宿主注入了 ICodeExecutionProvider 时才暴露给 LLM。
+ *
+ * 两种模式（二选一）：
+ *   - code：直接执行代码字符串（传统模式）；
+ *   - script_path：执行项目根下的脚本文件（cwd=项目根，脚本可 require 项目本地依赖/读取项目数据）。
+ *
+ * 「临时脚本」闭环（对齐主流 AI IDE 行为约定）：write_file 写脚本 → run_code(script_path)
+ * 执行拿数据 → delete_file 清理脚本——一次性数据处理不留痕。
  */
 export const RUN_CODE_TOOL: ToolDefinition = {
   name: 'run_code',
   description:
-    '执行一段代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。',
+    '执行代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。' +
+    '两种模式（二选一）：① 传 code 直接执行代码字符串；② 传 script_path 执行项目根下的脚本文件（相对项目根路径，cwd=项目根，脚本可 require 项目本地依赖、读取项目数据）。' +
+    '一次性数据处理推荐「临时脚本」闭环：先 write_file 写入脚本 → run_code(script_path) 执行拿数据 → delete_file 清理脚本，不留痕。',
   parameters: {
     type: 'object',
     properties: {
-      language: { type: 'string', description: '代码语言，如 "python"、"node"、"shell"（可用性取决于宿主执行器）' },
-      code: { type: 'string', description: '要执行的代码内容' },
+      language: {
+        type: 'string',
+        description: '代码语言，如 "python"、"node"、"shell"（可用性取决于宿主执行器；script_path 模式省略时按文件扩展名推断）',
+      },
+      code: { type: 'string', description: '要执行的代码内容（与 script_path 二选一）' },
+      script_path: {
+        type: 'string',
+        description: '要执行的项目脚本文件路径（相对项目根，如 "tmp_analyze.mjs"；与 code 二选一，cwd=项目根，脚本可用项目依赖）',
+      },
     },
-    required: ['language', 'code'],
+    required: [],
   },
 };
 
@@ -306,6 +324,18 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         },
       },
       required: ['path', 'content'],
+    },
+  },
+  {
+    name: 'delete_file',
+    description:
+      '删除项目内文件。用于清理 LLM 创建的临时脚本等一次性文件（配合 run_code 的 script_path 模式：写脚本 → 执行 → 删除，不留痕）。受路径白名单保护；owner 模式默认自动批准，guest 模式会要求用户确认。仅支持删除文件，不支持删除目录。',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: '相对项目根目录的文件路径' },
+      },
+      required: ['path'],
     },
   },
   {

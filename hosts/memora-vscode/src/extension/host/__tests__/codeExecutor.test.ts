@@ -17,9 +17,10 @@ describe('codeExecutor（G2 本地子进程执行器）', () => {
     vi.restoreAllMocks();
   });
 
-  it('支持 javascript/js/nodejs，不支持其他语言返回明确提示', async () => {
+  it('支持 javascript/js/nodejs/node，不支持其他语言返回明确提示', async () => {
     const exe = createLocalCodeExecutor();
-    for (const lang of ['javascript', 'js', 'nodejs']) {
+    // node 别名：对齐内核 run_code script_path 模式按扩展名推断出的规范语言名
+    for (const lang of ['javascript', 'js', 'nodejs', 'node']) {
       const r = await exe.execute('console.log(1 + 1)', lang);
       expect(r.exitCode).toBe(0);
       expect(r.stdout.trim()).toBe('2');

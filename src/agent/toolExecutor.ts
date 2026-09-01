@@ -47,6 +47,37 @@ const RUN_CODE_LANGUAGE_MAX_LEN = 32;
 /** run_code 单次结果字段最大长度（防长输出撑爆上下文） */
 const RUN_CODE_RESULT_MAX_LEN = 20_000;
 
+// ─── run_code script_path 模式：脚本扩展名 → 语言推断 ─────────────────
+
+/** 脚本文件扩展名 → 执行语言映射（script_path 模式省略 language 时推断用；可用性仍取决于宿主执行器） */
+const SCRIPT_EXT_LANGUAGE: Record<string, string> = {
+  '.js': 'node',
+  '.mjs': 'node',
+  '.cjs': 'node',
+  '.ts': 'node', // TS 语义按 node 下探，能否执行取决于宿主执行器
+  '.py': 'python',
+  '.sh': 'shell',
+  '.bash': 'shell',
+  '.zsh': 'shell',
+};
+/** 无法识别扩展名时的兜底语言（脚本模式默认按 Node 执行） */
+const SCRIPT_LANGUAGE_FALLBACK = 'node';
+
+/**
+ * 按脚本文件扩展名推断执行语言（run_code script_path 模式）
+ *
+ * 纯字符串解析（不引入 node:path 依赖，保持 toolExecutor 零 node 依赖的编排层纯度）。
+ *
+ * @param scriptPath 相对项目根的脚本路径
+ * @returns 推断的语言名；无法识别时回退 SCRIPT_LANGUAGE_FALLBACK
+ */
+function inferLanguageFromScriptPath(scriptPath: string): string {
+  // 取最后一个点号后的扩展名（含点）并小写；无扩展名则回退兜底语言
+  const lastDot = scriptPath.lastIndexOf('.');
+  const ext = lastDot >= 0 ? scriptPath.slice(lastDot).toLowerCase() : '';
+  return SCRIPT_EXT_LANGUAGE[ext] ?? SCRIPT_LANGUAGE_FALLBACK;
+}
+
 // ─── run_skill_script 注入防御常量 ─────────────────
 /** run_skill_script 单次结果最大长度（防脚本刷屏撑爆上下文；对齐 run_code 的 RUN_CODE_RESULT_MAX_LEN） */
 const RUN_SCRIPT_RESULT_MAX_LEN = 20_000;
@@ -650,6 +681,10 @@ export class ToolExecutor {
         const content = sanitizeExternalText(page.content, WEB_FETCH_CONTENT_MAX_LEN);
         return `来源：${page.url || url}\n标题：${title || '(无标题)'}\n\n${content}`;
       }
+      case 'delete_file':
+        // 删除项目文件（临时脚本闭环收尾：write_file 写 → run_code 执行 → delete_file 清理）
+        // 路径白名单 + 用户确认（guest/confirmWrites）由 BuiltinToolHandlers.deleteFile 负责
+        return this.builtinHandlers.deleteFile(strArg('path'));
       case 'run_code': {
         // run_code 由 ToolExecutor 直接处理（通用计算/数据处理/验证底座）
         // 使用注入的 codeExecutionProvider 执行代码，带超时保护；失败由 safeExecuteCode 降级
@@ -658,26 +693,54 @@ export class ToolExecutor {
         }
         const language = strArg('language');
         const code = strArg('code');
-        if (!language) {
+        const scriptPath = strArg('script_path');
+        // 两种模式互斥：code（执行代码字符串）与 script_path（执行项目脚本文件）二选一，防语义歧义
+        if (scriptPath && code) {
           throw toolError(
-            'run_code 工具调用缺少 language 参数',
-            'LLM 未传 language',
-            ['language 不能为空'],
+            'run_code 参数冲突',
+            'code 与 script_path 不能同时传入',
+            ['二选一：传 code 执行代码字符串，或传 script_path 执行项目脚本文件'],
             undefined,
             ToolErrorCode.ARGUMENT_ERROR,
           );
         }
-        if (!code) {
-          throw toolError(
-            'run_code 工具调用缺少 code 参数',
-            'LLM 未传 code',
-            ['code 不能为空'],
-            undefined,
-            ToolErrorCode.ARGUMENT_ERROR,
-          );
+        // 统一执行入参：脚本源码 / 代码字符串 + 语言 + 工作目录
+        let execCode: string;
+        let execLanguage: string;
+        // 临时脚本模式 cwd=项目根（脚本可 require 项目本地依赖、读取项目数据）；code 模式不指定由执行器决定
+        const execOptions: { cwd?: string } | undefined = scriptPath
+          ? { cwd: this.builtinHandlers.projectPath }
+          : undefined;
+        if (scriptPath) {
+          // 读取脚本文件原样执行（路径白名单 + 长度上限由 readScriptFile 负责，截断会破坏语法）
+          execCode = await this.builtinHandlers.readScriptFile(scriptPath);
+          execLanguage = language || inferLanguageFromScriptPath(scriptPath);
+        } else {
+          // 传统 code 模式：language + code 均必填
+          if (!language) {
+            throw toolError(
+              'run_code 工具调用缺少 language 参数',
+              'LLM 未传 language',
+              ['language 不能为空'],
+              undefined,
+              ToolErrorCode.ARGUMENT_ERROR,
+            );
+          }
+          if (!code) {
+            throw toolError(
+              'run_code 工具调用缺少 code 参数',
+              'LLM 未传 code',
+              ['code 不能为空'],
+              undefined,
+              ToolErrorCode.ARGUMENT_ERROR,
+            );
+          }
+          execCode = code;
+          execLanguage = language;
         }
         // 参数校验：language/code 当不可信输入，做长度上限（防超长滥用）
-        if (language.length > RUN_CODE_LANGUAGE_MAX_LEN) {
+        // script_path 模式代码长度由 readScriptFile 的 SCRIPT_READ_MAX_LEN 兜底，不重复校验
+        if (execLanguage.length > RUN_CODE_LANGUAGE_MAX_LEN) {
           throw toolError(
             'run_code language 参数过长',
             `language 超过 ${RUN_CODE_LANGUAGE_MAX_LEN} 字符上限`,
@@ -686,7 +749,7 @@ export class ToolExecutor {
             ToolErrorCode.ARGUMENT_ERROR,
           );
         }
-        if (code.length > RUN_CODE_CODE_MAX_LEN) {
+        if (!scriptPath && execCode.length > RUN_CODE_CODE_MAX_LEN) {
           throw toolError(
             'run_code code 参数过长',
             `code 超过 ${RUN_CODE_CODE_MAX_LEN} 字符上限`,
@@ -695,7 +758,7 @@ export class ToolExecutor {
             ToolErrorCode.ARGUMENT_ERROR,
           );
         }
-        const result = await safeExecuteCode(this.codeExecutionProvider, code, language);
+        const result = await safeExecuteCode(this.codeExecutionProvider, execCode, execLanguage, execOptions);
         // 结果净化：stdout/stderr 当外部内容去控制字符 + 长度上限，防长上下文注入
         const stdout = sanitizeExternalText(result.stdout, RUN_CODE_RESULT_MAX_LEN);
         const stderr = sanitizeExternalText(result.stderr, RUN_CODE_RESULT_MAX_LEN);

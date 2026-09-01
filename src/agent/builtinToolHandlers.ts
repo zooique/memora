@@ -13,7 +13,7 @@
  * 自然生长原则：BuiltinToolHandlers 不持有 customTools 注册表（避免与 ToolExecutor 状态耦合），
  * 所有方法接收参数，是无状态的纯计算 + I/O 操作。
  */
-import { readFile, writeFile, mkdir, readdir, stat, access } from 'node:fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, access, unlink } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/pathGuard.js';
@@ -49,6 +49,14 @@ const LIST_SESSIONS_SUMMARY_CHARS = 200;
  * 避免撑爆 ContextManager token 上限、与控制字符注入面回归一致。
  */
 const FILE_READ_MAX_LEN = 50_000;
+
+/**
+ * 脚本文件读取最大长度（run_code script_path 模式）
+ *
+ * 脚本代码要原样交给执行器，截断会破坏语法——故上限比 read_file 更宽松，
+ * 但仍是外部内容，防超大脚本滥用（对齐 write_file 的 MAX_CONTENT_FILE_LEN 量级）。
+ */
+const SCRIPT_READ_MAX_LEN = 200_000;
 
 /**
  * 工具结果返回净化：去控制字符 + 长度上限
@@ -92,13 +100,13 @@ export class BuiltinToolHandlers {
   static readonly IGNORED_DIR_NAMES: readonly string[] = IGNORED_DIR_NAMES;
 
   /**
-   * @param projectPath 项目根路径（用于相对路径解析）
+   * @param projectPath 项目根路径（用于相对路径解析；公开只读，供 run_code script_path 模式取 cwd）
    * @param security 安全守卫（路径白名单 + 写入确认）
    * @param memoryIndex 记忆索引（用于 search_memories 工具）
    * @param sessionStore 会话存储（可选，trace_summary 溯源原始对话用；未注入时回退为摘要文本）
    */
   constructor(
-    private readonly projectPath: string,
+    readonly projectPath: string,
     private readonly security: SecurityGuard,
     private readonly memoryIndex: IMemoryStorage,
     private readonly sessionStore?: ISessionStore,
@@ -209,6 +217,179 @@ export class BuiltinToolHandlers {
         ['确认文件权限', '确认路径正确'],
         e,
         ToolErrorCode.UNKNOWN,
+      );
+    }
+  }
+
+  /**
+   * 读取项目脚本文件原始内容（供 run_code script_path 模式执行）
+   *
+   * 与 readFile 的区别：不截断不净化——脚本代码要原样交给执行器，截断会破坏语法。
+   * 仅做路径白名单校验 + 长度上限（SCRIPT_READ_MAX_LEN，防超大脚本滥用）。
+   *
+   * @param relativePath 相对项目根的文件路径
+   * @returns 脚本文件原始内容
+   */
+  async readScriptFile(relativePath: string): Promise<string> {
+    if (!relativePath) {
+      throw toolError(
+        'run_code script_path 参数缺失',
+        'LLM 未传 script_path',
+        ['script_path 不能为空'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    const absolutePath = this.resolveSafePath(relativePath);
+    this.guardPathOrThrow(absolutePath, 'run_code');
+
+    try {
+      // 读前预检：目标是目录时给出可执行指引（脚本语义是文件）
+      const stats = await stat(absolutePath);
+      if (stats.isDirectory()) {
+        throw toolError(
+          'run_code script_path 目标是目录',
+          `${relativePath}：这是目录，不是脚本文件`,
+          ['传入脚本文件路径'],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
+      }
+    } catch (err) {
+      // stat 失败（如 ENOENT）移交下方统一报错；工具错误直接抛出
+      if (err instanceof MemoraError) throw err;
+    }
+
+    try {
+      const content = await readFile(absolutePath, 'utf-8');
+      if (content.length > SCRIPT_READ_MAX_LEN) {
+        throw toolError(
+          'run_code 脚本文件过长',
+          `脚本超过 ${SCRIPT_READ_MAX_LEN} 字符上限`,
+          ['精简脚本或拆分为多个文件'],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
+      }
+      return content;
+    } catch (err) {
+      if (err instanceof MemoraError) throw err;
+      const e = toError(err);
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'ENOENT'
+      ) {
+        throw toolError(
+          'run_code 脚本文件不存在',
+          `${absolutePath}：文件不存在`,
+          ['确认 script_path 正确', '先 write_file 创建脚本再执行'],
+          e,
+          ToolErrorCode.FILE_NOT_FOUND,
+        );
+      }
+      throw toolError(
+        'run_code 读取脚本失败',
+        `${absolutePath}：${e.message}`,
+        ['确认文件可读'],
+        e,
+        ToolErrorCode.UNKNOWN,
+      );
+    }
+  }
+
+  /**
+   * 删除项目文件（供 delete_file 工具）
+   *
+   * 安全策略：路径白名单校验 + 用户确认（guest 模式 / confirmWrites）。
+   * 仅支持删除文件，不支持删除目录（防误删）。
+   *
+   * 与 readScriptFile 同属「临时脚本」闭环（write_file 写 → run_code 执行 → delete_file 清理，
+   * 对齐主流 AI IDE 一次性数据处理不留痕的行为约定）。
+   *
+   * @param relativePath 相对项目根的文件路径
+   * @returns 删除结果描述
+   */
+  async deleteFile(relativePath: string): Promise<string> {
+    if (!relativePath) {
+      throw toolError(
+        'delete_file 工具调用缺少 path 参数',
+        'LLM 未传 path',
+        ['检查 personality.md 是否明确了 delete_file 用法'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
+
+    const absolutePath = this.resolveSafePath(relativePath);
+    this.guardPathOrThrow(absolutePath, 'delete_file');
+
+    try {
+      // 删前预检：目标是目录时拒绝（防误删）
+      const stats = await stat(absolutePath);
+      if (stats.isDirectory()) {
+        throw toolError(
+          'delete_file 目标是目录',
+          `${relativePath}：这是目录，delete_file 仅支持删除文件`,
+          ['改用专门的删除目录工具（若存在）或手动删除'],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
+      }
+    } catch (err) {
+      // stat 失败（如 ENOENT）视为"已删除"，返回成功（幂等性）；判断方式对齐 readScriptFile（code === 'ENOENT'）
+      if (err instanceof MemoraError) throw err;
+      if (
+        err !== null &&
+        typeof err === 'object' &&
+        'code' in err &&
+        (err as { code: unknown }).code === 'ENOENT'
+      ) {
+        return `✅ 文件不存在（已删除）：${absolutePath}`;
+      }
+      const e = toError(err);
+      throw toolError(
+        'delete_file 预检失败',
+        `${absolutePath}：${e.message}`,
+        ['确认路径正确'],
+        e,
+        ToolErrorCode.UNKNOWN,
+      );
+    }
+
+    // 删除确认：owner 模式默认自动批准，guest 模式 / confirmWrites 需用户确认
+    const needConfirm = this.security.permission === 'guest' || this.security.confirmWrites;
+    if (needConfirm) {
+      const description = `删除文件：${basename(absolutePath)}`;
+      const confirmed = await this.security.requestWriteConfirmation(
+        absolutePath,
+        'delete_file',
+        description,
+      );
+      if (!confirmed) {
+        throw toolError(
+          '用户拒绝删除',
+          `用户取消了 delete_file 操作：${absolutePath}`,
+          ['如需删除，请重新发起请求并确认'],
+          undefined,
+          ToolErrorCode.WRITE_REJECTED,
+        );
+      }
+    }
+
+    try {
+      await unlink(absolutePath);
+      return `✅ 已删除：${absolutePath}`;
+    } catch (err) {
+      const e = toError(err);
+      throw toolError(
+        'delete_file 删除失败',
+        `${absolutePath}：${e.message}`,
+        ['确认文件未被占用', '确认有删除权限'],
+        e,
+        ToolErrorCode.PERMISSION_DENIED,
       );
     }
   }

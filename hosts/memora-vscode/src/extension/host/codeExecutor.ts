@@ -19,7 +19,9 @@
  * （防死循环/防卡死），而非文件系统/网络沙箱。如要运行不可信代码，需升级为
  * OS 级容器/沙箱（如专用受限用户 + rlimit + 网络隔离），不在本执行器范围。
  *
- * 语言支持：仅 JavaScript（javascript / js / nodejs）。其他语言由 LLM 提示词约束避开。
+ * 语言支持：仅 JavaScript（javascript / js / nodejs / node）。其他语言由 LLM 提示词约束避开。
+ * 「node」别名对齐内核 run_code 的规范语言名（工具描述「如 python、node、shell」，
+ * script_path 模式按扩展名推断 .js/.mjs/.cjs/.ts 即产出 node）。
  */
 import { spawn } from 'node:child_process';
 import type {
@@ -32,8 +34,8 @@ import type {
 const DEFAULT_TIMEOUT_MS = 10_000;
 /** 最大执行超时（毫秒，对齐内核 safeExecuteCode 外层兜底 120s 上限约束） */
 const MAX_TIMEOUT_MS = 120_000;
-/** 支持的语言（小写归一） */
-const SUPPORTED_LANGUAGES = new Set(['javascript', 'js', 'nodejs']);
+/** 支持的语言（小写归一；node 为内核 run_code script_path 推断出的规范名） */
+const SUPPORTED_LANGUAGES = new Set(['javascript', 'js', 'nodejs', 'node']);
 
 /**
  * 创建本地代码执行器（子进程隔离 + 超时强杀；G2 注入 Agent 启用 run_code 工具）
@@ -46,7 +48,7 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
      * 在独立 Node 子进程内执行 JavaScript 代码
      *
      * @param code 要执行的代码
-     * @param language 代码语言（仅支持 javascript/js/nodejs）
+     * @param language 代码语言（仅支持 javascript/js/nodejs/node）
      * @param options 执行选项（读取 timeoutMs；cwd 传递为子进程工作目录）
      * @returns 执行结果（stdout/stderr/exitCode/timedOut）
      */
@@ -60,7 +62,7 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
       if (!SUPPORTED_LANGUAGES.has(lang)) {
         return {
           stdout: '',
-          stderr: `暂不支持语言「${language || '(空)'}」；当前执行器仅支持 JavaScript（javascript / js / nodejs）`,
+          stderr: `暂不支持语言「${language || '(空)'}」；当前执行器仅支持 JavaScript（javascript / js / nodejs / node）`,
           exitCode: -1,
           timedOut: false,
         };

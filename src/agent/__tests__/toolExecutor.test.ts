@@ -15,6 +15,7 @@ import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
+import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { MemoraError, toolError } from '@/utils/errors.js';
 
 describe('工具执行器（6 个工具）', () => {
@@ -74,16 +75,17 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 15 个工具', () => {
+    it('应注册 16 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(15);
+      expect(names.length).toBe(16);
+      expect(names).toContain('delete_file');
     });
 
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 15 + 条件 4（web_search / web_fetch / run_code / search_project）
-      expect(names.length).toBe(19);
+      // 始终内置 16 + 条件 4（web_search / web_fetch / run_code / search_project）
+      expect(names.length).toBe(20);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
@@ -297,12 +299,18 @@ describe('工具执行器（6 个工具）', () => {
 
   describe('run_code（注入提供者）', () => {
     let execWithCode: ToolExecutor;
-    const mockCodeProvider = {
-      async execute(code: string, language: string) {
+    // mock 把 cwd 编入 stdout，便于断言 script_path 模式的 cwd=项目根（无需捕获变量，避免 TS 收窄陷阱）
+    const mockCodeProvider: ICodeExecutionProvider = {
+      async execute(code, language, options) {
         if (code.includes('boom')) {
           return { stdout: '', stderr: 'reference error', exitCode: 1, timedOut: false };
         }
-        return { stdout: `${language}:ok`, stderr: '', exitCode: 0, timedOut: false };
+        return {
+          stdout: `${language}:ok:cwd=${options?.cwd ?? 'none'}`,
+          stderr: '',
+          exitCode: 0,
+          timedOut: false,
+        };
       },
     };
 
@@ -340,8 +348,81 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('reference error');
     });
 
-    it('缺少 language/code 参数应抛 MemoraError（必填参数校验）', async () => {
+    it('code 模式缺 code 参数应抛 MemoraError', async () => {
       await expect(execWithCode.execute('run_code', JSON.stringify({ language: 'node' }))).rejects.toThrow(
+        'run_code 工具调用缺少 code 参数',
+      );
+    });
+
+    it('code 模式缺 language 参数应抛 MemoraError', async () => {
+      await expect(execWithCode.execute('run_code', JSON.stringify({ code: 'x' }))).rejects.toThrow(
+        'run_code 工具调用缺少 language 参数',
+      );
+    });
+
+    it('script_path 模式：读取脚本 + 按扩展名推断语言 + cwd=项目根', async () => {
+      // 写入临时脚本（临时脚本闭环起点）
+      writeFileSync(join(tmpProject, 'tmp_analyze.mjs'), 'export const a = 1;\n', 'utf-8');
+      const result = await execWithCode.execute(
+        'run_code',
+        JSON.stringify({ script_path: 'tmp_analyze.mjs' }),
+      );
+      // 扩展名 .mjs → node，脚本内容被原样执行
+      expect(result).toContain('node:ok');
+      // cwd=项目根（脚本可 require 项目本地依赖、读取项目数据）
+      expect(result).toContain(`cwd=${tmpProject}`);
+      // 清理临时脚本（闭环收尾）
+      await execWithCode.execute('delete_file', JSON.stringify({ path: 'tmp_analyze.mjs' }));
+    });
+
+    it('script_path 模式：显式 language 覆盖扩展名推断', async () => {
+      writeFileSync(join(tmpProject, 'tmp_analyze.py'), 'print(1)\n', 'utf-8');
+      const result = await execWithCode.execute(
+        'run_code',
+        JSON.stringify({ script_path: 'tmp_analyze.py', language: 'node' }),
+      );
+      expect(result).toContain('node:ok');
+      await execWithCode.execute('delete_file', JSON.stringify({ path: 'tmp_analyze.py' }));
+    });
+
+    it('code 与 script_path 同时传入应抛 MemoraError（两模式互斥）', async () => {
+      await expect(
+        execWithCode.execute(
+          'run_code',
+          JSON.stringify({ language: 'node', code: 'x', script_path: 'tmp.mjs' }),
+        ),
+      ).rejects.toThrow('run_code 参数冲突');
+    });
+
+    it('script_path 指向不存在的文件应抛 MemoraError', async () => {
+      await expect(
+        execWithCode.execute('run_code', JSON.stringify({ script_path: 'no-such-script.mjs' })),
+      ).rejects.toThrow('文件不存在');
+    });
+  });
+
+  describe('delete_file（临时脚本清理）', () => {
+    it('删除存在的文件成功', async () => {
+      writeFileSync(join(tmpProject, 'tmp_cleanup.txt'), 'x', 'utf-8');
+      const result = await executor.execute('delete_file', JSON.stringify({ path: 'tmp_cleanup.txt' }));
+      expect(result).toContain('已删除');
+      // 文件确已删除
+      expect(() => readFileSync(join(tmpProject, 'tmp_cleanup.txt'))).toThrow();
+    });
+
+    it('删除不存在的文件返回已删除（目标态幂等）', async () => {
+      const result = await executor.execute('delete_file', JSON.stringify({ path: 'never-exists.txt' }));
+      expect(result).toContain('文件不存在（已删除）');
+    });
+
+    it('删除目录应被拒绝（仅支持文件）', async () => {
+      await expect(executor.execute('delete_file', JSON.stringify({ path: 'src' }))).rejects.toThrow(
+        'delete_file 目标是目录',
+      );
+    });
+
+    it('缺少 path 参数应抛 MemoraError（schema 必填校验拦截）', async () => {
+      await expect(executor.execute('delete_file', JSON.stringify({}))).rejects.toThrow(
         '工具参数缺失',
       );
     });

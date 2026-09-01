@@ -23,14 +23,15 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 15 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(15);
+  it('应包含 16 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(16);
   });
 
-  it('应包含 read_file / write_file / list_dir / search_memories / trace_summary / list_sessions', () => {
+  it('应包含 read_file / write_file / delete_file / list_dir / search_memories / trace_summary / list_sessions', () => {
     const names = BUILTIN_TOOLS.map((t) => t.name);
     expect(names).toContain('read_file');
     expect(names).toContain('write_file');
+    expect(names).toContain('delete_file');
     expect(names).toContain('list_dir');
     expect(names).toContain('search_memories');
     expect(names).toContain('trace_summary');
@@ -55,6 +56,15 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     const names = BUILTIN_TOOLS.map((t) => t.name);
     expect(names).toContain('register_work');
     expect(BUILTIN_TOOL_IDEMPOTENCY.register_work).toBe('idempotent-key');
+  });
+
+  it('delete_file 应注册为内置工具且标记幂等（临时脚本闭环收尾：清理一次性脚本不留痕）', () => {
+    const names = BUILTIN_TOOLS.map((t) => t.name);
+    expect(names).toContain('delete_file');
+    // 目标态幂等：重复删除同一文件意图一致（仅一次语义拦截 LLM 反复删同一文件）
+    expect(BUILTIN_TOOL_IDEMPOTENCY.delete_file).toBe('idempotent');
+    const def = BUILTIN_TOOLS.find((t) => t.name === 'delete_file')!;
+    expect(def.parameters.required).toContain('path');
   });
 
   it('read_skill 应注册为内置工具且标记幂等（渐进披露 L2）', () => {
@@ -283,9 +293,14 @@ describe('builtinTools · RUN_CODE_TOOL（通用计算/验证底座）', () => {
     expect(RUN_CODE_TOOL.parameters.properties.code!.type).toBe('string');
   });
 
-  it('language 和 code 均应为必填参数', () => {
-    expect(RUN_CODE_TOOL.parameters.required).toContain('language');
-    expect(RUN_CODE_TOOL.parameters.required).toContain('code');
+  it('应定义 script_path 参数且无全量必填（code 与 script_path 两模式二选一）', () => {
+    // code 模式（language+code）与 script_path 模式互斥，故无单参数可标全量必填
+    expect(RUN_CODE_TOOL.parameters.properties.script_path).toBeDefined();
+    expect(RUN_CODE_TOOL.parameters.properties.script_path!.type).toBe('string');
+    expect(RUN_CODE_TOOL.parameters.required).toHaveLength(0);
+    // description 引导「临时脚本」闭环（写 → 执行 → 删除，不留痕）
+    expect(RUN_CODE_TOOL.description).toContain('script_path');
+    expect(RUN_CODE_TOOL.description).toContain('delete_file');
   });
 
   it('应符合 ToolDefinition 类型约束', () => {
