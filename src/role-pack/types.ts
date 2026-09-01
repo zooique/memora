@@ -133,7 +133,7 @@ export interface ReflectStrategy {
 
 /** 跨阶段全局策略集合 */
 export interface GlobalStrategy {
-  /** 每轮总 token 上限（默认 8000；内核已消费） */
+  /** 每轮总 token 上限（默认 200000；内核已消费） */
   readonly tokenBudget?: number;
   /** 每轮工具步数上限（默认 50；内核已消费） */
   readonly stepBudget?: number;

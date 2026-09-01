@@ -20,9 +20,9 @@
 
 ## 二、文件格式（文件夹包：manifest.json 唯一核心控制文件）
 
-**格式决策**：角色包统一为**文件夹包（bundle）** 形态——系统此前未启用角色包（无存量包），故**不保留单文件 .md / role-pack.md 旧格式**。每个角色包 = 一个文件夹，`manifest.json` 是**唯一核心控制文件**（元数据 + L2 策略 + 内容路径注册 + capabilities 注册），内容文件（persona.md / rules.md / skills/\*）作为独立文档装载（skills 目录动态扫描，C3）。
+**格式决策**：角色包统一为**文件夹包（bundle）** 形态——系统此前未启用角色包（无存量包），故**不保留单文件 .md / role-pack.md 旧格式**。每个角色包 = 一个文件夹，`manifest.json` 是**唯一核心控制文件**（元数据 + L2 策略 + skills 白名单 + capabilities 注册），内容文件（persona.md / rules.md / skills/\*）作为独立文档按约定名装载（skills 目录动态扫描，C3；persona/rules 纯约定名零声明，§2.3）。
 
-> **设计要点（内容文件独立性）**：persona / rules / skills 是独立 Markdown 文档，用户既可**独立移植**这些文档到其他项目，也可**整体装载**角色包。manifest 只做路径注册，不内嵌正文——元数据/策略单一真理源在 manifest，正文单一真理源在内容文件，二者不双写。
+> **设计要点（内容文件独立性）**：persona / rules / skills 是独立 Markdown 文档，用户既可**独立移植**这些文档到其他项目，也可**整体装载**角色包。manifest 只承载元数据/策略/capabilities/skills 白名单，不内嵌正文——元数据/策略单一真理源在 manifest，正文单一真理源在内容文件，二者不双写。
 
 ### 2.1 角色包 vs Skills（代际关系）
 
@@ -38,7 +38,7 @@
 
 ```
 我的角色包/                        ← 文件夹，zip 压缩分发
-├── manifest.json                 # ★核心控制文件（唯一权威）：元数据 + strategy + 内容路径注册 + capabilities 注册
+├── manifest.json                 # ★核心控制文件（唯一权威）：元数据 + strategy + skills 白名单 + capabilities 注册（内容文件纯约定名，不注册路径）
 ├── persona.md                    # 可选：身份设定（约定文件名，§2.3）
 ├── rules.md                      # 可选：确定性规则（约定文件名，§2.3）
 ├── skills/                       # 可选：内嵌技能（目录动态扫描，frontmatter 声明，§四 C3）
@@ -96,11 +96,11 @@
 
 * *persona.md / rules.md / skills/* 是独立 Markdown 文档\*。用户可**独立移植**这些文档，也可**整体装载**角色包；
 
-* **内容文件零声明**：`persona.md`（身份）、`rules.md`（规则）为**约定文件名**——manifest 未声明时装载器回退约定名，**无需在 manifest 声明**；`skills/` 目录动态扫描（C3）。manifest 只承载「非约定内容」；声明路径仅为向后兼容的自由命名；
+* **内容文件零声明**：`persona.md`（身份）、`rules.md`（规则）为**约定文件名**——装载器一律回退约定名，**manifest 不注册内容路径**（R7 纪律：manifest 禁止路径注册，防"路径写错静默丢内容"）；`skills/` 目录动态扫描（C3）。manifest 只承载「非约定内容」：capabilities、strategy、handoffPrompt、元数据与合规字段；
 
-* **persona.md 为约定文件名**：身份设定**约定俗成为** **`persona.md`**——manifest 未声明 `persona` 字段时装载器回退约定名；
+* **persona.md 为约定文件名**：身份设定**约定俗成为** **`persona.md`**——装载器不读 manifest 路径字段，一律回退约定名；
 
-* **rules.md 为约定文件名**：rules 规则文件**约定俗成为** **`rules.md`**——manifest 未声明 `rules` 字段时装载器回退约定名。消除「路径写错静默丢规则」错误面；
+* **rules.md 为约定文件名**：rules 规则文件**约定俗成为** **`rules.md`**——装载器不读 manifest 路径字段，一律回退约定名。消除「路径写错静默丢规则」错误面；
 
 * **persona 允许缺省**：`persona.md` 文件不存在时，角色包无身份设定，仅靠策略驱动行为；
 
@@ -108,9 +108,9 @@
 
 ### 2.4 单一真理源与字段集
 
-* **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + 内容路径注册 + skills 目录声明 + capabilities 注册全部在此，无第二份权威，同字段永不双写；
+* **manifest.json 是唯一的权威（SSOT）**：元数据 + L2 策略 + skills 白名单声明 + capabilities 注册全部在此，无第二份权威，同字段永不双写；
 
-* **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `persona`、`rules`（内容文件路径，可选；**均缺省回退约定名** **`persona.md`/`rules.md`，零声明**，§2.3）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）；
+* **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）。**不含内容文件路径字段**——persona.md / rules.md 为纯约定名，manifest 不注册路径（R7 纪律，§2.3）；
 
 * **内容文件零声明**：`persona.md` / `rules.md` / `skills/` 全部**约定俗成**——persona 与 rules 不声明即回退约定名，skills 目录动态扫描。manifest 只承载「非约定内容」：capabilities、strategy、handoffPrompt、元数据与合规字段；
 
@@ -118,7 +118,7 @@
 
 * **capabilities 字段集**：`capability`（必填，中立能力名 `域:动作`，§四）+ `description`（可选）；声明角色可调用的中立能力（工具白名单面）；
 
-* **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按路径装载 persona.md / rules.md **正文**（`rules` 未声明时回退约定名 `rules.md`）；**skills 目录动态扫描**（frontmatter 元数据 + 正文经 read\_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
+* **加载规则**：装载器扫描 `role-packs/<名>/` 文件夹，读取 `manifest.json`，按约定名装载 persona.md / rules.md **正文**（无路径注册，零声明）；**skills 目录动态扫描**（frontmatter 元数据 + 正文经 read\_skill 按需装载，§四 渐进披露）；无 `manifest.json` 的文件夹不计入角色包，`manifest.json` 非法 JSON 时跳过该包；
 
 * **内嵌 skills 上限（行业实测校准）**：渐进式披露下，内嵌 skills 建议 **≤10 个**；单个内嵌技能文件建议 **≤500 行**，详述放 `references/`；
 
@@ -153,7 +153,7 @@
 
 ```
 角色包（文件夹包）
-├── manifest.json（★核心控制文件 = 元数据 + L2 策略 + 内容路径注册 + capabilities 注册）
+├── manifest.json（★核心控制文件 = 元数据 + L2 策略 + skills 白名单 + capabilities 注册；内容文件纯约定名）
 │   ├── 元数据：name / displayName / formatVersion / keywords / trigger / version / 合规字段 ...
 │   ├── strategy：L2 行为策略（嵌套对象，见 §六）
 │   └── capabilities：能力声明顶层数组（capability / description，§四 C2）

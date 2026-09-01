@@ -440,19 +440,19 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: 0 } })).toBe(0);
     });
 
-    it('负数回退默认 8000', () => {
+    it('负数回退默认 200000', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: -1 } })).toBe(200_000);
     });
 
-    it('小数回退默认 8000', () => {
+    it('小数回退默认 200000', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: 8000.5 } })).toBe(200_000);
     });
 
-    it('越上界回退默认 8000（防无条件填写）', () => {
+    it('越上界回退默认 200000（防无条件填写）', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: MAX_TOKEN_BUDGET + 1 } })).toBe(200_000);
     });
 
-    it('缺失回退默认 8000', () => {
+    it('缺失回退默认 200000', () => {
       expect(resolveTokenBudget(undefined)).toBe(200_000);
     });
   });
