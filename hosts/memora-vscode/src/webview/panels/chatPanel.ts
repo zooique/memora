@@ -1238,7 +1238,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         totalTokens,
         rolePackBaseTokens,
         dialogueTokens,
-        dialogueCount: history.length,
+        // 计数标准：以用户输入条数计（一个问答闭环=1，残缺回答如实记录），与内核 dialogueCount 口径一致（SSOT）
+        dialogueCount: history.filter((m) => m.role === 'user').length,
         memoryTokens: 0,
         memoryCount: 0,
         inputAnchorTokens: 0,

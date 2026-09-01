@@ -464,6 +464,77 @@ describe('AgentMetrics · 类型结构', () => {
     expect(occ!.dialogueTokens).toBe(12_000);
   });
 
+  it('对话占用实时刷新：user 输入后 dialogueCount 按问答闭环重算（+1），容量含新输入', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 预置 3 个已落库 user 消息（模拟已有 3 个问答闭环）
+    const msgs = loop as unknown as { messages: Array<{ role: string; content: string }> };
+    msgs.messages.push(
+      { role: 'user', content: 'q1' },
+      { role: 'assistant', content: 'a1' },
+      { role: 'user', content: 'q2' },
+      { role: 'assistant', content: 'a2' },
+      { role: 'user', content: 'q3' },
+    );
+    // 模拟 prepare 期已记录快照（dialogueCount 占位 99，验证会被真实重算覆盖）
+    loop.recordOccupancy({
+      totalTokens: 120_000,
+      rolePackBaseTokens: 3_000,
+      dialogueTokens: 12_000,
+      dialogueCount: 99,
+      memoryTokens: 0,
+      memoryCount: 0,
+      inputAnchorTokens: 0,
+      outputReserveTokens: 18_000,
+      freeTokens: 87_000,
+    });
+    // 用户输入第 4 条（一个问答闭环）→ 触发占用实时刷新
+    (loop as unknown as { appendUserMessage: (c: string) => void }).appendUserMessage('新问题');
+    const occ = loop.getMetrics().context.occupancy!;
+    // 计数标准：user 消息数 = 4（占位 99 被真实重算覆盖）
+    expect(occ.dialogueCount).toBe(4);
+    // 容量诚实统计：dialogueTokens 重算为真实 messages 估算（含新用户输入，>0 且等于直接估算）
+    const conv = (loop as unknown as { getConversationMessages: () => Array<{ role: string }> }).getConversationMessages();
+    expect(occ.dialogueTokens).toBe(loop.estimateTokens(conv as never));
+    expect(occ.dialogueTokens).toBeGreaterThan(0);
+    // 其余段不被重算（守 SSOT，沿用快照）
+    expect(occ.rolePackBaseTokens).toBe(3_000);
+    expect(occ.memoryTokens).toBe(0);
+  });
+
+  it('对话占用实时刷新：assistant 落盘后容量补含回答（残缺/中止回复如实计入容量）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const msgs = loop as unknown as { messages: Array<{ role: string; content: string }> };
+    msgs.messages.push({ role: 'user', content: 'q1' });
+    loop.recordOccupancy({
+      totalTokens: 120_000,
+      rolePackBaseTokens: 3_000,
+      dialogueTokens: 5_000,
+      dialogueCount: 99,
+      memoryTokens: 0,
+      memoryCount: 0,
+      inputAnchorTokens: 0,
+      outputReserveTokens: 18_000,
+      freeTokens: 94_000,
+    });
+    // user 输入第 2 条 → dialogueCount 重算为 2
+    (loop as unknown as { appendUserMessage: (c: string) => void }).appendUserMessage('问题');
+    expect(loop.getMetrics().context.occupancy!.dialogueCount).toBe(2);
+    const beforeTokens = loop.getMetrics().context.occupancy!.dialogueTokens;
+    // assistant 落盘（哪怕残缺/被中止也如实 append）→ 容量补含回答全文
+    (loop as unknown as { appendAssistantText: (c: string) => void }).appendAssistantText('这是回复');
+    const occ = loop.getMetrics().context.occupancy!;
+    expect(occ.dialogueCount).toBe(2); // 条数仍以 user 计，assistant 不增条数
+    expect(occ.dialogueTokens).toBeGreaterThan(beforeTokens); // 容量含 assistant 全文
+  });
+
   it('setRolePackBaseTokens 经构造/设值写入，getMetrics().context.rolePackBaseTokens 透出（装配即确定，冷启动可用）', () => {
     const loop = new AgentLoop({
       provider: mockProvider([]),

@@ -272,9 +272,13 @@ export class ContextPreparer {
       contextAssembly === 'hybrid'
         ? loop.estimateTokens(dialogue.history)
         : loop.estimateTokens(loop.getConversationMessages());
-    // 条数与 token 同源：同一数组取 length（供宿主 hover 明细展示「完整对话 N 条」）
+    // 条数语义（2026-09-01 定案）：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
+    // 哪怕 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 不计入条数，但计入 dialogueTokens 容量。
+    // 与 dialogueTokens 同源分支：hybrid 用注入窗口的 dialogue.history，fixed/query 用 loop.messages 全量。
     const dialogueCount =
-      contextAssembly === 'hybrid' ? dialogue.history.length : loop.getConversationMessages().length;
+      contextAssembly === 'hybrid'
+        ? dialogue.history.filter((m) => m.role === 'user').length
+        : loop.getConversationMessages().filter((m) => m.role === 'user').length;
     const memoryTokens = recalledMemories.length
       ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
       : 0;

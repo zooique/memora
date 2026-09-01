@@ -24,6 +24,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 1. **内核算**：`contextPreparer` 在 prepare 期算 `ContextOccupancy`（互斥分段拼满窗口总容量 `totalTokens`）：
    - `rolePackBaseTokens` = `fixedOverheadTokens`（system prompt：persona + rules + 技能 L1 + 工具 schema）
    - `dialogueTokens` = 实际进窗完整对话：hybrid 模式计量注入的最近轮次摘要块；fixed/query 模式不注入摘要（对话全量保留在 loop.messages），计量全部 user/assistant 对话
+   - `dialogueCount` = **问答闭环数（user 消息条数）**，非对话消息总数。计数标准以「用户输入」为准：一个 user 消息计 1 条，哪怕对应 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 消息不计入条数，但计入 `dialogueTokens` 容量。此口径 2026-09-01 定案，解「发一条消息后圆环不刷新」体感（详见「对话占用实时刷新」增补段）。
    - `memoryTokens` = `estimateTokens(注入的 recalled 记忆)`
    - `inputAnchorTokens` = `budget.anchorTokens`（触发输入 + 首个回答预留）
    - `outputReserveTokens` = 窗口 × 输出预留比例（留给模型回答的容量，非已用）
@@ -39,7 +40,7 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 | 分段 | 历史会话取值 | 性质 |
 |---|---|---|
 | `totalTokens` | `resolveContextWindow(当前 Provider.contextWindow)` | 真值，与 `pushProviders` 同源 |
-| `dialogueTokens` / `dialogueCount` | 持久化消息经 `estimateTokensMessages` 求和 / `length` | 真值（与运行时同口径） |
+| `dialogueTokens` / `dialogueCount` | `dialogueTokens` = 持久化消息经 `estimateTokensMessages` 求和（全量 user+assistant）；`dialogueCount` = 其中 **user 消息数**（问答闭环，与运行时同口径） | 真值（与运行时同口径） |
 | `rolePackBaseTokens` | 装配/切换角色包时由内核算定真值（`assembler` 拼完 systemPromptPrefix 即 `estimateTokensMessages`；切换走 `agent.setRolePackBaseTokens`），**冷启动即真值、不降级为 0**（2026-09-01 T5/T6 落地，见「装配期真值前移」增补段） | 真值 |
 | `memoryTokens` / `memoryCount` | `0` | 诚实置 0（不可预测，不虚报） |
 | `inputAnchorTokens` | `0` | 真值（历史会话无当前输入） |
@@ -88,6 +89,19 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 收益（SSOT + 自然生长）：复用既有 `estimateTokensMessages` + 既有 `postContextOccupancy` 收口点 + 既有 `rolePackSwitched` 事件链路，**无新增协议类型、无第二份计算**。冷启动首屏圆环即真实角色包底盘占比，不再显示假 0%。
 
 > 注：此增补使上文第 43/51/83 行的「冷启动降级为 0 / 需新增内核 API」表述作废，已就地改为历史注记。
+
+### 增补：对话占用实时刷新 + 条数语义定案（2026-09-01 修复）
+
+**体感 bug**：用户发一条消息后，输入区圆环 hover「完整对话：N 条」不增长（仍是切换会话前的旧数）；记忆回忆正常。根因：占用快照 `ContextOccupancy` 仅在 **prepare 期**（每轮 LLM 调用前、assistant 生成前）由 `contextPreparer` `recordOccupancy` 写入；单轮对话（user→assistant 结束、不发动第 2 轮）结束后无新 prepare，快照永不刷新，且天然不含本轮 assistant。用户切会话触发 `postHistoryOccupancy`（读持久化全量）才看到正确值——故「切回来变正常」。
+
+**条数语义定案（用户拍板）**：`dialogueCount` 以**用户输入**为计数标准——一个问答闭环（user 消息）计 1 条，哪怕 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；`dialogueTokens`（容量）仍诚实统计问答闭环 user+assistant 全文总和。废弃原「对话消息总数」口径（hybrid 计轮数 / fixed 计消息数之差异亦消除，统一为 user 数）。
+
+**修复（内核侧，守 SSOT：宿主不重算）**：
+- `contextPreparer.ts`：`dialogueCount` 改为 `loop.getConversationMessages().filter(m => m.role==='user').length`，去掉 hybrid/fixed 分支。
+- `loop.ts`：新增 `refreshOccupancyDialogue()`——基于最新 `this.messages` 重算 `dialogueCount`（user 数）+ `dialogueTokens`（全量），合并 `lastOccupancy` 其余段后 `recordOccupancy`；在 `appendUserMessage`（user 输入即 +1，实时）与 `appendAssistantText`（assistant 落盘补容量，含残缺回复）末尾调用。幂等：无快照时 no-op。
+- 宿主 `chatPanel.ts` `postHistoryOccupancy` 的 `dialogueCount: history.length` 同步改为 `history.filter(role==='user').length`，与内核口径一致。
+
+收益：发消息即时 +1、assistant 落盘容量补上，无需切会话即可看到正确占用；条数语义直白（问答闭环数），残缺回复如实计入容量。
 
 ## 何时回顾
 

@@ -227,8 +227,9 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
     // 完整对话 = 全量对话 token（10），而非派生 history（避免低估）
     expect(occ.dialogueTokens).toBe(10);
-    // fixed 模式计量 loop.messages 全量 user/assistant：2 条
-    expect(occ.dialogueCount).toBe(2);
+    // 条数语义（2026-09-01 定案）：以用户输入条数计（一个问答闭环=1）
+    // → 该用例仅 1 个 user 消息，dialogueCount=1（assistant 不计入条数，但 token 容量含其全文）
+    expect(occ.dialogueCount).toBe(1);
     expect(occ.memoryCount).toBe(0);
     // 其余段语义与 hybrid 一致
     expect(occ.totalTokens).toBe(120_000);

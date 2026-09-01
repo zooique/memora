@@ -1736,6 +1736,26 @@ export class AgentLoop {
   }
 
   /**
+   * 对话占用实时刷新（④ 预算可视化 · 输入区常驻指示器）。
+   *
+   * occupancy 主体在 prepare 期 record（见 contextPreparer），但 prepare 发生在 assistant
+   * 生成前，故快照的 dialogue 段天然不含本轮 assistant、且单轮对话结束后不再刷新。
+   * 本方法在 user 消息落库 / assistant 落盘后以最新 this.messages 重算 dialogue 段：
+   *   dialogueCount  = user 消息数（计数标准：一个问答闭环=1，残缺回答如实记录）
+   *   dialogueTokens = 全量 user+assistant 估算（容量诚实统计问答闭环总和）
+   * 其余段（rolePackBase/memory/inputAnchor/outputReserve）沿用 prepare 快照，不重算
+   * （守 SSOT：宿主只透传，内核单一真相源）。
+   * 幂等：无快照时 no-op（如首轮 prepare 尚未发生）。
+   */
+  private refreshOccupancyDialogue(): void {
+    if (!this.lastOccupancy) return;
+    const conv = this.getConversationMessages();
+    const dialogueCount = conv.filter((m) => m.role === 'user').length;
+    const dialogueTokens = this.estimateTokens(conv);
+    this.lastOccupancy = { ...this.lastOccupancy, dialogueCount, dialogueTokens };
+  }
+
+  /**
    * 写入当前激活角色包底盘占用（system prompt 总体 token）。
    * 装配 / 切换角色包时调用（早于 prepare），使冷启动 / 重启首屏即可显示真实占比；
    * prepare 期 recordOccupancy 也以其实际注入值覆盖，口径一致（同一估算器）。
@@ -1961,6 +1981,8 @@ export class AgentLoop {
       content: `<user_input>${content}</user_input>`,
       roundId: this.currentRoundId,
     });
+    // 用户输入即刷新占用条数（问答闭环 +1，实时反映到输入区圆环）
+    this.refreshOccupancyDialogue();
   }
 
   /** 追加一条 system 消息（技能注入、召回、任务表、自审查提示等通用注入通道） */
@@ -1976,6 +1998,8 @@ export class AgentLoop {
   /** 追加一条 assistant 纯文本消息（正常 LLM 回复或兜底文本）；附当前轮次 roundId */
   private appendAssistantText(content: string): void {
     this.messages.push({ role: 'assistant', content, roundId: this.currentRoundId });
+    // assistant 落盘（含残缺/中止回复）后补算对话容量，使圆环即时含本轮回答
+    this.refreshOccupancyDialogue();
   }
 
   /** 追加一条带 toolCalls 的 assistant 消息（executeToolCalls 前导）；附当前轮次 roundId */
