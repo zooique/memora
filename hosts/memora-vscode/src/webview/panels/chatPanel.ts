@@ -731,6 +731,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.postCapabilityBadge();
     // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
     this.pushSkillList();
+    // 角色包底盘占用随切换实时反映到输入区圆环（内核已在切换时重算 setRolePackBaseTokens，
+    // 此处直接推当前占用快照即可，不重算、不依赖跑 prepare——ADR-030「切角色包即刷新占用」）
+    this.postContextOccupancy();
   };
 
   /**
@@ -1207,7 +1210,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 切到历史会话（含首次启动回放）时调用：圆环从「空态 0%」纠正为「该会话真实占用」——
    *   对话层  = 持久化消息经内核 estimateTokensMessages 求和（与运行时 prepare 同口径）
-   *   角色包  = 内核最近一次 prepare 的 rolePackBaseTokens；无 prepare 记录降级为 0
+   *   角色包  = 内核当前激活角色包底盘占用（system prompt 总体 token，装配/切换即确定，
+   *             冷启动也有真实值，不再降级为 0；见 context.rolePackBaseTokens）
    *   输入锚点= 0（历史会话无当前输入）
    *   记忆层  = 0（历史会话无法预测"下一条消息会召回哪些记忆"，如实标注不虚报）
    * 组装复用内核 estimateOccupancy（SSOT 单点，free 收敛口径与运行时 prepare 一致）。
@@ -1225,9 +1229,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 对话消息序列：round-based（viewLoader）或 legacy 扁平路径统一提取
       const history = this.collectHistoryMessages();
       const dialogueTokens = estimateTokensMessages(history);
-      // 角色包固定开销：内核最近一次 prepare 的真实值。冷启动尚无 prepare 记录时降级为 0
-      // （已知低估，首轮 prepare 后自动修正；内核未暴露 system prompt token，见 ADR-030 增补）
-      const rolePackBaseTokens = agent.getMetrics().context.occupancy?.rolePackBaseTokens ?? 0;
+      // 角色包固定开销：优先取内核当前激活角色包底盘占用（装配/切换即确定，冷启动也有真实值）；
+      // 该指标暂无时回退 occupancy 旧值（兼容极端时序），再回退 0。
+      const ctx = agent.getMetrics().context;
+      const rolePackBaseTokens =
+        ctx.rolePackBaseTokens ?? ctx.occupancy?.rolePackBaseTokens ?? 0;
       const occ = estimateOccupancy({
         totalTokens,
         rolePackBaseTokens,
@@ -2163,8 +2169,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private postContextOccupancy(): void {
     if (!this._agent) return;
-    const occ = this._agent.getMetrics().context.occupancy;
+    const ctx = this._agent.getMetrics().context;
+    const occ = ctx.occupancy;
     if (!occ) return;
+    // 角色包底盘占用可能已在切换时由内核刷新（setRolePackBaseTokens），早于下一轮 prepare；
+    // 用最新底盘值覆盖快照中的旧值，使圆环在角色包切换即时反映，无需等到下一轮。
+    const freshRolePack = ctx.rolePackBaseTokens;
+    if (freshRolePack !== undefined && freshRolePack !== occ.rolePackBaseTokens) {
+      this.post({
+        type: 'context_occupancy',
+        occupancy: estimateOccupancy({
+          ...occ,
+          rolePackBaseTokens: freshRolePack,
+        }),
+      });
+      return;
+    }
     this.post({ type: 'context_occupancy', occupancy: occ });
   }
 

@@ -31,6 +31,7 @@ import { SessionManager } from '@/agent/managers/sessionManager.js';
 import { ContextPreparer } from '@/agent/contextPreparer.js';
 // 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判）
 import { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
+import { estimateTokensMessages } from '@/agent/contextManager.js';
 // 工具幂等契约（接线下沉：onToolExecuted / preExecutionCheck 依赖幂等表 + 补偿判断）
 import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
 // 任务表渲染（接线下沉：loop.getTaskTable 依赖）
@@ -452,6 +453,9 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     locale,
     workProjectionContext,
   );
+  // 角色包底盘占用（system prompt 总体 token）= 装配此刻即确定的真值，早于 prepare；
+  // 冷启动 / 重启首屏即可显示真实占比。与运行时 prepare 用同一 estimateTokensMessages 估算器（口径一致）。
+  const rolePackBaseTokens = estimateTokensMessages([{ content: systemPromptPrefix }]);
 
   // 后台组件统一使用 backgroundProvider，降级到前台 provider（SSOT：与 textPolisher 同模式）
   const sessionArchiver = new SessionArchiver(backgroundProvider ?? provider, sessionStore);
@@ -498,6 +502,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     bootstrapMemories: pctx.bootstrapMemories,
     toolExecutor: (name: string, args: string) => toolExec.execute(name, args),
     systemPromptPrefix,
+    rolePackBaseTokens,
     toolDefinitions: toolExec.list,
     // 完整内置定义注入只读闸（toolReadonly 查询 readonly 标记；单一真理源取 toolExec.builtinDefinitions）
     builtinTools: toolExec.builtinDefinitions,

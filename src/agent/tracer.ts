@@ -136,6 +136,12 @@ export interface AgentMetrics {
     budget?: ContextBudget;
     /** 上下文占用快照（可选：prepare 期真实用量，供输入区指示器展示，④ 预算可视化） */
     occupancy?: ContextOccupancy;
+    /**
+     * 当前激活角色包底盘占用（system prompt 总体 token，persona+rules+技能 L1+工具 schema+全局技能+时间戳）。
+     * 与 occupancy.rolePackBaseTokens 同源但产生时机更早：装配 / 切换角色包时即确定（不依赖跑过 prepare），
+     * 冷启动 / 重启后首屏即可显示真实占比。prepare 期仍会以其实际注入值覆盖刷新（口径一致，同一估算器）。
+     */
+    rolePackBaseTokens?: number;
   };
   /** 任务级 SLO 度量（AgentLoop 层填充） */
   tasks: {

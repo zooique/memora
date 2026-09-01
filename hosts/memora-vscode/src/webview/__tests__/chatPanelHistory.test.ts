@@ -474,6 +474,60 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     });
   });
 
+  // ─── 角色包切换实时刷新占用（2026-09-01）：onRolePackSwitched 末尾补推 context_occupancy ───
+  it('切换角色包（rolePackSwitched）→ 实时补推 context_occupancy（含最新 rolePackBaseTokens）', async () => {
+    const { provider, posted } = setup();
+    // agent stub：on 捕获 rolePackSwitched 处理器，getMetrics 返回当前角色包底盘占用
+    let rolePackHandler: ((info: { from: string | null; to: string }) => void) | undefined;
+    const agent = {
+      on: vi.fn((event: string, cb: (info: { from: string | null; to: string }) => void) => {
+        if (event === 'rolePackSwitched') rolePackHandler = cb;
+      }),
+      off: vi.fn(),
+      getMetrics: () => ({
+        context: {
+          // 角色包切换后的底盘占用（内核已在切换时 setRolePackBaseTokens 重算）
+          occupancy: { rolePackBaseTokens: 9000 } as never,
+          rolePackBaseTokens: 9000,
+        },
+      }),
+    } as unknown as Agent;
+    provider.setAgent(agent);
+    expect(rolePackHandler).toBeDefined();
+    // 内核 emit 角色包切换（手动 activate / 检查点恢复激活）
+    rolePackHandler!({ from: 'packA', to: 'packB' });
+    // postContextOccupancy 同步推送；断言圆环即时反映最新角色包占用（无需等下一轮 prepare）
+    const occs = ofType<{ type: string; occupancy: { rolePackBaseTokens: number } }>(posted, 'context_occupancy');
+    expect(occs.length).toBeGreaterThanOrEqual(1);
+    // 取最后一次推送：角色包切换补推的那一条必须带最新 rolePackBaseTokens
+    expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(9000);
+  });
+
+  it('冷启动无 prepare：rolePackBaseTokens 由装配时确定并随切换覆盖（postContextOccupancy 覆盖旧快照）', async () => {
+    const { provider, posted } = setup();
+    // 装配后内核已确定 rolePackBaseTokens，但首轮 prepare 前 occupancy 快照的该字段可能仍为 0（诚实降级）
+    let rolePackHandler: ((info: { from: string | null; to: string }) => void) | undefined;
+    const agent = {
+      on: vi.fn((event: string, cb: (info: { from: string | null; to: string }) => void) => {
+        if (event === 'rolePackSwitched') rolePackHandler = cb;
+      }),
+      off: vi.fn(),
+      getMetrics: () => ({
+        context: {
+          occupancy: { rolePackBaseTokens: 0 } as never, // 快照降级值
+          rolePackBaseTokens: 7000, // 真实最新值（切换时重算）
+        },
+      }),
+    } as unknown as Agent;
+    provider.setAgent(agent);
+    expect(rolePackHandler).toBeDefined();
+    rolePackHandler!({ from: null, to: 'packB' });
+    const occs = ofType<{ type: string; occupancy: { rolePackBaseTokens: number } }>(posted, 'context_occupancy');
+    expect(occs.length).toBeGreaterThanOrEqual(1);
+    // postContextOccupancy 用 ctx.rolePackBaseTokens 覆盖快照的 0，圆环展示真实 7000
+    expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(7000);
+  });
+
   // ─── Phase 4 软暂停入口：生成中暂停走迭口边界挂起 requestPause（与内核迭口软暂停语义一致） ───
   function pauseAgentStub(): {
     agent: Agent;

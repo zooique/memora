@@ -46,6 +46,7 @@ import {
   type GCResult,
 } from '@/memory/gcService.js';
 import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
+import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
@@ -1412,6 +1413,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       workProjectionContext,
     );
     this.loop.refreshRolePackPrefix(newPrefix);
+    // 角色包底盘占用随切换实时更新（不依赖跑 prepare）：装配此刻即确定的真值
+    this.loop.setRolePackBaseTokens(
+      estimateTokensMessages([{ content: newPrefix }]),
+    );
     // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit / streaming）
     // 键恒为 activePack：buildChatOptionsFromStrategy 读激活包策略，不随本轮装配视角变
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());

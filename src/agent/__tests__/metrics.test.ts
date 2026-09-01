@@ -464,6 +464,22 @@ describe('AgentMetrics · 类型结构', () => {
     expect(occ!.dialogueTokens).toBe(12_000);
   });
 
+  it('setRolePackBaseTokens 经构造/设值写入，getMetrics().context.rolePackBaseTokens 透出（装配即确定，冷启动可用）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      rolePackBaseTokens: 5_000,
+    });
+    // 构造期注入（装配即确定，早于 prepare）
+    expect(loop.getMetrics().context.rolePackBaseTokens).toBe(5_000);
+
+    // 切换角色包后实时更新（不依赖跑 prepare）
+    loop.setRolePackBaseTokens(9_000);
+    expect(loop.getRolePackBaseTokens()).toBe(9_000);
+    expect(loop.getMetrics().context.rolePackBaseTokens).toBe(9_000);
+  });
+
   it('hitRate 应在 0-1 范围内', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),

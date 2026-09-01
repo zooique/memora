@@ -59,6 +59,11 @@ export interface AgentLoopOptions {
   maxIterations?: number;
   /** 系统 prompt 前缀（角色包 prompt），注入到 bootstrap 记忆之前 */
   systemPromptPrefix?: string;
+  /**
+   * 当前激活角色包底盘占用（system prompt 总体 token），装配时即确定。
+   * 早于 prepare 写入，使冷启动 / 重启首屏即可显示真实占比；prepare 期以其实际值覆盖，口径一致。
+   */
+  rolePackBaseTokens?: number;
   /** 情感基调前缀，插在 systemPromptPrefix 与 bootstrapMemories 之间（injectAffect 设置，角色切换时保留） */
   affectPrefix?: string;
   /** 工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
@@ -237,6 +242,12 @@ export class AgentLoop {
   private lastBudget: ContextBudget | undefined;
   /** 最近一次输入装配的上下文占用快照（④ 预算可视化，真实用量） */
   private lastOccupancy: ContextOccupancy | undefined;
+  /**
+   * 当前激活角色包底盘占用（system prompt 总体 token）。
+   * 装配 / 切换角色包时经 setRolePackBaseTokens 写入（早于 prepare，冷启动即可用），
+   * prepare 期 recordOccupancy 也以其实际值覆盖，口径一致（同一 estimateTokensMessages 估算器）。
+   */
+  private rolePackBaseTokens: number | undefined;
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
   private isLastContextTruncated = false;
   /** 是否因迭代/步数上限而终止（非正常完成，供 orchestrator 检查） */
@@ -338,6 +349,10 @@ export class AgentLoop {
     // 初始化 system prompt（基于永驻记忆，加前缀）
     const prefix = opts.systemPromptPrefix ?? '';
     this.appendSystemMessage(prefix + this.buildSystemPrompt(opts.bootstrapMemories));
+    // 角色包底盘占用（装配时即确定，早于 prepare）：取 opts 透传的装配真值
+    if (opts.rolePackBaseTokens !== undefined) {
+      this.rolePackBaseTokens = opts.rolePackBaseTokens;
+    }
 
     // 单工具执行器：注入 loop 稳定能力窄面，strategy 经闭包读最新（setStrategy 动态生效）
     this.toolRunner = new ToolRunner({
@@ -1721,6 +1736,20 @@ export class AgentLoop {
   }
 
   /**
+   * 写入当前激活角色包底盘占用（system prompt 总体 token）。
+   * 装配 / 切换角色包时调用（早于 prepare），使冷启动 / 重启首屏即可显示真实占比；
+   * prepare 期 recordOccupancy 也以其实际注入值覆盖，口径一致（同一估算器）。
+   */
+  setRolePackBaseTokens(tokens: number): void {
+    this.rolePackBaseTokens = tokens;
+  }
+
+  /** 读取当前激活角色包底盘占用（未确定时为 undefined，调用方降级处理） */
+  getRolePackBaseTokens(): number | undefined {
+    return this.rolePackBaseTokens;
+  }
+
+  /**
    * 获取 AgentLoop 运行时指标快照（纯只读、零副作用，适合宿主轮询构建监控面板）。
    */
   getMetrics(): AgentMetrics {
@@ -1747,6 +1776,7 @@ export class AgentLoop {
         estimatedTokens: this.contextManager.estimateTokens(this.messages),
         ...(this.lastBudget ? { budget: this.lastBudget } : {}),
         ...(this.lastOccupancy ? { occupancy: this.lastOccupancy } : {}),
+        ...(this.rolePackBaseTokens !== undefined ? { rolePackBaseTokens: this.rolePackBaseTokens } : {}),
       },
       tasks: {
         totalCount: this.metrics.taskTotalCount,
