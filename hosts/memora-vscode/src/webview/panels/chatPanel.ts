@@ -22,7 +22,7 @@ import {
   getSessionDisplayName,
   resolveContextWindow,
   estimateOccupancy,
-  estimateTokensText,
+  estimateTokensMessages,
   type Agent,
   type AgentChunk,
   type IRoundStore,
@@ -253,14 +253,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.bindSecurityAudit();
     // H0：绑定写入确认回调（confirmWrites=true 时触发，默认 fail-closed）
     this.bindWriteConfirmation();
-    // 装配注入后补推角色信息（时序竞态修复，2026-08-15）：
+    // 装配注入后统一补推（时序竞态修复，2026-08-15）：
     // webview ready 时 agent 可能尚未装配，replaySession 的 chat_role_pack / pushRolePacks
     // 会因 _agent 为空而跳过推送 → 输入区角色选择器永久缺失。此处装配完成即补推一次，
     // 面板未就绪时 post 静默忽略（_view 为空），由 replaySession 兜底再推。
-    this.refreshRoleInfoAfterAssemble();
-    // 历史会话占用兜底：replaySession 时若 agent 未装配完成（占用静默跳过），
-    // 装配完成后补推一次——此时 agent.getMetrics 的 rolePackBaseTokens 方为真实值
-    void this.postHistoryOccupancy();
+    // 历史会话占用补推等「装配后补推」也已收口在 refreshAfterAssemble 内，
+    // 本方法不再另推一份（否则懒装配路径漏推）。
+    this.refreshAfterAssemble();
   }
 
   /** 推送三源技能清单到 chatView（composer 动态下拉 SSOT：与设置面板共用 listVisibleSkills） */
@@ -493,11 +492,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.bindSecurityAudit();
       // H0：绑定写入确认回调（confirmWrites=true 时触发）
       this.bindWriteConfirmation();
-      // 装配完成后补推角色信息（时序竞态修复，2026-08-15）：
-      // 与 setAgent 路径一致——ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
+      // 装配完成后统一补推（与 setAgent 路径共用同一收口点）：
+      // ready 时 agent 可能尚未装配 / _activeRolePack 未设置，
       // 装配完成即补推，避免输入区角色选择器永久缺失；面板未就绪时 post 静默，
       // 由 replaySession 兜底。
-      this.refreshRoleInfoAfterAssemble();
+      this.refreshAfterAssemble();
       // 首次启动兜底：装配成功后若无任何会话记录，自动创建首个会话（用户可直接输入）
       void this.ensureInitialSession();
     } catch (err) {
@@ -722,7 +721,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 使其与内核 rolePackManager.activeName 一致，成为 replaySession 的单一真相源。
     // 此前仅 post 给当时可能已被 dispose 的 webview（被静默忽略），未更新 _activeRolePack
     // → 用户从「角色」视图切换后聚焦对话（chat 视图重解析），ensureAgent 因 _agent 已存在
-    // 提前返回、refreshRoleInfoAfterAssemble 不再跑 → replaySession 读到陈旧 _activeRolePack
+    // 提前返回、refreshAfterAssemble 不再跑 → replaySession 读到陈旧 _activeRolePack
     // → 徽章显示旧角色（与设置视图不一致）。设置视图靠 activateRole 显式 loadRoles 才更新，
     // 两视图真相源分叉即 SSOT 违反。现由同一事件驱动状态，重解析即推正确角色。
     this._activeRolePack = info.to;
@@ -1204,11 +1203,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 推送历史会话上下文占用（轻量版方案，2026-08-31）
+   * 推送历史会话上下文占用（轻量版，ADR-030 增补）
    *
    * 切到历史会话（含首次启动回放）时调用：圆环从「空态 0%」纠正为「该会话真实占用」——
-   *   对话层  = 持久化消息逐条 estimateTokensText 求和（与内核估算口径一致）
-   *   角色包  = 当前 agent 最近一次装配的 rolePackBaseTokens（角色包全局跨会话一致）
+   *   对话层  = 持久化消息经内核 estimateTokensMessages 求和（与运行时 prepare 同口径）
+   *   角色包  = 内核最近一次 prepare 的 rolePackBaseTokens；无 prepare 记录降级为 0
    *   输入锚点= 0（历史会话无当前输入）
    *   记忆层  = 0（历史会话无法预测"下一条消息会召回哪些记忆"，如实标注不虚报）
    * 组装复用内核 estimateOccupancy（SSOT 单点，free 收敛口径与运行时 prepare 一致）。
@@ -1225,11 +1224,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       const totalTokens = resolveContextWindow(active?.contextWindow);
       // 对话消息序列：round-based（viewLoader）或 legacy 扁平路径统一提取
       const history = this.collectHistoryMessages();
-      let dialogueTokens = 0;
-      for (const m of history) {
-        dialogueTokens += estimateTokensText(m.content);
-      }
-      // 角色包固定开销：取内核最近一次装配的真实值（无装配记录时为 0，冷启动空态）
+      const dialogueTokens = estimateTokensMessages(history);
+      // 角色包固定开销：内核最近一次 prepare 的真实值。冷启动尚无 prepare 记录时降级为 0
+      // （已知低估，首轮 prepare 后自动修正；内核未暴露 system prompt token，见 ADR-030 增补）
       const rolePackBaseTokens = agent.getMetrics().context.occupancy?.rolePackBaseTokens ?? 0;
       const occ = estimateOccupancy({
         totalTokens,
@@ -1256,8 +1253,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const msgs: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (this._viewLoader) {
       // 会话无轮次记录（新建/空会话）→ 直接返回空，避免触发 loadView「会话不存在」噪音
-      const { date, session } = this.parseSessionId(this._currentSessionId);
-      if (this.sessionStore.getRoundIds(`${date}-${session}`).length === 0) {
+      // 守卫直用完整 sessionId（getRoundIds 以 sessionId 为键，无需 parse 拼回——parse 再拼回是恒等变换）
+      if (this.sessionStore.getRoundIds(this._currentSessionId).length === 0) {
         return msgs;
       }
       const rounds = this.loadRoundBasedHistory();
@@ -1344,13 +1341,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushRolePacks();
     // Phase 4 E2：补推工具权限徽章（replaySession 时角色信息已就绪）
     this.postCapabilityBadge();
-    // 视图重解析时补推三源技能清单（与 refreshRoleInfoAfterAssemble 输出同构，
+    // 视图重解析时补推三源技能清单（与 refreshAfterAssemble 输出同构，
     // 避免 agent 已装配时 ensureAgent 提前返回导致技能下拉为空）
     this.pushSkillList();
     // G3 断点续跑：检测当前会话是否有可恢复的持久化暂停检查点 → 推送断点续跑提示条
     this.maybeOfferCheckpointRestore();
     // 历史会话占用（轻量版）：首次启动回放即推真实占用（而非空态 0%）。
-    // _agent 未装配完成时 postHistoryOccupancy 静默跳过，由 setAgent 装配后兜底再推
+    // _agent 未装配完成时本调用静默跳过，由装配后收口点 refreshAfterAssemble 兜底再推
+    // （两条装配入口——memora.open 命令与懒装配——都经该收口点，不漏路径）。
     this.postHistoryOccupancy();
   }
 
@@ -1489,7 +1487,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 装配完成后补推角色信息（时序竞态修复，2026-08-15）
+   * 装配完成后统一补推（收口点，时序竞态修复 2026-08-15 / 占用补推收口 2026-09-01）
    *
    * 懒装配路径（直接点活动栏面板图标）：ensureAgent 异步装配，webview ready 时
    * _agent 往往尚未就绪，replaySession 会因 _agent 为空（pushRolePacks）或
@@ -1499,9 +1497,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   2. 补推 chat_role_pack → 角色选择器 / AI 消息标签可见（即使无激活角色也推送，
    *      让 webview 正确处理状态）
    *   3. 补推 chat_role_packs → 角色切换入口数据
+   *   4. 补推历史会话占用 → 输入区圆环脱离空态 0%
+   *
+   * 历史会话占用补推原仅挂在 setAgent，导致懒装配路径（ensureAgent）重启/侧栏打开
+   * 面板时圆环恒为 0%。2026-09-01 收口：任何装配后补推都只挂在本方法，
+   * 不得在 setAgent / ensureAgent 各钉一份（挂两处必漏对称的另一条路径）。
    * 面板未就绪时 post 静默（_view 为空），由 replaySession 兜底；重复推送幂等。
+   *
+   * SSOT：本方法是「装配后补推」的唯一入口，setAgent 与 ensureAgent 两条装配路径
+   * 都必须经过它。任何新增的装配后补推都挂在本方法内，不在调用方各钉一份——
+   * 挂两处必然漏掉对称的另一条路径。
    */
-  private refreshRoleInfoAfterAssemble(): void {
+  private refreshAfterAssemble(): void {
     if (!this._agent) return;
     // 懒装配路径从未调用 setRolePack：从 agent 实际激活角色补齐（无角色包时为 undefined）
     if (!this._activeRolePack) {
@@ -1521,9 +1528,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushRolePacks();
     // Phase 4 E2：装配完成即补推工具权限徽章
     this.postCapabilityBadge();
-    // 装配完成统一补推三源技能清单（SSOT 收紧：setAgent 与 ensureAgent 懒装配共用本入口，
-    // 角色信息与技能清单同一"装配后刷新"逻辑，杜绝某条路径漏推 → composer 下拉为空）
+      // 装配完成统一补推三源技能清单（SSOT 收紧：setAgent 与 ensureAgent 懒装配共用本入口，
+      // 角色信息与技能清单同一"装配后刷新"逻辑，杜绝某条路径漏推 → composer 下拉为空）
     this.pushSkillList();
+    // 历史会话占用（轻量版）：装配完成即补推——replaySession 时 agent 未装配会静默跳过，
+    // 装配后 agent.getMetrics 的 rolePackBaseTokens 方为真实值。
+    // 本收口点是 setAgent 与 ensureAgent 懒装配两条入口的共用点：占用补推只在此一处，
+    // 不得再在 setAgent / ensureAgent 各推一份（否则必漏懒装配路径）。
+    void this.postHistoryOccupancy();
   }
 
   /**
@@ -1718,11 +1730,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 解析会话标识（YYYY-MM-DD-sessionName）为日期 + 会话名
    *
-   * 会话名可能含连字符（如 main-b1），故从最后一个 '-' 切分（日期固定 10 位）。
+   * 日期固定 10 位（formatDateKey → YYYY-MM-DD），故按位切而非按最后一个 '-' 切——
+   * 会话名本身可能含连字符（分叉产生的 main-b1）。
    */
   private parseSessionId(sessionId: string): { date: string; session: string } {
-    const idx = sessionId.lastIndexOf('-');
-    return { date: sessionId.slice(0, idx), session: sessionId.slice(idx + 1) };
+    return { date: sessionId.slice(0, 10), session: sessionId.slice(11) };
   }
 
   /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */

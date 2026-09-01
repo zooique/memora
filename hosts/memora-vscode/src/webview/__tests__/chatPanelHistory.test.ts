@@ -444,6 +444,36 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(ofType(posted, 'context_occupancy').length).toBe(0);
   });
 
+  it('懒装配路径（ensureAgent）装配完成后推送历史会话占用（两条装配入口共用收口点）', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '问题A', ts: 't1' },
+      { role: 'assistant', content: '回答A', ts: 't2' },
+    ]);
+    const agent = {
+      on: vi.fn(),
+      off: vi.fn(),
+      getMetrics: () => ({
+        context: { occupancy: { rolePackBaseTokens: 15000 } },
+      }),
+    } as unknown as Agent;
+    // 懒装配入口：只注入工厂、不调 setAgent（点侧栏图标 / 重启恢复面板走此路径）
+    provider.setAgentFactory(async () => agent);
+    await (provider as unknown as { ensureAgent(): Promise<void> }).ensureAgent();
+    await vi.waitFor(() => {
+      const occs = ofType<{ type: string; occupancy: { dialogueCount: number; rolePackBaseTokens: number } }>(
+        posted,
+        'context_occupancy',
+      );
+      expect(occs.length).toBeGreaterThanOrEqual(1);
+      expect(occs[occs.length - 1]!.occupancy.dialogueCount).toBe(2);
+      expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(15000);
+    });
+  });
+
   // ─── Phase 4 软暂停入口：生成中暂停走迭口边界挂起 requestPause（与内核迭口软暂停语义一致） ───
   function pauseAgentStub(): {
     agent: Agent;

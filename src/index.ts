@@ -17,8 +17,14 @@ export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 export { resolveContextWindow } from '@/agent/budget.js';
 // 上下文占用快照组装（SSOT 单点）：宿主历史会话重算占用时与内核 prepare 共用同一收敛口径
 export { estimateOccupancy, type EstimateOccupancyInput } from '@/agent/budget.js';
-// 单段文本 token 估算（CJK 感知，零状态）：宿主历史会话重算对话层 token 时与内核估算口径一致
-export { estimateTokensText } from '@/agent/contextManager.js';
+// token 估算（CJK 感知，零状态纯函数）：
+//   estimateTokensMessages = 消息序列（先累计后取整，与运行时 prepare 同口径，历史会话重算用它）
+//   estimateTokensText     = 单段文本（逐条场景；用于消息序列会放大取整误差）
+export {
+  estimateTokensMessages,
+  estimateTokensText,
+  type EstimableMessage,
+} from '@/agent/contextManager.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
 export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';

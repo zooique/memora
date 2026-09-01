@@ -25,6 +25,9 @@
 - 占位条常驻输入区（隐藏至首轮流式结束收到 `context_occupancy`），hover 出分层明细；`free = max(0, total − Σ各段)`，非负收敛。
 - `chatPanel.postContextOccupancy` 每轮**无条件**推（独立于 dev 开关 `memora.showMetrics`）。
 - ADR-030 锁定契约「内核算 → 宿主传 → webview 渲」。改动须保持此边界：新增段只在内核加字段 + protocol 转发 + webview 渲，不在宿主/webview 算。
+- **⚠️ 历史会话轻量版占用（2026-08-31 引入，2026-09-01 已修复 + ADR-030 已含增补段）**：宿主 `chatPanel.postHistoryOccupancy()` 自己读持久化消息经内核 `estimateTokensMessages` 求和再组装 `estimateOccupancy`（宿主侧第二条计算路径，与 ADR-030「不另立占用计算路径」表面冲突，但 ADR-030 增补段已批准「无快照时的降级重算」，且该路径 token 估算/组装全部复用内核纯函数，非第二份实现）。
+  - 修复史：**2026-09-01 圆环 0% bug** —— 占用补推原只钉在 `setAgent`，懒装配（ensureAgent / 重启·侧栏图标）路径漏推。已收口进装配后统一收口点 `refreshAfterAssemble`（原 `refreshRoleInfoAfterAssemble`），两入口共用，质量门 328 绿。
+  - 残留已知项：`rolePackBaseTokens` 冷启动取 0（无 prepare 记录）属诚实降级，首轮 prepare 后自动修正；内核未暴露 system prompt token，需新内核 API 才能取真值（留作独立决策）。
 
 ## SSOT 单一真理源约定（收敛结论，勿回改）
 - source→子目录映射：`src/memory/sourcePaths.ts` 唯一（SOURCE_TO_DIR/sourceToDir/resolveSourceFilePath）。宿主严禁硬编码 `'personas'/'rules'/'skills'`。
@@ -34,6 +37,7 @@
 - 执行流消费：`consumeExecutionStream` 收口 chat/resume/handleNonChat；finally 中 cancelPendingPause+clearPauseRequest。落盘收口 touchCheckpoint/flushCheckpoint（脏标记）。
 - 挂载物卸载：clearPlan 卸 plan/roundLog；pauseMeta 由 setPauseMeta(undefined) 卸；consecutivePauseTimestamps 进程内不入检查点。
 - **反复病灶（对称的另一半没写完）**：增删/读写/翻转归零改动须答「反方向在哪」；有 add 无 evict、void 调 async generator、缓存失效漏一个入口皆此类。
+- **反复病灶 · 补推型改动的落点（2026-09-01 第三次踩）**：凡「装配后 / 切换后 / 加载后需补推的数据」，必须挂进该事件的**唯一收口点**，严禁在 `setAgent` / `ensureAgent` / 各命令入口各钉一份。vscode 宿主既有收口点 = `chatPanel.refreshRoleInfoAfterAssemble()`（自注：setAgent 与 ensureAgent 懒装配共用本入口，杜绝某条路径漏推）。2026-08-31 把占用兜底钉进 setAgent 而绕过它 → 懒装配路径漏推 → 重启后圆环 0%。判定口诀：**新增补推前，先 grep 该事件是否已有收口点**。
 
 ## 审计/测试方法论（高信号）
 - 判死代码须跨内核/宿主 grep（内核写宿主读易误判为死）。

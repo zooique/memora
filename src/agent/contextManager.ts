@@ -119,12 +119,46 @@ function countCjkAndOther(str: string): { cjkChars: number; otherChars: number }
   return { cjkChars, otherChars };
 }
 
+/** 可估算 token 的最小消息形状（宿主历史会话重算无需构造完整内核 Message） */
+export interface EstimableMessage {
+  readonly content: string;
+  readonly toolCalls?: unknown;
+}
+
+/**
+ * 估算消息序列 token 数（CJK 感知，零状态纯函数）。
+ *
+ * 单一真理源：先累计全部字符、最后一次向上取整——与逐条取整再求和**不等价**
+ * （后者系统性高估）。运行时（`ContextManager.estimateTokens` / contextPreparer
+ * 各层计量）与宿主历史会话占用重算共用本函数，两端口径不漂移。
+ *
+ * @param messages 待估算的消息序列（content 计入，toolCalls 序列化后计入）
+ * @returns token 数（按 CJK/其他字符分轨估算后向上取整）
+ */
+export function estimateTokensMessages(messages: readonly EstimableMessage[]): number {
+  let cjkChars = 0;
+  let otherChars = 0;
+  for (const m of messages) {
+    const contentCounts = countCjkAndOther(m.content);
+    cjkChars += contentCounts.cjkChars;
+    otherChars += contentCounts.otherChars;
+    if (m.toolCalls) {
+      const toolCallsCounts = countCjkAndOther(JSON.stringify(m.toolCalls));
+      cjkChars += toolCallsCounts.cjkChars;
+      otherChars += toolCallsCounts.otherChars;
+    }
+  }
+  return Math.ceil(
+    cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN + otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
+  );
+}
+
 /**
  * 估算单段文本 token 数（CJK 感知，零状态纯函数）。
  *
- * 单一真理源：`ContextManager.estimateTokens` 逐条消息复用本函数；
- * 宿主侧（历史会话占用重算）亦调本函数对持久化消息求和估算，
- * 与内核估算口径完全一致，避免宿主另写一份低估/高估的估算逻辑。
+ * 供「单段文本」场景使用（如宿主对一条记忆正文的独立计量）。
+ * 计量**消息序列**须用 `estimateTokensMessages`：本函数逐条调用再求和会放大
+ * 取整误差，与本函数同口径但结果不等价。
  *
  * @param text 待估算文本
  * @returns token 数（按 CJK/其他字符分轨估算后向上取整）
@@ -193,23 +227,7 @@ export class ContextManager {
    * toolCalls 序列化字符同样计入。
    */
   estimateTokens(messages: readonly Message[]): number {
-    let cjkChars = 0;
-    let otherChars = 0;
-    for (const m of messages) {
-      // 逐条复用 countCjkAndOther（单一统计真理源），仍按「先累计后 ceil」原语义，
-      // 与 estimateTokensText 同口径但避免逐条取整导致的偏差
-      const contentCounts = countCjkAndOther(m.content);
-      cjkChars += contentCounts.cjkChars;
-      otherChars += contentCounts.otherChars;
-      if (m.toolCalls) {
-        const toolCallsCounts = countCjkAndOther(JSON.stringify(m.toolCalls));
-        cjkChars += toolCallsCounts.cjkChars;
-        otherChars += toolCallsCounts.otherChars;
-      }
-    }
-    return Math.ceil(
-      cjkChars / LOOP_CONSTANTS.CJK_CHARS_PER_TOKEN + otherChars / LOOP_CONSTANTS.CHARS_PER_TOKEN,
-    );
+    return estimateTokensMessages(messages);
   }
 
   /** token 超阈值且消息数 > 3（避免单条消息触发截断）时才需要截断 */
