@@ -313,6 +313,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let roundBlockEl: HTMLDetailsElement | null = null;
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
+  /** 当前轮 timeline 容器（任务时投影：thinking 实时相位 + 工具行；挂 label 后、正文前） */
+  let timelineEl: HTMLDivElement | null = null;
+  /** timeline 已挂载的 assistant 块（与 round-block 同规则：插话只挂首个） */
+  let timelineHostEl: HTMLElement | null = null;
   /**
    * 流式骨架块（TTFT 前即时反馈，吸收 Claude Code #81659 / 骨架屏最佳实践）
    *
@@ -392,7 +396,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     streamBodyRendered = false;
     messages.appendChild(div);
     flowShellEl = div;
-    // 挂载 round-block（meta 已在 currentEvents 首条）并渲染运行状态
+    // 挂载 timeline + round-block（meta 已在 currentEvents 首条）：任务时即时投影 + 档案运行状态
+    renderTimeline(currentEvents, false);
     renderRoundBlock(currentEvents, false);
     scrollToBottom(messages);
     updateEmptyState();
@@ -403,6 +408,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    *
    * 挂载规则（插话场景）：同一 roundId 可能对应多个 assistant 块（生成中插话），
    * round-block 只挂首个——roundBlockHostEl 记录已挂载宿主，host 变更（新轮次）才重建。
+   * 挂载位置：正文（.msg-content）之后、操作行（.msg-footer）之前——执行档案归尾部。
    *
    * @returns 存在则返回 round-block 容器；正文块未创建（meta 已到）时返回 null
    */
@@ -411,7 +417,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const host = activeAssistantEl;
     // 无过程事件（纯问答轮 / 无 processEvents 的老数据）不产生空块；无助手块也暂不挂载
     if (!host || roundBlockHostEl === host || currentEvents.length === 0) return null;
-    // 移除旧的（如上一轮残留），再挂到当前 assistant 块（label 之后、正文之前）
+    // 移除旧的（如上一轮残留），再挂到当前 assistant 块正文之后、操作行之前
     roundBlockEl?.remove();
     const rb = document.createElement('details');
     rb.className = 'round-block';
@@ -422,10 +428,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const body = document.createElement('div');
     body.className = 'round-block__details';
     rb.appendChild(body);
-    host.insertBefore(rb, host.querySelector(':scope .msg-content'));
+    const content = host.querySelector(':scope .msg-content');
+    content?.insertBefore(rb, content.querySelector(':scope .msg-footer'));
     roundBlockEl = rb;
     roundBlockHostEl = host;
     return rb;
+  }
+
+  /**
+   * 确保当前轮 timeline 容器存在并挂在本轮首个 assistant 块上（label 之后、正文之前）
+   *
+   * 挂载规则与 round-block 一致（插话只挂首个）。无工具/思考事件（纯问答轮）不产生空容器。
+   *
+   * @returns 存在则返回 timeline 容器；正文块未创建（meta 已到）时返回 null
+   */
+  function ensureTimeline(): HTMLDivElement | null {
+    if (timelineEl && timelineEl.isConnected) return timelineEl;
+    const host = activeAssistantEl;
+    const hasProcess = currentEvents.some((e) => e.type === 'tool_start' || e.type === 'thinking');
+    if (!host || timelineHostEl === host || !hasProcess) return null;
+    // 移除旧的（如上一轮残留），再挂到当前 assistant 块 label 之后、正文之前
+    timelineEl?.remove();
+    const tl = document.createElement('div');
+    tl.className = 'msg-timeline';
+    host.insertBefore(tl, host.querySelector(':scope .msg-content'));
+    timelineEl = tl;
+    timelineHostEl = host;
+    return tl;
   }
 
   /** 在 details 中创建/复用小节容器（标题 + 内容行容器，textContent 构建防注入） */
@@ -459,6 +488,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   /**
    * 工具调用行（tool_start 配对 tool_result）——二级嵌套折叠：summary = 名称(状态) 常显，
    * args + result 摘要折叠进 body，避免工具详情抢占对话主体。失败工具默认展开（错误应直接可见）。
+   * 唯一宿主 = timeline（任务时时序投影），不归属 round-block 档案（防双写）。
    */
   function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
     const result = events.find(
@@ -466,11 +496,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     );
     const status = result ? (result.payload.ok ? '成功' : '失败') : '进行中';
     const row = document.createElement('details');
-    row.className = 'round-block__tool';
+    row.className = 'msg-timeline__tool';
     // 失败默认展开（错误可见优先于整洁）；成功/进行中折叠（细节按需展开）
     row.open = result?.payload.ok === false;
     const summary = document.createElement('summary');
-    summary.className = 'round-block__tool-name';
+    summary.className = 'msg-timeline__tool-name';
     summary.textContent = `${start.payload.name} (${status})`;
     row.appendChild(summary);
     listEl.appendChild(row);
@@ -482,14 +512,54 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
     if (result?.payload.summary) {
       const sum = document.createElement('div');
-      sum.className = 'round-block__tool-summary';
+      sum.className = 'msg-timeline__tool-summary';
       sum.textContent = result.payload.summary;
       row.appendChild(sum);
     }
   }
 
   /**
-   * 渲染当前轮 round-block（运行时增量 / 重放整批共用，输入只有 events[]）
+   * 渲染当前轮 timeline（任务时时序投影：thinking 实时相位 + 工具行全量重建）
+   *
+   * SSOT：只读 currentEvents[] 投影，不新增事件存储。工具行复用 renderToolRow——
+   * tool_start 到达即建、tool_result 到达由全量重建天然更新状态（事件量小，简单确定性）。
+   *
+   * @param events 当前轮全部过程事件
+   * @param finalize 是否为本轮收尾（true 移除流式思考行，仅留沉淀的工具行）
+   */
+  function renderTimeline(events: ProcessEvent[], finalize: boolean): void {
+    const tl = ensureTimeline();
+    if (!tl) return;
+    // 思考行：流式中单条实时相位（更新文案）；收尾移除（thinking 是过程态，非沉淀）
+    const thinking = [...events].reverse().find((e) => e.type === 'thinking');
+    let thinkingRow = tl.querySelector<HTMLDivElement>('.msg-timeline__thinking');
+    if (!finalize && thinking) {
+      if (!thinkingRow) {
+        thinkingRow = document.createElement('div');
+        thinkingRow.className = 'msg-timeline__thinking';
+        tl.appendChild(thinkingRow);
+      }
+      thinkingRow.textContent = phaseLabel(thinking.payload.phase);
+    } else {
+      thinkingRow?.remove();
+    }
+    // 工具行：全量重建（tool_start 到达即投影；tool_result 到达由重建更新状态/失败展开）
+    tl.querySelectorAll('.msg-timeline__tool').forEach((el) => el.remove());
+    for (const e of events) {
+      if (e.type === 'tool_start') renderToolRow(tl, e, events);
+    }
+    // 空容器移除：收尾后无工具沉淀且无思考行（纯问答轮不残留空块）
+    if (!tl.querySelector('.msg-timeline__tool') && !tl.querySelector('.msg-timeline__thinking')) {
+      tl.remove();
+      timelineEl = null;
+      timelineHostEl = null;
+    }
+  }
+
+  /**
+   * 渲染当前轮 round-block（执行档案：召回/已沉淀/过程轨迹/自审查/执行指标，运行时与重放共用）
+   *
+   * 工具调用已由 timeline 时序投影承接（不在此渲染，防双写）；本块只沉淀专家挖掘层档案。
    *
    * @param events 当前轮全部过程事件
    * @param finalize 是否为本轮收尾（渲染完整 details + 执行指标；false = 流式中仅 summary）
@@ -497,7 +567,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   function renderRoundBlock(events: ProcessEvent[], finalize: boolean): void {
     const rb = ensureRoundBlock();
     if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
-    // summary：流式中=阶段状态 · 实时计数；收尾后=耗时 + 计数。带呼吸点
+    // summary：统计摘要（计数 + 耗时）。相位实时状态已由 timeline 思考行承担，不重复。
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     if (summary) {
       summary.textContent = '';
@@ -507,12 +577,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       summary.appendChild(dot);
       const stats = countEvents(events);
       const parts: string[] = [];
-      if (!finalize) {
-        // 运行状态（TTFT 前即时反馈）：最新 thinking 阶段文案 + 已完成计数
-        const lastThinking = [...events].reverse().find((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');
-        if (lastThinking) parts.push(phaseLabel(lastThinking.payload.phase));
-        else parts.push('处理中…');
-      }
       if (stats.tools > 0) parts.push(`工具×${stats.tools}`);
       if (stats.memories > 0) parts.push(`记忆×${stats.memories}`);
       if (stats.reviews > 0) parts.push(`审查×${stats.reviews}`);
@@ -520,7 +584,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
       const label = document.createElement('span');
       label.className = 'round-block__stats';
-      label.textContent = parts.length > 0 ? parts.join(' · ') : '执行过程';
+      label.textContent = parts.length > 0 ? parts.join(' · ') : '执行档案';
       summary.appendChild(label);
       rb.classList.toggle('is-running', !finalize);
     }
@@ -569,12 +633,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         row.textContent = e.payload.name || e.payload.id;
         listEl.appendChild(row);
       });
-    }
-    // § 工具调用 (N)
-    const toolStarts = events.filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start');
-    if (toolStarts.length > 0) {
-      const { listEl } = sectionOf(details, '工具调用');
-      toolStarts.forEach((s) => renderToolRow(listEl, s, events));
     }
     // § 自审查输出
     const reviews = events.filter((e): e is Extract<ProcessEvent, { type: 'self_review' }> => e.type === 'self_review');
@@ -1238,7 +1296,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
-    // 挂载本轮 round-block（meta 已先到）：过程事件块挂在本轮首个 assistant 块上
+    // 挂载本轮 timeline + round-block（meta 已先到）：任务时即时投影 + 档案运行状态
+    renderTimeline(currentEvents, false);
     renderRoundBlock(currentEvents, false);
     scrollToBottom(messages);
     updateEmptyState();
@@ -1645,11 +1704,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
       const ev = msg.event;
       if (ev.type === 'meta') {
-        // 新轮开始：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）
+        // 新轮开始：清空当前轮缓冲与 round-block/timeline 引用，随即建流式骨架（TTFT 前即时反馈）
         clearPendingWait(); // 骨架接管：移除 meta 前的回答等待指示器
         currentEvents = [];
         roundBlockEl = null;
         roundBlockHostEl = null;
+        timelineEl = null;
+        timelineHostEl = null;
         clearArchivingFallback();
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
         currentEvents.push(ev);
@@ -1673,7 +1734,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
           }
         }
         currentEvents.push(ev);
-        // 流式中实时刷新 summary（details 待流结束（done）统一收尾）
+        // 任务时即时投影（工具/思考到达即渲染 timeline）；round-block 统计随流同步刷新
+        renderTimeline(currentEvents, false);
         renderRoundBlock(currentEvents, false);
       }
     } else if (msg.type === 'replay_events') {
@@ -1685,6 +1747,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (metaEv) {
         currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
       }
+      // 重放整批：timeline（任务时）+ round-block（档案）同形态一次渲染（finalize=true）
+      renderTimeline(currentEvents, true);
       renderRoundBlock(currentEvents, true);
     } else if (msg.type === 'user') {
       // 无缝插话（缺口 B）：生成中收到用户补充 → 结束当前流式助手块（复位锚点与流式态），
@@ -1701,7 +1765,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       append('user', msg.text, msg.ts);
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
-      // 历史回放正文块创建后补挂 round-block（meta/replay_events 若先于正文到达，此处才挂得上）
+      // 历史回放正文块创建后补挂 timeline + round-block（meta/replay_events 若先于正文到达，此处才挂得上）
+      renderTimeline(currentEvents, true);
       renderRoundBlock(currentEvents, true);
     } else if (msg.type === 'chunk') {
       // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
@@ -1775,7 +1840,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       clearPendingWait();
       clearArchivingFallback();
       flowShellEl = null;
-      // 本轮过程事件收尾：完整渲染 round-block（含 § 执行指标等 details 小节，折叠态保持）
+      // 本轮过程事件收尾：timeline 移除流式思考行（仅留工具沉淀）+ round-block 完整渲染档案
+      renderTimeline(currentEvents, true);
       renderRoundBlock(currentEvents, true);
       // 流式收尾：一次性渲染 Markdown + 移除光标（吸收养分，结束前保持纯文本+光标）
       finalizeStreaming();
@@ -1788,7 +1854,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       clearPendingWait();
       clearArchivingFallback();
       flowShellEl = null;
-      // 打断即本轮结束：完整收尾 round-block（aborted 标记已进事件流）
+      // 打断即本轮结束：timeline 收尾（aborted 保留）+ round-block 完整渲染档案
+      renderTimeline(currentEvents, true);
       renderRoundBlock(currentEvents, true);
       // 流式收尾（取消 ≠ 丢弃，保留已生成内容）
       finalizeStreaming();
@@ -1860,7 +1927,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 清空消息区须同时清 .msg、.msg-wrapper（用户消息外层壳）、.round-block、.date-divider、.followup
       // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .msg-timeline, .date-divider, .followup').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
@@ -1875,11 +1942,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         streamRenderTimer = undefined;
       }
       streamBodyRendered = false;
-      // 过程事件状态复位：归档兜底定时器清除 + round-block 引用失效 + 骨架清除 + 本轮缓冲清空 +
+      // 过程事件状态复位：归档兜底定时器清除 + round-block/timeline 引用失效 + 骨架清除 + 本轮缓冲清空 +
       // 本轮身份保留给会话级标签回退（chat_role_pack 随后推送）+ 日期分隔线重新计算
       clearArchivingFallback();
       roundBlockEl = null;
       roundBlockHostEl = null;
+      timelineEl = null;
+      timelineHostEl = null;
       flowShellEl = null;
       currentEvents = [];
       lastShownDate = undefined;

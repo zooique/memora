@@ -122,24 +122,27 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(badge.hidden).toBe(true);
   });
 
-  it('clear_ok 同时清空 .msg 与 .round-block 残留，并恢复空状态', () => {
+  it('clear_ok 同时清空 .msg 与 .round-block/.msg-timeline 残留，并恢复空状态', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
     const emptyState = document.getElementById('emptyState') as HTMLElement;
 
-    // 预先塞入一条消息 + 一个过程块（模拟历史回放后残留）
+    // 预先塞入一条消息 + 过程块 + timeline（模拟历史回放后残留）
     const msg = document.createElement('div');
     msg.className = 'msg assistant';
     messages.appendChild(msg);
     const block = document.createElement('details');
     block.className = 'round-block';
     messages.appendChild(block);
-    expect(messages.querySelectorAll('.msg, .round-block')).toHaveLength(2);
+    const tl = document.createElement('div');
+    tl.className = 'msg-timeline';
+    messages.appendChild(tl);
+    expect(messages.querySelectorAll('.msg, .round-block, .msg-timeline')).toHaveLength(3);
 
     dispatch({ type: 'clear_ok' });
 
-    // 两类节点都必须被清空，且空状态提示恢复显示
-    expect(messages.querySelectorAll('.msg, .round-block')).toHaveLength(0);
+    // 三类节点都必须被清空，且空状态提示恢复显示
+    expect(messages.querySelectorAll('.msg, .round-block, .msg-timeline')).toHaveLength(0);
     expect(emptyState.hidden).toBe(false);
   });
 
@@ -259,21 +262,24 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(emptyState.hidden).toBe(true);
   });
 
-  it('thinking 过程事件进入 round-block § 过程轨迹且 summary 默认可见（alignment-iteration.md B）', () => {
+  it('thinking 过程事件：流式中进入 timeline 思考行（实时相位），收尾后归档 round-block § 过程轨迹', () => {
     mountChatView();
-    // 生成中先有 meta → 正文块挂载 round-block；thinking 事件流式中仅刷新 summary（is-running）
+    // 生成中先有 meta → 正文块挂载 timeline + round-block；thinking 事件流式中实时投影思考行
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '回答' });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
-    let rb = document.querySelector('.round-block') as HTMLDetailsElement;
-    expect(rb).not.toBeNull();
-    // 流式中：summary 显示执行过程标记，details 未渲染
-    expect(rb.classList.contains('is-running')).toBe(true);
-    // 收尾后完整渲染 § 过程轨迹（阶段文案按序排列），summary 默认折叠
+    // 流式中：thinking 实时投影为 timeline 思考行（任务时可见），round-block 运行中
+    const thinkingRow = document.querySelector('.msg-timeline__thinking') as HTMLElement;
+    expect(thinkingRow).not.toBeNull();
+    expect(thinkingRow.textContent).toContain('召回记忆中');
+    const rbRunning = document.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rbRunning.classList.contains('is-running')).toBe(true);
+    // 收尾后：思考行移除（无工具沉淀 → timeline 移除）；round-block § 过程轨迹保留相位时间线
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'archiving' } } });
     dispatch({ type: 'done' });
-    rb = document.querySelector('.round-block') as HTMLDetailsElement;
+    expect(document.querySelector('.msg-timeline')).toBeNull();
+    const rb = document.querySelector('.round-block') as HTMLDetailsElement;
     expect(rb.classList.contains('is-running')).toBe(false);
     expect(rb.open).toBe(false);
     expect(rb.querySelector('.round-block__details')?.textContent).toContain('召回记忆中');
@@ -667,7 +673,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    // round-block 挂在本轮 assistant 块内（label 之后、正文之前）
+    // round-block 挂在本轮 assistant 块内（正文之后、操作行之前）
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.contains(rb)).toBe(true);
     // summary：耗时（metrics）+ 计数（工具×1 · 记忆×1）
@@ -675,12 +681,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(summary.textContent).toContain('耗时 1m 2s');
     expect(summary.textContent).toContain('工具×1');
     expect(summary.textContent).toContain('记忆×1');
-    // details 各小节
+    // 工具行已移入 timeline（任务时时序投影），不重复出现在 round-block 档案
+    const tool = document.querySelector('.msg-timeline__tool') as HTMLElement;
+    expect(tool).not.toBeNull();
+    expect(tool.textContent).toContain('read_file (成功)');
+    expect(tool.textContent).toContain('读取成功');
+    // round-block details 各小节（档案：召回/已沉淀/执行指标）
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     expect(details.textContent).toContain('记忆A');
     expect(details.textContent).toContain('round-summary · 90%');
-    expect(details.textContent).toContain('read_file (成功)');
-    expect(details.textContent).toContain('读取成功');
     expect(details.textContent).toContain('设计约束');
     expect(details.textContent).toContain('Tokens：入 100 / 出 200');
     expect(details.textContent).toContain('完成：是');
@@ -699,7 +708,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't3', name: 'search', args: '{}' } } });
     dispatch({ type: 'done' });
 
-    const tools = document.querySelectorAll('.round-block__tool') as NodeListOf<HTMLDetailsElement>;
+    const tools = document.querySelectorAll('.msg-timeline__tool') as NodeListOf<HTMLDetailsElement>;
     expect(tools).toHaveLength(3);
     // 成功：折叠（open=false），summary 含名称(状态)，body 含 args 与 result
     expect(tools[0].open).toBe(false);
@@ -766,22 +775,23 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const label = assistant.querySelector('.msg-ai-label') as HTMLElement;
     expect(label.textContent).toContain('代码专家');
     expect(label.textContent).toContain('deepseek-chat');
-    // round-block 已挂载并处于运行中，summary 显示处理状态
+    // round-block 已挂载并处于运行中，summary 显示统计摘要（相位已由 timeline 思考行承担）
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
     expect(rb.classList.contains('is-running')).toBe(true);
-    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('处理中…');
+    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('执行档案');
   });
 
-  it('thinking 到达后骨架 summary 实时显示运行阶段（召唤中 → 调用模型中…）', () => {
+  it('thinking 到达后 timeline 思考行实时显示运行阶段（召回记忆中 → 调用模型中…）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
-    let summary = document.querySelector('.round-block__summary') as HTMLElement;
-    expect(summary.textContent).toContain('召回记忆中');
+    let row = document.querySelector('.msg-timeline__thinking') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.textContent).toContain('召回记忆中');
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
-    summary = document.querySelector('.round-block__summary') as HTMLElement;
-    expect(summary.textContent).toContain('调用模型中');
+    row = document.querySelector('.msg-timeline__thinking') as HTMLElement;
+    expect(row.textContent).toContain('调用模型中');
   });
 
   it('首个 chunk 复用餐架块：正文流入同一块，不新建第二条 assistant 消息', () => {

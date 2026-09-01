@@ -1023,20 +1023,43 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); line-height: 1.5;
     white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
   }
+  /* ============ Components：msg-timeline 任务时投影（2026-09-02 时序交叉） ============ */
+  /* 「任务时」实时投影：thinking 单行相位 + 工具行（到达即渲染，非收尾汇总）。
+     挂 assistant 块 label 后、正文前，按时间顺序即时可见（对齐 Trae Work 任务时/结论交叉）。
+     工具行视觉延续过程性降级，仅浅缩进，不抢对话主体。 */
+  .msg-timeline {
+    margin: var(--sp-1, 4px) var(--sp-5, 12px) 0;
+    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
+  }
+  /* 思考行：流式中单条实时相位（呼吸点动画，遵守 prefers-reduced-motion） */
+  .msg-timeline__thinking {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    padding: var(--sp-1, 2px) var(--sp-3, 8px);
+  }
+  .msg-timeline__thinking::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    background: var(--accent, #0e639c);
+    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .msg-timeline__thinking::before { animation: none; }
+  }
   /* 工具调用二级嵌套折叠：summary 常显名称(状态)，body（args + result）按需展开；
-     视觉延续过程性降级，仅在圆块内再退一级缩进 */
-  .round-block__tool {
+     视觉延续过程性降级，仅在 timeline 内再退一级缩进 */
+  .msg-timeline__tool {
     border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
     padding: var(--sp-1, 2px) var(--sp-3, 8px);
     margin: var(--sp-1, 2px) 0;
   }
-  .round-block__tool summary {
+  .msg-timeline__tool summary {
     cursor: pointer; user-select: none; outline: none;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
-  .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
+  .msg-timeline__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .msg-timeline__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }
