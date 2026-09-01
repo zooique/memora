@@ -177,6 +177,8 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
         firstRoundIncluded: false,
       }),
     );
+    // hybrid 对话进窗与 loop.messages 同源：getConversationMessages 与 dialogue.history 一致（真实架构）
+    loop.getConversationMessages = () => [{ role: 'user' as const, content: '第一条' }];
     vi.mocked(storage.search).mockReturnValue([
       makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
     ]);

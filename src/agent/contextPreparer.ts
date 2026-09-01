@@ -274,11 +274,11 @@ export class ContextPreparer {
         : loop.estimateTokens(loop.getConversationMessages());
     // 条数语义（2026-09-01 定案）：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
     // 哪怕 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 不计入条数，但计入 dialogueTokens 容量。
-    // 与 dialogueTokens 同源分支：hybrid 用注入窗口的 dialogue.history，fixed/query 用 loop.messages 全量。
-    const dialogueCount =
-      contextAssembly === 'hybrid'
-        ? dialogue.history.filter((m) => m.role === 'user').length
-        : loop.getConversationMessages().filter((m) => m.role === 'user').length;
+    // 关键：dialogueCount = 会话累计 user 消息数（不受预算截断），与装配模式无关——否则 hybrid 模式
+    // 下 getRecentHistoryWithinBudget 按预算截取「最近 N 轮」会把最新轮挤掉最旧轮、轮数守恒，
+    // 导致「发一条消息后完整对话数不涨」（用户实测 bug）。故统一取 loop.messages 全量 user 数，
+    // 不再依赖截断后的 dialogue.history。dialogueTokens 仍按各模式口径（进窗容量，ADR-030 既有设计）。
+    const dialogueCount = loop.getConversationMessages().filter((m) => m.role === 'user').length;
     const memoryTokens = recalledMemories.length
       ? loop.estimateTokens(recalledMemories.map((m) => ({ role: 'system', content: m.content })))
       : 0;

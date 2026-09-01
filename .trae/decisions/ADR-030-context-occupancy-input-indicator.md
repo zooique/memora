@@ -103,6 +103,8 @@ description: 输入区上下文占用指示器——单一真理源 = 内核 pre
 
 收益：发消息即时 +1、assistant 落盘容量补上，无需切会话即可看到正确占用；条数语义直白（问答闭环数），残缺回复如实计入容量。
 
+**修正（2026-09-01 实测复盘）**：初版 `dialogueCount` 在 hybrid 分支取 `dialogue.history.filter(role==='user')`，而 `dialogue.history` 由 `getRecentHistoryWithinBudget` 按预算截取「最近 N 轮」——发一条新消息时最新轮挤掉最旧轮、轮数守恒，导致「发一条后完整对话数不涨」（用户实测）。修正为统一取 `loop.getConversationMessages().filter(role==='user')`（会话累计全量 user 数，不受预算截断），hybrid/fixed 两分支合并为一。注意由此产生的语义分裂：`dialogueCount`=累计问答闭环数（全量），`dialogueTokens`=进窗容量（hybrid 仍按 dialogue.history 截断）；若需容量也按「问答闭环所有占用」全量统计，须另行调整 ADR-030 的进窗用量设计（独立决策，不在此扩张）。
+
 ## 何时回顾
 
 - 若内核预算装配引入新分段（如工具 schema 单列、思考预算），须同步扩 `ContextOccupancy` 字段并补 webview 分段，保持分段互斥拼满总量。
