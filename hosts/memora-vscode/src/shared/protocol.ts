@@ -935,7 +935,7 @@ export interface SkillDto {
   issues?: SkillIssueDto[];
 }
 
-/** 任务看板步骤条目（H4，2026-08-23：对齐内核 PlanStep 扁平化） */
+/** 任务看板步骤条目（对齐内核 PlanStep 扁平化） */
 export interface PlanStepDto {
   /** 步骤唯一标识 */
   id: string;
@@ -945,6 +945,8 @@ export interface PlanStepDto {
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;
+  /** 该步骤已关联的执行闭环摘要（来自 checkpoint.roundLog 的 stepId 关联，可为空数组） */
+  stepRounds: { stepId: string; summary: string }[];
 }
 
 /**

@@ -686,6 +686,35 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(details.textContent).toContain('完成：是');
   });
 
+  it('工具调用二级嵌套折叠：成功/进行中默认折叠，失败默认展开，body 含 args+result', () => {
+    mountChatView();
+    beginRound();
+    // 成功工具：默认折叠（summary 常显名称(状态)，args/result 折叠在 body）
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
+    // 失败工具：默认展开（错误可见优先）
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: false, summary: '权限不足' } } });
+    // 进行中工具（无 result）：默认折叠
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't3', name: 'search', args: '{}' } } });
+    dispatch({ type: 'done' });
+
+    const tools = document.querySelectorAll('.round-block__tool') as NodeListOf<HTMLDetailsElement>;
+    expect(tools).toHaveLength(3);
+    // 成功：折叠（open=false），summary 含名称(状态)，body 含 args 与 result
+    expect(tools[0].open).toBe(false);
+    expect(tools[0].querySelector('summary')?.textContent).toBe('read_file (成功)');
+    expect(tools[0].textContent).toContain('{"path":"a.md"}');
+    expect(tools[0].textContent).toContain('读取成功');
+    // 失败：默认展开（open=true），错误摘要可见
+    expect(tools[1].open).toBe(true);
+    expect(tools[1].querySelector('summary')?.textContent).toBe('write_file (失败)');
+    expect(tools[1].textContent).toContain('权限不足');
+    // 进行中：默认折叠
+    expect(tools[2].open).toBe(false);
+    expect(tools[2].querySelector('summary')?.textContent).toBe('search (进行中)');
+  });
+
   it('meta 驱动本轮身份：该轮 assistant 消息挂对应角色/模型标签（与会话级 chat_role_pack 分离）', () => {
     mountChatView();
     // 会话级角色（顶栏）先推一个"当前角色"
@@ -1390,42 +1419,65 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     vi.restoreAllMocks();
   });
 
-  it('plan_update → 渲染任务看板（标题 N/M + 步骤列表）', () => {
+  it('plan_update → 渲染任务看板（标题 N/M + 任务节点折叠列表）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '收集需求', status: 'done', order: 0 },
-        { id: 's2', description: '设计方案', status: 'active', order: 1 },
-        { id: 's3', description: '编写文档', status: 'pending', order: 2 },
+        { id: 's1', description: '收集需求', status: 'done', order: 0, stepRounds: [] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, stepRounds: [] },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2, stepRounds: [] },
       ],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
     expect(board).not.toBeNull();
     // 标题：完成的 N/total
     expect(board.querySelector('.plan-board-header')?.textContent).toBe('任务进度：1/3');
-    // 步骤：按 order 序号 + 描述；状态 class 按 status 映射
+    // 步骤：按 order 序号 + 描述（任务节点折叠）；状态 class 按 status 映射
     const steps = board.querySelectorAll('.plan-step');
     expect(steps).toHaveLength(3);
-    expect(steps[0].textContent).toBe('1. 收集需求');
+    expect(steps[0].querySelector('.plan-step-title')?.textContent).toBe('1. 收集需求');
     expect(steps[0].classList.contains('plan-step-done')).toBe(true);
-    expect(steps[1].textContent).toBe('2. 设计方案');
+    expect(steps[0].querySelector('.plan-step-badge')?.textContent).toBe('已完成');
+    expect(steps[1].querySelector('.plan-step-title')?.textContent).toBe('2. 设计方案');
     expect(steps[1].classList.contains('plan-step-active')).toBe(true);
-    expect(steps[2].textContent).toBe('3. 编写文档');
+    expect(steps[1].querySelector('.plan-step-badge')?.textContent).toBe('进行中');
+    expect(steps[2].querySelector('.plan-step-title')?.textContent).toBe('3. 编写文档');
     expect(steps[2].classList.contains('plan-step-pending')).toBe(true);
+    expect(steps[2].querySelector('.plan-step-badge')?.textContent).toBe('待执行');
+  });
+
+  it('plan_update 携带 stepRounds → 任务节点展开显示该步骤的执行闭环摘要', () => {
+    mountChatView();
+    dispatch({
+      type: 'plan_update',
+      steps: [
+        { id: 's1', description: '收集需求', status: 'done', order: 0, stepRounds: [{ stepId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, stepRounds: [] },
+      ],
+    });
+    const board = document.querySelector('.plan-board') as HTMLElement;
+    const steps = board.querySelectorAll('.plan-step');
+    // 有关联闭环的步骤：details 携带摘要 body（折叠态，仅标题常显）
+    const withRounds = steps[0] as HTMLDetailsElement;
+    expect(withRounds.open).toBe(false);
+    expect(withRounds.querySelector('.plan-step-round')?.textContent).toBe('梳理用户痛点并产出需求清单');
+    // 无关联闭环的步骤：不渲染空摘要体
+    const noRounds = steps[1] as HTMLDetailsElement;
+    expect(noRounds.querySelector('.plan-step-round')).toBeNull();
   });
 
   it('plan_update 覆盖旧看板（幂等更新，不堆叠）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'active', order: 0 }],
+      steps: [{ id: 's1', description: '第一步', status: 'active', order: 0, stepRounds: [] }],
     });
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'done', order: 0 },
-        { id: 's2', description: '第二步', status: 'active', order: 1 },
+        { id: 's1', description: '第一步', status: 'done', order: 0, stepRounds: [] },
+        { id: 's2', description: '第二步', status: 'active', order: 1, stepRounds: [] },
       ],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
@@ -1441,7 +1493,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0 }],
+      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepRounds: [] }],
     });
     expect(document.querySelector('.plan-board')).not.toBeNull();
     dispatch({ type: 'plan_update', steps: [] });
@@ -1452,7 +1504,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0 }],
+      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepRounds: [] }],
     });
     expect(document.querySelector('.plan-board')).not.toBeNull();
     dispatch({ type: 'clear_ok' });
@@ -1464,7 +1516,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     // 先创建任务看板
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '收集需求', status: 'active', order: 0 }],
+      steps: [{ id: 's1', description: '收集需求', status: 'active', order: 0, stepRounds: [] }],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
     expect(board).not.toBeNull();
@@ -1480,7 +1532,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     const banner2 = document.querySelector('.checkpoint-banner') as HTMLElement;
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '设计方案', status: 'pending', order: 0 }],
+      steps: [{ id: 's1', description: '设计方案', status: 'pending', order: 0, stepRounds: [] }],
     });
     const board2 = document.querySelector('.plan-board') as HTMLElement;
     expect(board2.compareDocumentPosition(banner2) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();

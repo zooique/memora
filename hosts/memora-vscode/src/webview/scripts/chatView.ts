@@ -11,6 +11,7 @@
  */
 import type {
   ExtensionToWebviewMessage,
+  PlanStepDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
@@ -21,6 +22,14 @@ import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scr
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { createIcon, getIconSvg, populateIcons } from './icons.js';
+
+/** 任务步骤状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
+const STEP_STATUS_LABEL: Record<PlanStepDto['status'], string> = {
+  pending: '待执行',
+  active: '进行中',
+  done: '已完成',
+  blocked: '阻塞',
+};
 
 /** chatView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ChatViewDeps {
@@ -222,9 +231,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     planBoard = null;
   }
 
-  /** 渲染/刷新任务看板（收到 plan_update 消息时调用）
-   * @param steps 计划的步骤快照（按 order 已排序） */
-  function renderPlanBoard(steps: { id: string; description: string; status: 'pending' | 'active' | 'done' | 'blocked'; order: number }[]): void {
+  /** 渲染/刷新任务看板（收到 plan_update 消息时调用） */
+  function renderPlanBoard(steps: PlanStepDto[]): void {
     if (steps.length === 0) {
       removePlanBoard();
       return;
@@ -234,7 +242,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       planBoard.className = 'plan-board';
       planBoard.setAttribute('role', 'region');
       planBoard.setAttribute('aria-label', '任务进度');
-      // 插到消息区顶部状态栈（P1-0 协议：任务看板恒在检查点横幅之下），与历史重放/新轮计划同步可见
+      // 插到消息区顶部状态栈（协议：任务看板恒在检查点横幅之下），与历史重放/新轮计划同步可见
       prependStatusBlock(planBoard);
     }
     // 标题行：任务进度 N/M
@@ -252,11 +260,36 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
     for (const step of steps) {
-      const li = document.createElement('li');
-      li.className = `plan-step plan-step-${step.status}`;
+      // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标；展开后展示该步骤已完成的
+      // 执行闭环摘要（stepRounds，来自 checkpoint.roundLog 关联）
+      const item = document.createElement('details');
+      item.className = `plan-step plan-step-${step.status}`;
+      item.open = false;
+      const summary = document.createElement('summary');
+      summary.className = 'plan-step-summary';
+      const label = document.createElement('span');
+      label.className = 'plan-step-title';
       // 步骤序号（order+1 展示为 1 起）+ 描述；textContent 防注入
-      li.textContent = `${step.order + 1}. ${step.description}`;
-      ul.appendChild(li);
+      label.textContent = `${step.order + 1}. ${step.description}`;
+      summary.appendChild(label);
+      const badge = document.createElement('span');
+      badge.className = 'plan-step-badge';
+      badge.textContent = STEP_STATUS_LABEL[step.status];
+      summary.appendChild(badge);
+      item.appendChild(summary);
+      const rounds = step.stepRounds;
+      if (rounds.length > 0) {
+        const body = document.createElement('div');
+        body.className = 'plan-step-rounds';
+        for (const r of rounds) {
+          const row = document.createElement('div');
+          row.className = 'plan-step-round';
+          row.textContent = r.summary;
+          body.appendChild(row);
+        }
+        item.appendChild(body);
+      }
+      ul.appendChild(item);
     }
     planBoard.appendChild(ul);
   }
@@ -423,30 +456,35 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     return { titleEl, listEl };
   }
 
-  /** 工具调用行（tool_start 配对 tool_result）：名称(状态) + args 代码块 + result 摘要 */
+  /**
+   * 工具调用行（tool_start 配对 tool_result）——二级嵌套折叠：summary = 名称(状态) 常显，
+   * args + result 摘要折叠进 body，避免工具详情抢占对话主体。失败工具默认展开（错误应直接可见）。
+   */
   function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
-    const row = document.createElement('div');
-    row.className = 'round-block__row';
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
     const status = result ? (result.payload.ok ? '成功' : '失败') : '进行中';
-    const name = document.createElement('span');
-    name.className = 'round-block__tool-name';
-    name.textContent = `${start.payload.name} (${status})`;
-    row.appendChild(name);
+    const row = document.createElement('details');
+    row.className = 'round-block__tool';
+    // 失败默认展开（错误可见优先于整洁）；成功/进行中折叠（细节按需展开）
+    row.open = result?.payload.ok === false;
+    const summary = document.createElement('summary');
+    summary.className = 'round-block__tool-name';
+    summary.textContent = `${start.payload.name} (${status})`;
+    row.appendChild(summary);
     listEl.appendChild(row);
     if (start.payload.args) {
       const pre = document.createElement('pre');
       pre.className = 'round-block__pre';
       pre.textContent = start.payload.args;
-      listEl.appendChild(pre);
+      row.appendChild(pre);
     }
     if (result?.payload.summary) {
       const sum = document.createElement('div');
       sum.className = 'round-block__tool-summary';
       sum.textContent = result.payload.summary;
-      listEl.appendChild(sum);
+      row.appendChild(sum);
     }
   }
 

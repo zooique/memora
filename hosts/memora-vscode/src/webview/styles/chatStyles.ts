@@ -927,9 +927,32 @@ export const chatStyles = `
     margin: 0;
     padding: 0;
   }
-  .plan-step { display: flex; align-items: baseline; gap: var(--sp-2, 6px); }
-  .plan-step-done { color: var(--status-pass, #4ec9b0); text-decoration: line-through; }
+  /* 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标，
+     展开后展示该步骤关联的执行闭环摘要（stepRounds） */
+  .plan-step {
+    margin: var(--sp-1, 2px) 0;
+    padding-left: var(--sp-2, 6px);
+  }
+  .plan-step summary {
+    display: flex; align-items: baseline; gap: var(--sp-2, 6px);
+    cursor: pointer; user-select: none; outline: none;
+  }
+  .plan-step summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .plan-step-title { flex: 1; word-break: break-all; }
+  .plan-step-badge {
+    flex-shrink: 0; font-size: var(--font-xs, 10px);
+    opacity: 0.85;
+  }
+  .plan-step-rounds {
+    margin: var(--sp-1, 2px) 0 var(--sp-1, 2px) var(--sp-4, 10px);
+    padding-left: var(--sp-2, 6px);
+    border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
+  }
+  .plan-step-round { font-size: var(--font-xs, 10px); padding: var(--sp-1, 2px) 0; }
+  .plan-step-done { color: var(--status-pass, #4ec9b0); }
+  .plan-step-done .plan-step-title { text-decoration: line-through; }
   .plan-step-active { color: var(--accent, #0e639c); font-weight: 500; }
+  .plan-step-active .plan-step-title { font-weight: 600; }
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-board 的 text-secondary，无需额外规则） */
 
@@ -1000,6 +1023,19 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); line-height: 1.5;
     white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
   }
+  /* 工具调用二级嵌套折叠：summary 常显名称(状态)，body（args + result）按需展开；
+     视觉延续过程性降级，仅在圆块内再退一级缩进 */
+  .round-block__tool {
+    border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+    padding: var(--sp-1, 2px) var(--sp-3, 8px);
+    margin: var(--sp-1, 2px) 0;
+  }
+  .round-block__tool summary {
+    cursor: pointer; user-select: none; outline: none;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+  }
+  .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
