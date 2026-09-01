@@ -23,6 +23,7 @@ import {
   resolveContextWindow,
   estimateOccupancy,
   estimateTokensMessages,
+  splitSessionId,
   type Agent,
   type AgentChunk,
   type IRoundStore,
@@ -957,7 +958,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     );
     if (choice !== '删除') return;
     try {
-      const { date, session } = this.parseSessionId(this._currentSessionId);
+      // sessionId 格式契约 SSOT：内核 splitSessionId 拆解（session 名可含连字符）
+      const { date, session } = splitSessionId(this._currentSessionId);
       const result = this.sessionStore.truncateFrom(date, session, ts);
       // ⑥ 联动（2026-08-29）：被回收问答闭环（引用归零）的轮次摘要软删进回收站；
       // 会话级摘要（SessionMeta.summary/keyTopics）不联动——会话本身仍在
@@ -1724,7 +1726,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 与 loadRoundBasedHistory 语义一致，仅在 viewLoader 未注入时启用。
    */
   private loadMessagesHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
-    const { date, session } = this.parseSessionId(this._currentSessionId);
+    // sessionId 格式契约 SSOT：内核 splitSessionId 拆解
+    const { date, session } = splitSessionId(this._currentSessionId);
     const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] = [];
     const msgs = this.sessionStore.loadMessages(date, session) as {
       role?: string;
@@ -1747,16 +1750,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     result.sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
     // 上限保护：仅回放最近 MAX_HISTORY_MESSAGES 条
     return result.slice(-MAX_HISTORY_MESSAGES);
-  }
-
-  /**
-   * 解析会话标识（YYYY-MM-DD-sessionName）为日期 + 会话名
-   *
-   * 日期固定 10 位（formatDateKey → YYYY-MM-DD），故按位切而非按最后一个 '-' 切——
-   * 会话名本身可能含连字符（分叉产生的 main-b1）。
-   */
-  private parseSessionId(sessionId: string): { date: string; session: string } {
-    return { date: sessionId.slice(0, 10), session: sessionId.slice(11) };
   }
 
   /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */

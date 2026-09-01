@@ -14,6 +14,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+  buildSessionId,
   defaultSessionTitle,
   type IRoundStore,
   type ISessionStore,
@@ -98,7 +99,8 @@ export class WorkspaceSessionStore implements ISessionStore {
 
   /** 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开） */
   loadMessages(date: string, session: string): SessionMessage[] {
-    const sessionId = `${date}-${session}`;
+    // 组装 sessionId（SSOT 契约 buildSessionId，date+session 双向一致）
+    const sessionId = buildSessionId(date, session);
     const roundIds = this.getRoundIds(sessionId);
     if (roundIds.length === 0) return [];
     const rounds = this.roundStore.getByIds(roundIds);
@@ -161,7 +163,8 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @returns 截断结果（ok = 锚点命中并完成；removedIds = 引用归零被物理删除的 Round，供联动软删记忆摘要）
    */
   truncateFrom(date: string, session: string, fromTs: string): RoundTruncateResult {
-    const sessionId = `${date}-${session}`;
+    // 组装 sessionId（SSOT 契约 buildSessionId）
+    const sessionId = buildSessionId(date, session);
     const roundIds = this.roundIdsStore.get(sessionId);
     if (!roundIds || roundIds.length === 0) return { ok: false, removedIds: [] };
     const rounds = this.roundStore.getByIds(roundIds);
