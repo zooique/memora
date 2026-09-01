@@ -288,9 +288,9 @@
 
 > **生长说明**：
 >
-> * **Loop 外循环本体在 L0**：`loop.ts` 的 `processUserInput` 即单轮闭环最小复用单元，对话/Loop/续跑共用同一闭环（[loop-design.md](./loop-design.md)）。
+> * **档1 执行闭环本体在 L0**：`loop.ts` 的 `processUserInput` 即单轮闭环最小复用单元，对话/Loop（步闭环）/续跑共用同一闭环；档2 Loop 编排（外循环）在 seed/orchestrator（`externalTaskLoop`/`completeExternalTask`，[loop-design.md](./loop-design.md)）。
 >
-> * **外循环语义化（生长方向）**：复杂问题由任务链驱动多轮闭环 + 收敛汇报的设计愿景见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)。
+> * **外循环语义化（已落地）**：复杂问题由任务链驱动多轮闭环 + 收敛汇报已实现于 seed/orchestrator（difficulty 难度分级 + `externalTaskLoop` 步闭环序列 + `runReport` 收尾汇报闭环 → 汇报单源摘要），实现记录见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)。
 >
 > * **会话记录底座**：`sessionStore.ts` 物理位置在 `memory/`，由宿主实现 `ISessionStore`，承载对话记录——是记忆溯源（traceSummary）与会话延续的共用底座。
 >

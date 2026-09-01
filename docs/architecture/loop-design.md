@@ -2,7 +2,7 @@
 
 > **文档定位**：模块重思（module-rethink）产出。聚焦 [src/agent/loop.ts](../../src/agent/loop.ts)，论证「Loop 是对单一闭环的编排，基于单一闭环自然生长」在现状代码中的落地情况，识别偏差点与生长点，作为后续方案生长的输入。
 >
-> **状态**：探索中（可逆决策，未固化 ADR）。本文不新增机制、不承诺接口，仅论证设计与现状。
+> **状态**：已对齐实现（2026-09-01 按实证更新）。本文论证的「Loop = 对单一闭环的编排」已随 seed 收敛落地——[orchestrator.ts](../../src/agent/seed/orchestrator.ts) 为三层模型结构真理源，档2 Loop 编排 = `externalTaskLoop`/`completeExternalTask`/`runStepSequence`。现状表述按代码实证同步，未新增机制、未固化 ADR。
 >
 > **哲学真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（闭环·Loop·内循环·回答后 Handoff 相关章节）
 
@@ -12,13 +12,13 @@
 
 | 项 | 内容 |
 |----|------|
-| 文件 | `src/agent/loop.ts`（1918 行） |
+| 文件 | `src/agent/loop.ts`（2212 行） |
 | 状态 | 🟢 已打磨（76 tests） |
-| 职责 | 单轮执行闭环的执行 + Loop（外循环）编排 |
+| 职责 | 档1 执行闭环的执行（act 引擎）；档2 Loop 编排在 seed/orchestrator |
 | 上游 | `agent.ts` 经 `seed/orchestrator.ts`（`runChat`/`runEvent`/`runResume`）委托调用 `processUserInput` / `continueAfterPause` / `processEvent` |
 | 下游 | `contextManager.ts`（截断/摘要）、`compaction.ts`（微压缩）、`duplicateInterceptor.ts`（重复拦截）、`role-pack` 策略（L2） |
 
-**核心事实**：loop.ts 是「单轮闭环」与「循环编排」的**合体**——这正是哲学所要求的形态。哲学指出：**Loop 的每一轮都是一次完整的单轮闭环，Loop 只是在 Handoff 处选择"继续"**。因此 loop.ts 不需要第二套引擎，也不应该拆成两个模块；它天然是一个"能重复自己的闭环"。
+**核心事实**：loop.ts 承载「单轮闭环」的 act 执行；循环编排（档2 外循环）由 seed/orchestrator 承担。但两者同构——哲学指出：**Loop 的每一轮都是一次完整的单轮闭环，Loop 只是在 Handoff 处选择"继续"**。因此 loop.ts 不需要第二套引擎，也不应该拆成两个模块；它天然是一个"能重复自己的闭环"。
 
 ---
 
@@ -46,8 +46,8 @@
 
 现状验证：
 - **对话模式** = `processUserInput` 执行一次闭环后 return（Handoff=等待用户）。
-- **Loop 模式** = `processUserInput` 委托 `runIterationLoop` 重复闭环（Handoff=自动续跑）。
-- **续跑** = `continueAfterPause` 复用同一套 `handleIteration` + `handleIterationResult`（软暂停后从迭代边界恢复）。
+- **Loop 模式** = seed/orchestrator 的 `externalTaskLoop` 编排多个 `processUserInput` 执行闭环——规划闭环（PLAN_ONLY 只建任务表）→ 步闭环序列（每步独立 roundId）→ 收尾汇报闭环（`runReport`）。外循环已不在本引擎内重复（本类注释：「真正的外循环由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内」）。
+- **续跑** = `continueAfterPause` 复用同一套 `handleIteration` + `handleIterationResult`（软暂停后从迭代边界恢复）；Loop 编排上下文中 `runResume` 续完当前闭环后继续推进剩余步 + 收尾。
 
 **设计结论**：单轮闭环的最小复用单元就是 `processUserInput` 这个生成器，**无需也不应新增"独立闭环类"**。未来目标模式只需在"回答后"插入对齐环节，仍复用同一闭环。
 
@@ -75,13 +75,13 @@
 
 ## 四、偏差点与生长点
 
-现状高度对齐，但存在 **3 个可生长的概念/接口级对齐点**（非缺陷，不阻塞运行）：
+现状高度对齐；3 个概念/接口级对齐点中 1、2 已随 seed 收敛落地（2026-09-01 实证），3 仍为远期锚点：
 
-| # | 偏差点 | 现状 | 生长方向 | 优先级 |
-|---|--------|------|---------|--------|
-| 1 | 概念命名"迭代" vs "闭环" | `handleIteration` 命名暗示"循环的一部分"，但它实为**单轮闭环的 Act 阶段核心** | 文档/注释显式映射「iteration = 单轮闭环实例」，防止未来读者误判为循环内部件 | 低（文档级） |
-| 2 | 终止条件分散 | 终止分散在 4 处：循环内 `stepBudget`、`handleIteration` 内 `tokenBudget`、循环外 `maxIterations` 兜底、`handleIterationResult` 的 done 判断 | 文档统一表述为「**Handoff 决策的输入集合**」（目标达成 / 资源上限 / 用户中断，对齐哲学"终止条件三分类"），**不做代码重构**（现状可工作，避免过度设计） | 低（概念收敛） |
-| 3 | 目标模式接口形状未预留 | loop 的 Reflect 只有 Handoff 决策，无对齐环节插入点 | **不实现**；仅在文档明确「未来目标模式 = 回答后插入对齐环节（差距分析 → 新 Trigger），仍复用 `processUserInput` 单轮闭环」 | 中（仅约束接口形状） |
+| # | 对齐点 | 收敛状态 | 现状（实证） |
+|---|--------|---------|------------|
+| 1 | 概念命名"迭代" vs "闭环" | **已收敛**（代码级） | loop.ts 头注释显式声明「本类承载【档1 执行闭环】的 act 内部迭代（`runIterationLoop`）」；orchestrator 头注释统一「iteration = 单轮闭环实例」口径，防未来读者误判为循环内部件 |
+| 2 | 终止条件分散 | **已语义化**（外循环） | 外循环终止由任务链收敛承担（orchestrator 按 pending 步驱动、耗尽即收尾汇报）；内循环仍以 `stepBudget`/`tokenBudget`/`maxIterations` 兜底。统一表述为「**Handoff 决策的输入集合**」：目标达成 / 资源上限 / 用户中断（对齐哲学"终止条件三分类"） |
+| 3 | 目标模式接口形状未预留 | 待实现（远期锚点） | 仍不实现；明确定位：未来目标模式 = 回答后插入对齐环节（差距分析 → 新 Trigger），插入点收敛在 orchestrator（闭环编排容器），仍复用 `processUserInput` 单轮闭环 |
 
 **反模式自查**（对照哲学「递归边界确定性」「模式统一论」）：
 
@@ -94,20 +94,21 @@
 
 ## 五、设计方案：保持单一闭环复用，不新增机制
 
-> 设计总纲：**loop 现状已满足"单一闭环编排"哲学，方案以"概念对齐 + 接口形状确认"为主，零代码重构。**
+> 设计总纲：**loop 满足"单一闭环编排"哲学，方案以"概念对齐 + 接口形状确认"为主；外循环编排已随 seed 收敛落于 orchestrator（loop.ts 保持为档1 执行闭环的 act 引擎），接口契约由 §5.1 固化。**
 
 ### 5.1 确认的接口契约（当前已成立，文档固化）
 
 | 契约 | 内容 | 消费方 |
 |------|------|--------|
-| `processUserInput` = 单轮闭环最小复用单元 | 召回注入 → Act 循环 → Handoff | `agent.ts`（对话）+ 自身（Loop 外循环） |
+| `processUserInput` = 单轮闭环最小复用单元 | 召回注入 → Act 循环 → Handoff | `agent.ts`（对话）+ orchestrator（Loop 编排规划/步闭环） |
 | `continueAfterPause` = 软暂停续跑入口 | 从迭代边界恢复，复用同一闭环 | `agent.ts`（pause/resume） |
 | `handleIterationResult` = Handoff 决策唯一出口 | 返回 `continue/done/paused/aborted` | 循环编排 + 自审查 |
 | `setStrategy(L2RuntimeStrategy)` = 行为配比唯一入口 | 内循环深度 + 外循环长度 + 工具权限 | `agent.ts`（角色包策略注入） |
+| `externalTaskLoop`/`completeExternalTask`/`runStepSequence` = 档2 Loop 编排 | 规划闭环 → 步闭环序列（每步独立 roundId）→ 收尾汇报闭环 + 汇报单源摘要 | seed/orchestrator（runChat 复杂路径 + runResume 续跑） |
 
 ### 5.2 生长路径（未来可执行，非本期）
 
-1. **目标模式**（哲学「目标模式」）：在 `handleIterationResult` 的 done 分支**之前**插入"对齐检查"回调——对齐未达则生成新 Trigger 继续，达成则 done。**无需新引擎**，只增加一个 Handoff 策略分支。
+1. **目标模式**（哲学「目标模式」，远期）：在 orchestrator 收尾（`finalizeExternalTask` → handoff）后插入"对齐检查"环节——对齐未达则生成新 Trigger 继续，达成则 done。**无需新引擎**，只增加编排层一个节奏分支，仍复用 `processUserInput` 单轮闭环。
 2. **子 Agent 套娃**（哲学「子 Agent 递归」）：子 Agent = 另一个 `AgentLoop` 实例，主 loop 通过工具调用它。**无需改造闭环**，工具层新增一个"子 Agent 工具"即可。
 
 ---
@@ -121,25 +122,25 @@
 
 ---
 
-## 七、外循环语义化（生长方向）
+## 七、外循环语义化（已落地）
 
-本文论证的是**现状对齐**（Loop = 闭环的重复在代码中的落地）。更高的目标是让外循环**有语义**——复杂问题不再是无条件重复，而是"任务链驱动 + 收敛汇报"。这属于 [task-driven-closed-loop.md](./task-driven-closed-loop.md)（任务驱动的多轮闭环收敛模型）的设计愿景，本文不复述。
+本文论证的是**现状对齐**（Loop = 闭环的重复在代码中的落地）。外循环语义化——复杂问题由"任务链驱动 + 收敛汇报"——最初是 [task-driven-closed-loop.md](./task-driven-closed-loop.md) 的设计愿景，现已在 seed/orchestrator 落地：
 
-| 现状（loop-design） | 目标（task-driven-closed-loop） |
+| 撰文时现状（loop-design） | 当前实现（seed/orchestrator + difficulty） |
 |---------------------|--------------------------------|
-| loop = while 无条件重复 | loop = 任务链驱动，有明确起点/终点 |
-| 简单/复杂都进同一循环 | LLM 判难度，简单直接一轮 done |
-| 撞上限终止 | 任务链 done 终止 |
-| 无收尾 | 独立汇报闭环 → 提炼摘要 |
+| loop = while 无条件重复 | loop = 任务链驱动（`externalTaskLoop`），有明确起点/终点 |
+| 简单/复杂都进同一循环 | 难度分级（[difficulty.ts](../../src/agent/seed/difficulty.ts)），simple/unknown 直接一轮 done |
+| 撞上限终止 | 任务链 pending 耗尽收敛；触顶兜底报告进度 + 列未完成 |
+| 无收尾 | 收尾汇报闭环（`runReport`）→ 汇报单源摘要（摘要恒 1:1） |
 
-> 两者不冲突：本文证明"loop 复用闭环"这个根；task-driven 文档在此根上长出"任务驱动 + 汇报"的枝叶。演进关系见 [task-driven-closed-loop.md §七](./task-driven-closed-loop.md)。
+> 根与枝叶关系不变：本文证明"loop 复用闭环"这个根；task-driven 文档在此根上长出"任务驱动 + 汇报"的枝叶——其角色已由「目标」转为「实现记录」。演进关系见 [task-driven-closed-loop.md §七](./task-driven-closed-loop.md)。
 
 ---
 
 ## 八、关联文档
 
 - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 设计哲学真理源（闭环·Loop·内循环·回答后 Handoff 相关章节）
-- [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 外循环语义化：任务驱动的多轮闭环收敛模型（生长方向）
+- [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 外循环语义化：任务驱动的多轮闭环收敛模型（已实现的实现记录）
 - [module-inventory.md](./module-inventory.md) —— 模块清单（loop.ts 🟢 76 tests）
 - [方案-seed收敛](../../tasks/归档/方案-seed收敛-最小问答闭环真理源-20260820.md) —— 种子收敛方案（含阶段 2 外部任务）
 - `src/agent/loop.ts` —— 实现
