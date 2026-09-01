@@ -944,6 +944,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 依赖宿主扩展方法 truncateFrom（宿主 ISessionStore 实现，内核接口保持最小化）。
    */
   private async deleteTurnFrom(ts: string): Promise<void> {
+    // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再删除问答' });
+      return;
+    }
     // 破坏性操作：确认不可恢复（与「清空对话」同强度确认）
     const choice = await vscode.window.showWarningMessage(
       `确定删除该问答及之后的所有对话？此操作不可恢复。`,
@@ -997,6 +1002,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * @param sessionId 目标会话标识（YYYY-MM-DD-sessionName）
    */
   private async handleDeleteSession(sessionId: string): Promise<void> {
+    // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再删除会话' });
+      return;
+    }
     const meta = this.sessionStore.getSessionMeta(sessionId);
     const title = getSessionDisplayName(meta) || sessionId;
     const choice = await vscode.window.showWarningMessage(
@@ -1140,6 +1150,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
   public async renameCurrentSession(): Promise<void> {
+    // 运行时守卫（SSOT：与 newSession/switchToSession 同源 _streaming，禁止运行中改会话结构）
+    if (this._streaming) {
+      this.post({ type: 'notice', level: 'info', message: '生成中，请稍候再重命名会话' });
+      return;
+    }
     const title = await vscode.window.showInputBox({
       prompt: '输入新的会话名称',
       value: this.currentSessionTitle(),
