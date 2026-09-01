@@ -156,6 +156,14 @@ export const chatStyles = `
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
   }
   .suggestion-chip:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
+  /* UX-1 onboarding 引导按钮（2026-09-01）：LLM 未配置时空态「去配置模型」，主按钮强调 */
+  .empty-onboard-btn {
+    padding: var(--sp-2, 6px) var(--sp-5, 12px); font-size: var(--font-md, 12px);
+    border-radius: var(--radius-pill, 999px); cursor: pointer;
+    border: 1px solid var(--accent, #4fc1ff); color: var(--accent, #4fc1ff);
+    background: transparent; margin-top: var(--sp-3, 8px);
+  }
+  .empty-onboard-btn:hover { background: var(--accent-soft, rgba(79,193,255,.12)); }
   /* Follow-up 建议块（T2，2026-08-17 回复后关联推荐）：AI 回复下方「接下来可以探索」，
      chips 与空状态示例共用 .suggestion-chip（左对齐，区别于空状态居中） */
   .followup { padding: var(--sp-1, 4px) var(--sp-2, 6px) var(--sp-5, 12px); }

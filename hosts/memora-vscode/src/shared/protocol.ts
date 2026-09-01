@@ -64,6 +64,12 @@ export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
   | { type: 'send'; text: string; skillName?: string }
+  /**
+   * 打开大模型配置视图（UX-1 空态引导按钮触发，2026-09-01）
+   *
+   * 由对话面板空态「去配置模型」引导按钮触发：host 打开大模型配置面板并切到「大模型」选项卡。
+   */
+  | { type: 'open_config' }
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
   /**

@@ -882,6 +882,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     renderEmptySuggestions(name);
   }
 
+  /**
+   * LLM 未配置时的空态 onboarding（UX-1，2026-09-01）
+   *
+   * 无 Provider 时切换空状态为「去配置模型」引导：提示用户先配置大模型（首次使用关键路径），
+   * 并提供一键跳转按钮（点击 post open_config → host 执行 memora.configureModel）。
+   * 配置就绪后调用方应再次走 updateEmptyStateRole 恢复普通引导（幂等，按钮用 querySelector 复用）。
+   * 文案一律 textContent 赋值防注入；按钮事件直接在创建处绑定（随空态 DOM 常驻，无需委托）。
+   */
+  function updateEmptyStateOnboarding(): void {
+    emptyTitle.textContent = '还没有配置大模型';
+    emptyHint.textContent = '配置一个大模型后即可开始对话（支持 OpenAI 兼容接口）';
+    emptySuggestions.textContent = '';
+    // 防重复追加（配置后回普通空态再触发时幂等）
+    let btn = emptyState.querySelector<HTMLButtonElement>('.empty-onboard-btn');
+    if (!btn) {
+      btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'empty-onboard-btn';
+      btn.textContent = '去配置模型';
+      btn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'open_config' });
+      });
+      emptyState.appendChild(btn);
+    }
+  }
+
   /** 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
    *
    * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如方案设计师的"种子收敛"引导，
@@ -1842,6 +1868,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       renderModelPicker();
       // ④ 预算可视化：按当前选中 LLM 的上下文上限实时渲染占用条容量（首轮对话前即有真实上限）
       renderOccupancyLimit(currentProviders, currentActive);
+      // UX-1（2026-09-01）：无 Provider 时空态切换为「去配置模型」引导（首次使用关键路径，
+      // 避免用户不知道去哪配置而卡在空态）；配置就绪后恢复角色化空态（幂等）
+      if (currentProviders.length === 0) {
+        updateEmptyStateOnboarding();
+      } else {
+        updateEmptyStateRole();
+        emptyState.querySelector('.empty-onboard-btn')?.remove();
+      }
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
       // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题 + 输入区角色徽章共用

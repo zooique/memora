@@ -414,6 +414,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
       } else if (msg.type === 'send' && msg.text.trim()) {
         void this.handleSend(msg.text.trim(), msg.skillName);
+      } else if (msg.type === 'open_config') {
+        // UX-1 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
+        void vscode.commands.executeCommand('memora.configureModel');
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
         void this.handleResume(msg.text.trim());
       } else if (msg.type === 'new_session') {
@@ -1026,10 +1029,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // （脱钩溯源，可恢复为独立记忆）。分叉共享轮由 deleteSession 返回值天然排除——
       // 不影响仍在使用的关联会话记忆。会话级路标存于 SessionMeta，随本调用一并删除。
       const removedIds = this.sessionStore.deleteSession(sessionId);
-      this.softDeleteSessionMemories(removedIds);
+      void this.softDeleteSessionMemories(removedIds);
+      // UX-3：删除成功给用户可见反馈，与「当前会话无法删除」提示对称
+      this.post({ type: 'notice', level: 'info', message: '会话已删除' });
     } catch (err) {
-      // 删除失败不阻塞（重推列表仍可用），但需记录（SSOT 不藏错）
+      // 删除失败不阻塞（重推列表仍可用），但需记录 + 给用户可见提示（SSOT 不藏错）
       console.warn('Memora 删除会话记录失败', err);
+      this.post({ type: 'notice', level: 'error', message: '删除会话失败，请稍后重试' });
     }
     this.pushSessionList();
   }
@@ -1316,6 +1322,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
     } catch (err) {
       console.warn('Memora 加载会话历史失败', err);
+      // UX-2：历史加载失败给用户可见提示，避免「历史空白」静默（SSOT 不藏错）
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: '加载会话历史失败，可尝试切换会话重试',
+      });
     }
   }
 
