@@ -13,8 +13,8 @@
  *   - 功能定位：内置角色包（dist/extension/role-packs/ 构建期同步）+ 用户角色包（globalStorageUri/role-packs 运行态注入）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
-import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger, resolveContextWindow } from '@zooique/memora';
-import type { ISessionStore, IRoundStore, UIMessages, ProviderRouter, LlmProvider } from '@zooique/memora';
+import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger, resolveContextWindow, buildSearchEndpoints } from '@zooique/memora';
+import type { ISessionStore, IRoundStore, UIMessages, ProviderRouter, LlmProvider, SearchEngineName } from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
@@ -165,6 +165,14 @@ export interface AssembleOptions {
    */
   allowedPaths?: string[];
   /**
+   * 内置网页搜索引擎（方案 A，2026-09-02）
+   *
+   * 由 extension 从 workspace 设置 memora.searchEngine 读取注入（'auto' | 'bing' | 'baidu' | 'sogou'）。
+   * auto = 默认降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。
+   * 修改需重建会话（装配是 activation 期一次性注入）。
+   */
+  searchEngine?: 'auto' | SearchEngineName;
+  /**
    * VSCode 输出通道（G7：日志对接）
    *
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
@@ -257,8 +265,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     sessionStore: store,
     // 问答闭环存储（Phase 4：round-based 模式，传入后内核启用独立 Round 存储）
     roundStore,
-    // 网络搜索（Bing→DuckDuckGo 降级，开箱即用，零依赖）
-    webSearchProvider: new FetchWebSearchProvider(),
+    // 网络搜索（memora.searchEngine 可切换内置引擎；auto = Bing→DuckDuckGo 默认链，
+    // 选 baidu/sogou 时用户首选引擎在前、Bing 兜底——国内可达且解析稳定）
+    webSearchProvider: new FetchWebSearchProvider(
+      options.searchEngine && options.searchEngine !== 'auto'
+        ? buildSearchEndpoints([options.searchEngine, 'bing'])
+        : undefined,
+    ),
     // 网页抓取（B8 首发生长：补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）
     fetchProvider: new FetchWebFetchProvider(),
     // 代码执行（G2：local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM

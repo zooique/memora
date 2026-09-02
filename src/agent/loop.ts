@@ -192,6 +192,10 @@ export class AgentLoop {
   /** 当前轮次已推送的 REFLECTION_HINT 次数。用显式计数器而非 filter 推断，
    *  避免上下文中段消息被裁剪后计数失真 */
   private reflectionCountThisTurn: number = 0;
+  /** TS-7 搜索收敛护栏：本闭环内成功 web_search 次数（executeToolCalls 累计，_prepareContext 检查） */
+  private successfulWebSearchCount = 0;
+  /** TS-7 搜索收敛护栏：本轮是否已注入收敛提示（幂等，防迭代累积刷屏） */
+  private searchConvergenceHintInjected = false;
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
@@ -678,6 +682,9 @@ export class AgentLoop {
     this.pauseRequested = false;
     this.selfReviewRound = 0;
     this._iterationLimitReached = false;
+    // TS-7 搜索收敛护栏：本闭环内计数与注入标记随轮重置（下一闭环重新累计）
+    this.successfulWebSearchCount = 0;
+    this.searchConvergenceHintInjected = false;
   }
 
   /**
@@ -942,6 +949,20 @@ export class AgentLoop {
       }
     }
     // ─── 压缩链结束 ─────────────────────────────────────────────
+
+    // TS-7 搜索收敛护栏：本闭环成功联网搜索达阈值后，注入收敛提示引导 LLM 停止搜索直接作答。
+    // 幂等：一轮内仅注入一次（executionTemp 随下一闭环入口清冗；计数随 resetTurnState 清零）
+    if (
+      this.successfulWebSearchCount >= LOOP_CONSTANTS.SEARCH_CONVERGENCE_THRESHOLD &&
+      !this.searchConvergenceHintInjected
+    ) {
+      this.searchConvergenceHintInjected = true;
+      this.appendSystemMessage(LOOP_CONSTANTS.SEARCH_CONVERGENCE_HINT, { executionTemp: true });
+      logger.info(
+        { successfulWebSearchCount: this.successfulWebSearchCount },
+        '搜索收敛护栏：已注入停止搜索提示',
+      );
+    }
 
     // 软上限（内核确定性检测）：上下文逼近容量上限且正文大量摘要化（摘要层达容量上限）
     // → 注入收尾信号，LLM 收敛产出最终交付（executionTemp，下一轮闭环入口即弃）
@@ -1418,11 +1439,16 @@ export class AgentLoop {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
       const result = results[i]!;
+      const ok = !result.startsWith('[ERR');
+      // TS-7 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
+      if (tc.function.name === 'web_search' && ok) {
+        this.successfulWebSearchCount++;
+      }
       yield {
         type: 'tool_result',
         toolCallId: tc.id,
         name: tc.function.name,
-        ok: !result.startsWith('[ERR'),
+        ok,
         summary: result.slice(0, 100),
       };
     }

@@ -11,7 +11,7 @@
  *   - URL 构造格式
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
+import { FetchWebSearchProvider, buildSearchEndpoints } from '@/web-search/fetchWebSearchProvider.js';
 
 /** 模拟 DuckDuckGo HTML 响应（含两个搜索结果） */
 const MOCK_DDG_HTML = `<!DOCTYPE html>
@@ -348,6 +348,92 @@ describe('FetchWebSearchProvider', () => {
 
       const results = await provider.search('测试');
       expect(results[0]!.endpoint).toBe('DuckDuckGo');
+    });
+  });
+
+  // ─── 方案 A 多端点（2026-09-02）：百度/搜狗 + buildSearchEndpoints 工厂 ───
+  describe('方案 A · 内置多搜索引擎端点（百度/搜狗）', () => {
+    /** 模拟百度结果页（h3.c-title > a[href] + span[class*=content-right] 摘要） */
+    const BAIDU_HTML = `<!DOCTYPE html>
+<html><body>
+  <div class="result c-container" data-click="{}">
+    <h3 class="c-title c-title-index"><a href="https://baidu-example.com/1">百度标题一</a></h3>
+    <div class="c-span-last"><span class="content-right_8Zs40">百度摘要一</span></div>
+  </div>
+</body></html>`;
+
+    /** 模拟搜狗结果页（h3.vr-title > a[href] + div.str_info 摘要） */
+    const SOGOU_HTML = `<!DOCTYPE html>
+<html><body>
+  <div class="vrwrap">
+    <h3 class="vr-title"><a href="https://sogou-example.com/1">搜狗标题一</a></h3>
+    <div class="str_info">搜狗摘要一</div>
+  </div>
+</body></html>`;
+
+    it('百度端点命中 → 解析标题/URL/摘要且打标 "Baidu"，优先不降级', async () => {
+      const engineProvider = new FetchWebSearchProvider(buildSearchEndpoints(['baidu', 'bing']));
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('baidu.com/s')) return htmlResponse(BAIDU_HTML);
+        return htmlResponse(MOCK_EMPTY_HTML);
+      });
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await engineProvider.search('测试查询');
+
+      expect(results).toHaveLength(1);
+      expect(results[0]!.title).toBe('百度标题一');
+      expect(results[0]!.url).toBe('https://baidu-example.com/1');
+      expect(results[0]!.snippet).toBe('百度摘要一');
+      expect(results[0]!.endpoint).toBe('Baidu');
+      // Baidu 为首选且命中 → 仅一次请求（未降级 Bing）
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]![0]).toContain('baidu.com/s?wd=');
+    });
+
+    it('搜狗端点解析 → 标题/URL/摘要正确', async () => {
+      const engineProvider = new FetchWebSearchProvider(buildSearchEndpoints(['sogou']));
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('sogou.com/web')) return htmlResponse(SOGOU_HTML);
+        return htmlResponse(MOCK_EMPTY_HTML);
+      });
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await engineProvider.search('测试查询');
+
+      expect(results[0]!.title).toBe('搜狗标题一');
+      expect(results[0]!.url).toBe('https://sogou-example.com/1');
+      expect(results[0]!.snippet).toBe('搜狗摘要一');
+      expect(results[0]!.endpoint).toBe('Sogou');
+    });
+
+    it('百度反爬（无结果结构）→ 降级到链上 Bing 兜底', async () => {
+      const engineProvider = new FetchWebSearchProvider(buildSearchEndpoints(['baidu', 'bing']));
+      const fetchMock = vi.fn().mockImplementation((url: string) => {
+        if (url.includes('baidu.com/s')) return htmlResponse(MOCK_EMPTY_HTML);
+        return htmlResponse(MOCK_BING_HTML);
+      });
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await engineProvider.search('测试查询');
+
+      // Baidu 空 → 降级 Bing（两次请求），结果打标 Bing
+      expect(results[0]!.endpoint).toBe('Bing');
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    it('buildSearchEndpoints 空名单 → 回退默认链（Bing→DuckDuckGo）', async () => {
+      const engineProvider = new FetchWebSearchProvider(buildSearchEndpoints([]));
+      const fetchMock = createUrlDispatchFetch(
+        () => htmlResponse(MOCK_BING_HTML),
+        () => htmlResponse(MOCK_EMPTY_HTML),
+      );
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await engineProvider.search('测试');
+
+      expect(results[0]!.endpoint).toBe('Bing');
+      expect(results[0]!.title).toBe('Bing 标题一');
     });
   });
 });

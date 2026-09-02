@@ -93,19 +93,94 @@ function parseDuckDuckGoHtml(html: string, limit: number): SearchResult[] {
   return results;
 }
 
-/** 默认端点降级链：Bing 首选（国内可达），DuckDuckGo 备用 */
-const DEFAULT_ENDPOINTS: readonly SearchEndpoint[] = [
-  {
+/**
+ * 百度搜索结果页 HTML 解析（中文场景命中质量通常优于 Bing 抓取）。
+ * 结构：结果条目 h3[class*=c-title] 内 <a href>，摘要取紧随的 content-right / c-abstract 块。
+ * 反爬时页面无结果结构 → 返回空数组，由降级链自动切换下一点端。
+ */
+function parseBaiduHtml(html: string, limit: number): SearchResult[] {
+  const results: SearchResult[] = [];
+  const itemRegex = /<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h3>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(html)) !== null && results.length < limit) {
+    const url = match[1]!.replace(/&amp;/g, '&').trim();
+    const title = match[2]!.replace(/<[^>]*>/g, '').trim();
+    if (!url || !title) continue;
+    // 摘要：标题块之后 800 字符范围内取首个内容摘要块（新版 content-right / 旧版 c-abstract）
+    const after = html.slice(match.index + match[0].length, match.index + match[0].length + 800);
+    const snipMatch = /(?:content-right|c-abstract)[^>]*>([\s\S]*?)<\/span>/i.exec(after);
+    const snippet = snipMatch?.[1]?.replace(/<[^>]*>/g, '').trim() ?? '';
+    results.push({ title, url, snippet });
+  }
+  return results;
+}
+
+/**
+ * 搜狗搜索结果页 HTML 解析。结构：div.vrwrap > h3.vr-title > a[href]，摘要 .str_info / .space-txt。
+ */
+function parseSogouHtml(html: string, limit: number): SearchResult[] {
+  const results: SearchResult[] = [];
+  const itemRegex = /<h3[^>]*>[\s\S]*?<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?<\/h3>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = itemRegex.exec(html)) !== null && results.length < limit) {
+    const url = match[1]!.replace(/&amp;/g, '&').trim();
+    const title = match[2]!.replace(/<[^>]*>/g, '').trim();
+    if (!url || !title) continue;
+    const after = html.slice(match.index + match[0].length, match.index + match[0].length + 800);
+    const snipMatch = /(?:str_info|space-txt)[^>]*>([\s\S]*?)<\/(?:div|p)>/i.exec(after);
+    const snippet = snipMatch?.[1]?.replace(/<[^>]*>/g, '').trim() ?? '';
+    results.push({ title, url, snippet });
+  }
+  return results;
+}
+
+/** 可切换的内置搜索引擎名（宿主设置 memora.searchEngine 对应枚举） */
+export type SearchEngineName = 'bing' | 'duckduckgo' | 'baidu' | 'sogou';
+
+/**
+ * 内置端点注册表（SSOT：端点名 → 定义）。
+ * FetchWebSearchProvider 默认链与 buildSearchEndpoints 均取自此处，
+ * 新增端点只改这里 + SearchEngineName（避免两处维护腐坏）。
+ */
+const SEARCH_ENDPOINT_REGISTRY: Readonly<Record<SearchEngineName, SearchEndpoint>> = {
+  bing: {
     name: 'Bing',
     buildUrl: (query) => `https://www.bing.com/search?q=${encodeURIComponent(query)}`,
     parse: parseBingHtml,
   },
-  {
+  duckduckgo: {
     name: 'DuckDuckGo',
     buildUrl: (query) => `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`,
     parse: parseDuckDuckGoHtml,
   },
+  baidu: {
+    name: 'Baidu',
+    buildUrl: (query) => `https://www.baidu.com/s?wd=${encodeURIComponent(query)}`,
+    parse: parseBaiduHtml,
+  },
+  sogou: {
+    name: 'Sogou',
+    buildUrl: (query) => `https://www.sogou.com/web?query=${encodeURIComponent(query)}`,
+    parse: parseSogouHtml,
+  },
+};
+
+/** 默认端点降级链：Bing（国内可达）→ DuckDuckGo（备用） */
+const DEFAULT_ENDPOINTS: readonly SearchEndpoint[] = [
+  SEARCH_ENDPOINT_REGISTRY.bing,
+  SEARCH_ENDPOINT_REGISTRY.duckduckgo,
 ];
+
+/**
+ * 按名字构建端点降级链（宿主设置 memora.searchEngine 用）：按给定顺序组装，
+ * 未知名字忽略；全部无效 / 空列表回退默认链（Bing→DuckDuckGo），保证零配置也开箱可用。
+ */
+export function buildSearchEndpoints(names: readonly SearchEngineName[]): readonly SearchEndpoint[] {
+  const picked = names
+    .map((n) => SEARCH_ENDPOINT_REGISTRY[n])
+    .filter((e): e is SearchEndpoint => !!e);
+  return picked.length > 0 ? picked : DEFAULT_ENDPOINTS;
+}
 
 /** 默认搜索实现：多后端降级链（Bing → DuckDuckGo），每端点独立超时。生产建议宿主自定义 IWebSearchProvider */
 export class FetchWebSearchProvider implements IWebSearchProvider {

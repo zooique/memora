@@ -91,6 +91,10 @@ function getOrCreateAgent(
     const allowedPaths = vscode.workspace
       .getConfiguration('memora')
       .get<string[]>('allowedPaths', []);
+    // 内置网页搜索引擎（方案 A：memora.searchEngine 设置，'auto' = Bing→DuckDuckGo 默认链）
+    const searchEngine = vscode.workspace
+      .getConfiguration('memora')
+      .get<'auto' | 'bing' | 'baidu' | 'sogou'>('searchEngine', 'auto');
     agentPromise = assembleAgent({
       projectPath,
       // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
@@ -101,6 +105,7 @@ function getOrCreateAgent(
       activeRolePack,
       rolePackTeams,
       configDir,
+      searchEngine,
       userSkillsDir,
       userRolePacksDir,
       confirmWrites,

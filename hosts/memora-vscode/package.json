@@ -78,6 +78,18 @@
           "items": { "type": "string" },
           "default": [],
           "description": "白名单额外允许目录（项目目录之外的可信目录，Agent 可读取/写入）。项目目录始终允许，无需添加。修改即时生效，重启后仍保留。"
+        },
+        "memora.searchEngine": {
+          "type": "string",
+          "enum": ["auto", "bing", "baidu", "sogou"],
+          "enumDescriptions": [
+            "自动：Bing 优先，降级 DuckDuckGo（默认）",
+            "必应（Bing）",
+            "百度（中文场景命中通常更好）",
+            "搜狗"
+          ],
+          "default": "auto",
+          "description": "内部网页搜索引擎（web_search 工具使用的后端）。auto 为内置降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。修改后重建会话（或重载窗口）生效。"
         }
       }
     },

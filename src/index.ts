@@ -103,6 +103,8 @@ export { BOOST_INCREMENT, SCORE_CEILING, SCORE_FLOOR, INACTIVITY_SINK_DAYS } fro
 export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-search/types.js';
 // FetchWebSearchProvider：默认搜索实现（零依赖开箱即用）；safeSearch：带超时保护的搜索包装（宿主可复用）
 export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
+// buildSearchEndpoints：按名字构建搜索端点降级链（宿主设置 memora.searchEngine 切换引擎用）
+export { buildSearchEndpoints, type SearchEngineName } from '@/web-search/fetchWebSearchProvider.js';
 export { safeSearch } from '@/web-search/webSearchProvider.js';
 
 // ─── 网页抓取导出（搜索→抓取闭环第二段） ──────────────────────

@@ -2612,6 +2612,79 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
   });
 });
 
+describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
+  it('连续成功联网搜索达阈值后注入收敛提示，幂等一次（防 LLM 反复搜索不收敛触迭代上限）', async () => {
+    // 每轮工具执行统一返回成功结果（web_search ok=true）
+    const toolExecutor = vi.fn().mockResolvedValue('1. 结果A\n2. 结果B');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '先并行搜一轮',
+          toolCalls: [
+            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+            { id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } },
+          ],
+        },
+      ],
+      [
+        {
+          content: '继续搜（应已注入收敛提示）',
+          toolCalls: [
+            { id: 's3', type: 'function', function: { name: 'web_search', arguments: '{"query":"C"}' } },
+          ],
+        },
+      ],
+      [{ content: '信息足够，直接给出结论。' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    for await (const {} of loop.processUserInput('做分析')) {
+      // drain
+    }
+
+    // 收敛提示已注入且仅一次（executionTemp 在本闭环节点存活；计数达阈值后不再重复注入）
+    const messages = loop.getMessages();
+    const hints = messages.filter((m) => m.role === 'system' && m.content.includes('搜索收敛提示'));
+    expect(hints).toHaveLength(1);
+  });
+
+  it('搜索失败不累计、未达阈值不注入收敛提示', async () => {
+    // 首次搜索失败（[ERR 前缀），后续仅一次成功 → 未达阈值（2），不注入
+    const toolExecutor = vi
+      .fn()
+      .mockResolvedValueOnce('[ERR:TOOL:NETWORK] 搜索失败')
+      .mockResolvedValue('1. 结果A');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '搜一次失败',
+          toolCalls: [
+            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+          ],
+        },
+      ],
+      [
+        {
+          content: '再搜（累计成功 1，未达阈值）',
+          toolCalls: [
+            { id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } },
+          ],
+        },
+      ],
+      [{ content: '基于结果回答。' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    for await (const {} of loop.processUserInput('做分析')) {
+      // drain
+    }
+
+    const messages = loop.getMessages();
+    const hints = messages.filter((m) => m.role === 'system' && m.content.includes('搜索收敛提示'));
+    expect(hints).toHaveLength(0);
+  });
+});
+
 // ═══════════════════════════════════════════════════════════════
 // 测试：建议B埋点（"模型看到了什么"可追溯）
 // 覆盖：LLM_CALL span 记录 systemPromptHash / RECALL span 记录 attachedMemory 指纹 /
