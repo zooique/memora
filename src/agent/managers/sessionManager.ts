@@ -1208,14 +1208,6 @@ export class SessionManager {
     // 依赖 completeRound / createCheckpoint 在回合边界统一 flush
   }
 
-  /** 检查工具是否已执行（outbox 模式）：以名称+参数签名作唯一标识，恢复时避免重复执行幂等工具 */
-  hasToolExecuted(name: string, args: string): boolean {
-    if (!this.checkpoint?.completedToolCalls) return false;
-    return this.checkpoint.completedToolCalls.some(
-      (r) => r.name === name && r.argsSignature === args,
-    );
-  }
-
   /** 记录非幂等工具执行（补偿降级后仅日志）：不再逐副作用执行补偿，仅记录事实供宿主/人工排查 */
   compensateTool(record: ToolExecutionRecord): string {
     const msg = `${record.name}(${record.argsSignature.slice(0, 50)})：非幂等工具，需人工确认是否需要补偿`;

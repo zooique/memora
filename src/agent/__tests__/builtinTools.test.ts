@@ -69,10 +69,10 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(def.parameters.required).toContain('path');
   });
 
-  it('read_skill 应注册为内置工具且标记幂等（渐进披露 L2）', () => {
+  it('read_skill 应注册为内置工具且标记 read-only（读操作，永不跳过）', () => {
     const names = BUILTIN_TOOLS.map((t) => t.name);
     expect(names).toContain('read_skill');
-    expect(BUILTIN_TOOL_IDEMPOTENCY.read_skill).toBe('idempotent');
+    expect(BUILTIN_TOOL_IDEMPOTENCY.read_skill).toBe('read-only');
   });
 
   it('工具名应唯一（无重复）', () => {
@@ -354,8 +354,8 @@ describe('builtinTools · SEARCH_PROJECT_TOOL（项目内搜索，等价 IDE 全
     expect(SEARCH_PROJECT_TOOL.parameters.required).toHaveLength(0);
   });
 
-  it('search_project 应为幂等（读操作，天然幂等）', () => {
-    expect(BUILTIN_TOOL_IDEMPOTENCY.search_project).toBe('idempotent');
+  it('search_project 应为 read-only（只读搜索，永不跳过）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.search_project).toBe('read-only');
   });
 
   it('应符合 ToolDefinition 类型约束', () => {
@@ -382,8 +382,8 @@ describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_update).toBe('idempotent');
   });
 
-  it('web_fetch 应标记为 idempotent（读操作，天然幂等）', () => {
-    expect(BUILTIN_TOOL_IDEMPOTENCY.web_fetch).toBe('idempotent');
+  it('web_fetch 应标记为 read-only（读操作，永不跳过）', () => {
+    expect(BUILTIN_TOOL_IDEMPOTENCY.web_fetch).toBe('read-only');
   });
 
   it('run_code 应标记为 non-idempotent（任意代码执行有副作用）', () => {
@@ -448,5 +448,13 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
     const args = '{"path":"tmp_analyze.cjs"}';
     const records = [rec('delete_file', args, true, level, '✅ 已删除')];
     expect(shouldSkipForIdempotency(records, 'delete_file', args, level)).toEqual({ skip: false });
+  });
+
+  it('read-only 工具即使上次成功也永不跳过——目标态可被写工具/时间改动，回喂陈旧结果误导 LLM（IDM-1）', () => {
+    // 用真实映射值判定（禁用硬编码 'read-only'）：归类一旦回退为幂等/可跳过，本例即红
+    const level = BUILTIN_TOOL_IDEMPOTENCY.read_file!;
+    const args = '{"path":"a.ts"}';
+    const records = [rec('read_file', args, true, level, '旧内容（已过时）')];
+    expect(shouldSkipForIdempotency(records, 'read_file', args, level)).toEqual({ skip: false });
   });
 });

@@ -35,14 +35,16 @@ export interface ToolDefinition {
 // ─── 工具幂等性映射（补偿机制） ────────────────────────
 //
 // 幂等性定义：
-//   - idempotent：天然幂等（读操作），相同参数多次执行结果一致
-//   - idempotent-key：依赖业务唯一键实现幂等（写操作）
+//   - idempotent：写后状态确定、可安全重跑（如 task_table_update），跳过回喂缓存摘要
+//   - idempotent-key：依赖业务唯一键实现幂等（写操作，如 write_file / register_work）
+//   - read-only：读/查询类，目标态可被外部改动（写工具/时间），永不跳过——跳过回喂
+//     陈旧结果会误导 LLM；重跑无害且无需去重持久化
 //   - non-idempotent：非幂等，需补偿机制兜底；另承担「禁止跳过」语义——目标态可被其它工具
 //     重建的操作（delete_file 的目标态可被 write_file 重建）必须禁跳过，重跑是否有害另行判断
 //
 // 内置工具幂等性判断：
-//   - read_file / list_dir：读操作，天然幂等 ✅
-//   - search_memories：读操作，天然幂等 ✅
+//   - read_file / list_dir：读操作，永不跳过（read-only）——文件态可变，跳过回喂陈旧结果误导 LLM
+//   - search_memories：读操作，永不跳过（read-only）
 //   - write_file（overwrite 模式）：全量覆盖，重复执行结果一致 ✅
 //   - write_file（append 模式）：追加写入，重复执行会追加多次 ❌
 //   - write_file（insert 模式）：行插入，重复执行会插入多次 ❌
@@ -63,34 +65,34 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
  * 供补偿机制和仅一次语义检查使用。
  */
 export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
-  read_file: 'idempotent',
+  read_file: 'read-only',
   write_file: 'idempotent-key',
   // delete_file 归 non-idempotent 是「禁止跳过」而非「重跑有害」（重跑由 deleteFile 的 ENOENT 兜底，无害）。
   // 禁止跳过的原因：删除的目标态可被 write_file 重建，而幂等键只有 name+args、不含文件状态 →
   // 标幂等会让同会话内第二次「写 → 执行 → 删」闭环被静默跳过，脚本残留且 LLM 收到假的「已删除」。
   delete_file: 'non-idempotent',
-  list_dir: 'idempotent',
-  search_memories: 'idempotent',
-  web_search: 'idempotent',
-  trace_summary: 'idempotent',
-  // list_sessions：读操作（列举会话路标），天然幂等 ✅
-  list_sessions: 'idempotent',
-  // 第二级压缩：由 loop 拦截执行（现场压临时摘要，loop 收尾即弃），幂等
-  compress_context: 'idempotent',
+  list_dir: 'read-only',
+  search_memories: 'read-only',
+  web_search: 'read-only',
+  trace_summary: 'read-only',
+  // list_sessions：读操作（列举会话路标），永不跳过（read-only）
+  list_sessions: 'read-only',
+  // 第二级压缩：由 loop 拦截执行（现场压临时摘要，loop 收尾即弃），永不跳过（read-only）
+  compress_context: 'read-only',
   task_table_write: 'non-idempotent',
   task_table_update: 'idempotent',
-  read_skill: 'idempotent',
-  read_resource: 'idempotent',
+  read_skill: 'read-only',
+  read_resource: 'read-only',
   run_skill_script: 'non-idempotent',
   // register_work：写 JSON 索引（同 path+description → 同记录），以 source 为业务键实现幂等
   register_work: 'idempotent-key',
   // 条件工具（宿主注入对应 provider 才暴露）：
-  // web_fetch：读操作，天然幂等 ✅
+  // web_fetch：读操作，永不跳过（read-only）
   // run_code：任意代码执行，有副作用（计算/IO），如实标记非幂等（重复执行结果不可预期）
-  web_fetch: 'idempotent',
+  web_fetch: 'read-only',
   run_code: 'non-idempotent',
-  // search_project：读操作（只读搜索），天然幂等 ✅
-  search_project: 'idempotent',
+  // search_project：读操作（只读搜索），永不跳过（read-only）
+  search_project: 'read-only',
 };
 
 /**
@@ -98,6 +100,7 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
  *
  * 规则：
  * - non-idempotent 工具永不跳过——失败后允许 LLM 原样重试，恢复时由补偿机制兜底；
+ * - read-only 工具永不跳过——目标态可被写工具/时间改动，跳过回喂陈旧结果会误导 LLM，重跑无害；
  * - 幂等工具（idempotent / idempotent-key）仅当上次执行**成功**（ok === true）时跳过；
  *   上次失败（ok === false）不拦截重试，否则失败操作会被静默吞掉。
  *
@@ -116,7 +119,7 @@ export function shouldSkipForIdempotency(
   args: string,
   idempotent: IdempotencyLevel,
 ): { skip: boolean; previousResult?: string } {
-  if (idempotent === 'non-idempotent') return { skip: false };
+  if (idempotent === 'non-idempotent' || idempotent === 'read-only') return { skip: false };
   const record = records?.find((r) => r.name === name && r.argsSignature === args);
   if (!record || record.ok !== true) return { skip: false };
   return {

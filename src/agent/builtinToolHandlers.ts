@@ -7,7 +7,7 @@
  *   3. 文件写入内容计算（computeWriteContent）
  *   4. 目录递归遍历（walkDir + shouldIgnore）
  *
- * 设计理由：ToolExecutor 802 行超阈值，内置工具实现（~440 行）
+ * 设计理由：ToolExecutor 作为编排层（注册/分发/校验）体量偏大，内置工具实现（~440 行）
  * 是独立职责——实际文件系统/记忆索引操作，与 ToolExecutor 的注册/分发/校验职责分离。
  *
  * 自然生长原则：BuiltinToolHandlers 不持有 customTools 注册表（避免与 ToolExecutor 状态耦合），

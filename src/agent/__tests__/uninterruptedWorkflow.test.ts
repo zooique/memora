@@ -4,7 +4,7 @@
  * 覆盖全部核心功能：
  *   - 三态状态机流转（SessionStateMachine）
  *   - 检查点快照与恢复（SessionManager.createCheckpoint/restoreFromCheckpoint）
- *   - 工具幂等性与 outbox 模式（preExecutionCheck/hasToolExecuted）
+ *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
  *   - 执行计划管理（advancePlan/completeStep/isPlanStalled）
  *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
@@ -618,44 +618,37 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
     manager.createCheckpoint('测试目标');
   });
 
-  describe('logToolExecution / hasToolExecuted', () => {
-    it('logToolExecution 应写入工具执行记录', () => {
+  describe('logToolExecution 持久化', () => {
+    it('logToolExecution 应写入 completedToolCalls 且可被 getCheckpoint 读取', () => {
       const record: ToolExecutionRecord = {
         name: 'read_file',
         argsSignature: '{"path":"test.ts"}',
         executedAt: Date.now(),
         resultSummary: '文件内容',
         ok: true,
+        idempotent: 'read-only',
       };
       manager.logToolExecution(record);
-      expect(manager.hasToolExecuted('read_file', '{"path":"test.ts"}')).toBe(true);
+      const found = manager.getCheckpoint()?.completedToolCalls?.find(
+        (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
+      );
+      expect(found).toBeDefined();
+      expect(found!.resultSummary).toBe('文件内容');
     });
 
-    it('hasToolExecuted 未执行时返回 false', () => {
-      expect(manager.hasToolExecuted('read_file', '{"path":"nonexistent.ts"}')).toBe(false);
-    });
-
-    it('参数签名不同应视为不同调用', () => {
+    it('参数签名不同应视为不同记录', () => {
       manager.logToolExecution({
         name: 'read_file',
         argsSignature: '{"path":"a.ts"}',
         executedAt: Date.now(),
         resultSummary: 'a',
         ok: true,
+        idempotent: 'read-only',
       });
-      expect(manager.hasToolExecuted('read_file', '{"path":"a.ts"}')).toBe(true);
-      expect(manager.hasToolExecuted('read_file', '{"path":"b.ts"}')).toBe(false);
-    });
-
-    it('工具名不同即使参数相同也视为不同调用', () => {
-      manager.logToolExecution({
-        name: 'read_file',
-        argsSignature: '{"path":"test.ts"}',
-        executedAt: Date.now(),
-        resultSummary: '内容',
-        ok: true,
-      });
-      expect(manager.hasToolExecuted('write_file', '{"path":"test.ts"}')).toBe(false);
+      const found = manager.getCheckpoint()?.completedToolCalls?.find(
+        (r) => r.name === 'read_file' && r.argsSignature === '{"path":"b.ts"}',
+      );
+      expect(found).toBeUndefined();
     });
   });
 
@@ -1574,14 +1567,14 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 D：工具幂等性——outbox 模式跳过重复执行
+   * 场景 D：工具执行记录持久化——logToolExecution 写入 completedToolCalls 供恢复排重
    *
    * 验证完整闭环：
    *   1. 模拟工具执行，记录到检查点
-   *   2. 恢复检查点后，相同工具调用应被 preExecutionCheck 跳过
-   *   3. 验证工具未被重复执行
+   *   2. 记录可被 getCheckpoint 读取（completedToolCalls 持久化）
+   *   3. 相同 name+argsSignature 的记录可被定位（恢复时 outbox 排重的数据基础）
    */
-  it('场景 D：工具幂等性——outbox 模式跳过重复执行', { timeout: 30000 }, async () => {
+  it('场景 D：工具执行记录持久化——logToolExecution 写入 completedToolCalls 供恢复排重', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1597,31 +1590,28 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     agent.createCheckpoint('测试幂等性');
 
     // 模拟工具执行记录
-    // 通过 sessionManager 的 logToolExecution 记录幂等工具
+    // 通过 sessionManager 的 logToolExecution 记录写工具（幂等键级别，恢复时排重用）
     agent.sessionManager!.logToolExecution({
       name: 'read_file',
       argsSignature: '{"path":"test.ts"}',
       executedAt: Date.now(),
       resultSummary: '文件内容：hello',
       ok: true,
-      idempotent: 'idempotent',
+      idempotent: 'read-only',
     });
 
-    // 验证 hasToolExecuted 返回 true
-    expect(agent.sessionManager!.hasToolExecuted('read_file', '{"path":"test.ts"}')).toBe(true);
-
-    // 验证未执行过的工具返回 false
-    expect(agent.sessionManager!.hasToolExecuted('read_file', '{"path":"other.ts"}')).toBe(false);
-
-    // 验证 preExecutionCheck 逻辑（通过 agent 内部回调）
-    // 直接调用 agent 的 preExecutionCheck 逻辑（通过 assembler 注入的）
-    // 由于 agent 内部 intercept 了 preExecutionCheck，这里通过 sessionManager 验证
+    // 记录可被 getCheckpoint 读取（outbox 排重的数据基础，替代已删除的 hasToolExecuted）
     const cp = agent.getCheckpoint()!;
     const prevRecord = cp.completedToolCalls?.find(
       (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
     );
     expect(prevRecord).toBeDefined();
     expect(prevRecord!.resultSummary).toContain('hello');
+    // 不同参数签名视为不同记录（排重粒度）
+    const otherRecord = cp.completedToolCalls?.find(
+      (r) => r.name === 'read_file' && r.argsSignature === '{"path":"other.ts"}',
+    );
+    expect(otherRecord).toBeUndefined();
   });
 
   /**
@@ -2542,7 +2532,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
   it('组合-放行后幂等生效：宿主 skip=false 放行，内部幂等仍按 outbox 语义跳过', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
-      provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
+      provider: new SingleToolThenTextProvider('write_file', '{"path":"probe.txt"}'),
       configDir: tmpConfig,
       dataDir: tmpData,
       permission: 'owner',
@@ -2553,25 +2543,25 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     });
     await agent.init();
 
-    // 预置检查点 + 已完成的幂等工具记录（read_file 为 'idempotent' 级别）
+    // 预置检查点 + 已完成的幂等工具记录（write_file 为 'idempotent-key' 级别，可跳过）
     agent.createCheckpoint('测试放行后幂等');
     agent.sessionManager!.logToolExecution({
-      name: 'read_file',
+      name: 'write_file',
       argsSignature: '{"path":"probe.txt"}',
       executedAt: Date.now(),
       resultSummary: '幂等上次结果',
       ok: true,
-      idempotent: 'idempotent',
+      idempotent: BUILTIN_TOOL_IDEMPOTENCY.write_file,
     });
 
     const results: Array<{ ok: boolean; summary?: string }> = [];
-    for await (const chunk of agent.chat('读取探针文件')) {
+    for await (const chunk of agent.chat('写入探针文件')) {
       if (chunk.type === 'tool_result') {
         results.push({ ok: chunk.ok, summary: chunk.summary });
       }
     }
 
-    // 宿主放行 → 内部幂等跳过：outbox 标记 + 上次结果
+    // 宿主放行 → 内部幂等键跳过：outbox 标记 + 上次结果
     expect(results).toHaveLength(1);
     expect(results[0]!.ok).toBe(true);
     expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
@@ -2581,7 +2571,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
   it('向后兼容：未注入宿主回调时，内部幂等检查照常工作', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
-      provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
+      provider: new SingleToolThenTextProvider('write_file', '{"path":"probe.txt"}'),
       configDir: tmpConfig,
       dataDir: tmpData,
       permission: 'owner',
@@ -2593,22 +2583,22 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
 
     agent.createCheckpoint('测试向后兼容');
     agent.sessionManager!.logToolExecution({
-      name: 'read_file',
+      name: 'write_file',
       argsSignature: '{"path":"probe.txt"}',
       executedAt: Date.now(),
       resultSummary: '现状幂等结果',
       ok: true,
-      idempotent: 'idempotent',
+      idempotent: BUILTIN_TOOL_IDEMPOTENCY.write_file,
     });
 
     const results: Array<{ ok: boolean; summary?: string }> = [];
-    for await (const chunk of agent.chat('读取探针文件')) {
+    for await (const chunk of agent.chat('写入探针文件')) {
       if (chunk.type === 'tool_result') {
         results.push({ ok: chunk.ok, summary: chunk.summary });
       }
     }
 
-    // 无宿主回调 → 幂等照常：outbox 标记 + 上次结果
+    // 无宿主回调 → 幂等键照常：outbox 标记 + 上次结果
     expect(results).toHaveLength(1);
     expect(results[0]!.ok).toBe(true);
     expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
@@ -2653,6 +2643,72 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     expect(results[0]!.summary).not.toContain('[SKIP:TOOL:IDEMPOTENT]');
     // 目标态达成：文件确实被删除（闭环不留痕）
     expect(existsSync(join(tmpProject, 'probe.txt'))).toBe(false);
+  });
+
+  it('IDM-1 端到端：write→read→write→read 中第二次 read 返回当前内容而非陈旧跳过结果', { timeout: 30000 }, async () => {
+    // 序列 Provider：依次发出 write(v1) → read → write(v2) → read，最后文本。
+    // 不读消息、仅按步推进——用于构造「同会话内读同一文件且中间被写覆盖」的闭环。
+    class SequenceToolProvider extends LlmProvider {
+      readonly name = 'mock-seq';
+      private steps = [
+        { name: 'write_file', args: JSON.stringify({ path: 'data.txt', content: 'v1-初始内容' }) },
+        { name: 'read_file', args: JSON.stringify({ path: 'data.txt' }) },
+        { name: 'write_file', args: JSON.stringify({ path: 'data.txt', content: 'v2-被覆盖后的最新内容' }) },
+        { name: 'read_file', args: JSON.stringify({ path: 'data.txt' }) },
+      ];
+      private i = 0;
+
+      async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+        const sys = messages.find((m) => m.role === 'system')?.content;
+        if (typeof sys === 'string' && sys.includes('对话摘要生成器')) {
+          yield { content: JSON.stringify({ summary: 'x', type: 'general' }) };
+          yield { finishReason: 'stop' };
+          return;
+        }
+        if (this.i < this.steps.length) {
+          const s = this.steps[this.i]!;
+          this.i += 1;
+          yield {
+            toolCalls: [{ id: 'c' + this.i, type: 'function', function: { name: s.name, arguments: s.args } }],
+          };
+          yield { finishReason: 'tool_calls' };
+          return;
+        }
+        yield { content: '完成' };
+        yield { finishReason: 'stop' };
+      }
+    }
+
+    // 预置 v1 在盘（模拟会话开始前文件已存在）
+    writeFileSync(join(tmpProject, 'data.txt'), 'v1-初始内容', 'utf-8');
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SequenceToolProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpProject, tmpData],
+      archiveMode: 'manual',
+    });
+    await agent.init();
+    agent.createCheckpoint('测试 IDM-1 陈旧读');
+
+    const reads: string[] = [];
+    for await (const chunk of agent.chat('开始')) {
+      if (chunk.type === 'tool_result' && chunk.name === 'read_file') {
+        reads.push(chunk.summary ?? '');
+      }
+    }
+
+    // 两次 read_file 都必须真实执行（read-only 永不跳过），而非命中首次的陈旧 outbox 缓存：
+    //   - 第一次读到 v1（盘上预置内容）
+    //   - 第二次读到 v2（中间 write_file 已覆盖）
+    // 若 read_file 仍被标为可跳过（IDM-1 未修复），第二次 read 会回喂首次的 v1 摘要 → 本例红。
+    expect(reads).toHaveLength(2);
+    expect(reads[0]).toContain('v1-初始内容');
+    expect(reads[1]).toContain('v2-被覆盖后的最新内容');
+    // 磁盘最终态为 v2（write 真实生效、read 未被假跳过）
+    expect(existsSync(join(tmpProject, 'data.txt'))).toBe(true);
   });
 });
 

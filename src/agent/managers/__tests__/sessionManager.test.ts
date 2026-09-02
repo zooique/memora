@@ -1660,9 +1660,13 @@ describe('SessionManager', () => {
           () => false,
           vi.fn(),
         );
-        const loaded = revived.loadPersistedCheckpoint();
-        expect(loaded).not.toBeNull();
-        expect(revived.hasToolExecuted('write_file', '{"path":"a.ts"}')).toBe(true);
+      const loaded = revived.loadPersistedCheckpoint();
+      expect(loaded).not.toBeNull();
+      expect(
+        loaded!.completedToolCalls?.some(
+          (r) => r.name === 'write_file' && r.argsSignature === '{"path":"a.ts"}',
+        ),
+      ).toBe(true);
       });
     });
 

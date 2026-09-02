@@ -547,11 +547,15 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
         idempotent,
       };
       sessionManager.logToolExecution(record);
-      // D1-②：非只读工具（有写副作用）完成后立即落盘其 completedToolCalls——使「工具重跑排重」
-      // 在进程崩溃/重启后仍生效（幂等契约跨重启可靠），而非依赖闭环边界/关闭 flush。
-      // 只读幂等工具可安全重跑，故不落盘以省 IO。
-      if (idempotent !== 'idempotent') {
-        // 非只读工具完成后立即落盘 completedToolCalls（SessionManager 恒实现，强调用不设可选链）
+      // D1-②：有写副作用且需在崩溃/重启后保留执行记录的工具，执行完成后立即落盘
+      // completedToolCalls——使「工具重跑排重 / 补偿」在进程崩溃/重启后仍生效（幂等契约跨重启可靠）。
+      // 分级落盘依据（对照四态语义）：
+      //   - non-idempotent：记录供补偿回滚（compensateAllNonIdempotent）使用，必须落盘；
+      //   - idempotent-key：记录供恢复时排重（避免重复写入），需落盘；
+      //   - idempotent（task_table_update）：重跑安全，无需立即落盘（会话收尾/其它 flush 点兜底）；
+      //   - read-only：永不跳过且重跑无害，落盘纯属 IO 浪费，不落盘。
+      if (idempotent === 'non-idempotent' || idempotent === 'idempotent-key') {
+        // 有写副作用且需持久化记录的工具：完成后立即落盘 completedToolCalls（SessionManager 恒实现）
         sessionManager.flushNow();
       }
     },

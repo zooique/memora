@@ -218,10 +218,14 @@ export interface PauseMeta {
 }
 
 /**
- * 工具幂等性级别：'idempotent'（读操作天然幂等）/'idempotent-key'（依赖业务唯一键，
- * 写操作）/non-idempotent（非幂等，需补偿机制兜底）。
+ * 工具幂等性级别：
+ * - 'idempotent'：写后状态确定、可安全重跑（如 task_table_update），跳过回喂缓存摘要
+ * - 'idempotent-key'：依赖业务唯一键实现幂等（写操作，如 write_file / register_work）
+ * - 'non-idempotent'：非幂等，需补偿机制兜底；另承担「禁止跳过」语义
+ * - 'read-only'：读/查询类，目标态可被外部改动（写工具/时间），永不跳过——跳过回喂
+ *   陈旧结果会误导 LLM；重跑无害且无需去重持久化
  */
-export type IdempotencyLevel = 'idempotent' | 'idempotent-key' | 'non-idempotent';
+export type IdempotencyLevel = 'idempotent' | 'idempotent-key' | 'non-idempotent' | 'read-only';
 
 /** 记录已执行的工具调用，以工具名+参数签名唯一标识；恢复时检查 outbox 模式避免重复执行 */
 export interface ToolExecutionRecord {

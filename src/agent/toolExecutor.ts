@@ -55,11 +55,12 @@ const SCRIPT_EXT_LANGUAGE: Record<string, string> = {
   '.js': 'node',
   '.mjs': 'node',
   '.cjs': 'node',
-  '.ts': 'node', // TS 语义按 node 下探，能否执行取决于宿主执行器
   '.py': 'python',
   '.sh': 'shell',
   '.bash': 'shell',
   '.zsh': 'shell',
+  // 注：'.ts' 不在可靠支持集合——node 无法直接解析 TS，省略 language 时交由下方兜底 'node'，
+  // 是否真能执行取决于宿主执行器是否具备 TS 转译能力（如 vscode codeExecutor 仅别名 .js/.mjs/.cjs）。
 };
 /** 无法识别扩展名时的兜底语言（脚本模式默认按 Node 执行） */
 const SCRIPT_LANGUAGE_FALLBACK = 'node';
