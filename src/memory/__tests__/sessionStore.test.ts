@@ -16,8 +16,8 @@ import type {
   SessionMessage,
   SessionMeta,
 } from '../sessionStore.js';
-// 内核真实实现（本文件顶部的同名 InMemorySessionStore 是测试替身，故此处取别名区分）
-import { InMemorySessionStore as KernelSessionStore } from '../inMemorySessionStore.js';
+// 内核真实实现（测试替身改名 TestInMemorySessionStore 后，本名恢复独占，无需再取别名区分）
+import { InMemorySessionStore } from '../inMemorySessionStore.js';
 import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
 
 // ══════════════════════════════════════════════════════════════
@@ -30,7 +30,7 @@ import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
  * 实现 ISessionStore 所有必需方法 + 大部分可选方法，
  * 验证接口契约的完整性。
  */
-class InMemorySessionStore implements ISessionStore {
+class TestInMemorySessionStore implements ISessionStore {
   /** 消息存储：key = `${date}/${session}`，value = 消息数组 */
   private readonly messages = new Map<string, SessionMessage[]>();
   /** 检查点存储：key = sessionId，value = checkpoint JSON 字符串 */
@@ -204,10 +204,10 @@ class InMemorySessionStore implements ISessionStore {
 
 describe('ISessionStore — 必需方法契约', () => {
 
-  let store: InMemorySessionStore;
+  let store: TestInMemorySessionStore;
 
   beforeEach(() => {
-    store = new InMemorySessionStore();
+    store = new TestInMemorySessionStore();
   });
 
   describe('seedMessages（会话视图播种） + loadMessages', () => {
@@ -309,10 +309,10 @@ describe('ISessionStore — 必需方法契约', () => {
 
 describe('ISessionStore — 可选方法契约', () => {
 
-  let store: InMemorySessionStore;
+  let store: TestInMemorySessionStore;
 
   beforeEach(() => {
-    store = new InMemorySessionStore();
+    store = new TestInMemorySessionStore();
   });
 
   describe('saveCheckpoint + loadCheckpoint + deleteCheckpoint', () => {
@@ -494,7 +494,7 @@ describe('ISessionStore — SessionMeta 类型', () => {
 
 describe('内核 InMemorySessionStore（真实实现）· listSessionMetas 排序契约', () => {
   it('按 updatedAt 降序（最近活跃在前）——与宿主实现同向', () => {
-    const store = new KernelSessionStore(new InMemoryRoundStore());
+    const store = new InMemorySessionStore(new InMemoryRoundStore());
     // 乱序插入：确保验证的是「实现真的排序」而非插入顺序
     store.createSession({ sessionId: '2026-08-01-a', updatedAt: '2026-08-01T00:00:00.000Z', messageCount: 0 });
     store.createSession({ sessionId: '2026-08-03-b', updatedAt: '2026-08-03T00:00:00.000Z', messageCount: 0 });
