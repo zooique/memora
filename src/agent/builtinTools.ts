@@ -37,7 +37,8 @@ export interface ToolDefinition {
 // 幂等性定义：
 //   - idempotent：天然幂等（读操作），相同参数多次执行结果一致
 //   - idempotent-key：依赖业务唯一键实现幂等（写操作）
-//   - non-idempotent：非幂等，需补偿机制兜底
+//   - non-idempotent：非幂等，需补偿机制兜底；另承担「禁止跳过」语义——目标态可被其它工具
+//     重建的操作（delete_file 的目标态可被 write_file 重建）必须禁跳过，重跑是否有害另行判断
 //
 // 内置工具幂等性判断：
 //   - read_file / list_dir：读操作，天然幂等 ✅
