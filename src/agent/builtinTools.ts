@@ -64,8 +64,10 @@ import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   read_file: 'idempotent',
   write_file: 'idempotent-key',
-  // delete_file：目标态幂等（重复删除同一文件意图一致，仅一次语义拦截 LLM 反复删同一文件）
-  delete_file: 'idempotent',
+  // delete_file 归 non-idempotent 是「禁止跳过」而非「重跑有害」（重跑由 deleteFile 的 ENOENT 兜底，无害）。
+  // 禁止跳过的原因：删除的目标态可被 write_file 重建，而幂等键只有 name+args、不含文件状态 →
+  // 标幂等会让同会话内第二次「写 → 执行 → 删」闭环被静默跳过，脚本残留且 LLM 收到假的「已删除」。
+  delete_file: 'non-idempotent',
   list_dir: 'idempotent',
   search_memories: 'idempotent',
   web_search: 'idempotent',

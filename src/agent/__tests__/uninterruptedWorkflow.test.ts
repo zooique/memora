@@ -17,10 +17,11 @@
  *   - 遵循现有测试模式和命名规范
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Agent } from '@/agent/agent.js';
+import { BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 import { SessionManager } from '@/agent/managers/sessionManager.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
 import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
@@ -2597,5 +2598,45 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     expect(results[0]!.ok).toBe(true);
     expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
     expect(results[0]!.summary).toContain('现状幂等结果');
+  });
+
+  it('delete_file 二次闭环不被幂等跳过（目标态可被 write_file 重建 → 跳过会残留临时脚本）', { timeout: 30000 }, async () => {
+    // 磁盘预置待清理文件：模拟同会话内第二次「写 → 执行 → 删」闭环时重建的同名临时脚本
+    writeFileSync(join(tmpProject, 'probe.txt'), '临时脚本内容', 'utf-8');
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new SingleToolThenTextProvider('delete_file', '{"path":"probe.txt"}'),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpProject, tmpData],
+      archiveMode: 'manual',
+    });
+    await agent.init();
+
+    // 预置：上一轮已成功删除过同路径（第一次闭环的执行记录）
+    agent.createCheckpoint('测试 delete_file 不跳过');
+    agent.sessionManager!.logToolExecution({
+      name: 'delete_file',
+      argsSignature: '{"path":"probe.txt"}',
+      executedAt: Date.now(),
+      resultSummary: '✅ 已删除：probe.txt',
+      ok: true,
+      idempotent: BUILTIN_TOOL_IDEMPOTENCY.delete_file,
+    });
+
+    const results: Array<{ ok: boolean; summary?: string }> = [];
+    for await (const chunk of agent.chat('清理临时脚本')) {
+      if (chunk.type === 'tool_result') {
+        results.push({ ok: chunk.ok, summary: chunk.summary });
+      }
+    }
+
+    // 核心：必须真实执行，而非命中 outbox 跳过（跳过会让 LLM 收到假的「已删除」而文件仍在）
+    expect(results).toHaveLength(1);
+    expect(results[0]!.ok).toBe(true);
+    expect(results[0]!.summary).not.toContain('[SKIP:TOOL:IDEMPOTENT]');
+    // 目标态达成：文件确实被删除（闭环不留痕）
+    expect(existsSync(join(tmpProject, 'probe.txt'))).toBe(false);
   });
 });

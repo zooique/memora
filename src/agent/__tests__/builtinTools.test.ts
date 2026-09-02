@@ -58,11 +58,13 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.register_work).toBe('idempotent-key');
   });
 
-  it('delete_file 应注册为内置工具且标记幂等（临时脚本闭环收尾：清理一次性脚本不留痕）', () => {
+  it('delete_file 应注册为内置工具且禁止幂等跳过（临时脚本闭环收尾：清理一次性脚本不留痕）', () => {
     const names = BUILTIN_TOOLS.map((t) => t.name);
     expect(names).toContain('delete_file');
-    // 目标态幂等：重复删除同一文件意图一致（仅一次语义拦截 LLM 反复删同一文件）
-    expect(BUILTIN_TOOL_IDEMPOTENCY.delete_file).toBe('idempotent');
+    // 归类 non-idempotent 是「禁止跳过」而非「重跑有害」：重跑由 deleteFile 内部 ENOENT 兜底，无害。
+    // 禁止跳过的原因：删除的目标态可被 write_file 重建，而幂等键只有 name+args、不含文件状态，
+    // 标幂等会让同会话内第二次「写 → 执行 → 删」闭环被静默跳过 → 脚本残留且 LLM 收到假的「已删除」。
+    expect(BUILTIN_TOOL_IDEMPOTENCY.delete_file).toBe('non-idempotent');
     const def = BUILTIN_TOOLS.find((t) => t.name === 'delete_file')!;
     expect(def.parameters.required).toContain('path');
   });
@@ -438,5 +440,13 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
     const result = shouldSkipForIdempotency(records, 'read_file', '{"path":"a.ts"}', 'idempotent');
     expect(result.skip).toBe(true);
     expect(result.previousResult).toBeUndefined();
+  });
+
+  it('delete_file 上次删除成功后仍不跳过——目标态可被 write_file 重建，跳过会让二次闭环残留脚本', () => {
+    // 用真实映射值判定（禁用硬编码 'non-idempotent'）：归类一旦回退为幂等，本例即红
+    const level = BUILTIN_TOOL_IDEMPOTENCY.delete_file!;
+    const args = '{"path":"tmp_analyze.cjs"}';
+    const records = [rec('delete_file', args, true, level, '✅ 已删除')];
+    expect(shouldSkipForIdempotency(records, 'delete_file', args, level)).toEqual({ skip: false });
   });
 });
