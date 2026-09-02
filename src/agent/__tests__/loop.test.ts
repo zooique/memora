@@ -1689,10 +1689,10 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(textChunks.find((c) => c.content === '原始回复')?.stage).toBe('answer');
     expect(textChunks.find((c) => c.content === '改进后的回复')?.stage).toBe('self_review');
 
-    // 验证 selfReview chunk 被 emit（round=1）
+    // 验证 selfReview chunk 被 emit（round=1；roundId 为执行闭环归属标记，随 withRound 附加）
     const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
     expect(selfReviewChunks).toHaveLength(1);
-    expect(selfReviewChunks[0]!).toEqual({ type: 'selfReview', round: 1 });
+    expect(selfReviewChunks[0]!).toMatchObject({ type: 'selfReview', round: 1 });
 
     const messages = loop.getMessages();
     // system + user + assistant(toolCalls) + tool + assistant(原始) + system(自审查提示) + assistant(改进) = 7

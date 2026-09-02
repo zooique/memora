@@ -55,6 +55,9 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
     restoreHistory: vi.fn(),
     resetContextSummary: vi.fn(),
     getMessages: vi.fn().mockReturnValue([]),
+    // 闭环节点锚点（TS-9）：检查点快照/恢复读写，mock 默认空轮
+    getCurrentRoundId: vi.fn().mockReturnValue(''),
+    setCurrentRoundId: vi.fn(),
     ...overrides,
   } as unknown as AgentLoop;
 }
@@ -978,6 +981,9 @@ describe('SessionManager', () => {
         restoreHistory: vi.fn(),
         getMessages: vi.fn().mockReturnValue(msgs.map((m) => ({ ...m, name: undefined }))),
         injectSystemMessage: vi.fn(),
+        // 闭环节点锚点（TS-9）：检查点快照/恢复读写（默认空轮，测试覆盖时覆写）
+        getCurrentRoundId: vi.fn().mockReturnValue(''),
+        setCurrentRoundId: vi.fn(),
       } as unknown as AgentLoop;
     }
 

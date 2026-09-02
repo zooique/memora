@@ -15,7 +15,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Agent, Round } from '@zooique/memora';
+import type { Agent, AgentChunk, Round } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
@@ -628,5 +628,123 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const msgTypes = ['user', 'assistant', 'process_event', 'replay_events', 'chunk', 'tool_start', 'tool_result'];
     const leaked = afterClear.filter((m) => msgTypes.includes((m as { type: string }).type));
     expect(leaked).toHaveLength(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09-02）
+// ═══════════════════════════════════════════════════════════
+// 修复：宿主原「流末一次落盘到 roundIds 末尾一个 round」在多执行闭环（Loop 编排）下归属错误——
+// 全部工具堆一个 round（拥挤）+ 部分 round 无 processEvents（丢失）。现按内核 chunk.roundId
+// 分组，每个执行闭环独立落盘到各自 Round（SSOT：归属由内核唯一提供，非 roundIds 末尾推断）。
+describe('consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09-02）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 构造带 chat()/getMetrics/sessionManager 的 mock agent（consumeFlow 落盘链路用） */
+  function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>): Agent {
+    return {
+      chat: chatFn,
+      getMetrics: () => ({ llm: { totalInputTokens: 0, totalOutputTokens: 0 } }),
+      sessionManager: {
+        getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
+        switchToSession: async () => 0,
+      },
+      on: vi.fn(),
+      off: vi.fn(),
+      memory: { softDeleteRoundSummaries: vi.fn() },
+      getCheckpoint: () => null,
+    } as unknown as Agent;
+  }
+
+  it('一次 chat() 多执行闭环（Loop 编排）：各执行闭环 processEvents 独立落盘，不堆叠不覆盖', async () => {
+    const { store, roundStore, provider } = setup();
+    provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
+    // 预造两个执行闭环的 Round（round-1 / round-2）
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '任务', ts: 't0' },
+      { role: 'assistant', content: '执行闭环1回答', ts: 't1' },
+    ]);
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '继续', ts: 't2' },
+      { role: 'assistant', content: '执行闭环2回答', ts: 't3' },
+    ]);
+    // mock chat：一次流内两个执行闭环（round-1 工具 / round-2 思考+工具），各自独立 roundId
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-1' };
+          yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
+          yield { type: 'text', content: '执行闭环1回答', roundId: 'round-1' };
+          yield { type: 'thinking', phase: 'planning', roundId: 'round-2' };
+          yield { type: 'tool_start', toolCallId: 't2', name: 'search', args: '{}', roundId: 'round-2' };
+          yield { type: 'tool_result', toolCallId: 't2', name: 'search', ok: true, summary: 's', roundId: 'round-2' };
+          yield { type: 'text', content: '执行闭环2回答', roundId: 'round-2' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
+
+    // 每个执行闭环的 processEvents 独立归属到自己的 Round（meta 段首 + 各自工具；metrics 归入收尾执行闭环）
+    const r1 = roundStore.getById('round-1')!;
+    const r2 = roundStore.getById('round-2')!;
+    expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result']);
+    expect(r2.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
+    // 工具归属精确：t1 只在 round-1，t2 只在 round-2（不堆叠、不串位）
+    expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1')).toBe(true);
+    expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(false);
+    expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
+  });
+
+  it('连续两次 chat()（第二次问答）：第二次 processEvents 独立落盘到新 Round，不覆盖第一次', async () => {
+    const { store, roundStore, provider } = setup();
+    provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '第一次', ts: 't0' },
+      { role: 'assistant', content: '第一次回答', ts: 't1' },
+    ]);
+    // 第一次 chat：round-1 工具（search）
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'tool_start', toolCallId: 't1', name: 'search', args: '{}', roundId: 'round-1' };
+          yield { type: 'tool_result', toolCallId: 't1', name: 'search', ok: true, summary: 'a', roundId: 'round-1' };
+          yield { type: 'text', content: '第一次回答', roundId: 'round-1' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('第一次');
+    // 第二次 chat 前追加 round-2
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '第二次', ts: 't2' },
+      { role: 'assistant', content: '第二次回答', ts: 't3' },
+    ]);
+    // 第二次 chat：round-2 工具（read_file）
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'thinking', phase: 'processing', roundId: 'round-2' };
+          yield { type: 'tool_start', toolCallId: 't2', name: 'read_file', args: '{}', roundId: 'round-2' };
+          yield { type: 'tool_result', toolCallId: 't2', name: 'read_file', ok: true, summary: 'b', roundId: 'round-2' };
+          yield { type: 'text', content: '第二次回答', roundId: 'round-2' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('第二次');
+
+    // 第一次的 round-1 保留自己的工具记录（不被第二次覆盖）；metrics 归入自己的执行闭环（单执行闭环收尾）
+    const r1 = roundStore.getById('round-1')!;
+    const r2 = roundStore.getById('round-2')!;
+    expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result', 'metrics']);
+    expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1')).toBe(true);
+    // 第二次独立落盘到 round-2（含 thinking/tool/metrics），不覆盖 round-1 的工具记录
+    expect(r2.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
+    expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
   });
 });

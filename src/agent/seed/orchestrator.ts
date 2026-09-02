@@ -20,6 +20,7 @@
  */
 
 import type { AgentChunk, SessionEvent } from '@/agent/types.js';
+import type { InteractiveInputKind } from '@/memory/roundStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { resolveTaskLoopLimit, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
@@ -199,25 +200,35 @@ export class SeedOrchestrator {
    * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文（prepare）、不在闭环出口分岔
    * （handoff）——差异源于 Trigger 的续跑语义，收在编排器内。
    *
-   * @param input 可选补充输入（空=续跑原路径；有=注入修正后续轮）
+   * TS-9 问答闭环归属：交互输入（主动提问回答 / 暂停补充）不分配新 roundId——
+   * 续跑延续 prepare 分配的闭环节点 roundId（loop.currentRoundId），appendUser 以
+   * 交互归属（interactive）追加到该轮 interactiveInputs，round 记录不因交互输入分裂。
+   * 跨进程重启时 currentRoundId 已由检查点 closureRoundId 回填（sessionManager.restore）。
+   *
+   * @param input 可选补充输入（空=续跑原路径；有=注入修正后续轮，同一闭环节点内）
    * @param signal 中止信号
+   * @param kind 交互输入类型（question-answer=主动提问回答；supplement=暂停后补充，默认）
    * @yields AgentChunk 事件流
    */
   async *runResume(
     input: string | undefined,
     signal: AbortSignal,
+    kind: InteractiveInputKind = 'supplement',
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
-    // 用户回答作为新问答闭环落盘（SSOT：消息历史唯一写点 MessageHistory）。
-    // 续跑与 chat 的唯一差异是无回答前——但用户回答（input）不能只活在 loop 内存，
-    // 必须写入历史轮才能跨重启可回溯、摘要可溯源。当前轮 ID 提前分配并与 loop 对齐，
-    // 使 continueAfterPause 的内存注入与 act 尾的 appendAssistant 落在同一轮上。
+    // 交互输入归属当前闭环节点（SSOT：roundId 唯一锚点=prepare appendUser 的 head roundId，
+    // 不重新 alloc——原「新问答闭环落盘」语义正是 TS-9 要修的闭环分裂点）。消息历史唯一写点
+    // MessageHistory：必须写入历史轮才能跨重启可回溯、摘要可溯源。
+    // 空 roundId（内存/检查点兜底异常）时 fallback alloc，防 appendUser 无锚点漏写。
     // Loop 编排续跑（completeExternalTask）有自己的组合溯源轮，不在此干预。
     if (input?.trim() && !parts.loop.isWithinExternalTask) {
-      const roundId = parts.loop.allocRoundId();
-      parts.loop.setCurrentRoundId(roundId);
+      const closureRoundId = parts.loop.getCurrentRoundId() || parts.loop.allocRoundId();
+      parts.loop.setCurrentRoundId(closureRoundId);
       try {
-        await parts.history.appendUser(input, roundId);
+        await parts.history.appendUser(input, closureRoundId, {
+          interactive: true,
+          kind,
+        });
       } catch (err) {
         logger.warn({ err }, '续跑用户回答历史写入失败');
       }

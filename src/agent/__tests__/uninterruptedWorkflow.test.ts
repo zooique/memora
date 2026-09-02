@@ -30,6 +30,8 @@ import { logger } from '@/logging/logger.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
+import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import type {
   SessionCheckpoint,
   PlanStep,
@@ -39,6 +41,7 @@ import type {
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MockedFunction } from 'vitest';
+import type { Round } from '@/memory/roundStore.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
@@ -129,6 +132,9 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
       { role: 'system', content: 'system prompt' },
     ]),
     injectSystemMessage: vi.fn(),
+    // 闭环节点锚点（TS-9）：检查点快照/恢复读写，mock 默认空轮
+    getCurrentRoundId: vi.fn().mockReturnValue(''),
+    setCurrentRoundId: vi.fn(),
     ...overrides,
   } as unknown as AgentLoop;
 }
@@ -1970,6 +1976,15 @@ class AskThenResumeProvider extends LlmProvider {
       yield { finishReason: 'stop' };
       return;
     }
+    // 会话命名助手调用（SessionNamer fire-and-forget，无 system 消息）：返回标题 JSON，
+    // 不消耗主对话「是否已 [ASK]」分岔状态——否则注入 sessionStore 的测试里
+    // 首条消息异步命名会抢先吞掉首次 [ASK]（TS-9 集成测试实测差异点）
+    const firstUser = messages.find((m) => m.role === 'user')?.content;
+    if (typeof firstUser === 'string' && firstUser.startsWith('你是会话命名助手。')) {
+      yield { content: JSON.stringify({ title: '测试会话' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
     if (!this.asked) {
       this.asked = true;
       // 首轮：[ASK] 主动提问，问题全文入史后暂停等待用户回答
@@ -2638,5 +2653,165 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     expect(results[0]!.summary).not.toContain('[SKIP:TOOL:IDEMPOTENT]');
     // 目标态达成：文件确实被删除（闭环不留痕）
     expect(existsSync(join(tmpProject, 'probe.txt'))).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// TS-9 · 问答闭环内交互输入归属（提问→补充→续跑 不分裂，含重启复现）
+// ═══════════════════════════════════════════════════════════════
+
+describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分裂）', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+  // 真实内存 Round Store：闭环节点物理真相源（断言 interactiveInputs 归属的唯一入口）
+  let roundStore: InMemoryRoundStore;
+  // 真实内存 Session Store：检查点持久化 + roundIds 会话登记（重启复现依赖）
+  let sessionStore: InMemorySessionStore;
+  // 与 AskThenResumeProvider 同步的提问-续跑 provider（首轮 [ASK] 主动提问 → 续跑正常作答）
+  let askProvider: AskThenResumeProvider;
+
+  beforeEach(() => {
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-ts9-data-'));
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-ts9-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-ts9-cfg-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+    roundStore = new InMemoryRoundStore();
+    sessionStore = new InMemorySessionStore(roundStore);
+    askProvider = new AskThenResumeProvider();
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      try {
+        await agent.close();
+      } catch {
+        // 忽略关闭错误
+      }
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  /** 创建注入 roundStore/sessionStore 的 Agent（两者同源关联，round 归属可观测） */
+  function makeTs9Agent(): Agent {
+    return new Agent({
+      projectPath: tmpProject,
+      provider: askProvider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+      roundStore,
+      // 关闭自动归档：避免后台摘要/归档 LLM 调用干扰交互时序断言
+      archiveMode: 'manual',
+    });
+  }
+
+  /** 取出当前闭环节点（roundStore 中唯一 Round；不分裂断言的核心判据） */
+  function currentClosure(): Round {
+    const rounds = roundStore.listAll();
+    expect(rounds).toHaveLength(1);
+    return rounds[0]!;
+  }
+
+  it('主动提问回答 → 流中暂停补充 → 续跑：三类交互输入归属同一闭环节点（round 不分裂）', { timeout: 30000 }, async () => {
+    agent = makeTs9Agent();
+    await agent.init();
+
+    // ── (1) 首轮：LLM 主动提问（[ASK]）→ 暂停，prepare 已分配闭环节点 roundId ──
+    for await (const _chunk of agent.chat('帮我读取一个文件')) {
+      void _chunk; // 仅消费流，断言看状态机与 RoundStore
+    }
+    expect(agent.sessionManager!.status).toBe('paused');
+    const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
+    expect(anchorRoundId).toBeTruthy();
+    // round 尚未完成（暂停轮不落 [ASK] assistant 段），但闭环节点已建立
+    let closure = currentClosure();
+    expect(closure.id).toBe(anchorRoundId);
+
+    // ── (2) 用户回答主动提问（question-answer）→ 归属同一闭环节点 ──
+    for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
+      void _chunk; // 仅消费流
+    }
+    expect(agent.sessionManager!.status).toBe('running');
+    closure = currentClosure();
+    expect(closure.id).toBe(anchorRoundId);
+    expect(closure.interactiveInputs).toHaveLength(1);
+    expect(closure.interactiveInputs![0]!.kind).toBe('question-answer');
+    expect(closure.interactiveInputs![0]!.content).toBe('我想读 probe.txt');
+    // 回答完整落盘：assistantMessage 为续跑最终回答
+    expect(closure.status).toBe('complete');
+    expect(closure.assistantMessage?.content).toContain('继续执行');
+
+    // ── (3) 用户补充（supplement）→ 归属同一闭环节点 ──
+    // 空闲态 requestPause 直接翻 PAUSED（Agent 门面已确认），模拟「暂停后补充」路由前置
+    expect(agent.requestPause('暂停后补充', 'user')).toBe(true);
+    expect(agent.sessionManager!.status).toBe('paused');
+    for await (const _chunk of agent.resumeExecution('补充：请同时读取测试配置', undefined, 'supplement')) {
+      void _chunk; // 仅消费流
+    }
+    expect(agent.sessionManager!.status).toBe('running');
+    closure = currentClosure();
+    expect(closure.id).toBe(anchorRoundId);
+    expect(closure.interactiveInputs).toHaveLength(2);
+    expect(closure.interactiveInputs![1]!.kind).toBe('supplement');
+    expect(closure.interactiveInputs![1]!.content).toBe('补充：请同时读取测试配置');
+
+    // (4) 会话登记也只有一个闭环节点（roundIds 不因交互输入新增）
+    const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
+    expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);
+    // (5) checkpoint 暂停态收口：回答/pause 硬恢复后 pausedAt 已清除，status 同步 running
+    const cp = agent.sessionManager!.getCheckpoint()!;
+    expect(cp.status).toBe('running');
+    expect(cp).not.toHaveProperty('pausedAt');
+  });
+
+  it('重启复现：检查点 closureRoundId 锚定原闭环节点，重启后补充续跑仍不分裂', { timeout: 30000 }, async () => {
+    // ── 第一段：提问 → 回答 → 暂停（checkpoint 落盘 closureRoundId 锚点）──
+    agent = makeTs9Agent();
+    await agent.init();
+    for await (const _chunk of agent.chat('帮我读取一个文件')) {
+      void _chunk; // 仅消费流
+    }
+    expect(agent.sessionManager!.status).toBe('paused');
+    const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
+    expect(anchorRoundId).toBeTruthy();
+    for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
+      void _chunk; // 仅消费流
+    }
+    // 暂停态关闭：checkpoint status=paused 持久化，closureRoundId=anchor 锚定
+    expect(agent.requestPause('重启前暂停', 'user')).toBe(true);
+    expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
+    await agent.close();
+    agent = null;
+
+    // ── 第二段：重启（新 Agent 实例，同 sessionStore/roundStore）──
+    agent = makeTs9Agent();
+    await agent.init();
+    // init 自动 loadPersistedCheckpoint → restoreFromCheckpoint（paused）
+    expect(agent.sessionManager!.status).toBe('paused');
+    // 闭环节点锚点随检查点恢复回填 loop.currentRoundId（collectionRoundId 回填）
+    expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
+
+    // 重启后补充输入 → 经 runResume 归属原闭环节点（不分裂新轮）
+    for await (const _chunk of agent.resumeExecution('重启后补充：换个方案', undefined, 'supplement')) {
+      void _chunk; // 仅消费流
+    }
+    expect(agent.sessionManager!.status).toBe('running');
+    const closure = currentClosure();
+    expect(closure.id).toBe(anchorRoundId);
+    expect(closure.interactiveInputs).toHaveLength(2);
+    expect(closure.interactiveInputs![1]!.kind).toBe('supplement');
+    expect(closure.interactiveInputs![1]!.content).toBe('重启后补充：换个方案');
+    // 会话登记仍仅此一个闭环节点
+    const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
+    expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);
+    // checkpoint 恢复后的暂停态收口：恢复即卸载 pausedAt
+    expect(agent.sessionManager!.getCheckpoint()).not.toHaveProperty('pausedAt');
   });
 });

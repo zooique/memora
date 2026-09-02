@@ -406,8 +406,8 @@ export class AgentLoop {
       if (this._shouldSkipRecallInjection()) {
         logger.debug('Token budget tight, skipping recall injection');
       } else {
-        // 召回注入
-        yield* this._injectRecall(recalledMemories);
+        // 召回注入（附执行闭环 roundId）
+        yield* this.withRound(this._injectRecall(recalledMemories));
       }
 
       // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力，受控写入口统一包裹）
@@ -420,8 +420,9 @@ export class AgentLoop {
 
       // 单轮迭代循环（runIterationLoop）：本闭环的执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
       // 真正的「外循环」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
+      // 经 withRound 附加当前执行闭环 roundId（SSOT：过程事件归属由内核唯一提供）
       taskSucceeded = true;
-      yield* this.runIterationLoop(signal);
+      yield* this.withRound(this.runIterationLoop(signal));
     } catch (err) {
       // 任务级 SLO：捕获未处理异常，标记任务失败
       taskSucceeded = false;
@@ -506,9 +507,9 @@ export class AgentLoop {
     this.resetTurnState();
 
     try {
-      // 重新进入迭代引擎，从保留的 this.messages 续跑
+      // 重新进入迭代引擎，从保留的 this.messages 续跑（续跑延续同一执行闭环 roundId，经 withRound 附加）
       taskSucceeded = true;
-      yield* this.runIterationLoop(signal);
+      yield* this.withRound(this.runIterationLoop(signal));
     } catch (err) {
       taskSucceeded = false;
       throw err;
@@ -554,11 +555,11 @@ export class AgentLoop {
     // 上下文准备（截断+微压缩+预算），安全消息集合供 LLM 调用
     const prep = await this._prepareContext(signal);
     if (prep === 'done') {
-      yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}` };
+      yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}`, roundId: this.currentRoundId };
       return;
     }
 
-    yield { type: 'thinking', phase: 'llm_calling' };
+    yield { type: 'thinking', phase: 'llm_calling', roundId: this.currentRoundId };
     const llmResult = yield* this.callLlmWithRetry(prep.safeMessages, prep.chatOpts, signal, 0);
     if (llmResult.aborted) return;
 
@@ -567,12 +568,25 @@ export class AgentLoop {
 
     // 汇报以 assistant 回填工作记忆（保留供历史/摘要沉淀；不触发工具路由）
     this.appendAssistantText(report);
-    yield { type: 'text', content: report };
+    yield { type: 'text', content: report, roundId: this.currentRoundId };
   }
 
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;
+  }
+
+  /**
+   * 给子生成器的每个 chunk 附加当前执行闭环 roundId（SSOT：过程事件归属由内核唯一提供）。
+   * 宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮。
+   * 三个执行闭环入口（processUserInput / continueAfterPause / runReport）统一经此包装。
+   */
+  private async *withRound<T extends AgentChunk>(
+    gen: AsyncGenerator<T, void, unknown>,
+  ): AsyncGenerator<T, void, unknown> {
+    for await (const chunk of gen) {
+      yield { ...chunk, roundId: this.currentRoundId } as T;
+    }
   }
 
   /** 设置 L2 运行时策略（与现策略浅合并）。默认值仅在策略解析层 resolveL2Strategy 归一，loop 不再兜底 */

@@ -160,6 +160,8 @@ export { getSessionDisplayName } from '@/memory/sessionStore.js';
 // ─── 问答闭环（Round）存储导出 ─────────────────────────────
 // Round 数据结构和存储接口
 export type { Round, RoundMessage, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
+// 问答闭环内交互输入（TS-9：主动提问回答/补充输入的类型与归属语义）
+export type { InteractiveInputKind } from '@/memory/roundStore.js';
 // 过程事件（每轮 UI 状态重建真相源，v1.5 单文件内聚，见 process-event-log-replay-design）
 export type {
   ProcessEvent,

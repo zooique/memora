@@ -49,6 +49,32 @@ export interface RoundMessage {
   };
 }
 
+/**
+ * 交互输入类型（TS-9 问答闭环内交互输入归属）
+ *
+ * 一次外部输入（Trigger）= 一个问答闭环。执行中的三类用户交互输入
+ * （LLM 主动提问回答 / 流式中补充 / 暂停后续跑补充）均归属当前问答闭环，
+ * 不分裂新轮——类型只影响 UI 折叠块文案，不参与 round 归属判定。
+ *
+ * - question-answer：LLM 主动提问（[ASK]/need_clarify）的用户回答（宿主 handleResume 路由）
+ * - supplement：用户中途补充（插话 interject / 暂停后主输入框补充）
+ */
+export type InteractiveInputKind = 'question-answer' | 'supplement';
+
+/**
+ * 问答闭环内交互输入（Round.interactiveInputs 元素）
+ *
+ * 附加在闭环节点轮上，按时间序追加；重放时宿主据此渲染折叠的「用户提问/用户补充」块。
+ */
+export interface RoundInteractiveInput extends RoundMessage {
+  /** 唯一标识（格式：msg-{roundId}-input-{序号}） */
+  id: string;
+  /** 恒为 user（与 RoundMessage.role 对齐，供统一迭代） */
+  role: 'user';
+  /** 交互输入类型（UI 折叠块文案与路由语义，不参与归属判定） */
+  kind: InteractiveInputKind;
+}
+
 // ─── 问答闭环状态 ───────────────────────────────────────
 
 /**
@@ -186,6 +212,24 @@ export interface Round {
 
   /** AI 消息（pending 状态时可能为空） */
   assistantMessage?: RoundMessage;
+
+  /**
+   * 问答闭环内交互输入（TS-9，2026-09-02 新增）
+   *
+   * LLM 主动提问回答 / 用户中途补充（插话 / 暂停续跑输入）按时间序追加于此处，
+   * 不因交互输入分裂出新问答闭环。assistantMessage 恒为闭环节点的最终回答；
+   * 此数组仅承载用户侧交互输入，供重放渲染折叠的「用户提问 / 用户补充」块。
+   */
+  interactiveInputs?: RoundInteractiveInput[];
+
+  /**
+   * 问答闭环内多段 assistant（TS-9，2026-09-02 新增）
+   *
+   * 闭环节点跨暂停-续跑时，前序 assistant 段（如 [ASK] 主动提问、中断半截）
+   * 入此数组，assistantMessage 恒为末段（最终回答）。普通单段问答轮无此字段
+   * （零冗余：仅在 appendAssistant 重写已存在 assistantMessage 时产生）。
+   */
+  assistantLog?: RoundMessage[];
 
   /** 问答闭环状态 */
   status: RoundStatus;

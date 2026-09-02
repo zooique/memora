@@ -7,8 +7,10 @@
  */
 import type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 import type {
+  InteractiveInputKind,
   IRoundStore,
   Round,
+  RoundInteractiveInput,
   RoundMessage,
 } from '@/memory/roundStore.js';
 import { logger } from '@/logging/logger.js';
@@ -234,8 +236,19 @@ export class MessageHistory {
    * Round-based 路径：roundStore 注入且 roundId 存在时，创建 pending Round
    * 写入 RoundStore（refCount=0，未完成不登记会话）。**仅 complete 才 appendRoundId**——
    * 崩溃残留的 pending 轮是孤儿（refCount=0），可由 GC 清理，不污染会话视图。
+   *
+   * 交互输入（TS-9）：opts.interactive 为真且 roundId 对应轮已存在（prepare 建 pending 或
+   * 暂停已完成轮）时，不再创建/覆盖新轮——按序追加到该轮 interactiveInputs，保问答闭环不分裂。
+   *
+   * @param content 用户输入内容
+   * @param roundId 闭环节点轮次 ID（可选，交互输入必须携带 = appendUser 的 head roundId）
+   * @param opts 交互输入选项（interactive=是否交互归属；kind=折叠块类型文案）
    */
-  async appendUser(content: string, roundId?: string): Promise<void> {
+  async appendUser(
+    content: string,
+    roundId?: string,
+    opts?: { interactive?: boolean; kind?: InteractiveInputKind },
+  ): Promise<void> {
     const message: SessionMessage = {
       role: 'user',
       content,
@@ -246,6 +259,29 @@ export class MessageHistory {
     // Round-based 路径：roundStore 注入且有 roundId 时写入
     if (roundId && this.roundStore) {
       try {
+        // 交互输入：同一问答闭环内续写（不新建/不覆盖轮），防闭环节点被交互输入分裂（TS-9）
+        if (opts?.interactive) {
+          const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
+          if (existing) {
+            const input: RoundInteractiveInput = {
+              id: `msg-${roundId}-input-${(existing.interactiveInputs?.length ?? 0) + 1}`,
+              role: 'user',
+              content,
+              timestamp: message.timestamp,
+              kind: opts.kind ?? 'supplement',
+            };
+            const updated: Round = {
+              ...existing,
+              interactiveInputs: [...(existing.interactiveInputs ?? []), input],
+            };
+            this.roundStore.save(updated);
+            this.pendingRounds.set(roundId, updated);
+            logger.debug({ roundId, kind: input.kind }, 'appendUser: 交互输入归属问答闭环');
+            return;
+          }
+          // 轮不存在（异常兜底）：降级为普通 pending Round（内容不丢失，GC 兜底）
+          logger.warn({ roundId }, 'appendUser: 交互输入对应轮缺失，降级为新建 pending Round');
+        }
         const pendingRound: Round = {
           id: roundId,
           userMessage: {
@@ -277,6 +313,11 @@ export class MessageHistory {
    * incrementRef（refCount 0→1）+ appendRoundId。pending 缓存丢失（跨重启）时从
    * RoundStore 取回补全；Round 不存在（异常兜底）时创建独立 complete Round 并登记，
    * 保证用户消息不丢失。
+   *
+   * 闭环节点续写（TS-9）：同一 roundId 已存在 assistantMessage（跨暂停-续跑：
+   * 暂停轮已把 [ASK] 提问/中断半截落为 assistantMessage）时，旧段入 assistantLog，
+   * assistantMessage 恒为末段（最终回答）——问答闭环不因续跑分裂新轮，且前序 LLM
+   * 文本（如主动提问）不丢失。
    */
   async appendAssistant(content: string, roundId?: string): Promise<void> {
     if (!content.trim()) return;
@@ -291,49 +332,53 @@ export class MessageHistory {
     // Round-based 路径：roundStore 注入且有 roundId 时完成 pending Round
     if (roundId && this.roundStore) {
       let completed: Round | null = null;
-      const pendingRound = this.pendingRounds.get(roundId);
-      if (pendingRound) {
+      // 统一取现有轮：优先 pending 缓存（prepare 新建后未完成），否则 RoundStore（跨重启 / 暂停已完成轮）
+      const existing =
+        this.pendingRounds.get(roundId) ?? this.roundStore.getById(roundId) ?? null;
+      if (existing) {
+        // 旧 assistant 段入 assistantLog（仅当已存在 assistantMessage 时产生，普通单段轮零冗余）
+        const assistantLog = existing.assistantLog
+          ? [...existing.assistantLog]
+          : existing.assistantMessage
+            ? []
+            : undefined;
+        if (existing.assistantMessage) assistantLog!.push(existing.assistantMessage);
         completed = {
-          ...pendingRound,
+          ...existing,
           assistantMessage: {
             id: `msg-${roundId}-assistant`,
             role: 'assistant',
             content,
             timestamp: message.timestamp,
           } as RoundMessage,
+          assistantLog: assistantLog && assistantLog.length > 0 ? assistantLog : undefined,
           status: 'complete',
           completedAt: message.timestamp,
         };
         this.pendingRounds.delete(roundId);
       } else {
-        // pending 缓存丢失（跨重启等）：从 RoundStore 取回补全
-        const round = this.roundStore.getById(roundId);
-        if (round) {
-          completed = {
-            ...round,
-            assistantMessage: {
-              id: `msg-${roundId}-assistant`,
-              role: 'assistant',
-              content,
-              timestamp: message.timestamp,
-            } as RoundMessage,
-            status: 'complete',
-            completedAt: message.timestamp,
-          };
-        } else {
-          logger.warn({ roundId }, 'appendAssistant: Round not found in RoundStore');
-        }
+        logger.warn({ roundId }, 'appendAssistant: Round not found in RoundStore');
       }
 
       if (completed) {
         this.roundStore.save(completed);
-        // complete 才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理
-        this.roundStore.incrementRef(roundId);
-        const sessionId = this.currentSessionName;
-        try {
-          this.sessionStore?.appendRoundId(sessionId, roundId);
-        } catch (err) {
-          logger.warn({ err, sessionId, roundId }, 'appendAssistant: appendRoundId 失败');
+        // 首次 complete 才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理。
+        // 续写同一闭环节点（assistantLog：跨暂停-续跑多次 appendAssistant 到同一 roundId）不重复登记——
+        // 否则 roundIds 同 id 重复堆叠、refCount 虚增，会话视图出现「一个问答闭环多次登记」（TS-9 分裂残留）
+        const isReappend = existing?.status === 'complete';
+        if (!isReappend) {
+          this.roundStore.incrementRef(roundId);
+          const sessionId = this.currentSessionName;
+          try {
+            this.sessionStore?.appendRoundId(sessionId, roundId);
+          } catch (err) {
+            logger.warn({ err, sessionId, roundId }, 'appendAssistant: appendRoundId 失败');
+          }
+        } else {
+          logger.debug(
+            { roundId, status: existing.status },
+            'appendAssistant: 闭环节点续写段但不重复登记会话引用',
+          );
         }
         logger.debug({ roundId }, 'appendAssistant: Round-based Round completed');
       } else {

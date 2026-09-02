@@ -22,6 +22,7 @@ import type {
 import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
 import { Composer } from '@/agent/composer.js';
 import type { PlanContext } from '@/agent/types.js';
+import type { InteractiveInputKind } from '@/memory/roundStore.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import { ProjectManager, type ProjectContext } from '@/memory/projectManager.js';
@@ -673,12 +674,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 驱动 loop.continueAfterPause 续跑并转发 chunk，完成后追加历史 + 后处理（同 chat 尾处理）。
    * 硬停止（signal.abort）仍是唯一霸道中止路径，与软暂停严格区分。
    *
+   * TS-9 归属：补充输入归属当前问答闭环（复用 prepare 分配的闭环节点 roundId，不分裂新轮），
+   * 以 kind 区分交互类型（question-answer=主动提问回答 / supplement=暂停/流中补充）。
+   *
    * @param input - 可选补充输入（空=续跑原路径；有=注入修正后续轮）
    * @param signal - 可选 AbortSignal（硬停止仍走此路径）
+   * @param kind - 交互输入类型（默认 supplement；对主动提问的回答传 'question-answer'）
    */
   async *resumeExecution(
     input?: string,
     signal?: AbortSignal,
+    kind: InteractiveInputKind = 'supplement',
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const resumeStatus = this._sessionManager?.status;
     // 错误态续跑须明确失败而非静默吞没：error 态由检查点恢复回填进入，运行时异常走
@@ -731,7 +737,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
       // 委托种子编排器：续跑路径闭环（act(continueAfterPause) → reflect；无回答前、无 Handoff），
       // 预判短路与锁/状态机守卫留在门面，执行语义收在编排器内。
-      yield* this.internals.seedOrchestrator!.runResume(input, combinedSignal);
+      yield* this.internals.seedOrchestrator!.runResume(input, combinedSignal, kind);
     } finally {
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.internals.chatLockManager?.release(myToken);
@@ -950,9 +956,21 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 在 LLM 执行过程中插入用户输入并中断当前调用，注入下一轮继续处理。
    * 与 requestPause 区别：requestPause 在边界挂起保留上下文待续跑；interject 立即中断、注入新内容继续，用户无感知
    * （调用链：Agent.interject → AgentLoop.interject → abort interjectController → 消费 pendingInterjections → 注入 user 消息继续循环）。
+   *
+   * TS-9 归属：插话同时以「补充」交互输入持久化到当前闭环节点（interactiveInputs），
+   * 保证跨重启重放时插话内容不丢失、不分裂新轮。持久化 fire-and-forget（appendUser 内部
+   * 已 catch 写入失败，仅记日志），不阻塞插话本身。
    */
   interject(content: string): void {
     this.assertInitialized('interject');
+    // 持久化插话为闭环节点交互补充输入（roundId 非空时才写；空=无在途闭环，跳过）
+    const closureRoundId = this.loop?.getCurrentRoundId();
+    if (closureRoundId) {
+      void this.history?.appendUser(content, closureRoundId, {
+        interactive: true,
+        kind: 'supplement',
+      });
+    }
     this.requireLoop.interject(content);
   }
 

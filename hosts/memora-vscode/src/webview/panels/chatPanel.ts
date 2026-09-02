@@ -26,6 +26,7 @@ import {
   splitSessionId,
   type Agent,
   type AgentChunk,
+  type InteractiveInputKind,
   type IRoundStore,
   type ISessionStore,
   type ProcessEvent,
@@ -68,6 +69,10 @@ interface ReplayRound {
   assistant?: { content: string; ts?: string };
   /** 该轮过程事件（Round.processEvents；无过程数据则空数组，只回放正文） */
   processEvents: ProcessEvent[];
+  /** 问答闭环内交互输入（TS-9：主动提问回答/补充，折叠块渲染，不分裂新轮） */
+  interactiveInputs?: { content: string; ts?: string; kind: InteractiveInputKind }[];
+  /** 问答闭环内前序 assistant 段（TS-9：如 [ASK] 主动提问，排在交互输入之前） */
+  assistantLog?: { content: string; ts?: string }[];
 }
 
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
@@ -1698,6 +1703,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
               : undefined,
           // 过程事件从 Round 同文件读取；无 processEvents（纯问答轮/异常轮）为空数组
           processEvents: this._eventLogRoundStore?.getById(round.id)?.processEvents ?? [],
+          // 交互输入与前序 assistant 段（TS-9：同一闭环节点内，不分裂新轮）
+          interactiveInputs: round.interactiveInputs?.map((i) => ({
+            content: i.content,
+            ts: i.timestamp,
+            kind: i.kind,
+          })),
+          assistantLog: round.assistantLog?.map((m) => ({
+            content: m.content,
+            ts: m.timestamp,
+          })),
         });
       }
 
@@ -1725,6 +1740,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 该轮当「运行时新轮」触发骨架创建，产生重复消息块（原因见方法注释，勿再拆分）
       if (r.processEvents.length > 0) {
         this.post({ type: 'replay_events', roundId: r.roundId, events: r.processEvents });
+      }
+      // TS-9 闭环节点内前序 assistant 段（如 [ASK] 主动提问）：正文先于交互输入回放
+      for (const seg of r.assistantLog ?? []) {
+        if (seg.content) {
+          this.post({ type: 'assistant', text: seg.content, ts: seg.ts, roundId: r.roundId });
+        }
+      }
+      // TS-9 交互输入：折叠块渲染（kind 标记 提问回答/补充），不分裂新轮
+      for (const input of r.interactiveInputs ?? []) {
+        this.post({ type: 'user', text: input.content, ts: input.ts, kind: input.kind });
       }
       if (r.assistant) {
         this.post({ type: 'assistant', text: r.assistant.content, ts: r.assistant.ts, roundId: r.roundId });
@@ -1794,8 +1819,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 内核在下一迭代边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
     // 正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
     if (this._streaming && this._abortController) {
-      this.post({ type: 'user', text: input, ts: new Date().toISOString() });
+      this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
       this._agent.interject(input);
+      return;
+    }
+    // TS-9：暂停态补充输入 → 不发起新 chat() → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
+    const now = new Date().toISOString();
+    if (this._agent.sessionManager && this._agent.sessionManager.status === 'paused') {
+      this.post({ type: 'user', text: input, ts: now, kind: 'supplement' });
+      await this.runFlow((signal) => this._agent!.resumeExecution(input, signal, 'supplement'));
       return;
     }
     // 确保 Agent 对齐到当前会话（ADR-024）：用户可能打开面板后直接发送，未显式
@@ -1817,7 +1849,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
       }
     }
-    const now = new Date().toISOString();
     // 用户消息持久化由内核 chat() → appendUser 完成（写入当前会话 _currentSessionId），
     // 此处不再 persist，避免与内核双写同一条消息（SSOT 单一真理源）
     this.post({ type: 'user', text: input, ts: now });
@@ -1843,13 +1874,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
   }
 
-  /** 处理用户对主动提问的回答：resumeExecution 续跑（用户回答落盘由内核 runResume 完成，SSOT 不双写） */
+  /** 处理用户对主动提问的回答：resumeExecution 续跑（用户回答落盘由内核 runResume 完成，SSOT 不双写）
+   *  TS-9：回答以 question-answer 交互输入归属当前问答闭环（不分裂新轮） */
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
-    // 回答上屏；持久化由内核 resumeExecution 按新问答闭环写入（见 runResume）
-    this.post({ type: 'user', text: input, ts: now });
-    await this.runFlow((signal) => this._agent!.resumeExecution(input, signal));
+    // 回答上屏（折叠块标记）；持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点
+    this.post({ type: 'user', text: input, ts: now, kind: 'question-answer' });
+    await this.runFlow((signal) => this._agent!.resumeExecution(input, signal, 'question-answer'));
   }
 
   /**
@@ -1964,26 +1996,46 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       out: this._agent.getMetrics().llm.totalOutputTokens,
     };
     // 过程事件缓冲 + 单形态投影（v1.5 协议纯化）：流式期间攒内存、逐条 post process_event，
-    // 流结束附到 Round.processEvents 落盘（宿主流式期间拿不到当前 roundId，见设计文档 §3.5）
-    const events: ProcessEvent[] = [];
+    // 流结束按执行闭环 roundId 分组附到各 Round.processEvents 落盘。
+    // 分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId，2026-09-02），
+    // 不再依赖「roundIds 末尾」推断当前轮——一次 chat()（Loop 编排）多执行闭环各自独立落盘。
+    const eventsByRound = new Map<string, ProcessEvent[]>();
     let seq = 0;
-    /** 构造过程事件：进缓冲（落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
+    /** 当前执行闭环归属（最近一个带 roundId 的 chunk 的执行闭环） */
+    let currentRoundKey: string | undefined;
+    /** 当前执行闭环是否已补 meta 首条（每执行闭环段首条身份，角色/模型显示名） */
+    let metaEmittedForRound = false;
+    const roundMeta = () => {
+      const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
+      const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
+      return { role, llm };
+    };
+    /** 构造过程事件：进缓冲（按执行闭环分段，落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
     const emitEvent = (typeKey: ProcessEvent['type'], payload: ProcessEvent['payload']): void => {
       seq += 1;
       const event = { type: typeKey, seq, ts: new Date().toISOString(), payload } as ProcessEvent;
-      events.push(event);
+      // 归属当前执行闭环分段（无 roundId 的宿主自造事件归入最近执行闭环）
+      if (currentRoundKey) {
+        const list = eventsByRound.get(currentRoundKey) ?? [];
+        list.push(event);
+        eventsByRound.set(currentRoundKey, list);
+      }
       this.post({ type: 'process_event', event });
     };
-    // 首条 meta：本轮回答身份（角色/模型显示名，从 host 状态读取，SSOT 与消息标签同源）
-    {
-      const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
-      const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
-      emitEvent('meta', { role, llm });
-    }
     // Phase 4：暂停标记——当轮是否收到 paused chunk（软暂停状态）
     let pausedOnPurpose = false;
     try {
       for await (const chunk of gen) {
+        // 执行闭环边界检测：roundId 变化 = 新执行闭环开始（Loop 编排多执行闭环各自独立 roundId）
+        if (chunk.roundId && chunk.roundId !== currentRoundKey) {
+          currentRoundKey = chunk.roundId;
+          metaEmittedForRound = false;
+        }
+        // 每执行闭环段首条补 meta（身份，SSOT 与消息标签同源）；处理当前 chunk 前先补，保证 meta 为段内首条
+        if (currentRoundKey && !metaEmittedForRound) {
+          metaEmittedForRound = true;
+          emitEvent('meta', roundMeta());
+        }
         // 显式忽略的 chunk（取舍声明，排雷 2026-08-17）：
         //   - question_pending：已由 questionPending 事件驱动 need_clarify，chunk 通道不重复消费。
         if (chunk.type === 'aborted') {
@@ -2071,31 +2123,44 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 结束状态：用户打断（abort() 已置 signal.aborted）→ interrupted（webview 渲染
     // 「已停止」并恢复输入框）；软暂停 → status:paused（按钮切为「继续」）；
     // 正常结束 → done。三者均恢复/切换按钮态，仅提示语义不同。
-    // 附带当前会话最新 roundId：webview 据此回填消息分叉按钮（任意 LLM 回答可分叉）。
-    const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
-    const sessionRoundIds = meta?.roundIds ?? [];
-    const latestRoundId = sessionRoundIds[sessionRoundIds.length - 1];
-    // 过程事件落盘（v1.5）：metrics 末条 + 读最新 round → 附加 processEvents → save。
+    // 附带本轮回答归属的 roundId（SSOT：来自 chunk 携带的执行闭环 roundId，非 roundIds 末尾推断）：
+    // webview 据此回填消息分叉按钮（任意 LLM 回答可分叉）。
+    const latestRoundId = currentRoundKey;
+    // 过程事件落盘（v1.5 收敛）：metrics 末条归入最后执行闭环 + 按执行闭环 roundId 分组
+    // 写入各自 Round（SSOT：归属来自内核 chunk.roundId，一次 chat() 多执行闭环各自独立落盘）。
     // fire-and-forget：失败仅记日志，不阻塞展示（对齐 P1 消息持久化降级语义，SSOT 不藏错）
-    if (latestRoundId && this._eventLogRoundStore && events.length > 0) {
+    if (this._eventLogRoundStore && eventsByRound.size > 0) {
       const metricsNow = this._agent.getMetrics();
       emitEvent('metrics', {
         durationMs: Date.now() - flowStartMs,
         tokenIn: Math.max(0, metricsNow.llm.totalInputTokens - metricsBefore.in),
         tokenOut: Math.max(0, metricsNow.llm.totalOutputTokens - metricsBefore.out),
-        toolFailureCount: events.filter((e) => e.type === 'tool_result' && !e.payload.ok).length,
-        recallCount: events.reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
+        toolFailureCount: [...eventsByRound.values()].flat().filter((e) => e.type === 'tool_result' && !e.payload.ok).length,
+        recallCount: [...eventsByRound.values()].flat().reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });
-      try {
-        const round = this._eventLogRoundStore.getById(latestRoundId);
-        if (round) {
-          // 整轮覆盖（Write-once：processEvents 与 assistantMessage 同在流结束定型）
-          round.processEvents = events;
-          this._eventLogRoundStore.save(round);
+      for (const [roundId, roundEvents] of eventsByRound) {
+        try {
+          const round = this._eventLogRoundStore.getById(roundId);
+          if (round) {
+            // TS-9 闭环节点跨流累积：续跑（暂停→resume）与首轮共享同一闭环节点 roundId，
+            // processEvents 不能整轮覆盖（会丢失暂停前的召回/工具过程）。合并规则：
+            //   - 前序流的 meta/metrics 属「流级快照」：meta 保留、metrics 剔除（终局 metrics 恒为末流）
+            //   - 当前流的 meta 剔除（已含前序流 meta，丢重复身份）
+            // 普通单流轮（此前无 processEvents）行为不变。
+            const prior = round.processEvents ?? [];
+            round.processEvents =
+              prior.length > 0
+                ? [
+                    ...prior.filter((e) => e.type !== 'metrics'),
+                    ...roundEvents.filter((e) => e.type !== 'meta'),
+                  ]
+                : roundEvents;
+            this._eventLogRoundStore.save(round);
+          }
+        } catch (err) {
+          console.warn('Memora 过程事件落盘失败', err);
         }
-      } catch (err) {
-        console.warn('Memora 过程事件落盘失败', err);
       }
     }
     if (controller.signal.aborted) {

@@ -457,6 +457,9 @@ export class SessionManager {
       // hotMemory 与 truncatedCount 必须配套重算，不可从基底继承
       hotMemory,
       truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
+      // 问答闭环锚点轮次（TS-9）：快照当前在途闭环节点 roundId，跨暂停-续跑 / 跨进程
+      // 重启恢复时保留，续跑补充输入据此归属同一闭环节点（空则继承 prev，prev 亦无则缺省）
+      closureRoundId: this.getLoop().getCurrentRoundId() || prev?.closureRoundId,
       lastHeartbeat: Date.now(),
     };
 
@@ -724,6 +727,9 @@ export class SessionManager {
       toolCallId: cm.toolCallId,
     }));
     this.getLoop().restoreHistory(messages);
+    // 恢复问答闭环锚点轮次（TS-9）：闭环节点 roundId 随检查点回填 loop 当前轮——
+    // 重启后 resume 续跑补充输入据此归属同一闭环节点，不分裂新轮
+    this.getLoop().setCurrentRoundId(checkpoint.closureRoundId ?? '');
     // 恢复替换了消息集合：作废派生缓存（与 switch/fork 共用 chokepoint）
     this.invalidateSessionDerivedState();
 
@@ -865,6 +871,10 @@ export class SessionManager {
       if (this.checkpoint) {
         // 从状态机投影 status（SSOT），避免写死
         this.checkpoint.status = this.stateMachine.status;
+        // 收口暂停态残留（TS-9）：pausedAt 是「暂停起点」标记，恢复即应卸载——
+        // 否则检查点长期残留 pausedAt（status=running + pausedAt 并列的脏快照），
+        // 且下一次暂停超时判定会被旧起点污染。随 setPauseMeta 落盘一并持久化。
+        delete this.checkpoint.pausedAt;
         // 卸载 pauseMeta 状态层挂载物（仅含展示信息，恢复即"回到运行"应卸载，否则任务面板残留"继续"按钮）。
         // 走 setPauseMeta 唯一写入口而非内联赋值，避免绕过其兜底与落盘链路（其内部已含 touch+flush，此处不再重复调用）
         this.setPauseMeta(undefined);

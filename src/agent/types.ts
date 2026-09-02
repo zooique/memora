@@ -33,7 +33,11 @@ export interface RecalledMemorySummary {
 /** 回答后衔接决策：'wait' 等用户输入 / 'loop' 自动续跑 / 'end' 终止会话 */
 export type HandoffDecision = 'wait' | 'loop' | 'end';
 
-export type AgentChunk =
+/** 执行闭环归属标记：chunk 携带所在执行闭环 roundId（SSOT：过程事件归属由内核唯一提供，
+ *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */
+export type RoundTagged = { roundId?: string };
+
+export type AgentChunk = (
   | { type: 'recall'; memories: RecalledMemorySummary[] }
   | {
       type: 'thinking';
@@ -71,7 +75,8 @@ export type AgentChunk =
    * 自审查轮开始信号：注入自审查提示前 emit；round 为第几轮（为多轮预留）
    */
   | { type: 'selfReview'; round: number }
-  | { type: 'done' };
+  | { type: 'done' }
+) & RoundTagged;
 
 /**
  * 文本块阶段标识（text chunk 携带）：供宿主区分正常交付与自审查应答，做独立分段展示。
@@ -341,6 +346,14 @@ export interface SessionCheckpoint {
   completedToolCalls?: ToolExecutionRecord[];
   /** 回合结果日志（FIFO cap 10-12 条） */
   roundLog?: RoundOutcome[];
+  /**
+   * 问答闭环锚点轮次（TS-9，2026-09-02 新增）
+   *
+   * 正在进行的问答闭环 roundId（= prepare appendUser 的 head roundId）：
+   * 跨暂停-续跑 / 跨进程重启恢复时保留，续跑补充输入据此归属同一闭环节点，
+   * 不因交互输入分裂新轮。恢复时回填 loop.currentRoundId；空串=无在途闭环（兜底）。
+   */
+  closureRoundId?: string;
   /** 暂停元数据 */
   pauseMeta?: PauseMeta;
   /** 心跳时间戳（毫秒），防僵尸会话 */

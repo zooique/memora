@@ -1,4 +1,4 @@
-import type { ProcessEvent } from '@zooique/memora';
+import type { InteractiveInputKind, ProcessEvent } from '@zooique/memora';
 
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
@@ -337,7 +337,12 @@ export type WebviewToExtensionMessage =
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
-  | { type: 'user'; text: string; ts?: string; roundId?: string }
+  /**
+   * 用户消息（TS-9）：kind 存在 = 问答闭环内交互输入（折叠块渲染，不分裂新轮）——
+   * question-answer=对 LLM 主动提问的回答；supplement=补充（插话/暂停续跑输入）。
+   * 普通新闭环输入不携带 kind。
+   */
+  | { type: 'user'; text: string; ts?: string; roundId?: string; kind?: InteractiveInputKind }
   /** 历史/流式 assistant 消息（历史回放用 text 完整段） */
   | { type: 'assistant'; text: string; ts?: string; roundId?: string }
   /**

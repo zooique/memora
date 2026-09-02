@@ -206,6 +206,38 @@ export const chatStyles = `
     opacity: 1; transform: translateY(0);
   }
   .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  /* TS-9 问答闭环内交互输入折叠块（用户提问/用户补充）：轻量折叠条，默认收起 */
+  .msg.user.is-interactive {
+    background: transparent;
+    padding: 0;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+    border-radius: var(--radius, 6px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .msg.user.is-interactive[open] { background: var(--surface-hover, rgba(128, 128, 128, 0.12)); }
+  .msg.user.is-interactive .msg-interactive-summary {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    cursor: pointer; user-select: none;
+    list-style: none;
+  }
+  .msg.user.is-interactive .msg-interactive-summary::-webkit-details-marker { display: none; }
+  .msg.user.is-interactive .msg-interactive-summary::before {
+    content: '▸'; flex-shrink: 0; transition: transform 0.15s ease;
+  }
+  .msg.user.is-interactive[open] .msg-interactive-summary::before { transform: rotate(90deg); }
+  .msg.user.is-interactive .msg-interactive-label {
+    flex-shrink: 0; font-size: var(--font-xs, 10px);
+    color: var(--accent, #0e639c); font-weight: 600;
+  }
+  .msg.user.is-interactive .msg-interactive-preview {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--font-md, 12px);
+  }
+  .msg.user.is-interactive .msg-body {
+    padding: var(--sp-1, 4px) var(--sp-3, 8px) var(--sp-3, 8px);
+    font-size: var(--font-md, 12px);
+  }
   /* 图标按钮通用样式 */
   .msg-icon-btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -231,8 +263,13 @@ export const chatStyles = `
     color: var(--status-fail, #b3261e);
   }
   .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
-  /* AI 回答：顶部身份标签 + 正文铺满（对齐主流大厂 AI 对话设计）。
-   * 结构：.msg.assistant → 纵向 [.msg-ai-label[角色/模型名]][.msg-content[正文+footer]]。
+  /* AI 回答：顶部身份标签 + 任务过程折叠区 + 报告正文 + footer（对齐主流大厂 AI 对话设计）。
+   * 结构（2026-09-02 收紧：任务过程在上 · 报告在下，SSOT 单一折叠区）：
+   *   .msg.assistant → 纵向
+   *     [.msg-ai-label            角色/模型名]
+   *     [.round-block             任务过程折叠区（进行中展开·实时相位+工具追加；完成收起只留摘要）]
+   *     [.msg-body                报告正文（单一连续 markdown，不被工具切碎）]
+   *     [.msg-footer              复制/分叉/删除 + 时间戳]
    * 不再用侧边头像（避免每条回复都挤占一行），改为顶部弱标签标「谁在说」，
    * 正文直接铺满宽度，信息密度更高（ui-redesign 迭代）。 */
   .msg.assistant {
@@ -273,8 +310,6 @@ export const chatStyles = `
     margin-right: var(--sp-1, 4px);
     color: var(--border-panel, rgba(128,128,128,.4));
   }
-  /* AI 正文容器：承接正文 + 底部操作行，铺满宽度 */
-  .msg-content { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 
   /* ============ Components：AI 回复 Markdown 渲染（吸收养分，2026-08-16） ============
    * 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读。
@@ -956,11 +991,12 @@ export const chatStyles = `
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-board 的 text-secondary，无需额外规则） */
 
-  /* ============ Components：round-block 过程块（v1.5 单形态） ============ */
-  /* 每轮回答的单一折叠元信息块：summary 默认可见（弱标签计数 + 耗时），details 展开后
-   * 按小节呈现过程轨迹/召回/已沉淀/工具/自审查/已停止/执行指标。彻底取代 tool-card /
-   * review-block / thought-block / recall-detail 独立卡片外壳（SSOT 展示收敛）。
-   * 视觉延续过程性降级：灰字小字号 + 左细边框，不抢对话主体。 */
+  /* ============ Components：round-block 任务过程折叠区（2026-09-02 收紧：SSOT 单一容器） ============ */
+  /* 每轮回答的单一「任务过程」折叠区：summary 默认可见（进行中呼吸点 + 计数/耗时，完成收起），
+   * details 展开后按小节呈现实时相位/工具调用/过程轨迹/召回/已沉淀/自审查/执行指标。
+   * 运行时的全部过程事件统一折叠于此，报告正文（.msg-body）保持干净不被切碎——
+   * 用户阅读时只看到报告，想翻找细节再展开折叠区（对齐 Trae Work「任务过程 + 报告」）。
+   * 视觉延续过程性降级：灰字小字号 + 左细边框，不抢报告主体。 */
   .round-block {
     margin: var(--sp-1, 4px) var(--sp-5, 12px) 0;
     font-size: var(--font-sm, 11px); line-height: 1.5;
@@ -1023,43 +1059,35 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px); line-height: 1.5;
     white-space: pre-wrap; word-break: break-all; overflow-wrap: anywhere;
   }
-  /* ============ Components：msg-timeline 任务时投影（2026-09-02 时序交叉） ============ */
-  /* 「任务时」实时投影：thinking 单行相位 + 工具行（到达即渲染，非收尾汇总）。
-     挂 assistant 块 label 后、正文前，按时间顺序即时可见（对齐 Trae Work 任务时/结论交叉）。
-     工具行视觉延续过程性降级，仅浅缩进，不抢对话主体。 */
-  .msg-timeline {
-    margin: var(--sp-1, 4px) var(--sp-5, 12px) 0;
-    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
-  }
-  /* 思考行：流式中单条实时相位（呼吸点动画，遵守 prefers-reduced-motion） */
-  .msg-timeline__thinking {
+  /* 实时相位行：进行中 details 顶部单条「当前正在做什么」（呼吸点动画，遵守 prefers-reduced-motion） */
+  .round-block__phase {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
     padding: var(--sp-1, 2px) var(--sp-3, 8px);
   }
-  .msg-timeline__thinking::before {
+  .round-block__phase::before {
     content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
     background: var(--accent, #0e639c);
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }
   @media (prefers-reduced-motion: reduce) {
-    .msg-timeline__thinking::before { animation: none; }
+    .round-block__phase::before { animation: none; }
   }
   /* 工具调用二级嵌套折叠：summary 常显名称(状态)，body（args + result）按需展开；
-     视觉延续过程性降级，仅在 timeline 内再退一级缩进 */
-  .msg-timeline__tool {
+     视觉延续过程性降级，在任务过程折叠区内再退一级缩进 */
+  .round-block__tool {
     border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
     padding: var(--sp-1, 2px) var(--sp-3, 8px);
     margin: var(--sp-1, 2px) 0;
   }
-  .msg-timeline__tool summary {
+  .round-block__tool summary {
     cursor: pointer; user-select: none; outline: none;
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
   }
-  .msg-timeline__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .msg-timeline__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
+  .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }
