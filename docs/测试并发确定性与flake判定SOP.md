@@ -2,7 +2,7 @@
 
 > **SSOT**：本文件是内核测试并发策略与 flake 判定的唯一权威。配置侧声明见 `vitest.config.ts` 的 `fileParallelism` 注释。
 >
-> **适用边界**：内核（`@zooique/memora`）纯逻辑库，100 个测试文件（`src/**/__tests__/*.test.ts`）。宿主（vscode / sprite）各自的 vitest 配置不在本文件范围，但 flake 判定思想通用。
+> **适用边界**：内核（`@zooique/memora`）纯逻辑库，100 个测试文件（`src/**/__tests__/*.test.ts`）。宿主（vscode）各自的 vitest 配置不在本文件范围，但 flake 判定思想通用。
 
 ## 1. 当前并发策略（显式声明）
 

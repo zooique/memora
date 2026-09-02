@@ -300,7 +300,7 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 | 事件日志膨胀          | 只存最小重建信息；`args`/记忆正文截断；删除跟随 round（同文件，天然原子：删 round 即删事件）                                                                                                 |
 | 写盘频率            | 流式期间内存缓冲，流结束附到 Round 整写一次（免节流；不逐 chunk 写）                                                                                                                       |
 | 无 processEvents 的轮（pending/error） | 不渲染 round-block（无过程数据），正文照常；字段可选仅为轮状态语义，不做任何回退/兼容分支（开发期，v1.5 纯度） |
-| 宿主迁移            | Sprite 宿主已搁置，不维护兼容（按宿主状态声明）                                                                                                                             |
+| 宿主迁移            | Sprite 宿主已移除（2026-09-03 起独立仓库维护），不维护兼容                                                                                                                    |
 | 与 checkpoint 关系 | 检查点继续管 plan/goal 等执行态；`processEvents` 只管 UI 展示态，职责分离。**任务看板（plan\_update / plan-board）归 checkpoint 执行态，不在 processEvents 复原范围**（完成定义 2 的 diff 对齐仅约束 round-block 折叠区） |
 
 ***

@@ -91,8 +91,8 @@ role-packs/<name>/
 └── rules.md        # 角色行为规则（可选）
 ```
 
-## 五、与 memora-sprite 的关系
+## 五、宿主定位与独立分发
 
-- 同属宿主层，但 **VS Code 插件更薄**（复用 VS Code 窗口/编辑器/UI，不自造 Electron 壳）。
-- 目录思路对齐 sprite 的 `directory-structure.md`：按职责分组、extension/webview 分层、shared/ 共享契约。
+- VS Code 插件更薄：复用 VS Code 窗口/编辑器/UI，不自造 Electron 壳。
+- 目录按职责分组、extension/webview 分层、shared/ 共享契约。
 - git 层面：物理同仓（便于开发），后续需要独立分发/开源时，在 `hosts/memora-vscode/` 单独初始化 git 仓库即可（ADR-VC-001 决策 6）。
