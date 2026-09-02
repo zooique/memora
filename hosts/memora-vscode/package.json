@@ -81,6 +81,7 @@
         },
         "memora.searchEngine": {
           "type": "string",
+          "scope": "application",
           "enum": ["auto", "bing", "baidu", "sogou"],
           "enumDescriptions": [
             "自动：Bing 优先，降级 DuckDuckGo（默认）",
@@ -89,7 +90,7 @@
             "搜狗"
           ],
           "default": "auto",
-          "description": "内部网页搜索引擎（web_search 工具使用的后端）。auto 为内置降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。修改后重建会话（或重载窗口）生效。"
+          "description": "内部网页搜索引擎（web_search 工具使用的后端）。auto 为内置降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。用户级偏好，随用户而非随项目。修改后重建会话（或重载窗口）生效。"
         }
       }
     },

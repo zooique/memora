@@ -341,9 +341,10 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'allowed_paths_set'; paths: string[] }
   /**
-   * 设置内部网页搜索引擎（search_engine_set 消息处理，方案 A 2026-09-02）
+   * 设置内部网页搜索引擎（search_engine_set 消息处理，2026-09-02 方案 A）
    *
-   * 由设置面板「网页搜索引擎」下拉触发：host 持久化到 workspace 设置（memora.searchEngine）。
+   * 由设置面板「网页搜索引擎」下拉触发：host 持久化到**用户级**设置
+   * （memora.searchEngine，ConfigurationTarget.Global——用户偏好不进项目 settings）。
    * 装配期一次性注入，修改需重载窗口（或重建会话）后生效。
    */
   | { type: 'search_engine_set'; engine: SearchEngineSetting };

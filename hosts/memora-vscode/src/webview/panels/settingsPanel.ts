@@ -1083,16 +1083,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 设置内部网页搜索引擎（search_engine_set 消息处理，方案 A 2026-09-02）
+   * 设置内部网页搜索引擎（search_engine_set 消息处理，2026-09-02 方案 A）
    *
-   * 持久化到 workspace 设置（memora.searchEngine）。装配期一次性注入，
-   * 修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
+   * 归类：搜索引擎是**用户级偏好**（跨项目一致，与模型/provider 同属用户设置），
+   * 写入 ConfigurationTarget.Global——不进项目 .vscode/settings.json，避免个人偏好
+   * 入库/跨仓漂移（与 providerStore 的 providers/embedding 同 scope，2026-09-02 归类收口）。
+   * 装配期一次性注入，修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
    */
   private async setSearchEngine(engine: SearchEngineSetting): Promise<void> {
     try {
       await vscode.workspace
         .getConfiguration('memora')
-        .update('searchEngine', engine, vscode.ConfigurationTarget.Workspace);
+        .update('searchEngine', engine, vscode.ConfigurationTarget.Global);
       this.post({ type: 'search_engine_status', engine });
       this.post({ type: 'notice', level: 'info', message: `已切换网页搜索引擎：${engine}（重载窗口后生效）` });
     } catch (err) {
