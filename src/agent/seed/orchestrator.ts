@@ -204,7 +204,7 @@ export class SeedOrchestrator {
   }
 
   /** 回答中：消费 produce() 生成的 loop 执行流，统一尾处理。
-   * chat/event/resume 三路径共用（驱动不同 loop 入口），中断/追加助手消息尾处理收在此。
+   * chat/resume 路径共用（驱动不同 loop 入口），中断/追加助手消息尾处理收在此。
    * @param produce 生成 loop 执行流的闭包
    * @param signal 中止信号（透传 consumeExecutionStream 区分真取消 vs 连接中断）
    */
