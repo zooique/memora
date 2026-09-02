@@ -518,6 +518,28 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '补充要求' });
   });
 
+  it('中文输入法组合确认按 Enter 不误触发送（isComposing 守卫）', () => {
+    const { postMessage } = mountChatView();
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    input.value = '选字中';
+    input.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', isComposing: true, bubbles: true,
+    }));
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'send', text: '选字中' });
+  });
+
+  it('中文输入法在澄清输入框按 Enter 不触发澄清答复', () => {
+    const { postMessage } = mountChatView();
+    // 触发澄清交互后澄清输入框存在
+    dispatch({ type: 'clarify', question: '需要补充什么？' });
+    const clarifyInput = document.getElementById('clarifyInput') as HTMLTextAreaElement;
+    clarifyInput.value = '补一段';
+    clarifyInput.dispatchEvent(new KeyboardEvent('keydown', {
+      key: 'Enter', isComposing: true, bubbles: true,
+    }));
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'clarify_answer', text: '补一段' });
+  });
+
   it('interrupted 渲染「已停止生成」提示条', () => {
     mountChatView();
     dispatch({ type: 'interrupted' });

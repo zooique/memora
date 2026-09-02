@@ -797,8 +797,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           return { content, aborted: true, paused, failed: false, iterationLimitReached };
         }
         // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：
-        // 非用户取消，与普通错误同归 error 分支，避免谎报为用户取消。
+        // 非用户取消，判为「连接中断」——与普通错误同归 error 分支，消息加可识别前缀，
+        // 避免谎报为用户取消。
         logger.warn({ err }, 'LLM 请求非用户取消原因中断，判为连接中断');
+        const raw = err instanceof Error ? err.message : String(err);
+        yield {
+          type: 'error',
+          // 连接中断：友好前缀 + 保留原始消息后缀（调试/报错可追溯）
+          message: `[连接中断] ${raw}`,
+        };
+        return { content, aborted, paused, failed: true, iterationLimitReached };
       }
       yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
       return { content, aborted, paused, failed: true, iterationLimitReached };

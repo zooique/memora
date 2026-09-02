@@ -2410,6 +2410,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     vscode.postMessage({ type: 'pause' });
   });
   input.addEventListener('keydown', (e) => {
+    // isComposing 守卫：中文输入法组合确认（如打字中途按 Enter 选字）不误触发发送
+    if (e.isComposing) return;
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -2610,6 +2612,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
   clarifySend.addEventListener('click', sendClarifyAnswer);
   clarifyInput.addEventListener('keydown', (e) => {
+    // isComposing 守卫：中文输入法组合确认不误触发澄清答复
+    if (e.isComposing) return;
     if (e.key === 'Enter') sendClarifyAnswer();
   });
 
