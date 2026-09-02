@@ -160,5 +160,5 @@
 
 **净效果**：16 文件 +58/−1689（净 −1631 行）。`tsc --noEmit` 0 错；内核 2602 用例全绿。
 
-**遗留（按"抛弃 sprite"决策不处理，仅记录）**：sprite 宿主 `chatHandlers.ts` / `ipcListeners.ts` / `preload.ts` 仍监听已删除的 `needClarify` 事件——内核不再 emit，sprite 澄清功能静默失效。若未来重新启用 sprite，需先同步该监听面。
+**遗留（已随 sprite 移除处理，仅记录）**：sprite 宿主 `chatHandlers.ts` / `ipcListeners.ts` / `preload.ts` 原监听已删除的 `needClarify` 事件。**sprite 宿主已于 2026-09-03 正式移除**（版本落后、独立仓库维护，见 tasks 记录），遗留监听随 `hosts/memora-sprite/` 目录一并删除，无兼容维护。
 

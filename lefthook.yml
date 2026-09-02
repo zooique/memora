@@ -22,17 +22,6 @@ pre-commit:
       glob: "*.ts"
       run: npx tsc --noEmit
 
-    # 步骤 3：CSS 守卫（stylelint；importFrom 提供 token 集，守卫全量 styles 目录）
-    #   - 仅当本次提交含 *.css 时触发；npm run lint:css 跑全量目录保证守卫强度
-    #   - 抓「引用不存在的 --x token」/ 重复属性 / 非法 hex / 空源（详见 .stylelintrc.mjs）
-    #   - lint:css 脚本定义在 hosts/memora-sprite/package.json，故 root 锁定到该子目录，
-    #     否则 lefthook 在仓库根目录执行会报 Missing script: lint:css
-    lint:css:
-      glob: "*.css"
-      root: hosts/memora-sprite
-      run: npm run lint:css
-      stage_fixed: false
-
 # 提交信息规范校验（commitlint）
 # 强制执行 conventional commits 规范，详见 commitlint.config.mjs
 commit-msg:

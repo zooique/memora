@@ -284,8 +284,6 @@ npm 包内置 `role-packs/` 示例角色库（`小说助手` / `文档设计师`
 
 [memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、双通道召回、角色包管理与记忆视图。
 
-> 桌面精灵宿主（memora-sprite）亦作为参考宿主位于本仓库 `hosts/memora-sprite`（Electron 桌面应用，展示 SQLite 持久化 / 向量索引 / 系统托盘 / 全局快捷键）。
-
 ## 贡献
 
 本项目遵循"大树模型"工程哲学。技术决策记录（ADR）位于仓库 [.trae/decisions/](https://gitee.com/zooique/memora/tree/main/.trae/decisions)。

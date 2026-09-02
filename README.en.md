@@ -278,7 +278,7 @@ npm run build        # Compile to dist/
 
 ## Host Project
 
-[memora-sprite](https://gitee.com/zooique/memora/tree/main/hosts/memora-sprite) — An Electron-based desktop sprite host (v1.5.0), demonstrating a complete Memora integration: SQLite persistence, vector indexing, system tray, global shortcuts, and memory graph visualization.
+[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — The VS Code extension host (primary host), demonstrating a complete Memora integration: SQLite persistence, dual-channel recall, role pack management, and memory views.
 
 ## Why Memora?
 
