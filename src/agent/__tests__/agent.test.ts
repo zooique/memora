@@ -2372,12 +2372,14 @@ describe('Agent · chat() 中断保留文本', () => {
     const aborted = chunks.filter((c) => c.type === 'aborted');
     expect(aborted).toHaveLength(0);
 
-    // 应产出 error chunk（连接中断），且消息带可识别前缀、保留原始细节（调试可追溯）
+    // 应产出 error chunk（连接中断），且 category 为 'connection'、message 保留原始细节（调试可追溯）
     const errors = chunks.filter((c) => c.type === 'error');
     expect(errors.length).toBeGreaterThan(0);
-    // 连接中断分类前缀 + 原始 AbortError 消息（ConnectionInterruptedProvider 抛出内容）
-    expect(errors.some((c) => c.message.includes('[连接中断]'))).toBe(true);
+    // 结构化分类：category = 'connection'，而非裸前缀；原始 AbortError 消息（ConnectionInterruptedProvider 抛出内容）
+    expect(errors.some((c) => c.category === 'connection')).toBe(true);
     expect(errors.some((c) => c.message.includes('connection was interrupted'))).toBe(true);
+    // 语义分类走 category 字段，error message 不再携带裸前缀
+    expect(errors.some((c) => c.message.includes('[连接中断]'))).toBe(false);
   }, 15000);
 });
 

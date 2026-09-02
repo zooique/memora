@@ -462,7 +462,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       // 状态机翻转是副作用，必须在并发闸门内执行——PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
       if (!this.autoResumeIfPaused()) {
-        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话' };
+        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话', category: 'timeout' };
         return;
       }
       this._lastInteractionAt = new Date();
@@ -694,7 +694,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
         reason: '会话处于错误态，无法续跑',
       });
-      yield { type: 'error', message: '当前会话处于错误态，无法续跑，请重新开始' };
+      yield { type: 'error', message: '当前会话处于错误态，无法续跑，请重新开始', category: 'unknown' };
       return;
     }
     if (resumeStatus !== 'paused') return;
@@ -710,7 +710,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
           reason: 'resume() 返回 false，可能因暂停超时或状态机拒绝',
         });
-        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话' };
+        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话', category: 'timeout' };
         return;
       }
 
@@ -797,14 +797,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           return { content, aborted: true, paused, failed: false, iterationLimitReached };
         }
         // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：
-        // 非用户取消，判为「连接中断」——与普通错误同归 error 分支，消息加可识别前缀，
-        // 避免谎报为用户取消。
+        // 非用户取消，判为「连接中断」——与普通错误同归 error 分支，用结构化 category
+        // 标记连接中断（宿主按 category 映射友好文案），避免谎报为用户取消。
         logger.warn({ err }, 'LLM 请求非用户取消原因中断，判为连接中断');
         const raw = err instanceof Error ? err.message : String(err);
         yield {
           type: 'error',
-          // 连接中断：友好前缀 + 保留原始消息后缀（调试/报错可追溯）
-          message: `[连接中断] ${raw}`,
+          // 连接中断分类：语义走 category 字段，不携带裸前缀；message 保留原始细节（调试/报错可追溯）
+          category: 'connection',
+          message: raw,
         };
         return { content, aborted, paused, failed: true, iterationLimitReached };
       }

@@ -1641,6 +1641,16 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     expect(messages.querySelector('.pending-wait')).toBeNull();
   });
 
+  it('error 消息带 category（结构化分类）时按 message 渲染、不崩溃', () => {
+    // TS-10b：内核 error chunk 携带 category（connection/timeout/unknown），
+    // webview 只消费 message（已是宿主映射后的友好文案），category 是透传诊断字段不影响渲染
+    mountChatView();
+    dispatch({ type: 'error', message: '对话连接中断，已保留部分回答，请检查网络后重试', category: 'connection' });
+    const body = document.querySelector('.msg.error .msg-body') as HTMLElement;
+    expect(body).not.toBeNull();
+    expect(body.textContent).toBe('对话连接中断，已保留部分回答，请检查网络后重试');
+  });
+
   it('纯 user 消息（历史回放路径）不触发等待指示器，防止误报', () => {
     // 纯 user 消息（历史回放 path）不建等待条——等待条只由运行时 thinking 事件驱动
     mountChatView();

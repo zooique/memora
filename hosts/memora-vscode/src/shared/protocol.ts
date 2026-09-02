@@ -382,7 +382,7 @@ export type ExtensionToWebviewMessage =
        */
       roundId?: string;
     }
-  | { type: 'error'; message: string }
+  | { type: 'error'; message: string; category?: 'connection' | 'timeout' | 'unknown' }
   /**
    * 流被用户中断（stop 的应答）
    *

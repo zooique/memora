@@ -78,7 +78,14 @@ export type AgentChunk = (
    */
   | { type: 'narrate'; content: string }
   | { type: 'aborted'; reason: string }
-  | { type: 'error'; message: string }
+  /**
+   * 流式错误（error chunk 的分类字段，TS-10a）
+   *
+   * 类别由内核唯一判定（Signal 未 abort 却抛 AbortError = 'connection' 等），
+   * 宿主按 category 映射友好展示文案；无 category（null）时宿主回退原始 message，
+   * 保留调试可追溯性。不承载裸前缀（如 `[连接中断]`）——语义分类走结构化字段。
+   */
+  | { type: 'error'; message: string; category?: 'connection' | 'timeout' | 'unknown' }
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'paused' }
   /**

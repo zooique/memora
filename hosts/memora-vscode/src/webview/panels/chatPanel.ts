@@ -2123,8 +2123,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // P2 过程叙述 → 过程事件（webview 渲染 § 过程叙述 折叠行，不进正文流）
           emitEvent('narrate', { content: chunk.content });
         } else if (chunk.type === 'error') {
-          // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）
-          this.post({ type: 'error', message: chunk.message });
+          // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）。
+          // TS-10b：按内核产出的 category 映射友好文案（connection/timeout/unknown），
+          // 无 category（普通错误）回退原始 message——语义分类走结构化字段，不做裸前缀/字符串匹配。
+          const friendlyByCategory: Record<string, string> = {
+            connection: '对话连接中断，已保留部分回答，请检查网络后重试',
+            timeout: '对话处理超时，请稍后重试',
+          };
+          this.post({
+            type: 'error',
+            message: chunk.category ? (friendlyByCategory[chunk.category] ?? chunk.message) : chunk.message,
+            category: chunk.category,
+          });
         }
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
