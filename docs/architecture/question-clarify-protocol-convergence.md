@@ -162,3 +162,14 @@
 
 **遗留（已随 sprite 移除处理，仅记录）**：sprite 宿主 `chatHandlers.ts` / `ipcListeners.ts` / `preload.ts` 原监听已删除的 `needClarify` 事件。**sprite 宿主已于 2026-09-03 正式移除**（版本落后、独立仓库维护，见 tasks 记录），遗留监听随 `hosts/memora-sprite/` 目录一并删除，无兼容维护。
 
+### 后遗症评估（2026-09-03 sprite 删除后）
+
+sprite 删除后复核 `chatSync` / `injectAffect` 两个失去该宿主的公开方法，**决定保留**（非死代码，判据见下）：
+
+| 方法 | 判据 | 结论 |
+| --- | --- | --- |
+| `chatSync` | 是 `chat()` 的同步薄封装（内部复用 runChat），非独立执行通道；**内核测试 agent.test.ts / uninterruptedWorkflow.test.ts 约 5 处 + vscode 测试 1 处仍在使用**，删除会破坏测试基础设施 | 保留 |
+| `injectAffect` | 是 loop 的情感基调能力面（agent.ts → loop.ts 完整链路，接口语义清晰），属"未消费能力"而非"设计残留"；删除需动 loop.ts + agent.ts + 测试，收益低、动公共 API 风险高 | 保留 |
+
+**收紧 API 的边界**：vscode 宿主从 `@zooique/memora` 包名导入（[assemble.ts](../../hosts/memora-vscode/src/extension/host/assemble.ts) L16），消费 npm 公开面——收紧 `index.ts` 导出属 **breaking change**（需 semver major），无真实场景触发不动作，维持观察。
+
