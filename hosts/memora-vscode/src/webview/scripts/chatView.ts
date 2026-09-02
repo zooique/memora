@@ -674,17 +674,31 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * 宿主容器：建议 A 分组后为 narrate 父块的 .round-block__narrate-tools；无前序叙述时直挂
    * round-block__details 顶层。
    */
+  /**
+   * 工具行状态（单一推导，renderToolRow/updateToolRowState 共用）：
+   * 无结果=进行中；策略拦截（blocked）=已拦截且默认展开（拒绝文案应直接可见）；
+   * 其余按 ok 成功/失败，失败默认展开（错误可见优先于整洁）。
+   */
+  function toolRowStatus(
+    result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined,
+  ): { label: string; open: boolean } {
+    if (!result) return { label: '进行中', open: false };
+    if (result.payload.blocked === true) return { label: '已拦截', open: true };
+    return result.payload.ok
+      ? { label: '成功', open: false }
+      : { label: '失败', open: true };
+  }
+
   function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
-    const status = result ? (result.payload.ok ? '成功' : '失败') : '进行中';
+    const { label: status, open } = toolRowStatus(result);
     const row = document.createElement('details');
     row.className = 'round-block__tool';
     // 增量追加去重锚点：通过 toolCallId 定位已渲染的工具行（流式进行中增量追加）
     row.dataset.toolCallId = start.payload.toolCallId;
-    // 失败默认展开（错误可见优先于整洁）；成功/进行中折叠（细节按需展开）
-    row.open = result?.payload.ok === false;
+    row.open = open;
     const summary = document.createElement('summary');
     summary.className = 'round-block__tool-name';
     // 任务过程文字化：原生工具名 → 行动叙述（如「读取文件：src/main.ts」；未收录回退原生名）
@@ -714,14 +728,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    */
   function updateToolRowState(container: HTMLElement, result: Extract<ProcessEvent, { type: 'tool_result' }>): void {
     container.querySelectorAll<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`).forEach((row) => {
-      const status = result.payload.ok ? '成功' : '失败';
+      const { label: status, open } = toolRowStatus(result);
       const nameEl = row.querySelector('.round-block__tool-name');
       if (nameEl) {
         // 精确替换末尾状态标签：工具名本身可能含括号，锚定尾部匹配
-        nameEl.textContent = nameEl.textContent.replace(/\((进行中|成功|失败)\)$/, `(${status})`);
+        nameEl.textContent = nameEl.textContent.replace(/\((进行中|成功|失败|已拦截)\)$/, `(${status})`);
       }
-      // 失败工具立即展开（错误优先可见）；成功收起
-      row.open = result.payload.ok === false;
+      row.open = open;
       // 结果摘要：首次到达补 DOM（后续到达不重复）
       if (result.payload.summary && !row.querySelector('.round-block__tool-summary')) {
         const s = document.createElement('div');

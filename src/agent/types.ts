@@ -57,7 +57,19 @@ export type AgentChunk = (
       stage?: TextChunkStage;
     }
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
-  | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
+  | {
+      type: 'tool_result';
+      toolCallId: string;
+      name: string;
+      ok: boolean;
+      summary?: string;
+      /**
+       * 策略拦截标记（2026-09-02）：工具被内核确定性拒绝（如 web_search 达硬上限），
+       * 未实际执行。ok=false + blocked=true：区别于「执行失败」，UI 显示「已拦截」，
+       * 不计成功数亦不计失败数；LLM 收到的是拒绝文案而非真实结果。
+       */
+      blocked?: boolean;
+    }
   /**
    * 过程叙述（2026-09-02）：LLM 在工具迭代前产出的行动叙述文本
    * （如「让我先查看所有文档」「现在逐一读取它们的内容」）。

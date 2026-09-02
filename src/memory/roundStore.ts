@@ -178,7 +178,14 @@ export type ProcessEvent =
       type: 'tool_result';
       seq: number;
       ts: string;
-      payload: { toolCallId: string; name: string; ok: boolean; summary?: string };
+      payload: {
+        toolCallId: string;
+        name: string;
+        ok: boolean;
+        summary?: string;
+        /** 策略拦截（2026-09-02）：ok=false + blocked=true = 被确定性拒绝未执行（如搜索达硬上限） */
+        blocked?: boolean;
+      };
     }
   | { type: 'self_review'; seq: number; ts: string; payload: { round: number } }
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }

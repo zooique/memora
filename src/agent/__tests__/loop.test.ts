@@ -2749,8 +2749,9 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     // 显式注册 web_search 工具定义（用真实内置定义）：让 buildChatOptions 真正对外提供该工具，
     // 方能验证「命中硬上限后从下一轮 tools 移除」（无定义则无工具可过滤，测试无意义）
     const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor, toolDefinitions: [WEB_SEARCH_TOOL] });
-    for await (const {} of loop.processUserInput('做分析')) {
-      /* drain */
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('做分析')) {
+      chunks.push(chunk);
     }
 
     // 既有断言不变：仅前 6 次真正执行，拒绝文案回填
@@ -2765,6 +2766,19 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     // 双闸新增断言③：命中后下一轮（收尾轮）工具集不再含 web_search —— LLM 物理上无法再发起搜索
     const lastTools = toolsPerCall[toolsPerCall.length - 1] ?? [];
     expect(lastTools).not.toContain('web_search');
+
+    // 第三态（2026-09-02）：被拒搜索 tool_result 为 blocked=true + ok=false——非成功非失败，
+    // UI 显示「已拦截」，成功搜索计数与失败计数均不含该次（不诱导模型重试、不算执行失败）
+    const blockedResults = chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'tool_result' }> =>
+        c.type === 'tool_result' && (c as { blocked?: boolean }).blocked === true,
+    );
+    expect(blockedResults).toHaveLength(1);
+    expect(blockedResults[0]!.name).toBe('web_search');
+    expect(blockedResults[0]!.ok).toBe(false);
+    expect(blockedResults[0]!.summary).toContain('[SEARCH_LIMIT_REACHED]');
+    // 第 7 次搜索未计入成功数（成功计数应恰为 6 次执行成功的；被拒那次的 blocked=true 不会误增）
+    expect(loop.getMetrics().tools.failureCount).toBe(0);
   });
 
   it('工具迭代前发射 narrate 过程叙述（不进入最终回答正文）', async () => {

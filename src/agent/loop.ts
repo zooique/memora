@@ -1472,6 +1472,8 @@ export class AgentLoop {
 
     // yield tool_start 并并发发起所有工具执行（不 await，由 Promise.all 统一等待）
     const toolPromises: Promise<string>[] = [];
+    /** 策略拦截标记（按 toolCalls 顺序平行记录）：确定性拒绝（如搜索硬上限）的工具 blocked=true */
+    const blockedFlags: boolean[] = [];
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
       const isSearch = tc.function.name === 'web_search';
@@ -1497,6 +1499,7 @@ export class AgentLoop {
             { executionTemp: true },
           );
         }
+        blockedFlags.push(true);
         toolPromises.push(
           Promise.resolve(
             `[SEARCH_LIMIT_REACHED] 已执行 ${LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS} 次联网搜索，信息应已足够；` +
@@ -1505,6 +1508,7 @@ export class AgentLoop {
         );
         continue;
       }
+      blockedFlags.push(false);
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
       toolPromises.push(
         tc.function.name === COMPRESS_CONTEXT_TOOL.name
@@ -1521,7 +1525,10 @@ export class AgentLoop {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
       const result = results[i]!;
-      const ok = !result.startsWith('[ERR');
+      // 第三态（2026-09-02）：策略拦截 blocked=true 非成功亦非失败——ok=false 且不计成功搜索数；
+      // 失败（[ERR 前缀）与拦截区分开，UI 显示「已拦截」，metrics 失败数不把拦截算作失败
+      const blocked = blockedFlags[i] === true;
+      const ok = !blocked && !result.startsWith('[ERR');
       // TS-7 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
@@ -1532,6 +1539,7 @@ export class AgentLoop {
         name: tc.function.name,
         ok,
         summary: result.slice(0, 100),
+        ...(blocked ? { blocked: true } : {}),
       };
     }
 

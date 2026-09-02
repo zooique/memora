@@ -1967,4 +1967,18 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(narrate).not.toBeNull();
     expect(narrate.open).toBe(false);
   });
+
+  it('策略拦截（blocked）工具行显示「已拦截」并默认展开，不冒充成功/失败（2026-09-02 第三态）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: false, blocked: true, summary: '[SEARCH_LIMIT_REACHED] 已达上限' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const row = rb.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="t1"]');
+    expect(row).not.toBeNull();
+    // 状态标签为「已拦截」而非「成功/失败」；拦截即展开（拒绝文案应直接可见，与失败同纪律）
+    expect(row!.textContent).toContain('已拦截');
+    expect(row!.open).toBe(true);
+  });
 });

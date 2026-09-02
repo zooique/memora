@@ -2087,7 +2087,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           }
         } else if (chunk.type === 'tool_result') {
           // 工具调用结束 → 过程事件（§ 工具调用 完成态；失败计入 metrics.toolFailureCount）
-          emitEvent('tool_result', { toolCallId: chunk.toolCallId, name: chunk.name, ok: chunk.ok, summary: chunk.summary });
+          // 策略拦截（2026-09-02）：blocked 透传，UI 显示「已拦截」而非「成功/失败」
+          emitEvent('tool_result', {
+            toolCallId: chunk.toolCallId,
+            name: chunk.name,
+            ok: chunk.ok,
+            summary: chunk.summary,
+            ...(chunk.blocked ? { blocked: true } : {}),
+          });
         } else if (chunk.type === 'selfReview') {
           // 自审查轮开始 → 过程事件（§ 自审查输出 头部）
           emitEvent('self_review', { round: chunk.round });
