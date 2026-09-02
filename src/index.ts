@@ -7,7 +7,7 @@
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from '@/agent/agent.js';
 // RecalledMemorySummary：recall chunk 载荷类型，宿主渲染召回记忆列表时需要
-export type { AgentChunk, ThinkingPhase, UIMessages, ArchiveMode, RecalledMemorySummary, AgentOptions, AgentContext, AgentProjectEntry } from '@/agent/types.js';
+export type { AgentChunk, ThinkingPhase, AbortStopReason, UIMessages, ArchiveMode, RecalledMemorySummary, AgentOptions, AgentContext, AgentProjectEntry } from '@/agent/types.js';
 // 重复工具调用拦截器（宿主可自定义判重策略）
 export type { DuplicateCallInterceptor, DuplicateCheckVerdict, DuplicateCheckContext } from '@/agent/types.js';
 export { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';

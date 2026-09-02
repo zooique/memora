@@ -2330,11 +2330,18 @@ describe('Agent · chat() 中断保留文本', () => {
     await agent.init();
 
     const ctrl = new AbortController();
+    const chunks: AgentChunk[] = [];
     for await (const chunk of agent.chat('测试', ctrl.signal)) {
+      chunks.push(chunk);
       if (chunk.type === 'text') {
         ctrl.abort();
       }
     }
+
+    // TS-12a：真用户取消（signal.aborted）→ aborted chunk 带 stopReason:'user'
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(aborted.length).toBeGreaterThan(0);
+    expect((aborted[0] as { stopReason?: string }).stopReason).toBe('user');
 
     // 验证 history 中使用自定义中断文案，而非默认的 [已中断]
     const messages = agent.getMessages();

@@ -793,7 +793,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // signal 已 abort（宿主/插话合并信号）→ 真用户取消：非失败——置 aborted 供 act() 走
         // 「中断保留已产出文本」分支，半截回答落盘。
         if (signal?.aborted) {
-          yield { type: 'aborted', reason: 'User cancelled the conversation' };
+          yield { type: 'aborted', reason: 'User cancelled the conversation', stopReason: 'user' };
           return { content, aborted: true, paused, failed: false, iterationLimitReached };
         }
         // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：

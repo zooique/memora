@@ -92,7 +92,7 @@ export class SeedOrchestrator {
     // 回答前：装配上下文 + 召回记忆
     const prepared = yield* this.prepare.run(input, signal);
     if (prepared.aborted) {
-      yield { type: 'aborted', reason: this.abortedReasonByUser() };
+      yield { type: 'aborted', reason: this.abortedReasonByUser(), stopReason: 'user' };
       return;
     }
 
@@ -167,7 +167,7 @@ export class SeedOrchestrator {
     // 回答前：装配上下文 + 召回记忆
     const prepared = yield* this.prepare.run(input, signal);
     if (prepared.aborted) {
-      yield { type: 'aborted', reason: this.abortedReasonByUser() };
+      yield { type: 'aborted', reason: this.abortedReasonByUser(), stopReason: 'user' };
       return;
     }
 

@@ -753,8 +753,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(tools[1].open).toBe(true);
     expect(tools[1].querySelector('summary')?.textContent).toBe('写入文件：b.md (失败)');
     expect(tools[1].textContent).toContain('权限不足');
-    // 进行中：默认折叠
-    expect(tools[2].open).toBe(false);
+    // 进行中：TS-11b 默认展开（让正在执行的工具可见）+ 进行中态 class（is-tool-running）
+    expect(tools[2].open).toBe(true);
+    expect(tools[2].classList.contains('is-tool-running')).toBe(true);
     expect(tools[2].querySelector('summary')?.textContent).toBe('search (进行中)');
   });
 
@@ -2012,5 +2013,124 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // 状态标签为「已拦截」而非「成功/失败」；拦截即展开（拒绝文案应直接可见，与失败同纪律）
     expect(row!.textContent).toContain('已拦截');
     expect(row!.open).toBe(true);
+  });
+
+  it('TS-11 已拦截工具行不带 is-tool-running（拦截即终态，非进行中）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: false, blocked: true, summary: 'x' } } });
+    dispatch({ type: 'done' });
+    const row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
+    expect(row.classList.contains('is-tool-running')).toBe(false);
+  });
+});
+
+describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）', () => {
+  function beginRound(): void {
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+  }
+
+  it('TS-11a 相位行联动：tool_start → 「正在执行：写入文件」叙述，tool_result → 回落 thinking 相位', () => {
+    mountChatView();
+    beginRound();
+    // 先有 thinking（LLM 调用相位）
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } } });
+    // 工具开始执行：相位行切「正在执行」行动叙述（toolActionLabel 复用），is-tool 态
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
+    let phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    expect(phaseRow).not.toBeNull();
+    expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
+    expect(phaseRow.classList.contains('is-tool')).toBe(true);
+    // 工具完成：相位行回落最新 thinking（调用模型中…），移除 is-tool 态
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' } } });
+    phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    expect(phaseRow.textContent).toContain('调用模型中');
+    expect(phaseRow.classList.contains('is-tool')).toBe(false);
+  });
+
+  it('TS-11a 多工具并行：最新未完成工具为相位主体，逐完成回落（无 thinking 时安全移除）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' } } });
+    // 最新未完成者（t2）为相位主体
+    let phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
+    // t2 完成 → t1 成为剩余未完成者 → 相位切回 t1
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true, summary: 'ok' } } });
+    phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    expect(phaseRow.textContent).toBe('正在执行：读取文件：a.md');
+    // t1 完成 → 无进行中工具且无 thinking → 相位行移除（不残留过期「正在执行」）
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' } } });
+    expect(document.querySelector('.round-block__phase')).toBeNull();
+  });
+
+  it('TS-11b 进行中工具行实时可见：默认展开 + is-tool-running，result 到达移除', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
+    const row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
+    expect(row).not.toBeNull();
+    expect(row.open).toBe(true);
+    expect(row.classList.contains('is-tool-running')).toBe(true);
+    // result 到达 → 成功折叠 + 移除进行中态
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: '已写入' } } });
+    expect(row.classList.contains('is-tool-running')).toBe(false);
+    expect(row.open).toBe(false);
+    expect(row.textContent).toContain('(成功)');
+  });
+
+  describe('TS-11c 工具等待时长（瞬态，不落库）', () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('tool_start → 秒数实时刷新；结果完成 + 流结束 → elapsed 移除', () => {
+      mountChatView();
+      beginRound();
+      dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
+      // tick 前无 elapsed span；advance 2s 后出现「Ns」标签（Date 被 fake timers 一并 mock）
+      expect(document.querySelector('.round-block__elapsed')).toBeNull();
+      vi.advanceTimersByTime(2000);
+      const row = document.querySelector('.round-block__tool') as HTMLElement;
+      expect(row.textContent).toContain('2s');
+      // 结果完成 + 流结束 → elapsed 清空（瞬态退场）
+      dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' } } });
+      dispatch({ type: 'done' });
+      expect(document.querySelector('.round-block__elapsed')).toBeNull();
+    });
+  });
+});
+
+describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () => {
+  function beginRound(): void {
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+  }
+
+  it('stopReason=user → § 已停止 显示「用户停止了对话」（不写死「用户取消了对话」）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const detail = rb.querySelector('.round-block__details') as HTMLElement;
+    expect(detail.textContent).toContain('已停止');
+    expect(detail.textContent).toContain('用户停止了对话');
+    expect(detail.textContent).not.toContain('用户取消了对话');
+  });
+
+  it('无 stopReason（旧数据）→ 回退 reason 原文（兼容不丢细节）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'legacy 原因' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb.textContent).toContain('legacy 原因');
   });
 });

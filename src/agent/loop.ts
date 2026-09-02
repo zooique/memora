@@ -707,6 +707,12 @@ export class AgentLoop {
     // 硬上限停搜标志随轮重置（下一闭环 web_search 重新可用）
     this.searchDisabled = false;
     this.searchDisabledHintInjected = false;
+    // TS-13 闭环入口防残留：interjectController 已 abort 且排队插话已消费完 → 重建干净控制器，
+    // 避免上一轮「done 终止前消费 pending」残留 aborted 信号使本轮首迭代被 _handleInterrupt 误中止。
+    // 保留「暂停后插话 → resume 首迭代消费」语义（pending 非空时不重建）。
+    if (this.interjectController.signal.aborted && this.pendingInterjections.length === 0) {
+      this.interjectController = new AbortController();
+    }
   }
 
   /**
@@ -781,6 +787,8 @@ export class AgentLoop {
     // 修复：消费排队插话并继续迭代，保证 block 模式语义（不打断当前轮，但下一轮必须处理）。
     if (this.pendingInterjections.length > 0) {
       const contents = this.pendingInterjections.splice(0);
+      // TS-13：消费后同步重建控制器——防「消费了排队但 abort 残留」使下一闭环首迭代误中止
+      this.interjectController = new AbortController();
       for (const content of contents) {
         this.appendUserMessage(content);
       }
@@ -870,7 +878,7 @@ export class AgentLoop {
     if (effectiveSignal?.aborted) {
       // 插话控制器在迭代边界被 abort（interject() 在上一次迭代之后被调用），
       // 直接返回 aborted，由 processUserInput 消费 pendingInterjections
-      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
       return 'aborted';
     }
 
@@ -926,7 +934,7 @@ export class AgentLoop {
       if (llmResult.fullContent.trim()) {
         this.appendAssistantText(llmResult.fullContent + this.ui.interrupted);
       }
-      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
       return 'aborted';
     }
 
@@ -1078,7 +1086,7 @@ export class AgentLoop {
       signal,
     );
     if (execResult.aborted) {
-      yield { type: 'aborted', reason: this.ui.abortedByUser };
+      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
       return 'aborted';
     }
 

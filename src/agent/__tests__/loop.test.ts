@@ -2046,6 +2046,32 @@ describe('AgentLoop · 执行中插话', () => {
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
 
+  it('TS-13 防残留：interjectController 残留 aborted 且排队已空 → 下一闭环不误中止（假中断跨轮污染）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '正常回答' }]),
+      bootstrapMemories: [],
+      toolExecutor: async () => 'ok',
+    });
+    // 构造残留态：上一闭环 interject 后排队内容已被消费（模拟「done 终止前消费 pending 但
+    // 控制器未重建」的旧漏洞路径），interjectController 仍 aborted + pendingInterjections 空
+    loop.interject('已消费的插话');
+    const exposed = loop as unknown as {
+      pendingInterjections: string[];
+      interjectController: AbortController;
+    };
+    exposed.pendingInterjections.length = 0;
+
+    // 新闭环入口 resetTurnState 应重建干净控制器 → 首迭代不被 _handleInterrupt 误判为用户取消
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('新一轮')) {
+      chunks.push(chunk);
+    }
+    // 修复前：首 chunk 为 aborted 且整轮无回答；修复后：正常走完产出 done
+    expect(chunks.some((c) => c.type === 'aborted')).toBe(false);
+    expect(chunks[chunks.length - 1]!.type).toBe('done');
+    expect(exposed.interjectController.signal.aborted).toBe(false);
+  }, 15000);
+
   it('interject() 后 interjectController 应重建，支持多次插话', async () => {
     // 两轮工具执行，每轮都被插话中断
     const toolExecutor = vi.fn().mockImplementation(

@@ -675,34 +675,77 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * round-block__details 顶层。
    */
   /**
+   * TS-12b：aborted 中断语义 → 展示文案（单一映射，与 error category 词典同构）。
+   * 'user' → 用户停止；'interrupted' → 中断；
+   * 无 stopReason（旧数据/直接构造） → 回退 reason 原文（调试可追溯，不丢原始细节）。
+   * 注：'connection' 不在此映射——连接中断统一由 error chunk category 承载（TS-10b chatPanel 映射），
+   * aborted 永不带此语义，假分支删除防文案双源漂移。
+   */
+  function stopReasonLabel(payload: { reason: string; stopReason?: string }): string {
+    const map: Record<string, string> = {
+      user: '用户停止了对话',
+      interrupted: '对话已中断',
+    };
+    return (payload.stopReason && map[payload.stopReason]) || payload.reason;
+  }
+
+  /**
+   * TS-11a：定位「进行中工具」——tool_start 已到、tool_result 未达的最新一个（工具并行执行时以
+   * 最新未完成者作为「当前正在做什么」的展示主体）。无进行中工具返回 null（相位行回退 thinking）。
+   */
+  function findRunningTool(events: ProcessEvent[]): Extract<ProcessEvent, { type: 'tool_start' }> | null {
+    const starts = events.filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start');
+    // 从最新往前找第一个没有配对的 tool_result 的 tool_start
+    for (let i = starts.length - 1; i >= 0; i--) {
+      const start = starts[i]!;
+      const matched = events.some(
+        (e) => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
+      );
+      if (!matched) return start;
+    }
+    return null;
+  }
+
+  /**
    * 工具行状态（单一推导，renderToolRow/updateToolRowState 共用）：
-   * 无结果=进行中；策略拦截（blocked）=已拦截且默认展开（拒绝文案应直接可见）；
+   * 无结果=进行中（TS-11b 默认展开 + running 标记，让正在执行的工具可见）；
+   * 策略拦截（blocked）=已拦截且默认展开（拒绝文案应直接可见）；
    * 其余按 ok 成功/失败，失败默认展开（错误可见优先于整洁）。
    */
   function toolRowStatus(
     result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined,
-  ): { label: string; open: boolean } {
-    if (!result) return { label: '进行中', open: false };
-    if (result.payload.blocked === true) return { label: '已拦截', open: true };
+  ): { label: string; open: boolean; running: boolean } {
+    if (!result) return { label: '进行中', open: true, running: true };
+    if (result.payload.blocked === true) return { label: '已拦截', open: true, running: false };
     return result.payload.ok
-      ? { label: '成功', open: false }
-      : { label: '失败', open: true };
+      ? { label: '成功', open: false, running: false }
+      : { label: '失败', open: true, running: false };
   }
 
   function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
-    const { label: status, open } = toolRowStatus(result);
+    const { label: status, open, running } = toolRowStatus(result);
     const row = document.createElement('details');
     row.className = 'round-block__tool';
     // 增量追加去重锚点：通过 toolCallId 定位已渲染的工具行（流式进行中增量追加）
     row.dataset.toolCallId = start.payload.toolCallId;
     row.open = open;
+    // TS-11b：进行中态 class（未出结果时高亮；result 到达由 updateToolRowState 移除）
+    row.classList.toggle('is-tool-running', running);
     const summary = document.createElement('summary');
     summary.className = 'round-block__tool-name';
-    // 任务过程文字化：原生工具名 → 行动叙述（如「读取文件：src/main.ts」；未收录回退原生名）
-    summary.textContent = `${toolActionLabel(start.payload.name, start.payload.args)} (${status})`;
+    // TS-11 结构化管理：叙述与状态标签分孤儿 span——状态标签独占定位供 updateToolRowState 精确更新，
+    // 与 TS-11c elapsed 等待标签（append 到 summary 尾部）共存不冲突（若仍用整体 textContent 替换，
+    // 尾部 Ns 会使状态正则 `\)$` 失配，状态标签停更）
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'round-block__tool-label';
+    labelSpan.textContent = toolActionLabel(start.payload.name, start.payload.args);
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'round-block__tool-status';
+    statusSpan.textContent = ` (${status})`; // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距
+    summary.append(labelSpan, statusSpan);
     row.appendChild(summary);
     listEl.appendChild(row);
     if (start.payload.args) {
@@ -728,13 +771,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    */
   function updateToolRowState(container: HTMLElement, result: Extract<ProcessEvent, { type: 'tool_result' }>): void {
     container.querySelectorAll<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`).forEach((row) => {
-      const { label: status, open } = toolRowStatus(result);
-      const nameEl = row.querySelector('.round-block__tool-name');
-      if (nameEl) {
-        // 精确替换末尾状态标签：工具名本身可能含括号，锚定尾部匹配
-        nameEl.textContent = nameEl.textContent.replace(/\((进行中|成功|失败|已拦截)\)$/, `(${status})`);
-      }
+      const { label: status, open, running } = toolRowStatus(result);
+      // TS-11 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）
+      const statusEl = row.querySelector('.round-block__tool-status');
+      if (statusEl) statusEl.textContent = ` (${status})`;
       row.open = open;
+      // TS-11b：result 已到达 → 移除进行中态（恢复普通行样式）
+      row.classList.toggle('is-tool-running', running);
+      // TS-11c：工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
+      row.querySelector(':scope .round-block__elapsed')?.remove();
       // 结果摘要：首次到达补 DOM（后续到达不重复）
       if (result.payload.summary && !row.querySelector('.round-block__tool-summary')) {
         const s = document.createElement('div');
@@ -797,15 +842,27 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (!details) return;
     // ── 进行中（finalize=false）：实时相位行 + 工具行增量追加（不重建 details 防闪烁） ──
     if (!finalize) {
-      // 实时相位行：details 顶部单条「当前正在做什么」
+      // 实时相位行：details 顶部单条「当前正在做什么」。
+      // TS-11a 优先级：进行中工具（tool_start 已到、tool_result 未达）→ 执行叙述；
+      // 否则按最新 thinking 相位展示（原逻辑）。
+      const runningTool = findRunningTool(events);
       const thinking = [...events].reverse().find((e) => e.type === 'thinking');
       let phaseRow = details.querySelector('.round-block__phase') as HTMLDivElement | null;
-      if (thinking) {
+      if (runningTool) {
         if (!phaseRow) {
           phaseRow = document.createElement('div');
           phaseRow.className = 'round-block__phase';
           details.prepend(phaseRow);
         }
+        phaseRow.classList.add('is-tool');
+        phaseRow.textContent = `正在执行：${toolActionLabel(runningTool.payload.name, runningTool.payload.args)}`;
+      } else if (thinking) {
+        if (!phaseRow) {
+          phaseRow = document.createElement('div');
+          phaseRow.className = 'round-block__phase';
+          details.prepend(phaseRow);
+        }
+        phaseRow.classList.remove('is-tool');
         phaseRow.textContent = phaseLabel(thinking.payload.phase);
       } else {
         phaseRow?.remove();
@@ -931,7 +988,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const { listEl } = sectionOf(details, '已停止');
       const row = document.createElement('div');
       row.className = 'round-block__row';
-      row.textContent = aborted.payload.reason;
+      // TS-12b：stopReason 语义映射（与 error.category→友好文案同构）——不把「如何结束」写死成
+      // 用户取消；无 stopReason（旧数据）回退 reason 原文
+      row.textContent = stopReasonLabel(aborted.payload);
       listEl.appendChild(row);
     }
     // § 执行指标（metrics 事件）
@@ -1133,6 +1192,58 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     pendingWaitEl = null;
     pendingWaitStart = 0;
     pendingWaitPhase = '正在准备回答…';
+  }
+
+  // ── TS-11c：工具等待时长（瞬态展示，不落库） ─────────────────────
+  // 进行中工具行的「已等待 Ns」秒数：仅 tool_start 已到、tool_result 未达期间实时刷新。
+  // 瞬态不参与 eventsByRound（历史只记 tool_start/tool_result，时长属展示时点信息）。
+  /** toolCallId → 工具开始时间戳（进程内瞬态，不随过程事件持久化） */
+  const toolElapsedStart = new Map<string, number>();
+  /** 工具等待秒数刷新的定时器句柄（仅有进行中工具时运行，空转兜底自动清理） */
+  let toolElapsedTimer: ReturnType<typeof setInterval> | undefined;
+
+  /** 停止工具计时并清空全部时点记录（流结束 / 新轮开始调用，防定时器泄漏） */
+  function clearToolElapsed(): void {
+    if (toolElapsedTimer !== undefined) {
+      clearInterval(toolElapsedTimer);
+      toolElapsedTimer = undefined;
+    }
+    toolElapsedStart.clear();
+    messages.querySelectorAll('.round-block__elapsed').forEach((el) => el.remove());
+  }
+
+  /** 首个进行中工具到达时启动秒数刷新（幂等；无进行中工具时由 tick 兜底停止） */
+  function ensureToolElapsedTimer(): void {
+    if (toolElapsedTimer !== undefined) return;
+    toolElapsedTimer = setInterval(tickToolElapsed, 1000);
+  }
+
+  /** 每秒刷新所有进行中工具行的「已等待 Ns」标签（elapsed 是个独立 span，不动 summary 文本，避免与状态标签替换冲突） */
+  function tickToolElapsed(): void {
+    let anyRunning = false;
+    messages.querySelectorAll<HTMLElement>('.round-block__tool.is-tool-running').forEach((row) => {
+      const id = row.dataset.toolCallId;
+      if (!id) return;
+      const summary = row.querySelector(':scope summary');
+      if (!summary) return;
+      const startTs = toolElapsedStart.get(id);
+      if (startTs === undefined) {
+        // 缺起点（map 被清但行仍在）→ 以当前时刻补记，防显示异常
+        toolElapsedStart.set(id, Date.now());
+        return;
+      }
+      let el = row.querySelector(':scope .round-block__elapsed') as HTMLElement | null;
+      if (!el) {
+        el = document.createElement('span');
+        el.className = 'round-block__elapsed';
+        summary.appendChild(el);
+      }
+      const seconds = Math.max(0, Math.floor((Date.now() - startTs) / 1000));
+      el.textContent = `${seconds}s`;
+      anyRunning = true;
+    });
+    // 无任何进行中工具 → 兜底停止（防漏挂清理的残留定时器空转）
+    if (!anyRunning) clearToolElapsed();
   }
 
   // 复制消息文本到剪贴板
@@ -2025,6 +2136,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (ev.type === 'meta') {
         // 新轮开始：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）
         clearPendingWait(); // 骨架接管：移除 meta 前的回答等待指示器
+        clearToolElapsed(); // TS-11c：切轮清工具等待计时（瞬态，防跨轮残留）
         currentEvents = [];
         roundBlockEl = null;
         roundBlockHostEl = null;
@@ -2049,6 +2161,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
             pendingWaitPhase = phaseLabel(ev.payload.phase);
             ensurePendingWait();
           }
+        } else if (ev.type === 'tool_start') {
+          // TS-11c：工具开始执行 → 记起点 + 启动秒数刷新（进行中行的「已等待 Ns」）
+          toolElapsedStart.set(ev.payload.toolCallId, Date.now());
+          ensureToolElapsedTimer();
+        } else if (ev.type === 'tool_result') {
+          // TS-11c：工具结束 → 移除计时点（行内 elapsed 由 result 后的重渲/清理移除）
+          toolElapsedStart.delete(ev.payload.toolCallId);
         }
         currentEvents.push(ev);
         // 任务过程折叠区随流同步刷新（进行中增量：实时相位 + 工具追加）
@@ -2178,6 +2297,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 等待指示器同步收尾（③ 排雷补漏 2026-08-30）：done/error 均清，唯独中断漏清——
       // 残留的 pending-wait 会悬挂「已等待 Ns」且 1s 定时器空转，直到下次用户输入才被清掉。
       clearPendingWait();
+      clearToolElapsed(); // TS-11c：中断同样清工具等待计时（防定时器残留空转）
       clearArchivingFallback();
       flowShellEl = null;
       // 同 done 顺序纪律：先收起任务过程折叠区，再关流式

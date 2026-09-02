@@ -2053,7 +2053,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 导致内核 act() 的中断保存（appendAssistant 半截内容 + roundId 登记）永不执行，
           // 表现为「中断后的问答闭环不落盘」。必须让流自然走完（aborted 是末块，后续无 text）。
           // 中断通知统一由本方法末尾按 controller.signal.aborted 发出。
-          emitEvent('aborted', { reason: chunk.reason });
+          emitEvent('aborted', { reason: chunk.reason, ...(chunk.stopReason ? { stopReason: chunk.stopReason } : {}) });
           continue;
         }
         // 召回明细 → 过程事件（webview 据此渲染 § 召回记忆 + 瞬时「已召回 N 条」提示）
@@ -2178,14 +2178,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           if (round) {
             // TS-9 闭环节点跨流累积：续跑（暂停→resume）与首轮共享同一闭环节点 roundId，
             // processEvents 不能整轮覆盖（会丢失暂停前的召回/工具过程）。合并规则：
-            //   - 前序流的 meta/metrics 属「流级快照」：meta 保留、metrics 剔除（终局 metrics 恒为末流）
+            //   - 前序流的 meta/metrics/aborted 属「流级快照」：meta 保留、metrics 与 aborted 剔除
+            //     （TS-12c：aborted 与 metrics 同为终态——终局终态恒为末流，旧流中断残留不污染新流展示）
             //   - 当前流的 meta 剔除（已含前序流 meta，丢重复身份）
             // 普通单流轮（此前无 processEvents）行为不变。
             const prior = round.processEvents ?? [];
             round.processEvents =
               prior.length > 0
                 ? [
-                    ...prior.filter((e) => e.type !== 'metrics'),
+                    ...prior.filter((e) => e.type !== 'metrics' && e.type !== 'aborted'),
                     ...roundEvents.filter((e) => e.type !== 'meta'),
                   ]
                 : roundEvents;

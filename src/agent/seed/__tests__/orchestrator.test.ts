@@ -110,10 +110,14 @@ describe('SeedOrchestrator 最小执行闭环', () => {
 
     const { chunks } = await collectGen(new SeedOrchestrator(deps).runChat('输入', ac.signal));
 
-    expect(chunks).toContainEqual({
-      type: 'aborted',
-      reason: 'User cancelled the conversation',
-    });
+    // TS-12a：aborted chunk 带 stopReason:'user'（stopReason 为可选字段，用 toMatchObject 兼容）
+    expect(chunks).toContainEqual(
+      expect.objectContaining({
+        type: 'aborted',
+        reason: 'User cancelled the conversation',
+        stopReason: 'user',
+      }),
+    );
     expect(mocks.loop.setCurrentRoundId).not.toHaveBeenCalled();
     expect(mocks.history.appendUser).not.toHaveBeenCalled();
     expect(mocks.history.appendAssistant).not.toHaveBeenCalled();

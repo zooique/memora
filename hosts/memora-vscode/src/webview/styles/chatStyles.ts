@@ -1092,6 +1092,8 @@ export const chatStyles = `
     background: var(--accent, #0e639c);
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }
+  /* TS-11a：相位行切「工具执行」态——进行中工具优先显示执行叙述，主色强调 + 呼吸点延续 */
+  .round-block__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
   @media (prefers-reduced-motion: reduce) {
     .round-block__phase::before { animation: none; }
   }
@@ -1109,6 +1111,27 @@ export const chatStyles = `
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
+  /* TS-11b：进行中工具行——高亮左缘 + 主色名称 + 尾部呼吸点，让「正在执行的工具」一眼可见；
+     result 到达即移除（updateToolRowState 切 class），收尾全量渲染天然不带该态 */
+  .round-block__tool.is-tool-running {
+    border-left-color: var(--accent, #0e639c);
+    background: var(--surface-thought, rgba(128,128,128,.05));
+  }
+  .round-block__tool.is-tool-running > summary { color: var(--text-primary, #e6e6e6); font-weight: 600; }
+  .round-block__tool.is-tool-running > summary::after {
+    content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
+    margin-left: var(--sp-2, 6px); background: var(--accent, #0e639c);
+    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .round-block__tool.is-tool-running > summary::after { animation: none; }
+  }
+  /* TS-11c：工具等待时长标签（瞬态，仅进行中工具行显示「Ns」） */
+  .round-block__elapsed {
+    margin-left: var(--sp-2, 6px);
+    color: var(--text-secondary, #9aa0a6);
+    font-variant-numeric: tabular-nums;
+  }
   @keyframes selfReviewPulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }

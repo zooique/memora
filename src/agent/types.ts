@@ -77,7 +77,16 @@ export type AgentChunk = (
    * 不进入最终回答正文（consumeExecutionStream 不将其拼入 content）。
    */
   | { type: 'narrate'; content: string }
-  | { type: 'aborted'; reason: string }
+  /**
+   * 中断（aborted chunk 的语义分类，TS-12）
+   *
+   * stopReason 由内核在产生点按真实触因唯一判定，宿主按语义映射友好文案（与 error.category 同构）：
+   * - 'user'：宿主 signal / 插话控制器真 abort（用户主动停止或插话介入）
+   * - 'interrupted'：预留语义（流式中断；当前无产生点，未来场景分化时启用）
+   * - 'connection'：预留语义（连接中断已由 error chunk category:'connection' 捕获，不在此重复）
+   * 无 stopReason（旧数据/直接构造）时宿主回退 reason 原文，保持兼容。
+   */
+  | { type: 'aborted'; reason: string; stopReason?: AbortStopReason }
   /**
    * 流式错误（error chunk 的分类字段，TS-10a）
    *
@@ -105,7 +114,12 @@ export type AgentChunk = (
 ) & RoundTagged;
 
 /**
- * 文本块阶段标识（text chunk 携带）：供宿主区分正常交付与自审查应答，做独立分段展示。
+ * 中断语义分类（TS-12a）：'user' = 用户主动停止/插话；'interrupted'/'connection' 为预留语义（当前无产生点）。
+ */
+export type AbortStopReason = 'user' | 'interrupted' | 'connection';
+
+/**
+ * 文本块阶段标识：供宿主区分正常交付与自审查应答，做独立分段展示。
  * - 'answer'：正常回答（缺省值）
  * - 'self_review'：自审查轮应答（满意确认或修订输出）
  */

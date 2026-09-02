@@ -13,6 +13,7 @@
  */
 
 import type { MessageRole } from '@/memory/types.js';
+import type { AbortStopReason } from '@/agent/types.js';
 
 // ─── 问答闭环消息 ───────────────────────────────────────
 
@@ -190,7 +191,7 @@ export type ProcessEvent =
   | { type: 'self_review'; seq: number; ts: string; payload: { round: number } }
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
   | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
-  | { type: 'aborted'; seq: number; ts: string; payload: { reason: string } }
+  | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }
   | { type: 'metrics'; seq: number; ts: string; payload: ProcessMetricsPayload };
 
 // ─── 问答闭环 ───────────────────────────────────────────
