@@ -659,22 +659,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   };
 
-  /**
-   * needClarify：P4 任务槽位补全澄清（composer 路径，区别于 questionPending 的 [ASK] 路径）
-   *
-   * 内核 composer 在槽位无法自动补全（P4）时 emit 此事件，宿主渲染澄清输入条
-   * （与 need_clarify 协议消息类型对齐，webview 复用现有澄清 UI）。
-   */
-  private readonly onNeedClarify = (info: {
-    slot: string;
-    question: string;
-    options?: string[];
-  }[]): void => {
-    if (info.length > 0) {
-      this.post({ type: 'need_clarify', questions: info });
-    }
-  };
-
   // ─── H2 低价值事件（状态冗余确认） ───
 
   /** sessionPaused：对话被暂停（状态可视化补充） */
@@ -843,8 +827,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('sessionForked', this.onSessionForked);
     a.off('dedupCompleted', this.onDedupCompleted);
     a.on('dedupCompleted', this.onDedupCompleted);
-    a.off('needClarify', this.onNeedClarify);
-    a.on('needClarify', this.onNeedClarify);
     // H2 低价值事件：会话状态冗余确认
     a.off('sessionPaused', this.onSessionPaused);
     a.on('sessionPaused', this.onSessionPaused);

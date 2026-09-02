@@ -604,8 +604,9 @@ export type ExtensionToWebviewMessage =
    * 后转发，触发 Agent 暂停（pause），等待用户在提问输入框回答；收到 clarify_answer 后调
    * resumeExecution 续跑。
    *
-   * 注：内核另有 needClarify 事件（P4 任务槽位补全，processEvent/composer 路径），插件当前
-   * 仅用 chat()/resumeExecution 不触达该路径，故不监听；如未来接入该路径需在此补监听。
+   * 注：内核 needClarify 事件（P4 任务槽位补全/composer 路径）已于 2026-09-03 整链剪枝，
+   * `[ASK]` 为唯一提问通道——本消息类型由 questionPending 事件（主）+ question_pending
+   * chunk（幂等兜底，TS-O3/TS-O5）归一驱动渲染。
    */
   | { type: 'need_clarify'; questions: { slot: string; question: string; options?: string[] }[] }
   /**
