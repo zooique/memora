@@ -2,7 +2,7 @@
 
 > **文档定位**：TS-O3（待完成任务清单「观察项」）收敛评估产出。评估「P4 澄清」与「\[ASK] 主动提问」两套"提问后暂停"机制是否重复、如何收敛。
 >
-> **状态**：档 1 已实施（2026-09-02，内核 + vscode 宿主）；观察记录（P4 vscode 死路径 / 停滞确认移交 [ASK]）见 §六。可逆决策，符合 S1 探索期落地——不写 ADR、不占编号、不改 README 索引。
+> **状态**：档 1 已实施（2026-09-02，内核 + vscode 宿主）；**档 2 已剪枝（2026-09-03，P4 整条移除，[ASK] 为唯一提问通道，见 §七）**。可逆决策，符合 S1 探索期落地——不写 ADR、不占编号、不改 README 索引。
 >
 > **方法**：实证先行（逐条读源码链路核对现状，非凭印象）；自然生长（收敛目标是「统一对外提问协议」，不消灭触发源差异与续跑语义差异）；关联既有真理源 [pause-ask-resume-design.md](./pause-ask-resume-design.md)（三机制共享的闭环暂停边界已收敛至单一收口）。
 
@@ -103,29 +103,62 @@
 
 - 既有设计真理源：[pause-ask-resume-design.md](./pause-ask-resume-design.md)（三机制共享最小单元"闭环暂停边界"识别）、[agent-design-philosophy.md](./agent-design-philosophy.md)（§14.3 主动提问/输入中断）
 
----
+***
 
 ## 六、实施记录与观察（2026-09-02 档 1 落地）
 
 ### 实施内容（档 1 · 协议统一 + TS-O5 收敛）
 
-| 层 | 文件 | 改动 |
-|----|------|------|
-| 内核 | [agent.ts](../../src/agent/agent.ts) L632-L642 | P4 暂停补发结构化 `question_pending` chunk（slot/question/options，与 [ASK] 同构）；`needClarify` 事件保留（全局注册稳定，兼容 sprite） |
-| 宿主 vscode | [chatPanel.ts consumeFlow](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts) | `question_pending` chunk 从"无条件忽略"改为**事件优先 + chunk 幂等兜底**：事件驱动时清 chunk 缓存；事件未驱动（监听未就绪/异常）时流尾统一兜底渲染提问 UI。TS-O5 消除 |
-| 测试 | [uninterruptedWorkflow.test.ts](../../src/agent/__tests__/uninterruptedWorkflow.test.ts) L2379 | P4 链路补断言 `question_pending` chunk（correction 事件触发 task 槽 P4 澄清） |
+| 层         | 文件                                                                                             | 改动                                                                                                              |
+| --------- | ---------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| 内核        | [agent.ts](../../src/agent/agent.ts) L632-L642                                                 | P4 暂停补发结构化 `question_pending` chunk（slot/question/options，与 \[ASK] 同构）；`needClarify` 事件保留（全局注册稳定，兼容 sprite）     |
+| 宿主 vscode | [chatPanel.ts consumeFlow](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)          | `question_pending` chunk 从"无条件忽略"改为**事件优先 + chunk 幂等兜底**：事件驱动时清 chunk 缓存；事件未驱动（监听未就绪/异常）时流尾统一兜底渲染提问 UI。TS-O5 消除 |
+| 测试        | [uninterruptedWorkflow.test.ts](../../src/agent/__tests__/uninterruptedWorkflow.test.ts) L2379 | P4 链路补断言 `question_pending` chunk（correction 事件触发 task 槽 P4 澄清）                                                 |
 
 **验证**：内核 2636 全绿 + 宿主 vscode 246 全绿 + 双端 tsc 0 错。
 
 ### 实证发现：P4 在 vscode 宿主为死路径
 
-- vscode 宿主唯一入口 `agent.chat()`（chatPanel L1883）→ `runChat` 直连 loop，**从不调 `processEvent`（P4 唯一消费入口）**；
-- vscode 宿主**从不发送** `correction/command/clarify` 类型 SessionEvent（全仓搜索零命中）；
-- 结论：P4 在 vscode **100% 不可触发**（用户实测从未目睹一致）；P4 为 **sprite 专用 + vscode 死路径**（sprite 走 chatStreamHandler `processEvent`）。
-- 含义：档 1 的 P4 补 chunk 在 vscode 是纯防御/协议同构增量；TS-O5 chunk 兜底的真价值在 [ASK]（正常触发）。
+- vscode 宿主唯一入口 `agent.chat()`（chatPanel L1883）→ `runChat` 直连 loop，**从不调** **`processEvent`（P4 唯一消费入口）**；
 
-### 观察：停滞确认职责未来或可移交 [ASK]（待 [ASK] 可靠性实证）
+- vscode 宿主**从不发送** `correction/command/clarify` 类型 SessionEvent（全仓搜索零命中）；
+
+- 结论：P4 在 vscode **100% 不可触发**（用户实测从未目睹一致）；P4 为 **sprite 专用 + vscode 死路径**（sprite 走 chatStreamHandler `processEvent`）。
+
+- 含义：档 1 的 P4 补 chunk 在 vscode 是纯防御/协议同构增量；TS-O5 chunk 兜底的真价值在 \[ASK]（正常触发）。
+
+### 观察：停滞确认职责未来或可移交 \[ASK]（待 \[ASK] 可靠性实证）
 
 - P4 剩余真实职责仅 `resolveStalledTaskSlot`（计划停滞 → 确定性问方向）+ role/standard SlotRef 边缘。
-- 主流范式（AskUserQuestion 等）把"提问时机/内容"交给 LLM；若未来 [ASK] 在"任务链收尾"场景被真实场景实证"问得准、记得问"，可评估 P4 停滞分支退役（由 [ASK]/LLM 承担）——**当前不做**：vscode 上 P4 不触发、sprite 还依赖确定性停滞确认，退役是净功能损失换形态统一，违背"克制提问"哲学。
+
+- 主流范式（AskUserQuestion 等）把"提问时机/内容"交给 LLM；若未来 \[ASK] 在"任务链收尾"场景被真实场景实证"问得准、记得问"，可评估 P4 停滞分支退役（由 \[ASK]/LLM 承担）——**当前不做**：vscode 上 P4 不触发、sprite 还依赖确定性停滞确认，退役是净功能损失换形态统一，违背"克制提问"哲学。
+
+***
+
+## 七、档 2 · P4 整条剪枝（2026-09-03 实施）
+
+**决策**：P4（needClarify · composer 四元组补全链）整条移除，`[ASK]`（question\_pending）成为内核唯一「提问后暂停」通道。符合"先验证后固化"：P4 为 vscode **死路径**（§六实证），属初始设计未自然生长的残留，剪枝保持内核纯洁性。
+
+**删净的 sprite 专属实体**（仅内核，宿主 sprite 侧未同步、按"抛弃 sprite"决策不再维护）：
+
+| 实体 | 落点 |
+| --- | --- |
+| `composer.ts`（四元组三源补全）/ `composer.test.ts` | 删除 |
+| `SessionEvent` / `DeltaPayload` / `SlotRef` / `FourTuple` / `CompletionLevel` | [types.ts](../../src/agent/types.ts) 删除 |
+| `processEvent` / `applyResolvedDelta` / `handleNonChatEvent` / `formatClarifyAnswers` / `injectMetaNote` | [agent.ts](../../src/agent/agent.ts) / [loop.ts](../../src/agent/loop.ts) 删除 |
+| `runEvent` / `settle` / `TASK_TABLE_HINT` | [orchestrator.ts](../../src/agent/seed/orchestrator.ts) 删除 |
+| `shouldGenerateTaskTable`（任务表预判） | [checkpointRestoreCoordinator.ts](../../src/agent/checkpointRestoreCoordinator.ts) 删除 |
+| `AGENT_EVENTS.needClarify` | [eventEmitter.ts](../../src/utils/eventEmitter.ts) 删除 |
+| 相关测试（runEvent / processEvent 用例） | [orchestrator.test.ts](../../src/agent/seed/__tests__/orchestrator.test.ts) / [uninterruptedWorkflow.test.ts](../../src/agent/__tests__/uninterruptedWorkflow.test.ts) 删除 |
+
+**保留的共享内核**（vscode 活性依赖，非 sprite 专属，剪枝不动）：
+
+- `seed/` 的 `runChat` / `runResume`——`agent.chat()` 委托（vscode 唯一入口）、`resumeExecution()` 续跑（`[ASK]` 回答 / 继续按钮）。
+- `checkpointRestoreCoordinator.ts`——`restoreFromCheckpoint` 初始化时活性调用。
+- `chatSync`——`chat()` 的同步封装（内部复用 `runChat`），非独立执行通道。
+- 记录剪枝决策的注释（`types.ts` / `index.ts` / `eventEmitter.ts` 的"已随 composer 剪枝"标注）。
+
+**净效果**：16 文件 +58/−1689（净 −1631 行）。`tsc --noEmit` 0 错；内核 2602 用例全绿。
+
+**遗留（按"抛弃 sprite"决策不处理，仅记录）**：sprite 宿主 `chatHandlers.ts` / `ipcListeners.ts` / `preload.ts` 仍监听已删除的 `needClarify` 事件——内核不再 emit，sprite 澄清功能静默失效。若未来重新启用 sprite，需先同步该监听面。
 

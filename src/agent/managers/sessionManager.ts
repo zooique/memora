@@ -879,8 +879,8 @@ export class SessionManager {
         // 走 setPauseMeta 唯一写入口而非内联赋值，避免绕过其兜底与落盘链路（其内部已含 touch+flush，此处不再重复调用）
         this.setPauseMeta(undefined);
       }
-      // 连续暂停计数不在 resume() 重置，而在 Agent.processEvent clarify 完成后显式重置，
-      // 避免用户回答前过早清零导致防滥用机制无效
+      // 连续暂停计数在暂停超时处理（checkPauseTimeout / restoreFromCheckpoint）对称重置，
+      // 不在 resume() 里清零——避免用户回答前过早清零导致防滥用机制无效
       this.emitEvent('sessionResumed', {
         sessionId: this.checkpoint?.sessionId,
       });
@@ -931,7 +931,7 @@ export class SessionManager {
     return this.consecutivePauseTimestamps.length;
   }
 
-  /** 重置连续暂停计数（防滥用）：用户 clarify 回答后调用。与 resume() 分离，由 Agent.processEvent 显式调用，防回答前过早清零致防滥用失效 */
+  /** 重置连续暂停计数（防滥用）：暂停超时处理后调用。与 resume() 分离，防回答前过早清零致防滥用失效 */
   resetConsecutivePauseCount(): void {
     this.consecutivePauseTimestamps = [];
     logger.debug('连续暂停时间戳已清空');
@@ -976,7 +976,7 @@ export class SessionManager {
     }
 
     // 幂等短路：目标值未变直接返回（返回 level='same'），不递增 goalChangeSeq、不触发漂移。
-    // composer 对"继续"事件每轮都喂相同 currentGoal，若无短路 goalChangeSeq 会退化为轮次计数器
+    // 续跑/补充输入每轮喂相同 currentGoal，若无短路 goalChangeSeq 会退化为轮次计数器
     if (newGoal === this.checkpoint.currentGoal) {
       return {
         level: 'same',

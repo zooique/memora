@@ -1,18 +1,18 @@
 /**
  * 种子闭环编排器独立单元测试
  *
- * 覆盖 SeedOrchestrator（最小执行闭环唯一编排真理源）的三个显式命名入口：
+ * 覆盖 SeedOrchestrator（最小执行闭环唯一编排真理源）的显式命名入口：
  *   - runChat：完整闭环 prepare → act(processUserInput) → reflect → handoff
- *   - runEvent：prepare → 任务表预判注入 → act(processEvent) → reflect → handoff
  *   - runResume：act(continueAfterPause) → reflect（无回答前、无 Handoff）
+ * 注：原 runEvent（SessionEvent 结构化事件路径）已随 composer 剪枝移除。
  *
- * 三入口共用短路语义：回答前中断 yield aborted；回答中失败/中断不触发回答后与 handoff。
+ * 入口共用短路语义：回答前中断 yield aborted；回答中失败/中断不触发回答后与 handoff。
  */
 
 import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
-import type { AgentChunk, SessionEvent } from '@/agent/types.js';
+import type { AgentChunk } from '@/agent/types.js';
 import {
   createHarness,
   collectGen,
@@ -28,19 +28,9 @@ function stubProcessUserInput(mocks: SeedMocks, contentPart: string): void {
   mocks.loop.processUserInput.mockReturnValue(textStream(contentPart));
 }
 
-/** 让 loop.processEvent 返回一个文本流（runEvent 的 produce 入口） */
-function stubProcessEvent(mocks: SeedMocks, contentPart: string): void {
-  mocks.loop.processEvent.mockReturnValue(textStream(contentPart));
-}
-
 /** 让 loop.continueAfterPause 返回一个文本流（runResume 的 produce 入口） */
 function stubContinue(mocks: SeedMocks, contentPart: string): void {
   mocks.loop.continueAfterPause.mockReturnValue(textStream(contentPart));
-}
-
-/** 构造最小 chat 语义 SessionEvent */
-function chatEvent(content: string): SessionEvent {
-  return { type: 'chat', content, delta: {} } as SessionEvent;
 }
 
 describe('SeedOrchestrator 最小执行闭环', () => {
@@ -176,118 +166,6 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
     // 续跑态不在闭环出口分岔：不产 handoff
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
-  });
-
-  // ── runEvent ────────────────────────────────────────────
-  it('runEvent 应生成任务表：shouldGenerateTaskTable 命中 → 注入 TASK_TABLE_HINT', async () => {
-    const { mocks, deps, consumeControl } = createHarness();
-    stubProcessEvent(mocks, '事件回复');
-    consumeControl.result = { content: '事件回复', aborted: false, paused: false, failed: false };
-    mocks.checkpointRestoreCoordinator.shouldGenerateTaskTable.mockReturnValue(true);
-
-    const { chunks } = await collectGen(
-      new SeedOrchestrator(deps).runEvent(
-        chatEvent('事件输入'),
-        '事件输入',
-        new AbortController().signal,
-      ),
-    );
-    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
-
-    // 任务表提示已注入 loop
-    expect(mocks.loop.injectSystemMessage).toHaveBeenCalledWith(
-      expect.stringContaining('task_table_write'),
-    );
-    // 驱动 loop.processEvent（非 processUserInput）
-    expect(mocks.loop.processEvent).toHaveBeenCalledTimes(1);
-    // prepare（appendUser）+ act（appendAssistant）+ handoff 都走
-    expect(mocks.history.appendUser).toHaveBeenCalledWith('事件输入', expect.any(String));
-    expect(mocks.history.appendAssistant).toHaveBeenCalledWith('事件回复', expect.any(String));
-    expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait' });
-  });
-
-  it('runEvent 不生成任务表：shouldGenerateTaskTable 未命中 → 不注入', async () => {
-    const { mocks, deps, consumeControl } = createHarness();
-    stubProcessEvent(mocks, '回复');
-    consumeControl.result = { content: '回复', aborted: false, paused: false, failed: false };
-    // 默认 shouldGenerateTaskTable 返回 false
-
-    await collectGen(
-      new SeedOrchestrator(deps).runEvent(chatEvent('输入'), '输入', new AbortController().signal),
-    );
-
-    expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalled();
-  });
-
-  it('runEvent 复杂且收敛：settle 走汇报闭环，摘要挂 head（阶段 2 溯源）', async () => {
-    const { mocks, deps, consumeControl } = createHarness({
-      // 难度分级判定为复杂
-      getBackgroundProvider: () => mockProvider('complex'),
-    });
-    stubProcessEvent(mocks, '事件回复');
-    consumeControl.result = { content: '事件回复', aborted: false, paused: false, failed: false };
-    // 已收敛：plan 含 done 步骤 → settle 触发汇报
-    mocks.sessionManager.getCheckpoint.mockReturnValue({
-      sessionId: 'sess',
-      plan: [{ id: 's1', status: 'done', description: '步骤一' }],
-    });
-    mocks.loop.runReport.mockReturnValue(textStream('【阶段2汇报】已收敛，结论 Y'));
-
-    await collectGen(
-      new SeedOrchestrator(deps).runEvent(
-        chatEvent('事件输入'),
-        '事件输入',
-        new AbortController().signal,
-      ),
-    );
-    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
-
-    // settle 走汇报闭环；汇报单源摘要（输入侧为空）
-    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
-    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
-      '',
-      '【阶段2汇报】已收敛，结论 Y',
-      expect.any(String),
-      expect.any(String),
-      undefined,
-    );
-    // 阶段 2 head 溯源：事件路径无步闭环覆盖 roundId，getCurrentRoundId() = prepare 分配值 = appendUser 同 id
-    expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(
-      mocks.history.appendUser.mock.calls[0]![1],
-    );
-  });
-
-  it('runEvent 复杂收敛但汇报为空：回退主回答普通摘要，仍恒 1 条', async () => {
-    const { mocks, deps, consumeControl } = createHarness({
-      getBackgroundProvider: () => mockProvider('complex'),
-    });
-    stubProcessEvent(mocks, '事件回复');
-    consumeControl.result = { content: '事件回复', aborted: false, paused: false, failed: false };
-    mocks.sessionManager.getCheckpoint.mockReturnValue({
-      sessionId: 'sess',
-      plan: [{ id: 's1', status: 'done', description: '步骤一' }],
-    });
-    // 汇报闭环返回空流（LLM 未产出真实收尾）
-    mocks.loop.runReport.mockImplementation(function* () {});
-
-    await collectGen(
-      new SeedOrchestrator(deps).runEvent(
-        chatEvent('事件输入'),
-        '事件输入',
-        new AbortController().signal,
-      ),
-    );
-    await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
-
-    // 无实质收尾 → 回退主回答普通摘要（阶段 2 同样恒 1:1）
-    expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
-    expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledWith(
-      '事件输入', // 输入侧：event 输入（fallbackInput）
-      '事件回复', // 输出侧：主回答（fallbackContent）
-      expect.any(String),
-      expect.any(String),
-      undefined,
-    );
   });
 
   // ── runResume ───────────────────────────────────────────

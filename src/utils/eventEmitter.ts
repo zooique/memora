@@ -29,8 +29,7 @@ export const AGENT_EVENTS = {
   sessionResumeFailed: 'sessionResumeFailed',
   /** 装配前判负（洞 3）：触发输入过大，剩余预算无法支撑至少一轮正文——与软上限不同失败原因 */
   inputTooLarge: 'inputTooLarge',
-  needClarify: 'needClarify',
-  /** 回答中 LLM 输出 [ASK] 时主动提问（与 needClarify 共享暂停/恢复机制） */
+  /** 回答中 LLM 输出 [ASK] 时主动提问（唯一「提问后暂停」通道，[P4] needClarify 已剪枝） */
   questionPending: 'questionPending',
   goalDriftDetected: 'goalDriftDetected',
   /** 目标被主动更新（用户/系统直接改写 currentGoal，与 goalDriftDetected 的 LLM 漂移检测区分） */
@@ -78,7 +77,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   };
   sessionResumeBlocked: { sessionId: string; reason: string };
   sessionResumeFailed: { sessionId?: string; reason: string };
-  needClarify: { slot: string; question: string; options?: string[] }[];
   /** 装配前判负载荷：剩余预算详情 + 给宿主的降级提示（建议放文件用 read_file 读） */
   inputTooLarge: {
     inputLength: number;

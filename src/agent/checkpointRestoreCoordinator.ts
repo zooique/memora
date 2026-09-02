@@ -5,7 +5,7 @@
  *   - warmRecall：温记忆按需召回（以 mainGoal/currentGoal 查询早期上下文，合并资源槽 + 注入 loop）
  *   - reinject：契约重注入（角色 persona / 技能 / 规则，恢复后 system prompt 与暂停前一致）
  *   - restore：完整恢复编排（热窗口载入 → 温记忆召回 → 契约重注入）
- *   - shouldGenerateTaskTable：任务表生成预判（plan 为空且输入含多步信号）
+ * 注：原 shouldGenerateTaskTable（任务表预判，event 路径专属）已随 composer 剪枝移除。
  *
  * 设计原则：
  *   - 只依赖 Agent 注入的稳定能力（deps），不反向依赖 Agent 私有状态（与 ContextPreparer 同构）
@@ -22,7 +22,7 @@ import { recall, boostScores } from '@/memory/recall.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { ITracer } from '@/agent/tracer.js';
-import type { SessionCheckpoint, SessionEvent } from '@/agent/types.js';
+import type { SessionCheckpoint } from '@/agent/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { logger } from '@/logging/logger.js';
@@ -64,8 +64,8 @@ export interface CheckpointRestoreDeps {
 /**
  * 检查点恢复协议协调器
  *
- * 承载恢复会话时的完整领域协议：热窗口载入、温记忆按需召回、契约重注入、任务表生成预判。
- * Agent.restoreFromCheckpoint 保留为公开 API 委托本类；processEvent 中的任务表预判调用本类。
+ * 承载恢复会话时的完整领域协议：热窗口载入、温记忆按需召回、契约重注入。
+ * Agent.restoreFromCheckpoint 保留为公开 API 委托本类。
  */
 export class CheckpointRestoreCoordinator {
   /** 依赖注入集合（Agent 稳定能力窄面） */
@@ -243,31 +243,5 @@ export class CheckpointRestoreCoordinator {
     );
 
     return messageCount;
-  }
-
-  /**
-   * 预判是否应提示 LLM 生成任务表：保守默认 false，仅 plan 为空且输入含明确多步信号时返回 true（不依赖 composer）
-   *
-   * @param event 当前会话事件（含输入内容）
-   * @param checkpoint 当前检查点（判断 plan 是否为空）
-   * @returns 是否应提示生成任务表
-   */
-  shouldGenerateTaskTable(event: SessionEvent, checkpoint?: SessionCheckpoint): boolean {
-    // 已有任务表不再生成
-    if (!checkpoint || checkpoint.plan.length > 0) return false;
-
-    const content = event.content ?? '';
-
-    // 多步信号关键词（中英文，保守匹配）
-    const multiStepSignals = [
-      '第一步', '第二步', '步骤', '首先', '然后', '接下来',
-      '先做', '再做', '最后', '分步', '逐步',
-      'step 1', 'step1', 'step 2', 'step2',
-      'first', 'then', 'next', 'finally',
-      '计划', '规划', '安排', '任务表',
-      'plan', 'task list', 'todo',
-    ];
-
-    return multiStepSignals.some((signal) => content.includes(signal));
   }
 }

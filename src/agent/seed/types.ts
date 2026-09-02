@@ -16,7 +16,6 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentChunk, ArchiveMode, UIMessages } from '@/agent/types.js';
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
-import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
 import type { SessionManager } from '@/agent/managers/sessionManager.js';
 import type { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
@@ -57,8 +56,6 @@ export interface SeedParts {
   contextPreparer: ContextPreparer;
   sessionNamer: SessionNamer | null;
   roundSummaryGenerator: RoundSummaryGenerator | null;
-  /** 检查点恢复协议（event 路径回答前任务表预判用，可为空） */
-  checkpointRestoreCoordinator: CheckpointRestoreCoordinator | null;
 }
 
 /**

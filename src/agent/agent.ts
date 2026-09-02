@@ -8,7 +8,6 @@
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
-import { COMPLETION_LEVELS } from '@/agent/types.js';
 import type {
   AgentChunk,
   ArchiveMode,
@@ -18,10 +17,8 @@ import type {
   Role,
   Standard,
   ToolExecutionRecord,
+  SessionCheckpoint,
 } from '@/agent/types.js';
-import type { SessionEvent, SessionCheckpoint, ResolvedDelta } from '@/agent/types.js';
-import { Composer } from '@/agent/composer.js';
-import type { PlanContext } from '@/agent/types.js';
 import type { InteractiveInputKind } from '@/memory/roundStore.js';
 import type { ToolExecutor } from '@/agent/toolExecutor.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
@@ -139,17 +136,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     roundSummaryGenerator: RoundSummaryGenerator | null;
     /** 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点） */
     contextPreparer: ContextPreparer | null;
-    /** 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判，Agent 保留公开 API 委托） */
+    /** 检查点恢复协议（温记忆召回 / 契约重注入，Agent 保留公开 API 委托） */
     checkpointRestoreCoordinator: CheckpointRestoreCoordinator | null;
-    /** 四级补全器（四元组 + 三源融合，不中断工作模型 v2.0） */
-    composer: Composer | null;
     /** chat() 并发锁管理器（并发锁 + token 校验 + 超时保护 + 外部 signal 合并，init 时创建、close 时销毁） */
     chatLockManager: ChatLockManager | null;
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
     archiveCoordinator: ArchiveCoordinator | null;
     /**
      * 种子闭环编排器（最小执行闭环唯一编排真理源）：prepare → act → reflect → handoff。
-     * chat() 委托 run()；processEvent()/resumeExecution() 按路径复用单阶段能力。
+     * chat() 委托 runChat()；续跑（continueAfterPause）走 runResume()，复用同一闭环编排。
      * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
      */
     seedOrchestrator: SeedOrchestrator | null;
@@ -163,7 +158,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     roundSummaryGenerator: null,
     contextPreparer: null,
     checkpointRestoreCoordinator: null,
-    composer: null,
     chatLockManager: null,
     archiveCoordinator: null,
     seedOrchestrator: null,
@@ -382,9 +376,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
     }
 
-    // 四级补全器（不中断工作模型 v2.0）
-    this.internals.composer = new Composer();
-
     // 归档操作委托给 ArchiveCoordinator（content 会话归档）
     this.internals.archiveCoordinator = new ArchiveCoordinator({
       getSessionArchiver: () => this.internals.sessionArchiver,
@@ -434,7 +425,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         contextPreparer: this.internals.contextPreparer!,
         sessionNamer: this.internals.sessionNamer,
         roundSummaryGenerator: this.internals.roundSummaryGenerator,
-        checkpointRestoreCoordinator: this.internals.checkpointRestoreCoordinator,
       }),
       tracer: this.#config.tracer ?? null,
       archiveMode: this.#config.archiveMode,
@@ -551,134 +541,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 不中断工作模型 v2.0：公开 API ──────────────────────
 
   /**
-   * 处理增量事件（不中断工作模型核心入口）
-   *
-   * 替代 chat() 的结构化输入接口，接收 SessionEvent 按意图路由，与 chat() 共享同一并发锁（互斥调用）。
-   *
-   * @param event - 增量事件（含意图分类 + 内容 + 可选四元组增量）
-   * @param signal - 可选的 AbortSignal
-   * @yields AgentChunk 事件流
-   */
-  async *processEvent(
-    event: SessionEvent,
-    signal?: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    this.assertInitialized('processEvent');
-    this.validateChatInput(event.content);
-
-    // auto-resume 必须在锁内执行（状态机翻转是副作用，须先通过并发闸门）：
-    // PAUSED 态收到用户事件=自动恢复+作为补充注入继续；command 事件不触发自动恢复；ERROR 态仍拒绝。
-    // 旧顺序（autoResume 先于加锁）会让锁忙时状态机已翻 RUNNING、异常被静默吞掉——故先加锁。
-    const lockCtx = this.acquireChatLock(signal);
-    const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
-
-    try {
-      if (!this.autoResumeIfPaused(event.type)) {
-        throw configError('会话超时', '暂停超时无法自动恢复，请重新开始新对话', []);
-      }
-      this._lastInteractionAt = new Date();
-
-      // 四级补全：将 SessionEvent.delta 与当前检查点融合
-      const checkpoint = this._sessionManager?.getCheckpoint();
-      if (checkpoint && this.internals.composer) {
-        // 收集计划上下文（执行计划管理）
-        const sm = this._sessionManager!;
-        const planCtx: PlanContext | undefined =
-          checkpoint.plan.length > 0
-            ? {
-                stalled: sm.isPlanStalled(),
-                activeStep: sm.getActiveStep()?.description,
-                pendingStep: sm.getNextPendingStep()?.description,
-              }
-            : undefined;
-
-        const composeResult = this.internals.composer.compose(event, checkpoint, planCtx);
-
-        // 必须先应用已确定槽位（applyResolvedDelta 对 P4_CLARIFY 槽位有守卫），再处理 P4 澄清，
-        // 否则本轮增量（如 correction 的 delta.role）随暂停丢弃，解析成果丢失
-        this.applyResolvedDelta(composeResult.resolved);
-
-        // P4 澄清问题处理：存在需澄清槽位时暂停等用户回答
-        if (composeResult.needClarify && composeResult.needClarify.length > 0) {
-          // P4 防滥用：连续高风险暂停达上限时过滤高风险问题、降级 P3 兜底（低风险仍可确认，不计入连续计数）
-          const sm = this._sessionManager;
-          if (sm && sm.isPauseLimitReached()) {
-            const highRiskQuestions = composeResult.needClarify.filter((q) => !q.lowRisk);
-            if (highRiskQuestions.length > 0) {
-              logger.warn(
-                {
-                  consecutivePauseCount: sm.getConsecutivePauseCount(),
-                  filteredCount: highRiskQuestions.length,
-                },
-                '连续高风险暂停已达上限，强制降级 P3 兜底',
-              );
-              composeResult.needClarify = composeResult.needClarify.filter((q) => q.lowRisk);
-            }
-          }
-
-          // 过滤后仍有剩余问题（低风险）→ 正常暂停流程
-          if (composeResult.needClarify.length > 0) {
-            for (const q of composeResult.needClarify) {
-              yield { type: 'text', content: `[需澄清] ${q.question}` };
-            }
-            this.emit(
-              AGENT_EVENTS.needClarify,
-              composeResult.needClarify.map((q) => ({
-                slot: q.slot,
-                question: q.question,
-                options: q.options,
-              })),
-            );
-            // TS-O3 档1 协议同构：补发结构化提问 chunk（与 [ASK] question_pending 同构），
-            // 统一「提问后暂停」对外协议——宿主可经 chunk 通道幂等兜底渲染提问 UI
-            // （vscode 走 chat() 不经 processEvent，此为 sprite/未来事件路径的协议一致性增量）
-            yield {
-              type: 'question_pending',
-              questions: composeResult.needClarify.map((q) => ({
-                slot: q.slot,
-                question: q.question,
-                ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
-              })),
-            };
-            // 全为低风险才不计入连续暂停计数——用 every：只要存在高风险，本次暂停就确实在索取确认、应消耗配额；
-            // some 会让混合场景免费逃逸计数，反向打开滥用面。
-            const allLowRisk = composeResult.needClarify.every((q) => q.lowRisk);
-            const clarifyReason = `需要澄清：${composeResult.needClarify
-              .map((q) => q.question)
-              .join('; ')}`;
-            this.pause(clarifyReason, 'agent', allLowRisk);
-            // P4 直接暂停不经流收口（无 paused chunk）→ 在此补写 pauseMeta，与流中暂停路径一致
-            this._sessionManager?.setPauseMeta({ reason: clarifyReason, source: 'agent' });
-            yield { type: 'done' };
-            return;
-          }
-          // 高风险问题已被过滤降级、无剩余 → 继续执行（不暂停）
-        }
-      }
-
-      // 意图分类防污染：command/correction 属控制/元信息，不写 chat 历史；
-      // clarify 例外——回答已经 compose 应用至检查点、入口已 auto-resume，转 chat 语义继续执行，
-      // 且需重置连续暂停计数恢复防滥用机制
-      if (event.type === 'clarify') {
-        this._sessionManager?.resetConsecutivePauseCount();
-        event = { type: 'chat', content: this.formatClarifyAnswers(event.content), delta: {} };
-      } else if (event.type !== 'chat') {
-        yield* this.handleNonChatEvent(event, combinedSignal);
-        return;
-      }
-
-      // ── chat 事件正常流程（写历史、后处理） ──────────────
-      // 委托种子编排器：SessionEvent 路径闭环（prepare → 任务表预判注入 → act(processEvent)
-      // → reflect → handoff）；任务表预判与流消费均收在编排器内，门面只做一行委托。
-      yield* this.internals.seedOrchestrator!.runEvent(event, event.content, combinedSignal);
-    } finally {
-      this.internals.chatLockManager?.release(myToken);
-      cleanupExternalSignal();
-      await this.flushPendingConfigReload();
-    }
-  }
-
-  /**
    * 软暂停后续跑（不中断工作模型 v2.1）
    *
    * 翻状态机为 RUNNING（触发 sessionResumed → 宿主转发 STATUS{running}），
@@ -759,7 +621,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 消费执行流的单一真理源
    *
-   * chat（processEvent）与续跑（continueAfterPause）此前各持一份同构消费逻辑且已实证漂移
+   * chat() 与续跑（continueAfterPause）此前各持一份同构消费逻辑且已实证漂移
    * （续跑漏 paused 分支导致三方分叉）；收口于此，新增 chunk 类型只需改一处。
    * 暂停幂等锁的释放放 finally——清理是"退出本作用域的不变式"而非某分支动作，新增 return 分支无遗漏。
    *
@@ -836,41 +698,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 处理非 chat 事件（command/correction/clarify 不写 chat 历史、不触发后处理，
-   * 经 onSessionEvent 回调同步状态机），避免控制/元信息污染对话流
-   */
-  private async *handleNonChatEvent(
-    event: SessionEvent,
-    signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    for await (const chunk of this.requireLoop.processEvent(event, undefined, signal)) {
-      yield chunk;
-    }
-  }
-
-  /**
-   * 将澄清回答 JSON 格式化为可读文本（clarify → chat 转换用）
-   * 宿主将回答序列化为 [{slot, answer}, ...] JSON，此处解析为自然语言；解析失败原样返回（降级不阻断）。
-   */
-  private formatClarifyAnswers(content: string): string {
-    const slotLabels: Record<string, string> = {
-      role: '角色',
-      task: '任务',
-      standard: '标准',
-      resource: '资源',
-    };
-    try {
-      const answers = JSON.parse(content) as Array<{ slot: string; answer: string }>;
-      if (Array.isArray(answers) && answers.length > 0) {
-        return answers.map((a) => `${slotLabels[a.slot] ?? a.slot}：${a.answer}`).join('；');
-      }
-    } catch {
-      // JSON 解析失败：原样返回，不阻断后续流程
-    }
-    return content;
-  }
-
-  /**
    * 暂停会话（用户/Agent/系统均可触发，暂停前自动创建检查点）
    * @param lowRisk 低风险暂停不计入 P4 连续暂停计数（默认 false）
    */
@@ -888,14 +715,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 自动恢复暂停状态（chat() 与 processEvent() 共用）：
+   * 自动恢复暂停状态（chat() 与续跑共用）：
    * ERROR 态直接 throw（拒绝，须先 recover 保持状态一致）；PAUSED 态尝试自动恢复。
-   * 双通道：暂停只停"工作通道"，PAUSED 收到用户事件=自动恢复+继续；command 事件不触发自动恢复。
-   * resumeExecution() 不调用本方法（有独立短路逻辑）。
+   * 续跑（continueAfterPause）不走自动恢复，由独立的暂停恢复短路逻辑处理。
    *
    * @returns true=恢复成功或无需恢复；false=恢复失败（暂停超时等）
    */
-  private autoResumeIfPaused(eventType?: string): boolean {
+  private autoResumeIfPaused(): boolean {
     const sm = this._sessionManager;
     if (!sm) return true;
     const status = sm.status;
@@ -904,7 +730,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         '先标记 error.recovered=true 并调用 agent.recover()',
       ]);
     }
-    if (status === 'paused' && eventType !== 'command') {
+    if (status === 'paused') {
       return this.resume();
     }
     return true;
@@ -1121,35 +947,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertInitialized('restoreFromCheckpoint');
     // 恢复协议单一真理源：委托 CheckpointRestoreCoordinator（热窗口载入 → 温记忆召回 → 契约重注入）
     return this.internals.checkpointRestoreCoordinator!.restore(checkpoint);
-  }
-
-  /**
-   * 应用增量解析结果到检查点（P1 增量解析）：角色/标准/任务/资源各槽位独立更新；
-   * P4 级别（澄清中）槽位不应用（等待用户回答）。
-   */
-  private applyResolvedDelta(resolved: ResolvedDelta): void {
-    const sm = this._sessionManager;
-    if (!sm) return;
-
-    // 应用角色槽（P1→P3 级别才更新，P4 等待用户回答）
-    if (resolved.role.source !== COMPLETION_LEVELS.P4_CLARIFY) {
-      sm.updateRole(resolved.role.value);
-    }
-
-    // 应用任务槽（currentGoal 更新）
-    if (resolved.task.source !== COMPLETION_LEVELS.P4_CLARIFY) {
-      sm.updateGoal(resolved.task.value);
-    }
-
-    // 应用标准槽
-    if (resolved.standard.source !== COMPLETION_LEVELS.P4_CLARIFY) {
-      sm.updateStandard(resolved.standard.value);
-    }
-
-    // 应用资源槽
-    if (resolved.resource.source !== COMPLETION_LEVELS.P4_CLARIFY) {
-      sm.updateResource(resolved.resource.value);
-    }
   }
 
   /**
@@ -1839,7 +1636,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       roundSummaryGenerator: null,
       contextPreparer: null,
       checkpointRestoreCoordinator: null,
-      composer: null,
       chatLockManager: null,
       archiveCoordinator: null,
       seedOrchestrator: null,

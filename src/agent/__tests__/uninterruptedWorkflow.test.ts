@@ -1244,32 +1244,6 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     });
   });
 
-  describe('锁忙时的 auto-resume', () => {
-    it('锁忙时 processEvent 抛错且状态机不被静默翻转', async () => {
-      agent = makeAgent(tmpProject, tmpConfig, tmpData);
-      await agent.init();
-
-      // 暂停会话，状态机进入 PAUSED
-      agent.pause('测试暂停', 'user');
-      expect(agent.sessionManager!.status).toBe('paused');
-
-      // 模拟 chat 锁被其他执行流占用
-      (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
-
-      // 锁先校验再动作：acquireChatLock 失败时状态机保持 PAUSED，不被静默吞掉
-      const gen = agent.processEvent({ type: 'chat', content: '你好' });
-      await expect(async () => {
-        // 迭代以驱动生成器执行（chunk 无消费者，仅触发函数体）
-        for await (const chunk of gen) {
-          void chunk;
-        }
-      }).rejects.toThrow(/对话繁忙/);
-
-      // 状态机必须保持 PAUSED
-      expect(agent.sessionManager!.status).toBe('paused');
-    });
-  });
-
   describe('triggerError / recover', () => {
     it('triggerError 应触发异常', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
@@ -2231,44 +2205,6 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
   });
 });
 
-describe('SSOT 排雷防回归 · 死 command 分支', () => {
-  let tmpProject: string;
-  let tmpConfig: string;
-  let tmpData: string;
-  let agent: Agent | null = null;
-
-  beforeEach(() => {
-    tmpData = mkdtempSync(join(tmpdir(), 'memora-t13-data-'));
-    tmpProject = mkdtempSync(join(tmpdir(), 'memora-t13-proj-'));
-    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-t13-cfg-'));
-    seedProject(tmpProject, tmpConfig, tmpData);
-  });
-
-  afterEach(() => {
-    agent = null;
-    rmSync(tmpData, { recursive: true, force: true });
-    rmSync(tmpProject, { recursive: true, force: true });
-    rmSync(tmpConfig, { recursive: true, force: true });
-  });
-
-  it('喂入 type:command 事件不应触发状态机翻转（死分支已删）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-    expect(agent.sessionManager!.status).toBe('running');
-
-    // command 事件经 agent.processEvent → loop.processEvent → onSessionEvent 回调。
-    // 死分支（agent.handleSessionEvent 的 case 'command' 调 sm.pause / loop.handleCommand）
-    // 已被删除，command 应降级为 default（chat），绝不应翻 PAUSED。
-    let sawPauseChunk = false;
-    for await (const chunk of agent.processEvent({ type: 'command', content: 'pause' })) {
-      if (chunk.type === 'text' && chunk.content.includes('会话已暂停')) sawPauseChunk = true;
-    }
-
-    expect(agent.sessionManager!.status).toBe('running');
-    expect(sawPauseChunk).toBe(false);
-  });
-});
-
 describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2349,39 +2285,7 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     // resetToRunning() 先归零，再 triggerError，使残留 paused 也能正确落到 error
     await manager.restoreFromCheckpoint(errorCheckpoint);
     expect(manager.status).toBe('error');
-  });
-
-  it('P4 澄清暂停前应先应用已确定槽位（防解析成果随暂停丢失）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    // 手动创建检查点：新会话（无磁盘检查点）时 checkpoint 为 null，
-    // processEvent 的 compose 分支（`if (checkpoint && this.composer)`）会被整体跳过，
-    // 增量解析（含 P4 澄清）不生效——该边界为既有缺口（见日志），本测试聚焦澄清分支本身。
-    agent.sessionManager!.createCheckpoint('', { name: 'initial-role', description: '初始角色' });
-    expect(agent.sessionManager!.getCheckpoint()!.currentGoal).toBe('');
-
-    // correction 事件：role 槽有显式增量（P1 确定），task 槽无 delta 且 currentGoal 为空
-    // → task 走 P4 澄清（needClarify 非空）→ 命中暂停分支；
-    // 暂停前先应用已确定槽位，使检查点已含 expert。
-    const chunkTypes: string[] = [];
-    for await (const chunk of agent.processEvent({
-      type: 'correction',
-      content: '切换为专家模式',
-      delta: { role: { name: 'expert', description: '领域专家' } },
-    })) {
-      chunkTypes.push(chunk.type);
-    }
-
-    // 澄清暂停已发生
-    expect(chunkTypes).toContain('done');
-    expect(agent.sessionManager!.status).toBe('paused');
-    // TS-O3 档1：P4 暂停补发结构化提问 chunk（与 [ASK] question_pending 同构，统一对外提问协议）
-    expect(chunkTypes).toContain('question_pending');
-
-    // 核心断言：已确定槽位（role）必须在暂停前落检查点
-    expect(agent.sessionManager!.getCheckpoint()!.role.name).toBe('expert');
-  });
+    });
 });
 
 // ═══════════════════════════════════════════════════════════════

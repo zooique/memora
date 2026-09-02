@@ -17,7 +17,6 @@ import { COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
   UIMessages,
-  SessionEvent,
   PreExecutionResult,
   TextChunkStage,
   AskQuestion,
@@ -87,8 +86,6 @@ export interface AgentLoopOptions {
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   /** LLM 主动压缩完成回调（第二级压缩，传压缩目标/被替换消息数/摘要长度）；未注入静默忽略 */
   onContextCompressed?: (target: 'earliest_round' | 'largest_tool_result', replacedCount: number, summaryLength: number) => void;
-  /** 会话事件回调（处理 SessionEvent 时通知上层状态机变化，如 pause/resume/error 触发）；未注入静默忽略 */
-  onSessionEvent?: (eventType: SessionEvent['type'], detail: string) => void;
   /** 工具执行完成回调（供 outbox 模式恢复时判断工具是否已执行过，避免重复执行）；未注入静默忽略 */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
   /** 工具执行前检查回调（宿主闸门）。三态：放行（可携 overrideArgs 改写参数）/ 跳过
@@ -465,46 +462,6 @@ export class AgentLoop {
   }
 
   /**
-   * 处理增量事件（按 SessionEvent 意图分类路由，防止 chat 被误解析为 command）
-   *
-   * chat→processUserInput；correction→目标修正；clarify→澄清回答；未知类型降级为 chat
-   */
-  async *processEvent(
-    event: SessionEvent,
-    recalledMemories?: readonly Memory[],
-    signal?: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 通知上层会话事件回调
-    this.opts.onSessionEvent?.(event.type, event.content);
-
-    switch (event.type) {
-      case 'chat':
-        yield* this.processUserInput(event.content, recalledMemories, signal);
-        break;
-
-      case 'correction':
-        yield* this.injectMetaNote(
-          '[目标修正] 用户更新了目标方向',
-          '已记录目标修正',
-          event.content,
-        );
-        break;
-
-      case 'clarify':
-        yield* this.injectMetaNote('[澄清回答] 用户补充说明', '已记录补充说明', event.content);
-        break;
-
-      default:
-        // 未知意图降级为 chat 处理
-        logger.warn(
-          { eventType: (event as SessionEvent).type },
-          '未知 SessionEvent 类型，降级为 chat',
-        );
-        yield* this.processUserInput(event.content, recalledMemories, signal);
-    }
-  }
-
-  /**
    * 软暂停后续跑（在暂停边界后从保留的 this.messages 重新进入迭代循环）
    *
    * 有补充输入时先 push 为 user 消息再续跑
@@ -829,18 +786,6 @@ export class AgentLoop {
       }
     }
     return '';
-  }
-
-  /** 处理 correction/clarify 事件：以 system 消息注入元信息到上下文（两者结构相同，仅文案不同） */
-  private async *injectMetaNote(
-    systemPrefix: string,
-    ackPrefix: string,
-    content: string,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    this.appendSystemMessage(`${systemPrefix}：${content}`, { executionTemp: true });
-
-    yield { type: 'text', content: `${ackPrefix}：${content}` };
-    yield { type: 'done' };
   }
 
   /** 单次迭代编排：编排中断检查 → 上下文准备 → LLM 调用 → 结果路由。

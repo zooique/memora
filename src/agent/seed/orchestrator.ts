@@ -3,10 +3,10 @@
  *
  * 「如何串联一个执行闭环」全部收在此处，门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
  *
- * 三个显式命名入口（闭环只认 Trigger、不认来源，见 [agent-design-philosophy.md §2.1 Trigger](../../../docs/architecture/agent-design-philosophy.md)）：
+ * 两个显式命名入口（闭环只认 Trigger、不认来源，见 [agent-design-philosophy.md §2.1 Trigger](../../../docs/architecture/agent-design-philosophy.md)）：
  *   - runChat   （对话 Trigger）   完整闭环：prepare → act(processUserInput) → reflect → handoff
- *   - runEvent  （SessionEvent）   prepare → 任务表预判注入 → act(processEvent) → reflect → handoff
  *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
+ * 注：原 runEvent（SessionEvent 结构化事件路径）已随 composer/四元组补全整条剪枝，输入统一走 runChat 的 chat 语义。
  *
  * 概念澄清（注释历史错位的收敛，零逻辑变更）：
  *   - 本文件的 externalTaskLoop / completeExternalTask / runStepSequence 是【档2 Loop 编排】
@@ -14,12 +14,12 @@
  *    语义等价于"Loop 编排"；不涉及档3 目标模式（远期，未实现）。
  *   - 档1 执行闭环的 act 阶段内部迭代由 loop.ts 的 runIterationLoop 承载（内循环），不在此文件。
  *
- * 刻意不做「单 run() + mode 标志」——三条路径的真实差异（runEvent 有任务表注入、runResume
- * 无 prepare/无 handoff）若硬塞进一个开关，会落入场景特化补丁反模式。
+ * 刻意不做「单 run() + mode 标志」——两条路径的真实差异（runResume 无 prepare/无 handoff）
+ * 若硬塞进一个开关，会落入场景特化补丁反模式。
  *
  */
 
-import type { AgentChunk, SessionEvent } from '@/agent/types.js';
+import type { AgentChunk } from '@/agent/types.js';
 import type { InteractiveInputKind } from '@/memory/roundStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
@@ -31,19 +31,11 @@ import {
   type SeedPrepareResult,
 } from './types.js';
 import { SeedPrepare, refreshAssemblyForRolePack } from './prepare.js';
-import { DifficultyJudge, type Difficulty } from './difficulty.js';
+import { DifficultyJudge } from './difficulty.js';
 import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
 import { renderTaskTable } from '@/agent/taskTableRenderer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
-
-/**
- * event 路径任务表预判注入提示（仅 plan 为空且应生成任务表时注入，提示 LLM 分步）
- */
-const TASK_TABLE_HINT =
-  '如果需要分步完成任务，请使用 task_table_write 工具创建任务表，' +
-  '包含各步骤的描述（description）。每完成一步使用 task_table_update 工具更新对应步骤状态。' +
-  '任务表仅作参考，LLM 可自行决定执行顺序。';
 
 /**
  * Loop 编排规划闭环提示（档2）：复杂任务第一步只调查 + 建任务表，不执行步骤。
@@ -64,7 +56,7 @@ function stepPrompt(description: string): string {
 /**
  * 种子闭环编排器
  *
- * 聚合回答前/中/后与 Handoff 四阶段，提供闭环编排的全部入口（runChat/runEvent/runResume）。
+ * 聚合回答前/中/后与 Handoff 四阶段，提供闭环编排的全部入口（runChat/runResume）。
  * prepare / act / reflect / handoff 各自可测；编排语义只在 orchestrator 唯一实现。
  */
 export class SeedOrchestrator {
@@ -142,52 +134,6 @@ export class SeedOrchestrator {
 
     // 回答后：普通回答摘要
     this.backgroundReflect(input, acted.content);
-
-    // Handoff：对外产出衔接决策
-    // 迭代上限时强制返回 wait，防止宿主自动续跑导致连续回答
-    yield* this.handoff(false, acted.iterationLimitReached);
-  }
-
-  /**
-   * SessionEvent 路径闭环：回答前 → 任务表预判注入 → 回答中(processEvent) → 回答后 → Handoff。
-   *
-   * 与 runChat 的唯一差异是回答中驱动 loop.processEvent + 回答前多一步任务表预判提示——
-   * 该差异是 event Trigger 的闭环内属性，故在编排器内处理而非泄漏到门面。
-   *
-   * @param event 增量事件（chat 语义；驱动 loop.processEvent）
-   * @param input 用户输入内容（= event.content，回答前与回答后共用）
-   * @param signal 中止信号
-   * @yields AgentChunk 事件流
-   */
-  async *runEvent(
-    event: SessionEvent,
-    input: string,
-    signal: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 回答前：装配上下文 + 召回记忆
-    const prepared = yield* this.prepare.run(input, signal);
-    if (prepared.aborted) {
-      yield { type: 'aborted', reason: this.abortedReasonByUser(), stopReason: 'user' };
-      return;
-    }
-
-    // 难度分级（回答前）：简单/复杂，决定收敛后是否触发汇报
-    const difficulty = await this.difficulty.classify(input);
-
-    // 任务表预判（仅 event 路径）：plan 为空且应生成时，提示 LLM 用任务表分步
-    const parts = this.deps.getParts();
-    const crc = parts.checkpointRestoreCoordinator;
-    if (crc?.shouldGenerateTaskTable(event, parts.sessionManager?.getCheckpoint() ?? undefined)) {
-      parts.loop.injectSystemMessage(TASK_TABLE_HINT);
-    }
-
-    // 回答中：消费 loop.processEvent 执行流 + 统一尾处理
-    const produce = () => parts.loop.processEvent(event, prepared.recalledMemories, signal);
-    const acted = yield* this.act(produce, signal);
-    if (acted.failed || acted.aborted || acted.paused) return;
-
-    // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
-    yield* this.settle(difficulty, input, acted.content, signal);
 
     // Handoff：对外产出衔接决策
     // 迭代上限时强制返回 wait，防止宿主自动续跑导致连续回答
@@ -586,7 +532,7 @@ export class SeedOrchestrator {
    * 则以 fallbackContent 走普通单条摘要——保证"收敛"路径恒产 1 条（摘要↔外部输入恒 1:1）。
    * @param signal 中止信号（汇报生成用）
    * @param fallbackInput 已落库的输入文本（无实质收尾回退时作摘要的输入源）
-   * @param fallbackContent 回退摘要来源（externalTaskLoop 传规划产出；settle 传主回答）
+   * @param fallbackContent 回退摘要来源（externalTaskLoop 传规划产出；普通 runChat 直答传主回答）
    */
   private async *runReportAndReflect(
     signal: AbortSignal,
@@ -626,29 +572,6 @@ export class SeedOrchestrator {
     const steps = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
     const next = steps.find((s) => s.status === 'pending');
     return next ? { id: next.id, description: next.description, rolePack: next.rolePack } : null;
-  }
-
-  /**
-   * 回答后统一收尾（event 入口用）：普通回答摘要；或（复杂且收敛）汇报闭环 + 汇报单源摘要。
-   *
-   * @param difficulty 回答前判定的难度
-   * @param input 用户输入（普通摘要输入侧）
-   * @param assistantContent 主回答文本（普通摘要输出侧）
-   * @param signal 中止信号（汇报生成用）
-   */
-  private async *settle(
-    difficulty: Difficulty,
-    input: string,
-    assistantContent: string,
-    signal: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 复杂且收敛：汇报闭环 + 汇报单源摘要；汇报为空/占位 → 回退主回答普通摘要（同样恒 1:1）
-    if (difficulty === 'complex' && this.isConverged()) {
-      yield* this.runReportAndReflect(signal, input, assistantContent);
-      return;
-    }
-    // 普通回答后摘要（既有语义不变）
-    this.backgroundReflect(input, assistantContent);
   }
 
   /**

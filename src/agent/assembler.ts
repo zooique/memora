@@ -122,7 +122,7 @@ export interface AgentHooks {
   emit: (event: AgentEventName, data: unknown) => void;
   /** 会话忙状态查询（SessionManager 守卫） */
   isChatBusy: () => boolean;
-  /** 主动提问/澄清时请求软暂停（与 needClarify 共享暂停/恢复机制） */
+  /** 主动提问时请求软暂停（[ASK] question_pending 触发） */
   requestPause: (reason: string, source: 'user' | 'agent' | 'system') => void;
   /**
    * 宿主工具执行前检查回调（统一执行入口 · 单点聚合检查）
@@ -292,34 +292,6 @@ export interface AssembleOutput {
 // ── 子工厂函数 ─────────────────────────────────────────────
 
 /**
- * 会话事件分发
- *
- * AgentLoop 处理 SessionEvent 时通知会话管理器：按事件类型触发状态机转换或检查点更新。
- *
- * @param sm 会话管理器
- * @param eventType 事件类型（correction=修正目标 / clarify=澄清心跳 / chat=对话心跳）
- * @param detail 事件详情（correction 时为目标文本）
- */
-function dispatchSessionEvent(sm: SessionManager, eventType: string, detail: string): void {
-  switch (eventType) {
-    case 'correction':
-      // 修正事件：更新目标版本
-      sm.updateGoal(detail);
-      break;
-    case 'clarify':
-      // 澄清事件：记录心跳
-      sm.heartbeat();
-      break;
-    case 'chat':
-      // 对话事件：记录心跳
-      sm.heartbeat();
-      break;
-    default:
-      break;
-  }
-}
-
-/**
  * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
  *
  * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
@@ -341,7 +313,6 @@ function wireRuntimeCallbacks(
   let stalledRoundCount = 0;
 
   // 主动提问（回答中检测到 LLM 结构化输出 [ASK]）：发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停。
-  // 与 needClarify（P4 目标槽位补全）触发源不同，但共享 pause/resume 机制
   loop.onPendingQuestion = (questions) => {
     if (questions.length === 0) return;
     hooks?.emit(AGENT_EVENTS.questionPending, questions);
@@ -531,8 +502,6 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     onContextCompressed: (target, replacedCount, summaryLength) => {
       hooks?.emit(AGENT_EVENTS.contextCompressed, { target, replacedCount, summaryLength });
     },
-    // 会话事件 → 分发到会话管理器（状态机转换/心跳，接线下沉后内联）
-    onSessionEvent: (eventType, detail) => dispatchSessionEvent(sessionManager, eventType, detail),
     // 工具执行完成回调（幂等 outbox 落点）：记录执行到检查点供恢复排重
     // sessionManager 先于 loop 创建，此处可直接写入——无需暂存队列补丁
     onToolExecuted: (name, args, toolResult, ok) => {

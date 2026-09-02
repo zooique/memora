@@ -99,7 +99,7 @@ export type AgentChunk = (
   | { type: 'paused' }
   /**
    * 主动提问：LLM 结构化输出 `[ASK] 问题` 时 yield，Agent 暂停等用户在提问框回答；
-   * 用户回答走 resumeExecution 续跑（非 Trigger）。与 needClarify（P4 补全）同构但触发源不同。
+   * 用户回答走 resumeExecution 续跑（非 Trigger）。
    */
   | { type: 'question_pending'; questions: AskQuestion[] }
   /**
@@ -164,36 +164,15 @@ export interface UIMessages {
  */
 export type ArchiveMode = 'full' | 'manual';
 
-// ─── 不中断工作模型：增量事件 + 检查点 ───────────────────
-// 核心思路：从「一问一答」升级为「开启后常驻、仅暂停不终止」，输入升级为增量事件（SessionEvent），
-// 会话升级为状态机 + 检查点（SessionCheckpoint）。三态：RUNNING → PAUSED（双向）→ ERROR（独立可见）；
+// ─── 不中断工作模型：会话状态机 + 检查点 ─────────────────
+// 核心思路：从「一问一答」升级为「开启后常驻、仅暂停不终止」，会话升级为状态机 + 检查点（SessionCheckpoint）
+// 支持断点续跑。三态：RUNNING → PAUSED（双向）→ ERROR（独立可见）；
 // ERROR → RUNNING 前须 error.recovered===true 且 cause 已解除。
+// 注：原「增量事件（SessionEvent）驱动补全」整条剪枝（见 docs/architecture/），输入统一走 chat。
 // ────────────────────────────────────────────────────────
 
 /** 会话状态（三态状态机） */
 export type SessionStatus = 'running' | 'paused' | 'error';
-
-/**
- * 不中断工作模型的核心输入：角色 × 任务 × 标准 × 资源，三源融合逐级补全，缺省有明确补全链。
- */
-export interface FourTuple {
-  /** 角色定义（会话级，可中途变更） */
-  role: Role;
-  /** 任务描述（mainGoal 或 currentGoal） */
-  task: string;
-  /** 执行标准（质量标准 + 约束条件） */
-  standard: Standard;
-  /** 资源快照（当前引用的文档/记忆/上下文） */
-  resource: ResourceState;
-}
-
-/**
- * 槽位增量引用标记：用「引用当前值」而非「提供新值」（如「继续」时 task 槽引用 currentGoal）。
- */
-export interface SlotRef {
-  /** 引用标识 */
-  ref: string;
-}
 
 /** 会话级角色，定义行为边界和语气风格，可中途变更 */
 export interface Role {
@@ -305,33 +284,6 @@ export interface ChatMessage {
 }
 
 /**
- * 增量事件（替代纯文本输入，为不中断工作模型提供结构化意图分类）。
- * 意图分类防污染：不同意图走不同路径，避免 chat 被误解析为 command。
- */
-export interface SessionEvent {
-  /** 意图分类 */
-  type: 'command' | 'correction' | 'clarify' | 'chat';
-  /** 原始文本内容 */
-  content: string;
-  /**
-   * 槽位级增量合并：SlotRef 引用当前值（不覆盖）/ 新值覆盖 / 数组追加 / undefined 走补全链
-   */
-  delta?: DeltaPayload;
-}
-
-/** 每槽位：具体值=覆盖，SlotRef=引用当前值，undefined=走补全链 */
-export interface DeltaPayload {
-  /** 角色增量（支持引用当前角色） */
-  role?: Role | SlotRef;
-  /** 任务增量（支持引用当前目标） */
-  task?: string | SlotRef;
-  /** 标准增量（支持引用当前标准） */
-  standard?: Standard | SlotRef;
-  /** 资源增量（支持引用当前资源，或提供新资源追加） */
-  resource?: ResourceState | SlotRef;
-}
-
-/**
  * 会话检查点，不中断工作模型的核心状态载体，支持序列化后断点续跑。
  * 三态：running / paused（主动暂停）/ error（异常，独立可见不自动转 PAUSED，保留 cause 供检查，
  * 恢复前须校验 error.recovered===true 且 cause 已解除）。
@@ -423,56 +375,11 @@ export interface StatusTransition {
   allowed: boolean;
 }
 
-// ─── 四级补全：Composer 类型 ─────────────────────────────
-// 三源融合（P1 显式 → P2 记忆 → P3 内置 → P4 暂停询问），每槽位独立走补全链。
-// ────────────────────────────────────────────────────────
-
-/**
- * 补全来源级别常量（SSOT）。由常量对象推导 CompletionLevel 类型，
- * composer.ts 和 agent.ts 引用此常量而非硬编码字符串。
- */
-export const COMPLETION_LEVELS = {
-  P1_EXPLICIT: 'P1-explicit',
-  P2_MEMORY: 'P2-memory',
-  P3_BUILTIN: 'P3-builtin',
-  P4_CLARIFY: 'P4-clarify',
-} as const;
-
-/** 补全来源级别联合类型（由 COMPLETION_LEVELS 推导），标记每槽位来源，用于可追溯性 */
-export type CompletionLevel = (typeof COMPLETION_LEVELS)[keyof typeof COMPLETION_LEVELS];
-
-/** Composer 补全链输出：将 SessionEvent.delta 补全为完整的四元组增量，每槽位标注补全来源 */
-export interface ResolvedDelta {
-  /** 角色槽 */
-  role: { value: Role; source: CompletionLevel };
-  /** 任务槽 */
-  task: { value: string; source: CompletionLevel };
-  /** 标准槽 */
-  standard: { value: Standard; source: CompletionLevel };
-  /** 资源槽 */
-  resource: { value: ResourceState; source: CompletionLevel };
-}
-
-/** P4 补全：P1→P3 都无法补全某槽位时生成的澄清问题，暂停等待用户回答 */
-export interface ClarifyQuestion {
-  /** 目标槽位（role/task/standard/resource） */
-  slot: keyof FourTuple;
-  /** 问题文本 */
-  question: string;
-  /** 默认选项（可选，用户可快速选择） */
-  options?: string[];
-  /**
-   * 是否低风险（P4 防滥用）：低风险决策由 Agent 用 P3 内置值自动兜底，不计入连续暂停；
-   * 高风险须用户确认并计入计数，连续 2 次后强制降级 P3。
-   */
-  lowRisk?: boolean;
-}
-
 /**
  * 结构化主动提问（LLM 输出 `[ASK] 问题 {A|B}` 行时解析）
  *
- * 与 ClarifyQuestion 触发源不同（[ASK] → loop 提问框；P4 → composer 补全链），
- * 但两者共享 slot/question/options 载荷形状，宿主可统一渲染选择型澄清。
+ * 原 composer 确定性补全问询已整条剪枝，本通道为唯一「提问后暂停」形态。
+ * 是 LLM 对话流内的语义判断提问（区别于已移除的确定性槽位补全问询）。
  */
 export interface AskQuestion {
   /** 溯源槽位（当前恒为 'ask'，为未来扩展保留） */
@@ -481,24 +388,6 @@ export interface AskQuestion {
   question: string;
   /** 候选选项（LLM 以行内 `{A|B|C}` 声明，可点击选择） */
   options?: string[];
-}
-
-/** Composer 输出：从 composer.ts 迁移至此，与四级补全类型同处一处 */
-export interface ComposeResult {
-  /** 已解析的四元组增量 */
-  resolved: ResolvedDelta;
-  /** 需澄清的问题（仅 P4 级别时非空，此时应暂停等待用户回答） */
-  needClarify?: ClarifyQuestion[];
-}
-
-/** 计划上下文（从 composer.ts 迁移至此） */
-export interface PlanContext {
-  /** 计划是否停滞（所有步骤完成/阻塞，或空计划） */
-  stalled: boolean;
-  /** 当前活跃步骤描述（有活跃步骤时） */
-  activeStep?: string;
-  /** 下一个待处理步骤描述（有 pending 步骤时） */
-  pendingStep?: string;
 }
 
 // ─── Agent 门面类型 ─────────────────────────────────────
