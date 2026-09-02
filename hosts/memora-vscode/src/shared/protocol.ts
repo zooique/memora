@@ -335,7 +335,8 @@ export type WebviewToExtensionMessage =
   /**
    * 设置白名单额外允许路径（allowed_paths_set 消息处理）
    *
-   * 由设置面板「允许路径白名单」增删后整体下发：host 持久化到 workspace 设置（memora.allowedPaths）
+   * 由设置面板「允许路径白名单」增删后整体下发：host 持久化到**用户级**设置
+   * （memora.allowedPaths，ConfigurationTarget.Global——目录信任是机器级，个人路径不进项目 settings）
    * + 热更新 agent.security.setAllowedPaths()。无需重启 Agent。
    * paths = 完整用户额外数组（不含 projectPath 基准根），host 为真理源。
    */

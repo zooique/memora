@@ -76,8 +76,9 @@
         "memora.allowedPaths": {
           "type": "array",
           "items": { "type": "string" },
+          "scope": "application",
           "default": [],
-          "description": "白名单额外允许目录（项目目录之外的可信目录，Agent 可读取/写入）。项目目录始终允许，无需添加。修改即时生效，重启后仍保留。"
+          "description": "白名单额外允许目录（项目目录之外的可信目录，Agent 可读取/写入）。项目目录始终允许，无需添加。用户级：机器级目录信任，个人绝对路径不进项目 settings。修改即时生效，重启后仍保留。"
         },
         "memora.searchEngine": {
           "type": "string",

@@ -1039,16 +1039,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /**
    * 设置白名单额外允许路径（allowed_paths_set 消息处理，G8）
    *
-   * 持久化到 workspace 设置（memora.allowedPaths，落 .vscode/settings.json）+ 热更新
-   * agent.security.setAllowedPaths()。无需重启 Agent——SecurityGuard 支持运行时热更新。
+   * 归类（2026-09-02 拍板）：目录白名单 = 这台机器信任的数据目录（机器级信任，
+   * 跨项目通用），归 ConfigurationTarget.Global——个人绝对路径不进项目
+   * .vscode/settings.json（避免随项目入库泄漏本机目录结构 + 跨项目重复配置）。
+   * 热更新 agent.security.setAllowedPaths()。无需重启 Agent——SecurityGuard 支持运行时热更新。
    * paths = 完整用户额外数组（不含 projectPath 基准根）。
    */
   private async setAllowedPaths(paths: string[]): Promise<void> {
     try {
-      // 1. 持久化到 workspace 设置（项目级；projectPath 基准根恒在，不在此数组内）
+      // 1. 持久化到用户级设置（机器级信任；projectPath 基准根恒在，不在此数组内）
       await vscode.workspace
         .getConfiguration('memora')
-        .update('allowedPaths', paths, vscode.ConfigurationTarget.Workspace);
+        .update('allowedPaths', paths, vscode.ConfigurationTarget.Global);
       // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
       const agent = await this.ensureAgent();
       if (agent?.security) {

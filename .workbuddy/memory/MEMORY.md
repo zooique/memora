@@ -72,5 +72,5 @@
 - recall 超时：双通道（vectorStore.search 异步 + storage.search 同步）已 try/catch 降级；JsonVectorStore.search 在内存跑余弦无 I/O 阻塞，embedding 层 EmbeddingOptions 已透传 signal/timeoutMs。O3「recall 超时保护」在同步存储+内存向量场景下基本不成立，可移出任务清单。
 
 ## 配置落点归类原则（vscode 宿主，2026-09-02 定案「四问」）
-- 新增任何设置先定「主人」再写代码：①用户偏好（跨项目一致、要人改）→ configuration `memora.*` `ConfigurationTarget.Global`（providers/activeProvider/embedding/searchEngine/showMetrics）；②秘密 → SecretStorage（apiKey，永不落 settings 文件）；③程序内部状态（角色包激活/会议/二次确认）→ globalState；④项目级安全/团队策略（allowedPaths）→ Workspace。
-- 反例血训：searchEngine 曾落 Workspace（.vscode/settings.json）与 providers 的 Global 归类自相矛盾，2026-09-02 迁 Global + package.json `scope:"application"`（commit 44534972）。判定口诀：换项目还想一样吗→用户级；秘密吗→钥匙串；给人改吗→configuration；按项目不同/团队共享→Workspace。
+- 新增任何设置先定「主人」再写代码：①用户偏好（跨项目一致、要人改）→ configuration `memora.*` `ConfigurationTarget.Global`（providers/activeProvider/embedding/searchEngine/showMetrics/allowedPaths）；②秘密 → SecretStorage（apiKey，永不落 settings 文件）；③程序内部状态（角色包激活/会议/二次确认）→ globalState；④项目级安全/团队策略 → Workspace。
+- 反例血训：searchEngine 曾落 Workspace（.vscode/settings.json）与 providers 的 Global 归类自相矛盾，2026-09-02 迁 Global + package.json `scope:"application"`（commit 44534972）；同批拍板 allowedPaths（目录白名单）= 机器级目录信任 → 一并 Global（commit 待落）。判定口诀：换项目还想一样吗→用户级；秘密吗→钥匙串；给人改吗→configuration；按项目不同/团队共享→Workspace。
