@@ -1980,8 +1980,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     controller: AbortController,
   ): Promise<void> {
     if (!this._agent) return;
+    // TS-O3/TS-O5：提问渲染双源归一——questionPending 事件优先驱动提问 UI，question_pending chunk 作幂等兜底。
+    // 内核保证事件先于 chunk 到达（loop 先 onPendingQuestion 回调、后 yield chunk）：事件驱动时清空 chunk 缓存，
+    // chunk 仅作「事件监听未就绪/异常」时的兜底渲染源（消除单点事件依赖，问题不丢失）。
+    let clarifyEventDriven = false;
+    const clarifyChunkQueue: { slot: string; question: string; options?: string[] }[] = [];
     // 监听主动提问事件 → 渲染提问框（含 LLM 声明的候选选项，webview 渲染为可点击按钮）
     const onPendingQuestion = (questions: { slot: string; question: string; options?: string[] }[]) => {
+      clarifyEventDriven = true;
+      clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this.post({ type: 'need_clarify', questions });
     };
     this._agent.on('questionPending', onPendingQuestion);
@@ -2045,8 +2052,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           metaEmittedForRound = true;
           emitEvent('meta', roundMeta());
         }
-        // 显式忽略的 chunk（取舍声明，排雷 2026-08-17）：
-        //   - question_pending：已由 questionPending 事件驱动 need_clarify，chunk 通道不重复消费。
+        // 提问 chunk（question_pending，[ASK]/P4 双触发源同构）：事件优先驱动，chunk 幂等兜底（TS-O3/TS-O5）。
+        // 事件已驱动（内核先回调、后 yield chunk）→ 跳过；未驱动 → 攒缓存，流尾统一兜底渲染（避免逐条 post 后者覆盖前者）
+        if (chunk.type === 'question_pending') {
+          if (!clarifyEventDriven) {
+            clarifyChunkQueue.push(...chunk.questions);
+          }
+          continue;
+        }
         if (chunk.type === 'aborted') {
           // 用户 stop/插话 → 内核 abort 应答。⚠ 不要 break：break 会触发 async iterator 的
           // return() 提前终止整条 yield* 链（chat → runChat → act → consumeExecutionStream），
@@ -2136,6 +2149,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             category: chunk.category,
           });
         }
+      }
+      // 流尾兜底：本流产生提问 chunk 但事件未驱动（监听未就绪/异常）→ 用 chunk 缓存渲染提问 UI，问题不丢失
+      if (!clarifyEventDriven && clarifyChunkQueue.length > 0) {
+        this.post({ type: 'need_clarify', questions: clarifyChunkQueue });
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）

@@ -2376,6 +2376,8 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     // 澄清暂停已发生
     expect(chunkTypes).toContain('done');
     expect(agent.sessionManager!.status).toBe('paused');
+    // TS-O3 档1：P4 暂停补发结构化提问 chunk（与 [ASK] question_pending 同构，统一对外提问协议）
+    expect(chunkTypes).toContain('question_pending');
 
     // 核心断言：已确定槽位（role）必须在暂停前落检查点
     expect(agent.sessionManager!.getCheckpoint()!.role.name).toBe('expert');

@@ -629,6 +629,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
                 options: q.options,
               })),
             );
+            // TS-O3 档1 协议同构：补发结构化提问 chunk（与 [ASK] question_pending 同构），
+            // 统一「提问后暂停」对外协议——宿主可经 chunk 通道幂等兜底渲染提问 UI
+            // （vscode 走 chat() 不经 processEvent，此为 sprite/未来事件路径的协议一致性增量）
+            yield {
+              type: 'question_pending',
+              questions: composeResult.needClarify.map((q) => ({
+                slot: q.slot,
+                question: q.question,
+                ...(q.options && q.options.length > 0 ? { options: q.options } : {}),
+              })),
+            };
             // 全为低风险才不计入连续暂停计数——用 every：只要存在高风险，本次暂停就确实在索取确认、应消耗配额；
             // some 会让混合场景免费逃逸计数，反向打开滥用面。
             const allLowRisk = composeResult.needClarify.every((q) => q.lowRisk);
