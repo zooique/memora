@@ -177,7 +177,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(rb).not.toBeNull();
     expect(rb.textContent).toContain('自审查轮 1');
     // summary 也有审查计数
-    expect(rb.textContent).toContain('审查×1');
+    expect(rb.textContent).toContain('审查 1 次');
   });
 
   it('流式 chunk 与 process_event 交错后仍追加到同一条 assistant 消息（P0-1 锚点）', () => {
@@ -688,15 +688,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // round-block 挂在本轮 assistant 块内（正文之后、操作行之前）
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.contains(rb)).toBe(true);
-    // summary：耗时（metrics）+ 计数（工具×1 · 记忆×1）
+    // summary：耗时（metrics）+ 叙述句（执行 1 步工具（读取 1）· 召回 1 条记忆）
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     expect(summary.textContent).toContain('耗时 1m 2s');
-    expect(summary.textContent).toContain('工具×1');
-    expect(summary.textContent).toContain('记忆×1');
+    expect(summary.textContent).toContain('执行 1 步工具（读取 1）');
+    expect(summary.textContent).toContain('召回 1 条记忆');
     // 工具行移入 round-block（任务过程折叠区）工具调用小节，不重复出现在其他档案小节
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     expect(tool).not.toBeNull();
-    expect(tool.textContent).toContain('read_file (成功)');
+    expect(tool.textContent).toContain('读取文件：a.md (成功)');
     expect(tool.textContent).toContain('读取成功');
     // round-block details 各小节（档案：召回/已沉淀/执行指标）
     const details = rb.querySelector('.round-block__details') as HTMLElement;
@@ -724,12 +724,12 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(tools).toHaveLength(3);
     // 成功：折叠（open=false），summary 含名称(状态)，body 含 args 与 result
     expect(tools[0].open).toBe(false);
-    expect(tools[0].querySelector('summary')?.textContent).toBe('read_file (成功)');
+    expect(tools[0].querySelector('summary')?.textContent).toBe('读取文件：a.md (成功)');
     expect(tools[0].textContent).toContain('{"path":"a.md"}');
     expect(tools[0].textContent).toContain('读取成功');
     // 失败：默认展开（open=true），错误摘要可见
     expect(tools[1].open).toBe(true);
-    expect(tools[1].querySelector('summary')?.textContent).toBe('write_file (失败)');
+    expect(tools[1].querySelector('summary')?.textContent).toBe('写入文件：b.md (失败)');
     expect(tools[1].textContent).toContain('权限不足');
     // 进行中：默认折叠
     expect(tools[2].open).toBe(false);
@@ -764,7 +764,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb?.textContent).toContain('旧记忆');
     expect(rb?.textContent).toContain('已停止');
-    expect(rb?.textContent).toContain('记忆×1');
+    expect(rb?.textContent).toContain('召回 1 条记忆');
   });
 
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
@@ -846,7 +846,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const rb = el.querySelector('.round-block') as HTMLElement | null;
     expect(rb).not.toBeNull();
     expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('耗时 9.6s');
-    expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('记忆×1');
+    expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('召回 1 条记忆');
   });
 
   it('重放路径不会创建流式骨架引用（flowShellEl 保持 null，无残留副作用）', () => {
@@ -1829,5 +1829,82 @@ describe('chatView 澄清候选选项（P4/[ASK] options，2026-09-02）', () =>
     const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
     expect(btns).toHaveLength(0);
     expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(true);
+  });
+});
+
+describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过程为参照）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 开一轮（meta + 首 chunk），等价于 beginRound（本 describe 外的局部 helper 不共享） */
+  function beginRound(): void {
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+  }
+
+  it('read_file 工具行显示行动叙述「读取文件：path (状态)」，原始 args 保留在折叠 body', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"docs/a.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '内容概要' } } });
+    dispatch({ type: 'done' });
+    const tool = document.querySelector('.round-block__tool') as HTMLElement;
+    expect(tool.querySelector('summary')?.textContent).toBe('读取文件：docs/a.md (成功)');
+    // 原始 args JSON 仍在折叠 body（细节不丢）
+    expect(tool.textContent).toContain('{"path":"docs/a.md"}');
+  });
+
+  it('未收录工具（自定义/未知）回退原生工具名，不编造叙述', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't99', name: 'my_custom_tool', args: '{"foo":"bar"}' } } });
+    dispatch({ type: 'done' });
+    const tool = document.querySelector('.round-block__tool') as HTMLElement;
+    // 无 result → 进行中；未收录映射 → 原生名
+    expect(tool.querySelector('summary')?.textContent).toBe('my_custom_tool (进行中)');
+  });
+
+  it('args 非合法 JSON 时回退原生工具名（解析兜底，不抛错）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: 'not-json{{{[' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
+    dispatch({ type: 'done' });
+    const tool = document.querySelector('.round-block__tool') as HTMLElement;
+    expect(tool.querySelector('summary')?.textContent).toBe('read_file (成功)');
+  });
+
+  it('多分型工具 → 收尾叙述句「执行 N 步工具（读取 x · 搜索 y · 写入 z）」，描述收口清晰', () => {
+    mountChatView();
+    beginRound();
+    // 2 读取 + 1 搜索 + 1 写入（分型计数进入叙述句）
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'read_skill', args: '{"name":"doc-writer"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't2', name: 'read_skill', ok: true } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't3', name: 'search_project', args: '{"query":"createSession"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 7, ts: '', payload: { toolCallId: 't3', name: 'search_project', ok: true } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't4', name: 'write_file', args: '{"path":"out.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't4', name: 'write_file', ok: true } } });
+    dispatch({ type: 'done' });
+    const summary = document.querySelector('.round-block__summary') as HTMLElement;
+    expect(summary.textContent).toContain('执行 4 步工具（读取 2 · 搜索 1 · 写入 1）');
+  });
+
+  it('插话打断旧流时移除旧块流式光标（is-streaming ▋ 不残留闪烁）', () => {
+    mountChatView();
+    // 流式正文进行中（is-streaming 光标亮）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正在回答第一段' });
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(body.classList.contains('is-streaming')).toBe(true);
+    // 插话（supplement）到达 → 旧流被打断：新块由后续 chunk 开启，旧块必须是静态正文（无光标）
+    dispatch({ type: 'user', text: '补充：换个方向', ts: '2026-09-02T04:15:05Z', kind: 'supplement' });
+    const oldBody = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
 });

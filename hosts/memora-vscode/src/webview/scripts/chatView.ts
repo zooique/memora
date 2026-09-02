@@ -356,6 +356,128 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     return map[phase] ?? '思考中…';
   }
 
+  /**
+   * 工具 → 行动叙述生成器（SSOT：任务过程文字化）
+   *
+   * 对齐 Trae「执行过程」的工程侧人话渲染（"调用了 X 技能 / 浏览了 N 个网页"）：
+   * 由工具名 + args 关键参数确定性生成「读取文件：path」式叙述，零 LLM 成本。
+   * 参数名与 src/agent/builtinTools.ts（ToolDefinition.parameters）一一对应。
+   * 兜底纪律：未收录工具 / 参数缺失 / args 非 JSON 均回退原生工具名（角色包自定义工具零遗漏）；
+   * 原始 args JSON 仍保留在折叠 pre 中（细节不丢）。
+   */
+  type ToolActionFn = (args: Readonly<Record<string, unknown>>) => string | undefined;
+
+  /** 工具 → 行动叙述映射（未收录键 → 回退原生工具名） */
+  const TOOL_ACTION_LABELS: Record<string, ToolActionFn> = {
+    read_file: (a) => {
+      const p = argStr(a, 'path');
+      return p ? `读取文件：${p}` : undefined;
+    },
+    write_file: (a) => {
+      const p = argStr(a, 'path');
+      return p ? `写入文件：${p}` : undefined;
+    },
+    delete_file: (a) => {
+      const p = argStr(a, 'path');
+      return p ? `删除文件：${p}` : undefined;
+    },
+    list_dir: (a) => {
+      const p = argStr(a, 'path');
+      return p ? `浏览目录：${p}` : '浏览项目目录';
+    },
+    search_project: (a) => {
+      const q = argStr(a, 'query');
+      return q ? `搜索项目：${q}` : '列出项目文件';
+    },
+    search_memories: (a) => {
+      const q = argStr(a, 'query');
+      return q ? `检索记忆：${q}` : undefined;
+    },
+    web_search: (a) => {
+      const q = argStr(a, 'query');
+      return q ? `联网搜索：${q}` : undefined;
+    },
+    web_fetch: (a) => {
+      const u = argStr(a, 'url');
+      return u ? `浏览网页：${u}` : undefined;
+    },
+    // run_code 双模式：script_path（执行脚本） vs code（直接执行代码片段）
+    run_code: (a) => {
+      const script = argStr(a, 'script_path');
+      if (script) return `运行脚本：${script}`;
+      return argStr(a, 'code') ? '运行代码片段' : undefined;
+    },
+    run_skill_script: (a) => {
+      const skill = argStr(a, 'skill_name');
+      const script = argStr(a, 'script_path');
+      return script ? `执行技能脚本：${skill ? `${skill}/` : ''}${script}` : undefined;
+    },
+    read_skill: (a) => {
+      const n = argStr(a, 'name');
+      return n ? `读取技能：${n}` : undefined;
+    },
+    read_resource: (a) => {
+      const p = argStr(a, 'resource_path');
+      return p ? `读取资源：${p}` : undefined;
+    },
+    trace_summary: (a) => {
+      const s = argStr(a, 'sessionId');
+      return s ? `追溯对话记录：${s}` : undefined;
+    },
+    list_sessions: () => '列出历史会话',
+    list_resources: (a) => {
+      const n = argStr(a, 'skill_name');
+      return n ? `列出技能资源：${n}` : '列出技能资源';
+    },
+    list_skills: () => '列出可用技能',
+    task_table_write: () => '建立任务计划',
+    task_table_update: () => '更新任务进度',
+    register_work: (a) => {
+      const p = argStr(a, 'path');
+      return p ? `登记作品：${p}` : undefined;
+    },
+    compress_context: () => '整理上下文空间',
+  };
+
+  /** 安全取工具 args 的字符串参数（args 为 JSON 解析后的对象；类型不符 / 空返回 undefined） */
+  function argStr(args: Readonly<Record<string, unknown>>, key: string): string | undefined {
+    const v = args[key];
+    return typeof v === 'string' && v.length > 0 ? v : undefined;
+  }
+
+  /** 解析工具 args JSON → 对象；非 JSON / 空返回空对象（叙述按缺参回退原生工具名） */
+  function parseToolArgs(raw: string | undefined): Readonly<Record<string, unknown>> {
+    if (!raw) return {};
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+        ? (parsed as Record<string, unknown>)
+        : {};
+    } catch {
+      return {};
+    }
+  }
+
+  /** 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退原生工具名（未知工具零遗漏） */
+  function toolActionLabel(name: string, argsRaw: string | undefined): string {
+    return TOOL_ACTION_LABELS[name]?.(parseToolArgs(argsRaw)) ?? name;
+  }
+
+  /** 工具动作分型（收尾叙述句的分组依据，语义与 TOOL_ACTION_LABELS 对齐） */
+  type ToolActionType = 'read' | 'search' | 'write' | 'run' | 'other';
+
+  /** 工具名 → 动作分型（未收录归 other） */
+  function toolActionType(name: string): ToolActionType {
+    if (name === 'read_file' || name === 'read_skill' || name === 'read_resource' || name === 'trace_summary' || name === 'web_fetch')
+      return 'read';
+    if (name === 'web_search' || name === 'search_project' || name === 'search_memories' || name === 'list_dir' || name === 'list_sessions' || name === 'list_resources' || name === 'list_skills')
+      return 'search';
+    if (name === 'write_file' || name === 'delete_file' || name === 'register_work' || name === 'task_table_write' || name === 'task_table_update')
+      return 'write';
+    if (name === 'run_code' || name === 'run_skill_script') return 'run';
+    return 'other';
+  }
+
   /** 耗时格式化：≥60s 显示「x m y s」，否则「x.x s」 */
   function fmtDuration(ms: number): string {
     const sec = Math.round(ms / 100) / 10;
@@ -365,10 +487,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     return `${m}m ${s}s`;
   }
 
-  /** 事件统计：工具×N / 记忆×N / 审查×N（运行时与重放同一函数，SSOT 杜绝两处算法） */
-  function countEvents(events: ProcessEvent[]): { tools: number; memories: number; reviews: number } {
+  /** 事件统计：工具（含分型）/ 记忆 / 审查（运行时与重放同一函数，SSOT 杜绝两处算法）。
+   * 分型计数供收尾叙述句「执行 N 步工具（读取 x · 搜索 y）」使用 */
+  function countEvents(events: ProcessEvent[]): {
+    tools: number;
+    reads: number;
+    searches: number;
+    writes: number;
+    runs: number;
+    others: number;
+    memories: number;
+    reviews: number;
+  } {
+    const toolTypes = events
+      .filter((e) => e.type === 'tool_start')
+      .map((e) => toolActionType((e as Extract<ProcessEvent, { type: 'tool_start' }>).payload.name));
     return {
-      tools: events.filter((e) => e.type === 'tool_start').length,
+      tools: toolTypes.length,
+      reads: toolTypes.filter((t) => t === 'read').length,
+      searches: toolTypes.filter((t) => t === 'search').length,
+      writes: toolTypes.filter((t) => t === 'write').length,
+      runs: toolTypes.filter((t) => t === 'run').length,
+      others: toolTypes.filter((t) => t === 'other').length,
       memories: events.reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
       reviews: events.filter((e) => e.type === 'self_review').length,
     };
@@ -489,7 +629,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     row.open = result?.payload.ok === false;
     const summary = document.createElement('summary');
     summary.className = 'round-block__tool-name';
-    summary.textContent = `${start.payload.name} (${status})`;
+    // 任务过程文字化：原生工具名 → 行动叙述（如「读取文件：src/main.ts」；未收录回退原生名）
+    summary.textContent = `${toolActionLabel(start.payload.name, start.payload.args)} (${status})`;
     row.appendChild(summary);
     listEl.appendChild(row);
     if (start.payload.args) {
@@ -557,9 +698,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       summary.appendChild(dot);
       const stats = countEvents(events);
       const parts: string[] = [];
-      if (stats.tools > 0) parts.push(`工具×${stats.tools}`);
-      if (stats.memories > 0) parts.push(`记忆×${stats.memories}`);
-      if (stats.reviews > 0) parts.push(`审查×${stats.reviews}`);
+      // 工具叙述句：分型计数（读取 x · 搜索 y …）→ 收起态也能看懂"它做了什么"；
+      // other 类（未知自定义工具/空间整理）不进叙述句，避免标签误导，仅计入总数
+      if (stats.tools > 0) {
+        const subtypeParts: string[] = [];
+        if (stats.reads > 0) subtypeParts.push(`读取 ${stats.reads}`);
+        if (stats.searches > 0) subtypeParts.push(`搜索 ${stats.searches}`);
+        if (stats.writes > 0) subtypeParts.push(`写入 ${stats.writes}`);
+        if (stats.runs > 0) subtypeParts.push(`运行 ${stats.runs}`);
+        parts.push(
+          subtypeParts.length > 0 ? `执行 ${stats.tools} 步工具（${subtypeParts.join(' · ')}）` : `工具×${stats.tools}`,
+        );
+      }
+      if (stats.memories > 0) parts.push(`召回 ${stats.memories} 条记忆`);
+      if (stats.reviews > 0) parts.push(`审查 ${stats.reviews} 次`);
       const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
       if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
       const label = document.createElement('span');
@@ -1819,6 +1971,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 无缝插话（缺口 B）：生成中收到用户补充 → 结束当前流式助手块（复位锚点与流式态），
       // 使后续 chunk 经 beginStreaming 开新助手块、置于本用户消息之后，保证消息排序正确。
       if (streamingActive) {
+        // 打断旧流必须同时移除旧块流式光标（is-streaming ▋）——否则旧块光标残留闪烁：
+        // 该块只是"被打断的半截回答"，不再有新 chunk，finalizeStreaming 也不会再被调用
+        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body')?.classList.remove('is-streaming');
+        if (streamRenderTimer) {
+          clearTimeout(streamRenderTimer);
+          streamRenderTimer = undefined;
+        }
         streamingActive = false;
         activeAssistantEl = null;
         streamingRaw = '';

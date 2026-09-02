@@ -1747,12 +1747,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'assistant', text: seg.content, ts: seg.ts, roundId: r.roundId });
         }
       }
-      // TS-9 交互输入：折叠块渲染（kind 标记 提问回答/补充），不分裂新轮
+      // TS-9 主动提问回答（question-answer）：紧随前序提问段，在最终回答之前
       for (const input of r.interactiveInputs ?? []) {
-        this.post({ type: 'user', text: input.content, ts: input.ts, kind: input.kind });
+        if (input.kind !== 'supplement') {
+          this.post({ type: 'user', text: input.content, ts: input.ts, kind: input.kind });
+        }
       }
       if (r.assistant) {
         this.post({ type: 'assistant', text: r.assistant.content, ts: r.assistant.ts, roundId: r.roundId });
+      }
+      // 打断补充（supplement）：语义 = 对「已产出回答」的追补纠正，重放排到最终回答之后，
+      // 与运行时时序一致（运行时补充发生在回答流中/后，见 handleSend 暂停态分支）
+      for (const input of r.interactiveInputs ?? []) {
+        if (input.kind === 'supplement') {
+          this.post({ type: 'user', text: input.content, ts: input.ts, kind: 'supplement' });
+        }
       }
     }
   }

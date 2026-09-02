@@ -329,6 +329,40 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     });
   });
 
+  it('interactiveInputs 重放顺序收紧：qa 在前序段后、supplement 排最终回答之后（TS-8，2026-09-02）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '任务A', ts: 't1' },
+      { role: 'assistant', content: '最终回答', ts: 't5' },
+    ]);
+    // TS-9 闭环节点数据：前序 assistant 段（含 [ASK] 提问）+ 交互输入（qa 与 supplement 混合）
+    const round = roundStore.getById('round-1')!;
+    round.assistantLog = [
+      { id: 'a0', role: 'assistant', content: '[ASK] 选择哪个方案？', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
+    ];
+    round.interactiveInputs = [
+      { id: 'i1', role: 'user', content: '选方案A', timestamp: 't3', kind: 'question-answer' } as never,
+      { id: 'i2', role: 'user', content: '补充：不要联网搜索', timestamp: 't4', kind: 'supplement' } as never,
+    ];
+    roundStore.save(round);
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string });
+    const idxAsk = ordered.findIndex((m) => m.type === 'assistant' && m.text === '[ASK] 选择哪个方案？');
+    const idxQa = ordered.findIndex((m) => m.type === 'user' && m.kind === 'question-answer');
+    const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '最终回答');
+    const idxSupp = ordered.findIndex((m) => m.type === 'user' && m.kind === 'supplement');
+    // 主动提问回答紧随前序提问段之后、最终回答之前
+    expect(idxQa).toBeGreaterThan(idxAsk);
+    expect(idxMain).toBeGreaterThan(idxQa);
+    // 打断补充（supplement）重放排到最终回答之后（与运行时时序一致，不再插在 user 与回答中间）
+    expect(idxSupp).toBeGreaterThan(idxMain);
+  });
+
   it('round-based 纯问答轮（无 processEvents）退化为仅正文，不发 process_event/replay_events', () => {
     const { store, roundStore, provider, posted } = setup();
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
