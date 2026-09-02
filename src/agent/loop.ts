@@ -438,8 +438,6 @@ export class AgentLoop {
 
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
-      // 新问答闭环入口重置"工具步发生"标记（自审查触发门槛）；续跑 continueAfterPause 同闭环延续不在此重置
-      this.toolExecutedThisTurn = false;
 
       // 单轮迭代循环（runIterationLoop）：本闭环的执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
       // 真正的「外循环」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
@@ -700,6 +698,9 @@ export class AgentLoop {
     this.pauseRequested = false;
     this.selfReviewRound = 0;
     this._iterationLimitReached = false;
+    // TS-14 每轮独立重置「工具步发生」标记（自审查触发门槛）：新问答闭环入口即续跑入口都复位，
+    // 避免续跑段未执行工具却被上次的 true 触发自审查（消除 processUserInput 单独重置的 SSOT 漂移）
+    this.toolExecutedThisTurn = false;
     // TS-7 搜索收敛护栏：本闭环内计数与注入标记随轮重置（下一闭环重新累计）
     this.successfulWebSearchCount = 0;
     this.searchConvergenceHintInjected = false;

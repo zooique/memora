@@ -413,6 +413,17 @@ export class SeedOrchestrator {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
 
+    // TS-15 软暂停遗留现场兜底：本次是「新输入」却已处于 Loop 编排上下文（正常续跑走 runResume
+    // 直调 completeExternalTask，不会进本规划入口）→ 说明是上次规划/步链软暂停后放弃续跑、
+    // 改用全新输入。此时旧链仍挂着（withinExternalTask + 任务表 + PLAN_ONLY 保留），若不清会
+    // 导致本链覆盖 head roundId 后残留旧 pending 步被新链误取。故先清旧链现场再用新输入建新链：
+    // 打破 Loop 编排上下文 + 清任务表 + 清 PLAN_ONLY 装配提示（防重复注入）。
+    if (parts.loop.isWithinExternalTask) {
+      parts.loop.setWithinExternalTask(false);
+      parts.sessionManager?.clearPlan?.();
+      parts.loop.cleanTemporarySystemMessages();
+    }
+
     // 组合 head id：捕获"这次外部输入"的 roundId（prepare 已分配并 appendUser）。
     // 步闭环会给 loop 分配独立 currentRoundId，故先把 head 持久到 loop，收尾摘要时回指——
     // 确保 round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源，跨暂停-续跑保留）。
