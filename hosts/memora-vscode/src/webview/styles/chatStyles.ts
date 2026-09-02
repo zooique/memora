@@ -1066,6 +1066,12 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
   }
+  /* 建议 A：narrate 父块内的嵌套工具子容器（文字与对应调用成对缩进；边框复用 .round-block__tool 自身左边框） */
+  .round-block__narrate-tools {
+    margin: var(--sp-1, 2px) 0 var(--sp-1, 2px) var(--sp-4, 12px);
+    padding-left: var(--sp-2, 6px);
+    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
+  }
   .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);

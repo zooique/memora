@@ -121,11 +121,16 @@ interface LlmCallResult {
   toolCalls: Message['toolCalls'];
   aborted: boolean;
   /**
-   * P2 文本通道剥离缓冲：本轮「工具调用轮」的叙述文本（收到 toolCalls 信号后
-   * 后续/同条的 content 累积于此）。结果路由据此发射 narrate 事件，不进回答正文；
-   * 纯文本轮的正文始终按流式实时 yield（stage 携带），不受本缓冲影响。
+   * P2 文本通道剥离缓冲：工具轮叙述文本（本闭环已执行过工具后的整条消息文本，
+   * 或收到 toolCalls 信号后后续/同条的 content）累积于此。结果路由据此发射
+   * narrate 事件，不进回答正文；纯文本闭环（无工具史）正文保持按流式实时 yield。
    */
   pendingNarrate: string;
+  /**
+   * 本轮正文是否曾逐字流式 yield（工具闭环内延迟分类的消息未 yield → false）。
+   * 结果路由据此在纯文本/中断路径补发整段 text，避免缓冲文本对 UI 不可见。
+   */
+  textStreamed: boolean;
 }
 
 /** AgentLoop 运行时指标纯状态容器 */
@@ -204,6 +209,11 @@ export class AgentLoop {
   private searchConvergenceHintInjected = false;
   /** TS-7 搜索硬上限：本闭环内 web_search 调用次数（含被拒绝的，达到上限后后续搜索直接拒绝） */
   private searchCallCount = 0;
+  /** TS-7 搜索硬上限命中后：从后续 LLM 调用的工具集确定性移除 web_search（双闸的第二闸，
+   *  与 system 提示互补，彻底终结「拒绝风暴」耗尽迭代/上下文导致问答闭环中断） */
+  private searchDisabled = false;
+  /** TS-7 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
+  private searchDisabledHintInjected = false;
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
@@ -694,6 +704,9 @@ export class AgentLoop {
     this.successfulWebSearchCount = 0;
     this.searchConvergenceHintInjected = false;
     this.searchCallCount = 0;
+    // 硬上限停搜标志随轮重置（下一闭环 web_search 重新可用）
+    this.searchDisabled = false;
+    this.searchDisabledHintInjected = false;
   }
 
   /**
@@ -902,6 +915,11 @@ export class AgentLoop {
     );
 
     if (llmResult.aborted) {
+      // K1 缓冲补发：工具闭环内延迟分类的消息被中断时，缓冲文本从未流式 yield →
+      // 先补发给 UI（不带中断标记——中断提示由宿主 interrupted 消息承载，与逐字流中断一致）
+      if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
+        yield { type: 'text', content: llmResult.fullContent, stage: textStage };
+      }
       // 保留已生成的部分文本（追加 interrupted 标记），让下一轮 LLM 识别非完整回复。
       // 注：工具调用中断在此不处理——executeToolCalls 已 push assistant（含 toolCalls），
       // 追加文本标记会破坏工具调用结构
@@ -928,6 +946,10 @@ export class AgentLoop {
         yield { type: 'narrate', content: narration, roundId: this.currentRoundId };
       }
       return yield* this.handleToolCalls(llmResult, effectiveSignal);
+    }
+    // K1 补发：工具闭环内延迟分类的纯文本消息（收尾交付）从未流式 yield → 先补发整段正文再收尾
+    if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
+      yield { type: 'text', content: llmResult.fullContent, stage: textStage };
     }
     return yield* this.handleTextResponse(llmResult);
   }
@@ -1260,6 +1282,12 @@ export class AgentLoop {
     let isToolCallTurn = false;
     // P2 叙述累积：工具轮 text（同条 content + 信号后的后续 content），route 时作为 narrate 发射
     let pendingNarrate = '';
+    /** 本轮是否曾逐字流式 yield 过正文（纯文本闭环逐字；工具闭环延迟分类则全程 false） */
+    let textStreamed = false;
+    // 消息级延迟分类（K1 窄化，2026-09-02）：本闭环已执行过工具（toolExecutedThisTurn）后，
+    // 后续 LLM 消息的文本整段缓冲到消息结束再分类——工具轮 → narrate（含信号前全文），
+    // 纯文本 → 由路由补发 text。单轮问答/首轮（无工具史）保持逐字流式，不受影响。
+    const deferTextToMessageEnd = this.toolExecutedThisTurn;
 
     // 将 AbortSignal 与超时传入 provider，确保 fetch 与 SSE 流读取能被及时中断（用户取消/超时）
     const effectiveOpts: ChatOptions = {
@@ -1347,11 +1375,13 @@ export class AgentLoop {
           }
           if (chunk.content) {
             fullContent += chunk.content;
-            // P2 文本通道剥离：工具轮（已见 toolCalls 信号或同条携带）的文本归叙述缓冲，
-            // 不进回答正文；纯文本轮保持流式实时 yield（stage 供宿主自审查分段）。
-            if (isToolCallTurn || chunk.toolCalls?.length) {
+            // P2 文本通道剥离：① 工具闭环内消息整段缓冲（deferTextToMessageEnd）；
+            // ② 工具轮（已见 toolCalls 信号或同条携带）的文本归叙述缓冲，不进回答正文。
+            // ③ 纯文本闭环保持流式实时 yield（stage 供宿主自审查分段）。
+            if (deferTextToMessageEnd || isToolCallTurn || chunk.toolCalls?.length) {
               pendingNarrate += chunk.content;
             } else {
+              textStreamed = true;
               yield { type: 'text', content: chunk.content, stage };
             }
           }
@@ -1387,7 +1417,7 @@ export class AgentLoop {
           if (this.strategy.errorHandling === 'degrade') {
             logger.warn({ err: e }, 'LLM 流式中途失败，降级为已生成的文本内容');
             llmSpan.end();
-            return { fullContent, pendingNarrate, toolCalls: undefined, aborted: false };
+            return { fullContent, pendingNarrate, toolCalls: undefined, aborted: false, textStreamed };
           }
           llmSpan.recordException(e);
           llmSpan.end();
@@ -1399,7 +1429,7 @@ export class AgentLoop {
             const degradedMsg = '抱歉，AI 服务暂时不可用，请稍后重试。';
             logger.warn({ err: e }, 'LLM 重试耗尽，降级回复');
             llmSpan.end();
-            return { fullContent: degradedMsg, pendingNarrate, toolCalls: undefined, aborted: false };
+            return { fullContent: degradedMsg, pendingNarrate, toolCalls: undefined, aborted: false, textStreamed };
           }
           llmSpan.recordException(e);
           llmSpan.end();
@@ -1411,11 +1441,11 @@ export class AgentLoop {
 
     if (aborted) {
       llmSpan.end();
-      return { fullContent, pendingNarrate, toolCalls, aborted: true };
+      return { fullContent, pendingNarrate, toolCalls, aborted: true, textStreamed };
     }
 
     llmSpan.end();
-    return { fullContent, pendingNarrate, toolCalls, aborted: false };
+    return { fullContent, pendingNarrate, toolCalls, aborted: false, textStreamed };
   }
 
   /**
@@ -1455,6 +1485,18 @@ export class AgentLoop {
       // 搜索硬上限（TS-7 升级）：单闭环 web_search 超过上限后确定性拒绝——不执行、回填拒绝文案，
       // 不依赖 LLM 听从软收敛提示。LLM 看到的是一条「被拒绝」的 tool 消息，据此停止搜索直接作答。
       if (isSearch && this.searchCallCount > LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS) {
+        // 双闸第二闸：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
+        // （buildChatOptions 确定性过滤），并在本轮注入「视为未找到更多相关→继续下一步」提示，
+        // 双管齐下终结「被拒→重搜→再被拒」拒绝风暴耗尽迭代/上下文导致问答闭环中断。
+        this.searchDisabled = true;
+        if (!this.searchDisabledHintInjected) {
+          this.searchDisabledHintInjected = true;
+          this.appendSystemMessage(
+            `[SEARCH_LIMIT] 联网搜索已达 ${LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS} 次上限，视为未检索到更多相关内容。` +
+              `请停止调用 web_search，直接基于已有信息继续下一步或作答。`,
+            { executionTemp: true },
+          );
+        }
         toolPromises.push(
           Promise.resolve(
             `[SEARCH_LIMIT_REACHED] 已执行 ${LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS} 次联网搜索，信息应已足够；` +
@@ -1651,7 +1693,10 @@ export class AgentLoop {
     let prompt = `# Memora Agent\n\n${sections}\n\n---\n\n你是 Memora Agent。基于以上人格、规则和领域知识，回应用户的问题。`;
 
     // 追加工具描述（让 LLM 知道可用工具及其参数）
-    const tools = this.opts.toolDefinitions;
+    // TS-7 搜索硬上限命中后：同步剔除 web_search 描述，避免「描述存在但工具不可用」不一致
+    const tools = this.searchDisabled
+      ? (this.opts.toolDefinitions ?? []).filter((t) => t.name !== 'web_search')
+      : this.opts.toolDefinitions;
     if (tools && tools.length > 0) {
       const toolDescs = tools
         .map((t) => {
@@ -1664,6 +1709,10 @@ export class AgentLoop {
         })
         .join('\n');
       prompt += `\n\n## 可用工具\n\n你可以通过 tool_call 调用以下工具：\n${toolDescs}`;
+
+      // 工具导语纪律（分区式 UI 配套）：正文只承载最终交付；调用工具前意图说明压到一句话，
+      // 抑制长导语混入正文（首轮工具步在消息级分类前仍逐字流式，纪律把残余降到可忽略）
+      prompt += `\n\n${LOOP_CONSTANTS.TOOL_NARRATION_DISCIPLINE}`;
 
       // 工具选择规则：仅对工具清单中实际存在的 create_* 工具生成指引；
       // 无 create_* 工具时（编辑类宿主直接管理角色/技能/规则配置）整个规则节不输出，
@@ -1731,10 +1780,13 @@ export class AgentLoop {
    * tools 参数触发的独立流式协议，两者不能并存；response_format 保留供调用方按需显式传入）
    */
   private buildChatOptions(): ChatOptions {
-    const tools = this.opts.toolDefinitions;
+    // TS-7 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸；
+    // 不修改 opts.toolDefinitions，仅按轮过滤，随 resetTurnState 自然恢复）
+    const allTools = this.opts.toolDefinitions ?? [];
+    const tools = this.searchDisabled ? allTools.filter((t) => t.name !== 'web_search') : allTools;
     const baseOptions: ChatOptions = {};
 
-    if (tools && tools.length > 0) {
+    if (tools.length > 0) {
       baseOptions.tools = tools.map((t) => ({
         type: 'function' as const,
         function: {

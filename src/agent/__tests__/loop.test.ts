@@ -9,6 +9,7 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { TRACE_SPANS, type ISpan, type ITracer } from '@/agent/tracer.js';
 import * as hashModule from '@/utils/hash.js';
+import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -2721,6 +2722,51 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     expect(messages.some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]'))).toBe(true);
   });
 
+  it('web_search 达硬上限后从下一轮工具集移除并注入「未找到更多相关」提示（双闸终结拒绝风暴）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('1. 结果A');
+    // 7 轮各调一次 web_search（前 6 次执行，第 7 次拒），第 8 轮无工具调用收尾
+    const turns: ChunkItem[][] = [];
+    for (let i = 0; i < 7; i++) {
+      turns.push([
+        { content: `搜索第 ${i} 轮`, toolCalls: [{ id: `s${i}`, type: 'function', function: { name: 'web_search', arguments: `{"query":"Q${i}"}` } }] },
+      ]);
+    }
+    turns.push([{ content: '停止搜索，直接给出结论。' }]);
+
+    // 捕获每轮 LLM 调用传入的 tools 名称，验证命中后 web_search 被剔除
+    const toolsPerCall: string[][] = [];
+    let ti = 0;
+    const provider = {
+      name: 'mock',
+      async *chat(_messages: unknown[], options: { tools?: { function: { name: string } }[] }) {
+        toolsPerCall.push((options?.tools ?? []).map((t) => t.function.name));
+        const chunks = turns[ti] ?? [];
+        ti++;
+        for (const c of chunks) yield c;
+      },
+    } as unknown as LlmProvider;
+
+    // 显式注册 web_search 工具定义（用真实内置定义）：让 buildChatOptions 真正对外提供该工具，
+    // 方能验证「命中硬上限后从下一轮 tools 移除」（无定义则无工具可过滤，测试无意义）
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor, toolDefinitions: [WEB_SEARCH_TOOL] });
+    for await (const {} of loop.processUserInput('做分析')) {
+      /* drain */
+    }
+
+    // 既有断言不变：仅前 6 次真正执行，拒绝文案回填
+    expect(toolExecutor).toHaveBeenCalledTimes(6);
+    expect(loop.getMessages().some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]'))).toBe(true);
+
+    // 双闸新增断言①：命中后注入「视为未找到更多相关 → 继续下一步」系统提示
+    expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('[SEARCH_LIMIT]'))).toBe(true);
+
+    // 双闸新增断言②：命中前最后一轮（发起第 7 次搜索那轮）工具集仍含 web_search
+    expect(toolsPerCall[6]).toContain('web_search');
+    // 双闸新增断言③：命中后下一轮（收尾轮）工具集不再含 web_search —— LLM 物理上无法再发起搜索
+    const lastTools = toolsPerCall[toolsPerCall.length - 1] ?? [];
+    expect(lastTools).not.toContain('web_search');
+  });
+
   it('工具迭代前发射 narrate 过程叙述（不进入最终回答正文）', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('结果');
     const provider = mockMultiTurnProvider([
@@ -2752,6 +2798,49 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
       .map((c) => (c as { content: string }).content)
       .join('');
     expect(texts).not.toContain('让我先搜索相关资料');
+  });
+
+  it('工具闭环内消息整段延迟分类：信号前文本进 narrate、收尾纯文本补发一次（K1 窄化）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    // 真实 provider 分块形状：文本 delta 与 toolCalls 分属不同 chunk（toolCalls 只在末 chunk 出现）
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '第一轮：先检索',
+          toolCalls: [
+            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+          ],
+        },
+      ],
+      // 工具已执行（闭环内）→ 本消息整段缓冲：导语「第二轮补充检索」在 toolCalls 信号前到达也必须进 narrate
+      [{ content: '第二轮补充检索' }, { toolCalls: [{ id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } }] }],
+      // 收尾纯文本轮（无工具）：缓冲 → 路由补发一次 text
+      [{ content: '结论是：检索结果已足够。' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('做分析')) {
+      chunks.push(chunk);
+    }
+
+    const narrates = chunks.filter((c) => c.type === 'narrate').map((c) => (c as { content: string }).content);
+    expect(narrates).toHaveLength(2);
+    expect(narrates.join('')).toContain('第二轮补充检索'); // 信号前文本也被整段收入 narrate
+
+    const texts = chunks
+      .filter((c) => c.type === 'text')
+      .map((c) => (c as { content: string }).content)
+      .join('');
+    // 工具轮叙述零混入正文；收尾纯文本轮补发一次且为唯一正文
+    expect(texts).not.toContain('第二轮补充检索');
+    expect(texts).not.toContain('第一轮：先检索');
+    expect(texts).toContain('结论是：检索结果已足够。');
+    expect(chunks.filter((c) => c.type === 'text')).toHaveLength(1);
   });
 });
 

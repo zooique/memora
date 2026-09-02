@@ -1908,7 +1908,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
 
-  it('narrate 过程事件渲染为「过程叙述」小节，每段叙述一个独立折叠行（P2）', () => {
+  it('narrate 过程事件渲染为独立父块（建议 A），每段叙述一个可折叠父块', () => {
     mountChatView();
     beginRound();
     dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '让我先查看项目结构和所有文档' } } });
@@ -1916,11 +1916,55 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    // 「过程叙述」小节存在，每段各行折叠（details），内容不堆在同一行
-    expect(rb.textContent).toContain('过程叙述');
+    // 每段叙述 = 一个独立 .round-block__narrate 父块（建议 A 后不再有「过程叙述」独立小节标题）
     const rows = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('让我先查看项目结构和所有文档');
     expect(rows[1].textContent).toContain('现在逐一读取它们的内容');
+  });
+
+  it('建议 A：narrate 父块紧跟其 tool_start/tool_result 嵌套成子项（文字与调用一一对应顺序显示）', () => {
+    mountChatView();
+    beginRound();
+    // 第一段叙述 → 一个搜索工具
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } } });
+    // 第二段叙述 → 一个读取工具
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 5, ts: '', payload: { content: '再读取文档' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't2', name: 'read_file', args: '{"path":"x.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 7, ts: '', payload: { toolCallId: 't2', name: 'read_file', ok: true, summary: '内容' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const narrates = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
+    expect(narrates).toHaveLength(2);
+    // 第一段叙述嵌套 t1（web_search），第二段嵌套 t2（read_file）
+    const tools1 = narrates[0]!.querySelectorAll<HTMLDetailsElement>('.round-block__tool');
+    expect(tools1).toHaveLength(1);
+    expect(tools1[0]!.dataset.toolCallId).toBe('t1');
+    const tools2 = narrates[1]!.querySelectorAll<HTMLDetailsElement>('.round-block__tool');
+    expect(tools2).toHaveLength(1);
+    expect(tools2[0]!.dataset.toolCallId).toBe('t2');
+    // 工具必须嵌套在 narrate 父块的 .round-block__narrate-tools 内，而非顶层/独立 section
+    const nested = rb.querySelectorAll('.round-block__narrate > .round-block__narrate-tools .round-block__tool');
+    expect(nested).toHaveLength(2);
+  });
+
+  it('运行中 narrate 父块默认展开、done 收尾重建后收起（2026-09-02 拍板）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
+    // 运行中（finalize=false 增量投影）：narrate 父块默认展开，嵌套工具行实时可见
+    let rb = document.querySelector('.round-block') as HTMLElement;
+    let narrate = rb.querySelector('.round-block__narrate') as HTMLDetailsElement;
+    expect(narrate.open).toBe(true);
+    dispatch({ type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } });
+    dispatch({ type: 'done' });
+    // 收尾（finalize=true 全量重建）：narrate 父块收起（与 round-block 收尾收起一致）
+    rb = document.querySelector('.round-block') as HTMLElement;
+    narrate = rb.querySelector('.round-block__narrate') as HTMLDetailsElement;
+    expect(narrate).not.toBeNull();
+    expect(narrate.open).toBe(false);
   });
 });
