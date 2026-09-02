@@ -685,7 +685,14 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
 
     // 过滤 text 事件，验证内容（不包含 tool_start/tool_result/tool_done）
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
-    expect(texts).toEqual(['我来查一下', '找到了文件内容']);
+    // P2 文本通道净化：工具轮叙述「我来查一下」被剥离进 narrate 事件，正文仅最终回答
+    expect(texts).toEqual(['找到了文件内容']);
+    // 工具轮叙述 → narrate 事件（过程叙述区折叠展示，不进正文）
+    const narrates = chunks.filter((c) => c.type === 'narrate');
+    expect(narrates).toHaveLength(1);
+    if (narrates[0]?.type === 'narrate') {
+      expect(narrates[0].content).toContain('我来查一下');
+    }
     // 验证 tool_start 和 tool_result 事件
     const toolStarts = chunks.filter((c) => c.type === 'tool_start');
     expect(toolStarts).toHaveLength(1);
@@ -2682,6 +2689,69 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     const messages = loop.getMessages();
     const hints = messages.filter((m) => m.role === 'system' && m.content.includes('搜索收敛提示'));
     expect(hints).toHaveLength(0);
+  });
+
+  it('web_search 达硬上限（MAX_WEB_SEARCH_CALLS）后确定性拒绝执行，不依赖 LLM 听从软提示', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('1. 结果A');
+    // 7 轮各调一次 web_search（第 1-6 次应执行，第 7 次被硬上限拒绝）
+    // 显式标注类型：push 动态拼装时保字面量（type: 'function' 不拓宽为 string）
+    const turns: ChunkItem[][] = [];
+    for (let i = 0; i < 7; i++) {
+      turns.push([
+        {
+          content: `搜索第 ${i} 轮`,
+          toolCalls: [
+            { id: `s${i}`, type: 'function', function: { name: 'web_search', arguments: `{"query":"Q${i}"}` } },
+          ],
+        },
+      ]);
+    }
+    turns.push([{ content: '停止搜索，直接给出结论。' }]);
+    const provider = mockMultiTurnProvider(turns);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    for await (const {} of loop.processUserInput('做分析')) {
+      // drain
+    }
+
+    // 仅前 6 次真正执行（第 7 次被拒绝，不调工具执行器）
+    expect(toolExecutor).toHaveBeenCalledTimes(6);
+    // 拒绝文案作为 tool 消息回填（LLM 上下文可见，据此停止搜索）
+    const messages = loop.getMessages();
+    expect(messages.some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]'))).toBe(true);
+  });
+
+  it('工具迭代前发射 narrate 过程叙述（不进入最终回答正文）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          content: '让我先搜索相关资料',
+          toolCalls: [
+            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+          ],
+        },
+      ],
+      [{ content: '基于结果直接回答。' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('分析')) {
+      chunks.push(chunk);
+    }
+
+    // narrate chunk 发射且内容为 LLM 叙述文本
+    const narrates = chunks.filter((c) => c.type === 'narrate');
+    expect(narrates).toHaveLength(1);
+    if (narrates[0]?.type === 'narrate') {
+      expect(narrates[0].content).toContain('让我先搜索相关资料');
+    }
+    // 叙述不进最终回答（text chunks 不包含叙述文本）
+    const texts = chunks
+      .filter((c) => c.type === 'text')
+      .map((c) => (c as { content: string }).content)
+      .join('');
+    expect(texts).not.toContain('让我先搜索相关资料');
   });
 });
 

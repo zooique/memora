@@ -20,6 +20,7 @@ import type {
   GovernanceStatsDto,
   MemoryItemDto,
   MemoryStatsDto,
+  SearchEngineSetting,
   SkillDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
@@ -143,9 +144,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void this.loadConfig();
       void this.loadMemory();
       void this.loadSkills();
-      // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径（G8）
+      // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径（G8）+ 网页搜索引擎（方案 A）
       this.loadSecurityStatus();
       this.loadAllowedPathsStatus();
+      this.loadSearchEngineStatus();
       return;
     }
 
@@ -346,6 +348,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
     if (msg.type === 'allowed_paths_set') {
       await this.setAllowedPaths(msg.paths);
+      return;
+    }
+    // 网页搜索引擎（方案 A）：持久化设置 + 回显选中下拉
+    if (msg.type === 'search_engine_set') {
+      await this.setSearchEngine(msg.engine);
       return;
     }
   }
@@ -1075,6 +1082,34 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'allowed_paths_status', projectPath, paths });
   }
 
+  /**
+   * 设置内部网页搜索引擎（search_engine_set 消息处理，方案 A 2026-09-02）
+   *
+   * 持久化到 workspace 设置（memora.searchEngine）。装配期一次性注入，
+   * 修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
+   */
+  private async setSearchEngine(engine: SearchEngineSetting): Promise<void> {
+    try {
+      await vscode.workspace
+        .getConfiguration('memora')
+        .update('searchEngine', engine, vscode.ConfigurationTarget.Workspace);
+      this.post({ type: 'search_engine_status', engine });
+      this.post({ type: 'notice', level: 'info', message: `已切换网页搜索引擎：${engine}（重载窗口后生效）` });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `设置搜索引擎失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  /** 加载并推送当前搜索引擎选择（settings 视图 ready 时调用） */
+  private loadSearchEngineStatus(): void {
+    const engine = vscode.workspace.getConfiguration('memora').get<SearchEngineSetting>('searchEngine', 'auto');
+    this.post({ type: 'search_engine_status', engine });
+  }
+
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(msg);
@@ -1370,6 +1405,18 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           <input id="allowedPathsInput" type="text" class="allowed-paths-input" placeholder="输入目录绝对路径，如 D:/我的笔记" aria-label="新增允许路径" />
           <button id="allowedPathsAdd" class="btn btn-secondary" type="button">添加</button>
         </div>
+      </div>
+      <div class="security-item">
+        <div class="security-item-header">
+          <label class="security-label" for="searchEngineSelect">网页搜索引擎</label>
+        </div>
+        <p class="security-desc">「联网搜索」工具使用的内部搜索后端。自动 = Bing 优先降级 DuckDuckGo；中文场景推荐切「百度/搜狗」提升命中质量。修改后需重载窗口生效。</p>
+        <select id="searchEngineSelect" class="security-select" aria-label="网页搜索引擎">
+          <option value="auto">自动（Bing → DuckDuckGo）</option>
+          <option value="bing">必应（Bing）</option>
+          <option value="baidu">百度（中文推荐）</option>
+          <option value="sogou">搜狗</option>
+        </select>
       </div>
     </div>
   </div>

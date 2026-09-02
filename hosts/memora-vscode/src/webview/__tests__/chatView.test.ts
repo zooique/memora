@@ -1907,4 +1907,20 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const oldBody = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
+
+  it('narrate 过程事件渲染为「过程叙述」小节，每段叙述一个独立折叠行（P2）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '让我先查看项目结构和所有文档' } } });
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 3, ts: '', payload: { content: '现在逐一读取它们的内容' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    // 「过程叙述」小节存在，每段各行折叠（details），内容不堆在同一行
+    expect(rb.textContent).toContain('过程叙述');
+    const rows = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
+    expect(rows).toHaveLength(2);
+    expect(rows[0].textContent).toContain('让我先查看项目结构和所有文档');
+    expect(rows[1].textContent).toContain('现在逐一读取它们的内容');
+  });
 });

@@ -60,6 +60,12 @@ export interface EmbeddingInfoDto {
 }
 
 /** Webview → extension 消息 */
+/**
+ * 内部网页搜索引擎设置值（方案 A 2026-09-02，与内核 SearchEngineName + auto 对齐）
+ * auto = 默认降级链（Bing→DuckDuckGo）。
+ */
+export type SearchEngineSetting = 'auto' | 'bing' | 'baidu' | 'sogou';
+
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
@@ -333,7 +339,14 @@ export type WebviewToExtensionMessage =
    * + 热更新 agent.security.setAllowedPaths()。无需重启 Agent。
    * paths = 完整用户额外数组（不含 projectPath 基准根），host 为真理源。
    */
-  | { type: 'allowed_paths_set'; paths: string[] };
+  | { type: 'allowed_paths_set'; paths: string[] }
+  /**
+   * 设置内部网页搜索引擎（search_engine_set 消息处理，方案 A 2026-09-02）
+   *
+   * 由设置面板「网页搜索引擎」下拉触发：host 持久化到 workspace 设置（memora.searchEngine）。
+   * 装配期一次性注入，修改需重载窗口（或重建会话）后生效。
+   */
+  | { type: 'search_engine_set'; engine: SearchEngineSetting };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -836,7 +849,13 @@ export type ExtensionToWebviewMessage =
    * 由 host 在 settings 视图 ready / 增删后推送，webview 据此渲染列表。
    * projectPath 用于渲染只读基准行；paths 为用户额外目录数组（不含基准根）。
    */
-  | { type: 'allowed_paths_status'; projectPath: string; paths: string[] };
+  | { type: 'allowed_paths_status'; projectPath: string; paths: string[] }
+  /**
+   * 网页搜索引擎状态推送（设置面板加载时推送当前选择）
+   *
+   * 由 host 在 settings 视图 ready / 用户修改后推送，webview 据此渲染下拉选中项。
+   */
+  | { type: 'search_engine_status'; engine: SearchEngineSetting };
 
 /** 角色策略指示器（从内核 BehaviorStrategy 提取的关键策略摘要，供 UI 渲染图标/徽章） */
 export interface RoleStrategyIndicatorDto {
@@ -984,6 +1003,7 @@ export const MESSAGE_TYPES = {
   WRITE_CONFIRM_ANSWER: 'write_confirm_answer',
   SECURITY_STATUS: 'security_status',
   ALLOWED_PATHS_STATUS: 'allowed_paths_status',
+  SEARCH_ENGINE_STATUS: 'search_engine_status',
   // 观察性数据
   TRACE_UPDATE: 'trace_update',
   METRICS_UPDATE: 'metrics_update',
@@ -1000,6 +1020,7 @@ export const MESSAGE_TYPES = {
   GET_CONFIG: 'get_config',
   SET_SECURITY_TOGGLE: 'security_toggle',
   SET_ALLOWED_PATHS: 'allowed_paths_set',
+  SET_SEARCH_ENGINE: 'search_engine_set',
   // 会话管理
   CREATE_SESSION: 'create_session',
   SWITCH_SESSION: 'switch_session',

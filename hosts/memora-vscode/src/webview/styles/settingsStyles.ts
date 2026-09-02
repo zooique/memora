@@ -253,6 +253,14 @@ export const settingsStyles = `
     border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
     background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
   }
+  /* 网页搜索引擎下拉（方案 A 2026-09-02）：与路径输入同视觉语言 */
+  .security-select {
+    margin-top: var(--sp-2, 6px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
+    background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
+    max-width: 280px;
+  }
+  .security-select option { background: var(--surface-panel, #1e1e1e); }
 
   /* Toggle Switch（写入二次确认开关） */
   .toggle-switch { position: relative; display: inline-block; width: 40px; height: 22px; }

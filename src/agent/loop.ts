@@ -120,6 +120,12 @@ interface LlmCallResult {
   fullContent: string;
   toolCalls: Message['toolCalls'];
   aborted: boolean;
+  /**
+   * P2 文本通道剥离缓冲：本轮「工具调用轮」的叙述文本（收到 toolCalls 信号后
+   * 后续/同条的 content 累积于此）。结果路由据此发射 narrate 事件，不进回答正文；
+   * 纯文本轮的正文始终按流式实时 yield（stage 携带），不受本缓冲影响。
+   */
+  pendingNarrate: string;
 }
 
 /** AgentLoop 运行时指标纯状态容器 */
@@ -196,6 +202,8 @@ export class AgentLoop {
   private successfulWebSearchCount = 0;
   /** TS-7 搜索收敛护栏：本轮是否已注入收敛提示（幂等，防迭代累积刷屏） */
   private searchConvergenceHintInjected = false;
+  /** TS-7 搜索硬上限：本闭环内 web_search 调用次数（含被拒绝的，达到上限后后续搜索直接拒绝） */
+  private searchCallCount = 0;
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
@@ -685,6 +693,7 @@ export class AgentLoop {
     // TS-7 搜索收敛护栏：本闭环内计数与注入标记随轮重置（下一闭环重新累计）
     this.successfulWebSearchCount = 0;
     this.searchConvergenceHintInjected = false;
+    this.searchCallCount = 0;
   }
 
   /**
@@ -912,6 +921,12 @@ export class AgentLoop {
 
     // ④ 结果路由：工具分支 / 纯文本结束分支
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
+      // P2 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
+      // 供宿主渲染「过程叙述」折叠行——正文已在流式阶段剥离（未见工具轮文本）。
+      const narration = llmResult.pendingNarrate.trim();
+      if (narration) {
+        yield { type: 'narrate', content: narration, roundId: this.currentRoundId };
+      }
       return yield* this.handleToolCalls(llmResult, effectiveSignal);
     }
     return yield* this.handleTextResponse(llmResult);
@@ -1241,6 +1256,10 @@ export class AgentLoop {
     let streamStarted = false;
     let lastError: Error | null = null;
     let aborted = false;
+    // P2 文本通道剥离：是否已进入「工具调用轮」（收到 toolCalls 信号后后续 text 均属叙述）
+    let isToolCallTurn = false;
+    // P2 叙述累积：工具轮 text（同条 content + 信号后的后续 content），route 时作为 narrate 发射
+    let pendingNarrate = '';
 
     // 将 AbortSignal 与超时传入 provider，确保 fetch 与 SSE 流读取能被及时中断（用户取消/超时）
     const effectiveOpts: ChatOptions = {
@@ -1300,6 +1319,8 @@ export class AgentLoop {
         // 重试后重置流式状态，避免沿用上次的累积输出
         fullContent = '';
         toolCalls = undefined;
+        pendingNarrate = '';
+        isToolCallTurn = false;
         if (signal?.aborted) {
           aborted = true;
           break;
@@ -1326,11 +1347,17 @@ export class AgentLoop {
           }
           if (chunk.content) {
             fullContent += chunk.content;
-            // 携带文本阶段标识（'answer'/'self_review'），宿主据此决定渲染进主回答还是自审查分段
-            yield { type: 'text', content: chunk.content, stage };
+            // P2 文本通道剥离：工具轮（已见 toolCalls 信号或同条携带）的文本归叙述缓冲，
+            // 不进回答正文；纯文本轮保持流式实时 yield（stage 供宿主自审查分段）。
+            if (isToolCallTurn || chunk.toolCalls?.length) {
+              pendingNarrate += chunk.content;
+            } else {
+              yield { type: 'text', content: chunk.content, stage };
+            }
           }
           if (chunk.toolCalls) {
             toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
+            isToolCallTurn = true;
           }
         }
         // 成功时累计输出 token
@@ -1360,7 +1387,7 @@ export class AgentLoop {
           if (this.strategy.errorHandling === 'degrade') {
             logger.warn({ err: e }, 'LLM 流式中途失败，降级为已生成的文本内容');
             llmSpan.end();
-            return { fullContent, toolCalls: undefined, aborted: false };
+            return { fullContent, pendingNarrate, toolCalls: undefined, aborted: false };
           }
           llmSpan.recordException(e);
           llmSpan.end();
@@ -1372,7 +1399,7 @@ export class AgentLoop {
             const degradedMsg = '抱歉，AI 服务暂时不可用，请稍后重试。';
             logger.warn({ err: e }, 'LLM 重试耗尽，降级回复');
             llmSpan.end();
-            return { fullContent: degradedMsg, toolCalls: undefined, aborted: false };
+            return { fullContent: degradedMsg, pendingNarrate, toolCalls: undefined, aborted: false };
           }
           llmSpan.recordException(e);
           llmSpan.end();
@@ -1384,11 +1411,11 @@ export class AgentLoop {
 
     if (aborted) {
       llmSpan.end();
-      return { fullContent, toolCalls, aborted: true };
+      return { fullContent, pendingNarrate, toolCalls, aborted: true };
     }
 
     llmSpan.end();
-    return { fullContent, toolCalls, aborted: false };
+    return { fullContent, pendingNarrate, toolCalls, aborted: false };
   }
 
   /**
@@ -1417,12 +1444,25 @@ export class AgentLoop {
     const toolPromises: Promise<string>[] = [];
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
+      const isSearch = tc.function.name === 'web_search';
+      if (isSearch) this.searchCallCount++;
       yield {
         type: 'tool_start',
         toolCallId: tc.id,
         name: tc.function.name,
         args: tc.function.arguments,
       };
+      // 搜索硬上限（TS-7 升级）：单闭环 web_search 超过上限后确定性拒绝——不执行、回填拒绝文案，
+      // 不依赖 LLM 听从软收敛提示。LLM 看到的是一条「被拒绝」的 tool 消息，据此停止搜索直接作答。
+      if (isSearch && this.searchCallCount > LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS) {
+        toolPromises.push(
+          Promise.resolve(
+            `[SEARCH_LIMIT_REACHED] 已执行 ${LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS} 次联网搜索，信息应已足够；` +
+              `请停止调用 web_search，直接基于现有搜索结果作答。`,
+          ),
+        );
+        continue;
+      }
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
       toolPromises.push(
         tc.function.name === COMPRESS_CONTEXT_TOOL.name

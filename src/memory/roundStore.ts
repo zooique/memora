@@ -182,6 +182,7 @@ export type ProcessEvent =
     }
   | { type: 'self_review'; seq: number; ts: string; payload: { round: number } }
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
+  | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
   | { type: 'aborted'; seq: number; ts: string; payload: { reason: string } }
   | { type: 'metrics'; seq: number; ts: string; payload: ProcessMetricsPayload };
 

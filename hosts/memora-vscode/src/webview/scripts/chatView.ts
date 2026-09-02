@@ -616,7 +616,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败工具默认展开（错误应直接可见）。
    * 唯一宿主 = round-block（任务过程折叠区）工具调用小节。
    */
-  function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
+  /** 过程叙述行（P2，2026-09-02）：LLM 一段行动叙述 = 一个可折叠 details——
+   * summary 显示首行摘要（截断），展开看全文；每个叙述段独立成行，不再堆在一个折叠里 */
+function appendNarrateRow(listEl: HTMLElement, ev: Extract<ProcessEvent, { type: 'narrate' }>): void {
+  const row = document.createElement('details');
+  row.className = 'round-block__narrate';
+  // seq 锚点：进行中增量追加去重（renderRoundBlock 每次事件到达全量扫描）
+  row.dataset.seq = String(ev.seq);
+  const summary = document.createElement('summary');
+  const text = ev.payload.content.trim();
+  summary.textContent = text.length > 80 ? `${text.slice(0, 80)}…` : text;
+  const body = document.createElement('div');
+  body.className = 'round-block__narrate-body';
+  body.textContent = text;
+  row.append(summary, body);
+  listEl.appendChild(row);
+}
+
+function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
@@ -755,6 +772,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
           }
         }
       }
+      // 过程叙述增量追加（P2）：一段叙述 = 一行折叠（seq 锚点去重，防每次事件到达重复渲染）
+      const narrates = events.filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate');
+      if (narrates.length > 0) {
+        const narrateSection = getOrCreateSection(details, '过程叙述');
+        const narrateList = narrateSection.querySelector('.round-block__section-list') as HTMLElement;
+        for (const e of narrates) {
+          if (!narrateList.querySelector(`.round-block__narrate[data-seq="${e.seq}"]`)) {
+            appendNarrateRow(narrateList, e);
+          }
+        }
+      }
       return;
     }
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
@@ -768,6 +796,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       for (const e of events) {
         if (e.type === 'tool_start') renderToolRow(listEl, e, events);
       }
+    }
+    // § 过程叙述（P2：LLM 工具迭代前的行动叙述，一段一行折叠）
+    const narrates = events.filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate');
+    if (narrates.length > 0) {
+      const { listEl } = sectionOf(details, '过程叙述');
+      narrates.forEach((e) => appendNarrateRow(listEl, e));
     }
     // § 过程轨迹（thinking 阶段时间线）
     const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');

@@ -2112,6 +2112,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else if (chunk.type === 'thinking') {
           // 思考阶段 → 过程事件（webview 渲染 § 过程轨迹）
           emitEvent('thinking', { phase: chunk.phase });
+        } else if (chunk.type === 'narrate') {
+          // P2 过程叙述 → 过程事件（webview 渲染 § 过程叙述 折叠行，不进正文流）
+          emitEvent('narrate', { content: chunk.content });
         } else if (chunk.type === 'error') {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）
           this.post({ type: 'error', message: chunk.message });

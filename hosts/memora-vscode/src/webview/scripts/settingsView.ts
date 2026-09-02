@@ -372,7 +372,16 @@ function createSecurityView({
     });
   }
 
-  // 监听 host 的 security_status / allowed_paths_status 消息
+  // ─── 网页搜索引擎下拉（方案 A 2026-09-02）───
+  const engineSelect = root.querySelector<HTMLSelectElement>('#searchEngineSelect');
+  engineSelect?.addEventListener('change', () => {
+    const engine = engineSelect.value;
+    if (engine === 'auto' || engine === 'bing' || engine === 'baidu' || engine === 'sogou') {
+      vscode.postMessage({ type: 'search_engine_set', engine });
+    }
+  });
+
+  // 监听 host 的 security_status / allowed_paths_status / search_engine_status 消息
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'security_status' && toggle) {
@@ -386,6 +395,9 @@ function createSecurityView({
       currentProjectPath = msg.projectPath;
       currentPaths = msg.paths ?? [];
       renderAllowedPaths();
+    }
+    if (msg.type === 'search_engine_status' && engineSelect) {
+      engineSelect.value = msg.engine;
     }
   });
 }

@@ -1051,6 +1051,21 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) 0; line-height: 1.6;
     word-break: break-all;
   }
+  /* 过程叙述行（P2，2026-09-02）：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开） */
+  .round-block__narrate { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
+  .round-block__narrate summary {
+    cursor: pointer; font-size: var(--font-xs, 11px);
+    color: var(--text-primary, #e0e0e0);
+    word-break: break-all; white-space: pre-wrap;
+  }
+  .round-block__narrate summary::marker { color: var(--text-secondary, #9aa0a6); }
+  .round-block__narrate-body {
+    margin-top: var(--sp-1, 2px); padding: var(--sp-2, 6px);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    font-size: var(--font-xs, 11px); line-height: 1.7;
+    color: var(--text-secondary, #9aa0a6);
+    white-space: pre-wrap; word-break: break-all;
+  }
   .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);

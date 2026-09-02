@@ -58,6 +58,13 @@ export type AgentChunk = (
     }
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }
+  /**
+   * 过程叙述（2026-09-02）：LLM 在工具迭代前产出的行动叙述文本
+   * （如「让我先查看所有文档」「现在逐一读取它们的内容」）。
+   * 与 text（回答正文）语义分离：narrate 只供宿主渲染「过程叙述」折叠行，
+   * 不进入最终回答正文（consumeExecutionStream 不将其拼入 content）。
+   */
+  | { type: 'narrate'; content: string }
   | { type: 'aborted'; reason: string }
   | { type: 'error'; message: string }
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }

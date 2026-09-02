@@ -65,6 +65,12 @@ const HTML = `
         <span>写入二次确认</span>
       </label>
       <p id="securityStatus" class="security-status" hidden></p>
+      <select id="searchEngineSelect">
+        <option value="auto">自动</option>
+        <option value="bing">必应</option>
+        <option value="baidu">百度</option>
+        <option value="sogou">搜狗</option>
+      </select>
     </div>
   </div>
 `;
@@ -183,5 +189,20 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     );
     expect(document.querySelector('#memory-root .mem-card')).not.toBeNull();
     expect(document.querySelector('#memory-root .mem-card-name')?.textContent).toContain('设计决策');
+  });
+
+  it('网页搜索引擎下拉（方案 A）：变更发 search_engine_set，host 回推 search_engine_status 回显', () => {
+    const { postMessage } = mountSettingsView();
+    // 初始为 auto（无 host 推送时不强制）
+    const select = document.getElementById('searchEngineSelect') as HTMLSelectElement;
+    // 切换 → 通知 host
+    select.value = 'baidu';
+    select.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'search_engine_set', engine: 'baidu' });
+    // host 回推当前选择 → 下拉回显
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'search_engine_status', engine: 'sogou' } }),
+    );
+    expect(select.value).toBe('sogou');
   });
 });
