@@ -4,6 +4,7 @@
  */
 import { getLogger } from '@/utils/loggerHolder.js';
 import { toError } from '@/utils/toError.js';
+import type { AskQuestion } from '@/agent/types.js';
 
 /** Agent 事件名常量（运行时真理源，与 AgentEventMap 键集一致） */
 export const AGENT_EVENTS = {
@@ -84,7 +85,7 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
     remainingTokens: number;
     hint: string;
   };
-  questionPending: { slot: string; question: string }[];
+  questionPending: AskQuestion[];
   goalDriftDetected: {
     sessionId: string;
     mainGoal: string;

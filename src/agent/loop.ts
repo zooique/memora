@@ -20,6 +20,7 @@ import type {
   SessionEvent,
   PreExecutionResult,
   TextChunkStage,
+  AskQuestion,
 } from '@/agent/types.js';
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import type { ContextBudget, ContextOccupancy } from '@/agent/budget.js';
@@ -94,7 +95,7 @@ export interface AgentLoopOptions {
    * （返回 previousResult 幂等去重）/ 拒绝（阻止执行）；未注入时正常执行 */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /** 主动提问回调（回答中检测到结构化 `[ASK]` 时调用，loop 只回调不处理 UI） */
-  onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
+  onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 已存轮次摘要加载器。截断生成摘要前优先取持久化 round-summary（零成本保真），仅无已存时才现调 LLM */
   roundSummaryLoader?: () => string;
   /** 截断时最少保留的最近原始对话轮数（默认 0），宿主可据 provider prompt caching 能力放宽 */
@@ -200,7 +201,7 @@ export class AgentLoop {
   /** Loop 编排组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
   private externalTaskHeadRoundId = '';
   /** 主动提问回调（检测到 `[ASK]` 时调用，Agent 注入，loop 只回调不处理 UI） */
-  onPendingQuestion?: (questions: { slot: string; question: string }[]) => void;
+  onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
   private readonly toolRunner: ToolRunner;
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
@@ -1146,14 +1147,35 @@ export class AgentLoop {
     return 'done';
   }
 
-  /** 提取 LLM 输出的结构化主动提问（行首 `[ASK]`，可多条；不含则返回空数组走正常对话流） */
-  private extractAskQuestions(fullContent: string): { slot: string; question: string }[] {
-    const questions: { slot: string; question: string }[] = [];
+  /**
+   * 提取 LLM 输出的结构化主动提问（行首 `[ASK]`，可多条；不含则返回空数组走正常对话流）
+   *
+   * 候选选项约定：行尾以 `{A|B|C}`（全半角括号、`|`/`｜` 分隔均可）声明，
+   * 宿主可渲染为可点击按钮；仅括号内含分隔符才解析为选项，
+   * 避免将普通花括号字面量（如示例代码）误判吞掉。
+   */
+  private extractAskQuestions(fullContent: string): AskQuestion[] {
+    const questions: AskQuestion[] = [];
     for (const line of fullContent.split(/\r?\n/)) {
       const trimmed = line.trim();
       const match = /^\[ASK\][\s:：]*(.+)$/i.exec(trimmed);
       if (match && match[1]?.trim()) {
-        questions.push({ slot: 'ask', question: match[1].trim() });
+        let questionText = match[1].trim();
+        let options: string[] | undefined;
+        // 行内选项解析：捕获行尾花括号内容，仅当内含分隔符时按选项拆分
+        const optMatch = /^(.*?)\s*[｛{](.+)[｝}]\s*$/.exec(questionText);
+        if (optMatch && /[|｜]/.test(optMatch[2]!)) {
+          const resolved = optMatch[1]!.trim();
+          if (resolved.length > 0) {
+            // 仅当括号前还有问题文本才拆分为选项，否则整行按普通问题处理
+            questionText = resolved;
+            options = optMatch[2]!
+              .split(/[|｜]/)
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+          }
+        }
+        questions.push({ slot: 'ask', question: questionText, ...(options && options.length > 0 ? { options } : {}) });
       }
     }
     return questions;

@@ -183,6 +183,8 @@ describe('Composer · compose() 四元组补全', () => {
     expect(result.needClarify!.length).toBe(1);
     expect(result.needClarify![0]!.slot).toBe('task');
     expect(result.needClarify![0]!.question).toContain('任务目标');
+    // task 槽 P4 附带方向性候选选项（SSOT：与 clarifyOptionsFor 同源）
+    expect(result.needClarify![0]!.options).toEqual(['延续当前会话目标', '开启新任务']);
   });
 
   it('P4: 多个槽位无法补全时生成多个澄清问题（非 chat 事件）', () => {
@@ -375,6 +377,8 @@ describe('Composer · 计划停滞感知', () => {
     expect(result.needClarify![0]!.question).toContain('正在执行步骤 A');
     expect(result.needClarify![0]!.question).toContain('待处理');
     expect(result.needClarify![0]!.question).toContain('待处理步骤 B');
+    // 停滞场景的 P4 附带下一步方向候选
+    expect(result.needClarify![0]!.options).toEqual(['开启新任务', '沿用当前目标继续']);
   });
 
   it('停滞 + 无 activeStep/pendingStep 应生成简洁澄清问题（非 chat）', () => {

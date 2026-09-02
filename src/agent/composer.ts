@@ -41,6 +41,36 @@ const SYSTEM_DEFAULTS = {
 } as const;
 
 /**
+ * 槽位澄清提示表（SSOT：澄清问题与候选选项同源定义）
+ *
+ * clarifyQuestionFor / clarifyOptionsFor 均取自此处，保证问题与选项一一对应、
+ * 不出现「问题改了一处、选项改另一处」的偏离。
+ * 其中 resource 槽实际不触发 P4（仅 P1～P3），保留定义仅为完整性。
+ */
+const CLARIFY_PROMPTS: Record<keyof FourTuple, { question: string; options: string[] }> = {
+  // 角色槽：预设常见 Agent 角色，与问题示例保持一致
+  role: {
+    question: '请指定 Agent 角色（如：开发者、审查者、旅行规划师）',
+    options: ['开发者', '审查者', '旅行规划师'],
+  },
+  // 任务槽：P4 仅在非 chat 事件（command/correction/clarify）触发，预设方向性选项
+  task: {
+    question: '请描述当前任务目标',
+    options: ['延续当前会话目标', '开启新任务'],
+  },
+  // 标准槽：预设常见完成标准
+  standard: {
+    question: '请指定完成标准（如：代码必须通过所有测试）',
+    options: ['代码通过全部测试', '功能可演示', '测试通过且无回归'],
+  },
+  // 资源槽：自由输入为主，无固定候选
+  resource: {
+    question: '请提供相关资源（文档路径、参考记忆等）',
+    options: [],
+  },
+};
+
+/**
  * 四级补全器
  *
  * 将 SessionEvent 的增量四元组与 SessionCheckpoint 的历史状态融合，
@@ -165,6 +195,7 @@ export class Composer {
         needClarify.push({
           slot: slotName,
           question: this.clarifyQuestionFor(slotName),
+          options: this.clarifyOptionsFor(slotName),
         });
         return { value: defaultVal, source: COMPLETION_LEVELS.P4_CLARIFY };
       }
@@ -186,6 +217,7 @@ export class Composer {
     needClarify.push({
       slot: slotName,
       question: this.clarifyQuestionFor(slotName),
+      options: this.clarifyOptionsFor(slotName),
     });
     // 返回空值占位，调用方检查 needClarify 后暂停
     return { value: defaultVal, source: COMPLETION_LEVELS.P4_CLARIFY };
@@ -312,6 +344,8 @@ export class Composer {
     needClarify.push({
       slot: 'task',
       question,
+      // 计划停滞时的方向性候选：用户点选后作为新任务输入流转
+      options: ['开启新任务', '沿用当前目标继续'],
     });
 
     // 返回 currentGoal 作为占位值，调用方检查 needClarify 后暂停
@@ -320,14 +354,21 @@ export class Composer {
 
   /**
    * 生成槽位澄清问题
+   *
+   * 与 clarifyOptionsFor 同取 CLARIFY_PROMPTS（SSOT），
+   * 保证问题文本与候选选项一一对应、不各写一处。
    */
   private clarifyQuestionFor(slot: keyof FourTuple): string {
-    const questions: Record<keyof FourTuple, string> = {
-      role: '请指定 Agent 角色（如：开发者、审查者、旅行规划师）',
-      task: '请描述当前任务目标',
-      standard: '请指定完成标准（如：代码必须通过所有测试）',
-      resource: '请提供相关资源（文档路径、参考记忆等）',
-    };
-    return questions[slot];
+    return CLARIFY_PROMPTS[slot].question;
+  }
+
+  /**
+   * 生成槽位候选选项
+   *
+   * P4 暂停询问时随问题一并产出可点击选项，供宿主渲染单选/多选 UI；
+   * 无固定候选的槽位（resource）返回空数组，宿主退化为纯文本输入。
+   */
+  private clarifyOptionsFor(slot: keyof FourTuple): string[] {
+    return CLARIFY_PROMPTS[slot].options;
   }
 }

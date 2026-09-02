@@ -1971,8 +1971,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     controller: AbortController,
   ): Promise<void> {
     if (!this._agent) return;
-    // 监听主动提问事件 → 渲染提问框
-    const onPendingQuestion = (questions: { slot: string; question: string }[]) => {
+    // 监听主动提问事件 → 渲染提问框（含 LLM 声明的候选选项，webview 渲染为可点击按钮）
+    const onPendingQuestion = (questions: { slot: string; question: string; options?: string[] }[]) => {
       this.post({ type: 'need_clarify', questions });
     };
     this._agent.on('questionPending', onPendingQuestion);

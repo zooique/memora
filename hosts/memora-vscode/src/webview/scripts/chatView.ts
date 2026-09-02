@@ -1950,8 +1950,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
           b.className = 'opt-btn';
           b.textContent = opt;
           b.addEventListener('click', () => {
+            // 点击即答：选项直接作为澄清答案提交续跑（无需二次回车）
             clarifyInput.value = opt;
-            clarifyInput.focus();
+            sendClarifyAnswer();
           });
           clarifyOptions.appendChild(b);
         });

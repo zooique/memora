@@ -66,7 +66,7 @@ export type AgentChunk = (
    * 主动提问：LLM 结构化输出 `[ASK] 问题` 时 yield，Agent 暂停等用户在提问框回答；
    * 用户回答走 resumeExecution 续跑（非 Trigger）。与 needClarify（P4 补全）同构但触发源不同。
    */
-  | { type: 'question_pending'; questions: { slot: string; question: string }[] }
+  | { type: 'question_pending'; questions: AskQuestion[] }
   /**
    * 回答后阶段基于 endingHandoff 配置给出衔接决策，宿主据此决定是否自动触发下一轮
    */
@@ -422,6 +422,21 @@ export interface ClarifyQuestion {
    * 高风险须用户确认并计入计数，连续 2 次后强制降级 P3。
    */
   lowRisk?: boolean;
+}
+
+/**
+ * 结构化主动提问（LLM 输出 `[ASK] 问题 {A|B}` 行时解析）
+ *
+ * 与 ClarifyQuestion 触发源不同（[ASK] → loop 提问框；P4 → composer 补全链），
+ * 但两者共享 slot/question/options 载荷形状，宿主可统一渲染选择型澄清。
+ */
+export interface AskQuestion {
+  /** 溯源槽位（当前恒为 'ask'，为未来扩展保留） */
+  slot: string;
+  /** 问题文本 */
+  question: string;
+  /** 候选选项（LLM 以行内 `{A|B|C}` 声明，可点击选择） */
+  options?: string[];
 }
 
 /** Composer 输出：从 composer.ts 迁移至此，与四级补全类型同处一处 */

@@ -1774,3 +1774,60 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     expect(tip).toContain('角色包/系统设定：15K（占窗口 23.4%）');
   });
 });
+
+describe('chatView 澄清候选选项（P4/[ASK] options，2026-09-02）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('need_clarify 携带 options → 澄清条渲染可点击选项按钮', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'need_clarify',
+      questions: [
+        { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
+      ],
+    });
+    const bar = document.getElementById('clarifyBar') as HTMLElement;
+    expect(bar.classList.contains('visible')).toBe(true);
+    // 每个选项一个按钮，文案与 options 一致
+    const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
+    expect(btns).toHaveLength(2);
+    expect(btns[0].textContent).toBe('延续当前会话目标');
+    expect(btns[1].textContent).toBe('开启新任务');
+    // clarified 之前未发送答案
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'clarify_answer' });
+  });
+
+  it('点击候选选项 → 点击即答：该选项作为澄清答案提交（clarify_answer）并收起澄清条', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'need_clarify',
+      questions: [
+        { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
+      ],
+    });
+    const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
+    (btns[1] as HTMLButtonElement).click();
+    // 点击即答：无需二次回车，直接 postMessage clarify_answer
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '开启新任务' });
+    const bar = document.getElementById('clarifyBar') as HTMLElement;
+    expect(bar.classList.contains('visible')).toBe(false);
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    expect(inputBar.hidden).toBe(false);
+  });
+
+  it('无 options 的 need_clarify 不渲染选项按钮（纯文本输入退化）', () => {
+    mountChatView();
+    dispatch({
+      type: 'need_clarify',
+      questions: [{ slot: 'task', question: '请描述当前任务目标' }],
+    });
+    const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
+    expect(btns).toHaveLength(0);
+    expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(true);
+  });
+});

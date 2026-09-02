@@ -2551,6 +2551,65 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
     // 最后是 done（正常结束）
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   });
+
+  it('解析 [ASK] 行尾 `{A|B|C}` 候选选项：问题与选项分离、半角全角均兼容', async () => {
+    const onPendingQuestion = vi.fn();
+    const loop = new AgentLoop({
+      // 半角括号 + 半角分隔 / 全角括号 + 全角分隔 混合验证
+      provider: mockProvider([
+        { content: '[ASK] 选择故事基调 {温馨|悬疑|热血}\n[ASK] 主角身份是？｛勇者｜法师｝' },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onPendingQuestion,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('写个故事')) {
+      chunks.push(chunk);
+    }
+
+    // 问题文本剔除选项部分，选项按分隔符拆分且去首尾空白
+    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
+    expect(onPendingQuestion).toHaveBeenCalledWith([
+      { slot: 'ask', question: '选择故事基调', options: ['温馨', '悬疑', '热血'] },
+      { slot: 'ask', question: '主角身份是？', options: ['勇者', '法师'] },
+    ]);
+    // chunk 通道同样携带 options
+    const qp = chunks.filter((c) => c.type === 'question_pending');
+    expect(qp).toHaveLength(2);
+    if (qp[0]?.type === 'question_pending') {
+      expect(qp[0].questions[0]!.options).toEqual(['温馨', '悬疑', '热血']);
+    }
+    if (qp[1]?.type === 'question_pending') {
+      expect(qp[1].questions[0]!.options).toEqual(['勇者', '法师']);
+    }
+  });
+
+  it('花括号内无分隔符时按普通问题处理（不误吞普通花括号字面量）', async () => {
+    const onPendingQuestion = vi.fn();
+    const loop = new AgentLoop({
+      // `{...}` 内不含 | → 整行视为问题文本，不解析 options
+      provider: mockProvider([{ content: '[ASK] 参考代码模板 {示例} 可用吗？' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      onPendingQuestion,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('写代码')) {
+      chunks.push(chunk);
+    }
+
+    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
+    expect(onPendingQuestion).toHaveBeenCalledWith([
+      { slot: 'ask', question: '参考代码模板 {示例} 可用吗？' },
+    ]);
+    const qp = chunks.filter((c) => c.type === 'question_pending');
+    if (qp[0]?.type === 'question_pending') {
+      expect(qp[0].questions[0]!.options).toBeUndefined();
+    }
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
