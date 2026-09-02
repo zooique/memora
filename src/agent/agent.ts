@@ -443,7 +443,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
       // 会议机制：按本轮表层装配视角刷新 loop 前缀（roundRole=null 回落 activePack）
       refreshRolePackPrefixForRound: (roundRole) => this.refreshRolePackPrefixForRound(roundRole),
-      consumeExecutionStream: (source) => this.consumeExecutionStream(source),
+      consumeExecutionStream: (source, signal) => this.consumeExecutionStream(source, signal),
       getBackgroundProvider: () => this.#backgroundProvider,
       // 宿主装配级策略覆盖（能力边界）：传给策略解析链，压过角色包声明（单一语义键不变）
       strategyOverride: this.#config.strategyOverride,
@@ -756,6 +756,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private async *consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
+    signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean; iterationLimitReached?: boolean }, unknown> {
     let content = '';
     let aborted = false;
@@ -789,11 +790,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
     } catch (err) {
       if (isAbortError(err)) {
-        // 用户主动取消：非失败——置 aborted 供 act() 走「中断保留已产出文本」分支。
-        // ⚠ 真实 LLM 流式 abort 抛 AbortError（fetch stream 中断），必须返回 aborted:true + failed:false，
-        //   否则 act() 的 failed 短路会跳过中断保存，半截回答不落盘（顺手修复 F-1 分叉点错位同源根因）。
-        yield { type: 'aborted', reason: 'User cancelled the conversation' };
-        return { content, aborted: true, paused, failed: false, iterationLimitReached };
+        // signal 已 abort（宿主/插话合并信号）→ 真用户取消：非失败——置 aborted 供 act() 走
+        // 「中断保留已产出文本」分支，半截回答落盘。
+        if (signal?.aborted) {
+          yield { type: 'aborted', reason: 'User cancelled the conversation' };
+          return { content, aborted: true, paused, failed: false, iterationLimitReached };
+        }
+        // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：
+        // 非用户取消，与普通错误同归 error 分支，避免谎报为用户取消。
+        logger.warn({ err }, 'LLM 请求非用户取消原因中断，判为连接中断');
       }
       yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
       return { content, aborted, paused, failed: true, iterationLimitReached };

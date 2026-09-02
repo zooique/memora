@@ -226,7 +226,10 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     span: { end: vi.fn() },
     applyRolePackToolExposure: vi.fn(),
     refreshRolePackPrefixForRound: vi.fn(),
-    consumeExecutionStream: vi.fn(async function* (source: AsyncGenerator<AgentChunk, void, unknown>) {
+    consumeExecutionStream: vi.fn(async function* (
+      source: AsyncGenerator<AgentChunk, void, unknown>,
+      _signal?: AbortSignal,
+    ) {
       for await (const chunk of source) yield chunk;
       return consumeControl.result;
     }),

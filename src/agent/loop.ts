@@ -1399,10 +1399,19 @@ export class AgentLoop {
         const e = toError(err);
         lastError = e;
 
-        // AbortError = 用户主动取消/超时中断，不重试，直接退出（避免停止后仍发起 LLM 请求）
+        // AbortError 语义分裂（2026-09-02 假中断排雷）：
+        //  - signal（宿主 / 插话控制器合并信号）已被 abort → 真实用户取消/插话，不重试直接退出
+        //  - signal 未被 abort 却捕获 AbortError → provider/网络层内部中断（连接被抽断/代理异常），
+        //    并非用户取消；抛出以示「连接中断」，避免内核谎报为「用户取消了对话」。
         if (isAbortError(err)) {
-          aborted = true;
-          break;
+          if (signal?.aborted) {
+            aborted = true;
+            break;
+          }
+          logger.warn({ err: e }, 'LLM 请求被非用户消原因 AbortError 中断（host signal 未 abort），判为连接中断');
+          llmSpan.recordException(e);
+          llmSpan.end();
+          throw e;
         }
 
         // errorHandling='stop' → 立即抛出，不重试

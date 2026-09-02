@@ -1289,7 +1289,43 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     expect(retries).toHaveLength(0);
   }, 15000);
 
-  it('AbortError 不应重试（用户主动取消）', async () => {
+  // 真用户取消语义（2026-09-02 假中断排雷校准）：信号已被 abort → 判为用户取消 → aborted chunk。
+  // processUserInput 显式传入已 abort 的 AbortSignal，验证 abort 语义只在 signal.aborted 时生效。
+  it('AbortError 且 signal 已 abort → 用户取消，输出 aborted chunk', async () => {
+    const provider = mockRetryProvider([
+      { throw: new DOMException('aborted', 'AbortError') },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 构造已中止的 AbortSignal：模拟宿主「停止」按钮 abort()
+    const ac = new AbortController();
+    ac.abort();
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+      chunks.push(chunk);
+    }
+
+    // signal 已中止 → processUserInput 早期即 abort 退出，provider 不会被调用（不重试更不会发起请求）
+    expect(provider.callCount).toBe(0);
+
+    // 不应有 retry chunk
+    const retries = chunks.filter((c) => c.type === 'retry');
+    expect(retries).toHaveLength(0);
+
+    // 应有 aborted chunk
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(aborted.length).toBeGreaterThan(0);
+  }, 15000);
+
+  // 假中断语义校准（2026-09-02 排雷）：无 abort 信号（signal 未 abort）却收到 AbortError →
+  // provider/网络层内部中断（连接被抽断），非用户取消 → 向上抛错，不输出 aborted chunk。
+  it('AbortError 但 signal 未 abort → 连接中断，抛错而非用户取消', async () => {
     const provider = mockRetryProvider([
       { throw: new DOMException('aborted', 'AbortError') },
     ]);
@@ -1301,20 +1337,16 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     });
 
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试')) {
-      chunks.push(chunk);
-    }
+    // 不传 signal（undefined）：AbortError 应判为连接中断并抛错
+    await expect(async () => {
+      for await (const chunk of loop.processUserInput('测试')) {
+        chunks.push(chunk);
+      }
+    }).rejects.toThrow('aborted');
 
-    // provider 应只被调用 1 次（AbortError 不重试）
-    expect(provider.callCount).toBe(1);
-
-    // 不应有 retry chunk
-    const retries = chunks.filter((c) => c.type === 'retry');
-    expect(retries).toHaveLength(0);
-
-    // 应有 aborted chunk
+    // 不应有 aborted chunk（非用户取消）
     const aborted = chunks.filter((c) => c.type === 'aborted');
-    expect(aborted.length).toBeGreaterThan(0);
+    expect(aborted).toHaveLength(0);
   }, 15000);
 
   it('重试次数耗尽后应向上抛错', async () => {

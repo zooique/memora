@@ -2154,7 +2154,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         durationMs: Date.now() - flowStartMs,
         tokenIn: Math.max(0, metricsNow.llm.totalInputTokens - metricsBefore.in),
         tokenOut: Math.max(0, metricsNow.llm.totalOutputTokens - metricsBefore.out),
-        toolFailureCount: [...eventsByRound.values()].flat().filter((e) => e.type === 'tool_result' && !e.payload.ok).length,
+        // 工具失败计数：与内核口径对齐（策略拦截 blocked 既非成功亦非失败，不计入失败），
+        // 语义为本轮增量。内核对应用计数是累计（this.metrics.toolFailureCount），非本轮 diff，不可直接复用。
+        toolFailureCount: [...eventsByRound.values()]
+          .flat()
+          .filter((e) => e.type === 'tool_result' && !e.payload.ok && !e.payload.blocked).length,
         recallCount: [...eventsByRound.values()].flat().reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });

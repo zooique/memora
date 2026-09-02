@@ -137,7 +137,7 @@ export class SeedOrchestrator {
           signal,
           this.deps.getParts().loop.getCurrentRoundId(),
         );
-    const acted = yield* this.act(produce);
+    const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 
     // 回答后：普通回答摘要
@@ -183,7 +183,7 @@ export class SeedOrchestrator {
 
     // 回答中：消费 loop.processEvent 执行流 + 统一尾处理
     const produce = () => parts.loop.processEvent(event, prepared.recalledMemories, signal);
-    const acted = yield* this.act(produce);
+    const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 
     // 回答后：复杂且收敛 → 汇报闭环 + 汇报单源摘要；否则普通回答摘要
@@ -235,7 +235,7 @@ export class SeedOrchestrator {
     }
     // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
     const produce = () => parts.loop.continueAfterPause(input, signal);
-    const acted = yield* this.act(produce);
+    const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 
     // Loop 编排续跑整链：续完当前闭环后，若仍处于 Loop 编排上下文（withinExternalTask）→ 推进剩余步 + 收尾汇报
@@ -259,12 +259,15 @@ export class SeedOrchestrator {
 
   /** 回答中：消费 produce() 生成的 loop 执行流，统一尾处理。
    * chat/event/resume 三路径共用（驱动不同 loop 入口），中断/追加助手消息尾处理收在此。
+   * @param produce 生成 loop 执行流的闭包
+   * @param signal 中止信号（透传 consumeExecutionStream 区分真取消 vs 连接中断）
    */
   private async *act(
     produce: () => AsyncGenerator<AgentChunk, void, unknown>,
+    signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, StreamConsumeResult, unknown> {
     // 流消费统一收口于门面的 consumeExecutionStream（对话/事件/续跑共用同构实现）
-    const streamResult = yield* this.deps.consumeExecutionStream(produce());
+    const streamResult = yield* this.deps.consumeExecutionStream(produce(), signal);
     if (streamResult.failed) return streamResult;
 
     const assistantContent = streamResult.content;
@@ -428,6 +431,7 @@ export class SeedOrchestrator {
         signal,
         headRoundId,
       ),
+      signal,
     );
     if (planAct.paused) {
       // 规划闭环在迭代边界软暂停：现场保留（含 PLAN_ONLY 约束），续跑完规划后继续整链，不产摘要
@@ -506,6 +510,7 @@ export class SeedOrchestrator {
       // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId
       const stepAct = yield* this.act(() =>
         parts.loop.processUserInput(stepPrompt(next.description), [], signal),
+        signal,
       );
       if (stepAct.failed || stepAct.aborted) {
         // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」），任务链终止

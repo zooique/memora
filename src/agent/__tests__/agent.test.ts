@@ -2157,6 +2157,36 @@ class AbortThrowingProvider extends LlmProvider {
   }
 }
 
+/**
+ * 连接中断 Mock Provider（2026-09-02 假中断排雷测试专用）
+ *
+ * 无任何 abort 触发（宿主 signal 未 abort），却在流式过程中主动抛 AbortError——
+ * 模拟真实网络/代理内部中断（连接被抽断）。
+ * 内核应判为「连接中断」而非「用户取消」：agent 层输出 error chunk + failed，
+ * 不会产出 aborted chunk，history 不写中断标记。
+ */
+class ConnectionInterruptedProvider extends LlmProvider {
+  readonly name = 'connection-interrupted';
+  /** 分块输出多少段文本后再抛 AbortError */
+  private readonly chunks: string[];
+
+  constructor(chunks: string[] = ['第一段']) {
+    super();
+    this.chunks = chunks;
+  }
+
+  async *chat(
+    _messages: Message[],
+    _opts?: ChatOptions,
+  ): AsyncIterable<LlmChunk> {
+    for (const chunk of this.chunks) {
+      yield { content: chunk };
+    }
+    // 无 abort 的外部原因直接抛 AbortError（模拟连接中断）
+    throw new DOMException('The connection was interrupted', 'AbortError');
+  }
+}
+
 describe('Agent · chat() 中断保留文本', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2313,6 +2343,38 @@ describe('Agent · chat() 中断保留文本', () => {
     expect(lastAssistant!.content).toContain('部分内容');
     expect(lastAssistant!.content).toContain('[自定义中断标记]');
     expect(lastAssistant!.content).not.toContain('[已中断]');
+  }, 15000);
+
+  it('连接中断（signal 未 abort 却抛 AbortError）→ 判为错误而非用户取消', async () => {
+    // 2026-09-02 假中断排雷：宿主 signal 未 abort（用户没点停止），provider/网络层抛 AbortError
+    // 模拟真实连接被抽断。agent 层应输出 error chunk + failed，而非 aborted（不谎报用户取消）。
+    const provider = new ConnectionInterruptedProvider(['第一段']);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 构造未中止的 AbortController（用户没有取消）
+    const ctrl = new AbortController();
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('测试', ctrl.signal)) {
+      chunks.push(chunk);
+      // 收集后统一断言（不在循环中断言，保证全流消费）
+    }
+
+    // 不应产出 aborted chunk（非用户取消）
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(aborted).toHaveLength(0);
+
+    // 应产出 error chunk（连接中断）
+    const errors = chunks.filter((c) => c.type === 'error');
+    expect(errors.length).toBeGreaterThan(0);
   }, 15000);
 });
 

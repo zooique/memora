@@ -85,9 +85,12 @@ export interface SeedDeps {
    * 键（strategy/ChatOptions）恒为 activePack，不随视角变。缺省 no-op（纯工厂单测）。
    */
   refreshRolePackPrefixForRound?(roundRole: string | null): void;
-  /** 门面能力：统一流收口协议（消费 loop 执行流 → AgentChunk；物理实现在 Agent） */
+  /** 门面能力：统一流收口协议（消费 loop 执行流 → AgentChunk；物理实现在 Agent）。
+   *  signal 透传：consumeExecutionStream 据此区分「宿主/插话真取消」（signal.aborted）
+   *  与「provider/网络内部中断」（signal 未 abort 却抛 AbortError）——避免连接中断谎报为用户取消 */
   consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
+    signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, StreamConsumeResult, unknown>;
   /**
    * 后台 Provider（难度分级等「回答前视图」轻量判定用；运行时可变，故取函数式）；
