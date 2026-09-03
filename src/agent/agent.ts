@@ -49,7 +49,7 @@ import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
 import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
-import { chatBusyError, configError, isAbortError } from '@/utils/errors.js';
+import { chatBusyError, configError, isAbortError, isTimeoutAbortSignal } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
 import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
@@ -666,7 +666,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // signal 已 abort（宿主/插话合并信号）→ 真用户取消：非失败——置 aborted 供 act() 走
         // 「中断保留已产出文本」分支，半截回答落盘。
         if (signal?.aborted) {
-          yield { type: 'aborted', reason: 'User cancelled the conversation', stopReason: 'user' };
+          // 锁超时中断（signal.reason=TimeoutError）≠ 用户取消：stopReason 区分，宿主映射超时文案
+          yield {
+            type: 'aborted',
+            reason: isTimeoutAbortSignal(signal)
+              ? 'LLM request timed out (no response)'
+              : 'User cancelled the conversation',
+            stopReason: isTimeoutAbortSignal(signal) ? 'timeout' : 'user',
+          };
           return { content, aborted: true, paused, failed: false, iterationLimitReached };
         }
         // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：

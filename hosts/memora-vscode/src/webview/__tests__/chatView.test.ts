@@ -2133,4 +2133,14 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb.textContent).toContain('legacy 原因');
   });
+
+  it('stopReason=timeout（chat 锁超时/LLM 无响应）→ 显示「对话处理超时」，不显示「用户停止」', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'LLM request timed out (no response)', stopReason: 'timeout' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb.textContent).toContain('对话处理超时，请稍后重试');
+    expect(rb.textContent).not.toContain('用户停止');
+  });
 });

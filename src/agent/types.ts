@@ -82,6 +82,7 @@ export type AgentChunk = (
    *
    * stopReason 由内核在产生点按真实触因唯一判定，宿主按语义映射友好文案（与 error.category 同构）：
    * - 'user'：宿主 signal / 插话控制器真 abort（用户主动停止或插话介入）
+   * - 'timeout'：chat 锁超时 / LLM 无响应超时中断（signal.reason 为 TimeoutError，区别于用户取消）
    * - 'interrupted'：预留语义（流式中断；当前无产生点，未来场景分化时启用）
    * - 'connection'：预留语义（连接中断已由 error chunk category:'connection' 捕获，不在此重复）
    * 无 stopReason（旧数据/直接构造）时宿主回退 reason 原文，保持兼容。
@@ -116,7 +117,7 @@ export type AgentChunk = (
 /**
  * 中断语义分类（TS-12a）：'user' = 用户主动停止/插话；'interrupted'/'connection' 为预留语义（当前无产生点）。
  */
-export type AbortStopReason = 'user' | 'interrupted' | 'connection';
+export type AbortStopReason = 'user' | 'timeout' | 'interrupted' | 'connection';
 
 /**
  * 文本块阶段标识：供宿主区分正常交付与自审查应答，做独立分段展示。
@@ -134,6 +135,8 @@ export type TextChunkStage = 'answer' | 'self_review';
 export interface UIMessages {
   /** 对话取消提示（默认 "User cancelled the conversation"） */
   abortedByUser?: string;
+  /** 锁超时/LLM 无响应中断提示（默认 "LLM request timed out (no response)"） */
+  abortedByTimeout?: string;
   /** 达到最大迭代次数提示（默认 "\n\n[Max iterations reached]"） */
   maxIterationsReached?: string;
   /** 流式中断标记（默认 "\n\n[已中断]"）：中断时已生成文本仍写历史，此标记追加到末尾供下轮识别 */

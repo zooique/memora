@@ -52,7 +52,9 @@ export class ChatLockManager {
         { timeoutMs },
         'chat() 锁超时，中断 generator 并释放锁',
       );
-      internalAbort.abort();
+      // reason 语义化：TimeoutError 标识「服务无响应的超时中断」，与用户取消（无 reason /
+      // AbortError）区分——上游据此映射 stopReason:'timeout' 而非谎报成用户取消。
+      internalAbort.abort(new DOMException('chat 锁超时（LLM 长时间无响应）', 'TimeoutError'));
       this._chatBusy = false;
       this.chatLockTimer = null;
       this.chatAbortController = null;

@@ -23,6 +23,7 @@ import type { AgentChunk } from '@/agent/types.js';
 import type { InteractiveInputKind } from '@/memory/roundStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
+import { isTimeoutAbortSignal } from '@/utils/errors.js';
 import { resolveTaskLoopLimit, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import {
   type StreamConsumeResult,
@@ -84,7 +85,14 @@ export class SeedOrchestrator {
     // 回答前：装配上下文 + 召回记忆
     const prepared = yield* this.prepare.run(input, signal);
     if (prepared.aborted) {
-      yield { type: 'aborted', reason: this.abortedReasonByUser(), stopReason: 'user' };
+      // 锁超时中断（signal.reason=TimeoutError）≠ 用户取消：stopReason 区分，宿主映射超时文案
+      yield {
+        type: 'aborted',
+        reason: isTimeoutAbortSignal(signal)
+          ? 'LLM request timed out (no response)'
+          : this.abortedReasonByUser(),
+        stopReason: isTimeoutAbortSignal(signal) ? 'timeout' : 'user',
+      };
       return;
     }
 

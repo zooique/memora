@@ -28,6 +28,7 @@ import { ContextManager } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import {
   isAbortError,
+  isTimeoutAbortSignal,
   isRetryableErrorCode,
   type ToolErrorCodeValue,
 } from '@/utils/errors.js';
@@ -310,6 +311,8 @@ export class AgentLoop {
     this.onPendingQuestion = opts.onPendingQuestion;
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
+      abortedByTimeout:
+        opts.messages?.abortedByTimeout ?? 'LLM request timed out (no response)',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
       // 流式中断标记：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"（SSOT：默认文案下沉 LOOP_CONSTANTS）
       interrupted: opts.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
@@ -880,7 +883,13 @@ export class AgentLoop {
       if (llmResult.fullContent.trim()) {
         this.appendAssistantText(llmResult.fullContent + this.ui.interrupted);
       }
-      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
+      yield {
+        type: 'aborted',
+        reason: isTimeoutAbortSignal(effectiveSignal)
+          ? this.ui.abortedByTimeout
+          : this.ui.abortedByUser,
+        stopReason: isTimeoutAbortSignal(effectiveSignal) ? 'timeout' : 'user',
+      };
       return 'aborted';
     }
 
@@ -1032,7 +1041,11 @@ export class AgentLoop {
       signal,
     );
     if (execResult.aborted) {
-      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
+      yield {
+        type: 'aborted',
+        reason: isTimeoutAbortSignal(signal) ? this.ui.abortedByTimeout : this.ui.abortedByUser,
+        stopReason: isTimeoutAbortSignal(signal) ? 'timeout' : 'user',
+      };
       return 'aborted';
     }
 
@@ -1359,23 +1372,6 @@ export class AgentLoop {
         //    并非用户取消；抛出以示「连接中断」，避免内核谎报为「用户取消了对话」。
         if (isAbortError(err)) {
           if (signal?.aborted) {
-            // 诊断插桩（2026-09-03 老问题复现定位，定位后移除）：静态下用户零操作不应使
-            // effectiveSignal 处于 aborted——打印来源链（reason + interject 残留态 + 错误名），
-            // 区分「宿主真 abort」vs「信号被意外污染/超时误判」。
-            logger.warn(
-              {
-                signalReason: signal.reason
-                  ? toError(signal.reason).name ?? String(signal.reason)
-                  : 'null',
-                interjectAborted: this.interjectController.signal.aborted,
-                interjectReason: this.interjectController.signal.reason
-                  ? toError(this.interjectController.signal.reason).name ?? String(this.interjectController.signal.reason)
-                  : 'null',
-                errName: e.name,
-                errMsg: e.message,
-              },
-              '[诊断] effectiveSignal 已 abort → 判用户取消',
-            );
             aborted = true;
             break;
           }

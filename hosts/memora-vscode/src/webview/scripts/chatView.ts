@@ -684,6 +684,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   function stopReasonLabel(payload: { reason: string; stopReason?: string }): string {
     const map: Record<string, string> = {
       user: '用户停止了对话',
+      timeout: '对话处理超时，请稍后重试',
       interrupted: '对话已中断',
     };
     return (payload.stopReason && map[payload.stopReason]) || payload.reason;

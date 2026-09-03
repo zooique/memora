@@ -153,3 +153,13 @@ export function securityError(
 export function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
 }
+
+/** 判断 AbortSignal 是否为「超时中断」（chat 锁超时 / LLM 无响应超时统一以 TimeoutError reason 标识）。
+ *  与用户取消（abort() 无 reason / AbortError reason）区分——锁超时中断不能谎报成用户取消。 */
+export function isTimeoutAbortSignal(signal: AbortSignal | undefined): boolean {
+  return (
+    signal?.aborted === true &&
+    signal.reason instanceof DOMException &&
+    signal.reason.name === 'TimeoutError'
+  );
+}
