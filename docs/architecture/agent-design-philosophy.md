@@ -855,7 +855,7 @@ turn（问答闭环）与多 turn 任务编排使用**同一套上下文拼接�
 
 闭环三条件之一即**可观察**（§1.1）：单元执行过程对外可见、可记录、可测试。这一属性在产品层面应落地为**内核暴露的结构化"agent 活动事件"**——工具调用、计划步骤、进度、关键决策点——供宿主（UI）渲染透明面板。这是对最小单元固有属性的**产品化暴露**，不是新增机制：
 
-* **内核只产事件，不渲染 UI**：内核在闭环边界产出结构化 chunk（如 `tool_start` / `tool_result` / `handoff` / `selfReview` / `question_pending`，见 [types.ts AgentChunk](../../src/agent/types.ts)），轮次边界（round 开始/结束）走 `onRoundBoundary` 回调；渲染、进度、审计面板由宿主基于事件流实现，守住"零依赖内核 + 宿主负责 UI"的边界。
+* **内核只产事件，不渲染 UI**：内核在执行边界产出结构化 chunk（如 `tool_start` / `tool_result` / `handoff` / `selfReview` / `question_pending`，见 [types.ts AgentChunk](../../src/agent/types.ts)），轮次边界（round 开始/结束）走 `onRoundBoundary` 回调；渲染、进度、审计面板由宿主基于事件流实现，守住"零依赖内核 + 宿主负责 UI"的边界。
 
 * **对齐 UX 基线**：2026 agentic UX 将"活动透明 + 分步可见"列为信任前提（无中间可见性的 agent 弃用率显著更高）。事件流是内核为此提供的最小契约。
 

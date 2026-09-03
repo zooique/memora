@@ -821,7 +821,7 @@ export class AgentLoop {
     return yield* this._callAndRoute(iteration, gate);
   }
 
-  /** 中断检查：软暂停（迭口边界挂起，可续跑）、硬中止（signal aborted）与 block 插话消费在此裁决。
+  /** 中断检查：软暂停（step 边界挂起，可续跑）、硬中止（signal aborted）与 block 插话消费在此裁决。
    *  暂停统一在迭代边界挂起，由 consumeExecutionStream 统一收口翻态写 pauseMeta。
    *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
   private async *_handleInterrupt(
