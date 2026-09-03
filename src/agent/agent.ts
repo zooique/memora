@@ -853,7 +853,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 卸载运行态挂载物：清空检查点计划与回合日志（宿主任务流结束/停止/异常广播 idle 前调用），
+   * 卸载运行态挂载物：清空检查点计划与 step 推进日志（宿主任务流结束/停止/异常广播 idle 前调用），
    * 回到"空闲 = 无挂载物"的资源层常态；会话历史与记忆等资源层内容不受影响。
    */
   clearPlan(): void {
