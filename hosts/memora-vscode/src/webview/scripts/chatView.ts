@@ -159,13 +159,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   let streamingRaw = '';
 
   // UX-9 问答闭环可视化（2026-09-03，纯展示层）：
-  //   lastAssistantRoundId  — 上一个 assistant 块的 roundId（B 同环续接判定：同 roundId 的
-  //                           第 2+ 段 → is-continued，圆环连线表达「同一问答闭环的多段连续」）
-  //   expectContinueNext    — 运行时打断/回答后即将到来的 assistant 段为「续接」（打断分条的
-  //                           后续接，还原内核 interject() abort→续跑语义）。chunk 无 roundId，
-  //                           故运行时靠此标志驱动，重放则靠 roundId 相等驱动（双轨 SSOT）
+  //   lastAssistantRoundId — 上一个 assistant 块的 roundId（B 同环续接判定唯一依据：同 roundId
+  //                          的第 2+ 段 → is-continued，圆环连线表达「同一问答闭环的多段连续」）。
+  //                          D3 单轨收敛（2026-09-03）：宿主透传 chunk.roundId 后，运行时与重放
+  //                          统一走「roundId 相等」判定，无独立时序标志（原 expectContinueNext 已删）。
   let lastAssistantRoundId: string | undefined;
-  let expectContinueNext = false;
 
   // G3 断点续跑提示条：检测到持久化暂停检查点时展示，用户点击「从断点续跑」恢复
   let restoreBanner: HTMLElement | null = null;
@@ -542,12 +540,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     flowShellEl?.remove();
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // UX-9 A/B：resume 续跑（qa/supplement 后）骨架为同环续接段（与打断分条/折叠后接上）
-    if (expectContinueNext) {
-      div.classList.add('is-continued');
-      expectContinueNext = false;
-    }
-    // 流式未完成：footer 初始隐藏（is-pending 由 buildAssistantShell 加类），finalize 时展示
+    // 流式未完成：footer 初始隐藏（is-pending 由 buildAssistantShell 加类），finalize 时展示。
+    // D3 单轨：骨架此刻无 roundId（meta 不带），is-continued 判定延后到首个 chunk 到达时
+    // 在复用骨架分支补类（见 chunk 分支 flowShellEl 路径）——骨架是空等待态，补类时机无感
     buildAssistantShell(div, new Date().toISOString(), undefined, { pending: true });
     activeAssistantEl = div;
     streamBodyRendered = false;
@@ -1558,13 +1553,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (role === 'assistant') {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
-      // UX-9 B 同环续接标识：重放时同 roundId 的第 2+ 段（assistantLog 段们在 final 之前的续接）、
-      // 运行时打断/回答后的续接段（expectContinueNext）都标记 is-continued —— 圆环连线 + 「续接」chip，
-      // 让 [ASK]→回答→再答 / 半截→补充→续接 呈连续链而非三条孤立消息
-      const isContinued = expectContinueNext || (!!roundId && roundId === lastAssistantRoundId);
+      // UX-9 B 同环续接标识（D3 单轨）：同 roundId 的第 2+ 段（assistantLog 段们在 final 之前的
+      // 续接、运行时打断/回答后的续接段）统一按「roundId 相等」标记 is-continued —— 圆环连线 +
+      // 「续接」chip，让 [ASK]→回答→再答 / 半截→补充→续接 呈连续链而非三条孤立消息
+      const isContinued = isSameRoundContinue(roundId);
       if (isContinued) div.classList.add('is-continued');
-      // 消费续接标志；roundId 记录为本轮标识（无 roundId 的流式块不覆盖，重放每轮都有）
-      expectContinueNext = false;
+      // roundId 记录为本轮标识（无 roundId 的块不覆盖，重放每轮都有）
       if (roundId) lastAssistantRoundId = roundId;
       // AI 消息：复用骨架构建（label + content + body + footer），
       // 一次性消息（历史回放）直接渲染 Markdown（吸收养分，代码块/列表/表格可读）
@@ -1725,6 +1719,39 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   /**
+   * D3 单轨同环判定：是否有 roundId 且与上一 assistant 段同环（同问答闭环第 2+ 段 = 续接）
+   *
+   * 三个建块入口共用（SSOT 单一判定，取代双轨时序标志）：
+   * - append（重放路径）：assistant 段/final 建块；
+   * - beginStreaming（流式无骨架路径）：运行时打断/续跑首 chunk 建块；
+   * - chunk 流式复用骨架分支：meta 骨架补判。
+   *
+   * @param roundId 待判 roundId（chunk/消息携带；undefined 一律非续接）
+   */
+  function isSameRoundContinue(roundId: string | undefined): boolean {
+    return !!roundId && roundId === lastAssistantRoundId;
+  }
+
+  /**
+   * 同环续接标记 chip：在身份标签前置「↻ 续接」（UX-9 B，D3 单轨）
+   *
+   * 消费方（SSOT 单一实现，两处共用）：
+   * - buildAssistantShell：建块时 div 已带 is-continued → 直接打 chip；
+   * - chunk 流式复用骨架分支：骨架建块时无 roundId 未判续接，chunk 到达补类后补 chip。
+   * 幂等：label 已有 chip 时不重复插（防多次 chunk 补类叠加）。
+   *
+   * @param label 消息身份标签（.msg-ai-label），chip 插至最前
+   */
+  function attachContinueChip(label: HTMLElement): void {
+    if (label.querySelector('.msg-ai-label__cont')) return;
+    const contEl = document.createElement('span');
+    contEl.className = 'msg-ai-label__cont';
+    contEl.textContent = '↻ 续接';
+    contEl.title = '与上一条属同一问答闭环，为继续作答';
+    label.prepend(contEl);
+  }
+
+  /**
    * 构建 AI 消息骨架（label + content + body + footer[复制 + 时间戳]）
    *
    * assistant 一次性消息与流式消息共用骨架，差异仅在 body 内容（markdown 渲染 vs
@@ -1748,13 +1775,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     label.className = 'msg-ai-label';
     // UX-9 B 同环续接 chip：is-continued 块（同 roundId 第 2+ 段 / 被打断后续接段）
     // 在身份标签前置「↻ 续接」，配合块间虚线把 [ASK]→回答→再答 连成连续链
-    if (div.classList.contains('is-continued')) {
-      const contEl = document.createElement('span');
-      contEl.className = 'msg-ai-label__cont';
-      contEl.textContent = '↻ 续接';
-      contEl.title = '与上一条属同一问答闭环，为继续作答';
-      label.appendChild(contEl);
-    }
+    if (div.classList.contains('is-continued')) attachContinueChip(label);
     // 角色名：优先级 = 本轮身份（meta）→ 会话级角色（chat_role_pack），品牌色 + 小圆点
     const roleName = currentRoundMeta?.role || currentRoleName || 'AI';
     const roleEl = document.createElement('span');
@@ -1826,17 +1847,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * 渲染（节流）+ 末尾闪烁光标；流结束后由 finalizeStreaming 收敛（去光标 + 代码块增强）。
    *
    * @param ts 本轮流式第一条 chunk 的时间戳
+   * @param roundId 执行闭环 roundId（chunk 携带；供 D3 同环续接判定与骨架 roundId 回填）
    */
-  function beginStreaming(ts?: string): void {
+  function beginStreaming(ts?: string, roundId?: string): void {
     renderDateDivider(ts);
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // UX-9 A/B：打断补充/问答后的后续正文 = 同环续接段（chunk 无 roundId，靠标志驱动）
-    if (expectContinueNext) {
-      div.classList.add('is-continued');
-      expectContinueNext = false;
-    }
-    const { body } = buildAssistantShell(div, ts, undefined, { pending: true });
+    // UX-9 A/B（D3 单轨）：打断补充/问答后的后续正文 = 同环续接段（chunk 携带执行闭环 roundId，
+    // 「roundId 相等」判定与重放路径共用——运行时不再依赖独立时序标志）
+    if (isSameRoundContinue(roundId)) div.classList.add('is-continued');
+    if (roundId) lastAssistantRoundId = roundId;
+    const { body } = buildAssistantShell(div, ts, roundId, { pending: true });
     // 流式期间：is-streaming 类驱动 CSS ::after 闪烁光标（markdown 由增量渲染填充）
     body.classList.add('is-streaming');
     activeAssistantEl = div;
@@ -2324,17 +2345,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       flowShellEl?.remove();
       flowShellEl = null;
       clearPendingWait();
-      // UX-9：带 kind 的交互输入 → 行内打断分条（supplement）/ round-block 折叠子节点（qa），
-      // 并标记即将到来的 assistant 段为「续接」（expectContinueNext，运行时无 roundId 的判据）；
-      // 普通新闭环输入重置续接判定（上一轮 roundId 不再作同环判定）
+      // UX-9：带 kind 的交互输入 → 行内打断分条（supplement）/ round-block 折叠子节点（qa）。
+      // D3 单轨：不再置「续接」时序标志——后续 assistant 段是否续接由 chunk 携带的 roundId
+      // 与 lastAssistantRoundId 相等判定（运行时与重放同一判定源）；普通新闭环输入重置同环判定
       if (msg.kind) {
-        expectContinueNext = true;
         appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId);
       } else {
         append('user', msg.text, msg.ts);
-        // 新问答闭环开始：重置同环判定（roundId + 续接标志，防 qa/supp 后缺 final 的异常数据跨轮误标）
+        // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
         lastAssistantRoundId = undefined;
-        expectContinueNext = false;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -2350,13 +2369,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         clearPendingWait(); // 正文开启：等待指示器退场（骨架已接管）
         if (flowShellEl) {
           // 复用骨架：正文流入同一块（不新建第二条 assistant 消息）
+          // D3 单轨：骨架在 meta 时无 roundId，此处置该块的同环续接判定（chunk 到达才有数据）；
+          // 与 beginStreaming 同用「roundId 相等」判定 + dataset 回填（分叉按钮早期可用）
+          if (isSameRoundContinue(msg.roundId)) {
+            flowShellEl.classList.add('is-continued');
+            // 补「↻ 续接」chip：骨架 buildAssistantShell 时无 is-continued 未建 chip，
+            // 与 beginStreaming 的 chip 创建共用 attachContinueChip（SSOT 单一实现）
+            const label = flowShellEl.querySelector<HTMLElement>(':scope > .msg-ai-label');
+            if (label) attachContinueChip(label);
+          }
+          if (msg.roundId) {
+            lastAssistantRoundId = msg.roundId;
+            flowShellEl.dataset.roundId = msg.roundId;
+          }
           streamingActive = true;
           streamingRaw = '';
           const body = flowShellEl.querySelector(':scope .msg-body');
           body?.classList.add('is-streaming');
           flowShellEl = null; // 已转化为正文块，后续插话/新轮不再特殊处理
         } else {
-          beginStreaming(msg.ts);
+          beginStreaming(msg.ts, msg.roundId);
           streamingActive = true;
           streamingRaw = '';
         }
@@ -2521,9 +2553,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       roundBlockHostEl = null;
       flowShellEl = null;
       currentEvents = [];
-      // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续接标志不再生效（防跨会话误判）
+      // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId 不再生效（防跨会话误判）
       lastAssistantRoundId = undefined;
-      expectContinueNext = false;
       lastShownDate = undefined;
       updateEmptyState();
     } else if (msg.type === 'history_loaded') {

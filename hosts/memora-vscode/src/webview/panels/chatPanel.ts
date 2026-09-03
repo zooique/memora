@@ -2082,8 +2082,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             emitEvent('text_self_review', { content: chunk.content });
             continue;
           }
-          // 主回答正文 → 照常走 chunk 消息（markdown 渲染，属内容轨，不属于过程事件）
-          this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs });
+          // 主回答正文 → 照常走 chunk 消息（markdown 渲染，属内容轨，不属于过程事件）。
+          // roundId 透传（D3 单轨，2026-09-03）：运行时段同为「同环续接」判定提供数据依据，
+          // 与重放路径共用「roundId 相等」单一判定源（chunk.roundId 由内核 withRound 携带）
+          this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs, roundId: chunk.roundId });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → 过程事件（webview 渲染 § 工具调用）
           emitEvent('tool_start', { toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });

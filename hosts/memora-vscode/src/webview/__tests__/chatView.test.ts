@@ -1944,7 +1944,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 A：打断补充渲染为行内打断切分条，插在被打破块之后；后续 chunk 为「续接」块', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '正在回答第一段' });
+    // D3 单轨：运行时 chunk 携带执行闭环 roundId（宿主透传），续接判定与重放共用「roundId 相等」
+    dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
     // 打断补充（streaming 中 supplement）→ 行内打断切分条，不再是消息流底部游离折叠块
     dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });
     const divider = document.querySelector('.interrupt-divider') as HTMLElement;
@@ -1954,8 +1955,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // 分条插在被打断的 assistant 块之后（打断点归位），与消息流平级
     const interrupted = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
     expect(interrupted.nextElementSibling).toBe(divider);
-    // 后续 chunk → 新「续接」块（is-continued + ↻ 续接 chip），位于分条之后
-    dispatch({ type: 'chunk', content: '好的，按你的要求继续' });
+    // 后续 chunk（同 roundId）→ 新「续接」块（is-continued + ↻ 续接 chip），位于分条之后
+    dispatch({ type: 'chunk', content: '好的，按你的要求继续', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     const continued = blocks[1] as HTMLElement;
@@ -1963,6 +1964,26 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
     expect(divider.nextElementSibling).toBe(continued);
     expect(collectAllBodyText(continued)).toContain('按你的要求继续');
+  });
+
+  it('D3 单轨：运行时 qa 回答后 resume，meta 骨架经 chunk roundId 复用补「续接」（骨架零状态延后判）', () => {
+    mountChatView();
+    // 第一段回答（[ASK] 提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '[ASK] 选择哪个方案？', roundId: 'round-1' });
+    // 用户回答（question-answer，不重置同环判定——qa 属当前闭环）
+    dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1' });
+    // resumeExecution → 新 runFlow 的 meta → 新骨架（meta 不带 roundId，零状态不标续接）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    const blocks = document.querySelectorAll('.msg.assistant');
+    expect(blocks).toHaveLength(2);
+    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
+    // 首个 chunk（同 roundId）→ flowShellEl 复用骨架分支按「roundId 相等」补 is-continued
+    dispatch({ type: 'chunk', content: '好，开始执行方案A', roundId: 'round-1' });
+    const continued = document.querySelectorAll('.msg.assistant')[1] as HTMLElement;
+    expect(continued.classList.contains('is-continued')).toBe(true);
+    expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
+    expect(collectAllBodyText(continued)).toContain('开始执行方案A');
   });
 
   it('UX-9 B：重放同 roundId 多段 AI（assistantLog + final）呈连续链，第 2 段起标记续接', () => {
