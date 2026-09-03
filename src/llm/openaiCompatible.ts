@@ -53,6 +53,9 @@ function normalizeTimeoutMs(value: number | undefined, fallback: number): number
  */
 const FIRST_CHUNK_TIMEOUT_MS = 120_000;
 const INTER_CHUNK_TIMEOUT_MS = 60_000;
+/** 有效 SSE 事件停滞超时：即便有字节持续到达（keep-alive/代理心跳），只要长时间无 `data:` 事件，
+ *  也判超时——补 chunk 级超时（按 read 重置）对「有字节无进展」的真空区，防止连接半挂永久等待。 */
+const EVENT_STALL_TIMEOUT_MS = 120_000;
 
 /** 通用 OpenAI 兼容 Provider：通过 baseUrl 适配不同厂商 */
 export class OpenAICompatibleProvider extends LlmProvider {
@@ -265,6 +268,22 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     // chunk 级读超时：无超时则连接半挂（NAT/代理不关 TCP）会永久等待，用 setTimeout + reader.cancel 让 read() reject；
     // 区分首 chunk（reasoning 思考数十秒，120s）与 chunk 间（连接已正常，60s）
+    // 有效事件停滞监视：收到任意 data: 行即重置；长时间无事件（即便有字节）触发 cancel。
+    // 与 chunk 级超时互补——chunk 超时按 read 重置会漏掉「服务端发 keep-alive 字节但无进展」。
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const stallReset = (): void => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(() => {
+        reader.cancel(new DOMException('LLM 流长时间无有效事件（有字节但无 data 事件）', 'TimeoutError')).catch(
+          (err: unknown) => {
+            logger.debug({ err: toError(err).message }, 'reader.cancel 失败（事件停滞超时）');
+          },
+        );
+      }, EVENT_STALL_TIMEOUT_MS);
+    };
+    // 进入流读取即启动停滞监视（首事件前的“有字节无事件”同样覆盖）
+    stallReset();
+
     let firstChunkReceived = false;
 
     try {
@@ -307,6 +326,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
         for (const line of lines) {
           const trimmed = line.trim();
           if (!trimmed.startsWith('data:')) continue;
+          // 有效事件停滞重置：收到 data 行即代表服务端仍在推进（即便内容暂无可输出）
+          stallReset();
           const data = trimmed.slice(5).trim();
           if (data === '[DONE]') {
             // 流结束：输出累积的 tool_calls（如果有）
@@ -399,6 +420,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
         }
       }
     } finally {
+      // 清理事件停滞监视（流已结束，不再需要 stall 兜底）
+      if (stallTimer) clearTimeout(stallTimer);
       // reader.cancel() 彻底释放底层 TCP 连接（releaseLock 仅释放锁不取消流，防止 break 时连接悬挂）；已 done 的 cancel 是 no-op
       try {
         await reader.cancel();

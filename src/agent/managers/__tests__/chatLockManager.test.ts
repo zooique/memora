@@ -130,8 +130,8 @@ describe('ChatLockManager', () => {
       vi.useRealTimers();
     });
 
-    it('超时回调触发 + 锁释放', () => {
-      const { token, internalAbort } = manager.acquire(180_000);
+    it('超时回调触发 + 锁释放（不中断生成流）', () => {
+      const { internalAbort } = manager.acquire(180_000);
 
       expect(manager.isBusy).toBe(true);
       expect(internalAbort.signal.aborted).toBe(false);
@@ -139,12 +139,10 @@ describe('ChatLockManager', () => {
       // 推进时间触发超时
       vi.advanceTimersByTime(180_000);
 
-      // 超时后锁应释放 + internalAbort 应触发
+      // 超时后锁释放；内部 abort 不被触发——锁超时仅释放锁，不中断生成流
+      // （LLM 无进展由 provider 层超时兜底，2026-09-03 语义收敛）
       expect(manager.isBusy).toBe(false);
-      expect(internalAbort.signal.aborted).toBe(true);
-
-      // token 仍是当前持有者（超时回调未递增 token，仅释放锁）
-      expect(token).toBe(1);
+      expect(internalAbort.signal.aborted).toBe(false);
     });
 
     it('超时回调触发 onTimeout 回调', () => {
@@ -165,9 +163,9 @@ describe('ChatLockManager', () => {
       vi.advanceTimersByTime(180_000);
       expect(manager.isBusy).toBe(false);
 
-      // 新调用应能获取锁
+      // 新调用应能获取锁；超时释放时已自增 token（防旧 release 误清），新 acquire 再增
       const { token: token2 } = manager.acquire(180_000);
-      expect(token2).toBe(token1 + 1);
+      expect(token2).toBe(token1 + 2);
       expect(manager.isBusy).toBe(true);
 
       // 清理
@@ -191,8 +189,8 @@ describe('ChatLockManager', () => {
       // 关键断言：新调用的锁应仍然存在
       expect(manager.isBusy).toBe(true);
 
-      // abort1 已被超时回调触发
-      expect(abort1.signal.aborted).toBe(true);
+      // 超时回调不 abort 旧流的 abortController（2026-09-03：仅释放锁，不中断生成流）
+      expect(abort1.signal.aborted).toBe(false);
 
       // 清理
       manager.release(token2);

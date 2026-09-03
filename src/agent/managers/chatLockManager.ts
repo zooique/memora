@@ -29,17 +29,18 @@ export class ChatLockManager {
   }
 
   /**
-   * 获取锁，返回 token（finally 校验）+ internalAbort（传给 loop.processUserInput）。
-   * 超时保护：LLM 卡死时中断 generator 并释放锁。
-   */
+ * 获取锁，返回 token（finally 校验）+ internalAbort（传给 loop.processUserInput）。
+ * 超时保护：锁超时后自动释放锁（允许新对话进入），但不中断生成流——
+ * LLM 无进展由 provider 层请求级/事件停滞超时兜底，锁不对整次对话时长设硬上限。
+ */
   acquire(
     timeoutMs: number,
     onTimeout?: () => void,
   ): { token: number; internalAbort: AbortController } {
     this._chatBusy = true;
-    // 分配本调用 token，超时/finally 据此判断是否仍是持有者，避免误清新调用者资源
+    // 分配本调用 token，超时/finally 据此判断是否仍是持有者，避免误清新调用资源
     const token = ++this._chatLockToken;
-    // 超时时中断 generator 而非仅释放锁
+    // 中断信号（用户 stop / 插话 / 宿主 forceRelease 会 abort 它；锁自身超时不 abort）
     const internalAbort = new AbortController();
     this.chatAbortController = internalAbort;
 
@@ -50,11 +51,12 @@ export class ChatLockManager {
       }
       logger.warn(
         { timeoutMs },
-        'chat() 锁超时，中断 generator 并释放锁',
+        'chat() 锁超时，自动释放锁（不中断生成流）',
       );
-      // reason 语义化：TimeoutError 标识「服务无响应的超时中断」，与用户取消（无 reason /
-      // AbortError）区分——上游据此映射 stopReason:'timeout' 而非谎报成用户取消。
-      internalAbort.abort(new DOMException('chat 锁超时（LLM 长时间无响应）', 'TimeoutError'));
+      // 仅释放锁（自增 token 令旧 generator 的 finally release 跳过清理，避免误清新调用），
+      // 不 abort 生成流——LLM 无进展/停滞由 provider 层超时兜底（请求级 120s + SSE 事件停滞 120s），
+      // 锁不再对「整次对话时长」设硬上限，慢但正常的长时间对话不被误杀。
+      this._chatLockToken++;
       this._chatBusy = false;
       this.chatLockTimer = null;
       this.chatAbortController = null;

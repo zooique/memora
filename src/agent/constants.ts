@@ -19,7 +19,8 @@ import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
  */
 export const AGENT_CONSTANTS = {
   /**
-   * chat() 并发锁超时。180s = LLM 120s + 60s 缓冲，作为所有超时后的最后兜底。
+   * chat() 并发锁超时。锁超时后仅自动释放锁（放行新对话），不中断生成流——
+   * LLM 无进展由 provider 层兜底（请求级 120s + SSE 事件停滞 120s），锁不对整次对话时长设上限。
    */
   CHAT_LOCK_TIMEOUT_MS: 180_000,
 

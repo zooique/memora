@@ -2506,19 +2506,19 @@ describe('Agent · chat() 锁超时机制', () => {
     // 超时后 isBusy 应为 false（锁已释放）
     expect(agent.isBusy).toBe(false);
 
-    // 清理：解除 HungProvider 阻塞，消费剩余 chunk 并收集 aborted 语义
+    // 清理：解除 HungProvider 阻塞，消费剩余 chunk
     provider.outerResolve();
-    const stopReasons: Array<string | undefined> = [];
+    const abortedChunks: Array<{ type: string }> = [];
     try {
       for await (const chunk of gen) {
-        if (chunk.type === 'aborted') stopReasons.push(chunk.stopReason);
+        if ('stopReason' in chunk) abortedChunks.push(chunk);
       }
     } catch {
       // 超时后 generator 可能抛 AbortError，忽略
     }
-    // 锁超时（signal.reason=TimeoutError）须归类为 timeout，不得谎报 user（2026-09-03 修复）
-    expect(stopReasons).toContain('timeout');
-    expect(stopReasons).not.toContain('user');
+    // 锁超时（2026-09-03 语义收敛）仅释放锁、不中断生成流——LLM 无进展由 provider 层超时兜底，
+    // 故锁超时不应产出 aborted chunk（旧流由 outerResolve 正常放行收尾）。
+    expect(abortedChunks.length).toBe(0);
   }, 30000);
 
   it('锁超时后新调用应能获取锁（不抛"对话繁忙"）', async () => {
