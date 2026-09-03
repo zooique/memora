@@ -211,12 +211,12 @@ await agent.close();
 ```
 src/
 ├── index.ts          # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/            # Agent 门面 + AgentLoop + seed/（单轮执行闭环）
+├── agent/            # Agent 门面 + AgentLoop + seed/（turn）
 │   ├── agent.ts      # 门面类（宿主唯一入口）
 │   ├── loop.ts       # 核心循环（推理 → 工具调用 → 反思重试）
 │   ├── assembler.ts  # 组件组装器（纯工厂）
 │   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts / checkpointRestoreCoordinator.ts ···
-│   ├── seed/         # 最小执行闭环（prepare → act/difficulty → reflect，含外部任务外循环）
+│   ├── seed/         # turn（prepare → act/difficulty → reflect，含多 turn 任务编排）
 │   └── managers/     # 16 个专职 Manager/服务类（memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
 ├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 召回 / 混合排序 / 向量 / 治理常量）
 ├── role-pack/        # 角色包（manifest 解析 + validator + strategyResolver + 能力映射）

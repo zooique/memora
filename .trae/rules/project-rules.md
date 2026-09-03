@@ -69,7 +69,7 @@ memora/                          # Git 仓库根目录
 ```
 src/
 ├── index.ts        # 库导出入口（类型 + 接口 + 函数 + 类导出，无 CLI）
-├── agent/          # Agent 门面 + AgentLoop（seed/ 最小执行闭环编排）+ 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 上下文装配
+├── agent/          # Agent 门面 + AgentLoop（seed/ turn 编排）+ 工具执行 + managers/ 子目录（专职 Manager/服务类，完整清单与职责见 backend_layers_rules.md §分层职责）+ 上下文装配
 ├── code-exec/      # 通用代码执行抽象（ICodeExecutionProvider + 沙箱由宿主提供）
 ├── config/         # 配置加载
 ├── llm/            # LLM 适配层
@@ -138,7 +138,7 @@ chore: 升级 dependencies
 >
 > **架构说明书**：集成设计哲学、闭环设计、数据模型、角色包体系、思维模式速查的完整参考文档，位于 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)。
 >
-> **架构定论**：不中断工作模型最终答案 = 「申请暂停模型」（不中断原则作用于 **loop 任务内**；memora 在大厂已有 loop 能力之上增加显式「申请暂停 / 继续」按钮——暂停 = 申请暂停，等进行中的执行闭环结束于 loop 边界挂起，可继续或注入；硬停止 signal.abort 仍是唯一霸道中止）。完整设计推导见 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §2.3（输入待定与气口接受）。
+> **架构定论**：不中断工作模型最终答案 = 「申请暂停模型」（不中断原则作用于 **turn 内的 step 循环**；memora 在大厂已有 loop 能力之上增加显式「申请暂停 / 继续」按钮——暂停 = 申请暂停，等进行中的 turn 结束于 step 边界挂起，可继续或注入；硬停止 signal.abort 仍是唯一霸道中止）。完整设计推导见 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §2.3（输入待定与气口接受）。
 
 ## 7. AI 行为 DO/DON'T 速查表
 
