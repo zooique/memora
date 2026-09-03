@@ -16,6 +16,10 @@ import type {
 } from '../../shared/protocol.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
+// [ASK] 提问契约解析（SSOT 单一真理源，2026-09-03 T1）：与内核 loop.extractAskQuestions 共用
+// utils/askParser 同一实现；走 package.json "./ask-parser" 浏览器安全子图导出，esbuild 只
+// 内联这一自包含文件（不拖入内核 node:* 依赖链）——解析/剥离改一处全局生效
+import { parseAskQuestions, stripAskLines } from '@zooique/memora/ask-parser';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
@@ -1577,7 +1581,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // A 容器化：归位到所属 .round-group（同 roundId 段收进容器；无 roundId 留消息流）
       ensureRoundGroup(roundId, div);
       // R2 重放 [ASK] live 解析：历史正文的行首 [ASK] 行（+ 行尾 {A|B} 选项，格式契约
-      // 同 loop.extractAskQuestions / strategyResolver 注入指令）渲染为只读选择题——
+      // 同内核/宿主共用的 utils/askParser / strategyResolver 注入指令）渲染为只读选择题——
       // 重放复用运行时提问的视觉语言，但不可作答；正文中的 [ASK] 行剔除避免双重展示
       renderAskReplay(div, text);
       scrollToBottom(messages);
@@ -1781,7 +1785,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     g.appendChild(footer);
   }
 
-  /** 容器整链文本：用户提问（前一兄弟，若为 user 气泡）+ 容器内全部 assistant 段原始文本 */
+  /**
+   * 容器整链文本：用户提问（前一兄弟，若为 user 气泡）+ 容器内全部 assistant 段正文
+   *
+   * 报告净化（2026-09-03 T3 拍板）：段正文经 stripAskLines 剥离 [ASK] 提问契约行——
+   * 复制只拿「最终汇报」实质内容，不掺交互噪声；剥离后为空的纯提问段被跳过。
+   * rawText 本身不改写（重放/整链原文溯源仍完整），契约剥离统一复用 utils/askParser（SSOT）。
+   */
   function roundChainText(g: HTMLElement): string {
     const parts: string[] = [];
     const user = g.previousElementSibling;
@@ -1790,46 +1800,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (t) parts.push(t);
     }
     g.querySelectorAll<HTMLElement>('.msg.assistant').forEach((a) => {
-      const t = a.dataset.rawText ?? '';
+      const t = stripAskLines(a.dataset.rawText ?? '').trim();
       if (t) parts.push(t);
     });
     return parts.join('\n\n');
-  }
-
-  /**
-   * 解析正文结构化主动提问（[ASK] 行 → {question, options}，与内核 loop.extractAskQuestions
-   * 同源格式契约，2026-09-03 R2）
-   *
-   * 行首 `[ASK]`（可多条）即问题行，问题至行尾；行尾花括号 `{A|B|C}`（全半角括号、
-   * `|`/`｜` 分隔均可）且内含分隔符才解析为选项，避免把正文普通花括号字面量误判吞掉。
-   *
-   * @param text 待解析正文全文（assistant 段原始文本）
-   * @returns 解析出的提问列表（无 [ASK] 行返回空数组）
-   */
-  function parseAskQuestions(text: string): { question: string; options?: string[] }[] {
-    const questions: { question: string; options?: string[] }[] = [];
-    for (const line of text.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      const match = /^\[ASK\][\s:：]*(.+)$/i.exec(trimmed);
-      if (match && match[1]?.trim()) {
-        let questionText = match[1].trim();
-        let options: string[] | undefined;
-        // 行内选项：捕获行尾花括号内容，仅当内含分隔符时按选项拆分
-        const optMatch = /^(.*?)\s*[｛{](.+)[｝}]\s*$/.exec(questionText);
-        if (optMatch && /[|｜]/.test(optMatch[2]!)) {
-          const resolved = optMatch[1]!.trim();
-          if (resolved.length > 0) {
-            questionText = resolved;
-            options = optMatch[2]!
-              .split(/[|｜]/)
-              .map((s) => s.trim())
-              .filter((s) => s.length > 0);
-          }
-        }
-        questions.push({ question: questionText, ...(options && options.length > 0 ? { options } : {}) });
-      }
-    }
-    return questions;
   }
 
   /**
@@ -1838,7 +1812,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * 历史正文中的结构化提问在重放时 live 解析为只读选择题块（.ask-replay）：与运行时
    * 提问内联选择题（.ask-inline）同视觉语言（问题 + 选项 chips），但无交互——历史不可
    * 作答，用户只能回看「当时问过什么、可选项有哪些」。正文中的 [ASK] 行本体剔除，
-   * 避免问题/选项双重展示；复制整链仍取原文（dataset.rawText 不改写）。
+   * 避免问题/选项双重展示；rawText 保留原文供整链复制（复制出口 side 剥离契约行，
+   * 见 roundChainText——解析/剥离契约唯一归 utils/askParser，2026-09-03 T1 SSOT）。
    *
    * @param host 当前 assistant 消息块（.msg.assistant）
    * @param text 原始正文全文（含 [ASK] 行）
@@ -1851,12 +1826,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 剔除行首 [ASK] 行后重渲正文（保留其余正文，markdown 保真 + 代码块增强重做）
     const body = host.querySelector<HTMLElement>(':scope .msg-body');
     if (body) {
-      const kept = text
-        .split(/\r?\n/)
-        .filter((l) => !/^\s*\[ASK\][\s:：]*/i.test(l.trim()))
-        .join('\n')
-        .trim();
-      body.innerHTML = renderMarkdown(kept, sanitize);
+      body.innerHTML = renderMarkdown(stripAskLines(text).trim(), sanitize);
       enhanceCodeBlocks(body);
     }
     const box = document.createElement('div');

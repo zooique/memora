@@ -449,7 +449,7 @@ export function mergeStrategy(
  *
  * 将原始角色包解析为含完整策略的装载结果，供装配层直接使用。
  * 同时根据策略中的 userFollowup/askOn/askLimit 注入主动提问指令到 persona prompt，
- * 并在指令中携带 [ASK] 输出格式契约（行首标记 + 行尾花括号选项，与 loop 解析器同源）。
+ * 并在指令中携带 [ASK] 输出格式契约（行首标记 + 行尾花括号选项，与 utils/askParser 解析器同源）。
  *
  * @param pack 原始角色包
  * @returns 含完整策略的装载结果

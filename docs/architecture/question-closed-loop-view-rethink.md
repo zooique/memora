@@ -29,7 +29,7 @@
 
 ### 1.3 模块关系
 
-- 上游依赖：`Round` 数据模型（roundStore.ts）——userMessage/assistantLog/interactiveInputs/assistantMessage；内核 `[ASK]` 解析（loop.extractAskQuestions）
+- 上游依赖：`Round` 数据模型（roundStore.ts）——userMessage/assistantLog/interactiveInputs/assistantMessage；内核 `[ASK]` 解析（utils/askParser，2026-09-03 T1 下沉后为内核与宿主共用同一实现）
 
 - 下游依赖：无（纯展示层，hosts/memora-vscode 内）
 
@@ -66,16 +66,16 @@
 ### 3.2 方案定选：A 完整容器化（已实施，2026-09-03）
 
 > 用户拍板：一步到位选 A——同 roundId 的全部 assistant 段收进同一 `.round-group` 容器，
-> 操作上移容器级 footer（复制整链/分叉/删除 + 时间戳），段级 footer 拆除。B 的「续接标识」
+> 操作上移容器级 footer（复制整链/分叉/删除 + 时间戳），段级 footer CSS 隐藏。B 的「续接标识」
 > 由容器边框天然表达，C 的「交互输入挂靠」在容器内自然归位——A 吃进 B/C 诉求，不再造碎片补丁。
 
-| 改动项       | 当前状态                                 | 目标状态（A 容器化落地）                                                   | 涉及文件                                |
-| --------- | ------------------------------------ | ------------------------------------------------------------------ | ----------------------------------- |
-| R1 整链复制   | 首段复制只复制本段；续接段不可复制                    | 容器级 footer 复制整链：用户提问（容器前兄弟）+ 全部 assistant 段 rawText，单一入口全覆盖       | chatView\.ts（ensureRoundGroupFooter + roundChainText） |
-| R2 重放选项还原 | assistantLog 段原文显示 `[ASK] {A\|B\|C}` | append 时对正文 `[ASK]` 行 live 解析（parseAskQuestions，与 loop.extractAskQuestions 同源）渲染只读选择题 `.ask-replay`；不落库 | chatView\.ts（renderAskReplay） |
-| Y1 操作发现性  | 续接段无 footer 且无提示                     | 操作整体上移 `.round-group__footer`（一处入口管整环），段级 footer CSS 隐藏               | chatView\.ts / chatStyles.ts |
-| Y2 你答子行   | 120 字截断                              | 整链复制覆盖你答行（roundChainText 拼接原文）；qa 子行保留 title 全量                     | 随 R1 一并                             |
-| Y3 无障碍    | 选项区无 aria                            | `.ask-inline` 已带 aria-label/title（运行时可交互）；重放 `.ask-replay` 纯静态展示     | chatView\.ts 微调                     |
+| 改动项       | 当前状态                                 | 目标状态（A 容器化落地）                                                                                                                 | 涉及文件                                                  |
+| --------- | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| R1 整链复制   | 首段复制只复制本段；续接段不可复制                    | 容器级 footer 复制整链：用户提问（容器前兄弟）+ 全部 assistant 段报告正文，单一入口全覆盖                                                                       | chatView\.ts（ensureRoundGroupFooter + roundChainText） |
+| R2 重放选项还原 | assistantLog 段原文显示 `[ASK] {A\|B\|C}` | append 时对正文 `[ASK]` 行 live 解析（parseAskQuestions = 内核 loop 共用的 utils/askParser 同一实现，2026-09-03 T1 下沉）渲染只读选择题 `.ask-replay`；不落库 | chatView\.ts（renderAskReplay）+ 内核 utils/askParser     |
+| Y1 操作发现性  | 续接段无 footer 且无提示                     | 操作整体上移 `.round-group__footer`（一处入口管整环），段级 footer CSS 隐藏                                                                       | chatView\.ts / chatStyles.ts                          |
+| Y2 你答子行   | 120 字截断                              | qa 子行保留 title 全量；你答行不进整链复制（复制仅取「用户提问 + 报告正文」，交互噪声剥离，2026-09-03 T3 拍板）                                                         | 随 R1 一并                                               |
+| Y3 无障碍    | 选项区无 aria                            | `.ask-inline` 已带 aria-label/title（运行时可交互）；重放 `.ask-replay` 纯静态展示                                                              | chatView\.ts 微调                                       |
 
 容器归位（ensureRoundGroup）四路共用：append（重放/一次性）、beginStreaming（运行时首块）、
 chunk 骨架复用、meta 骨架随 chunk 归位；新段恒插容器 footer 之前（结构：段 → footer 居底）。
@@ -83,13 +83,17 @@ chunk 骨架复用、meta 骨架随 chunk 归位；新段恒插容器 footer 之
 
 ### 3.3 实施记录
 
-- 已落地：容器化归位 + 容器 footer（整链复制/分叉/删除/时间戳）+ 段级 footer 拆除 + clear_ok 补清 `.round-group` + 重放 [ASK] 只读选择题 live 解析
-- 质量门：宿主 tsc 0 错 / eslint 0 错 / vitest 全绿（chatView.test.ts 141 例含容器结构、复制整链、重放选择题新增用例；全量 376 例）
+- 已落地：容器化归位 + 容器 footer（整链复制/分叉/删除/时间戳）+ 段级 footer CSS 隐藏 + clear\_ok 补清 `.round-group` + 重放 \[ASK] 只读选择题 live 解析
+
+- 收尾（2026-09-03 T1/T3）：`[ASK]` 解析器下沉内核 utils/askParser 单一真理源（loop 与 webview 共用，走 package.json `./ask-parser` 浏览器安全子图，消除双实现漂移）；整链复制剥离提问契约行（复制 = 用户提问 + 报告正文，交互噪声不入）
+
+- 质量门：内核 tsc 0 错 + vitest 全绿（2619 例含 askParser 契约单测）；宿主 tsc 0 错 + vitest 全绿（377 例）+ esbuild 编译通过（webview bundle 仅内联 askParser，无 node:\* 依赖）
+
 - 未做（保持重思范围）：交互输入/选择题按钮改 aria 细节迭代、打断分条展开、你答子行展开——均旧观察项，未扩范围
 
 ### 3.4 兼容性评估
 
-- 影响范围：纯展示层（chatView\.ts / chatStyles.ts / chatView\.test.ts）；内核零改动
+- 影响范围：纯展示层为主体（chatView\.ts / chatStyles.ts / chatView\.test.ts）；内核改动限于 `[ASK]` 解析器提取下沉（纯函数，无行为变更，loop 测试保持绿）
 
 - 风险等级：低（不触流式时序；复制与渲染为增量）
 

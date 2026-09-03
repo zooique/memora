@@ -33,6 +33,9 @@ import {
   type ToolErrorCodeValue,
 } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
+// [ASK] 提问契约解析（SSOT 单一真理源，2026-09-03 T1）：解析逻辑唯一归 utils/askParser，
+// 宿主 webview（重放/复制）经 esbuild 内联同一份，避免双实现漂移
+import { parseAskQuestions } from '@/utils/askParser.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
@@ -86,7 +89,11 @@ export interface AgentLoopOptions {
   /** 上下文截断回调（传被裁剪/保留消息数），宿主可据此发 contextTruncated 事件；未注入静默忽略 */
   onContextTruncated?: (skippedCount: number, keptCount: number) => void;
   /** LLM 主动压缩完成回调（第二级压缩，传压缩目标/被替换消息数/摘要长度）；未注入静默忽略 */
-  onContextCompressed?: (target: 'earliest_round' | 'largest_tool_result', replacedCount: number, summaryLength: number) => void;
+  onContextCompressed?: (
+    target: 'earliest_round' | 'largest_tool_result',
+    replacedCount: number,
+    summaryLength: number,
+  ) => void;
   /** 工具执行完成回调（供 outbox 模式恢复时判断工具是否已执行过，避免重复执行）；未注入静默忽略 */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
   /** 工具执行前检查回调（宿主闸门）。三态：放行（可携 overrideArgs 改写参数）/ 跳过
@@ -311,8 +318,7 @@ export class AgentLoop {
     this.onPendingQuestion = opts.onPendingQuestion;
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
-      abortedByTimeout:
-        opts.messages?.abortedByTimeout ?? 'LLM request timed out (no response)',
+      abortedByTimeout: opts.messages?.abortedByTimeout ?? 'LLM request timed out (no response)',
       maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
       // 流式中断标记：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"（SSOT：默认文案下沉 LOOP_CONSTANTS）
       interrupted: opts.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
@@ -536,7 +542,11 @@ export class AgentLoop {
     // 上下文准备（截断+微压缩+预算），安全消息集合供 LLM 调用
     const prep = await this._prepareContext(signal);
     if (prep === 'done') {
-      yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}`, roundId: this.currentRoundId };
+      yield {
+        type: 'text',
+        content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}`,
+        roundId: this.currentRoundId,
+      };
       return;
     }
 
@@ -969,7 +979,10 @@ export class AgentLoop {
     if (this.contextManager.shouldInjectSoftLimitWrapup(this.messages)) {
       this.appendSystemMessage(this.ui.softLimitWrapup, { executionTemp: true });
       logger.warn(
-        { estimatedTokens: this.contextManager.estimateTokens(this.messages), max: this.maxContextTokens },
+        {
+          estimatedTokens: this.contextManager.estimateTokens(this.messages),
+          max: this.maxContextTokens,
+        },
         '软上限：摘要层达容量上限，注入收尾信号，LLM 收敛产出最终交付',
       );
     } else if (this.contextManager.shouldInjectContextPressureHint(this.messages)) {
@@ -979,7 +992,10 @@ export class AgentLoop {
         this.appendSystemMessage(LOOP_CONSTANTS.CONTEXT_PRESSURE_HINT, { executionTemp: true });
       }
       logger.debug(
-        { estimatedTokens: this.contextManager.estimateTokens(this.messages), max: this.maxContextTokens },
+        {
+          estimatedTokens: this.contextManager.estimateTokens(this.messages),
+          max: this.maxContextTokens,
+        },
         '上下文预算预警：容量到线未饱和，注入压缩/收敛提示',
       );
     }
@@ -1175,42 +1191,22 @@ export class AgentLoop {
   /**
    * 提取 LLM 输出的结构化主动提问（行首 `[ASK]`，可多条；不含则返回空数组走正常对话流）
    *
-   * 候选选项约定：行尾以 `{A|B|C}`（全半角括号、`|`/`｜` 分隔均可）声明，
-   * 宿主可渲染为可点击按钮；仅括号内含分隔符才解析为选项，
-   * 避免将普通花括号字面量（如示例代码）误判吞掉。
+   * 契约解析唯一归 utils/askParser（SSOT，2026-09-03 T1）；本方法仅补业务溯源字段 slot
+   * 后透传——宿主持同一份解析器渲染重放/复制，格式演化改一处即全局生效。
    */
   private extractAskQuestions(fullContent: string): AskQuestion[] {
-    const questions: AskQuestion[] = [];
-    for (const line of fullContent.split(/\r?\n/)) {
-      const trimmed = line.trim();
-      const match = /^\[ASK\][\s:：]*(.+)$/i.exec(trimmed);
-      if (match && match[1]?.trim()) {
-        let questionText = match[1].trim();
-        let options: string[] | undefined;
-        // 行内选项解析：捕获行尾花括号内容，仅当内含分隔符时按选项拆分
-        const optMatch = /^(.*?)\s*[｛{](.+)[｝}]\s*$/.exec(questionText);
-        if (optMatch && /[|｜]/.test(optMatch[2]!)) {
-          const resolved = optMatch[1]!.trim();
-          if (resolved.length > 0) {
-            // 仅当括号前还有问题文本才拆分为选项，否则整行按普通问题处理
-            questionText = resolved;
-            options = optMatch[2]!
-              .split(/[|｜]/)
-              .map((s) => s.trim())
-              .filter((s) => s.length > 0);
-          }
-        }
-        questions.push({ slot: 'ask', question: questionText, ...(options && options.length > 0 ? { options } : {}) });
-      }
-    }
-    return questions;
+    return parseAskQuestions(fullContent).map((q) => ({ slot: 'ask', ...q }));
   }
 
   /** 确定当前回合任务类型（多模型路由）：含代码块→code；长文本(>500字符)→reasoning；其余→simple */
   private determineTaskType(messages: readonly Message[]): TaskType {
     // 从后向前取最近 N 条 user 消息作为检测窗口（多轮对话中真正含代码的请求可能不在最后一条）
     const recentUserContents: string[] = [];
-    for (let i = messages.length - 1; i >= 0 && recentUserContents.length < LOOP_CONSTANTS.TASK_TYPE_WINDOW; i--) {
+    for (
+      let i = messages.length - 1;
+      i >= 0 && recentUserContents.length < LOOP_CONSTANTS.TASK_TYPE_WINDOW;
+      i--
+    ) {
       if (messages[i]?.role === 'user') {
         recentUserContents.push(messages[i]!.content ?? '');
       }
@@ -1375,7 +1371,10 @@ export class AgentLoop {
             aborted = true;
             break;
           }
-          logger.warn({ err: e }, 'LLM 请求被非用户消原因 AbortError 中断（host signal 未 abort），判为连接中断');
+          logger.warn(
+            { err: e },
+            'LLM 请求被非用户消原因 AbortError 中断（host signal 未 abort），判为连接中断',
+          );
           llmSpan.recordException(e);
           llmSpan.end();
           throw e;
@@ -1393,7 +1392,13 @@ export class AgentLoop {
           if (this.strategy.errorHandling === 'degrade') {
             logger.warn({ err: e }, 'LLM 流式中途失败，降级为已生成的文本内容');
             llmSpan.end();
-            return { fullContent, pendingNarrate, toolCalls: undefined, aborted: false, textStreamed };
+            return {
+              fullContent,
+              pendingNarrate,
+              toolCalls: undefined,
+              aborted: false,
+              textStreamed,
+            };
           }
           llmSpan.recordException(e);
           llmSpan.end();
@@ -1405,7 +1410,13 @@ export class AgentLoop {
             const degradedMsg = '抱歉，AI 服务暂时不可用，请稍后重试。';
             logger.warn({ err: e }, 'LLM 重试耗尽，降级回复');
             llmSpan.end();
-            return { fullContent: degradedMsg, pendingNarrate, toolCalls: undefined, aborted: false, textStreamed };
+            return {
+              fullContent: degradedMsg,
+              pendingNarrate,
+              toolCalls: undefined,
+              aborted: false,
+              textStreamed,
+            };
           }
           llmSpan.recordException(e);
           llmSpan.end();
@@ -1625,7 +1636,11 @@ export class AgentLoop {
   private findLargestToolResult(): Message[] | null {
     let largest: Message | null = null;
     for (const m of this.messages) {
-      if (m.role === 'tool' && m.toolCallId && (!largest || m.content.length > largest.content.length)) {
+      if (
+        m.role === 'tool' &&
+        m.toolCallId &&
+        (!largest || m.content.length > largest.content.length)
+      ) {
         largest = m;
       }
     }
@@ -1639,7 +1654,10 @@ export class AgentLoop {
   ): Promise<string> {
     try {
       const content = targetMsgs
-        .map((m) => `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`)
+        .map(
+          (m) =>
+            `${m.role}: ${typeof m.content === 'string' ? m.content.substring(0, LOOP_CONSTANTS.SUMMARY_CONTENT_SLICE) : '[tool]'}`,
+        )
         .join('\n');
       if (!content) return '';
 
@@ -1734,9 +1752,7 @@ export class AgentLoop {
       .map((m) => {
         // 兼容 createdAt 为 number（时间戳）或 string（ISO 8601）两种格式
         const dateStr =
-          typeof m.createdAt === 'number'
-            ? new Date(m.createdAt).toISOString()
-            : m.createdAt;
+          typeof m.createdAt === 'number' ? new Date(m.createdAt).toISOString() : m.createdAt;
         return `- [${dateStr.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`;
       })
       .join('\n');
@@ -1944,7 +1960,9 @@ export class AgentLoop {
         estimatedTokens: this.contextManager.estimateTokens(this.messages),
         ...(this.lastBudget ? { budget: this.lastBudget } : {}),
         ...(this.lastOccupancy ? { occupancy: this.lastOccupancy } : {}),
-        ...(this.rolePackBaseTokens !== undefined ? { rolePackBaseTokens: this.rolePackBaseTokens } : {}),
+        ...(this.rolePackBaseTokens !== undefined
+          ? { rolePackBaseTokens: this.rolePackBaseTokens }
+          : {}),
       },
       tasks: {
         totalCount: this.metrics.taskTotalCount,

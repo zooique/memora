@@ -2151,7 +2151,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(userWrap.classList.contains('msg-wrapper')).toBe(true);
   });
 
-  it('A 容器化：容器级 footer 复制整链 = 用户提问 + 全部 assistant 段原文（含 [ASK] 行）', () => {
+  it('A 容器化：容器级 footer 复制 = 用户提问 + 各段报告正文（[ASK] 契约行被剥离，纯提问段跳过）', () => {
     mountChatView();
     // jsdom 无 navigator.clipboard，注入 writeText mock 捕获复制内容
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -2162,12 +2162,35 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
-    // 整链 = 用户提问 + 各段原文（提问在先、段按序拼接，[ASK] 行及其选项原文保留）
+    // 整链 = 用户提问 + 实质正文（提问在先、段按序拼接）
     expect(copied).toContain('帮我做方案');
-    expect(copied).toContain('[ASK] 你倾向哪个方案？{方案A|方案B}');
     expect(copied).toContain('好的，按方案A继续');
+    // T3 报告净化：提问契约行（含选项花括号）不混入复制，纯提问段剥离后为空被跳过
+    expect(copied).not.toContain('[ASK]');
+    expect(copied).not.toContain('方案B');
     // 拼接顺序：提问在前、回答段在后
     expect(copied.indexOf('帮我做方案')).toBeLessThan(copied.indexOf('好的，按方案A继续'));
+  });
+
+  it('A 容器化：整链复制剥离 [ASK] 行但保留同段实质正文（rawText 原文不改写）', () => {
+    mountChatView();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
+    // 同一段内 [ASK] 行与实质正文混排：剥离契约行、正文保留
+    dispatch({ type: 'assistant', text: '先确认倾向。\n[ASK] 倾向哪个方案？{方案A|方案B}', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
+    copyBtn.click();
+    const copied = writeText.mock.calls[0]?.[0] ?? '';
+    expect(copied).toContain('先确认倾向。');
+    // 契约行（问句 + 选项花括号）被剥离，正文剩余自然出现的关键词不误伤
+    expect(copied).not.toContain('[ASK]');
+    expect(copied).not.toContain('倾向哪个方案');
+    expect(copied).not.toContain('{方案A|方案B}');
+    // rawText 保留原文（重放/溯源不受复制净化影响）
+    const seg = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(seg.dataset.rawText).toContain('[ASK]');
   });
 
   it('R2 重放 [ASK]：live 解析只读选择题（问题 + 选项 chips，正文剔除 [ASK] 原文行）', () => {

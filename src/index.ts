@@ -7,9 +7,23 @@
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from '@/agent/agent.js';
 // RecalledMemorySummary：recall chunk 载荷类型，宿主渲染召回记忆列表时需要
-export type { AgentChunk, ThinkingPhase, AbortStopReason, UIMessages, ArchiveMode, RecalledMemorySummary, AgentOptions, AgentContext, AgentProjectEntry } from '@/agent/types.js';
+export type {
+  AgentChunk,
+  ThinkingPhase,
+  AbortStopReason,
+  UIMessages,
+  ArchiveMode,
+  RecalledMemorySummary,
+  AgentOptions,
+  AgentContext,
+  AgentProjectEntry,
+} from '@/agent/types.js';
 // 重复工具调用拦截器（宿主可自定义判重策略）
-export type { DuplicateCallInterceptor, DuplicateCheckVerdict, DuplicateCheckContext } from '@/agent/types.js';
+export type {
+  DuplicateCallInterceptor,
+  DuplicateCheckVerdict,
+  DuplicateCheckContext,
+} from '@/agent/types.js';
 export { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
 export { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 // 上下文窗口解析（单一真理源公式）：宿主在构造 Agent 前将 provider.contextWindow 与
@@ -27,27 +41,57 @@ export {
 } from '@/agent/contextManager.js';
 export { type AgentForkResult } from '@/agent/managers/sessionManager.js';
 export type { SessionManager } from '@/agent/managers/sessionManager.js';
-export type { ToolDefinition, ToolHandler, ToolContext, WriteExtensions } from '@/agent/toolExecutor.js';
+export type {
+  ToolDefinition,
+  ToolHandler,
+  ToolContext,
+  WriteExtensions,
+} from '@/agent/toolExecutor.js';
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 // 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
-  RolePack, RolePackMeta, RolePackAssembly, RolePackTeam,
-  RolePackCapability, RolePackManifestSkill,
-  BehaviorStrategy, PrepareStrategy, ActStrategy, ReflectStrategy, GlobalStrategy,
-  UnderstandingConfirm, ContextAssembly, MemoryRecallMode,
-  ToolApproval, ToolReadonly, StreamingMode,
-  ProviderRouting, MultiStepReasoning, InputInterrupt,
+  RolePack,
+  RolePackMeta,
+  RolePackAssembly,
+  RolePackTeam,
+  RolePackCapability,
+  RolePackManifestSkill,
+  BehaviorStrategy,
+  PrepareStrategy,
+  ActStrategy,
+  ReflectStrategy,
+  GlobalStrategy,
+  UnderstandingConfirm,
+  ContextAssembly,
+  MemoryRecallMode,
+  ToolApproval,
+  ToolReadonly,
+  StreamingMode,
+  ProviderRouting,
+  MultiStepReasoning,
+  InputInterrupt,
   LoopContinue,
   UserFollowup,
   ErrorHandling,
 } from '@/role-pack/types.js';
-export { DEFAULT_BEHAVIOR_STRATEGY, mergeStrategy, assembleRolePack } from '@/role-pack/strategyResolver.js';
+export {
+  DEFAULT_BEHAVIOR_STRATEGY,
+  mergeStrategy,
+  assembleRolePack,
+} from '@/role-pack/strategyResolver.js';
 export { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
 export { RolePackManager } from '@/role-pack/rolePackManager.js';
 // 角色包格式校验器：manifest.json 唯一核心控制文件 + companion 内容红线检测
-export { validateManifest, validateManifestText, checkCompanionContentRedline } from '@/role-pack/validator.js';
+export {
+  validateManifest,
+  validateManifestText,
+  checkCompanionContentRedline,
+} from '@/role-pack/validator.js';
 export type {
-  RolePackValidationIssue, RolePackValidationResult, RolePackValidateInput, RolePackIssueSeverity,
+  RolePackValidationIssue,
+  RolePackValidationResult,
+  RolePackValidateInput,
+  RolePackIssueSeverity,
 } from '@/role-pack/validator.js';
 export type {
   MemoryInspector,
@@ -96,7 +140,12 @@ export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 // 治理共享常量：宿主 WorkspaceStorage 与核心库 recall.ts 共用同一真理源（clamp/沉底边界）
-export { BOOST_INCREMENT, SCORE_CEILING, SCORE_FLOOR, INACTIVITY_SINK_DAYS } from '@/memory/governance.js';
+export {
+  BOOST_INCREMENT,
+  SCORE_CEILING,
+  SCORE_FLOOR,
+  INACTIVITY_SINK_DAYS,
+} from '@/memory/governance.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎
@@ -104,7 +153,10 @@ export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-s
 // FetchWebSearchProvider：默认搜索实现（零依赖开箱即用）；safeSearch：带超时保护的搜索包装（宿主可复用）
 export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
 // buildSearchEndpoints：按名字构建搜索端点降级链（宿主设置 memora.searchEngine 切换引擎用）
-export { buildSearchEndpoints, type SearchEngineName } from '@/web-search/fetchWebSearchProvider.js';
+export {
+  buildSearchEndpoints,
+  type SearchEngineName,
+} from '@/web-search/fetchWebSearchProvider.js';
 export { safeSearch } from '@/web-search/webSearchProvider.js';
 
 // ─── 网页抓取导出（搜索→抓取闭环第二段） ──────────────────────
@@ -134,7 +186,10 @@ export type {
   ProjectTextSearchOptions,
 } from '@/project-search/types.js';
 // safeSearchProjectFiles/safeSearchProjectText：带超时保护的项目搜索包装（宿主可复用）
-export { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
+export {
+  safeSearchProjectFiles,
+  safeSearchProjectText,
+} from '@/project-search/projectSearchProvider.js';
 // SEARCH_PROJECT_TOOL：条件性工具定义（宿主注入 IProjectSearchProvider 后暴露给 LLM）
 export { SEARCH_PROJECT_TOOL } from '@/agent/builtinTools.js';
 // PROJECT_SEARCH_RESULT_MAX_LEN / IGNORED_DIR_NAMES：search_project 调用面与宿主实现方共享的单一真理源
@@ -173,12 +228,25 @@ export type {
   ProcessMetricsPayload,
 } from '@/memory/roundStore.js';
 // Round 辅助函数
-export { generateRoundId, generateMessageId, createPendingRound, completeRound } from '@/memory/roundStore.js';
+export {
+  generateRoundId,
+  generateMessageId,
+  createPendingRound,
+  completeRound,
+} from '@/memory/roundStore.js';
 
 // ─── 会话视图加载器导出 ─────────────────────────────────────
 // SessionViewLoader：将 Round ID 列表展开为完整对话视图
-export type { ISessionViewLoader, SessionView, SessionSummary } from '@/memory/sessionViewLoader.js';
-export { flattenRoundsToMessages, truncateRoundsUpTo, countMessagesInRounds } from '@/memory/sessionViewLoader.js';
+export type {
+  ISessionViewLoader,
+  SessionView,
+  SessionSummary,
+} from '@/memory/sessionViewLoader.js';
+export {
+  flattenRoundsToMessages,
+  truncateRoundsUpTo,
+  countMessagesInRounds,
+} from '@/memory/sessionViewLoader.js';
 // 内存版实现（用于测试和开发）
 export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 
@@ -211,8 +279,16 @@ export { setLogger, logger } from '@/logging/logger.js';
 export { segmentText, segmentLower } from '@/utils/segmenter.js';
 export { isPlainObject } from '@/utils/objects.js';
 export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
+// [ASK] 提问契约解析（SSOT 单一真理源，2026-09-03 T1）：内核 loop 提取提问与宿主 webview
+// 重放/复制清洗共用同一份浏览器安全纯函数（零 Node 依赖，esbuild 可内联进渲染进程 bundle）
+export { parseAskQuestions, stripAskLines, type ParsedAskQuestion } from '@/utils/askParser.js';
 // 宿主主进程统一使用 safeSetTimeout/safeSetInterval 跟踪清理定时器
-export { safeSetTimeout, safeSetInterval, clearSafeTimeout, clearSafeInterval } from '@/utils/safeTimer.js';
+export {
+  safeSetTimeout,
+  safeSetInterval,
+  clearSafeTimeout,
+  clearSafeInterval,
+} from '@/utils/safeTimer.js';
 export type { SkillEntry, SkillMatch } from '@/skill/types.js';
 
 // ─── 安全层导出 ────────────────────────────────────────────
@@ -234,5 +310,10 @@ export type { ToolErrorCodeValue } from '@/utils/errors.js';
 
 // ─── 通用工具导出 ────────────────────────────────────────
 // 宿主主进程统一从 'memora' 导入通用工具，消除 shared/ 跨层副本（渲染进程因浏览器环境保留副本）
-export { truncate, isValidConfigName, parseConfigId, MAX_CONFIG_NAME_LENGTH } from '@/utils/strings.js';
+export {
+  truncate,
+  isValidConfigName,
+  parseConfigId,
+  MAX_CONFIG_NAME_LENGTH,
+} from '@/utils/strings.js';
 export { formatDateKey, todayDate } from '@/utils/time.js';
