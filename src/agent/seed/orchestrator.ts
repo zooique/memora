@@ -1,18 +1,20 @@
 /**
- * 种子闭环编排器 — 三层模型的结构真理源（执行闭环 ⊂ Loop ⊂ 目标模式，见 [agent-design-philosophy.md §4.4](../../../docs/architecture/agent-design-philosophy.md)）
+ * 种子 turn 编排器 — 三层模型的结构真理源：turn（档1）⊂ 多 turn 任务编排（档2）⊂ 目标模式（档3，未实现）
+ * 见 [agent-design-philosophy.md §4.4](../../../docs/architecture/agent-design-philosophy.md)。
  *
- * 「如何串联一个执行闭环」全部收在此处，门面只做一行委托 + 生命周期守卫，不再持有闭环编排逻辑。
+ * 「如何串联一个 turn」全部收在此处，门面只做一行委托 + 生命周期守卫，不再持有 turn 编排逻辑。
  *
- * 两个显式命名入口（闭环只认 Trigger、不认来源，见 [agent-design-philosophy.md §2.1 Trigger](../../../docs/architecture/agent-design-philosophy.md)）：
- *   - runChat   （对话 Trigger）   完整闭环：prepare → act(processUserInput) → reflect → handoff
+ * 两个显式命名入口（turn 只认 Trigger、不认来源，见 [agent-design-philosophy.md §2.1 Trigger](../../../docs/architecture/agent-design-philosophy.md)）：
+ *   - runChat   （对话 Trigger）   完整 turn：prepare → act(processUserInput) → reflect → handoff
  *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
  * 注：原 runEvent（SessionEvent 结构化事件路径）已随 composer/四元组补全整条剪枝，输入统一走 runChat 的 chat 语义。
  *
- * 概念澄清（注释历史错位的收敛，零逻辑变更）：
- *   - 本文件的 externalTaskLoop / completeExternalTask / runStepSequence 是【档2 Loop 编排】
- *    （复杂输入 → 规划闭环 + 每步一执行闭环序列 + 收尾汇报）。"外部任务/外循环"是历史命名残留，
- *    语义等价于"Loop 编排"；不涉及档3 目标模式（远期，未实现）。
- *   - 档1 执行闭环的 act 阶段内部迭代由 loop.ts 的 runIterationLoop 承载（内循环），不在此文件。
+ * 概念澄清（2026-09-03 术语统一，零逻辑变更）：
+ *   - 本文件的 externalTaskLoop / completeExternalTask / runStepSequence 是【档2 多 turn 任务编排】
+ *    （复杂输入 → 规划 turn + 每步一 turn 序列 + 收尾汇报 turn）。"外部任务/外循环/Loop 编排"
+ *    是历史命名残留，术语层面统一为「多 turn 任务编排」；不涉及档3 目标模式（远期，未实现）。
+ *   - 档1 turn Act 阶段内部的 step 编排（官方 loop = Agent Loop）由 loop.ts 的 runIterationLoop 承载，不在此文件。
+ *   - 代码值 `HandoffDecision='loop'` 意为「自动续跑 turn」，非术语「loop = 对 step 的编排」。
  *
  * 刻意不做「单 run() + mode 标志」——两条路径的真实差异（runResume 无 prepare/无 handoff）
  * 若硬塞进一个开关，会落入场景特化补丁反模式。
@@ -39,8 +41,8 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
- * Loop 编排规划闭环提示（档2）：复杂任务第一步只调查 + 建任务表，不执行步骤。
- * 规划后由 orchestrator 的 Loop 编排按 pending 步骤逐个拉起独立执行闭环，避免规划与执行在一次闭环内挤在一起。
+ * 多 turn 任务编排「规划 turn」提示（档2）：复杂任务第一步只调查 + 建任务表，不执行步骤。
+ * 规划后由 orchestrator 按 pending 步骤逐个拉起独立执行 turn，避免规划与执行挤在一次 turn 内。
  */
 const PLAN_ONLY_HINT =
   '这是一个需要多步完成的复杂任务。请先充分调查并建立任务表（task_table_write），' +

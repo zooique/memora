@@ -143,8 +143,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
     archiveCoordinator: ArchiveCoordinator | null;
     /**
-     * 种子闭环编排器（最小执行闭环唯一编排真理源）：prepare → act → reflect → handoff。
-     * chat() 委托 runChat()；续跑（continueAfterPause）走 runResume()，复用同一闭环编排。
+     * 种子 turn 编排器（turn 的唯一编排真理源）：prepare → act → reflect → handoff。
+     * chat() 委托 runChat()；续跑（continueAfterPause）走 runResume()，复用同一 turn 编排。
      * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
      */
     seedOrchestrator: SeedOrchestrator | null;
@@ -399,7 +399,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.internals.memoryAdvisor,
     );
 
-    // 种子闭环编排器（最小执行闭环唯一编排真理源）：依赖 sessionManager/loop/history 等
+    // 种子 turn 编排器（turn 唯一编排真理源）：依赖 sessionManager/loop/history 等
     // 均已就绪（assembleComponents 已完成 + sessionNamer 本方法前段创建），在此构造一次。
     // getParts() 惰性取当前组件——rebuildComponents（switchProject）更换组件后仍取到最新引用。
     this.internals.seedOrchestrator = this.createSeedOrchestrator();
@@ -916,7 +916,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 获取最近一次处理线程的工具执行历史（loop/执行闭环域聚合出口，补待办 #3）
+   * 获取最近一次处理线程的工具执行历史（loop 域聚合出口，补待办 #3）
    *
    * 数据源自 sessionManager 检查点的 completedToolCalls（已由
    * AGENT_CONSTANTS.COMPLETED_TOOL_CALLS_MAX 做 FIFO 封顶）。本方法剥离「恢复/幂等」内部

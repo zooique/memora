@@ -1,13 +1,13 @@
 /**
- * 难度分级 — 回答前判定一次问答为「简单/复杂」，决定走档1单闭环直答还是档2 Loop 编排
+ * 难度分级 — 回答前判定一次问答为「简单/复杂」，决定走档1 单 turn 直答还是档2 多 turn 任务编排
  *
  * 在回答前做一次轻量 LLM 判断（难度分级，三层模型见 agent-design-philosophy §4.4）：
- * 简单/unknown → 档1 单执行闭环直接答（不鼓励多步规划、不触发汇报）；
- * 复杂 → 档2 Loop 编排（externalTaskLoop：规划 → 步序列 → 收尾汇报），由 orchestrator 按
- * taskLoopLimit 共同决策。
+ * 简单/unknown → 档1 单 turn 直接答（不鼓励多步规划、不触发汇报）；
+ * 复杂 → 档2 多 turn 任务编排（externalTaskLoop：规划 turn → 步 turn 序列 → 收尾汇报 turn），
+ * 由 orchestrator 按 taskLoopLimit 共同决策。
  *
  * 设计纪律：
- *   - 纯新增、可逆：判定结果只影响「走单闭环还是 Loop 编排」这一条附加路径，不改动现有回答语义。
+ *   - 纯新增、可逆：判定结果只影响「走单 turn 还是多 turn 编排」这一条附加路径，不改动现有回答语义。
  *   - 用后台 Provider（backgroundProvider）：判定属「回答前视图」，与角色 LLM 兜底同源
  *     （非阻塞主线生成模型），backgroundProvider 为 null 时优雅跳过 → 返回 'unknown'。
  *   - 过度判断是浪费：single low-token 调用，仅区分 simple/complex 两态。

@@ -1,13 +1,15 @@
 /**
- * 执行闭环 act 引擎（AgentLoop）— 单轮执行闭环「回答中」阶段的 LLM↔工具迭代引擎
+ * turn（问答闭环）Act 引擎（AgentLoop）— turn 回答中阶段的 loop（对 step 的编排，官方 Agent Loop 本义）
  *
- * 概念定位（三层模型，见 [agent-design-philosophy.md §4.4](../../docs/architecture/agent-design-philosophy.md)）：
- *   - 本类承载【档1 执行闭环】的 act 内部迭代（runIterationLoop：LLM 自主决定推理/调用工具，
- *     循环直到输出纯文本）——是闭环的身体引擎，不构成独立层级；
- *   - 【档2 Loop 编排】（多个执行闭环的编排：规划 → 步序列 → 收尾）由
- *     seed/orchestrator 的 externalTaskLoop 承载，本类只是它逐轮驱动的 act 引擎。
- *   - 上下文 = 用户输入 + Agent 记忆召回结果 + Loop 工作记忆（召回结果
- *     由 Agent 层通过 processUserInput 的 recalledMemories 参数注入）。
+ * 概念定位（术语统一 2026-09-03，见 [agent-design-philosophy.md §3](../../docs/architecture/agent-design-philosophy.md)）：
+ *   - step = 一次 LLM 调用 + 可选工具执行（runIterationLoop 内每次循环体，历史别名「迭代/内循环」）；
+ *   - loop = 对 step 的编排：turn 回答中阶段反复拉起 step 直到输出最终回答；
+ *   - 本类承载【档1 turn（问答闭环）】的 Act 引擎（含 loop=step 编排），是 turn 的身体引擎，
+ *     不构成独立层级；
+ *   - 【档2 多 turn 任务编排】（多个 turn 的串联：规划 turn + 步 turn 序列 + 收尾 turn）
+ *     由 seed/orchestrator 的 externalTaskLoop 承载，本类只是它逐轮驱动的 Act 引擎。
+ *   - 上下文 = 用户输入 + Agent 记忆召回结果 + 运行帧追加（召回结果由 Agent 层
+ *     通过 processUserInput 的 recalledMemories 参数注入）。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';

@@ -1,23 +1,23 @@
-# 任务驱动的多轮闭环收敛模型
+# 任务驱动的多 turn 任务编排收敛模型
 
-> **定位**：本模型是"单轮执行闭环 = 种子"哲学的**外循环语义化**——它回答一个问题：**复杂的笼统问题，如何从一棵干净的种子长成"有条理、有起点、有终点"的多轮执行？**
+> **定位**：本模型是"turn（问答闭环）= 种子"哲学的**多 turn 任务编排语义化**——它回答一个问题：**复杂的笼统问题，如何从一棵干净的种子长成"有条理、有起点、有终点"的多 turn 执行？**
 >
-> **状态**：已实现（2026-09-01 按实证更新）。本文论证的目标形态已全部落地于 seed/orchestrator——难度分级（[difficulty.ts](../../src/agent/seed/difficulty.ts)）+ 任务链编排（`externalTaskLoop`/`completeExternalTask`/`runStepSequence`）+ 收尾汇报闭环（`runReport` → 汇报单源摘要）。「目标 vs 现状」表述已同步为实现记录，未固化 ADR。
+> **状态**：已实现（2026-09-03 术语统一更新）。本文论证的目标形态已全部落地于 seed/orchestrator——难度分级（[difficulty.ts](../../src/agent/seed/difficulty.ts)）+ 多 turn 任务链编排（`externalTaskLoop`/`completeExternalTask`/`runStepSequence`）+ 收尾汇报 turn（`runReport` → 汇报单源摘要）。「目标 vs 现状」表述已同步为实现记录，未固化 ADR。
 >
-> **哲学真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（闭环 = 最小单元）· [loop-design.md](./loop-design.md)（Loop = 闭环的重复）· [module-inventory.md](./module-inventory.md)（模块现状）
+> **哲学真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（turn·step·loop·多 turn 任务编排）· [loop-design.md](./loop-design.md)（loop = 对 step 的编排）· [module-inventory.md](./module-inventory.md)（模块现状）
 
 ---
 
 ## 〇、核心命题
 
-> **触发器分两态：简单问题一问一答（单轮闭环）；复杂问题通过"任务驱动外循环"收敛（多轮闭环 + 起始与收尾），直到问题收敛完毕。**
+> **触发器分两态：简单问题一问一答（单 turn 闭环）；复杂问题通过"任务驱动的多 turn 编排"收敛（多 turn + 起始与收尾 turn），直到问题收敛完毕。**
 
-执行闭环是**单一真理源**——无论简单还是复杂，都是同一棵种子。复杂度不改变单元，只改变**如何串联单元**：
+turn（问答闭环）是**单一真理源**——无论简单还是复杂，都是同一棵种子。复杂度不改变单元，只改变**如何串联单元**：
 
-| 问题难度 | 行为 | 闭环数 |
+| 问题难度 | 行为 | turn 数 |
 |---------|------|--------|
 | 简单 | 直接回答，一问一答 | 1 轮 |
-| 复杂 | 编排任务链 → 逐个闭环执行 → 收敛汇报 | 多轮（loop） |
+| 复杂 | 编排任务链 → 逐个 turn 执行 → 收敛汇报 turn | 多轮（多 turn 任务编排） |
 
 ---
 
@@ -29,17 +29,17 @@
   ├─[LLM 判难度]──────────────┐
   │  简单                     │ 复杂
   ▼                           ▼
- 直接回答               【第 1 个闭环】调查 + 编排任务链
-    │（一轮 done）            │  task_table_write 建长任务链
-    │                         ▼（本轮结束，进入 loop）
-    │                  【loop 模式】任务链逐步驱动多轮闭环
-    │                    ├─ 每轮解一个任务，task_table_update 标记
-    │                    ├─ 过程中可主动提问 / 用户插话 / 暂停续跑
-    │                    └─ 任务链全部 done → 收敛
-    │                         ▼
-    │                  【汇报闭环】汇总任务结果，产出总结汇报
-    ▼                         ▼
-   结束                    【摘要提炼】汇报 → round-summary（摘要即记忆）
+ 直接回答               【第 1 个 turn】调查 + 编排任务链
+   │（一轮 done）            │  task_table_write 建长任务链
+   │                         ▼（本轮结束，进入多 turn 任务编排）
+   │                  【多 turn 任务链】逐步驱动多轮 turn
+   │                    ├─ 每轮解一个任务，task_table_update 标记
+   │                    ├─ 过程中可主动提问 / 用户插话 / 暂停续跑（气口在 step 之间）
+   │                    └─ 任务链全部 done → 收敛
+   │                         ▼
+   │                  【汇报 turn】汇总任务结果，产出总结汇报
+   ▼                         ▼
+  结束                    【摘要提炼】汇报 turn → round-summary（摘要即记忆）
 ```
 
 ---
@@ -49,73 +49,73 @@
 | # | 阶段 | 目标形态 | 实现（实证） | 差距 |
 |---|------|---------|------------|------|
 | 1 | **难度分级** | LLM 判简单/复杂，简单直接一轮 done | ✅ [difficulty.ts](../../src/agent/seed/difficulty.ts)：simple/unknown → 档1 直答；complex 且 `taskLoopLimit>0` → 档2 | 无 |
-| 2 | **调查** | 复杂时用 read_file/list_dir 等工具调查实情 | ✅ 内置工具已具备（规划闭环注入 PLAN_ONLY 引导调查建表） | 无 |
-| 3 | **编排任务链** | 规划闭环只建任务表（task_table_write），不执行步骤 | ✅ `externalTaskLoop` 规划闭环 + `setWithinExternalTask` 进入编排上下文 | 无 |
-| 4 | **loop 执行** | 任务链逐步驱动多轮闭环到收敛 | ✅ `completeExternalTask`/`runStepSequence`：每步独立 roundId 执行闭环，pending 耗尽收敛 | 无 |
-| 5 | **汇报 + 摘要** | 独立汇报闭环 → 汇总 → 提炼摘要 | ✅ `finalizeExternalTask`：收敛 → `runReport` 汇报闭环 + 汇报单源摘要（摘要恒 1:1）；未收敛 → 普通单条摘要 | 无 |
+| 2 | **调查** | 复杂时用 read_file/list_dir 等工具调查实情 | ✅ 内置工具已具备（规划 turn 注入 PLAN_ONLY 引导调查建表） | 无 |
+| 3 | **编排任务链** | 规划 turn 只建任务表（task_table_write），不执行步骤 | ✅ `externalTaskLoop` 规划 turn + `setWithinExternalTask` 进入编排上下文 | 无 |
+| 4 | **多 turn 执行** | 任务链逐步驱动多 turn 到收敛 | ✅ `completeExternalTask`/`runStepSequence`：每步独立 roundId 执行 turn，pending 耗尽收敛 | 无 |
+| 5 | **汇报 + 摘要** | 独立汇报 turn → 汇总 → 提炼摘要 | ✅ `finalizeExternalTask`：收敛 → `runReport` 汇报 turn + 汇报单源摘要（摘要恒 1:1）；未收敛 → 普通单条摘要 | 无 |
 
 ---
 
 ## 三、两个关键设计决策
 
-### 决策 A：内循环 vs 外循环——双轨任务，非此即彼
+### 决策 A：loop（step 编排） × 多 turn 任务编排——双轨配比，正交互补
 
-> **背景**：task_table 驱动的"内循环"（单轮闭环内的工具调用继续）已存在；本模型引入的"外循环"（跨多轮闭环的任务链驱动）是不同形态。
+> **背景**：loop.ts `runIterationLoop`（turn 内对 step 的编排，即"官方 loop"）已存在；本模型引入的"档2 多 turn 任务编排"（跨 turn 的任务链驱动，代码 `externalTaskLoop`）是另一层编排——**两者不在同一个概念层，不是非此即彼的互斥**。
 
 | 任务类型 | 驱动对象 | 语义 | 现有性 |
 |---------|---------|------|--------|
-| **内部任务** | 单轮闭环内的工具循环（内循环 continue，`runIterationLoop`） | "一个闭环有多深" | ✅ 已实现 |
-| **外部任务** | 跨多轮闭环的串联（步闭环序列驱动下一个闭环，`externalTaskLoop`/`runStepSequence`） | "一次任务有多长" | ✅ 已实现 |
+| **turn 内 step 编排（官方 loop）** | 单 turn 内 LLM↔工具交替（`runIterationLoop`） | "一个 turn 有多深" | ✅ 已实现 |
+| **多 turn 任务编排（档2）** | 跨 turn 串联（规划 turn + 步 turn 序列 + 汇报 turn，`externalTaskLoop`/`runStepSequence`） | "一次任务有多长" | ✅ 已实现 |
 
-**判定**：两者正交互补——内部任务保留（复杂步骤在单轮内连续执行，loop.ts `runIterationLoop`），外部任务已增加（清单驱动多轮，orchestrator 步闭环序列）。对照哲学 §7.3「内循环深 / 外循环长」配比。注：「外部任务/外循环」为历史命名残留，语义等价于「Loop 编排」（orchestrator 头注释概念澄清，档2）。
+**判定**：两者正交互补——turn 内 step 保持深（复杂步骤在单 turn 内连续执行，loop.ts `runIterationLoop`），多 turn 任务编排在 turn 级串联长（清单驱动多 turn，orchestrator 步 turn 序列）。对照哲学 §7.3「loop 深 / 多 turn 任务编排长」配比。注：「externalTaskLoop 里带的 Loop」为历史标识符残留，术语层面已统一为「多 turn 任务编排」（档2）。
 
-### 决策 B：loop 的终止语义化——从"撞上限"到"任务收敛 + 汇报"
+### 决策 B：多 turn 任务编排的终止语义化——从"撞上限"到"任务收敛 + 汇报"
 
-> **背景**：撰文时 loop 靠"撞上限"兜底终止；本模型将其升级为"任务链驱动 + 收敛汇报"，现已在 orchestrator 落地（决策 A 同批实现）。
+> **背景**：撰文时档2 编排只是"重复拉起 turn"的硬循环；本模型将其升级为"任务链驱动 + 收敛汇报 turn"，现已在 orchestrator 落地（决策 A 同批实现）。注意此处的"loop 字样"指「档2 多 turn 任务编排」（历史遗留叫法），非官方 loop = 对 step 的编排。
 
 | 维度 | 撰文时现状 | 当前实现 |
 |------|------|------|
-| 触发 | 无条件进入 loop | difficulty 判 complex 且 `taskLoopLimit>0` 才进入（[difficulty.ts](../../src/agent/seed/difficulty.ts)） |
-| 驱动 | 无任务语义，单纯重复 | 任务表 pending 步逐步指导下一步（`getNextPendingStep`，步闭环 stepPrompt） |
+| 触发 | 无条件进入编排 | difficulty 判 complex 且 `taskLoopLimit>0` 才进入（[difficulty.ts](../../src/agent/seed/difficulty.ts)） |
+| 驱动 | 无任务语义，单纯重复 turn | 任务表 pending 步逐步指导下一步（`getNextPendingStep`，步 turn stepPrompt） |
 | 终止 | 撞 maxIterations/stepBudget | 任务链 pending 耗尽收敛；触顶兜底报告进度 + 列未完成（`finalizeExternalTask`） |
-| 收尾 | 直接断开 | **独立汇报闭环**（`runReport` 汇总 → 汇报单源摘要，摘要恒 1:1） |
+| 收尾 | 直接断开 | **独立汇报 turn**（`runReport` 汇总 → 汇报单源摘要，摘要恒 1:1） |
 
 ---
 
-## 四、汇报闭环 → 摘要记忆（决策 C，高价值纯增量）
+## 四、汇报 turn → 摘要记忆（决策 C，高价值纯增量）
 
-> **核心洞察**：任务收敛后的独立汇报闭环，是**摘要记忆的最佳信息源**——它天然是一段自洽的"我做了什么"总结，直接可提炼为 round-summary（摘要即记忆单轨）。
+> **核心洞察**：任务收敛后的独立汇报 turn，是**摘要记忆的最佳信息源**——它天然是一段自洽的"我做了什么"总结，直接可提炼为 round-summary（摘要即记忆单轨）。
 >
-> **已实现（2026-09-01 实证）**：`finalizeExternalTask` 收敛 → `runReport` 汇报闭环 → `reflectReported` 汇报单源摘要（摘要↔外部输入恒 1:1）；无实质收尾时回退普通单条摘要（`backgroundReflect`），收敛路径恒产 1 条。
+> **已实现（2026-09-01 实证）**：`finalizeExternalTask` 收敛 → `runReport` 汇报 turn → `reflectReported` 汇报单源摘要（摘要↔外部输入恒 1:1）；无实质收尾时回退普通单条摘要（`backgroundReflect`），收敛路径恒产 1 条。
 
 **为什么这是良配**：
-- 汇报闭环的产出 = 结构化总结（目标回顾 + 已完成步骤 + 结果），比零散对话更易提炼
+- 汇报 turn 的产出 = 结构化总结（目标回顾 + 已完成步骤 + 结果），比零散对话更易提炼
 - 符合"摘要即记忆"——汇报本身就是一条高质量摘要候选，无需新机制
-- 落地即**纯新增**：在任务链收敛后，再编排一次"汇报"闭环，其产出走既有 round-summary 生成管线
+- 落地即**纯新增**：在任务链收敛后，再编排一次"汇报" turn，其产出走既有 round-summary 生成管线
 
 ---
 
-## 五、loop 运行时的既有能力（现状已具备，无需新建）
+## 五、turn × loop × 多 turn 编排运行时的既有能力（现状已具备，无需新建）
 
-> 用户记忆中的"loop 运行时能做什么"——**全部真实存在于代码**，是闭环迭代边界的天然能力，非 loop 补丁：
+> 用户记忆中的"编排运行时能做什么"——**全部真实存在于代码**，是 turn 内 step 边界的天然能力，非补丁：
 
 | 能力 | 真实实现 |
 |------|---------|
-| **主动提问** | `extractAskQuestions` 解析 `[ASK]` → `question_pending` 事件 |
-| **用户插话** | `interject()` 立即中断 + 排队 `pendingInterjections`，迭代边界消费 |
-| **申请暂停** | `requestPause()` → 迭代边界 `yield paused` 挂起（暂停收口统一翻态 + 写 pauseMeta） |
-| **继续运行** | `continueAfterPause()` 从边界续跑 |
+| **主动提问** | `extractAskQuestions` 解析 `[ASK]` → `question_pending` 事件（气口：step 之间） |
+| **用户插话** | `interject()` 立即中断 + 排队 `pendingInterjections`，step 边界消费 |
+| **申请暂停** | `requestPause()` → step 边界 `yield paused` 挂起（暂停收口统一翻态 + 写 pauseMeta） |
+| **继续运行** | `continueAfterPause()` 从 step 边界续跑 |
 
-**结论**：这些是"闭环边界天然提供的交互点"，本模型只需在 loop 执行阶段**正常使用**它们，不新增机制。
+**结论**：这些是"turn 内 step 边界天然提供的交互点"，本模型只需在多 turn 执行阶段**正常使用**它们，不新增机制。
 
-### 档2 步序列记忆策略（2026-09-01 定案：不强制召回，LLM 按需自取）
+### 档2 步 turn 序列记忆策略（2026-09-01 定案：不强制召回，LLM 按需自取）
 
-步序列（`runStepSequence`）中每个步闭环的 `recalledMemories` 恒空（orchestrator 传 `[]`）——**显式不强制召回，属设计选择而非缺口**：
+步 turn 序列（`runStepSequence`）中每个步 turn 的 `recalledMemories` 恒空（orchestrator 传 `[]`）——**显式不强制召回，属设计选择而非缺口**：
 
-- **基座已足**：规划闭环已做一次语义召回注入（残留上下文供后续步骤复用）；步间正文经完整对话层累积，任务上下文不缺失。
+- **基座已足**：规划 turn 已做一次语义召回注入（残留上下文供后续步骤复用）；步 turn 间正文经完整对话层累积，任务上下文不缺失。
 - **按需自取**：LLM 在步进中需要全局记忆/历史决策时，主动调用 `search_memories`（全局关键词）→ `trace_summary`（回溯原文）自取——与"装配帧内核召回 + 运行帧 LLM 按需"的混合设计一致，不把召回决策权强制交给内核。
-- **理由**：强制每步召回需重定义"触发源语义"（步闭环算外部驱动还是自动续跑，哲学 §12.4）、每步 recall 成本 + exclude 互斥维护；而兜底工具已存在，先例 = search_project P1-1（不改机制、强化工具描述引导）。
-- **抓手**：`search_memories` 工具描述已补"多步任务需要历史决策/既有记忆时主动调用"引导（2026-09-01）。真实场景若发现 LLM 大量遗忘调用导致终局质量下降，再评估强制步级召回（届时须先拍板触发源语义）。
+- **理由**：强制每步召回需重定义"触发源语义"（步 turn 算外部驱动还是自动续跑，哲学 §12.4）、每步 recall 成本 + exclude 互斥维护；而兜底工具已存在，先例 = search_project P1-1（不改机制、强化工具描述引导）。
+- **抓手**：`search_memories` 工具描述已补"多步任务需要历史决策/既有记忆时主动调用"引导（2026-09-01）。真实场景若发现 LLM 大量遗忘调用导致终局质量下降，再评估强制步 turn 召回（届时须先拍板触发源语义）。
 
 ### `[ASK]` 主动提问的独占约束
 
@@ -134,49 +134,51 @@
 
 ---
 
-## 六、自审查与 loop 的关系
+## 六、自审查与 turn/多 turn 编排的关系
 
-> **问题**：角色包有自审查开关（`reflect.loopContinue` → `maxSelfReviewRounds`，0=关闭）。进入 loop 模式后，自审查是"每个执行闭环各审一遍"还是"整个 loop 结束才审"？
+> **问题**：角色包有自审查开关（`reflect.loopContinue` → `maxSelfReviewRounds`，0=关闭）。进入多 turn 任务编排后，自审查是"每个 turn 各审一遍"还是"整个编排结束才审"？
+>
+> 注意：代码字段名的 `loopContinue` 是"续跑继续"的语义（Handoff 决策 `loop` 值），非官方「loop = 对 step 的编排」概念。
 
-### 结论：自审查粒度 = "单个闭环"，不是"整个 loop 汇总"
+### 结论：自审查粒度 = "单个 turn"，不是"整个编排汇总"
 
-关键在 `selfReviewRound` 的 reset 边界——它在 `processUserInput` 入口归 0（[loop.ts](../../src/agent/loop.ts) `resetTurnState`），在该闭环 `done` 时经 `handleIterationResult` 触发自审。因此 **自审查范围限定在"一个闭环内部"**，不跨闭环累计。
+关键在 `selfReviewRound` 的 reset 边界——它在 `processUserInput` 入口归 0（[loop.ts](../../src/agent/loop.ts) `resetTurnState`），在该 turn `done` 时经 `handleIterationResult` 触发自审。因此 **自审查范围限定在"一个 turn 内部"**，不跨 turn 累计。
 
 | 形态 | 自审查行为 |
 |------|-----------|
-| **档1 单闭环**（一次 `processUserInput` 内多迭代） | 内部所有迭代共享一个 `selfReviewRound`，只在**那次输入的最终 done** 审一次，不每迭代一审 |
-| **档2 Loop 编排**（`externalTaskLoop` 步闭环序列） | 每步独立 `processUserInput` → 各自 done 审一次；收尾汇报闭环自带一次汇总审 |
+| **档1 单 turn**（一次 `processUserInput` 内多个 step） | turn 内所有 step 共享一个 `selfReviewRound`，只在**那次输入的最终 done** 审一次，不每 step 一审 |
+| **档2 多 turn 任务编排**（`externalTaskLoop` 步 turn 序列） | 每步独立 `processUserInput` → 各自 done 审一次；收尾汇报 turn 自带一次汇总审 |
 
-> **触发门槛（2026-08-28 补充）**：自审查只在闭环内**实际执行过工具步**（多轮执行闭环）后才接入——一遍过的纯文本问答不触发（无外部校验信号，避免"为审而审"）。审查应答为满意短确认（如"无需修改"）时**立即终止**（满意即停），不再追问下一轮审查。
+> **触发门槛（2026-08-28 补充）**：自审查只在 turn 内**实际执行过工具步**（多 step 的 loop）后才接入——一遍过的纯文本问答不触发（无外部校验信号，避免"为审而审"）。审查应答为满意短确认（如"无需修改"）时**立即终止**（满意即停），不再追问下一轮审查。
 
 ### 落地后（已实现）
 
-按本模型实施（orchestrator `runStepSequence` 步闭环序列），loop 已是"多个独立闭环"，自审按任务分解：
+按本模型实施（orchestrator `runStepSequence` 步 turn 序列），多 turn 编排是"多个独立 turn"，自审按任务分解：
 
 ```
 任务链
- ├─ 任务1 → 独立闭环① → done → 自审①
- ├─ 任务2 → 独立闭环② → done → 自审②
- ├─ 任务3 → 独立闭环③ → done → 自审③
- └─ 汇报 → 汇报闭环 → done → （汇报自带一次自审）
+ ├─ 任务1 → 独立 turn ① → done → 自审①
+ ├─ 任务2 → 独立 turn ② → done → 自审②
+ ├─ 任务3 → 独立 turn ③ → done → 自审③
+ └─ 汇报 → 汇报 turn → done → （汇报自带一次自审）
 ```
 
-**不需要为"loop 模式自审"写任何特殊逻辑**——只要"每个任务是独立闭环"，各自自审自动成立。
+**不需要为"多 turn 编排自审"写任何特殊逻辑**——只要"每个任务是独立 turn"，各自自审自动成立。
 
-### 一个免费的自洽：汇报闭环也自带一次自审
+### 一个免费的自洽：汇报 turn 也自带一次自审
 
-汇报闭环本身也是闭环，其 `done` 后同样走 `maxSelfReviewRounds`。因此：
+汇报 turn 本身也是 turn，其 `done` 后同样走 `maxSelfReviewRounds`。因此：
 
 - 若接受默认 → **每任务各审 + 汇报自然带一次汇总审**（零额外代码）
-- 这是本模型的**免费收益**：汇报的"整体质量审"由闭环机制天然提供，无需专门的"汇总自审"机制
+- 这是本模型的**免费收益**：汇报的"整体质量审"由 turn 机制天然提供，无需专门的"汇总自审"机制
 
-### 与汇报闭环的分工
+### 与汇报 turn 的分工
 
-- **任务自审**（每闭环）：管"单个任务干得好不好"，粒度 = 单任务
-- **汇报自审**（汇报闭环，免费）：可承担"整个任务汇总"的审查，粒度 = 全任务
+- **任务自审**（每 turn）：管"单个任务干得好不好"，粒度 = 单任务
+- **汇报自审**（汇报 turn，免费）：可承担"整个任务汇总"的审查，粒度 = 全任务
 - 两者粒度不同、天然分工，正符合本模型的收敛结构
 
-> 落地即目标态行为：每步闭环独立 roundId（`runStepSequence`），各自的 done 触发各自自审；汇报闭环自带一次汇总审。无需为"Loop 模式自审"写任何特殊逻辑——只要"每个任务是独立闭环"，各自自审自动成立。
+> 落地即目标态行为：每步 turn 独立 roundId（`runStepSequence`），各自的 done 触发各自自审；汇报 turn 自带一次汇总审。无需为"多 turn 编排自审"写任何特殊逻辑——只要"每个任务是独立 turn"，各自自审自动成立。
 
 ---
 
@@ -184,11 +186,12 @@
 
 | 哲学论断 | 本模型 |
 |---------|--------|
-| 闭环 = 最小单元 | ✅ 简单/复杂都用一个种子 |
-| Loop = 闭环的重复 | ✅ 外部任务 = 闭环的语义化重复 |
-| 内循环深 / 外循环长 | ✅ 内部任务（深）+ 外部任务（长）双轨 |
-| 摘要即记忆 | ✅ 汇报闭环 → round-summary，单轨不破 |
-| 没有第二套引擎 | ✅ 任务链只是"闭环用什么顺序被调用"，不造新引擎 |
+| turn = 最小单元 | ✅ 简单/复杂都用一个种子（turn） |
+| loop = 对 step 的编排（turn 内 Act） | ✅ turn 内部 runIterationLoop 驱动多 step |
+| 多 turn 任务编排 = 对 turn 的串联（档2） | ✅ 外部任务链 = turn 的语义化串联 |
+| 「loop 深 / 任务编排长」配比 | ✅ turn 内 step 深 + 档2 turn 串联长，双轨并存 |
+| 摘要即记忆 | ✅ 汇报 turn → round-summary，单轨不破 |
+| 没有第二套引擎 | ✅ 任务链只是"turn 用什么顺序被调用"，不造新引擎 |
 
 ---
 
@@ -196,8 +199,8 @@
 
 | 阶段 | 内容 | 落地情况 |
 |------|------|---------|
-| **第一版** | 难度分级（简单直接回答）+ 独立汇报闭环 + 汇报→摘要提炼 | ✅ 已实现（[difficulty.ts](../../src/agent/seed/difficulty.ts) + `finalizeExternalTask`：`runReport` → 汇报单源摘要） |
-| **阶段 2** | 外部任务驱动 loop（task_table 驱动力从内循环接入外循环 + loop 终止语义化） | ✅ 已实现（`externalTaskLoop`/`completeExternalTask`/`runStepSequence`，随 seed 收敛并入 orchestrator） |
+| **第一版** | 难度分级（简单直接回答）+ 独立汇报 turn + 汇报→摘要提炼 | ✅ 已实现（[difficulty.ts](../../src/agent/seed/difficulty.ts) + `finalizeExternalTask`：`runReport` → 汇报单源摘要） |
+| **阶段 2** | 外部任务驱动的多 turn 编排（task_table 驱动档2 串联 + 终止语义化 + 汇报 turn） | ✅ 已实现（`externalTaskLoop`/`completeExternalTask`/`runStepSequence`，随 seed 收敛并入 orchestrator） |
 
 > 两阶段均已落地，本文由「实施建议」转为「实现记录」。任务表清场（⑦ 排雷）：收尾/硬中止后 `clearPlan`，防残留 pending 步被下一次输入误续旧链。
 
@@ -205,8 +208,8 @@
 
 ## 九、关联文档
 
-- [agent-design-philosophy.md](./agent-design-philosophy.md) —— 种子哲学真理源
-- [loop-design.md](./loop-design.md) —— Loop = 闭环重复的现状映射
-- [memory-as-summary.md](./memory-as-summary.md) —— 摘要即记忆，汇报→摘要的落点
+- [agent-design-philosophy.md](./agent-design-philosophy.md) —— 种子哲学真理源（turn·step·loop·多 turn 任务编排）
+- [loop-design.md](./loop-design.md) —— loop = 对 step 的编排，多 turn 任务编排落于 orchestrator
+- [memory-as-summary.md](./memory-as-summary.md) —— 摘要即记忆，汇报 turn→摘要的落点
 - [module-inventory.md](./module-inventory.md) —— 模块现状清单
 - 方案：[tasks/方案-seed收敛-最小问答闭环真理源-20260820.md](../../tasks/归档/方案-seed收敛-最小问答闭环真理源-20260820.md)

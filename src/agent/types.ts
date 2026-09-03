@@ -11,7 +11,7 @@ export type ThinkingPhase =
   | 'processing'
   | 'archiving'
   | 'llm_calling'
-  // Loop 编排（档2 externalTaskLoop）阶段标记：规划 / 第 N 步 / 汇报
+  // 多 turn 任务编排（档2 externalTaskLoop）阶段标记：规划 / 第 N 步 / 汇报
   | 'planning'
   | 'step'
   | 'reporting';
@@ -33,7 +33,7 @@ export interface RecalledMemorySummary {
 /** 回答后衔接决策：'wait' 等用户输入 / 'loop' 自动续跑 / 'end' 终止会话 */
 export type HandoffDecision = 'wait' | 'loop' | 'end';
 
-/** 执行闭环归属标记：chunk 携带所在执行闭环 roundId（SSOT：过程事件归属由内核唯一提供，
+/** turn 归属标记：chunk 携带所在 turn roundId（SSOT：过程事件归属由内核唯一提供，
  *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */
 export type RoundTagged = { roundId?: string };
 

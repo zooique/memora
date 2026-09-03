@@ -172,7 +172,7 @@ export const LOOP_CONSTANTS = {
 
   /**
    * TS-7 搜索收敛护栏（2026-09-02 实测：LLM 连续成功联网搜索 10+ 次不收敛，Bing 结果泛泛仍反复搜）
-   * 单执行闭环内成功 web_search 次数达到此阈值后，注入收敛提示引导 LLM 停止搜索直接作答。
+   * 单 turn（问答闭环）内成功 web_search 次数达到此阈值后，注入收敛提示引导 LLM 停止搜索直接作答。
    * 计入成功（ok=true）与连续轮次无关——一次工具步内并行多个搜索按多次计。
    */
   SEARCH_CONVERGENCE_THRESHOLD: 2,
@@ -185,7 +185,7 @@ export const LOOP_CONSTANTS = {
 
   /**
    * TS-7 搜索硬上限（2026-09-02 升级：实测软提示未能阻止 LLM 持续重搜，改用确定性拒绝）
-   * 单执行闭环内 web_search 调用次数超过此数后，后续搜索执行时直接拒绝并回填拒绝文案，
+   * 单 turn（问答闭环）内 web_search 调用次数超过此数后，后续搜索执行时直接拒绝并回填拒绝文案，
    * 不依赖 LLM 听从软提示——软提示引导收敛（< 上限时），硬限兜底（达到上限强制停）。
    */
   MAX_WEB_SEARCH_CALLS: 6,

@@ -2,11 +2,11 @@
 
 > 本文档记录 memora 内核所有模块的当前状态、测试覆盖度、质量评级与打磨优先级。
 >
-> 与普通按目录罗列的模块清单不同：本文档以 **「单轮执行闭环 = 种子」** 为编排锚点，按**自然生长顺序**组织全部模块——从最小单元出发，沿着「支撑 → 回答前 → 回答中 → 回答后 → 外循环 → 地基」的生长链逐层向外，让开发者顺着「种子怎么长出枝干」的脉络理解项目为什么长成今天这样。
+> 与普通按目录罗列的模块清单不同：本文档以 **「turn（问答闭环）= 种子」** 为编排锚点，按**自然生长顺序**组织全部模块——从最小单元出发，沿着「支撑 → 回答前 → 回答中 → 回答后 → 多 turn 任务编排 → 地基」的生长链逐层向外，让开发者顺着「种子怎么长出枝干」的脉络理解项目为什么长成今天这样。
 >
-> **最近更新**：2026-08-20
-> **设计哲学**：万物皆记忆 · 最小执行闭环 · 单一真理源
-> **设计真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（种子推导）· [memory-as-summary.md](./memory-as-summary.md)（记忆生长）· [loop-design.md](./loop-design.md)（Loop 生长）· [role-pack-spec.md](./role-pack-spec.md)（角色包生长）
+> **最近更新**：2026-09-03（术语统一：turn·step·loop·多 turn 任务编排）
+> **设计哲学**：万物皆记忆 · turn（问答闭环）为种子 · 单一真理源
+> **设计真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（种子推导：turn·step·loop·多 turn 任务编排）· [memory-as-summary.md](./memory-as-summary.md)（记忆生长）· [loop-design.md](./loop-design.md)（loop = 对 step 的编排）· [role-pack-spec.md](./role-pack-spec.md)（角色包生长）
 
 ***
 
@@ -23,35 +23,35 @@
 
 ## 生长全景图
 
-**核心公理**：单轮执行闭环（一次触发、一次回答、三阶段）是 Agent 的最小完整单元——自足、可重复、可观察。一切复杂功能都是它三阶段（回答前/中/后）的自然生长，**没有第二套引擎**。
+**核心公理**：turn（问答闭环：一次触发、一次回答、三阶段）是 Agent 的最小完整单元——自足、可重复、可观察。一切复杂功能都是它三阶段（回答前/中/后）的自然生长，**没有第二套引擎**。turn 回答中阶段的 loop（对 step 编排）驱动多 step；多个 turn 可被 orchestrator 串联为「多 turn 任务编排」。
 
 ```
                          ┌──────────────────────────────────────────┐
-                         │   L0 种子 · 单轮执行闭环                   │
-                         │   一次触发 → 回答前 → 回答中 → 回答后      │
-                         │   （loop.ts 执行 + agent.ts 编排门面）     │
+                         │   L0 种子 · turn（问答闭环）                │
+                         │   一次触发 → 回答前 → 回答中(loop) → 回答后  │
+                         │   （loop.ts 承载 Act + agent.ts 门面编排）    │
                          └────────────────────┬─────────────────────┘
-                                              │ 闭环要稳定运行 → 长出支撑骨架
+                                              │ turn 稳定运行需骨架
                                               ▼
                          ┌──────────────────────────────────────────┐
                          │   L1 支撑骨架 · 状态 / 上下文 / 消息 / 装配 │
                          │   状态机·上下文窗口·微压缩·装配·可观察      │
                          └────────────────────┬─────────────────────┘
-                                              │ 闭环内部三阶段各自精雕生长
+                                              │ turn 三阶段各自精雕
                  ┌────────────────────────────┼────────────────────────────┐
                  ▼                            ▼                            ▼
         ┌──────────────────┐        ┌──────────────────┐        ┌──────────────────┐
         │  L2 认知·回答前   │        │  L3 行动·回答中   │        │  L4 沉淀·回答后   │
-        │  理解→角色→技能   │        │  LLM 生成 + 工具  │        │  摘要→记忆系统诞生 │
-        │  →召回→装配       │        │  执行             │        │  →会话级沉淀       │
+        │  理解→角色→技能   │        │  loop(step 编排)  │        │  摘要→记忆系统诞生 │
+        │  →召回→装配       │        │  + 工具执行       │        │  →会话级沉淀       │
         └────────┬─────────┘        └────────┬─────────┘        └────────┬─────────┘
                  │                            │                           │
                  └──────────────┬─────────────┴─────────────┬─────────────┘
-                                │  回答后 Handoff 选择"继续" → 长出外循环
+                                │  回答后 Handoff='loop' → 长出多 turn 任务编排
                                 ▼
                         ┌──────────────────────────────────────────┐
-                        │   L5 外循环 · Loop 与会话延续              │
-                        │   闭环的重复 · 检查点恢复 · 会话生命周期    │
+                        │   L5 多 turn 任务编排 · 会话延续            │
+                        │   turn 的串联 · 检查点恢复 · 会话生命周期    │
                         └────────────────────┬─────────────────────┘
                                              │ 所有生长层共享的地基
                                              ▼
@@ -62,37 +62,37 @@
 
 **生长链与依赖关系（一句话版）**：
 
-| 层  | 名称         | 生长来源                    | 被谁消费            |
-| -- | ---------- | ----------------------- | --------------- |
-| L0 | 种子 · 执行闭环  | 最小单元（公理）                | 所有层             |
-| L1 | 支撑骨架       | 让闭环稳定运行                 | L0 运行期          |
-| L2 | 认知 · 回答前   | 闭环 Prepare 阶段精雕         | 生成回答的认知基础       |
-| L3 | 行动 · 回答中   | 闭环 Act 阶段精雕             | 执行多步行动          |
-| L4 | 沉淀 · 回答后   | 闭环 Reflect 阶段精雕         | 记忆写入 → 下次 L2 召回 |
-| L5 | 外循环 · 会话延续 | 闭环的重复（Handoff=continue） | 多轮任务/会话切换       |
-| L6 | 通用地基       | 所有层复用的公共设施              | 全部上层            |
+| 层  | 名称              | 生长来源                       | 被谁消费            |
+| -- | --------------- | -------------------------- | --------------- |
+| L0 | 种子 · turn       | 最小单元（公理）turn = Prepare/Act/Reflect | 所有层             |
+| L1 | 支撑骨架            | 让 turn 稳定运行                  | L0 运行期          |
+| L2 | 认知 · 回答前        | turn Prepare 阶段精雕            | 生成回答的认知基础       |
+| L3 | 行动 · 回答中        | turn Act 阶段精雕（loop = step 编排） | 执行多步行动          |
+| L4 | 沉淀 · 回答后        | turn Reflect 阶段精雕            | 记忆写入 → 下次 L2 召回 |
+| L5 | 多 turn 任务编排 · 会话延续 | turn 的串联（Handoff='loop' 自动续跑 + 任务链驱动） | 多轮任务/会话切换       |
+| L6 | 通用地基            | 所有层复用的公共设施                 | 全部上层            |
 
-> **阅读顺序**：先读 L0（种子）理解最小单元，再沿「L1 → L2 → L3 → L4」看三阶段如何从种子长满，接着看 L5 如何让闭环重复生长，最后落到 L6 地基。记忆系统的位置是理解全貌的关键——它在 **L4 诞生**（回答后沉淀出摘要），在 **L2 被消费**（下一次回答前召回），这正是「闭环 → 沉淀 → 再召回」的生长闭环。
+> **阅读顺序**：先读 L0（种子）理解最小单元，再沿「L1 → L2 → L3 → L4」看三阶段如何从种子长满，接着看 L5 如何串联多个 turn，最后落到 L6 地基。记忆系统的位置是理解全貌的关键——它在 **L4 诞生**（回答后沉淀出摘要），在 **L2 被消费**（下一次回答前召回），这正是「turn → 沉淀摘要 → 召回再利用」的生长闭环。
 
 ***
 
-## 〇、种子：单轮执行闭环（L0 · 最小单元）
+## 〇、种子：turn 问答闭环（L0 · 最小单元）
 
-> **为什么这是种子**：单轮执行闭环满足自足（一次触发一次回答）、可重复（可反复调用且独立）、可观察（执行可见可测）三条件，是 Agent 的最小完整单元。Loop、记忆、召回、角色包、技能——全部是它三阶段（回答前/中/后）的自然生长，而非独立系统。**本层是唯一的"立论"，其余各层都是它的"生长"。**
+> **为什么这是种子**：turn（问答闭环）满足自足（一次触发一次回答）、可重复（可反复调用且独立）、可观察（执行可见可测）三条件，是 Agent 的最小完整单元。loop（step 编排）、记忆、召回、角色包、技能、多 turn 任务编排——全部是它三阶段（回答前/中/后）的自然生长，而非独立系统。**本层是唯一的"立论"，其余各层都是它的"生长"。**
 
 | 模块文件                | 状态     | 测试文件                                                                  | 质量说明                                                                                                                                             |
 | ------------------- | ------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/orchestrator/difficulty + harness，39 tests） | 种子三阶段（回答前/中/后）+ Handoff 由 `seed/orchestrator.ts` 唯一编排（prepare/act/reflect/handoff 三阶段执行器并入 orchestrator）；`seed/difficulty.ts` 回答前 LLM 难度分级（阶段 2） |
-| `agent/loop.ts`     | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests)                                   | AgentLoop 核心：单轮闭环执行 + Loop 外循环编排，含拦截器集成                                                                                                          |
-| `agent/agent.ts`    | 🟢 已打磨 | `__tests__/agent.test.ts`                                             | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行闭环（宿主 getter 契约字段独立，纯内部组件聚合于 `internals`）                                                                 |
+| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/orchestrator/difficulty + harness，39 tests） | 种子三阶段（回答前/中/后）+ Handoff 由 `seed/orchestrator.ts` 唯一编排（prepare/act/reflect/handoff 三阶段执行器并入 orchestrator）；`seed/difficulty.ts` 回答前 LLM 难度分级（决定档1 单 turn vs 档2 多 turn 编排） |
+| `agent/loop.ts`     | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests)                                   | AgentLoop 核心：单 turn Act 引擎 + loop（step 编排），含拦截器集成                                                                                                 |
+| `agent/agent.ts`    | 🟢 已打磨 | `__tests__/agent.test.ts`                                             | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行 turn（宿主 getter 契约字段独立，纯内部组件聚合于 `internals`）                                                                 |
 
-> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。**阶段 2 生长**：`seed/difficulty.ts` 在回答前判简单/复杂，复杂且收敛的主任务闭环后再跑一次 `loop.runReport()` 汇报闭环，其产出作为 round-summary 单源（`reflect.runReported`）——「汇总即记忆」。**阶段 3 生长**：orchestrator 外循环驱动器（`externalTaskLoop`）——复杂任务拆成「规划闭环 → 每步独立闭环（独立 roundId 供消息溯源/互斥排除，不单产摘要）→ 收敛后汇报」，步数上限经角色包 `global.taskLoopLimit` 配置；摘要恒「外部输入 ↔ round-summary 1:1」，仅收尾汇报产出唯一摘要（见 memory-as-summary §2.5）。`loop.ts` 是「单轮闭环」与「循环编排」的**合体**——哲学要求 Loop 的每一轮都是一次完整闭环，Loop 只是在 Handoff 处选择"继续"（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend\_layers\_rules.md](../../.trae/rules/backend_layers_rules.md)）。
+> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。**阶段 2 生长**：`seed/difficulty.ts` 在回答前判简单/复杂，复杂任务收敛后主 turn 结束后再跑一次 `loop.runReport()` 汇报 turn，其产出作为 round-summary 单源（`reflect.runReported`）——「汇总即记忆」。**阶段 3 生长**：orchestrator 多 turn 任务编排驱动器（`externalTaskLoop`）——复杂任务拆成「规划 turn → 每步独立 turn（独立 roundId 供消息溯源/互斥排除，不单产摘要）→ 收敛后汇报 turn」，步数上限经角色包 `global.taskLoopLimit` 配置；摘要恒「外部输入 ↔ round-summary 1:1」，仅收尾汇报 turn 产出唯一摘要（见 memory-as-summary §2.5）。`loop.ts` 是「单 turn Act 引擎 + loop（step 编排）」的合体——哲学要求 turn 内 Act 用 loop 驱动多 step；多 turn 任务编排由 orchestrator 在 turn 出口 Handoff 处串联（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend\_layers\_rules.md](../../.trae/rules/backend_layers_rules.md)）。
 
 ***
 
-## 一、支撑骨架：让闭环稳定运行（L1）
+## 一、支撑骨架：让 turn 稳定运行（L1）
 
-> **生长来源**：闭环要稳定运行，必须回答"现在处于什么状态、上下文还剩多少、异常如何恢复"。这一层是闭环运行的**骨架**——不产生新能力，但保证闭环在任何情况下都能自洽运转。
+> **生长来源**：turn 要稳定运行，必须回答"现在处于什么状态、上下文还剩多少、异常如何恢复"。这一层是 turn 运行的**骨架**——不产生新能力，但保证 turn 在任何情况下都能自洽运转。
 
 | 模块文件                           | 状态     | 测试文件                                                     | 质量说明                                                                                                           |
 | ------------------------------ | ------ | -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
@@ -102,17 +102,17 @@
 | `agent/messageHistory.ts`      | 🟢 已打磨 | `__tests__/messageHistory.test.ts`                       | 消息历史管理                                                                                                         |
 | `agent/composer.ts`            | 🟢 已打磨 | `__tests__/composer.test.ts`                             | 上下文组装                                                                                                          |
 | `agent/assembler.ts`           | 🟢 已打磨 | `__tests__/assembler.test.ts`                            | 组件装配（AgentHooks + 接线回调 + sessionManager + ContextPreparer + CheckpointRestoreCoordinator 分阶段组装）                |
-| `agent/tracer.ts`              | 🟢 已打磨 | `__tests__/tracer.test.ts` + `__tests__/metrics.test.ts` | 可观测性追踪（闭环可观察属性的载体）+ AgentMetrics 运行时指标（AgentLoop/Agent.getMetrics：LLM 调用 / 记忆召回 / 工具调用 / 上下文管理 / 任务级 SLO，5 维度） |
+| `agent/tracer.ts`              | 🟢 已打磨 | `__tests__/tracer.test.ts` + `__tests__/metrics.test.ts` | 可观测性追踪（turn 可观察属性的载体）+ AgentMetrics 运行时指标（AgentLoop/Agent.getMetrics：LLM 调用 / 记忆召回 / 工具调用 / 上下文管理 / 任务级 SLO，5 维度） |
 | `agent/constants.ts`           | 🟢 已打磨 | `__tests__/constants.test.ts`                            | 常量定义                                                                                                           |
 | `agent/types.ts`               | 🟢 已打磨 | 间接测试                                                     | 36 个导出类型定义                                                                                                     |
 
-> **生长说明**：状态机是"闭环运行的骨架"（哲学第九章），上下文/微压缩是"资源边界"（哲学第十一章），消息/装配/可观察是闭环自足的物理承载。这一层与 L0 共同构成「最小单元能跑起来」的地基。
+> **生长说明**：状态机是"turn 运行的骨架"（哲学第九章），上下文/微压缩是"资源边界"（哲学第十一章），消息/装配/可观察是 turn 自足的物理承载。这一层与 L0 共同构成「最小单元能跑起来」的地基。
 
 ***
 
 ## 二、认知生长 · 回答前（Prepare · L2）
 
-> **生长来源**：闭环回答前（Prepare）承担"理解触发、装配上下文"的认知职责。它把一次原始触发转化为可执行上下文，分三步：**理解输入 → 召回相关 → 装配上下文**。本层即这三步在代码中的自然生长。
+> **生长来源**：turn 回答前（Prepare）承担"理解触发、装配上下文"的认知职责。它把一次原始触发转化为可执行上下文，分三步：**理解输入 → 召回相关 → 装配上下文**。本层即这三步在代码中的自然生长。
 
 ### 2.1 输入增强管线
 
@@ -155,7 +155,7 @@
 
 ## 三、行动生长 · 回答中（Act · L3）
 
-> **生长来源**：闭环回答中（Act）承担"生成与执行"。它由两个能力构成：**生成**（LLM 调用）与**工具**（扩展行动能力）。工具调用是回答中的**内循环**——生成 → 判断 → 调用 → 回填 → 再生成，让单轮闭环具备多步行动能力。
+> **生长来源**：turn 回答中（Act）承担"生成与执行"。它由两个能力构成：**生成**（LLM 调用，即 step）与**工具**（扩展行动能力）。loop = turn 内对 step 的编排：step → 判断工具调用 → 执行 → 回填 → 再 step，让 turn 具备多步行动能力。
 
 ### 3.1 LLM 生成（llm/）
 
@@ -216,7 +216,7 @@
 
 ## 四、沉淀生长 · 回答后（Reflect · L4）—— 记忆系统的诞生
 
-> **生长来源**：闭环回答后（Reflect）承担"提炼沉淀与衔接决策"。**记忆系统正是在这里诞生**——每轮闭环完成后，后台异步生成轮次摘要（round-summary），它就是唯一记忆单元（摘要即记忆）。本层是「万物皆记忆」的生长点，也是 L2 回答前召回的知识来源。
+> **生长来源**：turn 回答后（Reflect）承担"提炼沉淀与衔接决策"。**记忆系统正是在这里诞生**——每轮 turn 完成后，后台异步生成轮次摘要（round-summary），它就是唯一记忆单元（摘要即记忆）。本层是「万物皆记忆」的生长点，也是 L2 回答前召回的知识来源。
 
 ### 4.1 摘要生成（唯一记忆单元）
 
@@ -276,9 +276,9 @@
 
 ***
 
-## 五、外循环生长 · Loop 与会话延续（L5）
+## 五、多 turn 任务编排生长 · 会话延续（L5）
 
-> **生长来源**：闭环回答后的 Handoff 选择"继续"，就长出 Loop——**Loop = 闭环的重复**（哲学第三章），循环编排本身在 L0 `loop.ts` 内。本层是让闭环能跨轮延续、跨会话切换的配套模块：检查点恢复（断点续跑）、会话生命周期管理、会话记录底座。
+> **生长来源**：turn 回答后的 Handoff='loop'（自动续跑）或任务链驱动，就长出多 turn 任务编排；turn 内 loop（对 step 编排）仍在 L0 `loop.ts` 内。本层是让 turn 能跨 turn 延续、跨会话切换的配套模块：检查点恢复、会话生命周期、会话记录底座。
 
 | 模块文件                                    | 状态     | 测试文件                                                                                         | 质量说明                                                                            |
 | --------------------------------------- | ------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -288,9 +288,9 @@
 
 > **生长说明**：
 >
-> * **档1 执行闭环本体在 L0**：`loop.ts` 的 `processUserInput` 即单轮闭环最小复用单元，对话/Loop（步闭环）/续跑共用同一闭环；档2 Loop 编排（外循环）在 seed/orchestrator（`externalTaskLoop`/`completeExternalTask`，[loop-design.md](./loop-design.md)）。
+> * **档1 turn 本体在 L0**：`loop.ts` 的 `processUserInput` 即单 turn 最小复用单元，对话/多 turn 任务编排（步 turn）/续跑共用同一 turn；档2 多 turn 任务编排（turn 串联）在 seed/orchestrator（`externalTaskLoop`/`completeExternalTask`，[loop-design.md](./loop-design.md)）。
 >
-> * **外循环语义化（已落地）**：复杂问题由任务链驱动多轮闭环 + 收敛汇报已实现于 seed/orchestrator（difficulty 难度分级 + `externalTaskLoop` 步闭环序列 + `runReport` 收尾汇报闭环 → 汇报单源摘要），实现记录见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)。
+> * **多 turn 任务编排语义化（已落地）**：复杂问题由任务链驱动多 turn + 收敛汇报 turn 已实现于 seed/orchestrator（difficulty 难度分级 + `externalTaskLoop` 步 turn 序列 + `runReport` 收尾汇报 turn → 汇报单源摘要），实现记录见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)。
 >
 > * **会话记录底座**：`sessionStore.ts` 物理位置在 `memory/`，由宿主实现 `ISessionStore`，承载对话记录——是记忆溯源（traceSummary）与会话延续的共用底座。
 >

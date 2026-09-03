@@ -1,7 +1,7 @@
 /**
- * 种子闭环契约类型 — 最小执行闭环（回答前/中/后 + Handoff）的类型定义
+ * 种子 turn 契约类型 — turn（问答闭环，含回答前/中/后 + Handoff）的类型定义
  *
- * 种子哲学（单轮执行闭环 = 最小单元）：一次触发 → 回答前 → 回答中 → 回答后 →
+ * 种子哲学（turn = 最小单元，单一真理源）：一次触发 → 回答前 → 回答中 → 回答后 →
  * Handoff。本文件定义这三阶段的输入/输出契约，以及 seed 模块所需的依赖接口。
  *
  * 设计纪律：
@@ -107,7 +107,7 @@ export interface SeedDeps {
  * input = 原始输入；recalledMemories = 召回记忆（注入 loop 为 system 消息）；
  * aborted = 回答前阶段已中断（调用方应 yield aborted chunk 并返回，不进回答中）；
  * meetingPreset = 本次会议触发已由系统确定性预置任务表（见 ADR-028 收敛补记），
- *   调用方（orchestrator）据此强制进入 Loop 编排（档2）直跑步序列，跳过规划闭环。
+ *   调用方（orchestrator）据此强制进入「多 turn 任务编排（档2）」直跑步 turn 序列，跳过规划 turn。
  * roundId 不在此结果中——round 归属以 loop 的 currentRoundId 为单一真理源。
  */
 export interface SeedPrepareResult {

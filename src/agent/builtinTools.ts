@@ -175,10 +175,10 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
 /**
  * compress_context 工具定义（独立导出，第二级压缩：LLM 主动触发兜底）
  *
- * 作用对象：尚无记忆摘要的东西——loop 进行中的执行闭环、超大 tool_result。
- * 现场压成**临时压缩摘要**替换，loop 收尾即弃、不进记忆库。
+ * 作用对象：尚无记忆摘要的东西——turn 内 loop 进行中的 step（未收尾迭代）、超大 tool_result。
+ * 现场压成**临时压缩摘要**替换，turn 收尾即弃、不进记忆库。
  * 与第一级替换（内核自动 LRU，从库取现成摘要）互补：替换只对"已沉淀摘要的问答闭环"可用，
- * 压缩只对"无记忆摘要的执行闭环/工具结果"可用——同一空间管理链条的两级。
+ * 压缩只对"无记忆摘要的 step/工具结果"可用——同一空间管理链条的两级。
  * 由 AgentLoop 拦截执行（非 ToolExecutor），执行逻辑在 loop.compressContext。
  */
 export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
