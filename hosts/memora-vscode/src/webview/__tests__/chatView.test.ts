@@ -2128,12 +2128,12 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(qa.nextElementSibling).toBe(blocks[1]);
   });
 
-  it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（边框一体 + 容器级 footer）', () => {
+  it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（平铺归组 + 容器级 footer）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
     dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
     dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
-    // 同 roundId → 单个 .round-group 容器，两段同框 + 容器级 footer
+    // 同 roundId → 单个 .round-group 容器，两段平铺归组 + 容器级 footer
     const groups = document.querySelectorAll('.round-group');
     expect(groups).toHaveLength(1);
     const g = groups[0] as HTMLElement;

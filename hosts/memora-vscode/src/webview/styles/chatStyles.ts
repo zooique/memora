@@ -568,34 +568,39 @@ export const chatStyles = `
   /* 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳），回答完毕后才展示。
    * 状态类 is-pending 由 buildAssistantShell（pending 选项）加类、finalizeStreaming 移除。 */
   .msg-footer.is-pending { display: none; }
-  /* UX-9 A 容器化（2026-09-03）：同 roundId 的 AI 段收进同一视觉单元（问答闭环容器）。
-   * 容器 = 一个问答闭环的完整作答链：提问段/前序段/末段同框、边框一体，操作整体上移
-   * 容器级 footer（复制整链/分叉/删除 + 时间戳）。user 主提问在容器外（消息流气泡），
-   * 与 AI 作答链上下衔接——视觉即「同一个问答闭环」，不新增大卡片/强调色。 */
+  /* UX-9 A 容器化·平铺版（2026-09-03）：同 roundId 的 AI 段归组进同一 DOM 容器（问答闭环）。
+   * 容器只做「同环归组 + 容器级操作」的结构职责，不做「卡片」视觉：
+   * 无边框/无圆角/无背景/无 overflow:hidden，AI 正文全宽平铺铺满消息区
+   * （对齐 Trae Work 对话流：回答直接铺满版面，不套框）。
+   * 操作整体上移容器级 footer（复制整链/分叉/删除 + 时间戳），user 主提问在容器外
+   * （消息流气泡），与 AI 作答链上下衔接——视觉即「同一个问答闭环」的连续体。 */
   .round-group {
     margin: var(--sp-2, 6px) 0;
-    /* min-width:0 → flex 子项允许收缩到面板宽，防代码块/长文本把容器撑宽后
-     * 被自身 overflow:hidden 裁掉右缘（2026-09-03 修复：LLM 回答「锁在框里」） */
+    /* min-width:0 → flex 子项允许收缩到面板宽，防代码块/长文本把容器撑宽后被
+     * 自身宽度裁掉右缘；max-width:100% 保证容器不超出消息区（2026-09-03 防「锁在框里」） */
     min-width: 0; max-width: 100%;
-    border: 1px solid var(--border-panel, rgba(128,128,128,.16));
-    border-radius: var(--radius-md, 6px);
-    overflow: hidden;
     display: flex; flex-direction: column;
   }
-  /* 容器内边距：段正文不再贴着边框（呼吸感，降低「囚笼」压迫观感）；
-   * 你答子行/打断分条同为容器直系，同步内缩保持一致 */
+  /* 容器直系子块（AI 段/你答子行/打断分条）全宽平铺，不再内缩——
+   * 正文直接贴着消息区左右边距，铺满整个版面 */
   .round-group > .msg.assistant,
   .round-group > .msg-qa,
-  .round-group > .interrupt-divider { padding-right: var(--sp-4, 10px); padding-left: var(--sp-4, 10px); }
-  /* 容器级 footer：操作上移后的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点） */
+  .round-group > .interrupt-divider { padding-right: 0; padding-left: 0; }
+  /* 容器级 footer：操作上移后的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点）。
+   * 平铺版轻量化：去背景色，顶部细虚线分隔（与 .interrupt-divider 语言一致），
+   * 不突出操作行、不抢正文；操作入口保留今天「整链复制/分叉/删除」的闭环能力 */
   .round-group__footer {
     display: flex; align-items: center; justify-content: space-between;
     gap: var(--sp-2, 6px);
-    padding: var(--sp-1, 4px) var(--sp-3, 8px);
-    background: var(--surface-hover, rgba(128,128,128,.08));
-    border-top: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    margin-top: var(--sp-1, 4px);
+    padding: var(--sp-1, 4px) 0 0;
+    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.24));
     font-size: var(--font-sm, 11px);
   }
+  /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义（SSOT 复用）。
+   * 提问（need_clarify）等待回答期间容器 footer 不显示——底部只留 ask-inline 交互块；
+   * 回答 resume 完成（done）后由 finalizeStreaming 移除该状态，与不提问场景底部栏统一。 */
+  .round-group__footer.is-pending { display: none; }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
   /* 段级 footer 隐藏：容器化后复制/分叉/删除/时间戳统一上移容器级，段级不再出现
    * （避免「续接正文底部又有操作按钮」的重复入口；.ask-replay 只读块不受影响） */

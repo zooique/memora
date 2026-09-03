@@ -1751,6 +1751,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    *
    * 整链复制 = 该 round 的「用户提问（容器前一兄弟）+ 全部 assistant 段」，单一入口
    * 覆盖闭环全量（R1 修复）。段级 footer 由 CSS 隐藏，操作整体上移到容器读取。
+   * is-pending：与段级 footer 同一「内容未定稿」语义（SSOT 复用）——创建即隐藏，
+   * 回答定稿（finalizeStreaming）后移除；提问（need_clarify）等待期间保持隐藏，
+   * 保证提问/不提问两种场景底部操作栏显示时机统一。
    *
    * @param g 容器元素（幂等：已有 footer 不重复建）
    */
@@ -1758,6 +1761,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (g.querySelector('.round-group__footer')) return;
     const footer = document.createElement('div');
     footer.className = 'round-group__footer';
+    footer.classList.add('is-pending'); // 内容未定稿默认隐藏（提问/流式中不出现操作栏）
     const copyBtn = createIcon('copy', '复制整条问答（含你的提问与全部回答）', 'msg-copy-icon');
     copyBtn.addEventListener('click', () => copyText(roundChainText(g)));
     const forkBtn = createIcon('fork', '从此问答闭环分叉新会话', 'msg-fork-icon');
@@ -1869,6 +1873,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     // 锚点 = 当前 assistant 块（[ASK] 提问块/骨架）；无链接（异常）返回 null 降级 clarifyBar
     const host = activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null;
     if (!host?.parentNode) return null;
+    // 提问等待态：容器操作栏保持隐藏（底部只留 ask-inline 交互块，不出现「复制+时间」）。
+    // 防御 interrupted 已提前移除 is-pending 的路径——提问未回答前操作栏不显示，
+    // 回答 resume 完成（done）后 finalizeStreaming 再统一显示（SSOT 同态收敛）
+    host.closest<HTMLElement>('.round-group')
+      ?.querySelector<HTMLElement>('.round-group__footer')
+      ?.classList.add('is-pending');
     // 幂等：重复 need_clarify（如连续多问）先移除旧内联块，再挂新
     document.querySelector('.ask-inline')?.remove();
     const box = document.createElement('div');
@@ -2170,8 +2180,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       body.innerHTML = renderMarkdown(streamingRaw, sanitize);
       enhanceCodeBlocks(body);
     }
-    // 回答完毕：展示底部操作行（复制/分叉/删除 + 时间戳）——完整内容已定稿，操作才有效
+    // 回答完毕：展示底部操作行（复制/分叉/删除 + 时间戳）——完整内容已定稿，操作才有效。
+    // SSOT 同态收敛：段级 footer 与容器级 footer 同一 is-pending 语义，此处一并移除
+    //（容器级创建即隐藏；提问等待期间保持隐藏，done/interrupted 定稿后统一显示）
     activeAssistantEl.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
+    activeAssistantEl.closest<HTMLElement>('.round-group')
+      ?.querySelector<HTMLElement>('.round-group__footer')
+      ?.classList.remove('is-pending');
     // 复制源更新为完整原始文本（.msg.dataset.rawText 供复制按钮读取）
     activeAssistantEl.dataset.rawText = streamingRaw;
     streamingActive = false;
