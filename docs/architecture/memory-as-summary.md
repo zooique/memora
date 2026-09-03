@@ -119,12 +119,12 @@ postProcess → 使用 round-5 生成摘要
 
 > **恒定规则**：**「摘要 ↔ 外部输入 恒 1:1」——一次外部输入恰好产出一条 round-summary。**
 >
-> **构成**：loop 内部的 tool/反思迭代不是 turn（见 §2.4），不单独摘要；外部任务驱动 loop 的内部子 turn（规划/步）虽各占 `roundId`（用于消息溯源/互斥排除），**同样不单独摘要**——内部子 turn 是否拆分为独立 roundId 只影响溯源粒度，不影响摘要数量。
+> **构成**：loop 内部的 tool/反思 step 不是 turn（见 §2.4），不单独摘要；多 turn 任务编排的内部子 turn（规划/步）虽各占 `roundId`（用于消息溯源/互斥排除），**同样不单独摘要**——内部子 turn 是否拆分为独立 roundId 只影响溯源粒度，不影响摘要数量。
 
-- **来源**（「简单直接」与「loop 收尾汇报」是同一规则的两种取值，都指向"答完/收尾那轮"）：
+- **来源**（「简单直接」与「多 turn 任务编排收尾汇报」是同一规则的两种取值，都指向"答完/收尾那轮"）：
   - 直接回答（简单）= 答完那轮即答案 → 提炼该答案；
-  - 外部任务驱动 loop·复杂收敛 = 收尾汇报 turn → 提炼汇报（阶段 2+3 `reflect.runReported` 以汇报文本为单源）。
-- **触发时刻**：turn「答完/收尾」即触发（非 tool 迭代、非暂停边界）。对话 `wait` 态（答完等用户）同样答完即摘要——"结束指令"非此处触发条件。
+  - 多 turn 任务编排·复杂收敛 = 收尾汇报 turn → 提炼汇报（阶段 2+3 `reflect.runReported` 以汇报文本为单源）。
+- **触发时刻**：turn「答完/收尾」即触发（非 tool step、非暂停边界）。对话 `wait` 态（答完等用户）同样答完即摘要——"结束指令"非此处触发条件。
 - **硬中止（abort / 用户取消）**：不打完 → **不摘要**（残缺半成品不入记忆）；但已产出内容以 `[已中断]` 标记写进对话历史（保真留存，供 `traceSummary` 回溯）。历史保细节、记忆不收纳残缺，两者分离。
 - **软暂停（requestPause，可续跑）**：暂停时**不立即摘要**；若后续续跑并真正答完 → 该轮**仍会**摘要。
 
@@ -136,7 +136,7 @@ postProcess → 使用 round-5 生成摘要
 > - **单一决策点**：「恒1:1」不违背「turn 一摘要」——把"外部输入"视为**最外层 turn**（Trigger=输入；Act=规划+步序列；Reflect=收尾汇报），收尾汇报 turn 即该最外层 turn 的 Reflect。故**摘要决策点唯一（最外层收尾）**，内部子 turn 复用 turn 机制但不设 round-summary 决策点。
 > - **上下文注入自洽**：loop 多轮时，被挤出窗口的历史靠 context summary 骨架保留，**不依赖也不应依赖** round-summary 兜底（否则职责错位）；骨架对 code/diff/table 的保真由角色包 `summaryFocus` 承担。
 > - **无实质收尾仍恒 1:1**：收敛但汇报为空/仅 token 预算占位（无真实收尾）→ 回退以该外部输入的主答（阶段 2）/规划产出（阶段 3）走普通单条（`runReportAndReflect`，[orchestrator.ts](../../src/agent/seed/orchestrator.ts)），**不是 0 条**。
-> - **组合溯源（head id，已落地）**：外部任务驱动 loop 的 round-summary 挂在**组合 head id**（= `prepare` 分配、`appendUser` 的 roundId，即"这次外部输入"），而非最后一步——`externalTaskLoop` 收尾时把 roundId 回指 head，使汇报文本与 round-summary 与用户消息同 roundId（组合内溯源自洽）。步 turn 仍用独立 sub roundId（消息溯源/互斥排除），但收尾摘要锚定 head。
+> - **组合溯源（head id，已落地）**：多 turn 任务编排的 round-summary 挂在**组合 head id**（= `prepare` 分配、`appendUser` 的 roundId，即"这次外部输入"），而非最后一步——`externalTaskLoop` 收尾时把 roundId 回指 head，使汇报文本与 round-summary 与用户消息同 roundId（组合内溯源自洽）。步 turn 仍用独立 sub roundId（消息溯源/互斥排除），但收尾摘要锚定 head。
 
 ---
 
