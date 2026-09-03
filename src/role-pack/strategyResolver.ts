@@ -448,7 +448,8 @@ export function mergeStrategy(
  * 将 RolePack 解析为 RolePackAssembly
  *
  * 将原始角色包解析为含完整策略的装载结果，供装配层直接使用。
- * 同时根据策略中的 userFollowup/askOn/askLimit 注入主动提问指令到 persona prompt。
+ * 同时根据策略中的 userFollowup/askOn/askLimit 注入主动提问指令到 persona prompt，
+ * 并在指令中携带 [ASK] 输出格式契约（行首标记 + 行尾花括号选项，与 loop 解析器同源）。
  *
  * @param pack 原始角色包
  * @returns 含完整策略的装载结果
@@ -496,7 +497,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     }
     if (triggerLabels.length > 0) {
       promptParts.push(
-        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每轮最多提问 ${askLimit} 次`,
+        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每轮最多提问 ${askLimit} 次\n- 提问用行首标记 \`[ASK]\` 开头（一题一行）；需给出可选项时，在问题行尾附花括号选项 \`{A|B|C}\`（全半角括号、竖线分隔均可）——系统据此暂停并等待你的回答`,
       );
     }
   }

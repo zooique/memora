@@ -633,6 +633,9 @@ describe('assembleRolePack — 角色包装配', () => {
     expect(result.personaPrompt).toContain('遇到模糊不清的情况时');
     expect(result.personaPrompt).toContain('需要用户做决策时');
     expect(result.personaPrompt).toContain('每轮最多提问 2 次');
+    // [ASK] 输出格式契约（与 loop 解析器同源）：行首标记 + 行尾花括号选项
+    expect(result.personaPrompt).toContain('[ASK]');
+    expect(result.personaPrompt).toContain('{A|B|C}');
   });
 
   it('userFollowup=silent 时不注入主动提问指令', () => {
