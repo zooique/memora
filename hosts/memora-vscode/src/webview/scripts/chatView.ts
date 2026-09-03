@@ -169,6 +169,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   //                          避免 resume 二次 runFlow 的 meta 被当新轮重置出第二个运行时折叠。
   let lastAssistantRoundId: string | undefined;
   let resumePending = false;
+  /** 运行时/重放同环容器（A 容器化，2026-09-03）：同 roundId 的 AI 段收进 .round-group，
+   *  操作上移容器级 footer（复制整链/分叉/删除）；user 主输入在容器外，与 AI 作答单元分离 */
+  let roundGroupEl: HTMLElement | null = null;
 
   // G3 断点续跑提示条：检测到持久化暂停检查点时展示，用户点击「从断点续跑」恢复
   let restoreBanner: HTMLElement | null = null;
@@ -1571,6 +1574,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
       activeAssistantEl = div;
       messages.appendChild(div);
+      // A 容器化：归位到所属 .round-group（同 roundId 段收进容器；无 roundId 留消息流）
+      ensureRoundGroup(roundId, div);
+      // R2 重放 [ASK] live 解析：历史正文的行首 [ASK] 行（+ 行尾 {A|B} 选项，格式契约
+      // 同 loop.extractAskQuestions / strategyResolver 注入指令）渲染为只读选择题——
+      // 重放复用运行时提问的视觉语言，但不可作答；正文中的 [ASK] 行剔除避免双重展示
+      renderAskReplay(div, text);
       scrollToBottom(messages);
       updateEmptyState();
       return div;
@@ -1618,14 +1627,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * @param text 输入全文
    * @param ts 时间戳（日期分隔线）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充）
-   * @param roundId 所属问答闭环 ID（roundId 连线底座；留存 data 语义，纯展示判定）
    */
-  function appendInteractiveInput(
-    text: string,
-    ts: string | undefined,
-    kind: 'question-answer' | 'supplement',
-    roundId?: string,
-  ): void {
+  function appendInteractiveInput(text: string, ts: string | undefined, kind: 'question-answer' | 'supplement'): void {
     if (kind === 'supplement') {
       // A：行内打断切分条（插在打断点；「续接」标志由调用方置位，此处仅渲染分条本体）。
       // 分条是行内打断元素而非消息流实体，不触发日期分隔线（避免分隔条插进打断链中间）
@@ -1703,6 +1706,183 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    */
   function isSameRoundContinue(roundId: string | undefined): boolean {
     return !!roundId && roundId === lastAssistantRoundId;
+  }
+
+  /**
+   * 问答闭环容器（A 容器化，2026-09-03）：把 AI 段归位到所属 .round-group
+   *
+   * 同 roundId 的所有 assistant 段收进同一容器（视觉一体 + 操作整体），
+   * 四路归位共用：append（重放/一次性）、beginStreaming（运行时首块）、
+   * chunk 骨架复用、prepareFlowShell 骨架随 chunk 归位。无 roundId 时不建容器
+   * （骨架/异常兜底直接留消息流）。
+   *
+   * @param roundId 该段执行闭环 ID；无则不入容器
+   * @param el 待归位的 assistant 块（如已在消息流，则搬迁进容器）
+   * @returns 容器元素或 null
+   */
+  function ensureRoundGroup(roundId: string | undefined, el: HTMLElement): HTMLElement | null {
+    if (!roundId) return null;
+    if (roundGroupEl?.isConnected && roundGroupEl.dataset.roundId === roundId) {
+      // 段必须插在容器 footer 之前（footer 恒居容器底部；直接 appendChild 会把段放进 footer 之后）
+      if (el.parentNode !== roundGroupEl) {
+        const foot = roundGroupEl.querySelector('.round-group__footer');
+        if (foot && foot.parentNode === roundGroupEl) roundGroupEl.insertBefore(el, foot);
+        else roundGroupEl.appendChild(el);
+      }
+      return roundGroupEl;
+    }
+    // 新容器：插在该段之前（袋紧 user 提问），段移入容器
+    const g = document.createElement('div');
+    g.className = 'round-group';
+    g.dataset.roundId = roundId;
+    el.before(g);
+    g.appendChild(el);
+    ensureRoundGroupFooter(g);
+    roundGroupEl = g;
+    return g;
+  }
+
+  /**
+   * 容器级 footer（A 容器化）：复制整链 / 分叉 / 删除 + 时间戳
+   *
+   * 整链复制 = 该 round 的「用户提问（容器前一兄弟）+ 全部 assistant 段」，单一入口
+   * 覆盖闭环全量（R1 修复）。段级 footer 由 CSS 隐藏，操作整体上移到容器读取。
+   *
+   * @param g 容器元素（幂等：已有 footer 不重复建）
+   */
+  function ensureRoundGroupFooter(g: HTMLElement): void {
+    if (g.querySelector('.round-group__footer')) return;
+    const footer = document.createElement('div');
+    footer.className = 'round-group__footer';
+    const copyBtn = createIcon('copy', '复制整条问答（含你的提问与全部回答）', 'msg-copy-icon');
+    copyBtn.addEventListener('click', () => copyText(roundChainText(g)));
+    const forkBtn = createIcon('fork', '从此问答闭环分叉新会话', 'msg-fork-icon');
+    forkBtn.disabled = !g.dataset.roundId;
+    forkBtn.addEventListener('click', () => vscode.postMessage({ type: 'fork_session', roundId: g.dataset.roundId }));
+    const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
+    const firstSeg = g.querySelector<HTMLElement>('.msg.assistant');
+    deleteBtn.disabled = !firstSeg?.dataset.ts;
+    deleteBtn.addEventListener('click', () => {
+      if (firstSeg?.dataset.ts) vscode.postMessage({ type: 'delete_turn', ts: firstSeg.dataset.ts });
+    });
+    // 按钮组靠左、时间戳靠右（flex space-between 分散）
+    const actions = document.createElement('div');
+    actions.className = 'round-group__actions';
+    actions.append(copyBtn, forkBtn, deleteBtn);
+    footer.append(actions);
+    // 时间戳：取首段时间（闭环起点）
+    const t = firstSeg ? fmtTime(firstSeg.dataset.ts) : '';
+    if (t) {
+      const timeEl = document.createElement('span');
+      timeEl.className = 'msg-time';
+      timeEl.textContent = t;
+      footer.appendChild(timeEl);
+    }
+    g.appendChild(footer);
+  }
+
+  /** 容器整链文本：用户提问（前一兄弟，若为 user 气泡）+ 容器内全部 assistant 段原始文本 */
+  function roundChainText(g: HTMLElement): string {
+    const parts: string[] = [];
+    const user = g.previousElementSibling;
+    if (user instanceof HTMLElement && user.classList.contains('msg-wrapper')) {
+      const t = user.textContent?.trim();
+      if (t) parts.push(t);
+    }
+    g.querySelectorAll<HTMLElement>('.msg.assistant').forEach((a) => {
+      const t = a.dataset.rawText ?? '';
+      if (t) parts.push(t);
+    });
+    return parts.join('\n\n');
+  }
+
+  /**
+   * 解析正文结构化主动提问（[ASK] 行 → {question, options}，与内核 loop.extractAskQuestions
+   * 同源格式契约，2026-09-03 R2）
+   *
+   * 行首 `[ASK]`（可多条）即问题行，问题至行尾；行尾花括号 `{A|B|C}`（全半角括号、
+   * `|`/`｜` 分隔均可）且内含分隔符才解析为选项，避免把正文普通花括号字面量误判吞掉。
+   *
+   * @param text 待解析正文全文（assistant 段原始文本）
+   * @returns 解析出的提问列表（无 [ASK] 行返回空数组）
+   */
+  function parseAskQuestions(text: string): { question: string; options?: string[] }[] {
+    const questions: { question: string; options?: string[] }[] = [];
+    for (const line of text.split(/\r?\n/)) {
+      const trimmed = line.trim();
+      const match = /^\[ASK\][\s:：]*(.+)$/i.exec(trimmed);
+      if (match && match[1]?.trim()) {
+        let questionText = match[1].trim();
+        let options: string[] | undefined;
+        // 行内选项：捕获行尾花括号内容，仅当内含分隔符时按选项拆分
+        const optMatch = /^(.*?)\s*[｛{](.+)[｝}]\s*$/.exec(questionText);
+        if (optMatch && /[|｜]/.test(optMatch[2]!)) {
+          const resolved = optMatch[1]!.trim();
+          if (resolved.length > 0) {
+            questionText = resolved;
+            options = optMatch[2]!
+              .split(/[|｜]/)
+              .map((s) => s.trim())
+              .filter((s) => s.length > 0);
+          }
+        }
+        questions.push({ question: questionText, ...(options && options.length > 0 ? { options } : {}) });
+      }
+    }
+    return questions;
+  }
+
+  /**
+   * 重放 [ASK] 行只读选择题渲染（R2，2026-09-03）
+   *
+   * 历史正文中的结构化提问在重放时 live 解析为只读选择题块（.ask-replay）：与运行时
+   * 提问内联选择题（.ask-inline）同视觉语言（问题 + 选项 chips），但无交互——历史不可
+   * 作答，用户只能回看「当时问过什么、可选项有哪些」。正文中的 [ASK] 行本体剔除，
+   * 避免问题/选项双重展示；复制整链仍取原文（dataset.rawText 不改写）。
+   *
+   * @param host 当前 assistant 消息块（.msg.assistant）
+   * @param text 原始正文全文（含 [ASK] 行）
+   */
+  function renderAskReplay(host: HTMLElement, text: string): void {
+    const questions = parseAskQuestions(text);
+    if (questions.length === 0) return;
+    // 幂等：同块不重复挂（append 每段至多一次，防御未来多点接入）
+    if (host.querySelector('.ask-replay')) return;
+    // 剔除行首 [ASK] 行后重渲正文（保留其余正文，markdown 保真 + 代码块增强重做）
+    const body = host.querySelector<HTMLElement>(':scope .msg-body');
+    if (body) {
+      const kept = text
+        .split(/\r?\n/)
+        .filter((l) => !/^\s*\[ASK\][\s:：]*/i.test(l.trim()))
+        .join('\n')
+        .trim();
+      body.innerHTML = renderMarkdown(kept, sanitize);
+      enhanceCodeBlocks(body);
+    }
+    const box = document.createElement('div');
+    box.className = 'ask-replay';
+    for (const q of questions) {
+      const item = document.createElement('div');
+      item.className = 'ask-replay__item';
+      const qEl = document.createElement('div');
+      qEl.className = 'ask-replay__q';
+      qEl.textContent = q.question; // textContent 防注入
+      item.appendChild(qEl);
+      if (q.options && q.options.length > 0) {
+        const opts = document.createElement('div');
+        opts.className = 'ask-replay__opts';
+        for (const opt of q.options) {
+          // 只读 chip：非按钮（历史不可作答），纯静态展示
+          const chip = document.createElement('span');
+          chip.className = 'ask-replay__opt';
+          chip.textContent = opt;
+          opts.appendChild(chip);
+        }
+        item.appendChild(opts);
+      }
+      box.appendChild(item);
+    }
+    host.appendChild(box);
   }
 
   /**
@@ -1921,6 +2101,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
+    // A 容器化：运行时首块归位到所属 .round-group（chunk 携带执行闭环 roundId）
+    ensureRoundGroup(roundId, div);
     // 挂载任务过程折叠区（meta 已先到）：进行中实时展开投影过程事件
     renderRoundBlock(currentEvents, false);
     scrollToBottom(messages);
@@ -2038,6 +2220,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     activeAssistantEl.dataset.roundId = roundId;
     const forkBtn = activeAssistantEl.querySelector<HTMLButtonElement>('.msg-fork-icon');
     if (forkBtn) forkBtn.disabled = false;
+    // A 容器化：容器级分叉按钮同步启用（操作上移容器后，段级 fork 已不可见）
+    const g = activeAssistantEl.closest<HTMLElement>('.round-group');
+    const gFork = g?.querySelector<HTMLButtonElement>('.round-group__footer .msg-fork-icon');
+    if (gFork) gFork.disabled = false;
   }
 
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
@@ -2417,7 +2603,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
       if (msg.kind) {
         resumePending = true;
-        appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId);
+        appendInteractiveInput(msg.text, msg.ts, msg.kind);
       } else {
         append('user', msg.text, msg.ts);
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
@@ -2425,6 +2611,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
         resumePending = false;
         roundBlockEl = null;
         roundBlockHostEl = null;
+        roundGroupEl = null; // A 容器化：新闭环容器另行创建
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -2457,6 +2644,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
           streamingRaw = '';
           const body = flowShellEl.querySelector(':scope .msg-body');
           body?.classList.add('is-streaming');
+          // A 容器化：骨架①随 chunk 归位到所属容器（骨架建时无 roundId）
+          ensureRoundGroup(msg.roundId, flowShellEl);
           flowShellEl = null; // 已转化为正文块，后续插话/新轮不再特殊处理
         } else {
           beginStreaming(msg.ts, msg.roundId);
@@ -2618,7 +2807,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // .followup、.interrupt-divider（UX-9 行内打断切分条，与 .msg 平级）
       // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa, .round-group').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
@@ -2640,9 +2829,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       roundBlockHostEl = null;
       flowShellEl = null;
       currentEvents = [];
-      // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待不再生效（防跨会话误判）
+      // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
       lastAssistantRoundId = undefined;
       resumePending = false;
+      roundGroupEl = null;
       lastShownDate = undefined;
       updateEmptyState();
     } else if (msg.type === 'history_loaded') {

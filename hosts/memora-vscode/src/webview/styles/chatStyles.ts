@@ -316,6 +316,30 @@ export const chatStyles = `
   }
   .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
   .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  /* UX-9 R2 重放只读选择题（2026-09-03）：历史正文 [ASK] 行 live 解析的结果块。
+   * 与 .ask-inline 同视觉语言（浅底容器 + 问题行 + 选项 chips），但纯静态——历史不可作答，
+   * 选项用灰底标签而非可点击按钮（无 hover 变色、无 focus 态），从视觉上区分「当时的选择」。 */
+  .ask-replay {
+    margin: var(--sp-2, 6px) 0 0;
+    padding: var(--sp-3, 8px);
+    background: var(--surface-hover, rgba(128,128,128,.06));
+    border: 1px dashed var(--border-panel, rgba(128,128,128,.2));
+    border-radius: var(--radius-md, 6px);
+    display: flex; flex-direction: column; gap: var(--sp-2, 6px);
+    min-width: 0;
+  }
+  .ask-replay__item { display: flex; flex-direction: column; gap: var(--sp-1, 4px); }
+  .ask-replay__q { font-size: var(--font-md, 12px); color: var(--text-primary, #cccccc); }
+  .ask-replay__opts { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
+  .ask-replay__opt {
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-panel, rgba(128,128,128,.1));
+    border: none;
+    border-radius: var(--radius-full, 999px);
+    padding: 2px var(--sp-3, 8px);
+    user-select: none;
+  }
   /* UX-9 回答内联子行（2026-09-03）：用户对 [ASK] 的回答为提问块下方紧凑单行
    * 「你答：xxx」——阅读位置落在提问与续答之间，同环连续体的一个节点，非游离折叠块 */
   .msg-qa {
@@ -544,6 +568,30 @@ export const chatStyles = `
   /* 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳），回答完毕后才展示。
    * 状态类 is-pending 由 buildAssistantShell（pending 选项）加类、finalizeStreaming 移除。 */
   .msg-footer.is-pending { display: none; }
+  /* UX-9 A 容器化（2026-09-03）：同 roundId 的 AI 段收进同一视觉单元（问答闭环容器）。
+   * 容器 = 一个问答闭环的完整作答链：提问段/前序段/末段同框、边框一体，操作整体上移
+   * 容器级 footer（复制整链/分叉/删除 + 时间戳）。user 主提问在容器外（消息流气泡），
+   * 与 AI 作答链上下衔接——视觉即「同一个问答闭环」，不新增大卡片/强调色。 */
+  .round-group {
+    margin: var(--sp-2, 6px) 0;
+    border: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    border-radius: var(--radius-md, 6px);
+    overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  /* 容器级 footer：操作上移后的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点） */
+  .round-group__footer {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: var(--sp-2, 6px);
+    padding: var(--sp-1, 4px) var(--sp-3, 8px);
+    background: var(--surface-hover, rgba(128,128,128,.08));
+    border-top: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    font-size: var(--font-sm, 11px);
+  }
+  .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
+  /* 段级 footer 隐藏：容器化后复制/分叉/删除/时间戳统一上移容器级，段级不再出现
+   * （避免「续接正文底部又有操作按钮」的重复入口；.ask-replay 只读块不受影响） */
+  .msg.assistant .msg-footer { display: none; }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   /* 润色按钮（H5 文本润色入口，2026-08-23）：用户消息专属，调用内核润色服务。
    * 与复制按钮同尺寸，用强调色区分（--accent），润色中态用 opacity 降提示。

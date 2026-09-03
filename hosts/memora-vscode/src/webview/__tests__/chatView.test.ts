@@ -2128,6 +2128,87 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(qa.nextElementSibling).toBe(blocks[1]);
   });
 
+  it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（边框一体 + 容器级 footer）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    // 同 roundId → 单个 .round-group 容器，两段同框 + 容器级 footer
+    const groups = document.querySelectorAll('.round-group');
+    expect(groups).toHaveLength(1);
+    const g = groups[0] as HTMLElement;
+    expect(g.querySelectorAll('.msg.assistant')).toHaveLength(2);
+    expect(g.querySelector('.round-group__footer')).not.toBeNull();
+    // 结构：段全部位于容器内，footer 恒居容器底部（段不会压到 footer 之后）
+    const kids = Array.from(g.children);
+    const footIdx = kids.findIndex((c) => c.classList.contains('round-group__footer'));
+    expect(footIdx).toBe(kids.length - 1);
+    const segIdx = kids.findIndex((c) => c.classList.contains('msg'));
+    expect(segIdx).toBeGreaterThanOrEqual(0);
+    expect(segIdx).toBeLessThan(footIdx);
+    // 用户主提问在容器外（消息流气泡），与 AI 作答链上下衔接
+    const userWrap = g.previousElementSibling as HTMLElement;
+    expect(userWrap.classList.contains('msg-wrapper')).toBe(true);
+  });
+
+  it('A 容器化：容器级 footer 复制整链 = 用户提问 + 全部 assistant 段原文（含 [ASK] 行）', () => {
+    mountChatView();
+    // jsdom 无 navigator.clipboard，注入 writeText mock 捕获复制内容
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
+    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？{方案A|方案B}', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
+    copyBtn.click();
+    const copied = writeText.mock.calls[0]?.[0] ?? '';
+    // 整链 = 用户提问 + 各段原文（提问在先、段按序拼接，[ASK] 行及其选项原文保留）
+    expect(copied).toContain('帮我做方案');
+    expect(copied).toContain('[ASK] 你倾向哪个方案？{方案A|方案B}');
+    expect(copied).toContain('好的，按方案A继续');
+    // 拼接顺序：提问在前、回答段在后
+    expect(copied.indexOf('帮我做方案')).toBeLessThan(copied.indexOf('好的，按方案A继续'));
+  });
+
+  it('R2 重放 [ASK]：live 解析只读选择题（问题 + 选项 chips，正文剔除 [ASK] 原文行）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '先确认你的倾向。\n[ASK] 倾向哪个方案？{方案A|方案B}', ts: 't2', roundId: 'round-1' });
+    // 只读选择题块：问题 + 选项 chips
+    const ask = document.querySelector('.ask-replay') as HTMLElement;
+    expect(ask).not.toBeNull();
+    expect(ask.querySelector('.ask-replay__q')?.textContent).toBe('倾向哪个方案？');
+    const opts = ask.querySelectorAll('.ask-replay__opt');
+    expect(opts).toHaveLength(2);
+    expect(opts[0]?.textContent).toBe('方案A');
+    expect(opts[1]?.textContent).toBe('方案B');
+    // 只读：chip 为 span 非 button（历史不可作答）
+    expect(ask.querySelectorAll('button')).toHaveLength(0);
+    // 正文 [ASK] 原文行被剔除（不双重展示），其余正文保留
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(body.textContent).not.toContain('[ASK]');
+    expect(body.textContent).toContain('先确认你的倾向');
+    // 复制整链仍取原文（dataset.rawText 不改写，含 [ASK] 行）
+    const seg = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(seg.dataset.rawText).toContain('[ASK]');
+  });
+
+  it('R2 重放 [ASK]：无选项的提问行解析为纯问题；无 [ASK] 行的正文不渲染只读块', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '帮我写代码', ts: 't1', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '[ASK] 需要我补充什么细节吗？', ts: 't2', roundId: 'round-1' });
+    const ask = document.querySelector('.ask-replay') as HTMLElement;
+    expect(ask).not.toBeNull();
+    expect(ask.querySelectorAll('.ask-replay__opt')).toHaveLength(0);
+    expect(ask.querySelector('.ask-replay__q')?.textContent).toBe('需要我补充什么细节吗？');
+    // 完全无 [ASK] 行 → 不渲染只读块（普通正文不受影响）
+    dispatch({ type: 'user', text: '你好', ts: 't3', roundId: 'round-2' });
+    dispatch({ type: 'assistant', text: '你好，有什么可以帮你？', ts: 't4', roundId: 'round-2' });
+    const segs = document.querySelectorAll('.msg.assistant');
+    const last = segs[segs.length - 1] as HTMLElement;
+    expect(last.querySelector('.ask-replay')).toBeNull();
+  });
+
   it('narrate 过程事件渲染为独立父块（建议 A），每段叙述一个可折叠父块', () => {
     mountChatView();
     beginRound();
