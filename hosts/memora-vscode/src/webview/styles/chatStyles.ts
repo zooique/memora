@@ -414,9 +414,9 @@ export const chatStyles = `
    * 顶部虚线分隔表达「上一条被打断/提问、本条继续」，身份标签前置「↻ 续接」chip 弱化标识 ——
    * 克制呈现（圆环 + 灰字），不突出大卡片、不抢正文视觉。 */
   .msg.assistant.is-continued {
-    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.28));
-    margin-top: var(--sp-1, 4px);
-    padding-top: var(--sp-2, 6px);
+    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.24));
+    margin-top: var(--sp-1, 2px);
+    padding-top: var(--sp-1, 4px);
   }
   .msg-ai-label__cont {
     display: inline-flex; align-items: center;
@@ -433,6 +433,12 @@ export const chatStyles = `
    * 从视觉上让 [ASK]→回答→再答 呈现为同一条回答的延续 */
   .msg.assistant.is-continued .msg-ai-label__role,
   .msg.assistant.is-continued .msg-ai-label__model {
+    display: none;
+  }
+  /* UX-9 闭环同体感（2026-09-03）：续接段隐藏 footer（复制/分叉/删除 + 时间戳）——
+   * 整条回答的操作归属首段，续接段纯正文延续（无独立消息感，对齐 TraeWork 单消息多段落）。
+   * 时间戳同样只留首段带，续接段不再重复出现「第二消息」痕迹 */
+  .msg.assistant.is-continued .msg-footer {
     display: none;
   }
 
