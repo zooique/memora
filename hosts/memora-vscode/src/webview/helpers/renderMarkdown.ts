@@ -43,11 +43,15 @@ function fixIncompleteMarkdown(raw: string): string {
  * 返回的 HTML 由调用方赋给 .msg-body 的 innerHTML（消毒后安全）。
  *
  * @param text 原始 Markdown 文本
+ * @param win 宿主 window（依赖注入：webview 传全局 window；测试传 jsdom window）。
+ *   不裸用全局 window——webview 脚本若被 Node 环境误加载，裸 window 引用会抛
+ *   ReferenceError（2026-09-03 打开聊天面板报错根因），显式注入让运行环境显式化。
  * @returns 可安全 innerHTML 的 HTML 片段
  */
-export function renderMarkdown(text: string): string {
+export function renderMarkdown(text: string, win: Window): string {
   // 半截子补全后交给解析器（async:false 同步返回 string，无异步扩展）
   const html = marked.parse(fixIncompleteMarkdown(text), { async: false }) as string;
-  // 消毒：LLM 生成内容不可控，必须过滤 XSS（DOMPurify(window) 兼容浏览器与 jsdom 测试）
-  return DOMPurify(window).sanitize(html);
+  // 消毒：LLM 生成内容不可控，必须过滤 XSS（DOMPurify 工厂的 WindowLike 与 lib.dom Window
+  // 存在类型缺口，运行时等价——显式断言，不裸用全局 window）
+  return DOMPurify(win as unknown as Parameters<typeof DOMPurify>[0]).sanitize(html);
 }

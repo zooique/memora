@@ -1536,7 +1536,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const { body } = buildAssistantShell(div, ts, roundId);
       // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
       div.dataset.rawText = text;
-      body.innerHTML = renderMarkdown(text);
+      body.innerHTML = renderMarkdown(text, window);
       // 历史回放同样做代码块增强（语言标签 + 复制按钮）
       enhanceCodeBlocks(body);
       // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
@@ -1751,7 +1751,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (!streamingActive || !activeAssistantEl || !activeAssistantEl.isConnected) return;
     const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
     if (!body) return;
-    body.innerHTML = renderMarkdown(streamingRaw);
+    body.innerHTML = renderMarkdown(streamingRaw, window);
     streamBodyRendered = true;
   }
 
@@ -1818,7 +1818,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
     if (body) {
       body.classList.remove('is-streaming');
-      body.innerHTML = renderMarkdown(streamingRaw);
+      body.innerHTML = renderMarkdown(streamingRaw, window);
       enhanceCodeBlocks(body);
     }
     // 回答完毕：展示底部操作行（复制/分叉/删除 + 时间戳）——完整内容已定稿，操作才有效
