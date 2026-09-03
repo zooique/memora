@@ -271,17 +271,6 @@ export class OpenAICompatibleProvider extends LlmProvider {
       while (true) {
         // 检查中止信号：刻意抛 DOMException（AbortError）而非 MemoraError——它是 LLM 中断协议，上游按 err.name==='AbortError' 识别
         if (signal?.aborted) {
-          // 诊断插桩（2026-09-03 老问题复现定位，定位后移除）：打印合并信号被 abort 的来源，
-          // 区分超时定时器触发（TimeoutError reason）vs 外部用户取消（AbortError reason）。
-          logger.warn(
-            {
-              abortedReason: signal.reason
-                ? toError(signal.reason).name ?? String(signal.reason)
-                : 'null',
-              firstChunkReceived,
-            },
-            '[诊断] SSE 读取见合并信号已 abort，抛 AbortError',
-          );
           throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
         }
 
