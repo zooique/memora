@@ -125,7 +125,7 @@ Step 3 恢复协议 → CheckpointRestoreCoordinator
 >
 > * [module-inventory.md](./module-inventory.md) —— agent/ 模块清单与质量状态（实施后更新）
 >
-> * [agent-design-philosophy.md](./agent-design-philosophy.md) —— 单轮执行闭环设计推导
+> * [agent-design-philosophy.md](./agent-design-philosophy.md) —— turn 设计推导
 >
 > * [.trae/rules/single-truth-source-mindset.md](../../.trae/rules/single-truth-source-mindset.md) —— 最小单元与逻辑下沉
 >

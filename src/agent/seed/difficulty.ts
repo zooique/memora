@@ -72,8 +72,8 @@ export class DifficultyJudge {
       const verdict = raw.trim().toLowerCase();
       if (verdict.includes('simple')) return 'simple';
       if (verdict.includes('complex')) return 'complex';
-      // 解析不到明确判词 → 判不了即 unknown（不触发 Loop 编排）。difficulty 是附加降级路径，
-      // 误判 complex 会无谓触发 Loop 编排（多轮执行 + 汇报烧 token），故判不了不折叠为
+      // 解析不到明确判词 → 判不了即 unknown（不触发多 turn 任务编排）。difficulty 是附加降级路径，
+      // 误判 complex 会无谓触发多 turn 任务编排（多轮执行 + 汇报烧 token），故判不了不折叠为
       // complex，与类注释「解析失败返回 unknown」一致。
       return 'unknown';
     } catch (err) {

@@ -224,10 +224,10 @@ export class AgentLoop {
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
-  /** Loop 编排上下文标志（档2 externalTaskLoop）：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
+  /** 多 turn 任务编排上下文标志（档2 externalTaskLoop）：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
   private withinExternalTask = false;
 
-  /** Loop 编排组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
+  /** 多 turn 任务编排组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
   private externalTaskHeadRoundId = '';
   /** 主动提问回调（检测到 `[ASK]` 时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
@@ -237,8 +237,8 @@ export class AgentLoop {
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
   /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
   private selfReviewRound = 0;
-  /** 本问答闭环（processUserInput）内是否实际执行过工具步。
-   *  自审查的唯一触发门槛：只有多轮执行闭环（发生过工具调用）才审查，
+  /** 本 turn（processUserInput）内是否实际执行过工具步。
+   *  自审查的唯一触发门槛：只有多轮 turn（发生过工具调用）才审查，
    *  一遍过的纯文本问答不触发。由 processUserInput 入口重置（续跑 continueAfterPause 保留）。
    */
   private toolExecutedThisTurn = false;
@@ -437,7 +437,7 @@ export class AgentLoop {
       if (this._shouldSkipRecallInjection()) {
         logger.debug('Token budget tight, skipping recall injection');
       } else {
-        // 召回注入（附执行闭环 roundId）
+        // 召回注入（附 turn roundId）
         yield* this.withRound(this._injectRecall(recalledMemories));
       }
 
@@ -447,9 +447,9 @@ export class AgentLoop {
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
 
-      // 单轮迭代循环（runIterationLoop）：本闭环的执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
-      // 真正的「外循环」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
-      // 经 withRound 附加当前执行闭环 roundId（SSOT：过程事件归属由内核唯一提供）
+      // 单轮 step 循环（runIterationLoop）：本 turn 的 step 编排执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
+      // 真正的「多 turn 任务编排」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
+      // 经 withRound 附加当前 turn roundId（SSOT：过程事件归属由内核唯一提供）
       taskSucceeded = true;
       yield* this.withRound(this.runIterationLoop(signal));
     } catch (err) {
@@ -473,7 +473,7 @@ export class AgentLoop {
   }
 
   /**
-   * 软暂停后续跑（在暂停边界后从保留的 this.messages 重新进入迭代循环）
+   * 软暂停后续跑（在暂停边界后从保留的 this.messages 重新进入 step 循环引擎）
    *
    * 有补充输入时先 push 为 user 消息再续跑
    */
@@ -496,7 +496,7 @@ export class AgentLoop {
     this.resetTurnState();
 
     try {
-      // 重新进入迭代引擎，从保留的 this.messages 续跑（续跑延续同一执行闭环 roundId，经 withRound 附加）
+      // 重新进入 step 循环引擎，从保留的 this.messages 续跑（续跑延续同一 turn roundId，经 withRound 附加）
       taskSucceeded = true;
       yield* this.withRound(this.runIterationLoop(signal));
     } catch (err) {
@@ -534,7 +534,7 @@ export class AgentLoop {
    * @yields 汇报文本的 text chunk；无（汇报为空/失败）时 yield 空
    */
   async *runReport(signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
-    // 汇报入口先清执行期临时残留（上一步闭环的 self-review 等），
+    // 汇报入口先清执行期临时残留（上一步 turn 的 self-review 等），
     // 保证汇报只看到规划产物 + 汇报指令，不把步内残留混入收尾上下文（汇报不走 processUserInput）
     this.cleanExecutionTemporary();
 
@@ -570,9 +570,9 @@ export class AgentLoop {
   }
 
   /**
-   * 给子生成器的每个 chunk 附加当前执行闭环 roundId（SSOT：过程事件归属由内核唯一提供）。
+   * 给子生成器的每个 chunk 附加当前 turn roundId（SSOT：过程事件归属由内核唯一提供）。
    * 宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮。
-   * 三个执行闭环入口（processUserInput / continueAfterPause / runReport）统一经此包装。
+   * 三个 turn 入口（processUserInput / continueAfterPause / runReport）统一经此包装。
    */
   private async *withRound<T extends AgentChunk>(
     gen: AsyncGenerator<T, void, unknown>,
@@ -606,22 +606,22 @@ export class AgentLoop {
     this.pauseRequested = false;
   }
 
-  /** 标记当前是否处于 Loop 编排上下文（档2 externalTaskLoop：规划/步开启，编排器收尾后清除） */
+  /** 标记当前是否处于多 turn 任务编排上下文（档2 externalTaskLoop：规划/步开启，编排器收尾后清除） */
   setWithinExternalTask(v: boolean): void {
     this.withinExternalTask = v;
   }
 
-  /** 查询是否处于 Loop 编排上下文（续跑入口判断"是否继续推进任务链"的唯一依据） */
+  /** 查询是否处于多 turn 任务编排上下文（续跑入口判断"是否继续推进任务链"的唯一依据） */
   get isWithinExternalTask(): boolean {
     return this.withinExternalTask;
   }
 
-  /** 设置 Loop 编排组合溯源 head roundId（编排器规划后写入，续跑读取回指收尾摘要） */
+  /** 设置多 turn 任务编排组合溯源 head roundId（编排器规划后写入，续跑读取回指收尾摘要） */
   setExternalTaskHeadRoundId(roundId: string): void {
     this.externalTaskHeadRoundId = roundId;
   }
 
-  /** 读取 Loop 编排组合溯源 head roundId（续跑收尾时回指，保证摘要锚定"这次外部输入"） */
+  /** 读取多 turn 任务编排组合溯源 head roundId（续跑收尾时回指，保证摘要锚定"这次外部输入"） */
   get externalTaskHeadId(): string {
     return this.externalTaskHeadRoundId;
   }
@@ -649,7 +649,7 @@ export class AgentLoop {
     return AbortSignal.any(valid);
   }
 
-  /** 输出"达到最大迭代/步数预算"提示并结束（执行闭环 act 收敛兜底，多入口共享） */
+  /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
     this._iterationLimitReached = true;
     yield { type: 'text', content: this.ui.maxIterationsReached };
@@ -689,10 +689,10 @@ export class AgentLoop {
   }
 
   /**
-   * 单轮迭代引擎（执行闭环 act 内工具循环）：一轮 = 一次 handleIteration（processUserInput/continueAfterPause 共享）。
+   * 单轮 step 循环引擎（turn act 内 step 编排）：一次循环 = 一次 handleIteration（processUserInput/continueAfterPause 共享）。
    * stepBudget 软上限与 maxIterations 兜底在此统一收敛。
-   * 注：真正的「Loop 编排」（档2：多个执行闭环的编排，规划→步序列→收尾）由 seed/orchestrator 的
-   * externalTaskLoop 承载，不在本引擎内——本方法只服务单个执行闭环的 act 阶段。
+   * 注：真正的「多 turn 任务编排」（档2：多个 turn 的编排，规划→步 turn 序列→收尾）由 seed/orchestrator 的
+   * externalTaskLoop 承载，不在本引擎内——本方法只服务单个 turn 的 act 阶段。
    */
   private async *runIterationLoop(
     signal: AbortSignal | undefined,
@@ -745,7 +745,7 @@ export class AgentLoop {
     }
     // result === 'done'：仅当满足自审查注入条件时才注入提示继续 1 轮。
     // 注入判定收敛在 shouldInjectSelfReview（单一真理源，供 emit 通知与注入共用）：
-    // 多轮执行闭环（本问答发生过工具步）+ 未达上限 + 非工具屏蔽 + 审查应答不是满意确认（满意即停）。
+    // 多轮 turn（本问答发生过工具步）+ 未达上限 + 非工具屏蔽 + 审查应答不是满意确认（满意即停）。
     if (this.shouldInjectSelfReview()) {
       this.selfReviewRound++;
       this.appendSystemMessage(
@@ -760,7 +760,7 @@ export class AgentLoop {
     // 修复：消费排队插话并继续迭代，保证 block 模式语义（不打断当前轮，但下一轮必须处理）。
     if (this.pendingInterjections.length > 0) {
       const contents = this.pendingInterjections.splice(0);
-      // TS-13：消费后同步重建控制器——防「消费了排队但 abort 残留」使下一闭环首迭代误中止
+      // TS-13：消费后同步重建控制器——防「消费了排队但 abort 残留」使下一 turn 首迭代误中止
       this.interjectController = new AbortController();
       for (const content of contents) {
         this.appendUserMessage(content);
@@ -777,7 +777,7 @@ export class AgentLoop {
    * 1. 启用自审查（maxSelfReviewRounds > 0）；
    * 2. 未达审查轮数上限；
    * 3. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
-   * 4. **多轮执行闭环门槛**：本问答闭环内实际执行过工具步（一遍过的纯文本问答不审查）；
+   * 4. **多轮 turn 门槛**：本 turn 内实际执行过工具步（一遍过的纯文本问答不审查）；
    * 5. **满意即停**：审查应答若为"确认/无需修改"类短句 → 不再追问下一轮审查。
    */
   private shouldInjectSelfReview(): boolean {
@@ -805,7 +805,7 @@ export class AgentLoop {
 
   /** 单次迭代编排：编排中断检查 → 上下文准备 → LLM 调用 → 结果路由。
    *  按抽象层拆分为 _handleInterrupt / _prepareContext / _callAndRoute，
-   *  编排者只保留顺序，各阶段职责内聚在小方法（保持单轮闭环结构完整）。 */
+   *  编排者只保留顺序，各阶段职责内聚在小方法（保持单轮 turn 结构完整）。 */
   private async *handleIteration(
     iteration: number,
     signal: AbortSignal | undefined,
@@ -1453,7 +1453,7 @@ export class AgentLoop {
       return { aborted: true };
     }
 
-    // 实际执行工具步：标记"本问答闭环发生过工具调用"，作为自审查触发门槛（多轮执行闭环才审查）
+    // 实际执行工具步：标记"本 turn 发生过工具调用"，作为自审查触发门槛（多轮 turn 才审查）
     this.toolExecutedThisTurn = true;
 
     // 标记进入自主工具步（供内核向宿主暴露"可续跑"信号）
@@ -1542,10 +1542,10 @@ export class AgentLoop {
   }
 
   /**
-   * 第二级压缩（LLM 主动触发兜底）：把最早的执行闭环或超大工具结果现场压成临时摘要替换。
+   * 第二级压缩（LLM 主动触发兜底）：把最早的 turn 或超大工具结果现场压成临时摘要替换。
    *
-   * 作用对象是尚无记忆摘要的东西（第一级替换只对已沉淀摘要的问答闭环可用）；压缩摘要是
-   * loop 内临时态（标记 executionTemp，下一轮闭环入口即弃），不进记忆库。
+   * 作用对象是尚无记忆摘要的东西（第一级替换只对已沉淀摘要的 turn 可用）；压缩摘要是
+   * loop 内临时态（标记 executionTemp，下一轮 turn 入口即弃），不进记忆库。
    *
    * @param args 工具参数 JSON（{ target: 'earliest_round' | 'largest_tool_result' }）
    * @param signal 中止信号
@@ -1604,8 +1604,8 @@ export class AgentLoop {
   }
 
   /**
-   * 定位当前触发输入（顶级锚点）之前最早的执行闭环；无旧轮次（新对话第一轮）返回 null
-   * （当前输入永不压缩——交软上限收尾闭环而非压掉触发输入继续硬跑）。
+   * 定位当前触发输入（顶级锚点）之前最早的 turn；无旧轮次（新对话第一轮）返回 null
+   * （当前输入永不压缩——交软上限收尾而非压掉触发输入继续硬跑）。
    */
   private findEarliestRound(): Message[] | null {
     // 最后一个 user = 当前触发输入（顶级锚点，永不压缩）
@@ -1618,13 +1618,13 @@ export class AgentLoop {
     }
     if (lastUserIdx === -1) return null;
 
-    // 第一个 user = 会话最早的执行闭环；与当前输入重合（仅一轮）→ 无旧轮次可压
+    // 第一个 user = 会话最早的 turn；与当前输入重合（仅一轮）→ 无旧轮次可压
     const firstUserIdx = this.messages.findIndex((m) => m.role === 'user');
     if (firstUserIdx === -1 || firstUserIdx >= lastUserIdx) {
       return null;
     }
 
-    // 收集最早执行闭环（第一个 user 到下一个 user 之前的所有消息）
+    // 收集最早 turn（第一个 user 到下一个 user 之前的所有消息）
     const out: Message[] = [];
     for (let i = firstUserIdx; i < this.messages.length; i++) {
       const m = this.messages[i]!;

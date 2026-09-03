@@ -10,7 +10,7 @@
 | [memora-接入指南.md](../memora-接入指南.md) | **现行宿主接入契约基线**（Provider / 存储 / 会话 / 工具 / 安全决策，含 preExecutionCheck 恒放行纪律） |
 | [memora-api-reference.md](../memora-api-reference.md) | 内核公开 API 参考 |
 | [architecture/module-inventory.md](module-inventory.md) | 内核模块清单与生长路线图（L0-L6） |
-| [architecture/agent-design-philosophy.md](agent-design-philosophy.md) | 设计哲学（单轮执行闭环为种子） |
+| [architecture/agent-design-philosophy.md](agent-design-philosophy.md) | 设计哲学（turn 为种子） |
 
 ## 为什么归档
 

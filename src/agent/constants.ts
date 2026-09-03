@@ -167,7 +167,7 @@ export const LOOP_CONSTANTS = {
    */
   CONTEXT_PRESSURE_HINT:
     '## 上下文空间提示\n' +
-    '当前上下文已接近容量上限。若后续步骤需要更多空间，可调用 compress_context 压缩较早执行闭环' +
+    '当前上下文已接近容量上限。若后续步骤需要更多空间，可调用 compress_context 压缩较早 turn' +
     '或超大工具结果；同时注意收敛回答篇幅，避免无谓展开。',
 
   /**

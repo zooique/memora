@@ -125,8 +125,8 @@ DeepSeek Harness（2026-08-13 开源，MIT）提出三大可借鉴点：
 | 可组合性 | 模型/沙箱/存储/Loop 整体可替换 | 仅替换边界（存储/LLM/向量/日志） | Harness |
 | 可追溯性 | "模型可见即已记录"是架构不变量（append-only 事件溯源） | 软链接溯源（`sessionName+roundId` 定位，删 Round 即连坐失效；`isTraceable` 字段已于 2026-08-28 删除） | Harness |
 | 配置驱动扩展 | `cordis.patch.yml` 零代码叠加 | 注入需写代码 | Harness |
-| 设计原点纯度 | 最小单元是插件，但多元（Context/Service/Event 三抽象 + Loop 例外） | 单一最小单元（单轮闭环），一切皆其自然生长 | memora |
-| 认知负担 | 230+ workspace / 30+ Service / 三层事件瀑布 | 一套闭环 + 一套记忆模型 + 少量接口 | memora |
+| 设计原点纯度 | 最小单元是插件，但多元（Context/Service/Event 三抽象 + Loop 例外） | 单一最小单元（turn），一切皆其自然生长 | memora |
+| 认知负担 | 230+ workspace / 30+ Service / 三层事件瀑布 | 一套 turn + 一套记忆模型 + 少量接口 | memora |
 | 抓住 Agent 本质 | 记忆降级为日志投影（无治理/去重/衰减/跨会话） | 记忆是一等公民（L1-L4 治理 / 双通道召回 / 跨会话） | memora |
 
 ### 5.2 结论

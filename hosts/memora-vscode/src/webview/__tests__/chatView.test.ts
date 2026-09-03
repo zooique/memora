@@ -1494,7 +1494,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     expect(steps[2].querySelector('.plan-step-badge')?.textContent).toBe('待执行');
   });
 
-  it('plan_update 携带 stepRounds → 任务节点展开显示该步骤的执行闭环摘要', () => {
+  it('plan_update 携带 stepRounds → 任务节点展开显示该步骤的turn摘要', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
@@ -1980,7 +1980,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 A：打断补充渲染为行内打断切分条，插在被打破块之后；后续 chunk 为「续接」块', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    // D3 单轨：运行时 chunk 携带执行闭环 roundId（宿主透传），续接判定与重放共用「roundId 相等」
+    // D3 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
     dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
     // 打断补充（streaming 中 supplement）→ 行内打断切分条，不再是消息流底部游离折叠块
     dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });

@@ -67,7 +67,7 @@ export class SeedPrepare {
 
     // 会议机制（S5）确定性触发：用户消息含「小组会议」且 activePack 是组长 →
     // 经既有 writePlan 泛型能力预置任务表（组员各一步 + 汇总一步，复用 PlanStep.rolePack 表层覆盖），
-    // 并标记 meetingPreset 强制 orchestrator 进入 Loop 编排直跑步序列（不引入会议引擎，见 ADR-028 收敛补记）。
+    // 并标记 meetingPreset 强制 orchestrator 进入多 turn 任务编排直跑步序列（不引入会议引擎，见 ADR-028 收敛补记）。
     const meetingSteps = rolePackManager?.tryBuildMeetingPlan?.(input) ?? null;
     let meetingPreset = false;
     if (meetingSteps && sessionManager) {

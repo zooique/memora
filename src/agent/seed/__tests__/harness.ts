@@ -165,7 +165,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
   let currentRoundId = 'round-1';
   // allocRoundId 自增计数：每次分配返回不重复的 round id（等价真实 loop 的 round-${Date.now()}）
   let allocCounter = 0;
-  // 外循环上下文原子状态：供 setWithinExternalTask/… 读写，模拟真实 loop 的跨方法上下文
+  // 多 turn 任务编排上下文原子状态：供 setWithinExternalTask/… 读写，模拟真实 loop 的跨方法上下文
   let withinExternalTask = false;
   let externalTaskHeadRoundId = '';
 
@@ -180,7 +180,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       // allocRoundId 生成新轮次 ID（prepare 提前分配，供 setCurrentRoundId/appendUser 同源使用）
       allocRoundId: vi.fn(() => `round-alloc-${++allocCounter}`),
       getCurrentRoundId: vi.fn(() => currentRoundId),
-      // 外循环上下文：setter 写状态、getter 读状态（与真实 loop 的属性 getter 一致，作为续跑推进的判断依据）
+      // 多 turn 任务编排上下文：setter 写状态、getter 读状态（与真实 loop 的属性 getter 一致，作为续跑推进的判断依据）
       setWithinExternalTask: vi.fn((v: boolean) => {
         withinExternalTask = v;
       }),

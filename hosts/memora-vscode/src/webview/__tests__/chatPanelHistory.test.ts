@@ -673,12 +673,12 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 });
 
 // ═══════════════════════════════════════════════════════════
-// consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09-02）
+// consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）
 // ═══════════════════════════════════════════════════════════
-// 修复：宿主原「流末一次落盘到 roundIds 末尾一个 round」在多执行闭环（Loop 编排）下归属错误——
+// 修复：宿主原「流末一次落盘到 roundIds 末尾一个 round」在多 turn 任务编排下归属错误——
 // 全部工具堆一个 round（拥挤）+ 部分 round 无 processEvents（丢失）。现按内核 chunk.roundId
-// 分组，每个执行闭环独立落盘到各自 Round（SSOT：归属由内核唯一提供，非 roundIds 末尾推断）。
-describe('consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09-02）', () => {
+// 分组，每个 turn 独立落盘到各自 Round（SSOT：归属由内核唯一提供，非 roundIds 末尾推断）。
+describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
@@ -699,29 +699,29 @@ describe('consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09
     } as unknown as Agent;
   }
 
-  it('一次 chat() 多执行闭环（Loop 编排）：各执行闭环 processEvents 独立落盘，不堆叠不覆盖', async () => {
+  it('一次 chat() 多turn（多 turn 任务编排）：各turn processEvents 独立落盘，不堆叠不覆盖', async () => {
     const { store, roundStore, provider } = setup();
     provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
-    // 预造两个执行闭环的 Round（round-1 / round-2）
+    // 预造两个turn的 Round（round-1 / round-2）
     seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '任务', ts: 't0' },
-      { role: 'assistant', content: '执行闭环1回答', ts: 't1' },
+      { role: 'assistant', content: 'turn1回答', ts: 't1' },
     ]);
     seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '继续', ts: 't2' },
-      { role: 'assistant', content: '执行闭环2回答', ts: 't3' },
+      { role: 'assistant', content: 'turn2回答', ts: 't3' },
     ]);
-    // mock chat：一次流内两个执行闭环（round-1 工具 / round-2 思考+工具），各自独立 roundId
+    // mock chat：一次流内两个turn（round-1 工具 / round-2 思考+工具），各自独立 roundId
     provider.setAgent(
       chatAgentStub(() =>
         (async function* () {
           yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-1' };
           yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
-          yield { type: 'text', content: '执行闭环1回答', roundId: 'round-1' };
+          yield { type: 'text', content: 'turn1回答', roundId: 'round-1' };
           yield { type: 'thinking', phase: 'planning', roundId: 'round-2' };
           yield { type: 'tool_start', toolCallId: 't2', name: 'search', args: '{}', roundId: 'round-2' };
           yield { type: 'tool_result', toolCallId: 't2', name: 'search', ok: true, summary: 's', roundId: 'round-2' };
-          yield { type: 'text', content: '执行闭环2回答', roundId: 'round-2' };
+          yield { type: 'text', content: 'turn2回答', roundId: 'round-2' };
           yield { type: 'done' };
         })(),
       ),
@@ -729,7 +729,7 @@ describe('consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
 
-    // 每个执行闭环的 processEvents 独立归属到自己的 Round（meta 段首 + 各自工具；metrics 归入收尾执行闭环）
+    // 每个 turn 的 processEvents 独立归属到自己的 Round（meta 段首 + 各自工具；metrics 归入收尾 turn）
     const r1 = roundStore.getById('round-1')!;
     const r2 = roundStore.getById('round-2')!;
     expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result']);
@@ -779,7 +779,7 @@ describe('consumeFlow 过程事件按执行闭环 roundId 分组落盘（2026-09
     );
     await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('第二次');
 
-    // 第一次的 round-1 保留自己的工具记录（不被第二次覆盖）；metrics 归入自己的执行闭环（单执行闭环收尾）
+    // 第一次的 round-1 保留自己的工具记录（不被第二次覆盖）；metrics 归入自己的turn（单turn收尾）
     const r1 = roundStore.getById('round-1')!;
     const r2 = roundStore.getById('round-2')!;
     expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result', 'metrics']);

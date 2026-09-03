@@ -1155,7 +1155,7 @@ export const chatStyles = `
     padding: 0;
   }
   /* 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标，
-     展开后展示该步骤关联的执行闭环摘要（stepRounds） */
+     展开后展示该步骤关联的 turn 摘要（stepRounds） */
   .plan-step {
     margin: var(--sp-1, 2px) 0;
     padding-left: var(--sp-2, 6px);

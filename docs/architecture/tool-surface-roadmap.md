@@ -15,7 +15,7 @@
 |---|---|---|---|
 | 记忆/技能 | `search_memories` / `trace_summary` / `read_skill` / `read_resource` / `run_skill_script` / `list_resources` / `list_skills` | 始终可用（技能三件套渐进披露） | 核心域，设计最完整 |
 | 本地文件 | `read_file` / `write_file` / `list_dir` | 始终可用 | 路径白名单 + 写入二次确认 |
-| 任务执行 | `task_table_write` / `task_table_update` | 始终可用 | 外循环驱动 |
+| 任务执行 | `task_table_write` / `task_table_update` | 始终可用 | 多 turn 任务编排驱动 |
 | 外部信息 | `web_search` / `web_fetch` / `run_code` | **条件性**（宿主注入对应 provider 才暴露，独立导出 `WEB_SEARCH_TOOL` / `WEB_FETCH_TOOL` / `RUN_CODE_TOOL`） | 搜索→抓取闭环 + 通用计算底座（第一版补齐落地） |
 
 **工具面哲学**：全部是「自包含能力」（读自己、写自己、搜自己记忆），唯一连接外部世界的是 `web_search` / `web_fetch` / `run_code` 三个条件工具——其中 `web_search` 只返回摘要、`web_fetch` 读取正文（成对构成搜索→抓取闭环）、`run_code` 提供通用计算/验证底座。

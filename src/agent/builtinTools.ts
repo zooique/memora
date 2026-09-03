@@ -184,15 +184,15 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
 export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
   name: 'compress_context',
   description:
-    '当上下文接近容量上限或空间紧张时主动压缩空间（第二级压缩，LLM 触发兜底）：把最早的执行闭环' +
+    '当上下文接近容量上限或空间紧张时主动压缩空间（第二级压缩，LLM 触发兜底）：把最早的 turn' +
     '或超大工具结果现场压成临时摘要替换，loop 收尾即弃。当替换无法释放空间（无已存摘要）时、或存在' +
-    '超大工具结果 / 较多旧执行闭环时使用；压缩内容仍可经 trace_summary 回溯。',
+    '超大工具结果 / 较多旧 turn 时使用；压缩内容仍可经 trace_summary 回溯。',
   parameters: {
     type: 'object',
     properties: {
       target: {
         type: 'string',
-        description: '压缩目标："earliest_round"（最早的执行闭环，默认）或 "largest_tool_result"（最大的工具结果）',
+        description: '压缩目标："earliest_round"（最早的 turn，默认）或 "largest_tool_result"（最大的工具结果）',
       },
     },
     required: [],

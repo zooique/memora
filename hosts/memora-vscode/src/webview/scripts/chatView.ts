@@ -288,7 +288,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     ul.className = 'plan-board-list';
     for (const step of steps) {
       // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标；展开后展示该步骤已完成的
-      // 执行闭环摘要（stepRounds，来自 checkpoint.roundLog 关联）
+      // turn 摘要（stepRounds，来自 checkpoint.roundLog 关联）
       const item = document.createElement('details');
       item.className = `plan-step plan-step-${step.status}`;
       item.open = false;
@@ -1720,7 +1720,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * chunk 骨架复用、prepareFlowShell 骨架随 chunk 归位。无 roundId 时不建容器
    * （骨架/异常兜底直接留消息流）。
    *
-   * @param roundId 该段执行闭环 ID；无则不入容器
+   * @param roundId 该段 turn ID；无则不入容器
    * @param el 待归位的 assistant 块（如已在消息流，则搬迁进容器）
    * @returns 容器元素或 null
    */
@@ -2065,13 +2065,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    * 渲染（节流）+ 末尾闪烁光标；流结束后由 finalizeStreaming 收敛（去光标 + 代码块增强）。
    *
    * @param ts 本轮流式第一条 chunk 的时间戳
-   * @param roundId 执行闭环 roundId（chunk 携带；供 D3 同环续接判定与骨架 roundId 回填）
+   * @param roundId turn roundId（chunk 携带；供 D3 同环续接判定与骨架 roundId 回填）
    */
   function beginStreaming(ts?: string, roundId?: string): void {
     renderDateDivider(ts);
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // UX-9 A/B（D3 单轨）：打断补充/问答后的后续正文 = 同环续接段（chunk 携带执行闭环 roundId，
+    // UX-9 A/B（D3 单轨）：打断补充/问答后的后续正文 = 同环续接段（chunk 携带 turn roundId，
     // 「roundId 相等」判定与重放路径共用——运行时不再依赖独立时序标志）
     if (isSameRoundContinue(roundId)) div.classList.add('is-continued');
     if (roundId) lastAssistantRoundId = roundId;
@@ -2081,7 +2081,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
-    // A 容器化：运行时首块归位到所属 .round-group（chunk 携带执行闭环 roundId）
+    // A 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
     ensureRoundGroup(roundId, div);
     // 挂载任务过程折叠区（meta 已先到）：进行中实时展开投影过程事件
     renderRoundBlock(currentEvents, false);

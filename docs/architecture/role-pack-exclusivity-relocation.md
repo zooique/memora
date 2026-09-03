@@ -145,7 +145,7 @@ activePack 解析（单一函数，所有场景共用）：
 
 **为什么落点在任务表层而不是 loop 层**：
 
-* **改 loop = 给执行闭环开洞**——违反"执行闭环是 Agent 最小完整单元"（single-truth-source-mindset §11.3）。
+* **改 loop = 给 turn 开洞**——违反"turn 是 Agent 最小完整单元"（single-truth-source-mindset §11.3）。
 * **挂 `PlanStep` = 往既有挂载点生长**——任务表本就由 LLM 经 `task_table_write` 维护、每次迭代 LLM 调用前注入上下文、状态写入收口在 `SessionManager.updatePlanStepStatus`。"LLM 组织任务清单"是既有能力，零新增。
 
 **实施前提**：
@@ -158,8 +158,8 @@ activePack 解析（单一函数，所有场景共用）：
 * **范围校验（边界前置）**：`rolePack` 必须 ∈ {组长} ∪ {组员}。越界 → 忽略该覆盖 + warning（防 LLM 幻觉角色名）。
 * **成员数是编排约定，不是内核上限**：宿主在系统提示给建议值（建议 ≤5，控制 token 成本）；内核不截断。
 * 用户发起、显式触发，非自动行为（不破坏专注模式）。
-* **步粒度边界**：工具面恒锁组长（`setChatOptions` 恒读 activePack 策略，B1）；仅步入口换前缀、步内多轮不重复（B2）；loop 零改动（会议不进执行闭环）。
-* **不改变角色选择状态**：不改 `activePack`、不开新状态面。（会议写 N+1 轮历史与沉淀记忆——那是闭环的固有产物。）
+* **步粒度边界**：工具面恒锁组长（`setChatOptions` 恒读 activePack 策略，B1）；仅步入口换前缀、步内多轮不重复（B2）；loop 零改动（会议不进 turn）。
+* **不改变角色选择状态**：不改 `activePack`、不开新状态面。（会议写 N+1 轮历史与沉淀记忆——那是 turn 的固有产物。）
 * 观点仅为视角输入，最终决策权在用户。
 
 ### 4.6 兜底（内核兜底契约包）

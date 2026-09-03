@@ -374,7 +374,7 @@ export type ExtensionToWebviewMessage =
       ts?: string;
       guardrailBlocked?: boolean;
       /**
-       * 执行闭环 roundId（D3 单轨，2026-09-03）：宿主从内核 chunk.roundId 透传，
+       * turn roundId（D3 单轨，2026-09-03）：宿主从内核 chunk.roundId 透传，
        * webview 端「同环续接」判定统一走 roundId 相等（运行时与重放共用单一判定源，
        * 不再依赖独立时序标志）。持久化落盘归属已由宿主用同源 roundId 完成，此处仅供展示判定。
        */
@@ -978,7 +978,7 @@ export interface PlanStepDto {
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;
-  /** 该步骤已关联的执行闭环摘要（来自 checkpoint.roundLog 的 stepId 关联，可为空数组） */
+  /** 该步骤已关联的 turn 摘要（来自 checkpoint.roundLog 的 stepId 关联，可为空数组） */
   stepRounds: { stepId: string; summary: string }[];
 }
 

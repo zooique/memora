@@ -81,7 +81,7 @@
 |---|--------|---------|------------|
 | 1 | 概念命名"step" vs "turn" | **已收敛**（术语表 2026-09-03） | step = `runIterationLoop` 内每次 LLM 调用 + 工具；turn = `processUserInput` 一次完整执行（一个 roundId）；loop = 对 step 的编排（`runIterationLoop`） |
 | 2 | 终止条件分散 | **已语义化**（多 turn 任务编排） | 任务编排终止由任务链收敛承担（orchestrator 按 pending 步驱动、耗尽即收尾汇报）；loop 以 `toolStepLimit` 约束深度；turn 整体以 `stepBudget`/`tokenBudget`/`maxIterations` 兜底。统一表述为「**Handoff 决策的输入集合**」：目标达成 / 资源上限 / 用户中断（对齐哲学"终止条件三分类"） |
-| 3 | 目标模式接口形状未预留 | 待实现（远期锚点） | 仍不实现；明确定位：未来目标模式 = 回答后插入对齐环节（差距分析 → 新 Trigger），插入点收敛在 orchestrator（闭环编排容器），仍复用 `processUserInput` 单轮闭环 |
+| 3 | 目标模式接口形状未预留 | 待实现（远期锚点） | 仍不实现；明确定位：未来目标模式 = 回答后插入对齐环节（差距分析 → 新 Trigger），插入点收敛在 orchestrator（闭环编排容器），仍复用 `processUserInput` 的 turn |
 
 **反模式自查**（对照哲学「递归边界确定性」「模式统一论」）：
 
@@ -129,7 +129,7 @@
 
 ### 5.2 生长路径（未来可执行，非本期）
 
-1. **目标模式**（哲学「目标模式」，远期）：在 orchestrator 收尾（`finalizeExternalTask` → handoff）后插入"对齐检查"环节——对齐未达则生成新 Trigger 继续，达成则 done。**无需新引擎**，只增加编排层一个节奏分支，仍复用 `processUserInput` 单轮闭环。
+1. **目标模式**（哲学「目标模式」，远期）：在 orchestrator 收尾（`finalizeExternalTask` → handoff）后插入"对齐检查"环节——对齐未达则生成新 Trigger 继续，达成则 done。**无需新引擎**，只增加编排层一个节奏分支，仍复用 `processUserInput` 的 turn。
 2. **子 Agent 套娃**（哲学「子 Agent 递归」）：子 Agent = 另一个 `AgentLoop` 实例，主 turn 通过工具调用它。**无需改造 turn**，工具层新增一个"子 Agent 工具"即可。
 
 ---

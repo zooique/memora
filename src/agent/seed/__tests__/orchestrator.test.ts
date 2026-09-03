@@ -1,8 +1,8 @@
 /**
- * 种子闭环编排器独立单元测试
+ * 种子 turn 编排器独立单元测试
  *
- * 覆盖 SeedOrchestrator（最小执行闭环唯一编排真理源）的显式命名入口：
- *   - runChat：完整闭环 prepare → act(processUserInput) → reflect → handoff
+ * 覆盖 SeedOrchestrator（最小 turn 唯一编排真理源）的显式命名入口：
+ *   - runChat：完整 turn prepare → act(processUserInput) → reflect → handoff
  *   - runResume：act(continueAfterPause) → reflect（无回答前、无 Handoff）
  * 注：原 runEvent（SessionEvent 结构化事件路径）已随 composer 剪枝移除。
  *
@@ -33,9 +33,9 @@ function stubContinue(mocks: SeedMocks, contentPart: string): void {
   mocks.loop.continueAfterPause.mockReturnValue(textStream(contentPart));
 }
 
-describe('SeedOrchestrator 最小执行闭环', () => {
+describe('SeedOrchestrator 最小 turn', () => {
   // ── runChat ────────────────────────────────────────────
-  it('runChat 完整闭环：prepare → act → reflect → handoff 顺序产出', async () => {
+  it('runChat 完整 turn：prepare → act → reflect → handoff 顺序产出', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');
     consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
@@ -191,7 +191,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
-  it('外部任务：步闭环软暂停保留现场，runResume 续跑补完剩余步并收尾汇报（摘要恒 1:1）', async () => {
+  it('外部任务：步 turn软暂停保留现场，runResume 续跑补完剩余步并收尾汇报（摘要恒 1:1）', async () => {
     const { mocks, deps } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),
     });
@@ -227,7 +227,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
       },
     );
 
-    // ── 第 1 段：runChat 外循环，步2 软暂停 → 现场保留、不收尾不产摘要
+    // ── 第 1 段：runChat 多 turn 任务编排，步2 软暂停 → 现场保留、不收尾不产摘要
     await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 20));
 
@@ -256,23 +256,23 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     expect(chunks).toContainEqual({ type: 'thinking', phase: 'reporting' });
   });
 
-  // ── runChat · 外部任务驱动外循环（阶段 3）────────────────
-  it('runChat 复杂且启用外部循环：规划闭环 → 每步独立闭环（独立 roundId）→ 收敛后汇报', async () => {
+  // ── runChat · 外部任务驱动的多 turn 任务编排（阶段 3）────────────────
+  it('runChat 复杂且启用外部任务编排：规划 turn → 每步独立 turn（独立 roundId）→ 收敛后汇报', async () => {
     const { mocks, deps, consumeControl } = createHarness({
       // 难度分级判定为复杂
       getBackgroundProvider: () => mockProvider('complex'),
     });
-    // 可变任务表：2 个 pending 步骤（步闭环执行后陆续标记 done）
+    // 可变任务表：2 个 pending 步骤（步 turn执行后陆续标记 done）
     const plan: Array<{ id: string; status: string; description: string }> = [
       { id: 's1', status: 'pending', description: '步骤一' },
       { id: 's2', status: 'pending', description: '步骤二' },
     ];
     mocks.sessionManager.getCheckpoint.mockImplementation(() => ({ sessionId: 'sess', plan }));
     consumeControl.result = { content: '答', aborted: false, paused: false, failed: false };
-    // 汇报闭环返回文本流
+    // 汇报 turn返回文本流
     mocks.loop.runReport.mockReturnValue(textStream('【任务总结汇报】已完成，结论 X'));
 
-    // processUserInput 驱动：规划闭环（用户输入）只建表；步闭环（含 stepPrompt）处理一个 pending 并标记 done
+    // processUserInput 驱动：规划 turn（用户输入）只建表；步 turn（含 stepPrompt）处理一个 pending 并标记 done
     mocks.loop.processUserInput.mockImplementation(function* (input: string) {
       if (typeof input === 'string' && input.includes('执行任务步骤')) {
         const step = plan[plan.findIndex((s) => s.status === 'pending')];
@@ -289,9 +289,9 @@ describe('SeedOrchestrator 最小执行闭环', () => {
       expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
     });
 
-    // 规划闭环 + 2 个步闭环 = processUserInput 共 3 次
+    // 规划 turn + 2 个步 turn = processUserInput 共 3 次
     expect(mocks.loop.processUserInput).toHaveBeenCalledTimes(3);
-    // 收敛后触发汇报闭环；汇报追加进会话历史（含 roundId 溯源）
+    // 收敛后触发汇报 turn；汇报追加进会话历史（含 roundId 溯源）
     expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
       '【任务总结汇报】已完成，结论 X',
@@ -311,7 +311,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     expect(mocks.roundSummaryGenerator.generate.mock.calls[0]![2]).toBe(headRoundId);
     // 汇报文本同样挂 head（与摘要、用户消息同 roundId，组合内溯源一致）
     expect(mocks.history.appendAssistant.mock.calls.at(-1)?.[1]).toBe(headRoundId);
-    // 每个步闭环独立 roundId 由 processUserInput 自生成（未传 roundId，mock 不覆盖 currentRoundId）。
+    // 每个步 turn独立 roundId 由 processUserInput 自生成（未传 roundId，mock 不覆盖 currentRoundId）。
     // 故 setCurrentRoundId 仅 prepare 1 次 + 收尾回指 head 1 次 = 2 次（Q4：allocRoundId 冗余已删除）
     expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(2);
     // 步间临时 system 回收：清理职责已收敛（单一真理源）。
@@ -321,7 +321,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     const cleanCount = mocks.loop.cleanTemporarySystemMessages.mock.calls.length;
     // prepare 入口 1 次 + 规划后（PLAN_ONLY）1 次 = 2 次
     expect(cleanCount).toBe(2);
-    // 外循环阶段标记（供宿主区分「规划 / 第 N 步 / 汇报」）
+    // 多 turn 任务编排阶段标记（供宿主区分「规划 / 第 N 步 / 汇报」）
     expect(chunks).toContainEqual({ type: 'thinking', phase: 'planning' });
     expect(chunks).toContainEqual({
       type: 'thinking',
@@ -345,7 +345,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     });
     stubProcessUserInput(mocks, '规划内容');
     consumeControl.result = { content: '规划内容', aborted: false, paused: false, failed: false };
-    // 汇报闭环返回空流（LLM 未产出真实收尾内容）
+    // 汇报 turn 返回空流（LLM 未产出真实收尾内容）
     mocks.loop.runReport.mockImplementation(function* () {});
 
     await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
@@ -420,7 +420,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     );
   });
 
-  it('runChat 复杂但 taskLoopLimit=0（关闭外循环）：走单闭环，不触发规划/步闭环/汇报', async () => {
+  it('runChat 复杂但 taskLoopLimit=0（关闭多 turn 任务编排）：走单 turn，不触发规划/步 turn/汇报', async () => {
     const { mocks, deps, consumeControl } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),
     });
@@ -428,7 +428,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     useStrategy(mocks, makeStrategy({ taskLoopLimit: 0 }));
     stubProcessUserInput(mocks, '直接答');
     consumeControl.result = { content: '直接答', aborted: false, paused: false, failed: false };
-    // 即使有已完成 plan 步骤，也不应进入外循环
+    // 即使有已完成 plan 步骤，也不应进入多 turn 任务编排
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
       plan: [{ id: 's1', status: 'done' }],
@@ -437,7 +437,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    // 关闭外循环 → 不注入 PLAN_ONLY、不汇报、不 runReport；走单闭环答后摘要
+    // 关闭多 turn 任务编排 → 不注入 PLAN_ONLY、不汇报、不 runReport；走单 turn 答后摘要
     expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalledWith(
       expect.stringContaining('暂时不要执行任何步骤'),
     );
@@ -481,7 +481,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     ];
     mocks.sessionManager.getCheckpoint.mockImplementation(() => ({ sessionId: 'sess', plan }));
     consumeControl.result = { content: '答', aborted: false, paused: false, failed: false };
-    // 汇报闭环返回"进度 + 未完成"报告（触顶不是硬止损）
+    // 汇报 turn返回"进度 + 未完成"报告（触顶不是硬止损）
     mocks.loop.runReport.mockReturnValue(textStream('【触顶汇报】已完成步骤一，未完成步骤二'));
 
     mocks.loop.processUserInput.mockImplementation(function* (input: string) {
@@ -494,7 +494,7 @@ describe('SeedOrchestrator 最小执行闭环', () => {
 
     await collectGen(new SeedOrchestrator(deps).runChat('复杂任务', new AbortController().signal));
     await vi.waitFor(() => {
-      // 触顶且有未完成 → 汇报闭环（进度 + 列未完成），非冷断
+      // 触顶且有未完成 → 汇报 turn（进度 + 列未完成），非冷断
       expect(mocks.loop.runReport).toHaveBeenCalledTimes(1);
     });
     // 汇报文本写入会话历史（供下次输入按记忆递归续接）
@@ -504,16 +504,16 @@ describe('SeedOrchestrator 最小执行闭环', () => {
     );
   });
 
-  it('runChat 步闭环中断：不产摘要（残缺半成品不入记忆，与单闭环一致）', async () => {
+  it('runChat 步 turn 中断：不产摘要（残缺半成品不入记忆，与单 turn 一致）', async () => {
     const { mocks, deps } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),
     });
-    // 1 个 pending 步：规划闭环成功后步闭环中断 → 中断不产摘要，仅保真对话历史
+    // 1 个 pending 步：规划 turn 成功后步 turn 中断 → 中断不产摘要，仅保真对话历史
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       sessionId: 'sess',
       plan: [{ id: 's1', status: 'pending', description: '步骤一' }],
     });
-    // 规划闭环（用户输入）产出规划文本；步闭环（stepPrompt）产出步内文本
+    // 规划 turn（用户输入）产出规划文本；步 turn（stepPrompt）产出步内文本
     mocks.loop.processUserInput.mockImplementation(function* (input: string) {
       yield { type: 'text', content: input.includes('执行任务步骤') ? '步内' : '规划产出' };
     });
@@ -557,8 +557,8 @@ describe('SeedOrchestrator 最小执行闭环', () => {
 });
 
 describe('会议机制（S5 补强）：步粒度硬切换', () => {
-  it('外部任务循环：每步入口按 rolePack 刷新装配（成员文档真进上下文），工具面锁死组长', async () => {
-    // 复杂任务 + 启用外循环（taskLoopLimit>0）
+  it('多 turn 任务编排：每步入口按 rolePack 刷新装配（成员文档真进上下文），工具面锁死组长', async () => {
+    // 复杂任务 + 启用多 turn 任务编排（taskLoopLimit>0）
     const { mocks, deps, consumeControl } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),
     });
@@ -577,7 +577,7 @@ describe('会议机制（S5 补强）：步粒度硬切换', () => {
       (declared: string | undefined) => (declared ? declared : null),
     );
 
-    // 模拟 LLM 每完成一步（步入口 prompt 含「【执行任务步骤】」）将对应 pending 步标 done，推进外循环
+    // 模拟 LLM 每完成一步（步入口 prompt 含「【执行任务步骤】」）将对应 pending 步标 done，推进多 turn 任务编排
     mocks.loop.processUserInput.mockImplementation((input: string) => {
       if (typeof input === 'string' && input.includes('【执行任务步骤】')) {
         const next = plan.find((s) => s.status === 'pending');
@@ -609,7 +609,7 @@ describe('会议机制（S5 补强）：步粒度硬切换', () => {
 });
 
 describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序列直跑', () => {
-  it('runChat：prepare 命中会议预置 → 跳过规划闭环，直调 completeExternalTask 逐成员步序列', async () => {
+  it('runChat：prepare 命中会议预置 → 跳过规划 turn，直调 completeExternalTask 逐成员步序列', async () => {
     const { mocks, deps, consumeControl } = createHarness({
       getBackgroundProvider: () => mockProvider('complex'),
     });
@@ -652,9 +652,9 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
 
     // ① prepare 已按会议步骤预置任务表（overwrite），而非等待 LLM 自建
     expect(mocks.sessionManager.writePlan).toHaveBeenCalledWith('overwrite', steps);
-    // ② 跳过规划闭环：不注入 PLAN_ONLY 提示（planning 阶段不发生）
+    // ② 跳过规划 turn：不注入 PLAN_ONLY 提示（planning 阶段不发生）
     expect(mocks.loop.injectSystemMessage).not.toHaveBeenCalledWith(
-      expect.stringContaining('外部任务规划闭环'),
+      expect.stringContaining('外部任务规划 turn'),
     );
     // ③ 步序列直跑：成员步触发表层装配硬切换（rolePack=成员）
     expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员A');
@@ -675,7 +675,7 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
     await collectGen(new SeedOrchestrator(deps).runChat('普通问题', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    // 未命中：不预置任务表、不进入外部任务闭环
+    // 未命中：不预置任务表、不进入多 turn 任务编排
     expect(mocks.sessionManager.writePlan).not.toHaveBeenCalled();
     expect(mocks.loop.setWithinExternalTask).not.toHaveBeenCalledWith(true);
   });
@@ -697,7 +697,7 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
     await collectGen(new SeedOrchestrator(deps).runChat('小组会议：讨论', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    // 硬中止：退出外循环上下文 + 清残留任务表（软暂停不清、硬中止清）
+    // 硬中止：退出多 turn 任务编排上下文 + 清残留任务表（软暂停不清、硬中止清）
     expect(mocks.loop.setWithinExternalTask).toHaveBeenCalledWith(false);
     expect(mocks.sessionManager.clearPlan).toHaveBeenCalledTimes(1);
   });

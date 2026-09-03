@@ -264,7 +264,7 @@ describe('AgentLoop · getRecentHistoryWithinBudget（动态轮数 + 第一条�
 });
 
 describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时摘要收尾即弃）', () => {
-  it('压缩最早的执行闭环为临时摘要；下轮闭环入口即弃（不进上下文）', async () => {
+  it('压缩最早的 turn 为临时摘要；下轮 turn 入口即弃（不进上下文）', async () => {
     // 4+1 轮 provider：首轮问答 / 二轮工具调用(compress_context) / 压缩摘要 / 二轮文本 / 三轮问答
     const provider = mockMultiTurnProvider([
       [{ content: '第一轮回答' }], // turn0：首轮纯文本
@@ -294,7 +294,7 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
     for await (const {} of loop.processUserInput('第一个任务')) {
       // drain
     }
-    // 二轮：LLM 主动触发 compress_context → 最早的执行闭环被压成临时摘要，顶级锚点不动
+    // 二轮：LLM 主动触发 compress_context → 最早的 turn 被压成临时摘要，顶级锚点不动
     for await (const {} of loop.processUserInput('当前任务')) {
       // drain
     }
@@ -307,7 +307,7 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
     // 首轮正文已被压缩替换（不再含原首轮 user 内容）
     expect(messages.some((m) => m.content.includes('第一个任务'))).toBe(false);
 
-    // 三轮：新一轮闭环入口清理执行期临时残留 → 压缩摘要收尾即弃
+    // 三轮：新一轮 turn 入口清理执行期临时残留 → 压缩摘要收尾即弃
     for await (const {} of loop.processUserInput('新任务')) {
       // drain
     }
@@ -346,7 +346,7 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
   });
 
   it('新对话第一轮 compress_context：无旧轮次可压，当前输入（顶级锚点）不被压', async () => {
-    // 上下文仅当前一轮（无任何旧执行闭环）——LLM 首轮就主动压缩
+    // 上下文仅当前一轮（无任何旧 turn）——LLM 首轮就主动压缩
     const provider = mockMultiTurnProvider([
       [
         {
@@ -622,7 +622,7 @@ describe('AgentLoop · 软上限终止（摘要层达容量上限 → 收尾信�
     expect(messages.some((m) => m.content.includes('SOFT_LIMIT'))).toBe(false);
   });
 
-  it('软上限信号为执行期临时（下一轮闭环入口即弃，不跨轮堆积）', async () => {
+  it('软上限信号为执行期临时（下一轮 turn 入口即弃，不跨轮堆积）', async () => {
     const provider = mockMultiTurnProvider([
       [{ content: '回答一' }], // turn0：首轮触发软上限
       [{ content: '回答二' }], // turn1：二轮
@@ -1688,14 +1688,14 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 自审查轮（Self-Review）', () => {
-  // 工具步 chunk：模拟一轮执行闭环（LLM 调用工具）
+  // 工具步 chunk：模拟一轮 turn（LLM 调用工具）
   const toolCallChunk: ChunkItem = {
     toolCalls: [
       { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
     ],
   };
 
-  it('自审查启用时（1 轮），多轮执行闭环（执行过工具步）后应触发自审查轮', async () => {
+  it('自审查启用时（1 轮），多轮 turn（执行过工具步）后应触发自审查轮', async () => {
     // 三轮 provider：工具步 → 初始回答 → 自审查回答
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1729,7 +1729,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(textChunks.find((c) => c.content === '原始回复')?.stage).toBe('answer');
     expect(textChunks.find((c) => c.content === '改进后的回复')?.stage).toBe('self_review');
 
-    // 验证 selfReview chunk 被 emit（round=1；roundId 为执行闭环归属标记，随 withRound 附加）
+    // 验证 selfReview chunk 被 emit（round=1；roundId 为 turn 归属标记，随 withRound 附加）
     const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
     expect(selfReviewChunks).toHaveLength(1);
     expect(selfReviewChunks[0]!).toMatchObject({ type: 'selfReview', round: 1 });
@@ -1743,7 +1743,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(messages[5]!.content).toContain('1/1');
   });
 
-  it('纯文本问答闭环（无工具步）不触发自审查', async () => {
+  it('纯文本 turn（无工具步）不触发自审查', async () => {
     // 双轮 provider：仅文本就完成——但执行过工具步的前置门槛不满足，不应触发第二轮
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2046,7 +2046,7 @@ describe('AgentLoop · 执行中插话', () => {
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
 
-  it('TS-13 防残留：interjectController 残留 aborted 且排队已空 → 下一闭环不误中止（假中断跨轮污染）', async () => {
+  it('TS-13 防残留：interjectController 残留 aborted 且排队已空 → 下一 turn 不误中止（假中断跨轮污染）', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '正常回答' }]),
       bootstrapMemories: [],

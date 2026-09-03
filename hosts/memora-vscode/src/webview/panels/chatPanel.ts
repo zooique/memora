@@ -2007,25 +2007,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       out: this._agent.getMetrics().llm.totalOutputTokens,
     };
     // 过程事件缓冲 + 单形态投影（v1.5 协议纯化）：流式期间攒内存、逐条 post process_event，
-    // 流结束按执行闭环 roundId 分组附到各 Round.processEvents 落盘。
+    // 流结束按 turn roundId 分组附到各 Round.processEvents 落盘。
     // 分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId，2026-09-02），
-    // 不再依赖「roundIds 末尾」推断当前轮——一次 chat()（Loop 编排）多执行闭环各自独立落盘。
+    // 不再依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘。
     const eventsByRound = new Map<string, ProcessEvent[]>();
     let seq = 0;
-    /** 当前执行闭环归属（最近一个带 roundId 的 chunk 的执行闭环） */
+    /** 当前 turn 归属（最近一个带 roundId 的 chunk 的 turn） */
     let currentRoundKey: string | undefined;
-    /** 当前执行闭环是否已补 meta 首条（每执行闭环段首条身份，角色/模型显示名） */
+    /** 当前 turn 是否已补 meta 首条（每 turn 段首条身份，角色/模型显示名） */
     let metaEmittedForRound = false;
     const roundMeta = () => {
       const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
       const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
       return { role, llm };
     };
-    /** 构造过程事件：进缓冲（按执行闭环分段，落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
+    /** 构造过程事件：进缓冲（按 turn 分段，落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
     const emitEvent = (typeKey: ProcessEvent['type'], payload: ProcessEvent['payload']): void => {
       seq += 1;
       const event = { type: typeKey, seq, ts: new Date().toISOString(), payload } as ProcessEvent;
-      // 归属当前执行闭环分段（无 roundId 的宿主自造事件归入最近执行闭环）
+      // 归属当前 turn 分段（无 roundId 的宿主自造事件归入最近 turn）
       if (currentRoundKey) {
         const list = eventsByRound.get(currentRoundKey) ?? [];
         list.push(event);
@@ -2037,12 +2037,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     let pausedOnPurpose = false;
     try {
       for await (const chunk of gen) {
-        // 执行闭环边界检测：roundId 变化 = 新执行闭环开始（Loop 编排多执行闭环各自独立 roundId）
+        // turn 边界检测：roundId 变化 = 新 turn 开始（多 turn 任务编排多 turn 各自独立 roundId）
         if (chunk.roundId && chunk.roundId !== currentRoundKey) {
           currentRoundKey = chunk.roundId;
           metaEmittedForRound = false;
         }
-        // 每执行闭环段首条补 meta（身份，SSOT 与消息标签同源）；处理当前 chunk 前先补，保证 meta 为段内首条
+        // 每 turn 段首条补 meta（身份，SSOT 与消息标签同源）；处理当前 chunk 前先补，保证 meta 为段内首条
         if (currentRoundKey && !metaEmittedForRound) {
           metaEmittedForRound = true;
           emitEvent('meta', roundMeta());
@@ -2166,11 +2166,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 结束状态：用户打断（abort() 已置 signal.aborted）→ interrupted（webview 渲染
     // 「已停止」并恢复输入框）；软暂停 → status:paused（按钮切为「继续」）；
     // 正常结束 → done。三者均恢复/切换按钮态，仅提示语义不同。
-    // 附带本轮回答归属的 roundId（SSOT：来自 chunk 携带的执行闭环 roundId，非 roundIds 末尾推断）：
+    // 附带本轮回答归属的 roundId（SSOT：来自 chunk 携带的 turn roundId，非 roundIds 末尾推断）：
     // webview 据此回填消息分叉按钮（任意 LLM 回答可分叉）。
     const latestRoundId = currentRoundKey;
-    // 过程事件落盘（v1.5 收敛）：metrics 末条归入最后执行闭环 + 按执行闭环 roundId 分组
-    // 写入各自 Round（SSOT：归属来自内核 chunk.roundId，一次 chat() 多执行闭环各自独立落盘）。
+    // 过程事件落盘（v1.5 收敛）：metrics 末条归入最后 turn + 按 turn roundId 分组
+    // 写入各自 Round（SSOT：归属来自内核 chunk.roundId，一次 chat() 多 turn 各自独立落盘）。
     // fire-and-forget：失败仅记日志，不阻塞展示（对齐 P1 消息持久化降级语义，SSOT 不藏错）
     if (this._eventLogRoundStore && eventsByRound.size > 0) {
       const metricsNow = this._agent.getMetrics();
@@ -2236,14 +2236,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 仅当 plan 非空时推送（空计划不产生看板）。薄壳装配：只读提取，不参与 LLM 执行，
    * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
    *
-   * 任务节点聚合：额外从 checkpoint.roundLog 提取 stepId 关联，按步骤分组携带各执行闭环
-   * 摘要（stepRounds），webview 展开任务节点时展示该步骤下已完成的执行闭环标题。
+   * 任务节点聚合：额外从 checkpoint.roundLog 提取 stepId 关联，按步骤分组携带各 turn
+   * 摘要（stepRounds），webview 展开任务节点时展示该步骤下已完成的 turn 标题。
    */
   private postPlanUpdate(): void {
     if (!this._agent) return;
     const checkpoint = this._agent.getCheckpoint();
     if (!checkpoint || !checkpoint.plan || checkpoint.plan.length === 0) return;
-    // 步骤 → 关联闭环摘要（roundLog 的 stepId 关联，内核已写入，宿主只读消费）
+    // 步骤 → 关联 turn 摘要（roundLog 的 stepId 关联，内核已写入，宿主只读消费）
     const roundsByStep = new Map<string, { stepId: string; summary: string }[]>();
     for (const r of checkpoint.roundLog ?? []) {
       if (!r.stepId) continue;
