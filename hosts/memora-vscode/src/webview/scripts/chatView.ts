@@ -22,6 +22,7 @@ import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scr
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { createIcon, getIconSvg, populateIcons } from './icons.js';
+import { createSanitizer } from '../helpers/sanitizer.js';
 
 /** 任务步骤状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
 const STEP_STATUS_LABEL: Record<PlanStepDto['status'], string> = {
@@ -77,6 +78,13 @@ const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
 export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void {
   const document = window.document;
   const vscode = acquireVsCodeApi();
+
+  // 在 webview（浏览器）环境构造消毒器：createSanitizer 是 DOMPurify 构造的唯一真源
+  // （sanitizer.ts），依赖浏览器 window，不能在 Node 环境可达模块顶层构造
+  // （2026-09-03 打开聊天面板 ReferenceError 根因）。渲染函数 renderMarkdown
+  // 通过注入 sanitize 回调使用，职责分离：渲染逻辑纯函数化，浏览器环境只在
+  // createChatView（webview 唯一初始化入口）绑定一次。
+  const sanitize = createSanitizer(window);
 
   // 统一图标填充：将 HTML 中 data-icon 属性的元素替换为 Trae 风格 SVG 图标
   populateIcons(document.body);
@@ -1536,7 +1544,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const { body } = buildAssistantShell(div, ts, roundId);
       // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
       div.dataset.rawText = text;
-      body.innerHTML = renderMarkdown(text, window);
+      body.innerHTML = renderMarkdown(text, sanitize);
       // 历史回放同样做代码块增强（语言标签 + 复制按钮）
       enhanceCodeBlocks(body);
       // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
@@ -1751,7 +1759,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     if (!streamingActive || !activeAssistantEl || !activeAssistantEl.isConnected) return;
     const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
     if (!body) return;
-    body.innerHTML = renderMarkdown(streamingRaw, window);
+    body.innerHTML = renderMarkdown(streamingRaw, sanitize);
     streamBodyRendered = true;
   }
 
@@ -1818,7 +1826,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
     if (body) {
       body.classList.remove('is-streaming');
-      body.innerHTML = renderMarkdown(streamingRaw, window);
+      body.innerHTML = renderMarkdown(streamingRaw, sanitize);
       enhanceCodeBlocks(body);
     }
     // 回答完毕：展示底部操作行（复制/分叉/删除 + 时间戳）——完整内容已定稿，操作才有效

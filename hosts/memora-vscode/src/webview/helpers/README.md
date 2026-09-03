@@ -18,5 +18,9 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、文档
   chatView 共用；导出 `scrollToBottom` + `trackScroll`（滚动事件处理器，更新吸底状态）。
 - `cardList.ts` — 列表分区渲染纯函数（`createGroupTitle` + `createEmptyState`），
   SSOT 收敛 configView 与 rolesView 的列表级同构 DOM 构建（分组标题 + 空态引导）。
+- `renderMarkdown.ts` — AI 回复 Markdown 渲染（半截子补全 + marked 解析），纯函数；
+  消毒不在此 import（Node 端安全），经 `SanitizeFn` 回调注入。
+- `sanitizer.ts` — DOMPurify 构造单一真源：`createSanitizer(win)` 仅在 webview 浏览器
+  环境创建消毒器，导出 `SanitizeFn` 契约（`renderMarkdown` 的注入类型，仅 `import type` 引用）。
 
-未来扩展：markdown 渲染、更丰富的时间/日期格式化等。
+未来扩展：更丰富的时间/日期格式化等。

@@ -7,13 +7,16 @@
  *   - LLM 生成内容不可控，渲染前必须 DOMPurify 消毒，防 XSS 注入。
  *
  * 设计（单一真理源 + 简洁）：
- *   - 依赖 marked（Markdown → HTML）+ dompurify（消毒），均由 esbuild 打进 webview bundle；
+ *   - 依赖 marked（Markdown → HTML），消毒（DOMPurify）由调用方在 webview 环境构造后注入，
+ *     不在本模块顶层 import（Node 端 import 链安全，见 renderMarkdown 注释）；
  *   - 半截子补全仅「渲染时」拼凑，不污染存库的原始文本（调用方始终传原始串）；
  *   - 表格防爆由 chatStyles 的 `.msg-body table { display:block; overflow-x:auto }` 承担
  *     （纯 CSS 降维，不写复杂正则补全表格结构）。
  */
 import { marked } from 'marked';
-import DOMPurify from 'dompurify';
+// import type：仅编译期引用契约，esbuild/tsc 剥离后不产生运行时依赖——Node 端 import
+// 本模块永不加载 sanitizer.js（含 dompurify），保持渲染纯函数的跨环境安全
+import type { SanitizeFn } from './sanitizer.js';
 
 /**
  * 动态补全不完整的 Markdown（仅渲染用，不污染原始文本）
@@ -39,19 +42,21 @@ function fixIncompleteMarkdown(raw: string): string {
 /**
  * 渲染 Markdown 为已消毒的 HTML 字符串
  *
- * 流程：半截子补全 → marked 解析 → dompurify 消毒（防 LLM 注入 <script> 等）。
+ * 流程：半截子补全 → marked 解析 → sanitize 消毒（防 LLM 注入 <script> 等）。
  * 返回的 HTML 由调用方赋给 .msg-body 的 innerHTML（消毒后安全）。
  *
+ * 重要设计：不在此文件 import dompurify。dompurify 需要浏览器 window 对象，
+ * 若在 Node 环境（扩展宿主 import 链）顶层加载会抛 ReferenceError。
+ * 调用方在 webview 浏览器环境经 createSanitizer 构造消毒器，以 SanitizeFn
+ * 回调注入，实现「渲染逻辑」与「浏览器环境」的职责分离（契约见 sanitizer.ts）。
+ *
  * @param text 原始 Markdown 文本
- * @param win 宿主 window（依赖注入：webview 传全局 window；测试传 jsdom window）。
- *   不裸用全局 window——webview 脚本若被 Node 环境误加载，裸 window 引用会抛
- *   ReferenceError（2026-09-03 打开聊天面板报错根因），显式注入让运行环境显式化。
+ * @param sanitize 消毒函数（SanitizeFn），由调用方在 webview 环境构造并注入
  * @returns 可安全 innerHTML 的 HTML 片段
  */
-export function renderMarkdown(text: string, win: Window): string {
+export function renderMarkdown(text: string, sanitize: SanitizeFn): string {
   // 半截子补全后交给解析器（async:false 同步返回 string，无异步扩展）
   const html = marked.parse(fixIncompleteMarkdown(text), { async: false }) as string;
-  // 消毒：LLM 生成内容不可控，必须过滤 XSS（DOMPurify 工厂的 WindowLike 与 lib.dom Window
-  // 存在类型缺口，运行时等价——显式断言，不裸用全局 window）
-  return DOMPurify(win as unknown as Parameters<typeof DOMPurify>[0]).sanitize(html);
+  // 消毒：LLM 生成内容不可控，必须过滤 XSS（sanitize 由调用方在 webview 浏览器环境构造）
+  return sanitize(html);
 }
