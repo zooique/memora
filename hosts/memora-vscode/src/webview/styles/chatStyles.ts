@@ -574,11 +574,19 @@ export const chatStyles = `
    * 与 AI 作答链上下衔接——视觉即「同一个问答闭环」，不新增大卡片/强调色。 */
   .round-group {
     margin: var(--sp-2, 6px) 0;
-    border: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    /* min-width:0 → flex 子项允许收缩到面板宽，防代码块/长文本把容器撑宽后
+     * 被自身 overflow:hidden 裁掉右缘（2026-09-03 修复：LLM 回答「锁在框里」） */
+    min-width: 0; max-width: 100%;
+    border: 1px solid var(--border-panel, rgba(128,128,128,.16));
     border-radius: var(--radius-md, 6px);
     overflow: hidden;
     display: flex; flex-direction: column;
   }
+  /* 容器内边距：段正文不再贴着边框（呼吸感，降低「囚笼」压迫观感）；
+   * 你答子行/打断分条同为容器直系，同步内缩保持一致 */
+  .round-group > .msg.assistant,
+  .round-group > .msg-qa,
+  .round-group > .interrupt-divider { padding-right: var(--sp-4, 10px); padding-left: var(--sp-4, 10px); }
   /* 容器级 footer：操作上移后的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点） */
   .round-group__footer {
     display: flex; align-items: center; justify-content: space-between;
