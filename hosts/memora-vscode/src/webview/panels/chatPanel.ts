@@ -1707,43 +1707,56 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 按轮交织发送重放视图（v1.6，§3.7 时序）
+   * 按轮交织发送重放视图（UX-9 闭环可视化，2026-09-03）
    *
-   * 每轮：user → replay_events（含 meta，整批统一重放）→ assistant 正文（此块挂 round-block）。
+   * 每轮：user（带 roundId）→ replay_events（含 meta，整批统一重放）→
+   * 前序 assistant 段 + 交互输入按时间升序交织（还原打断点 / [ASK] 提问点时序）→
+   * assistant 最终回答（末段，webview 端以同 roundId 判定「同环续接」标记）。
    * 严禁拆分 meta 走 process_event：process_event(meta) 在 webview 端被当作「运行时新轮开始」，
    * 会调用 prepareFlowShell() 建骨架 assistant 块，导致后续 assistant 正文又 append 第二个块
    * （同一轮出现两条独立消息块的 bug）。replay_events 处理自行从数组提取 meta 设身份，无骨架副作用。
-   * 无过程事件（纯问答轮/旧数据）则仅回放正文（不产生 round-block）。
+   * 所有 user/assistant 消息均携带 roundId——这是三个新枝（行内打断分条 / 同环续接 /
+   * 交互输入挂靠 round-block）的共同底座，纯展示判定，不做内核落库改造。
+   *
+   * 时序还原说明（A）：打断补充（supplement）插在它打断的那段 AI 正文之后、最终回答之前，
+   * 由 webview 渲染为行内打断切分条，语义还原内核 interject() abort→续跑（loop.ts:617）。
+   * 交互输入按 ts 升序与前序 assistant 段交织：ts 缺失时保持稳定序（段 → 提问回答 → 补充）。
    */
   private sendRoundView(rounds: ReplayRound[]): void {
     for (const r of rounds) {
-      if (r.user) this.post({ type: 'user', text: r.user.content, ts: r.user.ts });
+      // 主用户输入（roundId 全程携带：同环连线底座，webview 依此重置「续接」判定）
+      if (r.user) this.post({ type: 'user', text: r.user.content, ts: r.user.ts, roundId: r.roundId });
       // 整批统一发 replay_events（含 meta）：拆分 meta 走 process_event 会让 webview 端把
       // 该轮当「运行时新轮」触发骨架创建，产生重复消息块（原因见方法注释，勿再拆分）
       if (r.processEvents.length > 0) {
         this.post({ type: 'replay_events', roundId: r.roundId, events: r.processEvents });
       }
-      // TS-9 闭环节点内前序 assistant 段（如 [ASK] 主动提问）：正文先于交互输入回放
-      for (const seg of r.assistantLog ?? []) {
-        if (seg.content) {
-          this.post({ type: 'assistant', text: seg.content, ts: seg.ts, roundId: r.roundId });
+      // —— 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原真实时序）——
+      const middle: {
+        kind: 'seg' | 'qa' | 'supp';
+        content: string;
+        ts?: string;
+      }[] = [
+        ...(r.assistantLog ?? []).map((m) => ({ kind: 'seg' as const, content: m.content, ts: m.ts })),
+        ...(r.interactiveInputs ?? []).map((i) => ({
+          kind: (i.kind === 'supplement' ? 'supp' : 'qa') as 'qa' | 'supp',
+          content: i.content,
+          ts: i.ts,
+        })),
+      ].sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
+      for (const item of middle) {
+        if (!item.content) continue;
+        if (item.kind === 'seg') {
+          this.post({ type: 'assistant', text: item.content, ts: item.ts, roundId: r.roundId });
+        } else if (item.kind === 'qa') {
+          this.post({ type: 'user', text: item.content, ts: item.ts, roundId: r.roundId, kind: 'question-answer' });
+        } else {
+          this.post({ type: 'user', text: item.content, ts: item.ts, roundId: r.roundId, kind: 'supplement' });
         }
       }
-      // TS-9 主动提问回答（question-answer）：紧随前序提问段，在最终回答之前
-      for (const input of r.interactiveInputs ?? []) {
-        if (input.kind !== 'supplement') {
-          this.post({ type: 'user', text: input.content, ts: input.ts, kind: input.kind });
-        }
-      }
+      // 最终回答（末段）：webview 以同 roundId 判定「同环续接」（B）
       if (r.assistant) {
         this.post({ type: 'assistant', text: r.assistant.content, ts: r.assistant.ts, roundId: r.roundId });
-      }
-      // 打断补充（supplement）：语义 = 对「已产出回答」的追补纠正，重放排到最终回答之后，
-      // 与运行时时序一致（运行时补充发生在回答流中/后，见 handleSend 暂停态分支）
-      for (const input of r.interactiveInputs ?? []) {
-        if (input.kind === 'supplement') {
-          this.post({ type: 'user', text: input.content, ts: input.ts, kind: 'supplement' });
-        }
       }
     }
   }

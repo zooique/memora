@@ -238,6 +238,34 @@ export const chatStyles = `
     padding: var(--sp-1, 4px) var(--sp-3, 8px) var(--sp-3, 8px);
     font-size: var(--font-md, 12px);
   }
+  /* UX-9 A 行内打断切分条（用户打断补充）：插在被打断的 AI 正文块之后，
+   * 两端虚线延伸 + 居中「你补充了 xxx」——还原 interject() abort→续跑的视觉切口，
+   * 让补充归位到打断点上下文，而非消息流底部游离块。轻薄低扰（不做大卡片）。 */
+  .interrupt-divider {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    margin: var(--sp-1, 4px) 0 var(--sp-2, 6px);
+    min-width: 0;
+    color: var(--text-secondary, #9aa0a6);
+    user-select: none;
+  }
+  .interrupt-divider::before,
+  .interrupt-divider::after {
+    content: '';
+    flex: 1 1 auto;
+    border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.25));
+  }
+  .interrupt-divider__label {
+    flex-shrink: 0;
+    font-size: var(--font-xs, 10px);
+    color: var(--accent, #0e639c);
+    font-weight: 600;
+  }
+  .interrupt-divider__text {
+    flex: 0 1 auto;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--font-sm, 11px);
+    max-width: 45%;
+  }
   /* 图标按钮通用样式 */
   .msg-icon-btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -309,6 +337,24 @@ export const chatStyles = `
     content: '·';
     margin-right: var(--sp-1, 4px);
     color: var(--border-panel, rgba(128,128,128,.4));
+  }
+  /* UX-9 B 同环续接：同 roundId 第 2+ 段的 assistant 块（[ASK]→回答→再答 / 半截→补充→续接）。
+   * 顶部虚线分隔表达「上一条被打断/提问、本条继续」，身份标签前置「↻ 续接」chip 弱化标识 ——
+   * 克制呈现（圆环 + 灰字），不突出大卡片、不抢正文视觉。 */
+  .msg.assistant.is-continued {
+    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.28));
+    margin-top: var(--sp-1, 4px);
+    padding-top: var(--sp-2, 6px);
+  }
+  .msg-ai-label__cont {
+    display: inline-flex; align-items: center;
+    flex-shrink: 0;
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    background: var(--surface-hover, rgba(128,128,128,.12));
+    border-radius: var(--radius-sm, 3px);
+    padding: 1px var(--sp-2, 5px);
+    white-space: nowrap;
   }
 
   /* ============ Components：AI 回复 Markdown 渲染（吸收养分，2026-08-16） ============
@@ -1073,6 +1119,16 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-1, 2px);
   }
   .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
+  /* UX-9 C 交互输入挂靠区：问答闭环内交互输入（用户对 [ASK] 的回答）为可折叠子节点，
+   * 归入 round-block 内（复用现有容器不新造 DOM）——收起态由 summary「交互 N」提示，
+   * 展开可见折叠行；子节点复用 .msg.user.is-interactive 折叠样式，这里仅收敛间距 */
+  .round-block__interactives {
+    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
+    margin: var(--sp-1, 2px) 0;
+  }
+  .round-block__interactives .msg.user.is-interactive {
+    border-color: var(--border-panel, rgba(128,128,128,.35));
+  }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);
     background: var(--surface-code, rgba(0,0,0,.2));

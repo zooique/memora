@@ -1941,6 +1941,105 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
 
+  it('UX-9 A：打断补充渲染为行内打断切分条，插在被打破块之后；后续 chunk 为「续接」块', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正在回答第一段' });
+    // 打断补充（streaming 中 supplement）→ 行内打断切分条，不再是消息流底部游离折叠块
+    dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });
+    const divider = document.querySelector('.interrupt-divider') as HTMLElement;
+    expect(divider).not.toBeNull();
+    expect(divider.textContent).toContain('你补充了');
+    expect(divider.textContent).toContain('不要联网搜索');
+    // 分条插在被打断的 assistant 块之后（打断点归位），与消息流平级
+    const interrupted = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
+    expect(interrupted.nextElementSibling).toBe(divider);
+    // 后续 chunk → 新「续接」块（is-continued + ↻ 续接 chip），位于分条之后
+    dispatch({ type: 'chunk', content: '好的，按你的要求继续' });
+    const blocks = document.querySelectorAll('.msg.assistant');
+    expect(blocks).toHaveLength(2);
+    const continued = blocks[1] as HTMLElement;
+    expect(continued.classList.contains('is-continued')).toBe(true);
+    expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
+    expect(divider.nextElementSibling).toBe(continued);
+    expect(collectAllBodyText(continued)).toContain('按你的要求继续');
+  });
+
+  it('UX-9 B：重放同 roundId 多段 AI（assistantLog + final）呈连续链，第 2 段起标记续接', () => {
+    mountChatView();
+    // 普通新闭环用户输入（重置上轮同环判定）
+    dispatch({ type: 'user', text: '任务A', ts: 't1', roundId: 'round-1' });
+    // 前序 assistant 段（[ASK] 提问）
+    dispatch({ type: 'assistant', text: '[ASK] 选择哪个方案？', ts: 't2', roundId: 'round-1' });
+    // 用户回答（question-answer）
+    dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
+    // 最终回答（同 roundId）→ 同环续接
+    dispatch({ type: 'assistant', text: '好，开始执行方案A', ts: 't4', roundId: 'round-1' });
+    const blocks = document.querySelectorAll('.msg.assistant');
+    expect(blocks).toHaveLength(2);
+    expect((blocks[0] as HTMLElement).classList.contains('is-continued')).toBe(false);
+    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
+    expect((blocks[1] as HTMLElement).querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
+    // 下一轮（新 roundId）→ 不再误标续接
+    dispatch({ type: 'user', text: '任务B', ts: 't5', roundId: 'round-2' });
+    dispatch({ type: 'assistant', text: '回答B', ts: 't6', roundId: 'round-2' });
+    const blocks2 = document.querySelectorAll('.msg.assistant');
+    expect((blocks2[2] as HTMLElement).classList.contains('is-continued')).toBe(false);
+  });
+
+  it('UX-9 C：question-answer 折叠子节点挂靠所属 round-block 内，summary 计「交互 1」', () => {
+    mountChatView();
+    beginRound(); // meta + chunk：骨架建块并挂载 round-block（有过程事件）
+    // 用户对 [ASK] 的回答 → 折叠子节点进 round-block 交互区（非消息流底部）
+    dispatch({ type: 'user', text: '选方案A', ts: '2026-09-03T03:15:05Z', kind: 'question-answer', roundId: 'round-1' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const container = rb.querySelector('.round-block__interactives') as HTMLElement;
+    expect(container).not.toBeNull();
+    const fold = container.querySelector('.msg.user.is-interactive') as HTMLElement;
+    expect(fold).not.toBeNull();
+    expect(fold.textContent).toContain('用户提问');
+    expect(fold.textContent).toContain('选方案A');
+    // 收起态发现性：summary 追加「交互 1」
+    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('交互 1');
+    // 消息流底部不应出现游离折叠块
+    expect(document.querySelector('#messages > .msg-wrapper > .msg.user.is-interactive')).toBeNull();
+  });
+
+  it('UX-9 C 兜底：无 round-block（纯问答轮）时 qa 仍折叠落消息流，不丢失', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '问题', ts: 't1' });
+    dispatch({ type: 'assistant', text: '回答', ts: 't2' }); // 无过程事件 → 无 round-block
+    dispatch({ type: 'user', text: '补充说明', ts: 't3', kind: 'question-answer' });
+    const fold = document.querySelector('.msg.user.is-interactive') as HTMLElement;
+    expect(fold).not.toBeNull();
+    expect(fold.textContent).toContain('补充说明');
+  });
+
+  it('UX-9 重放路径：replay_events + 前序段 + qa 挂 round-block、final 为续接（A/B/C 同框回归）', () => {
+    mountChatView();
+    // 主输入 → 整批过程事件（含 meta）→ [ASK] 前序段
+    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
+    dispatch({ type: 'replay_events', roundId: 'round-1', events: [
+      { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 0, success: true } },
+    ] as never });
+    dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
+    // 用户回答 → 挂靠 round-block（重放路径：round-block 由前序段补挂完成）
+    dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
+    // 最终回答 → 同环续接
+    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    // C：qa 折叠节点挂 round-block 交互区（非消息流底部游离）
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(rb.querySelector('.round-block__interactives .msg.user.is-interactive')?.textContent).toContain('选方案A');
+    // A/B：前序段与 final 同 roundId → final 为续接链；打断分条在无打断轮不出现
+    const blocks = document.querySelectorAll('.msg.assistant');
+    expect(blocks).toHaveLength(2);
+    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
+    expect(document.querySelector('.interrupt-divider')).toBeNull();
+    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('交互 1');
+  });
+
   it('narrate 过程事件渲染为独立父块（建议 A），每段叙述一个可折叠父块', () => {
     mountChatView();
     beginRound();

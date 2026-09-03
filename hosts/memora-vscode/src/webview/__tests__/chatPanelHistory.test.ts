@@ -329,7 +329,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     });
   });
 
-  it('interactiveInputs 重放顺序收紧：qa 在前序段后、supplement 排最终回答之后（TS-8，2026-09-02）', () => {
+  it('interactiveInputs 重放按时间序归位（UX-9）：qa/supplement 按 ts 交织于前序段后、final 前，且均携带 roundId', () => {
     const { store, roundStore, provider, posted } = setup();
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
     provider.setRoundStore(roundStore);
@@ -351,16 +351,23 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string });
+    const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string; roundId?: string });
+    const idxUser = ordered.findIndex((m) => m.type === 'user' && !m.kind);
     const idxAsk = ordered.findIndex((m) => m.type === 'assistant' && m.text === '[ASK] 选择哪个方案？');
     const idxQa = ordered.findIndex((m) => m.type === 'user' && m.kind === 'question-answer');
-    const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '最终回答');
     const idxSupp = ordered.findIndex((m) => m.type === 'user' && m.kind === 'supplement');
-    // 主动提问回答紧随前序提问段之后、最终回答之前
+    const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '最终回答');
+    // UX-9 时序还原：主输入 → [ASK] 段 → 用户回答 → 打断补充（打断点）→ 最终回答（续接）
+    expect(idxAsk).toBeGreaterThan(idxUser);
     expect(idxQa).toBeGreaterThan(idxAsk);
-    expect(idxMain).toBeGreaterThan(idxQa);
-    // 打断补充（supplement）重放排到最终回答之后（与运行时时序一致，不再插在 user 与回答中间）
-    expect(idxSupp).toBeGreaterThan(idxMain);
+    expect(idxSupp).toBeGreaterThan(idxQa);
+    expect(idxMain).toBeGreaterThan(idxSupp);
+    // 共同底座：所有 user/assistant 消息均携带 roundId（webview 依此判同环续接/挂靠）
+    const roundTagged = ordered.filter((m) => ['user', 'assistant'].includes(m.type));
+    expect(roundTagged.length).toBeGreaterThan(0);
+    for (const m of roundTagged) {
+      expect(m.roundId).toBe('round-1');
+    }
   });
 
   it('round-based 纯问答轮（无 processEvents）退化为仅正文，不发 process_event/replay_events', () => {
