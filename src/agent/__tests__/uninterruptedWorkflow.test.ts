@@ -466,7 +466,7 @@ describe('SessionManager · 检查点管理', () => {
     });
   });
 
-  describe('updatePlan / completeRound', () => {
+  describe('updatePlan / completeStep', () => {
     it('updatePlan 应更新检查点计划', () => {
       manager.createCheckpoint('测试');
       const plan: PlanStep[] = [
@@ -477,19 +477,19 @@ describe('SessionManager · 检查点管理', () => {
       expect(manager.getCheckpoint()!.plan).toHaveLength(2);
     });
 
-    it('completeRound 应标记步骤为完成并记录回合日志', () => {
+    it('completeStep 应标记步骤为完成并记录 step 推进日志', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
       ]);
-      manager.completeRound({ stepId: 's1', summary: '测试回合' });
+      manager.completeStep({ planStepId: 's1', summary: '测试 step' });
       const step = manager.getCheckpoint()!.plan[0]!;
       expect(step.status).toBe('done');
-      expect(manager.getCheckpoint()!.roundLog).toHaveLength(1);
-      expect(manager.getCheckpoint()!.roundLog![0]!.summary).toBe('测试回合');
+      expect(manager.getCheckpoint()!.stepLog).toHaveLength(1);
+      expect(manager.getCheckpoint()!.stepLog![0]!.summary).toBe('测试 step');
     });
 
-    it('completeRound 必须走 updatePlanStepStatus 唯一写点（不得直改 status）', () => {
+    it('completeStep 必须走 updatePlanStepStatus 唯一写点（不得直改 status）', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
@@ -499,20 +499,20 @@ describe('SessionManager · 检查点管理', () => {
         manager as unknown as { updatePlanStepStatus(id: string, s: string): boolean },
         'updatePlanStepStatus',
       );
-      manager.completeRound({ stepId: 's1', summary: '测试回合' });
+      manager.completeStep({ planStepId: 's1', summary: '测试 step' });
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy).toHaveBeenCalledWith('s1', 'done');
       expect(manager.getCheckpoint()!.plan[0]!.status).toBe('done');
       spy.mockRestore();
     });
 
-    it('无 stepId 的 completeRound 仍记录回合日志（收口不破无步骤路径）', () => {
+    it('无 planStepId 的 completeStep 仍记录 step 推进日志（收口不破无步骤路径）', () => {
       manager.createCheckpoint('测试');
-      manager.completeRound({ summary: '自由对话回合' });
+      manager.completeStep({ summary: '自由对话迭代' });
       const cp = manager.getCheckpoint()!;
-      expect(cp.roundLog).toHaveLength(1);
-      expect(cp.roundLog![0]!.summary).toBe('自由对话回合');
-      // 无 stepId 时不应触碰 plan 状态
+      expect(cp.stepLog).toHaveLength(1);
+      expect(cp.stepLog![0]!.summary).toBe('自由对话迭代');
+      // 无 planStepId 时不应触碰 plan 状态
       expect(cp.plan).toHaveLength(0);
     });
 
@@ -1636,13 +1636,13 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     });
 
   /**
-   * 场景 G：roundLog 关联 active 步骤
+   * 场景 G：stepLog 关联 active 步骤
    *
-   * 旧缺陷：loop.onRoundBoundary → completeRound 不传 stepId（恒 undefined）→
-   * roundLog 与 plan 无法关联，「哪一回合推进了哪一步」不可追溯。
-   * onRoundBoundary 取当前 active 步骤 ID 传入，roundLog 成为 plan 的时间轴投影。
+   * 旧缺陷：loop.onStepBoundary → completeStep 不传 planStepId（恒 undefined）→
+   * stepLog 与 plan 无法关联，「哪个 step 推进了哪一步」不可追溯。
+   * onStepBoundary 取当前 active 步骤 ID 传入，stepLog 成为 plan 的时间轴投影。
    */
-  it('场景 G：roundLog 应记录 active 步骤 ID', { timeout: 30000 }, async () => {
+  it('场景 G：stepLog 应记录 active 步骤 ID', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1663,13 +1663,13 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       order: 1,
     });
 
-    // 触发一轮对话 → loop 迭代边界 → onRoundBoundary → completeRound
+    // 触发一轮对话 → loop 迭代边界 → onStepBoundary → completeStep
     await agent.chatSync('推进任务');
 
-    const roundLog = agent.getCheckpoint()!.roundLog ?? [];
-    expect(roundLog.length).toBeGreaterThan(0);
-    // roundLog 的 stepId 应关联当前 active 步骤
-    expect(roundLog[roundLog.length - 1]!.stepId).toBe(stepId);
+    const stepLog = agent.getCheckpoint()!.stepLog ?? [];
+    expect(stepLog.length).toBeGreaterThan(0);
+    // stepLog 的 planStepId 应关联当前 active 步骤
+    expect(stepLog[stepLog.length - 1]!.planStepId).toBe(stepId);
   });
 
   /**

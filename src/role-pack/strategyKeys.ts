@@ -31,8 +31,8 @@ export const MAX_OUTPUT_LIMIT = 65536;
 /** 单轮工具调用步数上限：100 步足够复杂任务单轮调用 */
 export const MAX_TOOL_STEP_LIMIT = 100;
 /** 自审查轮数上限：LLM 纯文本回复后自动审查，10 轮已是极端场景 */
-export const MAX_LOOP_CONTINUE = 10;
-/** 每轮主动提问次数上限：每轮最多 askLimit 次提问，10 次防打扰失控 */
+export const MAX_SELF_REVIEW_ROUNDS = 10;
+/** 主动提问次数上限：按一次用户输入（turn 粒度）计，10 次防打扰失控 */
 export const MAX_ASK_LIMIT = 10;
 /** 每轮总 token 预算上限：1_000_000 覆盖 1M 上下文窗口（mimo-v2.5-pro 等旗舰模型） */
 export const MAX_TOKEN_BUDGET = 1_000_000;
@@ -133,8 +133,10 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
   reflect: {
     summary: { kind: 'enum', values: ['on', 'off'] },
     handoff: { kind: 'enum', values: ['wait', 'loop', 'end'] },
-    // 自审查轮数（0~MAX_LOOP_CONTINUE，0=关闭）
-    loopContinue: intRange(0, MAX_LOOP_CONTINUE),
+    // 自审查轮数（0~MAX_SELF_REVIEW_ROUNDS，0=关闭）
+    selfReview: intRange(0, MAX_SELF_REVIEW_ROUNDS),
+    // 历史别名（v0.13- 命名残留）：新键 selfReview 优先，旧键回退——保留以兼容已落盘角色包
+    loopContinue: intRange(0, MAX_SELF_REVIEW_ROUNDS),
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
   },
   global: {

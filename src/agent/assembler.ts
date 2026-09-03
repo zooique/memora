@@ -292,13 +292,14 @@ export interface AssembleOutput {
 // ── 子工厂函数 ─────────────────────────────────────────────
 
 /**
- * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
+ * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onStepBoundary/getTaskTable/planManager）
  *
  * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
  * 属装配职责（装配逻辑单一真理源）。
  * 注：loop.onPaused 不再在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
+ * 注：任务表停滞检测（多 turn 编排职责）已迁至 seed/orchestrator runStepSequence（2026-09-04 M-B）。
  *
- * @param loop AgentLoop（装配其 onPendingQuestion/onRoundBoundary/getTaskTable）
+ * @param loop AgentLoop（装配其 onPendingQuestion/onStepBoundary/getTaskTable）
  * @param toolExec 工具执行器（装配其 planManager）
  * @param sessionManager 会话管理器（全部闭包的操作落点）
  * @param hooks Agent 门面注入的稳定能力（emit/requestPause；可选，缺省 no-op）
@@ -309,54 +310,32 @@ function wireRuntimeCallbacks(
   sessionManager: SessionManager,
   hooks: AgentHooks | undefined,
 ): void {
-  // 兜底停滞计数器：连续无 task_table_update 的回合数（装配期闭包，rebuild 重建归零）
-  let stalledRoundCount = 0;
-
   // 主动提问（回答中检测到 LLM 结构化输出 [ASK]）：发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停。
   loop.onPendingQuestion = (questions) => {
     if (questions.length === 0) return;
     hooks?.emit(AGENT_EVENTS.questionPending, questions);
-    // 触发软暂停：handleTextResponse 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
+    // 触发软暂停：_callAndRoute 检测 [ASK] 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
     const reason = `需要澄清：${questions.map((q) => q.question).join('; ')}`;
     hooks?.requestPause(reason, 'agent');
   };
 
-  loop.onRoundBoundary = (roundInfo) => {
-    // completeRound 写 roundLog 关联 plan 步骤（取 active 步骤 ID）。此前不传 stepId 使 roundLog 与 plan
-    // 无法关联（不可追溯）；单向引用——plan 仍是任务状态真理源，roundLog 是其时间轴投影（避免双写）
+  // step 边界回调（每次 LLM 迭代完成后触发）：写 stepLog 关联任务表步骤（取 active 步骤 ID）。
+  // 单向引用——plan 仍是任务状态真理源，stepLog 是其时间轴投影（避免双写）
+  loop.onStepBoundary = (stepInfo) => {
     const activeStepId = sessionManager
       .getCheckpoint()
       ?.plan.find((s) => s.status === 'active')?.id;
-    sessionManager.completeRound({
-      stepId: activeStepId,
-      summary: roundInfo.summary,
+    sessionManager.completeStep({
+      planStepId: activeStepId,
+      summary: stepInfo.summary,
     });
-
-    // 兜底停滞检测：连续 3 轮无 task_table_update 且 plan 有未完任务 → 将 active step 标记为 blocked
-    stalledRoundCount++;
-    if (stalledRoundCount >= 3) {
-      const cp = sessionManager.getCheckpoint();
-      if (cp) {
-        const activeStep = cp.plan.find((s) => s.status === 'active');
-        const hasPending = cp.plan.some((s) => s.status === 'pending' || s.status === 'active');
-        if (activeStep && hasPending) {
-          // 经 updatePlanStepStatus 标脏，checkpointDirty 置位确保阻塞标记可落盘
-          sessionManager.updatePlanStepStatus(activeStep.id, 'blocked');
-          loop.injectSystemMessage(
-            `[系统] 检测到任务表停滞（连续 3 回合未更新步骤状态），已自动将步骤 "${activeStep.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
-          );
-        }
-      }
-      // 复位计数器（无论是否触发，防止无限触发）
-      stalledRoundCount = 0;
-    }
   };
 
   // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
   loop.getTaskTable = () => {
     const cp = sessionManager.getCheckpoint();
     if (!cp) return '';
-    return renderTaskTable(cp.plan, cp.roundLog);
+    return renderTaskTable(cp.plan, cp.stepLog);
   };
 
   // 装配任务表工具回调（planManager）
@@ -375,8 +354,6 @@ function wireRuntimeCallbacks(
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
       }
       const step = sessionManager.getCheckpoint()?.plan.find((s) => s.id === stepId);
-      // 兜底停滞计数器复位（LLM 调用了 task_table_update，说明未停滞）
-      stalledRoundCount = 0;
       return `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
     },
     getPlan: () => {
@@ -805,7 +782,7 @@ export async function assembleComponents(
     });
   loopRef = loop;
 
-  // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onRoundBoundary/getTaskTable/planManager）
+  // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onStepBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks);
 
   // ── 依赖 Loop 的组件 ──

@@ -41,7 +41,7 @@ import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 import {
   MAX_MIN_FALLBACK,
   MAX_TOOL_STEP_LIMIT,
-  MAX_LOOP_CONTINUE,
+  MAX_SELF_REVIEW_ROUNDS,
   MAX_TOKEN_BUDGET,
   MAX_STEP_BUDGET,
   MAX_TASK_LOOP_LIMIT,
@@ -122,7 +122,7 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
   it('reflect 维度包含全部必需字段', () => {
     const r = DEFAULT_BEHAVIOR_STRATEGY.reflect!;
     expect(r.handoff).toBe('wait');
-    expect(r.loopContinue).toBe(0);
+    expect(r.selfReview).toBe(0);
     expect(r.summary).toBe('on');
     expect(r.userFollowup).toBe('silent');
   });
@@ -632,7 +632,7 @@ describe('assembleRolePack — 角色包装配', () => {
     expect(result.personaPrompt).toContain('## 主动提问规则');
     expect(result.personaPrompt).toContain('遇到模糊不清的情况时');
     expect(result.personaPrompt).toContain('需要用户做决策时');
-    expect(result.personaPrompt).toContain('每轮最多提问 2 次');
+    expect(result.personaPrompt).toContain('每次回答中最多提问 2 次');
     // [ASK] 输出格式契约（与 loop 解析器同源）：行首标记 + 行尾花括号选项
     expect(result.personaPrompt).toContain('[ASK]');
     expect(result.personaPrompt).toContain('{A|B|C}');
@@ -805,26 +805,39 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
     expect(s.providerRouting).toBe('auto');
   });
 
-  it('loopContinue=N（正整数）映射为 maxSelfReviewRounds，非法值归 0', () => {
+  it('selfReview=N（正整数）映射为 maxSelfReviewRounds，非法值归 0', () => {
     expect(
-      resolveL2Strategy({ reflect: { loopContinue: 3 } } as BehaviorStrategy).maxSelfReviewRounds,
+      resolveL2Strategy({ reflect: { selfReview: 3 } } as BehaviorStrategy).maxSelfReviewRounds,
     ).toBe(3);
     // 负 / 小数 / 非 number 均归一为 0（关闭自审查）
     expect(
-      resolveL2Strategy({ reflect: { loopContinue: -1 } } as BehaviorStrategy).maxSelfReviewRounds,
+      resolveL2Strategy({ reflect: { selfReview: -1 } } as BehaviorStrategy).maxSelfReviewRounds,
     ).toBe(0);
     expect(
-      resolveL2Strategy({ reflect: { loopContinue: 2.5 } } as BehaviorStrategy).maxSelfReviewRounds,
+      resolveL2Strategy({ reflect: { selfReview: 2.5 } } as BehaviorStrategy).maxSelfReviewRounds,
     ).toBe(0);
     expect(
-      resolveL2Strategy({ reflect: { loopContinue: 'on' } } as unknown as BehaviorStrategy)
+      resolveL2Strategy({ reflect: { selfReview: 'on' } } as unknown as BehaviorStrategy)
         .maxSelfReviewRounds,
     ).toBe(0);
     // 越上界归一为 0（防无条件填写导致无限自审查）
     expect(
-      resolveL2Strategy({ reflect: { loopContinue: MAX_LOOP_CONTINUE + 1 } } as BehaviorStrategy)
+      resolveL2Strategy({ reflect: { selfReview: MAX_SELF_REVIEW_ROUNDS + 1 } } as BehaviorStrategy)
         .maxSelfReviewRounds,
     ).toBe(0);
+  });
+
+  it('旧键 loopContinue 回退（历史别名兼容）：新键 selfReview 优先', () => {
+    // 旧键仍生效（已落盘角色包不自审查静默失效）
+    expect(
+      resolveL2Strategy({ reflect: { loopContinue: 2 } } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(2);
+    // 双键并存时新键优先
+    expect(
+      resolveL2Strategy({
+        reflect: { selfReview: 3, loopContinue: 2 },
+      } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(3);
   });
 
   it('act/global 声明值覆盖对应维度', () => {

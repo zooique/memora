@@ -1471,9 +1471,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '收集需求', status: 'done', order: 0, stepRounds: [] },
-        { id: 's2', description: '设计方案', status: 'active', order: 1, stepRounds: [] },
-        { id: 's3', description: '编写文档', status: 'pending', order: 2, stepRounds: [] },
+        { id: 's1', description: '收集需求', status: 'done', order: 0, stepLog: [] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, stepLog: [] },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2, stepLog: [] },
       ],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
@@ -1494,22 +1494,22 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     expect(steps[2].querySelector('.plan-step-badge')?.textContent).toBe('待执行');
   });
 
-  it('plan_update 携带 stepRounds → 任务节点展开显示该步骤的turn摘要', () => {
+  it('plan_update 携带 stepLog → 任务节点展开显示该步骤的 step 推进记录', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '收集需求', status: 'done', order: 0, stepRounds: [{ stepId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
-        { id: 's2', description: '设计方案', status: 'active', order: 1, stepRounds: [] },
+        { id: 's1', description: '收集需求', status: 'done', order: 0, stepLog: [{ planStepId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, stepLog: [] },
       ],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
     const steps = board.querySelectorAll('.plan-step');
-    // 有关联闭环的步骤：details 携带摘要 body（折叠态，仅标题常显）
+    // 有关联推进记录的步骤：details 携带摘要 body（折叠态，仅标题常显）
     const withRounds = steps[0] as HTMLDetailsElement;
     expect(withRounds.open).toBe(false);
     expect(withRounds.querySelector('.plan-step-round')?.textContent).toBe('梳理用户痛点并产出需求清单');
-    // 无关联闭环的步骤：不渲染空摘要体
+    // 无关联推进记录的步骤：不渲染空摘要体
     const noRounds = steps[1] as HTMLDetailsElement;
     expect(noRounds.querySelector('.plan-step-round')).toBeNull();
   });
@@ -1518,13 +1518,13 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'active', order: 0, stepRounds: [] }],
+      steps: [{ id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] }],
     });
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'done', order: 0, stepRounds: [] },
-        { id: 's2', description: '第二步', status: 'active', order: 1, stepRounds: [] },
+        { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
+        { id: 's2', description: '第二步', status: 'active', order: 1, stepLog: [] },
       ],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
@@ -1540,7 +1540,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepRounds: [] }],
+      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepLog: [] }],
     });
     expect(document.querySelector('.plan-board')).not.toBeNull();
     dispatch({ type: 'plan_update', steps: [] });
@@ -1551,7 +1551,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepRounds: [] }],
+      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepLog: [] }],
     });
     expect(document.querySelector('.plan-board')).not.toBeNull();
     dispatch({ type: 'clear_ok' });
@@ -1563,7 +1563,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     // 先创建任务看板
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '收集需求', status: 'active', order: 0, stepRounds: [] }],
+      steps: [{ id: 's1', description: '收集需求', status: 'active', order: 0, stepLog: [] }],
     });
     const board = document.querySelector('.plan-board') as HTMLElement;
     expect(board).not.toBeNull();
@@ -1579,7 +1579,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     const banner2 = document.querySelector('.checkpoint-banner') as HTMLElement;
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '设计方案', status: 'pending', order: 0, stepRounds: [] }],
+      steps: [{ id: 's1', description: '设计方案', status: 'pending', order: 0, stepLog: [] }],
     });
     const board2 = document.querySelector('.plan-board') as HTMLElement;
     expect(board2.compareDocumentPosition(banner2) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();

@@ -9,8 +9,8 @@
  * 注：纯函数测试，无副作用。
  */
 import { describe, it, expect } from 'vitest';
-import { renderTaskTable, ROUND_LOG_CAP } from '../taskTableRenderer.js';
-import type { PlanStep, RoundOutcome } from '../types.js';
+import { renderTaskTable, STEP_LOG_CAP } from '../taskTableRenderer.js';
+import type { PlanStep, StepOutcome } from '../types.js';
 
 /** 创建测试用 PlanStep */
 function createStep(
@@ -22,9 +22,9 @@ function createStep(
   return { id: id ?? `step-${order}`, order, description, status };
 }
 
-/** 创建测试用 RoundOutcome */
-function createRound(summary: string, stepId?: string): RoundOutcome {
-  return { summary, stepId, completedAt: Date.now() };
+/** 创建测试用 StepOutcome */
+function createStepLog(summary: string, planStepId?: string): StepOutcome {
+  return { summary, planStepId, completedAt: Date.now() };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -153,62 +153,62 @@ describe('taskTableRenderer — 多步骤渲染', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 3. 回合日志渲染
+// 3. step 推进日志渲染
 // ══════════════════════════════════════════════════════════════
 
-describe('taskTableRenderer — 回合日志渲染', () => {
+describe('taskTableRenderer — step 推进日志渲染', () => {
 
-  it('有回合日志时追加回合记录', () => {
+  it('有 step 推进日志时追加 step 推进记录', () => {
     const plan = [createStep(0, '步骤一', 'active')];
-    const roundLog: RoundOutcome[] = [
-      createRound('完成了需求分析', 'step-0'),
-      createRound('发现一个 bug', 'step-1'),
+    const stepLog: StepOutcome[] = [
+      createStepLog('完成了需求分析', 'step-0'),
+      createStepLog('发现一个 bug', 'step-1'),
     ];
-    const result = renderTaskTable(plan, roundLog);
+    const result = renderTaskTable(plan, stepLog);
 
-    expect(result).toContain('[回合记录]');
+    expect(result).toContain('[step 推进记录]');
     expect(result).toContain('完成了需求分析 (步骤 step-0)');
     expect(result).toContain('发现一个 bug (步骤 step-1)');
   });
 
-  it('回合日志无 stepId 时不显示步骤编号', () => {
+  it('step 推进日志无 planStepId 时不显示步骤编号', () => {
     const plan = [createStep(0, '步骤一', 'active')];
-    const roundLog: RoundOutcome[] = [
-      createRound('自由对话回合'),
+    const stepLog: StepOutcome[] = [
+      createStepLog('自由对话迭代'),
     ];
-    const result = renderTaskTable(plan, roundLog);
+    const result = renderTaskTable(plan, stepLog);
 
-    expect(result).toContain('自由对话回合');
+    expect(result).toContain('自由对话迭代');
     // 不应包含 (步骤 ...)
     expect(result).not.toContain('(步骤');
   });
 
-  it('回合日志为空数组时不追加回合记录', () => {
+  it('step 推进日志为空数组时不追加推进记录', () => {
     const plan = [createStep(0, '步骤一', 'active')];
     const result = renderTaskTable(plan, []);
 
-    expect(result).not.toContain('[回合记录]');
+    expect(result).not.toContain('[step 推进记录]');
   });
 
-  it('回合日志全部渲染（ROUND_LOG_CAP 仅为导出常量，截断逻辑未实现）', () => {
+  it('step 推进日志全部渲染（STEP_LOG_CAP 仅为导出常量，截断逻辑未实现）', () => {
     const plan = [createStep(0, '步骤一', 'active')];
-    const roundLog: RoundOutcome[] = [];
+    const stepLog: StepOutcome[] = [];
     for (let i = 0; i < 5; i++) {
-      roundLog.push(createRound(`回合 ${i}`));
+      stepLog.push(createStepLog(`step ${i}`));
     }
-    const result = renderTaskTable(plan, roundLog);
+    const result = renderTaskTable(plan, stepLog);
 
-    // 验证所有回合日志都被渲染
+    // 验证所有 step 推进记录都被渲染
     for (let i = 0; i < 5; i++) {
-      expect(result).toContain(`回合 ${i}`);
+      expect(result).toContain(`step ${i}`);
     }
   });
 
-  it('不传回合日志时不追加回合记录', () => {
+  it('不传 step 推进日志时不追加推进记录', () => {
     const plan = [createStep(0, '步骤一', 'active')];
     const result = renderTaskTable(plan);
 
-    expect(result).not.toContain('[回合记录]');
+    expect(result).not.toContain('[step 推进记录]');
   });
 });
 
@@ -278,9 +278,9 @@ describe('taskTableRenderer — 边界场景', () => {
     expect(result).toContain('100');
   });
 
-  it('ROUND_LOG_CAP 常量存在且合理', () => {
-    expect(ROUND_LOG_CAP).toBe(12);
-    expect(ROUND_LOG_CAP).toBeGreaterThan(0);
+  it('STEP_LOG_CAP 常量存在且合理', () => {
+    expect(STEP_LOG_CAP).toBe(12);
+    expect(STEP_LOG_CAP).toBeGreaterThan(0);
   });
 
   it('输出以「非当前指令」标记开头区域', () => {

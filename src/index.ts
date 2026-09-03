@@ -70,7 +70,7 @@ export type {
   ProviderRouting,
   MultiStepReasoning,
   InputInterrupt,
-  LoopContinue,
+  SelfReviewRounds,
   UserFollowup,
   ErrorHandling,
 } from '@/role-pack/types.js';
@@ -260,7 +260,7 @@ export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNam
 // 宿主可条件性控制 trace_summary 工具的可见性
 export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 // 不中断工作模型类型（宿主 IPC 层类型声明用；增量事件类型已随 composer 剪枝移除）
-export type { SessionCheckpoint, PauseMeta, RoundOutcome, PlanStep } from '@/agent/types.js';
+export type { SessionCheckpoint, PauseMeta, StepOutcome, PlanStep } from '@/agent/types.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 召回函数：简化关键词搜索

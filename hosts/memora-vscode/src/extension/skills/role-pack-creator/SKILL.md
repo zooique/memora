@@ -85,7 +85,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 `prepare`（8）默认值：`memoryRecall`=full｜`understandingConfirm`=off｜`memoryRecallPercent`=0.4(0~1)｜`minFallback`=2(0~100)｜`summaryFocus`(≤500字符，默认省略)｜`contextAssembly`=hybrid｜`recallConfidence`=0.6(0~1)｜`summaryRecall`=on
 `act`（10）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`streaming`=streaming｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`inputInterrupt`=allow｜`multiStepReasoning`=auto｜`toolReadonly`=full｜`toolApproval`=auto
-`reflect`（4）默认值：`summary`=on｜`handoff`=wait｜`loopContinue`=0(0~10)｜`userFollowup`=silent
+`reflect`（4）默认值：`summary`=on｜`handoff`=wait｜`selfReview`=0(0~10)｜`userFollowup`=silent
 `global`（6）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=3(1~10)｜`errorHandling`=retry｜`tokenBudget`=200000(0~1000000)｜`stepBudget`=50(0~500)｜`taskLoopLimit`=10(0~100)
 
 ### 第四步：校验（写→验→用闭环）

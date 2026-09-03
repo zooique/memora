@@ -686,7 +686,7 @@ chatProvider.setAgentFactory((projectPath) =>
 
 - **28 键全部被内核真实消费、零 `[草案]`**（prepare 8 / act 10 / reflect 4 / global 6）。解析层 `rolePackManager` + `strategyResolver` 84 项测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
 - **三类流向，单一收口无镜像**：
-  1. act 8 键（除 `temperature`/`outputLimit`/`streaming` 由 `agent.ts` 直映射 `ChatOptions`）+ `loopContinue` + global 3 键，统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；
+  1. act 8 键（除 `temperature`/`outputLimit`/`streaming` 由 `agent.ts` 直映射 `ChatOptions`）+ `selfReview` + global 3 键，统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；
   2. prepare 键经 `resolveActiveStrategy()` 单一真理源流入 `contextPreparer` / `recall` / `roundSummaryGenerator`；
   3. persona 指令类（`understandingConfirm`/`userFollowup`/`askOn`/`askLimit`）由 `assembleRolePack()` 单收口注入。
 - **⚠️ 边界纠正：`toolReadonly` / `toolApproval` 内核已执行，非「无宿主执行方」**。`toolRunner.ts:119-152` 三重闸中，闸①（只读闸）与闸②（审批闸 `onToolApproval` 通知）**由内核执行**；VS Code 宿主 `preExecutionCheck` 恒放行（`assemble.ts:267`）只是单用户信任模型下的**第三重闸让行**（关联 十.5 / 设计纪律 D5），未来多用户/服务端须替换真实审批。**新宿主切勿误以为这两键无执行方而自行在宿主侧重复实现拦截**——内核已兜底，宿主恒放行是显式决策而非缺位。

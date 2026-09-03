@@ -7,8 +7,8 @@ import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 // 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
 import {
   MAX_ASK_LIMIT,
-  MAX_LOOP_CONTINUE,
   MAX_MIN_FALLBACK,
+  MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
   MAX_TASK_LOOP_LIMIT,
@@ -102,7 +102,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   },
   reflect: {
     handoff: 'wait',
-    loopContinue: 0,
+    selfReview: 0,
     summary: 'on',
     userFollowup: 'silent',
   },
@@ -388,21 +388,22 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
  * 解析 L2 运行时策略（收敛：替代 Agent 层 11 处 setXxx 逐项装配）
  *
  * 聚合现有 10 个 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
- * 输入中断、Token/步数预算、多步推理、工具只读、工具审批）+ reflect.loopContinue；
- * 非法值经各 resolve* 归位内核默认；loopContinue 归一为「0=关闭 / 正整数=N 轮执行上限」。
+ * 输入中断、Token/步数预算、多步推理、工具只读、工具审批）+ reflect.selfReview；
+ * 非法值经各 resolve* 归位内核默认；selfReview 归一为「0=关闭 / 正整数=N 轮执行上限」。
  *
  * @param strategy 合并后的行为策略（角色包声明，可为空）
  * @returns 注入 AgentLoop 的单一运行时策略对象
  */
 export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2RuntimeStrategy {
-  // loopContinue → 自审查轮数：整数且 ∈ [0, MAX_LOOP_CONTINUE] 才采用，否则关闭（0 轮）
-  const loopContinue = strategy?.reflect?.loopContinue;
+  // selfReview → 自审查轮数：整数且 ∈ [0, MAX_SELF_REVIEW_ROUNDS] 才采用，否则关闭（0 轮）。
+  // 兼容旧键 loopContinue（manifest 历史别名，新键优先、旧键回退，防已落盘角色包自审查静默失效）
+  const rawSelfReview = strategy?.reflect?.selfReview ?? strategy?.reflect?.loopContinue;
   const maxSelfReviewRounds =
-    typeof loopContinue === 'number' &&
-    Number.isInteger(loopContinue) &&
-    loopContinue >= 0 &&
-    loopContinue <= MAX_LOOP_CONTINUE
-      ? loopContinue
+    typeof rawSelfReview === 'number' &&
+    Number.isInteger(rawSelfReview) &&
+    rawSelfReview >= 0 &&
+    rawSelfReview <= MAX_SELF_REVIEW_ROUNDS
+      ? rawSelfReview
       : 0;
   return {
     toolCallsBlocked: resolveToolMode(strategy) === 'block',
@@ -497,7 +498,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     }
     if (triggerLabels.length > 0) {
       promptParts.push(
-        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每轮最多提问 ${askLimit} 次\n- 提问用行首标记 \`[ASK]\` 开头（一题一行）；需给出可选项时，在问题行尾附花括号选项 \`{A|B|C}\`（全半角括号、竖线分隔均可）——系统据此暂停并等待你的回答`,
+        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每次回答中最多提问 ${askLimit} 次（按一次用户输入计，turn 粒度防打扰）\n- 提问用行首标记 \`[ASK]\` 开头（一题一行）；需给出可选项时，在问题行尾附花括号选项 \`{A|B|C}\`（全半角括号、竖线分隔均可）——系统据此在 step 边界暂停并等待你的回答`,
       );
     }
   }

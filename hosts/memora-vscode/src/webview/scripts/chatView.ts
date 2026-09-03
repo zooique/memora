@@ -287,8 +287,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
     for (const step of steps) {
-      // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标；展开后展示该步骤已完成的
-      // turn 摘要（stepRounds，来自 checkpoint.roundLog 关联）
+      // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标；展开后展示该步骤关联的
+      // step 推进记录（stepLog，来自 checkpoint.stepLog 关联）
       const item = document.createElement('details');
       item.className = `plan-step plan-step-${step.status}`;
       item.open = false;
@@ -304,11 +304,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       badge.textContent = STEP_STATUS_LABEL[step.status];
       summary.appendChild(badge);
       item.appendChild(summary);
-      const rounds = step.stepRounds;
-      if (rounds.length > 0) {
+      const logs = step.stepLog;
+      if (logs.length > 0) {
         const body = document.createElement('div');
         body.className = 'plan-step-rounds';
-        for (const r of rounds) {
+        for (const r of logs) {
           const row = document.createElement('div');
           row.className = 'plan-step-round';
           row.textContent = r.summary;

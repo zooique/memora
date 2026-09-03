@@ -2236,25 +2236,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 仅当 plan 非空时推送（空计划不产生看板）。薄壳装配：只读提取，不参与 LLM 执行，
    * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
    *
-   * 任务节点聚合：额外从 checkpoint.roundLog 提取 stepId 关联，按步骤分组携带各 turn
-   * 摘要（stepRounds），webview 展开任务节点时展示该步骤下已完成的 turn 标题。
+   * 任务节点聚合：额外从 checkpoint.stepLog 提取 planStepId 关联，按步骤分组携带各 step
+   * 推进记录（stepLog），webview 展开任务节点时展示该步骤下的推进摘要。
    */
   private postPlanUpdate(): void {
     if (!this._agent) return;
     const checkpoint = this._agent.getCheckpoint();
     if (!checkpoint || !checkpoint.plan || checkpoint.plan.length === 0) return;
-    // 步骤 → 关联 turn 摘要（roundLog 的 stepId 关联，内核已写入，宿主只读消费）
-    const roundsByStep = new Map<string, { stepId: string; summary: string }[]>();
-    for (const r of checkpoint.roundLog ?? []) {
-      if (!r.stepId) continue;
-      const list = roundsByStep.get(r.stepId) ?? [];
-      list.push({ stepId: r.stepId, summary: r.summary });
-      roundsByStep.set(r.stepId, list);
+    // 步骤 → 关联 step 推进记录（stepLog 的 planStepId 关联，内核已写入，宿主只读消费）
+    const stepsByStep = new Map<string, { planStepId: string; summary: string }[]>();
+    for (const r of checkpoint.stepLog ?? []) {
+      if (!r.planStepId) continue;
+      const list = stepsByStep.get(r.planStepId) ?? [];
+      list.push({ planStepId: r.planStepId, summary: r.summary });
+      stepsByStep.set(r.planStepId, list);
     }
     // 按 order 排序列化（内核 PlanStep 已含 order，防冗余中断序漂移）
     const steps = [...checkpoint.plan]
       .sort((a, b) => a.order - b.order)
-      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, stepRounds: roundsByStep.get(s.id) ?? [] }));
+      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, stepLog: stepsByStep.get(s.id) ?? [] }));
     this.post({ type: 'plan_update', steps });
   }
 

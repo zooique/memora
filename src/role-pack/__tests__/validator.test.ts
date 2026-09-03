@@ -13,7 +13,7 @@ import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 const validStrategy = {
   prepare: { memoryRecall: 'full', memoryRecallPercent: 0.4, minFallback: 2, summaryFocus: '聚焦核心逻辑' },
   act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096, streaming: 'streaming' },
-  reflect: { summary: 'on', handoff: 'wait', loopContinue: 0, userFollowup: 'silent' },
+  reflect: { summary: 'on', handoff: 'wait', selfReview: 0, userFollowup: 'silent' },
   global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
 };
 
@@ -254,24 +254,24 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
 
-  it('loopContinue 非负整数合法（0=关闭 / N=最多 N 轮）→ 通过（雷-3b）', () => {
+  it('selfReview 非负整数合法（0=关闭 / N=最多 N 轮）→ 通过（雷-3b）', () => {
     const r0 = validate({
-      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 0 } },
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, selfReview: 0 } },
     });
     const r2 = validate({
-      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 2 } },
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, selfReview: 2 } },
     });
     expect(r0.valid).toBe(true);
     expect(r2.valid).toBe(true);
     expect(findByCode(r0.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
   });
 
-  it('loopContinue 负数/字符串 → INVALID_STRATEGY_VALUE error（雷-3b）', () => {
+  it('selfReview 负数/字符串 → INVALID_STRATEGY_VALUE error（雷-3b）', () => {
     const neg = validate({
-      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: -1 } },
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, selfReview: -1 } },
     });
     const str = validate({
-      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 'on' } },
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, selfReview: 'on' } },
     });
     expect(findByCode(neg.issues, 'INVALID_STRATEGY_VALUE').length).toBeGreaterThan(0);
     expect(findByCode(str.issues, 'INVALID_STRATEGY_VALUE').length).toBeGreaterThan(0);
@@ -299,9 +299,9 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
 
-  it('loopContinue 越上界（> MAX_LOOP_CONTINUE）→ error', () => {
+  it('selfReview 越上界（> MAX_SELF_REVIEW_ROUNDS）→ error', () => {
     const result = validate({
-      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, loopContinue: 999 } },
+      strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, selfReview: 999 } },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });

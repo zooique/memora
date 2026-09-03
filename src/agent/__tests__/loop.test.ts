@@ -2676,6 +2676,45 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
       expect(qp[0].questions[0]!.options).toBeUndefined();
     }
   });
+
+  it('工具轮 [ASK] + 工具调用并存 → 提问优先（step 级气口），工具不执行', async () => {
+    const onPendingQuestion = vi.fn();
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      // 同一 chunk 携带 [ASK] 正文 + toolCalls：工具轮文本虽被 P2 叙述剥离，[ASK] 仍应识别为提问
+      provider: mockProvider([
+        {
+          content: '让我先确认一下。\n[ASK] 需要读取哪个文件？',
+          toolCalls: [
+            {
+              id: 'call_1',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+            },
+          ],
+        },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      onPendingQuestion,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('处理文件')) {
+      chunks.push(chunk);
+    }
+
+    // 工具轮正文的 [ASK] 也被识别（不再被剥离为叙述）
+    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
+    expect(onPendingQuestion).toHaveBeenCalledWith([
+      { slot: 'ask', question: '需要读取哪个文件？' },
+    ]);
+    expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
+    // 提问优先于工具执行：工具不被调用
+    expect(toolExecutor).not.toHaveBeenCalled();
+    // 最后 paused（step 边界气口，等待用户回答续跑）
+    expect(chunks[chunks.length - 1]!.type).toBe('paused');
+  });
 });
 
 describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {

@@ -7,10 +7,10 @@
  * @module taskTableRenderer
  */
 
-import type { PlanStep, RoundOutcome } from './types.js';
+import type { PlanStep, StepOutcome } from './types.js';
 
-/** 回合日志 FIFO 最大条数 */
-export const ROUND_LOG_CAP = 12;
+/** step 推进日志 FIFO 最大条数 */
+export const STEP_LOG_CAP = 12;
 
 /**
  * 渲染任务表（含进度行）
@@ -19,12 +19,12 @@ export const ROUND_LOG_CAP = 12;
  * 输出以「非当前指令」标记开头，防止 LLM 将状态信息误认为指令。
  *
  * @param plan - 计划步骤列表
- * @param roundLog - 可选回合日志
+ * @param stepLog - 可选 step 推进日志
  * @returns 格式化后的任务表文本（空计划返回空字符串）
  */
 export function renderTaskTable(
   plan: PlanStep[],
-  roundLog?: RoundOutcome[],
+  stepLog?: StepOutcome[],
 ): string {
   if (plan.length === 0) return '';
 
@@ -56,11 +56,11 @@ export function renderTaskTable(
 
   lines.push('└─────┴──────────────────────────────────────────┴──────────┘');
 
-  // 追加回合日志（仅非空时）
-  if (roundLog && roundLog.length > 0) {
-    lines.push('', '[回合记录]');
-    for (const r of roundLog) {
-      lines.push(`- ${r.summary}${r.stepId ? ` (步骤 ${r.stepId})` : ''}`);
+  // 追加 step 推进日志（仅非空时）
+  if (stepLog && stepLog.length > 0) {
+    lines.push('', '[step 推进记录]');
+    for (const r of stepLog) {
+      lines.push(`- ${r.summary}${r.planStepId ? ` (步骤 ${r.planStepId})` : ''}`);
     }
   }
 

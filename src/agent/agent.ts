@@ -1582,7 +1582,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // 清理 SessionManager（须先于 nullifyAllComponents，destroy 需访问其内部状态）
     if (this._sessionManager) {
-      // flush 脏检查点落盘后再 destroy，覆盖 logToolExecution 标脏后未 completeRound 的关闭窗口
+      // flush 脏检查点落盘后再 destroy，覆盖 logToolExecution 标脏后未 completeStep 的关闭窗口
       this._sessionManager.flushOnShutdown();
       this._sessionManager.destroy();
     }

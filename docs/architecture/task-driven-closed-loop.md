@@ -136,9 +136,9 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 
 ## 六、自审查与 turn/多 turn 编排的关系
 
-> **问题**：角色包有自审查开关（`reflect.loopContinue` → `maxSelfReviewRounds`，0=关闭）。进入多 turn 任务编排后，自审查是"每个 turn 各审一遍"还是"整个编排结束才审"？
+> **问题**：角色包有自审查开关（`reflect.selfReview` → `maxSelfReviewRounds`，0=关闭）。进入多 turn 任务编排后，自审查是"每个 turn 各审一遍"还是"整个编排结束才审"？
 >
-> 注意：代码字段名的 `loopContinue` 是"续跑继续"的语义（Handoff 决策 `loop` 值），非官方「loop = 对 step 的编排」概念。
+> 注意：代码字段名的历史别名 `loopContinue` 是"续跑继续"的语义（Handoff 决策 `loop` 值），非官方「loop = 对 step 的编排」概念；已随术语收口更名 `selfReview`。
 
 ### 结论：自审查粒度 = "单个 turn"，不是"整个编排汇总"
 

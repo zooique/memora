@@ -224,7 +224,7 @@
               "enum": ["wait", "loop", "end"],
               "description": "衔接决策：wait=等待用户 / loop=自动续跑 / end=终止（默认 wait）"
             },
-            "loopContinue": {
+            "selfReview": {
               "type": "integer",
               "minimum": 0,
               "maximum": 10,

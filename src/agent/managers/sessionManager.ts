@@ -24,7 +24,7 @@ import type {
   ResourceState,
   PlanStep,
   ToolExecutionRecord,
-  RoundOutcome,
+  StepOutcome,
   PauseMeta,
 } from '@/agent/types.js';
 import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
@@ -427,7 +427,7 @@ export class SessionManager {
 
     // 合并语义：以已有检查点为基底展开，仅覆写本次重算的字段。
     // 【禁止改回对象字面量整体重建】——整体重建≈隐式字段白名单，任何未显式列出的字段每次 pause 被静默丢弃
-    // （整体重建曾使 roundLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
+    // （整体重建曾使 stepLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
     this.checkpoint = {
       ...(prev ?? {}),
 
@@ -1114,40 +1114,40 @@ export class SessionManager {
     return true;
   }
 
-  /** 完成一个回合（SSOT 唯一写点）：单函数内顺序写步骤状态 + roundLog + heartbeat 保证原子性 */
-  completeRound(options: { stepId?: string; summary: string }): void {
+  /** 完成一个 step（SSOT 唯一写点）：单函数内顺序写步骤状态 + stepLog + heartbeat 保证原子性 */
+  completeStep(options: { planStepId?: string; summary: string }): void {
     if (!this.checkpoint) return;
 
     // 标记步骤状态（经 updatePlanStepStatus 单一写点，避免旁路契约）
-    const { stepId, summary } = options;
-    if (stepId) {
-      this.updatePlanStepStatus(stepId, 'done');
+    const { planStepId, summary } = options;
+    if (planStepId) {
+      this.updatePlanStepStatus(planStepId, 'done');
     }
 
-    // 追加回合日志（FIFO 超 12 条移除最早）
-    const outcome: RoundOutcome = {
-      stepId,
+    // 追加 step 日志（step 级推进记录，FIFO 超 12 条移除最早）
+    const outcome: StepOutcome = {
+      planStepId,
       summary,
       completedAt: Date.now(),
     };
-    if (!this.checkpoint.roundLog) {
-      this.checkpoint.roundLog = [];
+    if (!this.checkpoint.stepLog) {
+      this.checkpoint.stepLog = [];
     }
-    this.checkpoint.roundLog.push(outcome);
-    if (this.checkpoint.roundLog.length > 12) {
-      this.checkpoint.roundLog = this.checkpoint.roundLog.slice(-12);
+    this.checkpoint.stepLog.push(outcome);
+    if (this.checkpoint.stepLog.length > 12) {
+      this.checkpoint.stepLog = this.checkpoint.stepLog.slice(-12);
     }
 
-    // 心跳 + 落盘：回合边界即检查点语义边界，崩溃后可从该边界无损续跑
+    // 心跳 + 落盘：step 边界即检查点语义边界，崩溃后可从该边界无损续跑
     this.touchCheckpoint();
     this.flushCheckpoint();
   }
 
-  /** 卸载运行态挂载物：任务流结束/转 idle 时清空 plan/roundLog（SSOT 资源层 vs 状态层模型），回到"空闲=无挂载物"常态；与 updatePlan（运行态维护）正交 */
+  /** 卸载运行态挂载物：任务流结束/转 idle 时清空 plan/stepLog（SSOT 资源层 vs 状态层模型），回到"空闲=无挂载物"常态；与 updatePlan（运行态维护）正交 */
   clearPlan(): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = [];
-    this.checkpoint.roundLog = undefined;
+    this.checkpoint.stepLog = undefined;
     this.touchCheckpoint();
     this.flushCheckpoint();
   }
@@ -1185,7 +1185,7 @@ export class SessionManager {
 
   /**
    * 记录工具执行：追加到检查点日志（append-only）供恢复时 outbox 检查。
-   * 落盘策略：仅标脏不即时落盘（completeRound 回合边界统一 flush、createCheckpoint 暂停/异常强制落盘）。
+   * 落盘策略：仅标脏不即时落盘（completeStep step 边界统一 flush、createCheckpoint 暂停/异常强制落盘）。
    * 回合中途崩溃最坏丢最近一条记录，outbox 视为"未执行"恢复后重跑，对幂等工具安全；IO 从每工具调用降为每回合。
    */
   logToolExecution(record: ToolExecutionRecord): void {
@@ -1205,7 +1205,7 @@ export class SessionManager {
       }
     }
     this.touchCheckpoint();
-    // 依赖 completeRound / createCheckpoint 在回合边界统一 flush
+    // 依赖 completeStep / createCheckpoint 在 step 边界统一 flush
   }
 
   /** 记录非幂等工具执行（补偿降级后仅日志）：不再逐副作用执行补偿，仅记录事实供宿主/人工排查 */
@@ -1302,7 +1302,7 @@ export class SessionManager {
     this.stopPauseTimeoutTimer();
   }
 
-  /** 关闭时 flush 脏检查点落盘（Agent 关闭、destroy 前调用）：覆盖 logToolExecution 标脏后未到 completeRound 的关闭窗口，确保脏检查点不丢失 */
+  /** 关闭时 flush 脏检查点落盘（Agent 关闭、destroy 前调用）：覆盖 logToolExecution 标脏后未到 completeStep 的关闭窗口，确保脏检查点不丢失 */
   flushOnShutdown(): void {
     this.flushCheckpoint(true);
   }

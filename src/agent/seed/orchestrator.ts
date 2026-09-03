@@ -464,6 +464,10 @@ export class SeedOrchestrator {
     const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager, this.deps.strategyOverride));
 
     let stepsRun = 0;
+    // 停滞检测（多 turn 编排级，2026-09-04 自 assembler step 回调归位）：步 turn 正常结束后
+    // 若刚执行的步骤未被 task_table_update 推进为 done → 计停滞；连续 3 步未推进 → 标 blocked + 提示
+    let stalledStepCount = 0;
+    const STALL_THRESHOLD = 3;
     while (stepsRun < limit) {
       const next = this.getNextPendingStep();
       if (!next) break;
@@ -490,6 +494,22 @@ export class SeedOrchestrator {
       if (stepAct.paused) {
         // 本 turn 自然结束后软暂停：保留现场（含任务表），续跑从下一 pending 步继续整链
         return { continueFinalize: false, stepsRun };
+      }
+      // 停滞检测（多 turn 编排级）：本步未推进为 done → 计停滞；推进成功 → 复位
+      const cp = parts.sessionManager?.getCheckpoint();
+      const stepDone = cp?.plan.some((s) => s.id === next.id && s.status === 'done') ?? false;
+      stalledStepCount = stepDone ? 0 : stalledStepCount + 1;
+      if (stalledStepCount >= STALL_THRESHOLD) {
+        const hasPending = cp?.plan.some((s) => s.status === 'pending' || s.status === 'active');
+        if (hasPending) {
+          // 经 updatePlanStepStatus 标脏，checkpointDirty 置位确保阻塞标记可落盘
+          parts.sessionManager?.updatePlanStepStatus?.(next.id, 'blocked');
+          parts.loop.injectSystemMessage(
+            `[系统] 检测到任务表停滞（连续 ${STALL_THRESHOLD} 步未更新步骤状态），已自动将步骤 "${next.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
+          );
+        }
+        // 复位计数器（无论是否触发，防止无限触发）
+        stalledStepCount = 0;
       }
       // 步 turn 不产摘要（摘要 1:1 只由收尾汇报产出）
     }

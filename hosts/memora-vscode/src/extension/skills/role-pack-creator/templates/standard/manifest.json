@@ -35,7 +35,7 @@
     "reflect": {
       "summary": "on",
       "handoff": "wait",
-      "loopContinue": 0,
+      "selfReview": 0,
       "userFollowup": "silent"
     },
     "global": {

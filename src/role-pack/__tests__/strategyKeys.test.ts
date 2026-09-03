@@ -18,7 +18,7 @@ import {
   MAX_MIN_FALLBACK,
   MAX_OUTPUT_LIMIT,
   MAX_TOOL_STEP_LIMIT,
-  MAX_LOOP_CONTINUE,
+  MAX_SELF_REVIEW_ROUNDS,
   MAX_ASK_LIMIT,
   MAX_TOKEN_BUDGET,
   MAX_STEP_BUDGET,
@@ -192,6 +192,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     reflect: [
       'summary',
       'handoff',
+      'selfReview',
       'loopContinue',
       'userFollowup',
     ],
@@ -314,14 +315,16 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       expect(checkRule.check(3.0)).toBe(false);
     });
 
-    it('reflect.loopContinue 使用区间断言（0~MAX_LOOP_CONTINUE）', () => {
-      const rule = STRATEGY_KEY_RULES.reflect!.loopContinue!;
+    it('reflect.selfReview 使用区间断言（0~MAX_SELF_REVIEW_ROUNDS），旧键 loopContinue 保留为历史别名', () => {
+      const rule = STRATEGY_KEY_RULES.reflect!.selfReview!;
       expect(rule.kind).toBe('check');
       const checkRule = rule as { check: (v: unknown) => boolean; range?: { min: number; max: number } };
       expect(checkRule.check(0)).toBe(true);
       expect(checkRule.check(3)).toBe(true);
       expect(checkRule.check(-1)).toBe(false);
-      expect(checkRule.range).toEqual({ min: 0, max: MAX_LOOP_CONTINUE });
+      expect(checkRule.range).toEqual({ min: 0, max: MAX_SELF_REVIEW_ROUNDS });
+      // 历史别名仍被校验器认可（兼容已落盘角色包，不报未知键）
+      expect(STRATEGY_KEY_RULES.reflect!.loopContinue).toBeDefined();
     });
 
     it('global.askLimit 使用区间断言（1~MAX_ASK_LIMIT）', () => {
@@ -344,7 +347,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       { key: 'act.temperature', rule: STRATEGY_KEY_RULES.act!.temperature!, min: 0, max: 2, probe: 2.1 },
       { key: 'act.outputLimit', rule: STRATEGY_KEY_RULES.act!.outputLimit!, min: 1, max: MAX_OUTPUT_LIMIT, probe: MAX_OUTPUT_LIMIT + 1 },
       { key: 'act.toolStepLimit', rule: STRATEGY_KEY_RULES.act!.toolStepLimit!, min: 0, max: MAX_TOOL_STEP_LIMIT, probe: MAX_TOOL_STEP_LIMIT + 1 },
-      { key: 'reflect.loopContinue', rule: STRATEGY_KEY_RULES.reflect!.loopContinue!, min: 0, max: MAX_LOOP_CONTINUE, probe: MAX_LOOP_CONTINUE + 1 },
+      { key: 'reflect.selfReview', rule: STRATEGY_KEY_RULES.reflect!.selfReview!, min: 0, max: MAX_SELF_REVIEW_ROUNDS, probe: MAX_SELF_REVIEW_ROUNDS + 1 },
       { key: 'global.askLimit', rule: STRATEGY_KEY_RULES.global!.askLimit!, min: 1, max: MAX_ASK_LIMIT, probe: MAX_ASK_LIMIT + 1 },
       { key: 'global.tokenBudget', rule: STRATEGY_KEY_RULES.global!.tokenBudget!, min: 0, max: MAX_TOKEN_BUDGET, probe: MAX_TOKEN_BUDGET + 1 },
       { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: 0, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },

@@ -248,8 +248,8 @@ export class AgentLoop {
   private inAutonomousStep = false;
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
-  /** 回合边界回调——每次迭代完成时调用（含 stepId 和 assistant 摘要） */
-  onRoundBoundary?: (roundInfo: { stepId?: string; summary: string }) => void;
+  /** step 边界回调——每次迭代（=step）完成时调用（含 planStepId 与 assistant 摘要，step 级推进记录） */
+  onStepBoundary?: (stepInfo: { planStepId?: string; summary: string }) => void;
   /** 工具审批回调——当 toolApproval='confirm' 时触发 */
   onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
@@ -905,11 +905,29 @@ export class AgentLoop {
       return 'aborted';
     }
 
-    // 回合边界回调（每次迭代完成后触发，用于 roundLog 记录）
-    if (this.onRoundBoundary) {
-      this.onRoundBoundary({
+    // step 边界回调（每次迭代完成后触发，用于 stepLog 记录；step 级推进事件，非 turn 边界）
+    if (this.onStepBoundary) {
+      this.onStepBoundary({
         summary: llmResult.fullContent.slice(0, 200),
       });
+    }
+
+    // ── 主动提问检测（step 级气口，2026-09-04 自 handleTextResponse 前移）──
+    // 不再只在「纯文本收尾」分支识别 `[ASK]`：工具轮正文同样解析（fullContent 含全部文本），
+    // 命中即 step 边界提问气口——提问优先于工具执行（工具调用不执行，续跑时 LLM 基于问题上下文重新决策）。
+    // 注意：提问时仅保留问题正文入史、不 append 带 toolCalls 的 assistant 消息——OpenAI 兼容端
+    // 要求 assistant.tool_calls 后必有配对 tool 结果（否则 400），故此处不落工具调用结构。
+    const pendingQuestions = this.extractAskQuestions(llmResult.fullContent);
+    if (pendingQuestions.length > 0) {
+      if (llmResult.fullContent) {
+        this.appendAssistantText(llmResult.fullContent);
+      }
+      this.onPendingQuestion?.(pendingQuestions);
+      for (const q of pendingQuestions) {
+        yield { type: 'question_pending', questions: [q] };
+      }
+      yield { type: 'paused' };
+      return 'paused';
     }
 
     // ④ 结果路由：工具分支 / 纯文本结束分支
@@ -1152,30 +1170,12 @@ export class AgentLoop {
     return 'continue';
   }
 
-  /** 纯文本结束（子方法 3/3）：push assistant 消息（含空响应兜底）并 yield done */
+  /** 纯文本结束（子方法 3/3）：push assistant 消息（含空响应兜底）并 yield done。
+   *  注：`[ASK]` 主动提问检测已前移至 _callAndRoute 结果路由（step 级气口），
+   *  本方法只处理纯文本交付，不再承担提问暂停。 */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
-    // 主动提问检测：检测到结构化 `[ASK] 问题` 时，不只推送问题文本，而是暂停等待用户回答续跑。
-    // 约定：`[ASK]` 位于行首（可多条），其后到行尾为问题文本
-    const pendingQuestions = this.extractAskQuestions(llmResult.fullContent);
-    if (pendingQuestions.length > 0) {
-      // 问题全文入史（含 [ASK] 行周围正文）：续跑时 LLM 需记得自己问过什么，
-      // 否则用户短回答（如"红色"）会在无问题上下文下断链。UI 展示与历史落史分离——
-      // UI 只渲染 question_pending 的问题文本，历史保存全文。
-      if (llmResult.fullContent) {
-        this.appendAssistantText(llmResult.fullContent);
-      }
-      // 回调已在此时触发 pause（设 pauseRequested + 状态机 pendingPause），
-      // yield paused 后 consumeExecutionStream 会消费 pendingPause 并翻 PAUSED
-      this.onPendingQuestion?.(pendingQuestions);
-      for (const q of pendingQuestions) {
-        yield { type: 'question_pending', questions: [q] };
-      }
-      yield { type: 'paused' };
-      return 'paused';
-    }
-
     if (llmResult.fullContent) {
       this.appendAssistantText(llmResult.fullContent);
     } else {

@@ -570,7 +570,7 @@ describe('会议机制（S5 补强）：步粒度硬切换', () => {
       { id: 's2', description: '程序员实现', status: 'pending', order: 1, rolePack: '成员A' },
       { id: 's3', description: '汇总', status: 'pending', order: 2 },
     ];
-    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan, roundLog: [] });
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan, stepLog: [] });
 
     // 范围校验桩：成员声明有效、未声明→null（与 resolveRoundAssemblyRole 语义一致）
     mocks.rolePackManager.resolveRoundAssemblyRole.mockImplementation(
@@ -631,7 +631,7 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
       ...(s.rolePack ? { rolePack: s.rolePack } : {}),
     }));
     mocks.sessionManager.writePlan.mockReturnValue(plan);
-    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan, roundLog: [] });
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan, stepLog: [] });
     // 范围校验桩：成员声明有效、未声明→null
     mocks.rolePackManager.resolveRoundAssemblyRole.mockImplementation(
       (declared: string | undefined) => (declared ? declared : null),
@@ -688,7 +688,7 @@ describe('会议机制（S5 确定性触发）：meetingPreset 预置 + 步序�
     const steps = [{ description: '成员A 发言', rolePack: '成员A' }];
     mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
     mocks.sessionManager.writePlan.mockReturnValue([{ id: 'm0', description: '成员A 发言', status: 'pending', order: 0, rolePack: '成员A' }]);
-    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan: [{ id: 'm0', description: '成员A 发言', status: 'pending', order: 0, rolePack: '成员A' }], roundLog: [] });
+    mocks.sessionManager.getCheckpoint.mockReturnValue({ plan: [{ id: 'm0', description: '成员A 发言', status: 'pending', order: 0, rolePack: '成员A' }], stepLog: [] });
     mocks.rolePackManager.resolveRoundAssemblyRole.mockImplementation((d: string | undefined) => (d ? d : null));
     // 步执行中止（用户中断 / 失败）→ 硬中止即清场
     mocks.loop.processUserInput.mockReturnValue(textStream('半成品'));

@@ -978,8 +978,8 @@ export interface PlanStepDto {
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;
-  /** 该步骤已关联的 turn 摘要（来自 checkpoint.roundLog 的 stepId 关联，可为空数组） */
-  stepRounds: { stepId: string; summary: string }[];
+  /** 该步骤已关联的 step 推进记录（来自 checkpoint.stepLog 的 planStepId 关联，可为空数组） */
+  stepLog: { planStepId: string; summary: string }[];
 }
 
 /**

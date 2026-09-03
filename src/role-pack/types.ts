@@ -49,8 +49,8 @@ export type InputInterrupt = 'allow' | 'block';
 /** 结束衔接模式（标准键 reflect.handoff）：wait=等待用户 / loop=自动续跑 / end=终止 */
 export type Handoff = 'wait' | 'loop' | 'end';
 
-/** Loop 续跑轮次：0=关闭自审查 / N=LLM 纯文本回复后最多自审查 N 轮 */
-export type LoopContinue = number;
+/** 自审查轮数：0=关闭 / N=LLM 纯文本回复后最多自审查 N 轮 */
+export type SelfReviewRounds = number;
 
 /** 摘要生成开关（on=生成摘要 / off=不生成） */
 export type Summary = 'on' | 'off';
@@ -123,8 +123,10 @@ export interface ActStrategy {
 export interface ReflectStrategy {
   /** 结束衔接模式（默认 wait；标准键 reflect.handoff） */
   readonly handoff?: Handoff;
-  /** Loop 续跑轮次（默认 0=关闭；0=关闭自审查 / N=最多自审查 N 轮） */
-  readonly loopContinue?: LoopContinue;
+  /** 自审查轮数（默认 0=关闭；0=关闭 / N=最多自审查 N 轮） */
+  readonly selfReview?: SelfReviewRounds;
+  /** 历史别名（v0.13- 命名残留）：新键 selfReview 优先，旧键回退 */
+  readonly loopContinue?: SelfReviewRounds;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;
   /** 用户追问策略（默认 silent） */
@@ -141,7 +143,7 @@ export interface GlobalStrategy {
   readonly errorHandling?: ErrorHandling;
   /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
-  /** 每轮主动提问次数上限（默认 3） */
+  /** 主动提问次数上限：按一次用户输入（turn 粒度）计，防单次输入被打断过多次（默认 3） */
   readonly askLimit?: number;
   /** 外部任务驱动循环步数上限，0=关闭（默认 10；外部任务循环已消费）——复杂任务按任务表每步一个闭环的最大步数 */
   readonly taskLoopLimit?: number;
@@ -153,7 +155,7 @@ export interface GlobalStrategy {
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
- * reflect 的 summary/handoff/loopContinue/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
+ * reflect 的 summary/handoff/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {
@@ -179,7 +181,7 @@ export interface BehaviorStrategy {
 export interface L2RuntimeStrategy {
   /** 工具调用是否被阻止（toolMode==='block' 时为 true） */
   readonly toolCallsBlocked: boolean;
-  /** 自审查最大轮数（reflect.loopContinue：0=关闭 / N=最多 N 轮） */
+  /** 自审查最大轮数（reflect.selfReview：0=关闭 / N=最多 N 轮） */
   readonly maxSelfReviewRounds: number;
   /** 单轮工具调用步数上限（act.toolStepLimit：0=无限制 / N=限制步数） */
   readonly toolStepLimit: number;

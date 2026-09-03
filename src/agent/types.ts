@@ -221,11 +221,11 @@ export interface PlanStep {
   rolePack?: string;
 }
 
-/** 一次完整 LLM 调用回合的执行结果，注入时标「非当前指令」防 LLM 误执行 */
-export interface RoundOutcome {
-  /** 对应计划步骤 ID（可为空 = 自由对话回合） */
-  stepId?: string;
-  /** 回合摘要（LLM 单句或截断） */
+/** 一次 LLM 迭代（step）的执行结果，注入时标「非当前指令」防 LLM 误执行 */
+export interface StepOutcome {
+  /** 关联任务表步骤 ID（可为空 = 自由对话的迭代推进） */
+  planStepId?: string;
+  /** step 摘要（LLM 单句或截断） */
   summary: string;
   /** 完成时间戳 */
   completedAt: number;
@@ -343,8 +343,8 @@ export interface SessionCheckpoint {
    * 非幂等未补偿记录永不丢弃。
    */
   completedToolCalls?: ToolExecutionRecord[];
-  /** 回合结果日志（FIFO cap 10-12 条） */
-  roundLog?: RoundOutcome[];
+  /** step 推进日志（LLM 迭代级时间轴，FIFO cap 10-12 条；task 步骤状态见 plan） */
+  stepLog?: StepOutcome[];
   /**
    * 问答闭环锚点轮次（TS-9，2026-09-02 新增）
    *
