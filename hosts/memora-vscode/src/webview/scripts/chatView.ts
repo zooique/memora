@@ -2949,7 +2949,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     }
   });
   // 暂停按钮（Gap A）：仅生成中可见，点击发 pause 消息——host 调 agent.requestPause()
-  // 迭口边界软暂停当前流（落检查点、可经「继续」恢复），区别于「停止」的丢弃语义。
+  // step 边界软暂停当前流（落检查点、可经「继续」恢复），区别于「停止」的丢弃语义。
   pauseBtn?.addEventListener('click', () => {
     vscode.postMessage({ type: 'pause' });
   });

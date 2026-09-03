@@ -451,7 +451,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 停止生成：中断当前流式输出（mvp-scope 打断能力）
         this.handleStop();
       } else if (msg.type === 'pause') {
-        // Phase 4：暂停生成：调 agent.requestPause()（迭口边界软暂停）暂停当前流
+        // Phase 4：暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
         this.handlePause();
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
@@ -1931,7 +1931,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 暂停生成：用户软暂停当前 Agent 执行（Phase 4 暂停/恢复）
    *
-   * 调 agent.requestPause() 迭口边界软暂停（状态机翻 PAUSED 由内核收口，非申请即翻转）；
+   * 调 agent.requestPause() step 边界软暂停（状态机翻 PAUSED 由内核收口，非申请即翻转）；
    * 空闲态（无进行中流）提前拦截给明确提示。
    */
   private handlePause(): void {

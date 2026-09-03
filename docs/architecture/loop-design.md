@@ -36,6 +36,8 @@
 
 **结论**：现状已高度对齐设计哲学——**loop（step 编排）是 turn Act 内部的自然属性，没有独立于 turn 之外的第二套引擎**；多 turn 任务编排由 orchestrator 在 turn 出口处串联。
 
+**层级定位（防误读为四层）**：turn / step / loop / 多 turn 任务编排**不是四个并列的层**——`step`（原子）⊂ `loop`（turn 内 Act 的 step 编排）⊂ `turn`（最小完整单元）；`turn` ⊂ `多 turn 任务编排`（外部串联，`externalTaskLoop`）。loop 是 turn 的**内部结构**（微观），多 turn 任务编排是 turn 的**外部编排**（宏观），二者方向不同，各不构成对方的一层；本文件的 loop.ts 只属「单元层内部」。
+
 ---
 
 ## 三、关键机制与哲学一致性分析

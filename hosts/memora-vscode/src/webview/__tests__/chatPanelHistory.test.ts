@@ -570,7 +570,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(7000);
   });
 
-  // ─── Phase 4 软暂停入口：生成中暂停走迭口边界挂起 requestPause（与内核迭口软暂停语义一致） ───
+  // ─── Phase 4 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致） ───
   function pauseAgentStub(): {
     agent: Agent;
     requestPause: ReturnType<typeof vi.fn>;
@@ -582,14 +582,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     return { agent, requestPause, pause };
   }
 
-  it('handlePause：生成中软暂停走 requestPause（迭口边界挂起），不用立即翻态的 pause', () => {
+  it('handlePause：生成中软暂停走 requestPause（step 边界挂起），不用立即翻态的 pause', () => {
     const { provider, posted } = setup();
     const { agent, requestPause, pause } = pauseAgentStub();
     provider.setAgent(agent);
     // 生成中（流进行中）暂停按钮才可见 → _streaming=true
     (provider as unknown as { _streaming: boolean })._streaming = true;
     (provider as unknown as { handlePause(): void }).handlePause();
-    // 应调迭口边界软暂停入口 requestPause，而非立即翻态的 pause
+    // 应调step 边界软暂停入口 requestPause，而非立即翻态的 pause
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
     expect(pause).not.toHaveBeenCalled();
     // 无失败提示

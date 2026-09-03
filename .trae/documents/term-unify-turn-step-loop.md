@@ -36,7 +36,7 @@
 - §1.1/1.2「单轮执行闭环」→「turn（问答闭环）」，三阶段结构图保留（turn 内部三阶段）。
 - §2.2 Handoff / 气口（约 L125-152）：明确「气口 = step 之间的暂停点」；Handoff 仍是 turn 出口（wait/loop/end 策略），但**气口暂停**与「turn 之间的新问答」区分开。
 - §3.1 Loop（约 L158-182）：表述为「对 turn 的编排」。
-- §4.4 三层演进模型（约 L245-277）：改为「turn ⊂ loop 编排 ⊂ 目标模式」，更新与主流术语对照表（Single Agent Turn ≈ turn、ReAct 内 LLM↔工具循环 = step）。
+- §4.4 三层演进模型（约 L245-277）：改为「turn ⊂ 多 turn 任务编排 ⊂ 目标模式」（**loop 是 turn 内部 step 编排，不构成新层**），更新与主流术语对照表（Single Agent Turn ≈ turn、ReAct 内 LLM↔工具循环 = step）。
 
 **2. `docs/architecture/loop-design.md`**
 - 头注与状态（L1-8）、映射矩阵（§二，L25-37）：执行闭环→turn、内循环→step。
