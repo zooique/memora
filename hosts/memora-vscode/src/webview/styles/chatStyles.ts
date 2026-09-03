@@ -266,6 +266,78 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px);
     max-width: 45%;
   }
+  /* UX-9 提问内联选择题（2026-09-03，提问形态内联化）：
+   * [ASK] 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
+   * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */
+  .ask-inline {
+    margin: var(--sp-2, 6px) 0;
+    padding: var(--sp-3, 8px);
+    background: var(--surface-hover, rgba(128,128,128,.08));
+    border: 1px solid var(--border-panel, rgba(128,128,128,.2));
+    border-radius: var(--radius-md, 6px);
+    display: flex; flex-direction: column; gap: var(--sp-2, 6px);
+    min-width: 0;
+  }
+  .ask-inline__item { display: flex; flex-direction: column; gap: var(--sp-1, 4px); }
+  .ask-inline__q { font-size: var(--font-md, 12px); color: var(--text-primary, #cccccc); }
+  .ask-inline__opts { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
+  .ask-inline__opt {
+    font-size: var(--font-sm, 11px);
+    color: var(--accent, #0e639c);
+    background: transparent;
+    border: 1px solid var(--accent, #0e639c);
+    border-radius: var(--radius-full, 999px);
+    padding: 2px var(--sp-3, 8px);
+    cursor: pointer;
+  }
+  .ask-inline__opt:hover { background: var(--accent-soft, rgba(14,99,156,.12)); }
+  .ask-inline__opt:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  .ask-inline__input-row { display: flex; gap: var(--sp-2, 6px); align-items: center; }
+  .ask-inline__input {
+    flex: 1 1 auto; min-width: 0;
+    font-size: var(--font-sm, 11px);
+    background: var(--surface-input, rgba(0,0,0,.2));
+    color: var(--text-primary, #cccccc);
+    border: 1px solid var(--border, rgba(128,128,128,.3));
+    border-radius: var(--radius-sm, 3px);
+    padding: 4px var(--sp-2, 6px);
+  }
+  .ask-inline__input::placeholder { color: var(--text-tertiary, #6e7681); }
+  .ask-inline__input:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 0; }
+  .ask-inline__send {
+    flex-shrink: 0;
+    font-size: var(--font-sm, 11px);
+    color: #fff;
+    background: var(--accent, #0e639c);
+    border: none;
+    border-radius: var(--radius-sm, 3px);
+    padding: 4px var(--sp-3, 8px);
+    cursor: pointer;
+  }
+  .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
+  .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  /* UX-9 回答内联子行（2026-09-03）：用户对 [ASK] 的回答为提问块下方紧凑单行
+   * 「你答：xxx」——阅读位置落在提问与续答之间，同环连续体的一个节点，非游离折叠块 */
+  .msg-qa {
+    display: flex; align-items: baseline; gap: var(--sp-1, 4px);
+    margin: var(--sp-1, 4px) 0;
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    user-select: none;
+    padding-left: var(--sp-5, 12px);
+  }
+  .msg-qa__tag {
+    flex-shrink: 0;
+    font-weight: 600;
+    color: var(--accent, #0e639c);
+    background: var(--surface-hover, rgba(128,128,128,.12));
+    border-radius: var(--radius-sm, 3px);
+    padding: 1px var(--sp-2, 5px);
+  }
+  .msg-qa__text {
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 60%;
+  }
   /* 图标按钮通用样式 */
   .msg-icon-btn {
     display: inline-flex; align-items: center; justify-content: center;
@@ -355,6 +427,13 @@ export const chatStyles = `
     border-radius: var(--radius-sm, 3px);
     padding: 1px var(--sp-2, 5px);
     white-space: nowrap;
+  }
+  /* UX-9 闭环同体感（2026-09-03）：续接块隐藏重复的角色/模型身份标签——
+   * 同一问答闭环的续答不再是「独立新消息」，只保留「↻ 续接」chip + 时间戳，
+   * 从视觉上让 [ASK]→回答→再答 呈现为同一条回答的延续 */
+  .msg.assistant.is-continued .msg-ai-label__role,
+  .msg.assistant.is-continued .msg-ai-label__model {
+    display: none;
   }
 
   /* ============ Components：AI 回复 Markdown 渲染（吸收养分，2026-08-16） ============
@@ -1119,16 +1198,6 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-1, 2px);
   }
   .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
-  /* UX-9 C 交互输入挂靠区：问答闭环内交互输入（用户对 [ASK] 的回答）为可折叠子节点，
-   * 归入 round-block 内（复用现有容器不新造 DOM）——收起态由 summary「交互 N」提示，
-   * 展开可见折叠行；子节点复用 .msg.user.is-interactive 折叠样式，这里仅收敛间距 */
-  .round-block__interactives {
-    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
-    margin: var(--sp-1, 2px) 0;
-  }
-  .round-block__interactives .msg.user.is-interactive {
-    border-color: var(--border-panel, rgba(128,128,128,.35));
-  }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);
     background: var(--surface-code, rgba(0,0,0,.2));

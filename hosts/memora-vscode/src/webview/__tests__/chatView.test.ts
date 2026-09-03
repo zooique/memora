@@ -1816,52 +1816,88 @@ describe('chatView 澄清候选选项（P4/[ASK] options，2026-09-02）', () =>
     vi.restoreAllMocks();
   });
 
-  it('need_clarify 携带 options → 澄清条渲染可点击选项按钮', () => {
+  it('need_clarify 携带 options → 消息流内联选择题渲染可点选项按钮（提问下方，非底部弹层）', () => {
     const { postMessage } = mountChatView();
+    // 先建提问骨架作为内联锚点（[ASK] 提问块；纯视觉锚点，不含完整内核流）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
       type: 'need_clarify',
       questions: [
         { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
       ],
     });
-    const bar = document.getElementById('clarifyBar') as HTMLElement;
-    expect(bar.classList.contains('visible')).toBe(true);
-    // 每个选项一个按钮，文案与 options 一致
-    const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
+    // 内联选择题在消息流内（提问块下方），不再是底部 clarifyBar 替换输入栏
+    const box = document.querySelector('.ask-inline') as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(box.querySelector('.ask-inline__q')?.textContent).toBe('请描述当前任务目标');
+    const btns = box.querySelectorAll('.ask-inline__opt');
     expect(btns).toHaveLength(2);
     expect(btns[0].textContent).toBe('延续当前会话目标');
     expect(btns[1].textContent).toBe('开启新任务');
-    // clarified 之前未发送答案
+    // 补充输入通道随内联块出现（选择题 + 自由补充双通道）
+    expect(box.querySelector('.ask-inline__input')).not.toBeNull();
+    expect(box.querySelector('.ask-inline__send')).not.toBeNull();
+    // 底部 clarifyBar 不激活（主路径已内联）
+    expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(false);
     expect(postMessage).not.toHaveBeenCalledWith({ type: 'clarify_answer' });
   });
 
-  it('点击候选选项 → 点击即答：该选项作为澄清答案提交（clarify_answer）并收起澄清条', () => {
+  it('点击内联选项 → 点击即答：提交 clarify_answer 并移除内联块', () => {
     const { postMessage } = mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
       type: 'need_clarify',
       questions: [
         { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
       ],
     });
-    const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
+    const btns = document.querySelectorAll('.ask-inline__opt');
     (btns[1] as HTMLButtonElement).click();
     // 点击即答：无需二次回车，直接 postMessage clarify_answer
     expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '开启新任务' });
-    const bar = document.getElementById('clarifyBar') as HTMLElement;
-    expect(bar.classList.contains('visible')).toBe(false);
-    const inputBar = document.getElementById('inputBar') as HTMLElement;
-    expect(inputBar.hidden).toBe(false);
+    // 内联块已移除（答案就位，不再等待）
+    expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
-  it('无 options 的 need_clarify 不渲染选项按钮（纯文本输入退化）', () => {
+  it('无 options 的 need_clarify 不渲染选项按钮（仅补充输入通道）', () => {
     mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
       type: 'need_clarify',
       questions: [{ slot: 'task', question: '请描述当前任务目标' }],
     });
-    const btns = document.querySelectorAll('#clarifyOptions .opt-btn');
-    expect(btns).toHaveLength(0);
-    expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(true);
+    const box = document.querySelector('.ask-inline') as HTMLElement;
+    expect(box).not.toBeNull();
+    expect(box.querySelectorAll('.ask-inline__opt')).toHaveLength(0);
+    // 无选项时引导补充输入（纯文本输入退化仍可用）
+    expect(box.querySelector('.ask-inline__input')).not.toBeNull();
+  });
+
+  it('内联补充输入：键入后回车 → 提交 clarify_answer 并移除内联块', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'need_clarify',
+      questions: [{ slot: 'task', question: '请描述当前任务目标', options: ['方案A', '方案B'] }],
+    });
+    const input = document.querySelector('.ask-inline__input') as HTMLInputElement;
+    input.value = '我补充一点要求';
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '我补充一点要求' });
+    expect(document.querySelector('.ask-inline')).toBeNull();
+  });
+
+  it('无 assistant 锚点时 need_clarify 降级底部 clarifyBar（异常兜底）', () => {
+    mountChatView();
+    dispatch({
+      type: 'need_clarify',
+      questions: [{ slot: 'task', question: '请描述当前任务目标', options: ['A', 'B'] }],
+    });
+    // 无可用提问块 → 无内联块，底部 clarifyBar 兜底显示（含选项按钮）
+    expect(document.querySelector('.ask-inline')).toBeNull();
+    const bar = document.getElementById('clarifyBar') as HTMLElement;
+    expect(bar.classList.contains('visible')).toBe(true);
+    expect(document.querySelectorAll('#clarifyOptions .opt-btn')).toHaveLength(2);
   });
 });
 
@@ -1986,6 +2022,36 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(collectAllBodyText(continued)).toContain('开始执行方案A');
   });
 
+  it('运行时暂停（paused）清流式光标：提问后暂停块不再闪烁「调用大模型」', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '[ASK] 选择哪个方案？', roundId: 'round-1' });
+    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+    expect(body.classList.contains('is-streaming')).toBe(true); // 暂停前光标亮
+    dispatch({ type: 'paused' });
+    expect(body.classList.contains('is-streaming')).toBe(false); // 暂停即灭光标（静态半截）
+  });
+
+  it('运行时 resume meta：续跑保留 round-block 锚点，不复制第二个运行时折叠', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '[ASK] 选择哪个方案？', roundId: 'round-1' });
+    const rb0 = document.querySelector('.round-block') as HTMLElement;
+    expect(rb0).not.toBeNull();
+    expect(rb0.closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
+    // 用户回答 → resumePending 置位
+    dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1' });
+    // resume 新 runFlow 的 meta（同闭环续跑）→ 不重置锚点：折叠仍只有一个、留在首块
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    const rb1s = document.querySelectorAll('.round-block');
+    expect(rb1s).toHaveLength(1);
+    expect(rb1s[0].closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
+    // 续接骨架不挂第二个折叠
+    const blocks = document.querySelectorAll('.msg.assistant');
+    expect(blocks).toHaveLength(2);
+    expect(blocks[1].querySelector('.round-block')).toBeNull();
+  });
+
   it('UX-9 B：重放同 roundId 多段 AI（assistantLog + final）呈连续链，第 2 段起标记续接', () => {
     mountChatView();
     // 普通新闭环用户输入（重置上轮同环判定）
@@ -2008,35 +2074,35 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect((blocks2[2] as HTMLElement).classList.contains('is-continued')).toBe(false);
   });
 
-  it('UX-9 C：question-answer 折叠子节点挂靠所属 round-block 内，summary 计「交互 1」', () => {
+  it('UX-9 C：question-answer 渲染为消息流内联子行（提问块下方，非折叠收纳）', () => {
     mountChatView();
     beginRound(); // meta + chunk：骨架建块并挂载 round-block（有过程事件）
-    // 用户对 [ASK] 的回答 → 折叠子节点进 round-block 交互区（非消息流底部）
+    // 用户对 [ASK] 的回答 → 内联子行「你答：xxx」插在提问块（activeAssistantEl）之后
     dispatch({ type: 'user', text: '选方案A', ts: '2026-09-03T03:15:05Z', kind: 'question-answer', roundId: 'round-1' });
+    const qa = document.querySelector('.msg-qa') as HTMLElement;
+    expect(qa).not.toBeNull();
+    expect(qa.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
+    expect(qa.querySelector('.msg-qa__text')?.textContent).toContain('选方案A');
+    // 位置：提问块（assistant）之后，与消息流平级（不在 round-block 折叠内部）
+    const ask = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
+    expect(ask.nextElementSibling).toBe(qa);
+    // 折叠区不再藏交互输入（无「交互 N」计数、无 .round-block__interactives 容器）
     const rb = document.querySelector('.round-block') as HTMLElement;
-    const container = rb.querySelector('.round-block__interactives') as HTMLElement;
-    expect(container).not.toBeNull();
-    const fold = container.querySelector('.msg.user.is-interactive') as HTMLElement;
-    expect(fold).not.toBeNull();
-    expect(fold.textContent).toContain('用户提问');
-    expect(fold.textContent).toContain('选方案A');
-    // 收起态发现性：summary 追加「交互 1」
-    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('交互 1');
-    // 消息流底部不应出现游离折叠块
-    expect(document.querySelector('#messages > .msg-wrapper > .msg.user.is-interactive')).toBeNull();
+    expect(rb.querySelector('.round-block__interactives')).toBeNull();
+    expect(rb.querySelector('.round-block__summary')?.textContent).not.toContain('交互');
   });
 
-  it('UX-9 C 兜底：无 round-block（纯问答轮）时 qa 仍折叠落消息流，不丢失', () => {
+  it('UX-9 C 兜底：无 assistant 锚点时 qa 内联子行落消息流，不丢失', () => {
     mountChatView();
     dispatch({ type: 'user', text: '问题', ts: 't1' });
     dispatch({ type: 'assistant', text: '回答', ts: 't2' }); // 无过程事件 → 无 round-block
     dispatch({ type: 'user', text: '补充说明', ts: 't3', kind: 'question-answer' });
-    const fold = document.querySelector('.msg.user.is-interactive') as HTMLElement;
-    expect(fold).not.toBeNull();
-    expect(fold.textContent).toContain('补充说明');
+    const qa = document.querySelector('.msg-qa') as HTMLElement;
+    expect(qa).not.toBeNull();
+    expect(qa.textContent).toContain('补充说明');
   });
 
-  it('UX-9 重放路径：replay_events + 前序段 + qa 挂 round-block、final 为续接（A/B/C 同框回归）', () => {
+  it('UX-9 重放路径：replay_events + 前序段 + qa 内联子行、final 为续接（A/B/C 同框回归）', () => {
     mountChatView();
     // 主输入 → 整批过程事件（含 meta）→ [ASK] 前序段
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
@@ -2045,20 +2111,21 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 0, success: true } },
     ] as never });
     dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
-    // 用户回答 → 挂靠 round-block（重放路径：round-block 由前序段补挂完成）
+    // 用户回答 → 内联子行（插在前序段之后、final 之前）
     dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
     // 最终回答 → 同环续接
     dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
-    // C：qa 折叠节点挂 round-block 交互区（非消息流底部游离）
-    const rb = document.querySelector('.round-block') as HTMLElement;
-    expect(rb).not.toBeNull();
-    expect(rb.querySelector('.round-block__interactives .msg.user.is-interactive')?.textContent).toContain('选方案A');
+    const qa = document.querySelector('.msg-qa') as HTMLElement;
+    expect(qa).not.toBeNull();
+    expect(qa.textContent).toContain('选方案A');
     // A/B：前序段与 final 同 roundId → final 为续接链；打断分条在无打断轮不出现
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
     expect(document.querySelector('.interrupt-divider')).toBeNull();
-    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('交互 1');
+    // 位置连贯：提问段 → 回答子行 → 续接 final
+    expect((blocks[0] as HTMLElement).nextElementSibling).toBe(qa);
+    expect(qa.nextElementSibling).toBe(blocks[1]);
   });
 
   it('narrate 过程事件渲染为独立父块（建议 A），每段叙述一个可折叠父块', () => {

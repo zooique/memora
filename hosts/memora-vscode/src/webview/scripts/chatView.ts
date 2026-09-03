@@ -163,7 +163,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   //                          的第 2+ 段 → is-continued，圆环连线表达「同一问答闭环的多段连续」）。
   //                          D3 单轨收敛（2026-09-03）：宿主透传 chunk.roundId 后，运行时与重放
   //                          统一走「roundId 相等」判定，无独立时序标志（原 expectContinueNext 已删）。
+  //   resumePending        — 问答/补充续跑期待：交互输入（qa/supplement）或内联提问提交后置位，
+  //                          下一个 process_event meta 消费为「同闭环续跑的 meta」而非新轮——
+  //                          保留 currentEvents 与 round-block 锚点（折叠留在闭环首块），
+  //                          避免 resume 二次 runFlow 的 meta 被当新轮重置出第二个运行时折叠。
   let lastAssistantRoundId: string | undefined;
+  let resumePending = false;
 
   // G3 断点续跑提示条：检测到持久化暂停检查点时展示，用户点击「从断点续跑」恢复
   let restoreBanner: HTMLElement | null = null;
@@ -848,11 +853,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       if (stats.reviews > 0) parts.push(`审查 ${stats.reviews} 次`);
       const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
       if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
-      // UX-9 C：round-block 内交互输入（用户提问折叠子节点）计入收起态摘要 —— 展开查阅，
-      // 收起态也能发现「该轮发生过交互」（数据中心 = .round-block__interactives 真实 DOM）
-      const interactives = rb.querySelector('.round-block__interactives');
-      const interactiveCount = interactives ? interactives.children.length : 0;
-      if (interactiveCount > 0) parts.push(`交互 ${interactiveCount}`);
       const label = document.createElement('span');
       label.className = 'round-block__stats';
       label.textContent = parts.length > 0 ? parts.join(' · ') : '任务过程';
@@ -1607,19 +1607,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   /**
-   * 追加问答闭环内交互输入（UX-9 闭环可视化，2026-09-03 重构）
+   * 追加问答闭环内交互输入（UX-9 闭环可视化，2026-09-03 重构；内联化 2026-09-03）
    *
-   * 交互内容归位到它生发的上下文，不再是 messages 流底部的游离折叠块，两种形态：
+   * 交互内容归位到它生发的上下文，同一问答闭环消息流连续体，两种形态：
    * - supplement（用户打断补充）：渲染为「行内打断切分条」（A），插在打断点（被打断的
    *   assistant 块之后），resume 续接正文随后跟上 —— 还原内核 interject() abort→续跑语义；
-   * - question-answer（用户对 [ASK] 提问的回答）：可折叠子节点（C），优先挂靠所属
-   *   round-block 内（复用现有 round-block 容器，不新造 DOM；收起态 summary 补「交互 N」计数），
-   *   无 round-block（纯问答轮）时兜底落消息流。
+   * - question-answer（用户对 [ASK] 提问的回答）：消息流内联子行（C'，`你答：xxx`），
+   *   插在提问块下方、续接块上方，阅读位置连贯（不再收进 round-block 折叠）。
    *
    * @param text 输入全文
    * @param ts 时间戳（日期分隔线）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充）
-   * @param roundId 所属问答闭环 ID（roundId 连线底座；qa 挂靠定位所属轮渲染用）
+   * @param roundId 所属问答闭环 ID（roundId 连线底座；留存 data 语义，纯展示判定）
    */
   function appendInteractiveInput(
     text: string,
@@ -1633,51 +1632,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       appendInterruptDivider(text);
       return;
     }
-    // C：question-answer 可折叠子节点 —— 优先挂靠所属 round-block 内（交互区小节）
-    renderDateDivider(ts);
-    const details = document.createElement('details');
-    details.className = 'msg user is-interactive round-block__interactive';
-    details.dataset.kind = kind;
-    details.dataset.roundId = roundId ?? '';
-    const summary = document.createElement('summary');
-    summary.className = 'msg-interactive-summary';
-    const label = document.createElement('span');
-    label.className = 'msg-interactive-label';
-    label.textContent = '用户提问';
-    const preview = document.createElement('span');
-    preview.className = 'msg-interactive-preview';
-    preview.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
-    summary.appendChild(label);
-    summary.appendChild(preview);
-    const body = document.createElement('div');
-    body.className = 'msg-body';
-    body.textContent = text;
-    details.appendChild(summary);
-    details.appendChild(body);
-
-    const rb = roundBlockEl && roundBlockEl.isConnected ? roundBlockEl : null;
-    if (rb) {
-      // 挂靠所属 round-block：details 内追加交互输入子区（类名避开 renderRoundBlock 全量
-      // 重建的清理选择器 .round-block__section/.narrate/.tool，防被误删）
-      let container = rb.querySelector<HTMLElement>('.round-block__interactives');
-      if (!container) {
-        container = document.createElement('div');
-        container.className = 'round-block__interactives';
-        rb.querySelector('.round-block__details')?.appendChild(container);
-      }
-      container.appendChild(details);
-      // 收起态发现性：summary 追加「交互 N」计数（去旧加权，多次追加不叠加）
-      const stats = rb.querySelector('.round-block__stats') as HTMLElement | null;
-      if (stats) {
-        const base = (stats.textContent ?? '').replace(/\s*·\s*交互\s*\d+$/, '');
-        stats.textContent = base + ` · 交互 ${container.children.length}`;
-      }
+    // C：question-answer → 消息流内联子行（提问块下方，阅读位置连贯）
+    // 紧凑单行「你答：xxx」（过长截断 title 悬停），不触发日期分隔线
+    const host =
+      (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
+      (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
+    const row = document.createElement('div');
+    row.className = 'msg-qa';
+    const tag = document.createElement('span');
+    tag.className = 'msg-qa__tag';
+    tag.textContent = '你答';
+    const txt = document.createElement('span');
+    txt.className = 'msg-qa__text';
+    txt.textContent = text.length > 120 ? text.slice(0, 120) + '…' : text;
+    txt.title = text;
+    row.append(tag, txt);
+    if (host?.parentNode) {
+      host.after(row);
     } else {
-      // 兜底（纯问答轮无 round-block）：保持消息流独立折叠块（外层壳对齐用户消息）
-      const wrapper = document.createElement('div');
-      wrapper.className = 'msg-wrapper';
-      wrapper.appendChild(details);
-      messages.appendChild(wrapper);
+      messages.appendChild(row);
     }
     scrollToBottom(messages);
     updateEmptyState();
@@ -1730,6 +1703,91 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
    */
   function isSameRoundContinue(roundId: string | undefined): boolean {
     return !!roundId && roundId === lastAssistantRoundId;
+  }
+
+  /**
+   * 渲染内联选择题（提问形态内联化，2026-09-03）
+   *
+   * 对齐主流对话流（Claude / TraeWork）：[ASK] 提问正文下直接出「选项按钮 + 补充输入」，
+   * 点击选项即答（无需二次回车），也可直接打字补充后发送。渲染在提问块下方，
+   * 不替换底部输入栏（clarifyBar 仅异常兜底）。
+   *
+   * @param questions 提问列表（question + 候选 options，可选）
+   * @returns 内联块元素；无可用 assistant 锚点时返回 null（调用方走 clarifyBar 兜底）
+   */
+  function renderAskInline(questions: { question: string; options?: string[] }[]): HTMLElement | null {
+    // 锚点 = 当前 assistant 块（[ASK] 提问块/骨架）；无链接（异常）返回 null 降级 clarifyBar
+    const host = activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null;
+    if (!host?.parentNode) return null;
+    // 幂等：重复 need_clarify（如连续多问）先移除旧内联块，再挂新
+    document.querySelector('.ask-inline')?.remove();
+    const box = document.createElement('div');
+    box.className = 'ask-inline';
+    const commit = (text: string): void => {
+      commitAskAnswer(text);
+      box.remove();
+      scrollToBottom(messages);
+    };
+    for (const q of questions) {
+      const item = document.createElement('div');
+      item.className = 'ask-inline__item';
+      const qEl = document.createElement('div');
+      qEl.className = 'ask-inline__q';
+      qEl.textContent = q.question; // textContent 防注入
+      item.appendChild(qEl);
+      if (q.options && q.options.length > 0) {
+        const opts = document.createElement('div');
+        opts.className = 'ask-inline__opts';
+        for (const opt of q.options) {
+          const b = document.createElement('button');
+          b.className = 'ask-inline__opt';
+          b.textContent = opt;
+          b.addEventListener('click', () => commit(opt)); // 点击即答
+          opts.appendChild(b);
+        }
+        item.appendChild(opts);
+      }
+      box.appendChild(item);
+    }
+    // 补充通道：不选选项、直接打字输入（「选择题 + 自由补充」双通道）
+    const inputRow = document.createElement('div');
+    inputRow.className = 'ask-inline__input-row';
+    const askInput = document.createElement('input');
+    askInput.className = 'ask-inline__input';
+    askInput.placeholder = '也可直接输入你的选择/补充…';
+    const sendBtn = document.createElement('button');
+    sendBtn.className = 'ask-inline__send';
+    sendBtn.textContent = '发送';
+    const submit = (): void => {
+      const t = askInput.value.trim();
+      if (!t) return;
+      askInput.value = '';
+      commit(t);
+    };
+    sendBtn.addEventListener('click', submit);
+    askInput.addEventListener('keydown', (e) => {
+      if (e.isComposing) return;
+      if (e.key === 'Enter') submit();
+    });
+    inputRow.append(askInput, sendBtn);
+    box.appendChild(inputRow);
+    host.after(box);
+    askInput.focus(); // 焦点给补充输入（默认引导：也可直接打字）
+    scrollToBottom(messages);
+    return box;
+  }
+
+  /**
+   * 提交问答回答（内联选择题 / 兜底 clarifyBar 共用）
+   *
+   * 置 resumePending：提问后的 resume 新 runFlow meta 将识别为「同闭环续跑」，
+   * 保留 currentEvents 与 round-block 锚点（折叠留在闭环首块，不在续接块复制）。
+   *
+   * @param text 用户回答（选项文本或自由输入）
+   */
+  function commitAskAnswer(text: string): void {
+    resumePending = true;
+    vscode.postMessage({ type: 'clarify_answer', text });
   }
 
   /**
@@ -2274,15 +2332,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
       const ev = msg.event;
       if (ev.type === 'meta') {
-        // 新轮开始：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）
-        clearPendingWait(); // 骨架接管：移除 meta 前的回答等待指示器
+        // 新轮/续跑判定：交互输入后（resumePending）的 meta = 同闭环续跑（qa 回答 / 暂停补充
+        // 后的第二个 runFlow）——保留 currentEvents 与 round-block 锚点（折叠留在闭环首块，
+        // 不因新 runFlow 当新轮重置出第二个运行时折叠），仅刷新身份 + 建续接骨架；
+        // 真新轮则清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）
+        clearPendingWait(); // 骨架接管：移除等待指示器
         clearToolElapsed(); // TS-11c：切轮清工具等待计时（瞬态，防跨轮残留）
-        currentEvents = [];
-        roundBlockEl = null;
-        roundBlockHostEl = null;
-        clearArchivingFallback();
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
-        currentEvents.push(ev);
+        if (resumePending) {
+          resumePending = false;
+        } else {
+          currentEvents = [];
+          roundBlockEl = null;
+          roundBlockHostEl = null;
+          clearArchivingFallback();
+          currentEvents.push(ev);
+        }
         prepareFlowShell();
       } else {
         if (ev.type === 'recall') {
@@ -2345,15 +2410,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       flowShellEl?.remove();
       flowShellEl = null;
       clearPendingWait();
-      // UX-9：带 kind 的交互输入 → 行内打断分条（supplement）/ round-block 折叠子节点（qa）。
-      // D3 单轨：不再置「续接」时序标志——后续 assistant 段是否续接由 chunk 携带的 roundId
-      // 与 lastAssistantRoundId 相等判定（运行时与重放同一判定源）；普通新闭环输入重置同环判定
+      // UX-9：带 kind 的交互输入 → 行内打断分条（supplement）/ 消息流内联子行（qa）。
+      // D3 单轨：后续 assistant 段是否续接由 chunk 携带的 roundId 与 lastAssistantRoundId
+      // 相等判定（运行时与重放同一判定源）；resumePending 供下一次 process_event meta
+      // 识别「同闭环续跑」（保留 currentEvents 与 round-block 锚点，不重置）。
+      // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
       if (msg.kind) {
+        resumePending = true;
         appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId);
       } else {
         append('user', msg.text, msg.ts);
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
         lastAssistantRoundId = undefined;
+        resumePending = false;
+        roundBlockEl = null;
+        roundBlockHostEl = null;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -2418,6 +2489,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
+      // 暂停即流暂停：清流式光标 + 停节流定时器（保留半截正文静态展示，不 finalize 终态）。
+      // 提问/补充后 resume 的新 runFlow 由 meta/chunk 建续接块，本暂停块不再闪烁「调用大模型」
+      if (streamingActive) {
+        if (streamRenderTimer) {
+          clearTimeout(streamRenderTimer);
+          streamRenderTimer = undefined;
+        }
+        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body')?.classList.remove('is-streaming');
+        streamingActive = false;
+      }
     } else if (msg.type === 'checkpoint_available') {
       // G3 断点续跑：检测到持久化暂停检查点，展示「从断点续跑」提示条
       showRestoreBanner('检测到上次暂停的会话，可继续', true);
@@ -2475,26 +2556,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       autoResize();
       syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步
     } else if (msg.type === 'need_clarify') {
-      clarifyText.textContent =
-        'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
-      clarifyInput.value = '';
-      clarifyOptions.textContent = '';
-      msg.questions.forEach((q) => {
-        (q.options || []).forEach((opt) => {
-          const b = document.createElement('button');
-          b.className = 'opt-btn';
-          b.textContent = opt;
-          b.addEventListener('click', () => {
-            // 点击即答：选项直接作为澄清答案提交续跑（无需二次回车）
-            clarifyInput.value = opt;
-            sendClarifyAnswer();
+      // 提问形态内联化（2026-09-03）：选择题 + 补充输入渲染到消息流提问块下方
+      //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
+      // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
+      const askBlock = renderAskInline(msg.questions);
+      if (!askBlock) {
+        clarifyText.textContent =
+          'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
+        clarifyInput.value = '';
+        clarifyOptions.textContent = '';
+        msg.questions.forEach((q) => {
+          (q.options || []).forEach((opt) => {
+            const b = document.createElement('button');
+            b.className = 'opt-btn';
+            b.textContent = opt;
+            b.addEventListener('click', () => {
+              // 点击即答：选项直接作为澄清答案提交续跑（无需二次回车）
+              clarifyInput.value = opt;
+              sendClarifyAnswer();
+            });
+            clarifyOptions.appendChild(b);
           });
-          clarifyOptions.appendChild(b);
         });
-      });
-      clarifyBar.classList.add('visible');
-      inputBar.hidden = true;
-      clarifyInput.focus();
+        clarifyBar.classList.add('visible');
+        inputBar.hidden = true;
+        clarifyInput.focus();
+      }
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.steps);
@@ -2531,7 +2618,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // .followup、.interrupt-divider（UX-9 行内打断切分条，与 .msg 平级）
       // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
@@ -2553,8 +2640,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       roundBlockHostEl = null;
       flowShellEl = null;
       currentEvents = [];
-      // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId 不再生效（防跨会话误判）
+      // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待不再生效（防跨会话误判）
       lastAssistantRoundId = undefined;
+      resumePending = false;
       lastShownDate = undefined;
       updateEmptyState();
     } else if (msg.type === 'history_loaded') {
@@ -2882,13 +2970,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     updateSkillPickerLabel();
   }
 
-  // 主动提问回答：提交并续跑
+  // 主动提问回答（clarifyBar 异常兜底路径）：提交并续跑
+  // 内联选择题（主路径）走 commitAskAnswer，两者须保持同一 resumePending 置位语义
   function sendClarifyAnswer(): void {
     const text = clarifyInput.value.trim();
     if (!text) return;
     clarifyInput.value = '';
     clarifyBar.classList.remove('visible');
     inputBar.hidden = false;
+    resumePending = true;
     vscode.postMessage({ type: 'clarify_answer', text });
   }
   clarifySend.addEventListener('click', sendClarifyAnswer);
