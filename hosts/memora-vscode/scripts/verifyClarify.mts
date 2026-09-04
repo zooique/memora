@@ -1,10 +1,10 @@
 /**
- * 主动提问验证脚本 — [ASK] 解析 + question_pending 事件 + 回答续跑闭环
+ * 主动提问验证脚本 — ask_user 工具 + question_pending 事件 + 回答续跑闭环
  *
- * 目的：验证内核在 LLM 结构化输出 `[ASK] 问题` 时：
+ * 目的：验证内核在 LLM 调用 ask_user 工具时：
  *   1. 发射 questionPending 事件（宿主可渲染提问 UI）
  *   2. Agent 暂停（翻 PAUSED）
- *   3. 用户回答后经 resumeExecution 续跑，回答进入上下文并继续
+ *   3. 用户回答后经 answerQuestion + resumeExecution 续跑，回答进入上下文并继续
  *
  * 运行方式（在 hosts/memora-vscode 下）：
  *   node --import ../../node_modules/tsx/dist/loader.mjs scripts/verifyClarify.mts
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
     console.log(`🔔 questionPending 事件：${questions.map((q) => q.question).join('；')}`);
   });
 
-  // 第一轮：引导 LLM 用 ask_user 工具提问（2026-09-04 通道收敛，替代 [ASK] 文本）
+  // 第一轮：引导 LLM 用 ask_user 工具提问（唯一通道）
   const input =
     '请帮我写一个系统设计文档。但在动手前，请先调用 ask_user 工具问清楚：这个系统主要面向什么用户？只做这一步，不要执行其他工具。';
   const first = await collectFlow(agent.chat(input));
