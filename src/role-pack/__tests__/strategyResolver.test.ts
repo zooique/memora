@@ -461,7 +461,7 @@ describe('resolve* 函数 — 数值解析', () => {
   // ── resolveStepBudget ──
   describe('resolveStepBudget', () => {
     it('合法正整数采用', () => {
-      expect(resolveStepBudget({ global: { stepBudget: 100 } })).toBe(100);
+      expect(resolveStepBudget({ global: { stepBudget: 40 } })).toBe(40);
     });
 
     it('0 表示不限制', () => {

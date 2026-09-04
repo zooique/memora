@@ -6,6 +6,7 @@
 import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 // 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
 import {
+  DEFAULT_MAX_ITERATIONS,
   MAX_ASK_LIMIT,
   MAX_MIN_FALLBACK,
   MAX_SELF_REVIEW_ROUNDS,
@@ -55,7 +56,9 @@ export const DEFAULT_TOKEN_BUDGET = 200_000;
  * `resolveStepBudget` 的非法/缺失回退、`DEFAULT_L2_STRATEGY.stepBudget`（loop 构造期惰性初始）。
  * 软上限，配合 maxIterations 双重保护；0 = 不限制。
  */
-export const DEFAULT_STEP_BUDGET = 50;
+// stepBudget 软上限默认值引用内核物理上限 SSOT——低于/等于物理上限才能真的生效
+// （否则永远是硬上限先撞线，软上限变成摆设）
+export const DEFAULT_STEP_BUDGET = DEFAULT_MAX_ITERATIONS;
 
 /**
  * 外部任务驱动循环步数上限内核默认值（SSOT 单一来源）。

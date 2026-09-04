@@ -52,6 +52,7 @@ import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js
 import { ToolResultCache, DEDUP_KEY_EXTRACTORS } from '@/agent/toolResultCache.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
+import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
 
 export interface AgentLoopOptions {
@@ -298,9 +299,10 @@ export class AgentLoop {
   private metrics = new LoopMetrics();
 
   constructor(private readonly opts: AgentLoopOptions) {
-    // 内核物理上限 SSOT：默认 50（业界参考 LangGraph=25, Claude Code=25-50, CrewAI=25）。
+    // 内核物理上限 SSOT：默认值引用 role-pack/strategyKeys.DEFAULT_MAX_ITERATIONS（单一源头）。
     // 迭代 = 一次 LLM call + N 并行工具。50 足以覆盖复杂多步任务，同时防止死循环烧 token。
-    this.maxIterations = opts.maxIterations ?? 50;
+    // 角色包 MAX_STEP_BUDGET 和 DEFAULT_STEP_BUDGET 也引用同一个源头——三者收敛，无配置错配。
+    this.maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
