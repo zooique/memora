@@ -1,0 +1,9 @@
+# 带 YAML frontmatter 的技能/模板 md：prettier 解析失败会把它当普通 markdown 重排，
+# 导致 frontmatter 分隔符（--- → ***）被破坏、技能加载失效。严禁 prettier 触碰——
+# format / format:check 脚本（package.json）与 IDE 保存格式化同步跳过。
+
+# 宿主技能（SKILL.md frontmatter）+ 角色包创建模板
+hosts/memora-vscode/src/extension/skills/**/*.md
+
+# 示例角色包的技能文件（同样带 frontmatter）
+role-packs/**/skills/**/*.md
