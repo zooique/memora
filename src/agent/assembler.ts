@@ -310,11 +310,12 @@ function wireRuntimeCallbacks(
   sessionManager: SessionManager,
   hooks: AgentHooks | undefined,
 ): void {
-  // 主动提问（回答中检测到 LLM 结构化输出 [ASK]）：发射 questionPending 事件（宿主渲染提问 UI）+ 触发暂停。
+  // 主动提问（ask_user 工具检出，2026-09-04 通道收敛替代 [ASK]）：发射 questionPending 事件
+  // （宿主渲染提问 UI）+ 触发暂停（pauseMeta 记 reason/source，供重启恢复展示"问了什么"）。
   loop.onPendingQuestion = (questions) => {
     if (questions.length === 0) return;
     hooks?.emit(AGENT_EVENTS.questionPending, questions);
-    // 触发软暂停：_callAndRoute 检测 [ASK] 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
+    // 触发软暂停：handleAskUser 检出 ask_user 返回 'paused' 后由 consumeExecutionStream 翻 PAUSED
     const reason = `需要澄清：${questions.map((q) => q.question).join('; ')}`;
     hooks?.requestPause(reason, 'agent');
   };

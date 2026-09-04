@@ -15,7 +15,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
-import { COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
+import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
   UIMessages,
@@ -35,9 +35,6 @@ import {
   type ToolErrorCodeValue,
 } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
-// [ASK] 提问契约解析（SSOT 单一真理源，2026-09-03 T1）：解析逻辑唯一归 utils/askParser，
-// 宿主 webview（重放/复制）经 esbuild 内联同一份，避免双实现漂移
-import { parseAskQuestions } from '@/utils/askParser.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
 import { roundTo } from '@/utils/math.js';
@@ -254,10 +251,15 @@ export class AgentLoop {
   onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
-  /** 插话控制器。interject() 时 abort 中断当前操作，消费后重建以支持多次插话 */
-  private interjectController = new AbortController();
-  /** 待注入的插话内容队列。interject() 追加，step 边界消费清空；数组支持连续快速插话 */
+  /** 待注入的插话内容队列。interject() 追加（申请），step 边界消费清空；数组支持连续快速插话 */
   private pendingInterjections: string[] = [];
+  /** 主动提问计数（本 turn 粒度，resetTurnState 清零）：ask_user 工具触发次数（askLimit 硬护栏） */
+  private askCountThisTurn = 0;
+  /**
+   * 在途提问登记（ask_user 工具轮挂起后、回答回填前）：记录各 ask_user 调用的 toolCallId
+   * 与解析出的结构化问题。answerQuestion（正常作答）/ cancelAsk（跳过/兜底）二选一消费。
+   */
+  private pendingAsk: { toolCallIds: string[]; questions: AskQuestion[] } | undefined = undefined;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
@@ -446,6 +448,9 @@ export class AgentLoop {
 
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
+      // askLimit 计数按「一次用户输入」重置（turn 粒度：暂停-续跑跨续跑累计）——仅入口清，
+      // continueAfterPause 不清（防续跑段被重复允许提问）
+      this.resetAskBudget();
 
       // 单轮 step 循环（runIterationLoop）：本 turn 的 step 编排执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
       // 真正的「多 turn 任务编排」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
@@ -626,27 +631,11 @@ export class AgentLoop {
     return this.externalTaskHeadRoundId;
   }
 
-  /** 执行中插话：立即中断当前 LLM/工具操作，注入内容后下一轮继续。
-   *  与 requestPause（step 边界挂起待续跑）不同——interject 立即中断并持续处理 */
+  /** 插话（申请）：把用户补充输入排队，当前 step 完成后在 step 边界统一注入为 user 消息。
+   *  与 requestPause（step 边界挂起待续跑）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
+   *  只在边界拿到补充输入后开始下一轮 step。 */
   interject(content: string): void {
-    // inputInterrupt='block' 时阻止插话，排队到下一轮 step 边界消费
-    if (this.strategy.inputInterrupt === 'block') {
-      this.pendingInterjections.push(content);
-      return;
-    }
     this.pendingInterjections.push(content);
-    this.interjectController.abort();
-  }
-
-  /** 合并多个 AbortSignal 为一个（任一 abort 即生效）。用 AbortSignal.any() 替代手动监听，避免监听器累积泄漏 */
-  private static combineSignals(...signals: (AbortSignal | undefined)[]): AbortSignal | undefined {
-    const valid = signals.filter((s): s is AbortSignal => s !== undefined);
-    if (valid.length === 0) return undefined;
-    if (valid.length === 1) return valid[0];
-    // 若已有 aborted 的 signal，直接短路返回，避免创建新对象
-    const aborted = valid.find((s) => s.aborted);
-    if (aborted) return aborted;
-    return AbortSignal.any(valid);
   }
 
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
@@ -680,12 +669,14 @@ export class AgentLoop {
     // 硬上限停搜标志随轮重置（下一闭环 web_search 重新可用）
     this.searchDisabled = false;
     this.searchDisabledHintInjected = false;
-    // TS-13 闭环入口防残留：interjectController 已 abort 且排队插话已消费完 → 重建干净控制器，
-    // 避免上一轮「done 终止前消费 pending」残留 aborted 信号使本轮首迭代被 _handleInterrupt 误中止。
-    // 保留「暂停后插话 → resume 首迭代消费」语义（pending 非空时不重建）。
-    if (this.interjectController.signal.aborted && this.pendingInterjections.length === 0) {
-      this.interjectController = new AbortController();
-    }
+    // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
+    // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
+  }
+
+  /** 重置 askLimit 计数（turn 入口，2026-09-04）：仅 processUserInput 调用，continueAfterPause 不动，
+   *  保证暂停-续跑同属一次用户输入、提问次数跨续跑累计（askLimit 语义：按输入打扰防刷）。 */
+  private resetAskBudget(): void {
+    this.askCountThisTurn = 0;
   }
 
   /**
@@ -701,6 +692,12 @@ export class AgentLoop {
     while (iteration < this.maxIterations) {
       iteration++;
       this.currentIteration = iteration;
+
+      // 在途提问兜底：提问挂起后未作答就续跑（宿主漏调 answerQuestion/cancelAsk）→
+      // 在此补占位 tool 结果，保证 assistant.tool_calls 恒有配对 tool 消息（OpenAI 兼容端结构合法）
+      if (this.pendingAsk) {
+        this.cancelAsk();
+      }
 
       // stepBudget 步数软上限检查（0=不限制）
       if (this.strategy.stepBudget > 0 && iteration >= this.strategy.stepBudget) {
@@ -725,24 +722,15 @@ export class AgentLoop {
   }
 
   /** 处理一次迭代结果（processUserInput/continueAfterPause 共享）。
-   *  continue→继续；paused→终止；aborted→消费插话后继续；done→注入自审查后继续。
-   *  返回 false 表示调用方应终止循环 */
+   *  continue→继续；paused→终止（step 边界挂起待续跑）；aborted→终止（硬中止，排队插话已留档）；
+   *  done→有自审查/排队插话待注入则继续，否则终止。返回 false 表示调用方应终止循环 */
   private handleIterationResult(result: 'aborted' | 'done' | 'continue' | 'paused'): boolean {
     // continue（工具结果已回填）无需特殊处理
     if (result === 'continue') return true;
+    // paused（软暂停/提问在 step 边界生效）：终止本轮循环，保留现场待续跑
     if (result === 'paused') return false;
-    if (result === 'aborted') {
-      // 因插话导致 abort：消费待注入的插话队列后继续，并重建控制器支持再次插话
-      if (this.pendingInterjections.length > 0) {
-        const contents = this.pendingInterjections.splice(0);
-        this.interjectController = new AbortController();
-        for (const content of contents) {
-          this.appendUserMessage(content);
-        }
-        return true;
-      }
-      return false;
-    }
+    // aborted（用户取消/超时）：硬中止，终止循环；排队插话已由 _handleInterrupt 消费进上下文留档
+    if (result === 'aborted') return false;
     // result === 'done'：仅当满足自审查注入条件时才注入提示继续 1 轮。
     // 注入判定收敛在 shouldInjectSelfReview（单一真理源，供 emit 通知与注入共用）：
     // 多轮 turn（本问答发生过工具步）+ 未达上限 + 非工具屏蔽 + 审查应答不是满意确认（满意即停）。
@@ -754,14 +742,12 @@ export class AgentLoop {
       );
       return true;
     }
-    // 关键修复：done 终止前检查 block-mode 排队插话。
-    // 场景：LLM 返回 done（纯文本完成），但用户在上一轮 LLM 处理期间调用了 interject(content, 'block')。
-    // 此时 pendingInterjections 非空，若直接 return false，插话内容被静默丢弃。
-    // 修复：消费排队插话并继续迭代，保证 block 模式语义（不打断当前轮，但下一轮必须处理）。
+    // done 终止前消费排队插话（统一「申请 → 气口生效」语义）：
+    // LLM 返回 done（纯文本完成）期间用户 interject() 入队的补充输入，若直接 return false 会被静默丢弃；
+    // 消费并继续迭代，下一轮 LLM 必看到插话内容。insert 的消费主要发生在 _handleInterrupt
+    // （迭代开始前），此处覆盖「LLM 在收尾轮执行期间插话」的窗口。
     if (this.pendingInterjections.length > 0) {
       const contents = this.pendingInterjections.splice(0);
-      // TS-13：消费后同步重建控制器——防「消费了排队但 abort 残留」使下一 turn 首迭代误中止
-      this.interjectController = new AbortController();
       for (const content of contents) {
         this.appendUserMessage(content);
       }
@@ -821,7 +807,7 @@ export class AgentLoop {
     return yield* this._callAndRoute(iteration, gate);
   }
 
-  /** 中断检查：软暂停（step 边界挂起，可续跑）、硬中止（signal aborted）与 block 插话消费在此裁决。
+  /** 中断检查：软暂停（step 边界挂起，可续跑）、硬中止（signal aborted）与排队插话消费在此裁决。
    *  暂停统一在 step 边界挂起，由 consumeExecutionStream 统一收口翻态写 pauseMeta。
    *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
   private async *_handleInterrupt(
@@ -834,25 +820,21 @@ export class AgentLoop {
       yield { type: 'paused' };
       return 'paused';
     }
-    // 合并外部取消 signal 与内部插话控制器 signal，让子方法同时响应两种中断
-    const effectiveSignal = AgentLoop.combineSignals(signal, this.interjectController.signal);
-    if (effectiveSignal?.aborted) {
-      // 插话控制器在 step 边界被 abort（interject() 在上一次迭代之后被调用），
-      // 直接返回 aborted，由 processUserInput 消费 pendingInterjections
-      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
-      return 'aborted';
-    }
-
-    // block 模式排队插话消费：inputInterrupt='block' 时 interject() 只入队不 abort
-    // （避免中断执行），排队内容在此 step 边界统一注入为 user 消息——否则 pending 永不被消费。
-    // allow 分支走上方 aborted 路径由 handleIterationResult 消费，这里只处理未 abort 的 block 排队。
+    // 排队插话消费（统一在 step 边界注入）：interject() 只入队不中断，排队内容在下一迭代开始前
+    // 统一注入为 user 消息（「申请 → 气口生效」，与 requestPause 同构）。abort 时同样消费（留档，
+    // 下一 turn 可见）；done 分支的兜底消费见 handleIterationResult。
     if (this.pendingInterjections.length > 0) {
       const contents = this.pendingInterjections.splice(0);
       for (const content of contents) {
         this.appendUserMessage(content);
       }
     }
-    return effectiveSignal;
+    // 硬中止检查：外部 signal（宿主取消/超时）。插话不再经独立 controller（单一模式，2026-09-04）
+    if (signal?.aborted) {
+      yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
+      return 'aborted';
+    }
+    return signal;
   }
 
   /** LLM 调用 + 结果路由：上下文准备 → 调 LLM → 按 abort/工具/纯文本 分支路由。
@@ -912,25 +894,10 @@ export class AgentLoop {
       });
     }
 
-    // ── 主动提问检测（step 级气口，2026-09-04 自 handleTextResponse 前移）──
-    // 不再只在「纯文本收尾」分支识别 `[ASK]`：工具轮正文同样解析（fullContent 含全部文本），
-    // 命中即 step 边界提问气口——提问优先于工具执行（工具调用不执行，续跑时 LLM 基于问题上下文重新决策）。
-    // 注意：提问时仅保留问题正文入史、不 append 带 toolCalls 的 assistant 消息——OpenAI 兼容端
-    // 要求 assistant.tool_calls 后必有配对 tool 结果（否则 400），故此处不落工具调用结构。
-    const pendingQuestions = this.extractAskQuestions(llmResult.fullContent);
-    if (pendingQuestions.length > 0) {
-      if (llmResult.fullContent) {
-        this.appendAssistantText(llmResult.fullContent);
-      }
-      this.onPendingQuestion?.(pendingQuestions);
-      for (const q of pendingQuestions) {
-        yield { type: 'question_pending', questions: [q] };
-      }
-      yield { type: 'paused' };
-      return 'paused';
-    }
-
     // ④ 结果路由：工具分支 / 纯文本结束分支
+    // 主动提问走 ask_user 内置工具（2026-09-04 通道收敛，替代已下线的 [ASK] 文本行）：
+    // 提问 = 一次普通工具调用，在 handleToolCalls 检出挂起；用户答案以 tool result 回填，
+    // 工具调用结构完整落地（不再「撕掉」工具），OpenAI 兼容端 assistant.tool_calls 恒有配对 tool 消息。
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
       // P2 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
       // 供宿主渲染「过程叙述」折叠行——正文已在流式阶段剥离（未见工具轮文本）。
@@ -1041,11 +1008,11 @@ export class AgentLoop {
     return { chatOpts, safeMessages };
   }
 
-  /** 工具调用分支 + Reflection（子方法 2/3） */
+  /** 工具调用分支 + Reflection（子方法 2/3）；ask_user 提问检出挂起（返回 'paused'） */
   private async *handleToolCalls(
     llmResult: LlmCallResult,
     signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'continue' | 'done', unknown> {
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'continue' | 'done' | 'paused', unknown> {
     // L2 策略阻止工具调用：跳过执行，仅保留文本内容
     if (this.strategy.toolCallsBlocked) {
       const blockedMsg = llmResult.fullContent.trim() || '（当前角色不允许调用工具）';
@@ -1069,6 +1036,17 @@ export class AgentLoop {
         '工具步数超限，截断至上限',
       );
       effectiveToolCalls = effectiveToolCalls.slice(0, this.strategy.toolStepLimit);
+    }
+
+    // 主动提问检出（ask_user 工具，2026-09-04 通道收敛，替代 [ASK] 文本行）：
+    // 提问 = 一次普通工具调用（对齐 Claude Code AskUserQuestion 机制）。检出 ask_user 且未达
+    // askLimit 上限 → 整轮挂起（其余工具不执行——提问是决策关口，答案未定前执行可能白跑），
+    // 用户答案经 answerQuestion 回填为 tool 结果后由宿主续跑，LLM 基于答案重新决策。
+    if (
+      effectiveToolCalls.some((tc) => tc.function.name === ASK_USER_TOOL.name) &&
+      this.askCountThisTurn < this.strategy.askLimit
+    ) {
+      return yield* this.handleAskUser(llmResult, effectiveToolCalls);
     }
 
     const execResult = yield* this.executeToolCalls(
@@ -1170,9 +1148,112 @@ export class AgentLoop {
     return 'continue';
   }
 
+  /**
+   * ask_user 提问挂起（step 边界气口，2026-09-04）：把提问作为普通工具轮落地，挂起等用户作答。
+   *
+   * 与插话/暂停统一的「申请 → 气口生效」语义：
+   * - assistant(toolCalls) 结构完整入史（含 ask_user），不再「撕掉」工具——OpenAI 兼容端
+   *   assistant.tool_calls 后必有配对 tool 消息（用户答案），结构恒合法；
+   * - 解析各 ask_user 参数为结构化 AskQuestion，yield question_pending 供宿主渲染提问 UI；
+   * - yield paused 挂起（consumeExecutionStream 统一翻 PAUSED + 写 pauseMeta），
+   *   用户作答后宿主调 answerQuestion() 回填 tool 结果，再 continueAfterPause() 续跑。
+   */
+  private async *handleAskUser(
+    llmResult: LlmCallResult,
+    toolCalls: NonNullable<Message['toolCalls']>,
+  ): AsyncGenerator<AgentChunk, 'paused', unknown> {
+    // 工具调用结构完整落地（提问就是工具轮，不撕毁任何调用）
+    this.appendAssistantToolCall(llmResult.fullContent, toolCalls);
+    const askCalls = toolCalls.filter((tc) => tc.function.name === ASK_USER_TOOL.name);
+    const questions = this.parseAskCalls(askCalls);
+    // turn 粒度计数：提问落地即累计（askLimit 硬护栏，防 LLM 反复提问刷打扰次数）
+    this.askCountThisTurn += questions.length;
+    this.pendingAsk = { toolCallIds: askCalls.map((tc) => tc.id), questions };
+    // 挂起等待用户作答（非自主工具步执行中，复位可续跑信号）
+    this.inAutonomousStep = false;
+    // loop 只回调不处理 UI：宿主应答 questionPending 事件渲染提问
+    this.onPendingQuestion?.(questions);
+    for (const q of questions) {
+      yield { type: 'question_pending', questions: [q] };
+    }
+    yield { type: 'paused' };
+    return 'paused';
+  }
+
+  /**
+   * 解析 ask_user 工具参数为结构化提问（question 必填；options/allowCustom 可选，缺失降级容忍）。
+   * 参数非 JSON/缺字段时降级为问题文本兜底（宿主渲染自有兜底，不抛错阻断工具轮）。
+   */
+  private parseAskCalls(askCalls: readonly { id: string; function: { arguments: string } }[]): AskQuestion[] {
+    return askCalls.map((tc) => {
+      let question = '';
+      let options: string[] | undefined;
+      let allowCustom: boolean | undefined;
+      try {
+        const parsed = JSON.parse(tc.function.arguments ?? '{}') as {
+          question?: string;
+          options?: string[];
+          allowCustom?: boolean;
+        };
+        question = typeof parsed.question === 'string' ? parsed.question : '';
+        options = Array.isArray(parsed.options)
+          ? parsed.options.filter((o): o is string => typeof o === 'string')
+          : undefined;
+        allowCustom = parsed.allowCustom;
+      } catch {
+        // 参数非法：降级为空问题（宿主渲染兜底，不阻断）
+      }
+      return {
+        slot: 'ask',
+        question,
+        ...(options && options.length > 0 ? { options } : {}),
+        ...(allowCustom !== undefined ? { allowCustom } : {}),
+      };
+    });
+  }
+
+  /**
+   * 回答在途提问（宿主在用户作答后调用，随后 continueAfterPause() 续跑）：
+   * 答案以 ask_user 工具的 tool result 回填（<tool_result> 包裹防注入，与 assistant.tool_calls 配对）。
+   * answers 与提问按序一对一；不足时复用最后一条/空串兜底。返回 false 表示无在途提问。
+   */
+  answerQuestion(answers: readonly string[]): boolean {
+    if (!this.pendingAsk) return false;
+    const { toolCallIds } = this.pendingAsk;
+    toolCallIds.forEach((id, i) => {
+      const answer = answers[i] ?? answers[answers.length - 1] ?? '';
+      this.appendToolMessage(
+        this.wrapToolResult(ASK_USER_TOOL.name, `[ASK_ANSWER] 用户回答：${answer}`),
+        id,
+      );
+    });
+    this.pendingAsk = undefined;
+    this.inAutonomousStep = false;
+    logger.info({ answers }, 'ask_user 已回填用户答案');
+    return true;
+  }
+
+  /**
+   * 取消在途提问（宿主「跳过/取消提问」时调用；runIterationLoop 续跑兜底也调用）：
+   * 以占位结果回填，防 assistant.tool_calls 无配对 tool 消息（OpenAI 兼容端 400）。
+   */
+  cancelAsk(): void {
+    if (!this.pendingAsk) return;
+    const { toolCallIds } = this.pendingAsk;
+    for (const id of toolCallIds) {
+      this.appendToolMessage(
+        this.wrapToolResult(ASK_USER_TOOL.name, '[ASK_ABORTED] 用户未回答该提问'),
+        id,
+      );
+    }
+    this.pendingAsk = undefined;
+    this.inAutonomousStep = false;
+    logger.info({ toolCallIds }, 'ask_user 提问已取消（占位结果回填）');
+  }
+
   /** 纯文本结束（子方法 3/3）：push assistant 消息（含空响应兜底）并 yield done。
-   *  注：`[ASK]` 主动提问检测已前移至 _callAndRoute 结果路由（step 级气口），
-   *  本方法只处理纯文本交付，不再承担提问暂停。 */
+   *  注：主动提问已收敛为 ask_user 工具（2026-09-04），本方法只处理纯文本交付，
+   *  不再承担提问暂停。 */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
@@ -1188,16 +1269,6 @@ export class AgentLoop {
 
     yield { type: 'done' };
     return 'done';
-  }
-
-  /**
-   * 提取 LLM 输出的结构化主动提问（行首 `[ASK]`，可多条；不含则返回空数组走正常对话流）
-   *
-   * 契约解析唯一归 utils/askParser（SSOT，2026-09-03 T1）；本方法仅补业务溯源字段 slot
-   * 后透传——宿主持同一份解析器渲染重放/复制，格式演化改一处即全局生效。
-   */
-  private extractAskQuestions(fullContent: string): AskQuestion[] {
-    return parseAskQuestions(fullContent).map((q) => ({ slot: 'ask', ...q }));
   }
 
   /** 确定当前回合任务类型（多模型路由）：含代码块→code；长文本(>500字符)→reasoning；其余→simple */
@@ -1498,6 +1569,18 @@ export class AgentLoop {
         continue;
       }
       blockedFlags.push(false);
+      // ask_user 硬护栏（askLimit 超限，2026-09-04）：拒绝该提问并回填拒绝文案。
+      // 走到这里说明未达上限的提问已在 handleToolCalls 检出挂起——此分支只兜「单轮内多次提问
+      // 超限」或「检出后计数已满」（同轮多个 ask_user 跨上限），拒绝后其余工具照常执行。
+      if (tc.function.name === ASK_USER_TOOL.name && this.askCountThisTurn >= this.strategy.askLimit) {
+        blockedFlags.push(true);
+        toolPromises.push(
+          Promise.resolve(
+            `[ASK_LIMIT] 本问答闭环已提问 ${this.strategy.askLimit} 次（上限），请基于现有信息继续，不要再调用 ask_user。`,
+          ),
+        );
+        continue;
+      }
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
       toolPromises.push(
         tc.function.name === COMPRESS_CONTEXT_TOOL.name

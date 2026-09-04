@@ -109,7 +109,6 @@
 | `streaming`          | `streaming` / `non-streaming` | —                  | `streaming` | 输出方式          | `"non-streaming"` |
 | `toolStepLimit`      | 整数                            | `0 ~ 100`（0=无限制）   | `20`        | 单轮工具调用步数上限    | `30`              |
 | `providerRouting`    | `auto` / `fixed`              | —                  | `auto`      | Provider 路由策略 | `"fixed"`         |
-| `inputInterrupt`     | `allow` / `block`             | —                  | `allow`     | 执行中是否可接受新输入   | `"block"`         |
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
 | `toolReadonly`       | `full` / `readonly`           | —                  | `full`      | 工具操作范围        | `"readonly"`      |
 | `toolApproval`       | `auto` / `confirm`            | —                  | `auto`      | 工具批准模式        | `"confirm"`       |

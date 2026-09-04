@@ -86,9 +86,9 @@ async function main(): Promise<void> {
     console.log(`🔔 questionPending 事件：${questions.map((q) => q.question).join('；')}`);
   });
 
-  // 第一轮：引导 LLM 用 [ASK] 输出一个澄清问题
+  // 第一轮：引导 LLM 用 ask_user 工具提问（2026-09-04 通道收敛，替代 [ASK] 文本）
   const input =
-    '请帮我写一个系统设计文档。但在动手前，请先用一行 `[ASK] 问题` 的格式问清楚：这个系统主要面向什么用户？只输出这一行问题，不要写别的内容。';
+    '请帮我写一个系统设计文档。但在动手前，请先调用 ask_user 工具问清楚：这个系统主要面向什么用户？只做这一步，不要执行其他工具。';
   const first = await collectFlow(agent.chat(input));
 
   console.log('\n=== 第一轮输出 ===');
@@ -99,18 +99,19 @@ async function main(): Promise<void> {
   const triggered = pendingQuestions.length > 0;
   console.log(`\n📊 questionPending 事件触发：${triggered ? '✅' : '⚠️'}`);
   if (!triggered) {
-    console.log('⚠️ 未触发主动提问，请人工判断 LLM 是否输出了 [ASK]');
+    console.log('⚠️ 未触发主动提问，请人工判断 LLM 是否调用了 ask_user');
   }
 
   // 判定2：是否进入暂停（PAUSED）
   const paused = first.events.includes('paused');
   console.log(`📊 进入暂停（paused chunk）：${paused ? '✅' : '⚠️'}`);
 
-  // 用户回答 → resumeExecution 续跑
+  // 用户回答 → answerQuestion 回填 + resumeExecution 续跑
   if (triggered && paused) {
     const answer =
       '目标用户是中小企业的前端工程师。请基于这个回答，继续给出系统设计文档的核心模块划分。';
     console.log(`\n💬 用户回答：${answer}`);
+    agent.answerQuestion([answer]);
     const second = await collectFlow(agent.resumeExecution(answer));
     console.log('\n=== 续跑输出 ===');
     console.log(second.text.slice(0, 800));

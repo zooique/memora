@@ -99,8 +99,8 @@ export type AgentChunk = (
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'paused' }
   /**
-   * 主动提问：LLM 结构化输出 `[ASK] 问题` 时 yield，Agent 暂停等用户在提问框回答；
-   * 用户回答走 resumeExecution 续跑（非 Trigger）。
+   * 主动提问（ask_user 工具，2026-09-04 通道收敛）：LLM 调 ask_user 时 yield，
+   * Agent 暂停等用户在提问框回答；用户回答经 answerQuestion 回填后 continueAfterPause 续跑（非 Trigger）。
    */
   | { type: 'question_pending'; questions: AskQuestion[] }
   /**
@@ -379,18 +379,20 @@ export interface StatusTransition {
 }
 
 /**
- * 结构化主动提问（LLM 输出 `[ASK] 问题 {A|B}` 行时解析）
+ * 结构化主动提问（ask_user 内置工具解析产物，2026-09-04 通道收敛替代 [ASK] 文本行）
  *
- * 原 composer 确定性补全问询已整条剪枝，本通道为唯一「提问后暂停」形态。
- * 是 LLM 对话流内的语义判断提问（区别于已移除的确定性槽位补全问询）。
+ * 唯一「提问后暂停」形态：LLM 调 ask_user 工具（question + 可选 options/allowCustom），
+ * loop 检出后挂起，用户答案以 tool result 回填（对齐 Claude Code AskUserQuestion 机制）。
  */
 export interface AskQuestion {
   /** 溯源槽位（当前恒为 'ask'，为未来扩展保留） */
   slot: string;
   /** 问题文本 */
   question: string;
-  /** 候选选项（LLM 以行内 `{A|B|C}` 声明，可点击选择） */
+  /** 候选选项（ask_user 工具 options 参数，宿主渲染可点击选项） */
   options?: string[];
+  /** 是否允许用户在选项外自由输入（ask_user 工具 allowCustom 参数，默认 false） */
+  allowCustom?: boolean;
 }
 
 // ─── Agent 门面类型 ─────────────────────────────────────

@@ -1960,15 +1960,20 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：执行中插话
-// 覆盖：中断工具执行 / 中断 LLM 回复 / 连续插话队列 / 插话后继续
+// 测试：执行中插话（单一模式：排队 → step 边界注入，2026-09-04）
+// 覆盖：排队不中断 / 连续插话队列 / done 收尾轮插话不丢 / 暂停后插话
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 执行中插话', () => {
-  it('interject() 应中断工具执行并注入插话内容', async () => {
-    // 工具执行耗时 100ms，interject 在 10ms 时触发
+  it('interject() 排队插话在 step 边界被注入，不中断当前工具执行', async () => {
+    // 工具执行耗时 100ms，interject 在 10ms 时触发（入队，等工具完成后注入）
+    let toolCompleted = false;
     const toolExecutor = vi.fn().mockImplementation(
-      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+      () =>
+        new Promise<string>((resolve) => setTimeout(() => {
+          toolCompleted = true;
+          resolve('工具结果');
+        }, 100)),
     );
 
     const loop = new AgentLoop({
@@ -1993,7 +1998,9 @@ describe('AgentLoop · 执行中插话', () => {
       chunks.push(chunk);
     }
 
-    // 插话内容应被注入为 user 消息
+    // 插话不中断工具执行：工具应完整跑完（单一模式「申请 → 气口生效」）
+    expect(toolCompleted).toBe(true);
+    // 插话内容应被注入为 user 消息（step 边界消费）
     const messages = loop.getMessages();
     expect(messages.some((m) => m.role === 'user' && m.content.includes('等等，我改主意了'))).toBe(true);
     // 应继续处理插话后的回复
@@ -2022,7 +2029,7 @@ describe('AgentLoop · 执行中插话', () => {
       toolExecutor,
     });
 
-    // 连续两次插话（同步调用，都入队列）
+    // 连续两次插话（同步调用，都入队列，step 边界一并注入）
     setTimeout(() => {
       loop.interject('第一次修正');
       loop.interject('第二次修正');
@@ -2046,36 +2053,10 @@ describe('AgentLoop · 执行中插话', () => {
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
 
-  it('TS-13 防残留：interjectController 残留 aborted 且排队已空 → 下一 turn 不误中止（假中断跨轮污染）', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '正常回答' }]),
-      bootstrapMemories: [],
-      toolExecutor: async () => 'ok',
-    });
-    // 构造残留态：上一闭环 interject 后排队内容已被消费（模拟「done 终止前消费 pending 但
-    // 控制器未重建」的旧漏洞路径），interjectController 仍 aborted + pendingInterjections 空
-    loop.interject('已消费的插话');
-    const exposed = loop as unknown as {
-      pendingInterjections: string[];
-      interjectController: AbortController;
-    };
-    exposed.pendingInterjections.length = 0;
-
-    // 新闭环入口 resetTurnState 应重建干净控制器 → 首迭代不被 _handleInterrupt 误判为用户取消
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('新一轮')) {
-      chunks.push(chunk);
-    }
-    // 修复前：首 chunk 为 aborted 且整轮无回答；修复后：正常走完产出 done
-    expect(chunks.some((c) => c.type === 'aborted')).toBe(false);
-    expect(chunks[chunks.length - 1]!.type).toBe('done');
-    expect(exposed.interjectController.signal.aborted).toBe(false);
-  }, 15000);
-
-  it('interject() 后 interjectController 应重建，支持多次插话', async () => {
-    // 两轮工具执行，每轮都被插话中断
+  it('排队插话在 step 边界被消费注入，未达上限不影响多工具轮（单轮插话 → 次轮注入）', async () => {
+    // 两轮工具执行，插话在第一轮工具执行中入队——不中断第二轮，但要保证插话被注入
     const toolExecutor = vi.fn().mockImplementation(
-      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 50)),
     );
 
     const loop = new AgentLoop({
@@ -2094,16 +2075,13 @@ describe('AgentLoop · 执行中插话', () => {
             ],
           },
         ],
-        [{ content: '两次插话都处理完毕' }],
+        [{ content: '插话已处理完毕' }],
       ]),
       bootstrapMemories: [],
       toolExecutor,
     });
 
-    // 第一次插话
-    setTimeout(() => loop.interject('第一次'), 10);
-    // 第二次插话（在第一次插话消费后重建的 controller 上触发）
-    setTimeout(() => loop.interject('第二次'), 50);
+    setTimeout(() => loop.interject('排队补充'), 10);
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2111,64 +2089,17 @@ describe('AgentLoop · 执行中插话', () => {
     }
 
     const messages = loop.getMessages();
-    const firstInjected = messages.some(
-      (m) => m.role === 'user' && m.content.includes('第一次'),
-    );
-    const secondInjected = messages.some(
-      (m) => m.role === 'user' && m.content.includes('第二次'),
-    );
-    expect(firstInjected).toBe(true);
-    expect(secondInjected).toBe(true);
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('排队补充'))).toBe(true);
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
 
-  it('inputInterrupt=block 时排队插话在 step 边界被消费注入（不中断执行）', async () => {
-    const toolExecutor = vi.fn().mockImplementation(
-      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 50)),
-    );
-    const loop = new AgentLoop({
-      // 两轮：先工具调用，再纯文本回复（block 插话排队后仍需继续到纯文本结束）
-      provider: mockMultiTurnProvider([
-        [
-          {
-            toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
-            ],
-          },
-        ],
-        [{ content: '已处理排队插话' }],
-      ]),
-      bootstrapMemories: [],
-      toolExecutor,
-    });
-    // 开启 block 模式：interject 只入队不 abort
-    loop.setStrategy({ inputInterrupt: 'block' });
-
-    // 工具执行中触发 block 插话（入队，不中断工具执行）
-    setTimeout(() => loop.interject('排队消息'), 10);
-
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('帮我处理')) {
-      chunks.push(chunk);
-    }
-
-    // 排队插话应在 step 边界被消费并注入为 user 消息（block 语义落实）
-    const messages = loop.getMessages();
-    expect(messages.some((m) => m.role === 'user' && m.content.includes('排队消息'))).toBe(true);
-    // 未因插话 abort，正常走到纯文本结束
-    expect(chunks[chunks.length - 1]!.type).toBe('done');
-    const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
-    expect(texts).toContain('已处理排队插话');
-  }, 15000);
-
-  it('K5 block 模式：纯文本结束轮期间排队插话不被静默丢弃', async () => {
-    // 场景：LLM 第一轮直接纯文本回复（done 结束轮），期间 block 插话排队。
-    // 修复前 done 分支直接 return false 终止，排队插话静默丢失；
-    // 修复后 done 分支消费插话并继续迭代。
+  it('纯文本结束轮期间排队插话不被静默丢弃', async () => {
+    // 场景：LLM 第一轮直接纯文本回复（done 结束轮），期间插话排队。
+    // done 分支消费插话并继续迭代（handleIterationResult 兜底），下一轮 LLM 必看到插话。
     let call = 0;
     const loop = new AgentLoop({
       provider: {
-        name: 'slow-block-mock',
+        name: 'slow-interject-mock',
         async *chat() {
           call++;
           if (call === 1) {
@@ -2184,9 +2115,8 @@ describe('AgentLoop · 执行中插话', () => {
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
-    loop.setStrategy({ inputInterrupt: 'block' });
 
-    // 第一轮 LLM 生成期间触发 block 插话（入队不打断）
+    // 第一轮 LLM 生成期间触发插话（入队不打断）
     setTimeout(() => loop.interject('补充说明'), 10);
 
     const chunks: AgentChunk[] = [];
@@ -2233,10 +2163,10 @@ describe('AgentLoop · continueAfterPause 中插话', () => {
     }
     expect(loop.getMessages()).toHaveLength(4);
 
-    // 暂停后插话（无 LLM 调用进行中，interjectController 在 step 边界被 abort）
+    // 暂停后插话（无 LLM 调用进行中，入队等待；resume 首迭代 step 边界消费）
     loop.interject('暂停后插话');
 
-    // resume：首迭代检测到 interjectController 已 abort → 消费插话队列 → 继续
+    // resume：首迭代 _handleInterrupt 消费排队插话 → 注入 user 消息 → 继续
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.continueAfterPause()) {
       chunks.push(chunk);
@@ -2543,11 +2473,29 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
   });
 });
 
-describe('AgentLoop · 主动提问 [ASK] 解析', () => {
-  it('LLM 输出含 [ASK] 时 yield question_pending 并返回 paused', async () => {
+describe('AgentLoop · 主动提问（ask_user 工具，2026-09-04 收敛替代 [ASK]）', () => {
+  it('LLM 调 ask_user 时结构完整落地（不撕工具）、yield question_pending 并返回 paused', async () => {
     const onPendingQuestion = vi.fn();
     const loop = new AgentLoop({
-      provider: mockProvider([{ content: '[ASK] 结尾想要什么基调？' }]),
+      provider: mockProvider([
+        {
+          content: '在继续前需要确认一下',
+          toolCalls: [
+            {
+              id: 'call_ask_1',
+              type: 'function',
+              function: {
+                name: 'ask_user',
+                arguments: JSON.stringify({
+                  question: '结尾想要什么基调？',
+                  options: ['欢快', '深沉'],
+                  allowCustom: true,
+                }),
+              },
+            },
+          ],
+        },
+      ]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
       onPendingQuestion,
@@ -2558,29 +2506,51 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
       chunks.push(chunk);
     }
 
-    // 触发 onPendingQuestion 回调，携带解析出的问题
+    // 触发 onPendingQuestion 回调，携带解析出的结构化问题
     expect(onPendingQuestion).toHaveBeenCalledTimes(1);
     expect(onPendingQuestion).toHaveBeenCalledWith([
-      { slot: 'ask', question: '结尾想要什么基调？' },
+      { slot: 'ask', question: '结尾想要什么基调？', options: ['欢快', '深沉'], allowCustom: true },
     ]);
     // yield 结构化 question_pending chunk
     const qp = chunks.filter((c) => c.type === 'question_pending');
     expect(qp).toHaveLength(1);
     if (qp[0]?.type === 'question_pending') {
       expect(qp[0].questions[0]!.question).toBe('结尾想要什么基调？');
+      expect(qp[0].questions[0]!.options).toEqual(['欢快', '深沉']);
     }
-    // 最后是 paused，而非 done（等待用户回答后续跑）
+    // 工具调用结构完整入史（assistant.tool_calls 含 ask_user，不再「撕掉」）
+    const messages = loop.getMessages();
+    const assistantToolCalls = messages.find((m) => m.role === 'assistant' && m.toolCalls);
+    expect(assistantToolCalls?.toolCalls?.[0]?.function.name).toBe('ask_user');
+    // 最后是 paused（step 边界气口，等待用户回答后经 answerQuestion + continueAfterPause 续跑）
     expect(chunks[chunks.length - 1]!.type).toBe('paused');
   });
 
-  it('支持一行内多条 [ASK] 分别解析', async () => {
+  it('多个 ask_user 调用分别解析为多个提问', async () => {
+    const onPendingQuestion = vi.fn();
     const loop = new AgentLoop({
       provider: mockProvider([
-        { content: '[ASK] 主角职业是？\n[ASK] 故事发生在哪个城市？' },
+        {
+          toolCalls: [
+            {
+              id: 'q1',
+              type: 'function',
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '主角职业是？' }) },
+            },
+            {
+              id: 'q2',
+              type: 'function',
+              function: {
+                name: 'ask_user',
+                arguments: JSON.stringify({ question: '故事发生在哪个城市？', options: ['上海', '北京'] }),
+              },
+            },
+          ],
+        },
       ]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
-      onPendingQuestion: vi.fn(),
+      onPendingQuestion,
     });
 
     const chunks: AgentChunk[] = [];
@@ -2588,6 +2558,11 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
       chunks.push(chunk);
     }
 
+    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
+    expect(onPendingQuestion).toHaveBeenCalledWith([
+      { slot: 'ask', question: '主角职业是？' },
+      { slot: 'ask', question: '故事发生在哪个城市？', options: ['上海', '北京'] },
+    ]);
     const qp = chunks.filter((c) => c.type === 'question_pending');
     expect(qp).toHaveLength(2);
     if (qp[0]?.type === 'question_pending') {
@@ -2598,98 +2573,47 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
     }
   });
 
-  it('普通输出不含 [ASK] 时走正常对话流（不误判）', async () => {
+  it('普通工具轮（无 ask_user）不误触发提问', async () => {
     const onPendingQuestion = vi.fn();
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
     const loop = new AgentLoop({
-      provider: mockProvider([{ content: '好的，这是一个普通回复，没有提问。' }]),
+      provider: mockProvider([
+        {
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+          ],
+        },
+      ]),
       bootstrapMemories: [],
-      toolExecutor: vi.fn(),
+      toolExecutor,
       onPendingQuestion,
     });
 
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('打招呼')) {
+    for await (const chunk of loop.processUserInput('读取文件')) {
       chunks.push(chunk);
     }
 
     expect(onPendingQuestion).not.toHaveBeenCalled();
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(false);
-    // 最后是 done（正常结束）
-    expect(chunks[chunks.length - 1]!.type).toBe('done');
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
   });
 
-  it('解析 [ASK] 行尾 `{A|B|C}` 候选选项：问题与选项分离、半角全角均兼容', async () => {
-    const onPendingQuestion = vi.fn();
-    const loop = new AgentLoop({
-      // 半角括号 + 半角分隔 / 全角括号 + 全角分隔 混合验证
-      provider: mockProvider([
-        { content: '[ASK] 选择故事基调 {温馨|悬疑|热血}\n[ASK] 主角身份是？｛勇者｜法师｝' },
-      ]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      onPendingQuestion,
-    });
-
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('写个故事')) {
-      chunks.push(chunk);
-    }
-
-    // 问题文本剔除选项部分，选项按分隔符拆分且去首尾空白
-    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
-    expect(onPendingQuestion).toHaveBeenCalledWith([
-      { slot: 'ask', question: '选择故事基调', options: ['温馨', '悬疑', '热血'] },
-      { slot: 'ask', question: '主角身份是？', options: ['勇者', '法师'] },
-    ]);
-    // chunk 通道同样携带 options
-    const qp = chunks.filter((c) => c.type === 'question_pending');
-    expect(qp).toHaveLength(2);
-    if (qp[0]?.type === 'question_pending') {
-      expect(qp[0].questions[0]!.options).toEqual(['温馨', '悬疑', '热血']);
-    }
-    if (qp[1]?.type === 'question_pending') {
-      expect(qp[1].questions[0]!.options).toEqual(['勇者', '法师']);
-    }
-  });
-
-  it('花括号内无分隔符时按普通问题处理（不误吞普通花括号字面量）', async () => {
-    const onPendingQuestion = vi.fn();
-    const loop = new AgentLoop({
-      // `{...}` 内不含 | → 整行视为问题文本，不解析 options
-      provider: mockProvider([{ content: '[ASK] 参考代码模板 {示例} 可用吗？' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      onPendingQuestion,
-    });
-
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('写代码')) {
-      chunks.push(chunk);
-    }
-
-    expect(onPendingQuestion).toHaveBeenCalledTimes(1);
-    expect(onPendingQuestion).toHaveBeenCalledWith([
-      { slot: 'ask', question: '参考代码模板 {示例} 可用吗？' },
-    ]);
-    const qp = chunks.filter((c) => c.type === 'question_pending');
-    if (qp[0]?.type === 'question_pending') {
-      expect(qp[0].questions[0]!.options).toBeUndefined();
-    }
-  });
-
-  it('工具轮 [ASK] + 工具调用并存 → 提问优先（step 级气口），工具不执行', async () => {
+  // 观察项 1 回归测试：工具轮提问不再「撕工具」
+  it('ask_user 与普通工具并存 → 整轮挂起：工具调用结构保留入史且不执行（不再撕掉）', async () => {
     const onPendingQuestion = vi.fn();
     const toolExecutor = vi.fn().mockResolvedValue('文件内容');
     const loop = new AgentLoop({
-      // 同一 chunk 携带 [ASK] 正文 + toolCalls：工具轮文本虽被 P2 叙述剥离，[ASK] 仍应识别为提问
+      // 同一工具轮携带 ask_user + read_file（提问决策关口：整轮挂起，等答案后续跑重新决策）
       provider: mockProvider([
         {
-          content: '让我先确认一下。\n[ASK] 需要读取哪个文件？',
+          content: '先确认再读取',
           toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
             {
-              id: 'call_1',
+              id: 'c2',
               type: 'function',
-              function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '读取哪个文件？' }) },
             },
           ],
         },
@@ -2704,16 +2628,163 @@ describe('AgentLoop · 主动提问 [ASK] 解析', () => {
       chunks.push(chunk);
     }
 
-    // 工具轮正文的 [ASK] 也被识别（不再被剥离为叙述）
+    // 提问被检出：question_pending + paused（不执行任何工具）
     expect(onPendingQuestion).toHaveBeenCalledTimes(1);
-    expect(onPendingQuestion).toHaveBeenCalledWith([
-      { slot: 'ask', question: '需要读取哪个文件？' },
-    ]);
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
-    // 提问优先于工具执行：工具不被调用
     expect(toolExecutor).not.toHaveBeenCalled();
-    // 最后 paused（step 边界气口，等待用户回答续跑）
+    // 工具调用结构完整入史（含 read_file 与 ask_user 两个调用——修复前这里被「撕掉」只剩问题文本）
+    const messages = loop.getMessages();
+    const assistant = messages.find((m) => m.role === 'assistant' && m.toolCalls);
+    const names = assistant?.toolCalls?.map((tc) => tc.function.name);
+    expect(names).toContain('read_file');
+    expect(names).toContain('ask_user');
     expect(chunks[chunks.length - 1]!.type).toBe('paused');
+
+    // 用户回答后：answerQuestion 回填 tool 结果（与 assistant.tool_calls 配对，结构合法）→ 续跑
+    expect(loop.answerQuestion(['a.ts'])).toBe(true);
+    const chunks2: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      chunks2.push(chunk);
+    }
+    expect(chunks2.some((c) => c.type === 'aborted')).toBe(false);
+  });
+
+  it('answerQuestion 以 tool result 回填用户答案（结构化配对）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([
+        {
+          toolCalls: [
+            {
+              id: 'q1',
+              type: 'function',
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '基调选择？' }) },
+            },
+          ],
+        },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    for await (const {} of loop.processUserInput('故事')) {
+      // drain 到 paused
+    }
+
+    // 回答前：pendingAsk 在途，回填前 messages 尾部是 assistant(toolCalls)（无配对 tool）
+    expect(loop.answerQuestion(['欢快'])).toBe(true);
+    const messages = loop.getMessages();
+    const lastTool = messages.find((m) => m.role === 'tool' && m.toolCallId === 'q1');
+    expect(lastTool).toBeDefined();
+    expect(lastTool?.content).toContain('[ASK_ANSWER] 用户回答：欢快');
+    // 重复回答（无在途提问）返回 false
+    expect(loop.answerQuestion(['再次回答'])).toBe(false);
+  });
+
+  it('未回答直接续跑 → cancelAsk 兜底补占位 tool 结果（防结构非法/400）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              {
+                id: 'q1',
+                type: 'function',
+                function: { name: 'ask_user', arguments: JSON.stringify({ question: '确认继续？' }) },
+              },
+            ],
+          },
+        ],
+        [{ content: '好的，继续' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务')) {
+      chunks.push(chunk);
+    }
+    expect(chunks[chunks.length - 1]!.type).toBe('paused');
+
+    // 宿主漏调 answerQuestion/cancelAsk 直接续跑 → runIterationLoop 顶部自动 cancelAsk 兜底
+    const chunks2: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      chunks2.push(chunk);
+    }
+    const messages = loop.getMessages();
+    const lastTool = messages.find((m) => m.role === 'tool' && m.toolCallId === 'q1');
+    expect(lastTool).toBeDefined();
+    expect(lastTool?.content).toContain('[ASK_ABORTED]');
+    // 续跑正常完成（无 400 结构问题）
+    expect(chunks2.some((c) => c.type === 'aborted')).toBe(false);
+    expect(chunks2[chunks2.length - 1]!.type).toBe('done');
+  });
+
+  it('askLimit 硬护栏：turn 内超限后 ask_user 被拒绝（不挂起，回填拒绝文案）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // turn1：首次提问（允许，挂起）
+        [
+          {
+            toolCalls: [
+              {
+                id: 'q1',
+                type: 'function',
+                function: { name: 'ask_user', arguments: JSON.stringify({ question: '先确认' }) },
+              },
+            ],
+          },
+        ],
+        // turn2：超限后再问（应被拒绝，不挂起）
+        [
+          {
+            toolCalls: [
+              {
+                id: 'q2',
+                type: 'function',
+                function: { name: 'ask_user', arguments: JSON.stringify({ question: '再确认' }) },
+              },
+            ],
+          },
+        ],
+        // turn3：正常工具轮
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    // 硬护栏上限 = 1（默认 3）
+    loop.setStrategy({ askLimit: 1 });
+
+    // turn1：提问挂起
+    const chunks1: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务')) {
+      chunks1.push(chunk);
+    }
+    expect(chunks1[chunks1.length - 1]!.type).toBe('paused');
+    loop.answerQuestion(['好']);
+
+    // turn2：超限拒绝（走 executeToolCalls 拦截，non-blocking——不 pause，继续工具轮）
+    const chunks2: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      chunks2.push(chunk);
+    }
+    const messages = loop.getMessages();
+    // q2 的 tool 结果为拒绝文案（[ASK_LIMIT]），非占位/答案
+    const q2Tool = messages.find((m) => m.role === 'tool' && m.toolCallId === 'q2');
+    expect(q2Tool?.content).toContain('[ASK_LIMIT]');
+    // read_file 正常执行，整个过程无第二次 paused
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
+    expect(chunks2.some((c) => c.type === 'paused')).toBe(false);
+    expect(chunks2[chunks2.length - 1]!.type).toBe('done');
   });
 });
 

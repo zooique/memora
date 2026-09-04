@@ -633,7 +633,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean; iterationLimitReached?: boolean }, unknown> {
     let content = '';
     let aborted = false;
-    // 软暂停标记：loop 在 step 边界挂起（用户 requestPause / [ASK] 主动提问）时置真，
+    // 软暂停标记：loop 在 step 边界挂起（用户 requestPause / ask_user 主动提问）时置真，
     // 供编排器据此推迟摘要——回合未完成不产摘要，保摘要与外部输入 1:1
     let paused = false;
     // 迭代上限标志：loop 因 maxIterations/stepBudget 上限而终止时置真
@@ -646,7 +646,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (chunk.type === 'paused') {
           const pendingInfo = this._sessionManager?.consumePendingPause();
           // 暂停收口统一写 pauseMeta：reason/source 取自 pendingPause（与状态机一致）。
-          // [ASK] 主动提问等"直接暂停路径"不走 loop.onPaused，在此自然补齐，
+          // ask_user 主动提问等"直接暂停路径"不走 loop.onPaused，在此自然补齐，
           // 重启后宿主可展示"为什么暂停 + 问了什么"
           const pauseReason = pendingInfo?.reason ?? '用户主动暂停';
           const pauseSource = pendingInfo?.source ?? 'user';
@@ -809,11 +809,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 执行中插话
+   * 执行中插话（申请）：把用户补充输入排队，当前 step 完成后在 step 边界统一注入为 user 消息。
    *
-   * 在 LLM 执行过程中插入用户输入并中断当前调用，注入下一轮继续处理。
-   * 与 requestPause 区别：requestPause 在边界挂起保留上下文待续跑；interject 立即中断、注入新内容继续，用户无感知
-   * （调用链：Agent.interject → AgentLoop.interject → abort interjectController → 消费 pendingInterjections → 注入 user 消息继续循环）。
+   * 与 requestPause（step 边界挂起待续跑）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
+   * 只在边界拿到补充输入后开始下一轮 step。插话是唯一写入口（interject → pendingInterjections 排队），
+   * 无「立即中断」模式：收紧为单一模式（2026-09-04，inputInterrupt 键已删除）。
    *
    * TS-9 归属：插话同时以「补充」交互输入持久化到当前闭环节点（interactiveInputs），
    * 保证跨重启重放时插话内容不丢失、不分裂新轮。持久化 fire-and-forget（appendUser 内部
@@ -833,14 +833,26 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 设置运行时插话模式（无缝 vs 打断）。
-   * - 'block'（无缝）：interject() 将输入排队，在下一 step 边界统一注入为 user 消息，不中断当前执行；
-   * - 'allow'（默认）：interject() 立即中断当前 LLM/工具调用、注入后继续循环。
-   * 宿主若要实现「loop 中直接输入补充内容、不打断执行」的无缝注入，应在发起 chat 前设为 'block'。
+   * 放弃在途主动提问（ask_user 工具挂起后，宿主「跳过/取消提问」时调用）：
+   * 委托 loop.cancelAsk 补占位 tool 结果（防 assistant.tool_calls 无配对 → 400），
+   * 随后 resumeExecution() 续跑。与 answerQuestion 二选一消费在途提问。
    */
-  setInputInterrupt(mode: 'allow' | 'block'): void {
-    this.assertInitialized('setInputInterrupt');
-    this.requireLoop.setStrategy({ inputInterrupt: mode });
+  cancelAsk(): void {
+    this.assertInitialized('cancelAsk');
+    this.requireLoop.cancelAsk();
+  }
+
+  /**
+   * 回答在途主动提问（ask_user 工具，2026-09-04 通道收敛替代 [ASK]）：
+   * 答案以 ask_user 的 tool result 回填（与 assistant.tool_calls 配对，结构合法）。
+   * 调用后宿主以 resumeExecution(回答文本, undefined, 'question-answer') 续跑——
+   * 回答文本同时作为新 user 输入注入并记录为闭环节点交互输入（round 不分裂），
+   * 与既有续跑主流程一致（本方法只负责结构化回填，不做历史记录，避免双写）。
+   * 返回 false 表示无在途提问（提供方未调用 / 已消费）。
+   */
+  answerQuestion(answers: readonly string[]): boolean {
+    this.assertInitialized('answerQuestion');
+    return this.requireLoop.answerQuestion(answers);
   }
 
   /**

@@ -184,7 +184,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'streaming',
       'toolStepLimit',
       'providerRouting',
-      'inputInterrupt',
       'multiStepReasoning',
       'toolReadonly',
       'toolApproval',

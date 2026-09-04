@@ -86,6 +86,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   run_skill_script: 'non-idempotent',
   // register_work：写 JSON 索引（同 path+description → 同记录），以 source 为业务键实现幂等
   register_work: 'idempotent-key',
+  // ask_user：read-only 语义——提问的目标态（用户答案）天然可变，永不跳过（跳过=丢问题）
+  ask_user: 'read-only',
   // 条件工具（宿主注入对应 provider 才暴露）：
   // web_fetch：读操作，永不跳过（read-only）
   // run_code：任意代码执行，有副作用（计算/IO），如实标记非幂等（重复执行结果不可预期）
@@ -196,6 +198,42 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
       },
     },
     required: [],
+  },
+};
+
+/**
+ * ask_user 内置工具定义（主动提问唯一通道，2026-09-04 收敛替代 [ASK] 文本行）
+ *
+ * 对齐 Claude Code AskUserQuestion 机制：提问 = 一次普通工具调用（Tool Calling）。
+ * loop 检出 ask_user → 整轮挂起（step 边界气口）→ 用户答案以 tool result 回填 →
+ * LLM 基于答案续跑。工具调用结构完整落地（不再「撕掉」），OpenAI 兼容端结构恒合法。
+ *
+ * 独立导出常量（同 COMPRESS_CONTEXT_TOOL 的「loop 拦截执行」模式）：供 loop/toolExecutor
+ * 引用常量名，避免散落字符串工具名导致契约漂移；BUILTIN_TOOLS 数组同样引用本常量。
+ */
+export const ASK_USER_TOOL: ToolDefinition = {
+  name: 'ask_user',
+  description:
+    '向用户提问（结构化）——当需要用户做决策、补充关键信息、或确认时使用：系统会暂停当前执行，' +
+    '在 step 边界向用户展示提问，用户答案会作为本工具的结果返回给你，你据此继续。' +
+    '提供候选选项（options）可提升回答效率；不提供时用户自由输入（可设 allowCustom）。',
+  // 永不跳过（幂等映射 read-only）：提问的目标态（用户答案）天然可变，跳过会丢问题
+  readonly: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      question: { type: 'string', description: '要问用户的问题（一句话，清晰具体）' },
+      options: {
+        type: 'array',
+        description: '候选选项（可选，用户可直接点选）：各项为选项文本；省略时用户自由输入',
+        items: { type: 'string', properties: {}, required: [] },
+      },
+      allowCustom: {
+        type: 'string',
+        description: '是否允许用户在选项外自由输入："true" / "false"，默认 "false"（options 为空时无效）',
+      },
+    },
+    required: ['question'],
   },
 };
 
@@ -409,6 +447,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   // ── 两级空间管理·第二级压缩（LLM 主动触发兜底）──────
   COMPRESS_CONTEXT_TOOL,
+  // ── 主动提问（ask_user 工具，loop 检出挂起；2026-09-04 唯一提问通道）──
+  ASK_USER_TOOL,
   // ── 任务表管理工具 ──────────────────────────────
   {
     name: 'task_table_write',

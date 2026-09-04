@@ -115,10 +115,10 @@ role-packs/小说写作/
   - `ambiguity`：指令歧义（"结尾想要什么基调？"）
   - `decision`：关键决策点（"反转落在人身上还是猫身上？"）
   - `missing_info`：缺前置事实（"主角职业是？"）
-- **机制**：prompt 级指令注入——`assembleRolePack()` 将 `askOn`/`askLimit` 转为 LLM 指令（"当遇到模糊不清时主动提问"），LLM 提问时以**结构化形式输出**（如 `[ASK] 问题文本`），内核**确定性解析**为 `question_pending` 事件（问题文本 + 挂起原因），用户自然回复。**不引入运行时暂停通道，也不靠宿主从 text chunk 猜"是不是提问"**——结构化输出 + 确定性解析（约定优于检测），避免"检测提问 vs 陈述"的不可靠启发式（SSOT §2.2 输入触发；agent-design-philosophy §13.x 事件契约）。
-- **MVP 形态**：问题文本 + 补充输入窗口（宿主基于 `question_pending` 事件渲染提问 UI）
-- **约束**：`askLimit` 默认 3（超限按默认方案继续并在输出标注不确定性）；问题文本过输出护栏；提问挂起不计入 `maxRoundDuration`
-- **答复继续**：`resumeExecution(答复)` 注入，走恢复通道非 Trigger 通道（不触发 recall/角色重匹配）
+- **机制**：prompt 级指令注入——`assembleRolePack()` 将 `askOn`/`askLimit` 转为 LLM 指令（"当遇到模糊不清时主动提问"）。LLM 以 **`ask_user` 内置工具**提问（2026-09-04 收敛，对齐 Claude Code AskUserQuestion；参数 question + 可选 options/allowCustom），loop 检出后整轮挂起，用户答案经 `answerQuestion()` 以 **tool result 回填**后续跑。**不引入运行时暂停通道，也不靠宿主从 text chunk 猜"是不是提问"**——工具调用 + 确定性检出（约定优于检测），避免"检测提问 vs 陈述"的不可靠启发式（SSOT §2.2 输入触发；agent-design-philosophy §13.x 事件契约）。
+- **MVP 形态**：选项/自由文本提问框（宿主基于 `question_pending` 事件渲染提问 UI，answerQuestion 回填后 resumeExecution 续跑）
+- **约束**：`askLimit` 默认 3（硬护栏，超限回填 `[ASK_LIMIT]` 按默认方案继续）；问题文本过输出护栏；提问挂起不计入 `maxRoundDuration`
+- **答复继续**：`answerQuestion(答复)` 回填（tool 结果结构化配对）+ `resumeExecution(答复, undefined, 'question-answer')` 注入，走恢复通道非 Trigger 通道（不触发 recall/角色重匹配）
 
 ### 三·一 自审查轮（MVP 内）
 

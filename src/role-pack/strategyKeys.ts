@@ -125,7 +125,6 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     // 工具步数上限（0~MAX_TOOL_STEP_LIMIT，0=无限制）
     toolStepLimit: intRange(0, MAX_TOOL_STEP_LIMIT),
     providerRouting: { kind: 'enum', values: ['auto', 'fixed'] },
-    inputInterrupt: { kind: 'enum', values: ['allow', 'block'] },
     multiStepReasoning: { kind: 'enum', values: ['auto', 'manual'] },
     toolReadonly: { kind: 'enum', values: ['full', 'readonly'] },
     toolApproval: { kind: 'enum', values: ['auto', 'confirm'] },

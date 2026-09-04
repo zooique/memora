@@ -75,17 +75,17 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 16 个工具', () => {
+    it('应注册 17 个工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(16);
+      expect(names.length).toBe(17);
       expect(names).toContain('delete_file');
     });
 
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 16 + 条件 4（web_search / web_fetch / run_code / search_project）
-      expect(names.length).toBe(20);
+      // 始终内置 17 + 条件 4（web_search / web_fetch / run_code / search_project）
+      expect(names.length).toBe(21);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');

@@ -1913,20 +1913,20 @@ class SingleToolThenTextProvider extends LlmProvider {
 }
 
 /**
- * [ASK] 主动提问 → 回答 → 续跑 Provider（集成测试专用）
+ * ask_user 主动提问 → 回答 → 续跑 Provider（集成测试专用，2026-09-04 通道收敛替代 [ASK]）
  *
  * 设计要点（对抗式复核）：
  * - 摘要生成器（RoundSummaryGenerator）用主 provider 生成摘要——识别系统标记
  *   '对话摘要生成器' 返回有效 JSON，同时累计 summaryRequestCount 作为「恒 1:1」断言依据。
- * - 主对话按「是否已输出过 [ASK]」分岔：首轮输出 [ASK] 挂起等待回答；续跑轮
- *   （上下文含问题 + 用户回答）正常作答，不再触发 [ASK]。
+ * - 主对话按「是否已发出过 ask_user」分岔：首轮调 ask_user 工具挂起等待回答；续跑轮
+ *   （上下文含 assistant.tool_calls + 用户回答 tool 结果）正常作答，不再提问。
  * - 记录续跑轮收到的完整消息列表（resumeMessages），供断言续跑上下文含「问题 + 回答」。
  */
 class AskThenResumeProvider extends LlmProvider {
   readonly name = 'mock-ask-resume';
   /** 摘要生成请求计数（RoundSummaryGenerator 调用次数 = 已产 round-summary 条数） */
   summaryRequestCount = 0;
-  /** 首轮是否已输出 [ASK]（分岔：首轮挂起，续跑轮正常作答） */
+  /** 首轮是否已发出 ask_user（分岔：首轮挂起，续跑轮正常作答） */
   private asked = false;
   /** 续跑轮（第二轮主对话）收到的完整消息列表，供断言上下文含问题 + 回答 */
   resumeMessages: Message[] | null = null;
@@ -1941,8 +1941,8 @@ class AskThenResumeProvider extends LlmProvider {
       return;
     }
     // 会话命名助手调用（SessionNamer fire-and-forget，无 system 消息）：返回标题 JSON，
-    // 不消耗主对话「是否已 [ASK]」分岔状态——否则注入 sessionStore 的测试里
-    // 首条消息异步命名会抢先吞掉首次 [ASK]（TS-9 集成测试实测差异点）
+    // 不消耗主对话「是否已 ask_user」分岔状态——否则注入 sessionStore 的测试里
+    // 首条消息异步命名会抢先吞掉首次提问（TS-9 集成测试实测差异点）
     const firstUser = messages.find((m) => m.role === 'user')?.content;
     if (typeof firstUser === 'string' && firstUser.startsWith('你是会话命名助手。')) {
       yield { content: JSON.stringify({ title: '测试会话' }) };
@@ -1951,12 +1951,24 @@ class AskThenResumeProvider extends LlmProvider {
     }
     if (!this.asked) {
       this.asked = true;
-      // 首轮：[ASK] 主动提问，问题全文入史后暂停等待用户回答
-      yield { content: '在读取文件前需要确认：\n[ASK] 你想读哪个文件？' };
+      // 首轮：ask_user 主动提问（工具调用结构完整落地，挂起等用户回答；答后经 answerQuestion 回填）
+      yield {
+        content: '在读取文件前需要确认：',
+        toolCalls: [
+          {
+            id: 'ask-1',
+            type: 'function',
+            function: {
+              name: 'ask_user',
+              arguments: JSON.stringify({ question: '你想读哪个文件？' }),
+            },
+          },
+        ],
+      };
       yield { finishReason: 'stop' };
       return;
     }
-    // 续跑轮：上下文应含「问题 + 用户回答」（用户回答已注入 messages），正常收尾
+    // 续跑轮：上下文应含「assistant.tool_calls(ask_user) + 用户回答 tool 结果」（答案已回填），正常收尾
     this.resumeMessages = messages;
     yield { content: '好的，继续执行。' };
     yield { finishReason: 'stop' };
@@ -2147,7 +2159,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(agent.requestPause('崩溃后的暂停', 'user')).toBe(true);
   });
 
-  it('Agent 级集成：[ASK] 主动提问 → 暂停不产摘要 → 回答续跑 → 恒 1:1 摘要', { timeout: 30000 }, async () => {
+  it('Agent 级集成：ask_user 主动提问 → 暂停不产摘要 → 回答续跑 → 恒 1:1 摘要', { timeout: 30000 }, async () => {
     const askProvider = new AskThenResumeProvider();
     agent = new Agent({
       projectPath: tmpProject,
@@ -2159,7 +2171,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     });
     await agent.init();
 
-    // ── (a)(b)：首轮 [ASK] 主动提问 ─────────────────────────────
+    // ── (a)(b)：首轮 ask_user 主动提问 ─────────────────────────
     const pendingEvents: unknown[] = [];
     agent.on('questionPending', (data: unknown) => pendingEvents.push(data));
 
@@ -2171,15 +2183,14 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     // 结构化 question_pending 事件发射（宿主可渲染提问 UI）+ 流中 question_pending chunk
     expect(pendingEvents.length).toBe(1);
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
-    // 会话进入 PAUSED（[ASK] 主动提问走软暂停，等待用户回答续跑）
+    // 会话进入 PAUSED（主动提问走软暂停，等待用户回答续跑）
     expect(agent.sessionManager!.status).toBe('paused');
-    // (a) 问题全文入史：历史中 assistant 消息含 [ASK] 问题文本
-    const historyText = agent
+    // (a) 工具调用结构完整入史：assistant.tool_calls 含 ask_user（修复前被「撕掉」只剩文本）
+    const historyToolCalls = agent
       .getMessages()
-      .filter((m) => m.role === 'assistant')
-      .map((m) => String(m.content))
-      .join('\n');
-    expect(historyText).toContain('[ASK] 你想读哪个文件？');
+      .flatMap((m) => m.toolCalls ?? [])
+      .map((tc) => tc.function.name);
+    expect(historyToolCalls).toContain('ask_user');
     // 暂停原因/来源落检查点（收口统一写：source='agent'，重启后宿主可展示"为什么暂停 + 问了什么"）
     const pauseMeta = agent.sessionManager!.getCheckpoint()!.pauseMeta;
     expect(pauseMeta).toBeDefined();
@@ -2188,17 +2199,24 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(askProvider.summaryRequestCount).toBe(0);
 
     // ── (c)(d)：回答续跑 → 恒 1:1 摘要 ──────────────────────────
-    for await (const chunk of agent.resumeExecution('我想读 probe.txt')) {
+    // 双轨道：answerQuestion 结构化回填 tool 结果 + resumeExecution(回答, 'question-answer')
+    // 记录回答为闭环节点交互输入并走完整续跑主流程
+    expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
+    for await (const chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
       chunks.push(chunk as { type: string; content?: string; questions?: unknown });
     }
     expect(agent.sessionManager!.status).toBe('running');
 
-    // (c) 续跑上下文含「问题 + 回答」：LLM 下一轮可见自己问过什么 + 用户回答
-    const resumeText = (askProvider.resumeMessages ?? [])
+    // (c) 续跑上下文含「问题 + 回答」：LLM 下一轮可见自己问过的工具调用 + 用户回答（tool 结果）
+    const resumeToolCalls = (askProvider.resumeMessages ?? [])
+      .flatMap((m) => m.toolCalls ?? [])
+      .map((tc) => tc.function.name);
+    expect(resumeToolCalls).toContain('ask_user');
+    const resumeToolResults = (askProvider.resumeMessages ?? [])
+      .filter((m) => m.role === 'tool')
       .map((m) => String(m.content))
       .join('\n');
-    expect(resumeText).toContain('[ASK] 你想读哪个文件？');
-    expect(resumeText).toContain('我想读 probe.txt');
+    expect(resumeToolResults).toContain('[ASK_ANSWER] 用户回答：我想读 probe.txt');
 
     // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
     await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
@@ -2631,7 +2649,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
   let roundStore: InMemoryRoundStore;
   // 真实内存 Session Store：检查点持久化 + roundIds 会话登记（重启复现依赖）
   let sessionStore: InMemorySessionStore;
-  // 与 AskThenResumeProvider 同步的提问-续跑 provider（首轮 [ASK] 主动提问 → 续跑正常作答）
+  // 与 AskThenResumeProvider 同步的提问-续跑 provider（首轮 ask_user 主动提问 → 续跑正常作答）
   let askProvider: AskThenResumeProvider;
 
   beforeEach(() => {
@@ -2685,18 +2703,19 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     agent = makeTs9Agent();
     await agent.init();
 
-    // ── (1) 首轮：LLM 主动提问（[ASK]）→ 暂停，prepare 已分配闭环节点 roundId ──
+    // ── (1) 首轮：LLM 主动提问（ask_user 工具）→ 暂停，prepare 已分配闭环节点 roundId ──
     for await (const _chunk of agent.chat('帮我读取一个文件')) {
       void _chunk; // 仅消费流，断言看状态机与 RoundStore
     }
     expect(agent.sessionManager!.status).toBe('paused');
     const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
     expect(anchorRoundId).toBeTruthy();
-    // round 尚未完成（暂停轮不落 [ASK] assistant 段），但闭环节点已建立
+    // round 尚未完成（暂停轮不落 ask_user 的 tool 结果段），但闭环节点已建立
     let closure = currentClosure();
     expect(closure.id).toBe(anchorRoundId);
 
-    // ── (2) 用户回答主动提问（question-answer）→ 归属同一闭环节点 ──
+    // ── (2) 用户回答主动提问（answerQuestion 回填 + 带回答续跑）→ 归属同一闭环节点 ──
+    expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
     for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
       void _chunk; // 仅消费流
     }
@@ -2743,6 +2762,8 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(agent.sessionManager!.status).toBe('paused');
     const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
     expect(anchorRoundId).toBeTruthy();
+    // 回答主动提问（结构化回填 + 带回答续跑）
+    expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
     for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
       void _chunk; // 仅消费流
     }

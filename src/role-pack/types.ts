@@ -41,9 +41,6 @@ export type ProviderRouting = 'auto' | 'fixed';
 /** 多步推理模式：auto=自动深度思考 / manual=快速回答 */
 export type MultiStepReasoning = 'auto' | 'manual';
 
-/** 输入中断策略：allow=执行中可接受新输入 / block=排队到下一轮 */
-export type InputInterrupt = 'allow' | 'block';
-
 // ── 回答后（Reflect）：沉淀策略 ──
 
 /** 结束衔接模式（标准键 reflect.handoff）：wait=等待用户 / loop=自动续跑 / end=终止 */
@@ -115,8 +112,6 @@ export interface ActStrategy {
   readonly providerRouting?: ProviderRouting;
   /** 多步推理模式（默认 auto；内核已消费） */
   readonly multiStepReasoning?: MultiStepReasoning;
-  /** 输入中断策略（默认 allow；内核已消费） */
-  readonly inputInterrupt?: InputInterrupt;
 }
 
 /** 回答后（Reflect）沉淀策略集合 */
@@ -154,7 +149,7 @@ export interface GlobalStrategy {
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/recallConfidence/summaryRecall；
- * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/inputInterrupt/multiStepReasoning/toolReadonly/toolApproval；
+ * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly/toolApproval；
  * reflect 的 summary/handoff/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
@@ -189,14 +184,14 @@ export interface L2RuntimeStrategy {
   readonly errorHandling: ErrorHandling;
   /** Provider 路由策略（act.providerRouting） */
   readonly providerRouting: ProviderRouting;
-  /** 输入中断策略（act.inputInterrupt） */
-  readonly inputInterrupt: InputInterrupt;
   /** Token 预算上限（global.tokenBudget：0=不限制） */
   readonly tokenBudget: number;
   /** 步数预算上限（global.stepBudget：0=不限制） */
   readonly stepBudget: number;
   /** 多步推理模式（act.multiStepReasoning） */
   readonly multiStepReasoning: MultiStepReasoning;
+  /** 主动提问次数上限（global.askLimit：turn 粒度防打扰；ask_user 硬护栏拦截超限调用） */
+  readonly askLimit: number;
   /** 工具只读模式（act.toolReadonly） */
   readonly toolReadonly: ToolReadonly;
   /** 工具审批模式（act.toolApproval） */

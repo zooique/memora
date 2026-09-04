@@ -101,8 +101,8 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 
 | 能力 | 真实实现 |
 |------|---------|
-| **主动提问** | `extractAskQuestions` 解析 `[ASK]` → `question_pending` 事件（气口：step 之间） |
-| **用户插话** | `interject()` 立即中断 + 排队 `pendingInterjections`，step 边界消费 |
+| **主动提问** | `ask_user` 内置工具（2026-09-04 通道收敛替代 `[ASK]` 文本）→ loop 检出挂起 → `question_pending` 事件（气口：step 之间） |
+| **用户插话** | `interject()` 排队 `pendingInterjections`，step 边界统一注入 user 消息（申请 → 气口生效，单一模式） |
 | **申请暂停** | `requestPause()` → step 边界 `yield paused` 挂起（暂停收口统一翻态 + 写 pauseMeta） |
 | **继续运行** | `continueAfterPause()` 从 step 边界续跑 |
 
@@ -117,16 +117,18 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 - **理由**：强制每步召回需重定义"触发源语义"（步 turn 算外部驱动还是自动续跑，哲学 §12.4）、每步 recall 成本 + exclude 互斥维护；而兜底工具已存在，先例 = search_project P1-1（不改机制、强化工具描述引导）。
 - **抓手**：`search_memories` 工具描述已补"多步任务需要历史决策/既有记忆时主动调用"引导（2026-09-01）。真实场景若发现 LLM 大量遗忘调用导致终局质量下降，再评估强制步 turn 召回（届时须先拍板触发源语义）。
 
-### `[ASK]` 主动提问的独占约束
+### `ask_user` 主动提问（2026-09-04 定案：提问 = 一次普通工具调用）
 
-> **约定**：`[ASK]` 是纯约定（零依赖 SSOT）——LLM 以行首 `[ASK] 问题` 结构输出时触发主动提问暂停。**`[ASK]` 必须独占回合输出，不与工具调用同轮混出。**
+> **定案**：主动提问收敛为 **`ask_user` 内置工具**（对齐 Claude Code AskUserQuestion 机制）——LLM 调 `ask_user(question, options?, allowCustom?)` 时，loop 检出后**整轮挂起**（step 边界气口），用户答案经 `answerQuestion()` 以 **tool result 回填**（与 assistant.tool_calls 配对，结构恒合法），再 `continueAfterPause` 续跑。
 
 | 形态 | 行为 |
 |------|------|
-| 纯文本含 `[ASK]`（独占回合） | 问题全文入史 → `question_pending` 事件 + 软暂停 → 用户回答续跑 |
-| 与工具调用同轮混出 | **软降级**：问题文本仍入史（不静默丢信息），但不暂停——LLM 下一轮自见问题可继续 |
+| LLM 调 `ask_user`（独占工具轮） | assistant.tool_calls 完整入史（不撕工具）→ `question_pending` 事件 + 软暂停 → `answerQuestion` 回填 → 续跑 |
+| `ask_user` 与普通工具并存 | **整轮挂起**：提问是决策关口，其余工具不执行（等答案后续跑重新决策） |
+| turn 内提问超 `askLimit` | 硬护栏拒绝（回填 `[ASK_LIMIT]`，不挂起，其余工具照常执行） |
+| 提问后未回答直接续跑 | `cancelAsk()` 兜底补占位 tool 结果（防 assistant.tool_calls 无配对 → 400） |
 
-**降级语义**：混出不暂停，是"不暂停的软降级"——问题保留在上下文中，LLM 可自行决定再问或按已有信息继续，不丢信息、不卡流程。
+**为何替代 `[ASK]` 文本约定**：`[ASK]` 在工具轮与文本提问并存时会把即将执行的工具调用"撕掉"（OpenAI 兼容端要求 tool_calls 必有配对 tool 结果）；工具化后提问本身就是工具轮的一环，冲突从根上消除。
 
 ### 已知边界记录（暂不修复）
 

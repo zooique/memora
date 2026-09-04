@@ -21,7 +21,7 @@ import {
   resolveToolStepLimit,
   resolveErrorHandling,
   resolveProviderRouting,
-  resolveInputInterrupt,
+  resolveAskLimit,
   resolveTokenBudget,
   resolveStepBudget,
   resolveTaskLoopLimit,
@@ -116,7 +116,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(a.outputLimit).toBe(4096);
     expect(a.providerRouting).toBe('auto');
     expect(a.multiStepReasoning).toBe('auto');
-    expect(a.inputInterrupt).toBe('allow');
   });
 
   it('reflect 维度包含全部必需字段', () => {
@@ -240,15 +239,17 @@ describe('resolve* 函数 — 基础策略解析', () => {
     });
   });
 
-  // ── resolveInputInterrupt ──
-  describe('resolveInputInterrupt', () => {
+  // ── resolveAskLimit ──
+  describe('resolveAskLimit', () => {
     it('合法值透传', () => {
-      expect(resolveInputInterrupt({ act: { inputInterrupt: 'block' } })).toBe('block');
+      expect(resolveAskLimit({ global: { askLimit: 5 } })).toBe(5);
     });
 
-    it('非法/缺失值回退默认 allow', () => {
-      expect(resolveInputInterrupt({ act: { inputInterrupt: 'bad' as never } })).toBe('allow');
-      expect(resolveInputInterrupt(undefined)).toBe('allow');
+    it('非法/缺失值回退默认 3', () => {
+      expect(resolveAskLimit({ global: { askLimit: 0 } })).toBe(3);
+      expect(resolveAskLimit({ global: { askLimit: 99 } })).toBe(3);
+      expect(resolveAskLimit({ global: { askLimit: '3' as never } })).toBe(3);
+      expect(resolveAskLimit(undefined)).toBe(3);
     });
   });
 
@@ -633,9 +634,8 @@ describe('assembleRolePack — 角色包装配', () => {
     expect(result.personaPrompt).toContain('遇到模糊不清的情况时');
     expect(result.personaPrompt).toContain('需要用户做决策时');
     expect(result.personaPrompt).toContain('每次回答中最多提问 2 次');
-    // [ASK] 输出格式契约（与 loop 解析器同源）：行首标记 + 行尾花括号选项
-    expect(result.personaPrompt).toContain('[ASK]');
-    expect(result.personaPrompt).toContain('{A|B|C}');
+    // 提问通道收敛为 ask_user 工具引导（2026-09-04 替代 [ASK] 文本行契约）
+    expect(result.personaPrompt).toContain('ask_user');
   });
 
   it('userFollowup=silent 时不注入主动提问指令', () => {

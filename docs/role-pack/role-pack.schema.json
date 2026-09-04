@@ -187,11 +187,6 @@
               "enum": ["auto", "fixed"],
               "description": "Provider 路由策略（默认 auto）"
             },
-            "inputInterrupt": {
-              "type": "string",
-              "enum": ["allow", "block"],
-              "description": "执行中是否接受新输入（默认 allow）"
-            },
             "multiStepReasoning": {
               "type": "string",
               "enum": ["auto", "manual"],

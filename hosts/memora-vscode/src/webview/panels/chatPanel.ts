@@ -1878,14 +1878,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
   }
 
-  /** 处理用户对主动提问的回答：resumeExecution 续跑（用户回答落盘由内核 runResume 完成，SSOT 不双写）
-   *  TS-9：回答以 question-answer 交互输入归属当前问答闭环（不分裂新轮） */
+  /** 处理用户对主动提问的回答：answerQuestion 结构化回填 + resumeExecution 续跑
+   *  2026-09-04：内核提问收敛为 ask_user 工具——先 answerQuestion 以 tool result 回填
+   *  （与 assistant.tool_calls 配对，结构合法），再由 resumeExecution 续跑（回答 text
+   *  作为新 user 输入注入并记录交互归属 question-answer，round 不分裂）。
+   *  TS-9：回答落盘由内核 runResume 按交互归属写入同闭环节点，宿主不双写 */
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
     // 回答上屏（折叠块标记）；持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点
     this.post({ type: 'user', text: input, ts: now, kind: 'question-answer' });
-    await this.runFlow((signal) => this._agent!.resumeExecution(input, signal, 'question-answer'));
+    await this.runFlow((signal) => {
+      // ask_user 工具：答案先行回填为 tool 结果（幂等：无在途提问时 no-op 返回 false）
+      this._agent!.answerQuestion([input]);
+      return this._agent!.resumeExecution(input, signal, 'question-answer');
+    });
   }
 
   /**

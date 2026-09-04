@@ -315,7 +315,7 @@ export class MessageHistory {
    * 保证用户消息不丢失。
    *
    * 闭环节点续写（TS-9）：同一 roundId 已存在 assistantMessage（跨暂停-续跑：
-   * 暂停轮已把 [ASK] 提问/中断半截落为 assistantMessage）时，旧段入 assistantLog，
+   * 暂停轮已把 ask_user 提问/中断半截落为 assistantMessage）时，旧段入 assistantLog，
    * assistantMessage 恒为末段（最终回答）——问答闭环不因续跑分裂新轮，且前序 LLM
    * 文本（如主动提问）不丢失。
    */

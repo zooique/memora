@@ -21,7 +21,6 @@ import type {
   MemoryRecallMode,
   ContextAssembly,
   ErrorHandling,
-  InputInterrupt,
   ProviderRouting,
   MultiStepReasoning,
   SummaryRecall,
@@ -98,7 +97,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     outputLimit: 4096,
     providerRouting: 'auto',
     multiStepReasoning: 'auto',
-    inputInterrupt: 'allow',
   },
   reflect: {
     handoff: 'wait',
@@ -247,9 +245,18 @@ export function resolveProviderRouting(strategy: BehaviorStrategy | undefined): 
   return normalizeEnum(strategy?.act?.providerRouting, ['auto', 'fixed'], 'auto');
 }
 
-/** 解析输入中断策略（内核已消费）：非法值归位 'allow'——allow=执行中可插话 / block=排队到下一轮 */
-export function resolveInputInterrupt(strategy: BehaviorStrategy | undefined): InputInterrupt {
-  return normalizeEnum(strategy?.act?.inputInterrupt, ['allow', 'block'], 'allow');
+/**
+ * 解析主动提问次数上限（内核已消费）：整数且 ∈ [1, MAX_ASK_LIMIT] 才采用，缺失/越界回退默认 3。
+ * ask_user 工具的 turn 粒度硬护栏取值（SSOT：assembleRolePack 的 prompt 引导与 loop 拦截共用）。
+ */
+export function resolveAskLimit(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.askLimit;
+  const valid =
+    typeof candidate === 'number' &&
+    Number.isInteger(candidate) &&
+    candidate >= 1 &&
+    candidate <= MAX_ASK_LIMIT;
+  return valid ? candidate : 3;
 }
 
 /** 解析 Token 预算上限（内核已消费）：整数且 ∈ [0, MAX_TOKEN_BUDGET] 才采用，非法/越界回退内核默认（DEFAULT_TOKEN_BUDGET，0=不限制） */
@@ -376,19 +383,19 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
   toolStepLimit: 0,
   errorHandling: 'retry',
   providerRouting: 'auto',
-  inputInterrupt: 'allow',
   tokenBudget: DEFAULT_TOKEN_BUDGET,
   stepBudget: DEFAULT_STEP_BUDGET,
   multiStepReasoning: 'auto',
+  askLimit: 3,
   toolReadonly: 'full',
   toolApproval: 'auto',
 };
 
 /**
- * 解析 L2 运行时策略（收敛：替代 Agent 层 11 处 setXxx 逐项装配）
+ * 解析 L2 运行时策略（收敛：替代 Agent 层逐项 setXxx 装配）
  *
- * 聚合现有 10 个 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
- * 输入中断、Token/步数预算、多步推理、工具只读、工具审批）+ reflect.selfReview；
+ * 聚合现有各 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
+ * Token/步数预算、多步推理、主动提问上限、工具只读、工具审批）+ reflect.selfReview；
  * 非法值经各 resolve* 归位内核默认；selfReview 归一为「0=关闭 / 正整数=N 轮执行上限」。
  *
  * @param strategy 合并后的行为策略（角色包声明，可为空）
@@ -411,10 +418,10 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
     toolStepLimit: resolveToolStepLimit(strategy),
     errorHandling: resolveErrorHandling(strategy),
     providerRouting: resolveProviderRouting(strategy),
-    inputInterrupt: resolveInputInterrupt(strategy),
     tokenBudget: resolveTokenBudget(strategy),
     stepBudget: resolveStepBudget(strategy),
     multiStepReasoning: resolveMultiStepReasoning(strategy),
+    askLimit: resolveAskLimit(strategy),
     toolReadonly: resolveToolReadonly(strategy),
     toolApproval: resolveToolApproval(strategy),
   };
@@ -450,7 +457,7 @@ export function mergeStrategy(
  *
  * 将原始角色包解析为含完整策略的装载结果，供装配层直接使用。
  * 同时根据策略中的 userFollowup/askOn/askLimit 注入主动提问指令到 persona prompt，
- * 并在指令中携带 [ASK] 输出格式契约（行首标记 + 行尾花括号选项，与 utils/askParser 解析器同源）。
+ * 引导 LLM 使用 ask_user 内置工具提问（答案以 tool result 回填，替代已下线的 [ASK] 文本行）。
  *
  * @param pack 原始角色包
  * @returns 含完整策略的装载结果
@@ -466,18 +473,13 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     promptParts.push(`## 规则\n${pack.rules.map((r) => `- ${r}`).join('\n')}`);
   }
 
-  // 主动提问指令注入：userFollowup=ask 时，将 askOn/askLimit 转为 LLM 指令
+  // 主动提问指令注入：userFollowup=ask 时，将 askOn/askLimit 转为 LLM 指令。
+  // 提问通道收敛为 ask_user 内置工具（2026-09-04，对齐 Claude Code AskUserQuestion 机制）：
+  // 提问 = 一次普通工具调用，用户答案以 tool result 回填——不再是 [ASK] 文本行（已下线）。
   if (strategy.reflect?.userFollowup === 'ask') {
     const askOn = strategy.global?.askOn;
-    // askLimit 需 ∈ [1, MAX_ASK_LIMIT] 才注入 prompt，越界回退默认 3（防 LLM 指令注入失控次数）
-    const rawAskLimit = strategy.global?.askLimit ?? 3;
-    const askLimit =
-      typeof rawAskLimit === 'number' &&
-      Number.isInteger(rawAskLimit) &&
-      rawAskLimit >= 1 &&
-      rawAskLimit <= MAX_ASK_LIMIT
-        ? rawAskLimit
-        : 3;
+    // askLimit 取值收敛到 resolveAskLimit（SSOT：prompt 引导与 loop 拦截共用同一解析）
+    const askLimit = resolveAskLimit(strategy);
     const triggerLabels: string[] = [];
     const triggers = Array.isArray(askOn) ? askOn : askOn ? [askOn] : [];
     for (const t of triggers) {
@@ -498,7 +500,7 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
     }
     if (triggerLabels.length > 0) {
       promptParts.push(
-        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每次回答中最多提问 ${askLimit} 次（按一次用户输入计，turn 粒度防打扰）\n- 提问用行首标记 \`[ASK]\` 开头（一题一行）；需给出可选项时，在问题行尾附花括号选项 \`{A|B|C}\`（全半角括号、竖线分隔均可）——系统据此在 step 边界暂停并等待你的回答`,
+        `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每次回答中最多提问 ${askLimit} 次（按一次用户输入计，turn 粒度防打扰）\n- 提问必须调用 ask_user 工具（参数：question 问题文本 + 可选 options 选项数组/allowCustom 是否允许自定义回答）——系统据此在 step 边界暂停等你的回答，用户答案会作为工具结果返回给你`,
       );
     }
   }
