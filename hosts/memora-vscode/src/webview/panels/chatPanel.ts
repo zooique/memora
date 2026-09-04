@@ -1393,7 +1393,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 检测当前会话是否存在可恢复的持久化「断点」（G3 断点续跑）
    *
-   * 跨实例/插件重启场景：Agent 重装配后内存无检查点，但检查点已由内核在闭环边界 flush 到
+   * 跨实例/插件重启场景：Agent 重装配后内存无检查点，但检查点已由内核在 turn 边界 flush 到
    * sessionStore 持久化。凡是「进行中的任务」（paused/error，或 running 且有未完成计划步骤）
    * 都提示续跑——恢复 plan + hotMemory，任务原地接着做；纯单轮问答不提示。
    * 同进程暂停续跑（resume）已由 handleResumeFromPause 覆盖，不触发本提示。
