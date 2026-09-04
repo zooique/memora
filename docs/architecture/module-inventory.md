@@ -149,7 +149,7 @@
 
 > **生长闭环**：回答前的记忆召回（`recall()` 语义 + 关键词双通道、同会话窗口优先、互斥排除正文已加载轮次、minFallback 保底）由 `contextPreparer` 在外部输入触发时调用。**其物理实现位于 L4 记忆系统**（recall.ts / hybridMerge.ts / vectorStore.ts / reranker.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次回答前召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
 >
-> 召回相关设计详见 [memory-as-summary.md](./memory-as-summary.md) 与 [recall-mutex-pre-filter.md](./recall-mutex-pre-filter.md)。
+> 召回相关设计详见 [memory-as-summary.md](./memory-as-summary.md)（含互斥前置过滤语义）。
 
 ***
 
@@ -198,7 +198,7 @@
 
 ### 3.5 网页抓取 + 代码执行 + 项目搜索（web-fetch/ · code-exec/ · project-search/ · 外部世界工具族）
 
-> **生长来源**：与 web-search 同属「连接外部世界」工具族（[tool-surface-roadmap.md](./tool-surface-roadmap.md)）——经 `IFetchProvider` / `ICodeExecutionProvider` / `IProjectSearchProvider` 接口宿主注入、条件性暴露；web\_fetch 与 web\_search 成对构成「搜索→抓取」闭环，run\_code 提供通用计算/验证底座，search\_project 提供项目内搜索（等价 IDE 全局搜索，VS Code 宿主用 findFiles + Node fs 受限实现）。内核零运行时依赖（沙箱由宿主 provider 决定）。
+> **生长来源**：与 web-search 同属「连接外部世界」工具族（原工具面路线规划 `tool-surface-roadmap.md` 已随 2026-09-04 docs 整理删除，此处为现行描述）——经 `IFetchProvider` / `ICodeExecutionProvider` / `IProjectSearchProvider` 接口宿主注入、条件性暴露；web\_fetch 与 web\_search 成对构成「搜索→抓取」闭环，run\_code 提供通用计算/验证底座，search\_project 提供项目内搜索（等价 IDE 全局搜索，VS Code 宿主用 findFiles + Node fs 受限实现）。内核零运行时依赖（沙箱由宿主 provider 决定）。
 
 | 模块文件                                      | 状态     | 测试文件                                      | 质量说明                                               |
 | ----------------------------------------- | ------ | ----------------------------------------- | -------------------------------------------------- |

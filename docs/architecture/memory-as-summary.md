@@ -2,7 +2,7 @@
 
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
-> **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（turn 公理）· [mvp-scope.md](mvp-scope.md)（MVP 边界）
+> **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（turn 公理）· role-pack-spec.md（记忆键 SSOT）
 
 ---
 
@@ -666,7 +666,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 > **关联资源**：
 > - [agent-design-philosophy.md](agent-design-philosophy.md) —— turn 公理
-> - [mvp-scope.md](mvp-scope.md) —— MVP 能力边界
+> - role-pack-spec.md —— 角色包标准（记忆相关键 SSOT）
 > - [role-pack-spec.md](role-pack-spec.md) —— 角色包标准（L2 召回键作为**后置覆盖**，不阻塞本模块）
 > - [memory-role-pack-boundary.md](memory-role-pack-boundary.md) —— 记忆系统 × 角色包边界收敛（设定记忆归角色包，记忆库 = 摘要记忆本体）
 > - [ADR-021](../../.trae/decisions/ADR-021-memory-conflict-supersede-write-path.md) —— 记忆冲突消解（写路径取代检测，§5.3）

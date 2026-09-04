@@ -859,7 +859,7 @@ turn（问答闭环）与多 turn 任务编排使用**同一套上下文拼接�
 
 * **对齐 UX 基线**：2026 agentic UX 将"活动透明 + 分步可见"列为信任前提（无中间可见性的 agent 弃用率显著更高）。事件流是内核为此提供的最小契约。
 
-**第一个真实用例——主动提问事件（`question_pending`）**：Agent 主动征询用户（MVP 核心能力）时，LLM 以结构化形式输出（如 `[ASK] 问题文本`），内核**确定性解析**为 `question_pending` 事件（问题文本 + 挂起原因），宿主据此渲染提问 UI——而不是靠宿主从 text chunk 猜"是不是提问"（见 mvp-scope §三、§14.3）。这让"可观察契约"落地一个真实事件，非空谈。
+**第一个真实用例——主动提问事件（`question_pending`）**：Agent 主动征询用户（MVP 核心能力）时，LLM 以结构化形式输出（如 `[ASK] 问题文本`），内核**确定性解析**为 `question_pending` 事件（问题文本 + 挂起原因），宿主据此渲染提问 UI——而不是靠宿主从 text chunk 猜"是不是提问"（见 role-pack-spec `global.askOn`、§14.3）。这让"可观察契约"落地一个真实事件，非空谈。
 
 **当前状态**：事件 emit 机制已具备（宿主可见）。本小节明确其**契约定位**（透明面板的数据源），渲染形态由宿主决定，内核不绑定任何 UI 框架。
 
@@ -987,7 +987,7 @@ turn（问答闭环）与多 turn 任务编排使用**同一套上下文拼接�
 | 成本预算     | 金额                                                            | 单任务总成本上限               | 目标模式必需                                                                                                                                        |
 | 错误处理     | retry / degrade / stop                                        | 异常时的策略                 | retry=重试；degrade=降级；stop=终止                                                                                                                   |
 | 安全规则     | 继承/覆盖                                                         | 是否允许角色覆盖全局 rule        | 安全规则默认不可被角色覆盖                                                                                                                                 |
-| 主动提问     | askOn（ambiguity/decision/missing\_info/confirm，可组合）+ askLimit | Agent 在关键节点主动征询，而非闷头执行 | 触发条件枚举（mvp-scope §三）；发生在回答中生成阶段（LLM 以结构化 `[ASK]` 形式输出问题 → 内核解析为 `question_pending` 事件）→ 回答后经 `resumeExecution` 续跑（非 Trigger，不触发 recall/角色重匹配） |
+| 主动提问     | askOn（ambiguity/decision/missing\_info/confirm，可组合）+ askLimit | Agent 在关键节点主动征询，而非闷头执行 | 触发条件枚举（role-pack-spec `global.askOn`）；发生在回答中生成阶段（LLM 以结构化 `[ASK]` 形式输出问题 → 内核解析为 `question_pending` 事件）→ 回答后经 `resumeExecution` 续跑（非 Trigger，不触发 recall/角色重匹配） |
 
 > **主动提问的定位**：本行"主动提问"（`askOn`/`askLimit`）与 Prepare 表"理解确认"、Reflect 表"用户追问"共同构成"Agent 主动征询"能力——`askOn` 是**统一触发条件枚举**（spec §六 `global.askOn`），"理解确认"是回答前的一种征询（等价 `askOn` 含 `confirm`），"用户追问"是回答后引导对话的征询。三者由同一触发条件体系驱动，命名以 spec `global.askOn` 为准，避免同一行为多套命名。其**落地形态为结构化** **`question_pending`** **事件**（§13.x），宿主渲染，内核不依赖启发式识别"是不是提问"。
 
