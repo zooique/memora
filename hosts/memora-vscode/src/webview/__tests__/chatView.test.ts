@@ -2244,7 +2244,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(rows[1].textContent).toContain('现在逐一读取它们的内容');
   });
 
-  it('建议 A：narrate 父块紧跟其 tool_start/tool_result 嵌套成子项（文字与调用一一对应顺序显示）', () => {
+  it('扁平化：narrate 与 tool 按 seq 平铺 details 顶层，各自独立折叠（2026-09-04）', () => {
     mountChatView();
     beginRound();
     // 第一段叙述 → 一个搜索工具
@@ -2258,17 +2258,24 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const narrates = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
+    const tools = rb.querySelectorAll('.round-block__tool') as NodeListOf<HTMLDetailsElement>;
     expect(narrates).toHaveLength(2);
-    // 第一段叙述嵌套 t1（web_search），第二段嵌套 t2（read_file）
-    const tools1 = narrates[0]!.querySelectorAll<HTMLDetailsElement>('.round-block__tool');
-    expect(tools1).toHaveLength(1);
-    expect(tools1[0]!.dataset.toolCallId).toBe('t1');
-    const tools2 = narrates[1]!.querySelectorAll<HTMLDetailsElement>('.round-block__tool');
-    expect(tools2).toHaveLength(1);
-    expect(tools2[0]!.dataset.toolCallId).toBe('t2');
-    // 工具必须嵌套在 narrate 父块的 .round-block__narrate-tools 内，而非顶层/独立 section
-    const nested = rb.querySelectorAll('.round-block__narrate > .round-block__narrate-tools .round-block__tool');
-    expect(nested).toHaveLength(2);
+    expect(tools).toHaveLength(2);
+    // 扁平化：工具行不再嵌套进 narrate（narrate 内部无 .round-block__tool）
+    const nested = rb.querySelectorAll('.round-block__narrate .round-block__tool');
+    expect(nested).toHaveLength(0);
+    // 严格时序：details 顶层子元素按 seq 交错平铺 narrate(2) → tool t1(3) → narrate(5) → tool t2(6)
+    const childSeq = Array.from(rb.querySelector('.round-block__details')!.children)
+      .filter((el) => el.classList.contains('round-block__narrate') || el.classList.contains('round-block__tool'))
+      .map((el) => (el as HTMLElement).dataset.seq);
+    expect(childSeq).toEqual(['2', '3', '5', '6']);
+    // narrate 与 tool 各自保留原展现（叙述文本 / 工具名与状态）
+    expect(narrates[0].textContent).toContain('我先搜索相关资料');
+    expect(narrates[1].textContent).toContain('再读取文档');
+    expect(tools[0].dataset.toolCallId).toBe('t1');
+    expect(tools[1].dataset.toolCallId).toBe('t2');
+    expect(tools[0].textContent).toContain('联网搜索：A (成功)');
+    expect(tools[1].textContent).toContain('读取文件：x.md (成功)');
   });
 
   it('运行中 narrate 父块默认展开、done 收尾重建后收起（2026-09-02 拍板）', () => {

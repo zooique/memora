@@ -637,24 +637,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 过程叙述父块（建议 A，2026-09-02）：LLM 一段行动叙述 = 一个可折叠父块——
-   * summary 显示首行摘要（截断），展开看全文；其紧随的 tool_start/tool_result 嵌套进块内
-   * .round-block__narrate-tools 子容器，实现「文字与对应调用一一顺序成对显示」，
-   * 而非叙述与工具各自独立成段（旧 P2 结构）。返回父块 el 与内部工具子容器。
+   * 过程叙述父块（扁平化，2026-09-04）：LLM 一段行动叙述 = 一个可折叠父块——
+   * summary 显示首行摘要（截断），展开看全文。工具调用不再嵌套进叙述块——narrate 与 tool
+   * 平级、各自独立折叠，按 seq 顺序平铺在 details 顶层（Trae Work 式扁平 step 流）。返回父块 el。
    */
   function createNarrateGroup(
     ev: Extract<ProcessEvent, { type: 'narrate' }>,
     openByDefault = false,
-  ): {
-    el: HTMLDetailsElement;
-    toolContainer: HTMLElement;
-  } {
+  ): HTMLDetailsElement {
     const row = document.createElement('details');
     row.className = 'round-block__narrate';
     // 展开态（2026-09-02 拍板）：运行中（增量投影）默认展开——嵌套工具行实时可见，
     // 保持旧结构「工具状态直显」体验；收尾/回放（finalize 重建）默认收起，与 round-block 一致
     row.open = openByDefault;
-    // seq 锚点：进行中增量追加去重（renderRoundBlock 每次事件到达全量扫描）
+    // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertStepInOrder）
     row.dataset.seq = String(ev.seq);
     const summary = document.createElement('summary');
     const text = ev.payload.content.trim();
@@ -662,28 +658,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const body = document.createElement('div');
     body.className = 'round-block__narrate-body';
     body.textContent = text;
-    const toolContainer = document.createElement('div');
-    toolContainer.className = 'round-block__narrate-tools';
-    row.append(summary, body, toolContainer);
-    return { el: row, toolContainer };
+    row.append(summary, body);
+    return row;
   }
 
-  /** 取「前序最近 narrate」父块：seq 小于给定工具 seq 且最大者（无则 null → 工具落顶层/首个） */
-  function precedingNarrateEl(details: HTMLElement, toolSeq: number): HTMLDetailsElement | null {
-    const cands = Array.from(details.querySelectorAll<HTMLDetailsElement>('.round-block__narrate')).filter(
-      (el) => Number(el.dataset.seq) < toolSeq,
-    );
-    if (cands.length === 0) return null;
-    cands.sort((a, b) => Number(a.dataset.seq) - Number(b.dataset.seq));
-    return cands[cands.length - 1]!;
-  }
-
-  /** 按 seq 顺序插入 narrate 父块（避免每次事件到达时整体重排导致闪烁/展开态丢失） */
-  function insertNarrateInOrder(details: HTMLElement, el: HTMLDetailsElement, seq: number): void {
-    const existing = Array.from(details.querySelectorAll<HTMLDetailsElement>('.round-block__narrate')).filter(
-      (e) => e !== el,
-    );
-    const next = existing.find((e) => Number(e.dataset.seq) > seq);
+  /**
+   * 步骤行按 seq 顺序插入 details 顶层（narrate 与 tool 共用，扁平化平铺）。
+   * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
+   * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
+   */
+  function insertStepInOrder(details: HTMLElement, el: HTMLElement, seq: number): void {
+    const existing = Array.from(
+      details.querySelectorAll<HTMLElement>('.round-block__narrate, .round-block__tool'),
+    ).filter((e) => e !== el);
+    const next = existing.find((e) => Number(e.dataset.seq ?? Infinity) > seq);
     if (next) {
       details.insertBefore(el, next);
     } else {
@@ -694,10 +682,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 工具调用行（tool_start 配对 tool_result）——二级嵌套折叠：summary = 名称(状态) 常显，
-   * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败工具默认展开（错误应直接可见）。
-   * 宿主容器：建议 A 分组后为 narrate 父块的 .round-block__narrate-tools；无前序叙述时直挂
-   * round-block__details 顶层。
+   * 工具调用行（tool_start 配对 tool_result）——折叠行：summary = 名称(状态) 常显，
+   * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败/进行中默认展开（错误直显）。
+   * 宿主容器（扁平化，2026-09-04）：直接平铺在 round-block__details 顶层（insertStepInOrder 按 seq 插入）。
    */
   /**
    * TS-12b：aborted 中断语义 → 展示文案（单一映射，与 error category 词典同构）。
@@ -748,15 +735,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       : { label: '失败', open: true, running: false };
   }
 
-  function renderToolRow(listEl: HTMLElement, start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): void {
+  function renderToolRow(start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): HTMLDetailsElement {
     const result = events.find(
       (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
     const { label: status, open, running } = toolRowStatus(result);
     const row = document.createElement('details');
     row.className = 'round-block__tool';
-    // 增量追加去重锚点：通过 toolCallId 定位已渲染的工具行（流式进行中增量追加）
+    // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertStepInOrder）
     row.dataset.toolCallId = start.payload.toolCallId;
+    row.dataset.seq = String(start.seq);
     row.open = open;
     // TS-11b：进行中态 class（未出结果时高亮；result 到达由 updateToolRowState 移除）
     row.classList.toggle('is-tool-running', running);
@@ -773,7 +761,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     statusSpan.textContent = ` (${status})`; // 前导空格：span 间空白不折叠，显式补「叙述 (状态)」间距
     summary.append(labelSpan, statusSpan);
     row.appendChild(summary);
-    listEl.appendChild(row);
     if (start.payload.args) {
       const pre = document.createElement('pre');
       pre.className = 'round-block__pre';
@@ -786,6 +773,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sum.textContent = result.payload.summary;
       row.appendChild(sum);
     }
+    // 返回行元素：由调用方按 seq 插入 details 顶层（扁平化，不再自挂容器）
+    return row;
   }
 
   /**
@@ -893,34 +882,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       } else {
         phaseRow?.remove();
       }
-      // 过程叙述 + 工具调用（建议 A：narrate 父块，工具嵌套子项，一一对应顺序显示）
+      // process_event 增量投影（扁平化，2026-09-04）：narrate 与 tool 按 seq 平铺 details 顶层，
+      // 各自独立折叠——工具行不再嵌套进叙述块（Trae Work 式扁平 step 流）
       const narrates = events
         .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
         .sort((a, b) => a.seq - b.seq);
-      // 1) 确保每段 narrate 父块存在（按 seq 顺序插入，data-seq 去重防重复渲染；运行中默认展开）
+      const toolStarts = events
+        .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
+        .sort((a, b) => a.seq - b.seq);
+      // narrate 父块：不存在则创建（data-seq 去重防重复渲染；运行中默认展开），按 seq 插入
       for (const n of narrates) {
         if (!details.querySelector(`.round-block__narrate[data-seq="${n.seq}"]`)) {
-          const { el } = createNarrateGroup(n, true);
-          insertNarrateInOrder(details, el, n.seq);
+          insertStepInOrder(details, createNarrateGroup(n, true), n.seq);
         }
       }
-      // 2) 工具调用：归属「前序最近 narrate」的 .round-block__narrate-tools 子容器；
-      //    tool_start 未渲染则追加，tool_result 原地更新状态（嵌套行 data-tool-call-id 去重）
-      const hasTool = events.some((e) => e.type === 'tool_start' || e.type === 'tool_result');
-      if (hasTool) {
-        for (const e of events) {
-          if (e.type === 'tool_start') {
-            const start = e as Extract<ProcessEvent, { type: 'tool_start' }>;
-            const parent = precedingNarrateEl(details, start.seq);
-            const container = parent
-              ? (parent.querySelector('.round-block__narrate-tools') as HTMLElement)
-              : details;
-            if (!container.querySelector(`.round-block__tool[data-tool-call-id="${start.payload.toolCallId}"]`)) {
-              renderToolRow(container, start, events);
-            }
-          } else if (e.type === 'tool_result') {
-            updateToolRowState(details, e as Extract<ProcessEvent, { type: 'tool_result' }>);
-          }
+      // 工具行：不存在则渲染并插入（data-tool-call-id 去重），结果到达原地更新状态
+      for (const t of toolStarts) {
+        if (!details.querySelector(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`)) {
+          const row = renderToolRow(t, events);
+          if (row) insertStepInOrder(details, row, t.seq);
+        }
+      }
+      for (const e of events) {
+        if (e.type === 'tool_result') {
+          updateToolRowState(details, e as Extract<ProcessEvent, { type: 'tool_result' }>);
         }
       }
       return;
@@ -931,24 +916,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 全量重建前清理增量产物：section（轨迹/召回等）、narrate 父块（含嵌套工具）、
     // 以及无前序 narrate 时落在 details 顶层的工具行（旧结构依赖工具 section 清理，新结构需显式移除防重复渲染）
     details.querySelectorAll('.round-block__section, .round-block__narrate, .round-block__tool').forEach((el) => el.remove());
-    // § 过程叙述 + 工具调用（建议 A：narrate 父块，工具嵌套子项，一一对应顺序显示）
+    // § 过程叙述 + 工具调用（扁平化，2026-09-04：narrate 与 tool 按 seq 平铺 details 顶层）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
     const toolStarts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
       .sort((a, b) => a.seq - b.seq);
-    const groupToolContainers = new Map<number, HTMLElement>(); // narrate seq → 嵌套工具容器
     for (const n of narrates) {
-      const { el, toolContainer } = createNarrateGroup(n);
-      details.appendChild(el);
-      groupToolContainers.set(n.seq, toolContainer);
+      insertStepInOrder(details, createNarrateGroup(n), n.seq);
     }
     for (const t of toolStarts) {
-      // 归属「前序最近 narrate」（纯函数从 events 计算，不依赖 DOM 顺序）
-      const preceding = [...narrates].reverse().find((n) => n.seq < t.seq);
-      const container = preceding ? groupToolContainers.get(preceding.seq)! : details;
-      renderToolRow(container, t, events);
+      const row = renderToolRow(t, events);
+      if (row) insertStepInOrder(details, row, t.seq);
     }
     // § 过程轨迹（thinking 阶段时间线）
     const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');
