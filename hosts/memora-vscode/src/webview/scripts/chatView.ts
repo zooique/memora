@@ -79,7 +79,7 @@ const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
  *
  * @param deps 运行时依赖（acquireVsCodeApi + window）
  */
-export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void {
+export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { dispose(): void } {
   const document = window.document;
   const vscode = acquireVsCodeApi();
 
@@ -2494,7 +2494,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   }
 
   // 处理 extension → webview 消息（流式渲染 / 状态机 / 单一过程事件 / 下拉数据）
-  window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
+  function onMessage(event: MessageEvent<ExtensionToWebviewMessage>): void {
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
@@ -2900,7 +2900,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       const levelLabel = msg.level === 'drift' ? '严重偏离' : '需要确认';
       showActivity('info', `目标漂移（${levelLabel}，相似度 ${pct}%）：${msg.newGoal}`);
     }
-  });
+  }
+
+  window.addEventListener('message', onMessage);
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
   // SSOT：高度上限单一真理源 — 从 CSS 令牌(--input-max-h)的计算值读取，
@@ -3028,7 +3030,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
 
   // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）。
   // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。
-  document.addEventListener('click', (e) => {
+  function onDocumentClick(e: Event): void {
     const chip = (e.target as HTMLElement).closest<HTMLElement>('.suggestion-chip');
     if (!chip) return;
     const prompt = chip.dataset.prompt || '';
@@ -3037,7 +3039,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
     input.focus();
     autoResize();
     syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步
-  });
+  }
+  document.addEventListener('click', onDocumentClick);
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
@@ -3173,4 +3176,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
   // 通知 extension：脚本已就绪、监听器已注册，可安全回放会话
   // （消除折叠/展开重建 HTML 时，消息在监听器注册前到达而被丢弃的竞态）
   vscode.postMessage({ type: 'ready' });
+
+  // ─── 可销毁：移除全局监听器 + 清理全部定时器（测试环境隔离 / 页面卸载复用） ───
+  // 根因：createChatView 在 window / document 上注册全局监听且内部持有多个定时器，
+  // 若无显式销毁，单测每个 mountChatView 都会累积泄漏的监听器（跨测试污染 DOM），
+  // 表现为「单独跑全绿、整包跑偶发红灯」的非确定性 flake。
+  function dispose(): void {
+    window.removeEventListener('message', onMessage);
+    document.removeEventListener('click', onDocumentClick);
+    if (streamRenderTimer) clearTimeout(streamRenderTimer);
+    if (archivingFallbackTimer !== undefined) clearTimeout(archivingFallbackTimer);
+    if (pendingWaitTimer !== undefined) clearInterval(pendingWaitTimer);
+    if (toolElapsedTimer !== undefined) clearInterval(toolElapsedTimer);
+    if (activityTimer !== null) window.clearTimeout(activityTimer);
+  }
+
+  return { dispose };
 }

@@ -90,16 +90,26 @@ const HTML = `
   </div>
 `;
 
+/** 跨用例累积泄漏的 createChatView 销毁句柄（flake 根因：全局监听器未移除） */
+let chatViewDispose: (() => void) | undefined;
+
 /** 挂载 createChatView 并返回 postMessage mock（ready 消息在此被捕获） */
 function mountChatView(): { postMessage: ReturnType<typeof vi.fn> } {
   document.body.innerHTML = HTML;
   const postMessage = vi.fn();
-  createChatView({
+  const view = createChatView({
     acquireVsCodeApi: () => ({ postMessage }),
     window: window as unknown as Window,
   });
+  chatViewDispose = view.dispose;
   return { postMessage };
 }
+
+// 每个用例结束后显式销毁，防止 window/document 全局监听器跨用例累积泄漏（flake 根因）
+afterEach(() => {
+  chatViewDispose?.();
+  chatViewDispose = undefined;
+});
 
 /** 向 webview 分发一条 extension → webview 消息 */
 function dispatch(msg: unknown): void {
