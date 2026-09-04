@@ -589,7 +589,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 生成中（流进行中）暂停按钮才可见 → _streaming=true
     (provider as unknown as { _streaming: boolean })._streaming = true;
     (provider as unknown as { handlePause(): void }).handlePause();
-    // 应调step 边界软暂停入口 requestPause，而非立即翻态的 pause
+    // 应调 step 边界软暂停入口 requestPause，而非立即翻态的 pause
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
     expect(pause).not.toHaveBeenCalled();
     // 无失败提示

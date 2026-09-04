@@ -1058,4 +1058,4 @@ Memora 的内核，遵循的正是这条道路。它把一切复杂收敛到"tur
 * **向下看（turn 的内部结构）**：`step`（原子）⊂ `loop`（turn 内 Act 阶段的 step 编排，`runIterationLoop`）⊂ `turn`（最小完整单元，Prepare + Act + Reflect）。**loop 不构成新层**——它只是 turn 回答中阶段的编排机制；turn 比 loop 多出回答前（Prepare）与回答后（Reflect），loop 是 turn 的一个阶段（Act）的内部实现。
 * **向上看（turn 的外部编排）**：`turn` ⊂ `多 turn 任务编排`（`externalTaskLoop`/`completeExternalTask`：复杂任务 = 规划 turn + 每步一 turn + 收尾 turn）⊂ `目标模式`（远期，对任务编排级 turn 的编排）。
 * **配比关系**：loop 决定「一轮有多深」（turn 内 step 数），多 turn 任务编排决定「一次任务有多长」（turn 数）——两者是可配比的资源（§10.3），不是非此即彼的层。
-* **功能归属口径**：概念分层时只列「宏观（多 turn 编排）→ 单元（turn）→ 微观（loop + step）」三档；loop 归微观（turn 内部的实现机制），不再与 turn 并列。
+* **功能归属口径**：概念按粒度只分「宏观（多 turn 编排）→ 单元（turn）→ 微观（loop，内含 step）」三个层级；loop 归微观（turn 内部的实现机制），step 是其内部原子，二者均不与 turn 并列。

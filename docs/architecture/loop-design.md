@@ -26,7 +26,7 @@
 
 | 哲学概念 | 现状实现（loop.ts） | 对齐度 |
 |---------|--------------------|--------|
-| turn = Prepare/Act/Reflect 三阶段 | **Prepare**：`_injectRecall`（召回注入）+ 用户消息 push + 状态重置<br>**Act**：`handleIteration`（step：一次 LLM 生成 + 可选工具执行，多 step 由 `runIterationLoop` 驱动即 loop）<br>**Reflect**：`handleIterationResult`（Handoff 决策）；摘要/归档在 `agent.ts` 后处理 | ✅ 高 |
+| turn = Prepare/Act/Reflect 三阶段 | **Prepare**：`_injectRecall`（召回注入）+ 用户消息 push + 状态重置<br>**Act**：`handleIteration`（step：一次 LLM 生成 + 可选工具执行，多 step 由 `runIterationLoop` 驱动即 loop）<br>**Reflect（Handoff 决策点）**：`handleIterationResult` 在 `runIterationLoop` 末端决定 Handoff（continue/done/paused/aborted），据此触发后续 Reflect 阶段；摘要/归档在 `agent.ts` 后处理 | ✅ 高 |
 | loop = 对 step 的编排（Act 内部） | `runIterationLoop` 反复拉起 step：LLM 推理 → 工具执行 → 回填 → 再推理；深度由 `toolStepLimit` 控制 | ✅ 高 |
 | loop（step 深度） × 多 turn 任务编排（turn 长度）配比 | loop 深度：`toolStepLimit`（单 turn 工具步数）；任务编排长度：`stepBudget` / `maxIterations` / `taskLoopLimit` | ✅ 高 |
 | Handoff = turn 出口衔接决策 | `handleIterationResult` 返回 `continue / done / paused / aborted`，上层据此决定 `wait`/`loop`（自动续跑）/`end` | ✅ 高 |
