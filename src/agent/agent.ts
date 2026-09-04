@@ -437,6 +437,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       getBackgroundProvider: () => this.#backgroundProvider,
       // 宿主装配级策略覆盖（能力边界）：传给策略解析链，压过角色包声明（单一语义键不变）
       strategyOverride: this.#config.strategyOverride,
+      // 事件发射回调：orchestrator.runSummary 完成后 emit roundSummaryGenerated，
+      // 让宿主感知后台摘要收口 → 解锁 UI 生命周期（删除/分叉按钮解禁，防孤儿记忆）
+      emit: (event, payload) => {
+        if (AGENT_EVENT_SET.has(event)) {
+          this.emit(event as keyof AgentEventMap, payload as never);
+        }
+      },
     });
   }
 

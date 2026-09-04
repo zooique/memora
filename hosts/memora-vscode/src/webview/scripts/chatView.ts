@@ -1140,14 +1140,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * locked 态优先（运行时强制禁用），unlock 时还原为「无锚点 ts 则禁用」的原始语义。
    */
   let sessionControlsLocked = false;
+  /**
+   * 会话导航类控件运行时锁（SSOT 收口点）：运行时禁用改变会话结构的操作。
+   * 覆盖范围：新建会话 / 切换历史 / 删除问答闭环 / 分叉问答闭环。
+   * 单一真相源 = 宿主 status 事件（经 setStatus 驱动）；locked 态优先，unlock 时还原为锚点缺失则禁用的原始语义。
+   */
   function updateSessionControlsLock(locked: boolean): void {
     sessionControlsLocked = locked;
     newSessionBtn.disabled = locked;
     historyBtn.disabled = locked;
+    // 删除按钮：锚点 = dataset.ts（无时间戳则禁用）
     document
       .querySelectorAll<HTMLButtonElement>('.msg-delete-icon')
       .forEach((b) => {
         b.disabled = locked || !b.dataset.ts;
+      });
+    // 分叉按钮：锚点 = dataset.roundId（无 roundId 则禁用；段级+容器级均命中 .msg-fork-icon）
+    document
+      .querySelectorAll<HTMLButtonElement>('.msg-fork-icon')
+      .forEach((b) => {
+        b.disabled = locked || !b.dataset.roundId;
       });
   }
 
@@ -2129,20 +2141,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 本轮问答闭环结束后回填 roundId：启用该条 AI 消息的分叉按钮（任意 LLM 回答可分叉）。
+   * 本轮问答闭环结束后回填 roundId（fork 按钮数据锚点）。
    *
    * 流式创建时 roundId 未知 → 按钮初始禁用；host 在 done / interrupted 消息上携带本轮 roundId，
-   * 此处写入 dataset.roundId 并解除禁用。分叉按钮点击读 dataset（SSOT 单一读取点），回填即生效。
+   * 此处只回填 dataset.roundId（disabled 状态由 updateSessionControlsLock 统一管理——
+   * SSOT：全局锁根据 sessionControlsLocked + dataset.roundId 存在与否判定，commitRoundId 不越权）。
+   * 分叉按钮点击读 dataset（SSOT 单一读取点），回填即生效。
    */
   function commitRoundId(roundId?: string): void {
     if (!roundId || !activeAssistantEl) return;
     activeAssistantEl.dataset.roundId = roundId;
-    const forkBtn = activeAssistantEl.querySelector<HTMLButtonElement>('.msg-fork-icon');
-    if (forkBtn) forkBtn.disabled = false;
-    // A 容器化：容器级分叉按钮同步启用（操作上移容器后，段级 fork 已不可见）
-    const g = activeAssistantEl.closest<HTMLElement>('.round-group');
-    const gFork = g?.querySelector<HTMLButtonElement>('.round-group__footer .msg-fork-icon');
-    if (gFork) gFork.disabled = false;
+    // 回填后立即让全局锁重新评估 disabled 状态（commitRoundId 不直接设 disabled，
+    // 统一走 updateSessionControlsLock 的「locked || !dataset.roundId」判定）
+    updateSessionControlsLock(sessionControlsLocked);
   }
 
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───

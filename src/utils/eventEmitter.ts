@@ -40,6 +40,13 @@ export const AGENT_EVENTS = {
   sessionRecovered: 'sessionRecovered',
   /** 会话标题被 LLM 自动更新（SessionNamer 完成后触发，宿主据此刷新 UI） */
   sessionTitleUpdated: 'sessionTitleUpdated',
+  /**
+   * 轮次摘要生成完成（round-summary fire-and-forget 后台任务收口信号）。
+   * 宿主据此解锁「问答闭环完整结束」的 UI 状态（删除/分叉按钮解禁）——
+   * 避免 done 后立即删除导致孤儿 round-summary（摘要还在生成就删了源）。
+   * 一次 chat() 只触发一次，载荷带 roundId 溯源。
+   */
+  roundSummaryGenerated: 'roundSummaryGenerated',
 } as const;
 
 /** 事件名联合类型（由 AGENT_EVENTS 推导，新增事件只需在此加一项） */
@@ -105,6 +112,8 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   sessionRecovered: { sessionId?: string };
   /** 会话标题更新载荷：会话 ID + 新标题 */
   sessionTitleUpdated: { sessionId: string; title: string };
+  /** 轮次摘要生成完成载荷：本轮 roundId（溯源）+ 成功/失败（失败时宿主仍需兜底解锁） */
+  roundSummaryGenerated: { roundId: string; success: boolean };
 }
 
 /** 事件处理器类型 */

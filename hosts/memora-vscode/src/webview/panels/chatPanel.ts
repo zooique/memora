@@ -2233,7 +2233,28 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'status', state: 'paused' });
     } else {
       this.post({ type: 'done', roundId: latestRoundId });
-      this.post({ type: 'status', state: 'done' });
+      // status:done 延后到摘要完成（或 30s 兜底）——防 done 后立即删除导致孤儿 round-summary
+      // 详见 orchestrator.runSummary emit roundSummaryGenerated；中断/暂停走即时 done 路径
+      const SUMMARY_WAIT_TIMEOUT_MS = 30_000;
+      let resolved = false;
+      /** 解锁回调：受 _streaming 状态门控，防跨轮竞态（旧轮事件误触冲掉新轮 thinking） */
+      const unlockDone = () => {
+        if (resolved) return;
+        resolved = true;
+        // 竞态防护：新轮已开始 → 跳过，让新轮走自己的 done 流程
+        if (this._streaming) return;
+        this.post({ type: 'status', state: 'done' });
+      };
+      const timeoutHandle = setTimeout(() => {
+        // 超时也手动解绑事件监听，防累积泄漏（.once 只在触发时自动解绑，超时不触发会遗留 handler）
+        this._agent.off('roundSummaryGenerated', onSummary);
+        unlockDone();
+      }, SUMMARY_WAIT_TIMEOUT_MS);
+      const onSummary = (_info: { roundId: string; success: boolean }) => {
+        clearTimeout(timeoutHandle);
+        unlockDone();
+      };
+      this._agent.on('roundSummaryGenerated', onSummary);
       // T2 Follow-up 建议：仅正常结束时推送（零 LLM、纯计算；打断/异常不给不完整回复挂建议）
       this.postSuggestions();
     }

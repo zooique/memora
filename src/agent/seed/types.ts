@@ -99,6 +99,12 @@ export interface SeedDeps {
    *（v0.13 后无内置示例键；机制保留供宿主能力边界使用）
    */
   strategyOverride?: Partial<BehaviorStrategy>;
+  /**
+   * 门面事件发射回调（可选，默认 no-op）。种子编排器在摘要生成完成后触发 roundSummaryGenerated，
+   * 让宿主感知后台任务收口、解锁 UI 生命周期（删除/分叉按钮解禁）。
+   * 接口设计同 assembler 的 AgentHooks.emit——门面层桥接 TypedEventEmitter。
+   */
+  emit?: (event: string, payload: unknown) => void;
 }
 
 /**

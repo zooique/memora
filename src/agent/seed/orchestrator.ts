@@ -290,13 +290,14 @@ export class SeedOrchestrator {
       const { history, loop, roundSummaryGenerator, rolePackManager } =
         this.deps.getParts() as SeedParts;
 
-      // reflect.summary='off' 时跳过（一次性对话不沉淀）
-      if (
-        roundSummaryGenerator &&
-        resolveSummary(resolveActiveStrategy(rolePackManager, this.deps.strategyOverride)) === 'on'
-      ) {
+      const roundId = loop.getCurrentRoundId();
+      // reflect.summary='off' 或 generator 不存在 → 无摘要，直接 emit 让宿主解锁 UI
+      const summaryOn =
+        !!roundSummaryGenerator &&
+        resolveSummary(resolveActiveStrategy(rolePackManager, this.deps.strategyOverride)) === 'on';
+
+      if (summaryOn) {
         try {
-          const roundId = loop.getCurrentRoundId();
           const sessionName = history.currentSessionName;
           // 提炼视角：激活角色包 prepare.summaryFocus → 注入摘要生成（无则通用归纳框架）
           const summaryFocus = resolveSummaryFocus(
@@ -310,9 +311,20 @@ export class SeedOrchestrator {
             summaryFocus,
           );
           history.registerPendingArchive(summaryPromise);
+          // 摘要完成后 emit roundSummaryGenerated → 宿主据此解锁 UI（删除/分叉按钮解禁）
+          // 关键：不能等 await——runSummary 是后台 fire-and-forget，不能把 chat() generator
+          // 的收尾阻塞在摘要 LLM 调用上。用 .then/.catch 非阻塞挂起回调。
+          summaryPromise.then(
+            () => this.deps.emit?.('roundSummaryGenerated', { roundId, success: true }),
+            () => this.deps.emit?.('roundSummaryGenerated', { roundId, success: false }),
+          );
         } catch (err) {
           logger.warn({ err }, '轮次摘要生成初始化失败');
+          this.deps.emit?.('roundSummaryGenerated', { roundId, success: false });
         }
+      } else {
+        // 摘要关闭 → 无后台任务需等待，直接 emit 让宿主解锁
+        this.deps.emit?.('roundSummaryGenerated', { roundId, success: true });
       }
     } finally {
       span.end();
