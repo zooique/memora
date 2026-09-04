@@ -176,7 +176,7 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
         (value === 0 || (value >= MIN_STEP_BUDGET && value <= MAX_STEP_BUDGET)),
       range: { min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET },
     },
-    // 外部任务驱动循环步数（0~MAX_TASK_LOOP_LIMIT，0=关闭）
+    // 会议步骤截断上限（0~MAX_TASK_LOOP_LIMIT，0=关闭截断）；收敛后唯一消费方：prepare.ts 会议机制 tryBuildMeetingPlan
     taskLoopLimit: intRange(0, MAX_TASK_LOOP_LIMIT),
   },
 };

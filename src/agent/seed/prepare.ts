@@ -69,7 +69,8 @@ export class SeedPrepare {
     // 经 writePlan 预置任务表（组员各一步 + 汇总一步），让 LLM 在单 turn step 循环里自然消费。
     const meetingSteps = rolePackManager?.tryBuildMeetingPlan?.(input) ?? null;
     if (meetingSteps && sessionManager) {
-      // 步数截断保护：会议步骤总数不能超过 taskLoopLimit（预留预算保护）
+      // 会议步骤截断保护（taskLoopLimit 键名是历史遗留，收敛后唯一消费点就是这里——会议机制）：
+      // 防止 tryBuildMeetingPlan 给 50 人大会编出 50 步任务表塞爆预算。默认 10，0=关闭截断。
       const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
       const taskLoopLimit = resolveTaskLoopLimit(strategy);
       const capped =

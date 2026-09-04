@@ -55,9 +55,12 @@ import type { RolePackManager } from './rolePackManager.js';
 const FALLBACK_TOKEN_BUDGET = 80_000;
 
 /**
- * 外部任务驱动循环步数上限内核默认值（SSOT 单一来源）。
- * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.taskLoopLimit`（角色包声明层）、
- * `resolveTaskLoopLimit` 的非法/缺失回退。0 = 关闭外部任务驱动循环。
+ * 会议步骤截断保护内核默认值（SSOT 单一来源，收敛后唯一消费点：prepare.ts 会议机制）。
+ * 角色包声明层 `DEFAULT_BEHAVIOR_STRATEGY.global.taskLoopLimit` +
+ * `resolveTaskLoopLimit` 的非法/缺失回退均引用此常量。
+ * 注：键名 taskLoopLimit 是历史遗留（原多 turn 任务编排循环上限），收敛后语义收窄为「会议步骤截断上限」——
+ * 仅当用户触发会议且 `tryBuildMeetingPlan` 生成步骤清单时生效，与 step 循环迭代上限（stepBudget）零交互。
+ * 0 = 关闭截断（不推荐，LLM 可能编出超长会议清单）。
  */
 export const DEFAULT_TASK_LOOP_LIMIT = 10;
 
@@ -278,7 +281,10 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
   return valid ? candidate : DEFAULT_MAX_ITERATIONS;
 }
 
-/** 解析外部任务驱动循环步数上限（外部任务循环已消费）：整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
+/** 解析会议步骤截断上限（收敛后唯一消费方：prepare.ts 会议机制 tryBuildMeetingPlan 步骤截断）：
+ * 整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT）。
+ * 注：键名 taskLoopLimit 是历史遗留（原多 turn 任务编排循环上限已砍）；
+ * 与 stepBudget（step 循环迭代上限）控制完全不同的维度，零交互。0 = 关闭截断。 */
 export function resolveTaskLoopLimit(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.taskLoopLimit;
   const valid =
