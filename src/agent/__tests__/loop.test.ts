@@ -3159,6 +3159,7 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
   });
 
   it('连续 4 次相同工具调用触发负反馈注入（threshold=3 表示累计重复 3 次后触发）', async () => {
+    // 用 write_file（副作用型，不防重）才能穿透 toolResultCache 到 duplicateInterceptor
     const toolExecutor = vi.fn().mockResolvedValue('未变更的结果');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -3169,7 +3170,7 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
               {
                 id: 'c1',
                 type: 'function',
-                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+                function: { name: 'write_file', arguments: '{"path":"a.ts","content":"x"}' },
               },
             ],
           },
@@ -3181,7 +3182,7 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
               {
                 id: 'c2',
                 type: 'function',
-                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+                function: { name: 'write_file', arguments: '{"path":"a.ts","content":"x"}' },
               },
             ],
           },
@@ -3193,7 +3194,7 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
               {
                 id: 'c3',
                 type: 'function',
-                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+                function: { name: 'write_file', arguments: '{"path":"a.ts","content":"x"}' },
               },
             ],
           },
@@ -3205,7 +3206,7 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
               {
                 id: 'c4',
                 type: 'function',
-                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+                function: { name: 'write_file', arguments: '{"path":"a.ts","content":"x"}' },
               },
             ],
           },

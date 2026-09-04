@@ -1692,10 +1692,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * （骨架/异常兜底直接留消息流）。
    *
    * @param roundId 该段 turn ID；无则不入容器
-   * @param el 待归位的 assistant 块（如已在消息流，则搬迁进容器）
+   * @param el      待归位的 assistant 块（如已在消息流，则搬迁进容器）
+   * @param pending 是否内容未定稿（流式创建传 true，回放/一次性传 false；
+   *                仅新容器首次创建时生效——已有容器的 footer 幂等跳过）
    * @returns 容器元素或 null
    */
-  function ensureRoundGroup(roundId: string | undefined, el: HTMLElement): HTMLElement | null {
+  function ensureRoundGroup(roundId: string | undefined, el: HTMLElement, pending = false): HTMLElement | null {
     if (!roundId) return null;
     if (roundGroupEl?.isConnected && roundGroupEl.dataset.roundId === roundId) {
       // 段必须插在容器 footer 之前（footer 恒居容器底部；直接 appendChild 会把段放进 footer 之后）
@@ -1712,7 +1714,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     g.dataset.roundId = roundId;
     el.before(g);
     g.appendChild(el);
-    ensureRoundGroupFooter(g);
+    ensureRoundGroupFooter(g, pending);
     roundGroupEl = g;
     return g;
   }
@@ -1722,17 +1724,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 整链复制 = 该 round 的「用户提问（容器前一兄弟）+ 全部 assistant 段」，单一入口
    * 覆盖闭环全量（R1 修复）。段级 footer 由 CSS 隐藏，操作整体上移到容器读取。
-   * is-pending：与段级 footer 同一「内容未定稿」语义（SSOT 复用）——创建即隐藏，
-   * 回答定稿（finalizeStreaming）后移除；提问（need_clarify）等待期间保持隐藏，
-   * 保证提问/不提问两种场景底部操作栏显示时机统一。
+   * is-pending：与段级 footer 同一「内容未定稿」语义（SSOT 复用）——流式创建时隐藏，
+   * 回答定稿（finalizeStreaming）后移除；历史回放/一次性消息直接传 false（已定稿）。
    *
-   * @param g 容器元素（幂等：已有 footer 不重复建）
+   * @param g       容器元素（幂等：已有 footer 不重复建）
+   * @param pending 是否内容未定稿（流式创建传 true，回放/一次性传 false）
    */
-  function ensureRoundGroupFooter(g: HTMLElement): void {
+  function ensureRoundGroupFooter(g: HTMLElement, pending: boolean): void {
     if (g.querySelector('.round-group__footer')) return;
     const footer = document.createElement('div');
     footer.className = 'round-group__footer';
-    footer.classList.add('is-pending'); // 内容未定稿默认隐藏（提问/流式中不出现操作栏）
+    if (pending) footer.classList.add('is-pending'); // 流式/提问等待中：未定稿隐藏；回放/已定稿直接显示
     const copyBtn = createIcon('copy', '复制整条问答（含你的提问与全部回答）', 'msg-copy-icon');
     copyBtn.addEventListener('click', () => copyText(roundChainText(g)));
     const forkBtn = createIcon('fork', '从此问答闭环分叉新会话', 'msg-fork-icon');
@@ -2009,7 +2011,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     streamBodyRendered = false;
     messages.appendChild(div);
     // A 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
-    ensureRoundGroup(roundId, div);
+    // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
+    ensureRoundGroup(roundId, div, true);
     // 挂载任务过程折叠区（meta 已先到）：进行中实时展开投影过程事件
     renderRoundBlock(currentEvents, false);
     scrollToBottom(messages);
@@ -2095,27 +2098,31 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 原始文本源同步更新为完整流式文本。
    */
   function finalizeStreaming(): void {
-    if (!streamingActive || !activeAssistantEl || activeAssistantEl.isConnected === false) return;
+    // ① UI 收尾（与流式状态无关，done/interrupted/打断均需执行）：
+    // 段级/容器级 footer 的 is-pending 移除 = 内容已定稿的信号，打断也是定稿（半截内容到此为止）。
+    // 放在 guard 之外——打断路径已把 streamingActive 清为 false，guard 会挡住旧逻辑。
+    const el = activeAssistantEl;
+    if (el?.isConnected) {
+      el.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
+      el.closest<HTMLElement>('.round-group')
+        ?.querySelector<HTMLElement>('.round-group__footer')
+        ?.classList.remove('is-pending');
+    }
+    // ② 流式专属清理（guard 保护：非流式状态下这些动作不该执行）
+    if (!streamingActive || !el || !el.isConnected) return;
     if (streamRenderTimer) {
       clearTimeout(streamRenderTimer);
       streamRenderTimer = undefined;
     }
     // 单容器结构：正文 = 该轮唯一 .msg-body（报告正文），收尾一次终渲染 + 去光标 + 代码块增强
-    const body = activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null;
+    const body = el.querySelector(':scope .msg-body') as HTMLElement | null;
     if (body) {
       body.classList.remove('is-streaming');
       body.innerHTML = renderMarkdown(streamingRaw, sanitize);
       enhanceCodeBlocks(body);
     }
-    // 回答完毕：展示底部操作行（复制/分叉/删除 + 时间戳）——完整内容已定稿，操作才有效。
-    // SSOT 同态收敛：段级 footer 与容器级 footer 同一 is-pending 语义，此处一并移除
-    //（容器级创建即隐藏；提问等待期间保持隐藏，done/interrupted 定稿后统一显示）
-    activeAssistantEl.querySelector<HTMLElement>('.msg-footer')?.classList.remove('is-pending');
-    activeAssistantEl.closest<HTMLElement>('.round-group')
-      ?.querySelector<HTMLElement>('.round-group__footer')
-      ?.classList.remove('is-pending');
     // 复制源更新为完整原始文本（.msg.dataset.rawText 供复制按钮读取）
-    activeAssistantEl.dataset.rawText = streamingRaw;
+    el.dataset.rawText = streamingRaw;
     streamingActive = false;
     streamingRaw = '';
     streamBodyRendered = false;
@@ -2557,7 +2564,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           const body = flowShellEl.querySelector(':scope .msg-body');
           body?.classList.add('is-streaming');
           // A 容器化：骨架①随 chunk 归位到所属容器（骨架建时无 roundId）
-          ensureRoundGroup(msg.roundId, flowShellEl);
+          // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
+          ensureRoundGroup(msg.roundId, flowShellEl, true);
           flowShellEl = null; // 已转化为正文块，后续插话/新轮不再特殊处理
         } else {
           beginStreaming(msg.ts, msg.roundId);

@@ -375,9 +375,10 @@ describe('拦截器注入 AgentLoop 端到端', () => {
     };
 
     const loop = new AgentLoop({
+      // 用 write_file（副作用型，不防重）才能穿透 toolResultCache 到 duplicateInterceptor
       provider: mockMultiTurnProvider([
         ...Array.from({ length: 5 }, (_, i) => [
-          toolMsg([{ id: `c${i}`, function: { name: 'read_file', arguments: '{"path":"x"}' } }]),
+          toolMsg([{ id: `c${i}`, function: { name: 'write_file', arguments: '{"path":"x","content":"ok"}' } }]),
         ]),
         [textMsg('完成')],
       ]),

@@ -49,6 +49,7 @@ import {
 import { deriveDialogueRounds } from '@/agent/budget.js';
 import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/types.js';
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
+import { ToolResultCache, DEDUP_KEY_EXTRACTORS } from '@/agent/toolResultCache.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
@@ -218,6 +219,10 @@ export class AgentLoop {
   private searchDisabled = false;
   /** TS-7 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
   private searchDisabledHintInjected = false;
+  /** 工具结果防重缓存（闭环内有效，每轮 resetTurnState 清空）。
+   *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
+   *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
+  private readonly toolResultCache = new ToolResultCache();
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  step 边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
@@ -293,7 +298,9 @@ export class AgentLoop {
   private metrics = new LoopMetrics();
 
   constructor(private readonly opts: AgentLoopOptions) {
-    this.maxIterations = opts.maxIterations ?? 20;
+    // 内核物理上限 SSOT：默认 50（业界参考 LangGraph=25, Claude Code=25-50, CrewAI=25）。
+    // 迭代 = 一次 LLM call + N 并行工具。50 足以覆盖复杂多步任务，同时防止死循环烧 token。
+    this.maxIterations = opts.maxIterations ?? 50;
     this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
@@ -669,6 +676,8 @@ export class AgentLoop {
     // 硬上限停搜标志随轮重置（下一闭环 web_search 重新可用）
     this.searchDisabled = false;
     this.searchDisabledHintInjected = false;
+    // 工具结果防重缓存：闭环内有效，新闭环开始即清空（跨闭环不复用，避免上一轮已读文件"误伤"本轮合法重读）
+    this.toolResultCache.clear();
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
   }
@@ -699,9 +708,18 @@ export class AgentLoop {
         this.cancelAsk();
       }
 
-      // stepBudget 步数软上限检查（0=不限制）
-      if (this.strategy.stepBudget > 0 && iteration >= this.strategy.stepBudget) {
-        logger.info({ iteration, stepBudget: this.strategy.stepBudget }, '达到步数预算上限');
+      // stepBudget 步数软上限检查（0=不限制）。
+      // 双闸收敛：角色包声明 stepBudget 不得超过内核 maxIterations（物理上限 SSOT），
+      // 即使角色包/策略解析返回更大值也只 clamp 到 maxIterations——防止"软上限声明比硬上限还高"的配置错配。
+      const effectiveStepBudget =
+        this.strategy.stepBudget > 0
+          ? Math.min(this.strategy.stepBudget, this.maxIterations)
+          : 0;
+      if (effectiveStepBudget > 0 && iteration >= effectiveStepBudget) {
+        logger.info(
+          { iteration, stepBudget: this.strategy.stepBudget, effectiveStepBudget, maxIterations: this.maxIterations },
+          '达到步数预算上限',
+        );
         yield* this.emitMaxIterationsReached();
         return;
       }
@@ -1587,6 +1605,28 @@ export class AgentLoop {
         );
         continue;
       }
+      // 工具结果防重拦截（read_file/list_dir/web_search 等信息获取型工具）：
+      // 闭环内同 toolName + 同去重 key 的重复调用 → blocked=true + [ALREADY_READ] 拒绝文案。
+      // 与 web_search MAX_WEB_SEARCH_CALLS / ask_user askLimit 同级的确定性拦截，
+      // 终结 LLM 在同一批文件/同一 query 上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线）。
+      // 文件被 write_file/delete_file 修改 → 结果处理循环主动 invalidateFile 放行后续合法重读。
+      const dedupExtractor = DEDUP_KEY_EXTRACTORS[tc.function.name];
+      if (dedupExtractor) {
+        const dedupKey = dedupExtractor(tc.function.arguments);
+        if (dedupKey) {
+          const hit = this.toolResultCache.check(tc.function.name, dedupKey);
+          if (hit) {
+            blockedFlags.push(true);
+            toolPromises.push(
+              Promise.resolve(
+                `[ALREADY_READ] 你已在第 ${hit.cachedAtIteration} 轮读取过此内容（${tc.function.name}:${dedupKey}），` +
+                  `请基于已有信息继续分析或作答，不要重复读取。`,
+              ),
+            );
+            continue;
+          }
+        }
+      }
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
       toolPromises.push(
         tc.function.name === COMPRESS_CONTEXT_TOOL.name
@@ -1610,6 +1650,23 @@ export class AgentLoop {
       // TS-7 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
+      }
+      // 工具结果防重缓存：仅成功且是 info-fetch 类型的工具才写入（失败/拦截不缓存——
+      // 失败可能是临时问题，拦截是我们主动挡的）。
+      const resultExtractor = DEDUP_KEY_EXTRACTORS[tc.function.name];
+      if (ok && resultExtractor) {
+        const key = resultExtractor(tc.function.arguments);
+        if (key) this.toolResultCache.set(tc.function.name, key, this.currentIteration);
+      }
+      // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
+      // 覆盖 write_file/delete_file 两类会修改文件系统状态的工具
+      if (ok && (tc.function.name === 'write_file' || tc.function.name === 'delete_file')) {
+        try {
+          const a = JSON.parse(tc.function.arguments) as { path?: string };
+          if (a.path) this.toolResultCache.invalidateFile(a.path);
+        } catch {
+          /* 参数非 JSON → 忽略 */
+        }
       }
       yield {
         type: 'tool_result',

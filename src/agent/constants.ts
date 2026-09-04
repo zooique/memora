@@ -91,9 +91,12 @@ export const AGENT_CONSTANTS = {
  *
  * 用于 loop.ts 中的 token 估算、召回上下文长度、LLM 重试、循环限制等。
  *
- * 注意：AgentLoop 构造选项中的默认值（maxIterations ?? 20 等）保留在 loop.ts 原地，
+ * 注意：AgentLoop 构造选项中的默认值（maxIterations ?? 50 等）保留在 loop.ts 原地，
  * 因为它们是 API 契约的一部分——调用方期望"未传入时使用默认值"。
  * 这里只提取与 UI/重试/估算相关的纯常量。
+ * maxIterations（内核物理上限 SSOT）与 role-pack 的 DEFAULT_STEP_BUDGET（软上限默认）
+ * 是独立定义但运行时收敛：loop.ts stepBudget 消费点会 clamp 到 maxIterations，
+ * 防止角色包声明的 stepBudget 比内核硬上限还高的配置错配。
  */
 export const LOOP_CONSTANTS = {
   /**
