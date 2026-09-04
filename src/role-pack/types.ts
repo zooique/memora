@@ -43,9 +43,6 @@ export type MultiStepReasoning = 'auto' | 'manual';
 
 // ── 回答后（Reflect）：沉淀策略 ──
 
-/** 结束衔接模式（标准键 reflect.handoff）：wait=等待用户 / loop=自动续跑 / end=终止 */
-export type Handoff = 'wait' | 'loop' | 'end';
-
 /** 自审查轮数：0=关闭 / N=LLM 纯文本回复后最多自审查 N 轮 */
 export type SelfReviewRounds = number;
 
@@ -116,8 +113,6 @@ export interface ActStrategy {
 
 /** 回答后（Reflect）沉淀策略集合 */
 export interface ReflectStrategy {
-  /** 结束衔接模式（默认 wait；标准键 reflect.handoff） */
-  readonly handoff?: Handoff;
   /** 自审查轮数（默认 0=关闭；0=关闭 / N=最多自审查 N 轮） */
   readonly selfReview?: SelfReviewRounds;
   /** 历史别名（v0.13- 命名残留）：新键 selfReview 优先，旧键回退 */
@@ -150,7 +145,7 @@ export interface GlobalStrategy {
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly/toolApproval；
- * reflect 的 summary/handoff/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
+ * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {

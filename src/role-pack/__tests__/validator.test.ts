@@ -13,7 +13,7 @@ import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 const validStrategy = {
   prepare: { memoryRecall: 'full', memoryRecallPercent: 0.4, minFallback: 2, summaryFocus: '聚焦核心逻辑' },
   act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096, streaming: 'streaming' },
-  reflect: { summary: 'on', handoff: 'wait', selfReview: 0, userFollowup: 'silent' },
+  reflect: { summary: 'on', selfReview: 0, userFollowup: 'silent' },
   global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
 };
 

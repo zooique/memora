@@ -7,8 +7,8 @@
  * 不再强制拆成多 turn 编排（档2 已砍；见 tasks/收敛多turn编排到动态单turn.md）。
  *
  * 两个显式命名入口（turn 只认 Trigger、不认来源）：
- *   - runChat   （对话 Trigger）   完整 turn：prepare → act(processUserInput) → reflect → handoff
- *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无 prepare、无 Handoff）
+ *   - runChat   （对话 Trigger）   完整 turn：prepare → act(processUserInput) → reflect
+ *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无 prepare）
  */
 
 import type { AgentChunk } from '@/agent/types.js';
@@ -23,15 +23,16 @@ import {
   type SeedParts,
 } from './types.js';
 import { SeedPrepare } from './prepare.js';
-import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
+import { resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
  * 种子 turn 编排器
  *
- * 聚合回答前/中/后与 Handoff 四阶段，提供 turn 编排的全部入口（runChat/runResume）。
- * prepare / act / reflect / handoff 各自可测；编排语义只在 orchestrator 唯一实现。
+ * 聚合回答前/中/后三阶段，提供 turn 编排的全部入口（runChat/runResume）。
+ * prepare / act / reflect 各自可测；编排语义只在 orchestrator 唯一实现。
+ * turn 结束即流结束 + done 消息——不再对外产出 handoff chunk（2026-09-05 收敛）。
  */
 export class SeedOrchestrator {
   /** 依赖注入（门面稳定能力窄面） */
@@ -45,12 +46,13 @@ export class SeedOrchestrator {
   }
 
   /**
-   * 对话路径完整 turn：回答前 → 回答中(processUserInput) → 回答后 → Handoff。
+   * 对话路径完整 turn：回答前 → 回答中(processUserInput) → 回答后。
    * 所有复杂度（含 LLM 动态建任务表）在一个 turn 的 step 循环里承载。
+   * turn 结束即流结束 + done 消息，不再产出 handoff chunk。
    *
    * @param input 用户输入
    * @param signal 中止信号
-   * @yields AgentChunk 事件流（thinking / handoff / 透传 loop 执行流 chunk）
+   * @yields AgentChunk 事件流（thinking / 透传 loop 执行流 chunk）
    */
   async *runChat(input: string, signal: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
     // 回答前：装配上下文 + 召回记忆
@@ -81,16 +83,12 @@ export class SeedOrchestrator {
 
     // 回答后：摘要
     this.backgroundReflect(input, acted.content);
-
-    // Handoff：对外产出衔接决策
-    yield* this.handoff(acted.iterationLimitReached);
   }
 
   /**
-   * 续跑路径 turn：回答中(continueAfterPause) → 回答后。无回答前、无 Handoff。
+   * 续跑路径 turn：回答中(continueAfterPause) → 回答后。无回答前。
    *
-   * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文、不在 turn 出口分岔
-   * （handoff）——差异源于 Trigger 的续跑语义，收在编排器内。
+   * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文——差异源于 Trigger 的续跑语义，收在编排器内。
    *
    * TS-9 问答闭环归属：交互输入不分配新 roundId——续跑延续 prepare 分配的 turn 节点
    * roundId（loop.currentRoundId），appendUser 以交互归属（interactive）追加到该轮
@@ -250,26 +248,6 @@ export class SeedOrchestrator {
     } finally {
       span.end();
     }
-  }
-
-  /** Handoff 衔接决策：产出 turn 出口 chunk。
-   *  SSOT：角色包参数（reflect.handoff 等）仅由内核消费——'loop' 是内核内部的自主续跑许可信号，
-   *  已由 loop 的 stepBudget/maxIterations 在单次 chat() 内消费完，绝不外泄给宿主（宿主只是插座）。
-   *  故对外 handoff 恒为 'wait'（把控制权交还用户）或 'end'（任务完成）。
-   *  @param forceWait 是否强制返回 wait（迭代上限时启用，防止误导宿主自动续跑） */
-  private async *handoff(forceWait = false): AsyncGenerator<AgentChunk, void, unknown> {
-    const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager, this.deps.strategyOverride);
-    const mode = forceWait ? 'wait' : resolveHandoff(strategy);
-    const decision = mode === 'end' ? 'end' : 'wait';
-    yield {
-      type: 'handoff',
-      decision,
-      reason: forceWait
-        ? '迭代上限已达，等待用户介入'
-        : mode === 'loop'
-          ? '本轮自主执行已完成，等待你的指示'
-          : undefined,
-    };
   }
 
   /**

@@ -579,7 +579,7 @@ export class AgentLoop {
     yield { type: 'done' };
   }
 
-  /** 检查是否因迭代/步数上限而终止（供 orchestrator 检查，决定 handoff 策略） */
+  /** 检查是否因迭代/步数上限而终止（内核内部运行状态标记，不再对外产出 handoff chunk） */
   isIterationLimitReached(): boolean {
     return this._iterationLimitReached;
   }

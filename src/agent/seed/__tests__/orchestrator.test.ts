@@ -2,11 +2,11 @@
  * 种子 turn 编排器独立单元测试
  *
  * 覆盖 SeedOrchestrator（最小 turn 唯一编排真理源）的显式命名入口：
- *   - runChat：完整 turn prepare → act(processUserInput) → reflect → handoff
- *   - runResume：act(continueAfterPause) → reflect（无回答前、无 Handoff）
+ *   - runChat：完整 turn prepare → act(processUserInput) → reflect
+ *   - runResume：act(continueAfterPause) → reflect（无回答前）
  * 注：原 runEvent（SessionEvent 结构化事件路径）已随 composer 剪枝移除。
  *
- * 入口共用短路语义：回答前中断 yield aborted；回答中失败/中断不触发回答后与 handoff。
+ * 入口共用短路语义：回答前中断 yield aborted；回答中失败/中断不触发回答后。
  */
 
 import { describe, it, expect, vi } from 'vitest';
@@ -32,12 +32,12 @@ function stubContinue(mocks: SeedMocks, contentPart: string): void {
 
 describe('SeedOrchestrator 最小 turn', () => {
   // ── runChat ────────────────────────────────────────────
-  it('runChat 完整 turn：prepare → act → reflect → handoff 顺序产出', async () => {
+  it('runChat 完整 turn：prepare → act → reflect 顺序产出', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');
     consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
 
-    const { chunks } = await collectGen(
+    await collectGen(
       new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal),
     );
     await vi.waitFor(() => {
@@ -50,8 +50,6 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith('完成回复', expect.any(String));
     // reflect 已委托摘要生成
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
-    // handoff 产出（默认 wait）
-    expect(chunks).toContainEqual({ type: 'handoff', decision: 'wait', reason: undefined });
   });
 
   it('reflect 守卫：reflect.summary=off 时跳过摘要生成（不沉淀）', async () => {
@@ -66,7 +64,7 @@ describe('SeedOrchestrator 最小 turn', () => {
 
     // 摘要生成不被调用（reflect 门控生效）
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
-    // 其余闭环仍完整：act 入史、handoff 产出
+    // 其余闭环仍完整：act 入史
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith('完成回复', expect.any(String));
   });
 
@@ -110,28 +108,23 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.history.appendAssistant).not.toHaveBeenCalled();
   });
 
-  it('runChat 回答中失败：不触发回答后与 handoff', async () => {
+  it('runChat 回答中失败：不触发回答后', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
     consumeControl.result = { content: '', aborted: false, paused: false, failed: true };
 
-    const { chunks } = await collectGen(
-      new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
-    );
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
-  it('runChat 回答中中断：不触发回答后与 handoff', async () => {
+  it('runChat 回答中中断：不触发回答后', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
     consumeControl.result = { content: '部分', aborted: true, paused: false, failed: false };
 
-    const { chunks } = await collectGen(
-      new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),
-    );
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
@@ -139,10 +132,9 @@ describe('SeedOrchestrator 最小 turn', () => {
       expect.any(String),
     );
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
-  it('runChat 回答中软暂停（paused）：问题全文入史但不产摘要、不 handoff（摘要 1:1）', async () => {
+  it('runChat 回答中软暂停（paused）：问题全文入史但不产摘要（摘要 1:1）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
     // 主动提问挂起：streamResult.paused=true，本轮回合未完成
@@ -161,19 +153,15 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(chunks).not.toContainEqual({ type: 'thinking', phase: 'archiving' });
     // 摘要推迟到续跑最终轮：本轮不产摘要
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
-    // 续跑态不在闭环出口分岔：不产 handoff
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 
   // ── runResume ───────────────────────────────────────────
-  it('runResume：act(continueAfterPause) → reflect；无回答前、无 Handoff', async () => {
+  it('runResume：act(continueAfterPause) → reflect；无回答前', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubContinue(mocks, '续跑回复');
     consumeControl.result = { content: '续跑回复', aborted: false, paused: false, failed: false };
 
-    const { chunks } = await collectGen(
-      new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal),
-    );
+    await collectGen(new SeedOrchestrator(deps).runResume(undefined, new AbortController().signal));
     await vi.waitFor(() => expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1));
 
     // 不重新装配上下文（无 prepare）：不加用户消息、不生成 roundId
@@ -184,7 +172,5 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.history.appendAssistant).toHaveBeenCalledWith('续跑回复', expect.any(String));
     // reflect 走摘要
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
-    // 无 Handoff
-    expect(chunks).not.toContainEqual(expect.objectContaining({ type: 'handoff' }));
   });
 });

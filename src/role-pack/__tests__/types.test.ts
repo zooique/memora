@@ -13,7 +13,6 @@
 import { describe, it, expect } from 'vitest';
 import {
   resolveMemoryRecallPercent,
-  resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
   resolveSummaryFocus,
@@ -87,7 +86,7 @@ describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
     expect(merged.prepare?.memoryRecallPercent).toBe(0.6);
     expect(merged.prepare?.memoryRecall).toBe('full');
     expect(merged.act?.toolMode).toBe('allow');
-    expect(merged.reflect?.handoff).toBe('wait');
+    expect(merged.reflect?.summary).toBe('on');
   });
 
   it('未传入覆盖策略（undefined）时返回完整默认策略', () => {
@@ -105,19 +104,6 @@ describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
 });
 
 describe('枚举键解析 · SSOT 非法值归位（不透传宿主）', () => {
-  it('resolveHandoff 合法值 wait/loop/end 一律采用', () => {
-    expect(resolveHandoff({ reflect: { handoff: 'wait' } } as unknown as BehaviorStrategy)).toBe('wait');
-    expect(resolveHandoff({ reflect: { handoff: 'loop' } } as unknown as BehaviorStrategy)).toBe('loop');
-    expect(resolveHandoff({ reflect: { handoff: 'end' } } as unknown as BehaviorStrategy)).toBe('end');
-  });
-
-  it('resolveHandoff 非法值（拼写错误/undefined/空策略）归位 wait', () => {
-    expect(resolveHandoff({ reflect: { handoff: 'blcok' } } as unknown as BehaviorStrategy)).toBe('wait');
-    expect(resolveHandoff({ reflect: { handoff: undefined } } as unknown as BehaviorStrategy)).toBe('wait');
-    expect(resolveHandoff({} as unknown as BehaviorStrategy)).toBe('wait');
-    expect(resolveHandoff(undefined)).toBe('wait');
-  });
-
   it('resolveMemoryRecallMode 合法值 full/limited/none 一律采用', () => {
     expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'full' } } as unknown as BehaviorStrategy)).toBe('full');
     expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'limited' } } as unknown as BehaviorStrategy)).toBe('limited');

@@ -2595,14 +2595,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         else scheduleStreamRender();
       }
       scrollToBottom(messages);
-    } else if (msg.type === 'handoff') {
-      // 衔接决策（SSOT 收紧后 loop 已由宿主归一为 wait，语意让位用户）：
-      // wait 静默（等用户输入，输入框已随 done 恢复）；end 低扰提示任务已收尾。
-      // 不渲染"将自动续跑"——自主循环由内核在单次 chat() 内消费预算，宿主不再二次进入。
-      if (msg.decision === 'end') {
-        showActivity('info', '任务已完成，可开始下一项');
-      }
-      // loop / wait 均静默处理
     } else if (msg.type === 'retry') {
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
       showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);

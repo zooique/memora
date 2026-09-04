@@ -30,9 +30,6 @@ export interface RecalledMemorySummary {
   source: string;
 }
 
-/** 回答后衔接决策：'wait' 等用户输入 / 'loop' 自动续跑 / 'end' 终止会话 */
-export type HandoffDecision = 'wait' | 'loop' | 'end';
-
 /** turn 归属标记：chunk 携带所在 turn roundId（SSOT：过程事件归属由内核唯一提供，
  *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */
 export type RoundTagged = { roundId?: string };
@@ -103,10 +100,6 @@ export type AgentChunk = (
    * Agent 暂停等用户在提问框回答；用户回答经 answerQuestion 回填后 continueAfterPause 续跑（非 Trigger）。
    */
   | { type: 'question_pending'; questions: AskQuestion[] }
-  /**
-   * 回答后阶段基于 endingHandoff 配置给出衔接决策，宿主据此决定是否自动触发下一轮
-   */
-  | { type: 'handoff'; decision: HandoffDecision; reason?: string }
   /**
    * 自审查轮开始信号：注入自审查提示前 emit；round 为第几轮（为多轮预留）
    */

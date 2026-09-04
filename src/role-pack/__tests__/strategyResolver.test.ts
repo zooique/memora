@@ -11,7 +11,6 @@ import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
   resolveMemoryRecallPercent,
-  resolveHandoff,
   resolveMemoryRecallMode,
   resolveMinFallback,
   resolveSummaryFocus,
@@ -120,7 +119,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 
   it('reflect 维度包含全部必需字段', () => {
     const r = DEFAULT_BEHAVIOR_STRATEGY.reflect!;
-    expect(r.handoff).toBe('wait');
     expect(r.selfReview).toBe(0);
     expect(r.summary).toBe('on');
     expect(r.userFollowup).toBe('silent');
@@ -147,24 +145,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 // ════════════════════════════════════════════════════════
 
 describe('resolve* 函数 — 基础策略解析', () => {
-  // ── resolveHandoff ──
-  describe('resolveHandoff', () => {
-    it('合法值透传', () => {
-      expect(resolveHandoff({ reflect: { handoff: 'loop' } })).toBe('loop');
-      expect(resolveHandoff({ reflect: { handoff: 'end' } })).toBe('end');
-      expect(resolveHandoff({ reflect: { handoff: 'wait' } })).toBe('wait');
-    });
-
-    it('非法值回退默认 wait', () => {
-      expect(resolveHandoff({ reflect: { handoff: 'invalid' as never } })).toBe('wait');
-    });
-
-    it('缺失值回退默认 wait', () => {
-      expect(resolveHandoff(undefined)).toBe('wait');
-      expect(resolveHandoff({})).toBe('wait');
-    });
-  });
-
   // ── resolveMemoryRecallMode ──
   describe('resolveMemoryRecallMode', () => {
     it('合法值透传', () => {
@@ -553,11 +533,11 @@ describe('mergeStrategy — 策略合并', () => {
     expect(result.global).toEqual(base.global);
   });
 
-  it('部分覆盖：仅修改 handoff', () => {
+  it('部分覆盖：仅修改 reflect.summary', () => {
     const result = mergeStrategy(base, {
-      reflect: { handoff: 'loop' },
+      reflect: { summary: 'off' },
     });
-    expect(result.reflect!.handoff).toBe('loop');
+    expect(result.reflect!.summary).toBe('off');
     // 其他维度不变
     expect(result.prepare!.memoryRecall).toBe('full');
     expect(result.act!.toolMode).toBe('allow');
@@ -567,12 +547,12 @@ describe('mergeStrategy — 策略合并', () => {
     const result = mergeStrategy(base, {
       prepare: { memoryRecall: 'none' },
       act: { toolMode: 'block', providerRouting: 'fixed' },
-      reflect: { handoff: 'end' },
+      reflect: { userFollowup: 'ask' },
     });
     expect(result.prepare!.memoryRecall).toBe('none');
     expect(result.act!.toolMode).toBe('block');
     expect(result.act!.providerRouting).toBe('fixed');
-    expect(result.reflect!.handoff).toBe('end');
+    expect(result.reflect!.userFollowup).toBe('ask');
     // 未覆盖的字段保留默认值
     expect(result.act!.temperature).toBe(0.7);
   });
@@ -720,17 +700,17 @@ describe('assembleRolePack — 角色包装配', () => {
     expect(s.global).toBeDefined();
 
     // 关键字段有默认值
-    expect(s.reflect!.handoff).toBe('wait');
+    expect(s.reflect!.summary).toBe('on');
     expect(s.act!.toolMode).toBe('allow');
   });
 
   it('装配后的 strategy 叠加角色包声明值', () => {
     const pack = makeRolePackWithStrategy({
-      reflect: { handoff: 'loop' },
+      reflect: { summary: 'off' },
     });
     const result = assembleRolePack(pack);
 
-    expect(result.strategy.reflect!.handoff).toBe('loop');
+    expect(result.strategy.reflect!.summary).toBe('off');
     // 其他字段仍是默认
     expect(result.strategy.act!.toolMode).toBe('allow');
   });

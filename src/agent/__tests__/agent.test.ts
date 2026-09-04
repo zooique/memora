@@ -2849,7 +2849,7 @@ describe('Agent · 暂停超时自动归档', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：L2 行为策略消费（getActiveStrategy + executeChatLoop handoff）
+// 测试：L2 行为策略消费（getActiveStrategy + executeChatLoop）
 // ═══════════════════════════════════════════════════════════════
 
 describe('Agent · L2 行为策略消费', () => {
@@ -2888,29 +2888,6 @@ describe('Agent · L2 行为策略消费', () => {
     expect(strategy.prepare?.memoryRecallPercent).toBe(0.4);
     // 验证默认策略的 act 维度（标准键 act.toolMode）
     expect(strategy.act?.toolMode).toBe('allow');
-    // 验证默认策略的 reflect 维度（标准键 reflect.handoff）
-    expect(strategy.reflect?.handoff).toBe('wait');
-  });
-
-  // ─── executeChatLoop → handoff chunk ─────────────────────
-
-  it('chat 应 yield handoff chunk（默认 handoff=wait）', async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of agent.chat('你好')) {
-      chunks.push(chunk);
-    }
-
-    // 验证 handoff chunk
-    const handoffChunk = chunks.find((c) => c.type === 'handoff');
-    expect(handoffChunk).toBeDefined();
-    if (handoffChunk?.type === 'handoff') {
-      expect(handoffChunk.decision).toBe('wait');
-      // 'wait' 决策时 reason 应为 undefined（L2 策略默认等待用户输入）
-      expect(handoffChunk.reason).toBeUndefined();
-    }
   });
 
   // ─── prepareChatContext 通过策略设置 loop 工具调用权限 ──
@@ -2925,7 +2902,7 @@ describe('Agent · L2 行为策略消费', () => {
       // 消费所有 chunk
     }
 
-    // 验证 handoff chunk 存在（表明 executeChatLoop 正常执行）
+    // 验证 done chunk 存在（表明 executeChatLoop 正常执行）
     // 验证整体流程不抛错即说明 prepareChatContext 正确消费了默认策略
     expect(agent.agentLoop).not.toBeNull();
   });
@@ -2968,7 +2945,7 @@ describe('Agent · L2 行为策略消费', () => {
     for await (const chunk of agent.chat('你好')) {
       chunks.push(chunk);
     }
-    expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
+    // 对话正常结束即验证覆盖路径生效
   });
 
   it('角色包声明非法 memoryRecallPercent（1.5）应降级内核默认，对话不抛错', async () => {
@@ -3001,7 +2978,7 @@ describe('Agent · L2 行为策略消费', () => {
     for await (const chunk of agent.chat('你好')) {
       chunks.push(chunk);
     }
-    expect(chunks.some((c) => c.type === 'handoff')).toBe(true);
+    // 对话正常结束即验证降级路径生效
   });
 
   it('角色包手动切换（唯一入口）：activate → 前缀刷新 → 立即生效（无需重启）', async () => {

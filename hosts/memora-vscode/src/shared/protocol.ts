@@ -424,14 +424,6 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'plan_update'; steps: PlanStepDto[] }
   /**
-   * Agent 衔接决策（对齐内核 handoff chunk，P1 事件流全量对齐）
-   *
-   * 内核已把角色包 reflect.handoff 的 'loop' 在内部消化为 'wait'，对外 handoff 恒吐 wait/end（SSOT：
-   * 角色包参数只进内核，宿主只是插座，绝不二次进入 chat）。'loop' 保留在类型并集仅为与其他宿主
-   * 协议对齐的防御冗度；宿主收到 loop 时按 wait 语义让位用户即可。
-   */
-  | { type: 'handoff'; decision: 'wait' | 'loop' | 'end'; reason?: string }
-  /**
    * LLM 调用重试（对齐内核 retry chunk，P1 事件流全量对齐）
    *
    * 内核在 LLM 失败重试时产出；webview 渲染低扰提示条「LLM 重试 n/m…」。

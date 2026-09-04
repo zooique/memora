@@ -191,7 +191,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     ],
     reflect: [
       'summary',
-      'handoff',
       'selfReview',
       'loopContinue',
       'userFollowup',
@@ -274,11 +273,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     it('act.streaming 枚举值正确', () => {
       const rule = STRATEGY_KEY_RULES.act!.streaming!;
       expect(rule).toEqual({ kind: 'enum', values: ['streaming', 'non-streaming'] });
-    });
-
-    it('reflect.handoff 枚举值正确', () => {
-      const rule = STRATEGY_KEY_RULES.reflect!.handoff!;
-      expect(rule).toEqual({ kind: 'enum', values: ['wait', 'loop', 'end'] });
     });
 
     it('reflect.summary 枚举值正确', () => {

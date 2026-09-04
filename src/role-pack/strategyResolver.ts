@@ -18,7 +18,6 @@ import {
 } from './strategyKeys.js';
 import type {
   BehaviorStrategy,
-  Handoff,
   MemoryRecallMode,
   ContextAssembly,
   ErrorHandling,
@@ -99,7 +98,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     multiStepReasoning: 'auto',
   },
   reflect: {
-    handoff: 'wait',
     selfReview: 0,
     summary: 'on',
     userFollowup: 'silent',
@@ -146,7 +144,7 @@ export function resolveActiveStrategy(
 
 /**
  * 枚举值合法性收窄（SSOT 兜底）：角色包 L2 键是枚举开关，非法拼写不应静默透传
- * （handoff 会直接 yield 给宿主，其他枚举会污染行为分支），统一归位到内核默认。
+ * （非法枚举会污染行为分支或注入 persona prompt），统一归位到内核默认。
  */
 function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], fallback: T): T {
   return typeof value === 'string' && (allowed as readonly string[]).includes(value)
@@ -157,14 +155,6 @@ function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], 
 // ════════════════════════════════════════════════════════════
 // 策略解析函数 (resolve*)
 // ════════════════════════════════════════════════════════════
-
-/**
- * 解析衔接策略（SSOT）：非法值（非 wait/loop/end）归位 'wait'。
- * handoff 是唯一会作为 chunk 直接暴露给宿主的枚举，非法值必须归位，避免宿主收到无法识别的决策。
- */
-export function resolveHandoff(strategy: BehaviorStrategy | undefined): Handoff {
-  return normalizeEnum(strategy?.reflect?.handoff, ['wait', 'loop', 'end'], 'wait');
-}
 
 /** 解析记忆召回模式（SSOT）：非法值归位 'full' */
 export function resolveMemoryRecallMode(strategy: BehaviorStrategy | undefined): MemoryRecallMode {
