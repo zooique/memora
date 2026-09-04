@@ -457,7 +457,7 @@ export function mergeStrategy(
  *
  * 将原始角色包解析为含完整策略的装载结果，供装配层直接使用。
  * 同时根据策略中的 userFollowup/askOn/askLimit 注入主动提问指令到 persona prompt，
- * 引导 LLM 使用 ask_user 内置工具提问（答案以 tool result 回填，替代已下线的 [ASK] 文本行）。
+ * 引导 LLM 使用 ask_user 内置工具提问（答案以 tool result 回填）。
  *
  * @param pack 原始角色包
  * @returns 含完整策略的装载结果
@@ -474,8 +474,8 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
   }
 
   // 主动提问指令注入：userFollowup=ask 时，将 askOn/askLimit 转为 LLM 指令。
-  // 提问通道收敛为 ask_user 内置工具（2026-09-04，对齐 Claude Code AskUserQuestion 机制）：
-  // 提问 = 一次普通工具调用，用户答案以 tool result 回填——不再是 [ASK] 文本行（已下线）。
+  // 提问通道 = ask_user 内置工具（对齐 Claude Code AskUserQuestion 机制）：
+  // 提问 = 一次普通工具调用，用户答案以 tool result 回填。
   if (strategy.reflect?.userFollowup === 'ask') {
     const askOn = strategy.global?.askOn;
     // askLimit 取值收敛到 resolveAskLimit（SSOT：prompt 引导与 loop 拦截共用同一解析）

@@ -2473,7 +2473,7 @@ describe('AgentLoop · L2 策略 setToolCallsBlocked', () => {
   });
 });
 
-describe('AgentLoop · 主动提问（ask_user 工具，2026-09-04 收敛替代 [ASK]）', () => {
+describe('AgentLoop · 主动提问（ask_user 工具）', () => {
   it('LLM 调 ask_user 时结构完整落地（不撕工具）、yield question_pending 并返回 paused', async () => {
     const onPendingQuestion = vi.fn();
     const loop = new AgentLoop({

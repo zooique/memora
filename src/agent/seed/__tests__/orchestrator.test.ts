@@ -148,7 +148,7 @@ describe('SeedOrchestrator 最小 turn', () => {
   it('runChat 回答中软暂停（paused）：问题全文入史但不产摘要、不 handoff（摘要 1:1）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
-    // [ASK] 主动提问挂起：streamResult.paused=true，本轮回合未完成
+    // 主动提问挂起：streamResult.paused=true，本轮回合未完成
     consumeControl.result = { content: '这个颜色你喜欢吗？', aborted: false, paused: true, failed: false };
 
     const { chunks } = await collectGen(

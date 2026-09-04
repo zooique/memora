@@ -202,7 +202,7 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
 };
 
 /**
- * ask_user 内置工具定义（主动提问唯一通道，2026-09-04 收敛替代 [ASK] 文本行）
+ * ask_user 内置工具定义（主动提问唯一通道）
  *
  * 对齐 Claude Code AskUserQuestion 机制：提问 = 一次普通工具调用（Tool Calling）。
  * loop 检出 ask_user → 整轮挂起（step 边界气口）→ 用户答案以 tool result 回填 →

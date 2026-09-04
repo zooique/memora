@@ -28,11 +28,6 @@
       "import": "./dist/index.js",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./ask-parser": {
-      "import": "./dist/utils/askParser.js",
-      "types": "./dist/utils/askParser.d.ts",
-      "default": "./dist/utils/askParser.js"
     }
   },
   "repository": {

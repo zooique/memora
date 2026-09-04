@@ -634,7 +634,7 @@ describe('assembleRolePack — 角色包装配', () => {
     expect(result.personaPrompt).toContain('遇到模糊不清的情况时');
     expect(result.personaPrompt).toContain('需要用户做决策时');
     expect(result.personaPrompt).toContain('每次回答中最多提问 2 次');
-    // 提问通道收敛为 ask_user 工具引导（2026-09-04 替代 [ASK] 文本行契约）
+    // 提问通道 = ask_user 工具引导
     expect(result.personaPrompt).toContain('ask_user');
   });
 

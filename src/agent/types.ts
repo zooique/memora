@@ -379,7 +379,7 @@ export interface StatusTransition {
 }
 
 /**
- * 结构化主动提问（ask_user 内置工具解析产物，2026-09-04 通道收敛替代 [ASK] 文本行）
+ * 结构化主动提问（ask_user 内置工具解析产物）
  *
  * 唯一「提问后暂停」形态：LLM 调 ask_user 工具（question + 可选 options/allowCustom），
  * loop 检出后挂起，用户答案以 tool result 回填（对齐 Claude Code AskUserQuestion 机制）。

@@ -1913,7 +1913,7 @@ class SingleToolThenTextProvider extends LlmProvider {
 }
 
 /**
- * ask_user 主动提问 → 回答 → 续跑 Provider（集成测试专用，2026-09-04 通道收敛替代 [ASK]）
+ * ask_user 主动提问 → 回答 → 续跑 Provider（集成测试专用）
  *
  * 设计要点（对抗式复核）：
  * - 摘要生成器（RoundSummaryGenerator）用主 provider 生成摘要——识别系统标记

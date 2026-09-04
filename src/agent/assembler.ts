@@ -122,7 +122,7 @@ export interface AgentHooks {
   emit: (event: AgentEventName, data: unknown) => void;
   /** 会话忙状态查询（SessionManager 守卫） */
   isChatBusy: () => boolean;
-  /** 主动提问时请求软暂停（[ASK] question_pending 触发） */
+  /** 主动提问时请求软暂停（ask_user question_pending 触发） */
   requestPause: (reason: string, source: 'user' | 'agent' | 'system') => void;
   /**
    * 宿主工具执行前检查回调（统一执行入口 · 单点聚合检查）
@@ -310,8 +310,8 @@ function wireRuntimeCallbacks(
   sessionManager: SessionManager,
   hooks: AgentHooks | undefined,
 ): void {
-  // 主动提问（ask_user 工具检出，2026-09-04 通道收敛替代 [ASK]）：发射 questionPending 事件
-  // （宿主渲染提问 UI）+ 触发暂停（pauseMeta 记 reason/source，供重启恢复展示"问了什么"）。
+  // 主动提问（ask_user 工具检出）：发射 questionPending 事件（宿主渲染提问 UI）+
+  // 触发暂停（pauseMeta 记 reason/source，供重启恢复展示"问了什么"）。
   loop.onPendingQuestion = (questions) => {
     if (questions.length === 0) return;
     hooks?.emit(AGENT_EVENTS.questionPending, questions);

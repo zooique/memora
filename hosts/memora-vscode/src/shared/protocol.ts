@@ -606,15 +606,18 @@ export type ExtensionToWebviewMessage =
   /**
    * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
    *
-   * 实际来源：extension host 监听内核 questionPending 事件（LLM 调 ask_user 工具路径，
-   * 2026-09-04 收敛替代 [ASK] 文本）后转发，触发 Agent 暂停（pause），等待用户在提问
+   * 实际来源：extension host 监听内核 questionPending 事件（LLM 调 ask_user 工具路径）
+   * 后转发，触发 Agent 暂停（pause），等待用户在提问
    * 输入框回答；收到 clarify_answer 后 host 调 agent.answerQuestion() 回填 + resumeExecution 续跑。
    *
    * 注：内核 needClarify 事件（P4 任务槽位补全/composer 路径）已于 2026-09-03 整链剪枝，
    * ask_user 为唯一提问通道——本消息类型由 questionPending 事件（主）+ question_pending
    * chunk（幂等兜底，TS-O3/TS-O5）归一驱动渲染。
    */
-  | { type: 'need_clarify'; questions: { slot: string; question: string; options?: string[] }[] }
+  | {
+      type: 'need_clarify';
+      questions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[];
+    }
   /**
    * 目标漂移检测提示（H2 事件：goalDriftDetected）
    *

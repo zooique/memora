@@ -98,7 +98,7 @@ export interface AgentLoopOptions {
   /** 工具执行前检查回调（宿主闸门）。三态：放行（可携 overrideArgs 改写参数）/ 跳过
    * （返回 previousResult 幂等去重）/ 拒绝（阻止执行）；未注入时正常执行 */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
-  /** 主动提问回调（回答中检测到结构化 `[ASK]` 时调用，loop 只回调不处理 UI） */
+  /** 主动提问回调（回答中 LLM 调 ask_user 工具时调用，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 已存轮次摘要加载器。截断生成摘要前优先取持久化 round-summary（零成本保真），仅无已存时才现调 LLM */
   roundSummaryLoader?: () => string;
@@ -226,7 +226,7 @@ export class AgentLoop {
 
   /** 多 turn 任务编排组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
   private externalTaskHeadRoundId = '';
-  /** 主动提问回调（检测到 `[ASK]` 时调用，Agent 注入，loop 只回调不处理 UI） */
+  /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
   private readonly toolRunner: ToolRunner;
@@ -895,9 +895,9 @@ export class AgentLoop {
     }
 
     // ④ 结果路由：工具分支 / 纯文本结束分支
-    // 主动提问走 ask_user 内置工具（2026-09-04 通道收敛，替代已下线的 [ASK] 文本行）：
-    // 提问 = 一次普通工具调用，在 handleToolCalls 检出挂起；用户答案以 tool result 回填，
-    // 工具调用结构完整落地（不再「撕掉」工具），OpenAI 兼容端 assistant.tool_calls 恒有配对 tool 消息。
+    // 主动提问走 ask_user 内置工具（唯一通道）：提问 = 一次普通工具调用，在 handleToolCalls 检出
+    // 挂起；用户答案以 tool result 回填，工具调用结构完整落地（不再「撕掉」工具），
+    // OpenAI 兼容端 assistant.tool_calls 恒有配对 tool 消息。
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
       // P2 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
       // 供宿主渲染「过程叙述」折叠行——正文已在流式阶段剥离（未见工具轮文本）。
@@ -1038,10 +1038,10 @@ export class AgentLoop {
       effectiveToolCalls = effectiveToolCalls.slice(0, this.strategy.toolStepLimit);
     }
 
-    // 主动提问检出（ask_user 工具，2026-09-04 通道收敛，替代 [ASK] 文本行）：
-    // 提问 = 一次普通工具调用（对齐 Claude Code AskUserQuestion 机制）。检出 ask_user 且未达
-    // askLimit 上限 → 整轮挂起（其余工具不执行——提问是决策关口，答案未定前执行可能白跑），
-    // 用户答案经 answerQuestion 回填为 tool 结果后由宿主续跑，LLM 基于答案重新决策。
+    // 主动提问检出（ask_user 内置工具）：提问 = 一次普通工具调用（对齐 Claude Code AskUserQuestion
+    // 机制）。检出 ask_user 且未达 askLimit 上限 → 整轮挂起（其余工具不执行——提问是决策关口，
+    // 答案未定前执行可能白跑），用户答案经 answerQuestion 回填为 tool 结果后由宿主续跑，
+    // LLM 基于答案重新决策。
     if (
       effectiveToolCalls.some((tc) => tc.function.name === ASK_USER_TOOL.name) &&
       this.askCountThisTurn < this.strategy.askLimit

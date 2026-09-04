@@ -71,7 +71,7 @@ interface ReplayRound {
   processEvents: ProcessEvent[];
   /** 问答闭环内交互输入（TS-9：主动提问回答/补充，折叠块渲染，不分裂新轮） */
   interactiveInputs?: { content: string; ts?: string; kind: InteractiveInputKind }[];
-  /** 问答闭环内前序 assistant 段（TS-9：如 [ASK] 主动提问，排在交互输入之前） */
+  /** 问答闭环内前序 assistant 段（TS-9：如主动提问，排在交互输入之前） */
   assistantLog?: { content: string; ts?: string }[];
 }
 
@@ -1710,7 +1710,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 按轮交织发送重放视图（UX-9 闭环可视化，2026-09-03）
    *
    * 每轮：user（带 roundId）→ replay_events（含 meta，整批统一重放）→
-   * 前序 assistant 段 + 交互输入按时间升序交织（还原打断点 / [ASK] 提问点时序）→
+   * 前序 assistant 段 + 交互输入按时间升序交织（还原打断点 / 提问点时序）→
    * assistant 最终回答（末段，webview 端以同 roundId 判定「同环续接」标记）。
    * 严禁拆分 meta 走 process_event：process_event(meta) 在 webview 端被当作「运行时新轮开始」，
    * 会调用 prepareFlowShell() 建骨架 assistant 块，导致后续 assistant 正文又 append 第二个块
@@ -1986,9 +1986,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 内核保证事件先于 chunk 到达（loop 先 onPendingQuestion 回调、后 yield chunk）：事件驱动时清空 chunk 缓存，
     // chunk 仅作「事件监听未就绪/异常」时的兜底渲染源（消除单点事件依赖，问题不丢失）。
     let clarifyEventDriven = false;
-    const clarifyChunkQueue: { slot: string; question: string; options?: string[] }[] = [];
+    const clarifyChunkQueue: {
+      slot: string;
+      question: string;
+      options?: string[];
+      allowCustom?: boolean;
+    }[] = [];
     // 监听主动提问事件 → 渲染提问框（含 LLM 声明的候选选项，webview 渲染为可点击按钮）
-    const onPendingQuestion = (questions: { slot: string; question: string; options?: string[] }[]) => {
+    const onPendingQuestion = (questions: (
+      { slot: string; question: string; options?: string[]; allowCustom?: boolean }[]
+    )) => {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this.post({ type: 'need_clarify', questions });
@@ -2054,7 +2061,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           metaEmittedForRound = true;
           emitEvent('meta', roundMeta());
         }
-        // 提问 chunk（question_pending，[ASK]/P4 双触发源同构）：事件优先驱动，chunk 幂等兜底（TS-O3/TS-O5）。
+        // 提问 chunk（question_pending）：事件优先驱动，chunk 幂等兜底（TS-O3/TS-O5）。
         // 事件已驱动（内核先回调、后 yield chunk）→ 跳过；未驱动 → 攒缓存，流尾统一兜底渲染（避免逐条 post 后者覆盖前者）
         if (chunk.type === 'question_pending') {
           if (!clarifyEventDriven) {

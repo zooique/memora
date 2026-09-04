@@ -338,10 +338,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'user', content: '任务A', ts: 't1' },
       { role: 'assistant', content: '最终回答', ts: 't5' },
     ]);
-    // TS-9 闭环节点数据：前序 assistant 段（含 [ASK] 提问）+ 交互输入（qa 与 supplement 混合）
+    // TS-9 闭环节点数据：前序 assistant 段（含提问）+ 交互输入（qa 与 supplement 混合）
     const round = roundStore.getById('round-1')!;
     round.assistantLog = [
-      { id: 'a0', role: 'assistant', content: '[ASK] 选择哪个方案？', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
+      { id: 'a0', role: 'assistant', content: '需要先确认哪个方案？', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
     ];
     round.interactiveInputs = [
       { id: 'i1', role: 'user', content: '选方案A', timestamp: 't3', kind: 'question-answer' } as never,
@@ -353,11 +353,11 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string; roundId?: string });
     const idxUser = ordered.findIndex((m) => m.type === 'user' && !m.kind);
-    const idxAsk = ordered.findIndex((m) => m.type === 'assistant' && m.text === '[ASK] 选择哪个方案？');
+    const idxAsk = ordered.findIndex((m) => m.type === 'assistant' && m.text === '需要先确认哪个方案？');
     const idxQa = ordered.findIndex((m) => m.type === 'user' && m.kind === 'question-answer');
     const idxSupp = ordered.findIndex((m) => m.type === 'user' && m.kind === 'supplement');
     const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '最终回答');
-    // UX-9 时序还原：主输入 → [ASK] 段 → 用户回答 → 打断补充（打断点）→ 最终回答（续接）
+    // UX-9 时序还原：主输入 → 提问段 → 用户回答 → 打断补充（打断点）→ 最终回答（续接）
     expect(idxAsk).toBeGreaterThan(idxUser);
     expect(idxQa).toBeGreaterThan(idxAsk);
     expect(idxSupp).toBeGreaterThan(idxQa);

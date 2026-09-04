@@ -278,10 +278,6 @@ export { setLogger, logger } from '@/logging/logger.js';
 export { segmentText, segmentLower } from '@/utils/segmenter.js';
 export { isPlainObject } from '@/utils/objects.js';
 export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
-// [ASK] 历史提问契约解析（SSOT 单一真理源，2026-09-03 T1）：主动提问已收敛为 ask_user 工具
-// （2026-09-04），内核 loop 不再解析 [ASK]；本解析器保留供宿主 webview 对**历史会话重放/复制**的
-// 兼容清洗（存量 [ASK] 文本数据仍存在）——同一份浏览器安全纯函数（零 Node 依赖，esbuild 可内联）
-export { parseAskQuestions, stripAskLines, type ParsedAskQuestion } from '@/utils/askParser.js';
 // 宿主主进程统一使用 safeSetTimeout/safeSetInterval 跟踪清理定时器
 export {
   safeSetTimeout,

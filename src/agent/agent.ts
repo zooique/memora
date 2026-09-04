@@ -843,7 +843,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 回答在途主动提问（ask_user 工具，2026-09-04 通道收敛替代 [ASK]）：
+   * 回答在途主动提问（ask_user 工具）：
    * 答案以 ask_user 的 tool result 回填（与 assistant.tool_calls 配对，结构合法）。
    * 调用后宿主以 resumeExecution(回答文本, undefined, 'question-answer') 续跑——
    * 回答文本同时作为新 user 输入注入并记录为闭环节点交互输入（round 不分裂），

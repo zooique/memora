@@ -1818,7 +1818,7 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
   });
 });
 
-describe('chatView 澄清候选选项（P4/[ASK] options，2026-09-02）', () => {
+describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -1828,7 +1828,7 @@ describe('chatView 澄清候选选项（P4/[ASK] options，2026-09-02）', () =>
 
   it('need_clarify 携带 options → 消息流内联选择题渲染可点选项按钮（提问下方，非底部弹层）', () => {
     const { postMessage } = mountChatView();
-    // 先建提问骨架作为内联锚点（[ASK] 提问块；纯视觉锚点，不含完整内核流）
+    // 先建提问骨架作为内联锚点（提问块；纯视觉锚点，不含完整内核流）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
       type: 'need_clarify',
@@ -1908,6 +1908,40 @@ describe('chatView 澄清候选选项（P4/[ASK] options，2026-09-02）', () =>
     const bar = document.getElementById('clarifyBar') as HTMLElement;
     expect(bar.classList.contains('visible')).toBe(true);
     expect(document.querySelectorAll('#clarifyOptions .opt-btn')).toHaveLength(2);
+  });
+
+  it('allowCustom=false 且带 options → 强制单选：隐藏自由输入行（仅点选）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'need_clarify',
+      questions: [
+        { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: false },
+      ],
+    });
+    const box = document.querySelector('.ask-inline') as HTMLElement;
+    expect(box).not.toBeNull();
+    // 选项仍在
+    expect(box.querySelectorAll('.ask-inline__opt')).toHaveLength(2);
+    // 自由输入行被隐藏（强制只点选）
+    const inputRow = box.querySelector('.ask-inline__input-row') as HTMLElement;
+    expect(inputRow).not.toBeNull();
+    expect(inputRow.hidden).toBe(true);
+  });
+
+  it('allowCustom 缺省/true 且带 options → 保持双通道（自由输入行可见）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // allowCustom=true 显式允许自由输入
+    dispatch({
+      type: 'need_clarify',
+      questions: [
+        { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: true },
+      ],
+    });
+    const row = document.querySelector('.ask-inline__input-row') as HTMLElement;
+    expect(row).not.toBeNull();
+    expect(row.hidden).toBe(false);
   });
 });
 
@@ -2014,9 +2048,9 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('D3 单轨：运行时 qa 回答后 resume，meta 骨架经 chunk roundId 复用补「续接」（骨架零状态延后判）', () => {
     mountChatView();
-    // 第一段回答（[ASK] 提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId
+    // 第一段回答（提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '[ASK] 选择哪个方案？', roundId: 'round-1' });
+    dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     // 用户回答（question-answer，不重置同环判定——qa 属当前闭环）
     dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1' });
     // resumeExecution → 新 runFlow 的 meta → 新骨架（meta 不带 roundId，零状态不标续接）
@@ -2035,7 +2069,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('运行时暂停（paused）清流式光标：提问后暂停块不再闪烁「调用大模型」', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '[ASK] 选择哪个方案？', roundId: 'round-1' });
+    dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     expect(body.classList.contains('is-streaming')).toBe(true); // 暂停前光标亮
     dispatch({ type: 'paused' });
@@ -2045,7 +2079,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('运行时 resume meta：续跑保留 round-block 锚点，不复制第二个运行时折叠', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '[ASK] 选择哪个方案？', roundId: 'round-1' });
+    dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     const rb0 = document.querySelector('.round-block') as HTMLElement;
     expect(rb0).not.toBeNull();
     expect(rb0.closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
@@ -2066,8 +2100,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     mountChatView();
     // 普通新闭环用户输入（重置上轮同环判定）
     dispatch({ type: 'user', text: '任务A', ts: 't1', roundId: 'round-1' });
-    // 前序 assistant 段（[ASK] 提问）
-    dispatch({ type: 'assistant', text: '[ASK] 选择哪个方案？', ts: 't2', roundId: 'round-1' });
+    // 前序 assistant 段（提问）
+    dispatch({ type: 'assistant', text: '需要先确认哪个方案？', ts: 't2', roundId: 'round-1' });
     // 用户回答（question-answer）
     dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
     // 最终回答（同 roundId）→ 同环续接
@@ -2087,7 +2121,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 C：question-answer 渲染为消息流内联子行（提问块下方，非折叠收纳）', () => {
     mountChatView();
     beginRound(); // meta + chunk：骨架建块并挂载 round-block（有过程事件）
-    // 用户对 [ASK] 的回答 → 内联子行「你答：xxx」插在提问块（activeAssistantEl）之后
+    // 用户对提问的回答 → 内联子行「你答：xxx」插在提问块（activeAssistantEl）之后
     dispatch({ type: 'user', text: '选方案A', ts: '2026-09-03T03:15:05Z', kind: 'question-answer', roundId: 'round-1' });
     const qa = document.querySelector('.msg-qa') as HTMLElement;
     expect(qa).not.toBeNull();
@@ -2114,13 +2148,13 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('UX-9 重放路径：replay_events + 前序段 + qa 内联子行、final 为续接（A/B/C 同框回归）', () => {
     mountChatView();
-    // 主输入 → 整批过程事件（含 meta）→ [ASK] 前序段
+    // 主输入 → 整批过程事件（含 meta）→ 提问前序段
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
     dispatch({ type: 'replay_events', roundId: 'round-1', events: [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
       { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 0, success: true } },
     ] as never });
-    dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
     // 用户回答 → 内联子行（插在前序段之后、final 之前）
     dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
     // 最终回答 → 同环续接
@@ -2141,7 +2175,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（平铺归组 + 容器级 footer）', () => {
     mountChatView();
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
     dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
     // 同 roundId → 单个 .round-group 容器，两段平铺归组 + 容器级 footer
     const groups = document.querySelectorAll('.round-group');
@@ -2161,85 +2195,38 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(userWrap.classList.contains('msg-wrapper')).toBe(true);
   });
 
-  it('A 容器化：容器级 footer 复制 = 用户提问 + 各段报告正文（[ASK] 契约行被剥离，纯提问段跳过）', () => {
+  it('A 容器化：容器级 footer 复制 = 用户提问 + 各段报告正文（rawText 原文直取）', () => {
     mountChatView();
     // jsdom 无 navigator.clipboard，注入 writeText mock 捕获复制内容
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '[ASK] 你倾向哪个方案？{方案A|方案B}', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
     dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
     const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
-    // 整链 = 用户提问 + 实质正文（提问在先、段按序拼接）
+    // 整链 = 用户提问 + 各段原文（提问在先、段按序拼接，rawText 直取不剥离）
     expect(copied).toContain('帮我做方案');
+    expect(copied).toContain('你倾向哪个方案？');
     expect(copied).toContain('好的，按方案A继续');
-    // T3 报告净化：提问契约行（含选项花括号）不混入复制，纯提问段剥离后为空被跳过
-    expect(copied).not.toContain('[ASK]');
-    expect(copied).not.toContain('方案B');
     // 拼接顺序：提问在前、回答段在后
     expect(copied.indexOf('帮我做方案')).toBeLessThan(copied.indexOf('好的，按方案A继续'));
   });
 
-  it('A 容器化：整链复制剥离 [ASK] 行但保留同段实质正文（rawText 原文不改写）', () => {
+  it('A 容器化：整链复制直取各段 rawText 原文（不剥离、不改写，溯源完整）', () => {
     mountChatView();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    // 同一段内 [ASK] 行与实质正文混排：剥离契约行、正文保留
-    dispatch({ type: 'assistant', text: '先确认倾向。\n[ASK] 倾向哪个方案？{方案A|方案B}', ts: 't2', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '先确认倾向。\n采用方案A', ts: 't2', roundId: 'round-1' });
     dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
     const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
     expect(copied).toContain('先确认倾向。');
-    // 契约行（问句 + 选项花括号）被剥离，正文剩余自然出现的关键词不误伤
-    expect(copied).not.toContain('[ASK]');
-    expect(copied).not.toContain('倾向哪个方案');
-    expect(copied).not.toContain('{方案A|方案B}');
-    // rawText 保留原文（重放/溯源不受复制净化影响）
-    const seg = document.querySelector('.msg.assistant') as HTMLElement;
-    expect(seg.dataset.rawText).toContain('[ASK]');
-  });
-
-  it('R2 重放 [ASK]：live 解析只读选择题（问题 + 选项 chips，正文剔除 [ASK] 原文行）', () => {
-    mountChatView();
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '先确认你的倾向。\n[ASK] 倾向哪个方案？{方案A|方案B}', ts: 't2', roundId: 'round-1' });
-    // 只读选择题块：问题 + 选项 chips
-    const ask = document.querySelector('.ask-replay') as HTMLElement;
-    expect(ask).not.toBeNull();
-    expect(ask.querySelector('.ask-replay__q')?.textContent).toBe('倾向哪个方案？');
-    const opts = ask.querySelectorAll('.ask-replay__opt');
-    expect(opts).toHaveLength(2);
-    expect(opts[0]?.textContent).toBe('方案A');
-    expect(opts[1]?.textContent).toBe('方案B');
-    // 只读：chip 为 span 非 button（历史不可作答）
-    expect(ask.querySelectorAll('button')).toHaveLength(0);
-    // 正文 [ASK] 原文行被剔除（不双重展示），其余正文保留
-    const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
-    expect(body.textContent).not.toContain('[ASK]');
-    expect(body.textContent).toContain('先确认你的倾向');
-    // 复制整链仍取原文（dataset.rawText 不改写，含 [ASK] 行）
-    const seg = document.querySelector('.msg.assistant') as HTMLElement;
-    expect(seg.dataset.rawText).toContain('[ASK]');
-  });
-
-  it('R2 重放 [ASK]：无选项的提问行解析为纯问题；无 [ASK] 行的正文不渲染只读块', () => {
-    mountChatView();
-    dispatch({ type: 'user', text: '帮我写代码', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '[ASK] 需要我补充什么细节吗？', ts: 't2', roundId: 'round-1' });
-    const ask = document.querySelector('.ask-replay') as HTMLElement;
-    expect(ask).not.toBeNull();
-    expect(ask.querySelectorAll('.ask-replay__opt')).toHaveLength(0);
-    expect(ask.querySelector('.ask-replay__q')?.textContent).toBe('需要我补充什么细节吗？');
-    // 完全无 [ASK] 行 → 不渲染只读块（普通正文不受影响）
-    dispatch({ type: 'user', text: '你好', ts: 't3', roundId: 'round-2' });
-    dispatch({ type: 'assistant', text: '你好，有什么可以帮你？', ts: 't4', roundId: 'round-2' });
-    const segs = document.querySelectorAll('.msg.assistant');
-    const last = segs[segs.length - 1] as HTMLElement;
-    expect(last.querySelector('.ask-replay')).toBeNull();
+    expect(copied).toContain('采用方案A');
+    expect(copied).toContain('好的，按方案A继续');
   });
 
   it('narrate 过程事件渲染为独立父块（建议 A），每段叙述一个可折叠父块', () => {

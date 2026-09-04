@@ -57,7 +57,7 @@ export interface RoundMessage {
  * （LLM 主动提问回答 / 流式中补充 / 暂停后续跑补充）均归属当前问答闭环，
  * 不分裂新轮——类型只影响 UI 折叠块文案，不参与 round 归属判定。
  *
- * - question-answer：LLM 主动提问（[ASK]/need_clarify）的用户回答（宿主 handleResume 路由）
+ * - question-answer：LLM 主动提问（ask_user 工具）的用户回答（宿主 handleResume 路由）
  * - supplement：用户中途补充（插话 interject / 暂停后主输入框补充）
  */
 export type InteractiveInputKind = 'question-answer' | 'supplement';
@@ -234,7 +234,7 @@ export interface Round {
   /**
    * 问答闭环内多段 assistant（TS-9，2026-09-02 新增）
    *
-   * 闭环节点跨暂停-续跑时，前序 assistant 段（如 [ASK] 主动提问、中断半截）
+   * 闭环节点跨暂停-续跑时，前序 assistant 段（如主动提问、中断半截）
    * 入此数组，assistantMessage 恒为末段（最终回答）。普通单段问答轮无此字段
    * （零冗余：仅在 appendAssistant 重写已存在 assistantMessage 时产生）。
    */

@@ -16,10 +16,6 @@ import type {
 } from '../../shared/protocol.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
-// [ASK] 提问契约解析（SSOT 单一真理源，2026-09-03 T1）：与内核 loop.extractAskQuestions 共用
-// utils/askParser 同一实现；走 package.json "./ask-parser" 浏览器安全子图导出，esbuild 只
-// 内联这一自包含文件（不拖入内核 node:* 依赖链）——解析/剥离改一处全局生效
-import { parseAskQuestions, stripAskLines } from '@zooique/memora/ask-parser';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
@@ -1562,7 +1558,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       div.className = 'msg ' + role;
       // UX-9 B 同环续接标识（D3 单轨）：同 roundId 的第 2+ 段（assistantLog 段们在 final 之前的
       // 续接、运行时打断/回答后的续接段）统一按「roundId 相等」标记 is-continued —— 圆环连线 +
-      // 「续接」chip，让 [ASK]→回答→再答 / 半截→补充→续接 呈连续链而非三条孤立消息
+      // 「续接」chip，让提问→回答→再答 / 半截→补充→续接 呈连续链而非三条孤立消息
       const isContinued = isSameRoundContinue(roundId);
       if (isContinued) div.classList.add('is-continued');
       // roundId 记录为本轮标识（无 roundId 的块不覆盖，重放每轮都有）
@@ -1580,10 +1576,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       messages.appendChild(div);
       // A 容器化：归位到所属 .round-group（同 roundId 段收进容器；无 roundId 留消息流）
       ensureRoundGroup(roundId, div);
-      // R2 重放 [ASK] live 解析：历史正文的行首 [ASK] 行（+ 行尾 {A|B} 选项，格式契约
-      // 同内核/宿主共用的 utils/askParser / strategyResolver 注入指令）渲染为只读选择题——
-      // 重放复用运行时提问的视觉语言，但不可作答；正文中的 [ASK] 行剔除避免双重展示
-      renderAskReplay(div, text);
       scrollToBottom(messages);
       updateEmptyState();
       return div;
@@ -1625,7 +1617,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 交互内容归位到它生发的上下文，同一问答闭环消息流连续体，两种形态：
    * - supplement（用户打断补充）：渲染为「行内打断切分条」（A），插在打断点（被打断的
    *   assistant 块之后），resume 续接正文随后跟上 —— 还原内核 interject() abort→续跑语义；
-   * - question-answer（用户对 [ASK] 提问的回答）：消息流内联子行（C'，`你答：xxx`），
+   * - question-answer（用户对主动提问的回答）：消息流内联子行（C'，`你答：xxx`），
    *   插在提问块下方、续接块上方，阅读位置连贯（不再收进 round-block 折叠）。
    *
    * @param text 输入全文
@@ -1792,9 +1784,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 容器整链文本：用户提问（前一兄弟，若为 user 气泡）+ 容器内全部 assistant 段正文
    *
-   * 报告净化（2026-09-03 T3 拍板）：段正文经 stripAskLines 剥离 [ASK] 提问契约行——
-   * 复制只拿「最终汇报」实质内容，不掺交互噪声；剥离后为空的纯提问段被跳过。
-   * rawText 本身不改写（重放/整链原文溯源仍完整），契约剥离统一复用 utils/askParser（SSOT）。
+   * 复制拿「最终汇报」实质内容，不掺交互噪声；rawText 原文完整保留（溯源不受影响）。
    */
   function roundChainText(g: HTMLElement): string {
     const parts: string[] = [];
@@ -1804,73 +1794,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (t) parts.push(t);
     }
     g.querySelectorAll<HTMLElement>('.msg.assistant').forEach((a) => {
-      const t = stripAskLines(a.dataset.rawText ?? '').trim();
+      const t = (a.dataset.rawText ?? '').trim();
       if (t) parts.push(t);
     });
     return parts.join('\n\n');
   }
 
   /**
-   * 重放 [ASK] 行只读选择题渲染（R2，2026-09-03）
-   *
-   * 历史正文中的结构化提问在重放时 live 解析为只读选择题块（.ask-replay）：与运行时
-   * 提问内联选择题（.ask-inline）同视觉语言（问题 + 选项 chips），但无交互——历史不可
-   * 作答，用户只能回看「当时问过什么、可选项有哪些」。正文中的 [ASK] 行本体剔除，
-   * 避免问题/选项双重展示；rawText 保留原文供整链复制（复制出口 side 剥离契约行，
-   * 见 roundChainText——解析/剥离契约唯一归 utils/askParser，2026-09-03 T1 SSOT）。
-   *
-   * @param host 当前 assistant 消息块（.msg.assistant）
-   * @param text 原始正文全文（含 [ASK] 行）
-   */
-  function renderAskReplay(host: HTMLElement, text: string): void {
-    const questions = parseAskQuestions(text);
-    if (questions.length === 0) return;
-    // 幂等：同块不重复挂（append 每段至多一次，防御未来多点接入）
-    if (host.querySelector('.ask-replay')) return;
-    // 剔除行首 [ASK] 行后重渲正文（保留其余正文，markdown 保真 + 代码块增强重做）
-    const body = host.querySelector<HTMLElement>(':scope .msg-body');
-    if (body) {
-      body.innerHTML = renderMarkdown(stripAskLines(text).trim(), sanitize);
-      enhanceCodeBlocks(body);
-    }
-    const box = document.createElement('div');
-    box.className = 'ask-replay';
-    for (const q of questions) {
-      const item = document.createElement('div');
-      item.className = 'ask-replay__item';
-      const qEl = document.createElement('div');
-      qEl.className = 'ask-replay__q';
-      qEl.textContent = q.question; // textContent 防注入
-      item.appendChild(qEl);
-      if (q.options && q.options.length > 0) {
-        const opts = document.createElement('div');
-        opts.className = 'ask-replay__opts';
-        for (const opt of q.options) {
-          // 只读 chip：非按钮（历史不可作答），纯静态展示
-          const chip = document.createElement('span');
-          chip.className = 'ask-replay__opt';
-          chip.textContent = opt;
-          opts.appendChild(chip);
-        }
-        item.appendChild(opts);
-      }
-      box.appendChild(item);
-    }
-    host.appendChild(box);
-  }
-
-  /**
    * 渲染内联选择题（提问形态内联化，2026-09-03）
    *
-   * 对齐主流对话流（Claude / TraeWork）：[ASK] 提问正文下直接出「选项按钮 + 补充输入」，
+   * 对齐主流对话流（Claude / TraeWork）：提问正文下直接出「选项按钮 + 补充输入」，
    * 点击选项即答（无需二次回车），也可直接打字补充后发送。渲染在提问块下方，
    * 不替换底部输入栏（clarifyBar 仅异常兜底）。
    *
    * @param questions 提问列表（question + 候选 options，可选）
    * @returns 内联块元素；无可用 assistant 锚点时返回 null（调用方走 clarifyBar 兜底）
    */
-  function renderAskInline(questions: { question: string; options?: string[] }[]): HTMLElement | null {
-    // 锚点 = 当前 assistant 块（[ASK] 提问块/骨架）；无链接（异常）返回 null 降级 clarifyBar
+  function renderAskInline(questions: { question: string; options?: string[]; allowCustom?: boolean }[]): HTMLElement | null {
+    // 锚点 = 当前 assistant 块（提问块/骨架）；无链接（异常）返回 null 降级 clarifyBar
     const host = activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null;
     if (!host?.parentNode) return null;
     // 提问等待态：容器操作栏保持隐藏（底部只留 ask-inline 交互块，不出现「复制+时间」）。
@@ -1910,6 +1851,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       box.appendChild(item);
     }
     // 补充通道：不选选项、直接打字输入（「选择题 + 自由补充」双通道）
+    // 强制单选：任一提问带 options 且 allowCustom=false → 隐藏自由输入行（仅限点选，语义对齐内核 ask_user）。
+    // 向后兼容：allowCustom 缺省（undefined/true）时保持「点选 + 自由输入」双通道。
+    const forceChoose = questions.some(
+      (q) => q.options && q.options.length > 0 && q.allowCustom === false,
+    );
     const inputRow = document.createElement('div');
     inputRow.className = 'ask-inline__input-row';
     const askInput = document.createElement('input');
@@ -1930,9 +1876,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (e.key === 'Enter') submit();
     });
     inputRow.append(askInput, sendBtn);
+    if (forceChoose) inputRow.hidden = true; // 强制单选：隐藏自由输入行，仅可点选
     box.appendChild(inputRow);
     host.after(box);
-    askInput.focus(); // 焦点给补充输入（默认引导：也可直接打字）
+    // 焦点：连同输入行可见时才给输入框（强制单选时无从聚焦）
+    if (!forceChoose) askInput.focus();
     scrollToBottom(messages);
     return box;
   }
@@ -1992,7 +1940,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
     // UX-9 B 同环续接 chip：is-continued 块（同 roundId 第 2+ 段 / 被打断后续接段）
-    // 在身份标签前置「↻ 续接」，配合块间虚线把 [ASK]→回答→再答 连成连续链
+    // 在身份标签前置「↻ 续接」，配合块间虚线把提问→回答→再答 连成连续链
     if (div.classList.contains('is-continued')) attachContinueChip(label);
     // 角色名：优先级 = 本轮身份（meta）→ 会话级角色（chat_role_pack），品牌色 + 小圆点
     const roleName = currentRoundMeta?.role || currentRoleName || 'AI';
@@ -2739,6 +2687,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
         clarifyInput.value = '';
         clarifyOptions.textContent = '';
+        // 强制单选（同 renderAskInline 语义）：任一提问带 options 且 allowCustom=false → 隐藏自由输入框
+        const forceChoose = msg.questions.some(
+          (q) => q.options && q.options.length > 0 && q.allowCustom === false,
+        );
+        clarifyInput.hidden = forceChoose;
         msg.questions.forEach((q) => {
           (q.options || []).forEach((opt) => {
             const b = document.createElement('button');

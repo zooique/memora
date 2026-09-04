@@ -267,7 +267,7 @@ export const chatStyles = `
     max-width: 45%;
   }
   /* UX-9 提问内联选择题（2026-09-03，提问形态内联化）：
-   * [ASK] 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
+   * 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
    * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */
   .ask-inline {
     margin: var(--sp-2, 6px) 0;
@@ -316,31 +316,7 @@ export const chatStyles = `
   }
   .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
   .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
-  /* UX-9 R2 重放只读选择题（2026-09-03）：历史正文 [ASK] 行 live 解析的结果块。
-   * 与 .ask-inline 同视觉语言（浅底容器 + 问题行 + 选项 chips），但纯静态——历史不可作答，
-   * 选项用灰底标签而非可点击按钮（无 hover 变色、无 focus 态），从视觉上区分「当时的选择」。 */
-  .ask-replay {
-    margin: var(--sp-2, 6px) 0 0;
-    padding: var(--sp-3, 8px);
-    background: var(--surface-hover, rgba(128,128,128,.06));
-    border: 1px dashed var(--border-panel, rgba(128,128,128,.2));
-    border-radius: var(--radius-md, 6px);
-    display: flex; flex-direction: column; gap: var(--sp-2, 6px);
-    min-width: 0;
-  }
-  .ask-replay__item { display: flex; flex-direction: column; gap: var(--sp-1, 4px); }
-  .ask-replay__q { font-size: var(--font-md, 12px); color: var(--text-primary, #cccccc); }
-  .ask-replay__opts { display: flex; flex-wrap: wrap; gap: var(--sp-2, 6px); }
-  .ask-replay__opt {
-    font-size: var(--font-sm, 11px);
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-panel, rgba(128,128,128,.1));
-    border: none;
-    border-radius: var(--radius-full, 999px);
-    padding: 2px var(--sp-3, 8px);
-    user-select: none;
-  }
-  /* UX-9 回答内联子行（2026-09-03）：用户对 [ASK] 的回答为提问块下方紧凑单行
+  /* UX-9 回答内联子行（2026-09-03）：用户对主动提问的回答为提问块下方紧凑单行
    * 「你答：xxx」——阅读位置落在提问与续答之间，同环连续体的一个节点，非游离折叠块 */
   .msg-qa {
     display: flex; align-items: baseline; gap: var(--sp-1, 4px);
@@ -434,7 +410,7 @@ export const chatStyles = `
     margin-right: var(--sp-1, 4px);
     color: var(--border-panel, rgba(128,128,128,.4));
   }
-  /* UX-9 B 同环续接：同 roundId 第 2+ 段的 assistant 块（[ASK]→回答→再答 / 半截→补充→续接）。
+  /* UX-9 B 同环续接：同 roundId 第 2+ 段的 assistant 块（提问→回答→再答 / 半截→补充→续接）。
    * 顶部虚线分隔表达「上一条被打断/提问、本条继续」，身份标签前置「↻ 续接」chip 弱化标识 ——
    * 克制呈现（圆环 + 灰字），不突出大卡片、不抢正文视觉。 */
   .msg.assistant.is-continued {
@@ -454,7 +430,7 @@ export const chatStyles = `
   }
   /* UX-9 闭环同体感（2026-09-03）：续接块隐藏重复的角色/模型身份标签——
    * 同一问答闭环的续答不再是「独立新消息」，只保留「↻ 续接」chip + 时间戳，
-   * 从视觉上让 [ASK]→回答→再答 呈现为同一条回答的延续 */
+   * 从视觉上让提问→回答→再答 呈现为同一条回答的延续 */
   .msg.assistant.is-continued .msg-ai-label__role,
   .msg.assistant.is-continued .msg-ai-label__model {
     display: none;
@@ -603,7 +579,7 @@ export const chatStyles = `
   .round-group__footer.is-pending { display: none; }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
   /* 段级 footer 隐藏：容器化后复制/分叉/删除/时间戳统一上移容器级，段级不再出现
-   * （避免「续接正文底部又有操作按钮」的重复入口；.ask-replay 只读块不受影响） */
+   * （避免「续接正文底部又有操作按钮」的重复入口） */
   .msg.assistant .msg-footer { display: none; }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
   /* 润色按钮（H5 文本润色入口，2026-08-23）：用户消息专属，调用内核润色服务。
