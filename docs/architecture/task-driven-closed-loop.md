@@ -212,4 +212,3 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 - [loop-design.md](./loop-design.md) —— loop = 对 step 的编排，多 turn 任务编排落于 orchestrator
 - [memory-as-summary.md](./memory-as-summary.md) —— 摘要即记忆，汇报 turn→摘要的落点
 - [module-inventory.md](./module-inventory.md) —— 模块现状清单
-- 方案：[tasks/方案-seed收敛-最小问答闭环真理源-20260820.md](../../tasks/归档/方案-seed收敛-最小问答闭环真理源-20260820.md)

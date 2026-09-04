@@ -165,6 +165,5 @@
 - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 设计哲学真理源（turn/step/loop/多 turn 任务编排/Handoff/气口相关章节）
 - [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 多 turn 任务编排语义化：任务驱动的多 turn 收敛模型（已实现的实现记录）
 - [module-inventory.md](./module-inventory.md) —— 模块清单（loop.ts 🟢 76 tests）
-- [方案-seed收敛](../../tasks/归档/方案-seed收敛-最小问答闭环真理源-20260820.md) —— 种子收敛方案（含阶段 2 外部任务）
 - `src/agent/loop.ts` —— 实现
 - `src/agent/agent.ts` —— 调用边界

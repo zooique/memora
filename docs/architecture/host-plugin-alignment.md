@@ -1,7 +1,7 @@
 # 宿主对齐方案 · 历史快照索引（已归档）
 
 > ⚠️ **本文件已于 2026-08-31 归档为历史快照**，不再作为现行实现依据。
-> 早期宿主对齐方案的完整正文（含已演进废弃的接口，如 `IMemoryStorage` 治理方法、`runMemoryDecayOnce`、`PersonaManager` 时期事件）已移至 [tasks/归档/host-plugin-alignment-历史快照.md](../../tasks/归档/host-plugin-alignment-历史快照.md)。
+> 早期宿主对齐方案的完整正文（含已演进废弃的接口，如 `IMemoryStorage` 治理方法、`runMemoryDecayOnce`、`PersonaManager` 时期事件）原存档 `tasks/归档/host-plugin-alignment-历史快照.md`，已随 2026-09-04 tasks 目录整理删除（git 历史可溯）。
 
 ## 现行宿主接入契约（以这些为准）
 
