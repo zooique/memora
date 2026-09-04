@@ -66,7 +66,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 | `manifest.json` | 按需增删 `capabilities`、调整 `strategy` 键（只保留要用改的键，键集见下表） |
 | `persona.md` | 角色身份/职责/风格/边界（并入 system prompt，第一优先级） |
 | `rules.md` | 工作方法/流程/禁忌（`- ` 无序列表逐条 + 段落合并） |
-| `skills/*.md` | 领域方法库（frontmatter 必须含 `name` + `description`，目录扫描零声明） |
+| `skills/*.md` | 领域方法库（frontmatter 必须含 `name` + `description`，目录扫描零声明；description 按[四问规范](#四问规范软自查)写明 做什么/何时用/输入/返回） |
 
 #### capabilities（能力面）候选
 
@@ -94,7 +94,21 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 2. 所有数值/枚举在上述区内；`summaryFocus` ≤500 字符；`keywords` ≤20 个。
 3. `name` 有效（1~64 位，中文/字母/数字/下划线/连字符，不以 `.` 开头）。
 4. `skills/*.md` 均含 frontmatter 且带 `description`（缺则技能不可用）。
-5. **禁止**命名 `memora助手`（memora 内置兜底契约角色，避免冲突）。
+5. （软自查）`skills/*.md` 的 description 按[四问规范](#四问规范软自查)对照，含糊措辞（如"处理数据"）须重写。
+6. **禁止**命名 `memora助手`（memora 内置兜底契约角色，避免冲突）。
+
+#### 四问规范（软自查）
+
+`description` 是 LLM 决定是否 `read_skill` 拉取正文的唯一说明书——写不好，技能会系统性漏召（技能存在但 LLM 以为无关）。精修技能时对照四问：
+
+| 问 | 说明 | 反例 → 正例 |
+|----|------|------------|
+| ① 做什么 | 一句话动作（动词 + 对象） | 处理数据 → 将 Markdown 表格转 CSV |
+| ② 何时用 | 触发场景，帮助 LLM 判断相关性 | 需要整理文档数据时用 |
+| ③ 输入 | 接受什么（路径/文本/参数） | 输入：表格文件路径 |
+| ④ 返回 | 结果形式，含失败形态 | 返回：CSV 文本；无表格时返回明确提示 |
+
+作品投影等索引描述同理：一句话说清「文件是什么 + 何时会用到」。
 
 ### 第五步：交付
 
@@ -108,7 +122,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - 用 `node scripts/skaffold.mjs` 初始化骨架（模板 = 结构唯一真相源，不手写 JSON 结构）。
 - 精修只在产出文件内进行，产出后逐项跑校验清单。
 - `capabilities` 写数组前确认每个能力都有工具映射；全放行就省略字段。
-- `skills/*.md` 一律带 frontmatter `name` + `description`。
+- `skills/*.md` 一律带 frontmatter `name` + `description`，且 description 按[四问规范](#四问规范软自查)写清 做什么/何时用/输入/返回。
 
 ### ❌ 禁止做
 
