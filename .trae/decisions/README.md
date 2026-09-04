@@ -23,24 +23,20 @@ description: Memora 关键决策年轮
 | [ADR-008](./ADR-008-directory-structure.md) | 目录结构按"职责分层"而非"按类型分层"                      | ✅ 已接受 | 工程   |
 | [ADR-010](./ADR-010-agent-facade.md)        | Agent 门面类（宿主项目接入入口）                          | ✅ 已接受 | 架构   |
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
-| [ADR-013](./ADR-013-archive-pipeline.md)    | 记忆归档管道（v2.0：单步 LLM 提取 + Jaccard 去重）        | ✅ 已接受 | 架构   |
-| [ADR-014](./ADR-014-memory-relation.md)     | 记忆关系图谱（侧车模型，开放字符串关系类型）              | ❌ 已废弃（2026-08-14） | 架构   |
 | [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual，GAP-2 已落地 2026-07-03）   | ✅ 已接受 | 架构   |
 | [ADR-016](./ADR-016-vector-store-interface.md) | 向量存储接口化（IVectorStore + JsonVectorStore）       | ✅ 已接受 | 数据层 |
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
 | [ADR-017-web-search](./ADR-017-web-search-module.md) | Web 搜索模块（IWebSearchProvider 接口 + FetchWebSearchProvider，条件暴露给 LLM） | ✅ 已接受 | 集成层 |
 | [ADR-018](./ADR-018-css-scoping-convention.md) | CSS 作用域规范：面板前缀 + BEM + 单一真理源（消除 BARE 类跨面板污染） | ✅ 已接受 | 前端 |
-| [ADR-019](./ADR-019-css-functional-grouping.md) | CSS-R6 功能域分组重构：8 子目录 + 浮窗统一迁入 windows/ + 聚合器相对路径 | ✅ 已接受 | 前端 |
-| [ADR-020](./ADR-020-error-handling-strategy.md) | 错误处理策略统一：按层 + 按边界分类（内核降级 / IPC 契约 / 主进程 throw / 渲染进程 reportError） | ✅ 已接受 | 工程 |
 | [ADR-021](./ADR-021-memory-conflict-supersede-write-path.md) | 记忆冲突消解（写路径取代检测）与闭环透明契约 | ✅ 已接受 | 架构 |
 | [ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md) | 上下文信任边界与 Agent 行为评估视角 | ✅ 已接受 | 架构 |
 | [ADR-023](./ADR-023-context-cost-injection-defense-loop-convergence.md) | 上下文成本重构、即时注入防御与最小闭环收敛 | ✅ 已接受 | 架构 |
 | [ADR-024](./ADR-024-session-title-layer.md) | 会话标题层：身份与展示标题解耦，首轮闭环自动命名 + 手动改名透传 | ✅ 已接受 | 架构 |
 | [ADR-025](./ADR-025-memory-role-pack-boundary.md) | 记忆系统 × 角色包边界收敛：设定记忆归角色包，记忆库 = round-summary 摘要单轨，会话级摘要归 SessionMeta | ✅ 已接受 | 架构 |
-| [ADR-026](./ADR-026-auto-switch-host-assembly.md) | 角色自动匹配开关归宿主装配层（autoSwitch 宿主级键 + strategyOverride 通用覆盖通道） | 🔄 替代（2026-08-29） | 架构 |
 | [ADR-027](./ADR-027-process-event-log.md) | 过程事件日志 + 重放重建（Round.processEvents 单文件内聚 + 展示层 process_event 单形态 + currentRoundMeta 身份单源） | ✅ 已接受 | 架构 |
 | [ADR-028](./ADR-028-role-pack-manual-switch-teams-meeting.md) | 角色包体系：手动切换 + 组（组长+组员）+ 小组会议（任务表应用，内核零会议代码） | ✅ 已接受 | 架构 |
 | [ADR-029](./ADR-029-context-window-resolution-host-injection.md) | 上下文窗口解析归宿主注入（内核只消费不解析，resolveContextWindow 单一公式，角色包不声明绝对 token 配额） | ✅ 已接受 | 架构 |
+| [ADR-030](./ADR-030-context-occupancy-input-indicator.md) | 输入区上下文占用指示器（内核算、宿主传、webview 渲，输入区常驻比例条 + hover 明细） | ✅ 已接受 | 架构 |
 
 ### 插件宿主（VC 系列）
 
@@ -48,11 +44,13 @@ description: Memora 关键决策年轮
 | --------------------------------------------------- | ------------------------------------------------- | --------- | ------ |
 | [ADR-VC-001](./ADR-VC-001-vscode-plugin-host.md)   | VS Code 插件作为 memora 内核宿主 | ✅ 已接受 | 形态   |
 
-> **跳号说明**：ADR-005（内核）序号保留未使用（初始设计被 ADR-004 合并）；ADR-017-web-search 为 ADR-017 的同号子模块决策（Web 搜索能力，2026-07-30 回溯补录）；ADR-VC 系列为插件宿主（VS Code）专用前缀，与内核序号互不占用。
+> **跳号说明**：ADR-005（内核）序号保留未使用（初始设计被 ADR-004 合并）；ADR-009/012/013/014/019/020/026 已删除（零消费或已废弃/替代，git 历史可溯）；ADR-017-web-search 为 ADR-017 的同号子模块决策（Web 搜索能力，2026-07-30 回溯补录）；ADR-VC 系列为插件宿主（VS Code）专用前缀，与内核序号互不占用。
 >
 > **深度剪枝（2026-08-19）**：删除 ADR-009（专注模式，零消费）与 ADR-012（领域切换，已废弃）。序号保持空缺不重用——编号是历史的稳定标识，废弃即让位，避免序号错乱。
 >
 > **精灵宿主独立（2026-08-21）**：ADR-SP 系列（精灵宿主决策，SP-001~008/015~018）随精灵独立仓库开发，已从本仓库 decisions 移除并归档至精灵仓库。本仓库决策年轮仅保留内核 + 插件宿主（memora-vscode，第一宿主）。
+>
+> **年轮修剪（2026-09-04）**：删除 ADR-013（零外部引用，实现代码已移除）、ADR-014（已废弃，被 ADR-021 写取代检测取代）、ADR-019（精灵宿主 CSS 分组，精灵移出）、ADR-020（精灵宿主错误体系，精灵移出）、ADR-026（已被 ADR-028 替代）。ADR-018 保留更新（CSS 三层模型被 vscode 宿主继承消费），去精灵宿主死链并加宿主迁移注记。
 
 ---
 
@@ -63,11 +61,11 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001 |
 | 数据层 | 2    | ADR-002, ADR-016 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 15   | ADR-004, ADR-010~015, ADR-021~029 |
+| 架构   | 13   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~030 |
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
-| 工程   | 3    | ADR-008, ADR-017, ADR-020 |
-| 前端   | 2    | ADR-018, ADR-019 |
+| 工程   | 2    | ADR-008, ADR-017 |
+| 前端   | 1    | ADR-018 |
 | 形态   | 1    | ADR-VC-001 |
 
 ---

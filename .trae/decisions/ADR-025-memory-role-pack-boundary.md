@@ -36,7 +36,7 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 
 > **初定（2026-08-17）**：曾主张 `SessionArchiver` 写入 `source='content'` 会话级摘要，构成「摘要 + 标签 + 粒度」两级结构。
 >
-> **修订（2026-08-28）**：原 D6 要求 content 带 `isTraceable=true`——字段已删除（无行为消费者，见 [memory-as-summary.md](../docs/architecture/memory-as-summary.md) §5.2）。
+> **修订（2026-08-28）**：原 D6 要求 content 带 `isTraceable=true`——字段已删除（无行为消费者，见 [memory-as-summary.md](../../docs/architecture/memory-as-summary.md) §5.2）。
 >
 > **修订（2026-08-31）**：会话级摘要不再写记忆库——`SessionArchiver` 只更新 `SessionMeta.summary/keyTopics`（会话记录存储，随 `deleteSession` 删除）；`content` 收敛为**用户手动轨**（仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`）。记忆库唯一自动轨 = `round-summary`（摘要单轨，见 [memory-role-pack-boundary-rules.md 规则 R5](../rules/memory-role-pack-boundary-rules.md)）。
 

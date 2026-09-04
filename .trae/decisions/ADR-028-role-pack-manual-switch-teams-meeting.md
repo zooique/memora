@@ -1,7 +1,7 @@
 # ADR-028 · 角色包体系：手动切换 + 组（组长+组员）+ 小组会议（任务表应用）
 
 > **状态**：✅ 已接受
-> **日期**：2026-08-29 **播种批次**：— **来源**：设计文档 [role-pack-exclusivity-relocation.md](../../docs/architecture/role-pack-exclusivity-relocation.md)（v0.13 定案）· 🔄 替代 [ADR-026](./ADR-026-auto-switch-host-assembly.md)
+> **日期**：2026-08-29 **播种批次**：— **来源**：设计文档 [role-pack-exclusivity-relocation.md](../../docs/architecture/role-pack-exclusivity-relocation.md)（v0.13 定案）· 🔄 替代 ADR-026（已删除，git 历史可溯）
 
 ## 背景
 
@@ -26,7 +26,7 @@
 
 - **显式 vs 隐式是分水岭**：手动换角色/会议指定角色 = 用户意图（配置切换 OK）；关键词命中自动切 = 隐式（配置抖动，砍）。
 - **键不随视角切（防抖动）**：表层是轻量视角，键切换才是重操作，两者不混用。
-- **改 loop = 给执行闭环开洞**（违反「闭环是最小完整单元」）；挂 `PlanStep` = 往既有挂载点生长（任务表本就由 LLM 经 `task_table_write` 维护）。
+- **改 loop = 给 turn（问答闭环）开洞**（违反「turn 是最小完整单元」）；挂 `PlanStep` = 往既有挂载点生长（任务表本就由 LLM 经 `task_table_write` 维护）。
 - **组数据归宿主**：组是环境关系（谁是谁的组员取决于环境），不进 manifest（角色包零环境知识）。
 - **兜底包归内核**：兜底是机制底线，随内核分发，各宿主零分叉（构建期校验前移失败尽早）。
 
@@ -56,7 +56,7 @@
 
 1. **触发判定（SSOT 单一入口）**：`RolePackManager.tryBuildMeetingPlan(input)` —— 输入含「小组会议」**且** `activePack` 是某组组长 → 返回预置步骤（组员各一步 `rolePack=成员` + 一步汇总 `无 rolePack=组长视角`）；否则返回 `null`。
 2. **预置（复用既有泛型）**：`SeedPrepare.run` 命中即经 `SessionManager.writePlan`（既有任务表写点，与 `task_table_write` 同机）预置，不新写会议专属写路径。
-3. **强制外循环**：`orchestrator.runChat` 读 `SeedPrepareResult.meetingPreset` → 跳过规划闭环、直调 `completeExternalTask` 跑步序列（复用既有步闭环 + `refreshAssemblyForRolePack` 逐成员硬切换）。
+3. **强制多 turn 任务编排**：`orchestrator.runChat` 读 `SeedPrepareResult.meetingPreset` → 跳过规划闭环、直调 `completeExternalTask` 跑多 turn 步序列（复用既有步闭环 + `refreshAssemblyForRolePack` 逐成员硬切换）。
 4. **软指令退役**：`buildTeamContextBlock` 原「须立即用 task_table_write」软触发删除，改为描述系统编排、仅要求 LLM 用 `task_table_update` 标记完成——消除「确定性预置」与「LLM 自建表」双写竞争。
 
 **为何不违反决策 5「内核零会议代码」**：未引入会议执行引擎（无独立循环 / 键切换 / 重入）；确定性触发仅用既有 `PlanStep.rolePack` 表层覆盖能力 + 既有步闭环执行，是决策 5 允许能力的延伸，内核零会议执行引擎底线不变。

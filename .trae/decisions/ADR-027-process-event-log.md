@@ -1,7 +1,7 @@
 # ADR-027 · 过程事件日志 + 重放重建（单文件内聚 + 展示层单形态）
 
 > **状态**：✅ 已接受
-> **日期**：2026-08-28 **播种批次**：日常生长 **来源**：[process-event-log-replay-design.md](../docs/architecture/process-event-log-replay-design.md)（v1.5）
+> **日期**：2026-08-28 **播种批次**：日常生长 **来源**：[process-event-log-replay-design.md](../../docs/architecture/process-event-log-replay-design.md)（v1.5）
 
 ## 背景
 

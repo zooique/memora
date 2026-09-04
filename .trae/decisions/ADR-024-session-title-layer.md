@@ -8,7 +8,7 @@ description: 会话标题层——会话身份（date-session）与展示标题�
 > **状态**：✅ 已接受
 > **日期**：2026-08-15
 > **来源**：宿主改造需求（从"按天自动归档"→"手动创建会话 + 自动命名/改名 + 历史列表导航"）+ 网络土壤（Trae 历史面板 / WorkBuddy 任务制会话设计）
-> **依赖**：[ADR-013](./ADR-013-archive-pipeline.md)（记忆归档管道）、[agent-design-philosophy.md §8.1](../../docs/architecture/agent-design-philosophy.md)（回答后沉淀）
+> **依赖**：[agent-design-philosophy.md §8.1](../../docs/architecture/agent-design-philosophy.md)（回答后沉淀）；ADR-013 已删除（git 历史可溯）
 
 ## 背景
 

@@ -60,4 +60,4 @@ v0.3 版本的 `VectorStore` 是一个**具体类**，直接 `import { readFileS
 ## 相关 ADR
 
 - [ADR-002](./ADR-002-storage-layer.md) · 存储层抽象（IMemoryStorage）—— IVectorStore 与之同构
-- [ADR-014](./ADR-014-memory-relation.md) · 记忆关系侧车（IMemoryRelationStore）—— IVectorStore 与之同构
+- ADR-014 · 记忆关系侧车（IMemoryRelationStore）—— IVectorStore 与之同构（已废弃，git 历史可溯）
