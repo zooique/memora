@@ -440,7 +440,7 @@ export type ExtensionToWebviewMessage =
   /**
    * Agent 暂停（对齐内核 paused chunk，P1 事件流全量对齐）
    *
-   * 内核在输入待定/迭代边界软暂停时产出；webview 渲染提示条「Agent 已暂停」。
+   * 内核在输入待定/step 边界软暂停时产出；webview 渲染提示条「Agent 已暂停」。
    */
   | { type: 'paused' }
   /**

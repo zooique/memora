@@ -2661,7 +2661,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): void
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
       showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);
     } else if (msg.type === 'paused') {
-      // Agent 暂停（输入待定/迭代边界软暂停）→ 提示条
+      // Agent 暂停（输入待定/step 边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
       // 暂停即流暂停：清流式光标 + 停节流定时器（保留半截正文静态展示，不 finalize 终态）。
       // 提问/补充后 resume 的新 runFlow 由 meta/chunk 建续接块，本暂停块不再闪烁「调用大模型」

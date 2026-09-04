@@ -354,7 +354,7 @@ export class SeedOrchestrator {
    *
    * 序列：规划 turn（只建任务表）→ [completeExternalTask] 步 turn 序列 + 收尾汇报。
    *   - 规划 turn：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步 turn 重复执行）；
-   *     规划在迭代边界软暂停 → 现场保留，续跑完规划后继续整链。
+   *     规划在 step 边界软暂停 → 现场保留，续跑完规划后继续整链。
    *   - 步序列 + 收尾由 [completeExternalTask] 承担（可重入，runChat 规划后与 runResume 续跑共用）。
    *   - 进入多 turn 任务编排上下文时持久 head roundId（loop），续跑收尾摘要回指——组合溯源跨暂停保留。
    *
@@ -401,7 +401,7 @@ export class SeedOrchestrator {
       signal,
     );
     if (planAct.paused) {
-      // 规划 turn 在迭代边界软暂停：现场保留（含 PLAN_ONLY 约束），续跑完规划后继续整链，不产摘要
+      // 规划 turn 在 step 边界软暂停：现场保留（含 PLAN_ONLY 约束），续跑完规划后继续整链，不产摘要
       return;
     }
     if (planAct.failed || planAct.aborted) {

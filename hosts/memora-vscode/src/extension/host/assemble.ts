@@ -306,7 +306,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   await agent.init();
 
   // 4.1 无缝插话策略（缺口 B）：宿主「生成中 Enter 输入补充」走 agent.interject()，
-  // 设 inputInterrupt='block' 使其排队、在下一迭代边界并入，不中断当前 loop 执行
+  // 设 inputInterrupt='block' 使其排队、在下一 step 边界并入，不中断当前 loop 执行
   //（默认 'allow' 会中断当前调用，达不到「补充内容不打断 loop」的效果）。
   agent.setInputInterrupt('block');
 

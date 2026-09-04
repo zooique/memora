@@ -222,7 +222,7 @@ export class AgentLoop {
   /** TS-7 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
   private searchDisabledHintInjected = false;
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
-   *  迭代边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
+   *  step 边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
   /** 多 turn 任务编排上下文标志（档2 externalTaskLoop）：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
   private withinExternalTask = false;
@@ -256,7 +256,7 @@ export class AgentLoop {
   getTaskTable?: () => string;
   /** 插话控制器。interject() 时 abort 中断当前操作，消费后重建以支持多次插话 */
   private interjectController = new AbortController();
-  /** 待注入的插话内容队列。interject() 追加，迭代边界消费清空；数组支持连续快速插话 */
+  /** 待注入的插话内容队列。interject() 追加，step 边界消费清空；数组支持连续快速插话 */
   private pendingInterjections: string[] = [];
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
@@ -593,7 +593,7 @@ export class AgentLoop {
   }
 
   /**
-   * 请求在下一迭代边界挂起（软暂停唯一写入口，仅置标志）。
+   * 请求在下一 step 边界挂起（软暂停唯一写入口，仅置标志）。
    * 仅挂起不 abort，可经 continueAfterPause 续跑——与硬停止（signal.abort 无法续跑）严格区分；
    * 暂停语义与持久化由状态机持有，本标志只控制挂起时机。
    */
@@ -627,9 +627,9 @@ export class AgentLoop {
   }
 
   /** 执行中插话：立即中断当前 LLM/工具操作，注入内容后下一轮继续。
-   *  与 requestPause（迭代边界挂起待续跑）不同——interject 立即中断并持续处理 */
+   *  与 requestPause（step 边界挂起待续跑）不同——interject 立即中断并持续处理 */
   interject(content: string): void {
-    // inputInterrupt='block' 时阻止插话，排队到下一轮迭代边界消费
+    // inputInterrupt='block' 时阻止插话，排队到下一轮 step 边界消费
     if (this.strategy.inputInterrupt === 'block') {
       this.pendingInterjections.push(content);
       return;
@@ -822,12 +822,12 @@ export class AgentLoop {
   }
 
   /** 中断检查：软暂停（step 边界挂起，可续跑）、硬中止（signal aborted）与 block 插话消费在此裁决。
-   *  暂停统一在迭代边界挂起，由 consumeExecutionStream 统一收口翻态写 pauseMeta。
+   *  暂停统一在 step 边界挂起，由 consumeExecutionStream 统一收口翻态写 pauseMeta。
    *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
   private async *_handleInterrupt(
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, 'paused' | 'aborted' | AbortSignal | undefined, unknown> {
-    // 软暂停：在迭代边界挂起生成器（不 abort，保留 this.messages 供续跑）；
+    // 软暂停：在 step 边界挂起生成器（不 abort，保留 this.messages 供续跑）；
     // 暂停通知走 yield {type:'paused'} chunk，由 consumeExecutionStream 收口统一翻态 + 写 pauseMeta
     if (this.pauseRequested) {
       this.pauseRequested = false;
@@ -837,14 +837,14 @@ export class AgentLoop {
     // 合并外部取消 signal 与内部插话控制器 signal，让子方法同时响应两种中断
     const effectiveSignal = AgentLoop.combineSignals(signal, this.interjectController.signal);
     if (effectiveSignal?.aborted) {
-      // 插话控制器在迭代边界被 abort（interject() 在上一次迭代之后被调用），
+      // 插话控制器在 step 边界被 abort（interject() 在上一次迭代之后被调用），
       // 直接返回 aborted，由 processUserInput 消费 pendingInterjections
       yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
       return 'aborted';
     }
 
     // block 模式排队插话消费：inputInterrupt='block' 时 interject() 只入队不 abort
-    // （避免中断执行），排队内容在此迭代边界统一注入为 user 消息——否则 pending 永不被消费。
+    // （避免中断执行），排队内容在此 step 边界统一注入为 user 消息——否则 pending 永不被消费。
     // allow 分支走上方 aborted 路径由 handleIterationResult 消费，这里只处理未 abort 的 block 排队。
     if (this.pendingInterjections.length > 0) {
       const contents = this.pendingInterjections.splice(0);

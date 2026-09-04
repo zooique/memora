@@ -1490,7 +1490,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     ]);
   }
 
-  it('流式中点暂停 → 在下一迭代边界挂起、messages 保留、产出 {paused}', async () => {
+  it('流式中点暂停 → 在下一 step 边界挂起、messages 保留、产出 {paused}', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('文件内容');
     const loop = new AgentLoop({
       provider: makeToolThenTextProvider('后续完成'),
@@ -1502,7 +1502,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     for await (const chunk of loop.processUserInput('读取文件')) {
       chunks.push(chunk);
       // 第一轮工具步完成（tool_result）后请求软暂停，
-      // loop 会在下一迭代边界（handleIteration 开头）挂起
+      // loop 会在下一 step 边界（handleIteration 开头）挂起
       if (chunk.type === 'tool_result') {
         loop.requestPause();
       }
@@ -1584,7 +1584,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 
   it('pauseRequested 残留标志不跨轮泄漏（D2 修复：processUserInput 入口复位）', async () => {
     // 两轮各单迭代完成：第一轮结束前请求暂停（本轮已 done，标志未消费），
-    // 验证第二轮不会因残留 pauseRequested 在首迭代边界立即误暂停
+    // 验证第二轮不会因残留 pauseRequested 在首 step 边界立即误暂停
     const provider = mockMultiTurnProvider([
       [{ content: '第一轮完成' }],
       [{ content: '第二轮完成' }],
@@ -1596,7 +1596,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     });
 
     // 第一轮：流式产出文本后请求软暂停；本轮 LLM 已返回 stop，
-    // 在下一迭代边界前即以 done 结束 → pauseRequested 残留但未被本轮消费
+    // 在下一 step 边界前即以 done 结束 → pauseRequested 残留但未被本轮消费
     const chunks1: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('任务A')) {
       chunks1.push(chunk);
@@ -2122,7 +2122,7 @@ describe('AgentLoop · 执行中插话', () => {
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
 
-  it('inputInterrupt=block 时排队插话在迭代边界被消费注入（不中断执行）', async () => {
+  it('inputInterrupt=block 时排队插话在 step 边界被消费注入（不中断执行）', async () => {
     const toolExecutor = vi.fn().mockImplementation(
       () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 50)),
     );
@@ -2152,7 +2152,7 @@ describe('AgentLoop · 执行中插话', () => {
       chunks.push(chunk);
     }
 
-    // 排队插话应在迭代边界被消费并注入为 user 消息（block 语义落实）
+    // 排队插话应在 step 边界被消费并注入为 user 消息（block 语义落实）
     const messages = loop.getMessages();
     expect(messages.some((m) => m.role === 'user' && m.content.includes('排队消息'))).toBe(true);
     // 未因插话 abort，正常走到纯文本结束
@@ -2233,7 +2233,7 @@ describe('AgentLoop · continueAfterPause 中插话', () => {
     }
     expect(loop.getMessages()).toHaveLength(4);
 
-    // 暂停后插话（无 LLM 调用进行中，interjectController 在迭代边界被 abort）
+    // 暂停后插话（无 LLM 调用进行中，interjectController 在 step 边界被 abort）
     loop.interject('暂停后插话');
 
     // resume：首迭代检测到 interjectController 已 abort → 消费插话队列 → 继续

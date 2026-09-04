@@ -2126,7 +2126,7 @@ class AbortableMockProvider extends LlmProvider {
  * 就抛 DOMException('AbortError')——模拟真实 LLM 流式中断（fetch stream 被 abort 后的行为）。
  *
  * 关键：真实中断路径是 provider 抛 AbortError → consumeExecutionStream 的 catch 分支，
- * 而非 loop 迭代边界的 yield aborted（AbortableMockProvider 路径）。两条路径都要覆盖。
+ * 而非 loop step 边界的 yield aborted（AbortableMockProvider 路径）。两条路径都要覆盖。
  */
 class AbortThrowingProvider extends LlmProvider {
   readonly name = 'abort-throwing';

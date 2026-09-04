@@ -633,7 +633,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean; iterationLimitReached?: boolean }, unknown> {
     let content = '';
     let aborted = false;
-    // 软暂停标记：loop 在迭代边界挂起（用户 requestPause / [ASK] 主动提问）时置真，
+    // 软暂停标记：loop 在 step 边界挂起（用户 requestPause / [ASK] 主动提问）时置真，
     // 供编排器据此推迟摘要——回合未完成不产摘要，保摘要与外部输入 1:1
     let paused = false;
     // 迭代上限标志：loop 因 maxIterations/stepBudget 上限而终止时置真
@@ -641,7 +641,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     try {
       for await (const chunk of source) {
-        // 内核事实驱动：loop 在迭代边界真正挂起时状态机才翻 PAUSED，非申请即翻转；
+        // 内核事实驱动：loop 在 step 边界真正挂起时状态机才翻 PAUSED，非申请即翻转；
         // 与 requestPause 空闲分支同源，须传 lowRisk=true 保持同一暂停事件契约（否则流中暂停计入 P4 配额）
         if (chunk.type === 'paused') {
           const pendingInfo = this._sessionManager?.consumePendingPause();
@@ -746,11 +746,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 请求软暂停（不中断工作模型 v2.1）
    *
-   * 仅设 loop 的 pauseRequested 标志（在下一迭代边界挂起，不 abort），reason/source 暂存到 SessionStateMachine。
+   * 仅设 loop 的 pauseRequested 标志（在下一 step 边界挂起，不 abort），reason/source 暂存到 SessionStateMachine。
    * 状态机翻 PAUSED 延后到 loop 边界真正挂起时——内核事实驱动而非申请即翻转；与硬停止（abort）严格区分，
    * 软暂停保留历史、可经 resumeExecution 续跑。
    *
-   * @returns true=请求已注册（下一迭代边界生效）；false=无法暂停
+   * @returns true=请求已注册（下一 step 边界生效）；false=无法暂停
    */
   requestPause(reason: string, source: 'user' | 'agent' | 'system' = 'user'): boolean {
     this.assertInitialized('requestPause');
@@ -834,7 +834,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 设置运行时插话模式（无缝 vs 打断）。
-   * - 'block'（无缝）：interject() 将输入排队，在下一迭代边界统一注入为 user 消息，不中断当前执行；
+   * - 'block'（无缝）：interject() 将输入排队，在下一 step 边界统一注入为 user 消息，不中断当前执行；
    * - 'allow'（默认）：interject() 立即中断当前 LLM/工具调用、注入后继续循环。
    * 宿主若要实现「loop 中直接输入补充内容、不打断执行」的无缝注入，应在发起 chat 前设为 'block'。
    */
@@ -864,7 +864,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 内核→宿主信号：当前会话是否可"无输入续跑"（决定暂停按钮显隐 + 暂停后继续 UI）
    *
-   * 真值条件：① 状态机已 paused（已软暂停必可续跑，最高优先级——pauseRequested 在下一迭代边界才挂起，
+   * 真值条件：① 状态机已 paused（已软暂停必可续跑，最高优先级——pauseRequested 在下一 step 边界才挂起，
    * 彼时 inAutonomousStep 已重置为 false，仅看它会误报）；② loop 在自主工具步（可暴露暂停按钮在边界挂起）；
    * ③ 存在未完成的计划步骤（多轮任务可续跑下一轮）。三者皆否（纯单轮、无待续目标）→ 隐藏暂停按钮（仅停止）。
    */

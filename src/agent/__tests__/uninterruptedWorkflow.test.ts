@@ -1663,7 +1663,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       order: 1,
     });
 
-    // 触发一轮对话 → loop 迭代边界 → onStepBoundary → completeStep
+    // 触发一轮对话 → loop step 边界 → onStepBoundary → completeStep
     await agent.chatSync('推进任务');
 
     const stepLog = agent.getCheckpoint()!.stepLog ?? [];
@@ -1830,7 +1830,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
  *   后处理归档（ArchiveCoordinator）也会调用 provider.chat，若按调用次数计数会被污染，
  *   导致 resume 时轮次错位、无法触发第二次暂停——本用例早期失败的真因即在此。
  * - 文本型 LLM 调用（归档 / 角色匹配等）只产文本，不消耗工具步预算。
- * - 续跑必须至少跨越一次迭代边界才会 yield paused，单轮 MockProvider 无法覆盖该场景。
+ * - 续跑必须至少跨越一次 step 边界才会 yield paused，单轮 MockProvider 无法覆盖该场景。
  */
 class ToolThenToolThenTextProvider extends LlmProvider {
   readonly name = 'mock-multi-turn';
@@ -2022,7 +2022,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     await agent.init();
 
     // 在流进行中（isBusy=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
-    // 直到 loop 在迭代边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
+    // 直到 loop 在 step 边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
     // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转（D1）。
     let statusRightAfterRequestPause = '';
     for await (const chunk of agent.chat('读取探针文件')) {
@@ -2135,7 +2135,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     });
     await agent.init();
 
-    // 在流进行中设置暂停锁（不预先 requestPause，否则会在迭代边界先翻 PAUSED 而绕开错误路径）。
+    // 在流进行中设置暂停锁（不预先 requestPause，否则会在 step 边界先翻 PAUSED 而绕开错误路径）。
     // provider 在首句后立即崩溃：此时 handleIteration 仍处于 yield* provider.chat 内部，
     // 下一轮 pauseRequested 检查尚未执行，故状态机停留 running；错误由
     // consumeExecutionStream 的 catch 转为 error chunk，finally 清理挂起的暂停锁。

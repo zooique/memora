@@ -1806,7 +1806,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写）
    *
    * 插话语义（无缝注入，缺口 B）：生成中用户 Enter 输入补充 → 不中断 loop，调 agent.interject()
-   * 排队，内核在下一迭代边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。 */
+   * 排队，内核在下一 step 边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。 */
   private async handleSend(input: string, skillName?: string): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
@@ -1820,7 +1820,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     // 无缝插话（缺口 B）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
-    // 内核在下一迭代边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
+    // 内核在下一 step 边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
     // 正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
     if (this._streaming && this._abortController) {
       this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
@@ -2123,7 +2123,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             error: chunk.error,
           });
         } else if (chunk.type === 'paused') {
-          // Agent 暂停（输入待定/迭代边界软暂停）→ 转发提示条 + 标记暂停态
+          // Agent 暂停（输入待定/step 边界软暂停）→ 转发提示条 + 标记暂停态
           this.post({ type: 'paused' });
           pausedOnPurpose = true;
         } else if (chunk.type === 'thinking') {
