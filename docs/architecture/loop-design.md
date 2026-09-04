@@ -59,7 +59,7 @@
 
 现状验证：
 - `handleToolCalls` 内：L2 策略检查（`toolCallsBlocked`）→ 步数限制（`toolStepLimit`）→ 并发执行（`executeToolCalls`）→ 重复检测（`duplicateCallInterceptor`）→ Reflection（`reflectionHint`）→ 回填 `return 'continue'`。
-- step（每次 LLM 调用 + 工具）的迭代边界 = 天然的暂停点 / abort 检查点（`raceToolWithSignal`）。**气口在此发生**（LLM 主动提问、用户插话、暂停续跑）。
+- step 边界（每次 LLM 调用 + 工具之间）= 天然的暂停点 / abort 检查点（`raceToolWithSignal`）。**气口在此发生**（LLM 主动提问、用户插话、暂停续跑）。
 
 **设计结论**：loop 深度由 `toolStepLimit` / `toolCallsBlocked` 控制；多 turn 任务编排长度由 `stepBudget` / `maxIterations` / `taskLoopLimit` 控制。角色通过策略选择配比，不改 turn 结构——与哲学完全一致。
 

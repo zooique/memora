@@ -67,7 +67,7 @@ while(有 pending 步):
 
 ## 五、边界与取舍
 
-- **暂停粒度**：本定案允许"暂停在 turn 内 step 边界"（loop 迭代边界）与"turn 间气口"并存，二者都保留现场、续跑都整链——生效点以 loop 的 `requestPause` 实际触发边界为准，不承诺"严格只在 turn 后"。若需严格"当前 turn 完整执行完才停"，需再调 loop 打断语义（风险更大，延后评估）。
+- **暂停粒度**：本定案允许"暂停在 turn 内 step 边界"（loop step 边界）与"turn 间气口"并存，二者都保留现场、续跑都整链——生效点以 loop 的 `requestPause` 实际触发边界为准，不承诺"严格只在 turn 后"。若需严格"当前 turn 完整执行完才停"，需再调 loop 打断语义（风险更大，延后评估）。
 - **续跑范围**：整链续跑在 `fromResume=true` 时从"下一个 pending 步"继续到收尾汇报 turn（一次续跑推进完毕）；多轮暂停-续跑可反复。
 - **回归安全**：非多 turn 任务编排的单 turn 续跑走 `fromResume=false`/普通分支，行为零变化。
 
