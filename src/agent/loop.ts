@@ -1298,6 +1298,26 @@ export class AgentLoop {
   }
 
   /**
+   * 多模型路由：按任务类型选 Provider；单轮内缓存同一 taskType 结果，避免重复路由计算。
+   * 三分支收敛：strategy='fixed' → 默认 Provider；有 providerRouter → 路由 + 缓存；否则 fallback 默认。
+   * 从 callLlmWithRetry 内联逻辑抽离（2026-09-04），减少 retry 循环内嵌套宽度。
+   */
+  private resolveProvider(safeMessages: readonly Message[]): LlmProvider {
+    if (this.strategy.providerRouting === 'fixed') {
+      return this.opts.provider;
+    }
+    if (this.opts.providerRouter) {
+      const taskType = this.determineTaskType(safeMessages);
+      const cached = this.providerRouteCache.get(taskType);
+      if (cached) return cached;
+      const routed = this.opts.providerRouter(taskType);
+      this.providerRouteCache.set(taskType, routed);
+      return routed;
+    }
+    return this.opts.provider;
+  }
+
+  /**
    * 调用 LLM（带指数退避重试，仅在流式输出前失败时重试；流式已开始则直接上抛，因用户已看到部分结果）。
    * 经 providerRouter 按任务类型路由到对应 Provider。
    */
@@ -1337,22 +1357,8 @@ export class AgentLoop {
       effectiveOpts.reasoning_effort = 'low';
     }
 
-    // 多模型路由：按任务类型选 Provider；单轮内缓存同一 taskType 结果，避免重复路由计算
-    let effectiveProvider: LlmProvider;
-    if (this.strategy.providerRouting === 'fixed') {
-      effectiveProvider = this.opts.provider;
-    } else if (this.opts.providerRouter) {
-      const taskType = this.determineTaskType(safeMessages);
-      const cached = this.providerRouteCache.get(taskType);
-      if (cached) {
-        effectiveProvider = cached;
-      } else {
-        effectiveProvider = this.opts.providerRouter(taskType);
-        this.providerRouteCache.set(taskType, effectiveProvider);
-      }
-    } else {
-      effectiveProvider = this.opts.provider;
-    }
+    // 多模型路由：按任务类型选 Provider（resolveProvider 私有方法，含缓存）
+    const effectiveProvider = this.resolveProvider(safeMessages);
 
     // LLM 调用 Span（涵盖重试循环）
     const llmSpan = this.tracer.startSpan(TRACE_SPANS.LLM_CALL, {
