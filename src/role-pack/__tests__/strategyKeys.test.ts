@@ -22,6 +22,7 @@ import {
   MAX_ASK_LIMIT,
   MAX_TOKEN_BUDGET,
   MAX_STEP_BUDGET,
+  MIN_STEP_BUDGET,
   MAX_TASK_LOOP_LIMIT,
   MAX_SUMMARY_FOCUS_LENGTH,
   type KeyRule,
@@ -349,7 +350,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       { key: 'reflect.selfReview', rule: STRATEGY_KEY_RULES.reflect!.selfReview!, min: 0, max: MAX_SELF_REVIEW_ROUNDS, probe: MAX_SELF_REVIEW_ROUNDS + 1 },
       { key: 'global.askLimit', rule: STRATEGY_KEY_RULES.global!.askLimit!, min: 1, max: MAX_ASK_LIMIT, probe: MAX_ASK_LIMIT + 1 },
       { key: 'global.tokenBudget', rule: STRATEGY_KEY_RULES.global!.tokenBudget!, min: 0, max: MAX_TOKEN_BUDGET, probe: MAX_TOKEN_BUDGET + 1 },
-      { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: 0, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
+      { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
       { key: 'global.taskLoopLimit', rule: STRATEGY_KEY_RULES.global!.taskLoopLimit!, min: 0, max: MAX_TASK_LOOP_LIMIT, probe: MAX_TASK_LOOP_LIMIT + 1 },
     ];
 

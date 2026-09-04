@@ -50,12 +50,15 @@ export const MAX_SELF_REVIEW_ROUNDS = 10;
 export const MAX_ASK_LIMIT = 10;
 /** 每轮总 token 预算上限：1_000_000 覆盖 1M 上下文窗口（mimo-v2.5-pro 等旗舰模型） */
 export const MAX_TOKEN_BUDGET = 1_000_000;
+/** 步数预算声明下限：角色包 stepBudget 不得低于 10，低于此视为越界回退默认值 */
+export const MIN_STEP_BUDGET = 10;
 /**
- * 步数预算声明上限（角色包可声明的 stepBudget 最大值）。
- * 与 DEFAULT_MAX_ITERATIONS 对齐——stepBudget 是内核物理上限以下的软提前终止闸，
- * 声明值不得超过物理上限（loop.ts 运行时也会 clamp 兜底）。
+ * 步数预算声明上限：角色包可自由声明 0~500 之间的 stepBudget。
+ * 角色作者想让这个角色跑得久就配大值，想保守就配小值。
+ * 角色包不声明 stepBudget 时，resolveStepBudget 回退 DEFAULT_MAX_ITERATIONS。
+ * loop 运行时由 opts.maxIterations 传入覆盖——角色包声明多少给多少，内核只兜底默认。
  */
-export const MAX_STEP_BUDGET = DEFAULT_MAX_ITERATIONS;
+export const MAX_STEP_BUDGET = 500;
 /** 外部任务驱动循环步数上限：任务表每步一个闭环，100 步防死循环烧 token */
 export const MAX_TASK_LOOP_LIMIT = 100;
 /** 提炼视角（summaryFocus）字符串长度上限（字符）：防止巨型字符串注入 prompt */
@@ -163,8 +166,14 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
     // 每轮总 token 预算（0~MAX_TOKEN_BUDGET，0=不限制）
     tokenBudget: intRange(0, MAX_TOKEN_BUDGET),
-    // 每轮工具步数预算（0~MAX_STEP_BUDGET，0=不限制）
-    stepBudget: intRange(0, MAX_STEP_BUDGET),
+    // 每轮工具步数预算：0=不限制，或 ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]（角色包声明区间）
+    stepBudget: {
+      kind: 'check',
+      check: (value) =>
+        typeof value === 'number' && Number.isInteger(value) &&
+        (value === 0 || (value >= MIN_STEP_BUDGET && value <= MAX_STEP_BUDGET)),
+      range: { min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET },
+    },
     // 外部任务驱动循环步数（0~MAX_TASK_LOOP_LIMIT，0=关闭）
     taskLoopLimit: intRange(0, MAX_TASK_LOOP_LIMIT),
   },

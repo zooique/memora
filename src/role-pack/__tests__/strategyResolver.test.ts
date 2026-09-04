@@ -128,8 +128,9 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 
   it('global 维度包含全部必需字段', () => {
     const g = DEFAULT_BEHAVIOR_STRATEGY.global!;
-    expect(g.tokenBudget).toBe(200_000);
-    expect(g.stepBudget).toBe(50);
+    // 0 = 角色包不声明，resolve 函数缺省回退 FALLBACK_TOKEN_BUDGET=80K / DEFAULT_MAX_ITERATIONS=50
+    expect(g.tokenBudget).toBe(0);
+    expect(g.stepBudget).toBe(0);
     expect(g.errorHandling).toBe('retry');
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
     expect(g.askLimit).toBe(3);
@@ -441,20 +442,20 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveTokenBudget({ global: { tokenBudget: 0 } })).toBe(0);
     });
 
-    it('负数回退默认 200000', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: -1 } })).toBe(200_000);
+    it('负数回退默认 80000', () => {
+      expect(resolveTokenBudget({ global: { tokenBudget: -1 } })).toBe(80_000);
     });
 
-    it('小数回退默认 200000', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: 8000.5 } })).toBe(200_000);
+    it('小数回退默认 80000', () => {
+      expect(resolveTokenBudget({ global: { tokenBudget: 8000.5 } })).toBe(80_000);
     });
 
-    it('越上界回退默认 200000（防无条件填写）', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: MAX_TOKEN_BUDGET + 1 } })).toBe(200_000);
+    it('越上界回退默认 80000（防无条件填写）', () => {
+      expect(resolveTokenBudget({ global: { tokenBudget: MAX_TOKEN_BUDGET + 1 } })).toBe(80_000);
     });
 
-    it('缺失回退默认 200000', () => {
-      expect(resolveTokenBudget(undefined)).toBe(200_000);
+    it('缺失回退默认 80000', () => {
+      expect(resolveTokenBudget(undefined)).toBe(80_000);
     });
   });
 

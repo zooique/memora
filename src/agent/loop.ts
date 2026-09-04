@@ -699,8 +699,16 @@ export class AgentLoop {
   private async *runIterationLoop(
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 角色包 stepBudget 覆盖 loop.maxIterations（角色包声明多少给多少）。
+    // stepBudget > 0 → 角色包声明了明确的步数预算，用它；
+    // stepBudget = 0 → 不声明，用 loop.maxIterations（内核兜底 DEFAULT_MAX_ITERATIONS）。
+    // 这样角色包配 stepBudget=200 → 跑 200 轮，完全不被内核硬墙 clamp。
+    const effectiveMax = this.strategy.stepBudget > 0
+      ? this.strategy.stepBudget
+      : this.maxIterations;
+
     let iteration = 0;
-    while (iteration < this.maxIterations) {
+    while (iteration < effectiveMax) {
       iteration++;
       this.currentIteration = iteration;
 
@@ -708,22 +716,6 @@ export class AgentLoop {
       // 在此补占位 tool 结果，保证 assistant.tool_calls 恒有配对 tool 消息（OpenAI 兼容端结构合法）
       if (this.pendingAsk) {
         this.cancelAsk();
-      }
-
-      // stepBudget 步数软上限检查（0=不限制）。
-      // 双闸收敛：角色包声明 stepBudget 不得超过内核 maxIterations（物理上限 SSOT），
-      // 即使角色包/策略解析返回更大值也只 clamp 到 maxIterations——防止"软上限声明比硬上限还高"的配置错配。
-      const effectiveStepBudget =
-        this.strategy.stepBudget > 0
-          ? Math.min(this.strategy.stepBudget, this.maxIterations)
-          : 0;
-      if (effectiveStepBudget > 0 && iteration >= effectiveStepBudget) {
-        logger.info(
-          { iteration, stepBudget: this.strategy.stepBudget, effectiveStepBudget, maxIterations: this.maxIterations },
-          '达到步数预算上限',
-        );
-        yield* this.emitMaxIterationsReached();
-        return;
       }
 
       const result = yield* this.handleIteration(iteration, signal);

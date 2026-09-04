@@ -42,23 +42,17 @@ import type { RolePackManager } from './rolePackManager.js';
 // 默认值常量
 // ════════════════════════════════════════════════════════════
 
-/**
- * Token 预算内核默认值（SSOT 单一来源）。
- * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.tokenBudget`（角色包声明层）、
- * `resolveTokenBudget` 的非法/缺失回退、`DEFAULT_L2_STRATEGY.tokenBudget`（loop 构造期惰性初始）。
- * 0 = 不限制。
- */
-export const DEFAULT_TOKEN_BUDGET = 200_000;
+// ════════════════════════════════════════════════════════════
+// 默认值常量（角色包层的兜底默认——角色包不声明时走这里，
+// loop 构造时 opts.maxIterations 也用同一个 DEFAULT_MAX_ITERATIONS 源头对齐）
+// ════════════════════════════════════════════════════════════
 
 /**
- * 步数预算内核默认值（SSOT 单一来源）。
- * 同时服务于三层：`DEFAULT_BEHAVIOR_STRATEGY.global.stepBudget`（角色包声明层）、
- * `resolveStepBudget` 的非法/缺失回退、`DEFAULT_L2_STRATEGY.stepBudget`（loop 构造期惰性初始）。
- * 软上限，配合 maxIterations 双重保护；0 = 不限制。
+ * Token 预算缺省回退值。角色包 tokenBudget 不合法/越界时使用。
+ * 80_000 ≤ AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS=120_000（Provider 硬墙），
+ * 保证软预算检查能真的在硬墙之前触发——200K 方向错误（永远触不到）。
  */
-// stepBudget 软上限默认值引用内核物理上限 SSOT——低于/等于物理上限才能真的生效
-// （否则永远是硬上限先撞线，软上限变成摆设）
-export const DEFAULT_STEP_BUDGET = DEFAULT_MAX_ITERATIONS;
+const FALLBACK_TOKEN_BUDGET = 80_000;
 
 /**
  * 外部任务驱动循环步数上限内核默认值（SSOT 单一来源）。
@@ -108,8 +102,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     userFollowup: 'silent',
   },
   global: {
-    tokenBudget: DEFAULT_TOKEN_BUDGET,
-    stepBudget: DEFAULT_STEP_BUDGET,
+    tokenBudget: 0, // 0 = 不声明，resolveTokenBudget 回退 FALLBACK_TOKEN_BUDGET
+    stepBudget: 0,  // 0 = 不声明，resolveStepBudget 回退 DEFAULT_MAX_ITERATIONS
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 3,
@@ -262,7 +256,7 @@ export function resolveAskLimit(strategy: BehaviorStrategy | undefined): number 
   return valid ? candidate : 3;
 }
 
-/** 解析 Token 预算上限（内核已消费）：整数且 ∈ [0, MAX_TOKEN_BUDGET] 才采用，非法/越界回退内核默认（DEFAULT_TOKEN_BUDGET，0=不限制） */
+/** 解析 Token 预算：角色包 tokenBudget 合法（整数 ∈ [0, MAX_TOKEN_BUDGET]）则采用，否则回退 FALLBACK_TOKEN_BUDGET。0=不限制。 */
 export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.tokenBudget;
   const valid =
@@ -270,10 +264,10 @@ export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): numb
     Number.isInteger(candidate) &&
     candidate >= 0 &&
     candidate <= MAX_TOKEN_BUDGET;
-  return valid ? candidate : DEFAULT_TOKEN_BUDGET;
+  return valid ? candidate : FALLBACK_TOKEN_BUDGET;
 }
 
-/** 解析步数预算上限（内核已消费）：整数且 ∈ [0, MAX_STEP_BUDGET] 才采用，非法/越界回退内核默认（DEFAULT_STEP_BUDGET，软上限，配合 maxIterations 双重保护，0=不限制） */
+/** 解析步数预算：角色包 stepBudget 合法则采用，否则回退 DEFAULT_MAX_ITERATIONS。0=不限制 stepBudget 提前终止。 */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
   const valid =
@@ -281,7 +275,7 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
     Number.isInteger(candidate) &&
     candidate >= 0 &&
     candidate <= MAX_STEP_BUDGET;
-  return valid ? candidate : DEFAULT_STEP_BUDGET;
+  return valid ? candidate : DEFAULT_MAX_ITERATIONS;
 }
 
 /** 解析外部任务驱动循环步数上限（外部任务循环已消费）：整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT，0=关闭外部任务循环） */
@@ -386,8 +380,8 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
   toolStepLimit: 0,
   errorHandling: 'retry',
   providerRouting: 'auto',
-  tokenBudget: DEFAULT_TOKEN_BUDGET,
-  stepBudget: DEFAULT_STEP_BUDGET,
+  tokenBudget: FALLBACK_TOKEN_BUDGET,
+  stepBudget: DEFAULT_MAX_ITERATIONS,
   multiStepReasoning: 'auto',
   askLimit: 3,
   toolReadonly: 'full',
