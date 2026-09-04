@@ -1,24 +1,14 @@
 /**
- * 种子 turn 编排器 — 三层模型的结构真理源：turn（档1）⊂ 多 turn 任务编排（档2）⊂ 目标模式（档3，未实现）
- * 见 [agent-design-philosophy.md §4.4](../../../docs/architecture/agent-design-philosophy.md)。
+ * 种子 turn 编排器 — 单 turn 动态 step 循环承载所有复杂度（2026-09-04 收敛）。
  *
- * 「如何串联一个 turn」全部收在此处，门面只做一行委托 + 生命周期守卫，不再持有 turn 编排逻辑。
+ * 「如何串联一个 turn」全部收在此处，门面只做一行委托 + 生命周期守卫。
+ * 宿主是插座——只调 runChat / runResume，内核自主决定 step 循环长度与任务表策略。
+ * 复杂任务（task_table_write + 动态规划）在一个 turn 的 step 循环里自然生长，
+ * 不再强制拆成多 turn 编排（档2 已砍；见 tasks/收敛多turn编排到动态单turn.md）。
  *
- * 两个显式命名入口（turn 只认 Trigger、不认来源，见 [agent-design-philosophy.md §2.1 Trigger](../../../docs/architecture/agent-design-philosophy.md)）：
+ * 两个显式命名入口（turn 只认 Trigger、不认来源）：
  *   - runChat   （对话 Trigger）   完整 turn：prepare → act(processUserInput) → reflect → handoff
- *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无回答前、无 Handoff）
- * 注：原 runEvent（SessionEvent 结构化事件路径）已随 composer/四元组补全整条剪枝，输入统一走 runChat 的 chat 语义。
- *
- * 概念澄清（2026-09-03 术语统一，零逻辑变更）：
- *   - 本文件的 externalTaskLoop / completeExternalTask / runStepSequence 是【档2 多 turn 任务编排】
- *    （复杂输入 → 规划 turn + 每步一 turn 序列 + 收尾汇报 turn）。"外部任务/外循环/Loop 编排"
- *    是历史命名残留，术语层面统一为「多 turn 任务编排」；不涉及档3 目标模式（远期，未实现）。
- *   - 档1 turn Act 阶段内部的 step 编排（官方 loop = Agent Loop）由 loop.ts 的 runIterationLoop 承载，不在此文件。
- *   - 代码值 `HandoffDecision='loop'` 意为「自动续跑 turn」，非术语「loop = 对 step 的编排」。
- *
- * 刻意不做「单 run() + mode 标志」——两条路径的真实差异（runResume 无 prepare/无 handoff）
- * 若硬塞进一个开关，会落入场景特化补丁反模式。
- *
+ *   - runResume （续跑 Trigger）   act(continueAfterPause) → reflect（无 prepare、无 Handoff）
  */
 
 import type { AgentChunk } from '@/agent/types.js';
@@ -26,35 +16,16 @@ import type { InteractiveInputKind } from '@/memory/roundStore.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { isTimeoutAbortSignal } from '@/utils/errors.js';
-import { resolveTaskLoopLimit, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
+import { resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
 import {
   type StreamConsumeResult,
   type SeedDeps,
   type SeedParts,
-  type SeedPrepareResult,
 } from './types.js';
-import { SeedPrepare, refreshAssemblyForRolePack } from './prepare.js';
-import { DifficultyJudge } from './difficulty.js';
+import { SeedPrepare } from './prepare.js';
 import { resolveHandoff, resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
-import { renderTaskTable } from '@/agent/taskTableRenderer.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
-
-/**
- * 多 turn 任务编排「规划 turn」提示（档2）：复杂任务第一步只调查 + 建任务表，不执行步骤。
- * 规划后由 orchestrator 按 pending 步骤逐个拉起独立执行 turn，避免规划与执行挤在一次 turn 内。
- */
-const PLAN_ONLY_HINT =
-  '这是一个需要多步完成的复杂任务。请先充分调查并建立任务表（task_table_write），' +
-  '明确列出待完成的步骤，但【暂时不要执行任何步骤】。本回合只做规划与建表。';
-
-/**
- * 多 turn 任务编排「步 turn」提示（档2）：给定当前待执行步骤，让该 turn 专注解这一步骤。
- * @param description 步骤描述（从任务表 pending 步骤读取）
- */
-function stepPrompt(description: string): string {
-  return `【执行任务步骤】${description}\n请完成此步骤；完成后用 task_table_update 将该步骤标记为 done 或 blocked。`;
-}
 
 /**
  * 种子 turn 编排器
@@ -67,17 +38,15 @@ export class SeedOrchestrator {
   private readonly deps: SeedDeps;
   /** 回答前（装配上下文 + 召回 + 技能 + 用户消息入史） */
   private readonly prepare: SeedPrepare;
-  /** 难度分级（回答前判简单/复杂，决定是否触发汇报） */
-  private readonly difficulty: DifficultyJudge;
 
   constructor(deps: SeedDeps) {
     this.deps = deps;
     this.prepare = new SeedPrepare(deps);
-    this.difficulty = new DifficultyJudge(() => deps.getBackgroundProvider(), deps.tracer);
   }
 
   /**
    * 对话路径完整 turn：回答前 → 回答中(processUserInput) → 回答后 → Handoff。
+   * 所有复杂度（含 LLM 动态建任务表）在一个 turn 的 step 循环里承载。
    *
    * @param input 用户输入
    * @param signal 中止信号
@@ -87,7 +56,6 @@ export class SeedOrchestrator {
     // 回答前：装配上下文 + 召回记忆
     const prepared = yield* this.prepare.run(input, signal);
     if (prepared.aborted) {
-      // 锁超时中断（signal.reason=TimeoutError）≠ 用户取消：stopReason 区分，宿主映射超时文案
       yield {
         type: 'aborted',
         reason: isTimeoutAbortSignal(signal)
@@ -98,38 +66,7 @@ export class SeedOrchestrator {
       return;
     }
 
-    // 会议机制（S5）确定性触发：系统已预置任务表 → 跳过规划 turn，直调 completeExternalTask 跑步序列 + 收尾。
-    // 复用既有多 turn 任务编排执行机（步 turn + refreshAssemblyForRolePack 逐成员硬切换），不引入会议引擎（ADR-028 收敛补记）。
-    if (prepared.meetingPreset) {
-      const parts = this.deps.getParts();
-      const headRoundId = parts.loop.getCurrentRoundId();
-      parts.loop.setExternalTaskHeadRoundId(headRoundId);
-      parts.loop.setWithinExternalTask(true);
-      // 兜底摘要来源 = 预置任务表渲染文本（等价于规划 turn 的规划产出，避免触顶未收敛时摘要为空）
-      const plan = parts.sessionManager?.getCheckpoint()?.plan ?? [];
-      const planFallback = renderTaskTable(plan);
-      yield* this.completeExternalTask(signal, input, planFallback);
-      const forceWait = parts.loop.isIterationLimitReached?.() ?? false;
-      yield* this.handoff(true, forceWait);
-      return;
-    }
-
-    // 难度分级（回答前，档2 能力）：复杂且启用多 turn 任务编排 → externalTaskLoop（规划 + 每步一 turn + 汇报）；否则单 turn 直接答。
-    // 【注意】档2 多 turn 任务编排天然包含档1：简单输入直接走下方 runChat 单 turn 路径，无需宿主额外开关。
-    const difficulty = await this.difficulty.classify(input);
-    const taskLoopLimit = resolveTaskLoopLimit(
-      resolveActiveStrategy(this.deps.getParts().rolePackManager, this.deps.strategyOverride),
-    );
-    if (difficulty === 'complex' && taskLoopLimit > 0) {
-      yield* this.externalTaskLoop(input, prepared, signal);
-      // 多 turn 任务编排完成后，检查 step 循环是否因迭代上限而终止（兼容 mock）
-      const parts = this.deps.getParts();
-      const forceWait = parts.loop.isIterationLimitReached?.() ?? false;
-      yield* this.handoff(true, forceWait);
-      return;
-    }
-
-    // 回答中：消费 loop.processUserInput 执行流（roundId 以 loop 当前轮为真理源）
+    // 回答中：消费 loop.processUserInput 执行流
     const produce = () =>
       this.deps
         .getParts()
@@ -142,24 +79,22 @@ export class SeedOrchestrator {
     const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 
-    // 回答后：普通回答摘要
+    // 回答后：摘要
     this.backgroundReflect(input, acted.content);
 
     // Handoff：对外产出衔接决策
-    // 迭代上限时强制返回 wait，防止宿主自动续跑导致连续回答
-    yield* this.handoff(false, acted.iterationLimitReached);
+    yield* this.handoff(acted.iterationLimitReached);
   }
 
   /**
    * 续跑路径 turn：回答中(continueAfterPause) → 回答后。无回答前、无 Handoff。
    *
-   * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文（prepare）、不在 turn 出口分岔
+   * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文、不在 turn 出口分岔
    * （handoff）——差异源于 Trigger 的续跑语义，收在编排器内。
    *
-   * TS-9 问答闭环归属：交互输入（主动提问回答 / 暂停补充）不分配新 roundId——
-   * 续跑延续 prepare 分配的 turn 节点 roundId（loop.currentRoundId），appendUser 以
-   * 交互归属（interactive）追加到该轮 interactiveInputs，round 记录不因交互输入分裂。
-   * 跨进程重启时 currentRoundId 已由检查点 closureRoundId 回填（sessionManager.restore）。
+   * TS-9 问答闭环归属：交互输入不分配新 roundId——续跑延续 prepare 分配的 turn 节点
+   * roundId（loop.currentRoundId），appendUser 以交互归属（interactive）追加到该轮
+   * interactiveInputs，round 记录不因交互输入分裂。
    *
    * @param input 可选补充输入（空=续跑原路径；有=注入修正后续轮，同一 turn 节点内）
    * @param signal 中止信号
@@ -173,11 +108,8 @@ export class SeedOrchestrator {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
     // 交互输入归属当前 turn 节点（SSOT：roundId 唯一锚点=prepare appendUser 的 head roundId，
-    // 不重新 alloc——原「新问答闭环落盘」语义正是 TS-9 要修的 turn 分裂点）。消息历史唯一写点
-    // MessageHistory：必须写入历史轮才能跨重启可回溯、摘要可溯源。
-    // 空 roundId（内存/检查点兜底异常）时 fallback alloc，防 appendUser 无锚点漏写。
-    // 多 turn 任务编排续跑（completeExternalTask）有自己的组合溯源轮，不在此干预。
-    if (input?.trim() && !parts.loop.isWithinExternalTask) {
+    // 不重新 alloc——turn 分裂点已由 TS-9 收敛）。空 roundId 时 fallback alloc。
+    if (input?.trim()) {
       const closureRoundId = parts.loop.getCurrentRoundId() || parts.loop.allocRoundId();
       parts.loop.setCurrentRoundId(closureRoundId);
       try {
@@ -189,19 +121,13 @@ export class SeedOrchestrator {
         logger.warn({ err }, '续跑用户回答历史写入失败');
       }
     }
-    // 回答中：消费 loop.continueAfterPause 执行流 + 统一尾处理
+    // 回答中：消费 loop.continueAfterPause 执行流
     const produce = () => parts.loop.continueAfterPause(input, signal);
     const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 
-    // 多 turn 任务编排续跑整链：续完当前 turn 后，若仍处于多 turn 任务编排上下文（withinExternalTask）→ 推进剩余步 + 收尾汇报
-    // （摘要统一由 completeExternalTask 收尾产出，保持摘要↔外部输入恒 1:1，不在此重复产摘要）
-    if (parts.loop.isWithinExternalTask) {
-      yield* this.completeExternalTask(signal, input ?? '', acted.content);
-      return;
-    }
-    // 普通续跑（非多 turn 任务编排）：答后摘要
-    void this.backgroundReflect(input ?? '', acted.content);
+    // 续跑正常完成：摘要
+    this.backgroundReflect(input ?? '', acted.content);
   }
 
   /**
@@ -273,12 +199,7 @@ export class SeedOrchestrator {
     await this.runSummary(input, assistantContent, TRACE_SPANS.POST_PROCESS);
   }
 
-  /** 回答后汇报摘要：以汇报文本为单源（输入侧空，仅由汇报驱动） */
-  private async reflectReported(reportText: string): Promise<void> {
-    await this.runSummary('', reportText, TRACE_SPANS.REPORT);
-  }
-
-  /** 摘要生成统一委托：铺 span + 收敛 round-summary（记忆即摘要单轨，见 [memory-as-summary.md](../../../docs/architecture/memory-as-summary.md)），策略门控开才生成 */
+  /** 摘要生成统一委托：铺 span + 收敛 round-summary（记忆即摘要单轨），策略门控开才生成 */
   private async runSummary(
     input: string,
     assistantContent: string,
@@ -331,298 +252,24 @@ export class SeedOrchestrator {
     }
   }
 
-  /** Handoff 衔接决策：产出 turn 出口 chunk（对话等待 / 任务结束）。
+  /** Handoff 衔接决策：产出 turn 出口 chunk。
    *  SSOT：角色包参数（reflect.handoff 等）仅由内核消费——'loop' 是内核内部的自主续跑许可信号，
-   *  已由 loop 的 stepBudget/maxIterations 在单次 chat() 内消费完，绝不外泄给宿主（宿主只是插座，
-   *  不应被要求"再跑一轮"。宿主看到的 loop 意味着内核循环引擎漏到宿主层，属反模式）。
+   *  已由 loop 的 stepBudget/maxIterations 在单次 chat() 内消费完，绝不外泄给宿主（宿主只是插座）。
    *  故对外 handoff 恒为 'wait'（把控制权交还用户）或 'end'（任务完成）。
-   *  @param externalTaskReported 本 turn 是否为多 turn 任务编排收尾（runChat 复杂路径传 true，
-   *    供宿主区分"普通答完"与"复杂任务收敛汇报完"，以对齐 poll-round-summary 时机）
    *  @param forceWait 是否强制返回 wait（迭代上限时启用，防止误导宿主自动续跑） */
-  private async *handoff(
-    externalTaskReported = false,
-    forceWait = false,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
+  private async *handoff(forceWait = false): AsyncGenerator<AgentChunk, void, unknown> {
     const strategy = resolveActiveStrategy(this.deps.getParts().rolePackManager, this.deps.strategyOverride);
-    // 迭代上限时强制 wait，忽略角色包的 loop 策略；否则读取角色包策略的 handoff 意图
     const mode = forceWait ? 'wait' : resolveHandoff(strategy);
-    // 'loop' 在此被内核内部消化为 'wait'：自主续跑由内核循环预算承载，宿主只需等待用户
     const decision = mode === 'end' ? 'end' : 'wait';
     yield {
       type: 'handoff',
       decision,
-      reason: externalTaskReported
-        ? '外部任务收尾汇报'
-        : forceWait
-          ? '迭代上限已达，等待用户介入'
-          : mode === 'loop'
-            ? '本轮自主执行已完成，等待你的指示'
-            : undefined,
+      reason: forceWait
+        ? '迭代上限已达，等待用户介入'
+        : mode === 'loop'
+          ? '本轮自主执行已完成，等待你的指示'
+          : undefined,
     };
-  }
-
-  /**
-   * 档2 多 turn 任务编排（externalTaskLoop）：单个复杂输入 → 多 turn 组合。
-   *
-   * 序列：规划 turn（只建任务表）→ [completeExternalTask] 步 turn 序列 + 收尾汇报。
-   *   - 规划 turn：注入 PLAN_ONLY，只调查 + 建任务表，不执行（避免与步 turn 重复执行）；
-   *     规划在 step 边界软暂停 → 现场保留，续跑完规划后继续整链。
-   *   - 步序列 + 收尾由 [completeExternalTask] 承担（可重入，runChat 规划后与 runResume 续跑共用）。
-   *   - 进入多 turn 任务编排上下文时持久 head roundId（loop），续跑收尾摘要回指——组合溯源跨暂停保留。
-   *
-   * @param input 用户输入
-   * @param prepared 回答前结果（recalledMemories 供规划 turn 注入）
-   * @param signal 中止信号
-   */
-  private async *externalTaskLoop(
-    input: string,
-    prepared: SeedPrepareResult,
-    signal: AbortSignal,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    const parts = this.deps.getParts();
-
-    // TS-15 软暂停遗留现场兜底：本次是「新输入」却已处于多 turn 任务编排上下文（正常续跑走 runResume
-    // 直调 completeExternalTask，不会进本规划入口）→ 说明是上次规划/步链软暂停后放弃续跑、
-    // 改用全新输入。此时旧链仍挂着（withinExternalTask + 任务表 + PLAN_ONLY 保留），若不清会
-    // 导致本链覆盖 head roundId 后残留旧 pending 步被新链误取。故先清旧链现场再用新输入建新链：
-    // 打破多 turn 任务编排上下文 + 清任务表 + 清 PLAN_ONLY 装配提示（防重复注入）。
-    if (parts.loop.isWithinExternalTask) {
-      parts.loop.setWithinExternalTask(false);
-      parts.sessionManager?.clearPlan?.();
-      parts.loop.cleanTemporarySystemMessages();
-    }
-
-    // 组合 head id：捕获"这次外部输入"的 roundId（prepare 已分配并 appendUser）。
-    // 步 turn 会给 loop 分配独立 currentRoundId，故先把 head 持久到 loop，收尾摘要时回指——
-    // 确保 round-summary 锚定"这次外部输入"而非"最后一步"（组合溯源，跨暂停-续跑保留）。
-    const headRoundId = parts.loop.getCurrentRoundId();
-    parts.loop.setExternalTaskHeadRoundId(headRoundId);
-    // 进入多 turn 任务编排上下文（规划 + 步序列 + 收尾）——续跑入口据此决定是否继续推进任务链
-    parts.loop.setWithinExternalTask(true);
-
-    // 1) 规划 turn：只调查 + 建任务表，不执行
-    yield { type: 'thinking', phase: 'planning' };
-    parts.loop.injectSystemMessage(PLAN_ONLY_HINT);
-    const planAct = yield* this.act(() =>
-      parts.loop.processUserInput(
-        input,
-        prepared.recalledMemories,
-        signal,
-        headRoundId,
-      ),
-      signal,
-    );
-    if (planAct.paused) {
-      // 规划 turn 在 step 边界软暂停：现场保留（含 PLAN_ONLY 约束），续跑完规划后继续整链，不产摘要
-      return;
-    }
-    if (planAct.failed || planAct.aborted) {
-      // 规划中断/失败：清 PLAN_ONLY 防残留跨下一次输入；残缺半成品不入记忆（同主路径 act 语义）
-      parts.loop.cleanTemporarySystemMessages();
-      parts.loop.setWithinExternalTask(false);
-      // 规划失败同样清任务表（⑦ 排雷 2026-08-29）：防半写 plan 影响下一次输入误入旧链
-      parts.sessionManager?.clearPlan?.();
-      return;
-    }
-    // 规划成功：清 PLAN_ONLY（装配控制提示，非执行期临时，需显式清理），进入步序列 + 收尾
-    parts.loop.cleanTemporarySystemMessages();
-    yield* this.completeExternalTask(signal, input, planAct.content);
-  }
-
-  /**
-   * 可重入推进多 turn 任务编排任务链（runChat 复杂路径规划后 / runResume 续跑共用）。
-   *
-   * 从下一个 pending 步执行步 turn 序列直至收敛收尾汇报：
-   *   - 每个步 turn 独立 roundId（消息溯源/互斥排除隔离），不产摘要（摘要恒 1:1 只由收尾汇报产出）；
-   *   - 步 turn paused → return 保留现场（软暂停），续跑从下一 pending 步继续整链；
-   *   - 收尾前把 roundId 回指 loop.externalTaskHeadId（组合溯源：摘要锚定"这次外部输入"）；
-   *   - 收敛 → 汇报 turn + 汇报单源摘要；未收敛 → 普通单条摘要（恒 1:1）。
-   *
-   * 职责按内聚拆分：步循环（runStepSequence）+ 收尾决策（finalizeExternalTask），
-   * 本方法仅作编排壳——步序列中途中止/软暂停（runStepSequence 返回 false）则不进入收尾。
-   *
-   * @param signal 中止信号
-   * @param input 用户输入（未收敛兜底摘要的输入侧）
-   * @param planFallback 未收敛兜底摘要的内容侧（首次=规划产出；续跑=最后 turn 产出）
-   */
-  private async *completeExternalTask(
-    signal: AbortSignal,
-    input: string,
-    planFallback: string,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 步 turn 序列：每步独立 roundId（消息溯源用，不产摘要）；false = 中止/软暂停提前返回，不收尾
-    const seq = yield* this.runStepSequence(signal);
-    if (!seq.continueFinalize) return;
-
-    // 步序列正常走完（收敛或触顶）→ 收尾决策 + 清场
-    yield* this.finalizeExternalTask(signal, input, planFallback, seq.stepsRun);
-  }
-
-  /**
-   * 顺序执行任务表待办步骤的步 turn 序列（多 turn 任务编排档2；每步独立 roundId，不产摘要）。
-   *
-   * 三个出口（收敛/中止/软暂停）收进一个布尔返回语义，调用方据此决定是否进入收尾：
-   *   - 无 pending 步骤 → break（收敛），返回 true；
-   *   - 某步中止/失败 → 即时清场（残缺不入记忆），返回 false；
-   *   - 某步软暂停 → 保留现场（续跑从下一 pending 继续），返回 false（此时不清场，现场保留）。
-   *
-   * @param signal 中止信号
-   * @returns { continueFinalize, stepsRun } 是否应继续收尾 + 实际执行步数（供收尾判定触顶）
-   */
-  private async *runStepSequence(
-    signal: AbortSignal,
-  ): AsyncGenerator<AgentChunk, { continueFinalize: boolean; stepsRun: number }, unknown> {
-    const parts = this.deps.getParts();
-    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager, this.deps.strategyOverride));
-
-    let stepsRun = 0;
-    // 停滞检测（多 turn 编排级，2026-09-04 自 assembler step 回调归位）：步 turn 正常结束后
-    // 若刚执行的步骤未被 task_table_update 推进为 done → 计停滞；连续 3 步未推进 → 标 blocked + 提示
-    let stalledStepCount = 0;
-    const STALL_THRESHOLD = 3;
-    while (stepsRun < limit) {
-      const next = this.getNextPendingStep();
-      if (!next) break;
-      stepsRun++;
-      // 步级进度标记（供宿主区分「正在执行第几步」）：index=当前步序号，limit=步数上限
-      yield { type: 'thinking', phase: 'step', index: stepsRun, limit };
-      // 会议机制（S5 补强）：步入口按本步 rolePack 刷新表层装配（逐成员硬切换系统人格；
-      // 工具面恒归组长——refreshRolePackPrefixForRound 内部按 activePack 策略构建 ChatOptions 锁死）
-      refreshAssemblyForRolePack(this.deps, next.rolePack);
-      // 步入 processUserInput 未传 roundId，由 loop 自生成独立 id（round 归属以 loop 为单一真理源）——
-      // 消息溯源/互斥排除在不同步骤间天然隔离，无需此处显式 allocRoundId
-      const stepAct = yield* this.act(() =>
-        parts.loop.processUserInput(stepPrompt(next.description), [], signal),
-        signal,
-      );
-      if (stepAct.failed || stepAct.aborted) {
-        // 中断/失败：残缺半成品不入记忆（哲学「硬中止不产摘要」），任务链终止
-        parts.loop.setWithinExternalTask(false);
-        // 清残留任务表（⑦ 排雷 2026-08-29）：硬中止即清场——否则残留 pending 步会被下一次
-        // 输入误当作「续跑旧链」执行（与软暂停保留现场相对；软暂停不清，供 runResume 续跑从下一 pending 继续）
-        parts.sessionManager?.clearPlan?.();
-        return { continueFinalize: false, stepsRun };
-      }
-      if (stepAct.paused) {
-        // 本 turn 自然结束后软暂停：保留现场（含任务表），续跑从下一 pending 步继续整链
-        return { continueFinalize: false, stepsRun };
-      }
-      // 停滞检测（多 turn 编排级）：本步未推进为 done → 计停滞；推进成功 → 复位
-      const cp = parts.sessionManager?.getCheckpoint();
-      const stepDone = cp?.plan.some((s) => s.id === next.id && s.status === 'done') ?? false;
-      stalledStepCount = stepDone ? 0 : stalledStepCount + 1;
-      if (stalledStepCount >= STALL_THRESHOLD) {
-        const hasPending = cp?.plan.some((s) => s.status === 'pending' || s.status === 'active');
-        if (hasPending) {
-          // 经 updatePlanStepStatus 标脏，checkpointDirty 置位确保阻塞标记可落盘
-          parts.sessionManager?.updatePlanStepStatus?.(next.id, 'blocked');
-          parts.loop.injectSystemMessage(
-            `[系统] 检测到任务表停滞（连续 ${STALL_THRESHOLD} 步未更新步骤状态），已自动将步骤 "${next.description}" 标记为 blocked。请使用 task_table_update 推进剩余任务，或使用 task_table_write 重新规划。`,
-          );
-        }
-        // 复位计数器（无论是否触发，防止无限触发）
-        stalledStepCount = 0;
-      }
-      // 步 turn 不产摘要（摘要 1:1 只由收尾汇报产出）
-    }
-
-    return { continueFinalize: true, stepsRun };
-  }
-
-  /**
-   * 多 turn 任务编排任务链收尾决策 + 清场（步序列正常走完后调用，档2）。
-   *
-   * 收敛/触顶 → 汇报 turn + 汇报单源摘要；未收敛 → 普通单条摘要（保证摘要恒 1:1）。
-   * 两种收尾后均清多 turn 任务编排上下文（供后续续跑不误入已结束链）。
-   *
-   * @param signal 中止信号
-   * @param input 用户输入（未收敛兜底摘要的输入侧）
-   * @param planFallback 未收敛兜底摘要的内容侧（首次=规划产出；续跑=最后 turn 产出）
-   * @param stepsRun 步序列实际执行步数（供触顶判定）
-   */
-  private async *finalizeExternalTask(
-    signal: AbortSignal,
-    input: string,
-    planFallback: string,
-    stepsRun: number,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    const parts = this.deps.getParts();
-    const limit = resolveTaskLoopLimit(resolveActiveStrategy(parts.rolePackManager, this.deps.strategyOverride));
-
-    // 收尾：收敛 → 汇报 turn + 汇报单源摘要；硬上限触顶且有未完成步骤 → 汇报进度 + 列未完成
-    // （触顶不是硬止损，等用户输入按记忆递归续接）；其余未收敛 → 以 planFallback 走普通单条摘要（保证恒 1:1）
-    parts.loop.setCurrentRoundId(parts.loop.externalTaskHeadId);
-    // 汇报入口（loop.runReport）已自动清理上一步执行期临时残留，无需此处手动再清
-    const hitLimitWithPending = stepsRun >= limit && this.getNextPendingStep() !== undefined;
-    if (this.isConverged() || hitLimitWithPending) {
-      yield { type: 'thinking', phase: 'reporting' };
-      yield* this.runReportAndReflect(signal, input, planFallback);
-    } else {
-      this.backgroundReflect(input, planFallback);
-    }
-    // 任务链已收尾：清除多 turn 任务编排上下文（供后续续跑不误入已结束链）
-    parts.loop.setWithinExternalTask(false);
-    // 清空任务表（收尾清场，⑦ 排雷 2026-08-29）：已执行完的 plan 不残留——
-    // 否则残留 pending 步会被下一次复杂输入误当「续跑旧链」，出现非会议却跑会议链的错乱
-    parts.sessionManager?.clearPlan?.();
-  }
-
-  /**
-   * 汇报 turn（可复用）：消费 loop.runReport 流 → 汇报文本入会话历史 → 汇报单源摘要。
-   *
-   * 无实质收尾兜底：若汇报为空、或仅为 token 预算占位（无真实收尾内容），
-   * 则以 fallbackContent 走普通单条摘要——保证"收敛"路径恒产 1 条（摘要↔外部输入恒 1:1）。
-   * @param signal 中止信号（汇报生成用）
-   * @param fallbackInput 已落库的输入文本（无实质收尾回退时作摘要的输入源）
-   * @param fallbackContent 回退摘要来源（externalTaskLoop 传规划产出；普通 runChat 直答传主回答）
-   */
-  private async *runReportAndReflect(
-    signal: AbortSignal,
-    fallbackInput: string,
-    fallbackContent: string,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    const parts = this.deps.getParts();
-    let report = '';
-    for await (const chunk of parts.loop.runReport(signal)) {
-      if (chunk.type === 'text') report += chunk.content;
-      yield chunk;
-    }
-    // 剥离 token 预算占位再判空：占位视作"未产出真实收尾"，一并走回退（token 预算耗尽不是收尾）
-    const trimmed = report
-      .trim()
-      .replace(LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER, '')
-      .trim();
-    if (trimmed) {
-      try {
-        await parts.history.appendAssistant(trimmed, parts.loop.getCurrentRoundId());
-      } catch (err) {
-        logger.warn({ err }, '汇报消息历史写入失败');
-      }
-      // 汇报→摘要单源：以汇报文本为摘要来源（走既有 reflect 管线，记忆即摘要单轨，见 [memory-as-summary.md](../../../docs/architecture/memory-as-summary.md)）
-      backgroundTask('report-summary', () => this.reflectReported(trimmed));
-      return;
-    }
-    // 无实质收尾 → 回退普通单条摘要（与"未收敛"分支同一真理源，保证收敛恒 1:1）
-    this.backgroundReflect(fallbackInput, fallbackContent);
-  }
-
-  /**
-   * 读取任务表下一个 pending 步骤（多 turn 任务编排步 turn 的驱动信号，档2）。
-   * @returns 下一个待执行步骤（description 供步 turn 提示）；无则返回 null（收敛）
-   */
-  private getNextPendingStep(): { id: string; description: string; rolePack?: string } | null {
-    const steps = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
-    const next = steps.find((s) => s.status === 'pending');
-    return next ? { id: next.id, description: next.description, rolePack: next.rolePack } : null;
-  }
-
-  /**
-   * 收敛判定：session 检查点存在至少一个 plan/task-table 步骤已完成。
-   * 无计划/无完成步骤 → 未收敛 → 不触发汇报。
-   */
-  private isConverged(): boolean {
-    const plan = this.deps.getParts().sessionManager?.getCheckpoint()?.plan ?? [];
-    return plan.some((s) => s.status === 'done');
   }
 
   /**

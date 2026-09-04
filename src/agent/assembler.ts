@@ -297,7 +297,7 @@ export interface AssembleOutput {
  * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
  * 属装配职责（装配逻辑单一真理源）。
  * 注：loop.onPaused 不再在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
- * 注：任务表停滞检测（多 turn 编排职责）已迁至 seed/orchestrator runStepSequence（2026-09-04 M-B）。
+ * 注：任务表停滞检测已迁移到单 turn step 循环内嵌（2026-09-04 收敛：多 turn 编排已砍）。
  *
  * @param loop AgentLoop（装配其 onPendingQuestion/onStepBoundary/getTaskTable）
  * @param toolExec 工具执行器（装配其 planManager）

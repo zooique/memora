@@ -66,14 +66,10 @@ export class SeedPrepare {
     }
 
     // 会议机制（S5）确定性触发：用户消息含「小组会议」且 activePack 是组长 →
-    // 经既有 writePlan 泛型能力预置任务表（组员各一步 + 汇总一步，复用 PlanStep.rolePack 表层覆盖），
-    // 并标记 meetingPreset 强制 orchestrator 进入多 turn 任务编排直跑步序列（不引入会议引擎，见 ADR-028 收敛补记）。
+    // 经 writePlan 预置任务表（组员各一步 + 汇总一步），让 LLM 在单 turn step 循环里自然消费。
     const meetingSteps = rolePackManager?.tryBuildMeetingPlan?.(input) ?? null;
-    let meetingPreset = false;
     if (meetingSteps && sessionManager) {
-      // 步数截断保护：会议步骤总数（组员 + 汇总）不能超过 taskLoopLimit，
-      // 否则 runStepSequence 会被步数上限截断，末尾组员/汇总步骤永远不执行（会议不完整）。
-      // 自然生长：预置即截断——保证「预置什么就执行什么」，不产生必然被截断的步骤。
+      // 步数截断保护：会议步骤总数不能超过 taskLoopLimit（预留预算保护）
       const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
       const taskLoopLimit = resolveTaskLoopLimit(strategy);
       const capped =
@@ -81,7 +77,6 @@ export class SeedPrepare {
           ? meetingSteps.slice(0, taskLoopLimit)
           : meetingSteps;
       sessionManager.writePlan('overwrite', capped);
-      meetingPreset = true;
     }
 
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
@@ -105,7 +100,7 @@ export class SeedPrepare {
     );
 
     if (signal.aborted) {
-      return { input, recalledMemories, aborted: true, meetingPreset: false } satisfies SeedPrepareResult;
+      return { input, recalledMemories, aborted: true } satisfies SeedPrepareResult;
     }
 
     // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
@@ -126,7 +121,7 @@ export class SeedPrepare {
       );
     }
 
-    return { input, recalledMemories, aborted: false, meetingPreset } satisfies SeedPrepareResult;
+    return { input, recalledMemories, aborted: false } satisfies SeedPrepareResult;
   }
 }
 

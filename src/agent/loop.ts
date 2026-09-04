@@ -1,15 +1,13 @@
 /**
  * turn（问答闭环）Act 引擎（AgentLoop）— turn 回答中阶段的 loop（对 step 的编排，官方 Agent Loop 本义）
  *
- * 概念定位（术语统一 2026-09-03，见 [agent-design-philosophy.md §3](../../docs/architecture/agent-design-philosophy.md)）：
- *   - step = 一次 LLM 调用 + 可选工具执行（runIterationLoop 内每次循环体，历史别名「迭代/内循环」）；
+ * 概念定位（2026-09-04 收敛：档2 多 turn 任务编排已砍，所有复杂度在单 turn step 循环里承载）：
+ *   - step = 一次 LLM 调用 + 可选工具执行（runIterationLoop 内每次循环体）；
  *   - loop = 对 step 的编排：turn 回答中阶段反复拉起 step 直到输出最终回答；
- *   - 本类承载【档1 turn（问答闭环）】的 Act 引擎（含 loop=step 编排），是 turn 的身体引擎，
- *     不构成独立层级；
- *   - 【档2 多 turn 任务编排】（多个 turn 的串联：规划 turn + 步 turn 序列 + 收尾 turn）
- *     由 seed/orchestrator 的 externalTaskLoop 承载，本类只是它逐轮驱动的 Act 引擎。
- *   - 上下文 = 用户输入 + Agent 记忆召回结果 + 运行帧追加（召回结果由 Agent 层
- *     通过 processUserInput 的 recalledMemories 参数注入）。
+ *   - 本类承载 turn（问答闭环）的 Act 引擎（含 loop=step 编排），是 turn 的身体引擎；
+ *   - 复杂任务（task_table_write + 动态规划）在一个 turn 的 step 循环里自然生长，
+ *     不再强制拆成多 turn 编排（见 tasks/收敛多turn编排到动态单turn.md）；
+ *   - 上下文 = 用户输入 + Agent 记忆召回结果 + 运行帧追加。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
@@ -227,11 +225,6 @@ export class AgentLoop {
   /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
    *  step 边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
   private pauseRequested = false;
-  /** 多 turn 任务编排上下文标志（档2 externalTaskLoop）：规划/步开启，收尾汇报后清除。续跑入口据此决定是否继续推进任务链 */
-  private withinExternalTask = false;
-
-  /** 多 turn 任务编排组合溯源 head roundId（=本次外部输入 appendUser 的 roundId），跨暂停-续跑保留 */
-  private externalTaskHeadRoundId = '';
   /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
@@ -464,7 +457,7 @@ export class AgentLoop {
       this.resetAskBudget();
 
       // 单轮 step 循环（runIterationLoop）：本 turn 的 step 编排执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
-      // 真正的「多 turn 任务编排」（外部任务多步编排）由 seed/orchestrator 的 externalTaskLoop 承载，不在本引擎内。
+      // 所有复杂度（含 LLM 动态建任务表、会议机制角色切换）在一个 turn 内承载（2026-09-04 收敛：多 turn 编排已砍）。
       // 经 withRound 附加当前 turn roundId（SSOT：过程事件归属由内核唯一提供）
       taskSucceeded = true;
       yield* this.withRound(this.runIterationLoop(signal));
@@ -530,56 +523,6 @@ export class AgentLoop {
     }
   }
 
-  /** 汇报系统提示：引导 LLM 对已完成的复杂任务产出自洽的结构化总结报告 */
-  static readonly REPORT_PROMPT =
-    '请基于以上已完成的对话与任务执行过程，用中文输出一份结构化任务总结报告，' +
-    '内容仅包含：目标回顾、已完成的关键步骤、最终结果与结论、遗留事项（如有）。' +
-    '不要调用任何工具，直接输出报告文本。';
-
-  /**
-   * 汇报闭环：对已收敛的复杂任务做一次独立汇报生成。
-   *
-   * 设计要点（纯新增，不改造现有循环路径）：
-   *   - 复用 _prepareContext（截断/微压缩/预算）与 callLlmWithRetry（重试/错误兜底），
-   *     保证长任务汇报不撑爆上下文、错误有兜底。
-   *   - 追加一条 system 汇报指令（随下一轮 cleanTemporarySystemMessages 清理，
-   *     不污染后续上下文的指令面）；汇报文本以 assistant 追加进工作记忆（保留下次续跑可引用）。
-   *   - 汇报只做单次生成，不做工具路由——它是"收尾总结"，不应再触发工具。
-   *
-   * @param signal 中止信号
-   * @yields 汇报文本的 text chunk；无（汇报为空/失败）时 yield 空
-   */
-  async *runReport(signal?: AbortSignal): AsyncGenerator<AgentChunk, void, unknown> {
-    // 汇报入口先清执行期临时残留（上一步 turn 的 self-review 等），
-    // 保证汇报只看到规划产物 + 汇报指令，不把步内残留混入收尾上下文（汇报不走 processUserInput）
-    this.cleanExecutionTemporary();
-
-    // 追加汇报指令为（临时）system 消息，指令进本轮上下文
-    this.appendSystemMessage(AgentLoop.REPORT_PROMPT);
-
-    // 上下文准备（截断+微压缩+预算），安全消息集合供 LLM 调用
-    const prep = await this._prepareContext(signal);
-    if (prep === 'done') {
-      yield {
-        type: 'text',
-        content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}`,
-        roundId: this.currentRoundId,
-      };
-      return;
-    }
-
-    yield { type: 'thinking', phase: 'llm_calling', roundId: this.currentRoundId };
-    const llmResult = yield* this.callLlmWithRetry(prep.safeMessages, prep.chatOpts, signal, 0);
-    if (llmResult.aborted) return;
-
-    const report = llmResult.fullContent.trim();
-    if (!report) return;
-
-    // 汇报以 assistant 回填工作记忆（保留供历史/摘要沉淀；不触发工具路由）
-    this.appendAssistantText(report);
-    yield { type: 'text', content: report, roundId: this.currentRoundId };
-  }
-
   /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;
@@ -587,8 +530,8 @@ export class AgentLoop {
 
   /**
    * 给子生成器的每个 chunk 附加当前 turn roundId（SSOT：过程事件归属由内核唯一提供）。
-   * 宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮。
-   * 三个 turn 入口（processUserInput / continueAfterPause / runReport）统一经此包装。
+   * 宿主据此把 ProcessEvent 落盘到正确的 Round。
+   * 两个 turn 入口（processUserInput / continueAfterPause）统一经此包装。
    */
   private async *withRound<T extends AgentChunk>(
     gen: AsyncGenerator<T, void, unknown>,
@@ -620,26 +563,6 @@ export class AgentLoop {
   /** 清除在途的软暂停申请（与 requestPause 对称：用户取消/流结束清理/暂停超时清扫共用） */
   clearPauseRequest(): void {
     this.pauseRequested = false;
-  }
-
-  /** 标记当前是否处于多 turn 任务编排上下文（档2 externalTaskLoop：规划/步开启，编排器收尾后清除） */
-  setWithinExternalTask(v: boolean): void {
-    this.withinExternalTask = v;
-  }
-
-  /** 查询是否处于多 turn 任务编排上下文（续跑入口判断"是否继续推进任务链"的唯一依据） */
-  get isWithinExternalTask(): boolean {
-    return this.withinExternalTask;
-  }
-
-  /** 设置多 turn 任务编排组合溯源 head roundId（编排器规划后写入，续跑读取回指收尾摘要） */
-  setExternalTaskHeadRoundId(roundId: string): void {
-    this.externalTaskHeadRoundId = roundId;
-  }
-
-  /** 读取多 turn 任务编排组合溯源 head roundId（续跑收尾时回指，保证摘要锚定"这次外部输入"） */
-  get externalTaskHeadId(): string {
-    return this.externalTaskHeadRoundId;
   }
 
   /** 插话（申请）：把用户补充输入排队，当前 step 完成后在 step 边界统一注入为 user 消息。
@@ -695,8 +618,7 @@ export class AgentLoop {
   /**
    * 单轮 step 循环引擎（turn act 内 step 编排）：一次循环 = 一次 handleIteration（processUserInput/continueAfterPause 共享）。
    * stepBudget 软上限与 maxIterations 兜底在此统一收敛。
-   * 注：真正的「多 turn 任务编排」（档2：多个 turn 的编排，规划→步 turn 序列→收尾）由 seed/orchestrator 的
-   * externalTaskLoop 承载，不在本引擎内——本方法只服务单个 turn 的 act 阶段。
+   * 注：所有复杂度（含 LLM 动态建任务表、会议机制角色切换）在单 turn 内承载（2026-09-04 收敛：多 turn 编排已砍）。
    */
   private async *runIterationLoop(
     signal: AbortSignal | undefined,
@@ -2271,7 +2193,7 @@ export class AgentLoop {
   /**
    * 清理执行期临时 system 消息（self-review / reflection / duplicate-warning / metaNote）。
    *
-   * 每轮闭环入口执行一次（processUserInput / continueAfterPause / runReport），清掉上一轮
+   * 每轮闭环入口执行一次（processUserInput / continueAfterPause），清掉上一轮
    * 执行中产生、下一轮不应再见的残留。与 prepare 阶段的装配性注入区分：装配注入（召回、
    * 最近对话）不在此集合，保留到 prepare 重建。replaceContext 走浅拷贝保留消息引用，
    * 故按引用过滤是安全且幂等的。
