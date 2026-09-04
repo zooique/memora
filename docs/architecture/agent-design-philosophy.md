@@ -1,5 +1,9 @@
 # Memora Agent 设计 —— 以 turn（问答闭环）为种子
 
+> **2026-09-04 收敛补记**：本文论述的「多 turn 任务编排」层（规划 turn + N 个步 turn + 汇报 turn 的跨 turn 串联）已废弃。复杂任务收敛为：**所有复杂度（含任务表、会议多角色）在一个 turn 的 step 循环内自然生长**。代码删除 externalTaskLoop / runStepSequence / runReport 等 1181 行。任务表工具（task_table_write/update）、会议机制、暂停续跑全部保留，只是从"跨 turn 编排驱动"变为"单 turn step 循环内动态进度追踪"。**SSOT 核心公理（turn = 最小单元）未变**——废弃的是"多个 turn 串联"这个架构层，不是 turn 本身。
+>
+> 正文推导过程原样保留（它记录了"为什么走到这一步"的完整思考链），关键结论处 inline 标注废弃状态。
+
 > 这是一篇关于 Agent 内核设计的长文。它以"turn（问答闭环，即一次「用户输入 → 最终回答」，历史别名「单轮执行闭环」）"为种子，用文字逐步推导出完整的设计：从基础模型出发，论述它如何生长出 loop（对 step 的编排）与多 turn 任务编排、再到目标模式，再回到 turn 内部，分层精雕回答前、回答中、回答后三个阶段的每一处细节。目标不是罗列功能，而是呈现一个 Agent 完整的运行闭环——让读者理解：一切复杂性，都从这一条最朴素的闭环中自然生长出来。
 
 ***
@@ -173,7 +177,7 @@ Handoff 是闭环的出口，也是整个系统的分岔口。所有模式——
 
 * **turn 内循环（loop = 对 step 的编排）**：单个 turn **内部**回答中阶段的 LLM↔工具迭代。**这是 loop 的本义。**
 
-* **多 turn 任务编排**：多个 turn **之间**的串联（复杂任务：规划 turn + 每步一 turn + 收尾 turn，对应代码 `externalTaskLoop`/`completeExternalTask`）。这是**任务编排（task orchestration）**，不是 loop——它编排的是 turn 的序列，与 loop 编排 step 是不同概念。
+* **多 turn 任务编排**：多个 turn **之间**的串联（复杂任务：规划 turn + 每步一 turn + 收尾 turn，对应代码 `externalTaskLoop`/`completeExternalTask`）。这是**任务编排（task orchestration）**，不是 loop——它编排的是 turn 的序列，与 loop 编排 step 是不同概念。~~**2026-09-04 废弃**：此层架构已删除，复杂度收敛为单 turn step 循环驱动。~~
 
 **loop 不是执行闭环**（这是常见认识错位）：执行闭环就是问答闭环（turn），loop 只是 turn 回答中阶段对 step 的编排方式，不构成新层。
 
@@ -257,7 +261,7 @@ loop 必须有终止条件，否则在目标模糊时会无限循环。终止分
 
 * **第 1 层 · 抽象**：复杂任务出现后，把 **turn** 确立为最小执行单位（一次触发、一次回答、三阶段），turn 内部以 **loop（step 编排）** 完成回答中阶段——`runIterationLoop` 是 turn 内的 step 循环，不构成新层。
 
-* **第 2 层 · 多 turn 任务编排**：**任务编排 = 对多个 turn 的编排**——首个 turn 确认难度 + 建任务清单，后续 turn 逐个执行，收尾汇报 turn 汇总结论。对应代码 `externalTaskLoop`/`completeExternalTask`。**注意：这不是 loop**——loop 编排 step（turn 内），任务编排编排 turn（turn 间），二者概念不同义，`externalTaskLoop` 不再称 Loop。
+* **第 2 层 · 多 turn 任务编排**：**任务编排 = 对多个 turn 的编排**——首个 turn 确认难度 + 建任务清单，后续 turn 逐个执行，收尾汇报 turn 汇总结论。对应代码 `externalTaskLoop`/`completeExternalTask`。**注意：这不是 loop**——loop 编排 step（turn 内），任务编排编排 turn（turn 间），二者概念不同义，`externalTaskLoop` 不再称 Loop。~~**2026-09-04 废弃**：此层架构已删除（-1181 行）。复杂任务收敛为单 turn 内 step 循环驱动，目标模式演进路径变更为"单 turn step 循环内驱动多角色/多任务"而非"跨 turn 串联"。~~
 
 * **第 3 层 · 目标模式**：**目标模式 = 对任务编排级 turn 的编排（远期，代码未实现）**——一次驱动多个任务编排级 turn 完成超复杂任务。
 
@@ -476,6 +480,8 @@ Agent 基于装配好的上下文，调用 LLM 生成回答。生成过程的纪
 3. **不建新抽象**：已有 `preExecutionCheck`（执行前检查）+ `onToolExecuted`（执行后记录）已覆盖"前 + 后"两个时机，扩展返回语义（三态 + overrideArgs）即可，**不引入独立的 ToolHook 钩子系统**。这是从 DeepSeek Harness 工具流水线（pre-execute → execute → post-execute）汲取思想后收敛的结论——memora 用"接口注入 + 单点聚合检查"实现同等能力，不照搬插件瀑布机制。
 
 ### 7.3 loop（step 编排）与多 turn 任务编排：深与长的配比
+
+> ~~**2026-09-04 收敛**：本节讨论的"深与长双维度配比"中，"长"（多 turn 任务编排串联跨 turn）已废弃。收敛后仅剩"深"——**所有复杂度在单 turn step 循环内承载**，资源配比变为 step 循环深度（`toolStepLimit` / `maxIterations`）的单维度。LLM 自主在 step 循环内动态决策任务表、会议角色切换，而非跨 turn 串行推进。~~
 
 第三章已区分两种"循环"——loop（对 step 的编排，回答中）与多 turn 任务编排（对 turn 的编排，回答间）。本章从配比视角补一个关键认识：**loop 决定"一轮有多深"，多 turn 任务编排决定"一次任务有多长"**。
 

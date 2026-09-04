@@ -1,5 +1,7 @@
 # 记忆即摘要：溯源式记忆架构设计
 
+> **2026-09-04 收敛补记**：本文论述的多 turn 编排摘要策略（"复杂收敛 → 收尾汇报 turn → 提炼汇报单源摘要""子 turn 不单产摘要""head id 组合溯源"）已随多 turn 编排层废弃。收敛后语义简化为：**一次外部输入 → 一个 turn → 一条 round-summary**，无中间 turn、无 head id 概念、无 report 单源摘要。全文其余架构（溯源标识、摘要为唯一记忆单元等）未变。
+>
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
 > **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（turn 公理）· role-pack-spec.md（记忆键 SSOT）

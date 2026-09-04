@@ -1,7 +1,10 @@
 # 外部任务「气口暂停 → 续跑整链」设计定案（docs 架构层）
 
-> **定位**：**设计定案（docs 架构层），由用户设计方案固化而来**。**当前非 ADR**（S1 探索期→此处将方案 A 定为实施蓝图）；待实施落地、被 `src` 引用 / 规则引用 / 真实场景复现消费后，按探索期决策沉淀纪律 S2 固化 ADR（三条件之一即补）。
-> 本文是 D1（外部任务循环 paused 状态丢失）方案 A 的实施依据。
+> **⚠️ 2026-09-04 整体废弃**：本文论述的 `externalTaskLoop`（多 turn 任务编排跨 turn 串联）已整体删除。暂停续跑的语义已收敛为**单 turn step 循环内的气口续跑**（`continueAfterPause` 复用同一 turn 的 `handleIteration` + `handleIterationResult`），不再需要"续跑整链"概念。**历史设计原样保留**——它记录了从"多 turn 串联"架构到"单 turn step 循环驱动"的探索过程。
+>
+> 现状真理源：[agent-design-philosophy.md](./agent-design-philosophy.md)（头部收敛补记已更新）· 代码：[loop.ts](../../src/agent/loop.ts)（`continueAfterPause`）
+
+> **原定位（历史）**：设计定案（docs 架构层），由用户设计方案固化而来。
 
 ---
 
