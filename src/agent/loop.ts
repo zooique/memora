@@ -299,9 +299,11 @@ export class AgentLoop {
   private metrics = new LoopMetrics();
 
   constructor(private readonly opts: AgentLoopOptions) {
-    // 内核物理上限 SSOT：默认值引用 role-pack/strategyKeys.DEFAULT_MAX_ITERATIONS（单一源头）。
-    // 迭代 = 一次 LLM call + N 并行工具。50 足以覆盖复杂多步任务，同时防止死循环烧 token。
-    // 角色包 MAX_STEP_BUDGET 和 DEFAULT_STEP_BUDGET 也引用同一个源头——三者收敛，无配置错配。
+    // 内核兜底迭代上限：默认值引用 role-pack/strategyKeys.DEFAULT_MAX_ITERATIONS。
+    // 迭代 = 一次 LLM call + N 并行工具。50 足以覆盖复杂多步任务。
+    // 真正的迭代上限由 runIterationLoop 入口动态计算 effectiveMax：
+    //   strategy.stepBudget > 0 → 角色包声明的步数预算（配多少给多少）
+    //   strategy.stepBudget = 0 → 这里的 maxIterations 兜底
     this.maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
     this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;

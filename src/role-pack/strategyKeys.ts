@@ -22,16 +22,18 @@ export type KeyRule =
 // ════════════════════════════════════════════════════════════
 // 数值键上下限常量（SSOT 单一来源：validator + resolver + 文档共用）
 // 上界选值原则：宽松防呆而非限制能力——覆盖真实使用上限即可，杜绝无条件填写导致的资源失控
-// 同时是跨模块迭代上限 SSOT：agent/loop.ts 的 maxIterations 默认值 与
-// role-pack 的 MAX_STEP_BUDGET（角色包声明区间）、DEFAULT_STEP_BUDGET（软上限默认）
-// 三者共用 DEFAULT_MAX_ITERATIONS 这一源头常量。内核物理上限决定一切。
+//
+// stepBudget 三层设计：
+//   DEFAULT_MAX_ITERATIONS=50 → 内核兜底（loop.maxIterations 默认值 + resolveStepBudget 缺省回退）
+//   MIN_STEP_BUDGET=10 / MAX_STEP_BUDGET=500 → 角色包声明合法区间（validator 拦截越界）
+//   角色包配 stepBudget → loop.runIterationLoop 动态计算 effectiveMax，配多少给多少
 // ════════════════════════════════════════════════════════════
 
 /**
- * 内核物理迭代上限（SSOT 单一来源）。
+ * 内核兜底迭代上限（SSOT 单一来源）。
  *
- * 定义位置：role-pack 策略边界层（role-pack 声明的任何 stepBudget 不得超过此值，
- * agent/loop.ts 的 maxIterations 默认值也引用同一源头）。
+ * 定义位置：role-pack 策略边界层——agent/loop.ts 的 maxIterations 默认值引用这里，
+ * resolveStepBudget 缺省回退也引用这里。agent→role-pack 单向依赖，方向正确。
  *
  * 业界参考：LangGraph=25, Claude Code=25-50, CrewAI=25。
  * 迭代 = 一次 LLM call + N 并行工具。50 足以覆盖复杂多步任务。
