@@ -49,7 +49,6 @@
       "streaming": "streaming",
       "toolStepLimit": 100,
       "providerRouting": "auto",
-      "inputInterrupt": "block",
       "multiStepReasoning": "auto",
       "toolReadonly": "readonly",
       "toolApproval": "auto"

@@ -81,10 +81,10 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 > ⚠️ **语义红线**：`capabilities: []`（空数组）或仅含无工具映射的能力 = **无任何工具可调用（全禁）**。需要放行全部工具时**省略** capabilities 字段（= 全放行）。凡写数组即显式白名单。
 
-#### strategy 键速查（28 键；未改动的键可删除 = 内核默认）
+#### strategy 键速查（27 键；未改动的键可删除 = 内核默认）
 
 `prepare`（8）默认值：`memoryRecall`=full｜`understandingConfirm`=off｜`memoryRecallPercent`=0.4(0~1)｜`minFallback`=2(0~100)｜`summaryFocus`(≤500字符，默认省略)｜`contextAssembly`=hybrid｜`recallConfidence`=0.6(0~1)｜`summaryRecall`=on
-`act`（10）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`streaming`=streaming｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`inputInterrupt`=allow｜`multiStepReasoning`=auto｜`toolReadonly`=full｜`toolApproval`=auto
+`act`（9）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`streaming`=streaming｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full｜`toolApproval`=auto
 `reflect`（4）默认值：`summary`=on｜`handoff`=wait｜`selfReview`=0(0~10)｜`userFollowup`=silent
 `global`（6）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=3(1~10)｜`errorHandling`=retry｜`tokenBudget`=200000(0~1000000)｜`stepBudget`=50(0~500)｜`taskLoopLimit`=10(0~100)
 
