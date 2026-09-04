@@ -107,20 +107,46 @@ async function main(): Promise<void> {
   console.log(`📊 进入暂停（paused chunk）：${paused ? '✅' : '⚠️'}`);
 
   // 用户回答 → answerQuestion 回填 + resumeExecution 续跑
+  // 支持多轮追问：LLM 可能基于回答再抛新问题（question_pending + paused），
+  // 故循环自动应答直到收敛（done）或达到轮数上限，判定以「续跑有实质产出」为准。
   if (triggered && paused) {
-    const answer =
-      '目标用户是中小企业的前端工程师。请基于这个回答，继续给出系统设计文档的核心模块划分。';
-    console.log(`\n💬 用户回答：${answer}`);
-    agent.answerQuestion([answer]);
-    const second = await collectFlow(agent.resumeExecution(answer));
-    console.log('\n=== 续跑输出 ===');
-    console.log(second.text.slice(0, 800));
-    console.log('事件序列：', second.events.join(' → '));
+    // 多轮追问上限（防未收敛时无限循环烧 token）
+    const maxAskRounds = 3;
+    let producedText = false; // 任一续跑轮有正文输出（回答真正驱动了继续执行）
+    let reachedDone = false;  // 收敛：LLM 停止追问并产出最终回答
+    let askAgainCount = 0;    // 续跑中再次提问次数（多轮追问证据）
+    for (let i = 1; i <= maxAskRounds; i++) {
+      // 首轮用具体回答；后续轮给收敛性答案，引导 LLM 停止追问
+      const answer =
+        i === 1
+          ? '目标用户是中小企业的前端工程师。请基于这个回答，直接给出系统设计文档的核心模块划分，不要再提问。'
+          : '由你决定即可。请直接给出系统设计文档的核心模块划分，不要再提问。';
+      console.log(`\n💬 [第 ${i} 轮] 用户回答：${answer}`);
+      agent.answerQuestion([answer]);
+      const flow = await collectFlow(agent.resumeExecution(answer));
+      console.log(`\n=== 续跑输出（第 ${i} 轮）===`);
+      console.log(flow.text.slice(0, 800));
+      console.log('事件序列：', flow.events.join(' → '));
+      // 记录本轮信号：有正文产出 / 收敛 / 再次提问
+      if (flow.text.trim().length > 0) producedText = true;
+      if (flow.events.includes('done')) {
+        reachedDone = true;
+        break;
+      }
+      if (flow.events.includes('question_pending')) askAgainCount++;
+      // 既未 done 也未再次暂停：异常中断，停止循环
+      if (!flow.events.includes('paused')) break;
+    }
 
-    const continued = second.events.some((e) => e === 'done') && second.text.length > 0;
-    console.log(`\n📊 回答后续跑成功：${continued ? '✅' : '⚠️'}`);
+    // 判定3：回答后是否驱动了继续执行（有实质正文产出即视为续跑成功——ask_user 答案真正生效）
+    const continued = producedText;
+    console.log(`\n📊 回答后续跑有实质产出：${continued ? '✅' : '⚠️'}`);
+    console.log(`📊 多轮追问次数（续跑中再次提问）：${askAgainCount}`);
+    console.log(`📊 收敛（done）：${reachedDone ? '✅' : '⚠️'}`);
     if (triggered && paused && continued) {
-      console.log('✅ 主动提问→回答→续跑 全链路跑通');
+      console.log(
+        `✅ 主动提问→回答→续跑 全链路跑通${reachedDone ? '（完整收敛）' : '（多轮追问链路）'}`,
+      );
     }
   }
 
