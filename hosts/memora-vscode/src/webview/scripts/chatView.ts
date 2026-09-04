@@ -647,8 +647,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   ): HTMLDetailsElement {
     const row = document.createElement('details');
     row.className = 'round-block__narrate';
-    // 展开态（2026-09-02 拍板）：运行中（增量投影）默认展开——嵌套工具行实时可见，
-    // 保持旧结构「工具状态直显」体验；收尾/回放（finalize 重建）默认收起，与 round-block 一致
+    // 展开态（2026-09-02 拍板）：运行中（增量投影）默认展开——过程叙述直显，
+    // 保持「任务过程可见」体验；收尾/回放（finalize 重建）默认收起，与 round-block 一致
     row.open = openByDefault;
     // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertStepInOrder）
     row.dataset.seq = String(ev.seq);
@@ -913,8 +913,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
     // 实时相位行是进行中专属（details 直接子元素，非小节），收尾先移除
     details.querySelector('.round-block__phase')?.remove();
-    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate 父块（含嵌套工具）、
-    // 以及无前序 narrate 时落在 details 顶层的工具行（旧结构依赖工具 section 清理，新结构需显式移除防重复渲染）
+    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool 等增量元素，避免重复渲染
     details.querySelectorAll('.round-block__section, .round-block__narrate, .round-block__tool').forEach((el) => el.remove());
     // § 过程叙述 + 工具调用（扁平化，2026-09-04：narrate 与 tool 按 seq 平铺 details 顶层）
     const narrates = events

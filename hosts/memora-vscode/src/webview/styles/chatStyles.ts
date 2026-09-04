@@ -1219,7 +1219,7 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) 0; line-height: 1.6;
     word-break: break-all;
   }
-  /* 过程叙述行（P2，2026-09-02）：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开） */
+  /* 过程叙述行：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开），与工具行平级平铺 details 顶层 */
   .round-block__narrate { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
   .round-block__narrate summary {
     cursor: pointer; font-size: var(--font-xs, 11px);
@@ -1233,12 +1233,6 @@ export const chatStyles = `
     font-size: var(--font-xs, 11px); line-height: 1.7;
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
-  }
-  /* 建议 A：narrate 父块内的嵌套工具子容器（文字与对应调用成对缩进；边框复用 .round-block__tool 自身左边框） */
-  .round-block__narrate-tools {
-    margin: var(--sp-1, 2px) 0 var(--sp-1, 2px) var(--sp-4, 12px);
-    padding-left: var(--sp-2, 6px);
-    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
   }
   .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
   .round-block__pre {
@@ -1265,8 +1259,8 @@ export const chatStyles = `
   @media (prefers-reduced-motion: reduce) {
     .round-block__phase::before { animation: none; }
   }
-  /* 工具调用二级嵌套折叠：summary 常显名称(状态)，body（args + result）按需展开；
-     视觉延续过程性降级，在任务过程折叠区内再退一级缩进 */
+  /* 工具调用折叠行：summary 常显名称(状态)，body（args + result）按需展开；
+     与 narrate 平级平铺 details 顶层，各自独立折叠 */
   .round-block__tool {
     border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
