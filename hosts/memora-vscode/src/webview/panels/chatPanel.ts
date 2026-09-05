@@ -385,6 +385,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 角色包组（会议名单）热更新通知：settingsPanel 保存/删除队伍后调。
+   * 不改变当前角色，只重推一次 chat_role_pack（带最新 team 字段）让 chatView 刷新 team 图标。
+   * 启动缺口兜底：若 activePack 就是保存/删除的组长 → team 图标立即显隐；
+   * 非组长改队不影响 chatView（activePack 不是组长时本来就不显示 team 图标）。
+   */
+  public refreshActiveRolePackForTeam(): void {
+    if (!this._view || !this._activeRolePack) return;
+    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
+  }
+
+  /**
    * 角色 handoff 预填：将提示文案填入对话输入框（不自动发送，用户可编辑后回车）
    *
    * 对话视图已就绪 → 立即投递；未就绪（用户从设置视图首次带入对话）→ 缓冲到

@@ -174,7 +174,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       }
       return;
     }
-    // 保存角色包组（会议名单）：校验 → 持久化 globalState → 热更新内核 → 重推角色视图
+    // 保存角色包组（会议名单）：校验 → 持久化 globalState → 热更新内核 → 重推角色视图 → 通知 chatPanel
     if (msg.type === 'roles_team_save') {
       const result = await this.saveRolePackTeam(msg.leader, msg.members);
       this.post({
@@ -182,13 +182,19 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         level: result.ok ? 'info' : 'error',
         message: result.ok ? '小组已保存' : result.reason,
       });
-      if (result.ok) await this.loadRoles();
+      if (result.ok) {
+        await this.loadRoles();
+        // 热更新通知：chatPanel 重推 chat_role_pack 让 chatView 刷新 team 图标（组长队伍变更后图标显隐）
+        this._chatProvider?.refreshActiveRolePackForTeam();
+      }
       return;
     }
-    // 删除角色包组（会议名单）
+    // 删除角色包组（会议名单）：持久化移除 + 热更新内核 → 通知 chatPanel
     if (msg.type === 'roles_team_delete') {
       await this.deleteRolePackTeam(msg.leader);
       await this.loadRoles();
+      // 热更新通知：同上，删除组长队伍后 team 图标应隐藏
+      this._chatProvider?.refreshActiveRolePackForTeam();
       return;
     }
     // 打开用户角色包目录（对齐技能系统，2026-08-30）
