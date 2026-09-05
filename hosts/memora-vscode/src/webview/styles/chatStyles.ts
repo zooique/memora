@@ -627,6 +627,63 @@ export const chatStyles = `
     background: transparent;
     position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
+  /* Phase 4：thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色预览条
+   * 懒创建（chatView.updatePendingQueueBar），仅 items.length>0 时显示；
+   * hidden 属性天然生效（display:block 被显式 [hidden] 覆盖为 none）。
+   * 视觉定位：弱化灰色条（--surface-track），比输入卡片更轻，不抢注意力。 */
+  .pending-queue-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-2, 4px);
+    margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
+    padding: var(--sp-2, 4px) var(--sp-3, 8px);
+    background: var(--surface-track, rgba(128,128,128,.12));
+    border: 1px dashed var(--border-panel, rgba(128,128,128,.35));
+    border-radius: var(--radius-md, 6px);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-muted, #9a9a9a);
+  }
+  .pending-queue-bar__label {
+    flex-shrink: 0;
+    font-weight: 500;
+    color: var(--text-secondary, #b0b0b0);
+  }
+  .pending-queue-bar__preview {
+    flex: 1;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    color: var(--text-input, #cccccc);
+    opacity: 0.85;
+  }
+  .pending-queue-bar__count {
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-muted, #888);
+  }
+  .pending-queue-bar__clear {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--text-muted, #888);
+    cursor: pointer;
+    font-size: 10px;
+    line-height: 1;
+    transition: background 0.12s, color 0.12s;
+  }
+  .pending-queue-bar__clear:hover {
+    background: var(--surface-hover, rgba(255,255,255,.08));
+    color: var(--text-secondary, #ccc);
+  }
+  .pending-queue-bar[hidden] { display: none; }
   /* ④ 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
    * 避免向下展开挤压面板底部出现外部滚动条） */
   .context-ring {

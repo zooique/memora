@@ -589,6 +589,162 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
   });
 });
 
+describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  // ─── thinking × 输入内容 ───
+
+  it('thinking + 空输入 → 停止方块（loading），禁用态为 false（可停止）', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    expect(send.classList.contains('loading')).toBe(true);
+    expect(send.classList.contains('paused')).toBe(false);
+    expect(send.disabled).toBe(false);
+  });
+
+  it('thinking + 有输入 → 发送图标（无 loading/paused），可用态', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    input.value = '我插一句话';
+    input.dispatchEvent(new Event('input'));
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.classList.contains('paused')).toBe(false);
+    expect(send.disabled).toBe(false);
+  });
+
+  // ─── paused × 输入内容 ───
+
+  it('paused + 空输入 → 继续 ▶（paused 类），可用态', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'paused' });
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    expect(send.classList.contains('paused')).toBe(true);
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.disabled).toBe(false);
+  });
+
+  it('paused + 有输入 → 发送图标（无 paused/loading），可用态', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'paused' });
+    input.value = '补充一下';
+    input.dispatchEvent(new Event('input'));
+    expect(send.classList.contains('paused')).toBe(false);
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.disabled).toBe(false);
+  });
+
+  // ─── done × 输入内容 ───
+
+  it('done + 空输入 → 发送禁用', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'done' });
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    expect(send.classList.contains('loading')).toBe(false);
+    expect(send.classList.contains('paused')).toBe(false);
+    expect(send.disabled).toBe(true);
+  });
+
+  it('done + 有输入 → 发送启用', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'done' });
+    input.value = '开始吧';
+    input.dispatchEvent(new Event('input'));
+    expect(send.disabled).toBe(false);
+  });
+
+  // ─── pauseBtn toggle 文案联动 ───
+
+  it('thinking 态 pause_btn_state post → pauseBtn 文案从"暂停"切"取消暂停"', () => {
+    mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    // 默认：未 pending → "暂停"
+    expect(pauseBtn.textContent).toBe('暂停');
+    // host post pause_btn_state pending=true → 翻文案
+    dispatch({ type: 'pause_btn_state', pending: true });
+    expect(pauseBtn.textContent).toBe('取消暂停');
+    // toggle 回 false → 恢复
+    dispatch({ type: 'pause_btn_state', pending: false });
+    expect(pauseBtn.textContent).toBe('暂停');
+  });
+
+  // ─── pending_queue_update DOM 渲染 ───
+
+  it('pending_queue_update → 懒创建 .pending-queue-bar 并渲染预览', () => {
+    mountChatView();
+    dispatch({ type: 'status', state: 'thinking' });
+    dispatch({ type: 'pending_queue_update', items: ['我插一句话', '再来一句'] });
+    const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(bar.hidden).toBe(false);
+    // 最新一条（最后一条）优先预览 + 计数
+    expect(bar.querySelector('.pending-queue-bar__preview')!.textContent).toBe('再来一句');
+    expect(bar.querySelector('.pending-queue-bar__count')!.textContent).toContain('2');
+    // 清空 → 隐藏
+    dispatch({ type: 'pending_queue_update', items: [] });
+    expect(bar.hidden).toBe(true);
+  });
+
+  it('pending-queue-bar 清空按钮 → post clear_pending_queue', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'status', state: 'thinking' });
+    dispatch({ type: 'pending_queue_update', items: ['插队内容'] });
+    const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLButtonElement;
+    clearBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clear_pending_queue' });
+  });
+
+  // ─── send click 路由统一（验证宿主路由契约） ───
+
+  it('thinking + 空输入点击 send → post stop（停止）', () => {
+    const { postMessage } = mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
+  });
+
+  it('paused + 空输入点击 send → post resume（继续）', () => {
+    const { postMessage } = mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    dispatch({ type: 'status', state: 'paused' });
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'resume' });
+  });
+
+  it('thinking + 有输入点击 send → post send（宿主路由 interject）', () => {
+    const { postMessage } = mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    input.value = '插队';
+    input.dispatchEvent(new Event('input'));
+    send.click();
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'send', text: '插队' }));
+  });
+});
+
 describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

@@ -175,6 +175,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  避免 chatLock 未释放导致「发起新对话」busy 冲突 */
   private _currentFlow: Promise<void> | undefined;
   /**
+   * 待发送区排队内容（仅 thinking 态 interject 时写入）
+   * UI 层（chatView）据此渲染待发送区预览 + 清空按钮。
+   * 清空时机：sessionResumed 事件触发（resume 成功、loop 消费完队列） */
+  private _pendingQueue: string[] = [];
+  /**
    * 待处理写入确认请求（H0）
    *
    * 内核触发写入确认时，host 创建 requestId + pending Promise，向 webview 推送
@@ -453,6 +458,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'pause') {
         // Phase 4：暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
         this.handlePause();
+      } else if (msg.type === 'clear_pending_queue') {
+        // Phase 4：清空 thinking 态 interject 队列（用户点待发送区的清空按钮）
+        this._pendingQueue = [];
+        this.post({ type: 'pending_queue_update', items: [] });
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
@@ -670,9 +679,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'notice', level: 'info', message: `对话已暂停（${info.reason}）` });
   };
 
-  /** sessionResumed：对话恢复执行（状态反馈补充） */
+  /** sessionResumed：对话恢复执行（状态反馈 + 清空待发送区） */
   private readonly onSessionResumed = (_info: { sessionId?: string }): void => {
     this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
+    // Phase 4：resume 成功 → loop 消费完 pendingInterjections → 清空宿主队列 + 通知 webview
+    this._pendingQueue = [];
+    this.post({ type: 'pending_queue_update', items: [] });
   };
 
   /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
@@ -1851,12 +1863,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'info', message: '请先点击上方「＋」新建会话再开始对话' });
       return;
     }
-    // 无缝插话（缺口 B）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
-    // 内核在下一 step 边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
-    // 正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
+    // 无缝插话（Phase 4 收敛，flag 驱动 SSOT）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
+    //  内核在下一 step 边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
+    //  正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
+    //  pausePending 窗口（flag=true 但 step 还没跑完）发补充 → interject + 自动 cancelPauseRequest（一行覆盖暂停操作）。
     if (this._streaming && this._abortController) {
       this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
       this._agent.interject(input);
+      // 新增：pausePending 期间发补充 → 自动取消暂停（一行改动，覆盖暂停操作）
+      if (this._agent.isPausePending()) {
+        this._agent.cancelPauseRequest();
+        this.post({ type: 'pause_btn_state', pending: false });
+      }
+      // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
+      this._pendingQueue.push(input);
+      this.post({ type: 'pending_queue_update', items: [...this._pendingQueue] });
       return;
     }
     // TS-9：暂停态补充输入 → 不发起新 chat() → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
@@ -1961,10 +1982,25 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * await 点退出并 yield aborted chunk，consumeFlow 捕获后发送 interrupted
    * 通知 webview（恢复输入框 + 渲染「已停止」提示）。
    */
+  /**
+   * 停止生成：用户主动中断执行（Phase 4 暂停/恢复后硬停止对齐）
+   *
+   * 三种运行态行为一致：
+   *   - thinking（_streaming=true）→ abort() 当前流，内核在下一 await 点退出 yield aborted
+   *   - paused（status=paused, _streaming=false）→ 宿主层 post status:done + notice（下一次 chat() 会重建 loop 状态）
+   * done 态无停止按钮（UI 隐藏）。 */
   private handleStop(): void {
-    if (!this._streaming || !this._abortController) return;
-    // abort() 同步置 signal.aborted，consumeFlow 末尾据此判定发送 interrupted
-    this._abortController.abort();
+    // thinking 态：已有路径
+    if (this._streaming && this._abortController) {
+      this._abortController.abort();
+      return;
+    }
+    // paused 态：宿主层 post status:done + 提示（内核无 clearCheckpoint，
+    //  但下一次 chat() 会通过 resetTurnState + restoreHistory 重建 loop 状态，零残留）
+    if (this._agent?.sessionManager?.status === 'paused') {
+      this.post({ type: 'status', state: 'done' });
+      this.post({ type: 'notice', level: 'info', message: '已停止，检查点保留供后续恢复' });
+    }
   }
 
   /**
@@ -1973,15 +2009,32 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 调 agent.requestPause() step 边界软暂停（状态机翻 PAUSED 由内核收口，非申请即翻转）；
    * 空闲态（无进行中流）提前拦截给明确提示。
    */
+  /**
+   * 暂停 / 取消暂停 toggle（Phase 4 暂停/恢复，flag 驱动 SSOT）
+   *
+   * 读 isPausePending 决定行为：
+   *   - 有在途暂停申请 → cancelPauseRequest() 取消（用户反悔）
+   *   - 无在途暂停申请 → requestPause() 申请暂停
+   * UI 直接读 flag 翻视觉（点暂停立即变"取消暂停"，再点立即翻回），不等 step 边界事件。
+   * 内核 loop.pauseRequested = 单一真理源，step 边界是 flag 的唯一消费者。 */
   private handlePause(): void {
     if (!this._agent) return;
     if (!this._streaming) {
       this.post({ type: 'notice', level: 'info', message: '当前没有可暂停的生成' });
       return;
     }
+    if (this._agent.isPausePending()) {
+      // toggle 回取消（用户反悔）
+      this._agent.cancelPauseRequest();
+      this.post({ type: 'pause_btn_state', pending: false });
+      return;
+    }
     const ok = this._agent.requestPause('user-pause', 'user');
     if (!ok) {
       this.post({ type: 'notice', level: 'error', message: '暂停失败，请重试' });
+    } else {
+      // 立即通知 webview 按钮翻视觉（不等 step 边界）
+      this.post({ type: 'pause_btn_state', pending: true });
     }
   }
 

@@ -11,9 +11,15 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     // 内核测试 + protocolGuard 守卫（纯源码解析无宿主运行时依赖）
+    // webview 测试（chatView 等）需 jsdom 环境，用 test.files 条件匹配
     include: [
       'src/**/__tests__/**/*.test.ts',
       'hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts',
+      'hosts/memora-vscode/src/webview/__tests__/**/*.test.ts',
+    ],
+    // jsdom 环境：webview 测试用 DOM API（document / dispatchEvent），其他保持 node
+    environmentMatchGlobs: [
+      ['hosts/memora-vscode/src/webview/**', 'jsdom'],
     ],
     // ── 并发确定性策略（SSOT：见 docs/测试并发确定性与flake判定SOP.md）──
     // 文件级并发保持开启（fileParallelism=true 即 vitest 默认，此处显式声明策略意图）：

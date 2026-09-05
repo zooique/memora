@@ -1067,10 +1067,110 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }, ARCHIVING_STALL_MS);
   }
 
-  // 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
-  // 输入框保持可用（支持插话）；done 恢复发送按钮；paused 切换为「继续」按钮。
-  // SSOT 收敛：身份条已删，生成中状态由 round-block（过程可见）+ 发送按钮（可操作）承载。
+  /**
+   * 会话 UI 状态（Phase 4 收敛后）：setStatus 驱动的单一真理源，
+   * syncButtonSemantics / syncSendEnabled 都读它做矩阵决策。
+   */
+  let _sessionUiState: 'thinking' | 'done' | 'paused' = 'done';
+  /** pauseBtn toggle flag：host post pause_btn_state 同步，驱动按钮文案（暂停/取消暂停）*/
+  let _pauseBtnPending = false;
+
+  /**
+   * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → send 的 classList/title/aria-label + pauseBtn 的 hidden/textContent。
+   * 调用点 = setStatus（状态变了）+ input 事件（输入内容变了）+ pause_btn_state post（pausePending 变了）。
+   * 不改变 disabled 态（那是 syncSendEnabled 的职责），不负责 round-block 呼吸点/导航锁（setStatus 的职责）。
+   */
+  function syncButtonSemantics(): void {
+    const hasInput = input.value.trim().length > 0;
+    switch (_sessionUiState) {
+      case 'thinking':
+        // Gap A：生成中暴露「暂停」软控制（flag 驱动 toggle，pending 状态由 host post 同步）
+        if (pauseBtn) pauseBtn.hidden = false;
+        if (pauseBtn) pauseBtn.textContent = _pauseBtnPending ? '取消暂停' : '暂停';
+        if (hasInput) {
+          // thinking + 有输入：发送按钮 = interject 排队（去掉 loading/paused 类，切默认发送图标）
+          send.classList.remove('loading', 'paused');
+          send.setAttribute('title', '发送补充（排队等 step 边界注入）');
+          send.setAttribute('aria-label', '发送补充');
+        } else {
+          // thinking + 空输入：发送按钮 = 停止
+          send.classList.add('loading');
+          send.classList.remove('paused');
+          send.setAttribute('title', '停止生成');
+          send.setAttribute('aria-label', '停止生成');
+        }
+        break;
+      case 'paused':
+        // 已暂停：pauseBtn 隐藏（paused 态出口是"继续"或"发送补充"）
+        if (pauseBtn) pauseBtn.hidden = true;
+        if (hasInput) {
+          // paused + 有输入：发送按钮 = 立即 resumeExecution 带补充
+          send.classList.remove('loading', 'paused');
+          send.setAttribute('title', '发送补充并继续执行');
+          send.setAttribute('aria-label', '发送补充');
+        } else {
+          // paused + 空输入：发送按钮 = 继续（resumeExecution 空输入续跑）
+          send.classList.remove('loading');
+          send.classList.add('paused');
+          send.setAttribute('title', '继续生成');
+          send.setAttribute('aria-label', '继续生成');
+        }
+        break;
+      default: // done
+        send.classList.remove('loading', 'paused');
+        send.setAttribute('title', '发送 (Enter)');
+        send.setAttribute('aria-label', '发送');
+        if (pauseBtn) pauseBtn.hidden = true;
+        break;
+    }
+  }
+
+  /**
+   * Phase 4 待发送区（interject 队列可视化）：宿主 post pending_queue_update 时更新。
+   * 懒创建 DOM 元素（挂在 inputBar 前面）——显示最新一条补充预览 + N 条待发计数 + 清空按钮。
+   * 仅 thinking 态有排队时显示；paused 宿主已清队列；done 不可能有队列。
+   */
+  let _pendingQueueBar: HTMLElement | null = null;
+  function updatePendingQueueBar(items: string[]): void {
+    if (!_pendingQueueBar) {
+      // 懒创建：挂在 inputBar 前面，灰色条样式（--pending-queue-bg CSS 令牌驱动）
+      _pendingQueueBar = document.createElement('div');
+      _pendingQueueBar.className = 'pending-queue-bar';
+      _pendingQueueBar.innerHTML = `
+        <span class="pending-queue-bar__label">待发送</span>
+        <span class="pending-queue-bar__preview"></span>
+        <span class="pending-queue-bar__count"></span>
+        <button class="pending-queue-bar__clear" type="button" title="清空待发送补充">✕</button>
+      `;
+      inputBar.parentNode?.insertBefore(_pendingQueueBar, inputBar);
+      const clearBtn = _pendingQueueBar.querySelector('.pending-queue-bar__clear');
+      clearBtn?.addEventListener('click', () => {
+        // Phase 4：清空 interject 队列（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
+        vscode.postMessage({ type: 'clear_pending_queue' });
+      });
+    }
+    if (items.length === 0) {
+      _pendingQueueBar.hidden = true;
+      return;
+    }
+    // 渲染预览：最新一条（最后一条）+ 计数（前面还有 N 条）
+    const previewEl = _pendingQueueBar.querySelector('.pending-queue-bar__preview')!;
+    const countEl = _pendingQueueBar.querySelector('.pending-queue-bar__count')!;
+    const latest = items[items.length - 1].length > 80
+      ? items[items.length - 1].slice(0, 80) + '…'
+      : items[items.length - 1];
+    previewEl.textContent = latest;
+    countEl.textContent = items.length > 1 ? ` 共 ${items.length} 条` : '';
+    _pendingQueueBar.hidden = false;
+  }
+
+  /**
+   * 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
+   * 输入框保持可用（支持插话）；done 恢复发送按钮；paused 切换为「继续」按钮。
+   * Phase 4 收敛后：按钮语义 = 会话状态 × 输入框内容 矩阵驱动（syncButtonSemantics 承载）。
+   */
   function setStatus(state: 'thinking' | 'done' | 'paused'): void {
+    _sessionUiState = state;
     if (state === 'thinking') {
       // 生成中：round-block summary 呼吸点 + 计数实时刷新（renderRoundBlock 驱动，无需额外文案）
     } else if (state === 'paused') {
@@ -1086,49 +1186,40 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roundBlockEl.classList.remove('is-running');
       }
     }
-    if (state === 'thinking') {
-      send.classList.add('loading');
-      send.classList.remove('paused');
-      send.setAttribute('title', '停止生成');
-      send.setAttribute('aria-label', '停止生成');
-      // Gap A：生成中暴露「暂停」软控制，与「停止」并列（暂停落检查点可恢复，停止丢弃）
-      if (pauseBtn) pauseBtn.hidden = false;
-      // 生成中不禁用输入框：用户可输入新消息 → Enter 插话（不打断当前生成）。
-      // 发送按钮此时承担「停止」职责，插话走 Enter 发送。
-    } else if (state === 'paused') {
-      // 暂停中：按钮切为「继续」语义（▶ 图标）——用户点击即 post resume 消息恢复执行
-      send.classList.remove('loading');
-      send.classList.add('paused');
-      send.setAttribute('title', '继续生成');
-      send.setAttribute('aria-label', '继续生成');
-      if (pauseBtn) pauseBtn.hidden = true; // 已暂停，收回暂停入口
-    } else {
-      send.classList.remove('loading');
-      send.classList.remove('paused');
-      send.setAttribute('title', '发送 (Enter)');
-      send.setAttribute('aria-label', '发送');
-      if (pauseBtn) pauseBtn.hidden = true;
-      // 输入框全程不禁用，无需恢复；仅当用户焦点已回落到 body（如刚完成其他操作）
-      // 时才恢复输入焦点，避免 done 时强制 focus 打断用户正在进行的操作（对抗评估 P1-4）
-      if (document.activeElement === document.body) input.focus();
-    }
-    // 状态切换影响发送按钮可用性（生成中/暂停语义下恒可用，见 syncSendEnabled）
+    // Phase 4：按钮语义矩阵（session × hasInput）
+    syncButtonSemantics();
+    // 状态切换影响发送按钮可用性（Phase 4 扩展见 syncSendEnabled）
     syncSendEnabled();
     // 会话导航类控件运行时锁：thinking/paused（运行时）禁用，done（非运行时）恢复
     updateSessionControlsLock(state !== 'done');
+    // done 态才需要恢复输入焦点（对抗评估 P1-4：避免强制 focus 打断用户其他操作）
+    if (state === 'done' && document.activeElement === document.body) input.focus();
   }
 
   /**
-   * 同步发送按钮可用态：仅「发送」语义（空闲态）下输入为空则禁用；
-   * 「停止」（loading）/「继续」（paused）承担其他职责，始终可用（支持空输入继续/停止）。
-   * 调用点 = 一切输入内容/按钮状态变化处：input 事件、程序化预填/清空（不触发 input 事件）、setStatus。
+   * 同步发送按钮可用态：按钮语义 = 会话状态 × 输入框内容 矩阵驱动（Phase 4 收敛）——
+   *   thinking + 空 → loading（停止方块）→ 恒可用
+   *   thinking + 有输入 → 发送（interject 排队）→ 恒可用
+   *   paused + 空 → paused 类（继续 ▶）→ 恒可用
+   *   paused + 有输入 → 发送（resumeExecution 带补充）→ 恒可用
+   *   done + 空 → 发送图标 → 空输入禁用
+   *   done + 有输入 → 发送图标 → 有输入启用
+   * 调用点 = 一切输入内容/按钮状态变化处：input 事件、程序化预填/清空、setStatus。
    */
   function syncSendEnabled(): void {
-    if (send.classList.contains('loading') || send.classList.contains('paused')) {
+    const hasInput = input.value.trim().length > 0;
+    // Phase 4 扩展：除 classList 的 loading/paused（停止/继续），thinking+有输入 / paused+有输入也恒可用
+    const alwaysEnabled =
+      send.classList.contains('loading') ||
+      send.classList.contains('paused') ||
+      (_sessionUiState === 'thinking' && hasInput) ||
+      (_sessionUiState === 'paused' && hasInput);
+    if (alwaysEnabled) {
       send.disabled = false;
       return;
     }
-    send.disabled = !input.value.trim();
+    // done 态：空输入禁用，有输入启用
+    send.disabled = !hasInput;
   }
 
   /**
@@ -2443,6 +2534,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
+    } else if (msg.type === 'pause_btn_state') {
+      // Phase 4：host flag 驱动 pauseBtn 文案切换（零事件延迟，toggle 的唯一真理源在宿主层）
+      _pauseBtnPending = msg.pending;
+      syncButtonSemantics();
+    } else if (msg.type === 'pending_queue_update') {
+      // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
+      updatePendingQueueBar(msg.items);
     } else if (msg.type === 'process_event') {
       // 运行时单形态渲染投影（v1.5）：一律汇入当前轮 events[] 由 renderRoundBlock 渲染。
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
@@ -2862,8 +2960,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function sendMessage(): void {
     const text = input.value.trim();
     // 暂停态且输入为空 → 视为「继续」动作，恢复暂停点之后的执行（用户未输入新请求）
-    const isPaused = send.getAttribute('title') === '继续生成';
-    if (isPaused && !text) {
+    // Phase 4：用 classList 判断（syncButtonSemantics 在 paused+空输入时加 paused 类）
+    const isPausedContinue = send.classList.contains('paused');
+    if (isPausedContinue && !text) {
       vscode.postMessage({ type: 'resume' });
       return;
     }
@@ -2871,7 +2970,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
-    syncSendEnabled(); // 宿主可能早退（Agent 未就绪/无会话）不转 thinking，清空后须立即禁用
+    // Phase 4：清输入框后按钮语义也要重算（hasInput 变了）
+    syncButtonSemantics();
+    syncSendEnabled();
     // 构建消息：选中技能传技能名（SSOT 收紧，host 按名走内核 buildSystemPrompt，取消前端硬编码提示）
     const payload: WebviewToExtensionMessage = { type: 'send' as const, text };
     if (currentSkill) {
@@ -2884,12 +2985,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 生成中插话走 Enter（见下方 keydown，不经此分支）。
   send.addEventListener('click', () => {
     if (send.classList.contains('loading')) {
-      // thinking 态：按钮承担「停止」职责
+      // thinking+空输入：按钮承担「停止」职责
       vscode.postMessage({ type: 'stop' });
-    } else if (send.getAttribute('title') === '继续生成') {
-      // paused 态：按钮承担「继续」职责，恢复暂停点之后的执行
+    } else if (send.classList.contains('paused')) {
+      // paused+空输入：按钮承担「继续」职责，恢复暂停点之后的执行
       vscode.postMessage({ type: 'resume' });
     } else {
+      // 其他所有情况（done+有输入 / thinking+有输入 / paused+有输入）：统一走 sendMessage 发 type='send'
+      // 宿主层 handleSend 会根据 session 状态路由到 chat() / interject() / resumeExecution()
       sendMessage();
     }
   });
@@ -2908,7 +3011,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
   input.addEventListener('input', () => {
     autoResize();
-    syncSendEnabled(); // 用户输入实时重算发送按钮可用性（空输入禁用）
+    // Phase 4：输入内容变化时，按钮语义（classList 图标）和 disabled 态都要重算
+    syncButtonSemantics();
+    syncSendEnabled();
   });
 
   // ─── 会话管理（2026-08-17 会话管理重构 v2，标题条收敛全部入口）───

@@ -179,6 +179,12 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'resume' }
   /**
+   * Phase 4：清空 interject 队列（thinking 态待发送补充区的清空按钮）
+   *
+   * 由 webview 待发送区触发，宿主清 _pendingQueue 并 post 空 pending_queue_update。
+   */
+  | { type: 'clear_pending_queue' }
+  /**
    * 从检查点续跑（G3 断点续跑，2026-08-23）
    *
    * 由「从断点续跑」提示条按钮触发：host 调 agent.restoreFromCheckpoint() 恢复上次
@@ -636,6 +642,20 @@ export type ExtensionToWebviewMessage =
    * 不经本消息通道（记忆活动已收口到 ProcessEvent 单源）。
    */
   | { type: 'notice'; level: 'info' | 'error'; message: string }
+  /**
+   * 暂停按钮视觉状态同步（Phase 4 暂停/恢复，flag 驱动 SSOT）
+   *
+   * host 在 handlePause 调完 requestPause / cancelPauseRequest 后立即 post，
+   * webview 直接翻 pauseBtn 文案（零事件延迟）。pending=true → "取消暂停"，false → "暂停"。
+   */
+  | { type: 'pause_btn_state'; pending: boolean }
+  /**
+   * 待发送区队列更新（Phase 4 暂停/恢复）
+   *
+   * thinking 态 interject 排队时 host push 进 _pendingQueue，立即 post 给 webview
+   * 渲染待发送区预览。sessionResumed 事件后 queue 清空，webview 同步隐藏待发送区。
+   */
+  | { type: 'pending_queue_update'; items: string[] }
   /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *
