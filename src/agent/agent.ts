@@ -470,6 +470,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
+      // turn 结束自动收尾：plan 全 done → 清运行时挂载物
+      this.autoClearPlanIfAllDone();
       // 补执行对话期间暂存的配置重载请求
       await this.flushPendingConfigReload();
     }
@@ -622,6 +624,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
+      // turn 结束自动收尾：plan 全 done → 清运行时挂载物
+      this.autoClearPlanIfAllDone();
     }
   }
 
@@ -932,6 +936,22 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   clearPlan(): void {
     this.assertInitialized('clearPlan');
     this.requireSessionManager.clearPlan();
+  }
+
+  /**
+   * turn 结束自动收尾：所有 plan step = done + 非暂停态 → clearPlan
+   * 运行时状态（plan/stepLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史
+   * 挂点：chat() / continueAfterPause 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）
+   */
+  private autoClearPlanIfAllDone(): void {
+    const sm = this._sessionManager;
+    if (!sm) return;
+    const cp = sm.getCheckpoint();
+    if (!cp?.plan || cp.plan.length === 0) return;
+    if (cp.pauseMeta) return; // 暂停态不清，恢复时要继续用 plan
+    if (cp.plan.every((s) => s.status === 'done')) {
+      sm.clearPlan();
+    }
   }
 
   /**

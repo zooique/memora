@@ -1653,6 +1653,13 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       status: 'active',
       order: 1,
     });
+    // 加一个 pending step 防止 chatSync 跑完后 allDone 触发 autoClearPlan（不影响 stepLog 关联逻辑验证）
+    agent.getCheckpoint()!.plan.push({
+      id: 'step-pending-2',
+      description: '后续步骤',
+      status: 'pending',
+      order: 2,
+    });
 
     // 触发一轮对话 → loop step 边界 → onStepBoundary → completeStep
     await agent.chatSync('推进任务');
