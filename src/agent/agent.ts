@@ -815,12 +815,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 与 pause() 对称：pause 创建检查点；discardCurrentCheckpoint 销毁检查点。
    * 宿主 handleStop 在 paused 态调用——用户决定彻底放弃暂停执行，不再 resume。
-   * 转发 SessionManager.discardCheckpoint：删存储 + 清内存 + 状态机 resetToRunning。
+   *
+   * T2 修复：除转发 SessionManager.discardCheckpoint（删存储 + 清内存 + 状态机 resetToRunning），
+   *  追加协同 loop.clearPendingInterjections() 清排队插话——pause 生效时 step 边界优先返回不消费 queue，
+   *  原实现只清 checkpoint 留 queue 成孤儿数据，下次 chat() 第一个 step 会误消费残留。
+   *  返回值以 checkpoint 清理为主（queue 残留不是失败）。
    * @returns true=成功清理；false=无暂停检查点（空闲态调了个空）
    */
   discardCurrentCheckpoint(): boolean {
     this.assertInitialized('discardCurrentCheckpoint');
-    return this._sessionManager?.discardCheckpoint() ?? false;
+    // 协同清理暂停上下文的两个组成部分：checkpoint（持久化暂停点）+ pendingInterjections（排队插话）
+    //  暂停上下文 = checkpoint + queue，stop 语义下两者必须同清，不留孤儿
+    const checkpointCleared = this._sessionManager?.discardCheckpoint() ?? false;
+    // queue 清理独立：即使 checkpoint 已不存在（空闲态调），残留 queue 也应顺手清掉
+    const queueCleared = this.loop?.clearPendingInterjections() ?? 0;
+    if (queueCleared > 0) {
+      logger.info({ count: queueCleared }, 'discardCheckpoint 协同清理残留 pendingInterjections');
+    }
+    return checkpointCleared;
   }
 
   /**
@@ -857,6 +869,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   removePendingInterject(index: number): boolean {
     this.assertInitialized('removePendingInterject');
     return this.requireLoop.removePendingInterject(index);
+  }
+
+  /**
+   * 清空全部待注入插话（宿主「全部清空」按钮触发，或 stop→discard 协同清理）。
+   *
+   * 逻辑下沉 loop.clearPendingInterjections 原子方法——
+   *  宿主 clear_pending_queue handler 之前只清镜像不清内核（单写 bug）；
+   *  agent.discardCurrentCheckpoint 之前只清 checkpoint 不清队列（孤儿数据 bug）。
+   *  @returns 被清除的条目数（宿主可用于 notice 反馈；无队列时返回 0）
+   */
+  clearPendingInterjections(): number {
+    this.assertInitialized('clearPendingInterjections');
+    return this.requireLoop.clearPendingInterjections();
   }
 
   /**

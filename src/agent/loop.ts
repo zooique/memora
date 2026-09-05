@@ -579,6 +579,17 @@ export class AgentLoop {
     return true;
   }
 
+  /** 清空全部待注入插话（宿主「全部清空」按钮或 stop→discard 协同清理）。
+   *  与 removePendingInterject 单条删除对称，覆盖宿主镜像与内核队列不对称缺口——
+   *  宿主 clear_pending_queue handler 之前只清镜像不清内核（单写 bug）；
+   *  agent.discardCurrentCheckpoint 之前只清 checkpoint 不清队列（孤儿数据 bug）。
+   *  @returns 被清除的条目数（宿主可用于 notice 反馈） */
+  clearPendingInterjections(): number {
+    const cleared = this.pendingInterjections.length;
+    this.pendingInterjections.length = 0;
+    return cleared;
+  }
+
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
     yield { type: 'text', content: this.ui.maxIterationsReached };

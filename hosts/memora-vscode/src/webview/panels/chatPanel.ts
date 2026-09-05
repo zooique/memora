@@ -459,7 +459,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // Phase 4：暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
         this.handlePause();
       } else if (msg.type === 'clear_pending_queue') {
-        // Phase 4：清空 thinking 态 interject 队列（用户点待发送区的清空按钮）
+        // Phase 4 收敛（T1 修复）：全清双写——宿主清镜像 + 内核清队列（之前只清镜像，
+        //  内核 loop.pendingInterjections 成孤儿；对齐 remove_pending_item 的双写模式）
+        const cleared = this._agent?.clearPendingInterjections() ?? 0;
+        if (cleared > 0) {
+          this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
+        }
         this._pendingQueue = [];
         this.post({ type: 'pending_queue_update', items: [] });
       } else if (msg.type === 'remove_pending_item') {
