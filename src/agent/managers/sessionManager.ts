@@ -996,12 +996,6 @@ export class SessionManager {
     // 目标变更是会话的语义骨架，立即落盘
     this.flushCheckpoint();
 
-    this.emitEvent('goalUpdated', {
-      newGoal,
-      goalChangeSeq: this.checkpoint.goalChangeSeq,
-      sessionId: this.checkpoint.sessionId,
-    });
-
     // 检测到漂移则发射 goalDriftDetected 事件；drift 级自动低风险暂停强制用户确认（不计入连续计数）
     if (consistencyResult.level !== 'same') {
       this.emitEvent('goalDriftDetected', {

@@ -874,7 +874,6 @@ describe('SessionManager', () => {
       expect(result!.level).toBe('same');
       expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
       expect(manager.status).toBe('running');
-      expect(emitEvent).not.toHaveBeenCalledWith('goalUpdated', expect.anything());
       expect(emitEvent).not.toHaveBeenCalledWith('goalDriftDetected', expect.anything());
     });
 
@@ -930,7 +929,7 @@ describe('SessionManager', () => {
       }));
     });
 
-    it('confirm 级别目标变更应发射 goalUpdated 事件（含完整载荷）', () => {
+    it('confirm 级别目标变更应发射 goalDriftDetected（含完整载荷）', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
       const newGoal = '编写一个计算器应用程序支持加减乘除运算';
 
@@ -939,18 +938,16 @@ describe('SessionManager', () => {
 
       manager.updateGoal(newGoal);
 
-      expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
+      // goalUpdated 已并入 goalDriftDetected（SSOT 收敛：后者 payload 全包含前者）
+      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
+        level: 'confirm',
         newGoal,
         goalChangeSeq: 1,
         sessionId: expect.any(String),
       }));
-      // confirm 级别同时发射 goalUpdated 和 goalDriftDetected
-      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
-        level: 'confirm',
-      }));
     });
 
-    it('drift 级别目标变更应同时发射 goalUpdated 和 goalDriftDetected', () => {
+    it('drift 级别目标变更应发射 goalDriftDetected 并自动暂停', () => {
       const mainGoal = '编写一个计算器应用程序支持基本数学运算';
       const driftedGoal = '今天纽约的天气怎么样适合出行吗';
 
@@ -959,14 +956,14 @@ describe('SessionManager', () => {
 
       manager.updateGoal(driftedGoal);
 
-      // drift 级别应同时发射两个事件：goalUpdated（目标变更通知）+ goalDriftDetected（漂移告警）
-      expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
+      // goalUpdated 已并入 goalDriftDetected（SSOT 收敛：后者 payload 全包含前者）
+      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
+        level: 'drift',
         newGoal: driftedGoal,
         goalChangeSeq: 1,
       }));
-      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
-        level: 'drift',
-      }));
+      // drift 级内核自动低风险暂停
+      expect(manager.status).toBe('paused');
     });
   });
 

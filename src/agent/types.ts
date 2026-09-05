@@ -312,7 +312,7 @@ export interface SessionCheckpoint {
   /** 当前迭代目标（可随 plan 推进更新） */
   currentGoal: string;
   /**
-   * 目标变更事件序号（每次 currentGoal 变更递增，goalUpdated / goalDriftDetected 事件载荷）。
+   * 目标变更事件序号（每次 currentGoal 变更递增，goalDriftDetected 事件载荷）。
    * 仅作事件序号，不承担版本一致性校验——漂移碰撞由文本相似度完成，勿误用为版本校验。
    */
   goalChangeSeq: number;

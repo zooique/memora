@@ -439,15 +439,6 @@ describe('SessionManager · 检查点管理', () => {
       expect(cp!.goalChangeSeq).toBe(1);
     });
 
-    it('应发射 goalUpdated 事件', () => {
-      manager.createCheckpoint('初始目标');
-      manager.updateGoal('新目标');
-      expect(emitEvent).toHaveBeenCalledWith('goalUpdated', expect.objectContaining({
-        newGoal: '新目标',
-        goalChangeSeq: 1,
-      }));
-    });
-
     it('目标一致时不应发射 goalDriftDetected 事件', () => {
       manager.createCheckpoint('写一个排序函数');
       manager.updateGoal('写一个排序函数');
