@@ -3,7 +3,7 @@
  *
  * 以 vi.fn() 桩替代全部协作对象（AgentLoop / MessageHistory / SessionManager /
  * RolePackManager / ContextPreparer / SessionNamer / RoundSummaryGenerator / Tracer），
- * 返回可控的 SeedDeps，供 prepare / act / reflect / handoff / orchestrator 独立测试复用。
+ * 返回可控的 SeedDeps，供 prepare / act / reflect / orchestrator 独立测试复用。
  *
  * 设计：
  *   - getParts() 经闭包返回桩对象，测试可经 mocks.* 直接覆写行为
@@ -89,7 +89,6 @@ export interface SeedMocks {
 export function makeStrategy(
   p: {
     summary?: 'on' | 'off';
-    handoff?: 'wait' | 'loop' | 'end';
     summaryFocus?: string;
     taskLoopLimit?: number;
   } = {},
@@ -104,7 +103,6 @@ export function makeStrategy(
     reflect: {
       ...DEFAULT_BEHAVIOR_STRATEGY.reflect,
       ...(p.summary !== undefined ? { summary: p.summary } : {}),
-      ...(p.handoff !== undefined ? { handoff: p.handoff } : {}),
     },
     global: {
       ...DEFAULT_BEHAVIOR_STRATEGY.global,

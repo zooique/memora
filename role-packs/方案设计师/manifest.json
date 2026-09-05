@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "方案设计师",
   "displayName": "方案设计师",
   "formatVersion": "1.0.0",
@@ -67,8 +67,7 @@
     },
     "reflect": {
       "summary": "on",
-      "handoff": "loop",
-      "loopContinue": 3,
+      "selfReview": 3,
       "userFollowup": "ask"
     },
     "global": {

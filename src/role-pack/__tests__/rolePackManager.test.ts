@@ -17,7 +17,6 @@ const MANIFEST_TECH = {
   interactionType: 'tool_assistant',
   strategy: {
     prepare: { contextAssembly: 'fixed' },
-    reflect: { handoff: 'wait' },
   },
   skills: [
     { file: 'skills/summarize.md', name: 'summarize' },

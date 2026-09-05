@@ -281,8 +281,6 @@ export class AgentLoop {
   private rolePackBaseTokens: number | undefined;
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
   private isLastContextTruncated = false;
-  /** 是否因迭代/步数上限而终止（非正常完成，供 orchestrator 检查） */
-  private _iterationLimitReached = false;
   /** 两级空间管理压缩链（第一级替换 → 第二级 tool_result 占位 → 第二级超大结果卸载兜底） */
   private readonly compactionStrategies: ICompactionStrategy[];
   /** Provider 路由缓存（单轮内缓存同一 taskType，避免每轮重复路由计算），跨轮清空不复用 */
@@ -574,14 +572,8 @@ export class AgentLoop {
 
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
-    this._iterationLimitReached = true;
     yield { type: 'text', content: this.ui.maxIterationsReached };
     yield { type: 'done' };
-  }
-
-  /** 检查是否因迭代/步数上限而终止（内核内部运行状态标记，不再对外产出 handoff chunk） */
-  isIterationLimitReached(): boolean {
-    return this._iterationLimitReached;
   }
 
   /** 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立；续跑入口同样调用） */
@@ -592,7 +584,6 @@ export class AgentLoop {
     this.inAutonomousStep = false;
     this.pauseRequested = false;
     this.selfReviewRound = 0;
-    this._iterationLimitReached = false;
     // TS-14 每轮独立重置「工具步发生」标记（自审查触发门槛）：新问答闭环入口即续跑入口都复位，
     // 避免续跑段未执行工具却被上次的 true 触发自审查（消除 processUserInput 单独重置的 SSOT 漂移）
     this.toolExecutedThisTurn = false;

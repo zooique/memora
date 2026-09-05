@@ -1,4 +1,4 @@
-{
+﻿{
   "name": "文档设计师",
   "displayName": "文档设计师",
   "formatVersion": "1.0.0",
@@ -55,8 +55,7 @@
     },
     "reflect": {
       "summary": "on",
-      "handoff": "wait",
-      "loopContinue": 2,
+      "selfReview": 2,
       "userFollowup": "ask"
     },
     "global": {

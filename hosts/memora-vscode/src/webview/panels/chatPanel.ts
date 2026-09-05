@@ -2122,11 +2122,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else if (chunk.type === 'selfReview') {
           // 自审查轮开始 → 过程事件（§ 自审查输出 头部）
           emitEvent('self_review', { round: chunk.round });
-        } else if (chunk.type === 'handoff') {
-          // 宿主是插座的纯转发：不解释、不决策 handoff，原样投递给 webview。
-          // 内核已把角色包 reflect.handoff 的 loop 在内部消化，对外恒吐 wait/end，
-          // 宿主绝不据此"再进一轮 chat"（否则内核循环引擎漏到宿主层，属反模式）。
-          this.post({ type: 'handoff', decision: chunk.decision, reason: chunk.reason });
         } else if (chunk.type === 'retry') {
           // LLM 失败重试 → 转发低扰提示条
           this.post({

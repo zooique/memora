@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Agent 门面类 — Memora 宿主项目接入入口
  *
  * 宿主通过 `import { Agent } from '@zooique/memora'` 一行接入。
@@ -143,7 +143,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
     archiveCoordinator: ArchiveCoordinator | null;
     /**
-     * 种子 turn 编排器（turn 的唯一编排真理源）：prepare → act → reflect → handoff。
+     * 种子 turn 编排器（turn 的唯一编排真理源）：prepare → act → reflect。
      * chat() 委托 runChat()；续跑（continueAfterPause）走 runResume()，复用同一 turn 编排。
      * 经 getParts() getter 取当前组件——rebuildComponents 更换组件后仍取到最新引用。
      */
@@ -464,7 +464,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       }
       this._lastInteractionAt = new Date();
 
-      // 委托种子编排器：对话路径完整闭环（prepare → act → reflect → handoff）
+      // 委托种子编排器：对话路径完整闭环（prepare → act → reflect）
       yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal);
     } finally {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
@@ -615,7 +615,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         }
       }
 
-      // 委托种子编排器：续跑路径闭环（act(continueAfterPause) → reflect；无回答前、无 Handoff），
+      // 委托种子编排器：续跑路径闭环（act(continueAfterPause) → reflect；无回答前），
       // 预判短路与锁/状态机守卫留在门面，执行语义收在编排器内。
       yield* this.internals.seedOrchestrator!.runResume(input, combinedSignal, kind);
     } finally {
@@ -637,14 +637,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private async *consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
     signal?: AbortSignal,
-  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean; iterationLimitReached?: boolean }, unknown> {
+  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean }, unknown> {
     let content = '';
     let aborted = false;
     // 软暂停标记：loop 在 step 边界挂起（用户 requestPause / ask_user 主动提问）时置真，
     // 供编排器据此推迟摘要——回合未完成不产摘要，保摘要与外部输入 1:1
     let paused = false;
-    // 迭代上限标志：loop 因 maxIterations/stepBudget 上限而终止时置真
-    let iterationLimitReached = false;
 
     try {
       for await (const chunk of source) {
@@ -681,7 +679,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
               : 'User cancelled the conversation',
             stopReason: isTimeoutAbortSignal(signal) ? 'timeout' : 'user',
           };
-          return { content, aborted: true, paused, failed: false, iterationLimitReached };
+          return { content, aborted: true, paused, failed: false };
         }
         // signal 未 abort 却抛 AbortError → provider/网络内部中断（连接被抽断/代理异常）：
         // 非用户取消，判为「连接中断」——与普通错误同归 error 分支，用结构化 category
@@ -694,10 +692,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           category: 'connection',
           message: raw,
         };
-        return { content, aborted, paused, failed: true, iterationLimitReached };
+        return { content, aborted, paused, failed: true };
       }
       yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
-      return { content, aborted, paused, failed: true, iterationLimitReached };
+      return { content, aborted, paused, failed: true };
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求
       this._sessionManager?.cancelPendingPause();
@@ -705,10 +703,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.requireLoop.clearPauseRequest();
     }
 
-    // 检查 loop 是否因迭代/步数上限而终止（兼容 mock）
-    iterationLimitReached = this.requireLoop.isIterationLimitReached?.() ?? false;
-
-    return { content, aborted, paused, failed: false, iterationLimitReached };
+    return { content, aborted, paused, failed: false };
   }
 
   /**

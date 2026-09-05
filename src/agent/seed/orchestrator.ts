@@ -154,7 +154,7 @@ export class SeedOrchestrator {
     const history = this.deps.getParts().history;
     const loop = this.deps.getParts().loop;
 
-    // 中断：保留已产出文本 + 中断标记写入历史后返回（不进回答后 / Handoff）
+    // 中断：保留已产出文本 + 中断标记写入历史后返回（不进回答后摘要）
     if (streamResult.aborted) {
       if (assistantContent.trim()) {
         // 中断标记默认文案与 loop 统一走 LOOP_CONSTANTS（SSOT），避免宿主未注入 messages 时两处降级不一致
