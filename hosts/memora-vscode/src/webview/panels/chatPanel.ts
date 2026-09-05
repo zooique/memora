@@ -778,6 +778,32 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
+   * rolePackSwitchLocked：角色包切换被锁定时提示用户（核心交互补全——rolesView 点"设为当前"
+   * 但内核判定上一轮未完成/自审查中等原因拒绝切换时，此前用户点击无反馈属 silent failure）
+   */
+  private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
+    this.post({
+      type: 'notice',
+      level: 'warning',
+      message: `角色包切换被锁定：${info.reason}，${info.lockedSeconds} 秒后再试`,
+    });
+  };
+
+  /**
+   * memoryRecalled：LLM 回答前内核从记忆库召回了 N 条相关记忆
+   *
+   * 纯感知增强——用户不知道 LLM 看了多少历史对话/笔记，补一个 info 级提示条。
+   * 对齐内核 contextPreparer.ts L227 emit 点 + checkpointRestoreCoordinator warm recall。
+   */
+  private readonly onMemoryRecalled = (info: { count: number; query: string }): void => {
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `已从记忆库召回 ${info.count} 条相关记忆`,
+    });
+  };
+
+  /**
    * 绑定会话级可观测事件 → 错误提示
    *
    * Agent 为单例跨面板展开共享，此处先 off 再 on（命名 handler 引用一致），
@@ -817,6 +843,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('configReloaded', this.onConfigReloaded);
     a.off('archiveModeChanged', this.onArchiveModeChanged);
     a.on('archiveModeChanged', this.onArchiveModeChanged);
+    // G2/G3：角色包切换锁定事件（P0 补全 rolesView 点设为当前被锁时的 silent failure）
+    a.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+    a.on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+    // memoryRecalled：LLM 回答前召回 N 条记忆 → info 级感知提示
+    a.off('memoryRecalled', this.onMemoryRecalled);
+    a.on('memoryRecalled', this.onMemoryRecalled);
     // H2 高价值事件：输入过大预警 + 目标漂移检测
     a.off('inputTooLarge', this.onInputTooLarge);
     a.on('inputTooLarge', this.onInputTooLarge);
