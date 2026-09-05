@@ -64,7 +64,12 @@ export class WorkspaceSessionStore implements ISessionStore {
     }
   }
 
-  /** 从文件加载会话（文件不存在则空） */
+  /** 从文件加载会话（文件不存在则空）
+   *
+   * Phase 4 收敛：加 checkpoint 僵尸数据防御性清理。
+   * 异常退出（kill/crash）时内核跳过 discardCheckpoint → sessions.json 残留 checkpoint 字段。
+   * 判断：checkpoint 的 sessionId 在 roundIdsStore 里不存在 → 会话已被物理清理 → checkpoint 是僵尸。
+   * 清理后持久化（调 save）——启动时顺手做，零额外成本。 */
   load(): void {
     if (!existsSync(this.filePath)) return;
     try {
@@ -78,6 +83,19 @@ export class WorkspaceSessionStore implements ISessionStore {
       for (const [k, v] of Object.entries(data.metas ?? {})) this.metas.set(k, v);
       // 加载 round-based 模式的 Round ID 列表（唯一内容来源）
       for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
+
+      // Phase 4：防御性清理 checkpoint 僵尸数据
+      let cleaned = 0;
+      for (const sessionId of [...this.checkpoints.keys()]) {
+        if (!this.roundIdsStore.has(sessionId)) {
+          this.checkpoints.delete(sessionId);
+          cleaned++;
+        }
+      }
+      if (cleaned > 0) {
+        // 持久化清理结果——load() 唯一有副作用的场景
+        this.save();
+      }
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
       console.warn('Memora 会话文件读取失败，降级为空', err);
