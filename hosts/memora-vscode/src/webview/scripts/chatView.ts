@@ -1074,6 +1074,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let _sessionUiState: 'thinking' | 'done' | 'paused' = 'done';
   /** pauseBtn toggle flag：host post pause_btn_state 同步，驱动按钮文案（暂停/取消暂停）*/
   let _pauseBtnPending = false;
+  /** 连续 supplement 合并跟踪：当前活跃的打断切分条（多条补充追加到同一容器，而非每条建一个新 divider）*/
+  let _lastInterruptDivider: HTMLElement | null = null;
 
   /**
    * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → send 的 classList/title/aria-label + pauseBtn 的 hidden/textContent。
@@ -1127,25 +1129,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /**
    * Phase 4 待发送区（interject 队列可视化）：宿主 post pending_queue_update 时更新。
-   * 懒创建 DOM 元素（挂在 inputBar 前面）——显示最新一条补充预览 + N 条待发计数 + 清空按钮。
+   * 懒创建 DOM 元素（挂在 inputBar 前面）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮。
    * 仅 thinking 态有排队时显示；paused 宿主已清队列；done 不可能有队列。
+   *
+   * 连续补充的用户心智：用户在 LLM 思考期间连发多条 → 每条独立显示 + 可删除，
+   * step 边界时内核一次性注入全部 → UI 渲染层 appendInterruptDivider 合并成一个气泡展示。
    */
   let _pendingQueueBar: HTMLElement | null = null;
   function updatePendingQueueBar(items: string[]): void {
     if (!_pendingQueueBar) {
-      // 懒创建：挂在 inputBar 前面，灰色条样式（--pending-queue-bg CSS 令牌驱动）
+      // 懒创建：flex column 布局（label 在顶部 + 列表在中间 + clear 在顶部右侧）
       _pendingQueueBar = document.createElement('div');
       _pendingQueueBar.className = 'pending-queue-bar';
       _pendingQueueBar.innerHTML = `
         <span class="pending-queue-bar__label">待发送</span>
-        <span class="pending-queue-bar__preview"></span>
         <span class="pending-queue-bar__count"></span>
-        <button class="pending-queue-bar__clear" type="button" title="清空待发送补充">✕</button>
+        <button class="pending-queue-bar__clear" type="button" title="清空全部">✕</button>
+        <div class="pending-queue-bar__list"></div>
       `;
       inputBar.parentNode?.insertBefore(_pendingQueueBar, inputBar);
       const clearBtn = _pendingQueueBar.querySelector('.pending-queue-bar__clear');
       clearBtn?.addEventListener('click', () => {
-        // Phase 4：清空 interject 队列（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
+        // Phase 4：清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
         vscode.postMessage({ type: 'clear_pending_queue' });
       });
     }
@@ -1153,14 +1158,36 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       _pendingQueueBar.hidden = true;
       return;
     }
-    // 渲染预览：最新一条（最后一条）+ 计数（前面还有 N 条）
-    const previewEl = _pendingQueueBar.querySelector('.pending-queue-bar__preview')!;
+    // 头部计数
     const countEl = _pendingQueueBar.querySelector('.pending-queue-bar__count')!;
-    const latest = items[items.length - 1].length > 80
-      ? items[items.length - 1].slice(0, 80) + '…'
-      : items[items.length - 1];
-    previewEl.textContent = latest;
-    countEl.textContent = items.length > 1 ? ` 共 ${items.length} 条` : '';
+    countEl.textContent = `共 ${items.length} 条`;
+    // 列表容器重建（每次全量重渲染，items.length 小时成本可忽略）
+    const listEl = _pendingQueueBar.querySelector('.pending-queue-bar__list')!;
+    listEl.innerHTML = '';
+    items.forEach((text, idx) => {
+      const row = document.createElement('div');
+      row.className = 'pending-queue-bar__item';
+      // 序号（1. / 2. / 3.）
+      const num = document.createElement('span');
+      num.className = 'pending-queue-bar__num';
+      num.textContent = `${idx + 1}.`;
+      // 文本（过长截断，title 悬停看全文）
+      const preview = document.createElement('span');
+      preview.className = 'pending-queue-bar__text';
+      preview.textContent = text.length > 100 ? text.slice(0, 100) + '…' : text;
+      preview.title = text;
+      // 单条删除按钮
+      const delBtn = document.createElement('button');
+      delBtn.className = 'pending-queue-bar__item-del';
+      delBtn.type = 'button';
+      delBtn.title = '删除这条';
+      delBtn.textContent = '×';
+      delBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'remove_pending_item', index: idx });
+      });
+      row.append(num, preview, delBtn);
+      listEl.appendChild(row);
+    });
     _pendingQueueBar.hidden = false;
   }
 
@@ -1171,6 +1198,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function setStatus(state: 'thinking' | 'done' | 'paused'): void {
     _sessionUiState = state;
+    // Phase 4：合并补充条的生命周期跟随会话状态——状态变化 = 合并周期结束，
+    // 下一个 supplement 应该重新开新 divider（不同运行阶段的补充不应混在一起）
+    _lastInterruptDivider = null;
     if (state === 'thinking') {
       // 生成中：round-block summary 呼吸点 + 计数实时刷新（renderRoundBlock 驱动，无需额外文案）
     } else if (state === 'paused') {
@@ -1744,30 +1774,77 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 语义 = 内核 interject() abort→续跑（loop.ts:617）：打断点（已产出正文）与续接段之间
    * 的视觉切口，让「补充」归位到它生发的上下文，而非消息流底部的游离折叠块。
    *
+   * Phase 4 收敛（连续补充合并）：
+   *   - 首次 supplement 创建独立 divider，label = "你补充了"
+   *   - 后续连续 supplement 追加到同一 divider 里（每条一行，带序号），label 更新为 "你补充了 N 条"
+   *   - 合并终止时机：setStatus 变化 / 收到非 supplement 的消息 → 下次 supplement 重新开新 divider
+   *
    * @param text 补充全文（过长截断展示，title 悬停看全文）
    */
   function appendInterruptDivider(text: string): void {
-    // 打断点 = 当前正在输出的 assistant 块（流式打断，activeAssistantEl 保留引用）或
+    // 合并路径：已有活跃 divider → 追加条目而非新建
+    if (_lastInterruptDivider && _lastInterruptDivider.isConnected) {
+      const count = (_lastInterruptDivider.dataset.count ? parseInt(_lastInterruptDivider.dataset.count, 10) : 1) + 1;
+      _lastInterruptDivider.dataset.count = String(count);
+      // 更新 label（"你补充了" → "你补充了 2 条"）
+      const label = _lastInterruptDivider.querySelector('.interrupt-divider__label');
+      if (label) {
+        label.textContent = count > 1 ? `你补充了 ${count} 条` : '你补充了';
+      }
+      // 追加新条目
+      const items = _lastInterruptDivider.querySelector('.interrupt-divider__items');
+      if (items) {
+        const row = document.createElement('div');
+        row.className = 'interrupt-divider__item';
+        const num = document.createElement('span');
+        num.className = 'interrupt-divider__num';
+        num.textContent = `${count}.`;
+        const preview = document.createElement('span');
+        preview.className = 'interrupt-divider__text';
+        preview.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
+        preview.title = text;
+        row.append(num, preview);
+        items.appendChild(row);
+      }
+      scrollToBottom(messages);
+      updateEmptyState();
+      return;
+    }
+
+    // 新建路径：打断点 = 当前正在输出的 assistant 块（流式打断，activeAssistantEl 保留引用）或
     // 最后一条 assistant 块（暂停续跑补充）
     const host =
       (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
       (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
     const divider = document.createElement('div');
     divider.className = 'interrupt-divider';
+    divider.dataset.count = '1';
     const label = document.createElement('span');
     label.className = 'interrupt-divider__label';
     label.textContent = '你补充了';
+    // 合并列表容器（预留后续追加）
+    const items = document.createElement('div');
+    items.className = 'interrupt-divider__items';
+    // 首条补充（序号 1）
+    const row = document.createElement('div');
+    row.className = 'interrupt-divider__item';
+    const num = document.createElement('span');
+    num.className = 'interrupt-divider__num';
+    num.textContent = '1.';
     const preview = document.createElement('span');
     preview.className = 'interrupt-divider__text';
     preview.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
     preview.title = text;
+    row.append(num, preview);
+    items.appendChild(row);
     divider.appendChild(label);
-    divider.appendChild(preview);
+    divider.appendChild(items);
     if (host?.parentNode) {
       host.after(divider);
     } else {
       messages.appendChild(divider);
     }
+    _lastInterruptDivider = divider;
     scrollToBottom(messages);
     updateEmptyState();
   }

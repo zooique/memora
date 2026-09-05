@@ -811,6 +811,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 放弃当前暂停检查点（宿主 stop 语义的内核出口）
+   *
+   * 与 pause() 对称：pause 创建检查点；discardCurrentCheckpoint 销毁检查点。
+   * 宿主 handleStop 在 paused 态调用——用户决定彻底放弃暂停执行，不再 resume。
+   * 转发 SessionManager.discardCheckpoint：删存储 + 清内存 + 状态机 resetToRunning。
+   * @returns true=成功清理；false=无暂停检查点（空闲态调了个空）
+   */
+  discardCurrentCheckpoint(): boolean {
+    this.assertInitialized('discardCurrentCheckpoint');
+    return this._sessionManager?.discardCheckpoint() ?? false;
+  }
+
+  /**
    * 执行中插话（申请）：把用户补充输入排队，当前 step 完成后在 step 边界统一注入为 user 消息。
    *
    * 与 requestPause（step 边界挂起待续跑）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
@@ -832,6 +845,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       });
     }
     this.requireLoop.interject(content);
+  }
+
+  /**
+   * 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称。
+   * 注意：interject 时已持久化到 history（TS-9 交互归属），此处只从内核队列移除，不删除已落盘记录——
+   * 未来若需完整"撤回"需额外方案（如软删标记），当前先保证 step 边界不会注入已删除的补充。
+   * @param index 要删除的插话在队列中的位置（宿主镜像数组与内核队列同序同长度）
+   * @returns true=成功删除；false=index 越界或队列为空
+   */
+  removePendingInterject(index: number): boolean {
+    this.assertInitialized('removePendingInterject');
+    return this.requireLoop.removePendingInterject(index);
   }
 
   /**

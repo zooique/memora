@@ -185,6 +185,13 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'clear_pending_queue' }
   /**
+   * Phase 4：删除单条 interject（待发送区每条的独立删除按钮）
+   *
+   * 由 webview 待发送区某条补充的 × 按钮触发，宿主从 _pendingQueue + 内核 loop 队列
+   * 同步删除指定 index 的补充，然后 post 更新后的 pending_queue_update。
+   */
+  | { type: 'remove_pending_item'; index: number }
+  /**
    * 从检查点续跑（G3 断点续跑，2026-08-23）
    *
    * 由「从断点续跑」提示条按钮触发：host 调 agent.restoreFromCheckpoint() 恢复上次

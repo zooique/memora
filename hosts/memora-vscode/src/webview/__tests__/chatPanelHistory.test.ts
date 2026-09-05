@@ -570,16 +570,23 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(7000);
   });
 
-  // ─── Phase 4 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致） ───
+  // ─── Phase 4 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致）
+  // Phase 4 升级：handlePause 从"只调 requestPause"变成"先读 isPausePending toggle 再调 requestPause/cancelPauseRequest"
+  // （chatPanel.ts L2026），mock 必须同步新增 isPausePending + cancelPauseRequest，否则 TypeError。 ───
   function pauseAgentStub(): {
     agent: Agent;
     requestPause: ReturnType<typeof vi.fn>;
     pause: ReturnType<typeof vi.fn>;
+    isPausePending: ReturnType<typeof vi.fn>;
+    cancelPauseRequest: ReturnType<typeof vi.fn>;
   } {
     const requestPause = vi.fn(() => true);
     const pause = vi.fn(() => true);
-    const agent = { requestPause, pause, on: vi.fn(), off: vi.fn() } as unknown as Agent;
-    return { agent, requestPause, pause };
+    // Phase 4 toggle 依赖：默认无在途暂停申请（走 requestPause 路径，非 cancel）
+    const isPausePending = vi.fn(() => false);
+    const cancelPauseRequest = vi.fn();
+    const agent = { requestPause, pause, isPausePending, cancelPauseRequest, on: vi.fn(), off: vi.fn() } as unknown as Agent;
+    return { agent, requestPause, pause, isPausePending, cancelPauseRequest };
   }
 
   it('handlePause：生成中软暂停走 requestPause（step 边界挂起），不用立即翻态的 pause', () => {

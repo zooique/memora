@@ -570,6 +570,15 @@ export class AgentLoop {
     this.pendingInterjections.push(content);
   }
 
+  /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。
+   *  index 越界时静默 no-op（宿主镜像数组和内核队列始终同序同长度，理论上不会越界）。
+   *  @returns true=成功删除；false=index 越界或队列为空 */
+  removePendingInterject(index: number): boolean {
+    if (index < 0 || index >= this.pendingInterjections.length) return false;
+    this.pendingInterjections.splice(index, 1);
+    return true;
+  }
+
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
     yield { type: 'text', content: this.ui.maxIterationsReached };

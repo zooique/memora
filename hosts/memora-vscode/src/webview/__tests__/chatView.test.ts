@@ -691,15 +691,20 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
 
   // ─── pending_queue_update DOM 渲染 ───
 
-  it('pending_queue_update → 懒创建 .pending-queue-bar 并渲染预览', () => {
+  it('pending_queue_update → 懒创建 .pending-queue-bar 并渲染全部条目', () => {
     mountChatView();
     dispatch({ type: 'status', state: 'thinking' });
     dispatch({ type: 'pending_queue_update', items: ['我插一句话', '再来一句'] });
     const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
     expect(bar).not.toBeNull();
     expect(bar.hidden).toBe(false);
-    // 最新一条（最后一条）优先预览 + 计数
-    expect(bar.querySelector('.pending-queue-bar__preview')!.textContent).toBe('再来一句');
+    // Phase 4 收敛：列表模式渲染全部条目 + 序号 + 计数
+    const items = bar.querySelectorAll('.pending-queue-bar__item');
+    expect(items.length).toBe(2);
+    expect(items[0]!.querySelector('.pending-queue-bar__num')!.textContent).toBe('1.');
+    expect(items[0]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('我插一句话');
+    expect(items[1]!.querySelector('.pending-queue-bar__num')!.textContent).toBe('2.');
+    expect(items[1]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('再来一句');
     expect(bar.querySelector('.pending-queue-bar__count')!.textContent).toContain('2');
     // 清空 → 隐藏
     dispatch({ type: 'pending_queue_update', items: [] });

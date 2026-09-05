@@ -266,6 +266,31 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px);
     max-width: 45%;
   }
+  /* Phase 4：合并模式（连续 supplement 追加到同一 divider）——items 容器 + item 行 */
+  .interrupt-divider__items {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    max-width: 50%;
+  }
+  .interrupt-divider__item {
+    display: flex;
+    align-items: center;
+    gap: 3px;
+    padding: 0;
+  }
+  .interrupt-divider__num {
+    flex-shrink: 0;
+    font-size: 10px;
+    color: var(--text-muted, #888);
+    text-align: right;
+    width: 14px;
+  }
+  /* item 内的 text：flex:1 撑满，不再 max-width 45%（那是旧单条模式的） */
+  .interrupt-divider__item > .interrupt-divider__text {
+    flex: 1 1 auto;
+    max-width: none;
+  }
   /* UX-9 提问内联选择题（2026-09-03，提问形态内联化）：
    * 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
    * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */
@@ -627,14 +652,15 @@ export const chatStyles = `
     background: transparent;
     position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
-  /* Phase 4：thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色预览条
+  /* Phase 4：thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色条
    * 懒创建（chatView.updatePendingQueueBar），仅 items.length>0 时显示；
    * hidden 属性天然生效（display:block 被显式 [hidden] 覆盖为 none）。
-   * 视觉定位：弱化灰色条（--surface-track），比输入卡片更轻，不抢注意力。 */
+   * 视觉定位：弱化灰色条（--surface-track），比输入卡片更轻，不抢注意力。
+   * 布局：flex column（label+count+clear 在顶部一行 + list 在下方多行） */
   .pending-queue-bar {
     display: flex;
-    align-items: center;
-    gap: var(--sp-2, 4px);
+    flex-direction: column;
+    gap: var(--sp-1, 2px);
     margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
     padding: var(--sp-2, 4px) var(--sp-3, 8px);
     background: var(--surface-track, rgba(128,128,128,.12));
@@ -644,12 +670,37 @@ export const chatStyles = `
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
   }
+  /* 顶部标题行：label + count + clear */
   .pending-queue-bar__label {
-    flex-shrink: 0;
     font-weight: 500;
     color: var(--text-secondary, #b0b0b0);
   }
-  .pending-queue-bar__preview {
+  .pending-queue-bar__count {
+    flex: 1;
+    font-size: 11px;
+    color: var(--text-muted, #888);
+  }
+  /* 列表容器 */
+  .pending-queue-bar__list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  /* 每条补充的行 */
+  .pending-queue-bar__item {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1, 2px);
+    padding: 1px 0;
+  }
+  .pending-queue-bar__num {
+    flex-shrink: 0;
+    width: 16px;
+    font-size: 11px;
+    color: var(--text-muted, #888);
+    text-align: right;
+  }
+  .pending-queue-bar__text {
     flex: 1;
     overflow: hidden;
     white-space: nowrap;
@@ -657,11 +708,29 @@ export const chatStyles = `
     color: var(--text-input, #cccccc);
     opacity: 0.85;
   }
-  .pending-queue-bar__count {
+  /* 单条删除按钮 */
+  .pending-queue-bar__item-del {
     flex-shrink: 0;
-    font-size: 11px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    padding: 0;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
     color: var(--text-muted, #888);
+    cursor: pointer;
+    font-size: 9px;
+    line-height: 1;
+    transition: background 0.12s, color 0.12s;
   }
+  .pending-queue-bar__item-del:hover {
+    background: var(--surface-hover, rgba(255,255,255,.08));
+    color: var(--text-secondary, #ccc);
+  }
+  /* 全局清空按钮（右上角） */
   .pending-queue-bar__clear {
     flex-shrink: 0;
     display: inline-flex;

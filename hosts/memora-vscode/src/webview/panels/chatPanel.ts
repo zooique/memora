@@ -462,6 +462,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // Phase 4：清空 thinking 态 interject 队列（用户点待发送区的清空按钮）
         this._pendingQueue = [];
         this.post({ type: 'pending_queue_update', items: [] });
+      } else if (msg.type === 'remove_pending_item') {
+        // Phase 4：删除单条 interject（待发送区某条的独立 × 按钮）
+        // 同步删宿主镜像数组 + 内核队列（双写：视觉层 + 注入层必须一致）
+        const idx = msg.index;
+        if (idx >= 0 && idx < this._pendingQueue.length) {
+          this._pendingQueue.splice(idx, 1);
+          this._agent?.removePendingInterject(idx);
+          this.post({ type: 'pending_queue_update', items: [...this._pendingQueue] });
+        }
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
@@ -1985,9 +1994,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 停止生成：用户主动中断执行（Phase 4 暂停/恢复后硬停止对齐）
    *
-   * 三种运行态行为一致：
+   * 三种运行态行为：
    *   - thinking（_streaming=true）→ abort() 当前流，内核在下一 await 点退出 yield aborted
-   *   - paused（status=paused, _streaming=false）→ 宿主层 post status:done + notice（下一次 chat() 会重建 loop 状态）
+   *   - paused（status=paused, _streaming=false）→ 调 agent.discardCurrentCheckpoint 清检查点
+   *     （对称语义：pause=想继续；stop=彻底放弃，检查点不应残留）
    * done 态无停止按钮（UI 隐藏）。 */
   private handleStop(): void {
     // thinking 态：已有路径
@@ -1995,11 +2005,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._abortController.abort();
       return;
     }
-    // paused 态：宿主层 post status:done + 提示（内核无 clearCheckpoint，
-    //  但下一次 chat() 会通过 resetTurnState + restoreHistory 重建 loop 状态，零残留）
+    // paused 态：彻底放弃暂停检查点（对称 pause 语义）
     if (this._agent?.sessionManager?.status === 'paused') {
+      // Phase 4 收敛：内核已暴露 discardCurrentCheckpoint，不再靠"下一次 chat() 会重建"隐式清理
+      const cleaned = this._agent.discardCurrentCheckpoint();
       this.post({ type: 'status', state: 'done' });
-      this.post({ type: 'notice', level: 'info', message: '已停止，检查点保留供后续恢复' });
+      if (cleaned) {
+        this.post({ type: 'notice', level: 'info', message: '已停止，暂停检查点已清理' });
+      }
     }
   }
 

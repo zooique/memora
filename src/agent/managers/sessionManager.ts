@@ -937,6 +937,44 @@ export class SessionManager {
     logger.debug('连续暂停时间戳已清空');
   }
 
+  /**
+   * 放弃当前暂停检查点（宿主 stop 语义的内核出口）
+   *
+   * 语义 = 用户决定**彻底放弃**暂停执行，不再 resume。清理内容：
+   *   1. 停暂停超时定时器（防止已放弃的 checkpoint 继续被超时清理）
+   *   2. 从 sessionStore 删除持久化检查点（若存在）
+   *   3. 清内存态 checkpoint + checkpointDirty + pauseMeta
+   *   4. 状态机 resetToRunning（回到 idle 之前的 running 基础态，下次 chat() 正常）
+   *
+   * 与 resume() 的区别：resume = 想继续跑暂停点；discardCheckpoint = 不想了，检查点作废。
+   * 与 pause() 的对称：pause 创建检查点；discardCheckpoint 销毁检查点。
+   * @returns true=成功清理；false=无暂停检查点（空闲态调了个空）
+   */
+  discardCheckpoint(): boolean {
+    if (!this.checkpoint) {
+      logger.debug('discardCheckpoint：无检查点可清理（可能已清理或从未暂停）');
+      return false;
+    }
+
+    const sessionId = this.checkpoint.sessionId;
+    logger.info({ sessionId }, '放弃暂停检查点（用户 stop 语义）');
+
+    // 1. 停暂停超时定时器
+    this.stopPauseTimeoutTimer();
+    // 2. 删持久化存储（如果 sessionStore 支持）
+    if (this.sessionStore?.deleteCheckpoint) {
+      this.sessionStore.deleteCheckpoint(sessionId);
+    }
+    // 3. 清内存态
+    this.checkpoint = null;
+    this.checkpointDirty = false;
+    this.setPauseMeta(undefined);
+    // 4. 状态机回到 running
+    this.stateMachine.resetToRunning();
+
+    return true;
+  }
+
   /** 从异常恢复：标记 error.recovered=true 并经 stateMachine.recover 校验。恢复必须落盘——recovered 若只在内存，进程崩溃后磁盘仍是未恢复 error 快照，恢复链永久断裂 */
   recover(): boolean {
     if (!this.checkpoint || !this.checkpoint.error) {
