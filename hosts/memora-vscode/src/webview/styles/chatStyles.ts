@@ -1247,9 +1247,20 @@ export const chatStyles = `
     border-left: 3px solid var(--accent, #0e639c);
   }
   .plan-board-header {
+    display: flex; align-items: center; gap: var(--sp-3, 8px);
     font-weight: 600;
     color: var(--text-primary, #cccccc);
     margin-bottom: var(--sp-2, 6px);
+  }
+  .plan-board-progress-wrap {
+    flex: 1; height: 4px;
+    background: var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 2px; overflow: hidden;
+  }
+  .plan-board-progress {
+    height: 100%; background: var(--accent, #0e639c);
+    border-radius: 2px;
+    transition: width .3s ease-out;
   }
   .plan-board-list {
     list-style: none;
@@ -1285,6 +1296,38 @@ export const chatStyles = `
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-board 的 text-secondary，无需额外规则） */
 
+  /* ============ Components：plan-inline（对话流内嵌进度条，2026-09-05 Phase 4.1 双轨升级） ============ */
+  /* inline 版：一行紧凑头部，挂在 assistant 块内、round-block 上方。随对话自然向下流动，
+     不再像顶部独立面板那样反向 prepend 成"导航浮窗"。 */
+  .plan-inline {
+    margin: var(--sp-2, 6px) var(--sp-5, 12px) var(--sp-1, 2px);
+    padding: var(--sp-2, 4px) var(--sp-3, 8px);
+    background: var(--surface-card, #252526);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-left: 3px solid var(--accent, #0e639c);
+    border-radius: var(--radius-sm, 4px);
+  }
+  .plan-inline-wrap {
+    display: flex; align-items: center; gap: var(--sp-3, 8px);
+  }
+  .plan-inline-progress-wrap {
+    flex: 1; height: 4px; min-width: 40px;
+    background: var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 2px; overflow: hidden;
+  }
+  .plan-inline-progress {
+    height: 100%; background: var(--accent, #0e639c);
+    border-radius: 2px;
+    transition: width .3s ease-out;
+  }
+  .plan-inline-text {
+    flex-shrink: 0;
+    font-size: var(--font-xs, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 260px;
+  }
+
   /* ============ Components：round-block 任务过程折叠区（2026-09-02 收紧：SSOT 单一容器） ============ */
   /* 每轮回答的单一「任务过程」折叠区：summary 默认可见（进行中呼吸点 + 计数/耗时，完成收起），
    * details 展开后按小节呈现实时相位/工具调用/过程轨迹/召回/已沉淀/自审查/执行指标。
@@ -1305,6 +1348,14 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
   }
   .round-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  /* round-block step 标签：active step 提示。prepend 到 details 最前（summary 上方） */
+  .round-block__plan-tag {
+    font-size: var(--font-xs, 10px);
+    color: var(--accent, #0e639c);
+    padding: 0 0 var(--sp-1, 2px);
+    border-bottom: 1px dashed var(--border-panel, rgba(128,128,128,.3));
+    margin-bottom: var(--sp-1, 2px);
+  }
   .round-block__dot {
     width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
     background: var(--text-secondary, #9aa0a6);

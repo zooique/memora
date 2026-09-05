@@ -182,8 +182,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function prependStatusBlock(el: HTMLElement): void {
     if (restoreBanner && el !== restoreBanner) {
       messages.insertBefore(el, restoreBanner.nextSibling);
-    } else if (planBoard && el !== planBoard) {
-      messages.insertBefore(el, planBoard);
+    } else if (globalPlanBoard && el !== globalPlanBoard) {
+      messages.insertBefore(el, globalPlanBoard);
     } else {
       messages.prepend(el);
     }
@@ -241,50 +241,125 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentActive: string | undefined;
 
   /**
-   * 任务看板（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
+   * 任务看板（H4 任务驱动多步闭环）—— 2026-09-05 Phase 4.1 双轨升级
    *
-   * 动态创建并 prepend 到消息区顶部（与断点续跑提示条同点位模式）。收到 plan_update 时
-   * 创建/更新；清空/新会话时移除。只读展示内核 checkpoint.plan，不参与 LLM 执行。
+   * 双轨呈现（参考 Trae Work 体验）：
+   *   ① globalPlanBoard：顶部独立面板（prependStatusBlock 状态栈第 2 层），完整 step 列表 +
+   *      折叠 stepLog，进度条 + N/M 文字。用于全局任务清单一览。
+   *   ② inlinePlanBoard：对话流内嵌（挂到 activeAssistantEl 内、round-block 上方），
+   *      一行简化头部（进度条 + N/M + 当前 active step 摘要）。随对话自然向下流动。
+   *
+   * 数据源头：plan_update 协议消息（plan 数据由内核 checkpoint.plan 驱动，宿主 postPlanUpdate
+   * 做只读快照推送）。webview 只消费不写，SSOT 不变。
    */
-  let planBoard: HTMLElement | null = null;
+  let globalPlanBoard: HTMLElement | null = null;
+  let inlinePlanBoard: HTMLElement | null = null;
+  /** 当前计划快照缓存（供 round-block step 标签、inline 复用，零新增协议） */
+  let currentPlanSteps: PlanStepDto[] = [];
+  /** plan_update 早于 beginStreaming 时的 defer：activeAssistantEl 还没创建，暂存等 assistant 块就绪后挂载 */
+  let pendingInlinePlan: PlanStepDto[] | null = null;
 
-  /** 移除任务看板（清空/切换会话时调用，避免跨会话残留） */
-  function removePlanBoard(): void {
-    planBoard?.remove();
-    planBoard = null;
+  /** 移除所有任务看板（global + inline + 状态缓存） */
+  function removeAllPlanBoards(): void {
+    globalPlanBoard?.remove();
+    globalPlanBoard = null;
+    inlinePlanBoard?.remove();
+    inlinePlanBoard = null;
+    currentPlanSteps = [];
+    pendingInlinePlan = null;
   }
 
-  /** 渲染/刷新任务看板（收到 plan_update 消息时调用） */
-  function renderPlanBoard(steps: PlanStepDto[]): void {
-    if (steps.length === 0) {
-      removePlanBoard();
+  /** 在 activeAssistantEl 内挂载 inlinePlanBoard（首次 beginStreaming 或 plan_update 延迟消费时） */
+  function mountInlinePlanBoard(steps: PlanStepDto[]): void {
+    if (!activeAssistantEl || !activeAssistantEl.isConnected) {
+      // assistant 块还没创建（plan_update 早于 beginStreaming）：defer
+      pendingInlinePlan = steps;
       return;
     }
-    if (!planBoard) {
-      planBoard = document.createElement('div');
-      planBoard.className = 'plan-board';
-      planBoard.setAttribute('role', 'region');
-      planBoard.setAttribute('aria-label', '任务进度');
-      // 插到消息区顶部状态栈（协议：任务看板恒在检查点横幅之下），与历史重放/新轮计划同步可见
-      prependStatusBlock(planBoard);
+    if (!inlinePlanBoard) {
+      inlinePlanBoard = document.createElement('div');
+      inlinePlanBoard.className = 'plan-inline';
+      inlinePlanBoard.setAttribute('role', 'status');
+      inlinePlanBoard.setAttribute('aria-label', '当前任务进度');
+      // 插到 assistant 块内、round-block 之前（和对话流同方向）
+      const rb = activeAssistantEl.querySelector(':scope .round-block');
+      activeAssistantEl.insertBefore(inlinePlanBoard, rb);
     }
-    // 标题行：任务进度 N/M
+    renderInlinePlanBoard(steps);
+    pendingInlinePlan = null;
+  }
+
+  /** inline 版：一行简化头部（进度条 + N/M + 当前 active step），挂在 round-block 上方 */
+  function renderInlinePlanBoard(steps: PlanStepDto[]): void {
+    if (!inlinePlanBoard) return;
     const doneCount = steps.filter((s) => s.status === 'done').length;
-    let header = planBoard.querySelector(':scope .plan-board-header') as HTMLElement;
+    const total = steps.length;
+    const percent = total > 0 ? (doneCount / total) * 100 : 0;
+    const activeStep = steps.find((s) => s.status === 'active');
+    // 构建一行 DOM：progress-wrap（进度条）+ text（N/M + step 摘要）
+    inlinePlanBoard.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'plan-inline-wrap';
+    const barWrap = document.createElement('div');
+    barWrap.className = 'plan-inline-progress-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'plan-inline-progress';
+    bar.style.width = `${percent}%`;
+    barWrap.appendChild(bar);
+    wrap.appendChild(barWrap);
+    const text = document.createElement('div');
+    text.className = 'plan-inline-text';
+    // 右侧文案：N/M + active step 摘要（done 时显示"已完成"）
+    if (doneCount === total && total > 0) {
+      text.textContent = `${doneCount}/${total}  ✓ 已完成`;
+    } else if (activeStep) {
+      const brief = activeStep.description.length > 28 ? `${activeStep.description.slice(0, 28)}…` : activeStep.description;
+      text.textContent = `${doneCount}/${total}  🔵 ${brief}`;
+    } else {
+      text.textContent = `${doneCount}/${total}`;
+    }
+    wrap.appendChild(text);
+    inlinePlanBoard.appendChild(wrap);
+  }
+
+  /** global 版：顶部独立面板（完整 step 列表 + 折叠 stepLog + 进度条 + N/M） */
+  function renderGlobalPlanBoard(steps: PlanStepDto[]): void {
+    if (!globalPlanBoard) {
+      globalPlanBoard = document.createElement('div');
+      globalPlanBoard.className = 'plan-board';
+      globalPlanBoard.setAttribute('role', 'region');
+      globalPlanBoard.setAttribute('aria-label', '任务进度');
+      // 插到消息区顶部状态栈（协议：任务看板恒在检查点横幅之下），与历史重放/新轮计划同步可见
+      prependStatusBlock(globalPlanBoard);
+    }
+    const doneCount = steps.filter((s) => s.status === 'done').length;
+    const total = steps.length;
+    const percent = total > 0 ? (doneCount / total) * 100 : 0;
+    // 标题行 + 进度条（header 内：N/M 文字 + 4px 进度条）
+    let header = globalPlanBoard.querySelector(':scope .plan-board-header') as HTMLElement;
     if (!header) {
       header = document.createElement('div');
       header.className = 'plan-board-header';
-      planBoard.appendChild(header);
+      globalPlanBoard.appendChild(header);
     }
-    header.textContent = `任务进度：${doneCount}/${steps.length}`;
-    // 步骤列表：全量重建（简单确定性——步骤量小，重建成本可忽略；避免增量 diff 复杂化）
-    const list = planBoard.querySelector(':scope .plan-board-list') as HTMLElement;
+    header.innerHTML = '';
+    const headerLeft = document.createElement('span');
+    headerLeft.textContent = `任务进度：${doneCount}/${total}`;
+    header.appendChild(headerLeft);
+    const barWrap = document.createElement('div');
+    barWrap.className = 'plan-board-progress-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'plan-board-progress';
+    bar.style.width = `${percent}%`;
+    barWrap.appendChild(bar);
+    header.appendChild(barWrap);
+    // 步骤列表：全量重建（简单确定性——步骤量小，重建成本可忽略）
+    const list = globalPlanBoard.querySelector(':scope .plan-board-list') as HTMLElement;
     if (list) list.remove();
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
     for (const step of steps) {
-      // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标；展开后展示该步骤关联的
-      // step 推进记录（stepLog，来自 checkpoint.stepLog 关联）
+      // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标
       const item = document.createElement('details');
       item.className = `plan-step plan-step-${step.status}`;
       item.open = false;
@@ -292,7 +367,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       summary.className = 'plan-step-summary';
       const label = document.createElement('span');
       label.className = 'plan-step-title';
-      // 步骤序号（order+1 展示为 1 起）+ 描述；textContent 防注入
       label.textContent = `${step.order + 1}. ${step.description}`;
       summary.appendChild(label);
       const badge = document.createElement('span');
@@ -314,7 +388,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       ul.appendChild(item);
     }
-    planBoard.appendChild(ul);
+    globalPlanBoard.appendChild(ul);
+  }
+
+  /** 渲染/刷新双轨任务看板（收到 plan_update 消息时调用） */
+  function renderPlanBoard(steps: PlanStepDto[]): void {
+    // 缓存快照（供 round-block step 标签复用）
+    currentPlanSteps = steps;
+    if (steps.length === 0) {
+      // 空计划 → 全清（不再渲染任何轨道）
+      removeAllPlanBoards();
+      return;
+    }
+    // global：顶部独立面板（始终渲染，全局概览）
+    renderGlobalPlanBoard(steps);
+    // inline：对话流内嵌（defer 机制：activeAssistantEl 存在时立即挂载，否则等 beginStreaming 消费）
+    mountInlinePlanBoard(steps);
   }
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换已独立到「角色」视图（2026-08-17），本面板仅消费角色名用于展示，不再承载切换。
@@ -558,6 +647,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     flowShellEl = div;
     // 挂载任务过程折叠区（meta 已在 currentEvents 首条）：进行中实时展开投影过程事件
     renderRoundBlock(currentEvents, false);
+    // plan_update 先于 beginStreaming 的 defer 消费：现在 activeAssistantEl 已就绪，挂载 inlinePlanBoard
+    if (pendingInlinePlan) {
+      mountInlinePlanBoard(pendingInlinePlan);
+    }
     scrollToBottom(messages);
     updateEmptyState();
   }
@@ -850,6 +943,29 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       label.textContent = parts.length > 0 ? parts.join(' · ') : '任务过程';
       summary.appendChild(label);
       rb.classList.toggle('is-running', !finalize);
+    }
+    // T4：round-block step 标签——如果有 active step，在 summary 上方显示"📍 执行 step-N: xxx"
+    // 从 currentPlanSteps 缓存读（plan_update 消息存，零新增协议）；每次重建保证始终正确
+    const existingTag = rb.querySelector(':scope .round-block__plan-tag');
+    if (currentPlanSteps.length > 0) {
+      const activeStep = currentPlanSteps.find((s) => s.status === 'active');
+      if (activeStep) {
+        const brief = activeStep.description.length > 36 ? `${activeStep.description.slice(0, 36)}…` : activeStep.description;
+        if (existingTag) {
+          existingTag.textContent = `📍 执行 step-${activeStep.order + 1}: ${brief}`;
+        } else {
+          const tag = document.createElement('div');
+          tag.className = 'round-block__plan-tag';
+          tag.textContent = `📍 执行 step-${activeStep.order + 1}: ${brief}`;
+          rb.prepend(tag);
+        }
+      } else if (existingTag) {
+        // 无 active step（全部 done 或 pending）→ 移除标签
+        existingTag.remove();
+      }
+    } else if (existingTag) {
+      // currentPlanSteps 为空 → 移除旧标签
+      existingTag.remove();
     }
     // 展开态：进行中自动展开（任务过程实时可见），完成自动收起（只留摘要，报告干净）
     rb.open = !finalize;
@@ -2915,8 +3031,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa, .round-group').forEach((el) => el.remove());
       // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
       removeRestoreBanner();
-      // H4：清空/切换会话时移除任务看板（避免旧计划残留污染新会话）
-      removePlanBoard();
+      // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
+      removeAllPlanBoards();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
