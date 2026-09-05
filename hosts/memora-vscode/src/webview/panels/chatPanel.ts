@@ -2263,6 +2263,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // status:done 延后到摘要完成（或 30s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 详见 orchestrator.runSummary emit roundSummaryGenerated；中断/暂停走即时 done 路径
       const SUMMARY_WAIT_TIMEOUT_MS = 30_000;
+      // 局部捕获 agent——函数入口已 guard this._agent，但 setTimeout 闭包内 tsc 不传播 guard，
+      // 局部变量让闭包捕获到确定存在的引用（入口 if (!this._agent) return 已保证到此点必有值）
+      const agent = this._agent;
       let resolved = false;
       /** 解锁回调：受 _streaming 状态门控，防跨轮竞态（旧轮事件误触冲掉新轮 thinking） */
       const unlockDone = () => {
@@ -2274,14 +2277,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       };
       const timeoutHandle = setTimeout(() => {
         // 超时也手动解绑事件监听，防累积泄漏（.once 只在触发时自动解绑，超时不触发会遗留 handler）
-        this._agent.off('roundSummaryGenerated', onSummary);
+        agent?.off('roundSummaryGenerated', onSummary);
         unlockDone();
       }, SUMMARY_WAIT_TIMEOUT_MS);
       const onSummary = (_info: { roundId: string; success: boolean }) => {
         clearTimeout(timeoutHandle);
         unlockDone();
       };
-      this._agent.on('roundSummaryGenerated', onSummary);
+      agent?.on('roundSummaryGenerated', onSummary);
       // T2 Follow-up 建议：仅正常结束时推送（零 LLM、纯计算；打断/异常不给不完整回复挂建议）
       this.postSuggestions();
     }

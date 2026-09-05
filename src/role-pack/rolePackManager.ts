@@ -661,7 +661,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         );
         return null;
       }
-      manifest = JSON.parse(manifestRaw) as Record<string, unknown>;
+      // 防御：VSCode 等编辑器保存 JSON 时可能加 UTF-8 BOM（U+FEFF），Node.js JSON.parse 不认
+      manifest = JSON.parse(manifestRaw.replace(/^\uFEFF/, '')) as Record<string, unknown>;
     } catch (err) {
       getLogger().warn({ manifestPath, err }, 'manifest.json 读取或解析失败，跳过该角色包');
       return null;

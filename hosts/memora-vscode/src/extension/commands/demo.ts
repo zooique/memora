@@ -143,9 +143,6 @@ function appendChunk(
           (chunk.summary ? ` · ${chunk.summary}` : ''),
       );
       break;
-    case 'handoff':
-      output.appendLine(`   [衔接决策] ${chunk.decision}`);
-      break;
     case 'selfReview':
       output.appendLine(`   [自审查] 第 ${chunk.round} 轮`);
       break;
