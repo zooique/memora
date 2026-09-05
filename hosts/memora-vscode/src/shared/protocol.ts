@@ -181,14 +181,13 @@ export type WebviewToExtensionMessage =
   /**
    * Phase 4：清空 interject 队列（thinking 态待发送补充区的清空按钮）
    *
-   * 由 webview 待发送区触发，宿主清 _pendingQueue 并 post 空 pending_queue_update。
+   * 由 webview 待发送区触发，宿主调 agent.clearPendingInterjections() 清内核队列并 post 空 pending_queue_update。
    */
   | { type: 'clear_pending_queue' }
   /**
    * Phase 4：删除单条 interject（待发送区每条的独立删除按钮）
    *
-   * 由 webview 待发送区某条补充的 × 按钮触发，宿主从 _pendingQueue + 内核 loop 队列
-   * 同步删除指定 index 的补充，然后 post 更新后的 pending_queue_update。
+   * 由 webview 待发送区某条补充的 × 按钮触发，宿主调 agent.removePendingInterject(index) 从内核队列删除，然后 post 更新后的 pending_queue_update。
    */
   | { type: 'remove_pending_item'; index: number }
   /**
@@ -659,7 +658,7 @@ export type ExtensionToWebviewMessage =
   /**
    * 待发送区队列更新（Phase 4 暂停/恢复）
    *
-   * thinking 态 interject 排队时 host push 进 _pendingQueue，立即 post 给 webview
+   * thinking 态 interject 排队时 host 从内核 loop.pendingInterjections 读快照，立即 post 给 webview
    * 渲染待发送区预览。sessionResumed 事件后 queue 清空，webview 同步隐藏待发送区。
    */
   | { type: 'pending_queue_update'; items: string[] }

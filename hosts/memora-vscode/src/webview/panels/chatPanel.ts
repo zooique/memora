@@ -2320,6 +2320,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         }
       }
     }
+    // plan 快照对齐：generator close 后内核 autoClearPlanIfAllDone 已清 plan（暂停态 guard 不清），
+    // 此处推一次快照让 webview 同步——正常/中断 → 空 steps（global 消失 + inline 快照）；
+    // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
+    this.postPlanUpdate();
     if (controller.signal.aborted) {
       this.post({ type: 'interrupted', roundId: latestRoundId });
       this.post({ type: 'status', state: 'done' });
