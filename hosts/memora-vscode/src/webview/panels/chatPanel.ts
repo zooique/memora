@@ -784,7 +784,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
     this.post({
       type: 'notice',
-      level: 'warning',
+      level: 'info',
       message: `角色包切换被锁定：${info.reason}，${info.lockedSeconds} 秒后再试`,
     });
   };

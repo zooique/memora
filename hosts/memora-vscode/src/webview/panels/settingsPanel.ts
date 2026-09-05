@@ -50,6 +50,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _agentPromise: Promise<Agent | undefined> | undefined;
   /** 是否已绑定 rolePackSwitched 事件（角色切换可观测，只绑定一次避免重复监听） */
   private _rolePackBound = false;
+  /** rolePackSwitchLocked handler 执行标记（同步 emit，activateRole ok=false 分支据此区分"被锁"vs"不存在"） */
+  private _lockedNoticeShown = false;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 getOrCreateAgent） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 全局状态存储（持久化激活角色包，用户级） */
@@ -376,11 +378,14 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       });
     }
     const agent = await this._agentPromise;
-    // 只绑定一次 rolePackSwitched（角色包切换可观测 —— 跨面板一致）
+    // 只绑定一次 rolePackSwitched + rolePackSwitchLocked（角色包切换可观测 —— 跨面板一致）
     if (agent && !this._rolePackBound) {
       this._rolePackBound = true;
       agent.off('rolePackSwitched', this.onRolePackSwitched);
       agent.on('rolePackSwitched', this.onRolePackSwitched);
+      // 切换被锁时提示宿主（同步 emit，activateRole 内可据此区分"被锁"vs"不存在"）
+      agent.off('rolePackSwitchLocked', this.onRolePackSwitchLocked);
+      agent.on('rolePackSwitchLocked', this.onRolePackSwitchLocked);
     }
     return agent;
   }
@@ -389,17 +394,30 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     void this.loadRoles();
   };
 
+  /** rolePackSwitchLocked：切换被锁时弹 info 提示 + 设置标记让 activateRole 不重复弹"不存在" */
+  private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
+    this._lockedNoticeShown = true;
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `角色包切换被锁定：${info.reason}，${info.lockedSeconds} 秒后再试`,
+    });
+  };
+
   /** 切换激活角色包（SSOT：roles_set_active 与 roles_handoff 共用），返回是否成功 */
   private async activateRole(name: string): Promise<boolean> {
     const agent = await this.ensureAgent();
     if (!agent) return false;
+    // 重置标记——rolePackSwitchLocked 是同步 emit，handler 会在 switchRolePack 返回前执行并置 true
+    this._lockedNoticeShown = false;
     // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。
     // 角色视图刷新由 rolePackSwitched 事件驱动（onRolePackSwitched → loadRoles），不再显式
     // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT 剪枝，2026-08-17）。
     const ok = agent.switchRolePack(name);
     if (ok) {
       this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
-    } else {
+    } else if (!this._lockedNoticeShown) {
+      // ok=false 且没收到锁定事件 → 真正的"角色包不存在"
       this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
     }
     return ok;
