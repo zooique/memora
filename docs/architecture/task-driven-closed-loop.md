@@ -107,8 +107,17 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 |------|---------|
 | **主动提问** | `ask_user` 内置工具（2026-09-04 通道收敛替代 `[ASK]` 文本）→ loop 检出挂起 → `question_pending` 事件（气口：step 之间） |
 | **用户插话** | `interject()` 排队 `pendingInterjections`，step 边界统一注入 user 消息（申请 → 气口生效，单一模式） |
+| **撤回插话** | `removePendingInterject(index)` 从队列中删除（宿主待发送区每条的 × 按钮；与 interject 对称，step 边界消费前可安全删） |
 | **申请暂停** | `requestPause()` → step 边界 `yield paused` 挂起（暂停收口统一翻态 + 写 pauseMeta） |
+| **取消暂停申请** | `cancelPauseRequest()` 清除在途暂停申请（用户点了暂停后又反悔；UI 立即翻视觉） |
+| **判断暂停状态** | `isPausePending()` 区分三态：暂停申请在途 / 已挂起 / 无暂停（宿主 pauseBtn toggle 依据） |
+| **放弃暂停（停止）** | `sessionManager.discardCheckpoint()` 停定时器 + 删存储 + 清内存 + resetToRunning（宿主 handleStop paused 态调之；与 pause 创建检查点对称） |
 | **继续运行** | `continueAfterPause()` 从 step 边界续跑 |
+
+> **2026-09-05 Phase 4 收敛注脚**：
+> 1. **进程重启 = 停止**（用户决策）：暂停检查点/插话队列/运行时状态一律丢弃，不持久化恢复。`sessionStore.load()` 启动时自动清理异常退出残留的 checkpoint 字段。
+> 2. **暂停申请 UI 立即切换**：`requestPause()` / `cancelPauseRequest()` 宿主立即 post `pause_btn_state` 消息，webview 按钮视觉零延迟变化，不等 step 边界。
+> 3. **连续插话合并渲染**：宿主待发送区显示全部条目 + 序号 + 独立删除按钮；step 边界消费后 webview interrupt-divider 合并为一个气泡展示。
 
 **结论**：这些是"turn 内 step 边界天然提供的交互点"，本模型只需在多 turn 执行阶段**正常使用**它们，不新增机制。
 

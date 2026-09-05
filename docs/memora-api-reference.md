@@ -541,6 +541,7 @@ interface ISessionStore {
 | `sessionManager.createCheckpoint(mainGoal?)` → `SessionCheckpoint \| null` | 创建当前会话检查点（含热记忆、目标、计划、状态机快照），首次调用返回完整检查点，后续调用合并增量 |
 | `sessionManager.restoreFromCheckpoint(checkpoint)` → `Promise<number>` | 从检查点恢复会话（恢复消息历史、状态机状态、截断时注入提示消息） |
 | `sessionManager.getCheckpoint()` → `SessionCheckpoint \| null` | 获取当前检查点（只读，不修改状态） |
+| `sessionManager.discardCheckpoint()` → `boolean` | **Phase 4 新增**：放弃当前暂停检查点（对称 pause 创建，宿主 handleStop paused 态调之；停定时器 + 删存储 + 清内存 + resetToRunning；无检查点返回 false） |
 
 ```typescript
 // 项目列表
@@ -839,7 +840,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 生命周期 | `init(projectPathOverride?)` / `close()` |
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `processEvent(event)` / `resumeExecution()` / `forceReleaseChatLock()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
-| 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `canContinueWithoutInput()` |
+| 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
 | 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `restoreFromCheckpoint(checkpoint)` / `createCheckpoint(mainGoal?, role?, standard?)` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
