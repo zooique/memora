@@ -223,7 +223,11 @@ export interface RolePackMeta {
   readonly description?: string;
   /** 版本号 */
   readonly version?: string;
-  /** 触发关键词（用于自动匹配） */
+  /**
+   * 废弃：原设计用于关键词自动匹配角色包，v0.13 定案角色包只能手动切换后自动匹配链已死。
+   * 当前 parse 时置 undefined（RolePack 构造时硬编码空数组以满足 ConfigResource 接口约束）。
+   * 保留声明仅为兼容旧 manifest 解析 + validator 防御性校验，未来可考虑彻底移除。
+   */
   readonly keywords?: readonly string[];
   /** 可选：作者/来源 */
   readonly author?: string;
