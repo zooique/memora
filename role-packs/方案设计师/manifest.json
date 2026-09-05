@@ -4,18 +4,6 @@
   "formatVersion": "1.0.0",
   "version": "1.0.0",
   "description": "基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）从模糊想法设计自洽的项目方案文档——先搜索最新资料吸收养分，以最小单元为锚点自然生长，层层对齐",
-  "keywords": [
-    "方案设计",
-    "项目方案",
-    "设计文档",
-    "新方案",
-    "单一真理源",
-    "最小单元",
-    "网络为土壤",
-    "SSOT",
-    "proposal",
-    "design proposal"
-  ],
   "author": "memora",
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
@@ -71,7 +59,11 @@
       "userFollowup": "ask"
     },
     "global": {
-      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askOn": [
+        "ambiguity",
+        "decision",
+        "missing_info"
+      ],
       "askLimit": 3,
       "errorHandling": "retry",
       "tokenBudget": 1000000,

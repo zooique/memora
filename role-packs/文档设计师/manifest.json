@@ -4,14 +4,6 @@
   "formatVersion": "1.0.0",
   "description": "技术文档设计专家：从需求到结构化文档（API 文档 / 教程 / 架构说明），覆盖骨架规划、内容组织、规范校对全流程",
   "version": "1.0.0",
-  "keywords": [
-    "文档",
-    "API",
-    "教程",
-    "架构说明",
-    "写作",
-    "规范"
-  ],
   "author": "memora",
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
@@ -59,7 +51,11 @@
       "userFollowup": "ask"
     },
     "global": {
-      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askOn": [
+        "ambiguity",
+        "decision",
+        "missing_info"
+      ],
       "askLimit": 3,
       "errorHandling": "retry",
       "tokenBudget": 1000000,

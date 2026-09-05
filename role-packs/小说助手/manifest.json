@@ -4,14 +4,6 @@
   "formatVersion": "1.0.0",
   "description": "小说创作助手：从故事构思到成文，覆盖人物设定、情节结构、对白与文风打磨",
   "version": "1.0.0",
-  "keywords": [
-    "小说",
-    "故事",
-    "写作",
-    "创作",
-    "情节",
-    "人物"
-  ],
   "author": "memora",
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,
@@ -55,7 +47,11 @@
       "userFollowup": "ask"
     },
     "global": {
-      "askOn": ["ambiguity", "decision", "confirm"],
+      "askOn": [
+        "ambiguity",
+        "decision",
+        "confirm"
+      ],
       "askLimit": 3,
       "errorHandling": "degrade",
       "tokenBudget": 1000000,

@@ -14,7 +14,6 @@ import { parseFrontmatter } from '@/utils/frontmatter.js';
 import {
   validateManifest,
   checkCompanionContentRedline,
-  MAX_MATCH_WORDS,
   MAX_HANDOFF_PROMPT_LEN,
 } from '@/role-pack/validator.js';
 import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
@@ -71,29 +70,6 @@ function parseStrategyNode(strategyNode: unknown): BehaviorStrategy | undefined 
     reflect: stages['reflect'],
     global: stages['global'],
   } as BehaviorStrategy;
-}
-
-/**
- * 解析 keywords（数组/逗号串）并合并 trigger 去重（匹配词单一真理源）。
- * 角色包 trigger 为字符串数组（精确/包含匹配）而非正则——正则仅 Skill 系统存在。
- * 数量上限运行时兜底：validator 报错，此处截断保证运行时安全值（防匹配词列表膨胀拖慢匹配）。
- */
-function parseKeywordsAny(manifest: Record<string, unknown>): string[] | undefined {
-  const parseField = (key: string): string[] | undefined => {
-    const raw = manifest[key];
-    if (Array.isArray(raw)) {
-      return raw.map((k) => String(k)).filter(Boolean);
-    }
-    if (typeof raw === 'string') {
-      return raw
-        .split(',')
-        .map((s) => s.trim())
-        .filter(Boolean);
-    }
-    return undefined;
-  };
-  const merged = [...new Set([...(parseField('keywords') ?? []), ...(parseField('trigger') ?? [])])];
-  return merged.length > MAX_MATCH_WORDS ? merged.slice(0, MAX_MATCH_WORDS) : merged;
 }
 
 /** 从 persona.md frontmatter 解析 traits.* 数值键值对（clamp 0-1），无 traits 返回 undefined */
@@ -686,7 +662,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       displayName: str(manifest['displayName']),
       description: str(manifest['description']),
       version: str(manifest['version']),
-      keywords: parseKeywordsAny(manifest),
+      keywords: undefined,
       author: str(manifest['author']),
       formatVersion: str(manifest['formatVersion']) ?? DEFAULT_FORMAT_VERSION,
       interactionType: manifest['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
@@ -747,9 +723,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
     // 预计算装配结果并缓存（角色包装载后不可变，缓存安全）
     const pack: RolePack = {
-      // ConfigResource 约束字段
+      // ConfigResource 约束字段（keywords 永远空数组——角色包已无自动匹配消费，手动切换唯一入口）
       name: meta.name,
-      keywords: meta.keywords ? [...meta.keywords] : [],
+      keywords: [],
       content,
       filePath: manifestPath,
       // 角色包特有字段
