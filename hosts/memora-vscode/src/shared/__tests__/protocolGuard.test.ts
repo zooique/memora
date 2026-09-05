@@ -101,17 +101,18 @@ function extractAgentEventKeys(source: string): Set<string> {
 }
 
 /**
- * 从宿主文件源码提取 `.on('xxx'` 事件消费名（排除注释）
+ * 从宿主文件源码提取事件消费名（.on / .once，排除注释）
  * 同时读取 chatPanel + settingsPanel 两个宿主核心消费入口
  */
 function extractHostConsumedEvents(filePaths: string[]): Set<string> {
   const consumed = new Set<string>();
   for (const filePath of filePaths) {
     const source = readFileSync(filePath, 'utf-8');
-    // 去注释防止注释内的 `.on('xxx')` 被误计
+    // 去注释防止注释内的 .on('xxx') 被误计
     const noBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
     const noComments = noBlockComments.replace(/\/\/[^\n]*/g, '');
-    const re = /\.on\(['"]([^'"]+)['"]/g;
+    // 同时匹配 .on 和 .once（TypedEventEmitter 两种订阅方法）
+    const re = /\.(?:on|once)\(['"]([^'"]+)['"]/g;
     let m: RegExpExecArray | null;
     while ((m = re.exec(noComments)) !== null) {
       consumed.add(m[1]);
