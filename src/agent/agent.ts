@@ -885,6 +885,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
+   * 读取当前待注入插话队列快照（宿主渲染层只读镜像，不修改内核状态）。
+   * 返回副本，宿主无法暗改内核 queue。宿主从「维护 _pendingQueue 镜像数组」收敛为「每次渲染从内核读」。
+   */
+  getPendingInterjections(): readonly string[] {
+    this.assertInitialized('getPendingInterjections');
+    return this.requireLoop.getPendingInterjections();
+  }
+
+  /**
    * 放弃在途主动提问（ask_user 工具挂起后，宿主「跳过/取消提问」时调用）：
    * 委托 loop.cancelAsk 补占位 tool 结果（防 assistant.tool_calls 无配对 → 400），
    * 随后 resumeExecution() 续跑。与 answerQuestion 二选一消费在途提问。

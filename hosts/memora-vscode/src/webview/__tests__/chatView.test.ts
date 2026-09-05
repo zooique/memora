@@ -758,21 +758,8 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     vi.restoreAllMocks();
   });
 
-  it('handoff(loop) 静默不渲染（SSOT 收紧：loop 由内核消费预算，宿主不再自动续跑）', () => {
-    mountChatView();
-    dispatch({ type: 'handoff', decision: 'loop', reason: '后续步骤' });
-    const activityBar = document.getElementById('activityBar') as HTMLElement;
-    // loop 不再渲染任何"自动续跑"提示（避免误导），活动条保持隐藏
-    expect(activityBar.hidden).toBe(true);
-  });
-
-  it('handoff(end) 渲染「任务已完成」低扰提示条', () => {
-    mountChatView();
-    dispatch({ type: 'handoff', decision: 'end', reason: '任务已完成' });
-    const activityBar = document.getElementById('activityBar') as HTMLElement;
-    expect(activityBar.hidden).toBe(false);
-    expect(activityBar.textContent).toContain('任务已完成');
-  });
+  // handoff chunk 机制已在 commit 180b5fdc 删除（handoff → 消息已并入 done chunk），
+  // chatView.ts 无 type: 'handoff' handler，以下 2 个死测试删除（2026-09-05，Phase 4 测试债清理 T3a）
 
   it('retry 渲染「LLM 重试 n/m」低扰提示条', () => {
     mountChatView();
@@ -1386,6 +1373,9 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     expect(forkBtn.disabled).toBe(true);
     // 本轮闭环结束：host done 携带 roundId → 回填 dataset 并启用按钮
     dispatch({ type: 'done', roundId: 'round-42' });
+    // T3b 排雷：done 消息后宿主紧跟 status:done 释放 sessionControlsLocked，
+    // forkBtn.disabled 判定 = locked || !roundId，锁未释放时恒为 true
+    dispatch({ type: 'status', state: 'done' });
     expect(msg.dataset.roundId).toBe('round-42');
     expect(forkBtn.disabled).toBe(false);
     // 点击 → 携带该 roundId 发 fork_session（从本轮位置分叉新会话）
@@ -1400,6 +1390,8 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     const forkBtn = msg.querySelector('.msg-fork-icon') as HTMLButtonElement;
     expect(forkBtn.disabled).toBe(true);
     dispatch({ type: 'interrupted', roundId: 'round-7' });
+    // T3b 排雷：interrupted 后宿主同样发 status:done 释放锁
+    dispatch({ type: 'status', state: 'done' });
     expect(msg.dataset.roundId).toBe('round-7');
     expect(forkBtn.disabled).toBe(false);
   });

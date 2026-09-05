@@ -177,8 +177,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 待发送区排队内容（仅 thinking 态 interject 时写入）
    * UI 层（chatView）据此渲染待发送区预览 + 清空按钮。
+   * P2 收敛（Phase 5）：宿主不再维护镜像，每次 post pending_queue_update 时从内核 loop.pendingInterjections 读当前值
    * 清空时机：sessionResumed 事件触发（resume 成功、loop 消费完队列） */
-  private _pendingQueue: string[] = [];
+  // NOTE: _pendingQueue 已移除（P2 收敛），SSOT 源头 = agent.getPendingInterjections() → loop.pendingInterjections
   /**
    * 待处理写入确认请求（H0）
    *
@@ -459,23 +460,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // Phase 4：暂停生成：调 agent.requestPause()（step 边界软暂停）暂停当前流
         this.handlePause();
       } else if (msg.type === 'clear_pending_queue') {
-        // Phase 4 收敛（T1 修复）：全清双写——宿主清镜像 + 内核清队列（之前只清镜像，
-        //  内核 loop.pendingInterjections 成孤儿；对齐 remove_pending_item 的双写模式）
+        // Phase 4 收敛（T1 修复 + P2 收敛）：全清内核 queue + 从内核读当前值渲染
+        //  之前宿主手动维护镜像双写（易出错），收敛为内核 clearPendingInterjections 原子操作 + getter 读
         const cleared = this._agent?.clearPendingInterjections() ?? 0;
         if (cleared > 0) {
           this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
         }
-        this._pendingQueue = [];
-        this.post({ type: 'pending_queue_update', items: [] });
+        this.post({ type: 'pending_queue_update', items: this._agent?.getPendingInterjections() ?? [] });
       } else if (msg.type === 'remove_pending_item') {
         // Phase 4：删除单条 interject（待发送区某条的独立 × 按钮）
-        // 同步删宿主镜像数组 + 内核队列（双写：视觉层 + 注入层必须一致）
-        const idx = msg.index;
-        if (idx >= 0 && idx < this._pendingQueue.length) {
-          this._pendingQueue.splice(idx, 1);
-          this._agent?.removePendingInterject(idx);
-          this.post({ type: 'pending_queue_update', items: [...this._pendingQueue] });
-        }
+        // P2 收敛：不再维护宿主镜像，内核 removePendingInterject 内部已做越界检查，
+        // 宿主直接调内核 + 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
+        this._agent?.removePendingInterject(msg.index);
+        this.post({ type: 'pending_queue_update', items: this._agent?.getPendingInterjections() ?? [] });
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
@@ -696,9 +693,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** sessionResumed：对话恢复执行（状态反馈 + 清空待发送区） */
   private readonly onSessionResumed = (_info: { sessionId?: string }): void => {
     this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
-    // Phase 4：resume 成功 → loop 消费完 pendingInterjections → 清空宿主队列 + 通知 webview
-    this._pendingQueue = [];
-    this.post({ type: 'pending_queue_update', items: [] });
+    // Phase 4：resume 成功 → loop 消费完 pendingInterjections → 从内核读当前值通知 webview
+    // P2 收敛：不再维护宿主镜像，SSOT 源头 = loop.pendingInterjections
+    this.post({ type: 'pending_queue_update', items: this._agent?.getPendingInterjections() ?? [] });
   };
 
   /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
@@ -1890,8 +1887,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.post({ type: 'pause_btn_state', pending: false });
       }
       // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
-      this._pendingQueue.push(input);
-      this.post({ type: 'pending_queue_update', items: [...this._pendingQueue] });
+      // P2 收敛：不再维护 _pendingQueue 镜像，从内核 queue 读当前值（SSOT 源头）
+      this.post({ type: 'pending_queue_update', items: this._agent.getPendingInterjections() });
       return;
     }
     // TS-9：暂停态补充输入 → 不发起新 chat() → 走 resumeExecution 路由（保留闭环节点归属，不分裂）

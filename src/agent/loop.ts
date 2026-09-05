@@ -590,6 +590,13 @@ export class AgentLoop {
     return cleared;
   }
 
+  /** 读取当前待注入插话队列快照（宿主渲染层只读镜像）。
+   *  返回副本而非原数组——宿主拿不到内核内部引用，防暗改。
+   *  宿主 Phase 5 收敛：不再自己维护 _pendingQueue 镜像，每次渲染从内核读。 */
+  getPendingInterjections(): readonly string[] {
+    return this.pendingInterjections.slice();
+  }
+
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
     yield { type: 'text', content: this.ui.maxIterationsReached };

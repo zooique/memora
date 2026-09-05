@@ -1276,11 +1276,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .forEach((b) => {
         b.disabled = locked || !b.dataset.ts;
       });
-    // 分叉按钮：锚点 = dataset.roundId（无 roundId 则禁用；段级+容器级均命中 .msg-fork-icon）
+    // 分叉按钮：锚点从父块继承（.msg.assistant 段级 / .round-group 容器级），
+    // 与点击 handler 读父块 dataset.roundId 保持 SSOT 一致；forkBtn 自身不存 roundId
     document
       .querySelectorAll<HTMLButtonElement>('.msg-fork-icon')
       .forEach((b) => {
-        b.disabled = locked || !b.dataset.roundId;
+        const anchor = b.closest<HTMLElement>('.msg.assistant, .round-group');
+        b.disabled = locked || !anchor?.dataset.roundId;
       });
   }
 
