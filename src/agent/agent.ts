@@ -664,7 +664,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           paused = true;
         }
         yield chunk;
-        if (chunk.type === 'text') {
+        // 累积 assistantContent 用于持久化到 history：只累积正常回答（stage≠self_review）。
+        // 自审查文本是内部思考过程——宿主渲染进 round-block § 自审查输出折叠区（不进正文流），
+        // 也不应持久化到会话历史（重启后不应在对话记录里看到自审查内容）。
+        // 注：loop.messages 里自审查 assistant 仍保留（LLM 下一轮迭代可能需参考），过滤只在持久化出口。
+        if (chunk.type === 'text' && chunk.stage !== 'self_review') {
           content += chunk.content;
         } else if (chunk.type === 'aborted') {
           aborted = true;
