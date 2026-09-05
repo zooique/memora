@@ -313,7 +313,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private getActiveTeamForProtocol(): { leader: string; members: string[] } | undefined {
     const team = this._agent?.rolePackManager?.getActiveTeam();
     if (!team || team.members.length === 0) return undefined;
-    return { leader: team.leader, members: team.members };
+    // spread 只读数组为可变引用（protocol.ts team.members 已声明 readonly，post 透传不修改）
+    return { leader: team.leader, members: [...team.members] };
   }
 
   /**

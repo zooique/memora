@@ -145,7 +145,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // Phase 4 E2：工具权限徽章（输入区角色徽章旁，展示工具模式与能力列表）
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
   // 当前角色队伍快照（小组会议启动图标用；由 chat_role_pack.team 填充）
-  let currentActiveTeam: { leader: string; members: string[] } | null = null;
+  let currentActiveTeam: { leader: string; members: readonly string[] } | null = null;
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -1291,7 +1291,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * step 边界时内核一次性注入全部 → UI 渲染层 appendInterruptDivider 合并成一个气泡展示。
    */
   let _pendingQueueBar: HTMLElement | null = null;
-  function updatePendingQueueBar(items: string[]): void {
+  function updatePendingQueueBar(items: readonly string[]): void {
     if (!_pendingQueueBar) {
       // 懒创建：flex column 布局（label 在顶部 + 列表在中间 + clear 在顶部右侧）
       _pendingQueueBar = document.createElement('div');

@@ -661,7 +661,7 @@ export type ExtensionToWebviewMessage =
    * thinking 态 interject 排队时 host 从内核 loop.pendingInterjections 读快照，立即 post 给 webview
    * 渲染待发送区预览。sessionResumed 事件后 queue 清空，webview 同步隐藏待发送区。
    */
-  | { type: 'pending_queue_update'; items: string[] }
+  | { type: 'pending_queue_update'; items: readonly string[] }
   /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *
@@ -677,7 +677,7 @@ export type ExtensionToWebviewMessage =
       /** 当前 activePack 作为组长的队伍（可选；无队伍或非组长时 undefined）
        *  team.members 已由内核走 activeTeamMembers 截断（超限不参与），
        *  保证宿主 UI 看到的参与名单与内核会议实际消费一致（SSOT）。 */
-      team?: { leader: string; members: string[] };
+      team?: { leader: string; members: readonly string[] };
     }
   /**
    * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）
