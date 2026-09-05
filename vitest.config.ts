@@ -10,7 +10,11 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    include: ['src/**/__tests__/**/*.test.ts'],
+    // 内核测试 + protocolGuard 守卫（纯源码解析无宿主运行时依赖）
+    include: [
+      'src/**/__tests__/**/*.test.ts',
+      'hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts',
+    ],
     // ── 并发确定性策略（SSOT：见 docs/测试并发确定性与flake判定SOP.md）──
     // 文件级并发保持开启（fileParallelism=true 即 vitest 默认，此处显式声明策略意图）：
     // 跨文件并发加速本地/CI，代价是已知跨文件共享态 flake（agent.test.ts > memory.snapshot().working）。
