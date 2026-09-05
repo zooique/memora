@@ -2375,13 +2375,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private postPlanUpdate(): void {
     if (!this._agent) return;
     const checkpoint = this._agent.getCheckpoint();
-    if (!checkpoint || !checkpoint.plan || checkpoint.plan.length === 0) return;
+    // checkpoint 不存在时推空消息让 webview 清看板；plan 为空也推（autoClearPlan 后）
+    if (!checkpoint || !checkpoint.plan) {
+      this.post({ type: 'plan_update', steps: [] });
+      return;
+    }
+    // plan 为空时也推（turn 结束 autoClearPlan 或 LLM 新任务写入空 plan）
+    if (checkpoint.plan.length === 0) {
+      this.post({ type: 'plan_update', steps: [] });
+      return;
+    }
     // 步骤 → 关联 step 推进记录（stepLog 的 planStepId 关联，内核已写入，宿主只读消费）
-    const stepsByStep = new Map<string, { planStepId: string; summary: string }[]>();
+    const stepsByStep = new Map<string, { planStepId: string; summary: string; completedAt?: number }[]>();
     for (const r of checkpoint.stepLog ?? []) {
       if (!r.planStepId) continue;
       const list = stepsByStep.get(r.planStepId) ?? [];
-      list.push({ planStepId: r.planStepId, summary: r.summary });
+      list.push({ planStepId: r.planStepId, summary: r.summary, completedAt: r.completedAt });
       stepsByStep.set(r.planStepId, list);
     }
     // 按 order 排序列化（内核 PlanStep 已含 order，防冗余中断序漂移）

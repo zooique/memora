@@ -253,51 +253,61 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 做只读快照推送）。webview 只消费不写，SSOT 不变。
    */
   let globalPlanBoard: HTMLElement | null = null;
-  let inlinePlanBoard: HTMLElement | null = null;
   /** 当前计划快照缓存（供 round-block step 标签、inline 复用，零新增协议） */
   let currentPlanSteps: PlanStepDto[] = [];
   /** plan_update 早于 beginStreaming 时的 defer：activeAssistantEl 还没创建，暂存等 assistant 块就绪后挂载 */
   let pendingInlinePlan: PlanStepDto[] | null = null;
 
-  /** 移除所有任务看板（global + inline + 状态缓存） */
+  /** 移除所有任务看板（global 清 + inline 全部转静态快照 + 状态缓存重置）
+   *  注意：clear_ok/切换会话时调用，和 autoClearPlan 的"inline 留快照"语义不同——
+   *  clear_ok 意味着完全重置对话区，inline 也应一起清 */
   function removeAllPlanBoards(): void {
     globalPlanBoard?.remove();
     globalPlanBoard = null;
-    inlinePlanBoard?.remove();
-    inlinePlanBoard = null;
+    // clear_ok 时 inline 也全清（对话区整体清空）
+    messages.querySelectorAll('.plan-inline').forEach((el) => el.remove());
     currentPlanSteps = [];
     pendingInlinePlan = null;
   }
 
-  /** 在 activeAssistantEl 内挂载 inlinePlanBoard（首次 beginStreaming 或 plan_update 延迟消费时） */
+  /** snapshot 所有 inlinePlanBoard：plan 清空时调用，把运行态进度条转静态 done 快照（历史保留） */
+  function snapshotAllInlinePlanBoards(): void {
+    messages.querySelectorAll('.plan-inline').forEach((el) => {
+      el.classList.add('plan-inline-done');
+    });
+  }
+
+  /** 在 activeAssistantEl 内挂载/刷新 inlinePlanBoard（累积式：每个 assistant 块有自己的 inline） */
   function mountInlinePlanBoard(steps: PlanStepDto[]): void {
     if (!activeAssistantEl || !activeAssistantEl.isConnected) {
       // assistant 块还没创建（plan_update 早于 beginStreaming）：defer
       pendingInlinePlan = steps;
       return;
     }
-    if (!inlinePlanBoard) {
-      inlinePlanBoard = document.createElement('div');
-      inlinePlanBoard.className = 'plan-inline';
-      inlinePlanBoard.setAttribute('role', 'status');
-      inlinePlanBoard.setAttribute('aria-label', '当前任务进度');
+    // 查找当前 assistant 块上是否已有 inline：有则刷新，无则新建（累积式，不替换历史 assistant 块）
+    let inlineEl = activeAssistantEl.querySelector(':scope .plan-inline') as HTMLElement | null;
+    if (!inlineEl) {
+      inlineEl = document.createElement('div');
+      inlineEl.className = 'plan-inline';
+      inlineEl.setAttribute('role', 'status');
+      inlineEl.setAttribute('aria-label', '当前任务进度');
       // 插到 assistant 块内、round-block 之前（和对话流同方向）
       const rb = activeAssistantEl.querySelector(':scope .round-block');
-      activeAssistantEl.insertBefore(inlinePlanBoard, rb);
+      activeAssistantEl.insertBefore(inlineEl, rb);
     }
-    renderInlinePlanBoard(steps);
+    renderInlinePlanBoard(inlineEl, steps);
     pendingInlinePlan = null;
   }
 
   /** inline 版：一行简化头部（进度条 + N/M + 当前 active step），挂在 round-block 上方 */
-  function renderInlinePlanBoard(steps: PlanStepDto[]): void {
-    if (!inlinePlanBoard) return;
+  function renderInlinePlanBoard(el: HTMLElement, steps: PlanStepDto[]): void {
+    if (!el) return;
     const doneCount = steps.filter((s) => s.status === 'done').length;
     const total = steps.length;
     const percent = total > 0 ? (doneCount / total) * 100 : 0;
     const activeStep = steps.find((s) => s.status === 'active');
     // 构建一行 DOM：progress-wrap（进度条）+ text（N/M + step 摘要）
-    inlinePlanBoard.innerHTML = '';
+    el.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'plan-inline-wrap';
     const barWrap = document.createElement('div');
@@ -319,7 +329,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       text.textContent = `${doneCount}/${total}`;
     }
     wrap.appendChild(text);
-    inlinePlanBoard.appendChild(wrap);
+    el.appendChild(wrap);
   }
 
   /** global 版：顶部独立面板（完整 step 列表 + 折叠 stepLog + 进度条 + N/M） */
@@ -378,10 +388,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (logs.length > 0) {
         const body = document.createElement('div');
         body.className = 'plan-step-rounds';
+        const now = Date.now();
         for (const r of logs) {
           const row = document.createElement('div');
           row.className = 'plan-step-round';
-          row.textContent = r.summary;
+          // 相对时间（P-2：completedAt 可选，有则显示"3s 前 / 2m 前 / 1h 前"）
+          if (r.completedAt) {
+            const span = document.createElement('span');
+            span.className = 'plan-step-round-time';
+            span.textContent = formatRelativeTime(r.completedAt, now);
+            row.appendChild(span);
+            const text = document.createElement('span');
+            text.textContent = r.summary;
+            row.appendChild(text);
+          } else {
+            row.textContent = r.summary;
+          }
           body.appendChild(row);
         }
         item.appendChild(body);
@@ -396,8 +418,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 缓存快照（供 round-block step 标签复用）
     currentPlanSteps = steps;
     if (steps.length === 0) {
-      // 空计划 → 全清（不再渲染任何轨道）
-      removeAllPlanBoards();
+      // 空计划 → global 清顶部面板 + inline 全部转静态 done 快照（历史保留）
+      globalPlanBoard?.remove();
+      globalPlanBoard = null;
+      snapshotAllInlinePlanBoards();
       return;
     }
     // global：顶部独立面板（始终渲染，全局概览）
@@ -452,6 +476,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
       d.getDate(),
     ).padStart(2, '0')}`;
+  }
+
+  /** 相对时间格式化（P-2：stepLog 完成时间 → "3s 前 / 2m 前 / 1h 前"） */
+  function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
+    const diff = Math.max(0, now - timestamp);
+    const seconds = Math.floor(diff / 1000);
+    if (seconds < 60) return `${seconds}s 前`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m 前`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h 前`;
+    const days = Math.floor(hours / 24);
+    return `${days}d 前`;
   }
 
   /** thinking 阶段 → 中文标签（对齐内核 ThinkingPhase，Webview 展示面） */

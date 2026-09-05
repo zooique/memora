@@ -1327,6 +1327,24 @@ export const chatStyles = `
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     max-width: 260px;
   }
+  /* P-3：inline 任务完成后转静态快照（plan-inline-done），视觉弱化：进度条变灰 + 左边框改成功色 */
+  .plan-inline.plan-inline-done {
+    border-left-color: var(--success, #2ea043);
+    opacity: 0.85;
+  }
+  .plan-inline.plan-inline-done .plan-inline-progress {
+    background: var(--success, #2ea043);
+  }
+  /* P-2：plan-board stepLog 行内相对时间标签 */
+  .plan-step-round-time {
+    display: inline-block;
+    font-size: 10px;
+    color: var(--text-muted, #6e7681);
+    margin-right: var(--sp-2, 4px);
+    padding: 1px 4px;
+    background: var(--surface-inset, rgba(128,128,128,.12));
+    border-radius: 3px;
+  }
 
   /* ============ Components：round-block 任务过程折叠区（2026-09-02 收紧：SSOT 单一容器） ============ */
   /* 每轮回答的单一「任务过程」折叠区：summary 默认可见（进行中呼吸点 + 计数/耗时，完成收起），
