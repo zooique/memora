@@ -339,6 +339,21 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 获取当前 activePack 作为组长的队伍（供宿主 UI 消费的只读快照）。
+   * SSOT 出口：宿主拿 team 数据的唯一公共方法，不绕过内核直接读 globalState。
+   * 内部成员名单走 activeTeamMembers 截断（会议消费端约束超限部分不参与），
+   * 保证宿主看到的参与名单与内核会议实际消费一致。
+   *
+   * @returns 队伍快照（组长 + 截断后的组员）；activePack 非组长或无队伍时返回 null
+   */
+  getActiveTeam(): RolePackTeam | null {
+    if (!this.activePackName) return null;
+    const team = this.rolePackTeams.find((t) => t.leader === this.activePackName);
+    if (!team) return null;
+    return { leader: team.leader, members: [...this.activeTeamMembers] };
+  }
+
+  /**
    * 组数据校验（S4，装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 / 组长组员互斥 → warning（不阻塞装载）。
    * 组员失效 → 会议时缺员跳过（resolveRoundAssemblyRole 内判定）；组长失效 → 该组失效（仅影响会议）。
    */

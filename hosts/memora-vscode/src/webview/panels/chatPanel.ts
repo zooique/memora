@@ -304,6 +304,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 获取当前 activePack 的 team 快照（供 chat_role_pack 协议消息携带，可选字段）。
+   * SSOT：从内核 rolePackManager.getActiveTeam() 读，不绕过内核直碰 globalState。
+   * 宿主 UI 消费端据此决定是否渲染"小组会议启动"图标。
+   *
+   * @returns team 对象（组长 + 组员数组，组员已截断超限过滤）；无队伍/非组长时 undefined
+   */
+  private getActiveTeamForProtocol(): { leader: string; members: string[] } | undefined {
+    const team = this._agent?.rolePackManager?.getActiveTeam();
+    if (!team || team.members.length === 0) return undefined;
+    return { leader: team.leader, members: team.members };
+  }
+
+  /**
    * Phase 4 E2：推送工具权限徽章（角色切换后能力面随之变化）
    *
    * 从内核 RolePackManager.getActive() 读取当前角色包的 capabilities 与 toolMode，
@@ -366,7 +379,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图已就绪时立即推送（而非等待下次 replaySession），保证角色选择器即时刷新；
     // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeRolePack 推送）。
     if (this._view) {
-      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(rolePack), traits: this.getActiveTraits() });
+      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(rolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
     }
   }
 
@@ -742,7 +755,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 两视图真相源分叉即 SSOT 违反。现由同一事件驱动状态，重解析即推正确角色。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
-    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to), traits: this.getActiveTraits() });
+    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
     // Phase 4 E2：同步推送工具权限徽章（角色切换后能力面随之变化）
     this.postCapabilityBadge();
     // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
@@ -1408,7 +1421,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
-      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits() });
+      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
     } else {
       // 无激活角色包：推送空信息，让 webview 清除角色标签
       this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
@@ -1596,7 +1609,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
     if (this._view) {
       if (this._activeRolePack) {
-        this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits() });
+        this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
       } else {
         // 无激活角色包时推送空信息，让 webview 清除角色标签
         this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });

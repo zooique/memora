@@ -674,6 +674,10 @@ export type ExtensionToWebviewMessage =
       rolePack: string;
       /** 角色性格特征简要，用于徽章/顶栏展示（可选，无 trait 时不展示） */
       traits?: Record<string, number>;
+      /** 当前 activePack 作为组长的队伍（可选；无队伍或非组长时 undefined）
+       *  team.members 已由内核走 activeTeamMembers 截断（超限不参与），
+       *  保证宿主 UI 看到的参与名单与内核会议实际消费一致（SSOT）。 */
+      team?: { leader: string; members: string[] };
     }
   /**
    * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）

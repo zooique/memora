@@ -144,6 +144,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const roleBadge = document.getElementById('currentRoleBadge') as HTMLElement | null;
   // Phase 4 E2：工具权限徽章（输入区角色徽章旁，展示工具模式与能力列表）
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
+  // 当前角色队伍快照（小组会议启动图标用；由 chat_role_pack.team 填充）
+  let currentActiveTeam: { leader: string; members: string[] } | null = null;
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -1603,6 +1605,66 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 无 trait 时仅显示角色名
     roleBadge.textContent = currentRoleName;
+  }
+
+  /**
+   * 小组会议启动图标（角色徽章旁，单图标触发）
+   *
+   * 形态：Trae 风格 team SVG 图标（icons.ts），无文字。
+   * 可见性：currentActiveTeam 存在且 members.length > 0 时显示（roleBadge 旁）。
+   * 交互：hover 显示队员名单（title），点击 → 填充「小组会议：」前缀到输入框并聚焦。
+   *
+   * 数据源：currentActiveTeam 由 chat_role_pack.team 消息填充（SSOT：内核 rolePackManager.getActiveTeam 截断过滤后下发）。
+   * 实现：lazy create（首次显示时才创建元素）+ 复用 icons.ts 统一图标管理。
+   */
+  function updateTeamMeetingIcon(): void {
+    if (!roleBadge) return;
+    const team = currentActiveTeam;
+    // 无队伍 / 非组长 → 隐藏
+    if (!team || team.members.length === 0) {
+      const existing = document.getElementById('teamMeetingIcon') as HTMLElement | null;
+      if (existing) existing.hidden = true;
+      return;
+    }
+    // 确保元素存在（lazy create，避免无队伍时白占 DOM）
+    let icon = document.getElementById('teamMeetingIcon') as HTMLElement | null;
+    if (!icon) {
+      icon = ensureTeamMeetingIcon();
+    }
+    // 更新队员 tooltip（角色切换时队员名单可能变）
+    icon.title = `小组会议 · 组长：${team.leader} · 组员：${team.members.join('、')}（点击启动）`;
+    icon.hidden = false;
+  }
+
+  /**
+   * 懒创建 team-meeting 图标按钮（roleBadge 右侧，Trae 风格图标）。
+   * 复用 icons.ts 统一图标管理，创建后挂到 roleBadge 同行容器。
+   */
+  function ensureTeamMeetingIcon(): HTMLElement {
+    // 用 createIcon 创建按钮（Trae 统一图标管理，team 图标双人轮廓）
+    const btn = createIcon('team', '小组会议（点击启动）', 'team-meeting-icon');
+    // 插入 roleBadge 同行容器（roleBadge.parentNode 是底部徽章行）
+    const container = roleBadge!.parentNode as HTMLElement;
+    if (container) {
+      // roleBadge 之后插入，跟在角色名右侧
+      const refNode = roleBadge!.nextSibling;
+      if (refNode) container.insertBefore(btn, refNode);
+      else container.appendChild(btn);
+    }
+    // 点击：填充「小组会议：」前缀 + 聚焦 + 光标停在冒号后
+    btn.addEventListener('click', () => {
+      const input = document.getElementById('input') as HTMLTextAreaElement | null;
+      if (!input) return;
+      const PREFIX = '小组会议：';
+      input.value = PREFIX + input.value;
+      input.focus();
+      input.setSelectionRange(PREFIX.length, PREFIX.length);
+    });
+    // 键盘可达（Enter / Space 触发）
+    btn.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn!.click(); }
+    });
+    return btn;
   }
 
   /**
@@ -3129,8 +3191,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // （角色切换已独立到「角色」视图，2026-08-17）
       currentRoleName = msg.rolePack;
       currentRoleTraits = msg.traits;
+      // 队伍快照：小组会议启动图标数据源（SSOT，内核 rolePackManager.getActiveTeam 截断过滤后下发）
+      currentActiveTeam = msg.team ?? null;
       // 输入区左侧徽章：展示当前角色（只读状态，让用户感知当前定位）
       updateRoleBadge();
+      // 小组会议启动图标：activeTeam 存在 → 显示，否则隐藏
+      updateTeamMeetingIcon();
       // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
       updateEmptyStateRole();
     } else if (msg.type === 'chat_role_packs') {

@@ -936,6 +936,24 @@ export const chatStyles = `
     flex-shrink: 0;
   }
   .role-badge[hidden] { display: none; }
+  /** 小组会议启动图标（角色徽章右侧，Trae 风格 team SVG）
+   * 复用 msg-icon-btn 基础样式（size/cursor/focus），差异化：
+   *   - 更高优先级视觉（accent 色 + hover 背景）
+   *   - roleBadge 相邻时的间距
+   *   - hidden 状态（无队伍时隐藏，不占 DOM） */
+  .team-meeting-icon {
+    margin-left: var(--sp-1, 4px);
+    width: 18px; height: 18px;
+    padding: 2px;
+    color: var(--accent, #0e639c);
+    border-radius: var(--radius-sm, 4px);
+    background: transparent;
+    transition: background var(--trae-duration-fast, 120ms) ease;
+  }
+  .team-meeting-icon:hover {
+    background: var(--accent-hover, rgba(14, 99, 156, 0.15));
+  }
+  .team-meeting-icon[hidden] { display: none; }
   /* Phase 4 E2：工具权限徽章（与角色徽章并列，展示工具模式与能力列表） */
   .capability-badge {
     display: inline-flex;

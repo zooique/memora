@@ -42,7 +42,8 @@ export type IconName =
   | 'pause'         // 暂停（双竖线）
   | 'send'          // 发送（上箭头）
   | 'stop'          // 停止（方块）
-  | 'play';         // 继续/播放（三角）
+  | 'play'          // 继续/播放（三角）
+  | 'team';         // 小组会议（双人轮廓，柔和线条）
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -90,6 +91,8 @@ const ICON_PATHS: Record<IconName, string> = {
   history: '<circle cx="8" cy="8" r="6"/><path d="M8 5v3l2 1.5"/>',
   // 回到底部：向下箭头到横线
   'scroll-bottom': '<path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/>',
+  // 小组会议：双人轮廓（小在前大在后，柔和线条）
+  team: '<circle cx="5.5" cy="6" r="1.5"/><circle cx="10.5" cy="6.5" r="2"/><path d="M3 13c0-1.5 1.1-2.5 2.5-2.5S8 11.5 8 13"/><path d="M8.5 13c0-1.7 1.5-3 3-3s3 1.3 3 3"/>',
 };
 
 /** SVG 通用属性（Trae 柔和风格） */
