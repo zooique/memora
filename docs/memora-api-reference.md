@@ -840,7 +840,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 生命周期 | `init(projectPathOverride?)` / `close()` |
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `processEvent(event)` / `resumeExecution()` / `forceReleaseChatLock()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
-| 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
+| 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
 | 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `restoreFromCheckpoint(checkpoint)` / `createCheckpoint(mainGoal?, role?, standard?)` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |

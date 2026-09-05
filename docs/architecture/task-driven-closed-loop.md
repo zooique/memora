@@ -114,10 +114,13 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 | **放弃暂停（停止）** | `sessionManager.discardCheckpoint()` 停定时器 + 删存储 + 清内存 + resetToRunning（宿主 handleStop paused 态调之；与 pause 创建检查点对称） |
 | **继续运行** | `continueAfterPause()` 从 step 边界续跑 |
 
-> **2026-09-05 Phase 4 收敛注脚**：
-> 1. **进程重启 = 停止**（用户决策）：暂停检查点/插话队列/运行时状态一律丢弃，不持久化恢复。`sessionStore.load()` 启动时自动清理异常退出残留的 checkpoint 字段。
-> 2. **暂停申请 UI 立即切换**：`requestPause()` / `cancelPauseRequest()` 宿主立即 post `pause_btn_state` 消息，webview 按钮视觉零延迟变化，不等 step 边界。
-> 3. **连续插话合并渲染**：宿主待发送区显示全部条目 + 序号 + 独立删除按钮；step 边界消费后 webview interrupt-divider 合并为一个气泡展示。
+> **2026-09-05 Phase 4.1 收敛注脚**（Phase 4 原始落地后二次炼化）：
+> 1. **clear_pending_queue 已双写**（commit 010d5f65）：宿主「全部清空」按钮之前只清镜像不清内核，现已补全为 `loop.clearPendingInterjections()` 原子方法 + 宿主同步。
+> 2. **discardCheckpoint 协同 loop**（commit 010d5f65）：暂停检查点放弃时，`loop.pendingInterjections` 孤儿数据一并清理（暂停上下文 = checkpoint + queue 全清）。
+> 3. **宿主 `_pendingQueue` 镜像层移除**（commit 65b54250）：宿主不再维护第三层镜像（`loop.pendingInterjections` 是唯一真理源，宿主通过 `getPendingInterjections()` getter 读当前值渲染），彻底消除双写风险。
+> 4. **forkBtn disabled 锚点 bug 修复**（commit 65b54250）：`updateSessionControlsLock` 之前读 `forkBtn.dataset.roundId`（forkBtn 自身从未设 roundId），改为 closest 父块继承，与点击 handler SSOT 一致。
+
+**2026-09-05 已退役测试**：handoff(end/loop) 两个死测试删除（handoff chunk 机制已在 commit 180b5fdc 删除，chatView.ts 无 type: 'handoff' handler）。
 
 **结论**：这些是"turn 内 step 边界天然提供的交互点"，本模型只需在多 turn 执行阶段**正常使用**它们，不新增机制。
 
