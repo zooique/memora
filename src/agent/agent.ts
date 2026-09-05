@@ -1178,6 +1178,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       projectPath: this.#config.projectPath,
       configDir: this.#config.configDir,
       activeRolePack: this.#config.activeRolePack,
+      // 组数据（宿主装配级）：组长角色包 + 组员名单（会议名单容器）
+      rolePackTeams: this.#config.rolePackTeams,
       maxContextTokens: this.#config.maxContextTokens,
       sessionStore: this.#config.sessionStore,
       roundStore: this.#config.roundStore,
