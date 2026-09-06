@@ -820,8 +820,10 @@ export class AgentLoop {
   }
 
   /** 从已取出的 reqs 列表中消费注入型条目（interject → appendUserMessage）。
-   *  与 _consumeQueueForInjection 同源——_handleInterrupt 用 splice(0) 原子取出全部后，
-   *  分离 interject 到此处处理，pause 留在原函数后续处理。共享"遍历 reqs + appendUserMessage"逻辑。
+   *  职责不同：_handleInterrupt 用 splice(0) 原子取出全部后，分离 interject 到此方法处理，
+   *  pause 留在原函数后续处理。遍历 + append 逻辑与 _consumeQueueForInjection 有 1 行重叠，
+   *  但不刻意合并——两方法输入源不同（splice 取出的局部列表 vs 全局 queue），
+   *  强行合并会增加调用栈复杂度。
    *  @param reqs splice(0) 取出的全部气口申请（含 pause + interject） */
   private _consumeInterjectsFromReqs(reqs: InterruptRequest[]): void {
     for (const req of reqs) {
@@ -905,6 +907,13 @@ export class AgentLoop {
       // 追加文本标记会破坏工具调用结构
       if (llmResult.fullContent.trim()) {
         this.appendAssistantText(llmResult.fullContent + this.ui.interrupted);
+      }
+      // P1-01：timeout catch 里若用户已申请暂停（interruptQueue 有 pause 条目），
+      // 语义上应尊重用户"暂停待续跑"的意图，而非硬中止。改路由为 paused →
+      // 上游 agent.ts 会把 checkpoint 设为 paused，用户可 resume。
+      if (isTimeoutAbortSignal(effectiveSignal) && this.pauseRequested) {
+        yield { type: 'paused' };
+        return 'paused';
       }
       yield {
         type: 'aborted',

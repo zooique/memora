@@ -1168,7 +1168,9 @@ export class SessionManager {
     const plan = this.checkpoint.plan;
     if (plan.length === 0) return;
 
-    // 已有 active step → 什么都不做
+    // 已有 active step → 什么都不做。
+    // 注：如果多 active 同时存在 → 脏数据（历史 checkpoint 迁移/外部旁路写可能产生）；
+    // 此处不修、只保单调一，上层单一写点（writePlan + updatePlanStepStatus）契约保证不会产生多 active。
     const hasActive = plan.some((s) => s.status === 'active');
     if (hasActive) return;
 
