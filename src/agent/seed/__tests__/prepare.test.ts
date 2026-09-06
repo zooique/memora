@@ -96,45 +96,15 @@ describe('SeedPrepare 回答前', () => {
     expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith(null);
   });
 
-  it('会议机制（T2 守卫）：无在途计划 + 「小组会议」输入 → overwrite 预置任务表', async () => {
+  it('会议机制（ADR-028 2026-09-06）：prepare 不再自动预置任务表（「小组会议」不调用 writePlan）', async () => {
     const { mocks, deps } = createHarness();
-    // 无检查点（无在途计划）
+    // 无在途计划（任一输入下，prepare 均不得再自动预置——写点已归 LLM 通道）
     mocks.sessionManager.getCheckpoint.mockReturnValue(null);
-    const steps = [
-      { description: '组长A 发言：讨论X', rolePack: '组长A' },
-      { description: '组员1 发言：讨论X', rolePack: '组员1' },
-      { description: '汇总各方观点：讨论X' },
-    ];
-    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
 
     await collectGen(new SeedPrepare(deps).run('小组会议：讨论X', new AbortController().signal));
 
-    // overwrite 预置（writePlan 语义修复后为真清空——新会议替换一切旧计划）
-    expect(mocks.sessionManager.writePlan).toHaveBeenCalledWith('overwrite', steps);
-  });
-
-  it('会议机制（T2 守卫）：在途计划存在时「小组会议」输入不自动重开（续会交由 LLM 按任务表推进）', async () => {
-    const { mocks, deps } = createHarness();
-    // 在途会议：plan 已有 pending 步骤（第一轮预置后、未完成）
-    mocks.sessionManager.getCheckpoint.mockReturnValue({
-      plan: [
-        { id: 's1', description: '组员1 发言：讨论X', status: 'done', order: 0, rolePack: '组员1' },
-        { id: 's2', description: '组员2 发言：讨论X', status: 'active', order: 1, rolePack: '组员2' },
-        { id: 's3', description: '汇总各方观点：讨论X', status: 'pending', order: 2 },
-      ],
-    });
-    // 即便 tryBuildMeetingPlan 判定可触发（输入含「小组会议」），守卫也必须拦截
-    const steps = [{ description: '组员1 发言', rolePack: '组员1' }];
-    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
-    // active 步骤（组员2）在名单内 → 范围校验通过
-    mocks.rolePackManager.resolveRoundAssemblyRole.mockReturnValue('组员2');
-
-    await collectGen(new SeedPrepare(deps).run('继续小组会议讨论', new AbortController().signal));
-
-    // 不 overwrite（不重开/不叠加）——已有进度不被清空
+    // 确定性预置已退役：不自动 writePlan，建表交由 LLM 经 task_table_write 自主完成
     expect(mocks.sessionManager.writePlan).not.toHaveBeenCalled();
-    // 视角仍按当前 active 步骤（组员2）装配
-    expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('组员2');
   });
 
   it('回答前中断：signal.aborted → 返回 aborted，跳过技能注入与用户消息入史', async () => {

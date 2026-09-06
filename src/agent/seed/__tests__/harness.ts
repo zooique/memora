@@ -64,8 +64,6 @@ export interface SeedMocks {
     resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
     setRoundAssemblyRole: ReturnType<typeof vi.fn>;
     buildTeamContextBlock: ReturnType<typeof vi.fn>;
-    // 会议机制（S5 确定性触发）：输入含「小组会议」且组长 → 预置步骤（默认为空，测试可注入）
-    tryBuildMeetingPlan: ReturnType<typeof vi.fn>;
   };
   contextPreparer: {
     recallAndInject: ReturnType<typeof vi.fn>;
@@ -90,7 +88,6 @@ export function makeStrategy(
   p: {
     summary?: 'on' | 'off';
     summaryFocus?: string;
-    taskLoopLimit?: number;
   } = {},
 ): BehaviorStrategy {
   return {
@@ -106,7 +103,6 @@ export function makeStrategy(
     },
     global: {
       ...DEFAULT_BEHAVIOR_STRATEGY.global,
-      ...(p.taskLoopLimit !== undefined ? { taskLoopLimit: p.taskLoopLimit } : {}),
     },
   } as BehaviorStrategy;
 }
@@ -184,7 +180,6 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       resolveRoundAssemblyRole: vi.fn(() => null),
       setRoundAssemblyRole: vi.fn(),
       buildTeamContextBlock: vi.fn(() => ''),
-      tryBuildMeetingPlan: vi.fn(() => null),
     },
     contextPreparer: {
       recallAndInject: vi.fn(async () => [] as Memory[]),

@@ -135,8 +135,6 @@ export interface GlobalStrategy {
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
   /** 主动提问次数上限：按一次用户输入（turn 粒度）计，防单次输入被打断过多次（默认 3） */
   readonly askLimit?: number;
-  /** 外部任务驱动循环步数上限，0=关闭（默认 10；外部任务循环已消费）——复杂任务按任务表每步一个闭环的最大步数 */
-  readonly taskLoopLimit?: number;
 }
 
 /**
@@ -145,7 +143,7 @@ export interface GlobalStrategy {
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/recallConfidence/summaryRecall；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly/toolApproval；
- * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget/taskLoopLimit。
+ * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {

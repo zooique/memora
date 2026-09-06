@@ -61,6 +61,16 @@
 
 **为何不违反决策 5「内核零会议代码」**：未引入会议执行引擎（无独立循环 / 键切换 / 重入）；确定性触发仅用既有 `PlanStep.rolePack` 表层覆盖能力 + 既有步闭环执行，是决策 5 允许能力的延伸，内核零会议执行引擎底线不变。
 
+## 收敛补记（2026-09-06）：确定性预置退役，归 LLM 通道
+
+决策再次反转：`tryBuildMeetingPlan` 确定性任务表自动预置退役，会议建表回归 LLM 经 `task_table_write` 自主组织（回到上文决策 5 原设计，且 LLM 通道 = 任务表 SSOT 唯一写点）。
+
+- **触发变为主动指令**：删除 `prepare.run` 的「小组会议」守卫 + `writePlan('overwrite')` 预置，及 `RolePackManager.tryBuildMeetingPlan()`；`buildTeamContextBlock` 文案改为明确指挥 LLM 用 `task_table_write` 自主建表（带 rolePack=组员示例），不再承诺「系统自动预置」。
+- **删除任务表截断链**：`taskLoopLimit` 键、`resolveTaskLoopLimit()`、`MAX_TASK_LOOP_LIMIT` / `DEFAULT_TASK_LOOP_LIMIT`、`GlobalStrategy.taskLoopLimit` 全删（键已无常量消费方）。
+- **保留**：任务表泛型能力（`task_table_write/update`）、`PlanStep.rolePack` + 表层装配分支 + 组清单注入 + 范围校验、会议执行骨架（技能/装配跟随角色切换）。
+- **理由**：任务表本通用能力，会议只借用；确定性预置是会议场景特化的越权补丁（前次补记已证软指令时灵时不灵），本次彻底删确定性、把写点收敛到唯一 LLM 通道，符合「最小单元不自造第二引擎」。
+- **已知回归（已接受）**：LLM 可能需多发一次会话来主动建表（依赖提示词可靠性回到软驱动水平）；任务表为空时会议退化为普通问答闭环。
+
 ## 何时回顾
 
 - 出现「需要某角色完整能力（键+工具）参与会议」的诉求时——当前方案要求手动切换该角色（完整切换），而非会议内切键；若该诉求成高频，重新评估会议内键切换的代价。

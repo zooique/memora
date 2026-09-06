@@ -16,7 +16,6 @@ import {
   resolveL2Strategy,
   resolveMemoryRecallMode,
   resolveActiveStrategy,
-  resolveTaskLoopLimit,
 } from '@/role-pack/strategyResolver.js';
 import {
   type SeedDeps,
@@ -66,30 +65,8 @@ export class SeedPrepare {
       loop.injectSystemMessage(teamContext);
     }
 
-    // 会议机制（S5）确定性触发：用户消息含「小组会议」且 activePack 是组长 →
-    // 经 writePlan 预置任务表（组员各一步 + 汇总一步），让 LLM 在单 turn step 循环里自然消费。
-    // 2026-09-06 T2 在途守卫（与 writePlan('overwrite') 真清空修复同批，见 tasks/四子系统闭环缺口-任务清单-20260906.md）：
-    //   已有未完成计划（pending/active 存在）→ 跳过自动预置 = 续会语义：第二轮「继续小组会议」等输入
-    //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
-    //   重开已推进会议需显式手段（宿主清空任务表 / LLM task_table_write），非自然语言自动触发。
-    const hasInflightPlan = (checkpoint?.plan ?? []).some(
-      (s) => s.status === 'pending' || s.status === 'active',
-    );
-    const meetingSteps = hasInflightPlan
-      ? null
-      : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);
-    if (meetingSteps && sessionManager) {
-      // 会议步骤截断保护（taskLoopLimit 键名是历史遗留，收敛后唯一消费点就是这里——会议机制）：
-      // 防止 tryBuildMeetingPlan 给 50 人大会编出 50 步任务表塞爆预算。默认 10，0=关闭截断。
-      const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
-      const taskLoopLimit = resolveTaskLoopLimit(strategy);
-      const capped =
-        taskLoopLimit > 0 && meetingSteps.length > taskLoopLimit
-          ? meetingSteps.slice(0, taskLoopLimit)
-          : meetingSteps;
-      sessionManager.writePlan('overwrite', capped);
-    }
-
+    // 会议机制（ADR-028 收敛补记为确定性预置退役：任务表写点归 LLM 通道）——此处不再自动
+    // writePlan 预置会议任务表，建表由 buildTeamContextBlock 指令引导 LLM 经 task_table_write 自主完成。
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
     // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
     const memoryRecallMode = resolveMemoryRecallMode(strategy);

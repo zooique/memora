@@ -23,7 +23,6 @@ import {
   resolveAskLimit,
   resolveTokenBudget,
   resolveStepBudget,
-  resolveTaskLoopLimit,
   resolveMultiStepReasoning,
   resolveRecallConfidence,
   resolveSummaryRecall,
@@ -43,7 +42,6 @@ import {
   MAX_SELF_REVIEW_ROUNDS,
   MAX_TOKEN_BUDGET,
   MAX_STEP_BUDGET,
-  MAX_TASK_LOOP_LIMIT,
   MAX_SUMMARY_FOCUS_LENGTH,
 } from '@/role-pack/strategyKeys.js';
 import type {
@@ -463,33 +461,6 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('缺失回退默认 50', () => {
       expect(resolveStepBudget(undefined)).toBe(50);
-    });
-  });
-
-  // ── resolveTaskLoopLimit（阶段 3 外部任务循环步数上限）──
-  describe('resolveTaskLoopLimit', () => {
-    it('合法正整数采用', () => {
-      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 5 } })).toBe(5);
-    });
-
-    it('0 表示关闭外部任务循环', () => {
-      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 0 } })).toBe(0);
-    });
-
-    it('负数回退默认 10', () => {
-      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: -1 } })).toBe(10);
-    });
-
-    it('小数回退默认 10', () => {
-      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: 3.14 } })).toBe(10);
-    });
-
-    it('越上界回退默认 10（防无条件填写）', () => {
-      expect(resolveTaskLoopLimit({ global: { taskLoopLimit: MAX_TASK_LOOP_LIMIT + 1 } })).toBe(10);
-    });
-
-    it('缺失回退默认 10', () => {
-      expect(resolveTaskLoopLimit(undefined)).toBe(10);
     });
   });
 

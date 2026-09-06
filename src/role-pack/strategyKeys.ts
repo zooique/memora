@@ -61,8 +61,6 @@ export const MIN_STEP_BUDGET = 10;
  * loop 运行时由 opts.maxIterations 传入覆盖——角色包声明多少给多少，内核只兜底默认。
  */
 export const MAX_STEP_BUDGET = 500;
-/** 外部任务驱动循环步数上限：任务表每步一个闭环，100 步防死循环烧 token */
-export const MAX_TASK_LOOP_LIMIT = 100;
 /** 提炼视角（summaryFocus）字符串长度上限（字符）：防止巨型字符串注入 prompt */
 export const MAX_SUMMARY_FOCUS_LENGTH = 500;
 
@@ -175,7 +173,5 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
         (value === 0 || (value >= MIN_STEP_BUDGET && value <= MAX_STEP_BUDGET)),
       range: { min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET },
     },
-    // 会议步骤截断上限（0~MAX_TASK_LOOP_LIMIT，0=关闭截断）；收敛后唯一消费方：prepare.ts 会议机制 tryBuildMeetingPlan
-    taskLoopLimit: intRange(0, MAX_TASK_LOOP_LIMIT),
   },
 };

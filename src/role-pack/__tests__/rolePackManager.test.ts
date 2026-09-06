@@ -718,65 +718,27 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const block = manager.buildTeamContextBlock();
       expect(block).toContain('组长A');
       expect(block).toContain('组员1');
+      expect(block).toContain('task_table_write');
       expect(block).toContain('task_table_update');
       // 切到非组长 → 空串（不注入）
       manager.activate('组员1');
       expect(manager.buildTeamContextBlock()).toBe('');
     });
 
-    it('buildTeamContextBlock：描述系统编排的会议（自动预置、LLM 仅用 task_table_update 标记）', async () => {
+    it('buildTeamContextBlock：指挥 LLM 用 task_table_write 自主建表（带 rolePack 示例）', async () => {
       await writeTeamPacks();
       const manager = new RolePackManager(dir);
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
       await manager.load('组长A');
       const block = manager.buildTeamContextBlock();
-      // 系统确定性预置任务表，不指挥 LLM 自建表（软触发已退役，见 ADR-028 收敛补记）
+      // 确定性预置已退役（ADR-028 2026-09-06 收敛补记）：改指挥 LLM 自主建表
       expect(block).toContain('小组会议');
-      expect(block).toContain('自动预置');
+      expect(block).toContain('task_table_write');
+      expect(block).toContain('rolePack=对应组员');
       expect(block).toContain('task_table_update');
-      expect(block).not.toContain('须立即');
-      expect(block).not.toContain('task_table_write');
-    });
-
-    it('tryBuildMeetingPlan：组长 + 「小组会议」→ 组员各一步(带 rolePack) + 汇总一步(无 rolePack)', async () => {
-      await writeTeamPacks();
-      const manager = new RolePackManager(dir);
-      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
-      await manager.load('组长A');
-      const steps = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
-      expect(steps).not.toBeNull();
-      // 组员各一步，rolePack = 成员（触发表层装配硬切换）
-      expect(steps![0]).toEqual({ description: '组员1 发言：讨论叙事平台', rolePack: '组员1' });
-      expect(steps![1]).toEqual({ description: '组员2 发言：讨论叙事平台', rolePack: '组员2' });
-      // 末步汇总，无 rolePack（组长视角）
-      expect(steps![2]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
-      expect(steps).toHaveLength(3);
-    });
-
-    it('tryBuildMeetingPlan：无「小组会议」keyword → null（回落普通闭环）', async () => {
-      await writeTeamPacks();
-      const manager = new RolePackManager(dir);
-      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
-      await manager.load('组长A');
-      expect(manager.tryBuildMeetingPlan('请评审这份文档')).toBeNull();
-    });
-
-    it('tryBuildMeetingPlan：activePack 非组长 → null', async () => {
-      await writeTeamPacks();
-      const manager = new RolePackManager(dir);
-      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
-      await manager.load('组员1'); // 激活的是组员，非组长
-      expect(manager.tryBuildMeetingPlan('小组会议：讨论xxx')).toBeNull();
-    });
-
-    it('tryBuildMeetingPlan：主题可缺省（仅「小组会议」）→ 步骤不带主题后缀', async () => {
-      await writeTeamPacks();
-      const manager = new RolePackManager(dir);
-      manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
-      await manager.load('组长A');
-      const steps = manager.tryBuildMeetingPlan('小组会议');
-      expect(steps![0]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
-      expect(steps![1]).toEqual({ description: '汇总各方观点' });
+      // 不再把「系统自动预置」作为既定事实承诺给 LLM（确定性预置已退役）
+      expect(block).not.toContain('系统自动预置');
+      expect(block).not.toContain('无需你自建任务表');
     });
 
     describe('组员数量上限：超限部分不参与会议（截断收口，② 组队规格）', () => {
@@ -813,19 +775,6 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         const block = manager.buildTeamContextBlock();
         expect(block).toContain('组员4');
         expect(block).not.toContain('组员5');
-      });
-
-      it('tryBuildMeetingPlan：只预置前 4 名发言步骤 + 1 步汇总（共 5 步）', async () => {
-        await writeOverLimitPacks();
-        const manager = new RolePackManager(dir);
-        manager.setRolePackTeams([
-          { leader: '组长A', members: ['组员1', '组员2', '组员3', '组员4', '组员5'] },
-        ]);
-        await manager.load('组长A');
-        const steps = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
-        expect(steps).toHaveLength(5); // 4 发言 + 1 汇总
-        expect(steps!.map((s) => s.rolePack)).not.toContain('组员5');
-        expect(steps![4]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
       });
     });
   });

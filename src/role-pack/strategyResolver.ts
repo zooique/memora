@@ -12,7 +12,6 @@ import {
   MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
-  MAX_TASK_LOOP_LIMIT,
   MAX_TOKEN_BUDGET,
   MAX_TOOL_STEP_LIMIT,
 } from './strategyKeys.js';
@@ -52,16 +51,6 @@ import type { RolePackManager } from './rolePackManager.js';
  * 保证软预算检查能真的在硬墙之前触发——200K 方向错误（永远触不到）。
  */
 const FALLBACK_TOKEN_BUDGET = 80_000;
-
-/**
- * 会议步骤截断保护内核默认值（SSOT 单一来源，收敛后唯一消费点：prepare.ts 会议机制）。
- * 角色包声明层 `DEFAULT_BEHAVIOR_STRATEGY.global.taskLoopLimit` +
- * `resolveTaskLoopLimit` 的非法/缺失回退均引用此常量。
- * 注：键名 taskLoopLimit 是历史遗留（原多 turn 任务编排循环上限），收敛后语义收窄为「会议步骤截断上限」——
- * 仅当用户触发会议且 `tryBuildMeetingPlan` 生成步骤清单时生效，与 step 循环迭代上限（stepBudget）零交互。
- * 0 = 关闭截断（不推荐，LLM 可能编出超长会议清单）。
- */
-export const DEFAULT_TASK_LOOP_LIMIT = 10;
 
 /**
  * 记忆召回百分比 cap 内核默认值（SSOT 单一来源）。
@@ -108,7 +97,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 3,
-    taskLoopLimit: DEFAULT_TASK_LOOP_LIMIT,
   },
 } as const;
 
@@ -269,20 +257,6 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
     candidate >= 0 &&
     candidate <= MAX_STEP_BUDGET;
   return valid ? candidate : DEFAULT_MAX_ITERATIONS;
-}
-
-/** 解析会议步骤截断上限（收敛后唯一消费方：prepare.ts 会议机制 tryBuildMeetingPlan 步骤截断）：
- * 整数且 ∈ [0, MAX_TASK_LOOP_LIMIT] 才采用，非法/越界回退内核默认（DEFAULT_TASK_LOOP_LIMIT）。
- * 注：键名 taskLoopLimit 是历史遗留（原多 turn 任务编排循环上限已砍）；
- * 与 stepBudget（step 循环迭代上限）控制完全不同的维度，零交互。0 = 关闭截断。 */
-export function resolveTaskLoopLimit(strategy: BehaviorStrategy | undefined): number {
-  const candidate = strategy?.global?.taskLoopLimit;
-  const valid =
-    typeof candidate === 'number' &&
-    Number.isInteger(candidate) &&
-    candidate >= 0 &&
-    candidate <= MAX_TASK_LOOP_LIMIT;
-  return valid ? candidate : DEFAULT_TASK_LOOP_LIMIT;
 }
 
 /** 解析多步推理模式（内核已消费）：非法值归位 'auto'——auto=Provider 决定 / manual=强制快速回答 */
