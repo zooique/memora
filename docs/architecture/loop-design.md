@@ -16,7 +16,7 @@
 |----|------|
 | 文件 | `src/agent/loop.ts`（2212 行） |
 | 状态 | 🟢 已打磨（76 tests） |
-| 职责 | 档1 turn（问答闭环）的 Act 引擎（含 loop = 对 step 的编排）；档2 多 turn 任务编排在 seed/orchestrator |
+| 职责 | 档1 turn（问答闭环）的 Act 引擎（含 loop = 对 step 的编排）；~~档2 多 turn 任务编排在 seed/orchestrator~~ 已废弃（2026-09-04） |
 | 上游 | `agent.ts` 经 `seed/orchestrator.ts`（`runChat`/`runEvent`/`runResume`）委托调用 `processUserInput` / `continueAfterPause` / `processEvent` |
 | 下游 | `contextManager.ts`（截断/摘要）、`compaction.ts`（微压缩）、`duplicateInterceptor.ts`（重复拦截）、`role-pack` 策略（L2） |
 
@@ -31,12 +31,12 @@
 | turn = Prepare/Act/Reflect 三阶段 | **Prepare**：`_injectRecall`（召回注入）+ 用户消息 push + 状态重置<br>**Act**：`handleIteration`（step：一次 LLM 生成 + 可选工具执行，多 step 由 `runIterationLoop` 驱动即 loop）<br>**Reflect（Handoff 决策点）**：`handleIterationResult` 在 `runIterationLoop` 末端决定 Handoff（continue/done/paused/aborted），据此触发后续 Reflect 阶段；摘要/归档在 `agent.ts` 后处理 | ✅ 高 |
 | loop = 对 step 的编排（Act 内部） | `runIterationLoop` 反复拉起 step：LLM 推理 → 工具执行 → 回填 → 再推理；深度由 `toolStepLimit` 控制 | ✅ 高 |
 | loop（step 深度） × 多 turn 任务编排（turn 长度）配比 | loop 深度：`toolStepLimit`（单 turn 工具步数）；任务编排长度：`stepBudget` / `maxIterations` / `taskLoopLimit` | ✅ 高 |
-| Handoff = turn 出口衔接决策 | `handleIterationResult` 返回 `continue / done / paused / aborted`，上层据此决定 `wait`/`loop`（自动续跑）/`end` | ✅ 高 |
+| ~~Handoff = turn 出口衔接决策~~ | ~~内部控制信号，非对外衔接~~ | **已废弃（2026-09-05）** |
 | 触发源决定召回 | `_shouldSkipRecallInjection`（Token 紧时跳过召回）；`_injectRecall` 仅外部输入触发（loop 内部 step 不触发） | ✅ 高 |
 | 策略层 = 参数化配置 | `setStrategy(L2RuntimeStrategy)`：工具权限/步数/预算/自审查/插话 全量参数化 | ✅ 高 |
 | 终止条件三类（目标/上限/中断） | 目标达成：`done` 分支；上限：`maxIterations`/`stepBudget`/`tokenBudget`/`toolStepLimit`；中断：`abort`/`pause`/`interject` | ✅ 高 |
 
-**结论**：现状已高度对齐设计哲学——**loop（step 编排）是 turn Act 内部的自然属性，没有独立于 turn 之外的第二套引擎**；多 turn 任务编排由 orchestrator 在 turn 出口处串联。
+**结论**：现状已高度对齐设计哲学——**loop（step 编排）是 turn Act 内部的自然属性，没有独立于 turn 之外的第二套引擎（原档2 多 turn 编排已废弃）**；~~多 turn 任务编排由 orchestrator 在 turn 出口处串联~~（已废弃）。
 
 **层级定位（防误读为四层）**：turn / step / loop / 多 turn 任务编排**不是四个并列的层**——`step`（原子）⊂ `loop`（turn 内 Act 的 step 编排）⊂ `turn`（最小完整单元）；`turn` ⊂ `多 turn 任务编排`（外部串联，`externalTaskLoop`）。loop 是 turn 的**内部结构**（微观），多 turn 任务编排是 turn 的**外部编排**（宏观），二者方向不同，各不构成对方的一层；本文件的 loop.ts 只属「单元层内部」。
 
@@ -70,10 +70,10 @@
 哲学：回答后 = **同步 Handoff 决策** + **异步提炼沉淀**。
 
 现状验证：
-- loop 只做同步的 Handoff 决策（`handleIterationResult` 的 done/continue 判断）。
+- loop 只做同步的内部控制（`handleIterationResult` 的 done/continue/paused/aborted 判断），非 Handoff 决策（已废弃）。
 - 摘要生成、记忆归档、历史持久化在 `agent.ts` 的后处理（`history.appendAssistant`、`postProcess`）完成。
 
-**设计结论**：loop 不承载提炼沉淀——这是正确的边界。摘要/归档属于"回答后异步"，不应被塞进 loop 的 Handoff 决策里。
+**设计结论**：loop 不承载提炼沉淀——这是正确的边界。摘要/归档属于"回答后异步"，不应被塞进 loop 的内部控制里。
 
 ---
 
