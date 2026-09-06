@@ -1,22 +1,247 @@
-# 暂停 · 主动提问 · 输入补充 —— 三机制缺陷修复设计（探索期）
+# 暂停 · 主动提问 · 输入补充 —— 气口机制设计（定案）
 
-> **2026-09-04 定案注记**：主动提问通道已从 `[ASK]` 文本约定**收敛为 `ask_user` 内置工具**（对齐 Claude Code AskUserQuestion：提问 = 一次普通工具调用，用户答案以 tool result 回填，修复"工具轮问话撕工具"观察项）。userInput 插话收紧为单一模式（排队 → step 边界注入，`inputInterrupt` 键删除）。本文保留探索期论证记录（含 [ASK] 相关的 A1/A4 缺陷与 P0/P2 方案），作为收敛决策的历史依据——不复述新实现细节，见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)、[策略键消费矩阵](../策略键消费矩阵.md)。
+> **2026-09-06 定案**：三气口机制已收敛。中断队列 + 统一 step 边界消费。本文前半部分为定案设计（当前代码形态），后半部分保留探索期设计记录（决策依据）。
 >
-> **文档定位**：代码质量评审产出。针对 `LLM 主动暂停提问（[ASK]）/ 用户暂停继续 / 输入补充（Composer P1-P4）` 三机制发现的缺陷，先吸收主流大厂交互经验（土壤），再在最小单元上自然生长出修复方案（种子）。
->
-> **状态**：探认定案→迁移（已收敛至 ask_user/排队单一模式；历史探索记录保留）。
->
-> **方法**：网络为土壤（§一吸收 → §二交叉评审 → §三生长方案），单一真理源（每个缺陷在最小单元层面解决，不引入新机制）。
->
-> **哲学真理源**：
-> - [agent-design-philosophy.md](./agent-design-philosophy.md)（§14.3 主动提问/输入中断、闭环软暂停）
-> - [memory-as-summary.md](./memory-as-summary.md)（§2.5 摘要与外部输入恒 1:1、软暂停不摘要）
-> - [loop-design.md](./loop-design.md)（Loop = 单一闭环的编排）
-> - [task-driven-closed-loop.md](./task-driven-closed-loop.md)（主动提问/暂停续跑链路）
+> **文档定位**：已实现的气口机制设计文档。不是 ADR（没有跨模块不可逆约束需要冻结），是"代码就是设计"的自然生长记录。
 
 ---
 
-## 一、土壤吸收：主流 Agent 的暂停/提问/续跑交互经验
+## 第一部分 · 定案设计（当前代码形态）
+
+### 一、核心模型：InterruptRequest 队列（SSOT）
+
+**2026-09-06 收敛**：旧设计分散为 `pauseRequested: boolean` flag + `pendingInterjections: string[]` 数组。统一为单一队列。
+
+```typescript
+// loop.ts
+type InterruptRequest =
+  | { readonly kind: 'pause' }                              // 用户暂停申请
+  | { readonly kind: 'interject'; readonly content: string }; // 用户插话申请
+
+// 唯一字段
+private interruptQueue: InterruptRequest[] = [];
+```
+
+**ask_user（LLM 主动提问）不走此队列**——它是 LLM 工具触发的气口，在 `handleAskUser` 工具分支独立 yield paused。来源不同（用户申请 vs LLM 工具），分开合理。
+
+### 二、写入入口（申请 → 队列）
+
+所有申请都是**非阻塞入队**——不中断当前正在跑的 step，等 step 边界生效。
+
+| 用户操作 | Agent API | Loop 委托 | 队列操作 |
+|----------|-----------|-----------|----------|
+| 点暂停按钮 | `agent.requestPause(reason, source)` | `loop.requestPause()` | `queue.push({kind:'pause'})`（幂等：已有 pause 条目则不重复） |
+| 取消暂停（生效前反悔） | `agent.cancelPauseRequest()` | `loop.clearPauseRequest()` | `queue.filter(r => r.kind !== 'pause')` |
+| 执行中插话 | `agent.interject(content)` | `loop.interject(content)` | `queue.push({kind:'interject', content})` + history 持久化（TS-9 问答归属） |
+| 删一条插话（后悔） | `agent.removePendingInterject(index)` | `loop.removePendingInterject(index)` | 计算 interject 条目的全局索引映射，splice 删除 |
+| 清空全部插话 | `agent.clearPendingInterjections()` | `loop.clearPendingInterjections()` | `queue.filter(r => r.kind !== 'interject')` |
+
+### 三、消费出口（step 边界 → 统一 splice）
+
+`_handleInterrupt` 是**唯一消费点**——每次迭代循环的头部被调用，原子取出全部申请。
+
+```typescript
+// loop.ts _handleInterrupt（简化）
+private async *_handleInterrupt(signal) {
+  const reqs = this.interruptQueue.splice(0); // 原子消费，消费后队列为空
+
+  // ① 先注入型（interject）→ appendUserMessage
+  for (const req of reqs) {
+    if (req.kind === 'interject') this.appendUserMessage(req.content);
+  }
+
+  // ② 后挂起型（pause）→ yield paused + generator return
+  if (reqs.some(r => r.kind === 'pause')) {
+    yield { type: 'paused' };
+    return 'paused';
+  }
+
+  // ③ 硬中止检查
+  if (signal?.aborted) {
+    yield { type: 'aborted', reason: ... };
+    return 'aborted';
+  }
+  return signal; // 继续正常迭代
+}
+```
+
+**消费顺序是刻意的**：注入型优先于挂起型。如果用户同时发了 interject + pause，补充输入先 `appendUserMessage` 入史，再 yield paused。这样续跑时 LLM 能看到补充，不会被 pause 吞掉。
+
+### 四、续跑：generator return paused → 外部重入
+
+暂停不是"让正在跑的 step 停下来"——正在跑的 LLM 调用/工具执行会**自然跑完**。`pauseRequested` 标志在**下一个 step 边界**被检查。
+
+```
+runIterationLoop {         // generator instance A
+  while (...) {
+    step 1
+    _handleInterrupt() → queue 有 pause → yield {type:'paused'}
+                                        return 'paused'  ← generator A 结束
+    step 2...  （不会被执行）
+  }
+}
+
+// consumeExecutionStream 收到 'paused' chunk
+// → sessionManager.pause()   [状态机 running → paused]
+// → 写 pauseMeta checkpoint
+
+// 用户点继续 → agent.resumeExecution(input?)
+// → loop.continueAfterPause(input, signal)
+//   → (optional) input → cleanExecutionTemporary + appendUserMessage(input)
+//     // 注：续跑时直接 append，不走 queue——此时 loop 还没开始跑，不存在"step 边界"消费时机
+//   → resetTurnState()
+//   → runIterationLoop()   // generator instance B，全新！
+```
+
+**同一 turn 节点延续**：续跑沿用 `processUserInput` 分配的 roundId（不分裂新轮），messages 保留（checkpoint 落盘），askBudget 不清（防续跑段重复允许提问）。
+
+### 五、状态机翻态：事实驱动，不申请即翻
+
+```
+申请阶段（UI 点暂停）：
+  agent.requestPause()
+    → sessionManager.requestPause()  // 只置 pendingPause，状态机仍 running
+    → loop.requestPause()            // queue.push({kind:'pause'})
+  状态机仍 running！UI 暂停按钮图标不变（纯投影，无本地 toggle）
+
+气口生效（loop 边界）：
+  _handleInterrupt → yield {type:'paused'}
+  consumeExecutionStream 消费：
+    → sessionManager.consumePendingPause()  // 取走 pendingPause
+    → sessionManager.pause()                // 状态机 running → paused
+  UI 收到 status{paused} → pauseBtn 隐藏，send 按钮变 ▶
+```
+
+### 六、ask_user 主动提问（LLM 工具触发的气口）
+
+不走 interruptQueue——它是 LLM 调 ask_user 工具时触发的，在 handleAskUser 分支独立处理：
+
+```typescript
+// loop.ts handleAskUser
+private async *handleAskUser(llmResult, toolCalls) {
+  this.appendAssistantToolCall(fullContent, toolCalls); // tool_calls 落史
+  this.pendingAsk = {toolCallIds, questions};
+  for (const q of questions) yield {type: 'question_pending', questions: [q]};
+  yield {type: 'paused'};
+  return 'paused';
+}
+```
+
+**回答续跑**：`agent.answerQuestion(answers)` 回填 tool result（和 tool_calls 配对，结构合法）→ `agent.resumeExecution(answer, kind:'question-answer')` → `continueAfterPause`。
+
+---
+
+## 第二部分 · 用户体验
+
+### 核心认知：暂停不打断正在跑的 step
+
+**所有暂停/插话都不打断当前正在跑的 step**。LLM 打字打到一半不会停，工具执行到一半不会停。它们都是"当前 step 跑完后、下一步开始前"生效。这是整个设计最核心的纪律，也是用户体验最稳定的保障。
+
+### 场景 1：正常暂停 → 继续
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | 正在生成中，pauseBtn 显示 ‖ | 进度条在动，LLM 在打字 |
+| T1 | 点暂停按钮 | **当前正在打的字会打完**，等待时间 = 当前 step 剩余时间（一般 1-3 秒） |
+| T2 | step 边界到 | 状态翻 PAUSED，pauseBtn 隐藏，send 变 ▶ |
+| T3 | 点继续 ▶ | 从 checkpoint 恢复，进度条继续推进 |
+
+### 场景 2：暂停 → 生效前反悔 → 取消暂停
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | 正在输出 | — |
+| T1 | 点暂停 → 入队 pause 申请 | 但 step 还没到边界 |
+| T2 | 再点暂停 | cancelPauseRequest → queue 里 pause 被移除 |
+| T3 | step 边界到 | queue 空，**完全无感**——按钮图标没变，LLM 继续输出 |
+
+### 场景 3：暂停 → 等生效 → 补充输入 → 继续
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | 暂停生效，PAUSED | 状态翻暂停 |
+| T1 | 在输入框打字补充内容 | 输入框完全可用，没被锁 |
+| T2 | 点 send | 补充内容作为新 user 消息入史，LLM 续跑时必看到 |
+
+### 场景 4：执行中插话（不暂停 loop）
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | 正在生成中 | — |
+| T1 | 快速打字 + send | interject → queue 入队 + history 持久化 |
+| T2 | 当前 step 跑完，边界到 | 注入型优先 → 补充先入史，然后继续 loop |
+| T3 | 下一轮 step | LLM 可能立刻调整行为，比如"收到补充，现在同时写 report.md" |
+
+### 场景 5：执行中插话 + 同时点暂停
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | 快速打字 + 点暂停 | queue = [{interject}, {pause}] |
+| T1 | step 边界到 | **注入型优先**：interject 先入史，再 pause 挂起。补充不被吞掉 |
+| T2 | 点继续 | messages 里已经有补充了，LLM 续跑第一轮就看到 |
+
+### 场景 6：暂停 → 不想继续了 → 彻底停止
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | PAUSED 状态 | — |
+| T1 | 点硬停止 | discardCurrentCheckpoint → **同时清 checkpoint + 清 queue**（不留孤儿数据） |
+| T2 | done 态 | 可以开始新对话，没有残留 |
+
+### 场景 7：LLM 主动提问
+
+| 阶段 | 用户动作 | 感知 |
+|------|----------|------|
+| T0 | LLM 执行中决定问用户 | 弹出结构化提问 UI，暂停 |
+| T1 | 回答问题 | answerQuestion（回填 tool result） + resumeExecution |
+| T2 | 续跑 | LLM 已看到回答，继续执行 |
+
+### 用户体验总结
+
+> 暂停按钮点了**不立即停**（等 step 边界），取消暂停**完全无感**，补充输入**不被吞**（注入型优先），暂停后输入框**正常可用**，stop 彻底清干净**不留残留**。用户看到的就是"一个 ‖ 按钮 + 一个 ▶ 按钮 + 永远能打字的输入框"，其他复杂的气口消费顺序、queue 原子消费、generator 重入——都在用户看不到的内核里自然生长。
+
+---
+
+## 第三部分 · 自然生长的设计哲学
+
+### 公理检验
+
+| 自问三题 | 答案 |
+|----------|------|
+| ① 这套逻辑是否只在某场景生效？ | 否。interruptQueue 覆盖 pause + interject；ask_user 是 LLM 工具触发，来源不同分开合理 |
+| ② 去掉该场景特殊处理，核心是否仍完整？ | 是。pauseRequested getter/setter 是 queue 的语法糖，去掉也能跑，保留只是兼容 API |
+| ③ 实现是否需在最小单元之外引入新机制？ | 否。统一 queue + 统一 splice(0) 消费，没有引入新引擎/新层 |
+
+### "水龙头模型" vs 当前截断重接
+
+用户曾提出"generator 不退出、活着挂起等外部信号"的水龙头模型。评估后结论：**当前截断重接不是"错的截断"，而是"在每轮 step 循环后 generator 自然退出，续跑就像再开一轮"**——逻辑上和水龙头等价，但工程上更干净。
+
+```
+水龙头模型（理论）：generator 挂起 + await Promise resolve
+当前实现（定案）：generator return paused + 外部重调 runIterationLoop
+```
+
+### "永不停止运行"的承载方式
+
+"类似机器人的开关，一启动就持续运作"**不需要改 turn 内任何东西**——它是**宿主层驱动**：turn done 后宿主自动调 runChat()。暂停 = 打断当前 turn 的 step 循环（requestPause → generator return）；继续 = continueAfterPause（同 turn 节点续跑）+ 等 done 后宿主再自动拉起下一个 turn。
+
+### SSOT 残留检查
+
+| 检查项 | 状态 |
+|--------|------|
+| pauseRequested flag 还作为独立变量？ | ✅ 已消除（getter/setter 委托 queue） |
+| pendingInterjections 还作为独立数组？ | ✅ 已消除（合并进 queue） |
+| _handleInterrupt 还分别检查两处？ | ✅ 已统一（queue.splice(0) 一次消费） |
+| 状态机翻态是"申请即翻"？ | ✅ 事实驱动（chunk.type===paused 时才翻 PAUSED） |
+| 有没有双写（history + queue 写同一内容）？ | ✅ 无（history 持久化 + queue 运行时消费，两个目的） |
+| 取消暂停后 queue 残留 pause？ | ✅ 已防（setter filter + splice(0) 天然清空） |
+| stop→discard 时 queue 残留？ | ✅ 已防（同时清 checkpoint + queue） |
+
+---
+
+## 第四部分 · 历史探索记录（2026-09-04 归档）
+
+> 以下保留探索期缺陷分析与方案论证，作为收敛决策的历史依据。**不再作为实现参考**——当前代码以上文定案设计为准。
 
 ### 1.1 Trae Work（用户认可的最佳交互范式）
 
@@ -31,131 +256,27 @@
 
 | 经验 | 来源 | 可吸收点 |
 |------|------|----------|
-| **Plan-Then-Execute 收敛**：先研究→把歧义列为"开放问题"→用户澄清→再执行；澄清集中在规划阶段而非执行中途 | [Forge proactive-clarification 设计](https://github.com/johnkord/agents/blob/main/research/phase-5b-proactive-clarification-design.md) | 印证 memora `chat 事件永不 P4` 的正确性（少问多做）；执行中提问是 memora 相对主流的前瞻点（[ASK]） |
-| **AskUserQuestion 是"工具化澄清"**：Anthropic 特意做了结构化工具而非纯文本约定，因为结构化提问产出更稳 | [Claude Code Pitfalls #37](https://claudecodetips.com/en/guide/pitfalls/37) | memora 用 `[ASK]` 文本约定 + 内核确定性解析，是"零第三方依赖"下的等价物；但**工具调用式天然把问题留在上下文**，[ASK] 缺失这一点（A1） |
-| **过度确认破坏 flow**（反面教材）：Copilot 频繁暂停要"continue"被大量吐槽，要求"上下文无歧义时自动继续" | [vscode#291565](https://github.com/microsoft/vscode/issues/291565) | 印证：**提问要克制**（askLimit/防滥用已有），且被提问打断的回合不应污染记忆（A2） |
-| **interrupt 四组件**：gate（拦截）+ checkpoint（保状态）+ notification（通知到人）+ resume path（重建工作流），缺一即坏 | [Agent Interrupt and Approval Checkpoints](https://www.channel.tel/blog/agent-interrupt-checkpoint-approval-patterns) | memora 已具备四组件；**checkpoint 的 pauseMeta 是"通知到人"的持久化载体**（A3） |
-| **反馈信号分级**（👍继续/👎改向/✋打断）：轻量元数据而非完整消息，"不打断世界"的连续反馈 | [claude-code#59265](https://github.com/anthropics/claude-code/issues/59265) | 对应 memora `interject`/`requestPause` 的软语义；佐证"暂停是软事件"应保留上下文（A1） |
-| **AG-UI interrupt 标准**：interrupt 含 id/reason/message，resolve(payload) 恢复、cancel 取消，支持多 interrupt 独立回答 | [CopilotKit useInterrupt](https://docs.showcase.copilotkit.ai/human-in-the-loop/useInterrupt) | memora `[ASK]` 单问题暂停已对齐该语义；多问题（多条 `[ASK]`）对齐多 interrupt |
+| **Plan-Then-Execute 收敛**：先研究→把歧义列为"开放问题"→用户澄清→再执行；澄清集中在规划阶段而非执行中途 | [Forge proactive-clarification 设计](https://github.com/johnkord/agents/blob/main/research/phase-5b-proactive-clarification-design.md) | 印证 memora `chat 事件永不 P4` 的正确性（少问多做）；执行中提问是 memora 相对主流的前瞻点（ask_user） |
+| **AskUserQuestion 是"工具化澄清"**：Anthropic 特意做了结构化工具而非纯文本约定，因为结构化提问产出更稳 | [Claude Code Pitfalls #37](https://claudecodetips.com/en/guide/pitfalls/37) | memora 用 ask_user 工具调用（2026-09-04 收敛），天然保持问题在上下文可追溯 |
+| **过度确认破坏 flow**（反面教材）：Copilot 频繁暂停要"continue"被大量吐槽，要求"上下文无歧义时自动继续" | [vscode#291565](https://github.com/microsoft/vscode/issues/291565) | 印证：**提问要克制**（askLimit/防滥用已有），且被提问打断的回合不应污染记忆（A2 已修复） |
+| **interrupt 四组件**：gate（拦截）+ checkpoint（保状态）+ notification（通知到人）+ resume path（重建工作流），缺一即坏 | [Agent Interrupt and Approval Checkpoints](https://www.channel.tel/blog/agent-interrupt-checkpoint-approval-patterns) | memora 已具备四组件；pauseMeta 是"通知到人"的持久化载体（A3 已修复） |
 
-### 1.3 交叉评审：土壤 vs 种子
+### 缺陷定性与根因（探索期）
 
-| 土壤结论 | 种子（memora 既有设计） | 评审结论 |
-|---------|------------------------|----------|
-| 澄清最好在规划阶段（Plan-Then-Execute） | chat 事件永不 P4（content 即意图，直接执行） | ✅ **一致**：memora 已天然少问多做，符合过度确认的反面教训。不调整 |
-| 提问要结构化、可追溯、留在上下文 | `[ASK]` 解析为 question_pending，**但问题未入消息历史** | ⚠️ **缺陷 A1**：结构性（解析）已对齐，可追溯（入史）缺失 |
-| 暂停轮是"回合未完成"，不应作为独立轮次沉淀 | 摘要恒 1:1，软暂停不摘要（§2.5 定案） | ⚠️ **缺陷 A2**：文档已定案，**实现未落地**（文档-实现脱节） |
-| 暂停原因应持久化、可展示（通知到人） | pauseMeta 仅在边界暂停写入 | ⚠️ **缺陷 A3**：`[ASK]`/P4 直接暂停路径未写 pauseMeta |
+| # | 缺陷 | 定性 | 根因 |
+|---|------|------|------|
+| A1 | 问题未入工作记忆 → 续跑上下文断裂 | 实现缺陷 | ask_user 分支遗漏常规文本路径的 appendAssistantText |
+| A2 | 暂停轮产出空摘要 + 续跑再产一条 → 违反摘要 1:1 | 文档-实现脱节 | StreamConsumeResult 无 paused 字段 |
+| A3 | 暂停路径未写 pauseMeta → 重启后暂停原因丢失 | 实现缺陷 | pauseMeta 只在 onPaused 写入 |
+| B1 | 执行中 requestPause 同样可能产空摘要 | 同 A2 根因 | 同 A2 |
 
-**土壤吸收结论**：memora 三机制与主流范式高度同构，**方向正确，差距在"上下文完整性与状态持久化的实现完整性"**，而非设计范式本身。以下方案全部是"补齐既有闭环的固有属性"，不是新增机制。
+**共性根因**（修复前）：三机制共享同一个最小单元——「闭环暂停边界」，但暂停边界**没有把它"为什么暂停、问了什么、是否算回合完成"这三个固有属性完整记录下来**。
 
----
+**修复后**：上述缺陷全部修复。ask_user 已收敛为内置工具（问题落史、答案 tool result 回填）；暂停轮不产摘要（StreamConsumeResult.paused 门控）；pauseMeta 统一收口写入（Agent.pause() 收口处）。
 
-## 二、缺陷定性与根因（评审证据）
-
-| # | 缺陷 | 定性 | 根因 | 证据 |
-|---|------|------|------|------|
-| A1 | `[ASK]` 问题未入工作记忆 → 续跑上下文断裂 | 实现缺陷 | `handleTextResponse` 的 `[ASK]` 分支遗漏常规文本路径的 `appendAssistantText` | loop.ts L839-849 |
-| A2 | 暂停轮产出空输出摘要 + 续跑再产一条 → 违反摘要 1:1 | **文档-实现脱节** | `StreamConsumeResult` 无 `paused` 字段；`runEvent/runResume` 只判 `failed/aborted` | orchestrator.ts L161/L187；memory-as-summary §2.5 已定案"软暂停不摘要" |
-| A3 | `[ASK]`/P4 暂停未写 pauseMeta → 重启后暂停原因丢失 | 实现缺陷 | pauseMeta 只在 `onPaused`（边界暂停）写入，直接暂停路径绕过 | assembler.ts L338-345 vs agent.ts L584 |
-| A4 | `[ASK]` 与工具调用混出时被静默忽略 | 约束缺文档 | `extractAskQuestions` 仅在纯文本路由调用 | loop.ts L655 |
-| A5 | `[ASK]` 行周围正文整体丢弃 | 随 A1 修复缓解 | `[ASK]` 分支只推问题、不落史 | loop.ts L839-849 |
-| B1 | 执行中 `requestPause` 边界挂起同样可能产空摘要 | 同 A2 根因 | 同 A2 | runEvent→settle |
-| C1 | P4 needClarify 暂停未写 pauseMeta | 同 A3 根因 | 同 A3 | agent.ts L584 |
-| A6 | 无 Agent 级 `[ASK]→回答→续跑` 端到端测试 | 测试缺口 | 只有 loop 层单测 | loop.test.ts L1836-1910 |
-
-**共性根因（一句话）**：三机制共享同一个最小单元——「闭环暂停边界」，但暂停边界**没有把它"为什么暂停、问了什么、是否算回合完成"这三个固有属性完整记录下来**。修复应落在暂停边界的收口处统一补齐，而非在三个入口各打补丁。
-
----
-
-## 三、自然生长方案
-
-> 原则：每个缺陷在「闭环暂停边界」这一既有最小单元上补齐固有属性，不新建机制、不新增模块。改动面收敛到 `loop.ts`（入史）+ `agent.ts`（收口标记/写 pauseMeta）+ `orchestrator.ts`（摘要门控）。
-
-### P0-1 修复 A1+A5：`[ASK]` 问题入工作记忆（复用既有文本落史路径）
-
-**生长点**：`handleTextResponse` 的常规路径本就 `appendAssistantText` 落史；`[ASK]` 分支只是走了"只推送、不落史"的旁路。补齐旁路即可，不引入任何新抽象。
-
-**方案**：
-
-```
-handleTextResponse 检测到 pendingQuestions：
-  1. this.appendAssistantText(fullContent)   // 问题全文入史（含 [ASK] 行周围正文）
-  2. yield question_pending（每条 [ASK]）
-  3. yield paused
-```
-
-**收益**：
-- 续跑时 LLM 上下文为 `assistant(问题) + user(回答)`，短回答（"红色"/"第二个"）不再断链；
-- [ASK] 行周围正文不再丢弃（A5 缓解）；
-- 续跑轮的 round-summary 能提炼到问题与决策（配合 P0-2）。
-
-**设计注意**：UI 展示与历史落史分离——UI 只渲染 question_pending 的问题文本，历史保存全文（与"可观察契约"一致）。
-
-### P0-2 修复 A2+B1：暂停轮不产摘要 ——「回合完成」信号下沉
-
-**生长点**：orchestrator 对 `aborted` 已有"不摘要"门控（L161/L187），`paused` 是同一个"结束原因枚举"的另一取值。在 `StreamConsumeResult` 上补 `paused` 字段并接线，是**枚举的自然扩展**，非新机制。同时把 [memory-as-summary §2.5](../../docs/architecture/memory-as-summary.md) 已定案、未落地的"软暂停不摘要"真正实现，消除文档-实现脱节（SSOT 收口）。
-
-**方案**：
-1. `consumeExecutionStream` 遇 `chunk.type === 'paused'` 时置 `paused: true`；
-2. `runEvent` / `runRun` / `runChat` 在 `acted.paused` 时跳过 `settle`/`backgroundReflect`（摘要推迟到续跑最终轮）；
-3. 续跑轮正常产摘要（维持恒 1:1：暂停轮 0 条 + 续跑轮 1 条 = 一次外部输入 1 条）。
-
-**边界一致性**：
-- 执行中 `requestPause` 边界挂起（content 可能部分文本）→ 同样 `paused` 跳过（回合未完成）；
-- `aborted`（硬中止）→ 维持现状不摘要 + `[已中断]` 标记写史；
-- 暂停后不续跑 → 该轮无摘要（无收尾，符合"摘要来自最后一轮问答产出"）。
-
-### P1-1 修复 A3+C1：pauseMeta 统一到暂停收口
-
-**生长点**：三个暂停入口最终都汇入 `consumeExecutionStream` 的 `paused` 收口（agent.ts L710-713），但 pauseMeta 记录却散在 `onPaused`（仅边界路径）。把记录点**收敛到收口**，是"暂停边界的固有属性"的单一落点。
-
-**方案**：
-1. `Agent.pause()`（收口处，`consumePendingPause` 之后）统一写入 pauseMeta（reason/source 取自 pendingPause，与状态机一致）；
-2. `onPaused` 回调完全移除——`{type:'paused'}` chunk 本身即事件通知（consumeExecutionStream 消费），原回调零注册纯死代码（落地比"降级"更彻底）；
-3. `[ASK]`/P4 直接暂停路径自然获得 pauseMeta（它们也走同一收口）。
-
-**收益**：所有暂停路径（用户/Agent[ASK]/系统/P4 clarify）的暂停原因在 checkpoint 中一致，重启后宿主可展示"为什么暂停 + 问了什么"。
-
-### P1-2 修复 A6：补 Agent 级端到端集成测试
-
-在 `uninterruptedWorkflow.test.ts` 新增用例，断言：
-- (a) LLM 输出 `[ASK]` → 问题入史（`assistant` 消息含问题）；
-- (b) 会话进 `paused`，**该轮不产 round-summary**；
-- (c) `resumeExecution(回答)` 续跑 → LLM 下一轮上下文含问题 + 回答；
-- (d) 续跑轮恰好产 1 条 round-summary（恒 1:1）。
-
-### P2-1 修复 A4：`[ASK]` 与工具混出的约束文档化
-
-保持 `[ASK]` 纯约定（零依赖 SSOT），文档化约定："`[ASK]` 必须独占回合输出，不与工具调用同轮"。混出时的降级行为：问题文本仍入史（P0-1 后），不暂停——LLM 下一轮自见问题可继续，属于"不暂停的软降级"，不静默丢信息。
-
-### P2-2 记录 B3（低优先，暂不修）：续跑时插话时序
-
-paused 后 interject 的队列在续跑时消费，且 resume 输入先于插话 append（continueAfterPause L359-363 vs handleIterationResult L530-536）。场景罕见、影响极小，本文只记录，不承诺修复。
-
----
-
-## 四、实施顺序与验证
-
-| 批次 | 项 | 改动文件 | 风险 |
-|------|----|----------|------|
-| 批次 1（P0） | A1+A5 入史；A2+B1 摘要门控 | `loop.ts`、`agent.ts`、`seed/orchestrator.ts` | 低：复用既有路径，纯补齐 |
-| 批次 2（P1） | A3+C1 pauseMeta 收口；A6 集成测试 | `agent.ts`、`assembler.ts`、`__tests__/uninterruptedWorkflow.test.ts` | 低：收口单一化 |
-| 批次 3（P2） | A4 文档化；B3 记录 | `docs/architecture/task-driven-closed-loop.md` | 无代码风险 |
-
-**验证**：`npx vitest run src/agent`（含新增集成用例）；`npm run typecheck` 零错误。批次 1 落地后再回归评审，确认摘要恒 1:1 在普通对话/暂停续跑/外部任务循环三种路径下均成立。
-
----
-
-## 五、来源记录（土壤可追溯）
+### 来源记录（土壤可追溯）
 
 - [TraeWork 快速开始（官方）](https://docs.trae.cn/work_trae-work-web-and-desktop-quickstart)
 - [TraeWork 概述（官方）](https://docs.trae.cn/work_what-is-trae-work)
-- [TraeWork 学习闭环 Skill 案例（官方社区）](https://forum.trae.cn/t/topic/172245)
-- [Forge Proactive Clarification 设计（Phase 5B）](https://github.com/johnkord/agents/blob/main/research/phase-5b-proactive-clarification-design.md)
-- [Claude Code Pitfalls #37: AskUserQuestion](https://claudecodetips.com/en/guide/pitfalls/37)
-- [vscode#291565: 过度确认破坏 flow（反面教材）](https://github.com/microsoft/vscode/issues/291565)
 - [Agent Interrupt and Approval Checkpoints（四组件）](https://www.channel.tel/blog/agent-interrupt-checkpoint-approval-patterns)
-- [claude-code#59265: 实时反馈信号分级](https://github.com/anthropics/claude-code/issues/59265)
 - [CopilotKit useInterrupt（AG-UI interrupt 标准）](https://docs.showcase.copilotkit.ai/human-in-the-loop/useInterrupt)
-- [AI Agent Interface Design（progress visibility / intervention）](https://designpixil.com/blog/ai-agent-interface-design)
