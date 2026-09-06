@@ -479,6 +479,12 @@ export class AgentLoop {
 
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
+      // 新增问题入口清理残留补充输入（对称缺口修复，2026-09-06）：
+      // abort/host close 等异常路径可能让上一轮 interject 残留 interruptQueue，若不清，
+      // 会被本 turn 首 step 边界 _handleInterrupt 误消费注入到新问题。
+      // 不能在 resetTurnState 清——它也被 continueAfterPause 复用，会误杀「暂停后 interject → resume 注入」
+      // 的合法语义（loop.test「暂停后 interject()」用例验证）；只在新问题入口清。
+      this.clearPendingInterjections();
       // askLimit 计数按「一次用户输入」重置（turn 粒度：暂停-续跑跨续跑累计）——仅入口清，
       // continueAfterPause 不清（防续跑段被重复允许提问）
       this.resetAskBudget();

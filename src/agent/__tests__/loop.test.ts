@@ -1682,6 +1682,45 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     expect(chunks2.some((c) => c.type === 'text' && c.content === '第二轮完成')).toBe(true);
   });
 
+  it('interject 补充残留不跨轮泄漏（工具步后中止消费 → 新轮不误注入残留补充，对称于 pause 泄漏修复）', async () => {
+    // 工具步 chunk：模拟第一轮 LLM 请求工具（与自审查测试同款）
+    const toolCallChunk: ChunkItem = {
+      toolCalls: [
+        { id: 'tc1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+      ],
+    };
+    const loop = new AgentLoop({
+      // 三轮 turn：第一轮=工具+回复；第二轮=纯文本（第二轮报错在每轮独立数组，互不串）
+      provider: mockMultiTurnProvider([
+        [toolCallChunk],
+        [{ content: 'R1 完成' }],
+        [{ content: 'R2 完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('文件内容'),
+    });
+
+    // 第一轮：工具步产出 tool_result 后 interject 补充，随即 break 中止消费（模拟宿主停止/close），
+    // 此时补充输入已入 interruptQueue 但未到 step 边界消费 → 残留
+    const chunks1: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务A')) {
+      chunks1.push(chunk);
+      if (chunk.type === 'tool_result') {
+        loop.interject('残留补充');
+        break;
+      }
+    }
+
+    // 第二轮：新问题，不应被上一轮残留的 interject 污染（修复前首 step 边界会误消费注入）
+    for await (const chunk of loop.processUserInput('新问题')) {
+      void chunk;
+    }
+    const residual = loop
+      .getMessages()
+      .filter((m) => m.role === 'user' && String(m.content).includes('残留补充'));
+    expect(residual).toHaveLength(0);
+  });
+
   it('硬停止(abort) → 中断标记路径不变，产出 [已中断]', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '部分内容' }, { content: '不应出现' }]),
