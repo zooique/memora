@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Agent 门面类 — Memora 宿主项目接入入口
  *
  * 宿主通过 `import { Agent } from '@zooique/memora'` 一行接入。
@@ -707,7 +707,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求
       this._sessionManager?.cancelPendingPause();
-      // 同步清理 loop 的 pauseRequested 标志
+      // 同步清理 loop 的 pause 申请（clearPauseRequest 委托 interruptQueue 过滤 kind='pause' 条目）
       this.requireLoop.clearPauseRequest();
     }
 

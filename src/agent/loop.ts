@@ -743,17 +743,10 @@ export class AgentLoop {
     }
     // done 终止前消费排队插话（统一「申请 → 气口生效」语义）：
     // LLM 返回 done（纯文本完成）期间用户 interject() 入队的补充输入，若直接 return false 会被静默丢弃；
-    // 消费并继续迭代，下一轮 LLM 必看到插话内容。主要消费发生在 _handleInterrupt（迭代开始前），
-    // 此处覆盖「LLM 在收尾轮执行期间插话」的窗口。从 interruptQueue 取 interject 条目并过滤删除。
-    const interjectReqs = this.interruptQueue.filter((r) => r.kind === 'interject');
-    if (interjectReqs.length > 0) {
-      for (const req of interjectReqs) {
-        this.appendUserMessage((req as Extract<InterruptRequest, { kind: 'interject' }>).content);
-      }
-      this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
-      return true;
-    }
-    return false;
+    // 消费并继续迭代，下一轮 LLM 必看到插话内容。委托 _consumeQueueForInjection（SSOT）。
+    // 主要消费发生在 _handleInterrupt（迭代开始前），此处覆盖「LLM 在收尾轮执行期间插话」的窗口。
+    const consumedCount = this._consumeQueueForInjection();
+    return consumedCount > 0;
   }
 
   /**
@@ -807,6 +800,37 @@ export class AgentLoop {
     return yield* this._callAndRoute(iteration, gate);
   }
 
+  /** 统一消费 interruptQueue 中的注入型（interject）条目：遍历 appendUserMessage 后过滤移除。
+   *  单一真理源——_handleInterrupt（step 边界）和 done 分支（LLM 收尾兜底）都委托此方法，
+   *  防两处独立实现导致消费逻辑漂移（如加去重/计数时改一处漏一处）。
+   *  @returns 消费的 interject 条目数（调用方可据此决定是否继续迭代） */
+  private _consumeQueueForInjection(): number {
+    let count = 0;
+    const remaining: InterruptRequest[] = [];
+    for (const req of this.interruptQueue) {
+      if (req.kind === 'interject') {
+        this.appendUserMessage(req.content);
+        count++;
+      } else {
+        remaining.push(req);
+      }
+    }
+    this.interruptQueue = remaining;
+    return count;
+  }
+
+  /** 从已取出的 reqs 列表中消费注入型条目（interject → appendUserMessage）。
+   *  与 _consumeQueueForInjection 同源——_handleInterrupt 用 splice(0) 原子取出全部后，
+   *  分离 interject 到此处处理，pause 留在原函数后续处理。共享"遍历 reqs + appendUserMessage"逻辑。
+   *  @param reqs splice(0) 取出的全部气口申请（含 pause + interject） */
+  private _consumeInterjectsFromReqs(reqs: InterruptRequest[]): void {
+    for (const req of reqs) {
+      if (req.kind === 'interject') {
+        this.appendUserMessage(req.content);
+      }
+    }
+  }
+
   /** 中断检查：step 边界统一消费 interruptQueue（pause + interject）+ 硬中止检查。
    *
    *  收敛后的单一气口出口——pauseRequested flag 和 pendingInterjections[] 都已收敛为 interruptQueue，
@@ -825,11 +849,7 @@ export class AgentLoop {
     const reqs = this.interruptQueue.splice(0);
 
     // ① 先处理注入型气口（interject → appendUserMessage）——不暂停 loop，让补充输入立刻生效
-    for (const req of reqs) {
-      if (req.kind === 'interject') {
-        this.appendUserMessage(req.content);
-      }
-    }
+    this._consumeInterjectsFromReqs(reqs);
 
     // ② 后处理挂起型气口（pause → yield paused）——如果队列里有 pause 申请，在 step 边界挂起
     if (reqs.some((r) => r.kind === 'pause')) {
