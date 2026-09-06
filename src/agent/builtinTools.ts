@@ -487,11 +487,12 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_update',
     description:
-      '更新任务表中指定步骤的状态。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。',
+      '更新任务表中指定步骤的状态。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。' +
+      'step_id 传任务表「#」列序号（1 开始，如 "1" = 第一行）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
       properties: {
-        step_id: { type: 'string', description: '步骤 ID（task_table_write 返回的 id 列表中的 id）' },
+        step_id: { type: 'string', description: '步骤定位：# 列序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
         status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
       },
       required: ['step_id', 'status'],

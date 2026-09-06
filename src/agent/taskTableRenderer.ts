@@ -42,7 +42,9 @@ export function renderTaskTable(
   ];
 
   for (const step of plan) {
-    const orderStr = String(step.order).padEnd(3);
+    // # 列展示 1-based 序号（order 0 起 → 显示 1）——与 task_table_update 的「# 序号寻址」对齐
+    //（2026-09-06 契约-展示对齐：LLM 据 renderer 序号即可定位步骤，无需感知 uuid）
+    const orderStr = String(step.order + 1).padEnd(3);
     // 会议步骤标注装配角色（rolePack），供 LLM 识别「该步骤由谁发言」
     const roleTag = step.rolePack ? `【${step.rolePack}】` : '';
     const raw = `${roleTag}${step.description}`;

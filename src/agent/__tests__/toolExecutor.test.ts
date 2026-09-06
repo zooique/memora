@@ -973,6 +973,62 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('task_table_update（2026-09-06 序号寻址契约：renderer # 序号 ↔ step_id 寻址对齐）', () => {
+    /** 注入 planManager 桩：记录 updateStep 最终收到的 stepId（解析后） */
+    function injectPlanManager(): { updateCalls: string[] } {
+      const updateCalls: string[] = [];
+      executor.planManager = {
+        writePlan: () => '',
+        updateStep: (stepId: string) => {
+          updateCalls.push(stepId);
+          return `步骤 [${stepId.slice(0, 8)}] 已更新`;
+        },
+        getPlan: () => [
+          { id: 'uuid-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
+          { id: 'uuid-step-2', description: '小说助手发言', status: 'pending', order: 1 },
+          { id: 'uuid-step-3', description: '方案设计师汇总', status: 'pending', order: 2 },
+        ],
+      };
+      return { updateCalls };
+    }
+
+    it('step_id 传 # 序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
+      const { updateCalls } = injectPlanManager();
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '1', status: 'done' }));
+      expect(updateCalls).toEqual(['uuid-step-1']);
+      expect(result).toContain('已更新');
+    });
+
+    it('step_id 传第 3 步序号 → 解析到 order=2 的 id（1-based 寻址）', async () => {
+      const { updateCalls } = injectPlanManager();
+      await executor.execute('task_table_update', JSON.stringify({ step_id: '3', status: 'blocked' }));
+      expect(updateCalls).toEqual(['uuid-step-3']);
+    });
+
+    it('step_id 传非数字（uuid 精确寻址）→ 原样透传', async () => {
+      const { updateCalls } = injectPlanManager();
+      await executor.execute('task_table_update', JSON.stringify({ step_id: 'uuid-step-2', status: 'done' }));
+      expect(updateCalls).toEqual(['uuid-step-2']);
+    });
+
+    it('step_id 数字越界（超出 plan 长度）→ 保持原值透传（由 updateStep 返回未找到）', async () => {
+      const { updateCalls } = injectPlanManager();
+      await executor.execute('task_table_update', JSON.stringify({ step_id: '99', status: 'done' }));
+      expect(updateCalls).toEqual(['99']);
+    });
+
+    it('step_id 为空字符串 → [ERR:INVALID_ARG]（实测路径：LLM 传空值的兜底）', async () => {
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '', status: 'done' }));
+      expect(result).toContain('[ERR:INVALID_ARG] step_id 不能为空');
+    });
+
+    it('step_id 缺失 → schema 必填校验拦截（工具参数缺失 MemoraError）', async () => {
+      await expect(executor.execute('task_table_update', JSON.stringify({ status: 'done' }))).rejects.toThrow(
+        '工具参数缺失',
+      );
+    });
+  });
+
   describe('自定义工具注册', () => {
     /** 测试用自定义工具定义 */
     const customDef = {

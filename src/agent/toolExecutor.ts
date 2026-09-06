@@ -874,11 +874,21 @@ export class ToolExecutor {
         if (!stepId) {
           return '[ERR:INVALID_ARG] step_id 不能为空';
         }
+        // 序号寻址兼容（2026-09-06 契约-展示对齐）：任务表 renderer 只向 LLM 展示 # 序号（1-based），
+        // 而会议预置路径 LLM 从未执行 task_table_write（拿不到返回的短 id）→ 允许数字 step_id 按序号解析。
+        let resolvedStepId = stepId;
+        if (/^\d+$/.test(stepId)) {
+          const plan = this.planManager.getPlan?.() ?? [];
+          const index = Number(stepId) - 1;
+          if (index >= 0 && index < plan.length) {
+            resolvedStepId = plan[index]!.id;
+          }
+        }
         const stepStatus = strArg('status', 'done');
         if (stepStatus !== 'done' && stepStatus !== 'blocked') {
           return `[ERR:INVALID_ARG] 不支持的状态 "${stepStatus}"，仅支持 done/blocked`;
         }
-        return this.planManager.updateStep(stepId, stepStatus);
+        return this.planManager.updateStep(resolvedStepId, stepStatus);
       }
       case 'read_skill': {
         // 渐进披露 L2：读取激活角色包内嵌技能正文（readSkill 回调由 agent 装配注入）

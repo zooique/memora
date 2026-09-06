@@ -264,7 +264,7 @@ describe('taskTableRenderer — 边界场景', () => {
     expect(result).toBeDefined();
   });
 
-  it('顺序号正确格式化', () => {
+  it('顺序号正确格式化（1-based，2026-09-06 与 task_table_update 序号寻址对齐）', () => {
     const plan = [
       createStep(0, '第一', 'pending'),
       createStep(10, '第十一', 'pending'),
@@ -272,10 +272,27 @@ describe('taskTableRenderer — 边界场景', () => {
     ];
     const result = renderTaskTable(plan);
 
-    // 顺序号应被格式化为固定宽度
-    expect(result).toContain('0  ');
-    expect(result).toContain('10 ');
-    expect(result).toContain('100');
+    // # 列为 order+1：LLM 据序号即可定位步骤（task_table_update step_id="1" = 第一行）
+    expect(result).toContain('1  ');
+    expect(result).toContain('11 ');
+    expect(result).toContain('101');
+    // 不再出现 0-based 序号
+    expect(result).not.toContain('0  ');
+  });
+
+  it('任务表 # 序号与 task_table_update 寻址对齐（1-based 可见即传）', () => {
+    const plan: PlanStep[] = [
+      createStep(0, '文档设计师发言', 'done', 's1'),
+      createStep(1, '小说助手发言', 'active', 's2'),
+      createStep(2, '方案设计师汇总', 'pending', 's3'),
+    ];
+    const result = renderTaskTable(plan);
+    // 行首 # 序列为 1/2/3，与「step_id 传 # 序号」契约一致（LLM 无需感知 uuid s1/s2/s3）
+    const lines = result.split('\n');
+    const stepLine1 = lines.find((l) => l.includes('文档设计师发言'))!;
+    const stepLine3 = lines.find((l) => l.includes('方案设计师汇总'))!;
+    expect(stepLine1.trim().startsWith('│ 1')).toBe(true);
+    expect(stepLine3.trim().startsWith('│ 3')).toBe(true);
   });
 
   it('STEP_LOG_CAP 常量存在且合理', () => {
