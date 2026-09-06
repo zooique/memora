@@ -1083,6 +1083,44 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 重放路径：单容器一次性渲染，按所有 .msg-body 拼接断言（结构无关）
     expect(collectAllBodyText(document.querySelectorAll('.msg.assistant')[0])).toContain('回答');
   });
+
+  it('两轮带过程事件的重放：折叠区各归其轮（第二轮折叠不串到第一轮顶部，2026-09-07 回归）', () => {
+    mountChatView();
+    // 场景：用户只测 2 个问答后重启，历史重放两轮都带过程事件
+    // 第 1 轮：召回 1 条记忆
+    dispatch({ type: 'user', text: '问题一', ts: 't1' });
+    dispatch({
+      type: 'replay_events',
+      roundId: 'r:1',
+      events: [
+        { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', score: 0.9 }] } },
+      ],
+    });
+    dispatch({ type: 'assistant', text: '回答一', ts: 't2', roundId: 'r:1' });
+    // 第 2 轮：召回 2 条记忆
+    dispatch({ type: 'user', text: '问题二', ts: 't3' });
+    dispatch({
+      type: 'replay_events',
+      roundId: 'r:2',
+      events: [
+        { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:2', name: '角色包', source: 'round-summary', score: 0.8 }, { id: 'm:3', name: '任务表', source: 'round-summary', score: 0.7 }] } },
+      ],
+    });
+    dispatch({ type: 'assistant', text: '回答二', ts: 't4', roundId: 'r:2' });
+    // 两个 assistant 块，折叠区总数 = 2（不得在旧块上堆叠）
+    const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
+    expect(blocks).toHaveLength(2);
+    expect(document.querySelectorAll('.round-block')).toHaveLength(2);
+    // 折叠区各挂各轮：第一轮块 1 个（召回 1 条）、第二轮块 1 个（召回 2 条）
+    const rb1 = blocks[0].querySelectorAll('.round-block');
+    const rb2 = blocks[1].querySelectorAll('.round-block');
+    expect(rb1).toHaveLength(1);
+    expect(rb2).toHaveLength(1);
+    expect(rb1[0].querySelector('.round-block__summary')?.textContent).toContain('召回 1 条记忆');
+    expect(rb2[0].querySelector('.round-block__summary')?.textContent).toContain('召回 2 条记忆');
+  });
 });
 
 describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 重构）', () => {

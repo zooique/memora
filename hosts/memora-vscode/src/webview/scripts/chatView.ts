@@ -2939,6 +2939,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roundBlockEl = null;
         roundBlockHostEl = null;
         roundGroupEl = null; // A 容器化：新闭环容器另行创建
+        // 解除旧轮 assistant 块锚定（2026-09-07 修复跨轮挂载串位）：新闭环后 activeAssistantEl
+        // 仍指向上一轮首块，重放路径 replay_events 在正文块创建前到达时会以该块为挂载目标，
+        // 导致第二轮折叠区跑到第一轮顶部、第二轮只剩最终回答（对称同批：roundBlock*/roundGroup
+        // 已重置，唯独缺 assistant 锚点）。置 null 待新一轮骨架/正文块建立时重新锚定；
+        // 打断补充/提问回答走带 kind 分支不重置，锚点保留供分条/子行定位。
+        activeAssistantEl = null;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
