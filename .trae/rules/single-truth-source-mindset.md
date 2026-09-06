@@ -13,10 +13,19 @@ description: 单一真理源思维模型——以最小单元为锚点，让复�
 
 **SSOT 不是"只有一个文件/模块"，而是"只有一个设计原点"**：一套最小单元承载全部复杂行为；同一套逻辑多场景复用、不做场景特化；复杂度向外生长、核心保持简单。
 
+## 活跃设计口径（剪枝/审计四层，2026-09-05 定）
+任何"全库一致性"审计/剪枝须同时覆盖以下四层，缺一层即视为未收口：
+1. `src/`（代码真理源）
+2. `.trae/rules/`（alwaysApply 规则，每轮注入 Agent 上下文，最易被忽略）
+3. `.trae/documents/`（术语/决策文档）
+4. `docs/architecture/`（活跃架构文档）
+
 ## 关键推导（证明"turn 自然生长出全部复杂度"）
 
-- **turn 的重复 = 闭环的重复，非独立引擎**：每次续跑都是完整 turn（`HandoffDecision='loop'` 意为自动续跑 turn），只在 Handoff 处选 `continue`。无需第二套引擎。
-- **召回 = 由触发源决定**：外部输入触发 → `recall()`；turn 续跑（Handoff 选 `continue`）→ 不触发。不是"Loop 模式跳过召回"的开关。
+- **turn 的重复 = 闭环的重复，非独立引擎**：每次续跑都是完整 turn，无需第二套引擎。
+  > **废弃说明（2026-09-05）**：旧设计用 `HandoffDecision='loop'` 实现 turn 内自动续跑（Handoff 处选 `continue`）。**已收敛**：turn 结束即 done，不再有自动续跑机制；未来"持续运行"由角色包策略或宿主侧定时器驱动新 Trigger，不在 turn 内做 Handoff loop（`src/agent/seed/orchestrator.ts` L35 注释为证：不再产出 handoff chunk）。
+- **召回 = 由触发源决定**：仅外部输入触发 → `recall()`。
+  > **废弃说明（2026-09-05）**：旧设计"turn 续跑（Handoff 选 continue）→ 不触发 recall"的判定随之废弃——turn 内不再有自动续跑，故召回只由外部输入决定，无"Loop 模式跳过召回"开关。
 - **摘要 + 归档 = turn 后处理**：Reflect 阶段天然承载；无独立定时任务/后台系统。
 
 ## 解题步骤与补丁识别

@@ -116,7 +116,8 @@ Memora 被宿主接入后即该程序唯一 Agent，`memora.db` 是 Agent 级共
 
 - 卡：**可插拔**（role-pack-spec 标准格式，实现无关）、**可共享**（纯文本可分发/版本管理，manifest 唯一核心控制）、**不自洽**（不含执行引擎，是纯声明）。
 - **任何时候只有一个角色包生效**（v0.13 定案：手动切换单一角色包 + 组长角色包会议名单，组员仅会议内发言，ADR-028）。
-- 校验/管理/能力映射都非独立系统，是闭环各阶段行为（Prepare/Handoff/Act）。
+- 校验/管理/能力映射都非独立系统，是闭环各阶段行为（Prepare/Act/后台 Reflect）。
+  > **废弃说明（2026-09-05）**：旧设计含 `Handoff` 阶段（与 Prepare/Act 并列）。seed 收敛后 turn 结束即 done，`seed/orchestrator.ts` 只聚合 prepare/act/reflect，**Handoff 阶段已删除**——气口（step 边界暂停）是 loop 内 step 编排的自然属性，不属独立的闭环阶段。
 - 技能两级（见 §1 Skill）：通用技能全局一份，角色包不重复（避免复制）；`manifest.capabilities`（能做什么）与 `manifest.skills`（技能正文）分离。
 
 **禁止**：❌ 角色包包含执行引擎逻辑；❌ 内核 hardcode 任何领域知识；❌ 角色包与内核版本强耦合（用 formatVersion 兼容）。

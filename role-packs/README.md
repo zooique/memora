@@ -26,7 +26,7 @@
 | **memora助手** | **兜底契约包**（非示例，名字由内核常量 `BUILTIN_FALLBACK_PACK` 锁定，改名须走 ADR；**宿主 UI 禁删 + 构建期 existsSync 硬校验**）：领域无关的最小兜底角色，负责通用对话与任务执行 | 领域无关最小集：无 skills / 无 capabilities（= 放行全部工具）/ 无 strategy（走内核默认） |
 | 文档设计师 | 示例：工具型角色包——技术文档设计（API 文档 / 教程 / 架构说明） | 真实 skills/ 文件（read_skill L2）+ capabilities + strategy（toolMode:allow / 低温度）+ handoffPrompt |
 | 小说助手 | 示例：创作型角色包——小说写作（结构 / 人物 / 对白 / 伏笔） | 真实 skills/ 文件 + capabilities + strategy（高温度 / askOn 主动提问）+ handoffPrompt |
-| 方案设计师 | 示例：方法论型角色包——基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）从模糊想法设计自洽方案 | 真实 skills/ 文件（种子收敛/土壤吸收/SSOT 自检）+ capabilities（含 memory:recall / llm:summarize）+ strategy（contextAssembly:hybrid / handoff:loop）+ handoffPrompt |
+| 方案设计师 | 示例：方法论型角色包——基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）从模糊想法设计自洽方案 | 真实 skills/ 文件（种子收敛/土壤吸收/SSOT 自检）+ capabilities（含 memory:recall / llm:summarize）+ strategy（contextAssembly:hybrid）+ handoffPrompt |
 
 > 兜底契约包与示例包**同目录但性质不同**：示例可删，契约包不可删（宿主 UI 禁删 + 构建期校验）；二者均随 `copyRolePacks()` 同步进宿主 `dist/extension/role-packs/`。
 
