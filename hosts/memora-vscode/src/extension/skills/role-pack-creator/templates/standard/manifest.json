@@ -33,7 +33,6 @@
     },
     "reflect": {
       "summary": "on",
-      "handoff": "wait",
       "selfReview": 0,
       "userFollowup": "silent"
     },
@@ -42,8 +41,7 @@
       "askLimit": 3,
       "errorHandling": "retry",
       "tokenBudget": 200000,
-      "stepBudget": 50,
-      "taskLoopLimit": 10
+      "stepBudget": 50
     }
   }
 }

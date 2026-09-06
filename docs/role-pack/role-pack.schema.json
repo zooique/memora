@@ -220,6 +220,12 @@
               "maximum": 10,
               "description": "自审查最大轮数（0=关闭，N=最多 N 轮，默认 0）"
             },
+            "loopContinue": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10,
+              "description": "v0.13- 历史别名键（已废弃）：新键 selfReview 优先、旧键回退——保留以兼容已落盘角色包（默认 0）"
+            },
             "userFollowup": {
               "type": "string",
               "enum": ["ask", "silent"],
@@ -263,12 +269,6 @@
               "minimum": 0,
               "maximum": 500,
               "description": "每轮工具步数预算上限（软上限，0=不限制，默认 50）"
-            },
-            "taskLoopLimit": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 100,
-              "description": "外部任务驱动循环步数上限（0=关闭，默认 10）"
             }
           },
           "additionalProperties": false

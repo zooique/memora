@@ -55,8 +55,7 @@
       "askLimit": 3,
       "errorHandling": "degrade",
       "tokenBudget": 1000000,
-      "stepBudget": 40,
-      "taskLoopLimit": 10
+      "stepBudget": 40
     }
   }
 }
