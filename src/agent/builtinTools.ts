@@ -453,7 +453,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_write',
     description:
-      '写入或更新任务表。overwrite 与 append 均为追加新步骤（overwrite 不再限制 plan 必须为空）；' +
+      '写入或更新任务表。overwrite 清空现有任务表后写入新步骤（重写/重开计划，2026-09-06 与实现对齐）；' +
+      'append 在现有任务表后追加新步骤；' +
       'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
       '每个步骤可声明可选 rolePack 字段（小组会议用：该步骤的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
       '输出格式为 Markdown 表格，包含进度行和状态标记。',
@@ -462,7 +463,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       properties: {
         mode: {
           type: 'string',
-          description: '写入模式："overwrite"/"append"（均为追加新步骤）、"update"（替换，保留步骤 ID 与状态）',
+          description: '写入模式："overwrite"（清空后重写全部步骤）、"append"（追加新步骤）、"update"（替换，保留步骤 ID 与状态）',
         },
         steps: {
           type: 'array',

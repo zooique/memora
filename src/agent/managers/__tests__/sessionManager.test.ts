@@ -1866,10 +1866,29 @@ describe('SessionManager', () => {
         ]);
       });
 
-      it("'overwrite' 应等价于追加（不要求 plan 为空）", () => {
+      it("'overwrite' 应清空已有 plan 后写入新步骤（2026-09-06 修复：原实现与 append 同分支只追加）", () => {
+        // 预置 3 步旧计划，模拟会议已推进/LLM 已建任务表后被重写
+        mgr.appendPlanStep('旧步骤1');
+        mgr.appendPlanStep('旧步骤2');
+        mgr.appendPlanStep('旧步骤3');
+        const result = mgr.writePlan('overwrite', [
+          { description: '第一步' },
+          { description: '第二步' },
+        ]);
+        expect(result).toHaveLength(2);
+        expect(result.map((s: { description: string }) => s.description)).toEqual(['第一步', '第二步']);
+        // 全新建步骤（旧 id 不留存）+ ensureActiveStep 激活第一个
+        expect(result[0]!.status).toBe('active');
+        expect(result[1]!.status).toBe('pending');
+        // 旧步骤 id 不留存（真清空重建，非原位覆盖）
+        expect(mgr.getCheckpoint()!.plan.every((s) => !s.description.startsWith('旧'))).toBe(true);
+      });
+
+      it("'overwrite' 在无已有步骤时等价于新建 N 步", () => {
         const result = mgr.writePlan('overwrite', [{ description: '第一步' }, { description: '第二步' }]);
         expect(result).toHaveLength(2);
         expect(result.map((s: { description: string }) => s.description)).toEqual(['第一步', '第二步']);
+        expect(result[0]!.status).toBe('active');
       });
 
       it("'update' 应全量替换并保留已有步骤 id 与 status（ensureActiveStep 自动激活第一个）", () => {

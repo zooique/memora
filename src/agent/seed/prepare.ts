@@ -56,7 +56,8 @@ export class SeedPrepare {
     loop.cleanTemporarySystemMessages();
 
     // 会议机制（S5）：读取当前 active 步骤声明的 rolePack，按本轮表层装配刷新前缀（范围校验 + 回落）
-    const activeStep = sessionManager?.getCheckpoint()?.plan.find((s) => s.status === 'active');
+    const checkpoint = sessionManager?.getCheckpoint();
+    const activeStep = checkpoint?.plan.find((s) => s.status === 'active');
     refreshAssemblyForRolePack(this.deps, activeStep?.rolePack);
 
     // 会议机制实施前提②：组/成员清单暴露给 LLM（防编造角色名）——仅当 activePack 是某组组长时注入
@@ -67,7 +68,16 @@ export class SeedPrepare {
 
     // 会议机制（S5）确定性触发：用户消息含「小组会议」且 activePack 是组长 →
     // 经 writePlan 预置任务表（组员各一步 + 汇总一步），让 LLM 在单 turn step 循环里自然消费。
-    const meetingSteps = rolePackManager?.tryBuildMeetingPlan?.(input) ?? null;
+    // 2026-09-06 T2 在途守卫（与 writePlan('overwrite') 真清空修复同批，见 tasks/四子系统闭环缺口-任务清单-20260906.md）：
+    //   已有未完成计划（pending/active 存在）→ 跳过自动预置 = 续会语义：第二轮「继续小组会议」等输入
+    //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
+    //   重开已推进会议需显式手段（宿主清空任务表 / LLM task_table_write），非自然语言自动触发。
+    const hasInflightPlan = (checkpoint?.plan ?? []).some(
+      (s) => s.status === 'pending' || s.status === 'active',
+    );
+    const meetingSteps = hasInflightPlan
+      ? null
+      : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);
     if (meetingSteps && sessionManager) {
       // 会议步骤截断保护（taskLoopLimit 键名是历史遗留，收敛后唯一消费点就是这里——会议机制）：
       // 防止 tryBuildMeetingPlan 给 50 人大会编出 50 步任务表塞爆预算。默认 10，0=关闭截断。

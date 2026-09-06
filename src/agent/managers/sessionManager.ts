@@ -1102,8 +1102,12 @@ export class SessionManager {
   }
 
   /**
-   * 写入执行计划（计划写入口唯一分发点）。模式：'overwrite'|'append' 按追加逐条 appendPlanStep；
-   * 'update' 全量替换现有 plan（保留已有 id/status/rolePack，仅覆盖 description）。其它 mode 兜底 no-op。
+   * 写入执行计划（计划写入口唯一分发点）。模式语义：
+   *   'overwrite'：先清空现有 plan 再逐条追加（真重写——LLM task_table_write / 会议预置都依赖此语义，
+   *                 2026-09-06 修复：此前与 'append' 同分支只追加不清空，overwrite 名存实亡）；
+   *   'append'   ：在现有 plan 后逐条追加；
+   *   'update'   ：全量替换现有 plan（保留已有 id/status/rolePack，仅覆盖 description）。
+   *   其它 mode 兜底 no-op。
    * 分发逻辑原嵌 Agent 闭包无法单测，归位本类后由 sessionCheckpointLifecycle.test.ts 覆盖。
    */
   writePlan(
@@ -1113,6 +1117,10 @@ export class SessionManager {
     if (!this.checkpoint) return [];
     const existingPlan = this.checkpoint.plan;
     if (mode === 'overwrite' || mode === 'append') {
+      // overwrite 真清空：order 由 appendPlanStep 按清空后 plan.length 从 0 重建，自洽无需额外维护
+      if (mode === 'overwrite') {
+        this.checkpoint.plan = [];
+      }
       for (const step of steps) {
         this.appendPlanStep(step.description, step.rolePack);
       }
