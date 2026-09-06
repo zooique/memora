@@ -1,4 +1,4 @@
-# 过程事件日志 + 重放重建（规范化设计文档）
+﻿# 过程事件日志 + 重放重建（规范化设计文档）
 
 > **文档状态**：✅ 正式设计方案（SSOT）
 > **版本**：v1.6
@@ -275,7 +275,7 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
         → webview 一次性塞入 events[] → 一次性 render summary + details
 ```
 
-**协议纯化（v1.5）**：渲染类消息统一为单一形态——`process_event: { event: ProcessEvent }`（增量，运行时用）+ `replay_events: { roundId, events: ProcessEvent[] }`（整批，重放用）。原 thinking / tool_start / tool_result / memory(recalled_items|added) / self_review 渲染分支**全部删除**，由 process_event 承载同一笔数据；status / notice / handoff / retry / paused / interrupted / done 等控制类消息保留不变（非渲染输入）。webview 收到 process_event 时先解析 meta 写入 `currentRoundMeta`、再 append 到 events[] 触发渲染——运行时与重放处理同构。
+**协议纯化（v1.5）**：渲染类消息统一为单一形态——`process_event: { event: ProcessEvent }`（增量，运行时用）+ `replay_events: { roundId, events: ProcessEvent[] }`（整批，重放用）。原 thinking / tool_start / tool_result / memory(recalled_items|added) / self_review 渲染分支**全部删除**，由 process_event 承载同一笔数据；status / notice / retry / paused / interrupted / done 等控制类消息保留不变（非渲染输入）。webview 收到 process_event 时先解析 meta 写入 `currentRoundMeta`、再 append 到 events[] 触发渲染——运行时与重放处理同构。
 
 好处：
 
