@@ -32,7 +32,7 @@
   "strategy": {
     "prepare": { "memoryRecall": "full", "contextAssembly": "hybrid" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
-    "reflect": { "handoff": "wait", "selfReview": 2 },
+    "reflect": { "selfReview": 2 },
     "global": { "tokenBudget": 12000, "stepBudget": 60 }
   },
   "capabilities": [
@@ -118,7 +118,6 @@
 | 键              | 类型 / 枚举                 | 合法区间           | 默认       | 含义                                                                        | 示例       |
 | -------------- | ----------------------- | -------------- | -------- | ------------------------------------------------------------------------- | -------- |
 | `summary`      | `on` / `off`            | —              | `on`     | 是否生成轮次摘要                                                                  | `"off"`  |
-| `handoff`      | `wait` / `loop` / `end` | —              | `wait`   | 结束衔接模式                                                                    | `"loop"` |
 | `selfReview`   | 整数                      | `0 ~ 10`（0=关闭） | `0`      | 本 turn **执行过工具步**（多 step）后自动自审查最多 N 轮；纯文本一遍问答不触发；审查应答为满意短确认（如"无需修改"）时立即终止 | `2`      |
 | `userFollowup` | `ask` / `silent`        | —              | `silent` | 用户追问策略                                                                    | `"ask"`  |
 

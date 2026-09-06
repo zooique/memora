@@ -68,7 +68,6 @@ role-packs/小说写作/
   "strategy": {
     "prepare": { "memoryRecall": "full" },
     "act": { "toolMode": "allow" },
-    "reflect": { "handoff": "wait" },
     "global": { "askOn": ["ambiguity", "decision", "missing_info"], "askLimit": 3 }
   },
   "persona": "persona.md",

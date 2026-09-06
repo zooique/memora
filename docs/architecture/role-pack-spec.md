@@ -63,8 +63,7 @@
   "interactionType": "tool_assistant",
   "strategy": {
     "prepare": { "contextAssembly": "fixed", "memoryRecallPercent": 0.4 },
-    "act": { "toolMode": "allow", "temperature": 0.6 },
-    "reflect": { "handoff": "wait" }
+    "act": { "toolMode": "allow", "temperature": 0.6 }
   },
   "skills": [
     { "file": "skills/write.md", "name": "write" },
@@ -636,7 +635,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 | [mvp-scope.md §二](mvp-scope.md)                                                              | MVP 落地范围 = 本标准的 L1 + 核心 L2 键子集                                                                           |
 | 演进状态                                                                                         | 角色包标准处**草案演进期**，v1 字段冻结延后至内核基础（turn / 记忆系统）定型后——见本文档定位宣言                                                 |
 
-> 标准优先于实现（P0 键集对齐）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`、`strategy.reflect.endingHandoff` → `reflect.handoff`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部曾定义但零消费的字段（如历史上的 `understandingConfirm`/`taskClassification`）经审计已分别落地消费 / 清除，不再作为僵尸键保留（§五 僵尸键原则）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
+> 标准优先于实现（P0 键集对齐）：memora 已对齐本规范中立命名——`strategy.act.toolCalls` → `act.toolMode`；解析层保留旧键 → 标准键**别名迁移**（warn 降级提示，不阻断装载），消费方一律读标准键。memora 内部曾定义但零消费的字段（如历史上的 `understandingConfirm`/`taskClassification`/`reflect.endingHandoff`）经审计已清除；`reflect.handoff` 键 2026-09-05 废弃（turn 结束即 done，不再有衔接决策）。规范演进以 `formatVersion` 控制，不破坏已装载的卡。
 
 ### 9.1 来源边界声明
 

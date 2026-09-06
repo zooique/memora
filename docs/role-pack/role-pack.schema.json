@@ -214,11 +214,6 @@
               "enum": ["on", "off"],
               "description": "是否生成轮次摘要（默认 on）"
             },
-            "handoff": {
-              "type": "string",
-              "enum": ["wait", "loop", "end"],
-              "description": "衔接决策：wait=等待用户 / loop=自动续跑 / end=终止（默认 wait）"
-            },
             "selfReview": {
               "type": "integer",
               "minimum": 0,
