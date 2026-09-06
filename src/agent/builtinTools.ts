@@ -52,8 +52,12 @@ export interface ToolDefinition {
 // 注：write_file 的幂等性依赖于写入模式——overwrite 模式幂等，
 // append/insert 模式非幂等。当前统一标记为 'idempotent-key'，
 // 因 overwrite 是最常用模式，append/insert 的补偿应在调用方保证。
-// task_table_write 为追加语义（appendPlanStep），重复执行不幂等，
-// 如实标记为 'non-idempotent'（不再被仅一次语义拦截重复追加）。
+// task_table_write 幂等性随 mode 而异（2026-09-06 writePlan 三分支语义后修正，勿再称「追加语义」）：
+//   overwrite（默认）= 清空重建，同参重跑结果一致 → 幂等，但重发会重置已推进的 plan（覆盖进行中状态）；
+//   update = 全量替换 → 幂等；
+//   append = 逐条追加，重复执行累加 → 非幂等（主要风险面）。
+// 映射只支持单值 → 保守标记 'non-idempotent'：宁每次执行、不被仅一次语义静默跳过，
+// 防 append 重发漏执行；overwrite 重发风险（重置推进）由 LLM 侧少发同参调用规避。
 // ──────────────────────────────────────────────────────────
 
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';

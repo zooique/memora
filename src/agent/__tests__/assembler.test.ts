@@ -328,4 +328,77 @@ describe('assembleComponents', () => {
       expect(applyActiveStepAssembly).not.toHaveBeenCalled();
     });
   });
+
+  // ─── task_table_update 全链寻址（2026-09-06 P0 断链修复，防 mock 盲区）────────────────
+
+  describe('task_table_update 全链寻址：短 id → 真实 sessionManager 命中', () => {
+    async function assembleReal(): Promise<Awaited<ReturnType<typeof assembleComponents>>> {
+      return assembleComponents(
+        createPctx(),
+        createInput({
+          hooks: {
+            emit: vi.fn(),
+            isChatBusy: () => false,
+            requestPause: vi.fn(),
+          },
+        }),
+      );
+    }
+
+    it('writePlan 返回的 8 位短 id 经 task_table_update 可命中真实步骤（toolExecutor 解析 + 装配 updateStep + sessionManager 全等）', async () => {
+      const output = await assembleReal();
+      output.sessionManager.createCheckpoint('测试计划');
+      const newPlan = output.sessionManager.writePlan('overwrite', [
+        { description: '第一步' },
+        { description: '第二步' },
+      ]);
+      // task_table_write 装配层渲染的短 id = uuid 前 8 位（assembler.writePlan 事实源）
+      const shortId = newPlan[1]!.id.slice(0, 8);
+      const fullId = newPlan[1]!.id;
+
+      const result = await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: shortId, status: 'blocked' }),
+      );
+
+      // 修复前：短 id 透传到 updatePlanStepStatus 全等匹配 → STEP_NOT_FOUND（断链）
+      expect(result).toContain('已标记为 blocked');
+      const cp = output.sessionManager.getCheckpoint()!;
+      expect(cp.plan.find((s) => s.id === fullId)!.status).toBe('blocked');
+    });
+
+    it('# 序号经 task_table_update 在真实装配链同样命中（order 与 id 映射一致）', async () => {
+      const output = await assembleReal();
+      output.sessionManager.createCheckpoint('测试计划');
+      const newPlan = output.sessionManager.writePlan('overwrite', [
+        { description: '步骤甲' },
+        { description: '步骤乙' },
+      ]);
+      const fullId = newPlan[0]!.id; // #1 = order 0
+
+      const result = await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '1', status: 'done' }),
+      );
+
+      expect(result).toContain('已标记为 done');
+      const cp = output.sessionManager.getCheckpoint()!;
+      expect(cp.plan.find((s) => s.id === fullId)!.status).toBe('done');
+    });
+
+    it('未知 8 位短 id → STEP_NOT_FOUND 且不触碰任何步骤', async () => {
+      const output = await assembleReal();
+      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.writePlan('overwrite', [{ description: '唯一步骤' }]);
+
+      const result = await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: 'ffffffff', status: 'done' }),
+      );
+
+      expect(result).toContain('[ERR:STEP_NOT_FOUND]');
+      const cp = output.sessionManager.getCheckpoint()!;
+      expect(cp.plan.every((s) => s.status !== 'done')).toBe(true);
+    });
+  });
 });

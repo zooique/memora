@@ -374,11 +374,11 @@ describe('builtinTools · SEARCH_PROJECT_TOOL（项目内搜索，等价 IDE 全
 });
 
 describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
-  it('task_table_write 应如实标记为 non-idempotent（追加语义，重复执行不幂等）', () => {
+  it('task_table_write 保守标记 non-idempotent（mode 依赖：overwrite/update 同参幂等，append 非幂等）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
   });
 
-  it('task_table_update 应保持 idempotent（全量替换，真幂等）', () => {
+  it('task_table_update 标记 idempotent（步骤状态更新，目标态幂等；跳过风险见注释）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_update).toBe('idempotent');
   });
 

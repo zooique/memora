@@ -973,9 +973,18 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
-  describe('task_table_update（2026-09-06 序号寻址契约：renderer # 序号 ↔ step_id 寻址对齐）', () => {
-    /** 注入 planManager 桩：记录 updateStep 最终收到的 stepId（解析后） */
-    function injectPlanManager(): { updateCalls: string[] } {
+  describe('task_table_update（2026-09-06 寻址契约收口：renderer # 序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
+    /** 默认三步骤桩（id 前缀各异，8 位短 id 可唯一命中） */
+    const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> = [
+      { id: 'a1b2c3d4-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
+      { id: 'e5f6a7b8-step-2', description: '小说助手发言', status: 'pending', order: 1 },
+      { id: 'c9d0e1f2-step-3', description: '方案设计师汇总', status: 'pending', order: 2 },
+    ];
+
+    /** 注入 planManager 桩：记录 updateStep 最终收到的 stepId（解析后应为完整 uuid） */
+    function injectPlanManager(
+      plan: Array<{ id: string; description: string; status: string; order: number }> = DEFAULT_PLAN,
+    ): { updateCalls: string[] } {
       const updateCalls: string[] = [];
       executor.planManager = {
         writePlan: () => '',
@@ -983,11 +992,7 @@ describe('工具执行器（6 个工具）', () => {
           updateCalls.push(stepId);
           return `步骤 [${stepId.slice(0, 8)}] 已更新`;
         },
-        getPlan: () => [
-          { id: 'uuid-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
-          { id: 'uuid-step-2', description: '小说助手发言', status: 'pending', order: 1 },
-          { id: 'uuid-step-3', description: '方案设计师汇总', status: 'pending', order: 2 },
-        ],
+        getPlan: () => plan,
       };
       return { updateCalls };
     }
@@ -995,26 +1000,88 @@ describe('工具执行器（6 个工具）', () => {
     it('step_id 传 # 序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
       const { updateCalls } = injectPlanManager();
       const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '1', status: 'done' }));
-      expect(updateCalls).toEqual(['uuid-step-1']);
+      expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
       expect(result).toContain('已更新');
     });
 
     it('step_id 传第 3 步序号 → 解析到 order=2 的 id（1-based 寻址）', async () => {
       const { updateCalls } = injectPlanManager();
       await executor.execute('task_table_update', JSON.stringify({ step_id: '3', status: 'blocked' }));
-      expect(updateCalls).toEqual(['uuid-step-3']);
+      expect(updateCalls).toEqual(['c9d0e1f2-step-3']);
     });
 
-    it('step_id 传非数字（uuid 精确寻址）→ 原样透传', async () => {
-      const { updateCalls } = injectPlanManager();
-      await executor.execute('task_table_update', JSON.stringify({ step_id: 'uuid-step-2', status: 'done' }));
-      expect(updateCalls).toEqual(['uuid-step-2']);
+    it('序号按 order 匹配而非数组位（order 乱序 plan 仍正确定位——renderer 同键）', async () => {
+      const { updateCalls } = injectPlanManager([
+        { id: 'a1b2c3d4-step-1', description: 'A', status: 'pending', order: 2 },
+        { id: 'e5f6a7b8-step-2', description: 'B', status: 'pending', order: 0 },
+        { id: 'c9d0e1f2-step-3', description: 'C', status: 'pending', order: 1 },
+      ]);
+      await executor.execute('task_table_update', JSON.stringify({ step_id: '1', status: 'done' }));
+      // #1 = order 0 = e5f6a7b8-step-2（若按数组位解析会错误命中 a1b2c3d4-step-1）
+      expect(updateCalls).toEqual(['e5f6a7b8-step-2']);
     });
 
-    it('step_id 数字越界（超出 plan 长度）→ 保持原值透传（由 updateStep 返回未找到）', async () => {
+    it('step_id 传完整 uuid → 全等命中原样使用', async () => {
       const { updateCalls } = injectPlanManager();
-      await executor.execute('task_table_update', JSON.stringify({ step_id: '99', status: 'done' }));
-      expect(updateCalls).toEqual(['99']);
+      await executor.execute('task_table_update', JSON.stringify({ step_id: 'e5f6a7b8-step-2', status: 'done' }));
+      expect(updateCalls).toEqual(['e5f6a7b8-step-2']);
+    });
+
+    it('step_id 传 8 位短 id（task_table_write 返回格式）→ 前缀命中完整 uuid（P0 断链修复）', async () => {
+      const { updateCalls } = injectPlanManager();
+      // 'a1b2c3d4-step-1' 前 8 位 = 'a1b2c3d4'
+      await executor.execute('task_table_update', JSON.stringify({ step_id: 'a1b2c3d4', status: 'done' }));
+      expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
+    });
+
+    it('step_id 8 位纯数字短 id → 按短 id 语义前缀命中，不误判为序号（防 2.3% 全数字错配）', async () => {
+      const { updateCalls } = injectPlanManager([
+        { id: '12345678-abcd-4efg', description: '纯数字前缀步骤', status: 'pending', order: 0 },
+        { id: 'e5f6a7b8-step-2', description: 'B', status: 'pending', order: 1 },
+      ]);
+      await executor.execute('task_table_update', JSON.stringify({ step_id: '12345678', status: 'done' }));
+      expect(updateCalls).toEqual(['12345678-abcd-4efg']);
+    });
+
+    it('step_id 短 id 前缀多命中 → INVALID_ARG 歧义提示（改用 # 序号）', async () => {
+      const { updateCalls } = injectPlanManager([
+        { id: 'dup-prefix-aaaa', description: 'A', status: 'pending', order: 0 },
+        { id: 'dup-prefix-bbbb', description: 'B', status: 'pending', order: 1 },
+      ]);
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'dup-pref', status: 'done' }));
+      expect(result).toContain('[ERR:INVALID_ARG]');
+      expect(result).toContain('不唯一');
+      expect(updateCalls).toEqual([]);
+    });
+
+    it('step_id 8 位短 id 无命中 → STEP_NOT_FOUND（提示改用 # 序号）', async () => {
+      const { updateCalls } = injectPlanManager();
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'zzzzzzzz', status: 'done' }));
+      expect(result).toContain('[ERR:STEP_NOT_FOUND]');
+      expect(updateCalls).toEqual([]);
+    });
+
+    it('step_id 非数字非 8 位乱 id → STEP_NOT_FOUND（提示可用格式）', async () => {
+      const { updateCalls } = injectPlanManager();
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'hackme', status: 'done' }));
+      expect(result).toContain('[ERR:STEP_NOT_FOUND]');
+      expect(updateCalls).toEqual([]);
+    });
+
+    it('step_id 数字越界（超出 plan 长度）→ INVALID_ARG 带范围提示（原静默透传升级）', async () => {
+      const { updateCalls } = injectPlanManager();
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '99', status: 'done' }));
+      expect(result).toContain('[ERR:INVALID_ARG]');
+      expect(result).toContain('超出任务表范围');
+      expect(result).toContain('共 3 步');
+      expect(updateCalls).toEqual([]);
+    });
+
+    it('step_id 传 "0"（0-based 误用）→ INVALID_ARG 带范围提示', async () => {
+      const { updateCalls } = injectPlanManager();
+      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '0', status: 'done' }));
+      expect(result).toContain('[ERR:INVALID_ARG]');
+      expect(updateCalls).toEqual([]);
     });
 
     it('step_id 为空字符串 → [ERR:INVALID_ARG]（实测路径：LLM 传空值的兜底）', async () => {
