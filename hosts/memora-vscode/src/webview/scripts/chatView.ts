@@ -1241,10 +1241,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const hasInput = input.value.trim().length > 0;
     switch (_sessionUiState) {
       case 'thinking':
-        // 生成中暴露暂停按钮（图标永远是 pause ‖）。
+        // 生成中暴露暂停按钮（图标换回 pause ‖）。
         // pauseRequested=true 但 step 边界未到的窗口期，UI 不感知——用户可再点一次触发 cancel，
         // 宿主 handlePause 内部通过 agent.isPausePending() 自动切换 request/cancel 行为。
-        if (pauseBtn) pauseBtn.hidden = false;
+        if (pauseBtn) {
+          pauseBtn.hidden = false;
+          const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
+          if (icon) icon.setAttribute('data-icon', 'pause');
+          pauseBtn.setAttribute('title', '暂停生成');
+          pauseBtn.setAttribute('aria-label', '暂停生成');
+        }
         if (hasInput) {
           // thinking + 有输入：发送按钮 = interject 排队（去掉 loading/paused 类，切默认发送图标）
           send.classList.remove('loading', 'paused');
@@ -1259,20 +1265,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
         break;
       case 'paused':
-        // 已暂停：pauseBtn 隐藏（paused 态出口是"继续"或"发送补充"）
-        if (pauseBtn) pauseBtn.hidden = true;
-        if (hasInput) {
-          // paused + 有输入：发送按钮 = 立即 resumeExecution 带补充
-          send.classList.remove('loading', 'paused');
-          send.setAttribute('title', '发送补充并继续执行');
-          send.setAttribute('aria-label', '发送补充');
-        } else {
-          // paused + 空输入：发送按钮 = 继续（resumeExecution 空输入续跑）
-          send.classList.remove('loading');
-          send.classList.add('paused');
-          send.setAttribute('title', '继续生成');
-          send.setAttribute('aria-label', '继续生成');
+        // 已暂停：pauseBtn 换为 play ▶（继续），sendBtn 保持 stop ■（硬停止）——双按钮并存。
+        // 与 thinking 态视觉同级，语义区分：继续 = 从 checkpoint 恢复；停止 = 丢弃本次暂停。
+        if (pauseBtn) {
+          pauseBtn.hidden = false;
+          const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
+          if (icon) icon.setAttribute('data-icon', 'play');
+          // paused + 有输入 → resume 时带补充；paused + 空输入 → 纯续跑
+          pauseBtn.setAttribute('title', hasInput ? '发送补充并继续' : '继续生成');
+          pauseBtn.setAttribute('aria-label', hasInput ? '发送补充并继续' : '继续生成');
         }
+        // sendBtn 在 paused 态始终承担「硬停止」职责——暂停后不想继续了就丢弃检查点
+        send.classList.add('loading');
+        send.classList.remove('paused');
+        send.setAttribute('title', '停止生成（丢弃检查点）');
+        send.setAttribute('aria-label', '停止生成');
         break;
       default: // done
         send.classList.remove('loading', 'paused');
@@ -3292,12 +3299,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sendMessage();
     }
   });
-  // 暂停按钮：纯投影 thinking 状态，永远显示 pause（‖）图标。
-  // 点击 → 发 pause 消息；宿主 handlePause 通过 agent.isPausePending() 自动切换
-  // requestPause / cancelPauseRequest（用户可在 step 边界到之前反悔）。
-  // UI 不感知 pending 状态，也不做任何图标 toggle——语义完全由内核状态机驱动。
+  // pauseBtn 双态语义：thinking 态发 pause（暂停生成 / 或取消暂停）；
+  // paused 态发 resume（继续生成 / 或发送补充并继续）——click 行为由 _sessionUiState 路由。
   pauseBtn?.addEventListener('click', () => {
-    vscode.postMessage({ type: 'pause' });
+    if (_sessionUiState === 'paused') {
+      // paused 态：根据输入框内容决定是纯续跑还是带补充续跑
+      if (input.value.trim()) {
+        // 有输入：走 sendMessage（宿主层根据状态路由到 resumeExecution 带补充）
+        sendMessage();
+      } else {
+        // 空输入：纯续跑
+        vscode.postMessage({ type: 'resume' });
+      }
+    } else {
+      // thinking 态：暂停 / 取消暂停（宿主 handlePause 根据 isPausePending 自动切换）
+      vscode.postMessage({ type: 'pause' });
+    }
   });
   input.addEventListener('keydown', (e) => {
     // isComposing 守卫：中文输入法组合确认（如打字中途按 Enter 选字）不误触发发送
