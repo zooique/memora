@@ -197,7 +197,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 启动时激活的角色包名（宿主注入持久化值，init 时优先激活——§4.1 单链第一层）
       activeRolePack: opts.activeRolePack,
       // 组（宿主装配级）：组长角色包 + 组员名单（会议名单容器，非选择对象；组员仅会议参与）
-      rolePackTeams: opts.rolePackTeams,
+      // P-6（2026-09-06）：内部运行态归一化必选（外部未配 = 无团队），保证装配链必传
+      rolePackTeams: opts.rolePackTeams ?? [],
       // 程序级内置兜底角色（可选）：覆盖内核常量 BUILTIN_FALLBACK_PACK；须指向存在的包，否则回退内核常量
       builtinFallbackRole: opts.builtinFallbackRole,
       tracer: opts.tracer,

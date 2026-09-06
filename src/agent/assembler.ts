@@ -653,7 +653,9 @@ export async function assembleComponents(
   const rolePackManager = new RolePackManager(configDir);
   // 宿主装配级参数注入：兜底角色覆盖（须存在，否则回退内核常量）+ 组数据（会议名单容器）
   rolePackManager.setBuiltinFallbackRole(builtinFallbackRole ?? null);
-  rolePackManager.setRolePackTeams(rolePackTeams ?? []);
+  // P-6（2026-09-06）：AssembleInput.rolePackTeams 已由 AgentConfig 收敛为必选（Agent 构造 ?? [] 归一化），
+  // 此处直接透传，无 null 传播；漏传在编译期即报错
+  rolePackManager.setRolePackTeams(rolePackTeams);
   await rolePackManager.load(activeRolePack);
 
   // 激活角色包的 L1 persona（角色包唯一；无激活角色包时为空串）

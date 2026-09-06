@@ -586,4 +586,10 @@ export type AgentConfig = Omit<
   recallExcludeSources: string[];
   enableContextSummary: boolean;
   archiveMode: ArchiveMode;
+  /**
+   * 组（会议名单容器）：内部运行态必选——外部 AgentOptions 可选（不配 = 无团队），
+   * Agent 构造时 `?? []` 归一化后恒为数组。P-6（2026-09-06）：
+   * 收紧内部契约保证 AssembleInput 必传，防「可选性假约束」再吞团队数据（team 启动缺口教训）。
+   */
+  rolePackTeams: RolePackTeam[];
 };

@@ -94,6 +94,7 @@ function createInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     messages: undefined,
     enableContextSummary: false,
     recallExcludeSources: [],
+    rolePackTeams: [], // P-6（2026-09-06）：AgentConfig 收敛后必传；直构测试显式空数组
     existingSkillManager: null,
     ...overrides,
   };
