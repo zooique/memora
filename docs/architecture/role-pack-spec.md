@@ -453,7 +453,7 @@ export interface IMcpTransport {
 | global  | `global.askOn`                | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合）                                                                          | 冻结-条件消费 | memora 消费（types.ts `assembleRolePack` 提问指令注入，**仅** **`reflect.userFollowup=ask`** **时生效**）；条件消费 = 字段冻结，但行为仅在指定策略组合下激活                                 |
 | global  | `global.askLimit`             | 正整数（默认 3）                                             | 每任务提问上限                                                                                    | 冻结-条件消费 | memora 消费（同上，userFollowup=ask 时生效，缺省 3）                                                                                                               |
 | global  | `global.errorHandling`        | `retry` / `degrade` / `stop`                          | 异常策略                                                                                       | 冻结      | memora 消费（strategyResolver `resolveErrorHandling` → loop 异常处理分支，非法值归位 retry）；**由实现提炼进标准**（对账发现被真实消费后补录）                                               |
-| global  | `global.taskLoopLimit`        | 非负整数（默认 10，0=关闭）                                      | 外部任务驱动循环步数上限：复杂任务按任务表每步一个闭环的最大步数                                                           | 冻结      | memora 消费（seed/orchestrator `externalTaskLoop` 步数上限，防无限多步烧 token）；**由实现提炼进标准**（阶段 3 对账发现被真实消费后补录）                                                     |
+| global  | `global.taskLoopLimit`        | 非负整数（默认 10，0=关闭）                                      | 外部任务驱动循环步数上限（**删除**：多 turn 任务编排 2026-09-04 删除后语义收窄为「会议步骤数截断」，2026-09-06 会议确定性预置退役（ADR-028 收敛补记）后键已无常量消费方，实现直接移除，不留过渡兼容） | 废弃      | 三度收敛：多 turn 上限 → 会议截断 → 删除；现迭代上限由 `stepBudget`/`maxIterations` 承载 |
 
 ### 角色包配置边界：机制参数开放判定标准（决策依据）
 
@@ -469,7 +469,7 @@ export interface IMcpTransport {
 
 **判例**：
 
-* ✅ 已开放：`prepare.memoryRecallPercent`（装配，角色感知高）、`global.taskLoopLimit`（装配，复杂任务需更多轮）、`prepare.summaryFocus`（内容提炼视角，角色提供）
+* ✅ 已开放：`prepare.memoryRecallPercent`（装配，角色感知高）、`prepare.summaryFocus`（内容提炼视角，角色提供）
 
 * ❌ 留全局：`replaceRoundsKeepRecent`（替换保留窗口，压缩机制、角色感知低——已固化 Agent 级选项 + 默认 5，见 §上下文预算装配）、`archiveMode`（会话归档机制）
 
@@ -483,16 +483,16 @@ export interface IMcpTransport {
 
 固定 N 轮与内容长短脱节——短消息浪费容量、长内容（代码粘贴）超限触发 contextManager 截断丢旧消息。把「装几轮」改成派生值，由「角色包分配偏好 × 模型运行时容量」共同决定，才能真正用满窗口。
 
-#### B. 角色包键面（最简 3 键）
+#### B. 角色包键面（最简 2 键）
 
-迁移面下 L2 键只保留 3 个相关键，其余保持不变：
+迁移面下 L2 键只保留 2 个相关键，其余保持不变：
 
 | # | 键                                       | 作用域           | 含义                                                                                 |
 | - | --------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
 | ① | `prepare.memoryRecallPercent`（0.0\~1.0） | 分配上限（cap，非定额） | **记忆摘要层占可用预算的上限百分比**。记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写 |
 | ② | `prepare.minFallback`（非负整数）             | 运行前装配保底       | **召回保底下限**：recall 语义结果不足此数时，补最近记忆补足；**仅作用于运行前装配**，不管辖 loop 自循环阶段的压缩摘要上限            |
-| ③ | `global.taskLoopLimit`（非负整数，0=关闭）       | 硬上限兜底         | **loop 最多执行轮数**：防无限多步烧 token 的确定性计数器；与软上限 OR 触发终止                                  |
 
+> 原键面③ `global.taskLoopLimit`（硬上限兜底）已删除（2026-09-06，见上表删除标注）：loop 迭代上限现由 `stepBudget`（软上限）与内核 `maxIterations`（`DEFAULT_MAX_ITERATIONS` 兜底）双重承载，不再设角色包「硬上限」键。
 > 设计极简原则：`contextAssembly`（fixed/query/hybrid）、`memoryRecall`（full/limited/none）等开关与本主题正交，保持原状态，不在此迁移面内。
 
 #### C. 预算模型（容量来源 × 分配偏好 → 派生轮数）
@@ -575,12 +575,12 @@ export interface IMcpTransport {
 
 loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命中即终止：
 
-1. **硬上限**（角色包键③）：`taskLoopLimit` 计数器达上限——防死循环烧 token 的确定性兜底。**触顶不是硬止损**：收尾时报告完成进度 + 列出未完成内容，等用户输入继续；下一次装配按记忆递归自然续接（此段问答闭环也照常沉淀一条"做到哪、剩哪"的记忆摘要）。
+1. **硬上限**：内核 `maxIterations`（`DEFAULT_MAX_ITERATIONS` 兜底）+ 角色包 `stepBudget` 软声明——防死循环烧 token 的确定性兜底。**触顶不是硬止损**：收尾时报告完成进度 + 列出未完成内容，等用户输入继续；下一次装配按记忆递归自然续接（此段问答闭环也照常沉淀一条"做到哪、剩哪"的记忆摘要）。（2026-09-06 起原「键③ taskLoopLimit 硬上限」已删，迭代上限回归上述双承载。）
 2. **软上限**（内核预算检测，无角色包键）：替换/压缩已把**完整对话层除顶级锚点外全部替换为摘要形态**，且**摘要层 token 达容量上限**——注入收尾信号，LLM 收敛产出最终交付。触发点是**摘要层容量阈值**（确定性物理量），不是「全变摘要了吗」的状态快照。
 3. **自然结束**：LLM 完成任务交付——turn 自己收敛为 done（2026-09-05 废弃前用 handoff=end/wait 表示，turn 内不再有 Handoff 决策键）。
 4. **装配前判负**（洞 3 独立路径）：顶级锚点（触发输入+首个回答）划走后剩余预算 < 最小可运行阈值 → 该输入无法支撑 loop，装配前确定性拒绝/降级，而非计入上述软上限统计。
 
-> 软上限属于**内核**，不需要角色包键：角色包只负责「分配上限（①②）+ 硬上限（③）」，容量计算与软上限信号由内核统一预算检测产出，保持角色包键面最小。触发输入本身过大是与软上限**不同的失败原因**，走独立的装配前判负路径。
+> 软上限属于**内核**，不需要角色包键：角色包只负责「分配上限（①②）」，容量计算与软上限信号由内核统一预算检测产出，保持角色包键面最小。触发输入本身过大是与软上限**不同的失败原因**，走独立的装配前判负路径。
 
 #### F. 受影响键与互斥约束
 

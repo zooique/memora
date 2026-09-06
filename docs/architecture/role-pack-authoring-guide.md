@@ -130,7 +130,6 @@
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
 | `tokenBudget`   | 整数                           | `0 ~ 1000000`（0=不限制） | `200000`                              | 每轮总 token 上限  | `120000`                    |
 | `stepBudget`    | 整数                           | `0 ~ 500`（0=不限制）     | `50`                                  | 每轮工具步数上限（软上限） | `60`                        |
-| `taskLoopLimit` | 整数                           | `0 ~ 100`（0=关闭）      | `10`                                  | 外部任务驱动循环步数上限  | `20`                        |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。
@@ -155,7 +154,6 @@
 | `askLimit`            | 1    | 10      | error           | 回退默认 `3`           |
 | `tokenBudget`         | 0    | 1000000 | error           | 回退默认 `200000`      |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
-| `taskLoopLimit`       | 0    | 100     | error           | 回退默认 `10`          |
 
 ***
 
@@ -181,9 +179,9 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 28 键 |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 26 键 |
 
-> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。`costBudget` 因内核无定价能力、宿主无执行者已于 2026-08-28 撤键（无消费者的策略键不保留）。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
+> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）——无消费者的策略键不保留。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 
 ***
 
