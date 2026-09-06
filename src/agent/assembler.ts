@@ -146,6 +146,14 @@ export interface AgentHooks {
    * 缺省 no-op（纯工厂单测不触发）。
    */
   refreshRolePackPrefixOnLoop?: () => void;
+  /**
+   * 会议逐步切换（T1，2026-09-06 收口）：按当前 active 任务表步骤的 rolePack 刷新本轮装配视角。
+   *
+   * 由 taskTable 每轮注入时驱动——与任务表渲染同源（同读「当前 active step」），弥补
+   * 此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
+   * 内部防重：视角未变化则跳过，避免每轮迭代重复重建前缀。缺省 no-op（纯工厂单测不触发）。
+   */
+  applyActiveStepAssembly?: () => void;
 }
 
 /**
@@ -336,6 +344,8 @@ function wireRuntimeCallbacks(
   loop.getTaskTable = () => {
     const cp = sessionManager.getCheckpoint();
     if (!cp) return '';
+    // 会议逐步切换：每轮按当前 active step 派生装配视角（与任务表渲染同源；防重见 agent.applyActiveStepAssemblyIfChanged）
+    hooks?.applyActiveStepAssembly?.();
     return renderTaskTable(cp.plan, cp.stepLog);
   };
 

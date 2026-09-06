@@ -268,4 +268,63 @@ describe('assembleComponents', () => {
       expect(output.loop).toBeDefined();
     });
   });
+
+  // ─── 会议逐步切换（T1，2026-09-06）────────────────────────
+
+  describe('会议逐步切换：getTaskTable 驱动装配视角钩子', () => {
+    it('taskTable 每次注入都触发 applyActiveStepAssembly，active step 推进后仍触发', async () => {
+      // 缺口 A 收口：此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效。
+      // 此测试验证「任务表每轮注入 → applyActiveStepAssembly 钩子」的装配导线已接上
+      //（真实 Agent 中该钩子由 applyActiveStepAssemblyIfChanged 实现换角色；
+      //  resolveRoundAssemblyRole / setRoundAssemblyRole 的判定由 rolePackManager.test S5 覆盖）。
+      const applyActiveStepAssembly = vi.fn();
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({
+          hooks: {
+            emit: vi.fn(),
+            isChatBusy: () => false,
+            requestPause: vi.fn(),
+            applyActiveStepAssembly,
+          },
+        }),
+      );
+      // 建立会话检查点（writePlan 依赖 checkpoint 已建）
+      output.sessionManager.createCheckpoint('小组会议：讨论');
+      // 预置多步会议计划：组员1 与组员2 各一步（均带 rolePack）
+      output.sessionManager.writePlan('overwrite', [
+        { description: '组员1发言', rolePack: '组员1' },
+        { description: '组员2发言', rolePack: '组员2' },
+      ]);
+      // 首次注入：应触发钩子（随当前 active step）
+      output.loop.getTaskTable!();
+      expect(applyActiveStepAssembly).toHaveBeenCalledTimes(1);
+      // 组员1 发言完成 → 推进到组员2（active step 切换）
+      const cp = output.sessionManager.getCheckpoint()!;
+      const step1 = cp.plan.find((s) => s.description === '组员1发言')!;
+      expect(output.sessionManager.updatePlanStepStatus(step1.id, 'done')).toBe(true);
+      // 第二次注入：active step 已推进，钩子仍每轮触发（装配视角可随之切换）
+      output.loop.getTaskTable!();
+      expect(applyActiveStepAssembly).toHaveBeenCalledTimes(2);
+    });
+
+    it('无 checkpoint 时 getTaskTable 不触发装配视角钩子（短路）', async () => {
+      // 保护性断言：checkpoint 未建立时任务表为空，钩子不应被调用（避免空转）
+      const applyActiveStepAssembly = vi.fn();
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({
+          hooks: {
+            emit: vi.fn(),
+            isChatBusy: () => false,
+            requestPause: vi.fn(),
+            applyActiveStepAssembly,
+          },
+        }),
+      );
+      // 未 createCheckpoint → getCheckpoint 为空 → getTaskTable 返回 '' 且不触发钩子
+      expect(output.loop.getTaskTable!()).toBe('');
+      expect(applyActiveStepAssembly).not.toHaveBeenCalled();
+    });
+  });
 });

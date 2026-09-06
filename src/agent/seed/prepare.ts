@@ -129,13 +129,15 @@ export class SeedPrepare {
 /**
  * 会议机制（S5）：按给定任务项 rolePack 刷新本轮表层装配视角。
  *
- * 闭包入口（prepare.run）与步序列（runStepSequence 每步入口）共用，保证装配逻辑单一真理源：
+ * 装配逻辑单一真理源。两个调用入口共用本函数，避免双写：
+ *   - prepare.run（turn 开头：按首个 active step 的 rolePack 设一次）
+ *   - 任务表每轮注入（assembler.getTaskTable → hooks.applyActiveStepAssembly → agent.applyActiveStepAssemblyIfChanged，
+ *     T1 收口，2026-09-06：随 active step 推进逐步换角色，防重见 agent 实现）
+ * 内部动作：
  *   - resolveRoundAssemblyRole：范围校验（∈ 组长∪组员，越界/缺员→null+warning，防 LLM 幻觉角色名）
  *   - setRoundAssemblyRole：skills 加载跟随装配视角
  *   - refreshRolePackPrefixForRound：重建 loop 前缀（persona/rules/skills 换，键恒 activePack）
  * rolePack 未声明/越界/缺员 → null → 回落 activePack 前缀（组长视角，工具面不变）。
- *
- * 函数声明提升：prepare.run（类方法）可在其上方调用本函数，无需额外 import 顺序处理。
  *
  * @param deps 种子依赖（取 rolePackManager + 刷新前缀能力）
  * @param rolePack 任务项声明的角色包（无声明 = 非会议，回落 activePack）

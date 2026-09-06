@@ -1212,6 +1212,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
+        // 会议逐步切换：随 active 任务表步骤刷新本轮装配视角（T1，2026-09-06 收口缺口）
+        applyActiveStepAssembly: () => this.applyActiveStepAssemblyIfChanged(),
       },
     });
 
@@ -1335,6 +1337,24 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private refreshRolePackPrefixOnLoop(): void {
     this.refreshRolePackPrefixForRound(null);
+  }
+
+  /**
+   * 会议阶梯推进（T1，2026-09-06 收口）：按当前 active 任务表步骤的 rolePack 派生本轮装配视角。
+   *
+   * 由 assembler.getTaskTable 每轮注入时驱动（hooks.applyActiveStepAssembly），与任务表渲染同源，
+   * 弥补此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
+   * roundRole=candidate（可能为 null，无有效覆盖时回落 activePack 组长），调 refreshRolePackPrefixForRound 重建前缀。
+   * 防重：candidate 与 rolePackManager 当前 roundAssemblyPerspective 一致则跳过，避免每轮迭代重复重建。
+   */
+  private applyActiveStepAssemblyIfChanged(): void {
+    const plan = this._sessionManager?.getCheckpoint()?.plan ?? [];
+    const active = plan.find((s) => s.status === 'active');
+    const candidate = this._rolePackManager?.resolveRoundAssemblyRole(active?.rolePack) ?? null;
+    if (candidate === this._rolePackManager?.roundAssemblyPerspective) return;
+    this._rolePackManager?.setRoundAssemblyRole(candidate);
+    this.refreshRolePackPrefixForRound(candidate);
+    logger.debug({ roundAssemblyRole: candidate }, '会议装配视角随 active step 切换');
   }
 
   /**

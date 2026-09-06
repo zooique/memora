@@ -488,7 +488,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    *
    * 用户消息含「小组会议」**且** activePack 是某组组长 → 复用既有任务表泛型能力，
    * 程序化预置步骤：组员各一步（`rolePack=成员`，触发表层装配硬切换）+ 一步汇总（无 rolePack = 组长视角）。
-   * 不引入会议引擎：仅用 PlanStep.rolePack 表层覆盖 + 既有步 turn 执行（orchestrator 直调 completeExternalTask）。
+   * 不引入会议引擎：步骤执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按步标记 done/blocked，
+   * 装配视角逐步切换由 T1 收口（getTaskTable → applyActiveStepAssembly → applyActiveStepAssemblyIfChanged，2026-09-06）。
    *
    * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则步骤仅标「发言/汇总」由 LLM 见用户消息展开。
    * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。
