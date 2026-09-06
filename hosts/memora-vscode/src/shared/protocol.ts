@@ -649,13 +649,6 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'notice'; level: 'info' | 'error'; message: string }
   /**
-   * 暂停按钮视觉状态同步（Phase 4 暂停/恢复，flag 驱动 SSOT）
-   *
-   * host 在 handlePause 调完 requestPause / cancelPauseRequest 后立即 post，
-   * webview 直接翻 pauseBtn 文案（零事件延迟）。pending=true → "取消暂停"，false → "暂停"。
-   */
-  | { type: 'pause_btn_state'; pending: boolean }
-  /**
    * 待发送区队列更新（Phase 4 暂停/恢复）
    *
    * thinking 态 interject 排队时 host 从内核 loop.pendingInterjections 读快照，立即 post 给 webview

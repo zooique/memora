@@ -603,26 +603,29 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(ofType(posted, 'notice')).toHaveLength(0);
   });
 
-  it('handlePause：requestPause 失败（幂等/异常态）→ 提示暂停失败', () => {
+  it('handlePause：requestPause 返回 false 不弹错误提示（toggle 永远成功）', () => {
     const { provider, posted } = setup();
     const { agent, requestPause } = pauseAgentStub();
     requestPause.mockReturnValue(false);
     provider.setAgent(agent);
+    // handlePause 不再检查 _streaming
     (provider as unknown as { _streaming: boolean })._streaming = true;
     (provider as unknown as { handlePause(): void }).handlePause();
-    const notice = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notice.some((n) => n.message.includes('暂停失败'))).toBe(true);
+    // 不弹 notice——toggle 永远成功；requestPause 即使返回 false 也不拦截
+    expect(ofType(posted, 'notice')).toHaveLength(0);
   });
 
-  it('handlePause：空闲态（非生成中）→ 提示无可暂停', () => {
+  it('handlePause：空闲态也可 toggle（不再检查 _streaming）', () => {
     const { provider, posted } = setup();
     const { agent, requestPause } = pauseAgentStub();
     provider.setAgent(agent);
+    // _streaming=false 时 UI 本来就隐藏暂停按钮（syncButtonSemantics 控制）；
+    // 但如果 handlePause 被调（边缘场景），应该正常调 requestPause 不被拦截
     (provider as unknown as { _streaming: boolean })._streaming = false;
     (provider as unknown as { handlePause(): void }).handlePause();
-    expect(requestPause).not.toHaveBeenCalled();
-    const notice = ofType<{ type: string; message: string }>(posted, 'notice');
-    expect(notice.some((n) => n.message.includes('没有可暂停'))).toBe(true);
+    expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
+    // 不弹 notice
+    expect(ofType(posted, 'notice')).toHaveLength(0);
   });
 
   // ─── 首次启动自动创建首会话（2026-08-31 体验改进：无记录时免手动点「＋」） ───

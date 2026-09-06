@@ -1227,23 +1227,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * syncButtonSemantics / syncSendEnabled 都读它做矩阵决策。
    */
   let _sessionUiState: 'thinking' | 'done' | 'paused' = 'done';
-  /** pauseBtn toggle flag：host post pause_btn_state 同步，驱动按钮文案（暂停/取消暂停）*/
-  let _pauseBtnPending = false;
   /** 连续 supplement 合并跟踪：当前活跃的打断切分条（多条补充追加到同一容器，而非每条建一个新 divider）*/
   let _lastInterruptDivider: HTMLElement | null = null;
 
   /**
-   * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → send 的 classList/title/aria-label + pauseBtn 的 hidden/textContent。
-   * 调用点 = setStatus（状态变了）+ input 事件（输入内容变了）+ pause_btn_state post（pausePending 变了）。
+   * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → send 的 classList/title/aria-label + pauseBtn 的 hidden。
+   * pauseBtn 图标永远是 pause（‖），不做本地 toggle——request/cancel 的行为 toggle 完全由 host 层
+   * handlePause 通过 agent.isPausePending() 判断，UI 不感知 pending 状态。
+   * 调用点 = setStatus（状态变了）+ input 事件（输入内容变了）。
    * 不改变 disabled 态（那是 syncSendEnabled 的职责），不负责 round-block 呼吸点/导航锁（setStatus 的职责）。
    */
   function syncButtonSemantics(): void {
     const hasInput = input.value.trim().length > 0;
     switch (_sessionUiState) {
       case 'thinking':
-        // Gap A：生成中暴露「暂停」软控制（flag 驱动 toggle，pending 状态由 host post 同步）
+        // 生成中暴露暂停按钮（图标永远是 pause ‖）。
+        // pauseRequested=true 但 step 边界未到的窗口期，UI 不感知——用户可再点一次触发 cancel，
+        // 宿主 handlePause 内部通过 agent.isPausePending() 自动切换 request/cancel 行为。
         if (pauseBtn) pauseBtn.hidden = false;
-        if (pauseBtn) pauseBtn.textContent = _pauseBtnPending ? '取消暂停' : '暂停';
         if (hasInput) {
           // thinking + 有输入：发送按钮 = interject 排队（去掉 loading/paused 类，切默认发送图标）
           send.classList.remove('loading', 'paused');
@@ -1356,6 +1357,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // Phase 4：合并补充条的生命周期跟随会话状态——状态变化 = 合并周期结束，
     // 下一个 supplement 应该重新开新 divider（不同运行阶段的补充不应混在一起）
     _lastInterruptDivider = null;
+    // pauseBtn 图标永远是 pause（‖），UI 不维护 toggle 状态——直接进入状态分发
     if (state === 'thinking') {
       // 生成中：round-block summary 呼吸点 + 计数实时刷新（renderRoundBlock 驱动，无需额外文案）
     } else if (state === 'paused') {
@@ -2828,10 +2830,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
-    } else if (msg.type === 'pause_btn_state') {
-      // Phase 4：host flag 驱动 pauseBtn 文案切换（零事件延迟，toggle 的唯一真理源在宿主层）
-      _pauseBtnPending = msg.pending;
-      syncButtonSemantics();
     } else if (msg.type === 'pending_queue_update') {
       // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
       updatePendingQueueBar(msg.items);
@@ -3294,8 +3292,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       sendMessage();
     }
   });
-  // 暂停按钮（Gap A）：仅生成中可见，点击发 pause 消息——host 调 agent.requestPause()
-  // step 边界软暂停当前流（落检查点、可经「继续」恢复），区别于「停止」的丢弃语义。
+  // 暂停按钮：纯投影 thinking 状态，永远显示 pause（‖）图标。
+  // 点击 → 发 pause 消息；宿主 handlePause 通过 agent.isPausePending() 自动切换
+  // requestPause / cancelPauseRequest（用户可在 step 边界到之前反悔）。
+  // UI 不感知 pending 状态，也不做任何图标 toggle——语义完全由内核状态机驱动。
   pauseBtn?.addEventListener('click', () => {
     vscode.postMessage({ type: 'pause' });
   });

@@ -174,6 +174,20 @@ class LoopMetrics {
   }
 }
 
+/**
+ * step 边界气口申请——统一三种用户申请的气口语义（SSOT 收敛）：
+ *  旧设计分散为 pauseRequested flag + pendingInterjections[] 数组。2026-09-06 收敛为单一队列：
+ *    - pause：宿主 requestPause → queueInterrupt({kind:'pause'})
+ *    - interject：宿主 interject → queueInterrupt({kind:'interject', content})
+ *    - ask_user 不走此队列（它是 LLM 工具触发的气口，在工具分支直接 yield paused，与用户申请气口不同源）
+ *
+ * 消费方 = _handleInterrupt：step 边界统一 queue.splice(0) 取出全部申请，
+ * 先注入型（interject → appendUser）后挂起型（pause → yield paused）。
+ */
+type InterruptRequest =
+  | { readonly kind: 'pause' }
+  | { readonly kind: 'interject'; readonly content: string };
+
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
@@ -222,9 +236,26 @@ export class AgentLoop {
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
    *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
   private readonly toolResultCache = new ToolResultCache();
-  /** 软暂停请求标志（区别于硬停止 signal.abort）。requestPause() 置位，
-   *  step 边界挂起；写入口仅收敛为 requestPause/clearPauseRequest，保证不变式可守 */
-  private pauseRequested = false;
+  /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。保留 getter/setter 名兼容外部调用，
+   *  实际读写委托给 interruptQueue 中 kind='pause' 条目的增删 */
+  private get pauseRequested(): boolean {
+    return this.interruptQueue.some((r) => r.kind === 'pause');
+  }
+  private set pauseRequested(v: boolean) {
+    if (v) {
+      // 置位：确保队列有 pause 条目（幂等，不重复追加）
+      if (!this.interruptQueue.some((r) => r.kind === 'pause')) {
+        this.interruptQueue.push({ kind: 'pause' });
+      }
+    } else {
+      // 清除：过滤掉 pause 条目（保留 interject 条目）
+      this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'pause');
+    }
+  }
+  /** step 边界气口申请统一队列（2026-09-06 收敛：替代 pauseRequested flag + pendingInterjections[]）。
+   *  用户申请的气口（pause/interject）统一入队，_handleInterrupt 在 step 边界消费：
+   *  先注入型（interject → appendUser），后挂起型（pause → yield paused）。 */
+  private interruptQueue: InterruptRequest[] = [];
   /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
@@ -250,8 +281,6 @@ export class AgentLoop {
   onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
-  /** 待注入的插话内容队列。interject() 追加（申请），step 边界消费清空；数组支持连续快速插话 */
-  private pendingInterjections: string[] = [];
   /** 主动提问计数（本 turn 粒度，resetTurnState 清零）：ask_user 工具触发次数（askLimit 硬护栏） */
   private askCountThisTurn = 0;
   /**
@@ -497,6 +526,10 @@ export class AgentLoop {
     if (input && input.trim()) {
       // 先清执行期临时残留，再接续跑输入，保证续跑上下文干净（与 processUserInput 入口一致）
       this.cleanExecutionTemporary();
+      // 直接 appendUserMessage——不走 interruptQueue。
+      // 语义区分：interruptQueue 是 loop 正在跑时的"申请入队，step 边界消费"机制；
+      // 续跑时 loop 还没开始跑（generator 还没进入 while 循环），不存在"step 边界"这个消费时机，
+      // 所以补充输入直接 appendUserMessage 入史即可，runIterationLoop 启动后第一轮 LLM 必看到。
       this.appendUserMessage(input);
     }
     // 重置本轮运行计数状态（与 processUserInput 一致），确保续跑干净
@@ -550,32 +583,41 @@ export class AgentLoop {
   }
 
   /**
-   * 请求在下一 step 边界挂起（软暂停唯一写入口，仅置标志）。
+   * 请求在下一 step 边界挂起（软暂停申请入队）。
+   * 委托 interruptQueue（pauseRequested setter 已实现幂等），step 边界由 _handleInterrupt 消费。
    * 仅挂起不 abort，可经 continueAfterPause 续跑——与硬停止（signal.abort 无法续跑）严格区分；
-   * 暂停语义与持久化由状态机持有，本标志只控制挂起时机。
+   * 暂停语义与持久化由状态机持有，本方法只控制挂起时机。
    */
   requestPause(): void {
-    this.pauseRequested = true;
+    this.pauseRequested = true; // setter → interruptQueue push {kind:'pause'}（幂等）
   }
 
-  /** 清除在途的软暂停申请（与 requestPause 对称：用户取消/流结束清理/暂停超时清扫共用） */
+  /** 清除在途的软暂停申请（与 requestPause 对称：用户取消/流结束清理/暂停超时清扫共用）
+   *  委托 interruptQueue 过滤掉 pause 条目（保留 interject 条目） */
   clearPauseRequest(): void {
-    this.pauseRequested = false;
+    this.pauseRequested = false; // setter → interruptQueue filter
   }
 
-  /** 插话（申请）：把用户补充输入排队，当前 step 完成后在 step 边界统一注入为 user 消息。
-   *  与 requestPause（step 边界挂起待续跑）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
-   *  只在边界拿到补充输入后开始下一轮 step。 */
+  /** 插话（申请入队）：把用户补充输入作为 InterruptRequest{kind:'interject'} 入 interruptQueue。
+   *  与 requestPause（queueInterrupt pause）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
+   *  只在 step 边界统一消费（先注入型 → appendUser，后挂起型 → yield paused）。 */
   interject(content: string): void {
-    this.pendingInterjections.push(content);
+    this.interruptQueue.push({ kind: 'interject', content });
   }
 
   /** 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称，在 step 边界消费前可安全删除。
+   *  委托 interruptQueue 中 interject 条目的索引。
    *  index 越界时静默 no-op（宿主镜像数组和内核队列始终同序同长度，理论上不会越界）。
    *  @returns true=成功删除；false=index 越界或队列为空 */
   removePendingInterject(index: number): boolean {
-    if (index < 0 || index >= this.pendingInterjections.length) return false;
-    this.pendingInterjections.splice(index, 1);
+    // 计算所有 interject 条目的全局索引映射
+    const interjectIndices: number[] = [];
+    this.interruptQueue.forEach((req, i) => {
+      if (req.kind === 'interject') interjectIndices.push(i);
+    });
+    if (index < 0 || index >= interjectIndices.length) return false;
+    const globalIdx = interjectIndices[index]!; // 已由边界检查保证非 undefined
+    this.interruptQueue.splice(globalIdx, 1);
     return true;
   }
 
@@ -585,16 +627,19 @@ export class AgentLoop {
    *  agent.discardCurrentCheckpoint 之前只清 checkpoint 不清队列（孤儿数据 bug）。
    *  @returns 被清除的条目数（宿主可用于 notice 反馈） */
   clearPendingInterjections(): number {
-    const cleared = this.pendingInterjections.length;
-    this.pendingInterjections.length = 0;
+    const cleared = this.interruptQueue.filter((r) => r.kind === 'interject').length;
+    this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
     return cleared;
   }
 
   /** 读取当前待注入插话队列快照（宿主渲染层只读镜像）。
+   *  从 interruptQueue 中筛选 kind='interject' 并提取 content。
    *  返回副本而非原数组——宿主拿不到内核内部引用，防暗改。
    *  宿主 Phase 5 收敛：不再自己维护 _pendingQueue 镜像，每次渲染从内核读。 */
   getPendingInterjections(): readonly string[] {
-    return this.pendingInterjections.slice();
+    return this.interruptQueue
+      .filter((r): r is Extract<InterruptRequest, { kind: 'interject' }> => r.kind === 'interject')
+      .map((r) => r.content);
   }
 
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
@@ -698,13 +743,14 @@ export class AgentLoop {
     }
     // done 终止前消费排队插话（统一「申请 → 气口生效」语义）：
     // LLM 返回 done（纯文本完成）期间用户 interject() 入队的补充输入，若直接 return false 会被静默丢弃；
-    // 消费并继续迭代，下一轮 LLM 必看到插话内容。insert 的消费主要发生在 _handleInterrupt
-    // （迭代开始前），此处覆盖「LLM 在收尾轮执行期间插话」的窗口。
-    if (this.pendingInterjections.length > 0) {
-      const contents = this.pendingInterjections.splice(0);
-      for (const content of contents) {
-        this.appendUserMessage(content);
+    // 消费并继续迭代，下一轮 LLM 必看到插话内容。主要消费发生在 _handleInterrupt（迭代开始前），
+    // 此处覆盖「LLM 在收尾轮执行期间插话」的窗口。从 interruptQueue 取 interject 条目并过滤删除。
+    const interjectReqs = this.interruptQueue.filter((r) => r.kind === 'interject');
+    if (interjectReqs.length > 0) {
+      for (const req of interjectReqs) {
+        this.appendUserMessage((req as Extract<InterruptRequest, { kind: 'interject' }>).content);
       }
+      this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
       return true;
     }
     return false;
@@ -761,29 +807,38 @@ export class AgentLoop {
     return yield* this._callAndRoute(iteration, gate);
   }
 
-  /** 中断检查：软暂停（step 边界挂起，可续跑）、硬中止（signal aborted）与排队插话消费在此裁决。
-   *  暂停统一在 step 边界挂起，由 consumeExecutionStream 统一收口翻态写 pauseMeta。
+  /** 中断检查：step 边界统一消费 interruptQueue（pause + interject）+ 硬中止检查。
+   *
+   *  收敛后的单一气口出口——pauseRequested flag 和 pendingInterjections[] 都已收敛为 interruptQueue，
+   *  此处统一 queue.splice(0) 取出全部申请，按 kind 分两类处理：
+   *    - 注入型（interject）：先 appendUserMessage，不暂停 loop，让补充输入立刻进入下一轮 step
+   *    - 挂起型（pause）：yield {type:'paused'} + return 'paused'，generator 在 step 边界挂起
+   *
+   *  顺序：先消费注入型 → 再检查挂起型 → 最后硬中止。注入型优先是为了让补充输入在 pause 生效前
+   *  就入史——如果用户同时发了 interject + pause，补充输入应该被看到，而不是被 pause 吞掉。
+   *
    *  返回 'paused' | 'aborted' 表示本迭代终止；返回合并后的 AbortSignal 表示继续。 */
   private async *_handleInterrupt(
     signal: AbortSignal | undefined,
   ): AsyncGenerator<AgentChunk, 'paused' | 'aborted' | AbortSignal | undefined, unknown> {
-    // 软暂停：在 step 边界挂起生成器（不 abort，保留 this.messages 供续跑）；
-    // 暂停通知走 yield {type:'paused'} chunk，由 consumeExecutionStream 收口统一翻态 + 写 pauseMeta
-    if (this.pauseRequested) {
-      this.pauseRequested = false;
+    // 统一取出全部气口申请（queue.splice(0) 原子消费，消费后队列为空）
+    const reqs = this.interruptQueue.splice(0);
+
+    // ① 先处理注入型气口（interject → appendUserMessage）——不暂停 loop，让补充输入立刻生效
+    for (const req of reqs) {
+      if (req.kind === 'interject') {
+        this.appendUserMessage(req.content);
+      }
+    }
+
+    // ② 后处理挂起型气口（pause → yield paused）——如果队列里有 pause 申请，在 step 边界挂起
+    if (reqs.some((r) => r.kind === 'pause')) {
+      // pause 消费后 clearPauseRequest 已由 splice(0) 自动完成——无需额外清 flag
       yield { type: 'paused' };
       return 'paused';
     }
-    // 排队插话消费（统一在 step 边界注入）：interject() 只入队不中断，排队内容在下一迭代开始前
-    // 统一注入为 user 消息（「申请 → 气口生效」，与 requestPause 同构）。abort 时同样消费（留档，
-    // 下一 turn 可见）；done 分支的兜底消费见 handleIterationResult。
-    if (this.pendingInterjections.length > 0) {
-      const contents = this.pendingInterjections.splice(0);
-      for (const content of contents) {
-        this.appendUserMessage(content);
-      }
-    }
-    // 硬中止检查：外部 signal（宿主取消/超时）。插话不再经独立 controller（单一模式，2026-09-04）
+
+    // ③ 硬中止检查：外部 signal（宿主取消/超时）。插话不再经独立 controller（单一模式，2026-09-04）
     if (signal?.aborted) {
       yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
       return 'aborted';

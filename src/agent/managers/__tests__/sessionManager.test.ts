@@ -1872,7 +1872,7 @@ describe('SessionManager', () => {
         expect(result.map((s: { description: string }) => s.description)).toEqual(['第一步', '第二步']);
       });
 
-      it("'update' 应全量替换并保留已有步骤 id 与 status", () => {
+      it("'update' 应全量替换并保留已有步骤 id 与 status（ensureActiveStep 自动激活第一个）", () => {
         mgr.appendPlanStep('旧步骤1');
         mgr.appendPlanStep('旧步骤2');
         const before = mgr.getCheckpoint()!.plan;
@@ -1880,7 +1880,8 @@ describe('SessionManager', () => {
         expect(result).toHaveLength(2);
         expect(result.map((s: { description: string }) => s.description)).toEqual(['新步骤1', '新步骤2']);
         expect(result[0]!.id).toBe(before[0]!.id);
-        expect(result[0]!.status).toBe('pending');
+        // 修复：writePlan 后 ensureActiveStep 自动激活第一个 pending step
+        expect(result[0]!.status).toBe('active');
       });
 
       it("'update' 传入更多步骤时应新建后续步骤并保留前序 id", () => {

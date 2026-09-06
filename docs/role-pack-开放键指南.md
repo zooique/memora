@@ -141,7 +141,6 @@
   "strategy": {
     "prepare": { "memoryRecall": "full", "contextAssembly": "hybrid" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
-    "reflect": { "handoff": "wait" },
     "global": { "tokenBudget": 12000 }
   },
   "capabilities": [

@@ -1131,19 +1131,53 @@ export class SessionManager {
       });
       this.updatePlan(updatedPlan);
     }
+    // 确保新写入/追加/更新后的 plan 有 active step（overwrite 清空后全 pending → 激活第一个）
+    this.ensureActiveStep();
     return this.checkpoint.plan;
   }
 
   /**
    * 更新计划步骤状态（plan 步骤状态的唯一写点）。必须经此写点置 checkpointDirty，
    * 否则状态变更可能永不落盘，计划变更与标脏在此原子完成。
+   *
+   * 写完后自动 ensureActiveStep：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
+   * 则推进下一个 pending → active。这保证任何时刻 plan 中恰好有一个 active step。
    */
   updatePlanStepStatus(stepId: string, status: PlanStep['status']): boolean {
     const step = this.checkpoint?.plan.find((s) => s.id === stepId);
     if (!step) return false;
     step.status = status;
+    // 确保 active 步骤存在且正确推进（把 active 标记为 done/blocked 后自动激活下一个 pending）
+    this.ensureActiveStep();
     this.touchCheckpoint();
     return true;
+  }
+
+  /**
+   * 确保 plan 中存在且仅存在一个 active step（SSOT 自维护）。
+   *
+   * 三种场景会触发补偿：
+   * 1. 全 pending，无 active → 激活第一个 pending（plan 刚写入时）
+   * 2. 有 active，且刚被标记为 done/blocked → 激活下一个 pending（推进语义）
+   * 3. 无 active 且全 done/blocked → 空操作（plan 已完成）
+   *
+   * 不在 updatePlanStepStatus 外部重复调用——它在每次写点后自动执行。
+   */
+  private ensureActiveStep(): void {
+    if (!this.checkpoint) return;
+    const plan = this.checkpoint.plan;
+    if (plan.length === 0) return;
+
+    // 已有 active step → 什么都不做
+    const hasActive = plan.some((s) => s.status === 'active');
+    if (hasActive) return;
+
+    // 找到第一个 pending → 激活
+    const firstPending = plan.find((s) => s.status === 'pending');
+    if (firstPending) {
+      firstPending.status = 'active';
+      // 不 touchCheckpoint——调用方（updatePlanStepStatus / writePlan）会统一标脏
+    }
   }
 
   /** 完成一个 step（SSOT 唯一写点）：单函数内顺序写步骤状态 + stepLog + heartbeat 保证原子性 */

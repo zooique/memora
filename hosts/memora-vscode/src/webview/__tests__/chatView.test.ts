@@ -67,7 +67,7 @@ const HTML = `
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
-            <button id="pauseBtn" hidden></button>
+            <button id="pauseBtn" hidden title="暂停生成" aria-label="暂停生成"><span class="btn-icon" data-icon="pause"></span></button>
             <button id="send"></button>
           </div>
         </div>
@@ -673,20 +673,37 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(send.disabled).toBe(false);
   });
 
-  // ─── pauseBtn toggle 文案联动 ───
+  // ─── pauseBtn 纯投影会话状态机（图标永远 pause，不做本地 toggle） ───
 
-  it('thinking 态 pause_btn_state post → pauseBtn 文案从"暂停"切"取消暂停"', () => {
+  it('thinking 态 pauseBtn 显示 pause ‖ 图标，点击 post pause 消息', () => {
+    const { postMessage } = mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
+    // done 初始：隐藏
+    expect(pauseBtn.hidden).toBe(true);
+    // thinking 态：显示 pause 图标（永远不变）
+    dispatch({ type: 'status', state: 'thinking' });
+    expect(pauseBtn.hidden).toBe(false);
+    expect(icon?.dataset.icon).toBe('pause');
+    expect(pauseBtn.title).toBe('暂停生成');
+    // 点击 → 只 post pause 消息，不做任何视觉变化
+    pauseBtn.click();
+    expect(postMessage).toHaveBeenLastCalledWith({ type: 'pause' });
+    expect(pauseBtn.hidden).toBe(false);
+    expect(icon?.dataset.icon).toBe('pause'); // 图标不变
+  });
+
+  it('paused / done 态 pauseBtn 隐藏（状态机驱动）', () => {
     mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     dispatch({ type: 'status', state: 'thinking' });
-    // 默认：未 pending → "暂停"
-    expect(pauseBtn.textContent).toBe('暂停');
-    // host post pause_btn_state pending=true → 翻文案
-    dispatch({ type: 'pause_btn_state', pending: true });
-    expect(pauseBtn.textContent).toBe('取消暂停');
-    // toggle 回 false → 恢复
-    dispatch({ type: 'pause_btn_state', pending: false });
-    expect(pauseBtn.textContent).toBe('暂停');
+    expect(pauseBtn.hidden).toBe(false);
+    // paused 态：隐藏（pause 已被 step 边界消费，send 按钮自动变 ▶ 继续）
+    dispatch({ type: 'status', state: 'paused' });
+    expect(pauseBtn.hidden).toBe(true);
+    // done 态：隐藏
+    dispatch({ type: 'status', state: 'done' });
+    expect(pauseBtn.hidden).toBe(true);
   });
 
   // ─── pending_queue_update DOM 渲染 ───

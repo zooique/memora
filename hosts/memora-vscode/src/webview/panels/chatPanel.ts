@@ -1907,9 +1907,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
       this._agent.interject(input);
       // 新增：pausePending 期间发补充 → 自动取消暂停（一行改动，覆盖暂停操作）
+      // pause_btn_state 消息已删除（UI 本地 toggle），cancelPauseRequest 即可；
+      // UI 状态会在下一次 status 切换（如后续新 runFlow thinking）时自动重置
       if (this._agent.isPausePending()) {
         this._agent.cancelPauseRequest();
-        this.post({ type: 'pause_btn_state', pending: false });
       }
       // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
       // P2 收敛：不再维护 _pendingQueue 镜像，从内核 queue 读当前值（SSOT 源头）
@@ -2050,31 +2051,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 空闲态（无进行中流）提前拦截给明确提示。
    */
   /**
-   * 暂停 / 取消暂停 toggle（Phase 4 暂停/恢复，flag 驱动 SSOT）
+   * 暂停按钮行为 toggle（宿主层裁决，UI 纯投影）
    *
-   * 读 isPausePending 决定行为：
-   *   - 有在途暂停申请 → cancelPauseRequest() 取消（用户反悔）
-   *   - 无在途暂停申请 → requestPause() 申请暂停
-   * UI 直接读 flag 翻视觉（点暂停立即变"取消暂停"，再点立即翻回），不等 step 边界事件。
-   * 内核 loop.pauseRequested = 单一真理源，step 边界是 flag 的唯一消费者。 */
+   * UI 只负责显示 pause（‖）图标，不维护任何本地 toggle 状态——图标永远不变，
+   * hidden 由会话状态机驱动（thinking 显示，paused/done 隐藏）。
+   * 点击后的行为裁决完全在宿主层：
+   *   - agent.isPausePending()=true → cancelPauseRequest()（用户反悔，step 边界未到前取消申请）
+   *   - agent.isPausePending()=false → requestPause()（发暂停申请，step 边界生效）
+   * 不检查 requestPause 返回值、不弹错误提示——paused 状态下调用是 no-op，UI 下一次
+   * setStatus 收到 paused 就会隐藏按钮，不会卡住。 */
   private handlePause(): void {
     if (!this._agent) return;
-    if (!this._streaming) {
-      this.post({ type: 'notice', level: 'info', message: '当前没有可暂停的生成' });
-      return;
-    }
     if (this._agent.isPausePending()) {
-      // toggle 回取消（用户反悔）
       this._agent.cancelPauseRequest();
-      this.post({ type: 'pause_btn_state', pending: false });
-      return;
-    }
-    const ok = this._agent.requestPause('user-pause', 'user');
-    if (!ok) {
-      this.post({ type: 'notice', level: 'error', message: '暂停失败，请重试' });
     } else {
-      // 立即通知 webview 按钮翻视觉（不等 step 边界）
-      this.post({ type: 'pause_btn_state', pending: true });
+      // requestPause 在 paused/error 状态返回 false，我们不拦截——UI 再点一次 toggle 回来即可
+      this._agent.requestPause('user-pause', 'user');
     }
   }
 
@@ -2357,9 +2349,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'status', state: 'paused' });
     } else {
       this.post({ type: 'done', roundId: latestRoundId });
-      // status:done 延后到摘要完成（或 30s 兜底）——防 done 后立即删除导致孤儿 round-summary
-      // 详见 orchestrator.runSummary emit roundSummaryGenerated；中断/暂停走即时 done 路径
-      const SUMMARY_WAIT_TIMEOUT_MS = 30_000;
+      // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
+      // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；
+      // 5秒兜底足够抗偶发网络抖动，避免 UI 长时间卡在 thinking 态让用户困惑
+      const SUMMARY_WAIT_TIMEOUT_MS = 5_000;
       // 局部捕获 agent——函数入口已 guard this._agent，但 setTimeout 闭包内 tsc 不传播 guard，
       // 局部变量让闭包捕获到确定存在的引用（入口 if (!this._agent) return 已保证到此点必有值）
       const agent = this._agent;
