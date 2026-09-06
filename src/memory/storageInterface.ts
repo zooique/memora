@@ -19,7 +19,8 @@ import type { Memory } from '@/memory/types.js';
  */
 export interface IMemoryStorage {
   /**
-   * 插入或更新记忆；source 为开放字符串，无校验限制。
+   * 插入或更新记忆；source 为开放字符串可自定义，但写入须经 validateSource 统一校验
+   *（内核 inMemoryStorage 与宿主 workspaceStorage 已接入 block/warn 分级拦截，2026-09-06 DC-1 注释对齐）。
    * 契约（2026-08-25）：整对象覆盖、无 CAS 乐观锁——单 Agent 设计假设；
    * 多 Agent 并发写同会话需扩展版本字段/条件更新，内核当前不承诺并发一致性。
    */
