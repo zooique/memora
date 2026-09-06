@@ -1472,6 +1472,72 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：P1-01 超时-abort 与暂停竞态路由（SSOT 收口 _routePausedIfTimeoutAndPause）
+// 覆盖：超时 abort + 用户已申请暂停 → 路由 paused（续跑）而非 aborted（硬中止）；
+//       超时 abort 但用户未申请暂停 → 仍路由 aborted（不误判为 paused）。
+// 反例即 _routePausedIfTimeoutAndPause 谓词的突变靶标：删 `&& this.pauseRequested`
+// → 反例将由 aborted 变为 paused → 测试转红，证明 helper 是唯一活跃机制。
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · P1-01 超时-abort 与暂停竞态路由', () => {
+  /**
+   * 关键时序约束（对抗式排雷）：
+   * _handleInterrupt 在 step 边界（loop.ts L863）会先判 `signal?.aborted`——
+   * 若信号在 processUserInput 启动前就 abort，会直接短路返回 aborted，
+   * 永远到不了 L909 的 P1-01 路由。因此信号必须在首步 _handleInterrupt 放行后、
+   * LLM 调用前（借 thinking chunk）才 abort。thinking 在 _callAndRoute L895 产出，
+   * 早于 callLlmWithRetry（L901）→ 恰好落在放行之后、LLM 调用之前。
+   */
+  it('[P1-01] 超时 abort + 用户已申请暂停 → 路由 paused（续跑）而非 aborted', async () => {
+    const loop = new AgentLoop({
+      provider: mockRetryProvider([{ chunks: [{ content: '不应到达' }] }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const ac = new AbortController();
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+      chunks.push(chunk);
+      if (chunk.type === 'thinking') {
+        loop.requestPause();
+        ac.abort(new DOMException('LLM request timed out', 'TimeoutError'));
+      }
+    }
+
+    const paused = chunks.filter((c) => c.type === 'paused');
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(paused, '超时+暂停 应路由 paused').toHaveLength(1);
+    expect(aborted, '超时+暂停 不应路由 aborted').toHaveLength(0);
+    expect(chunks[chunks.length - 1]!.type, 'paused 应为末块').toBe('paused');
+  });
+
+  it('[P1-01] 超时 abort 但用户未申请暂停 → 路由 aborted（硬中止），不误判为 paused', async () => {
+    const loop = new AgentLoop({
+      provider: mockRetryProvider([{ chunks: [{ content: '不应到达' }] }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    const ac = new AbortController();
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+      chunks.push(chunk);
+      if (chunk.type === 'thinking') {
+        // 仅超时，不申请暂停
+        ac.abort(new DOMException('LLM request timed out', 'TimeoutError'));
+      }
+    }
+
+    const paused = chunks.filter((c) => c.type === 'paused');
+    const aborted = chunks.filter((c) => c.type === 'aborted');
+    expect(paused, '超时无暂停 不应路由 paused').toHaveLength(0);
+    expect(aborted, '超时无暂停 应路由 aborted').toHaveLength(1);
+    expect(chunks[chunks.length - 1]!.type, 'aborted 应为末块').toBe('aborted');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：软暂停（不中断工作模型 v2.1）
 // 覆盖：边界挂起 / messages 保留 / {paused} / 空输入续跑 / 有输入续跑 /
 //       硬停止 [已中断] / isInAutonomousStep 信号

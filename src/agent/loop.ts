@@ -868,6 +868,19 @@ export class AgentLoop {
     return signal;
   }
 
+  /** 超时 + 用户已申请暂停 → 路由 paused（续跑）而非 aborted（硬中止）。
+   *  SSOT：LLM 调用 abort 点（_callAndRoute）与工具执行 abort 点（handleToolCalls）统一过此判定，
+   *  消除「pause 优先于 abort」在两处各复制 if 的漂移风险。
+   *  注：step 边界（_handleInterrupt）的气口消费是另一机制——那里 pause 在 abort 之前被优先消费，
+   *  不属 abort 路由，故不经本方法。返回 paused chunk 或 null。 */
+  private _routePausedIfTimeoutAndPause(signal: AbortSignal | undefined): AgentChunk | null {
+    // 突变验证靶标：删除 `&& this.pauseRequested` → 负例测试（超时无暂停应 aborted）转红
+    if (isTimeoutAbortSignal(signal) && this.pauseRequested) {
+      return { type: 'paused' };
+    }
+    return null;
+  }
+
   /** LLM 调用 + 结果路由：上下文准备 → 调 LLM → 按 abort/工具/纯文本 分支路由。
    *  effectiveSignal 已由 _handleInterrupt 合并好，此处直接使用。 */
   private async *_callAndRoute(
@@ -908,11 +921,11 @@ export class AgentLoop {
       if (llmResult.fullContent.trim()) {
         this.appendAssistantText(llmResult.fullContent + this.ui.interrupted);
       }
-      // P1-01：timeout catch 里若用户已申请暂停（interruptQueue 有 pause 条目），
-      // 语义上应尊重用户"暂停待续跑"的意图，而非硬中止。改路由为 paused →
-      // 上游 agent.ts 会把 checkpoint 设为 paused，用户可 resume。
-      if (isTimeoutAbortSignal(effectiveSignal) && this.pauseRequested) {
-        yield { type: 'paused' };
+      // P1-01：timeout abort 且用户已申请暂停 → 路由 paused（续跑）而非 aborted（硬中止）。
+      // 经单一收口方法 _routePausedIfTimeoutAndPause，与工具执行 abort 点共用同一判定（SSOT）。
+      const pausedChunk = this._routePausedIfTimeoutAndPause(effectiveSignal);
+      if (pausedChunk) {
+        yield pausedChunk;
         return 'paused';
       }
       yield {
@@ -1093,6 +1106,13 @@ export class AgentLoop {
       signal,
     );
     if (execResult.aborted) {
+      // P1-01 同构：工具执行中途 timeout abort 且用户已申请暂停 → 路由 paused（续跑）。
+      // 经单一收口方法 _routePausedIfTimeoutAndPause，与 LLM abort 点共用同一判定（SSOT）。
+      const pausedChunk = this._routePausedIfTimeoutAndPause(signal);
+      if (pausedChunk) {
+        yield pausedChunk;
+        return 'paused';
+      }
       yield {
         type: 'aborted',
         reason: isTimeoutAbortSignal(signal) ? this.ui.abortedByTimeout : this.ui.abortedByUser,
