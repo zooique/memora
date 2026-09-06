@@ -1608,6 +1608,46 @@ describe('SessionManager', () => {
       });
     });
 
+    describe('stepLog 分组截断（P-1，2026-09-06：每 step 最多 3 条，替代全局 FIFO 12 条）', () => {
+      it('同一 step 完成 4 次 → 该 step 仅保留最近 3 条（最早 1 条被移除）', () => {
+        manager.createCheckpoint('主目标');
+        manager.completeStep({ planStepId: 'step-1', summary: '第1次' });
+        manager.completeStep({ planStepId: 'step-1', summary: '第2次' });
+        manager.completeStep({ planStepId: 'step-1', summary: '第3次' });
+        manager.completeStep({ planStepId: 'step-1', summary: '第4次' });
+        const logs = manager.getCheckpoint()!.stepLog!;
+        // 只留最近 3 条（第 4/3/2 次），最早第 1 次被移除
+        expect(logs).toHaveLength(3);
+        expect(logs.map((s) => s.summary)).toEqual(['第2次', '第3次', '第4次']);
+      });
+
+      it('5 个 step 各完成 3 次 → 每 step 记录都在（15 条不互斥截断），旧 step 摘要不再被截没', () => {
+        manager.createCheckpoint('主目标');
+        for (let step = 0; step < 5; step += 1) {
+          for (let round = 0; round < 3; round += 1) {
+            manager.completeStep({ planStepId: `step-${step}`, summary: `step-${step} 第${round}次` });
+          }
+        }
+        const logs = manager.getCheckpoint()!.stepLog!;
+        expect(logs).toHaveLength(15);
+        for (let step = 0; step < 5; step += 1) {
+          // 每个旧 step 的 3 条运行摘要全部可查（修复前全局 12 条会截没 step-0/1 的记录）
+          expect(logs.filter((s) => s.planStepId === `step-${step}`)).toHaveLength(3);
+        }
+      });
+
+      it('planStepId 为 undefined（非计划步骤兜底组）同样按 3 条截断', () => {
+        manager.createCheckpoint('主目标');
+        manager.completeStep({ summary: '兜底1' });
+        manager.completeStep({ summary: '兜底2' });
+        manager.completeStep({ summary: '兜底3' });
+        manager.completeStep({ summary: '兜底4' });
+        const logs = manager.getCheckpoint()!.stepLog!;
+        expect(logs).toHaveLength(3);
+        expect(logs.map((s) => s.summary)).toEqual(['兜底2', '兜底3', '兜底4']);
+      });
+    });
+
     describe('结构性守卫：字段集合不得在 pause 时收缩', () => {
       it('pause 前后检查点的键集合不得收缩，新增键仅限 pausedAt', () => {
         seedCheckpointWithSidecars();

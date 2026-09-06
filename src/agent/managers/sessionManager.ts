@@ -1200,7 +1200,8 @@ export class SessionManager {
       this.updatePlanStepStatus(planStepId, 'done');
     }
 
-    // 追加 step 日志（step 级推进记录，FIFO 超 12 条移除最早）
+    // 追加 step 日志（step 级推进记录；P-1 2026-09-06 起按 planStepId 分组截断，每 step 最多 3 条——
+    // 原全局 FIFO 12 条在 5+ step 任务中会把旧 step 的运行记录整段截没，用户翻旧 done step 摘要看到「空」）
     const outcome: StepOutcome = {
       planStepId,
       summary,
@@ -1210,8 +1211,18 @@ export class SessionManager {
       this.checkpoint.stepLog = [];
     }
     this.checkpoint.stepLog.push(outcome);
-    if (this.checkpoint.stepLog.length > 12) {
-      this.checkpoint.stepLog = this.checkpoint.stepLog.slice(-12);
+    // 每 step 截断上限：同 planStepId（含 undefined 兜底组）超过 3 条时移除最早进入的超出记录
+    const STEP_LOG_PER_STEP_LIMIT = 3;
+    const groupCount = this.checkpoint.stepLog.filter((s) => s.planStepId === planStepId).length;
+    if (groupCount > STEP_LOG_PER_STEP_LIMIT) {
+      let excess = groupCount - STEP_LOG_PER_STEP_LIMIT;
+      this.checkpoint.stepLog = this.checkpoint.stepLog.filter((s) => {
+        if (excess > 0 && s.planStepId === planStepId) {
+          excess -= 1;
+          return false;
+        }
+        return true;
+      });
     }
 
     // 心跳 + 落盘：step 边界即检查点语义边界，崩溃后可从该边界无损续跑
