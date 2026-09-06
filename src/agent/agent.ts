@@ -277,10 +277,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private registerPauseTimeoutArchiver(): void {
     this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
-      // 清理残留 pending 暂停态（checkPauseTimeout 已复位状态机，但 pendingPauseReason 可能遗留），
-      // 否则下次 requestPause() 会被幂等检查静默忽略
-      this._sessionManager?.cancelPendingPause();
-
+      // 2026-09-06 T4 收口：pendingPauseReason 已由 resetToRunning() 内部统一清理
+      //（原此处 cancelPendingPause 补丁删除——checkPauseTimeout 经 sessionManager:1361 resetToRunning 已覆盖）。
       const { sessionId, date, session } = payload;
       if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录

@@ -506,6 +506,29 @@ describe('SessionStateMachine — resetToRunning', () => {
     expect(sm.errorInfo).toBeNull();
     expect(sm.pendingPauseInfo).toBeNull();
   });
+
+  it('T4 收口：pending 在途时 resetToRunning 应清除 pendingPause（突变靶标：删 resetToRunning 内清 pending → 本测试红）', () => {
+    const sm = new SessionStateMachine();
+    expect(sm.requestPause('申请暂停', 'user')).toBe(true); // 在途申请注册成功（流中场景）
+    expect(sm.isPausePending()).toBe(true);
+
+    sm.resetToRunning(); // 强制重置（暂停超时/放弃检查点等清理路径）
+
+    expect(sm.isPausePending()).toBe(false);
+    expect(sm.pendingPauseInfo).toBeNull();
+  });
+
+  it('T4 收口：resetToRunning 后 requestPause 可再次接受（原残留会让幂等检查永久拒绝，暂停按钮全失效）', () => {
+    const sm = new SessionStateMachine();
+    sm.requestPause('第一次申请', 'user');
+    sm.resetToRunning();
+    // 修复前：pendingPauseReason 残留 → 此行返回 false（测试红）
+    expect(sm.requestPause('第二次申请', 'user')).toBe(true);
+    expect(sm.isPausePending()).toBe(true);
+    // 不影响后续正常消费
+    expect(sm.consumePendingPause()).toEqual({ reason: '第二次申请', source: 'user' });
+    expect(sm.isPausePending()).toBe(false);
+  });
 });
 
 // ════════════════════════════════════════════════════════
