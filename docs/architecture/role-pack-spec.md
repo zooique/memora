@@ -1,4 +1,4 @@
-# 角色包标准（RolePack Spec）
+﻿# 角色包标准（RolePack Spec）
 
 > **定位宣言**：角色包是一份**可共享的装载卡**——自包含的 Agent 行为单元（文件夹包，`manifest.json` 为核心控制文件），任何 Agent 实现都能装载。
 > **范式主张**：Agent = 最小闭环 + 装载卡。专业性来自装载的角色包，不来自代码分支；换装 = 换 Agent。
@@ -448,7 +448,6 @@ export interface IMcpTransport {
 | act     | `act.temperature`             | 0.0\~2.0                                              | 生成随机性                                                                                      | 冻结      | memora 消费（agent.ts `buildChatOptionsFromStrategy` 注入 ChatOptions.temperature，越界忽略）；**由实现提炼进标准**（对账发现被真实消费后补录）                                         |
 | act     | `act.streaming`               | `streaming` / `non-streaming`                         | 输出方式                                                                                       | 冻结      | memora 消费（agent.ts `buildChatOptionsFromStrategy` 注入 ChatOptions.stream）；**由实现提炼进标准**（对账发现被真实消费后补录）                                                   |
 | reflect | `reflect.summary`             | `on` / `off`                                          | 摘要生成                                                                                       | 冻结      | memora 消费（seed/orchestrator.ts 轮次摘要生成开关，非法值归位 on）；**由实现提炼进标准**（对账发现被真实消费后补录；memora 旧字段 `summaryGeneration` 为僵尸键，只标注不动）                                |
-| reflect | `reflect.handoff`             | `wait` / `loop` / `end`                               | 衔接决策                                                                                       | 冻结      | memora 消费（agent.ts 衔接决策）；命名归标准（旧 `reflect.endingHandoff`）                                                                                             |
 | reflect | `reflect.selfReview`        | 0 或正整数（兼容旧 'on'→1 / 'off'→0）                          | 自审查轮数：LLM 纯文本回复后自动审查 N 轮（0=关闭）                                                             | 冻结      | memora 消费（agent.ts 自审查轮数，mvp-scope §三·一）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录）；历史键 `loopContinue` 别名回退                                                       |
 | reflect | `reflect.userFollowup`        | `ask` / `silent`                                      | 用户追问策略：ask=主动引导对话 / silent=只等输入                                                            | 冻结      | memora 消费（agent.ts 衔接 + types.ts 提问指令注入）；**由实现提炼进标准**（spec 原缺，对账发现被真实消费后补录）                                                                           |
 | global  | `global.askOn`                | `ambiguity` / `decision` / `missing_info` / `confirm` | Agent 主动提问触发（可组合）                                                                          | 冻结-条件消费 | memora 消费（types.ts `assembleRolePack` 提问指令注入，**仅** **`reflect.userFollowup=ask`** **时生效**）；条件消费 = 字段冻结，但行为仅在指定策略组合下激活                                 |
@@ -578,7 +577,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 
 1. **硬上限**（角色包键③）：`taskLoopLimit` 计数器达上限——防死循环烧 token 的确定性兜底。**触顶不是硬止损**：收尾时报告完成进度 + 列出未完成内容，等用户输入继续；下一次装配按记忆递归自然续接（此段问答闭环也照常沉淀一条"做到哪、剩哪"的记忆摘要）。
 2. **软上限**（内核预算检测，无角色包键）：替换/压缩已把**完整对话层除顶级锚点外全部替换为摘要形态**，且**摘要层 token 达容量上限**——注入收尾信号，LLM 收敛产出最终交付。触发点是**摘要层容量阈值**（确定性物理量），不是「全变摘要了吗」的状态快照。
-3. **自然结束**：LLM 完成任务交付（handoff=end/wait）——任务自己结束。
+3. **自然结束**：LLM 完成任务交付——turn 自己收敛为 done（2026-09-05 废弃前用 handoff=end/wait 表示，turn 内不再有 Handoff 决策键）。
 4. **装配前判负**（洞 3 独立路径）：顶级锚点（触发输入+首个回答）划走后剩余预算 < 最小可运行阈值 → 该输入无法支撑 loop，装配前确定性拒绝/降级，而非计入上述软上限统计。
 
 > 软上限属于**内核**，不需要角色包键：角色包只负责「分配上限（①②）+ 硬上限（③）」，容量计算与软上限信号由内核统一预算检测产出，保持角色包键面最小。触发输入本身过大是与软上限**不同的失败原因**，走独立的装配前判负路径。

@@ -1,4 +1,4 @@
-# Memora 模块清单与生长路线图
+﻿# Memora 模块清单与生长路线图
 
 > **2026-09-04 收敛补记**：生长链中的「多 turn 任务编排」层已整体废弃（`externalTaskLoop`/`runStepSequence`/`runReport` 等 -1181 行全删）。模块层级从 5 层收敛为 4 层：支撑 → 回答前 → 回答中 → 回答后 → 地基。**所有复杂度在一个 turn 内的 step 循环里生长**，不再跨 turn 串联。下方 L5 章节（多 turn 任务编排）变为历史记录。
 >
@@ -84,11 +84,11 @@
 
 | 模块文件                | 状态     | 测试文件                                                                  | 质量说明                                                                                                                                             |
 | ------------------- | ------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare/orchestrator/difficulty + harness，39 tests） | 种子三阶段（回答前/中/后）+ Handoff 由 `seed/orchestrator.ts` 唯一编排（prepare/act/reflect/handoff 三阶段执行器并入 orchestrator）；`seed/difficulty.ts` 回答前 LLM 难度分级（决定档1 单 turn vs 档2 多 turn 编排） |
+| `agent/seed/`（聚合目录） | 🟢 已打磨 | `seed/__tests__/`（prepare.test.ts + orchestrator.test.ts，14 tests） | 种子两阶段（prepare 回答前 + act 回答中）由 `seed/orchestrator.ts` 唯一编排（`runChat`/`runResume` 两个入口）；reflect（回答后）在 `agent.ts` postProcess 后处理完成，无独立 reflect 执行器；**Handoff / difficulty.ts / externalTaskLoop / runReport 已废弃**（2026-09-04/05 收敛） |
 | `agent/loop.ts`     | 🟢 已打磨 | `__tests__/loop.test.ts` (76 tests)                                   | AgentLoop 核心：单 turn Act 引擎 + loop（step 编排），含拦截器集成                                                                                                 |
 | `agent/agent.ts`    | 🟢 已打磨 | `__tests__/agent.test.ts`                                             | Agent 主入口/门面：生命周期 + 锁/状态守卫 + 委托 seed 运行 turn（宿主 getter 契约字段独立，纯内部组件聚合于 `internals`）                                                                 |
 
-> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供三个显式命名入口（`runChat`/`runEvent`/`runResume`，对应对话/事件/续跑三种 Trigger），门面只做一行委托 + 生命周期守卫。**阶段 2 生长**：`seed/difficulty.ts` 在回答前判简单/复杂，复杂任务收敛后主 turn 结束后再跑一次 `loop.runReport()` 汇报 turn，其产出作为 round-summary 单源（`reflect.runReported`）——「汇总即记忆」。**阶段 3 生长**：orchestrator 多 turn 任务编排驱动器（`externalTaskLoop`）——复杂任务拆成「规划 turn → 每步独立 turn（独立 roundId 供消息溯源/互斥排除，不单产摘要）→ 收敛后汇报 turn」，步数上限经角色包 `global.taskLoopLimit` 配置；摘要恒「外部输入 ↔ round-summary 1:1」，仅收尾汇报 turn 产出唯一摘要（见 memory-as-summary §2.5）。`loop.ts` 是「单 turn Act 引擎 + loop（step 编排）」的合体——哲学要求 turn 内 Act 用 loop 驱动多 step；多 turn 任务编排由 orchestrator 在 turn 出口 Handoff 处串联（详见 [loop-design.md](./loop-design.md)）。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend\_layers\_rules.md](../../.trae/rules/backend_layers_rules.md)）。
+> **生长说明**：`seed/` 是"种子"的**代码名分**（2026-08-20 收敛）——原三阶段串联逻辑沉落在 `agent.ts` 4 个私有方法（prepareChatContext/executeChatLoop/postProcess/doPostProcess），现收进 seed 并交 `orchestrator` 唯一编排；orchestrator 提供两个显式命名入口（`runChat`/`runResume`，对应对话/续跑两种 Trigger），门面只做一行委托 + 生命周期守卫。**废弃历史（2026-09-04/05）**：阶段 2（`difficulty.ts` 难度分级 + `runReport` 汇报 turn）与阶段 3（`externalTaskLoop` 多 turn 任务编排驱动器）已整体删除——验证发现多 turn 复杂度可在单 turn 内通过动态任务表 + 循环驱动自然生长（SSOT：最小单元内加参数，而非新建多 turn 引擎），不再跨 turn 串联；Handoff（回答后衔接决策）同步废弃，turn 结束即 done。reflect（摘要/归档）保留在 `agent.ts` postProcess 后处理中，不在 seed 编排内。`loop.ts` 是「单 turn Act 引擎 + loop（step 编排）」的合体——哲学要求 turn 内 Act 用 loop 驱动多 step。`agent.ts` 是门面（编排 + 生命周期 + 守卫），输入增强/检查点恢复等横向切面已下沉到 L2/L5 专职模块（[agent-facade-convergence.md](./agent-facade-convergence.md)）。seed 依赖方向：`agent/seed/* → agent/loop`（消费引擎）、`agent.ts → agent/seed`（委托），不新建顶层模块（见 [backend\_layers\_rules.md](../../.trae/rules/backend_layers_rules.md)）。
 
 ***
 
@@ -385,11 +385,11 @@
 >
 > * 无测试的 8 个文件：`skill/types.ts`、`llm/types.ts`、`web-search/types.ts`、`memory/storageInterface.ts`（纯类型/接口，消费方集成测试覆盖）+ `utils/recallDefaults.ts`（单常量，无需测试）+ `logging/loggerInterface.ts`（纯接口）+ `seed/index.ts`（桶导出）+ `seed/types.ts`（纯类型/契约，经 seed 各单测消费）。
 >
-> * L0 含 `agent/seed/`（5 源文件：index/types/prepare/orchestrator/difficulty；3 个有独立单测，index/types 无独立测试——prepare/act/reflect/handoff 三阶段执行器并入 orchestrator，无独立文件）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
+> * L0 含 `agent/seed/`（4 源文件：index/types/prepare/orchestrator；2 个有独立单测 prepare.test.ts + orchestrator.test.ts，index/types 无独立测试；orchestrator 编排两阶段 prepare/act，reflect 在 agent.ts 后处理）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
 >
 > * L4 含 `memory/` 13 文件（`sessionStore.ts` 计入 L5）+ 摘要/治理/会话沉淀 15 个 managers 文件。
 >
 > * L6 含 `utils/` 20 文件（含 `recallDefaults.ts`、`backgroundTask.ts`）+ config/security/logging。
 >
-> * 2026-08-20 种子收敛（L0 `agent/seed/`）+ 阶段 2（seed/difficulty 难度分级 + loop.runReport 汇报闭环）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。
+> * 2026-08-20 种子收敛（L0 `agent/seed/`，4 源文件）；2026-09-04/05 废弃清理：difficulty.ts/externalTaskLoop/runReport/Handoff 整体删除（多 turn 复杂度在单 turn 内自然生长）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。
 

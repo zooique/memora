@@ -1,12 +1,12 @@
-# Loop 模块设计 —— 对 step 的编排（turn 回答中阶段）
+﻿# Loop 模块设计 —— 对 step 的编排（turn 回答中阶段）
 
-> **2026-09-04 收敛补记**：本文论述的「多 turn 任务编排 = orchestrator 对 turn 的串联」（`externalTaskLoop`/`completeExternalTask`）已整体废弃并删除。**loop.ts 本身未变**——`runIterationLoop`（单 turn step 循环引擎）是唯一剩存的 Loop 概念。收敛后架构简化为：一个 turn 内，step 循环承载全部复杂度（含动态建任务表、会议多角色、暂停续跑），不再跨 turn 串联。
+> **2026-09-04 收敛补记（一）**：本文论述的「多 turn 任务编排 = orchestrator 对 turn 的串联」（`externalTaskLoop`/`completeExternalTask`）已整体废弃并删除。**loop.ts 本身未变**——`runIterationLoop`（单 turn step 循环引擎）是唯一剩存的 Loop 概念。收敛后架构简化为：一个 turn 内，step 循环承载全部复杂度（含动态建任务表、会议多角色、暂停续跑），不再跨 turn 串联。
 >
 > **历史定位（原文保留）**：模块重思（module-rethink）产出。聚焦 [src/agent/loop.ts](../../src/agent/loop.ts)，论证「loop（Agent Loop）= turn 回答中阶段对 step 的编排」与「多 turn 任务编排 = orchestrator 对 turn 的串联」两套概念在现状代码中的落地情况。
 >
-> **历史状态**：已对齐实现（2026-09-03 术语统一更新）。
+> **2026-09-05 收敛补记（二）**：本文所述 **Handoff（turn 出口衔接决策）** 同步废弃——turn 结束即 done，`handleIterationResult` 返回 `continue/done/paused/aborted` 是**气口/续跑的内部控制信号**，不再是对外"谁来驱动下一轮"的衔接决策。本文正文描述的 Handoff 机制已成历史。
 >
-> **哲学真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（turn·step·loop·多 turn 任务编排·Handoff·气口相关章节）
+> **哲学真理源**：[agent-design-philosophy.md](./agent-design-philosophy.md)（turn·step·loop·气口相关章节）
 
 ---
 
