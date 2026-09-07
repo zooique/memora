@@ -256,6 +256,56 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(collectAllBodyText(assistants[1])).toBe('新回答');
   });
 
+  it('暂停态补充输入：user(kind=supplement) → resume meta → chunk 原位续写同块（疑惑 3 核心路径）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① 首轮生成：meta 建骨架 + 首段正文（roundId r1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '暂停前正文', roundId: 'r1' });
+    // ② 暂停
+    dispatch({ type: 'paused' });
+    // ③ 暂停态补充输入（宿主 handleSend paused 分支：post user(kind=supplement) + resumeExecution(input)）
+    dispatch({ type: 'user', text: '补充：成本标准改 <¥0.5', ts: '2026-09-07T11:00:00.000Z', kind: 'supplement' });
+    // ④ resume 重发 meta（宿主 consumeFlow 每次 runFlow 重发）——pausedResume 优先，不建骨架
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // ⑤ resume 后正文 chunk（同 roundId）：原位续写暂停块
+    dispatch({ type: 'chunk', content: '已按补充调整成本标准', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+
+    // 同一闭环一个 assistant 块，三部分拼接（补充输入是打断分条，不并入正文但也不分裂新块）
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('暂停前正文已按补充调整成本标准');
+  });
+
+  it('暂停态补充输入后再次继续：resumePending 已消费，下轮不误建续接骨架（2026-09-07 P-1 排雷修复）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① 首轮：meta + 正文（roundId r1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
+    // ② 暂停 → 补充输入（置 resumePending=true）
+    dispatch({ type: 'paused' });
+    dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:01:00.000Z', kind: 'supplement' });
+    // ③ resume meta：pausedResume 分支消费 resumePending（修复前残留 true）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '续写', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    // ④ 新闭环（无 kind）：真新轮应清空锚点建新骨架（不受残留 resumePending 影响）
+    dispatch({ type: 'user', text: '新问题', ts: '2026-09-07T11:02:00.000Z' });
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '新回答', roundId: 'r2' });
+    dispatch({ type: 'done', roundId: 'r2' });
+
+    // 两次闭环各自独立，新问题不误续写到暂停块
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(2);
+    expect(collectAllBodyText(assistants[0])).toBe('第一段续写');
+    expect(collectAllBodyText(assistants[1])).toBe('新回答');
+  });
+
   it('clear_ok 后流式锚点失效，后续 chunk 重建一条 assistant 消息（P0-1）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;

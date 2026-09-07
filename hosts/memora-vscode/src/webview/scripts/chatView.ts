@@ -2877,7 +2877,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const pausedResume = pausedAssistantEl !== null && pausedAssistantEl.isConnected;
         if (pausedResume) {
           // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
-          // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费
+          // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费。
+          // 必须同时消费 resumePending（2026-09-07 P-1 排雷修复）：暂停态补充输入时前三态
+          // 判定 pausedResume 优先、不会走到 else-if resumePending 分支 → resumePending 残留
+          // true。诚实定性：当前路径 pausedResume 恒优先，残留是惰性状态（突变验证不红），
+          // 但属状态不变量维护——清理纪律与 done/interrupted 对称，防未来新路径引入误判
+          // （如骨架期 ask_user 回答后残留被下一个无锚点 runFlow 消费成续接骨架）。
+          resumePending = false;
         } else if (resumePending) {
           resumePending = false;
           prepareFlowShell();
@@ -3091,6 +3097,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearArchivingFallback();
       flowShellEl = null;
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
+      resumePending = false; // 同节奏清续跑期待（P-1 对称：防中断/补充后残留污染下轮判定）
       // 顺序关键：先收起任务过程折叠区（完成态全量渲染 + 自动收起），再 finalizeStreaming 关流式光标
       renderRoundBlock(currentEvents, true);
       finalizeStreaming();
@@ -3105,6 +3112,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearArchivingFallback();
       flowShellEl = null;
       pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
+      resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
       // 同 done 顺序纪律：先收起任务过程折叠区，再关流式
       renderRoundBlock(currentEvents, true);
       finalizeStreaming();
