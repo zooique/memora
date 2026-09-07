@@ -778,12 +778,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       return false;
     }
 
-    // 无活跃流时延迟翻转没有消费方（finally 不会执行，pending 会永驻锁死幂等）→ 直接同步翻状态机，
-    // 这是"内核事实驱动延迟翻转"的正当例外：无流可延迟
+    // 空闲守卫（2026-09-07 收紧，用户拍板）：无活跃流时暂停无消费方——此前直接同步翻状态机并落盘
+    // checkpoint，导致「turn 已完成后的暂停」把会话钉在 paused，后续新输入被宿主路由成 supplement
+    // （新意图被吞成"上一个回答的补充"，毒化闭环节点；loop 无流消费的延迟翻转亦无意义）。
+    // 任务已结束 = 暂停申请作废，返回 false 供宿主明确反馈；系统/Agent 触发（ask_user/drift）均在
+    // 流中（isBusy=true）不经过此分支，不受影响。
     if (!this.isBusy) {
-      // 用户主动暂停不消耗 P4 连续暂停配额 → lowRisk=true
-      this.pause(reason, source, true);
-      return true;
+      logger.debug({ reason, source }, 'requestPause 空闲守卫：任务已结束，暂停申请作废');
+      return false;
     }
 
     // 委托 SessionStateMachine 管理 pending 暂停状态（含幂等检查）

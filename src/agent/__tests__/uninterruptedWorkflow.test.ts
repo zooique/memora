@@ -1132,34 +1132,32 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(() => agent!.pause('test')).toThrow(/未初始化/);
     });
 
-    it('空闲态（无活跃流）点暂停应直接翻 PAUSED 且不残留 pending 状态', async () => {
+    it('空闲态（任务已结束）requestPause 守卫：申请作废，不翻 PAUSED 不落检查点（2026-09-07 收紧）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      // 空闲态：无活跃执行流，isBusy 为 false → requestPause 走直接暂停路径
+      // 空闲态：无活跃执行流，isBusy=false → 守卫作废（此前直接翻 PAUSED + 落盘，
+      // 会把已完成 turn 钉在 paused，后续新输入被宿主路由成 supplement。任务已结束=申请作废）
 
       const ok = agent.requestPause('空闲暂停', 'user');
-      expect(ok).toBe(true);
-      // SSOT 收口后：空闲态直接翻 PAUSED，不经过 pending 延迟
-      expect(agent.sessionManager!.status).toBe('paused');
-      // 空闲态直接翻 PAUSED，不残留 pending 状态
+      expect(ok).toBe(false);
+      // 守卫不翻状态机（保持 running）、不残留 pending
+      expect(agent.sessionManager!.status).toBe('running');
       expect(agent.sessionManager!.isPausePending()).toBe(false);
 
-      // 幂等锁不残留：放弃后再次暂停仍生效（证明无悬挂副本锁死按钮）
-      // resume() 恢复运行态并清 pauseMeta
-      const resumed = agent.resume();
-      expect(resumed).toBe(true);
-      expect(agent.sessionManager!.status).toBe('running');
+      // 状态未变无需 resume；再次申请仍作废（无悬挂副本锁死按钮）
       const ok2 = agent.requestPause('再次暂停', 'user');
-      expect(ok2).toBe(true);
-      expect(agent.sessionManager!.status).toBe('paused');
+      expect(ok2).toBe(false);
+      expect(agent.sessionManager!.status).toBe('running');
     });
 
-    it('用户空闲主动暂停（requestPause）应透传 lowRisk=true，不计入连续暂停配额', async () => {
+    it('用户主动暂停 lowRisk=true 不计入连续暂停配额（契约保留，改显式 pause 验证）', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
 
-      const ok = agent.requestPause('空闲暂停', 'user');
+      // 空闲守卫收敛后，用户"暂停已完成任务"不再翻状态机（作废）；
+      // 用户主动暂停的 lowRisk 契约本体经显式 pause(lowRisk=true) 验证仍成立
+      const ok = agent.pause('空闲暂停', 'user', true);
       expect(ok).toBe(true);
       expect(agent.sessionManager!.status).toBe('paused');
       // 契约：用户主动暂停不消耗连续暂停配额 → 计数保持 0（不挤占 Agent 澄清额度）
@@ -2122,9 +2120,14 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       if (chunk.type === 'tool_result') agent.requestPause('续跑中第二次暂停', 'user');
     }
 
-    // 幂等锁若未在 finally 释放，此处将永久返回 false（暂停按钮全失效）
+    // 幂等锁若未在 finally 释放，此处将永久返回 false（暂停按钮全失效）——
+    // 守卫区分：流结束空闲态 requestPause 作废（false）但 isPausePending 无残留、可 resume，
+    // 证明非锁残留（2026-09-07 空闲守卫收紧后不再翻 PAUSED）
     agent.resume();
-    expect(agent.requestPause('第三次暂停', 'user')).toBe(true);
+    expect(agent.sessionManager!.isPausePending()).toBe(false);
+    expect(agent.sessionManager!.status).toBe('running');
+    expect(agent.requestPause('第三次暂停', 'user')).toBe(false);
+    expect(agent.sessionManager!.isPausePending()).toBe(false);
   });
 
   it('流抛出非 abort 错误后，暂停幂等锁仍应释放', { timeout: 30000 }, async () => {
@@ -2154,7 +2157,11 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       if (chunk.type === 'text') agent.requestPause('崩溃前暂停', 'user');
     }
 
-    expect(agent.requestPause('崩溃后的暂停', 'user')).toBe(true);
+    expect(agent.sessionManager!.isPausePending()).toBe(false);
+    // 崩溃后空闲态 requestPause 守卫作废（流已结束），但非锁残留（isPausePending 已清空）
+    expect(agent.requestPause('崩溃后的暂停', 'user')).toBe(false);
+    expect(agent.sessionManager!.isPausePending()).toBe(false);
+    expect(agent.sessionManager!.status).toBe('running');
   });
 
   it('Agent 级集成：ask_user 主动提问 → 暂停不产摘要 → 回答续跑 → 恒 1:1 摘要', { timeout: 30000 }, async () => {
@@ -2728,8 +2735,9 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(closure.assistantMessage?.content).toContain('继续执行');
 
     // ── (3) 用户补充（supplement）→ 归属同一闭环节点 ──
-    // 空闲态 requestPause 直接翻 PAUSED（Agent 门面已确认），模拟「暂停后补充」路由前置
-    expect(agent.requestPause('暂停后补充', 'user')).toBe(true);
+    // 暂停后补充路由前置：模拟「已暂停 → 发补充」——空闲 requestPause 已收敛为作废守卫
+    // （2026-09-07，任务结束的暂停申请即作废），此处用显式 pause 构造暂停态
+    expect(agent.pause('暂停后补充', 'user', true)).toBe(true);
     expect(agent.sessionManager!.status).toBe('paused');
     for await (const _chunk of agent.resumeExecution('补充：请同时读取测试配置', undefined, 'supplement')) {
       void _chunk; // 仅消费流
@@ -2766,7 +2774,8 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
       void _chunk; // 仅消费流
     }
     // 暂停态关闭：checkpoint status=paused 持久化，closureRoundId=anchor 锚定
-    expect(agent.requestPause('重启前暂停', 'user')).toBe(true);
+    // 显式 pause（空闲 requestPause 已收敛为作废守卫，2026-09-07）
+    expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
     expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
     await agent.close();
     agent = null;

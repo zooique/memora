@@ -2708,19 +2708,21 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
     expect(agent.canContinueWithoutInput()).toBe(false);
   });
 
-  it('空闲态 requestPause 应直接翻 PAUSED', async () => {
+  it('空闲态 requestPause 守卫：任务已结束 → 申请作废，不翻 PAUSED（2026-09-07 收紧）', async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
     // RUNNING 且无待续目标 → 不可续跑
     expect(agent.canContinueWithoutInput()).toBe(false);
 
-    // 空闲态申请软暂停：无活跃流可延迟到 loop 边界挂起，直接同步翻状态机（不经 pending 延迟）。
-    agent.requestPause('空闲暂停');
+    // 空闲态申请软暂停：无活跃流可挂起 → 守卫作废（返回 false），不再直接翻状态机。
+    // 收紧动机：turn 已完成后的暂停若翻 PAUSED 会把会话钉住，后续新输入被宿主路由成
+    // supplement（新意图吞成"上一个回答的补充"）——任务已结束，暂停申请即作废。
+    expect(agent.requestPause('空闲暂停')).toBe(false);
 
-    // 关键断言：空闲态应立即翻 PAUSED，且可续跑判定随之变为 true（UI 应展示"继续"）
-    expect(agent.sessionManager!.status).toBe('paused');
-    expect(agent.canContinueWithoutInput()).toBe(true);
+    // 关键断言：空闲守卫不作废状态机（保持 running），可续跑判定仍为 false（UI 不出现"继续"）
+    expect(agent.sessionManager!.status).toBe('running');
+    expect(agent.canContinueWithoutInput()).toBe(false);
   });
 
   it('isPausePending：申请在途=true，已暂停/已取消=false（宿主三态按钮依据）', async () => {
