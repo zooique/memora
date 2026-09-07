@@ -21,7 +21,7 @@ import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { initDropdowns } from '../components/dropdown.js';
-import { createIcon, getIconSvg, populateIcons } from './icons.js';
+import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
 
 /** 任务步骤状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
@@ -151,6 +151,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
   // 不会改变锚点，避免一次回复（含工具调用）被拆成多条消息。
   let activeAssistantEl: HTMLElement | null = null;
+  // 暂停块锚点（2026-09-07 resume 原位续接）：pause 时记录当前流式 assistant 块；
+  // 无输入 continue 的首个 text chunk 若同闭环（roundId 相等）→ 复用该块原位续写，
+  // 而非 beginStreaming 新建第 2 个 assistant 块（修复「一次输入、视觉两个独立 LLM 回答」）。
+  let pausedAssistantEl: HTMLElement | null = null;
 
   // 流式状态（Markdown 渲染 + 光标，2026-08-16 吸收养分）：
   //   streamingActive — 是否正在接收本轮流式（首个 chunk 置 true，done/interrupted 复位）；
@@ -1247,7 +1251,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (pauseBtn) {
           pauseBtn.hidden = false;
           const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
-          if (icon) icon.setAttribute('data-icon', 'pause');
+          if (icon) applyIcon(icon, 'pause');
           pauseBtn.setAttribute('title', '暂停生成');
           pauseBtn.setAttribute('aria-label', '暂停生成');
         }
@@ -1270,7 +1274,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (pauseBtn) {
           pauseBtn.hidden = false;
           const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
-          if (icon) icon.setAttribute('data-icon', 'play');
+          if (icon) applyIcon(icon, 'play');
           // paused + 有输入 → resume 时带补充；paused + 空输入 → 纯续跑
           pauseBtn.setAttribute('title', hasInput ? '发送补充并继续' : '继续生成');
           pauseBtn.setAttribute('aria-label', hasInput ? '发送补充并继续' : '继续生成');
@@ -2981,6 +2985,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
           ensureRoundGroup(msg.roundId, flowShellEl, true);
           flowShellEl = null; // 已转化为正文块，后续插话/新轮不再特殊处理
+        } else if (
+          pausedAssistantEl &&
+          pausedAssistantEl.isConnected &&
+          isSameRoundContinue(msg.roundId)
+        ) {
+          // pause→resume 原位续写（2026-09-07）：无输入 continue 后首个 text chunk，
+          // 同闭环（roundId 相等）且存在暂停块 → 复用暂停块续写（还原该块流式状态），
+          // 而非 beginStreaming 新建第 2 个 assistant 块——修复「一次输入、视觉两个独立 LLM 回答」。
+          // 注意：streamingRaw 不重置——暂停前已累积文本保留，续写增量拼接（renderStreamBody 全量重建）。
+          activeAssistantEl = pausedAssistantEl;
+          pausedAssistantEl = null;
+          const body = activeAssistantEl.querySelector(':scope .msg-body');
+          body?.classList.add('is-streaming');
+          streamingActive = true;
         } else {
           beginStreaming(msg.ts, msg.roundId);
           streamingActive = true;
@@ -3004,6 +3022,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/step 边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
+      // 记录暂停块（resume 原位续接锚，2026-09-07）：无输入 continue 的首 text chunk 复用此块
+      // 续写，避免 beginStreaming 新建第 2 个 assistant 块（视觉双回答分裂）；块 A 保留静态展示。
+      if (activeAssistantEl && activeAssistantEl.isConnected) {
+        pausedAssistantEl = activeAssistantEl;
+      }
       // 暂停即流暂停：清流式光标 + 停节流定时器（保留半截正文静态展示，不 finalize 终态）。
       // 提问/补充后 resume 的新 runFlow 由 meta/chunk 建续接块，本暂停块不再闪烁「调用大模型」
       if (streamingActive) {
@@ -3041,6 +3064,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearPendingWait();
       clearArchivingFallback();
       flowShellEl = null;
+      pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
       // 顺序关键：先收起任务过程折叠区（完成态全量渲染 + 自动收起），再 finalizeStreaming 关流式光标
       renderRoundBlock(currentEvents, true);
       finalizeStreaming();
@@ -3145,6 +3169,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       removeAllPlanBoards();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
       activeAssistantEl = null;
+      pausedAssistantEl = null; // 清空/切换会话：暂停续接锚一并作废
       // 流式状态复位：清空后不再累积/渲染半截流（下次 chunk 会 beginStreaming 重建）
       streamingActive = false;
       streamingRaw = '';

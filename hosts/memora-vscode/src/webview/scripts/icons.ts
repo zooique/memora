@@ -160,6 +160,19 @@ export function getIconSvg(name: IconName, width = 16, height = 16): string {
 }
 
 /**
+ * 运行时切换单个元素图标（2026-09-07 补：populateIcons 只在初始化跑一次，
+ * 运行中改 data-icon 不会重注入 SVG——pauseBtn 暂停→继续图标不更新即此因）。
+ * 与 populateIcons 共用 getIconSvg，单一图标注入实现（SSOT）。
+ *
+ * @param el 目标元素（须为 [data-icon] 容器）
+ * @param name 目标图标名
+ */
+export function applyIcon(el: HTMLElement, name: IconName): void {
+  el.dataset.icon = name;
+  el.innerHTML = getIconSvg(name, 16, 16);
+}
+
+/**
  * 填充 HTML 中所有 data-icon 属性的元素为 SVG 图标
  * 统一图标管理入口，避免散落在 HTML 中硬编码 SVG
  *
@@ -171,7 +184,7 @@ export function populateIcons(root: HTMLElement): void {
     const name = el.dataset.icon as IconName | undefined;
     if (!name || !ICON_PATHS[name]) return;
     // 清空容器并注入 SVG 图标（16x16，Trae 柔和风格）
-    el.innerHTML = getIconSvg(name, 16, 16);
+    applyIcon(el, name);
   });
 }
 

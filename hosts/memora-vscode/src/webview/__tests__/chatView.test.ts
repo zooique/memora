@@ -504,6 +504,21 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
   });
 
+  it('paused 态暂停按钮图标运行时注入 play SVG（2026-09-07：populateIcons 仅初始化跑一次）', () => {
+    mountChatView();
+    const icon = document.querySelector('#pauseBtn .btn-icon') as HTMLElement;
+    // 初始化由 populateIcons 注入 pause 双竖线 SVG
+    expect(icon.innerHTML).toContain('x="5" y="3.5" width="2"');
+    dispatch({ type: 'status', state: 'thinking' });
+    // thinking：applyIcon('pause') 显式注入（图标保持暂停语义）
+    expect(icon.dataset.icon).toBe('pause');
+    expect(icon.innerHTML).toContain('x="5" y="3.5" width="2"');
+    // paused：applyIcon('play') 运行时切换 → innerHTML 实时更新为三角（原 bug：仅改 data-icon 不重注入 SVG）
+    dispatch({ type: 'status', state: 'paused' });
+    expect(icon.dataset.icon).toBe('play');
+    expect(icon.innerHTML).toContain('M5 3.5l7 4.5-7 4.5z');
+  });
+
   it('done 恢复发送态（loading 移除 + 发送提示）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
@@ -1032,6 +1047,26 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const assistants = document.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('正文内容继续');
+  });
+
+  it('pause→resume 无输入续跑：原位续写暂停块，不新建第 2 个 assistant 块（2026-09-07 回归）', async () => {
+    mountChatView();
+    // meta 建骨架 → 首个 chunk 流入块 A（beginStreaming 记录同闭环 roundId）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '前半', roundId: 'r:1' });
+    expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
+    // 暂停：记录暂停块（resume 原位续接锚）+ 清流式态
+    dispatch({ type: 'paused' });
+    // 无输入 continue：同 roundId 首 chunk → 应原位续写暂停块（复用 pausedAssistantEl），
+    // 而非 beginStreaming 新建第 2 个独立回答块（视觉「两个 LLM 回答」bug 根因）
+    dispatch({ type: 'chunk', content: '后半', roundId: 'r:1' });
+    const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
+    expect(blocks).toHaveLength(1); // 关键断言：不出现第 2 个块
+    // 后续 chunk 走 150ms 节流重渲染（首个 chunk 已立即渲染）——等待节流周期后断言拼接完整
+    await new Promise((r) => setTimeout(r, 160));
+    expect(collectAllBodyText(blocks[0])).toContain('前半');
+    expect(collectAllBodyText(blocks[0])).toContain('后半');
+    dispatch({ type: 'done' });
   });
 
   it('重放路径：replay_events（含 meta）+ assistant 只产生 1 个 assistant 块（重启不重复块）', () => {
