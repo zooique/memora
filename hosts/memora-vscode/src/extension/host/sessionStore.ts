@@ -64,12 +64,12 @@ export class WorkspaceSessionStore implements ISessionStore {
     }
   }
 
-  /** 从文件加载会话（文件不存在则空）
+  /**
+   * 从文件加载会话（文件不存在则空）
    *
-   * Phase 4 收敛：加 checkpoint 僵尸数据防御性清理。
-   * 异常退出（kill/crash）时内核跳过 discardCheckpoint → sessions.json 残留 checkpoint 字段。
-   * 判断：checkpoint 的 sessionId 在 roundIdsStore 里不存在 → 会话已被物理清理 → checkpoint 是僵尸。
-   * 清理后持久化（调 save）——启动时顺手做，零额外成本。 */
+   * **只读路径，无副作用**（2026-09-07 G21 实证）：checkpoint 的清理职责归显式删除路径
+   * （`deleteSession` 三件套 / `deleteCheckpoint`），load 不做任何删除或落盘——详见函数内说明。
+   */
   load(): void {
     if (!existsSync(this.filePath)) return;
     try {
