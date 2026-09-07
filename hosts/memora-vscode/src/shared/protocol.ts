@@ -368,8 +368,19 @@ export type ExtensionToWebviewMessage =
    * 用户消息（TS-9）：kind 存在 = 问答闭环内交互输入（折叠块渲染，不分裂新轮）——
    * question-answer=对 LLM 主动提问的回答；supplement=补充（插话/暂停续跑输入）。
    * 普通新闭环输入不携带 kind。
+   * question/options（G26）：question-answer 重放时携带该回答所对的 ask_user 提问原文与
+   * 候选选项（随轮落盘，roundStore RoundInteractiveInput 透出），供 webview 还原问答对；
+   * supplement / 普通输入 / 旧数据不携带。
    */
-  | { type: 'user'; text: string; ts?: string; roundId?: string; kind?: InteractiveInputKind }
+  | {
+      type: 'user';
+      text: string;
+      ts?: string;
+      roundId?: string;
+      kind?: InteractiveInputKind;
+      question?: string;
+      options?: string[];
+    }
   /** 历史/流式 assistant 消息（历史回放用 text 完整段） */
   | { type: 'assistant'; text: string; ts?: string; roundId?: string }
   /**

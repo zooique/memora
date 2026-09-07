@@ -1979,13 +1979,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param text 输入全文
    * @param ts 时间戳（日期分隔线）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充）
+   * @param question G26 提问原文（重放历史轮携带时，回答行上方先渲染只读「问」回顾行）
+   * @param options G26 候选选项（静态文本随回顾行展示）
    */
-  function appendInteractiveInput(text: string, ts: string | undefined, kind: 'question-answer' | 'supplement', roundId?: string): void {
+  function appendInteractiveInput(
+    text: string,
+    ts: string | undefined,
+    kind: 'question-answer' | 'supplement',
+    roundId?: string,
+    question?: string,
+    options?: string[],
+  ): void {
     // 显示逻辑统一（2026-09-07 排雷收敛）：supplement 与 question-answer 同为「闭环内用户插话」
     // （数据同构 interactiveInputs.kind），共用内联子行形态（msg-qa），仅 tag 文案区分语义。
     //   补充（supplement）→ 「你补充」；回答（question-answer）→ 「你答」。
     // 不再用 interrupt-divider 打断分条（旧形态与 ask 两套语言、视觉违和）。
-    appendInlineInputRow(text, kind, roundId);
+    appendInlineInputRow(text, kind, roundId, question, options);
   }
 
   /** 内联子行统一渲染（supplement / question-answer 共用）：
@@ -1997,10 +2006,38 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  「渲染在顶部/第二个补充并入第一个」的跨轮错位；归元为合并周期 = 同 roundId）。
    *  合并周期重置：setStatus 变化 / 收到非 supplement 消息 / roundId 切换后，
    *  下次补充重新开行。 */
-  function appendInlineInputRow(text: string, kind: 'question-answer' | 'supplement', roundId?: string): void {
+  function appendInlineInputRow(
+    text: string,
+    kind: 'question-answer' | 'supplement',
+    roundId?: string,
+    question?: string,
+    options?: string[],
+  ): void {
     const host =
       (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
       (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
+    // G26 提问回顾行：重放 question-answer（随轮落盘携带 question）时，回答行上方先渲染
+    // 只读「问」行（问题原文 + 候选选项静态文本）——回看历史可还原「当时 LLM 问了什么 +
+    // 用户为什么这么选」。运行时（提问块正在 UI 上）/ supplement / 旧数据（无 question）不渲染。
+    let qReviewRow: HTMLElement | null = null;
+    if (kind === 'question-answer' && question) {
+      qReviewRow = document.createElement('div');
+      qReviewRow.className = 'msg-qa msg-qa--ask';
+      const qTag = document.createElement('span');
+      qTag.className = 'msg-qa__tag';
+      qTag.textContent = '问';
+      const qTxt = document.createElement('span');
+      qTxt.className = 'msg-qa__text';
+      qTxt.textContent = question.length > 120 ? question.slice(0, 120) + '…' : question;
+      qTxt.title = question;
+      qReviewRow.append(qTag, qTxt);
+      if (options && options.length > 0) {
+        const opts = document.createElement('span');
+        opts.className = 'msg-qa__opts';
+        opts.textContent = `候选：${options.join(' ｜ ')}`;
+        qReviewRow.appendChild(opts);
+      }
+    }
     // supplement 合并路径：同 roundId 闭环内的补充才合并（跨轮不并），且行仍连接
     if (
       kind === 'supplement' &&
@@ -2056,7 +2093,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       txt.title = text;
       row.append(tag, txt);
     }
-    if (host?.parentNode) {
+    // 插入：提问回顾行先占 host 后位，回答行紧随其后（保持「问 → 你答」阅读序）
+    if (qReviewRow) {
+      if (host?.parentNode) {
+        host.after(qReviewRow);
+      } else {
+        messages.appendChild(qReviewRow);
+      }
+      qReviewRow.after(row);
+    } else if (host?.parentNode) {
       host.after(row);
     } else {
       messages.appendChild(row);
@@ -2939,7 +2984,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
       if (msg.kind) {
         resumePending = true;
-        appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId);
+        appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId, msg.question, msg.options);
       } else {
         append('user', msg.text, msg.ts);
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）

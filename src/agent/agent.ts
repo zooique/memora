@@ -598,7 +598,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 预判短路（收窄，2026-09-07）：仅「计划全部 blocked」才拦——blocked=真停滞，继续调 LLM
       // 只会复读卡住状态、白烧 token。全 done / 无计划不再拦：用户主动点「继续」就是要 AI 产出
       // （可能收尾总结、补建计划、继续语境），且短问答暂停续跑本就无计划，拦了就没法继续聊。
-      // 判定下沉 sessionManager.isPlanAllBlocked()（与 isPlanStalled 区别：全 done/空计划放行）。
+      // 判定下沉 sessionManager.isPlanAllBlocked()（仅全 blocked 拦；全 done/空计划放行）。
       if (!input && this._sessionManager?.isPlanAllBlocked() && !this.requireLoop.isInAutonomousStep) {
         yield { type: 'text', content: '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划' };
         yield { type: 'done' };
@@ -744,7 +744,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 请求软暂停（不中断工作模型 v2.1）
    *
-   * 仅设 loop 的 pauseRequested 标志（在下一 step 边界挂起，不 abort），reason/source 暂存到 SessionStateMachine。
+   * 经 sm.requestPause 暂存 pending（SessionStateMachine 是 pending 真理源）+ loop.pauseRequested
+   * 入 interruptQueue（在下一 step 边界挂起，不 abort）。
    * 状态机翻 PAUSED 延后到 loop 边界真正挂起时——内核事实驱动而非申请即翻转；与硬停止（abort）严格区分，
    * 软暂停保留历史、可经 resumeExecution 续跑。
    *
@@ -802,7 +803,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 供宿主 UI 区分三态：无申请（暂停）/ 申请在途（取消暂停）/ 已暂停（继续）。
    * 状态真理源 SessionStateMachine.isPausePending()：流中 requestPause 置位、边界挂起后 consumePendingPause 消费、
-   * cancelPauseRequest 主动清理；空闲态 requestPause 直接翻 PAUSED（不置位 pending）——精确表达"申请在途"。
+   * cancelPauseRequest 主动清理；空闲态由 requestPause 空闲守卫作废（见上，return false 不触达状态机）——
+   * isPausePending 仅在流中「申请在途」时为 true（收紧后空闲不再翻 PAUSED，2026-09-07）。
    */
   isPausePending(): boolean {
     return this._sessionManager?.isPausePending() ?? false;
@@ -959,8 +961,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this._sessionManager?.status === 'paused') return true;
     // 错误态不展示"继续"：error 态由检查点恢复回填进入，须显式处理（重新开始或 recover），避免点了静默无反应
     if (this._sessionManager?.status === 'error') return false;
-    // 仅 pending/active（可推进）步骤计入"可续跑"——旧判据 s.status!=='done' 把 blocked 也算可续，
-    // 与 isPlanStalled（视 blocked 为停滞）反向，导致全 blocked 计划按钮可点但 resumeExecution 早退
+    // 仅 pending/active（可推进）步骤计入"可续跑"——blocked 不续（全 blocked 由 isPlanAllBlocked 拦，
+    // 避免全 blocked 计划按钮可点但 resumeExecution 早退）
     const hasPendingPlan =
       this._sessionManager
         ?.getCheckpoint()

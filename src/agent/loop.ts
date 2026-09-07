@@ -288,6 +288,14 @@ export class AgentLoop {
    * 与解析出的结构化问题。answerQuestion（正常作答）/ cancelAsk（跳过/兜底）二选一消费。
    */
   private pendingAsk: { toolCallIds: string[]; questions: AskQuestion[] } | undefined = undefined;
+  /**
+   * 已作答提问快照（G26，2026-09-07）：answerQuestion 回填后把 pendingAsk.questions 转存于此，
+   * 供 orchestrator.runResume 落盘交互输入时随回答一并持久化（回放还原「问了什么+选项」）。
+   * pendingAsk 照旧即清（runIterationLoop:710 兜底 cancelAsk 依赖其为「未消费」判据）；
+   * 快照由 runResume takeAnsweredAsk 取走，或下次 answerQuestion 覆盖（残留仅进程内、单 turn，无害）。
+   * cancelAsk（跳过/兜底）不产生快照——无回答即无问答对可落。
+   */
+  private lastAnsweredAsk: AskQuestion[] | undefined = undefined;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
   private readonly ui: Required<UIMessages>;
   /** 上下文超限时是否自动生成摘要 */
@@ -1291,10 +1299,23 @@ export class AgentLoop {
         id,
       );
     });
+    // G26：已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 照旧清空
+    this.lastAnsweredAsk = this.pendingAsk.questions;
     this.pendingAsk = undefined;
     this.inAutonomousStep = false;
     logger.info({ answers }, 'ask_user 已回填用户答案');
     return true;
+  }
+
+  /**
+   * 取走最近一次已作答提问快照（G26）：runResume 落盘回答交互输入前调用，取走即清。
+   * 返回 undefined = 本次续跑非提问回答路径（补充输入 / 无快照残留）。快照为
+   * AskQuestion[]（多 ask_user 轮整组），调用方按需取用（当前落盘语义取 questions[0]）。
+   */
+  takeAnsweredAsk(): AskQuestion[] | undefined {
+    const snapshot = this.lastAnsweredAsk;
+    this.lastAnsweredAsk = undefined;
+    return snapshot;
   }
 
   /**

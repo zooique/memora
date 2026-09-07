@@ -321,6 +321,17 @@ export const chatStyles = `
   .msg-qa__row > .msg-qa__text {
     flex: 1 1 auto; max-width: none; /* 合并容器内条目撑满，不再受单行 60% 限制 */
   }
+  /* G26 提问回顾行（2026-09-07）：重放 question-answer 携带提问原文时，回答行上方的
+   * 只读「问」行——问题 + 候选选项静态文本，回看历史还原「问了什么/为何这么选」。
+   * flex-wrap 让长问题与选项自然折行，opts 弱化小字不与正文抢视觉 */
+  .msg-qa--ask { flex-wrap: wrap; }
+  .msg-qa--ask > .msg-qa__text { max-width: none; white-space: normal; }
+  .msg-qa__opts {
+    flex-basis: 100%;
+    color: var(--text-tertiary, #6e7681);
+    white-space: normal;
+    padding-left: var(--sp-2, 5px);
+  }
   /* 图标按钮通用样式 */
   .msg-icon-btn {
     display: inline-flex; align-items: center; justify-content: center;

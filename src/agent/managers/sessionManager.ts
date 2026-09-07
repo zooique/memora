@@ -1248,18 +1248,11 @@ export class SessionManager {
     this.flushCheckpoint();
   }
 
-  /** 检查计划是否停滞：计划为空或全部步骤 done/blocked。停滞时增量默认分辨率降级为暂停澄清 */
-  isPlanStalled(): boolean {
-    if (!this.checkpoint) return true;
-    const { plan } = this.checkpoint;
-    if (plan.length === 0) return true;
-    return plan.every((s) => s.status === 'done' || s.status === 'blocked');
-  }
-
   /**
    * 计划是否全部阻塞（2026-09-07 预判短路收窄专用判定）：仅全 blocked 视为真停滞。
-   * 与 isPlanStalled 的区别：全 done / 计划空不视为"需要拦截"——用户主动点「继续」= 要 AI 产出，
+   * 全 done / 计划空不视为"需要拦截"——用户主动点「继续」= 要 AI 产出，
    * 全 done 可能只是本步收尾（还有总结未说出），空计划是普通问答暂停续跑，都应放行调 LLM。
+   * （2026-09-07 清理：旧 isPlanStalled 因语义相悖——把空/全 done 也判停滞——已删除，勿复用其口径）
    */
   isPlanAllBlocked(): boolean {
     if (!this.checkpoint) return false;

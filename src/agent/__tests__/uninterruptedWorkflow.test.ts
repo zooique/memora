@@ -6,7 +6,7 @@
  *   - 检查点快照与恢复（SessionManager.createCheckpoint/restoreFromCheckpoint）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
- *   - 执行计划管理（advancePlan/completeStep/isPlanStalled）
+ *   - 执行计划管理（advancePlan/completeStep/isPlanAllBlocked）
  *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
  *   - 端到端场景（Agent 门面完整工作流）
  *
@@ -505,28 +505,6 @@ describe('SessionManager · 检查点管理', () => {
       expect(cp.stepLog![0]!.summary).toBe('自由对话迭代');
       // 无 planStepId 时不应触碰 plan 状态
       expect(cp.plan).toHaveLength(0);
-    });
-
-    it('isPlanStalled 空计划应返回 true', () => {
-      manager.createCheckpoint('测试');
-      expect(manager.isPlanStalled()).toBe(true);
-    });
-
-    it('isPlanStalled 全部完成应返回 true', () => {
-      manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'done', order: 0 },
-      ]);
-      expect(manager.isPlanStalled()).toBe(true);
-    });
-
-    it('isPlanStalled 有未完成步骤应返回 false', () => {
-      manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'active', order: 0 },
-        { id: 's2', description: '步骤2', status: 'pending', order: 1 },
-      ]);
-      expect(manager.isPlanStalled()).toBe(false);
     });
 
     it('isPlanAllBlocked 全 blocked 应返回 true（预判短路收窄拦点）', () => {
@@ -1978,7 +1956,10 @@ class AskThenResumeProvider extends LlmProvider {
             type: 'function',
             function: {
               name: 'ask_user',
-              arguments: JSON.stringify({ question: '你想读哪个文件？' }),
+              arguments: JSON.stringify({
+                question: '你想读哪个文件？',
+                options: ['probe.txt', 'config.json'],
+              }),
             },
           },
         ],
@@ -2752,6 +2733,9 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(closure.interactiveInputs).toHaveLength(1);
     expect(closure.interactiveInputs![0]!.kind).toBe('question-answer');
     expect(closure.interactiveInputs![0]!.content).toBe('我想读 probe.txt');
+    // G26：提问原文与候选选项随回答落盘（answerQuestion 快照 → runResume → appendUser），回放可还原问答对
+    expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+    expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
     // 回答完整落盘：assistantMessage 为续跑最终回答
     expect(closure.status).toBe('complete');
     expect(closure.assistantMessage?.content).toContain('继续执行');
@@ -2820,6 +2804,10 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(closure.interactiveInputs).toHaveLength(2);
     expect(closure.interactiveInputs![1]!.kind).toBe('supplement');
     expect(closure.interactiveInputs![1]!.content).toBe('重启后补充：换个方案');
+    // G26：question/options 随轮持久化（roundStore 落盘，重启后仍在）；supplement 不携提问
+    expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+    expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+    expect(closure.interactiveInputs![1]!.question).toBeUndefined();
     // 会话登记仍仅此一个闭环节点
     const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
     expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);

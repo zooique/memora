@@ -119,10 +119,22 @@ export class SeedOrchestrator {
     if (input?.trim()) {
       const closureRoundId = parts.loop.getCurrentRoundId() || parts.loop.allocRoundId();
       parts.loop.setCurrentRoundId(closureRoundId);
+      // G26：取走已作答提问快照（answerQuestion 转存），随回答一并落盘——回放还原「问了什么+选项」。
+      // 多 ask_user 轮整组快照取首问（UI 单文本提交，与 questions[0] 配对最稳；次态边界已标注）。
+      const answeredAsk = kind === 'question-answer' ? parts.loop.takeAnsweredAsk() : undefined;
+      const answeredQ = answeredAsk?.[0];
       try {
         await parts.history.appendUser(input, closureRoundId, {
           interactive: true,
           kind,
+          ...(answeredQ
+            ? {
+                question: answeredQ.question,
+                ...(answeredQ.options && answeredQ.options.length > 0
+                  ? { options: answeredQ.options }
+                  : {}),
+              }
+            : {}),
         });
       } catch (err) {
         logger.warn({ err }, '续跑用户回答历史写入失败');

@@ -74,6 +74,16 @@ export interface RoundInteractiveInput extends RoundMessage {
   role: 'user';
   /** 交互输入类型（UI 折叠块文案与路由语义，不参与归属判定） */
   kind: InteractiveInputKind;
+  /**
+   * LLM 提问原文（G26，2026-09-07：仅 question-answer 携带）
+   *
+   * 该回答所对的 ask_user 提问文本——回答落盘时随交互输入一并持久化，
+   * 供回放还原「当时 LLM 问了什么 + 用户为什么这么选」上下文。
+   * supplement / 旧数据（无此字段）为缺省，回放退化为现状（仅「你答」内联行）。
+   */
+  question?: string;
+  /** LLM 提问候选选项（question-answer 且 LLM 提供时；静态文本，供回放展示） */
+  options?: string[];
 }
 
 // ─── 问答闭环状态 ───────────────────────────────────────

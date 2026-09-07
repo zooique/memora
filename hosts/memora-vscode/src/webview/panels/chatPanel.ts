@@ -70,7 +70,15 @@ interface ReplayRound {
   /** 该轮过程事件（Round.processEvents；无过程数据则空数组，只回放正文） */
   processEvents: ProcessEvent[];
   /** 问答闭环内交互输入（TS-9：主动提问回答/补充，折叠块渲染，不分裂新轮） */
-  interactiveInputs?: { content: string; ts?: string; kind: InteractiveInputKind }[];
+  interactiveInputs?: {
+    content: string;
+    ts?: string;
+    kind: InteractiveInputKind;
+    /** G26：该回答所对的 ask_user 提问原文（question-answer 且随轮落盘时有） */
+    question?: string;
+    /** G26：LLM 提问候选选项（静态展示用） */
+    options?: string[];
+  }[];
   /** 问答闭环内前序 assistant 段（TS-9：如主动提问，排在交互输入之前） */
   assistantLog?: { content: string; ts?: string }[];
 }
@@ -1465,7 +1473,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 判定持久化检查点是否可断点续跑（单一真理源：与 agent.canContinueWithoutInput 的判据一致）
+   * 判定持久化检查点是否可断点续跑（恢复前磁盘判定——跨重启后状态机未装配、无法问询
+   * agent.canContinueWithoutInput，故基于磁盘 cp 独立投影；判据与内核同构但场景分化，勿宣称"一致"：
+   *  差异① error 态此处恒可恢复（恢复后手动推进下一条），内核 canContinueWithoutInput 对 error 返 false
+   *        （错误态不亮「继续」按钮，点了静默无反应）；
+   *  差异② 运行中自主工具步（inAutonomousStep）此处不提示恢复（活会话无需恢复条），内核可亮暂停按钮。
+   * 恢复前磁盘判定是架构必然：loadPersistedCheckpoint 时 Agent 尚未 restore，运行时状态机不可用。）
    *
    * 状态机非 running（paused/error 由检查点恢复进入）恒可续跑；running 态仅在存在未完成
    * 可推进计划步骤（pending/active）时才算「进行中的任务」——纯单轮问答（plan 为空/已完成）
@@ -1779,6 +1792,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             content: i.content,
             ts: i.timestamp,
             kind: i.kind,
+            // G26：提问原文/选项随轮落盘透出（question-answer；旧数据缺省）
+            ...(i.question ? { question: i.question } : {}),
+            ...(i.options && i.options.length > 0 ? { options: i.options } : {}),
           })),
           assistantLog: round.assistantLog?.map((m) => ({
             content: m.content,
@@ -1825,12 +1841,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         kind: 'seg' | 'qa' | 'supp';
         content: string;
         ts?: string;
+        question?: string;
+        options?: string[];
       }[] = [
         ...(r.assistantLog ?? []).map((m) => ({ kind: 'seg' as const, content: m.content, ts: m.ts })),
         ...(r.interactiveInputs ?? []).map((i) => ({
           kind: (i.kind === 'supplement' ? 'supp' : 'qa') as 'qa' | 'supp',
           content: i.content,
           ts: i.ts,
+          ...(i.question ? { question: i.question } : {}),
+          ...(i.options && i.options.length > 0 ? { options: i.options } : {}),
         })),
       ].sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
       for (const item of middle) {
@@ -1838,7 +1858,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         if (item.kind === 'seg') {
           this.post({ type: 'assistant', text: item.content, ts: item.ts, roundId: r.roundId });
         } else if (item.kind === 'qa') {
-          this.post({ type: 'user', text: item.content, ts: item.ts, roundId: r.roundId, kind: 'question-answer' });
+          this.post({
+            type: 'user',
+            text: item.content,
+            ts: item.ts,
+            roundId: r.roundId,
+            kind: 'question-answer',
+            // G26：回答所对的提问原文/选项随重放消息携带（webview 还原问题块；supp 不携）
+            ...(item.question ? { question: item.question } : {}),
+            ...(item.options && item.options.length > 0 ? { options: item.options } : {}),
+          });
         } else {
           this.post({ type: 'user', text: item.content, ts: item.ts, roundId: r.roundId, kind: 'supplement' });
         }

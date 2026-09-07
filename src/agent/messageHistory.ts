@@ -242,12 +242,18 @@ export class MessageHistory {
    *
    * @param content 用户输入内容
    * @param roundId 闭环节点轮次 ID（可选，交互输入必须携带 = appendUser 的 head roundId）
-   * @param opts 交互输入选项（interactive=是否交互归属；kind=折叠块类型文案）
+   * @param opts 交互输入选项（interactive=是否交互归属；kind=折叠块类型文案；
+   *        question/options=该回答所对的 ask_user 提问原文与候选选项，G26 随回答一并持久化）
    */
   async appendUser(
     content: string,
     roundId?: string,
-    opts?: { interactive?: boolean; kind?: InteractiveInputKind },
+    opts?: {
+      interactive?: boolean;
+      kind?: InteractiveInputKind;
+      question?: string;
+      options?: string[];
+    },
   ): Promise<void> {
     const message: SessionMessage = {
       role: 'user',
@@ -269,6 +275,9 @@ export class MessageHistory {
               content,
               timestamp: message.timestamp,
               kind: opts.kind ?? 'supplement',
+              // G26：提问原文/选项随回答落盘（question-answer 携带；supplement/缺省不落，旧数据向后兼容）
+              ...(opts.question ? { question: opts.question } : {}),
+              ...(opts.options && opts.options.length > 0 ? { options: opts.options } : {}),
             };
             const updated: Round = {
               ...existing,

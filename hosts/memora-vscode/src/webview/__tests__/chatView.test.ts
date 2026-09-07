@@ -2514,6 +2514,43 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(rb.querySelector('.round-block__summary')?.textContent).not.toContain('交互');
   });
 
+  it('G26：重放 question-answer 携带 question/options → 先渲染只读「问」回顾行再「你答」', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '任务A', ts: 't1', roundId: 'round-1' });
+    dispatch({ type: 'assistant', text: '需要先确认哪个文件？', ts: 't2', roundId: 'round-1' });
+    dispatch({
+      type: 'user',
+      text: '读 probe.txt',
+      ts: 't3',
+      roundId: 'round-1',
+      kind: 'question-answer',
+      question: '你想读哪个文件？',
+      options: ['probe.txt', 'config.json'],
+    });
+    const qRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa'));
+    expect(qRows).toHaveLength(2); // 提问回顾行 + 回答行
+    const askRow = qRows[0]!;
+    expect(askRow.classList.contains('msg-qa--ask')).toBe(true);
+    expect(askRow.querySelector('.msg-qa__tag')?.textContent).toBe('问');
+    expect(askRow.querySelector('.msg-qa__text')?.textContent).toContain('你想读哪个文件？');
+    expect(askRow.querySelector('.msg-qa__opts')?.textContent).toContain('probe.txt');
+    // 阅读序：回顾行在前、回答行紧随其后
+    expect(askRow.nextElementSibling).toBe(qRows[1]);
+    expect(qRows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
+    expect(qRows[1]!.querySelector('.msg-qa__text')?.textContent).toContain('读 probe.txt');
+  });
+
+  it('G26：无 question 的 question-answer（运行时/旧数据）不渲染回顾行，退化为现状', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '问题', ts: 't1' });
+    dispatch({ type: 'assistant', text: '回答', ts: 't2' });
+    dispatch({ type: 'user', text: '选A', ts: 't3', kind: 'question-answer', roundId: 'round-1' });
+    const qRows = document.querySelectorAll('.msg-qa');
+    expect(qRows).toHaveLength(1); // 仅「你答」行
+    expect(document.querySelector('.msg-qa--ask')).toBeNull();
+    expect(document.querySelector('.msg-qa__opts')).toBeNull();
+  });
+
   it('UX-9 C 兜底：无 assistant 锚点时 qa 内联子行落消息流，不丢失', () => {
     mountChatView();
     dispatch({ type: 'user', text: '问题', ts: 't1' });
