@@ -180,6 +180,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * P2 收敛（Phase 5）：宿主不再维护镜像，每次 post pending_queue_update 时从内核 loop.pendingInterjections 读当前值
    * 清空时机：sessionResumed 事件触发（resume 成功、loop 消费完队列） */
   // NOTE: _pendingQueue 已移除（P2 收敛），SSOT 源头 = agent.getPendingInterjections() → loop.pendingInterjections
+  /** 上次推送给 webview 的待发送区长度（2026-09-07 修复：长度变化才 post，SSOT 收敛）
+   *  背景：普通插话（thinking 态 interject）不触发 sessionResumed（那是 resume 专有事件），
+   *  队列消费后无「空通知」→ 待发送区弹窗残留。统一经 syncPendingQueue 长度变化检测，
+   *  让「队列变空」这个真理源变化总能被推送到 webview（消费后必有后续 chunk 触发同步）。 */
+  private _lastPendingQueueLen = 0;
   /**
    * 待处理写入确认请求（H0）
    *
@@ -258,6 +263,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 由 extension 在装配 Agent 后注入（open 命令路径），同时绑定会话级可观测事件 */
   public setAgent(agent: Agent): void {
     this._agent = agent;
+    // 换 agent = 投影源切换（SSOT）：清空待发送区长度投影缓存，防旧 agent 队列长度残留
+    // 导致 syncPendingQueue 长度未变误判不推送（新 agent 首 chunk 同步必触发一次推送）
+    this._lastPendingQueueLen = 0;
     // 与 ensureAgent 懒装配路径保持一致：注入即绑定，确保事件通知两条路径都生效
     // （bindAgentNoticeEvents 内部先 off 再 on，幂等，折叠展开重复注入不重复注册）
     this.bindAgentNoticeEvents();
@@ -491,13 +499,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         if (cleared > 0) {
           this.post({ type: 'notice', level: 'info', message: `已清空 ${cleared} 条待发送内容` });
         }
-        this.post({ type: 'pending_queue_update', items: this._agent?.getPendingInterjections() ?? [] });
+        this.syncPendingQueue();
       } else if (msg.type === 'remove_pending_item') {
         // Phase 4：删除单条 interject（待发送区某条的独立 × 按钮）
         // P2 收敛：不再维护宿主镜像，内核 removePendingInterject 内部已做越界检查，
         // 宿主直接调内核 + 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
         this._agent?.removePendingInterject(msg.index);
-        this.post({ type: 'pending_queue_update', items: this._agent?.getPendingInterjections() ?? [] });
+        this.syncPendingQueue();
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
@@ -719,8 +727,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private readonly onSessionResumed = (_info: { sessionId?: string }): void => {
     this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
     // Phase 4：resume 成功 → loop 消费完 pendingInterjections → 从内核读当前值通知 webview
-    // P2 收敛：不再维护宿主镜像，SSOT 源头 = loop.pendingInterjections
-    this.post({ type: 'pending_queue_update', items: this._agent?.getPendingInterjections() ?? [] });
+    // P2 收敛：不再维护宿主镜像，SSOT 源头 = loop.pendingInterjections；
+    // 2026-09-07：改走 syncPendingQueue 统一长度变化检测（普通插话不触发本事件，由 step 边界后 chunk 补同步）
+    this.syncPendingQueue();
   };
 
   /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
@@ -1915,8 +1924,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this.post({ type: 'pause_pending', pending: false });
       }
       // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
-      // P2 收敛：不再维护 _pendingQueue 镜像，从内核 queue 读当前值（SSOT 源头）
-      this.post({ type: 'pending_queue_update', items: this._agent.getPendingInterjections() });
+      // P2 收敛：不再维护 _pendingQueue 镜像，从内核 queue 读当前值（SSOT 源头）；
+      // 2026-09-07：改走 syncPendingQueue 统一长度变化检测（入队/消费/清空/删除/step 边界共用）
+      this.syncPendingQueue();
       return;
     }
     // TS-9：暂停态补充输入 → 不发起新 chat() → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
@@ -2187,6 +2197,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     let pausedOnPurpose = false;
     try {
       for await (const chunk of gen) {
+        // 待发送区同步（SSOT，2026-09-07 修复弹窗残留）：step 边界推进 = 队列消费的直接信号
+        // ——interject 在 _handleInterrupt splice(0) 消费后，本 for-await 必然收到下一个 chunk，
+        // 此刻从内核读队列（已变空）→ 长度变化 → post 空 items → webview 隐藏待发送区。
+        // 普通插话（thinking 态 interject）不触发 sessionResumed，此处是它的唯一清空时机。
+        this.syncPendingQueue();
         // turn 边界检测：roundId 变化 = 新 turn 开始（多 turn 任务编排多 turn 各自独立 roundId）
         if (chunk.roundId && chunk.roundId !== currentRoundKey) {
           currentRoundKey = chunk.roundId;
@@ -2439,6 +2454,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       .sort((a, b) => a.order - b.order)
       .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, stepLog: stepsByStep.get(s.id) ?? [] }));
     this.post({ type: 'plan_update', steps });
+  }
+
+  /** 待发送区同步（SSOT 收敛，2026-09-07 修复弹窗残留）：
+   *  真理源 = 内核 queue（loop.pendingInterjections），宿主只做「长度变化检测」投影。
+   *  历史 bug：清空时机绑定 sessionResumed（resume 专有事件），普通插话（thinking 态 interject）
+   *  不触发 → 队列消费后无「空通知」→ webview 待发送区弹窗残留。本方法在调用方（入队/清空/
+   *  删除/step 边界后 chunk）统一调用，队列变空必然触发长度变化 → post 空 items → webview 隐藏。 */
+  private syncPendingQueue(): void {
+    if (!this._agent) return;
+    // optional 调用（2026-09-07）：consumeFlow 主循环每 chunk 同步，测试桩可能缺该方法
+    // （chatPanelHistory 的 mock agent 不实现 getPendingInterjections）——缺则跳过不阻断流
+    const items = this._agent.getPendingInterjections?.() ?? [];
+    // 长度未变不重复 post（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次
+    if (items.length === this._lastPendingQueueLen) return;
+    this._lastPendingQueueLen = items.length;
+    this.post({ type: 'pending_queue_update', items });
   }
 
   /**
