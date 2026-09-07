@@ -84,18 +84,11 @@ export class WorkspaceSessionStore implements ISessionStore {
       // 加载 round-based 模式的 Round ID 列表（唯一内容来源）
       for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
 
-      // Phase 4：防御性清理 checkpoint 僵尸数据
-      let cleaned = 0;
-      for (const sessionId of [...this.checkpoints.keys()]) {
-        if (!this.roundIdsStore.has(sessionId)) {
-          this.checkpoints.delete(sessionId);
-          cleaned++;
-        }
-      }
-      if (cleaned > 0) {
-        // 持久化清理结果——load() 唯一有副作用的场景
-        this.save();
-      }
+    // 检查点清理职责归显式删除路径（deleteSession 三件套已含 checkpoints.delete）——
+    // load() 不再做防御清理（2026-09-07 G21 实证误伤）：原判据「sessionId ∉ roundIdsStore」
+    // 会把「新建检查点但尚未产生对话轮次」的合法暂停现场当僵尸删除，导致跨重启无法恢复。
+    // 显式删除（deleteSession）已同步删 checkpoint，运行中异常退出残留的 pause checkpoint
+    // 正是跨重启断点续跑的恢复源（G3），不应被只读加载路径当垃圾清掉。
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
       console.warn('Memora 会话文件读取失败，降级为空', err);
