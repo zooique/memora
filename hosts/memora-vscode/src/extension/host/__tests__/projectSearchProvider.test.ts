@@ -42,7 +42,12 @@ describe('VscodeProjectSearchProvider', () => {
       ] as never);
       const provider = createVscodeProjectSearchProvider(root);
       const result = await provider.searchFiles({ query: '**/*.ts' });
-      expect(vscode.workspace.findFiles).toHaveBeenCalledWith('**/*.ts', null, 100);
+      // 默认排除 IGNORED_DIR_NAMES（含 .memora，2026-09-07 伪建表根治：防 LLM 搜到数据目录内任务表文件自我强化）
+      expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
+        '**/*.ts',
+        '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
+        100,
+      );
       expect(result).toEqual([
         { path: 'src/index.ts' },
         { path: 'README.md' },
@@ -55,7 +60,11 @@ describe('VscodeProjectSearchProvider', () => {
       ] as never);
       const provider = createVscodeProjectSearchProvider(root);
       await provider.searchFiles({});
-      expect(vscode.workspace.findFiles).toHaveBeenCalledWith('**/*', null, 100);
+      expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
+        '**/*',
+        '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
+        100,
+      );
     });
 
     it('Windows 反斜杠统一为正斜杠（与 read_file 相对路径语义对齐）', async () => {
@@ -67,18 +76,26 @@ describe('VscodeProjectSearchProvider', () => {
       expect(result).toEqual([{ path: 'src/index.ts' }]);
     });
 
-    it('exclude 透传给 findFiles（排除 node_modules 等）', async () => {
+    it('用户 exclude 与默认忽略目录合并后传给 findFiles', async () => {
       vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([] as never);
       const provider = createVscodeProjectSearchProvider(root);
-      await provider.searchFiles({ query: '**/*.ts', exclude: '**/node_modules/**' });
-      expect(vscode.workspace.findFiles).toHaveBeenCalledWith('**/*.ts', '**/node_modules/**', 100);
+      await provider.searchFiles({ query: '**/*.ts', exclude: 'docs/**' });
+      expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
+        '**/*.ts',
+        '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**,docs/**',
+        100,
+      );
     });
 
     it('maxResults 限制在 100 内（防结果刷屏）', async () => {
       vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([] as never);
       const provider = createVscodeProjectSearchProvider(root);
       await provider.searchFiles({ maxResults: 999 });
-      expect(vscode.workspace.findFiles).toHaveBeenCalledWith('**/*', null, 100);
+      expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
+        '**/*',
+        '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
+        100,
+      );
     });
   });
 

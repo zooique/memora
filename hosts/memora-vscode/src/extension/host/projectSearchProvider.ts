@@ -55,7 +55,11 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
      */
     async searchFiles(options?: ProjectFileSearchOptions): Promise<ProjectFileMatch[]> {
       const include = options?.query || '**/*';
-      const exclude = options?.exclude || null;
+      // name 模式与 content 模式忽略语义对齐：findFiles 显式排除 IGNORED_DIR_NAMES（含 .memora），
+      // 否则 LLM 会搜到数据目录内的 task-table.md 等内核管理文件，形成「伪建表」自我强化
+      // （2026-09-07 触发样本实证：LLM search_project "task-table" 命中 .memora/task-table.md 后继续沿用 write_file）。
+      const ignoreGlob = IGNORED_DIR_NAMES.map((d) => `**/${d}/**`).join(',');
+      const exclude = options?.exclude ? `${ignoreGlob},${options.exclude}` : ignoreGlob;
       const maxResults = Math.min(options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN, PROJECT_SEARCH_RESULT_MAX_LEN);
       const uris = await vscode.workspace.findFiles(include, exclude, maxResults);
       return uris.map((u) => ({ path: toProjectRelative(root, u.fsPath) }));
