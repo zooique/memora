@@ -952,8 +952,11 @@ export class AgentLoop {
       return 'aborted';
     }
 
-    // step 边界回调（每次迭代完成后触发，用于 stepLog 记录；step 级推进事件，非 turn 边界）
-    if (this.onStepBoundary) {
+    // step 边界回调（每次迭代完成后触发，用于 stepLog 记录；step 级推进事件，非 turn 边界）。
+    // 挂起型迭代不消耗 step（与用户暂停对称，2026-09-07）：含 ask_user 将挂起的迭代不自动
+    // done 当前 active step——问答对归当前步，回答续跑后由后续完整迭代在此边界完成该步；
+    // 判定经 willSuspendForAsk 单收口，与 handleToolCalls 挂起检出共用（防双判漂移）。
+    if (this.onStepBoundary && !this.willSuspendForAsk(llmResult.toolCalls)) {
       this.onStepBoundary({
         summary: llmResult.fullContent.slice(0, 200),
       });
@@ -1073,6 +1076,24 @@ export class AgentLoop {
     return { chatOpts, safeMessages };
   }
 
+  /**
+   * 本迭代将因 ask_user 挂起（决策关口，与用户暂停同属挂起型气口）？
+   * 含 ask_user 且未超 askLimit、非工具屏蔽。SSOT：onStepBoundary 的 step 推进排除判定
+   * 与 handleToolCalls 挂起检出共用同一谓词（防两处判定漂移）——收口验收：
+   * ask_user 挂起谓词字面全仓仅此一处。
+   * 注：边界处传 llmResult.toolCalls（原始集）、挂起检出传 effectiveToolCalls（toolStepLimit
+   * 截断后集）；截断把 ask_user 裁掉的窗口 → 边界多跳一轮不推进，安全向（少推进而非错推进）。
+   * askLimit 超限的 ask_user 走 executeToolCalls 拒绝（[ASK_LIMIT]），迭代照常执行 → 不判挂起。
+   */
+  private willSuspendForAsk(toolCalls: Message['toolCalls']): boolean {
+    return (
+      !this.strategy.toolCallsBlocked &&
+      toolCalls !== undefined &&
+      toolCalls.some((tc) => tc.function.name === ASK_USER_TOOL.name) &&
+      this.askCountThisTurn < this.strategy.askLimit
+    );
+  }
+
   /** 工具调用分支 + Reflection（子方法 2/3）；ask_user 提问检出挂起（返回 'paused'） */
   private async *handleToolCalls(
     llmResult: LlmCallResult,
@@ -1106,11 +1127,8 @@ export class AgentLoop {
     // 主动提问检出（ask_user 内置工具）：提问 = 一次普通工具调用（对齐 Claude Code AskUserQuestion
     // 机制）。检出 ask_user 且未达 askLimit 上限 → 整轮挂起（其余工具不执行——提问是决策关口，
     // 答案未定前执行可能白跑），用户答案经 answerQuestion 回填为 tool 结果后由宿主续跑，
-    // LLM 基于答案重新决策。
-    if (
-      effectiveToolCalls.some((tc) => tc.function.name === ASK_USER_TOOL.name) &&
-      this.askCountThisTurn < this.strategy.askLimit
-    ) {
+    // LLM 基于答案重新决策。挂起判定经 willSuspendForAsk 单收口（与 onStepBoundary 排除共用）。
+    if (this.willSuspendForAsk(effectiveToolCalls)) {
       return yield* this.handleAskUser(llmResult, effectiveToolCalls);
     }
 

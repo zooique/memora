@@ -136,6 +136,8 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 ### `ask_user` 主动提问（2026-09-04 定案：提问 = 一次普通工具调用）
 
 > **定案**：主动提问收敛为 **`ask_user` 内置工具**（对齐 Claude Code AskUserQuestion 机制）——LLM 调 `ask_user(question, options?, allowCustom?)` 时，loop 检出后**整轮挂起**（step 边界气口），用户答案经 `answerQuestion()` 以 **tool result 回填**（与 assistant.tool_calls 配对，结构恒合法），再 `continueAfterPause` 续跑。
+>
+> **收敛补记（2026-09-07）——提问轮不推进 step**：挂起型迭代（含将挂起的 `ask_user`）不触发 step 边界自动完成——问答对归当前 active step，回答续跑后由后续完整迭代在边界完成该步。与用户暂停（迭代边界挂起、不推进 step）对称；否则提问迭代会在 `onStepBoundary` 先把当前步 done 再挂起，回答产出被错归下一步（判定经 `willSuspendForAsk` 单收口，与挂起检出共用）。
 
 | 形态 | 行为 |
 |------|------|

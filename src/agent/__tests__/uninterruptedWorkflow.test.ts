@@ -1974,6 +1974,56 @@ class AskThenResumeProvider extends LlmProvider {
   }
 }
 
+/**
+ * plan + ask_user 组合（缝隙 A 防回归，2026-09-07）Provider：
+ * - 首轮调 ask_user 工具挂起（在既有 plan 之上提问，不预写任务表——plan 由测试直接
+ *   push 进 checkpoint，聚焦「提问迭代与 step 推进」的交互语义）；
+ * - 续跑轮（上下文含 [ASK_ANSWER] 回答 tool 结果）纯文本收尾（不调工具）——
+ *   由 onStepBoundary 在续跑迭代边界完成提问步（若提问轮已提前 done 步，则此处会错完成下一步）。
+ * 复用 AskThenResumeProvider 的 summarizer / sessionNamer 分岔守卫（不消耗主对话分岔状态）。
+ */
+class AskInPlanProvider extends LlmProvider {
+  readonly name = 'mock-ask-in-plan';
+  /** 首轮是否已发出 ask_user（分岔：首轮挂起，续跑轮纯文本收尾） */
+  private asked = false;
+
+  async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    const sysContent = messages.find((m) => m.role === 'system')?.content;
+    if (typeof sysContent === 'string' && sysContent.includes('对话摘要生成器')) {
+      yield { content: JSON.stringify({ summary: '测试摘要', type: 'general' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    const firstUser = messages.find((m) => m.role === 'user')?.content;
+    if (typeof firstUser === 'string' && firstUser.startsWith('你是会话命名助手。')) {
+      yield { content: JSON.stringify({ title: '测试会话' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    if (!this.asked) {
+      this.asked = true;
+      yield {
+        content: '在继续前需要确认：',
+        toolCalls: [
+          {
+            id: 'ask-plan-1',
+            type: 'function',
+            function: {
+              name: 'ask_user',
+              arguments: JSON.stringify({ question: '确认继续吗？' }),
+            },
+          },
+        ],
+      };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    // 续跑轮：纯文本收尾（不调工具）——「提问步」的产出交付，应归当前（提问）步完成
+    yield { content: '确认收到，本步工作完成。' };
+    yield { finishReason: 'stop' };
+  }
+}
+
 describe('SSOT 排雷防回归 · 暂停链路', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2228,6 +2278,77 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
 
     // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
     await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
+  });
+
+  // ─── 缝隙 A（2026-09-07）：plan + ask_user 组合（提问轮不消耗 step）──────────────────
+  // 旧缺陷：onStepBoundary（:955）先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
+  // 先把当前 active step 自动 done、推进到下一步，再挂起等答案——回答续跑后问答产出被
+  // 归到「下一步」，提问步无继续表达通道（与用户暂停在迭代边界挂起、不推进 step 不对称）。
+  // 修复：含 ask_user 将挂起的迭代不触发 step 边界完成（willSuspendForAsk 排除），
+  // 问答对归当前步；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
+
+  it('缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new AskInPlanProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+    // 预置任务表（仿场景 G 直接 push plan：S1 active + S2 pending）
+    agent.createCheckpoint('任务目标');
+    agent.getCheckpoint()!.plan.push(
+      { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
+      { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
+    );
+
+    for await (const _chunk of agent.chat('执行任务')) {
+      void _chunk; // 仅消费流：首轮 ask_user 提问挂起
+    }
+    expect(agent.sessionManager!.status).toBe('paused');
+    // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
+    expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
+    const after = agent.getCheckpoint()!.plan;
+    // 修复语义：提问步仍 active，下一步未被提前激活（旧码 S1=done/S2=active → 转红）
+    expect(after.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
+    expect(after.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
+  });
+
+  it('缝隙 A：回答续跑后由提问步自身完成（S1 done、S2 不被提前消费、stepLog 归位 S1）', { timeout: 30000 }, async () => {
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new AskInPlanProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+    agent.createCheckpoint('任务目标');
+    agent.getCheckpoint()!.plan.push(
+      { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
+      { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
+    );
+
+    for await (const _chunk of agent.chat('执行任务')) {
+      void _chunk; // 仅消费流：首轮提问挂起
+    }
+    expect(agent.sessionManager!.status).toBe('paused');
+    // 双轨道（对齐 TS-9）：answerQuestion 回填 + resumeExecution('question-answer') 续跑
+    expect(agent.answerQuestion(['确认'])).toBe(true);
+    for await (const _chunk of agent.resumeExecution('确认', undefined, 'question-answer')) {
+      void _chunk; // 仅消费流：续跑轮纯文本收尾（无工具）
+    }
+    const cp = agent.getCheckpoint()!;
+    // 续跑迭代在边界完成「提问步」本身（旧码此时完成的是已提前激活的 S2 → 转红）
+    expect(cp.plan.find((s) => s.id === 'ask-plan-s1')!.status).toBe('done');
+    expect(cp.plan.find((s) => s.id === 'ask-plan-s2')!.status).not.toBe('done');
+    // stepLog 末条归 S1（提问步的问答产出时间轴归位，不跳步）
+    const stepLog = cp.stepLog ?? [];
+    expect(stepLog.length).toBeGreaterThan(0);
+    expect(stepLog[stepLog.length - 1]!.planStepId).toBe('ask-plan-s1');
   });
 });
 
