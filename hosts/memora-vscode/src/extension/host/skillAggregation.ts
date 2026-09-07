@@ -58,20 +58,18 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     layer: SkillSource,
     name: string,
     description: string | undefined,
-    keywords: readonly string[],
-    trigger?: RegExp,
     filePath?: string,
   ): void => {
     if (!name || seen.has(name)) return;
     seen.add(name);
-    out.push({ name, description: description ?? '', keywords: [...keywords], trigger: trigger?.source, filePath, layer });
+    out.push({ name, description: description ?? '', filePath, layer });
   };
 
   // 源 1 + 3：SkillManager.list（内置 configDir/skills + 用户 loadExtraDir 注入）
   const sm = agent.skills;
   if (sm) {
     for (const s of sm.list) {
-      push(sourceOf(s.filePath, s.layer, configDir, userSkillsDir), s.name, s.description, s.keywords, s.trigger, s.filePath);
+      push(sourceOf(s.filePath, s.layer, configDir, userSkillsDir), s.name, s.description, s.filePath);
     }
   }
 
@@ -79,7 +77,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   const rpm = agent.rolePackManager;
   if (rpm) {
     for (const s of rpm.listSkills ? rpm.listSkills() : []) {
-      push('rolepack', s.name, s.description, []);
+      push('rolepack', s.name, s.description);
     }
   }
 

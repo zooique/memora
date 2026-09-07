@@ -992,10 +992,6 @@ export interface SkillDto {
   name: string;
   /** 技能描述 */
   description: string;
-  /** 关键词列表（用于触发匹配） */
-  keywords: string[];
-  /** 触发正则（可选） */
-  trigger?: string;
   /** 技能文件路径（用于定位来源） */
   filePath?: string;
   /** 技能来源三分类（SSOT 收紧，2026-08-25）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */

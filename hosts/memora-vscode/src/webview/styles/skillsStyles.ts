@@ -126,25 +126,11 @@ export const skillsStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
 
-  #skills-root .skill-trigger {
-    font-size: var(--font-sm, 11px);
-    color: var(--accent, #0e639c);
-    background: var(--accent-subtle);
-    padding: 1px 4px;
-    border-radius: var(--radius-sm, 2px);
-  }
-
   #skills-root .skill-desc {
     margin: 0 0 var(--sp-2, 6px) 0;
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     line-height: 1.4;
-  }
-
-  #skills-root .skill-keywords {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--sp-1, 4px);
   }
 
   /* G22 写→验→用（2026-08-25）：健康徽章 + 问题列表（error=未生效 / warn=可优化） */

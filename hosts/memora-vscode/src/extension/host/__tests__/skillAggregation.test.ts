@@ -26,8 +26,6 @@ function makeAgent(opts: {
       list: opts.global.map((g) => ({
         name: g.name,
         description: g.description,
-        keywords: [] as string[],
-        trigger: undefined,
         filePath: g.filePath,
         layer: (g.layer ?? 'project') as 'agent' | 'project',
       })),

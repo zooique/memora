@@ -60,7 +60,7 @@ describe('宿主集成端到端测试', () => {
     mkdirSync(defaultPackDir, { recursive: true });
     writeFileSync(
       join(defaultPackDir, 'manifest.json'),
-      JSON.stringify({ name: '默认助手', displayName: '默认助手', keywords: ['助手'] }),
+      JSON.stringify({ name: '默认助手', displayName: '默认助手' }),
     );
     writeFileSync(
       join(defaultPackDir, 'persona.md'),

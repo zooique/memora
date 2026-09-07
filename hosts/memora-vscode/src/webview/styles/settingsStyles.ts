@@ -151,8 +151,8 @@ export const settingsStyles = `
   #roles-root .empty-hint, #memory-root .empty-hint, #config-root .empty-hint {
     font-size: var(--font-md, 12px);
   }
-  /* Chip：小胶囊标签（cap-chip/keyword-chip 形态收敛；交互型 skill-chip 另行评估） */
-  #roles-root .cap-chip, #skills-root .keyword-chip {
+  /* Chip：小胶囊标签（cap-chip 形态；技能 keyword-chip 已随关键词命中系统移除） */
+  #roles-root .cap-chip {
     display: inline-block;
     padding: 1px var(--sp-2, 6px);
     font-size: var(--font-xs, 10px);

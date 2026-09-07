@@ -264,18 +264,12 @@ function renderSkills(
         <h3 class="skill-name">${escapeHtml(s.name)}</h3>
         <span class="skill-badge ${metaOf(s).badge}">${metaOf(s).label}</span>
         ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
-        ${s.trigger ? `<code class="skill-trigger">${escapeHtml(s.trigger)}</code>` : ''}
         <button class="skill-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
         s.issues && s.issues.length > 0
           ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
-          : ''
-      }
-      ${
-        s.keywords.length > 0
-          ? `<div class="skill-keywords">${s.keywords.map((k) => `<span class="keyword-chip">${escapeHtml(k)}</span>`).join('')}</div>`
           : ''
       }
       <div class="skill-content" style="display:none"></div>
