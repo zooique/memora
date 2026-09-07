@@ -90,6 +90,21 @@ export const IGNORED_DIR_NAMES: readonly string[] = [
 ];
 
 /**
+ * 任务表保留文件名判定（2026-09-07 伪建表根治，write_file 守卫唯一消费）
+ *
+ * 任务表是内核工具数据（task_table_write/update 管理），不落盘为 markdown 文件——`task-table.md` /
+ * `任务表.md` 等文件名保留给任务表机制，禁止 write_file 写入。命中规则 = 文件名（去扩展名）即
+ * `task-table` / `task_table` / `任务表`，或以其带分隔符/后缀开头（如 `task-table-进度.md`）。
+ *
+ * @param absolutePath 目标文件绝对路径
+ * @returns 是否命中保留名（任务表语义文件）
+ */
+export function isReservedTaskTableFile(absolutePath: string): boolean {
+  const base = basename(absolutePath).replace(/\.(md|markdown|txt)$/i, '');
+  return /^task[-_ ]?table(?:[-_ ].+)?$/i.test(base) || /^任务表(?:[-_ ].+)?$/.test(base);
+}
+
+/**
  * 内置工具处理器
  *
  * 管理 4 个内置工具的实际实现 + 路径安全校验。
@@ -459,6 +474,21 @@ export class BuiltinToolHandlers {
 
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'write_file');
+
+    // 保留名守卫（2026-09-07 伪建表根治）：任务表是内核工具数据（task_table_write/update 管理），
+    // 不落盘为 markdown 文件。历史样本实证：LLM 曾在同一会话内反复 write_file 写 .memora/task-table.md
+    // （上轮成功先例 few-shot 强化 → 下轮沿用），绕过 PlanStep 通道导致顶部任务板不渲染/视角切换失效。
+    // 软指令压不过历史先例，必须确定性拦截——命中即失败，错误样本进会话历史成为「此路不通」负面先例，
+    // 引导 LLM 改走 task_table_write 单通道。
+    if (isReservedTaskTableFile(absolutePath)) {
+      throw toolError(
+        '保留文件名：任务表必须用 task_table_write/task_table_update 管理',
+        `write_file 不允许写入 ${basename(absolutePath)}（任务表是内核工具数据，不落盘为文件）`,
+        ['使用 task_table_write 创建/更新任务表', '使用 task_table_update 标记步骤状态'],
+        undefined,
+        ToolErrorCode.ARGUMENT_ERROR,
+      );
+    }
 
     // 读取文件旧内容（如果存在）
     let beforeContent: string | null = null;

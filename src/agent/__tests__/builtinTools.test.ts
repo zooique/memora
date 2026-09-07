@@ -18,7 +18,27 @@ import {
   SEARCH_PROJECT_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
+import { isReservedTaskTableFile } from '@/agent/builtinToolHandlers.js';
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
+
+describe('builtinToolHandlers · isReservedTaskTableFile（任务表保留名，2026-09-07 伪建表根治）', () => {
+  it('命中任务表保留名（write_file 守卫拦截）', () => {
+    expect(isReservedTaskTableFile('C:/proj/task-table.md')).toBe(true);
+    expect(isReservedTaskTableFile('C:/proj/task_table.md')).toBe(true);
+    expect(isReservedTaskTableFile('C:/proj/task-table-进度.md')).toBe(true);
+    expect(isReservedTaskTableFile('C:/proj/.memora/task-table.md')).toBe(true);
+    expect(isReservedTaskTableFile('C:/proj/任务表.md')).toBe(true);
+    expect(isReservedTaskTableFile('C:/proj/Task-Table.md')).toBe(true); // 大小写不敏感
+  });
+
+  it('不误伤普通文件（保留名外路径照常可写）', () => {
+    expect(isReservedTaskTableFile('C:/proj/README.md')).toBe(false);
+    expect(isReservedTaskTableFile('C:/proj/tasklist.md')).toBe(false);
+    expect(isReservedTaskTableFile('C:/proj/task-board.md')).toBe(false);
+    expect(isReservedTaskTableFile('C:/proj/table.md')).toBe(false);
+    expect(isReservedTaskTableFile('C:/proj/docs/项目计划.md')).toBe(false);
+  });
+});
 
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
