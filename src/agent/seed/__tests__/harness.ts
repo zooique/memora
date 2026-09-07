@@ -64,6 +64,8 @@ export interface SeedMocks {
     resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
     setRoundAssemblyRole: ReturnType<typeof vi.fn>;
     buildTeamContextBlock: ReturnType<typeof vi.fn>;
+    // 会议机制骨架预置（2026-09-07 回归）：确定性骨架单入口（默认 null 不触发）
+    tryBuildMeetingPlan: ReturnType<typeof vi.fn>;
   };
   contextPreparer: {
     recallAndInject: ReturnType<typeof vi.fn>;
@@ -180,6 +182,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       resolveRoundAssemblyRole: vi.fn(() => null),
       setRoundAssemblyRole: vi.fn(),
       buildTeamContextBlock: vi.fn(() => ''),
+      tryBuildMeetingPlan: vi.fn(() => null),
     },
     contextPreparer: {
       recallAndInject: vi.fn(async () => [] as Memory[]),

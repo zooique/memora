@@ -720,25 +720,72 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(block).toContain('组员1');
       expect(block).toContain('task_table_write');
       expect(block).toContain('task_table_update');
+      // 2026-09-07 文案强化：显式禁止 write_file 模拟任务表（触发样本实证 LLM 曾绕过 PlanStep 通道）
+      expect(block).toContain('禁止用 write_file');
       // 切到非组长 → 空串（不注入）
       manager.activate('组员1');
       expect(manager.buildTeamContextBlock()).toBe('');
     });
 
-    it('buildTeamContextBlock：指挥 LLM 用 task_table_write 自主建表（带 rolePack 示例）', async () => {
+    it('buildTeamContextBlock：告知骨架预置 + rolePack 切换纪律 + 禁止 write_file 伪建表', async () => {
       await writeTeamPacks();
       const manager = new RolePackManager(dir);
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
       await manager.load('组长A');
       const block = manager.buildTeamContextBlock();
-      // 确定性预置已退役（ADR-028 2026-09-06 收敛补记）：改指挥 LLM 自主建表
+      // 确定性骨架已由 tryBuildMeetingPlan 预置（2026-09-07「最小受控起点」半反转），文案告知 LLM 骨架存在
       expect(block).toContain('小组会议');
-      expect(block).toContain('task_table_write');
+      expect(block).toContain('骨架');
       expect(block).toContain('rolePack=对应组员');
       expect(block).toContain('task_table_update');
-      // 不再把「系统自动预置」作为既定事实承诺给 LLM（确定性预置已退役）
-      expect(block).not.toContain('系统自动预置');
-      expect(block).not.toContain('无需你自建任务表');
+      // 伪建表禁令（触发样本：LLM 曾用 write_file 写 .memora/task-table.md 绕过 PlanStep 通道）
+      expect(block).toContain('禁止用 write_file');
+    });
+
+    describe('tryBuildMeetingPlan：骨架预置（2026-09-07 最小受控起点半反转）', () => {
+      it('组长 + 「小组会议」→ 组长开场步 + 组员各一步(带 rolePack) + 汇总步(无 rolePack)', async () => {
+        await writeTeamPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
+        await manager.load('组长A');
+        const steps = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
+        expect(steps).not.toBeNull();
+        // 组长开场步：无 rolePack = 默认组长视角（主持引入议题）
+        expect(steps![0]).toEqual({ description: '组长A 主持开场：讨论叙事平台' });
+        // 组员各一步，rolePack = 成员（触发表层装配硬切换）
+        expect(steps![1]).toEqual({ description: '组员1 发言：讨论叙事平台', rolePack: '组员1' });
+        expect(steps![2]).toEqual({ description: '组员2 发言：讨论叙事平台', rolePack: '组员2' });
+        // 末步汇总，无 rolePack（组长视角收尾）
+        expect(steps![3]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
+        expect(steps).toHaveLength(4);
+      });
+
+      it('无「小组会议」keyword → null（回落普通闭环）', async () => {
+        await writeTeamPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+        await manager.load('组长A');
+        expect(manager.tryBuildMeetingPlan('请评审这份文档')).toBeNull();
+      });
+
+      it('activePack 非组长 → null', async () => {
+        await writeTeamPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+        await manager.load('组员1'); // 激活的是组员，非组长
+        expect(manager.tryBuildMeetingPlan('小组会议：讨论xxx')).toBeNull();
+      });
+
+      it('主题可缺省（仅「小组会议」）→ 步骤不带主题后缀', async () => {
+        await writeTeamPacks();
+        const manager = new RolePackManager(dir);
+        manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
+        await manager.load('组长A');
+        const steps = manager.tryBuildMeetingPlan('小组会议');
+        expect(steps![0]).toEqual({ description: '组长A 主持开场' });
+        expect(steps![1]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
+        expect(steps![2]).toEqual({ description: '汇总各方观点' });
+      });
     });
 
     describe('组员数量上限：超限部分不参与会议（截断收口，② 组队规格）', () => {

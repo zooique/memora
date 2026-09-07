@@ -469,8 +469,11 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 构建「组长 + 组员名单」上下文块（会议机制实施前提②：组/成员清单暴露给 LLM，防编造角色名）。
    * 仅当 activePack 是某个组的组长且名单非空时产出；非组长返回空串（不注入）。
    *
-   * 文案指挥 LLM 用 `task_table_write` 自主建表（ADR-028 收敛补记为确定性预置退役，任务表写点归
-   * LLM 通道）：明确组员发言步需声明 `rolePack` 以触发表层装配切换，汇总步不声明回到组长视角。
+   * 文案指挥 LLM 用 `task_table_write` 自主建表（确定性骨架预置见 tryBuildMeetingPlan，
+   * 二者互补：骨架补首轮确定性，文案约束 LLM 后续走 task_table 单通道）：
+   * 明确组员发言步需声明 `rolePack` 以触发表层装配切换，汇总步不声明回到组长视角；
+   * 并显式禁止用 write_file 模拟任务表（2026-09-07 触发样本实证：LLM 曾用 write_file 写
+   * `.memora/task-table.md` 伪建表绕过 PlanStep 通道，导致顶部任务板不渲染）。
    */
   buildTeamContextBlock(): string {
     if (!this.activePackName) return '';
@@ -478,11 +481,50 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (members.length === 0) return '';
     return (
       `【小组会议角色（组长：${this.activePackName}；组员：${members.join(' / ')}）】` +
-      `用户以「小组会议：主题」发起时，系统不再自动预置任务表：` +
-      `请立即用 task_table_write 为本次会议自主建表——每位组员各建一步发言，并在此步声明 rolePack=对应组员` +
-      `（执行到该步时切换为该组员视角作答）；最后额外建一步汇总，不声明 rolePack（回到组长视角收尾）。` +
-      `随后按任务表逐项执行，每完成一步用 task_table_update 将该步标记 done 或 blocked。`
+      `用户以「小组会议：主题」发起时，系统不自动预置完整流程，但已确定性预置骨架任务表` +
+      `（组长开场 → 每位组员各一步发言 → 汇总），你只需按骨架逐项执行；` +
+      `如需追加讨论轮次可自行用 task_table_write 增步，并在此步声明 rolePack=对应组员` +
+      `（执行到该步时切换为该组员视角作答）；汇总步到达后不声明 rolePack（回到组长视角收尾）。` +
+      `每完成一步用 task_table_update 将该步标记 done 或 blocked。` +
+      `禁止用 write_file 创建或修改任务表文件（如 .memora/task-table.md）——任务表只能经 task_table_write 建表、task_table_update 标记。`
     );
+  }
+
+  /**
+   * 会议机制：确定性骨架预置（SSOT 单一入口，ADR-028 收敛补记的「最小受控起点」半反转，
+   * 2026-09-07 触发样本实证后回归，与 buildTeamContextBlock 文案互补）。
+   *
+   * 用户消息含「小组会议」**且** activePack 是某组组长 → 程序化预置占位骨架：
+   * 组长开场步（无 rolePack = 默认组长视角）+ 组员各一步（`rolePack=成员`，触发表层装配硬切换）
+   * + 汇总步尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
+   * LLM 可经 task_table_write 追加额外步骤（骨架以 append 扩步，不锁死多轮交互）。
+   * 不引入会议引擎：步骤执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按步标记 done/blocked，
+   * 装配视角逐步切换由 T1 收口（getTaskTable → applyActiveStepAssembly → applyActiveStepAssemblyIfChanged）。
+   *
+   * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则步骤仅标「发言/汇总」由 LLM 见用户消息展开。
+   * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。
+   *
+   * @param input 用户输入
+   * @returns 预置骨架步骤（description + 可选 rolePack）；不触发返回 null
+   */
+  tryBuildMeetingPlan(input: string): Array<{ description: string; rolePack?: string }> | null {
+    if (!this.activePackName) return null;
+    if (!/小组会议/.test(input)) return null;
+    const members = this.activeTeamMembers;
+    if (members.length === 0) return null;
+    const topic = input.replace(/^\s*小组会议\s*[:：,，]?\s*/, '').trim();
+    const suffix = topic ? `：${topic}` : '';
+    // 组长开场步：无 rolePack（默认组长视角），语义上"主持引入议题"
+    const steps: Array<{ description: string; rolePack?: string }> = [
+      { description: `${this.activePackName} 主持开场${suffix}` },
+    ];
+    // 组员各一步发言，rolePack=组员（触发表层装配切换为该组员视角）
+    for (const m of members) {
+      steps.push({ description: `${m} 发言${suffix}`, rolePack: m });
+    }
+    // 汇总步尾：无 rolePack（回到组长视角收尾）
+    steps.push({ description: `汇总各方观点${suffix}` });
+    return steps;
   }
 
   // ── 生命周期 ──────────────────────────────────────

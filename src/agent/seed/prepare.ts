@@ -65,8 +65,23 @@ export class SeedPrepare {
       loop.injectSystemMessage(teamContext);
     }
 
-    // 会议机制（ADR-028 收敛补记为确定性预置退役：任务表写点归 LLM 通道）——此处不再自动
-    // writePlan 预置会议任务表，建表由 buildTeamContextBlock 指令引导 LLM 经 task_table_write 自主完成。
+    // 会议机制骨架预置（2026-09-07 「最小受控起点」半反转回归，ADR-028 收敛补记 + ME-6 触发样本）。
+    // 与 buildTeamContextBlock 文案互补：骨架补首轮确定性（顶部任务板可见 + PlanStep.rolePack 装配钩子），
+    // 文案约束 LLM 后续推进走 task_table 单通道。守卫语义与 T2（2026-09-06）一致：
+    //   已有未完成计划（pending/active 存在）→ 跳过骨架预置 = 续会语义：第二轮「继续小组会议」等输入
+    //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
+    //   重开已推进会议需显式手段（宿主清空任务表 / LLM task_table_write），非自然语言自动触发。
+    const hasInflightPlan = (checkpoint?.plan ?? []).some(
+      (s) => s.status === 'pending' || s.status === 'active',
+    );
+    const meetingSteps = hasInflightPlan
+      ? null
+      : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);
+    if (meetingSteps && sessionManager) {
+      // 骨架预置：overwrite 真清空（writePlan 语义修复后为真重写——新会议替换一切旧计划）
+      sessionManager.writePlan('overwrite', meetingSteps);
+    }
+
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
     // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
     const memoryRecallMode = resolveMemoryRecallMode(strategy);
