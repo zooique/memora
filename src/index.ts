@@ -285,7 +285,7 @@ export {
   clearSafeTimeout,
   clearSafeInterval,
 } from '@/utils/safeTimer.js';
-export type { SkillEntry, SkillMatch } from '@/skill/types.js';
+export type { SkillEntry } from '@/skill/types.js';
 
 // ─── 安全层导出 ────────────────────────────────────────────
 // 审计日志类型（SecurityGuard.onAudit 回调的 event 参数）

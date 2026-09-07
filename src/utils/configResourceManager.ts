@@ -1,9 +1,8 @@
 /**
  * 配置资源管理器抽象基类 — 消除 SkillManager / RolePackManager 的重复结构：
- * 扫描 <configDir>/<subdir>/ 的 .md、解析 frontmatter keywords、关键词匹配、load/reload/deleteItem 生命周期。
+ * 扫描 <configDir>/<subdir>/ 的 .md、load/reload/deleteItem 生命周期。
  * 差异化保留在子类（createEntry 条目构造、buildSystemPrompt、各自额外状态/能力）。
  */
-import { scoreByKeywords } from '@/utils/segmenter.js';
 import { logger } from '@/logging/logger.js';
 import { resolveSubdir, scanMarkdownDir } from '@/utils/scanner.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
@@ -11,7 +10,6 @@ import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 /** 配置资源最小约束 */
 export interface ConfigResource {
   name: string;
-  keywords: string[];
   content: string;
   filePath: string;
 }
@@ -129,30 +127,6 @@ export abstract class ConfigResourceManager<
   protected registerRuntimeItem(item: T): void {
     this.items.push(item);
     this.runtimeNames.add(item.name);
-  }
-
-  // ── 关键词匹配（共享实现） ──────────────────────────────
-
-  /** 关键词匹配：遍历资源，返回命中阈值内得分最高的资源（子类可覆写扩展 trigger 等） */
-  protected findBestKeywordMatch(
-    userInput: string,
-    threshold: number,
-  ): { item: T; score: number } | null {
-    const matches: Array<{ item: T; score: number }> = [];
-
-    for (const item of this.items) {
-      if (item.keywords.length === 0) continue;
-      const score = scoreByKeywords(userInput, item.keywords);
-      if (score >= threshold) {
-        matches.push({ item, score });
-      }
-    }
-
-    if (matches.length === 0) return null;
-
-    // 主排序得分降序；次排序 name 字母序保证同分时确定性
-    matches.sort((a, b) => b.score - a.score || a.item.name.localeCompare(b.item.name));
-    return matches[0] ?? null;
   }
 
   // ── 抽象方法（子类差异化） ──────────────────────────────

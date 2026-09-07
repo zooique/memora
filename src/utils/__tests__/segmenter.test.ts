@@ -2,11 +2,9 @@
  * 单元测试：中文分词器
  *
  * 详见 Intl.Segmenter 中文分词
- *
- * tokenizeKeywords 为模块私有，其行为通过 scoreByKeywords 间接验证。
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, scoreByKeywords } from '@/utils/segmenter.js';
+import { segmentText } from '@/utils/segmenter.js';
 
 describe('中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -50,41 +48,5 @@ describe('中文分词器（Intl.Segmenter）', () => {
       expect(tokens).toContain('24');
       expect(tokens).toContain('LTS');
     });
-  });
-});
-
-describe('scoreByKeywords · 关键词匹配评分（间接覆盖 tokenizeKeywords）', () => {
-  it('空关键词列表应返回 0', () => {
-    expect(scoreByKeywords('任何输入', [])).toBe(0);
-  });
-
-  it('完全命中应返回 1', () => {
-    expect(scoreByKeywords('我想写玄幻小说', ['玄幻', '小说'])).toBe(1);
-  });
-
-  it('部分命中应返回正确比例（分母上限 3）', () => {
-    // 3 个关键词命中 2 个：分母 min(3,3)=3，得分 2/3
-    expect(scoreByKeywords('我想写玄幻小说', ['玄幻', '科幻', '小说'])).toBeCloseTo(2 / 3, 5);
-  });
-
-  it('关键词多于 3 个时，分母上限为 3（避免惩罚关键词多的角色）', () => {
-    // 5 个关键词命中 2 个：分母 min(5,3)=3，得分 2/3（非 2/5=0.4）
-    expect(scoreByKeywords('我想写玄幻小说', ['玄幻', '科幻', '小说', '修仙', '异界'])).toBeCloseTo(2 / 3, 5);
-  });
-
-  it('无命中应返回 0', () => {
-    expect(scoreByKeywords('今天天气不错', ['玄幻', '小说'])).toBe(0);
-  });
-
-  it('大小写不敏感', () => {
-    expect(scoreByKeywords('use TypeScript API', ['api', 'typescript'])).toBe(1);
-  });
-
-  it('中文子串匹配', () => {
-    expect(scoreByKeywords('我想学习编程技巧', ['编程'])).toBe(1);
-  });
-
-  it('英文关键词中文输入不命中', () => {
-    expect(scoreByKeywords('我想写小说', ['API', 'TypeScript'])).toBe(0);
   });
 });

@@ -1,7 +1,7 @@
 /**
  * 单元测试：Markdown 目录扫描工具
  *
- * 覆盖 scanMarkdownDir / parseKeywords / parseTrigger / resolveSubdir：
+ * 覆盖 scanMarkdownDir / resolveSubdir：
  *   - scanMarkdownDir：目录不存在降级返回空数组
  *   - scanMarkdownDir：正常扫描 *.md 并解析 frontmatter
  *   - scanMarkdownDir：排除隐藏文件、_ 前缀、README/CHANGELOG/LICENSE
@@ -9,9 +9,6 @@
  *   - scanMarkdownDir：解析失败的文件跳过并 warn
  *   - scanMarkdownDir：文件夹形式 SKILL.md 扫描
  *   - scanMarkdownDir：混合形式（单文件 + 文件夹）扫描
- *   - parseKeywords：逗号分隔、trim、过滤空值
- *   - parseTrigger：/pattern/flags 与纯 pattern 两种格式
- *   - parseTrigger：非法正则降级返回 undefined
  *   - resolveSubdir：configDir 为 undefined 返回 undefined
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
@@ -20,8 +17,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import {
   scanMarkdownDir,
-  parseKeywords,
-  parseTrigger,
   resolveSubdir,
   resolveSafePath,
 } from '@/utils/scanner.js';
@@ -216,93 +211,6 @@ description: 测试技能
       expect(result[0]?.name).toBe('no-fm-skill');
       expect(result[0]?.frontmatter).toEqual({});
       expect(result[0]?.body).toContain('# 纯正文');
-    });
-  });
-
-  describe('parseKeywords', () => {
-    it('应按逗号分隔并 trim', () => {
-      const result = parseKeywords({ keywords: '记忆, 归档 , 衰减' });
-      expect(result).toEqual(['记忆', '归档', '衰减']);
-    });
-
-    it('应过滤空字符串', () => {
-      const result = parseKeywords({ keywords: 'a, , b, ,c' });
-      expect(result).toEqual(['a', 'b', 'c']);
-    });
-
-    it('字段不存在应返回空数组', () => {
-      expect(parseKeywords({})).toEqual([]);
-      expect(parseKeywords({ other: 'x' })).toEqual([]);
-    });
-
-    it('字段为空字符串应返回空数组', () => {
-      expect(parseKeywords({ keywords: '' })).toEqual([]);
-    });
-
-    it('应支持自定义字段名', () => {
-      const result = parseKeywords({ tags: 'a, b, c' }, 'tags');
-      expect(result).toEqual(['a', 'b', 'c']);
-    });
-
-    it('纯空白字符串应返回空数组', () => {
-      expect(parseKeywords({ keywords: '   ' })).toEqual([]);
-    });
-
-    it('单个关键词应返回单元素数组', () => {
-      expect(parseKeywords({ keywords: 'solo' })).toEqual(['solo']);
-    });
-
-    it('非字符串值应通过 String() 转换', () => {
-      // frontmatter 类型是 Record<string, string>，但运行时可能传入其他类型
-      const result = parseKeywords({ keywords: 'a,b,c' } as Record<string, string>);
-      expect(result).toEqual(['a', 'b', 'c']);
-    });
-  });
-
-  describe('parseTrigger', () => {
-    it('应解析 /pattern/flags 格式', () => {
-      const result = parseTrigger({ trigger: '/hello/g' });
-      expect(result).toBeInstanceOf(RegExp);
-      expect(result?.source).toBe('hello');
-      expect(result?.flags).toBe('g');
-    });
-
-    it('应解析 /pattern/flags 的多标志', () => {
-      const result = parseTrigger({ trigger: '/test/gim' });
-      expect(result?.flags).toBe('gim');
-    });
-
-    it('纯 pattern 应使用默认 i 标志', () => {
-      const result = parseTrigger({ trigger: 'hello' });
-      expect(result?.source).toBe('hello');
-      expect(result?.flags).toBe('i');
-    });
-
-    it('字段不存在应返回 undefined', () => {
-      expect(parseTrigger({})).toBeUndefined();
-      expect(parseTrigger({ other: 'x' })).toBeUndefined();
-    });
-
-    it('字段为空字符串应返回 undefined', () => {
-      expect(parseTrigger({ trigger: '' })).toBeUndefined();
-    });
-
-    it('非法正则应返回 undefined 并 warn', () => {
-      // 未闭合的字符类是非法正则
-      const result = parseTrigger({ trigger: '[invalid' });
-      expect(result).toBeUndefined();
-    });
-
-    it('应支持自定义字段名', () => {
-      const result = parseTrigger({ pattern: '/abc/g' }, 'pattern');
-      expect(result?.source).toBe('abc');
-      expect(result?.flags).toBe('g');
-    });
-
-    it('带空白前后的 pattern 应正确 trim', () => {
-      const result = parseTrigger({ trigger: '  /hello/g  ' });
-      expect(result?.source).toBe('hello');
-      expect(result?.flags).toBe('g');
     });
   });
 

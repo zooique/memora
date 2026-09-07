@@ -221,12 +221,6 @@ export interface RolePackMeta {
   readonly description?: string;
   /** 版本号 */
   readonly version?: string;
-  /**
-   * 废弃：原设计用于关键词自动匹配角色包，v0.13 定案角色包只能手动切换后自动匹配链已死。
-   * 当前 parse 时置 undefined（RolePack 构造时硬编码空数组以满足 ConfigResource 接口约束）。
-   * 保留声明仅为兼容旧 manifest 解析 + validator 防御性校验，未来可考虑彻底移除。
-   */
-  readonly keywords?: readonly string[];
   /** 可选：作者/来源 */
   readonly author?: string;
   /** 格式版本（缺省按 1.0.0 处理） */
@@ -244,13 +238,11 @@ export interface RolePackMeta {
 /**
  * 角色包（Role Pack）—— L1 内容层 + L2 策略层
  * 从角色包文件夹的 manifest.json（唯一权威控制文件）+ 独立内容文件（persona.md/rules.md/skills/*）装配而成。
- * 实现 ConfigResource 约束：name/keywords 从 meta 派生，content 从 personaContent 派生。
+ * 实现 ConfigResource 约束：name 从 meta 派生，content 从 personaContent 派生。
  */
 export interface RolePack {
   /** 角色包名称（派生自 meta.name，满足 ConfigResource 约束） */
   readonly name: string;
-  /** 关键词列表（派生自 meta.keywords，满足 ConfigResource 约束） */
-  readonly keywords: string[];
   /** 内容正文（派生自 personaContent，满足 ConfigResource 约束） */
   readonly content: string;
   /** 来源文件路径（manifest.json 绝对路径，满足 ConfigResource 约束） */

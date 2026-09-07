@@ -1,8 +1,7 @@
 /**
  * 技能模块类型定义 — 三级渐进披露
  *
- * L1 元数据：name + description（必填，渐进披露唯一激活依据）→ 常驻 system prompt；
- *   keywords/trigger 为可选增强（本地匹配 + UI 标签），不进 L1 清单输出（B1 对齐主流：仅两字段）
+ * L1 元数据：name + description（必填，渐进披露唯一激活依据）→ 常驻 system prompt（B1 对齐主流：仅两字段）
  * L2 正文：content（SKILL.md 全文）→ read_skill 按需加载
  * L3 资源/脚本：resources + references + scripts → read_resource / run_skill_script 按需调用
  */
@@ -46,10 +45,6 @@ export interface SkillLayer3 {
 export interface SkillEntry {
   /** 技能名（文件名去 .md，或目录名） */
   name: string;
-  /** 触发关键词列表 */
-  keywords: string[];
-  /** 触发正则（可选，优先级高于 keywords） */
-  trigger?: RegExp;
   /** 技能描述（可选） */
   description?: string;
   /** 技能 prompt 正文（L2 内容） */
@@ -72,19 +67,11 @@ export interface SkillEntry {
   layer3?: SkillLayer3;
 }
 
-/** 技能匹配结果 */
-export interface SkillMatch {
-  /** 匹配的技能 */
-  skill: SkillEntry;
-  /** 匹配得分（0-1，用于排序） */
-  score: number;
-}
-
 /** 技能校验单条问题（G22 写→验→用闭环，2026-08-25） */
 export interface SkillIssue {
   /** 级别：error=不可生效 / warning=可加载但变弱 */
   level: 'error' | 'warning';
-  /** 问题归属字段（frontmatter/description/keywords/layer/trigger/body/file） */
+  /** 问题归属字段（frontmatter/description/layer/body/file） */
   field?: string;
   /** 人类可读问题描述（说明影响，供 UI 错误定位） */
   message: string;

@@ -3,7 +3,6 @@
  *
  * 覆盖范围：
  *   - deleteItem()：删除存在的资源 + 删除不存在的资源返回 false + 删除后 list 更新（原裸奔）
- *   - findBestKeywordMatch()：主排序得分降序 + 次排序 name 字母序 + 阈值过滤 + 无匹配返回 null（原裸奔）
  *   - reload()：重新扫描后 list 更新 + onAfterReload 钩子触发
  *   - loadItems()：加载后 list 更新 + onAfterLoad 钩子触发 + 返回数量
  *   - 生命周期钩子：onAfterLoad/onAfterReload 默认空实现 + 子类覆写
@@ -20,16 +19,11 @@ import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 
 /** 最小测试资源类型 */
 interface TestResource extends ConfigResource {
-  // 继承 name/keywords/content/filePath，无额外字段
+  // 继承 name/content/filePath，无额外字段
 }
 
 /** 最小测试子类——暴露 protected 方法供测试调用 */
 class TestResourceManager extends ConfigResourceManager<TestResource> {
-  /** 暴露 findBestKeywordMatch 供测试 */
-  public match(userInput: string, threshold: number) {
-    return this.findBestKeywordMatch(userInput, threshold);
-  }
-
   /** 暴露 loadItems 供测试 */
   public async load(options?: undefined): Promise<number> {
     return this.loadItems(options);
@@ -37,10 +31,9 @@ class TestResourceManager extends ConfigResourceManager<TestResource> {
 
   /** 暴露 createEntry 供测试验证 */
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<TestResource> {
-    // 从 frontmatter 提取 keywords（逗号分隔），body 作为 content（对齐真实子类 parseKeywords 模式）
+    // body 作为 content（对齐真实子类解析模式）
     return {
       name: entry.name,
-      keywords: (entry.frontmatter['keywords'] ?? '').split(',').map((k) => k.trim()).filter(Boolean),
       content: entry.body,
       filePath: entry.filePath,
     };
@@ -71,7 +64,6 @@ class TestResourceManager extends ConfigResourceManager<TestResource> {
 function createResource(overrides: Partial<TestResource> = {}): TestResource {
   return {
     name: 'test',
-    keywords: ['test'],
     content: '测试内容',
     filePath: '/tmp/test.md',
     ...overrides,
@@ -144,71 +136,6 @@ describe('ConfigResourceManager', () => {
       // 'program' 不是 'programmer'，应返回 false
       expect(manager.deleteItem('program')).toBe(false);
       expect(manager.list).toHaveLength(1);
-    });
-  });
-
-  // ── findBestKeywordMatch ────────────────────────────────
-
-  describe('findBestKeywordMatch()', () => {
-    it('返回得分最高的资源', () => {
-      // alpha 命中 1/2 关键词（test），beta 命中 2/2 关键词（test + hello）
-      // 评分公式：hitCount / Math.min(keywordList.length, 3)
-      // alpha 得分 = 1/2 = 0.5，beta 得分 = 2/2 = 1.0
-      const lowScore = createResource({ name: 'alpha', keywords: ['test', 'extra'] });
-      const highScore = createResource({ name: 'beta', keywords: ['test', 'hello'] });
-      setItems(manager, [lowScore, highScore]);
-
-      // 'hello test' 命中 beta 的 2 个关键词，得分更高
-      const result = manager.match('hello test', 0.1);
-      expect(result).not.toBeNull();
-      expect(result!.item.name).toBe('beta');
-    });
-
-    it('同分时按 name 字母序（保证确定性）', () => {
-      const zebra = createResource({ name: 'zebra', keywords: ['test'] });
-      const alpha = createResource({ name: 'alpha', keywords: ['test'] });
-      setItems(manager, [zebra, alpha]);
-
-      // 两个 keywords 相同，得分相同，alpha 字母序在前
-      const result = manager.match('test', 0.1);
-      expect(result).not.toBeNull();
-      expect(result!.item.name).toBe('alpha');
-    });
-
-    it('低于阈值的匹配被过滤', () => {
-      const res = createResource({ name: 'alpha', keywords: ['unrelated'] });
-      setItems(manager, [res]);
-
-      // 'test' 与 'unrelated' 无重叠，得分低于阈值
-      const result = manager.match('test', 0.5);
-      expect(result).toBeNull();
-    });
-
-    it('无资源时返回 null', () => {
-      setItems(manager, []);
-
-      const result = manager.match('test', 0.1);
-      expect(result).toBeNull();
-    });
-
-    it('keywords 为空的资源被跳过', () => {
-      const noKeywords = createResource({ name: 'empty', keywords: [] });
-      const withKeywords = createResource({ name: 'has', keywords: ['test'] });
-      setItems(manager, [noKeywords, withKeywords]);
-
-      const result = manager.match('test', 0.1);
-      expect(result).not.toBeNull();
-      expect(result!.item.name).toBe('has');
-    });
-
-    it('所有资源得分都低于阈值时返回 null', () => {
-      const res1 = createResource({ name: 'alpha', keywords: ['apple'] });
-      const res2 = createResource({ name: 'beta', keywords: ['banana'] });
-      setItems(manager, [res1, res2]);
-
-      // 'cherry' 与 apple/banana 无重叠
-      const result = manager.match('cherry', 0.3);
-      expect(result).toBeNull();
     });
   });
 

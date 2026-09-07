@@ -693,7 +693,6 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       displayName: str(manifest['displayName']),
       description: str(manifest['description']),
       version: str(manifest['version']),
-      keywords: undefined,
       author: str(manifest['author']),
       formatVersion: str(manifest['formatVersion']) ?? DEFAULT_FORMAT_VERSION,
       interactionType: manifest['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
@@ -754,9 +753,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
     // 预计算装配结果并缓存（角色包装载后不可变，缓存安全）
     const pack: RolePack = {
-      // ConfigResource 约束字段（keywords 永远空数组——角色包已无自动匹配消费，手动切换唯一入口）
+      // ConfigResource 约束字段
       name: meta.name,
-      keywords: [],
       content,
       filePath: manifestPath,
       // 角色包特有字段

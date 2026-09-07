@@ -152,49 +152,6 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
 }
 
 /**
- * 从 frontmatter 中解析逗号分隔的关键词列表
- *
- * @param fm frontmatter 键值对
- * @param key 关键词字段名（默认 'keywords'）
- * @returns 关键词数组
- */
-export function parseKeywords(fm: Record<string, string>, key = 'keywords'): string[] {
-  const raw = fm[key];
-  if (!raw) return [];
-  return String(raw)
-    .split(',')
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-/**
- * 从 frontmatter 中解析正则触发器
- *
- * 支持格式：/pattern/flags 或纯 pattern（默认 'i' flag）
- *
- * @param fm frontmatter 键值对
- * @param key 触发器字段名（默认 'trigger'）
- * @returns 正则表达式，解析失败返回 undefined
- */
-export function parseTrigger(fm: Record<string, string>, key = 'trigger'): RegExp | undefined {
-  const raw = fm[key];
-  if (!raw) return undefined;
-
-  try {
-    const pattern = String(raw).trim();
-    const match = pattern.match(/^\/(.+)\/([gimsuy]*)$/);
-    // 使用空值合并回退到 pattern（与 match 为 null 时逻辑一致）
-    const clean = match?.[1] ?? pattern;
-    // 使用捕获的 flags（默认 'i'）
-    const flags = match?.[2] || 'i';
-    return new RegExp(clean, flags);
-  } catch {
-    getLogger().warn({ trigger: raw }, '触发正则无效，已忽略');
-    return undefined;
-  }
-}
-
-/**
  * 解析目录路径：如果 configDir 存在则 resolve 子目录，否则返回 undefined
  */
 export function resolveSubdir(configDir: string | undefined, sub: string): string | undefined {

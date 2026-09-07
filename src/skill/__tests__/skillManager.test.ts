@@ -3,10 +3,8 @@
  *
  * 测试范围：
  *   - 技能文件解析（frontmatter + content）
- *   - 关键词匹配与 TF-IDF 排序
  *   - configDir/skills/ 目录扫描
  *   - 排除规则（隐藏文件、_ 前缀、README 等）
- *   - trigger 正则匹配
  *   - buildSystemPrompt 返回值
  *
  * 注意：SkillManager(configDir) 只扫描 configDir/skills/ 一个目录
@@ -43,9 +41,9 @@ describe('SkillManager', () => {
   describe('validateFile（G22 写→验→用闭环）', () => {
     const m = new SkillManager();
 
-    it('正常技能（有 name/description/keywords）→ ok=true，无 error', async () => {
+    it('正常技能（有 name/description）→ ok=true，无 error', async () => {
       const p = join(skillsDir, 'good.md');
-      createSkillFile(skillsDir, 'good.md', '---\nname: good\ndescription: 描述\nkeywords: a,b\n---\n正文');
+      createSkillFile(skillsDir, 'good.md', '---\nname: good\ndescription: 描述\n---\n正文');
       const v = await m.validateFile(p);
       expect(v.ok).toBe(true);
       expect(v.issues.filter((i) => i.level === 'error')).toHaveLength(0);
@@ -53,7 +51,7 @@ describe('SkillManager', () => {
 
     it('缺 description → error（未生效，渐进披露不暴露）', async () => {
       const p = join(skillsDir, 'node.md');
-      createSkillFile(skillsDir, 'node.md', '---\nname: node\nkeywords: a\n---\n正文');
+      createSkillFile(skillsDir, 'node.md', '---\nname: node\n---\n正文');
       const v = await m.validateFile(p);
       expect(v.ok).toBe(false);
       expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'description' }));
@@ -65,13 +63,6 @@ describe('SkillManager', () => {
       const v = await m.validateFile(p);
       expect(v.ok).toBe(false);
       expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'frontmatter' }));
-    });
-
-    it('缺 keywords → warning（可加载但触发弱）', async () => {
-      const p = join(skillsDir, 'warn.md');
-      createSkillFile(skillsDir, 'warn.md', '---\nname: warn\ndescription: d\n---\n正文');
-      const v = await m.validateFile(p);
-      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'warning', field: 'keywords' }));
     });
 
     it('无法读取文件 → error file', async () => {
@@ -88,8 +79,6 @@ describe('SkillManager', () => {
         'read-file.md',
         `---
 name: 读文件
-trigger: /读取|打开|查看.*文件/i
-keywords: 文件,读取,打开
 ---
 
 # 读文件技能
@@ -100,9 +89,8 @@ keywords: 文件,读取,打开
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      const match = skillManager.match('读取文件');
-      expect(match).not.toBeNull();
-      expect(match!.skill.name).toBe('读文件');
+      // 加载后技能可检索（自动匹配链已删，等价断言：get 可取到条目）
+      expect(skillManager.get('读文件')?.name).toBe('读文件');
     });
 
     it('应该在目录不存在时安全降级', async () => {
@@ -111,156 +99,8 @@ keywords: 文件,读取,打开
 
       await skillManager.load();
 
-      const match = skillManager.match('任意输入');
-      expect(match).toBeNull();
-    });
-  });
-
-  describe('match', () => {
-    beforeEach(() => {
-      createSkillFile(
-        skillsDir,
-        'read-file.md',
-        `---
-name: 读文件
-trigger: /读取|打开|查看.*文件/i
-keywords: 文件,读取,打开
----
-
-# 读文件技能
-
-当用户需要读取文件时，使用 read_file 工具。`,
-      );
-    });
-
-    it('应该通过 trigger 正则匹配', async () => {
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('帮我读取这个文件');
-      expect(match).not.toBeNull();
-      expect(match!.skill.name).toBe('读文件');
-    });
-
-    it('应该通过关键词匹配', async () => {
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('查看文件内容');
-      expect(match).not.toBeNull();
-      expect(match!.skill.name).toBe('读文件');
-    });
-
-    it('应该在无匹配时返回 null', async () => {
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('今天天气怎么样');
-      expect(match).toBeNull();
-    });
-  });
-
-  // ─── match · SKILL_MATCH_MIN_SCORE 阈值边界 ─────────────────
-  //
-  // 阈值 = 0.3，评分公式：hitCount / Math.min(keywordList.length, 3)
-  // 分母上限 3 避免关键词多的技能被惩罚（与 persona 评分算法一致）：
-  //   - 3 关键词命中 1 个 → 1/3=0.333 ≥ 0.3 → 激活
-  //   - 5 关键词命中 1 个 → 1/3=0.333 ≥ 0.3 → 激活（分母上限 3，不再惩罚）
-  //   - 10 关键词命中 3 个 → 3/3=1.0 → 激活
-  //   - 10 关键词命中 2 个 → 2/3=0.667 ≥ 0.3 → 激活（分母上限 3，不再惩罚）
-  //   - 2 关键词命中 0 个 → 0/2=0 < 0.3 → 不激活
-  describe('match · SKILL_MATCH_MIN_SCORE 阈值边界', () => {
-    it('3 关键词命中 1 个（score=0.333）应激活', async () => {
-      createSkillFile(skillsDir, 'three-kw.md', '---\nkeywords: 苹果,香蕉,橙子\n---\n# 三关键词技能');
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('苹果');
-      expect(match).not.toBeNull();
-      expect(match!.skill.name).toBe('three-kw');
-      expect(match!.score).toBeCloseTo(1 / 3, 5);
-    });
-
-    it('5 关键词命中 1 个（分母上限 3，score=0.333）应激活', async () => {
-      createSkillFile(
-        skillsDir,
-        'five-kw.md',
-        '---\nkeywords: 苹果,香蕉,橙子,葡萄,西瓜\n---\n# 五关键词技能',
-      );
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      // 分母上限 3：1/min(5,3)=1/3=0.333 ≥ 0.3 → 激活（不再因关键词多而惩罚）
-      const match = skillManager.match('苹果');
-      expect(match).not.toBeNull();
-      expect(match!.score).toBeCloseTo(1 / 3, 5);
-    });
-
-    it('2 关键词命中 1 个（score=0.5）应激活', async () => {
-      createSkillFile(skillsDir, 'two-kw.md', '---\nkeywords: 苹果,香蕉\n---\n# 两关键词技能');
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('苹果');
-      expect(match).not.toBeNull();
-      expect(match!.score).toBe(0.5);
-    });
-
-    it('10 关键词命中 3 个（分母上限 3，score=1.0）应激活', async () => {
-      createSkillFile(
-        skillsDir,
-        'ten-kw.md',
-        '---\nkeywords: 苹果,香蕉,橙子,葡萄,西瓜,梨,桃,李,杏,梅\n---\n# 十关键词技能',
-      );
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      // 分母上限 3：3/min(10,3)=3/3=1.0
-      const match = skillManager.match('苹果 橙子 西瓜');
-      expect(match).not.toBeNull();
-      expect(match!.score).toBe(1);
-    });
-
-    it('10 关键词命中 2 个（分母上限 3，score=0.667）应激活', async () => {
-      createSkillFile(
-        skillsDir,
-        'ten-kw-2.md',
-        '---\nkeywords: 苹果,香蕉,橙子,葡萄,西瓜,梨,桃,李,杏,梅\n---\n# 十关键词技能',
-      );
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      // 分母上限 3：2/min(10,3)=2/3=0.667 ≥ 0.3 → 激活（不再因关键词多而惩罚）
-      const match = skillManager.match('苹果 香蕉');
-      expect(match).not.toBeNull();
-      expect(match!.score).toBeCloseTo(2 / 3, 5);
-    });
-
-    it('关键词全部不命中应返回 null', async () => {
-      createSkillFile(
-        skillsDir,
-        'no-hit.md',
-        '---\nkeywords: 苹果,香蕉,橙子\n---\n# 三关键词技能',
-      );
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('今天天气不错');
-      expect(match).toBeNull();
-    });
-
-    it('多个技能同时匹配时应取最高分', async () => {
-      // 技能 A：3 关键词命中 1 个 → 0.333
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: 苹果,香蕉,橙子\n---\n# A');
-      // 技能 B：2 关键词命中 1 个 → 0.5
-      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: 苹果,葡萄\n---\n# B');
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const match = skillManager.match('苹果');
-      expect(match).not.toBeNull();
-      expect(match!.skill.name).toBe('skill-b');
-      expect(match!.score).toBe(0.5);
+      // 目录不存在 → 技能池为空（安全降级，不抛错）
+      expect(skillManager.list).toHaveLength(0);
     });
   });
 
@@ -271,7 +111,6 @@ keywords: 文件,读取,打开
         '.hidden.md',
         `---
 name: 隐藏技能
-keywords: 隐藏
 ---
 
 隐藏内容`,
@@ -280,8 +119,8 @@ keywords: 隐藏
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      const match = skillManager.match('隐藏');
-      expect(match).toBeNull();
+      // 被排除文件不进入技能池（自动匹配链已删，等价断言：items 中无此技能）
+      expect(skillManager.get('隐藏技能')).toBeNull();
     });
 
     it('应该排除 _ 前缀文件', async () => {
@@ -290,7 +129,6 @@ keywords: 隐藏
         '_underscore.md',
         `---
 name: 下划线技能
-keywords: 下划线
 ---
 
 下划线内容`,
@@ -299,8 +137,7 @@ keywords: 下划线
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      const match = skillManager.match('下划线');
-      expect(match).toBeNull();
+      expect(skillManager.get('下划线技能')).toBeNull();
     });
 
     it('应该排除 README、CHANGELOG、LICENSE', async () => {
@@ -309,7 +146,6 @@ keywords: 下划线
         'README.md',
         `---
 name: README
-keywords: readme
 ---
 
 README 内容`,
@@ -318,8 +154,7 @@ README 内容`,
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      const match = skillManager.match('readme');
-      expect(match).toBeNull();
+      expect(skillManager.get('README')).toBeNull();
     });
   });
 
@@ -330,7 +165,6 @@ README 内容`,
         'read-file.md',
         `---
 name: 读文件
-keywords: 文件,读取
 ---
 
 # 读文件技能
@@ -363,7 +197,6 @@ keywords: 文件,读取
         `---
 name: 读文件
 description: 读取本地文件内容
-keywords: 文件,读取
 ---
 
 # 读文件技能`,
@@ -374,7 +207,6 @@ keywords: 文件,读取
         `---
 name: 搜索
 description: 联网搜索资料
-keywords: 搜索,查询
 ---
 
 # 搜索技能`,
@@ -406,8 +238,6 @@ keywords: 搜索,查询
         skillManager.register({
           name: `技能${i}`,
           content: `正文${i}`,
-          keywords: [`k${i}`],
-          trigger: undefined,
           description: `这是第 ${i} 号技能的完整描述，长度超过二十字用于验证压缩截断行为`,
           layer: 'agent',
           filePath: '',
@@ -431,8 +261,6 @@ keywords: 搜索,查询
         skillManager.register({
           name: `技能${i}`,
           content: `正文${i}`,
-          keywords: [`k${i}`],
-          trigger: undefined,
           description: `描述 ${i}`,
           layer: 'agent',
           filePath: '',
@@ -451,21 +279,21 @@ keywords: 搜索,查询
 
   describe('layer 解析（agent / project 分层）', () => {
     it('frontmatter.layer=agent 应解析为 agent', async () => {
-      createSkillFile(skillsDir, 'agent-skill.md', '---\nkeywords: a\nlayer: agent\n---\n# Agent 技能');
+      createSkillFile(skillsDir, 'agent-skill.md', '---\nlayer: agent\n---\n# Agent 技能');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       expect(skillManager.get('agent-skill')?.layer).toBe('agent');
     });
 
     it('frontmatter 无 layer 时应回退 project（默认）', async () => {
-      createSkillFile(skillsDir, 'project-skill.md', '---\nkeywords: b\n---\n# 项目技能');
+      createSkillFile(skillsDir, 'project-skill.md', '---\nnote: x\n---\n# 项目技能');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       expect(skillManager.get('project-skill')?.layer).toBe('project');
     });
 
     it('frontmatter.layer 为非法值时应回退 project（防御契约外值透传宿主）', async () => {
-      createSkillFile(skillsDir, 'bad-skill.md', '---\nkeywords: c\nlayer: unknown-layer\n---\n# 非法层技能');
+      createSkillFile(skillsDir, 'bad-skill.md', '---\nlayer: unknown-layer\n---\n# 非法层技能');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       expect(skillManager.get('bad-skill')?.layer).toBe('project');
@@ -475,13 +303,13 @@ keywords: 搜索,查询
   describe('reload', () => {
     it('重载应反映目录变更（新增技能）', async () => {
       // 初始加载 1 个技能
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A\n内容 A');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: a\n---\n# 技能 A\n内容 A');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       expect(skillManager.list).toHaveLength(1);
 
       // 新增第 2 个技能文件
-      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: b\n---\n# 技能 B\n内容 B');
+      createSkillFile(skillsDir, 'skill-b.md', '---\nnote: b\n---\n# 技能 B\n内容 B');
 
       // 重载后应看到 2 个技能
       const count = await skillManager.reload();
@@ -491,8 +319,8 @@ keywords: 搜索,查询
     });
 
     it('重载应反映目录变更（删除技能）', async () => {
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A\n内容 A');
-      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: b\n---\n# 技能 B\n内容 B');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: a\n---\n# 技能 A\n内容 A');
+      createSkillFile(skillsDir, 'skill-b.md', '---\nnote: b\n---\n# 技能 B\n内容 B');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       expect(skillManager.list).toHaveLength(2);
@@ -508,15 +336,13 @@ keywords: 搜索,查询
     });
 
     it('重载应保留运行时注入的技能（注入项无磁盘真理源）', async () => {
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 技能 A');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: a\n---\n# 技能 A');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
       skillManager.register({
         name: 'runtime-skill',
         content: '运行时注入技能',
-        keywords: ['运行时'],
-        trigger: undefined,
         layer: 'agent',
         filePath: '',
       });
@@ -535,27 +361,25 @@ keywords: 搜索,查询
       skillManager.register({
         name: 'skill-a',
         content: '注入版本',
-        keywords: [],
-        trigger: undefined,
         layer: 'agent',
         filePath: '',
       });
 
       // 磁盘上出现同名技能：真理源转移到磁盘，注入版本被接管而非并存
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# 磁盘版本');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: disk\n---\n# 磁盘版本');
       const count = await skillManager.reload();
       expect(count).toBe(1);
       expect(skillManager.get('skill-a')?.content).toBe('# 磁盘版本');
     });
 
     it('重载应反映内容变更', async () => {
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: old\n---\n# 旧内容');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: old\n---\n# 旧内容');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
       expect(skillManager.get('skill-a')?.content).toBe('# 旧内容');
 
       // 修改技能文件内容
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: new\n---\n# 新内容');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: new\n---\n# 新内容');
       await skillManager.reload();
       expect(skillManager.get('skill-a')?.content).toBe('# 新内容');
     });
@@ -572,8 +396,6 @@ keywords: 搜索,查询
       skillManager.register({
         name: 'runtime-skill',
         content: '运行时注入技能',
-        keywords: ['运行时'],
-        trigger: undefined,
         layer: 'agent',
         filePath: '<runtime>',
       });
@@ -586,7 +408,7 @@ keywords: 搜索,查询
       createSkillFile(
         skillsDir,
         'existing.md',
-        '---\nname: existing\nkeywords: test\n---\n# 已存在',
+        '---\nname: existing\n---\n# 已存在',
       );
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
@@ -596,30 +418,24 @@ keywords: 搜索,查询
         skillManager.register({
           name: 'existing',
           content: '重复注册',
-          keywords: ['dup'],
-          trigger: undefined,
           layer: 'agent',
           filePath: '<runtime>',
         }),
       ).toThrow('已存在');
     });
 
-    it('register 后 match 应能匹配注入的技能', async () => {
+    it('register 后 get 应能取到注入的技能', async () => {
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
       skillManager.register({
         name: 'injected',
         content: '注入技能内容',
-        keywords: ['注入关键词'],
-        trigger: undefined,
         layer: 'agent',
         filePath: '<runtime>',
       });
 
-      const match = skillManager.match('注入关键词');
-      expect(match).not.toBeNull();
-      expect(match!.skill.name).toBe('injected');
+      expect(skillManager.get('injected')?.content).toBe('注入技能内容');
     });
   });
 
@@ -632,8 +448,8 @@ keywords: 搜索,查询
     });
 
     it('list 应返回所有已加载的技能', async () => {
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# A');
-      createSkillFile(skillsDir, 'skill-b.md', '---\nkeywords: b\n---\n# B');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: a\n---\n# A');
+      createSkillFile(skillsDir, 'skill-b.md', '---\nnote: b\n---\n# B');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
@@ -643,7 +459,7 @@ keywords: 搜索,查询
     });
 
     it('list 应是只读快照（修改不影响内部状态）', async () => {
-      createSkillFile(skillsDir, 'skill-a.md', '---\nkeywords: a\n---\n# A');
+      createSkillFile(skillsDir, 'skill-a.md', '---\nnote: a\n---\n# A');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
@@ -652,7 +468,6 @@ keywords: 搜索,查询
       const snapshot = skillManager.list;
       snapshot.push({
         name: '越权注入',
-        keywords: [],
         content: 'x',
         filePath: '',
         layer: 'agent',
@@ -672,7 +487,7 @@ keywords: 搜索,查询
   describe('L3 隔离纪律（仅文件夹形态发现 resources/scripts）', () => {
     it('顶层裸 .md 技能不扫描 L3 资源', async () => {
       // 顶层裸 .md：纯 L1/L2，即使同级存在 resources/ 也不归属它
-      createSkillFile(skillsDir, 'foo.md', '---\nname: foo\nkeywords: a\n---\n# Foo 技能');
+      createSkillFile(skillsDir, 'foo.md', '---\nname: foo\n---\n# Foo 技能');
       // 同级创建 resources/：模拟「共享技能根」场景，验证不并入裸 .md
       mkdirSync(join(skillsDir, 'resources'), { recursive: true });
       writeFileSync(join(skillsDir, 'resources', 'api.md'), 'API 参考', 'utf-8');
@@ -689,7 +504,7 @@ keywords: 搜索,查询
     });
 
     it('顶层裸 .md 技能不扫描 L3 脚本', async () => {
-      createSkillFile(skillsDir, 'bar.md', '---\nname: bar\nkeywords: b\n---\n# Bar 技能');
+      createSkillFile(skillsDir, 'bar.md', '---\nname: bar\n---\n# Bar 技能');
       // 同级 scripts/：验证不并归裸 .md（避免脚本池相互污染）
       mkdirSync(join(skillsDir, 'scripts'), { recursive: true });
       writeFileSync(join(skillsDir, 'scripts', 'helper.sh'), 'echo bar', 'utf-8');
@@ -705,7 +520,7 @@ keywords: 搜索,查询
       // 文件夹形态：目录下 SKILL.md 为唯一入口，其 directories 内的 resources/ scripts/ 归本合同
       const skillDir = join(skillsDir, 'baz');
       mkdirSync(join(skillDir, 'resources'), { recursive: true });
-      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: baz\nkeywords: c\n---\n# Baz 技能', 'utf-8');
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: baz\n---\n# Baz 技能', 'utf-8');
       writeFileSync(join(skillDir, 'resources', 'ref.md'), '参考文档', 'utf-8');
       mkdirSync(join(skillDir, 'scripts'), { recursive: true });
       writeFileSync(join(skillDir, 'scripts', 'run.sh'), 'echo baz', 'utf-8');
@@ -726,7 +541,7 @@ keywords: 搜索,查询
       // B1：references/ 是 TRAE / Agent Skills 主流辅助文档目录，纳入 L3 资源索引
       const skillDir = join(skillsDir, 'tree');
       mkdirSync(join(skillDir, 'references'), { recursive: true });
-      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: tree\nkeywords: d\n---\n# Tree 技能', 'utf-8');
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: tree\n---\n# Tree 技能', 'utf-8');
       writeFileSync(join(skillDir, 'references', 'modes.md'), 'Modes 参考文档', 'utf-8');
 
       const skillManager = new SkillManager(testDir);

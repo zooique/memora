@@ -5,46 +5,6 @@
  */
 const ZH_SEGMENTER = new Intl.Segmenter('zh-CN', { granularity: 'word' });
 
-/**
- * 轻量关键词分词（仅 scoreByKeywords 内部调用，0 外部消费者）：
- * 提取中文连续段（≥2 字）+ 英文词，不做 ICU 词典切分。
- */
-function tokenizeKeywords(input: string): string[] {
-  const tokens: string[] = [];
-  // 中文连续段（2 字以上）
-  const chineseSegments = input.match(/[\u4e00-\u9fff]{2,}/g) ?? [];
-  tokens.push(...chineseSegments);
-  // 英文/数字词
-  const englishSegments = input.match(/[a-zA-Z0-9]+/g) ?? [];
-  tokens.push(...englishSegments);
-  // 去重，避免重复 token 干扰匹配评分
-  return [...new Set(tokens)];
-}
-
-/** 评分分母上限：命中 2 个即视为强匹配，防止关键词多的角色被罚 */
-const KEYWORD_SCORE_DENOMINATOR_MAX = 3;
-
-/**
- * 关键词匹配评分（Persona/Skill 共享逻辑）：先分词，再对每个关键词做子串搜索（tokens + 原文双保险）。
- * 评分 = hitCount / min(关键词数, 3)——分母封顶避免关键词多的角色被误判低置信度。
- */
-export function scoreByKeywords(userInput: string, keywordList: string[]): number {
-  if (keywordList.length === 0) return 0;
-
-  const normalizedInput = userInput.toLowerCase();
-  const tokens = tokenizeKeywords(normalizedInput);
-
-  let hitCount = 0;
-  for (const kw of keywordList) {
-    const kwLower = kw.toLowerCase();
-    if (tokens.some((t) => t.includes(kwLower)) || normalizedInput.includes(kwLower)) {
-      hitCount++;
-    }
-  }
-
-  return hitCount / Math.min(keywordList.length, KEYWORD_SCORE_DENOMINATOR_MAX);
-}
-
 /** 单行精确分词（用于 LLM 输出切分）：去标点空白，保留中英文 + 数字 */
 export function segmentText(text: string): string[] {
   if (!text) return [];

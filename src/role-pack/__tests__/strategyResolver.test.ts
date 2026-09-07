@@ -56,7 +56,6 @@ import type {
 function makeRolePack(overrides: Partial<RolePack> = {}): RolePack {
   return {
     name: 'test-role',
-    keywords: ['test'],
     content: '测试内容',
     filePath: '/fake/path/manifest.json',
     meta: {
@@ -64,7 +63,6 @@ function makeRolePack(overrides: Partial<RolePack> = {}): RolePack {
       displayName: '测试角色',
       description: '用于测试的角色包',
       version: '1.0.0',
-      keywords: ['test'],
     },
     personaContent: '你是一个测试助手',
     rules: [],
