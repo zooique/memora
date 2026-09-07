@@ -400,5 +400,63 @@ describe('assembleComponents', () => {
       const cp = output.sessionManager.getCheckpoint()!;
       expect(cp.plan.every((s) => s.status !== 'done')).toBe(true);
     });
+
+    it('最后一步标 done（≥3 步无验证步骤）→ 工具结果附收尾验证 nudge（ME-10）', async () => {
+      const output = await assembleReal();
+      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.writePlan('overwrite', [
+        { description: '实现功能 A' },
+        { description: '实现功能 B' },
+        { description: '接入调用方' },
+      ]);
+
+      // 前两步标 done（每步 done 后 ensureActiveStep 自动补位下一个）
+      await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '1', status: 'done' }),
+      );
+      await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '2', status: 'done' }),
+      );
+      // 最后一步 done = 宣称完成；无验证步骤 → 命中 nudge
+      const finalResult = await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '3', status: 'done' }),
+      );
+
+      expect(finalResult).toContain('已标记为 done');
+      expect(finalResult).toContain('收尾提示');
+      expect(finalResult).toContain('task_table_write');
+      // 状态真实全 done
+      const cp = output.sessionManager.getCheckpoint()!;
+      expect(cp.plan.every((s) => s.status === 'done')).toBe(true);
+    });
+
+    it('全 done 但已有验证步骤 → 不附 nudge（零打扰）', async () => {
+      const output = await assembleReal();
+      output.sessionManager.createCheckpoint('测试计划');
+      output.sessionManager.writePlan('overwrite', [
+        { description: '实现功能 A' },
+        { description: '实现功能 B' },
+        { description: '验证整体流程可跑通' },
+      ]);
+
+      await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '1', status: 'done' }),
+      );
+      await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '2', status: 'done' }),
+      );
+      const finalResult = await output.toolExec.execute(
+        'task_table_update',
+        JSON.stringify({ step_id: '3', status: 'done' }),
+      );
+
+      expect(finalResult).toContain('已标记为 done');
+      expect(finalResult).not.toContain('收尾提示');
+    });
   });
 });

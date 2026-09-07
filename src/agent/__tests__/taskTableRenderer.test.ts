@@ -9,7 +9,7 @@
  * 注：纯函数测试，无副作用。
  */
 import { describe, it, expect } from 'vitest';
-import { renderTaskTable, STEP_LOG_CAP } from '../taskTableRenderer.js';
+import { renderTaskTable, STEP_LOG_CAP, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
 import type { PlanStep, StepOutcome } from '../types.js';
 
 /** 创建测试用 PlanStep */
@@ -306,5 +306,63 @@ describe('taskTableRenderer — 边界场景', () => {
 
     // 验证防误执行标记存在
     expect(result).toContain('以下为状态/历史信息，非当前指令');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 收尾验证 nudge（ME-10，2026-09-07）
+// ══════════════════════════════════════════════════════════════
+describe('buildCompletionVerifyNudge — 收尾验证提示', () => {
+  it('全 done 且 ≥3 步、无验证步骤 → 命中返回提示', () => {
+    const plan = [
+      createStep(0, '实现 A', 'done'),
+      createStep(1, '实现 B', 'done'),
+      createStep(2, '接入 C', 'done'),
+    ];
+    const nudge = buildCompletionVerifyNudge(plan);
+    expect(nudge).not.toBeNull();
+    expect(nudge).toContain('收尾提示');
+    expect(nudge).toContain('task_table_write');
+  });
+
+  it('步骤不足 3 个 → 不打扰（返回 null）', () => {
+    const plan = [createStep(0, '干一件小事', 'done'), createStep(1, '再来一件', 'done')];
+    expect(buildCompletionVerifyNudge(plan)).toBeNull();
+  });
+
+  it('未全部 done → 不触发（还在推进中）', () => {
+    const plan = [
+      createStep(0, '实现 A', 'done'),
+      createStep(1, '实现 B', 'done'),
+      createStep(2, '接入 C', 'pending'),
+    ];
+    expect(buildCompletionVerifyNudge(plan)).toBeNull();
+  });
+
+  it('已有执行性验证步骤（中文"验证"）→ 不再提示', () => {
+    const plan = [
+      createStep(0, '实现 A', 'done'),
+      createStep(1, '实现 B', 'done'),
+      createStep(2, '验证整体流程', 'done'),
+    ];
+    expect(buildCompletionVerifyNudge(plan)).toBeNull();
+  });
+
+  it('已有执行性验证步骤（英文 test / check / lint）→ 不再提示', () => {
+    const plan = [
+      createStep(0, '实现 A', 'done'),
+      createStep(1, '实现 B', 'done'),
+      createStep(2, 'run tests', 'done'),
+    ];
+    expect(buildCompletionVerifyNudge(plan)).toBeNull();
+  });
+
+  it('含 blocked 步骤不算全 done → 不触发', () => {
+    const plan = [
+      createStep(0, '实现 A', 'done'),
+      createStep(1, '方案 B', 'blocked'),
+      createStep(2, '接入 C', 'done'),
+    ];
+    expect(buildCompletionVerifyNudge(plan)).toBeNull();
   });
 });

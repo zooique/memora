@@ -35,7 +35,7 @@ import { estimateTokensMessages } from '@/agent/contextManager.js';
 // 工具幂等契约（接线下沉：onToolExecuted / preExecutionCheck 依赖幂等表 + 补偿判断）
 import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
 // 任务表渲染（接线下沉：loop.getTaskTable 依赖）
-import { renderTaskTable } from '@/agent/taskTableRenderer.js';
+import { renderTaskTable, buildCompletionVerifyNudge } from '@/agent/taskTableRenderer.js';
 import { logger } from '@/logging/logger.js';
 
 /** 截断优先复用 round-summary 的最大条数 */
@@ -364,8 +364,17 @@ function wireRuntimeCallbacks(
       if (!sessionManager.updatePlanStepStatus(stepId, status)) {
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
       }
-      const step = sessionManager.getCheckpoint()?.plan.find((s) => s.id === stepId);
-      return `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
+      // updatePlanStepStatus 返回 true ⇒ checkpoint/plan 必存在（sessionManager.ts:1154 早退契约），用非空断言保证
+      const plan = sessionManager.getCheckpoint()!.plan;
+      const step = plan.find((s) => s.id === stepId);
+      // 收尾验证 nudge（2026-09-07 ME-10）：把最后一步标 done = LLM 宣称任务完成——
+      // 若全 done 且无执行性验证步骤，追加提示引导补真验证（触发条件确定性，内容交 LLM）。
+      // 仅 done 路径触发（blocked 是中止宣告，无需 nudge）；判定函数返回 null = 零打扰。
+      const result = `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
+      if (status === 'done') {
+        return result + (buildCompletionVerifyNudge(plan) ?? '');
+      }
+      return result;
     },
     getPlan: () => {
       const cp = sessionManager.getCheckpoint();
