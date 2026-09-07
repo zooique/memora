@@ -1682,6 +1682,41 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     expect(chunks2.some((c) => c.type === 'text' && c.content === '第二轮完成')).toBe(true);
   });
 
+  it('done 后 pause 残留被入口复位：新 turn 不挂起、不吞输入（2026-09-07 竞态封印实证）', async () => {
+    // 实测封印（突变验证反证）：第一轮文本后 requestPause，但本轮单迭代即 done → pause 残留；
+    // 第二轮 processUserInput 入口 resetTurnState 复位 pauseRequested → 残留不进入第二轮
+    // 首 step 边界（_handleInterrupt）→ 新问题正常完成，不会被误挂起、不被吞成补充。
+    const provider = mockMultiTurnProvider([
+      [{ content: '第一轮完成' }],
+      [{ content: '第二轮完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    // 第一轮：文本产出后请求暂停，但本轮单迭代即 done → pause 残留（未被 _handleInterrupt 消费）
+    const chunks1: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务A')) {
+      chunks1.push(chunk);
+      if (chunk.type === 'text') loop.requestPause();
+    }
+    expect(chunks1.some((c) => c.type === 'paused')).toBe(false);
+    expect(chunks1[chunks1.length - 1]!.type).toBe('done');
+
+    // 第二轮：入口复位残留 → 不挂起、正常完成。若未复位，首 step 边界会消费残留 pause
+    // 将新问题挂起（突变：撤 resetTurnState 复位 → 本用例与新输入的归属断言转红）。
+    const chunks2: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务B')) {
+      chunks2.push(chunk);
+    }
+    expect(chunks2.some((c) => c.type === 'paused')).toBe(false);
+    expect(chunks2[chunks2.length - 1]!.type).toBe('done');
+    // 新问题正文正常产出（未被吞成「上一轮回答的补充」——第二轮按新 chat 完整跑完）
+    expect(chunks2.some((c) => c.type === 'text' && c.content === '第二轮完成')).toBe(true);
+  });
+
   it('interject 补充残留不跨轮泄漏（工具步后中止消费 → 新轮不误注入残留补充，对称于 pause 泄漏修复）', async () => {
     // 工具步 chunk：模拟第一轮 LLM 请求工具（与自审查测试同款）
     const toolCallChunk: ChunkItem = {

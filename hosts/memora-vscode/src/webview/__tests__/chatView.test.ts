@@ -870,7 +870,9 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(items[0]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('我插一句话');
     expect(items[1]!.querySelector('.pending-queue-bar__num')!.textContent).toBe('2.');
     expect(items[1]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('再来一句');
-    expect(bar.querySelector('.pending-queue-bar__count')!.textContent).toContain('2');
+    // 2026-09-07 UI 打磨：计数改圆形徽章（badge）
+    expect(bar.querySelector('.pending-queue-bar__badge')!.textContent).toBe('2');
+    expect(bar.querySelector('.pending-queue-bar__label')!.textContent).toBe('待发送');
     // 清空 → 隐藏
     dispatch({ type: 'pending_queue_update', items: [] });
     expect(bar.hidden).toBe(true);
@@ -2397,28 +2399,28 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
 
-  it('UX-9 A：打断补充渲染为行内打断切分条，插在被打破块之后；后续 chunk 为「续接」块', () => {
+  it('中断补充渲染为内联子行「你补充」，插在被打破块之后；后续 chunk 为「续接」块（2026-09-07 显示逻辑统一）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // D3 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
     dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
-    // 打断补充（streaming 中 supplement）→ 行内打断切分条，不再是消息流底部游离折叠块
+    // 被打断补充（streaming 中 supplement）→ 内联子行「你补充」：与 question-answer 共用 msg-qa 形态
     dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });
-    const divider = document.querySelector('.interrupt-divider') as HTMLElement;
-    expect(divider).not.toBeNull();
-    expect(divider.textContent).toContain('你补充了');
-    expect(divider.textContent).toContain('不要联网搜索');
-    // 分条插在被打断的 assistant 块之后（打断点归位），与消息流平级
+    const supRow = document.querySelector('.msg-qa') as HTMLElement;
+    expect(supRow).not.toBeNull();
+    expect(supRow.querySelector('.msg-qa__tag')?.textContent).toBe('你补充');
+    expect(supRow.textContent).toContain('不要联网搜索');
+    // 子行插在被打断的 assistant 块之后（打断点归位），与消息流平级
     const interrupted = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
-    expect(interrupted.nextElementSibling).toBe(divider);
-    // 后续 chunk（同 roundId）→ 新「续接」块（is-continued + ↻ 续接 chip），位于分条之后
+    expect(interrupted.nextElementSibling).toBe(supRow);
+    // 后续 chunk（同 roundId）→ 新「续接」块（is-continued + ↻ 续接 chip），位于子行之后
     dispatch({ type: 'chunk', content: '好的，按你的要求继续', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     const continued = blocks[1] as HTMLElement;
     expect(continued.classList.contains('is-continued')).toBe(true);
     expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
-    expect(divider.nextElementSibling).toBe(continued);
+    expect(supRow.nextElementSibling).toBe(continued);
     expect(collectAllBodyText(continued)).toContain('按你的要求继续');
   });
 
@@ -2538,14 +2540,41 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const qa = document.querySelector('.msg-qa') as HTMLElement;
     expect(qa).not.toBeNull();
     expect(qa.textContent).toContain('选方案A');
-    // A/B：前序段与 final 同 roundId → final 为续接链；打断分条在无打断轮不出现
+    // A/B：前序段与 final 同 roundId → final 为续接链；无打断轮不出现「补充」子行
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
-    expect(document.querySelector('.interrupt-divider')).toBeNull();
+    // 仅「补充」tag 不存在（本轮是 qa 回答，不渲染 supplement 子行）；「你答」子行仍应在
+    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa')).filter(
+      (el) => el.querySelector('.msg-qa__tag')?.textContent === '你补充',
+    );
+    expect(supplementRows).toHaveLength(0);
     // 位置连贯：提问段 → 回答子行 → 续接 final
     expect((blocks[0] as HTMLElement).nextElementSibling).toBe(qa);
     expect(qa.nextElementSibling).toBe(blocks[1]);
+  });
+
+  it('重放跨轮 supplement 不合并：各 roundId 补充独立成行（2026-09-07 跨轮合并 bug 修复）', () => {
+    mountChatView();
+    // 两轮问答，各带一条 supplement（重放时序：user → 中间段supp → 最终回答）
+    // 第一轮
+    dispatch({ type: 'user', text: '第一轮问题', ts: 't1', roundId: 'r1' });
+    dispatch({ type: 'user', text: '第一轮补充', ts: 't2', roundId: 'r1', kind: 'supplement' });
+    dispatch({ type: 'assistant', text: '第一轮回答', ts: 't3', roundId: 'r1' });
+    // 第二轮（无 setStatus 变化，模拟重放路径——修复前 _lastInterruptDivider 残留 → 误并入第一轮行）
+    dispatch({ type: 'user', text: '第二轮问题', ts: 't4', roundId: 'r2' });
+    dispatch({ type: 'user', text: '第二轮补充', ts: 't5', roundId: 'r2', kind: 'supplement' });
+    dispatch({ type: 'assistant', text: '第二轮回答', ts: 't6', roundId: 'r2' });
+
+    // 两轮补充各自独立成行（tag=你补充），不跨轮合并成「你补充了 2 条」
+    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa')).filter(
+      (el) => el.querySelector('.msg-qa__tag')?.textContent?.startsWith('你补充'),
+    );
+    expect(supplementRows).toHaveLength(2);
+    // 各含自己的补充内容（第二轮没并进第一轮）
+    expect(supplementRows[0]!.textContent).toContain('第一轮补充');
+    expect(supplementRows[1]!.textContent).toContain('第二轮补充');
+    expect(supplementRows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你补充'); // 非「你补充了 2 条」
   });
 
   it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（平铺归组 + 容器级 footer）', () => {

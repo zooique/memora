@@ -1313,13 +1313,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let _pendingQueueBar: HTMLElement | null = null;
   function updatePendingQueueBar(items: readonly string[]): void {
     if (!_pendingQueueBar) {
-      // 懒创建：flex column 布局（label 在顶部 + 列表在中间 + clear 在顶部右侧）
+      // 懒创建：顶行（徽章 + 标题 + 清空按钮）+ 列表（每条可独立删除）
+      // 2026-09-07 UI 打磨：计数改圆形徽章（视觉聚焦），结构保持轻量无重造
       _pendingQueueBar = document.createElement('div');
       _pendingQueueBar.className = 'pending-queue-bar';
       _pendingQueueBar.innerHTML = `
-        <span class="pending-queue-bar__label">待发送</span>
-        <span class="pending-queue-bar__count"></span>
-        <button class="pending-queue-bar__clear" type="button" title="清空全部">✕</button>
+        <div class="pending-queue-bar__head">
+          <span class="pending-queue-bar__badge"></span>
+          <span class="pending-queue-bar__label">待发送</span>
+          <span class="pending-queue-bar__hint">补充将紧随当前步骤后注入</span>
+          <button class="pending-queue-bar__clear" type="button" title="清空全部">✕</button>
+        </div>
         <div class="pending-queue-bar__list"></div>
       `;
       inputBar.parentNode?.insertBefore(_pendingQueueBar, inputBar);
@@ -1333,9 +1337,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       _pendingQueueBar.hidden = true;
       return;
     }
-    // 头部计数
-    const countEl = _pendingQueueBar.querySelector('.pending-queue-bar__count')!;
-    countEl.textContent = `共 ${items.length} 条`;
+    // 顶部：计数徽章（圆形，数字）+ 标题
+    const badgeEl = _pendingQueueBar.querySelector('.pending-queue-bar__badge')!;
+    badgeEl.textContent = String(items.length);
     // 列表容器重建（每次全量重渲染，items.length 小时成本可忽略）
     const listEl = _pendingQueueBar.querySelector('.pending-queue-bar__list')!;
     listEl.innerHTML = '';
@@ -1976,115 +1980,87 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param ts 时间戳（日期分隔线）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充）
    */
-  function appendInteractiveInput(text: string, ts: string | undefined, kind: 'question-answer' | 'supplement'): void {
-    if (kind === 'supplement') {
-      // A：行内打断切分条（插在打断点；「续接」标志由调用方置位，此处仅渲染分条本体）。
-      // 分条是行内打断元素而非消息流实体，不触发日期分隔线（避免分隔条插进打断链中间）
-      appendInterruptDivider(text);
-      return;
-    }
-    // C：question-answer → 消息流内联子行（提问块下方，阅读位置连贯）
-    // 紧凑单行「你答：xxx」（过长截断 title 悬停），不触发日期分隔线
+  function appendInteractiveInput(text: string, ts: string | undefined, kind: 'question-answer' | 'supplement', roundId?: string): void {
+    // 显示逻辑统一（2026-09-07 排雷收敛）：supplement 与 question-answer 同为「闭环内用户插话」
+    // （数据同构 interactiveInputs.kind），共用内联子行形态（msg-qa），仅 tag 文案区分语义。
+    //   补充（supplement）→ 「你补充」；回答（question-answer）→ 「你答」。
+    // 不再用 interrupt-divider 打断分条（旧形态与 ask 两套语言、视觉违和）。
+    appendInlineInputRow(text, kind, roundId);
+  }
+
+  /** 内联子行统一渲染（supplement / question-answer 共用）：
+   *  位置 = 当前 assistant 块之后（打断点/提问块下方，阅读位置连贯，同环连续体节点）。
+   *  补充支持连续合并：同一合并周期内（同 roundId 闭环）多条补充追加到同一行容器
+   *  （label 显示「你补充 N 条」带序号），与旧 interrupt-divider 的合并心智一致；
+   *  question-answer 每答一行不合并。跨 roundId 的补充不跨轮合并（2026-09-07 修复：
+   *  重放跨轮 supplement 此前靠 setStatus 重置合并锚，但重放路径无 setStatus 变化 →
+   *  「渲染在顶部/第二个补充并入第一个」的跨轮错位；归元为合并周期 = 同 roundId）。
+   *  合并周期重置：setStatus 变化 / 收到非 supplement 消息 / roundId 切换后，
+   *  下次补充重新开行。 */
+  function appendInlineInputRow(text: string, kind: 'question-answer' | 'supplement', roundId?: string): void {
     const host =
       (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
       (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
+    // supplement 合并路径：同 roundId 闭环内的补充才合并（跨轮不并），且行仍连接
+    if (
+      kind === 'supplement' &&
+      _lastInterruptDivider &&
+      _lastInterruptDivider.isConnected &&
+      _lastInterruptDivider.dataset.roundId === (roundId ?? '')
+    ) {
+      const container = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__group');
+      if (container) {
+        const count = container.childElementCount + 1;
+        const tag = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__tag');
+        if (tag) tag.textContent = `你补充了 ${count} 条`;
+        const row = document.createElement('div');
+        row.className = 'msg-qa__row';
+        const txt = document.createElement('span');
+        txt.className = 'msg-qa__text';
+        txt.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
+        txt.title = text;
+        row.appendChild(txt);
+        container.appendChild(row);
+        scrollToBottom(messages);
+        updateEmptyState();
+        return;
+      }
+    }
+    // 新建行（supplement 首条 / question-answer）
     const row = document.createElement('div');
     row.className = 'msg-qa';
     const tag = document.createElement('span');
     tag.className = 'msg-qa__tag';
-    tag.textContent = '你答';
-    const txt = document.createElement('span');
-    txt.className = 'msg-qa__text';
-    txt.textContent = text.length > 120 ? text.slice(0, 120) + '…' : text;
-    txt.title = text;
-    row.append(tag, txt);
+    tag.textContent = kind === 'supplement' ? '你补充' : '你答';
+    // supplement 带条目容器（合并追加目标）；question-answer 单文本直接行
+    if (kind === 'supplement') {
+      const group = document.createElement('div');
+      group.className = 'msg-qa__group';
+      const first = document.createElement('div');
+      first.className = 'msg-qa__row';
+      const txt = document.createElement('span');
+      txt.className = 'msg-qa__text';
+      txt.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
+      txt.title = text;
+      first.appendChild(txt);
+      group.appendChild(first);
+      row.append(tag, group);
+      // 合并锚记录 roundId（2026-09-07 跨轮合并修复）：仅同 roundId 的补充并入此行，
+      // 重放路径无 setStatus 时靠 roundId 归元合并周期（防「第二个补充并入第一个」跨轮错位）
+      row.dataset.roundId = roundId ?? '';
+      _lastInterruptDivider = row; // 复用同一合并期锚（变量名沿用，语义=「当前补充行」）
+    } else {
+      const txt = document.createElement('span');
+      txt.className = 'msg-qa__text';
+      txt.textContent = text.length > 120 ? text.slice(0, 120) + '…' : text;
+      txt.title = text;
+      row.append(tag, txt);
+    }
     if (host?.parentNode) {
       host.after(row);
     } else {
       messages.appendChild(row);
     }
-    scrollToBottom(messages);
-    updateEmptyState();
-  }
-
-  /**
-   * 追加「行内打断切分条」（UX-9 A，2026-09-03）
-   *
-   * 展示用户打断补充：一条分隔条插在被打断的 assistant 块之后，随后续接正文继续跟上。
-   * 语义 = 内核 interject() abort→续跑（loop.ts:617）：打断点（已产出正文）与续接段之间
-   * 的视觉切口，让「补充」归位到它生发的上下文，而非消息流底部的游离折叠块。
-   *
-   * Phase 4 收敛（连续补充合并）：
-   *   - 首次 supplement 创建独立 divider，label = "你补充了"
-   *   - 后续连续 supplement 追加到同一 divider 里（每条一行，带序号），label 更新为 "你补充了 N 条"
-   *   - 合并终止时机：setStatus 变化 / 收到非 supplement 的消息 → 下次 supplement 重新开新 divider
-   *
-   * @param text 补充全文（过长截断展示，title 悬停看全文）
-   */
-  function appendInterruptDivider(text: string): void {
-    // 合并路径：已有活跃 divider → 追加条目而非新建
-    if (_lastInterruptDivider && _lastInterruptDivider.isConnected) {
-      const count = (_lastInterruptDivider.dataset.count ? parseInt(_lastInterruptDivider.dataset.count, 10) : 1) + 1;
-      _lastInterruptDivider.dataset.count = String(count);
-      // 更新 label（"你补充了" → "你补充了 2 条"）
-      const label = _lastInterruptDivider.querySelector('.interrupt-divider__label');
-      if (label) {
-        label.textContent = count > 1 ? `你补充了 ${count} 条` : '你补充了';
-      }
-      // 追加新条目
-      const items = _lastInterruptDivider.querySelector('.interrupt-divider__items');
-      if (items) {
-        const row = document.createElement('div');
-        row.className = 'interrupt-divider__item';
-        const num = document.createElement('span');
-        num.className = 'interrupt-divider__num';
-        num.textContent = `${count}.`;
-        const preview = document.createElement('span');
-        preview.className = 'interrupt-divider__text';
-        preview.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
-        preview.title = text;
-        row.append(num, preview);
-        items.appendChild(row);
-      }
-      scrollToBottom(messages);
-      updateEmptyState();
-      return;
-    }
-
-    // 新建路径：打断点 = 当前正在输出的 assistant 块（流式打断，activeAssistantEl 保留引用）或
-    // 最后一条 assistant 块（暂停续跑补充）
-    const host =
-      (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
-      (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
-    const divider = document.createElement('div');
-    divider.className = 'interrupt-divider';
-    divider.dataset.count = '1';
-    const label = document.createElement('span');
-    label.className = 'interrupt-divider__label';
-    label.textContent = '你补充了';
-    // 合并列表容器（预留后续追加）
-    const items = document.createElement('div');
-    items.className = 'interrupt-divider__items';
-    // 首条补充（序号 1）
-    const row = document.createElement('div');
-    row.className = 'interrupt-divider__item';
-    const num = document.createElement('span');
-    num.className = 'interrupt-divider__num';
-    num.textContent = '1.';
-    const preview = document.createElement('span');
-    preview.className = 'interrupt-divider__text';
-    preview.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
-    preview.title = text;
-    row.append(num, preview);
-    items.appendChild(row);
-    divider.appendChild(label);
-    divider.appendChild(items);
-    if (host?.parentNode) {
-      host.after(divider);
-    } else {
-      messages.appendChild(divider);
-    }
-    _lastInterruptDivider = divider;
     scrollToBottom(messages);
     updateEmptyState();
   }
@@ -2963,7 +2939,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
       if (msg.kind) {
         resumePending = true;
-        appendInteractiveInput(msg.text, msg.ts, msg.kind);
+        appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId);
       } else {
         append('user', msg.text, msg.ts);
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
@@ -2981,6 +2957,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 新闭环同时清暂停续写锚（2026-09-07 对称雷修复）：残留会让下一轮 meta 误判 pausedResume，
         // 新问题正文被原位续写到上一个暂停块
         pausedAssistantEl = null;
+        // 新闭环也清补充合并锚（2026-09-07 跨轮合并修复，SSOT 与 setStatus 同清理纪律）：
+        // 跨 roundId 的补充不并进上一轮行；重放路径无 setStatus，此处是新轮补充开行的兜底锚点
+        _lastInterruptDivider = null;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);

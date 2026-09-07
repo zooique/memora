@@ -238,59 +238,6 @@ export const chatStyles = `
     padding: var(--sp-1, 4px) var(--sp-3, 8px) var(--sp-3, 8px);
     font-size: var(--font-md, 12px);
   }
-  /* UX-9 A 行内打断切分条（用户打断补充）：插在被打断的 AI 正文块之后，
-   * 两端虚线延伸 + 居中「你补充了 xxx」——还原 interject() abort→续跑的视觉切口，
-   * 让补充归位到打断点上下文，而非消息流底部游离块。轻薄低扰（不做大卡片）。 */
-  .interrupt-divider {
-    display: flex; align-items: center; gap: var(--sp-2, 6px);
-    margin: var(--sp-1, 4px) 0 var(--sp-2, 6px);
-    min-width: 0;
-    color: var(--text-secondary, #9aa0a6);
-    user-select: none;
-  }
-  .interrupt-divider::before,
-  .interrupt-divider::after {
-    content: '';
-    flex: 1 1 auto;
-    border-top: 1px dashed var(--border, rgba(128, 128, 128, 0.25));
-  }
-  .interrupt-divider__label {
-    flex-shrink: 0;
-    font-size: var(--font-xs, 10px);
-    color: var(--accent, #0e639c);
-    font-weight: 600;
-  }
-  .interrupt-divider__text {
-    flex: 0 1 auto;
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: var(--font-sm, 11px);
-    max-width: 45%;
-  }
-  /* Phase 4：合并模式（连续 supplement 追加到同一 divider）——items 容器 + item 行 */
-  .interrupt-divider__items {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    max-width: 50%;
-  }
-  .interrupt-divider__item {
-    display: flex;
-    align-items: center;
-    gap: 3px;
-    padding: 0;
-  }
-  .interrupt-divider__num {
-    flex-shrink: 0;
-    font-size: 10px;
-    color: var(--text-muted, #888);
-    text-align: right;
-    width: 14px;
-  }
-  /* item 内的 text：flex:1 撑满，不再 max-width 45%（那是旧单条模式的） */
-  .interrupt-divider__item > .interrupt-divider__text {
-    flex: 1 1 auto;
-    max-width: none;
-  }
   /* UX-9 提问内联选择题（2026-09-03，提问形态内联化）：
    * 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
    * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */
@@ -362,6 +309,17 @@ export const chatStyles = `
   .msg-qa__text {
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     max-width: 60%;
+  }
+  /* 补充合并容器（2026-09-07 显示逻辑统一：supplement 与 question-answer 共用 msg-qa 形态，
+   * 补充多条合一容器，tag 升级为「你补充 N 条」——替代旧 interrupt-divider 打断分条） */
+  .msg-qa__group {
+    display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto;
+  }
+  .msg-qa__row {
+    display: flex; align-items: baseline; gap: var(--sp-1, 4px); min-width: 0;
+  }
+  .msg-qa__row > .msg-qa__text {
+    flex: 1 1 auto; max-width: none; /* 合并容器内条目撑满，不再受单行 60% 限制 */
   }
   /* 图标按钮通用样式 */
   .msg-icon-btn {
@@ -582,11 +540,10 @@ export const chatStyles = `
     min-width: 0; max-width: 100%;
     display: flex; flex-direction: column;
   }
-  /* 容器直系子块（AI 段/你答子行/打断分条）全宽平铺，不再内缩——
+  /* 容器直系子块（AI 段/交互子行）全宽平铺，不再内缩——
    * 正文直接贴着消息区左右边距，铺满整个版面 */
   .round-group > .msg.assistant,
-  .round-group > .msg-qa,
-  .round-group > .interrupt-divider { padding-right: 0; padding-left: 0; }
+  .round-group > .msg-qa { padding-right: 0; padding-left: 0; }
   /* 容器级 footer：操作上移后的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点）。
    * 平铺版轻量化：去背景色，顶部细虚线分隔（与 .interrupt-divider 语言一致），
    * 不突出操作行、不抢正文；操作入口保留今天「整链复制/分叉/删除」的闭环能力 */
@@ -662,23 +619,49 @@ export const chatStyles = `
     flex-direction: column;
     gap: var(--sp-1, 2px);
     margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
-    padding: var(--sp-2, 4px) var(--sp-3, 8px);
-    background: var(--surface-track, rgba(128,128,128,.12));
-    border: 1px dashed var(--border-panel, rgba(128,128,128,.35));
-    border-radius: var(--radius-md, 6px);
+    padding: var(--sp-2, 4px) var(--sp-3, 8px) var(--sp-2, 4px);
+    border-left: 3px solid var(--accent, #0e639c);
+    background: transparent;
+    border-radius: var(--radius-sm, 3px);
     font-size: 12px;
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
+    /* 2026-09-07 UI 打磨：去整块灰底虚线卡，改左侧色条 + 透明底，轻盈贴近打断语义 */
   }
-  /* 顶部标题行：label + count + clear */
+  /* 顶部行：徽章 + 标题 + 提示 + 清空按钮（flex 一行） */
+  .pending-queue-bar__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+  }
+  /* 圆形计数徽章 */
+  .pending-queue-bar__badge {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: var(--accent, #0e639c);
+    color: var(--surface-inverse, #fff);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1;
+  }
+  /* 顶部标题行 */
   .pending-queue-bar__label {
     font-weight: 500;
     color: var(--text-secondary, #b0b0b0);
   }
-  .pending-queue-bar__count {
+  .pending-queue-bar__hint {
     flex: 1;
     font-size: 11px;
     color: var(--text-muted, #888);
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
   }
   /* 列表容器 */
   .pending-queue-bar__list {
@@ -686,12 +669,17 @@ export const chatStyles = `
     flex-direction: column;
     gap: 2px;
   }
-  /* 每条补充的行 */
+  /* 每条补充的行（hover 轻浮起 + 删除按钮显现） */
   .pending-queue-bar__item {
     display: flex;
     align-items: center;
     gap: var(--sp-1, 2px);
-    padding: 1px 0;
+    padding: 2px 2px;
+    border-radius: var(--radius-sm, 3px);
+    transition: background 0.12s;
+  }
+  .pending-queue-bar__item:hover {
+    background: var(--surface-hover, rgba(128,128,128,.10));
   }
   .pending-queue-bar__num {
     flex-shrink: 0;
@@ -706,31 +694,35 @@ export const chatStyles = `
     white-space: nowrap;
     text-overflow: ellipsis;
     color: var(--text-input, #cccccc);
-    opacity: 0.85;
+    opacity: 0.9;
   }
-  /* 单条删除按钮 */
+  /* 单条删除按钮：平时透明，hover 行时显现 */
   .pending-queue-bar__item-del {
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 14px;
-    height: 14px;
+    width: 16px;
+    height: 16px;
     padding: 0;
     border: none;
-    border-radius: 2px;
+    border-radius: 3px;
     background: transparent;
     color: var(--text-muted, #888);
     cursor: pointer;
-    font-size: 9px;
+    font-size: 10px;
     line-height: 1;
-    transition: background 0.12s, color 0.12s;
+    opacity: 0;
+    transition: opacity 0.12s, background 0.12s, color 0.12s;
+  }
+  .pending-queue-bar__item:hover .pending-queue-bar__item-del {
+    opacity: 1;
   }
   .pending-queue-bar__item-del:hover {
-    background: var(--surface-hover, rgba(255,255,255,.08));
-    color: var(--text-secondary, #ccc);
+    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
+    color: var(--status-fail, #b3261e);
   }
-  /* 全局清空按钮（右上角） */
+  /* 全局清空按钮（右上角）：hover 危险色暗示 */
   .pending-queue-bar__clear {
     flex-shrink: 0;
     display: inline-flex;
@@ -744,13 +736,13 @@ export const chatStyles = `
     background: transparent;
     color: var(--text-muted, #888);
     cursor: pointer;
-    font-size: 10px;
+    font-size: 11px;
     line-height: 1;
     transition: background 0.12s, color 0.12s;
   }
   .pending-queue-bar__clear:hover {
-    background: var(--surface-hover, rgba(255,255,255,.08));
-    color: var(--text-secondary, #ccc);
+    background: var(--feedback-error-bg, rgba(180, 40, 30, .14));
+    color: var(--status-fail, #b3261e);
   }
   .pending-queue-bar[hidden] { display: none; }
   /* ④ 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
