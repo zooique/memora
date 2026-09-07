@@ -210,6 +210,52 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(collectAllBodyText(assistants[0])).toBe('思考第一段思考第二段思考第三段');
   });
 
+  it('暂停→继续全时序：resume 的 meta 不建新骨架，chunk 原位续写暂停块（2026-09-07 双块分裂排雷修复）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① 首轮生成：meta 建骨架 + 首段正文（roundId r1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '暂停前正文', roundId: 'r1' });
+    // ② 暂停：记录暂停块锚点（activeAssistantEl 存为 pausedAssistantEl）
+    dispatch({ type: 'paused' });
+    // ③ resume 后 host 重新 emit meta（真实链路 consumeFlow 每次 runFlow 重发 meta，
+    //    2026-09-07 修复前此 meta 会无条件 prepareFlowShell 建骨架 B，劫持后续 chunk
+    //    → 视觉两个独立 LLM 回答）——pausedResume 分支应不建骨架、保留锚点
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // ④ resume 后首 text chunk（同 roundId）：应原位续写暂停块，不新建第 2 块
+    dispatch({ type: 'chunk', content: '暂停后正文', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+
+    // 同一问答闭环只有一个 assistant 块，两段正文拼接缝合
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('暂停前正文暂停后正文');
+  });
+
+  it('暂停后中断（interrupted）：清暂停锚点，下轮新闭环 meta 正常建骨架（2026-09-07 对称雷修复）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① 首轮：meta + 正文（roundId r1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '暂停前半', roundId: 'r1' });
+    // ② 暂停 → 中断（用户放弃暂停态，直接停止）
+    dispatch({ type: 'paused' });
+    dispatch({ type: 'interrupted', roundId: 'r1' });
+    // ③ 新闭环：user（无 kind，新问题）+ meta + chunk —— 应新建骨架块（锚点已清，不残留续写）
+    dispatch({ type: 'user', text: '新问题', ts: '2026-09-07T10:00:00.000Z' });
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '新回答', roundId: 'r2' });
+    dispatch({ type: 'done', roundId: 'r2' });
+
+    // 两块各自独立：暂停前的半截块（收尾）+ 新闭环新块（不误续写到旧暂停块）
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(2);
+    // 第二个块 = 新回答（未拼接旧正文）
+    expect(collectAllBodyText(assistants[1])).toBe('新回答');
+  });
+
   it('clear_ok 后流式锚点失效，后续 chunk 重建一条 assistant 消息（P0-1）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
@@ -480,6 +526,27 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     pauseBtn.click();
     // 点击暂停 → 发 pause 消息，host 调 agent.requestPause() step 边界软暂停（可经「继续」恢复）
     expect(postMessage).toHaveBeenCalledWith({ type: 'pause' });
+  });
+
+  it('暂停申请在途态：按钮即时切「继续」形态可反悔（2026-09-07 缺口修复 1）', () => {
+    const { postMessage } = mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    const icon = pauseBtn.querySelector('.btn-icon') as HTMLElement;
+    dispatch({ type: 'status', state: 'thinking' });
+    // 初始：暂停（‖）形态
+    expect(icon.dataset.icon).toBe('pause');
+    // host 推 pause_pending:true（申请已入队，step 未到）→ 按钮即时切「继续 ▶」可反悔
+    dispatch({ type: 'pause_pending', pending: true });
+    expect(icon.dataset.icon).toBe('play');
+    expect(pauseBtn.title).toContain('取消暂停申请');
+    // 申请态再点 → 仍发 pause 消息（host 侧 isPausePending → cancelPauseRequest 反悔）
+    postMessage.mockClear();
+    pauseBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'pause' });
+    // host 推 pause_pending:false（取消成功）→ 恢复「暂停」形态
+    dispatch({ type: 'pause_pending', pending: false });
+    expect(icon.dataset.icon).toBe('pause');
+    expect(pauseBtn.title).toBe('暂停生成');
   });
 
   it('暂停态双按钮：暂停按钮换「继续」▶、发送按钮保持「停止」■', () => {

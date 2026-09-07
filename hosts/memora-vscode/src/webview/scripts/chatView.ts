@@ -1231,6 +1231,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * syncButtonSemantics / syncSendEnabled 都读它做矩阵决策。
    */
   let _sessionUiState: 'thinking' | 'done' | 'paused' = 'done';
+  /** 暂停申请在途态（host 经 pause_pending 消息推送）：申请已入队但 step 未结束的窗口期。
+   *  用户心智只有 暂停/继续 两态——申请在了就是"在暂停"，按钮立即切为「继续」形态可反悔。 */
+  let _pausePending = false;
   /** 连续 supplement 合并跟踪：当前活跃的打断切分条（多条补充追加到同一容器，而非每条建一个新 divider）*/
   let _lastInterruptDivider: HTMLElement | null = null;
 
@@ -1245,15 +1248,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const hasInput = input.value.trim().length > 0;
     switch (_sessionUiState) {
       case 'thinking':
-        // 生成中暴露暂停按钮（图标换回 pause ‖）。
-        // pauseRequested=true 但 step 边界未到的窗口期，UI 不感知——用户可再点一次触发 cancel，
-        // 宿主 handlePause 内部通过 agent.isPausePending() 自动切换 request/cancel 行为。
+        // 生成中暴露暂停按钮（图标换回 pause ‖）。暂停申请在途（_pausePending=true）时
+        // 按钮即时切为「继续 ▶」形态——用户心智：申请暂停 = 已在暂停，可再点反悔（取消申请）。
         if (pauseBtn) {
           pauseBtn.hidden = false;
           const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
-          if (icon) applyIcon(icon, 'pause');
-          pauseBtn.setAttribute('title', '暂停生成');
-          pauseBtn.setAttribute('aria-label', '暂停生成');
+          if (_pausePending) {
+            if (icon) applyIcon(icon, 'play');
+            pauseBtn.setAttribute('title', '继续（点击取消暂停申请）');
+            pauseBtn.setAttribute('aria-label', '继续（取消暂停申请）');
+          } else {
+            if (icon) applyIcon(icon, 'pause');
+            pauseBtn.setAttribute('title', '暂停生成');
+            pauseBtn.setAttribute('aria-label', '暂停生成');
+          }
         }
         if (hasInput) {
           // thinking + 有输入：发送按钮 = interject 排队（去掉 loading/paused 类，切默认发送图标）
@@ -1365,6 +1373,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function setStatus(state: 'thinking' | 'done' | 'paused'): void {
     _sessionUiState = state;
+    // 暂停申请态只存在于 thinking 窗口：状态机翻到非 thinking 时申请必然已结束/作废
+    if (state !== 'thinking') _pausePending = false;
     // Phase 4：合并补充条的生命周期跟随会话状态——状态变化 = 合并周期结束，
     // 下一个 supplement 应该重新开新 divider（不同运行阶段的补充不应混在一起）
     _lastInterruptDivider = null;
@@ -2841,6 +2851,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
+    } else if (msg.type === 'pause_pending') {
+      // 暂停申请在途切换（host 推送）：申请态 = 按钮切「继续」可反悔；取消/作废 = 回归「暂停」。
+      _pausePending = msg.pending;
+      syncButtonSemantics();
     } else if (msg.type === 'pending_queue_update') {
       // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
       updatePendingQueueBar(msg.items);
@@ -2849,23 +2863,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
       const ev = msg.event;
       if (ev.type === 'meta') {
-        // 新轮/续跑判定：交互输入后（resumePending）的 meta = 同闭环续跑（qa 回答 / 暂停补充
-        // 后的第二个 runFlow）——保留 currentEvents 与 round-block 锚点（折叠留在闭环首块，
-        // 不因新 runFlow 当新轮重置出第二个运行时折叠），仅刷新身份 + 建续接骨架；
-        // 真新轮则清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）
+        // 新轮/续跑判定（三态收敛，2026-09-07 排雷修复）：暂停续跑（pausedAssistantEl 有效）
+        // > 交互续跑（resumePending）> 真新轮。
+        //   pausedResume：pause→resume 的新 runFlow meta——原位续写暂停块（不建新骨架、
+        //     不重置 round-block 锚点），后续 text chunk 走 pausedAssistantEl 分支续写同一
+        //     assistant 块。宿主每个 runFlow 都会重发 meta，若不处理，骨架 B 会劫持 chunk
+        //     走 flowShellEl 分支，导致「暂停后继续 = 视觉两个独立 LLM 回答」。
+        //   resumePending：插话/提问续跑（无 paused 锚点）→ 保留锚点但建续接骨架（新段）。
+        //   真新轮：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）。
         clearPendingWait(); // 骨架接管：移除等待指示器
         clearToolElapsed(); // TS-11c：切轮清工具等待计时（瞬态，防跨轮残留）
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
-        if (resumePending) {
+        const pausedResume = pausedAssistantEl !== null && pausedAssistantEl.isConnected;
+        if (pausedResume) {
+          // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
+          // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费
+        } else if (resumePending) {
           resumePending = false;
+          prepareFlowShell();
         } else {
           currentEvents = [];
           roundBlockEl = null;
           roundBlockHostEl = null;
           clearArchivingFallback();
           currentEvents.push(ev);
+          prepareFlowShell();
         }
-        prepareFlowShell();
       } else {
         if (ev.type === 'recall') {
           // 瞬时反馈：本轮召回 N 条（与折叠区 § 召回记忆同一数据源）
@@ -2949,6 +2972,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 已重置，唯独缺 assistant 锚点）。置 null 待新一轮骨架/正文块建立时重新锚定；
         // 打断补充/提问回答走带 kind 分支不重置，锚点保留供分条/子行定位。
         activeAssistantEl = null;
+        // 新闭环同时清暂停续写锚（2026-09-07 对称雷修复）：残留会让下一轮 meta 误判 pausedResume，
+        // 新问题正文被原位续写到上一个暂停块
+        pausedAssistantEl = null;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -3078,6 +3104,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearToolElapsed(); // TS-11c：中断同样清工具等待计时（防定时器残留空转）
       clearArchivingFallback();
       flowShellEl = null;
+      pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
       // 同 done 顺序纪律：先收起任务过程折叠区，再关流式
       renderRoundBlock(currentEvents, true);
       finalizeStreaming();
