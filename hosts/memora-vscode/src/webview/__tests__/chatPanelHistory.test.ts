@@ -599,11 +599,13 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 应调 step 边界软暂停入口 requestPause，而非立即翻态的 pause
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
     expect(pause).not.toHaveBeenCalled();
-    // 无失败提示
-    expect(ofType(posted, 'notice')).toHaveLength(0);
+    // 点击即反馈（2026-09-07）：申请已发送要明确告知
+    const notices = ofType(posted, 'notice');
+    expect(notices).toHaveLength(1);
+    expect((notices[0] as { message?: string }).message).toContain('暂停申请已发送');
   });
 
-  it('handlePause：requestPause 返回 false 不弹错误提示（toggle 永远成功）', () => {
+  it('handlePause：requestPause 返回 false → 明确告知申请未生效（作废路径）', () => {
     const { provider, posted } = setup();
     const { agent, requestPause } = pauseAgentStub();
     requestPause.mockReturnValue(false);
@@ -611,11 +613,13 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // handlePause 不再检查 _streaming
     (provider as unknown as { _streaming: boolean })._streaming = true;
     (provider as unknown as { handlePause(): void }).handlePause();
-    // 不弹 notice——toggle 永远成功；requestPause 即使返回 false 也不拦截
-    expect(ofType(posted, 'notice')).toHaveLength(0);
+    // 反馈申请未生效（空闲守卫作废 / 幂等 / paused、error 态）——不再保持沉默
+    const notices = ofType(posted, 'notice');
+    expect(notices).toHaveLength(1);
+    expect((notices[0] as { message?: string }).message).toContain('未生效');
   });
 
-  it('handlePause：空闲态也可 toggle（不再检查 _streaming）', () => {
+  it('handlePause：空闲态也可 toggle（不再检查 _streaming），点击即反馈', () => {
     const { provider, posted } = setup();
     const { agent, requestPause } = pauseAgentStub();
     provider.setAgent(agent);
@@ -624,8 +628,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     (provider as unknown as { _streaming: boolean })._streaming = false;
     (provider as unknown as { handlePause(): void }).handlePause();
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
-    // 不弹 notice
-    expect(ofType(posted, 'notice')).toHaveLength(0);
+    // 申请已发送（requestPause 默认 true）反馈
+    expect(ofType(posted, 'notice')).toHaveLength(1);
   });
 
   // ─── 首次启动自动创建首会话（2026-08-31 体验改进：无记录时免手动点「＋」） ───

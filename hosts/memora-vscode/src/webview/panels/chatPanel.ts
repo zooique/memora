@@ -2055,18 +2055,29 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * UI 只负责显示 pause（‖）图标，不维护任何本地 toggle 状态——图标永远不变，
    * hidden 由会话状态机驱动（thinking 显示，paused/done 隐藏）。
-   * 点击后的行为裁决完全在宿主层：
-   *   - agent.isPausePending()=true → cancelPauseRequest()（用户反悔，step 边界未到前取消申请）
-   *   - agent.isPausePending()=false → requestPause()（发暂停申请，step 边界生效）
-   * 不检查 requestPause 返回值、不弹错误提示——paused 状态下调用是 no-op，UI 下一次
-   * setStatus 收到 paused 就会隐藏按钮，不会卡住。 */
+   * 点击后的行为裁决完全在宿主层，点击即反馈（2026-09-07 收紧）：
+   *   - agent.isPausePending()=true → cancelPauseRequest()（反悔）+ 告知已取消
+   *   - 否则 requestPause()：
+   *      返回 true（运行中入队）→ 告知「暂停申请已发送，将在当前步骤完成后暂停」
+   *      返回 false（空闲守卫作废 / 幂等 / paused、error）→ 告知「任务已结束，申请未生效」
+   * 不再对 requestPause 返回值保持沉默——「有按钮就有反馈」。
+   */
   private handlePause(): void {
     if (!this._agent) return;
     if (this._agent.isPausePending()) {
       this._agent.cancelPauseRequest();
+      // 点击即反馈：取消申请也要明确告知（2026-09-07 用户要求「有按钮就有反馈」）
+      this.post({ type: 'notice', level: 'info', message: '已取消暂停申请（将继续运行）' });
+      return;
+    }
+    const ok = this._agent.requestPause('user-pause', 'user');
+    if (ok) {
+      // 点击即反馈：申请已入队，step 边界生效（用户知情，不再"点了没反应"）
+      this.post({ type: 'notice', level: 'info', message: '暂停申请已发送，将在当前步骤完成后暂停' });
     } else {
-      // requestPause 在 paused/error 状态返回 false，我们不拦截——UI 再点一次 toggle 回来即可
-      this._agent.requestPause('user-pause', 'user');
+      // 作废路径：空闲守卫（任务已结束）/ 幂等 / paused、error 态——统一明确告知
+      // （2026-09-07 收紧后空闲不再翻状态机，任务结束的暂停申请直接作废）
+      this.post({ type: 'notice', level: 'info', message: '当前任务已结束，暂停申请未生效' });
     }
   }
 
