@@ -40,9 +40,11 @@ export interface RolePackValidateInput {
 // 规则常量
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接 + 标准远期键） */
+/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接 + 标准远期键）。
+ * 注意：keywords/trigger 已废弃（v0.13 角色包手动切换，自动匹配链死），故意不在已知键集
+ * ——旧包带此二键按「未知键 warning + 忽略」宽容处理，与当前解析行为等价。 */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
-  'name', 'displayName', 'formatVersion', 'version', 'description', 'keywords', 'trigger',
+  'name', 'displayName', 'formatVersion', 'version', 'description',
   'author', 'homepage', 'repository', 'license',
   'minKernelVersion',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection',
@@ -67,10 +69,6 @@ const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 // 策略键数值区间在 strategyKeys.ts；此处管策略键之外的开放字段，防止无条件填写导致资源失控
 // ════════════════════════════════════════════════════════════
 
-/** 匹配词（keywords/trigger）最大数量：防止匹配词列表膨胀拖慢匹配 */
-export const MAX_MATCH_WORDS = 20;
-/** 单个匹配词最大长度（字符）：防止巨型关键词注入匹配词源 */
-export const MAX_MATCH_WORD_LEN = 50;
 /** skills 白名单最大数量：与 L1 列表工具阈值同量级，防止白名单膨胀 */
 export const MAX_MANIFEST_SKILLS = 50;
 /** capabilities 最大数量：防止能力声明面膨胀 */
@@ -476,106 +474,8 @@ function validateManifestCapabilities(
   });
 }
 
-/** 解析匹配字段（keywords/trigger）为字符串数组：支持数组与逗号串双写法，其余类型为非法返回 null（已 push error） */
-function parseMatchField(
-  fieldName: 'keywords' | 'trigger',
-  node: unknown,
-  issues: RolePackValidationIssue[],
-): string[] | null {
-  if (node === undefined) return null;
-
-  let values: string[];
-  if (Array.isArray(node)) {
-    // 数组写法：元素必须全为字符串；含非字符串元素视为非法
-    if (node.some((v) => typeof v !== 'string')) {
-      issues.push({
-        severity: 'error',
-        code: `INVALID_${fieldName.toUpperCase()}`,
-        path: fieldName,
-        message: `${fieldName} 数组的元素必须是字符串（匹配字段双写法）`,
-      });
-      return null;
-    }
-    values = node.map((s) => String(s));
-  } else if (typeof node === 'string') {
-    // 逗号分隔字符串写法：拆分 + 去空格
-    values = node
-      .split(',')
-      .map((s) => s.trim())
-      .filter(Boolean);
-  } else {
-    issues.push({
-      severity: 'error',
-      code: `INVALID_${fieldName.toUpperCase()}`,
-      path: fieldName,
-      message: `${fieldName} 必须是字符串数组或逗号分隔字符串（匹配字段双写法）`,
-    });
-    return null;
-  }
-
-  // 数量上限：匹配词列表防膨胀（匹配按 包数×词数 全量遍历）
-  if (values.length > MAX_MATCH_WORDS) {
-    issues.push({
-      severity: 'error',
-      code: `INVALID_${fieldName.toUpperCase()}`,
-      path: fieldName,
-      message: `${fieldName} 最多 ${MAX_MATCH_WORDS} 个匹配词（当前 ${values.length}）`,
-    });
-  }
-  // 单个匹配词长度上限：防巨型关键词注入匹配词源
-  for (let i = 0; i < values.length; i++) {
-    if (values[i]!.length > MAX_MATCH_WORD_LEN) {
-      issues.push({
-        severity: 'error',
-        code: `INVALID_${fieldName.toUpperCase()}`,
-        path: `${fieldName}[${i}]`,
-        message: `${fieldName} 单个匹配词最多 ${MAX_MATCH_WORD_LEN} 字符（当前 ${values[i]!.length}）`,
-      });
-    }
-  }
-  return values;
-}
-
-/** 校验 keywords 字段类型（复用 parseMatchField；无正则语义） */
-function validateKeywordsField(
-  keywordsNode: unknown,
-  issues: RolePackValidationIssue[],
-): void {
-  parseMatchField('keywords', keywordsNode, issues);
-}
-
 /**
- * 校验 trigger 字段类型 + 正则误用：角色包 trigger 为字符串数组（精确/包含匹配）而非正则。
- * 若值含 `/pattern/flags` 正则语法则 warning——会被当作字面关键词，无法匹配任何输入。
- */
-function validateTriggerField(
-  triggerNode: unknown,
-  issues: RolePackValidationIssue[],
-): void {
-  const values = parseMatchField('trigger', triggerNode, issues);
-  if (!values) return;
-
-  // 检测每个 trigger 值是否误用了正则语法
-  // 正则语法模式：以 / 开头、以 / 结尾（可能带 flags），如 /pattern/i
-  const regexPattern = /^\/.+\/[gimsuy]*$/;
-  for (let i = 0; i < values.length; i++) {
-    const value = values[i]!;
-    if (regexPattern.test(value)) {
-      issues.push({
-        severity: 'warning',
-        code: 'TRIGGER_REGEX_MISUSE',
-        path: `trigger[${i}]`,
-        message:
-          `trigger 值 "${value}" 疑似正则语法（/pattern/flags）。` +
-          `角色包 trigger 为字符串精确/包含匹配，不支持正则。` +
-          `正则匹配仅在 Skill 系统中支持。当前值会被当作字面关键词，无法匹配任何输入。`,
-      });
-    }
-  }
-}
-
-/**
- * 校验 manifest.json：必填/版本、合规分档、策略键、skills/capabilities、匹配字段。
+ * 校验 manifest.json：必填/版本、合规分档、策略键、skills/capabilities。
  * 未知键 warning + 忽略；valid = 无 error（warning 不阻塞装载）。
  */
 export function validateManifest(
@@ -590,8 +490,6 @@ export function validateManifest(
   validateHandoffPrompt(manifest, issues);
   validateManifestSkills(manifest['skills'], issues);
   validateManifestCapabilities(manifest['capabilities'], issues);
-  validateTriggerField(manifest['trigger'], issues);
-  validateKeywordsField(manifest['keywords'], issues);
 
   return { valid: issues.every((i) => i.severity !== 'error'), issues };
 }

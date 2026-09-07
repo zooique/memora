@@ -24,7 +24,6 @@ const validManifest: Record<string, unknown> = {
   version: '1.0.0',
   description: '测试角色包描述',
   author: '萧然',
-  keywords: ['角色包', 'agent'],
   interactionType: 'tool_assistant',
   aiIdentityDisclosure: true,
   minorProtection: 'required',
@@ -106,27 +105,29 @@ describe('validateManifest：键名合法性', () => {
     expect(result.valid).toBe(true);
   });
 
-  it('已知键（strategy/skills/trigger/handoffPrompt）不报未知键', () => {
-    const result = validate({ trigger: ['测试'], handoffPrompt: '开始吧' });
+  it('已知键（strategy/skills/handoffPrompt）不报未知键', () => {
+    const result = validate({ handoffPrompt: '开始吧' });
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
   });
 
-  it('keywords 双写法：字符串数组与逗号分隔字符串均为合法', () => {
-    const asArray = validate({ keywords: ['文档', 'API'] });
-    const asString = validate({ keywords: '文档, API' });
-    expect(asArray.valid).toBe(true);
-    expect(asString.valid).toBe(true);
-    expect(findByCode(asArray.issues, 'INVALID_KEYWORDS')).toHaveLength(0);
-    expect(findByCode(asString.issues, 'INVALID_KEYWORDS')).toHaveLength(0);
+  it('keywords/trigger 已废弃：按未知键 warning 宽容（不阻塞装载）', () => {
+    // v0.13 角色包手动切换，自动匹配链死——废弃键不在已知键集，旧包带此二键
+    // 走「未知键 warning + 忽略」通道，语义与校验器历史行为等价（warning 不阻塞）。
+    const result = validate({ keywords: ['文档', 'API'], trigger: ['测试'] });
+    expect(result.valid).toBe(true);
+    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(2);
   });
 
-  it('keywords 非法形状（数值/对象/数组含非字符串元素）→ INVALID_KEYWORDS error', () => {
+  it('keywords 任何形状均宽容（废弃键走未知键 warning，不判形状）', () => {
+    // 校验器不再认识 keywords：数组/逗号串/数值/对象一律未知键 warning + 忽略，
+    // 不阻塞装载（旧包兼容等价：历史行为对合法形状放行，废弃后形状不再有语义）。
+    const asArray = validate({ keywords: ['文档', 'API'] });
     const asNumber = validate({ keywords: 12 });
     const asObject = validate({ keywords: { a: 1 } });
-    const asArrayWithNonString = validate({ keywords: ['文档', 12] });
-    for (const result of [asNumber, asObject, asArrayWithNonString]) {
-      expect(result.valid).toBe(false);
-      expect(findByCode(result.issues, 'INVALID_KEYWORDS')).toHaveLength(1);
+    for (const result of [asArray, asNumber, asObject]) {
+      expect(result.valid).toBe(true);
+      expect(findByCode(result.issues, 'INVALID_KEYWORDS')).toHaveLength(0);
+      expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(1);
     }
   });
 
@@ -473,23 +474,6 @@ describe('validateManifest：handoffPrompt 接手衔接提示词（自洽声明�
 });
 
 describe('validateManifest：非策略键字段上限（开放字段防无条件填写）', () => {
-  it('keywords 超过 20 个 → INVALID_KEYWORDS error', () => {
-    const result = validate({ keywords: Array.from({ length: 21 }, (_, i) => `关键词${i}`) });
-    expect(findByCode(result.issues, 'INVALID_KEYWORDS').length).toBeGreaterThan(0);
-    expect(result.valid).toBe(false);
-  });
-
-  it('单个关键词超过 50 字符 → INVALID_KEYWORDS error', () => {
-    const result = validate({ keywords: ['a'.repeat(51)] });
-    expect(findByCode(result.issues, 'INVALID_KEYWORDS').length).toBeGreaterThan(0);
-    expect(result.valid).toBe(false);
-  });
-
-  it('trigger 超过 20 个 → INVALID_TRIGGER error', () => {
-    const result = validate({ trigger: Array.from({ length: 21 }, (_, i) => `触发${i}`) });
-    expect(findByCode(result.issues, 'INVALID_TRIGGER').length).toBeGreaterThan(0);
-  });
-
   it('skills 白名单超过 50 项 → SKILLS_TOO_MANY error', () => {
     const skills = Array.from({ length: 51 }, (_, i) => ({ file: `skills/s${i}.md` }));
     const result = validate({ skills });
@@ -514,9 +498,8 @@ describe('validateManifest：非策略键字段上限（开放字段防无条件
     expect(result.valid).toBe(false);
   });
 
-  it('边界值合法（恰好 20 词 / 2000 字符 / 50 项）→ 通过', () => {
+  it('边界值合法（2000 字符 / 50 项）→ 通过', () => {
     const result = validate({
-      keywords: Array.from({ length: 20 }, (_, i) => `关键词${i}`),
       handoffPrompt: 'h'.repeat(2000),
       skills: Array.from({ length: 50 }, (_, i) => ({ file: `skills/s${i}.md` })),
       capabilities: Array.from({ length: 50 }, (_, i) => ({ capability: `dom:act${i}` })),
