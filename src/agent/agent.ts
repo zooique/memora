@@ -595,25 +595,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      // 预判短路：计划停滞 + 无新输入 + 非自主工具步 → 无需续跑直接提示，避免浪费 token 调 LLM
-      if (!input) {
-        const sm = this._sessionManager!;
-        if (sm.isPlanStalled() && !this.requireLoop.isInAutonomousStep) {
-          // 区分"已完成"与"全部阻塞"——blocked ≠ done，避免误导用户以为任务已完成而实际一步未成
-          const plan = sm.getCheckpoint()?.plan ?? [];
-          const allDone = plan.length > 0 && plan.every((s) => s.status === 'done');
-          const allBlocked = plan.length > 0 && plan.every((s) => s.status === 'blocked');
-          yield {
-            type: 'text',
-            content: allDone
-              ? '所有计划步骤已完成，请提供下一步指令'
-              : allBlocked
-                ? '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划'
-                : '所有计划步骤已完成，请提供下一步指令',
-          };
-          yield { type: 'done' };
-          return;
-        }
+      // 预判短路（收窄，2026-09-07）：仅「计划全部 blocked」才拦——blocked=真停滞，继续调 LLM
+      // 只会复读卡住状态、白烧 token。全 done / 无计划不再拦：用户主动点「继续」就是要 AI 产出
+      // （可能收尾总结、补建计划、继续语境），且短问答暂停续跑本就无计划，拦了就没法继续聊。
+      // 判定下沉 sessionManager.isPlanAllBlocked()（与 isPlanStalled 区别：全 done/空计划放行）。
+      if (!input && this._sessionManager?.isPlanAllBlocked() && !this.requireLoop.isInAutonomousStep) {
+        yield { type: 'text', content: '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划' };
+        yield { type: 'done' };
+        return;
       }
 
       // 委托种子编排器：续跑路径闭环（act(continueAfterPause) → reflect；无回答前），

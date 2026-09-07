@@ -529,6 +529,28 @@ describe('SessionManager · 检查点管理', () => {
       expect(manager.isPlanStalled()).toBe(false);
     });
 
+    it('isPlanAllBlocked 全 blocked 应返回 true（预判短路收窄拦点）', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'blocked', order: 0 },
+        { id: 's2', description: '步骤2', status: 'blocked', order: 1 },
+      ]);
+      expect(manager.isPlanAllBlocked()).toBe(true);
+    });
+
+    it('isPlanAllBlocked 全 done 应返回 false（收窄后放行，继续=AI 产出）', () => {
+      manager.createCheckpoint('测试');
+      manager.updatePlan([
+        { id: 's1', description: '步骤1', status: 'done', order: 0 },
+      ]);
+      expect(manager.isPlanAllBlocked()).toBe(false);
+    });
+
+    it('isPlanAllBlocked 空计划应返回 false（普通问答暂停续跑放行）', () => {
+      manager.createCheckpoint('测试');
+      expect(manager.isPlanAllBlocked()).toBe(false);
+    });
+
     it('getNextPendingStep 应返回下一个 pending 步骤', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([

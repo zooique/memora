@@ -1256,6 +1256,17 @@ export class SessionManager {
     return plan.every((s) => s.status === 'done' || s.status === 'blocked');
   }
 
+  /**
+   * 计划是否全部阻塞（2026-09-07 预判短路收窄专用判定）：仅全 blocked 视为真停滞。
+   * 与 isPlanStalled 的区别：全 done / 计划空不视为"需要拦截"——用户主动点「继续」= 要 AI 产出，
+   * 全 done 可能只是本步收尾（还有总结未说出），空计划是普通问答暂停续跑，都应放行调 LLM。
+   */
+  isPlanAllBlocked(): boolean {
+    if (!this.checkpoint) return false;
+    const { plan } = this.checkpoint;
+    return plan.length > 0 && plan.every((s) => s.status === 'blocked');
+  }
+
   /** 获取下一个 pending 步骤（只读不推进，供上下文注入） */
   getNextPendingStep(): PlanStep | null {
     if (!this.checkpoint) return null;
