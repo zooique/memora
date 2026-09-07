@@ -26,7 +26,6 @@
   "displayName": "文档设计师",
   "description": "技术文档设计角色包",
   "version": "1.0.0",
-  "keywords": ["文档", "API", "教程"],
   "formatVersion": "1.0.0",
   "interactionType": "tool_assistant",
   "strategy": {
@@ -54,8 +53,8 @@
 | `description`          | string                         | 否  | 无                | 角色包描述；≤200 字符                                           |
 | `version`              | string                         | 否  | 无                | 建议 semver（`1.0.0`）                                      |
 | `formatVersion`        | string                         | 否  | `1.0.0`          | 声明则须 semver；版本迁移见规范 §五                                  |
-| `keywords`             | string\[] 或逗号串                 | 否  | 无                | 匹配词源（与 trigger 合并去重）；最多 20 个，单个 ≤50 字符                  |
-| `trigger`              | string\[] 或逗号串                 | 否  | 无                | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并；最多 20 个，单个 ≤50 字符    |
+| `keywords`             | string\[] 或逗号串                 | 否  | 无                | **memora 不消费**（v0.13 起角色包仅手动切换，自动匹配链已移除，解析置空）；保留仅为兼容旧 manifest，**新包勿写**；最多 20 个，单个 ≤50 字符 |
+| `trigger`              | string\[] 或逗号串                 | 否  | 无                | **memora 不消费**（同 keywords）；validator 仅防御性校验（正则误用提示），**新包勿写**；最多 20 个，单个 ≤50 字符 |
 | `author`               | string                         | 否  | 无                | 作者/来源；≤200 字符                                           |
 | `interactionType`      | `tool_assistant` / `companion` | 否  | `tool_assistant` | companion 触发全量强校验                                       |
 | `aiIdentityDisclosure` | boolean                        | 否  | `true`           | companion 必须显式 `true`                                   |

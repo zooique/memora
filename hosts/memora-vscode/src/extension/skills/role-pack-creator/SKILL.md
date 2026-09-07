@@ -50,7 +50,7 @@ layer: agent
 
 ```
 node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定位]
-      [--keywords 触发词1,触发词2] [--handoff "衔接话术"] [--out 目标目录]
+      [--handoff "衔接话术"] [--out 目标目录]
 ```
 
 - `<角色名>` 必填；`--out` 缺省为当前工作目录（产物 = `./<角色名>/`）；
@@ -91,7 +91,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 ### 第四步：校验（写→验→用闭环）
 
 1. `manifest.json` 为合法 JSON；`formatVersion` 必填（x.y.z）。
-2. 所有数值/枚举在上述区内；`summaryFocus` ≤500 字符；`keywords` ≤20 个。
+2. 所有数值/枚举在上述区内；`summaryFocus` ≤500 字符。
 3. `name` 有效（1~64 位，中文/字母/数字/下划线/连字符，不以 `.` 开头）。
 4. `skills/*.md` 均含 frontmatter 且带 `description`（缺则技能不可用）。
 5. （软自查）`skills/*.md` 的 description 按[四问规范](#四问规范软自查)对照，含糊措辞（如"处理数据"）须重写。

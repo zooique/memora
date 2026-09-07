@@ -6,7 +6,7 @@
  * 设计：模板是静态真实文件（SSOT 结构来源，不手写 JSON），脚本只做「复制 + 改名 + 填槽」。
  * 纯 Node 标准库、零第三方依赖。调用方式：
  *   node skaffold.mjs <角色名> [--display 展示名] [--desc 描述]
- *                     [--keywords k1,k2] [--handoff 话术] [--out 目标目录] [--force]
+ *                     [--handoff 话术] [--out 目标目录] [--force]
  */
 import { cp, readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
@@ -32,7 +32,6 @@ function parseArgs(argv) {
     name: argv[0] ?? '',
     display: '',
     desc: '',
-    keywords: [],
     handoff: '',
     out: '',
     force: false,
@@ -41,9 +40,6 @@ function parseArgs(argv) {
     switch (argv[i]) {
       case '--display': cfg.display = argv[++i] ?? ''; break;
       case '--desc': cfg.desc = argv[++i] ?? ''; break;
-      case '--keywords':
-        cfg.keywords = (argv[++i] ?? '').split(',').map((s) => s.trim()).filter(Boolean);
-        break;
       case '--handoff': cfg.handoff = argv[++i] ?? ''; break;
       case '--out': cfg.out = argv[++i] ?? ''; break;
       case '--force': cfg.force = true; break;
@@ -109,14 +105,12 @@ async function main() {
   // 4) 复制模板 → 目标
   await cp(TEMPLATE_DIR, targetDir, { recursive: true });
 
-  // 5) 占位符替换（身份字段注入；keywords 超 20 截断，符合 schema maxItems=20）
+  // 5) 占位符替换（身份字段注入）
   const display = cfg.display || cfg.name;
-  const keywordsJson = JSON.stringify(cfg.keywords.slice(0, 20));
   const map = {
     '{{PACK_NAME}}': cfg.name,
     '{{PACK_DISPLAY_NAME}}': display,
     '{{PACK_DESCRIPTION}}': cfg.desc || '（待补充：一句话定位这个角色的职责与边界）',
-    '{{PACK_KEYWORDS}}': keywordsJson,
     '{{PACK_HANDOFF}}': cfg.handoff || DEFAULT_HANDOFF,
   };
   for (const rel of PLACEHOLDER_FILES) {
@@ -125,7 +119,7 @@ async function main() {
 
   // 6) 摘要（供 LLM 继续精修时定位）
   console.log(`✅ 角色包骨架已生成：${targetDir}`);
-  console.log(`   展示名：${display} ｜ 关键词：${keywordsJson}`);
+  console.log(`   展示名：${display}`);
   console.log('下一步：');
   console.log(`  1. 编辑 ${targetDir}/manifest.json（增删 capabilities / 调整 strategy）`);
   console.log(`  2. 编辑 persona.md / rules.md / skills/（按角色精修）`);

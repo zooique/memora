@@ -4,7 +4,6 @@
   "formatVersion": "1.0.0",
   "version": "0.1.0",
   "description": "{{PACK_DESCRIPTION}}",
-  "keywords": {{PACK_KEYWORDS}},
   "author": "memora",
   "interactionType": "tool_assistant",
   "aiIdentityDisclosure": true,

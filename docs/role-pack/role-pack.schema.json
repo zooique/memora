@@ -36,13 +36,13 @@
       "type": "array",
       "maxItems": 20,
       "items": { "type": "string", "maxLength": 50 },
-      "description": "关键词列表（自动匹配，最多 20 个，单个 ≤50 字符）"
+      "description": "关键词列表（最多 20 个，单个 ≤50 字符）。参考实现注记：memora v0.13 起角色包仅手动切换，自动匹配链已移除，本字段不参与任何匹配（解析时置空）；保留仅为兼容旧 manifest + validator 防御性校验"
     },
     "trigger": {
       "type": "array",
       "maxItems": 20,
       "items": { "type": "string", "maxLength": 50 },
-      "description": "触发词列表（精确/包含匹配，非正则；与 keywords 合并去重为单一匹配词源，最多 20 个，单个 ≤50 字符）"
+      "description": "触发词列表（最多 20 个，单个 ≤50 字符；非正则）。参考实现注记：memora 参考实现不消费本字段（见 keywords 注记），保留仅为兼容旧 manifest + validator 防御性校验（含正则误用提示）"
     },
     "author": {
       "type": "string",
