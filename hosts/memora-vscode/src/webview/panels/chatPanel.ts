@@ -1911,6 +1911,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // UI 状态会在下一次 status 切换（如后续新 runFlow thinking）时自动重置
       if (this._agent.isPausePending()) {
         this._agent.cancelPauseRequest();
+        // 取消暂停（因补充输入覆盖）→ 同步恢复「暂停」形态
+        this.post({ type: 'pause_pending', pending: false });
       }
       // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
       // P2 收敛：不再维护 _pendingQueue 镜像，从内核 queue 读当前值（SSOT 源头）
@@ -2066,17 +2068,23 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._agent) return;
     if (this._agent.isPausePending()) {
       this._agent.cancelPauseRequest();
+      // 申请已取消 → 通知 webview 恢复「暂停」形态（用户可再点申请）
+      this.post({ type: 'pause_pending', pending: false });
       // 点击即反馈：取消申请也要明确告知（2026-09-07 用户要求「有按钮就有反馈」）
       this.post({ type: 'notice', level: 'info', message: '已取消暂停申请（将继续运行）' });
       return;
     }
     const ok = this._agent.requestPause('user-pause', 'user');
     if (ok) {
+      // 申请已入队（step 边界未到）→ 提前把按钮切为「继续」形态：申请即暂停，不需等 step 结束
+      this.post({ type: 'pause_pending', pending: true });
       // 点击即反馈：申请已入队，step 边界生效（用户知情，不再"点了没反应"）
       this.post({ type: 'notice', level: 'info', message: '暂停申请已发送，将在当前步骤完成后暂停' });
     } else {
       // 作废路径：空闲守卫（任务已结束）/ 幂等 / paused、error 态——统一明确告知
       // （2026-09-07 收紧后空闲不再翻状态机，任务结束的暂停申请直接作废）
+      // 申请未生效 → 恢复「暂停」形态
+      this.post({ type: 'pause_pending', pending: false });
       this.post({ type: 'notice', level: 'info', message: '当前任务已结束，暂停申请未生效' });
     }
   }
