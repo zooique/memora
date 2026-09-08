@@ -2986,7 +2986,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         resumePending = true;
         appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId, msg.question, msg.options);
       } else {
-        append('user', msg.text, msg.ts);
+        // 用户消息渲染兜底（2026-09-08 对治「重启后首输气泡偶发缺失」排查取证）：
+        // 若 append 内任一环节抛异常，不再静默吞消息——console.warn 暴露堆栈（复制发现场
+        // Console 即可定位），且以最小文本块降级渲染，保证用户输入恒可见。
+        try {
+          append('user', msg.text, msg.ts);
+        } catch (err) {
+          console.warn('[memora] 用户消息渲染失败（兜底降级）', err);
+          const fallback = document.createElement('div');
+          fallback.className = 'msg user msg-user-fallback';
+          fallback.textContent = msg.text;
+          messages.appendChild(fallback);
+        }
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
         lastAssistantRoundId = undefined;
         resumePending = false;
