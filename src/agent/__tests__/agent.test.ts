@@ -65,7 +65,6 @@ function seedProject(_projectPath: string, configDir: string, _dataDir: string):
     JSON.stringify({
       name: '默认助手',
       displayName: '默认助手',
-      keywords: ['你好', '帮助'],
       strategy: {},
     }),
     'utf-8',
@@ -636,7 +635,6 @@ function seedProjectWithPersonasAndSkills(
     JSON.stringify({
       name: '编程专家',
       displayName: '编程专家',
-      keywords: ['代码', '编程', 'bug', '函数', '调试'],
       strategy: {},
     }),
     'utf-8',
@@ -655,7 +653,6 @@ function seedProjectWithPersonasAndSkills(
     JSON.stringify({
       name: '写作助手',
       displayName: '写作助手',
-      keywords: ['写作', '文章', '故事', '小说'],
       strategy: {},
     }),
     'utf-8',
@@ -674,7 +671,6 @@ function seedProjectWithPersonasAndSkills(
     JSON.stringify({
       name: '代码审查助手',
       displayName: '代码审查助手',
-      keywords: ['审查', 'review', '代码质量'],
       strategy: {},
       skills: [{ file: 'code-review', name: '代码审查', description: '审查代码质量' }],
     }),
@@ -689,7 +685,7 @@ function seedProjectWithPersonasAndSkills(
   mkdirSync(skillsDir, { recursive: true });
   writeFileSync(
     join(skillsDir, 'code-review.md'),
-    '---\nname: 代码审查\ndescription: 审查代码质量\nkeywords: 审查,review,代码质量\n---\n\n审查代码时关注可读性、性能和安全性。',
+    '---\nname: 代码审查\ndescription: 审查代码质量\n---\n\n审查代码时关注可读性、性能和安全性。',
     'utf-8',
   );
 
@@ -697,7 +693,7 @@ function seedProjectWithPersonasAndSkills(
   mkdirSync(join(configDir, 'skills'), { recursive: true });
   writeFileSync(
     join(configDir, 'skills', 'code-review.md'),
-    '---\nsource: skill\nname: 代码审查\nkeywords: 审查,review,代码质量\n---\n\n审查代码时关注可读性、性能和安全性。',
+    '---\nsource: skill\nname: 代码审查\n---\n\n审查代码时关注可读性、性能和安全性。',
     'utf-8',
   );
 
@@ -1761,7 +1757,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     // 新增第 2 个技能文件
     writeFileSync(
       join(tmpConfig, 'skills', 'writing.md'),
-      '---\nsource: skill\nname: 写作技能\nkeywords: 写作,文章\n---\n\n写作技能内容',
+      '---\nsource: skill\nname: 写作技能\n---\n\n写作技能内容',
       'utf-8',
     );
 
@@ -1783,7 +1779,6 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
       JSON.stringify({
         name: '审查员',
         displayName: '审查员',
-        keywords: ['审查'],
         strategy: {},
       }),
       'utf-8',
@@ -2923,7 +2918,6 @@ describe('Agent · L2 行为策略消费', () => {
           name: '精算师',
           formatVersion: '1.0.0',
           description: 'memoryRecallPercent 覆盖验证',
-          keywords: ['精算'],
           strategy: { prepare: { memoryRecallPercent: 0.6 } },
         },
         null,
@@ -2962,7 +2956,6 @@ describe('Agent · L2 行为策略消费', () => {
           name: '非法百分比',
           formatVersion: '1.0.0',
           description: '非法 memoryRecallPercent 降级验证',
-          keywords: ['非法'],
           strategy: { prepare: { memoryRecallPercent: 1.5 } },
         },
         null,
@@ -2997,7 +2990,6 @@ describe('Agent · L2 行为策略消费', () => {
       {
         name: '翻译助手',
         formatVersion: '1.0.0',
-        keywords: ['翻译', '英译中'],
       },
       '你是翻译。',
     );
@@ -3006,7 +2998,6 @@ describe('Agent · L2 行为策略消费', () => {
       {
         name: '代码助手',
         formatVersion: '1.0.0',
-        keywords: ['编程', '写代码'],
       },
       '你是程序员。',
     );

@@ -82,7 +82,6 @@ describe.skipIf(!hasApiKey)('真实 LLM 集成测试', () => {
       JSON.stringify({
         name: '默认助手',
         displayName: '默认助手',
-        keywords: ['帮助', '助手'],
         strategy: {},
       }),
       'utf-8',
@@ -101,7 +100,6 @@ describe.skipIf(!hasApiKey)('真实 LLM 集成测试', () => {
       JSON.stringify({
         name: '程序员助手',
         displayName: '程序员助手',
-        keywords: ['代码', '编程', 'bug'],
         strategy: {},
       }),
       'utf-8',

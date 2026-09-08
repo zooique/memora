@@ -12,7 +12,6 @@ const MANIFEST_TECH = {
   name: '技术文档工程师',
   formatVersion: '1.0.0',
   description: '技术文档写作',
-  keywords: ['文档', 'API'],
   author: 'memora',
   interactionType: 'tool_assistant',
   strategy: {
@@ -30,7 +29,6 @@ const MANIFEST_TECH = {
 const MANIFEST_MULTI_SKILL_NO_PERSONA = {
   name: '全能写手',
   formatVersion: '1.0.0',
-  keywords: ['写作'],
   strategy: { act: { toolMode: 'block' } },
   skills: [
     { file: 'skills/write.md', name: 'write' },
@@ -47,7 +45,6 @@ const MANIFEST_MULTI_SKILL_NO_PERSONA = {
 const MANIFEST_PURE_CAPABILITY = {
   name: '项目总监',
   formatVersion: '1.0.0',
-  keywords: ['项目管理'],
   strategy: { act: { toolMode: 'allow' } },
   capabilities: [
     { capability: 'file:read', description: '读取项目文件' },
@@ -59,7 +56,6 @@ const MANIFEST_PURE_CAPABILITY = {
 const MANIFEST_HANDOFF_PROMPT = {
   name: '写作助手',
   formatVersion: '1.0.0',
-  keywords: ['写作'],
   handoffPrompt: '我已准备好开始写作任务，请告诉我主题与要求；若承接上文，请先概述当前进度。',
 };
 
@@ -67,12 +63,10 @@ const MANIFEST_HANDOFF_PROMPT = {
 const MANIFEST_TRANSLATOR = {
   name: '翻译助手',
   formatVersion: '1.0.0',
-  keywords: ['翻译', '英译中'],
 };
 const MANIFEST_CODER = {
   name: '代码助手',
   formatVersion: '1.0.0',
-  keywords: ['编程', '写代码'],
 };
 
 /** 便捷构造：写一个 folder 形态角色包（manifest.json + 可选内容文件） */
@@ -469,7 +463,6 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     await writePack(userPacksDir, '用户打磨', {
       name: '用户打磨',
       formatVersion: '1.0.0',
-      keywords: ['打磨'],
     }, { persona: '你是用户自建角色。' });
 
     const manager = new RolePackManager(dir);
@@ -928,7 +921,6 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await writePack(packsDir, '项目总监', {
         name: '项目总监',
         formatVersion: '1.0.0',
-        keywords: ['项目管理'],
         skills: [
           { file: 'skills/review.md', capability: 'task:plan', description: '审查计划' },
         ],
@@ -990,7 +982,6 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         join(packsDir, '文档专家', 'manifest.json'),
         JSON.stringify({
           name: '文档专家',
-          keywords: ['文档'],
           skills: { 'skills/doc-gen/SKILL.md': {} },
         }),
         'utf-8',
@@ -1019,7 +1010,6 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         join(packsDir, '文档专家2', 'manifest.json'),
         JSON.stringify({
           name: '文档专家2',
-          keywords: ['文档2'],
           skills: { 'skills/doc-gen/SKILL.md': {} },
         }),
         'utf-8',

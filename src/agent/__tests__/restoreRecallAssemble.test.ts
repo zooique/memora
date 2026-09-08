@@ -57,7 +57,6 @@ function seedProject(
     JSON.stringify({
       name: '默认助手',
       displayName: '默认助手',
-      keywords: ['你好', '帮助'],
       strategy,
     }),
     'utf-8',

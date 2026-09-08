@@ -45,7 +45,7 @@ describe('utils/scanner', () => {
         join(tempDir, 'rule1.md'),
         `---
 name: 规则一
-keywords: 记忆, 归档
+tags: 记忆, 归档
 ---
 # 规则一正文`,
       );
@@ -53,7 +53,7 @@ keywords: 记忆, 归档
       expect(result).toHaveLength(1);
       expect(result[0]?.name).toBe('规则一');
       expect(result[0]?.frontmatter['name']).toBe('规则一');
-      expect(result[0]?.frontmatter['keywords']).toBe('记忆, 归档');
+      expect(result[0]?.frontmatter['tags']).toBe('记忆, 归档');
       expect(result[0]?.body).toContain('# 规则一正文');
       expect(result[0]?.filePath).toBe(join(tempDir, 'rule1.md'));
     });
@@ -104,7 +104,7 @@ keywords: 记忆, 归档
     });
 
     it('frontmatter 无 name 字段时回退到文件名（去 .md）', async () => {
-      await writeFile(join(tempDir, 'fallback.md'), '---\nkeywords: test\n---\nbody');
+      await writeFile(join(tempDir, 'fallback.md'), '---\ntags: test\n---\nbody');
       const result = await scanMarkdownDir(tempDir);
       expect(result).toHaveLength(1);
       expect(result[0]?.name).toBe('fallback');
