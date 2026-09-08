@@ -281,6 +281,14 @@ export class AgentLoop {
   onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
+  /** active step 元信息回调（阶段二，2026-09-08 步级折叠路 B′）：loop 每次迭代完成时调用，
+   *  返回当前 active 任务表步骤 { stepId, title }；无任务表/无 active step 返回 null。
+   *  与 onStepBoundary 搭配：onStepBoundary 只管写 stepLog（推进投影），本回调供 loop 判断
+   *  「active step 是否已推进」，变化才产 step_boundary 事件（宿主据此按步分组渲染）。 */
+  getActiveStepMeta?: () => { stepId?: string; title?: string } | null;
+  /** 上一步级边界 ID（阶段二去噪）：记录最近一次已 emit step_boundary 的 stepId，
+   *  仅当 getActiveStepMeta 返回的 stepId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
+  private lastBoundaryStepId?: string;
   /** 主动提问计数（本 turn 粒度，resetTurnState 清零）：ask_user 工具触发次数（askLimit 硬护栏） */
   private askCountThisTurn = 0;
   /**
@@ -960,6 +968,21 @@ export class AgentLoop {
       this.onStepBoundary({
         summary: llmResult.fullContent.slice(0, 200),
       });
+    }
+    // 步级折叠边界事件（阶段二，2026-09-08 路 B′）：迭代完成后比较 active step 是否已推进。
+    // 推进才产 step_boundary（宿主按步分组后续事件），且比 narrate/tool yield 更早——保证
+    // 该步的第一条过程事件从边界后开始（语义="推进到这一步时记录边界"）。无任务表（null）
+    // 或 stepId 未变则不产（lastBoundaryStepId 去噪，避免每迭代发一条空边界）。
+    const activeStepMeta = this.getActiveStepMeta?.();
+    const activeStepId = activeStepMeta?.stepId;
+    if (activeStepMeta && activeStepId && activeStepId !== this.lastBoundaryStepId) {
+      this.lastBoundaryStepId = activeStepId;
+      yield {
+        type: 'step_boundary',
+        stepId: activeStepId,
+        title: activeStepMeta.title,
+        roundId: this.currentRoundId,
+      };
     }
 
     // ④ 结果路由：工具分支 / 纯文本结束分支

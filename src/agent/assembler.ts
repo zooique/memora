@@ -340,6 +340,17 @@ function wireRuntimeCallbacks(
     });
   };
 
+  // active step 元信息回调（阶段二步级折叠，2026-09-08 路 B′）：loop 迭代完成时取当前
+  // active 步骤 { stepId, title }，供 loop 对比推进产 step_boundary 事件。无任务表返回 null，
+  // 宿主端据此不产边界（静默）。与 onStepBoundary 同源取 active step，真理源一致。
+  loop.getActiveStepMeta = () => {
+    const cp = sessionManager.getCheckpoint();
+    const active = cp?.plan.find((s) => s.status === 'active');
+    return active
+      ? { stepId: active.id, title: active.description ?? active.id }
+      : null;
+  };
+
   // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
   loop.getTaskTable = () => {
     const cp = sessionManager.getCheckpoint();

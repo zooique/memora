@@ -104,6 +104,12 @@ export type AgentChunk = (
    * 自审查轮开始信号：注入自审查提示前 emit；round 为第几轮（为多轮预留）
    */
   | { type: 'selfReview'; round: number }
+  /**
+   * 步级折叠边界（阶段二，2026-09-08 路 B′）：迭代完成且 active 任务表步骤**推进**时 emit。
+   * 宿主据此把后续过程事件（narrate/tool/问答）归到对应 step 分组下渲染；无任务表不产。
+   * stepId 为推进到的新 active step ID，title 为步骤标题（供分组 summary 展示）。
+   */
+  | { type: 'step_boundary'; stepId?: string; title?: string }
   | { type: 'done' }
 ) & RoundTagged;
 

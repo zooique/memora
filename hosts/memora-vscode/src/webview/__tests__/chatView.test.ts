@@ -1225,6 +1225,41 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb?.textContent).toContain('召回 1 条记忆');
   });
 
+  it('阶段二步级折叠：replay_events 含 step_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '任务开始' });
+    dispatch({
+      type: 'replay_events',
+      roundId: 'r1',
+      events: [
+        { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '分析需求' } },
+        { type: 'narrate', seq: 3, ts: '', payload: { content: '正在分析需求文档' } },
+        { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file' } },
+        { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
+        { type: 'step_boundary', seq: 6, ts: '', payload: { stepId: 's2', title: '编写代码' } },
+        { type: 'narrate', seq: 7, ts: '', payload: { content: '开始编写实现代码' } },
+        { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'write_file' } },
+        { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true } },
+      ],
+    });
+    // 两个步级折叠块：summary 显示步骤名并可展开
+    const steps = document.querySelectorAll('.round-block__step');
+    expect(steps.length).toBe(2);
+    expect(steps[0]!.querySelector('.round-block__step-summary')?.textContent).toContain('step-1');
+    expect(steps[0]!.querySelector('.round-block__step-summary')?.textContent).toContain('分析需求');
+    expect(steps[1]!.querySelector('.round-block__step-summary')?.textContent).toContain('编写代码');
+    // 步1内：narrate 与 tool 归入第 1 个 step 容器（边界切组、步内平铺）
+    const step1Host = steps[0]!.querySelector('.round-block__narrate') as HTMLElement;
+    expect(step1Host?.textContent).toContain('正在分析需求文档');
+    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).toContain('read_file');
+    // 步2内：narrate 与 tool 归入第 2 个 step 容器，不越界混入步1
+    const step2Host = steps[1]!.querySelector('.round-block__narrate') as HTMLElement;
+    expect(step2Host?.textContent).toContain('开始编写实现代码');
+    expect(steps[1]!.querySelector('.round-block__tool')?.textContent).toContain('write_file');
+    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('write_file');
+  });
+
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
     beginRound();

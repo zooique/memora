@@ -813,6 +813,78 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
    * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
    */
+  /**
+   * 步级折叠容器（阶段二，2026-09-08 路 B′）：把 narrate/tool 按 step_boundary 归组。
+   * 先在清除式重建时清理旧 step 容器，再按事件 seq 定位应归入的 step 组：
+   *   - 无任何 step_boundary → 返回 details 本身（整轮一组，退回扁平现状）；
+   *   - 有 step_boundary → 返回最近一条步级边界（seq ≤ 目标 seq）所属的 step 折叠块容器，
+   *     懒创建（summary 显示「step-N · 标题」），保证边界后的过程事件归入对应步骤分组。
+   * 调用方用返回值替换 details 作为节点插入目标，实现「边界切组、步内平铺」。
+   */
+  function isStepBoundaryEvent(e: ProcessEvent): e is Extract<ProcessEvent, { type: 'step_boundary' }> {
+    return e.type === 'step_boundary';
+  }
+
+  /** 定位事件应插入的 step 容器（seq 为该事件真实顺序号）；无边界回退 details（整轮一组） */
+  function stepContainerFor(
+    root: HTMLElement,
+    events: ProcessEvent[],
+    seq: number,
+  ): {
+    host: HTMLElement;
+    bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[];
+  } {
+    const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.seq - b.seq);
+    if (bounds.length === 0) return { host: root, bounds };
+    // 找到 seq 前最近的边界（含本条边界自身）——本条边界之前（seq < 首边界）事件归 details 顶层
+    const active = [...bounds].reverse().find((b) => b.seq <= seq);
+    if (!active) return { host: root, bounds };
+    return { host: getOrCreateStepGroup(root, active, bounds), bounds };
+  }
+
+  /** 获取或创建步级折叠块（summary 显示步骤名；存在则复用，不解体既有已插入的步内元素） */
+  function getOrCreateStepGroup(
+    root: HTMLElement,
+    bound: Extract<ProcessEvent, { type: 'step_boundary' }>,
+    bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[],
+  ): HTMLElement {
+    const existing = root.querySelector<HTMLElement>(`.round-block__step[data-step="${bound.payload.stepId ?? ''}"]`);
+    if (existing && existing.isConnected) return existing;
+    const grp = document.createElement('details');
+    grp.className = 'round-block__step';
+    if (bound.payload.stepId) grp.dataset.step = bound.payload.stepId;
+    // 步骤序号 = 该边界在所有边界中的排名 + 1（从 1 起）
+    const order = bounds.indexOf(bound) + 1;
+    const title = bound.payload.title?.trim() ?? '';
+    const summary = document.createElement('summary');
+    summary.className = 'round-block__step-summary';
+    summary.textContent = `step-${order} · ${title.length > 36 ? `${title.slice(0, 36)}…` : title}`;
+    grp.appendChild(summary);
+    // 步内叙述/工具父容器：按序插入 details 顶层，容器内平铺该步过程事件
+    insertStepGroupInOrder(root, grp, bound.seq, bounds);
+    return grp;
+  }
+
+  /** 步级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
+  function insertStepGroupInOrder(
+    root: HTMLElement,
+    grp: HTMLElement,
+    boundSeq: number,
+    bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[],
+  ): void {
+    const existingGrps = Array.from(root.querySelectorAll<HTMLElement>('.round-block__step'));
+    const next = existingGrps.find((g) => {
+      const gBoundSeq = Number(g.dataset.seq ?? Infinity);
+      return gBoundSeq > boundSeq;
+    });
+    if (next) {
+      root.insertBefore(grp, next);
+    } else {
+      root.appendChild(grp);
+    }
+    grp.dataset.seq = String(boundSeq);
+  }
+
   function insertStepInOrder(details: HTMLElement, el: HTMLElement, seq: number): void {
     const existing = Array.from(
       details.querySelectorAll<HTMLElement>('.round-block__narrate, .round-block__tool'),
@@ -1062,14 +1134,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // narrate 父块：不存在则创建（data-seq 去重防重复渲染；运行中默认展开），按 seq 插入
       for (const n of narrates) {
         if (!details.querySelector(`.round-block__narrate[data-seq="${n.seq}"]`)) {
-          insertStepInOrder(details, createNarrateGroup(n, true), n.seq);
+          // 阶段二步级折叠：无 step_boundary 时 host===details（退回扁平），有则归入对应步级折叠块
+          const { host } = stepContainerFor(details, events, n.seq);
+          insertStepInOrder(host, createNarrateGroup(n, true), n.seq);
         }
       }
       // 工具行：不存在则渲染并插入（data-tool-call-id 去重），结果到达原地更新状态
       for (const t of toolStarts) {
         if (!details.querySelector(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`)) {
           const row = renderToolRow(t, events);
-          if (row) insertStepInOrder(details, row, t.seq);
+          if (row) {
+            const { host } = stepContainerFor(details, events, t.seq);
+            insertStepInOrder(host, row, t.seq);
+          }
         }
       }
       for (const e of events) {
@@ -1082,9 +1159,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
     // 实时相位行是进行中专属（details 直接子元素，非小节），收尾先移除
     details.querySelector('.round-block__phase')?.remove();
-    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool 等增量元素，避免重复渲染
-    details.querySelectorAll('.round-block__section, .round-block__narrate, .round-block__tool').forEach((el) => el.remove());
-    // § 过程叙述 + 工具调用（扁平化，2026-09-04：narrate 与 tool 按 seq 平铺 details 顶层）
+    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、step 容器等增量元素，避免重复渲染
+    details.querySelectorAll(
+      '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__step',
+    ).forEach((el) => el.remove());
+    // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；阶段二有 step_boundary 时归入步级折叠块）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
@@ -1092,11 +1171,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
       .sort((a, b) => a.seq - b.seq);
     for (const n of narrates) {
-      insertStepInOrder(details, createNarrateGroup(n), n.seq);
+      const { host } = stepContainerFor(details, events, n.seq);
+      insertStepInOrder(host, createNarrateGroup(n), n.seq);
     }
     for (const t of toolStarts) {
       const row = renderToolRow(t, events);
-      if (row) insertStepInOrder(details, row, t.seq);
+      if (row) {
+        const { host } = stepContainerFor(details, events, t.seq);
+        insertStepInOrder(host, row, t.seq);
+      }
     }
     // § 过程轨迹（thinking 阶段时间线）
     const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');

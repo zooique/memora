@@ -2340,6 +2340,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else if (chunk.type === 'narrate') {
           // P2 过程叙述 → 过程事件（webview 渲染 § 过程叙述 折叠行，不进正文流）
           emitEvent('narrate', { content: chunk.content });
+        } else if (chunk.type === 'step_boundary') {
+          // 步级折叠边界（阶段二，2026-09-08）：active 任务表步骤推进 → 落盘 step_boundary 事件。
+          // webview 据此把后续过程事件归入对应 step 分组；重放与运行时同一边界（同构）。
+          emitEvent('step_boundary', {
+            ...(chunk.stepId ? { stepId: chunk.stepId } : {}),
+            ...(chunk.title ? { title: chunk.title } : {}),
+          });
         } else if (chunk.type === 'error') {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）。
           // TS-10b：按内核产出的 category 映射友好文案（connection/timeout/unknown），

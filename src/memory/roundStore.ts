@@ -201,6 +201,11 @@ export type ProcessEvent =
   | { type: 'self_review'; seq: number; ts: string; payload: { round: number } }
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
   | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
+  /**
+   * 步级折叠边界（阶段二，2026-09-08 路 B′）：active 任务表步骤推进时由 loop 产，
+   * 宿主落盘此事件把后续 narrate/tool/问答归到对应 step 分组。无任务表不产。
+   */
+  | { type: 'step_boundary'; seq: number; ts: string; payload: { stepId?: string; title?: string } }
   | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }
   | { type: 'metrics'; seq: number; ts: string; payload: ProcessMetricsPayload };
 

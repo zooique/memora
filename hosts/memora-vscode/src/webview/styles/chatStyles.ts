@@ -1456,6 +1456,21 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) 0; line-height: 1.6;
     word-break: break-all;
   }
+  /* 步级折叠容器（阶段二，2026-09-08 路 B′）：active 任务表步骤推进时，后续 narrate/tool
+   * 归入对应 step 折叠块（summary 显示「step-N · 标题」），实现「边界切组、步内平铺」。
+   * 无 step_boundary 时不出现（退回整轮扁平）。默认收起——步骤过程属过程明细，报告保持简洁。 */
+  .round-block__step {
+    margin: var(--sp-1, 4px) 0; padding-left: var(--sp-3, 8px);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+  }
+  .round-block__step-summary {
+    cursor: pointer; user-select: none; outline: none; list-style: none;
+    font-size: var(--font-xs, 11px); color: var(--text-secondary, #9aa0a6);
+    font-weight: 600;
+  }
+  .round-block__step-summary::-webkit-details-marker { display: none; }
+  .round-block__step-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   /* 过程叙述行：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开），与工具行平级平铺 details 顶层 */
   .round-block__narrate { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
   .round-block__narrate summary {
