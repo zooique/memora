@@ -4,7 +4,7 @@
  * 「如何串联一个 turn」全部收在此处，门面只做一行委托 + 生命周期守卫。
  * 宿主是插座——只调 runChat / runResume，内核自主决定 step 循环长度与任务表策略。
  * 复杂任务（task_table_write + 动态规划）在一个 turn 的 step 循环里自然生长，
- * 不再强制拆成多 turn 编排（档2 已砍；见 tasks/收敛多turn编排到动态单turn.md）。
+ * 不再强制拆成多 turn 编排（档2 已砍；收敛依据见 docs/architecture/agent-design-philosophy.md 第一章 闭环）。
  *
  * 两个显式命名入口（turn 只认 Trigger、不认来源）：
  *   - runChat   （对话 Trigger）   完整 turn：prepare → act(processUserInput) → reflect

@@ -128,7 +128,7 @@ export class SessionStateMachine {
     // 2026-09-06 T4 收口：强制重置同时清在途暂停申请（原实现漏清——pendingPauseReason 残留会让
     // hasPendingPause() 恒 true，requestPause 幂等检查永久拒绝后续暂停，暂停按钮全失效）。
     // 此前靠调用方各自记得配对 cancelPendingPause（agent.ts:282 超时事件补丁）兜底，属补漏而非收口；
-    // 现收进 resetToRunning 内部，任何新增调用点无需再记配对。见 tasks/四子系统闭环缺口-任务清单-20260906.md。
+    // 现收进 resetToRunning 内部，任何新增调用点无需再记配对（源清单已随 tasks 目录收敛 2026-09-08 归档）。
     // 突变验证已过：禁用以下两行 → sessionStateMachine.test T4 用例转红（2026-09-06 实测）。
     this.pendingPauseReason = undefined;
     this.pendingPauseSource = 'user';

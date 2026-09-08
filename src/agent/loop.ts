@@ -6,7 +6,7 @@
  *   - loop = 对 step 的编排：turn 回答中阶段反复拉起 step 直到输出最终回答；
  *   - 本类承载 turn（问答闭环）的 Act 引擎（含 loop=step 编排），是 turn 的身体引擎；
  *   - 复杂任务（task_table_write + 动态规划）在一个 turn 的 step 循环里自然生长，
- *     不再强制拆成多 turn 编排（见 tasks/收敛多turn编排到动态单turn.md）；
+ *     不再强制拆成多 turn 编排（收敛依据见 docs/architecture/agent-design-philosophy.md 第一章 闭环）；
  *   - 上下文 = 用户输入 + Agent 记忆召回结果 + 运行帧追加。
  */
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
