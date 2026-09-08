@@ -9,16 +9,7 @@
   "aiIdentityDisclosure": true,
   "minorProtection": "required",
   "handoffPrompt": "我已准备好开始小说创作。请告诉我：要写什么题材与篇幅、已有故事雏形吗？若承接上文，请先概述当前情节进度、主要人物与待推进的冲突。",
-  "capabilities": [
-    {
-      "capability": "file:write",
-      "description": "将章节与文稿写入文件"
-    },
-    {
-      "capability": "file:read",
-      "description": "读取既有文稿与设定，保持连续性"
-    }
-  ],
+  "capabilities": [],
   "strategy": {
     "prepare": {
       "memoryRecall": "limited",

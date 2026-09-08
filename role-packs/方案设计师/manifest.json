@@ -15,18 +15,6 @@
       "description": "搜索最新行业资料与最佳实践，作为设计养分"
     },
     {
-      "capability": "file:read",
-      "description": "读取既有文档、代码与资料，理解现状作为设计输入"
-    },
-    {
-      "capability": "file:write",
-      "description": "将设计方案写入本地文档"
-    },
-    {
-      "capability": "memory:recall",
-      "description": "召回长期记忆中的相关决策与历史设计"
-    },
-    {
       "capability": "llm:summarize",
       "description": "提炼搜索资料与历史记录，收敛为设计依据"
     }

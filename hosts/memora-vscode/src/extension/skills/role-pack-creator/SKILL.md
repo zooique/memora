@@ -37,7 +37,7 @@ layer: agent
 |----|------|
 | 角色名 / 展示名 | 目录名 + `name`/`displayName` |
 | 一句话定位 | `description` + persona 第一句 |
-| 能力面 | `capabilities`（或省略 = 全放行） |
+| 能力面 | `capabilities`（特权键，或省略 = 全部暴露；`[]` = 仅默认常驻） |
 | 行为偏好 | 温度 / 主动提问 / 召回等 → strategy 键 |
 
 需求不足时按 [memora 角色包开放键指南](../../../../../docs/role-pack-开放键指南.md) 或直接补问，不臆造。
@@ -66,18 +66,17 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 | `rules.md` | 工作方法/流程/禁忌（`- ` 无序列表逐条 + 段落合并） |
 | `skills/*.md` | 领域方法库（frontmatter 必须含 `name` + `description`，目录扫描零声明；description 按[四问规范](#四问规范软自查)写明 做什么/何时用/输入/返回） |
 
-#### capabilities（能力面）候选
+#### capabilities（特权能力候选）
+
+> **模型（tool-exposure-model 2026-09-08）**：`capabilities` = 角色声明的**超越默认边界的特权**。本地读写/记忆/技能等 16 个工具**默认常驻**（`DEFAULT_EXPOSED_TOOLS`），**无需声明即可用**（省略 capabilities 同理）。只有下面 4 类特权键声明后才进入工具白名单：
 
 | capability | 对应工具 |
 |-----------|---------|
-| `file:read` / `file:write` / `file:list` | `read_file` / `write_file` / `list_dir` |
-| `web:search` / `web:fetch` | `web_search` / `web_fetch` |
-| `code:execute` | `run_code`（需宿主注入执行器） |
-| `memory:recall` | `search_memories` |
-| `task:plan` | `task_table_write` / `task_table_update` |
-| `llm:summarize` / `project:search` | 内核能力 / `search_project` |
+| `web:search` / `web:fetch` | `web_search` / `web_fetch`（外部网络特权） |
+| `code:execute` | `run_code`（LLM 现写代码执行特权；需宿主注入执行器） |
+| `task:plan` | `task_table_write` / `task_table_update`（任务规划特权） |
 
-> ⚠️ **语义红线**：`capabilities: []`（空数组）或仅含无工具映射的能力 = **无任何工具可调用（全禁）**。需要放行全部工具时**省略** capabilities 字段（= 全放行）。凡写数组即显式白名单。
+> ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../docs/architecture/tool-exposure-model.md)。
 
 #### strategy 键速查（26 键；未改动的键可删除 = 内核默认）
 
@@ -119,7 +118,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - 先采集四要素需求再跑脚本，不凭空假设角色定位。
 - 用 `node scripts/skaffold.mjs` 初始化骨架（模板 = 结构唯一真相源，不手写 JSON 结构）。
 - 精修只在产出文件内进行，产出后逐项跑校验清单。
-- `capabilities` 写数组前确认每个能力都有工具映射；全放行就省略字段。
+- `capabilities` 写数组前确认每个键都是特权键（web/code/task）；纯本地角色写 `[]`（仅常驻工具）；需要全部暴露才省略字段。
 - `skills/*.md` 一律带 frontmatter `name` + `description`，且 description 按[四问规范](#四问规范软自查)写清 做什么/何时用/输入/返回。
 
 ### ❌ 禁止做

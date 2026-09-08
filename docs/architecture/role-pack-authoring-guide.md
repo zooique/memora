@@ -59,7 +59,7 @@
 | `minorProtection`      | `required`                     | 否  | `required`       | 未成年人保护钩子，仅支持 `required`                                 |
 | `handoffPrompt`        | string                         | 否  | 无                | 被带入对话时预填的接手话术；≤2000 字符                                  |
 | `skills`               | 对象数组                           | 否  | 无                | 技能白名单（`{ file, name?, description? }`）；不声明则全量扫描；最多 50 项 |
-| `capabilities`         | 对象数组                           | 否  | `[]`             | 能力声明（`{ capability, description? }`）；最多 50 项            |
+| `capabilities`         | 对象数组                           | 否  | `[]`             | 特权能力声明（`{ capability, description? }`）；最多 50 项；`[]` = 仅默认常驻工具 |
 | `strategy`             | 嵌套对象                           | 否  | 全局默认             | L2 行为策略（见 §三）                                           |
 
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。

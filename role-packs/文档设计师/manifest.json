@@ -11,14 +11,6 @@
   "handoffPrompt": "我已准备好开始文档设计。请告诉我：文档受众是谁、要覆盖什么主题、期望的交付形态（API 参考 / 教程 / 架构说明）。若承接上文，请先概述当前已定的文档结构与待补内容。",
   "capabilities": [
     {
-      "capability": "file:read",
-      "description": "读取既有文档与代码，理解现状作为设计输入"
-    },
-    {
-      "capability": "file:write",
-      "description": "将设计产出写入本地文档文件"
-    },
-    {
       "capability": "web:search",
       "description": "搜索技术资料与最佳实践"
     }
