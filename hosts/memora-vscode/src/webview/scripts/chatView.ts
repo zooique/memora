@@ -1979,13 +1979,27 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 追加问答闭环内交互输入（UX-9 闭环可视化，2026-09-03 重构；内联化 2026-09-03）
+   * 用户输入恒可见兜底（SSOT 单实现，2026-09-08 审查收敛）：
+   * 普通 user 气泡与 qa/supp 交互行渲染失败时共用——异常不静默（console.warn 取证，复现时
+   * 浏览器 Console 即定位堆栈），且以最小文本块降级渲染保证用户输入不丢。
    *
-   * 交互内容归位到它生发的上下文，同一问答闭环消息流连续体，两种形态：
-   * - supplement（用户打断补充）：渲染为「行内打断切分条」（A），插在打断点（被打断的
-   *   assistant 块之后），resume 续接正文随后跟上 —— 还原内核 interject() abort→续跑语义；
-   * - question-answer（用户对主动提问的回答）：消息流内联子行（C'，`你答：xxx`），
-   *   插在提问块下方、续接块上方，阅读位置连贯（不再收进 round-block 折叠）。
+   * @param text 输入全文
+   * @param err  渲染异常（仅取证，不阻断降级渲染）
+   */
+  function ensureUserInputVisible(text: string, err: unknown): void {
+    console.warn('[memora] 用户输入渲染失败（兜底降级）', err);
+    const fallback = document.createElement('div');
+    fallback.className = 'msg user msg-user-fallback';
+    fallback.textContent = text;
+    messages.appendChild(fallback);
+  }
+
+  /**
+   * 交互输入渲染（QA 回答 / 补充）统一入口：
+   * - 置位 interactiveRowInserted（SSOT 收窄）：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
+   * - 委托 appendInlineInputRow 渲染内联子行；异常时兜底降级（ensureUserInputVisible）——
+   *   交互输入即便渲染失败也恒可见（与无 kind user 分支同纪律），且分块结构判定不受影响
+   *   （标志先置位再渲染）。
    *
    * @param text 输入全文
    * @param ts 时间戳（日期分隔线）
@@ -2006,7 +2020,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   补充（supplement）→ 「你补充」；回答（question-answer）→ 「你答」。
     // 不再用 interrupt-divider 打断分条（旧形态与 ask 两套语言、视觉违和）。
     interactiveRowInserted = true; // SSOT 收窄：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
-    appendInlineInputRow(text, kind, roundId, question, options);
+    try {
+      appendInlineInputRow(text, kind, roundId, question, options);
+    } catch (err) {
+      // 交互行渲染兜底（2026-09-08 审查扩展）：异常不静默 + 文本降级，"用户输入恒可见"纪律统一
+      ensureUserInputVisible(text, err);
+    }
   }
 
   /** 内联子行统一渲染（supplement / question-answer 共用）：
@@ -3024,19 +3043,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         resumePending = true;
         appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId, msg.question, msg.options);
       } else {
-        // 用户消息渲染兜底（2026-09-08 对治「重启后首输气泡偶发缺失」排查取证）：
-        // 若 append 内任一环节抛异常，不再静默吞消息——console.warn 暴露堆栈（复制发现场
-        // Console 即可定位），且以最小文本块降级渲染，保证用户输入恒可见。
+        // 用户消息渲染兜底（2026-09-08 对治「重启后首输气泡偶发缺失」排查取证 + 审查收敛）：
+        // 异常不再静默——console.warn 暴露堆栈（复制发现场 Console 即可定位），且以最小文本块
+        // 降级渲染保证用户输入恒可见（与带 kind 交互行共用 ensureUserInputVisible 单实现）。
         try {
           append('user', msg.text, msg.ts);
           // 记录本轮用户输入 ts（删除按钮 ts 锚回填源，commitTurnTs 消费）
           if (msg.ts) lastUserTs = msg.ts;
         } catch (err) {
-          console.warn('[memora] 用户消息渲染失败（兜底降级）', err);
-          const fallback = document.createElement('div');
-          fallback.className = 'msg user msg-user-fallback';
-          fallback.textContent = msg.text;
-          messages.appendChild(fallback);
+          ensureUserInputVisible(msg.text, err);
         }
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
         lastAssistantRoundId = undefined;
@@ -3167,6 +3182,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateContextOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
+      // 失败收尾同 done/interrupted 清理纪律（2026-09-08 审查补对称）：交互行标志一并清，
+      // 防「qa/补充行已插仍未 resume 时异常终态」残留阻断未来无输入 continue 的原位续写
+      interactiveRowInserted = false;
       append('error', msg.message);
     } else if (msg.type === 'done') {
       // 本轮流式结束：清除归档停滞兜底定时器 + 骨架引用（已定型为正文/异常块）

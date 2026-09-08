@@ -349,6 +349,40 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(assistants[1].classList.contains('is-continued')).toBe(true);
   });
 
+  it('交互行渲染异常 → 兜底降级可见：用户输入不丢，resume 后仍分块（ensureUserInputVisible）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    // ① 首轮：meta + 正文（roundId r1）—— 建立 activeAssistantEl 锚点（块A）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '前序正文', roundId: 'r1' });
+    // ② ask_user 暂停（pausedAssistantEl = 块A）
+    dispatch({ type: 'paused' });
+    // ③ 注入 DOM 异常：qa 行经 Element.after 插入时抛错（仅拦截下一次调用）
+    const spy = vi.spyOn(Element.prototype, 'after').mockImplementationOnce(() => {
+      throw new Error('injected-dom-failure');
+    });
+    dispatch({ type: 'user', text: '我的回答', ts: '2026-09-08T15:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
+    spy.mockRestore();
+
+    // ④ 兜底降级块可见（输入恒不丢）+ 取证 console.warn 已调用
+    const fb = messages.querySelector('.msg-user-fallback') as HTMLElement;
+    expect(fb).not.toBeNull();
+    expect(fb.textContent).toBe('我的回答');
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[memora] 用户输入渲染失败'), expect.anything());
+
+    // ⑤ 交互行标志已置位 → resume 后仍分块（渲染异常不破坏分块结构判定）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '最终正文', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(2);
+    expect(collectAllBodyText(assistants[1])).toBe('最终正文');
+
+    warnSpy.mockRestore();
+  });
+
   it('clear_ok 后流式锚点失效，后续 chunk 重建一条 assistant 消息（P0-1）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
