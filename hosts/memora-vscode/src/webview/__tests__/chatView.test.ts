@@ -2743,9 +2743,17 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       (el) => el.querySelector('.msg-qa__tag')?.textContent === '你补充',
     );
     expect(supplementRows).toHaveLength(0);
-    // 位置连贯：提问段 → 回答子行 → 续接 final
-    expect((blocks[0] as HTMLElement).nextElementSibling).toBe(qa);
-    expect(qa.nextElementSibling).toBe(blocks[1]);
+    // G31 方案1（2026-09-08 收敛落地）：有 round-block 时 QA 最终折入任务折叠块
+    // （不再平铺于折叠块与最终回答之间污染两段式）——qa 行收进 .round-block__details 内
+    const roundBlock = document.querySelector('.round-block') as HTMLElement;
+    expect(roundBlock).not.toBeNull();
+    const qaInsideBlock = roundBlock.querySelector('.msg-qa');
+    expect(qaInsideBlock).not.toBeNull();
+    expect(qaInsideBlock!.textContent).toContain('选方案A');
+    // 消息流层面干净：assistant 前序段与续接 final 直接相邻（两段式：折叠块 + 纯文字报告）
+    expect((blocks[0] as HTMLElement).nextElementSibling).toBe(blocks[1]);
+    // 折叠块收起态摘要含「你答×1」
+    expect(document.querySelector('.round-block__stats')?.textContent).toContain('你答×1');
   });
 
   it('重放跨轮 supplement 不合并：各 roundId 补充独立成行（2026-09-07 跨轮合并 bug 修复）', () => {
@@ -3071,5 +3079,37 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'done', roundId: 'r1' });
     // done 后：commitRoundId 回填交互行（防历史展开/未来宿主按 roundId 归属时落空）
     expect(qaRow.dataset.roundId).toBe('r1');
+  });
+
+  it('G31 方案1：运行时 done 收敛 QA 进折叠块——消息流干净、摘要含你答×N（2026-09-08 落地）', () => {
+    mountChatView();
+    // 有过程事件（narrate/tool）→ round-block 存在；过程中用户问答平铺消息流
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '开始分析' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
+    dispatch({ type: 'chunk', content: '正在执行，需要确认方案', roundId: 'r1' });
+    // 用户回答（运行时 qa，roundId 未知）
+    dispatch({ type: 'user', text: '选方案A', ts: 't', kind: 'question-answer' });
+    const qaRow = document.querySelector('.msg-qa') as HTMLElement;
+    expect(qaRow).not.toBeNull();
+    // 运行中：round-block 展开态（is-running）→ QA 仍平铺于消息流（折入未触发）
+    expect(document.querySelector('.round-block')?.classList.contains('is-running')).toBe(true);
+    expect(qaRow.parentElement?.classList.contains('round-block__details')).toBe(false);
+    // 续跑 + done → 收敛：QA 折入折叠块、摘要更新、消息流干净
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 5, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '好，按方案A继续', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    // QA 已折入 .round-block__details
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const rbQa = rb?.querySelector('.round-block__details .msg-qa');
+    expect(rbQa).not.toBeNull();
+    expect(rbQa!.textContent).toContain('选方案A');
+    // 消息流层面：assistant 正文（含折叠块）→ 续接块，无孤立 QA 行（两段式干净）
+    const assistants = document.querySelectorAll('.msg.assistant');
+    expect(assistants.length).toBeGreaterThanOrEqual(2);
+    expect(rb.querySelector('.round-block__stats')?.textContent).toContain('你答×1');
+    // done 后 round-block 收起（finalize）
+    expect(rb?.hasAttribute('open')).toBe(false);
   });
 });

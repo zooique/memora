@@ -1,4 +1,4 @@
-/**
+﻿/**
  * chatView — 对话面板 webview 运行时脚本（阶段 B P2-1）
  *
  * 由 chatPanel.ts 的 buildHtml 内联 <script> 迁移而来：以工厂函数 createChatView
@@ -675,6 +675,53 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * G31 方案1（2026-09-08 收敛落地）：把 QA 行折入任务折叠块
+   *
+   * 运行时最终收敛（done/interrupted）与重放路径共用同一归宿：交互行（问/答/补充）
+   * 平铺消息流后，最终一并移入 round-block 折叠块——完成任务态「任务折叠块 + 纯文字报告」
+   * 两段式纯净（QA 不再插在折叠块与报告之间污染阅读序）。
+   * 移动语义：元素已存在则直接「搬家」（appendChild 天然移动），避免复制产生重复节点。
+   */
+  function moveQaIntoRoundBlock(rb: HTMLElement, el: HTMLElement): void {
+    // 折叠块默认展开（进行中刚答完即时可见；收敛后随 round-block 收起态联动，可手动展开）
+    const detailsBody = rb.querySelector<HTMLElement>('.round-block__details');
+    if (!detailsBody) return;
+    // 规整容器：QA 行平铺于 details 底部（last-child 顺序追加，按到达序）
+    detailsBody.appendChild(el);
+    // 提问行与回答折叠块成对：若移动的是回答块且前一兄弟是提问回顾行，一并携带（保阅读序）
+    const prev = el.previousElementSibling;
+    if (prev && prev.classList.contains('msg-qa--ask') && prev.parentNode === messages) {
+      detailsBody.appendChild(prev);
+    }
+  }
+
+  /** G31 方案1：刷新 round-block 收起态摘要中的 QA 计数（你答×N · 你补充×N）
+   *
+   * 幂等设计：每次调用按 details 内**当前**已折入的 QA 行全量重算 QA 段，
+   * 与既有统计（工具/耗时等）拼接——重放多轮 QA 各自触发 refresh 时不会累积重复。
+   */
+  function refreshRoundBlockQaStats(rb: HTMLElement): void {
+    const summary = rb.querySelector<HTMLElement>('.round-block__stats');
+    if (!summary) return;
+    // 统计 details 内已折入的 QA 行：回答/补充各计；提问平铺行只承载上下文不算交互计数
+    let answers = 0;
+    let supplements = 0;
+    rb.querySelectorAll<HTMLElement>('.round-block__details .msg-qa').forEach((el) => {
+      const tag = el.querySelector<HTMLElement>('.msg-qa__tag')?.textContent ?? '';
+      if (tag.includes('你答')) answers += 1;
+      else if (tag.includes('你补充')) supplements += 1;
+    });
+    const qaParts: string[] = [];
+    if (answers > 0) qaParts.push(`你答×${answers}`);
+    if (supplements > 0) qaParts.push(`你补充×${supplements}`);
+    const qaText = qaParts.join(' · ');
+    // 基础统计（工具/耗时等）标到 span.dataset.baseStats，每次拼接 base + qa，防重复追加
+    if (!summary.dataset.baseStats) summary.dataset.baseStats = summary.textContent ?? '';
+    const base = summary.dataset.baseStats;
+    summary.textContent = qaText ? (base ? `${base} · ${qaText}` : qaText) : base;
+  }
+
+  /**
    * 创建流式骨架块（meta 到达即调用，TTFT 前即时反馈）
    *
    * 骨架 = 空正文的 assistant 块（label 已用本轮身份 currentRoundMeta）+ round-block（运行状态）。
@@ -1035,6 +1082,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // summary：统计摘要（计数 + 耗时）
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     if (summary) {
+      // G31 方案1：重置前先清掉旧 stats span 的 baseStats 缓存（textContent 清空会移除子节点，
+      // 残留 dataset 会让 refresh 拼接旧基准——每次重建重设一半，幂等）
+      const oldStats = summary.querySelector<HTMLElement>('.round-block__stats');
+      if (oldStats) delete oldStats.dataset.baseStats;
       summary.textContent = '';
       const dot = document.createElement('span');
       dot.className = 'round-block__dot';
@@ -1263,6 +1314,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
+    // G31 方案1（2026-09-08 收敛落地）：finalize 重建后统一补算已折入 QA 的摘要计数。
+    // 重放/运行时时序：QA 可能晚于本次重建到达（重放 assistant 后折入/运行时 done 后折入），
+    // 故此处只配合「details 内已存在」的 QA 刷新（幂等）；晚到折入由 appendInteractiveInput /
+    // foldPendingQaIntoRoundBlock 各自再 refresh。双保险保证收起态摘要始终含「你答×N/你补充×N」。
+    if (finalize) refreshRoundBlockQaStats(rb);
   }
 
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
@@ -2103,8 +2159,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   补充（supplement）→ 「你补充」；回答（question-answer）→ 「你答」。
     // 不再用 interrupt-divider 打断分条（旧形态与 ask 两套语言、视觉违和）。
     interactiveRowInserted = true; // SSOT 收窄：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
+    let inserted: HTMLElement | null = null;
     try {
-      appendInlineInputRow(text, kind, roundId, question, options);
+      inserted = appendInlineInputRow(text, kind, roundId, question, options);
+      // G31 方案1（2026-09-08 收敛落地）：运行时（round-block 展开态/未 finalize）QA 平铺消息流；
+      // 重放路径中 round-block 已 finalize（收起态）→ 新行立即折入折叠块（与 done 批量折入同一归宿）。
+      const rb = roundBlockEl;
+      if (inserted && rb && rb.isConnected && !rb.classList.contains('is-running')) {
+        moveQaIntoRoundBlock(rb, inserted);
+        refreshRoundBlockQaStats(rb);
+      }
     } catch (err) {
       // 交互行渲染兜底（2026-09-08 审查扩展）：异常不静默 + 文本降级，"用户输入恒可见"纪律统一
       ensureUserInputVisible(text, err);
@@ -2126,11 +2190,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     roundId?: string,
     question?: string,
     options?: string[],
-  ): void {
+  ): HTMLElement | null {
     // 阶段一定案（2026-09-08，不兼容旧内联形态）：用户交互输入统一收为**折叠块**——
     //   回答 / 补充 → `<details class="msg-qa">`（summary=tag「你答/你补充」，body=全文）；
     //   提问 → 平铺文字行 `.msg-qa--ask`（记录在对话流，非折叠）。
     // 移除旧的 60/120 字符硬截断（折叠块天然收住长文，不再设魔法数）。
+    // 返回新渲染的顶层元素（回答折叠块 / 提问行；supplement 合并进既有块时返回 null）——
+    // G31 方案1 折入 round-block 时据此「折也不重插」。
     const host =
       (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
       (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
@@ -2178,7 +2244,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         body.appendChild(row);
         scrollToBottom(messages);
         updateEmptyState();
-        return;
+        return null; // 合并进既有块：无新顶层元素（折入锚仍指旧块）
       }
     }
     // 新建折叠块（supplement 首条 / question-answer 回答）
@@ -2223,6 +2289,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     scrollToBottom(messages);
     updateEmptyState();
+    // 返回顶层新元素：提问行在则一并返回（answer 折叠块紧随其后，折入 round-block 时连续搬运）
+    return qReviewRow ?? details;
   }
 
   /**
@@ -2703,6 +2771,47 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 回填后立即让全局锁重新评估 disabled 状态（commitRoundId 不直接设 disabled，
     // 统一走 updateSessionControlsLock 的「locked || !dataset.roundId」判定）
     updateSessionControlsLock(sessionControlsLocked);
+  }
+
+  /**
+   * G31 方案1（2026-09-08 收敛落地）：完成态批量折入 QA 行
+   *
+   * 运行时 done/interrupted 调用：此刻 round-block 已 finalize（收起态），消息流中仍散落
+   * 本轮平铺的 QA 行（问/答/补充）——全部搬入折叠块，保证任务完成后「任务折叠块 + 纯文字
+   * 报告」两段式纯净。幂等：重复调用（如 done 后又有覆写）不产生重复节点（appendChild 移动）。
+   * 注意：重放路径不走此函数（QA 已逐行折入，见 appendInteractiveInput）。
+   */
+  function foldPendingQaIntoRoundBlock(): void {
+    const rb = roundBlockEl;
+    if (!rb || !rb.isConnected) return;
+    // 消息流中的 QA 行：运行时经 A 容器化可能在 .round-group 内、重放直接落 messages 层，
+    // 故全量扫描 .msg-qa（排除已折入 details 的——用父级判断）
+    const detailsBody = rb.querySelector('.round-block__details');
+    const pending = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa'));
+    for (const el of pending) {
+      if (detailsBody && el.parentNode === detailsBody) continue;
+      // 归属过滤：只折入「本轮」QA——当前运行时 rb 挂在 roundBlockHostEl（本轮 assistant 块），
+      // QA 经 host.after 插在其后（同 round-group 或紧随其后）；重放无此问题（已逐行折入）。
+      // 判定：QA 的父链中出现 round-group 时，其 roundId 须与 rb 宿主块 roundId 一致；
+      // 无 round-group（纯消息流）时视作本轮（单轮残留，保守折入）。
+      const hostBlock = roundBlockHostEl;
+      const hostRoundId = hostBlock?.dataset.roundId;
+      if (hostRoundId) {
+        const group = el.closest('.round-group') as HTMLElement | null;
+        const groupRoundId = group?.dataset.roundId;
+        if (groupRoundId && groupRoundId !== hostRoundId) continue;
+        if (group && !groupRoundId) continue; // 有容器无归属标记的异常情况跳过，避免跨轮误收
+      }
+      moveQaIntoRoundBlock(rb, el);
+    }
+    refreshRoundBlockQaStats(rb);
+  }
+
+  /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 收敛 QA 行进折叠块 + 关流式光标 */
+  function finalizeRound(): void {
+    renderRoundBlock(currentEvents, true);
+    foldPendingQaIntoRoundBlock();
+    finalizeStreaming();
   }
 
   /** 最近一次新闭环用户输入时间戳（删除按钮 ts 锚回填源；'user' 无 kind 分支记录，追问/回放同源） */
@@ -3293,11 +3402,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
       resumePending = false; // 同节奏清续跑期待（P-1 对称：防中断/补充后残留污染下轮判定）
       interactiveRowInserted = false; // 同纪律（2026-09-08）：闭环结束清交互行标志
-      // 顺序关键：先收起任务过程折叠区（完成态全量渲染 + 自动收起），再 finalizeStreaming 关流式光标
-      renderRoundBlock(currentEvents, true);
-      finalizeStreaming();
-      // 回填本轮 roundId（启用该回答的分叉按钮；host done 消息携带）
+      // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
+      // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式光标
+      // （G31 方案1：QA 不再留在折叠块与报告之间）
       commitRoundId(msg.roundId);
+      finalizeRound();
       // 回填删除按钮 ts 锚（运行时流式块 dataset.ts 恒空 → 删除按钮恒禁用修复）
       commitTurnTs();
     } else if (msg.type === 'interrupted') {
@@ -3311,11 +3420,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
       resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
       interactiveRowInserted = false; // 同纪律（2026-09-08）：中断结束清交互行标志
-      // 同 done 顺序纪律：先收起任务过程折叠区，再关流式
-      renderRoundBlock(currentEvents, true);
-      finalizeStreaming();
-      // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
+      // 同 done 顺序纪律：先回填 roundId（供 fold 归属过滤）→ 收起任务过程折叠区 → 收敛 QA → 关流式
       commitRoundId(msg.roundId);
+      finalizeRound();
+      // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
       commitTurnTs();
       showActivity('info', '已停止生成');
     } else if (msg.type === 'suggestions') {
