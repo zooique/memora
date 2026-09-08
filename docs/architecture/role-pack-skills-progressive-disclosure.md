@@ -3,7 +3,7 @@
 > **定位**：Skills 系统采用三级渐进披露模式，对齐 Claude Skills / Agent Skills 行业标准。
 > **状态**：L1/L2/L3 渐进披露已落地——L1 元数据清单、L2 `read_skill` 按需读正文、L3 `read_resource`/`run_skill_script`（实现见 [skillManager.ts](../../src/skill/skillManager.ts) `read_resource`/`listResources`、`skillScriptRunner.ts` 沙箱脚本，assembler 注入 L3 回调）
 > **形态定案（2026-08-30）**：**以主流文件夹形式为标准**（`<名>/SKILL.md` 为唯一入口，Agent Skills 开放标准），**兼容轻量单文件形式**（顶层裸 `.md`，纯 L1/L2）；L3（`resources/` `references/` `scripts/`）**仅归属文件夹形式**——L3 隔离纪律（详见 §2.1，判定单一真理源 `isFolderFormSkill`，见 [scanner.ts](../../src/utils/scanner.ts)）。
-> **字段对齐（2026-09-01，B1）**：技能 frontmatter **必填仅 `name` + `description`**（error 级，对齐 agentskills.io / TRAE 标准）；`keywords`/`trigger` 为**可选增强**（warning 级，本地匹配 + UI 标签，不参与渐进披露主链路）——只写两个字段的主流技能可直接加载运行。L3 资源兼容主流辅助文档目录 `references/`（与 `resources/` 并列，`read_resource` 按 subdir 选基目录，见 [scanner.ts](../../src/utils/scanner.ts)）。
+> **字段对齐（2026-09-01，B1）**：技能 frontmatter **必填仅 `name` + `description`**（error 级，对齐 agentskills.io / TRAE 标准）；`keywords`/`trigger` 关键词命中系统已于 2026-09-08 全链移除（不再是可选增强字段）；只写两个字段的主流技能可直接加载运行。L3 资源兼容主流辅助文档目录 `references/`（与 `resources/` 并列，`read_resource` 按 subdir 选基目录，见 [scanner.ts](../../src/utils/scanner.ts)）。
 > **关联**：[role-pack-spec.md](./role-pack-spec.md)、[memory-role-pack-boundary.md](./memory-role-pack-boundary.md)
 
 ---
@@ -18,7 +18,7 @@ Skills 系统的核心设计是**渐进披露（Progressive Disclosure）**—�
 
 | 层级 | 内容 | 装载时机 | Token 成本 | 用途 |
 |------|------|---------|-----------|------|
-| **L1 元数据** | `name` + `description`（必填） | **常驻**（每轮 system prompt） | ~100 token/skill | LLM 知道"有哪些技能，各是什么"（`keywords`/`trigger` 为可选增强，不进 L1 清单输出） |
+| **L1 元数据** | `name` + `description`（必填） | **常驻**（每轮 system prompt） | ~100 token/skill | LLM 知道"有哪些技能，各是什么"（L1 清单仅输出此两字段） |
 | **L2 正文** | `SKILL.md` / `.md` 文件全文 | **按需**（LLM 调用 `read_skill` 工具） | ~1k-5k token/skill | LLM 判定需要时获取完整指令 |
 | **L3 资源/脚本** | `resources/`（参考资料）+ `scripts/`（可执行脚本） | **按需**（LLM 调用 `read_resource` / `run_skill_script`） | 0 token/skill（脚本执行结果单独注入） | 资源供参考、脚本执行返回结果 |
 

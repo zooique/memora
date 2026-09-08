@@ -31,7 +31,7 @@
 
 | 层 | 消费方 | 键 | 用途 |
 |----|--------|-----|------|
-| **① 内核直接消费** | memora 内核 | `keywords` / `trigger` / `skills` / `strategy` | 匹配词源、技能扫描、行为策略 |
+| **① 内核直接消费** | memora 内核 | `skills` / `strategy` | 技能扫描、行为策略 |
 | **② 中立接口（宿主接入点）** | 宿主 / 其他实现 | `capabilities` / `handoffPrompt` | 能力映射、接手话术 |
 | **③ 元数据（UI 展示）** | 宿主 UI | `name` / `displayName` / `description` / `author` | 标识与展示 |
 
@@ -39,7 +39,6 @@
 
 这些键由 memora 内核自己跑逻辑，**宿主不需要处理**：
 
-- `keywords` / `trigger`：合并为**匹配词源**（`trigger` 兼容 `keywords` 双写法，字符串数组或逗号串，**非正则**），供匹配使用。
 - `skills`：内嵌技能白名单（目录动态扫描，声明项仅作白名单过滤；不声明则全量扫描 `skills/`）。
 - `strategy`：L2 行为策略（`prepare` / `act` / `reflect` / `global` 四组），控制记忆召回、工具、衔接、预算等行为偏好。
 
@@ -99,8 +98,6 @@
 
 | 键 | 类型 | 消费方 | 上限 | 说明 |
 |----|------|--------|------|------|
-| `keywords` | string[] 或逗号串 | ① 内核 | 最多 20 个，单个 ≤50 字符 | 匹配词源 |
-| `trigger` | string[] 或逗号串 | ① 内核 | 最多 20 个，单个 ≤50 字符 | 触发词（精确/包含匹配，**非正则**）；与 keywords 合并 |
 | `skills` | 对象数组 | ① 内核扫描 | ≤50 项 | 技能白名单（`{ file, name?, description? }`） |
 | `strategy` | 嵌套对象 | ① 内核行为 | 各数值键有上下限（见 authoring-guide §四） | L2 行为策略（prepare/act/reflect/global） |
 
@@ -135,7 +132,6 @@
   "name": "doc-writer",
   "displayName": "文档设计师",
   "description": "技术文档设计角色包",
-  "keywords": ["文档", "API", "教程"],
   "formatVersion": "1.0.0",
   "interactionType": "tool_assistant",
   "strategy": {

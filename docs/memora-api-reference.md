@@ -583,7 +583,7 @@ export interface ForkResult {
 
 | 成员 | 类型 | 说明 |
 |------|------|------|
-| `rolePack.listMeta()` | `RolePackMeta[]` | 所有角色包元数据（name/description/keywords/...） |
+| `rolePack.listMeta()` | `RolePackMeta[]` | 所有角色包元数据（name / displayName / description / version / ...） |
 | `rolePack.activeName` | `string \| null`（getter） | 当前激活的角色包名（null = 未激活） |
 | `rolePack.getActive()` | `RolePackAssembly \| null` | 当前激活的完整角色包对象（含合并后策略） |
 | `rolePack.getActiveRules()` | `string[]` | 当前激活角色包的规则列表 |
