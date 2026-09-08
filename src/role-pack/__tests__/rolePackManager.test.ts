@@ -1,7 +1,7 @@
 /**
  * RolePackManager 端到端测试（单一 manifest.json 文件夹形态）
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, writeFile, mkdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -918,6 +918,101 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
   });
 
+  describe('切换限流锁定 onRolePackSwitchLocked（30s 内 >5 次切换 → 锁 120s）', () => {
+    // 限流依赖真实时钟窗口（SWITCH_WINDOW_MS=30s），用 fake timers 精确控制窗口与自动解锁
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    async function loadSixPacks(manager: RolePackManager): Promise<void> {
+      const packsDir = join(dir, 'role-packs');
+      await mkdir(packsDir, { recursive: true });
+      // 复用在册 6 个 manifest 常量做切换对象（load 首个不消耗配额，其余供 activate 轮换）
+      await writePack(packsDir, '技术文档工程师', MANIFEST_TECH);
+      await writePack(packsDir, '全能写手', MANIFEST_MULTI_SKILL_NO_PERSONA);
+      await writePack(packsDir, '项目总监', MANIFEST_PURE_CAPABILITY);
+      await writePack(packsDir, '写作助手', MANIFEST_HANDOFF_PROMPT);
+      await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR);
+      await writePack(packsDir, '代码助手', MANIFEST_CODER);
+      await manager.load('技术文档工程师');
+    }
+
+    it('第 5 次窗口内真切换 → 锁定 + 回调通知 + 状态可查；锁定中 activate 拒绝', async () => {
+      const manager = new RolePackManager(dir);
+      await loadSixPacks(manager);
+
+      // 幂等短路不消耗配额：重复激活当前包验证「未提前锁定」
+      expect(manager.activate('技术文档工程师')).toBe(true);
+      expect(manager.getSwitchLockStatus().locked).toBe(false);
+
+      const lockCalls: Array<{ reason: string; lockedSeconds: number }> = [];
+      manager.onRolePackSwitchLocked((reason, lockedSeconds) => lockCalls.push({ reason, lockedSeconds }));
+
+      // 连续真切换（窗口内 5 次）→ 触发锁定（846-861：长度达阈值即锁 + 回调）
+      expect(manager.activate('全能写手')).toBe(true);
+      expect(manager.activate('项目总监')).toBe(true);
+      expect(manager.activate('写作助手')).toBe(true);
+      expect(manager.activate('翻译助手')).toBe(true);
+      expect(manager.activate('代码助手')).toBe(true);
+
+      const status = manager.getSwitchLockStatus();
+      expect(status.locked).toBe(true);
+      expect(status.unlockAt).not.toBeNull();
+      // 锁定回调：reason 描述限流 + lockedSeconds = 120s（AUTO_UNLOCK_MS）
+      expect(lockCalls).toHaveLength(1);
+      expect(lockCalls[0]!.lockedSeconds).toBe(120);
+      expect(lockCalls[0]!.reason).toContain('限流锁定');
+
+      // 锁定中任何激活被拒绝（保持当前，返回 false）
+      expect(manager.activate('技术文档工程师')).toBe(false);
+      expect(manager.activeName).toBe('代码助手');
+    });
+
+    it('AUTO_UNLOCK_MS 自动恢复：锁解除后激活恢复可用', async () => {
+      const manager = new RolePackManager(dir);
+      await loadSixPacks(manager);
+
+      // 触发锁定（同 5 次真切换）
+      manager.activate('全能写手');
+      manager.activate('项目总监');
+      manager.activate('写作助手');
+      manager.activate('翻译助手');
+      manager.activate('代码助手');
+      expect(manager.getSwitchLockStatus().locked).toBe(true);
+
+      // 前进 120s → unlockTimer 触发自动解锁（851-857：清锁 + 清时间戳）
+      vi.advanceTimersByTime(120_000);
+      expect(manager.getSwitchLockStatus().locked).toBe(false);
+      expect(manager.getSwitchLockStatus().unlockAt).toBeNull();
+      // 解锁后新激活正常；且时间戳已清空，窗口重新计
+      expect(manager.activate('技术文档工程师')).toBe(true);
+      expect(manager.activeName).toBe('技术文档工程师');
+    });
+
+    it('close() 清理锁定计时器：锁态复位，不再自动恢复回调', async () => {
+      const manager = new RolePackManager(dir);
+      await loadSixPacks(manager);
+
+      manager.activate('全能写手');
+      manager.activate('项目总监');
+      manager.activate('写作助手');
+      manager.activate('翻译助手');
+      manager.activate('代码助手');
+      expect(manager.getSwitchLockStatus().locked).toBe(true);
+
+      // close 清 timer + 锁态复位（SSOT：生命周期归属管理器自身，防关闭后回调触发）
+      manager.close();
+      expect(manager.getSwitchLockStatus().locked).toBe(false);
+      expect(manager.getSwitchLockStatus().unlockAt).toBeNull();
+      // 已 clearTimeout：时钟前进不会再触发自动恢复副作用（close 后状态恒复位）
+      vi.advanceTimersByTime(120_000);
+      expect(manager.getSwitchLockStatus().locked).toBe(false);
+    });
+  });
+
   describe('渐进披露 · read_skill + buildSystemPrompt 技能清单', () => {
     it('readSkillContent 按技能名读取内嵌技能正文（渐进披露 L2）', async () => {
       const packsDir = join(dir, 'role-packs');
@@ -1047,6 +1142,90 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       // 未登记的穿越路径仍被拒绝
       const bad = await manager.readSkillResource('文档生成2', '../secret.txt');
       expect(bad).toBeNull();
+    });
+
+    it('getSkillScriptPath：已登记脚本返回安全路径；未登记/越界被拒（L3 白名单双层防护）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      const skillPack = join(packsDir, '脚本包', 'skills', 'script-tool');
+      // 文件夹式技能：SKILL.md + scripts/run.sh（scanPackSkills 发现 layer3.scripts）
+      await mkdir(join(skillPack, 'scripts'), { recursive: true });
+      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 脚本工具\n---\n# 脚本工具\n', 'utf-8');
+      await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
+      await writeFile(
+        join(packsDir, '脚本包', 'manifest.json'),
+        JSON.stringify({ name: '脚本包', skills: { 'skills/script-tool/SKILL.md': {} } }),
+        'utf-8',
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('脚本包');
+
+      // 已登记的脚本定位到实际路径（resolveSafePath 收敛在技能 scripts/ 目录内）
+      const path = manager.getSkillScriptPath('脚本工具', 'run.sh');
+      expect(path).not.toBeNull();
+      expect(path!.toLowerCase()).toContain(join('scripts', 'run.sh').toLowerCase());
+      // 未登记的脚本 → null（layer3 白名单前置检查，不落 resolveSafePath）
+      expect(manager.getSkillScriptPath('脚本工具', 'not-exist.sh')).toBeNull();
+      // 越界脚本 → null（白名单 none-match 即拒；即使登记也过不了 resolveSafePath 前缀）
+      expect(manager.getSkillScriptPath('脚本工具', '../evil.sh')).toBeNull();
+      // 技能不存在 → null
+      expect(manager.getSkillScriptPath('不存在的技能', 'run.sh')).toBeNull();
+    });
+
+    it('getSkillScriptInfo：扫描 runtime 优先；未登记脚本按扩展名回退推断 runtime', async () => {
+      const packsDir = join(dir, 'role-packs');
+      const skillPack = join(packsDir, '脚本包', 'skills', 'script-tool');
+      await mkdir(join(skillPack, 'scripts'), { recursive: true });
+      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 脚本工具\n---\n# 脚本工具\n', 'utf-8');
+      await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
+      // 未登记脚本：仅作扩展名推断样例（运行.py 不入 layer3，应走回退分支）
+      await writeFile(join(skillPack, 'scripts', '运行.py'), 'print(1)', 'utf-8');
+      await writeFile(
+        join(packsDir, '脚本包', 'manifest.json'),
+        JSON.stringify({ name: '脚本包', skills: { 'skills/script-tool/SKILL.md': {} } }),
+        'utf-8',
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('脚本包');
+
+      // 已登记脚本：runtime 从 scanPackSkills 的 layer3 扫描结果获取（shell）
+      expect(manager.getSkillScriptInfo('脚本工具', 'run.sh')).toEqual({ runtime: 'shell' });
+      // 未登记但扩展名可推断：回退 runtimeMap 分支（1116-1133）
+      expect(manager.getSkillScriptInfo('脚本工具', '运行.py')).toEqual({ runtime: 'python' });
+      // 无法识别的扩展名 → null
+      expect(manager.getSkillScriptInfo('脚本工具', 'data.bin')).toBeNull();
+    });
+
+    it('listSkillResources / listSkills：L3 资源清单与 L1 技能清单投影（SSOT 展示数据源）', async () => {
+      const packsDir = join(dir, 'role-packs');
+      const skillPack = join(packsDir, '资源包', 'skills', 'res-tool');
+      // 文件夹式技能同时带 resources/ 与 scripts/，验证两者各自投影
+      await mkdir(join(skillPack, 'resources'), { recursive: true });
+      await mkdir(join(skillPack, 'scripts'), { recursive: true });
+      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 资源工具\n---\n# 资源工具\n', 'utf-8');
+      await writeFile(join(skillPack, 'resources', 'api.md'), 'API', 'utf-8');
+      await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
+      await writeFile(
+        join(packsDir, '资源包', 'manifest.json'),
+        JSON.stringify({ name: '资源包', skills: { 'skills/res-tool/SKILL.md': {} } }),
+        'utf-8',
+      );
+
+      const manager = new RolePackManager(dir);
+      await manager.load('资源包');
+
+      // L3 资源清单投影（path + size）
+      const resources = manager.listSkillResources('资源工具');
+      expect(resources).toHaveLength(1);
+      expect(resources[0]!.path).toBe('api.md');
+      expect(resources[0]!.size).toBeGreaterThan(0);
+      // 无资源技能 → 空数组
+      expect(manager.listSkillResources('不存在的技能')).toEqual([]);
+      // L1 技能清单（listSkills）：激活角色包内嵌技能（name 去重空名过滤）
+      const listed = manager.listSkills();
+      expect(listed).toHaveLength(1);
+      expect(listed[0]!.name).toBe('资源工具');
     });
   });
 });

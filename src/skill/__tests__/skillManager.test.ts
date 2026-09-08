@@ -560,5 +560,49 @@ description: 联网搜索资料
       const bad = await skillManager.readResource('tree', '../secret.txt');
       expect(bad).toBeNull();
     });
+
+    it('getScriptPath：已登记脚本定位安全路径；未登记/越界被拒（L3 双层防护）', async () => {
+      const skillDir = join(skillsDir, 'tool');
+      mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: tool\n---\n# Tool 技能', 'utf-8');
+      writeFileSync(join(skillDir, 'scripts', 'run.sh'), 'echo tool', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      // 已登记脚本 → resolveSafePath 收敛的绝对路径（隔离在技能 scripts/ 内）
+      const p = skillManager.getScriptPath('tool', 'run.sh');
+      expect(p).not.toBeNull();
+      expect(p!.toLowerCase()).toContain(join('scripts', 'run.sh').toLowerCase());
+      // 未登记脚本 → null（layer3 白名单前置检查）
+      expect(skillManager.getScriptPath('tool', 'not-exist.sh')).toBeNull();
+      // 越界路径 → null
+      expect(skillManager.getScriptPath('tool', '../evil.sh')).toBeNull();
+      // 技能不存在 → null
+      expect(skillManager.getScriptPath('nope', 'run.sh')).toBeNull();
+    });
+
+    it('listResources / listScripts：L3 资源与脚本清单投影（skillTool 数据源）；无 layer3 技能返回空数组', async () => {
+      const skillDir = join(skillsDir, 'full');
+      mkdirSync(join(skillDir, 'resources'), { recursive: true });
+      mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: full\n---\n# Full 技能', 'utf-8');
+      writeFileSync(join(skillDir, 'resources', 'ref.md'), '参考', 'utf-8');
+      writeFileSync(join(skillDir, 'scripts', 'run.sh'), 'echo full', 'utf-8');
+      // 顶层裸 .md：纯 L1/L2 对照组（listResources/listScripts 均空）
+      createSkillFile(skillsDir, 'plain.md', '---\nname: plain\n---\n# Plain 技能');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      expect(skillManager.listResources('full')).toHaveLength(1);
+      expect(skillManager.listResources('full')[0]!.path).toBe('ref.md');
+      expect(skillManager.listScripts('full')).toHaveLength(1);
+      expect(skillManager.listScripts('full')[0]!.path).toBe('run.sh');
+      // 无 layer3 / 技能不存在 → 空数组
+      expect(skillManager.listResources('plain')).toEqual([]);
+      expect(skillManager.listScripts('plain')).toEqual([]);
+      expect(skillManager.listResources('nope')).toEqual([]);
+    });
   });
 });
