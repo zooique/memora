@@ -861,17 +861,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     summary.textContent = `step-${order} · ${title.length > 36 ? `${title.slice(0, 36)}…` : title}`;
     grp.appendChild(summary);
     // 步内叙述/工具父容器：按序插入 details 顶层，容器内平铺该步过程事件
-    insertStepGroupInOrder(root, grp, bound.seq, bounds);
+    insertStepGroupInOrder(root, grp, bound.seq);
     return grp;
   }
 
   /** 步级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
-  function insertStepGroupInOrder(
-    root: HTMLElement,
-    grp: HTMLElement,
-    boundSeq: number,
-    bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[],
-  ): void {
+  function insertStepGroupInOrder(root: HTMLElement, grp: HTMLElement, boundSeq: number): void {
     const existingGrps = Array.from(root.querySelectorAll<HTMLElement>('.round-block__step'));
     const next = existingGrps.find((g) => {
       const gBoundSeq = Number(g.dataset.seq ?? Infinity);
