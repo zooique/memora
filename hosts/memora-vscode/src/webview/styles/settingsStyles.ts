@@ -216,10 +216,13 @@ export const settingsStyles = `
   #security-root { padding: var(--sp-3, 8px); }
   .security-section { margin-top: var(--sp-3, 8px); }
   .security-item {
+    /* A 类卡片外壳语言对齐（SSOT）：与记忆/技能/角色卡一致——surface-sidebar + border .4 +
+       margin-bottom 间距（skillsStyles:66 曾统一此壳，security 沿用半旧 surface-hover 漏同步，2026-09-08 收敛） */
     padding: var(--sp-3, 8px) var(--sp-4, 12px);
+    margin-bottom: var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius, 6px);
-    background: var(--surface-hover, rgba(128,128,128,.1));
+    background: var(--surface-sidebar);
   }
   .security-item-header {
     display: flex;
