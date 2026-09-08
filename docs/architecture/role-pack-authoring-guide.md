@@ -53,8 +53,6 @@
 | `description`          | string                         | 否  | 无                | 角色包描述；≤200 字符                                           |
 | `version`              | string                         | 否  | 无                | 建议 semver（`1.0.0`）                                      |
 | `formatVersion`        | string                         | 否  | `1.0.0`          | 声明则须 semver；版本迁移见规范 §五                                  |
-| `keywords`             | string\[] 或逗号串                 | 否  | 无                | **memora 不消费**（v0.13 起角色包仅手动切换，自动匹配链已移除，解析置空）；保留仅为兼容旧 manifest，**新包勿写**；最多 20 个，单个 ≤50 字符 |
-| `trigger`              | string\[] 或逗号串                 | 否  | 无                | **memora 不消费**（同 keywords）；validator 仅防御性校验（正则误用提示），**新包勿写**；最多 20 个，单个 ≤50 字符 |
 | `author`               | string                         | 否  | 无                | 作者/来源；≤200 字符                                           |
 | `interactionType`      | `tool_assistant` / `companion` | 否  | `tool_assistant` | companion 触发全量强校验                                       |
 | `aiIdentityDisclosure` | boolean                        | 否  | `true`           | companion 必须显式 `true`                                   |
@@ -66,7 +64,7 @@
 
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
 >
-> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MATCH_WORDS` / `MAX_MATCH_WORD_LEN` / `MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
+> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
 
 ### 2.4 rules.md 写法（ADR-025 档 3：规则语义对齐）
 
@@ -165,7 +163,6 @@
 | 数值键越界（超出上下限）                          | error   | 校验不通过；运行时回退内核默认/忽略     |
 | 未知顶层键 / 未知策略阶段 / 未知策略键                | warning | 警告并忽略，不阻塞装载（键级渐进）      |
 | `capabilities` 格式非法（非 `域:动作`）         | error   | 校验不通过                  |
-| `trigger` 误用正则语法（`/pattern/i`）        | warning | 会被当字面关键词，无法匹配任何输入      |
 | companion 缺 AI 身份/未声明 minorProtection | error   | 校验不通过                  |
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |
 
@@ -191,7 +188,6 @@
 | `"outputLimit": 999999`                             | `"outputLimit": 8192`                            | 越上界 `65536`，防输出失控     |
 | `"tokenBudget": -100`                               | `"tokenBudget": 120000`                          | 负值非法，应为 `0 ~ 1000000` |
 | `"selfReview": 999`                                 | `"selfReview": 3`                                | 越上界 `10`，防无限自审查       |
-| `"trigger": ["/文档/i"]`                              | `"trigger": ["文档"]`                              | trigger 不支持正则，会被当字面词  |
 | `"capabilities": [{"capability": "WriteFile"}]`     | `"capabilities": [{"capability": "file:write"}]` | 能力名必须 `域:动作` 小写格式     |
 | `"strategy": { "prepare": { "unknownKey": true } }` | 去掉该键                                             | 未知键 warning + 忽略，不生效  |
 
