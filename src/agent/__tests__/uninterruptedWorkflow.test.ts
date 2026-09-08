@@ -42,6 +42,7 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MockedFunction } from 'vitest';
 import type { Round } from '@/memory/roundStore.js';
+import { ASK_TIMEOUT_NOTICE } from '@/agent/seed/orchestrator.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock LLM Provider（模拟 LLM 响应，不依赖真实 API）
@@ -2934,5 +2935,44 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);
     // checkpoint 恢复后的暂停态收口：恢复即卸载 pausedAt
     expect(agent.sessionManager!.getCheckpoint()).not.toHaveProperty('pausedAt');
+  });
+
+  it('ask 提问超时未答 → cancelAsk + resumeExecution(timeout)：落「未回答」交互记录（带 question）、LLM 收到 [ASK_ABORTED] 自决、round 不分裂', { timeout: 30000 }, async () => {
+    agent = makeTs9Agent();
+    await agent.init();
+
+    // ── (1) 首轮：LLM 主动提问（ask_user 工具）→ 暂停 ──
+    for await (const _chunk of agent.chat('帮我读取一个文件')) {
+      void _chunk;
+    }
+    expect(agent.sessionManager!.status).toBe('paused');
+    const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
+
+    // ── (2) 宿主超时保底（2026-09-08）：cancelAsk（[ASK_ABORTED] 占位 + 快照转存）→ 无输入续跑 ──
+    agent.cancelAsk(); // 消费在途提问（注入 [ASK_ABORTED] 占位 + 转存提问快照供落盘）
+    agent.cancelAsk(); // 幂等：pendingAsk 已清 → no-op 不抛（重复触发无害）
+    for await (const _chunk of agent.resumeExecution(undefined, undefined, 'timeout')) {
+      void _chunk;
+    }
+    expect(agent.sessionManager!.status).toBe('running');
+
+    // ── (3) 落盘断言：kind=timeout + 超时通知正文 + G26 question/options 随记录 ──
+    const closure = currentClosure();
+    expect(closure.id).toBe(anchorRoundId); // round 不分裂
+    expect(closure.interactiveInputs).toHaveLength(1);
+    expect(closure.interactiveInputs![0]!.kind).toBe('timeout');
+    expect(closure.interactiveInputs![0]!.content).toBe(ASK_TIMEOUT_NOTICE);
+    expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+    expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+
+    // ── (4) LLM 自决依据：续跑轮上下文含 [ASK_ABORTED] 占位 tool result（用户未回答真相，不伪装选择）──
+    const resumeMsgs = askProvider.resumeMessages;
+    expect(resumeMsgs).not.toBeNull();
+    const toolResults = resumeMsgs!.filter((m) => m.role === 'tool');
+    const askResult = toolResults.find((m) => String(m.content).includes('[ASK_ABORTED]'));
+    expect(askResult).toBeTruthy();
+    expect(String(askResult!.content)).toContain('用户未回答该提问');
+    // 绝无「用户选择了某选项」的伪造注入
+    expect(String(askResult!.content)).not.toContain('[ASK_ANSWER]');
   });
 });

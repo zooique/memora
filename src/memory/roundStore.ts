@@ -59,8 +59,11 @@ export interface RoundMessage {
  *
  * - question-answer：LLM 主动提问（ask_user 工具）的用户回答（宿主 handleResume 路由）
  * - supplement：用户中途补充（插话 interject / 暂停后主输入框补充）
+ * - timeout：ask_user 提问超时未答（2026-09-08：宿主计时超时 → cancelAsk 注入
+ *   [ASK_ABORTED] 占位 + resumeExecution('timeout') 自动续跑，LLM 自决；记录带
+ *   question/options 供重放渲染「问 + 未回答」行）
  */
-export type InteractiveInputKind = 'question-answer' | 'supplement';
+export type InteractiveInputKind = 'question-answer' | 'supplement' | 'timeout';
 
 /**
  * 问答闭环内交互输入（Round.interactiveInputs 元素）

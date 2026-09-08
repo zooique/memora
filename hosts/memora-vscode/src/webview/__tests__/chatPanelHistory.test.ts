@@ -370,6 +370,50 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     }
   });
 
+  it('timeout 交互记录重放按 ts 透传：kind=timeout 携带 question/options、按序于提问段后 final 前（2026-09-08 超时保底）', () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '帮我读文件', ts: 't1' },
+      { role: 'assistant', content: '好的，按默认继续。', ts: 't5' },
+    ]);
+    const round = roundStore.getById('round-1')!;
+    round.assistantLog = [
+      { id: 'a0', role: 'assistant', content: '在读取前需要确认：', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
+    ];
+    // 内核超时保底落盘形态：kind='timeout' + 超时通知正文 + G26 question/options
+    round.interactiveInputs = [
+      {
+        id: 'i1',
+        role: 'user',
+        content: '用户未在时限内回答，已自动继续',
+        timestamp: 't3',
+        kind: 'timeout',
+        question: '你想读哪个文件？',
+        options: ['probe.txt', 'config.json'],
+      } as never,
+    ];
+    roundStore.save(round);
+
+    (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
+
+    const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string; question?: string; roundId?: string });
+    const idxUser = ordered.findIndex((m) => m.type === 'user' && !m.kind);
+    const idxAskSeg = ordered.findIndex((m) => m.type === 'assistant' && m.text === '在读取前需要确认：');
+    const idxTimeout = ordered.findIndex((m) => m.type === 'user' && m.kind === 'timeout');
+    const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '好的，按默认继续。');
+    // 时序：主输入 → 提问段 → timeout 行（携带原文与选项）→ 最终回答
+    expect(idxTimeout).toBeGreaterThan(idxUser);
+    expect(idxTimeout).toBeGreaterThan(idxAskSeg);
+    expect(idxMain).toBeGreaterThan(idxTimeout);
+    const timeoutMsg = ordered[idxTimeout]!;
+    expect(timeoutMsg.text).toContain('已自动继续');
+    expect(timeoutMsg.question).toBe('你想读哪个文件？');
+    expect(timeoutMsg.roundId).toBe('round-1');
+  });
+
   it('round-based 纯问答轮（无 processEvents）退化为仅正文，不发 process_event/replay_events', () => {
     const { store, roundStore, provider, posted } = setup();
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));

@@ -55,6 +55,19 @@ const MAX_HISTORY_MESSAGES = 200;
 const MAX_HISTORY_ROUNDS = 60;
 
 /**
+ * ask_user 提问等待超时（ms，2026-09-08）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
+ * + resumeExecution('timeout') 自动续跑（LLM 自决）。0/负值 = 禁用超时保底。
+ * 语义 = 保底而非打扰：选项/自由输入仍是唯一主动通道，无「跳过」按钮。
+ */
+const ASK_TIMEOUT_MS = 120_000;
+
+/**
+ * ask 超时交互记录正文（镜像内核 orchestrator.ts ASK_TIMEOUT_NOTICE，防运行时/重放
+ * 文案分叉——post 给 webview 即时渲染与内核落盘 content 必须同值；改此须同步内核。
+ */
+const ASK_TIMEOUT_NOTICE = '用户未在时限内回答，已自动继续';
+
+/**
  * 单轮重放视图（v1.5 交织重放）
  *
  * 正文（user/assistant）与过程事件（processEvents）同源同轮——同一 Round 文件内读取，
@@ -202,6 +215,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 清空时机：resume 回答提交后（只消费一次）。
    */
   private _lastPendingQuestions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[] = [];
+  /**
+   * ask 提问等待超时计时器（2026-09-08 超时保底）：onPendingQuestion / 流尾兜底提问渲染时
+   * 启动（覆写式），用户回答/补充消费提问时清除；到点未答 → handleAskTimeout 自动续跑。
+   * 生命周期仅限「存在未答提问」窗口——不随 consumeFlow finally 清（ask 暂停后流已结束但等待仍活）。
+   */
+  private _askTimeout: ReturnType<typeof setTimeout> | undefined;
   /**
    * 待处理写入确认请求（H0）
    *
@@ -1847,32 +1866,38 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       // —— 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原真实时序）——
       const middle: {
-        kind: 'seg' | 'qa' | 'supp';
+        kind: 'seg' | 'qa' | 'supp' | 'timeout';
         content: string;
         ts?: string;
         question?: string;
         options?: string[];
       }[] = [
         ...(r.assistantLog ?? []).map((m) => ({ kind: 'seg' as const, content: m.content, ts: m.ts })),
-        ...(r.interactiveInputs ?? []).map((i) => ({
-          kind: (i.kind === 'supplement' ? 'supp' : 'qa') as 'qa' | 'supp',
-          content: i.content,
-          ts: i.ts,
-          ...(i.question ? { question: i.question } : {}),
-          ...(i.options && i.options.length > 0 ? { options: i.options } : {}),
-        })),
+        ...(r.interactiveInputs ?? []).map((i) => {
+          // kind 归一：qa=question-answer；supp=supplement；timeout 原样透传（2026-09-08 超时保底，
+          // 渲染「未回答」行须携带提问原文，不可并入 supp/qa 丢语义）
+          const kind =
+            i.kind === 'supplement' ? ('supp' as const) : i.kind === 'timeout' ? ('timeout' as const) : ('qa' as const);
+          return {
+            kind,
+            content: i.content,
+            ts: i.ts,
+            ...(i.question ? { question: i.question } : {}),
+            ...(i.options && i.options.length > 0 ? { options: i.options } : {}),
+          };
+        }),
       ].sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
       for (const item of middle) {
         if (!item.content) continue;
         if (item.kind === 'seg') {
           this.post({ type: 'assistant', text: item.content, ts: item.ts, roundId: r.roundId });
-        } else if (item.kind === 'qa') {
+        } else if (item.kind === 'qa' || item.kind === 'timeout') {
           this.post({
             type: 'user',
             text: item.content,
             ts: item.ts,
             roundId: r.roundId,
-            kind: 'question-answer',
+            kind: item.kind === 'timeout' ? 'timeout' : 'question-answer',
             // G26：回答所对的提问原文/选项随重放消息携带（webview 还原问题块；supp 不携）
             ...(item.question ? { question: item.question } : {}),
             ...(item.options && item.options.length > 0 ? { options: item.options } : {}),
@@ -1970,6 +1995,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // TS-9：暂停态补充输入 → 不发起新 chat() → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
     const now = new Date().toISOString();
     if (this._agent.sessionManager && this._agent.sessionManager.status === 'paused') {
+      this.clearAskTimeout(); // 暂停态补充 = 已响应当前等待（含 ask 提问），关闭超时保底
       this.post({ type: 'user', text: input, ts: now, kind: 'supplement' });
       await this.runFlow((signal) => this._agent!.resumeExecution(input, signal, 'supplement'));
       return;
@@ -2018,6 +2044,50 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
   }
 
+  /** 启动/重置 ask 等待超时计时器（覆写式；超时保底入口，2026-09-08） */
+  private armAskTimeout(): void {
+    this.clearAskTimeout();
+    if (!ASK_TIMEOUT_MS || ASK_TIMEOUT_MS <= 0) return;
+    this._askTimeout = setTimeout(() => {
+      void this.handleAskTimeout();
+    }, ASK_TIMEOUT_MS);
+  }
+
+  /** 清除 ask 等待超时计时器（用户回答/补充消费提问、离开等待态时调用） */
+  private clearAskTimeout(): void {
+    if (this._askTimeout) {
+      clearTimeout(this._askTimeout);
+      this._askTimeout = undefined;
+    }
+  }
+
+  /**
+   * ask 提问等待超时（2026-09-08 保底，非打扰通道）：用户未在时限内回答 →
+   * ① 渲染「问 + 未回答」交互行（与 qa 同构，question/options 随行透出）；
+   * ② cancelAsk 注入 [ASK_ABORTED] 占位 tool result（转存提问快照供落盘）；
+   * ③ resumeExecution('timeout') 自动续跑——LLM 看到「用户未回答该提问」自决最优方案。
+   * 选项/自由输入仍是唯一主动通道，超时只是保底（用户明确不要「跳过」按钮）。
+   */
+  private async handleAskTimeout(): Promise<void> {
+    if (!this._agent) return;
+    this._askTimeout = undefined; // 一次性触发
+    if (this._lastPendingQuestions.length === 0) return; // 已被回答/补充消费
+    if (this._agent.sessionManager?.status !== 'paused') return; // 已离开暂停（异常/新流）
+    const now = new Date().toISOString();
+    const pendingQ = this._lastPendingQuestions[0];
+    this._lastPendingQuestions = []; // 消费式（与 handleResume 同构）
+    this.post({
+      type: 'user',
+      text: ASK_TIMEOUT_NOTICE, // 镜像内核 orchestrator ASK_TIMEOUT_NOTICE（运行时 = 重放同构）
+      ts: now,
+      kind: 'timeout',
+      ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
+    });
+    // cancelAsk 先于 resume：注入 [ASK_ABORTED] 占位 + 转存提问快照（runResume timeout 分支取走落盘 question）
+    this._agent.cancelAsk();
+    await this.runFlow((signal) => this._agent!.resumeExecution(undefined, signal, 'timeout'));
+  }
+
   /** 处理用户对主动提问的回答：answerQuestion 结构化回填 + resumeExecution 续跑
    *  2026-09-04：内核提问收敛为 ask_user 工具——先 answerQuestion 以 tool result 回填
    *  （与 assistant.tool_calls 配对，结构合法），再由 resumeExecution 续跑（回答 text
@@ -2025,6 +2095,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  TS-9：回答落盘由内核 runResume 按交互归属写入同闭环节点，宿主不双写 */
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
+    this.clearAskTimeout(); // 提问被回答：关闭超时保底
+    // 竞态守卫（2026-09-08 超时保底引入）：提问已超时自动续跑（RUNNING）或流异常结束 →
+    // 迟到回答丢弃——resume 前提 = paused，此处前置防「UI 已渲染你答行却无续跑」的分叉
+    if (this._agent.sessionManager?.status !== 'paused') return;
     const now = new Date().toISOString();
     // 回答上屏（折叠块标记；与重放 qa 行同构——question/options 透出，webview 渲染「问→你答」回顾行）；
     // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写
@@ -2193,6 +2267,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this._lastPendingQuestions = questions; // 缓存供 handleResume 透出（运行时 qa 行 question/options 同构）
       this.post({ type: 'need_clarify', questions });
+      this.armAskTimeout(); // 超时保底（2026-09-08）：未答 → 自动续跑
     };
     this._agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（v1.5 单源，
@@ -2365,6 +2440,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 流尾兜底：本流产生提问 chunk 但事件未驱动（监听未就绪/异常）→ 用 chunk 缓存渲染提问 UI，问题不丢失
       if (!clarifyEventDriven && clarifyChunkQueue.length > 0) {
         this.post({ type: 'need_clarify', questions: clarifyChunkQueue });
+        this._lastPendingQuestions = clarifyChunkQueue;
+        this.armAskTimeout(); // 兜底渲染同享超时保底（2026-09-08）
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），
       // 此处不再 persist，避免与内核双写同一条回复（SSOT 单一真理源）

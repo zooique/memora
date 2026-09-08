@@ -297,11 +297,11 @@ export class AgentLoop {
    */
   private pendingAsk: { toolCallIds: string[]; questions: AskQuestion[] } | undefined = undefined;
   /**
-   * 已作答提问快照（G26，2026-09-07）：answerQuestion 回填后把 pendingAsk.questions 转存于此，
-   * 供 orchestrator.runResume 落盘交互输入时随回答一并持久化（回放还原「问了什么+选项」）。
+   * 已作答/已取消提问快照（G26，2026-09-07 answerQuestion 转存；2026-09-08 cancelAsk
+   * 对称转存）：提问消费后把 pendingAsk.questions 转存于此，供 orchestrator.runResume
+   * 落盘交互输入时随回答/超时记录一并持久化（回放还原「问了什么+选项」）。
    * pendingAsk 照旧即清（runIterationLoop:710 兜底 cancelAsk 依赖其为「未消费」判据）；
-   * 快照由 runResume takeAnsweredAsk 取走，或下次 answerQuestion 覆盖（残留仅进程内、单 turn，无害）。
-   * cancelAsk（跳过/兜底）不产生快照——无回答即无问答对可落。
+   * 快照由 runResume takeAnsweredAsk 取走，或下次消费覆盖（残留仅进程内、单 turn，无害）。
    */
   private lastAnsweredAsk: AskQuestion[] | undefined = undefined;
   /** 宿主可覆盖的 UI 消息文本（已填充默认值） */
@@ -1360,8 +1360,13 @@ export class AgentLoop {
   }
 
   /**
-   * 取消在途提问（宿主「跳过/取消提问」时调用；runIterationLoop 续跑兜底也调用）：
+   * 取消在途提问（宿主「跳过/取消提问」或提问超时（2026-09-08）时调用；
+   * runIterationLoop 续跑兜底也调用）：
    * 以占位结果回填，防 assistant.tool_calls 无配对 tool 消息（OpenAI 兼容端 400）。
+   * G26 对称（2026-09-08）：与 answerQuestion 一致转存提问快照到 lastAnsweredAsk——
+   * 超时路径（resumeExecution kind='timeout'）经 runResume takeAnsweredAsk 随「未回答」
+   * 交互记录落盘 question/options，重放可渲染「问 + 未回答」行；跳过/兜底路径不消费
+   * 快照时残留仅进程内单 turn，无害（下次 answerQuestion 覆盖）。
    */
   cancelAsk(): void {
     if (!this.pendingAsk) return;
@@ -1372,6 +1377,7 @@ export class AgentLoop {
         id,
       );
     }
+    this.lastAnsweredAsk = this.pendingAsk.questions;
     this.pendingAsk = undefined;
     this.inAutonomousStep = false;
     logger.info({ toolCallIds }, 'ask_user 提问已取消（占位结果回填）');

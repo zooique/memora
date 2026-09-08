@@ -686,13 +686,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 折叠块默认展开（进行中刚答完即时可见；收敛后随 round-block 收起态联动，可手动展开）
     const detailsBody = rb.querySelector<HTMLElement>('.round-block__details');
     if (!detailsBody) return;
-    // 规整容器：QA 行平铺于 details 底部（last-child 顺序追加，按到达序）
-    detailsBody.appendChild(el);
-    // 提问行与回答折叠块成对：若移动的是回答块且前一兄弟是提问回顾行，一并携带（保阅读序）
+    // 成对携带必须在移动前捕获 prev——appendChild 先移走 el 后 previousElementSibling
+    // 已落在 detailsBody 内（空尾 → null），「先移后查」令 direct 调用（重放即时折入）
+    // 的成对携带恒失效（2026-09-08 修复：曾致带 question 的 qa 折入残缺/ask 行残留消息流）。
     const prev = el.previousElementSibling;
-    if (prev && prev.classList.contains('msg-qa--ask') && prev.parentNode === messages) {
-      detailsBody.appendChild(prev);
-    }
+    const prevIsAsk =
+      !!prev &&
+      prev.classList.contains('msg-qa--ask') &&
+      prev.parentNode !== detailsBody; // ask 行尚未折入即带（宿主容器 = messages 或 round-group，
+    // 不能限定 parentNode === messages——A 容器化下 QA 行落在 round-group 内，判定恒 false 漏带）
+    // 顺序：先搬 ask 回顾行、再搬 el（回答折叠块）→ [ask][details] 阅读序；幂等：元素
+    // 已在 detailsBody 时 appendChild 为无操作移动（foldPending 全量扫的重复调用天然去重）。
+    if (prevIsAsk) detailsBody.appendChild(prev);
+    detailsBody.appendChild(el);
   }
 
   /** G31 方案1：刷新 round-block 收起态摘要中的 QA 计数（你答×N · 你补充×N）
@@ -703,17 +709,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function refreshRoundBlockQaStats(rb: HTMLElement): void {
     const summary = rb.querySelector<HTMLElement>('.round-block__stats');
     if (!summary) return;
-    // 统计 details 内已折入的 QA 行：回答/补充各计；提问平铺行只承载上下文不算交互计数
+    // 统计 details 内已折入的 QA 行：回答/补充/超时未答各计；提问平铺行只承载上下文不算交互计数
     let answers = 0;
     let supplements = 0;
+    let unanswered = 0;
     rb.querySelectorAll<HTMLElement>('.round-block__details .msg-qa').forEach((el) => {
       const tag = el.querySelector<HTMLElement>('.msg-qa__tag')?.textContent ?? '';
       if (tag.includes('你答')) answers += 1;
       else if (tag.includes('你补充')) supplements += 1;
+      else if (tag.includes('未回答')) unanswered += 1; // timeout（2026-09-08）
     });
     const qaParts: string[] = [];
     if (answers > 0) qaParts.push(`你答×${answers}`);
     if (supplements > 0) qaParts.push(`你补充×${supplements}`);
+    if (unanswered > 0) qaParts.push(`未回答×${unanswered}`);
     const qaText = qaParts.join(' · ');
     // 基础统计（工具/耗时等）标到 span.dataset.baseStats，每次拼接 base + qa，防重复追加
     if (!summary.dataset.baseStats) summary.dataset.baseStats = summary.textContent ?? '';
@@ -2134,30 +2143,73 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 交互输入渲染（QA 回答 / 补充）统一入口：
+   * 交互元素插入锚（2026-09-09 连环 ask 修复，T2 决策：单轮多 ask = 正常需求）
+   *
+   * 运行时同轮可多次 ask_user（连环确认）。resume 续接骨架（prepareFlowShell 建的
+   * 空正文段）在用户下次回答提交时被 user(kind) 分支移除（flowShellEl.remove）→
+   * activeAssistantEl 悬空回退「最后 .msg.assistant」——原实现用 :last-of-type 选择器：
+   *   - assistant 段在同轮 .round-group 内时，:last-of-type 受容器 footer（同为 div）
+   *     干扰匹配失败 → host=null → 回答行 appendChild 消息流尾 = 第二轮 QA 散落容器外
+   *     （脱离同轮容器、视觉断裂，折叠收敛只靠「树序巧合」救回）；
+   *   - 无容器/无 footer 的轮 → 命中首 assistant 段 → 第二轮 QA 被顶到第一轮之前
+   *     （[A][问2][答2][问1][答1]，与重放 ts 序倒挂）。
+   * 修法：锚 = assistant 段之后**连续同轮交互元素**的末位（问行 .msg-qa--ask /
+   * 折叠块 details.msg-qa / 提问框 .ask-inline）——运行时轮内交互元素链式紧随
+   * assistant 段（round-group 内、footer 前），遇非交互元素即停。新正文段渲染后
+   * activeAssistantEl 已指向新段（其自身即新锚），无需维护额外状态。
+   * 跨轮安全：纯 DOM 兄弟链判定（运行时 roundId 到 done 才回填，不依赖数据）；
+   * 已折叠进 rb 的 QA 在段内、不在兄弟链上，不会被扫到。
+   */
+  function resolveInteractionAnchor(): HTMLElement | null {
+    const all = messages.querySelectorAll<HTMLElement>('.msg.assistant');
+    const base =
+      (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
+      (all.length > 0 ? all[all.length - 1] : null);
+    if (!base?.parentNode) return base;
+    let anchor: HTMLElement = base;
+    let cur = base.nextElementSibling;
+    while (cur instanceof HTMLElement) {
+      if (cur.classList.contains('msg-qa') || cur.classList.contains('ask-inline')) {
+        anchor = cur;
+        cur = cur.nextElementSibling;
+        continue;
+      }
+      break;
+    }
+    return anchor;
+  }
+
+  /**
+   * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口：
    * - 置位 interactiveRowInserted（SSOT 收窄）：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
    * - 委托 appendInlineInputRow 渲染内联子行；异常时兜底降级（ensureUserInputVisible）——
    *   交互输入即便渲染失败也恒可见（与无 kind user 分支同纪律），且分块结构判定不受影响
    *   （标志先置位再渲染）。
    *
-   * @param text 输入全文
+   * @param text 输入全文（timeout 时为超时通知文案，与内核落盘 content 同值）
    * @param ts 时间戳（日期分隔线）
-   * @param kind 交互类型（question-answer=提问回答 / supplement=补充）
-   * @param question G26 提问原文（重放历史轮携带时，回答行上方先渲染只读「问」回顾行）
+   * @param kind 交互类型（question-answer=提问回答 / supplement=补充 / timeout=提问超时未答）
+   * @param question G26 提问原文（qa/timeout 携带时，行上方先渲染只读「问」回顾行）
    * @param options G26 候选选项（静态文本随回顾行展示）
    */
   function appendInteractiveInput(
     text: string,
     ts: string | undefined,
-    kind: 'question-answer' | 'supplement',
+    kind: 'question-answer' | 'supplement' | 'timeout',
     roundId?: string,
     question?: string,
     options?: string[],
   ): void {
-    // 显示逻辑统一（2026-09-07 排雷收敛）：supplement 与 question-answer 同为「闭环内用户插话」
-    // （数据同构 interactiveInputs.kind），共用内联子行形态（msg-qa），仅 tag 文案区分语义。
-    //   补充（supplement）→ 「你补充」；回答（question-answer）→ 「你答」。
-    // 不再用 interrupt-divider 打断分条（旧形态与 ask 两套语言、视觉违和）。
+    // 显示逻辑统一（2026-09-07 排雷收敛）：supplement / question-answer / timeout 同为
+    // 「闭环内用户交互」（数据同构 interactiveInputs.kind），共用内联子行形态（msg-qa），
+    // 仅 tag 文案区分语义：补充 →「你补充」；回答 →「你答」；超时未答 →「未回答」。
+    // timeout 到达即提问等待结束（宿主已自动续跑）——先销毁提问交互 UI（ask-inline /
+    // 兜底 clarifyBar），避免「提问框 + 未回答行」同屏残留。
+    if (kind === 'timeout') {
+      document.querySelector('.ask-inline')?.remove();
+      clarifyBar.classList.remove('visible');
+      inputBar.hidden = false;
+    }
     interactiveRowInserted = true; // SSOT 收窄：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
     let inserted: HTMLElement | null = null;
     try {
@@ -2186,7 +2238,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  下次补充重新开行。 */
   function appendInlineInputRow(
     text: string,
-    kind: 'question-answer' | 'supplement',
+    kind: 'question-answer' | 'supplement' | 'timeout',
     roundId?: string,
     question?: string,
     options?: string[],
@@ -2195,16 +2247,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   回答 / 补充 → `<details class="msg-qa">`（summary=tag「你答/你补充」，body=全文）；
     //   提问 → 平铺文字行 `.msg-qa--ask`（记录在对话流，非折叠）。
     // 移除旧的 60/120 字符硬截断（折叠块天然收住长文，不再设魔法数）。
-    // 返回新渲染的顶层元素（回答折叠块 / 提问行；supplement 合并进既有块时返回 null）——
-    // G31 方案1 折入 round-block 时据此「折也不重插」。
-    const host =
-      (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
-      (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
-    // 提问回顾行：question-answer 携带 question 时，折叠块上方先渲染只读「问」平铺文字行
-    // （问题原文 + 候选选项静态文本）——回看历史还原「当时 LLM 问了什么 + 用户怎么选」。
-    // 运行时 / 重放同构：宿主 handleResume 已将 question/options 透出到 user 消息 → 同一渲染路径。
+    // 返回新渲染的回答折叠块（details；supplement 合并进既有块时返回 null）——
+    //   G31 方案1 折入 round-block 时据此「折也不重插」；带 question 时提问回顾行
+    //   （.msg-qa--ask）为折叠块前兄弟，由 moveQaIntoRoundBlock 成对携带搬入
+    //   （2026-09-08 修复：曾返回 ask 行致重放折入只搬问行、答块残留消息流）。
+    // 插入锚 = 同轮交互链末位（2026-09-09 连环 ask）：resume 骨架被 user(kind) 移除后
+    // activeAssistantEl 悬空回退旧段，此处后移到已渲染的问答对之后（防第二轮问答对
+    // 顶到第一轮之前 / 散落容器外）
+    const host = resolveInteractionAnchor();
+    // 提问回顾行：question-answer/timeout 携带 question 时，折叠块上方先渲染只读「问」平铺文字行
+    // （问题原文 + 候选选项静态文本）——回看历史还原「当时 LLM 问了什么 + 用户怎么回应/未回应」。
+    // 运行时 / 重放同构：宿主 handleResume/handleAskTimeout 已将 question/options 透出到 user 消息 → 同一渲染路径。
     let qReviewRow: HTMLElement | null = null;
-    if (kind === 'question-answer' && question) {
+    if ((kind === 'question-answer' || kind === 'timeout') && question) {
       qReviewRow = document.createElement('div');
       qReviewRow.className = 'msg-qa msg-qa--ask';
       const qTag = document.createElement('span');
@@ -2253,7 +2308,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const summary = document.createElement('summary');
     const tag = document.createElement('span');
     tag.className = 'msg-qa__tag';
-    tag.textContent = kind === 'supplement' ? '你补充' : '你答';
+    // tag 语义映射：回答 →「你答」；补充 →「你补充」；超时未答 →「未回答」（用户无主动输入，用陈述式）
+    tag.textContent = kind === 'supplement' ? '你补充' : kind === 'timeout' ? '未回答' : '你答';
     summary.appendChild(tag);
     details.appendChild(summary);
     // 折叠块 body：统一条目容器（补充多条追加目标；回答单条）
@@ -2289,8 +2345,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     scrollToBottom(messages);
     updateEmptyState();
-    // 返回顶层新元素：提问行在则一并返回（answer 折叠块紧随其后，折入 round-block 时连续搬运）
-    return qReviewRow ?? details;
+    // 返回回答折叠块（带 question 时提问回顾行是其前兄弟，成对搬运由 moveQaIntoRoundBlock
+    // 负责携带——返回 ask 行会造成折入只搬问行、答块残留消息流的失配，2026-09-08 修复）
+    return details;
   }
 
   /**
@@ -2416,8 +2473,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @returns 内联块元素；无可用 assistant 锚点时返回 null（调用方走 clarifyBar 兜底）
    */
   function renderAskInline(questions: { question: string; options?: string[]; allowCustom?: boolean }[]): HTMLElement | null {
-    // 锚点 = 当前 assistant 块（提问块/骨架）；无链接（异常）返回 null 降级 clarifyBar
-    const host = activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null;
+    // 锚点 = 同轮交互链末位（提问块/骨架/前一问答对之后；2026-09-09 连环 ask 与回答行
+    // 共用 resolveInteractionAnchor——第二次提问框须出现在第一问答对之后而非之前）；
+    // 无链接（异常）返回 null 降级 clarifyBar
+    const host = resolveInteractionAnchor();
     if (!host?.parentNode) return null;
     // 提问等待态：容器操作栏保持隐藏（底部只留 ask-inline 交互块，不出现「复制+时间」）。
     // 防御 interrupted 已提前移除 is-pending 的路径——提问未回答前操作栏不显示，
@@ -3162,11 +3221,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         } else if (resumePending) {
           resumePending = false;
           // 交互续跑（提问/补充答后 resume）：骨架初始即标识续接（is-continued，不闪「新开回答」），
-          // 挂载到最后一个交互行之后——与重放分块同构：[块A] → [问/你答行] → [块B 续接]（2026-09-08 运行时同构）。
-          // 注：不能用 :last-of-type（组内 footer 是最后 div 会匹配不到），取全部 .msg-qa 的末位
-          const qaAll = messages.querySelectorAll<HTMLElement>('.msg-qa');
-          const mountAfter = qaAll.length > 0 ? qaAll[qaAll.length - 1] : undefined;
-          prepareFlowShell({ continued: true, mountAfter });
+          // 挂载到交互链末位之后——与重放分块同构：[块A] → [问/你答行] → [块B 续接]（2026-09-08 运行时同构；
+          // 2026-09-09 连环 ask：统一 resolveInteractionAnchor，取代全范围「最后 .msg-qa」扫描——
+          // 后者在 QA 已折入 rb / 前轮残留时会跨轮误取）
+          prepareFlowShell({ continued: true, mountAfter: resolveInteractionAnchor() ?? undefined });
         } else {
           currentEvents = [];
           roundBlockEl = null;
