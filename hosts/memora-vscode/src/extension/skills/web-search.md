@@ -1,7 +1,6 @@
 ---
 name: 联网搜索
 description: 使用 web_search 工具搜索最新网络信息，获取行业动态、技术方案、社区实践等外部养分
-keywords: ['搜索', '联网', 'web_search', '调研', '资料']
 ---
 
 ## 什么时候使用
