@@ -26,7 +26,7 @@
 | 边界锚定项目工作区 | Codex workspace、Gemini trusted folders、Claude working directory，越界才审批 | 脚本路径白名单以「技能目录 / 项目根」为边界，越界即拒绝不协商 |
 | 三层防线各管一层 | Claude Code：权限（逻辑层）→ 沙箱（系统层）→ 错误恢复 | 暴露层 / 边界层 / 执行层分层实现 |
 | 权限与执行必须一致 | CSA Black Hat 2026：三主流均被攻破，Gemini CVE-2026-12537 根因「allowlist 注册但执行未强制」 | 路径校验在执行分支内二次强制，不信 LLM 自觉 |
-| 凭据最小化 | Claude Mask credentials/env；Gemini 自动排除 .env | 子进程 env 仅放行 PATH/HOME（已实现，保持） |
+| 凭据最小化 | Claude Mask credentials/env；Gemini 自动排除 .env | 子进程**继承宿主用户环境**（2026-09-08 反转，原 PATH/HOME 白名单过度裁剪——项目脚本读用户环境是合理需求；对齐宿主 codeExecutor 同语义）。密钥默认经 SecretStorage→config 对象注入不经 env（宿主默认路径）；env 回退配置模式（`MEMORA_API_KEY`，security_rules 支持）下 key 在进程 env 对脚本可见——owner 信任模型（默认自动批准）+ 脚本来源审阅（判据 B）为边界，视同用户本地 shell |
 | LLM 会自主越权（overeager） | OverEager-Bench：7500 次运行 Claude Code 越权率 27.7% | 边界由机制强制，不靠模型自觉 |
 
 ## 三、设计收敛：三种形态与权限模型
@@ -50,7 +50,8 @@
  ② 边界层  路径白名单 = 来源根目录（技能目录 / 项目根）+ resolveSafePath 防穿越；
            执行分支内二次强制校验（响应「注册≠强制」教训）
  ③ 执行层  运行时白名单（node/python/shell 固定三档）· 超时（默认 30s/上限 120s）·
-           env 最小化（仅 PATH/HOME，凭据不注入）
+           env 继承宿主用户环境（2026-09-08 反转；密钥默认不经 env，见上表凭据最小化行）·
+           windowsHide（Windows 不弹 conhost 黑框）
  确认层   needConfirm = permission==='guest' || confirmWrites || confirmScripts
            （confirmScripts 为新增可选开关，默认 false，供对脚本独立收紧）
 ```

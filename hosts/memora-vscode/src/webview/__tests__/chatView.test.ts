@@ -288,6 +288,39 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
   });
 
+  it('error 终态不清交互行门控：补充行已插 → resume 前 error → 再 resume 仍分块续接（2026-09-08 二查回退 182e5b8c 补清理）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① 首轮正文（roundId r1）→ 块1（activeAssistantEl=块1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '前序正文', roundId: 'r1' });
+    // ② 暂停（置 pausedAssistantEl=块1）
+    dispatch({ type: 'paused' });
+    // ③ 暂停态补充输入（interactiveRowInserted=true + resumePending=true，无骨架——resume 尚未开始）
+    dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:05:00.000Z', kind: 'supplement' });
+    // ④ resume 流启动即失败（宿主 runFlow 同步抛错路径：error 在 meta 前到达）——
+    //    不得清 interactiveRowInserted：error 属可恢复中断，交互行已插则后续正文恒分块
+    //    （182e5b8c 曾补清标志，二查定论其与 28d50f19 收窄语义相反而回退）
+    dispatch({ type: 'error', message: 'boom' });
+    // ⑤ 用户再次继续 → resume meta：门控仍在（未清）→ 不进 pausedResume 原位续写 → resumePending 分支建骨架
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '错误后续写', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+
+    // 块1 不被原位续写合并（回退前 error 清标志 → ⑤ pausedResume 原位续写 → 块1 被追加 '错误后续写'）
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants.length).toBeGreaterThanOrEqual(2);
+    expect(collectAllBodyText(assistants[0])).toBe('前序正文');
+    // 错误后正文在独立新块（分块续接语义：补充行恒位于两段之间，而非被顶到完整回答之后）
+    const texts = Array.from(assistants).map((a) => collectAllBodyText(a));
+    expect(texts[1]).toBe('错误后续写');
+    const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
+    expect(qaRow).not.toBeNull();
+    const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
+    expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]!));
+  });
+
   it('暂停态补充输入后再次继续：resumePending 已消费，下轮不误建续接骨架（2026-09-07 P-1 排雷修复，2026-09-08 收窄更新）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;

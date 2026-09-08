@@ -2,9 +2,12 @@
  * 技能脚本执行器 — L3 脚本运行时。
  * 三级渐进披露 L3：脚本在宿主环境（隔离子进程）执行，源代码不入 LLM 上下文，
  * 只有执行结果（stdout/stderr）作为工具返回值注入。
- * 安全模型：继承宿主用户环境变量（用户会话环境，脚本可读项目所需配置；memora 内部
- *   配置不经 env，无内部状态泄漏面）+ 超时限制（默认 30s，最大 120s）+ 白名单 runtime
- *   （node/python/shell）+ Windows 隐藏窗口（windowsHide:true，不弹 conhost）。
+ * 安全模型：继承宿主用户环境变量（用户会话环境——脚本可读项目所需配置与用户 shell 环境；
+ *   密钥默认经 SecretStorage→配置对象注入、不经 env（宿主默认路径）；env 回退配置模式
+ *   （MEMORA_API_KEY 等，security_rules 支持）下 key 在进程 env、对脚本可见——owner 信任
+ *   模型（默认自动批准）+ 脚本来源审阅（判据 B）为边界，视同用户本地 shell 语义）+ 超时
+ *   限制（默认 30s，最大 120s）+ 白名单 runtime（node/python/shell）+ Windows 隐藏窗口
+ *   （windowsHide:true，不弹 conhost）。
  * 注：当前为简单子进程执行，非完整沙箱（文件系统/网络隔离由宿主在生产环境实现）。
  */
 import * as childProcess from 'node:child_process';
@@ -58,9 +61,13 @@ export async function runSkillScript(
         child = childProcess.spawn(cmd, runArgs, {
           timeout: effectiveTimeout,
           // 继承宿主用户环境变量（2026-09-08 决策：原 PATH/HOME 白名单过度裁剪——
-          // 项目脚本读用户环境（API KEY/PATH/工作区变量）是合理需求；memora 内部
-          // 配置不经 env，继承无内部状态泄漏面。对齐 Claude Code bash 持久会话环境语义）
-          env: process.env,
+          // 项目脚本读用户环境（API KEY/PATH/工作区变量）是合理需求；密钥默认经
+          // SecretStorage→config 不经 env，env 回退模式下 key 在 env 属 owner 信任
+          // 语义（见文件头安全模型）。对齐宿主 codeExecutor 持久会话环境语义）
+          // 禁子进程彩色输出：FORCE_COLOR:0/NO_COLOR:1 源头禁色（对齐宿主 codeExecutor
+          // 同构）；回流净化由 toolExecutor sanitizeExternalText 兜底剥残留 ANSI——
+          // 源头禁根因 + 通用防御两层不冲突（2026-09-08 同构评估采纳）
+          env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
           stdio: ['ignore', 'pipe', 'pipe'],
           // 隐藏子进程窗口（Windows）：不传则每次执行弹 conhost 黑框（对齐宿主
           // codeExecutor 既有 windowsHide 语义 + 大厂仅隐藏子进程回流输出共识）

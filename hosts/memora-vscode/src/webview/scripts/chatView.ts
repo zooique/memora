@@ -3182,9 +3182,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateContextOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
-      // 失败收尾同 done/interrupted 清理纪律（2026-09-08 审查补对称）：交互行标志一并清，
-      // 防「qa/补充行已插仍未 resume 时异常终态」残留阻断未来无输入 continue 的原位续写
-      interactiveRowInserted = false;
+      // 错误收尾清理语义（2026-09-08 二查定论，回退 182e5b8c 的补清理）：
+      // error 属「可恢复流中断」，不清交互行标志——与 28d50f19 收窄语义一致：
+      // 交互行（qa/supp）一旦上屏，后续正文恒分块续接（interactiveRowInserted 门控
+      // pausedResume），error 后继续/重试也不例外；清标志会让「交互行已插 → error →
+      // resume」退回原位续写、QA 行被顶到续写正文之后（原 bug 形态复活）。
+      // 标志清理归口：done / interrupted / 新闭环 user / meta 消费（均已就位）——
+      // 主路径 error 后宿主流收尾必发 done 紧随清理；error 为末条（宿主异常未发 done）
+      // 时残留被下一 send 的 user 分支兜底，且 UI 无 paused 态则无 resume 入口，无触发面。
       append('error', msg.message);
     } else if (msg.type === 'done') {
       // 本轮流式结束：清除归档停滞兜底定时器 + 骨架引用（已定型为正文/异常块）

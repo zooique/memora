@@ -298,7 +298,7 @@ describe('skillScriptRunner — runSkillScript', () => {
 
   // ── 环境继承（2026-09-08 决策：原 PATH/HOME 白名单过度裁剪）──
   describe('环境继承', () => {
-    it('脚本能读取宿主环境变量（项目脚本读用户环境是合理需求；memora 配置不经 env，无泄漏面）', async () => {
+    it('脚本能读取宿主环境变量（项目脚本读用户环境是合理需求；owner 信任模型下视同用户本地 shell）', async () => {
       // 设置一个环境变量
       process.env.MEMORA_TEST_SECRET = 'secret-value-123';
       try {
