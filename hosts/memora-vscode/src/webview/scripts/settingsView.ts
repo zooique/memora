@@ -26,6 +26,7 @@ import { createConfigView } from './configView.js';
 import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
 import { populateIcons } from './icons.js';
+import { createPager, PagerController } from './pager.js';
 
 /** settingsView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface SettingsViewDeps {
@@ -124,7 +125,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
  * 技能子视图初始化与渲染
  *
  * 职责：
- *   - 监听 host 的 skills_loaded 消息，渲染全局技能列表
+ *   - 监听 host 的 skills_loaded 消息，渲染全局技能列表（分页：全量前端切片）
  *   - 提供刷新按钮，触发 skills_load 请求
  */
 function createSkillsView({
@@ -143,14 +144,62 @@ function createSkillsView({
 
   if (!listEl || !countEl || !refreshBtn) return;
 
-  // L2 渐进披露：已加载正文的技能名集合（避免重复请求）
-  const loadedContents = new Set<string>();
+  // L2 渐进披露：已加载的技能正文缓存（按技能名，跨分页保留——切页重建 DOM 后内容不丢）
+  const contentMap = new Map<string, string>();
+  /** 全量技能列表（skills_loaded 全量推送到前端，分页组件本地切片） */
+  let allSkills: SkillDto[] = [];
+
+  /** 分页组件 renderPage 回调：渲染单页技能卡片（空数组不覆盖空态——renderSkills 已设） */
+  function renderSkillItems(items: readonly SkillDto[]): void {
+    if (!items || items.length === 0) return;
+    // listEl 在函数入口 if 守卫后恒非空（闭包内 TS 不保留窄化，用非空断言）
+    listEl!.innerHTML = items
+      .map((s) => {
+        const meta = LAYER_META[s.layer ?? 'builtin'];
+        // L2 已缓存正文：预填 content（display 保持隐藏，点击「查看正文」才展开）
+        const cached = contentMap.has(s.name) ? contentMap.get(s.name) || '（未找到技能正文）' : '';
+        return `
+    <div class="skill-item ${meta.item}" data-skill-name="${escapeHtml(s.name)}">
+      <div class="skill-header">
+        <h3 class="skill-name">${escapeHtml(s.name)}</h3>
+        <span class="skill-badge ${meta.badge}">${meta.label}</span>
+        ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
+        <button class="skill-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
+      </div>
+      <p class="skill-desc">${escapeHtml(s.description)}</p>
+      ${
+        s.issues && s.issues.length > 0
+          ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
+          : ''
+      }
+      <div class="skill-content" style="display:none" ${cached ? '' : 'data-pending="1"'}>${cached}</div>
+    </div>
+  `;
+      })
+      .join('');
+  }
+
+  // 分页组件（2026-09-08）：技能全量前端分页。分页条插在列表之后；单页自动隐藏。
+  let pagerCtrl: PagerController<SkillDto> | null = null;
+  const pager = createPager<SkillDto>({
+    root,
+    mountRoot: root,
+    anchor: listEl,
+    pageSize: SKILL_PAGE_SIZE,
+    renderPage: (items) => renderSkillItems(items),
+    fetchPage: (page, pageSize) => {
+      // 全量前端分页：本地数组切片后同步填充（总数为全量长度）
+      const start = (page - 1) * pageSize;
+      pagerCtrl!.show(page, allSkills.slice(start, start + pageSize), allSkills.length);
+    },
+  });
+  pagerCtrl = pager;
 
   // 刷新按钮事件
   refreshBtn.addEventListener('click', () => {
     vscode.postMessage({ type: 'skills_load' });
     listEl.innerHTML = '<p class="loading-hint">加载中…</p>';
-    loadedContents.clear();
+    contentMap.clear();
   });
 
   // 打开目录按钮事件
@@ -160,7 +209,7 @@ function createSkillsView({
     });
   }
 
-  // L2：事件委托——点击「查看正文」按钮时请求内容
+  // L2：事件委托——点击「查看正文」按钮时请求内容或展开/折叠缓存内容
   listEl.addEventListener('click', (ev) => {
     const btn = (ev.target as HTMLElement).closest('.skill-toggle') as HTMLButtonElement | null;
     if (!btn) return;
@@ -168,9 +217,10 @@ function createSkillsView({
     if (!skillName) return;
     const contentEl = btn.closest('.skill-item')?.querySelector('.skill-content') as HTMLElement | null;
     if (!contentEl) return;
-    // 已加载 → 切换展开/折叠
-    if (loadedContents.has(skillName)) {
+    // 已加载 → 用缓存内容切换展开/折叠（切页重建 DOM 后缓存仍在，正文不丢）
+    if (contentMap.has(skillName)) {
       const isHidden = contentEl.style.display === 'none';
+      contentEl.textContent = contentMap.get(skillName) || '（未找到技能正文）';
       contentEl.style.display = isHidden ? 'block' : 'none';
       btn.textContent = isHidden ? '收起正文' : '查看正文';
       return;
@@ -184,11 +234,18 @@ function createSkillsView({
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'skills_loaded') {
-      renderSkills(listEl, countEl, msg.skills);
-      loadedContents.clear();
+      // renderSkills 更新计数 + 处理空态，返回按三源排序的全量数组 → 分页组件回第 1 页
+      allSkills = renderSkills(listEl, countEl, msg.skills);
+      contentMap.clear();
+      pager.show(1, allSkills.slice(0, SKILL_PAGE_SIZE), allSkills.length);
     } else if (msg.type === 'skill_content') {
-      // L2 渐进披露：渲染技能正文
+      // L2 渐进披露：渲染技能正文（缓存内容供分页切页重建）
       const item = listEl.querySelector(`[data-skill-name="${CSS.escape(msg.skillName)}"]`);
+      if (msg.content) {
+        contentMap.set(msg.skillName, msg.content);
+      } else {
+        contentMap.set(msg.skillName, '');
+      }
       if (item) {
         const btn = item.querySelector('.skill-toggle') as HTMLButtonElement | null;
         const contentEl = item.querySelector('.skill-content') as HTMLElement | null;
@@ -197,7 +254,6 @@ function createSkillsView({
             contentEl.textContent = msg.content;
             contentEl.style.display = 'block';
             btn.textContent = '收起正文';
-            loadedContents.add(msg.skillName);
           } else {
             contentEl.textContent = '（未找到技能正文）';
             contentEl.style.display = 'block';
@@ -209,20 +265,25 @@ function createSkillsView({
   });
 }
 
-/** 渲染技能列表 */
+/** 技能列表每页条数（2026-09-08 分页组件；全量前端切片分页） */
+const SKILL_PAGE_SIZE = 10;
+
+/** 三源分类元数据（SSOT 收紧，2026-08-25）：图层 item/badge class + 中文标签；模块级供分页渲染复用 */
+const LAYER_META: Record<'builtin' | 'rolepack' | 'user', { item: string; badge: string; label: string }> = {
+  builtin: { item: 'skill-agent', badge: 'badge-agent', label: '内置' },
+  rolepack: { item: 'skill-rolepack', badge: 'badge-rolepack', label: '角色包' },
+  user: { item: 'skill-user', badge: 'badge-user', label: '用户' },
+};
+
+/**
+ * 技能列表数据入口（skills_loaded 应答）：
+ * 更新计数 + 处理空态，返回按三源排序的全量数组（分页组件据此切片渲染）。
+ */
 function renderSkills(
   listEl: HTMLElement,
   countEl: HTMLElement,
   skills: SkillDto[],
-): void {
-  // 三源分类元数据（SSOT 收紧，2026-08-25）：图层 item/badge class + 中文标签
-  const LAYER_META: Record<'builtin' | 'rolepack' | 'user', { item: string; badge: string; label: string }> = {
-    builtin: { item: 'skill-agent', badge: 'badge-agent', label: '内置' },
-    rolepack: { item: 'skill-rolepack', badge: 'badge-rolepack', label: '角色包' },
-    user: { item: 'skill-user', badge: 'badge-user', label: '用户' },
-  };
-  const metaOf = (s: SkillDto) => LAYER_META[s.layer ?? 'builtin'];
-
+): SkillDto[] {
   // 分别统计内置 / 启用角色包 / 用户三源技能
   const builtinCount = skills.filter((s) => s.layer === 'builtin').length;
   const rolePackCount = skills.filter((s) => s.layer === 'rolepack').length;
@@ -240,43 +301,20 @@ function renderSkills(
     countEl.hidden = true;
   }
 
-  // 空状态
+  // 空状态（列表渲染由分页组件 renderPage 负责——renderSkillItems 空数组不覆盖）
   if (skills.length === 0) {
     listEl.innerHTML = '<p class="hint">暂无技能。<br>📁 用户技能目录：<code>VS Code 全局存储 / skills /</code><br>在该目录下创建 <code>.md</code> 文件即可添加自定义技能。</p>';
-    return;
+    return [];
   }
 
   // 按类型分组排序：内置 → 角色包 → 用户，同类型按名称排序
   const LAYER_ORDER: Record<'builtin' | 'rolepack' | 'user', number> = { builtin: 0, rolepack: 1, user: 2 };
-  const sorted = [...skills].sort((a, b) => {
+  return [...skills].sort((a, b) => {
     const oa = LAYER_ORDER[a.layer ?? 'builtin'];
     const ob = LAYER_ORDER[b.layer ?? 'builtin'];
     if (oa !== ob) return oa - ob;
     return a.name.localeCompare(b.name);
   });
-
-  // 渲染技能卡片（L1 元数据 + L2 按需加载正文的展开区）
-  listEl.innerHTML = sorted
-    .map(
-      (s) => `
-    <div class="skill-item ${metaOf(s).item}" data-skill-name="${escapeHtml(s.name)}">
-      <div class="skill-header">
-        <h3 class="skill-name">${escapeHtml(s.name)}</h3>
-        <span class="skill-badge ${metaOf(s).badge}">${metaOf(s).label}</span>
-        ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
-        <button class="skill-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
-      </div>
-      <p class="skill-desc">${escapeHtml(s.description)}</p>
-      ${
-        s.issues && s.issues.length > 0
-          ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
-          : ''
-      }
-      <div class="skill-content" style="display:none"></div>
-    </div>
-  `,
-    )
-    .join('');
 }
 
 /** HTML 转义（防注入） */

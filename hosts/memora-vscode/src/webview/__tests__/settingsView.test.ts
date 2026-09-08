@@ -260,3 +260,50 @@ describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08�
     expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(false);
   });
 });
+
+describe('技能分页（2026-09-08 通用分页组件，全量前端切片）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 构造技能 DTO（定宽名保证 localeCompare 排序符合数值序，避免 skill-10 < skill-2 错位） */
+  function makeSkill(i: number): { name: string; description: string; layer: 'builtin' } {
+    return { name: `skill-${String(i).padStart(2, '0')}`, description: `技能 ${i} 描述`, layer: 'builtin' };
+  }
+
+  /** 分发 skills_loaded */
+  function dispatchSkills(skills: unknown[]): void {
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'skills_loaded', skills } }),
+    );
+  }
+
+  it('skills_loaded 15 个 → 第 1 页渲染 10 张卡片 + 分页条「第 1 / 2 页（共 15 条）」', () => {
+    mountSettingsView();
+    dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i)));
+    const items = document.querySelectorAll('.skill-item');
+    expect(items).toHaveLength(10); // SKILL_PAGE_SIZE=10
+    expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-00');
+    const bar = document.querySelector('#skills-root .pager-bar') as HTMLElement;
+    expect(bar.hidden).toBe(false);
+    expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 2 页（共 15 条）');
+  });
+
+  it('点击「下一页」→ 前端切片渲染第 2 页（5 张，纯本地无 IPC 请求）', () => {
+    mountSettingsView();
+    dispatchSkills(Array.from({ length: 15 }, (_, i) => makeSkill(i)));
+    const nextBtn = document.querySelectorAll<HTMLButtonElement>('#skills-root .pager-btn')[1]!;
+    nextBtn.click();
+    const items = document.querySelectorAll('.skill-item');
+    expect(items).toHaveLength(5);
+    expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-10');
+    expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe('第 2 / 2 页（共 15 条）');
+  });
+
+  it('技能数 ≤ 10 → 分页条自动隐藏（小数据量无分页 UI）', () => {
+    mountSettingsView();
+    dispatchSkills(Array.from({ length: 6 }, (_, i) => makeSkill(i)));
+    expect((document.querySelector('#skills-root .pager-bar') as HTMLElement).hidden).toBe(true);
+    expect(document.querySelectorAll('.skill-item')).toHaveLength(6);
+  });
+});

@@ -277,4 +277,28 @@ export const settingsStyles = `
   .toggle-switch input:checked + .toggle-slider { background-color: var(--accent, #0e639c); }
   .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
   .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
+
+  /* ============ Pager：通用分页条（2026-09-08，记忆/技能/角色包三子视图共用） ============
+     组件自含 DOM + 单页自动隐藏（小数据量不暴露无意义分页 UI）；按钮禁用态灰化。 */
+  .pager-bar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sp-3, 8px);
+    margin: var(--sp-3, 8px) 0;
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+  }
+  .pager-btn {
+    font-size: var(--font-sm, 11px);
+    padding: var(--sp-1, 3px) var(--sp-3, 8px);
+    border-radius: var(--radius-sm, 4px);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    background: var(--surface-hover, rgba(128,128,128,.12));
+    color: var(--text-primary, #cccccc);
+    cursor: pointer;
+  }
+  .pager-btn:hover:not(:disabled) { background: var(--surface-active, rgba(128,128,128,.24)); }
+  .pager-btn:disabled { opacity: .4; cursor: default; }
+  .pager-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
+  .pager-info { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
 `;

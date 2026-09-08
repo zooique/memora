@@ -330,4 +330,52 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(label.title).toContain('名单共 5 名');
     expect(label.title).toContain('超出上限的 1 名不参与');
   });
+
+  describe('「其他角色」分页（2026-09-08 通用分页组件，激活角色恒显）', () => {
+    it('激活 1 + 其他 11 → 激活角色 + 其他第 1 页（8 张）+ 分页条「第 1 / 2 页」', () => {
+      mountRolesView();
+      const others = Array.from({ length: 11 }, (_, i) => ({
+        name: `role-${i}`,
+        displayName: `角色${i}`,
+        capabilities: [],
+      }));
+      dispatchLoaded([{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others], 'doc-review');
+      // 激活角色恒显 + 其他角色第 1 页 8 张（ROLE_PAGE_SIZE=8）
+      const cards = document.querySelectorAll('.card');
+      expect(cards).toHaveLength(9);
+      const bar = document.querySelector('.pager-bar') as HTMLElement;
+      expect(bar.hidden).toBe(false);
+      expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 2 页（共 11 条）');
+    });
+
+    it('点击「下一页」→ 其他角色第 2 页渲染剩余 3 张；激活角色仍置顶', () => {
+      mountRolesView();
+      const others = Array.from({ length: 11 }, (_, i) => ({
+        name: `role-${i}`,
+        displayName: `角色${i}`,
+        capabilities: [],
+      }));
+      dispatchLoaded([{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others], 'doc-review');
+      document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click();
+      // 第 2 页：激活 1 + 其他 3
+      const cards = document.querySelectorAll('.card');
+      expect(cards).toHaveLength(4);
+      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 2 页（共 11 条）');
+      // 激活角色卡片仍在
+      expect(cards[0]?.querySelector('.card-name')?.textContent).toContain('文档打磨');
+      expect(cards[0]?.classList.contains('active')).toBe(true);
+    });
+
+    it('其他角色 ≤ 8 → 分页条自动隐藏', () => {
+      mountRolesView();
+      dispatchLoaded(
+        [
+          { name: 'doc-review', displayName: '文档打磨', capabilities: [] },
+          { name: 'translator', displayName: '翻译助手', capabilities: [] },
+        ],
+        'doc-review',
+      );
+      expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
+    });
+  });
 });

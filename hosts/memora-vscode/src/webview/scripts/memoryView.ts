@@ -21,6 +21,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createEmptyState } from '../helpers/cardList.js';
+import { createPager } from './pager.js';
 
 /** memoryView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface MemoryViewDeps {
@@ -64,6 +65,9 @@ const TYPE_BADGE_LABEL: Record<string, string> = {
 /** score 阈值：高于该值视为「重要记忆」（score 圆点亮 accent） */
 const SCORE_HIGH = 0.6;
 
+/** 记忆列表每页条数（2026-09-08 分页组件；与宿主 MEMORY_LIST_LIMIT 对齐，首屏同 20 条） */
+const MEMORY_PAGE_SIZE = 20;
+
 /**
  * 初始化记忆管理面板 webview 交互
  *
@@ -92,32 +96,59 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
 
   /** 当前搜索词（非空表示处于搜索模式，列表模式为空串） */
   let activeQuery = '';
+  /** 记忆总数（memory_loaded 缓存，分页翻页时透传给 pager 计算页数） */
+  let listTotal = 0;
 
-  /** 渲染记忆列表（列表模式 / 搜索结果共用，searchSummary 可选区分） */
-  function render(memories: MemoryItemDto[], searchSummary?: string): void {
-    if (!memories || memories.length === 0) {
-      // 空态引导：无记忆或搜索结果为空（SSOT：createEmptyState 纯函数）
+  /** 渲染记忆列表（单页卡片 + 空态；分页组件 renderPage 回调，SSOT 唯一列表渲染出口） */
+  function renderList(items: readonly MemoryItemDto[]): void {
+    if (!items || items.length === 0) {
+      // 空态引导（SSOT：createEmptyState 纯函数）
       list.textContent = '';
       list.appendChild(
         createEmptyState(document, {
-          title: searchSummary ? '没有匹配的记忆' : '暂无记忆',
-          hint: searchSummary
-            ? `未找到与「${searchSummary}」相关的记忆。换个关键词，或开始一段新对话让 Agent 生成记忆`
-            : '对话沉淀的 round-summary 记忆会出现在这里',
+          title: '暂无记忆',
+          hint: '对话沉淀的 round-summary 记忆会出现在这里',
         }),
       );
       return;
     }
     list.textContent = '';
-    // 搜索模式：顶部展示命中摘要（主动可见：当前检索上下文）
-    if (searchSummary) {
-      const summary = document.createElement('div');
-      summary.className = 'search-summary';
-      summary.textContent = `「${searchSummary}」命中 ${memories.length} 条`;
-      list.appendChild(summary);
-    }
-    memories.forEach((m) => list.appendChild(buildCard(m)));
+    items.forEach((m) => list.appendChild(buildCard(m)));
   }
+
+  /** 渲染搜索结果（搜索模式专用，不分页——命中 ≤ 20 条，pager 已停用） */
+  function renderSearch(hits: readonly MemoryItemDto[], query: string): void {
+    if (!hits || hits.length === 0) {
+      list.textContent = '';
+      list.appendChild(
+        createEmptyState(document, {
+          title: '没有匹配的记忆',
+          hint: `未找到与「${query}」相关的记忆。换个关键词，或开始一段新对话让 Agent 生成记忆`,
+        }),
+      );
+      return;
+    }
+    list.textContent = '';
+    // 命中摘要（主动可见：当前检索上下文）
+    const summary = document.createElement('div');
+    summary.className = 'search-summary';
+    summary.textContent = `「${query}」命中 ${hits.length} 条`;
+    list.appendChild(summary);
+    hits.forEach((m) => list.appendChild(buildCard(m)));
+  }
+
+  // 分页组件（2026-09-08）：首屏由 memory_loaded 直接填充第 1 页，翻页走 memory_page 增量拉取。
+  // anchor=回收站 → 分页条插在列表正下方（list 与 recycle 之间）；单页自动隐藏。
+  const pager = createPager<MemoryItemDto>({
+    root,
+    mountRoot: root,
+    anchor: recycle ?? undefined,
+    pageSize: MEMORY_PAGE_SIZE,
+    renderPage: (items) => renderList(items),
+    fetchPage: (page, pageSize) => {
+      vscode.postMessage({ type: 'memory_page', page, pageSize });
+    },
+  });
 
   /** 构建单个记忆条目卡片（名称 + source 徽章 + score + 预览 + 可展开详情） */
   function buildCard(m: MemoryItemDto): HTMLElement {
@@ -452,13 +483,22 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       renderStats(payload.stats);
       activeQuery = '';
       showMemHint('', false);
-      render(payload.memories);
+      // 首屏：memory_loaded 已带第 1 页数据，直接填充 pager（不重发 memory_page）
+      listTotal = payload.stats.total;
+      pager.setEnabled(true);
+      pager.show(1, payload.memories, listTotal);
     } else if (msg.type === 'memory_search_result') {
       const payload = msg as SearchResultPayload;
       // 竞态守卫：仅当结果 query 与当前输入框一致才渲染——用户搜索后清空/改词时，
       // 迟到的旧搜索结果会被丢弃，避免残影覆盖列表态。
       if (payload.query !== searchInput.value.trim()) return;
-      render(payload.hits, payload.query);
+      // 搜索态停用分页（命中 ≤ 20 条无翻页必要）；清空搜索走 memory_load 恢复列表分页
+      pager.setEnabled(false);
+      renderSearch(payload.hits, payload.query);
+    } else if (msg.type === 'memory_page_result') {
+      // 竞态守卫：仅响应当前页码请求（快速连点翻页时滞后响应作废，防覆盖新页）
+      if (msg.page !== pager.getPage()) return;
+      pager.show(msg.page, msg.items, listTotal);
     } else if (msg.type === 'governance_loaded') {
       renderGovernance(msg.stats);
     } else if (msg.type === 'governance_result') {

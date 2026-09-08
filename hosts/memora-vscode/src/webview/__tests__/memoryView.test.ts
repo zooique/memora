@@ -503,4 +503,74 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     );
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
   });
+
+  describe('记忆分页（2026-09-08 通用分页组件）', () => {
+    /** 分发 memory_page_result（模拟宿主翻页应答） */
+    function dispatchPageResult(page: number, items: MemoryItemDto[]): void {
+      window.dispatchEvent(
+        new MessageEvent('message', { data: { type: 'memory_page_result', page, items } }),
+      );
+    }
+
+    it('超过一页（total > 20）→ 分页条可见 + 计数「第 1 / N 页」+ 下一页可用', () => {
+      mountMemoryView();
+      // 45 条按 20/页 = 3 页；首屏带第 1 页 20 条
+      dispatchLoaded(
+        { total: 45, bySource: { 'round-summary': 45 } },
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `m${i}`, name: `记忆${i}` })),
+      );
+      const bar = document.querySelector('.pager-bar') as HTMLElement;
+      expect(bar.hidden).toBe(false);
+      expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 3 页（共 45 条）');
+      const prev = bar.querySelector('[data-action="prev"]') as HTMLButtonElement | null;
+      // 首页：上一页禁用，下一页可用（未到末页）
+      expect(bar.querySelectorAll('.pager-btn')![0]!.hasAttribute('disabled')).toBe(true);
+      expect(bar.querySelectorAll('.pager-btn')![1]!.hasAttribute('disabled')).toBe(false);
+      void prev;
+    });
+
+    it('点击「下一页」→ postMessage memory_page（page=2）；应答后渲染第 2 页', () => {
+      const { postMessage } = mountMemoryView();
+      dispatchLoaded(
+        { total: 45, bySource: { 'round-summary': 45 } },
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `m${i}`, name: `记忆${i}` })),
+      );
+      const nextBtn = document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!;
+      nextBtn.click();
+      expect(postMessage).toHaveBeenCalledWith({ type: 'memory_page', page: 2, pageSize: 20 });
+
+      // 宿主返回第 2 页：渲染新卡片 + 计数更新
+      const page2 = Array.from({ length: 20 }, (_, i) => makeMemory({ id: `p2-${i}`, name: `页二${i}` }));
+      dispatchPageResult(2, page2);
+      const cards = document.querySelectorAll('.mem-card');
+      expect(cards).toHaveLength(20);
+      expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('页二0');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
+    });
+
+    it('竞态守卫：滞后页码应答（非当前页）被丢弃，不覆盖新页', () => {
+      mountMemoryView();
+      dispatchLoaded(
+        { total: 45, bySource: { 'round-summary': 45 } },
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `m${i}`, name: `记忆${i}` })),
+      );
+      // 翻到第 2 页
+      document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click();
+      dispatchPageResult(2, Array.from({ length: 20 }, (_, i) => makeMemory({ id: `b2-${i}`, name: `正确页${i}` })));
+      // 迟到的第 1 页应答（page=1 ≠ 当前页 2）→ 丢弃
+      dispatchPageResult(1, Array.from({ length: 20 }, (_, i) => makeMemory({ id: `stale-${i}`, name: `迟到${i}` })));
+      const cards = document.querySelectorAll('.mem-card');
+      expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('正确页0');
+      expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');
+    });
+
+    it('单页（total ≤ 20）→ 分页条自动隐藏（小数据量不暴露分页 UI）', () => {
+      mountMemoryView();
+      dispatchLoaded(
+        { total: 15, bySource: { 'round-summary': 15 } },
+        Array.from({ length: 15 }, (_, i) => makeMemory({ id: `m${i}`, name: `记忆${i}` })),
+      );
+      expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
+    });
+  });
 });

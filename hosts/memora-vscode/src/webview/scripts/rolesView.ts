@@ -17,6 +17,13 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
+import { createPager, PagerController } from './pager.js';
+
+/** 「其他角色」每页条数（2026-09-08 分页组件；激活角色恒显不参与分页） */
+const ROLE_PAGE_SIZE = 8;
+
+/** 角色包卡片条目类型（roles_loaded packs 元素，分页组件泛型用） */
+type RolePackItem = RolesPayload['packs'][number];
 
 /** rolesView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface RolesViewDeps {
@@ -85,14 +92,45 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   }
 
   let activeName: string | undefined;
+  /** 最近一次 roles_loaded 载荷（分页渲染需 teams 等上下文；每次 render 刷新） */
+  let lastData: RolesPayload | null = null;
+  /** 「其他角色」全量数组（分页组件前端切片数据源） */
+  let othersAll: RolesPayload['packs'] = [];
+  /** 「其他角色」整页容器（render 时创建，renderOthersPage 每次重建防翻页叠加） */
+  let othersHost = document.createElement('div');
+  /** 分页条插入锚点：footer-hint 之前（在卡片列表之后、页脚提示之前；不被 render 清空 list 影响） */
+  const footerHint = root.querySelector('.footer-hint') as HTMLElement | null;
 
-  /** 渲染角色包列表：激活角色置顶高亮，其余按序展示（对齐 config 面板分组） */
+  /** 分页组件 renderPage 回调：渲染「其他角色」当前页卡片（分组标题 + 卡片；空数组跳过不残留）。
+   *  容器 othersHost 每次整页重建（textContent='' ）——翻页不叠加旧页卡片。 */
+  function renderOthersPage(items: readonly RolePackItem[]): void {
+    othersHost.textContent = '';
+    if (!items || items.length === 0) return;
+    othersHost.appendChild(createGroupTitle(document, '其他角色'));
+    items.forEach((p) => othersHost.appendChild(buildCard(p, lastData!)));
+  }
+
+  // 分页组件（2026-09-08）：「其他角色」全量前端分页；激活角色恒显不参与。单页自动隐藏。
+  let pagerCtrl: PagerController<RolePackItem> | null = null;
+  const pager = createPager<RolePackItem>({
+    root,
+    mountRoot: root,
+    anchor: footerHint ?? undefined,
+    pageSize: ROLE_PAGE_SIZE,
+    renderPage: (items) => renderOthersPage(items),
+    fetchPage: (page, pageSize) => {
+      const start = (page - 1) * pageSize;
+      pagerCtrl!.show(page, othersAll.slice(start, start + pageSize), othersAll.length);
+    },
+  });
+  pagerCtrl = pager;
+
+  /** 渲染角色包列表：激活角色置顶常显，其余角色分页展示（对齐 config 面板分组） */
   function render(data: RolesPayload): void {
     statBar.hidden = false;
     statBar.textContent = `已加载 ${data.packs?.length ?? 0} 个角色`;
     list.textContent = '';
-    // ② 卡片级组队（2026-08-29）：小组信息以角色包卡片为单位呈现（卡片底部 team-ribbon），
-    // 不再有独立顶部小组会议区——组队入口/阵容/删除均落在各角色包卡片上（SSOT：组数据契约不变）
+    lastData = data;
     if (!data.packs || data.packs.length === 0) {
       // 空态引导：无角色包时提示（SSOT：createEmptyState 纯函数，对齐 configView 列表级同构）
       list.appendChild(
@@ -104,17 +142,19 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       return;
     }
     activeName = data.activeName;
-    // 激活角色置顶（主动可见：用户一眼看到当前定位）
+    // 激活角色置顶（主动可见：用户一眼看到当前定位）——恒显不参与分页
     const active = data.packs.filter((p) => p.name === activeName);
     if (active.length > 0) {
       list.appendChild(createGroupTitle(document, '当前角色'));
       active.forEach((p) => list.appendChild(buildCard(p, data)));
     }
-    const others = data.packs.filter((p) => p.name !== activeName);
-    if (others.length > 0) {
-      list.appendChild(createGroupTitle(document, '其他角色'));
-      others.forEach((p) => list.appendChild(buildCard(p, data)));
-    }
+    // 「其他角色」归口整页容器（renderOthersPage 重建，翻页不叠加）
+    othersHost = document.createElement('div');
+    othersHost.className = 'roles-others';
+    list.appendChild(othersHost);
+    // 全量交给分页组件切片渲染（数量大时避免全量堆叠）
+    othersAll = data.packs.filter((p) => p.name !== activeName);
+    pager.show(1, othersAll.slice(0, ROLE_PAGE_SIZE), othersAll.length);
   }
 
   /**

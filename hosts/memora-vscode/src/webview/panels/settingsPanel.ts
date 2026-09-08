@@ -298,6 +298,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.searchMemory(msg.query, msg.limit);
       return;
     }
+    if (msg.type === 'memory_page') {
+      await this.loadMemoryPage(msg.page, msg.pageSize);
+      return;
+    }
     // ─── 记忆单条删除 / 恢复 / 回收站（G19，2026-08-25） ───
     if (msg.type === 'memory_delete') {
       await this.deleteMemory(msg.id);
@@ -663,6 +667,21 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void vscode.window.showErrorMessage(`Memora 记忆搜索失败：${message}`);
       this.post({ type: 'memory_search_result', query, hits: [] });
     }
+  }
+
+  /**
+   * 记忆列表翻页（memory_page，2026-09-08 分页组件）
+   *
+   * MemoryInspector.list 按 score 降序；翻页取「前 page*pageSize 条」后切出目标页——
+   * 复用唯一检索入口（inMemoryStorage.search），零内核改动；页面浏览期间记忆库静止，
+   * score 排序稳定，前页数据与首屏 memory_loaded 一致。
+   */
+  private async loadMemoryPage(page: number, pageSize: number): Promise<void> {
+    const memory = await this.ensureMemory();
+    if (!memory || page < 1 || pageSize < 1) return;
+    const all = memory.list(page * pageSize);
+    const items: MemoryItemDto[] = all.slice((page - 1) * pageSize, page * pageSize).map(toItemDto);
+    this.post({ type: 'memory_page_result', page, items });
   }
 
   // ─── 记忆单条删除 / 恢复 / 回收站（G19，2026-08-25） ───

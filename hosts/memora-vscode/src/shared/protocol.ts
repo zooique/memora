@@ -245,6 +245,13 @@ export type WebviewToExtensionMessage =
    * 返回带 score/similarity 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
   | { type: 'memory_search'; query: string; limit?: number }
+  /**
+   * 请求记忆列表翻页（记忆视图分页组件「上一页/下一页」，2026-09-08）
+   *
+   * host 调 MemoryInspector.list(page*pageSize) 取前 N 条后按页切片返回（score 降序稳定），
+   * 应答 memory_page_result。首屏不发送本消息（memory_loaded 已带第 1 页数据）。
+   */
+  | { type: 'memory_page'; page: number; pageSize: number }
   // ─── 记忆治理：单条删除 / 恢复 / 回收站（G19，2026-08-25 新增） ───
   /**
    * 删除单条记忆（记忆列表「删除」按钮）
@@ -782,6 +789,12 @@ export type ExtensionToWebviewMessage =
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
+  /**
+   * 记忆列表翻页结果（对 memory_page 的应答，2026-09-08）
+   *
+   * page 与请求页一致（webview 据 pager.getPage() 竞态校验，防滞后响应覆盖新页）。
+   */
+  | { type: 'memory_page_result'; page: number; items: MemoryItemDto[] }
   // ─── 记忆治理：删除/恢复结果 + 回收站列表（G19，2026-08-25 新增） ───
   /**
    * 删除记忆结果（对 memory_delete 的应答）
