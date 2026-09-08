@@ -6,7 +6,7 @@
  *   密钥默认经 SecretStorage→配置对象注入、不经 env（宿主默认路径）；env 回退配置模式
  *   （MEMORA_API_KEY 等，security_rules 支持）下 key 在进程 env、对脚本可见——owner 信任
  *   模型（默认自动批准）+ 脚本来源审阅（判据 B）为边界，视同用户本地 shell 语义）+ 超时
- *   限制（默认 30s，最大 120s）+ 白名单 runtime（node/python/shell）+ Windows 隐藏窗口
+ *   限制（默认 60s，最大 600s——适配脚本内 API 调用/批处理长耗时；2026-09-08 用户实测调大）+ 白名单 runtime（node/python/shell）+ Windows 隐藏窗口
  *   （windowsHide:true，不弹 conhost）。
  * 注：当前为简单子进程执行，非完整沙箱（文件系统/网络隔离由宿主在生产环境实现）。
  */
@@ -17,10 +17,10 @@ import { logger } from '@/logging/logger.js';
 /** 脚本执行结果（= CodeExecutionResult，复用代码执行结果形态，SSOT 不重复定义） */
 export type ScriptExecutionResult = CodeExecutionResult;
 
-/** 默认执行超时（毫秒） */
-const DEFAULT_TIMEOUT_MS = 30_000;
-/** 最大执行超时（毫秒） */
-const MAX_TIMEOUT_MS = 120_000;
+/** 默认执行超时（毫秒）：脚本常用交互/构建任务在 1 分钟内完成；超长任务由 LLM 传 timeoutMs */
+const DEFAULT_TIMEOUT_MS = 60_000;
+/** 最大执行超时（毫秒）：适配脚本内 API 调用/批处理等长耗时任务（2026-09-08 用户实测调大） */
+const MAX_TIMEOUT_MS = 600_000;
 
 /**
  * 执行技能脚本：在隔离子进程中运行，收集 stdout/stderr/exitCode/timedOut

@@ -49,7 +49,7 @@
            + run_project_script 豁免能力白名单；run_code 仍走 capabilityMap 白名单
  ② 边界层  路径白名单 = 来源根目录（技能目录 / 项目根）+ resolveSafePath 防穿越；
            执行分支内二次强制校验（响应「注册≠强制」教训）
- ③ 执行层  运行时白名单（node/python/shell 固定三档）· 超时（默认 30s/上限 120s）·
+ ③ 执行层  运行时白名单（node/python/shell 固定三档）· 超时（默认 60s/上限 600s，LLM 可传 timeout_ms）·
            env 继承宿主用户环境（2026-09-08 反转；密钥默认不经 env，见上表凭据最小化行）·
            windowsHide（Windows 不弹 conhost 黑框）
  确认层   needConfirm = permission==='guest' || confirmWrites || confirmScripts

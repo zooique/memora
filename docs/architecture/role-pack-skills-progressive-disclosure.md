@@ -132,8 +132,8 @@ read_resource: {
 1. 脚本必须声明 `runtime`（`node` | `python` | `shell`）
 2. 脚本接受参数（从 LLM 的工具调用中传入）
 3. 脚本的 stdout/stderr 捕获后作为工具返回值
-4. 脚本执行有超时限制（默认 30s，最大 120s）
-5. 脚本执行在沙箱中进行，不暴露宿主环境
+4. 脚本执行有超时限制（默认 60s，最大 600s，可传 timeout_ms；2026-09-08 调大适配长耗时 API 调用）
+5. 脚本执行在隔离子进程中，继承宿主用户环境（用户本地 shell 语义——密钥默认经 SecretStorage 不经 env，env 回退模式下可见，owner 信任模型；2026-09-08 反转，原「不暴露宿主环境」已废弃）
 
 **脚本 frontmatter 声明**（嵌入 SKILL.md 的 frontmatter，或脚本文件自身的 frontmatter）：
 ```yaml

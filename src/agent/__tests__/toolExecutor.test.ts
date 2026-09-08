@@ -192,6 +192,16 @@ describe('工具执行器（6 个工具）', () => {
       );
       expect(result).toContain('SCRIPT_DECLINE');
     });
+
+    it('timeout_ms 透传内核执行器：短超时脚本即 [SCRIPT_TIMEOUT]（2026-09-08 超时弹性）', async () => {
+      // 死循环脚本 + 显式 1s（最小 clamp）超时：验证 timeout_ms 参数真实生效（不卡默认 60s）
+      writeFileSync(join(tmpProject, 'scripts/hang.js'), 'while (true) {}', 'utf-8');
+      const result = await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: 'scripts/hang.js', timeout_ms: 1 }),
+      );
+      expect(result).toContain('SCRIPT_TIMEOUT');
+    });
   });
 
   describe('read_skill（渐进披露 L2）', () => {

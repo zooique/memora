@@ -1089,11 +1089,14 @@ export class ToolExecutor {
         }
         // ③ 运行时白名单：扩展名推断并收敛到 node/python/shell 三档（推断即可信，不规则兜底 node）
         const runtime = normalizeScriptRuntime(inferLanguageFromScriptPath(scriptPath));
+        // timeout_ms（秒，可选）→ 毫秒透传内核执行器（默认 60s，上限 600s，见 skillScriptRunner 常量）；
+        // 脚本内 API 调用/批处理等长耗时任务由 LLM 按需传参，避免误超时
+        const timeoutMs = Number.isFinite(args['timeout_ms']) ? Number(args['timeout_ms']) * 1000 : undefined;
         const result = await runSkillScript(
           fullPath,
           runtime,
           scriptArgs,
-          undefined,
+          timeoutMs,
           // cwd=项目根：项目脚本可加载项目本地依赖/相对数据文件
           this.builtinHandlers.projectPath,
         );

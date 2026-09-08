@@ -680,18 +680,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 骨架 = 空正文的 assistant 块（label 已用本轮身份 currentRoundMeta）+ round-block（运行状态）。
    * 首个 text chunk 到达时由正文流复用此块，不新建第二条消息（见 chunk 分支）。
    */
-  function prepareFlowShell(): void {
+  function prepareFlowShell(opts?: { continued?: boolean; mountAfter?: HTMLElement }): void {
     // 清理异常路径可能残留的旧骨架（正常路径下 meta 每次新轮都会先清除引用）
     flowShellEl?.remove();
     const div = document.createElement('div');
     div.className = 'msg assistant';
+    // 交互续跑（提问/补充答后 resume 2026-09-08）：骨架初始即标识「↻ 续接」（is-continued），
+    // 不闪成「新开回答」——接着前序块/交互行连续作答（与重放分块同构 [块A]→[问/答]→[块B 续接]）
+    if (opts?.continued) div.classList.add('is-continued');
     // 流式未完成：footer 初始隐藏（is-pending 由 buildAssistantShell 加类），finalize 时展示。
     // D3 单轨：骨架此刻无 roundId（meta 不带），is-continued 判定延后到首个 chunk 到达时
     // 在复用骨架分支补类（见 chunk 分支 flowShellEl 路径）——骨架是空等待态，补类时机无感
     buildAssistantShell(div, new Date().toISOString(), undefined, { pending: true });
     activeAssistantEl = div;
     streamBodyRendered = false;
-    messages.appendChild(div);
+    // 挂载点：交互续跑插到交互行之后（保持 [块A]→[问/答]→[块B] 顺序）；新轮骨架落消息流尾
+    if (opts?.mountAfter?.parentNode) opts.mountAfter.after(div);
+    else messages.appendChild(div);
     flowShellEl = div;
     // 挂载任务过程折叠区（meta 已在 currentEvents 首条）：进行中实时展开投影过程事件
     renderRoundBlock(currentEvents, false);
@@ -2044,12 +2049,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     question?: string,
     options?: string[],
   ): void {
+    // 阶段一定案（2026-09-08，不兼容旧内联形态）：用户交互输入统一收为**折叠块**——
+    //   回答 / 补充 → `<details class="msg-qa">`（summary=tag「你答/你补充」，body=全文）；
+    //   提问 → 平铺文字行 `.msg-qa--ask`（记录在对话流，非折叠）。
+    // 移除旧的 60/120 字符硬截断（折叠块天然收住长文，不再设魔法数）。
     const host =
       (activeAssistantEl && activeAssistantEl.isConnected ? activeAssistantEl : null) ??
       (messages.querySelector<HTMLElement>('.msg.assistant:last-of-type') ?? null);
-    // G26 提问回顾行：重放 question-answer（随轮落盘携带 question）时，回答行上方先渲染
-    // 只读「问」行（问题原文 + 候选选项静态文本）——回看历史可还原「当时 LLM 问了什么 +
-    // 用户为什么这么选」。运行时（提问块正在 UI 上）/ supplement / 旧数据（无 question）不渲染。
+    // 提问回顾行：question-answer 携带 question 时，折叠块上方先渲染只读「问」平铺文字行
+    // （问题原文 + 候选选项静态文本）——回看历史还原「当时 LLM 问了什么 + 用户怎么选」。
+    // 运行时 / 重放同构：宿主 handleResume 已将 question/options 透出到 user 消息 → 同一渲染路径。
     let qReviewRow: HTMLElement | null = null;
     if (kind === 'question-answer' && question) {
       qReviewRow = document.createElement('div');
@@ -2059,7 +2068,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       qTag.textContent = '问';
       const qTxt = document.createElement('span');
       qTxt.className = 'msg-qa__text';
-      qTxt.textContent = question.length > 120 ? question.slice(0, 120) + '…' : question;
+      qTxt.textContent = question; // 完整平铺，不截断（折叠块承载回答，提问正文自然记录）
       qTxt.title = question;
       qReviewRow.append(qTag, qTxt);
       if (options && options.length > 0) {
@@ -2069,73 +2078,70 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         qReviewRow.appendChild(opts);
       }
     }
-    // supplement 合并路径：同 roundId 闭环内的补充才合并（跨轮不并），且行仍连接
+    // supplement 合并路径：同 roundId 闭环内的补充才合并（跨轮不并），合并进现有折叠块 body
     if (
       kind === 'supplement' &&
       _lastInterruptDivider &&
       _lastInterruptDivider.isConnected &&
       _lastInterruptDivider.dataset.roundId === (roundId ?? '')
     ) {
-      const container = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__group');
-      if (container) {
-        const count = container.childElementCount + 1;
+      const body = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__body');
+      if (body) {
+        const count = body.childElementCount + 1;
         const tag = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__tag');
         if (tag) tag.textContent = `你补充了 ${count} 条`;
         const row = document.createElement('div');
         row.className = 'msg-qa__row';
         const txt = document.createElement('span');
         txt.className = 'msg-qa__text';
-        txt.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
+        txt.textContent = text; // 完整文本，不截断
         txt.title = text;
         row.appendChild(txt);
-        container.appendChild(row);
+        body.appendChild(row);
         scrollToBottom(messages);
         updateEmptyState();
         return;
       }
     }
-    // 新建行（supplement 首条 / question-answer）
-    const row = document.createElement('div');
-    row.className = 'msg-qa';
+    // 新建折叠块（supplement 首条 / question-answer 回答）
+    const details = document.createElement('details');
+    details.className = 'msg-qa';
+    const summary = document.createElement('summary');
     const tag = document.createElement('span');
     tag.className = 'msg-qa__tag';
     tag.textContent = kind === 'supplement' ? '你补充' : '你答';
-    // supplement 带条目容器（合并追加目标）；question-answer 单文本直接行
+    summary.appendChild(tag);
+    details.appendChild(summary);
+    // 折叠块 body：统一条目容器（补充多条追加目标；回答单条）
+    const body = document.createElement('div');
+    body.className = 'msg-qa__body';
+    const row = document.createElement('div');
+    row.className = 'msg-qa__row';
+    const txt = document.createElement('span');
+    txt.className = 'msg-qa__text';
+    txt.textContent = text; // 完整文本，不截断
+    txt.title = text;
+    row.appendChild(txt);
+    body.appendChild(row);
+    details.appendChild(body);
     if (kind === 'supplement') {
-      const group = document.createElement('div');
-      group.className = 'msg-qa__group';
-      const first = document.createElement('div');
-      first.className = 'msg-qa__row';
-      const txt = document.createElement('span');
-      txt.className = 'msg-qa__text';
-      txt.textContent = text.length > 60 ? text.slice(0, 60) + '…' : text;
-      txt.title = text;
-      first.appendChild(txt);
-      group.appendChild(first);
-      row.append(tag, group);
-      // 合并锚记录 roundId（2026-09-07 跨轮合并修复）：仅同 roundId 的补充并入此行，
+      // 合并锚记录 roundId（跨轮合并归元）：仅同 roundId 的补充并入此折叠块，
       // 重放路径无 setStatus 时靠 roundId 归元合并周期（防「第二个补充并入第一个」跨轮错位）
-      row.dataset.roundId = roundId ?? '';
-      _lastInterruptDivider = row; // 复用同一合并期锚（变量名沿用，语义=「当前补充行」）
-    } else {
-      const txt = document.createElement('span');
-      txt.className = 'msg-qa__text';
-      txt.textContent = text.length > 120 ? text.slice(0, 120) + '…' : text;
-      txt.title = text;
-      row.append(tag, txt);
+      details.dataset.roundId = roundId ?? '';
+      _lastInterruptDivider = details; // 语义=「当前补充折叠块」
     }
-    // 插入：提问回顾行先占 host 后位，回答行紧随其后（保持「问 → 你答」阅读序）
+    // 插入：提问平铺行先占 host 后位，回答折叠块紧随其后（保持「问 → 你答」阅读序）
     if (qReviewRow) {
       if (host?.parentNode) {
         host.after(qReviewRow);
       } else {
         messages.appendChild(qReviewRow);
       }
-      qReviewRow.after(row);
+      qReviewRow.after(details);
     } else if (host?.parentNode) {
-      host.after(row);
+      host.after(details);
     } else {
-      messages.appendChild(row);
+      messages.appendChild(details);
     }
     scrollToBottom(messages);
     updateEmptyState();
@@ -2611,6 +2617,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function commitRoundId(roundId?: string): void {
     if (!roundId || !activeAssistantEl) return;
     activeAssistantEl.dataset.roundId = roundId;
+    // 交互行（qa/supp）roundId 回填（2026-09-08 运行时同构收口）：运行时 user(kind) 消息
+    // 先于 resume meta 到达、此刻 roundId 未知——随 done 一并回填，与重放自带 roundId 对齐
+    // （防历史展开/未来分叉类宿主按 roundId 归属时，运行时交互行落空）。
+    const qaRows = messages.querySelectorAll<HTMLElement>('.msg-qa:not([data-round-id])');
+    for (const row of qaRows) row.dataset.roundId = roundId;
     // 回填后立即让全局锁重新评估 disabled 状态（commitRoundId 不直接设 disabled，
     // 统一走 updateSessionControlsLock 的「locked || !dataset.roundId」判定）
     updateSessionControlsLock(sessionControlsLocked);
@@ -2963,7 +2974,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           resumePending = false;
         } else if (resumePending) {
           resumePending = false;
-          prepareFlowShell();
+          // 交互续跑（提问/补充答后 resume）：骨架初始即标识续接（is-continued，不闪「新开回答」），
+          // 挂载到最后一个交互行之后——与重放分块同构：[块A] → [问/你答行] → [块B 续接]（2026-09-08 运行时同构）。
+          // 注：不能用 :last-of-type（组内 footer 是最后 div 会匹配不到），取全部 .msg-qa 的末位
+          const qaAll = messages.querySelectorAll<HTMLElement>('.msg-qa');
+          const mountAfter = qaAll.length > 0 ? qaAll[qaAll.length - 1] : undefined;
+          prepareFlowShell({ continued: true, mountAfter });
         } else {
           currentEvents = [];
           roundBlockEl = null;

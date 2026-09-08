@@ -77,7 +77,7 @@ describe('skillScriptRunner — formatScriptResult', () => {
       };
       const formatted = formatScriptResult(result);
       expect(formatted).toContain('[SCRIPT_TIMEOUT]');
-      expect(formatted).toContain('120s'); // MAX_TIMEOUT_MS / 1000
+      expect(formatted).toContain('600s'); // MAX_TIMEOUT_MS / 1000（2026-09-08 上限 120→600s 调大）
       expect(formatted).toContain('partial output');
     });
 
@@ -227,7 +227,7 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
   it('formatScriptResult 薄封装等价（SCRIPT 变体回归锁定）', () => {
     const viaShared = formatExecutionResult(
       { stdout: 'Hello', stderr: '', exitCode: 0, timedOut: false },
-      { kind: 'SCRIPT', timeoutDetail: '脚本执行超时（超过 120s）', errorDetail: '脚本执行失败' },
+      { kind: 'SCRIPT', timeoutDetail: '脚本执行超时（超过 600s）', errorDetail: '脚本执行失败' },
     );
     const viaWrapper = formatScriptResult({ stdout: 'Hello', stderr: '', exitCode: 0, timedOut: false });
     expect(viaShared).toBe(viaWrapper);

@@ -60,6 +60,8 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）'
       expect(env.NO_COLOR).toBe('1');
       expect(env.PATH).toBe(process.env.PATH);
       expect(env.MEMORA_TEST_VAR).toBe('test-var-456');
+      // 超时默认 60s（2026-09-08 由 30s 调大；上限 600s 见 MAX_TIMEOUT_MS）
+      expect(calls[0]!.opts.timeout).toBe(60_000);
     } finally {
       delete process.env.MEMORA_TEST_VAR;
     }

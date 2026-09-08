@@ -194,6 +194,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  让「队列变空」这个真理源变化总能被推送到 webview（消费后必有后续 chunk 触发同步）。 */
   private _lastPendingQueueLen = 0;
   /**
+   * 最近一次在途主动提问（questionPending 事件透出，2026-09-08）
+   *
+   * 运行时渲染同构（SSOT：运行时 qa 行 = 重放 qa 行）：handleResume 发 user(kind='question-answer')
+   * 消息时把本次提问原文/候选透出给 webview——重放路径本就随轮带 question（G26），运行时补齐后
+   * 两端同构渲染「问→你答」回顾行（提问明文持久在对话流，对齐 TraeWork 展示）。
+   * 清空时机：resume 回答提交后（只消费一次）。
+   */
+  private _lastPendingQuestions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[] = [];
+  /**
    * 待处理写入确认请求（H0）
    *
    * 内核触发写入确认时，host 创建 requestId + pending Promise，向 webview 推送
@@ -2017,8 +2026,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleResume(input: string): Promise<void> {
     if (!this._agent) return;
     const now = new Date().toISOString();
-    // 回答上屏（折叠块标记）；持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点
-    this.post({ type: 'user', text: input, ts: now, kind: 'question-answer' });
+    // 回答上屏（折叠块标记；与重放 qa 行同构——question/options 透出，webview 渲染「问→你答」回顾行）；
+    // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写
+    const pendingQ = this._lastPendingQuestions[0];
+    this._lastPendingQuestions = []; // 消费式：一次提问只透出一次（防跨提问残留串题）
+    this.post({
+      type: 'user',
+      text: input,
+      ts: now,
+      kind: 'question-answer',
+      ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
+    });
     await this.runFlow((signal) => {
       // ask_user 工具：答案先行回填为 tool 结果（幂等：无在途提问时 no-op 返回 false）
       this._agent!.answerQuestion([input]);
@@ -2173,6 +2191,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     )) => {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
+      this._lastPendingQuestions = questions; // 缓存供 handleResume 透出（运行时 qa 行 question/options 同构）
       this.post({ type: 'need_clarify', questions });
     };
     this._agent.on('questionPending', onPendingQuestion);

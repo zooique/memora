@@ -2534,23 +2534,35 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(collectAllBodyText(continued)).toContain('按你的要求继续');
   });
 
-  it('D3 单轨：运行时 qa 回答后 resume，meta 骨架经 chunk roundId 复用补「续接」（骨架零状态延后判）', () => {
+  it('D3 单轨：运行时 qa 回答后 resume，骨架初始即标识续接（2026-09-08 同构收窄：交互已插=必然续接，不闪「新开回答」）', () => {
     mountChatView();
     // 第一段回答（提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
-    // 用户回答（question-answer，不重置同环判定——qa 属当前闭环）
-    dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1' });
-    // resumeExecution → 新 runFlow 的 meta → 新骨架（meta 不带 roundId，零状态不标续接）
+    // 用户回答（question-answer，带提问原文——运行时同构：host 透出 question，渲染「问」回顾行）
+    dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1', question: '需要先确认哪个方案？' });
+    const qaRows = document.querySelectorAll('.msg-qa');
+    expect(qaRows.length).toBeGreaterThanOrEqual(1);
+    // 提问明文在对话流（msg-qa--ask 回顾行 + 你答行）：trae work 形态，问答对可回看
+    const askRow = document.querySelector('.msg-qa--ask') as HTMLElement;
+    expect(askRow).not.toBeNull();
+    expect(askRow.textContent).toContain('需要先确认哪个方案？');
+    expect(askRow.textContent).toContain('问');
+    // resumeExecution → 新 runFlow 的 meta → resumePending 分支建续接骨架：
+    // 交互行已插 = 必然续接 → 骨架初始即 is-continued + 「↻ 续接」chip（不再零状态闪成新开回答）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
-    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
-    // 首个 chunk（同 roundId）→ flowShellEl 复用骨架分支按「roundId 相等」补 is-continued
+    const skeleton = blocks[1] as HTMLElement;
+    expect(skeleton.classList.contains('is-continued')).toBe(true);
+    expect(skeleton.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
+    // 骨架挂在交互行之后（[块A] → [问/答行] → [块B 续接] 顺序同构）
+    expect(qaRows[qaRows.length - 1]!.nextElementSibling).toBe(skeleton);
+    // 首个 chunk（同 roundId）→ flowShellEl 复用骨架，正文流入续接块（chip 幂等不重复）
     dispatch({ type: 'chunk', content: '好，开始执行方案A', roundId: 'round-1' });
     const continued = document.querySelectorAll('.msg.assistant')[1] as HTMLElement;
+    expect(continued).toBe(skeleton);
     expect(continued.classList.contains('is-continued')).toBe(true);
-    expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
     expect(collectAllBodyText(continued)).toContain('开始执行方案A');
   });
 
@@ -3007,5 +3019,22 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     // 分叉按钮：roundId 回填 → 同样可用
     const forkAfter = document.querySelector('.round-group__footer .msg-fork-icon') as HTMLButtonElement;
     expect(forkAfter.disabled).toBe(false);
+  });
+
+  it('运行时交互行 roundId 随 done 回填：qa/supp 行与重放自带 roundId 对齐（2026-09-08 同构收口）', () => {
+    mountChatView();
+    // 流式首段（提问）→ 用户回答（qa 行，运行时无 roundId）→ resume 续接 → done 携带 roundId
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '需要确认？', roundId: 'r1' });
+    dispatch({ type: 'user', text: '选A', ts: 't', kind: 'question-answer', question: '需要确认？' });
+    const qaRow = document.querySelector('.msg-qa') as HTMLElement;
+    expect(qaRow).not.toBeNull();
+    // done 前：运行时 qa 行 roundId 未知（空）——与重放带 roundId 的差异点
+    expect(qaRow.dataset.roundId ?? '').toBe('');
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '好，继续', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    // done 后：commitRoundId 回填交互行（防历史展开/未来宿主按 roundId 归属时落空）
+    expect(qaRow.dataset.roundId).toBe('r1');
   });
 });

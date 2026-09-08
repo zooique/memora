@@ -288,44 +288,65 @@ export const chatStyles = `
   }
   .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
   .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
-  /* UX-9 回答内联子行（2026-09-03）：用户对主动提问的回答为提问块下方紧凑单行
-   * 「你答：xxx」——阅读位置落在提问与续答之间，同环连续体的一个节点，非游离折叠块 */
+  /* UX-9 回答/补充折叠块（阶段一定案，2026-09-08）：用户交互输入统一收为折叠块——
+   * 回答/补充用 details 折叠块（summary 常显「你答/你补充」tag，body 全文按需展开）；
+   * 提问则平铺为 msg-qa--ask 文字行（记录在对话流，非折叠）。移除旧 60/120 截断，
+   * 长文天然由折叠块收住。样式对齐 round-block__tool 折叠视觉语言（左缘 + 圆角 + 弱化字色）。 */
   .msg-qa {
-    display: flex; align-items: baseline; gap: var(--sp-1, 4px);
-    margin: var(--sp-1, 4px) 0;
+    display: block;
+    border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+    margin: var(--sp-1, 2px) 0;
+    padding: var(--sp-1, 2px) var(--sp-3, 8px);
     font-size: var(--font-sm, 11px);
     color: var(--text-secondary, #9aa0a6);
     user-select: none;
-    padding-left: var(--sp-5, 12px);
+    background: var(--surface-hover, rgba(128,128,128,.04));
   }
+  /* 折叠块默认展开：刚答完即时可见，需时可手动收起（进行中展开，符合阅读直觉） */
+  .msg-qa[open] { background: var(--surface-hover, rgba(128,128,128,.06)); }
+  .msg-qa > summary {
+    cursor: pointer; user-select: none; outline: none;
+    list-style: none;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+  }
+  .msg-qa > summary::-webkit-details-marker { display: none; }
+  .msg-qa > summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .msg-qa__tag {
+    display: inline-flex; align-items: center;
     flex-shrink: 0;
     font-weight: 600;
     color: var(--accent, #0e639c);
-    background: var(--surface-hover, rgba(128,128,128,.12));
+    background: var(--surface-normal, rgba(128,128,128,.16));
     border-radius: var(--radius-sm, 3px);
     padding: 1px var(--sp-2, 5px);
   }
-  .msg-qa__text {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    max-width: 60%;
-  }
-  /* 补充合并容器（2026-09-07 显示逻辑统一：supplement 与 question-answer 共用 msg-qa 形态，
-   * 补充多条合一容器，tag 升级为「你补充 N 条」——替代旧 interrupt-divider 打断分条） */
-  .msg-qa__group {
-    display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto;
-  }
+  .msg-qa__body { display: flex; flex-direction: column; gap: var(--sp-1, 4px); padding-top: var(--sp-1, 4px); }
   .msg-qa__row {
     display: flex; align-items: baseline; gap: var(--sp-1, 4px); min-width: 0;
+    color: var(--text-primary, #cccccc);
   }
-  .msg-qa__row > .msg-qa__text {
-    flex: 1 1 auto; max-width: none; /* 合并容器内条目撑满，不再受单行 60% 限制 */
+  .msg-qa__text {
+    flex: 1 1 auto; min-width: 0;
+    overflow-wrap: anywhere; /* 全文平铺：长文本自然折行，不截断 */
+    color: var(--text-primary, #cccccc);
   }
-  /* G26 提问回顾行（2026-09-07）：重放 question-answer 携带提问原文时，回答行上方的
-   * 只读「问」行——问题 + 候选选项静态文本，回看历史还原「问了什么/为何这么选」。
+  /* 提问回顾行（平铺文字，非折叠）：问题 + 候选选项静态文本，还原「问了什么/为何这么选」。
    * flex-wrap 让长问题与选项自然折行，opts 弱化小字不与正文抢视觉 */
-  .msg-qa--ask { flex-wrap: wrap; }
-  .msg-qa--ask > .msg-qa__text { max-width: none; white-space: normal; }
+  .msg-qa--ask {
+    display: flex; align-items: baseline; flex-wrap: wrap;
+    gap: var(--sp-1, 4px);
+    margin: var(--sp-1, 4px) 0;
+    font-size: var(--font-sm, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    padding-left: var(--sp-5, 12px);
+    border-left: none; border-radius: 0; background: none;
+  }
+  .msg-qa--ask .msg-qa__text { max-width: none; white-space: normal; color: var(--text-secondary, #9aa0a6); }
+  .msg-qa--ask .msg-qa__tag {
+    background: transparent; color: var(--text-tertiary, #6e7681);
+    padding-left: 0;
+  }
   .msg-qa__opts {
     flex-basis: 100%;
     color: var(--text-tertiary, #6e7681);
