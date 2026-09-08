@@ -449,6 +449,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 本轮过程事件缓冲（渲染唯一真相源，运行时与重放同源） */
   let currentEvents: ProcessEvent[] = [];
+  /** 交互行（qa/supp）是否已插入当前闭环（SSOT 收窄 2026-09-08）：
+   *  meta 三态判定据此阻断「交互输入后 resume 原位续写」——交互行已插则后续正文开新续接块，
+   *  与重放 sendRoundView 按时间序穿插的形态同构（QA/补充行恒位于两段之间，而非完整回答之后）。
+   *  与 resumePending 同清理纪律（meta 消费 / 新闭环 user / done·interrupted / clear_ok）。 */
+  let interactiveRowInserted = false;
   /** 本轮身份（meta 事件写入）：该轮 AI 消息挂的角色/模型标签（与会话级 chat_role_pack 分离） */
   let currentRoundMeta: { role: string; llm: string } | undefined;
   /** 当前轮 round-block 容器（挂在本轮首个 assistant 块；null = 正文块尚未创建） */
@@ -2000,6 +2005,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // （数据同构 interactiveInputs.kind），共用内联子行形态（msg-qa），仅 tag 文案区分语义。
     //   补充（supplement）→ 「你补充」；回答（question-answer）→ 「你答」。
     // 不再用 interrupt-divider 打断分条（旧形态与 ask 两套语言、视觉违和）。
+    interactiveRowInserted = true; // SSOT 收窄：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
     appendInlineInputRow(text, kind, roundId, question, options);
   }
 
@@ -2922,7 +2928,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         clearPendingWait(); // 骨架接管：移除等待指示器
         clearToolElapsed(); // TS-11c：切轮清工具等待计时（瞬态，防跨轮残留）
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
-        const pausedResume = pausedAssistantEl !== null && pausedAssistantEl.isConnected;
+        const pausedResume =
+          pausedAssistantEl !== null &&
+          pausedAssistantEl.isConnected &&
+          !interactiveRowInserted; // SSOT 收窄（2026-09-08）：交互行（qa/supp）已插入的 resume 不走
+        // 原位续写——落入 resumePending 分支开新续接块，QA/补充行恒位于两段之间（与重放穿插同构）
         if (pausedResume) {
           // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
           // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费。
@@ -2943,6 +2953,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           currentEvents.push(ev);
           prepareFlowShell();
         }
+        interactiveRowInserted = false; // 消费式：meta 判定后即清（防残留阻断下一「无输入 continue」原位续写）
       } else {
         if (ev.type === 'recall') {
           // 瞬时反馈：本轮召回 N 条（与折叠区 § 召回记忆同一数据源）
@@ -3045,6 +3056,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 新闭环也清补充合并锚（2026-09-07 跨轮合并修复，SSOT 与 setStatus 同清理纪律）：
         // 跨 roundId 的补充不并进上一轮行；重放路径无 setStatus，此处是新轮补充开行的兜底锚点
         _lastInterruptDivider = null;
+        // 新闭环也清交互行已插标志（2026-09-08 SSOT 收窄同纪律）：防跨轮残留阻断下轮原位续写
+        interactiveRowInserted = false;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -3162,6 +3175,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       flowShellEl = null;
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
       resumePending = false; // 同节奏清续跑期待（P-1 对称：防中断/补充后残留污染下轮判定）
+      interactiveRowInserted = false; // 同纪律（2026-09-08）：闭环结束清交互行标志
       // 顺序关键：先收起任务过程折叠区（完成态全量渲染 + 自动收起），再 finalizeStreaming 关流式光标
       renderRoundBlock(currentEvents, true);
       finalizeStreaming();
@@ -3179,6 +3193,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       flowShellEl = null;
       pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
       resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
+      interactiveRowInserted = false; // 同纪律（2026-09-08）：中断结束清交互行标志
       // 同 done 顺序纪律：先收起任务过程折叠区，再关流式
       renderRoundBlock(currentEvents, true);
       finalizeStreaming();
@@ -3290,6 +3305,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
       lastAssistantRoundId = undefined;
       resumePending = false;
+      interactiveRowInserted = false; // 同纪律（2026-09-08）：清空会话清交互行标志
       roundGroupEl = null;
       lastShownDate = undefined;
       updateEmptyState();

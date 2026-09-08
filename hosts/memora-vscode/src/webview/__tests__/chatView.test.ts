@@ -256,7 +256,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(collectAllBodyText(assistants[1])).toBe('新回答');
   });
 
-  it('暂停态补充输入：user(kind=supplement) → resume meta → chunk 原位续写同块（疑惑 3 核心路径）', () => {
+  it('暂停态补充输入：user(kind=supplement) → resume meta 分块续接（SSOT 收窄 2026-09-08：与重放穿插同构）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
@@ -267,43 +267,86 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'paused' });
     // ③ 暂停态补充输入（宿主 handleSend paused 分支：post user(kind=supplement) + resumeExecution(input)）
     dispatch({ type: 'user', text: '补充：成本标准改 <¥0.5', ts: '2026-09-07T11:00:00.000Z', kind: 'supplement' });
-    // ④ resume 重发 meta（宿主 consumeFlow 每次 runFlow 重发）——pausedResume 优先，不建骨架
+    // ④ resume 重发 meta——交互行已插入（interactiveRowInserted）→ 阻断原位续写，走 resumePending
+    //    分支建续接骨架（修复前 pausedResume 恒优先原位续写，补充行被顶到完整回答之后）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    // ⑤ resume 后正文 chunk（同 roundId）：原位续写暂停块
+    // ⑤ resume 后正文 chunk（同 roundId）：复用续接骨架成第 2 块
     dispatch({ type: 'chunk', content: '已按补充调整成本标准', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
 
-    // 同一闭环一个 assistant 块，三部分拼接（补充输入是打断分条，不并入正文但也不分裂新块）
+    // 两块分列补充行两侧（与重放「段→补充→final 段」穿插时序同构）：
+    // [块A 暂停前正文] [补充行] [块B 已按补充调整成本标准]
     const assistants = messages.querySelectorAll('.msg.assistant');
-    expect(assistants).toHaveLength(1);
-    expect(collectAllBodyText(assistants[0])).toBe('暂停前正文已按补充调整成本标准');
+    expect(assistants).toHaveLength(2);
+    expect(collectAllBodyText(assistants[0])).toBe('暂停前正文');
+    expect(collectAllBodyText(assistants[1])).toBe('已按补充调整成本标准');
+    // 补充行位于两段之间（SSOT 用文档树序断言：querySelectorAll 深度优先，容器化/不容器化皆成立）
+    const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
+    expect(qaRow).not.toBeNull();
+    const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
+    expect(order.indexOf(assistants[0])).toBeLessThan(order.indexOf(qaRow));
+    expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
   });
 
-  it('暂停态补充输入后再次继续：resumePending 已消费，下轮不误建续接骨架（2026-09-07 P-1 排雷修复）', () => {
+  it('暂停态补充输入后再次继续：resumePending 已消费，下轮不误建续接骨架（2026-09-07 P-1 排雷修复，2026-09-08 收窄更新）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮：meta + 正文（roundId r1）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
-    // ② 暂停 → 补充输入（置 resumePending=true）
+    // ② 暂停 → 补充输入（置 resumePending=true + interactiveRowInserted=true）
     dispatch({ type: 'paused' });
     dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:01:00.000Z', kind: 'supplement' });
-    // ③ resume meta：pausedResume 分支消费 resumePending（修复前残留 true）
+    // ③ resume meta：交互行已插 → resumePending 分支（消费 resumePending + 建续接骨架）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '续写', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
-    // ④ 新闭环（无 kind）：真新轮应清空锚点建新骨架（不受残留 resumePending 影响）
+    // ④ 新闭环（无 kind）：真新轮应清空锚点建新骨架（不受残留 resumePending/interactiveRowInserted 影响）
     dispatch({ type: 'user', text: '新问题', ts: '2026-09-07T11:02:00.000Z' });
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '新回答', roundId: 'r2' });
     dispatch({ type: 'done', roundId: 'r2' });
 
-    // 两次闭环各自独立，新问题不误续写到暂停块
+    // 三段各自独立：补充行所在轮分块（第一段/续写），新问题不误续写到暂停块
+    const assistants = messages.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(3);
+    expect(collectAllBodyText(assistants[0])).toBe('第一段');
+    expect(collectAllBodyText(assistants[1])).toBe('续写');
+    expect(collectAllBodyText(assistants[2])).toBe('新回答');
+  });
+
+  it('ask_user 问答：paused → QA 行 → resume meta 分块续接（QA 恒在两段之间，运行时=重放形态）', () => {
+    mountChatView();
+    const messages = document.getElementById('messages') as HTMLElement;
+
+    // ① 提问前正文：meta 建骨架 + 首段正文（roundId r1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '提问前正文', roundId: 'r1' });
+    // ② LLM 调用 ask_user 暂停 → 提问块（ask-inline）挂出（消息流渲染，此处省略交互 DOM）
+    dispatch({ type: 'paused' });
+    // ③ 用户回答：宿主 post user(kind=question-answer)（G26 运行时无 question 回顾行，仅回答行）
+    dispatch({ type: 'user', text: '选方案 A', ts: '2026-09-07T12:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
+    // ④ resume 重发 meta——交互行已插入 → 阻断 pausedResume 原位续写，开续接骨架（修复前 QA 被顶到完整回答后）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // ⑤ 续跑最终正文（同 roundId）：进续接块（is-continued）
+    dispatch({ type: 'chunk', content: '已按方案 A 执行完毕', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+
+    // 形态 = 重放 sendRoundView 段穿插： [块A 提问前正文] [你答行] [块B 最终正文（续接）]
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(2);
-    expect(collectAllBodyText(assistants[0])).toBe('第一段续写');
-    expect(collectAllBodyText(assistants[1])).toBe('新回答');
+    expect(collectAllBodyText(assistants[0])).toBe('提问前正文');
+    expect(collectAllBodyText(assistants[1])).toBe('已按方案 A 执行完毕');
+    // 你答行位于两段之间（文档树序断言，round-group 容器化下同样成立）
+    const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
+    expect(qaRow).not.toBeNull();
+    expect(qaRow.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
+    const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
+    expect(order.indexOf(assistants[0])).toBeLessThan(order.indexOf(qaRow));
+    expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
+    // 最终正文块带同环续接标记（与重放 is-continued 一致）
+    expect(assistants[1].classList.contains('is-continued')).toBe(true);
   });
 
   it('clear_ok 后流式锚点失效，后续 chunk 重建一条 assistant 消息（P0-1）', () => {
