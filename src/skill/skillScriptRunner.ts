@@ -2,10 +2,12 @@
  * 技能脚本执行器 — L3 脚本运行时。
  * 三级渐进披露 L3：脚本在宿主环境（隔离子进程）执行，源代码不入 LLM 上下文，
  * 只有执行结果（stdout/stderr）作为工具返回值注入。
- * 安全模型：不继承宿主环境变量、超时限制（默认 30s，最大 120s）、白名单 runtime（node/python/shell）。
+ * 安全模型：继承宿主用户环境变量（用户会话环境，脚本可读项目所需配置；memora 内部
+ *   配置不经 env，无内部状态泄漏面）+ 超时限制（默认 30s，最大 120s）+ 白名单 runtime
+ *   （node/python/shell）+ Windows 隐藏窗口（windowsHide:true，不弹 conhost）。
  * 注：当前为简单子进程执行，非完整沙箱（文件系统/网络隔离由宿主在生产环境实现）。
  */
-import { spawn, type ChildProcess } from 'node:child_process';
+import * as childProcess from 'node:child_process';
 import type { CodeExecutionResult } from '@/code-exec/types.js';
 import { logger } from '@/logging/logger.js';
 
@@ -39,61 +41,102 @@ export async function runSkillScript(
 
   const { command, args: cmdArgs } = resolveCommand(runtime, scriptPath, args);
 
-  return new Promise<ScriptExecutionResult>((resolve) => {
-    let child: ChildProcess;
-    try {
-      child = spawn(command, cmdArgs, {
-        timeout: effectiveTimeout,
-        // 不继承宿主环境变量（最小化暴露），仅保留 PATH/HOME
-        env: {
-          PATH: process.env.PATH,
-          HOME: process.env.HOME,
-        },
-        stdio: ['ignore', 'pipe', 'pipe'],
-        // cwd 缺省时由 node 决定（当前进程目录）；仅显式传入时指定
-        ...(cwd ? { cwd } : {}),
-      });
-    } catch (err) {
-      logger.error({ scriptPath, runtime, err }, '启动脚本进程失败');
-      resolve({
-        stdout: '',
-        stderr: `启动失败: ${(err as Error).message}`,
-        exitCode: -1,
-        timedOut: false,
-      });
-      return;
-    }
-
-    let stdout = '';
-    let stderr = '';
-    let timedOut = false;
-
-    child.stdout?.on('data', (data: Buffer) => {
-      stdout += data.toString('utf-8');
-    });
-
-    child.stderr?.on('data', (data: Buffer) => {
-      stderr += data.toString('utf-8');
-    });
-
-    child.on('error', (err) => {
-      logger.error({ scriptPath, err }, '脚本进程执行错误');
-      resolve({ stdout, stderr: stderr || String(err), exitCode: -1, timedOut: false });
-    });
-
-    child.on('close', (code, signal) => {
-      if (signal === 'SIGTERM' || signal === 'SIGKILL') {
-        timedOut = true;
-        logger.warn({ scriptPath, effectiveTimeout }, '脚本执行超时，已被终止');
+  /**
+   * 单次子进程执行（spawn + 输出收集）。
+   *
+   * @returns 执行结果 + enoent 标记（命令不存在 → 供调用方判定 L2 fallback 重试）
+   */
+  const runOnce = (
+    cmd: string,
+    runArgs: string[],
+  ): Promise<ScriptExecutionResult & { enoent: boolean }> =>
+    new Promise((resolve) => {
+      /** ENOENT 标记：spawn 命令不存在（如 Windows 缺 python 命令，仅 python runtime 场景用） */
+      let enoent = false;
+      let child: childProcess.ChildProcess;
+      try {
+        child = childProcess.spawn(cmd, runArgs, {
+          timeout: effectiveTimeout,
+          // 继承宿主用户环境变量（2026-09-08 决策：原 PATH/HOME 白名单过度裁剪——
+          // 项目脚本读用户环境（API KEY/PATH/工作区变量）是合理需求；memora 内部
+          // 配置不经 env，继承无内部状态泄漏面。对齐 Claude Code bash 持久会话环境语义）
+          env: process.env,
+          stdio: ['ignore', 'pipe', 'pipe'],
+          // 隐藏子进程窗口（Windows）：不传则每次执行弹 conhost 黑框（对齐宿主
+          // codeExecutor 既有 windowsHide 语义 + 大厂仅隐藏子进程回流输出共识）
+          windowsHide: true,
+          // cwd 缺省时由 node 决定（当前进程目录）；仅显式传入时指定
+          ...(cwd ? { cwd } : {}),
+        });
+      } catch (err) {
+        logger.error({ scriptPath, runtime, err }, '启动脚本进程失败');
+        resolve({
+          stdout: '',
+          stderr: `启动失败: ${(err as Error).message}`,
+          exitCode: -1,
+          timedOut: false,
+          enoent: false,
+        });
+        return;
       }
-      resolve({
-        stdout,
-        stderr,
-        exitCode: code ?? 0,
-        timedOut,
+
+      let stdout = '';
+      let stderr = '';
+      let timedOut = false;
+
+      child.stdout?.on('data', (data: Buffer) => {
+        stdout += data.toString('utf-8');
+      });
+
+      child.stderr?.on('data', (data: Buffer) => {
+        stderr += data.toString('utf-8');
+      });
+
+      child.on('error', (err) => {
+        // ENOENT = 命令不存在（Windows python 9009 场景：现代 Python 只装 py 启动器）
+        // 记标记供 L2 fallback，其余错误原样返回
+        enoent = (err as NodeJS.ErrnoException).code === 'ENOENT';
+        logger.error({ scriptPath, err }, '脚本进程执行错误');
+        resolve({ stdout, stderr: stderr || String(err), exitCode: -1, timedOut: false, enoent });
+      });
+
+      child.on('close', (code, signal) => {
+        if (signal === 'SIGTERM' || signal === 'SIGKILL') {
+          timedOut = true;
+          logger.warn({ scriptPath, effectiveTimeout }, '脚本执行超时，已被终止');
+        }
+        resolve({
+          stdout,
+          stderr,
+          exitCode: code ?? 0,
+          timedOut,
+          enoent,
+        });
       });
     });
-  });
+
+  let result = await runOnce(command, cmdArgs);
+
+  // L2（2026-09-08）：Windows python 9009 兜底——python 命令不存在（现代 Python 安装
+  // 仅提供 py 启动器）时，首次 ENOENT 自动换 `py -3` 重试一次（成功/其它错误原样返回）
+  if (result.enoent && shouldFallbackPythonToPy(runtime, process.platform)) {
+    result = await runOnce('py', ['-3', scriptPath, ...args]);
+  }
+  return result;
+}
+
+/**
+ * L2 兜底判定：python runtime 在 Windows 下可用 py 启动器替换（纯函数，平台参数化可测）
+ *
+ * @param runtime  脚本运行时
+ * @param platform 当前平台（process.platform；参数化便于测试）
+ * @returns 是否应换 py -3 重试一次
+ */
+export function shouldFallbackPythonToPy(
+  runtime: 'node' | 'python' | 'shell',
+  platform: NodeJS.Platform,
+): boolean {
+  return runtime === 'python' && platform === 'win32';
 }
 
 /**

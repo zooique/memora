@@ -11,7 +11,7 @@ import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ToolExecutor, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
+import { ToolExecutor, sanitizeExternalText, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -810,6 +810,25 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).not.toContain('\u001b');
       // 可打印内容保留
       expect(result).toContain('line1');
+    });
+  });
+
+  describe('sanitizeExternalText（纯函数）', () => {
+    it('ANSI SGR 色码整体剥净（2026-09-08：env 继承后 FORCE_COLOR 使子进程输出色码）', () => {
+      // 子进程继承 FORCE_COLOR 后的真实输出形态：ESC [33m 包裹文本
+      // 单剥 ESC 会留 `[33m` 残渣——净化层须剥整个 CSI 序列
+      const colored = 'line1\u001b[33mtrue\u001b[39m line2';
+      const cleaned = sanitizeExternalText(colored, 10_000);
+      expect(cleaned).not.toContain('[33m');
+      expect(cleaned).not.toContain('[39m');
+      // 剥色后语义文本保持
+      expect(cleaned).toContain('true');
+      expect(cleaned).toContain('line2');
+    });
+
+    it('普通文本不受 ANSI 剥除影响（回归）', () => {
+      const cleaned = sanitizeExternalText('plain [bracket] text', 100);
+      expect(cleaned).toBe('plain [bracket] text');
     });
   });
 

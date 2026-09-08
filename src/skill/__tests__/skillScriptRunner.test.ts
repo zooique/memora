@@ -15,6 +15,7 @@ import {
   runSkillScript,
   formatScriptResult,
   formatExecutionResult,
+  shouldFallbackPythonToPy,
   type ScriptExecutionResult,
 } from '../skillScriptRunner.js';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -295,24 +296,23 @@ describe('skillScriptRunner — runSkillScript', () => {
     });
   });
 
-  // ── 环境变量隔离测试 ──
-  describe('环境变量隔离', () => {
-    it('脚本不能直接读取宿主环境变量', async () => {
+  // ── 环境继承（2026-09-08 决策：原 PATH/HOME 白名单过度裁剪）──
+  describe('环境继承', () => {
+    it('脚本能读取宿主环境变量（项目脚本读用户环境是合理需求；memora 配置不经 env，无泄漏面）', async () => {
       // 设置一个环境变量
       process.env.MEMORA_TEST_SECRET = 'secret-value-123';
       try {
-        const leakScript = join(TMP_DIR, 'env-leak.js');
-        // 脚本尝试读取 MEMORA_TEST_SECRET
-        writeFileSync(leakScript, 'console.log(process.env.MEMORA_TEST_SECRET || "NOT_FOUND");');
-        const result = await runSkillScript(leakScript, 'node');
-        // 环境变量不应该泄漏到子进程
-        expect(result.stdout.trim()).toBe('NOT_FOUND');
+        const envScript = join(TMP_DIR, 'env-read.js');
+        writeFileSync(envScript, 'console.log(process.env.MEMORA_TEST_SECRET || "NOT_FOUND");');
+        const result = await runSkillScript(envScript, 'node');
+        // 继承用户环境 → 脚本应能读到（对齐 Claude Code bash 持久会话环境语义）
+        expect(result.stdout.trim()).toBe('secret-value-123');
       } finally {
         delete process.env.MEMORA_TEST_SECRET;
       }
     });
 
-    it('PATH 环境变量被保留（用于系统命令）', async () => {
+    it('PATH 环境变量被继承（用于系统命令）', async () => {
       const pathScript = join(TMP_DIR, 'check-path.js');
       writeFileSync(pathScript, 'console.log(process.env.PATH || "NO_PATH");');
       const result = await runSkillScript(pathScript, 'node');
@@ -347,5 +347,24 @@ describe('skillScriptRunner — runSkillScript', () => {
       expect(typeof result.exitCode).toBe('number');
       expect(typeof result.timedOut).toBe('boolean');
     });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 3. L2 兜底判定纯函数（spawn 行为锁定见 skillScriptRunner-exec.test.ts）
+// ══════════════════════════════════════════════════════════════
+
+describe('skillScriptRunner — shouldFallbackPythonToPy 判定（2026-09-08）', () => {
+  // Windows python 9009 兜底判定：win32 + python runtime 才换 py -3 重试一次
+  it('win32 + python → 兜底', () => {
+    expect(shouldFallbackPythonToPy('python', 'win32')).toBe(true);
+  });
+
+  it('win32 + node → 不兜底（仅 python 命令解析问题）', () => {
+    expect(shouldFallbackPythonToPy('node', 'win32')).toBe(false);
+  });
+
+  it('linux + python → 不兜底（POSIX 无 py 启动器语义）', () => {
+    expect(shouldFallbackPythonToPy('python', 'linux')).toBe(false);
   });
 });

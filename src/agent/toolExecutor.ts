@@ -149,8 +149,11 @@ const RESOURCE_CONTENT_MAX_LEN = 50_000;
  * @returns 净化后的文本
  */
 export function sanitizeExternalText(text: string, maxLen: number): string {
+  // 去 ANSI 转义序列（CSI：ESC [ 参数 + 终结符；2026-09-08 env 继承后子进程可能继承
+  // FORCE_COLOR 输出色码，单剥 ESC 会留 `[33m` 残渣——整个序列须剥净）
+  const withoutAnsi = text.replace(/\u001B\[[0-9;?]*[a-zA-Z]/g, '');
   // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
-  const cleaned = text.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  const cleaned = withoutAnsi.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
   return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen)}…` : cleaned;
 }
 
