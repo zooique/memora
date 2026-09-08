@@ -113,6 +113,8 @@
 
 * **manifest 字段集**：`name`（必填）/ `displayName`（可选，UI 展示名，缺省回退 `name`）/ `formatVersion`（必填）/ `version` / `description` / `author` / `homepage` / `repository` / `license` / `keywords` / `trigger` / `interactionType` / `aiIdentityDisclosure` / `minorProtection`（合规字段为可选 + 分档，仅 `companion` 强校验，§七）/ `strategy`（L2 策略，§六）/ `handoffPrompt`（接手衔接提示词，自洽声明，§2.5）/ `skills`（可选白名单过滤，§四 C3）/ `capabilities`（能力声明顶层数组，§四 C2）。**不含内容文件路径字段**——persona.md / rules.md 为纯约定名，manifest 不注册路径（R7 纪律，§2.3）；
 
+> **`[草案]` 状态注记（2026-09-08 收敛）**：`homepage` / `repository` / `license` / `minKernelVersion` 为标准字段（生态通用元数据 + 版本兼容远期键），但当前**无参考实现消费**（memora 参考实现不读，按「未知键 warn + ignore」处理）。按 §六 双闸门纪律标 `[草案]`，征集实现验证后冻结；`keywords`/`trigger` 匹配字段见 §2.2 的 `[草案]` 注记。
+
 * **内容文件零声明**：`persona.md` / `rules.md` / `skills/` 全部**约定俗成**——persona 与 rules 不声明即回退约定名，skills 目录动态扫描。manifest 只承载「非约定内容」：capabilities、strategy、handoffPrompt、元数据与合规字段；
 
 * **skills 目录扫描（C3）**：`skills/` 目录下的 `.md` 文件**动态扫描**注册——文件 frontmatter 声明 `name`/`description`，正文为技能内容。**新增技能只写文件，无需改 manifest**。manifest.skills 可选：声明 `file` 时按文件过滤（白名单语义），未声明则全部扫描；

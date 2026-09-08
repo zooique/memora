@@ -40,13 +40,13 @@ export interface RolePackValidateInput {
 // 规则常量
 // ════════════════════════════════════════════════════════════
 
-/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接 + 标准远期键）。
- * 注意：keywords/trigger 已废弃（v0.13 角色包手动切换，自动匹配链死），故意不在已知键集
- * ——旧包带此二键按「未知键 warning + 忽略」宽容处理，与当前解析行为等价。 */
+/** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接）。
+ * 注意：keywords/trigger/extensions/minKernelVersion/homepage/repository/license 已废弃或
+ * 无参考实现消费（v0.13 角色包手动切换、自动匹配链死），故意不在已知键集——带这些键的
+ * manifest 按「未知键 warning + 忽略」宽容处理（键级渐进设计，兼容演进）。 */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description',
-  'author', 'homepage', 'repository', 'license',
-  'minKernelVersion',
+  'author',
   'interactionType', 'aiIdentityDisclosure', 'minorProtection',
   'strategy', 'skills', 'capabilities', 'handoffPrompt',
 ]);
@@ -98,7 +98,7 @@ function validateTopLevelKeys(
 
 /** 元数据字符串字段（进展示/标识，超长无意义，统一校验报错） */
 const META_STRING_FIELDS: ReadonlyArray<string> = [
-  'name', 'displayName', 'description', 'author', 'homepage', 'repository', 'license',
+  'name', 'displayName', 'description', 'author',
 ];
 
 /** 校验必填字段与版本语义（name 必填；formatVersion 缺省按 1.0.0，声明则须 semver；version 为 warning） */
@@ -155,20 +155,6 @@ function validateMetaFields(
       code: 'INVALID_VERSION',
       path: 'version',
       message: `version 建议使用 semver（当前：${String(version)}）`,
-    });
-  }
-
-  // minKernelVersion：标准远期键（spec §五 定义），格式不规范仅提示不阻塞——实现按「未知键 warn + ignore」处理
-  const minKernelVersion = manifest['minKernelVersion'];
-  if (
-    minKernelVersion !== undefined &&
-    (typeof minKernelVersion !== 'string' || !SEMVER_PATTERN.test(minKernelVersion))
-  ) {
-    issues.push({
-      severity: 'warning',
-      code: 'INVALID_MIN_KERNEL_VERSION',
-      path: 'minKernelVersion',
-      message: `minKernelVersion 建议使用 semver（当前：${String(minKernelVersion)}）`,
     });
   }
 }

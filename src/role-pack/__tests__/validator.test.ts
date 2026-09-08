@@ -508,18 +508,11 @@ describe('validateManifest：非策略键字段上限（开放字段防无条件
   });
 });
 
-describe('validateManifest：标准远期键（minKernelVersion）', () => {
-  it('minKernelVersion 合法 semver → 通过，不报未知键', () => {
-    const result = validate({ minKernelVersion: '1.0.0' });
-    expect(result.valid).toBe(true);
-    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
-    expect(findByCode(result.issues, 'INVALID_MIN_KERNEL_VERSION')).toHaveLength(0);
-  });
-
-  it('minKernelVersion 非 semver → INVALID_MIN_KERNEL_VERSION warning（不阻塞）', () => {
+describe('validateManifest：无消费远期键按未知键宽容', () => {
+  it('minKernelVersion 已移出白名单 → 未知键 warning（不阻塞）', () => {
     const result = validate({ minKernelVersion: 'v1' });
-    expect(findByCode(result.issues, 'INVALID_MIN_KERNEL_VERSION')).toHaveLength(1);
-    expect(findByCode(result.issues, 'INVALID_MIN_KERNEL_VERSION')[0]?.severity).toBe('warning');
+    expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(1);
+    expect(result.valid).toBe(true);
   });
 
   it('extensions 已移出白名单 → 作为未知键报 UNKNOWN_TOP_LEVEL_KEY warning', () => {

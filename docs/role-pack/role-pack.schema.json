@@ -37,28 +37,6 @@
       "maxLength": 200,
       "description": "角色包作者"
     },
-    "homepage": {
-      "type": "string",
-      "format": "uri",
-      "maxLength": 200,
-      "description": "项目主页"
-    },
-    "repository": {
-      "type": "string",
-      "format": "uri",
-      "maxLength": 200,
-      "description": "源码仓库地址"
-    },
-    "license": {
-      "type": "string",
-      "maxLength": 200,
-      "description": "开源许可证标识"
-    },
-    "minKernelVersion": {
-      "type": "string",
-      "pattern": "^\\d+\\.\\d+\\.\\d+$",
-      "description": "最低内核版本要求（semver，远期键）：高于实现版本时实现拒绝加载或警告降级运行；实现按未知键 warn + ignore 处理"
-    },
     "handoffPrompt": {
       "type": "string",
       "maxLength": 2000,
@@ -310,12 +288,6 @@
         },
         "additionalProperties": false
       }
-    },
-
-    "extensions": {
-      "type": "object",
-      "description": "反域名命名空间扩展（如 `com.memora/`，对齐 Agent Plugins 惯例），其他实现忽略；实现按未知键 warn + ignore 处理",
-      "additionalProperties": true
     }
   },
 
