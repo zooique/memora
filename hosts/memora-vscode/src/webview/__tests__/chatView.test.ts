@@ -2880,4 +2880,22 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb.textContent).toContain('对话处理超时，请稍后重试');
     expect(rb.textContent).not.toContain('用户停止');
   });
+
+  it('运行时流式轮 done 后回填 ts 锚：容器级删除按钮可用（修复「回答结束删除恒禁用」）', () => {
+    mountChatView();
+    // 用户输入（带 ts）→ 流式正文（建 round-group 容器 + footer）→ done（回填 roundId + ts 锚）
+    dispatch({ type: 'user', text: '请总结', ts: '2026-09-08T10:00:00.000Z' });
+    dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
+    dispatch({ type: 'chunk', content: '第二段' });
+    // done 前：容器 footer 的删除按钮 anchor ts 未回填 → 禁用
+    const delBefore = document.querySelector('.round-group__footer .msg-delete-icon') as HTMLButtonElement | null;
+    expect(delBefore?.disabled).toBe(true);
+    dispatch({ type: 'done', roundId: 'r1' });
+    // done 后：commitTurnTs 用本轮用户输入 ts 回填 → 删除按钮可用（锁定已解除）
+    const delAfter = document.querySelector('.round-group__footer .msg-delete-icon') as HTMLButtonElement;
+    expect(delAfter.disabled).toBe(false);
+    // 分叉按钮：roundId 回填 → 同样可用
+    const forkAfter = document.querySelector('.round-group__footer .msg-fork-icon') as HTMLButtonElement;
+    expect(forkAfter.disabled).toBe(false);
+  });
 });

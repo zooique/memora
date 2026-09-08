@@ -1452,11 +1452,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     sessionControlsLocked = locked;
     newSessionBtn.disabled = locked;
     historyBtn.disabled = locked;
-    // 删除按钮：锚点 = dataset.ts（无时间戳则禁用）
+    // 删除按钮：锚点归一化——段级（.msg 内 button）取自身 dataset.ts；容器级（round-group footer）
+    // button 无自身 dataset，取容器内首段 .msg.assistant 的 dataset.ts（与构建时 firstSeg 语义一致，
+    // 2026-09-08：修复运行时流式轮首段 ts 空导致删除恒禁用——commitTurnTs 回填后此处即生效）
     document
       .querySelectorAll<HTMLButtonElement>('.msg-delete-icon')
       .forEach((b) => {
-        b.disabled = locked || !b.dataset.ts;
+        const ts =
+          b.dataset.ts ||
+          b.closest<HTMLElement>('.round-group')?.querySelector<HTMLElement>('.msg.assistant')?.dataset.ts ||
+          '';
+        b.disabled = locked || !ts;
       });
     // 分叉按钮：锚点从父块继承（.msg.assistant 段级 / .round-group 容器级），
     // 与点击 handler 读父块 dataset.roundId 保持 SSOT 一致；forkBtn 自身不存 roundId
@@ -2585,6 +2591,27 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     updateSessionControlsLock(sessionControlsLocked);
   }
 
+  /** 最近一次新闭环用户输入时间戳（删除按钮 ts 锚回填源；'user' 无 kind 分支记录，追问/回放同源） */
+  let lastUserTs: string | undefined;
+
+  /**
+   * 回填删除按钮的 ts 锚（done/interrupted 后调用，与 commitRoundId 同族对齐）。
+   *
+   * 运行时流式轮的容器首段（骨架转正块）dataset.ts 恒空 → 容器 footer 删除按钮
+   * 「锚点 = firstSeg.dataset.ts」判定恒禁用（deleteBtn.disabled = !ts），只有切面板
+   * 重建（append 带 ts）才可用——「回答结束后删除按钮不可用、重渲染后可用」根因。
+   * 回填锚 = 本轮用户输入 ts（delete_turn 语义同源：删除该问答及之后所有对话）。
+   * 只回填数据不改 disabled，统一走 updateSessionControlsLock 的既有判定（SSOT）。
+   */
+  function commitTurnTs(): void {
+    if (!lastUserTs) return;
+    const container = activeAssistantEl?.closest<HTMLElement>('.round-group');
+    const firstSeg =
+      (container ? container.querySelector<HTMLElement>('.msg.assistant') : null) ?? activeAssistantEl;
+    if (firstSeg && !firstSeg.dataset.ts) firstSeg.dataset.ts = lastUserTs;
+    updateSessionControlsLock(sessionControlsLocked);
+  }
+
   // ─── 活动状态区（三合一：P0 错误 / P1 低扰 / P2 指标） ───
   // 单一主状态条（#activityBar）同时只显示一条；被覆盖的提示不丢失，
   // 全部进「▾ 活动详情」历史（最近 MAX_ACTIVITY_HISTORY 条，带时间戳）。
@@ -2991,6 +3018,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // Console 即可定位），且以最小文本块降级渲染，保证用户输入恒可见。
         try {
           append('user', msg.text, msg.ts);
+          // 记录本轮用户输入 ts（删除按钮 ts 锚回填源，commitTurnTs 消费）
+          if (msg.ts) lastUserTs = msg.ts;
         } catch (err) {
           console.warn('[memora] 用户消息渲染失败（兜底降级）', err);
           const fallback = document.createElement('div');
@@ -3138,6 +3167,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       finalizeStreaming();
       // 回填本轮 roundId（启用该回答的分叉按钮；host done 消息携带）
       commitRoundId(msg.roundId);
+      // 回填删除按钮 ts 锚（运行时流式块 dataset.ts 恒空 → 删除按钮恒禁用修复）
+      commitTurnTs();
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 低扰提示「已停止生成」
       // 等待指示器同步收尾（③ 排雷补漏 2026-08-30）：done/error 均清，唯独中断漏清——
@@ -3153,6 +3184,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       finalizeStreaming();
       // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
       commitRoundId(msg.roundId);
+      commitTurnTs();
       showActivity('info', '已停止生成');
     } else if (msg.type === 'suggestions') {
       // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
