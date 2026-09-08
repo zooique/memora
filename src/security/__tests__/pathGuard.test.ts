@@ -529,3 +529,72 @@ describe('SecurityGuard · 写入二次确认', () => {
     expect(received[0]!.afterContent).toBeUndefined();
   });
 });
+
+describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁）', () => {
+  let projectPath: string;
+  let dataDir: string;
+
+  beforeEach(() => {
+    projectPath = mkdtempSync(join(tmpdir(), 'memora-script-confirm-'));
+    dataDir = mkdtempSync(join(tmpdir(), 'memora-script-data-'));
+  });
+
+  it('owner + confirmScripts=false 应该自动批准（审计 write-auto）', async () => {
+    // 默认不弹窗：脚本执行自动放行，审计仍记录
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner');
+    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
+    expect(ok).toBe(true);
+
+    const audits = guard.getRecentAudits();
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-auto');
+    expect(last.decision).toBe('auto-approved');
+  });
+
+  it('owner + confirmScripts=true + 未注入 handler 应 fail-closed 拒绝', async () => {
+    // confirmScripts 打开但宿主没接确认 UI → 拒绝（安全优先，审计标注 fail-closed）
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
+    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
+    expect(ok).toBe(false);
+
+    const audits = guard.getRecentAudits();
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-decline');
+    expect(last.decision).toBe('declined');
+    expect(last.reason).toContain('fail-closed');
+  });
+
+  it('guest 模式（confirmScripts 默认 false 也强制确认）应 fail-closed 拒绝', async () => {
+    // guest 对脚本执行同样强制确认，且独立于 confirmScripts 开关
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'guest');
+    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
+    expect(ok).toBe(false);
+  });
+
+  it('confirmScripts=true + 注入 handler 返回 true 应确认放行', async () => {
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
+    guard.onWriteConfirmation(async (info) => {
+      expect(info.tool).toBe('run_project_script');
+      expect(info.needsConfirm).toBe(true);
+      expect(info.targetPath).toContain('test.py');
+      return true;
+    });
+    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script', '运行项目脚本 scripts/test.py');
+    expect(ok).toBe(true);
+
+    const audits = guard.getRecentAudits();
+    const last = audits[audits.length - 1]!;
+    expect(last.type).toBe('write-confirm');
+    expect(last.decision).toBe('confirmed');
+  });
+
+  it('判据独立：confirmScripts 不影响写入确认（confirmWrites 仍为 false 时写自动批准）', async () => {
+    // SSOT 收口验证：confirmGate 两入口判据互不串扰——开脚本确认不拖累写确认
+    const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
+    const scriptConfirmed = await guard.confirmScriptRun(join(projectPath, 'scripts', 'run.sh'), 'run_project_script');
+    expect(scriptConfirmed).toBe(false); // 脚本需确认但无 handler → 拒绝
+
+    const writeOk = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
+    expect(writeOk).toBe(true); // 写入判据独立：confirmWrites=false → 仍自动批准
+  });
+});
