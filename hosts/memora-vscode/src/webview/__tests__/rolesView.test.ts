@@ -122,6 +122,56 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(chips[1]?.textContent).toBe('摘要生成');
   });
 
+  it('G29 健康区：roles_loaded issues 渲染徽章 + 问题列表（error/warning 分色）', () => {
+    mountRolesView();
+    dispatchLoaded(
+      [
+        {
+          name: 'doc-review',
+          displayName: '文档打磨',
+          capabilities: [],
+          issues: [
+            { level: 'error' as const, message: '缺 name 字段' },
+            { level: 'warning' as const, message: '未知键 keywords（宽容忽略）' },
+          ],
+        },
+        { name: 'translator', displayName: '翻译助手', capabilities: [] },
+      ],
+      'doc-review',
+    );
+    const cards = document.querySelectorAll('.card');
+    // 有问题卡片：显示健康区 + 徽章（含 error → 配置异常）+ 两条问题（分色）
+    const health = cards[0]?.querySelector('.role-health');
+    expect(health).not.toBeNull();
+    expect(health?.querySelector('.role-health-badge')?.textContent).toBe('配置异常');
+    const problems = health?.querySelectorAll('.role-problems li');
+    expect(problems).toHaveLength(2);
+    expect(problems?.[0]?.textContent).toContain('缺 name 字段');
+    expect(problems?.[0]?.classList.contains('prob-error')).toBe(true);
+    expect(problems?.[1]?.classList.contains('prob-warning')).toBe(true);
+    // 无问题卡片：不渲染健康区
+    expect(cards[1]?.querySelector('.role-health')).toBeNull();
+  });
+
+  it('G29 健康区：仅有 warning 时徽章为「可优化」（error 优先分级）', () => {
+    mountRolesView();
+    dispatchLoaded(
+      [
+        {
+          name: 'translator',
+          displayName: '翻译助手',
+          capabilities: [],
+          issues: [{ level: 'warning' as const, message: '未知键 trigger（宽容忽略）' }],
+        },
+      ],
+      'translator',
+    );
+    const badge = document.querySelector('.role-health-badge');
+    expect(badge).not.toBeNull();
+    expect(badge?.textContent).toBe('可优化');
+    expect(badge?.classList.contains('health-warn')).toBe(true);
+  });
+
   it('「设为当前」→ postMessage roles_set_active（host 切换 + 持久化 + 重推）', () => {
     const { postMessage } = mountRolesView();
     dispatchLoaded(

@@ -545,6 +545,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           // v0.13 S7：该包作为组员被哪些组引用（仅小组会议用）+ 兜底契约包禁删标记
           teamMembers: memberOf.get(m.name),
           isFallback: m.name === BUILTIN_FALLBACK_PACK,
+          // G29 健康徽章：内核 validateManifest 全量 issues 透传给 webview（error/warning 均渲染）
+          issues: (pack?.validationIssues ?? []).map((i) => ({ level: i.severity, message: i.message })),
         };
       });
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');

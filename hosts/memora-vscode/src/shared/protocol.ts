@@ -738,6 +738,8 @@ export type ExtensionToWebviewMessage =
         teamMembers?: readonly string[];
         /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
         isFallback?: boolean;
+        /** manifest 校验问题（G29 健康徽章数据源，镜像 skills_loaded 的 SkillIssueDto 结构） */
+        issues?: readonly RoleIssueDto[];
       }[];
       /** 组（会议名单）：组长 + 组员（v0.13 S7，宿主用户级数据） */
       teams: { leader: string; members: string[] }[];
@@ -993,6 +995,14 @@ export interface SkillIssueDto {
   /** 级别：error=不可生效 / warning=可加载但变弱 */
   level: 'error' | 'warning';
   /** 问题描述（含影响说明，供 UI 错误定位） */
+  message: string;
+}
+
+/** 角色包校验问题（G29 健康徽章数据源，2026-09-08 镜像 SkillIssueDto；映射内核 RolePackValidationIssue） */
+export interface RoleIssueDto {
+  /** 级别：error=拒绝装载语义 / warning=可装载但提示 */
+  level: 'error' | 'warning';
+  /** 问题描述（映射内核 issue.message） */
   message: string;
 }
 export interface SkillDto {

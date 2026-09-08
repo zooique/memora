@@ -54,6 +54,8 @@ interface RolesPayload {
     teamMembers?: readonly string[];
     /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
     isFallback?: boolean;
+    /** manifest 校验问题（G29 健康徽章，level+message 结构对齐 skills_loaded） */
+    issues?: readonly { level: 'error' | 'warning'; message: string }[];
   }[];
   /** 组（会议名单）：组长 + 组员（v0.13 S7） */
   teams: { leader: string; members: string[] }[];
@@ -439,6 +441,29 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
 
     // ② 卡片级小组条（队伍状态 + 组队入口；复用小组成员标注的信息层级）
     card.appendChild(buildTeamRibbon(p, data));
+
+    // ===== G29 健康区（manifest 校验问题，镜像技能 G22 徽章模式）=====
+    // error=不可装载/特性缺失（红徽章）；warning=可装载但提示（黄徽章）；问题列表默认折叠展开
+    if (p.issues && p.issues.length > 0) {
+      const hasError = p.issues.some((i) => i.level === 'error');
+      const hasWarn = p.issues.some((i) => i.level === 'warning');
+      const health = document.createElement('div');
+      health.className = 'role-health';
+      const badge = document.createElement('span');
+      badge.className = `role-health-badge ${hasError ? 'health-error' : hasWarn ? 'health-warn' : ''}`;
+      badge.textContent = hasError ? '配置异常' : '可优化';
+      health.appendChild(badge);
+      const list = document.createElement('ul');
+      list.className = 'role-problems';
+      p.issues.forEach((i) => {
+        const li = document.createElement('li');
+        li.className = `prob-${i.level}`;
+        li.textContent = i.message;
+        list.appendChild(li);
+      });
+      health.appendChild(list);
+      card.appendChild(health);
+    }
 
     // ===== 底部折叠区（专家挖掘）=====
     const hasTraits = p.traits && Object.keys(p.traits).length > 0;

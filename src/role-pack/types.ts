@@ -7,6 +7,8 @@
 
 // 策略维度名称与可选值定型后不得随意修改——它是未来角色包文件格式的字段契约
 
+import type { RolePackValidationIssue } from './validator.js';
+
 // ── 回答前（Prepare）：认知策略 ──
 
 /** 理解确认模式：off=直接生成 / echo=复述但不等待 / confirm=预检停顿后确认 */
@@ -293,6 +295,9 @@ export interface RolePackAssembly {
   readonly strategy: BehaviorStrategy;
   /** 角色性格特征（traits），从 persona.md frontmatter 解析（traits.xxx = 0-1 数值），供宿主情感计算 */
   readonly traits?: Record<string, number>;
+  /** manifest 校验问题（G29 健康徽章数据源）：装载时 validateManifest 全量 issues（含 warning）。
+   *  可选向后兼容（旧装配无此字段）；宿主 UI 据此叠加健康徽章 + 问题列表，镜像技能 G22 徽章模式。 */
+  readonly validationIssues?: readonly RolePackValidationIssue[];
 }
 
 

@@ -147,6 +147,29 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.capabilities).toEqual([
       { capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' },
     ]);
+    // G29：合法包 validationIssues 为空数组（健康，宿主不渲染徽章）
+    expect(active!.validationIssues).toEqual([]);
+  });
+
+  it('G29 校验透出：带未知键 manifest 的 warning issues 经装配对外可见（不阻塞装载）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    // 未知键 keywords 走「unknown 键 warning + 忽略」宽容通道（键级渐进设计）
+    const manifest = { ...MANIFEST_TECH, name: 'legacy-key', keywords: ['旧'] };
+    await writePack(packsDir, 'legacy-key', manifest, {
+      persona: '旧键包',
+      rules: '',
+    });
+
+    const manager = new RolePackManager(dir);
+    const count = await manager.load('legacy-key');
+    expect(count).toBe(1);
+    const active = manager.getActive();
+    expect(active).not.toBeNull();
+    // warning 透出且不阻塞装载（宽容语义保持）
+    const issues = active!.validationIssues ?? [];
+    expect(issues.length).toBeGreaterThan(0);
+    expect(issues.some((i) => i.severity === 'warning' && /keywords/i.test(i.message))).toBe(true);
   });
 
   it('displayName 显式声明时解析为 UI 展示名（与 name 职责分离，SSOT）', async () => {

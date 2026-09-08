@@ -768,7 +768,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     };
     // 预计算装配结果（mergeStrategy + personaPrompt 构建）
     const cachedAssembly = assembleRolePack(pack);
-    return { ...pack, _cachedAssembly: cachedAssembly };
+    // G29 健康徽章数据源：把 validateManifest 全量 issues（含 warning）透进装配，
+    // 宿主据此叠加徽章/问题列表；原「只记 error 日志」行为保留在上方校验块。
+    const assemblyWithIssues: RolePackAssembly = { ...cachedAssembly, validationIssues: validation.issues };
+    return { ...pack, _cachedAssembly: assemblyWithIssues };
   }
 
   // ── 角色包管理 ────────────────────────────────────

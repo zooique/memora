@@ -137,6 +137,43 @@ export const rolesStyles = `
   /* 兜底契约包定位 chip（能力标签区，灰色系） */
   #roles-root .strategy-chip.fallback { background: rgba(96, 125, 139, 0.2); color: #607d8b; }
 
+  /* ============ Components：G29 健康区（manifest 校验问题，镜像技能 G22 徽章模式） ============ */
+  /* 徽章样式：复制技能侧 #skills-root .health-badge 形态，但用 #roles-root 作用域——避免把技能
+     样式类改造成跨场景共享（SSOT：各视图自持作用域类，视觉 token 复用 tokens.ts 的 --skill-health-*） */
+  #roles-root .role-health {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sp-2, 6px);
+    margin: var(--sp-2, 6px) 0;
+    padding: var(--sp-2, 6px);
+    border: 1px solid var(--border, rgba(128,128,128,.25));
+    border-radius: var(--radius-md, 6px);
+    background: var(--surface, rgba(0,0,0,.06));
+  }
+  #roles-root .role-health-badge {
+    font-size: var(--font-xs, 10px);
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill, 999px);
+    flex-shrink: 0;
+  }
+  #roles-root .role-health-badge.health-error {
+    color: #ffffff;
+    background: var(--skill-health-error);
+  }
+  #roles-root .role-health-badge.health-warn {
+    color: var(--skill-health-warn);
+    background: var(--surface-hover, rgba(128,128,128,.2));
+  }
+  #roles-root .role-problems {
+    margin: 0;
+    padding-left: 16px;
+    list-style: disc;
+    font-size: var(--font-xs, 10px);
+  }
+  #roles-root .role-problems .prob-error { color: var(--skill-health-error); }
+  #roles-root .role-problems .prob-warning { color: var(--skill-health-warn); }
+
   /* ============ Components：折叠详情区（专家挖掘） ============ */
   #roles-root .card-details {
     margin-top: var(--sp-1, 2px);
