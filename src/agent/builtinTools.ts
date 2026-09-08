@@ -554,7 +554,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     description:
       '运行项目内已有的脚本文件（默认开放，与角色包能力声明无关）。脚本路径相对项目根，越界（项目外路径）拒绝执行。' +
       '脚本源码不进入上下文，仅执行结果（stdout/stderr/退出码）返回。由内核子进程执行：超时 30s（上限 120s）、' +
-      '工作目录=项目根、不继承宿主环境变量。扩展名推断运行时：.py→python、.js/.mjs/.cjs→node、.sh/.bash/.zsh→shell。',
+      '工作目录=项目根、不继承宿主环境变量。扩展名推断运行时：.py→python、.js/.mjs/.cjs→node、.sh/.bash/.zsh→shell。' +
+      '与 run_code(script_path) 的区别：本工具运行**仓库既有**脚本（默认开放、内核执行）；' +
+      'run_code 面向 LLM 现写的一次性临时脚本（特权 code:execute + 宿主沙箱，写→执行→删闭环）。',
     parameters: {
       type: 'object',
       properties: {

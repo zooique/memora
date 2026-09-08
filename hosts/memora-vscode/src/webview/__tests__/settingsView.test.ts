@@ -64,6 +64,10 @@ const HTML = `
         <input type="checkbox" id="confirmWritesToggle" />
         <span>写入二次确认</span>
       </label>
+      <label class="toggle-label">
+        <input type="checkbox" id="confirmScriptsToggle" />
+        <span>脚本执行二次确认</span>
+      </label>
       <p id="securityStatus" class="security-status" hidden></p>
       <select id="searchEngineSelect">
         <option value="auto">自动</option>
@@ -204,5 +208,55 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
       new MessageEvent('message', { data: { type: 'search_engine_status', engine: 'sogou' } }),
     );
     expect(select.value).toBe('sogou');
+  });
+});
+
+describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('security_status 推送双开关初始状态（confirmWrites + confirmScripts 各自回显）', () => {
+    mountSettingsView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'security_status', confirmWrites: true, confirmScripts: true },
+      }),
+    );
+    expect((document.getElementById('confirmWritesToggle') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(true);
+    const statusEl = document.getElementById('securityStatus') as HTMLElement;
+    expect(statusEl.textContent).toContain('写文件前审批');
+    expect(statusEl.textContent).toContain('脚本执行前审批');
+  });
+
+  it('切换脚本确认开关 → 发送 security_scripts_toggle + 更新状态文案', () => {
+    const { postMessage } = mountSettingsView();
+    const scriptsToggle = document.getElementById('confirmScriptsToggle') as HTMLInputElement;
+    scriptsToggle.checked = true;
+    scriptsToggle.dispatchEvent(new Event('change'));
+    expect(postMessage).toHaveBeenCalledWith({ type: 'security_scripts_toggle', enabled: true });
+    expect((document.getElementById('securityStatus') as HTMLElement).textContent).toContain('运行脚本/代码前将弹出审批卡');
+  });
+
+  it('host 单独回推 confirmScripts=false 只改脚本开关、不影响写开关', () => {
+    mountSettingsView();
+    // 先置双开
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'security_status', confirmWrites: true, confirmScripts: true },
+      }),
+    );
+    // 再单独关脚本确认
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'security_status', confirmWrites: true, confirmScripts: false },
+      }),
+    );
+    expect((document.getElementById('confirmWritesToggle') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(false);
   });
 });

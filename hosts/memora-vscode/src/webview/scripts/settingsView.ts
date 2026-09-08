@@ -304,6 +304,7 @@ function createSecurityView({
   root: HTMLElement;
 }): void {
   const toggle = root.querySelector<HTMLInputElement>('#confirmWritesToggle');
+  const scriptsToggle = root.querySelector<HTMLInputElement>('#confirmScriptsToggle');
   const statusEl = root.querySelector<HTMLElement>('#securityStatus');
 
   // ─── G8 白名单额外路径 ───
@@ -366,6 +367,17 @@ function createSecurityView({
     });
   }
 
+  // 脚本执行二次确认开关：通知 host（security_scripts_toggle，2026-09-08）
+  if (scriptsToggle) {
+    scriptsToggle.addEventListener('change', () => {
+      vscode.postMessage({ type: 'security_scripts_toggle', enabled: scriptsToggle.checked });
+      if (statusEl) {
+        statusEl.textContent = scriptsToggle.checked ? '已开启：运行脚本/代码前将弹出审批卡' : '已关闭：脚本自动运行';
+        statusEl.hidden = false;
+      }
+    });
+  }
+
   // ─── 网页搜索引擎下拉（方案 A 2026-09-02）───
   const engineSelect = root.querySelector<HTMLSelectElement>('#searchEngineSelect');
   engineSelect?.addEventListener('change', () => {
@@ -378,10 +390,14 @@ function createSecurityView({
   // 监听 host 的 security_status / allowed_paths_status / search_engine_status 消息
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
-    if (msg.type === 'security_status' && toggle) {
-      toggle.checked = msg.confirmWrites;
+    if (msg.type === 'security_status') {
+      if (toggle) toggle.checked = msg.confirmWrites;
+      if (scriptsToggle) scriptsToggle.checked = msg.confirmScripts;
       if (statusEl) {
-        statusEl.textContent = msg.confirmWrites ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
+        const parts: string[] = [];
+        parts.push(msg.confirmWrites ? '写文件前审批' : '写文件自动批准');
+        parts.push(msg.confirmScripts ? '脚本执行前审批' : '脚本自动运行');
+        statusEl.textContent = `已开启：${parts.join(' · ')}`;
         statusEl.hidden = false;
       }
     }

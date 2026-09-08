@@ -212,6 +212,17 @@ export class SecurityGuard {
   }
 
   /**
+   * 运行时切换脚本/代码执行确认开关（宿主设置面板热更新）
+   *
+   * 开启后：owner 模式下 run_code/run_project_script 执行前会触发 confirmationHandler 弹窗审批；
+   * 关闭后：owner 模式下脚本自动批准（审计仍会记录）。
+   * guest 模式不受影响——脚本执行始终需要确认。
+   */
+  setConfirmScripts(value: boolean): void {
+    this.confirmScripts = value;
+  }
+
+  /**
    * 运行时设置「用户额外白名单」（宿主设置面板热更新）
    *
    * 仅操作额外项（extraRoots），基准信任根（baseRoots）永不被触碰——守住 D5 安全显式性：

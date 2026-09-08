@@ -27,7 +27,7 @@ import type {
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
+import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
 // 内核常量（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
 //   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview。
@@ -352,6 +352,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     // ─── 安全子视图消息（H0 写入审批 + G8 白名单，2026-08-23 / 2026-08-25） ───
     if (msg.type === 'security_toggle') {
       await this.toggleConfirmWrites(msg.enabled);
+      return;
+    }
+    if (msg.type === 'security_scripts_toggle') {
+      await this.toggleConfirmScripts(msg.enabled);
       return;
     }
     if (msg.type === 'allowed_paths_set') {
@@ -1034,8 +1038,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       if (agent?.security) {
         agent.security.setConfirmWrites(enabled);
       }
-      // 3. 推送最新状态给 webview
-      this.post({ type: 'security_status', confirmWrites: enabled });
+      // 3. 推送最新状态给 webview（脚本确认沿用持久值，保持双开关状态一致）
+      const scriptsEnabled = this._globalState?.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
+      this.post({ type: 'security_status', confirmWrites: enabled, confirmScripts: scriptsEnabled });
       this.post({
         type: 'notice',
         level: 'info',
@@ -1051,13 +1056,46 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 切换脚本/代码执行确认开关（security_scripts_toggle 消息处理，2026-09-08）
+   *
+   * 持久化到 globalState + 热更新 agent.security.setConfirmScripts()。
+   * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code/run_project_script 执行前询问。
+   */
+  private async toggleConfirmScripts(enabled: boolean): Promise<void> {
+    try {
+      // 1. 持久化到 globalState（用户级偏好）
+      this._globalState?.update(CONFIRM_SCRIPTS_KEY, enabled);
+      // 2. 热更新已装配的 Agent（SecurityGuard 运行时切换）
+      const agent = await this.ensureAgent();
+      if (agent?.security) {
+        agent.security.setConfirmScripts(enabled);
+      }
+      // 3. 推送最新状态给 webview（confirmWrites 沿用持久值，保持双开关状态一致）
+      const writesEnabled = this._globalState?.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
+      this.post({ type: 'security_status', confirmWrites: writesEnabled, confirmScripts: enabled });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: enabled ? '已开启脚本执行二次确认（运行脚本/代码前将弹出审批卡）' : '已关闭脚本执行二次确认（脚本自动运行）',
+      });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `切换脚本执行确认开关失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
+  }
+
+  /**
    * 加载并推送安全设置状态（settings 视图 ready 时调用）
    *
    * 从 globalState 读取持久化开关值，推送给 webview 渲染初始状态。
    */
   private loadSecurityStatus(): void {
     const enabled = this._globalState?.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
-    this.post({ type: 'security_status', confirmWrites: enabled });
+    const scripts = this._globalState?.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
+    this.post({ type: 'security_status', confirmWrites: enabled, confirmScripts: scripts });
   }
 
   /**
@@ -1421,6 +1459,16 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
           </label>
         </div>
         <p class="security-desc">开启后，AI 写文件前会弹出审批卡，需确认放行。默认关闭（owner 模式自动批准）。</p>
+      </div>
+      <div class="security-item">
+        <div class="security-item-header">
+          <label for="confirmScriptsToggle" class="security-label">脚本执行二次确认</label>
+          <label class="toggle-switch">
+            <input id="confirmScriptsToggle" type="checkbox" role="switch" aria-label="脚本执行二次确认开关" />
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <p class="security-desc">开启后，AI 运行脚本/代码（run_project_script / run_code）前会弹出审批卡，需确认放行。默认关闭（脚本自动运行）。仅控制「是否询问」，不影响脚本能力本身（run_project_script 始终默认开放）。</p>
       </div>
       <div id="securityStatus" class="security-status" hidden></div>
       <div class="security-item">

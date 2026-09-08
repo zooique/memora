@@ -27,7 +27,7 @@ import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, ROLE_PACK_TEAMS_KEY } from '../shared/constants.js';
+import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY } from '../shared/constants.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -86,6 +86,8 @@ function getOrCreateAgent(
     const rolePackTeams = globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     // 读取写入二次确认开关（用户安全偏好；默认 false → owner 写文件自动批准）
     const confirmWrites = globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
+    // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
+    const confirmScripts = globalState.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
     // 读取工作区白名单额外路径（G8：项目级设置，落 .vscode/settings.json）；
     // 项目目录基准根恒在，此处仅含用户额外路径
     const allowedPaths = vscode.workspace
@@ -109,6 +111,7 @@ function getOrCreateAgent(
       userSkillsDir,
       userRolePacksDir,
       confirmWrites,
+      confirmScripts,
       allowedPaths,
       outputChannel,
     }).catch(

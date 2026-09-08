@@ -23,3 +23,10 @@ export const ROLE_PACK_TEAMS_KEY = 'memora.rolePackTeams';
  *  运行时切换时直接调 agent.security.setConfirmWrites() 热更新。
  *  作用域为用户级（globalState）——安全偏好是用户级设置，跨项目共享。 */
 export const CONFIRM_WRITES_KEY = 'memora.confirmWrites';
+
+/** 脚本/代码执行确认开关的持久化键（vscode globalState）：
+ *  与写入二次确认同模式：用户在设置面板开启/关闭时写入，Agent 装配时读取决定是否传
+ *  confirmScripts=true，运行时切换时直接调 agent.security.setConfirmScripts() 热更新。
+ *  作用域为用户级（globalState）——安全偏好是用户级设置，跨项目共享。
+ *  注意：这是「执行前是否询问」开关，不是脚本能力总开关（run_project_script 始终默认开放）。 */
+export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';

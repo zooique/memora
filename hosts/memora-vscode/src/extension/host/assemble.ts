@@ -157,6 +157,14 @@ export interface AssembleOptions {
    */
   confirmWrites?: boolean;
   /**
+   * 脚本/代码执行确认开关（2026-09-08，P3-⑥）
+   *
+   * 与 confirmWrites 同模式：开启后 owner 模式 run_code/run_project_script 执行前
+   * 触发审批确认；关闭后自动批准。由 extension 从 globalState 读取注入，
+   * 运行时经 agent.security.setConfirmScripts() 热更新（设置面板），无需重启。
+   */
+  confirmScripts?: boolean;
+  /**
    * 白名单额外允许路径（G8）
    *
    * 用户级项目白名单（不含 projectPath 基准根），由 extension 从 workspace 设置
@@ -205,7 +213,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, allowedPaths, outputChannel } = options;
+  const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, confirmScripts, allowedPaths, outputChannel } = options;
 
   // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
@@ -300,6 +308,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     allowedPaths: [projectPath, ...(allowedPaths ?? [])],
     // 写入二次确认（H0：用户级安全偏好；开启后 owner 写文件前触发审批确认）
     confirmWrites: confirmWrites ?? false,
+    // 脚本/代码执行确认（2026-09-08：与写入确认同模式，开则 run_code/run_project_script 执行前询问）
+    confirmScripts: confirmScripts ?? false,
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）

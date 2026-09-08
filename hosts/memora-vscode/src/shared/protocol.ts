@@ -338,6 +338,14 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'security_toggle'; enabled: boolean }
   /**
+   * 切换脚本/代码执行确认开关（设置面板「安全」选项卡的 toggle 开关，2026-09-08）
+   *
+   * 由设置面板「脚本执行二次确认」开关触发：host 持久化到 globalState + 热更新
+   * agent.security.setConfirmScripts()。无需重启 Agent。
+   * 语义：开 = run_code/run_project_script 执行前弹窗询问；关（默认）= 自动批准。
+   */
+  | { type: 'security_scripts_toggle'; enabled: boolean }
+  /**
    * 写入审批应答（对 write_confirm_request 的应答）
    *
    * 用户在审批卡点击「确认写入」或「拒绝」后，webview 发送此消息。
@@ -889,7 +897,7 @@ export type ExtensionToWebviewMessage =
    * 由 host 在 settings 视图 ready 时推送，webview 据此渲染 toggle 初始状态。
    * enabled=true 时开关高亮开启。
    */
-  | { type: 'security_status'; confirmWrites: boolean }
+  | { type: 'security_status'; confirmWrites: boolean; confirmScripts: boolean }
   /**
    * 白名单额外允许路径状态推送（设置面板加载时推送当前列表）
    *
