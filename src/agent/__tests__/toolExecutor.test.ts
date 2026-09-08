@@ -7,7 +7,7 @@
  *   - list_dir：默认项目根 / 递归 / 深度限制 / 忽略 node_modules / 黑名单
  *   - search_memories：match 模式 / near 模式 / 空查询 / 注入限制
  */
-import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import { describe, it, expect, beforeAll, afterAll, afterEach } from 'vitest';
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -75,17 +75,17 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 17 个工具', () => {
+    it('应注册 18 个内置工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(17);
+      expect(names.length).toBe(18);
       expect(names).toContain('delete_file');
     });
 
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 17 + 条件 4（web_search / web_fetch / run_code / search_project）
-      expect(names.length).toBe(21);
+      // 始终内置 18 + 条件 4（web_search / web_fetch / run_code / search_project）
+      expect(names.length).toBe(22);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
@@ -108,6 +108,89 @@ describe('工具执行器（6 个工具）', () => {
         expect(tool.parameters.type).toBe('object');
         expect(Array.isArray(tool.parameters.required)).toBe(true);
       }
+    });
+  });
+
+  describe('工具暴露模型（默认常驻 vs 角色启动，tool-exposure-model 探索草稿）', () => {
+    afterEach(() => {
+      // 复位白名单，避免用例间污染
+      executor.setToolWhitelist(null);
+    });
+
+    it('toolWhitelist=null 时全部内置暴露（含特权工具 task_table_write）', () => {
+      const names = executor.list.map((t) => t.name);
+      expect(names).toContain('read_file');
+      expect(names).toContain('task_table_write');
+    });
+
+    it('空白名单（[]）时：常驻工具仍暴露，特权工具被过滤', () => {
+      executor.setToolWhitelist([]);
+      const names = executor.list.map((t) => t.name);
+      // 常驻豁免集（判据 A：项目内/内核自有）不受白名单影响
+      expect(names).toContain('read_file');
+      expect(names).toContain('write_file');
+      expect(names).toContain('run_project_script');
+      expect(names).toContain('read_skill');
+      // 特权工具（task:plan / 外部网络）被过滤
+      expect(names).not.toContain('task_table_write');
+      expect(names).not.toContain('task_table_update');
+    });
+
+    it('声明 web:search 白名单时：常驻 + web_search 特权暴露，task 特权仍过滤', () => {
+      // 未注入 webSearchProvider 时 web_search 条件工具不进入 baseTools，故仅验证常驻与 task 过滤
+      executor.setToolWhitelist(['web_search']);
+      const names = executor.list.map((t) => t.name);
+      expect(names).toContain('read_file');
+      expect(names).not.toContain('task_table_write');
+    });
+
+    it('白名单过滤后执行路由不受影响（暴露面控制 ≠ execute 拦截）——call 不存在工具直接参数报错', async () => {
+      // task_table_write 被过滤仅影响 LLM 可见性；刻意直接调用仍走 execute（由参数校验兜底）
+      await expect(executor.execute('task_table_write', JSON.stringify({}))).rejects.toThrow();
+    });
+  });
+
+  describe('run_project_script（默认开放：项目内已有脚本执行）', () => {
+    it('成功执行项目内脚本（扩展名推断运行时，cwd=项目根）', async () => {
+      // scripts/ 放脚本，验证相对根路径 + cwd=项目根（脚本可读项目相对文件）
+      mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
+      writeFileSync(
+        join(tmpProject, 'scripts/echo-env.js'),
+        "const fs = require('node:fs'); const p = require('node:path'); console.log('cwd-project-root:', fs.existsSync(p.join(process.cwd(), 'README.md'))); console.log('stdout-ok');",
+        'utf-8',
+      );
+      const result = await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: 'scripts/echo-env.js' }),
+      );
+      // 成功且 cwd 锚定项目根（能读项目内 README.md）
+      expect(result).toContain('cwd-project-root: true');
+      expect(result).toContain('stdout-ok');
+    });
+
+    it('路径越界（../ 穿越项目根）时拒绝执行', async () => {
+      const result = await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: '../escape.sh' }),
+      );
+      expect(result).toContain('PATH_DENIED');
+    });
+
+    it('缺少 script_path 参数时抛参数错误（schema 必填校验拦截）', async () => {
+      await expect(executor.execute('run_project_script', JSON.stringify({}))).rejects.toThrow(
+        '工具参数缺失',
+      );
+    });
+
+    it('guest 模式（无确认回调）时 fail-closed 拒绝', async () => {
+      // guest 强制确认；未注入 confirmationHandler → confirmScriptRun fail-closed → 拒绝
+      const guestSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'guest');
+      const guestExecutor = new ToolExecutor(tmpProject, guestSecurity, index);
+      const result = await guestExecutor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: 'scripts/echo-env.js' }),
+      );
+      expect(result).toContain('SCRIPT_DECLINE');
     });
   });
 

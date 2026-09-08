@@ -43,8 +43,8 @@ describe('builtinToolHandlers · isReservedTaskTableFile（任务表保留名，
 describe('builtinTools · BUILTIN_TOOLS', () => {
   // ─── 数量与名称 ────────────────────────────────────────────
 
-  it('应包含 17 个内置工具', () => {
-    expect(BUILTIN_TOOLS).toHaveLength(17);
+  it('应包含 18 个内置工具', () => {
+    expect(BUILTIN_TOOLS).toHaveLength(18);
   });
 
   it('应包含 read_file / write_file / delete_file / list_dir / search_memories / trace_summary / list_sessions', () => {

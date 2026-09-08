@@ -49,10 +49,10 @@
 这一层是**为宿主 / 跨实现接入预留的中立契约**——角色包不绑具体实现，由各实现自己消费：
 
 - **`capabilities`（能力声明）**：以**中立能力命名空间**声明（`域:动作`，如 `file:write` / `web:search`），不绑具体工具。**各实现（memora 是 reference implementation）自行映射到自有工具**：
-  - memora 侧映射表在 `src/role-pack/capabilityMap.ts`（SSOT）——`file:read` → `read_file`、`web:search` → `web_search` 等；
+  - **特权声明模型（2026-09-08，tool-exposure-model）**：memora 侧映射表在 `src/role-pack/capabilityMap.ts`（SSOT）——仅 `web:search` / `web:fetch` / `code:execute` / `task:plan` 映射为**特权工具白名单**；`file:*` / `memory:recall` 属**默认常驻工具**（`toolExecutor.DEFAULT_EXPOSED_TOOLS`），声明与否都不影响可见性、不再映射；
   - **宿主可以有自己的映射表**：例如 `code:execute` 需宿主注入 `ICodeExecutionProvider` 才真正暴露；
   - 未知能力（不在映射表）跳过，不阻塞装载。
-  - 角色包声明 `capabilities` 后，工具暴露面 = 该角色包能力白名单（换角色 → 工具集切换）。
+  - 角色包声明 `capabilities` 后，工具暴露面 = 常驻豁免集 + 能力白名单内的特权工具（换角色 → 特权工具集切换）。
 - **`handoffPrompt`（接手话术）**：该角色包**被宿主带入对话（激活 + 聚焦）时**预填输入框的特色衔接话术——作者为「这个角色接手任务时怎么说」定制的提示词，缺省由宿主回退通用话术。**宿主消费**（如 memora-vscode 在 `roles_handoff` 处理中读取 `listMeta().handoffPrompt` 预填）；内核仅透传 + 校验（非字符串 warning 不阻塞装载）。
 
 ### 2.3 ③ 元数据层（UI 展示）

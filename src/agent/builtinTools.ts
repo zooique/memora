@@ -88,6 +88,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   read_skill: 'read-only',
   read_resource: 'read-only',
   run_skill_script: 'non-idempotent',
+  // run_project_script：运行项目内已有脚本，结果不可预期，禁止跳过（同 run_skill_script）
+  run_project_script: 'non-idempotent',
   // register_work：写 JSON 索引（同 path+description → 同记录），以 source 为业务键实现幂等
   register_work: 'idempotent-key',
   // ask_user：read-only 语义——提问的目标态（用户答案）天然可变，永不跳过（跳过=丢问题）
@@ -545,6 +547,25 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         },
       },
       required: ['skill_name', 'script_path'],
+    },
+  },
+  {
+    name: 'run_project_script',
+    description:
+      '运行项目内已有的脚本文件（默认开放，与角色包能力声明无关）。脚本路径相对项目根，越界（项目外路径）拒绝执行。' +
+      '脚本源码不进入上下文，仅执行结果（stdout/stderr/退出码）返回。由内核子进程执行：超时 30s（上限 120s）、' +
+      '工作目录=项目根、不继承宿主环境变量。扩展名推断运行时：.py→python、.js/.mjs/.cjs→node、.sh/.bash/.zsh→shell。',
+    parameters: {
+      type: 'object',
+      properties: {
+        script_path: { type: 'string', description: '相对项目根目录的脚本路径（如 "scripts/test.py"）' },
+        args: {
+          type: 'array',
+          description: '传递给脚本的参数数组（可选）',
+          items: { type: 'string', properties: {}, required: [] },
+        },
+      },
+      required: ['script_path'],
     },
   },
   {

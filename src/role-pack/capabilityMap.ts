@@ -1,54 +1,41 @@
 /**
- * 能力声明（capability）→ memora 内置工具 映射表（SSOT）
+ * 能力声明（capability）→ memora 特权工具 映射表（SSOT）
  *
- * 角色包以**中立能力命名空间**声明
- * （`file:write` / `web:search` / `llm:summarize`），不绑具体实现；
- * 各实现（memora 是 reference implementation）自行映射到自有工具。
+ * 角色包以**中立能力命名空间**声明（`web:search` / `code:execute` / `task:plan`），
+ * 不绑具体实现；各实现（memora 是 reference implementation）自行映射到自有工具。
  *
- * 本文件是 **memora 侧的唯一映射表**（SSOT）：
- *   - key：中立能力名（`域:动作`）
- *   - value：memora 内置工具名数组（对应 BUILTIN_TOOLS / WEB_SEARCH_TOOL 的 name）
+ * 语义（tool-exposure-model 探索草稿：默认常驻 vs 角色启动）：
+ * capabilities = 角色包声明的**超越默认边界的特权**，而非逐项打开本地能力——
+ * 本地只读/项目内/内核基建工具（read_file/search_memories/技能域等）默认常驻、
+ * 不受本表控制（见 toolExecutor.DEFAULT_EXPOSED_TOOLS）。
  *
  * 映射规则：
- *   - 一个能力可映射到多个工具（如 `file:write` → write_file 的 owner 模式）；
- *   - 一个工具可被多个能力映射（如 llm:summarize 是内核内部能力，无工具映射）；
- *   - 未知能力（不在本表）：装载方跳过，不阻塞）。
- *
- * 注意：此表只控制**工具暴露面**（LLM 可见的工具列表），不改变 execute 路由——
- * 工具暴露 = 可被调用；工具未暴露 = LLM 无从发起调用。这是「换角色→工具集切换」
- * 范式的最小验证面（mvp-scope 验收标准 7）。
+ *   - 一个能力可映射到多个工具；一个工具可被多个能力映射；
+ *   - 未知能力（不在本表）：装载方跳过，不阻塞；
+ *   - 本表只控制**特权工具暴露面**（LLM 可见的工具列表），不改变 execute 路由——
+ *     工具暴露 = 可被调用；工具未暴露 = LLM 无从发起调用。
+ *     「换角色 → 特权工具集切换」是 mvp-scope 验收标准 7 的范式最小验证。
  */
 
 /** 能力→工具映射表（只读，防外部篡改） */
 const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
-  // 文件域
-  'file:read': ['read_file'],
-  'file:write': ['write_file'],
-  'file:list': ['list_dir'],
-  // 网络域
+  // 网络域（判据 A：外部网络副作用，越出项目边界）
   'web:search': ['web_search'],
   // 搜索→抓取闭环：web_fetch 读正文（与 web_search 成对声明，角色包按需声明）
   'web:fetch': ['web_fetch'],
-  // 通用计算域（宿主注入 ICodeExecutionProvider 才真正暴露，能力声明本身只控制暴露面）
+  // 通用计算域：LLM 现写任意代码（判据 A+B：无轨迹）。宿主注入 ICodeExecutionProvider 才真正暴露
   'code:execute': ['run_code'],
-  // 项目搜索域（宿主注入 IProjectSearchProvider 才真正暴露，等价 IDE 全局搜索）
-  // 例外：search_project 是本地只读工具，宿主注入即暴露（toolExecutor.list 追加在自定义工具之后），
-  // 不受角色包能力声明过滤。本映射仅保留中立能力声明面（角色包可声明「支持项目搜索」），
-  // 不控制工具可见性——与 file:read 等受白名单控制的映射语义不同。
-  'project:search': ['search_project'],
-  // 记忆域
-  'memory:recall': ['search_memories'],
-  // 任务域
+  // 任务域：深度领域规划，风格差异大（判据 A）
   'task:plan': ['task_table_write', 'task_table_update'],
   // 内核内部能力（无工具映射，仅声明存在；实现按自身能力实现）
   'llm:summarize': [],
 };
 
 /**
- * 解析能力声明列表为 memora 工具白名单
+ * 解析能力声明列表为 memora 特权工具白名单
  *
  * @param capabilities 角色包声明的能力列表（可空）
- * @returns 工具名白名单（去重、保序）；空数组 = 无工具可用（配合 toolMode=allow 即全禁）
+ * @returns 工具名白名单（去重、保序）；空数组 = 无特权工具（常驻豁免集仍全部可用）
  */
 export function resolveCapabilityTools(
   capabilities: readonly { capability: string }[] | undefined,
@@ -68,7 +55,7 @@ export function resolveCapabilityTools(
 /**
  * 判断某工具名是否为某能力白名单内
  *
- * 供测试/校验使用：验证「换角色 → 工具集切换」时工具暴露面正确。
+ * 供测试/校验使用：验证「换角色 → 特权工具集切换」时工具暴露面正确。
  */
 export function isToolInCapabilities(
   toolName: string,

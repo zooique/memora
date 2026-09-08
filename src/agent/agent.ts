@@ -186,6 +186,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
       confirmWrites: opts.confirmWrites ?? false,
+      confirmScripts: opts.confirmScripts ?? false,
       vectorStore: opts.vectorStore,
       recallExcludeSources: opts.recallExcludeSources ?? [
         ...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES,
@@ -324,6 +325,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           this.#config.allowedPaths,
           this.#config.confirmWrites,
           this.#config.permission,
+          this.#config.confirmScripts,
           configDir ?? this.#config.configDir,
           agentDataDir ?? this.#config.dataDir,
         ),

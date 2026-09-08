@@ -159,6 +159,9 @@ export class SecurityGuard {
   /** owner 是否启用写入二次确认；guest 强制开启（可运行时切换） */
   public confirmWrites: boolean;
 
+  /** 是否对脚本/代码执行启用确认（owner 模式；guest 强制开启；默认 false = 默认不弹窗） */
+  public confirmScripts: boolean;
+
   constructor(
     projectPath: string,
     memoraDir: string,
@@ -166,6 +169,8 @@ export class SecurityGuard {
     confirmWrites: boolean = false,
     /** 权限模式 */
     public readonly permission: Permission = 'owner',
+    /** 脚本执行确认开关（独立于写入确认，供对 run_code/run_project_script 单独收紧） */
+    confirmScripts: boolean = false,
     /** Agent 级配置目录（personas/rules/skills 所在目录） */
     configDir?: string,
     /** Agent 级数据目录（memora.db/vectors 所在目录） */
@@ -183,6 +188,8 @@ export class SecurityGuard {
       this.baseRoots.push(resolveRealpath(expandHome(agentDataDir)));
     }
     this.confirmWrites = confirmWrites;
+    // 脚本执行确认开关（独立于写入确认）
+    this.confirmScripts = confirmScripts;
     // 用户额外白名单（构造器注入），基准根与额外项分离以便 setAllowedPaths 仅改额外项
     this.extraRoots = extraAllowedPaths.map((p) => resolveRealpath(expandHome(p)));
     this.allowedRoots = [...this.baseRoots, ...this.extraRoots];
@@ -310,8 +317,55 @@ export class SecurityGuard {
     /** diff 内容选项（宿主 UI 变更预览用，自动截断到 10KB） */
     options?: { beforeContent?: string | null; afterContent?: string },
   ): Promise<boolean> {
-    const needConfirm = this.permission === 'guest' || this.confirmWrites;
+    return this.confirmGate(
+      targetPath,
+      tool,
+      description,
+      // 写入确认判据：guest 或 confirmWrites
+      this.permission === 'guest' || this.confirmWrites,
+      // diff 预览（仅写入场景有；脚本执行无内容预览）
+      {
+        beforeContent: truncateForDiff(options?.beforeContent),
+        afterContent: truncateForDiff(options?.afterContent),
+      },
+    );
+  }
 
+  /**
+   * 脚本/代码执行前确认（run_code / run_project_script 的执行闸）
+   *
+   * 判据与写入确认同构：guest 模式或 confirmScripts 需确认；未注入 confirmationHandler 时
+   * fail-closed 拒绝。owner + confirmScripts=false 自动批准（默认），审计仍记录。
+   * target 为脚本绝对路径（run_project_script）或描述型标识（run_code 内联代码无落盘路径）。
+   */
+  async confirmScriptRun(
+    targetPath: string,
+    tool: string,
+    description?: string,
+  ): Promise<boolean> {
+    return this.confirmGate(
+      targetPath,
+      tool,
+      description,
+      // 脚本执行确认判据：guest 或 confirmScripts（独立于写入确认）
+      this.permission === 'guest' || this.confirmScripts,
+    );
+  }
+
+  /**
+   * 确认闸公共核心（SSOT：写入确认与脚本执行确认的唯一执行路径）
+   *
+   * needConfirm=false → 自动批准（审计 write-auto）；为 true 且未注入 confirmationHandler
+   * → fail-closed 拒绝（审计 write-decline）；否则经 confirmViaHandler 走宿主确认 UI。
+   * diff 仅写入场景有，脚本执行不传（域留空）。
+   */
+  private async confirmGate(
+    targetPath: string,
+    tool: string,
+    description: string | undefined,
+    needConfirm: boolean,
+    diff?: { beforeContent?: string | null; afterContent?: string },
+  ): Promise<boolean> {
     // 无需确认：直接放行并记录审计
     if (!needConfirm) {
       this.emitAudit({
@@ -324,22 +378,22 @@ export class SecurityGuard {
       return true;
     }
 
-    // 构建确认信息（透传 diff 内容，供宿主 UI 展示变更预览）
+    // 构建确认信息（写入场景透传 diff 内容，供宿主 UI 展示变更预览）
     const info: WriteConfirmationInfo = {
       targetPath,
       tool,
       description,
       permission: this.permission,
       needsConfirm: needConfirm,
-      beforeContent: truncateForDiff(options?.beforeContent),
-      afterContent: truncateForDiff(options?.afterContent),
+      beforeContent: diff?.beforeContent,
+      afterContent: diff?.afterContent,
     };
 
     // 未注入 confirmationHandler 时 fail-closed 拒绝
     if (!this.confirmationHandler) {
       logger.warn(
         { targetPath, tool, permission: this.permission },
-        '写入确认失败：未注入 confirmationHandler，fail-closed 拒绝写入',
+        '执行确认失败：未注入 confirmationHandler，fail-closed 拒绝',
       );
       this.emitAudit({
         type: 'write-decline',

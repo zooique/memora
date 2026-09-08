@@ -511,6 +511,8 @@ export interface AgentOptions {
   allowedPaths?: string[];
   /** 写入确认 */
   confirmWrites?: boolean;
+  /** 脚本/代码执行确认（独立于写入确认；true 时 run_code/run_project_script 执行前弹窗，默认 false 不弹窗） */
+  confirmScripts?: boolean;
   /** 向量存储（可选，提供时启用语义召回；宿主可注入任意实现） */
   vectorStore?: IVectorStore;
   /** 召回排除的 source 标签（默认 []：设定记忆已归角色包、不进记忆库，无需召回排除；SSOT 见 recallDefaults.DEFAULT_RECALL_EXCLUDE_SOURCES） */
@@ -574,6 +576,7 @@ export type AgentConfig = Omit<
   | 'permission'
   | 'allowedPaths'
   | 'confirmWrites'
+  | 'confirmScripts'
   | 'recallExcludeSources'
   | 'enableContextSummary'
   | 'archiveMode'
@@ -583,6 +586,8 @@ export type AgentConfig = Omit<
   permission: 'owner' | 'guest';
   allowedPaths: string[];
   confirmWrites: boolean;
+  /** 脚本/代码执行确认开关（AgentOptions.confirmScripts 的默认值解析结果） */
+  confirmScripts: boolean;
   recallExcludeSources: string[];
   enableContextSummary: boolean;
   archiveMode: ArchiveMode;

@@ -19,12 +19,20 @@ const MAX_TIMEOUT_MS = 120_000;
 
 /**
  * 执行技能脚本：在隔离子进程中运行，收集 stdout/stderr/exitCode/timedOut
+ *
+ * @param scriptPath 脚本绝对路径
+ * @param runtime 运行时（node/python/shell 白名单三档）
+ * @param args 传给脚本的参数数组
+ * @param timeoutMs 超时（毫秒，限制在 [1s, MAX_TIMEOUT_MS] 内）
+ * @param cwd 子进程工作目录（可选；run_project_script 以项目根为 cwd，
+ *        使项目脚本可加载项目本地依赖/相对数据文件）
  */
 export async function runSkillScript(
   scriptPath: string,
   runtime: 'node' | 'python' | 'shell',
   args: string[] = [],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
+  cwd?: string,
 ): Promise<ScriptExecutionResult> {
   // 超时限制在 [1s, MAX_TIMEOUT_MS] 内
   const effectiveTimeout = Math.min(Math.max(timeoutMs, 1_000), MAX_TIMEOUT_MS);
@@ -42,6 +50,8 @@ export async function runSkillScript(
           HOME: process.env.HOME,
         },
         stdio: ['ignore', 'pipe', 'pipe'],
+        // cwd 缺省时由 node 决定（当前进程目录）；仅显式传入时指定
+        ...(cwd ? { cwd } : {}),
       });
     } catch (err) {
       logger.error({ scriptPath, runtime, err }, '启动脚本进程失败');

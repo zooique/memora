@@ -238,7 +238,7 @@ description: 把成稿写入本地文件
 
 * 命名空间采用 `域:动作`（`file:` / `web:` / `memory:` / `task:` / `llm:` / `code:`），扩展由社区协商，先保持最小集。
 
-**capability 是内核唯一行为入口**：`manifest.capabilities` 声明的能力（如 `web:search`）装载时映射到工具白名单；未声明 capabilities 的角色包 → 白名单为 null（全部暴露，保持现状）。
+**capability 是内核的特权入口**（tool-exposure-model：默认常驻 vs 角色启动）：`manifest.capabilities` 声明的能力（如 `web:search`）装载时映射为**特权工具白名单**；本地只读/项目内/内核基建工具默认常驻、不受白名单影响；未声明 capabilities 的角色包 → 白名单为 null（全部暴露，保持现状）。
 
 > **技能正文定位（渐进披露 L1/L2）**：`skills/{file}` 指向的技能文件正文默认**不预装载**，`capabilities` 是内核的**工具暴露入口**（映射工具白名单）。技能正文经**渐进披露**按需装载（对齐 Agent Skills 行业标准）：
 >
@@ -276,6 +276,8 @@ description: 把成稿写入本地文件
 | `task:plan`       | 管理任务计划（创建/更新表格）    | 需提供任务管理系统（memora → `task_table_write` / `task_table_update`）            | 冻结     |
 | `llm:summarize`   | 调用 LLM 做文本摘要       | 内核内部能力，无需独立工具映射（memora 映射为空）                                            | 冻结     |
 | `llm:code-review` | 调用 LLM 做代码安全与质量审查  | 可选，需 LLM 支持代码分析                                                         | `[草案]` |
+
+> **memora 消费口径（2026-09-08，tool-exposure-model）**：上表中 `file:read` / `file:write` / `file:list` / `memory:recall` 在 memora 属**默认常驻工具**——声明与否都不影响可见性（`DEFAULT_EXPOSED_TOOLS` 恒暴露），该四键在 memora 侧已丧失白名单映射能力（保留于中立字典供其他实现消费，memora 不再映射）；`web:search` / `web:fetch` / `code:execute` / `task:plan` 为**特权键**，声明才进入工具白名单。
 
 **能力确定原则**（对齐 §五 双闸门演进）：
 

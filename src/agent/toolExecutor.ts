@@ -22,7 +22,8 @@ import type { IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
-import { formatExecutionResult } from '@/skill/skillScriptRunner.js';
+import { formatExecutionResult, formatScriptResult, runSkillScript } from '@/skill/skillScriptRunner.js';
+import { resolveSafePath } from '@/utils/scanner.js';
 import type { IProjectSearchProvider } from '@/project-search/types.js';
 import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
@@ -78,6 +79,18 @@ function inferLanguageFromScriptPath(scriptPath: string): string {
   const lastDot = scriptPath.lastIndexOf('.');
   const ext = lastDot >= 0 ? scriptPath.slice(lastDot).toLowerCase() : '';
   return SCRIPT_EXT_LANGUAGE[ext] ?? SCRIPT_LANGUAGE_FALLBACK;
+}
+
+/**
+ * 语言名收敛为脚本运行时白名单三档（node/python/shell）
+ *
+ * run_project_script 的内核子进程执行器只接受三档运行时；
+ * 从扩展名推断的语言若落在白名单外一律兜底 'node'（推断即可信来源，不规则值不回传执行器）。
+ */
+function normalizeScriptRuntime(language: string): 'node' | 'python' | 'shell' {
+  if (language === 'python') return 'python';
+  if (language === 'shell') return 'shell';
+  return 'node';
 }
 
 // ─── run_skill_script 注入防御常量 ─────────────────
@@ -262,6 +275,39 @@ function resolveStepId(stepId: string, plan: StepIdPlanRef[]): StepIdResolve {
 }
 
 /**
+ * 默认常驻工具集（tool-exposure-model 探索草稿：默认常驻 vs 角色启动）
+ *
+ * 判据 A（越界判定）：副作用不越出「项目 + 会话 + 内核自有」边界 → 常驻；
+ * 判据 B（来源可信）：执行对象已在仓库/技能目录沉淀 → 常驻。
+ * 豁免能力白名单：角色包声明 capabilities 不影响这些工具的暴露面。
+ *
+ * 特权工具（不在此集，受 toolWhitelist 过滤）：web_search / web_fetch（外部网络），
+ * run_code（LLM 现写代码），task_table_write / task_table_update（领域深度规划）。
+ */
+export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
+  // 项目内读写（判据 A；写删的危险度由 confirmWrites/guest 确认层管）
+  'read_file',
+  'write_file',
+  'delete_file',
+  'list_dir',
+  // 内核自有数据 / 人机交互 / 上下文维护（判据 A 基建）
+  'search_memories',
+  'trace_summary',
+  'list_sessions',
+  'compress_context',
+  'ask_user',
+  'register_work',
+  // 技能域（判据 A+B：来源可信；既定豁免）
+  'read_skill',
+  'read_resource',
+  'run_skill_script',
+  'list_resources',
+  'list_skills',
+  // 项目内既有脚本执行（判据 A+B：仓库已沉淀）；search_project 走宿主注入例外，不在此集
+  'run_project_script',
+]);
+
+/**
  * 工具执行器
  *
  * 职责：工具注册 + 分发 + 参数校验。
@@ -281,17 +327,22 @@ export class ToolExecutor {
   private onToolsChanged?: () => void;
 
   /**
-   * 工具白名单（capabilities → 工具映射产物，M2.1）
+   * 工具白名单（capabilities → 工具映射产物，M2.1 → 特权声明模型扩展）
    *
    * - `null`（默认）：全部暴露——未声明 capabilities 的角色包/无角色包时保持现状；
-   * - `string[]`：只暴露白名单内的工具（内置 + web_search 按名单过滤，自定义工具不受限）；
-   * - `[]`：空白名单 = 无内置工具暴露（配合 toolMode=block 即全禁）。
+   * - `string[]`：在 DEFAULT_EXPOSED_TOOLS（默认常驻豁免集）之上，追加白名单内的特权工具；
+   * - `[]`：仅暴露常驻豁免集（配合 toolMode=block 即全禁）。
    *
-   * 语义：角色包声明 capabilities 后，工具暴露面 = 该角色包
-   * 映射出的工具集——「换角色 → 工具集切换」范式验证的最小实现（mvp-scope 验收标准 7）。
+   * 语义（tool-exposure-model 探索草稿：默认常驻 vs 角色启动）：
+   * 角色包声明 capabilities = 声明超越默认边界的**特权**（web:search / code:execute / task:plan
+   * 等），而非逐项打开本地能力。本地只读/项目内/内核基建工具默认常驻，不受白名单过滤——
+   * 修正「声明任意能力即误杀常驻工具」的暴露面不对称。
    * 白名单只控制**暴露面**（LLM 可见/可调），不改变 execute 路由。
    */
   private toolWhitelist: string[] | null = null;
+
+  /** 安全守卫（构造参数转存，run_code/run_project_script 执行前确认用） */
+  private readonly security: SecurityGuard;
 
   /** 网络搜索提供者（可选，注入时启用 web_search 工具） */
   private readonly webSearchProvider?: IWebSearchProvider;
@@ -404,6 +455,8 @@ export class ToolExecutor {
     this.fetchProvider = fetchProvider;
     this.codeExecutionProvider = codeExecutionProvider;
     this.projectSearchProvider = projectSearchProvider;
+    // 转存 SecurityGuard 引用：执行型工具（run_code/run_project_script）执行前确认用
+    this.security = security;
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
     // 构造参数仅用于初始化 BuiltinToolHandlers，ToolExecutor 自身不再持有这些引用
     this.builtinHandlers = new BuiltinToolHandlers(
@@ -523,12 +576,14 @@ export class ToolExecutor {
   /**
    * 获取所有工具定义（getter 风格，与 persona/skill 一致）
    *
-   * 白名单语义（M2.1）：
+   * 白名单语义（M2.1 → tool-exposure-model 特权声明模型）：
    * - toolWhitelist === null：全部暴露（内置 + web_search 条件 + 自定义工具）；
-   * - toolWhitelist === string[]：内置 + web_search 只保留名单内工具，自定义工具始终暴露
-   *   （自定义工具由宿主注册，属宿主能力面，角色包能力声明不越权过滤宿主工具）。
+   * - toolWhitelist === string[]：全部暴露命中「默认常驻豁免集 DEFAULT_EXPOSED_TOOLS」的
+   *   内置工具，特权工具（web_search / web_fetch / run_code / task_table_*）按名单过滤；
+   * - toolWhitelist === []：仅常驻豁免集（角色无任何特权能力时，本地能力仍完整可用）。
+   * - 自定义工具始终暴露（宿主注册，属宿主能力面，角色包能力声明不越权过滤宿主工具）；
    * - search_project：宿主注入即暴露（方案乙）——本地只读工具，等价 read_file 的只读语义，
-   *   不受角色包能力声明过滤（是否具备 project:search 能力不决定其可见性）。
+   *   不受角色包能力声明与豁免集语义约束（具备与否不决定其可见性）。
    */
   get list(): ToolDefinition[] {
     // 条件性包含外部信息工具：仅当注入了对应 provider 时才暴露给 LLM
@@ -541,15 +596,19 @@ export class ToolExecutor {
     if (this.fetchProvider) baseTools = [...baseTools, WEB_FETCH_TOOL];
     if (this.codeExecutionProvider) baseTools = [...baseTools, RUN_CODE_TOOL];
 
-    // 白名单过滤（仅内置/条件工具受控；自定义工具不受限）
+    // 常驻豁免集无条件暴露（LLM 工具面不因角色包能力声明收窄本地能力）
+    const exposed = baseTools.filter((t) => DEFAULT_EXPOSED_TOOLS.has(t.name));
+
+    // 特权工具按白名单过滤（toolWhitelist=null 全暴露；否则只在名单内）
+    const privileged = baseTools.filter((t) => !DEFAULT_EXPOSED_TOOLS.has(t.name));
     const whitelisted = this.toolWhitelist
-      ? baseTools.filter((t) => this.toolWhitelist?.includes(t.name))
-      : baseTools;
+      ? privileged.filter((t) => this.toolWhitelist?.includes(t.name))
+      : privileged;
 
     // search_project 作为宿主注入工具（方案乙）：注入即暴露，追加在自定义工具之后，不受白名单过滤
     const projectSearchTool = this.projectSearchProvider ? [SEARCH_PROJECT_TOOL] : [];
 
-    return [...whitelisted, ...[...this.customTools.values()].map((e) => e.definition), ...projectSearchTool];
+    return [...exposed, ...whitelisted, ...[...this.customTools.values()].map((e) => e.definition), ...projectSearchTool];
   }
 
   /**
@@ -817,6 +876,16 @@ export class ToolExecutor {
             ToolErrorCode.ARGUMENT_ERROR,
           );
         }
+        // 执行确认：guest 模式或 confirmScripts 时询问（run_code 由宿主沙箱执行，此处为权限层确认；
+        // owner+confirmScripts=false 自动批准，走审计。code 无落盘路径，target 用描述型标识）
+        const execConfirmed = await this.security.confirmScriptRun(
+          scriptPath ? `run_code:script:${scriptPath}` : 'run_code:inline',
+          'run_code',
+          scriptPath ? `运行脚本 ${scriptPath}（宿主沙箱）` : `执行内联代码（${execLanguage}，${execCode.length} 字符，宿主沙箱）`,
+        );
+        if (!execConfirmed) {
+          return '[ERR:SCRIPT_DECLINE] 代码执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+        }
         const result = await safeExecuteCode(this.codeExecutionProvider, execCode, execLanguage, execOptions);
         // 结果净化：stdout/stderr 当外部内容去控制字符 + 长度上限，防长上下文注入
         const stdout = sanitizeExternalText(result.stdout, RUN_CODE_RESULT_MAX_LEN);
@@ -986,6 +1055,47 @@ export class ToolExecutor {
         }
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（8-1 对齐 run_code 的防护），防刷屏撑爆上下文
         return sanitizeExternalText(result, RUN_SCRIPT_RESULT_MAX_LEN);
+      }
+      case 'run_project_script': {
+        // 项目内已有脚本执行（默认开放，判据 A+B）：内核子进程执行，脚本源码不进上下文
+        // 三道防线：路径白名单（执行时二次强制，响应「注册≠强制」教训）→ 确认 → 运行时白名单三档
+        const scriptPath = strArg('script_path');
+        if (!scriptPath) {
+          throw toolError(
+            'run_project_script 缺少 script_path 参数',
+            '未传脚本路径',
+            ['传相对项目根目录的脚本路径，如 "scripts/test.py"'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        const scriptArgs = Array.isArray(args['args']) ? (args['args'] as string[]) : [];
+        // ① 路径白名单：相对项目根解析，防穿越返回 null → 拒绝（越界不协商）
+        const fullPath = resolveSafePath(this.builtinHandlers.projectPath, scriptPath);
+        if (!fullPath) {
+          return `[ERR:PATH_DENIED] 脚本路径越界（超出项目根）："${scriptPath}"`;
+        }
+        // ② 执行确认：guest 模式或 confirmScripts 时询问（owner 默认自动批准，走审计）
+        const confirmed = await this.security.confirmScriptRun(
+          fullPath,
+          'run_project_script',
+          `运行项目脚本 ${scriptPath}`,
+        );
+        if (!confirmed) {
+          return '[ERR:SCRIPT_DECLINE] 脚本运行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+        }
+        // ③ 运行时白名单：扩展名推断并收敛到 node/python/shell 三档（推断即可信，不规则兜底 node）
+        const runtime = normalizeScriptRuntime(inferLanguageFromScriptPath(scriptPath));
+        const result = await runSkillScript(
+          fullPath,
+          runtime,
+          scriptArgs,
+          undefined,
+          // cwd=项目根：项目脚本可加载项目本地依赖/相对数据文件
+          this.builtinHandlers.projectPath,
+        );
+        // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）
+        return sanitizeExternalText(formatScriptResult(result), RUN_SCRIPT_RESULT_MAX_LEN);
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单
