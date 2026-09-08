@@ -608,17 +608,21 @@ const lock = rp.getSwitchLockStatus(); // 切换防抖状态
 
 > 工具注册/执行走 `agent.tools.xxx()`。
 
-### 8.1 内置工具（7 个）
+### 8.1 内置工具（核心摘要：默认常驻 + 条件暴露，非全集）
 
-| 工具名 | 用途 | 参数 |
-|--------|------|------|
-| `read_file` | 读取项目内文件内容 | `path` |
-| `write_file` | 写入/创建文件（支持 overwrite/append/insert 三种模式） | `path`, `content`, `mode?`, `insert_line?` |
-| `list_dir` | 列出目录内容（递归深度 ≤ 3） | `path?`, `recursive?`, `maxDepth?` |
-| `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` |
-| `web_search` | 搜索互联网（条件性暴露，仅在注入 `IWebSearchProvider` 时可用） | `query`, `limit?` |
-| `web_fetch` | 抓取网页正文（条件性暴露，仅在注入 `IFetchProvider` 时可用；与 `web_search` 成对构成「搜索→抓取」闭环，读候选链接正文） | `url`, `limit?` |
-| `run_code` | 执行代码并返回结果（条件性暴露，仅在注入 `ICodeExecutionProvider` 时可用；源码不进上下文，仅结果返回） | `language`, `code` |
+> 工具全集见 `toolExecutor.ts` / [tool-exposure-model.md](./architecture/tool-exposure-model.md)（默认常驻 vs 角色启动特权模型）。下表为对话/脚本场景核心工具。
+
+| 工具名 | 用途 | 参数 | 暴露条件 |
+|--------|------|------|------|
+| `read_file` | 读取项目内文件内容 | `path` | 默认常驻 |
+| `write_file` | 写入/创建文件（支持 overwrite/append/insert 三种模式） | `path`, `content`, `mode?`, `insert_line?` | 默认常驻 |
+| `list_dir` | 列出目录内容（递归深度 ≤ 3） | `path?`, `recursive?`, `maxDepth?` | 默认常驻 |
+| `search_memories` | 在记忆索引中搜索（支持 match/near 两种模式） | `query`, `limit?`, `mode?` | 默认常驻 |
+| `run_project_script` | 运行**项目内既有**脚本（内核子进程，cwd=项目根；路径白名单越界拒绝；扩展名推断 node/python/shell；超时 30s 上限 120s） | `script_path`, `args?` | 默认常驻（零注入） |
+| `run_skill_script` | 执行技能目录下的脚本（渐进披露 L3） | `skill_name`, `script_path`, `args?` | 默认常驻（来源=技能作者） |
+| `web_search` | 搜索互联网 | `query`, `limit?` | 条件暴露（注入 `IWebSearchProvider`） |
+| `web_fetch` | 抓取网页正文（与 `web_search` 成对闭环） | `url`, `limit?` | 条件暴露（注入 `IFetchProvider`） |
+| `run_code` | LLM 现写代码执行（特权：`code:execute` 声明 + 宿主沙箱注入） | `language`, `code` 或 `script_path` | 条件暴露（注入 `ICodeExecutionProvider` 且角色包声明特权） |
 
 ### 8.2 `agent.tools` — ToolExecutor
 
