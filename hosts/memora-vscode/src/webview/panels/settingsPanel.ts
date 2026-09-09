@@ -652,7 +652,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const stats: MemoryStatsDto = memory.stats();
-    const memories: MemoryItemDto[] = memory.list(MEMORY_LIST_LIMIT).map(toItemDto);
+    const items = memory.list(MEMORY_LIST_LIMIT);
+    // 沉底候选：一次性取内核判定集，SSOT（判定唯一源为 MemoryInspector.listFading，宿主只消费）
+    const fadingIds = listFadingIds(memory, MEMORY_LIST_LIMIT);
+    const memories: MemoryItemDto[] = items.map((m) => toItemDto(m, fadingIds.has(m.id)));
     this.post({ type: 'memory_loaded', stats, memories });
   }
 
@@ -680,7 +683,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const memory = await this.ensureMemory();
     if (!memory || page < 1 || pageSize < 1) return;
     const all = memory.list(page * pageSize);
-    const items: MemoryItemDto[] = all.slice((page - 1) * pageSize, page * pageSize).map(toItemDto);
+    // 沉底候选覆盖到目标页末条，保证页内 fading 标注完整（SSOT，见 loadMemory）
+    const fadingIds = listFadingIds(memory, page * pageSize);
+    const items: MemoryItemDto[] = all
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((m) => toItemDto(m, fadingIds.has(m.id)));
     this.post({ type: 'memory_page_result', page, items });
   }
 
@@ -864,7 +871,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'memory_recycle_loaded', items: [] });
       return;
     }
-    const items = memory.listDeleted(1000).map(toItemDto);
+    const items = memory.listDeleted(1000).map((m) => toItemDto(m, false));
     this.post({ type: 'memory_recycle_loaded', items });
   }
 
@@ -1218,20 +1225,24 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 }
 
 /** 内核 Memory → 记忆条目 DTO（deletedAt 仅回收站条目携带；round-summary 顶层字段透传） */
-function toItemDto(m: {
-  id: string;
-  name: string;
-  source: string;
-  score: number;
-  content: string;
-  createdAt?: string;
-  deletedAt?: string;
-  summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
-  sessionName?: string;
-  roundId?: string;
-  isModified?: boolean;
-  supersededBy?: string;
-}): MemoryItemDto {
+function toItemDto(
+  m: {
+    id: string;
+    name: string;
+    source: string;
+    score: number;
+    content: string;
+    createdAt?: string;
+    deletedAt?: string;
+    summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
+    sessionName?: string;
+    roundId?: string;
+    isModified?: boolean;
+    supersededBy?: string;
+  },
+  // 是否即将自然沉底（G34，由调用方经 listFadingIds 判定传入）
+  fading = false,
+): MemoryItemDto {
   return {
     id: m.id,
     name: m.name,
@@ -1245,7 +1256,31 @@ function toItemDto(m: {
     roundId: m.roundId,
     isModified: m.isModified,
     supersededBy: m.supersededBy,
+    fading,
   };
+}
+
+/**
+ * 汇总「即将自然沉底」记忆 id 集（G34，SSOT）
+ *
+ * 沉底判定的唯一真理源是内核 MemoryInspector.listFading（60 天未访问语义），
+ * 宿主仅在此做一次量级归并后消费，不重复实现天数判定。内核未实现/异常时返回空集。
+ *
+ * @param memory agent.memory 门面（listFading 可选实现）
+ * @param cover 需覆盖的记忆条数（取大于该值的内核 limit，保证返回集覆盖当前列表区间）
+ */
+function listFadingIds(
+  memory: { listFading?: (opts?: { limit?: number }) => Array<{ id: string }> },
+  cover: number,
+): Set<string> {
+  try {
+    const limit = Math.max(cover, 0) + 1;
+    const fading = memory.listFading?.({ limit }) ?? [];
+    return new Set(fading.map((f) => f.id));
+  } catch {
+    // 判定异常不阻断列表渲染（徽标缺失是可降级的观测信息）
+    return new Set();
+  }
 }
 
 /** 内核 AgentSearchHit → 记忆条目 DTO */
