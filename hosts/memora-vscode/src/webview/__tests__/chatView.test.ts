@@ -272,20 +272,17 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ⑤ resume 后正文 chunk（同 roundId）：复用续接骨架成第 2 块
     dispatch({ type: 'chunk', content: '已按补充调整成本标准', roundId: 'r1' });
-    dispatch({ type: 'done', roundId: 'r1' });
-
-    // 两块分列补充行两侧（与重放「段→补充→final 段」穿插时序同构）：
-    // [块A 暂停前正文] [补充行] [块B 已按补充调整成本标准]
+    // 运行时态（done 前）：补充行恒在两段之间——[块A] → [补充行] → [块B 续接]（2026-09-07 修复语义）
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(2);
     expect(collectAllBodyText(assistants[0])).toBe('暂停前正文');
     expect(collectAllBodyText(assistants[1])).toBe('已按补充调整成本标准');
-    // 补充行位于两段之间（SSOT 用文档树序断言：querySelectorAll 深度优先，容器化/不容器化皆成立）
     const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
     expect(qaRow).not.toBeNull();
     const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
     expect(order.indexOf(assistants[0])).toBeLessThan(order.indexOf(qaRow));
     expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
+    dispatch({ type: 'done', roundId: 'r1' });
   });
 
   it('error 终态不清交互行门控：补充行已插 → resume 前 error → 再 resume 仍分块续接（2026-09-08 二查回退 182e5b8c 补清理）', () => {
@@ -306,9 +303,7 @@ describe('chatView clear_ok 消息区清理', () => {
     // ⑤ 用户再次继续 → resume meta：门控仍在（未清）→ 不进 pausedResume 原位续写 → resumePending 分支建骨架
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '错误后续写', roundId: 'r1' });
-    dispatch({ type: 'done', roundId: 'r1' });
-
-    // 块1 不被原位续写合并（回退前 error 清标志 → ⑤ pausedResume 原位续写 → 块1 被追加 '错误后续写'）
+    // 运行时态（done 前）：块1 不被原位续写合并（回退前 error 清标志 → ⑤ pausedResume 原位续写 → 块1 被追加 '错误后续写'）
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants.length).toBeGreaterThanOrEqual(2);
     expect(collectAllBodyText(assistants[0])).toBe('前序正文');
@@ -319,6 +314,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(qaRow).not.toBeNull();
     const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
     expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]!));
+    dispatch({ type: 'done', roundId: 'r1' });
   });
 
   it('暂停态补充输入后再次继续：resumePending 已消费，下轮不误建续接骨架（2026-09-07 P-1 排雷修复，2026-09-08 收窄更新）', () => {
@@ -364,9 +360,7 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ⑤ 续跑最终正文（同 roundId）：进续接块（is-continued）
     dispatch({ type: 'chunk', content: '已按方案 A 执行完毕', roundId: 'r1' });
-    dispatch({ type: 'done', roundId: 'r1' });
-
-    // 形态 = 重放 sendRoundView 段穿插： [块A 提问前正文] [你答行] [块B 最终正文（续接）]
+    // 运行时态（done 前）：形态 = 重放 sendRoundView 段穿插： [块A 提问前正文] [你答行] [块B 最终正文（续接）]
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(2);
     expect(collectAllBodyText(assistants[0])).toBe('提问前正文');
@@ -380,6 +374,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
     // 最终正文块带同环续接标记（与重放 is-continued 一致）
     expect(assistants[1].classList.contains('is-continued')).toBe(true);
+    dispatch({ type: 'done', roundId: 'r1' });
   });
 
   it('同轮连环 ask：resume 无正文再问 → 第二轮 QA 恒插第一轮后（运行时=重放 ts 序，2026-09-09 T2）', () => {
@@ -550,11 +545,11 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '回答' });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
-    // 流式中：round-block 自动展开 + 顶部实时相位行（任务过程实时可见）
-    const rbRunning = document.querySelector('.round-block') as HTMLDetailsElement;
-    expect(rbRunning.open).toBe(true);
-    expect(rbRunning.classList.contains('is-running')).toBe(true);
-    const phaseRow = rbRunning.querySelector('.round-block__phase') as HTMLElement;
+    // 流式中（v1.8 剪枝）：无 round-block 壳，过程平铺在 .process-flow——thinking 相位轻量行实时显示
+    const rbRunning = document.querySelector('.process-flow') as HTMLElement;
+    expect(rbRunning).not.toBeNull();
+    expect(document.querySelector('.round-block')).toBeNull(); // 运行时绝无大折叠壳
+    const phaseRow = rbRunning.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow).not.toBeNull();
     expect(phaseRow.textContent).toContain('召回记忆中');
     // 收尾后：折叠区收起（open=false）、相位行移除；§ 过程轨迹保留相位时间线
@@ -1319,13 +1314,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     mountChatView();
     beginRound();
     dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧', source: 'a', score: 0.8 }] } } });
-    expect(document.querySelector('.round-block')).not.toBeNull();
+    expect(document.querySelector('.process-flow')).not.toBeNull(); // v1.8：运行时平铺容器
+    expect(document.querySelector('.round-block')).toBeNull(); // 运行时无大折叠壳
     dispatch({ type: 'clear_ok' });
     // DOM 与引用状态同步清空（下一轮 meta 重新挂载）
+    expect(document.querySelector('.process-flow')).toBeNull();
     expect(document.querySelector('.round-block')).toBeNull();
   });
 
-  it('meta 到达即建流式骨架：角色·模型标签 + round-block 运行状态立即可见（TTFT 前即时反馈）', () => {
+  it('meta 到达即建流式骨架：角色·模型标签 + 运行时过程容器立即可见（TTFT 前即时反馈）', () => {
     mountChatView();
     // 仅 meta（LLM 首 token 未到时）：应已有「谁在回答 + 正在做什么」
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '代码专家', llm: 'deepseek-chat' } } });
@@ -1335,22 +1332,23 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const label = assistant.querySelector('.msg-ai-label') as HTMLElement;
     expect(label.textContent).toContain('代码专家');
     expect(label.textContent).toContain('deepseek-chat');
-    // round-block 已挂载并处于运行中（进行中自动展开），summary 显示统计摘要
-    const rb = document.querySelector('.round-block') as HTMLElement;
-    expect(rb).not.toBeNull();
-    expect(rb.classList.contains('is-running')).toBe(true);
-    expect(rb.querySelector('.round-block__summary')?.textContent).toContain('任务过程');
+    // v1.8：运行时过程平铺容器已挂载（无 round-block 大折叠壳，无 summary 统计条）
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    expect(document.querySelector('.round-block')).toBeNull();
+    // 容器挂在本轮 assistant 块内 label 之后
+    expect(flow.closest('.msg.assistant')).toBe(assistant);
   });
 
-  it('thinking 到达后 round-block 实时相位行实时显示运行阶段（召回记忆中 → 调用模型中…）', () => {
+  it('thinking 到达后运行时平铺相位行实时显示运行阶段（召回记忆中 → 调用模型中…）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
-    let row = document.querySelector('.round-block__phase') as HTMLElement;
+    let row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row).not.toBeNull();
     expect(row.textContent).toContain('召回记忆中');
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
-    row = document.querySelector('.round-block__phase') as HTMLElement;
+    row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row.textContent).toContain('调用模型中');
   });
 
@@ -2199,10 +2197,11 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } } });
     expect(messages.querySelector('.pending-wait')!.textContent).toContain('调用模型中');
 
-    // meta 到达（建流式骨架）→ 等待条移除，round-block 接管
+    // meta 到达（建流式骨架 + 平铺容器）→ 等待条移除，过程平铺容器接管
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
     expect(messages.querySelector('.pending-wait')).toBeNull();
-    expect(messages.querySelector('.round-block')).not.toBeNull();
+    expect(messages.querySelector('.process-flow')).not.toBeNull(); // v1.8：平铺容器接管，无大折叠壳
+    expect(messages.querySelector('.round-block')).toBeNull();
   });
 
   it('正文开启（chunk 首段）后等待指示器退场', () => {
@@ -2684,24 +2683,24 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(body.classList.contains('is-streaming')).toBe(false); // 暂停即灭光标（静态半截）
   });
 
-  it('运行时 resume meta：续跑保留 round-block 锚点，不复制第二个运行时折叠', () => {
+  it('运行时 resume meta：续跑保留平铺容器锚点，不复制第二个运行时容器', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
-    const rb0 = document.querySelector('.round-block') as HTMLElement;
-    expect(rb0).not.toBeNull();
-    expect(rb0.closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
+    const flow0 = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow0).not.toBeNull();
+    expect(flow0.closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
     // 用户回答 → resumePending 置位
     dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1' });
-    // resume 新 runFlow 的 meta（同闭环续跑）→ 不重置锚点：折叠仍只有一个、留在首块
+    // resume 新 runFlow 的 meta（同闭环续跑）→ 不重置锚点：平铺容器仍只有一个、留在首块
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    const rb1s = document.querySelectorAll('.round-block');
-    expect(rb1s).toHaveLength(1);
-    expect(rb1s[0].closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
-    // 续接骨架不挂第二个折叠
+    const flow1s = document.querySelectorAll('.process-flow');
+    expect(flow1s).toHaveLength(1);
+    expect(flow1s[0].closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
+    // 续接骨架不挂第二个容器
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
-    expect(blocks[1].querySelector('.round-block')).toBeNull();
+    expect(blocks[1].querySelector('.process-flow')).toBeNull();
   });
 
   it('UX-9 B：重放同 roundId 多段 AI（assistantLog + final）呈连续链，第 2 段起标记续接', () => {
@@ -2738,10 +2737,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // 位置：提问块（assistant）之后，与消息流平级（不在 round-block 折叠内部）
     const ask = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
     expect(ask.nextElementSibling).toBe(qa);
-    // 折叠区不再藏交互输入（无「交互 N」计数、无 .round-block__interactives 容器）
-    const rb = document.querySelector('.round-block') as HTMLElement;
-    expect(rb.querySelector('.round-block__interactives')).toBeNull();
-    expect(rb.querySelector('.round-block__summary')?.textContent).not.toContain('交互');
+    // v1.8：运行时无 round-block 折叠壳，QA 平铺在消息流（不在 process-flow 过程容器内）
+    const flow = document.querySelector('.process-flow') as HTMLElement | null;
+    expect(document.querySelector('.round-block')).toBeNull(); // 无大折叠壳
+    expect(flow?.querySelector('.msg-qa')).toBeNull(); // 交互输入不混入过程平铺，保持两段独立
   });
 
   it('G26：重放 question-answer 携带 question/options → 先渲染只读「问」回顾行再「你答」', () => {
@@ -2958,22 +2957,35 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(tools[1].textContent).toContain('读取文件：x.md (成功)');
   });
 
-  it('运行中 narrate 父块默认展开、done 收尾重建后收起（2026-09-02 拍板）', () => {
+  it('运行中 narrate 平铺冒号行、done 收尾重建后进折叠块收起（v1.8 剪枝拍板）', () => {
     mountChatView();
     beginRound();
     dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
-    // 运行中（finalize=false 增量投影）：narrate 父块默认展开，嵌套工具行实时可见
-    let rb = document.querySelector('.round-block') as HTMLElement;
-    let narrate = rb.querySelector('.round-block__narrate') as HTMLDetailsElement;
-    expect(narrate.open).toBe(true);
+    // 运行中（v1.8 平铺）：narrate = 平铺文本行（非折叠），以「：」结尾，后接工具折叠行
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    expect(document.querySelector('.round-block')).toBeNull(); // 运行时无大折叠壳
+    const narrate = flow.querySelector('.process-flow__narrate') as HTMLElement;
+    expect(narrate).not.toBeNull();
+    expect(narrate.textContent).toBe('我先搜索相关资料：'); // 叙述冒号形态
+    const toolRow = flow.querySelector('.round-block__tool') as HTMLDetailsElement;
+    expect(toolRow).not.toBeNull();
+    expect(toolRow.dataset.toolCallId).toBe('t1');
+    // 阅读序：narrate 平铺行在工具折叠行之前（叙述冒号 → 工具块的序；phase 若存在居首）
+    const phaseFirst = flow.children[0]?.classList.contains('process-flow__phase') ?? false;
+    if (phaseFirst) expect(flow.children[1]).toBe(narrate);
+    else expect(flow.children[0]).toBe(narrate);
+    expect(narrate.nextElementSibling).toBe(toolRow);
     dispatch({ type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } });
     dispatch({ type: 'done' });
-    // 收尾（finalize=true 全量重建）：narrate 父块收起（与 round-block 收尾收起一致）
-    rb = document.querySelector('.round-block') as HTMLElement;
-    narrate = rb.querySelector('.round-block__narrate') as HTMLDetailsElement;
-    expect(narrate).not.toBeNull();
-    expect(narrate.open).toBe(false);
+    // 收尾（finalize 全量重建 + flow 移除）：narrate 进 round-block 折叠块（收起态）
+    const rb = document.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rb).not.toBeNull();
+    expect(document.querySelector('.process-flow')).toBeNull(); // 平铺容器已移除
+    const narrateFolded = rb.querySelector('.round-block__narrate') as HTMLDetailsElement;
+    expect(narrateFolded).not.toBeNull();
+    expect(narrateFolded.open).toBe(false);
   });
 
   it('策略拦截（blocked）工具行显示「已拦截」并默认展开，不冒充成功/失败（2026-09-02 第三态）', () => {
@@ -3014,13 +3026,13 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } } });
     // 工具开始执行：相位行切「正在执行」行动叙述（toolActionLabel 复用），is-tool 态
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
-    let phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    let phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow).not.toBeNull();
     expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
     expect(phaseRow.classList.contains('is-tool')).toBe(true);
     // 工具完成：相位行回落最新 thinking（调用模型中…），移除 is-tool 态
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' } } });
-    phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow.textContent).toContain('调用模型中');
     expect(phaseRow.classList.contains('is-tool')).toBe(false);
   });
@@ -3031,15 +3043,15 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' } } });
     // 最新未完成者（t2）为相位主体
-    let phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    let phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
     // t2 完成 → t1 成为剩余未完成者 → 相位切回 t1
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true, summary: 'ok' } } });
-    phaseRow = document.querySelector('.round-block__phase') as HTMLElement;
+    phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow.textContent).toBe('正在执行：读取文件：a.md');
     // t1 完成 → 无进行中工具且无 thinking → 相位行移除（不残留过期「正在执行」）
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' } } });
-    expect(document.querySelector('.round-block__phase')).toBeNull();
+    expect(document.querySelector('.process-flow__phase')).toBeNull();
   });
 
   it('TS-11b 进行中工具行实时可见：默认展开 + is-tool-running，result 到达移除', () => {
@@ -3166,18 +3178,24 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'user', text: '选方案A', ts: 't', kind: 'question-answer' });
     const qaRow = document.querySelector('.msg-qa') as HTMLElement;
     expect(qaRow).not.toBeNull();
-    // 运行中：round-block 展开态（is-running）→ QA 仍平铺于消息流（折入未触发）
-    expect(document.querySelector('.round-block')?.classList.contains('is-running')).toBe(true);
+    // 运行中（v1.8）：无 round-block 壳，过程平铺 .process-flow；QA 平铺消息流（折入未触发）
+    expect(document.querySelector('.round-block')).toBeNull(); // 运行时绝无大折叠壳
+    expect(document.querySelector('.process-flow')).not.toBeNull(); // 过程平铺容器在
     expect(qaRow.parentElement?.classList.contains('round-block__details')).toBe(false);
-    // 续跑 + done → 收敛：QA 折入折叠块、摘要更新、消息流干净
+    // 续跑 + done → 收敛：QA 折入折叠块、平铺内容收进折叠、摘要更新、消息流干净
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 5, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '好，按方案A继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
     // QA 已折入 .round-block__details
     const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    // 运行时平铺容器已移除（过程收进折叠块，无残留平铺）
+    expect(document.querySelector('.process-flow')).toBeNull();
     const rbQa = rb?.querySelector('.round-block__details .msg-qa');
     expect(rbQa).not.toBeNull();
     expect(rbQa!.textContent).toContain('选方案A');
+    // narrate/tool 已由 finalize 全量承载进折叠块（收尾后过程在折叠内）
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('开始分析');
     // 消息流层面：assistant 正文（含折叠块）→ 续接块，无孤立 QA 行（两段式干净）
     const assistants = document.querySelectorAll('.msg.assistant');
     expect(assistants.length).toBeGreaterThanOrEqual(2);

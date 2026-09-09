@@ -1446,6 +1446,34 @@ export const chatStyles = `
     margin-top: var(--sp-1, 4px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
   }
+  /* v1.8 运行时过程平铺容器（2026-09-09 剪枝）：运行时无 round-block 大折叠壳——
+     过程（narrate 冒号行 / 工具折叠行 / 思考状态）按 step 时序平铺于此，透明无壳；
+     done/interrupted finalize 时移除、内容收进 round-block 折叠块。任务表例外：
+     step_boundary 时平铺内容归入 .round-block__step 折叠块（复用折叠视觉）。 */
+  .process-flow {
+    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
+    padding: var(--sp-1, 2px) 0;
+  }
+  .process-flow__phase {
+    display: flex; align-items: center; gap: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .process-flow__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
+  .process-flow__phase::before {
+    content: ''; width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
+    background: var(--accent, #0e639c);
+    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .process-flow__phase::before { animation: none; }
+  }
+  /* 叙述冒号行：平铺直示（非折叠）——「AI 说什么：」后接工具折叠块 */
+  .process-flow__narrate {
+    font-size: var(--font-sm, 11px); line-height: 1.6;
+    color: var(--text-primary, #e0e0e0);
+    white-space: pre-wrap; word-break: break-all;
+  }
   .round-block__section-title {
     font-size: var(--font-xs, 10px); letter-spacing: 0.3px;
     color: var(--text-secondary, #9aa0a6);

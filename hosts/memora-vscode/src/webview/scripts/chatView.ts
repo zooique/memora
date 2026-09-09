@@ -460,6 +460,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let roundBlockEl: HTMLDetailsElement | null = null;
   /** round-block 已挂载的 assistant 块（重放去重判定：roundId 首次出现才挂） */
   let roundBlockHostEl: HTMLElement | null = null;
+  /** 运行时过程平铺容器（v1.8 剪枝，2026-09-09）：运行时**无 round-block 大折叠壳**——
+   *  过程（narrate 冒号行 / 工具折叠行 / 思考状态）按 step 时序平铺此容器（挂 label 与
+   *  body 之间，透明无边框）；done/interrupted 时 finalize 全量重建 round-block 并移除本容器。
+   *  任务表例外：有 step_boundary 时，平铺内容归入对应「step-N · 标题」折叠块（任务收纳）。 */
+  let flowEl: HTMLElement | null = null;
   /** 流式骨架块（TTFT 前即时反馈，吸收 Claude Code #81659 / 骨架屏最佳实践）
    *
    * meta 到达即创建「AI 回复骨架」：标签（角色·模型）+ round-block 运行状态，
@@ -754,14 +759,44 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (opts?.mountAfter?.parentNode) opts.mountAfter.after(div);
     else messages.appendChild(div);
     flowShellEl = div;
-    // 挂载任务过程折叠区（meta 已在 currentEvents 首条）：进行中实时展开投影过程事件
-    renderRoundBlock(currentEvents, false);
+    // 挂载运行时过程平铺容器（meta 已在 currentEvents 首条）：过程按 step 时序平铺（无大折叠壳）
+    renderProcessFlow(currentEvents);
     // plan_update 先于 beginStreaming 的 defer 消费：现在 activeAssistantEl 已就绪，挂载 inlinePlanBoard
     if (pendingInlinePlan) {
       mountInlinePlanBoard(pendingInlinePlan);
     }
     scrollToBottom(messages);
     updateEmptyState();
+  }
+
+  /**
+   * 确保当前轮**运行时过程平铺容器**（v1.8 剪枝，2026-09-09）存在并挂在本轮首个 assistant 块上
+   *
+   * 挂载规则与 ensureRoundBlock 同源（label 之后、正文 body 之前——「过程在上 · 报告在下」）。
+   * 与 ensureRoundBlock 互斥：运行时（非 finalize）优先平铺容器的存在，round-block 仅在
+   * finalize（done/interrupted/重放）时经 renderRoundBlock 创建——运行时绝不出现大折叠壳。
+   *
+   * @returns 平铺容器（正文块未创建 / 无过程事件时返回 null）
+   */
+  function ensureProcessFlow(): HTMLElement | null {
+    if (flowEl && flowEl.isConnected) return flowEl;
+    const host = activeAssistantEl;
+    if (!host || currentEvents.length === 0) return null;
+    flowEl?.remove();
+    const flow = document.createElement('div');
+    flow.className = 'process-flow';
+    // 插入点：.msg-ai-label 之后、.msg-body（报告正文）之前
+    const label = host.querySelector(':scope > .msg-ai-label');
+    const msgBody = host.querySelector(':scope > .msg-body');
+    if (msgBody) {
+      host.insertBefore(flow, msgBody);
+    } else if (label) {
+      label.after(flow);
+    } else {
+      host.prepend(flow);
+    }
+    flowEl = flow;
+    return flow;
   }
 
   /**
@@ -937,16 +972,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   function insertStepInOrder(details: HTMLElement, el: HTMLElement, seq: number): void {
+    // v1.8 剪枝：平铺容器（process-flow）内排序识别 .process-flow__narrate / .round-block__tool；
+    // round-block（finalize/重放）内识别 .round-block__narrate / .round-block__tool——
+    // 共用同一插入通道，覆盖两套容器类名。
     const existing = Array.from(
-      details.querySelectorAll<HTMLElement>('.round-block__narrate, .round-block__tool'),
+      details.querySelectorAll<HTMLElement>(
+        '.process-flow__narrate, .round-block__narrate, .round-block__tool, .process-flow__tool',
+      ),
     ).filter((e) => e !== el);
     const next = existing.find((e) => Number(e.dataset.seq ?? Infinity) > seq);
     if (next) {
       details.insertBefore(el, next);
     } else {
-      const phase = details.querySelector('.round-block__phase');
-      if (phase) phase.after(el);
-      else details.appendChild(el);
+      // 无更高 seq → append 到末尾。注意：不用 phase.after(el)（phase 在 prepend 后居首，
+      // phase.after 会把元素插到第二位置，破坏与低 seq 平铺元素——如 narrate——的 seq 序，v1.8 排雷）
+      details.appendChild(el);
     }
   }
 
@@ -1151,66 +1191,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     rb.open = !finalize;
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     if (!details) return;
-    // ── 进行中（finalize=false）：实时相位行 + 工具行增量追加（不重建 details 防闪烁） ──
-    if (!finalize) {
-      // 实时相位行：details 顶部单条「当前正在做什么」。
-      // TS-11a 优先级：进行中工具（tool_start 已到、tool_result 未达）→ 执行叙述；
-      // 否则按最新 thinking 相位展示（原逻辑）。
-      const runningTool = findRunningTool(events);
-      const thinking = [...events].reverse().find((e) => e.type === 'thinking');
-      let phaseRow = details.querySelector('.round-block__phase') as HTMLDivElement | null;
-      if (runningTool) {
-        if (!phaseRow) {
-          phaseRow = document.createElement('div');
-          phaseRow.className = 'round-block__phase';
-          details.prepend(phaseRow);
-        }
-        phaseRow.classList.add('is-tool');
-        phaseRow.textContent = `正在执行：${toolActionLabel(runningTool.payload.name, runningTool.payload.args)}`;
-      } else if (thinking) {
-        if (!phaseRow) {
-          phaseRow = document.createElement('div');
-          phaseRow.className = 'round-block__phase';
-          details.prepend(phaseRow);
-        }
-        phaseRow.classList.remove('is-tool');
-        phaseRow.textContent = phaseLabel(thinking.payload.phase);
-      } else {
-        phaseRow?.remove();
-      }
-      // process_event 增量投影（扁平化，2026-09-04）：narrate 与 tool 按 seq 平铺 details 顶层，
-      // 各自独立折叠——工具行不再嵌套进叙述块（Trae Work 式扁平 step 流）
-      const narrates = events
-        .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
-        .sort((a, b) => a.seq - b.seq);
-      const toolStarts = events
-        .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
-        .sort((a, b) => a.seq - b.seq);
-      // narrate 父块：不存在则创建（data-seq 去重防重复渲染；运行中默认展开），按 seq 插入
-      for (const n of narrates) {
-        if (!details.querySelector(`.round-block__narrate[data-seq="${n.seq}"]`)) {
-          // 阶段二步级折叠：无 step_boundary 时 host===details（退回扁平），有则归入对应步级折叠块
-          const { host } = stepContainerFor(details, events, n.seq);
-          insertStepInOrder(host, createNarrateGroup(n, true), n.seq);
-        }
-      }
-      // 工具行：不存在则渲染并插入（data-tool-call-id 去重），结果到达原地更新状态
-      for (const t of toolStarts) {
-        if (!details.querySelector(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`)) {
-          const row = renderToolRow(t, events);
-          if (row) {
-            const { host } = stepContainerFor(details, events, t.seq);
-            insertStepInOrder(host, row, t.seq);
-          }
-        }
-      }
-      for (const e of events) {
-        if (e.type === 'tool_result') {
-          updateToolRowState(details, e as Extract<ProcessEvent, { type: 'tool_result' }>);
-        }
-      }
-      return;
-    }
+    // v1.8 剪枝（2026-09-09）：renderRoundBlock 仅 finalize（done/interrupted/重放）调用，
+    // 运行时交由 renderProcessFlow（process-flow 平铺）承载——原「进行中增量投影」分支已成死代码，已删。
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
     // 实时相位行是进行中专属（details 直接子元素，非小节），收尾先移除
     details.querySelector('.round-block__phase')?.remove();
@@ -1328,6 +1310,82 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 故此处只配合「details 内已存在」的 QA 刷新（幂等）；晚到折入由 appendInteractiveInput /
     // foldPendingQaIntoRoundBlock 各自再 refresh。双保险保证收起态摘要始终含「你答×N/你补充×N」。
     if (finalize) refreshRoundBlockQaStats(rb);
+  }
+
+  /**
+   * 运行时过程平铺渲染（v1.8 剪枝，2026-09-09）：**无 round-block 大折叠壳**——
+   * 过程事件按 step 时序平铺在 process-flow 容器里：
+   *   narrate → 平铺文本行（结束补「：」——「AI 说什么：」后接工具块的叙述冒号形态）；
+   *   tool  → 独立折叠行（复用 .round-block__tool 视觉，data-tool-call-id 去重）；
+   *   thinking → 轻量状态行（phaseLabel，呼吸点，随最新相位更新）；
+   *   任务表例外：有 step_boundary 时 narrate/tool 归入「step-N · 标题」折叠块（offset：任务收纳）。
+   * 增量幂等：data-seq / data-tool-call-id 去重防重复渲染；narrate 平铺行按 seq 有序插入。
+   * finalize（done/interrupted）时不再调此函数：全量重建 round-block + flow 容器移除（见 finalizeRound
+   * ——foldPendingQaIntoRoundBlock 只折 QA；narrate/tool 已由 renderRoundBlock finalize 分支全量承载，
+   * 不物理搬运，仅删平铺容器，避免重复 DOM 与「折也不重插」的搬运成本）。
+   */
+  function renderProcessFlow(events: ProcessEvent[]): void {
+    const flow = ensureProcessFlow();
+    if (!flow) return;
+    // 1) 轻量状态行：单条，优先级 = 进行中工具（「正在执行：xxx」行动叙述）> 最新 thinking 相位；
+    //   （无则移除；TS-11 同构：工具执行中相位提供实时行动反馈，用户定案「显示」）
+    const runningTool = findRunningTool(events);
+    const thinking = [...events].reverse().find((e) => e.type === 'thinking') as
+      | Extract<ProcessEvent, { type: 'thinking' }>
+      | undefined;
+    let phaseRow = flow.querySelector<HTMLElement>('.process-flow__phase');
+    if (runningTool) {
+      if (!phaseRow) {
+        phaseRow = document.createElement('div');
+        phaseRow.className = 'process-flow__phase process-flow__phase--tool';
+        flow.prepend(phaseRow);
+      }
+      phaseRow.classList.add('is-tool');
+      phaseRow.textContent = `正在执行：${toolActionLabel(runningTool.payload.name, runningTool.payload.args)}`;
+    } else if (thinking && thinking.payload.phase !== 'archiving') {
+      if (!phaseRow) {
+        phaseRow = document.createElement('div');
+        phaseRow.className = 'process-flow__phase';
+        flow.prepend(phaseRow);
+      }
+      phaseRow.classList.remove('is-tool');
+      phaseRow.textContent = phaseLabel(thinking.payload.phase);
+    } else {
+      phaseRow?.remove();
+    }
+    // 2) narrate 平铺行 + 工具折叠行：按 seq 平铺（step_boundary 时归入步级折叠块，任务收纳例外）
+    const narrates = events
+      .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
+      .sort((a, b) => a.seq - b.seq);
+    const toolStarts = events
+      .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
+      .sort((a, b) => a.seq - b.seq);
+    for (const n of narrates) {
+      if (flow.querySelector(`.process-flow__narrate[data-seq="${n.seq}"]`)) continue;
+      const row = document.createElement('div');
+      row.className = 'process-flow__narrate';
+      row.dataset.seq = String(n.seq);
+      // 叙述冒号：结尾无标点时补「：」（用户定案「AI 说什么：」后接工具块）——文本防注入
+      const text = n.payload.content.trim();
+      row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
+      // 任务表例外：有 step_boundary 归入步级折叠块（复用阶段二 getOrCreateStepGroup 容器）
+      const { host } = stepContainerFor(flow, events, n.seq);
+      insertStepInOrder(host, row, n.seq);
+    }
+    for (const t of toolStarts) {
+      if (flow.querySelector(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`)) continue;
+      const row = renderToolRow(t, events);
+      if (row) {
+        const { host } = stepContainerFor(flow, events, t.seq);
+        insertStepInOrder(host, row, t.seq);
+      }
+    }
+    // 3) tool_result 到达更新工具行状态（详情/展开态/等待时长）
+    for (const e of events) {
+      if (e.type === 'tool_result') {
+        updateToolRowState(flow, e as Extract<ProcessEvent, { type: 'tool_result' }>);
+      }
+    }
   }
 
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
@@ -2661,8 +2719,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // A 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
     // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
     ensureRoundGroup(roundId, div, true);
-    // 挂载任务过程折叠区（meta 已先到）：进行中实时展开投影过程事件
-    renderRoundBlock(currentEvents, false);
+    // 挂载运行时过程平铺容器（meta 已先到）：过程按 step 时序平铺（无大折叠壳）
+    renderProcessFlow(currentEvents);
     scrollToBottom(messages);
     updateEmptyState();
   }
@@ -2831,9 +2889,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     refreshRoundBlockQaStats(rb);
   }
 
-  /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 收敛 QA 行进折叠块 + 关流式光标 */
+  /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 收敛 QA 行进折叠块 + 关流式光标。
+   *  v1.8 剪枝（2026-09-09）：finalize 全量重建 round-block 后**移除运行时平铺容器**（flowEl）——
+   *  narrate/tool 已由 renderRoundBlock(finalize=true) 全量小节承载，无需物理搬运；QA 行不在
+   *  折叠区内（独立 .msg-qa 行），仍由 foldPendingQaIntoRoundBlock 折入。 */
   function finalizeRound(): void {
     renderRoundBlock(currentEvents, true);
+    flowEl?.remove();
+    flowEl = null;
     foldPendingQaIntoRoundBlock();
     finalizeStreaming();
   }
@@ -3194,6 +3257,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           currentEvents = [];
           roundBlockEl = null;
           roundBlockHostEl = null;
+          flowEl = null; // 新轮：运行时平铺容器引用失效（随 skeleton 重建）
           clearArchivingFallback();
           currentEvents.push(ev);
           prepareFlowShell();
@@ -3210,9 +3274,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           if (ev.payload.phase === 'archiving') {
             scheduleArchivingFallback();
           }
-          // 回答等待指示器（③ 等待反馈）：meta 前（无骨架）补可见反馈——文案随
-          // 相位更新（召回/处理/规划…）+ 等待秒数，避免「发送后无反应」
-          if (!roundBlockEl && ev.payload.phase !== 'archiving') {
+          // 回答等待指示器（③ 等待反馈）：meta 前（无骨架无 flow）补可见反馈——文案随
+          // 相位更新（召回/处理/规划…）+ 等待秒数，避免「发送后无反应」。
+          // v1.8 剪枝：运行时 thinking 相位已由 process-flow 内 .process-flow__phase 行承载，
+          // 故仅 flow 未创建（骨架尚未挂载）时才落 pending-wait 兜底，防双显示。
+          if (!roundBlockEl && !flowEl && ev.payload.phase !== 'archiving') {
             pendingWaitPhase = phaseLabel(ev.payload.phase);
             ensurePendingWait();
           }
@@ -3225,8 +3291,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           toolElapsedStart.delete(ev.payload.toolCallId);
         }
         currentEvents.push(ev);
-        // 任务过程折叠区随流同步刷新（进行中增量：实时相位 + 工具追加）
-        renderRoundBlock(currentEvents, false);
+        // 运行时过程平铺容器随流同步刷新（增量：narrate 冒号行 + 工具折叠行 + 思考状态）
+        renderProcessFlow(currentEvents);
       }
     } else if (msg.type === 'replay_events') {
       // 重放整批（v1.5）：同一渲染路径——整批汇入 events[]，一次性渲染 summary + details
@@ -3284,6 +3350,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         resumePending = false;
         roundBlockEl = null;
         roundBlockHostEl = null;
+        flowEl = null; // 新闭环：运行时平铺容器引用失效
         roundGroupEl = null; // A 容器化：新闭环容器另行创建
         // 解除旧轮 assistant 块锚定（2026-09-07 修复跨轮挂载串位）：新闭环后 activeAssistantEl
         // 仍指向上一轮首块，重放路径 replay_events 在正文块创建前到达时会以该块为挂载目标，
@@ -3545,6 +3612,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearArchivingFallback();
       roundBlockEl = null;
       roundBlockHostEl = null;
+      flowEl = null; // 重放/清轮：运行时平铺容器引用失效
       flowShellEl = null;
       currentEvents = [];
       // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
