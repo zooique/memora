@@ -2624,6 +2624,24 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(collectAllBodyText(continued)).toContain('按你的要求继续');
   });
 
+  it('连续补充各自独立成块：每颗钉子独立折叠块、无「补充 N 条」合并（2026-09-09 剪枝定案）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正在回答', roundId: 'round-1' });
+    // 同轮连续两条补充（运行时：roundId 均未回填，历史上会误合并成「你补充 N 条」）
+    dispatch({ type: 'user', text: '补充：先看配置', ts: 't1', kind: 'supplement', roundId: '' });
+    dispatch({ type: 'user', text: '补充：再看日志', ts: 't2', kind: 'supplement', roundId: '' });
+    const supRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa')).filter(
+      (el) => el.querySelector('.msg-qa__tag')?.textContent?.startsWith('你补充'),
+    );
+    // 两颗钉子独立成块：不合并、无「你补充了 N 条」标签、各自含完整内容
+    expect(supRows).toHaveLength(2);
+    expect(supRows[0]!.textContent).toContain('先看配置');
+    expect(supRows[1]!.textContent).toContain('再看日志');
+    expect(supRows[0]!.querySelector('.msg-qa__tag')?.textContent).toBe('你补充');
+    expect(supRows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你补充');
+  });
+
   it('D3 单轨：运行时 qa 回答后 resume，骨架初始即标识续接（2026-09-08 同构收窄：交互已插=必然续接，不闪「新开回答」）', () => {
     mountChatView();
     // 第一段回答（提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId

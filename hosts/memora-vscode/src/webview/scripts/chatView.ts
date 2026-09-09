@@ -1387,8 +1387,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 暂停申请在途态（host 经 pause_pending 消息推送）：申请已入队但 step 未结束的窗口期。
    *  用户心智只有 暂停/继续 两态——申请在了就是"在暂停"，按钮立即切为「继续」形态可反悔。 */
   let _pausePending = false;
-  /** 连续 supplement 合并跟踪：当前活跃的打断切分条（多条补充追加到同一容器，而非每条建一个新 divider）*/
-  let _lastInterruptDivider: HTMLElement | null = null;
 
   /**
    * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → send 的 classList/title/aria-label + pauseBtn 的 hidden。
@@ -1532,9 +1530,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     _sessionUiState = state;
     // 暂停申请态只存在于 thinking 窗口：状态机翻到非 thinking 时申请必然已结束/作废
     if (state !== 'thinking') _pausePending = false;
-    // Phase 4：合并补充条的生命周期跟随会话状态——状态变化 = 合并周期结束，
-    // 下一个 supplement 应该重新开新 divider（不同运行阶段的补充不应混在一起）
-    _lastInterruptDivider = null;
     // pauseBtn 图标永远是 pause（‖），UI 不维护 toggle 状态——直接进入状态分发
     if (state === 'thinking') {
       // 生成中：round-block summary 呼吸点 + 计数实时刷新（renderRoundBlock 驱动，无需额外文案）
@@ -2227,15 +2222,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
   }
 
-  /** 内联子行统一渲染（supplement / question-answer 共用）：
+  /** 内联子行统一渲染（supplement / question-answer / timeout 共用）：
    *  位置 = 当前 assistant 块之后（打断点/提问块下方，阅读位置连贯，同环连续体节点）。
-   *  补充支持连续合并：同一合并周期内（同 roundId 闭环）多条补充追加到同一行容器
-   *  （label 显示「你补充 N 条」带序号），与旧 interrupt-divider 的合并心智一致；
-   *  question-answer 每答一行不合并。跨 roundId 的补充不跨轮合并（2026-09-07 修复：
-   *  重放跨轮 supplement 此前靠 setStatus 重置合并锚，但重放路径无 setStatus 变化 →
-   *  「渲染在顶部/第二个补充并入第一个」的跨轮错位；归元为合并周期 = 同 roundId）。
-   *  合并周期重置：setStatus 变化 / 收到非 supplement 消息 / roundId 切换后，
-   *  下次补充重新开行。 */
+   *  独立性（2026-09-09 剪枝定案）：每个补充 = 一颗钉子 = 独立折叠块，不合并、
+   *  无「补充 N 条」标签；question-answer 每答一行不合并。跨轮补充天然独立
+   *  （重放逐条重建，无合并周期，无跨轮错位风险——删除 _lastInterruptDivider 机制后
+   *  roundId 不再参与合并判定，本函数恒返回新渲染的折叠块）。 */
   function appendInlineInputRow(
     text: string,
     kind: 'question-answer' | 'supplement' | 'timeout',
@@ -2247,7 +2239,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   回答 / 补充 → `<details class="msg-qa">`（summary=tag「你答/你补充」，body=全文）；
     //   提问 → 平铺文字行 `.msg-qa--ask`（记录在对话流，非折叠）。
     // 移除旧的 60/120 字符硬截断（折叠块天然收住长文，不再设魔法数）。
-    // 返回新渲染的回答折叠块（details；supplement 合并进既有块时返回 null）——
+    // 返回新渲染的回答折叠块（恒非 null；2026-09-09 剪枝后无合并路径）——
     //   G31 方案1 折入 round-block 时据此「折也不重插」；带 question 时提问回顾行
     //   （.msg-qa--ask）为折叠块前兄弟，由 moveQaIntoRoundBlock 成对携带搬入
     //   （2026-09-08 修复：曾返回 ask 行致重放折入只搬问行、答块残留消息流）。
@@ -2277,32 +2269,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         qReviewRow.appendChild(opts);
       }
     }
-    // supplement 合并路径：同 roundId 闭环内的补充才合并（跨轮不并），合并进现有折叠块 body
-    if (
-      kind === 'supplement' &&
-      _lastInterruptDivider &&
-      _lastInterruptDivider.isConnected &&
-      _lastInterruptDivider.dataset.roundId === (roundId ?? '')
-    ) {
-      const body = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__body');
-      if (body) {
-        const count = body.childElementCount + 1;
-        const tag = _lastInterruptDivider.querySelector<HTMLElement>('.msg-qa__tag');
-        if (tag) tag.textContent = `你补充了 ${count} 条`;
-        const row = document.createElement('div');
-        row.className = 'msg-qa__row';
-        const txt = document.createElement('span');
-        txt.className = 'msg-qa__text';
-        txt.textContent = text; // 完整文本，不截断
-        txt.title = text;
-        row.appendChild(txt);
-        body.appendChild(row);
-        scrollToBottom(messages);
-        updateEmptyState();
-        return null; // 合并进既有块：无新顶层元素（折入锚仍指旧块）
-      }
-    }
-    // 新建折叠块（supplement 首条 / question-answer 回答）
+    // supplement 独立块路径（2026-09-09 剪枝定案）：每个补充 = 一颗独立钉子 = 独立折叠块，
+    // 不做同轮合并（删除 _lastInterruptDivider 焊接机制）——连续补充天然自然平铺，
+    // 免「补充 N 条」标签与合并周期的状态维护；无合并即无缺口1 过度合并风险，落盘/重放语义不变
+    // （重放按真实 roundId 逐条重建，同样独立成块）。
+    // 新建折叠块（supplement / question-answer 回答）
     const details = document.createElement('details');
     details.className = 'msg-qa';
     const summary = document.createElement('summary');
@@ -2312,7 +2283,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     tag.textContent = kind === 'supplement' ? '你补充' : kind === 'timeout' ? '未回答' : '你答';
     summary.appendChild(tag);
     details.appendChild(summary);
-    // 折叠块 body：统一条目容器（补充多条追加目标；回答单条）
+    // 折叠块 body：条目容器（每次交互输入独立成块，恒单条）
     const body = document.createElement('div');
     body.className = 'msg-qa__body';
     const row = document.createElement('div');
@@ -2324,12 +2295,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     row.appendChild(txt);
     body.appendChild(row);
     details.appendChild(body);
-    if (kind === 'supplement') {
-      // 合并锚记录 roundId（跨轮合并归元）：仅同 roundId 的补充并入此折叠块，
-      // 重放路径无 setStatus 时靠 roundId 归元合并周期（防「第二个补充并入第一个」跨轮错位）
-      details.dataset.roundId = roundId ?? '';
-      _lastInterruptDivider = details; // 语义=「当前补充折叠块」
-    }
     // 插入：提问平铺行先占 host 后位，回答折叠块紧随其后（保持「问 → 你答」阅读序）
     if (qReviewRow) {
       if (host?.parentNode) {
@@ -3329,9 +3294,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 新闭环同时清暂停续写锚（2026-09-07 对称雷修复）：残留会让下一轮 meta 误判 pausedResume，
         // 新问题正文被原位续写到上一个暂停块
         pausedAssistantEl = null;
-        // 新闭环也清补充合并锚（2026-09-07 跨轮合并修复，SSOT 与 setStatus 同清理纪律）：
-        // 跨 roundId 的补充不并进上一轮行；重放路径无 setStatus，此处是新轮补充开行的兜底锚点
-        _lastInterruptDivider = null;
         // 新闭环也清交互行已插标志（2026-09-08 SSOT 收窄同纪律）：防跨轮残留阻断下轮原位续写
         interactiveRowInserted = false;
       }

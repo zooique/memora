@@ -1,0 +1,117 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 500" width="100%" height="auto" role="img" aria-label="会话渲染形态时序图：运行时平铺、ask与补充钉子、停止、结束后收敛">
+  <style>
+    svg {
+      --surface: #F7F7F8;
+      --surface-muted: #EFEFF2;
+      --text: #171717;
+      --text-muted: #52525B;
+      --border: rgba(23, 23, 23, 0.12);
+      --brand: #4B3FE3;
+      --brand-soft: #F2F7FF;
+      --brand-text: #1A1759;
+      --brand-on: #FFFFFF;
+      --accent: #27D2BF;
+      --accent-soft: #EAFBF8;
+      --accent-text: #0F766E;
+      --warning: #EFAA17;
+      --font-sans: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    }
+    @media (prefers-color-scheme: dark) {
+      svg {
+        --surface: #171717;
+        --surface-muted: #262626;
+        --text: #E5E5E5;
+        --text-muted: #A1A1AA;
+        --border: rgba(229, 229, 229, 0.12);
+        --brand: #6054F1;
+        --brand-soft: #1A1759;
+        --brand-text: #CFD8FF;
+        --accent-soft: #123F3C;
+        --accent-text: #CCFBF1;
+      }
+    }
+    .t { fill: var(--text); font: 400 14px/20px var(--font-sans); }
+    .th { fill: var(--text); font: 500 14px/20px var(--font-sans); }
+    .title { fill: var(--text); font: 500 16px/24px var(--font-sans); }
+    .ts { fill: var(--text-muted); font: 400 12px/18px var(--font-sans); }
+    .arr { stroke: var(--text-muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; fill: none; }
+    .leader { stroke: var(--text-muted); stroke-width: 1; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 4 4; fill: none; }
+    .c-b { fill: var(--brand-soft); stroke: var(--brand); stroke-width: 1.2; }
+    .c-b .t, .c-b .th { fill: var(--brand-text); }
+    .c-a { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.2; }
+    .c-a .t, .c-a .th { fill: var(--accent-text); }
+    .c-n { fill: var(--surface); stroke: var(--border); stroke-width: 1.2; }
+    .c-w { fill: rgba(239, 170, 23, 0.13); stroke: var(--warning); stroke-width: 1.2; }
+    .c-w .ts { fill: var(--warning); }
+  </style>
+  <defs>
+    <marker id="arr" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" markerUnits="userSpaceOnUse" orient="auto">
+      <path d="M1 1 L7 4 L1 7 Z" fill="var(--text-muted)"/>
+    </marker>
+  </defs>
+
+  <!-- 标题区 -->
+  <text class="title" x="40" y="32">会话渲染形态：单轨 step 闭环 + 钉子</text>
+  <text class="ts" x="40" y="54">运行时 = 过程一等公民（平铺直叙） · 结束后 = 结果一等公民（报告收敛）</text>
+
+  <!-- ① 运行中 -->
+  <text class="ts" x="40" y="88">① 运行中 · 过程平铺</text>
+  <rect class="c-n" x="175" y="100" width="150" height="40" rx="8"/>
+  <text class="t" x="187" y="125">AI 叙述（平铺）</text>
+  <line class="arr" x1="335" y1="120" x2="368" y2="120" marker-end="url(#arr)"/>
+  <rect class="c-n" x="378" y="100" width="150" height="40" rx="8"/>
+  <text class="th" x="390" y="125">▾ 工具调用（折叠块）</text>
+  <line class="arr" x1="538" y1="120" x2="571" y2="120" marker-end="url(#arr)"/>
+  <rect class="c-n" x="581" y="100" width="140" height="40" rx="8"/>
+  <text class="t" x="593" y="125">AI 叙述（平铺）</text>
+  <text class="ts" x="175" y="162">文字与折叠块按 step 时序自然交替——主线是 step 的连续排列</text>
+
+  <!-- ② 钉子：ask + 用户补充 -->
+  <text class="ts" x="40" y="188">② 交互 = 切断 step 的钉子</text>
+  <rect class="c-n" x="175" y="200" width="120" height="40" rx="8"/>
+  <text class="t" x="187" y="225">AI 叙述</text>
+  <line class="arr" x1="305" y1="220" x2="338" y2="220" marker-end="url(#arr)"/>
+  <rect class="c-b" x="348" y="200" width="190" height="40" rx="8"/>
+  <text class="th" x="360" y="225">问 需要确认方案？</text>
+  <line class="arr" x1="548" y1="220" x2="581" y2="220" marker-end="url(#arr)"/>
+  <rect class="c-a" x="591" y="200" width="130" height="40" rx="8"/>
+  <text class="th" x="603" y="225">▸ 你答 / 你补充</text>
+  <text class="ts" x="175" y="262">ask 是内生钉子（LLM 暂停 step 提问）· 用户补充是外生钉子（不请自来）——插入后 turn 保持连续</text>
+
+  <!-- 分叉到两个结局 -->
+  <line class="leader" x1="200" y1="276" x2="200" y2="300"/>
+  <line class="leader" x1="524" y1="276" x2="524" y2="300"/>
+
+  <!-- ③ 用户直接停止（左结局） -->
+  <g>
+    <rect class="c-w" x="40" y="302" width="320" height="138" rx="12"/>
+    <text class="th" x="56" y="326">③ 用户直接停止</text>
+    <text class="ts" x="56" y="348">step 流截断于当前步 · 时间线冻结</text>
+    <rect class="c-n" x="56" y="360" width="288" height="36" rx="8"/>
+    <text class="t" x="68" y="384">已执行的 step / 工具 / 问答全部保留</text>
+    <text class="ts" x="56" y="418">过程不因停止丢失——已记录部分 = 溯源材料</text>
+  </g>
+
+  <!-- ④ 任务结束（右结局 · 焦点） -->
+  <g>
+    <rect class="c-n" x="380" y="302" width="340" height="138" rx="12"/>
+    <rect x="380" y="302" width="340" height="3" fill="var(--brand)"/>
+    <text class="th" x="396" y="326">④ 任务结束 · 结果一等公民</text>
+    <rect class="c-n" x="396" y="338" width="308" height="36" rx="8"/>
+    <text class="th" x="408" y="362">▾ 任务过程块（先前全部过程·折叠）</text>
+    <rect x="396" y="384" width="308" height="42" rx="8" fill="var(--brand)"/>
+    <text x="408" y="411" fill="var(--brand-on)" font="font-weight: 600; font-size: 14px; line-height: 20px">总结报告（纯文本 · 平铺在外）</text>
+  </g>
+
+  <!-- 图例 -->
+  <line class="arr" x1="40" y1="468" x2="70" y2="468"/>
+  <text class="ts" x="78" y="472">文本 = 平铺</text>
+  <line class="leader" x1="160" y1="468" x2="190" y2="468"/>
+  <text class="ts" x="198" y="472">非文本 = 折叠块</text>
+  <rect x="280" y="461" width="14" height="14" rx="3" fill="var(--brand-soft)" stroke="var(--brand)"/>
+  <text class="ts" x="300" y="472">ask 内生</text>
+  <rect x="368" y="461" width="14" height="14" rx="3" fill="var(--accent-soft)" stroke="var(--accent)"/>
+  <text class="ts" x="388" y="472">补充外生</text>
+  <rect x="456" y="461" width="14" height="14" rx="3" fill="var(--brand)"/>
+  <text class="ts" x="476" y="472">总结报告（焦点）</text>
+</svg>
