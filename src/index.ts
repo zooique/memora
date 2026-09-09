@@ -62,8 +62,6 @@ export type {
   ReflectStrategy,
   GlobalStrategy,
   UnderstandingConfirm,
-  ContextAssembly,
-  MemoryRecallMode,
   ToolApproval,
   ToolReadonly,
   StreamingMode,

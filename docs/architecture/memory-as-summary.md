@@ -2,6 +2,8 @@
 
 > **2026-09-04 收敛补记**：本文论述的多 turn 编排摘要策略（"复杂收敛 → 收尾汇报 turn → 提炼汇报单源摘要""子 turn 不单产摘要""head id 组合溯源"）已随多 turn 编排层废弃。收敛后语义简化为：**一次外部输入 → 一个 turn → 一条 round-summary**，无中间 turn、无 head id 概念、无 report 单源摘要。全文其余架构（溯源标识、摘要为唯一记忆单元等）未变。
 >
+> **2026-09-09 收敛补记（memory-tool-recall-design 阶段2）**：本文件正文中作为「角色包 L2 召回键」论述的 `memoryRecallPercent` / `memoryRecall` / `summaryRecall` / `recallConfidence` / `minFallback` / `contextAssembly` 已随召回策略键族**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除；召回改由 `memory_search` 工具触发，记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载。下文相关引用均为退役前设计语义，不再代表当前 schema。
+>
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
 > **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（turn 公理）· role-pack-spec.md（记忆键 SSOT）

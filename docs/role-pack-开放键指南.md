@@ -135,7 +135,7 @@
   "formatVersion": "1.0.0",
   "interactionType": "tool_assistant",
   "strategy": {
-    "prepare": { "memoryRecall": "full", "contextAssembly": "hybrid" },
+    "prepare": { "understandingConfirm": "confirm", "summaryFocus": "以文档设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
     "global": { "tokenBudget": 12000 }
   },

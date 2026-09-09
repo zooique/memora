@@ -11,7 +11,7 @@ import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 
 /** 合法 L2 策略（已消费键集，类型化常量供展开覆写） */
 const validStrategy = {
-  prepare: { memoryRecall: 'full', memoryRecallPercent: 0.4, minFallback: 2, summaryFocus: '聚焦核心逻辑' },
+  prepare: { summaryFocus: '聚焦核心逻辑' },
   act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096, streaming: 'streaming' },
   reflect: { summary: 'on', selfReview: 0, userFollowup: 'silent' },
   global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
@@ -160,43 +160,6 @@ describe('validateManifest：键名合法性', () => {
 });
 
 describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义"）', () => {
-  it('已开启键 contextAssembly 非法值 → INVALID_STRATEGY_VALUE error（Tier 2 已消费）', () => {
-    const result = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, contextAssembly: 'weird' } },
-    });
-    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
-    expect(result.valid).toBe(false); // error 阻断
-  });
-
-  it('已开启键 contextAssembly 合法值 → 通过（Tier 2 已消费）', () => {
-    const result = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, contextAssembly: 'query' } },
-    });
-    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
-    expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_KEY')).toHaveLength(0);
-    expect(result.valid).toBe(true);
-  });
-
-  it('memoryRecallPercent 合法百分比（0.0~1.0）→ 通过（cap 非 quota 键）', () => {
-    const result = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, memoryRecallPercent: 0.6 } },
-    });
-    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
-    expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_KEY')).toHaveLength(0);
-    expect(result.valid).toBe(true);
-  });
-
-  it('memoryRecallPercent 越界（> 1 / < 0）→ INVALID_STRATEGY_VALUE error', () => {
-    const over = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, memoryRecallPercent: 1.5 } },
-    });
-    const under = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, memoryRecallPercent: -0.1 } },
-    });
-    expect(findByCode(over.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
-    expect(findByCode(under.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
-  });
-
   it('summaryFocus 合法非空字符串 → 通过（结构化保真提炼键）', () => {
     const result = validate({
       strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: '高价值代码片段' } },
@@ -237,13 +200,6 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
   it('reflect.summary 越界枚举 → error', () => {
     const result = validate({
       strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, summary: 'invalid' } },
-    });
-    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
-  });
-
-  it('minFallback 负数 → error', () => {
-    const result = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, minFallback: -1 } },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });

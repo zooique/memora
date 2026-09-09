@@ -40,8 +40,6 @@ export type KeyRule =
  */
 export const DEFAULT_MAX_ITERATIONS = 50;
 
-/** 召回保底下限条数上限：语义召回不足时补足至该条数，100 已远高于任何真实记忆补足需求 */
-export const MAX_MIN_FALLBACK = 100;
 /** 单轮回答长度上限（token）：65536 覆盖当前所有模型 max_tokens 能力上限 */
 export const MAX_OUTPUT_LIMIT = 65536;
 /** 单轮工具调用步数上限：100 步足够复杂任务单轮调用 */
@@ -77,19 +75,9 @@ function intRange(min: number, max: number): KeyRule & { readonly kind: 'check' 
   };
 }
 
-/** 百分比断言：0.0~1.0（memoryRecallPercent，cap 非 quota） */
-export function isPercent(value: unknown): boolean {
-  return typeof value === 'number' && value >= 0 && value <= 1;
-}
-
 /** 温度断言：0.0~2.0（act.temperature） */
 export function isTemperature(value: unknown): boolean {
   return typeof value === 'number' && value >= 0 && value <= 2;
-}
-
-/** 召回置信度断言：0.0~1.0（recallConfidence） */
-export function isRecallConfidence(value: unknown): boolean {
-  return typeof value === 'number' && value >= 0 && value <= 1;
 }
 
 /** 提炼视角长度断言：非空字符串且 ≤ MAX_SUMMARY_FOCUS_LENGTH 字符（防巨型注入） */
@@ -124,18 +112,10 @@ export function isAskOn(value: unknown): boolean {
  */
 export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
-    memoryRecall: { kind: 'enum', values: ['full', 'limited', 'none'] },
     // 理解确认模式（内核已消费：assembleRolePack 注入 persona prompt 行为指令）
     understandingConfirm: { kind: 'enum', values: ['off', 'echo', 'confirm'] },
-    // 记忆召回百分比 cap（0.0~1.0，cap 非 quota；取代旧绝对 token 配额语义）
-    memoryRecallPercent: { kind: 'check', check: isPercent, range: { min: 0, max: 1 } },
-    // 召回保底下限（0~MAX_MIN_FALLBACK 条，0=关闭）
-    minFallback: intRange(0, MAX_MIN_FALLBACK),
     // 领域无关机制，内容由角色包提供（≤ MAX_SUMMARY_FOCUS_LENGTH 字符）
     summaryFocus: { kind: 'check', check: isSummaryFocus, range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH } },
-    contextAssembly: { kind: 'enum', values: ['fixed', 'query', 'hybrid'] },
-    recallConfidence: { kind: 'check', check: isRecallConfidence, range: { min: 0, max: 1 } },
-    summaryRecall: { kind: 'enum', values: ['on', 'off'] },
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },

@@ -86,8 +86,8 @@ export interface RecallOptions {
   /**
    * 摘要召回 token 上限（可选）：>0 时启用 cap 内分配（§4.3.1）——L2 preference 轨最多占
    * (cap - semanticFloor)、L2 语义轨保底 semanticFloor（未满余量补位）。缺省（0/undefined）
-   * 退化为纯 limit 条数裁剪。由调用方（contextPreparer limited 模式）按 memoryRecallPercent
-   * 预算换算为 token 传入。
+   * 退化为纯 limit 条数裁剪。由调用方（如装配期注入）按内核固定记忆层 cap（`DEFAULT_MEMORY_CAP_RATIO`）
+   * 预算换算为 token 传入；阶段2（2026-09-09）memoryRecallPercent 角色包键退役后不再由策略层换算。
    */
   capTokens?: number;
   /**

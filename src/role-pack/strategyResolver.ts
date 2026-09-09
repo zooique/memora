@@ -2,13 +2,13 @@
  * 角色包行为策略解析器：集中管理行为策略的默认值、解析（resolve*）、合并与装配逻辑。
  */
 
-// 召回保底下限默认值：跨层共享（role-pack 与 memory 均引用），SSOT 单一来源
-import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
+//  召回保底下限默认值（DEFAULT_MIN_FALLBACK）随阶段2 策略键族退役，recall() 函数层默认由 recall.ts 自持，
+//  role-pack 不再跨越引用（recall.ts 直接用 DEFAULT_MIN_FALLBACK，见 recallDefaults.ts）。
+
 // 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
 import {
   DEFAULT_MAX_ITERATIONS,
   MAX_ASK_LIMIT,
-  MAX_MIN_FALLBACK,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
@@ -17,12 +17,9 @@ import {
 } from './strategyKeys.js';
 import type {
   BehaviorStrategy,
-  MemoryRecallMode,
-  ContextAssembly,
   ErrorHandling,
   ProviderRouting,
   MultiStepReasoning,
-  SummaryRecall,
   ToolApproval,
   ToolReadonly,
   ToolMode,
@@ -52,13 +49,8 @@ import type { RolePackManager } from './rolePackManager.js';
  */
 const FALLBACK_TOKEN_BUDGET = 80_000;
 
-/**
- * 记忆召回百分比 cap 内核默认值（SSOT 单一来源）。
- * 同时服务于 `DEFAULT_BEHAVIOR_STRATEGY.prepare.memoryRecallPercent`（角色包声明层）、
- * `resolveMemoryRecallPercent` 的非法/缺失回退。cap 非 quota：完整对话层无条件优先，
- * 记忆摘要层是剩余空间的拾遗填充，百分比只封顶防止记忆挤占对话。
- */
-export const DEFAULT_MEMORY_RECALL_PERCENT = 0.4;
+// 记忆召回相关默认常量（DEFAULT_MEMORY_RECALL_PERCENT 等）随阶段2 召回策略键族退役：
+// 记忆纯工具化召回后 prepare 无自动注入消费端，memoryRecallPercent/recallConfidence 等不再由策略层解析。
 
 /**
  * 行为策略全局默认值——未配置的维度使用全局默认值，角色包只声明它想改变的部分。
@@ -67,13 +59,7 @@ export const DEFAULT_MEMORY_RECALL_PERCENT = 0.4;
 export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   prepare: {
     understandingConfirm: 'off',
-    contextAssembly: 'hybrid',
-    memoryRecall: 'full',
-    memoryRecallPercent: DEFAULT_MEMORY_RECALL_PERCENT,
-    summaryRecall: 'on',
-    minFallback: DEFAULT_MIN_FALLBACK,
     summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
-    recallConfidence: 0.6,
   },
   act: {
     toolMode: 'allow',
@@ -144,31 +130,9 @@ function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], 
 // 策略解析函数 (resolve*)
 // ════════════════════════════════════════════════════════════
 
-/** 解析记忆召回模式（SSOT）：非法值归位 'full' */
-export function resolveMemoryRecallMode(strategy: BehaviorStrategy | undefined): MemoryRecallMode {
-  return normalizeEnum(strategy?.prepare?.memoryRecall, ['full', 'limited', 'none'], 'full');
-}
-
-/** 解析召回保底下限（SSOT）：整数且 ∈ [0, MAX_MIN_FALLBACK] 才采用，缺失/越界回退以内置默认，置 0 彻底关闭保底 */
-export function resolveMinFallback(strategy: BehaviorStrategy | undefined): number {
-  const candidate = strategy?.prepare?.minFallback;
-  const valid =
-    typeof candidate === 'number' &&
-    Number.isInteger(candidate) &&
-    candidate >= 0 &&
-    candidate <= MAX_MIN_FALLBACK;
-  return valid ? candidate : DEFAULT_MIN_FALLBACK;
-}
-
-/**
- * 解析记忆召回百分比 cap（SSOT）：0.0~1.0 数值才采用，缺失/越界回退内核默认 0.4。
- * cap 非 quota：只封顶"记忆摘要层占剩余预算的上限百分比"，非法值不允许静默透传。
- */
-export function resolveMemoryRecallPercent(strategy: BehaviorStrategy | undefined): number {
-  const candidate = strategy?.prepare?.memoryRecallPercent;
-  const valid = typeof candidate === 'number' && candidate >= 0 && candidate <= 1;
-  return valid ? candidate : DEFAULT_MEMORY_RECALL_PERCENT;
-}
+// 自动注入召回 6 键解析函数（resolveMemoryRecallMode/resolveMinFallback/resolveMemoryRecallPercent/
+// resolveContextAssembly/resolveRecallConfidence/resolveSummaryRecall）随阶段2 键族退役——记忆纯工具化
+// 召回后 prepare 无自动注入消费端，解析全链（types/strategyKeys/resolver/validator）同步移除。
 
 /**
  * 解析角色包提炼视角（SSOT）：非空字符串且 ≤ MAX_SUMMARY_FOCUS_LENGTH 字符才采用，
@@ -192,11 +156,6 @@ export function resolveToolMode(strategy: BehaviorStrategy | undefined): ToolMod
 /** 解析摘要生成开关（内核已消费）：非法值归位 'on' */
 export function resolveSummary(strategy: BehaviorStrategy | undefined): Summary {
   return normalizeEnum(strategy?.reflect?.summary, ['on', 'off'], 'on');
-}
-
-/** 解析上下文装配策略（内核已消费）：非法值归位 'hybrid'——fixed=仅最近 N 轮 / query=仅语义召回 / hybrid=两者 */
-export function resolveContextAssembly(strategy: BehaviorStrategy | undefined): ContextAssembly {
-  return normalizeEnum(strategy?.prepare?.contextAssembly, ['fixed', 'query', 'hybrid'], 'hybrid');
 }
 
 /** 解析工具调用步数上限（内核已消费）：整数且 ∈ [0, MAX_TOOL_STEP_LIMIT] 才采用，非法/越界回退默认 0（不限制） */
@@ -267,37 +226,9 @@ export function resolveMultiStepReasoning(
 }
 
 /**
- * 解析召回置信度阈值：非法值回退全局默认（DEFAULT_BEHAVIOR_STRATEGY.prepare.recallConfidence = 0.6）
+ * 解析召回置信度阈值（recallConfidence）与摘要召回开关（summaryRecall）随阶段2 键族退役——
+ * 记忆纯工具化召回后由 memory_search 工具语义通道天然承载，prepare 无消费端，此处不再解析。
  *
- * 控制语义召回的相似度过滤阈值：
- * - 0.0~1.0 浮点数，越大越严格
- * - 缺失/非法值回退全局默认，保证"非法即失效"归位一致（SSOT：与默认层引用同一常量）
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的召回置信度阈值
- */
-export function resolveRecallConfidence(strategy: BehaviorStrategy | undefined): number {
-  const candidate = strategy?.prepare?.recallConfidence;
-  const valid = typeof candidate === 'number' && candidate >= 0 && candidate <= 1;
-  // 回退引用 DEFAULT 常量（而非独立字面量），避免默认值双写漂移
-  return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.prepare!.recallConfidence!;
-}
-
-/**
- * 解析摘要召回开关：非法值归位 'on'
- *
- * 控制摘要记忆是否参与召回：
- * - 'on' → 摘要和原始记忆一起参与召回（默认）
- * - 'off' → 仅召回原始记忆，跳过摘要
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的摘要召回开关
- */
-export function resolveSummaryRecall(strategy: BehaviorStrategy | undefined): SummaryRecall {
-  return normalizeEnum(strategy?.prepare?.summaryRecall, ['on', 'off'], 'on');
-}
-
-/**
  * 解析工具只读模式：非法值归位 'full'
  *
  * 控制工具操作权限范围：

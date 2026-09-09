@@ -10,13 +10,9 @@
 import { describe, it, expect } from 'vitest';
 import {
   DEFAULT_BEHAVIOR_STRATEGY,
-  resolveMemoryRecallPercent,
-  resolveMemoryRecallMode,
-  resolveMinFallback,
   resolveSummaryFocus,
   resolveToolMode,
   resolveSummary,
-  resolveContextAssembly,
   resolveToolStepLimit,
   resolveErrorHandling,
   resolveProviderRouting,
@@ -24,8 +20,6 @@ import {
   resolveTokenBudget,
   resolveStepBudget,
   resolveMultiStepReasoning,
-  resolveRecallConfidence,
-  resolveSummaryRecall,
   resolveToolReadonly,
   resolveToolApproval,
   resolveUnderstandingConfirm,
@@ -33,11 +27,8 @@ import {
   assembleRolePack,
   resolveL2Strategy,
   DEFAULT_L2_STRATEGY,
-  DEFAULT_MEMORY_RECALL_PERCENT,
 } from '@/role-pack/strategyResolver.js';
-import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 import {
-  MAX_MIN_FALLBACK,
   MAX_TOOL_STEP_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_TOKEN_BUDGET,
@@ -92,12 +83,7 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
   it('prepare 维度包含全部必需字段', () => {
     const p = DEFAULT_BEHAVIOR_STRATEGY.prepare!;
     expect(p.understandingConfirm).toBe('off');
-    expect(p.contextAssembly).toBe('hybrid');
-    expect(p.memoryRecall).toBe('full');
-    expect(p.memoryRecallPercent).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-    expect(p.summaryRecall).toBe('on');
-    expect(p.minFallback).toBe(DEFAULT_MIN_FALLBACK);
-    expect(p.recallConfidence).toBe(0.6);
+    expect(p.summaryFocus).toBeUndefined();
   });
 
   it('act 维度包含全部必需字段', () => {
@@ -129,11 +115,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
     expect(g.askLimit).toBe(3);
   });
-
-  it('DEFAULT_MEMORY_RECALL_PERCENT 常量与默认值一致', () => {
-    expect(DEFAULT_MEMORY_RECALL_PERCENT).toBe(0.4);
-    expect(DEFAULT_BEHAVIOR_STRATEGY.prepare!.memoryRecallPercent).toBe(0.4);
-  });
 });
 
 // ════════════════════════════════════════════════════════
@@ -141,19 +122,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 // ════════════════════════════════════════════════════════
 
 describe('resolve* 函数 — 基础策略解析', () => {
-  // ── resolveMemoryRecallMode ──
-  describe('resolveMemoryRecallMode', () => {
-    it('合法值透传', () => {
-      expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'limited' } })).toBe('limited');
-      expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'none' } })).toBe('none');
-    });
-
-    it('非法/缺失值回退默认 full', () => {
-      expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'bad' as never } })).toBe('full');
-      expect(resolveMemoryRecallMode(undefined)).toBe('full');
-    });
-  });
-
   // ── resolveToolMode ──
   describe('resolveToolMode', () => {
     it('合法值透传', () => {
@@ -175,19 +143,6 @@ describe('resolve* 函数 — 基础策略解析', () => {
     it('非法/缺失值回退默认 on', () => {
       expect(resolveSummary({ reflect: { summary: 'bad' as never } })).toBe('on');
       expect(resolveSummary(undefined)).toBe('on');
-    });
-  });
-
-  // ── resolveContextAssembly ──
-  describe('resolveContextAssembly', () => {
-    it('合法值透传', () => {
-      expect(resolveContextAssembly({ prepare: { contextAssembly: 'fixed' } })).toBe('fixed');
-      expect(resolveContextAssembly({ prepare: { contextAssembly: 'query' } })).toBe('query');
-    });
-
-    it('非法/缺失值回退默认 hybrid', () => {
-      expect(resolveContextAssembly({ prepare: { contextAssembly: 'bad' as never } })).toBe('hybrid');
-      expect(resolveContextAssembly(undefined)).toBe('hybrid');
     });
   });
 
@@ -242,18 +197,6 @@ describe('resolve* 函数 — 基础策略解析', () => {
     });
   });
 
-  // ── resolveSummaryRecall ──
-  describe('resolveSummaryRecall', () => {
-    it('合法值透传', () => {
-      expect(resolveSummaryRecall({ prepare: { summaryRecall: 'off' } })).toBe('off');
-    });
-
-    it('非法/缺失值回退默认 on', () => {
-      expect(resolveSummaryRecall({ prepare: { summaryRecall: 'bad' as never } })).toBe('on');
-      expect(resolveSummaryRecall(undefined)).toBe('on');
-    });
-  });
-
   // ── resolveToolReadonly ──
   describe('resolveToolReadonly', () => {
     it('合法值透传', () => {
@@ -298,64 +241,6 @@ describe('resolve* 函数 — 基础策略解析', () => {
 // ════════════════════════════════════════════════════════
 
 describe('resolve* 函数 — 数值解析', () => {
-  // ── resolveMemoryRecallPercent ──
-  describe('resolveMemoryRecallPercent', () => {
-    it('合法百分比（0.0~1.0）采用', () => {
-      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0.5 } })).toBe(0.5);
-      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0 } })).toBe(0);
-      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1 } })).toBe(1);
-    });
-
-    it('负数回退默认', () => {
-      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: -0.1 } })).toBe(
-        DEFAULT_MEMORY_RECALL_PERCENT,
-      );
-    });
-
-    it('超过 1 回退默认', () => {
-      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1.5 } })).toBe(
-        DEFAULT_MEMORY_RECALL_PERCENT,
-      );
-    });
-
-    it('非数值回退默认', () => {
-      expect(resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: '0.5' } as never })).toBe(
-        DEFAULT_MEMORY_RECALL_PERCENT,
-      );
-    });
-
-    it('缺失回退默认', () => {
-      expect(resolveMemoryRecallPercent(undefined)).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-      expect(resolveMemoryRecallPercent({ prepare: {} })).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-    });
-  });
-
-  // ── resolveMinFallback ──
-  describe('resolveMinFallback', () => {
-    it('合法非负整数采用', () => {
-      expect(resolveMinFallback({ prepare: { minFallback: 3 } })).toBe(3);
-      expect(resolveMinFallback({ prepare: { minFallback: 0 } })).toBe(0);
-    });
-
-    it('负数回退默认', () => {
-      expect(resolveMinFallback({ prepare: { minFallback: -1 } })).toBe(DEFAULT_MIN_FALLBACK);
-    });
-
-    it('越上界回退默认（防无条件填写）', () => {
-      expect(resolveMinFallback({ prepare: { minFallback: MAX_MIN_FALLBACK + 1 } })).toBe(
-        DEFAULT_MIN_FALLBACK,
-      );
-    });
-
-    it('小数回退默认', () => {
-      expect(resolveMinFallback({ prepare: { minFallback: 1.5 } })).toBe(DEFAULT_MIN_FALLBACK);
-    });
-
-    it('缺失/非数值回退默认', () => {
-      expect(resolveMinFallback(undefined)).toBe(DEFAULT_MIN_FALLBACK);
-    });
-  });
-
   // ── resolveSummaryFocus ──
   describe('resolveSummaryFocus', () => {
     it('合法非空字符串采用', () => {
@@ -461,24 +346,6 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveStepBudget(undefined)).toBe(50);
     });
   });
-
-  // ── resolveRecallConfidence ──
-  describe('resolveRecallConfidence', () => {
-    it('0.0~1.0 范围内采用', () => {
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: 0.8 } })).toBe(0.8);
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: 0.0 } })).toBe(0.0);
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: 1.0 } })).toBe(1.0);
-    });
-
-    it('超出范围回退全局默认（DEFAULT_BEHAVIOR_STRATEGY 0.6）', () => {
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: 1.5 } })).toBe(0.6);
-      expect(resolveRecallConfidence({ prepare: { recallConfidence: -0.1 } })).toBe(0.6);
-    });
-
-    it('缺失回退全局默认（DEFAULT_BEHAVIOR_STRATEGY 0.6）', () => {
-      expect(resolveRecallConfidence(undefined)).toBe(0.6);
-    });
-  });
 });
 
 // ════════════════════════════════════════════════════════
@@ -508,17 +375,15 @@ describe('mergeStrategy — 策略合并', () => {
     });
     expect(result.reflect!.summary).toBe('off');
     // 其他维度不变
-    expect(result.prepare!.memoryRecall).toBe('full');
+    expect(result.prepare!.understandingConfirm).toBe('off');
     expect(result.act!.toolMode).toBe('allow');
   });
 
   it('多维度覆盖', () => {
     const result = mergeStrategy(base, {
-      prepare: { memoryRecall: 'none' },
       act: { toolMode: 'block', providerRouting: 'fixed' },
       reflect: { userFollowup: 'ask' },
     });
-    expect(result.prepare!.memoryRecall).toBe('none');
     expect(result.act!.toolMode).toBe('block');
     expect(result.act!.providerRouting).toBe('fixed');
     expect(result.reflect!.userFollowup).toBe('ask');
@@ -528,11 +393,11 @@ describe('mergeStrategy — 策略合并', () => {
 
   it('空值覆盖不影响已有字段', () => {
     const result = mergeStrategy(base, {
-      prepare: { memoryRecall: 'none' },
+      prepare: { understandingConfirm: 'echo' },
     });
     // 其他 prepare 字段保持默认
-    expect(result.prepare!.memoryRecall).toBe('none');
-    expect(result.prepare!.contextAssembly).toBe('hybrid');
+    expect(result.prepare!.understandingConfirm).toBe('echo');
+    expect(result.prepare!.summaryFocus).toBeUndefined();
   });
 });
 
@@ -721,14 +586,6 @@ describe('assembleRolePack — 角色包装配', () => {
 // ════════════════════════════════════════════════════════
 
 describe('跨维度一致性', () => {
-  it('DEFAULT_BEHAVIOR_STRATEGY 的 prepare.memoryRecallPercent 与 DEFAULT_MEMORY_RECALL_PERCENT 一致', () => {
-    expect(DEFAULT_BEHAVIOR_STRATEGY.prepare!.memoryRecallPercent).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-
-  it('resolveMemoryRecallPercent(undefined) 与 DEFAULT_MEMORY_RECALL_PERCENT 一致', () => {
-    expect(resolveMemoryRecallPercent(undefined)).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-
   it('mergeStrategy 不改变 DEFAULT_BEHAVIOR_STRATEGY 引用', () => {
     const original = DEFAULT_BEHAVIOR_STRATEGY;
     mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, { act: { toolMode: 'block' } });

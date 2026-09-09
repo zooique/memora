@@ -2,20 +2,20 @@
  * strategyKeys.test.ts — 策略键 SSOT 测试
  *
  * 覆盖范围：
- *   1. 校验辅助函数（isPercent / isTemperature / isRecallConfidence / isSummaryFocus / isAskOn）
+ *   1. 校验辅助函数（isTemperature / isSummaryFocus / isAskOn）
  *   2. STRATEGY_KEY_RULES 完整性（prepare / act / reflect / global 四组键覆盖 + 规则类型）
+ *
+ * 注：isPercent / isRecallConfidence / MAX_MIN_FALLBACK 已随 memory-tool-recall-design 阶段2
+ * 召回策略键族（memoryRecallPercent/recallConfidence/minFallback）退役删除，无对应测试。
  *
  * 设计纪律：角色包对策略维度只"选择"不"定义"，因此枚举外取值是 error（机器可判读）
  */
 import { describe, it, expect } from 'vitest';
 import {
   STRATEGY_KEY_RULES,
-  isPercent,
   isTemperature,
-  isRecallConfidence,
   isSummaryFocus,
   isAskOn,
-  MAX_MIN_FALLBACK,
   MAX_OUTPUT_LIMIT,
   MAX_TOOL_STEP_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
@@ -32,27 +32,6 @@ import {
 // ══════════════════════════════════════════════════════════════
 
 describe('strategyKeys — 校验辅助函数', () => {
-  // ── isPercent ──
-  describe('isPercent', () => {
-    it('0.0 ~ 1.0 范围内通过', () => {
-      expect(isPercent(0)).toBe(true);
-      expect(isPercent(0.4)).toBe(true);
-      expect(isPercent(1.0)).toBe(true);
-    });
-
-    it('超出范围不通过', () => {
-      expect(isPercent(-0.1)).toBe(false);
-      expect(isPercent(1.1)).toBe(false);
-      expect(isPercent(2)).toBe(false);
-    });
-
-    it('非数字类型不通过', () => {
-      expect(isPercent('0.4')).toBe(false);
-      expect(isPercent(null)).toBe(false);
-      expect(isPercent(undefined)).toBe(false);
-    });
-  });
-
   // ── isTemperature ──
   describe('isTemperature', () => {
     it('0.0 ~ 2.0 范围内通过', () => {
@@ -75,25 +54,6 @@ describe('strategyKeys — 校验辅助函数', () => {
     it('非数字类型不通过', () => {
       expect(isTemperature('0.5')).toBe(false);
       expect(isTemperature(null)).toBe(false);
-    });
-  });
-
-  // ── isRecallConfidence ──
-  describe('isRecallConfidence', () => {
-    it('0.0 ~ 1.0 范围内通过', () => {
-      expect(isRecallConfidence(0)).toBe(true);
-      expect(isRecallConfidence(0.5)).toBe(true);
-      expect(isRecallConfidence(1.0)).toBe(true);
-    });
-
-    it('超出范围不通过', () => {
-      expect(isRecallConfidence(-0.1)).toBe(false);
-      expect(isRecallConfidence(1.1)).toBe(false);
-    });
-
-    it('非数字类型不通过', () => {
-      expect(isRecallConfidence('0.8')).toBe(false);
-      expect(isRecallConfidence(undefined)).toBe(false);
     });
   });
 
@@ -168,13 +128,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   // 收集所有已知键（文档列出的）
   const EXPECTED_KEYS: Record<Phase, string[]> = {
     prepare: [
-      'memoryRecall',
-      'memoryRecallPercent',
-      'minFallback',
       'summaryFocus',
-      'contextAssembly',
-      'recallConfidence',
-      'summaryRecall',
       'understandingConfirm',
     ],
     act: [
@@ -259,11 +213,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
 
   // ── 具体枚举值验证 ──
   describe('枚举值验证', () => {
-    it('prepare.memoryRecall 枚举值正确', () => {
-      const rule = STRATEGY_KEY_RULES.prepare!.memoryRecall!;
-      expect(rule).toEqual({ kind: 'enum', values: ['full', 'limited', 'none'] });
-    });
-
     it('act.toolMode 枚举值正确', () => {
       const rule = STRATEGY_KEY_RULES.act!.toolMode!;
       expect(rule).toEqual({ kind: 'enum', values: ['allow', 'block'] });
@@ -292,14 +241,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
 
   // ── 具体校验函数验证 ──
   describe('校验函数验证', () => {
-    it('prepare.memoryRecallPercent 使用 isPercent', () => {
-      const rule = STRATEGY_KEY_RULES.prepare!.memoryRecallPercent!;
-      expect(rule.kind).toBe('check');
-      const checkRule = rule as { check: (v: unknown) => boolean };
-      expect(checkRule.check(0.4)).toBe(true);
-      expect(checkRule.check(1.5)).toBe(false);
-    });
-
     it('act.temperature 使用 isTemperature', () => {
       const rule = STRATEGY_KEY_RULES.act!.temperature!;
       expect(rule.kind).toBe('check');
@@ -334,9 +275,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   describe('strategyKeys — 数值键区间上界', () => {
     // 每个数值键：check 断言内置完整区间 + range 元数据与断言同源（防双写漂移）
     const CASES: Array<{ key: string; rule: KeyRule; min: number; max: number; probe: number }> = [
-      { key: 'prepare.minFallback', rule: STRATEGY_KEY_RULES.prepare!.minFallback!, min: 0, max: MAX_MIN_FALLBACK, probe: MAX_MIN_FALLBACK + 1 },
-      { key: 'prepare.recallConfidence', rule: STRATEGY_KEY_RULES.prepare!.recallConfidence!, min: 0, max: 1, probe: 1.1 },
-      { key: 'prepare.memoryRecallPercent', rule: STRATEGY_KEY_RULES.prepare!.memoryRecallPercent!, min: 0, max: 1, probe: 1.1 },
       { key: 'act.temperature', rule: STRATEGY_KEY_RULES.act!.temperature!, min: 0, max: 2, probe: 2.1 },
       { key: 'act.outputLimit', rule: STRATEGY_KEY_RULES.act!.outputLimit!, min: 1, max: MAX_OUTPUT_LIMIT, probe: MAX_OUTPUT_LIMIT + 1 },
       { key: 'act.toolStepLimit', rule: STRATEGY_KEY_RULES.act!.toolStepLimit!, min: 0, max: MAX_TOOL_STEP_LIMIT, probe: MAX_TOOL_STEP_LIMIT + 1 },
@@ -373,10 +311,8 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       }
     });
 
-    // 浮点比例/温度键：允许小数，仅约束区间；其余数值键为整数键
+    // 浮点键：允许小数，仅约束区间；其余数值键为整数键
     const FLOAT_KEYS: ReadonlySet<string> = new Set([
-      'prepare.recallConfidence',
-      'prepare.memoryRecallPercent',
       'act.temperature',
     ]);
 

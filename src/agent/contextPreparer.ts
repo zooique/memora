@@ -93,16 +93,13 @@ export class ContextPreparer {
    * 原「记忆召回 + 固定轮次注入」中的**每轮语义召回段已退役**：记忆检索改由 LLM 经
    * memory_search 工具主动触发（builtinToolHandlers.searchMemories），本方法不再代模型
    * 猜测"此刻需要什么记忆"。方法退化为纯**上下文装配**：预算派生 + roundId 互斥 +
-   * 对话层注入（hybrid）+ 上下文占用快照，不再返回任何自动召回的注入记忆。
+   * 对话层注入 + 上下文占用快照，不再返回任何自动召回的注入记忆。
+   * contextAssembly 策略键已随阶段2 退役，对话层注入恒走 hybrid（最近对话摘要注入）。
    *
    * @param input 用户输入（仅作顶级锚点预算估算，不再作为召回 query）
-   * @param contextAssembly 上下文装配策略（fixed / query / hybrid；仅 hybrid 注入最近对话）
-   * @returns 恒为空数组（自动注入退役，契约保留防止过渡期破坏；步进 B 将移除 loop 消费端）
+   * @returns 恒为空数组（自动注入退役，契约保留防止过渡期破坏；步进 B 已将 loop 消费端移除）
    */
-  async recallAndInject(
-    input: string,
-    contextAssembly: 'fixed' | 'query' | 'hybrid',
-  ): Promise<Memory[]> {
+  async recallAndInject(input: string): Promise<Memory[]> {
     const { deps } = this;
     // 自动注入退役 → 无自动召回的注入记忆，返回恒为空数组
     const recalledMemories: Memory[] = [];
@@ -144,25 +141,21 @@ export class ContextPreparer {
     // 派生完整对话层轮次集合（动态轮数 + 第一条必在场，次级锚点）
     const dialogue = loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens);
 
-    // ── 完整对话层注入：仅 hybrid 模式执行 ──
-    // 关键修复：fixed 模式下 loop.messages 已保留全部对话历史（cleanTemporary 只清 system），
-    // 再注入 conversation 摘要会造成双份出现、浪费 token。hybrid 模式下对话按预算截断，
-    // 注入的最近轮次摘要提供结构化视图，避免 LLM 丢失上下文连续性。
-    if (contextAssembly === 'hybrid') {
-      const recentHistory = dialogue.history;
-      if (recentHistory.length > 0) {
-        const msgs = deps.config.messages;
-        const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
-        const userLabel = msgs?.userLabel ?? 'User';
-        const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
-        const recentPrompt =
-          `${label}\n` +
-          recentHistory
-            .map((m) => `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`)
-            .join('\n');
-        loop.injectSystemMessage(recentPrompt);
-        logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
-      }
+    // ── 完整对话层注入：恒 hybrid（阶段2 contextAssembly 键退役，不再有 fixed/query 分支） ──
+    // 对话按预算截断，注入的最近轮次摘要提供结构化视图，避免 LLM 丢失上下文连续性。
+    const recentHistory = dialogue.history;
+    if (recentHistory.length > 0) {
+      const msgs = deps.config.messages;
+      const label = msgs?.recentConversationLabel ?? '[Recent conversation]';
+      const userLabel = msgs?.userLabel ?? 'User';
+      const assistantLabel = msgs?.assistantLabel ?? 'Assistant';
+      const recentPrompt =
+        `${label}\n` +
+        recentHistory
+          .map((m) => `${m.role === 'user' ? userLabel : assistantLabel}：${m.content}`)
+          .join('\n');
+      loop.injectSystemMessage(recentPrompt);
+      logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
     }
 
     // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──

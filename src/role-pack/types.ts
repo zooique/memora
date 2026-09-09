@@ -14,14 +14,8 @@ import type { RolePackValidationIssue } from './validator.js';
 /** 理解确认模式：off=直接生成 / echo=复述但不等待 / confirm=预检停顿后确认 */
 export type UnderstandingConfirm = 'off' | 'echo' | 'confirm';
 
-/** 上下文装配策略：fixed=固定最近N轮 / query=按输入召回 / hybrid=两者 */
-export type ContextAssembly = 'fixed' | 'query' | 'hybrid';
-
-/** 记忆召回模式：full=全量召回 / limited=限额召回 / none=不召回 */
-export type MemoryRecallMode = 'full' | 'limited' | 'none';
-
-/** 摘要召回开关 */
-export type SummaryRecall = 'on' | 'off';
+// 自动注入召回 6 键（ContextAssembly/MemoryRecallMode/SummaryRecall 等）随 memory-tool-recall-design
+// 阶段2 删除——记忆纯工具化召回后 prepare 无自动注入消费端，键族整体退役（strategyResolver/strategyKeys 同步）。
 
 // ── 回答中（Act）：行动策略 ──
 
@@ -71,22 +65,6 @@ export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm'
 export interface PrepareStrategy {
   /** 理解确认模式（默认 off；内核已消费：assembleRolePack 注入 persona prompt 行为指令） */
   readonly understandingConfirm?: UnderstandingConfirm;
-  /** 上下文装配策略（默认 hybrid） */
-  readonly contextAssembly?: ContextAssembly;
-  /** 记忆召回模式（默认 full） */
-  readonly memoryRecall?: MemoryRecallMode;
-  /**
-   * 记忆召回占可用预算的百分比 cap（0.0~1.0，默认 0.4；cap 非 quota）。
-   * 记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 剩余预算 × 该值；只装完整对话层未覆盖的旧摘要。
-   * 取代旧绝对 token 配额语义（动态容量下绝对 token 不自洽）。
-   */
-  readonly memoryRecallPercent?: number;
-  /** 摘要召回开关（默认 on；内核已消费） */
-  readonly summaryRecall?: SummaryRecall;
-  /** 召回保底下限：语义召回不足时用最近记忆补足至该条数（0=关闭，默认 2；内核已消费） */
-  readonly minFallback?: number;
-  /** 召回结果相似度阈值 0.0~1.0（默认 0.6；内核已消费） */
-  readonly recallConfidence?: number;
   /** 角色包提炼视角（默认 undefined=通用浓缩；供 round-summary 生成判断「值得记什么」，内核已消费） */
   readonly summaryFocus?: string;
 }
@@ -143,7 +121,7 @@ export interface GlobalStrategy {
  * L2 行为策略全集
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
- * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/memoryRecall/memoryRecallPercent/minFallback/summaryFocus/contextAssembly/recallConfidence/summaryRecall；
+ * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/summaryFocus（round-summary 提炼视角；自动注入召回 6 键已随阶段2退役）；
  * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly/toolApproval；
  * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。

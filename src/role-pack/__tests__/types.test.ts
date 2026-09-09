@@ -2,89 +2,30 @@
  * role-pack/types.ts 纯函数回归测试
  *
  * 覆盖两类 SSOT 兜底契约：
- *   1. resolveMemoryRecallPercent —— 记忆召回百分比 cap 的单一解析：角色包合法值（0.0~1.0）优先，
- *      缺失/越界（负、超 1、非数字、显式 undefined）一律降级内核默认。
- *   2. mergeStrategy —— 角色包覆盖后的默认兜底：未声明或空段时保留 DEFAULT_BEHAVIOR_STRATEGY
+ *   1. mergeStrategy —— 角色包覆盖后的默认兜底：未声明或空段时保留 DEFAULT_BEHAVIOR_STRATEGY
  *      完整默认，保证"开放给角色包定义的参数，内核必有硬编码兜底"。
+ *   2. 枚举/字符串键解析 —— resolveToolMode / resolveSummaryFocus 的合法值透传与非法值归位。
  *
- * 背景：记忆召回百分比是"记忆摘要层占可用预算的上限 cap"（cap 非 quota）——完整对话层优先，
- * 百分比只封顶防止记忆挤占对话。
+ * 背景：prepare 召回策略键族（memoryRecall/memoryRecallPercent/minFallback/contextAssembly/
+ * recallConfidence/summaryRecall）已随 memory-tool-recall-design 阶段2 整体退役——记忆纯工具化
+ * 召回后 prepare 无自动注入消费端，故不再有对应解析函数与默认值（见 strategyResolver.ts）。
  */
 import { describe, it, expect } from 'vitest';
 import {
-  resolveMemoryRecallPercent,
-  resolveMemoryRecallMode,
-  resolveMinFallback,
   resolveSummaryFocus,
   resolveToolMode,
   mergeStrategy,
   DEFAULT_BEHAVIOR_STRATEGY,
-  DEFAULT_MEMORY_RECALL_PERCENT,
 } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
-// DEFAULT_MIN_FALLBACK 定义于 utils 共享层（SSOT），role-pack 与 memory 均引自此处
-import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
-
-describe('resolveMemoryRecallPercent · 记忆召回百分比 cap（SSOT 单一来源）', () => {
-  it('角色包声明合法百分比（0.0~1.0）时，一律采用角色包定义', () => {
-    expect(
-      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0.6 } } as unknown as BehaviorStrategy),
-    ).toBe(0.6);
-    expect(
-      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 0 } } as unknown as BehaviorStrategy),
-    ).toBe(0);
-    expect(
-      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1 } } as unknown as BehaviorStrategy),
-    ).toBe(1);
-  });
-
-  it('未传入策略（undefined）时降级为内核默认', () => {
-    expect(resolveMemoryRecallPercent(undefined)).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-
-  it('策略为空对象 / prepare 段缺失 memoryRecallPercent 时降级为内核默认', () => {
-    expect(resolveMemoryRecallPercent({} as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_MEMORY_RECALL_PERCENT,
-    );
-    expect(resolveMemoryRecallPercent({ prepare: {} } as unknown as BehaviorStrategy)).toBe(
-      DEFAULT_MEMORY_RECALL_PERCENT,
-    );
-  });
-
-  it('memoryRecallPercent 为负数（<0）时降级为内核默认', () => {
-    expect(
-      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: -0.1 } } as unknown as BehaviorStrategy),
-    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-
-  it('memoryRecallPercent 超过 1（>1）时降级为内核默认', () => {
-    expect(
-      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: 1.5 } } as unknown as BehaviorStrategy),
-    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-
-  it('memoryRecallPercent 为非数字（字符串）时降级为内核默认', () => {
-    expect(
-      resolveMemoryRecallPercent({ prepare: { memoryRecallPercent: '0.5' } } as unknown as BehaviorStrategy),
-    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-
-  it('memoryRecallPercent 显式为 undefined（角色包空值覆盖默认）时降级为内核默认', () => {
-    expect(
-      resolveMemoryRecallPercent({
-        prepare: { memoryRecallPercent: undefined },
-      } as unknown as BehaviorStrategy),
-    ).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-  });
-});
 
 describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
   it('角色包仅声明部分键时，其余键保留内核默认（兜底）', () => {
     const merged = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
-      prepare: { memoryRecallPercent: 0.6 },
+      prepare: { understandingConfirm: 'echo' },
     } as unknown as BehaviorStrategy);
-    expect(merged.prepare?.memoryRecallPercent).toBe(0.6);
-    expect(merged.prepare?.memoryRecall).toBe('full');
+    expect(merged.prepare?.understandingConfirm).toBe('echo');
+    expect(merged.prepare?.summaryFocus).toBeUndefined();
     expect(merged.act?.toolMode).toBe('allow');
     expect(merged.reflect?.summary).toBe('on');
   });
@@ -98,41 +39,12 @@ describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
     const merged = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
       prepare: undefined,
     } as unknown as BehaviorStrategy);
-    expect(merged.prepare?.memoryRecallPercent).toBe(DEFAULT_MEMORY_RECALL_PERCENT);
-    expect(merged.prepare?.memoryRecall).toBe('full');
+    expect(merged.prepare?.understandingConfirm).toBe('off');
+    expect(merged.prepare?.summaryFocus).toBeUndefined();
   });
 });
 
 describe('枚举键解析 · SSOT 非法值归位（不透传宿主）', () => {
-  it('resolveMemoryRecallMode 合法值 full/limited/none 一律采用', () => {
-    expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'full' } } as unknown as BehaviorStrategy)).toBe('full');
-    expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'limited' } } as unknown as BehaviorStrategy)).toBe('limited');
-    expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'none' } } as unknown as BehaviorStrategy)).toBe('none');
-  });
-
-  it('resolveMemoryRecallMode 非法值归位 full', () => {
-    expect(resolveMemoryRecallMode({ prepare: { memoryRecall: 'all' } } as unknown as BehaviorStrategy)).toBe('full');
-    expect(resolveMemoryRecallMode({ prepare: { memoryRecall: undefined } } as unknown as BehaviorStrategy)).toBe('full');
-    expect(resolveMemoryRecallMode(undefined)).toBe('full');
-  });
-
-  it('resolveMinFallback 合法非负整数（含 0）一律采用', () => {
-    expect(resolveMinFallback({ prepare: { minFallback: 3 } } as unknown as BehaviorStrategy)).toBe(3);
-    expect(resolveMinFallback({ prepare: { minFallback: 0 } } as unknown as BehaviorStrategy)).toBe(0); // 0=彻底关闭
-  });
-
-  it('resolveMinFallback 非法/缺失归位内核默认', () => {
-    expect(resolveMinFallback(undefined)).toBe(DEFAULT_MIN_FALLBACK);
-    expect(resolveMinFallback({} as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
-    expect(resolveMinFallback({ prepare: {} } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
-  });
-
-  it('resolveMinFallback 负数/非整数/非数字归位内核默认', () => {
-    expect(resolveMinFallback({ prepare: { minFallback: -1 } } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
-    expect(resolveMinFallback({ prepare: { minFallback: 2.5 } } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
-    expect(resolveMinFallback({ prepare: { minFallback: '2' } } as unknown as BehaviorStrategy)).toBe(DEFAULT_MIN_FALLBACK);
-  });
-
   it('resolveToolMode 合法值 allow/block 一律采用', () => {
     expect(resolveToolMode({ act: { toolMode: 'allow' } } as unknown as BehaviorStrategy)).toBe('allow');
     expect(resolveToolMode({ act: { toolMode: 'block' } } as unknown as BehaviorStrategy)).toBe('block');

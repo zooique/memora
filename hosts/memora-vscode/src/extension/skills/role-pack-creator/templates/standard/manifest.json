@@ -11,13 +11,7 @@
   "handoffPrompt": "{{PACK_HANDOFF}}",
   "strategy": {
     "prepare": {
-      "memoryRecall": "full",
-      "understandingConfirm": "off",
-      "memoryRecallPercent": 0.4,
-      "minFallback": 2,
-      "contextAssembly": "hybrid",
-      "recallConfidence": 0.6,
-      "summaryRecall": "on"
+      "understandingConfirm": "off"
     },
     "act": {
       "toolMode": "allow",

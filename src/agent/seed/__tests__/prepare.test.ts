@@ -43,8 +43,8 @@ describe('SeedPrepare 回答前', () => {
     // L2 策略注入 + 工具暴露面应用（工具面恒为 activePack）
     expect(mocks.loop.setStrategy).toHaveBeenCalledTimes(1);
     expect(mocks.applyRolePackToolExposure).toHaveBeenCalledTimes(1);
-    // 上下文装配（默认 hybrid；自动召回退役，recallAndInject 恒返回空）
-    expect(mocks.contextPreparer.recallAndInject).toHaveBeenCalledWith('用户输入', 'hybrid');
+    // 上下文装配（对话层注入恒 hybrid；自动召回退役，recallAndInject 单参恒返回空）
+    expect(mocks.contextPreparer.recallAndInject).toHaveBeenCalledWith('用户输入');
     // roundId 生成 + 用户消息入史（同 roundId 溯源）
     expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(1);
     const roundId = mocks.loop.setCurrentRoundId.mock.calls[0]?.[0];

@@ -3,7 +3,7 @@
  *
  * 覆盖：
  *   1. computeContextBudget：预算公式数值派生（可用/锚点/剩余/对话层/记忆层 cap）
- *   2. 边界：输入超大（剩余预算归零，供装配前判负判定）、记忆百分比极端（0 / 1）
+ *   2. 边界：输入超大（剩余预算归零，供装配前判负判定）、窗口过小（各级归零）
  *   3. deriveDialogueRounds：从最近往回塞 + 第一条必在场（次级锚点）
  */
 import { describe, it, expect } from 'vitest';
@@ -37,21 +37,21 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     expect(budget.memoryLayerCapTokens).toBe(Math.floor(96_800 * 0.4));
   });
 
-  it('自定义比例（输出预留 0.2 / 对话填充 0.8 / 记忆百分比 0.5）', () => {
+  it('自定义比例（输出预留 0.2 / 对话填充 0.8）；记忆层 cap 恒用内核固定比例 0.4', () => {
     const budget = computeContextBudget({
       windowTokens: 10_000,
       fixedOverheadTokens: 2_000,
       inputTokens: 500,
       outputReserveRatio: 0.2,
       dialogueFillRatio: 0.8,
-      memoryRecallPercent: 0.5,
     });
     // 10000 × 0.8 = 8000 − 2000 = 6000
     expect(budget.availableTokens).toBe(6_000);
     expect(budget.anchorTokens).toBe(1_000);
     expect(budget.remainingTokens).toBe(5_000);
     expect(budget.dialogueBudgetTokens).toBe(4_000);
-    expect(budget.memoryLayerCapTokens).toBe(2_500);
+    // memoryRecallPercent 键已退役，记忆层 cap = 剩余 × 内核固定比例 0.4
+    expect(budget.memoryLayerCapTokens).toBe(2_000);
   });
 
   it('输入超大（锚点划走剩余预算归零）——装配前判负的输入侧判定依据', () => {
@@ -75,30 +75,6 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     expect(budget.remainingTokens).toBe(0);
     expect(budget.dialogueBudgetTokens).toBe(0);
     expect(budget.memoryLayerCapTokens).toBe(0);
-  });
-
-  it('记忆百分比极端：0 → 记忆层 cap 为 0（cap 非 quota，对话层不受影响）', () => {
-    const budget = computeContextBudget({
-      windowTokens: 10_000,
-      fixedOverheadTokens: 2_000,
-      inputTokens: 500,
-      memoryRecallPercent: 0,
-    });
-    expect(budget.memoryLayerCapTokens).toBe(0);
-    // 对话层不受记忆百分比影响（完整对话层无条件优先）
-    // available=6500 − anchor=1000 → remaining=5500 → dialogue=floor(5500×0.9)=4950
-    expect(budget.dialogueBudgetTokens).toBe(4_950);
-  });
-
-  it('记忆百分比极端：1 → 记忆层 cap = 剩余预算（对话层填满后的全部剩余）', () => {
-    const budget = computeContextBudget({
-      windowTokens: 10_000,
-      fixedOverheadTokens: 2_000,
-      inputTokens: 500,
-      memoryRecallPercent: 1,
-    });
-    // available=6500 − anchor=1000 → remaining=5500
-    expect(budget.memoryLayerCapTokens).toBe(5_500);
   });
 
   it('默认常量：输出预留 15%、对话填充 90%', () => {

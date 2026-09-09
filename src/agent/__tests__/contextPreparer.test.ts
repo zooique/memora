@@ -96,7 +96,7 @@ describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
       makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
     ]);
 
-    const memories = await preparer.recallAndInject('查询', 'hybrid');
+    const memories = await preparer.recallAndInject('查询');
 
     // 恒空：无自动注入记忆（加回自动召回段 → storage.search 被调用 → 此项转红）
     expect(memories).toEqual([]);
@@ -109,7 +109,7 @@ describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
       (): DialogueResult => ({ history: [], recentRoundCount: 0, firstRoundIncluded: false }),
     );
 
-    await preparer.recallAndInject('正常问题', 'hybrid');
+    await preparer.recallAndInject('正常问题');
 
     expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
@@ -124,7 +124,7 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     // 超大输入：锚点划走剩余预算归零 → 装配前判负
     const hugeInput = 'x'.repeat(200_000);
 
-    const memories = await preparer.recallAndInject(hugeInput, 'hybrid');
+    const memories = await preparer.recallAndInject(hugeInput);
 
     // 独立降级：返回空 + 发 inputTooLarge 事件（宿主提示放文件用 read_file）
     expect(memories).toEqual([]);
@@ -148,7 +148,7 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
       }),
     );
 
-    const memories = await preparer.recallAndInject('正常问题', 'hybrid');
+    const memories = await preparer.recallAndInject('正常问题');
 
     expect(memories).toEqual([]);
     expect(loop.getRecentHistoryWithinBudget).toHaveBeenCalledTimes(1);
@@ -170,7 +170,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
       }),
     );
 
-    await preparer.recallAndInject('正常问题', 'hybrid');
+    await preparer.recallAndInject('正常问题');
 
     expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
@@ -192,14 +192,14 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
   });
 
-  it('fixed 模式计量全量对话（loop.messages 全量 user/assistant，记忆段亦恒 0）', async () => {
+  it('占用计量全量对话（loop.messages 全量 user/assistant，记忆段亦恒 0）', async () => {
     const { preparer, loop } = makePreparer();
     loop.getConversationMessages = () => [
       { role: 'user', content: '上一轮问题' }, // 长度 5
       { role: 'assistant', content: '上一轮回答' }, // 长度 5
     ];
 
-    await preparer.recallAndInject('正常问题', 'fixed');
+    await preparer.recallAndInject('正常问题');
 
     expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
@@ -222,8 +222,8 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
   });
 });
 
-describe('ContextPreparer · 对话层注入开关', () => {
-  it('fixed 模式不注入 [Recent conversation] 摘要块（loop.messages 已保留全量）', async () => {
+describe('ContextPreparer · 对话层注入', () => {
+  it('注入最近对话摘要块（阶段2 contextAssembly 键退役，对话层注入恒 hybrid）', async () => {
     const { preparer, loop, injectSystemMessage } = makePreparer();
     loop.getRecentHistoryWithinBudget = vi.fn(
       (): DialogueResult => ({
@@ -236,25 +236,7 @@ describe('ContextPreparer · 对话层注入开关', () => {
       }),
     );
 
-    await preparer.recallAndInject('新问题', 'fixed');
-
-    expect(injectSystemMessage).not.toHaveBeenCalledWith(expect.stringContaining('[Recent conversation]'));
-  });
-
-  it('hybrid 模式注入最近对话摘要块', async () => {
-    const { preparer, loop, injectSystemMessage } = makePreparer();
-    loop.getRecentHistoryWithinBudget = vi.fn(
-      (): DialogueResult => ({
-        history: [
-          { role: 'user' as const, content: '上一轮问题' },
-          { role: 'assistant' as const, content: '上一轮回答' },
-        ],
-        recentRoundCount: 1,
-        firstRoundIncluded: true,
-      }),
-    );
-
-    await preparer.recallAndInject('新问题', 'hybrid');
+    await preparer.recallAndInject('新问题');
 
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('[Recent conversation]'));
   });

@@ -43,7 +43,7 @@ class RecordingProvider extends LlmProvider {
 // 辅助函数
 // ═══════════════════════════════════════════════════════════════
 
-/** 项目骨架：默认角色包 + skills 目录（strategy 可注入 contextAssembly 等装配策略） */
+/** 项目骨架：默认角色包 + skills 目录（strategy 可注入装配策略） */
 function seedProject(
   _projectPath: string,
   configDir: string,
@@ -226,11 +226,10 @@ describe('全链路：恢复 → 召回 → 装配（Agent 门面层）', () => 
     }
   });
 
-  it('恢复后继续对话：装配不产生双份最近对话（K6 交互）', async () => {
-    // fixed 装配模式：loop 已保留完整对话历史，K6 修复保证不再注入 conversation 摘要造成双份
-    seedProject(tmpProject, tmpConfig, tmpData, {
-      prepare: { contextAssembly: 'fixed' },
-    });
+  it('恢复后继续对话：标准 hybrid 装配（user 消息不重复，摘要块注入结构化视图）', async () => {
+    // 阶段2 contextAssembly 键退役，对话层注入恒 hybrid——恢复后不再有 fixed 特判，
+    // 与普通轮次一致：注入最近对话摘要（结构化视图）+ 保留 loop 全量（可压缩），
+    // user-role 消息本身不重复注入（K6 守护的核心）。
     agent = makeAgent(tmpProject, tmpConfig, tmpData, provider, storage);
     await agent.init();
 
@@ -258,9 +257,10 @@ describe('全链路：恢复 → 召回 → 装配（Agent 门面层）', () => 
     // 2) 新增输入 '继续分析' 恰好出现一次（loop 中用户输入带 <user_input> 包装，用 includes 判定）
     expect(userContents.filter((c) => c.includes('继续分析'))).toHaveLength(1);
 
-    // 3) fixed 模式不注入 '[最近对话]' 摘要块（K6 修复的核心：避免与 loop 保留的完整历史双份）
+    // 3) 上下文摘要块按标准 hybrid 注入（角色包不声明 contextAssembly → 默认注入最近对话摘要）：
+    //    摘要以 system 「最近对话」承载用户历史的结构化视图，落到 system 消息、不复制为 user-role 消息。
     const systemTexts = loopMessages.filter((m) => m.role === 'system').map((m) => String(m.content));
-    const hasDuplicateSummary = systemTexts.some((t) => t.includes('最近对话'));
-    expect(hasDuplicateSummary).toBe(false);
+    const hasSummary = systemTexts.some((t) => t.includes('最近对话'));
+    expect(hasSummary).toBe(true);
   });
 });

@@ -69,49 +69,16 @@
           "type": "object",
           "description": "回答前阶段策略",
           "properties": {
-            "memoryRecall": {
-              "type": "string",
-              "enum": ["full", "limited", "none"],
-              "description": "长期记忆召回模式（默认 full）"
-            },
             "understandingConfirm": {
               "type": "string",
               "enum": ["off", "echo", "confirm"],
               "description": "理解确认模式：off=直接生成 / echo=复述不等待 / confirm=预检停顿后确认（默认 off）"
-            },
-            "memoryRecallPercent": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "description": "记忆摘要层占剩余预算上限百分比（cap 非 quota，默认 0.4）"
-            },
-            "minFallback": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 100,
-              "description": "召回保底下限（语义召回不足时补足最近记忆条数，0=关闭，默认 2）"
             },
             "summaryFocus": {
               "type": "string",
               "minLength": 1,
               "maxLength": 500,
               "description": "角色包提炼视角：决定 round-summary「值得记什么」的信息维度与保留形式（非空字符串，≤500 字符）"
-            },
-            "contextAssembly": {
-              "type": "string",
-              "enum": ["fixed", "query", "hybrid"],
-              "description": "上下文装配策略（默认 hybrid）"
-            },
-            "recallConfidence": {
-              "type": "number",
-              "minimum": 0,
-              "maximum": 1,
-              "description": "召回相似度阈值（越大越严格，默认 0.6）"
-            },
-            "summaryRecall": {
-              "type": "string",
-              "enum": ["on", "off"],
-              "description": "摘要是否参与召回（默认 on）"
             }
           },
           "additionalProperties": false

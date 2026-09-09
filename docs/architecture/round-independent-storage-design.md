@@ -580,8 +580,8 @@ recalledMemories = await recall(storage, input, {
   sessionId: history.currentSessionName,
   // 前置互斥排除：取 limit 前过滤完整对话层实际注入轮次的 round-summary
   excludeRoundIds: recentRoundIds,
-  // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
-  minFallback: resolveMinFallback(strategy),
+  // 召回保底下限：阶段2（2026-09-09）角色包 prepare.minFallback 策略键退役，改由 recall() 函数层默认自持（DEFAULT_MIN_FALLBACK）
+  minFallback: DEFAULT_MIN_FALLBACK,
 });
 
 // excludeRoundIds 来源（contextPreparer）：实际注入轮次集合，因果闭合

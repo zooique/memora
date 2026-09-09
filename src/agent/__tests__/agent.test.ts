@@ -2880,9 +2880,8 @@ describe('Agent · L2 行为策略消费', () => {
 
     const strategy = agent.getActiveStrategy();
     // 验证默认策略的 prepare 维度
-    expect(strategy.prepare?.memoryRecall).toBe('full');
-    // 记忆召回百分比 cap 默认 0.4（cap 非 quota）
-    expect(strategy.prepare?.memoryRecallPercent).toBe(0.4);
+    expect(strategy.prepare?.understandingConfirm).toBe('off');
+    expect(strategy.prepare?.summaryFocus).toBeUndefined();
     // 验证默认策略的 act 维度（标准键 act.toolMode）
     expect(strategy.act?.toolMode).toBe('allow');
   });
@@ -2902,78 +2901,6 @@ describe('Agent · L2 行为策略消费', () => {
     // 验证 done chunk 存在（表明 executeChatLoop 正常执行）
     // 验证整体流程不抛错即说明 prepareChatContext 正确消费了默认策略
     expect(agent.agentLoop).not.toBeNull();
-  });
-
-  // ─── memoryRecallPercent 覆盖记忆召回百分比 cap ──
-
-  it('角色包 prepare.memoryRecallPercent 应覆盖记忆召回百分比 cap', async () => {
-    // 在 configDir 下写一个带 memoryRecallPercent:0.6 的角色包（manifest.json 文件夹形态，
-    // init 自动扫描并激活第一个）
-    const packDir = join(tmpConfig, 'role-packs', '精算师');
-    mkdirSync(packDir, { recursive: true });
-    writeFileSync(
-      join(packDir, 'manifest.json'),
-      JSON.stringify(
-        {
-          name: '精算师',
-          formatVersion: '1.0.0',
-          description: 'memoryRecallPercent 覆盖验证',
-          strategy: { prepare: { memoryRecallPercent: 0.6 } },
-        },
-        null,
-        2,
-      ),
-      'utf-8',
-    );
-    writeFileSync(join(packDir, 'persona.md'), '你是一个精算师。', 'utf-8');
-
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-    // §4.1 单链：默认激活兜底包；手动切到精算师以触发其 prepare 策略装配
-    expect(agent.switchRolePack('精算师')).toBe(true);
-
-    // 角色包被激活，getActiveStrategy 返回其策略（装配层策略解析面）
-    const strategy = agent.getActiveStrategy();
-    expect(strategy.prepare?.memoryRecallPercent).toBe(0.6);
-
-    // 多轮对话走装配路径（对话层注入等活跃键消费），不抛错即验证覆盖路径生效
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of agent.chat('你好')) {
-      chunks.push(chunk);
-    }
-    // 对话正常结束即验证覆盖路径生效
-  });
-
-  it('角色包声明非法 memoryRecallPercent（1.5）应降级内核默认，对话不抛错', async () => {
-    // 非法值（1.5）在策略解析层面经 resolveMemoryRecallPercent 检测越界（>1）而降级回
-    // 内核默认遍历（SSOT：开放参数必有硬编码兜底；自动召回退役后键级校验随阶段二删除）
-    const packDir = join(tmpConfig, 'role-packs', '非法百分比');
-    mkdirSync(packDir, { recursive: true });
-    writeFileSync(
-      join(packDir, 'manifest.json'),
-      JSON.stringify(
-        {
-          name: '非法百分比',
-          formatVersion: '1.0.0',
-          description: '非法 memoryRecallPercent 降级验证',
-          strategy: { prepare: { memoryRecallPercent: 1.5 } },
-        },
-        null,
-        2,
-      ),
-      'utf-8',
-    );
-    writeFileSync(join(packDir, 'persona.md'), '你是一个测试角色。', 'utf-8');
-
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
-
-    // 装配路径对声明配置容错（非法值亦不炸对话），整轮对话不抛错
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of agent.chat('你好')) {
-      chunks.push(chunk);
-    }
-    // 对话正常结束即验证降级路径生效
   });
 
   it('角色包手动切换（唯一入口）：activate → 前缀刷新 → 立即生效（无需重启）', async () => {

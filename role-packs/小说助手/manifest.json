@@ -12,14 +12,8 @@
   "capabilities": [],
   "strategy": {
     "prepare": {
-      "memoryRecall": "limited",
       "understandingConfirm": "confirm",
-      "memoryRecallPercent": 0.6,
-      "minFallback": 5,
-      "summaryFocus": "以小说创作视角判断本轮值得记的维度：①人物状态与动机变化 ②情节推进节点 ③伏笔与回收清单 ④文风与对白风格；保留场景感与情绪张力",
-      "contextAssembly": "fixed",
-      "recallConfidence": 0.4,
-      "summaryRecall": "on"
+      "summaryFocus": "以小说创作视角判断本轮值得记的维度：①人物状态与动机变化 ②情节推进节点 ③伏笔与回收清单 ④文风与对白风格；保留场景感与情绪张力"
     },
     "act": {
       "toolMode": "allow",

@@ -12,7 +12,6 @@
 import type { AgentChunk } from '@/agent/types.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 import {
-  resolveContextAssembly,
   resolveL2Strategy,
   resolveActiveStrategy,
 } from '@/role-pack/strategyResolver.js';
@@ -82,8 +81,6 @@ export class SeedPrepare {
     }
 
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
-    // 上下文装配策略：fixed=仅固定轮次 / query=仅语义召回(已退役) / hybrid=混合（对话层注入开关）
-    const contextAssembly = resolveContextAssembly(strategy);
     // 单一 setStrategy 聚合 L2 策略（工具权限/步数/错误处理/路由/预算/推理/只读/审批/自审查）
     loop.setStrategy(resolveL2Strategy(strategy));
 
@@ -92,8 +89,8 @@ export class SeedPrepare {
     this.deps.applyRolePackToolExposure();
 
     yield { type: 'thinking', phase: 'recalling' };
-    // 上下文装配（自动记忆召回已退役，仅细则预算 + 对话层注入）
-    const recalledMemories = await contextPreparer.recallAndInject(input, contextAssembly);
+    // 上下文装配（自动记忆召回已退役，仅细则预算 + 对话层注入，见 memory-tool-recall-design §4）
+    const recalledMemories = await contextPreparer.recallAndInject(input);
 
     if (signal.aborted) {
       return { input, recalledMemories, aborted: true } satisfies SeedPrepareResult;

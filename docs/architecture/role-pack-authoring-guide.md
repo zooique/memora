@@ -29,7 +29,7 @@
   "formatVersion": "1.0.0",
   "interactionType": "tool_assistant",
   "strategy": {
-    "prepare": { "memoryRecall": "full", "contextAssembly": "hybrid" },
+    "prepare": { "understandingConfirm": "confirm", "summaryFocus": "以文档设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
     "reflect": { "selfReview": 2 },
     "global": { "tokenBudget": 12000, "stepBudget": 60 }
@@ -85,16 +85,12 @@
 
 ### 3.1 prepare 组（回答前·认知）
 
+> **阶段2（2026-09-09，memory-tool-recall-design）注记**：本组 6 个召回键 `memoryRecall` / `memoryRecallPercent` / `minFallback` / `contextAssembly` / `recallConfidence` / `summaryRecall` 已**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除。记忆检索改由 `memory_search` 工具触发（`source` 过滤承接 `summaryRecall` 语义）；上下文装配恒为 hybrid；记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载；召回保底由 `utils/recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK=2` 函数层默认承载。本组现存 2 键：
+
 | 键                      | 类型 / 枚举                      | 合法区间            | 默认       | 含义                                             | 示例              |
 | ---------------------- | ---------------------------- | --------------- | -------- | ---------------------------------------------- | --------------- |
-| `memoryRecall`         | `full` / `limited` / `none`  | —               | `full`   | 记忆召回模式                                         | `"limited"`     |
 | `understandingConfirm` | `off` / `echo` / `confirm`   | —               | `off`    | 理解确认模式：off=直接生成 / echo=复述不等待 / confirm=预检停顿后确认 | `"confirm"`     |
-| `memoryRecallPercent`  | number                       | `0.0 ~ 1.0`     | `0.4`    | 记忆摘要层占剩余预算上限百分比（cap 非 quota）                   | `0.3`           |
-| `minFallback`          | 整数                           | `0 ~ 100`（0=关闭） | `2`      | 语义召回不足时补足最近记忆的条数                               | `5`             |
 | `summaryFocus`         | string                       | `1 ~ 500` 字符    | 无        | 提炼视角：决定 round-summary「值得记什么」                   | `"聚焦架构决策与接口契约"` |
-| `contextAssembly`      | `fixed` / `query` / `hybrid` | —               | `hybrid` | 上下文装配策略                                        | `"hybrid"`      |
-| `recallConfidence`     | number                       | `0.0 ~ 1.0`     | `0.6`    | 召回相似度阈值（越大越严格）                                 | `0.7`           |
-| `summaryRecall`        | `on` / `off`                 | —               | `on`     | 摘要是否参与召回                                       | `"off"`         |
 
 ### 3.2 act 组（回答中·行动）
 
@@ -140,10 +136,7 @@
 
 | 键                     | 下界   | 上界      | 越界行为（validator） | 越界行为（运行时）          |
 | --------------------- | ---- | ------- | --------------- | ------------------ |
-| `memoryRecallPercent` | 0    | 1       | error           | 回退默认 `0.4`         |
-| `minFallback`         | 0    | 100     | error           | 回退默认 `2`           |
 | `summaryFocus`        | 1 字符 | 500 字符  | error           | 回退 undefined（通用浓缩） |
-| `recallConfidence`    | 0    | 1       | error           | 回退默认               |
 | `temperature`         | 0    | 2       | error           | 忽略不注入              |
 | `outputLimit`         | 1    | 65536   | error           | 忽略不注入              |
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
@@ -175,9 +168,9 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 26 键 |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 20 键（prepare 2 / act 9 / reflect 4 / global 5） |
 
-> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）——无消费者的策略键不保留。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
+> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）——无消费者的策略键不保留。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 
 ***
 

@@ -41,9 +41,10 @@ export interface ContextBudgetInput {
   readonly outputReserveRatio?: number;
   /** 完整对话层填充比例（默认 0.9 = 90%，留 buffer 防抖） */
   readonly dialogueFillRatio?: number;
-  /** 记忆召回百分比 cap（默认 0.4；cap 非 quota） */
-  readonly memoryRecallPercent?: number;
 }
+
+/** 记忆摘要层 cap 固定比例（剩余预算 × 该值；cap 非 quota——阶段2 memoryRecallPercent 策略键退役，恒用内核常量） */
+const DEFAULT_MEMORY_CAP_RATIO = 0.4;
 
 /**
  * 解析有效上下文窗口（SSOT 单源公式，宿主在构造内核 Agent 前调用）。
@@ -66,7 +67,7 @@ export interface ContextBudget {
   readonly remainingTokens: number;
   /** 完整对话层预算 = 剩余预算 × 填充比例（从最近往回塞到 ~90% 止） */
   readonly dialogueBudgetTokens: number;
-  /** 记忆摘要层 cap = 剩余预算 × memoryRecallPercent（拾遗填充上限，cap 非 quota） */
+  /** 记忆摘要层 cap = 剩余预算 × 内核固定比例 DEFAULT_MEMORY_CAP_RATIO（拾遗填充上限，cap 非 quota） */
   readonly memoryLayerCapTokens: number;
 }
 
@@ -159,7 +160,6 @@ export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupan
 export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
   const outputReserveRatio = input.outputReserveRatio ?? DEFAULT_OUTPUT_RESERVE_RATIO;
   const dialogueFillRatio = input.dialogueFillRatio ?? DEFAULT_DIALOGUE_FILL_RATIO;
-  const memoryRecallPercent = input.memoryRecallPercent ?? 0.4;
 
   // 可用预算 = 窗口 × (1 − 输出预留) − 固定开销（固定开销不参与百分比分配）
   const availableTokens = Math.max(
@@ -176,8 +176,8 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
   // 完整对话层 = 剩余预算 × 填充比例（留 buffer 防抖）
   const dialogueBudgetTokens = Math.floor(remainingTokens * dialogueFillRatio);
 
-  // 记忆摘要层 cap = 剩余预算 × memoryRecallPercent（拾遗填充上限）
-  const memoryLayerCapTokens = Math.floor(remainingTokens * memoryRecallPercent);
+  // 记忆摘要层 cap = 剩余预算 × 固定比例（拾遗填充上限；memoryRecallPercent 键已退役）
+  const memoryLayerCapTokens = Math.floor(remainingTokens * DEFAULT_MEMORY_CAP_RATIO);
 
   return {
     availableTokens,

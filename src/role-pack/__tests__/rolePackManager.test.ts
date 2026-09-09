@@ -14,9 +14,7 @@ const MANIFEST_TECH = {
   description: '技术文档写作',
   author: 'memora',
   interactionType: 'tool_assistant',
-  strategy: {
-    prepare: { contextAssembly: 'fixed' },
-  },
+  strategy: {},
   skills: [
     { file: 'skills/summarize.md', name: 'summarize' },
   ],
@@ -134,9 +132,6 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     // 合规字段默认值
     expect(active!.meta.interactionType).toBe('tool_assistant');
     expect(active!.meta.aiIdentityDisclosure).toBe(true);
-    // 嵌套 strategy
-    const prepare = active!.strategy.prepare as Record<string, unknown>;
-    expect(prepare['contextAssembly']).toBe('fixed');
     // L1 内容：persona + rules 从独立文件装载
     expect(active!.personaPrompt).toContain('技术文档工程师');
     expect(active!.personaPrompt).toContain('术语保持一致');

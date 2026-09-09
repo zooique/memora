@@ -62,7 +62,7 @@
   "author": "memora",
   "interactionType": "tool_assistant",
   "strategy": {
-    "prepare": { "contextAssembly": "fixed", "memoryRecallPercent": 0.4 },
+    "prepare": { "summaryFocus": "以技术文档视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.6 }
   },
   "skills": [
@@ -147,7 +147,7 @@
 **格式厚度的来源（三层，不在文件后缀）**：
 
 1. **schema**：manifest.json 每个键的类型/取值/必填有规范定义（见 §六）→ 校验器可机检；
-2. **嵌套对象取代点路径平铺**：`strategy.prepare.contextAssembly` 在 manifest 内是嵌套对象——无路径拼写问题，终结旧键名的 snake/camel 分裂；规范引用用点路径，与文件内嵌套等价映射；
+2. **嵌套对象取代点路径平铺**：`strategy.prepare.summaryFocus` 在 manifest 内是嵌套对象——无路径拼写问题，终结旧键名的 snake/camel 分裂；规范引用用点路径，与文件内嵌套等价映射；
 3. **文件夹承载扩展**：skills 内嵌 / references / assets / scripts（L3）——格式不推翻、只升级。
 
 ***
@@ -432,9 +432,9 @@ export interface IMcpTransport {
 
 ## 六、L2 策略键集（中立命名，v1 最小集）
 
-> 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.contextAssembly`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
+> 文件内为**嵌套 YAML**（`strategy: { prepare: { ... }, act: { ... } }`），规范引用用**点路径**（`strategy.prepare.summaryFocus`）——两者等价映射，见 §二 样例。键名统一 **camelCase**；此表是 v1 最小集，后续版本演进由 `formatVersion` 控制。
 >
-> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` / `prepare.recallConfidence` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。
+> **实现先行、标准追认**：此表只收已归标准的**中立命名键**。实现（memora）可先于标准扩展已消费键（如 `act.outputLimit` / `act.toolStepLimit` / `act.multiStepReasoning` / `global.tokenBudget` / `global.stepBudget` 等），这些键按「实现消费 → 提炼进标准」追认，未入表前不承诺跨实现一致行为（§五 双闸门演进）。完整实现键集与区间见 memora 侧 [role-pack-authoring-guide.md](role-pack-authoring-guide.md) §三 / `src/role-pack/strategyKeys.ts`。
 >
 > **状态列含义（P0 键集对齐）**：
 >
@@ -444,14 +444,14 @@ export interface IMcpTransport {
 
 | 组       | 键                             | 取值（枚举）                                                | 含义                                                                                         | 状态      | 实现消费要求                                                                                                                                                |
 | ------- | ----------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| prepare | `prepare.contextAssembly`     | `fixed` / `query` / `hybrid`                          | 最近轮次加载策略                                                                                   | 冻结      | memora 消费（seed/prepare.ts 上下文装配策略选择，非法值归位 hybrid）；**由实现提炼进标准**（对账发现被真实消费后补录）                                                                          |
+| prepare | `prepare.contextAssembly`     | `fixed` / `query` / `hybrid`                          | 最近轮次加载策略（**删除**（2026-09-09，memory-tool-recall-design 阶段2）：记忆纯工具化召回后上下文装配恒为 hybrid，不再有 fixed/query 分支；实现直接移除 `resolveContextAssembly`）                   | 废弃      | 删除（阶段2 键族退役；上下文装配固有 hybrid，无角色包开关）                                                                          |
 | prepare | `prepare.recentRounds`        | 正整数                                                   | 固定加载轮数（**删除**：被「上下文预算装配」动态轮数取代，见本节文末；实现直接移除，不留过渡兼容）                                        | 废弃      | 动态填充后轮数为派生值，不再显式声明                                                                                                                                    |
-| prepare | `prepare.memoryRecall`        | `full` / `limited` / `none`                           | 长期记忆召回                                                                                     | 冻结      | memora 消费（agent.ts 召回装配）                                                                                                                              |
+| prepare | `prepare.memoryRecall`        | `full` / `limited` / `none`                           | 长期记忆召回（**删除**（2026-09-09 阶段2）：记忆纯工具化召回后无自动注入消费端；实现直接移除 `resolveMemoryRecallMode`）            | 废弃      | 删除（recall 改由 `memory_search` 工具触发）                                                                                                                              |
 | prepare | `prepare.memoryRecallQuota`   | 正整数                                                   | 记忆召回限额（token，绝对量）（**删除**：过渡到百分比，见本节文末；实现直接移除 `resolveMemoryRecallQuota`）                   | 废弃      | limited 裁剪改为按 `memoryRecallPercent` cap 换算                                                                                                            |
-| prepare | `prepare.memoryRecallPercent` | 0.0\~1.0（角色包设）                                        | 记忆召回占可用预算的百分比（cap 非 quota）：记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 剩余预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写 | 冻结      | memora 消费（contextPreparer.ts 记忆摘要层 cap 换算，非法/越界回退默认 0.4）；**由实现提炼进标准**；拟取代 `memoryRecallQuota` 的绝对值语义（该键废弃）                                            |
-| prepare | `prepare.summaryRecall`       | `on` / `off`                                          | 摘要召回                                                                                       | 冻结      | memora 消费（contextPreparer.ts 摘要召回开关，非法值归位 on）；**由实现提炼进标准**（对账发现被真实消费后补录）                                                                              |
+| prepare | `prepare.memoryRecallPercent` | 0.0\~1.0（角色包设）                                        | 记忆召回占可用预算的百分比（cap 非 quota）（**删除**（2026-09-09 阶段2）：记忆层 cap 由缺口常数取代，见 §上下文预算装配；实现直接移除 `resolveMemoryRecallPercent`） | 废弃      | 记忆层 cap 恒用内核固定比例 0.4（`budget.ts` `DEFAULT_MEMORY_CAP_RATIO`），不再由角色包声明                                                                                    |
+| prepare | `prepare.summaryRecall`       | `on` / `off`                                          | 摘要召回（**删除**（2026-09-09 阶段2）：等价语义承接为 `memory_search` 工具 `source` 过滤参数，不引全局键）                       | 废弃      | 删除（全局键语义消失：查询时自选 source 过滤）                                                                                        |
 | prepare | `prepare.summaryFocus`        | 非空字符串                                                 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结      | 由实现提炼进标准（结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
-| prepare | `prepare.minFallback`         | 非负整数                                                  | 召回保底下限（recall 结果不足时用最近记忆补足，0=关闭）。仅作用于**运行前装配**的召回保底，不作用于 loop 自循环阶段的压缩摘要上限                 | 冻结      | memora 消费（recall.ts 保底补全，未配置回退默认 2）；语义边界锁定在装配前，loop 压缩上限由内核预算检测决定，不在该键管辖                                                                              |
+| prepare | `prepare.minFallback`         | 非负整数                                                  | 召回保底下限（**删除**（2026-09-09 阶段2）：角色包策略键退役，recall() 函数层默认由 recall.ts 自持），不作用于 loop 自循环阶段的压缩摘要上限                 | 废弃      | `DEFAULT_MIN_FALLBACK` 下沉 `utils/recallDefaults.ts`，recall() 调用方按需传参，不经角色包策略 ||
 | act     | `act.toolMode`                | `allow` / `block`                                     | 是否允许工具调用                                                                                   | 冻结      | memora 消费（agent.ts 工具开关）；命名归标准（旧 `act.toolCalls`）                                                                                                     |
 | act     | `act.temperature`             | 0.0\~2.0                                              | 生成随机性                                                                                      | 冻结      | memora 消费（agent.ts `buildChatOptionsFromStrategy` 注入 ChatOptions.temperature，越界忽略）；**由实现提炼进标准**（对账发现被真实消费后补录）                                         |
 | act     | `act.streaming`               | `streaming` / `non-streaming`                         | 输出方式                                                                                       | 冻结      | memora 消费（agent.ts `buildChatOptionsFromStrategy` 注入 ChatOptions.stream）；**由实现提炼进标准**（对账发现被真实消费后补录）                                                   |
@@ -477,7 +477,7 @@ export interface IMcpTransport {
 
 **判例**：
 
-* ✅ 已开放：`prepare.memoryRecallPercent`（装配，角色感知高）、`prepare.summaryFocus`（内容提炼视角，角色提供）
+* ✅ 已开放：`prepare.summaryFocus`（内容提炼视角，角色提供）；`prepare.memoryRecallPercent` / `prepare.minFallback` 曾开放，随阶段2（2026-09-09）召回键族整体退役（见 §上下文预算装配 注记）
 
 * ❌ 留全局：`replaceRoundsKeepRecent`（替换保留窗口，压缩机制、角色感知低——已固化 Agent 级选项 + 默认 5，见 §上下文预算装配）、`archiveMode`（会话归档机制）
 
@@ -491,17 +491,19 @@ export interface IMcpTransport {
 
 固定 N 轮与内容长短脱节——短消息浪费容量、长内容（代码粘贴）超限触发 contextManager 截断丢旧消息。把「装几轮」改成派生值，由「角色包分配偏好 × 模型运行时容量」共同决定，才能真正用满窗口。
 
-#### B. 角色包键面（最简 2 键）
+#### B. 角色包键面（阶段2 后归零，记忆层 cap 由内核常数承载）
 
-迁移面下 L2 键只保留 2 个相关键，其余保持不变：
+> **阶段2 注记（2026-09-09，memory-tool-recall-design）**：本表两个分配键 `prepare.memoryRecallPercent` / `prepare.minFallback` 已随召回策略键族**整体退役**（表② minFallback 本属召回保底，非「记忆摘要层分配」，归入键族一并移除）。记忆摘要层 cap 比率现为**内核常数** `budget.ts` 的 `DEFAULT_MEMORY_CAP_RATIO = 0.4`（见 §上下文预算装配 顶层常量），不再由角色包声明——「上下文预算装配」动态轮数填充机制本身保留。
 
-| # | 键                                       | 作用域           | 含义                                                                                 |
+迁移面下 L2 键**原**保留 2 个分配键（现均已退役，列此留档）：
+
+| # | 键                                       | 作用域           | 含义（退役前）                                                                        |
 | - | --------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| ① | `prepare.memoryRecallPercent`（0.0\~1.0） | 分配上限（cap，非定额） | **记忆摘要层占可用预算的上限百分比**。记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写 |
-| ② | `prepare.minFallback`（非负整数）             | 运行前装配保底       | **召回保底下限**：recall 语义结果不足此数时，补最近记忆补足；**仅作用于运行前装配**，不管辖 loop 自循环阶段的压缩摘要上限            |
+| ① | `prepare.memoryRecallPercent`（0.0\~1.0） | 分配上限（cap，非定额） | **记忆摘要层占可用预算的上限百分比**。记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写。现由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 取代 |
+| ② | `prepare.minFallback`（非负整数）             | 运行前装配保底       | **召回保底下限**：recall 语义结果不足此数时，补最近记忆补足。现由 `utils/recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK=2` 函数层默认取代（recall() 调用方按需传参）           |
 
 > 原键面③ `global.taskLoopLimit`（硬上限兜底）已删除（2026-09-06，见上表删除标注）：loop 迭代上限现由 `stepBudget`（软上限）与内核 `maxIterations`（`DEFAULT_MAX_ITERATIONS` 兜底）双重承载，不再设角色包「硬上限」键。
-> 设计极简原则：`contextAssembly`（fixed/query/hybrid）、`memoryRecall`（full/limited/none）等开关与本主题正交，保持原状态，不在此迁移面内。
+> `contextAssembly`（fixed/query/hybrid）、`memoryRecall`（full/limited/none）、`summaryRecall`（on/off）、`recallConfidence` 等开关已随阶段2（2026-09-09）召回键族整体退役——记忆纯工具化召回后无自动注入消费端，不再有固定/查询装配分支。
 
 #### C. 预算模型（容量来源 × 分配偏好 → 派生轮数）
 
@@ -513,11 +515,11 @@ export interface IMcpTransport {
 剩余预算    = 可用预算 − 顶级锚点空间
 
 完整对话层 = 剩余预算，从最近往回塞到 ~90% 止（先装，锚点不动）
-记忆摘要层 = 剩余预算 − 完整对话层实际占用（拾遗填充，≤ 剩余预算 × memoryRecallPercent 上限）
+记忆摘要层 = 剩余预算 − 完整对话层实际占用（拾遗填充，≤ 剩余预算 × 内核常数 `DEFAULT_MEMORY_CAP_RATIO`（0.4））
 动态轮数   = 完整对话层能装几轮就是几轮（派生值，不显式声明）
 ```
 
-* **百分比是 cap 不是 quota**：完整对话层无条件优先，记忆摘要层是"完整对话层填满后剩余空间的拾遗"，百分比只封顶防止记忆挤占对话（洞 2 解法）。
+* **现为内核固定 cap 而非角色包 quota**：完整对话层无条件优先，记忆摘要层是"完整对话层填满后剩余空间的拾遗"，`DEFAULT_MEMORY_CAP_RATIO` 只封顶防止记忆挤占对话（洞 2 解法）——阶段2（2026-09-09）该 cap 由角色包键 `memoryRecallPercent` 退役为内核常数（`budget.ts`），不再逐包声明。
 
 * **顶级锚点独立划块**：触发输入+首个回答自预算公式最上游划走，永不压缩；剩余预算低于最小可运行阈值 → 装配前判定无法支撑 loop（确定性拒绝，而非跑起来后提前软上限）（洞 3 解法）。洞 3 有**两道防线**：
 
@@ -525,7 +527,7 @@ export interface IMcpTransport {
 
   * **第二道 · 装配前判负（兜底）**：即便第一道放行了，装配前仍用公式算一遍——顶级锚点划走后剩余预算 < 最小可运行阈值 → 确定性拒绝/降级（提示"内容过大，建议放进文件用 read\_file 读"），而非放任跑起来后提前软上限。
 
-三层分工：容量（Provider/模型，运行时）→ 百分比（角色包键①，仅封顶）+ 锚点（内核，独立划块）→ 轮数（内核按预算填充派生）。
+三层分工：容量（Provider/模型，运行时）→ cap 常数（内核 `DEFAULT_MEMORY_CAP_RATIO`，仅封顶）+ 锚点（内核，独立划块）→ 轮数（内核按预算填充派生）。
 
 #### D. 锚点分级（装配 vs 压缩，两个维度不冲突）
 
@@ -596,7 +598,7 @@ loop 何时收敛停止，由以下三条确定性信号 OR 触发，任一命�
 
 * **删除**：`memoryRecallQuota`（绝对 token 语义在动态容量下不自洽，由键① `memoryRecallPercent` 取代；实现直接移除 `resolveMemoryRecallQuota`）。
 
-* **开关保留**：`contextAssembly`（fixed/query/hybrid）语义保留，仅「fixed/hybrid 的最近对话装载」由固定 N 轮改按预算填充。
+* **开关移除**：`contextAssembly`（fixed/query/hybrid）随阶段2（2026-09-09）召回键族退役——记忆纯工具化召回后上下文装配恒为 hybrid，不再有 fixed/query 分支（见 §六 键表）。「fixed/hybrid 的最近对话装载由固定 N 轮改按预算填充」的预算化语义已并入 §上下文预算装配（动态轮数），无需该开关。
 
 * **互斥约束**：记忆摘要层与完整对话层须维持互斥。**互斥是"完整对话层实际注入轮数"这个事实的派生物**（不是独立参数）：`excludeRoundIds` = 完整对话层注入的正文轮次集合，记忆摘要层只装这些轮次之外的旧摘要——因果闭合，无需单独计算窗口（洞 2 解法）。
 
