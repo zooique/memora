@@ -173,6 +173,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 是否在流式生成中（由 consumeFlow 维护）：生成中禁止切换历史，
    *  避免重放清空消息区后，进行中的 chunk 污染重放视图（对抗评估 P1-3） */
   private _streaming = false;
+  /** 视图重建代数（每次 resolveWebviewView 自增）：供流尾检测「流期间 webview 被折叠/展开
+   *  重建过」——重建后新 webview 没有本流的实时投影，落盘完成后须补一次 replaySession 刷全（2026-09-09） */
+  private _viewEpoch = 0;
   /**
    * 路径守卫安全审计累计（G6 安全/装配透明，2026-08-23）
    *
@@ -461,9 +464,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
-    // 折叠/展开会触发 resolve 重建 HTML。不设 retainContextWhenHidden（避免 window
-    // 全局标志残留与 document 重建的冲突），统一走「ready 回放」这一确定性机制：
-    // 每次重建后，webview 脚本就绪发 ready，extension 再回放会话，保证数据不丢。
+    // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
+    this._viewEpoch += 1;
+    // 折叠/展开（对话卡 ↔ 设置卡切换、侧边栏收起再展开）会触发 resolve 重建 HTML。
+    // 走「ready 回放」这一确定性机制：重建后 webview 脚本就绪发 ready，extension 再回放
+    // 已落盘会话，保证数据不丢（2026-09-09：正在运行的 turn 由 replaySession 的
+    // resumeRunningTurn 补推恢复，见 replaySession()；不设 retainContextWhenHidden——
+    // 官方语义：隐藏期间 webview 脚本挂起、无法接收消息，运行时现场本就不保真，
+    // 交由「设备重建 + 运行中兜底重放」统一恢复，避免两套机制漂移）。
     // 阶段 B（P2-1）：启用外部脚本（chatView.js），localResourceRoots 指向 dist/webview
     // 供 webview.asWebviewUri 解析（CSP script-src 'self'，不再用 'unsafe-inline' 注入脚本）
     webviewView.webview.options = {
@@ -1466,6 +1474,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._view) return;
     // 恢复当前会话历史消息（ADR-024：只回放 _currentSessionId；round-based 按轮交织重放，v1.5）
     this.replayHistory();
+    // 运行中兜底（2026-09-09）：折叠期间 agent 在扩展侧继续跑，重建时若仍有活动流，
+    // 补推 thinking 态让 webview 显示运行中（输入禁用 + 停止/暂停按钮），后续 chunk
+    // 照常流式追加；本流落盘后的全量回放由 consumeFlow 流尾 _viewEpoch 比对触发。
+    if (this._streaming) {
+      this.post({ type: 'status', state: 'thinking' });
+    }
     // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
     // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
     this.post({ type: 'history_loaded' });
@@ -2281,6 +2295,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'status', state: 'thinking' });
     // 置位生成态：会话切换/新建据此拒绝（P1-3，避免重放与进行中流混血）
     this._streaming = true;
+    // 记录流起始视图代数：流尾比对 _viewEpoch 判断「流期间 view 被折叠/展开重建过」
+    // （重建后新 webview 无本流实时投影 → 落盘完成须补 replaySession 刷全，2026-09-09）
+    const flowViewEpoch = this._viewEpoch;
     // P1：流式第一条 chunk 的时间戳（作为本轮 assistant 回复的时间）
     const firstChunkTs = new Date().toISOString();
     // 流开始时刻与 token 累计快照（metrics 事件需本轮增量：结束减开始）
@@ -2502,6 +2519,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           console.warn('Memora 过程事件落盘失败', err);
         }
       }
+    }
+    // 流期间 view 被折叠/展开重建过 → 新 webview 未投影本流（隐藏期 chunk/process_event
+    // 消息被丢弃），此刻数据已完整落盘，补一次 replaySession 全量回放恢复完整回合——
+    // 否则用户切回时只见历史不见本轮运行结果（2026-09-09 缺口修复）
+    if (this._viewEpoch !== flowViewEpoch) {
+      this.replaySession();
     }
     // plan 快照对齐：generator close 后内核 autoClearPlanIfAllDone 已清 plan（暂停态 guard 不清），
     // 此处推一次快照让 webview 同步——正常/中断 → 空 steps（global 消失 + inline 快照）；
