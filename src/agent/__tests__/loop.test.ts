@@ -10,6 +10,7 @@ import type { Memory } from '@/memory/types.js';
 import { TRACE_SPANS, type ISpan, type ITracer } from '@/agent/tracer.js';
 import * as hashModule from '@/utils/hash.js';
 import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
+import type { ToolDefinition } from '@/agent/builtinTools.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -3821,6 +3822,145 @@ describe('AgentLoop · thinking 事件 llm_calling 阶段', () => {
     ).length;
     // processUserInput + continueAfterPause 各至少一次
     expect(thinkingCount).toBeGreaterThanOrEqual(2);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 记忆首轮收窄握手（memory-tool-recall-design §3.2 件②）
+// 有查询意图轮次的首个 LLM 调用将 tools 收窄为只读探查面 + 指令点名 memory_search 优先，
+// 首轮工具执行后恢复全工具（toolExecutedThisTurn 自失效），随 resetTurnState 恢复。
+// ═══════════════════════════════════════════════════════════════
+
+/** 构造测试用工具定义：必须给出 name/description/parameters 骨架以满足 ToolDefinition 形状 */
+function makeToolDef(name: string): ToolDefinition {
+  return { name, description: `${name} 描述`, parameters: { type: 'object', properties: {}, required: [] } };
+}
+
+describe('AgentLoop · 记忆首轮收窄握手（§3.2 件②）', () => {
+  // 触发输入 → extractKeywords 非空（有查询意图）：英文词组可靠产生可提取词
+  const QUERY_INPUT = 'memory leak issue';
+  // 非触发输入 → extractKeywords 空（无查询意图）：纯符号无任何可提取词
+  const NO_INTENT_INPUT = '$#% ^&()';
+
+  it('有查询意图且首轮未执行工具：tools 收窄为探查面子集，system 注入记忆回想指令', async () => {
+    // 探查面 = [search_memories, read_file]；非探查 = [write_file, web_search]
+    const toolDefs = [makeToolDef('search_memories'), makeToolDef('read_file'), makeToolDef('write_file'), makeToolDef('web_search')];
+    const toolsPerCall: string[][] = [];
+    let ti = 0;
+    // 捕获型 provider：记录每轮 LLM 调用实际收到的 tools 名称
+    const provider = {
+      name: 'narrow-capture',
+      async *chat(_messages: Message[], options: { tools?: { function: { name: string } }[] }) {
+        toolsPerCall.push((options?.tools ?? []).map((t) => t.function.name));
+        // 首轮直接作答（不执行工具），不触发「工具执行后恢复」
+        const chunks = ti === 0 ? [{ role: 'assistant' as const, content: '直接回答' }] : [];
+        ti++;
+        for (const c of chunks) yield c;
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn(), toolDefinitions: toolDefs });
+    // loop 首轮前自派生（§3.2 件①）：extractKeywords(QUERY_INPUT) 非空 = 有查询意图
+    for await (const _ of loop.processUserInput(QUERY_INPUT)) {
+      void _;
+    }
+
+    // 首轮（唯一一轮）tools 只含探查面：write_file / web_search 被滤掉
+    expect(toolsPerCall[0]).toEqual(['search_memories', 'read_file']);
+    // system prompt 注入记忆回想指令（点名 memory_search 优先，构成「理解→搜」结构性机会）
+    expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('记忆回想'))).toBe(true);
+    expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('search_memories'))).toBe(true);
+  });
+
+  it('首轮执行探查工具后：下一轮 LLM 调用恢复全工具（toolExecutedThisTurn 自失效）', async () => {
+    const toolDefs = [makeToolDef('search_memories'), makeToolDef('read_file'), makeToolDef('write_file')];
+    const toolsPerCall: string[][] = [];
+    let ti = 0;
+    const turns: Message[][] = [
+      // 首轮只被允许调探查工具 → 调 read_file
+      [{ role: 'assistant', content: '读文件', toolCalls: [{ id: 'tc1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.md"}' } }] }],
+      // 工具执行后第二轮 → 应当恢复全工具
+      [{ role: 'assistant', content: '完成' }],
+    ];
+    const provider = {
+      name: 'narrow-recover',
+      async *chat(_messages: Message[], options: { tools?: { function: { name: string } }[] }) {
+        toolsPerCall.push((options?.tools ?? []).map((t) => t.function.name));
+        const chunks = turns[ti] ?? [];
+        ti++;
+        for (const c of chunks) yield c;
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn().mockResolvedValue('读取成功'), toolDefinitions: toolDefs });
+    for await (const _ of loop.processUserInput('read project code')) {
+      void _;
+    }
+
+    // 第 1 轮收窄：只给探查面；第 2 轮恢复：write_file 回归
+    expect(toolsPerCall[0]).toEqual(['search_memories', 'read_file']);
+    expect(toolsPerCall[1]).toEqual(['search_memories', 'read_file', 'write_file']);
+  });
+
+  it('无查询意图（extractKeywords 空）：全工具直答，不收窄', async () => {
+    const toolDefs = [makeToolDef('search_memories'), makeToolDef('write_file')];
+    const toolsPerCall: string[][] = [];
+    let ti = 0;
+    const provider = {
+      name: 'no-narrow',
+      async *chat(_messages: Message[], options: { tools?: { function: { name: string } }[] }) {
+        toolsPerCall.push((options?.tools ?? []).map((t) => t.function.name));
+        const chunks = ti === 0 ? [{ role: 'assistant' as const, content: '嗨' }] : [];
+        ti++;
+        for (const c of chunks) yield c;
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn(), toolDefinitions: toolDefs });
+    for await (const _ of loop.processUserInput(NO_INTENT_INPUT)) {
+      void _;
+    }
+
+    // 全工具（含 write_file），未收窄
+    expect(toolsPerCall[0]).toEqual(['search_memories', 'write_file']);
+    expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('记忆回想'))).toBe(false);
+  });
+
+  it('收窄状态位随 resetTurnState 恢复：下一轮（无查询意图）全工具直答', async () => {
+    const toolDefs = [makeToolDef('search_memories'), makeToolDef('write_file')];
+    const toolsPerCall: string[][] = [];
+    const turns: Message[][][] = [
+      // 第 1 轮：查询意图 → 收窄 + 直接作答（不执行工具）
+      [[{ role: 'assistant', content: '回答' }]],
+      // 第 2 轮：新 processUserInput（resetTurnState 已复位 + 无关键词派生）→ 全工具
+      [[{ role: 'assistant', content: '回答' }]],
+    ];
+    let call = 0;
+    const provider = {
+      name: 'narrow-turn-reset',
+      async *chat(_messages: Message[], options: { tools?: { function: { name: string } }[] }) {
+        toolsPerCall.push((options?.tools ?? []).map((t) => t.function.name));
+        const chunks = turns[call >> 0]![0] ?? [];
+        call++;
+        for (const c of chunks) yield c;
+      },
+    } as unknown as LlmProvider;
+
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn(), toolDefinitions: toolDefs });
+    // 第 1 轮有查询意图 → 收窄
+    for await (const _ of loop.processUserInput(QUERY_INPUT)) {
+      void _;
+    }
+    const firstCallTools = toolsPerCall[0] ?? [];
+
+    // 第 2 轮：无查询意图输入 → 派生 false + resetTurnState 复位 → 全工具
+    toolsPerCall.length = 0;
+    for await (const _ of loop.processUserInput(NO_INTENT_INPUT)) {
+      void _;
+    }
+
+    expect(firstCallTools).toEqual(['search_memories']); // 第 1 轮收窄（write_file 被滤）
+    expect(toolsPerCall[0]).toEqual(['search_memories', 'write_file']); // 第 2 轮全工具（状态已随轮复位）
   });
 });
 
