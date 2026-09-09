@@ -7,11 +7,10 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { validateSource } from '@/memory/sourceValidation.js';
 import { segmentLower } from '@/utils/segmenter.js';
-import { byScoreDesc } from '@/utils/array.js';
+import { byAccessedDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
-import { SCORE_FLOOR, SCORE_CEILING } from '@/memory/governance.js';
 
 /**
  * 内存存储：Map 存储，核心操作 O(1)~O(log n)。
@@ -130,20 +129,20 @@ export class InMemoryStorage implements IMemoryStorage {
     return { ...m };
   }
 
-  /** 按 source 取活跃记忆（浅拷贝，自动过滤软删除，score 降序） */
+  /** 按 source 取活跃记忆（浅拷贝，自动过滤软删除，accessedAt 降序） */
   getBySource(source: string): Memory[] {
     return Array.from(this.memories.values())
       .filter((m) => m.source === source && m.deletedAt === undefined)
-      .sort(byScoreDesc)
+      .sort(byAccessedDesc)
       .map((m) => ({ ...m }));
   }
 
-  /** 文本搜索活跃记忆（segmentLower 与 SqliteStorage/recall 一致），score 降序，limit 默认 10 */
+  /** 文本搜索活跃记忆（segmentLower 与 SqliteStorage/recall 一致），accessedAt 降序，limit 默认 10 */
   search(query: string, limit = 10): Memory[] {
     const activeMemories = Array.from(this.memories.values()).filter(
       (m) => m.deletedAt === undefined,
     );
-    // 空查询或分词无有效 token：按 score 返回
+    // 空查询或分词无有效 token：按 accessedAt 返回
     if (!query.trim()) {
       return this.sortCopyLimit(activeMemories, limit);
     }
@@ -162,7 +161,7 @@ export class InMemoryStorage implements IMemoryStorage {
   /** 排序 + 截断 + 浅拷贝，消除 search 内重复的 pattern */
   private sortCopyLimit(memories: Memory[], limit: number): Memory[] {
     return memories
-      .sort(byScoreDesc)
+      .sort(byAccessedDesc)
       .slice(0, limit)
       .map((m) => ({ ...m }));
   }
@@ -179,20 +178,10 @@ export class InMemoryStorage implements IMemoryStorage {
     return this.sourceCountCache.get(source) ?? 0;
   }
 
-  /** 原子 score+=delta，clamp 到 [SCORE_FLOOR, SCORE_CEILING]，同步存储下天然原子；不存在/软删返回 false */
-  incrementScore(id: string, delta: number, now: string): boolean {
+  /** 刷新 accessedAt（score 退役后的唯一写位）；不存在/软删返回 false */
+  touch(id: string, now: string): boolean {
     const memory = this.memories.get(id);
     if (!memory || memory.deletedAt !== undefined) return false;
-    memory.score = Math.max(SCORE_FLOOR, Math.min(SCORE_CEILING, memory.score + delta));
-    memory.accessedAt = now;
-    return true;
-  }
-
-  /** 原子设置 score 绝对值（不 clamp，调用方负责传合法值），同时更新 accessedAt */
-  setScore(id: string, newScore: number, now: string): boolean {
-    const memory = this.memories.get(id);
-    if (!memory || memory.deletedAt !== undefined) return false;
-    memory.score = newScore;
     memory.accessedAt = now;
     return true;
   }

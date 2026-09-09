@@ -256,7 +256,7 @@ describe('问答闭环存储', () => {
       const completed = completeRound(round, '你好！');
       const events: ProcessEvent[] = [
         { type: 'meta', seq: 1, ts: '2026-08-28T00:00:00.000Z', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-        { type: 'recall', seq: 2, ts: '2026-08-28T00:00:01.000Z', payload: { memories: [{ id: 'round-summary:r1', name: '设计约束', source: 'round-summary', score: 0.8 }] } },
+        { type: 'recall', seq: 2, ts: '2026-08-28T00:00:01.000Z', payload: { memories: [{ id: 'round-summary:r1', name: '设计约束', source: 'round-summary', score: 0.9 }] } },
         { type: 'tool_start', seq: 3, ts: '2026-08-28T00:00:02.000Z', payload: { toolCallId: 'tc1', name: 'read_file', args: '{"path":"a.md"}' } },
         { type: 'tool_result', seq: 4, ts: '2026-08-28T00:00:03.000Z', payload: { toolCallId: 'tc1', name: 'read_file', ok: true, summary: '读取成功' } },
         { type: 'metrics', seq: 5, ts: '2026-08-28T00:00:04.000Z', payload: { durationMs: 4000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, recallCount: 1, success: true } },

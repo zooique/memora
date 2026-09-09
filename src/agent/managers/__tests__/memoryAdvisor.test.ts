@@ -30,7 +30,6 @@ function createMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'default',
     createdAt: '2026-06-27T10:00:00.000Z',
     accessedAt: '2026-06-27T10:00:00.000Z',
-    score: 0.5,
     ...overrides,
   };
 }
@@ -60,129 +59,58 @@ beforeEach(() => {
 // ─── sourceHealth() ───────────────────────────────────────
 
 describe('MemoryAdvisor.sourceHealth()', () => {
-  describe('空存储与健康状态判定', () => {
-    it('空存储：sources=[], overallStatus=healthy', () => {
+  describe('空存储与事实观测', () => {
+    it('空存储：sources=[]', () => {
       const report = advisor.sourceHealth();
       expect(report.sources).toEqual([]);
-      expect(report.overallStatus).toBe('healthy');
       // diagnosedAt 是 ISO 8601 字符串
       expect(typeof report.diagnosedAt).toBe('string');
       expect(new Date(report.diagnosedAt).toString()).not.toBe('Invalid Date');
     });
 
-    it('healthy：avgScore≥0.5', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.7 }));
+    it('count 字段反映 source 记忆数', () => {
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:3' }));
       const report = advisor.sourceHealth();
-      expect(report.sources).toHaveLength(1);
-      expect(report.sources[0]?.status).toBe('healthy');
-      expect(report.overallStatus).toBe('healthy');
+      expect(report.sources[0]?.count).toBe(3);
     });
 
-    it('warning：avgScore<0.5', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.3 }));
+    it('不因 score 高低或久未访问而判定健康等级（2026-09-09 弃用 status：score 退役后无 avgScore 数据源）', () => {
+      // 低分 + 久未访问：仅输出 daysSinceLastAccess 事实，不再有 healthy/warning/critical 判定
+      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1' }));
       const report = advisor.sourceHealth();
-      expect(report.sources[0]?.status).toBe('warning');
-      expect(report.overallStatus).toBe('warning');
-    });
-
-    it('久未访问不降级：avgScore≥0.5 且 40 天未访问 → 仍 healthy（D7：时间不代理语义状态）', () => {
-      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1', score: 0.7 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.status).toBe('healthy');
-      expect(report.overallStatus).toBe('healthy');
-      // daysSinceLastAccess 仍如实输出（诊断事实），仅不参与状态判定
+      expect(report.sources[0]).not.toHaveProperty('status');
+      expect(report.sources[0]).not.toHaveProperty('avgScore');
+      // daysSinceLastAccess 仍如实输出（诊断事实）
       expect(report.sources[0]?.daysSinceLastAccess).toBeGreaterThanOrEqual(39);
     });
-
-    it('critical：avgScore<0.2', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.1 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.status).toBe('critical');
-      expect(report.overallStatus).toBe('critical');
-    });
-
-    it('critical 由低分决定，与访问时间无关（最近访问也不豁免）', () => {
-      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1', score: 0.1 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.status).toBe('critical');
-      expect(report.overallStatus).toBe('critical');
-    });
-
-    it('critical 优先级高于 warning（score 边界 0.2 触发）', () => {
-      // score=0.19：低于 CRITICAL_SCORE 直接判 critical，不会落进 warning 分支
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.19 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.status).toBe('critical');
-    });
   });
 
-  describe('多 source 整体状态与排序', () => {
-    it('overallStatus 取最差 source（healthy + critical → critical）', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', source: 'content', score: 0.1 }));
-      const report = advisor.sourceHealth();
-      expect(report.overallStatus).toBe('critical');
-      // 排序：critical 在前，healthy 在后
-      expect(report.sources[0]?.source).toBe('content');
-      expect(report.sources[1]?.source).toBe(SOURCE_LABELS.WORK_PROJECTION);
-    });
-
-    it('overallStatus 取最差 source（healthy + warning → warning）', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', source: 'content', score: 0.3 }));
-      const report = advisor.sourceHealth();
-      expect(report.overallStatus).toBe('warning');
-    });
-
-    it('多 source 同状态时保持插入顺序无关（按 status 排序）', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', source: 'content', score: 0.8 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources).toHaveLength(2);
-      // 两个都是 healthy，排序稳定即可
-      expect(report.sources.every((s) => s.status === 'healthy')).toBe(true);
-    });
-  });
-
-  describe('字段精度与边界', () => {
-    it('avgScore 四舍五入到 3 位小数', () => {
-      // score 0.3333... → avgScore 应为 0.333
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.3333 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.avgScore).toBe(0.333);
-    });
-
+  describe('字段精度与事实', () => {
     it('daysSinceLastAccess 四舍五入到 1 位小数', () => {
       // 1.5 天前访问
-      storage.upsert(createMemoryDaysAgo(1.5, { id: 'content:1', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1.5, { id: 'content:1' }));
       const report = advisor.sourceHealth();
       // 允许 ±0.2 误差（测试执行耗时）
       expect(report.sources[0]?.daysSinceLastAccess).toBeGreaterThanOrEqual(1.4);
       expect(report.sources[0]?.daysSinceLastAccess).toBeLessThanOrEqual(1.6);
     });
 
-    it('count 字段反映 source 记忆数', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2', score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:3', score: 0.7 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.count).toBe(3);
-    });
-
-    it('avgScore 取该 source 所有记忆的均值', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.6 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2', score: 0.8 }));
-      const report = advisor.sourceHealth();
-      expect(report.sources[0]?.avgScore).toBe(0.7);
-    });
-
     it('daysSinceLastAccess 取该 source 中最近访问时间', () => {
       // 一条 5 天前，一条 1 天前：取 1 天前
-      storage.upsert(createMemoryDaysAgo(5, { id: 'content:1', score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(5, { id: 'content:1' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2' }));
       const report = advisor.sourceHealth();
       expect(report.sources[0]?.daysSinceLastAccess).toBeGreaterThanOrEqual(0.9);
       expect(report.sources[0]?.daysSinceLastAccess).toBeLessThanOrEqual(1.1);
+    });
+
+    it('多 source 按 source 名稳定排序', () => {
+      storage.upsert(createMemoryDaysAgo(1, { id: 'a:1', source: 'a' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'b:1', source: 'b' }));
+      const report = advisor.sourceHealth();
+      expect(report.sources.map((s) => s.source)).toEqual(['a', 'b']);
     });
   });
 });
@@ -200,7 +128,7 @@ describe('MemoryAdvisor.suggest()', () => {
     });
 
     it('所有 source 被 excludeSources 排除：返回 []', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.9 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1' }));
       const result = advisor.suggest(undefined, { excludeSources: [SOURCE_LABELS.WORK_PROJECTION] });
       expect(result).toEqual([]);
     });
@@ -208,11 +136,11 @@ describe('MemoryAdvisor.suggest()', () => {
 
   describe('无 query 全局推荐', () => {
     it('仅 content source：返回按 relevance 排序的推荐', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'recent-high', score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:2', name: 'old-low', score: 0.3 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'recent-high' }));
+      storage.upsert(createMemoryDaysAgo(10, { id: 'content:2', name: 'old-low' }));
       const result = advisor.suggest();
       expect(result).toHaveLength(2);
-      // 1 天前 + score 0.9 的 relevance 应高于 10 天前 + score 0.3
+      // 1 天前访问的 relevance 应高于 10 天前访问（relevance 现为纯时效）
       expect(result[0]?.name).toBe('recent-high');
       expect(result[1]?.name).toBe('old-low');
     });
@@ -225,24 +153,24 @@ describe('MemoryAdvisor.suggest()', () => {
         SOURCE_LABELS.SKILL,
         SOURCE_LABELS.WORK_PROJECTION,
       ]);
-      storage.upsert(createMemoryDaysAgo(1, { id: 'persona:1', source: SOURCE_LABELS.PERSONA, score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'rule:1', source: SOURCE_LABELS.RULE, score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'skill:1', source: SOURCE_LABELS.SKILL, score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.5 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'persona:1', source: SOURCE_LABELS.PERSONA }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'rule:1', source: SOURCE_LABELS.RULE }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'skill:1', source: SOURCE_LABELS.SKILL }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1' }));
       const result = advisorAll.suggest();
       expect(result).toHaveLength(4);
     });
 
     it('每个 source 采样 top-N（SUGGEST_TOP_PER_SOURCE=3）', () => {
-      // 插入 5 条 content，应只取前 3 条（按 score 降序）
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2', score: 0.8 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:3', score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:4', score: 0.6 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:5', score: 0.5 }));
+      // 插入 5 条 content，应只取前 3 条（按 accessedAt 降序采样最近使用）
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:2' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:3' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:4' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:5' }));
       const result = advisor.suggest(undefined, { limit: 10 });
       expect(result).toHaveLength(3);
-      // 应该取 score 最高的 3 条
+      // 采样 3 条为最近使用，relevance 单调不增
       const scores = result.map((r) => r.relevance);
       expect(scores[0]).toBeGreaterThanOrEqual(scores[1]!);
       expect(scores[1]).toBeGreaterThanOrEqual(scores[2]!);
@@ -252,18 +180,18 @@ describe('MemoryAdvisor.suggest()', () => {
   describe('有 query 搜索命中优先', () => {
     it('搜索命中的记忆优先于全局推荐', () => {
       // 一条会被搜索命中（content 含"算法"）
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:hit', name: 'algo', content: '算法优化', score: 0.3 }));
-      // 一条不会被命中但 score 更高
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:high', name: 'high', content: '无关内容', score: 0.9 }));
+      storage.upsert(createMemoryDaysAgo(10, { id: 'content:hit', name: 'algo', content: '算法优化' }));
+      // 一条不会被命中但最近使用
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:high', name: 'high', content: '无关内容' }));
       const result = advisor.suggest('算法');
       expect(result.length).toBeGreaterThan(0);
-      // 搜索命中应排第一
+      // 搜索命中应排第一（即便年久的命中项也先于最近的非命中项）
       expect(result[0]?.name).toBe('algo');
     });
 
     it('搜索命中 + 全局补充混合', () => {
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:hit', name: 'hit', content: '算法', score: 0.3 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'work-projection:1', source: SOURCE_LABELS.WORK_PROJECTION, name: 'work-projection-1', score: 0.8 }));
+      storage.upsert(createMemoryDaysAgo(10, { id: 'content:hit', name: 'hit', content: '算法' }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'work-projection:1', source: SOURCE_LABELS.WORK_PROJECTION, name: 'work-projection-1' }));
       const result = advisor.suggest('算法', { limit: 5 });
       // 应包含搜索命中 + 全局推荐
       const names = result.map((r) => r.name);
@@ -272,7 +200,7 @@ describe('MemoryAdvisor.suggest()', () => {
     });
 
     it('空 query 字符串（仅空格）按无 query 处理', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'test', content: '内容', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'test', content: '内容' }));
       // query 为空格：不调用 search，所有候选都按全局推荐
       const result = advisor.suggest('   ');
       expect(result).toHaveLength(1);
@@ -284,80 +212,44 @@ describe('MemoryAdvisor.suggest()', () => {
     it('默认 limit=5（受 SUGGEST_TOP_PER_SOURCE 限制实际返回 3）', () => {
       // GOVERNANCE_SOURCES 仅含 WORK_PROJECTION，SUGGEST_TOP_PER_SOURCE=3 限制每 source 采样数
       // 插入 7 条 WORK_PROJECTION 记忆，实际仅能采样 top 3
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:2', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.8 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:3', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:4', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.6 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:5', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.5 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:6', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.4 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:7', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.3 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:1', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:2', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:3', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:4', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:5', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:6', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:7', source: SOURCE_LABELS.WORK_PROJECTION }));
       const result = advisor.suggest();
       // 默认 limit=5 但受每 source top-3 限制
       expect(result).toHaveLength(3);
     });
 
     it('自定义 limit=2', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:2', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.8 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:3', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:1', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:2', source: SOURCE_LABELS.WORK_PROJECTION }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'wp:3', source: SOURCE_LABELS.WORK_PROJECTION }));
       const result = advisor.suggest(undefined, { limit: 2 });
       expect(result).toHaveLength(2);
     });
   });
 
-  describe('recencyWeight 权重', () => {
-    it('recencyWeight=0：relevance 仅由 score 决定', () => {
-      // 高 score + 旧 vs 低 score + 新
-      storage.upsert(createMemoryDaysAgo(30, { id: 'content:old-high', name: 'old-high', score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:new-low', name: 'new-low', score: 0.3 }));
-      const result = advisor.suggest(undefined, { recencyWeight: 0 });
-      // score 0.9 应排前
-      expect(result[0]?.name).toBe('old-high');
-    });
-
-    it('recencyWeight=1：relevance 仅由 recency 决定', () => {
-      storage.upsert(createMemoryDaysAgo(30, { id: 'content:old-high', name: 'old-high', score: 0.9 }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:new-low', name: 'new-low', score: 0.3 }));
-      const result = advisor.suggest(undefined, { recencyWeight: 1 });
-      // 1 天前应排前
-      expect(result[0]?.name).toBe('new-low');
-    });
-
-    it('relevance 四舍五入到 2 位小数', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.55 }));
-      const result = advisor.suggest(undefined, { recencyWeight: 0.5 });
-      // relevance = 0.55*0.5 + recency*0.5，应四舍五入到 2 位
-      expect(result[0]?.relevance).toBeLessThanOrEqual(1);
-      // 验证最多 2 位小数
-      const decimals = (result[0]?.relevance ?? 0).toString().split('.')[1];
-      expect(!decimals || decimals.length <= 2).toBe(true);
-    });
-  });
-
   describe('reason 推荐理由 4 种分支', () => {
     it('reason="与搜索相关"（搜索命中）', () => {
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:1', name: 'hit', content: '算法', score: 0.5 }));
+      storage.upsert(createMemoryDaysAgo(10, { id: 'content:1', name: 'hit', content: '算法' }));
       const result = advisor.suggest('算法');
       expect(result[0]?.reason).toBe('与搜索相关');
     });
 
     it('reason="最近访问"（daysSinceAccess<1）', () => {
       // 0.5 天前访问
-      storage.upsert(createMemoryDaysAgo(0.5, { id: 'content:1', name: 'recent', score: 0.5 }));
+      storage.upsert(createMemoryDaysAgo(0.5, { id: 'content:1', name: 'recent' }));
       const result = advisor.suggest();
       expect(result[0]?.reason).toBe('最近访问');
     });
 
-    it('reason="高频记忆"（score≥0.8 且非最近访问）', () => {
-      // 5 天前访问 + score 0.9
-      storage.upsert(createMemoryDaysAgo(5, { id: 'content:1', name: 'high', score: 0.9 }));
-      const result = advisor.suggest();
-      expect(result[0]?.reason).toBe('高频记忆');
-    });
-
-    it('reason="${source} 推荐"（其他情况）', () => {
-      // 5 天前访问 + score 0.5（不满足 ≥0.8，也不满足 <1 天）
-      storage.upsert(createMemoryDaysAgo(5, { id: 'work-projection:1', name: 'mid', score: 0.5 }));
+    it('reason="work-projection 推荐"（其他情况）', () => {
+      // 5 天前访问（recency 窗口内但非当天）→ 归为"${source} 推荐"
+      storage.upsert(createMemoryDaysAgo(5, { id: 'work-projection:1', name: 'mid' }));
       const result = advisor.suggest();
       expect(result[0]?.reason).toBe('work-projection 推荐');
     });
@@ -365,14 +257,14 @@ describe('MemoryAdvisor.suggest()', () => {
 
   describe('contentPreview 截断', () => {
     it('短内容：原样返回', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', content: '短内容', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', content: '短内容' }));
       const result = advisor.suggest();
       expect(result[0]?.contentPreview).toBe('短内容');
     });
 
     it('长内容（>120 字符）：截断 + …', () => {
       const longContent = 'A'.repeat(200);
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', content: longContent, score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', content: longContent }));
       const result = advisor.suggest();
       // 120 字符 + 1 个 … = 121 字符
       expect(result[0]?.contentPreview).toHaveLength(121);
@@ -381,7 +273,7 @@ describe('MemoryAdvisor.suggest()', () => {
 
     it('恰好 120 字符：原样返回（不截断）', () => {
       const exactContent = 'B'.repeat(120);
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', content: exactContent, score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', content: exactContent }));
       const result = advisor.suggest();
       expect(result[0]?.contentPreview).toBe(exactContent);
     });
@@ -389,7 +281,7 @@ describe('MemoryAdvisor.suggest()', () => {
 
   describe('SuggestHit 字段完整性', () => {
     it('返回对象包含 name/source/relevance/contentPreview/reason 5 字段', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'test', source: SOURCE_LABELS.WORK_PROJECTION, content: '内容', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'test', source: SOURCE_LABELS.WORK_PROJECTION, content: '内容' }));
       const result = advisor.suggest();
       expect(result).toHaveLength(1);
       const hit = result[0]!;

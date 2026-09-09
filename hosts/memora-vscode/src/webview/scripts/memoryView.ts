@@ -5,7 +5,7 @@
  * 接收依赖（vscode / window / root）并初始化全部交互，替代「字符串注入脚本」。
  *
  * 职责：
- *   - 渲染记忆列表（按 score 降序，source 徽章 + score 圆点 + 单行预览）；
+ *   - 渲染记忆列表（按 accessedAt 降序，source 徽章 + 单行预览）；
  *   - 点击卡片展开详情（全文 content + 创建时间元数据）；
  *   - 搜索框输入（非空 → postMessage memory_search；清空 → 重新加载列表）；
  *   - 监听 memory_loaded / memory_search_result 渲染（host resolve 时推送 + 搜索应答）。
@@ -61,9 +61,6 @@ const TYPE_BADGE_LABEL: Record<string, string> = {
   intent: '意图',
   general: '通用',
 };
-
-/** score 阈值：高于该值视为「重要记忆」（score 圆点亮 accent） */
-const SCORE_HIGH = 0.6;
 
 /** 记忆列表每页条数（2026-09-08 分页组件；与宿主 MEMORY_LIST_LIMIT 对齐，首屏同 20 条） */
 const MEMORY_PAGE_SIZE = 20;
@@ -150,7 +147,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     },
   });
 
-  /** 构建单个记忆条目卡片（名称 + source 徽章 + score + 预览 + 可展开详情） */
+  /** 构建单个记忆条目卡片（名称 + source 徽章 + 类型徽章 + 预览 + 可展开详情） */
   function buildCard(m: MemoryItemDto): HTMLElement {
     const card = document.createElement('div');
     card.className = 'mem-card';
@@ -161,7 +158,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     card.setAttribute('aria-expanded', 'false');
     card.title = '点击展开 / 收起详情';
 
-    // 头部：名称 + source 徽章 + score 圆点
+    // 头部：名称 + source 徽章 + 类型徽章
     const head = document.createElement('div');
     head.className = 'mem-card-head';
     const name = document.createElement('span');
@@ -184,13 +181,6 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       typeBadge.title = `摘要类型：${m.summaryType}`;
       head.appendChild(typeBadge);
     }
-
-    // score 圆点：高重要度点亮 accent（视觉辅助，主动可见）
-    const scoreDot = document.createElement('span');
-    scoreDot.className = 'score-dot' + (m.score >= SCORE_HIGH ? ' score-dot-high' : '');
-    scoreDot.title = `重要度 ${m.score.toFixed(2)}`;
-    scoreDot.setAttribute('aria-hidden', 'true');
-    head.appendChild(scoreDot);
 
     // 删除按钮（G19）：stopPropagation 避免触发卡片展开，独立走 memory_delete
     const delBtn = document.createElement('button');
@@ -462,7 +452,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   /**
    * 展示治理操作结果（governance_result）并刷新数据
    *
-   * 治理操作会改变记忆库（取代/加权改 score 排序 / 清理删条目）→ 重新拉取治理数据 + 列表，
+   * 治理操作会改变记忆库（取代/清理删条目）→ 重新拉取治理数据 + 列表，
    * 保证治理区统计与列表实时一致。
    */
   function showGovernanceResult(msg: { ok: boolean; message?: string; action: 'cleanup' }): void {

@@ -162,9 +162,9 @@ console.log(`Deduplicated ${report.deduplicatedCount} memories`);
 
 const conflicts = await agent.governance.detectConflicts();
 
-// Source health diagnosis (pure computation, no LLM): per-source count / average score / status
+// Source health diagnosis (pure computation, no LLM): per-source count / days since last access (score retired → factual observation only)
 const health = agent.governance.sourceHealth();
-console.log(health?.overallStatus);
+console.log(health?.sources);
 ```
 
 ### Cleanup

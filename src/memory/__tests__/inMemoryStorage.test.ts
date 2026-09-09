@@ -27,7 +27,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
   // ─── 辅助：构造记忆对象 ───────────────────────────────────
 
   /** 构造一条测试记忆 */
-  function makeMemory(id: string, source: string, score = 0.8): Memory {
+  function makeMemory(id: string, source: string): Memory {
     return {
       id,
       content: `内容-${id}`,
@@ -35,7 +35,6 @@ describe('InMemoryStorage · 内存存储契约', () => {
       name: `名称-${id}`,
       createdAt: new Date().toISOString(),
       accessedAt: new Date().toISOString(),
-      score,
     };
   }
 
@@ -54,7 +53,7 @@ describe('InMemoryStorage · 内存存储契约', () => {
 
     it('更新同 id 同 source 时计数不变', () => {
       storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
-      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE, 0.9));
+      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE));
 
       expect(storage.countBySource(SOURCE_LABELS.RULE)).toBe(1);
       expect(storage.count()).toBe(1);
@@ -130,15 +129,15 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(again[0]!.content).toBe('内容-rule:1');
     });
 
-    it('getBySource 应按 score 降序排列', () => {
-      storage.upsert(makeMemory('rule:1', SOURCE_LABELS.RULE, 0.3));
-      storage.upsert(makeMemory('rule:2', SOURCE_LABELS.RULE, 0.9));
-      storage.upsert(makeMemory('rule:3', SOURCE_LABELS.RULE, 0.6));
+    it('getBySource 应按 accessedAt 降序排列', () => {
+      storage.upsert({ ...makeMemory('rule:1', SOURCE_LABELS.RULE), accessedAt: '2026-01-01T00:00:00.000Z' });
+      storage.upsert({ ...makeMemory('rule:2', SOURCE_LABELS.RULE), accessedAt: '2026-01-03T00:00:00.000Z' });
+      storage.upsert({ ...makeMemory('rule:3', SOURCE_LABELS.RULE), accessedAt: '2026-01-02T00:00:00.000Z' });
 
       const list = storage.getBySource(SOURCE_LABELS.RULE);
-      expect(list[0]!.score).toBe(0.9);
-      expect(list[1]!.score).toBe(0.6);
-      expect(list[2]!.score).toBe(0.3);
+      expect(list[0]!.id).toBe('rule:2');
+      expect(list[1]!.id).toBe('rule:3');
+      expect(list[2]!.id).toBe('rule:1');
     });
 
     it('getById 不存在时应返回 null', () => {
@@ -149,15 +148,15 @@ describe('InMemoryStorage · 内存存储契约', () => {
   // ─── search 分词匹配 ───────────────────────────────────
 
   describe('search', () => {
-    it('空查询应按 score 降序返回（limit 限制）', () => {
-      storage.upsert(makeMemory('m1', 'content', 0.5));
-      storage.upsert(makeMemory('m2', 'content', 0.9));
-      storage.upsert(makeMemory('m3', 'content', 0.3));
+    it('空查询应按 accessedAt 降序返回（limit 限制）', () => {
+      storage.upsert({ ...makeMemory('m1', 'content'), accessedAt: '2026-01-01T00:00:00.000Z' });
+      storage.upsert({ ...makeMemory('m2', 'content'), accessedAt: '2026-01-03T00:00:00.000Z' });
+      storage.upsert({ ...makeMemory('m3', 'content'), accessedAt: '2026-01-02T00:00:00.000Z' });
 
       const results = storage.search('', 2);
       expect(results).toHaveLength(2);
-      expect(results[0]!.score).toBe(0.9);
-      expect(results[1]!.score).toBe(0.5);
+      expect(results[0]!.id).toBe('m2');
+      expect(results[1]!.id).toBe('m3');
     });
 
     it('应匹配 content 中的关键词', () => {
@@ -187,25 +186,27 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(results[0]!.name).toBe('TypeScript 规则');
     });
 
-    it('匹配结果应按 score 降序排列', () => {
+    it('匹配结果应按 accessedAt 降序排列', () => {
       storage.upsert({
-        ...makeMemory('m1', 'content', 0.3),
+        ...makeMemory('m1', 'content'),
+        accessedAt: '2026-01-01T00:00:00.000Z',
         content: 'TypeScript 内容',
       });
       storage.upsert({
-        ...makeMemory('m2', 'content', 0.9),
+        ...makeMemory('m2', 'content'),
+        accessedAt: '2026-01-03T00:00:00.000Z',
         content: 'TypeScript 内容',
       });
 
       const results = storage.search('TypeScript');
-      expect(results[0]!.score).toBe(0.9);
-      expect(results[1]!.score).toBe(0.3);
+      expect(results[0]!.id).toBe('m2');
+      expect(results[1]!.id).toBe('m1');
     });
 
     it('应尊重 limit 参数', () => {
       for (let i = 0; i < 5; i++) {
         storage.upsert({
-          ...makeMemory(`m${i}`, 'content', 0.5),
+          ...makeMemory(`m${i}`, 'content'),
           content: `TypeScript 内容 ${i}`,
         });
       }

@@ -12,11 +12,11 @@ import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 // LLM judge 高阶函数（流式累积 + parseLlmJson + configError 封装）
 import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
-import { byScoreDesc } from '@/utils/array.js';
+import { byAccessedDesc } from '@/utils/array.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
-// 治理常量 SSOT（治理源列表 + 健康度阈值，统一由 governance.ts 维护）
-import { GOVERNANCE_SOURCES, SOURCE_HEALTH_THRESHOLDS } from '@/memory/governance.js';
+// 治理源列表 SSOT（设定记忆已归角色包）
+import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -38,28 +38,19 @@ const CONFLICT_CONTENT_PREVIEW_LEN = 200;
 
 // ─── 类型 ────────────────────────────────────────────────
 
-/** 记忆源健康状态 */
-export type SourceHealthStatus = 'healthy' | 'warning' | 'critical';
-
-/** 单个 source 的健康指标 */
+/** 单个 source 的事实观测指标（纯事实，不做健康等级判定） */
 export interface SourceHealthEntry {
   source: string;
   /** 记忆数量 */
   count: number;
-  /** 平均 score（0-1） */
-  avgScore: number;
-  /** 距上次访问的天数（取该 source 中最近访问的记忆） */
+  /** 距上次访问的天数（取该 source 中最近访问的记忆，冷记忆观测） */
   daysSinceLastAccess: number;
-  /** 健康状态：healthy（score≥0.5 且 7 天内有访问）/ warning（score<0.5 或 7-30 天未访问）/ critical（score<0.2 或 30 天以上未访问） */
-  status: SourceHealthStatus;
 }
 
-/** 记忆源健康诊断报告 */
+/** 记忆源诊断报告（纯事实观测，2026-09-09 弃用 status：score 退役后 avgScore 无数据源，记忆健康由 supersede/命中体现） */
 export interface SourceHealthReport {
-  /** 各 source 健康指标 */
+  /** 各 source 事实观测 */
   sources: SourceHealthEntry[];
-  /** 整体健康状态（取最差 source 的状态） */
-  overallStatus: SourceHealthStatus;
   /** 诊断时间（ISO 8601） */
   diagnosedAt: string;
 }
@@ -70,8 +61,6 @@ export interface SuggestOptions {
   limit?: number;
   /** 排除的 source 标签（默认空数组——设定记忆已归角色包，不再参与召回排除） */
   excludeSources?: string[];
-  /** 时效性权重（0-1，默认 0.3）：越高越偏好最近访问的记忆 */
-  recencyWeight?: number;
 }
 
 /** 关联推荐结果 */
@@ -81,7 +70,7 @@ export interface SuggestHit {
   name: string;
   /** 来源标签 */
   source: string;
-  /** 推荐分数（0-1，由 score + recency 综合计算） */
+  /** 推荐分数（0-1，score 退役后为纯时效 recency） */
   relevance: number;
   /** 内容预览（截断到 120 字符） */
   contentPreview: string;
@@ -140,15 +129,12 @@ export class MemoryAdvisor {
   // ─── 源健康诊断 ─────────────────────────────────────────
 
   /**
-   * 记忆源健康诊断：逐 source 计算数量/平均 score/最近访问天数/状态，助宿主判断是否需要清理或补充。
-   * 状态判定：healthy=avgScore≥0.5；warning=avgScore<0.5；critical=avgScore<0.2。
-   * 纪律（D7 / ADR-025）：仅按**语义状态**（平均 score）判定，时间不参与——久未访问不构成「过期/沉底」；
-   * daysSinceLastAccess 仅作事实展示，不驱动状态（2026-09-09 移除原 7/30 天时间分支）。
+   * 记忆源健康诊断：逐 source 计算记忆数量 / 最近访问天数（纯事实观测）。
+   * 2026-09-09 弃用 status 健康等级：score 退役后 avgScore 无数据源，且 G34 定性记忆无沉底语义，
+   * 记忆健康由 supersede（写时取代）/ 命中体现，无需榜单级 status 判定（daysSinceLastAccess 作冷记忆观测）。
    * 纯只读同步不调 LLM，用 getAllSources() 发现所有 source 标签（替代全量 search）。
    */
   sourceHealth(): SourceHealthReport {
-    const now = Date.now();
-
     // 获取所有有数据的 source 标签
     const sourceMap = this.index.getAllSources();
     const sourceSet = new Set<string>();
@@ -161,48 +147,25 @@ export class MemoryAdvisor {
       const memories = this.index.getBySource(source);
       const count = memories.length;
 
-      const avgScore = count > 0
-        ? memories.reduce((sum, m) => sum + m.score, 0) / count
-        : 0;
-
       // 最近访问时间（取该 source 中最新 accessedAt）
       const latestAccess = memories
         .map((m) => new Date(m.accessedAt).getTime())
         .filter((t) => !isNaN(t))
         .sort((a, b) => b - a)[0] ?? 0;
       const daysSinceLastAccess = latestAccess > 0
-        ? (now - latestAccess) / ONE_DAY_MS
+        ? (Date.now() - latestAccess) / ONE_DAY_MS
         : Infinity;
-
-      // 健康状态判定
-      let status: SourceHealthStatus;
-      if (avgScore < SOURCE_HEALTH_THRESHOLDS.CRITICAL_SCORE) {
-        status = 'critical';
-      } else if (avgScore < SOURCE_HEALTH_THRESHOLDS.WARNING_SCORE) {
-        status = 'warning';
-      } else {
-        status = 'healthy';
-      }
 
       entries.push({
         source,
         count,
-        avgScore: roundTo(avgScore, 3),
         daysSinceLastAccess: roundTo(daysSinceLastAccess, 1),
-        status,
       });
     }
 
-    // 整体状态取最差 source
-    const statusPriority: Record<SourceHealthStatus, number> = { healthy: 0, warning: 1, critical: 2 };
-    const overallStatus = entries.reduce<SourceHealthStatus>(
-      (worst, e) => statusPriority[e.status] > statusPriority[worst] ? e.status : worst,
-      'healthy',
-    );
-
     return {
-      sources: entries.sort((a, b) => statusPriority[b.status] - statusPriority[a.status]),
-      overallStatus,
+      // 按 source 名稳定排序（保证输出可预期；无关健康等级）
+      sources: entries.sort((a, b) => a.source.localeCompare(b.source)),
       diagnosedAt: nowIso(),
     };
   }
@@ -210,17 +173,16 @@ export class MemoryAdvisor {
   // ─── 关联推荐 ─────────────────────────────────────────
 
   /**
-   * 关联推荐：不调 LLM 纯计算，综合 score（权重）+ accessedAt（时效）+ source 多样性，
-   * 返回"相关但尚未直接搜索到"的记忆。query 提供时结合搜索命中推荐，省略时基于全局热度。
+   * 关联推荐：不调 LLM 纯计算，综合 accessedAt（时效）+ source 多样性，
+   * 返回"相关但尚未直接搜索到"的记忆。query 提供时结合搜索命中推荐，省略时基于最近使用。
+   * score 已退役（2026-09-09 阶段3），relevance 退化为纯时效（recency）
    */
   suggest(query?: string, options: SuggestOptions = {}): SuggestHit[] {
     const {
       limit = 5,
       excludeSources = [...DEFAULT_RECALL_EXCLUDE_SOURCES],
-      recencyWeight = 0.3,
     } = options;
 
-    const scoreWeight = 1 - recencyWeight;
     const now = Date.now();
 
     // 收集候选记忆
@@ -241,8 +203,8 @@ export class MemoryAdvisor {
       const count = this.index.countBySource(source);
       if (count > 0 && !excludeSources.includes(source)) {
         const memories = this.index.getBySource(source);
-        // 取 score 最高的前 N 条
-        const top = memories.sort(byScoreDesc).slice(0, SUGGEST_TOP_PER_SOURCE);
+        // 取最近使用的前 N 条（score 退役后按 accessedAt 降序）
+        const top = memories.sort(byAccessedDesc).slice(0, SUGGEST_TOP_PER_SOURCE);
         for (const m of top) {
           if (!candidates.has(m.id)) {
             candidates.set(m.id, { memory: m, searchHit: false });
@@ -256,14 +218,12 @@ export class MemoryAdvisor {
     const scored: Array<{ memory: Memory; searchHit: boolean; relevance: number; reason: string }> = [];
 
     for (const { memory, searchHit } of candidates.values()) {
-      // 时效性分：窗口内线性衰减，超过窗口归零
+      // 时效性分：窗口内线性衰减，超过窗口归零；score 退役后 relevance 即纯时效
       const accessedAt = new Date(memory.accessedAt);
       const daysSinceAccess = isNaN(accessedAt.getTime())
         ? SUGGEST_RECENCY_WINDOW_DAYS
         : (now - accessedAt.getTime()) / ONE_DAY_MS;
-      const recency = Math.max(0, 1 - daysSinceAccess / SUGGEST_RECENCY_WINDOW_DAYS);
-
-      const relevance = memory.score * scoreWeight + recency * recencyWeight;
+      const relevance = Math.max(0, 1 - daysSinceAccess / SUGGEST_RECENCY_WINDOW_DAYS);
 
       // 生成推荐理由
       let reason: string;
@@ -271,8 +231,6 @@ export class MemoryAdvisor {
         reason = '与搜索相关';
       } else if (daysSinceAccess < 1) {
         reason = '最近访问';
-      } else if (memory.score >= 0.8) {
-        reason = '高频记忆';
       } else {
         reason = `${memory.source} 推荐`;
       }
@@ -317,8 +275,8 @@ export class MemoryAdvisor {
     const candidates: Memory[] = [];
     for (const source of this.sources) {
       const memories = this.index.getBySource(source);
-      // 按 score 降序取 top N
-      const top = memories.sort(byScoreDesc).slice(0, CONFLICT_CANDIDATES_PER_SOURCE);
+      // 按 accessedAt 降序取 top N（score 退役后按最近使用采样）
+      const top = memories.sort(byAccessedDesc).slice(0, CONFLICT_CANDIDATES_PER_SOURCE);
       candidates.push(...top);
     }
 
@@ -483,13 +441,13 @@ function buildConflictMessages(memoryA: Memory, memoryB: Memory): Message[] {
       role: 'user',
       content: `请判断以下两条记忆是否存在语义冲突：
 
-记忆 A（score: ${memoryA.score}）：
+记忆 A：
 - 名称：${memoryA.name}
 - 来源：${memoryA.source}
 - 创建时间：${memoryA.createdAt}
 - 内容：${contentA}
 
-记忆 B（score: ${memoryB.score}）：
+记忆 B：
 - 名称：${memoryB.name}
 - 来源：${memoryB.source}
 - 创建时间：${memoryB.createdAt}

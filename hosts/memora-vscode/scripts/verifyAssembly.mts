@@ -71,7 +71,6 @@ const MEMORY: Memory = {
   name: '决策',
   source: 'content',
   content: '我们决定记忆存储用 JSON 文件，保持零依赖',
-  score: 0.9,
 };
 
 /** 输出一项检查结果 */

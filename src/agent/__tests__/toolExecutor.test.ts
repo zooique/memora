@@ -53,7 +53,6 @@ describe('工具执行器（6 个工具）', () => {
       name: 'core-rule',
       createdAt: '2026-06-01T00:00:00Z',
       accessedAt: '2026-06-01T00:00:00Z',
-      score: 0.9,
     });
     await index.upsert({
       id: 'mem-2',
@@ -62,7 +61,6 @@ describe('工具执行器（6 个工具）', () => {
       name: 'typescript-skill',
       createdAt: '2026-06-01T00:00:00Z',
       accessedAt: '2026-06-01T00:00:00Z',
-      score: 0.7,
     });
 
     executor = new ToolExecutor(tmpProject, security, index);

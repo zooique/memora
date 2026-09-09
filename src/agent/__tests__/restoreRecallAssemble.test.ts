@@ -179,7 +179,6 @@ describe('全链路：恢复 → 召回 → 装配（Agent 门面层）', () => 
       name: 'integration:r0',
       createdAt: new Date().toISOString(),
       accessedAt: new Date().toISOString(),
-      score: 0.6,
     });
 
     // 事件监听：验证 warmRecall 发射 memoryRecalled

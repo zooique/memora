@@ -109,7 +109,6 @@ describe('垃圾回收服务', () => {
         name: round.id,
         createdAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
-        score: 0.8,
       };
       memoryStorage.upsert(summaryMemory);
 
@@ -189,7 +188,6 @@ describe('垃圾回收服务', () => {
         name: round.id,
         createdAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
-        score: 0.5,
       };
       memoryStorage.upsert(summaryMemory);
 
@@ -327,7 +325,7 @@ describe('垃圾回收服务', () => {
         source: 'round-summary',
         name: round.id,
         createdAt: new Date().toISOString(),
-        score: 0.5,
+        accessedAt: new Date().toISOString(),
       } as Memory);
 
       gcWithVector.run();

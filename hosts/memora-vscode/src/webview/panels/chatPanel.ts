@@ -693,7 +693,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'notice', level: 'info', message: `记忆归档失败（${info.stage}）：${info.message}` });
   };
 
-  /** boostPersistFailed：boost score 持久化失败（记忆权重可能丢失） */
+  /** boostPersistFailed：记忆权重持久化失败（score 已物理退役，监听为兼容内核事件保留） */
   private readonly onBoostPersistFailed = (info: { message: string }): void => {
     this.post({ type: 'notice', level: 'info', message: `记忆权重保存失败：${info.message}` });
   };
@@ -2840,7 +2840,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 推送 Follow-up 建议（2026-08-17，T2：回复后关联推荐）
    *
-   * 复用内核 governance.suggest()——零 LLM、纯计算（基于记忆库 score + 时效 + 多样性，
+   * 复用内核 governance.suggest()——零 LLM、纯计算（基于记忆库 accessedAt 时效 + 多样性，
    * 见 memoryAdvisor.suggest），把「与你当前关注相关但未直接搜到」的记忆映射为
    * 「下一步可探索」chips 推给 webview。记忆名作 chip 标签（label），prompt 为填入输入框
    * 的完整下一步提问。记忆库为空/未装配（governance null）时不推送（webview 无建议块）。

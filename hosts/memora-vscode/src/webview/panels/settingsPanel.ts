@@ -672,9 +672,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /**
    * 记忆列表翻页（memory_page，2026-09-08 分页组件）
    *
-   * MemoryInspector.list 按 score 降序；翻页取「前 page*pageSize 条」后切出目标页——
+   * MemoryInspector.list 按 accessedAt 降序；翻页取「前 page*pageSize 条」后切出目标页——
    * 复用唯一检索入口（inMemoryStorage.search），零内核改动；页面浏览期间记忆库静止，
-   * score 排序稳定，前页数据与首屏 memory_loaded 一致。
+   * accessedAt 排序稳定，前页数据与首屏 memory_loaded 一致。
    */
   private async loadMemoryPage(page: number, pageSize: number): Promise<void> {
     const memory = await this.ensureMemory();
@@ -1222,9 +1222,9 @@ function toItemDto(m: {
   id: string;
   name: string;
   source: string;
-  score: number;
   content: string;
   createdAt?: string;
+  accessedAt?: string;
   deletedAt?: string;
   summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
   sessionName?: string;
@@ -1236,9 +1236,9 @@ function toItemDto(m: {
     id: m.id,
     name: m.name,
     source: m.source,
-    score: m.score,
     content: m.content,
     createdAt: m.createdAt,
+    accessedAt: m.accessedAt,
     deletedAt: m.deletedAt,
     summaryType: m.summaryType,
     sessionName: m.sessionName,
@@ -1248,22 +1248,24 @@ function toItemDto(m: {
   };
 }
 
-/** 内核 AgentSearchHit → 记忆条目 DTO */
+/** 内核 AgentSearchHit → 记忆条目 DTO（透传 similarity 语义相似度 + accessedAt 排序依据） */
 function toSearchDto(h: {
   id: string;
   name: string;
   source: string;
-  score: number;
   contentPreview: string;
   createdAt?: string;
+  accessedAt?: string;
+  similarity?: number;
 }): MemoryItemDto {
   return {
     id: h.id,
     name: h.name,
     source: h.source,
-    score: h.score,
     content: h.contentPreview,
     createdAt: h.createdAt,
+    accessedAt: h.accessedAt,
+    similarity: h.similarity,
   };
 }
 

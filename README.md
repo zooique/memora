@@ -161,9 +161,9 @@ console.log(`去重 ${report.deduplicatedCount} 条`);
 
 const conflicts = await agent.governance.detectConflicts();
 
-// 来源健康诊断（纯计算，不调 LLM）：逐 source 统计数量 / 平均 score / 状态
+// 来源健康诊断（纯计算，不调 LLM）：逐 source 统计数量 / 距最近访问天数（score 退役后仅存事实观测）
 const health = agent.governance.sourceHealth();
-console.log(health?.overallStatus);
+console.log(health?.sources);
 ```
 
 ### 关闭

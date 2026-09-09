@@ -196,7 +196,6 @@ describe('宿主集成端到端测试', () => {
         name: '测试记忆',
         content: '这是一条测试记忆内容',
         source: 'user',
-        score: 1,
         createdAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
       });

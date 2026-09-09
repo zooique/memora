@@ -5,19 +5,13 @@
  *   - GOVERNANCE_SOURCES 治理源为空（记忆库唯一自动轨 round-summary 不入治理源，
  *     其治理由 superseded 写时取代承担；content 历史残留 source 已清空）
  *   - 不含配置型 source（persona / rule / skill）
- *   - score 边界常量数值正确（提升量 / 上限 / 下限）
  *   - 常量不可变（readonly 约束 + 值锁定）
  *
- * 这些常量是 recall.ts / WorkspaceStorage / memoryInspector.ts 等多模块的
- * 共享真理源，值漂移会导致跨层行为不一致，需测试锁定契约。
+ * 注：score 边界常量（BOOST_INCREMENT / SCORE_CEILING / SCORE_FLOOR）已随阶段3
+ * score 物理退役删除（2026-09-09），本文件不再承载对应契约。
  */
 import { describe, expect, it } from 'vitest';
-import {
-  GOVERNANCE_SOURCES,
-  BOOST_INCREMENT,
-  SCORE_CEILING,
-  SCORE_FLOOR,
-} from '@/memory/governance.js';
+import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
@@ -48,33 +42,6 @@ describe('memory/governance · 常量契约', () => {
 
     it('不应包含 round-summary（事实记录语义，治理由 superseded 取代承担）', () => {
       expect(GOVERNANCE_SOURCES).not.toContain('round-summary');
-    });
-  });
-
-  describe('score 边界常量', () => {
-    it('BOOST_INCREMENT 应为 0.05（越常用越重要）', () => {
-      expect(BOOST_INCREMENT).toBe(0.05);
-    });
-
-    it('SCORE_CEILING 应为 1.0（boost 上限）', () => {
-      expect(SCORE_CEILING).toBe(1.0);
-    });
-
-    it('SCORE_FLOOR 应为 0.1（score 下限）', () => {
-      expect(SCORE_FLOOR).toBe(0.1);
-    });
-
-    it('BOOST_INCREMENT 应小于 SCORE_CEILING（提升量不会一步到顶）', () => {
-      // 契约约束：单次 boost 不应超过上限，否则 clamp 逻辑无意义
-      expect(BOOST_INCREMENT).toBeLessThan(SCORE_CEILING);
-    });
-
-    it('SCORE_FLOOR 应小于 SCORE_CEILING（下限低于上限）', () => {
-      expect(SCORE_FLOOR).toBeLessThan(SCORE_CEILING);
-    });
-
-    it('SCORE_FLOOR 应为正数（score 不会降到负数）', () => {
-      expect(SCORE_FLOOR).toBeGreaterThan(0);
     });
   });
 });

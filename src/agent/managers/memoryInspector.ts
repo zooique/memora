@@ -10,14 +10,11 @@ import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
-import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 // 融合排序算法 + 常量从 hybridMerge 导入（消除对 recall.ts 内部常量的依赖）
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
-// LLM 治理共享常量（统一由 governance.ts 维护）
-import { BOOST_INCREMENT } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -59,8 +56,6 @@ export interface BootstrapSnapshot {
     source: string;
     name: string;
     contentPreview: string;
-    /** 权重（0-1） */
-    score: number;
   }>;
 }
 
@@ -84,8 +79,6 @@ export interface AgentSearchHit {
   name: string;
   /** 来源标签 */
   source: string;
-  /** 权重（0-1） */
-  score: number;
   /** 内容预览（截断到 120 字符） */
   contentPreview: string;
   /** 语义相似度（0-1，仅 searchHybrid 返回） */
@@ -151,7 +144,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 列出所有记忆（供宿主记忆管理面板）。允许空查询，返回按 score 降序列表。
+   * 列出所有记忆（供宿主记忆管理面板）。允许空查询，返回按 accessedAt 降序列表。
    * search() 拒绝空查询防"静默全量返回"误用；list() 是显式声明列举全部。
    */
   list(limit = 50): Memory[] {
@@ -222,7 +215,6 @@ export class MemoryInspector {
       id: m.id,
       name: m.name,
       source: m.source,
-      score: m.score,
       // 截断长内容到搜索预览长度
       contentPreview: truncate(m.content, SEARCH_PREVIEW_LEN),
       createdAt: m.createdAt,
@@ -305,7 +297,6 @@ export class MemoryInspector {
       id: memory.id,
       name: memory.name,
       source: memory.source,
-      score: memory.score,
       similarity: vectorScore,
       contentPreview: truncate(memory.content, SEARCH_PREVIEW_LEN),
       createdAt: memory.createdAt,
@@ -339,15 +330,6 @@ export class MemoryInspector {
   /** 插入或更新记忆 */
   writeUpsert(memory: Memory): void {
     this.index.upsert(memory);
-  }
-
-  /**
-   * 提升记忆 score（L2 采纳反哺内核）：用户采纳候选后反哺，与 recall 的 boostScore 语义一致但触发主动。
-   * 记忆不存在时静默返回 false（候选可能来自对话历史，无对应记忆）。
-   */
-  writeBoost(id: string, increment: number = BOOST_INCREMENT): boolean {
-    // 用 incrementScore 原子操作，消除 read-modify-write 并发冲突（存储层一条原子更新）
-    return this.index.incrementScore(id, increment, nowIso());
   }
 
   /** 软删除记忆（写入 deletedAt） */

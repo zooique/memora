@@ -47,7 +47,7 @@ export const memoryStyles = `
   #memory-root .mem-card:hover { border-color: var(--text-secondary, #9aa0a6); }
   #memory-root .mem-card.expanded { border-color: var(--accent, #0e639c); }
 
-  /* 卡片头部：名称 + source 徽章 + score */
+  /* 卡片头部：名称 + source 徽章 + 类型徽章 */
   #memory-root .mem-card-head {
     display: flex;
     align-items: center;
@@ -106,15 +106,6 @@ export const memoryStyles = `
   }
   #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
   #memory-root .tag-modified { background: rgba(204,167,0,.15); color: var(--warn, #cca700); }
-
-  /* score 点：圆点指示记忆权重（越高越实心） */
-  #memory-root .score-dot {
-    width: 6px; height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-    background: var(--text-secondary, #9aa0a6);
-  }
-  #memory-root .score-dot-high { background: var(--accent, #0e639c); }
 
   /* 内容预览：单行截断，供快速扫读 */
   #memory-root .mem-card-preview {

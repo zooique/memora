@@ -24,8 +24,6 @@ const USER_INPUT_LIMIT = 500;
 const ASSISTANT_LIMIT = 2000;
 /** 摘要内容截断上限（字符） */
 const SUMMARY_CONTENT_LIMIT = 500;
-/** 默认摘要 score */
-const DEFAULT_SUMMARY_SCORE = 0.5;
 /** 取代检测的关键词重叠率阈值：同 session 新旧摘要关键词 Jaccard 重叠率≥此值则旧摘要被新摘要覆盖（打 supersededBy 标记，非删除） */
 const SUPERSEDE_OVERLAP_THRESHOLD = 0.5;
 
@@ -159,7 +157,6 @@ export class RoundSummaryGenerator {
         name: `轮次摘要 ${sessionName} ${roundId}`,
         createdAt: now,
         accessedAt: now,
-        score: DEFAULT_SUMMARY_SCORE,
         summaryType,
         sessionName,
         roundId,

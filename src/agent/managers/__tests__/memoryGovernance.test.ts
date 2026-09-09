@@ -125,7 +125,6 @@ describe('MemoryGovernance', () => {
     it('sourceHealth() 委托 memoryAdvisor.sourceHealth()', () => {
       const expectedReport: SourceHealthReport = {
         sources: [],
-        overallStatus: 'healthy',
         diagnosedAt: '2026-07-30T00:00:00.000Z',
       };
       const mockAdvisor = createMockMemoryAdvisor(expectedReport);

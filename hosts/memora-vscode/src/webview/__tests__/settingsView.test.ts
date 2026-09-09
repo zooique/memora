@@ -183,7 +183,6 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
       id: 'round-summary:设计决策',
       name: '设计决策',
       source: 'round-summary',
-      score: 0.9,
       content: '确认合并选项卡。',
     };
     window.dispatchEvent(

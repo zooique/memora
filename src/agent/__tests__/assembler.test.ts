@@ -261,7 +261,6 @@ describe('assembleComponents', () => {
         name: 'concise-reply',
         createdAt: '2026-06-27T10:00:00.000Z',
         accessedAt: '2026-06-27T10:00:00.000Z',
-        score: 0.8,
       };
       const pctx = createPctx({ bootstrapMemories: [bootstrapMemory] });
 

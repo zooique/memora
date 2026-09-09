@@ -23,7 +23,7 @@ function stubRecall(mocks: SeedMocks, memories: Memory[]): void {
 }
 
 const rec = (id: string): Memory =>
-  ({ id, content: `记忆${id}`, source: 'round-summary', score: 1, createdAt: '2026-08-20T00:00:00Z' }) as Memory;
+  ({ id, content: `记忆${id}`, source: 'round-summary', name: id, createdAt: '2026-08-20T00:00:00Z', accessedAt: '2026-08-20T00:00:00Z' }) as Memory;
 
 describe('SeedPrepare 回答前', () => {
   it('策略装配：装配上下文 → L2 策略注入 → 工具暴露 → 返回 recalledMemories', async () => {

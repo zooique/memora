@@ -1,7 +1,7 @@
 /**
- * 语义去重管理器 — L1 记忆治理子系统（从 MemoryInspector 拆分，专责异步 LLM 语义去重）。
+ * 记忆治理管理者（从 MemoryInspector 拆分，专责异步 LLM 语义去重）。
  * 职责分离：MemoryInspector 纯存储读写，DedupManager 异步 LLM 治理。
- * 设计原则：未注入 provider 时静默降级返回报告不抛错；不物理删除仅降 score 保留可恢复性；不阻塞主对话热路径。
+ * 设计原则：未注入 provider 时静默降级返回报告不抛错；不物理删除仅软删重复方保留可恢复性；不阻塞主对话热路径。
  */
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -11,7 +11,7 @@ import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 // LLM 治理共享常量（统一由 governance.ts 维护）
 import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 import { levenshtein } from '@/memory/sourceValidation.js';
-import { byScoreDesc } from '@/utils/array.js';
+import { byAccessedDesc } from '@/utils/array.js';
 import { nowIso } from '@/utils/time.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
@@ -25,8 +25,6 @@ const DEDUP_PAIR_LIMIT = 10;
 const DEDUP_NAME_SIMILARITY_THRESHOLD = 0.3;
 /** LLM 去重判断超时（ms） */
 const DEDUP_TIMEOUT_MS = 15_000;
-/** 判定为重复的记忆降级到此 score（接近 0 但保留可恢复性，不物理删除） */
-const DEDUP_LOW_SCORE = 0.1;
 /** 候选内容预览长度（送入 LLM 前截断，控制 token） */
 const DEDUP_CONTENT_PREVIEW_LEN = 200;
 
@@ -34,9 +32,9 @@ const DEDUP_CONTENT_PREVIEW_LEN = 200;
 
 /** 名称高度相似的候选记忆对（待 LLM 判断语义等价性） */
 export interface DedupPair {
-  /** 记忆 A（score 较高，保留候选） */
+  /** 记忆 A（保留候选） */
   a: Memory;
-  /** 记忆 B（score 较低，降级候选） */
+  /** 记忆 B（重复方，软删候选） */
   b: Memory;
   /** 名称归一化相似度（0-1，越小越相似） */
   nameSimilarity: number;
@@ -44,7 +42,7 @@ export interface DedupPair {
 
 /** LLM 对单对记忆的语义等价判断结果 */
 export interface DedupVerdict {
-  /** 是否语义等价（true → 降级低分记忆） */
+  /** 是否语义等价（true → 软删重复方） */
   isDuplicate: boolean;
   /** 合并后的内容（isDuplicate=true 时提供，保留更完整信息） */
   mergedContent?: string;
@@ -99,8 +97,8 @@ export class DedupManager {
   }
 
   /**
-   * 语义去重：加载候选（上限 50）→ 名称相似度筛选对（上限 10）→ LLM 判断语义等价 → 等价则降级低分方。
-   * 安全设计：不物理删除仅降 score（可恢复）；LLM 失败降级不阻塞；provider 未注入静默返回 skippedReason。
+   * 语义去重：加载候选（上限 50）→ 名称相似度筛选对（上限 10）→ LLM 判断语义等价 → 等价则软删重复方。
+   * 安全设计：不物理删除仅软删（可恢复）；LLM 失败降级不阻塞；provider 未注入静默返回 skippedReason。
    */
   async deduplicateMemories(signal?: AbortSignal): Promise<DedupReport> {
     // provider 未注入时静默降级
@@ -119,8 +117,8 @@ export class DedupManager {
       const memories = this.index.getBySource(source);
       candidates.push(...memories);
     }
-    // 按 score 降序，优先处理高分记忆（更可能产生重复）
-    candidates.sort(byScoreDesc);
+    // 按 accessedAt 降序（最近使用优先，score 退役后无分可排序）
+    candidates.sort(byAccessedDesc);
     const limited = candidates.slice(0, DEDUP_CANDIDATE_LIMIT);
 
     const pairs = this.findNameOverlapPairs(limited);
@@ -146,7 +144,7 @@ export class DedupManager {
           if (verdict.mergedContent) {
             this.keepMerged(pair.a, verdict.mergedContent);
           }
-          // b 的 score ≤ a（candidates 已按 score 降序），降级低分方
+          // 重复方软删（score 退役后无降级语义，soft-delete 保留可恢复）
           this.demoteMemory(pair.b);
           demotedIds.push(pair.b.id);
           // 收集审计详情（供 UI 展示"为什么降级"和"合并后保留了什么"）
@@ -259,13 +257,12 @@ export class DedupManager {
     };
   }
 
-  /** 降级重复记忆（score → DEDUP_LOW_SCORE）。不物理删除仅降分保留可恢复；合并内容由 keepMerged 单独写回 a。 */
+  /** 软删重复记忆（不物理删除保留可恢复；合并内容由 keepMerged 单独写回 a）。score 退役后弃用降级，代之以 delete 进入回收站。 */
   private demoteMemory(memory: Memory): void {
-    // 用 setScore 原子操作，避免 spread 旧快照覆盖期间被 boost 改动的字段
-    this.index.setScore(memory.id, DEDUP_LOW_SCORE, nowIso());
+    this.index.delete(memory.id);
   }
 
-  /** 将合并内容写回保留方 a：保持 id/source/name/score/createdAt 不变，仅刷新 content + accessedAt */
+  /** 将合并内容写回保留方 a：保持 id/source/name/createdAt 不变，仅刷新 content + accessedAt */
   private keepMerged(memory: Memory, mergedContent: string): void {
     const updated: Memory = {
       ...memory,
@@ -319,12 +316,12 @@ function buildDedupMessages(pair: DedupPair): Message[] {
       role: 'user',
       content: `请判断以下两条记忆是否语义等价：
 
-记忆 A（score: ${pair.a.score}，保留候选）：
+记忆 A（保留候选）：
 - 名称：${pair.a.name}
 - 来源：${pair.a.source}
 - 内容：${contentA}
 
-记忆 B（score: ${pair.b.score}，降级候选）：
+记忆 B（重复候选）：
 - 名称：${pair.b.name}
 - 来源：${pair.b.source}
 - 内容：${contentB}

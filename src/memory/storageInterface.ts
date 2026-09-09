@@ -66,7 +66,7 @@ export interface IMemoryStorage {
 
   /**
    * 关键词搜索活跃记忆。宿主实现：Intl.Segmenter 分词 + 停用词过滤，
-   * LIKE 匹配 content/name，按 score 降序返回 top N。
+   * LIKE 匹配 content/name，按 accessedAt 降序（最近使用优先）返回 top N。
    * InMemoryStorage 用 segmentText() 分词 + includes 匹配（与 SqliteStorage 一致）
    * @param limit - 返回上限（默认 10）
    */
@@ -81,19 +81,11 @@ export interface IMemoryStorage {
   countBySource(source: string): number;
 
   /**
-   * 原子增加记忆 score：score = clamp(score + delta, SCORE_FLOOR, SCORE_CEILING)，
-   * 同时更新 accessedAt 为 now；消除 boost 路径 read-modify-write 并发冲突，
-   * 宿主用一条 SQL UPDATE 完成
+   * 刷新记忆 accessedAt（使用轨迹写位）。score 退役后（2026-09-09 阶段3）唯一写位，
+   * 召回命中 / 工具命中经此「被想起即刷新」；toSetting 不 +score/delta，无 clamp 语义。
    * @returns 记忆不存在/软删除时返回 false，成功返回 true
    */
-  incrementScore(id: string, delta: number, now: string): boolean;
-
-  /**
-   * 原子设置 score 绝对值：直接设 newScore（不 clamp，调用方负责传合法值），
-   * 同时更新 accessedAt；用于 demote 场景避免 spread 旧快照覆盖 content 等字段
-   * @returns 记忆不存在/软删除时返回 false，成功返回 true
-   */
-  setScore(id: string, newScore: number, now: string): boolean;
+  touch(id: string, now: string): boolean;
 
   /**
    * 获取所有 source 标签及活跃记忆数量；替代 stats()/sourceHealth() 的全量遍历，

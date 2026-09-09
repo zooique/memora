@@ -33,7 +33,7 @@ function seedSummary(storage: InMemoryStorage, roundId: string): void {
     source: 'round-summary',
     name: roundId,
     createdAt: new Date().toISOString(),
-    score: 0.5,
+    accessedAt: new Date().toISOString(),
   } as Memory);
 }
 

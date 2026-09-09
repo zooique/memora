@@ -30,7 +30,6 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'test-memory',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',
-    score: 0.8,
     ...overrides,
   };
 }
@@ -93,7 +92,7 @@ describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
     const { preparer, storage } = makePreparer();
     // 记忆检索已移交 LLM 主动 memory_search 工具；prepare 期不再代模型召回注入
     vi.mocked(storage.search).mockReturnValue([
-      makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
+      makeMemory({ id: 'cross:1', source: 'content' }),
     ]);
 
     const memories = await preparer.recallAndInject('查询');

@@ -64,7 +64,6 @@ export function loadBenchmarkSeed(storage: InMemoryStorage): void {
       name: `${s.id} 种子`,
       content: s.content,
       source: s.source,
-      score: 0.7,
     };
     if (s.source === 'round-summary') {
       storage.upsert({ ...base, sessionName: BENCH_SESSION, roundId: OLD_ROUND });

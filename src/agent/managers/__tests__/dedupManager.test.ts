@@ -6,7 +6,7 @@
  * 旧实现生成 mergedContent 却从不写回，合并实为死代码。
  *
  * 通过 mock IMemoryStorage + mock LlmProvider 驱动 deduplicateMemories，
- * 断言保留方内容被覆盖、降级方 score 降至低分。
+ * 断言保留方内容被覆盖、降级方被软删（score 已物理退役，降级改由 delete 承担）。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { DedupManager } from '@/agent/managers/dedupManager.js';
@@ -18,8 +18,7 @@ import { SOURCE_LABELS } from '@/memory/types.js';
 /**
  * 创建内存版 IMemoryStorage mock（与 workProjection.test.ts 同模式）
  *
- * 补齐 setScore/incrementScore 原子操作实现，
- * 让 demoteMemory 的 setScore 调用真正写入 store，保证 getById 能读到新 score。
+ * score 退役后 demoteMemory 走 delete 软删路径，mock 只需实现写读基础操作。
  */
 const createMockStorage = (): IMemoryStorage => {
   const store = new Map<string, Memory>();
@@ -37,22 +36,6 @@ const createMockStorage = (): IMemoryStorage => {
     count: () => store.size,
     countBySource: (source: string) =>
       Array.from(store.values()).filter((m) => m.source === source).length,
-    // setScore 原子更新 score + accessedAt（mock 层直接改内存对象）
-    setScore: (id: string, newScore: number, now: string): boolean => {
-      const memory = store.get(id);
-      if (!memory) return false;
-      memory.score = newScore;
-      memory.accessedAt = now;
-      return true;
-    },
-    // incrementScore 原子增量（clamp 到 [0.1, 1.0]，与 InMemoryStorage 一致）
-    incrementScore: (id: string, delta: number, now: string): boolean => {
-      const memory = store.get(id);
-      if (!memory) return false;
-      memory.score = Math.max(0.1, Math.min(1.0, memory.score + delta));
-      memory.accessedAt = now;
-      return true;
-    },
     getAllSources: () => new Map(),
     close: () => {},
   } as unknown as IMemoryStorage;
@@ -81,7 +64,6 @@ describe('DedupManager · M6 合并内容落库', () => {
       content: '用户偏好简洁 UI',
       createdAt: '2026-01-01T00:00:00.000Z',
       accessedAt: '2026-01-01T00:00:00.000Z',
-      score: 0.9, // 高分 → 保留方
     };
     const memB: Memory = {
       id: 'content:b',
@@ -90,7 +72,6 @@ describe('DedupManager · M6 合并内容落库', () => {
       content: '用户偏好简洁界面',
       createdAt: '2026-01-01T00:00:00.000Z',
       accessedAt: '2026-01-01T00:00:00.000Z',
-      score: 0.5, // 低分 → 降级方
     };
     storage.upsert(memA);
     storage.upsert(memB);
@@ -118,9 +99,9 @@ describe('DedupManager · M6 合并内容落库', () => {
     expect(kept).not.toBeNull();
     expect(kept!.content).toBe('合并后的完整偏好：简洁 UI');
 
-    // 降级方 b score 降至低分（不物理删除，保留可恢复性）
+    // 降级方 b 被软删（score 退役后不再降分，改由 delete 保留可恢复性）
     const demoted = storage.getById('content:b');
-    expect(demoted!.score).toBe(0.1);
+    expect(demoted).toBeNull();
   });
 
   it('未提供 mergedContent 时不应覆盖保留方内容', async () => {
@@ -133,7 +114,6 @@ describe('DedupManager · M6 合并内容落库', () => {
       content: '原始A内容',
       createdAt: '2026-01-01T00:00:00.000Z',
       accessedAt: '2026-01-01T00:00:00.000Z',
-      score: 0.9,
     };
     const memB: Memory = {
       id: 'content:b',
@@ -142,7 +122,6 @@ describe('DedupManager · M6 合并内容落库', () => {
       content: '原始B内容',
       createdAt: '2026-01-01T00:00:00.000Z',
       accessedAt: '2026-01-01T00:00:00.000Z',
-      score: 0.5,
     };
     storage.upsert(memA);
     storage.upsert(memB);
@@ -155,8 +134,8 @@ describe('DedupManager · M6 合并内容落库', () => {
     // When
     await manager.deduplicateMemories();
 
-    // Then - 保留方内容保持原样（仅降级方被降分）
+    // Then - 保留方内容保持原样（仅降级方被软删）
     expect(storage.getById('content:a')!.content).toBe('原始A内容');
-    expect(storage.getById('content:b')!.score).toBe(0.1);
+    expect(storage.getById('content:b')).toBeNull();
   });
 });

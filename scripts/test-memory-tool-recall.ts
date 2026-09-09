@@ -8,9 +8,9 @@
  *   1. search_memories 语义混合后端（searchHybrid）：返回结构化字段
  *      similarity / accessedAt / sessionId / roundId（round-summary 溯源揭示，LLM 零解析直用 trace_summary）
  *   2. supersededBy 过滤：被取代的摘要不作为当前事实返回（仍可溯源）
- *   3. 命中即 touch：search_memories 命中后 fire-and-forget 刷新 accessedAt，且 score 不变（只 touch 不 +score）
+ *   3. 命中即 touch：search_memories 命中后 fire-and-forget 刷新 accessedAt（score 已随阶段3 退役）
  *   4. memoryRecalled 事件：LLM 查询记忆命中 N 条 → 宿主感知（§2.4「保留改语义」）
- *   5. touchScores（warmRecall 收敛，§5.2）：增量 delta=0，仅刷新 accessedAt 不改 score
+ *   5. touchScores（warmRecall 收敛，§5.2）：仅刷新 accessedAt，无 score 写位
  *
  * 验收：脚本输出全部 ✅，process.exitCode = 0。
  * 注：本脚本是「机制实测」脚手架（验证链路可运行、字段可观测），不替代设计 §阶段1 的
@@ -45,7 +45,7 @@ function assert(condition: boolean, message: string): void {
 
 // ─── 测试夹具（复用内核测试的构造模式，SSOT：不造独立实现） ──
 
-/** 构造 Memory 对象（默认 source=content, score=0.5） */
+/** 构造 Memory 对象（默认 source=content） */
 function createMemory(overrides: Partial<Memory> = {}): Memory {
   return {
     id: 'test:default',
@@ -54,7 +54,6 @@ function createMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'default',
     createdAt: '2026-06-27T10:00:00.000Z',
     accessedAt: '2026-06-27T10:00:00.000Z',
-    score: 0.5,
     ...overrides,
   };
 }
@@ -176,26 +175,18 @@ async function main(): Promise<void> {
       `touch 刷新 accessedAt（前=${leakBefore?.accessedAt} 后=${leakAfter?.accessedAt}）`,
     );
     assert(
-      leakAfter !== null && leakAfter.score === leakBefore?.score,
-      `touch 不改 score（前=${leakBefore?.score} 后=${leakAfter?.score}）`,
-    );
-    assert(
       recalledEvent !== null && recalledEvent.count > 0 && recalledEvent.query === '内存泄漏',
       `memoryRecalled 事件发射（count=${recalledEvent?.count} query=${recalledEvent?.query}）`,
     );
 
-    // ─── 3. touchScores（warmRecall 收敛 §5.2）：只刷 accessedAt 不改 score ──
-    console.log('\n📋 3. touchScores（warmRecall 收敛）：incrementScore delta=0 → 只刷 accessedAt');
+    // ─── 3. touchScores（warmRecall 收敛 §5.2）：只刷 accessedAt（score 已随阶段3 退役） ──
+    console.log('\n📋 3. touchScores（warmRecall 收敛）：touch → 只刷 accessedAt');
     const target = storage.getById('round-summary:2026-09-01-main:r5');
     await touchScores(storage, [target?.id ?? ''], '2099-01-01T00:00:00.000Z');
     const touched = storage.getById('round-summary:2026-09-01-main:r5');
     assert(
       touched?.accessedAt === '2099-01-01T00:00:00.000Z',
       `touchScores 刷新 accessedAt（实际: ${touched?.accessedAt}）`,
-    );
-    assert(
-      touched?.score === target?.score,
-      `touchScores 不改 score（前=${target?.score} 后=${touched?.score}）`,
     );
 
     console.log(`\n🎉 演示完成（now=${nowIso()}）。`);

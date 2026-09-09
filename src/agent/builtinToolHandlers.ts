@@ -875,7 +875,6 @@ export class BuiltinToolHandlers {
             id: m.id,
             name: m.name,
             source: m.source,
-            score: m.score,
             contentPreview: m.content,
             // 溯源 roundId 用于互斥过滤（与 searchHybrid 排除口径一致）
             roundId: m.roundId,
@@ -917,7 +916,8 @@ export class BuiltinToolHandlers {
         : '';
       // 附语义相似度（语义后端可用时），供 LLM 评估贴合度
       const sim = m.similarity !== undefined ? ` sim=${m.similarity.toFixed(2)}` : '';
-      return `${i + 1}. [${m.source}:${m.name}] (score=${m.score}${sim}${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
+      // score 已随阶段3 物理退役（2026-09-09）：命中项不再展示 score，仅保留 sim/accessedAt/trace
+      return `${i + 1}. [${m.source}:${m.name}] (${sim}${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
     });
     return `搜索 "${query}" 找到 ${hits.length} 条${this.memoryInspector ? '（语义+关键词）' : `（${modeStr} 模式）`}：\n${lines.join('\n')}`;
   }

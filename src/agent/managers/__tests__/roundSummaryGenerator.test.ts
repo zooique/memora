@@ -43,7 +43,6 @@ function seedSummary(
     name: `轮次摘要 ${sessionName} ${roundId}`,
     createdAt: now,
     accessedAt: now,
-    score: 0.5,
     summaryType: type,
     sessionName,
     roundId,

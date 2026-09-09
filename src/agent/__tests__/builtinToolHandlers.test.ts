@@ -53,7 +53,7 @@ afterEach(async () => {
 });
 
 /**
- * 构造 Memory 对象（默认 source=content, score=0.5）
+ * 构造 Memory 对象（默认 source=content）
  * @param overrides - 字段覆写
  * @returns 完整 Memory 对象
  */
@@ -65,7 +65,6 @@ function createMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'default',
     createdAt: '2026-06-27T10:00:00.000Z',
     accessedAt: '2026-06-27T10:00:00.000Z',
-    score: 0.5,
     ...overrides,
   };
 }
@@ -447,7 +446,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         content: 'TypeScript 是一门语言',
         name: 'ts-note',
         source: 'content',
-        score: 0.8,
       }),
     );
     storage.upsert(
@@ -456,7 +454,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         content: 'Python 也很流行',
         name: 'py-note',
         source: 'content',
-        score: 0.6,
       }),
     );
   });
@@ -501,10 +498,9 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     expect(result).toContain('未找到');
   });
 
-  it('返回格式包含序号 + source:name + score + preview', async () => {
+  it('返回格式包含序号 + source:name + preview', async () => {
     const result = await handlers.searchMemories('TypeScript', '10', 'match');
     expect(result).toContain('[content:ts-note]');
-    expect(result).toContain('score=0.8');
     expect(result).toMatch(/1\.\s/);
   });
 
@@ -516,7 +512,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         content: longContent,
         name: 'long-note',
         source: 'content',
-        score: 0.9,
       }),
     );
     const result = await handlers.searchMemories('A', '10', 'match');
@@ -538,7 +533,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         roundId: 'r1',
         name: '轮次摘要 2026-08-28-main r1',
         content: 'Constraint 决策内容',
-        score: 0.7,
         accessedAt: oldAccess,
       }),
     );
@@ -550,11 +544,10 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     expect(result).toContain('trace(2026-08-28-main, round=r1)');
     expect(result).toContain('accessedAt=2026-01-01T00:00:00Z');
 
-    // 命中即 touch：等后台任务落地后 accessedAt 被刷新（score 不变，只 touch）
+    // 命中即 touch：等后台任务落地后 accessedAt 被刷新（只 touch，不维护 score）
     await awaitBackgroundTasks(2000);
     const touched = storage.getById('round-summary:2026-08-28-main:r1');
     expect(touched!.accessedAt).not.toBe(oldAccess);
-    expect(touched!.score).toBe(0.7);
   });
 
   it('工具召回与装配期正文互斥：排除当前会话最近已载入正文轮次的 round-summary（§5.1）', async () => {
@@ -569,7 +562,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         roundId: 'r1',
         name: '轮次摘要 r1',
         content: 'ZizzleFrob 决策内容',
-        score: 0.9,
       }),
     );
     // 更早轮次 r2（正文未载入），应正常返回
@@ -581,7 +573,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         roundId: 'r2',
         name: '轮次摘要 r2',
         content: 'ZizzleFrob 更早决策',
-        score: 0.8,
       }),
     );
     // 注入互斥提供者：当前会话最近已载入正文轮次 = [r1]
@@ -605,7 +596,6 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         roundId: 'r1',
         name: '轮次摘要 r1',
         content: 'QuaggaBoom 决策内容',
-        score: 0.9,
       }),
     );
 
@@ -757,7 +747,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         content: '用户询问 TypeScript 的用法，助手解释了接口和类型',
         source: SOURCE_LABELS.ROUND_SUMMARY,
         name: `轮次摘要 ${SESSION} ${ROUND_A}`,
-        score: 0.5,
         summaryType: 'fact', sessionName: SESSION, roundId: ROUND_A,
       }),
     );
@@ -767,7 +756,6 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         content: '用户表达了使用 React 的偏好，助手确认了技术选型方向',
         source: SOURCE_LABELS.ROUND_SUMMARY,
         name: `轮次摘要 ${SESSION} ${ROUND_B}`,
-        score: 0.5,
         isModified: true,
         summaryType: 'preference', sessionName: SESSION, roundId: ROUND_B,
       }),

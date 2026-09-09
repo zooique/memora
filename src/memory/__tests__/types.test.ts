@@ -34,27 +34,11 @@ describe('记忆类型定义', () => {
       name: 'core',
       createdAt: '2026-06-02T00:00:00.000Z',
       accessedAt: '2026-06-02T00:00:00.000Z',
-      score: 0.8,
     };
 
     const parsed = parseMemory(memory);
     expect(parsed.id).toBe('rule:core');
     expect(parsed.source).toBe('rule');
-    expect(parsed.score).toBe(0.8);
-  });
-
-  it('应该拒绝无效的 score 范围', () => {
-    // score 必须在 0-1 之间
-    const invalid = {
-      id: 'x:test',
-      content: '测试内容',
-      source: 'rule',
-      name: 'test',
-      createdAt: '2026-06-02T00:00:00.000Z',
-      accessedAt: '2026-06-02T00:00:00.000Z',
-      score: 1.5,  // 超出范围
-    };
-    expect(() => parseMemory(invalid)).toThrow();
   });
 
   it('应该接受有效的 source 字符串（开放字符串，非枚举）', () => {
@@ -66,7 +50,6 @@ describe('记忆类型定义', () => {
       name: 'test',
       createdAt: '2026-06-02T00:00:00.000Z',
       accessedAt: '2026-06-02T00:00:00.000Z',
-      score: 0.5,
     };
     expect(() => parseMemory(customSource)).not.toThrow();
   });
@@ -98,7 +81,6 @@ describe('InMemoryStorage · source block 校验', () => {
       name: 'test',
       createdAt: '2026-06-18T00:00:00.000Z',
       accessedAt: '2026-06-18T00:00:00.000Z',
-      score: 0.5,
     };
   }
 

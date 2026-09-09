@@ -43,7 +43,6 @@ function createMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'default',
     createdAt: '2026-06-27T10:00:00.000Z',
     accessedAt: '2026-06-27T10:00:00.000Z',
-    score: 0.5,
     ...overrides,
   };
 }
@@ -178,13 +177,13 @@ describe('MemoryInspector', () => {
       expect(rules.map((m) => m.id)).toContain('rule:2');
     });
 
-    it('list 应委托 index.search("", limit) 返回按 score 降序', () => {
-      storage.upsert(createMemory({ id: 'content:low', source: 'content', name: 'low', score: 0.3 }));
-      storage.upsert(createMemory({ id: 'content:high', source: 'content', name: 'high', score: 0.9 }));
+    it('list 应委托 index.search("", limit) 返回按 accessedAt 降序', () => {
+      storage.upsert(createMemory({ id: 'content:low', source: 'content', name: 'low', accessedAt: '2026-01-01T00:00:00.000Z' }));
+      storage.upsert(createMemory({ id: 'content:high', source: 'content', name: 'high', accessedAt: '2026-01-03T00:00:00.000Z' }));
       const list = inspector.list(10);
       expect(list).toHaveLength(2);
-      // 按 score 降序（InMemoryStorage.search 默认行为）
-      expect(list[0]!.score).toBeGreaterThanOrEqual(list[1]!.score);
+      // 按 accessedAt 降序（InMemoryStorage.search 默认行为，score 已退役）
+      expect(list[0]!.name).toBe('high');
     });
   });
 
@@ -346,16 +345,14 @@ describe('MemoryInspector', () => {
       expect(hits[0]!.name).toBe('k1');
     });
 
-    it('综合排序：vectorScore * 0.6 + memory.score * 0.4 降序', async () => {
-      // vec 高语义分数 + 低 memory.score；kw 低语义分数 + 高 memory.score
+    it('综合排序：单 vectorScore 降序（score 已物理退役）', async () => {
+      // vec 向量命中（vectorScore=0.9）；kw 仅关键词命中（vectorScore=0）
       const vs = createMockVectorStore([{ id: 'content:vec', similarity: 0.9 }]);
       inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'content:vec', source: 'content', name: 'vec', content: 'shared', score: 0.1 }));
-      storage.upsert(createMemory({ id: 'content:kw', source: 'content', name: 'kw', content: 'shared', score: 0.95 }));
+      storage.upsert(createMemory({ id: 'content:vec', source: 'content', name: 'vec', content: 'shared' }));
+      storage.upsert(createMemory({ id: 'content:kw', source: 'content', name: 'kw', content: 'shared' }));
       const hits = await inspector.searchHybrid('shared');
-      // vec 综合分 = 0.9*0.6 + 0.1*0.4 = 0.58
-      // kw 综合分 = 0*0.6 + 0.95*0.4 = 0.38
-      // vec 应排第一
+      // vec vectorScore=0.9 > kw vectorScore=0，vec 应排第一
       expect(hits[0]!.name).toBe('vec');
       expect(hits[1]!.name).toBe('kw');
     });
@@ -460,49 +457,11 @@ describe('MemoryInspector', () => {
     });
 
     it('writeUpsert 应支持更新已存在的记忆', () => {
-      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1', score: 0.5 });
+      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.writeUpsert(mem);
-      // 更新 score
-      inspector.writeUpsert({ ...mem, score: 0.9 });
-      expect(inspector.getById('rule:1')!.score).toBe(0.9);
-    });
-
-    // ─── L2 采纳反哺内核 ───
-
-    it('writeBoost 应提升记忆 score 并更新 accessedAt', () => {
-      const mem = createMemory({ id: 'content:1', source: 'content', name: 'i1', score: 0.5 });
-      inspector.writeUpsert(mem);
-      const before = inspector.getById('content:1')!;
-      // 提升记忆 score
-      const result = inspector.writeBoost('content:1');
-      expect(result).toBe(true);
-      const after = inspector.getById('content:1')!;
-      // score 应增加 0.05（ADOPTION_BOOST_INCREMENT）
-      expect(after.score).toBeCloseTo(0.55, 5);
-      // accessedAt 应被更新（不复用原值）
-      expect(after.accessedAt).not.toBe(before.accessedAt);
-    });
-
-    it('writeBoost 应受 SCORE_CEILING=1.0 上限约束', () => {
-      const mem = createMemory({ id: 'content:1', source: 'content', name: 'i1', score: 0.98 });
-      inspector.writeUpsert(mem);
-      // 提升后应被钳制到 1.0，不超出上限
-      inspector.writeBoost('content:1');
-      expect(inspector.getById('content:1')!.score).toBe(1.0);
-    });
-
-    it('writeBoost 记忆不存在应返回 false（不抛错）', () => {
-      // 候选可能来自对话历史，无对应记忆，应静默返回 false
-      const result = inspector.writeBoost('content:不存在');
-      expect(result).toBe(false);
-    });
-
-    it('writeBoost 应支持自定义 increment', () => {
-      const mem = createMemory({ id: 'content:1', source: 'content', name: 'i1', score: 0.5 });
-      inspector.writeUpsert(mem);
-      // 自定义提升量 0.1
-      inspector.writeBoost('content:1', 0.1);
-      expect(inspector.getById('content:1')!.score).toBeCloseTo(0.6, 5);
+      // 更新内容（score 已退役，不参与断言）
+      inspector.writeUpsert({ ...mem, content: '新内容' });
+      expect(inspector.getById('rule:1')!.content).toBe('新内容');
     });
 
     it('writeDelete 应软删除记忆（getById 返回 null，getDeletedById 可读取）', () => {

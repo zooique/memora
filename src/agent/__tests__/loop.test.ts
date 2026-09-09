@@ -23,7 +23,6 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'test-personality',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',
-    score: 1.0,
     ...overrides,
   };
 }

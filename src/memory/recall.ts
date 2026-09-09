@@ -12,11 +12,8 @@ import { logger } from '@/logging/logger.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';
 import { nowIso } from '@/utils/time.js';
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
-import type { HybridWeights } from '@/memory/hybridMerge.js';
 // 召回默认值 SSOT 跨层共享（保底下限 + 排除默认）
 import { DEFAULT_MIN_FALLBACK, DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
-// 召回 score 提升/上限/下限：复用治理共享常量（boost/clamp），与宿主存储 incrementScore 同一 clamp 真源
-import { BOOST_INCREMENT, SCORE_CEILING } from '@/memory/governance.js';
 
 // ─── 召回常量 ─────────────────────────────────────
 
@@ -72,8 +69,6 @@ export interface RecallOptions {
   minSimilarity?: number;
   /** 重排序器（可选，hybridMerge 之后二次精排，如 MMR/LLM 评分） */
   reranker?: IReranker;
-  /** 双通道融合权重（可选，默认 0.6/0.4），见 hybridMerge.ts */
-  weights?: HybridWeights;
   /**
    * 会话窗口标识，用于同会话窗口优先排序。
    * 与 round-summary 写侧 sessionName 顶层字段同值同源（${date}-${session}），即"当前会话窗口摘要排最前"
@@ -111,7 +106,6 @@ export async function recall(
     vectorStore,
     minSimilarity = DEFAULT_MIN_SIMILARITY,
     reranker,
-    weights,
     sessionId,
     excludeRoundIds,
     capTokens,
@@ -197,7 +191,7 @@ export async function recall(
     // 语义轨在 cap 分配（token + 条数双约束）前就被挤出，minSemanticShare 兜底失效。
     // 最终条数由 applyCapAllocation 的 limit 槽位预算兜底（无 cap 时退化 slice(0, limit) 同旧行为）。
     const supersetLimit = limit * RECALL_LIMIT_MULTIPLIER;
-    const sorted = hybridMerge(candidates, supersetLimit, weights);
+    const sorted = hybridMerge(candidates, supersetLimit);
 
     // ── 重排序：reranker 二次精排（可选） ──
     // 与 hybridMerge 同为超集裁剪：rerank 的 limit 传超集数，避免把候选在 cap 分配前裁回 limit
@@ -221,7 +215,7 @@ export async function recall(
     active = reranked.filter((m) => !m.supersededBy);
   }
 
-  // 召回保底：active 少于 minFallback 时用空查询通道按 score 降序补最近记忆，排语义命中后、同过滤（excludeSources+去 superseded），置 0 关闭
+  // 召回保底：active 少于 minFallback 时用空查询通道补最近记忆，排语义命中后、同过滤（excludeSources+去 superseded），置 0 关闭
   // 数量上限：minFallback 同样 clamp 到 [0, MAX_RECALL_LIMIT]（公共 API 防呆，防空查询通道 shortfall 放大底层搜索）
   const fallbackFloor = Math.max(0, Math.min(MAX_RECALL_LIMIT, options.minFallback ?? DEFAULT_MIN_FALLBACK));
   // 仅"有查询意图"（关键词非空）时保底
@@ -264,11 +258,12 @@ export async function recall(
     limit,
   });
 
-  // 读/写拆分：在副本上 boost 仅影响本轮排序；持久化由调用方 fire-and-forget 调 boostScores，不阻塞读路径
+  // 读/写拆分：返回副本只刷新 accessedAt（被想起即刷新），不 boost score（§5.2 只 touch 不 +score 定案）；
+  // 持久化由调用方 fire-and-forget 调 touchScores，不阻塞读路径
   const now = nowIso();
   const result: Memory[] = allocated.map((memory) => {
     const copy = { ...memory };
-    boostScore(copy, now);
+    copy.accessedAt = now;
     return copy;
   });
 
@@ -467,12 +462,11 @@ function applyCapAllocation(
 }
 
 /**
- * 批量持久化 touch（召回后 fire-and-forget 调用）：只刷新 accessedAt，不改 score。
+ * 批量 touch（召回后 fire-and-forget 调用）：只刷新 accessedAt。
  *
- * 承接「只 touch 不 +score」定案（§5.2）：accessedAt 是「使用轨迹」唯一事实源
- * （被想起即刷新），不叠加 +score 以免与「最近使用优先」时间规则形成双轨、引回自强化。
- * 用 incrementScore(id, 0)：delta=0 → clamp 后 score 不变，仅 accessedAt 更新，
- * 天然原子（无 read-modify-write 并发冲突）。失败仅 log 不抛错，不阻塞读路径。
+ * 承接「只 touch 不 +score」定案（§5.2）并进化（2026-09-09 阶段3 score 物理退役）：
+ * accessedAt 是「使用轨迹」唯一事实源（被想起即刷新），storage.touch 即唯一写位，
+ * 无 +score / clamp 语义。失败仅 log 不抛错，不阻塞读路径。
  */
 export async function touchScores(
   storage: IMemoryStorage,
@@ -480,16 +474,7 @@ export async function touchScores(
   now: string = nowIso(),
 ): Promise<void> {
   for (const id of ids) {
-    storage.incrementScore(id, 0, now);
+    storage.touch(id, now);
   }
-}
-
-// ─── Score 提升机制 ─────────────────────────────────────
-
-/** 召回时提升 score（上限 1.0）：越常用越重要 */
-// 模块私有（0 外部消费者，仅 recall.ts 内部调用，与 tokenizeKeywords 同模式）
-function boostScore(memory: Memory, now?: string): void {
-  memory.score = Math.min(SCORE_CEILING, memory.score + BOOST_INCREMENT);
-  memory.accessedAt = now ?? nowIso();
 }
 

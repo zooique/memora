@@ -46,7 +46,6 @@ function makeMemories(count: number): Memory[] {
       name: `bench:${i}`,
       createdAt: new Date(now - i * 60_000).toISOString(),
       accessedAt: new Date(now - i * 3_600_000).toISOString(),
-      score: 0.5 + (i % 100) / 100,
     });
   }
   return list;
@@ -84,7 +83,7 @@ function main(): void {
 
       // 单次 save 代价（新增 1 条）—— 真实高频路径：渐进式写入
       const t1 = process.hrtime.bigint();
-      storage.upsert({ id: 'content:bench:extra', content: 'x', source: 'content', name: 'extra', createdAt: new Date().toISOString(), accessedAt: new Date().toISOString(), score: 0.5 });
+      storage.upsert({ id: 'content:bench:extra', content: 'x', source: 'content', name: 'extra', createdAt: new Date().toISOString(), accessedAt: new Date().toISOString() });
       const singleSaveMs = Number(process.hrtime.bigint() - t1) / 1e6;
       report(`单次增量 save（${size.toLocaleString()} 条库）`, singleSaveMs, 50);
 

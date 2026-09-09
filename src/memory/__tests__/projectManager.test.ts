@@ -127,14 +127,13 @@ describe('ProjectManager · initProject', () => {
       name: 'orphan',
       createdAt: now,
       accessedAt: now,
-      score: 0.8,
     });
 
     // 同时写入一个真实 rule 文件（有文件支撑的规则）
     mkdirSync(join(tmpDir, '.memora', 'rules'), { recursive: true });
     writeFileSync(
       join(tmpDir, '.memora', 'rules', 'real.md'),
-      '---\nid: rule:real\nsource: rule\nname: real\nscore: 0.8\n---\n\n真实规则',
+      '---\nid: rule:real\nsource: rule\nname: real\n---\n\n真实规则',
       'utf-8',
     );
 
@@ -366,7 +365,6 @@ describe('ProjectManager · closeProject 撤销项目记忆 (S2)', () => {
 id: rule:proj-rule
 source: rule
 name: proj-rule
-score: 1.0
 createdAt: 2026-01-01T00:00:00.000Z
 accessedAt: 2026-01-01T00:00:00.000Z
 ---
@@ -403,7 +401,6 @@ accessedAt: 2026-01-01T00:00:00.000Z
       name: 'proj-rule',
       createdAt: now,
       accessedAt: now,
-      score: 0.8,
     });
     await pm.closeProject();
     expect(ctx.index.getById('rule:proj-rule')).not.toBeNull();

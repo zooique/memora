@@ -215,7 +215,7 @@ describe('Agent · memory.snapshot() · 3 层记忆快照', () => {
       expect(item.id).toBeDefined();
       expect(item.source).toBeDefined();
       expect(item.name).toBeDefined();
-      expect(typeof item.score).toBe('number');
+      expect(typeof item.contentPreview).toBe('string');
     }
   });
 
@@ -541,7 +541,6 @@ describe('Agent · Manager 委托模式', () => {
       name: 'TypeScript 类型系统',
       createdAt: new Date().toISOString(),
       accessedAt: new Date().toISOString(),
-      score: 0.9,
     });
 
     // suggest 已迁至 Agent 门面直连 advisor，不再经 inspector 转发

@@ -1,6 +1,6 @@
 /**
  * 记忆召回测试
- * 覆盖关键词提取 + recall 函数 + boostScore 上限
+ * 覆盖关键词提取 + recall 函数 + touchScores 批量 touch
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { recall, extractKeywords, touchScores } from '@/memory/recall.js';
@@ -20,7 +20,6 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
     name: 'test-memory',
     createdAt: '2026-01-01T00:00:00.000Z',
     accessedAt: '2026-01-01T00:00:00.000Z',
-    score: 0.8,
     ...overrides,
   };
 }
@@ -73,8 +72,8 @@ describe('recall · 记忆召回', () => {
 
   it('应该基于查询搜索并返回结果', async () => {
     const results = [
-      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
-      makeMemory({ id: 'work-projection:1', source: 'work-projection', score: 0.7 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
+      makeMemory({ id: 'work-projection:1', source: 'work-projection' }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -86,9 +85,9 @@ describe('recall · 记忆召回', () => {
 
   it('默认不排除任何 source（设定记忆已归角色包，不再参与召回排除）', async () => {
     const results = [
-      makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
-      makeMemory({ id: 'rule:1', source: 'rule', score: 0.8 }),
-      makeMemory({ id: 'skill:1', source: 'skill', score: 0.7 }),
+      makeMemory({ id: 'persona:1', source: 'persona' }),
+      makeMemory({ id: 'rule:1', source: 'rule' }),
+      makeMemory({ id: 'skill:1', source: 'skill' }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -100,8 +99,8 @@ describe('recall · 记忆召回', () => {
 
   it('应该支持自定义 excludeSources', async () => {
     const results = [
-      makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
-      makeMemory({ id: 'skill:1', source: 'skill', score: 0.8 }),
+      makeMemory({ id: 'persona:1', source: 'persona' }),
+      makeMemory({ id: 'skill:1', source: 'skill' }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -113,7 +112,7 @@ describe('recall · 记忆召回', () => {
 
   it('应该限制返回数量', async () => {
     const results = Array.from({ length: 10 }, (_, i) =>
-      makeMemory({ id: `content:${i}`, source: 'content', score: 0.5 + i * 0.05 }),
+      makeMemory({ id: `content:${i}`, source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -124,7 +123,7 @@ describe('recall · 记忆召回', () => {
 
   it('limit 超上限应 clamp 到 100（防 ×multiplier 放大底层搜索）', async () => {
     const results = Array.from({ length: 150 }, (_, i) =>
-      makeMemory({ id: `content:${i}`, source: 'content', score: 0.5 }),
+      makeMemory({ id: `content:${i}`, source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
@@ -135,18 +134,19 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.search).toHaveBeenCalledWith('测试', 200);
   });
 
-  it('应该按 score 降序排列', async () => {
+  it('未提供 vectorStore 时保持关键词通道插入序（score 退役后不再按 score 重排）', async () => {
+    // 阶段3 排序纯化：hybridMerge=单 vectorScore；关键词通道全为 0 → stable-sort 保插入序
     const results = [
-      makeMemory({ id: 'content:1', source: 'content', score: 0.5 }),
-      makeMemory({ id: 'content:2', source: 'content', score: 0.9 }),
-      makeMemory({ id: 'content:3', source: 'content', score: 0.7 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
+      makeMemory({ id: 'content:2', source: 'content' }),
+      makeMemory({ id: 'content:3', source: 'content' }),
     ];
     vi.mocked(mockStorage.search).mockReturnValue(results);
 
     const memories = await recall(mockStorage, '测试');
 
-    expect(memories[0]!.score).toBeGreaterThanOrEqual(memories[1]!.score);
-    expect(memories[1]!.score).toBeGreaterThanOrEqual(memories[2]!.score);
+    // 结果保 storage.search 返回序（不再被 score 重排）
+    expect(memories.map((m) => m.id)).toEqual(['content:1', 'content:2', 'content:3']);
   });
 
   it('无关键词时应返回空数组', async () => {
@@ -157,32 +157,20 @@ describe('recall · 记忆召回', () => {
     expect(mockStorage.search).not.toHaveBeenCalled();
   });
 
-  it('recall 只读不写，返回 boost 后的副本（不调用 upsert）', async () => {
-    const original = makeMemory({ id: 'content:1', source: 'content', score: 0.5 });
+  it('recall 返回刷新 accessedAt 的副本（不调用 upsert、不修改原对象）', async () => {
+    const original = makeMemory({ id: 'content:1', source: 'content' });
     vi.mocked(mockStorage.search).mockReturnValue([original]);
 
     const memories = await recall(mockStorage, '测试');
 
-    // recall 只读，不再 upsert；boost 持久化由调用方 fire-and-forget 调用 boostScores
+    // recall 只读：不再 upsert；持久化 touch 由调用方 fire-and-forget
     expect(mockStorage.upsert).not.toHaveBeenCalled();
-    // 返回的 memory 应是 boost 后的副本（score 提升）
+    // 返回的 memory 是副本且为非空 accessedAt（§5.2 只 touch 不 +score，score 已物理退役）
     expect(memories[0]).not.toBe(original);
     expect(memories[0]!.id).toBe(original.id);
-    expect(memories[0]!.score).toBeGreaterThanOrEqual(0.5);
+    expect(typeof memories[0]!.accessedAt).toBe('string');
     // 原始对象不应被修改（不污染调用方持有的对象）
-    expect(original.score).toBe(0.5);
-  });
-
-  it('boost 后 score 不应超过上限 1.0（在返回的副本上验证）', async () => {
-    // 高分记忆（0.98）被召回后 boost +0.05 = 1.03，应被钳制到 1.0
-    const highScore = makeMemory({ id: 'content:high', source: 'content', score: 0.98 });
-    vi.mocked(mockStorage.search).mockReturnValue([highScore]);
-
-    const memories = await recall(mockStorage, '测试');
-
-    // 验证返回的副本 score 被钳制到 1.0（不再通过 upsert 验证）
-    expect(memories[0]!.score).toBe(1.0);
-    expect(mockStorage.upsert).not.toHaveBeenCalled();
+    expect(original.accessedAt).toBe('2026-01-01T00:00:00.000Z');
   });
 
   // ── 召回保底（recall fallback）──
@@ -190,12 +178,12 @@ describe('recall · 记忆召回', () => {
   it('保底：语义召回不足时用最近记忆补足至 minFallback', async () => {
     // 关键词搜索仅返回 1 条（不足默认 minFallback=2）
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
     ]);
     // 空查询补足通道：storage.search('', n) 返回最近记忆
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:recent1', source: 'content', score: 0.4 }),
-      makeMemory({ id: 'content:recent2', source: 'content', score: 0.3 }),
+      makeMemory({ id: 'content:recent1', source: 'content' }),
+      makeMemory({ id: 'content:recent2', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试');
@@ -212,9 +200,9 @@ describe('recall · 记忆召回', () => {
   it('保底：语义召回充足时不做空查询补足', async () => {
     // 关键词搜索返回 3 条（>= minFallback=2），无需补足
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
-      makeMemory({ id: 'content:2', source: 'content', score: 0.8 }),
-      makeMemory({ id: 'content:3', source: 'content', score: 0.7 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
+      makeMemory({ id: 'content:2', source: 'content' }),
+      makeMemory({ id: 'content:3', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试');
@@ -227,10 +215,10 @@ describe('recall · 记忆召回', () => {
   it('保底：补足项排在语义命中之后，不抢占相关性', async () => {
     // 语义命中 1 条（高分），补足 1 条低分
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:high', source: 'content', score: 0.95 }),
+      makeMemory({ id: 'content:high', source: 'content' })
     ]);
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:recent', source: 'content', score: 0.2 }),
+      makeMemory({ id: 'content:recent', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试');
@@ -243,11 +231,11 @@ describe('recall · 记忆召回', () => {
   it('保底：补足项同样去 superseded，不注入被取代摘要', async () => {
     // 语义命中 1 条（不足），补足通道返回 1 条被 superseded 的 + 1 条正常
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
     ]);
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:superseded', source: 'content', score: 0.5, supersededBy: 'content:2' }),
-      makeMemory({ id: 'content:valid', source: 'content', score: 0.3 }),
+      makeMemory({ id: 'content:superseded', source: 'content', supersededBy: 'content:2' }),
+      makeMemory({ id: 'content:valid', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试');
@@ -262,7 +250,7 @@ describe('recall · 记忆召回', () => {
   it('保底：minFallback 置 0 时彻底关闭', async () => {
     // 关键词搜索仅返回 1 条，但 minFallback=0 关闭保底
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { minFallback: 0 });
@@ -277,8 +265,8 @@ describe('recall · 记忆召回', () => {
     vi.mocked(mockStorage.search).mockReturnValueOnce([]);
     // 空查询补足通道返回最近记忆
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:recent1', source: 'content', score: 0.4 }),
-      makeMemory({ id: 'content:recent2', source: 'content', score: 0.3 }),
+      makeMemory({ id: 'content:recent1', source: 'content' }),
+      makeMemory({ id: 'content:recent2', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { minFallback: 2 });
@@ -296,7 +284,7 @@ describe('recall · 记忆召回', () => {
   });
 });
 
-describe('touchScores · 批量持久化 touch（只刷 accessedAt 不改 score）', () => {
+describe('touchScores · 批量持久化 touch（只刷 accessedAt）', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
@@ -308,38 +296,36 @@ describe('touchScores · 批量持久化 touch（只刷 accessedAt 不改 score�
       search: vi.fn(),
       count: vi.fn(() => 0),
       countBySource: vi.fn(() => 0),
-      // touchScores 用 incrementScore(id, 0)：delta=0 → score 不变，仅刷新 accessedAt（原子）
-      incrementScore: vi.fn(() => true),
-      setScore: vi.fn(() => true),
+      // score 物理退役后 touch 为唯一写位：只刷新 accessedAt（原子）
+      touch: vi.fn(() => true),
       getAllSources: vi.fn(() => new Map()),
       close: vi.fn(),
     } as unknown as IMemoryStorage;
   });
 
-  it('应对每个 id 调用 incrementScore 且 delta=0（只刷 accessedAt 不改 score）', async () => {
+  it('应对每个 id 调用 touch 刷新 accessedAt', async () => {
     await touchScores(mockStorage, ['content:1', 'content:2']);
 
-    // 应调用 2 次 incrementScore
-    expect(mockStorage.incrementScore).toHaveBeenCalledTimes(2);
-    const calls = vi.mocked(mockStorage.incrementScore).mock.calls;
+    // 应调用 2 次 touch
+    expect(mockStorage.touch).toHaveBeenCalledTimes(2);
+    const calls = vi.mocked(mockStorage.touch).mock.calls;
     expect(calls[0]![0]).toBe('content:1');
     expect(calls[1]![0]).toBe('content:2');
-    // delta=0：score 保持不变，仅 accessedAt 刷新（承接「只 touch 不 +score」定案）
-    expect(calls[0]![1]).toBe(0);
-    expect(typeof calls[0]![2]).toBe('string');
+    // 第二参为 ISO 时间戳（承接「只 touch 不 +score」定案，score 已物理退役）
+    expect(typeof calls[0]![1]).toBe('string');
   });
 
-  it('incrementScore 返回 false（记忆不存在/已删除）不报错', async () => {
-    vi.mocked(mockStorage.incrementScore).mockReturnValue(false);
+  it('touch 返回 false（记忆不存在/已删除）不报错', async () => {
+    vi.mocked(mockStorage.touch).mockReturnValue(false);
 
     // touchScores 不检查返回值，fire-and-forget 由 storage 层静默处理
     await expect(touchScores(mockStorage, ['content:deleted'])).resolves.toBeUndefined();
   });
 
-  it('空 ids 数组应直接返回，不调用 incrementScore', async () => {
+  it('空 ids 数组应直接返回，不调用 touch', async () => {
     await touchScores(mockStorage, []);
 
-    expect(mockStorage.incrementScore).not.toHaveBeenCalled();
+    expect(mockStorage.touch).not.toHaveBeenCalled();
   });
 });
 
@@ -374,7 +360,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       { id: 'content:semantic-1', similarity: 0.9 },
     ]);
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'content:semantic-1', source: 'content', score: 0.8 }),
+      makeMemory({ id: 'content:semantic-1', source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([]);
 
@@ -390,7 +376,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
     // size=0 时不应调用 vectorStore.search
     mockVectorStore.size = 0;
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'content:1', source: 'content', score: 0.5 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
@@ -405,7 +391,7 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       { id: 'persona:1', similarity: 0.9 },
     ]);
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'persona:1', source: 'persona', score: 0.9 }),
+      makeMemory({ id: 'persona:1', source: 'persona' }),
     );
 
     const memories = await recall(mockStorage, '测试', {
@@ -423,10 +409,10 @@ describe('recall · 语义搜索通道（双通道召回）', () => {
       { id: 'content:dup', similarity: 0.9 },
     ]);
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'content:dup', source: 'content', score: 0.8 }),
+      makeMemory({ id: 'content:dup', source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'content:dup', source: 'content', score: 0.8 }),
+      makeMemory({ id: 'content:dup', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
@@ -455,51 +441,49 @@ describe('recall · 双通道融合排序', () => {
     } as unknown as IMemoryStorage;
   });
 
-  it('高 similarity + 中等 score 应排在低 similarity + 高 score 前面', async () => {
-    // 综合分公式：vectorScore * 0.6 + memory.score * 0.4
-    // memory A：similarity=0.9, score=0.5 → 0.54 + 0.20 = 0.74
-    // memory B：similarity=0（关键词命中），score=0.9 → 0 + 0.36 = 0.36
+  it('高 similarity 应排在关键词命中（vectorScore=0）前面', async () => {
+    // 阶段3 排序纯化：融合序 = 单 vectorScore 降序
+    // memory A：similarity=0.9 → vectorScore=0.9；memory B：仅关键词命中 → vectorScore=0
     // 期望 A 排在 B 前面
     const mockVectorStore = {
       size: 10,
       search: vi.fn().mockResolvedValue([{ id: 'content:A', similarity: 0.9 }]),
     };
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'content:A', source: 'content', score: 0.5 }),
+      makeMemory({ id: 'content:A', source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'content:B', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:B', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(2);
-    // A 的综合分(0.74) > B 的综合分(0.36)，A 应排在前面
+    // A(vectorScore=0.9) > B(vectorScore=0)，A 应排在前面
     expect(memories[0]!.id).toBe('content:A');
     expect(memories[1]!.id).toBe('content:B');
   });
 
-  it('高 score 记忆可在融合排序中超越低 similarity 记忆', async () => {
-    // memory A：similarity=0.4, score=0.3 → 0.24 + 0.12 = 0.36
-    // memory B：similarity=0（关键词命中），score=0.95 → 0 + 0.38 = 0.38
-    // 期望 B 排在 A 前面（高 score 弥补了无 similarity）
+  it('高 similarity 排在关键词命中之前（score 退役后不再携带关键词命中反超）', async () => {
+    // 阶段3 排序纯化：融合序 = 单 vectorScore 降序；A 向量命中 0.4、B 仅关键词命中(0)
+    // A(0.4) > B(0)，A 恒在前——高 score 不再能弥补无相似度
     const mockVectorStore = {
       size: 10,
       search: vi.fn().mockResolvedValue([{ id: 'content:A', similarity: 0.4 }]),
     };
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'content:A', source: 'content', score: 0.3 }),
+      makeMemory({ id: 'content:A', source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'content:B', source: 'content', score: 0.95 }),
+      makeMemory({ id: 'content:B', source: 'content' })
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
 
     expect(memories).toHaveLength(2);
-    // B 的综合分(0.38) > A 的综合分(0.36)，B 应排在前面
-    expect(memories[0]!.id).toBe('content:B');
-    expect(memories[1]!.id).toBe('content:A');
+    // A 向量命中 → 排前；B 关键词命中 → 排后
+    expect(memories[0]!.id).toBe('content:A');
+    expect(memories[1]!.id).toBe('content:B');
   });
 
   it('limit 应在融合排序后截断', async () => {
@@ -513,12 +497,12 @@ describe('recall · 双通道融合排序', () => {
       ]),
     };
     vi.mocked(mockStorage.getById).mockImplementation((id: string) =>
-      makeMemory({ id, source: 'content', score: 0.5 }),
+      makeMemory({ id, source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'content:k1', source: 'content', score: 0.4 }),
-      makeMemory({ id: 'content:k2', source: 'content', score: 0.3 }),
-      makeMemory({ id: 'content:k3', source: 'content', score: 0.2 }),
+      makeMemory({ id: 'content:k1', source: 'content' }),
+      makeMemory({ id: 'content:k2', source: 'content' }),
+      makeMemory({ id: 'content:k3', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', {
@@ -555,7 +539,7 @@ describe('recall · 降级策略', () => {
       search: vi.fn().mockRejectedValue(new Error('向量索引损坏')),
     };
     vi.mocked(mockStorage.search).mockReturnValue([
-      makeMemory({ id: 'content:fallback', source: 'content', score: 0.7 }),
+      makeMemory({ id: 'content:fallback', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', { vectorStore: mockVectorStore as unknown as IVectorStore });
@@ -574,7 +558,7 @@ describe('recall · 降级策略', () => {
       search: vi.fn().mockResolvedValue([{ id: 'content:semantic', similarity: 0.9 }]),
     };
     vi.mocked(mockStorage.getById).mockReturnValue(
-      makeMemory({ id: 'content:semantic', source: 'content', score: 0.8 }),
+      makeMemory({ id: 'content:semantic', source: 'content' }),
     );
     vi.mocked(mockStorage.search).mockImplementation(() => {
       throw new Error('SQLite 锁定');
@@ -723,14 +707,14 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
     // 语义召回返回：两个当前会话最近轮摘要（roundId 命中排除）+ 一个跨会话记忆
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
-        id: 'round:A', source: 'round-summary', score: 0.9,
+        id: 'round:A', source: 'round-summary',
         roundId: 'r1', sessionName: 'cur', summaryType: 'fact',
       }),
       makeMemory({
-        id: 'round:B', source: 'round-summary', score: 0.8,
+        id: 'round:B', source: 'round-summary',
         roundId: 'r2', sessionName: 'cur', summaryType: 'fact',
       }),
-      makeMemory({ id: 'cross:1', source: 'content', score: 0.6 }),
+      makeMemory({ id: 'cross:1', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', {
@@ -751,10 +735,10 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
     // 一个 round-summary（roundId 命中）+ 一个无 roundId 的 content 记忆
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
-        id: 'round:A', source: 'round-summary', score: 0.9,
+        id: 'round:A', source: 'round-summary',
         roundId: 'r1', sessionName: 'cur', summaryType: 'fact',
       }),
-      makeMemory({ id: 'content:1', source: 'content', score: 0.7 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', {
@@ -770,15 +754,15 @@ describe('recall · 前置互斥排除（excludeRoundIds）', () => {
   it('保底补足：excludeRoundIds 命中的 round-summary 不被补回（避免重复注入）', async () => {
     // 语义召回不足（1 条），触发保底补足
     vi.mocked(mockStorage.search).mockReturnValueOnce([
-      makeMemory({ id: 'content:1', source: 'content', score: 0.9 }),
+      makeMemory({ id: 'content:1', source: 'content' }),
     ]);
     // 空查询补足通道返回：一个当前会话最近轮摘要（roundId 命中排除）+ 一个跨会话记忆
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
-        id: 'round:A', source: 'round-summary', score: 0.5,
+        id: 'round:A', source: 'round-summary',
         roundId: 'r1', sessionName: 'cur', summaryType: 'fact',
       }),
-      makeMemory({ id: 'cross:1', source: 'content', score: 0.3 }),
+      makeMemory({ id: 'cross:1', source: 'content' }),
     ]);
 
     const memories = await recall(mockStorage, '测试', {
@@ -838,7 +822,7 @@ describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap �
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
         id: 'pref:l1', source: 'round-summary', summaryType: 'preference',
-        sessionName: 'current-session', roundId: 'p1', score: 0.9,
+        sessionName: 'current-session', roundId: 'p1',
       }),
     ]);
     // 枚举里同时有 L1 偏好与 L2 偏好
@@ -869,11 +853,11 @@ describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap �
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
         id: 'intent:1', source: 'round-summary', summaryType: 'intent',
-        sessionName: 'other-session', roundId: 'i1', score: 0.9,
+        sessionName: 'other-session', roundId: 'i1',
       }),
       makeMemory({
         id: 'fact:1', source: 'round-summary', summaryType: 'fact',
-        sessionName: 'other-session', roundId: 'f1', score: 0.8,
+        sessionName: 'other-session', roundId: 'f1',
       }),
     ]);
 
@@ -892,7 +876,7 @@ describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap �
     vi.mocked(mockStorage.search).mockReturnValueOnce([
       makeMemory({
         id: 'intent:1', source: 'round-summary', summaryType: 'intent',
-        sessionName: 'current-session', roundId: 'i1', score: 0.9,
+        sessionName: 'current-session', roundId: 'i1',
       }),
     ]);
 
@@ -912,14 +896,14 @@ describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap �
         makeMemory({
           id: `pref:${i}`, source: 'round-summary', summaryType: 'preference',
           sessionName: 'other', roundId: `p${i}`, content: 'x'.repeat(40),
-          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.6,
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
         }),
       );
       const facts = Array.from({ length: 6 }, (_, i) =>
         makeMemory({
           id: `fact:${i}`, source: 'round-summary', summaryType: 'fact',
           sessionName: 'other', roundId: `f${i}`, content: 'y'.repeat(40),
-          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.5,
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
         }),
       );
       return [...prefs, ...facts];
@@ -960,14 +944,14 @@ describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap �
         makeMemory({
           id: `pref:${i}`, source: 'round-summary', summaryType: 'preference',
           sessionName: 'other', roundId: `p${i}`, content: 'x'.repeat(40),
-          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.6,
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
         }),
       );
       const facts = Array.from({ length: 6 }, (_, i) =>
         makeMemory({
           id: `fact:${i}`, source: 'round-summary', summaryType: 'fact',
           sessionName: 'other', roundId: `f${i}`, content: 'y'.repeat(40),
-          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.5,
+          createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
         }),
       );
       return [...prefs, ...facts];
@@ -1005,26 +989,26 @@ describe('recall · v3 分层分轨（preference 进池 / intent 排除 / cap �
       makeMemory({
         id: 'l1:1', source: 'round-summary', summaryType: 'fact',
         sessionName: 'current-session', roundId: 'c1', content: 'a'.repeat(40),
-        createdAt: '2026-01-01T00:00:00.000Z', score: 0.5,
+        createdAt: '2026-01-01T00:00:00.000Z',
       }),
       makeMemory({
         id: 'l1:2', source: 'round-summary', summaryType: 'decision',
         sessionName: 'current-session', roundId: 'c2', content: 'b'.repeat(40),
-        createdAt: '2026-01-02T00:00:00.000Z', score: 0.5,
+        createdAt: '2026-01-02T00:00:00.000Z',
       }),
     ];
     const prefs = Array.from({ length: 6 }, (_, i) =>
       makeMemory({
         id: `pref:${i}`, source: 'round-summary', summaryType: 'preference',
         sessionName: 'other', roundId: `p${i}`, content: 'x'.repeat(40),
-        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.6,
+        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
       }),
     );
     const facts = Array.from({ length: 6 }, (_, i) =>
       makeMemory({
         id: `fact:${i}`, source: 'round-summary', summaryType: 'fact',
         sessionName: 'other', roundId: `f${i}`, content: 'y'.repeat(40),
-        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`, score: 0.5,
+        createdAt: `2026-01-0${i + 1}T00:00:00.000Z`,
       }),
     );
     vi.mocked(mockStorage.search).mockReturnValueOnce([...l1, ...prefs, ...facts]);

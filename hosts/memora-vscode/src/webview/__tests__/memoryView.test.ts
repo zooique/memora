@@ -3,7 +3,7 @@
  *
  * 覆盖新增的记忆管理视图渲染路径：
  *   - 顶栏统计（statBar：总数 + source 分布）
- *   - 记忆卡片（名称 + source 徽章 + score 圆点 + 单行预览）
+ *   - 记忆卡片（名称 + source 徽章 + 单行预览）
  *   - 点击展开详情（全文 content + 创建时间元数据）
  *   - 搜索结果渲染（search-summary 摘要 + 命中条目）
  *   - 空态引导（memory_loaded 空列表 / 搜索无命中）
@@ -93,7 +93,6 @@ function makeMemory(overrides: Partial<MemoryItemDto> = {}): MemoryItemDto {
     id: 'round-summary:设计决策',
     name: '设计决策',
     source: 'round-summary',
-    score: 0.9,
     content: '确认采用独立记忆视图承载资产全貌。',
     createdAt: '2026-08-17T10:00:00.000Z',
     ...overrides,
@@ -113,13 +112,13 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_load' });
   });
 
-  it('memory_loaded 渲染顶栏统计 + 记忆卡片（名称/source 徽章/score 圆点/预览）', () => {
+  it('memory_loaded 渲染顶栏统计 + 记忆卡片（名称/source 徽章/预览）', () => {
     mountMemoryView();
     dispatchLoaded(
       { total: 3, bySource: { 'round-summary': 2, profile: 1 } },
       [
-        makeMemory({ score: 0.9 }),
-        makeMemory({ id: 'profile:偏好', name: '偏好', source: 'profile', score: 0.3, content: '偏好简洁界面。' }),
+        makeMemory(),
+        makeMemory({ id: 'profile:偏好', name: '偏好', source: 'profile', content: '偏好简洁界面。' }),
       ],
     );
     // 顶栏统计：总数 + source 分布
@@ -129,9 +128,6 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     // 名称 + source 徽章
     expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('设计决策');
     expect(cards[0]?.querySelector('.source-badge')?.textContent).toBe('round-summary');
-    // score 圆点：高分点亮 high 类
-    expect(cards[0]?.querySelector('.score-dot')?.classList.contains('score-dot-high')).toBe(true);
-    expect(cards[1]?.querySelector('.score-dot')?.classList.contains('score-dot-high')).toBe(false);
     // 单行预览
     expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('确认采用独立记忆视图承载资产全貌。');
     // 卡片 tooltip：提示可点击展开/收起（可发现性，对齐角色/配置卡）

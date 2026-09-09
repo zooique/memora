@@ -19,7 +19,6 @@ function makeMemory(overrides: Partial<Memory> & { id: string; content: string }
     name: `记忆-${overrides.id}`,
     createdAt: now,
     accessedAt: now,
-    score: 0.5,
     ...overrides,
   };
 }
@@ -41,7 +40,6 @@ describe('WorkspaceStorage.search', () => {
       makeMemory({
         id: 'm1',
         content: '用户决定插件记忆功能采用 JSON 文件存储（memories.json），不引入 SQLite。',
-        score: 0.5,
       }),
     );
 
@@ -74,12 +72,12 @@ describe('WorkspaceStorage.search', () => {
     expect(hits).toHaveLength(0);
   });
 
-  it('空查询按 score 降序返回全部活跃记忆', () => {
-    storage.upsert(makeMemory({ id: 'low', content: '低分记忆', score: 0.2 }));
-    storage.upsert(makeMemory({ id: 'high', content: '高分记忆', score: 0.9 }));
+  it('空查询按 accessedAt 降序返回全部活跃记忆', () => {
+    storage.upsert(makeMemory({ id: 'old', content: '旧记忆', accessedAt: '2026-01-01T00:00:00.000Z' }));
+    storage.upsert(makeMemory({ id: 'new', content: '新记忆', accessedAt: '2026-09-01T00:00:00.000Z' }));
 
     const hits = storage.search('', 10);
-    expect(hits.map((m) => m.id)).toEqual(['high', 'low']);
+    expect(hits.map((m) => m.id)).toEqual(['new', 'old']);
   });
 
   it('limit 截断返回数量', () => {
@@ -95,9 +93,9 @@ describe('WorkspaceStorage.search', () => {
     storage.upsert(makeMemory({ id: 'm1', content: '采用 JSON 文件存储。' }));
 
     const hits = storage.search('JSON', 10);
-    hits[0]!.score = 0;
-    // 内部存储的 score 不应被外部修改污染
-    expect(storage.getById('m1')!.score).toBe(0.5);
+    hits[0]!.accessedAt = '1970-01-01T00:00:00.000Z';
+    // 内部存储的 accessedAt 不应被外部修改污染
+    expect(storage.getById('m1')!.accessedAt).not.toBe('1970-01-01T00:00:00.000Z');
   });
 });
 

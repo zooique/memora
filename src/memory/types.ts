@@ -15,8 +15,9 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 // ─── 基元定义 ─────────────────────────────────────────────
 
 /**
- * 记忆基元接口：id/content/source/name/createdAt/accessedAt/score 7 个基础字段
+ * 记忆基元接口：id/content/source/name/createdAt/accessedAt 6 个基础字段
  * + deletedAt 可选（软删除）
+ * score 字段已物理删除（2026-09-09 阶段3 退役）：排序收敛为单语义分 vectorScore，使用轨迹唯一事实源为 accessedAt
  */
 export interface Memory {
   /** 唯一标识，格式 source:name，如 'rule:core'、'round-summary:session:r1' */
@@ -31,8 +32,6 @@ export interface Memory {
   createdAt: string;
   /** 最后访问时间（每次召回时刷新） */
   accessedAt: string;
-  /** 权重（0-1，召回时用于排序） */
-  score: number;
   /** 软删除时间；非 undefined 表示已删除，回收站保留 30 天后物理清理 */
   deletedAt?: string;
   /**
@@ -61,9 +60,6 @@ export interface Memory {
   supersededBy?: string;
 }
 
-/** parseMemory 未提供 score 时的默认权重 */
-export const DEFAULT_MEMORY_SCORE = 0.5;
-
 /**
  * round-summary 记忆的摘要类型，摘要生成时由 LLM 自动判断，无独立分类器
  */
@@ -71,7 +67,8 @@ export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'gener
 
 /**
  * 记忆解析器 — 验证原始数据并转换为 Memory
- * 校验：非空对象、字段类型、ISO 8601 日期、score 0-1、默认值填充（score=0.5）
+ * 校验：非空对象、字段类型、ISO 8601 日期
+ * score 字段已退役（2026-09-09 阶段3），不再解析/默认填充
  *
  * @param raw - 原始数据（通常来自 JSON 解析或数据库查询）
  * @returns 验证通过的 Memory 对象
@@ -112,17 +109,6 @@ export function parseMemory(raw: unknown): Memory {
     }
   }
 
-  // 验证 score 字段（可选，有默认值）；Number.isFinite 排除 NaN/Infinity（对齐 zod z.number()）
-  if (obj.score !== undefined && obj.score !== null) {
-    if (typeof obj.score !== 'number' || !Number.isFinite(obj.score) || obj.score < 0 || obj.score > 1) {
-      throw configError(
-        'Memory 解析失败',
-        `score 必须是 0-1 之间的数字（当前值: ${String(obj.score)}）`,
-        ['将 score 调整为 0-1 之间的有效数字'],
-      );
-    }
-  }
-
   // 验证可选的 deletedAt 字段
   if (obj.deletedAt !== undefined && obj.deletedAt !== null) {
     if (typeof obj.deletedAt !== 'string' || isNaN(Date.parse(obj.deletedAt as string))) {
@@ -141,7 +127,6 @@ export function parseMemory(raw: unknown): Memory {
     name: obj.name as string,
     createdAt: obj.createdAt as string,
     accessedAt: obj.accessedAt as string,
-    score: (obj.score as number) ?? DEFAULT_MEMORY_SCORE,
     deletedAt: obj.deletedAt as string | undefined,
     metadata: obj.metadata as Record<string, string> | undefined,
     summaryType: obj.summaryType as SummaryType | undefined,

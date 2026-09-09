@@ -234,7 +234,7 @@ export type WebviewToExtensionMessage =
   /**
    * 请求加载记忆列表（记忆视图打开/刷新时触发）
    *
-   * host 调 MemoryInspector.list() + stats() 返回：记忆按 score 降序（越常用越重要），
+   * host 调 MemoryInspector.list() + stats() 返回：记忆按 accessedAt 降序（最近使用优先），
    * 附带按 source 分布统计；agent.memory 未就绪时返回空列表（webview 渲染空态）。
    */
   | { type: 'memory_load' }
@@ -242,13 +242,13 @@ export type WebviewToExtensionMessage =
    * 请求搜索记忆（记忆视图搜索框触发，query 非空才发送）
    *
    * host 调 MemoryInspector.searchHybrid(query, limit)（语义+关键词混合检索），
-   * 返回带 score/similarity 的命中列表。空 query 不应发送本消息（走 memory_load）。
+   * 返回带 similarity/accessedAt 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
   | { type: 'memory_search'; query: string; limit?: number }
   /**
    * 请求记忆列表翻页（记忆视图分页组件「上一页/下一页」，2026-09-08）
    *
-   * host 调 MemoryInspector.list(page*pageSize) 取前 N 条后按页切片返回（score 降序稳定），
+   * host 调 MemoryInspector.list(page*pageSize) 取前 N 条后按页切片返回（accessedAt 降序稳定），
    * 应答 memory_page_result。首屏不发送本消息（memory_loaded 已带第 1 页数据）。
    */
   | { type: 'memory_page'; page: number; pageSize: number }
@@ -774,7 +774,7 @@ export type ExtensionToWebviewMessage =
   /**
    * 记忆列表加载完成（对 memory_load 的应答）
    *
-   * host 返回按 score 降序的记忆列表 + source 分布统计；agent.memory 未就绪时
+   * host 返回按 accessedAt 降序的记忆列表 + source 分布统计；agent.memory 未就绪时
    * memories 为空、stats.total 为 0，webview 渲染空态引导。
    */
   | {
@@ -785,7 +785,7 @@ export type ExtensionToWebviewMessage =
   /**
    * 记忆搜索结果（对 memory_search 的应答）
    *
-   * hits 为 searchHybrid 命中（带 score/similarity），content 为截断预览
+   * hits 为 searchHybrid 命中（带 similarity/accessedAt），content 为截断预览
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
@@ -861,7 +861,7 @@ export type ExtensionToWebviewMessage =
    * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）
    *
    * host 在本轮流式正常结束后调 agent.governance.suggest()（零 LLM、纯计算，
-   * 基于记忆库 score+时效+多样性推荐），映射为「下一步可探索」chips 推给 webview；
+   * 基于记忆库 accessedAt 时效 + 多样性推荐），映射为「下一步可探索」chips 推给 webview；
    * 用户打断/异常时不推送（避免给不完整回复挂建议）。
    */
   | { type: 'suggestions'; items: FollowupSuggestionDto[] }
@@ -983,14 +983,16 @@ export interface MemoryItemDto {
   name: string;
   /** 来源标签（round-summary / profile / work-projection 等） */
   source: string;
-  /** 权重（0-1） */
-  score: number;
   /** 内容（列表=全文；搜索结果=截断预览，供详情展开展示） */
   content: string;
   /** 创建时间（ISO 8601，可选） */
   createdAt?: string;
+  /** 最近访问时间（ISO 8601，可选；排序依据 accessedAt 降序，工具命中即 touch 刷新） */
+  accessedAt?: string;
   /** 软删除时间（ISO 8601，仅回收站条目携带，可选） */
   deletedAt?: string;
+  /** 语义相似度（0-1，仅搜索命中携带；独立于记忆权重的相似度分，非 Memory.score） */
+  similarity?: number;
   /** round-summary 摘要类型（preference/fact/decision/intent/general），仅 round-summary 有意义；对齐内核 SummaryType */
   summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
   /** round-summary 归属会话标识（${date}-${session}），供会话内/外分层召回 */

@@ -126,28 +126,28 @@ export class WorkspaceStorage implements IMemoryStorage {
   search(query: string, limit = 10): Memory[] {
     const q = query.trim();
     const active = [...this.store.values()].filter((m) => this.isActive(m));
-    // 空查询：按 score 降序返回
+    // 空查询：按 accessedAt 降序（最近使用优先）返回
     if (!q) {
-      return this.topByScore(active, limit);
+      return this.topByAccessed(active, limit);
     }
     // 规范分词（与内核 recall.ts extractKeywords 共用 segmentText）
     const tokens = segmentLower(q);
     if (tokens.length === 0) {
-      return this.topByScore(active, limit);
+      return this.topByAccessed(active, limit);
     }
     const hits = active.filter((m) => {
       const text = `${m.content} ${m.name}`.toLowerCase();
       // 任一 token 命中即可
       return tokens.some((t) => text.includes(t));
     });
-    return this.topByScore(hits, limit);
+    return this.topByAccessed(hits, limit);
   }
 
-  /** 按 score 降序排序并截断返回浅拷贝（消除 search 内重复排序逻辑） */
-  private topByScore(memories: Memory[], limit: number): Memory[] {
+  /** 按 accessedAt 降序排序并截断返回浅拷贝（最近使用优先，对齐内核 search 契约；消除 search 内重复排序逻辑） */
+  private topByAccessed(memories: Memory[], limit: number): Memory[] {
     return memories
       .slice()
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => (b.accessedAt ?? '').localeCompare(a.accessedAt ?? ''))
       .slice(0, limit)
       .map((m) => ({ ...m }));
   }
@@ -160,19 +160,10 @@ export class WorkspaceStorage implements IMemoryStorage {
     return [...this.store.values()].filter((m) => this.isActive(m) && m.source === source).length;
   }
 
-  incrementScore(id: string, delta: number, now: string): boolean {
+  /** 刷新记忆 accessedAt（使用轨迹写位，对齐内核 IMemoryStorage 契约）；不存在/已软删除返回 false */
+  touch(id: string, now: string): boolean {
     const m = this.store.get(id);
     if (!m || !this.isActive(m)) return false;
-    m.score = Math.min(1, Math.max(0, m.score + delta));
-    m.accessedAt = now;
-    this.save();
-    return true;
-  }
-
-  setScore(id: string, newScore: number, now: string): boolean {
-    const m = this.store.get(id);
-    if (!m || !this.isActive(m)) return false;
-    m.score = newScore;
     m.accessedAt = now;
     this.save();
     return true;
