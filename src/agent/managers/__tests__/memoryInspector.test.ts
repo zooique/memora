@@ -393,6 +393,21 @@ describe('MemoryInspector', () => {
       expect(hits[0]!.sessionId).toBe('2026-08-28-main');
       expect(hits[0]!.roundId).toBe('r1');
     });
+
+    it('excludeRoundIds：排除已载入正文轮次的 round-summary（§5.1 工具召回与装配期正文互斥）', async () => {
+      // 两条 round-summary 均语义命中；exclude r1 → 仅返回 r2（不补位凑满）
+      const vs = createMockVectorStore([
+        { id: 'round-summary:s:r1', similarity: 0.9 },
+        { id: 'round-summary:s:r2', similarity: 0.85 },
+      ]);
+      inspector.setVectorStore(vs);
+      storage.upsert(createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '摘要1', content: '内容一' }));
+      storage.upsert(createMemory({ id: 'round-summary:s:r2', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '摘要2', content: '内容二' }));
+
+      const hits = await inspector.searchHybrid('查询', 10, new Set(['r1']));
+
+      expect(hits.map((h) => h.roundId)).toEqual(['r2']);
+    });
   });
 
   // ════════════════════════════════════════════════════════

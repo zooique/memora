@@ -32,6 +32,7 @@ import { sanitizeExternalText } from '@/agent/toolExecutor.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 import { touchScores } from '@/memory/recall.js';
 import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
+import { AGENT_CONSTANTS } from '@/agent/constants.js';
 
 /** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
@@ -133,6 +134,9 @@ export class BuiltinToolHandlers {
   /** 记忆搜索器（search_memories 语义后端，装配期注入；未注入时回退关键词 memoryIndex.search） */
   private memoryInspector: MemoryInspector | null = null;
 
+  /** 当前会话最近已载入正文的轮次提供者（装配期注入；search_memories 用它与装配期正文互斥） */
+  private recentRoundIdsProvider: ((maxRounds: number) => string[]) | null = null;
+
   /** memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」；装配期注入，缺省不发射） */
   private onMemoryRecalled: ((info: { count: number; query: string }) => void) | null = null;
 
@@ -152,6 +156,18 @@ export class BuiltinToolHandlers {
    */
   setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
     this.onMemoryRecalled = callback;
+  }
+
+  /**
+   * 注入「当前会话最近已载入正文的轮次」提供者（memory-tool-recall-design §5.1 工具互斥）。
+   * search_memories 用它排除当前会话正文已在眼前的轮次 round-summary，避免与装配期完整对话重复。
+   * 提供者返回最近 maxRounds 轮的 roundId，与恢复路径 warmRecall 的 getRecentRoundIds 同源同值。
+   * 缺省不注入则不过滤（保持测试/独立调用可直接触发）。
+   *
+   * @param provider 接收最大轮数、返回当前会话最近已载入正文的 roundId 数组
+   */
+  setRecentRoundIdsProvider(provider: (maxRounds: number) => string[]): void {
+    this.recentRoundIdsProvider = provider;
   }
 
   // ─── 路径安全（内置 + 自定义工具共享） ──────────────────────────
@@ -834,19 +850,37 @@ export class BuiltinToolHandlers {
 
     let limit = Number.parseInt(limitStr, 10);
     if (Number.isNaN(limit) || limit < 1) {
-      limit = 10;
+      limit = AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT;
     }
     if (limit > 50) {
       limit = 50;
     }
 
+    // 工具召回与装配期正文互斥（§5.1）：排除当前会话最近已载入正文的轮次 round-summary（正文已在眼前，避免重复返回）。
+    // 由装配期注入的 recentRoundIdsProvider 提供（与恢复路径 warmRecall 同源 getRecentRoundIds）；
+    // 缺省不注入则不过滤（测试/独立调用可直接触发）。
+    const excludedRoundIds = new Set<string>(
+      this.recentRoundIdsProvider
+        ? this.recentRoundIdsProvider(AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS)
+        : [],
+    );
+
     // memory-tool-recall-design §3.3：注入 MemoryInspector 后走语义混合搜索（searchHybrid
     // = 语义 + 关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。
     const hits: AgentSearchHit[] = this.memoryInspector
-      ? await this.memoryInspector.searchHybrid(query, limit)
+      ? await this.memoryInspector.searchHybrid(query, limit, excludedRoundIds)
       : this.memoryIndex
           .search(query, limit)
-          .map((m) => ({ id: m.id, name: m.name, source: m.source, score: m.score, contentPreview: m.content }));
+          .map((m) => ({
+            id: m.id,
+            name: m.name,
+            source: m.source,
+            score: m.score,
+            contentPreview: m.content,
+            // 溯源 roundId 用于互斥过滤（与 searchHybrid 排除口径一致）
+            roundId: m.roundId,
+          }))
+          .filter((h) => !(h.roundId && excludedRoundIds.has(h.roundId)));
 
     // near 模式（仅关键词后端）：过滤只保留所有关键词都命中的结果
     if (!this.memoryInspector && modeStr === 'near' && hits.length > 0) {

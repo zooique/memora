@@ -557,6 +557,64 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     expect(touched!.score).toBe(0.7);
   });
 
+  it('工具召回与装配期正文互斥：排除当前会话最近已载入正文轮次的 round-summary（§5.1）', async () => {
+    const inspector = new MemoryInspector(storage, {} as never, {} as never);
+    handlers.setMemoryInspector(inspector);
+    // 当前会话正文已载入轮次 r1（其 round-summary 不应被工具召回带回，避免与正文重复）
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:r1',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'r1',
+        name: '轮次摘要 r1',
+        content: 'ZizzleFrob 决策内容',
+        score: 0.9,
+      }),
+    );
+    // 更早轮次 r2（正文未载入），应正常返回
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:r2',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'r2',
+        name: '轮次摘要 r2',
+        content: 'ZizzleFrob 更早决策',
+        score: 0.8,
+      }),
+    );
+    // 注入互斥提供者：当前会话最近已载入正文轮次 = [r1]
+    handlers.setRecentRoundIdsProvider(() => ['r1']);
+
+    const result = await handlers.searchMemories('ZizzleFrob', '10', 'match');
+
+    // r2（未载入）正常返回；r1（已载入正文，round=r1）被排除，不重复返回
+    expect(result).toContain('round=r2)');
+    expect(result).not.toContain('round=r1)');
+  });
+
+  it('未注入互斥提供者时不过滤（缺省直通，兼容测试/独立调用）', async () => {
+    const inspector = new MemoryInspector(storage, {} as never, {} as never);
+    handlers.setMemoryInspector(inspector);
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:r1',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'r1',
+        name: '轮次摘要 r1',
+        content: 'QuaggaBoom 决策内容',
+        score: 0.9,
+      }),
+    );
+
+    const result = await handlers.searchMemories('QuaggaBoom', '10', 'match');
+
+    // 未注入 provider → 不排除 r1
+    expect(result).toContain('round=r1)');
+  });
+
   it('注入 setOnMemoryRecalled 后命中触发事件（§2.4 保留改语义定案，LLM 查询命中数）', async () => {
     // 用独特词避免与库内其它记忆（重复 TypeScript 语义命中）干扰 count 断言
     storage.upsert(

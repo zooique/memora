@@ -237,8 +237,15 @@ export class MemoryInspector {
    * **不分层分轨**：不应用 L1/L2 分层、不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配
    * （capTokens / minSemanticShare）。分层分轨属「召回编排」（recall()，contextPreparer 调用），搜索工具
    * 只暴露融合相关性结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
+   *
+   * @param excludeRoundIds 排除的轮次 ID 集合（可选）：这些轮次的 round-summary 已被装配期载入正文，
+   *                       不重复返回（工具召回与装配期正文互斥，§5.1）；缺省不过滤。
    */
-  async searchHybrid(query: string, limit = 10): Promise<AgentSearchHit[]> {
+  async searchHybrid(
+    query: string,
+    limit = 10,
+    excludeRoundIds?: ReadonlySet<string>,
+  ): Promise<AgentSearchHit[]> {
     if (!query || query.trim() === '') {
       throw configError('搜索关键词为空', 'searchHybrid() 需要非空 query', [
         '传入非空字符串关键词',
@@ -283,7 +290,14 @@ export class MemoryInspector {
     // 前置 superseded 过滤（与 recall 读路径 recall.ts:221 一致）：被 supersededBy 取代的摘要不作为当前事实
     // 返回（仍保留可回溯，trace_summary 可精确取原文）。在排序前过滤，避免占据 top-N 槽位挤掉有效命中。
     const active = [...merged.values()].filter((e) => !e.memory.supersededBy);
-    const sorted = hybridMerge(active, limit);
+    // 工具召回与装配期正文互斥（§5.1）：排除当前会话最近已载入正文轮次的 round-summary，
+    // 避免 LLM 拿回眼前内容的摘要重复（excludeRoundIds 由调用方按 getRecentRoundIds 计算，天然不含当轮）。
+    // 被排除者不补位（工具语义）：返回更聚焦的结果即可，不强制凑满 limit。
+    const unexcluded =
+      excludeRoundIds && excludeRoundIds.size > 0
+        ? active.filter((e) => !e.memory.roundId || !excludeRoundIds.has(e.memory.roundId))
+        : active;
+    const sorted = hybridMerge(unexcluded, limit);
 
     // 排序语义（§5.2 定案）：仅返回 hybridMerge 融合序（语义相关主），不引入 accessedAt 时间主序——
     // accessedAt 只作为事实字段揭示（工具命中 touch 刷新），优先级判断归 LLM 结合任务定夺。

@@ -842,6 +842,9 @@ export async function assembleComponents(
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
   // 「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发 memoryRecalled。
   toolExec.setOnMemoryRecalled((info) => hooks?.emit(AGENT_EVENTS.memoryRecalled, info));
+  // 接线工具召回与装配期正文互斥（§5.1）：search_memories 排除当前会话最近已载入正文的轮次
+  // round-summary（getRecentRoundIds 与恢复路径 warmRecall 同源同值），避免 LLM 拿回眼前内容的摘要重复。
+  toolExec.setRecentRoundIdsProvider((maxRounds) => history.getRecentRoundIds(maxRounds));
 
   // ── 输入增强管线 ──
 
