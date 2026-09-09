@@ -752,56 +752,46 @@ agent.tools.registerTool(
 );
 ```
 
-#### 方案二：可选 Provider（自动注入 system prompt）
+#### 方案二：复用 `agent.injectAffect()` 固定注入（设计定案）
 
-适合场景：用户身份信息需要始终在上下文中。
+适合场景：用户身份 / 基础设定需要**始终在上下文中**，且与角色包解耦（切换角色不丢失）。
+
+内核公开 API `agent.injectAffect(text)`（见 [agent.ts](../../src/agent/agent.ts#L1803-L1810) / [loop.ts](../../src/agent/loop.ts#L2120-L2131)）是「宿主可控的 system prompt 固定文本槽」：文本原样插在**角色包 prompt 与 bootstrap 记忆之间**，角色切换不清除、实时重建，传空串清除。名字虽沿用"情感基调"，机制即通用文本注入，正适合承载用户基础设定。
 
 ```typescript
-// 定义可选的用户档案 Provider 接口
-interface IUserProfileProvider {
-  getProfile(): Promise<{
-    name: string;
-    role?: string;
-    background?: string;
-    preferences?: string[];
-  } | null>;
+// 宿主启动装配、agent.init() 完成后调用一次（内存态——每次启动从宿主自有存储读取后注入）
+async function loadUserProfile(): Promise<{
+  name: string;
+  role?: string;
+  background?: string;
+  preferences?: string[];
+} | null> {
+  // 宿主实现：文件 / SQLite / 环境变量均可
 }
 
-// 宿主实现
-class FileUserProfileProvider implements IUserProfileProvider {
-  constructor(private filePath: string) {}
-  
-  async getProfile() {
-    if (!await fs.exists(this.filePath)) return null;
-    const content = await fs.readFile(this.filePath, 'utf-8');
-    return JSON.parse(content);
-  }
-}
-
-// 注入到 Agent（需内核预留扩展点，当前为宿主侧约定）
-const agent = new Agent({
-  // ...其他配置
-  // 宿主自行在 system prompt 构建阶段追加用户档案信息
-});
-
-// 宿主侧包装：在 buildSystemPrompt 后追加
-const profile = await userProfileProvider.getProfile();
+const profile = await loadUserProfile();
 if (profile) {
-  agent.injectSystemMessage(
-    `关于用户：姓名=${profile.name}，角色=${profile.role ?? '未指定'}，` +
-    `背景=${profile.background ?? '未指定'}，偏好=${profile.preferences?.join(', ') ?? '无'}`
+  agent.injectAffect(
+    [
+      '【用户基础设定】',
+      `姓名：${profile.name}`,
+      `角色：${profile.role ?? '未指定'}`,
+      `背景：${profile.background ?? '未指定'}`,
+      `偏好：${profile.preferences?.join('、') ?? '无'}`,
+    ].join('\n'),
   );
 }
+// 需要清除时：agent.injectAffect('');
 ```
 
 ### 两种方案对比
 
-| 维度 | 方案一：工具注册 | 方案二：Provider 注入 |
+| 维度 | 方案一：工具注册 | 方案二：injectAffect 固定注入 |
 |------|---------------|-------------------|
-| 触发方式 | LLM 按需调用 | 自动注入 |
-| Token 效率 | 高（仅需要时消耗） | 低（每轮都注入） |
-| 实现复杂度 | 低 | 中 |
-| 适用场景 | 身份信息偶尔被查询 | 身份信息必须始终可见 |
+| 触发方式 | LLM 按需调用 | 装配时注入一次，始终在上下文 |
+| Token 效率 | 高（仅需要时消耗） | 低-中（每轮随 system prompt 携带） |
+| 实现复杂度 | 低 | 低 |
+| 适用场景 | 身份信息偶尔被查询 | 身份信息必须始终可见、且与角色解耦 |
 
 ### 用户档案文件格式示例
 
@@ -830,7 +820,7 @@ if (profile) {
 ### 核心约束
 
 1. **用户档案完全由宿主管理**：存储、更新、版本管理
-2. **内核不感知档案存在**：不新增存储、不新增 API
+2. **内核零新增**：不新增存储、不新增 API——方案二复用现有公开方法 `agent.injectAffect()`，仅以文本形式注入，内核不感知"档案"语义
 3. **不注入时零影响**：未实现用户档案的宿主，Agent 行为不变
 4. **偏好记忆仍走涌现路径**：对话中涌现的偏好（如"用户喜欢简洁回答"）仍通过 `preference` 摘要沉淀，用户档案仅承载**静态/半静态身份信息**
 
