@@ -82,7 +82,8 @@ export class SeedOrchestrator {
         .getParts()
         .loop.processUserInput(
           input,
-          prepared.recalledMemories,
+          // 自动注入退役（memory-tool-recall-design §4）：不再传递先知式召回记忆
+          undefined,
           signal,
           this.deps.getParts().loop.getCurrentRoundId(),
         );

@@ -1044,15 +1044,15 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
   });
 });
 
-describe('AgentLoop · processUserInput recall 事件', () => {
-  it('传入 recalledMemories 时应该 yield recall 事件', async () => {
+describe('AgentLoop · 自动注入退役（突变锚点）', () => {
+  it('传入 recalledMemories 也不再 yield recall 事件（每轮自动召回注入已退役）', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
 
-    // 模拟 2 条记忆召回
+    // 即便传入 recalledMemories，也不再产出 recall 事件（memory-tool-recall-design §4）
     const recalledMemories = [
       makeMemory({ id: 'mem:1', name: '记忆1', content: '之前讨论过' }),
       makeMemory({ id: 'mem:2', name: '记忆2', content: '另一个记忆' }),
@@ -1063,21 +1063,12 @@ describe('AgentLoop · processUserInput recall 事件', () => {
       chunks.push(chunk);
     }
 
-    // 应该有 recall 事件，memories 数组长度 = 2
+    // 无 recall 事件（加回 _injectRecall → 有 recall chunk → 此项转红）
     const recalls = chunks.filter((c) => c.type === 'recall');
-    expect(recalls).toHaveLength(1);
-    if (recalls[0]!.type === 'recall') {
-      expect(recalls[0]!.memories).toHaveLength(2);
-      // 验证摘要字段（name/score/source），不包含 content
-      expect(recalls[0]!.memories[0]!.name).toBe('记忆1');
-      expect(recalls[0]!.memories[1]!.name).toBe('记忆2');
-      // score 和 source 应存在（makeMemory 默认值）
-      expect(typeof recalls[0]!.memories[0]!.score).toBe('number');
-      expect(typeof recalls[0]!.memories[0]!.source).toBe('string');
-    }
+    expect(recalls).toHaveLength(0);
   });
 
-  it('不传 recalledMemories 时不应 yield recall 事件', async () => {
+  it('不传 recalledMemories 时同样不 yield recall 事件', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],
@@ -1093,7 +1084,7 @@ describe('AgentLoop · processUserInput recall 事件', () => {
     expect(recalls).toHaveLength(0);
   });
 
-  it('召回注入附带上下文预算自描述（条数 + 约 token + 总量/上限/剩余）', async () => {
+  it('不再注入召回 system 消息与预算自描述小节（记忆检索移交 memory_search 工具）', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],
@@ -1103,35 +1094,13 @@ describe('AgentLoop · processUserInput recall 事件', () => {
       makeMemory({ id: 'mem:1', name: '记忆1', content: '之前讨论过的决策' }),
       makeMemory({ id: 'mem:2', name: '记忆2', content: '另一个待办事项' }),
     ];
-    // 消费完整流（含 recall yield + LLM 调用）
+    // 消费完整流（含 LLM 调用）
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('你好', recalledMemories)) {
       chunks.push(chunk);
     }
-    // 定位召回 system 消息（含「召回的相关记忆」）
-    const recallMsg = loop
-      .getMessages()
-      .find((m) => m.role === 'system' && m.content.includes('召回的相关记忆'));
-    expect(recallMsg).toBeDefined();
-    // 预算自描述小节：条数 + 约 token + 当前总量/上限/剩余
-    expect(recallMsg!.content).toContain('## 上下文预算');
-    expect(recallMsg!.content).toContain('已召回记忆：2 条');
-    expect(recallMsg!.content).toContain('当前上下文');
-    expect(recallMsg!.content).toContain('剩余');
-    // 约 token 格式：整数或 x.xK（如「约 512 tokens」/「约 1.2K tokens」）
-    expect(recallMsg!.content).toMatch(/约 \d+(\.\d+)?K? tokens/);
-  });
-
-  it('无召回时不注入预算小节', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('你好')) {
-      chunks.push(chunk);
-    }
+    // 退役后不再注入「召回的相关记忆」system 消息，也不再附带预算小节
+    expect(loop.getMessages().some((m) => m.content.includes('召回的相关记忆'))).toBe(false);
     expect(loop.getMessages().some((m) => m.content.includes('上下文预算'))).toBe(false);
   });
 });
@@ -3222,7 +3191,7 @@ describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () 
     expect(llmAttrs?.['systemPromptHash']).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('注入真实 Tracer 且传入 recalledMemories 时，RECALL span 记录条数与 ID 集合指纹', async () => {
+  it('自动注入退役：即便传入 recalledMemories 也不再产出 RECALL span（子span与指纹不生成）', async () => {
     const tracer = new CapturingTracer();
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复内容' }]),
@@ -3237,10 +3206,9 @@ describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () 
       void _;
     }
 
-    // recall.recall span 应带附着记忆条数与 ID 集合指纹
+    // 退役后无 recall.recall 子span（记忆检索移交 memory_search 工具，loop 不再代召）
     const recallAttrs = tracer.attrs(TRACE_SPANS.RECALL);
-    expect(recallAttrs?.['attachedMemoryCount']).toBe(2);
-    expect(recallAttrs?.['attachedMemoryFingerprint']).toMatch(/^[0-9a-f]{64}$/);
+    expect(recallAttrs).toBeUndefined();
   });
 
   it('未注入 Tracer（默认 NOOP）时不计算指纹，保持零开销边界', async () => {
@@ -3639,73 +3607,33 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · Token 预算前置检查', () => {
-  it('tokenBudget 达 80% 时应跳过召回注入', async () => {
-    // 使用极小 tokenBudget 模拟预算紧张
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      maxContextTokens: 120_000,
-    });
+  it('自动注入退役：tokenBudget 阈值不再参与召回门控，任何预算下均无 recall chunk', async () => {
+    // 原逻辑用 tokenBudget 阈值决定是否跳过/注入召回——召回注入已整体退役，
+    // 门控随注入一并消失：不同预算下都不产出 recall chunk（memory-tool-recall-design §4）
+    const scenarios = [
+      { tokenBudget: 10 },   // 原「过低预算跳过」场景
+      { tokenBudget: 8000 }, // 原「充足预算注入」场景
+      {},                    // 原「默认无 budget」场景
+    ];
+    for (const cfg of scenarios) {
+      const loop = new AgentLoop({
+        provider: mockProvider([{ content: '回复' }]),
+        bootstrapMemories: [],
+        toolExecutor: vi.fn(),
+        maxContextTokens: 120_000,
+      });
+      loop.setStrategy({ tokenBudget: cfg.tokenBudget } as { tokenBudget?: number });
 
-    // 设置极低的 tokenBudget 触发跳过
-    loop.setStrategy({ tokenBudget: 10 });
-    // 添加一条长消息让 token 估算达预算阈值
-    loop['messages'].push({
-      role: 'user',
-      content: 'a'.repeat(50), // 估算 ~17 token（远超 10 * 0.8 = 8）
-    } as Message);
+      const chunks: AgentChunk[] = [];
+      const recallMemory = makeMemory({ content: '召回内容' });
+      for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
+        chunks.push(chunk);
+      }
 
-    const chunks: AgentChunk[] = [];
-    const recallMemory = makeMemory({ content: '召回内容' });
-    for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
-      chunks.push(chunk);
+      // 任何预算下均无 recall chunk（加回 _injectRecall → 有 recall chunk → 此项转红）
+      const recallChunks = chunks.filter((c) => c.type === 'recall');
+      expect(recallChunks).toHaveLength(0);
     }
-
-    // 不应有 recall chunk（召回被跳过）
-    const recallChunks = chunks.filter((c) => c.type === 'recall');
-    expect(recallChunks).toHaveLength(0);
-  });
-
-  it('tokenBudget 充足时应正常注入召回', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      maxContextTokens: 120_000,
-    });
-
-    // 充足的 tokenBudget
-    loop.setStrategy({ tokenBudget: 8000 });
-
-    const chunks: AgentChunk[] = [];
-    const recallMemory = makeMemory({ content: '召回内容' });
-    for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
-      chunks.push(chunk);
-    }
-
-    // 应有 recall chunk
-    const recallChunks = chunks.filter((c) => c.type === 'recall');
-    expect(recallChunks).toHaveLength(1);
-  });
-
-  it('无 tokenBudget 时应正常注入召回（默认行为）', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-
-    // tokenBudget 默认为 8000，充足
-
-    const chunks: AgentChunk[] = [];
-    const recallMemory = makeMemory({ content: '召回内容' });
-    for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
-      chunks.push(chunk);
-    }
-
-    const recallChunks = chunks.filter((c) => c.type === 'recall');
-    expect(recallChunks).toHaveLength(1);
   });
 });
 
@@ -3897,12 +3825,14 @@ describe('AgentLoop · thinking 事件 llm_calling 阶段', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// T2 实证：召回记忆端到端注入（配套 contextManager.test.ts 的截断层量化）
-// 存留链路：装配注入（recalledMemories）→ injectRecallAsSystem → 运行帧 LLM 实际收到
+// T2 实证：召回记忆端到端注入（已退役）
+// 原「装配注入 → injectRecallAsSystem → 运行帧 LLM 收到记忆块」链路已随自动注入
+// 退役删除（memory-tool-recall-design §4）：记忆检索移交 memory_search 工具，
+// 以下转为退役锚点——LLM 调用帧不再收到「召回的相关记忆」系统消息。
 // ═══════════════════════════════════════════════════════════════
 
-describe('T2 实证 · 召回记忆端到端注入（LLM 收到记忆块）', () => {
-  it('窗口充足：注入的召回记忆块完整到达 LLM（装配 → 运行帧存留链路打通）', async () => {
+describe('T2 实证 · 召回记忆端到端注入（已退役）', () => {
+  it('自动注入退役：LLM 调用帧不再收到「召回的相关记忆」系统消息', async () => {
     // 捕获型 provider：记录 LLM 实际收到的消息序列
     const calls: Message[][] = [];
     const provider = {
@@ -3927,15 +3857,10 @@ describe('T2 实证 · 召回记忆端到端注入（LLM 收到记忆块）', ()
       void chunk;
     }
 
-    // LLM 调用帧收到记忆块（含「召回的相关记忆」系统消息）
+    // 退役后 LLM 调用帧不含「召回的相关记忆」系统消息（加回 injectRecallAsSystem → 此项转红）
     expect(calls).toHaveLength(1);
     const sent = calls[0]!;
-    const memoryMsg = sent.find(
-      (m) => m.role === 'system' && m.content.includes('召回的相关记忆'),
-    );
-    expect(memoryMsg).toBeDefined();
-    expect(memoryMsg!.content).toContain('上次定的架构决策');
-    expect(memoryMsg!.content).toContain('用户偏好简洁');
+    expect(sent.some((m) => m.role === 'system' && m.content.includes('召回的相关记忆'))).toBe(false);
   });
 });
 

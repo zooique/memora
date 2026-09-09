@@ -3,8 +3,8 @@
  *
  * 覆盖 AgentLoop.getMetrics() 和 Agent.getMetrics() 的指标统计正确性：
  *   - LLM 调用指标（callCount、totalInputTokens、totalOutputTokens）
- *   - 记忆召回命中率指标（totalCount、hitCount、hitRate）
  *   - 工具调用指标（callCount、failureCount）
+ *   （记忆召回命中率指标已随自动注入退役删除，见下）
  *   - 上下文管理指标（truncationCount、messageCount、estimatedTokens）
  *   - Agent.getMetrics() 聚合行为
  */
@@ -193,67 +193,12 @@ describe('AgentLoop · LLM 调用指标', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 记忆召回命中率指标测试
-// ═══════════════════════════════════════════════════════════════
-
-describe('AgentLoop · 记忆召回命中率指标', () => {
-  it('无召回记忆时 totalCount=1, hitCount=0, hitRate=0', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-
-    // 不传入 recalledMemories
-    await consumeGenerator(loop.processUserInput('你好'));
-
-    const metrics = loop.getMetrics();
-    expect(metrics.recall.totalCount).toBe(1);
-    expect(metrics.recall.hitCount).toBe(0);
-    expect(metrics.recall.hitRate).toBe(0);
-  });
-
-  it('有召回记忆时 totalCount=1, hitCount=1, hitRate=1', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-
-    const recalledMemories: Memory[] = [makeMemory({ id: 'content:1', source: 'content' })];
-    await consumeGenerator(loop.processUserInput('你好', recalledMemories));
-
-    const metrics = loop.getMetrics();
-    expect(metrics.recall.totalCount).toBe(1);
-    expect(metrics.recall.hitCount).toBe(1);
-    expect(metrics.recall.hitRate).toBe(1);
-  });
-
-  it('多轮对话后命中率应正确计算', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-
-    // 第一轮：无召回
-    await consumeGenerator(loop.processUserInput('第一轮'));
-    // 第二轮：有召回
-    const recalled: Memory[] = [makeMemory({ id: 'content:1' })];
-    await consumeGenerator(loop.processUserInput('第二轮', recalled));
-    // 第三轮：无召回
-    await consumeGenerator(loop.processUserInput('第三轮'));
-
-    const metrics = loop.getMetrics();
-    expect(metrics.recall.totalCount).toBe(3);
-    expect(metrics.recall.hitCount).toBe(1);
-    // hitRate = 1/3 ≈ 0.333
-    expect(metrics.recall.hitRate).toBeCloseTo(0.333, 2);
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
 // 工具调用指标测试
+//
+// 记忆召回命中率指标（recall.totalCount/hitCount/hitRate）已随自动注入
+// 退役删除（memory-tool-recall-design §4）：记忆检索移交 LLM 主动 memory_search
+// 工具，loop 不再代模型召回注入，故该维度指标失去意义，不再有此 describe 块。
+// ═══════════════════════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 工具调用指标', () => {

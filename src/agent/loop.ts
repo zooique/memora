@@ -447,9 +447,13 @@ export class AgentLoop {
   }
 
   /**
-   * 处理一轮用户输入（编排方法，拆分为召回注入/单次迭代/工具分支/纯文本结束 4 个子方法）
+   * 处理一轮用户输入（编排方法：单次迭代/工具分支/纯文本结束）
    *
-   * @param recalledMemories - 记忆召回结果（Agent.memory.search() 产出），传入即注入上下文
+   * 自动召回注入已退役（memory-tool-recall-design §4）：recalledMemories 参数仅保留为
+   * 位置兼容位，不再注入任何自动召回的上下文记忆——记忆检索改由 LLM 经 memory_search
+   * 工具主动触发（builtinToolHandlers.searchMemories），不再由 prepare/loop 代模型猜测注入。
+   *
+   * @param recalledMemories - 已废弃：自动注入退役，恒应为 undefined/空（保留仅为位置兼容）
    * @param signal - 可选 AbortSignal，宿主导入 controller 触发取消
    * @param roundId - 外部已分配轮次 ID（保证 user/assistant/摘要同 roundId），未传自生成
    */
@@ -459,6 +463,8 @@ export class AgentLoop {
     signal?: AbortSignal,
     roundId?: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
+    // 自动注入退役：recalledMemories 仅位置兼容，不再注入（记忆检索引由 LLM 走 memory_search 工具）
+    void recalledMemories;
     // 任务级 SLO 追踪：记录任务开始时间
     const taskStartAt = Date.now();
     // 标记任务进行中
@@ -478,17 +484,9 @@ export class AgentLoop {
       // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
       this.providerRouteCache.clear();
 
-      // 闭环入口自动清理执行期临时残留（上轮 self-review/reflection/duplicate 等），
-      // 在召回注入之前执行——装配注入（召回/最近对话）不属于 executionTemp，不受影响
+      // 闭环入口自动清理执行期临时残留（上轮 self-review/reflection/duplicate 等）
+      // （装配注入「最近对话」不属于 executionTemp，不受影响）
       this.cleanExecutionTemporary();
-
-      // Token 预算前置检查：上下文已接近上限时跳过召回注入，避免加剧溢出风险
-      if (this._shouldSkipRecallInjection()) {
-        logger.debug('Token budget tight, skipping recall injection');
-      } else {
-        // 召回注入（附 turn roundId）
-        yield* this.withRound(this._injectRecall(recalledMemories));
-      }
 
       // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力，受控写入口统一包裹）
       this.appendUserMessage(userInput);
@@ -2006,38 +2004,6 @@ export class AgentLoop {
   }
 
   /**
-   * 以 system 消息注入召回记忆（user 注入并附反指令对协议兼容模型不可靠）；末尾追加预算小节，
-   * 让召回注入规模对模型可见。
-   */
-  private injectRecallAsSystem(memories: readonly Memory[]): void {
-    const memoryBlock = memories
-      .map((m) => {
-        // 兼容 createdAt 为 number（时间戳）或 string（ISO 8601）两种格式
-        const dateStr =
-          typeof m.createdAt === 'number' ? new Date(m.createdAt).toISOString() : m.createdAt;
-        return `- [${dateStr.slice(0, 10)}] ${m.name}: ${m.content.slice(0, LOOP_CONSTANTS.RECALL_CONTENT_SLICE)}`;
-      })
-      .join('\n');
-
-    // 预算估算：召回块自身 token + 注入前上下文总量（尚未 push 本条召回消息）
-    const recallTokens = this.contextManager.estimateTokens([
-      { role: 'system', content: memoryBlock },
-    ]);
-    const beforeTokens = this.contextManager.estimateTokens(this.messages);
-    const totalTokens = beforeTokens + recallTokens;
-    const remaining = Math.max(0, this.maxContextTokens - totalTokens);
-    const budgetNote =
-      `## 上下文预算（仅供参考）\n\n` +
-      `- 已召回记忆：${memories.length} 条 · 约 ${formatTokens(recallTokens)} tokens\n` +
-      `- 当前上下文：约 ${formatTokens(totalTokens)} / ${formatTokens(this.maxContextTokens)} · 剩余约 ${formatTokens(remaining)}\n`;
-
-    this.injectSystemMessage(
-      `## 召回的相关记忆（仅供参考）\n\n${memoryBlock}\n\n---\n\n${budgetNote}`,
-    );
-    logger.debug({ recallCount: memories.length }, '召回记忆已以 system 消息注入');
-  }
-
-  /**
    * 构建 LLM 调用选项。（为何不生成 response_format：它约束最终响应体，而 tool_calls 是通过
    * tools 参数触发的独立流式协议，两者不能并存；response_format 保留供调用方按需显式传入）
    */
@@ -2544,81 +2510,6 @@ export class AgentLoop {
       `</tool_result>`
     );
   }
-
-  /** 注入记忆召回结果 + 统计 + 透明度通知 */
-  private async *_injectRecall(
-    recalledMemories: readonly Memory[] | undefined,
-  ): AsyncGenerator<AgentChunk, void, unknown> {
-    const recallSpan = this.tracer.startSpan(TRACE_SPANS.RECALL, {
-      recallCount: recalledMemories?.length ?? 0,
-    });
-    if (recalledMemories?.length) {
-      this.injectRecallAsSystem(recalledMemories);
-    }
-    recallSpan.setAttribute('hit', recalledMemories !== undefined && recalledMemories.length > 0);
-    // 记录"附着进上下文"的记忆条数与 ID 指纹（只记 count+hash 不记内容，可观测性职责；仅真实 Tracer 时计算）
-    if (this.tracer !== NOOP_TRACER && recalledMemories?.length) {
-      recallSpan.setAttribute('attachedMemoryCount', recalledMemories.length);
-      const memoryIds = recalledMemories.map((m) => m.id).join(',');
-      recallSpan.setAttribute('attachedMemoryFingerprint', sha256Fingerprint(memoryIds));
-    }
-    recallSpan.end();
-    this.metrics.recallTotalCount++;
-    if (recalledMemories && recalledMemories.length > 0) {
-      this.metrics.recallHitCount++;
-    }
-    if (recalledMemories?.length) {
-      yield {
-        type: 'recall',
-        memories: recalledMemories.map((m) => ({
-          id: m.id,
-          name: m.name,
-          score: m.score,
-          source: m.source,
-        })),
-      };
-    }
-  }
-
-  /**
-   * 判断是否应跳过召回注入（Token 预算前置检查）：上下文已接近上限时召回注入只会加剧溢出，
-   * 故在注入前阻止。命中任一即跳过：tokenBudget 软上限达 80%；maxContextTokens 硬上限达 90%。
-   */
-  private _shouldSkipRecallInjection(): boolean {
-    const currentTokens = this.contextManager.estimateTokens(this.messages);
-
-    // 软上限：tokenBudget（0 = 不限制）
-    if (this.strategy.tokenBudget > 0 && currentTokens >= this.strategy.tokenBudget * 0.8) {
-      logger.debug(
-        { currentTokens, budget: this.strategy.tokenBudget },
-        'Token budget 80% reached, skip recall',
-      );
-      return true;
-    }
-
-    // 硬上限：maxContextTokens 90% 警戒线
-    if (currentTokens >= this.maxContextTokens * LOOP_CONSTANTS.CONTEXT_TOKENS_BUFFER_RATIO) {
-      logger.debug(
-        { currentTokens, max: this.maxContextTokens },
-        'Context 90% reached, skip recall',
-      );
-      return true;
-    }
-
-    return false;
-  }
-}
-
-/**
- * 格式化 token 数为可读字符串（约语义：≥1000 显示 x.xK；整数 K 去小数尾缀避免噪音）
- */
-function formatTokens(n: number): string {
-  if (n >= 1000) {
-    const k = n / 1000;
-    // 整数 K（如 1.0K → "1K"）去小数尾缀
-    return Number.isInteger(k) ? `${k}K` : `${k.toFixed(1)}K`;
-  }
-  return String(Math.round(n));
 }
 
 /**
