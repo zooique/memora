@@ -202,6 +202,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 - **失败定义（精确）**：值得回忆的场景（内容与过往相关）却未查询**且**答案劣于有记忆时——才是失败。"直接干"（简单任务判断为不值得回忆）且干对 = 想起判断的合理产物，**不算失败**；
 - **分模型**：云端大模型 vs 本地小模型分别跑同一问题集（memora 最小公分母是本地 LLM）。
 - **达标线（量化，2026-09-09 审查补，防验收事后叙事）**：B 必须 **≈100% 硬门槛**（未过则不视为阶段 1 落地，直接回退或升级）；A 记录基线并与自动注入基线的对照——若本地小模型 A **低于云端 A 的一半**（建议值，实测前冻结：如云端 80% / 本地 <40%）且同问题集复现 ≥3 次 → 触发 C 路径演进（§3.2/§6.9）或最小常驻轨回退预案（§1.3）。**阈值在阶段 1 实施前随验收集冻结**，不得事后按结果调标。
+- **具体问题集与判定基准见 [memory-tool-recall-ab-benchmark.md](memory-tool-recall-ab-benchmark.md)**（A/B 分类用例、目标记忆跨会话/旧轮规避组装互斥、判定记录表、装载器扩展建议）——问题集随实测迭代，不嵌正文。
 
 ### 阶段 2：prepare 召回策略键族删除（checklist 9 类落点批次）——**已实现**（commit 4f318407，全量回归通过；工具互斥收尾 commit 89d0ff26）
 
@@ -209,7 +210,32 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 
 ### 阶段 3：score 退役批次（承接 recency 文档 P0-2/P0-3，独立决策）
 
-纯工具化后 score 的消费端 = hybridMerge 排序权重（×0.4）与工具返回展示（`(score=...)` builtinToolHandlers.ts:837）。单调不减问题仍在工具结果排序中（无区分度但无害）。**倾向**：score 退出排序权重（hybridMerge 语义分纯化）→ 字段保留作诊断展示 → SOURCE_HEALTH_THRESHOLDS/SCORE_FLOOR 随建随拆记录在案（2026-09-09 教训）。破坏面 = 接口+宿主存储+协议 DTO（recency 文档 P0-2 已列）——**维持推后，不在本设计执行**。
+**现状（2026-09-09 实证）**：score 的消费端已收敛为三类——① 排序权重 `hybridMerge` 综合分 `vectorScore×0.6 + score×0.4`（hybridMerge.ts:58-64，recall() 与 searchHybrid() 共享单一真理源）；② 召回副本提升 `boostScore`（recall.ts:491，`+BOOST_INCREMENT`，auto-inject 退役后仅剩 warmRecall 走 recall()）；③ 展示/判定 `(score=...)` 工具返回（builtinToolHandlers.ts:920）与 `memoryAdvisor` avgScore 健康状态判定（`SOURCE_HEALTH_THRESHOLDS`，memoryAdvisor.ts:164-190）。字段本身（`Memory.score` + 宿主存储 + 协议 DTO）破坏面大（recency 文档 P0-2 已列）——**维持推后，字段物理保留作诊断展示**。
+
+**决策矩阵**：
+
+| 消费端 | 处置 | 理由 |
+|---|---|---|
+| `hybridMerge` score×0.4 | **退役**：排序纯化 = 单语义分 `vectorScore` 降序 | score 单调不减无区分度（P0-1）；`只 touch 不 +score`（§5.2）后 score 不再更新，排序残件。同贴题下的次序交由 LLM 依据暴露的 `accessedAt` 字段决策（§5.2 定案：代码不预排时间主序） |
+| `boostScore`（recall.ts 副本提升） | **删除**：收敛为 touch | 唯一排序消费者（hybridMerge score 项）退役后，boost 副作用失效；touchScores `incrementScore(id,0)` 已落地（只刷 accessedAt），是唯一写位 |
+| `SCORE_FLOOR` | **保留**作存储 clamp 下限 | touch 仍走 `incrementScore`（clamp 到 floor），是存储不变量、非排序语义；勿随排序批拆除误伤 touch 读路径 |
+| `memoryAdvisor` avgScore 健康判定 | **回退判定基准**（本周另议指标，候选=accessedAt 冷度｜弃用 status） | G34 已定性记忆无沉底语义、`listFading` 更名「冷记忆观测」；score 不再更新 → avgScore 冻结失去时效含义，健康判定基础消失 |
+| 工具返回 `(score=...)` | **保留**作诊断展示 | 字段物理保留故可展示，只读回溯价值（已实现只读不改） |
+| `BOOST_INCREMENT` / `SCORE_CEILING` | 3B 后查孤儿：若 boostScore 删除且无 q 排写提升位，常量失消费 → 另批清理 | 同「预留键 vs 僵尸键」纪律，勿留空转 |
+
+**批次序（渐进重构 + progressive-refactor，每批独立提交 + 全量回归）**：
+
+- **3A 排序纯化**：`hybridMerge` 移除 `memoryScoreWeight` 项与 `HybridWeights` 权重参数 → 变量 `sort 单向量分`；recall() 与 searchHybrid() 同步生效（同一函数，一处改处处生效）。`keyword-only` 回退通道（vectorScore=0）失去 score 打破平局 → 次序依赖 stable-sort 插入序，可接受（兜底后端，语义缺失本就无主序）。
+- **3B boost 收敛**：recall.ts 删除 `boostScore`（:491/:271 副本提升段），确认 `touchScores` 为唯一写位（`incrementScore(id,0)`）。
+- **3C 判定回退**：`memoryAdvisor` 健康状态改基准（拍板见下表①），`SOURCE_HEALTH_THRESHOLDS` 随速随拆记录在案（2026-09-09 教训：新增后未住即拆，勿留孤儿）。
+- **3D 常量清理**：`BOOST_INCREMENT`/`SCORE_CEILING` 去孤儿（3B 后 grep 消费方归零则删，`src/index.ts:139` 导出面同步）。
+
+**退出条件**：排序行为回归（语义分主序、score 不参与且不被 boost 维护）；工具 `(score=...)` 仍正常展示；memoryAdvisor 健康判定有明确基准；全量测试绿。
+
+**决策点（拍板后实施）**：
+1. **memoryAdvisor 健康判定基准**：accessedAt 冷度（承接「冷记忆观测」正名） vs **弃用 status**（倾向弃用——记忆健康由 supersede/命中体现，无需榜单级 status）。
+2. **hybridMerge 接口**：权重参数删除（倾向，代码纯化） vs 保留归零（兼容未来次级键）。
+3. **工具 `(score=...)` 展示**：保留作诊断（倾向） vs 移除（字段已无排序语义）。
 
 ---
 
