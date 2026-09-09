@@ -2339,7 +2339,8 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       },
     });
     expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('完整对话：3 条');
-    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('记忆摘要：2 条');
+    // 「记忆摘要」段已隐藏（§2.4 定案：自动注入退役后 memoryTokens/memoryCount 恒 0，无信息量）；DTO 字段保留
+    expect((document.getElementById('occTip') as HTMLElement).textContent).not.toContain('记忆摘要');
     // 同款 chat_providers 再推送（如面板刷新）→ 上限未变 → 不把已用清回 0
     dispatch({
       type: 'chat_providers',
@@ -2409,7 +2410,8 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     const tip = (document.getElementById('occTip') as HTMLElement).textContent ?? '';
     expect(tip).toContain('总容量 64K');
     expect(tip).toContain('完整对话：2 条 · 1K');
-    expect(tip).toContain('记忆摘要：1 条 · 1K');
+    // 「记忆摘要」段已隐藏（§2.4 定案）；DTO 字段保留作诊断
+    expect(tip).not.toContain('记忆摘要');
     expect(tip).toContain('角色包/系统设定：15K（占窗口 23.4%）');
   });
 });

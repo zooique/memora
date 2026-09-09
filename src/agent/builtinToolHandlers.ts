@@ -29,6 +29,9 @@ import { splitSessionId } from '@/utils/time.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText } from '@/agent/toolExecutor.js';
+import { backgroundTask } from '@/utils/backgroundTask.js';
+import { touchScores } from '@/memory/recall.js';
+import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
 
 /** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
@@ -126,6 +129,30 @@ export class BuiltinToolHandlers {
     private readonly memoryIndex: IMemoryStorage,
     private readonly sessionStore?: ISessionStore,
   ) {}
+
+  /** 记忆搜索器（search_memories 语义后端，装配期注入；未注入时回退关键词 memoryIndex.search） */
+  private memoryInspector: MemoryInspector | null = null;
+
+  /** memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」；装配期注入，缺省不发射） */
+  private onMemoryRecalled: ((info: { count: number; query: string }) => void) | null = null;
+
+  /**
+   * 注入 MemoryInspector，启用 search_memories 的语义混合搜索后端（memory-tool-recall-design §3.3）。
+   * 装配依赖 loop/history，toolExec 在 assembler 中先于它构造，故用「构造后注入」而非构造参数。
+   * 注入后 search_memories 走 searchHybrid（语义+关键词+superseded 过滤+溯源揭示），未注入保持旧关键词行为。
+   */
+  setMemoryInspector(inspector: MemoryInspector): void {
+    this.memoryInspector = inspector;
+  }
+
+  /**
+   * 注入 memoryRecalled 事件发射回调（宿主消费，§2.4「保留改语义」定案）。
+   * 搜索工具命中记忆时触发，文案语义 =「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发。
+   * 缺省不注入则静默跳过（内置工具也可被测试/脚本直调，无宿主时 no-op）。
+   */
+  setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
+    this.onMemoryRecalled = callback;
+  }
 
   // ─── 路径安全（内置 + 自定义工具共享） ──────────────────────────
 
@@ -813,30 +840,71 @@ export class BuiltinToolHandlers {
       limit = 50;
     }
 
-    const mode = modeStr === 'near' ? 'near' : 'match';
-    let results = this.memoryIndex.search(query, limit);
+    // memory-tool-recall-design §3.3：注入 MemoryInspector 后走语义混合搜索（searchHybrid
+    // = 语义 + 关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。
+    const hits: AgentSearchHit[] = this.memoryInspector
+      ? await this.memoryInspector.searchHybrid(query, limit)
+      : this.memoryIndex
+          .search(query, limit)
+          .map((m) => ({ id: m.id, name: m.name, source: m.source, score: m.score, contentPreview: m.content }));
 
-    // near 模式：过滤只保留所有关键词都命中的结果
-    if (mode === 'near' && results.length > 0) {
-      // 复用 segmentText 分词，与 inMemoryStorage 搜索保持一致
+    // near 模式（仅关键词后端）：过滤只保留所有关键词都命中的结果
+    if (!this.memoryInspector && modeStr === 'near' && hits.length > 0) {
       const keywords = segmentLower(query);
       if (keywords.length > 1) {
-        results = results.filter((m) => {
-          const text = `${m.content} ${m.name}`.toLowerCase();
+        const filtered = hits.filter((m) => {
+          const text = `${m.contentPreview} ${m.name}`.toLowerCase();
           return keywords.every((kw) => text.includes(kw));
         });
+        hits.length = 0;
+        hits.push(...filtered);
       }
     }
 
-    if (results.length === 0) {
-      return `（未找到匹配 "${query}" 的记忆${mode === 'near' ? '（near 模式：所有关键词必须命中）' : ''}）`;
+    if (hits.length === 0) {
+      return `（未找到匹配 "${query}" 的记忆${!this.memoryInspector && modeStr === 'near' ? '（near 模式：所有关键词必须命中）' : ''}）`;
     }
 
-    const lines = results.map((m, i) => {
-      const preview = truncate(m.content, 80);
-      return `${i + 1}. [${m.source}:${m.name}] (score=${m.score})\n   ${preview.replace(/\n/g, ' ')}`;
+    // 命中即 touch（§3.4/§3.3「命中 touch」行）：fire-and-forget 刷新 accessedAt（backgroundTask + touchScores）。
+    // 只 touch 不 +score（§5.2 定案）：accessedAt 是「使用轨迹」唯一事实源，touchScores 用 incrementScore(id, 0)
+    // 保持 score 不变仅刷新访问时间——命中 = 被 LLM 想起 = 记忆强化，与人类记忆隐喻对齐（回忆强化记忆）。查询低频，无自强化（自动注入退役后根除正反馈）。
+    this.touchHits(hits);
+
+    // memoryRecalled 事件（§2.4「保留改语义」定案）：LLM 查询记忆命中 N 条 → 宿主感知提示。
+    // 与 warmRecall（恢复路径）的 memoryRecalled 发射并列为仅存的两个触发位。
+    this.onMemoryRecalled?.({ count: hits.length, query });
+
+    const lines = hits.map((m, i) => {
+      const preview = truncate(m.contentPreview ?? '', 80);
+      const access = m.accessedAt ? ` accessedAt=${m.accessedAt}` : '';
+      // 结构化溯源（§3.3「返回」行）：round-summary 命中项显式附 sessionId/roundId，LLM 零解析直用 trace_summary
+      const trace = m.sessionId
+        ? ` trace(${m.sessionId}${m.roundId ? `, round=${m.roundId}` : ''})`
+        : '';
+      // 附语义相似度（语义后端可用时），供 LLM 评估贴合度
+      const sim = m.similarity !== undefined ? ` sim=${m.similarity.toFixed(2)}` : '';
+      return `${i + 1}. [${m.source}:${m.name}] (score=${m.score}${sim}${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
     });
-    return `搜索 "${query}" 找到 ${results.length} 条（${mode} 模式）：\n${lines.join('\n')}`;
+    return `搜索 "${query}" 找到 ${hits.length} 条${this.memoryInspector ? '（语义+关键词）' : `（${modeStr} 模式）`}：\n${lines.join('\n')}`;
+  }
+
+  /**
+   * 命中即 touch：fire-and-forget 刷新命中记忆的 accessedAt（保持 score 不变）。
+   *
+   * 收敛到 recall.ts 的单一真理源 touchScores（§5.2 只 touch 不 +score，incrementScore(id, 0)
+   * 原子更新 accessedAt、不改 score）——不为工具命中另造 setScore 循环。backgroundTask 保证
+   * fire-and-forget 不阻塞搜索返回，且统一并发限流；失败兜底记日志即可（touch 是强化副作用，非主线流程）。
+   *
+   * @param hits 搜索命中项（取其 id 定位，score 交由 touchScores 内部 incrementScore 保持）
+   */
+  private touchHits(hits: readonly AgentSearchHit[]): void {
+    if (hits.length === 0) return;
+    backgroundTask('search_memories.touch', () =>
+      touchScores(
+        this.memoryIndex,
+        hits.map((h) => h.id),
+      ),
+    );
   }
 
   /**

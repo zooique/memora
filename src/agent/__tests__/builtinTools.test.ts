@@ -174,12 +174,12 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(searchMemories!.parameters.properties.mode).toBeDefined();
   });
 
-  it('search_memories 描述含多步任务按需召回的引导（档案2 步序列记忆策略 (b)）', () => {
+  it('search_memories 描述含混合检索与按需召回的引导（§3.3 工具升级定案）', () => {
     const searchMemories = BUILTIN_TOOLS.find((t) => t.name === 'search_memories');
-    // 引导：多步任务中需要历史决策/既有记忆时主动调用（回答前仅注入一次、运行中不自动补充）
-    expect(searchMemories!.description).toContain('多步任务');
-    expect(searchMemories!.description).toContain('主动调用本工具按需召回');
-    expect(searchMemories!.description).toContain('不自动补充');
+    // 引导：语义+关键词混合检索，涉及过往决定/偏好/项目背景时主动按需召回；揭示 accessedAt/sim 辅助排序
+    expect(searchMemories!.description).toContain('语义+关键词混合检索记忆库');
+    expect(searchMemories!.description).toContain('按需召回');
+    expect(searchMemories!.description).toContain('accessedAt');
   });
 
   // ─── ToolDefinition 类型守卫 ──────────────────────────────

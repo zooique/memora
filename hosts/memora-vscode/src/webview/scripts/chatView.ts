@@ -1,4 +1,4 @@
-﻿/**
+/**
  * chatView — 对话面板 webview 运行时脚本（阶段 B P2-1）
  *
  * 由 chatPanel.ts 的 buildHtml 内联 <script> 迁移而来：以工厂函数 createChatView
@@ -3111,6 +3111,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 每行「标签：数量 · token（占比）」；rolePack 额外给「占窗口比例」；
    * UI 只渲染宿主透传的数字与条数，不重算（守内核/宿主边界）。
+   * 「记忆摘要」段已隐藏（memory-tool-recall-design §2.4 定案）：自动注入退役后
+   * memoryTokens/memoryCount 恒定 0，「记忆摘要」段无信息量 → 不渲染；DTO 字段保留作诊断。
    */
   function buildOccupancyTipText(
     occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
@@ -3119,7 +3121,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
     const lines: string[] = [`上下文占用（总容量 ${fmtTokens(occ.totalTokens)}）`];
     lines.push(`角色包/系统设定：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`);
-    lines.push(`记忆摘要：${occ.memoryCount} 条 · ${fmtTokens(occ.memoryTokens)}（${pctOf(occ.memoryTokens)}）`);
     lines.push(`完整对话：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`);
     lines.push(`当前输入锚点：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`);
     lines.push(`输出预留：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`);

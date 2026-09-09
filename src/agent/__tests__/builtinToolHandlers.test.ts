@@ -19,6 +19,8 @@ import { join, resolve } from 'node:path';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
+import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+import { awaitBackgroundTasks } from '@/utils/backgroundTask.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
@@ -520,6 +522,63 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     const result = await handlers.searchMemories('A', '10', 'match');
     // preview 应为 80 字符 + …
     expect(result).toContain('A'.repeat(80) + '…');
+  });
+
+  it('注入 MemoryInspector 后走语义搜索：揭示 accessedAt/溯源，命中即 touch 刷新访问时间（§3.3）', async () => {
+    // 真实 MemoryInspector 接线（同 storage），searchHybrid 语义命中 + 溯源字段给出
+    const inspector = new MemoryInspector(storage, {} as never, {} as never);
+    handlers.setMemoryInspector(inspector);
+    // 当前访问时间戳
+    const oldAccess = '2026-01-01T00:00:00Z';
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:r1',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'r1',
+        name: '轮次摘要 2026-08-28-main r1',
+        content: 'Constraint 决策内容',
+        score: 0.7,
+        accessedAt: oldAccess,
+      }),
+    );
+
+    const result = await handlers.searchMemories('决策', '10', 'match');
+
+    // 语义后端路径：头部标记 + 溯源字段揭示 + accessedAt 揭示
+    expect(result).toContain('语义+关键词');
+    expect(result).toContain('trace(2026-08-28-main, round=r1)');
+    expect(result).toContain('accessedAt=2026-01-01T00:00:00Z');
+
+    // 命中即 touch：等后台任务落地后 accessedAt 被刷新（score 不变，只 touch）
+    await awaitBackgroundTasks(2000);
+    const touched = storage.getById('round-summary:2026-08-28-main:r1');
+    expect(touched!.accessedAt).not.toBe(oldAccess);
+    expect(touched!.score).toBe(0.7);
+  });
+
+  it('注入 setOnMemoryRecalled 后命中触发事件（§2.4 保留改语义定案，LLM 查询命中数）', async () => {
+    // 用独特词避免与库内其它记忆（重复 TypeScript 语义命中）干扰 count 断言
+    storage.upsert(
+      createMemory({ id: 'content:pref', source: 'preference', name: '偏好', content: '偏好 XylophoneFoo 独特配置' }),
+    );
+    const cb = vi.fn();
+    handlers.setOnMemoryRecalled(cb);
+
+    await handlers.searchMemories('XylophoneFoo', '10', 'match');
+
+    // 命中 1 条 → 发射 { count, query } 供宿主感知提示
+    expect(cb).toHaveBeenCalledTimes(1);
+    expect(cb).toHaveBeenCalledWith({ count: 1, query: 'XylophoneFoo' });
+  });
+
+  it('命中为空时不触发 memoryRecalled（无意义感知噪声）', async () => {
+    const cb = vi.fn();
+    handlers.setOnMemoryRecalled(cb);
+
+    await handlers.searchMemories('不存在的关键词', '10', 'match');
+
+    expect(cb).not.toHaveBeenCalled();
   });
 });
 

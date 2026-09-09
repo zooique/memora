@@ -92,6 +92,12 @@ export interface AgentSearchHit {
   similarity?: number;
   /** 创建时间（ISO 8601，供 UI 时间筛选） */
   createdAt?: string;
+  /** 最近使用时间（ISO 8601，工具命中即 touch 刷新，§3.3/§5.2 事实字段：LLM 按此定「最近使用优先」） */
+  accessedAt?: string;
+  /** 溯源（round-summary 命中项）：会话标识（YYYY-MM-DD-sessionName，trace_summary 参数直通） */
+  sessionId?: string;
+  /** 溯源（round-summary 命中项）：轮次 ID（trace_summary 参数直通），LLM 零解析直用 */
+  roundId?: string;
 }
 
 /** 记忆库统计数据 */
@@ -273,9 +279,14 @@ export class MemoryInspector {
       }
     }
 
-    // 综合排序（hybridMerge 纯函数，与 recall() 共享）
-    const sorted = hybridMerge(merged.values(), limit);
+    // 融合排序（hybridMerge 纯函数，与 recall() 共享）
+    // 前置 superseded 过滤（与 recall 读路径 recall.ts:221 一致）：被 supersededBy 取代的摘要不作为当前事实
+    // 返回（仍保留可回溯，trace_summary 可精确取原文）。在排序前过滤，避免占据 top-N 槽位挤掉有效命中。
+    const active = [...merged.values()].filter((e) => !e.memory.supersededBy);
+    const sorted = hybridMerge(active, limit);
 
+    // 排序语义（§5.2 定案）：仅返回 hybridMerge 融合序（语义相关主），不引入 accessedAt 时间主序——
+    // accessedAt 只作为事实字段揭示（工具命中 touch 刷新），优先级判断归 LLM 结合任务定夺。
     return sorted.map(({ memory, vectorScore }) => ({
       id: memory.id,
       name: memory.name,
@@ -284,6 +295,13 @@ export class MemoryInspector {
       similarity: vectorScore,
       contentPreview: truncate(memory.content, SEARCH_PREVIEW_LEN),
       createdAt: memory.createdAt,
+      accessedAt: memory.accessedAt,
+      // 结构化溯源（§3.3「返回」行）：round-summary 命中项显式附 sessionId/roundId，
+      // 与 trace_summary 参数直通——LLM 零解析直用（替代原先隐式埋在 name 的未文档化格式契约）。
+      // 字段值源：round-summary 顶层持久化 sessionName（= YYYY-MM-DD-sessionName，即 trace_summary 的 sessionId）
+      // + roundId，A1 边界定案：宿主 SQLite 不持久化 metadata，故不从 metadata 读。
+      sessionId: memory.sessionName,
+      roundId: memory.roundId,
     }));
   }
 

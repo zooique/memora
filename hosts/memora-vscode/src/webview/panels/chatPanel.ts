@@ -916,16 +916,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * memoryRecalled：LLM 回答前内核从记忆库召回了 N 条相关记忆
+   * memoryRecalled：LLM 查询记忆库命中 N 条相关记忆（纯工具化后语义，§2.4 保留改语义定案）
    *
-   * 纯感知增强——用户不知道 LLM 看了多少历史对话/笔记，补一个 info 级提示条。
-   * 对齐内核 contextPreparer.ts L227 emit 点 + checkpointRestoreCoordinator warm recall。
+   * 纯感知增强——用户不知道 LLM 查了哪些历史/笔记，补一个 info 级提示条。
+   * 自动注入退役后唯一触发位 = search_memories 工具命中（assembler 接线）+ warmRecall 恢复例外；
+   * 对齐内核 builtinToolHandlers.searchMemories 命中点 + checkpointRestoreCoordinator warm recall。
    */
   private readonly onMemoryRecalled = (info: { count: number; query: string }): void => {
     this.post({
       type: 'notice',
       level: 'info',
-      message: `已从记忆库召回 ${info.count} 条相关记忆`,
+      message: `LLM 查询记忆命中 ${info.count} 条`,
     });
   };
 

@@ -371,6 +371,28 @@ describe('MemoryInspector', () => {
       // 长内容截断到 120 + '…'
       expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
     });
+
+    it('superseded 过滤：被 supersededBy 取代的摘要不返回（§3.3 过滤行）', async () => {
+      // 旧摘要被新摘要取代 → 不出现；有效摘要正常返回
+      const vs = createMockVectorStore([{ id: 'round-summary:s:old', similarity: 0.9 }]);
+      inspector.setVectorStore(vs);
+      storage.upsert(createMemory({ id: 'round-summary:s:old', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '旧摘要', supersededBy: 'round-summary:s:new' }));
+      storage.upsert(createMemory({ id: 'round-summary:s:new', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '新摘要', content: '最新内容' }));
+      const hits = await inspector.searchHybrid('新');
+      expect(hits).toHaveLength(1);
+      expect(hits[0]!.name).toBe('新摘要');
+    });
+
+    it('命中揭示 accessedAt + 溯源 sessionId/roundId（§3.3 返回行，round-summary 直通 trace_summary）', async () => {
+      const vs = createMockVectorStore([{ id: 'round-summary:2026-08-28-main:r1', similarity: 0.8 }]);
+      inspector.setVectorStore(vs);
+      storage.upsert(createMemory({ id: 'round-summary:2026-08-28-main:r1', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r1', name: '摘要1', content: '决策内容', accessedAt: '2026-09-01T00:00:00Z' }));
+      const hits = await inspector.searchHybrid('决策');
+      expect(hits[0]!.accessedAt).toBe('2026-09-01T00:00:00Z');
+      // 溯源字段 = trace_summary 参数直通（sessionName 即 sessionId）
+      expect(hits[0]!.sessionId).toBe('2026-08-28-main');
+      expect(hits[0]!.roundId).toBe('r1');
+    });
   });
 
   // ════════════════════════════════════════════════════════

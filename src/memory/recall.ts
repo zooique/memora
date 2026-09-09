@@ -467,17 +467,20 @@ function applyCapAllocation(
 }
 
 /**
- * 批量持久化 boost（recall 后 fire-and-forget 调用）：失败仅 log 不抛错，不阻塞读路径。
- * 不在 recall 内 upsert（消除写耦合读）；不引入 dirty+批量调度器；立即持久化但 fire-and-forget
+ * 批量持久化 touch（召回后 fire-and-forget 调用）：只刷新 accessedAt，不改 score。
+ *
+ * 承接「只 touch 不 +score」定案（§5.2）：accessedAt 是「使用轨迹」唯一事实源
+ * （被想起即刷新），不叠加 +score 以免与「最近使用优先」时间规则形成双轨、引回自强化。
+ * 用 incrementScore(id, 0)：delta=0 → clamp 后 score 不变，仅 accessedAt 更新，
+ * 天然原子（无 read-modify-write 并发冲突）。失败仅 log 不抛错，不阻塞读路径。
  */
-export async function boostScores(
+export async function touchScores(
   storage: IMemoryStorage,
   ids: string[],
   now: string = nowIso(),
 ): Promise<void> {
   for (const id of ids) {
-    // incrementScore 原子操作，消除 read-modify-write 并发冲突
-    storage.incrementScore(id, BOOST_INCREMENT, now);
+    storage.incrementScore(id, 0, now);
   }
 }
 

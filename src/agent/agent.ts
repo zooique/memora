@@ -1667,7 +1667,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.internals.gcService = null;
     // 等待 WorkProjection 无 inflight 概念（作品投影改为用户主动触发同步写，无后台 LLM 任务）
     // 背景任务统一由下方 awaitBackgroundTasks 兜底
-    // 关键修复：等待 backgroundTask 全局在途任务完成（如 boostScores）。
+    // 关键修复：等待 backgroundTask 全局在途任务完成（如 touchScores）。
     // 否则 close 后后台任务仍可能 upsert 已关闭的 storage，触发写失效或异常。
     try {
       const awaited = await awaitBackgroundTasks(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);

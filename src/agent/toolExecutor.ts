@@ -16,6 +16,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
+import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
 import type { IFetchProvider } from '@/web-fetch/types.js';
@@ -468,6 +469,27 @@ export class ToolExecutor {
       memoryIndex,
       sessionStore,
     );
+  }
+
+  /**
+   * 注入 MemoryInspector，启用 search_memories 的语义混合搜索后端（memory-tool-recall-design §3.3）。
+   * assembler 中它依赖 loop/history、后于 toolExec 构造，故用「构造后注入」——装配期经
+   * toolExec.setMemoryInspector(...) 接线，未注入时 search_memories 保持旧关键词行为。
+   *
+   * @param inspector 记忆搜索器（含语义向量后端 + superseded 过滤 + 溯源揭示）
+   */
+  setMemoryInspector(inspector: MemoryInspector): void {
+    this.builtinHandlers.setMemoryInspector(inspector);
+  }
+
+  /**
+   * 注入 memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」，§2.4 保留改语义定案）。
+   * 转发给 builtinHandlers：search_memories 命中记忆时触发，与 warmRecall 的 memoryRecalled 并为仅存两个触发位。
+   *
+   * @param callback 命中回调（count 命中条数 / query 检索词），缺省注入则工具静默（无宿主 no-op）
+   */
+  setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
+    this.builtinHandlers.setOnMemoryRecalled(callback);
   }
 
   /**

@@ -1,7 +1,8 @@
 # 记忆纯工具化召回设计（告别自动注入）
 
-> **状态**：提案待审（设计先行，未实现）
+> **状态**：阶段1自动注入机制退役 **已实现**（步进A/B/C/D/E 落地，全量回归 2946 通过）；阶段2 6 键族删除 / 阶段3 score 退役 待办
 > **日期**：2026-09-09
+> **实测**：`scripts/test-memory-tool-recall.ts`（机制实测脚手架，验证 searchHybrid 结构化溯源字段、superseded 过滤、命中 touch 不改 score、memoryRecalled 事件、touchScores 收敛）；A/B 模型行为验收（想起率/命中率）待真实 LLM + 问题集见 §阶段1 出口条件
 > **关联**：[memory-recall-recency-design.md](memory-recall-recency-design.md)（本设计**取代**其问题域，见 §0.5）· [memory-as-summary.md](memory-as-summary.md) · [memory-role-pack-boundary.md](memory-role-pack-boundary.md) D7/D6
 > **决策链**：score 单调不减窘境（实证）→ accessedAt 近因提案 → 复合键排雷（P0-1 连续浮点失效）→ 主流设计对照（ACT-R / Generative Agents / Mem0 均揉单标量，memora 不揉的理由）→ **范式切换定案：纯工具化**（2026-09-09 萧然拍板）→ **首步记忆检索：确定性触发**（自发工具调用不可靠 → 首轮收窄为只读探查面，同日二轮拍板）→ **记忆职责校正：被想起为主、被找到为兜底**（LLM 收到要求的第一反应是回忆；"用户提点才查到"是最差兜底线，非目标，同日三轮）→ **四轮澄清：想起 = 每轮默认第一反应（判断恒在），"直接干"是判断的合理产物**（"不是每轮都必须" = 结果允许不需要，非降低回忆地位）→ **「最近使用优先」规则落定：accessedAt 字段揭示 + 描述规则归 LLM，代码不预排时间主序**（同日补充拍板，§5.2）
 

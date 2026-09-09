@@ -836,6 +836,12 @@ export async function assembleComponents(
   if (vectorStore) {
     memoryInspector.setVectorStore(vectorStore);
   }
+  // 接线 search_memories 语义后端：toolExec 先于 memoryInspector 构造，故此处后注入；
+  // 注入后 search_memories 走 searchHybrid（语义+关键词+superseded 过滤+accessedAt/溯源揭示，§3.3）
+  toolExec.setMemoryInspector(memoryInspector);
+  // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
+  // 「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发 memoryRecalled。
+  toolExec.setOnMemoryRecalled((info) => hooks?.emit(AGENT_EVENTS.memoryRecalled, info));
 
   // ── 输入增强管线 ──
 

@@ -406,14 +406,15 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'search_memories',
     description:
-      '在记忆索引中搜索关键词。支持 match（任一命中，默认）和 near（全部命中）两种模式。' +
-      '执行多步任务（复杂任务分步推进）过程中需要历史决策或既有记忆时，主动调用本工具按需召回' +
-      '（回答前仅注入一次召回记忆，运行中不自动补充）。',
+      '语义+关键词混合检索记忆库。涉及过往决定、历史事实、用户偏好、项目背景，或回答' +
+      '不确定时，优先调用本工具按需召回（理解意图 → 搜记忆，结构性前置）。命中会返回该记忆的' +
+      '最近使用时间 accessedAt 与语义相似度 sim；多个候选贴合度相近时，按 accessedAt 新者优先定优先级' +
+      '（命中会刷新该记忆的最近使用时间）。',
     readonly: true,
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索关键词' },
+        query: { type: 'string', description: '搜索关键词或语义描述' },
         limit: { type: 'string', description: '返回结果数量上限，默认 "10"' },
         mode: { type: 'string', description: '"match"（默认，任一）或 "near"（必须全部）' },
       },

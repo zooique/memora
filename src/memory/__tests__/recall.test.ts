@@ -3,7 +3,7 @@
  * 覆盖关键词提取 + recall 函数 + boostScore 上限
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { recall, extractKeywords, boostScores } from '@/memory/recall.js';
+import { recall, extractKeywords, touchScores } from '@/memory/recall.js';
 import { RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
@@ -296,7 +296,7 @@ describe('recall · 记忆召回', () => {
   });
 });
 
-describe('boostScores · 批量持久化 boost', () => {
+describe('touchScores · 批量持久化 touch（只刷 accessedAt 不改 score）', () => {
   let mockStorage: IMemoryStorage;
 
   beforeEach(() => {
@@ -308,7 +308,7 @@ describe('boostScores · 批量持久化 boost', () => {
       search: vi.fn(),
       count: vi.fn(() => 0),
       countBySource: vi.fn(() => 0),
-      // boostScores 改用 incrementScore 原子操作（替代 read-modify-write）
+      // touchScores 用 incrementScore(id, 0)：delta=0 → score 不变，仅刷新 accessedAt（原子）
       incrementScore: vi.fn(() => true),
       setScore: vi.fn(() => true),
       getAllSources: vi.fn(() => new Map()),
@@ -316,28 +316,28 @@ describe('boostScores · 批量持久化 boost', () => {
     } as unknown as IMemoryStorage;
   });
 
-  it('应对每个 id 调用 incrementScore 原子增量', async () => {
-    await boostScores(mockStorage, ['content:1', 'content:2']);
+  it('应对每个 id 调用 incrementScore 且 delta=0（只刷 accessedAt 不改 score）', async () => {
+    await touchScores(mockStorage, ['content:1', 'content:2']);
 
-    // 应调用 2 次 incrementScore，传入 BOOST_INCREMENT 增量
+    // 应调用 2 次 incrementScore
     expect(mockStorage.incrementScore).toHaveBeenCalledTimes(2);
     const calls = vi.mocked(mockStorage.incrementScore).mock.calls;
     expect(calls[0]![0]).toBe('content:1');
     expect(calls[1]![0]).toBe('content:2');
-    // delta 是 BOOST_INCREMENT（0.05），now 是 ISO 字符串
-    expect(calls[0]![1]).toBe(0.05);
+    // delta=0：score 保持不变，仅 accessedAt 刷新（承接「只 touch 不 +score」定案）
+    expect(calls[0]![1]).toBe(0);
     expect(typeof calls[0]![2]).toBe('string');
   });
 
   it('incrementScore 返回 false（记忆不存在/已删除）不报错', async () => {
     vi.mocked(mockStorage.incrementScore).mockReturnValue(false);
 
-    // boostScores 不检查返回值，fire-and-forget 由 storage 层静默处理
-    await expect(boostScores(mockStorage, ['content:deleted'])).resolves.toBeUndefined();
+    // touchScores 不检查返回值，fire-and-forget 由 storage 层静默处理
+    await expect(touchScores(mockStorage, ['content:deleted'])).resolves.toBeUndefined();
   });
 
   it('空 ids 数组应直接返回，不调用 incrementScore', async () => {
-    await boostScores(mockStorage, []);
+    await touchScores(mockStorage, []);
 
     expect(mockStorage.incrementScore).not.toHaveBeenCalled();
   });
