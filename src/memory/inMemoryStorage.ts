@@ -7,7 +7,7 @@ import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { Memory } from '@/memory/types.js';
 import { validateSource } from '@/memory/sourceValidation.js';
 import { segmentLower } from '@/utils/segmenter.js';
-import { byScoreDesc, byFadingAsc } from '@/utils/array.js';
+import { byScoreDesc } from '@/utils/array.js';
 import { configError } from '@/utils/errors.js';
 import { logger } from '@/logging/logger.js';
 import { nowIso } from '@/utils/time.js';
@@ -200,15 +200,6 @@ export class InMemoryStorage implements IMemoryStorage {
   /** 全部 source 及活跃计数（拷贝 Map，O(sources)） */
   getAllSources(): Map<string, number> {
     return new Map(this.sourceCountCache);
-  }
-
-  /** 列出 accessedAt 早于 before 的活跃记忆，按沉底顺序（accessedAt 升序 + score 升序）取前 limit 条 */
-  listFading(before: string, limit = Number.MAX_SAFE_INTEGER): Memory[] {
-    return Array.from(this.memories.values())
-      .filter((m) => m.deletedAt === undefined && m.accessedAt < before)
-      .sort(byFadingAsc)
-      .slice(0, Math.max(0, limit))
-      .map((m) => ({ ...m }));
   }
 
   /** 关闭即丢弃全部记忆（终结操作不可逆）；勿在会话暂停/检查点恢复等状态层动作调用 */

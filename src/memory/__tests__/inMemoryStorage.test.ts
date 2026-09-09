@@ -13,7 +13,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
-import { ONE_DAY_MS, nowIso } from '@/utils/time.js';
+import { ONE_DAY_MS } from '@/utils/time.js';
 import { MemoraError } from '@/utils/errors.js';
 import type { Memory } from '@/memory/types.js';
 
@@ -733,70 +733,6 @@ describe('InMemoryStorage · 内存存储契约', () => {
       // 新增记忆应正常工作
       storage.upsert(makeMemory('new-id', SOURCE_LABELS.RULE));
       expect(storage.count()).toBe(1);
-    });
-  });
-
-  // ════════════════════════════════════════════════════════
-  // listFading（可选方法 · 即将沉底契约）
-  // ════════════════════════════════════════════════════════
-
-  describe('listFading', () => {
-    it('应只返回 accessedAt 早于 before 的活跃记忆', () => {
-      storage.upsert({
-        ...makeMemory('content:old', SOURCE_LABELS.RULE),
-        accessedAt: '2020-01-01T00:00:00.000Z',
-      });
-      storage.upsert({
-        ...makeMemory('content:recent', SOURCE_LABELS.RULE),
-        accessedAt: nowIso(),
-      });
-      storage.upsert({
-        ...makeMemory('content:deleted', SOURCE_LABELS.RULE),
-        accessedAt: '2019-01-01T00:00:00.000Z',
-      });
-
-      // 软删除的即使早于 before 也不应返回
-      storage.delete('content:deleted');
-
-      const result = storage.listFading('2021-01-01T00:00:00.000Z');
-      expect(result).toHaveLength(1);
-      expect(result[0]!.id).toBe('content:old');
-    });
-
-    it('应按沉底顺序排序：accessedAt 升序，相同 score 升序', () => {
-      storage.upsert({
-        ...makeMemory('content:a', SOURCE_LABELS.RULE, 0.8),
-        accessedAt: '2020-01-01T00:00:00.000Z',
-      });
-      storage.upsert({
-        ...makeMemory('content:b', SOURCE_LABELS.RULE, 0.3),
-        accessedAt: '2020-01-01T00:00:00.000Z',
-      });
-      storage.upsert({
-        ...makeMemory('content:c', SOURCE_LABELS.RULE, 0.5),
-        accessedAt: '2019-01-01T00:00:00.000Z',
-      });
-
-      const ids = storage.listFading('2021-01-01T00:00:00.000Z').map((m) => m.id);
-      expect(ids).toEqual(['content:c', 'content:b', 'content:a']);
-    });
-
-    it('limit 控制返回条数', () => {
-      for (let i = 0; i < 5; i++) {
-        storage.upsert({
-          ...makeMemory(`content:old-${i}`, SOURCE_LABELS.RULE),
-          accessedAt: '2020-01-01T00:00:00.000Z',
-        });
-      }
-      expect(storage.listFading('2021-01-01T00:00:00.000Z', 2)).toHaveLength(2);
-    });
-
-    it('无候选返回空数组', () => {
-      storage.upsert({
-        ...makeMemory('content:new', SOURCE_LABELS.RULE),
-        accessedAt: nowIso(),
-      });
-      expect(storage.listFading('2021-01-01T00:00:00.000Z')).toEqual([]);
     });
   });
 });

@@ -88,8 +88,8 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 
 **无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ boost（召回加权）**；物理清理靠回收站（默认保留 30 天）。
 
-- round-summary 不参与 score 衰减，其遗忘由写路径取代 + 召回 boost 承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
-- `purgeExpiredMemories(before)` 清理过期软删除记忆；`MemoryInspector.listFading` 提供健康观测（>60 天未访问），内核只读不做主动清理。
+- round-summary 记忆有效性由 superseded 写时取代 + 召回 boost 承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
+- `purgeExpiredMemories(before)` 清理过期软删除记忆；内核不做主动衰减/沉底清理（记忆无时间归档语义）。
 
 **禁止**：❌ 永不删除任何记忆；❌ 所有记忆一视同仁；❌ 召回越多越好（会击穿上下文窗口）。
 

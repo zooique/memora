@@ -24,10 +24,10 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 ## 二、可执行规则
 
 - **R1 新增设定一律进角色包**（persona.md/rules.md/skills/*），不走 `agent-config/personas|rules|skills` 进记忆库。
-- **R2 新增记忆只允许摘要记忆（单轨）**：round-summary（自动轨）+ content（治理页手动轨）。判断：是"对话的沉淀"还是"思考方式的设定"？前者进记忆库，后者进角色包。
+- **R2 新增记忆只允许摘要记忆（单轨）**：round-summary 为唯一记忆轨（content 历史残留 source 无生产写入路径，已从治理源清空，2026-09-09 剪枝，见 R5）。判断：是"对话的沉淀"还是"思考方式的设定"？前者进记忆库，后者进角色包。
 - **R3 读取从角色包**（`RolePackManager`/`assembleRolePack`），不从记忆库 `getBySource` 读。
 - **R4 迁移纪律**：停写→切读分档执行，任何一步不得跳过；存量设定记忆行保留（软删兼容），宿主一次性清理。
-- **R5 摘要记忆单轨**：**round-summary = 唯一自动轨**（每轮问答闭环自动生成，带 summaryType/sessionName/roundId 溯源）。**content = 用户手动轨**（仅治理页经 `writeUpsert` 写入，不由内核自动生成，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`）。**会话级摘要不进记忆库**——归会话记录存储 `SessionMeta`（summary/keyTopics），随 `deleteSession` 一并删除。路标检索闭环：`list_sessions`（粗定位）→ `trace_summary`（细取证），均在 `BUILTIN_TOOLS`。禁止新增无标签、无溯源的第二轨道自动记忆源。治理操作软删 round-summary 时溯源即清空（原会话/轮已物理回收）。
+- **R5 摘要记忆单轨**：**round-summary = 唯一记忆轨**（每轮问答闭环自动生成，带 summaryType/sessionName/roundId 溯源；`content` 为历史残留 source——无生产写入路径，`writeUpsert` 仅治理页编辑已有记忆复用，已从 `GOVERNANCE_SOURCES` 清空，2026-09-09 剪枝）。**会话级摘要不进记忆库**——归会话记录存储 `SessionMeta`（summary/keyTopics），随 `deleteSession` 一并删除。路标检索闭环：`list_sessions`（粗定位）→ `trace_summary`（细取证），均在 `BUILTIN_TOOLS`。禁止新增无标签、无溯源的第二轨道自动记忆源。治理操作软删 round-summary 时溯源即清空（原会话/轮已物理回收）。
 - **R6 type 不设时效**：`summaryType` 纯语义标签，禁止新增 type→时间窗口过滤；有效否由 superseded + 召回相关性判定。
 - **R7 内容文件零声明**：persona.md/rules.md 约定俗成（manifest 不声明即回退），skills/ 目录动态扫描；manifest 不承载内容路径注册，禁止"路径写错静默丢内容"的自命名字段。
 - **R8 能力声明独立顶层** `capabilities`；禁止在技能文件/skills 项塞 capability。

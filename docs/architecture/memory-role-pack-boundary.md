@@ -59,7 +59,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 | D1 | guardrail 归宿 | **作废**——guardrail 空转链已摘除，无此物无需归宿 |
 | D2 | 存量设定记忆数据 | 由宿主提供一次性迁移脚本；文件已在角色包/agent-config 中，SQLite 索引行清空或标记兼容 |
 | D3 | skills 正文展示 | **渐进披露**（readSkillContent 按需读），不在记忆库镜像保留 |
-| D4 | content 会话归档 | **重定**——会话级摘要不再写记忆库：SessionArchiver 只更新 `SessionMeta`（summary/keyTopics），content 降为治理页手动写入轨（`memoryInspector.writeUpsert`），保留粒度（会话级）与 round-summary（轮次级）差异但非自动生产 |
+| D4 | content 会话归档 | **作废（2026-09-09 剪枝）**——会话级摘要不进记忆库：SessionArchiver 只更新 `SessionMeta`（summary/keyTopics）；`content` 为历史残留 source，无生产写入路径（`memoryInspector.writeUpsert` 仅治理页编辑已有记忆复用，无新增入口），已从 `GOVERNANCE_SOURCES` 清空 |
 | D5 | **默认角色包归属** | **宿主职责**。memora 内核不设计「默认角色包」，也不内置默认卡。「默认激活哪张卡」是宿主决策；内核只保证「零角色包激活时系统可运行」。零角色包时**空角色包态**运行（persona 兜底已移除，无角色设定注入） |
 
 ### 4.1 默认角色包边界（D5 定案）
@@ -72,9 +72,9 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 
 ### 4.2 会话级摘要归属与 type 去时效（D6/D7 定案）
 
-> **D6 · 会话级摘要归会话记录存储（重定 2026-08-31）**：`SessionArchiver` 只更新 `SessionMeta.summary/keyTopics`（见 [sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)），不再写入 `source='content'` 记忆。 「content = 用户手动轨」：仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`，非内核自动生产（`isTraceable` 已删除，2026-08-28：无行为消费者，见 ADR-025 修订与 memory-as-summary §5.2）
+> **D6 · 会话级摘要归会话记录存储（重定 2026-08-31）**：`SessionArchiver` 只更新 `SessionMeta.summary/keyTopics`（见 [sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)），不写任何记忆库 source。`content` 为历史残留 source——无生产写入路径（`memoryInspector.writeUpsert` 仅治理页编辑已有记忆复用），已从 `GOVERNANCE_SOURCES` 清空（2026-09-09 剪枝，`isTraceable` 已于 2026-08-28 删除：无行为消费者，见 ADR-025 修订与 memory-as-summary §5.2）
 >
-> **D7 · type 不设时效性**：记忆是否有效由**语义状态**判定（superseded 写时取代 + score 衰减自然沉底），不由时间流逝判定——用户久未使用不构成记忆过期的理由。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃（见 memory-as-summary.md §4.2）。
+> **D7 · type 不设时效性**：记忆是否有效由**语义状态**判定（superseded 写时取代，score 无衰减），不由时间流逝判定——用户久未使用不构成记忆过期的理由。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃（见 memory-as-summary.md §4.2）。
 
 ## 五、隐式依赖（收敛时易漏）
 

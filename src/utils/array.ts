@@ -22,20 +22,3 @@
 export function byScoreDesc<T extends { score: number }>(a: T, b: T): number {
   return b.score - a.score;
 }
-
-/**
- * 按"沉底顺序"升序排序的比较函数：accessedAt 升序（最久未访问在前），
- * 相同再按 score 升序（分数最低 = 最接近自然沉底）。
- *
- * 用于记忆健康观测（MemoryInspector.listFading）与沉底候选的排序。
- *
- * @param a 前一个元素
- * @param b 后一个元素
- * @returns 负数表示 a 排前（更早遗忘），正数表示 b 排前
- */
-export function byFadingAsc<T extends { accessedAt: string; score: number }>(a: T, b: T): number {
-  if (a.accessedAt !== b.accessedAt) {
-    return a.accessedAt < b.accessedAt ? -1 : 1;
-  }
-  return a.score - b.score;
-}

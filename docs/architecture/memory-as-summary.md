@@ -97,7 +97,7 @@ round-summary（轮次级，唯一记忆单元）
 
 > **当前形态**：记忆收敛为**摘要单轨**——唯一记忆单元是 round-summary（轮次级），无独立的用户画像层与洞察提炼层。用户画像（UserProfile / userFactExtractor / archiveProfileFacts）与洞察层（InsightExtractor / archiveInsight）不独立存在，其能力并入 round-summary 的 `summaryType` 标签分类（§3.2）。`traceSummary` 溯源接对话记录（§4/§4.5），对话记录作为展示层 + 溯源兜底的运行依赖（§5.2）。
 
-> **会话级摘要不进记忆库**：`SessionArchiver` 只更新会话记录存储 `SessionMeta`（summary/keyTopics/autoName，见 [sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)），不再写入 `source='content'` 记忆（「content = 用户手动轨」：仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`）。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
+> **会话级摘要不进记忆库**：`SessionArchiver` 只更新会话记录存储 `SessionMeta`（summary/keyTopics/autoName，见 [sessionArchiver.ts](../../src/agent/managers/sessionArchiver.ts)），**不写任何记忆库 source**。`content` 为历史残留 source——无生产写入路径（`memoryInspector.writeUpsert` 仅治理页编辑已有记忆时复用，无新增入口），已从 `GOVERNANCE_SOURCES` 清空（2026-09-09 剪枝）。详见 [memory-role-pack-boundary.md](memory-role-pack-boundary.md) 与 [ADR-025](../../.trae/decisions/ADR-025-memory-role-pack-boundary.md)。
 
 ### 2.4 Round 边界
 
@@ -162,7 +162,7 @@ postProcess → 使用 round-5 生成摘要
 └──────────────────────────────────────────────────┘
 ```
 
-写入 `IMemoryStorage`，`source='round-summary'`。这是系统**唯一自动**的记忆产生层（轮次级）；会话级归档只更新 `SessionMeta`（不写记忆库，见 §2.3）；`content` 为治理页手动写入轨（`memoryInspector.writeUpsert`），非自动生产。
+写入 `IMemoryStorage`，`source='round-summary'`。这是系统**唯一**的记忆产生层（轮次级自动轨）；会话级归档只更新 `SessionMeta`（不写记忆库，见 §2.3）；`content` 为历史残留 source（无生产写入路径，已清出治理源，2026-09-09 剪枝）。
 
 ### 3.2 摘要类型（SummaryType）— 语义标签
 
@@ -179,7 +179,7 @@ postProcess → 使用 round-5 生成摘要
 **设计要点**：
 - **type 不携带时效性**。记忆是否有效由「语义状态」判定（superseded 写时取代），不由时间流逝判定——用户久未使用不构成记忆过期的理由。
 - 类型继承自原有洞察系统的分类思路，复用既有分类体系，不引入新机制。
-- **排序由「会话窗口 + 时间」两个正交维度构成**（§4.8），类型不参与排序。
+- **排序由「分层分轨（L1 优先 L2）+ 组内时间 + 语义相关性」构成**（§4.1-§4.3/§4.8），类型不参与排序。
 - 类型隐含价值层级——`preference`/`decision` 天然比 `general` 更有记忆价值，价值通过召回时的相关性排序自然体现，无需独立的 quality 评分字段（避免与 type 信息冗余）。
 
 ### 3.3 溯源链接
@@ -402,7 +402,7 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 
 ### 4.8 排序：分层分轨 + 时间
 
-> **历史说明**：本节描述的是 v2 时代的排序策略（"会话窗口优先 + 时间"两个正交维度）。v3 的排序策略已由 §4.1-§4.3 的分层分轨规则统一处理，本节保留作为设计演进参考。
+> **历史说明**：本节描述的是 v2 时代的排序策略（"会话窗口优先 + 时间"两个正交维度）。v3 的排序策略已由 §4.1-§4.3 的分层分轨规则统一处理，本节保留作为设计演进参考。**现行排序 = 分层分轨（§4.1-§4.3）+ 组内 created-at 升序 + 语义相关性，见 §7 最终形态表，勿按本节单读成"按时间召回"。**
 
 v2 排序由**两个正交维度**构成，任何维度都不被类型覆盖：
 
@@ -644,7 +644,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 ## 七、最终形态（总结）
 
-**一句话**：摘要单轨，分层分轨，时间排序，supersede 治理。
+**一句话**：摘要单轨，分层分轨，组内时间 + 相关性排序，supersede 治理。
 
 | 维度 | 设计 |
 |------|------|
@@ -652,7 +652,7 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 | **召回方式** | 单一召回入口（recall 函数） |
 | **分层** | L1 会话内优先于 L2 会话外 |
 | **分轨** | preference 进池（不经检索，有查询意图时）、intent 不进池、其余语义召回进池；cap 内靠排序分配，`minSemanticShare` 可选防挤占（默认 0） |
-| **排序** | 时间顺序（createdAt 升序） |
+| **排序** | 分层分轨（L1 会话内优先 L2）+ 组内时间（createdAt 升序）+ 语义相关性（cap 内分配） |
 | **治理** | supersede（写时取代）+ boost（召回+0.05） |
 
 **详细说明**：

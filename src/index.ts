@@ -100,7 +100,6 @@ export type {
   ArchiveSnapshot,
   AgentSearchHit,
   AgentStats,
-  FadingMemory,
 } from '@/agent/managers/memoryInspector.js';
 export { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 export { WorkProjectionManager } from '@/agent/managers/workProjection.js';
@@ -138,13 +137,8 @@ export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';
 export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-// 治理共享常量：宿主 WorkspaceStorage 与核心库 recall.ts 共用同一真理源（clamp/沉底边界）
-export {
-  BOOST_INCREMENT,
-  SCORE_CEILING,
-  SCORE_FLOOR,
-  INACTIVITY_SINK_DAYS,
-} from '@/memory/governance.js';
+// 治理共享常量：宿主 WorkspaceStorage 与核心库 recall.ts 共用同一真理源（clamp/边界）
+export { BOOST_INCREMENT, SCORE_CEILING, SCORE_FLOOR } from '@/memory/governance.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎

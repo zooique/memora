@@ -82,7 +82,7 @@ configDir/
 | | `storage`（IMemoryStorage） | `dataDir` |
 |---|---|---|
 | 本质 | 接口实例（宿主写的类） | 文件系统目录路径（字符串） |
-| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `decayScores`… | 用它拼接落盘路径：`join(dataDir, 'memora.db')`、注册表、锁文件 |
+| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 用它拼接落盘路径：`join(dataDir, 'memora.db')`、注册表、锁文件 |
 | 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆 / 项目 / 锁文件放哪个目录"（物理位置） |
 | 谁实现 | 宿主实现（如 SqliteMemoryStorage） | 宿主传路径 |
 | 关系 | `dataDir` 指向目录；宿主通常拿它构造 storage：`new SqliteMemoryStorage(join(dataDir,'memora.db'))` | 内核仍用 `dataDir` 推导 dbPath / registry / lock |
@@ -223,7 +223,7 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.rolePack` | `RolePackManager \| null` | 角色包管理 |
 | `agent.tools` | `ToolExecutor \| null` | 工具注册与执行 |
 | `agent.skills` | `SkillManager \| null` | 技能匹配与注入 |
-| `agent.governance` | `MemoryGovernance \| null` | 记忆治理（去重/衰减/建议编排） |
+| `agent.governance` | `MemoryGovernance \| null` | 记忆治理（去重/冲突检测/建议） |
 | `agent.memory` | `MemoryInspector \| null` | 记忆查询 + 写入（`writeXxx` 前缀） |
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
@@ -261,9 +261,8 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 
 | 事件名 | 载荷 | 触发时机 |
 |--------|------|----------|
-| `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（round-summary 沉淀、rule 注入等） |
+| `memoryAdded` | `{ id, source, name }` | 记忆被写入存储（round-summary 沉淀等） |
 | `personaSwitched` | `{ from: string \| null, to }` | 角色被切换（手动指定） |
-| `decayCompleted` | `{ decayedCount }` | 记忆衰减完成（init 首次 + 每小时定时） |
 | `memoryRecalled` | `{ count, query }` | 记忆被召回（用于 UI 展示） |
 | `sessionForked` | `{ from, to, messageCount }` | 会话被分叉（创建新分支） |
 | `projectSwitched` | `{ from: string \| null, to: string, projectName: string }` | 项目切换（宿主 UI 可据此刷新项目相关界面） |
@@ -273,7 +272,6 @@ agent.once<K extends AgentEventName>(event: K, handler: (payload: AgentEventMap[
 ```typescript
 // 使用示例
 agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
-agent.on('decayCompleted', (e) => console.log(`衰减 ${e.decayedCount} 条记忆`));
 ```
 
 > `close()` 自动移除所有事件监听器。
@@ -441,7 +439,7 @@ interface Memory {
 }
 ```
 
-> **8 字段基元**（v2.1 软删除扩展）：7 个基础字段 + 1 个可选 `deletedAt`。所有查询方法（getById/getBySource/search/count/countBySource/decayScores/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
+> **8 字段基元**（v2.1 软删除扩展）：7 个基础字段 + 1 个可选 `deletedAt`。所有查询方法（getById/getBySource/search/count/countBySource/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
 
 **常用 source 标签（`SOURCE_LABELS` 常量）：**
 
@@ -458,7 +456,7 @@ interface Memory {
 
 ### 5.2 `IMemoryStorage` 接口
 
-宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **18 方法**（含可选 `listFading` / `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
+宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **17 方法**（含可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
 
 ```typescript
 interface IMemoryStorage {
@@ -478,19 +476,17 @@ interface IMemoryStorage {
   getDeletedById(id: string): Memory | null;    // 按 ID 获取单条软删除记忆（restore/purge 前存在性校验）
   purgeExpired(before: Date): number;           // 清理过期回收站（物理删除 deletedAt 早于 before 的，返回清理数量）
 
-  // ─── 统计与维护（4 方法） ───
-  decayScores(sources: string[], now: Date): number;  // 批量衰减指定 source 的 score（宿主实现批量 SQL UPDATE）
+  // ─── 统计与维护（3 方法） ───
   incrementScore(id: string, delta: number, now: string): boolean;  // 原子递增 score（消除 read-modify-write 并发冲突）
   setScore(id: string, newScore: number, now: string): boolean;     // 直接设置 score
   getAllSources(): Map<string, number>;               // 获取所有 source 标签及其活跃记忆数量
 
-  // ─── 可选（2 方法） ───
-  listFading?(before: string, limit?: number): Memory[];  // 列出指定时间前的记忆（衰减可观测，C1）
+  // ─── 可选（1 方法） ───
   close?(): void;
 }
 ```
 
-> 宿主实现应使用 `COUNT(*)` / `UPDATE ... WHERE` 等数据库原生操作，避免全量加载数据。`decayScores` 和 `getAllSources` 是性能优化方法，避免逐条遍历。详见 ADR-002 §IMemoryStorage 接口方法。
+> 宿主实现应使用 `COUNT(*)` / `UPDATE ... WHERE` 等数据库原生操作，避免全量加载数据。`getAllSources` 是性能优化方法，避免逐条遍历。详见 ADR-002 §IMemoryStorage 接口方法。
 
 ### 5.3 `ISessionStore` 接口
 
@@ -766,7 +762,7 @@ const agent = new Agent({
 
 作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在**项目级目录** `<memoraDir>/projections/<slug>.json`（不进入记忆库/SQLite）。原始文件内容不进投影，Agent 通过工具按需读取。
 
-> **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（score 衰减/去重/冲突检测/时效评估均不覆盖），随项目隔离——换项目即消失。宿主如需让模型感知投影，可显式经 `agent.works.loadAll()` 注入。
+> **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（去重/冲突检测不覆盖），随项目隔离——换项目即消失。宿主如需让模型感知投影，可显式经 `agent.works.loadAll()` 注入。
 
 ### 类型定义
 
@@ -851,7 +847,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |
 | 手动归档 | `archiveSession(...)` |
 | 配置热更新 | `reloadConfig(source?)` |
-| 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.evaluateTimeliness()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` / `.decay()`，见下方 Manager 成员） |
+| 记忆治理 | 经 `agent.governance` 暴露（`.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()`，见下方 Manager 成员） |
 | 指标 | `getMetrics()` |
 
 ### Agent 面类只读访问器
@@ -865,7 +861,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.rolePack` | `RolePackManager` | `.listMeta()` / `.activeName` / `.getActive()` / `.getActiveRules()` / `.activate()` / `.getSwitchLockStatus()` / `.getActiveTraits()` |
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
-| `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.evaluateTimeliness()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` / `.decay()` |
+| `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` |
 | `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeBoost()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
@@ -958,7 +954,7 @@ isRetryableErrorCode(ToolErrorCode.PATH_NOT_ALLOWED);  // false
 
 ## 十六、类型导出
 
-> 以下**精选子集**为宿主最常用的公开导出，全部经 `@zooique/memora` 再导出（无幻影）；未在清单中的其他导出（如 `DuplicateCallInterceptor` / `FadingMemory` / `SessionManager` / `ProviderRouter` / `SummaryType` 等）以 `src/index.ts` 为准。治理报告类型（`DedupReport` / `SourceHealthReport` 等）经方法返回推断，不列为显式导出。
+> 以下**精选子集**为宿主最常用的公开导出，全部经 `@zooique/memora` 再导出（无幻影）；未在清单中的其他导出（如 `DuplicateCallInterceptor` / `SessionManager` / `ProviderRouter` / `SummaryType` 等）以 `src/index.ts` 为准。治理报告类型（`DedupReport` / `SourceHealthReport` 等）经方法返回推断，不列为显式导出。
 
 ```typescript
 // Agent 与流式事件
@@ -1012,8 +1008,8 @@ export { escapeLike, validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
-// 治理共享常量（衰减/提升/上限）
-export { BOOST_INCREMENT, SCORE_CEILING, DECAY_FLOOR, DECAY_AGE_DAYS, DECAY_AMOUNT } from '@zooique/memora';
+// 治理共享常量（提升/上限/下限）
+export { BOOST_INCREMENT, SCORE_CEILING, SCORE_FLOOR } from '@zooique/memora';
 export type { ISessionStore, SessionMessage } from '@zooique/memora';
 export type { ForkResult } from '@zooique/memora';
 

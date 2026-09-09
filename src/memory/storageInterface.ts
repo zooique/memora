@@ -102,20 +102,6 @@ export interface IMemoryStorage {
   getAllSources(): Map<string, number>;
 
   /**
-   * 可选：列出"即将自然沉底"的活跃记忆（accessedAt 早于 before），
-   * 按沉底顺序（accessedAt 升序；相同时 score 升序）取前 limit 条。
-   *
-   * 纯只读健康观测，不触发衰减。作为可选方法（与 close? 同风格）——
-   * 宿主可不实现；不实现时由上层（MemoryInspector）以 search+本地过滤回退。
-   * 宿主实现时可用一条 SQL 高效完成（WHERE accessed_at < ? ORDER BY accessed_at, score LIMIT ?）。
-   *
-   * @param before - 访问截止时间（ISO 8601），早于该值视为"即将沉底"
-   * @param limit - 返回上限（正整数）
-   * @returns 符合条件的 Memory[]（无候选则空数组）
-   */
-  listFading?(before: string, limit?: number): Memory[];
-
-  /**
    * 可选：终结操作，调用后本实例不得再读写。落盘实现断开连接但数据保留；
    * InMemoryStorage 则丢弃全部记忆（内存即存储介质，不释放就是泄漏）。
    * 不可当作可逆的「暂停」——会话暂停/检查点恢复不得触碰，否则连带清空资源层记忆

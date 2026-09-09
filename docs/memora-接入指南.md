@@ -159,14 +159,13 @@ const reply = await agent.chatSync('你好');
 
 ### 3.5 事件订阅（可选）
 
-Agent 向宿主广播对话外事件（记忆变更、角色切换、衰减完成、会话分叉等）。
+Agent 向宿主广播对话外事件（记忆变更、角色切换、会话分叉等）。
 
 ```typescript
 import type { AgentEventMap } from '@zooique/memora';
 
 agent.on('memoryAdded', (e) => console.log(`新记忆: ${e.source}:${e.name}`));
 agent.on('personaSwitched', (e) => console.log(`角色: ${e.from} → ${e.to}`));
-agent.on('decayCompleted', (e) => console.log(`衰减 ${e.decayedCount} 条记忆`));
 agent.on('memoryRecalled', (e) => console.log(`想起 ${e.count} 条记忆`));
 agent.on('sessionForked', (e) => console.log(`分叉: ${e.from} → ${e.to}，${e.roundCount} 个问答闭环`));
 
@@ -445,7 +444,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | 工具 | `agent.tools.registerTool()/execute()` | §八 |
 | 会话 | `agent.forkSession()` / `agent.sessionManager.*` | §六 |
 
-> 记忆治理（去重/时效/冲突/衰减）统一走 `agent.governance` 或 Agent 层方法，见参考手册 §四 与「记忆治理」章节。
+> 记忆治理（去重/冲突）统一走 `agent.governance` 或 Agent 层方法，见参考手册 §四 与「记忆治理」章节。
 
 ---
 
@@ -713,7 +712,7 @@ Memora 的记忆系统通过 `round-summary` 的 `type=preference` 类型承载"
 **Memora 选择"涌现驱动"的核心理由**：
 1. **单一真理源**：偏好从对话中涌现，而非外部注入，避免双写冲突
 2. **自然生长**：不预埋用户画像结构，符合"种子决定长势、土壤决定养分"哲学
-3. **零新增模块**：复用现有记忆/召回/衰减机制
+3. **零新增模块**：复用现有记忆/召回机制
 
 ### 宿主实现方案
 

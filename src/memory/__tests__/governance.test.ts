@@ -2,9 +2,10 @@
  * 单元测试：记忆治理共享常量
  *
  * 覆盖 governance.ts 导出的全部常量，重点验证：
- *   - GOVERNANCE_SOURCES 列表内容与 SOURCE_LABELS 一致
+ *   - GOVERNANCE_SOURCES 治理源为空（记忆库唯一自动轨 round-summary 不入治理源，
+ *     其治理由 superseded 写时取代承担；content 历史残留 source 已清空）
  *   - 不含配置型 source（persona / rule / skill）
- *   - score 边界常量数值正确（提升量 / 上限 / 下限 / 沉底判定天数）
+ *   - score 边界常量数值正确（提升量 / 上限 / 下限）
  *   - 常量不可变（readonly 约束 + 值锁定）
  *
  * 这些常量是 recall.ts / WorkspaceStorage / memoryInspector.ts 等多模块的
@@ -20,22 +21,19 @@ import {
 
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
-    it('应只包含 content（唯一治理对象）', () => {
+    it('应为空（记忆库无独立治理源）', () => {
       // 设计演进（2026-08-26 对齐 ADR-025 + 架构收敛）：
       //   - persona / rule / skill 已归角色包管理，不写入记忆库
       //   - work-projection 已移出记忆库（2026-08-20）
       //   - profile 已收敛为 round-summary 的 type=preference 召回
-      //   - round-summary 不参与衰减（事实记录语义）
-      expect(GOVERNANCE_SOURCES).toHaveLength(1);
+      //   - round-summary 不参与治理（事实记录语义，superseded 写时取代承载）
+      //   - content 历史残留 source 无生产写入路径（2026-09-09 剪枝清空）
+      expect(GOVERNANCE_SOURCES).toHaveLength(0);
     });
 
-    it('应包含 content 治理源', () => {
-      // content 是用户主动添加的记忆，唯一治理对象
-      expect(GOVERNANCE_SOURCES).toContain('content');
-    });
-
-    it('不应包含已废弃的 source（persona / rule / skill / work-projection / profile）', () => {
-      // 这些 source 已随架构收敛移出记忆库，不应出现在治理源中
+    it('不应包含已废弃的 source（content / persona / rule / skill / work-projection / profile）', () => {
+      // 这些 source 已随架构收敛移出治理范围，不应出现在治理源中
+      expect(GOVERNANCE_SOURCES).not.toContain('content');
       expect(GOVERNANCE_SOURCES).not.toContain('persona');
       expect(GOVERNANCE_SOURCES).not.toContain('rule');
       expect(GOVERNANCE_SOURCES).not.toContain('skill');
@@ -48,8 +46,7 @@ describe('memory/governance · 常量契约', () => {
       expect(GOVERNANCE_SOURCES).not.toContain('unknown');
     });
 
-    it('不应包含 round-summary（事实记录不衰减）', () => {
-      // round-summary 是会话摘要，事实记录语义，不参与衰减
+    it('不应包含 round-summary（事实记录语义，治理由 superseded 取代承担）', () => {
       expect(GOVERNANCE_SOURCES).not.toContain('round-summary');
     });
   });
