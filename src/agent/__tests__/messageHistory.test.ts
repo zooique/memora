@@ -9,6 +9,10 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import { MessageHistory } from '@/agent/messageHistory.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
+import { generateRoundId } from '@/memory/roundStore.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import { todayDate } from '@/utils/time.js';
 
@@ -235,5 +239,105 @@ describe('MessageHistory · getFirstRoundId（会话起点背景互斥排除）'
       'main',
     );
     expect(noRounds.getFirstRoundId()).toBeNull();
+  });
+});
+
+describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop turn，T1）', () => {
+  /** 构造「崩溃残局」：真实 Round/Session 存储 + 仅 appendUser 的中断轮（refCount=0、未登记会话） */
+  function createCrashScene(): {
+    roundStore: InMemoryRoundStore;
+    sessionStore: InMemorySessionStore;
+  } {
+    const roundStore = new InMemoryRoundStore();
+    const sessionStore = new InMemorySessionStore(roundStore);
+    sessionStore.createSession({
+      sessionId: `${todayDate()}-main`,
+      roundIds: [],
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    // 崩溃重启 = 新建 MessageHistory（共享同一存储单例，无 pendingRounds 缓存）——
+    // 与宿主「重启后 Agent 重建、roundStore/sessionStore 为同一工作区单例」等价
+    return { roundStore, sessionStore };
+  }
+
+  it('中断轮（带恢复文本）升级为 complete：写 assistantMessage（含中断标记）+ refCount 0→1 + 入 roundIds', async () => {
+    const { roundStore, sessionStore } = createCrashScene();
+    const roundId = generateRoundId();
+    const first = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    // 崩溃前形态：appendUser 后 pending（refCount=0），宿主 step 检查点已落盘 processEvents
+    await first.appendUser('帮我梳理架构', roundId);
+    roundStore.getById(roundId)!.refCount = 0;
+
+    // 重启后打捞升级：宿主从 narrate 派生文本 → 内核收场
+    const restarted = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    await restarted.appendInterrupted(roundId, { content: '已整理出一版草稿' });
+
+    const round = roundStore.getById(roundId)!;
+    expect(round.status).toBe('complete');
+    expect(round.completedAt).toBeDefined();
+    // 收场文本 = 恢复内容 + 默认中断标记（与运行期中断收场默认文案同源 SSOT）
+    expect(round.assistantMessage?.content).toBe(
+      '已整理出一版草稿' + LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
+    );
+    expect(round.refCount).toBe(1);
+    expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);
+  });
+
+  it('无恢复文本的中断轮仍按 stop 语义收场：complete 但无 assistantMessage，照样登记会话', async () => {
+    const { roundStore, sessionStore } = createCrashScene();
+    // 工具阶段崩溃：无任何 narrate 文本，processEvents 仅有 tool 事件
+    const roundId = generateRoundId();
+    const first = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    await first.appendUser('执行任务', roundId);
+    const stored = roundStore.getById(roundId)!;
+    stored.processEvents = [
+      {
+        type: 'tool_start',
+        seq: 1,
+        ts: new Date().toISOString(),
+        payload: { toolCallId: 't1', name: 'web_search' },
+      },
+    ];
+    roundStore.save(stored);
+
+    const restarted = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    await restarted.appendInterrupted(roundId, { content: '' });
+
+    const round = roundStore.getById(roundId)!;
+    expect(round.status).toBe('complete');
+    expect(round.assistantMessage).toBeUndefined(); // §一·五：无摘要也按 stop 语义收场
+    expect(round.refCount).toBe(1);
+    expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);
+    // processEvents 原样保留（宿主 step 检查点落盘数据不被升级破坏）
+    expect(round.processEvents?.[0]?.type).toBe('tool_start');
+  });
+
+  it('轮缺失：防御性降级，不抛错、不登记', async () => {
+    const { roundStore, sessionStore } = createCrashScene();
+    const restarted = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    await expect(
+      restarted.appendInterrupted('round-does-not-exist', { content: '任意' }),
+    ).resolves.toBeUndefined();
+    expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toEqual([]);
+    expect(roundStore.size()).toBe(0);
+  });
+
+  it('重复升级幂等：不二次登记 roundIds、refCount 不虚增（T3 宿主不双重复放的底座）', async () => {
+    const { roundStore, sessionStore } = createCrashScene();
+    const roundId = generateRoundId();
+    const first = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    await first.appendUser('问题', roundId);
+
+    const restarted = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    await restarted.appendInterrupted(roundId, { content: '回答' });
+    // 宿主 once-guard 异常/双 ready 时的防御重跑：
+    await restarted.appendInterrupted(roundId, { content: '回答' });
+    await restarted.appendInterrupted(roundId, { content: '回答' });
+
+    const ids = sessionStore.getRoundIds(`${todayDate()}-main`);
+    expect(ids.filter((id) => id === roundId)).toHaveLength(1); // 只登记一次
+    expect(roundStore.getById(roundId)!.refCount).toBe(1); // refCount 不虚增
   });
 });

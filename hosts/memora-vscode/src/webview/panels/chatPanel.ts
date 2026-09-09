@@ -160,6 +160,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 是否已尝试装配（避免面板每次展开都重复装配） */
   private _agentResolving = false;
+  /**
+   * Agent 装配 Promise（T1，2026-09-09 增强）：缓存「在途装配」供等待，而非仅布尔标记——
+   * 否则 'ready' 在装配进行中调用 ensureAgent() 会早退，崩溃恢复打捞（依赖 agent.agentHistory）
+   * 与首次回放产生时序竞态。装配失败在内部消化（resolves 而非 rejects），等待方不抛。
+   */
+  private _agentReady: Promise<void> | null = null;
+  /** 崩溃残留轮升级为 stop turn 是否已执行（T1，2026-09-09）：每面板实例一次；
+   *  升级后轮已 complete + refCount>0，listInterruptedRecent 不再命中，重复执行无意义 */
+  private _salvageUpgraded = false;
   /** 当前激活角色包（对话面板承载的定位角色；装配时由 extension 注入，切换时持久化） */
   private _activeRolePack: string | undefined;
   /**
@@ -250,6 +259,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private _eventLogRoundStore: IRoundStore | undefined;
   /** 当前激活 Provider 的显示名（meta 事件 llm 字段来源，随 pushProviders 刷新，SSOT 与模型下拉同源） */
   private _activeProviderDisplayName = '';
+  /**
+   * 过程事件 seq 全局计数器（2026-09-09 step 原子落盘新增）。
+   * 原为 consumeFlow 内局部 seq（每流重置，跨流 seq 冲突）——step 检查点需按 seq 幂等合并增量，
+   * 改为实例级单调递增，保证事件 seq 全局唯一，power 幂等去重与保序追加。
+   */
+  private _processSeq = 0;
 
   /**
    * @param extensionUri 插件扩展根 URI（用于 webview 本地资源加载 localResourceRoots）
@@ -493,13 +508,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 处理来自 webview 的用户输入
     webviewView.webview.onDidReceiveMessage((msg: WebviewToExtensionMessage) => {
       if (msg.type === 'ready') {
-        // webview 脚本就绪后才回放会话（历史 + Provider 列表），消除时序竞态
-        this.replaySession();
-        // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
-        if (this._pendingPrefill !== undefined) {
-          this.post({ type: 'prefill_input', text: this._pendingPrefill });
-          this._pendingPrefill = undefined;
-        }
+        // webview 脚本就绪后才回放会话（历史 + Provider 列表）。回放前置（T1，2026-09-09）：
+        // ① 等 Agent 装配完成（在途即等待，见 ensureAgent 可等待化）② 打捞升级崩溃残留轮为
+        // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发（T3）
+        void this.handleWebviewReady();
       } else if (msg.type === 'send' && msg.text.trim()) {
         void this.handleSend(msg.text.trim(), msg.skillName);
       } else if (msg.type === 'open_config') {
@@ -576,13 +588,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 用户可能直接点活动栏面板图标打开（未执行 open 命令），此时 agent 从未装配，
    * 会导致发送无反应。此方法在打开面板时自动装配，失败时给出明确提示。
+   *
+   * 可等待性（T1，2026-09-09）：装配进行中再次调用会 await 在途 Promise（_agentReady），
+   * 而非早退——保证 'ready' 流程可在首次回放前拿到 Agent（崩溃恢复打捞的前置）。
    */
   private async ensureAgent(): Promise<void> {
     // Agent 已注入（open 命令路径先装配）：仍兜底首次无会话自动创建（幂等，仅面板打开触发）
     if (this._agent) {
+      this._agentReady ??= Promise.resolve();
       void this.ensureInitialSession();
       return;
     }
+    // 首次触发装配并缓存 Promise（等待中的调用方 await 同一实例；失败内部消化不抛出）
+    if (!this._agentReady) {
+      this._agentReady = this.performAgentAssembly();
+    }
+    await this._agentReady;
+  }
+
+  /** Agent 懒装配实际执行体（ensureAgent 分离：Promise 缓存 + 一次性执行） */
+  private async performAgentAssembly(): Promise<void> {
     if (this._agentResolving || !this._getAgent) return;
     this._agentResolving = true;
     try {
@@ -1465,6 +1490,74 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * webview ready 处理：等 Agent 装配 + 崩溃残留轮打捞升级 → 再回放会话（T1，2026-09-09）。
+   *
+   * 回放前置理由：升级后的中断轮须随首次回放（roundIds 已含）一次性投递，避免新增第二条
+   * 回放通道（否则与 _viewEpoch 折叠重建回放产生双重复放——T3 互斥目标）。
+   */
+  private async handleWebviewReady(): Promise<void> {
+    try {
+      // ① 等 Agent 装配完成（在途即等待；失败内部消化为错误提示，不抛出）
+      await this.ensureAgent();
+      // ② 打捞升级崩溃残留轮（once-guard；无当前会话/无 Agent 时跳过，等待下次触发再试）
+      await this.upgradeInterruptedRounds();
+    } catch (err) {
+      console.warn('Memora 崩溃恢复打捞升级失败（不阻断历史回放）', err);
+    }
+    // ③ 回放会话历史（历史 + Provider 列表；升级轮已入 roundIds，随本次回放按普通 turn 投递）
+    this.replaySession();
+    // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
+    if (this._pendingPrefill !== undefined) {
+      this.post({ type: 'prefill_input', text: this._pendingPrefill });
+      this._pendingPrefill = undefined;
+    }
+  }
+
+  /**
+   * 崩溃残留轮打捞 → 升级为正常 stop turn 并入当前会话（T1，2026-09-09）。
+   *
+   * 语义定案（step-atomic-persistence.md §一·五）：中断轮 = 正常 turn（等同用户点「停止」）——
+   * 可删、入会话 roundIds、作后续上下文，**不是**半成品草稿/孤儿。打捞口
+   * `IRoundStore.listInterruptedRecent` 只负责「找到」，本方法完成「升级登记」：
+   *   文本派生：seq 升序拼接叙事件（narrate）内容作为恢复的助手文本；无叙述（工具阶段崩溃）
+   *   则不写 assistantMessage，仍按 stop 语义收场——内核 `agentHistory.appendInterrupted` 支撑。
+   * 幂等/时序：
+   *   once-guard（_salvageUpgraded）+ 内核 appendInterrupted 防重 → 升级轮不二次登记、不被
+   *   _viewEpoch 折叠重建回放与崩溃恢复重复投递（T3）；升级后轮 complete + refCount>0，
+   *   GC 按普通 turn 生命周期处理（随会话删除，T2）。
+   * 失败降级：打捞/升级失败仅记日志，不阻断历史回放；未升级轮保持 pending，由 GC 兜底回收。
+   */
+  private async upgradeInterruptedRounds(): Promise<void> {
+    if (this._salvageUpgraded) return;
+    const store = this._eventLogRoundStore;
+    const agent = this._agent;
+    // 前置不足（无当前会话 / 无 Round 存储 / Agent 未就绪）→ 本次不置 guard，等待下次触发再试
+    if (!this._currentSessionId || !store || !agent?.agentHistory) return;
+    this._salvageUpgraded = true;
+    try {
+      // date 过滤沿用当前会话日期（崩溃窗口宿主只持当前会话日期，取舍记于设计文档 §八 T2）
+      const sessionDate = this._currentSessionId.slice(0, 10);
+      // 可选接口（IRoundStore.listInterruptedRecent?）：未实现时跳过打捞（防御性降级）
+      const interrupted = store.listInterruptedRecent?.(sessionDate) ?? [];
+      if (interrupted.length === 0) return;
+      // 按 createdAt 升序登记（保序入 roundIds，恢复后对话时序正确）
+      const ordered = [...interrupted].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+      for (const round of ordered) {
+        // 文本派生：seq 升序拼接 narrate 内容（运行期过程叙述 = 部分助手文本）
+        const content = (round.processEvents ?? [])
+          .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
+          .sort((a, b) => a.seq - b.seq)
+          .map((e) => e.payload.content)
+          .join('');
+        await agent.agentHistory.appendInterrupted(round.id, { content });
+      }
+      console.info(`Memora 已恢复 ${ordered.length} 个中断轮为普通会话回合`);
+    } catch (err) {
+      console.warn('Memora 中断轮升级恢复失败（不影响历史回放；未恢复轮由 GC 兜底）', err);
+    }
+  }
+
+  /**
    * 回放当前会话（历史消息 + 历史日期列表 + Skill + Provider）
    *
    * 仅在 webview 发来 ready（脚本监听器已注册）后调用，避免 postMessage
@@ -2254,6 +2347,59 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
   }
 
+  /**
+   * 按 seq 幂等合并过程事件（2026-09-09 step 原子落盘·SSOT 单一合并语义）。
+   *
+   * step 检查点与流尾完成共用本函数，避免两份合并逻辑漂移；靠 seq 全局唯一
+   * （_processSeq 单调）天然幂等——step 检查点已写入的增量，流尾重合并不会重复追加，保序。
+   *
+   * 合并规则（对齐既有 TS-9 / TS-12c）：
+   * - 终态净化（TS-12c）：prior 中旧流 aborted/metrics 恒剔除——终局终态恒为末流。
+   * - 身份去重（TS-9）：多流续跑（prior 非空）时剔除 incoming 的 meta——身份保留首流，
+   *   续跑不重复身份；单流轮（prior 空）保留 meta（现状 else 分支等价）。
+   * - 幂等去重：incoming 中 seq 已写入的丢弃（跨流不重叠，seq 全局唯一）。
+   *
+   * @param prior Round 既有 processEvents（前流/上次检查点产物，可为空）
+   * @param incoming 本流当前已累积事件（含刚 emit 的 step_boundary / 末轮 metrics）
+   * @returns 合并后数组（不改写存储，落盘由调用方决定）
+   */
+  private mergeProcessEvents(prior: ProcessEvent[], incoming: ProcessEvent[]): ProcessEvent[] {
+    // 终态净化：旧流 aborted/metrics 剔除（终态恒为末流，TS-12c）；单流轮 base 为空故不影响
+    const base = prior.filter((e) => e.type !== 'aborted' && e.type !== 'metrics');
+    // 身份去重：仅多流续跑（prior 非空）剔 incoming 的 meta，避免重复身份（TS-9）
+    const freshIncoming = prior.length > 0 ? incoming.filter((e) => e.type !== 'meta') : incoming;
+    // 幂等去重：seq 全局唯一，incoming 中已写入的丢弃；fresh 恒在 base 之后（seq 单调保序）
+    const have = new Set(base.map((e) => e.seq));
+    const fresh = freshIncoming.filter((e) => !have.has(e.seq));
+    return [...base, ...fresh];
+  }
+
+  /**
+   * step 原子检查点：把当前轮已累积过程落盘到 pending Round（2026-09-09 档2）。
+   *
+   * 崩溃发生在 appendAssistant 完成前时，过程经此逐步持久化（非等流尾一次性）→
+   * 进程被杀只丢当前 step，之前完成 step 的过程在库，重启后经
+   * IRoundStore.listInterruptedRecent 打捞 → upgradeInterruptedRounds 升级为正常 stop turn
+   * （§一·五：非半成品草稿，T1 收口）。
+   * 幂等（seq 全局单调 + mergeProcessEvents），多次检查点/流尾各调无害不重复。
+   * fire-and-forget：失败仅记日志，不阻塞展示（对齐 P1 降级语义）。
+   *
+   * @param roundId 当前 turn roundId（内核 chunk 携带）
+   * @param events 该轮当前已累积过程事件（含刚 emit 的边界/metrics）
+   */
+  private checkpointRound(roundId: string, events: ProcessEvent[]): void {
+    const store = this._eventLogRoundStore;
+    if (!store || !roundId || events.length === 0) return;
+    try {
+      const round = store.getById(roundId);
+      if (!round) return;
+      round.processEvents = this.mergeProcessEvents(round.processEvents ?? [], events);
+      store.save(round);
+    } catch (err) {
+      console.warn('Memora step 原子检查点落盘失败', err);
+    }
+  }
+
   /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态，支持用户打断
    *  @param gen Agent 流（chat / resumeExecution）
    *  @param controller 本轮 AbortController：stop / 插话经 abort() 中断流；
@@ -2310,9 +2456,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 流结束按 turn roundId 分组附到各 Round.processEvents 落盘。
     // 分段归属 SSOT：roundId 由内核 chunk 携带（AgentChunk.roundId，2026-09-02），
     // 不再依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘。
+    // step 检查点按 seq 幂等合并增量落盘（seq 实例级单调，见 _processSeq，2026-09-09）。
     const eventsByRound = new Map<string, ProcessEvent[]>();
-    let seq = 0;
-    /** 当前 turn 归属（最近一个带 roundId 的 chunk 的 turn） */
     let currentRoundKey: string | undefined;
     /** 当前 turn 是否已补 meta 首条（每 turn 段首条身份，角色/模型显示名） */
     let metaEmittedForRound = false;
@@ -2323,7 +2468,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
     /** 构造过程事件：进缓冲（按 turn 分段，落盘真相源）+ 即时投影给 webview（渲染真相源），同一份数据 */
     const emitEvent = (typeKey: ProcessEvent['type'], payload: ProcessEvent['payload']): void => {
-      seq += 1;
+      // seq 实例级全局单调（_processSeq）：step 原子检查点按 seq 幂等合并，跨流/跨轮不冲突
+      const seq = ++this._processSeq;
       const event = { type: typeKey, seq, ts: new Date().toISOString(), payload } as ProcessEvent;
       // 归属当前 turn 分段（无 roundId 的宿主自造事件归入最近 turn）
       if (currentRoundKey) {
@@ -2439,6 +2585,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ...(chunk.stepId ? { stepId: chunk.stepId } : {}),
             ...(chunk.title ? { title: chunk.title } : {}),
           });
+          // step 原子检查点（2026-09-09 档2）：推进到新 step 即把当前已产过程落盘 pending Round，
+          // 崩溃只丢当前 step——之前完成 step 的过程在库，重启可经 listInterruptedRecent 恢复。
+          // 幂等（seq 单调 + mergeProcessEvents），与流尾共用同一合并语义（SSOT）。
+          if (currentRoundKey) {
+            this.checkpointRound(currentRoundKey, eventsByRound.get(currentRoundKey) ?? []);
+          }
         } else if (chunk.type === 'error') {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）。
           // TS-10b：按内核产出的 category 映射友好文案（connection/timeout/unknown），
@@ -2495,29 +2647,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         recallCount: [...eventsByRound.values()].flat().reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });
+      // step 原子检查点（2026-09-09 档2）：流尾最终落盘复用同一合并语义（SSOT）——
+      // 与 step_boundary 时的增量检查点共用 mergeProcessEvents，靠 seq 幂等不重复、保序。
+      // TS-9 跨流累积 / TS-12c 终态净化已收在 mergeProcessEvents 内，此处不再重复实现。
       for (const [roundId, roundEvents] of eventsByRound) {
-        try {
-          const round = this._eventLogRoundStore.getById(roundId);
-          if (round) {
-            // TS-9 闭环节点跨流累积：续跑（暂停→resume）与首轮共享同一闭环节点 roundId，
-            // processEvents 不能整轮覆盖（会丢失暂停前的召回/工具过程）。合并规则：
-            //   - 前序流的 meta/metrics/aborted 属「流级快照」：meta 保留、metrics 与 aborted 剔除
-            //     （TS-12c：aborted 与 metrics 同为终态——终局终态恒为末流，旧流中断残留不污染新流展示）
-            //   - 当前流的 meta 剔除（已含前序流 meta，丢重复身份）
-            // 普通单流轮（此前无 processEvents）行为不变。
-            const prior = round.processEvents ?? [];
-            round.processEvents =
-              prior.length > 0
-                ? [
-                    ...prior.filter((e) => e.type !== 'metrics' && e.type !== 'aborted'),
-                    ...roundEvents.filter((e) => e.type !== 'meta'),
-                  ]
-                : roundEvents;
-            this._eventLogRoundStore.save(round);
-          }
-        } catch (err) {
-          console.warn('Memora 过程事件落盘失败', err);
-        }
+        this.checkpointRound(roundId, roundEvents);
       }
     }
     // 流期间 view 被折叠/展开重建过 → 新 webview 未投影本流（隐藏期 chunk/process_event

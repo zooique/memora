@@ -13,6 +13,7 @@ import type {
   RoundInteractiveInput,
   RoundMessage,
 } from '@/memory/roundStore.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
@@ -421,6 +422,82 @@ export class MessageHistory {
     }
 
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendAssistant');
+  }
+
+  /**
+   * 中断轮收场：把崩溃残留轮升级为正常 stop turn 并入会话（T1，2026-09-09）。
+   *
+   * 语义定案（step-atomic-persistence.md §一·五）：崩溃残留轮（pending/error + refCount=0 + 有已
+   * 落盘 processEvents）= 等同于用户点「停止」的正常 turn——可删、入会话 roundIds、作后续上下文，
+   * **不是**半成品草稿/孤儿。宿主经 `IRoundStore.listInterruptedRecent` 打捞后再调本方法完成
+   * 「升级登记」，恢复为普通 turn 渲染无需特殊草稿卡。
+   *
+   * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status complete +
+   * completedAt + isReappend 防重复登记），Round schema / 存储格式不变；
+   * **有意不直接复用 appendAssistant**，两处差异：
+   * - appendAssistant 顶层跳过空内容 → 无文本中断轮无法收场；本方法允许多段「即使无
+   *   assistantMessage 总结也按 stop 语义收场」（§一·五验收口径）。
+   * - 中断标记统一追加默认文案（LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK），与运行期两条
+   *   中断收场路径（loop 流式中断 / orchestrator 历史写入）的默认降级同源（SSOT）。
+   *
+   * @param roundId 崩塌残留轮 ID（须已存在于 RoundStore；缺失仅记日志不抛错，防御性降级）
+   * @param opts.content 恢复的助手文本（宿主从 processEvents 的 narrate 内容拼接派生；
+   *        缺省/空则**不写** assistantMessage，仍按 stop 语义收场）
+   * @param opts.interruptedMark 中断标记（缺省用 LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK）
+   */
+  async appendInterrupted(
+    roundId: string,
+    opts?: { content?: string; interruptedMark?: string },
+  ): Promise<void> {
+    if (!roundId || !this.roundStore) return;
+    try {
+      // 统一取现有轮：优先 pending 缓存（同实例未重启），否则 RoundStore（崩溃重启后的常态）
+      const existing = this.pendingRounds.get(roundId) ?? this.roundStore.getById(roundId) ?? null;
+      if (!existing) {
+        logger.warn({ roundId }, 'appendInterrupted: Round 未找到，跳过升级');
+        return;
+      }
+      // 已收场（幂等重跑 / 防御）：不再二次登记会话引用，防止 roundIds 重复堆叠、refCount 虚增
+      if (existing.status === 'complete') {
+        logger.debug({ roundId }, 'appendInterrupted: 轮已收场，跳过重复升级');
+        return;
+      }
+      // 有恢复文本才写 assistantMessage（§一·五：无 assistantMessage 总结也按 stop 语义收场）
+      const content = opts?.content?.trim() ?? '';
+      const completed: Round = {
+        // 展开保留 userMessage / interactiveInputs / processEvents（宿主 step 检查点已落盘）等原字段
+        ...existing,
+        ...(content
+          ? {
+              assistantMessage: {
+                id: `msg-${roundId}-assistant`,
+                role: 'assistant',
+                content:
+                  content + (opts?.interruptedMark ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK),
+                timestamp: nowIso(),
+              } as RoundMessage,
+            }
+          : {}),
+        status: 'complete',
+        completedAt: nowIso(),
+      };
+      this.pendingRounds.delete(roundId);
+      this.roundStore.save(completed);
+      // 收场登记：与 appendAssistant 同一约定——refCount 0→1 + 会话 roundIds 追加
+      this.roundStore.incrementRef(roundId);
+      const sessionId = this.currentSessionName;
+      try {
+        this.sessionStore?.appendRoundId(sessionId, roundId);
+      } catch (err) {
+        logger.warn({ err, sessionId, roundId }, 'appendInterrupted: appendRoundId 失败');
+      }
+      logger.info(
+        { roundId, sessionId, hasAssistant: content.length > 0 },
+        'appendInterrupted: 崩溃残留轮升级为正常 stop turn',
+      );
+    } catch (err) {
+      logger.warn({ err, roundId }, 'appendInterrupted: 中断轮升级失败');
+    }
   }
 
   /** 列出所有会话标识（YYYY-MM-DD-session）；未注入 ISessionStore 返回空 */

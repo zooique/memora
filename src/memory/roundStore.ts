@@ -383,6 +383,28 @@ export interface IRoundStore {
    * @returns 孤立 Round 数组
    */
   listOrphaned?(minAgeMs?: number): Round[];
+
+  /**
+   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（2026-09-09 step 原子落盘·档2）。
+   *
+   * 用途：崩溃残留轮升级前的**只读中转**——崩溃发生在 appendAssistant 完成前时，该轮
+   * refCount=0、未登记进会话 roundIds，宿主无法从会话列表发现；但其过程已由 step 原子
+   * 检查点落盘到 pending Round。宿主重启后经此口查回，「找到」后由宿主调用收场方法
+   * （MessageHistory.appendInterrupted）**升级为正常 stop turn** 并登记入会话（T1）。
+   *
+   * 语义约束（SSOT）：
+   * - **只读查询**，不登记会话、不改写 Round、不改变 appendAssistant 完成语义；
+   *   升级登记是独立的「收场」动作（§一·五：中断轮 = 正常 stop turn，非半成品草稿）。
+   * - **不污染正式会话 roundIds**——升级登记完成（complete + refCount>0）前，中断轮
+   *   仍是无引用中间态，本接口只处理该短暂窗口的「找到」。
+   * - 中断轮超龄后仍由 GC sweepOrphans 正常回收（refCount=0 孤儿），本接口不改变其生命周期；
+   *   打捞窗口落在启动后的升级动作内（早于 24h 存活保护），不构成误回收。
+   *
+   * @param date - YYYY-MM-DD，按 createdAt 的前缀匹配（ISO 日期头 10 位）
+   * @param limit - 最多返回条数，按 createdAt 降序（最新在前）；缺省不截断
+   * @returns 中断残留 Round 数组（按 createdAt 倒序）
+   */
+  listInterruptedRecent?(date: string, limit?: number): Round[];
 }
 
 // ─── 辅助函数 ───────────────────────────────────────────

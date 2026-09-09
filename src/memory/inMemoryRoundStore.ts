@@ -185,6 +185,28 @@ export class InMemoryRoundStore implements IRoundStore {
   }
 
   /**
+   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（2026-09-09 step 原子落盘·档2）。
+   *
+   * 崩溃发生在 appendAssistant 前时，该轮 refCount=0、未登记会话、orphan 但可能有已落盘
+   * processEvents（step 检查点）。宿主重启后经此口「找到」中断轮，再调收场方法
+   * （MessageHistory.appendInterrupted）**升级为正常 stop turn**（§一·五：非半成品草稿，T1）。
+   * 只读、不改写、不登记会话；升级完成（complete + refCount>0）前为打捞窗口内中间态，
+   * 超龄仍未升级的中断轮由 GC 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
+   *
+   * @param date - YYYY-MM-DD，按 createdAt 前缀匹配（ISO 头 10 位）
+   * @param limit - 最多条数，按 createdAt 降序（最新在前）；缺省不截断
+   * @returns 中断残留 Round 数组（倒序）
+   */
+  listInterruptedRecent(date: string, limit?: number): Round[] {
+    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤后倒序取最新
+    const interrupted = Array.from(this.rounds.values())
+      .filter((r) => r.refCount === 0 && (r.status === 'pending' || r.status === 'error'))
+      .filter((r) => r.createdAt.startsWith(date))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return (limit !== undefined ? interrupted.slice(0, limit) : interrupted).map((r) => ({ ...r }));
+  }
+
+  /**
    * 获取存储中的 Round 数量
    *
    * 用于监控和测试

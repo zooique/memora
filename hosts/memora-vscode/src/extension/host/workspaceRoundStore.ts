@@ -388,6 +388,31 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
+   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（2026-09-09 step 原子落盘·档2）。
+   *
+   * 崩溃发生在 appendAssistant 完成前：该轮 refCount=0、未登记会话 roundIds，宿主从会话列表
+   * 无法发现；但其过程可能已由 step 原子检查点落盘到 pending Round——重启后经此只读口
+   * 「找到」，再由宿主收场方法（chatPanel.upgradeInterruptedRounds → 内核
+   * MessageHistory.appendInterrupted）**升级为正常 stop turn**（§一·五：非半成品草稿，T1）。
+   * 只读、不登记会话、不改写；升级完成（complete + refCount>0）前为打捞窗口内中间态，
+   * 超龄未升级的中断轮仍由 sweepOrphans 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
+   *
+   * @param date - YYYY-MM-DD，按 createdAt 前缀匹配（ISO 头 10 位）
+   * @param limit - 最多条数，按 createdAt 降序（最新在前）；缺省不截断
+   * @returns 中断残留 Round 数组（倒序）
+   */
+  listInterruptedRecent(date: string, limit?: number): Round[] {
+    // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤；先索引判型避免全量读盘
+    const candidates = Array.from(this.index.values())
+      .filter((e) => e.refCount === 0 && (e.status === 'pending' || e.status === 'error'))
+      .filter((e) => e.createdAt.startsWith(date))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const slice = limit !== undefined ? candidates.slice(0, limit) : candidates;
+    // 命中后才读完整 Round（多步查询只对命中的走盘，避免一次枚举全量物理读写）
+    return slice.map((e) => this.getById(e.id)).filter((r): r is Round => r !== null);
+  }
+
+  /**
    * 清扫无引用孤儿 Round（refCount=0）：删除会话/截断后遗留的物理文件统一回收。
    *
    * SSOT：Round 物理生命周期归 RoundStore（引用归 SessionStore）——deleteSession/truncate

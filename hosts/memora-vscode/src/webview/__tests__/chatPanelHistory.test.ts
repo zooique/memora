@@ -15,7 +15,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { Agent, AgentChunk, Round } from '@zooique/memora';
+import type { Agent, AgentChunk, ProcessEvent, Round } from '@zooique/memora';
+import { todayDate } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
@@ -845,5 +846,142 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     // 第二次独立落盘到 round-2（含 thinking/tool/metrics），不覆盖 round-1 的工具记录
     expect(r2.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
     expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
+  });
+});
+
+describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，2026-09-09）', () => {
+  /** 种子「崩溃残局」轮：pending + refCount=0 + 宿主已落盘的 processEvents */
+  function seedInterruptedRound(
+    roundStore: WorkspaceRoundStore,
+    id: string,
+    createdAt: string,
+    processEvents: ProcessEvent[],
+  ): void {
+    roundStore.save({
+      id,
+      userMessage: { id: `msg-${id}-user`, role: 'user', content: '帮我梳理架构', timestamp: createdAt },
+      status: 'pending',
+      createdAt,
+      refCount: 0,
+      processEvents,
+    } as Round);
+  }
+
+  /** 构造打捞升级环境：真实 Workspace 存储 + 注入带 agentHistory 的 Agent 桩 */
+  function setupSalvage(options?: { seedSession?: boolean }): {
+    store: WorkspaceSessionStore;
+    roundStore: WorkspaceRoundStore;
+    provider: MemoraChatViewProvider;
+    appendInterrupted: ReturnType<typeof vi.fn>;
+    sessionId: string;
+  } {
+    const dir = mkdtempSync(join(tmpdir(), 'memora-salvage-'));
+    const roundStore = new WorkspaceRoundStore(dir);
+    roundStore.load();
+    const store = new WorkspaceSessionStore(dir, roundStore);
+    store.load();
+    const sessionId = `${todayDate()}-restored`;
+    // 制造「最近活跃会话」（崩溃前正使用的会话）：meta 的 updatedAt 为最新 → listSessionMetas[0]
+    if (options?.seedSession !== false) {
+      store.updateSessionMeta(sessionId, { autoName: '崩溃恢复测试会话', displayName: '崩溃恢复测试会话' });
+    }
+
+    const providerStore = { listMasked: async () => [], getActiveName: () => undefined } as never;
+    const provider = new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, providerStore);
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    provider.setRoundStore(roundStore);
+    const webviewView = {
+      webview: {
+        asWebviewUri: () => ({ toString: () => 'mock://script' }),
+        options: {},
+        html: '',
+        postMessage: () => Promise.resolve(true),
+      },
+      onDidDispose: () => ({ dispose: () => {} }),
+      onDidReceiveMessage: () => ({ dispose: () => {} }),
+    } as never;
+    (provider as unknown as { _view: unknown })._view = webviewView;
+
+    // 注入带 agentHistory 的 Agent 桩（升级登记走内核 appendInterrupted，宿主只负责打捞与派生文本）
+    const appendInterrupted = vi.fn().mockResolvedValue(undefined);
+    const agent = {
+      agentHistory: { appendInterrupted },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
+    (provider as unknown as { _agent: Agent })._agent = agent;
+
+    return { store, roundStore, provider, appendInterrupted, sessionId };
+  }
+
+  /** 反射调私有打捞方法 */
+  function upgrade(provider: MemoraChatViewProvider): Promise<void> {
+    return (provider as unknown as { upgradeInterruptedRounds(): Promise<void> }).upgradeInterruptedRounds();
+  }
+
+  it('打捞当前会话日期内中断轮 → 按 createdAt 升序升级：narrate 文本拼接传给内核收场', async () => {
+    const { roundStore, provider, appendInterrupted } = setupSalvage();
+    const tBase = `${todayDate()}T10:00:00.000Z`;
+    // 两个中断轮（不同 createdAt，processEvents 含多段 narrate）
+    seedInterruptedRound(roundStore, 'round-a', `${todayDate()}T11:00:00.000Z`, [
+      { type: 'narrate', seq: 1, ts: tBase, payload: { content: '第一段' } },
+      { type: 'narrate', seq: 2, ts: tBase, payload: { content: '第二段' } },
+    ]);
+    seedInterruptedRound(roundStore, 'round-b', `${todayDate()}T12:00:00.000Z`, [
+      { type: 'narrate', seq: 1, ts: tBase, payload: { content: 'B段' } },
+    ]);
+
+    await upgrade(provider);
+
+    // createdAt 升序登记（round-a 先于 round-b），content = narrate 按 seq 拼接
+    expect(appendInterrupted).toHaveBeenCalledTimes(2);
+    expect(appendInterrupted.mock.calls[0]?.[0]).toBe('round-a');
+    expect(appendInterrupted.mock.calls[0]?.[1]).toEqual({ content: '第一段第二段' });
+    expect(appendInterrupted.mock.calls[1]?.[0]).toBe('round-b');
+    expect(appendInterrupted.mock.calls[1]?.[1]).toEqual({ content: 'B段' });
+  });
+
+  it('工具阶段崩溃（无 narrate）→ content 传空串，交由内核按 stop 语义收场（§一·五）', async () => {
+    const { roundStore, provider, appendInterrupted } = setupSalvage();
+    seedInterruptedRound(roundStore, 'round-tool', `${todayDate()}T11:00:00.000Z`, [
+      {
+        type: 'tool_start',
+        seq: 1,
+        ts: `${todayDate()}T11:00:01.000Z`,
+        payload: { toolCallId: 't1', name: 'web_search' },
+      },
+    ]);
+
+    await upgrade(provider);
+
+    expect(appendInterrupted).toHaveBeenCalledTimes(1);
+    expect(appendInterrupted.mock.calls[0]?.[1]).toEqual({ content: '' });
+  });
+
+  it('once-guard：第二次调用不再重复升级（T3 不双重复放底座）', async () => {
+    const { roundStore, provider, appendInterrupted } = setupSalvage();
+    seedInterruptedRound(roundStore, 'round-a', `${todayDate()}T11:00:00.000Z`, [
+      { type: 'narrate', seq: 1, ts: `${todayDate()}T10:00:00.000Z`, payload: { content: 'A' } },
+    ]);
+
+    await upgrade(provider);
+    await upgrade(provider); // 重复触发（双 ready / 折叠重建）
+
+    expect(appendInterrupted).toHaveBeenCalledTimes(1);
+    expect((provider as unknown as { _salvageUpgraded: boolean })._salvageUpgraded).toBe(true);
+  });
+
+  it('无中断轮 → 不调内核收场，但 guard 置位（之后不再空扫）', async () => {
+    const { provider, appendInterrupted } = setupSalvage();
+    await upgrade(provider);
+    expect(appendInterrupted).not.toHaveBeenCalled();
+    expect((provider as unknown as { _salvageUpgraded: boolean })._salvageUpgraded).toBe(true);
+  });
+
+  it('无当前会话 → 跳过且不置 guard（Agent/会话就绪后等待下次触发再试）', async () => {
+    const { provider, appendInterrupted } = setupSalvage({ seedSession: false });
+    await upgrade(provider);
+    expect(appendInterrupted).not.toHaveBeenCalled();
+    expect((provider as unknown as { _salvageUpgraded: boolean })._salvageUpgraded).toBe(false);
   });
 });

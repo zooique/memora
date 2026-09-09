@@ -12,6 +12,7 @@ import {
   generateSummaryId,
   parseRoundIdFromSummaryId,
   type ProcessEvent,
+  type Round,
 } from '@/memory/roundStore.js';
 
 describe('问答闭环存储', () => {
@@ -36,6 +37,43 @@ describe('问答闭环存储', () => {
       expect(retrieved?.status).toBe('pending');
       expect(retrieved?.userMessage.content).toBe('你好');
       expect(retrieved?.refCount).toBe(1);
+    });
+
+    it('listInterruptedRecent：列出指定日期崩溃残留轮（pending/error + refCount=0 + 倒序）', () => {
+      // 构造崩溃残留轮：覆盖工厂默认（refCount=1）为 refCount=0（崩溃发生在 appendAssistant 前的形态）
+      const mk = (date: string, min: string, status: Round['status']): void => {
+        const base = createPendingRound(`q-${min}`);
+        // status 覆盖 complete 需补 summaryId 才符合完成语义；此处仅验证过滤，不做模型完整性校验
+        const round: Round = {
+          ...base,
+          status,
+          refCount: 0,
+          createdAt: `${date}T${min}:00.00.000Z`,
+        };
+        store.save(round);
+      };
+      // 目标日期：pending 两条 + error 一条（最新在前，分钟序 2 > 0 > 1）
+      mk('2026-09-09', '00', 'pending');
+      mk('2026-09-09', '01', 'pending');
+      mk('2026-09-09', '02', 'error');
+      // 排除项：他日 pending、同日 complete（归零轮非未完成残留）
+      mk('2026-09-08', '03', 'pending');
+      mk('2026-09-09', '04', 'complete');
+      // 排除项：被引用（refCount>0）的 pending——进行中轮不属崩溃残留
+      const refed = createPendingRound('refed');
+      refed.refCount = 1;
+      store.save(refed);
+
+      // 全量：仅 3 条目标，按 createdAt 倒序（最新在前，分钟序 02 > 01 > 00）
+      const all = store.listInterruptedRecent('2026-09-09');
+      expect(all).toHaveLength(3);
+      expect(all.map((r) => r.userMessage.content)).toEqual(['q-02', 'q-01', 'q-00']);
+
+      // limit 截断：取最新 2 条
+      const limited = store.listInterruptedRecent('2026-09-09', 2);
+      expect(limited).toHaveLength(2);
+      expect(limited[0]?.userMessage.content).toBe('q-02');
+      expect(limited[1]?.userMessage.content).toBe('q-01');
     });
 
     it('应该完成问答闭环', () => {
