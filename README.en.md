@@ -17,7 +17,7 @@
 ## What problem are you facing?
 
 - **LLM forgets everything between sessions** — Your users remember what they said, your agent doesn't
-- **Existing memory solutions are either too heavy (framework-bound) or too shallow (CRUD only)** — No dedup, decay, conflict detection, or timeliness evaluation
+- **Existing memory solutions are either too heavy (framework-bound) or too shallow (CRUD only)** — No dedup, conflict detection, or write-time supersede
 - **Memory and persona are tangled** — Switch personas and lose your history
 - **You don't want to send data to the cloud** — Need a local, private memory layer with zero external dependencies
 
@@ -25,7 +25,7 @@
 
 Memora is an **Agent memory kernel** — framework-agnostic, cloud-independent, focused on one thing: **giving your agent cross-session, cross-topic long-term memory that stays clean.**
 
-"Clean" means: automatic deduplication, natural decay, conflict detection, timeliness evaluation — not just stuffing history into the context window.
+"Clean" means: semantic deduplication, conflict detection, write-time supersede, and recall boost (the more a memory is used, the more it matters) — not just stuffing history into the context window.
 
 ```typescript
 import { Agent, createProviderFromConfig } from '@zooique/memora';
@@ -49,10 +49,10 @@ for await (const chunk of agent.chat('I love TypeScript')) {
 // Next session — agent recalls automatically
 const reply = await agent.chatSync('What language do I like?');
 
-// Memory governance — dedup / conflict / timeliness / decay
+// Memory governance — dedup / conflict detection / source health
 await agent.governance.deduplicate();
 await agent.governance.detectConflicts();
-agent.governance.decay();
+const health = agent.governance.sourceHealth();
 
 await agent.close();
 ```
@@ -65,7 +65,7 @@ await agent.close();
 
 | | Memora | Vector memory libs (agent-memory, MemStack) | Framework-builtin memory (Mastra, LangGraph) |
 |---|---|---|---|
-| **Memory governance** | ✅ Dedup+decay+conflict+timeliness | ⚠️ Decay only or none | ⚠️ Partial |
+| **Memory governance** | ✅ Dedup+conflict+write-time supersede | ⚠️ Decay only or none | ⚠️ Partial |
 | **Framework lock-in** | ✅ Zero — pure kernel | ✅ Standalone | ❌ Tied to framework |
 | **Data privacy** | ✅ 100% local | ✅ Local | ⚠️ Partially cloud |
 | **Runtime deps** | ✅ Zero (node:* only) | ❌ SQLite / better-sqlite3 | ❌ Heavy |
@@ -94,7 +94,7 @@ Memora is a **brain kernel that cannot run standalone** — it has interfaces bu
 |-----------|-------------|
 | **Long-term Memory** | Cross-session, cross-topic memory persistence with intelligent recall |
 | **Dual-channel Recall** | Semantic vector search + keyword search, hybridMerge fusion ranking |
-| **Memory Governance** | L0 decay / L1 semantic dedup / L2 timeliness / L3 conflict detection via `agent.governance` facade |
+| **Memory Governance** | Write-time supersede + recall boost + semantic dedup + conflict detection via `agent.governance` facade (dedup / conflict judged by LLM) |
 | **Agent-Persona Separation** | Agent is a pure memory engine; persona is a personality vessel. Switch personas without losing memories |
 | **Unified Memory Model** | Everything is a "Memory" primitive, distinguished by open-string `source` — no closed enums |
 | **Domain-agnostic** | Same architecture, different memory configs → different domains |
@@ -160,11 +160,11 @@ const hits = await agent.memory.searchHybrid('TypeScript preference', 5);
 const report = await agent.governance.deduplicate();
 console.log(`Deduplicated ${report.deduplicatedCount} memories`);
 
-const timeliness = await agent.governance.evaluateTimeliness();
 const conflicts = await agent.governance.detectConflicts();
 
-// Manual decay trigger (pure score decrease, no LLM call)
-agent.governance.decay();
+// Source health diagnosis (pure computation, no LLM): per-source count / average score / status
+const health = agent.governance.sourceHealth();
+console.log(health?.overallStatus);
 ```
 
 ### Cleanup
@@ -187,7 +187,7 @@ await agent.close();
 │  │  Memora Kernel (Agent)                   │               │
 │  │  - chat(input) → streaming response      │               │
 │  │  - Dual-channel recall (semantic+keyword)│               │
-│  │  - Memory governance (decay/dedup/conflict) │            │
+│  │  - Memory governance (dedup/conflict/supersede) │         │
 │  │  - Role pack matching / Skill matching   │               │
 │  │  - Tool registration / execution         │               │
 │  │  - Session archive / external task loop  │               │
@@ -201,7 +201,7 @@ The kernel interacts with the outside world through interfaces. Hosts inject imp
 
 | Interface | Responsibility | Built-in Implementation |
 |-----------|---------------|------------------------|
-| `IMemoryStorage` | Memory CRUD + search + decay | `InMemoryStorage` |
+| `IMemoryStorage` | Memory CRUD + search + query by source | `InMemoryStorage` |
 | `IVectorStore` | Semantic vector index | `JsonVectorStore` |
 | `ISessionStore` | Session history persistence | None (host implements) |
 | `ILogger` | Logging output | console fallback |
@@ -286,7 +286,7 @@ npm run build        # Compile to dist/
 |---|---|---|---|
 | Data privacy | ✅ 100% local | ❌ Cloud-dependent | ⚠️ Varies |
 | Runtime deps | ✅ Zero | N/A (SaaS) | ❌ Heavy |
-| Memory lifecycle | ✅ Full (dedup/decay/conflict) | ⚠️ Partial | ❌ CRUD only |
+| Memory lifecycle | ✅ Full (dedup/conflict/supersede) | ⚠️ Partial | ❌ CRUD only |
 | Domain-agnostic | ✅ Open-string source | ⚠️ Opinionated | ⚠️ Framework-locked |
 | Embeddable | ✅ Any Node.js host | ❌ API calls only | ⚠️ Framework-bound |
 | Relation graph | ✅ Built-in sidecar | ❌ Rare | ❌ Rare |

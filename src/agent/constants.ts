@@ -15,7 +15,7 @@ import { DEFAULT_RECALL_EXCLUDE_SOURCES } from '@/utils/recallDefaults.js';
 /**
  * Agent 门面层常量
  *
- * 用于 agent.ts 中的并发锁、输入限制、记忆衰减周期等。
+ * 用于 agent.ts 中的并发锁、输入限制、召回/上下文配置等。
  */
 export const AGENT_CONSTANTS = {
   /**

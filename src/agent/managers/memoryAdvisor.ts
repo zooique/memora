@@ -15,8 +15,8 @@ import { judgeWithLlm } from '@/agent/managers/llmJudgeHelper.js';
 import { byScoreDesc } from '@/utils/array.js';
 import { truncate } from '@/utils/strings.js';
 import { logger } from '@/logging/logger.js';
-// LLM 治理源列表（统一由 governance.ts 维护）
-import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
+// 治理常量 SSOT（治理源列表 + 健康度阈值，统一由 governance.ts 维护）
+import { GOVERNANCE_SOURCES, SOURCE_HEALTH_THRESHOLDS } from '@/memory/governance.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -26,18 +26,6 @@ const SUGGEST_TOP_PER_SOURCE = 3;
 const SUGGEST_RECENCY_WINDOW_DAYS = 30;
 /** 推荐内容预览字符数 */
 const ADVISOR_PREVIEW_LEN = 120;
-/** source 健康度阈值（低于或超期触发 critical/warning） */
-const SOURCE_HEALTH_THRESHOLDS = {
-  /** 平均 score 低于此值 → critical */
-  CRITICAL_SCORE: 0.2,
-  /** 平均 score 低于此值 → warning */
-  WARNING_SCORE: 0.5,
-  /** 超过此天数未访问 → critical */
-  CRITICAL_DAYS: 30,
-  /** 超过此天数未访问 → warning */
-  WARNING_DAYS: 7,
-} as const;
-
 // ─── L3 冲突检测常量 ────────────────────────────────────
 /** 单个 source 内参与配对的条数上限（控制 O(n²) 配对规模） */
 const CONFLICT_CANDIDATES_PER_SOURCE = 10;
@@ -152,8 +140,10 @@ export class MemoryAdvisor {
   // ─── 源健康诊断 ─────────────────────────────────────────
 
   /**
-   * 记忆源健康诊断：逐 source 计算数量/平均 score/新鲜度/状态，助宿主判断是否需衰减、清理或补充。
-   * 状态判定：healthy=score≥0.5 且 7 天内有访问；warning=score<0.5 或 7-30 天未访问；critical=score<0.2 或 30 天以上未访问。
+   * 记忆源健康诊断：逐 source 计算数量/平均 score/最近访问天数/状态，助宿主判断是否需要清理或补充。
+   * 状态判定：healthy=avgScore≥0.5；warning=avgScore<0.5；critical=avgScore<0.2。
+   * 纪律（D7 / ADR-025）：仅按**语义状态**（平均 score）判定，时间不参与——久未访问不构成「过期/沉底」；
+   * daysSinceLastAccess 仅作事实展示，不驱动状态（2026-09-09 移除原 7/30 天时间分支）。
    * 纯只读同步不调 LLM，用 getAllSources() 发现所有 source 标签（替代全量 search）。
    */
   sourceHealth(): SourceHealthReport {
@@ -186,9 +176,9 @@ export class MemoryAdvisor {
 
       // 健康状态判定
       let status: SourceHealthStatus;
-      if (avgScore < SOURCE_HEALTH_THRESHOLDS.CRITICAL_SCORE || daysSinceLastAccess > SOURCE_HEALTH_THRESHOLDS.CRITICAL_DAYS) {
+      if (avgScore < SOURCE_HEALTH_THRESHOLDS.CRITICAL_SCORE) {
         status = 'critical';
-      } else if (avgScore < SOURCE_HEALTH_THRESHOLDS.WARNING_SCORE || daysSinceLastAccess > SOURCE_HEALTH_THRESHOLDS.WARNING_DAYS) {
+      } else if (avgScore < SOURCE_HEALTH_THRESHOLDS.WARNING_SCORE) {
         status = 'warning';
       } else {
         status = 'healthy';

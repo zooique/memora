@@ -39,10 +39,14 @@ description: 对抗性审查架构决策收敛——核心：设定记忆（pers
 > **修订（2026-08-28）**：原 D6 要求 content 带 `isTraceable=true`——字段已删除（无行为消费者，见 [memory-as-summary.md](../../docs/architecture/memory-as-summary.md) §5.2）。
 >
 > **修订（2026-08-31）**：会话级摘要不再写记忆库——`SessionArchiver` 只更新 `SessionMeta.summary/keyTopics`（会话记录存储，随 `deleteSession` 删除）；`content` 收敛为**用户手动轨**（仅治理页经 `memoryInspector.writeUpsert` 写入，不在 `SOURCE_LABELS`，属 `GOVERNANCE_SOURCES`）。记忆库唯一自动轨 = `round-summary`（摘要单轨，见 [memory-role-pack-boundary-rules.md 规则 R5](../rules/memory-role-pack-boundary-rules.md)）。
+>
+> **修订（2026-09-09）**：`writeUpsert` 经核查**仅能编辑已有记忆**（`{ ...existing, content, isModified: true }`，见 `settingsPanel.ts:841`），**无新建 `source='content'` 的入口**；故 `content` 已随本次剪枝从 `GOVERNANCE_SOURCES` 清空（现为 `[]`）。准确定性：`content` 是**无自动生产路径、亦无新增入口的历史残留 source**，仅存量兼容保留标签。
 
 ### 配套决策 D7：type 不设时效性（2026-08-17 定案）
 
-> 记忆是否有效由**语义状态**判定（superseded 写时取代 + score 衰减自然沉底），不由时间流逝判定——**用户久未使用不构成记忆过期的理由**。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃。type 回归**纯语义标签**（组织/展示/统计），不驱动过滤与排序。
+> 记忆是否有效由**语义状态**判定（superseded 写时取代；**score 无衰减、无沉底**），不由时间流逝判定——**用户久未使用不构成记忆过期的理由**。原 `intent`/`general` 7 天窗口是「用时间代理语义状态」的读时猜测，违反 ADR-021「写时定、不读时猜」纪律，已废弃。type 回归**纯语义标签**（组织/展示/统计），不驱动过滤与排序。
+>
+> **修订（2026-09-09，与下游 D7 对齐）**：原表述含「score 衰减自然沉底」——衰减子系统已于 2026-08-27 移除，沉底语义不存在（下游 D7 见 [memory-role-pack-boundary.md](../../docs/architecture/memory-role-pack-boundary.md)）。有效性判定**收敛为 superseded 写时取代一项**。
 
 ### 配套决策 D5：默认角色包 = 宿主职责（2026-08-17 定案）
 

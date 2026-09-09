@@ -8,7 +8,7 @@
  * 用于格式化任意 Date 为 YYYY-MM-DD（本地时区）。
  */
 
-/** 一天对应的毫秒数（跨层共享，供衰减年龄/沉底天数换算） */
+/** 一天对应的毫秒数（跨层共享，供天数差换算：诊断展示 daysSinceLastAccess / 推荐时效权重 / daysBetween） */
 export const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 /**

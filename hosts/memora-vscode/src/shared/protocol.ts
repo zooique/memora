@@ -1134,7 +1134,7 @@ export const MESSAGE_TYPES = {
 } as const;
 
 // ─── 诊断 DTO 类型已移除（2026-08-24 第一性原理复盘） ───
-// 复杂治理细节（取代/加权/自然沉底）超越终端用户需要（ChatGPT 仅暴露「记住了什么+删改」），
+// 复杂治理细节（取代/加权）超越终端用户需要（ChatGPT 仅暴露「记住了什么+删改」），
 // 且记忆明文存于 .memora/memories.json 用户可直接读；内核治理机制强制自动跑，无终端用户场景。
 // 相关消息类型（governance_source_health / governance_detect_conflicts / governance_deduplicate /
 // governance_evaluate_timeliness / source_health_loaded / conflict_detection_loaded /

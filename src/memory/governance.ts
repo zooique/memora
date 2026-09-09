@@ -18,6 +18,22 @@ export const SCORE_CEILING = 1.0;
 export const SCORE_FLOOR = 0.1;
 
 /**
+ * source 健康度阈值：仅按**平均 score**判定，不含任何时间维度。
+ * 消费者：memoryAdvisor.sourceHealth()。
+ *
+ * 纪律（D7 / ADR-025）：记忆有效性由**语义状态**判定（superseded 写时取代），
+ * 不由时间流逝判定——用户久未使用不构成记忆"过期"或"沉底"的理由。
+ * 「用时间代理语义状态」是读时猜测，违反 ADR-021「写时定、不读时猜」，已废弃
+ * （2026-09-09：原 CRITICAL_DAYS=30 / WARNING_DAYS=7 时间分支移除）。
+ */
+export const SOURCE_HEALTH_THRESHOLDS = {
+  /** 平均 score 低于此值 → critical */
+  CRITICAL_SCORE: 0.2,
+  /** 平均 score 低于此值 → warning */
+  WARNING_SCORE: 0.5,
+} as const;
+
+/**
  * 治理源列表：实际写入记忆库的 source 才参与去重 / 冲突治理。
  * 当前记忆库唯一自动轨 = round-summary（摘要即记忆本体，见 memory-as-summary.md），
  * 其治理由 superseded 写时取代承担，不入本数组；content 历史残留 source 无生产写入路径

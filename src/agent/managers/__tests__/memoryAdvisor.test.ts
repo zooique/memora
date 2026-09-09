@@ -70,7 +70,7 @@ describe('MemoryAdvisor.sourceHealth()', () => {
       expect(new Date(report.diagnosedAt).toString()).not.toBe('Invalid Date');
     });
 
-    it('healthy：avgScore≥0.5 且 7 天内访问', () => {
+    it('healthy：avgScore≥0.5', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.7 }));
       const report = advisor.sourceHealth();
       expect(report.sources).toHaveLength(1);
@@ -78,36 +78,38 @@ describe('MemoryAdvisor.sourceHealth()', () => {
       expect(report.overallStatus).toBe('healthy');
     });
 
-    it('warning：avgScore<0.5 且 7 天内访问', () => {
+    it('warning：avgScore<0.5', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.3 }));
       const report = advisor.sourceHealth();
       expect(report.sources[0]?.status).toBe('warning');
       expect(report.overallStatus).toBe('warning');
     });
 
-    it('warning：avgScore≥0.5 且 7-30 天未访问', () => {
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:1', score: 0.7 }));
+    it('久未访问不降级：avgScore≥0.5 且 40 天未访问 → 仍 healthy（D7：时间不代理语义状态）', () => {
+      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1', score: 0.7 }));
       const report = advisor.sourceHealth();
-      expect(report.sources[0]?.status).toBe('warning');
-      expect(report.overallStatus).toBe('warning');
+      expect(report.sources[0]?.status).toBe('healthy');
+      expect(report.overallStatus).toBe('healthy');
+      // daysSinceLastAccess 仍如实输出（诊断事实），仅不参与状态判定
+      expect(report.sources[0]?.daysSinceLastAccess).toBeGreaterThanOrEqual(39);
     });
 
-    it('critical：avgScore<0.2 且 7 天内访问', () => {
+    it('critical：avgScore<0.2', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.1 }));
       const report = advisor.sourceHealth();
       expect(report.sources[0]?.status).toBe('critical');
       expect(report.overallStatus).toBe('critical');
     });
 
-    it('critical：avgScore≥0.5 且 >30 天未访问', () => {
-      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1', score: 0.7 }));
+    it('critical 由低分决定，与访问时间无关（最近访问也不豁免）', () => {
+      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1', score: 0.1 }));
       const report = advisor.sourceHealth();
       expect(report.sources[0]?.status).toBe('critical');
       expect(report.overallStatus).toBe('critical');
     });
 
     it('critical 优先级高于 warning（score 边界 0.2 触发）', () => {
-      // score=0.19 + 1 天前访问：触发 critical（score<0.2 优先于 days<7）
+      // score=0.19：低于 CRITICAL_SCORE 直接判 critical，不会落进 warning 分支
       storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', score: 0.19 }));
       const report = advisor.sourceHealth();
       expect(report.sources[0]?.status).toBe('critical');
@@ -117,7 +119,7 @@ describe('MemoryAdvisor.sourceHealth()', () => {
   describe('多 source 整体状态与排序', () => {
     it('overallStatus 取最差 source（healthy + critical → critical）', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(40, { id: 'content:1', source: 'content', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', source: 'content', score: 0.1 }));
       const report = advisor.sourceHealth();
       expect(report.overallStatus).toBe('critical');
       // 排序：critical 在前，healthy 在后
@@ -127,7 +129,7 @@ describe('MemoryAdvisor.sourceHealth()', () => {
 
     it('overallStatus 取最差 source（healthy + warning → warning）', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'work:1', source: SOURCE_LABELS.WORK_PROJECTION, score: 0.7 }));
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:1', source: 'content', score: 0.7 }));
+      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', source: 'content', score: 0.3 }));
       const report = advisor.sourceHealth();
       expect(report.overallStatus).toBe('warning');
     });

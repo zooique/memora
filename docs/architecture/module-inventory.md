@@ -241,7 +241,7 @@
 | `memory/vectorStore.ts`      | 🟢 已打磨 | `__tests__/vectorStore.test.ts`        | 向量存储                                  |
 | `memory/reranker.ts`         | ⚪ 接口   | `__tests__/reranker.test.ts` (3 tests) | 重排序接口（IReranker，仅类型；默认实现已剪枝移除）        |
 | `memory/types.ts`            | 🟢 已打磨 | `__tests__/types.test.ts`              | 记忆类型定义                                |
-| `memory/governance.ts`       | 🟢 已打磨 | `__tests__/governance.test.ts`         | 治理常量（supersede/boost/沉底 cutoff）       |
+| `memory/governance.ts`       | 🟢 已打磨 | `__tests__/governance.test.ts`         | 治理常量（boost 增量/上下限 + 健康度阈值 + 治理源）      |
 | `memory/inMemoryStorage.ts`  | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts`    | 内存存储实现                                |
 | `memory/storageInterface.ts` | ⚪ 接口   | 无独立测试                                  | IMemoryStorage 接口定义                   |
 | `memory/lockManager.ts`      | 🟢 已打磨 | `__tests__/lockManager.test.ts`        | 锁文件管理                                 |

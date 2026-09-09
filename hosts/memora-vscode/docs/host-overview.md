@@ -29,7 +29,7 @@
 | 插件 → UI | 角色包多包机制：**3 个内核出厂角色包**（文档设计师 / 方案设计师 / 小说助手）构建期从内核 `role-packs/` 同步打入 dist（宿主不自持源，2026-08-24 机制化单一真理源），身份条角色下拉切换（复用 dropdown capsule 变体），角色切换事件（`rolePackSwitched` → `chat_role_pack` 协议消息，chatPanel.ts:615-629）实时对齐 | ✅ |
 | 插件 → UI | thinking 阶段真实 phase（recalling / processing / archiving）替代笼统 status | ✅ |
 | 插件 → UI | composer 附加能力 chip（角色包 capabilities 驱动的联网指示） | ✅ |
-| 插件 → UI | 指标面板（Tokens / 记忆衰减 / 工具失败等）折叠区展示 | ✅ |
+| 插件 → UI | 指标面板（Tokens / 记忆摘要 / 工具失败等）折叠区展示 | ✅ |
 
 **角色包清单（出厂自带，3 个）**：文档设计师 / 方案设计师 / 小说助手。定位由维护于内核 `role-packs/` 的 manifest 声明（宿主构建期经 esbuild 从内核同步，单一真理源——宿主不再自持副本），内核 `RolePackManager` 自动扫描激活，插件不自定性（ADR-VC-001 决策）。
 
@@ -63,7 +63,7 @@
 | 断点续跑横幅 `.checkpoint-banner` | 软暂停持久化检查点 | 临时，可续跑/关闭 |
 | 任务看板 `.plan-board` | task_table_write/update（H4） | 临时，N/M 进度 |
 | 主动提问条 `#clarifyBar` | needClarify / questionPending | 等待用户输入 |
-| 记忆治理区 `.governance` | 记忆衰减/清理（G4） | 统计卡 + 操作 |
+| 记忆治理区 `.governance` | 记忆清理（cleanup，G4；记忆无衰减语义） | 统计卡 + 操作 |
 | 后台模型通道 `.cfg-bg` | 独立 backgroundProvider（G5） | 配置子视图分区 |
 | Embedding 配置 `.embedding-cfg` | 向量检索（G1） | 折叠区 |
 | 写入审批开关 `.security-*` | 二次确认（H0） | toggle |

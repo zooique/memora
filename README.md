@@ -17,7 +17,7 @@
 ## 你遇到了什么问题？
 
 - **LLM 每次对话都从零开始** — 用户记得上次聊过什么，Agent 不记得
-- **现有记忆方案要么太重（框架绑定）要么太浅（只有 CRUD）** — 缺少去重、衰减、冲突检测等治理能力
+- **现有记忆方案要么太重（框架绑定）要么太浅（只有 CRUD）** — 缺少去重、冲突检测、写时取代等治理能力
 - **记忆和角色混在一起** — 换个角色人格，历史记忆也跟着丢了
 - **数据不想上云** — 需要一个本地、私有、不依赖外部服务的记忆层
 
@@ -25,7 +25,7 @@
 
 Memora 是一个 **Agent 记忆内核**——不绑定任何框架，不依赖任何云服务，专注于一件事：**让 Agent 拥有跨会话、跨话题的长期记忆，并且记忆是干净的。**
 
-"干净"意味着：自动去重、自然衰减、冲突检测、时效评估——不是简单地把历史堆进上下文窗口。
+"干净"意味着：语义去重、冲突检测、写时取代（supersede）、越用越重要（boost）——不是简单地把历史堆进上下文窗口。
 
 ```typescript
 import { Agent, createProviderFromConfig } from '@zooique/memora';
@@ -49,10 +49,10 @@ for await (const chunk of agent.chat('我喜欢 TypeScript')) {
 // 下次对话 — Agent 自动召回记忆
 const reply = await agent.chatSync('我喜欢什么语言？');
 
-// 记忆治理 — 去重 / 冲突 / 时效 / 衰减
+// 记忆治理 — 语义去重 / 冲突检测 / 来源健康诊断
 await agent.governance.deduplicate();
 await agent.governance.detectConflicts();
-agent.governance.decay();
+const health = agent.governance.sourceHealth();
 
 await agent.close();
 ```
@@ -65,7 +65,7 @@ await agent.close();
 
 | | Memora | 向量记忆库 (agent-memory, MemStack) | 框架内置记忆 (Mastra, LangGraph) |
 |---|---|---|---|
-| **记忆治理** | ✅ 去重+衰减+冲突+时效 四层 | ⚠️ 仅衰减或无治理 | ⚠️ 部分支持 |
+| **记忆治理** | ✅ 去重+冲突+写时取代 | ⚠️ 仅衰减或无治理 | ⚠️ 部分支持 |
 | **框架绑定** | ✅ 零绑定，纯内核 | ✅ 独立 | ❌ 绑定特定框架 |
 | **数据隐私** | ✅ 100% 本地 | ✅ 本地 | ⚠️ 部分云端 |
 | **运行时依赖** | ✅ 零（仅 node:*） | ❌ SQLite / better-sqlite3 | ❌ 重依赖 |
@@ -94,7 +94,7 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 |------|------|
 | **长期记忆沉淀** | 跨会话、跨话题的记忆持久化与智能召回 |
 | **双通道召回** | 语义向量搜索 + 关键词搜索，hybridMerge 融合排序 |
-| **记忆治理** | L0 衰减 / L1 语义去重 / L2 时效评估 / L3 冲突检测，经 `agent.governance` 门面委托暴露（LLM 判断） |
+| **记忆治理** | supersede 写时取代 + boost 召回加权 + 语义去重 + 冲突检测，经 `agent.governance` 门面暴露（去重 / 冲突由 LLM 判断） |
 | **Agent 与角色分离** | Agent 是纯记忆引擎，角色是人格载体。换角色不丢记忆 |
 | **统一记忆模型** | 一切统一为「记忆」，通过 `source` 开放字符串区分，无封闭枚举 |
 | **领域可插拔** | 同一套架构，加载不同记忆配置即可适配不同领域 |
@@ -159,11 +159,11 @@ const hits = await agent.memory.searchHybrid('TypeScript 偏好', 5);
 const report = await agent.governance.deduplicate();
 console.log(`去重 ${report.deduplicatedCount} 条`);
 
-const timeliness = await agent.governance.evaluateTimeliness();
 const conflicts = await agent.governance.detectConflicts();
 
-// 手动触发一次记忆衰减（纯 score 递减，无 LLM 调用）
-agent.governance.decay();
+// 来源健康诊断（纯计算，不调 LLM）：逐 source 统计数量 / 平均 score / 状态
+const health = agent.governance.sourceHealth();
+console.log(health?.overallStatus);
 ```
 
 ### 关闭
@@ -186,7 +186,7 @@ await agent.close();
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
 │  │  - 双通道记忆召回（语义 + 关键词）       │               │
-│  │  - 记忆治理机制（去重/时效/冲突/衰减）   │               │
+│  │  - 记忆治理机制（去重/冲突/写时取代）   │               │
 │  │  - 角色 / 技能匹配（渐进披露）          │               │
 │  │  - 工具注册 / 工具执行 / 反思重试        │               │
 │  │  - 会话归档 / 外部任务循环              │               │
@@ -200,7 +200,7 @@ await agent.close();
 
 | 接口 | 职责 | 内置实现 | 宿主注意 |
 |------|------|----------|----------|
-| `IMemoryStorage` | 记忆 CRUD + 搜索 + 衰减 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
+| `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
 | `IVectorStore` | 语义向量索引 | `JsonVectorStore` | 无 |
 | `ISessionStore` | 会话历史 + 检查点持久化 | 无（宿主实现） | 实现 `saveCheckpoint/loadPersistedCheckpoint` 即获得跨进程会话恢复 |
 | `ILogger` | 日志输出 | console fallback | 无 |

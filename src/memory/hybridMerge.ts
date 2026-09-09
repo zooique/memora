@@ -10,7 +10,7 @@ import type { Memory } from '@/memory/types.js';
 export const RECALL_LIMIT_MULTIPLIER = 2;
 
 /**
- * 语义相似度权重（0.6）：向量通道权重高于 score 通道（score 受编辑/衰减/默认值影响不确定性高）；
+ * 语义相似度权重（0.6）：向量通道权重高于 score 通道（score 受编辑/boost/降级等影响不确定性高）；
  * 但 score 仍占 0.4 以抑制"向量相似但 score 极低"的边缘记忆、提升高频/人工标注记忆；
  * 非 0.7/0.3 是避免向量通道压倒性优势、保留 score 话语权
  */

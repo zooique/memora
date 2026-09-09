@@ -213,7 +213,7 @@ export async function recall(
         ).catch(() => sorted.map((e) => e.memory))
       : sorted.map((e) => e.memory);
 
-    // 记忆有效性由 superseded（写时取代）+ score 衰减判定，不在读路径按时间过滤
+    // 记忆有效性由 superseded（写时取代）判定，不在读路径按时间过滤（score 衰减机制已移除）
     // 分层排序（v3 §4.1/4.2）：L1 会话内（createdAt 升序）→ L2 preference（createdAt 升序）→ L2 其余（保持相关性相对序）
     reranked = sortByLayer(reranked, sessionId);
 
@@ -481,7 +481,7 @@ export async function boostScores(
   }
 }
 
-// ─── Score 衰减机制 ─────────────────────────────────────
+// ─── Score 提升机制 ─────────────────────────────────────
 
 /** 召回时提升 score（上限 1.0）：越常用越重要 */
 // 模块私有（0 外部消费者，仅 recall.ts 内部调用，与 tokenizeKeywords 同模式）
