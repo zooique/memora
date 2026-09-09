@@ -106,8 +106,6 @@ export const memoryStyles = `
   }
   #memory-root .tag-superseded { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-secondary, #9aa0a6); }
   #memory-root .tag-modified { background: rgba(204,167,0,.15); color: var(--warn, #cca700); }
-  /* 即将沉底（G34）：淡红警示色调，暗示临近自然归档 */
-  #memory-root .tag-fading { background: rgba(208,70,60,.15); color: var(--danger, #d0463c); }
 
   /* score 点：圆点指示记忆权重（越高越实心） */
   #memory-root .score-dot {

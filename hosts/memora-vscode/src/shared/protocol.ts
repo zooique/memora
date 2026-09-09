@@ -1001,13 +1001,6 @@ export interface MemoryItemDto {
   isModified?: boolean;
   /** 写路径取代标记：非 undefined 表示已被更新的摘要覆盖（值为取代它的新摘要 id） */
   supersededBy?: string;
-  /**
-   * 即将自然沉底（G34 观测徽标，2026-09-09）
-   *
-   * 判定唯一源为内核 MemoryInspector.listFading（60 天沉底语义）；宿主只消费该
-   * 结果标注此标记，不重复实现判定。undefined/缺省 = 非沉底候选。
-   */
-  fading?: boolean;
 }
 
 /** 全局技能条目（技能视图列表，2026-08-22 新增） */

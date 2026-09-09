@@ -138,23 +138,6 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(cards[0]?.getAttribute('title')).toBe('点击展开 / 收起详情');
   });
 
-  it('memory_loaded 为 fading 记忆条目渲染「即将沉底」徽标（G34）', () => {
-    mountMemoryView();
-    dispatchLoaded(
-      { total: 2, bySource: { 'round-summary': 2 } },
-      [
-        makeMemory({ id: 'round-summary:沉底候选', name: '沉底候选', fading: true }),
-        makeMemory({ id: 'round-summary:活跃记忆', name: '活跃记忆' }),
-      ],
-    );
-    const cards = document.querySelectorAll('.mem-card');
-    // fading=true 条目：命中状态标签容器 + tag-fading 徽标
-    expect(cards[0]?.querySelector('.tag-fading')?.textContent).toBe('即将沉底');
-    expect(cards[0]?.querySelector('.tag-fading')?.getAttribute('title')).toContain('沉底归档');
-    // 非 fading 条目：无状态标签
-    expect(cards[1]?.querySelector('.mem-card-tags')).toBeNull();
-  });
-
   it('点击卡片展开详情（全文 content + 创建时间），再点击收起', () => {
     mountMemoryView();
     dispatchLoaded(

@@ -221,8 +221,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     preview.className = 'mem-card-preview';
     preview.textContent = m.content;
     card.appendChild(preview);
-    // 状态标签（G34 新增 fading）：取代/编辑/即将沉底——各字段命中才渲染，非这些状态自然无
-    if (m.supersededBy || m.isModified || m.fading) {
+    // 取代/编辑状态标记（仅命中对应字段时渲染，非 round-summary 自然无）
+    if (m.supersededBy || m.isModified) {
       const tags = document.createElement('div');
       tags.className = 'mem-card-tags';
       if (m.supersededBy) {
@@ -236,13 +236,6 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
         const t = document.createElement('span');
         t.className = 'tag tag-modified';
         t.textContent = '已编辑';
-        tags.appendChild(t);
-      }
-      if (m.fading) {
-        const t = document.createElement('span');
-        t.className = 'tag tag-fading';
-        t.textContent = '即将沉底';
-        t.title = '长时间未访问，即将被自然沉底归档';
         tags.appendChild(t);
       }
       card.appendChild(tags);
