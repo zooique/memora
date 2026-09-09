@@ -565,6 +565,25 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(rb.querySelector('.round-block__details')?.textContent).toContain('归档记忆中');
   });
 
+  it('过程轨迹聚合：同一 thinking 相位 N 次压缩为「相位 ×N」一行，去视觉噪点（2026-09-09）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+    // 同一相位「调用模型中」连续 5 次（LLM 多轮调用）+ 单次「召回记忆中」——模拟真实冗长轨迹
+    for (let i = 0; i < 5; i++) {
+      dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2 + i, ts: '', payload: { phase: 'llm_calling' } } });
+    }
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 8, ts: '', payload: { phase: 'recalling' } } });
+    dispatch({ type: 'done' });
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    const rows = Array.from(details.querySelectorAll('.round-block__row')).map((r) => r.textContent);
+    // 聚合：同相位合并计次（×5；phaseLabel 输出含「…」省略号），单次相位直显不赘 ×1；
+    // 行数 = 相位种类（2），不随事件数（6）膨胀
+    expect(rows.some((r) => r.includes('×5'))).toBe(true);
+    expect(rows.some((r) => r.includes('召回记忆'))).toBe(true);
+    expect(details.querySelectorAll('.round-block__row')).toHaveLength(2);
+  });
+
   it('metrics 渲染 token 用量与记忆治理字段（alignment-iteration.md D）', () => {
     mountChatView();
     const metrics = document.getElementById('activityMetrics') as HTMLElement;

@@ -229,7 +229,7 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 │   │   ├── · 耗时 1m 56s                  // 来自 metrics.durationMs
 │   │   └── · 工具×2 · 记忆×3 · 审查×1     // 事件统计（对 events[] 过滤计数）
 │   └── .round-block__details              // 默认折叠，展开后才显示
-│       ├── § 过程轨迹                     // thinking 阶段的时间线
+│       ├── § 过程轨迹                     // thinking 阶段的时间线（同一相位 N 次聚合为「相位 ×N」一行，去视觉噪点；单次直显不赘 ×1，按首次出现序）
 │       ├── § 召回记忆 (3)                 // 每条：名称 + source/score 标签 + 单行预览
 │       ├── § 已沉淀 (1)                   // 每条：name（memory_added）
 │       ├── § 工具调用 (2)                 // 每个：名称(状态) + args 代码块 + result 摘要

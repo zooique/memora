@@ -1218,16 +1218,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertStepInOrder(host, row, t.seq);
       }
     }
-    // § 过程轨迹（thinking 阶段时间线）
+    // § 过程轨迹（thinking 阶段：聚合计数，2026-09-09 去噪——同一相位 N 条 thinking 事件
+    //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
     const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');
     if (thinking.length > 0) {
       const { listEl } = sectionOf(details, '过程轨迹');
-      thinking.forEach((e) => {
+      const labelCount = new Map<string, number>();
+      const order: string[] = [];
+      for (const e of thinking) {
+        const label = phaseLabel(e.payload.phase);
+        if (!labelCount.has(label)) {
+          labelCount.set(label, 0);
+          order.push(label);
+        }
+        labelCount.set(label, labelCount.get(label)! + 1);
+      }
+      for (const label of order) {
         const row = document.createElement('div');
         row.className = 'round-block__row';
-        row.textContent = phaseLabel(e.payload.phase);
+        // 计数 > 1 显示「×N」；计数 1 省略（单次相位直接显名，不赘 ×1）
+        row.textContent = labelCount.get(label)! > 1 ? `${label} ×${labelCount.get(label)}` : label;
         listEl.appendChild(row);
-      });
+      }
     }
     // § 召回记忆 (N)
     const recalls = events.filter((e): e is Extract<ProcessEvent, { type: 'recall' }> => e.type === 'recall');
