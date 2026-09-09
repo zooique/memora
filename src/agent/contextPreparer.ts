@@ -2,40 +2,29 @@
  * Agent 输入增强管线 — 外部输入 → 记忆/技能增强
  *
  * 职责：
- *   - recallAndInject：语义召回 + limited 配额裁剪 + 固定轮次注入
+ *   - recallAndInject：上下文装配（预算派生 + 固定轮次注入 + 占用快照）。
+ *     每轮自动记忆召回已退役（memory-tool-recall-design §3/§4），检索改由 memory_search 工具主动触发。
  *   - （角色自动匹配已随 v0.13 移除：角色包只能手动切换，无 autoMatch / LLM 语义兜底）
  *
  * 设计原则：
  *   - 只依赖 Agent 注入的稳定能力（deps），不反向依赖 Agent 私有状态（与 AgentHooks 同构）
- *   - 管线逻辑单一真理源：策略解析（记忆百分比 / minFallback / 置信度）随管线走
+ *   - 管线逻辑单一真理源：对话层注入/占用快照随管线走
  *   - Agent 门面保留编排骨架（thinking 阶段 yield 与调用点），叶子逻辑在此唯一实现
- *   - 事件发射（memoryRecalled / boostPersistFailed）经 emit 回调由 Agent 承接
+ *   - 事件发射（inputTooLarge）经 emit 回调由 Agent 承接
  */
 
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import {
-  resolveMinFallback,
-  resolveRecallConfidence,
-  resolveMemoryRecallPercent,
-  resolveSummaryRecall,
-  resolveActiveStrategy,
-} from '@/role-pack/strategyResolver.js';
-import type { MemoryRecallMode, BehaviorStrategy } from '@/role-pack/types.js';
+import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { computeContextBudget, isInputTooLarge, estimateOccupancy } from '@/agent/budget.js';
-import { recall, boostScores } from '@/memory/recall.js';
 import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { UIMessages } from '@/agent/types.js';
-import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { logger } from '@/logging/logger.js';
 import type { ITracer } from '@/agent/tracer.js';
-import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
-import { toError } from '@/utils/toError.js';
-import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
  * 输入增强管线的依赖注入接口（Agent 稳定能力的窄面）
@@ -99,27 +88,24 @@ export class ContextPreparer {
   }
 
   /**
-   * 记忆召回 + 固定轮次注入
+   * 上下文装配（记忆自动注入已退役，见 memory-tool-recall-design §3/§4）
    *
-   * 策略控制：'none' 模式跳过实际召回；contextAssembly 决定语义召回（query/hybrid）与
-   * 固定轮次注入（fixed/hybrid）的组合；limited 模式把记忆摘要层 token cap 传入 recall
-   * 做 cap 内分配（分轨：preference 取余量、语义轨保底）。
-   * 前置互斥排除当前会话最近 N 轮 round-summary，避免挤占 top-limit 预算。
+   * 原「记忆召回 + 固定轮次注入」中的**每轮语义召回段已退役**：记忆检索改由 LLM 经
+   * memory_search 工具主动触发（builtinToolHandlers.searchMemories），本方法不再代模型
+   * 猜测"此刻需要什么记忆"。方法退化为纯**上下文装配**：预算派生 + roundId 互斥 +
+   * 对话层注入（hybrid）+ 上下文占用快照，不再返回任何自动召回的注入记忆。
    *
-   * @param input 用户输入（作为召回 query）
-   * @param memoryRecallMode 记忆召回模式（full / limited / none）
-   * @param contextAssembly 上下文装配策略（fixed / query / hybrid）
-   * @returns 召回的记忆列表（供 loop.processUserInput 注入为 system 消息）
+   * @param input 用户输入（仅作顶级锚点预算估算，不再作为召回 query）
+   * @param contextAssembly 上下文装配策略（fixed / query / hybrid；仅 hybrid 注入最近对话）
+   * @returns 恒为空数组（自动注入退役，契约保留防止过渡期破坏；步进 B 将移除 loop 消费端）
    */
   async recallAndInject(
     input: string,
-    memoryRecallMode: MemoryRecallMode,
     contextAssembly: 'fixed' | 'query' | 'hybrid',
   ): Promise<Memory[]> {
     const { deps } = this;
-    // 策略控制：'none' 模式跳过实际召回，仅注入最近对话
-    const strategy = resolveActiveStrategy(this.deps.rolePackManager, this.deps.strategyOverride);
-    let recalledMemories: Memory[] = [];
+    // 自动注入退役 → 无自动召回的注入记忆，返回恒为空数组
+    const recalledMemories: Memory[] = [];
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
     // 容量来源：windowTokens = deps.config.maxContextTokens —— 单一数字，已由宿主在构造内核 Agent 前
@@ -134,7 +120,6 @@ export class ContextPreparer {
       windowTokens: deps.config.maxContextTokens,
       fixedOverheadTokens,
       inputTokens,
-      memoryRecallPercent: resolveMemoryRecallPercent(strategy),
     });
     // 预算透出（④ 预算可视化）：暂存最近一轮预算供指标快照展示"预算花到哪"
     deps.loop.recordBudget?.(budget);
@@ -151,95 +136,13 @@ export class ContextPreparer {
       });
       logger.warn(
         { inputLength: input.length, remainingTokens: budget.remainingTokens },
-        '装配前判负：输入过大，跳过召回与完整对话层注入',
+        '装配前判负：输入过大，跳过上下文装配与完整对话层注入',
       );
       return [];
     }
 
     // 派生完整对话层轮次集合（动态轮数 + 第一条必在场，次级锚点）
     const dialogue = loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens);
-
-    // 互斥 roundId 集合 = 完整对话层实际注入轮次集合（最近 dialogue.recentRoundCount 轮 +
-    // 显式补的第一条 + 第一级替换产物 roundId）。前置传入 recall() 在取 limit 前过滤，
-    // 避免正文/替换产物被二次召回（装配时间线互斥：exclude = 实际注入轮次，因果闭合）
-    const recentRoundIds = new Set(deps.history.getRecentRoundIds(dialogue.recentRoundCount));
-    if (dialogue.firstRoundIncluded) {
-      const firstRoundId = deps.history.getFirstRoundId();
-      if (firstRoundId) recentRoundIds.add(firstRoundId);
-    }
-    // 第一级替换产物：越界轮正文已替换成其记忆摘要并随上下文注入，其 roundId 须 exclude 防双写
-    for (const replacedRoundId of loop.getReplacedRoundIds()) {
-      recentRoundIds.add(replacedRoundId);
-    }
-    // T1（2026-09-01）：loop 视图内实际保留轮次并入 exclude——截断重排后按重要性提炼保留的
-    // 中间轮正文已在视图（roundId 随消息保留，contextManager.extractKeyMessages 重插），其
-    // round-summary 须排除防与该正文双写；该中间轮不在 history 最近 N 内（也非首轮/替换产物），
-    // 仅靠「正文注入 → exclude」的装配时间线互斥无法覆盖，须读视图真相补齐（因果闭合）。
-    // 被完全裁掉的旧轮不在视图、不在集合，其摘要仍可召回补充上下文。
-    for (const visibleRoundId of loop.getVisibleRoundIds()) {
-      recentRoundIds.add(visibleRoundId);
-    }
-
-    // ── 语义召回：contextAssembly !== 'fixed' 时执行（query / hybrid） ──
-    if (contextAssembly !== 'fixed' && memoryRecallMode !== 'none') {
-      const tracer = deps.config.tracer ?? NOOP_TRACER;
-      const recallSpan = tracer.startSpan(TRACE_SPANS.RECALL_ACTUAL, {
-        queryLength: input.length,
-        hasVectorStore: !!deps.config.vectorStore,
-        memoryRecallMode,
-      });
-
-      try {
-        // 条数上限统一 DEFAULT_RECALL_LIMIT（full/limited 共用有界条数）；
-        // limited 模式把记忆摘要层 cap（剩余预算 × memoryRecallPercent，token）传入 recall
-        // 做 cap 内分配（§4.3.1：preference 取余量、语义轨保底），替代返回后的纯字符截断
-        recalledMemories = await recall(deps.getIndex(), input, {
-          limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
-          // null（deps 关闭语义）收窄为 recall 的可选参数 undefined
-          vectorStore: deps.config.vectorStore ?? undefined,
-          excludeSources: deps.config.recallExcludeSources,
-          // 会话窗口标识与写入侧 sessionName 同源同值，保证"同窗口优先"命中当前会话
-          sessionId: deps.history.currentSessionName,
-          // 召回保底下限：角色包 prepare.minFallback 控制，非法/缺失回退默认 2
-          minFallback: resolveMinFallback(strategy),
-          // 前置互斥排除：取 limit 前过滤完整对话层实际注入轮次的 round-summary
-          excludeRoundIds: recentRoundIds,
-          // 召回置信度阈值（0.0-1.0）
-          minSimilarity: resolveRecallConfidence(strategy),
-          // cap 内分配（C1）：limited 模式传记忆摘要层 token 上限，由 recall 分轨分配；
-          // full 模式不传（退化为 limit 条数），minSemanticShare 走内核默认 0（C2 不进角色包）
-          capTokens: memoryRecallMode === 'limited' ? budget.memoryLayerCapTokens : undefined,
-        });
-      } catch (err) {
-        recallSpan.recordException(err instanceof Error ? err : new Error(String(err)));
-        throw err;
-      } finally {
-        recallSpan.setAttribute('resultCount', recalledMemories.length);
-        recallSpan.end();
-      }
-
-      // summaryRecall='off' → 过滤摘要类记忆（保留原始记忆）
-      const summaryRecall = resolveSummaryRecall(strategy);
-      if (summaryRecall === 'off') {
-        recalledMemories = recalledMemories.filter((m) => m.source !== 'round-summary');
-      }
-
-      if (recalledMemories.length > 0) {
-        deps.emit(AGENT_EVENTS.memoryRecalled, { count: recalledMemories.length, query: input });
-        // boost 持久化为 fire-and-forget（软指标 +0.05/次 上限 1.0）；失败经 onFailure 通知宿主，不阻塞 chat 读路径
-        const ids = recalledMemories.map((m) => m.id);
-        backgroundTask(
-          'boost-scores',
-          () => boostScores(deps.getIndex(), ids),
-          (err: unknown) => {
-            deps.emit(AGENT_EVENTS.boostPersistFailed, {
-              memoryId: ids.join(','),
-              message: toError(err).message,
-            });
-          },
-        );
-      }
-    }
 
     // ── 完整对话层注入：仅 hybrid 模式执行 ──
     // 关键修复：fixed 模式下 loop.messages 已保留全部对话历史（cleanTemporary 只清 system），
@@ -261,9 +164,6 @@ export class ContextPreparer {
         logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
       }
     }
-
-    // 跨窗口召回摘要按 createdAt 升序排列，帮助 LLM 识别"最近偏好"（越早越靠前）
-    recalledMemories = [...recalledMemories].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
 
     // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
     // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。

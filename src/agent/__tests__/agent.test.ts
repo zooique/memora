@@ -2929,14 +2929,14 @@ describe('Agent · L2 行为策略消费', () => {
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
-    // §4.1 单链：默认激活兜底包；手动切到精算师以消费其 memoryRecallPercent 策略
+    // §4.1 单链：默认激活兜底包；手动切到精算师以触发其 prepare 策略装配
     expect(agent.switchRolePack('精算师')).toBe(true);
 
-    // 角色包被激活，getActiveStrategy 返回其策略（消费入口：recallAndInject 读取此值）
+    // 角色包被激活，getActiveStrategy 返回其策略（装配层策略解析面）
     const strategy = agent.getActiveStrategy();
     expect(strategy.prepare?.memoryRecallPercent).toBe(0.6);
 
-    // 多轮对话走 recallAndInject，消费 memoryRecallPercent 不抛错即验证覆盖路径生效
+    // 多轮对话走装配路径（对话层注入等活跃键消费），不抛错即验证覆盖路径生效
     const chunks: AgentChunk[] = [];
     for await (const chunk of agent.chat('你好')) {
       chunks.push(chunk);
@@ -2945,8 +2945,8 @@ describe('Agent · L2 行为策略消费', () => {
   });
 
   it('角色包声明非法 memoryRecallPercent（1.5）应降级内核默认，对话不抛错', async () => {
-    // 非法值（1.5）经 mergeStrategy 覆盖默认 0.4，但消费处 resolveMemoryRecallPercent 检测到
-    // 越界（>1）而降级回内核默认兜底——SSOT：开放参数必有硬编码兜底
+    // 非法值（1.5）在策略解析层面经 resolveMemoryRecallPercent 检测越界（>1）而降级回
+    // 内核默认遍历（SSOT：开放参数必有硬编码兜底；自动召回退役后键级校验随阶段二删除）
     const packDir = join(tmpConfig, 'role-packs', '非法百分比');
     mkdirSync(packDir, { recursive: true });
     writeFileSync(
@@ -2968,7 +2968,7 @@ describe('Agent · L2 行为策略消费', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    // 消费路径（recallAndInject → resolveMemoryRecallPercent）对非法值降级，整轮对话不抛错
+    // 装配路径对声明配置容错（非法值亦不炸对话），整轮对话不抛错
     const chunks: AgentChunk[] = [];
     for await (const chunk of agent.chat('你好')) {
       chunks.push(chunk);

@@ -14,7 +14,6 @@ import { backgroundTask } from '@/utils/backgroundTask.js';
 import {
   resolveContextAssembly,
   resolveL2Strategy,
-  resolveMemoryRecallMode,
   resolveActiveStrategy,
 } from '@/role-pack/strategyResolver.js';
 import {
@@ -83,9 +82,7 @@ export class SeedPrepare {
     }
 
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
-    // 枚举键经集中解析（SSOT 兜底）：非法值归位内核默认，不透传
-    const memoryRecallMode = resolveMemoryRecallMode(strategy);
-    // 上下文装配策略：fixed=仅固定轮次 / query=仅语义召回 / hybrid=混合
+    // 上下文装配策略：fixed=仅固定轮次 / query=仅语义召回(已退役) / hybrid=混合（对话层注入开关）
     const contextAssembly = resolveContextAssembly(strategy);
     // 单一 setStrategy 聚合 L2 策略（工具权限/步数/错误处理/路由/预算/推理/只读/审批/自审查）
     loop.setStrategy(resolveL2Strategy(strategy));
@@ -95,12 +92,8 @@ export class SeedPrepare {
     this.deps.applyRolePackToolExposure();
 
     yield { type: 'thinking', phase: 'recalling' };
-    // 记忆召回 + 固定轮次注入（输入增强管线叶子逻辑，内容唯一实现在 ContextPreparer）
-    const recalledMemories = await contextPreparer.recallAndInject(
-      input,
-      memoryRecallMode,
-      contextAssembly,
-    );
+    // 上下文装配（自动记忆召回已退役，仅细则预算 + 对话层注入）
+    const recalledMemories = await contextPreparer.recallAndInject(input, contextAssembly);
 
     if (signal.aborted) {
       return { input, recalledMemories, aborted: true } satisfies SeedPrepareResult;
