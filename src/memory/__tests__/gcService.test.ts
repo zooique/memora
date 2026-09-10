@@ -100,13 +100,14 @@ describe('垃圾回收服务', () => {
       completed.refCount = 0;
       roundStore.save(completed);
 
-      // 创建关联的记忆摘要
-      const summaryId = generateSummaryId(round.id);
+      // 创建关联的记忆摘要（规范两段式 ID，宿主实际写入形态）
+      const summaryId = `round-summary:2026-09-10-main:${round.id}`;
       const summaryMemory: Memory = {
         id: summaryId,
         content: '对话摘要内容',
         source: 'round-summary',
         name: round.id,
+        roundId: round.id,
         createdAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
       };
@@ -115,12 +116,34 @@ describe('垃圾回收服务', () => {
       // 验证摘要存在
       expect(memoryStorage.getById(summaryId)).not.toBeNull();
 
-      // 执行 GC（cleanUpMemory=true）
+      // 执行 GC（cleanUpMemory=true）——按 roundId 顶层字段反查两段式摘要
       const result = gc.run();
       expect(result.memoryCleaned).toBe(1);
 
       // 验证摘要已清理
       expect(memoryStorage.getById(summaryId)).toBeNull();
+    });
+
+    it('单段 ID 摘要走兜底寻址清理（历史/异常形态）', () => {
+      const round = createPendingRound('单段兜底');
+      const completed = completeRound(round, '回答');
+      completed.refCount = 0;
+      roundStore.save(completed);
+
+      // 单段 ID（无会话段）——两段式下不会出现，仅异常/历史数据
+      const legacyId = generateSummaryId(round.id);
+      memoryStorage.upsert({
+        id: legacyId,
+        content: '历史摘要',
+        source: 'round-summary',
+        name: round.id,
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+      } as Memory);
+
+      const result = gc.run();
+      expect(result.memoryCleaned).toBe(1);
+      expect(memoryStorage.getById(legacyId)).toBeNull();
     });
 
     it('应该按批处理清理', () => {
@@ -180,12 +203,13 @@ describe('垃圾回收服务', () => {
       roundStore.save(completed);
 
       // 创建关联的记忆
-      const summaryId = generateSummaryId(round.id);
+      const summaryId = `round-summary:2026-09-10-main:${round.id}`;
       const summaryMemory: Memory = {
         id: summaryId,
         content: '摘要内容',
         source: 'round-summary',
         name: round.id,
+        roundId: round.id,
         createdAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
       };
@@ -313,17 +337,18 @@ describe('垃圾回收服务', () => {
         mockVectorStore,
       );
 
-      // 孤立的 complete Round + 关联摘要
+      // 孤立的 complete Round + 关联摘要（规范两段式 ID：round-summary:{session}:{roundId}）
       const round = createPendingRound('向量同步');
       const completed = completeRound(round, '回答');
       completed.refCount = 0;
       roundStore.save(completed);
-      const summaryId = generateSummaryId(round.id);
+      const summaryId = `round-summary:2026-09-10-main:${round.id}`;
       memoryStorage.upsert({
         id: summaryId,
         content: '摘要',
         source: 'round-summary',
         name: round.id,
+        roundId: round.id,
         createdAt: new Date().toISOString(),
         accessedAt: new Date().toISOString(),
       } as Memory);

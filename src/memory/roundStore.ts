@@ -253,14 +253,6 @@ export interface Round {
   completedAt?: string;
 
   /**
-   * 关联的记忆摘要 ID
-   *
-   * 格式：round-summary:{roundId}
-   * 指向 Memory 存储中的摘要记录
-   */
-  summaryId?: string;
-
-  /**
    * 引用计数（被多少个会话引用）
    *
    * 用途：
@@ -425,25 +417,18 @@ export function generateMessageId(): string {
 /**
  * 生成摘要 ID（格式：round-summary:{roundId}）
  *
- * 与现有 Memory.id 格式对齐
+ * ⚠️ **仅供 GC 的孤儿摘要兜底寻址**，非摘要记忆的规范 ID 构造器。
+ * 摘要记忆的**规范 ID** 由 `roundSummaryGenerator` 按
+ * `round-summary:{sessionName}:{roundId}` 构造（含会话段，跨会话可溯源）。
+ *
+ * 两段式 ID 下本函数产物在真实记忆中**恒不存在**——它只用于孤儿轮
+ * （从未落到摘要生成那一步）的防御性寻址：有则删，无不影响。
+ * 新增代码请勿以本函数作为摘要 ID 的构造依据。
+ *
+ * @deprecated 语义收窄为 GC 内部兜底，勿在新代码中作为摘要 ID 构造器使用
  */
 export function generateSummaryId(roundId: string): string {
   return `round-summary:${roundId}`;
-}
-
-/**
- * 解析摘要 ID 获取 roundId
- *
- * @param summaryId - 摘要 ID（格式：round-summary:{roundId}）
- * @returns roundId，格式错误返回 null
- */
-export function parseRoundIdFromSummaryId(summaryId: string): string | null {
-  const prefix = 'round-summary:';
-  if (!summaryId.startsWith(prefix)) return null;
-  const roundId = summaryId.slice(prefix.length);
-  // 空字符串检查
-  if (roundId.length === 0) return null;
-  return roundId;
 }
 
 /**
@@ -473,9 +458,13 @@ export function createPendingRound(userMessage: string): Round {
 }
 
 /**
- * 完成 Round（设置 AI 消息和摘要 ID）
+ * 完成 Round（设置 AI 消息）
  *
  * 辅助函数：将 pending Round 转换为 complete 状态
+ *
+ * ⚠️ 注意：本函数**不设置任何摘要关联字段**——摘要记忆的 ID 由 roundSummaryGenerator
+ * 按 `round-summary:{sessionName}:{roundId}` 独立构造并按 roundId 溯源，
+ * Round 侧不持有反向指针（GC 清理走 roundId 派生寻址，见 gcService）。
  *
  * @param round - 要完成的 Round（必须是 pending 状态）
  * @param assistantContent - AI 回复内容
@@ -488,7 +477,6 @@ export function completeRound(
   tokenUsage?: { input: number; output: number },
 ): Round {
   const now = new Date().toISOString();
-  const summaryId = generateSummaryId(round.id);
 
   return {
     ...round,
@@ -501,6 +489,5 @@ export function completeRound(
     },
     status: 'complete',
     completedAt: now,
-    summaryId,
   };
 }

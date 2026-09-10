@@ -199,9 +199,6 @@ export interface Round {
   /** 完成时间 */
   completedAt?: string;
   
-  /** 关联的记忆摘要 ID */
-  summaryId?: string;
-  
   /** 引用计数（被多少个会话引用） */
   refCount: number;
 }
@@ -695,7 +692,7 @@ class GCService {
       for (const round of batch) {
         const deleted = this.roundStore.delete(round.id);
         if (deleted && cleanUpMemory) {
-          this.cleanUpRoundSummary(round);  // 按 summaryId / 默认格式定位并删除关联摘要
+          this.cleanUpRoundSummary(round);  // 按 roundId 顶层字段反查两段式摘要（round-summary:{session}:{roundId}）
         }
       }
     }

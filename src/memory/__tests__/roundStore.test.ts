@@ -10,7 +10,6 @@ import {
   generateRoundId,
   generateMessageId,
   generateSummaryId,
-  parseRoundIdFromSummaryId,
   type ProcessEvent,
   type Round,
 } from '@/memory/roundStore.js';
@@ -43,7 +42,7 @@ describe('问答闭环存储', () => {
       // 构造崩溃残留轮：覆盖工厂默认（refCount=1）为 refCount=0（崩溃发生在 appendAssistant 前的形态）
       const mk = (date: string, min: string, status: Round['status']): void => {
         const base = createPendingRound(`q-${min}`);
-        // status 覆盖 complete 需补 summaryId 才符合完成语义；此处仅验证过滤，不做模型完整性校验
+        // status 覆盖为 complete（此处仅验证过滤，不做模型完整性校验）
         const round: Round = {
           ...base,
           status,
@@ -88,8 +87,9 @@ describe('问答闭环存储', () => {
       const retrieved = store.getById(round.id);
       expect(retrieved?.status).toBe('complete');
       expect(retrieved?.assistantMessage?.content).toBe('你好！有什么可以帮你的？');
-      expect(retrieved?.summaryId).toBe(`round-summary:${round.id}`);
       expect(retrieved?.completedAt).toBeDefined();
+      // 摘要关联不落 Round：ID 由 roundSummaryGenerator 按 roundId 独立构造，Round 侧无反向指针
+      expect(retrieved && 'summaryId' in retrieved).toBe(false);
     });
 
     it('应该批量获取问答闭环', () => {
@@ -316,23 +316,12 @@ describe('问答闭环存储', () => {
       expect(id1).not.toBe(id2);
     });
 
-    it('应该生成正确的摘要 ID', () => {
+    it('应该生成 GC 兜底用的单段摘要 ID', () => {
+      // 语义已收窄为 GC 孤儿摘要兜底寻址（规范 ID 为两段式 round-summary:{session}:{roundId}）
       const roundId = 'round-abc123';
       const summaryId = generateSummaryId(roundId);
 
       expect(summaryId).toBe('round-summary:round-abc123');
-    });
-
-    it('应该从摘要 ID 解析 roundId', () => {
-      const summaryId = 'round-summary:round-abc123';
-      const roundId = parseRoundIdFromSummaryId(summaryId);
-
-      expect(roundId).toBe('round-abc123');
-    });
-
-    it('应该拒绝无效的摘要 ID 格式', () => {
-      expect(parseRoundIdFromSummaryId('invalid-format')).toBeNull();
-      expect(parseRoundIdFromSummaryId('round-summary:')).toBeNull(); // 空 roundId
     });
 
     it('应该创建 pending Round', () => {
@@ -354,8 +343,9 @@ describe('问答闭环存储', () => {
       expect(completed.assistantMessage?.content).toBe('AI 回答');
       expect(completed.assistantMessage?.tokenUsage?.input).toBe(10);
       expect(completed.assistantMessage?.tokenUsage?.output).toBe(20);
-      expect(completed.summaryId).toBe(`round-summary:${round.id}`);
       expect(completed.completedAt).toBeDefined();
+      // Round 不持有摘要反向指针（summaryId 字段已删除）
+      expect('summaryId' in completed).toBe(false);
     });
   });
 });

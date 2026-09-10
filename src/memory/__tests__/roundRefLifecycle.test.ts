@@ -21,17 +21,29 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
 import { GCService } from '@/memory/gcService.js';
-import { generateRoundId, generateSummaryId } from '@/memory/roundStore.js';
+import { generateRoundId } from '@/memory/roundStore.js';
 import { todayDate } from '@/utils/time.js';
 import type { Memory } from '@/memory/types.js';
 
-/** 模拟 LLM 已生成的 round-summary（以 roundId 溯源） */
+/**
+ * 模拟 LLM 已生成的 round-summary（以 roundId 溯源）
+ *
+ * ID 采用**规范两段式** `round-summary:{session}:{roundId}`（与 roundSummaryGenerator
+ * 实际写入形态一致）；GC 按 `roundId` 顶层字段反查清理，故 roundId 必须落顶层。
+ */
+const TEST_SESSION = '2026-09-10-main';
+
+function summaryIdOf(roundId: string): string {
+  return `round-summary:${TEST_SESSION}:${roundId}`;
+}
+
 function seedSummary(storage: InMemoryStorage, roundId: string): void {
   storage.upsert({
-    id: generateSummaryId(roundId),
+    id: summaryIdOf(roundId),
     content: `摘要：${roundId}`,
     source: 'round-summary',
     name: roundId,
+    roundId,
     createdAt: new Date().toISOString(),
     accessedAt: new Date().toISOString(),
   } as Memory);
@@ -115,8 +127,8 @@ describe('Round 引用生命周期端到端', () => {
     expect(roundStore.getById(r1)).not.toBeNull();
     expect(roundStore.getById(r2)).not.toBeNull();
     expect(roundStore.getById(r3)).toBeNull();
-    expect(storage.getById(generateSummaryId(r1))).not.toBeNull();
-    expect(storage.getById(generateSummaryId(r3))).toBeNull(); // 摘要随孤儿物理清理
+    expect(storage.getById(summaryIdOf(r1))).not.toBeNull();
+    expect(storage.getById(summaryIdOf(r3))).toBeNull(); // 摘要随孤儿物理清理
 
     // 5. 删除分叉会话：共享轮 refCount→0，双双成孤儿
     sessionStore.deleteSession(forkSessionId);
@@ -127,7 +139,7 @@ describe('Round 引用生命周期端到端', () => {
     expect(second.deleted).toBe(2);
     expect(second.memoryCleaned).toBe(2);
     expect(roundStore.size()).toBe(0);
-    expect(storage.getById(generateSummaryId(r2))).toBeNull();
+    expect(storage.getById(summaryIdOf(r2))).toBeNull();
   });
 
   it('分叉后源会话续聊的新轮不进入分叉会话；删分叉后新轮仍存活', async () => {
