@@ -1958,66 +1958,6 @@ describe('chatView Follow-up 建议（T2，2026-08-17 回复后关联推荐）',
   });
 });
 
-describe('chatView 断点续跑提示条（G3，2026-08-23）', () => {
-  beforeEach(() => {
-    document.body.innerHTML = '';
-  });
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
-
-  it('checkpoint_available → 渲染提示条 + 「从断点续跑」按钮', () => {
-    mountChatView();
-    dispatch({ type: 'checkpoint_available' });
-    const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
-    expect(banner).not.toBeNull();
-    expect(banner.textContent).toContain('检测到未完成的任务');
-    expect(banner.querySelector('.checkpoint-banner-btn')?.textContent).toBe('从断点续跑');
-  });
-
-  it('点击「从断点续跑」→ postMessage checkpoint_restore', () => {
-    const { postMessage } = mountChatView();
-    dispatch({ type: 'checkpoint_available' });
-    const btn = document.querySelector('.checkpoint-banner-btn') as HTMLButtonElement;
-    btn.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'checkpoint_restore' });
-  });
-
-  it('checkpoint_result ok → 移除提示条', () => {
-    mountChatView();
-    dispatch({ type: 'checkpoint_available' });
-    expect(document.querySelector('.checkpoint-banner')).not.toBeNull();
-    dispatch({ type: 'checkpoint_result', ok: true, message: '已恢复' });
-    expect(document.querySelector('.checkpoint-banner')).toBeNull();
-  });
-
-  it('checkpoint_result 失败 → 展示错误文案 + 无续跑按钮（保留关闭）', () => {
-    mountChatView();
-    dispatch({ type: 'checkpoint_available' });
-    dispatch({ type: 'checkpoint_result', ok: false, message: '没有可恢复的暂停会话' });
-    const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
-    expect(banner.textContent).toContain('没有可恢复的暂停会话');
-    expect(banner.querySelector('.checkpoint-banner-btn')).toBeNull();
-    expect(banner.querySelector('.checkpoint-banner-close')).not.toBeNull();
-  });
-
-  it('点击关闭按钮 → 移除提示条', () => {
-    mountChatView();
-    dispatch({ type: 'checkpoint_available' });
-    const close = document.querySelector('.checkpoint-banner-close') as HTMLButtonElement;
-    close.click();
-    expect(document.querySelector('.checkpoint-banner')).toBeNull();
-  });
-
-  it('clear_ok → 移除断点续跑提示条（切换会话不残留）', () => {
-    mountChatView();
-    dispatch({ type: 'checkpoint_available' });
-    expect(document.querySelector('.checkpoint-banner')).not.toBeNull();
-    dispatch({ type: 'clear_ok' });
-    expect(document.querySelector('.checkpoint-banner')).toBeNull();
-  });
-});
-
 describe('chatView 安全审计指标（G6，2026-08-23）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
@@ -2160,32 +2100,6 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     expect(document.querySelector('.plan-board')).toBeNull();
   });
 
-  it('planBoard + restoreBanner 同时存在 → 检查点横幅恒在任务看板之上（P1-0 插入顺序协议）', () => {
-    mountChatView();
-    // 先创建任务看板
-    dispatch({
-      type: 'plan_update',
-      steps: [{ id: 's1', description: '收集需求', status: 'active', order: 0, stepLog: [] }],
-    });
-    const board = document.querySelector('.plan-board') as HTMLElement;
-    expect(board).not.toBeNull();
-    // 再创建检查点横幅（需决策），应插入到 planBoard 之前
-    dispatch({ type: 'checkpoint_available' });
-    const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
-    expect(banner).not.toBeNull();
-    // 检查点横幅应在任务看板之前（DOM 中 banner 是 board 的 previousSibling 或更前）
-    expect(banner.compareDocumentPosition(board) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    // 反向验证：先建 banner 再建 board，board 应在 banner 之后
-    dispatch({ type: 'clear_ok' });
-    dispatch({ type: 'checkpoint_available' });
-    const banner2 = document.querySelector('.checkpoint-banner') as HTMLElement;
-    dispatch({
-      type: 'plan_update',
-      steps: [{ id: 's1', description: '设计方案', status: 'pending', order: 0, stepLog: [] }],
-    });
-    const board2 = document.querySelector('.plan-board') as HTMLElement;
-    expect(board2.compareDocumentPosition(banner2) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
-  });
 });
 
 describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', () => {

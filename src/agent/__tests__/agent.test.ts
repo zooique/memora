@@ -26,8 +26,6 @@ import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import { todayDate } from '@/utils/time.js';
-import { AGENT_CONSTANTS } from '@/agent/constants.js';
-import { ArchiveCoordinator } from '@/agent/managers/archiveCoordinator.js';
 import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import { AgentLoop } from '@/agent/loop.js';
 
@@ -2744,105 +2742,6 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
   });
 });
 
-// ═══════════════════════════════════════════════════════════════
-// 测试：暂停超时自动归档 · 单一消费点
-// ═══════════════════════════════════════════════════════════════
-
-describe('Agent · 暂停超时自动归档', () => {
-  let tmpProject: string;
-  let tmpConfig: string;
-  let tmpData: string;
-  let agent: Agent | null = null;
-
-  /**
-   * Mock ISessionStore：只回放一个心跳已过期的 paused 检查点
-   *
-   * 让 init() 的 loadPersistedCheckpoint 走进超时分支，
-   * 从而验证「发现超时 → 触发归档」这条链是否真的通。
-   */
-  function createTimedOutCheckpointStore(sessionId: string): ISessionStore {
-    const checkpoint = {
-      sessionId,
-      status: 'paused',
-      mainGoal: '超时归档测试',
-      currentGoal: '超时归档测试',
-      goalChangeSeq: 0,
-      plan: [],
-      role: { name: 'assistant' },
-      standard: { quality: '完成', constraints: [] },
-      resource: { documents: [], memories: [], context: '' },
-      hotMemory: [],
-      lastHeartbeat: Date.now() - AGENT_CONSTANTS.PAUSE_TIMEOUT_MS - 60_000,
-    };
-    return {
-      loadMessages: () => [],
-      listSessions: () => [],
-      saveCheckpoint: () => {},
-      loadCheckpoint: (id: string) => (id === sessionId ? JSON.stringify(checkpoint) : null),
-      deleteCheckpoint: () => {},
-      getRoundIds: () => [],
-      setRoundIds: () => {},
-      appendRoundId: () => {},
-      appendRoundIds: () => {},
-      createSession: () => {},
-      deleteSession: () => {},
-      getSessionMeta: () => undefined,
-      updateSessionMeta: () => {},
-      listSessionMetas: () => [],
-    };
-  }
-
-  beforeEach(() => {
-    tmpData = mkdtempSync(join(tmpdir(), 'memora-timeout-data-'));
-    tmpProject = mkdtempSync(join(tmpdir(), 'memora-timeout-proj-'));
-    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-timeout-cfg-'));
-    seedProject(tmpProject, tmpConfig, tmpData);
-  });
-
-  afterEach(async () => {
-    vi.restoreAllMocks();
-    if (agent) {
-      await agent.close();
-      agent = null;
-    }
-    rmSync(tmpProject, { recursive: true, force: true });
-    rmSync(tmpConfig, { recursive: true, force: true });
-    rmSync(tmpData, { recursive: true, force: true });
-  });
-
-  it('启动时发现超时会话应触发内容归档', async () => {
-    // 只监听不改实现：archiveMode 为 manual 时
-    // autoTriggered 的 content 归档会立即降级返回，不触碰 LLM
-    const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSession');
-    const sessionId = `${todayDate()}-main`;
-
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      archiveMode: 'manual',
-      sessionStore: createTimedOutCheckpointStore(sessionId),
-    });
-    await agent.init();
-
-    // 关键断言：监听器必须先于 loadPersistedCheckpoint 注册，
-    // 否则启动路径的超时事件无人接收，归档静默丢失
-    expect(spy).toHaveBeenCalledWith(todayDate(), 'main', { autoTriggered: true });
-
-    });
-
-  it('无超时会话时不应触发归档', async () => {
-    const spy = vi.spyOn(ArchiveCoordinator.prototype, 'archiveSession');
-
-    agent = makeAgent(tmpProject, tmpConfig, tmpData, 'manual');
-    await agent.init();
-
-    expect(spy).not.toHaveBeenCalled();
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════
 // 测试：L2 行为策略消费（getActiveStrategy + executeChatLoop）

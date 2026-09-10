@@ -24,8 +24,6 @@ import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
  */
 export class InMemorySessionStore implements ISessionStore {
   private readonly roundStore: IRoundStore;
-  /** 检查点存储：key = sessionId，value = checkpoint JSON 字符串 */
-  private readonly checkpoints = new Map<string, string>();
   /** 会话元数据存储 */
   private readonly metas = new Map<string, SessionMeta>();
   /** Round ID 列表存储：key = sessionId，value = roundId 数组（round-based 模式） */
@@ -82,27 +80,6 @@ export class InMemorySessionStore implements ISessionStore {
       sessions.add(sessionId);
     }
     return Array.from(sessions).sort();
-  }
-
-  /**
-   * 保存会话检查点
-   */
-  saveCheckpoint(sessionId: string, checkpoint: string): void {
-    this.checkpoints.set(sessionId, checkpoint);
-  }
-
-  /**
-   * 加载会话检查点
-   */
-  loadCheckpoint(sessionId: string): string | null {
-    return this.checkpoints.get(sessionId) ?? null;
-  }
-
-  /**
-   * 删除会话检查点
-   */
-  deleteCheckpoint(sessionId: string): void {
-    this.checkpoints.delete(sessionId);
   }
 
   /**
@@ -243,7 +220,6 @@ export class InMemorySessionStore implements ISessionStore {
     }
     this.metas.delete(sessionId);
     this.roundIdsMap.delete(sessionId);
-    this.checkpoints.delete(sessionId);
   }
 
   // ─── 私有辅助方法 ─────────────────────────────────────
@@ -297,7 +273,6 @@ export class InMemorySessionStore implements ISessionStore {
    */
   clear(): void {
     this.metas.clear();
-    this.checkpoints.clear();
     this.roundIdsMap.clear();
   }
 }

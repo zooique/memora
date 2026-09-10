@@ -16,9 +16,9 @@
 | **角色包** | **角色包系统核心完整落地（MVP 第一公民，见 §二）**：L1 内容层 + L2 策略层 + 匹配/粘性/装载 + rule→软约束护栏 + skill→工具 | 多角色合并与冲突裁决 / 漂移检测 / L3 代码层 |
 | 工具 | **写文件 `writeFile` + 读文件 `readFile` + Web 搜索 `web_search`**（绑定角色包 skill） | 复杂工具链、自定义工具注册 |
 | 记忆 | 自动摘要（round-summary）入库，跨任务按需聚合召回（摘要即记忆，见 memory-as-summary） | 显式记忆指令、记忆管理面板 |
-| 打断 | **插话**（输入让位纠偏）+ **停止**（abort）+ **Agent 主动提问**（写作关键节点征询）+ **用户手动暂停**（内核侧 `requestPause('user')` 已实现，断点续跑） | 暂停/恢复面板（宿主 UI，当前仅内核 API） |
+| 打断 | **插话**（输入让位纠偏）+ **停止**（abort）+ **Agent 主动提问**（写作关键节点征询）+ **用户手动暂停**（内核侧 `requestPause('user')` 已实现，同 turn 内续跑） | 暂停/恢复面板（宿主 UI，当前仅内核 API） |
 | 上下文 | L1 最近轮 + 基础截断 + 摘要注入 | 成本预算、性能预算 |
-| 持久化 | 基础检查点（写文件后落一次）+ **检查点加载**（`loadPersistedCheckpoint` 暴露快照 + 暂停超时归档 + error 态回填；跨重启**不自动恢复暂停态**——断电优先裁决 2026-09-10，一律以 running 起，见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts)） | 热更新 |
+| 持久化 | 会话内容以 **Round 物理落盘**为唯一真相源（step 一步完成即记录）+ 标题元数据持久化；暂停超时归档（同进程 30min）。**检查点持久化已退役**（2026-09-10 减法：跨重启恢复链整体退役）——`SessionCheckpoint` 降级为同进程内存态，中止/断电一律把未完成 turn 补全为完整 turn 身份、下次按历史加载（见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts)） | 热更新 |
 | 并发/隔离 | 单会话串行 | 多会话并行、资源锁、共享记忆 |
 | 护栏 | 基础输入/输出过滤（SecurityGuard 通用最小集）+ 角色包 rule 软约束护栏（经 personaPrompt 注入，LLM 视角生效，见 §二） | 完整规则体系 |
 

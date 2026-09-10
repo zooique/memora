@@ -1,6 +1,7 @@
 # 记忆纯工具化召回设计（告别自动注入）
 
 > **状态**：阶段1自动注入机制退役 **已实现**（步进A/B/C/D/E 落地，全量回归 2946 通过）；阶段2 6 键族删除 **已实现**（commit 4f318407）+ 工具互斥落地（search_memories 排除已载入正文轮次 + limit 收紧 10→5 + trace_summary 精取引导，commit 89d0ff26）；阶段3 score 退役 **已实现**（2026-09-09：Memory.score 字段物理删除、hybridMerge 排序纯化单 vectorScore、boost→touch 收敛、memoryAdvisor 弃 status 健康判定、宿主 workspaceStorage/protocol/webview 同步；全量回归 2864 通过）。A4 检索召回质量问题与 score 无关（实证见 .trae/documents/a4-fix-or-phase3-sequencing.md），作为独立开放项留待本地小模型对照后裁决。
+> **2026-09-10 补记（剪枝）**：文中「`checkpointRestoreCoordinator.warmRecall` 保留例外」（§4.2 表 / §开放点 1）已随**跨重启恢复链整体退役**而失效——`checkpointRestoreCoordinator.ts` 整文件删除，`recall()` 召回编排因此**零消费者连带退役**（`recall.ts` 仅余 `extractKeywords` / `touchScores`，`recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK` 删除，内核 `ISessionStore` 的 checkpoint 三方法删除）。记忆检索现**完全**由 `search_memories` 工具承载（含首轮确定性收窄），无任何自动召回路径。下文相关段落为退役前语义，不再代表当前实现。
 > **日期**：2026-09-09
 > **实测**：`scripts/test-memory-tool-recall.ts`（机制实测脚手架，验证 searchHybrid 结构化溯源字段、superseded 过滤、命中 touch 刷新 accessedAt、memoryRecalled 事件、touchScores 收敛）；A/B 模型行为验收（想起率/命中率）待真实 LLM + 问题集见 §阶段1 出口条件
 > **关联**：[memory-recall-recency-design.md](memory-recall-recency-design.md)（本设计**取代**其问题域，见 §0.5）· [memory-as-summary.md](memory-as-summary.md) · [memory-role-pack-boundary.md](memory-role-pack-boundary.md) D7/D6

@@ -85,7 +85,7 @@
 
 ### 3.1 prepare 组（回答前·认知）
 
-> **阶段2（2026-09-09，memory-tool-recall-design）注记**：本组 6 个召回键 `memoryRecall` / `memoryRecallPercent` / `minFallback` / `contextAssembly` / `recallConfidence` / `summaryRecall` 已**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除。记忆检索改由 `memory_search` 工具触发（`source` 过滤承接 `summaryRecall` 语义）；上下文装配恒为 hybrid；记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载；召回保底由 `utils/recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK=2` 函数层默认承载。本组现存 2 键：
+> **阶段2（2026-09-09，memory-tool-recall-design）注记**：本组 6 个召回键 `memoryRecall` / `memoryRecallPercent` / `minFallback` / `contextAssembly` / `recallConfidence` / `summaryRecall` 已**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除。记忆检索改由 `memory_search` 工具触发（`source` 过滤承接 `summaryRecall` 语义）；上下文装配恒为 hybrid；记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载。**召回保底机制亦已彻底退役**（2026-09-10 剪枝：`DEFAULT_MIN_FALLBACK` 随 `recall()` 召回编排一并删除，见 memory-tool-recall-design 补记）。本组现存 2 键：
 
 | 键                      | 类型 / 枚举                      | 合法区间            | 默认       | 含义                                             | 示例              |
 | ---------------------- | ---------------------------- | --------------- | -------- | ---------------------------------------------- | --------------- |

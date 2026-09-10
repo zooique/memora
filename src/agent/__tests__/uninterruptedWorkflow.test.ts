@@ -3,7 +3,8 @@
  *
  * 覆盖全部核心功能：
  *   - 三态状态机流转（SessionStateMachine）
- *   - 检查点快照与恢复（SessionManager.createCheckpoint/restoreFromCheckpoint）
+ *   - 检查点内存态生命周期（SessionManager.createCheckpoint/getCheckpoint/settleCheckpoint；
+ *     跨重启恢复链已随 2026-09-10 减法退役）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
  *   - 执行计划管理（advancePlan/completeStep/isPlanAllBlocked）
@@ -26,7 +27,6 @@ import { SessionManager } from '@/agent/managers/sessionManager.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
 import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
 import { LlmProvider } from '@/llm/provider.js';
-import { logger } from '@/logging/logger.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
@@ -141,22 +141,12 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
 }
 
 /**
- * 创建 Mock ISessionStore（支持检查点持久化）
+ * 创建 Mock ISessionStore
  */
 function createMockSessionStore(overrides: Partial<ISessionStore> = {}): ISessionStore {
-  const store = new Map<string, string>();
   return {
     loadMessages: vi.fn().mockReturnValue([]),
     listSessions: vi.fn().mockReturnValue([]),
-    saveCheckpoint: vi.fn((sessionId: string, json: string) => {
-      store.set(sessionId, json);
-    }),
-    loadCheckpoint: vi.fn((sessionId: string) => {
-      return store.get(sessionId) ?? null;
-    }),
-    deleteCheckpoint: vi.fn((sessionId: string) => {
-      store.delete(sessionId);
-    }),
     ...overrides,
   } as unknown as ISessionStore;
 }
@@ -702,149 +692,6 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
       expect(manager.compensateAllNonIdempotent()).toHaveLength(1);
     });
   });
-
-  describe('restoreFromCheckpoint 非幂等工具日志', () => {
-    it('恢复时无非幂等工具应正常完成', async () => {
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        schemaVersion: 1,
-        status: 'paused',
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        lastHeartbeat: Date.now(),
-      };
-      const count = await manager.restoreFromCheckpoint(cp);
-      expect(count).toBe(0);
-      expect(loop.restoreHistory).toHaveBeenCalled();
-    });
-
-    it('恢复时含非幂等工具应记录日志（不再注入系统消息）', async () => {
-      const warnSpy = vi.spyOn(logger, 'warn');
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        schemaVersion: 1,
-        status: 'paused',
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        completedToolCalls: [
-          {
-            name: 'write_file',
-            argsSignature: '{"path":"a.ts","content":"hello"}',
-            executedAt: Date.now(),
-            resultSummary: 'ok',
-            ok: true,
-            idempotent: 'non-idempotent',
-          },
-        ],
-        lastHeartbeat: Date.now(),
-      };
-      await manager.restoreFromCheckpoint(cp);
-      // 降级后不再注入系统消息，仅通过 logger.warn 记录
-      expect(loop.injectSystemMessage).not.toHaveBeenCalled();
-      expect(warnSpy).toHaveBeenCalledWith(
-        expect.objectContaining({ nonIdempotentCount: 1 }),
-        expect.stringContaining('非幂等工具'),
-      );
-      warnSpy.mockRestore();
-    });
-  });
-
-  describe('restoreFromCheckpoint 恢复行为', () => {
-    it('error 态检查点缺 error 字段时应降级为 running，不产生永久分叉', async () => {
-      // 先让状态机残留 paused（模拟跨会话恢复时的残留状态）
-      manager.pause('测试暂停', 'user');
-      expect(manager.status).toBe('paused');
-
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        schemaVersion: 1,
-        status: 'error', // error 态但 error 字段缺失（旧版检查点 / 序列化丢字段）
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        lastHeartbeat: Date.now(),
-      };
-      await manager.restoreFromCheckpoint(cp);
-
-      // 契约：恢复 error 检查点后，状态机与检查点 status 同步为 running，避免永久分叉
-      expect(manager.status).toBe('running');
-      expect(manager.getCheckpoint()!.status).toBe('running');
-    });
-
-    it('恢复 paused 检查点后应启动暂停超时定时器', async () => {
-      const startSpy = vi.spyOn(
-        manager as unknown as { startPauseTimeoutTimer: () => void },
-        'startPauseTimeoutTimer',
-      );
-
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        schemaVersion: 1,
-        status: 'paused',
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        lastHeartbeat: Date.now(),
-      };
-      await manager.restoreFromCheckpoint(cp);
-
-      // 契约：恢复 paused 检查点须启动暂停超时定时器（否则本次运行期无超时检测）
-      expect(startSpy).toHaveBeenCalledTimes(1);
-    });
-
-    it('loadSessionMessages 失败时应显式降级（catch 挂 handler）而非悬空 rejection', async () => {
-      // mock 会话加载失败（磁盘损坏 / 会话不存在等）
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
-        new Error('会话消息加载失败'),
-      );
-      const warnSpy = vi.spyOn(logger, 'warn');
-
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        schemaVersion: 1,
-        status: 'running',
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        lastHeartbeat: Date.now(),
-      };
-      await manager.restoreFromCheckpoint(cp);
-
-      // 恢复主流程不受影响（热记忆已恢复、状态机已归位）
-      expect(manager.status).toBe('running');
-      // 让微任务队列排空，使 rejection 走完 handler 链
-      await new Promise((resolve) => setTimeout(resolve, 10));
-      expect(warnSpy).toHaveBeenCalled();
-      expect(history.loadSessionMessages).toHaveBeenCalled();
-    });
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -950,45 +797,6 @@ describe('SessionManager · 暂停/恢复/异常', () => {
     it('RUNNING 状态 recover 应返回 false', () => {
       const result = manager.recover();
       expect(result).toBe(false);
-    });
-  });
-
-  describe('暂停超时检测', () => {
-    it('未超时的暂停不应触发超时逻辑', () => {
-      // 直接创建 paused 状态的检查点（最近心跳）
-      const cp: SessionCheckpoint = {
-        sessionId: '2026-08-08-main',
-        schemaVersion: 1,
-        status: 'paused',
-        mainGoal: '测试',
-        currentGoal: '测试',
-        goalChangeSeq: 0,
-        plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
-        lastHeartbeat: Date.now(), // 当前时间，不超时
-      };
-      // 通过 loadPersistedCheckpoint 间接测试 pauseTimedOut 检测
-      // 存储检查点
-      sessionStore!.saveCheckpoint!(cp.sessionId, JSON.stringify(cp));
-      // 加载检查点，不应触发超时
-      const loaded = manager.loadPersistedCheckpoint();
-      // 不超时，应返回检查点
-      // 注意：如果检查点状态为 paused，loadPersistedCheckpoint 会恢复暂停状态
-      // 不超时场景下 checkpoint 不为 null
-      // 但 loadPersistedCheckpoint 内部会调用 stateMachine.pause，所以 cp 应被设置
-      // 由于 isPauseTimedOut 返回 false，checkpoint 保留
-      // 不过 loadPersistedCheckpoint 中 pause 会创建新检查点...
-      // 让我们验证行为：不超时则 checkPoint 被设置
-      // 需要验证 checkPoint 不为 null 且状态机为 paused
-      expect(loaded).not.toBeNull();
-      // 但是 loadPersistedCheckpoint 返回的是 checkpoint 的引用，之后 pause 会创建新检查点覆盖
-      // 所以我们验证状态机状态
-      if (loaded) {
-        expect(loaded.status).toBe('paused');
-      }
     });
   });
 });
@@ -1309,23 +1117,13 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * 带检查点持久化的 Mock ISessionStore
+ * 端到端场景用 Mock ISessionStore
+ *
+ * 注：原 `createPersistentSessionStore`（检查点持久化）已随跨重启恢复链退役（2026-09-10 减法）
+ * 并入通用 `createMockSessionStore`。
  */
 function createPersistentSessionStore(): ISessionStore {
-  const checkpointStore = new Map<string, string>();
-  return {
-    loadMessages: () => [],
-    listSessions: () => [],
-    saveCheckpoint: vi.fn((sessionId: string, json: string) => {
-      checkpointStore.set(sessionId, json);
-    }),
-    loadCheckpoint: vi.fn((sessionId: string) => {
-      return checkpointStore.get(sessionId) ?? null;
-    }),
-    deleteCheckpoint: vi.fn((sessionId: string) => {
-      checkpointStore.delete(sessionId);
-    }),
-  } as unknown as ISessionStore;
+  return createMockSessionStore();
 }
 
 describe('端到端场景 · 不中断工作模型完整流程', () => {
@@ -1461,70 +1259,6 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 6. 检查检查点状态
     const recoveredCp = agent.getCheckpoint();
     expect(recoveredCp!.status).toBe('running');
-  });
-
-  /**
-   * 场景 C：检查点持久化与恢复
-   *
-   * 验证完整闭环：
-   *   1. Agent init 后创建检查点，写入 sessionStore
-   *   2. close() 关闭 Agent
-   *   3. 重新 init（新 Agent 实例，复用 sessionStore）
-   *   4. loadPersistedCheckpoint 加载持久化检查点
-   *   5. restoreFromCheckpoint 恢复热记忆
-   *   6. 继续对话验证上下文完整
-   */
-  it('场景 C：检查点持久化与恢复', { timeout: 30000 }, async () => {
-    // 第一轮：创建检查点并持久化
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      sessionStore,
-    });
-    await agent.init();
-
-    // 先对话，产生热记忆
-    const reply1 = await agent.chatSync('你好，帮我写一段代码');
-    expect(reply1).toContain('Mock 响应');
-
-    // 创建检查点（含热记忆）
-    agent.createCheckpoint('编写代码', { name: 'developer' });
-    const cp = agent.getCheckpoint()!;
-    expect(cp.mainGoal).toBe('编写代码');
-    expect(cp.role.name).toBe('developer');
-
-    // 暂停会话，触发持久化
-    agent.pause('暂停测试', 'user');
-    expect(sessionStore.saveCheckpoint).toHaveBeenCalled();
-
-    // 关闭 Agent
-    await agent.close();
-    agent = null;
-
-    // 第二轮：新 Agent 实例，加载持久化检查点
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      sessionStore,
-    });
-    await agent.init();
-
-    // 持久化检查点仍可加载（持久化链路本身有效），但状态机**不恢复 paused**
-    // （断电优先裁决 2026-09-10：重启一律以 running 起，中断轮由宿主打捞为正常 turn + 只能新开 turn）
-    expect(agent.sessionManager!.loadPersistedCheckpoint()).not.toBeNull();
-    expect(agent.sessionManager!.status).toBe('running');
-
-    // 继续对话：新开 turn，不依赖恢复暂停态上下文
-    const reply2 = await agent.chatSync('继续编写代码');
-    expect(reply2).toContain('Mock 响应');
   });
 
   /**
@@ -2407,30 +2141,6 @@ describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
     agent.pause('高风险决策确认', 'agent');
     expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(before + 1);
   });
-
-  it('状态机残留 paused 时恢复 error 检查点，应正确落到 error', async () => {
-    const manager = new SessionManager(
-      () => createMockHistory(),
-      () => createMockLoop(),
-      createMockSessionStore(),
-      () => false,
-      () => {},
-    );
-
-    // 制造残留：管理器的状态机先进入 paused（模拟上一个会话未正常复位）
-    manager.pause('前一个会话的暂停', 'user');
-    expect(manager.status).toBe('paused');
-
-    const errorCheckpoint: SessionCheckpoint = {
-      ...manager.createCheckpoint('目标')!,
-      status: 'error',
-      error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
-    };
-
-    // resetToRunning() 先归零，再 triggerError，使残留 paused 也能正确落到 error
-    await manager.restoreFromCheckpoint(errorCheckpoint);
-    expect(manager.status).toBe('error');
-    });
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2904,6 +2614,8 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
     // 原闭环节点此刻：1 条交互输入（question-answer）
     expect(currentClosure().interactiveInputs).toHaveLength(1);
+    // 会话标识在重启前取证：减法后重启不再加载持久化检查点，届时无从取 sessionId
+    const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
     await agent.close();
     agent = null;
 
@@ -2911,11 +2623,12 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     agent = makeTs9Agent();
     await agent.init();
 
-    // 断电优先裁决（2026-09-10）：进程死亡即非自愿中断——重启**不回填 paused**，
-    // 也不再自动 restoreFromCheckpoint（自愿介入要求内存态连续，故一律降级为「收场重开」）。
+    // 断电优先裁决（2026-09-10）：进程死亡即非自愿中断——重启**不回填 paused**，也不再加载
+    // 持久化检查点（自愿介入要求内存态连续，故一律降级为「收场重开」）。
     expect(agent.sessionManager!.status).toBe('running');
-    // 检查点仍被加载并暴露（供宿主判定「有未完成 plan」等续跑价值），闭环节点锚点随之可见
-    expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
+    // 减法定案（2026-09-10）：跨重启恢复链整体退役，SessionCheckpoint 降级为同进程内存态
+    // → 重启后 **不加载**任何持久化检查点（上下文连续性一律靠 Round 物理记录，不靠检查点）。
+    expect(agent.sessionManager!.getCheckpoint()).toBeNull();
 
     // 重启后输入 → **新开 turn**（不再续写原闭环节点：上下文已不连续，续写会毒化闭环节点语义）
     for await (const _chunk of agent.chat('重启后补充：换个方案')) {
@@ -2932,7 +2645,6 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     const fresh = rounds.find((r) => r.id !== anchorRoundId)!;
     expect(fresh.interactiveInputs ?? []).toHaveLength(0);
     // 会话登记含原节点 + 新节点（原节点未被替换）
-    const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
     expect(sessionStore.getRoundIds(sessionId)).toContain(anchorRoundId);
     expect(sessionStore.getRoundIds(sessionId)).toContain(fresh.id);
   });

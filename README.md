@@ -202,7 +202,7 @@ await agent.close();
 |------|------|----------|----------|
 | `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
 | `IVectorStore` | 语义向量索引 | `JsonVectorStore` | 无 |
-| `ISessionStore` | 会话历史 + 检查点持久化 | 无（宿主实现） | 实现 `saveCheckpoint/loadPersistedCheckpoint` 即获得检查点持久化；跨重启**不自动恢复暂停态**（断电优先裁决，2026-09-10），中断轮由宿主打捞为正常 turn + 只能新开 turn |
+| `ISessionStore` | 会话历史 + 标题元数据持久化 | 无（宿主实现） | **不含检查点持久化**（2026-09-10 减法：跨重启恢复链整体退役）——中止/断电一律把未完成 turn 补全为完整 turn 身份、下次会话按历史加载；运行时暂停是同 turn 内续跑（内存态），无需跨进程载体 |
 | `ILogger` | 日志输出 | console fallback | 无 |
 | `ITracer` | 可观测性 span | `NOOP_TRACER` | 无 |
 
@@ -215,7 +215,7 @@ src/
 │   ├── agent.ts      # 门面类（宿主唯一入口）
 │   ├── loop.ts       # 核心循环（推理 → 工具调用 → 反思重试）
 │   ├── assembler.ts  # 组件组装器（纯工厂）
-│   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts / checkpointRestoreCoordinator.ts ···
+│   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # turn（prepare → act/difficulty → reflect，含多 turn 任务编排）
 │   └── managers/     # 16 个专职 Manager/服务类（memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
 ├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 召回 / 混合排序 / 向量 / 治理常量）

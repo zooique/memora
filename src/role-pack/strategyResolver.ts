@@ -2,8 +2,8 @@
  * 角色包行为策略解析器：集中管理行为策略的默认值、解析（resolve*）、合并与装配逻辑。
  */
 
-//  召回保底下限默认值（DEFAULT_MIN_FALLBACK）随阶段2 策略键族退役，recall() 函数层默认由 recall.ts 自持，
-//  role-pack 不再跨越引用（recall.ts 直接用 DEFAULT_MIN_FALLBACK，见 recallDefaults.ts）。
+//  召回保底下限默认值（原 DEFAULT_MIN_FALLBACK）随阶段2 策略键族退役，且该常量本身已随
+//  `recall()` 召回编排于 2026-09-10 剪枝中删除——role-pack 与 memory 层现均不持有召回保底；
 
 // 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
 import {

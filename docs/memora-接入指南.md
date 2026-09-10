@@ -286,6 +286,9 @@ await agent.close(); // 释放项目锁 + 关闭数据库
 
 Memora 通过 `ISessionStore` 接口支持会话消息的持久化。宿主实现此接口，注入到 Agent。
 
+> **⚠ 现行契约以类型定义为准（[sessionStore.ts](../src/memory/sessionStore.ts)）**：下方示例仅示意最小形态。当前接口为 **round-based 单一模式**（`appendRoundId` / `getRoundIds` / `setRoundIds` / `createSession` / `deleteSession` + 标题元数据 `getSessionMeta` / `updateSessionMeta` / `listSessionMetas`）——消息内容只存 RoundStore，`ISessionStore` 只持 Round 指针。
+> **检查点持久化已退役（2026-09-10 减法）**：`saveCheckpoint` / `loadCheckpoint` / `deleteCheckpoint` 已从接口删除；跨重启恢复链整体下线，中止/断电一律把未完成 turn 补全为完整 turn 身份并在下次会话按历史加载，运行时暂停是同 turn 内续跑（内存态）。
+
 ```typescript
 import type { ISessionStore, SessionMessage } from '@zooique/memora';
 
@@ -469,7 +472,6 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `safeSetInterval(fn, ms)` | 安全间隔器（可跟踪清理） |
 | `clearSafeTimeout(id)` | 清除安全定时器 |
 | `clearSafeInterval(id)` | 清除安全间隔器 |
-| `recall(storage, query, options?)` | 记忆召回（async，双通道：语义 + 关键词） |
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |

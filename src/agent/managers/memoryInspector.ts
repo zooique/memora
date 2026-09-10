@@ -223,13 +223,13 @@ export class MemoryInspector {
 
   /**
    * 混合搜索记忆（语义 + 关键词双通道）。VectorStore 可用时补强语义缺口，向量搜索失败静默降级到关键词。
-   * 融合排序委托 hybridMerge（与 recall() 共享，避免跨模块常量依赖）。
+   * 融合排序委托 hybridMerge（避免跨模块常量依赖）。
    *
    * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——保持融合排序
    * **不分层分轨**：不应用 L1/L2 分层、不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配
-   * （capTokens / minSemanticShare）。分层分轨属「召回编排」（recall()，现仅由检查点恢复路径
-   * `checkpointRestoreCoordinator.warmRecall` 调用；自动注入退役后 contextPreparer 已不再调用），搜索工具
-   * 只暴露融合相关性结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
+   * （capTokens / minSemanticShare）。分层分轨原属「召回编排」`recall()`——该方法已连同其唯一消费者
+   * （跨重启恢复链的 `checkpointRestoreCoordinator.warmRecall`）于 2026-09-10 整体退役，故**现行实现中
+   * 已无任何召回编排**；搜索工具只暴露融合相关性结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
    *
    * @param excludeRoundIds 排除的轮次 ID 集合（可选）：这些轮次的 round-summary 已被装配期载入正文，
    *                       不重复返回（工具召回与装配期正文互斥，§5.1）；缺省不过滤。

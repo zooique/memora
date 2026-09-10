@@ -6,12 +6,10 @@
  *   2. 写路径取代检测：同 session 同主题旧摘要被标记 supersededBy
  *   3. 不同 session / 不同主题不误取代
  *   4. 已 superseded 的旧摘要不再被重复标记
- *   5. recall() 读时过滤 superseded 摘要
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-import { recall } from '@/memory/recall.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { SummaryType } from '@/memory/types.js';
 import type { LlmProvider } from '@/llm/provider.js';
@@ -162,25 +160,6 @@ describe('RoundSummaryGenerator', () => {
 
     // r1 已 superseded，不再被 r3 覆盖（保持指向 r2）
     expect(storage.getById('round-summary:session-a:r1')?.supersededBy).toBe('round-summary:session-a:r2');
-  });
-
-  it('recall() 读时过滤被 superseded 的摘要', async () => {
-    // 两条同主题摘要，r1 被 r2 取代
-    seedSummary(storage, 'session-a', 'r1', '用户偏好深色主题界面的简洁风格', 'preference');
-    seedSummary(storage, 'session-a', 'r2', '用户偏好深色主题的极简界面', 'preference');
-    storage.upsert({
-      ...storage.getById('round-summary:session-a:r1')!,
-      supersededBy: 'round-summary:session-a:r2',
-    });
-
-    const result = await recall(storage, '深色主题 偏好', {
-      excludeSources: [SOURCE_LABELS.PERSONA, SOURCE_LABELS.RULE, SOURCE_LABELS.SKILL],
-    });
-
-    // 被取代的 r1 不作为当前事实注入
-    expect(result.some((m) => m.id === 'round-summary:session-a:r1')).toBe(false);
-    // 新 r2 仍被召回
-    expect(result.some((m) => m.id === 'round-summary:session-a:r2')).toBe(true);
   });
 
   it('取代检测候选窗口收敛：超出最近 N 条（SUPERSEDE_CANDIDATE_WINDOW）的旧摘要不被取代', async () => {

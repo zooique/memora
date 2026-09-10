@@ -16,12 +16,6 @@ export interface ISessionStore {
   // ── 通用方法 ─────────────────────────────────────────
   /** 列出所有会话标识（YYYY-MM-DD-session） */
   listSessions(): string[];
-  /** 覆盖保存会话检查点（存储层序列化 JSON，不关心内部结构） */
-  saveCheckpoint?(sessionId: string, checkpoint: string): void;
-  /** 加载会话检查点，不存在返回 null */
-  loadCheckpoint?(sessionId: string): string | null;
-  /** 删除会话检查点，不实现为 no-op */
-  deleteCheckpoint?(sessionId: string): void;
   /** 读取会话标题元数据，不存在返回 undefined */
   getSessionMeta(sessionId: string): SessionMeta | undefined;
   /** 设置用户可修改的显示名（displayName）；首轮自动命名走 updateSessionMeta 写 autoName */

@@ -5,6 +5,7 @@
 > **创建日期**：2026-08-27
 > **更新日期**：2026-08-28
 > **状态**：已确认，作为 Memora 会话管理的唯一真理源
+> **2026-09-10 剪枝补记**：本文 Round 独立存储主体（roundIds 指针 + RoundStore 物理真相源）**仍现行有效**。但文中涉及 `recall()` 的段落已失效——§4.4「`minFallback` 保底通道」「恢复路径对称（`checkpointRestoreCoordinator.warmRecall` 透传）」及实施清单中「适配 Recall 召回逻辑」行，均随**跨重启恢复链整体退役**（`recall()` 零消费者连带退役、`DEFAULT_MIN_FALLBACK` 删除、checkpoint 持久化删除）。记忆检索改由 `search_memories` 工具承载。
 
 ### 变更记录
 

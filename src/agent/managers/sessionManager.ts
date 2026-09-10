@@ -64,7 +64,7 @@ export class SessionManager {
   private stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
-  /** 检查点脏标记（落盘收口）：内存态≠磁盘态时为 true，touchCheckpoint 置位、flushCheckpoint 写盘后清除 */
+  /** 检查点脏标记（内存态收口）：touchCheckpoint 置位、settleCheckpoint 清理（不再落盘，2026-09-10 减法） */
   private checkpointDirty = false;
   /** 目标一致性校验器（目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
@@ -186,7 +186,7 @@ export class SessionManager {
 
     // 检查点是当前会话的工作状态，切换时 flush 落盘并清空内存态
     if (this.checkpoint && this.checkpoint.sessionId !== newSession) {
-      this.flushCheckpoint(true);
+      this.settleCheckpoint(true);
       this.checkpoint = null;
       this.checkpointDirty = false;
     }
@@ -279,7 +279,7 @@ export class SessionManager {
 
     // 关键修复：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话持久化检查点。
     if (this.checkpoint) {
-      this.flushCheckpoint(true);
+      this.settleCheckpoint(true);
       this.checkpoint = null;
       this.checkpointDirty = false;
     }
@@ -464,7 +464,7 @@ export class SessionManager {
     };
 
     // 检查点内容已整体重算，强制落盘
-    this.flushCheckpoint(true);
+    this.settleCheckpoint(true);
 
     return this.checkpoint;
   }
@@ -480,351 +480,21 @@ export class SessionManager {
   }
 
   /**
-   * 冲洗检查点到存储层（落盘唯一入口）。写盘失败保留脏标记使其下个语义边界自动重试，单次 IO 抖动不丢变更。
-   * @param force 忽略脏标记强制落盘（用于检查点被整体替换场景）
+   * 检查点脏标记清理（**纯内存态**，「减法」2026-09-10）：
+   * `SessionCheckpoint` 不再落盘——中止/断电走「中断轮补全为完整 turn」而非跨重启恢复，
+   * 运行时暂停是同 turn 内续跑（内存态），无跨进程载体需求。故本方法仅清理脏标记，
+   * 不再写存储层（保留方法语义边界，避免为纯净化波及 40+ 处调用点）。
    */
-  private flushCheckpoint(force = false): void {
+  private settleCheckpoint(force = false): void {
     if (!this.checkpoint) return;
     if (!force && !this.checkpointDirty) return;
-    if (!this.sessionStore?.saveCheckpoint) {
-      // 无存储层：降级纯内存模式，清脏避免无意义累积
-      this.checkpointDirty = false;
-      return;
-    }
-    try {
-      const json = JSON.stringify(this.checkpoint);
-      this.sessionStore.saveCheckpoint(this.checkpoint.sessionId, json);
-      this.checkpointDirty = false;
-    } catch (err) {
-      logger.warn({ err }, '检查点持久化失败（保留脏标记，下个语义边界重试）');
-    }
-  }
-
-  /**
-   * 加载持久化检查点（Agent 重启后读取上次会话快照）；不存在返回 null。
-   *
-   * 用途：① 启动路径的暂停超时归档检测（超时会话清理 + 发 `sessionPauseTimedOut`）
-   * ② 暴露检查点供宿主判定「有未完成 plan 的任务」等续跑价值。
-   *
-   * ⚠ **不回填任何状态机状态**（「断电优先」裁决，2026-09-10）：paused / error 均不恢复，
-   * 重启一律以 running 起，中断轮由宿主打捞为正常 turn + 只能新开 turn；详见下方分支注释。
-   */
-  loadPersistedCheckpoint(): SessionCheckpoint | null {
-    if (!this.sessionStore?.loadCheckpoint) return null;
-
-    try {
-      const history = this.getHistory();
-      const sessionId = history.currentSessionName;
-
-      const json = this.sessionStore.loadCheckpoint(sessionId);
-      if (!json) return null;
-
-      // 反序列化收口：解析 + 严格校验统一由 parseCheckpoint 承担
-      // （`JSON.parse(json) as` 断言无运行时效力，残缺检查点会抛错被外层 catch 静默吞掉整个会话）。
-      const checkpoint = SessionManager.parseCheckpoint(json, sessionId);
-      if (!checkpoint) {
-        logger.warn({ sessionId }, '持久化检查点无法解析或不可修复，降级为内存模式');
-        return null;
-      }
-
-      this.checkpoint = checkpoint;
-      // 刚从磁盘读入，内存态与磁盘态一致
-      this.checkpointDirty = false;
-
-      // 暂停超时检测：超时会话自动清理检查点，不恢复暂停状态
-      if (this.isPauseTimedOut(checkpoint)) {
-        const pauseDuration = Date.now() - (checkpoint.pausedAt ?? checkpoint.lastHeartbeat);
-        logger.warn(
-          { sessionId, pauseDuration, status: checkpoint.status },
-          '暂停超时，自动清理检查点（会话将继续，但不会恢复暂停状态）',
-        );
-
-        // 从存储层删除防下次 init 重复加载；状态机保持运行中
-        this.sessionStore.deleteCheckpoint?.(sessionId);
-        this.checkpoint = null;
-        this.checkpointDirty = false;
-        // 与 checkPauseTimeout 对称地重置连续暂停计数
-        this.resetConsecutivePauseCount();
-        this.markSessionTimedOut(sessionId, pauseDuration);
-
-        return null;
-      }
-
-      // 状态机对齐：**paused / error 均不回填**（「断电优先」裁决，2026-09-10）。
-      // 代码无法区分「优雅暂停/出错后关闭」与「断电前恰好暂停/出错」，故一律以断电为标准——
-      // 进程死亡即降级为**非自愿中断**，重启后会话一律以 running 起（被中断的 turn 由宿主
-      // `listInterruptedRecent` 打捞 → `appendInterrupted` 收场为正常 turn，用户只能**新开 turn**）。
-      // 若回填 paused：① UI 显示「已暂停」，与「只能新开 turn」冲突；② `resumeExecution` 会半途
-      // 续跑一个上下文已不连续的轮（loop 无热记忆/闭环节点锚点），实测会把补充输入分裂成新轮
-      // （2026-09-10 实锤：TS-9 重启复现用例 1 轮 → 2 轮）。
-      // 若回填 error：重启后 `chat()` 直接抛 configError（autoResumeIfPaused 拒收），而宿主**无
-      // `agent.recover()` 入口**（原唯一脱困路径是「断点续跑」提示，本次已按 plan-only 收紧）→
-      // 用户被钉死在 error 态。故一并取消回填。
-      // 注：`error` 态本身仍由公开 API `agent.triggerError()` 可达（语义 =「崩溃残留 → 恢复前
-      // 强制校验」，见 sessionStateMachine 顶部说明），只是不再**自动**从磁盘回填；显式恢复走
-      // `restoreFromCheckpoint`（其内部仍按检查点重建 error 态，供调用方校验后再 recover）。
-      // running / paused / error 均无需额外操作
-
-      logger.info({ sessionId, status: checkpoint.status }, '已从持久化存储加载会话检查点');
-      return checkpoint;
-    } catch (err) {
-      logger.warn({ err }, '加载持久化检查点失败（降级为内存模式）');
-      return null;
-    }
-  }
-
-  /**
-   * 检查点归一化（反序列化唯一收口）。
-   * 为什么：反序列化此前各写各的，残缺数据或静默丢整会话（loadPersistedCheckpoint 断言无运行时效力被 catch 吞）或崩进程（restore 直接信任外部对象 map() 抛 TypeError）。
-   * 严格模式：检查点由当前版本 createCheckpoint 全量写入，任一必需字段缺失或类型错误即视为数据损坏，拒绝恢复（返回 null），
-   * 不做静默补齐——兜底填充掩盖根因（缺字段=写入 bug 或存储损坏，应暴露而非糊过去）。
-   * 版本策略＝「版本门控」而非「字段迁移」：当前仅 CHECKPOINT_SCHEMA_VERSION（v1）。高于本版本拒绝恢复；
-   * 若未来引入 v2 新增必需字段，旧 checkpoint 须在下方版本路由处实现显式迁移，否则按损坏拒绝——绝不静默补字段。
-   * 原地改写入参而非返回副本（restore 本就改写同一引用，返回副本会制造双份并列副本）。
-   */
-  private static normalizeCheckpoint(
-    raw: unknown,
-    fallbackSessionId?: string,
-  ): SessionCheckpoint | null {
-    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
-      logger.warn(
-        { rawType: Array.isArray(raw) ? 'array' : typeof raw, fallbackSessionId },
-        '检查点归一化失败：内容不是对象（按无检查点处理）',
-      );
-      return null;
-    }
-
-    const cp = raw as Partial<SessionCheckpoint>;
-
-    // sessionId 是会话定位键，不可编造：本体缺失时只接受调用方已知的值
-    if (typeof cp.sessionId !== 'string' || !cp.sessionId) {
-      if (!fallbackSessionId) {
-        logger.warn('检查点归一化失败：缺少 sessionId 且调用方未提供回填值');
-        return null;
-      }
-      cp.sessionId = fallbackSessionId;
-    }
-
-    // K1 版本路由：schemaVersion 缺失视为旧版本（向后兼容由未写版本的内核生成）；
-    // 缺失即旧版本签注为当前版本，使后续必需字段校验可用当前 schema 约束；
-    // 高于当前版本拒绝恢复（来自未来内核，结构可能不匹配，静默恢复比拒绝更危险）。
-    const declaredVersion =
-      cp.schemaVersion === undefined
-        ? AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION
-        : cp.schemaVersion;
-    if (typeof declaredVersion !== 'number' || !Number.isFinite(declaredVersion) || declaredVersion <= 0) {
-      logger.warn(
-        { sessionId: cp.sessionId, schemaVersion: cp.schemaVersion },
-        '检查点版本非法（非正整数），视为数据损坏拒绝恢复',
-      );
-      return null;
-    }
-    if (declaredVersion > AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION) {
-      logger.warn(
-        { sessionId: cp.sessionId, declaredVersion, currentVersion: AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION },
-        '检查点来自未来版本，结构可能不匹配，拒绝恢复（请升级内核或迁移检查点）',
-      );
-      return null;
-    }
-    // K1 迁移映射：declaredVersion < 当前版本 → 逐级迁移至当前版本。
-    // v1 → v2（2026-08-29）：PlanStep 新增可选 rolePack（会议表层装配角色）——可选字段对旧检查点
-    // 天然兼容（缺失即 undefined = 非会议），迁移为无操作（结构保持）。此处为显式迁移挂载点，
-    // 未来 v2→v3 新增必需字段时在此实现字段变换，绝不静默补字段。
-    if (declaredVersion < AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION) {
-      logger.info(
-        { sessionId: cp.sessionId, from: declaredVersion, to: AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION },
-        '检查点结构迁移（v1→v2：PlanStep.rolePack 可选字段，无操作）',
-      );
-    }
-    // 掉入此处：declaredVersion === 当前版本（含缺失回退）。新创建路径由 createCheckpoint
-    // 写入当前版本；缺失回退在此未回写字段——恢复路径只读不写，回写交由 createCheckpoint
-    // 下次落盘时自然覆盖为新版本（单次恢复场景不重写磁盘，保持只读）。
-    cp.schemaVersion = declaredVersion;
-
-    // 必需字段严格校验：任一缺失或类型错误即视为损坏，拒绝恢复（不静默补齐）
-    const invalidFields: string[] = [];
-    const isFiniteNumber = (v: unknown): v is number =>
-      typeof v === 'number' && Number.isFinite(v);
-    const isPlainObject = (v: unknown): v is Record<string, unknown> =>
-      typeof v === 'object' && v !== null && !Array.isArray(v);
-
-    if (cp.status !== 'running' && cp.status !== 'paused' && cp.status !== 'error') {
-      invalidFields.push('status');
-    }
-    if (typeof cp.mainGoal !== 'string') invalidFields.push('mainGoal');
-    if (typeof cp.currentGoal !== 'string') invalidFields.push('currentGoal');
-    if (!isFiniteNumber(cp.goalChangeSeq)) invalidFields.push('goalChangeSeq');
-    if (!isFiniteNumber(cp.lastHeartbeat)) invalidFields.push('lastHeartbeat');
-    if (!Array.isArray(cp.plan)) invalidFields.push('plan');
-    if (!Array.isArray(cp.hotMemory)) invalidFields.push('hotMemory');
-    if (!isPlainObject(cp.role)) invalidFields.push('role');
-    if (!isPlainObject(cp.standard)) invalidFields.push('standard');
-    if (!isPlainObject(cp.resource)) invalidFields.push('resource');
-
-    if (invalidFields.length > 0) {
-      logger.warn(
-        { sessionId: cp.sessionId, invalidFields },
-        '检查点归一化失败：必需字段缺失或类型错误（数据损坏），拒绝恢复',
-      );
-      return null;
-    }
-
-    // 可选字段结构非法视为缺席：optional 字段有合法「未设置」语义，清空而非编造
-    if (cp.pausedAt !== undefined && !isFiniteNumber(cp.pausedAt)) {
-      delete cp.pausedAt;
-    }
-    if (
-      cp.error !== undefined &&
-      (!isPlainObject(cp.error) ||
-        typeof cp.error.cause !== 'string' ||
-        !cp.error.cause ||
-        !isFiniteNumber(cp.error.at) ||
-        typeof cp.error.recovered !== 'boolean')
-    ) {
-      // 异常态无法重建时清空，交由 restoreFromCheckpoint 降级为 running 并记录
-      cp.error = undefined;
-    }
-
-    return cp as SessionCheckpoint;
-  }
-
-  /**
-   * 检查点反序列化（JSON 入口唯一收口）。JSON.parse 失败（内容损坏）与必需字段残缺是两类故障，
-   * 解析失败按无检查点处理；解析成功交 normalizeCheckpoint 严格校验。损坏或不可修复返回 null。
-   */
-  private static parseCheckpoint(
-    json: string,
-    fallbackSessionId?: string,
-  ): SessionCheckpoint | null {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(json);
-    } catch (err) {
-      logger.warn({ err, fallbackSessionId }, '检查点 JSON 解析失败（内容损坏，按无检查点处理）');
-      return null;
-    }
-    return SessionManager.normalizeCheckpoint(raw, fallbackSessionId);
+    // 纯内存：无落盘动作，仅清脏
+    this.checkpointDirty = false;
   }
 
   /** 获取当前检查点快照；未创建返回 null */
   getCheckpoint(): SessionCheckpoint | null {
     return this.checkpoint;
-  }
-
-  /**
-   * 从检查点恢复会话：恢复热记忆到 AgentLoop 工作记忆 + 恢复状态机到记录状态。
-   * 异步：内部 await loadSessionMessages 切换会话，调用方 await 等待完成。
-   */
-  async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
-    // 与 loadPersistedCheckpoint 共用归一化入口：严格校验必需字段，损坏即拒绝恢复
-    if (!SessionManager.normalizeCheckpoint(checkpoint)) {
-      // 可选链非冗余：外部（宿主 IPC）可能传入 null
-      logger.error(
-        { sessionId: checkpoint?.sessionId },
-        '检查点结构不可修复，恢复中止（会话保持当前状态，不做部分恢复）',
-      );
-      return 0;
-    }
-
-    this.checkpoint = checkpoint;
-    // 外部整体注入，视为与来源一致；后续变更由 touchCheckpoint 标脏
-    this.checkpointDirty = false;
-
-    // 恢复热记忆到 AgentLoop
-    const messages: Message[] = checkpoint.hotMemory.map((cm) => ({
-      role: cm.role,
-      content: cm.content,
-      // 恢复 name 字段（LLM 上下文一致性）
-      name: cm.name,
-      toolCalls: cm.toolCalls,
-      toolCallId: cm.toolCallId,
-    }));
-    this.getLoop().restoreHistory(messages);
-    // 恢复问答闭环锚点轮次（TS-9）：闭环节点 roundId 随检查点回填 loop 当前轮——
-    // 重启后 resume 续跑补充输入据此归属同一闭环节点，不分裂新轮
-    this.getLoop().setCurrentRoundId(checkpoint.closureRoundId ?? '');
-    // 恢复替换了消息集合：作废派生缓存（与 switch/fork 共用 chokepoint）
-    this.invalidateSessionDerivedState();
-
-    // 注入截断一致性标记：热记忆被截断时告知 LLM 有早期消息被截断（可触发温记忆召回），避免上下文缺失困惑
-    if (checkpoint.truncatedCount && checkpoint.truncatedCount > 0) {
-      this.getLoop().injectSystemMessage(
-        `[热记忆截断提示] 本次恢复的会话有 ${checkpoint.truncatedCount} 条早期消息已被截断。这些消息已不在当前上下文中，但相关信息已归档到温记忆中，可通过温记忆召回获取。`,
-      );
-    }
-
-    // 恢复状态机：先强制归零再按检查点重建——triggerError/pause 仅允许从 running 出发，
-    // 不先归零时若残留 paused/error 会静默失败 → 磁盘检查点 status 与内存状态机分叉。
-    this.stateMachine.resetToRunning();
-    if (checkpoint.status === 'error') {
-      if (checkpoint.error) {
-        const transition = this.stateMachine.triggerError(checkpoint.error.cause);
-        if (!transition.allowed) {
-          logger.error(
-            { transition, sessionId: checkpoint.sessionId },
-            '检查点错误态恢复失败，状态机与检查点分叉',
-          );
-        }
-      } else {
-        // error 字段缺失/结构非法无法重建 error 态：强制检查点状态跟随归零结果并显式记录降级，避免永久分叉无日志
-        checkpoint.status = this.stateMachine.status;
-        logger.warn(
-          { sessionId: checkpoint.sessionId },
-          '检查点 error 态缺少 error 字段，无法重建异常状态，已降级为 running',
-        );
-      }
-    } else if (checkpoint.status === 'paused') {
-      const transition = this.stateMachine.pause('从检查点恢复', 'system');
-      if (transition.allowed) {
-        // 补启暂停超时定时器（唯一调用点在 pause() 此处绕过，否则恢复的 paused 会话本次运行期无超时检测）
-        this.startPauseTimeoutTimer();
-      } else {
-        logger.error(
-          { transition, sessionId: checkpoint.sessionId },
-          '检查点暂停态恢复失败，状态机与检查点分叉',
-        );
-      }
-    }
-    // running 状态由 resetToRunning() 承担
-
-    // 切换到检查点记录的会话。await loadSessionMessages 消除 void 悬空的 unhandledRejection；
-    // 单 Agent 单线程下期间无其他写入者，切换失败时降级继续（热记忆已由 restoreHistory 恢复）。
-    const history = this.getHistory();
-    // 使用统一正则解析 sessionId，与 switchToSession 保持一致（SSOT 单一真理源）
-    const match = checkpoint.sessionId.match(SessionManager.SESSION_ID_PATTERN);
-    if (match && match[1] && match[2]) {
-      const [, date, session] = match;
-      try {
-        await history.loadSessionMessages(date, session);
-      } catch (err) {
-        logger.warn(
-          { err, sessionId: checkpoint.sessionId },
-          '恢复检查点时切换会话失败（热记忆已恢复，继续运行）',
-        );
-      }
-    }
-
-    // 恢复时补偿降级：补偿管线已降为纯日志，仅记录非幂等工具执行事实供宿主/人工排查
-    const nonIdempotentCount =
-      this.checkpoint.completedToolCalls?.filter((r) => r.idempotent === 'non-idempotent').length ??
-      0;
-    if (nonIdempotentCount > 0) {
-      logger.warn(
-        { sessionId: checkpoint.sessionId, nonIdempotentCount },
-        `恢复时发现 ${nonIdempotentCount} 个非幂等工具执行（补偿管线已降级，跳过自动补偿）`,
-      );
-    }
-
-    logger.info(
-      {
-        sessionId: checkpoint.sessionId,
-        messageCount: messages.length,
-        truncatedCount: checkpoint.truncatedCount ?? 0,
-      },
-      '从检查点恢复会话',
-    );
-
-    return messages.length;
   }
 
   /**
@@ -892,7 +562,7 @@ export class SessionManager {
         // 走 setPauseMeta 唯一写入口而非内联赋值，避免绕过其兜底与落盘链路（其内部已含 touch+flush，此处不再重复调用）
         this.setPauseMeta(undefined);
       }
-      // 连续暂停计数在暂停超时处理（checkPauseTimeout / restoreFromCheckpoint）对称重置，
+      // 连续暂停计数在暂停超时处理（checkPauseTimeout）对称重置，
       // 不在 resume() 里清零——避免用户回答前过早清零导致防滥用机制无效
       this.emitEvent('sessionResumed', {
         sessionId: this.checkpoint?.sessionId,
@@ -955,9 +625,8 @@ export class SessionManager {
    *
    * 语义 = 用户决定**彻底放弃**暂停执行，不再 resume。清理内容：
    *   1. 停暂停超时定时器（防止已放弃的 checkpoint 继续被超时清理）
-   *   2. 从 sessionStore 删除持久化检查点（若存在）
-   *   3. 清内存态 checkpoint + checkpointDirty + pauseMeta
-   *   4. 状态机 resetToRunning（回到 idle 之前的 running 基础态，下次 chat() 正常）
+   *   2. 清内存态 checkpoint + checkpointDirty + pauseMeta
+   *   3. 状态机 resetToRunning（回到 idle 之前的 running 基础态，下次 chat() 正常）
    *
    * 与 resume() 的区别：resume = 想继续跑暂停点；discardCheckpoint = 不想了，检查点作废。
    * 与 pause() 的对称：pause 创建检查点；discardCheckpoint 销毁检查点。
@@ -974,21 +643,17 @@ export class SessionManager {
 
     // 1. 停暂停超时定时器
     this.stopPauseTimeoutTimer();
-    // 2. 删持久化存储（如果 sessionStore 支持）
-    if (this.sessionStore?.deleteCheckpoint) {
-      this.sessionStore.deleteCheckpoint(sessionId);
-    }
-    // 3. 清内存态
+    // 2. 清内存态（减法后检查点不落盘，无存储清理动作）
     this.checkpoint = null;
     this.checkpointDirty = false;
     this.setPauseMeta(undefined);
-    // 4. 状态机回到 running
+    // 3. 状态机回到 running
     this.stateMachine.resetToRunning();
 
     return true;
   }
 
-  /** 从异常恢复：标记 error.recovered=true 并经 stateMachine.recover 校验。恢复必须落盘——recovered 若只在内存，进程崩溃后磁盘仍是未恢复 error 快照，恢复链永久断裂 */
+  /** 从异常恢复：标记 error.recovered=true 并经 stateMachine.recover 校验。减法后检查点不落盘，恢复仅活在内存态 */
   recover(): boolean {
     if (!this.checkpoint || !this.checkpoint.error) {
       logger.warn('无法恢复：无检查点或异常信息');
@@ -1005,8 +670,8 @@ export class SessionManager {
         this.checkpoint.status = this.stateMachine.status;
         this.touchCheckpoint();
       }
-      // 恢复必须落盘（见方法注释：recovered 只活内存会让崩溃重启后恢复链断裂）
-      this.flushCheckpoint();
+      // 内存态收口（减法后无落盘：recovered 只活内存，跨进程一律走中断补全）
+      this.settleCheckpoint();
       this.emitEvent('sessionRecovered', {
         sessionId: this.checkpoint?.sessionId,
       });
@@ -1045,7 +710,7 @@ export class SessionManager {
     this.checkpoint.goalChangeSeq++;
     this.touchCheckpoint();
     // 目标变更是会话的语义骨架，立即落盘
-    this.flushCheckpoint();
+    this.settleCheckpoint();
 
     // 检测到漂移则发射 goalDriftDetected 事件；drift 级自动低风险暂停强制用户确认（不计入连续计数）
     if (consistencyResult.level !== 'same') {
@@ -1240,7 +905,7 @@ export class SessionManager {
 
     // 心跳 + 落盘：step 边界即检查点语义边界，崩溃后可从该边界无损续跑
     this.touchCheckpoint();
-    this.flushCheckpoint();
+    this.settleCheckpoint();
   }
 
   /** 卸载运行态挂载物：任务流结束/转 idle 时清空 plan/stepLog（SSOT 资源层 vs 状态层模型），回到"空闲=无挂载物"常态；与 updatePlan（运行态维护）正交 */
@@ -1249,7 +914,7 @@ export class SessionManager {
     this.checkpoint.plan = [];
     this.checkpoint.stepLog = undefined;
     this.touchCheckpoint();
-    this.flushCheckpoint();
+    this.settleCheckpoint();
   }
 
   /** 设置暂停元数据；传 undefined 清除。写后必须落盘（清除也落盘，避免磁盘残留与内存分叉） */
@@ -1258,7 +923,7 @@ export class SessionManager {
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();
-    this.flushCheckpoint();
+    this.settleCheckpoint();
   }
 
   /**
@@ -1336,7 +1001,8 @@ export class SessionManager {
 
   /**
    * 标记会话暂停超时（超时事实唯一写点）。广播式：超时信息经事件载荷传递，多监听器并行消费互不干扰。
-   * loadPersistedCheckpoint 与 checkPauseTimeout 共用。会话标识不符 YYYY-MM-DD-<会话名> 时 date/session 缺省但仍发射事件。
+   * 由 checkPauseTimeout 调用（原 `loadPersistedCheckpoint` 启动路径调用点已随跨重启恢复链退役，2026-09-10）。
+   * 会话标识不符 YYYY-MM-DD-<会话名> 时 date/session 缺省但仍发射事件。
    */
   private markSessionTimedOut(sessionId: string, pauseDuration: number): void {
     const matched = SessionManager.SESSION_ID_PATTERN.exec(sessionId);
@@ -1386,11 +1052,6 @@ export class SessionManager {
 
     logger.warn({ sessionId, pauseDuration }, '运行时检测到暂停超时，自动清理检查点');
 
-    // 从存储层删除
-    if (this.sessionStore?.deleteCheckpoint) {
-      this.sessionStore.deleteCheckpoint(sessionId);
-    }
-
     // 清除检查点 + 状态机回到 running；残留脏标记无对应内存态一并清除
     this.checkpoint = null;
     this.checkpointDirty = false;
@@ -1408,13 +1069,13 @@ export class SessionManager {
 
   /** 关闭时 flush 脏检查点落盘（Agent 关闭、destroy 前调用）：覆盖 logToolExecution 标脏后未到 completeStep 的关闭窗口，确保脏检查点不丢失 */
   flushOnShutdown(): void {
-    this.flushCheckpoint(true);
+    this.settleCheckpoint(true);
   }
 
   /** 立即 flush 脏检查点落盘（D1-②，2026-08-26）：非只读工具完成后调用，持久化其 completedToolCalls
    * 幂等标记，使「工具重跑排重」在进程崩溃/重启后仍生效（逼近事件溯源），而非仅依赖 turn 边界/关闭 */
   flushNow(): void {
-    this.flushCheckpoint(true);
+    this.settleCheckpoint(true);
   }
 
   /** 销毁 SessionManager，清理所有定时器（防阻止进程退出或悬空回调） */

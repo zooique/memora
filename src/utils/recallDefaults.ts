@@ -1,11 +1,9 @@
 /**
- * 召回默认值——单一真理源：`DEFAULT_MIN_FALLBACK` **仅 memory 召回层（recall.ts）自持**。
- * （原「被 role-pack 策略层与 memory 层共享」已不成立：召回策略键族随阶段2 整体退役，
- * role-pack 不再跨引用本常量，见 role-pack/strategyResolver.ts 顶部说明。）
+ * 召回默认值——单一真理源（记忆层与 agent 层共享）。
+ *
+ * `DEFAULT_MIN_FALLBACK` 已随 `recall()` 退役（「减法」2026-09-10）：该保底仅服务
+ * 「检查点恢复的温记忆召回」，随跨重启恢复链整体退役而消亡（见 docs/白话设计文档.md 第六步）。
  */
-
-/** 召回保底下限默认值：语义召回不足时补足至该条数（0=关闭，默认 2） */
-export const DEFAULT_MIN_FALLBACK = 2;
 
 /**
  * 召回排除 source 默认值（空数组）——设定记忆（persona/rule/skill）已归角色包、

@@ -452,53 +452,6 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect((provider as unknown as { _docContext: string | undefined })._docContext).toBeUndefined();
   });
 
-  // ─── 断点续跑提示判定（G3；2026-09-10「断电优先」配套收紧：判据 = 任务价值（未完成计划步骤），不再看 status） ───
-  function setupCheckpointOffer(checkpoint: unknown): { provider: MemoraChatViewProvider; posted: unknown[] } {
-    const agent = agentStub().agent as unknown as { sessionManager: { loadPersistedCheckpoint: () => unknown } };
-    // 注入持久化检查点桩：loadPersistedCheckpoint 返回夹具
-    (agent.sessionManager as { loadPersistedCheckpoint: ReturnType<typeof vi.fn> }).loadPersistedCheckpoint =
-      vi.fn(() => checkpoint);
-    const { provider, posted } = setup();
-    provider.setAgent(agent as never);
-    return { provider, posted };
-  }
-
-  it('断点提示·paused 且无未完成计划 → 不提示（断电优先：重启不恢复暂停态，只能新开 turn）', () => {
-    const { provider, posted } = setupCheckpointOffer({ status: 'paused' });
-    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
-    expect(ofType(posted, 'checkpoint_available').length).toBe(0);
-  });
-
-  it('断点提示·paused 但有未完成计划步骤 → 仍提示（判据是任务价值，非状态）', () => {
-    const { provider, posted } = setupCheckpointOffer({
-      status: 'paused',
-      plan: [{ id: 's1', status: 'pending' }],
-    });
-    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
-    expect(ofType(posted, 'checkpoint_available').length).toBe(1);
-  });
-
-  it('断点提示·error 状态本身不触发（重启不回填 error；仅未完成计划才算续跑价值）', () => {
-    const { provider, posted } = setupCheckpointOffer({ status: 'error' });
-    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
-    expect(ofType(posted, 'checkpoint_available').length).toBe(0);
-  });
-
-  it('断点提示·running 且有未完成计划步骤 → 提示恢复 plan+hotMemory（本轮新增）', () => {
-    const { provider, posted } = setupCheckpointOffer({
-      status: 'running',
-      plan: [{ id: 's1', status: 'pending' }, { id: 's2', status: 'active' }],
-    });
-    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
-    expect(ofType(posted, 'checkpoint_available').length).toBe(1);
-  });
-
-  it('断点提示·running 且纯单轮问答（空计划）→ 不提示，避免误弹', () => {
-    const { provider, posted } = setupCheckpointOffer({ status: 'running', plan: [] });
-    (provider as unknown as { maybeOfferCheckpointRestore(): void }).maybeOfferCheckpointRestore();
-    expect(ofType(posted, 'checkpoint_available').length).toBe(0);
-  });
-
   // ─── 历史会话占用重算（轻量版方案，2026-08-31）：切会话后圆环展示真实占用而非空态 0% ───
   it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值 + 记忆层置 0', async () => {
     const { store, roundStore, provider, posted } = setup();

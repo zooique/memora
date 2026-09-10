@@ -146,14 +146,15 @@ describe('assembleComponents', () => {
   // ─── 组装成功 + 返回值完整性 ────────────────────────────
 
   describe('组装成功 + 返回值完整性', () => {
-    it('返回 AssembleOutput 包含全部 13 个字段', async () => {
+    it('返回 AssembleOutput 包含全部 14 个字段', async () => {
       const output = await assembleComponents(createPctx(), createInput());
 
-      // 13 个字段全部存在（history/loop/toolExec/
+      // 14 个字段全部存在（history/loop/toolExec/
       // workProjection/skillManager/memoryInspector/
       // dedupManager/memoryAdvisor/roundSummaryGenerator/
       // sessionArchiver/textPolisher/rolePackManager/
-      // sessionManager——由组装器创建，先于 loop）
+      // sessionManager——由组装器创建，先于 loop/
+      // contextPreparer）
       const expectedKeys = [
         'history',
         'loop',
@@ -169,7 +170,6 @@ describe('assembleComponents', () => {
         'rolePackManager',
         'sessionManager',
         'contextPreparer',
-        'checkpointRestoreCoordinator',
       ];
       expect(Object.keys(output).sort()).toEqual(expectedKeys.sort());
     });

@@ -190,15 +190,6 @@ export type WebviewToExtensionMessage =
    * 由 webview 待发送区某条补充的 × 按钮触发，宿主调 agent.removePendingInterject(index) 从内核队列删除，然后 post 更新后的 pending_queue_update。
    */
   | { type: 'remove_pending_item'; index: number }
-  /**
-   * 从检查点续跑（G3 断点续跑，2026-08-23）
-   *
-   * 由「从断点续跑」提示条按钮触发：host 调 agent.restoreFromCheckpoint() 恢复上次
-   * 持久化的暂停检查点（跨实例/插件重启场景，恢复热窗口 + 温记忆 + 契约重注入），
-   * 随后重放会话历史。适用于 Agent 重装配后内存无检查点、需从 sessionStore 持久化
-   * 检查点重建的断点场景（同进程暂停续跑仍走 resume）。
-   */
-  | { type: 'checkpoint_restore' }
   // ─── 大模型配置面板消息 ───
   /** 请求加载 Provider 列表 */
   | { type: 'cfg_load' }
@@ -578,22 +569,6 @@ export type ExtensionToWebviewMessage =
    * 与 done/error 配合，构成完整的「进行中 → 结束」状态机。
    */
   | { type: 'status'; state: 'thinking' | 'done' | 'paused' }
-  /**
-   * 检测到有续跑价值的持久化检查点（G3 断点续跑，2026-08-23）
-   *
-   * host 在回放会话时检测到当前会话存在**未完成计划步骤**（pending/active）的持久化检查点
-   * （跨实例/插件重启场景）推送：webview 渲染「从断点续跑」提示条。
-   * 判据 = 任务价值（2026-09-10 断电优先配套收紧：内核重启后不再回填 paused/error，一律 running，
-   * 故不再按状态提示）；同进程暂停续跑（resume）不适用本消息。
-   */
-  | { type: 'checkpoint_available' }
-  /**
-   * 检查点续跑结果（对 checkpoint_restore 的应答，G3 断点续跑）
-   *
-   * ok=true 时 host 已 restoreFromCheckpoint + 重放会话历史（webview 移除提示条）；
-   * ok=false 时 message 为失败原因（webview 展示错误提示）。
-   */
-  | { type: 'checkpoint_result'; ok: boolean; message?: string }
   /** 清空会话完成（webview 收到后清空消息区） */
   | { type: 'clear_ok' }
   /**

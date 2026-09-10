@@ -255,8 +255,7 @@ export type { SessionCheckpoint, PauseMeta, StepOutcome, PlanStep } from '@/agen
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 召回函数：简化关键词搜索
-export { recall, extractKeywords } from '@/memory/recall.js';
-export type { RecallOptions } from '@/memory/recall.js';
+export { extractKeywords } from '@/memory/recall.js';
 
 // ─── 日志抽象 ────────────────────────────────────────────
 export type { ILogger } from '@/logging/loggerInterface.js';

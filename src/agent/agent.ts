@@ -48,7 +48,6 @@ import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
-import type { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
 import { chatBusyError, configError, isAbortError, isTimeoutAbortSignal } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
@@ -136,8 +135,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     roundSummaryGenerator: RoundSummaryGenerator | null;
     /** 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点） */
     contextPreparer: ContextPreparer | null;
-    /** 检查点恢复协议（温记忆召回 / 契约重注入，Agent 保留公开 API 委托） */
-    checkpointRestoreCoordinator: CheckpointRestoreCoordinator | null;
     /** chat() 并发锁管理器（并发锁 + token 校验 + 超时保护 + 外部 signal 合并，init 时创建、close 时销毁） */
     chatLockManager: ChatLockManager | null;
     /** 归档协调器（归档操作委托给 ArchiveCoordinator） */
@@ -157,7 +154,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     sessionNamer: null,
     roundSummaryGenerator: null,
     contextPreparer: null,
-    checkpointRestoreCoordinator: null,
     chatLockManager: null,
     archiveCoordinator: null,
     seedOrchestrator: null,
@@ -242,23 +238,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.validateCoreComponents();
     this.createPostInitComponents(pctx);
 
-    // 标记初始化完成，后续 restoreFromCheckpoint 依赖此标志
+    // 标记初始化完成
     this._initialized = true;
 
-    // 注册暂停超时归档；必须先于 loadPersistedCheckpoint()，否则启动路径的超时事件无人接收
+    // 注册暂停超时归档（同进程暂停超时：30min 无心跳则归档清理）
     this.registerPauseTimeoutArchiver();
     this.registerWorkProjectionRefresh();
 
-    // 加载持久化的会话检查点：用于①启动路径的暂停超时归档检测（超时会话清理 + 发事件）
-    // ②状态机对齐（paused/error 状态回填）。
-    //
-    // ⚠ **不再自动 `restoreFromCheckpoint`**（「断电优先」裁决，2026-09-10）：代码无法区分
-    // 「优雅暂停后关闭」与「断电前恰好暂停」，故一律以断电为标准——进程死亡即降级为**非自愿中断**，
-    // 被中断的 turn 由宿主经 `listInterruptedRecent` 打捞并 `appendInterrupted` 收场为正常 turn，
-    // 用户只能**新开 turn**；不恢复热记忆 / 温记忆召回 / 契约重注入（自愿介入才要求内存态连续）。
-    // 显式续跑仍可经宿主入口调用 `restoreFromCheckpoint`（用户主动触发，非自动）。
-    this._sessionManager?.loadPersistedCheckpoint();
-
+    // 注：不再加载持久化检查点（「减法」2026-09-10）——中止/断电一律走
+    // 「中断轮补全为完整 turn 身份 → 参与下一轮」，不存在跨重启恢复；
+    // 运行时暂停是同 turn 内续跑（内存态），无需磁盘载体。
     return pctx;
   }
 
@@ -1038,19 +1027,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 从检查点恢复会话（完整恢复协议）：
-   * ① 快照反序列化 + ② 热窗口载入（SessionManager）→ ③ 温记忆按需召回 → ④ 契约重注入；
-   * 温记忆召回失败静默降级，仅恢复热窗口和契约，不影响继续对话。
-   *
-   * @returns 恢复的消息数量
-   */
-  async restoreFromCheckpoint(checkpoint: SessionCheckpoint): Promise<number> {
-    this.assertInitialized('restoreFromCheckpoint');
-    // 恢复协议单一真理源：委托 CheckpointRestoreCoordinator（热窗口载入 → 温记忆召回 → 契约重注入）
-    return this.internals.checkpointRestoreCoordinator!.restore(checkpoint);
-  }
-
-  /**
    * 从指定 Round 位置分叉当前会话（委托至 SessionManager）：
    * round-based 模式唯一分叉方式——创建新会话，复制 Round ID 列表（指针复制），
    * 新会话是完全平等的普通会话。记忆索引全局共享不受影响。
@@ -1234,8 +1210,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this._sessionManager = result.sessionManager;
     // 输入增强管线由组装器创建，Agent 只保留编排调用点
     this.internals.contextPreparer = result.contextPreparer;
-    // 检查点恢复协议由组装器创建，Agent 保留公开 API 委托
-    this.internals.checkpointRestoreCoordinator = result.checkpointRestoreCoordinator;
   }
 
   // ─── Provider 管理 ────────────────────────────────────
@@ -1758,7 +1732,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       sessionNamer: null,
       roundSummaryGenerator: null,
       contextPreparer: null,
-      checkpointRestoreCoordinator: null,
       chatLockManager: null,
       archiveCoordinator: null,
       seedOrchestrator: null,

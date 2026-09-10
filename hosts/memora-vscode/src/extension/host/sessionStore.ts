@@ -38,8 +38,6 @@ export interface RoundTruncateResult {
  * 工作区会话存储
  */
 export class WorkspaceSessionStore implements ISessionStore {
-  /** 检查点存储：sessionId → checkpoint 字符串 */
-  private checkpoints = new Map<string, string>();
   /** 会话标题元数据（ADR-024）：sessionId → SessionMeta */
   private metas = new Map<string, SessionMeta>();
   /** Round ID 列表存储：sessionId → roundId[]（round-based 唯一真相源） */
@@ -67,32 +65,23 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 从文件加载会话（文件不存在则空）
    *
-   * **只读路径，无副作用**（2026-09-07 G21 实证）：checkpoint 的清理职责归显式删除路径
-   * （`deleteSession` 三件套 / `deleteCheckpoint`），load 不做任何删除或落盘——详见函数内说明。
+   * 存储模型（2026-09-10 减法后）：仅 metas（标题元数据）+ roundIdsStore（Round 指针）。
+   * 检查点持久化已随「跨重启恢复链」整体退役，本文件不再涉及 checkpoint。
    */
   load(): void {
     if (!existsSync(this.filePath)) return;
     try {
       const raw = readFileSync(this.filePath, 'utf8');
       const data = JSON.parse(raw) as {
-        checkpoints: Record<string, string>;
         metas: Record<string, SessionMeta>;
         roundIdsStore: Record<string, string[]>;
       };
-      for (const [k, v] of Object.entries(data.checkpoints ?? {})) this.checkpoints.set(k, v);
       for (const [k, v] of Object.entries(data.metas ?? {})) this.metas.set(k, v);
       // 加载 round-based 模式的 Round ID 列表（唯一内容来源）
       for (const [k, v] of Object.entries(data.roundIdsStore ?? {})) this.roundIdsStore.set(k, v);
-
-    // 检查点清理职责归显式删除路径（deleteSession 三件套已含 checkpoints.delete）——
-    // load() 不再做防御清理（2026-09-07 G21 实证误伤）：原判据「sessionId ∉ roundIdsStore」
-    // 会把「新建检查点但尚未产生对话轮次」的合法暂停现场当僵尸删除，导致跨重启无法恢复。
-    // 显式删除（deleteSession）已同步删 checkpoint，运行中异常退出残留的 pause checkpoint
-    // 正是跨重启断点续跑的恢复源（G3），不应被只读加载路径当垃圾清掉。
     } catch (err) {
       // 会话文件损坏时降级为空（不阻塞插件启动）
       console.warn('Memora 会话文件读取失败，降级为空', err);
-      this.checkpoints.clear();
       this.metas.clear();
       this.roundIdsStore.clear();
     }
@@ -101,7 +90,6 @@ export class WorkspaceSessionStore implements ISessionStore {
   /** 将内存原子写回文件（先写 .tmp 再 rename，防崩溃损坏） */
   private save(): void {
     const data = {
-      checkpoints: Object.fromEntries(this.checkpoints),
       metas: Object.fromEntries(this.metas),
       roundIdsStore: Object.fromEntries(this.roundIdsStore),
     };
@@ -152,10 +140,9 @@ export class WorkspaceSessionStore implements ISessionStore {
       // 物理删除成功（引用归零）→ 记录被回收的 Round，供调用方联动软删其记忆摘要（⑥）
       if (this.roundStore.delete(roundId)) removedIds.push(roundId);
     }
-    // 清理：移除 Round ID 指针 + 元数据 + 检查点（物理 Round 由 RoundStore 引用计数 + GC 管理）
+    // 清理：移除 Round ID 指针 + 元数据（物理 Round 由 RoundStore 引用计数 + GC 管理）
     this.roundIdsStore.delete(sessionId);
     this.metas.delete(sessionId);
-    this.checkpoints.delete(sessionId);
     this.save();
     return removedIds;
   }
@@ -295,20 +282,6 @@ export class WorkspaceSessionStore implements ISessionStore {
       }
     }
     return [...all.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  }
-
-  saveCheckpoint?(sessionId: string, checkpoint: string): void {
-    this.checkpoints.set(sessionId, checkpoint);
-    this.save();
-  }
-
-  loadCheckpoint?(sessionId: string): string | null {
-    return this.checkpoints.get(sessionId) ?? null;
-  }
-
-  deleteCheckpoint?(sessionId: string): void {
-    this.checkpoints.delete(sessionId);
-    this.save();
   }
 
   // ─── Round-based 模式方法 ─────────────────────────────────

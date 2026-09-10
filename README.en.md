@@ -216,7 +216,7 @@ src/
 │   ├── agent.ts      # Facade class (single entry point for hosts)
 │   ├── loop.ts       # Core loop (reason → tool call → reflection retry)
 │   ├── assembler.ts  # Component assembler (pure factory)
-│   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts / checkpointRestoreCoordinator.ts ···
+│   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # Minimal execution loop (prepare → act/difficulty → reflect, incl. external task outer loop)
 │   └── managers/     # 16 specialized Managers/service classes (memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager, etc.)
 ├── memory/           # Memory engine (IMemoryStorage + InMemoryStorage + recall / hybrid ranking / vector / governance constants)

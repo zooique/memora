@@ -103,7 +103,7 @@
 | `agent/compaction.ts`          | 🟢 已打磨 | `__tests__/compaction.test.ts` (15 tests)                | 微压缩层：ResultReplacement + OffloadCompaction（资源边界）                                                               |
 | `agent/messageHistory.ts`      | 🟢 已打磨 | `__tests__/messageHistory.test.ts`                       | 消息历史管理                                                                                                         |
 | `agent/composer.ts`            | 🟢 已打磨 | `__tests__/composer.test.ts`                             | 上下文组装                                                                                                          |
-| `agent/assembler.ts`           | 🟢 已打磨 | `__tests__/assembler.test.ts`                            | 组件装配（AgentHooks + 接线回调 + sessionManager + ContextPreparer + CheckpointRestoreCoordinator 分阶段组装）                |
+| `agent/assembler.ts`           | 🟢 已打磨 | `__tests__/assembler.test.ts`                            | 组件装配（AgentHooks + 接线回调 + sessionManager + ContextPreparer 分阶段组装）                |
 | `agent/tracer.ts`              | 🟢 已打磨 | `__tests__/tracer.test.ts` + `__tests__/metrics.test.ts` | 可观测性追踪（turn 可观察属性的载体）+ AgentMetrics 运行时指标（AgentLoop/Agent.getMetrics：LLM 调用 / 记忆召回 / 工具调用 / 上下文管理 / 任务级 SLO，5 维度） |
 | `agent/constants.ts`           | 🟢 已打磨 | `__tests__/constants.test.ts`                            | 常量定义                                                                                                           |
 | `agent/types.ts`               | 🟢 已打磨 | 间接测试                                                     | 36 个导出类型定义                                                                                                     |
@@ -149,7 +149,7 @@
 
 ### 2.4 记忆召回（知识内容 · 消费 L4 记忆系统）
 
-> **生长闭环**：回答前的记忆召回（`recall()` 语义 + 关键词双通道、同会话窗口优先、互斥排除正文已加载轮次、minFallback 保底）由 `contextPreparer` 在外部输入触发时调用。**其物理实现位于 L4 记忆系统**（recall.ts / hybridMerge.ts / vectorStore.ts / reranker.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次回答前召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
+> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchHybrid`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts / vectorStore.ts / reranker.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
 >
 > 召回相关设计详见 [memory-as-summary.md](./memory-as-summary.md)（含互斥前置过滤语义）。
 
@@ -236,7 +236,7 @@
 
 | 模块文件                         | 状态     | 测试文件                                   | 质量说明                                  |
 | ---------------------------- | ------ | -------------------------------------- | ------------------------------------- |
-| `memory/recall.ts`           | 🟢 已打磨 | `__tests__/recall.test.ts`             | 召回核心逻辑（双通道 + 互斥前置过滤 + minFallback 保底） |
+| `memory/recall.ts`           | 🟡 已收敛 | `__tests__/recall.test.ts`             | 仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
 | `memory/hybridMerge.ts`      | 🟢 已打磨 | `__tests__/hybridMerge.test.ts`        | 混合检索（向量 0.6 + score 0.4）              |
 | `memory/vectorStore.ts`      | 🟢 已打磨 | `__tests__/vectorStore.test.ts`        | 向量存储                                  |
 | `memory/reranker.ts`         | ⚪ 接口   | `__tests__/reranker.test.ts` (3 tests) | 重排序接口（IReranker，仅类型；默认实现已剪枝移除）        |
@@ -280,13 +280,12 @@
 
 ## 五、多 turn 任务编排生长 · 会话延续（L5）
 
-> **生长来源**：turn 回答后的 Handoff='loop'（自动续跑）或任务链驱动，就长出多 turn 任务编排；turn 内 loop（对 step 编排）仍在 L0 `loop.ts` 内。本层是让 turn 能跨 turn 延续、跨会话切换的配套模块：检查点恢复、会话生命周期、会话记录底座。
+> **生长来源**：turn 回答后的 Handoff='loop'（自动续跑）或任务链驱动，就长出多 turn 任务编排；turn 内 loop（对 step 编排）仍在 L0 `loop.ts` 内。本层是让 turn 能跨 turn 延续、跨会话切换的配套模块：会话生命周期、会话记录底座（检查点恢复随 2026-09-10 减法退役）。
 
 | 模块文件                                    | 状态     | 测试文件                                                                                         | 质量说明                                                                            |
 | --------------------------------------- | ------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `agent/checkpointRestoreCoordinator.ts` | 🟢 已打磨 | 间接测试（agent.test.ts）                                                                          | 检查点恢复协议：温记忆召回 / 契约重注入 / restore 编排 / 任务表预判                                      |
-| `managers/sessionManager.ts`            | 🟢 已打磨 | `__tests__/sessionManager.test.ts` (98 tests)                                                | 会话生命周期管理：切换、分叉、恢复、消息加载 + 检查点生命周期                                                |
-| `memory/sessionStore.ts`                | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + 全部可选方法（checkpoint/meta）+ 双层命名（autoName/displayName）类型验证 |
+| `managers/sessionManager.ts`            | 🟢 已打磨 | `__tests__/sessionManager.test.ts` (98 tests)                                                | 会话生命周期管理：切换、分叉、恢复、消息加载 + 检查点内存态生命周期（跨重启恢复链 2026-09-10 退役）                                         |
+| `memory/sessionStore.ts`                | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + meta 可选方法 + 双层命名（autoName/displayName）类型验证（checkpoint 相关方法已随减法删除） |
 
 > **生长说明**：
 >
@@ -333,7 +332,7 @@
 | `utils/configResourceManager.ts` | 🟢 已打磨 | `__tests__/configResourceManager.test.ts`  | 配置资源管理（角色包/技能复用的基类）                   |
 | `utils/loggerHolder.ts`          | 🟢 已打磨 | `__tests__/loggerHolder.test.ts`           | Logger 持有者                            |
 | `utils/atomicWrite.ts`           | 🟢 已打磨 | `__tests__/atomicWrite.test.ts` (12 tests) | 原子写：临时文件+rename/覆盖写入/大内容/特殊字符/目录不存在异常 |
-| `utils/recallDefaults.ts`        | ⚪ 工具   | 无需测试                                       | 单常量 `DEFAULT_MIN_FALLBACK = 2`        |
+| `utils/recallDefaults.ts`        | ⚪ 工具   | 无需测试                                       | 单常量 `DEFAULT_RECALL_EXCLUDE_SOURCES`（排除源白名单；`DEFAULT_MIN_FALLBACK` 已随召回编排退役） |
 
 ### 6.3 安全（security/）
 
@@ -362,7 +361,7 @@
 | - | --------------------------------------------------------- | ---------------------------------------------------- | --- |
 | 1 | `memory/storageInterface.ts`、`logging/loggerInterface.ts` | 为 IMemoryStorage / ILogger 补独立契约测试（当前主路径已由消费方集成测试覆盖） | 低   |
 | 2 | `skill/types.ts`、`llm/types.ts`、`web-search/types.ts`     | 纯类型定义，随消费方集成测试覆盖即可，无需独立测试                            | 低   |
-| 3 | `utils/recallDefaults.ts`                                 | 单常量（`DEFAULT_MIN_FALLBACK = 2`），无需测试                 | —   |
+| 3 | `utils/recallDefaults.ts`                                 | 单常量（`DEFAULT_RECALL_EXCLUDE_SOURCES`），无需测试           | —   |
 
 ***
 

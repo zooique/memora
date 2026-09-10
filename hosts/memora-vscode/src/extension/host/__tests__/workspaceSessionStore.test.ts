@@ -3,7 +3,7 @@
  *
  * 覆盖两类：
  *   - ISessionStore 契约（2026-08-17 排雷 P4 补充）：round 写入/loadMessages 往返、
- *     checkpoints 三件套、metas 三件套、落盘持久化往返、损坏降级
+ *     metas 三件套、落盘持久化往返、损坏降级
  *   - truncate-from-turn 语义（2026-08-16 对话闭环管理）：
  *     - 删除目标问答闭环（anchor assistant 向前最近的 user 消息起）到会话末尾
  *     - 目标为最后一条时只删该问答
@@ -169,24 +169,14 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(store.loadMessages('2026-08-17', 'main')[0]?.content).toBe('原内容');
   });
 
-  it('持久化往返：新实例 load 可恢复消息/检查点/标题', () => {
+  it('持久化往返：新实例 load 可恢复消息/标题', () => {
     seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
-    store.saveCheckpoint?.('2026-08-17-main', '{"status":"paused"}');
     store.setSessionTitle?.('2026-08-17-main', '会话一');
     // 模拟重启：同一工作区新建实例并 load
     const reopened = new WorkspaceSessionStore(dir);
     reopened.load();
     expect(reopened.loadMessages('2026-08-17', 'main')).toHaveLength(1);
-    expect(reopened.loadCheckpoint?.('2026-08-17-main')).toBe('{"status":"paused"}');
     expect(reopened.getSessionMeta('2026-08-17-main')?.displayName).toBe('会话一');
-  });
-
-  it('saveCheckpoint 覆盖写 + deleteCheckpoint 清除', () => {
-    store.saveCheckpoint?.('2026-08-17-main', 'v1');
-    store.saveCheckpoint?.('2026-08-17-main', 'v2'); // 覆盖
-    expect(store.loadCheckpoint?.('2026-08-17-main')).toBe('v2');
-    store.deleteCheckpoint?.('2026-08-17-main');
-    expect(store.loadCheckpoint?.('2026-08-17-main')).toBeNull();
   });
 
   it('setSessionTitle 不改 updatedAt（改名非活跃事件，ADR-024）', () => {
@@ -214,14 +204,12 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     }
   });
 
-  it('deleteSession：删除消息 + meta + 检查点 + 物理回收无引用 Round（0 引用孤儿不留滞）', () => {
+  it('deleteSession：删除消息 + meta + 物理回收无引用 Round（0 引用孤儿不留滞）', () => {
     const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
     store.setSessionTitle?.('2026-08-17-main', '会话一');
-    store.saveCheckpoint?.('2026-08-17-main', '{"status":"paused"}');
     const removedIds = store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-17-main');
-    expect(store.loadCheckpoint?.('2026-08-17-main')).toBeNull();
     // refCount 归零 → Round 物理文件同步回收（2026-08-29：deleteSession 减引用后立即物理删除）
     expect(roundStore.getById(roundId)).toBeNull();
     // 返回值 = 被物理回收的 Round 列表（供调用方联动软删记忆摘要，⑥）
@@ -248,7 +236,6 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const s = new WorkspaceSessionStore(dir);
     expect(() => s.load()).not.toThrow();
     expect(s.listSessions()).toEqual([]);
-    expect(s.loadCheckpoint?.('2026-08-17-main')).toBeNull();
   });
 });
 

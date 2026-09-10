@@ -179,59 +179,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  操作上移容器级 footer（复制整链/分叉/删除）；user 主输入在容器外，与 AI 作答单元分离 */
   let roundGroupEl: HTMLElement | null = null;
 
-  // G3 断点续跑提示条：检测到「有未完成计划步骤」的持久化检查点时展示（判据 = 任务价值，非暂停状态），用户点击「从断点续跑」恢复
-  let restoreBanner: HTMLElement | null = null;
-
   /** 消息区顶部状态块插入协议（P1-0，2026-08-24）：
-   * 需用户决策的检查点横幅（restoreBanner）恒在需感知的任务看板（planBoard）之上，
-   * 避免后 prepend 者盖住先者导致「续跑」入口被遮挡。 */
+   * 后插入的状态块恒排在已感知的任务看板（planBoard）之前，避免后 prepend 者被先者遮挡。 */
   function prependStatusBlock(el: HTMLElement): void {
-    if (restoreBanner && el !== restoreBanner) {
-      messages.insertBefore(el, restoreBanner.nextSibling);
-    } else if (globalPlanBoard && el !== globalPlanBoard) {
+    if (globalPlanBoard && el !== globalPlanBoard) {
       messages.insertBefore(el, globalPlanBoard);
     } else {
       messages.prepend(el);
     }
-  }
-
-  /** 移除断点续跑提示条（恢复成功 / 用户关闭 / 切换会话时调用） */
-  function removeRestoreBanner(): void {
-    restoreBanner?.remove();
-    restoreBanner = null;
-  }
-
-  /**
-   * 展示断点续跑提示条（checkpoint_available / checkpoint_result 失败时）
-   *
-   * @param text 提示文案
-   * @param withRestore 是否展示「从断点续跑」按钮（可恢复时 true；失败时仅展示错误 + 关闭）
-   */
-  function showRestoreBanner(text: string, withRestore: boolean): void {
-    removeRestoreBanner();
-    restoreBanner = document.createElement('div');
-    restoreBanner.className = 'checkpoint-banner';
-    restoreBanner.setAttribute('role', 'status');
-    const label = document.createElement('span');
-    label.className = 'checkpoint-banner-text';
-    label.textContent = text;
-    restoreBanner.appendChild(label);
-    if (withRestore) {
-      const restoreBtn = document.createElement('button');
-      restoreBtn.className = 'checkpoint-banner-btn';
-      restoreBtn.textContent = '从断点续跑';
-      restoreBtn.addEventListener('click', () => vscode.postMessage({ type: 'checkpoint_restore' }));
-      restoreBanner.appendChild(restoreBtn);
-    }
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'checkpoint-banner-close';
-    closeBtn.textContent = '✕';
-    closeBtn.title = '关闭';
-    closeBtn.setAttribute('aria-label', '关闭提示');
-    closeBtn.addEventListener('click', removeRestoreBanner);
-    restoreBanner.appendChild(closeBtn);
-    // 插到消息区顶部状态栈（P1-0 协议：检查点横幅恒在任务看板之上），与历史重放同步可见
-    prependStatusBlock(restoreBanner);
   }
 
   // 当前 Provider 列表（由 chat_providers 消息填充）
@@ -3439,16 +3394,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body')?.classList.remove('is-streaming');
         streamingActive = false;
       }
-    } else if (msg.type === 'checkpoint_available') {
-      // G3 断点续跑：检测到「有未完成计划步骤」的持久化检查点，展示「从断点续跑」提示条
-      showRestoreBanner('检测到未完成的任务，可继续', true);
-    } else if (msg.type === 'checkpoint_result') {
-      // G3 断点续跑结果：ok 移除提示条（host 已重放历史）；失败展示错误（保留关闭按钮）
-      if (msg.ok) {
-        removeRestoreBanner();
-      } else {
-        showRestoreBanner(msg.message ?? '断点恢复失败', false);
-      }
     } else if (msg.type === 'capability_badge') {
       // Phase 4 E2：角色能力徽章 → 更新工具权限展示
       updateCapabilityBadge(msg.toolMode, msg.capabilities);
@@ -3580,8 +3525,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
       messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa, .round-group').forEach((el) => el.remove());
-      // G3：清空/切换会话时移除断点续跑提示条（避免切换到非断点会话后残留）
-      removeRestoreBanner();
       // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
       removeAllPlanBoards();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）

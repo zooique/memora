@@ -16,6 +16,8 @@
 > **体量（2026-08-29 收敛完成时快照）**：agent.ts 2255 → 1721 行（-534）；新增 assembler 694 / contextPreparer 298 / checkpointRestoreCoordinator 246。注：截至 2026-08-31 `agent.ts` 已增至 **1927 行**（后续功能叠加），数字为时点值，非长期保证。
 >
 > **最小切片**：P0 审查建议"capability 聚合"经评估——宿主 getter（memory/works/polish/sessionManager 等）是公共契约不可动、字段聚合不减少方法数、项目文档已声明"守卫/字段区移动收益低"。收敛为**仅聚合纯内部组件**：12 个无宿主 getter 契约的专职组件（dedupManager/memoryAdvisor/sessionArchiver/sessionNamer/roundSummaryGenerator/contextPreparer/checkpointRestoreCoordinator/composer/chatLockManager/memoryDecayScheduler/archiveCoordinator/seedOrchestrator）收进 `Agent.internals` 聚合对象，扁平 private 字段 51 → 40，nullify 生命周期样板收敛；宿主 getter 契约字段保持独立（零 breaking change）。
+>
+> **2026-09-10 剪枝补记**：上述 **Step 3 检查点恢复** 已整体退役——`checkpointRestoreCoordinator.ts` 整文件删除（`warmRecall` / `reinject` / `restore` / `shouldGenerateTaskTable` 随之消失），`Agent.restoreFromCheckpoint` 公开 API 与 `Agent.internals` 中该字段一并删除。原因见 [白话设计文档](../../docs/白话设计文档.md) 第六步「暂停与中断」：中止/断电一律把未完成 turn 补全为完整 turn 身份并由下次会话按历史加载，运行时暂停是同 turn 内续跑（内存态），**不存在与主路径并列的第二套恢复机制**。故本文「装配层三切面」现为**两切面**（装配回填 + 输入增强）。
 
 ***
 

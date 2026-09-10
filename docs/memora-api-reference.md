@@ -522,10 +522,9 @@ interface ISessionStore {
 | `sessionManager.loadSessionMessages(date, session)` → `Promise<SessionMessage[]>` | 加载指定日期/会话的消息（含时间戳） |
 | `sessionManager.restoreMostRecentSession()` → `Promise<number>` | 恢复最近活跃会话（SSOT：listSessionMetas[0]，updatedAt 降序；绝不隐式创建——新建会话唯一入口为宿主手动按钮） |
 | `sessionManager.restoreSession(date, session)` → `Promise<number>` | 恢复指定日期/会话 |
-| `sessionManager.createCheckpoint(mainGoal?)` → `SessionCheckpoint \| null` | 创建当前会话检查点（含热记忆、目标、计划、状态机快照），首次调用返回完整检查点，后续调用合并增量 |
-| `sessionManager.restoreFromCheckpoint(checkpoint)` → `Promise<number>` | 从检查点恢复会话（恢复消息历史、状态机状态、截断时注入提示消息） |
+| `sessionManager.createCheckpoint(mainGoal?)` → `SessionCheckpoint \| null` | 创建当前会话检查点（含热记忆、目标、计划、状态机快照），首次调用返回完整检查点，后续调用合并增量。**同进程内存态**（2026-09-10 减法后不落盘） |
 | `sessionManager.getCheckpoint()` → `SessionCheckpoint \| null` | 获取当前检查点（只读，不修改状态） |
-| `sessionManager.discardCheckpoint()` → `boolean` | **Phase 4 新增**：放弃当前暂停检查点（对称 pause 创建，宿主 handleStop paused 态调之；停定时器 + 删存储 + 清内存 + resetToRunning；无检查点返回 false） |
+| `sessionManager.discardCheckpoint()` → `boolean` | **Phase 4 新增**：放弃当前暂停检查点（对称 pause 创建，宿主 handleStop paused 态调之；停定时器 + 清内存 + resetToRunning；无检查点返回 false） |
 
 ```typescript
 // 项目列表
@@ -829,7 +828,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | 对话 | `chat(input, signal?)` / `chatSync(input, signal?)` / `processEvent(event)` / `resumeExecution()` / `forceReleaseChatLock()` |
 | 事件 | `on()` / `off()` / `once()`（继承自 TypedEventEmitter） |
 | 暂停/继续 | `pause(reason, source?, lowRisk?)` / `resume()` / `requestPause(reason, source?)` / `cancelPauseRequest()` / `isPausePending()` / `interject(content)` / `removePendingInterject(index)` / `clearPendingInterjections()` / `getPendingInterjections()` / `discardCurrentCheckpoint()` / `canContinueWithoutInput()` |
-| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `restoreFromCheckpoint(checkpoint)` / `createCheckpoint(mainGoal?, role?, standard?)` / `getCheckpoint()` |
+| 项目 / 会话 | `switchProject(nameOrPath)` / `rebuildComponents()` / `forkSession(targetSession?)` / `createCheckpoint(mainGoal?, role?, standard?)` / `getCheckpoint()` |
 | Provider | `setProvider(provider)` / `setBackgroundProvider(provider)` |
 | 归档模式 | `setArchiveMode(mode)` / `getArchiveMode()` |
 | 角色 | `switchRolePack(name)` / `getRolePackSwitchLockStatus()` / `getActiveTraits()` / `injectAffect(affectString)` |
@@ -1029,9 +1028,9 @@ export type { ToolErrorCodeValue } from '@zooique/memora';
 export type { ILogger } from '@zooique/memora';
 export { setLogger, logger } from '@zooique/memora';
 
-// 召回
-export { recall, extractKeywords } from '@zooique/memora';
-export type { RecallOptions } from '@zooique/memora';
+// 召回（2026-09-10 减法：`recall()` 召回编排 + `RecallOptions` 已退役——
+// 唯一消费者是跨重启恢复链的 warmRecall，随之整体下线；记忆检索走 `search_memories` 工具 → `searchHybrid`）
+export { extractKeywords } from '@zooique/memora';
 
 // 网络搜索
 export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@zooique/memora';

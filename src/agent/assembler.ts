@@ -29,8 +29,6 @@ import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js
 import { SessionManager } from '@/agent/managers/sessionManager.js';
 // 输入增强管线（角色/记忆/技能增强的叶子逻辑）
 import { ContextPreparer } from '@/agent/contextPreparer.js';
-// 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判）
-import { CheckpointRestoreCoordinator } from '@/agent/checkpointRestoreCoordinator.js';
 import { estimateTokensMessages } from '@/agent/contextManager.js';
 // 工具幂等契约（接线下沉：onToolExecuted / preExecutionCheck 依赖幂等表 + 补偿判断）
 import { BUILTIN_TOOL_IDEMPOTENCY, shouldSkipForIdempotency } from '@/agent/builtinTools.js';
@@ -279,8 +277,6 @@ export interface AssembleOutput {
   sessionManager: SessionManager;
   /** 输入增强管线（角色/记忆/技能增强，Agent 门面保留编排调用点） */
   contextPreparer: ContextPreparer;
-  /** 检查点恢复协议（温记忆召回 / 契约重注入 / 任务表预判，Agent 保留公开 API 委托） */
-  checkpointRestoreCoordinator: CheckpointRestoreCoordinator;
 }
 
 /**
@@ -867,28 +863,6 @@ export async function assembleComponents(
     emit: (event, data) => hooks?.emit(event, data),
   });
 
-  // ── 检查点恢复协议 ──
-
-  // CheckpointRestoreCoordinator 依赖已装配的 sessionManager/loop；
-  // 恢复协议只依赖稳定接口（sessionManager/history/loop），生命周期回调由 hooks 注入。
-  const checkpointRestoreCoordinator = new CheckpointRestoreCoordinator({
-    sessionManager,
-    history,
-    loop,
-    getIndex: () => pctx.index,
-    rolePackManager,
-    config: {
-      tracer: tracer ?? null,
-      vectorStore: vectorStore ?? null,
-      recallExcludeSources,
-    },
-    // 事件发射桥接到 Agent 强类型 emit
-    emit: (event, data) => hooks?.emit(event, data),
-    // 角色契约重注入命中时走 Agent 生命周期（缺省 no-op，供纯工厂单测）
-    applyRolePackToolExposure: hooks?.applyRolePackToolExposure ?? (() => {}),
-    refreshRolePackPrefixOnLoop: hooks?.refreshRolePackPrefixOnLoop ?? (() => {}),
-  });
-
   return {
     history,
     loop,
@@ -904,6 +878,5 @@ export async function assembleComponents(
     roundSummaryGenerator,
     sessionManager,
     contextPreparer,
-    checkpointRestoreCoordinator,
   };
 }

@@ -33,8 +33,6 @@ import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
 class TestInMemorySessionStore implements ISessionStore {
   /** 消息存储：key = `${date}/${session}`，value = 消息数组 */
   private readonly messages = new Map<string, SessionMessage[]>();
-  /** 检查点存储：key = sessionId，value = checkpoint JSON 字符串 */
-  private readonly checkpoints = new Map<string, string>();
   /** 会话元数据存储 */
   private readonly metas = new Map<string, SessionMeta>();
   /** Round ID 存储：key = sessionId，value = roundId[] */
@@ -73,21 +71,6 @@ class TestInMemorySessionStore implements ISessionStore {
       sessions.add(`${date}-${session}`);
     }
     return Array.from(sessions).sort();
-  }
-
-  /** 保存检查点（可选方法实现） */
-  saveCheckpoint(sessionId: string, checkpoint: string): void {
-    this.checkpoints.set(sessionId, checkpoint);
-  }
-
-  /** 加载检查点（可选方法实现） */
-  loadCheckpoint(sessionId: string): string | null {
-    return this.checkpoints.get(sessionId) ?? null;
-  }
-
-  /** 删除检查点（可选方法实现） */
-  deleteCheckpoint(sessionId: string): void {
-    this.checkpoints.delete(sessionId);
   }
 
   /** 获取会话元数据（可选方法实现） */
@@ -315,36 +298,6 @@ describe('ISessionStore — 可选方法契约', () => {
     store = new TestInMemorySessionStore();
   });
 
-  describe('saveCheckpoint + loadCheckpoint + deleteCheckpoint', () => {
-    it('保存后可加载', () => {
-      const checkpoint = JSON.stringify({ step: 3, status: 'paused' });
-      store.saveCheckpoint('2026-08-18-test', checkpoint);
-
-      const loaded = store.loadCheckpoint('2026-08-18-test');
-      expect(loaded).toBe(checkpoint);
-    });
-
-    it('加载不存在的检查点返回 null', () => {
-      const loaded = store.loadCheckpoint('nonexistent-session');
-      expect(loaded).toBeNull();
-    });
-
-    it('删除检查点', () => {
-      store.saveCheckpoint('session-1', 'checkpoint-data');
-      store.deleteCheckpoint('session-1');
-
-      const loaded = store.loadCheckpoint('session-1');
-      expect(loaded).toBeNull();
-    });
-
-    it('覆盖保存', () => {
-      store.saveCheckpoint('session-1', 'version-1');
-      store.saveCheckpoint('session-1', 'version-2');
-
-      const loaded = store.loadCheckpoint('session-1');
-      expect(loaded).toBe('version-2');
-    });
-  });
 
   describe('getSessionMeta + setSessionTitle + listSessionMetas', () => {
     it('设置标题后可获取', () => {
