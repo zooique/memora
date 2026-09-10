@@ -1120,7 +1120,7 @@ describe('SessionManager', () => {
       expect(mgr.status).toBe('running');
     });
 
-    it('loadPersistedCheckpoint 应恢复 paused 状态', () => {
+    it('loadPersistedCheckpoint 不回填 paused 状态（断电优先裁决：重启一律 running）', () => {
       const loop = createMockLoopWithMessages([]);
       const store = createMockSessionStore({
         loadCheckpoint: vi.fn().mockReturnValue(JSON.stringify({
@@ -1148,9 +1148,11 @@ describe('SessionManager', () => {
       const cp = mgr.loadPersistedCheckpoint();
 
       expect(cp).not.toBeNull();
+      // 检查点本身仍被加载并暴露（status 保留磁盘原值，供宿主判定续跑价值）
       expect(cp!.status).toBe('paused');
-      // 状态机恢复为 paused
-      expect(mgr.status).toBe('paused');
+      // 但状态机**不回填 paused**（断电优先裁决 2026-09-10）：进程死亡即非自愿中断，
+      // 重启一律以 running 起，中断轮由宿主打捞为正常 turn + 只能新开 turn
+      expect(mgr.status).toBe('running');
     });
 
     it('loadPersistedCheckpoint 暂停超时应返回 null 并清理', () => {

@@ -249,12 +249,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.registerPauseTimeoutArchiver();
     this.registerWorkProjectionRefresh();
 
-    // 加载持久化的会话检查点；若上次会话在暂停/异常中关闭，加载后恢复状态机；
-    // 若为 paused 还需恢复热记忆 + 温记忆召回 + 契约重注入（重启后上下文完整）
-    const persistedCheckpoint = this._sessionManager?.loadPersistedCheckpoint();
-    if (persistedCheckpoint && persistedCheckpoint.status === 'paused') {
-      await this.restoreFromCheckpoint(persistedCheckpoint);
-    }
+    // 加载持久化的会话检查点：用于①启动路径的暂停超时归档检测（超时会话清理 + 发事件）
+    // ②状态机对齐（paused/error 状态回填）。
+    //
+    // ⚠ **不再自动 `restoreFromCheckpoint`**（「断电优先」裁决，2026-09-10）：代码无法区分
+    // 「优雅暂停后关闭」与「断电前恰好暂停」，故一律以断电为标准——进程死亡即降级为**非自愿中断**，
+    // 被中断的 turn 由宿主经 `listInterruptedRecent` 打捞并 `appendInterrupted` 收场为正常 turn，
+    // 用户只能**新开 turn**；不恢复热记忆 / 温记忆召回 / 契约重注入（自愿介入才要求内存态连续）。
+    // 显式续跑仍可经宿主入口调用 `restoreFromCheckpoint`（用户主动触发，非自动）。
+    this._sessionManager?.loadPersistedCheckpoint();
 
     return pctx;
   }

@@ -202,7 +202,7 @@ await agent.close();
 |------|------|----------|----------|
 | `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
 | `IVectorStore` | 语义向量索引 | `JsonVectorStore` | 无 |
-| `ISessionStore` | 会话历史 + 检查点持久化 | 无（宿主实现） | 实现 `saveCheckpoint/loadPersistedCheckpoint` 即获得跨进程会话恢复 |
+| `ISessionStore` | 会话历史 + 检查点持久化 | 无（宿主实现） | 实现 `saveCheckpoint/loadPersistedCheckpoint` 即获得检查点持久化；跨重启**不自动恢复暂停态**（断电优先裁决，2026-09-10），中断轮由宿主打捞为正常 turn + 只能新开 turn |
 | `ILogger` | 日志输出 | console fallback | 无 |
 | `ITracer` | 可观测性 span | `NOOP_TRACER` | 无 |
 

@@ -148,7 +148,9 @@ async function main(): Promise<void> {
   console.log('\n🧹 已清理临时工作区');
   console.log('\n=== 结论 ===');
   console.log('检查点由「暂停/切换/updateGoal 等操作点」createCheckpoint + force flush 触发落盘，');
-  console.log('正常对话结束不落盘——故 G3 断点续跑入口应与「暂停动作/未完成态」绑定，跨实例恢复经本链路');
+  console.log('正常对话结束不落盘。本脚本演示**显式**恢复链路（loadPersistedCheckpoint → restoreFromCheckpoint）。');
+  console.log('⚠ 断电优先裁决（2026-09-10）：跨重启**不自动**恢复暂停态（一律以 running 起 + 只能新开 turn），');
+  console.log('  故 init() 不再自动走本链路；restoreFromCheckpoint 仅由宿主显式入口（用户主动触发）调用。');
 }
 
 main().catch((err) => {

@@ -1517,15 +1517,12 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     });
     await agent.init();
 
-    // 验证持久化检查点被加载
-    // loadPersistedCheckpoint 在 init 中自动调用，恢复状态机
-    expect(agent.sessionManager!.status).toBe('paused');
+    // 持久化检查点仍可加载（持久化链路本身有效），但状态机**不恢复 paused**
+    // （断电优先裁决 2026-09-10：重启一律以 running 起，中断轮由宿主打捞为正常 turn + 只能新开 turn）
+    expect(agent.sessionManager!.loadPersistedCheckpoint()).not.toBeNull();
+    expect(agent.sessionManager!.status).toBe('running');
 
-    // 恢复会话
-    const resumeOk = agent.resume();
-    expect(resumeOk).toBe(true);
-
-    // 继续对话
+    // 继续对话：新开 turn，不依赖恢复暂停态上下文
     const reply2 = await agent.chatSync('继续编写代码');
     expect(reply2).toContain('Mock 响应');
   });
@@ -2767,7 +2764,7 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// TS-9 · 问答闭环内交互输入归属（提问→补充→续跑 不分裂，含重启复现）
+// TS-9 · 问答闭环内交互输入归属（提问→补充→续跑 不分裂，含断电优先重启裁决）
 // ═══════════════════════════════════════════════════════════════
 
 describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分裂）', () => {
@@ -2886,7 +2883,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(cp).not.toHaveProperty('pausedAt');
   });
 
-  it('重启复现：检查点 closureRoundId 锚定原闭环节点，重启后补充续跑仍不分裂', { timeout: 30000 }, async () => {
+  it('断电优先：重启不恢复暂停态，重启后输入新开 turn（原闭环节点不被续写）', { timeout: 30000 }, async () => {
     // ── 第一段：提问 → 回答 → 暂停（checkpoint 落盘 closureRoundId 锚点）──
     agent = makeTs9Agent();
     await agent.init();
@@ -2905,36 +2902,39 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     // 显式 pause（空闲 requestPause 已收敛为作废守卫，2026-09-07）
     expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
     expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
+    // 原闭环节点此刻：1 条交互输入（question-answer）
+    expect(currentClosure().interactiveInputs).toHaveLength(1);
     await agent.close();
     agent = null;
 
     // ── 第二段：重启（新 Agent 实例，同 sessionStore/roundStore）──
     agent = makeTs9Agent();
     await agent.init();
-    // init 自动 loadPersistedCheckpoint → restoreFromCheckpoint（paused）
-    expect(agent.sessionManager!.status).toBe('paused');
-    // 闭环节点锚点随检查点恢复回填 loop.currentRoundId（collectionRoundId 回填）
+
+    // 断电优先裁决（2026-09-10）：进程死亡即非自愿中断——重启**不回填 paused**，
+    // 也不再自动 restoreFromCheckpoint（自愿介入要求内存态连续，故一律降级为「收场重开」）。
+    expect(agent.sessionManager!.status).toBe('running');
+    // 检查点仍被加载并暴露（供宿主判定「有未完成 plan」等续跑价值），闭环节点锚点随之可见
     expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
 
-    // 重启后补充输入 → 经 runResume 归属原闭环节点（不分裂新轮）
-    for await (const _chunk of agent.resumeExecution('重启后补充：换个方案', undefined, 'supplement')) {
+    // 重启后输入 → **新开 turn**（不再续写原闭环节点：上下文已不连续，续写会毒化闭环节点语义）
+    for await (const _chunk of agent.chat('重启后补充：换个方案')) {
       void _chunk; // 仅消费流
     }
-    expect(agent.sessionManager!.status).toBe('running');
-    const closure = currentClosure();
-    expect(closure.id).toBe(anchorRoundId);
-    expect(closure.interactiveInputs).toHaveLength(2);
-    expect(closure.interactiveInputs![1]!.kind).toBe('supplement');
-    expect(closure.interactiveInputs![1]!.content).toBe('重启后补充：换个方案');
-    // G26：question/options 随轮持久化（roundStore 落盘，重启后仍在）；supplement 不携提问
-    expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
-    expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
-    expect(closure.interactiveInputs![1]!.question).toBeUndefined();
-    // 会话登记仍仅此一个闭环节点
+    const rounds = roundStore.listAll();
+    expect(rounds).toHaveLength(2); // 原闭环节点 + 新 turn，各自独立
+    const original = rounds.find((r) => r.id === anchorRoundId)!;
+    // 原闭环节点原样保留：1 条交互输入、question/options 随轮持久化（G26）
+    expect(original.interactiveInputs).toHaveLength(1);
+    expect(original.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+    expect(original.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+    // 新 turn 不携原闭环节点的交互输入（未续写）
+    const fresh = rounds.find((r) => r.id !== anchorRoundId)!;
+    expect(fresh.interactiveInputs ?? []).toHaveLength(0);
+    // 会话登记含原节点 + 新节点（原节点未被替换）
     const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
-    expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);
-    // checkpoint 恢复后的暂停态收口：恢复即卸载 pausedAt
-    expect(agent.sessionManager!.getCheckpoint()).not.toHaveProperty('pausedAt');
+    expect(sessionStore.getRoundIds(sessionId)).toContain(anchorRoundId);
+    expect(sessionStore.getRoundIds(sessionId)).toContain(fresh.id);
   });
 
   it('ask 提问超时未答 → cancelAsk + resumeExecution(timeout)：落「未回答」交互记录（带 question）、LLM 收到 [ASK_ABORTED] 自决、round 不分裂', { timeout: 30000 }, async () => {

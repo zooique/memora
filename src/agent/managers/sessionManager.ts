@@ -500,7 +500,15 @@ export class SessionManager {
     }
   }
 
-  /** 加载持久化检查点（Agent 重启后恢复暂停/异常会话）；不存在返回 null */
+  /**
+   * 加载持久化检查点（Agent 重启后读取上次会话快照）；不存在返回 null。
+   *
+   * 用途：① 启动路径的暂停超时归档检测（超时会话清理 + 发 `sessionPauseTimedOut`）
+   * ② 暴露检查点供宿主判定「有未完成 plan 的任务」等续跑价值 ③ error 态状态机回填。
+   *
+   * ⚠ **不回填 paused 状态**（「断电优先」裁决，2026-09-10）：重启一律以 running 起，
+   * 不恢复暂停态上下文；详见下方分支注释。
+   */
   loadPersistedCheckpoint(): SessionCheckpoint | null {
     if (!this.sessionStore?.loadCheckpoint) return null;
 
@@ -542,15 +550,18 @@ export class SessionManager {
         return null;
       }
 
-      // 恢复状态机状态
-      if (checkpoint.status === 'paused') {
-        this.stateMachine.pause('从持久化检查点恢复', 'system');
-        // 补启暂停超时定时器（唯一调用点在 pause()，此处绕过需补启，否则恢复的 paused 会话本次运行期无超时检测）
-        this.startPauseTimeoutTimer();
-      } else if (checkpoint.status === 'error' && checkpoint.error) {
+      // 状态机对齐：**paused 不回填**（「断电优先」裁决，2026-09-10）。
+      // 代码无法区分「优雅暂停后关闭」与「断电前恰好暂停」，故一律以断电为标准——进程死亡即降级为
+      // **非自愿中断**，重启后会话一律以 running 起（被中断的 turn 由宿主 `listInterruptedRecent`
+      // 打捞 → `appendInterrupted` 收场为正常 turn，用户只能**新开 turn**）。
+      // 若回填 paused：① UI 显示「已暂停」，与「只能新开 turn」冲突；② `resumeExecution` 会半途
+      // 续跑一个上下文已不连续的轮（loop 无热记忆/闭环节点锚点），实测会把补充输入分裂成新轮
+      // （2026-09-10 实锤：TS-9 重启复现用例 1 轮 → 2 轮）。故不回填。
+      // error 态仍回填（其恢复须经 agent.recover()，属独立设计，未随本裁决变更）。
+      if (checkpoint.status === 'error' && checkpoint.error) {
         this.stateMachine.triggerError(checkpoint.error.cause);
       }
-      // running 无需额外操作
+      // running / paused 均无需额外操作（paused 刻意不恢复）
 
       logger.info({ sessionId, status: checkpoint.status }, '已从持久化存储加载会话检查点');
       return checkpoint;

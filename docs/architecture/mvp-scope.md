@@ -18,7 +18,7 @@
 | 记忆 | 自动摘要（round-summary）入库，跨任务按需聚合召回（摘要即记忆，见 memory-as-summary） | 显式记忆指令、记忆管理面板 |
 | 打断 | **插话**（输入让位纠偏）+ **停止**（abort）+ **Agent 主动提问**（写作关键节点征询）+ **用户手动暂停**（内核侧 `requestPause('user')` 已实现，断点续跑） | 暂停/恢复面板（宿主 UI，当前仅内核 API） |
 | 上下文 | L1 最近轮 + 基础截断 + 摘要注入 | 成本预算、性能预算 |
-| 持久化 | 基础检查点（写文件后落一次）+ **多模式恢复**（持久化检查点恢复 paused/error/running，见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts) `loadPersistedCheckpoint`） | 热更新 |
+| 持久化 | 基础检查点（写文件后落一次）+ **检查点加载**（`loadPersistedCheckpoint` 暴露快照 + 暂停超时归档 + error 态回填；跨重启**不自动恢复暂停态**——断电优先裁决 2026-09-10，一律以 running 起，见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts)） | 热更新 |
 | 并发/隔离 | 单会话串行 | 多会话并行、资源锁、共享记忆 |
 | 护栏 | 基础输入/输出过滤（SecurityGuard 通用最小集）+ 角色包 rule 软约束护栏（经 personaPrompt 注入，LLM 视角生效，见 §二） | 完整规则体系 |
 
