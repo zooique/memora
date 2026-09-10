@@ -2,7 +2,9 @@
 
 > **2026-09-04 收敛补记**：本文论述的多 turn 编排摘要策略（"复杂收敛 → 收尾汇报 turn → 提炼汇报单源摘要""子 turn 不单产摘要""head id 组合溯源"）已随多 turn 编排层废弃。收敛后语义简化为：**一次外部输入 → 一个 turn → 一条 round-summary**，无中间 turn、无 head id 概念、无 report 单源摘要。全文其余架构（溯源标识、摘要为唯一记忆单元等）未变。
 >
-> **2026-09-09 收敛补记（memory-tool-recall-design 阶段2）**：本文件正文中作为「角色包 L2 召回键」论述的 `memoryRecallPercent` / `memoryRecall` / `summaryRecall` / `recallConfidence` / `minFallback` / `contextAssembly` 已随召回策略键族**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除；召回改由 `memory_search` 工具触发，记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载。下文相关引用均为退役前设计语义，不再代表当前 schema。
+> **2026-09-09 收敛补记（memory-tool-recall-design 阶段2）**：本文件正文中作为「角色包 L2 召回键」论述的 `memoryRecallPercent` / `memoryRecall` / `summaryRecall` / `recallConfidence` / `minFallback` / `contextAssembly` 已随召回策略键族**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除；召回改由 `search_memories` 工具触发。
+>
+> **2026-09-10 补记（减法 P2-2 · `ea76435d`）**：上述补记随后提到的「记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载」**亦已失效**——该常数连同 `ContextOccupancy.memoryTokens` / `memoryCount` 已整体删除。**现行预算与占用模型无任何记忆维度**：记忆不进 prepare 装配管线，检索唯一入口 = `search_memories` 工具，由 LLM 主动取用、按需拉取 token（非常驻预算），故**不存在「记忆层 cap」这一概念**（保留 `DEFAULT_MEMORY_CAP_RATIO` 之名即为结构性幻觉）。下文相关引用均为退役前设计语义，不再代表当前 schema。
 >
 > **2026-09-10 收敛补记（G39 P2-2 收口）**：上述替代物 `DEFAULT_MEMORY_CAP_RATIO` **亦已删除**——记忆自动注入退役后该 cap 无任何约束消费者（`recalledMemories` 恒空），属「为不存在的量算上限」。连带清理 `budget` 的 `memoryLayerCapTokens` 与占用快照的 `memoryTokens`/`memoryCount`。**现行预算/占用模型均无记忆维度**。
 >
@@ -377,7 +379,19 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 >
 > **当前形态诚实声明（2026-08-27 收敛）**：记忆库收敛为摘要单轨后，摘要是事实记录（"聊过什么"），无"过时"语义；其 score 由召回 boost 驱动（越常用越重要），记忆有效性由 superseded 写时取代判定。score 时间衰减机制已移除（见 §10 治理简化），自然遗忘仅由 superseded + 相关性排序承载。
 
+#### 4.6.2 隐式过期（implicit expiry）的显式边界声明（2026-09-10 补）
+
+业界 2026 将 **memory staleness** 列为记忆系统三大未解难题之一，主流对策是 TTL / temporal validity（让记忆随时间自然失效）。memora **不采用**该机制，这不是缺失而是**有界的设计选择**，须显式论证以免被误读为「忘了做」：
+
+- **supersede 处理的是「显式矛盾」**：新事实推翻旧事实（计划 A 改计划 B），写时即可确定取代关系（ADR-021）。
+- **TTL 处理的是「隐式过期」**：无任何新事实，但旧事实自然失效（如「我下周要去上海」过了那一周）。
+- **memora 的处理**：隐式过期**不在写入/存储层剪枝，交由检索时的 LLM 判读**——`round-summary` 天然携带 `createdAt` / `roundId` / `sessionName`，`search_memories` 命中后正文含时间信息，LLM 可据此自行判断时效。
+- **为何不引入 TTL**：① TTL 是**用时间代理语义状态**的读时猜测，与 §4.6 否决 type 时间窗同属一类错误（违反 ADR-021「写时定、不读时猜」）；② 「久未使用 ≠ 过期」，固定 TTL 会误杀仍有效的长期偏好；③ 引入独立过期机制即新增一条与 supersede 并列的失效路径，违反单一真理源。
+- **成立的边界（诚实声明）**：本选择依赖 LLM 在读取时**真的会**看时间戳做时效判断。若未来出现「LLM 把过期的时间性事实当作当前事实使用」的真实用户反馈，则应触发复评——届时优先考虑**在摘要正文内显式标注时效**（LLM 可读的结构化提示），而非引入系统级 TTL 剪枝。
+
 ### 4.6.1 角色包召回开关 × type 标签（两层协作）
+
+> **⚠️ 2026-09-10 失效标注**：本节所述 `prepare.memoryRecall` / `prepare.summaryRecall` **两键已随召回策略键族整体退役**（见文首 2026-09-09 补记）——记忆纯工具化召回后 prepare 无自动注入消费端，**「召回开关」概念不再存在于当前 schema**。本节保留为退役前设计语义（角色级约束的思路仍可作为未来「工具暴露面差异」的参考），不代表现行实现。
 
 角色包召回开关与 type 标签是**两层不同职责**，不冲突：
 

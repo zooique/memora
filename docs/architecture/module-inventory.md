@@ -102,7 +102,6 @@
 | `agent/contextManager.ts`      | 🟢 已打磨 | `__tests__/contextManager.test.ts`                       | Token 估算、上下文窗口管理、截断（优先复用已存 round-summary）                                                                      |
 | `agent/compaction.ts`          | 🟢 已打磨 | `__tests__/compaction.test.ts` (15 tests)                | 微压缩层：ResultReplacement + OffloadCompaction（资源边界）                                                               |
 | `agent/messageHistory.ts`      | 🟢 已打磨 | `__tests__/messageHistory.test.ts`                       | 消息历史管理                                                                                                         |
-| `agent/composer.ts`            | 🟢 已打磨 | `__tests__/composer.test.ts`                             | 上下文组装                                                                                                          |
 | `agent/assembler.ts`           | 🟢 已打磨 | `__tests__/assembler.test.ts`                            | 组件装配（AgentHooks + 接线回调 + sessionManager + ContextPreparer 分阶段组装）                |
 | `agent/tracer.ts`              | 🟢 已打磨 | `__tests__/tracer.test.ts` + `__tests__/metrics.test.ts` | 可观测性追踪（turn 可观察属性的载体）+ AgentMetrics 运行时指标（AgentLoop/Agent.getMetrics：LLM 调用 / 记忆召回 / 工具调用 / 上下文管理 / 任务级 SLO，5 维度） |
 | `agent/constants.ts`           | 🟢 已打磨 | `__tests__/constants.test.ts`                            | 常量定义                                                                                                           |
