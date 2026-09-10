@@ -4,7 +4,7 @@
 >
 > **2026-09-09 收敛补记（memory-tool-recall-design 阶段2）**：本文件正文中作为「角色包 L2 召回键」论述的 `memoryRecallPercent` / `memoryRecall` / `summaryRecall` / `recallConfidence` / `minFallback` / `contextAssembly` 已随召回策略键族**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除；召回改由 `memory_search` 工具触发，记忆层 cap 由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 承载。下文相关引用均为退役前设计语义，不再代表当前 schema。
 >
-> **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」（`RecalledMemorySummary` / 搜索命中返回值）不是记忆权重，仍然健在**。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
+> **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」不是记忆权重，仍然健在**——但承载它的 `RecalledMemorySummary`（recall chunk 载荷）已随自动召回展示链于 2026-09-10 物理删除，现行载体为搜索命中返回值 `AgentSearchHit.similarity`。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
 >
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >

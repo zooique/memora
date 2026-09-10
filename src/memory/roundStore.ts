@@ -131,21 +131,6 @@ export interface ProcessMetaPayload {
   llm: string;
 }
 
-/** recall 事件条目：召回记忆摘要（不含全文，指针不带内容，与作品投影同构） */
-export interface ProcessRecallItem {
-  /** 记忆唯一标识（source:name） */
-  id: string;
-  /** 记忆可读名称 */
-  name: string;
-  /** 来源标签（如 'round-summary'） */
-  source: string;
-  /**
-   * 语义相似度分（0-1）：与查询的贴合度。
-   * 命名对齐内核搜索命中的 similarity；与已退役的「记忆权重 score」（阶段3 物理删除）无关。
-   */
-  similarity: number;
-}
-
 /** metrics 事件载荷：每轮执行汇总（流结束后写一条） */
 export interface ProcessMetricsPayload {
   /** 本轮耗时（毫秒） */
@@ -156,8 +141,6 @@ export interface ProcessMetricsPayload {
   tokenOut: number;
   /** 工具调用失败次数 */
   toolFailureCount: number;
-  /** 召回记忆条数 */
-  recallCount: number;
   /** 本轮是否成功完成（false = 中断/失败） */
   success: boolean;
 }
@@ -170,7 +153,7 @@ export interface ProcessMetricsPayload {
  *
  * 事件类型全量：
  * - meta：每轮首条，该轮回答身份
- * - thinking / recall / memory_added / tool_start / tool_result：过程明细
+ * - thinking / memory_added / tool_start / tool_result：过程明细
  * - self_review / text_self_review：自审查过程与输出
  * - aborted：中断标记
  * - metrics：每轮末条，执行汇总
@@ -178,7 +161,6 @@ export interface ProcessMetricsPayload {
 export type ProcessEvent =
   | { type: 'meta'; seq: number; ts: string; payload: ProcessMetaPayload }
   | { type: 'thinking'; seq: number; ts: string; payload: { phase: ProcessThinkingPhase } }
-  | { type: 'recall'; seq: number; ts: string; payload: { memories: ProcessRecallItem[] } }
   | {
       type: 'memory_added';
       seq: number;

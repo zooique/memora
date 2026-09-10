@@ -1167,11 +1167,11 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(activityBar.textContent).toContain('会话异常');
     expect(activityBar.className).toContain('error');
     // 错误显示期间来低扰 info → 不覆盖主条，仅进历史
-    dispatch({ type: 'process_event', event: { type: 'recall', seq: 1, ts: '', payload: { memories: [{ id: 'a', name: 'm1', source: 'round-summary', similarity: 0.9 }, { id: 'b', name: 'm2', source: 'profile', similarity: 0.5 }] } } });
+    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 1, ts: '', payload: { id: 'm1', name: '决策：数据库用 PG', source: 'round-summary' } } });
     expect(activityBar.textContent).toContain('会话异常'); // 主条仍保持错误
     expect(activityBar.className).toContain('error');
     // 低扰信息进入详情历史（不丢失）
-    expect(list.textContent).toContain('已召回 2 条记忆');
+    expect(list.textContent).toContain('已沉淀：决策：数据库用 PG');
     // 新错误覆盖旧错误（P0 覆盖 P0）
     dispatch({ type: 'notice', level: 'error', message: '护栏规则未生效' });
     expect(activityBar.textContent).toContain('护栏规则未生效');
@@ -1199,14 +1199,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'chunk', content: '正文' });
   }
 
-  it('process_event 增量渲染 round-block：summary 计数 + details 各小节（召回/工具/已沉淀/执行指标）', () => {
+  it('process_event 增量渲染 round-block：summary 计数 + details 各小节（工具/已沉淀/执行指标）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '记忆A', source: 'round-summary', similarity: 0.9 }] } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
-    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 5, ts: '', payload: { id: 'm1', source: 'round-summary', name: '设计约束' } } });
-    dispatch({ type: 'process_event', event: { type: 'metrics', seq: 6, ts: '', payload: { durationMs: 62000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, recallCount: 1, success: true } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
+    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 4, ts: '', payload: { id: 'm1', source: 'round-summary', name: '设计约束' } } });
+    dispatch({ type: 'process_event', event: { type: 'metrics', seq: 5, ts: '', payload: { durationMs: 62000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
     dispatch({ type: 'done' });
 
     const rb = document.querySelector('.round-block') as HTMLElement;
@@ -1214,20 +1213,17 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // round-block 挂在本轮 assistant 块内（正文之后、操作行之前）
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.contains(rb)).toBe(true);
-    // summary：耗时（metrics）+ 叙述句（执行 1 步工具（读取 1）· 召回 1 条记忆）
+    // summary：耗时（metrics）+ 叙述句（执行 1 步工具（读取 1））
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     expect(summary.textContent).toContain('耗时 1m 2s');
     expect(summary.textContent).toContain('执行 1 步工具（读取 1）');
-    expect(summary.textContent).toContain('召回 1 条记忆');
     // 工具行移入 round-block（任务过程折叠区）工具调用小节，不重复出现在其他档案小节
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     expect(tool).not.toBeNull();
     expect(tool.textContent).toContain('读取文件：a.md (成功)');
     expect(tool.textContent).toContain('读取成功');
-    // round-block details 各小节（档案：召回/已沉淀/执行指标）
+    // round-block details 各小节（档案：已沉淀/执行指标）
     const details = rb.querySelector('.round-block__details') as HTMLElement;
-    expect(details.textContent).toContain('记忆A');
-    expect(details.textContent).toContain('round-summary · 90%');
     expect(details.textContent).toContain('设计约束');
     expect(details.textContent).toContain('Tokens：入 100 / 出 200');
     expect(details.textContent).toContain('完成：是');
@@ -1284,14 +1280,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       type: 'replay_events',
       roundId: 'r1',
       events: [
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧记忆', source: 'round-summary', similarity: 0.6 }] } },
+        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '旧记忆', source: 'round-summary' } },
         { type: 'aborted', seq: 3, ts: '', payload: { reason: 'User cancelled the conversation' } },
       ],
     });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb?.textContent).toContain('旧记忆');
     expect(rb?.textContent).toContain('已停止');
-    expect(rb?.textContent).toContain('召回 1 条记忆');
   });
 
   it('阶段二步级折叠：replay_events 含 step_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
@@ -1332,7 +1327,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧', source: 'a', similarity: 0.8 }] } } });
+    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '旧', source: 'a' } } });
     expect(document.querySelector('.process-flow')).not.toBeNull(); // v1.8：运行时平铺容器
     expect(document.querySelector('.round-block')).toBeNull(); // 运行时无大折叠壳
     dispatch({ type: 'clear_ok' });
@@ -1414,7 +1409,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       roundId: 'r:100',
       events: [
         { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo-v2.5-pro' } },
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', similarity: 0.9 }] } },
+        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
         { type: 'metrics', seq: 3, ts: '', payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 } },
       ],
     });
@@ -1431,7 +1426,6 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const rb = el.querySelector('.round-block') as HTMLElement | null;
     expect(rb).not.toBeNull();
     expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('耗时 9.6s');
-    expect(rb?.querySelector('.round-block__summary')?.textContent).toContain('召回 1 条记忆');
   });
 
   it('重放路径不会创建流式骨架引用（flowShellEl 保持 null，无残留副作用）', () => {
@@ -1458,25 +1452,26 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('两轮带过程事件的重放：折叠区各归其轮（第二轮折叠不串到第一轮顶部，2026-09-07 回归）', () => {
     mountChatView();
     // 场景：用户只测 2 个问答后重启，历史重放两轮都带过程事件
-    // 第 1 轮：召回 1 条记忆
+    // 第 1 轮：沉淀 1 条记忆
     dispatch({ type: 'user', text: '问题一', ts: 't1' });
     dispatch({
       type: 'replay_events',
       roundId: 'r:1',
       events: [
         { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', similarity: 0.9 }] } },
+        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
       ],
     });
     dispatch({ type: 'assistant', text: '回答一', ts: 't2', roundId: 'r:1' });
-    // 第 2 轮：召回 2 条记忆
+    // 第 2 轮：沉淀 2 条记忆
     dispatch({ type: 'user', text: '问题二', ts: 't3' });
     dispatch({
       type: 'replay_events',
       roundId: 'r:2',
       events: [
         { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:2', name: '角色包', source: 'round-summary', similarity: 0.8 }, { id: 'm:3', name: '任务表', source: 'round-summary', similarity: 0.7 }] } },
+        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:2', name: '角色包', source: 'round-summary' } },
+        { type: 'memory_added', seq: 3, ts: '', payload: { id: 'm:3', name: '任务表', source: 'round-summary' } },
       ],
     });
     dispatch({ type: 'assistant', text: '回答二', ts: 't4', roundId: 'r:2' });
@@ -1484,13 +1479,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(blocks).toHaveLength(2);
     expect(document.querySelectorAll('.round-block')).toHaveLength(2);
-    // 折叠区各挂各轮：第一轮块 1 个（召回 1 条）、第二轮块 1 个（召回 2 条）
+    // 折叠区各挂各轮：第一轮块含「设计哲学」，第二轮块含「角色包/任务表」，互不串轮
     const rb1 = blocks[0].querySelectorAll('.round-block');
     const rb2 = blocks[1].querySelectorAll('.round-block');
     expect(rb1).toHaveLength(1);
     expect(rb2).toHaveLength(1);
-    expect(rb1[0].querySelector('.round-block__summary')?.textContent).toContain('召回 1 条记忆');
-    expect(rb2[0].querySelector('.round-block__summary')?.textContent).toContain('召回 2 条记忆');
+    expect(rb1[0].textContent).toContain('设计哲学');
+    expect(rb1[0].textContent).not.toContain('角色包');
+    expect(rb2[0].textContent).toContain('角色包');
+    expect(rb2[0].textContent).toContain('任务表');
   });
 });
 
@@ -2817,7 +2814,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
     dispatch({ type: 'replay_events', roundId: 'round-1', events: [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 0, success: true } },
+      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
     ] as never });
     dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
     // 用户回答 → 内联子行（插在前序段之后、final 之前）
@@ -3230,7 +3227,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
     dispatch({ type: 'replay_events', roundId: 'round-1', events: [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 0, success: true } },
+      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
     ] as never });
     dispatch({ type: 'assistant', text: '你想读哪个文件？', ts: 't2', roundId: 'round-1' });
     // 带 question 的 qa（G26 形态：提问回顾行 + 回答折叠块）——修复前只折入问行、答块残留消息流
@@ -3291,7 +3288,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
     dispatch({ type: 'replay_events', roundId: 'round-1', events: [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 0, success: true } },
+      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
     ] as never });
     dispatch({ type: 'assistant', text: '在读取前需要确认：', ts: 't2', roundId: 'round-1' });
     // 重放 middle 段 timeout 行（宿主 sendRoundView 按 kind 透传；带 question/options）

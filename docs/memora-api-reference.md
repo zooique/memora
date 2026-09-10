@@ -298,7 +298,6 @@ async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, voi
 
 ```typescript
 type AgentChunk =
-  | { type: 'recall'; memories: RecalledMemorySummary[] }  // 记忆召回（携带摘要列表）
   | { type: 'thinking'; phase: ThinkingPhase }             // 推理阶段
   | { type: 'text'; content: string }  // LLM 文本片段（流式输出内容）
   | { type: 'tool_start'; toolCallId: string; name: string; args?: string }   // 工具调用开始
@@ -309,20 +308,9 @@ type AgentChunk =
   | { type: 'done' };                                      // 结束标记
 ```
 
+> **记忆召回展示链已退役（2026-09-10）**：`recall` chunk 分支与 `RecalledMemorySummary` 类型已随自动注入退役**物理删除**。记忆纯工具化后，「召回了什么」由 `memory_search` 工具的 `tool_start` / `tool_result` 过程事件天然展示；检索结果语义相似度分见 `AgentSearchHit.similarity`。
+
 `ThinkingPhase` 取值：`'recalling' | 'processing' | 'archiving'`
-
-#### `RecalledMemorySummary` 类型（recall chunk 载荷）
-
-仅暴露 UI 展示所需字段，不包含 `content`（避免向 UI 层泄露完整记忆内容）：
-
-```typescript
-interface RecalledMemorySummary {
-  id: string;       // 记忆唯一标识（source:name 格式，用于前端精准跳转详情）
-  name: string;     // 记忆可读名称（点击跳转记忆详情用）
-  score: number;    // 相似度分数（0-1）
-  source: string;   // 来源标签（开放字符串，如 'rule'、'round-summary'、'work-projection'）
-}
-```
 
 ### 3.2 `chatSync(input, signal?)` — 同步版（仅供测试用）
 
@@ -906,11 +894,12 @@ import { NOOP_TRACER } from '@zooique/memora';
 ```typescript
 import { TRACE_SPANS } from '@zooique/memora';
 
-TRACE_SPANS.RECALL     // 'recall.recall'    — 记忆召回阶段
 TRACE_SPANS.LLM_CALL   // 'llm.call'         — LLM API 调用
 TRACE_SPANS.TOOL_EXEC  // 'tool.execute'     — 工具执行
 TRACE_SPANS.RESPONSE   // 'response.generate' — 整轮响应
 ```
+
+> `TRACE_SPANS.RECALL`（`'recall.recall'`）与 `TRACE_SPANS.RECALL_ACTUAL`（`'recall.actual'`）常量仍在，但自动注入退役后**已无 emit 点**（记忆检索移交 `memory_search` 工具）。
 
 ---
 
@@ -971,7 +960,6 @@ export type {
   AgentProjectEntry,
 } from '@zooique/memora';
 export { type AgentForkResult } from '@zooique/memora';
-export type { RecalledMemorySummary } from '@zooique/memora';
 export type { SessionCheckpoint } from '@zooique/memora';
 
 // 记忆快照与搜索（MemoryInspector）

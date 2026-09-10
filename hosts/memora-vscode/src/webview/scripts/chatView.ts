@@ -652,7 +652,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return `${m}m ${s}s`;
   }
 
-  /** 事件统计：工具（含分型）/ 记忆 / 审查（运行时与重放同一函数，SSOT 杜绝两处算法）。
+  /** 事件统计：工具（含分型）/ 审查（运行时与重放同一函数，SSOT 杜绝两处算法）。
    * 分型计数供收尾叙述句「执行 N 步工具（读取 x · 搜索 y）」使用 */
   function countEvents(events: ProcessEvent[]): {
     tools: number;
@@ -661,7 +661,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     writes: number;
     runs: number;
     others: number;
-    memories: number;
     reviews: number;
   } {
     const toolTypes = events
@@ -674,7 +673,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       writes: toolTypes.filter((t) => t === 'write').length,
       runs: toolTypes.filter((t) => t === 'run').length,
       others: toolTypes.filter((t) => t === 'other').length,
-      memories: events.reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
       reviews: events.filter((e) => e.type === 'self_review').length,
     };
   }
@@ -1154,7 +1152,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           subtypeParts.length > 0 ? `执行 ${stats.tools} 步工具（${subtypeParts.join(' · ')}）` : `工具×${stats.tools}`,
         );
       }
-      if (stats.memories > 0) parts.push(`召回 ${stats.memories} 条记忆`);
       if (stats.reviews > 0) parts.push(`审查 ${stats.reviews} 次`);
       const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
       if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
@@ -1241,24 +1238,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       }
     }
-    // § 召回记忆 (N)
-    const recalls = events.filter((e): e is Extract<ProcessEvent, { type: 'recall' }> => e.type === 'recall');
-    const recallItems = recalls.flatMap((e) => e.payload.memories);
-    if (recallItems.length > 0) {
-      const { listEl } = sectionOf(details, '召回记忆');
-      recallItems.forEach((m) => {
-        const row = document.createElement('div');
-        row.className = 'round-block__row';
-        const name = document.createElement('span');
-        name.className = 'round-block__recall-name';
-        name.textContent = m.name || m.id;
-        const metaEl = document.createElement('span');
-        metaEl.className = 'round-block__recall-meta';
-        metaEl.textContent = `${m.source} · ${Math.round(m.similarity * 100)}%`;
-        row.append(name, metaEl);
-        listEl.appendChild(row);
-      });
-    }
     // § 已沉淀 (N)
     const added = events.filter((e): e is Extract<ProcessEvent, { type: 'memory_added' }> => e.type === 'memory_added');
     if (added.length > 0) {
@@ -1306,7 +1285,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const lines = [
         `耗时：${fmtDuration(metrics.payload.durationMs)}`,
         `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
-        `召回记忆：${metrics.payload.recallCount} 条`,
         `工具失败：${metrics.payload.toolFailureCount} 次`,
         `完成：${metrics.payload.success ? '是' : '否（中断/失败）'}`,
       ];
@@ -3277,10 +3255,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
         interactiveRowInserted = false; // 消费式：meta 判定后即清（防残留阻断下一「无输入 continue」原位续写）
       } else {
-        if (ev.type === 'recall') {
-          // 瞬时反馈：本轮召回 N 条（与折叠区 § 召回记忆同一数据源）
-          showActivity('info', `已召回 ${ev.payload.memories.length} 条记忆`);
-        } else if (ev.type === 'memory_added') {
+        if (ev.type === 'memory_added') {
           showActivity('info', `已沉淀：${ev.payload.name || ev.payload.id}`);
         } else if (ev.type === 'thinking') {
           // 归档停滞兜底：archiving 激活即调度超时收起呼吸点

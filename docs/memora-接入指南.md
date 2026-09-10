@@ -510,10 +510,11 @@ interface ISpan {
 
 | Span 名称 | 常量 | 触发时机 | 关键属性 |
 |-----------|------|---------|---------|
-| `recall.recall` | `TRACE_SPANS.RECALL` | 记忆召回阶段 | `recallCount` |
 | `llm.call` | `TRACE_SPANS.LLM_CALL` | LLM API 调用 | `model`, `messageCount`, `iteration` |
 | `tool.execute` | `TRACE_SPANS.TOOL_EXEC` | 工具执行 | `toolName` |
 | `response.generate` | `TRACE_SPANS.RESPONSE` | 整轮响应 | `inputLength` |
+
+> `TRACE_SPANS.RECALL` / `TRACE_SPANS.RECALL_ACTUAL`（`recall.recall` / `recall.actual`）常量仍在，但**自动注入退役后已无 emit 点**（记忆检索移交 `memory_search` 工具）——宿主无需为其编写 span 处理逻辑。
 
 ### 宿主接入示例（OpenTelemetry）
 

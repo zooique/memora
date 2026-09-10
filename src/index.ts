@@ -6,14 +6,12 @@
 
 // ─── 库导出：供宿主项目 import 接入 ──────────────────────
 export { Agent } from '@/agent/agent.js';
-// RecalledMemorySummary：recall chunk 载荷类型，宿主渲染召回记忆列表时需要
 export type {
   AgentChunk,
   ThinkingPhase,
   AbortStopReason,
   UIMessages,
   ArchiveMode,
-  RecalledMemorySummary,
   AgentOptions,
   AgentContext,
   AgentProjectEntry,
@@ -218,7 +216,6 @@ export type {
   ProcessEvent,
   ProcessThinkingPhase,
   ProcessMetaPayload,
-  ProcessRecallItem,
   ProcessMetricsPayload,
 } from '@/memory/roundStore.js';
 // Round 辅助函数

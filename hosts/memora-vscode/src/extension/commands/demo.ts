@@ -125,9 +125,6 @@ function appendChunk(
   chunk: AgentChunk,
 ): void {
   switch (chunk.type) {
-    case 'recall':
-      output.appendLine(`🔎 召回记忆：${chunk.memories.length} 条`);
-      break;
     case 'thinking':
       output.appendLine(`   [思考] 阶段：${chunk.phase}`);
       break;

@@ -137,14 +137,13 @@ ProcessEvent = {
 | ------------------ | ------------------------------------------------------------------ | --------------------- |
 | `meta`（每轮首条）       | `role`（角色显示名）+ `llm`（模型显示名）                                        | 顶部角色徽章 + LLM 名称（该轮应答） |
 | `thinking`         | `phase`（recalling/llm\_calling/processing/archiving）               | 思考折叠块                 |
-| `recall`           | 记忆 `id/name/source/score` 摘要                                       | 召回记忆列表                |
 | `memory_added`     | `id/name/source`（对应内核 `memoryAdded` 事件）                            | 「已沉淀：xx」提示条           |
 | `tool_start`       | `toolCallId/name/args`（args 超长截断）                                  | 工具执行记录                |
 | `tool_result`      | `toolCallId/ok/summary`                                            | 工具完成态                 |
 | `self_review`      | `round` + 自审查文本                                                    | 自审查过程块                |
 | `text_self_review` | 自审查段内容（`text` chunk `stage='self_review'` 分段）                      | 自审查输出分段               |
 | `aborted`          | `reason`                                                           | 「已停止」标记               |
-| `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/recallCount/success` | 顶栏耗时 + § 执行指标         |
+| `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/success`             | 顶栏耗时 + § 执行指标         |
 
 > **meta 粒度定案（2026-08-28 评审修正，v1.5 单源收紧）**：`meta` 是 **round 级**而非会话首轮——用户可在同一会话内随时切换 LLM 与角色包（`chat_set_provider` / `roles_set_active`），首轮快照无法还原后续轮次的状态。每轮首条写 `meta`，重放时该轮 meta 写入**本轮身份** `currentRoundMeta`、该轮 AI 消息按它挂对应角色/模型标签；**不覆盖会话级顶栏**（顶栏唯一真理源 = `chat_role_pack`，见 §3.7——删除「顶栏 = 最后重放轮 meta」的伪真理源表述）。`meta.role` 存角色**显示名**（displayName ?? name，与 AI 消息标签同源）、`meta.llm` 存模型**显示名**（displayName ?? name）——重放不依赖 ProviderStore / RolePackManager 即可渲染。
 >

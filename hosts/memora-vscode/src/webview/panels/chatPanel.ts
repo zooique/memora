@@ -2426,7 +2426,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
     this._agent.on('questionPending', onPendingQuestion);
     // 监听记忆沉淀事件（memoryAdded，非 chunk 通道）→ 与 chunk 同源进过程事件缓冲（v1.5 单源，
-    // 渲染/落盘同一份 ProcessEvent；「已召回 N 条」由 webview 解析 recall 事件本地派生，不再单发消息）
+    // 渲染/落盘同一份 ProcessEvent）
     const onMemoryAdded = (info: { id: string; source: string; name: string }) => {
       emitEvent('memory_added', { id: info.id, name: info.name, source: info.source });
     };
@@ -2508,18 +2508,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 表现为「中断后的问答闭环不落盘」。必须让流自然走完（aborted 是末块，后续无 text）。
           // 中断通知统一由本方法末尾按 controller.signal.aborted 发出。
           emitEvent('aborted', { reason: chunk.reason, ...(chunk.stopReason ? { stopReason: chunk.stopReason } : {}) });
-          continue;
-        }
-        // 召回明细 → 过程事件（webview 据此渲染 § 召回记忆 + 瞬时「已召回 N 条」提示）
-        if (chunk.type === 'recall' && chunk.memories.length > 0) {
-          emitEvent('recall', {
-            memories: chunk.memories.map((m) => ({
-              id: m.id,
-              name: m.name,
-              source: m.source,
-              similarity: m.similarity,
-            })),
-          });
           continue;
         }
         if (chunk.type === 'text' && chunk.content) {
@@ -2639,7 +2627,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         toolFailureCount: [...eventsByRound.values()]
           .flat()
           .filter((e) => e.type === 'tool_result' && !e.payload.ok && !e.payload.blocked).length,
-        recallCount: [...eventsByRound.values()].flat().reduce((sum, e) => (e.type === 'recall' ? sum + e.payload.memories.length : sum), 0),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });
       // step 原子检查点（2026-09-09 档2）：流尾最终落盘复用同一合并语义（SSOT）——

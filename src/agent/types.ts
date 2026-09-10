@@ -16,29 +16,11 @@ export type ThinkingPhase =
   | 'step'
   | 'reporting';
 
-/**
- * 召回记忆摘要（仅暴露 UI 展示所需字段，不含 content，避免泄露完整记忆内容）
- */
-export interface RecalledMemorySummary {
-  /** 记忆唯一标识（source:name，前端跳转详情） */
-  id: string;
-  /** 可读名称（点击跳转详情） */
-  name: string;
-  /**
-   * 语义相似度分（0-1）：与查询的贴合度，每次检索实时计算。
-   * 注意与已退役的「记忆权重 score」（阶段3 物理删除）无关——本字段是检索结果属性，非记忆固有属性。
-   */
-  similarity: number;
-  /** 来源标签（开放字符串，如 'rule'、'round-summary'） */
-  source: string;
-}
-
 /** turn 归属标记：chunk 携带所在 turn roundId（SSOT：过程事件归属由内核唯一提供，
  *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */
 export type RoundTagged = { roundId?: string };
 
 export type AgentChunk = (
-  | { type: 'recall'; memories: RecalledMemorySummary[] }
   | {
       type: 'thinking';
       phase: ThinkingPhase;

@@ -298,12 +298,12 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'user', content: '问题A', ts: 't1' },
       { role: 'assistant', content: '回答A', ts: 't2' },
     ]);
-    // 为第一轮补过程事件（meta 首条 + recall + metrics 末条）
+    // 为第一轮补过程事件（meta 首条 + memory_added + metrics 末条）
     const round = roundStore.getById('round-1')!;
     round.processEvents = [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '记忆', source: 'round-summary', similarity: 0.8 }] } },
-      { type: 'metrics', seq: 3, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 1, success: true } },
+      { type: 'memory_added', seq: 2, ts: 't1', payload: { id: 'r:1', name: '记忆', source: 'round-summary' } },
+      { type: 'metrics', seq: 3, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
     ];
     roundStore.save(round);
 
@@ -323,7 +323,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // replay_events：roundId 关联正确，且 meta 为整批首条（webview 端自行提取身份，不再单独发）
     const replay = posted[idxReplay] as { roundId: string; events: { type: string }[] };
     expect(replay.roundId).toBe('round-1');
-    expect(replay.events.map((e) => e.type)).toEqual(['meta', 'recall', 'metrics']);
+    expect(replay.events.map((e) => e.type)).toEqual(['meta', 'memory_added', 'metrics']);
     expect((replay.events[0] as unknown as { payload: { role: string; llm: string } }).payload).toEqual({
       role: '文档设计师',
       llm: 'deepseek-chat',

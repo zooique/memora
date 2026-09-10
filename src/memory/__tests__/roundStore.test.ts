@@ -251,15 +251,15 @@ describe('问答闭环存储', () => {
 
   describe('processEvents 过程事件透传', () => {
     it('应该完整透传保存的 processEvents（含 seq 顺序与各类型 payload）', () => {
-      // 构造一轮完整的过程事件（meta 首条 → recall → tool_start → metrics 末条）
+      // 构造一轮完整的过程事件（meta 首条 → thinking → tool_start → metrics 末条）
       const round = createPendingRound('你好');
       const completed = completeRound(round, '你好！');
       const events: ProcessEvent[] = [
         { type: 'meta', seq: 1, ts: '2026-08-28T00:00:00.000Z', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-        { type: 'recall', seq: 2, ts: '2026-08-28T00:00:01.000Z', payload: { memories: [{ id: 'round-summary:r1', name: '设计约束', source: 'round-summary', similarity: 0.9 }] } },
+        { type: 'thinking', seq: 2, ts: '2026-08-28T00:00:01.000Z', payload: { phase: 'processing' } },
         { type: 'tool_start', seq: 3, ts: '2026-08-28T00:00:02.000Z', payload: { toolCallId: 'tc1', name: 'read_file', args: '{"path":"a.md"}' } },
         { type: 'tool_result', seq: 4, ts: '2026-08-28T00:00:03.000Z', payload: { toolCallId: 'tc1', name: 'read_file', ok: true, summary: '读取成功' } },
-        { type: 'metrics', seq: 5, ts: '2026-08-28T00:00:04.000Z', payload: { durationMs: 4000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, recallCount: 1, success: true } },
+        { type: 'metrics', seq: 5, ts: '2026-08-28T00:00:04.000Z', payload: { durationMs: 4000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } },
       ];
       completed.processEvents = events;
       store.save(completed);
@@ -267,7 +267,7 @@ describe('问答闭环存储', () => {
       // 找回后事件完整且顺序一致
       const retrieved = store.getById(completed.id);
       expect(retrieved?.processEvents).toHaveLength(5);
-      expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'recall', 'tool_start', 'tool_result', 'metrics']);
+      expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
       expect(retrieved?.processEvents?.[0]).toEqual(events[0]);
       expect(retrieved?.processEvents?.[4]).toEqual(events[4]);
     });

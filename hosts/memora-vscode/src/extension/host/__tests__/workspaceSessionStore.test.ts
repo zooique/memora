@@ -356,7 +356,7 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       refCount: 1,
       processEvents: [
         { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-        { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '设计约束', source: 'round-summary', similarity: 0.8 }] } },
+        { type: 'memory_added', seq: 2, ts: 't1', payload: { id: 'r:1', name: '设计约束', source: 'round-summary' } },
         { type: 'aborted', seq: 3, ts: 't2', payload: { reason: 'User cancelled the conversation' } },
       ],
     };
@@ -367,7 +367,7 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
     roundStore.load();
     const retrieved = roundStore.getById('round-e1');
     expect(retrieved?.processEvents).toEqual(round.processEvents);
-    expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'recall', 'aborted']);
+    expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'memory_added', 'aborted']);
   });
 
   it('删除 round 即删 processEvents（生命周期原子，无独立文件需联动）', () => {
