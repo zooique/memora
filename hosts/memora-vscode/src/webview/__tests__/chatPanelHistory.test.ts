@@ -453,7 +453,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   });
 
   // ─── 历史会话占用重算（轻量版方案，2026-08-31）：切会话后圆环展示真实占用而非空态 0% ───
-  it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值 + 记忆层置 0', async () => {
+  it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值', async () => {
     const { store, roundStore, provider, posted } = setup();
     // viewLoader + roundStore：round-based 消息路径
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
@@ -476,7 +476,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
     // 等待 fire-and-forget 的 postHistoryOccupancy（async）落定
     await vi.waitFor(() => {
-      const occs = ofType<{ type: string; occupancy: { dialogueCount: number; rolePackBaseTokens: number; memoryCount: number } }>(
+      const occs = ofType<{ type: string; occupancy: { dialogueCount: number; rolePackBaseTokens: number } }>(
         posted,
         'context_occupancy',
       );
@@ -484,10 +484,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       expect(occs.length).toBeGreaterThanOrEqual(1);
       const occ = occs[occs.length - 1]!.occupancy;
       // 对话层 = 1 个问答闭环（1 条 user，assistant 不计入条数，2026-09-01 定案）
-      // 角色包 = 当前装配值；记忆层历史会话置 0
+      // 角色包 = 当前装配值
       expect(occ.dialogueCount).toBe(1);
       expect(occ.rolePackBaseTokens).toBe(15000);
-      expect(occ.memoryCount).toBe(0);
     });
   });
 

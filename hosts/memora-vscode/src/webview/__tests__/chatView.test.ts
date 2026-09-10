@@ -622,16 +622,14 @@ describe('chatView clear_ok 消息区清理', () => {
           anchorTokens: 200,
           remainingTokens: 96_800,
           dialogueBudgetTokens: 87_120,
-          memoryLayerCapTokens: 38_720,
         },
       },
     });
     expect(metrics.hidden).toBe(false);
-    // 预算行展示：可用/锚点/对话层/记忆 cap/剩余（k 缩写）
+    // 预算行展示：可用/锚点/对话层/剩余（k 缩写）
     expect(metrics.textContent).toContain('预算：可用 97k');
     expect(metrics.textContent).toContain('锚点 200');
     expect(metrics.textContent).toContain('对话层 87k');
-    expect(metrics.textContent).toContain('记忆 cap 39k');
     expect(metrics.textContent).toContain('剩余 97k');
   });
 
@@ -2240,18 +2238,14 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       occupancy: {
         totalTokens: 128000,
         rolePackBaseTokens: 20000,
-        memoryTokens: 2000,
         dialogueTokens: 2000,
         dialogueCount: 3,
-        memoryCount: 2,
         inputAnchorTokens: 0,
         outputReserveTokens: 19200,
-        freeTokens: 84800,
+        freeTokens: 86800,
       },
     });
     expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('完整对话：3 条');
-    // 「记忆摘要」段已隐藏（§2.4 定案：自动注入退役后 memoryTokens/memoryCount 恒 0，无信息量）；DTO 字段保留
-    expect((document.getElementById('occTip') as HTMLElement).textContent).not.toContain('记忆摘要');
     // 同款 chat_providers 再推送（如面板刷新）→ 上限未变 → 不把已用清回 0
     dispatch({
       type: 'chat_providers',
@@ -2302,27 +2296,23 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       occupancy: {
         totalTokens: 64000,
         rolePackBaseTokens: 15000,
-        memoryTokens: 1000,
         dialogueTokens: 1000,
         dialogueCount: 2,
-        memoryCount: 1,
         inputAnchorTokens: 50,
         outputReserveTokens: 9600,
-        freeTokens: 37350,
+        freeTokens: 38350,
       },
     });
-    // 更新：百分比取整显示 42%（41.64% → toFixed(0)）
-    expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('42%');
-    // 圆环充能：dashoffset 用精确比例 (64000−37350)/64000 = 0.4164（弧线精确、显示取整）
+    // 更新：百分比取整显示 40%（40.08% → toFixed(0)）
+    expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('40%');
+    // 圆环充能：dashoffset 用精确比例 (64000−38350)/64000 = 0.4008（弧线精确、显示取整）
     const fill = document.getElementById('occFill') as unknown as SVGCircleElement;
-    const expectedOffset = 2 * Math.PI * 16 * (37350 / 64000);
+    const expectedOffset = 2 * Math.PI * 16 * (38350 / 64000);
     expect(Number(fill.style.strokeDashoffset)).toBeCloseTo(expectedOffset, 1);
     // 明细弹窗：含角色包比例 + 条数 + token（fmtTokens 整千缩写 15K/1K）
     const tip = (document.getElementById('occTip') as HTMLElement).textContent ?? '';
     expect(tip).toContain('总容量 64K');
     expect(tip).toContain('完整对话：2 条 · 1K');
-    // 「记忆摘要」段已隐藏（§2.4 定案）；DTO 字段保留作诊断
-    expect(tip).not.toContain('记忆摘要');
     expect(tip).toContain('角色包/系统设定：15K（占窗口 23.4%）');
   });
 });

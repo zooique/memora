@@ -372,12 +372,10 @@ describe('AgentMetrics · 类型结构', () => {
       anchorTokens: 200,
       remainingTokens: 96_800,
       dialogueBudgetTokens: 87_120,
-      memoryLayerCapTokens: 38_720,
     });
     const budget = loop.getMetrics().context.budget;
     expect(budget).toBeDefined();
     expect(budget!.dialogueBudgetTokens).toBe(87_120);
-    expect(budget!.memoryLayerCapTokens).toBe(38_720);
   });
 
   it('recordOccupancy 后 getMetrics().context.occupancy 透出（④ 预算可视化·真实占用）', () => {
@@ -396,11 +394,9 @@ describe('AgentMetrics · 类型结构', () => {
       rolePackBaseTokens: 3_000,
       dialogueTokens: 12_000,
       dialogueCount: 3,
-      memoryTokens: 4_000,
-      memoryCount: 2,
       inputAnchorTokens: 800,
       outputReserveTokens: 18_000,
-      freeTokens: 82_200,
+      freeTokens: 86_200,
     });
     const occ = loop.getMetrics().context.occupancy;
     expect(occ).toBeDefined();
@@ -429,8 +425,6 @@ describe('AgentMetrics · 类型结构', () => {
       rolePackBaseTokens: 3_000,
       dialogueTokens: 12_000,
       dialogueCount: 99,
-      memoryTokens: 0,
-      memoryCount: 0,
       inputAnchorTokens: 0,
       outputReserveTokens: 18_000,
       freeTokens: 87_000,
@@ -446,7 +440,6 @@ describe('AgentMetrics · 类型结构', () => {
     expect(occ.dialogueTokens).toBeGreaterThan(0);
     // 其余段不被重算（守 SSOT，沿用快照）
     expect(occ.rolePackBaseTokens).toBe(3_000);
-    expect(occ.memoryTokens).toBe(0);
   });
 
   it('对话占用实时刷新：assistant 落盘后容量补含回答（残缺/中止回复如实计入容量）', () => {
@@ -462,8 +455,6 @@ describe('AgentMetrics · 类型结构', () => {
       rolePackBaseTokens: 3_000,
       dialogueTokens: 5_000,
       dialogueCount: 99,
-      memoryTokens: 0,
-      memoryCount: 0,
       inputAnchorTokens: 0,
       outputReserveTokens: 18_000,
       freeTokens: 94_000,

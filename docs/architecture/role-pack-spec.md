@@ -448,7 +448,7 @@ export interface IMcpTransport {
 | prepare | `prepare.recentRounds`        | 正整数                                                   | 固定加载轮数（**删除**：被「上下文预算装配」动态轮数取代，见本节文末；实现直接移除，不留过渡兼容）                                        | 废弃      | 动态填充后轮数为派生值，不再显式声明                                                                                                                                    |
 | prepare | `prepare.memoryRecall`        | `full` / `limited` / `none`                           | 长期记忆召回（**删除**（2026-09-09 阶段2）：记忆纯工具化召回后无自动注入消费端；实现直接移除 `resolveMemoryRecallMode`）            | 废弃      | 删除（recall 改由 `memory_search` 工具触发）                                                                                                                              |
 | prepare | `prepare.memoryRecallQuota`   | 正整数                                                   | 记忆召回限额（token，绝对量）（**删除**：过渡到百分比，见本节文末；实现直接移除 `resolveMemoryRecallQuota`）                   | 废弃      | limited 裁剪改为按 `memoryRecallPercent` cap 换算                                                                                                            |
-| prepare | `prepare.memoryRecallPercent` | 0.0\~1.0（角色包设）                                        | 记忆召回占可用预算的百分比（cap 非 quota）（**删除**（2026-09-09 阶段2）：记忆层 cap 由缺口常数取代，见 §上下文预算装配；实现直接移除 `resolveMemoryRecallPercent`） | 废弃      | 记忆层 cap 恒用内核固定比例 0.4（`budget.ts` `DEFAULT_MEMORY_CAP_RATIO`），不再由角色包声明                                                                                    |
+| prepare | `prepare.memoryRecallPercent` | 0.0\~1.0（角色包设）                                        | 记忆召回占可用预算的百分比（cap 非 quota）（**删除**（2026-09-09 阶段2）：记忆层 cap 由缺口常数取代，见 §上下文预算装配；实现直接移除 `resolveMemoryRecallPercent`） | 废弃      | 记忆层 cap 曾恒用内核固定比例 0.4（`budget.ts` `DEFAULT_MEMORY_CAP_RATIO`）——**该常数亦已于 2026-09-10 删除**（记忆层整体退役，预算模型无记忆维度） |
 | prepare | `prepare.summaryRecall`       | `on` / `off`                                          | 摘要召回（**删除**（2026-09-09 阶段2）：等价语义承接为 `memory_search` 工具 `source` 过滤参数，不引全局键）                       | 废弃      | 删除（全局键语义消失：查询时自选 source 过滤）                                                                                        |
 | prepare | `prepare.summaryFocus`        | 非空字符串                                                 | 角色包提炼视角：判断 round-summary「值得记什么」的信息维度与保留形式（领域无关机制，替换通用归纳框架，JSON+SummaryType 硬契约保留；内容由角色包提供） | 冻结      | 由实现提炼进标准（结构化信息保真 + 提炼侧视角下沉）；memora 消费（agent.ts → `resolveSummaryFocus` → `roundSummaryGenerator.generate` 注入提炼视角 prompt）；首个消费者为编程/方案卡，未达「≥2 处复用」机制化门槛 |
 | prepare | `prepare.minFallback`         | 非负整数                                                  | 召回保底下限（**删除**（2026-09-09 阶段2）：角色包策略键退役，recall() 函数层默认由 recall.ts 自持），不作用于 loop 自循环阶段的压缩摘要上限                 | 废弃      | `DEFAULT_MIN_FALLBACK` 曾下沉 `utils/recallDefaults.ts`（2026-09-10 随 `recall()` 召回编排一并删除），recall() 调用方按需传参，不经角色包策略 ||
@@ -491,15 +491,17 @@ export interface IMcpTransport {
 
 固定 N 轮与内容长短脱节——短消息浪费容量、长内容（代码粘贴）超限触发 contextManager 截断丢旧消息。把「装几轮」改成派生值，由「角色包分配偏好 × 模型运行时容量」共同决定，才能真正用满窗口。
 
-#### B. 角色包键面（阶段2 后归零，记忆层 cap 由内核常数承载）
+#### B. 角色包键面（阶段2 后归零）
 
-> **阶段2 注记（2026-09-09，memory-tool-recall-design）**：本表两个分配键 `prepare.memoryRecallPercent` / `prepare.minFallback` 已随召回策略键族**整体退役**（表② minFallback 本属召回保底，非「记忆摘要层分配」，归入键族一并移除）。记忆摘要层 cap 比率现为**内核常数** `budget.ts` 的 `DEFAULT_MEMORY_CAP_RATIO = 0.4`（见 §上下文预算装配 顶层常量），不再由角色包声明——「上下文预算装配」动态轮数填充机制本身保留。
+> **阶段2 注记（2026-09-09，memory-tool-recall-design）**：本表两个分配键 `prepare.memoryRecallPercent` / `prepare.minFallback` 已随召回策略键族**整体退役**（表② minFallback 本属召回保底，非「记忆摘要层分配」，归入键族一并移除）。记忆摘要层 cap 比率曾为**内核常数** `budget.ts` 的 `DEFAULT_MEMORY_CAP_RATIO = 0.4`，不再由角色包声明——「上下文预算装配」动态轮数填充机制本身保留。
+>
+> **收敛补记（2026-09-10，G39 P2-2 收口）**：上述 `DEFAULT_MEMORY_CAP_RATIO` **亦已删除**。记忆自动注入退役后该 cap 无任何约束消费者（`recalledMemories` 恒空），属「为不存在的量算上限」→ 连同 `memoryLayerCapTokens`、`ContextOccupancy.memoryTokens/memoryCount` 一并清理。**现行预算/占用模型均无记忆维度**。
 
 迁移面下 L2 键**原**保留 2 个分配键（现均已退役，列此留档）：
 
 | # | 键                                       | 作用域           | 含义（退役前）                                                                        |
 | - | --------------------------------------- | ------------- | ---------------------------------------------------------------------------------- |
-| ① | `prepare.memoryRecallPercent`（0.0\~1.0） | 分配上限（cap，非定额） | **记忆摘要层占可用预算的上限百分比**。记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写。现由内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 取代 |
+| ① | `prepare.memoryRecallPercent`（0.0\~1.0） | 分配上限（cap，非定额） | **记忆摘要层占可用预算的上限百分比**。记忆摘要层 = 完整对话层填满后剩余空间的拾遗填充，≤ 预算 × 该值；只装完整对话层未覆盖的旧摘要；与正文章节互斥不双写。**该机制与替代它的内核常数 `DEFAULT_MEMORY_CAP_RATIO=0.4` 均已退役（2026-09-10）** |
 | ② | `prepare.minFallback`（非负整数）             | 运行前装配保底       | **召回保底下限**：recall 语义结果不足此数时，补最近记忆补足。曾由 `utils/recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK=2` 函数层默认取代；该常量已随 2026-09-10 剪枝删除（`recall()` 召回编排整体退役），召回保底机制**不存于现行实现**           |
 
 > 原键面③ `global.taskLoopLimit`（硬上限兜底）已删除（2026-09-06，见上表删除标注）：loop 迭代上限现由 `stepBudget`（软上限）与内核 `maxIterations`（`DEFAULT_MAX_ITERATIONS` 兜底）双重承载，不再设角色包「硬上限」键。
@@ -515,11 +517,10 @@ export interface IMcpTransport {
 剩余预算    = 可用预算 − 顶级锚点空间
 
 完整对话层 = 剩余预算，从最近往回塞到 ~90% 止（先装，锚点不动）
-记忆摘要层 = 剩余预算 − 完整对话层实际占用（拾遗填充，≤ 剩余预算 × 内核常数 `DEFAULT_MEMORY_CAP_RATIO`（0.4））
 动态轮数   = 完整对话层能装几轮就是几轮（派生值，不显式声明）
 ```
 
-* **现为内核固定 cap 而非角色包 quota**：完整对话层无条件优先，记忆摘要层是"完整对话层填满后剩余空间的拾遗"，`DEFAULT_MEMORY_CAP_RATIO` 只封顶防止记忆挤占对话（洞 2 解法）——阶段2（2026-09-09）该 cap 由角色包键 `memoryRecallPercent` 退役为内核常数（`budget.ts`），不再逐包声明。
+* **记忆摘要层已整体退役**（2026-09-09 阶段2 + 2026-09-10 收口）：原「剩余预算 − 完整对话层实际占用」的拾遗填充 + `DEFAULT_MEMORY_CAP_RATIO` 封顶机制**已随记忆自动注入退役而删除**——记忆改为纯工具召回（`memory_search`），prepare 不再注入任何记忆（`recallAndInject` 恒返回空数组），故预算模型中**无记忆维度**。原角色包键 `memoryRecallPercent` 与内核常数 `DEFAULT_MEMORY_CAP_RATIO` 均已移除。
 
 * **顶级锚点独立划块**：触发输入+首个回答自预算公式最上游划走，永不压缩；剩余预算低于最小可运行阈值 → 装配前判定无法支撑 loop（确定性拒绝，而非跑起来后提前软上限）（洞 3 解法）。洞 3 有**两道防线**：
 
@@ -527,7 +528,7 @@ export interface IMcpTransport {
 
   * **第二道 · 装配前判负（兜底）**：即便第一道放行了，装配前仍用公式算一遍——顶级锚点划走后剩余预算 < 最小可运行阈值 → 确定性拒绝/降级（提示"内容过大，建议放进文件用 read\_file 读"），而非放任跑起来后提前软上限。
 
-三层分工：容量（Provider/模型，运行时）→ cap 常数（内核 `DEFAULT_MEMORY_CAP_RATIO`，仅封顶）+ 锚点（内核，独立划块）→ 轮数（内核按预算填充派生）。
+三层分工：容量（Provider/模型，运行时）→ 锚点（内核，独立划块）→ 轮数（内核按预算填充派生）。
 
 > **补记（2026-09-10，口径核实）**：上式已与实现逐项对齐（`budget.ts` `computeContextBudget`）。补充三点**实现事实**：
 >
@@ -535,8 +536,8 @@ export interface IMcpTransport {
 > 2. **「两道线」不是同一个比例，勿混**：
 >    * **装配线**（决定「装多少」）：`可用 = 窗口 × (1 − DEFAULT_OUTPUT_RESERVE_RATIO 0.15) − 固定开销`；`完整对话层 = 剩余 × DEFAULT_DIALOGUE_FILL_RATIO 0.9`。
 >    * **截断线**（决定「超了砍到多少」）：`ContextManager.truncateMessages` 触发于 `token > maxContextTokens`，把 payload 压到 `窗口 × CONTEXT_TOKENS_BUFFER_RATIO 0.9 − system`（`constants.ts:131`），从尾部向前装、中间裁掉（关键消息 + 摘要 + 占位）。**每次迭代送 LLM 前必经**，故正常运行不会溢出。
->    * **口径分叉（登记）**：两处「给模型回答的预留」分别取 **15%**（装配）与 **10%**（截断，= 1 − 0.9），且两个 `0.9` 基准不同（剩余预算 vs 窗口）。阶段不同、非 bug，但属「同名不同义」，后续统一命名或显式注明。
-> 3. **`memoryLayerCapTokens` 已无约束消费者**：记忆自动注入退役（2026-09-09）后它不再封顶任何真实注入，仅经 `protocol.ts` 透传给宿主 webview 展示「记忆 cap」。属**展示残留**，待收起或改称诊断值（登记，勿再当作生效约束引用）。
+>    * **口径分叉（已注明，2026-09-10）**：两处「给模型回答的预留」分别取 **15%**（装配）与 **10%**（截断，= 1 − 0.9），且两个 `0.9` 基准不同（剩余预算 vs 窗口）。阶段不同、非 bug。已在源码两端各加双向交叉引用注明（`budget.ts` `DEFAULT_OUTPUT_RESERVE_RATIO` ↔ `constants.ts` `CONTEXT_TOKENS_BUFFER_RATIO`）：**基准不同、语法相反（减法预留 vs 乘法保留），恰好互余纯属巧合，勿统一**。
+> 3. **`memoryLayerCapTokens` 已删除**（2026-09-10 收口，非「展示残留」而是整体退役）：记忆自动注入退役（2026-09-09）后该字段已无任何约束消费者——仅经 `protocol.ts` 透传给宿主 webview 展示「记忆 cap」。2026-09-10 判定其为**为不存在的量算上限**（`recalledMemories` 恒空 → 无记忆可封顶），已连同 `DEFAULT_MEMORY_CAP_RATIO`、`ContextOccupancy.memoryTokens/memoryCount`、webview 展示行、`protocol.ts` 字段一并删除；占用模型与预算模型均**不再有记忆维度**。
 
 #### D. 锚点分级（装配 vs 压缩，两个维度不冲突）
 

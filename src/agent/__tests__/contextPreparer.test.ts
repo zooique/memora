@@ -2,7 +2,7 @@
  * contextPreparer.ts 集成测试——上下文装配管线（动态预算装配 + 装配前判负 + 对话层注入 + 占用）
  *
  * 覆盖（记忆自动注入退役，memory-tool-recall-design §3/§4）：
- *   1. 自动注入退役锚点：recallAndInject 恒返回空数组、storage.search 不再被调用、占用 memory 段恒 0
+ *   1. 自动注入退役锚点：recallAndInject 恒返回空数组、storage.search 不再被调用
  *     （若有人把每轮自动召回段加回，storage.search 被调用、该断言转红）；
  *   2. 装配前判负：超大输入走独立降级路径（inputTooLarge 事件 + 返回空 + 跳过注入），不污染软上限；
  *   3. 预算可视化占用：各层 token/条数与 free 互斥拼满非负收敛；
@@ -96,20 +96,6 @@ describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
     expect(memories).toEqual([]);
     expect(storage.search).not.toHaveBeenCalled();
   });
-
-  it('占用快照 memory 段恒 0（聊了什么不再自动注入进上下文）', async () => {
-    const { preparer, loop } = makePreparer();
-    loop.getRecentHistoryWithinBudget = vi.fn(
-      (): DialogueResult => ({ history: [], recentRoundCount: 0, firstRoundIncluded: false }),
-    );
-
-    await preparer.recallAndInject('正常问题');
-
-    expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
-    const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
-    expect(occ.memoryTokens).toBe(0);
-    expect(occ.memoryCount).toBe(0);
-  });
 });
 
 describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
@@ -151,8 +137,8 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
   });
 });
 
-describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负收敛、memory 段恒 0）', () => {
-  it('hybrid 模式计量完整对话，记忆段恒 0', async () => {
+describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负收敛）', () => {
+  it('hybrid 模式计量完整对话', async () => {
     const { preparer, loop } = makePreparer();
     // hybrid 对话与 loop.messages 同源：getConversationMessages 与 dialogue.history 一致
     loop.getConversationMessages = () => [{ role: 'user' as const, content: '第一条' }];
@@ -172,21 +158,18 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.rolePackBaseTokens).toBe(3);
     expect(occ.dialogueTokens).toBe(3);
     expect(occ.dialogueCount).toBe(1);
-    expect(occ.memoryTokens).toBe(0);
-    expect(occ.memoryCount).toBe(0);
     expect(occ.inputAnchorTokens).toBe(8);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
       occ.rolePackBaseTokens +
       occ.dialogueTokens +
-      occ.memoryTokens +
       occ.inputAnchorTokens +
       occ.outputReserveTokens;
     expect(occ.freeTokens).toBe(occ.totalTokens - used);
     expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
   });
 
-  it('占用计量全量对话（loop.messages 全量 user/assistant，记忆段亦恒 0）', async () => {
+  it('占用计量全量对话（loop.messages 全量 user/assistant）', async () => {
     const { preparer, loop } = makePreparer();
     loop.getConversationMessages = () => [
       { role: 'user', content: '上一轮问题' }, // 长度 5
@@ -199,8 +182,6 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
     expect(occ.dialogueTokens).toBe(10);
     expect(occ.dialogueCount).toBe(1);
-    expect(occ.memoryTokens).toBe(0);
-    expect(occ.memoryCount).toBe(0);
     expect(occ.totalTokens).toBe(120_000);
     expect(occ.rolePackBaseTokens).toBe(3);
     expect(occ.inputAnchorTokens).toBe(8);
@@ -208,7 +189,6 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     const used =
       occ.rolePackBaseTokens +
       occ.dialogueTokens +
-      occ.memoryTokens +
       occ.inputAnchorTokens +
       occ.outputReserveTokens;
     expect(occ.freeTokens).toBe(occ.totalTokens - used);

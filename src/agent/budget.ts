@@ -8,18 +8,29 @@
  *   顶级锚点空间 = 本轮用户输入 + 首个回答预留（独立划块，暂以输入长度估算，永不压缩）
  *   剩余预算 = 可用预算 − 顶级锚点空间
  *   完整对话层 = 剩余预算，从最近往回塞到 ~90% 止（先装，锚点不动；留 buffer 防抖）
- *   记忆摘要层 = 剩余预算 − 完整对话层实际占用（拾遗填充，≤ 剩余预算 × memoryRecallPercent 上限）
  *   动态轮数 = 完整对话层能装几轮（派生值，不显式声明）
+ *
+ * 注：记忆摘要层（原「剩余预算 − 完整对话层实际占用」拾遗填充 + `DEFAULT_MEMORY_CAP_RATIO`
+ * 封顶）已随记忆自动注入退役（2026-09-09）整体移除——记忆改为纯工具召回（`memory_search`），
+ * prepare 不再注入任何记忆，故本模块无记忆概念。
  *
  * 纯函数、零依赖：token 估算由调用方（AgentLoop/ContextManager）提供，本模块只做数值派生。
  * 装配前判负（洞 3）亦基于本模块的剩余预算阈值判定。
  */
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 
-/** 输出预留比例默认值（可用预算 = 窗口 × (1 − 该值) − 固定开销） */
+/**
+ * 输出预留比例默认值（**预留比例**：`可用预算 = 窗口 × (1 − 该值) − 固定开销`）。
+ *
+ * ⚠️ 与 `constants.ts` 的 `CONTEXT_TOKENS_BUFFER_RATIO = 0.9` **不可直接比较**——两者基准不同、
+ * 语法相反（同属「给模型回答的预留」，但阶段与依据均不同）：
+ *   · 本常量（**装配线**）：`computeContextBudget` 决定「装多少」，语义 = **预留 15%**（减法）。
+ *   · `CONTEXT_TOKENS_BUFFER_RATIO`（**截断线**）：`truncateMessages` 决定「超了砍到多少」，
+ *     语义 = **保留 90%**（乘法）。二者恰好互余纯属巧合，勿据此推导关联或试图统一。
+ */
 export const DEFAULT_OUTPUT_RESERVE_RATIO = 0.15;
 
-/** 完整对话层填充比例默认值（~90% 止，留 10% buffer 防抖 + 记忆摘要层拾遗空间） */
+/** 完整对话层填充比例默认值（~90% 止，留 10% buffer 防抖） */
 export const DEFAULT_DIALOGUE_FILL_RATIO = 0.9;
 
 /** 顶级锚点倍数：触发输入 + 首个回答（首个回答暂以输入长度估算，双倍输入） */
@@ -43,9 +54,6 @@ export interface ContextBudgetInput {
   readonly dialogueFillRatio?: number;
 }
 
-/** 记忆摘要层 cap 固定比例（剩余预算 × 该值；cap 非 quota——阶段2 memoryRecallPercent 策略键退役，恒用内核常量） */
-const DEFAULT_MEMORY_CAP_RATIO = 0.4;
-
 /**
  * 解析有效上下文窗口（SSOT 单源公式，宿主在构造内核 Agent 前调用）。
  *
@@ -67,15 +75,13 @@ export interface ContextBudget {
   readonly remainingTokens: number;
   /** 完整对话层预算 = 剩余预算 × 填充比例（从最近往回塞到 ~90% 止） */
   readonly dialogueBudgetTokens: number;
-  /** 记忆摘要层 cap = 剩余预算 × 内核固定比例 DEFAULT_MEMORY_CAP_RATIO（拾遗填充上限，cap 非 quota） */
-  readonly memoryLayerCapTokens: number;
 }
 
 /**
  * 上下文占用快照（真实用量，供输入区指示器展示；与 `ContextBudget` 的「预算上限」互补）。
  *
  * 设计：各段为 prepare 期**实际占用** token，互斥分段拼满整个窗口容量 `totalTokens`：
- *   角色包基础设定(system) | 记忆摘要 | 完整对话 | 当前输入锚点 | 输出预留 | 剩余。
+ *   角色包基础设定(system) | 完整对话 | 当前输入锚点 | 输出预留 | 剩余。
  * 单一真理源 = 内核 prepare 计算（contextPreparer 经 loop.recordOccupancy 写入），
  * 宿主/webview 只渲染、不重算。free 非负收敛（窗口过小/输入过大时各段归零，free 不出现负值）。
  */
@@ -88,10 +94,6 @@ export interface ContextOccupancy {
   readonly dialogueTokens: number;
   /** 完整对话层注入的对话条数（user+assistant 消息总数；条数与 token 并存供宿主 hover 明细展示） */
   readonly dialogueCount: number;
-  /** 记忆摘要层实际占用（注入的 recalled 记忆 token） */
-  readonly memoryTokens: number;
-  /** 记忆摘要层注入的记忆条数（recalled 记忆数；与 dialogueCount 同源，供宿主明细展示） */
-  readonly memoryCount: number;
   /** 当前输入锚点（触发输入 + 首个回答预留估算，独立划块） */
   readonly inputAnchorTokens: number;
   /** 输出预留（窗口 × 输出预留比例，留给模型回答的容量，非已用） */
@@ -110,10 +112,6 @@ export interface EstimateOccupancyInput {
   readonly dialogueTokens: number;
   /** 完整对话层条数 */
   readonly dialogueCount: number;
-  /** 记忆摘要层 token */
-  readonly memoryTokens: number;
-  /** 记忆摘要层条数 */
-  readonly memoryCount: number;
   /** 当前输入锚点 token（运行时 = budget.anchorTokens；历史会话 = 0） */
   readonly inputAnchorTokens: number;
   /** 输出预留比例（默认 0.15） */
@@ -134,7 +132,6 @@ export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupan
   const usedBeforeFree =
     input.rolePackBaseTokens +
     input.dialogueTokens +
-    input.memoryTokens +
     input.inputAnchorTokens +
     outputReserveTokens;
   const freeTokens = Math.max(0, input.totalTokens - usedBeforeFree);
@@ -143,8 +140,6 @@ export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupan
     rolePackBaseTokens: input.rolePackBaseTokens,
     dialogueTokens: input.dialogueTokens,
     dialogueCount: input.dialogueCount,
-    memoryTokens: input.memoryTokens,
-    memoryCount: input.memoryCount,
     inputAnchorTokens: input.inputAnchorTokens,
     outputReserveTokens,
     freeTokens,
@@ -154,8 +149,8 @@ export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupan
 /**
  * 计算上下文预算（SSOT 数值派生）。
  *
- * 百分比是 cap 不是 quota：完整对话层无条件优先，记忆摘要层是剩余空间的拾遗填充，
- * 百分比只封顶防止记忆挤占对话。各级非负收敛（窗口过小/输入过大时归零，供装配前判负判定）。
+ * 百分比是 cap 不是 quota：完整对话层无条件优先。
+ * 各级非负收敛（窗口过小/输入过大时归零，供装配前判负判定）。
  */
 export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
   const outputReserveRatio = input.outputReserveRatio ?? DEFAULT_OUTPUT_RESERVE_RATIO;
@@ -176,15 +171,11 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
   // 完整对话层 = 剩余预算 × 填充比例（留 buffer 防抖）
   const dialogueBudgetTokens = Math.floor(remainingTokens * dialogueFillRatio);
 
-  // 记忆摘要层 cap = 剩余预算 × 固定比例（拾遗填充上限；memoryRecallPercent 键已退役）
-  const memoryLayerCapTokens = Math.floor(remainingTokens * DEFAULT_MEMORY_CAP_RATIO);
-
   return {
     availableTokens,
     anchorTokens,
     remainingTokens,
     dialogueBudgetTokens,
-    memoryLayerCapTokens,
   };
 }
 

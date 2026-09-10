@@ -33,11 +33,9 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     expect(budget.remainingTokens).toBe(96_800);
     // 完整对话层 = 剩余 × 0.9
     expect(budget.dialogueBudgetTokens).toBe(Math.floor(96_800 * 0.9));
-    // 记忆摘要层 cap = 剩余 × 0.4
-    expect(budget.memoryLayerCapTokens).toBe(Math.floor(96_800 * 0.4));
   });
 
-  it('自定义比例（输出预留 0.2 / 对话填充 0.8）；记忆层 cap 恒用内核固定比例 0.4', () => {
+  it('自定义比例（输出预留 0.2 / 对话填充 0.8）', () => {
     const budget = computeContextBudget({
       windowTokens: 10_000,
       fixedOverheadTokens: 2_000,
@@ -50,8 +48,6 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     expect(budget.anchorTokens).toBe(1_000);
     expect(budget.remainingTokens).toBe(5_000);
     expect(budget.dialogueBudgetTokens).toBe(4_000);
-    // memoryRecallPercent 键已退役，记忆层 cap = 剩余 × 内核固定比例 0.4
-    expect(budget.memoryLayerCapTokens).toBe(2_000);
   });
 
   it('输入超大（锚点划走剩余预算归零）——装配前判负的输入侧判定依据', () => {
@@ -62,7 +58,6 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     });
     expect(budget.remainingTokens).toBe(0);
     expect(budget.dialogueBudgetTokens).toBe(0);
-    expect(budget.memoryLayerCapTokens).toBe(0);
   });
 
   it('窗口过小（固定开销超过预留后窗口）时各级归零', () => {
@@ -74,7 +69,6 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     expect(budget.availableTokens).toBe(0);
     expect(budget.remainingTokens).toBe(0);
     expect(budget.dialogueBudgetTokens).toBe(0);
-    expect(budget.memoryLayerCapTokens).toBe(0);
   });
 
   it('默认常量：输出预留 15%、对话填充 90%', () => {
@@ -161,16 +155,13 @@ describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运�
       rolePackBaseTokens: 3_000,
       dialogueTokens: 12_000,
       dialogueCount: 3,
-      memoryTokens: 4_000,
-      memoryCount: 2,
       inputAnchorTokens: 800,
     });
     expect(occ.outputReserveTokens).toBe(18_000); // 120000 × 0.15
-    // free = total − (rolepack + dialogue + memory + input + reserve)
-    expect(occ.freeTokens).toBe(120_000 - (3_000 + 12_000 + 4_000 + 800 + 18_000));
+    // free = total − (rolepack + dialogue + input + reserve)
+    expect(occ.freeTokens).toBe(120_000 - (3_000 + 12_000 + 800 + 18_000));
     // 条数透传
     expect(occ.dialogueCount).toBe(3);
-    expect(occ.memoryCount).toBe(2);
   });
 
   it('自定义输出预留比例生效', () => {
@@ -179,8 +170,6 @@ describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运�
       rolePackBaseTokens: 1_000,
       dialogueTokens: 2_000,
       dialogueCount: 1,
-      memoryTokens: 0,
-      memoryCount: 0,
       inputAnchorTokens: 0,
       outputReserveRatio: 0.2,
     });
@@ -194,27 +183,22 @@ describe('estimateOccupancy · 上下文占用快照组装（SSOT 单点，运�
       rolePackBaseTokens: 3_000,
       dialogueTokens: 3_000,
       dialogueCount: 2,
-      memoryTokens: 1_000,
-      memoryCount: 1,
       inputAnchorTokens: 500,
     });
-    // used = 3000+3000+1000+500+750 = 8250 > 5000 → free 收敛为 0（不出现负值）
+    // used = 3000+3000+500+750 = 7250 > 5000 → free 收敛为 0（不出现负值）
     expect(occ.freeTokens).toBe(0);
   });
 
-  it('历史会话重算语义：inputAnchor=0、memory=0 时仅算对话 + 角色包 + 预留', () => {
+  it('历史会话重算语义：inputAnchor=0 时仅算对话 + 角色包 + 预留', () => {
     const occ = estimateOccupancy({
       totalTokens: 64_000,
       rolePackBaseTokens: 15_000,
       dialogueTokens: 10_000,
       dialogueCount: 4,
-      memoryTokens: 0,
-      memoryCount: 0,
       inputAnchorTokens: 0,
     });
     expect(occ.inputAnchorTokens).toBe(0);
-    expect(occ.memoryTokens).toBe(0);
-    // free = 64000 − (15000 + 10000 + 0 + 0 + 9600)
+    // free = 64000 − (15000 + 10000 + 0 + 9600)
     expect(occ.freeTokens).toBe(64_000 - (15_000 + 10_000 + 9_600));
   });
 });

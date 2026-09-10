@@ -113,7 +113,17 @@ export const LOOP_CONSTANTS = {
   /** 单次 LLM 请求超时（毫秒）。120 秒。超时后可重试。 */
   LLM_TIMEOUT_MS: 120_000,
 
-  /** 上下文截断时给 LLM 响应预留的缓冲比例。0.9 = 留 10% 给响应。 */
+  /**
+   * 上下文截断时保留的窗口比例（**保留系数**：乘 `maxContextTokens` 得目标上限）。0.9 = 留 10% 缓冲。
+   *
+   * ⚠️ 与 `budget.ts` 的 `DEFAULT_OUTPUT_RESERVE_RATIO = 0.15` **不可直接比较**——两者基准不同、
+   * 语法相反（同属「给模型回答的预留」，但阶段与依据均不同）：
+   *   · 本常量（**截断线**）：`ContextManager.truncateMessages` 触发于 `token > maxContextTokens`，
+   *     把 payload 压到 `maxContextTokens × 0.9`。基准 = **窗口总量**；语义 = **保留 90%**（乘法）。
+   *   · `DEFAULT_OUTPUT_RESERVE_RATIO`（**装配线**）：`computeContextBudget` 的
+   *     `可用 = 窗口 × (1 − 0.15) − 固定开销`。基准 = **窗口总量**；语义 = **预留 15%**（减法）。
+   * 二者恰好互余（0.9 保留 ↔ 0.15 预留）纯属巧合，勿据此推导关联或试图统一。
+   */
   CONTEXT_TOKENS_BUFFER_RATIO: 0.9,
 
   /**

@@ -491,7 +491,6 @@ export type ExtensionToWebviewMessage =
           anchorTokens: number;
           remainingTokens: number;
           dialogueBudgetTokens: number;
-          memoryLayerCapTokens: number;
         };
       };
       /**
@@ -530,10 +529,6 @@ export type ExtensionToWebviewMessage =
         dialogueTokens: number;
         /** 完整对话层注入的对话条数（user+assistant 消息总数，与 dialogueTokens 同源） */
         dialogueCount: number;
-        /** 记忆摘要层实际占用（注入的 recalled 记忆） */
-        memoryTokens: number;
-        /** 记忆摘要层注入的记忆条数（recalled 记忆数，与 memoryTokens 同源） */
-        memoryCount: number;
         /** 当前输入锚点（触发输入 + 首个回答预留） */
         inputAnchorTokens: number;
         /** 输出预留（窗口 × 输出预留比例，留作模型回答容量） */

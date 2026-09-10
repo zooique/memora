@@ -2984,13 +2984,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
         ' / ' +
         (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -'),
-      // ④（2026-08-29）：预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层/记忆 cap 瓜分
+      // ④（2026-08-29）：预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
       ...(msg.metrics.budget
         ? [
             '预算：可用 ' + fmtCompactTokens(msg.metrics.budget.availableTokens) +
               ' · 锚点 ' + fmtCompactTokens(msg.metrics.budget.anchorTokens) +
               ' · 对话层 ' + fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens) +
-              ' · 记忆 cap ' + fmtCompactTokens(msg.metrics.budget.memoryLayerCapTokens) +
               ' · 剩余 ' + fmtCompactTokens(msg.metrics.budget.remainingTokens),
           ]
         : []),
@@ -3044,8 +3043,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 每行「标签：数量 · token（占比）」；rolePack 额外给「占窗口比例」；
    * UI 只渲染宿主透传的数字与条数，不重算（守内核/宿主边界）。
-   * 「记忆摘要」段已隐藏（memory-tool-recall-design §2.4 定案）：自动注入退役后
-   * memoryTokens/memoryCount 恒定 0，「记忆摘要」段无信息量 → 不渲染；DTO 字段保留作诊断。
    */
   function buildOccupancyTipText(
     occ: Extract<ExtensionToWebviewMessage, { type: 'context_occupancy' }>['occupancy'],
@@ -3092,8 +3089,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         rolePackBaseTokens: 0,
         dialogueTokens: 0,
         dialogueCount: 0,
-        memoryTokens: 0,
-        memoryCount: 0,
         inputAnchorTokens: 0,
         outputReserveTokens: 0,
         freeTokens: active.limitTokens,

@@ -1375,7 +1375,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *   角色包  = 内核当前激活角色包底盘占用（system prompt 总体 token，装配/切换即确定，
    *             冷启动也有真实值，不再降级为 0；见 context.rolePackBaseTokens）
    *   输入锚点= 0（历史会话无当前输入）
-   *   记忆层  = 0（历史会话无法预测"下一条消息会召回哪些记忆"，如实标注不虚报）
    * 组装复用内核 estimateOccupancy（SSOT 单点，free 收敛口径与运行时 prepare 一致）。
    * 异步仅用于读取当前 Provider 窗口（listMasked），失败静默（圆环维持 chat_providers 空态）。
    */
@@ -1402,8 +1401,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         dialogueTokens,
         // 计数标准：以用户输入条数计（一个问答闭环=1，残缺回答如实记录），与内核 dialogueCount 口径一致（SSOT）
         dialogueCount: history.filter((m) => m.role === 'user').length,
-        memoryTokens: 0,
-        memoryCount: 0,
         inputAnchorTokens: 0,
       });
       this.post({ type: 'context_occupancy', occupancy: occ });
