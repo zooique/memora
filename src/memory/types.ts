@@ -70,8 +70,11 @@ export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'gener
  * 校验：非空对象、字段类型、ISO 8601 日期
  * score 字段已退役（2026-09-09 阶段3），不再解析/默认填充
  *
+ * **白名单构造**：返回值只含 Memory 接口声明的字段，源对象上的任何未知字段（如旧档残留的
+ * `score`）一律剥离——宿主读旧档经此函数即完成数据层清洗，无需另写迁移脚本。
+ *
  * @param raw - 原始数据（通常来自 JSON 解析或数据库查询）
- * @returns 验证通过的 Memory 对象
+ * @returns 验证通过的 Memory 对象（仅白名单字段，未知字段已剥离）
  * @throws Error 当数据不符合 Memory 接口定义时
  */
 export function parseMemory(raw: unknown): Memory {
@@ -109,7 +112,9 @@ export function parseMemory(raw: unknown): Memory {
     }
   }
 
-  // 验证可选的 deletedAt 字段
+  // 验证可选的 deletedAt 字段（null 视为未删除并归一为 undefined：
+  // JSON 落盘可能出现 null，而 deletedAt?: string 不允许 null——否则消费方判
+  // `deletedAt === undefined` 会因 null !== undefined 把活跃记忆误判为已删除）
   if (obj.deletedAt !== undefined && obj.deletedAt !== null) {
     if (typeof obj.deletedAt !== 'string' || isNaN(Date.parse(obj.deletedAt as string))) {
       throw configError(
@@ -127,7 +132,7 @@ export function parseMemory(raw: unknown): Memory {
     name: obj.name as string,
     createdAt: obj.createdAt as string,
     accessedAt: obj.accessedAt as string,
-    deletedAt: obj.deletedAt as string | undefined,
+    deletedAt: (obj.deletedAt as string | undefined) ?? undefined,
     metadata: obj.metadata as Record<string, string> | undefined,
     summaryType: obj.summaryType as SummaryType | undefined,
     sessionName: obj.sessionName as string | undefined,

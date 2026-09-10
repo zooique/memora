@@ -139,8 +139,11 @@ export interface ProcessRecallItem {
   name: string;
   /** 来源标签（如 'round-summary'） */
   source: string;
-  /** 相似度分数（0-1） */
-  score: number;
+  /**
+   * 语义相似度分（0-1）：与查询的贴合度。
+   * 命名对齐内核搜索命中的 similarity；与已退役的「记忆权重 score」（阶段3 物理删除）无关。
+   */
+  similarity: number;
 }
 
 /** metrics 事件载荷：每轮执行汇总（流结束后写一条） */

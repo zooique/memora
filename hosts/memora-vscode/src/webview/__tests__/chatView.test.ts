@@ -1167,7 +1167,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(activityBar.textContent).toContain('会话异常');
     expect(activityBar.className).toContain('error');
     // 错误显示期间来低扰 info → 不覆盖主条，仅进历史
-    dispatch({ type: 'process_event', event: { type: 'recall', seq: 1, ts: '', payload: { memories: [{ id: 'a', name: 'm1', source: 'round-summary', score: 0.9 }, { id: 'b', name: 'm2', source: 'profile', score: 0.5 }] } } });
+    dispatch({ type: 'process_event', event: { type: 'recall', seq: 1, ts: '', payload: { memories: [{ id: 'a', name: 'm1', source: 'round-summary', similarity: 0.9 }, { id: 'b', name: 'm2', source: 'profile', similarity: 0.5 }] } } });
     expect(activityBar.textContent).toContain('会话异常'); // 主条仍保持错误
     expect(activityBar.className).toContain('error');
     // 低扰信息进入详情历史（不丢失）
@@ -1202,7 +1202,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('process_event 增量渲染 round-block：summary 计数 + details 各小节（召回/工具/已沉淀/执行指标）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '记忆A', source: 'round-summary', score: 0.9 }] } } });
+    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '记忆A', source: 'round-summary', similarity: 0.9 }] } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
     dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 5, ts: '', payload: { id: 'm1', source: 'round-summary', name: '设计约束' } } });
@@ -1284,7 +1284,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       type: 'replay_events',
       roundId: 'r1',
       events: [
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧记忆', source: 'round-summary', score: 0.6 }] } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧记忆', source: 'round-summary', similarity: 0.6 }] } },
         { type: 'aborted', seq: 3, ts: '', payload: { reason: 'User cancelled the conversation' } },
       ],
     });
@@ -1332,7 +1332,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧', source: 'a', score: 0.8 }] } } });
+    dispatch({ type: 'process_event', event: { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'r:1', name: '旧', source: 'a', similarity: 0.8 }] } } });
     expect(document.querySelector('.process-flow')).not.toBeNull(); // v1.8：运行时平铺容器
     expect(document.querySelector('.round-block')).toBeNull(); // 运行时无大折叠壳
     dispatch({ type: 'clear_ok' });
@@ -1414,7 +1414,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       roundId: 'r:100',
       events: [
         { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo-v2.5-pro' } },
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', score: 0.9 }] } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', similarity: 0.9 }] } },
         { type: 'metrics', seq: 3, ts: '', payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 } },
       ],
     });
@@ -1465,7 +1465,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       roundId: 'r:1',
       events: [
         { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', score: 0.9 }] } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:1', name: '设计哲学', source: 'round-summary', similarity: 0.9 }] } },
       ],
     });
     dispatch({ type: 'assistant', text: '回答一', ts: 't2', roundId: 'r:1' });
@@ -1476,7 +1476,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       roundId: 'r:2',
       events: [
         { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:2', name: '角色包', source: 'round-summary', score: 0.8 }, { id: 'm:3', name: '任务表', source: 'round-summary', score: 0.7 }] } },
+        { type: 'recall', seq: 2, ts: '', payload: { memories: [{ id: 'm:2', name: '角色包', source: 'round-summary', similarity: 0.8 }, { id: 'm:3', name: '任务表', source: 'round-summary', similarity: 0.7 }] } },
       ],
     });
     dispatch({ type: 'assistant', text: '回答二', ts: 't4', roundId: 'r:2' });

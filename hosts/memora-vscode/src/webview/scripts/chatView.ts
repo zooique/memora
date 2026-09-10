@@ -1254,7 +1254,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         name.textContent = m.name || m.id;
         const metaEl = document.createElement('span');
         metaEl.className = 'round-block__recall-meta';
-        metaEl.textContent = `${m.source} · ${Math.round(m.score * 100)}%`;
+        metaEl.textContent = `${m.source} · ${Math.round(m.similarity * 100)}%`;
         row.append(name, metaEl);
         listEl.appendChild(row);
       });

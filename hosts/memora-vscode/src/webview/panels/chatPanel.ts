@@ -693,10 +693,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'notice', level: 'info', message: `记忆归档失败（${info.stage}）：${info.message}` });
   };
 
-  /** boostPersistFailed：记忆权重持久化失败（score 已物理退役，监听为兼容内核事件保留） */
-  private readonly onBoostPersistFailed = (info: { message: string }): void => {
-    this.post({ type: 'notice', level: 'info', message: `记忆权重保存失败：${info.message}` });
-  };
 
   // ─── H2 高价值事件（2026-08-23 第二轮生长） ───
 
@@ -947,7 +943,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('sessionResumeBlocked', this.onSessionResumeBlocked);
     a.off('sessionPauseTimedOut', this.onSessionPauseTimedOut);
     a.on('sessionPauseTimedOut', this.onSessionPauseTimedOut);
-    // P1 后续波：低扰信息（截断/压缩/归档失败/权重保存失败）→ info 级提示条
+    // P1 后续波：低扰信息（截断/压缩/归档失败）→ info 级提示条
     a.off('contextTruncated', this.onContextTruncated);
     a.on('contextTruncated', this.onContextTruncated);
     // G3：LLM 主动压缩事件订阅（与 contextTruncated 的内核自动截断区分）
@@ -955,8 +951,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     a.on('contextCompressed', this.onContextCompressed);
     a.off('archiveFailed', this.onArchiveFailed);
     a.on('archiveFailed', this.onArchiveFailed);
-    a.off('boostPersistFailed', this.onBoostPersistFailed);
-    a.on('boostPersistFailed', this.onBoostPersistFailed);
     // A1（alignment-iteration.md）：角色包切换 → UI 角色选择器实时对齐（内核粘性切换/显式激活）
     a.off('rolePackSwitched', this.onRolePackSwitched);
     a.on('rolePackSwitched', this.onRolePackSwitched);
@@ -2523,7 +2517,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
               id: m.id,
               name: m.name,
               source: m.source,
-              score: m.score,
+              similarity: m.similarity,
             })),
           });
           continue;

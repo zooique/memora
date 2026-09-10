@@ -356,7 +356,7 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       refCount: 1,
       processEvents: [
         { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-        { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '设计约束', source: 'round-summary', score: 0.8 }] } },
+        { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '设计约束', source: 'round-summary', similarity: 0.8 }] } },
         { type: 'aborted', seq: 3, ts: 't2', payload: { reason: 'User cancelled the conversation' } },
       ],
     };

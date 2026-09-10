@@ -6,13 +6,14 @@
  *   - 实现 IMemoryStorage 接口，注入 Agent，让记忆跨会话存活
  *   - 软删除语义与内核一致：delete 写 deletedAt，查询自动过滤
  *   - source 校验：upsert 时调 validateSource 拦截无效 source（路径遍历/空字节/首尾空格）
+ *   - 读档校验：load 逐条经内核 parseMemory 白名单构造，未知字段（旧档 score）剥离即清洗
  *
  * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
  * 后续阶段：如需高性能/向量索引，可换 SQLite 或 JsonVectorStore。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { segmentLower, validateSource, type IMemoryStorage, type Memory } from '@zooique/memora';
+import { segmentLower, validateSource, parseMemory, type IMemoryStorage, type Memory } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /** 工作区记忆存储 */
@@ -27,17 +28,49 @@ export class WorkspaceStorage implements IMemoryStorage {
     this.filePath = join(workspacePath, '.memora', 'memories.json');
   }
 
-  /** 启动时从文件加载记忆（文件不存在则空库） */
+  /**
+   * 启动时从文件加载记忆（文件不存在则空库）
+   *
+   * 逐条经内核 `parseMemory` 白名单校验：未知字段（旧档遗留的 `score` 等）被剥离，
+   * 读一次即完成数据层清洗，后续 save() 写回的 JSON 自动不含退役字段。
+   * 单条损坏只跳过该条并告警——不因一条脏数据清空整个记忆库（整库清空会让用户静默丢记忆）。
+   */
   load(): void {
     if (!existsSync(this.filePath)) return;
+    let raw: string;
     try {
-      const raw = readFileSync(this.filePath, 'utf8');
-      const list = JSON.parse(raw) as Memory[];
-      for (const m of list) this.store.set(m.id, m);
+      raw = readFileSync(this.filePath, 'utf8');
     } catch (err) {
-      // 记忆文件损坏时降级为空库（不阻塞插件启动），避免静默吞错（记日志由上层处理）
+      // 记忆文件不可读时降级为空库（不阻塞插件启动），避免静默吞错（记日志由上层处理）
       console.warn('Memora 记忆文件读取失败，降级为空库', err);
       this.store.clear();
+      return;
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      console.warn('Memora 记忆文件 JSON 解析失败，降级为空库', err);
+      this.store.clear();
+      return;
+    }
+
+    if (!Array.isArray(parsed)) {
+      console.warn('Memora 记忆文件格式非法（顶层非数组），降级为空库');
+      this.store.clear();
+      return;
+    }
+
+    this.store.clear();
+    for (const item of parsed) {
+      try {
+        const memory = parseMemory(item);
+        this.store.set(memory.id, memory);
+      } catch (err) {
+        // 跳过损坏条目：保住其余记忆，不让一条脏数据拖垮整个库
+        console.warn('Memora 跳过一条无法解析的记忆', err);
+      }
     }
   }
 

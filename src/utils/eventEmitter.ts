@@ -21,7 +21,6 @@ export const AGENT_EVENTS = {
   archiveModeChanged: 'archiveModeChanged',
   rolePackSwitchLocked: 'rolePackSwitchLocked',
   workProjectionGenerated: 'workProjectionGenerated',
-  boostPersistFailed: 'boostPersistFailed',
   dedupCompleted: 'dedupCompleted',
   sessionPauseTimedOut: 'sessionPauseTimedOut',
   sessionResumeBlocked: 'sessionResumeBlocked',
@@ -72,7 +71,6 @@ export interface AgentEventMap extends Record<AgentEventName, unknown> {
   archiveModeChanged: { from: string; to: string };
   rolePackSwitchLocked: { reason: string; lockedSeconds: number };
   workProjectionGenerated: { sourcePath: string; summary: string };
-  boostPersistFailed: { memoryId: string; message: string };
   dedupCompleted: { deduplicatedCount: number; demotedIds: string[] };
   sessionPauseTimedOut: {
     sessionId: string;

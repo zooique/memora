@@ -302,7 +302,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const round = roundStore.getById('round-1')!;
     round.processEvents = [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '记忆', source: 'round-summary', score: 0.8 }] } },
+      { type: 'recall', seq: 2, ts: 't1', payload: { memories: [{ id: 'r:1', name: '记忆', source: 'round-summary', similarity: 0.8 }] } },
       { type: 'metrics', seq: 3, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, recallCount: 1, success: true } },
     ];
     roundStore.save(round);

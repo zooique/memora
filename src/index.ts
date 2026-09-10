@@ -130,6 +130,11 @@ export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 export { SOURCE_LABELS } from '@/memory/types.js';
 // 冲突检测基于 supersededBy 判定，无需记忆关系图谱
 export type { Memory, SummaryType } from '@/memory/types.js';
+/**
+ * 记忆解析器（宿主读档复用内核校验，避免宿主另写一份字段白名单）
+ * 白名单构造：剥离未知字段（旧档 score 等），见 src/memory/types.ts
+ */
+export { parseMemory } from '@/memory/types.js';
 export { escapeLike, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent

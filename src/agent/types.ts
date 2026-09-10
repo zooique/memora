@@ -24,8 +24,11 @@ export interface RecalledMemorySummary {
   id: string;
   /** 可读名称（点击跳转详情） */
   name: string;
-  /** 相似度分数（0-1） */
-  score: number;
+  /**
+   * 语义相似度分（0-1）：与查询的贴合度，每次检索实时计算。
+   * 注意与已退役的「记忆权重 score」（阶段3 物理删除）无关——本字段是检索结果属性，非记忆固有属性。
+   */
+  similarity: number;
   /** 来源标签（开放字符串，如 'rule'、'round-summary'） */
   source: string;
 }

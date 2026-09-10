@@ -116,3 +116,73 @@ describe('InMemoryStorage · source block 校验', () => {
     expect(store.getById('test:rule')).not.toBeNull();
   });
 });
+
+describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清洗契约）', () => {
+  /** 构造一条带已退役 score 字段的旧档记忆（模拟宿主 memories.json 历史数据） */
+  function legacyMemory(): Record<string, unknown> {
+    return {
+      id: 'round-summary:legacy',
+      content: '旧档内容',
+      source: 'round-summary',
+      name: 'legacy',
+      createdAt: '2026-06-02T00:00:00.000Z',
+      accessedAt: '2026-06-02T00:00:00.000Z',
+      score: 0.85, // 阶段3 已物理退役的字段
+    };
+  }
+
+  it('未知字段（旧档 score）应被剥离，不出现在解析结果上', () => {
+    const parsed = parseMemory(legacyMemory());
+
+    // 需经 unknown 转 Record 访问：Memory 类型上已不存在 score 属性（类型层退役的静态证明）
+    expect((parsed as unknown as Record<string, unknown>).score).toBeUndefined();
+    // 白名单外字段不应驻留（宿主写回时据此完成数据清洗）
+    expect(Object.keys(parsed)).not.toContain('score');
+  });
+
+  it('解析结果只含 Memory 接口声明的字段', () => {
+    const parsed = parseMemory(legacyMemory());
+
+    expect(Object.keys(parsed).sort()).toEqual(
+      [
+        'accessedAt',
+        'content',
+        'createdAt',
+        'deletedAt',
+        'id',
+        'isModified',
+        'metadata',
+        'name',
+        'roundId',
+        'sessionName',
+        'source',
+        'summaryType',
+        'supersededBy',
+      ].sort(),
+    );
+  });
+
+  it('deletedAt 为 null 应归一为 undefined（null 会让消费方误判为已删除）', () => {
+    const parsed = parseMemory({ ...legacyMemory(), deletedAt: null });
+
+    // 关键：必须是 undefined 而非 null——消费方按 `deletedAt === undefined` 判活跃
+    expect(parsed.deletedAt).toBeUndefined();
+    expect(parsed.deletedAt === undefined).toBe(true);
+  });
+
+  it('deletedAt 为合法 ISO 串应原样保留', () => {
+    const parsed = parseMemory({
+      ...legacyMemory(),
+      deletedAt: '2026-09-01T00:00:00.000Z',
+    });
+
+    expect(parsed.deletedAt).toBe('2026-09-01T00:00:00.000Z');
+  });
+
+  it('deletedAt 为非法日期应抛错', () => {
+    // configError 的 Error.message 为标题「Memory 解析失败」，字段细节在其 detail 中
+    expect(() => parseMemory({ ...legacyMemory(), deletedAt: 'not-a-date' })).toThrow(
+      /Memory 解析失败/,
+    );
+  });
+});
