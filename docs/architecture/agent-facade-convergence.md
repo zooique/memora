@@ -5,13 +5,13 @@
 > 目标：让 `agent.ts` 从「5 个协议的中枢」收敛为「编排 + 生命周期 + 守卫」的真门面。
 > 本文档为门面收敛的**落地记录**（探索期草稿已按 S2 固化）；下方行数为收敛完成时的时点快照，后续迭代会导致变化。
 >
-> **现状（已落地）**：三个横向切面已下沉为专职模块——
+> **现状（已落地）**：三个横向切面已下沉为专职模块——**⚠️ 其中 Step 3 已于 2026-09-10 退役，现行仅两切面（见文末剪枝补记）**：
 >
 > * **Step 1 装配回填** → `assembler.ts` 新增 `AgentHooks`，Agent.assembleComponents 退化为一行委托
 >
 > * **Step 2 输入增强** → `contextPreparer.ts`（recallAndInject，v0.13 起角色仅手动切换、无自动匹配），Agent 留编排调用点
 >
-> * **Step 3 检查点恢复** → `checkpointRestoreCoordinator.ts`（warmRecall / reinject / restore / shouldGenerateTaskTable），Agent.restoreFromCheckpoint 委托
+> * **Step 3 检查点恢复** <del>→ `checkpointRestoreCoordinator.ts`（warmRecall / reinject / restore / shouldGenerateTaskTable），Agent.restoreFromCheckpoint 委托</del> **【已退役 2026-09-10】**
 >
 > **体量（2026-08-29 收敛完成时快照）**：agent.ts 2255 → 1721 行（-534）；新增 assembler 694 / contextPreparer 298 / checkpointRestoreCoordinator 246。注：截至 2026-08-31 `agent.ts` 已增至 **1927 行**（后续功能叠加），数字为时点值，非长期保证。
 >
@@ -54,6 +54,8 @@
 
 ## 四、三个切面
 
+> **行文口径注（2026-09-10）**：本节保留**收敛完成时（2026-08-29）**的现在时叙述，作为决策记录。其中**切面 3（检查点恢复）已于 2026-09-10 整体退役**（见文首剪枝补记）——`checkpointRestoreCoordinator.ts` 已删除，本文现为**两切面**（装配回填 + 输入增强）。切面 3 小节（下方 §80-90）仅存历史价值。
+
 ### 切面 1：装配回填 → assembler.ts（Step 1 · 最低风险）
 
 **现状**：[assembleComponents](../../src/agent/agent.ts) 的 178 行里，「组装」只有开头一段，主体是 8 个接线回调
@@ -78,6 +80,8 @@ v0.13 起角色自动匹配已移除，管线仅剩记忆/技能增强）。
 **边界**：召回后的事件发射（memoryRecalled / boost 持久化）由 Agent 通过 options 回调承接，语义不变。
 
 ### 切面 3：检查点恢复协议 → CheckpointRestoreCoordinator（Step 3 · 最独立）
+
+> **已退役（2026-09-10）**：本切面所属 `checkpointRestoreCoordinator.ts` 已整体删除（`warmRecall`/`reinject`/`restore`/`shouldGenerateTaskTable` 随之消失），`Agent.restoreFromCheckpoint` 公开 API 一并移除。以下为退役前的设计记录。
 
 **现状**：[warmRecallForCheckpoint](../../src/agent/agent.ts) + reinjectContracts + restoreFromCheckpoint +
 [shouldGenerateTaskTable](../../src/agent/agent.ts)，约 300 行，只在 resume 时激活。

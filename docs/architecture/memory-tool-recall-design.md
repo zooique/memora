@@ -2,6 +2,8 @@
 
 > **状态**：阶段1自动注入机制退役 **已实现**（步进A/B/C/D/E 落地，全量回归 2946 通过）；阶段2 6 键族删除 **已实现**（commit 4f318407）+ 工具互斥落地（search_memories 排除已载入正文轮次 + limit 收紧 10→5 + trace_summary 精取引导，commit 89d0ff26）；阶段3 score 退役 **已实现**（2026-09-09：Memory.score 字段物理删除、hybridMerge 排序纯化单 vectorScore、boost→touch 收敛、memoryAdvisor 弃 status 健康判定、宿主 workspaceStorage/protocol/webview 同步；全量回归 2864 通过）。A4 检索召回质量问题与 score 无关（实证见 .trae/documents/a4-fix-or-phase3-sequencing.md），作为独立开放项留待本地小模型对照后裁决。
 > **2026-09-10 补记（剪枝）**：文中「`checkpointRestoreCoordinator.warmRecall` 保留例外」（§4.2 表 / §开放点 1）已随**跨重启恢复链整体退役**而失效——`checkpointRestoreCoordinator.ts` 整文件删除，`recall()` 召回编排因此**零消费者连带退役**（`recall.ts` 仅余 `extractKeywords` / `touchScores`，`recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK` 删除，内核 `ISessionStore` 的 checkpoint 三方法删除）。记忆检索现**完全**由 `search_memories` 工具承载（含首轮确定性收窄），无任何自动召回路径。下文相关段落为退役前语义，不再代表当前实现。
+>
+> **⚠️ 批次级失效声明（2026-09-10，务必先读）**：下文 **§2（现状实证）** 与 **§4（退役面）** 两节的行号引用与「现状」栏，均为 **2026-09-09 探索期快照**，相关代码已于 **2026-09-09 ~ 09-10 全链退役** —— 所列 `contextPreparer.ts:184-242`（recallAndInject 语义召回段）、`loop.ts:2012`（`injectRecallAsSystem`）、`checkpointRestoreCoordinator.ts:106`（warmRecall）、`chatView.ts:3122 / protocol.ts:543`（`memoryTokens`/`memoryCount`）、`recall.ts` 的 `applyTrackPolicy`/`sortByLayer`/`applyCapAllocation`、`budget.ts` 的 `memoryLayerCapTokens`、`HOT_MEMORY_MAX_ROUNDS`、`DEFAULT_MEMORY_CAP_RATIO` 等符号**均已物理删除**。**照行号 grep 将全部 miss，勿据此判定实现现状**。两节保留的价值仅在「决策推导过程」；现行实现真相源 = `loop.getExclusionRoundIds()` + `memoryInspector.searchHybrid` + `budget.ts`(无记忆维度)。
 > **日期**：2026-09-09
 > **实测**：`scripts/test-memory-tool-recall.ts`（机制实测脚手架，验证 searchHybrid 结构化溯源字段、superseded 过滤、命中 touch 刷新 accessedAt、memoryRecalled 事件、touchScores 收敛）；A/B 模型行为验收（想起率/命中率）待真实 LLM + 问题集见 §阶段1 出口条件
 > **关联**：[memory-recall-recency-design.md](memory-recall-recency-design.md)（本设计**取代**其问题域，见 §0.5）· [memory-as-summary.md](memory-as-summary.md) · [memory-role-pack-boundary.md](memory-role-pack-boundary.md) D7/D6
@@ -162,7 +164,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 > * **本行原理由已失效**：「与恢复路径 warmRecall 同源同值」——`warmRecall` / `checkpointRestoreCoordinator` 已于 **2026-09-10 减法整体退役**，已无「恢复路径」可同源。
 > * **失效方向**：`recentRoundCount > 20` → 漏剔（已在场的轮摘要被重复返回，违背本行「干净」初衷）；`recentRoundCount < 20` → 多剔（视野外的摘要也拿不到）。
 >
-> **收口定案**：排除集改用上述**精确并集**（`getVisibleRoundIds ∪ getReplacedRoundIds ∪ first`），删除固定 20 窗口；`HOT_MEMORY_MAX_ROUNDS` 随之失去该用途。任务账本见 `tasks/上下文装配与互斥口径收口-任务清单-20260910.md`。
+> **收口定案**：排除集改用上述**精确并集**（`getVisibleRoundIds ∪ getReplacedRoundIds ∪ first`），删除固定 20 窗口；`HOT_MEMORY_MAX_ROUNDS` 随之失去该用途。**收口已落地**（commit `b2cef58c`）；原任务账本随 2026-09-10 tasks 目录整理归档入 `tasks/已完成任务.md`。
 | 返回 | **结构化溯源字段**：round-summary 命中项显式附 `sessionId`/`roundId`（与 trace_summary 参数直通）。现状溯源参数**隐式埋在 name**（`轮次摘要 {date-session} {roundId}`，roundSummaryGenerator.ts:159——LLM 解析 name 可得，但为未文档化格式契约，name 一变链路即断） | 溯源链去隐式依赖：LLM 零解析直用 trace_summary（§3.5） |
 | 描述 | 删除"回答前仅注入一次召回记忆，运行中不自动补充"残留；改写为"记忆不再自动注入；回答涉及过往决定/历史事实/用户偏好/项目背景，或对答案不确定时，先检索记忆再作答" | 行为性描述与实现同批更新（血训 2c6e54b3）；触发词与 §3.2 首轮指令/§5.3 三层缓解一致 |
 | 幂等映射 | search_memories: 'read-only'（builtinTools.ts:79）不动 | 只读工具永不跳过，语义天然正确 |
