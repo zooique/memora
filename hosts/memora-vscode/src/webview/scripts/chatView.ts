@@ -179,7 +179,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  操作上移容器级 footer（复制整链/分叉/删除）；user 主输入在容器外，与 AI 作答单元分离 */
   let roundGroupEl: HTMLElement | null = null;
 
-  // G3 断点续跑提示条：检测到持久化暂停检查点时展示，用户点击「从断点续跑」恢复
+  // G3 断点续跑提示条：检测到「有未完成计划步骤」的持久化检查点时展示（判据 = 任务价值，非暂停状态），用户点击「从断点续跑」恢复
   let restoreBanner: HTMLElement | null = null;
 
   /** 消息区顶部状态块插入协议（P1-0，2026-08-24）：
@@ -3440,8 +3440,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         streamingActive = false;
       }
     } else if (msg.type === 'checkpoint_available') {
-      // G3 断点续跑：检测到持久化暂停检查点，展示「从断点续跑」提示条
-      showRestoreBanner('检测到上次暂停的会话，可继续', true);
+      // G3 断点续跑：检测到「有未完成计划步骤」的持久化检查点，展示「从断点续跑」提示条
+      showRestoreBanner('检测到未完成的任务，可继续', true);
     } else if (msg.type === 'checkpoint_result') {
       // G3 断点续跑结果：ok 移除提示条（host 已重放历史）；失败展示错误（保留关闭按钮）
       if (msg.ok) {

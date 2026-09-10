@@ -579,10 +579,12 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'status'; state: 'thinking' | 'done' | 'paused' }
   /**
-   * 检测到可恢复的暂停检查点（G3 断点续跑，2026-08-23）
+   * 检测到有续跑价值的持久化检查点（G3 断点续跑，2026-08-23）
    *
-   * host 在回放会话时检测到当前会话存在持久化「暂停」检查点（跨实例/插件重启场景）
-   * 推送：webview 渲染「从断点续跑」提示条。同进程暂停续跑（resume）不适用本消息。
+   * host 在回放会话时检测到当前会话存在**未完成计划步骤**（pending/active）的持久化检查点
+   * （跨实例/插件重启场景）推送：webview 渲染「从断点续跑」提示条。
+   * 判据 = 任务价值（2026-09-10 断电优先配套收紧：内核重启后不再回填 paused/error，一律 running，
+   * 故不再按状态提示）；同进程暂停续跑（resume）不适用本消息。
    */
   | { type: 'checkpoint_available' }
   /**

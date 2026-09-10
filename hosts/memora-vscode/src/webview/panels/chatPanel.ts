@@ -566,7 +566,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
       } else if (msg.type === 'checkpoint_restore') {
-        // G3 断点续跑：从持久化暂停检查点恢复（跨实例/插件重启场景）
+        // G3 断点续跑：从有未完成计划步骤的持久化检查点恢复（跨实例/插件重启场景）
         void this.handleCheckpointRestore();
       } else if (msg.type === 'polish_text') {
         // H5 文本润色：调 agent.polish(text) 润色用户消息
@@ -1594,7 +1594,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图重解析时补推三源技能清单（与 refreshAfterAssemble 输出同构，
     // 避免 agent 已装配时 ensureAgent 提前返回导致技能下拉为空）
     this.pushSkillList();
-    // G3 断点续跑：检测当前会话是否有可恢复的持久化暂停检查点 → 推送断点续跑提示条
+    // G3 断点续跑：检测当前会话是否有**未完成计划步骤**的持久化检查点 → 推送断点续跑提示条
+    // （判据 = 任务价值，非暂停状态；2026-09-10 断电优先配套收紧）
     this.maybeOfferCheckpointRestore();
     // 历史会话占用（轻量版）：首次启动回放即推真实占用（而非空态 0%）。
     // _agent 未装配完成时本调用静默跳过，由装配后收口点 refreshAfterAssemble 兜底再推
@@ -1603,31 +1604,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 判定持久化检查点是否可断点续跑（恢复前磁盘判定——跨重启后状态机未装配、无法问询
+   * 判定持久化检查点是否有「续跑价值」（恢复前磁盘判定——跨重启后状态机未装配、无法问询
    * agent.canContinueWithoutInput，故基于磁盘 cp 独立投影；判据与内核同构但场景分化，勿宣称"一致"：
-   *  差异① error 态此处恒可恢复（恢复后手动推进下一条），内核 canContinueWithoutInput 对 error 返 false
-   *        （错误态不亮「继续」按钮，点了静默无反应）；
-   *  差异② 运行中自主工具步（inAutonomousStep）此处不提示恢复（活会话无需恢复条），内核可亮暂停按钮。
+   *  差异① 运行中自主工具步（inAutonomousStep）此处不提示恢复（活会话无需恢复条），内核可亮暂停按钮。
    * 恢复前磁盘判定是架构必然：loadPersistedCheckpoint 时 Agent 尚未 restore，运行时状态机不可用。）
    *
-   * 状态机非 running（paused/error 由检查点恢复进入）恒可续跑；running 态仅在存在未完成
-   * 可推进计划步骤（pending/active）时才算「进行中的任务」——纯单轮问答（plan 为空/已完成）
-   * 不提示，避免正常会话误弹「从断点继续」。
+   * 判据收窄为**任务价值**（2026-09-10「断电优先」裁决配套）：内核重启后不再回填 paused/error
+   * （一律以 running 起，中断轮由宿主打捞为正常 turn + 只能新开 turn），故 `status` 已无提示语义；
+   * 唯一有续跑价值的场景 = 存在未完成的可推进计划步骤（pending/active，任务原地续做）。
+   * 纯单轮问答（plan 为空/已完成）不提示，避免正常会话误弹「从断点继续」。
    */
   private isRestorableCheckpoint(
     cp: { status?: string; plan?: { status?: string }[] } | null | undefined,
   ): boolean {
     if (!cp) return false;
-    if (cp.status !== 'running') return true;
     return (cp.plan ?? []).some((s) => s.status === 'pending' || s.status === 'active');
   }
 
   /**
-   * 检测当前会话是否存在可恢复的持久化「断点」（G3 断点续跑）
+   * 检测当前会话是否存在有续跑价值的持久化「断点」（G3 断点续跑）
    *
    * 跨实例/插件重启场景：Agent 重装配后内存无检查点，但检查点已由内核在 turn 边界 flush 到
-   * sessionStore 持久化。凡是「进行中的任务」（paused/error，或 running 且有未完成计划步骤）
-   * 都提示续跑——恢复 plan + hotMemory，任务原地接着做；纯单轮问答不提示。
+   * sessionStore 持久化。判据 = **存在未完成的可推进计划步骤**（pending/active）——恢复 plan +
+   * hotMemory，任务原地接着做；纯单轮问答不提示。
+   * 2026-09-10「断电优先」裁决配套：内核重启后不再回填 paused/error（一律 running），故不再按
+   * 状态提示——否则「暂停/出错后关程序再打开」会误弹续跑条，与「只能新开 turn」冲突。
    * 同进程暂停续跑（resume）已由 handleResumeFromPause 覆盖，不触发本提示。
    */
   private maybeOfferCheckpointRestore(): void {
@@ -1644,10 +1645,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 从持久化暂停检查点续跑（checkpoint_restore，G3 断点续跑）
+   * 从有未完成计划步骤的持久化检查点续跑（checkpoint_restore，G3 断点续跑）
    *
    * 走内核完整恢复协议 Agent.restoreFromCheckpoint（热窗口载入 + 温记忆召回 + 契约重注入），
    * 恢复后重放会话历史。小验证确认：恢复后状态为 paused（可经「继续」按钮 resumeExecution 续跑）。
+   * 2026-09-10「断电优先」配套：这是**唯一**仍会恢复暂停态的路径——须用户主动点击，非自动
+   * （自动路径 init() 已不回填 paused/error）。
    * 加载失败/无检查点 → 推送 checkpoint_result ok=false。
    */
   private async handleCheckpointRestore(): Promise<void> {

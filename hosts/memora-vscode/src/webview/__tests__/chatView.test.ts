@@ -1971,7 +1971,7 @@ describe('chatView 断点续跑提示条（G3，2026-08-23）', () => {
     dispatch({ type: 'checkpoint_available' });
     const banner = document.querySelector('.checkpoint-banner') as HTMLElement;
     expect(banner).not.toBeNull();
-    expect(banner.textContent).toContain('检测到上次暂停的会话');
+    expect(banner.textContent).toContain('检测到未完成的任务');
     expect(banner.querySelector('.checkpoint-banner-btn')?.textContent).toBe('从断点续跑');
   });
 
