@@ -199,6 +199,13 @@ export class InMemoryRoundStore implements IRoundStore {
    */
   listInterruptedRecent(date: string, limit?: number): Round[] {
     // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤后倒序取最新
+    //
+    // ⚠️ `'error'` 是**预留态**（2026-09-10 G36 裁决②「明示收起」）：
+    // 全仓**无任何写点**把 Round.status 置为 'error'（写点仅 pending → complete /
+    // appendInterrupted → complete）——它在此处与 'pending' **共用同一条打捞条件**，
+    // 故保留字段本身零成本、删除反而是无谓改动。保留的是「接口形状」而非「当前行为」：
+    // 若未来出现「整轮失败且需与中断区分」的真实需求，可在此分支补齐语义，无需改签名。
+    // 纪律：勿因「grep 到零写点」而删该字段（它是打捞条件的组成部分，非死代码）。
     const interrupted = Array.from(this.rounds.values())
       .filter((r) => r.refCount === 0 && (r.status === 'pending' || r.status === 'error'))
       .filter((r) => r.createdAt.startsWith(date))

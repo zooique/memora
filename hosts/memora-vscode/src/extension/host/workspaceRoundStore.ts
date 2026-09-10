@@ -403,6 +403,10 @@ export class WorkspaceRoundStore implements IRoundStore {
    */
   listInterruptedRecent(date: string, limit?: number): Round[] {
     // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤；先索引判型避免全量读盘
+    //
+    // ⚠️ `'error'` 是**预留态**（2026-09-10 G36 裁决②「明示收起」，与内核
+    // `inMemoryRoundStore.listInterruptedRecent` 同款语义）——全仓零写点，仅与 'pending'
+    // 共用本打捞条件。**勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
     const candidates = Array.from(this.index.values())
       .filter((e) => e.refCount === 0 && (e.status === 'pending' || e.status === 'error'))
       .filter((e) => e.createdAt.startsWith(date))

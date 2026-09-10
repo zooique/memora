@@ -94,10 +94,19 @@ export interface RoundInteractiveInput extends RoundMessage {
 /**
  * 问答闭环状态机
  *
- * 状态流转：
- * - pending → complete：AI 回复生成完成
- * - pending → error：AI 回复生成失败
- * - error → pending：重试（创建新 Round，而非修改原 Round）
+ * 状态流转（**实测口径**，2026-09-10 G36 核实）：
+ * - pending → complete：AI 回复生成完成（真实路径）
+ * - error：**预留态，当前无写点**（2026-09-10 G36 裁决②「明示收起」）
+ *
+ * ⚠️ 关于 `error`（防未来误判）：
+ * - **不存在** `pending → error` 的流转——全仓 grep 零写点（生产代码）；运行时失败走
+ *   `yield { type:'error' }` 事件流上报，**不翻 Round 状态机**，一律按「中断」处理
+ *   （appendInterrupted → complete），因为「中断」对用户是可理解的、而「出错」需要
+ *   区分语义——目前无此产品需求。
+ * - **但它不是死代码**：`listInterruptedRecent`（内核 `inMemoryRoundStore` + 宿主
+ *   `workspaceRoundStore` 两端）的打捞条件为 `pending || error`，error 是该条件的组成部分。
+ * - **纪律**：勿因「grep 到零写点」而删此成员或改窄打捞条件；若未来出现「整轮失败且
+ *   需与中断区分展示」的真实需求，再补写点，签名无需变更。
  */
 export type RoundStatus = 'pending' | 'complete' | 'error';
 
