@@ -1,7 +1,7 @@
 /**
  * 会话管理器：从 Agent 拆出的独立会话职责，负责会话切换/分叉/恢复/消息加载。
  * 通过回调访问 Agent 当前组件状态，避免与 history/loop 引用生命周期耦合。
- * 不中断工作模型：会话状态可序列化为 SessionCheckpoint，支持暂停后断点续跑；SessionStateMachine 管理三态流转。
+ * 不中断工作模型：SessionCheckpoint 为同进程内存态快照（不落盘、无序列化/恢复路径）；SessionStateMachine 管理三态流转。
  */
 
 import { logger } from '@/logging/logger.js';
@@ -18,10 +18,8 @@ import { type AgentEventName } from '@/utils/eventEmitter.js';
 import type {
   SessionCheckpoint,
   SessionStatus,
-  ChatMessage,
   Role,
   Standard,
-  ResourceState,
   PlanStep,
   ToolExecutionRecord,
   StepOutcome,
@@ -400,8 +398,6 @@ export class SessionManager {
     | 'plan'
     | 'role'
     | 'standard'
-    | 'resource'
-    | 'hotMemory'
   > {
     return {
       mainGoal: '',
@@ -410,17 +406,12 @@ export class SessionManager {
       plan: [],
       role: { name: 'assistant' },
       standard: { quality: '', constraints: [] },
-      resource: { documents: [], memories: [], context: '' },
-      hotMemory: [],
     };
   }
 
   /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成可序列化 SessionCheckpoint 并持久化 */
   createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint {
     const history = this.getHistory();
-
-    // 从 AgentLoop 获取热记忆（FIFO 截断 + 内容截断）
-    const { messages: hotMemory, truncatedCount } = this.extractHotMemory();
 
     const prev = this.checkpoint;
     const defaults = SessionManager.checkpointDefaults();
@@ -453,10 +444,6 @@ export class SessionManager {
       plan: prev?.plan ?? defaults.plan,
       role: role ?? prev?.role ?? defaults.role,
       standard: standard ?? prev?.standard ?? defaults.standard,
-      resource: prev?.resource ?? defaults.resource,
-      // hotMemory 与 truncatedCount 必须配套重算，不可从基底继承
-      hotMemory,
-      truncatedCount: truncatedCount > 0 ? truncatedCount : undefined,
       // 问答闭环锚点轮次（TS-9）：快照当前在途闭环节点 roundId，跨暂停-续跑 / 跨进程
       // 重启恢复时保留，续跑补充输入据此归属同一闭环节点（空则继承 prev，prev 亦无则缺省）
       closureRoundId: this.getLoop().getCurrentRoundId() || prev?.closureRoundId,
@@ -737,13 +724,6 @@ export class SessionManager {
   updatePlan(plan: PlanStep[]): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = plan;
-    this.touchCheckpoint();
-  }
-
-  /** 更新检查点资源状态 */
-  updateResource(resource: ResourceState): void {
-    if (!this.checkpoint) return;
-    this.checkpoint.resource = resource;
     this.touchCheckpoint();
   }
 
@@ -1091,67 +1071,5 @@ export class SessionManager {
     if (checkpoint.status !== 'paused') return false;
     const pauseStart = checkpoint.pausedAt ?? checkpoint.lastHeartbeat;
     return Date.now() - pauseStart > AGENT_CONSTANTS.PAUSE_TIMEOUT_MS;
-  }
-
-  /**
-   * 从 AgentLoop 提取热记忆（按轮边界截断 + 内容截断），仅保留 user/assistant/tool 排除 system。
-   * 关键设计：**按轮边界截断**，而非按消息条数截断——保证 assistant(tool_calls) 与后续 tool 消息同留，
-   * 避免恢复上下文末尾出现孤立的 tool_calls 消息（OpenAI 协议下会导致 400 错误）。
-   */
-  private extractHotMemory(): { messages: ChatMessage[]; truncatedCount: number } {
-    const loop = this.getLoop();
-    const messages = loop.getMessages();
-
-    // 排除 system prompt
-    const hotMessages = messages.filter((m) => m.role !== 'system');
-    const originalCount = hotMessages.length;
-
-    // 按轮边界分组：每个 user 消息开启一个新轮次，直到下一个 user 消息或数组末尾
-    // 每轮包含：user + assistant(+ tool_calls) + tool 结果 + assistant 回复
-    const rounds: ChatMessage[][] = [];
-    let currentRound: ChatMessage[] = [];
-    for (const msg of hotMessages) {
-      // user 消息开启新一轮（currentRound 非空时先保存当前轮）
-      if (msg.role === 'user' && currentRound.length > 0) {
-        rounds.push(currentRound);
-        currentRound = [];
-      }
-      currentRound.push(msg);
-    }
-    // 保存最后一轮
-    if (currentRound.length > 0) {
-      rounds.push(currentRound);
-    }
-
-    // 保留最近 N 轮（HOT_MEMORY_MAX_ROUNDS），丢弃旧轮次
-    const maxRounds = AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS;
-    let keptRounds = rounds;
-    if (rounds.length > maxRounds) {
-      keptRounds = rounds.slice(-maxRounds);
-    }
-
-    // 展平为消息列表
-    const truncatedMessages = keptRounds.flat();
-    const truncatedCount = originalCount - truncatedMessages.length;
-
-    // 内容截断：单条消息超阈值时截断并追加标记
-    const contentSlice = AGENT_CONSTANTS.HOT_MEMORY_CONTENT_SLICE;
-    const result = truncatedMessages.map((m) => ({
-      role: m.role as ChatMessage['role'],
-      content:
-        m.content.length > contentSlice
-          ? m.content.slice(0, contentSlice) + '\n\n[内容已截断]'
-          : m.content,
-      // 透传 name 字段（LLM Message 可能携带，如 function 调用结果标识）
-      name: m.name,
-      toolCalls: m.toolCalls?.map((tc) => ({
-        id: tc.id,
-        type: tc.type,
-        function: { name: tc.function.name, arguments: tc.function.arguments },
-      })),
-      toolCallId: m.toolCallId,
-    }));
-
-    return { messages: result, truncatedCount };
   }
 }

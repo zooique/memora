@@ -21,8 +21,9 @@
 
 ## 1. 关键约束（本轮新增认知：互斥避让）
 
-1. **目标记忆必须置于「当前会话正文未载入」的位置**——否则会被装配期正文（[Recent conversation]）或 `search_memories` 的工具互斥（§5.1，`excludeRoundIds` 排除当前会话最近 `HOT_MEMORY_MAX_ROUNDS` 轮）排除，命中即被过滤，**不算有效命中**。
+1. **目标记忆必须置于「当前会话正文未载入」的位置**——否则会被装配期正文（[Recent conversation]）或 `search_memories` 的工具互斥（§5.1，`excludeRoundIds` 排除已在场的轮次）排除，命中即被过滤，**不算有效命中**。
    - 实现：目标记忆写入**另一会话**（不同 `sessionName`）或**当前会话更早轮次**（超过互斥热窗口的旧轮）。
+   - **⚠ 2026-09-10 口径校正**：现行实现的互斥窗口是 `getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS = 20)`（**固定 20 轮**），而正解为「**已在场轮次的精确集合**」（动态，随模型窗口/预算变化）——见 [memory-tool-recall-design.md](memory-tool-recall-design.md) §5.1 补记。本约束「置于未载入位置」的前提**仍成立**，但**避让窗口大小随模型变化**：窗口大的模型可能在 20 轮之外仍已载入正文。
 2. **种子隔离**：每个 case 的目标记忆用独特实体词（如 `ZizzleNgauge`），避免与库内既有记忆语义混淆干扰命中判定。
 3. **判定两段**：`queried?`（是否主动调 `search_memories`）→ `hit?`（返回结果是否含目标记忆 roundId）。A 只看前段+后段都成立才计一次成功；B 命中判据以返回含目标 id 为准（显式提点本应主动查）。
 

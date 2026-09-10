@@ -529,6 +529,15 @@ export interface IMcpTransport {
 
 三层分工：容量（Provider/模型，运行时）→ cap 常数（内核 `DEFAULT_MEMORY_CAP_RATIO`，仅封顶）+ 锚点（内核，独立划块）→ 轮数（内核按预算填充派生）。
 
+> **补记（2026-09-10，口径核实）**：上式已与实现逐项对齐（`budget.ts` `computeContextBudget`）。补充三点**实现事实**：
+>
+> 1. **窗口的唯一来源**：`maxContextTokens = resolveContextWindow(用户 per-LLM 的 contextWindow)`，未配置回落内核兜底 `DEFAULT_MAX_CONTEXT_TOKENS = 120_000`；**无全局封顶**（ADR-029：用户对自己填写的参数负责）。宿主仅做 sanity 范围校验（`CONTEXT_WINDOW_MIN/MAX = 1024 / 10_000_000`），**非模型真上限**——即「填得比模型真实窗口大」时系统不会拦，这是唯一可能溢出的日常路径。
+> 2. **「两道线」不是同一个比例，勿混**：
+>    * **装配线**（决定「装多少」）：`可用 = 窗口 × (1 − DEFAULT_OUTPUT_RESERVE_RATIO 0.15) − 固定开销`；`完整对话层 = 剩余 × DEFAULT_DIALOGUE_FILL_RATIO 0.9`。
+>    * **截断线**（决定「超了砍到多少」）：`ContextManager.truncateMessages` 触发于 `token > maxContextTokens`，把 payload 压到 `窗口 × CONTEXT_TOKENS_BUFFER_RATIO 0.9 − system`（`constants.ts:131`），从尾部向前装、中间裁掉（关键消息 + 摘要 + 占位）。**每次迭代送 LLM 前必经**，故正常运行不会溢出。
+>    * **口径分叉（登记）**：两处「给模型回答的预留」分别取 **15%**（装配）与 **10%**（截断，= 1 − 0.9），且两个 `0.9` 基准不同（剩余预算 vs 窗口）。阶段不同、非 bug，但属「同名不同义」，后续统一命名或显式注明。
+> 3. **`memoryLayerCapTokens` 已无约束消费者**：记忆自动注入退役（2026-09-09）后它不再封顶任何真实注入，仅经 `protocol.ts` 透传给宿主 webview 展示「记忆 cap」。属**展示残留**，待收起或改称诊断值（登记，勿再当作生效约束引用）。
+
 #### D. 锚点分级（装配 vs 压缩，两个维度不冲突）
 
 完整对话**装配维度**和 loop **压缩维度**是两件事，分别定义：

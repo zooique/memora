@@ -28,8 +28,6 @@ function makeErrorCheckpoint(cause: string, recovered = false): SessionCheckpoin
     plan: [],
     role: { name: 'assistant' },
     standard: { quality: '', constraints: [] },
-    resource: { documents: [], memories: [], context: '' },
-    hotMemory: [],
     lastHeartbeat: Date.now(),
     
   };
@@ -47,8 +45,6 @@ function makeNoErrorCheckpoint(): SessionCheckpoint {
     plan: [],
     role: { name: 'assistant' },
     standard: { quality: '', constraints: [] },
-    resource: { documents: [], memories: [], context: '' },
-    hotMemory: [],
     lastHeartbeat: Date.now(),
     
   };
@@ -302,8 +298,6 @@ describe('SessionStateMachine — ERROR 恢复校验', () => {
       plan: [],
       role: { name: 'assistant' },
       standard: { quality: '', constraints: [] },
-      resource: { documents: [], memories: [], context: '' },
-      hotMemory: [],
       lastHeartbeat: Date.now(),
       
     };

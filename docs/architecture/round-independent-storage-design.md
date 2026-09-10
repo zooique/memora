@@ -596,9 +596,17 @@ for (const replacedRoundId of loop.getReplacedRoundIds()) {
 }
 ```
 
+> **补记（2026-09-10，口径复核）**：本节「三层机制」的**排除集计算**是**既定设计**；但两层实现均已与它脱节，记录如下：
+>
+> * **`recall()` 调用形态已失效**：`recall()` 召回编排已于 2026-09-10 随跨重启恢复链**整体退役**（唯一消费者 `warmRecall` 一并删除）。现行唯一检索入口 = `search_memories` 工具 → `memoryInspector.searchHybrid`。故上方 `recall(storage, input, {…})` 代码块仅存**设计意图**，非现行实现。
+> * **排除集计算偏离既定设计（待收口）**：本节写的是 `getRecentRoundIds(dialogue.recentRoundCount)`（**动态轮数**，百分比预算派生）+ `getFirstRoundId()` + `getReplacedRoundIds()`；而现行实现（`assembler.ts:843` → `builtinToolHandlers.ts:864`）用的是 `getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS = 20)`——**固定 20 轮**，且丢了「首轮」与「被替换轮」两项。更晚的 T1 修订（2026-09-01，`loop.getVisibleRoundIds()` doc「装配 exclude 用」）进一步指向「按**视图精确集合**」而非按计数。
+> * **即**：本节记的是正解方向，代码是它的**退化实现**。收口账本见 `tasks/上下文装配与互斥口径收口-任务清单-20260910.md`。
+
 **恢复路径对称**：`checkpointRestoreCoordinator.warmRecall`（暂停恢复的温记忆召回）同样透传
 `sessionId`（restoreFromCheckpoint 已 loadSessionMessages 同步）与 `excludeRoundIds`
 （热窗口 `HOT_MEMORY_MAX_ROUNDS` 轮正文已载入 loop，其摘要不重复注入）。
+
+> **补记（2026-09-10）**：本段两条机制均已退役——`checkpointRestoreCoordinator.warmRecall` / `restoreFromCheckpoint` 随跨重启恢复链**整体退役**（2026-09-10 减法）；`HOT_MEMORY_MAX_ROUNDS` 的排除窗口口径亦**待收口**（见上条补记）。本段留存仅作历史对称性记录。
 
 **分叉后召回**：分叉产生的新会话拥有自己的 `roundIds` 切片，其 `sessionName` 与源会话不同；
 任何一侧的召回都只透传本会话的 roundIds/excludeRoundIds——分支 A 的 round-summary 不会在原会话窗口层面对分支 B 生效（记忆库全局共享，但装配时间线各自互斥）。

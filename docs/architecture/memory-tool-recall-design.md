@@ -153,6 +153,16 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 | 命中 touch | 工具命中 → fire-and-forget 刷新 accessedAt（复用 backgroundTask + memoryRecalled 事件模式，contextPreparer.ts:229 同构） | accessedAt 语义"被想起即刷新"在新范式下的唯一触发位——**"被 LLM 使用"以命中为准**（命中 = 被想起 = 记忆强化，同 §3.4 人类隐喻）；规则同步告知 LLM（下行「优先级规则」） |
 | 优先级规则（2026-09-09 补充定案） | 命中项显式附 `accessedAt` 结构化字段（与 sessionId/roundId 溯源增强同批）；工具描述明示：「候选默认按语义相关性排序；多个候选贴题度相近时，按上次被使用先后（accessedAt 新者优先）定优先级；命中会刷新该记忆的最近使用时间」 | 「最近使用优先」作为**规则暴露给 LLM 决策、代码不预排时间主序**（§5.2）：判断归模型，时间只提供事实字段 |
 | 互斥过滤（审查补 → 2026-09-09 已落地） | **不暴露为工具参数**：装配期注入 `recentRoundIdsProvider`（`getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS)`，与恢复路径 warmRecall 同源同值），search_memories 内部算 `excludeRoundIds` 传给 `searchHybrid`，过滤 roundId∈集合的命中（在 superseded 过滤后、融合排序前剔除；不补位凑满——工具语义返回更聚焦结果即可） | 原 `recall()` 的 excludeRoundIds（recall.ts:85/:188/:252）在工具直连查库路径下**无天然继承者**，不加则 LLM 首轮检索会把已在上下文的最近轮摘要重复搜回（违背"干净"）；**传给调用方（LLM/角色包）则互斥可被关掉而失效**，故固化为内核装配注入（builtinToolHandlers.setRecentRoundIdsProvider），不开放（§5.1 边界同批）；明文溯源行见 §8 |
+
+> **补记（2026-09-10，互斥口径收口）**：上表落地方式经复核**存在真相源错位**，本行「实现方式」已不准确，**待收口**：
+>
+> * **「已在眼前的轮次」精确集合早已产出，却零生产消费者**：`AgentLoop.getVisibleRoundIds()`（`loop.ts:2286`，= 进 LLM 的工作记忆视图——截断会回写 `messages`，故该集合即「正文已在眼前」）+ `AgentLoop.getReplacedRoundIds()`（`:2278`，被替换轮的 roundId 已不在视图，须另计）+ `MessageHistory.getFirstRoundId()`（`:101`，长会话显式补入的首轮）。三者 doc 均自承「装配 exclude 用」，实测**仅测试引用**。
+> * **装配期已算出动态轮数却悬空**：`contextPreparer` 取 `loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens)`，其 `recentRoundCount` 的 JSDoc 明写「**供互斥 roundId 排除**」，但从未被读。
+> * **实际接线是固定近似量**：`getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS=20)` 读 **sessionStore** 最近 20 轮，与上述精确集合**不同源**。
+> * **本行原理由已失效**：「与恢复路径 warmRecall 同源同值」——`warmRecall` / `checkpointRestoreCoordinator` 已于 **2026-09-10 减法整体退役**，已无「恢复路径」可同源。
+> * **失效方向**：`recentRoundCount > 20` → 漏剔（已在场的轮摘要被重复返回，违背本行「干净」初衷）；`recentRoundCount < 20` → 多剔（视野外的摘要也拿不到）。
+>
+> **收口定案**：排除集改用上述**精确并集**（`getVisibleRoundIds ∪ getReplacedRoundIds ∪ first`），删除固定 20 窗口；`HOT_MEMORY_MAX_ROUNDS` 随之失去该用途。任务账本见 `tasks/上下文装配与互斥口径收口-任务清单-20260910.md`。
 | 返回 | **结构化溯源字段**：round-summary 命中项显式附 `sessionId`/`roundId`（与 trace_summary 参数直通）。现状溯源参数**隐式埋在 name**（`轮次摘要 {date-session} {roundId}`，roundSummaryGenerator.ts:159——LLM 解析 name 可得，但为未文档化格式契约，name 一变链路即断） | 溯源链去隐式依赖：LLM 零解析直用 trace_summary（§3.5） |
 | 描述 | 删除"回答前仅注入一次召回记忆，运行中不自动补充"残留；改写为"记忆不再自动注入；回答涉及过往决定/历史事实/用户偏好/项目背景，或对答案不确定时，先检索记忆再作答" | 行为性描述与实现同批更新（血训 2c6e54b3）；触发词与 §3.2 首轮指令/§5.3 三层缓解一致 |
 | 幂等映射 | search_memories: 'read-only'（builtinTools.ts:79）不动 | 只读工具永不跳过，语义天然正确 |
@@ -312,4 +322,4 @@ R1（模型不知道自己不知道）的缓解分三层，按确定性降序：
 
 ## 8. 一句话总结
 
-**把记忆从"每轮喂给模型的背景"改成"LLM 主动回忆的资源"：自动注入管线与 6 个召回策略键退役，search_memories 原地升级为语义检索工具（命中即 touch、返回结构化溯源字段）；有查询意图的轮次首轮收窄为只读探查面——LLM 收到要求的第一反应是判断"这值得回忆吗"，相关即主动检索（想起为主），用户显式提点必中（被找到为兜底）；摘要可溯源原文的闭环已实证成立；恢复预热保留为唯一自动例外——排序难题随注入语境一起消失。** 阶段 1/阶段 2 已落地：**工具互斥固化为内核装配注入**（`setRecentRoundIdsProvider` → `getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS)` 过滤 roundId∈当前会话已载入正文轮次的命中，与恢复路径 warmRecall 同源同值），`limit` 收紧 10→5 + 工具描述引导 `trace_summary` 精取原文——工具检索与装配期正文互斥，`excludeRoundIds` 不开放为工具参数、不开放给角色包（互斥被关掉即失效）。
+**把记忆从"每轮喂给模型的背景"改成"LLM 主动回忆的资源"：自动注入管线与 6 个召回策略键退役，search_memories 原地升级为语义检索工具（命中即 touch、返回结构化溯源字段）；有查询意图的轮次首轮收窄为只读探查面——LLM 收到要求的第一反应是判断"这值得回忆吗"，相关即主动检索（想起为主），用户显式提点必中（被找到为兜底）；摘要可溯源原文的闭环已实证成立；恢复预热保留为唯一自动例外——排序难题随注入语境一起消失。** 阶段 1/阶段 2 已落地：**工具互斥固化为内核装配注入**（`setRecentRoundIdsProvider` → `getRecentRoundIds(HOT_MEMORY_MAX_ROUNDS)` 过滤 roundId∈当前会话已载入正文轮次的命中（**⚠ 该口径 2026-09-10 复核为近似实现——固定 20 轮；且「warmRecall」已随 2026-09-10 减法退役、不再存在，正解改为精确集合，见本节「互斥过滤」补记**），`limit` 收紧 10→5 + 工具描述引导 `trace_summary` 精取原文——工具检索与装配期正文互斥，`excludeRoundIds` 不开放为工具参数、不开放给角色包（互斥被关掉即失效）。

@@ -271,8 +271,6 @@ describe('SessionStateMachine · 三态流转', () => {
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
         lastHeartbeat: Date.now(),
       };
       const result = sm.recover(checkpoint);
@@ -294,8 +292,6 @@ describe('SessionStateMachine · 三态流转', () => {
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
         lastHeartbeat: Date.now(),
       };
       const result = sm.recover(checkpoint);
@@ -314,8 +310,6 @@ describe('SessionStateMachine · 三态流转', () => {
         plan: [],
         role: { name: 'assistant' },
         standard: { quality: '', constraints: [] },
-        resource: { documents: [], memories: [], context: '' },
-        hotMemory: [],
         lastHeartbeat: Date.now(),
       };
       const result = sm.recover(checkpoint);
@@ -389,8 +383,6 @@ describe('SessionManager · 检查点管理', () => {
       expect(cp).toHaveProperty('plan');
       expect(cp).toHaveProperty('role');
       expect(cp).toHaveProperty('standard');
-      expect(cp).toHaveProperty('resource');
-      expect(cp).toHaveProperty('hotMemory');
       expect(cp).toHaveProperty('lastHeartbeat');
     });
 
@@ -544,15 +536,7 @@ describe('SessionManager · 检查点管理', () => {
 
     });
 
-  describe('updateResource / updateStandard / updateRole', () => {
-    it('updateResource 应更新资源状态', () => {
-      manager.createCheckpoint('测试');
-      manager.updateResource({ documents: ['doc1.md'], memories: ['mem:1'], context: '测试上下文' });
-      const cp = manager.getCheckpoint()!;
-      expect(cp.resource.documents).toContain('doc1.md');
-      expect(cp.resource.context).toBe('测试上下文');
-    });
-
+  describe('updateStandard / updateRole', () => {
     it('updateStandard 应更新执行标准', () => {
       manager.createCheckpoint('测试');
       manager.updateStandard({ quality: '高质量', constraints: ['测试覆盖'] });

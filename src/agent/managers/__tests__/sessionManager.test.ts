@@ -225,218 +225,6 @@ describe('SessionManager', () => {
       manager.forkSession();
       expect(manager.getCheckpoint()).toBeNull();
     });
-
-    it('K3 热记忆按轮截断应保持 tool_calls 与 tool 结果配对', () => {
-      // 构造 21 轮对话（HOT_MEMORY_MAX_ROUNDS=20，超 1 轮触发截断）
-      // 最后一轮含 assistant(tool_calls)→tool 结果，验证截断后配对保持
-      const messages = [];
-      for (let i = 1; i <= 20; i++) {
-        messages.push({ role: 'user', content: `u${i}` });
-        messages.push({ role: 'assistant', content: `a${i}` });
-      }
-      // 第 21 轮：用户 → assistant(tool_calls) → tool 结果 → assistant 回复
-      messages.push({ role: 'user', content: 'u21' });
-      messages.push({
-        role: 'assistant',
-        content: '',
-        toolCalls: [{ id: 'c21', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
-      });
-      messages.push({ role: 'tool', toolCallId: 'c21', content: 'tool21-result' });
-      messages.push({ role: 'assistant', content: 'a21' });
-      loop.getMessages = vi.fn().mockReturnValue(messages);
-
-      const cp = manager.createCheckpoint('目标');
-      const hot = cp.hotMemory;
-
-      // 第 1 轮（最早）应被截断
-      expect(hot.some((m) => m.content === 'u1')).toBe(false);
-      // 第 21 轮的 tool_calls 与其 tool 结果必须同留（配对）
-      const hasCall = hot.some(
-        (m) => m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.some((tc) => tc.id === 'c21'),
-      );
-      const hasResult = hot.some((m) => m.role === 'tool' && m.toolCallId === 'c21');
-      expect(hasCall).toBe(true);
-      expect(hasResult).toBe(true);
-      // 任何带 tool_calls 的 assistant 消息其后必须紧跟 tool 结果（无孤立 tool_calls）
-      for (let i = 0; i < hot.length; i++) {
-        const m = hot[i]!;
-        if (m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
-          expect(hot[i + 1]?.role).toBe('tool');
-        }
-      }
-    });
-  });
-
-  // ── 交叉链路集成测试：检查点恢复 → 热记忆提取 → 上下文装配 ──
-  // 验证 K3（按轮截断）和 K6（双份注入防护）在恢复链路中的协同正确性
-  describe('交叉链路：检查点恢复 → 热记忆提取 → 上下文装配', () => {
-    /**
-     * 构造含 tool_calls 的多轮对话（超 HOT_MEMORY_MAX_ROUNDS 轮）
-     * 模拟真实场景：用户 → assistant(tool_calls) → tool 结果 → assistant
-     */
-    function buildMultiRoundMessages(roundCount: number): Array<{
-      role: 'user' | 'assistant' | 'tool';
-      content: string;
-      toolCalls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
-      toolCallId?: string;
-    }> {
-      const msgs: Array<{
-        role: 'user' | 'assistant' | 'tool';
-        content: string;
-        toolCalls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
-        toolCallId?: string;
-      }> = [];
-      for (let i = 1; i <= roundCount; i++) {
-        msgs.push({ role: 'user', content: `第${i}轮-用户问题` });
-        // 偶数轮包含 tool_calls
-        if (i % 3 === 0) {
-          const callId = `call-${i}`;
-          msgs.push({
-            role: 'assistant',
-            content: '',
-            toolCalls: [{ id: callId, type: 'function', function: { name: 'read_file', arguments: `{"path":"f${i}"}` } }],
-          });
-          msgs.push({ role: 'tool', toolCallId: callId, content: `第${i}轮-工具执行结果` });
-          msgs.push({ role: 'assistant', content: `第${i}轮-基于工具的回复` });
-        } else {
-          msgs.push({ role: 'assistant', content: `第${i}轮-直接回复` });
-        }
-      }
-      return msgs;
-    }
-
-    it('K3+K6 协同：恢复含 tool_calls 的检查点后，热记忆截断保持配对且无孤立 tool_calls', () => {
-      // 构造 25 轮对话（超 HOT_MEMORY_MAX_ROUNDS=20 轮 5 轮），含 8 次 tool_calls
-      const messages = buildMultiRoundMessages(25);
-      loop.getMessages = vi.fn().mockReturnValue(messages);
-
-      // 创建检查点 → 内部触发 extractHotMemory
-      const checkpoint = manager.createCheckpoint('K3+K6 交叉验证');
-      const hotMemory = checkpoint.hotMemory;
-
-      // 验证 1：旧轮次被截断（第 1-5 轮应被丢弃，保留最后 20 轮）
-      const firstRoundUser = hotMemory.find((m) => m.content === '第1轮-用户问题');
-      expect(firstRoundUser).toBeUndefined();
-
-      // 验证 2：热记忆中 tool_calls 与 tool 结果保持配对
-      // 遍历所有 assistant(tool_calls) 消息，验证其后紧跟 tool 结果
-      for (let i = 0; i < hotMemory.length; i++) {
-        const msg = hotMemory[i]!;
-        if (msg.role === 'assistant' && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) {
-          // 下一条必须是 tool 结果
-          const nextMsg = hotMemory[i + 1];
-          expect(nextMsg).toBeDefined();
-          expect(nextMsg!.role).toBe('tool');
-          // tool 结果的 toolCallId 必须匹配
-          expect(nextMsg!.toolCallId).toBe(msg.toolCalls[0]!.id);
-        }
-      }
-
-      // 验证 3：无孤立 tool_calls（所有 tool_calls 都有配对的 tool 结果）
-      const toolCallAssistantIndices: number[] = [];
-      hotMemory.forEach((m, idx) => {
-        if (m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.length > 0) {
-          toolCallAssistantIndices.push(idx);
-        }
-      });
-      for (const idx of toolCallAssistantIndices) {
-        const nextMsg = hotMemory[idx + 1];
-        expect(nextMsg).toBeDefined();
-        expect(nextMsg!.role).toBe('tool');
-      }
-
-      // 验证 4：截断计数正确
-      expect((checkpoint.truncatedCount ?? 0)).toBeGreaterThan(0);
-    });
-
-    it('K3+K6 协同：恢复检查点后，热记忆可成功注入 AgentLoop 上下文', () => {
-      // 构造含 tool_calls 的 22 轮对话
-      const messages = buildMultiRoundMessages(22);
-      loop.getMessages = vi.fn().mockReturnValue(messages);
-
-      // 创建检查点
-      const checkpoint = manager.createCheckpoint('恢复链路验证');
-      const hotMemory = checkpoint.hotMemory;
-
-      // 模拟恢复：将热记忆注入 loop
-      // 验证热记忆的结构完整性（可被 loop.acceptsHistory 接受）
-      for (const msg of hotMemory) {
-        // 每条消息必须有 role 和 content（除 tool 消息外）
-        expect(msg.role).toBeDefined();
-        if (msg.role !== 'tool') {
-          expect(typeof msg.content).toBe('string');
-        }
-      }
-
-      // 验证热记忆不包含 system 消息
-      const hasSystem = hotMemory.some((m) => m.role === 'system');
-      expect(hasSystem).toBe(false);
-
-      // 验证热记忆中 user/assistant/tool 三种角色齐全
-      const roles = new Set(hotMemory.map((m) => m.role));
-      expect(roles.has('user')).toBe(true);
-      expect(roles.has('assistant')).toBe(true);
-      expect(roles.has('tool')).toBe(true);
-    });
-
-    it('K3+K6 协同：边界场景——恰好 HOT_MEMORY_MAX_ROUNDS 轮不截断', () => {
-      // 构造恰好 20 轮（HOT_MEMORY_MAX_ROUNDS=20）
-      const messages = buildMultiRoundMessages(20);
-      loop.getMessages = vi.fn().mockReturnValue(messages);
-
-      const checkpoint = manager.createCheckpoint('边界验证');
-      const hotMemory = checkpoint.hotMemory;
-
-      // 不截断（truncatedCount 为 undefined 或 0 均表示无截断）
-      expect(checkpoint.truncatedCount ?? 0).toBe(0);
-      expect(hotMemory.length).toBe(messages.length);
-
-      // tool_calls 配对依然完整
-      for (let i = 0; i < hotMemory.length; i++) {
-        const msg = hotMemory[i]!;
-        if (msg.role === 'assistant' && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0) {
-          expect(hotMemory[i + 1]?.role).toBe('tool');
-        }
-      }
-    });
-
-    it('K3+K6 协同：单轮 tool_calls 场景——截断不影响配对', () => {
-      // 构造 21 轮对话，仅最后一轮含 tool_calls
-      const messages: Array<{
-        role: 'user' | 'assistant' | 'tool';
-        content: string;
-        toolCalls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
-        toolCallId?: string;
-      }> = [];
-      for (let i = 1; i <= 20; i++) {
-        messages.push({ role: 'user', content: `u${i}` });
-        messages.push({ role: 'assistant', content: `a${i}` });
-      }
-      // 第 21 轮：单轮 tool_calls 场景
-      messages.push({ role: 'user', content: 'u21' });
-      messages.push({
-        role: 'assistant',
-        content: '',
-        toolCalls: [{ id: 'call-single', type: 'function', function: { name: 'search', arguments: '{"q":"test"}' } }],
-      });
-      messages.push({ role: 'tool', toolCallId: 'call-single', content: '搜索结果' });
-      messages.push({ role: 'assistant', content: '找到了' });
-
-      loop.getMessages = vi.fn().mockReturnValue(messages);
-
-      const checkpoint = manager.createCheckpoint('单轮 tool_calls');
-      const hotMemory = checkpoint.hotMemory;
-
-      // 第 1 轮被截断
-      expect(hotMemory.some((m) => m.content === 'u1')).toBe(false);
-      // 第 21 轮完整保留
-      const hasToolCall = hotMemory.some(
-        (m) => m.role === 'assistant' && Array.isArray(m.toolCalls) && m.toolCalls.some((tc) => tc.id === 'call-single'),
-      );
-      const hasToolResult = hotMemory.some((m) => m.role === 'tool' && m.toolCallId === 'call-single');
-      expect(hasToolCall).toBe(true);
-      expect(hasToolResult).toBe(true);
-    });
   });
 
   describe('restoreMostRecentSession', () => {
@@ -965,10 +753,10 @@ describe('SessionManager', () => {
 
   // ── consecutivePauseCount 时间衰减 ────────────────
 
-  // ── 检查点序列化/反序列化全路径 ──────────────────────────
+  // ── 检查点创建全路径 ──────────────────────────
 
-  describe('checkpoint create/load/restore cycle', () => {
-    /** 创建有内容的 mock Loop，使 extractHotMemory 返回非空热记忆 */
+  describe('createCheckpoint 全路径', () => {
+    /** 创建包含指定消息的 mock Loop */
     function createMockLoopWithMessages(msgs: Array<{ role: string; content: string }>): AgentLoop {
       return {
         restoreHistory: vi.fn(),
@@ -1000,8 +788,6 @@ describe('SessionManager', () => {
       expect(cp.currentGoal).toBe('测试主目标'); // 首次创建 currentGoal == mainGoal
       expect(cp.goalChangeSeq).toBe(0);
       expect(cp.status).toBe('running');
-      expect(cp.hotMemory).toHaveLength(2);
-      expect(cp.hotMemory[0]!.content).toBe('你好');
       expect(cp.plan).toEqual([]);
       expect(cp.lastHeartbeat).toBeGreaterThan(0);
     });

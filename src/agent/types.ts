@@ -177,16 +177,6 @@ export interface Standard {
   constraints: string[];
 }
 
-/** 会话资源维度快照，断点续跑时还原 Agent 引用的上下文 */
-export interface ResourceState {
-  /** 引用的文档路径列表 */
-  documents: string[];
-  /** 引用的记忆 ID 列表 */
-  memories: string[];
-  /** 当前上下文摘要（断点续跑还原用） */
-  context: string;
-}
-
 /** 计划中单个步骤，用于目标漂移检测（文本相似度）和进度追踪 */
 export interface PlanStep {
   /** 步骤唯一标识 */
@@ -313,15 +303,6 @@ export interface SessionCheckpoint {
   role: Role;
   /** 当前执行标准（可更新） */
   standard: Standard;
-  /** 资源快照（断点续跑还原用） */
-  resource: ResourceState;
-  /** 热记忆窗口（截断后的最近对话，防膨胀） */
-  hotMemory: ChatMessage[];
-  /**
-   * 热记忆截断计数：超 HOT_MEMORY_MAX_ROUNDS 轮 FIFO 截断的早期消息数（0/undefined=未截断），
-   * 用于恢复时注入一致性标记。
-   */
-  truncatedCount?: number;
   /**
    * 工具执行日志（outbox 模式）：FIFO，超上限时优先丢弃「幂等或已补偿」的最早记录，
    * 非幂等未补偿记录永不丢弃。
