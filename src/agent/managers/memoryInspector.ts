@@ -227,7 +227,8 @@ export class MemoryInspector {
    *
    * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——保持融合排序
    * **不分层分轨**：不应用 L1/L2 分层、不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配
-   * （capTokens / minSemanticShare）。分层分轨属「召回编排」（recall()，contextPreparer 调用），搜索工具
+   * （capTokens / minSemanticShare）。分层分轨属「召回编排」（recall()，现仅由检查点恢复路径
+   * `checkpointRestoreCoordinator.warmRecall` 调用；自动注入退役后 contextPreparer 已不再调用），搜索工具
    * 只暴露融合相关性结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
    *
    * @param excludeRoundIds 排除的轮次 ID 集合（可选）：这些轮次的 round-summary 已被装配期载入正文，

@@ -25,6 +25,7 @@ import type { ITracer } from '@/agent/tracer.js';
 import type { SessionCheckpoint } from '@/agent/types.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
+import { DEFAULT_MIN_FALLBACK } from '@/utils/recallDefaults.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -82,6 +83,8 @@ export class CheckpointRestoreCoordinator {
    * 合并进资源槽（memories + context）并注入 loop 的 system message，让恢复后感知暂停前完整上下文。
    * 召回失败静默降级，仅记日志，不影响热窗口恢复与契约重注入。
    *
+   * `minFallback` 显式传参（2026-09-10 P1-B）：恢复场景有意保留保底，见调用点注释。
+   *
    * @param checkpoint 会话检查点
    */
   async warmRecall(checkpoint: SessionCheckpoint): Promise<void> {
@@ -108,6 +111,9 @@ export class CheckpointRestoreCoordinator {
         query,
         {
           limit: AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT,
+          // 显式传参（2026-09-10 P1-B）：恢复场景**有意保留保底**，不依赖 recall.ts 的隐式默认——
+          // 恢复时 LLM 无工具调用机会，语义零命中会直接丢失任务连续性 → 宁滥勿缺。
+          minFallback: DEFAULT_MIN_FALLBACK,
           vectorStore: deps.config.vectorStore ?? undefined,
           excludeSources: deps.config.recallExcludeSources,
           // 会话窗口标识与写入侧 sessionName 同源同值（restoreFromCheckpoint 已 loadSessionMessages 同步），
