@@ -444,9 +444,6 @@ export class SessionManager {
       plan: prev?.plan ?? defaults.plan,
       role: role ?? prev?.role ?? defaults.role,
       standard: standard ?? prev?.standard ?? defaults.standard,
-      // 问答闭环锚点轮次（TS-9）：快照当前在途闭环节点 roundId，跨暂停-续跑 / 跨进程
-      // 重启恢复时保留，续跑补充输入据此归属同一闭环节点（空则继承 prev，prev 亦无则缺省）
-      closureRoundId: this.getLoop().getCurrentRoundId() || prev?.closureRoundId,
       lastHeartbeat: Date.now(),
     };
 

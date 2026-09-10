@@ -2529,7 +2529,8 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
       void _chunk; // 仅消费流，断言看状态机与 RoundStore
     }
     expect(agent.sessionManager!.status).toBe('paused');
-    const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
+    // 闭环节点锚点 = roundStore 唯一 Round 的 id（锚点真理源 = loop.currentRoundId，checkpoint 不存副本）
+    const anchorRoundId = currentClosure().id;
     expect(anchorRoundId).toBeTruthy();
     // round 尚未完成（暂停轮不落 ask_user 的 tool 结果段），但闭环节点已建立
     let closure = currentClosure();
@@ -2578,24 +2579,24 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
   });
 
   it('断电优先：重启不恢复暂停态，重启后输入新开 turn（原闭环节点不被续写）', { timeout: 30000 }, async () => {
-    // ── 第一段：提问 → 回答 → 暂停（checkpoint 落盘 closureRoundId 锚点）──
+    // ── 第一段：提问 → 回答 → 暂停（闭环节点锚点 = roundStore 唯一 Round）──
     agent = makeTs9Agent();
     await agent.init();
     for await (const _chunk of agent.chat('帮我读取一个文件')) {
       void _chunk; // 仅消费流
     }
     expect(agent.sessionManager!.status).toBe('paused');
-    const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
+    const anchorRoundId = currentClosure().id;
     expect(anchorRoundId).toBeTruthy();
     // 回答主动提问（结构化回填 + 带回答续跑）
     expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
     for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
       void _chunk; // 仅消费流
     }
-    // 暂停态关闭：checkpoint status=paused 持久化，closureRoundId=anchor 锚定
+    // 暂停态关闭：闭环节点仍锚定同一 Round（roundStore 唯一节点）
     // 显式 pause（空闲 requestPause 已收敛为作废守卫，2026-09-07）
     expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
-    expect(agent.sessionManager!.getCheckpoint()!.closureRoundId).toBe(anchorRoundId);
+    expect(currentClosure().id).toBe(anchorRoundId);
     // 原闭环节点此刻：1 条交互输入（question-answer）
     expect(currentClosure().interactiveInputs).toHaveLength(1);
     // 会话标识在重启前取证：减法后重启不再加载持久化检查点，届时无从取 sessionId
@@ -2642,7 +2643,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
       void _chunk;
     }
     expect(agent.sessionManager!.status).toBe('paused');
-    const anchorRoundId = agent.sessionManager!.getCheckpoint()!.closureRoundId;
+    const anchorRoundId = currentClosure().id;
 
     // ── (2) 宿主超时保底（2026-09-08）：cancelAsk（[ASK_ABORTED] 占位 + 快照转存）→ 无输入续跑 ──
     agent.cancelAsk(); // 消费在途提问（注入 [ASK_ABORTED] 占位 + 转存提问快照供落盘）

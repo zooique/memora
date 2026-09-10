@@ -310,14 +310,6 @@ export interface SessionCheckpoint {
   completedToolCalls?: ToolExecutionRecord[];
   /** step 推进日志（LLM 迭代级时间轴，FIFO cap 10-12 条；task 步骤状态见 plan） */
   stepLog?: StepOutcome[];
-  /**
-   * 问答闭环锚点轮次（TS-9，2026-09-02 新增）
-   *
-   * 正在进行的问答闭环 roundId（= prepare appendUser 的 head roundId）：
-   * 跨暂停-续跑 / 跨进程重启恢复时保留，续跑补充输入据此归属同一闭环节点，
-   * 不因交互输入分裂新轮。恢复时回填 loop.currentRoundId；空串=无在途闭环（兜底）。
-   */
-  closureRoundId?: string;
   /** 暂停元数据 */
   pauseMeta?: PauseMeta;
   /** 心跳时间戳（毫秒），防僵尸会话 */
