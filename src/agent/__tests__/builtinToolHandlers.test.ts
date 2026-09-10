@@ -575,14 +575,61 @@ describe('BuiltinToolHandlers.searchMemories', () => {
         content: 'ZizzleFrob 更早决策',
       }),
     );
-    // 注入互斥提供者：当前会话最近已载入正文轮次 = [r1]
-    handlers.setRecentRoundIdsProvider(() => ['r1']);
+    // 注入互斥排除集：当前会话「正文或摘要已在眼前」的轮次 = {r1}
+    handlers.setExclusionRoundIdsProvider(() => new Set(['r1']));
 
     const result = await handlers.searchMemories('ZizzleFrob', '10', 'match');
 
-    // r2（未载入）正常返回；r1（已载入正文，round=r1）被排除，不重复返回
+    // r2（未载入）正常返回；r1（内容已在眼前，round=r1）被排除，不重复返回
     expect(result).toContain('round=r2)');
     expect(result).not.toContain('round=r1)');
+  });
+
+  it('互斥排除集覆盖「被替换轮 / 在途轮」：正文已换成摘要的轮次其摘要不再被召回（§5.1）', async () => {
+    const inspector = new MemoryInspector(storage, {} as never, {} as never);
+    handlers.setMemoryInspector(inspector);
+    // 已进视图的轮 p1（正文在眼前）
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:p1',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'p1',
+        name: '轮次摘要 p1',
+        content: 'BlibberQuark 决策内容',
+      }),
+    );
+    // 被第一级替换的轮 p2（正文已换成摘要，roundId 不在 messages 但摘要已在上下文）
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:p2',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'p2',
+        name: '轮次摘要 p2',
+        content: 'BlibberQuark 更早决策',
+      }),
+    );
+    // 在途轮 p3（当轮 user 已落 store、尚未进 messages 的窗口期）
+    storage.upsert(
+      createMemory({
+        id: 'round-summary:2026-08-28-main:p3',
+        source: SOURCE_LABELS.ROUND_SUMMARY,
+        sessionName: '2026-08-28-main',
+        roundId: 'p3',
+        name: '轮次摘要 p3',
+        content: 'BlibberQuark 在途决策',
+      }),
+    );
+    // 精确排除集 = 视图内 {p1} ∪ 被替换 {p2} ∪ 在途 {p3}（loop.getExclusionRoundIds 的产物形态）
+    handlers.setExclusionRoundIdsProvider(() => new Set(['p1', 'p2', 'p3']));
+
+    const result = await handlers.searchMemories('BlibberQuark', '10', 'match');
+
+    // 三者内容均已在上下文（正文或摘要）→ 摘要一律不再返回（精确集合，与轮数/模型窗口无关）
+    expect(result).not.toContain('round=p1)');
+    expect(result).not.toContain('round=p2)');
+    expect(result).not.toContain('round=p3)');
   });
 
   it('未注入互斥提供者时不过滤（缺省直通，兼容测试/独立调用）', async () => {

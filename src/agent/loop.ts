@@ -2294,6 +2294,29 @@ export class AgentLoop {
   }
 
   /**
+   * 召回互斥排除集（memory-tool-recall-design §5.1）：正文已不在眼前、但其摘要已在眼前的轮次。
+   *
+   * = 视图内轮次（`getVisibleRoundIds`，含截断后按重要性保留的中间轮）
+   *   ∪ 已被第一级替换的轮次（`getReplacedRoundIds`，正文被换成了摘要，roundId 已不在 messages
+   *     但摘要已在上下文，故须另计——否则其 round-summary 会被二次召回重复返回）
+   *   ∪ 当前在途轮次（`currentRoundId`，当轮 user 已落 store 但尚未进 messages 的窗口期）。
+   *
+   * **唯一真理源**：从 loop 的工作记忆视图派生（精确集合），不再用「最近 N 轮」代理量近似。
+   * 由装配期注入 `search_memories`（`toolExec.setExclusionRoundIdsProvider`）。
+   * 首轮若仍在视图内则已被覆盖；长会话首轮被裁掉时可另行显式计入（当前无消费者，未接）。
+   */
+  getExclusionRoundIds(): ReadonlySet<string> {
+    const ids = new Set<string>(this.getVisibleRoundIds());
+    for (const rid of this.replacedRoundIds) {
+      ids.add(rid);
+    }
+    if (this.currentRoundId) {
+      ids.add(this.currentRoundId);
+    }
+    return ids;
+  }
+
+  /**
    * 获取当前窗口中的完整对话消息（仅 user + assistant，排除 system/tool）。
    * 供 contextPreparer 计量 fixed/query 模式下实际进窗的完整对话占用
    * （区别于 hybrid 模式注入的最近轮次摘要块，见 getRecentHistoryWithinBudget）。

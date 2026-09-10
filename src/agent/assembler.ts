@@ -838,15 +838,15 @@ export async function assembleComponents(
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
   // 「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发 memoryRecalled。
   toolExec.setOnMemoryRecalled((info) => hooks?.emit(AGENT_EVENTS.memoryRecalled, info));
-  // 接线工具召回与装配期正文互斥（§5.1）：search_memories 排除当前会话最近已载入正文的轮次
-  // round-summary（getRecentRoundIds 与恢复路径 warmRecall 同源同值），避免 LLM 拿回眼前内容的摘要重复。
-  toolExec.setRecentRoundIdsProvider((maxRounds) => history.getRecentRoundIds(maxRounds));
+  // 接线工具召回与装配期内容互斥（§5.1）：search_memories 排除「正文或摘要已在眼前」的轮次
+  // round-summary，避免 LLM 拿回眼前内容的摘要重复。排除集从 loop 工作记忆视图精确派生
+  // （getExclusionRoundIds = 视图内 ∪ 被替换 ∪ 在途），与模型窗口无关，取代旧的固定 20 轮代理量。
+  toolExec.setExclusionRoundIdsProvider(() => loop.getExclusionRoundIds());
 
   // ── 输入增强管线 ──
 
   // ContextPreparer 依赖已装配的 loop/history/rolePackManager；策略推导走 rolePackManager（SSOT）。
   const contextPreparer = new ContextPreparer({
-    history,
     loop,
     rolePackManager,
     getIndex: () => pctx.index,

@@ -493,14 +493,14 @@ export class ToolExecutor {
   }
 
   /**
-   * 注入「当前会话最近已载入正文的轮次」提供者（memory-tool-recall-design §5.1 工具互斥），
-   * 转发给 builtinHandlers：search_memories 用它排除当前会话正文已在眼前的轮次 round-summary。
+   * 注入召回互斥排除集提供者（memory-tool-recall-design §5.1 工具互斥），
+   * 转发给 builtinHandlers：search_memories 用它排除「正文或摘要已在眼前」的轮次 round-summary。
    * assembler 中装配期 wiring（与 setMemoryInspector 同一时机），缺省不注入则工具不过滤。
    *
-   * @param provider 接收最大轮数、返回当前会话最近已载入正文的 roundId 数组
+   * @param provider 返回当前会话「内容已在上下文」的 roundId 精确集合（无参，从 loop 视图派生）
    */
-  setRecentRoundIdsProvider(provider: (maxRounds: number) => string[]): void {
-    this.builtinHandlers.setRecentRoundIdsProvider(provider);
+  setExclusionRoundIdsProvider(provider: () => ReadonlySet<string>): void {
+    this.builtinHandlers.setExclusionRoundIdsProvider(provider);
   }
 
   /**

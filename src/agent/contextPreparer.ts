@@ -14,7 +14,6 @@
  */
 
 import type { AgentLoop } from '@/agent/loop.js';
-import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { computeContextBudget, isInputTooLarge, estimateOccupancy } from '@/agent/budget.js';
@@ -33,9 +32,7 @@ import type { ITracer } from '@/agent/tracer.js';
  * 不传可变私有状态。
  */
 export interface ContextPreparerDeps {
-  /** 消息历史（固定轮次注入 / 互斥 roundId 排除） */
-  history: MessageHistory;
-  /** AgentLoop（最近对话注入） */
+  /** AgentLoop（最近对话注入 + 召回互斥排除集派生） */
   loop: AgentLoop;
   /** 角色包管理器（策略来源；可为空） */
   rolePackManager: RolePackManager | null;

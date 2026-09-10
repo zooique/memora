@@ -134,8 +134,8 @@ export class BuiltinToolHandlers {
   /** 记忆搜索器（search_memories 语义后端，装配期注入；未注入时回退关键词 memoryIndex.search） */
   private memoryInspector: MemoryInspector | null = null;
 
-  /** 当前会话最近已载入正文的轮次提供者（装配期注入；search_memories 用它与装配期正文互斥） */
-  private recentRoundIdsProvider: ((maxRounds: number) => string[]) | null = null;
+  /** 当前会话「正文或摘要已在眼前」的轮次提供者（装配期注入；search_memories 用它与装配期内容互斥） */
+  private exclusionRoundIdsProvider: (() => ReadonlySet<string>) | null = null;
 
   /** memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」；装配期注入，缺省不发射） */
   private onMemoryRecalled: ((info: { count: number; query: string }) => void) | null = null;
@@ -159,15 +159,14 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * 注入「当前会话最近已载入正文的轮次」提供者（memory-tool-recall-design §5.1 工具互斥）。
-   * search_memories 用它排除当前会话正文已在眼前的轮次 round-summary，避免与装配期完整对话重复。
-   * 提供者返回最近 maxRounds 轮的 roundId，与恢复路径 warmRecall 的 getRecentRoundIds 同源同值。
+   * 注入召回互斥排除集提供者（memory-tool-recall-design §5.1 工具互斥）。
+   * search_memories 用它排除「正文或摘要已在眼前」轮次的 round-summary，避免与装配期内容重复。
+   * 提供者返回精确集合（`loop.getExclusionRoundIds()`：视图内 ∪ 被替换 ∪ 在途），
+   * 语义为「该轮内容已在上下文，其摘要不应再被召回带回」——从视图派生，与模型窗口无关。
    * 缺省不注入则不过滤（保持测试/独立调用可直接触发）。
-   *
-   * @param provider 接收最大轮数、返回当前会话最近已载入正文的 roundId 数组
    */
-  setRecentRoundIdsProvider(provider: (maxRounds: number) => string[]): void {
-    this.recentRoundIdsProvider = provider;
+  setExclusionRoundIdsProvider(provider: () => ReadonlySet<string>): void {
+    this.exclusionRoundIdsProvider = provider;
   }
 
   // ─── 路径安全（内置 + 自定义工具共享） ──────────────────────────
@@ -856,14 +855,12 @@ export class BuiltinToolHandlers {
       limit = 50;
     }
 
-    // 工具召回与装配期正文互斥（§5.1）：排除当前会话最近已载入正文的轮次 round-summary（正文已在眼前，避免重复返回）。
-    // 由装配期注入的 recentRoundIdsProvider 提供（与恢复路径 warmRecall 同源 getRecentRoundIds）；
-    // 缺省不注入则不过滤（测试/独立调用可直接触发）。
-    const excludedRoundIds = new Set<string>(
-      this.recentRoundIdsProvider
-        ? this.recentRoundIdsProvider(AGENT_CONSTANTS.HOT_MEMORY_MAX_ROUNDS)
-        : [],
-    );
+    // 工具召回与装配期内容互斥（§5.1）：排除「正文或摘要已在眼前」的轮次 round-summary
+    // （正文已在眼前，避免重复返回）。由装配期注入的 exclusionRoundIdsProvider 提供
+    // （= loop.getExclusionRoundIds() 精确集合）；缺省不注入则不过滤（测试/独立调用可直接触发）。
+    const excludedRoundIds: ReadonlySet<string> = this.exclusionRoundIdsProvider
+      ? this.exclusionRoundIdsProvider()
+      : new Set<string>();
 
     // memory-tool-recall-design §3.3：注入 MemoryInspector 后走语义混合搜索（searchHybrid
     // = 语义 + 关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。

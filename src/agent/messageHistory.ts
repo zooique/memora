@@ -68,35 +68,9 @@ export class MessageHistory {
   }
 
   /**
-   * 最近 N 轮的 roundId 集合（互斥排除用）。
-   * 已完整加载进上下文的轮次，其摘要不应再被召回注入，避免正文与摘要重复进上下文（浪费 token + 干扰判断）。
-   * 从 sessionStore 取 roundId 非空的最近 N 轮去重；rounds = 上下文固定加载轮数；无 sessionStore/roundId 或异常时返回空数组。
-   */
-  getRecentRoundIds(rounds: number): string[] {
-    if (!this.sessionStore || rounds <= 0) return [];
-    try {
-      const messages = this.sessionStore.loadMessages(this.currentDate, this.currentSession);
-      const ids: string[] = [];
-      const seen = new Set<string>();
-      // 从后向前收集最近 rounds 轮的 roundId（去重，保最近）
-      for (let i = messages.length - 1; i >= 0 && ids.length < rounds; i--) {
-        const rid = messages[i]?.roundId;
-        if (rid && !seen.has(rid)) {
-          seen.add(rid);
-          ids.push(rid);
-        }
-      }
-      return ids;
-    } catch (err) {
-      logger.warn({ err }, '获取最近轮次 roundId 失败，跳过互斥排除');
-      return [];
-    }
-  }
-
-  /**
    * 当前会话第一条轮次的 roundId（会话起点背景，互斥排除用）。
    * 装配时若第一条不在最近轮内（长会话），完整对话层显式补入第一条，其 roundId 须计入 exclude
-   * 避免其摘要被二次召回（与 getRecentRoundIds 同源同值）。
+   * 避免其摘要被二次召回。
    */
   getFirstRoundId(): string | null {
     if (!this.sessionStore) return null;

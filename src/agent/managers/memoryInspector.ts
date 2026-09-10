@@ -283,8 +283,9 @@ export class MemoryInspector {
     // 前置 superseded 过滤（与 recall 读路径 recall.ts:221 一致）：被 supersededBy 取代的摘要不作为当前事实
     // 返回（仍保留可回溯，trace_summary 可精确取原文）。在排序前过滤，避免占据 top-N 槽位挤掉有效命中。
     const active = [...merged.values()].filter((e) => !e.memory.supersededBy);
-    // 工具召回与装配期正文互斥（§5.1）：排除当前会话最近已载入正文轮次的 round-summary，
-    // 避免 LLM 拿回眼前内容的摘要重复（excludeRoundIds 由调用方按 getRecentRoundIds 计算，天然不含当轮）。
+    // 工具召回与装配期内容互斥（§5.1）：排除「正文或摘要已在眼前」轮次的 round-summary，
+    // 避免 LLM 拿回眼前内容的摘要重复（excludeRoundIds 由调用方按 loop.getExclusionRoundIds 精确派生，
+    // = 视图内 ∪ 被替换 ∪ 在途，天然不含当轮）。
     // 被排除者不补位（工具语义）：返回更聚焦的结果即可，不强制凑满 limit。
     const unexcluded =
       excludeRoundIds && excludeRoundIds.size > 0

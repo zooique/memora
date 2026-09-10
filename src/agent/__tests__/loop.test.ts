@@ -575,6 +575,58 @@ describe('AgentLoop · getVisibleRoundIds（T1 视图内轮次集合，装配 ex
   });
 });
 
+describe('AgentLoop · getExclusionRoundIds（§5.1 精确召回排除集）', () => {
+  it('= 视图内轮次 ∪ 被替换轮 ∪ 在途轮（三源并集，取代固定轮数代理量）', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ content: '第一轮回答' }], // turn0：首轮（其正文会被第一级替换成摘要）
+        [{ content: '第二轮回答' }], // turn1：二轮
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      replaceRoundsKeepRecent: 1,
+      // round-1 有已存摘要 → 二轮触发第一级替换（正文换摘要，roundId 记账进 replacedRoundIds）
+      getRoundSummary: (roundId) => (roundId === 'round-1' ? '摘要：第一轮干的事' : null),
+    });
+
+    // 第一轮：视图内 roundId = {round-1}，无被替换轮
+    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+      // drain
+    }
+    expect(Array.from(loop.getExclusionRoundIds()).sort()).toEqual(['round-1']);
+
+    // 第二轮：round-1 正文被替换成摘要（roundId 记账），round-2 进视图，currentRoundId 亦为 round-2
+    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+      // drain
+    }
+    const exclusion = loop.getExclusionRoundIds();
+    // round-1：正文已换成摘要仍在上下文 → 须排除（否则其摘要被二次召回重复返回）
+    expect(exclusion.has('round-1')).toBe(true);
+    // round-2：正文在视图内 → 须排除
+    expect(exclusion.has('round-2')).toBe(true);
+    // 与 getVisibleRoundIds 的关系：排除集是视图集的超集（含被替换轮）
+    expect(loop.getReplacedRoundIds()).toContain('round-1');
+    expect(loop.getVisibleRoundIds().has('round-1')).toBe(false);
+    expect(exclusion.size).toBeGreaterThanOrEqual(loop.getVisibleRoundIds().size);
+  });
+
+  it('无活动轮次时退化为视图集（currentRoundId 空不注入）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    loop.restoreHistory([
+      { role: 'system', content: 'sys' },
+      { role: 'user', content: '提问', roundId: 'round-7' },
+      { role: 'assistant', content: '回答' },
+    ]);
+
+    // 未 processUserInput → currentRoundId 空；无被替换轮 → 排除集 = 视图集
+    expect(Array.from(loop.getExclusionRoundIds())).toEqual(['round-7']);
+  });
+});
+
 describe('AgentLoop · 软上限终止（摘要层达容量上限 → 收尾信号）', () => {
   it('上下文逼近容量上限且正文已摘要化 → 注入 SOFT_LIMIT 收尾信号', async () => {
     const loop = new AgentLoop({

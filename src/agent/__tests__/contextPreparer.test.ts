@@ -34,7 +34,7 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
   };
 }
 
-/** 构造 ContextPreparer 测试依赖（loop/history/storage 均 mock，token 估算按内容长度） */
+/** 构造 ContextPreparer 测试依赖（loop/storage 均 mock，token 估算按内容长度） */
 function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
   const emit = vi.fn();
   const injectSystemMessage = vi.fn();
@@ -49,14 +49,10 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     getConversationMessages: (): Array<{ role: 'user' | 'assistant'; content: string }> => [],
     getReplacedRoundIds: (): readonly string[] => [],
     getVisibleRoundIds: (): ReadonlySet<string> => new Set(),
+    getExclusionRoundIds: (): ReadonlySet<string> => new Set(),
     recordBudget: vi.fn(),
     recordOccupancy: vi.fn(),
     injectSystemMessage,
-  };
-  const history = {
-    getRecentRoundIds: () => [],
-    getFirstRoundId: () => null,
-    currentSessionName: '2026-08-22-main',
   };
   const storage = {
     upsert: vi.fn(async () => {}),
@@ -69,7 +65,6 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     close: vi.fn(),
   } as unknown as IMemoryStorage;
   const deps: ContextPreparerDeps = {
-    history: history as unknown as ContextPreparerDeps['history'],
     loop: loop as unknown as ContextPreparerDeps['loop'],
     rolePackManager: null,
     getIndex: () => storage,
@@ -84,7 +79,7 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     ...overrides,
   };
   const preparer = new ContextPreparer(deps);
-  return { preparer, deps, loop, history, storage, emit, injectSystemMessage };
+  return { preparer, deps, loop, storage, emit, injectSystemMessage };
 }
 
 describe('ContextPreparer · 自动注入退役（突变锚点）', () => {

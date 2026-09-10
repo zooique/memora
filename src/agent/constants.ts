@@ -54,15 +54,6 @@ export const AGENT_CONSTANTS = {
    */
   GC_INTERVAL_MS: 24 * 60 * 60 * 1000,
 
-  // ─── 召回排除窗口 ─────────────────────────────
-
-  /**
-   * `search_memories` 召回排除窗口（近似轮数）：排除最近 N 轮「正文已载入上下文」的轮次。
-   * 20 轮 ≈ 40 条消息 ≈ 8K-12K tokens。
-   * 2026-09-10 减法：「热记忆截断」语义已随 `SessionCheckpoint.hotMemory` 退役，本常量仅剩此一处消费者。
-   */
-  HOT_MEMORY_MAX_ROUNDS: 20,
-
   // ─── completedToolCalls FIFO 封顶 ─────────────────
   //
   // 工具执行日志无上限时，检查点序列化开销随会话寿命线性增长。
