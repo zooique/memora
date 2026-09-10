@@ -1383,6 +1383,61 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     // provider 应被调用 3 次（1 首次 + 2 重试）
     expect(provider.callCount).toBe(3);
   }, 15000);
+
+  // ─── degrade 降级分支（ARCH-3 P3-2 搬迁时经变异验证发现的覆盖缺口）───
+  // 该两条路径原在 loop.ts 的 callLlmWithRetry 内，搬至 LlmCaller 后补测：
+  // 用变异（改降级文案）验证过——无测试时会静默通过，说明此处确为覆盖缺口。
+
+  it("errorHandling='degrade' 且重试耗尽 → 降级为固定文案，不抛错", async () => {
+    const provider = mockRetryProvider([
+      { throw: new Error('fail') },
+      { throw: new Error('fail') },
+      { throw: new Error('fail') },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    loop.setStrategy({ errorHandling: 'degrade' });
+
+    const texts: string[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      if (chunk.type === 'text') texts.push(chunk.content);
+    }
+
+    // 降级文案精确送达用户（精确匹配：断言整句，防「文案被改」类变异静默通过），且整轮未抛错
+    expect(texts.join('')).toContain('抱歉，AI 服务暂时不可用，请稍后重试。');
+    expect(provider.callCount).toBe(3);
+  }, 15000);
+
+  it("errorHandling='degrade' 且流式中途失败 → 降级为已生成的部分文本", async () => {
+    const provider = mockRetryProvider([
+      {
+        streamThenThrow: {
+          chunks: [{ content: '已生成的部分' }],
+          error: new Error('stream broke'),
+        },
+      },
+    ]);
+
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    loop.setStrategy({ errorHandling: 'degrade' });
+
+    const texts: string[] = [];
+    for await (const chunk of loop.processUserInput('测试')) {
+      if (chunk.type === 'text') texts.push(chunk.content);
+    }
+
+    // 流式已开始的文本被保留（不重试、不抛错）
+    expect(texts.join('')).toContain('已生成的部分');
+    expect(provider.callCount).toBe(1);
+  }, 15000);
 });
 
 // ═══════════════════════════════════════════════════════════════
