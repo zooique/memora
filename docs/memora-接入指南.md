@@ -286,7 +286,7 @@ await agent.close(); // 释放项目锁 + 关闭数据库
 
 Memora 通过 `ISessionStore` 接口支持会话消息的持久化。宿主实现此接口，注入到 Agent。
 
-> **⚠ 现行契约以类型定义为准（[sessionStore.ts](../src/memory/sessionStore.ts)）**：下方示例仅示意最小形态。当前接口为 **round-based 单一模式**（`appendRoundId` / `getRoundIds` / `setRoundIds` / `createSession` / `deleteSession` + 标题元数据 `getSessionMeta` / `updateSessionMeta` / `listSessionMetas`）——消息内容只存 RoundStore，`ISessionStore` 只持 Round 指针。
+> **⚠ 现行契约以类型定义为准（导出类型 `ISessionStore`，以随包 `.d.ts` 为准）**：下方示例仅示意最小形态。当前接口为 **round-based 单一模式**（`appendRoundId` / `getRoundIds` / `setRoundIds` / `createSession` / `deleteSession` + 标题元数据 `getSessionMeta` / `updateSessionMeta` / `listSessionMetas`）——消息内容只存 RoundStore，`ISessionStore` 只持 Round 指针。
 > **检查点持久化已退役（2026-09-10 减法）**：`saveCheckpoint` / `loadCheckpoint` / `deleteCheckpoint` 已从接口删除；跨重启恢复链整体下线，中止/断电一律把未完成 turn 补全为完整 turn 身份并在下次会话按历史加载，运行时暂停是同 turn 内续跑（内存态）。
 
 ```typescript
@@ -684,7 +684,7 @@ chatProvider.setAgentFactory((projectPath) =>
 
 ## 十.7、策略键消费矩阵（17 键 SSOT 落点）📌 参考
 
-> 完整 17 键 × 内核消费位置 × UI 侧消费的逐键矩阵见 **[`docs/策略键消费矩阵.md`](../策略键消费矩阵.md)**（SSOT：`src/role-pack/strategyKeys.ts`）。此处只给新宿主对接必知的结论与边界。
+> 逐键矩阵（17 键 × 内核消费位置 × UI 侧消费）为仓库内开发文档（SSOT：`src/role-pack/strategyKeys.ts`），**不随包发布**；宿主对接所需的键语义见 [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) §三。此处只给新宿主对接必知的结论与边界。
 
 - **17 键全部被内核真实消费、零 `[草案]`**（prepare 2 / act 7 / reflect 3 / global 5）。解析层 `rolePackManager` + `strategyResolver` 84 项测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `managers/llmCaller` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
 - **三类流向，单一收口无镜像**：
@@ -759,7 +759,7 @@ agent.tools.registerTool(
 
 适合场景：用户身份 / 基础设定需要**始终在上下文中**，且与角色包解耦（切换角色不丢失）。
 
-内核公开 API `agent.injectAffect(text)`（见 [agent.ts](../../src/agent/agent.ts#L1803-L1810) / [loop.ts](../../src/agent/loop.ts#L2120-L2131)）是「宿主可控的 system prompt 固定文本槽」：文本原样插在**角色包 prompt 与 bootstrap 记忆之间**，角色切换不清除、实时重建，传空串清除。名字虽沿用"情感基调"，机制即通用文本注入，正适合承载用户基础设定。
+内核公开 API `agent.injectAffect(text)`（见 [API 参考手册](./memora-api-reference.md) §十二 完整 API 一览·角色条目）是「宿主可控的 system prompt 固定文本槽」：文本原样插在**角色包 prompt 与 bootstrap 记忆之间**，角色切换不清除、实时重建，传空串清除。名字虽沿用"情感基调"，机制即通用文本注入，正适合承载用户基础设定。
 
 ```typescript
 // 宿主启动装配、agent.init() 完成后调用一次（内存态——每次启动从宿主自有存储读取后注入）

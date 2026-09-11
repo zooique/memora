@@ -119,11 +119,12 @@
 | `askOn`         | 数组（元素见下）                     | 1\~4 个元素             | `[ambiguity, decision, missing_info]` | 主动提问触发场景（可组合） | `["ambiguity", "decision"]` |
 | `askLimit`      | 整数                           | `1 ~ 10`             | `3`                                   | 每轮主动提问次数上限    | `2`                         |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
-| `tokenBudget`   | 整数                           | `0 ~ 1000000`（0=不限制） | 未声明→`0`（不限制）                           | 每轮总 token 上限  | `120000`                    |
+| `tokenBudget`   | 整数                           | `0 ~ 1000000`（0=不限制） | 未声明→`0`（不限制）                           | 每轮总 token 上限  | `12000`                     |
 | `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `50`                                  | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。
+> `tokenBudget` 为**软上限**：仅当本轮累计估算 token ≥ 该值才提前收尾。**声明值须小于上下文窗口**（内核默认 120000），否则永不触发——内置示例包声明 `1000000`，等价于「不设限」；`0` 或未声明则完全不检查。
 
 ***
 
@@ -177,7 +178,7 @@
 | ❌ 错误写法                                              | ✅ 正确写法                                           | 原因                    |
 | --------------------------------------------------- | ------------------------------------------------ | --------------------- |
 | `"outputLimit": 999999`                             | `"outputLimit": 8192`                            | 越上界 `65536`，防输出失控     |
-| `"tokenBudget": -100`                               | `"tokenBudget": 120000`                          | 负值非法，应为 `0 ~ 1000000` |
+| `"tokenBudget": -100`                               | `"tokenBudget": 12000`                           | 负值非法，应为 `0 ~ 1000000` |
 | `"selfReview": 999`                                 | `"selfReview": 3`                                | 越上界 `10`，防无限自审查       |
 | `"capabilities": [{"capability": "WriteFile"}]`     | `"capabilities": [{"capability": "file:write"}]` | 能力名必须 `域:动作` 小写格式     |
 | `"strategy": { "prepare": { "unknownKey": true } }` | 去掉该键                                             | 未知键 warning + 忽略，不生效  |

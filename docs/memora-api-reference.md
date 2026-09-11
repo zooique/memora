@@ -593,8 +593,6 @@ const lock = rp.getSwitchLockStatus(); // 切换防抖状态
 
 ### 8.1 内置工具（核心摘要：默认常驻 + 条件暴露，非全集）
 
-> 工具全集见 `toolExecutor.ts` / [tool-exposure-model.md](./architecture/tool-exposure-model.md)（默认常驻 vs 角色启动特权模型）。下表为对话/脚本场景核心工具。
-
 | 工具名 | 用途 | 参数 | 暴露条件 |
 |--------|------|------|------|
 | `read_file` | 读取项目内文件内容 | `path` | 默认常驻 |
