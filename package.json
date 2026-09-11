@@ -51,6 +51,7 @@
     "typecheck": "tsc --noEmit",
     "eval:budget": "tsx scripts/eval-context-budget-snapshot.ts",
     "eval:budget:check": "tsx scripts/eval-context-budget-snapshot.ts --check",
+    "docs:links": "tsx scripts/check-publish-links.ts",
     "prepare": "lefthook install || true",
     "prepublishOnly": "npx rimraf dist && npm run build"
   },
