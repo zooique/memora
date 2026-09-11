@@ -144,7 +144,8 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
     // 每轮总 token 预算（0~MAX_TOKEN_BUDGET，0=不限制）
     tokenBudget: intRange(0, MAX_TOKEN_BUDGET),
-    // 每轮工具步数预算：0=不限制，或 ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]（角色包声明区间）
+    // 每轮步数预算：0 或未声明 = 不声明（loop 侧落 maxIterations 兜底），或 ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]（角色包声明区间）
+    // 注意：0 ≠「不限步数」——stepBudget 无不受限路径（防死循环设计），0 仅表示走内核兜底
     stepBudget: {
       kind: 'check',
       check: (value) =>

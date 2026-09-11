@@ -37,24 +37,20 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
     expect(parseConfig({}).memory.maxContextTokens).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
   });
 
-  it('默认 recall 排除的 source 应为空（设定记忆已归角色包，不参与召回排除）', () => {
-    expect(AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES).toEqual([]);
-  });
-
   it('默认 locale 应为 zh-CN（项目母语，可被 AssembleInput.locale 覆盖）', () => {
     expect(AGENT_CONSTANTS.DEFAULT_LOCALE).toBe('zh-CN');
   });
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    // 11 个字段：CHAT_LOCK_TIMEOUT_MS / SHUTDOWN_ARCHIVE_TIMEOUT_MS / CHAT_INPUT_MAX_LENGTH /
-    // DEFAULT_MAX_CONTEXT_TOKENS / DEFAULT_RECALL_EXCLUDE_SOURCES /
+    // 10 个字段：CHAT_LOCK_TIMEOUT_MS / SHUTDOWN_ARCHIVE_TIMEOUT_MS / CHAT_INPUT_MAX_LENGTH /
+    // DEFAULT_MAX_CONTEXT_TOKENS /
     // DEFAULT_LOCALE / DEFAULT_RECALL_LIMIT /
     // PAUSE_TIMEOUT_MS（暂停超时自动归档）/
     // GC_INTERVAL_MS（孤儿 Round 垃圾回收周期）/
     // COMPLETED_TOOL_CALLS_MAX（FIFO 封顶）/
     // CHECKPOINT_SCHEMA_VERSION（K1 检查点结构版本）
-    expect(Object.keys(AGENT_CONSTANTS)).toHaveLength(11);
+    expect(Object.keys(AGENT_CONSTANTS)).toHaveLength(10);
   });
 });
 

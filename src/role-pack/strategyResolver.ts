@@ -77,7 +77,8 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   },
   global: {
     tokenBudget: 0, // 0 = 不声明，resolveTokenBudget 回退 FALLBACK_TOKEN_BUDGET
-    stepBudget: 0,  // 0 = 不声明，resolveStepBudget 回退 DEFAULT_MAX_ITERATIONS
+    // 0 或未声明 → 内核兜底 DEFAULT_MAX_ITERATIONS（无「不限步数」路径，符合防死循环设计）
+    stepBudget: 0,
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
     askLimit: 3,
@@ -205,7 +206,8 @@ export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): numb
   return valid ? candidate : FALLBACK_TOKEN_BUDGET;
 }
 
-/** 解析步数预算：角色包 stepBudget 合法则采用，否则回退 DEFAULT_MAX_ITERATIONS。0=不限制 stepBudget 提前终止。 */
+/** 解析步数预算：0 或未声明 → DEFAULT_MAX_ITERATIONS 兜底；stepBudget ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]
+ * 按声明采用。不存在「不限步数」路径——0 在 loop 侧等同未声明（effectiveMax 取 maxIterations 兜底）。 */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
   const valid =

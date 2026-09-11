@@ -244,6 +244,13 @@ export class SeedOrchestrator {
         this.deps.getParts() as SeedParts;
 
       const roundId = loop.getCurrentRoundId();
+      // 预算触顶占位（V5 落实意图）：该轮无实质回答——round-summary 基于占位文本生成为低质浪费。
+      // 检测 LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER（SSOT 共享常量，非魔法字面量）跳过摘要生成，
+      // 落实 constants 该常量「orchestrator 需以此判定无实质收尾（走回退摘要而非当作真实内容）」的既有意图。
+      if (assistantContent.includes(LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER)) {
+        this.deps.emit?.('roundSummaryGenerated', { roundId, success: true });
+        return;
+      }
       // reflect.summary='off' 或 generator 不存在 → 无摘要，直接 emit 让宿主解锁 UI
       const summaryOn =
         !!roundSummaryGenerator &&
