@@ -523,7 +523,6 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         const strategyHint = strategy
           ? {
               toolReadonly: strategy.act?.toolReadonly,
-              toolApproval: strategy.act?.toolApproval,
               tempGroup: tempGroup as 'high' | 'mid' | 'low',
               reasoningMode: reasoningMode as 'auto' | 'manual' | undefined,
               summaryFocus: strategy.prepare?.summaryFocus,

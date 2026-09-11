@@ -22,9 +22,6 @@ export type UnderstandingConfirm = 'off' | 'echo' | 'confirm';
 /** 工具调用模式：allow=允许 / block=只回答不执行（标准键 act.toolMode） */
 export type ToolMode = 'allow' | 'block';
 
-/** 工具批准模式：auto=自动执行 / confirm=执行前征询用户 */
-export type ToolApproval = 'auto' | 'confirm';
-
 /** 工具操作范围：readonly=仅允许只读操作 / full=完整权限 */
 export type ToolReadonly = 'readonly' | 'full';
 
@@ -73,8 +70,6 @@ export interface PrepareStrategy {
 export interface ActStrategy {
   /** 工具调用模式（默认 allow；标准键 act.toolMode） */
   readonly toolMode?: ToolMode;
-  /** 工具批准模式（默认 auto；内核已消费） */
-  readonly toolApproval?: ToolApproval;
   /** 工具操作范围（默认 full；内核已消费） */
   readonly toolReadonly?: ToolReadonly;
   /** 单轮工具调用步数上限（默认 20） */
@@ -122,7 +117,7 @@ export interface GlobalStrategy {
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/summaryFocus（round-summary 提炼视角；自动注入召回 6 键已随阶段2退役）；
- * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly/toolApproval；
+ * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
  * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
@@ -167,8 +162,6 @@ export interface L2RuntimeStrategy {
   readonly askLimit: number;
   /** 工具只读模式（act.toolReadonly） */
   readonly toolReadonly: ToolReadonly;
-  /** 工具审批模式（act.toolApproval） */
-  readonly toolApproval: ToolApproval;
 }
 
 /** 能力声明：以中立能力命名空间（`file:write`/`web:search`）声明，由各实现映射到自有工具（见 capabilityMap.ts 映射表） */

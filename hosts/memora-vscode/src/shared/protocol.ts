@@ -903,8 +903,6 @@ export type ExtensionToWebviewMessage =
 export interface RoleStrategyIndicatorDto {
   /** 工具只读模式（readonly=仅只读操作 / full=完整权限） */
   toolReadonly?: 'readonly' | 'full';
-  /** 工具审批模式（confirm=执行前确认 / auto=自动执行） */
-  toolApproval?: 'confirm' | 'auto';
   /** 生成温度分组（high=0.8+ / low=0.4- / mid=之间） */
   tempGroup?: 'high' | 'mid' | 'low';
   /** 多步推理模式 */

@@ -129,11 +129,6 @@
               "type": "string",
               "enum": ["full", "readonly"],
               "description": "工具操作范围（默认 full）"
-            },
-            "toolApproval": {
-              "type": "string",
-              "enum": ["auto", "confirm"],
-              "description": "工具批准模式（默认 auto）"
             }
           },
           "additionalProperties": false

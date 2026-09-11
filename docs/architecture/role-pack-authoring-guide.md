@@ -104,7 +104,6 @@
 | `providerRouting`    | `auto` / `fixed`              | —                  | `auto`      | Provider 路由策略 | `"fixed"`         |
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
 | `toolReadonly`       | `full` / `readonly`           | —                  | `full`      | 工具操作范围        | `"readonly"`      |
-| `toolApproval`       | `auto` / `confirm`            | —                  | `auto`      | 工具批准模式        | `"confirm"`       |
 
 ### 3.3 reflect 组（回答后·沉淀）
 

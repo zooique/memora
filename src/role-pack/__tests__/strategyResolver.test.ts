@@ -21,7 +21,6 @@ import {
   resolveStepBudget,
   resolveMultiStepReasoning,
   resolveToolReadonly,
-  resolveToolApproval,
   resolveUnderstandingConfirm,
   mergeStrategy,
   assembleRolePack,
@@ -89,7 +88,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
   it('act 维度包含全部必需字段', () => {
     const a = DEFAULT_BEHAVIOR_STRATEGY.act!;
     expect(a.toolMode).toBe('allow');
-    expect(a.toolApproval).toBe('auto');
     expect(a.toolReadonly).toBe('full');
     expect(a.toolStepLimit).toBe(20);
     expect(a.streaming).toBe('streaming');
@@ -206,18 +204,6 @@ describe('resolve* 函数 — 基础策略解析', () => {
     it('非法/缺失值回退默认 full', () => {
       expect(resolveToolReadonly({ act: { toolReadonly: 'bad' as never } })).toBe('full');
       expect(resolveToolReadonly(undefined)).toBe('full');
-    });
-  });
-
-  // ── resolveToolApproval ──
-  describe('resolveToolApproval', () => {
-    it('合法值透传', () => {
-      expect(resolveToolApproval({ act: { toolApproval: 'confirm' } })).toBe('confirm');
-    });
-
-    it('非法/缺失值回退默认 auto', () => {
-      expect(resolveToolApproval({ act: { toolApproval: 'bad' as never } })).toBe('auto');
-      expect(resolveToolApproval(undefined)).toBe('auto');
     });
   });
 
@@ -649,10 +635,9 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
 
   it('act/global 声明值覆盖对应维度', () => {
     const s = resolveL2Strategy({
-      act: { toolApproval: 'confirm', toolReadonly: 'readonly' },
+      act: { toolReadonly: 'readonly' },
       global: { tokenBudget: 120 },
     } as BehaviorStrategy);
-    expect(s.toolApproval).toBe('confirm');
     expect(s.toolReadonly).toBe('readonly');
     expect(s.tokenBudget).toBe(120);
   });

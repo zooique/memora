@@ -28,8 +28,7 @@
       "toolStepLimit": 100,
       "providerRouting": "auto",
       "multiStepReasoning": "auto",
-      "toolReadonly": "readonly",
-      "toolApproval": "auto"
+      "toolReadonly": "readonly"
     },
     "reflect": {
       "summary": "on",

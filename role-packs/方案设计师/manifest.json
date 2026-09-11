@@ -32,8 +32,7 @@
       "toolStepLimit": 50,
       "providerRouting": "auto",
       "multiStepReasoning": "auto",
-      "toolReadonly": "full",
-      "toolApproval": "auto"
+      "toolReadonly": "full"
     },
     "reflect": {
       "summary": "on",

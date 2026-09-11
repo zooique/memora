@@ -5,7 +5,7 @@
  * 状态独立（不触碰 loop 工作记忆 / 指标 / 自主步标志），输入工具调用元素、输出结果串并触发
  * onToolExecuted，故可独立单测。loop 的 executeToolCalls 只做批量编排，逐工具委托本执行器。
  *
- * 依赖经 deps 注入（execute / preExecutionCheck / onToolExecuted / onToolApproval / getStrategy / tracer），
+ * 依赖经 deps 注入（execute / preExecutionCheck / onToolExecuted / getStrategy / tracer），
  * 其中 getStrategy 每次执行读最新策略——setStrategy 的动态更新在此依然生效。
  */
 
@@ -41,9 +41,7 @@ export interface ToolRunnerDeps {
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
   /** 工具执行完成回调（outbox 幂等记录是否已执行） */
   onToolExecuted?: (name: string, args: string, result: string, ok: boolean) => void;
-  /** 审批回调（toolApproval=confirm 时触发） */
-  onToolApproval?: (info: { toolName: string; args: string }) => void;
-  /** 读最新 L2 策略（toolReadonly / toolApproval 随 setStrategy 动态生效） */
+  /** 读最新 L2 策略（toolReadonly 随 setStrategy 动态生效） */
   getStrategy: () => L2RuntimeStrategy;
   /** 可观测性 Tracer */
   tracer: ITracer;
@@ -132,14 +130,6 @@ export class ToolRunner {
           result: `[ERR:TOOL:READONLY_DENIED] 工具 "${name}" 是写入操作，在只读模式下不可用`,
         };
       }
-    }
-
-    // ② 审批闸：toolApproval='confirm' 触发审批回调（仅通知宿主征询，不阻塞放行）。
-    // 职责边界：onToolApproval 只"通知"宿主有 toolApproval=confirm 的高风险调用，不承担放行/拒绝决策；
-    // 真正的决策闸是③ preExecutionCheck（宿主返回 denied 即拒绝）。宿主须在 preExecutionCheck 做 confirm
-    // 拦截，勿期待 onToolApproval 的返回能阻止执行（它无返回值，回调后仍继续到③）。
-    if (strategy.toolApproval === 'confirm') {
-      this.deps.onToolApproval?.({ toolName: name, args });
     }
 
     // ③ 宿主 preExecutionCheck：拒绝 / 跳过 / 放行（可改写参数）

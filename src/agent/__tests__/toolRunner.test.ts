@@ -21,7 +21,7 @@ function tc(name = 'echo', args = '{}'): ToolCall {
   return { id: 't1', type: 'function', function: { name, arguments: args } };
 }
 
-/** 构造默认策略（默认 toolReadonly/toolApproval 关闭） */
+/** 构造默认策略（默认 toolReadonly 关闭） */
 function strategy(overrides: Partial<L2RuntimeStrategy> = {}): L2RuntimeStrategy {
   return { ...DEFAULT_L2_STRATEGY, ...overrides } as L2RuntimeStrategy;
 }
@@ -116,21 +116,6 @@ describe('ToolRunner 单工具执行', () => {
 
     expect(result).toBe('已执行过');
     expect(deps.execute).not.toHaveBeenCalled();
-  });
-
-  it('审批闸：toolApproval=confirm 触发 onToolApproval', async () => {
-    const onToolApproval = vi.fn();
-    const deps = makeDeps({
-      onToolApproval,
-      getStrategy: () => strategy({ toolApproval: 'confirm' }),
-    });
-    const runner = new ToolRunner(deps);
-
-    await runner.runOne(tc());
-
-    expect(onToolApproval).toHaveBeenCalledWith({ toolName: 'echo', args: '{}' });
-    // 审批不阻塞放行
-    expect(deps.execute).toHaveBeenCalled();
   });
 
   it('工具抛 MemoraError → 结构化错误串并 onToolExecuted(ok=false)', async () => {

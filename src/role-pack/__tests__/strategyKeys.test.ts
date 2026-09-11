@@ -140,7 +140,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'providerRouting',
       'multiStepReasoning',
       'toolReadonly',
-      'toolApproval',
     ],
     reflect: [
       'summary',

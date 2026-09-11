@@ -49,7 +49,6 @@ interface RolesPayload {
     handoffPrompt?: string;
     strategyHint?: {
       toolReadonly?: 'readonly' | 'full';
-      toolApproval?: 'confirm' | 'auto';
       tempGroup?: 'high' | 'mid' | 'low';
       reasoningMode?: 'auto' | 'manual';
       summaryFocus?: string;
@@ -419,12 +418,6 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         const chip = document.createElement('span');
         chip.className = 'strategy-chip ' + (hint.toolReadonly === 'readonly' ? 'readonly' : 'full');
         chip.textContent = hint.toolReadonly === 'readonly' ? '只读模式' : '完整工具';
-        strategy.appendChild(chip);
-      }
-      if (hint?.toolApproval) {
-        const chip = document.createElement('span');
-        chip.className = 'strategy-chip ' + (hint.toolApproval === 'confirm' ? 'confirm' : 'auto');
-        chip.textContent = hint.toolApproval === 'confirm' ? '需审批' : '自动执行';
         strategy.appendChild(chip);
       }
       if (hint?.tempGroup) {

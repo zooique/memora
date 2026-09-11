@@ -12,7 +12,6 @@
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
-import { extractKeywords } from '@/memory/recall.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
 import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
 import type {
@@ -54,23 +53,6 @@ import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
-
-/**
- * 记忆首轮收窄的只读探查面（memory-tool-recall-design §3.2 件②）。
- * 有查询意图轮次的首个 LLM 调用仅暴露该子集——搜索/读文件/定位路标族提前到首轮，
- * 写/执行/网络/任务表工具延后到第二轮恢复。条件性工具（如 search_project 未注入）经 filter 自动排除。
- *
- * 命名与 builtinTools 工具名一致（search_memories/trace_summary/list_sessions 来自 builtinTools.ts，
- * read_file/list_dir/search_project 宿主注入）。判定 = 「是不是探查工具」，非白名单语义。
- */
-const PROBE_MEMORY_TOOLS: ReadonlySet<string> = new Set([
-  'search_memories',
-  'read_file',
-  'list_dir',
-  'search_project',
-  'trace_summary',
-  'list_sessions',
-]);
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -203,13 +185,6 @@ export class AgentLoop {
   private searchDisabled = false;
   /** TS-7 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
   private searchDisabledHintInjected = false;
-  /** 记忆首轮收窄握手状态位（memory-tool-recall-design §3.2 件②，探索中）。
-   *  有查询意图轮次的首个 LLM 调用（信号 = !toolExecutedThisTurn），tools 收窄为只读探查面
-   *  （PROBE_MEMORY_TOOLS）+ 指令点名 memory_search 优先——「理解意图 → 搜记忆」由编排保证，
-   *  非模型自律（纯自发调用不可靠：LLM 可能全程不调 = 记忆形同虚设）。
-   *  生命周期同 searchDisabled：turn 开始由 prepare 预筛结果 setNarrowFirstRound 设置；
-   *  首轮 tool 执行后（!toolExecutedThisTurn 自失效）或随 resetTurnState 自然恢复，无显式恢复点。 */
-  private narrowFirstRound = false;
   /** 工具结果防重缓存（闭环内有效，每轮 resetTurnState 清空）。
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
    *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
@@ -256,8 +231,6 @@ export class AgentLoop {
   /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要，step 级推进记录；
    *  planStepId 由消费方自查 active step，loop 不传——签名不再留空头支票） */
   onStepBoundary?: (stepInfo: { summary: string }) => void;
-  /** 工具审批回调——当 toolApproval='confirm' 时触发 */
-  onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
   /** active step 元信息回调（阶段二，2026-09-08 步级折叠路 B′）：loop 每次迭代完成时调用，
@@ -427,7 +400,6 @@ export class AgentLoop {
       builtinTools: opts.builtinTools,
       preExecutionCheck: opts.preExecutionCheck,
       onToolExecuted: opts.onToolExecuted,
-      onToolApproval: (info) => this.onToolApproval?.(info),
       getStrategy: () => this.strategy,
       tracer: this.tracer,
     });
@@ -489,12 +461,6 @@ export class AgentLoop {
 
       // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
       this.resetTurnState();
-      // 记忆首轮收窄预筛（memory-tool-recall-design §3.2 件①，探索中）：
-      // extractKeywords 非空即有查询意图 → 首个 LLM 调用收窄为只读探查面 + 指令点名 memory_search 优先
-      // （「理解→搜」由编排保证，非模型自律）。在本轮 turn 状态已复位后派生——若如其前（prepare 期）设置，
-      // 会被上方 resetTurnState 复位清空（状态位生命周期 = 本轮 turn，随 resetTurnState 自然恢复）。
-      // 无查询意图（问候/续句）→ 置 false，全工具直接答。
-      this.applyNarrowFirstRound(extractKeywords(userInput).length > 0);
       // 新增问题入口清理残留补充输入（对称缺口修复，2026-09-06）：
       // abort/host close 等异常路径可能让上一轮 interject 残留 interruptQueue，若不清，
       // 会被本 turn 首 step 边界 _handleInterrupt 误消费注入到新问题。
@@ -683,8 +649,6 @@ export class AgentLoop {
     // 硬上限停搜标志随轮重置（下一闭环 web_search 重新可用）
     this.searchDisabled = false;
     this.searchDisabledHintInjected = false;
-    // 记忆首轮收窄握手状态位随轮重置（下一闭环预筛重新判定，与 searchDisabled 同生命周期）
-    this.narrowFirstRound = false;
     // 工具结果防重缓存：闭环内有效，新闭环开始即清空（跨闭环不复用，避免上一轮已读文件"误伤"本轮合法重读）
     this.toolResultCache.clear();
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
@@ -1685,22 +1649,6 @@ export class AgentLoop {
   }
 
   /**
-   * 应用记忆首轮收窄状态位（memory-tool-recall-design §3.2 件①②接线，探索中）。
-   *
-   * loop 在本轮 turn 状态复位后根据输入派生（processUserInput 入口）：有查询意图 → 首个 LLM 调用
-   * 的 tools 与 system prompt 收窄为只读探查面 + 指令点名 memory_search 优先；无 → 全工具直答。
-   * true 置位后同步重建 system prompt，令 buildSystemPrompt 的双闸过滤（探查面 + 指令）即时生效
-   * （system 消息构造期已按全工具构建，不重建则描述面与 tools 参数面不一致）。
-   *
-   * @param enabled 是否有查询意图（extractKeywords(input).length > 0）
-   */
-  private applyNarrowFirstRound(enabled: boolean): void {
-    this.narrowFirstRound = enabled;
-    // 置位时重建 system prompt：探查面收窄 + 指令一句必须在首轮 LLM 调用前生效
-    if (enabled) this.rebuildSystemMessage();
-  }
-
-  /**
    * 构建 system prompt（装载 bootstrapMemories + 工具描述）
    *
    * 身份中性（architecture_philosophy §11「memora 不需要知道自己是谁」）：
@@ -1716,13 +1664,9 @@ export class AgentLoop {
 
     // 追加工具描述（让 LLM 知道可用工具及其参数）
     // TS-7 搜索硬上限命中后：同步剔除 web_search 描述，避免「描述存在但工具不可用」不一致
-    // 记忆首轮收窄：有查询意图轮次的首个 LLM 调用，工具描述收窄为只读探查面（§3.2 件②双闸第一闸）
-    const firstNarrowed = this.narrowFirstRound && !this.toolExecutedThisTurn;
-    const tools = firstNarrowed
-      ? (this.opts.toolDefinitions ?? []).filter((t) => PROBE_MEMORY_TOOLS.has(t.name))
-      : this.searchDisabled
-        ? (this.opts.toolDefinitions ?? []).filter((t) => t.name !== 'web_search')
-        : this.opts.toolDefinitions;
+    const tools = this.searchDisabled
+      ? (this.opts.toolDefinitions ?? []).filter((t) => t.name !== 'web_search')
+      : this.opts.toolDefinitions;
     if (tools && tools.length > 0) {
       const toolDescs = tools
         .map((t) => {
@@ -1758,9 +1702,11 @@ export class AgentLoop {
         prompt += `\n\n## 工具选择规则（必须遵守）\n\n${createLines.join('\n')}\n- 以上配置文件的任何操作，永远不要使用 write_file 工具`;
       }
 
-      // 记忆首轮收窄指令一句（§3.2 件②）：仅在探查面生效时注入——首轮被置于「这值得回忆吗」判断位，
-      // 点名 memory_search 优先。判断相关即调（想起的动作），太简单/与过往无涉可直接作答（判断的合理产物）。
-      if (firstNarrowed) {
+      // 记忆回想导语句（T12 2026-09-11，砍硬收窄后保留软引导）：工具描述块存在即注入，
+      // 让 LLM 建立「涉及过往先回想」的通用良习（不依赖轮次状态/查询意图）。
+      // toolCallsBlocked（确定性工具屏蔽，角色冻结态）时排除：引导调用被禁止的 search_memories
+      // 属描述面不一致——其调用会被 handleToolCalls 确定性拒绝并直接 done，白费一轮 LLM 工具意图。
+      if (!this.strategy.toolCallsBlocked) {
         prompt += `\n\n## 记忆回想\n回答涉及过往决定、历史、用户偏好、项目背景，或你不确定答案时，先调用 search_memories。`;
       }
     }
@@ -1778,18 +1724,12 @@ export class AgentLoop {
    * tools 参数触发的独立流式协议，两者不能并存；response_format 保留供调用方按需显式传入）
    */
   private buildChatOptions(): ChatOptions {
-    // 记忆首轮收窄（§3.2 件②双闸第二闸，确定性）：有查询意图轮次的首个 LLM 调用（!toolExecutedThisTurn），
-    // tools 参数收窄为只读探查面——想调工具必先面对 memory_search（「理解→搜」由编排保证，非模型自律）。
-    // 与 searchDisabled 同构：不修改 opts.toolDefinitions，仅按轮过滤；首轮 tool 执行后或随 resetTurnState 恢复。
     const allTools = this.opts.toolDefinitions ?? [];
-    const firstNarrowed = this.narrowFirstRound && !this.toolExecutedThisTurn;
     // TS-7 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸；
     // 不修改 opts.toolDefinitions，仅按轮过滤，随 resetTurnState 自然恢复）
-    const tools = firstNarrowed
-      ? allTools.filter((t) => PROBE_MEMORY_TOOLS.has(t.name))
-      : this.searchDisabled
-        ? allTools.filter((t) => t.name !== 'web_search')
-        : allTools;
+    const tools = this.searchDisabled
+      ? allTools.filter((t) => t.name !== 'web_search')
+      : allTools;
     const baseOptions: ChatOptions = {};
 
     if (tools.length > 0) {

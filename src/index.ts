@@ -60,7 +60,6 @@ export type {
   ReflectStrategy,
   GlobalStrategy,
   UnderstandingConfirm,
-  ToolApproval,
   ToolReadonly,
   StreamingMode,
   ProviderRouting,

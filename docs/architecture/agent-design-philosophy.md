@@ -472,7 +472,7 @@ Agent 基于装配好的上下文，调用 LLM 生成回答。生成过程的纪
 
 **设计纪律**：
 
-1. **单点聚合、多重顺序检查**：执行前约束（审批/审计/参数改写/幂等跳过）经统一入口**按顺序叠加**（只读 → 审批 → preExecutionCheck），宿主以回调注入（对应现有 `preExecutionCheck`、`onToolApproval` 与 `onToolExecuted`），而非散落于各工具内部的特判（如 `onBeforeWrite`、`sanitizeExternalText` 属工具内部实现，不与此混淆）。
+1. **单点聚合、多重顺序检查**：执行前约束（审计/参数改写/幂等跳过）经统一入口**按顺序叠加**（只读 → preExecutionCheck），宿主以回调注入（对应现有 `preExecutionCheck` 与 `onToolExecuted`），而非散落于各工具内部的特判（如 `onBeforeWrite`、`sanitizeExternalText` 属工具内部实现，不与此混淆）。注：审批闸 `onToolApproval` 已随 3.0.0 删键（2026-09-11，单用户本地无真实审批场景），审批职责归宿主 `preExecutionCheck`。
 2. **策略是枚举，检查是载体**：§14.3 的策略维度是"角色选择什么行为"（声明层），执行前检查是"内核如何执行"（机制层）。策略决定"是否拦、拦了怎么办"，检查负责"在统一入口拦截"——两者职责分离，不重复。
 3. **不建新抽象**：已有 `preExecutionCheck`（执行前检查）+ `onToolExecuted`（执行后记录）已覆盖"前 + 后"两个时机，扩展返回语义（三态 + overrideArgs）即可，**不引入独立的 ToolHook 钩子系统**。这是从 DeepSeek Harness 工具流水线（pre-execute → execute → post-execute）汲取思想后收敛的结论——memora 用"接口注入 + 单点聚合检查"实现同等能力，不照搬插件瀑布机制。
 

@@ -419,7 +419,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
     const strategyHint = {
       toolReadonly: strategy.act?.toolReadonly,
-      toolApproval: strategy.act?.toolApproval,
       tempGroup: tempGroup as 'high' | 'mid' | 'low',
       reasoningMode: reasoningMode as 'auto' | 'manual' | undefined,
       summaryFocus: strategy.prepare?.summaryFocus,

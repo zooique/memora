@@ -128,7 +128,6 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     providerRouting: { kind: 'enum', values: ['auto', 'fixed'] },
     multiStepReasoning: { kind: 'enum', values: ['auto', 'manual'] },
     toolReadonly: { kind: 'enum', values: ['full', 'readonly'] },
-    toolApproval: { kind: 'enum', values: ['auto', 'confirm'] },
   },
   reflect: {
     summary: { kind: 'enum', values: ['on', 'off'] },

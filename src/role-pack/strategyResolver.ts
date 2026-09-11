@@ -20,7 +20,6 @@ import type {
   ErrorHandling,
   ProviderRouting,
   MultiStepReasoning,
-  ToolApproval,
   ToolReadonly,
   ToolMode,
   UnderstandingConfirm,
@@ -63,7 +62,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   },
   act: {
     toolMode: 'allow',
-    toolApproval: 'auto',
     toolReadonly: 'full',
     toolStepLimit: 20,
     streaming: 'streaming',
@@ -243,20 +241,6 @@ export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): Too
 }
 
 /**
- * 解析工具审批模式：非法值归位 'auto'
- *
- * 控制工具执行审批行为：
- * - 'auto' → 自动执行（默认）
- * - 'confirm' → 执行前等待宿主确认
- *
- * @param strategy 合并后的行为策略
- * @returns 合法的工具审批模式
- */
-export function resolveToolApproval(strategy: BehaviorStrategy | undefined): ToolApproval {
-  return normalizeEnum(strategy?.act?.toolApproval, ['auto', 'confirm'], 'auto');
-}
-
-/**
  * 解析理解确认模式（内核已消费）：非法值归位 'off'
  * —— off=直接生成 / echo=复述用户意图但不等待 / confirm=预检复述并等待确认。
  * 消费点在 assembleRolePack，将模式转为 persona prompt 行为指令。
@@ -286,14 +270,13 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
   multiStepReasoning: 'auto',
   askLimit: 3,
   toolReadonly: 'full',
-  toolApproval: 'auto',
 };
 
 /**
  * 解析 L2 运行时策略（收敛：替代 Agent 层逐项 setXxx 装配）
  *
  * 聚合现有各 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
- * Token/步数预算、多步推理、主动提问上限、工具只读、工具审批）+ reflect.selfReview；
+ * Token/步数预算、多步推理、主动提问上限、工具只读）+ reflect.selfReview；
  * 非法值经各 resolve* 归位内核默认；selfReview 归一为「0=关闭 / 正整数=N 轮执行上限」。
  *
  * @param strategy 合并后的行为策略（角色包声明，可为空）
@@ -321,7 +304,6 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
     multiStepReasoning: resolveMultiStepReasoning(strategy),
     askLimit: resolveAskLimit(strategy),
     toolReadonly: resolveToolReadonly(strategy),
-    toolApproval: resolveToolApproval(strategy),
   };
 }
 
