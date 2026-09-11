@@ -135,7 +135,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'toolMode',
       'temperature',
       'outputLimit',
-      'streaming',
       'toolStepLimit',
       'providerRouting',
       'multiStepReasoning',
@@ -185,6 +184,17 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     expect(STRATEGY_KEY_RULES.global!.autoSwitch).toBeUndefined();
   });
 
+  it('已撤键（防回归）：streaming 不在任何阶段键集', () => {
+    // 2026-09-11 撤键：streaming 仅被 agent.ts 写入 ChatOptions.stream，而 openaiCompatible
+    // 硬编码 stream:true 从不读取 —— 暴露给作者却是空转的假键（同 toolApproval 型）。
+    // 若未来误加回键集，此守卫红。
+    for (const phase of PHASES) {
+      expect(Object.keys(STRATEGY_KEY_RULES[phase]!), `${phase} 不应含 streaming`).not.toContain(
+        'streaming',
+      );
+    }
+  });
+
   it('每个规则都是合法的 KeyRule 类型', () => {
     for (const phase of PHASES) {
       const rules = STRATEGY_KEY_RULES[phase]!;
@@ -215,11 +225,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     it('act.toolMode 枚举值正确', () => {
       const rule = STRATEGY_KEY_RULES.act!.toolMode!;
       expect(rule).toEqual({ kind: 'enum', values: ['allow', 'block'] });
-    });
-
-    it('act.streaming 枚举值正确', () => {
-      const rule = STRATEGY_KEY_RULES.act!.streaming!;
-      expect(rule).toEqual({ kind: 'enum', values: ['streaming', 'non-streaming'] });
     });
 
     it('reflect.summary 枚举值正确', () => {

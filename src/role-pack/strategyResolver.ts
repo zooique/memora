@@ -64,7 +64,6 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     toolMode: 'allow',
     toolReadonly: 'full',
     toolStepLimit: 20,
-    streaming: 'streaming',
     temperature: 0.7,
     outputLimit: 4096,
     providerRouting: 'auto',

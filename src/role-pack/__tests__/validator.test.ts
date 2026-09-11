@@ -12,7 +12,7 @@ import type { RolePackValidationIssue } from '@/role-pack/validator.js';
 /** 合法 L2 策略（已消费键集，类型化常量供展开覆写） */
 const validStrategy = {
   prepare: { summaryFocus: '聚焦核心逻辑' },
-  act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096, streaming: 'streaming' },
+  act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096 },
   reflect: { summary: 'on', selfReview: 0, userFollowup: 'silent' },
   global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
 };
@@ -186,13 +186,6 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
   it('act.outputLimit 非正整数 → error', () => {
     const result = validate({
       strategy: { ...validStrategy, act: { ...validStrategy.act, outputLimit: -1 } },
-    });
-    expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
-  });
-
-  it('act.streaming 越界枚举 → error', () => {
-    const result = validate({
-      strategy: { ...validStrategy, act: { ...validStrategy.act, streaming: 'invalid' } },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });

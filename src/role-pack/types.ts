@@ -25,9 +25,6 @@ export type ToolMode = 'allow' | 'block';
 /** 工具操作范围：readonly=仅允许只读操作 / full=完整权限 */
 export type ToolReadonly = 'readonly' | 'full';
 
-/** 生成流式模式 */
-export type StreamingMode = 'streaming' | 'non-streaming';
-
 /** Provider 路由策略：auto=按任务类型换模型 / fixed=固定模型 */
 export type ProviderRouting = 'auto' | 'fixed';
 
@@ -74,8 +71,6 @@ export interface ActStrategy {
   readonly toolReadonly?: ToolReadonly;
   /** 单轮工具调用步数上限（默认 20） */
   readonly toolStepLimit?: number;
-  /** 生成流式模式（默认 streaming） */
-  readonly streaming?: StreamingMode;
   /** 生成温度 0.0~2.0（默认 0.7） */
   readonly temperature?: number;
   /** 单轮回答长度上限 token 数（默认 4096） */
@@ -117,7 +112,7 @@ export interface GlobalStrategy {
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/summaryFocus（round-summary 提炼视角；自动注入召回 6 键已随阶段2退役）；
- * act 的 toolMode/temperature/outputLimit/streaming/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
+ * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
  * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
  * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */

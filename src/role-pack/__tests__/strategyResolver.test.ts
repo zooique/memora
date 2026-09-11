@@ -90,7 +90,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(a.toolMode).toBe('allow');
     expect(a.toolReadonly).toBe('full');
     expect(a.toolStepLimit).toBe(20);
-    expect(a.streaming).toBe('streaming');
     expect(a.temperature).toBe(0.7);
     expect(a.outputLimit).toBe(4096);
     expect(a.providerRouting).toBe('auto');

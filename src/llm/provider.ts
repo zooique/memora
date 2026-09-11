@@ -43,8 +43,6 @@ export interface ChatOptions {
       schema: Record<string, unknown>;
     };
   };
-  /** 预留字段（当前无消费者）：openaiCompatible 始终以 stream:true 发起，chat() 返回 AsyncIterable */
-  stream?: boolean;
   /** 推理深度控制：'low'|'medium'|'high'，Provider 不支持时静默忽略 */
   reasoning_effort?: 'low' | 'medium' | 'high';
   /** 中止信号：用户取消时传入，Provider 应传给底层 fetch/stream 以支持中断 */

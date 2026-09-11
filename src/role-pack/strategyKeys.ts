@@ -119,10 +119,9 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
   },
   act: {
     toolMode: { kind: 'enum', values: ['allow', 'block'] },
-    // 角色包可控温度（0.0~2.0）/输出长度（1~MAX_OUTPUT_LIMIT token）/流式
+    // 角色包可控温度（0.0~2.0）/输出长度（1~MAX_OUTPUT_LIMIT token）
     temperature: { kind: 'check', check: isTemperature, range: { min: 0, max: 2 } },
     outputLimit: intRange(1, MAX_OUTPUT_LIMIT),
-    streaming: { kind: 'enum', values: ['streaming', 'non-streaming'] },
     // 工具步数上限（0~MAX_TOOL_STEP_LIMIT，0=无限制）
     toolStepLimit: intRange(0, MAX_TOOL_STEP_LIMIT),
     providerRouting: { kind: 'enum', values: ['auto', 'fixed'] },

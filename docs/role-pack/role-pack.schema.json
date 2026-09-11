@@ -104,11 +104,6 @@
               "maximum": 65536,
               "description": "单轮回答长度上限（token，默认 4096）"
             },
-            "streaming": {
-              "type": "string",
-              "enum": ["streaming", "non-streaming"],
-              "description": "输出方式（默认 streaming）"
-            },
             "toolStepLimit": {
               "type": "integer",
               "minimum": 0,

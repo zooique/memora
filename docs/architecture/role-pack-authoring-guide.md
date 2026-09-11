@@ -99,7 +99,6 @@
 | `toolMode`           | `allow` / `block`             | —                  | `allow`     | 是否允许工具调用      | `"block"`         |
 | `temperature`        | number                        | `0.0 ~ 2.0`        | `0.7`       | 生成随机性         | `0.3`             |
 | `outputLimit`        | 整数                            | `1 ~ 65536`（token） | `4096`      | 单轮回答长度上限      | `8192`            |
-| `streaming`          | `streaming` / `non-streaming` | —                  | `streaming` | 输出方式          | `"non-streaming"` |
 | `toolStepLimit`      | 整数                            | `0 ~ 100`（0=无限制）   | `20`        | 单轮工具调用步数上限    | `30`              |
 | `providerRouting`    | `auto` / `fixed`              | —                  | `auto`      | Provider 路由策略 | `"fixed"`         |
 | `multiStepReasoning` | `auto` / `manual`             | —                  | `auto`      | 多步推理模式        | `"manual"`        |
@@ -167,7 +166,7 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 20 键（prepare 2 / act 9 / reflect 4 / global 5） |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 18 键（prepare 2 / act 7 / reflect 4 / global 5） |
 
 > 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）——无消费者的策略键不保留。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 

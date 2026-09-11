@@ -682,13 +682,13 @@ chatProvider.setAgentFactory((projectPath) =>
 
 > 本约束对应 `tasks/待完成任务.md` **T1**：原仅存于 `extension.ts` 注释（L51 / L188 "杜绝双实例覆盖写"），现提升为宿主接入契约基线，避免新宿主对接踩坑。原子写实锤已具备（`atomicWriteFileSync`），单例 + 原子写已对齐主流硬化做法（grida / Chatbox 同款 tmp+rename）；唯一真实残留为跨进程锁，已列入检查清单第 4 项。
 
-## 十.7、策略键消费矩阵（19 键 SSOT 落点）📌 参考
+## 十.7、策略键消费矩阵（18 键 SSOT 落点）📌 参考
 
-> 完整 19 键 × 内核消费位置 × UI 侧消费的逐键矩阵见 **[`docs/策略键消费矩阵.md`](../策略键消费矩阵.md)**（SSOT：`src/role-pack/strategyKeys.ts`）。此处只给新宿主对接必知的结论与边界。
+> 完整 18 键 × 内核消费位置 × UI 侧消费的逐键矩阵见 **[`docs/策略键消费矩阵.md`](../策略键消费矩阵.md)**（SSOT：`src/role-pack/strategyKeys.ts`）。此处只给新宿主对接必知的结论与边界。
 
-- **19 键全部被内核真实消费、零 `[草案]`**（prepare 2 / act 8 / reflect 4 / global 5）。解析层 `rolePackManager` + `strategyResolver` 84 项测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
+- **18 键全部被内核真实消费、零 `[草案]`**（prepare 2 / act 7 / reflect 4 / global 5）。解析层 `rolePackManager` + `strategyResolver` 84 项测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
 - **三类流向，单一收口无镜像**：
-  1. act 5 键（`toolMode`/`toolStepLimit`/`providerRouting`/`multiStepReasoning`/`toolReadonly`）+ `selfReview`（旧键 `loopContinue` 回退）+ global 4 键（`errorHandling`/`tokenBudget`/`stepBudget`/`askLimit`），统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；`act.temperature`/`outputLimit`/`streaming` 由 `agent.ts` 直映射 `ChatOptions`（不经聚合）；
+  1. act 5 键（`toolMode`/`toolStepLimit`/`providerRouting`/`multiStepReasoning`/`toolReadonly`）+ `selfReview`（旧键 `loopContinue` 回退）+ global 4 键（`errorHandling`/`tokenBudget`/`stepBudget`/`askLimit`），统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；`act.temperature`/`outputLimit` 由 `agent.ts` 直映射 `ChatOptions`（不经聚合）；
   2. prepare 键经 `resolveActiveStrategy()` 单一真理源流入 `contextPreparer` / `recall` / `roundSummaryGenerator`；
   3. persona 指令类（`understandingConfirm`/`userFollowup`/`askOn`/`askLimit`）由 `assembleRolePack()` 单收口注入。
 - **⚠️ 边界纠正：`toolReadonly` 内核已执行，非「无宿主执行方」**。`toolRunner.ts` 只剩两层闸：闸①（只读闸 `toolReadonly==='readonly'`）**由内核执行**；闸②（宿主 `preExecutionCheck`）当前 VS Code 宿主恒放行（`assemble.ts:267`）只是单用户信任模型下的显式让行（关联 十.5 / 设计纪律 D5），未来多用户/服务端须替换真实审批。原闸② `toolApproval` 审批链已随 3.0.0 删键（2026-09-11）：单用户本地无真实审批场景，原"通知宿主 + UI 需审批 chip"是展示性假承诺——整键删除，新宿主切勿再期待 `onToolApproval` 回调或 `toolApproval==='confirm'` 语义，审批须自行在 `preExecutionCheck` 实现。

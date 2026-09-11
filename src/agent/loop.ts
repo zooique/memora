@@ -105,7 +105,7 @@ export interface AgentLoopOptions {
   roundSummaryLoader?: () => string;
   /** 截断时最少保留的最近原始对话轮数（默认 0），宿主可据 provider prompt caching 能力放宽 */
   minRecentRounds?: number;
-  /** ChatOptions 覆盖项（角色包策略注入 temperature/outputLimit/streaming 等，优先于默认值） */
+  /** ChatOptions 覆盖项（角色包策略注入 temperature/outputLimit 等，优先于默认值） */
   chatOptions?: Partial<ChatOptions>;
   /** 上下文压缩策略（微压缩层，每轮把旧 tool_result 替换为占位符省空间）；
    *  默认 ResultReplacementStrategy（保留最近 3 次完整结果），宿主可注入自定义策略。
@@ -1778,7 +1778,7 @@ export class AgentLoop {
       }));
     }
 
-    // 角色包策略覆盖项（temperature / outputLimit / streaming 等）
+    // 角色包策略覆盖项（temperature / outputLimit 等）
     if (this.opts.chatOptions) {
       Object.assign(baseOptions, this.opts.chatOptions);
     }
@@ -1817,7 +1817,7 @@ export class AgentLoop {
     this.rebuildSystemMessage();
   }
 
-  /** 从角色包策略更新 ChatOptions 覆盖项（temperature/outputLimit/streaming 等立即生效） */
+  /** 从角色包策略更新 ChatOptions 覆盖项（temperature/outputLimit 等立即生效） */
   setChatOptions(chatOptions: Partial<ChatOptions> | undefined): void {
     this.opts.chatOptions =
       chatOptions && Object.keys(chatOptions).length > 0 ? { ...chatOptions } : undefined;

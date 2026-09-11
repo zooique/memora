@@ -61,7 +61,6 @@ export type {
   GlobalStrategy,
   UnderstandingConfirm,
   ToolReadonly,
-  StreamingMode,
   ProviderRouting,
   MultiStepReasoning,
   SelfReviewRounds,

@@ -1329,7 +1329,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * roundRole=null（日常态）→ 回落 activePack 前缀；roundRole 为任务项角色 → 该角色
    * persona/rules/skills 全量表层装配（buildSystemPrompt(name)）。策略键恒为 activePack：
-   * ChatOptions（temperature/outputLimit/streaming）由 activePack 策略构建，不随视角变（键不换防抖动）。
+   * ChatOptions（temperature/outputLimit）由 activePack 策略构建，不随视角变（键不换防抖动）。
    * 由 seed prepare 每轮调用（`refreshRolePackPrefixForRound` 契约），保证前缀始终匹配本轮装配角色。
    */
   private refreshRolePackPrefixForRound(roundRole: string | null): void {
@@ -1350,14 +1350,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.loop.setRolePackBaseTokens(
       estimateTokensMessages([{ content: newPrefix }]),
     );
-    // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit / streaming）
+    // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit）
     // 键恒为 activePack：buildChatOptionsFromStrategy 读激活包策略，不随本轮装配视角变
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
   }
 
   /**
    * 从当前激活的角色包策略构建 ChatOptions 覆盖项
-   * 将 act.temperature / act.outputLimit / act.streaming 映射到 ChatOptions 字段，优先级高于全局默认值。
+   * 将 act.temperature / act.outputLimit 映射到 ChatOptions 字段，优先级高于全局默认值。
    */
   private buildChatOptionsFromStrategy(): Partial<ChatOptions> | undefined {
     const strategy = this.getActiveStrategy();
@@ -1380,14 +1380,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       outputLimit <= MAX_OUTPUT_LIMIT
     ) {
       chatOptions.maxTokens = outputLimit;
-    }
-
-    // act.streaming → ChatOptions.stream（'streaming' → true, 'non-streaming' → false）
-    const streaming = act?.streaming;
-    if (streaming === 'streaming') {
-      chatOptions.stream = true;
-    } else if (streaming === 'non-streaming') {
-      chatOptions.stream = false;
     }
 
     return Object.keys(chatOptions).length > 0 ? chatOptions : undefined;

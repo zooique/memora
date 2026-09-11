@@ -28,7 +28,6 @@
       "toolMode": "allow",
       "temperature": 0.5,
       "outputLimit": 8192,
-      "streaming": "streaming",
       "toolStepLimit": 50,
       "providerRouting": "auto",
       "multiStepReasoning": "auto",

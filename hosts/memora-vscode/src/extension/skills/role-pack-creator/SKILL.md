@@ -78,10 +78,10 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 > ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../docs/architecture/tool-exposure-model.md)。
 
-#### strategy 键速查（19 键；未改动的键可删除 = 内核默认）
+#### strategy 键速查（18 键；未改动的键可删除 = 内核默认）
 
 `prepare`（2）默认值：`understandingConfirm`=off｜`summaryFocus`(≤500字符，默认省略)。注：2026-09-09（memory-tool-recall-design 阶段2）起 `memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键已退役——记忆检索改由 `memory_search` 工具触发，勿再填写。
-`act`（8）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`streaming`=streaming｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
+`act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
 `reflect`（4）默认值：`summary`=on｜`selfReview`=0(0~10)｜`loopContinue`=0(0~10, v0.13- 兼容别名勿新写)｜`userFollowup`=silent
 `global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=3(1~10)｜`errorHandling`=retry｜`tokenBudget`=200000(0~1000000)｜`stepBudget`=50(0~500)
 
