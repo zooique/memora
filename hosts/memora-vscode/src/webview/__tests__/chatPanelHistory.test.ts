@@ -744,7 +744,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
           yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-1' };
           yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
           yield { type: 'text', content: 'turn1回答', roundId: 'round-1' };
-          yield { type: 'thinking', phase: 'planning', roundId: 'round-2' };
+          yield { type: 'thinking', phase: 'processing', roundId: 'round-2' };
           yield { type: 'tool_start', toolCallId: 't2', name: 'search', args: '{}', roundId: 'round-2' };
           yield { type: 'tool_result', toolCallId: 't2', name: 'search', ok: true, summary: 's', roundId: 'round-2' };
           yield { type: 'text', content: 'turn2回答', roundId: 'round-2' };
