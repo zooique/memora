@@ -184,9 +184,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       confirmWrites: opts.confirmWrites ?? false,
       confirmScripts: opts.confirmScripts ?? false,
       vectorStore: opts.vectorStore,
-      recallExcludeSources: opts.recallExcludeSources ?? [
-        ...AGENT_CONSTANTS.DEFAULT_RECALL_EXCLUDE_SOURCES,
-      ],
       storage: opts.storage,
       sessionStore: opts.sessionStore,
       roundStore: opts.roundStore,
@@ -1164,7 +1161,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
       vectorStore: this.#config.vectorStore,
-      recallExcludeSources: this.#config.recallExcludeSources,
       existingSkillManager: this.skillManager,
       // 宿主装配级策略覆盖（能力边界）：透传组装器 → ContextPreparer（策略解析唯一链）
       strategyOverride: this.#config.strategyOverride,

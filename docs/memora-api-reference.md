@@ -182,7 +182,7 @@ new Agent({
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
 | `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索召回；内置实现 JsonVectorStore） |
-| `recallExcludeSources` | `string[]` | ❌ | 召回时排除的 source 标签（默认空数组——设定记忆已归角色包、记忆库不再写入，不再参与召回排除） |
+| ~~`recallExcludeSources`~~ | ~~`string[]`~~ | — | **已删除（2026-09-11）**：该配置随召回编排 `recall()` 退役后成为零消费者死配置，全链（AgentOptions → AgentConfig → AssembleInput → ContextPreparerDeps）物理删除。关联推荐的实际排除走 `Agent.governance.suggest(query, { excludeSources })` 显式参数 |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
 | `messages` | `UIMessages` | ❌ | 宿主可覆盖的 UI 消息文本（默认英文，宿主覆盖为中文等） |

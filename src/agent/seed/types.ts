@@ -107,9 +107,12 @@ export interface SeedDeps {
 /**
  * 回答前（Prepare）运行结果
  *
- * input = 原始输入；recalledMemories = 召回记忆（注入 loop 为 system 消息）；
- * aborted = 回答前阶段已中断（调用方应 yield aborted chunk 并返回，不进回答中）；
+ * input = 原始输入；aborted = 回答前阶段已中断（调用方应 yield aborted chunk 并返回，不进回答中）；
  * roundId 不在此结果中——round 归属以 loop 的 currentRoundId 为单一真理源。
+ *
+ * recalledMemories = **恒为空数组**（自动记忆召回已退役，见 memory-tool-recall-design §3/§4）。
+ * 记忆检索改由 LLM 经 `search_memories` 工具主动触发，不再由 prepare 代模型猜测注入；
+ * 本字段仅为位置兼容保留（loop 消费端亦已 `void recalledMemories` 忽略），勿据此实现注入。
  */
 export interface SeedPrepareResult {
   input: string;

@@ -178,7 +178,6 @@ type AssembleRuntimeParams = Pick<
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
   | 'vectorStore'
-  | 'recallExcludeSources'
   | 'strategyOverride'
 >;
 
@@ -610,7 +609,6 @@ export async function assembleComponents(
     existingSkillManager,
     locale,
     vectorStore,
-    recallExcludeSources,
   } = input;
   const hooks = input.hooks;
 
@@ -854,7 +852,6 @@ export async function assembleComponents(
       // 组装器可选字段（undefined）收窄为 deps 的显式 null（关闭语义）
       tracer: tracer ?? null,
       vectorStore: vectorStore ?? null,
-      recallExcludeSources,
       messages,
       // 上下文预算装配的容量来源（动态轮数派生基准）
       maxContextTokens,

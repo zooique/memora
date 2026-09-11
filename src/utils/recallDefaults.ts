@@ -8,6 +8,10 @@
 /**
  * 召回排除 source 默认值（空数组）——设定记忆（persona/rule/skill）已归角色包、
  * 记忆库不再写入，不再参与召回排除（memory-role-pack-boundary）。早年"默认排除三类设定
- * 记忆"的补丁式修复已随角色包解耦剪枝，此处仅保留空默认供记忆层与 agent 层共享引用。
+ * 记忆"的补丁式修复已随角色包解耦剪枝，此处仅保留空默认。
+ *
+ * **唯一活性消费者 = `MemoryAdvisor.suggest()`**（关联推荐的 `excludeSources` 本地参数缺省值）。
+ * 曾经的同名配置管道 `config.recallExcludeSources`（ContextPreparer 侧）已于 2026-09-11 全链删除
+ * ——它是死配置（`recallAndInject` 从不读取），勿因「两处同名」而误以为是一根链。
  */
 export const DEFAULT_RECALL_EXCLUDE_SOURCES: readonly string[] = [];

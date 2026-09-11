@@ -1,12 +1,12 @@
 /**
  * 回答前（Prepare）— 种子闭环第一阶段
  *
- * 收敛原 Agent.prepareChatContext 的编排骨架：策略装配 → 角色 → 记忆召回 → roundId
+ * 收敛原 Agent.prepareChatContext 的编排骨架：策略装配 → 角色 → 上下文装配 → roundId
  * → appendUser → 会话命名。会议机制（S5）：任务项表层装配视角经本模块读取并驱动前缀刷新。
  *
  * 设计原则：
- *   - 叶子逻辑（recallAndInject）在 ContextPreparer 唯一实现，本模块只保留编排骨架
- *     （与 ContextPreparer 文档一致）。
+ *   - 叶子逻辑（recallAndInject → 上下文装配：预算派生 + 对话层注入 + 占用快照）在
+ *     ContextPreparer 唯一实现，本模块只保留编排骨架（与 ContextPreparer 文档一致）。
  */
 
 import type { AgentChunk } from '@/agent/types.js';
@@ -36,11 +36,11 @@ export class SeedPrepare {
   }
 
   /**
-   * 执行回答前：策略装配 → 角色 → 记忆召回 → 技能注入 → roundId → 用户消息入史 → 会话命名。
+   * 执行回答前：策略装配 → 角色 → 上下文装配 → 技能注入 → roundId → 用户消息入史 → 会话命名。
    *
    * @param input 用户输入
    * @param signal 中止信号（回答前中断则在技能注入前返回 aborted）
-   * @returns 回答前结果（recalledMemories 供回答中注入 loop）
+   * @returns 回答前结果（recalledMemories 恒空——自动召回已退役，见 SeedPrepareResult）
    */
   async *run(
     input: string,

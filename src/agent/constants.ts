@@ -33,7 +33,11 @@ export const AGENT_CONSTANTS = {
   /** AgentConfig.maxContextTokens 默认值。120K tokens。 */
   DEFAULT_MAX_CONTEXT_TOKENS: 120_000,
 
-  /** recallExcludeSources 默认值——设定记忆已归角色包，不再参与召回排除（常量下沉 utils 共享）。 */
+  /**
+   * 召回排除 source 的默认值——**服务 `MemoryAdvisor.suggest()` 关联推荐**（本地参数缺省值），
+   * 与 ContextPreparer 无关（那条 `recallExcludeSources` 配置管道已随召回编排退役删除）。
+   * 设定记忆已归角色包，故默认空数组。
+   */
   DEFAULT_RECALL_EXCLUDE_SOURCES,
 
   /**

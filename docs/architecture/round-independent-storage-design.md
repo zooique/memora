@@ -559,16 +559,25 @@ class MessageHistory {
 
 ### 4.4 召回逻辑：按 Round ID 筛选
 
-**实际实现**（v3 分层分轨，`src/memory/recall.ts`）：
+> **⚠️ 本节已整体失效（2026-09-11 核实）。以下为历史设计记录，勿据以实施。**
+>
+> `recall()` 召回编排函数已于 2026-09-10 随跨重启恢复链**物理删除**（`src/memory/recall.ts` 现仅存 `extractKeywords` / `touchScores` 两个工具函数）。本节描述的「三层机制」**均无现行实现**：
+>
+> * **同会话优先**：已整体退役，非「改道」。现行检索无会话窗口排序概念。
+> * **互斥排除**：机制保留但**换了实现位置**——从「recall 前置过滤」改为「`search_memories` 工具侧过滤」，真理源 = `loop.getExclusionRoundIds()`（视图内 ∪ 被替换 ∪ 在途），见本节末补记。
+> * **`minFallback` 保底**：`DEFAULT_MIN_FALLBACK` 随 `recall()` 一并退役，零活性引用。
+> * **`excludeSources` 透传**：`config.recallExcludeSources` 为死配置，已于 2026-09-11 全链删除。
+>
+> 现行唯一检索入口 = `search_memories` 工具 → `memoryInspector.searchHybrid`。
 
-同会话优先通过**三层机制**组合落地，而非文档早期设想的"按 roundIds 正向筛选 + 全局补充"双通道：
+**历史设计（已失效）**：原实现为 v3 分层分轨（`src/memory/recall.ts`），同会话优先通过**三层机制**组合落地，而非文档早期设想的"按 roundIds 正向筛选 + 全局补充"双通道：
 
 1. **`sessionId` 会话窗口标识**：recall 接收当前会话窗口 id（与 round-summary 写侧 `sessionName` 同源同值 `${date}-${session}`），`sortByLayer` 将**当前会话的摘要（L1）排在 preference（L2）与其余轨之前**——同窗口优先
 2. **`excludeRoundIds` 前置互斥排除**：调用侧把**上下文已实际注入轮次的 roundIds**（完整对话层 + 显式补首轮 + 替换产物）集合传入，recall 在 `hybridMerge` 取 limit **前**过滤这些轮次的 round-summary——避免正文已加载的摘要二次注入挤占预算
 3. **`minFallback` 保底通道**：语义/关键词命中不足时，空查询按 score 降序补最近记忆（排语义命中后、去 superseded），置 0 关闭
 
 ```typescript
-// src/memory/recall.ts（调用侧透传：contextPreparer / checkpointRestoreCoordinator）
+// 【历史代码，已失效】src/memory/recall.ts（调用侧透传：contextPreparer / checkpointRestoreCoordinator）
 
 recalledMemories = await recall(storage, input, {
   limit: DEFAULT_RECALL_LIMIT,

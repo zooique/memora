@@ -71,7 +71,6 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     config: {
       tracer: null,
       vectorStore: null,
-      recallExcludeSources: undefined,
       messages: undefined,
       maxContextTokens: 120_000,
     },

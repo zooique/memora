@@ -109,6 +109,9 @@ export class VscodeTracer implements ITracer {
         const tool = record.attributes.tool;
         return typeof tool === 'string' ? `工具·${tool}` : '工具';
       }
+      // RECALL / RECALL_ACTUAL 分支保留仅为**历史 trace 数据显示名**：两个 span 在内核
+      // 已无 emit 点（自动记忆召回退役 + recall() 物理删除，2026-09-11 核实），
+      // 现行记忆检索耗时可看「工具·search_memories」。勿据此开发新埋点。
       case TRACE_SPANS.RECALL:
         return '记忆召回';
       case TRACE_SPANS.RECALL_ACTUAL:

@@ -44,8 +44,6 @@ export interface ContextPreparerDeps {
     tracer: ITracer | null;
     /** 向量存储（可选，提供时启用语义召回） */
     vectorStore: IVectorStore | null;
-    /** 召回排除的 source 列表 */
-    recallExcludeSources: string[] | undefined;
     /** 界面文案（最近对话 / 用户 / 助手标签） */
     messages: UIMessages | undefined;
     /** 上下文窗口容量（token）：唯一真理源 = 宿主在构造内核前经 resolveContextWindow(window) 解析注入的单一数字（per-LLM 窗口，缺失回退默认 120K）。内核预算路径只消费单一数字，不认 provider/用户双层来源 */

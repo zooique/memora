@@ -479,8 +479,6 @@ export interface AgentOptions {
   confirmScripts?: boolean;
   /** 向量存储（可选，提供时启用语义召回；宿主可注入任意实现） */
   vectorStore?: IVectorStore;
-  /** 召回排除的 source 标签（默认 []：设定记忆已归角色包、不进记忆库，无需召回排除；SSOT 见 recallDefaults.DEFAULT_RECALL_EXCLUDE_SOURCES） */
-  recallExcludeSources?: string[];
   /** 外部注入的存储实例（不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
   /** 外部注入的会话存储（round-based 唯一模式；未注入则消息仅内存保存） */
@@ -541,7 +539,6 @@ export type AgentConfig = Omit<
   | 'allowedPaths'
   | 'confirmWrites'
   | 'confirmScripts'
-  | 'recallExcludeSources'
   | 'enableContextSummary'
   | 'archiveMode'
 > & {
@@ -552,7 +549,6 @@ export type AgentConfig = Omit<
   confirmWrites: boolean;
   /** 脚本/代码执行确认开关（AgentOptions.confirmScripts 的默认值解析结果） */
   confirmScripts: boolean;
-  recallExcludeSources: string[];
   enableContextSummary: boolean;
   archiveMode: ArchiveMode;
   /**
