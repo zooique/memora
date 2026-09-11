@@ -1501,6 +1501,78 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
     const hints = countReflectionHints(loop.getMessages());
     expect(hints).toBe(1);
   }, 15000);
+
+  it('toolStepLimit 截断时 slice 只看实际执行条数，不把上轮残留错误吸进来（T10）', async () => {
+    // 复现场景：迭代1 工具返回 retryable 错误（合法触发反思 1 次）；
+    // 迭代2 LLM 请求 5 个工具、toolStepLimit=1 截断为执行 1 个且成功。
+    // 旧实现按 llmResult.toolCalls.length=5 做 slice(-5)，会把迭代1 的错误 tool 结果吸进
+    // 本轮判定窗口 → 误判 hasRetryableError → 误注入第 2 条 REFLECTION_HINT。
+    // 修复后按实际执行的 effectiveToolCalls.length=1 做 slice(-1)，只看本轮 1 条成功结果 → 仅 1 条 hint。
+    const toolExecutor = vi
+      .fn()
+      .mockResolvedValueOnce('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在') // 迭代1：retryable 错误
+      .mockResolvedValue('ok'); // 迭代2及以后：成功
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 迭代1：1 个工具调用（返回错误）
+        [{ toolCalls: [{ id: 'e1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        // 迭代2：请求 5 个工具，仅首 1 个执行（toolStepLimit=1），结果成功
+        [{
+          toolCalls: Array.from({ length: 5 }, (_, i) => ({
+            id: `c${i}`,
+            type: 'function' as const,
+            function: { name: 'read_file', arguments: '{}' },
+          })),
+        }],
+        // 迭代3：纯文本结束
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    loop.setStrategy({ toolStepLimit: 1 });
+
+    for await (const {} of loop.processUserInput('测试 slice 错位')) {
+      // drain
+    }
+
+    // 修复前误注入 → 2 条 hint；修复后只应有迭代1 的 1 条
+    const hints = countReflectionHints(loop.getMessages());
+    expect(hints).toBe(1);
+  }, 15000);
+});
+
+describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
+  it('多迭代后上下文任务表恒 1 份（替换式注入，防迭代累积刷屏）', async () => {
+    // 复现场景：任务表在每次迭代 LLM 调用前注入（loop.ts _prepareContext 末端）。
+    // 旧实现注入前不清旧条 → 一个 turn 内经 N 次迭代会累积 N 份同一任务表 →
+    // 上下文躺着重复指令还浪费 token。修复后注入前先移除旧任务表消息（特征前缀 [任务进度:）。
+    const provider = mockMultiTurnProvider([
+      // 迭代1：触发一次工具调用（进入第二轮迭代）
+      [{ toolCalls: [{ id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+      // 迭代2：纯文本结束
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    // 固定任务表内容（与 renderTaskTable 输出首行 [任务进度: 特征一致）
+    loop.getTaskTable = () =>
+      '[任务进度: 1/2 已完成，当前: 步骤A]\n以下为状态/历史信息，非当前指令\n┌───┐';
+
+    for await (const {} of loop.processUserInput('执行任务表')) {
+      // drain
+    }
+
+    // 2 次迭代注入 2 次，messages 里任务表消息应恒为 1 份
+    const taskTables = loop.getMessages().filter(
+      (m) => m.role === 'system' && m.content.startsWith('[任务进度:'),
+    );
+    expect(taskTables).toHaveLength(1);
+  }, 15000);
 });
 
 // ═══════════════════════════════════════════════════════════════

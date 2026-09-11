@@ -1074,10 +1074,17 @@ export class AgentLoop {
       }
     }
 
-    // 每次迭代 LLM 调用前统一注入任务表
+    // 每次迭代 LLM 调用前统一注入任务表 —— 替换式注入（T9 2026-09-11）：
+    // 注入前先移除已有的任务表消息（特征前缀 [任务进度:，renderTaskTable 输出首行），
+    // 保证一个 turn 内经 N 次迭代上下文恒 1 份任务表，不重复灌指令浪费 token。
+    // 同时标记 executionTemp——跨 turn 由 cleanExecutionTemporary 在下一闭环入口统一清冗
+    // （旧实现不带标记，跨 turn 同样累积，本次一并收口）
     const taskTable = this.getTaskTable?.();
     if (taskTable) {
-      this.injectSystemMessage(taskTable);
+      this.replaceContext(
+        this.messages.filter((m) => !(m.role === 'system' && m.content.startsWith('[任务进度:'))),
+      );
+      this.appendSystemMessage(taskTable, { executionTemp: true });
     }
 
     return { chatOpts, safeMessages };
@@ -1227,8 +1234,11 @@ export class AgentLoop {
     // ─── 拦截器检测结束 ──────────────────────────────────────
 
     // Reflection：本轮工具结果含 retryable 错误时，追加反思提示帮 LLM 聚焦修正而非放弃
+    // slice 按实际执行的 effectiveToolCalls.length 取窗口——旧实现按 LLM 原始请求条数
+    // llmResult.toolCalls.length 切，toolStepLimit 截断时 slice 多看会把上一轮残留的
+    // tool 错误吸进判定窗口，误注入反思提示（T10 2026-09-11 修正）
     const hasRetryableError = this.messages
-      .slice(-llmResult.toolCalls!.length) // 只看本轮工具结果
+      .slice(-effectiveToolCalls.length) // 只看本轮工具结果
       .some((m) => m.role === 'tool' && isRetryableToolError(m.content));
     if (hasRetryableError) {
       // 反思次数用显式计数器限制，避免 messages 裁剪导致计数失真
