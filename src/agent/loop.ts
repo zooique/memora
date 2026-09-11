@@ -185,6 +185,11 @@ export class AgentLoop {
   private searchDisabled = false;
   /** TS-7 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
   private searchDisabledHintInjected = false;
+  /** 软上限收尾信号注入标记（幂等，防迭代累积刷屏）：摘要层饱和是跨迭代持续态，
+   *  同一 turn 内经本 flag 最多注入一次收尾信号；随 resetTurnState 重置——
+   *  每个新 turn（新用户输入）重新注入一次（每轮回答都需要收敛提醒），
+   *  防的是「同 turn 多步迭代各注一条」的刷屏（V1 修复，口径与搜索收敛 flag 同构）。 */
+  private softLimitWrapupInjected = false;
   /** 工具结果防重缓存（闭环内有效，每轮 resetTurnState 清空）。
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
    *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
@@ -649,6 +654,9 @@ export class AgentLoop {
     // 硬上限停搜标志随轮重置（下一闭环 web_search 重新可用）
     this.searchDisabled = false;
     this.searchDisabledHintInjected = false;
+    // 软上限收尾信号注入标记随轮重置：跨 turn 重新注入（每轮回答都需收敛提醒），
+    // 同 turn 内迭代仍由该 flag 防重（V1 语义：防迭代累积刷屏，不跨轮堆积）
+    this.softLimitWrapupInjected = false;
     // 工具结果防重缓存：闭环内有效，新闭环开始即清空（跨闭环不复用，避免上一轮已读文件"误伤"本轮合法重读）
     this.toolResultCache.clear();
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
@@ -706,9 +714,12 @@ export class AgentLoop {
   /** 处理一次迭代结果（processUserInput/continueAfterPause 共享）。
    *  continue→继续；paused→终止（step 边界挂起待续跑）；aborted→终止（硬中止，排队插话已留档）；
    *  done→有自审查/排队插话待注入则继续，否则终止。返回 false 表示调用方应终止循环 */
-  private handleIterationResult(result: 'aborted' | 'done' | 'continue' | 'paused'): boolean {
+  private handleIterationResult(result: 'aborted' | 'budget' | 'done' | 'continue' | 'paused'): boolean {
     // continue（工具结果已回填）无需特殊处理
     if (result === 'continue') return true;
+    // budget（tokenBudget 触顶，V3）：终止循环。预算已耗尽时自审查续跑纯烧 token，
+    // 与 'done'（自然收尾，可能注入审查）区分——_callAndRoute prep==='done' 分支产出。
+    if (result === 'budget') return false;
     // paused（软暂停/提问在 step 边界生效）：终止本轮循环，保留现场待续跑
     if (result === 'paused') return false;
     // aborted（用户取消/超时）：硬中止，终止循环；排队插话已由 _handleInterrupt 消费进上下文留档
@@ -772,7 +783,7 @@ export class AgentLoop {
   private async *handleIteration(
     iteration: number,
     signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'budget' | 'done' | 'continue' | 'paused', unknown> {
     logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
     // 中断检查：软暂停（边界挂起可续跑）/ 硬中止（不可续跑）；
@@ -856,12 +867,15 @@ export class AgentLoop {
   private async *_callAndRoute(
     iteration: number,
     effectiveSignal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'budget' | 'done' | 'continue' | 'paused', unknown> {
     // ─── 上下文准备：截断 + 微压缩 + tokenBudget 检查 ────────────
     const prep = await this._prepareContext(effectiveSignal);
     if (prep === 'done') {
       yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}` };
-      return 'done';
+      // 预算触顶走独立终止信号 'budget'（V3 修复）而非 'done'：
+      // 'done' 会经 handleIterationResult 触发自审查续跑，而预算已耗尽时续跑审查纯烧 token；
+      // 'budget' 分支直接终止循环，不注入 SELF_REVIEW（可在职责上与「自然收尾」区分）。
+      return 'budget';
     }
 
     // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
@@ -1001,8 +1015,12 @@ export class AgentLoop {
     }
 
     // 软上限（内核确定性检测）：上下文逼近容量上限且正文大量摘要化（摘要层达容量上限）
-    // → 注入收尾信号，LLM 收敛产出最终交付（executionTemp，下一轮闭环入口即弃）
-    if (this.contextManager.shouldInjectSoftLimitWrapup(this.messages)) {
+    // → 注入收尾信号，LLM 收敛产出最终交付（executionTemp，下一轮闭环入口即弃）。
+    // 幂等防重：摘要层饱和是跨迭代持续态、判定不随注入自变（注入文本不含摘要 marker，
+    // 不增摘要层 token）——无防重则同 turn 每步迭代各注入一条收尾信号刷屏（V1 修复：
+    // 与搜索收敛 flag / 压力提示 includes 断言的幂等口径对齐）。
+    if (this.contextManager.shouldInjectSoftLimitWrapup(this.messages) && !this.softLimitWrapupInjected) {
+      this.softLimitWrapupInjected = true;
       this.appendSystemMessage(this.ui.softLimitWrapup, { executionTemp: true });
       logger.warn(
         {
@@ -1387,7 +1405,14 @@ export class AgentLoop {
         // 双闸第二闸：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
         // （buildChatOptions 确定性过滤），并在本轮注入「视为未找到更多相关→继续下一步」提示，
         // 双管齐下终结「被拒→重搜→再被拒」拒绝风暴耗尽迭代/上下文导致问答闭环中断。
-        this.searchDisabled = true;
+        // 首次置位时同步重建 system prompt（V2 修复）：buildSystemPrompt 按 searchDisabled
+        // 过滤 web_search 描述，剔除「描述存在但工具不可用」不一致——此前 messages[0] 只在
+        // 构造 / refresh* 时机重建，描述残留到闭环结束。仅首次置位重建（幂等，同一闭环
+        // 多次超限搜索不再重复拼装；rebuildSystemMessage 只替换 messages[0]，不动注入消息）。
+        if (!this.searchDisabled) {
+          this.searchDisabled = true;
+          this.rebuildSystemMessage();
+        }
         if (!this.searchDisabledHintInjected) {
           this.searchDisabledHintInjected = true;
           this.appendSystemMessage(

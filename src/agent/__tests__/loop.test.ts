@@ -2204,6 +2204,91 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：预算与软上限防护（2026-09-11 种子审查批次：V1 软上限幂等 / V3 预算触顶终止）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 预算与软上限防护（2026-09-11 批次）', () => {
+  it('摘要层饱和时 softLimitWrapup 每闭环仅注入一次（幂等防迭代累积刷屏）', async () => {
+    // 第一轮工具执行（continue），第二轮迭代时摘要层仍饱和——验证幂等 flag 阻止重复注入
+    const toolExecutor = vi.fn().mockResolvedValue('工具结果');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          toolCalls: [
+            { id: 't1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } },
+          ],
+        },
+      ],
+      [{ content: '任务完成' }],
+    ]);
+
+    // 小窗口 + 预注入消息自定义构造上下文：构成「摘要层达容量上限」判定（估算口径见下）
+    //   - 摘要层：Round summary marker 消息 ≈ 3043 token ≥ 3000（= 10000 × SUMMARY_LAYER_TOKEN_RATIO 0.3）
+    //   - 总容量：≈ 9500 token ∈ [9000（= 10000 × 0.9）, 10000)，注入收尾信号（~50 token）后仍不触发截断
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      maxContextTokens: 10_000,
+    });
+    loop.injectSystemMessage('Round summary · roundId: m' + 'a'.repeat(9100)); // 摘要层 ≈ 3043 token
+    loop.injectSystemMessage('b'.repeat(19300)); // 普通消息 ≈ 6433 token（撑满总容量但不构成摘要层）
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('translate it')) {
+      chunks.push(chunk);
+    }
+
+    // 核心断言：软上限收尾信号 1 条（首轮注入；工具轮后第二轮迭代判定仍饱和，但幂等 flag 阻止重复注入）
+    const wrapups = loop
+      .getMessages()
+      .filter((m) => m.role === 'system' && m.content.includes('[SOFT_LIMIT]'));
+    expect(wrapups).toHaveLength(1);
+    // 防测试空转：收尾信号注入过（判定确实触发），且第一轮工具轮已推进
+    expect(chunks.some((c) => c.type === 'tool_result')).toBe(true);
+  });
+
+  it('tokenBudget 触顶走独立终止信号：不注入自审查（预算耗尽续跑审查纯烧 token）', async () => {
+    // 第一轮触发工具执行（toolExecutedThisTurn=true），第二轮上下文触顶 tokenBudget
+    const toolExecutor = vi.fn().mockResolvedValue('R'.repeat(300));
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          toolCalls: [
+            { id: 't1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } },
+          ],
+        },
+      ],
+      [{ content: '任务完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+
+    // 预算控制：system + user（含 <user_input> 包裹）后仅多 +5 token 余量，
+    // 工具轮必然增大上下文（assistant toolCalls + 300 字符 tool 结果 >> 5）→ 第二轮触顶
+    const input = 'translate it';
+    const sysTokens = loop.estimateTokens(loop.getMessages());
+    const userTokens = loop.estimateTokens([{ role: 'user', content: `<user_input>${input}</user_input>` }]);
+    loop.setStrategy({ maxSelfReviewRounds: 1, tokenBudget: sysTokens + userTokens + 5 });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput(input)) {
+      chunks.push(chunk);
+    }
+
+    // 预算触顶占位文本已产出（触顶路径被走过），且该轮无 LLM 回复文本
+    expect(
+      chunks.some((c) => c.type === 'text' && c.content.includes('Token budget reached')),
+    ).toBe(true);
+    // 修复核心断言（V3）：即使本轮执行过工具且自审查开启，预算触顶后不得注入 SELF_REVIEW 续跑——
+    // 'budget' 独立终止信号直接 return false，绕过 handleIterationResult 的 done→自审查分支
+    expect(chunks.filter((c) => c.type === 'selfReview')).toHaveLength(0);
+    expect(
+      loop.getMessages().filter((m) => m.role === 'system' && m.content.includes('SELF_REVIEW')),
+    ).toHaveLength(0);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：执行中插话（单一模式：排队 → step 边界注入，2026-09-04）
 // 覆盖：排队不中断 / 连续插话队列 / done 收尾轮插话不丢 / 暂停后插话
 // ═══════════════════════════════════════════════════════════════
@@ -3161,6 +3246,7 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     // 显式注册 web_search 工具定义（用真实内置定义）：让 buildChatOptions 真正对外提供该工具，
     // 方能验证「命中硬上限后从下一轮 tools 移除」（无定义则无工具可过滤，测试无意义）
     const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor, toolDefinitions: [WEB_SEARCH_TOOL] });
+    expect(loop.getMessages()[0]!.content).toContain('web_search');
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('做分析')) {
       chunks.push(chunk);
@@ -3191,6 +3277,10 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     expect(blockedResults[0]!.summary).toContain('[SEARCH_LIMIT_REACHED]');
     // 第 7 次搜索未计入成功数（成功计数应恰为 6 次执行成功的；被拒那次的 blocked=true 不会误增）
     expect(loop.getMetrics().tools.failureCount).toBe(0);
+
+    // V2 增强断言（2026-09-11）：命中硬上限后 messages[0] 已重建同步剔除 web_search 描述
+    // （此前描述残留到闭环结束，「描述存在但工具不可用」不一致——置位点已补 rebuildSystemMessage）
+    expect(loop.getMessages()[0]!.content).not.toContain('web_search');
   });
 
   it('工具迭代前发射 narrate 过程叙述（不进入最终回答正文）', async () => {
