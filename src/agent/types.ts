@@ -6,15 +6,7 @@
  */
 
 /** thinking 事件的阶段标识 */
-export type ThinkingPhase =
-  | 'recalling'
-  | 'processing'
-  | 'archiving'
-  | 'llm_calling'
-  // 多 turn 任务编排（档2 externalTaskLoop）阶段标记：规划 / 第 N 步 / 汇报
-  | 'planning'
-  | 'step'
-  | 'reporting';
+export type ThinkingPhase = 'recalling' | 'processing' | 'archiving' | 'llm_calling';
 
 /** turn 归属标记：chunk 携带所在 turn roundId（SSOT：过程事件归属由内核唯一提供，
  *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */
@@ -24,9 +16,6 @@ export type AgentChunk = (
   | {
       type: 'thinking';
       phase: ThinkingPhase;
-      /** 步级进度（仅 phase='step' 携带）：当前步序号 / 步数上限，供宿主精确展示进度 */
-      index?: number;
-      limit?: number;
     }
   | {
       type: 'text';

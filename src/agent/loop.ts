@@ -214,8 +214,8 @@ export class AgentLoop {
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
    *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
   private readonly toolResultCache = new ToolResultCache();
-  /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。保留 getter/setter 名兼容外部调用，
-   *  实际读写委托给 interruptQueue 中 kind='pause' 条目的增删 */
+  /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。private 读写器，内部消费点：
+   *  _routePausedIfTimeoutAndPause（读）/ resetTurnState（清）/ requestPause/clearPauseRequest（写） */
   private get pauseRequested(): boolean {
     return this.interruptQueue.some((r) => r.kind === 'pause');
   }
@@ -249,12 +249,13 @@ export class AgentLoop {
   private toolExecutedThisTurn = false;
   /** 当前轮次 ID（processUserInput 入口分配一次，各 iteration 共享），用于溯源式摘要 */
   private currentRoundId = '';
-  /** 是否正处于自主工具步执行中（供宿主决定暂停按钮显隐，内核→宿主"可续跑"信号） */
+  /** 是否正处于自主工具步执行中（内核自用：resumeExecution 预判短路 / canContinueWithoutInput；宿主零消费） */
   private inAutonomousStep = false;
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
-  /** step 边界回调——每次迭代（=step）完成时调用（含 planStepId 与 assistant 摘要，step 级推进记录） */
-  onStepBoundary?: (stepInfo: { planStepId?: string; summary: string }) => void;
+  /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要，step 级推进记录；
+   *  planStepId 由消费方自查 active step，loop 不传——签名不再留空头支票） */
+  onStepBoundary?: (stepInfo: { summary: string }) => void;
   /** 工具审批回调——当 toolApproval='confirm' 时触发 */
   onToolApproval?: (info: { toolName: string; args: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
@@ -575,7 +576,7 @@ export class AgentLoop {
     }
   }
 
-  /** 是否正处于自主工具步执行中（内核→宿主"可续跑"信号，供宿主决定暂停按钮显隐） */
+  /** 是否正处于自主工具步执行中（消费者 = agent.ts 预判短路/canContinueWithoutInput，内核内部） */
   get isInAutonomousStep(): boolean {
     return this.inAutonomousStep;
   }
@@ -596,11 +597,6 @@ export class AgentLoop {
   /** 设置 L2 运行时策略（与现策略浅合并）。默认值仅在策略解析层 resolveL2Strategy 归一，loop 不再兜底 */
   setStrategy(partial: Partial<L2RuntimeStrategy>): void {
     this.strategy = { ...this.strategy, ...partial };
-  }
-
-  /** 是否已请求软暂停（用于 close() 等场景检查 pending 状态） */
-  get isPauseRequested(): boolean {
-    return this.pauseRequested;
   }
 
   /**
@@ -766,9 +762,10 @@ export class AgentLoop {
     }
     // done 终止前消费排队插话（统一「申请 → 气口生效」语义）：
     // LLM 返回 done（纯文本完成）期间用户 interject() 入队的补充输入，若直接 return false 会被静默丢弃；
-    // 消费并继续迭代，下一轮 LLM 必看到插话内容。委托 _consumeQueueForInjection（SSOT）。
+    // 消费并继续迭代，下一轮 LLM 必看到插话内容。委托 _consumeInterjects（SSOT）。
     // 主要消费发生在 _handleInterrupt（迭代开始前），此处覆盖「LLM 在收尾轮执行期间插话」的窗口。
-    const consumedCount = this._consumeQueueForInjection();
+    const consumedCount = this._consumeInterjects(this.interruptQueue);
+    this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
     return consumedCount > 0;
   }
 
@@ -823,37 +820,23 @@ export class AgentLoop {
     return yield* this._callAndRoute(iteration, gate);
   }
 
-  /** 统一消费 interruptQueue 中的注入型（interject）条目：遍历 appendUserMessage 后过滤移除。
-   *  单一真理源——_handleInterrupt（step 边界）和 done 分支（LLM 收尾兜底）都委托此方法，
-   *  防两处独立实现导致消费逻辑漂移（如加去重/计数时改一处漏一处）。
+  /** 消费申请列表中的注入型（interject → appendUserMessage）条目。
+   *  单一真理源——_handleInterrupt（step 边界，splice 取出的局部列表）和 done 分支
+   *  （LLM 收尾兜底，全局 queue）共用同一遍历 + append 实现，防两处独立实现导致
+   *  消费逻辑漂移（如加去重/计数时改一处漏一处）。
+   *  删除语义留在调用方：_handleInterrupt 的 reqs 已 splice 出队无需再删；
+   *  done 分支消费后自行过滤全局 queue（pause 条目保留待下轮边界消费）。
+   *  @param reqs 待消费的申请列表（只读遍历，不修改）
    *  @returns 消费的 interject 条目数（调用方可据此决定是否继续迭代） */
-  private _consumeQueueForInjection(): number {
+  private _consumeInterjects(reqs: readonly InterruptRequest[]): number {
     let count = 0;
-    const remaining: InterruptRequest[] = [];
-    for (const req of this.interruptQueue) {
-      if (req.kind === 'interject') {
-        this.appendUserMessage(req.content);
-        count++;
-      } else {
-        remaining.push(req);
-      }
-    }
-    this.interruptQueue = remaining;
-    return count;
-  }
-
-  /** 从已取出的 reqs 列表中消费注入型条目（interject → appendUserMessage）。
-   *  职责不同：_handleInterrupt 用 splice(0) 原子取出全部后，分离 interject 到此方法处理，
-   *  pause 留在原函数后续处理。遍历 + append 逻辑与 _consumeQueueForInjection 有 1 行重叠，
-   *  但不刻意合并——两方法输入源不同（splice 取出的局部列表 vs 全局 queue），
-   *  强行合并会增加调用栈复杂度。
-   *  @param reqs splice(0) 取出的全部气口申请（含 pause + interject） */
-  private _consumeInterjectsFromReqs(reqs: InterruptRequest[]): void {
     for (const req of reqs) {
       if (req.kind === 'interject') {
         this.appendUserMessage(req.content);
+        count++;
       }
     }
+    return count;
   }
 
   /** 中断检查：step 边界统一消费 interruptQueue（pause + interject）+ 硬中止检查。
@@ -874,7 +857,7 @@ export class AgentLoop {
     const reqs = this.interruptQueue.splice(0);
 
     // ① 先处理注入型气口（interject → appendUserMessage）——不暂停 loop，让补充输入立刻生效
-    this._consumeInterjectsFromReqs(reqs);
+    this._consumeInterjects(reqs);
 
     // ② 后处理挂起型气口（pause → yield paused）——如果队列里有 pause 申请，在 step 边界挂起
     if (reqs.some((r) => r.kind === 'pause')) {
@@ -978,11 +961,11 @@ export class AgentLoop {
     const activeStepId = activeStepMeta?.stepId;
     if (activeStepMeta && activeStepId && activeStepId !== this.lastBoundaryStepId) {
       this.lastBoundaryStepId = activeStepId;
+      // roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带
       yield {
         type: 'step_boundary',
         stepId: activeStepId,
         title: activeStepMeta.title,
-        roundId: this.currentRoundId,
       };
     }
 
@@ -995,7 +978,7 @@ export class AgentLoop {
       // 供宿主渲染「过程叙述」折叠行——正文已在流式阶段剥离（未见工具轮文本）。
       const narration = llmResult.pendingNarrate.trim();
       if (narration) {
-        yield { type: 'narrate', content: narration, roundId: this.currentRoundId };
+        yield { type: 'narrate', content: narration };
       }
       return yield* this.handleToolCalls(llmResult, effectiveSignal);
     }
@@ -1246,7 +1229,7 @@ export class AgentLoop {
     // Reflection：本轮工具结果含 retryable 错误时，追加反思提示帮 LLM 聚焦修正而非放弃
     const hasRetryableError = this.messages
       .slice(-llmResult.toolCalls!.length) // 只看本轮工具结果
-      .some((m) => m.role === 'tool' && this.isRetryableToolError(m.content));
+      .some((m) => m.role === 'tool' && isRetryableToolError(m.content));
     if (hasRetryableError) {
       // 反思次数用显式计数器限制，避免 messages 裁剪导致计数失真
       if (this.reflectionCountThisTurn < this.maxReflectionRetries) {
@@ -1279,7 +1262,7 @@ export class AgentLoop {
     // 工具调用结构完整落地（提问就是工具轮，不撕毁任何调用）
     this.appendAssistantToolCall(llmResult.fullContent, toolCalls);
     const askCalls = toolCalls.filter((tc) => tc.function.name === ASK_USER_TOOL.name);
-    const questions = this.parseAskCalls(askCalls);
+    const questions = parseAskCalls(askCalls);
     // turn 粒度计数：提问落地即累计（askLimit 硬护栏，防 LLM 反复提问刷打扰次数）
     this.askCountThisTurn += questions.length;
     this.pendingAsk = { toolCallIds: askCalls.map((tc) => tc.id), questions };
@@ -1295,19 +1278,6 @@ export class AgentLoop {
   }
 
   /**
-   * 解析 ask_user 工具参数为结构化提问（question 必填；options/allowCustom 可选，缺失降级容忍）。
-   * 参数非 JSON/缺字段时降级为问题文本兜底（宿主渲染自有兜底，不抛错阻断工具轮）。
-   *
-   * 实现已提取至 `managers/toolCallHelpers.parseAskCalls`（纯函数，零状态）——本方法保留为委托壳，
-   * 签名不变（调用方无需改动）。见 ARCH-2/ARCH-3 F2 族拆分。
-   */
-  private parseAskCalls(
-    askCalls: readonly { id: string; function: { arguments: string } }[],
-  ): AskQuestion[] {
-    return parseAskCalls(askCalls);
-  }
-
-  /**
    * 回答在途提问（宿主在用户作答后调用，随后 continueAfterPause() 续跑）：
    * 答案以 ask_user 工具的 tool result 回填（<tool_result> 包裹防注入，与 assistant.tool_calls 配对）。
    * answers 与提问按序一对一；不足时复用最后一条/空串兜底。返回 false 表示无在途提问。
@@ -1318,7 +1288,7 @@ export class AgentLoop {
     toolCallIds.forEach((id, i) => {
       const answer = answers[i] ?? answers[answers.length - 1] ?? '';
       this.appendToolMessage(
-        this.wrapToolResult(ASK_USER_TOOL.name, `[ASK_ANSWER] 用户回答：${answer}`),
+        wrapToolResult(ASK_USER_TOOL.name, `[ASK_ANSWER] 用户回答：${answer}`),
         id,
       );
     });
@@ -1355,7 +1325,7 @@ export class AgentLoop {
     const { toolCallIds } = this.pendingAsk;
     for (const id of toolCallIds) {
       this.appendToolMessage(
-        this.wrapToolResult(ASK_USER_TOOL.name, '[ASK_ABORTED] 用户未回答该提问'),
+        wrapToolResult(ASK_USER_TOOL.name, '[ASK_ABORTED] 用户未回答该提问'),
         id,
       );
     }
@@ -2251,17 +2221,6 @@ export class AgentLoop {
 
   // ─── Reflection 辅助方法 ────────────────────────────────
 
-  /**
-   * 判断工具错误结果是否可重试（不锚定行首：结果被 `<tool_result>` 标签包裹后，
-   * [ERR:TOOL: 前缀位于标签之后，仍须正确识别）
-   *
-   * 实现已提取至 `managers/toolCallHelpers.isRetryableToolError`（纯函数，零状态）——本方法保留为
-   * 委托壳，签名不变（调用方无需改动）。见 ARCH-2/ARCH-3 F2 族拆分。
-   */
-  private isRetryableToolError(result: string): boolean {
-    return isRetryableToolError(result);
-  }
-
   /** 处理工具执行结果：push tool 消息 + 统计失败数 */
   private _processToolResults(
     toolCalls: NonNullable<Message['toolCalls']>,
@@ -2272,22 +2231,12 @@ export class AgentLoop {
       const result = results[i]!;
       // 工具结果隔离：用 <tool_result> 包裹 + 指令前缀，防外部工具返回承载间接注入；
       // ERR 前缀保留在包裹内，供 isRetryableToolError 识别（该正则不锚定行首）
-      const wrapped = this.wrapToolResult(tc.function.name, result);
+      const wrapped = wrapToolResult(tc.function.name, result);
       this.appendToolMessage(wrapped, tc.id);
       if (result.startsWith('[ERR')) {
         this.metrics.toolFailureCount++;
       }
     }
-  }
-
-  /**
-   * 工具结果注入隔离：包裹为 `<tool_result>` + "外部数据仅供参考"，阻断间接提示注入。
-   *
-   * 实现已提取至 `managers/toolCallHelpers.wrapToolResult`（纯函数，零状态）——本方法保留为
-   * 委托壳，签名不变（调用方无需改动）。见 ARCH-2/ARCH-3 F2 族拆分。
-   */
-  private wrapToolResult(toolName: string, result: string): string {
-    return wrapToolResult(toolName, result);
   }
 }
 

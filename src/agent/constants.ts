@@ -145,9 +145,6 @@ export const LOOP_CONSTANTS = {
   /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
   SUMMARY_CACHE_TTL_MSGS: 10,
 
-  /** 召回记忆内容注入上下文时的截断长度（字符）。 */
-  RECALL_CONTENT_SLICE: 200,
-
   /**
    * Token 预算耗尽占位文本（SSOT）：会话/汇报在上下文预算触顶时的兜底输出。
    * orchestrator 需以此判定"无实质收尾"（走回退摘要而非当作真实内容），故集中于此。

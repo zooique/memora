@@ -91,10 +91,6 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     expect(LOOP_CONSTANTS.SUMMARY_CACHE_TTL_MSGS).toBe(10);
   });
 
-  it('召回记忆内容截断长度应为 200 字符', () => {
-    expect(LOOP_CONSTANTS.RECALL_CONTENT_SLICE).toBe(200);
-  });
-
   it('上下文摘要参与消息条数应为 6', () => {
     expect(LOOP_CONSTANTS.SUMMARY_MSG_COUNT).toBe(6);
   });
@@ -113,9 +109,9 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    // 21 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
+    // 20 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
     // LLM_TIMEOUT_MS / CONTEXT_TOKENS_BUFFER_RATIO / SUMMARY_LAYER_TOKEN_RATIO /
-    // SUMMARY_CACHE_TTL_MSGS / RECALL_CONTENT_SLICE /
+    // SUMMARY_CACHE_TTL_MSGS /
     // TOKEN_BUDGET_REACHED_PLACEHOLDER / DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，2026-08-21 新增，
     // loop 与 orchestrator 共用）/
     // CONTEXT_PRESSURE_HINT（T3 预算预警提示，2026-09-01 新增）/
@@ -123,7 +119,7 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // TOOL_NARRATION_DISCIPLINE（工具导语纪律，2026-09-02 分区式 UI 配套）/
     // SUMMARY_MSG_COUNT / SUMMARY_CONTENT_SLICE / SUMMARY_MAX_TOKENS /
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(21);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(20);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {
