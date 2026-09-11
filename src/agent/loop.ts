@@ -120,13 +120,6 @@ export interface AgentLoopOptions {
   duplicateCallInterceptor?: DuplicateCallInterceptor;
 }
 
-/** callLlmWithRetry 的返回结果（定义已随 LLM 调用族下沉至 managers/llmCaller.ts，
- *  此处 re-export 保持 loop 内部与既有引用路径不变） */
-export type { LlmCallResult } from '@/agent/managers/llmCaller.js';
-
-/** AgentLoop 运行时指标纯状态容器（已下沉至 managers/loopMetrics.ts，此处仅 re-export 保持既有导入路径） */
-export { LoopMetrics } from '@/agent/managers/loopMetrics.js';
-
 /**
  * step 边界气口申请——统一三种用户申请的气口语义（SSOT 收敛）：
  *  旧设计分散为 pauseRequested flag + pendingInterjections[] 数组。2026-09-06 收敛为单一队列：
@@ -375,6 +368,10 @@ export class AgentLoop {
         opts.messages?.duplicateToolCallWarning ??
         ((threshold: number) =>
           `[DUPLICATE_TOOL_CALL_WARNING] 你已连续 ${threshold} 次调用相同工具 + 相同参数，可能陷入死循环。请分析工具结果，改变策略：调整参数、换用其他工具，或直接给出文本回复。`),
+      // LLM 空响应兜底（无文本无工具调用时使用；与多数 ui 字段一致默认英文，宿主可经 messages 覆盖）
+      emptyResponseFallback:
+        opts.messages?.emptyResponseFallback ??
+        'The model returned an empty response. Please try again or ask in a different way.',
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
     this.onContextCompressed = opts.onContextCompressed;
@@ -632,6 +629,14 @@ export class AgentLoop {
 
   /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
+    // 撞线收尾前消费排队插话（与 done 分支同一语义，2026-09-11 打磨）：
+    // 步数已到顶不会再产生下一轮迭代去消费 interruptQueue，插话若不在此入史将被静默丢弃；
+    // 消费为 user 消息后下一 turn 装配（最近对话）仍可见。pause 条目保留（无迭代边界可挂起，随 resetTurnState 清）
+    const consumed = this._consumeInterjects(this.interruptQueue);
+    this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'interject');
+    if (consumed > 0) {
+      logger.debug({ consumed }, '步数触顶收尾前消费排队插话');
+    }
     yield { type: 'text', content: this.ui.maxIterationsReached };
     yield { type: 'done' };
   }
@@ -993,6 +998,11 @@ export class AgentLoop {
     // ─── 两级空间管理压缩链 ─────────────────────────────────────
     // 第一级：替换（内核自动 LRU，取已存记忆摘要换越界轮次正文，无摘要 no-op）
     // 第二级：tool_result 占位（ResultReplacementStrategy）+ 超大结果卸载兜底（OffloadCompactionStrategy）
+    //
+    // 视图说明（截断轮一致性，2026-09-11 打磨备注）：截断时 safeMessages 为截断后新数组（本次
+    // 发往 LLM 的视图），this.messages 经 replaceContext 为同元素引用的浅拷贝。ResultReplacement
+    // 原地改对象 content（引用共享 → 对发送视图同样生效）；Offload 若 splice 移除消息，则当轮
+    // 发送视图仍含未卸载内容、下一迭代自然生效——无信息丢失，属预期延迟，非缺陷。
     for (const strategy of this.compactionStrategies) {
       if (strategy.shouldCompact(this.messages)) {
         await strategy.compact(this.messages);
@@ -1338,9 +1348,9 @@ export class AgentLoop {
     } else {
       // LLM 返回空响应（无文本无工具调用）的兜底，正常不会发生但 provider 边界情况可能触发
       logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
-      const fallbackText = '（模型未返回有效内容，请重试或换一种方式提问）';
-      this.appendAssistantText(fallbackText);
-      yield { type: 'text', content: fallbackText };
+      // 文案走 ui 通道（默认英文，宿主可经 messages.emptyResponseFallback 覆盖，与其它 UI 文案一致）
+      this.appendAssistantText(this.ui.emptyResponseFallback);
+      yield { type: 'text', content: this.ui.emptyResponseFallback };
     }
 
     yield { type: 'done' };
@@ -2100,11 +2110,22 @@ export class AgentLoop {
 
   /** 清理上一轮注入的临时 system 消息（每轮 chat() 前调用），防 recall/技能/截断注入堆积成冗余指令 */
   cleanTemporarySystemMessages(): void {
-    if (this.messages.length <= 1) return;
+    if (this.messages.length <= 1) {
+      // 无对话消息可清：仅同步清空 executionTempSystem 引用集（防与下方正常路径不一致的滞后残留）
+      if (this.executionTempSystem.size > 0) {
+        this.executionTempSystem.clear();
+      }
+      return;
+    }
     const permanent = this.messages[0]!;
     const conversationHistory = this.messages.slice(1).filter((m) => m.role !== 'system');
     const removedCount = this.messages.length - 1 - conversationHistory.length;
     this.replaceContext([permanent, ...conversationHistory]);
+    // 已移除全部非永驻 system 消息：executionTempSystem 引用的消息皆不在上下文，
+    // 同步清集合消除引用滞后（双清机制一致化，2026-09-11）——否则集合保留旧引用至下次闭环入口
+    if (this.executionTempSystem.size > 0) {
+      this.executionTempSystem.clear();
+    }
     if (removedCount > 0) {
       logger.debug(
         { removedCount, remainingMessages: this.messages.length },

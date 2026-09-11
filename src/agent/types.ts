@@ -130,6 +130,8 @@ export interface UIMessages {
   selfReviewPrompt?: (round: number, total: number) => string;
   /** 重复工具调用负反馈提示：连续多次相同工具+参数时注入，防止死循环 */
   duplicateToolCallWarning?: (threshold: number) => string;
+  /** LLM 空响应兜底提示（无文本无工具调用时使用，默认英文） */
+  emptyResponseFallback?: string;
 }
 
 // ─── 归档模式 ───────────────────────────────────────────
