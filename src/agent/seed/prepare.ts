@@ -24,7 +24,7 @@ import {
 /**
  * 回答前阶段执行器
  *
- * 一次输入 → 装配上下文（角色 + 召回 + 技能 + 用户消息入史），供回答中消费。
+ * 一次输入 → 装配上下文（角色 + 技能 + 用户消息入史），供回答中消费。
  * @remarks 异步生成器：运行期 yield AgentChunk（thinking 各阶段），返回 SeedPrepareResult。
  */
 export class SeedPrepare {
@@ -88,7 +88,7 @@ export class SeedPrepare {
     // 会议机制：工具面恒为 activePack（组员只"说"不执行，需完整能力应手动切换）——此处不走 roundAssemblyRole
     this.deps.applyRolePackToolExposure();
 
-    yield { type: 'thinking', phase: 'recalling' };
+    yield { type: 'thinking', phase: 'assembling' };
     // 上下文装配（自动记忆召回已退役，仅细则预算 + 对话层注入，见 memory-tool-recall-design §4）
     await contextPreparer.assembleContext(input);
 

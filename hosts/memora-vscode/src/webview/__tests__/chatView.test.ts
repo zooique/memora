@@ -544,14 +544,14 @@ describe('chatView clear_ok 消息区清理', () => {
     // 生成中先有 meta → 正文块挂载 round-block；thinking 事件流式中实时投影相位行
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '回答' });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'assembling' } } });
     // 流式中（v1.8 剪枝）：无 round-block 壳，过程平铺在 .process-flow——thinking 相位轻量行实时显示
     const rbRunning = document.querySelector('.process-flow') as HTMLElement;
     expect(rbRunning).not.toBeNull();
     expect(document.querySelector('.round-block')).toBeNull(); // 运行时绝无大折叠壳
     const phaseRow = rbRunning.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow).not.toBeNull();
-    expect(phaseRow.textContent).toContain('召回记忆中');
+    expect(phaseRow.textContent).toContain('装配上下文中');
     // 收尾后：折叠区收起（open=false）、相位行移除；§ 过程轨迹保留相位时间线
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'archiving' } } });
@@ -560,7 +560,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(rb.classList.contains('is-running')).toBe(false);
     expect(rb.open).toBe(false);
     expect(rb.querySelector('.round-block__phase')).toBeNull();
-    expect(rb.querySelector('.round-block__details')?.textContent).toContain('召回记忆中');
+    expect(rb.querySelector('.round-block__details')?.textContent).toContain('装配上下文中');
     expect(rb.querySelector('.round-block__details')?.textContent).toContain('调用模型中');
     expect(rb.querySelector('.round-block__details')?.textContent).toContain('归档记忆中');
   });
@@ -569,18 +569,18 @@ describe('chatView clear_ok 消息区清理', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '正文' });
-    // 同一相位「调用模型中」连续 5 次（LLM 多轮调用）+ 单次「召回记忆中」——模拟真实冗长轨迹
+    // 同一相位「调用模型中」连续 5 次（LLM 多轮调用）+ 单次「装配上下文中」——模拟真实冗长轨迹
     for (let i = 0; i < 5; i++) {
       dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2 + i, ts: '', payload: { phase: 'llm_calling' } } });
     }
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 8, ts: '', payload: { phase: 'recalling' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 8, ts: '', payload: { phase: 'assembling' } } });
     dispatch({ type: 'done' });
     const details = document.querySelector('.round-block__details') as HTMLElement;
     const rows = Array.from(details.querySelectorAll('.round-block__row')).map((r) => r.textContent);
     // 聚合：同相位合并计次（×5；phaseLabel 输出含「…」省略号），单次相位直显不赘 ×1；
     // 行数 = 相位种类（2），不随事件数（6）膨胀
     expect(rows.some((r) => r.includes('×5'))).toBe(true);
-    expect(rows.some((r) => r.includes('召回记忆'))).toBe(true);
+    expect(rows.some((r) => r.includes('装配上下文'))).toBe(true);
     expect(details.querySelectorAll('.round-block__row')).toHaveLength(2);
   });
 
@@ -1346,13 +1346,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(flow.closest('.msg.assistant')).toBe(assistant);
   });
 
-  it('thinking 到达后运行时平铺相位行实时显示运行阶段（召回记忆中 → 调用模型中…）', () => {
+  it('thinking 到达后运行时平铺相位行实时显示运行阶段（装配上下文中 → 调用模型中…）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'recalling' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'assembling' } } });
     let row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row).not.toBeNull();
-    expect(row.textContent).toContain('召回记忆中');
+    expect(row.textContent).toContain('装配上下文中');
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
     row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row.textContent).toContain('调用模型中');
@@ -2086,11 +2086,11 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
-    // prepare 阶段：recalling（meta 未到、无骨架）
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'recalling' } } });
+    // prepare 阶段：assembling（meta 未到、无骨架）
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'assembling' } } });
     let wait = messages.querySelector('.pending-wait') as HTMLElement | null;
     expect(wait).not.toBeNull();
-    expect(wait!.textContent).toContain('召回记忆中');
+    expect(wait!.textContent).toContain('装配上下文中');
     expect(wait!.textContent).toMatch(/已等待 \d+s/);
 
     // 相位推进 → 文案随 thinking 更新
@@ -2117,7 +2117,7 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
   it('done / error 收尾后等待指示器移除（不留残留定时器渲染）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'recalling' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'assembling' } } });
     expect(messages.querySelector('.pending-wait')).not.toBeNull();
     dispatch({ type: 'done' });
     expect(messages.querySelector('.pending-wait')).toBeNull();

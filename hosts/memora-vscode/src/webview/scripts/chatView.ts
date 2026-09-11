@@ -462,12 +462,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** thinking 阶段 → 中文标签（对齐内核 ThinkingPhase，Webview 展示面） */
   function phaseLabel(phase: ProcessThinkingPhase): string {
     const map: Record<ProcessThinkingPhase, string> = {
-      recalling: '召回记忆中…',
+      assembling: '装配上下文中…',
       llm_calling: '调用模型中…',
       processing: '处理中…',
-      planning: '规划中…',
-      step: '分步执行中…',
-      reporting: '收尾汇报中…',
       archiving: '归档记忆中…',
     };
     return map[phase] ?? '思考中…';

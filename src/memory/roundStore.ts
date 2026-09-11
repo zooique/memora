@@ -120,17 +120,16 @@ export type RoundStatus = 'pending' | 'complete' | 'error';
 /**
  * 思考阶段值（与 agent ThinkingPhase 同值的本地字面量，解耦依赖方向）
  *
- * 阶段与 Agent turn 对应：recalling=召回 / llm_calling=调用模型 / processing=处理 /
- * planning,step,reporting=多 turn 任务编排（档2 externalTaskLoop）/ archiving=归档。
+ * 阶段与 Agent turn 对应：assembling=上下文装配 / llm_calling=调用模型 / processing=处理 / archiving=归档。
+ * planning,step,reporting 已随多 turn 任务编排（externalTaskLoop）废弃（2026-09-04），
+ * 无生产发射点，移出枚举消除僵尸分支。
+ * recalling → assembling（2026-09-11）：语义从"召回"退化为纯"装配"，对齐 assembleContext 改名。
  */
 export type ProcessThinkingPhase =
-  | 'recalling'
+  | 'assembling'
   | 'processing'
   | 'archiving'
-  | 'llm_calling'
-  | 'planning'
-  | 'step'
-  | 'reporting';
+  | 'llm_calling';
 
 /** meta 事件载荷：该轮回答身份（角色/模型均为显示名，重放不依赖 ProviderStore/RolePackManager） */
 export interface ProcessMetaPayload {

@@ -6,7 +6,7 @@
  */
 
 /** thinking 事件的阶段标识 */
-export type ThinkingPhase = 'recalling' | 'processing' | 'archiving' | 'llm_calling';
+export type ThinkingPhase = 'assembling' | 'processing' | 'archiving' | 'llm_calling';
 
 /** turn 归属标记：chunk 携带所在 turn roundId（SSOT：过程事件归属由内核唯一提供，
  *  宿主据此把 ProcessEvent 落盘到正确的 Round，不再依赖「roundIds 末尾」推断当前轮） */

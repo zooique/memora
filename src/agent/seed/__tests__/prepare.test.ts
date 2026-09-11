@@ -23,9 +23,9 @@ describe('SeedPrepare 回答前', () => {
       new SeedPrepare(deps).run('用户输入', new AbortController().signal),
     );
 
-    // thinking 阶段提示（recalling → processing）
+    // thinking 阶段提示（assembling → processing）
     expect(chunks).toEqual([
-      { type: 'thinking', phase: 'recalling' },
+      { type: 'thinking', phase: 'assembling' },
       { type: 'thinking', phase: 'processing' },
     ]);
 

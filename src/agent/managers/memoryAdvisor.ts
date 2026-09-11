@@ -22,7 +22,7 @@ import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 
 /** 关联推荐：每个 source 采样 top-N 条 */
 const SUGGEST_TOP_PER_SOURCE = 3;
-/** 关联推荐：时效性衰减窗口（天），超过此天数归零 */
+/** 关联推荐：时效性窗口（天），超过此天数 relevance 归零（score 退役后纯时效排序） */
 const SUGGEST_RECENCY_WINDOW_DAYS = 30;
 /** 推荐内容预览字符数 */
 const ADVISOR_PREVIEW_LEN = 120;
