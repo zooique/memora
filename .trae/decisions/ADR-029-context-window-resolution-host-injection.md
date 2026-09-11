@@ -32,6 +32,9 @@ description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 
    - **sprite 宿主（本 ADR 暂不实现，留作对称扩展点）**：读 `config.llm.providers[active].contextWindow` 直接作为 `resolveContextWindow` 的入参（无全局封顶）。
 4. **角色包不再声明绝对 token 配额**：废除角色包 schema 的 `global.tokenBudget`（违反 strategyKeys 初衷且绝对量级耦合模型窗口）。内核「上下文近满则跳过召回」语义若保留须改为比例 `recallSkipAbovePercent`（默认对齐 90% 硬帽，行为不变），不暴露绝对 token。3 个内置 manifest 的 `tokenBudget:1000000` 迁回依赖 `memoryRecallPercent`（模型无关的正确抽象，已接线 `budget.ts`）。
 
+> ⚠️ **本条后半句已失效，不执行（2026-09-12 复核）**：其论证前提是「内核上下文近满则跳过**召回**」，而召回注入已随召回策略键族于 2026-09-09 退役（`src/role-pack/strategyResolver.ts:52`）；且目标载体 `memoryRecallPercent` **本身也在该批退役**——论证前提与目标载体双双消失。故「改为 `recallSkipAbovePercent`」「迁回 `memoryRecallPercent`」两项**不再执行**（`recallSkipAbovePercent` 从未引入）。
+> **前半句仍成立**：角色包不声明绝对 token 配额。2026-09-12 以「3 个内置 manifest 改 `tokenBudget: 0`（= 不设限）」兑现——**保留键、取消绝对量级**，比原议「废除键」更保守，且与「软上限须小于上下文窗口（默认 120K）才可能触发」一致（原值 `1000000` 永不触发，等价于不设限却有误导性）。
+
 ### 配套决策（复杂度守恒，避免过度抽象）
 
 - **不复用并行 `windowTokens` 管线**：内核已有 `maxContextTokens` 即「窗口」单一入参（budget/loop/contextManager 全用它）。宿主注入即复用，引入并行 `windowTokens` 是重复抽象。

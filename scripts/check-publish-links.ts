@@ -4,12 +4,19 @@
  * 定位（C7 收口后的防回归闸门）：
  *   `package.json#files` 白名单才是「进发布包」的实锤边界。出货 `.md` 里的相对链接若解析到
  *   白名单之外，npm 消费者点开即 404 —— 但**在仓库内它往往是好的**，所以人工审查极易漏判
- *   （C7 初版只数出 3 处，本检查器实测 10 处）。
+ *   （C7 人工初版只数出 3 处；以本判据回测**修复前**的文档为 10 处。本脚本建于修复之后，
+ *   首次运行即为 0 命中，「10」是回测数而非本脚本实测数）。
  *
  * 双条件判据（缺一不可，只查一半会误判）：
  *   ① **目标在磁盘上存在** —— 不满足 = 连仓库内都是断的（真 bug，如路径深度写错）；
  *   ② **目标在发布白名单内** —— 不满足 = 仅 npm 消费者断（发布边界缺陷）。
  *   另：`package.json` 等属 npm **强制随包**文件（与 `files` 无关），不得误报。
+ *
+ * 闸门自检（self-test，每次运行都跑，不可关闭）：
+ *   「扫描 0 命中即成功」这类断言若判据本身失明（正则改坏、白名单解析失效），会**静默 exit 0**
+ *   —— 实测：把 `LINK_RE` 改成永不匹配的有效正则后，真死链也能被放行。故本脚本先对 2 条内置
+ *   样例跑**同一套判据**（`classifyTarget`，与主扫描同源，非另写一套），未全捕获即 exit 2。
+ *   自检跑不通过 = 闸门已瞎，此时「0 命中」不可信。
  *
  * 用法：
  *   npx tsx scripts/check-publish-links.ts          # 打印报告，有问题 exit 1
@@ -40,6 +47,7 @@ interface Finding {
   line: number;
   raw: string;
   resolved: string;
+  verdict: 'missing' | 'unshipped';
 }
 
 const pkg = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
@@ -71,6 +79,9 @@ function collectShippedMarkdown(dir: string, out: string[]): void {
 
 const LINK_RE = /\]\(([^)]*)\)/g;
 
+/** 自检样例的解析起点：选必然随包的出货 md，保证 dirname 相对解析有效 */
+const SELF_TEST_ANCHOR = 'docs/architecture/role-pack-authoring-guide.md';
+
 function isExternal(target: string): boolean {
   return /^(https?:|mailto:|tel:)/i.test(target);
 }
@@ -87,6 +98,82 @@ function normalizeTarget(raw: string): string {
   }
 }
 
+type Verdict = 'skip' | 'missing' | 'unshipped' | 'ok';
+
+interface Classified {
+  verdict: Verdict;
+  resolved: string;
+}
+
+/** 链接判据唯一实现：主扫描与自检共用，杜绝「自检通过但判据已瞎」 */
+function classifyTarget(raw: string, fromRel: string): Classified {
+  const t = raw.trim();
+  const none: Classified = { verdict: 'skip', resolved: '' };
+  if (!t || t.startsWith('#') || isExternal(t)) return none;
+  const target = normalizeTarget(t);
+  if (!target) return none;
+  const resolved = relative(ROOT, resolve(dirname(join(ROOT, fromRel)), target)).replace(/\\/g, '/');
+  if (!existsSync(join(ROOT, resolved))) return { verdict: 'missing', resolved };
+  if (!isShipped(resolved)) return { verdict: 'unshipped', resolved };
+  return { verdict: 'ok', resolved };
+}
+
+/** 扫描一行：LINK_RE 提取 + classifyTarget 判定，主扫描与自检**端到端同源** */
+function scanLine(line: string, fromRel: string): Array<Omit<Finding, 'line'>> {
+  const out: Array<Omit<Finding, 'line'>> = [];
+  LINK_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = LINK_RE.exec(line)) !== null) {
+    const { verdict, resolved } = classifyTarget(m[1], fromRel);
+    if (verdict === 'missing' || verdict === 'unshipped') {
+      out.push({ file: fromRel, raw: m[1].trim(), resolved, verdict });
+    }
+  }
+  return out;
+}
+
+/**
+ * 闸门自检：判据失明时「0 命中」是假绿，故先证明闸门还看得见。
+ * 必须**从原始文本行**起跑（含 LINK_RE 提取环节）——只测判据会漏掉「提取正则被改坏」
+ * 这一类最易发生的失明（实测：只测判据时，正则失明仍能静默 exit 0）。
+ * 样例锚点选必然随包的出货 md（保证 dirname 解析有效），目标零额外磁盘依赖。
+ * 断言**命中数**而不只是首条判定：否则「外链跳过逻辑失效」会碰巧凑出同样的首条判定而蒙混过关。
+ */
+const SELF_TEST: ReadonlyArray<{
+  line: string;
+  hits: number;
+  verdict?: 'missing' | 'unshipped';
+}> = [
+  // [A] 目标不存在 → 命中 1（同行的外链须被跳过）；verdict = missing
+  {
+    line: '见 [外链](https://example.com) 与 [坏链](../../__self_test_missing__/nope.md)。',
+    hits: 1,
+    verdict: 'missing',
+  },
+  // [B] 目标存在但不随包（scripts/ 不在 files 白名单）→ 命中 1，verdict = unshipped
+  { line: '见 [脚本](../../scripts/check-publish-links.ts) 说明。', hits: 1, verdict: 'unshipped' },
+  // [C] 反向护栏：随包链接不得误报（正则过宽会连正常链接一起判死）→ 命中 0
+  { line: '见 [指南](./role-pack-spec.md) 说明。', hits: 0 },
+];
+
+function runSelfTest(): boolean {
+  let ok = 0;
+  for (const c of SELF_TEST) {
+    const hit = scanLine(c.line, SELF_TEST_ANCHOR);
+    const got = hit[0]?.verdict ?? 'none';
+    const pass = hit.length === c.hits && (c.verdict === undefined || got === c.verdict);
+    if (pass) ok += 1;
+    else console.error(`  自检失败: 「${c.line}」期望命中 ${c.hits}/${c.verdict ?? '-'}，实得 ${hit.length}/${got}`);
+  }
+  console.log(`闸门自检: ${ok}/${SELF_TEST.length} 样例符合预期`);
+  return ok === SELF_TEST.length;
+}
+
+if (!runSelfTest()) {
+  console.error('\n闸门自检未通过：判据可能已失明，此时「0 命中」不可信。');
+  process.exit(2);
+}
+
 const missing: Finding[] = [];
 const unshipped: Finding[] = [];
 
@@ -97,17 +184,8 @@ shippedMd.sort();
 for (const rel of shippedMd) {
   const lines = readFileSync(join(ROOT, rel), 'utf8').split(/\r?\n/);
   lines.forEach((line, i) => {
-    LINK_RE.lastIndex = 0;
-    let m: RegExpExecArray | null;
-    while ((m = LINK_RE.exec(line)) !== null) {
-      const raw = m[1].trim();
-      if (!raw || raw.startsWith('#') || isExternal(raw)) continue;
-      const target = normalizeTarget(raw);
-      if (!target) continue;
-      const resolved = relative(ROOT, resolve(dirname(join(ROOT, rel)), target)).replace(/\\/g, '/');
-      const rec: Finding = { file: rel, line: i + 1, raw, resolved };
-      if (!existsSync(join(ROOT, resolved))) missing.push(rec);
-      else if (!isShipped(resolved)) unshipped.push(rec);
+    for (const f of scanLine(line, rel)) {
+      (f.verdict === 'missing' ? missing : unshipped).push({ ...f, line: i + 1 });
     }
   });
 }
