@@ -56,7 +56,7 @@ export const chatStyles = `
 
   /* ============ Components：会话标题条（ADR-024 会话标题层） ============ */
   /* 顶部一条：主动可见展示当前会话标题，让用户始终识别「我在哪个会话」；
-   * 灰字小字号 + 左侧细竖线（会话语义，与 memory-tag 同语言），不挤占消息区；
+   * 灰字小字号 + 左侧细竖线（会话语义），不挤占消息区；
    * flex 非缩放：宽度铺满、高度自适应单行，置于消息区上方。 */
   .session-title-bar {
     display: flex; align-items: center;
@@ -613,17 +613,6 @@ export const chatStyles = `
   .msg-polish:focus-visible {
     outline: 2px solid var(--border-focus, #0e639c);
     outline-offset: 2px;
-  }
-  /* P1（2026-08-15 记忆附着可见）：AI 回复底部「基于 N 条记忆」弱标签。
-   * 灰字小字号 + 左侧细竖线（记忆语义），主动可见不打扰；
-   * margin-right:auto 使其靠左（信息性标签），复制/时间戳保持靠右（footer 为 flex-end）。 */
-  .memory-tag {
-    margin-right: auto;
-    font-size: var(--font-sm, 11px);
-    color: var(--text-secondary, #9aa0a6);
-    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
-    padding-left: var(--sp-2, 6px);
-    user-select: none;
   }
 
   /* ============ Components：底部输入卡片 ============

@@ -10,25 +10,14 @@
 
 import { describe, it, expect } from 'vitest';
 import { SeedPrepare } from '@/agent/seed/prepare.js';
-import type { Memory } from '@/memory/types.js';
 import {
   createHarness,
   collectGen,
-  type SeedMocks,
 } from './harness.js';
 
-/** 让召回桩返回若干记忆 */
-function stubRecall(mocks: SeedMocks, memories: Memory[]): void {
-  mocks.contextPreparer.recallAndInject.mockImplementation(async () => memories);
-}
-
-const rec = (id: string): Memory =>
-  ({ id, content: `记忆${id}`, source: 'round-summary', name: id, createdAt: '2026-08-20T00:00:00Z', accessedAt: '2026-08-20T00:00:00Z' }) as Memory;
-
 describe('SeedPrepare 回答前', () => {
-  it('策略装配：装配上下文 → L2 策略注入 → 工具暴露 → 返回 recalledMemories', async () => {
+  it('策略装配：装配上下文 → L2 策略注入 → 工具暴露', async () => {
     const { mocks, deps } = createHarness();
-    stubRecall(mocks, [rec('a'), rec('b')]);
 
     const { chunks, result } = await collectGen(
       new SeedPrepare(deps).run('用户输入', new AbortController().signal),
@@ -43,7 +32,7 @@ describe('SeedPrepare 回答前', () => {
     // L2 策略注入 + 工具暴露面应用（工具面恒为 activePack）
     expect(mocks.loop.setStrategy).toHaveBeenCalledTimes(1);
     expect(mocks.applyRolePackToolExposure).toHaveBeenCalledTimes(1);
-    // 上下文装配（对话层注入恒 hybrid；自动召回退役，recallAndInject 单参恒返回空）
+    // 上下文装配（对话层注入恒 hybrid；自动召回退役，recallAndInject 单参无返回值）
     expect(mocks.contextPreparer.recallAndInject).toHaveBeenCalledWith('用户输入');
     // roundId 生成 + 用户消息入史（同 roundId 溯源）
     expect(mocks.loop.setCurrentRoundId).toHaveBeenCalledTimes(1);
@@ -52,12 +41,8 @@ describe('SeedPrepare 回答前', () => {
     // 会话命名 fire-and-forget
     expect(mocks.sessionNamer.ensureSessionTitle).toHaveBeenCalledWith('2026-08-20', 'main', '用户输入');
 
-    // 返回召回记忆，未中断
-    expect(result).toEqual({
-      input: '用户输入',
-      recalledMemories: [expect.objectContaining({ id: 'a' }), expect.objectContaining({ id: 'b' })],
-      aborted: false,
-    });
+    // 返回结果：仅 input + aborted（round 归属见 loop.currentRoundId）
+    expect(result).toEqual({ input: '用户输入', aborted: false });
   });
 
   it('会议机制：active 步骤声明有效组员 rolePack → 表层装配视角 + 前缀刷新 + 组清单注入', async () => {
@@ -140,7 +125,6 @@ describe('SeedPrepare 回答前', () => {
 
   it('回答前中断：signal.aborted → 返回 aborted，跳过技能注入与用户消息入史', async () => {
     const { mocks, deps } = createHarness();
-    stubRecall(mocks, [rec('x')]);
 
     // 召回阶段前先中止 signal
     const ac = new AbortController();
@@ -148,8 +132,7 @@ describe('SeedPrepare 回答前', () => {
 
     const { result } = await collectGen(new SeedPrepare(deps).run('输入', ac.signal));
 
-    expect(result?.aborted).toBe(true);
-    expect(result?.recalledMemories).toEqual([expect.objectContaining({ id: 'x' })]);
+    expect(result).toEqual({ input: '输入', aborted: true });
     // 中断后不再注入用户消息 / 不命名
     expect(mocks.loop.setCurrentRoundId).not.toHaveBeenCalled();
     expect(mocks.history.appendUser).not.toHaveBeenCalled();

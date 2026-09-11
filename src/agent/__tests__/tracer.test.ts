@@ -91,12 +91,8 @@ describe('NOOP_TRACER 单例', () => {
 // ─── TRACE_SPANS 预定义 Span 名称 ─────────────────────────
 
 describe('TRACE_SPANS 预定义 Span 名称常量', () => {
-  it('包含 9 个 AgentLoop 关键节点 Span 名称', () => {
-    expect(Object.keys(TRACE_SPANS)).toHaveLength(9);
-  });
-
-  it('RECALL = "recall.recall"（记忆召回阶段）', () => {
-    expect(TRACE_SPANS.RECALL).toBe('recall.recall');
+  it('包含 7 个 AgentLoop 关键节点 Span 名称', () => {
+    expect(Object.keys(TRACE_SPANS)).toHaveLength(7);
   });
 
   it('LLM_CALL = "llm.call"（LLM API 调用）', () => {
@@ -117,10 +113,6 @@ describe('TRACE_SPANS 预定义 Span 名称常量', () => {
 
   it('POST_PROCESS = "archive.postProcess"（对话后归档处理）', () => {
     expect(TRACE_SPANS.POST_PROCESS).toBe('archive.postProcess');
-  });
-
-  it('RECALL_ACTUAL = "recall.actual"（实际记忆召回函数）', () => {
-    expect(TRACE_SPANS.RECALL_ACTUAL).toBe('recall.actual');
   });
 
   it('所有 Span 名称采用 dot.notation 命名约定', () => {

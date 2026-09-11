@@ -65,16 +65,12 @@ export const NOOP_TRACER: ITracer = new NoopTracer();
 /**
  * AgentLoop 关键节点 Span 名称常量——供宿主按名过滤建监控面板。
  * 各 span 名称/用途契约（span 名是宿主监控依赖，勿改）：
+ *
+ * 注：原 RECALL / RECALL_ACTUAL 常量已于 2026-09-11 物理删除——两 span 在内核
+ * 已无 emit 点（自动记忆召回退役 + recall() 物理删除），为幽灵 API 保留契约
+ * 即为幻觉留门。现行记忆检索耗时可看 TOOL_EXEC span（search_memories 工具）。
  */
 export const TRACE_SPANS = {
-  /**
-   * 记忆召回阶段 —— **已无 emit 点**（2026-09-11 核实）。
-   *
-   * 原由上下文装配期注入动作发射；自动记忆召回退役后（memory-tool-recall-design §3/§4）
-   * prepare 不再注入任何记忆，故无产出。宿主 `getLatestFingerprints()` 仍按名读取该 span，
-   * 只是恒读不到 → 指纹字段缺省。常量保留供宿主历史 trace 数据显示名。
-   */
-  RECALL: 'recall.recall',
   /** LLM API 调用 */
   LLM_CALL: 'llm.call',
   /** 工具执行 */
@@ -85,14 +81,6 @@ export const TRACE_SPANS = {
   CONTEXT_SUMMARY: 'context.summary',
   /** 对话后归档处理——每轮 chat() 后 postProcess（round-summary 生成、角色/技能匹配）；观察归档耗时/失败率 */
   POST_PROCESS: 'archive.postProcess',
-  /**
-   * 实际记忆召回函数 span —— **已无 emit 点**（2026-09-11 核实）。
-   *
-   * 原埋点位置为 `recall()` 召回编排函数内部，该函数已于 2026-09-10 随跨重启恢复链物理删除；
-   * 记忆检索改由 `search_memories` 工具承担，其耗时由 `TOOL_EXEC` span 覆盖。
-   * 常量保留仅为**跨版本 trace 数据可读**（历史 span 名 → 宿主面板有显示名），勿据此开发新埋点。
-   */
-  RECALL_ACTUAL: 'recall.actual',
   /** 难度分级——回答前判定简单/复杂（种子聚类） */
   DIFFICULTY: 'round.difficulty',
   /** 汇报闭环——复杂任务收敛后独立汇报产出 */
@@ -104,7 +92,8 @@ export const TRACE_SPANS = {
 /**
  * Agent 运行时指标快照——Agent.getMetrics() 聚合 AgentLoop+Agent 两层指标产出，供宿主做监控/健康度面板。
  * 只读快照（不修改状态）、同步返回（不触发 LLM/IO）、累计值（init 起累加，close() 后清零）。
- * 分 5 维度：LLM 调用、记忆召回、工具调用、上下文管理、任务级 SLO（显式衰减维度已随衰减子系统移除，2026-08-27）。
+ * 分 4 维度：LLM 调用、工具调用、上下文管理、任务级 SLO（显式衰减维度已随衰减子系统移除，2026-08-27；
+ * 记忆召回维度已随自动召回退役删除，2026-09-11——recallTotalCount/recallHitCount 零写点、hitRate 恒 0）。
  */
 export interface AgentMetrics {
   /** LLM 调用指标 */
@@ -119,15 +108,6 @@ export interface AgentMetrics {
     actualInputTokens: number;
     /** 实际 API 返回的输出 token 累计值（仅在 Provider 支持 usage 时填充，否则为 0） */
     actualOutputTokens: number;
-  };
-  /** 记忆召回指标 */
-  recall: {
-    /** 召回总次数（每轮 processUserInput 算一次） */
-    totalCount: number;
-    /** 命中次数（召回结果非空） */
-    hitCount: number;
-    /** 命中率（0-1，totalCount 为 0 时为 0） */
-    hitRate: number;
   };
   /** 工具调用指标 */
   tools: {

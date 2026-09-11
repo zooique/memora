@@ -2690,11 +2690,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       type: 'metrics',
       fingerprints: {
         systemPromptHash: fp.systemPromptHash ? fp.systemPromptHash.slice(0, 12) : undefined,
-        attachedMemoryCount: fp.attachedMemoryCount,
       },
       metrics: {
         llmCallCount: m.llm.callCount,
-        recallHitRate: m.recall.hitRate,
         toolFailureCount: m.tools.failureCount,
         truncationCount: m.context.truncationCount,
         // D（alignment-iteration.md）：补齐 token 用量

@@ -23,7 +23,6 @@ import type { SessionNamer } from '@/agent/managers/sessionNamer.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import type { AgentChunk } from '@/agent/types.js';
-import type { Memory } from '@/memory/types.js';
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ITracer } from '@/agent/tracer.js';
@@ -185,7 +184,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       tryBuildMeetingPlan: vi.fn(() => null),
     },
     contextPreparer: {
-      recallAndInject: vi.fn(async () => [] as Memory[]),
+      recallAndInject: vi.fn(async () => {}),
     },
     sessionNamer: { ensureSessionTitle: vi.fn(async () => {}) },
     roundSummaryGenerator: { generate: vi.fn(async () => {}) },

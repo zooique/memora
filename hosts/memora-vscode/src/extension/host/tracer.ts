@@ -2,9 +2,9 @@
  * VscodeTracer — VS Code 宿主侧的可观测性实现（P2，§5.2.1 可追溯性边界）
  *
  * 职责：
- *   - 实现内核 ITracer 接口，采集内核埋点产出的 span（llm.call / recall / tool.execute 等）
+ *   - 实现内核 ITracer 接口，采集内核埋点产出的 span（llm.call / tool.execute 等）
  *   - 有界采集：内存环形缓冲（上限 200 条），FIFO 截断，不落盘（避免存储膨胀，对齐「有界、可选」边界）
- *   - 提取「模型看到了什么」指纹：systemPromptHash / attachedMemoryCount / attachedMemoryFingerprint
+ *   - 提取「模型看到了什么」指纹：systemPromptHash
  *     （只记 hash 不记内容——可追溯性边界声明：指纹属可观测性，不入 sessionStore）
  *
  * 设计（薄壳 + 装配）：
@@ -78,7 +78,7 @@ export class VscodeTracer implements ITracer {
    * 提取最近最近几轮的 span 作为「透明面板」的操作流（B9 可观测补齐）
    *
    * 把本类已采集但此前仅用于指纹提取的 span 缓冲暴露出来，供透明面板渲染操作序列
-   * （召回 → LLM → 工具 → 响应…）。只回传 span 名 + 关键属性加工成的展现标签，
+   * （LLM → 工具 → 响应…）。只回传 span 名 + 关键属性加工成的展现标签，
    * 不传原始内容（延续「指纹可观测、不入存储」的可追溯性边界）。
    *
    * @param limit 返回条数上限（默认 20，新→旧排序；超界由调用方控制）
@@ -109,13 +109,6 @@ export class VscodeTracer implements ITracer {
         const tool = record.attributes.tool;
         return typeof tool === 'string' ? `工具·${tool}` : '工具';
       }
-      // RECALL / RECALL_ACTUAL 分支保留仅为**历史 trace 数据显示名**：两个 span 在内核
-      // 已无 emit 点（自动记忆召回退役 + recall() 物理删除，2026-09-11 核实），
-      // 现行记忆检索耗时可看「工具·search_memories」。勿据此开发新埋点。
-      case TRACE_SPANS.RECALL:
-        return '记忆召回';
-      case TRACE_SPANS.RECALL_ACTUAL:
-        return '召回执行';
       case TRACE_SPANS.RESPONSE:
         return '响应生成';
       case TRACE_SPANS.CONTEXT_SUMMARY:
@@ -134,28 +127,25 @@ export class VscodeTracer implements ITracer {
   /**
    * 提取最近一轮的「模型看到了什么」指纹（§5.2.1 可追溯性边界）
    *
-   * 从最近已结束的 llm.call span 取 systemPromptHash、recall span 取附着记忆指纹。
-   * 只返回 hash 与计数，不返回内容——与内核边界声明一致（指纹属可观测性，不入存储）。
+   * 从最近已结束的 llm.call span 取 systemPromptHash。
+   * 只返回 hash，不返回内容——与内核边界声明一致（指纹属可观测性，不入存储）。
+   * 注：原 attachedMemoryCount / attachedMemoryFingerprint 读取分支已随记忆附着
+   * 可观测性全链退役删除（2026-09-11）。
    *
    * @returns 指纹摘要（未采集到对应 span 时字段缺省）
    */
-  getLatestFingerprints(): { systemPromptHash?: string; attachedMemoryCount?: number; attachedMemoryFingerprint?: string } {
+  getLatestFingerprints(): { systemPromptHash?: string } {
     let systemPromptHash: string | undefined;
-    let attachedMemoryCount: number | undefined;
-    let attachedMemoryFingerprint: string | undefined;
-    // 倒序找最近的对应 span（llm.call 可能多次，取最后一条）
+    // 倒序找最近的 llm.call span（可能多次，取最后一条）
     for (let i = this.spans.length - 1; i >= 0; i--) {
       const s = this.spans[i];
-      if (s.name === TRACE_SPANS.LLM_CALL && !systemPromptHash) {
+      if (s.name === TRACE_SPANS.LLM_CALL) {
         const v = s.attributes.systemPromptHash;
         if (typeof v === 'string') systemPromptHash = v;
-      } else if (s.name === TRACE_SPANS.RECALL) {
-        if (typeof s.attributes.attachedMemoryCount === 'number') attachedMemoryCount = s.attributes.attachedMemoryCount;
-        const fp = s.attributes.attachedMemoryFingerprint;
-        if (typeof fp === 'string') attachedMemoryFingerprint = fp;
+        break;
       }
     }
-    return { systemPromptHash, attachedMemoryCount, attachedMemoryFingerprint };
+    return { systemPromptHash };
   }
 }
 

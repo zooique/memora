@@ -471,10 +471,10 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
     });
 
     // 两轮外部输入，显式指定 roundId（round-1 有已存摘要）
-    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+    for await (const {} of loop.processUserInput('任务一', undefined, 'round-1')) {
       // drain
     }
-    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+    for await (const {} of loop.processUserInput('任务二', undefined, 'round-2')) {
       // drain
     }
 
@@ -502,10 +502,10 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
       getRoundSummary: () => null,
     });
 
-    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+    for await (const {} of loop.processUserInput('任务一', undefined, 'round-1')) {
       // drain
     }
-    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+    for await (const {} of loop.processUserInput('任务二', undefined, 'round-2')) {
       // drain
     }
 
@@ -530,10 +530,10 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
       maxContextTokens: 200, // 窗口大于 system prompt、小于二轮整体 → 触发截断重排
     });
 
-    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+    for await (const {} of loop.processUserInput('任务一', undefined, 'round-1')) {
       // drain
     }
-    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+    for await (const {} of loop.processUserInput('任务二', undefined, 'round-2')) {
       // drain
     }
 
@@ -590,13 +590,13 @@ describe('AgentLoop · getExclusionRoundIds（§5.1 精确召回排除集）', (
     });
 
     // 第一轮：视图内 roundId = {round-1}，无被替换轮
-    for await (const {} of loop.processUserInput('任务一', undefined, undefined, 'round-1')) {
+    for await (const {} of loop.processUserInput('任务一', undefined, 'round-1')) {
       // drain
     }
     expect(Array.from(loop.getExclusionRoundIds()).sort()).toEqual(['round-1']);
 
     // 第二轮：round-1 正文被替换成摘要（roundId 记账），round-2 进视图，currentRoundId 亦为 round-2
-    for await (const {} of loop.processUserInput('任务二', undefined, undefined, 'round-2')) {
+    for await (const {} of loop.processUserInput('任务二', undefined, 'round-2')) {
       // drain
     }
     const exclusion = loop.getExclusionRoundIds();
@@ -1015,7 +1015,7 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
     ac.abort();
 
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
       chunks.push(chunk);
     }
 
@@ -1052,7 +1052,7 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
     setTimeout(() => ac.abort(), 10);
 
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
       chunks.push(chunk);
     }
 
@@ -1096,52 +1096,19 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
   });
 });
 
-describe('AgentLoop · 自动注入退役（突变锚点）', () => {
-  it('传入 recalledMemories 也被完全忽略（每轮自动召回注入已退役）', async () => {
+describe('AgentLoop · 预算小节不进消息历史（突变锚点）', () => {
+  it('消息历史中不出现「上下文预算」自描述小节（预算可视化走占用指示器，不走消息流）', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
-
-    // 即便传入 recalledMemories，也一律不注入（memory-tool-recall-design §4）。
-    // 退役后 recall chunk 类型已从 AgentChunk 联合物理删除（编译期不可产出），
-    // 故此处断言更外层的可观测不变量：记忆内容不进入任何 chunk，也不进入消息历史。
-    const recalledMemories = [
-      makeMemory({ id: 'mem:1', name: '记忆1', content: '之前讨论过' }),
-      makeMemory({ id: 'mem:2', name: '记忆2', content: '另一个记忆' }),
-    ];
-
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('你好', recalledMemories)) {
-      chunks.push(chunk);
-    }
-
-    // 加回 _injectRecall / injectRecallAsSystem → 记忆内容泄漏进 chunk 或消息历史 → 此项转红
-    // 断言活性锚：真实一轮必产出 chunk（防空数组使 not.toContain 空过）
-    expect(chunks.length).toBeGreaterThan(0);
-    expect(JSON.stringify(chunks)).not.toContain('之前讨论过');
-    expect(JSON.stringify(chunks)).not.toContain('另一个记忆');
-    expect(loop.getMessages().some((m) => m.content.includes('之前讨论过'))).toBe(false);
-  });
-
-  it('不再注入召回 system 消息与预算自描述小节（记忆检索移交 memory_search 工具）', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-    const recalledMemories = [
-      makeMemory({ id: 'mem:1', name: '记忆1', content: '之前讨论过的决策' }),
-      makeMemory({ id: 'mem:2', name: '记忆2', content: '另一个待办事项' }),
-    ];
     // 消费完整流（含 LLM 调用）
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('你好', recalledMemories)) {
+    for await (const chunk of loop.processUserInput('你好')) {
       chunks.push(chunk);
     }
-    // 退役后不再注入「召回的相关记忆」system 消息，也不再附带预算小节
-    expect(loop.getMessages().some((m) => m.content.includes('召回的相关记忆'))).toBe(false);
+    // 加回「预算自描述小节写入消息历史」→ 此项转红（占用指示器是预算可视化唯一出口）
     expect(loop.getMessages().some((m) => m.content.includes('上下文预算'))).toBe(false);
   });
 });
@@ -1317,7 +1284,7 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     ac.abort();
 
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
       chunks.push(chunk);
     }
 
@@ -1562,7 +1529,7 @@ describe('AgentLoop · P1-01 超时-abort 与暂停竞态路由', () => {
 
     const ac = new AbortController();
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
       chunks.push(chunk);
       if (chunk.type === 'thinking') {
         loop.requestPause();
@@ -1586,7 +1553,7 @@ describe('AgentLoop · P1-01 超时-abort 与暂停竞态路由', () => {
 
     const ac = new AbortController();
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
       chunks.push(chunk);
       if (chunk.type === 'thinking') {
         // 仅超时，不申请暂停
@@ -1830,7 +1797,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 
     const ac = new AbortController();
     const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput('测试', undefined, ac.signal)) {
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
       chunks.push(chunk);
       if (chunk.type === 'text' && chunk.content === '部分内容') {
         ac.abort();
@@ -3233,8 +3200,10 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
 
 // ═══════════════════════════════════════════════════════════════
 // 测试：建议B埋点（"模型看到了什么"可追溯）
-// 覆盖：LLM_CALL span 记录 systemPromptHash / RECALL span 记录 attachedMemory 指纹 /
+// 覆盖：LLM_CALL span 记录 systemPromptHash /
 //       NOOP tracer 下跳过指纹计算（零开销边界）
+// 注：原「RECALL span 记录 attachedMemory 指纹」覆盖项已随记忆附着可观测性
+//     全链退役删除（2026-09-11，RECALL span 在内核已无 emit 点）。
 // 设计边界：
 //   - 只记录指纹 hash，不记录全量内容——可观测性职责（ITracer），不入 sessionStore
 //   - 宿主未注入 Tracer（NOOP）时不做额外工作
@@ -3287,26 +3256,6 @@ describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () 
     expect(llmAttrs?.['systemPromptHash']).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it('自动注入退役：即便传入 recalledMemories 也不再产出 RECALL span（子span与指纹不生成）', async () => {
-    const tracer = new CapturingTracer();
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复内容' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-      tracer,
-    });
-
-    const mem1 = makeMemory({ id: 'mem:r1', content: '记忆A' });
-    const mem2 = makeMemory({ id: 'mem:r2', content: '记忆B' });
-    for await (const _ of loop.processUserInput('你好', [mem1, mem2])) {
-      void _;
-    }
-
-    // 退役后无 recall.recall 子span（记忆检索移交 memory_search 工具，loop 不再代召）
-    const recallAttrs = tracer.attrs(TRACE_SPANS.RECALL);
-    expect(recallAttrs).toBeUndefined();
-  });
-
   it('未注入 Tracer（默认 NOOP）时不计算指纹，保持零开销边界', async () => {
     // spy 验证 NOOP 下 sha256Fingerprint 不被调用（宿主未启用观测性 → 不做额外工作）
     const hashSpy = vi.spyOn(hashModule, 'sha256Fingerprint');
@@ -3317,7 +3266,7 @@ describe('AgentLoop · 建议B埋点（"模型看到了什么"可追溯）', () 
       toolExecutor: vi.fn(),
     });
 
-    for await (const _ of loop.processUserInput('你好', [makeMemory({ id: 'mem:r1', content: '记忆A' })])) {
+    for await (const _ of loop.processUserInput('你好')) {
       void _;
     }
 
@@ -3699,43 +3648,6 @@ describe('AgentLoop · 重复 tool_call 检测', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// Token 预算前置检查（性能优化）
-// ═══════════════════════════════════════════════════════════════
-
-describe('AgentLoop · Token 预算前置检查', () => {
-  it('自动注入退役：tokenBudget 阈值不再参与召回门控，任何预算下记忆均不注入', async () => {
-    // 原逻辑用 tokenBudget 阈值决定是否跳过/注入召回——召回注入已整体退役，
-    // 门控随注入一并消失：不同预算下 recalledMemories 都被忽略（memory-tool-recall-design §4）
-    const scenarios = [
-      { tokenBudget: 10 },   // 原「过低预算跳过」场景
-      { tokenBudget: 8000 }, // 原「充足预算注入」场景
-      {},                    // 原「默认无 budget」场景
-    ];
-    for (const cfg of scenarios) {
-      const loop = new AgentLoop({
-        provider: mockProvider([{ content: '回复' }]),
-        bootstrapMemories: [],
-        toolExecutor: vi.fn(),
-        maxContextTokens: 120_000,
-      });
-      loop.setStrategy({ tokenBudget: cfg.tokenBudget } as { tokenBudget?: number });
-
-      const chunks: AgentChunk[] = [];
-      const recallMemory = makeMemory({ content: '召回内容' });
-      for await (const chunk of loop.processUserInput('测试', [recallMemory])) {
-        chunks.push(chunk);
-      }
-
-      // 任何预算下记忆内容都不进入 chunk 与消息历史（加回 _injectRecall → 此项转红）
-      // 断言活性锚：真实一轮必产出 chunk（防空数组使 not.toContain 空过）
-      expect(chunks.length).toBeGreaterThan(0);
-      expect(JSON.stringify(chunks)).not.toContain('召回内容');
-      expect(loop.getMessages().some((m) => m.content.includes('召回内容'))).toBe(false);
-    }
-  });
-});
-
-// ═══════════════════════════════════════════════════════════════
 // Provider 路由缓存（性能优化）
 // ═══════════════════════════════════════════════════════════════
 
@@ -4067,39 +3979,6 @@ describe('AgentLoop · 记忆首轮收窄握手（§3.2 件②）', () => {
 // 退役删除（memory-tool-recall-design §4）：记忆检索移交 memory_search 工具，
 // 以下转为退役锚点——LLM 调用帧不再收到「召回的相关记忆」系统消息。
 // ═══════════════════════════════════════════════════════════════
-
-describe('T2 实证 · 召回记忆端到端注入（已退役）', () => {
-  it('自动注入退役：LLM 调用帧不再收到「召回的相关记忆」系统消息', async () => {
-    // 捕获型 provider：记录 LLM 实际收到的消息序列
-    const calls: Message[][] = [];
-    const provider = {
-      name: 't2-capture',
-      async *chat(messages: Message[]) {
-        calls.push(messages);
-        yield { content: '收到记忆' };
-      },
-    } as unknown as LlmProvider;
-
-    const loop = new AgentLoop({
-      provider,
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-    const recalledMemories = [
-      makeMemory({ id: 'mem:t2-1', name: '记忆A', content: '上次定的架构决策' }),
-      makeMemory({ id: 'mem:t2-2', name: '记忆B', content: '用户偏好简洁' }),
-    ];
-
-    for await (const chunk of loop.processUserInput('这次的方案', recalledMemories)) {
-      void chunk;
-    }
-
-    // 退役后 LLM 调用帧不含「召回的相关记忆」系统消息（加回 injectRecallAsSystem → 此项转红）
-    expect(calls).toHaveLength(1);
-    const sent = calls[0]!;
-    expect(sent.some((m) => m.role === 'system' && m.content.includes('召回的相关记忆'))).toBe(false);
-  });
-});
 
 // ═══════════════════════════════════════════════════════════════
 // T3 预算预警档：容量到线但摘要层未饱和 → 注入压缩/收敛提示（软上限前一级）

@@ -40,7 +40,7 @@ export class SeedPrepare {
    *
    * @param input 用户输入
    * @param signal 中止信号（回答前中断则在技能注入前返回 aborted）
-   * @returns 回答前结果（recalledMemories 恒空——自动召回已退役，见 SeedPrepareResult）
+   * @returns 回答前结果（input + aborted；round 归属见 SeedPrepareResult）
    */
   async *run(
     input: string,
@@ -90,10 +90,10 @@ export class SeedPrepare {
 
     yield { type: 'thinking', phase: 'recalling' };
     // 上下文装配（自动记忆召回已退役，仅细则预算 + 对话层注入，见 memory-tool-recall-design §4）
-    const recalledMemories = await contextPreparer.recallAndInject(input);
+    await contextPreparer.recallAndInject(input);
 
     if (signal.aborted) {
-      return { input, recalledMemories, aborted: true } satisfies SeedPrepareResult;
+      return { input, aborted: true } satisfies SeedPrepareResult;
     }
 
     // 技能按渐进披露 L1 清单常驻 system prompt，正文由模型按需 read_skill，回答前不预注入
@@ -114,7 +114,7 @@ export class SeedPrepare {
       );
     }
 
-    return { input, recalledMemories, aborted: false } satisfies SeedPrepareResult;
+    return { input, aborted: false } satisfies SeedPrepareResult;
   }
 }
 

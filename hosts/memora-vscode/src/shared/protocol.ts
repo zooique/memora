@@ -467,19 +467,19 @@ export type ExtensionToWebviewMessage =
   /**
    * 活动指标快照（P2：§13.x 透明面板 + §5.2.1 指纹可见）
    *
-   * 每轮流式结束后由 extension host 推送：本轮指纹（系统提示 hash 前 12 位 + 附着记忆条数，
-   * 只记 hash 不记内容）+ 累计指标（LLM 调用 / 召回命中率 / 工具失败 / 截断）。
+   * 每轮流式结束后由 extension host 推送：本轮指纹（系统提示 hash 前 12 位，只记 hash
+   * 不记内容）+ 累计指标（LLM 调用 / 工具失败 / 截断）。
    * webview 渲染为默认折叠的「活动指标」区。
+   * 注：原 attachedMemoryCount / recallHitRate 已于 2026-09-11 删除——自动记忆注入退役后
+   * 两者恒零（假指标），字段的存在本身即在宣称一件已不存在的事。
    */
   | {
       type: 'metrics';
       fingerprints: {
         systemPromptHash?: string;
-        attachedMemoryCount?: number;
       };
       metrics: {
         llmCallCount: number;
-        recallHitRate: number;
         toolFailureCount: number;
         truncationCount: number;
         /** D（alignment-iteration.md）：LLM token 用量（输入/输出） */

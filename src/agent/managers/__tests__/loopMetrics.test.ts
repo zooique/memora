@@ -1,7 +1,9 @@
 /**
  * LoopMetrics 单测（ARCH-3 P3-6 下沉后补）
  *
- * 纯值对象：11 个计数字段 + 3 个派生 getter 的**除法保护**（分母为 0 时不得返回 NaN）。
+ * 纯值对象：9 个计数字段 + 3 个派生 getter 的**除法保护**（分母为 0 时不得返回 NaN）。
+ * 注：原 recallTotalCount/recallHitCount/hitRate 已于 2026-09-11 随假指标链物理删除
+ * （自动召回退役后零写点、恒 0）。
  */
 
 import { describe, it, expect } from 'vitest';
@@ -11,18 +13,9 @@ describe('LoopMetrics', () => {
   it('初始值全为 0，派生指标不产生 NaN（分母保护）', () => {
     const m = new LoopMetrics();
     expect(m.llmCallCount).toBe(0);
-    expect(m.hitRate).toBe(0);
     expect(m.taskSuccessRate).toBe(0);
     expect(m.taskAvgDurationMs).toBe(0);
-    expect(Number.isNaN(m.hitRate)).toBe(false);
     expect(Number.isNaN(m.taskSuccessRate)).toBe(false);
-  });
-
-  it('hitRate = 命中 / 总数', () => {
-    const m = new LoopMetrics();
-    m.recallTotalCount = 4;
-    m.recallHitCount = 3;
-    expect(m.hitRate).toBe(0.75);
   });
 
   it('taskSuccessRate = 成功 / 总数', () => {

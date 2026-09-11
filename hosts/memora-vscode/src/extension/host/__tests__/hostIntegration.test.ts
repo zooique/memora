@@ -134,7 +134,7 @@ describe('宿主集成端到端测试', () => {
 
     it('VscodeTracer.getRecentTraces 返回中文标签', () => {
       const tracer = new VscodeTracer();
-      tracer.startSpan(TRACE_SPANS.RECALL).end();
+      tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY).end();
       tracer.startSpan(TRACE_SPANS.LLM_CALL).end();
       tracer.startSpan(TRACE_SPANS.TOOL_EXEC, { tool: 'read_file' }).end();
       tracer.startSpan(TRACE_SPANS.RESPONSE).end();
@@ -144,7 +144,7 @@ describe('宿主集成端到端测试', () => {
 
       // 验证中文标签映射
       const labels = traces.map((t) => t.label);
-      expect(labels).toContain('记忆召回');
+      expect(labels).toContain('压缩摘要');
       expect(labels).toContain('LLM 调用');
       expect(labels).toContain('工具·read_file');
       expect(labels).toContain('响应生成');

@@ -448,22 +448,18 @@ export class AgentLoop {
   /**
    * 处理一轮用户输入（编排方法：单次迭代/工具分支/纯文本结束）
    *
-   * 自动召回注入已退役（memory-tool-recall-design §4）：recalledMemories 参数仅保留为
-   * 位置兼容位，不再注入任何自动召回的上下文记忆——记忆检索改由 LLM 经 memory_search
-   * 工具主动触发（builtinToolHandlers.searchMemories），不再由 prepare/loop 代模型猜测注入。
+   * 记忆检索唯一入口 = LLM 经 `search_memories` 工具主动触发（builtinToolHandlers.searchMemories），
+   * 非由 prepare/loop 代模型猜测注入——原 recalledMemories 参数已于 2026-09-11 物理删除。
    *
-   * @param recalledMemories - 已废弃：自动注入退役，恒应为 undefined/空（保留仅为位置兼容）
+   * @param userInput - 用户输入
    * @param signal - 可选 AbortSignal，宿主导入 controller 触发取消
    * @param roundId - 外部已分配轮次 ID（保证 user/assistant/摘要同 roundId），未传自生成
    */
   async *processUserInput(
     userInput: string,
-    recalledMemories?: readonly Memory[],
     signal?: AbortSignal,
     roundId?: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 自动注入退役：recalledMemories 仅位置兼容，不再注入（记忆检索引由 LLM 走 memory_search 工具）
-    void recalledMemories;
     // 任务级 SLO 追踪：记录任务开始时间
     const taskStartAt = Date.now();
     // 标记任务进行中
@@ -1974,11 +1970,6 @@ export class AgentLoop {
         totalOutputTokens: this.metrics.totalOutputTokens,
         actualInputTokens: this.metrics.actualInputTokens,
         actualOutputTokens: this.metrics.actualOutputTokens,
-      },
-      recall: {
-        totalCount: this.metrics.recallTotalCount,
-        hitCount: this.metrics.recallHitCount,
-        hitRate: roundTo(this.metrics.hitRate, 3), // 保留 3 位小数
       },
       tools: {
         callCount: this.metrics.toolCallCount,

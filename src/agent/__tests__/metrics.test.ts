@@ -12,27 +12,11 @@ import { describe, it, expect, vi } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
-import type { Memory } from '@/memory/types.js';
 import type { AgentMetrics } from '@/agent/tracer.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Mock 工具
 // ═══════════════════════════════════════════════════════════════
-
-/**
- * 创建测试用 Memory 对象
- */
-function makeMemory(overrides: Partial<Memory> = {}): Memory {
-  return {
-    id: 'test:1',
-    content: '你是一个测试助手',
-    source: 'persona',
-    name: 'test-personality',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    accessedAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
 
 type ChunkItem = { content?: string; toolCalls?: Message['toolCalls']; finishReason?: string };
 
@@ -97,9 +81,6 @@ describe('AgentLoop · getMetrics 初始状态', () => {
     expect(metrics.llm.totalOutputTokens).toBe(0);
     expect(metrics.llm.actualInputTokens).toBe(0);
     expect(metrics.llm.actualOutputTokens).toBe(0);
-    expect(metrics.recall.totalCount).toBe(0);
-    expect(metrics.recall.hitCount).toBe(0);
-    expect(metrics.recall.hitRate).toBe(0);
     expect(metrics.tools.callCount).toBe(0);
     expect(metrics.tools.failureCount).toBe(0);
     expect(metrics.context.truncationCount).toBe(0);
@@ -128,7 +109,7 @@ describe('AgentLoop · getMetrics 初始状态', () => {
       const metrics2 = loop.getMetrics();
       // 两次调用返回的值应相同（纯只读快照）
       expect(metrics1.llm.callCount).toBe(metrics2.llm.callCount);
-      expect(metrics1.recall.totalCount).toBe(metrics2.recall.totalCount);
+      expect(metrics1.tools.callCount).toBe(metrics2.tools.callCount);
     });
   });
 });
@@ -194,10 +175,9 @@ describe('AgentLoop · LLM 调用指标', () => {
 // ═══════════════════════════════════════════════════════════════
 // 工具调用指标测试
 //
-// 记忆召回命中率指标（recall.totalCount/hitCount/hitRate）已随自动注入
-// 退役删除（memory-tool-recall-design §4）：记忆检索移交 LLM 主动 memory_search
-// 工具，loop 不再代模型召回注入，故该维度指标失去意义，不再有此 describe 块。
-// ═══════════════════════════════════════════════════════════════
+// 记忆召回指标维度（recall.totalCount/hitCount/hitRate）已于 2026-09-11 随
+// LoopMetrics/AgentMetrics 中的字段一并物理删除：自动召回退役后三者零写点、
+// hitRate 恒 0（假指标）。记忆检索唯一入口 = search_memories 工具（TOOL_EXEC span）。
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 工具调用指标', () => {
@@ -320,9 +300,8 @@ describe('AgentMetrics · 类型结构', () => {
 
     const metrics: AgentMetrics = loop.getMetrics();
 
-    // 验证 5 个维度都存在
+    // 验证 4 个维度都存在
     expect(metrics).toHaveProperty('llm');
-    expect(metrics).toHaveProperty('recall');
     expect(metrics).toHaveProperty('tools');
     expect(metrics).toHaveProperty('context');
     expect(metrics).toHaveProperty('tasks');
@@ -333,11 +312,6 @@ describe('AgentMetrics · 类型结构', () => {
     expect(metrics.llm).toHaveProperty('totalOutputTokens');
     expect(metrics.llm).toHaveProperty('actualInputTokens');
     expect(metrics.llm).toHaveProperty('actualOutputTokens');
-
-    // 验证 recall 维度字段
-    expect(metrics.recall).toHaveProperty('totalCount');
-    expect(metrics.recall).toHaveProperty('hitCount');
-    expect(metrics.recall).toHaveProperty('hitRate');
 
     // 验证 tools 维度字段
     expect(metrics.tools).toHaveProperty('callCount');
@@ -484,20 +458,5 @@ describe('AgentMetrics · 类型结构', () => {
     loop.setRolePackBaseTokens(9_000);
     expect(loop.getRolePackBaseTokens()).toBe(9_000);
     expect(loop.getMetrics().context.rolePackBaseTokens).toBe(9_000);
-  });
-
-  it('hitRate 应在 0-1 范围内', async () => {
-    const loop = new AgentLoop({
-      provider: mockProvider([{ content: '回复' }]),
-      bootstrapMemories: [],
-      toolExecutor: vi.fn(),
-    });
-
-    const recalled: Memory[] = [makeMemory({ id: 'content:1' })];
-    await consumeGenerator(loop.processUserInput('你好', recalled));
-
-    const metrics = loop.getMetrics();
-    expect(metrics.recall.hitRate).toBeGreaterThanOrEqual(0);
-    expect(metrics.recall.hitRate).toBeLessThanOrEqual(1);
   });
 });

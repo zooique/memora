@@ -393,9 +393,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换已独立到「角色」视图（2026-08-17），本面板仅消费角色名用于展示，不再承载切换。
   let currentRolePacks: { name: string; displayName: string; description?: string }[] = [];
-  // P1（2026-08-15 记忆附着可见）：最近一轮结束时的附着记忆条数（metrics.fingerprints 提供）。
-  // 流式结束后给 AI 回复补「基于 N 条记忆」弱标签，让记忆附着主动可见（memora 差异化价值）。
-  let lastAttachedMemoryCount: number | undefined;
 
   // ─── 过程事件（ProcessEvent）渲染（v1.5 单形态）──────────────
   // 渲染真理源 = 当前轮 events[]（currentEvents）：运行时 process_event 增量与重放
@@ -2961,23 +2958,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 渲染活动指标详情（P2：§13.x 透明面板 + §5.2.1 指纹可见）
    *
-   * 指纹（系统提示 hash 前 12 位 + 附着记忆条数）+ 累计指标（LLM / 召回命中率 /
-   * 工具失败 / 截断）。textContent 赋值防注入；指标只进详情折叠区，不占用主状态条。
+   * 指纹（系统提示 hash 前 12 位）+ 累计指标（LLM / 工具失败 / 截断）。
+   * textContent 赋值防注入；指标只进详情折叠区，不占用主状态条。
+   * 注：原「附着记忆条数 / 召回命中率」已于 2026-09-11 退役——自动记忆注入与
+   * recall 指标随自动召回退役恒零（假指标），显示即误导。
    */
   function renderMetrics(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): void {
     const fp = msg.fingerprints;
-    // P1（2026-08-15 记忆附着可见）：缓存本轮附着记忆数，供 AI 回复底部「基于 N 条记忆」弱标签
-    if (typeof fp.attachedMemoryCount === 'number') {
-      lastAttachedMemoryCount = fp.attachedMemoryCount;
-    }
     const lines = [
-      // 指纹行：只显示 hash 与计数，不显示内容（可追溯性边界）
+      // 指纹行：只显示 hash，不显示内容（可追溯性边界）
       '本轮指纹：' +
-        (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -') +
-        (typeof fp.attachedMemoryCount === 'number' ? ' · 附着记忆 ' + fp.attachedMemoryCount + ' 条' : ''),
+        (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
       // 累计指标行
-      '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 召回命中 ' +
-        Math.round(msg.metrics.recallHitRate * 100) + '% · 工具失败 ' +
+      '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 工具失败 ' +
         msg.metrics.toolFailureCount + ' · 截断 ' + msg.metrics.truncationCount,
       // D（alignment-iteration.md）：token 用量（可选字段，缺省不显示）
       'Tokens：' +
@@ -3012,8 +3005,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     activityMetrics.textContent = lines.join('\n');
     activityMetrics.hidden = false;
     renderActivityDetail();
-    // P1（2026-08-15 记忆附着可见）：本轮流式结束 → 给最后一条 AI 回复补记忆附着弱标签
-    applyMemoryTag();
   }
 
   // 当前占用条已展示的容量上限（token）——Provider 列表推送（含上限）时据此判断
@@ -3119,30 +3110,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (percentEl) percentEl.textContent = usedPct.toFixed(0) + '%';
     const tipEl = document.getElementById('occTip');
     if (tipEl) tipEl.textContent = buildOccupancyTipText(occ);
-  }
-
-  /**
-   * P1（2026-08-15 记忆附着可见）：在最后一条 AI 回复底部补「基于 N 条记忆」弱标签
-   *
-   * memora 的差异化价值是记忆，但「附着记忆 N 条」此前只出现在活动详情折叠区（低可见）。
-   * 每轮 metrics 到达（流式结束）后，给本轮最后一条 assistant 消息补弱标签：
-   * 主动可见、不打扰（灰字小字号靠左），让用户直观感知「这条回复基于哪些记忆」。
-   * footer 内已存在 memory-tag 则跳过（一轮只补一次，防 metrics 多次触发重复）。
-   */
-  function applyMemoryTag(): void {
-    if (lastAttachedMemoryCount === undefined) return;
-    // 优先定位流式锚点（本轮最后一条 AI 回复），锚点失效时回退最后一条 assistant 消息
-    const target =
-      activeAssistantEl && activeAssistantEl.isConnected
-        ? activeAssistantEl
-        : (messages.querySelector('.msg.assistant:last-of-type') as HTMLElement | null);
-    if (!target) return;
-    const footer = target.querySelector(':scope .msg-footer') as HTMLElement | null;
-    if (!footer || footer.querySelector('.memory-tag')) return;
-    const tag = document.createElement('span');
-    tag.className = 'memory-tag';
-    tag.textContent = '基于 ' + lastAttachedMemoryCount + ' 条记忆';
-    footer.prepend(tag); // 信息性标签靠左（margin-right:auto），复制/时间戳保持靠右
   }
 
   // 处理 extension → webview 消息（流式渲染 / 状态机 / 单一过程事件 / 下拉数据）

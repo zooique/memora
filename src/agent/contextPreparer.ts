@@ -17,7 +17,6 @@ import type { AgentLoop } from '@/agent/loop.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { computeContextBudget, isInputTooLarge, estimateOccupancy } from '@/agent/budget.js';
-import type { Memory } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { UIMessages } from '@/agent/types.js';
@@ -92,12 +91,9 @@ export class ContextPreparer {
    * contextAssembly 策略键已随阶段2 退役，对话层注入恒走 hybrid（最近对话摘要注入）。
    *
    * @param input 用户输入（仅作顶级锚点预算估算，不再作为召回 query）
-   * @returns 恒为空数组（自动注入退役，契约保留防止过渡期破坏；步进 B 已将 loop 消费端移除）
    */
-  async recallAndInject(input: string): Promise<Memory[]> {
+  async recallAndInject(input: string): Promise<void> {
     const { deps } = this;
-    // 自动注入退役 → 无自动召回的注入记忆，返回恒为空数组
-    const recalledMemories: Memory[] = [];
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
     // 容量来源：windowTokens = deps.config.maxContextTokens —— 单一数字，已由宿主在构造内核 Agent 前
@@ -130,7 +126,7 @@ export class ContextPreparer {
         { inputLength: input.length, remainingTokens: budget.remainingTokens },
         '装配前判负：输入过大，跳过上下文装配与完整对话层注入',
       );
-      return [];
+      return;
     }
 
     // 派生完整对话层轮次集合（动态轮数 + 第一条必在场，次级锚点）
@@ -162,8 +158,8 @@ export class ContextPreparer {
     //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
     //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
     //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
-    // 注：原「记忆摘要」段已随记忆自动注入退役移除（2026-09-09）——recalledMemories 恒空，
-    //     记忆不再占用上下文，占用模型无记忆维度。
+    // 注：原「记忆摘要」段已随记忆自动注入退役移除（2026-09-09）——记忆不再占用上下文，
+    //     占用模型无记忆维度。
     const dialogueTokens = loop.estimateTokens(loop.getConversationMessages());
     // 条数语义（2026-09-01 定案）：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
     // 哪怕 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 不计入条数，但计入 dialogueTokens 容量。
@@ -183,7 +179,5 @@ export class ContextPreparer {
         inputAnchorTokens: budget.anchorTokens,
       }),
     );
-
-    return recalledMemories;
   }
 }

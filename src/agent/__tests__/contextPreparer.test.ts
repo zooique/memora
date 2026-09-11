@@ -2,9 +2,9 @@
  * contextPreparer.ts 集成测试——上下文装配管线（动态预算装配 + 装配前判负 + 对话层注入 + 占用）
  *
  * 覆盖（记忆自动注入退役，memory-tool-recall-design §3/§4）：
- *   1. 自动注入退役锚点：recallAndInject 恒返回空数组、storage.search 不再被调用
+ *   1. 自动注入退役锚点：recallAndInject 无返回值、storage.search 不再被调用
  *     （若有人把每轮自动召回段加回，storage.search 被调用、该断言转红）；
- *   2. 装配前判负：超大输入走独立降级路径（inputTooLarge 事件 + 返回空 + 跳过注入），不污染软上限；
+ *   2. 装配前判负：超大输入走独立降级路径（inputTooLarge 事件 + 跳过注入），不污染软上限；
  *   3. 预算可视化占用：各层 token/条数与 free 互斥拼满非负收敛；
  *   4. 对话层注入开关：fixed 不注入 [Recent conversation]，hybrid 注入。
  */
@@ -12,7 +12,6 @@ import { describe, it, expect, vi } from 'vitest';
 import { ContextPreparer, type ContextPreparerDeps } from '@/agent/contextPreparer.js';
 import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { Memory } from '@/memory/types.js';
 
 /** 完整对话层派生结果类型（loop.getRecentHistoryWithinBudget 返回） */
 type DialogueResult = {
@@ -20,19 +19,6 @@ type DialogueResult = {
   recentRoundCount: number;
   firstRoundIncluded: boolean;
 };
-
-/** 构造测试用 Memory */
-function makeMemory(overrides: Partial<Memory> = {}): Memory {
-  return {
-    id: 'test:1',
-    content: '测试内容',
-    source: 'content',
-    name: 'test-memory',
-    createdAt: '2026-01-01T00:00:00.000Z',
-    accessedAt: '2026-01-01T00:00:00.000Z',
-    ...overrides,
-  };
-}
 
 /** 构造 ContextPreparer 测试依赖（loop/storage 均 mock，token 估算按内容长度） */
 function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
@@ -82,31 +68,36 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
 }
 
 describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
-  it('recallAndInject 恒返回空数组，storage.search 不被调用（自动召回段已退役）', async () => {
+  it('recallAndInject 不做自动召回：storage.search 不被调用（检索唯一入口 = memory_search 工具）', async () => {
     const { preparer, storage } = makePreparer();
     // 记忆检索已移交 LLM 主动 memory_search 工具；prepare 期不再代模型召回注入
     vi.mocked(storage.search).mockReturnValue([
-      makeMemory({ id: 'cross:1', source: 'content' }),
+      {
+        id: 'cross:1',
+        content: '测试内容',
+        source: 'content',
+        name: 'test-memory',
+        createdAt: '2026-01-01T00:00:00.000Z',
+        accessedAt: '2026-01-01T00:00:00.000Z',
+      },
     ]);
 
-    const memories = await preparer.recallAndInject('查询');
+    await preparer.recallAndInject('查询');
 
-    // 恒空：无自动注入记忆（加回自动召回段 → storage.search 被调用 → 此项转红）
-    expect(memories).toEqual([]);
+    // 加回自动召回段 → storage.search 被调用 → 此项转红
     expect(storage.search).not.toHaveBeenCalled();
   });
 });
 
 describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
-  it('超大输入走装配前判负：发 inputTooLarge 事件、返回空、跳过注入', async () => {
+  it('超大输入走装配前判负：发 inputTooLarge 事件、跳过注入', async () => {
     const { preparer, loop, storage, emit, injectSystemMessage } = makePreparer();
     // 超大输入：锚点划走剩余预算归零 → 装配前判负
     const hugeInput = 'x'.repeat(200_000);
 
-    const memories = await preparer.recallAndInject(hugeInput);
+    await preparer.recallAndInject(hugeInput);
 
-    // 独立降级：返回空 + 发 inputTooLarge 事件（宿主提示放文件用 read_file）
-    expect(memories).toEqual([]);
+    // 独立降级：发 inputTooLarge 事件（宿主提示放文件用 read_file）
     expect(emit).toHaveBeenCalledWith(
       AGENT_EVENTS.inputTooLarge,
       expect.objectContaining({ inputLength: hugeInput.length, hint: expect.stringContaining('read_file') }),
@@ -127,9 +118,8 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
       }),
     );
 
-    const memories = await preparer.recallAndInject('正常问题');
+    await preparer.recallAndInject('正常问题');
 
-    expect(memories).toEqual([]);
     expect(loop.getRecentHistoryWithinBudget).toHaveBeenCalledTimes(1);
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('第一条'));
     expect(storage.search).not.toHaveBeenCalled();

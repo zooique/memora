@@ -14,16 +14,16 @@ import { VscodeTracer } from '../tracer.js';
 describe('VscodeTracer.getRecentTraces', () => {
   it('按新→旧返回已结束 span，并映射为中文标签', () => {
     const tracer = new VscodeTracer();
-    tracer.startSpan(TRACE_SPANS.RECALL).end();
+    tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY).end();
     tracer.startSpan(TRACE_SPANS.LLM_CALL, { inputTokens: 100 }).end();
     tracer.startSpan(TRACE_SPANS.RESPONSE).end();
 
     const traces = tracer.getRecentTraces();
-    // 新→旧：最先结束的 recall 在末尾
+    // 新→旧：最先结束的 context.summary 在末尾
     expect(traces).toHaveLength(3);
     expect(traces[0].label).toBe('响应生成');
     expect(traces[1].label).toBe('LLM 调用');
-    expect(traces[2].label).toBe('记忆召回');
+    expect(traces[2].label).toBe('压缩摘要');
   });
 
   it('工具 span 附带工具名（工具·<名>）', () => {

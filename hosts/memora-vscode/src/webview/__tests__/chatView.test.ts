@@ -589,10 +589,9 @@ describe('chatView clear_ok 消息区清理', () => {
     const metrics = document.getElementById('activityMetrics') as HTMLElement;
     dispatch({
       type: 'metrics',
-      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 2 },
+      fingerprints: { systemPromptHash: 'abc123' },
       metrics: {
         llmCallCount: 3,
-        recallHitRate: 0.5,
         toolFailureCount: 1,
         truncationCount: 0,
         llmTokenIn: 1000,
@@ -612,7 +611,6 @@ describe('chatView clear_ok 消息区清理', () => {
       fingerprints: {},
       metrics: {
         llmCallCount: 1,
-        recallHitRate: 0.5,
         toolFailureCount: 0,
         truncationCount: 0,
         llmTokenIn: 1000,
@@ -639,7 +637,7 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({
       type: 'metrics',
       fingerprints: {},
-      metrics: { llmCallCount: 0, recallHitRate: 0, toolFailureCount: 0, truncationCount: 0 },
+      metrics: { llmCallCount: 0, toolFailureCount: 0, truncationCount: 0 },
     });
     expect(metrics.textContent).not.toContain('预算：');
   });
@@ -649,20 +647,19 @@ describe('chatView clear_ok 消息区清理', () => {
     const metrics = document.getElementById('activityMetrics') as HTMLElement;
     dispatch({
       type: 'metrics',
-      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 2 },
+      fingerprints: { systemPromptHash: 'abc123' },
       metrics: {
         llmCallCount: 3,
-        recallHitRate: 0.5,
         toolFailureCount: 1,
         truncationCount: 0,
       },
-      trace: [{ label: '响应生成' }, { label: '工具·read_file' }, { label: '记忆召回' }],
+      trace: [{ label: '响应生成' }, { label: '工具·read_file' }, { label: '压缩摘要' }],
     });
     expect(metrics.hidden).toBe(false);
     expect(metrics.textContent).toContain('操作流');
     expect(metrics.textContent).toContain('› 响应生成');
     expect(metrics.textContent).toContain('› 工具·read_file');
-    expect(metrics.textContent).toContain('› 记忆召回');
+    expect(metrics.textContent).toContain('› 压缩摘要');
   });
 
   it('metrics 无操作流时渲染不受影响（trace 缺省）', () => {
@@ -673,7 +670,6 @@ describe('chatView clear_ok 消息区清理', () => {
       fingerprints: { systemPromptHash: 'abc123' },
       metrics: {
         llmCallCount: 1,
-        recallHitRate: 0,
         toolFailureCount: 0,
         truncationCount: 0,
       },
@@ -1132,7 +1128,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(body?.textContent?.trim()).toBe('被阻断的回复');
   });
 
-  it('metrics 渲染活动详情折叠区（指纹只显示 hash 与计数，不显示内容）', () => {
+  it('metrics 渲染活动详情折叠区（指纹只显示 hash，不显示内容）', () => {
     mountChatView();
     const detail = document.getElementById('activityDetail') as HTMLElement;
     const metrics = document.getElementById('activityMetrics') as HTMLElement;
@@ -1141,8 +1137,8 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
 
     dispatch({
       type: 'metrics',
-      fingerprints: { systemPromptHash: 'a1b2c3d4e5f6', attachedMemoryCount: 3 },
-      metrics: { llmCallCount: 5, recallHitRate: 0.8, toolFailureCount: 1, truncationCount: 0 },
+      fingerprints: { systemPromptHash: 'a1b2c3d4e5f6' },
+      metrics: { llmCallCount: 5, toolFailureCount: 1, truncationCount: 0 },
     });
 
     // metrics 只进详情折叠区，不占用主状态条（P2 不占主条）
@@ -1151,9 +1147,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(detail.hidden).toBe(false);
     expect(metrics.hidden).toBe(false);
     expect(metrics.textContent).toContain('系统提示 a1b2c3d4e5f6');
-    expect(metrics.textContent).toContain('附着记忆 3 条');
     expect(metrics.textContent).toContain('LLM 5 次');
-    expect(metrics.textContent).toContain('召回命中 80%');
   });
 
   it('P0 错误显示期间 P1 低扰不打断（错误优先保护，P1 仅进详情历史）', () => {
@@ -1592,28 +1586,6 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     vi.restoreAllMocks();
   });
 
-  it('P1：metrics 到达后 AI 回复底部补「基于 N 条记忆」弱标签（记忆附着可见）', () => {
-    mountChatView();
-    dispatch({ type: 'user', text: '你好', ts: new Date().toISOString() });
-    dispatch({ type: 'assistant', text: '回答', ts: new Date().toISOString() });
-    // 流式结束 → metrics 携带附着记忆数
-    dispatch({
-      type: 'metrics',
-      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 3 },
-      metrics: { llmCallCount: 1, recallHitRate: 0.5, toolFailureCount: 0, truncationCount: 0 },
-    });
-    const tag = document.querySelector('.msg.assistant .memory-tag');
-    expect(tag).not.toBeNull();
-    expect(tag?.textContent).toBe('基于 3 条记忆');
-    // 一轮只补一次：重复 metrics 不产生重复标签
-    dispatch({
-      type: 'metrics',
-      fingerprints: { systemPromptHash: 'abc123', attachedMemoryCount: 3 },
-      metrics: { llmCallCount: 1, recallHitRate: 0.5, toolFailureCount: 0, truncationCount: 0 },
-    });
-    expect(document.querySelectorAll('.msg.assistant .memory-tag').length).toBe(1);
-  });
-
   it('interrupted（aborted 事件）→ round-block § 已停止 标记渲染，半截正文保留', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
@@ -1968,8 +1940,8 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
     mountChatView();
     dispatch({
       type: 'metrics',
-      fingerprints: { attachedMemoryCount: 2 },
-      metrics: { llmCallCount: 3, recallHitRate: 0.5, toolFailureCount: 1, truncationCount: 0 },
+      fingerprints: {},
+      metrics: { llmCallCount: 3, toolFailureCount: 1, truncationCount: 0 },
       securityAudit: {
         total: 4,
         denied: 1,
@@ -1991,7 +1963,7 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
     dispatch({
       type: 'metrics',
       fingerprints: {},
-      metrics: { llmCallCount: 1, recallHitRate: 0, toolFailureCount: 0, truncationCount: 0 },
+      metrics: { llmCallCount: 1, toolFailureCount: 0, truncationCount: 0 },
     });
     const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
     expect(metricsEl.textContent).not.toContain('安全审计');
