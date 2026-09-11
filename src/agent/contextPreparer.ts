@@ -98,7 +98,7 @@ export class ContextPreparer {
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──
     // 容量来源：windowTokens = deps.config.maxContextTokens —— 单一数字，已由宿主在构造内核 Agent 前
     // 经内核 resolveContextWindow(window) 解析（per-LLM 窗口为唯一真理源，缺失回退默认 120K）后注入；内核预算路径只消费单一数字，不认 provider/用户双层来源。
-    // 固定开销取 system prompt；顶级锚点 = 触发输入 + 首个回答预留（独立划块，永不压缩）；完整对话层从最近往回塞到 ~90% 止
+    // 固定开销取 system prompt；顶级锚点 = 本轮用户输入（独立划块，永不压缩）；完整对话层从最近往回塞到 ~90% 止
     const loop = deps.loop;
     const loopMessages = loop.getMessages();
     const fixedOverheadTokens =
@@ -155,7 +155,7 @@ export class ContextPreparer {
     //   dialogue     = 问答闭环完整对话 token（全量 user+assistant，与装配模式无关——容量诚实
     //                  统计问答闭环总和，ADR-030 口径；loop.append 侧 refreshOccupancyDialogue 以
     //                  同一估算器重算覆盖，prepare 与实时刷新同源同数据，无口径漂移）
-    //   inputAnchor  = 顶级锚点（触发输入 + 首个回答预留，budget.anchorTokens）
+    //   inputAnchor  = 顶级锚点（本轮用户输入，budget.anchorTokens）
     //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
     //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
     // 注：原「记忆摘要」段已随记忆自动注入退役移除（2026-09-09）——记忆不再占用上下文，

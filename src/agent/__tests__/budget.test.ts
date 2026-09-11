@@ -27,12 +27,12 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     });
     // 120000 × 0.85 = 102000 − 5000 = 97000
     expect(budget.availableTokens).toBe(97_000);
-    // 顶级锚点 = 输入 × 2（输入 + 首个回答预留）
-    expect(budget.anchorTokens).toBe(200);
-    // 剩余预算 = 97000 − 200
-    expect(budget.remainingTokens).toBe(96_800);
+    // 顶级锚点 = 输入 × 1（仅当前用户输入，首个回答预留已退役）
+    expect(budget.anchorTokens).toBe(100);
+    // 剩余预算 = 97000 − 100
+    expect(budget.remainingTokens).toBe(96_900);
     // 完整对话层 = 剩余 × 0.9
-    expect(budget.dialogueBudgetTokens).toBe(Math.floor(96_800 * 0.9));
+    expect(budget.dialogueBudgetTokens).toBe(Math.floor(96_900 * 0.9));
   });
 
   it('自定义比例（输出预留 0.2 / 对话填充 0.8）', () => {
@@ -45,9 +45,9 @@ describe('computeContextBudget · 预算公式数值派生', () => {
     });
     // 10000 × 0.8 = 8000 − 2000 = 6000
     expect(budget.availableTokens).toBe(6_000);
-    expect(budget.anchorTokens).toBe(1_000);
-    expect(budget.remainingTokens).toBe(5_000);
-    expect(budget.dialogueBudgetTokens).toBe(4_000);
+    expect(budget.anchorTokens).toBe(500);
+    expect(budget.remainingTokens).toBe(5_500);
+    expect(budget.dialogueBudgetTokens).toBe(4_400);
   });
 
   it('输入超大（锚点划走剩余预算归零）——装配前判负的输入侧判定依据', () => {

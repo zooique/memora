@@ -529,7 +529,7 @@ export type ExtensionToWebviewMessage =
         dialogueTokens: number;
         /** 完整对话层注入的对话条数（user+assistant 消息总数，与 dialogueTokens 同源） */
         dialogueCount: number;
-        /** 当前输入锚点（触发输入 + 首个回答预留） */
+        /** 当前输入锚点（本轮用户输入独立划块） */
         inputAnchorTokens: number;
         /** 输出预留（窗口 × 输出预留比例，留作模型回答容量） */
         outputReserveTokens: number;

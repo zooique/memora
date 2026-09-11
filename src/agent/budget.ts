@@ -5,7 +5,8 @@
  *
  * 预算公式（容量来源 × 分配偏好 → 派生轮数）：
  *   可用预算 = Provider窗口 − 固定开销(system+persona+rules+技能L1+工具schema) − 输出预留(15~20%)
- *   顶级锚点空间 = 本轮用户输入 + 首个回答预留（独立划块，暂以输入长度估算，永不压缩）
+ *   顶级锚点空间 = 本轮用户输入（独立划块，永不压缩；已收敛为仅当前输入，
+ *     首个回答预留为多 turn 编排遗留，2026-09-11 退役）
  *   剩余预算 = 可用预算 − 顶级锚点空间
  *   完整对话层 = 剩余预算，从最近往回塞到 ~90% 止（先装，锚点不动；留 buffer 防抖）
  *   动态轮数 = 完整对话层能装几轮（派生值，不显式声明）
@@ -33,8 +34,8 @@ export const DEFAULT_OUTPUT_RESERVE_RATIO = 0.15;
 /** 完整对话层填充比例默认值（~90% 止，留 10% buffer 防抖） */
 export const DEFAULT_DIALOGUE_FILL_RATIO = 0.9;
 
-/** 顶级锚点倍数：触发输入 + 首个回答（首个回答暂以输入长度估算，双倍输入） */
-export const DEFAULT_ANCHOR_ANSWER_FACTOR = 2;
+/** 顶级锚点倍数：已收敛为仅当前用户输入（首个回答预留为多 turn 编排遗留，退役） */
+export const DEFAULT_ANCHOR_ANSWER_FACTOR = 1;
 
 /** 最小可运行对话层余量（token）：剩余预算低于此值判定「输入过大」装配前判负。
  *  洞 3：触发输入本身过大是与软上限不同的失败原因，走独立装配前判负路径，不污染软上限统计。 */
@@ -69,7 +70,7 @@ export function resolveContextWindow(window?: number): number {
 export interface ContextBudget {
   /** 可用预算 = 窗口 × (1 − 输出预留) − 固定开销 */
   readonly availableTokens: number;
-  /** 顶级锚点空间 = 输入 + 首个回答预留（独立划块，永不压缩） */
+  /** 顶级锚点空间 = 本轮用户输入（独立划块，永不压缩） */
   readonly anchorTokens: number;
   /** 剩余预算 = 可用预算 − 顶级锚点空间 */
   readonly remainingTokens: number;
@@ -94,7 +95,7 @@ export interface ContextOccupancy {
   readonly dialogueTokens: number;
   /** 完整对话层注入的对话条数（user+assistant 消息总数；条数与 token 并存供宿主 hover 明细展示） */
   readonly dialogueCount: number;
-  /** 当前输入锚点（触发输入 + 首个回答预留估算，独立划块） */
+  /** 当前输入锚点（本轮用户输入独立划块） */
   readonly inputAnchorTokens: number;
   /** 输出预留（窗口 × 输出预留比例，留给模型回答的容量，非已用） */
   readonly outputReserveTokens: number;
@@ -162,7 +163,7 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
     Math.floor(input.windowTokens * (1 - outputReserveRatio)) - input.fixedOverheadTokens,
   );
 
-  // 顶级锚点空间 = 触发输入 + 首个回答预留（独立划块，暂以输入长度估算）
+  // 顶级锚点空间 = 本轮用户输入（独立划块；因子 1，仅当前输入，无首个回答预留）
   const anchorTokens = input.inputTokens * DEFAULT_ANCHOR_ANSWER_FACTOR;
 
   // 剩余预算 = 可用预算 − 顶级锚点空间（< 0 归零，供装配前判负判定「剩余不足」）
@@ -180,7 +181,7 @@ export function computeContextBudget(input: ContextBudgetInput): ContextBudget {
 }
 
 /**
- * 装配前判负（洞 3 独立路径）：顶级锚点（触发输入 + 首个回答）划走后剩余预算低于
+ * 装配前判负（洞 3 独立路径）：顶级锚点（本轮用户输入）划走后剩余预算低于
  * 最小可运行阈值 → 该输入无法支撑至少一轮正文，装配前确定性拒绝/降级。
  * 与软上限（摘要饱和）是不同失败原因：走独立路径，不占用软上限统计。
  */

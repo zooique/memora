@@ -172,11 +172,11 @@ function buildSnapshot(): Snapshot {
 //       改动者需显式确认语义并在提交里更新它（git diff 即审计痕迹）。
 const BASELINE: Snapshot = {
   budget: [
-    { scenario: 'win-120K/短输入', availableTokens: 99000, anchorTokens: 400, remainingTokens: 98600, dialogueBudgetTokens: 88740 },
-    { scenario: 'win-120K/中输入', availableTokens: 99000, anchorTokens: 4000, remainingTokens: 95000, dialogueBudgetTokens: 85500 },
-    { scenario: 'win-120K/长输入', availableTokens: 99000, anchorTokens: 40000, remainingTokens: 59000, dialogueBudgetTokens: 53100 },
-    { scenario: 'win-200K/中输入', availableTokens: 165000, anchorTokens: 4000, remainingTokens: 161000, dialogueBudgetTokens: 144900 },
-    { scenario: 'win-1M/中输入', availableTokens: 845000, anchorTokens: 4000, remainingTokens: 841000, dialogueBudgetTokens: 756900 },
+    { scenario: 'win-120K/短输入', availableTokens: 99000, anchorTokens: 200, remainingTokens: 98800, dialogueBudgetTokens: 88920 },
+    { scenario: 'win-120K/中输入', availableTokens: 99000, anchorTokens: 2000, remainingTokens: 97000, dialogueBudgetTokens: 87300 },
+    { scenario: 'win-120K/长输入', availableTokens: 99000, anchorTokens: 20000, remainingTokens: 79000, dialogueBudgetTokens: 71100 },
+    { scenario: 'win-200K/中输入', availableTokens: 165000, anchorTokens: 2000, remainingTokens: 163000, dialogueBudgetTokens: 146700 },
+    { scenario: 'win-1M/中输入', availableTokens: 845000, anchorTokens: 2000, remainingTokens: 843000, dialogueBudgetTokens: 758700 },
   ],
   dialogueRounds: [
     { scenario: '预算8000/每轮1000/30轮', roundCosts: 30, recentRoundCount: 8, firstRoundIncluded: true, usedTokens: 8000 },
@@ -194,7 +194,7 @@ const BASELINE: Snapshot = {
 
 function printHuman(s: Snapshot): void {
   console.log('\n📊 上下文预算 · 确定性快照\n');
-  console.log('── 1. 预算切分（可用 = 窗口×0.85 − 固定开销；锚点 = 输入×2；对话层 = 剩余×0.9）──');
+  console.log('── 1. 预算切分（可用 = 窗口×0.85 − 固定开销；锚点 = 本轮输入×1；对话层 = 剩余×0.9）──');
   for (const b of s.budget) {
     console.log(
       `  ${b.scenario.padEnd(20)} 可用=${String(b.availableTokens).padStart(7)}  锚点=${String(b.anchorTokens).padStart(6)}  剩余=${String(b.remainingTokens).padStart(7)}  对话层=${String(b.dialogueBudgetTokens).padStart(7)}`,

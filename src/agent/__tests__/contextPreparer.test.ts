@@ -147,7 +147,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.rolePackBaseTokens).toBe(3);
     expect(occ.dialogueTokens).toBe(3);
     expect(occ.dialogueCount).toBe(1);
-    expect(occ.inputAnchorTokens).toBe(8);
+    expect(occ.inputAnchorTokens).toBe(4);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
       occ.rolePackBaseTokens +
@@ -173,7 +173,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.dialogueCount).toBe(1);
     expect(occ.totalTokens).toBe(120_000);
     expect(occ.rolePackBaseTokens).toBe(3);
-    expect(occ.inputAnchorTokens).toBe(8);
+    expect(occ.inputAnchorTokens).toBe(4);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
       occ.rolePackBaseTokens +
