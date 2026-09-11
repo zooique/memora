@@ -31,7 +31,7 @@
       "askOn": ["ambiguity", "decision", "missing_info"],
       "askLimit": 3,
       "errorHandling": "retry",
-      "tokenBudget": 200000,
+      "tokenBudget": 0,
       "stepBudget": 50
     }
   }

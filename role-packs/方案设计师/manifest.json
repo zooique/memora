@@ -46,7 +46,7 @@
       ],
       "askLimit": 3,
       "errorHandling": "retry",
-      "tokenBudget": 1000000,
+      "tokenBudget": 0,
       "stepBudget": 80
     }
   }

@@ -37,7 +37,7 @@
       ],
       "askLimit": 3,
       "errorHandling": "degrade",
-      "tokenBudget": 1000000,
+      "tokenBudget": 0,
       "stepBudget": 40
     }
   }
