@@ -1,6 +1,6 @@
 /**
- * 双通道融合排序 — 共享给 recall() 与 searchHybrid()。
- * 集中单点维护排序逻辑与常量，agent 直接从本模块导入，不绕道 recall.ts（agent 不依赖 memory 内部常量分层原则）
+ * 双通道融合排序 — search_memories 工具（searchHybrid）的排序数组。
+ * 集中单点维护排序逻辑与常量，agent 直接从本模块导入（agent 不依赖 memory 内部常量分层原则）。
  *
  * 阶段3（2026-09-09）排序纯化：score 权重退役，融合分 = 单语义分 vectorScore 降序。
  * score 单调不减无区分度、且 §5.2 「只 touch 不 +score」后不再更新 → 排序残件，移除 0.4 权重项
@@ -29,7 +29,7 @@ export interface HybridMergeEntry {
 
 /**
  * 融合排序纯函数：按单语义分 vectorScore 降序取前 limit。
- * 分享消費者：recall() 召回融合排序 · searchHybrid() 搜索融合排序。
+ * 消费者：searchHybrid()（search_memories 工具）融合排序。
  * keyword-only 回退（vectorScore=0）失去 score 平局 → 依赖 stable-sort 插入序，可接受（兜底后端无主序语义）。
  */
 export function hybridMerge(

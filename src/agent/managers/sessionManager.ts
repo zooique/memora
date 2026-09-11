@@ -409,7 +409,8 @@ export class SessionManager {
     };
   }
 
-  /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成可序列化 SessionCheckpoint 并持久化 */
+  /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成 SessionCheckpoint（纯内存态，
+   *  「减法」2026-09-10 起不再落盘——中止/断电走中断轮补全，运行时暂停同 turn 内存续跑） */
   createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint {
     const history = this.getHistory();
 

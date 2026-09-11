@@ -8,7 +8,7 @@
  *   - limit 截断
  *   - 空输入 / 单条 / vectorScore=0 边界
  *
- * 共享消费者：recall.ts recall() + memoryInspector.ts searchHybrid()
+ * 消费者：memoryInspector.ts searchHybrid()（search_memories 工具）
  * 本测试保证两者底层的排序行为一致
  */
 import { describe, it, expect } from 'vitest';

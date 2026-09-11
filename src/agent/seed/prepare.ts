@@ -5,7 +5,7 @@
  * → appendUser → 会话命名。会议机制（S5）：任务项表层装配视角经本模块读取并驱动前缀刷新。
  *
  * 设计原则：
- *   - 叶子逻辑（recallAndInject → 上下文装配：预算派生 + 对话层注入 + 占用快照）在
+ *   - 叶子逻辑（assembleContext → 上下文装配：预算派生 + 对话层注入 + 占用快照）在
  *     ContextPreparer 唯一实现，本模块只保留编排骨架（与 ContextPreparer 文档一致）。
  */
 
@@ -90,7 +90,7 @@ export class SeedPrepare {
 
     yield { type: 'thinking', phase: 'recalling' };
     // 上下文装配（自动记忆召回已退役，仅细则预算 + 对话层注入，见 memory-tool-recall-design §4）
-    await contextPreparer.recallAndInject(input);
+    await contextPreparer.assembleContext(input);
 
     if (signal.aborted) {
       return { input, aborted: true } satisfies SeedPrepareResult;

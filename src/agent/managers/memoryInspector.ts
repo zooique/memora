@@ -279,8 +279,8 @@ export class MemoryInspector {
       }
     }
 
-    // 融合排序（hybridMerge 纯函数，与 recall() 共享）
-    // 前置 superseded 过滤（与 recall 读路径 recall.ts:221 一致）：被 supersededBy 取代的摘要不作为当前事实
+    // 融合排序（hybridMerge 纯函数）。
+    // 前置 superseded 过滤：被 supersededBy 取代的摘要不作为当前事实
     // 返回（仍保留可回溯，trace_summary 可精确取原文）。在排序前过滤，避免占据 top-N 槽位挤掉有效命中。
     const active = [...merged.values()].filter((e) => !e.memory.supersededBy);
     // 工具召回与装配期内容互斥（§5.1）：排除「正文或摘要已在眼前」轮次的 round-summary，

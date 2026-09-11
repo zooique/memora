@@ -2,7 +2,7 @@
  * contextPreparer.ts 集成测试——上下文装配管线（动态预算装配 + 装配前判负 + 对话层注入 + 占用）
  *
  * 覆盖（记忆自动注入退役，memory-tool-recall-design §3/§4）：
- *   1. 自动注入退役锚点：recallAndInject 无返回值、storage.search 不再被调用
+ *   1. 自动注入退役锚点：assembleContext 无返回值、storage.search 不再被调用
  *     （若有人把每轮自动召回段加回，storage.search 被调用、该断言转红）；
  *   2. 装配前判负：超大输入走独立降级路径（inputTooLarge 事件 + 跳过注入），不污染软上限；
  *   3. 预算可视化占用：各层 token/条数与 free 互斥拼满非负收敛；
@@ -68,9 +68,9 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
 }
 
 describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
-  it('recallAndInject 不做自动召回：storage.search 不被调用（检索唯一入口 = memory_search 工具）', async () => {
+  it('assembleContext 不做自动召回：storage.search 不被调用（检索唯一入口 = search_memories 工具）', async () => {
     const { preparer, storage } = makePreparer();
-    // 记忆检索已移交 LLM 主动 memory_search 工具；prepare 期不再代模型召回注入
+    // 记忆检索已移交 LLM 主动 search_memories 工具；prepare 期不再代模型召回注入
     vi.mocked(storage.search).mockReturnValue([
       {
         id: 'cross:1',
@@ -82,7 +82,7 @@ describe('ContextPreparer · 自动注入退役（突变锚点）', () => {
       },
     ]);
 
-    await preparer.recallAndInject('查询');
+    await preparer.assembleContext('查询');
 
     // 加回自动召回段 → storage.search 被调用 → 此项转红
     expect(storage.search).not.toHaveBeenCalled();
@@ -95,7 +95,7 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     // 超大输入：锚点划走剩余预算归零 → 装配前判负
     const hugeInput = 'x'.repeat(200_000);
 
-    await preparer.recallAndInject(hugeInput);
+    await preparer.assembleContext(hugeInput);
 
     // 独立降级：发 inputTooLarge 事件（宿主提示放文件用 read_file）
     expect(emit).toHaveBeenCalledWith(
@@ -118,7 +118,7 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
       }),
     );
 
-    await preparer.recallAndInject('正常问题');
+    await preparer.assembleContext('正常问题');
 
     expect(loop.getRecentHistoryWithinBudget).toHaveBeenCalledTimes(1);
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('第一条'));
@@ -139,7 +139,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
       }),
     );
 
-    await preparer.recallAndInject('正常问题');
+    await preparer.assembleContext('正常问题');
 
     expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
@@ -165,7 +165,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
       { role: 'assistant', content: '上一轮回答' }, // 长度 5
     ];
 
-    await preparer.recallAndInject('正常问题');
+    await preparer.assembleContext('正常问题');
 
     expect(loop.recordOccupancy).toHaveBeenCalledTimes(1);
     const occ = vi.mocked(loop.recordOccupancy).mock.calls[0]![0];
@@ -199,7 +199,7 @@ describe('ContextPreparer · 对话层注入', () => {
       }),
     );
 
-    await preparer.recallAndInject('新问题');
+    await preparer.assembleContext('新问题');
 
     expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('[Recent conversation]'));
   });

@@ -203,7 +203,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 
 | 文件 | 改动 |
 |---|---|
-| contextPreparer.ts | recallAndInject **语义召回段删除**（:184-242 的 recall/boost/memoryRecalled）；保留预算派生、roundId 互斥、对话层注入（hybrid）、占用快照。方法语义从"召回+注入"退化为"上下文装配"（改名可议） |
+| contextPreparer.ts | recallAndInject **语义召回段删除**（:184-242 的 recall/boost/memoryRecalled）；保留预算派生、roundId 互斥、对话层注入（hybrid）、占用快照。方法语义从"召回+注入"退化为"上下文装配"——**已收口改名 `assembleContext`（2026-09-11）** |
 | seed/prepare.ts | 删除 memoryRecallMode/contextAssembly 解析与传参（:87-89/:99-103）；recalling thinking 阶段保留；**预筛接入**：extractKeywords(input) 产出 hasQueryIntent → 设置 loop 收窄状态位（归属实施批次定：此处或 loop 首轮前） |
 | loop.ts | **首轮工具面收窄（新增，§3.2 件②）**：收窄状态位（turn 开始由预筛结果设置）+ buildChatOptions/buildSystemPrompt 双闸按轮过滤（复刻 searchDisabled 先例 :2048/:1961）+ 收窄指令注入；`injectRecallAsSystem`（:2012）退役（结果以 tool result 形态进入，件③）；状态随 resetTurnState 自然恢复 |
 | checkpointRestoreCoordinator.ts | warmRecall **保留**（开放点 1 拍板）——若保留，boost 段（:128）同步收敛为 touch |

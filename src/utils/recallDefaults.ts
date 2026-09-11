@@ -12,6 +12,6 @@
  *
  * **唯一活性消费者 = `MemoryAdvisor.suggest()`**（关联推荐的 `excludeSources` 本地参数缺省值）。
  * 曾经的同名配置管道 `config.recallExcludeSources`（ContextPreparer 侧）已于 2026-09-11 全链删除
- * ——它是死配置（`recallAndInject` 从不读取），勿因「两处同名」而误以为是一根链。
+ * ——它是死配置（`assembleContext` 从不读取），勿因「两处同名」而误以为是一根链。
  */
 export const DEFAULT_RECALL_EXCLUDE_SOURCES: readonly string[] = [];

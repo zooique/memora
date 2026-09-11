@@ -1,9 +1,9 @@
 /**
- * Agent 输入增强管线 — 外部输入 → 记忆/技能增强
+ * Agent 输入增强管线 — 外部输入 → 上下文装配
  *
  * 职责：
- *   - recallAndInject：上下文装配（预算派生 + 固定轮次注入 + 占用快照）。
- *     每轮自动记忆召回已退役（memory-tool-recall-design §3/§4），检索改由 memory_search 工具主动触发。
+ *   - assembleContext：上下文装配（预算派生 + 对话层注入 + 占用快照）。
+ *     每轮自动记忆召回已退役（memory-tool-recall-design §3/§4），检索改由 search_memories 工具主动触发。
  *   - （角色自动匹配已随 v0.13 移除：角色包只能手动切换，无 autoMatch / LLM 语义兜底）
  *
  * 设计原则：
@@ -85,14 +85,14 @@ export class ContextPreparer {
    * 上下文装配（记忆自动注入已退役，见 memory-tool-recall-design §3/§4）
    *
    * 原「记忆召回 + 固定轮次注入」中的**每轮语义召回段已退役**：记忆检索改由 LLM 经
-   * memory_search 工具主动触发（builtinToolHandlers.searchMemories），本方法不再代模型
+   * search_memories 工具主动触发（builtinToolHandlers.searchMemories），本方法不再代模型
    * 猜测"此刻需要什么记忆"。方法退化为纯**上下文装配**：预算派生 + roundId 互斥 +
    * 对话层注入 + 上下文占用快照，不再返回任何自动召回的注入记忆。
    * contextAssembly 策略键已随阶段2 退役，对话层注入恒走 hybrid（最近对话摘要注入）。
    *
    * @param input 用户输入（仅作顶级锚点预算估算，不再作为召回 query）
    */
-  async recallAndInject(input: string): Promise<void> {
+  async assembleContext(input: string): Promise<void> {
     const { deps } = this;
 
     // ── 上下文预算：动态预算装配（role-pack-spec §C） ──

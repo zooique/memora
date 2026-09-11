@@ -67,7 +67,7 @@ export interface SeedMocks {
     tryBuildMeetingPlan: ReturnType<typeof vi.fn>;
   };
   contextPreparer: {
-    recallAndInject: ReturnType<typeof vi.fn>;
+    assembleContext: ReturnType<typeof vi.fn>;
   };
   sessionNamer: { ensureSessionTitle: ReturnType<typeof vi.fn> };
   roundSummaryGenerator: { generate: ReturnType<typeof vi.fn> };
@@ -184,7 +184,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       tryBuildMeetingPlan: vi.fn(() => null),
     },
     contextPreparer: {
-      recallAndInject: vi.fn(async () => {}),
+      assembleContext: vi.fn(async () => {}),
     },
     sessionNamer: { ensureSessionTitle: vi.fn(async () => {}) },
     roundSummaryGenerator: { generate: vi.fn(async () => {}) },
