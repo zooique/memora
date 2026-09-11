@@ -146,6 +146,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
   // 当前角色队伍快照（小组会议启动图标用；由 chat_role_pack.team 填充）
   let currentActiveTeam: { leader: string; members: readonly string[] } | null = null;
+  // 小组会议启动图标单例（懒创建，同 globalPlanBoard 范式）：身份即本引用。
+  // 不得改用字符串键（getElementById/querySelector）复查找回——创建键与查找键一旦不一致
+  // 就会每次推送各新建一个，表现为重复图标（SSOT：单例身份只有这一个声明）。
+  let teamMeetingIcon: HTMLElement | null = null;
 
   // 流式锚点（SSOT，排雷 P0-1）：当前正在流式接收的 assistant 消息元素。
   // 追加目标用「不变锚点」而非 messages 最后一个元素——工具卡片/其他节点插入
@@ -1793,32 +1797,33 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 交互：hover 显示队员名单（title），点击 → 填充「小组会议：」前缀到输入框并聚焦。
    *
    * 数据源：currentActiveTeam 由 chat_role_pack.team 消息填充（SSOT：内核 rolePackManager.getActiveTeam 截断过滤后下发）。
-   * 实现：lazy create（首次显示时才创建元素）+ 复用 icons.ts 统一图标管理。
+   * 实现：单例引用 teamMeetingIcon（懒创建，同 globalPlanBoard 范式）+ 复用 icons.ts 统一图标管理。
+   *      幂等：chat_role_pack 可能多次到达（replaySession 与装配后补推各一次），
+   *      重复调用只切换显隐，不重复创建。
    */
   function updateTeamMeetingIcon(): void {
     if (!roleBadge) return;
     const team = currentActiveTeam;
-    // 无队伍 / 非组长 → 隐藏
+    // 无队伍 / 非组长 → 隐藏（未创建则无需任何操作）
     if (!team || team.members.length === 0) {
-      const existing = document.getElementById('teamMeetingIcon') as HTMLElement | null;
-      if (existing) existing.hidden = true;
+      if (teamMeetingIcon) teamMeetingIcon.hidden = true;
       return;
     }
-    // 确保元素存在（lazy create，避免无队伍时白占 DOM）
-    let icon = document.getElementById('teamMeetingIcon') as HTMLElement | null;
-    if (!icon) {
-      icon = ensureTeamMeetingIcon();
+    // 首次显示才创建（lazy create，避免无队伍时白占 DOM）
+    if (!teamMeetingIcon) {
+      teamMeetingIcon = createTeamMeetingIcon();
     }
     // 更新队员 tooltip（角色切换时队员名单可能变）
-    icon.title = `小组会议 · 组长：${team.leader} · 组员：${team.members.join('、')}（点击启动）`;
-    icon.hidden = false;
+    teamMeetingIcon.title = `小组会议 · 组长：${team.leader} · 组员：${team.members.join('、')}（点击启动）`;
+    teamMeetingIcon.hidden = false;
   }
 
   /**
-   * 懒创建 team-meeting 图标按钮（roleBadge 右侧，Trae 风格图标）。
+   * 创建 team-meeting 图标按钮（roleBadge 右侧，Trae 风格图标）。
+   * 单例：仅由 updateTeamMeetingIcon 首次显示时调用一次；返回值存入 teamMeetingIcon。
    * 复用 icons.ts 统一图标管理，创建后挂到 roleBadge 同行容器。
    */
-  function ensureTeamMeetingIcon(): HTMLElement {
+  function createTeamMeetingIcon(): HTMLElement {
     // 用 createIcon 创建按钮（Trae 统一图标管理，team 图标双人轮廓）
     const btn = createIcon('team', '小组会议（点击启动）', 'team-meeting-icon');
     // 插入 roleBadge 同行容器（roleBadge.parentNode 是底部徽章行）
@@ -1840,7 +1845,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
     // 键盘可达（Enter / Space 触发）
     btn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn!.click(); }
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
     });
     return btn;
   }
