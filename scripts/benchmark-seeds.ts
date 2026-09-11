@@ -33,7 +33,7 @@ export interface BenchmarkSeed {
 
 /** 隔离会话（跨主会话，规避装配正文互斥 + 不污染真实对话） */
 export const BENCH_SESSION = '2026-09-01-benchmark';
-/** round-summary 类用例统一用旧轮（远于 HOT_MEMORY_MAX_ROUNDS 热窗口） */
+/** round-summary 类用例统一用旧轮（远于当前会话已载入轮次，规避装配正文互斥） */
 export const OLD_ROUND = 'r9-bench-seed';
 
 /** 基准内存目标（与基准文档 §2 对应；C 组反例不装载种子） */

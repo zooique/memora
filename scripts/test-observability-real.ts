@@ -172,7 +172,6 @@ function printMetrics(metrics: AgentMetrics, title: string): void {
   console.log(`\n┌─ ${title}`);
   console.log(`│  LLM: 调用 ${metrics.llm.callCount} 次 | 估算输入 ${metrics.llm.totalInputTokens} / 实际 ${metrics.llm.actualInputTokens} tokens`);
   console.log(`│  LLM: 估算输出 ${metrics.llm.totalOutputTokens} / 实际 ${metrics.llm.actualOutputTokens} tokens`);
-  console.log(`│  召回: ${metrics.recall.totalCount} 次 | 命中 ${metrics.recall.hitCount} 次 | 命中率 ${(metrics.recall.hitRate * 100).toFixed(1)}%`);
   console.log(`│  工具: ${metrics.tools.callCount} 次调用 | ${metrics.tools.failureCount} 次失败`);
   console.log(`│  上下文: ${metrics.context.messageCount} 条消息 | 估算 ${metrics.context.estimatedTokens} tokens | 截断 ${metrics.context.truncationCount} 次`);
   console.log(`│  任务: ${metrics.tasks.totalCount} 次 | 成功 ${metrics.tasks.successCount} | 失败 ${metrics.tasks.failureCount} | 成功率 ${(metrics.tasks.successRate * 100).toFixed(1)}%`);
@@ -376,9 +375,9 @@ async function main(): Promise<void> {
   printBanner('最终 Metrics 快照');
   printMetrics(metrics3, '3 轮对话累积指标');
 
-  // 9. 6 维度完整性
-  console.log('\n📋 步骤 7：6 维度完整性验证');
-  const dimensions: Array<keyof AgentMetrics> = ['llm', 'recall', 'tools', 'context', 'decay', 'tasks'];
+  // 9. 4 维度完整性
+  console.log('\n📋 步骤 7：4 维度完整性验证');
+  const dimensions: Array<keyof AgentMetrics> = ['llm', 'tools', 'context', 'tasks'];
   for (const dim of dimensions) {
     assert(metrics3[dim] !== undefined, `维度 "${dim}" 存在`);
   }
