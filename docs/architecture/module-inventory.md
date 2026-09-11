@@ -148,7 +148,7 @@
 
 ### 2.4 记忆召回（知识内容 · 消费 L4 记忆系统）
 
-> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchHybrid`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts / vectorStore.ts / reranker.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
+> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchHybrid`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts / vectorStore.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
 >
 > 召回相关设计详见 [memory-as-summary.md](./memory-as-summary.md)（含互斥前置过滤语义）。
 
@@ -231,14 +231,13 @@
 
 ### 4.2 记忆底座（memory/ · 存储与召回）
 
-> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。`recall.ts`/`hybridMerge.ts`/`vectorStore.ts`/`reranker.ts` 在 L2 回答前被召回消费（见 §二 2.4）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
+> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。`recall.ts`/`hybridMerge.ts`/`vectorStore.ts` 在 L2 回答前被召回消费（见 §二 2.4）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
 
 | 模块文件                         | 状态     | 测试文件                                   | 质量说明                                  |
 | ---------------------------- | ------ | -------------------------------------- | ------------------------------------- |
 | `memory/recall.ts`           | 🟡 已收敛 | `__tests__/recall.test.ts`             | 仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
 | `memory/hybridMerge.ts`      | 🟢 已打磨 | `__tests__/hybridMerge.test.ts`        | 混合检索（向量 0.6 + score 0.4）              |
 | `memory/vectorStore.ts`      | 🟢 已打磨 | `__tests__/vectorStore.test.ts`        | 向量存储                                  |
-| `memory/reranker.ts`         | ⚪ 接口   | `__tests__/reranker.test.ts` (3 tests) | 重排序接口（IReranker，仅类型；默认实现已剪枝移除）        |
 | `memory/types.ts`            | 🟢 已打磨 | `__tests__/types.test.ts`              | 记忆类型定义                                |
 | `memory/governance.ts`       | 🟢 已打磨 | `__tests__/governance.test.ts`         | 治理常量（boost 增量/上下限 + 健康度阈值 + 治理源）      |
 | `memory/inMemoryStorage.ts`  | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts`    | 内存存储实现                                |
@@ -385,9 +384,9 @@
 >
 > * L0 含 `agent/seed/`（4 源文件：index/types/prepare/orchestrator；2 个有独立单测 prepare.test.ts + orchestrator.test.ts，index/types 无独立测试；orchestrator 编排两阶段 prepare/act，reflect 在 agent.ts 后处理）；`seed/__tests__/harness.ts` 为测试装备非测试文件，不单列。
 >
-> * L4 含 `memory/` 13 文件（`sessionStore.ts` 计入 L5）+ 摘要/治理/会话沉淀 15 个 managers 文件。
+> * L4 含 `memory/` 12 文件（`sessionStore.ts` 计入 L5）+ 摘要/治理/会话沉淀 15 个 managers 文件。
 >
 > * L6 含 `utils/` 20 文件（含 `recallDefaults.ts`、`backgroundTask.ts`）+ config/security/logging。
 >
-> * 2026-08-20 种子收敛（L0 `agent/seed/`，4 源文件）；2026-09-04/05 废弃清理：difficulty.ts/externalTaskLoop/runReport/Handoff 整体删除（多 turn 复杂度在单 turn 内自然生长）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）。
+> * 2026-08-20 种子收敛（L0 `agent/seed/`，4 源文件）；2026-09-04/05 废弃清理：difficulty.ts/externalTaskLoop/runReport/Handoff 整体删除（多 turn 复杂度在单 turn 内自然生长）；2026-08-19 深度剪枝后：memory/ 移除 store/loader/multiHop 3 个文件，eval/ 整体移除（3 文件），reranker 收敛为接口（测试 3 条）；2026-09-11 群落二审查：reranker 接口文件移除（零生产消费、依赖已退役 recall 编排、现行 searchHybrid 无精排阶段）。
 
