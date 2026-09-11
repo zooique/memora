@@ -2,6 +2,7 @@
 
 > **状态**：阶段1自动注入机制退役 **已实现**（步进A/B/C/D/E 落地，全量回归 2946 通过）；阶段2 6 键族删除 **已实现**（commit 4f318407）+ 工具互斥落地（search_memories 排除已载入正文轮次 + limit 收紧 10→5 + trace_summary 精取引导，commit 89d0ff26）；阶段3 score 退役 **已实现**（2026-09-09：Memory.score 字段物理删除、hybridMerge 排序纯化单 vectorScore、boost→touch 收敛、memoryAdvisor 弃 status 健康判定、宿主 workspaceStorage/protocol/webview 同步；全量回归 2864 通过）。A4 检索召回质量问题与 score 无关（实证见 .trae/documents/a4-fix-or-phase3-sequencing.md），作为独立开放项留待本地小模型对照后裁决。
 > **2026-09-10 补记（剪枝）**：文中「`checkpointRestoreCoordinator.warmRecall` 保留例外」（§4.2 表 / §开放点 1）已随**跨重启恢复链整体退役**而失效——`checkpointRestoreCoordinator.ts` 整文件删除，`recall()` 召回编排因此**零消费者连带退役**（`recall.ts` 仅余 `extractKeywords` / `touchScores`，`recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK` 删除，内核 `ISessionStore` 的 checkpoint 三方法删除）。记忆检索现**完全**由 `search_memories` 工具承载（含首轮确定性收窄），无任何自动召回路径。下文相关段落为退役前语义，不再代表当前实现。
+> **2026-09-11 补记（发倔回退，T12，务必先读）**：§3.2「首步记忆检索（确定性）」的**首轮硬收窄已整体砍除**（3.0.0 发倔，commit `681978a6`）——**§1.3 回退预案被启用**。「有查询意图 → 首轮只暴露只读探查面 + 双闸过滤」机制（件①代码预筛 `extractKeywords`、件②工具面收窄/指令注入、状态位 `narrowFirstRound`/`PROBE_MEMORY_TOOLS` 及全部收窄用例）已物理删除，首轮 LLM 调用 tools 参数**恒为全量**（新断言守护）。**砍除理由**：硬收窄是实现缺陷载体（首轮后描述面不恢复）+ 预支复杂度（D6 无触发样本）。**保留的软引导**：「记忆回想」指令一句改无条件注入（工具描述块存在即注入，`toolCallsBlocked` 确定性屏蔽时排除）——「被想起为主」的职责定位（§1.4）由文档化引导继续承载，但「判断机会结构性保证」由代码降级为提示语。**恢复条件**：若记忆侧要恢复「强制首轮检索」，须重新立项走完整闭环（清单移交注记）。下文 §3.2 及其引用段（§0 条目 6/7、§5.3、§6 开放点）为定案当时语义，不再代表当前实现。
 >
 > **⚠️ 批次级失效声明（2026-09-10，务必先读）**：下文 **§2（现状实证）** 与 **§4（退役面）** 两节的行号引用与「现状」栏，均为 **2026-09-09 探索期快照**，相关代码已于 **2026-09-09 ~ 09-10 全链退役** —— 所列 `contextPreparer.ts:184-242`（recallAndInject 语义召回段）、`loop.ts:2012`（`injectRecallAsSystem`）、`checkpointRestoreCoordinator.ts:106`（warmRecall）、`chatView.ts:3122 / protocol.ts:543`（`memoryTokens`/`memoryCount`）、`recall.ts` 的 `applyTrackPolicy`/`sortByLayer`/`applyCapAllocation`、`budget.ts` 的 `memoryLayerCapTokens`、`HOT_MEMORY_MAX_ROUNDS`、`DEFAULT_MEMORY_CAP_RATIO` 等符号**均已物理删除**。**照行号 grep 将全部 miss，勿据此判定实现现状**。两节保留的价值仅在「决策推导过程」；现行实现真相源 = `loop.getExclusionRoundIds()` + `memoryInspector.searchHybrid` + `budget.ts`(无记忆维度)。
 > **日期**：2026-09-09
@@ -121,6 +122,8 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 ```
 
 ### 3.2 触发编排：首步记忆检索（确定性，2026-09-09 二轮定案）
+
+> **⚠️ 已砍除（2026-09-11，T12，3.0.0 发倔）**：本节「首轮工具面收窄（件②）+ 代码预筛（件①）」机制已整体删除（见头部 2026-09-11 补记）。当前实现 = 全工具直答 + 「记忆回想」软引导一句，恢复须重新立项。本节保留为决策推导考古，不再代表实现。
 
 **问题**：纯自发工具调用（LLM 在回答中"想起来"才调）不可靠——search_memories 混在十余工具中，模型可能全程不调 = 记忆形同虚设（R1 实证化）。定案原则：**"理解意图 → 搜记忆"须是 turn 的结构性前置，而非模型自律的概率行为**——萧然原话：「如果是工具的话 LLM 不一定会用」。
 
