@@ -1085,6 +1085,20 @@ export class ToolExecutor {
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
         const scriptArgs = Array.isArray(args['args']) ? (args['args'] as string[]) : [];
+        // 脚本执行确认（2026-09-11 定案，与 run_code/run_project_script 同判据）：
+        // owner + confirmScripts=false 默认放行（技能脚本来源可信，判据 B，无人值守可跑）；
+        // guest 恒确认（受限权限下禁止"来源可信豁免"自主执行，缝合三脚本工具语义裂缝）；
+        // confirmScripts=true 时 owner 亦确认（开关语义 = "脚本执行二次确认"，对全部脚本生效）。
+        // 无 OS 级沙箱（子进程直跑 + env 继承用户环境），故不能以 Codex workspace-write 的
+        // "边界内自动"前提豁免 guest。target 用技能名:脚本路径标识（无落盘绝对路径）。
+        const execConfirmed = await this.security.confirmScriptRun(
+          `skill:${skillName}:${scriptPath ?? ''}`,
+          'run_skill_script',
+          `执行技能 ${skillName} 的脚本 ${scriptPath ?? ''}`,
+        );
+        if (!execConfirmed) {
+          return '[ERR:SCRIPT_DECLINE] 技能脚本执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
+        }
         const result = await this.runSkillScript(skillName, scriptPath, scriptArgs);
         if (result === null) {
           return `[ERR:SCRIPT_NOT_FOUND] 未找到脚本 "${scriptPath}"（技能 "${skillName}" 无此脚本，或执行失败）`;

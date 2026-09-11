@@ -50,13 +50,13 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 
 ## 四、实现落点
 
-- `src/agent/toolExecutor.ts` `list` getter：新增常驻豁免集常量（如 `DEFAULT_EXPOSED_TOOLS`，含上述 17 个），对豁免集跳过白名单过滤、特权工具（web_* / run_code / task_table_*）仍按现有 `toolWhitelist` 过滤——即 baseTools 拆「豁免 ∪ 特权」两段拼接。
+- `src/agent/toolExecutor.ts` `list` getter：新增常驻豁免集常量（`DEFAULT_EXPOSED_TOOLS`，共 16 个），对豁免集跳过白名单过滤、特权工具（web_* / run_code / task_table_*）仍按现有 `toolWhitelist` 过滤——即 baseTools 拆「豁免 ∪ 特权」两段拼接。
 - `src/role-pack/capabilityMap.ts`：裁剪不再控制可见性的能力键（file:read/write/list、memory:recall、project:search），收敛为特权能力映射（web:search / web:fetch / code:execute / task:plan）。
 - `src/agent/types.ts` / `agent.ts`：白名单语义微调（null=全部；[]=仅常驻；非空=常驻+名单内特权），现有 `setToolWhitelist` 通道与 onToolsChanged 刷新链路不变。
 
 ## 五、验证方式
 
-1. 定向测试：声明任意 capabilities 时 17 个常驻工具仍暴露；未声明时特权工具不暴露；声明 code:execute 后 run_code 出现；
+1. 定向测试：声明任意 capabilities 时 16 个常驻工具仍暴露；未声明时特权工具不暴露；声明 code:execute 后 run_code 出现；
 2. 回归：技能工具豁免（脚本草稿第五节点 3/4）与本模型的常驻集不冲突；run_code 仍受能力+宿主注入双重门槛；
 3. 全量测试 + tsc + eslint + commitlint 全绿后可评估从 docs 固化。
 

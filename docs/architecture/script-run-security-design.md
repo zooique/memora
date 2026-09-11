@@ -66,7 +66,7 @@
 
 **边界红线**：容器/seatbelt/VM 级沙箱不进内核（零依赖）；classifier 式 AI 审核不进内核（订阅侧服务）——两者均为宿主职责，`ICodeExecutionProvider` 即宿主注沙箱预留口。
 
-> 备注：`run_skill_script` 默认保持「来源可信、不接执行确认」——技能目录脚本经技能作者审阅（判据 B），与本轮 confirmScripts 接入面（run_code/run_project_script）分开。
+> 备注：`run_skill_script` 默认保持「来源可信、owner 默认放行」——技能目录脚本经技能作者审阅（判据 B）。**确认面收口（2026-09-11 定案）**：与 run_code/run_project_script 走同一 `confirmScriptRun` 闸——owner + confirmScripts=false 自动批准（无人值守语义不变）；**guest 恒确认**（受限权限下不设"来源可信豁免"自主执行，缝合三脚本工具语义裂缝；无 OS 级沙箱支撑 Codex workspace-write 式"边界内自动"前提）；confirmScripts=true 时 owner 亦确认（开关统一约束全部脚本执行）。
 
 ## 六、已弃用选项（土壤筛选结论，记录以免回捞）
 

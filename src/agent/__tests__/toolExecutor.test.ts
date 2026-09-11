@@ -292,6 +292,61 @@ describe('工具执行器（6 个工具）', () => {
       );
       expect(result).toBe('lint 通过，0 errors');
     });
+
+    it('owner + confirmScripts=false 默认放行（来源可信，无人值守可跑）', async () => {
+      executor.runSkillScript = async () => 'ok';
+      const result = await executor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(result).toBe('ok');
+    });
+
+    it('guest 模式（无确认回调）时 fail-closed 拒绝（2026-09-11 定案：受限权限下技能脚本不再豁免确认）', async () => {
+      // guest 恒确认；未注入 confirmationHandler → confirmScriptRun fail-closed → 拒绝
+      const guestSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'guest');
+      const guestExecutor = new ToolExecutor(tmpProject, guestSecurity, index);
+      guestExecutor.runSkillScript = async () => '不应执行';
+      const result = await guestExecutor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(result).toContain('SCRIPT_DECLINE');
+    });
+
+    it('owner + confirmScripts=true（无确认回调）时 fail-closed 拒绝（开关对技能脚本生效）', async () => {
+      const strictSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'owner', true);
+      const strictExecutor = new ToolExecutor(tmpProject, strictSecurity, index);
+      strictExecutor.runSkillScript = async () => '不应执行';
+      const result = await strictExecutor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(result).toContain('SCRIPT_DECLINE');
+    });
+
+    it('owner + confirmScripts=true + 确认回调：同意放行 / 拒绝拦截（2026-09-11 定案）', async () => {
+      const strictSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'owner', true);
+      const strictExecutor = new ToolExecutor(tmpProject, strictSecurity, index);
+
+      // 回调同意 → 放行执行
+      strictSecurity.onWriteConfirmation(async () => true);
+      strictExecutor.runSkillScript = async () => 'lint 通过，0 errors';
+      const ok = await strictExecutor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(ok).toBe('lint 通过，0 errors');
+
+      // 回调拒绝 → SCRIPT_DECLINE，脚本不执行
+      strictSecurity.onWriteConfirmation(async () => false);
+      strictExecutor.runSkillScript = async () => '不应执行';
+      const declined = await strictExecutor.execute(
+        'run_skill_script',
+        JSON.stringify({ skill_name: 'write', script_path: 'lint.ts' }),
+      );
+      expect(declined).toContain('SCRIPT_DECLINE');
+    });
   });
 
   describe('web_search（未注入提供者）', () => {
