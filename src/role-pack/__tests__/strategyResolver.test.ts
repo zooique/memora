@@ -311,7 +311,7 @@ describe('resolve* 函数 — 数值解析', () => {
       expect(resolveStepBudget({ global: { stepBudget: 40 } })).toBe(40);
     });
 
-    it('0 表示不限制', () => {
+    it('0 采用（loop 侧等同未声明 → maxIterations 兜底，非「不限」）', () => {
       expect(resolveStepBudget({ global: { stepBudget: 0 } })).toBe(0);
     });
 

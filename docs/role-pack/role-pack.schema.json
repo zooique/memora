@@ -179,13 +179,13 @@
               "type": "integer",
               "minimum": 0,
               "maximum": 1000000,
-              "description": "每轮总 token 预算上限（0=不限制，默认 200000；上界对齐 MAX_TOKEN_BUDGET=1M 覆盖旗舰模型 1M 窗口）"
+              "description": "每轮总 token 预算上限（0=不限制，未声明即 0=不限制；非法/越界值回退内核兜底 80000。声明值须小于上下文窗口，否则软闸永不触发；上界对齐 MAX_TOKEN_BUDGET=1M）"
             },
             "stepBudget": {
               "type": "integer",
               "minimum": 0,
               "maximum": 500,
-              "description": "每轮工具步数预算上限（软上限，0=不限制，默认 50）"
+              "description": "每轮工具步数预算上限（软上限；0 = 未声明，走内核 maxIterations 兜底 50——不是「不限步数」，无不受限路径）"
             }
           },
           "additionalProperties": false

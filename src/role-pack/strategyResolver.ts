@@ -75,7 +75,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     userFollowup: 'silent',
   },
   global: {
-    tokenBudget: 0, // 0 = 不声明，resolveTokenBudget 回退 FALLBACK_TOKEN_BUDGET
+    tokenBudget: 0, // 0 = 不限制（软闸不触发）；FALLBACK_TOKEN_BUDGET 仅兜底非法/越界值
     // 0 或未声明 → 内核兜底 DEFAULT_MAX_ITERATIONS（无「不限步数」路径，符合防死循环设计）
     stepBudget: 0,
     errorHandling: 'retry',

@@ -93,7 +93,7 @@ export interface ReflectStrategy {
 
 /** 跨阶段全局策略集合 */
 export interface GlobalStrategy {
-  /** 每轮总 token 上限（默认 200000；内核已消费） */
+  /** 每轮总 token 上限（0=不限制；未声明即 0=不限制，仅非法/越界值才回退内核兜底 80000） */
   readonly tokenBudget?: number;
   /** 每轮工具步数上限（默认 50；内核已消费） */
   readonly stepBudget?: number;
@@ -147,7 +147,7 @@ export interface L2RuntimeStrategy {
   readonly providerRouting: ProviderRouting;
   /** Token 预算上限（global.tokenBudget：0=不限制） */
   readonly tokenBudget: number;
-  /** 步数预算上限（global.stepBudget：0=不限制） */
+  /** 步数预算上限（global.stepBudget：0=未声明，走内核 maxIterations 兜底——非「不限」） */
   readonly stepBudget: number;
   /** 多步推理模式（act.multiStepReasoning） */
   readonly multiStepReasoning: MultiStepReasoning;

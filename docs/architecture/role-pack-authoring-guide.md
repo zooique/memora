@@ -119,8 +119,8 @@
 | `askOn`         | 数组（元素见下）                     | 1\~4 个元素             | `[ambiguity, decision, missing_info]` | 主动提问触发场景（可组合） | `["ambiguity", "decision"]` |
 | `askLimit`      | 整数                           | `1 ~ 10`             | `3`                                   | 每轮主动提问次数上限    | `2`                         |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
-| `tokenBudget`   | 整数                           | `0 ~ 1000000`（0=不限制） | `200000`                              | 每轮总 token 上限  | `120000`                    |
-| `stepBudget`    | 整数                           | `0 ~ 500`（0=不限制）     | `50`                                  | 每轮工具步数上限（软上限） | `60`                        |
+| `tokenBudget`   | 整数                           | `0 ~ 1000000`（0=不限制） | 未声明→`0`（不限制）                           | 每轮总 token 上限  | `120000`                    |
+| `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `50`                                  | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。
@@ -140,7 +140,7 @@
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
 | `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）         |
 | `askLimit`            | 1    | 10      | error           | 回退默认 `3`           |
-| `tokenBudget`         | 0    | 1000000 | error           | 回退默认 `200000`      |
+| `tokenBudget`         | 0    | 1000000 | error           | 回退内核兜底 `80000`      |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
 
 ***
