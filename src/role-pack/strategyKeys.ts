@@ -50,10 +50,10 @@ export const MAX_SELF_REVIEW_ROUNDS = 10;
 export const MAX_ASK_LIMIT = 10;
 /** 每轮总 token 预算上限：1_000_000 覆盖 1M 上下文窗口（mimo-v2.5-pro 等旗舰模型） */
 export const MAX_TOKEN_BUDGET = 1_000_000;
-/** 步数预算声明下限：角色包 stepBudget 不得低于 10，低于此视为越界回退默认值 */
+/** 步数预算声明下限：角色包 stepBudget 声明区间下限（0=未声明走兜底，正数声明不得低于此），低于此视为越界回退默认值 */
 export const MIN_STEP_BUDGET = 10;
 /**
- * 步数预算声明上限：角色包可自由声明 0~500 之间的 stepBudget。
+ * 步数预算声明上限：角色包声明区间为 {0} ∪ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]（0=未声明 → 兜底，无「不限步数」路径）。
  * 角色作者想让这个角色跑得久就配大值，想保守就配小值。
  * 角色包不声明 stepBudget 时，resolveStepBudget 回退 DEFAULT_MAX_ITERATIONS。
  * loop 运行时由 opts.maxIterations 传入覆盖——角色包声明多少给多少，内核只兜底默认。
