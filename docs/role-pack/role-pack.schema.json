@@ -143,12 +143,6 @@
               "maximum": 10,
               "description": "自审查最大轮数（0=关闭，N=最多 N 轮，默认 0）"
             },
-            "loopContinue": {
-              "type": "integer",
-              "minimum": 0,
-              "maximum": 10,
-              "description": "v0.13- 历史别名键（已废弃）：新键 selfReview 优先、旧键回退——保留以兼容已落盘角色包（默认 0）"
-            },
             "userFollowup": {
               "type": "string",
               "enum": ["ask", "silent"],

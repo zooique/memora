@@ -285,8 +285,7 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
  */
 export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2RuntimeStrategy {
   // selfReview → 自审查轮数：整数且 ∈ [0, MAX_SELF_REVIEW_ROUNDS] 才采用，否则关闭（0 轮）。
-  // 兼容旧键 loopContinue（manifest 历史别名，新键优先、旧键回退，防已落盘角色包自审查静默失效）
-  const rawSelfReview = strategy?.reflect?.selfReview ?? strategy?.reflect?.loopContinue;
+  const rawSelfReview = strategy?.reflect?.selfReview;
   const maxSelfReviewRounds =
     typeof rawSelfReview === 'number' &&
     Number.isInteger(rawSelfReview) &&

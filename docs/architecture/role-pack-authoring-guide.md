@@ -166,9 +166,9 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 18 键（prepare 2 / act 7 / reflect 4 / global 5） |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 17 键（prepare 2 / act 7 / reflect 3 / global 5） |
 
-> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）——无消费者的策略键不保留。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
+> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）、`toolApproval`（2026-09-11，审批链无执行方的展示性假承诺）、`streaming`（2026-09-11，写而不读的假旋钮——内核 provider 恒 `stream:true`）、`loopContinue`（2026-09-11，v0.13- 别名；安装基数 0 → 兼容防的是从未发生的场景，按版本契约分面「作者输入面可不兼容」删除）——**无消费者 / 无真实兼容对象的策略键不保留**。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 
 ***
 

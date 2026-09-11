@@ -82,7 +82,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 `prepare`（2）默认值：`understandingConfirm`=off｜`summaryFocus`(≤500字符，默认省略)。注：2026-09-09（memory-tool-recall-design 阶段2）起 `memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键已退役——记忆检索改由 `memory_search` 工具触发，勿再填写。
 `act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
-`reflect`（4）默认值：`summary`=on｜`selfReview`=0(0~10)｜`loopContinue`=0(0~10, v0.13- 兼容别名勿新写)｜`userFollowup`=silent
+`reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10)｜`userFollowup`=silent
 `global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=3(1~10)｜`errorHandling`=retry｜`tokenBudget`=200000(0~1000000)｜`stepBudget`=50(0~500)
 
 ### 第四步：校验（写→验→用闭环）

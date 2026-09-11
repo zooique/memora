@@ -619,19 +619,6 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
     ).toBe(0);
   });
 
-  it('旧键 loopContinue 回退（历史别名兼容）：新键 selfReview 优先', () => {
-    // 旧键仍生效（已落盘角色包不自审查静默失效）
-    expect(
-      resolveL2Strategy({ reflect: { loopContinue: 2 } } as BehaviorStrategy).maxSelfReviewRounds,
-    ).toBe(2);
-    // 双键并存时新键优先
-    expect(
-      resolveL2Strategy({
-        reflect: { selfReview: 3, loopContinue: 2 },
-      } as BehaviorStrategy).maxSelfReviewRounds,
-    ).toBe(3);
-  });
-
   it('act/global 声明值覆盖对应维度', () => {
     const s = resolveL2Strategy({
       act: { toolReadonly: 'readonly' },

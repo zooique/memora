@@ -143,7 +143,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     reflect: [
       'summary',
       'selfReview',
-      'loopContinue',
       'userFollowup',
     ],
     global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget'],
@@ -191,6 +190,17 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     for (const phase of PHASES) {
       expect(Object.keys(STRATEGY_KEY_RULES[phase]!), `${phase} 不应含 streaming`).not.toContain(
         'streaming',
+      );
+    }
+  });
+
+  it('已撤键（防回归）：loopContinue 别名不在任何阶段键集', () => {
+    // 2026-09-11 撤键：v0.13- 命名残留的兼容别名（selfReview 的旧名）。
+    // 安装基数 0（无已落盘角色包引用）→ 兼容防的是从未发生的场景；
+    // 按版本契约分面「作者输入面可不兼容」整键删除，不留过渡兼容。若未来误加回键集，此守卫红。
+    for (const phase of PHASES) {
+      expect(Object.keys(STRATEGY_KEY_RULES[phase]!), `${phase} 不应含 loopContinue`).not.toContain(
+        'loopContinue',
       );
     }
   });
@@ -253,7 +263,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       expect(checkRule.check(3.0)).toBe(false);
     });
 
-    it('reflect.selfReview 使用区间断言（0~MAX_SELF_REVIEW_ROUNDS），旧键 loopContinue 保留为历史别名', () => {
+    it('reflect.selfReview 使用区间断言（0~MAX_SELF_REVIEW_ROUNDS）', () => {
       const rule = STRATEGY_KEY_RULES.reflect!.selfReview!;
       expect(rule.kind).toBe('check');
       const checkRule = rule as { check: (v: unknown) => boolean; range?: { min: number; max: number } };
@@ -261,8 +271,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       expect(checkRule.check(3)).toBe(true);
       expect(checkRule.check(-1)).toBe(false);
       expect(checkRule.range).toEqual({ min: 0, max: MAX_SELF_REVIEW_ROUNDS });
-      // 历史别名仍被校验器认可（兼容已落盘角色包，不报未知键）
-      expect(STRATEGY_KEY_RULES.reflect!.loopContinue).toBeDefined();
     });
 
     it('global.askLimit 使用区间断言（1~MAX_ASK_LIMIT）', () => {

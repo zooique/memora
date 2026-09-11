@@ -132,8 +132,6 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     summary: { kind: 'enum', values: ['on', 'off'] },
     // 自审查轮数（0~MAX_SELF_REVIEW_ROUNDS，0=关闭）
     selfReview: intRange(0, MAX_SELF_REVIEW_ROUNDS),
-    // 历史别名（v0.13- 命名残留）：新键 selfReview 优先，旧键回退——保留以兼容已落盘角色包
-    loopContinue: intRange(0, MAX_SELF_REVIEW_ROUNDS),
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
   },
   global: {

@@ -85,8 +85,6 @@ export interface ActStrategy {
 export interface ReflectStrategy {
   /** 自审查轮数（默认 0=关闭；0=关闭 / N=最多自审查 N 轮） */
   readonly selfReview?: SelfReviewRounds;
-  /** 历史别名（v0.13- 命名残留）：新键 selfReview 优先，旧键回退 */
-  readonly loopContinue?: SelfReviewRounds;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;
   /** 用户追问策略（默认 silent） */
