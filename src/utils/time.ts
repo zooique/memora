@@ -104,3 +104,19 @@ export function splitSessionId(sessionId: string): { date: string; session: stri
   const session = sessionId.length > 11 ? sessionId.slice(11) : '';
   return { date, session };
 }
+
+/**
+ * 校验会话标识是否为严格的 `YYYY-MM-DD-<会话名>` 格式
+ *
+ * 供需要"严格合法性判定"的调用方使用（如存储写侧、切换会话时的格式守卫）。
+ * 与 splitSessionId 互补：本函数只做格式校验、不做拆解；二者组合 = 校验 + 拆解。
+ * 若仅需拆解而无需严格校验，请用 splitSessionId。
+ *
+ * 判定规则：日期段必须是 4-2-2 的数字（`\d{4}-\d{2}-\d{2}`），且分隔后的会话名非空。
+ *
+ * @param sessionId 会话标识
+ * @returns 是否匹配严格格式
+ */
+export function isValidSessionId(sessionId: string): boolean {
+  return /^(\d{4}-\d{2}-\d{2})-(.+)$/.test(sessionId);
+}

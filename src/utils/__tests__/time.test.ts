@@ -8,7 +8,7 @@
  *   - 多次调用返回值单调非递减
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { nowIso, formatDateKey, todayDate, buildSessionId, splitSessionId } from '@/utils/time.js';
+import { nowIso, formatDateKey, todayDate, buildSessionId, splitSessionId, isValidSessionId } from '@/utils/time.js';
 
 describe('utils/time', () => {
   afterEach(() => {
@@ -151,6 +151,26 @@ describe('utils/time', () => {
       expect(splitSessionId('proj-alpha-beta-gamma').session).toBe('beta-gamma');
       // 调用方需自行校验日期格式（本函数纯拆解，不校验）
       expect(/^\d{4}-\d{2}-\d{2}$/.test(splitSessionId('proj-alpha-beta-gamma').date)).toBe(false);
+    });
+  });
+
+  describe('isValidSessionId', () => {
+    it('应接受标准 YYYY-MM-DD-<会话名> 格式', () => {
+      expect(isValidSessionId('2026-06-21-main')).toBe(true);
+    });
+
+    it('session 名含连字符时仍合法（main-fork-1 不被误拒）', () => {
+      expect(isValidSessionId('2026-06-27-main-fork-1')).toBe(true);
+    });
+
+    it('应拒绝非法日期段（非 YYYY-MM-DD）', () => {
+      expect(isValidSessionId('2026-6-21-main')).toBe(false);
+      expect(isValidSessionId('proj-alpha-beta')).toBe(false);
+      expect(isValidSessionId('2026-06-21')).toBe(false);
+    });
+
+    it('应拒绝仅有日期、无会话名', () => {
+      expect(isValidSessionId('2026-06-21')).toBe(false);
     });
   });
 });

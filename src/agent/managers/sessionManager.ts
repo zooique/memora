@@ -7,7 +7,7 @@
 import { logger } from '@/logging/logger.js';
 import { chatBusyError, configError } from '@/utils/errors.js';
 // 会话标识格式契约（SSOT）：恢复最近会话时把 sessionId 拆成 (date, session) 供 loadMessages
-import { splitSessionId } from '@/utils/time.js';
+import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
@@ -74,9 +74,6 @@ export class SessionManager {
 
   /** 连续暂停时间窗口（毫秒），1 小时前的暂停不计入连续计数 */
   private static readonly CONSECUTIVE_PAUSE_WINDOW_MS = 3_600_000;
-
-  /** 会话标识解析模式 `YYYY-MM-DD-<会话名>`：日期段定长，正则无歧义还原二元组，会话名含连字符也不误切 */
-  private static readonly SESSION_ID_PATTERN = /^(\d{4}-\d{2}-\d{2})-(.+)$/;
 
   // ── 运行时暂停超时检测 ────────────────────────────────
 
@@ -206,14 +203,13 @@ export class SessionManager {
     if (this.isChatBusy()) {
       throw chatBusyError('打开会话');
     }
-    // 使用正则解析 sessionId：日期段（YYYY-MM-DD）+ 会话名（可含连字符）
-    const match = sessionId.match(SessionManager.SESSION_ID_PATTERN);
-    if (!match || !match[1] || !match[2]) {
+    // 严格校验会话标识格式（SSOT：isValidSessionId 单一真源）+ 拆解（date/session，会话名可含连字符）
+    if (!isValidSessionId(sessionId)) {
       throw configError('打开会话', `会话标识格式错误：${sessionId}`, [
         '格式应为 YYYY-MM-DD-sessionName',
       ]);
     }
-    const [, date, session] = match;
+    const { date, session } = splitSessionId(sessionId);
     // 切换会话身份（内部含 busy/状态守卫 + 作废派生缓存）
     this.switchSession(session);
     // 加载/清空工作记忆：空会话 → restoreHistory([]) 清空（缓存已作废，无陈旧注入）
@@ -983,11 +979,12 @@ export class SessionManager {
    * 会话标识不符 YYYY-MM-DD-<会话名> 时 date/session 缺省但仍发射事件。
    */
   private markSessionTimedOut(sessionId: string, pauseDuration: number): void {
-    const matched = SessionManager.SESSION_ID_PATTERN.exec(sessionId);
     const payload: Record<string, unknown> = { sessionId, pauseDuration };
-    if (matched) {
-      payload.date = matched[1]!;
-      payload.session = matched[2]!;
+    // 严格校验（SSOT：isValidSessionId 单一真源）；合法才拆解，非法走 warn 兜底
+    if (isValidSessionId(sessionId)) {
+      const { date, session } = splitSessionId(sessionId);
+      payload.date = date;
+      payload.session = session;
     } else {
       logger.warn({ sessionId }, '暂停超时会话标识不符合 YYYY-MM-DD-<会话名> 约定，跳过自动归档');
     }
