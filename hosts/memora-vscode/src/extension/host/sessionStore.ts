@@ -180,10 +180,10 @@ export class WorkspaceSessionStore implements ISessionStore {
     }
     const kept = roundIds.slice(0, idx);
     this.roundIdsStore.set(sessionId, kept);
-    // 同步元数据
+    // 同步元数据（roundIds 真源为 roundIdsStore，读时派生；此处仅更新 messageCount）
     const existing = this.metas.get(sessionId);
     if (existing) {
-      this.metas.set(sessionId, { ...existing, roundIds: [...kept], messageCount: kept.length * 2 });
+      this.metas.set(sessionId, { ...existing, messageCount: kept.length * 2 });
     }
     this.save();
     return { ok: true, removedIds };
@@ -207,15 +207,11 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 避免删除后又被占位元数据「复活」（deleteSession 契约：删除后 getSessionMeta 应为 undefined）。
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
+    // 读时派生 roundIds（方案 A：meta 不持久化 roundIds，唯一真源为 roundIdsStore）
     const meta = this.metas.get(sessionId);
     if (meta) {
-      // 如果有 roundIds 存储但 meta 中没有，同步更新
-      if (this.roundIdsStore.has(sessionId) && (!meta.roundIds || meta.roundIds.length === 0)) {
-        const roundIds = this.roundIdsStore.get(sessionId) ?? [];
-        meta.roundIds = roundIds;
-        this.metas.set(sessionId, meta);
-      }
-      return meta;
+      const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+      return { ...meta, roundIds: [...roundIds] };
     }
     // round-based 会话兜底：如果有 Round ID 列表，创建占位元数据
     const roundIds = this.roundIdsStore.get(sessionId);
@@ -297,10 +293,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     roundIds.push(roundId);
     this.roundIdsStore.set(sessionId, roundIds);
 
-    // 同步更新 meta 中的 roundIds 字段
-    this.syncMetaRoundIds(sessionId);
-
-    // 更新元数据
+    // 更新元数据（roundIds 真源为 roundIdsStore，读时派生）
     this.updateRoundBasedMessageCount(sessionId);
     this.save();
   }
@@ -316,10 +309,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     const merged = [...existing, ...roundIds];
     this.roundIdsStore.set(sessionId, merged);
 
-    // 同步更新 meta 中的 roundIds 字段
-    this.syncMetaRoundIds(sessionId);
-
-    // 更新元数据
+    // 更新元数据（roundIds 真源为 roundIdsStore，读时派生）
     this.updateRoundBasedMessageCount(sessionId);
     this.save();
   }
@@ -345,10 +335,7 @@ export class WorkspaceSessionStore implements ISessionStore {
   setRoundIds(sessionId: string, roundIds: string[]): void {
     this.roundIdsStore.set(sessionId, [...roundIds]);
 
-    // 同步更新 meta 中的 roundIds 字段
-    this.syncMetaRoundIds(sessionId);
-
-    // 更新元数据
+    // 更新元数据（roundIds 真源为 roundIdsStore，读时派生）
     this.updateRoundBasedMessageCount(sessionId);
     this.save();
   }
@@ -359,11 +346,13 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @param meta - 会话元数据
    */
   createSession(meta: SessionMeta): void {
-    this.metas.set(meta.sessionId, { ...meta });
+    // 剥离 roundIds：唯一真源在 roundIdsStore，不持久化进 meta（方案 A 读时派生）
+    const { roundIds, ...rest } = meta;
+    this.metas.set(meta.sessionId, rest);
 
-    // 如果有 roundIds，同时存储到 roundIdsStore
-    if (meta.roundIds && meta.roundIds.length > 0) {
-      this.roundIdsStore.set(meta.sessionId, [...meta.roundIds]);
+    // 如果有 roundIds，同时存储到真源 roundIdsStore
+    if (roundIds && roundIds.length > 0) {
+      this.roundIdsStore.set(meta.sessionId, [...roundIds]);
     }
 
     this.save();
@@ -372,32 +361,17 @@ export class WorkspaceSessionStore implements ISessionStore {
   // ─── 私有辅助方法 ─────────────────────────────────────
 
   /**
-   * 同步 meta 中的 roundIds 字段
-   *
-   * 确保 meta.roundIds 和 roundIdsStore 保持一致
-   */
-  private syncMetaRoundIds(sessionId: string): void {
-    const meta = this.metas.get(sessionId);
-    if (!meta) return;
-
-    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
-    this.metas.set(sessionId, {
-      ...meta,
-      roundIds: [...roundIds],
-    });
-  }
-
-  /**
    * 更新 round-based 会话的消息计数
    *
    * SSOT 边界（与 inMemorySessionStore 同口径）：*2 是「每个完整轮 = User+AI」的固有语义缓存，
    * 在 append 时点轮已完成，与精确 countMessagesInRounds 等价；免加载物理 Round（O(1)）。
+   * 真源取自 roundIdsStore（方案 A：meta 不再持有 roundIds）。
    */
   private updateRoundBasedMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);
     if (!meta) return;
 
-    const roundIds = this.roundIdsStore.get(sessionId) ?? meta.roundIds ?? [];
+    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
     const messageCount = roundIds.length * 2; // 每个 Round 包含 User + AI
 
     this.metas.set(sessionId, {

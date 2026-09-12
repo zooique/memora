@@ -84,9 +84,15 @@ export class InMemorySessionStore implements ISessionStore {
 
   /**
    * 获取会话元数据
+   *
+   * SSOT（方案 A：roundIds 读时派生）：meta 内部不持久化 roundIds（削弱镜像），
+   * 返回时从唯一真源 roundIdsMap 即时合成，消费者无感知。
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
-    return this.metas.get(sessionId);
+    const meta = this.metas.get(sessionId);
+    if (!meta) return undefined;
+    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
+    return { ...meta, roundIds: [...roundIds] };
   }
 
   /**
@@ -155,9 +161,6 @@ export class InMemorySessionStore implements ISessionStore {
     roundIds.push(roundId);
     this.roundIdsMap.set(sessionId, roundIds);
 
-    // 同步更新 meta 中的 roundIds 字段
-    this.syncMetaRoundIds(sessionId);
-
     // 更新元数据
     this.updateMessageCount(sessionId);
   }
@@ -169,9 +172,6 @@ export class InMemorySessionStore implements ISessionStore {
     const existing = this.roundIdsMap.get(sessionId) ?? [];
     const merged = [...existing, ...roundIds];
     this.roundIdsMap.set(sessionId, merged);
-
-    // 同步更新 meta 中的 roundIds 字段
-    this.syncMetaRoundIds(sessionId);
 
     // 更新元数据
     this.updateMessageCount(sessionId);
@@ -190,9 +190,6 @@ export class InMemorySessionStore implements ISessionStore {
   setRoundIds(sessionId: string, roundIds: string[]): void {
     this.roundIdsMap.set(sessionId, [...roundIds]);
 
-    // 同步更新 meta 中的 roundIds 字段
-    this.syncMetaRoundIds(sessionId);
-
     // 更新元数据
     this.updateMessageCount(sessionId);
   }
@@ -201,11 +198,13 @@ export class InMemorySessionStore implements ISessionStore {
    * 创建新会话元数据
    */
   createSession(meta: SessionMeta): void {
-    this.metas.set(meta.sessionId, { ...meta });
+    // 剥离 roundIds：roundIds 唯一真源在 roundIdsMap，不持久化进 meta（方案 A 读时派生）
+    const { roundIds, ...rest } = meta;
+    this.metas.set(meta.sessionId, rest);
 
-    // 如果有 roundIds，同时存储
-    if (meta.roundIds && meta.roundIds.length > 0) {
-      this.roundIdsMap.set(meta.sessionId, [...meta.roundIds]);
+    // 如果有 roundIds，同时存储到真源 roundIdsMap
+    if (roundIds && roundIds.length > 0) {
+      this.roundIdsMap.set(meta.sessionId, [...roundIds]);
     }
   }
 
@@ -225,31 +224,16 @@ export class InMemorySessionStore implements ISessionStore {
   // ─── 私有辅助方法 ─────────────────────────────────────
 
   /**
-   * 同步 meta 中的 roundIds 字段
-   *
-   * 确保 meta.roundIds 和 roundIdsMap 保持一致
-   */
-  private syncMetaRoundIds(sessionId: string): void {
-    const meta = this.metas.get(sessionId);
-    if (!meta) return;
-
-    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
-    this.metas.set(sessionId, {
-      ...meta,
-      roundIds: [...roundIds],
-    });
-  }
-
-  /**
    * 更新会话的消息计数（round-based 固有语义缓存：每个完整轮 = User+AI 2 条）。
    * SSOT 边界：此估算在 append 时点轮已完成，故与精确 countMessagesInRounds 等价；
    * 它是免加载物理 Round 的 O(1) 缓存；精确计算（countMessagesInRounds）仅用于需展开的场景。
+   * 真源取自 roundIdsMap（方案 A：meta 不再持有 roundIds）。
    */
   private updateMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);
     if (!meta) return;
 
-    const roundIds = this.roundIdsMap.get(sessionId) ?? meta.roundIds ?? [];
+    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
     const messageCount = roundIds.length * 2;
 
     this.metas.set(sessionId, {
@@ -262,13 +246,11 @@ export class InMemorySessionStore implements ISessionStore {
   /**
    * 统计会话消息数（round-based 固有语义：roundIds.length * 2）。
    * SSOT 边界同 updateMessageCount：估算（*2）与精确 countMessagesInRounds 在 append 时点等价。
+   * 真源取自 roundIdsMap（方案 A：meta 不再持有 roundIds）。
    */
   private countMessages(sessionId: string): number {
-    const roundIds = this.roundIdsMap.get(sessionId);
-    if (roundIds) return roundIds.length * 2;
-    const meta = this.metas.get(sessionId);
-    if (meta?.roundIds) return meta.roundIds.length * 2;
-    return 0;
+    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
+    return roundIds.length * 2;
   }
 
   /**
