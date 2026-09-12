@@ -753,10 +753,9 @@ export class AgentLoop {
    * 自审查注入判定（emit selfReview 通知与注入 SELF_REVIEW 提示共用单一真理源）。
    *
    * 需同时满足：
-   * 1. 启用自审查（maxSelfReviewRounds > 0）；
-   * 2. 未达审查轮数上限；
-   * 3. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
-   * 4. **单次终审语义（2026-09-12 边界归位）**：
+   * 1. 启用自审查（maxSelfReviewRounds > 0；解析层已保证取值 0|1）；
+   * 2. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
+   * 3. **单次终审语义（2026-09-12 边界归位）**：
    *    - 多轮 turn 门槛：本 turn 内实际执行过工具步（一遍过的纯文本问答不审查）；
    *    - **终审即停：审查轮（selfReviewRound > 0）一律不再安排下一轮**。审查轮产出后
    *      done 立即真实生效——自审只对「工具循环后的最终交付」做一次把关，不因需修改
@@ -765,10 +764,11 @@ export class AgentLoop {
    */
   private shouldInjectSelfReview(): boolean {
     if (this.strategy.maxSelfReviewRounds <= 0) return false;
-    if (this.selfReviewRound >= this.strategy.maxSelfReviewRounds) return false;
     if (this.strategy.toolCallsBlocked) return false;
     if (!this.toolExecutedThisTurn) return false;
-    // 终审即停：已是审查轮 → 无论满意与否都不再注入下一轮（done 真实生效）
+    // 终审即停：已是审查轮 → 无论满意与否都不再注入下一轮（done 真实生效）。
+    // 注：原「未达轮数上限」判据（selfReviewRound >= maxSelfReviewRounds）已删除——解析层把取值
+    // 钳到 0|1 后它与本判据完全等价，属永不单独生效的死分支（2026-09-13 双向变异验证）。
     if (this.selfReviewRound > 0) return false;
     return true;
   }

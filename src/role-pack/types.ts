@@ -83,7 +83,7 @@ export interface ActStrategy {
 
 /** 回答后（Reflect）沉淀策略集合 */
 export interface ReflectStrategy {
-  /** 自审查轮数（默认 0=关闭；0=关闭 / N=最多自审查 N 轮） */
+  /** 自审查开关（布尔数字，默认 0=关闭）：0=不自审查；正整数 >0 一律在解析层收敛为 1=自审查一次（大于 1 算 1）。仅本 turn 执行过工具步后做一次终审 */
   readonly selfReview?: SelfReviewRounds;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;
@@ -137,7 +137,7 @@ export interface BehaviorStrategy {
 export interface L2RuntimeStrategy {
   /** 工具调用是否被阻止（toolMode==='block' 时为 true） */
   readonly toolCallsBlocked: boolean;
-  /** 自审查最大轮数（reflect.selfReview：0=关闭 / N=最多 N 轮） */
+  /** 自审查上限（reflect.selfReview 的解析结果）：0=关闭 / 1=终审一次。取值由 resolveL2Strategy 从布尔数字输入钳到 0|1，loop 不再自行兜底 */
   readonly maxSelfReviewRounds: number;
   /** 单轮工具调用步数上限（act.toolStepLimit：0=无限制 / N=限制步数） */
   readonly toolStepLimit: number;

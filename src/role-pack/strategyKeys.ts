@@ -44,7 +44,11 @@ export const DEFAULT_MAX_ITERATIONS = 50;
 export const MAX_OUTPUT_LIMIT = 65536;
 /** 单轮工具调用步数上限：100 步足够复杂任务单轮调用 */
 export const MAX_TOOL_STEP_LIMIT = 100;
-/** 自审查轮数上限：LLM 纯文本回复后自动审查，10 轮已是极端场景 */
+/**
+ * selfReview 的**输入校验上界**，非运行时上限（勿据常量名推导运行时行为）。
+ * 布尔数字语义下任意正整数都在解析层收敛为 1=终审一次，故本值仅作 schema / validator 的防御上界，
+ * 不代表「可自审查 10 轮」。
+ */
 export const MAX_SELF_REVIEW_ROUNDS = 10;
 /** 主动提问次数上限：按一次用户输入（turn 粒度）计，10 次防打扰失控 */
 export const MAX_ASK_LIMIT = 10;

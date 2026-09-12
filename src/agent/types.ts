@@ -141,7 +141,7 @@ export interface UIMessages {
   assistantLabel?: string;
   /** Reflection 提示生成函数：工具调用失败且可重试时追加，帮 LLM 聚焦修正 */
   reflectionHint?: (remaining: number) => string;
-  /** 自审查提示生成函数：注入后让 LLM 审查自身回复质量（最多执行 maxSelfReviewRounds 轮） */
+  /** 自审查提示生成函数：注入后让 LLM 审查自身回复质量（单次终审语义下 round 与 total 恒为 1） */
   selfReviewPrompt?: (round: number, total: number) => string;
   /** 重复工具调用负反馈提示：连续多次相同工具+参数时注入，防止死循环 */
   duplicateToolCallWarning?: (threshold: number) => string;

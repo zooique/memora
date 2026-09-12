@@ -269,7 +269,7 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = resolveL2Strategy(undefine
  *
  * 聚合现有各 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
  * Token/步数预算、多步推理、主动提问上限、工具只读）+ reflect.selfReview；
- * 非法值经各 resolve* 归位内核默认；selfReview 归一为「0=关闭 / 正整数=N 轮执行上限」。
+ * 非法值经各 resolve* 归位内核默认；selfReview 归一为布尔数字「0=关闭 / 正整数 >0 收敛为 1」。
  *
  * @param strategy 合并后的行为策略（角色包声明，可为空）
  * @returns 注入 AgentLoop 的单一运行时策略对象

@@ -698,7 +698,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       interactionType: manifest['interactionType'] === 'companion' ? 'companion' : 'tool_assistant',
       aiIdentityDisclosure: manifest['aiIdentityDisclosure'] === false ? false : true,
       // 未成年人保护为强制项（非可配置）：恒为 'required'，与 validator「仅支持 required」一致；
-      // 若 manifest 声明其他值，validator 会拒绝装载，故此处无需读取声明值。
+      // 注意：validator 对非法值仅记 warning、不阻塞装载（见本函数内 validateManifest 调用处），
+      // 故强制手段是内核恒定取值，而非依赖 validator 拦截。
       minorProtection: 'required',
       // 接手衔接提示词（自洽声明，宿主 prefill；空白视为未声明）
       handoffPrompt: parseHandoffPrompt(manifest['handoffPrompt']),
