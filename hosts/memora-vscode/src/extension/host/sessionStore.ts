@@ -389,6 +389,9 @@ export class WorkspaceSessionStore implements ISessionStore {
 
   /**
    * 更新 round-based 会话的消息计数
+   *
+   * SSOT 边界（与 inMemorySessionStore 同口径）：*2 是「每个完整轮 = User+AI」的固有语义缓存，
+   * 在 append 时点轮已完成，与精确 countMessagesInRounds 等价；免加载物理 Round（O(1)）。
    */
   private updateRoundBasedMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);

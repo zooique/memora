@@ -25,6 +25,8 @@ import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
+// 会话显示名回退单一真理源（displayName→autoName），sessionId 兜底留在调用端
+import { getSessionDisplayName } from '@/memory/sessionStore.js';
 import { splitSessionId } from '@/utils/time.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
@@ -1095,7 +1097,7 @@ export class BuiltinToolHandlers {
     if (shown.length === 0) return '（暂无历史会话）';
 
     const lines = shown.map((m, i) => {
-      const name = m.displayName || m.autoName || m.sessionId;
+      const name = getSessionDisplayName(m) || m.sessionId;
       // 路标文本由 LLM 生成自用户内容 → 过 sanitize 防注入，并限长
       const summary = m.summary
         ? `\n   ${sanitizeExternalText(m.summary, LIST_SESSIONS_SUMMARY_CHARS)}`

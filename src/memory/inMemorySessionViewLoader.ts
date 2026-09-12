@@ -11,6 +11,8 @@
 
 import type { IRoundStore } from '@/memory/roundStore.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
+// 会话显示名回退单一真理源（displayName→autoName），sessionId 兜底留在调用端
+import { getSessionDisplayName } from '@/memory/sessionStore.js';
 import {
   flattenRoundsToMessages,
   truncateRoundsUpTo,
@@ -107,8 +109,8 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
       }
     }
 
-    // 计算标题（优先 displayName，其次 autoName，最后用会话 ID）
-    const title = meta.displayName || meta.autoName || sessionId;
+    // 计算标题（SSOT 显示名回退 displayName→autoName，sessionId 作最后兜底）
+    const title = getSessionDisplayName(meta) || sessionId;
 
     return {
       sessionId,
