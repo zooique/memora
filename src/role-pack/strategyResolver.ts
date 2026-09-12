@@ -191,7 +191,8 @@ export function resolveAskLimit(strategy: BehaviorStrategy | undefined): number 
     Number.isInteger(candidate) &&
     candidate >= 1 &&
     candidate <= MAX_ASK_LIMIT;
-  return valid ? candidate : 3;
+  // 非法/缺失回退到 DEFAULT_BEHAVIOR_STRATEGY 的 askLimit（SSOT 单点：不再硬编码 3）
+  return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.global!.askLimit!;
 }
 
 /** 解析 Token 预算：角色包 tokenBudget 合法（整数 ∈ [0, MAX_TOKEN_BUDGET]）则采用，否则回退 FALLBACK_TOKEN_BUDGET。0=不限制。 */
@@ -257,21 +258,11 @@ export function resolveUnderstandingConfirm(strategy: BehaviorStrategy | undefin
 /**
  * L2 运行时策略默认值（loop 构造初始态）
  *
- * 与各 resolve* 的"非法/缺失回退"默认值保持一致——真正每轮生效值来自 resolveL2Strategy，
+ * 由 `resolveL2Strategy(undefined)` 单一推导（SSOT）：不再手动复述各 resolve* 的回退默认值，
+ * 避免"回退规则改了、此处疏漏不同步"的二次写入点。真正每轮生效值来自 resolveL2Strategy，
  * 本常量仅作 loop 构造期的惰性初始值（收敛，替代 loop 内 11 个字段初始化魔数）。
  */
-export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = {
-  toolCallsBlocked: false,
-  maxSelfReviewRounds: 0,
-  toolStepLimit: 0,
-  errorHandling: 'retry',
-  providerRouting: 'auto',
-  tokenBudget: FALLBACK_TOKEN_BUDGET,
-  stepBudget: DEFAULT_MAX_ITERATIONS,
-  multiStepReasoning: 'auto',
-  askLimit: 3,
-  toolReadonly: 'full',
-};
+export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = resolveL2Strategy(undefined);
 
 /**
  * 解析 L2 运行时策略（收敛：替代 Agent 层逐项 setXxx 装配）
