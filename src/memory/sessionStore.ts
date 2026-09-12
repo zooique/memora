@@ -116,29 +116,3 @@ export interface SessionMessage {
   /** 所属轮次 ID（可选）：traceSummary 精确回溯用，空则退化为整会话摘要 */
   roundId?: string;
 }
-
-// ─── Round-based 模式辅助函数 ───────────────────────────
-
-/**
- * 创建 round-based 模式的新会话元数据
- *
- * @param sessionId - 会话 ID（格式：${date}-${sessionName}）
- * @param initialRoundIds - 初始 Round ID 列表（可选，用于分叉操作）
- * @returns 新创建的 SessionMeta
- */
-export function createRoundBasedSessionMeta(
-  sessionId: string,
-  initialRoundIds: string[] = [],
-): SessionMeta {
-  const now = new Date().toISOString();
-  // 加入随机后缀确保唯一性（防止连续调用产生相同时间戳）
-  const uniqueNow = `${now.slice(0, -1)}${Math.random().toString(36).slice(2, 5)}Z`;
-
-  return {
-    sessionId,
-    roundIds: [...initialRoundIds],
-    createdAt: uniqueNow,
-    updatedAt: uniqueNow,
-    messageCount: initialRoundIds.length * 2, // 每个 Round 包含 User + AI 两条消息
-  };
-}
