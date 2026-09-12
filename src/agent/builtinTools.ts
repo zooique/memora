@@ -169,6 +169,7 @@ export const WEB_SEARCH_TOOL: ToolDefinition = {
 export const TRACE_SUMMARY_TOOL: ToolDefinition = {
   name: 'trace_summary',
   description: '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
+  readonly: true,
   parameters: {
     type: 'object',
     properties: {
@@ -339,7 +340,7 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
  * 条件性工具（不在此数组，由 toolExecutor 按宿主注入的 Provider 拼接）：
  * - web_search / web_fetch：注入 IWebSearchProvider / IFetchProvider 时暴露，构成搜索→抓取闭环
  * - run_code：注入 ICodeExecutionProvider 时暴露
- * - TRACE_SUMMARY_TOOL：trace_summary 的别名导出（定义与数组内条目相同），供外部消费
+ * - TRACE_SUMMARY_TOOL：trace_summary 定义的真源（数组引用同一常量，无内联复述）
  */
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
@@ -422,22 +423,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['query'],
     },
   },
-  // ── 记忆即摘要·追溯工具 ──────────────────────
-  {
-    name: 'trace_summary',
-    description:
-      '追溯轮次摘要的原始对话内容。当需要查看某条摘要对应的完整对话时使用。',
-    readonly: true,
-    parameters: {
-      type: 'object',
-      properties: {
-        sessionId: { type: 'string', description: '会话标识（格式：YYYY-MM-DD-sessionName，如 "2026-08-13-main"）' },
-        roundId: { type: 'string', description: '轮次 ID（可选，不传则返回该会话最近 N 条摘要对应的对话）' },
-        limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
-      },
-      required: ['sessionId'],
-    },
-  },
+  // ── 记忆即摘要·追溯工具（引用 TRACE_SUMMARY_TOOL 单真源，2026-09-12 收敛）──
+  TRACE_SUMMARY_TOOL,
   {
     name: 'list_sessions',
     description:
