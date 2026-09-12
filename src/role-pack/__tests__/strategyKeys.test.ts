@@ -4,12 +4,14 @@
  * 覆盖范围：
  *   1. 校验辅助函数（isTemperature / isSummaryFocus / isAskOn）
  *   2. STRATEGY_KEY_RULES 完整性（prepare / act / reflect / global 四组键覆盖 + 规则类型）
+ *   3. docs/role-pack/role-pack.schema.json 与策略键常量的一致性（防腐守——防 schema 手写副本与代码常量漂移）
  *
  * 注：isPercent / isRecallConfidence / MAX_MIN_FALLBACK 已随 memory-tool-recall-design 阶段2
  * 召回策略键族（memoryRecallPercent/recallConfidence/minFallback）退役删除，无对应测试。
  *
  * 设计纪律：角色包对策略维度只"选择"不"定义"，因此枚举外取值是 error（机器可判读）
  */
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   STRATEGY_KEY_RULES,
@@ -379,5 +381,112 @@ describe('strategyKeys — KeyRule 类型验证', () => {
     if (checkRule.kind === 'check') {
       expect(typeof checkRule.check).toBe('function');
     }
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 3. schema.json 与策略键常量一致性（防腐守）
+//
+// schema.json 是给 IDE/编辑器做 manifest 校验提示的手写交付物，无法 import TS 常量，
+// 其上/下限是硬编码副本。此守卫把"两处"钉在代码真源上——改 strategyKeys.ts 常量
+// 或改 schema.json 游标都会在任一不一致处红灯，杜绝静默漂移。
+//
+// 范围：仅覆盖「数值键的上/下限」，这是最容易漂移且语义最关键的部分。
+// 语义差异说明（勿视作漂移）：
+//   - stepBudget.minimum=10 是「正数声明区间下限」（0=未声明走兜底），
+//     schema 的 minimum=0 是 JSON-Schema 层"接受 0"；二者叠加不冲突。
+// ═══════════════════════════════════════════════════════════
+
+describe('strategyKeys — schema.json 与常量一致性', () => {
+  /** 读取 schema.json 原始文本（测试运行于 node 环境，可用文件系统直接读） */
+  const schemaText = readFileSync(
+    new URL('../../../docs/role-pack/role-pack.schema.json', import.meta.url),
+    'utf-8',
+  );
+  /** 解析为 JSON 对象（schema 为有效 JSON，可直接 JSON.parse） */
+  const schema = JSON.parse(schemaText) as {
+    properties: {
+      strategy: {
+        properties: Record<
+          'act' | 'reflect' | 'global',
+          { properties: Record<string, { minimum?: number; maximum?: number }> }
+        >;
+      };
+    };
+  };
+
+  const strategyProps = schema.properties.strategy.properties;
+
+  // 数值键游标映射：schema 键 → 期望的上限（来自代码常量真源）
+  // - { phase, key, expectedMax }；阶段与代码 STRATEGY_KEY_RULES 阶段对齐
+  const BOUND_CASES: ReadonlyArray<{
+    phase: 'act' | 'reflect' | 'global';
+    key: string;
+    expectedMax: number;
+  }> = [
+    { phase: 'act', key: 'outputLimit', expectedMax: MAX_OUTPUT_LIMIT },
+    { phase: 'act', key: 'toolStepLimit', expectedMax: MAX_TOOL_STEP_LIMIT },
+    { phase: 'reflect', key: 'selfReview', expectedMax: MAX_SELF_REVIEW_ROUNDS },
+    { phase: 'global', key: 'askLimit', expectedMax: MAX_ASK_LIMIT },
+    { phase: 'global', key: 'tokenBudget', expectedMax: MAX_TOKEN_BUDGET },
+    { phase: 'global', key: 'stepBudget', expectedMax: MAX_STEP_BUDGET },
+  ];
+
+  it('所有受管数值键在 schema 中都能找到对应字段（防键被删/改名导致守门空转）', () => {
+    // 若有键在 schema 中缺位，守卫本身就是空的——必须确保守卫覆盖到了真实字段
+    for (const { phase, key } of BOUND_CASES) {
+      const field = strategyProps[phase]?.properties?.[key];
+      expect(field, `schema 应有 ${phase}.${key} 字段`).toBeDefined();
+      expect(typeof field?.maximum, `${phase}.${key} 应声明 maximum`).toBe('number');
+    }
+  });
+
+  it('schema 上限与代码 MAX_* 常量完全一致（防腐守：防 schema 手写副本漂移）', () => {
+    // 这是本守卫的核心断言：schema 手写的 maximum 必须等于代码常量真源
+    for (const { phase, key, expectedMax } of BOUND_CASES) {
+      expect(
+        strategyProps[phase]?.properties?.[key]?.maximum,
+        `${phase}.${key} schema 上限应等于代码常量 ${expectedMax}（改常量请同步 schema.json）`,
+      ).toBe(expectedMax);
+    }
+  });
+
+  it('数值键的 schema minimum 与代码 range.min 一致（不含 JSON-Schema 接受层差异）', () => {
+    // 通过 STRATEGY_KEY_RULES 的 range 元数据取代码真源 min，与 schema 比对
+    const ruleMin = (phase: 'act' | 'reflect' | 'global' | 'prepare', key: string): number => {
+      const rule = STRATEGY_KEY_RULES[phase]?.[key] as
+        | { kind: 'check'; range?: { min: number; max: number } }
+        | undefined;
+      expect(rule?.kind, `${phase}.${key} 应为 check 数值键`).toBe('check');
+      expect(rule?.range, `${phase}.${key} 应有 range`).toBeDefined();
+      return rule!.range!.min;
+    };
+
+    // 与 schema 比对的具体键（不含 stepBudget：其 schema 层 minimum=0 是 JSON-Schema 接受层，
+    // 与代码 MIN_STEP_BUDGET=10 的"正数声明区间"语义不同，已在文件头注释说明、不在此强比对）
+    const MIN_CASES = [
+      { phase: 'act', key: 'outputLimit' },
+      { phase: 'act', key: 'toolStepLimit' },
+      { phase: 'reflect', key: 'selfReview' },
+      { phase: 'global', key: 'askLimit' },
+      { phase: 'global', key: 'tokenBudget' },
+    ] as const;
+
+    for (const { phase, key } of MIN_CASES) {
+      const expected = ruleMin(phase, key);
+      expect(
+        strategyProps[phase]?.properties?.[key]?.minimum,
+        `${phase}.${key} schema 下限应等于代码常量 ${expected}`,
+      ).toBe(expected);
+    }
+  });
+
+  it('temperature 键 schema 范围与代码断言一致（0~2，无常量故直接断言）', () => {
+    const tempField = strategyProps.act?.properties?.temperature;
+    expect(tempField?.minimum).toBe(0);
+    expect(tempField?.maximum).toBe(2);
+    expect(isTemperature(0)).toBe(true);
+    expect(isTemperature(2)).toBe(true);
+    expect(isTemperature(2.1)).toBe(false);
   });
 });
