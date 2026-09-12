@@ -90,7 +90,7 @@ describe('AgentLoop · 构造函数', () => {
     expect(content).toContain('---');
   });
 
-  it('maxIterations 默认值应为 20', () => {
+  it('默认构造含一条系统指令消息（maxIterations 兜底见 DEFAULT_MAX_ITERATIONS，非本断言关注）', () => {
     const loop = new AgentLoop({
       provider: mockProvider([]),
       bootstrapMemories: [],

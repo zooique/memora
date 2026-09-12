@@ -468,13 +468,30 @@ describe('宿主集成端到端测试', () => {
         roundIndex++;
         let response = '';
         let hasError = false;
+        // 「已交互」标记：LLM 可产文本、报错、起工具、叙述、提问或走暂停出口（response 可为 0 且无 error，
+        // 如 ask_user 澄清暂停前的 search_memories→list_dir→write_file）。只要有一次有意义的推进即视为交互。
+        let interacted = false;
         for await (const chunk of a.chat(input)) {
-          if (chunk.type === 'text') response += chunk.content;
-          else if (chunk.type === 'error') hasError = true;
+          if (chunk.type === 'text') {
+            response += chunk.content;
+            if (chunk.content) interacted = true;
+          } else if (chunk.type === 'error') {
+            // error chunk 本身即「已交互」失败信号，计入以免纯报错轮被误判无输出
+            hasError = true;
+            interacted = true;
+          } else if (
+            chunk.type === 'tool_start' ||
+            chunk.type === 'narrate' ||
+            chunk.type === 'question_pending' ||
+            chunk.type === 'paused'
+          ) {
+            // 工具/叙述/提问/暂停 ≥ 1 次即视为 LLM 有推进（覆盖 ask_user 暂停出口这类 0 文本 0 错误轮）
+            interacted = true;
+          }
         }
-        console.warn(`第${roundIndex}轮 - 文本长度:${response.length}, 错误:${hasError}`);
-        // 允许 error chunk（LLM 可能不稳定），但验证至少有交互
-        expect(response.length > 0 || hasError).toBe(true);
+        console.warn(`第${roundIndex}轮 - 文本长度:${response.length}, 错误:${hasError}, 已交互:${interacted}`);
+        // 允许 error / ask_user 暂停出口 / 纯工具轮，但必须至少有一次有意义的交互，否则视为彻底无输出
+        expect(interacted).toBe(true);
       }
 
       // 验证 Metrics 累积（允许 LLM 调用失败但应有 tracer span）

@@ -1474,7 +1474,7 @@ export class AgentLoop {
             blockedFlags.push(true);
             toolPromises.push(
               Promise.resolve(
-                `[ALREADY_READ] 你已在第 ${hit.cachedAtIteration} 轮读取过此内容（${tc.function.name}:${dedupKey}），` +
+                `[ALREADY_READ] 你已在第 ${hit.cachedAtIteration} 步读取过此内容（${tc.function.name}:${dedupKey}），` +
                   `请基于已有信息继续分析或作答，不要重复读取。`,
               ),
             );
