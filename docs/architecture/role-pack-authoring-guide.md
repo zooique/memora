@@ -31,7 +31,7 @@
   "strategy": {
     "prepare": { "understandingConfirm": "confirm", "summaryFocus": "以文档设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
-    "reflect": { "selfReview": 2 },
+    "reflect": { "selfReview": 1 },
     "global": { "tokenBudget": 12000, "stepBudget": 60 }
   },
   "capabilities": [
@@ -109,7 +109,7 @@
 | 键              | 类型 / 枚举                 | 合法区间           | 默认       | 含义                                                                        | 示例       |
 | -------------- | ----------------------- | -------------- | -------- | ------------------------------------------------------------------------- | -------- |
 | `summary`      | `on` / `off`            | —              | `on`     | 是否生成轮次摘要                                                                  | `"off"`  |
-| `selfReview`   | 整数                      | `0 ~ 10`（0=关闭） | `0`      | 本 turn **执行过工具步**（多 step）后自动自审查最多 N 轮；纯文本一遍问答不触发；审查应答为满意短确认（如"无需修改"）时立即终止 | `2`      |
+| `selfReview`   | 整数                      | `0 ~ 10`（布尔数字：0=关闭，>0 收敛为 1） | `0`      | 自审查开关（布尔数字，2026-09-12 定案）：**0=不自审查，正整数 >0 一律收敛为 1=自审查一次（大于 1 算 1）**。当且仅当本 turn **执行过工具步**（多 step）后做一次终审；纯文本一遍问答不触发；审查应答为满意短确认（如"无需修改"）时立即终止 | `1`      |
 | `userFollowup` | `ask` / `silent`        | —              | `silent` | 用户追问策略                                                                    | `"ask"`  |
 
 ### 3.4 global 组（跨阶段·全局）
@@ -139,7 +139,7 @@
 | `temperature`         | 0    | 2       | error           | 忽略不注入              |
 | `outputLimit`         | 1    | 65536   | error           | 忽略不注入              |
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
-| `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）         |
+| `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）       |
 | `askLimit`            | 1    | 10      | error           | 回退默认 `3`           |
 | `tokenBudget`         | 0    | 1000000 | error           | 回退内核兜底 `80000`      |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
@@ -179,7 +179,7 @@
 | --------------------------------------------------- | ------------------------------------------------ | --------------------- |
 | `"outputLimit": 999999`                             | `"outputLimit": 8192`                            | 越上界 `65536`，防输出失控     |
 | `"tokenBudget": -100`                               | `"tokenBudget": 12000`                           | 负值非法，应为 `0 ~ 1000000` |
-| `"selfReview": 999`                                 | `"selfReview": 3`                                | 越上界 `10`，防无限自审查       |
+| `"selfReview": 999`                                 | `"selfReview": 1`                                | 越上界 `10` 非法；布尔数字语义下任意正整数只表示"自审查一次"，写 `1` 最清晰 |
 | `"capabilities": [{"capability": "WriteFile"}]`     | `"capabilities": [{"capability": "file:write"}]` | 能力名必须 `域:动作` 小写格式     |
 | `"strategy": { "prepare": { "unknownKey": true } }` | 去掉该键                                             | 未知键 warning + 忽略，不生效  |
 

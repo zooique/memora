@@ -204,7 +204,7 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
 
-  it('selfReview 非负整数合法（0=关闭 / N=最多 N 轮）→ 通过（雷-3b）', () => {
+  it('selfReview 非负整数合法（0=关闭；>0 在解析层收敛为 1）→ 通过（雷-3b）', () => {
     const r0 = validate({
       strategy: { ...validStrategy, reflect: { ...validStrategy.reflect, selfReview: 0 } },
     });

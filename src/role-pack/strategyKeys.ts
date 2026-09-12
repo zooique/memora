@@ -130,7 +130,7 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
   },
   reflect: {
     summary: { kind: 'enum', values: ['on', 'off'] },
-    // 自审查轮数（0~MAX_SELF_REVIEW_ROUNDS，0=关闭）
+    // 自审查（布尔数字：0=关闭；正整数>0 收敛为 1=自审查一次，大于 1 算 1；校验区间 0~MAX_SELF_REVIEW_ROUNDS）
     selfReview: intRange(0, MAX_SELF_REVIEW_ROUNDS),
     userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
   },

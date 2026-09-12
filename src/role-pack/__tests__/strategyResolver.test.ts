@@ -597,10 +597,17 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
     expect(s.providerRouting).toBe('auto');
   });
 
-  it('selfReview=N（正整数）映射为 maxSelfReviewRounds，非法值归 0', () => {
+  it('selfReview=正整数映射为布尔开关 maxSelfReviewRounds（0/1），非法值归 0', () => {
+    // 布尔数字语义（2026-09-12 定案）：任意正整数 >0 一律收敛为 1=自审查一次
+    expect(
+      resolveL2Strategy({ reflect: { selfReview: 1 } } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(1);
+    expect(
+      resolveL2Strategy({ reflect: { selfReview: 2 } } as BehaviorStrategy).maxSelfReviewRounds,
+    ).toBe(1);
     expect(
       resolveL2Strategy({ reflect: { selfReview: 3 } } as BehaviorStrategy).maxSelfReviewRounds,
-    ).toBe(3);
+    ).toBe(1);
     // 负 / 小数 / 非 number 均归一为 0（关闭自审查）
     expect(
       resolveL2Strategy({ reflect: { selfReview: -1 } } as BehaviorStrategy).maxSelfReviewRounds,
@@ -612,7 +619,7 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
       resolveL2Strategy({ reflect: { selfReview: 'on' } } as unknown as BehaviorStrategy)
         .maxSelfReviewRounds,
     ).toBe(0);
-    // 越上界归一为 0（防无条件填写导致无限自审查）
+    // 越上界归一为 0（防无条件填写）——语义上大于 1 已无额外轮数，上界仅作防御校验
     expect(
       resolveL2Strategy({ reflect: { selfReview: MAX_SELF_REVIEW_ROUNDS + 1 } } as BehaviorStrategy)
         .maxSelfReviewRounds,

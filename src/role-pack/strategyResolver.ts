@@ -275,14 +275,15 @@ export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = resolveL2Strategy(undefine
  * @returns 注入 AgentLoop 的单一运行时策略对象
  */
 export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2RuntimeStrategy {
-  // selfReview → 自审查轮数：整数且 ∈ [0, MAX_SELF_REVIEW_ROUNDS] 才采用，否则关闭（0 轮）。
+  // selfReview → 布尔数字语义（2026-09-12 定案）：0=关闭；正整数>0 一律收敛为 1=自审查一次，
+  // 大于 1 的数同样算作 1（类似布尔开关）。越界（负/小数/非 number/>MAX）归 0=关闭。
   const rawSelfReview = strategy?.reflect?.selfReview;
   const maxSelfReviewRounds =
     typeof rawSelfReview === 'number' &&
     Number.isInteger(rawSelfReview) &&
-    rawSelfReview >= 0 &&
+    rawSelfReview > 0 &&
     rawSelfReview <= MAX_SELF_REVIEW_ROUNDS
-      ? rawSelfReview
+      ? 1
       : 0;
   return {
     toolCallsBlocked: resolveToolMode(strategy) === 'block',
