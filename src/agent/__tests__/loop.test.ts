@@ -2055,14 +2055,17 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(selfReviewMsgs).toHaveLength(1);
   });
 
-  it('多轮自审查（2 轮）应依次执行且 round 递增', async () => {
-    // 5 轮 provider：工具步 + 初始回复 + 审查1 + 审查2 + （第3轮不应触发）
+  it('终审即停：即使 maxSelfReviewRounds=2 也仅执行 1 轮审查，此后 done 真实生效（SELF-1）', async () => {
+    // 2026-09-12 边界归位：自审查为「单次终审」——审查轮（selfReviewRound>0）后一律不再
+    // 注入下一轮，即使 maxSelfReviewRounds 上限 >1。改前此用例验证「满 2 轮续跑空转」，
+    // 与「done 后反复审查拖长 turn」带伤同源，已按 SELF-1 收敛。
+    // 5 轮 provider：工具步 + 初始回复 + 审查1 + （第4/5 轮不应触发）
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [toolCallChunk],
         [{ content: '初始回复' }],
         [{ content: '第一轮审查后' }],
-        [{ content: '第二轮审查后' }],
+        [{ content: '第二轮（不应出现）' }],
         [{ content: '第三轮（不应出现）' }],
       ]),
       bootstrapMemories: [],
@@ -2076,26 +2079,24 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       chunks.push(chunk);
     }
 
-    // 文本：初始 + 审查1 + 审查2，第 5 轮不应出现（2 轮后 done 即结束）
+    // 终审即停：审查轮完成后 done 立即生效，第 4/5 轮不再出现
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
-    expect(texts).toEqual(['初始回复', '第一轮审查后', '第二轮审查后']);
+    expect(texts).toEqual(['初始回复', '第一轮审查后']);
 
-    // selfReview chunk 应 emit 2 次，round 依次为 1、2
+    // selfReview chunk 只 emit 1 次（终审即停，即使 maxSelfReviewRounds=2）
     const selfReviewChunks = chunks.filter(
       (c): c is Extract<AgentChunk, { type: 'selfReview' }> => c.type === 'selfReview',
     );
-    expect(selfReviewChunks).toHaveLength(2);
+    expect(selfReviewChunks).toHaveLength(1);
     expect(selfReviewChunks[0]!.round).toBe(1);
-    expect(selfReviewChunks[1]!.round).toBe(2);
 
-    // 自审查 system 消息应只有 2 条，且提示分别携带 1/2 和 2/2
+    // 自审查 system 消息只有 1 条（审查轮不再触发下一轮）
     const messages = loop.getMessages();
     const selfReviewMsgs = messages.filter(
       (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
     );
-    expect(selfReviewMsgs).toHaveLength(2);
+    expect(selfReviewMsgs).toHaveLength(1);
     expect(selfReviewMsgs[0]!.content).toContain('1/2');
-    expect(selfReviewMsgs[1]!.content).toContain('2/2');
   });
 
   it('审查应答为满意确认（短句）时立即终止，不再安排下一轮审查', async () => {

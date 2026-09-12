@@ -756,30 +756,21 @@ export class AgentLoop {
    * 1. 启用自审查（maxSelfReviewRounds > 0）；
    * 2. 未达审查轮数上限；
    * 3. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
-   * 4. **多轮 turn 门槛**：本 turn 内实际执行过工具步（一遍过的纯文本问答不审查）；
-   * 5. **满意即停**：审查应答若为"确认/无需修改"类短句 → 不再追问下一轮审查。
+   * 4. **单次终审语义（2026-09-12 边界归位）**：
+   *    - 多轮 turn 门槛：本 turn 内实际执行过工具步（一遍过的纯文本问答不审查）；
+   *    - **终审即停：审查轮（selfReviewRound > 0）一律不再安排下一轮**。审查轮产出后
+   *      done 立即真实生效——自审只对「工具循环后的最终交付」做一次把关，不因需修改
+   *      而无限续跑空转（防 done 后反复审查拖长 turn，SELF-1）。能力迁移：深度"审查→
+   *      修正"的迭代属目标模式阶段验收，非单次问答闭环职责。
    */
   private shouldInjectSelfReview(): boolean {
     if (this.strategy.maxSelfReviewRounds <= 0) return false;
     if (this.selfReviewRound >= this.strategy.maxSelfReviewRounds) return false;
     if (this.strategy.toolCallsBlocked) return false;
     if (!this.toolExecutedThisTurn) return false;
-    // 审查应答（selfReviewRound>0）为满意确认短句 → 直接终止，不再安排下一轮
-    if (this.selfReviewRound > 0 && isSatisfactionConfirmText(this.lastAssistantText())) {
-      return false;
-    }
+    // 终审即停：已是审查轮 → 无论满意与否都不再注入下一轮（done 真实生效）
+    if (this.selfReviewRound > 0) return false;
     return true;
-  }
-
-  /** 取最近一条 assistant 消息的文本内容（自审查满意确认判定用；done 时最后一条 assistant 即本轮回复） */
-  private lastAssistantText(): string {
-    for (let i = this.messages.length - 1; i >= 0; i--) {
-      const m = this.messages[i];
-      if (m && (m.role as string) === 'assistant') {
-        return (m.content as string) ?? '';
-      }
-    }
-    return '';
   }
 
   /** 单次迭代编排：编排中断检查 → 上下文准备 → LLM 调用 → 结果路由。
@@ -2241,36 +2232,4 @@ export class AgentLoop {
       }
     }
   }
-}
-
-/**
- * 自审查满意确认的识别模式集：命中任一即视为"审查满意，无需修改"。
- * 仅匹配短响应（配合长度上限 ≤50 字符），长文本视为修订输出而非确认。
- */
-const SELF_REVIEW_SATISFIED_PATTERNS: readonly RegExp[] = [
-  /无需修改/,
-  /不用修改/,
-  /无需调整/,
-  /没有问题/,
-  /一切正常/,
-  /审查通过/,
-  /确认无误/,
-  /确认通过/,
-  /^确认[。！？!?\s]*$/,
-  /^满意[。！？!?\s]*$/,
-  /^OK$/i,
-  /^可以[。！？!?\s]*$/,
-];
-
-/**
- * 判定自审查应答是否为"满意/无需修改"类简短确认。
- * 命中返回 true → 自审查流程立即终止（满意即停，不再追问后续审查轮）。
- * 长度上限防止把修订输出（长文本）误判为确认。
- *
- * @param content - LLM 本轮审查应答文本
- */
-function isSatisfactionConfirmText(content: string): boolean {
-  const trimmed = content.trim();
-  if (trimmed.length === 0 || trimmed.length > 50) return false;
-  return SELF_REVIEW_SATISFIED_PATTERNS.some((re) => re.test(trimmed));
 }
