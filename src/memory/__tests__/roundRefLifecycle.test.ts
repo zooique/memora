@@ -79,7 +79,6 @@ function createHistory(roundStore: InMemoryRoundStore, sessionStore: InMemorySes
   const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
   sessionStore.createSession({
     sessionId: history.currentSessionName,
-    roundIds: [],
     messageCount: 0,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

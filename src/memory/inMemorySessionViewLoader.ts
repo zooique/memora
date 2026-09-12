@@ -62,7 +62,7 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
     }
 
     // 2. 获取 Round ID 列表
-    const roundIds = this.getRoundIdsFromMeta(meta);
+    const roundIds = this.getRoundIds(sessionId);
 
     // 3. 批量加载 Round
     const rounds = this.roundStore.getByIds(roundIds);
@@ -90,7 +90,7 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
     if (!meta) return null;
 
     // 获取 Round ID 列表
-    const roundIds = this.getRoundIdsFromMeta(meta);
+    const roundIds = this.getRoundIds(sessionId);
 
     // 加载最后一个 Round（用于预览）
     const lastRoundId = roundIds[roundIds.length - 1];
@@ -164,7 +164,7 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
     }
 
     // 否则计算
-    const roundIds = this.getRoundIdsFromMeta(meta);
+    const roundIds = this.getRoundIds(sessionId);
     if (roundIds.length === 0) return 0;
 
     // 加载 Round 并计算
@@ -232,26 +232,12 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
   }
 
   /**
-   * 从 SessionMeta 获取 Round ID 列表
+   * 获取会话的 Round ID 列表（SSOT：唯一真源为 sessionStore.getRoundIds）
    *
-   * 优先使用 getRoundIds 方法，其次从 meta.roundIds 获取
+   * SessionMeta 已回归纯展示 DTO（无 roundIds 字段），轮次一律经真源方法读取
    */
-  private getRoundIdsFromMeta(meta: SessionMeta): string[] {
-    // 优先使用 getRoundIds 方法
-    const getRoundIdsFn = this.sessionStore.getRoundIds;
-    if (getRoundIdsFn) {
-      const roundIds = getRoundIdsFn.call(this.sessionStore, meta.sessionId);
-      if (roundIds && roundIds.length > 0) {
-        return [...roundIds];
-      }
-    }
-
-    // 降级：从 meta.roundIds 获取
-    if (meta.roundIds && meta.roundIds.length > 0) {
-      return [...meta.roundIds];
-    }
-
-    // 单一 round-based 模式：无 roundIds 则无消息可加载
-    return [];
+  private getRoundIds(sessionId: string): string[] {
+    const roundIds = this.sessionStore.getRoundIds(sessionId);
+    return roundIds ? [...roundIds] : [];
   }
 }

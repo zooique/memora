@@ -1268,9 +1268,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!agent) return;
 
     try {
-      // 获取当前会话的最后一个 roundId 作为默认分叉点
-      const meta = this.sessionStore.getSessionMeta(this._currentSessionId);
-      const sessionRoundIds = meta?.roundIds ?? [];
+      // 获取当前会话的最后一个 roundId 作为默认分叉点（SSOT：走 getRoundIds 真源，SessionMeta 无 roundIds）
+      const sessionRoundIds = this.sessionStore.getRoundIds(this._currentSessionId);
       const forkRoundId = roundId ?? sessionRoundIds[sessionRoundIds.length - 1];
 
       if (!forkRoundId) {

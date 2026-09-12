@@ -65,14 +65,6 @@ export interface SessionMeta {
   /** 会话摘要（SessionArchiver 归档时生成，用于搜索/预览） */
   summary?: string;
 
-  /**
-   * Round ID 列表（会话唯一内容来源）
-   *
-   * 问答闭环 ID 的有序列表（消息内容只存于 RoundStore）
-   * 分叉操作时直接复制此列表（指针复制）
-   */
-  roundIds?: string[];
-
   // ── 元信息 ──
   /** 最近活跃时间（ISO 8601，历史列表排序依据） */
   updatedAt: string;

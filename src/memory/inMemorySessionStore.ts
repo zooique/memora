@@ -85,14 +85,10 @@ export class InMemorySessionStore implements ISessionStore {
   /**
    * 获取会话元数据
    *
-   * SSOT（方案 A：roundIds 读时派生）：meta 内部不持久化 roundIds（削弱镜像），
-   * 返回时从唯一真源 roundIdsMap 即时合成，消费者无感知。
+   * SSOT：SessionMeta 为纯展示 DTO（不含 roundIds），Round ID 需经 getRoundIds() 真源读取
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
-    const meta = this.metas.get(sessionId);
-    if (!meta) return undefined;
-    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
-    return { ...meta, roundIds: [...roundIds] };
+    return this.metas.get(sessionId);
   }
 
   /**
@@ -198,14 +194,8 @@ export class InMemorySessionStore implements ISessionStore {
    * 创建新会话元数据
    */
   createSession(meta: SessionMeta): void {
-    // 剥离 roundIds：roundIds 唯一真源在 roundIdsMap，不持久化进 meta（方案 A 读时派生）
-    const { roundIds, ...rest } = meta;
-    this.metas.set(meta.sessionId, rest);
-
-    // 如果有 roundIds，同时存储到真源 roundIdsMap
-    if (roundIds && roundIds.length > 0) {
-      this.roundIdsMap.set(meta.sessionId, [...roundIds]);
-    }
+    // SSOT：SessionMeta 为纯展示 DTO（无 roundIds），设置轮次请走 setRoundIds 真源
+    this.metas.set(meta.sessionId, { ...meta });
   }
 
   /**

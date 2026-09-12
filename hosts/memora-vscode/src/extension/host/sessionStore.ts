@@ -207,18 +207,14 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 避免删除后又被占位元数据「复活」（deleteSession 契约：删除后 getSessionMeta 应为 undefined）。
    */
   getSessionMeta(sessionId: string): SessionMeta | undefined {
-    // 读时派生 roundIds（方案 A：meta 不持久化 roundIds，唯一真源为 roundIdsStore）
+    // SSOT：SessionMeta 为纯展示 DTO（无 roundIds），Round ID 需经 getRoundIds() 真源读取
     const meta = this.metas.get(sessionId);
-    if (meta) {
-      const roundIds = this.roundIdsStore.get(sessionId) ?? [];
-      return { ...meta, roundIds: [...roundIds] };
-    }
+    if (meta) return meta;
     // round-based 会话兜底：如果有 Round ID 列表，创建占位元数据
     const roundIds = this.roundIdsStore.get(sessionId);
     if (roundIds && roundIds.length > 0) {
       return {
         sessionId,
-        roundIds: [...roundIds],
         displayName: defaultSessionTitle(),
         updatedAt: new Date().toISOString(),
         messageCount: roundIds.length * 2,
@@ -346,15 +342,8 @@ export class WorkspaceSessionStore implements ISessionStore {
    * @param meta - 会话元数据
    */
   createSession(meta: SessionMeta): void {
-    // 剥离 roundIds：唯一真源在 roundIdsStore，不持久化进 meta（方案 A 读时派生）
-    const { roundIds, ...rest } = meta;
-    this.metas.set(meta.sessionId, rest);
-
-    // 如果有 roundIds，同时存储到真源 roundIdsStore
-    if (roundIds && roundIds.length > 0) {
-      this.roundIdsStore.set(meta.sessionId, [...roundIds]);
-    }
-
+    // SSOT：SessionMeta 为纯展示 DTO（无 roundIds），设置轮次请走 setRoundIds 真源
+    this.metas.set(meta.sessionId, { ...meta });
     this.save();
   }
 

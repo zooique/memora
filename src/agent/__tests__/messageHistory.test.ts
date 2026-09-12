@@ -252,7 +252,6 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     const sessionStore = new InMemorySessionStore(roundStore);
     sessionStore.createSession({
       sessionId: `${todayDate()}-main`,
-      roundIds: [],
       messageCount: 0,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
