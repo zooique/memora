@@ -114,7 +114,10 @@ export class ToolRunner {
     }
   }
 
-  /** 执行前检查：按顺序叠加只读 → 审批 → 宿主 preExecutionCheck 三重闸门，任一命中提前返回 */
+  /**
+   * 执行前检查：按顺序叠加两层闸门——只读 → 宿主 preExecutionCheck，任一命中提前返回。
+   * （3.0.0 起内核不再提供"审批"闸门："需审批"标签与回调已删除，审批决策统一移入宿主 preExecutionCheck。）
+   */
   private applyPrechecks(tc: ToolCall): PreCheckDecision {
     const name = tc.function.name;
     const args = tc.function.arguments;
@@ -132,7 +135,7 @@ export class ToolRunner {
       }
     }
 
-    // ③ 宿主 preExecutionCheck：拒绝 / 跳过 / 放行（可改写参数）
+    // ② 宿主 preExecutionCheck：拒绝 / 跳过 / 放行（可改写参数）
     const preCheck = this.deps.preExecutionCheck?.(name, args);
     if (preCheck?.denied) {
       const reason = preCheck.reason ?? '工具调用被拒绝';
