@@ -43,4 +43,4 @@ description: 单一真理源思维模型——以最小单元为锚点，让复�
 - **循环依赖**（A 依赖 B、B 依赖 A）：解法是**中间插入一个确定性步骤**（如关键词精确匹配），让一个方向变确定性而非语义匹配，打破死锁。
 - **隐式切换**（系统偷偷换配置）：**重配置对象只被显式调用**。角色包是"自洽完整人格"（含行为配置），自动替换属于配置抖动，砍。**角色包只能手动切换**（v0.13 定案，唯一入口）。
 
-> 关联：[programmer-mindset-rules.md](./programmer-mindset-rules.md)（心智总纲）、[architecture_philosophy_rules.md](./architecture_philosophy_rules.md)
+> 关联：[programmer-mindset-rules.md](./programmer-mindset-rules.md)（心智总纲）、[architecture_philosophy_rules.md](./architecture_philosophy_rules.md)、[legacy-contract-audit-rules.md](./legacy-contract-audit-rules.md)（带伤设计实证审查——本模型的可执行落地）

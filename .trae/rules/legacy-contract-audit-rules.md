@@ -1,0 +1,70 @@
+---
+alwaysApply: false
+description: 带伤设计（历史折衷残痕）审查规则——区分「正常设计」与「兼容的无奈设计」，四类带伤模式 + 实证判定流程
+---
+
+# 带伤设计审查规则（Legacy Contract Audit）
+
+> **适用范围**：Memora 全库审查（`src/` 内核心 + `hosts/` 下宿主），用于识别"从零新写绝不会这么写"的历史折衷设计
+> **触发**：全库 SSOT 排查、大改前对既有模块的带伤审查、新模块设计时的反模式自检
+> **与现有规则关系**：本文件是 [single-truth-source-mindset.md](./single-truth-source-mindset.md) 的实证落地维度（把"最小单元/单一真理源"转成可执行的带伤识别标准）；与 [comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md) 互补（前者收代码残痕，后者收注释残痕）
+> **关联决策**：[决策 README](../decisions/README.md)
+
+## 1. 一句话定义
+
+> **带伤设计 = 看似符合直觉、跑起来也正常，但"从零新写时绝不会这么写"的设计。**
+> 它不是 bug，是历史演进留下的折衷——为兼容旧契约/旧数据/旧调用而被迫多绕的一层，正常设计本不需要它。
+
+## 2. 判别标准（三条核心，命中 ≥1 即疑似）
+
+| 标准 | 说明 | 项目实例 |
+| ---- | ---- | ---- |
+| **同语义多实现** | 同一逻辑/格式/规则在 ≥2 处各自实现：一处是 SSOT、另一处是绕过它的手写，且 SSOT 明文"禁止"却被历史代码违反 | `SESSION_ID_PATTERN` 正则 vs `splitSessionId` |
+| **绕一层才能接上** | 某接口/字段因历史包袱保留，正常设计让消费方走"真源方法"，带伤处却直接用旧契约/旧字段凑合 | `meta.roundIds` 双轨 + `getRoundIds` 降级兜底 |
+| **靠业务差异撑着** | ≥2 处调用对同一校验有不同失败语义（一处报错、一处兜底），统一函数不敢替换，手写逻辑得以旁生 | openSession 抛错 vs markSessionTimedOut warn 兜底 |
+
+> **反模式自问三题**（偏离则回到正常设计）：
+> ① 这套逻辑从零设计会这样写吗？
+> ② 去掉"兼容旧 XX"这一层，核心是否仍完整？
+> ③ 是否在 SSOT 边界之外另开了一条手写通道？
+
+## 3. 四类带伤模式（模块级识别信号）
+
+| 模式 | 识别信号 | 已收敛实例 |
+| ---- | ---- | ---- |
+| **双轨镜像** | 两处存同一份状态，靠 `sync*`/`synchronize`/双写函数对齐；两字段语义重叠需保持一致 | `meta.roundIds` + `roundIdsStore`（已删字段，收敛到 `getRoundIds()` 真源） |
+| **降级兜底残留** | "优先 X、否则降级 Y"，而 Y 永不触达；或 `??` 回退恒右侧、`||` 回退恒死 | ViewLoader 优先真源/降级 `meta.roundIds`（已删降级分支） |
+| **类型 hack** | `as unknown as` / `as any` / `@ts-ignore` 侥幸绕过类型约束（生产代码多处） | 多为良性（库类型缺口），如 DOMPurify 参数桥接 |
+| **重复实现** | 同语义不同名的函数/正则/常量散落；相同魔法数/哈希硬编码多处 | `SESSION_ID_PATTERN` vs `splitSessionId`（已收敛到 `isValidSessionId`） |
+
+## 4. 实证判定流程（关键：先读码，再定类）
+
+**不是所有"怪"都是带伤**——审查必须读码确认"真带伤 vs 良性 vs 已收敛"，不能只看表象：
+
+| 判定 | 判断依据 | 处置 |
+| ---- | ---- | ---- |
+| **真带伤** | 上述 4 类模式 + 有 ≥1 处历史折衷证据（SSOT 明文禁止却被绕过 / 兼容旧契约字段 / 靠业务差异撑着） | 走收敛流程（§5） |
+| **良性** | 有明确设计意图注释（如库类型缺口桥接）、有单一真源且全库无重复、有独立测试 | 不处理，记录判定 |
+| **已收敛** | SSOT 清理已覆盖（镜像已删、降级已删、导出已收回） | 跳过，避免重复劳动 |
+
+## 5. 收敛流程（改造约束）
+
+1. **每可疑点先 grep/读码实证**，判定真带伤/良性/已收敛后再动刀
+2. **优先在最小单元（SSOT 源）收敛**，不破坏原契约边界（如 `splitSessionId` 纯拆解语义保持，另加 `isValidSessionId` 作校验互补）
+3. **保留两处失败语义**：若带伤点有"报错/兜底"两种结局，收敛后须逐一保留各自语义（openSession 抛错的 + markSessionTimedOut 兜底的）
+4. **验证**：内核 + 宿主 `tsc` + 全量 `vitest` 全绿
+5. **炼化归元**：规则对齐（命名/注释/SSOT 声明一致）→ 剪枝（无"不是XX而是XX"、无修复思路旁白、无修改痕迹）→ 提交前审查
+6. 用 `refactor:` 提交，经 pre-commit（lint-staged + typecheck + commitlint）后推送
+
+## 6. 已收敛残留清单（避免重复审查）
+
+以下为已收敛的带伤点，新审查直接跳过：
+
+- `SessionMeta.roundIds` 双轨镜像 → 已删字段，收敛到 `ISessionStore.getRoundIds()/setRoundIds()` 真源
+- `sanitizeToolResult` 重复实现 → 已删除，统一走 `sanitizeExternalText`
+- `SESSION_ID_PATTERN` 正则重复实现 → 已删，收敛到 `isValidSessionId` + `splitSessionId`
+- `flattenRoundsToMessages`/`truncateRoundsUpTo`/`countMessagesInRounds`/`extractKeywords` 误暴露导出 → 已收回
+- `DEFAULT_L2_STRATEGY` / `askLimit` 默认值二次写入 → 已收敛到 `resolveL2Strategy(undefined)` 单点派生
+- `trace_summary` schema 双真源 → 已收敛 `BUILTIN_TOOLS` 引用 `TRACE_SUMMARY_TOOL`
+
+> 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)、[progressive-refactor-rules.md](./progressive-refactor-rules.md)
