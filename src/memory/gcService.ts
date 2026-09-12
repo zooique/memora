@@ -17,7 +17,6 @@ import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
-import { generateSummaryId } from '@/memory/roundStore.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 
 /**
@@ -230,9 +229,8 @@ export class GCService {
    * roundSummaryGenerator 构造，含会话段）——Round 侧**不持有反向指针**
    * （`Round.summaryId` 字段已于 2026-09-10 删除：零生产写点、零生产读点的死字段），
    * 故此处按 `roundId` 顶层字段反查，覆盖全部会话命名空间。
-   *
-   * 另保留单段 ID（`round-summary:{roundId}`）兜底寻址：历史数据或异常路径若存在
-   * 该形态摘要，一并清除；两段式下恒不命中，有则删、无不影响。
+   * （2026-09-12 收敛：删除 legacy 单段 ID `round-summary:{roundId}` 兜底寻址——
+   *   两段式下恒不命中的历史形态防御，随 generateSummaryId 一起移除）
    *
    * 系统治理删除走 purge 物理删除（不进回收站——孤儿摘要是系统清理产物，
    * 非用户主动删除的数据）；向量索引同步删除防脏数据累积。
@@ -240,20 +238,12 @@ export class GCService {
    * @param round - 要清理的 Round
    */
   private cleanUpRoundSummary(round: Round): void {
-    // ① 规范路径：按 roundId 顶层字段反查全部会话命名空间的两段式摘要
+    // 按 roundId 顶层字段反查全部会话命名空间的两段式摘要
     const roundSummaries = this.memoryStorage
       .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
       .filter((m) => m.roundId === round.id);
     for (const summary of roundSummaries) {
       this.purgeSummary(summary.id);
-    }
-    if (roundSummaries.length > 0) return;
-
-    // ② 兜底路径：单段 ID（round-summary:{roundId}）历史/异常形态
-    //    两段式下恒不存在，仅在①无命中时作防御性寻址
-    const legacySummaryId = generateSummaryId(round.id);
-    if (this.memoryStorage.getById(legacySummaryId)) {
-      this.purgeSummary(legacySummaryId);
     }
   }
 

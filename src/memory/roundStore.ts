@@ -423,23 +423,6 @@ export function generateMessageId(): string {
 }
 
 /**
- * 生成摘要 ID（格式：round-summary:{roundId}）
- *
- * ⚠️ **仅供 GC 的孤儿摘要兜底寻址**，非摘要记忆的规范 ID 构造器。
- * 摘要记忆的**规范 ID** 由 `roundSummaryGenerator` 按
- * `round-summary:{sessionName}:{roundId}` 构造（含会话段，跨会话可溯源）。
- *
- * 两段式 ID 下本函数产物在真实记忆中**恒不存在**——它只用于孤儿轮
- * （从未落到摘要生成那一步）的防御性寻址：有则删，无不影响。
- * 新增代码请勿以本函数作为摘要 ID 的构造依据。
- *
- * @deprecated 语义收窄为 GC 内部兜底，勿在新代码中作为摘要 ID 构造器使用
- */
-export function generateSummaryId(roundId: string): string {
-  return `round-summary:${roundId}`;
-}
-
-/**
  * 创建 pending 状态的 Round
  *
  * 辅助函数：快速创建新问答闭环的骨架

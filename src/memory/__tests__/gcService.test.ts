@@ -9,7 +9,6 @@ import { GCService, createDefaultGCService } from '@/memory/gcService.js';
 import {
   createPendingRound,
   completeRound,
-  generateSummaryId,
 } from '@/memory/roundStore.js';
 import type { Memory } from '@/memory/types.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
@@ -122,28 +121,6 @@ describe('垃圾回收服务', () => {
 
       // 验证摘要已清理
       expect(memoryStorage.getById(summaryId)).toBeNull();
-    });
-
-    it('单段 ID 摘要走兜底寻址清理（历史/异常形态）', () => {
-      const round = createPendingRound('单段兜底');
-      const completed = completeRound(round, '回答');
-      completed.refCount = 0;
-      roundStore.save(completed);
-
-      // 单段 ID（无会话段）——两段式下不会出现，仅异常/历史数据
-      const legacyId = generateSummaryId(round.id);
-      memoryStorage.upsert({
-        id: legacyId,
-        content: '历史摘要',
-        source: 'round-summary',
-        name: round.id,
-        createdAt: new Date().toISOString(),
-        accessedAt: new Date().toISOString(),
-      } as Memory);
-
-      const result = gc.run();
-      expect(result.memoryCleaned).toBe(1);
-      expect(memoryStorage.getById(legacyId)).toBeNull();
     });
 
     it('应该按批处理清理', () => {

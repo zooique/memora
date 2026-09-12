@@ -9,7 +9,6 @@ import {
   completeRound,
   generateRoundId,
   generateMessageId,
-  generateSummaryId,
   type ProcessEvent,
   type Round,
 } from '@/memory/roundStore.js';
@@ -314,14 +313,6 @@ describe('问答闭环存储', () => {
 
       expect(id1.startsWith('msg-')).toBe(true);
       expect(id1).not.toBe(id2);
-    });
-
-    it('应该生成 GC 兜底用的单段摘要 ID', () => {
-      // 语义已收窄为 GC 孤儿摘要兜底寻址（规范 ID 为两段式 round-summary:{session}:{roundId}）
-      const roundId = 'round-abc123';
-      const summaryId = generateSummaryId(roundId);
-
-      expect(summaryId).toBe('round-summary:round-abc123');
     });
 
     it('应该创建 pending Round', () => {
