@@ -1939,7 +1939,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     ],
   };
 
-  it('自审查启用时（1 轮），多轮 turn（执行过工具步）后应触发自审查轮', async () => {
+  it('自审查启用时，多轮 turn（执行过工具步）后应触发自审查轮', async () => {
     // 三轮 provider：工具步 → 初始回答 → 自审查回答
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1951,7 +1951,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
 
-    loop.setStrategy({ maxSelfReviewRounds: 1 });
+    loop.setStrategy({ selfReviewEnabled: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('用户问题')) {
@@ -1976,7 +1976,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     // 验证 selfReview chunk 被 emit（round=1；roundId 为 turn 归属标记，随 withRound 附加）
     const selfReviewChunks = chunks.filter((c) => c.type === 'selfReview');
     expect(selfReviewChunks).toHaveLength(1);
-    expect(selfReviewChunks[0]!).toMatchObject({ type: 'selfReview', round: 1 });
+    expect(selfReviewChunks[0]!).toMatchObject({ type: 'selfReview' });
 
     const messages = loop.getMessages();
     // system + user + assistant(toolCalls) + tool + assistant(原始) + system(自审查提示) + assistant(改进) = 7
@@ -1984,7 +1984,6 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     // 自审查提示应存在且携带轮次信息（第 1/1 轮）
     expect(messages[5]!.role).toBe('system');
     expect(messages[5]!.content).toContain('SELF_REVIEW');
-    expect(messages[5]!.content).toContain('1/1');
   });
 
   it('纯文本 turn（无工具步）不触发自审查', async () => {
@@ -1998,7 +1997,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn(),
     });
 
-    loop.setStrategy({ maxSelfReviewRounds: 1 });
+    loop.setStrategy({ selfReviewEnabled: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2019,7 +2018,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(selfReviewMsgs).toHaveLength(0);
   });
 
-  it('自审查轮仅执行一次（selfReviewRound 达到上限后停止）', async () => {
+  it('自审查仅执行一次（终审即停，done 真实生效）', async () => {
     // 4 轮 provider：工具步 → 原始文本 → 审查文本 → 第 3 轮不应触发
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2032,7 +2031,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
 
-    loop.setStrategy({ maxSelfReviewRounds: 1 });
+    loop.setStrategy({ selfReviewEnabled: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2055,10 +2054,10 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(selfReviewMsgs).toHaveLength(1);
   });
 
-  it('终审即停：即使 maxSelfReviewRounds=2 也仅执行 1 轮审查，此后 done 真实生效（SELF-1）', async () => {
-    // 2026-09-12 边界归位：自审查为「单次终审」——审查轮（selfReviewRound>0）后一律不再
-    // 注入下一轮，即使 maxSelfReviewRounds 上限 >1。改前此用例验证「满 2 轮续跑空转」，
-    // 与「done 后反复审查拖长 turn」带伤同源，已按 SELF-1 收敛。
+  it('终审即停：审查后 done 立即真实生效，不再续跑（SELF-1）', async () => {
+    // 2026-09-13 单轮化：开关已收敛为布尔 selfReviewEnabled，「上限 >1」在类型层不可构造，
+    // 故改用 5 轮 provider 直接验证「审查一轮后 done 立即生效、后续轮次全部不触发」，
+    // 守的仍是 SELF-1（防 done 后反复审查拖长 turn）。
     // 5 轮 provider：工具步 + 初始回复 + 审查1 + （第4/5 轮不应触发）
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2072,7 +2071,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
 
-    loop.setStrategy({ maxSelfReviewRounds: 2 });
+    loop.setStrategy({ selfReviewEnabled: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2083,12 +2082,11 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
     expect(texts).toEqual(['初始回复', '第一轮审查后']);
 
-    // selfReview chunk 只 emit 1 次（终审即停，即使 maxSelfReviewRounds=2）
+    // selfReview chunk 只 emit 1 次（单次终审：开关已布尔化，审查后 done 即止，不再续跑）
     const selfReviewChunks = chunks.filter(
       (c): c is Extract<AgentChunk, { type: 'selfReview' }> => c.type === 'selfReview',
     );
     expect(selfReviewChunks).toHaveLength(1);
-    expect(selfReviewChunks[0]!.round).toBe(1);
 
     // 自审查 system 消息只有 1 条（审查轮不再触发下一轮）
     const messages = loop.getMessages();
@@ -2096,7 +2094,6 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
     );
     expect(selfReviewMsgs).toHaveLength(1);
-    expect(selfReviewMsgs[0]!.content).toContain('1/2');
   });
 
   it('审查应答为满意确认（短句）时立即终止，不再安排下一轮审查', async () => {
@@ -2112,7 +2109,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
 
-    loop.setStrategy({ maxSelfReviewRounds: 2 });
+    loop.setStrategy({ selfReviewEnabled: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2128,7 +2125,6 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       (c): c is Extract<AgentChunk, { type: 'selfReview' }> => c.type === 'selfReview',
     );
     expect(selfReviewChunks).toHaveLength(1);
-    expect(selfReviewChunks[0]!.round).toBe(1);
 
     // 自审查 system 消息只有 1 条（第 1/2 轮）
     const messages = loop.getMessages();
@@ -2136,17 +2132,16 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
       (m) => m.role === 'system' && m.content.includes('SELF_REVIEW'),
     );
     expect(selfReviewMsgs).toHaveLength(1);
-    expect(selfReviewMsgs[0]!.content).toContain('1/2');
   });
 
-  it('0 轮（关闭）时不触发自审查', async () => {
+  it('关闭（selfReviewEnabled=false）时不触发自审查', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '仅文本回复' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
 
-    loop.setStrategy({ maxSelfReviewRounds: 0 });
+    loop.setStrategy({ selfReviewEnabled: false });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2179,7 +2174,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     });
 
     loop.setStrategy({ toolCallsBlocked: true });
-    loop.setStrategy({ maxSelfReviewRounds: 1 });
+    loop.setStrategy({ selfReviewEnabled: true });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('测试')) {
@@ -2269,7 +2264,7 @@ describe('AgentLoop · 预算与软上限防护（2026-09-11 批次）', () => {
     const input = 'translate it';
     const sysTokens = loop.estimateTokens(loop.getMessages());
     const userTokens = loop.estimateTokens([{ role: 'user', content: `<user_input>${input}</user_input>` }]);
-    loop.setStrategy({ maxSelfReviewRounds: 1, tokenBudget: sysTokens + userTokens + 5 });
+    loop.setStrategy({ selfReviewEnabled: true, tokenBudget: sysTokens + userTokens + 5 });
 
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput(input)) {

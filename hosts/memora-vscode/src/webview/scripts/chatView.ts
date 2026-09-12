@@ -1210,7 +1210,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       reviews.forEach((e) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
-        row.textContent = `自审查轮 ${e.payload.round}`;
+        row.textContent = '自审查终审';
         listEl.appendChild(row);
       });
       reviewTexts.forEach((e) => {

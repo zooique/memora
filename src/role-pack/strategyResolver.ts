@@ -278,16 +278,14 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
   // selfReview → 布尔数字语义（2026-09-12 定案）：0=关闭；正整数>0 一律收敛为 1=自审查一次，
   // 大于 1 的数同样算作 1（类似布尔开关）。越界（负/小数/非 number/>MAX）归 0=关闭。
   const rawSelfReview = strategy?.reflect?.selfReview;
-  const maxSelfReviewRounds =
+  const selfReviewEnabled =
     typeof rawSelfReview === 'number' &&
     Number.isInteger(rawSelfReview) &&
     rawSelfReview > 0 &&
-    rawSelfReview <= MAX_SELF_REVIEW_ROUNDS
-      ? 1
-      : 0;
+    rawSelfReview <= MAX_SELF_REVIEW_ROUNDS;
   return {
     toolCallsBlocked: resolveToolMode(strategy) === 'block',
-    maxSelfReviewRounds,
+    selfReviewEnabled,
     toolStepLimit: resolveToolStepLimit(strategy),
     errorHandling: resolveErrorHandling(strategy),
     providerRouting: resolveProviderRouting(strategy),

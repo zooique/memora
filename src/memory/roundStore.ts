@@ -194,7 +194,12 @@ export type ProcessEvent =
         blocked?: boolean;
       };
     }
-  | { type: 'self_review'; seq: number; ts: string; payload: { round: number } }
+  /**
+   * 自审查（单次终审；2026-09-13 单轮化）：无有效载荷。
+   * 已落盘的历史数据可能仍带 `round`（该值恒为 1，从未承载过 >1），
+   * 反序列化后作为多余键忽略，不影响读取，无需迁移。
+   */
+  | { type: 'self_review'; seq: number; ts: string; payload: Record<string, never> }
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
   | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
   /**

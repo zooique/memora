@@ -226,11 +226,11 @@ describe('chatView clear_ok 消息区清理', () => {
     // meta 开新轮 → 正文块（挂载 round-block）→ 自审查过程事件 → 收尾渲染
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '回答' });
-    dispatch({ type: 'process_event', event: { type: 'self_review', seq: 2, ts: '', payload: { round: 1 } } });
+    dispatch({ type: 'process_event', event: { type: 'self_review', seq: 2, ts: '', payload: {} } });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    expect(rb.textContent).toContain('自审查轮 1');
+    expect(rb.textContent).toContain('自审查终审');
     // summary 也有审查计数
     expect(rb.textContent).toContain('审查 1 次');
   });

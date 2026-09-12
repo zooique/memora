@@ -213,8 +213,8 @@ export class AgentLoop {
   private readonly toolRunner: ToolRunner;
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
   private strategy: L2RuntimeStrategy = { ...DEFAULT_L2_STRATEGY };
-  /** 已执行的自审查轮数（每轮用户输入独立计算，从 0 开始累加） */
-  private selfReviewRound = 0;
+  /** 本 turn 是否已执行过自审查（单次终审：布尔状态，不再需要轮次计数） */
+  private selfReviewDone = false;
   /** 本 turn（processUserInput）内是否实际执行过工具步。
    *  自审查的唯一触发门槛：只有多轮 turn（发生过工具调用）才审查，
    *  一遍过的纯文本问答不触发。由 processUserInput 入口重置（续跑 continueAfterPause 保留）。
@@ -350,10 +350,7 @@ export class AgentLoop {
           `[REFLECTION_HINT] 上次工具调用失败，错误可重试。请分析错误原因，修正参数后重新调用工具。剩余反思次数：${remaining}`),
       selfReviewPrompt:
         opts.messages?.selfReviewPrompt ??
-        ((
-          round: number,
-          total: number,
-        ) => `[SELF_REVIEW] 第 ${round}/${total} 轮审查：请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——防"自说自话"）。检查：
+        (() => `[SELF_REVIEW] 请基于**可验证的确定性判据**核查你上一条回复（而非泛化的自我评价——防"自说自话"）。检查：
 1. 本轮目标点是否全部覆盖（用户明确要求的内容是否都处理了）？
 2. 是否遵守了 Rules 中的安全/边界约束（如"不写敏感信息"）？
 3. 产出结构是否完整（正文/代码/文档是否齐全）？
@@ -648,7 +645,7 @@ export class AgentLoop {
     this.duplicateToolCallCount = 0;
     this.inAutonomousStep = false;
     this.pauseRequested = false;
-    this.selfReviewRound = 0;
+    this.selfReviewDone = false;
     // TS-14 每轮独立重置「工具步发生」标记（自审查触发门槛）：新问答闭环入口即续跑入口都复位，
     // 避免续跑段未执行工具却被上次的 true 触发自审查（消除 processUserInput 单独重置的 SSOT 漂移）
     this.toolExecutedThisTurn = false;
@@ -705,7 +702,7 @@ export class AgentLoop {
       // 自审查轮开始前 emit selfReview chunk，供宿主展示视觉反馈（与注入判定共用单一真理源，
       // 保证 UI 通知与实际注入一致：纯文本问答/满意确认终止时不发通知）
       if (result === 'done' && this.shouldInjectSelfReview()) {
-        yield { type: 'selfReview', round: this.selfReviewRound + 1 };
+        yield { type: 'selfReview' };
       }
       // 共享的迭代结果处理；返回 false 表示终止循环
       if (!this.handleIterationResult(result)) return;
@@ -731,13 +728,10 @@ export class AgentLoop {
     if (result === 'aborted') return false;
     // result === 'done'：仅当满足自审查注入条件时才注入提示继续 1 轮。
     // 注入判定收敛在 shouldInjectSelfReview（单一真理源，供 emit 通知与注入共用）：
-    // 多轮 turn（本问答发生过工具步）+ 未达上限 + 非工具屏蔽 + 审查应答不是满意确认（满意即停）。
+    // 多轮 turn（本问答发生过工具步）+ 开关已开 + 非工具屏蔽 + 本 turn 尚未审过（单次终审）。
     if (this.shouldInjectSelfReview()) {
-      this.selfReviewRound++;
-      this.appendSystemMessage(
-        this.ui.selfReviewPrompt(this.selfReviewRound, this.strategy.maxSelfReviewRounds),
-        { executionTemp: true },
-      );
+      this.selfReviewDone = true;
+      this.appendSystemMessage(this.ui.selfReviewPrompt(), { executionTemp: true });
       return true;
     }
     // done 终止前消费排队插话（统一「申请 → 气口生效」语义）：
@@ -753,23 +747,23 @@ export class AgentLoop {
    * 自审查注入判定（emit selfReview 通知与注入 SELF_REVIEW 提示共用单一真理源）。
    *
    * 需同时满足：
-   * 1. 启用自审查（maxSelfReviewRounds > 0；解析层已保证取值 0|1）；
+   * 1. 启用自审查（selfReviewEnabled）；
    * 2. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
    * 3. **单次终审语义（2026-09-12 边界归位）**：
    *    - 多轮 turn 门槛：本 turn 内实际执行过工具步（一遍过的纯文本问答不审查）；
-   *    - **终审即停：审查轮（selfReviewRound > 0）一律不再安排下一轮**。审查轮产出后
+   *    - **终审即停：本 turn 已审过（selfReviewDone）则一律不再安排**。审查轮产出后
    *      done 立即真实生效——自审只对「工具循环后的最终交付」做一次把关，不因需修改
    *      而无限续跑空转（防 done 后反复审查拖长 turn，SELF-1）。能力迁移：深度"审查→
    *      修正"的迭代属目标模式阶段验收，非单次问答闭环职责。
    */
   private shouldInjectSelfReview(): boolean {
-    if (this.strategy.maxSelfReviewRounds <= 0) return false;
+    if (!this.strategy.selfReviewEnabled) return false;
     if (this.strategy.toolCallsBlocked) return false;
     if (!this.toolExecutedThisTurn) return false;
-    // 终审即停：已是审查轮 → 无论满意与否都不再注入下一轮（done 真实生效）。
-    // 注：原「未达轮数上限」判据（selfReviewRound >= maxSelfReviewRounds）已删除——解析层把取值
-    // 钳到 0|1 后它与本判据完全等价，属永不单独生效的死分支（2026-09-13 双向变异验证）。
-    if (this.selfReviewRound > 0) return false;
+    // 终审即停：本 turn 已审过 → 无论满意与否都不再注入（done 真实生效）。
+    // 2026-09-13 单轮化：原 selfReviewRound 计数与「未达轮数上限」判据一并移除——
+    // 单次终审下「已审过」是布尔状态，轮次计数与上限判据均属永不生效的多轮残留。
+    if (this.selfReviewDone) return false;
     return true;
   }
 
@@ -877,9 +871,9 @@ export class AgentLoop {
     // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
     yield { type: 'thinking', phase: 'llm_calling' };
 
-    // 文本阶段标识：自审查应答（selfReviewRound>0）标注为 'self_review'，供宿主独立分段展示；
+    // 文本阶段标识：自审查应答（selfReviewDone）标注为 'self_review'，供宿主独立分段展示；
     // 正常回答/工具步文本为 'answer'。全流 text chunk 统一携带，保证审查输出与最终回答可区分。
-    const textStage: TextChunkStage = this.selfReviewRound > 0 ? 'self_review' : 'answer';
+    const textStage: TextChunkStage = this.selfReviewDone ? 'self_review' : 'answer';
 
     const llmResult: LlmCallResult = yield* this.callLlmWithRetry(
       prep.safeMessages,

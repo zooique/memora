@@ -2456,8 +2456,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ...(chunk.blocked ? { blocked: true } : {}),
           });
         } else if (chunk.type === 'selfReview') {
-          // 自审查轮开始 → 过程事件（§ 自审查输出 头部）
-          emitEvent('self_review', { round: chunk.round });
+          // 自审查终审开始 → 过程事件（§ 自审查输出 头部）
+          emitEvent('self_review', {});
         } else if (chunk.type === 'retry') {
           // LLM 失败重试 → 转发低扰提示条
           this.post({

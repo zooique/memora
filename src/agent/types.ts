@@ -90,9 +90,9 @@ export type AgentChunk = (
    */
   | { type: 'question_pending'; questions: AskQuestion[] }
   /**
-   * 自审查轮开始信号：注入自审查提示前 emit；round 为第几轮（为多轮预留）
+   * 自审查终审开始信号：注入自审查提示前 emit（单次终审，无轮次参数）
    */
-  | { type: 'selfReview'; round: number }
+  | { type: 'selfReview' }
   /**
    * 步级折叠边界（阶段二，2026-09-08 路 B′）：迭代完成且 active 任务表步骤**推进**时 emit。
    * 宿主据此把后续过程事件（narrate/tool/问答）归到对应 step 分组下渲染；无任务表不产。
@@ -141,8 +141,8 @@ export interface UIMessages {
   assistantLabel?: string;
   /** Reflection 提示生成函数：工具调用失败且可重试时追加，帮 LLM 聚焦修正 */
   reflectionHint?: (remaining: number) => string;
-  /** 自审查提示生成函数：注入后让 LLM 审查自身回复质量（单次终审语义下 round 与 total 恒为 1） */
-  selfReviewPrompt?: (round: number, total: number) => string;
+  /** 自审查提示生成函数：注入后让 LLM 审查自身回复质量（单次终审：一轮即止，无需轮次参数） */
+  selfReviewPrompt?: () => string;
   /** 重复工具调用负反馈提示：连续多次相同工具+参数时注入，防止死循环 */
   duplicateToolCallWarning?: (threshold: number) => string;
   /** LLM 空响应兜底提示（无文本无工具调用时使用，默认英文） */

@@ -49,8 +49,8 @@ const CHINESE_MESSAGES: UIMessages = {
   // 工具失败重试 / 自审查（低频场景，覆盖保证中文化一致）
   reflectionHint: (remaining: number) =>
     `\n\n[工具调用失败，剩余 ${remaining} 次反思机会，请聚焦修正而非放弃]`,
-  selfReviewPrompt: (round: number, total: number) =>
-    `\n\n[请审查你上一轮的回答质量（第 ${round}/${total} 轮自审查）]` +
+  selfReviewPrompt: () =>
+    `\n\n[请审查你上一轮的回答质量（单次终审）]` +
     `\n输出格式（必须遵守）：` +
     `\n- 满意：只输出一句简短确认（如"无需修改"），严禁重复输出完整回答。` +
     `\n- 存在必须改进的判据：才输出改进后的完整回复，不要附加说明。`,

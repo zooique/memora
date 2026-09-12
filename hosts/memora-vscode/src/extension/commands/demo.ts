@@ -141,7 +141,7 @@ function appendChunk(
       );
       break;
     case 'selfReview':
-      output.appendLine(`   [自审查] 第 ${chunk.round} 轮`);
+      output.appendLine('   [自审查] 终审');
       break;
     case 'retry':
       output.appendLine(`   [LLM 重试] 第 ${chunk.attempt}/${chunk.maxRetries} 次`);

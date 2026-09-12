@@ -156,17 +156,17 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 
 ## 六、自审查与 turn/多 turn 编排的关系
 
-> **问题**：角色包有自审查开关（`reflect.selfReview` → `maxSelfReviewRounds`，0=关闭）。进入多 turn 任务编排后，自审查是"每个 turn 各审一遍"还是"整个编排结束才审"？
+> **问题**：角色包有自审查开关（`reflect.selfReview` → `selfReviewEnabled`，false=关闭）。进入多 turn 任务编排后，自审查是"每个 turn 各审一遍"还是"整个编排结束才审"？
 >
 > 注意：自审查键的历史别名（旧名 `loopContinue`，是"续跑继续"的语义——Handoff 决策 `loop` 值，非官方「loop = 对 step 的编排」概念）已随术语收口更名 `selfReview`；该别名键本身亦已于 2026-09-11 整键删除（安装基数 0，无真实兼容对象）。
 
 ### 结论：自审查粒度 = "单个 turn"，不是"整个编排汇总"
 
-关键在 `selfReviewRound` 的 reset 边界——它在 `processUserInput` 入口归 0（[loop.ts](../../src/agent/loop.ts) `resetTurnState`），在该 turn `done` 时经 `handleIterationResult` 触发自审。因此 **自审查范围限定在"一个 turn 内部"**，不跨 turn 累计。
+关键在 `selfReviewDone` 的 reset 边界——它在 `processUserInput` 入口归 false（[loop.ts](../../src/agent/loop.ts) `resetTurnState`），在该 turn `done` 时经 `handleIterationResult` 触发自审后置 true（单次终审，不再计数）。因此 **自审查范围限定在"一个 turn 内部"**，不跨 turn 累计。
 
 | 形态 | 自审查行为 |
 |------|-----------|
-| **档1 单 turn**（一次 `processUserInput` 内多个 step） | turn 内所有 step 共享一个 `selfReviewRound`，只在**那次输入的最终 done** 审一次，不每 step 一审 |
+| **档1 单 turn**（一次 `processUserInput` 内多个 step） | turn 内所有 step 共享一个 `selfReviewDone`，只在**那次输入的最终 done** 审一次，不每 step 一审 |
 | **档2 多 turn 任务编排**（`externalTaskLoop` 步 turn 序列） | 每步独立 `processUserInput` → 各自 done 审一次；收尾汇报 turn 自带一次汇总审 |
 
 > **触发门槛（2026-08-28 补充）**：自审查只在 turn 内**实际执行过工具步**（多 step 的 loop）后才接入——一遍过的纯文本问答不触发（无外部校验信号，避免"为审而审"）。审查应答为满意短确认（如"无需修改"）时**立即终止**（满意即停），不再追问下一轮审查。
@@ -187,7 +187,7 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 
 ### 一个免费的自洽：汇报 turn 也自带一次自审
 
-汇报 turn 本身也是 turn，其 `done` 后同样走 `maxSelfReviewRounds`。因此：
+汇报 turn 本身也是 turn，其 `done` 后同样走 `selfReviewEnabled`。因此：
 
 - 若接受默认 → **每任务各审 + 汇报自然带一次汇总审**（零额外代码）
 - 这是本模型的**免费收益**：汇报的"整体质量审"由 turn 机制天然提供，无需专门的"汇总自审"机制
