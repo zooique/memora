@@ -142,24 +142,3 @@ export function createRoundBasedSessionMeta(
     messageCount: initialRoundIds.length * 2, // 每个 Round 包含 User + AI 两条消息
   };
 }
-
-/**
- * 计算 round-based 会话的消息数量
- *
- * @param roundIds - Round ID 列表
- * @param completedOnly - 是否只计算已完成的 Round（默认 true）
- * @returns 消息数量
- */
-export function calculateMessageCount(
-  roundIds: string[],
-  completedOnly: boolean = true,
-): number {
-  if (!completedOnly) {
-    // 简单估算：每个 Round 最多 2 条消息
-    return roundIds.length * 2;
-  }
-  // 精确计算需要查询 Round 状态，这里提供估算值
-  // 实际实现中应遍历 RoundStore 检查每个 Round 的 status
-  return roundIds.length * 2;
-}
-

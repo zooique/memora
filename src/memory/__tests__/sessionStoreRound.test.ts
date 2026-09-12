@@ -3,10 +3,7 @@
  * 验证 SessionMeta 的扩展字段和辅助函数
  */
 import { describe, expect, it } from 'vitest';
-import {
-  createRoundBasedSessionMeta,
-  calculateMessageCount,
-} from '@/memory/sessionStore.js';
+import { createRoundBasedSessionMeta } from '@/memory/sessionStore.js';
 
 describe('会话存储 Round-based 模式', () => {
   describe('createRoundBasedSessionMeta', () => {
@@ -33,20 +30,6 @@ describe('会话存储 Round-based 模式', () => {
       const meta2 = createRoundBasedSessionMeta('session2');
 
       expect(meta1.createdAt).not.toBe(meta2.createdAt);
-    });
-  });
-
-  describe('calculateMessageCount', () => {
-    it('应该估算 Round 列表的消息数', () => {
-      const roundIds = ['round-1', 'round-2', 'round-3'];
-      const count = calculateMessageCount(roundIds);
-
-      expect(count).toBe(6); // 3 * 2
-    });
-
-    it('应该处理空列表', () => {
-      const count = calculateMessageCount([]);
-      expect(count).toBe(0);
     });
   });
 });
