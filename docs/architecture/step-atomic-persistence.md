@@ -113,6 +113,7 @@ listInterruptedRecent(date: string, limit?: number): Round[];
   - `appendInterrupted` 与 `appendAssistant` 意图不同（崩溃恢复收场 vs 追加助手消息），独立命名自文档化；**收场约定复用** appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status complete + completedAt + isReappend 防重），Round schema / 存储格式不变。
 - **宿主收场链路**：`ready` 处理器改为 `await ensureAgent()`（ensureAgent 可等待化）→ `await upgradeInterruptedRounds()`（once-guard）→ `replaySession()`。升级轮随首次回放一次性投递，**不再有第二条回放通道** → 与 `_viewEpoch` 折叠重建互斥（T3）。
 - **文本派生**：narrate 事件按 seq 拼接作恢复的助手文本；无叙述（工具阶段崩溃）传空串，由内核按 stop 语义收场（不写 assistantMessage）。
+  * **A1 回抽后（2026-09-12）**：narrate 的 `content` 已含**首轮被回抽的叙述段**（该段先前被逐字流式进正文、不在 narrate 里，见 [process-event-log-replay-design.md](./process-event-log-replay-design.md) 事件表注记）→ 工具轮首个叙述步崩溃时派生文本**不再为空**，恢复出的助手文本更完整。注意 `narrate.withdrawn` 是运行时专有字段、**不落盘**，故本处派生只看 `content`。
 - **验收**：中断轮进入会话 roundIds ✅（单测：appendInterrupted 4 例 + 宿主打捞 5 例）、可按普通 turn 删除（入 roundIds 后即普通 turn，随 `deleteTurnFrom`/会话删除生命周期一致，推论成立，端到端复核）、可被后续 turn 召回装配（`loadRoundBasedMessages` 展开 roundIds 时含该轮 user + assistantMessage，推论成立，端到端复核）。**杀进程→重启端到端验证待真实插件环境**。
 
 ### T2 · 打捞口定位调整 ✅ 已随 T1 落地

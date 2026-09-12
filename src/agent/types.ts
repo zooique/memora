@@ -47,7 +47,22 @@ export type AgentChunk = (
    * 与 text（回答正文）语义分离：narrate 只供宿主渲染「过程叙述」折叠行，
    * 不进入最终回答正文（consumeExecutionStream 不将其拼入 content）。
    */
-  | { type: 'narrate'; content: string }
+  | {
+      type: 'narrate';
+      content: string;
+      /**
+       * 回抽（A1，2026-09-12）：content 中「曾逐字流式进正文区」的那一段**原文**。
+       *
+       * 成因：首轮（无工具史）消息级分类前无法预判是否工具轮，为保 TTFT 零损失文本已实时
+       * 流式进正文；收到 toolCalls 后才确认为过程叙述。本字段据此让消费者先把该段从正文
+       * 撤回（内核扣持久化正文 / 宿主移正文渲染），再按叙述渲染 content——首轮与后续轮同构。
+       * 契约：该段为「最近追加的正文文本」（后缀），消费者按后缀精确匹配撤回。
+       *
+       * 仅运行时消费（瞬态）：不落 ProcessEvent、不持久化；重放的一致由 Round.assistantMessage
+       * 已在持久化侧扣除该段保证（consumer = Agent.consumeExecutionStream）。
+       */
+      withdrawn?: string;
+    }
   /**
    * 中断（aborted chunk 的语义分类，TS-12）
    *

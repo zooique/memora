@@ -25,6 +25,8 @@ import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IRoundStore, Round } from '@/memory/roundStore.js';
+import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
+import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { todayDate } from '@/utils/time.js';
 import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import { AgentLoop } from '@/agent/loop.js';
@@ -2998,5 +3000,104 @@ describe('Agent · 作品投影实时刷新（workProjectionGenerated → loop �
 
     expect(refreshSpy).toHaveBeenCalled();
     refreshSpy.mockRestore();
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// A1 回抽 · 首轮工具步叙述不落持久化正文（2026-09-12）
+// ═══════════════════════════════════════════════════════════════
+
+/**
+ * 首轮工具步叙述按**真实流式分块形状**产出：content delta 先到、toolCalls 在后续 chunk。
+ *
+ * 首轮无工具史 → 文本已被逐字流式进正文（TTFT 零损失）；收到 toolCalls 确认为工具轮后，
+ * 内核发 narrate.withdrawn 让消费者把该段从正文撤回。本 provider 用于验证**持久化侧**扣除：
+ * consumeExecutionStream 累积的 content（= Round.assistantMessage）不得含该叙述。
+ */
+class NarrateThenToolProvider extends LlmProvider {
+  readonly name = 'mock-narrate-tool';
+  private emittedToolTurn = false;
+
+  async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    const sysContent = messages.find((m) => m.role === 'system')?.content;
+    // 摘要生成器 / 会话命名助手（后台 fire-and-forget）：返回合法 JSON，不消耗主对话分岔状态
+    if (typeof sysContent === 'string' && sysContent.includes('对话摘要生成器')) {
+      yield { content: JSON.stringify({ summary: '测试摘要', type: 'general' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    const firstUser = messages.find((m) => m.role === 'user')?.content;
+    if (typeof firstUser === 'string' && firstUser.startsWith('你是会话命名助手。')) {
+      yield { content: JSON.stringify({ title: '测试会话' }) };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    if (!this.emittedToolTurn) {
+      this.emittedToolTurn = true;
+      // content 与 toolCalls 分属不同 chunk（真实流式形状）→ content 已被逐字流式进正文
+      yield { content: '我先全面探索项目结构' };
+      yield {
+        toolCalls: [
+          { id: 't1', type: 'function', function: { name: 'list_dir', arguments: '{"path":"."}' } },
+        ],
+      };
+      yield { finishReason: 'stop' };
+      return;
+    }
+    yield { content: '这是最终结论。' };
+    yield { finishReason: 'stop' };
+  }
+}
+
+describe('A1 回抽 · 首轮工具轮叙述不进持久化正文', () => {
+  let tmpProject: string;
+  let tmpConfig: string;
+  let tmpData: string;
+  let agent: Agent | null = null;
+
+  beforeEach(() => {
+    tmpProject = mkdtempSync(join(tmpdir(), 'memora-a1-proj-'));
+    tmpConfig = mkdtempSync(join(tmpdir(), 'memora-a1-cfg-'));
+    tmpData = mkdtempSync(join(tmpdir(), 'memora-a1-data-'));
+    seedProject(tmpProject, tmpConfig, tmpData);
+  });
+
+  afterEach(async () => {
+    if (agent) {
+      await agent.close();
+      agent = null;
+    }
+    rmSync(tmpProject, { recursive: true, force: true });
+    rmSync(tmpConfig, { recursive: true, force: true });
+    rmSync(tmpData, { recursive: true, force: true });
+  });
+
+  it('assistantMessage 恒为最终结论（首轮叙述经 withdrawn 从持久化正文扣除）', async () => {
+    const roundStore = new InMemoryRoundStore();
+    const sessionStore = new InMemorySessionStore(roundStore);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new NarrateThenToolProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+      roundStore,
+      // 关闭自动归档：避免后台摘要 LLM 调用干扰主对话分岔状态
+      archiveMode: 'manual',
+    });
+    await agent.init();
+
+    for await (const _chunk of agent.chat('看看项目')) {
+      void _chunk;
+    }
+
+    const rounds = roundStore.listAll();
+    expect(rounds).toHaveLength(1);
+    const content = rounds[0]!.assistantMessage?.content ?? '';
+    // 回抽生效：首轮叙述不入持久化正文（重放时正文区不会出现该段）
+    expect(content).not.toContain('我先全面探索项目结构');
+    expect(content).toContain('这是最终结论。');
   });
 });

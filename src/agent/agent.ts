@@ -649,6 +649,19 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 注：loop.messages 里自审查 assistant 仍保留（LLM 下一轮迭代可能需参考），过滤只在持久化出口。
         if (chunk.type === 'text' && chunk.stage !== 'self_review') {
           content += chunk.content;
+        } else if (chunk.type === 'narrate' && chunk.withdrawn) {
+          // A1 回抽（2026-09-12）：首轮工具步的叙述文本曾作为 text 流式累积进正文（上面分支），
+          // 确认工具轮后从**持久化正文**扣除——与宿主正文撤回同源（同一 withdrawn 字段，SSOT）。
+          // 契约：该段为最近追加的正文文本（后缀）；不符（多 turn 复用流/异常序）则忽略并告警，
+          // 宁可正文多一段叙述也不误删真实答案。
+          if (content.endsWith(chunk.withdrawn)) {
+            content = content.slice(0, content.length - chunk.withdrawn.length);
+          } else {
+            logger.warn(
+              { withdrawnLen: chunk.withdrawn.length, contentLen: content.length },
+              'narrate 回抽：持久化正文不含该段（后缀契约不符），已忽略',
+            );
+          }
         } else if (chunk.type === 'aborted') {
           aborted = true;
         }

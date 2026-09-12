@@ -2477,6 +2477,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           emitEvent('thinking', { phase: chunk.phase });
         } else if (chunk.type === 'narrate') {
           // P2 过程叙述 → 过程事件（webview 渲染 § 过程叙述 折叠行，不进正文流）
+          // A1 回抽（2026-09-12）：首轮工具步的叙述曾逐字流式进正文区 → 先发瞬态撤回消息让
+          // webview 去掉正文该段，再落 narrate 事件渲染进过程叙述行（顺序：撤正文 → 补过程）。
+          // withdrawn 为运行时瞬态（不落盘）；持久化正文已由内核 consumeExecutionStream 扣除。
+          if (chunk.withdrawn) {
+            this.post({ type: 'narrate_withdraw', text: chunk.withdrawn });
+          }
           emitEvent('narrate', { content: chunk.content });
         } else if (chunk.type === 'step_boundary') {
           // 步级折叠边界（阶段二，2026-09-08）：active 任务表步骤推进 → 落盘 step_boundary 事件。

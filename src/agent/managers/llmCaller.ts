@@ -96,6 +96,14 @@ export interface LlmCallResult {
    * 结果路由据此在纯文本/中断路径补发整段 text，避免缓冲文本对 UI 不可见。
    */
   textStreamed: boolean;
+  /**
+   * P2 回抽（A1，2026-09-12）：本闭环曾逐字流式 yield 进正文区的**原文**（stage='answer'）。
+   *
+   * 首轮（无工具史）消息级分类前无法预判工具轮 → 文本已实时流式进正文；一旦收到 toolCalls，
+   * 结果路由据此发 `narrate.withdrawn` 告知消费者「该段其实属过程叙述，先撤回再渲染」。
+   * 纯文本闭环（正文即最终交付）与工具闭环内延迟分类路径（未 yield）恒为空串。
+   */
+  streamedText: string;
 }
 
 /**
@@ -176,6 +184,8 @@ export class LlmCaller {
     let pendingNarrate = '';
     /** 本轮是否曾逐字流式 yield 过正文（纯文本闭环逐字；工具闭环延迟分类则全程 false） */
     let textStreamed = false;
+    /** P2 回抽：已流式 yield 进正文的原文（A1，供工具轮撤回；见 LlmCallResult.streamedText） */
+    let streamedText = '';
     // 消息级延迟分类（K1 窄化，2026-09-02）：本闭环已执行过工具（toolExecutedThisTurn）后，
     // 后续 LLM 消息的文本整段缓冲到消息结束再分类——工具轮 → narrate（含信号前全文），
     // 纯文本 → 由路由补发 text。单轮问答/首轮（无工具史）保持逐字流式，不受影响。
@@ -226,6 +236,7 @@ export class LlmCaller {
         fullContent = '';
         toolCalls = undefined;
         pendingNarrate = '';
+        streamedText = '';
         isToolCallTurn = false;
         if (signal?.aborted) {
           aborted = true;
@@ -260,6 +271,7 @@ export class LlmCaller {
               pendingNarrate += chunk.content;
             } else {
               textStreamed = true;
+              streamedText += chunk.content;
               yield { type: 'text', content: chunk.content, stage };
             }
           }
@@ -310,6 +322,7 @@ export class LlmCaller {
             return {
               fullContent,
               pendingNarrate,
+              streamedText,
               toolCalls: undefined,
               aborted: false,
               textStreamed,
@@ -328,6 +341,7 @@ export class LlmCaller {
             return {
               fullContent: degradedMsg,
               pendingNarrate,
+              streamedText,
               toolCalls: undefined,
               aborted: false,
               textStreamed,
@@ -343,11 +357,11 @@ export class LlmCaller {
 
     if (aborted) {
       llmSpan.end();
-      return { fullContent, pendingNarrate, toolCalls, aborted: true, textStreamed };
+      return { fullContent, pendingNarrate, streamedText, toolCalls, aborted: true, textStreamed };
     }
 
     llmSpan.end();
-    return { fullContent, pendingNarrate, toolCalls, aborted: false, textStreamed };
+    return { fullContent, pendingNarrate, streamedText, toolCalls, aborted: false, textStreamed };
   }
 
   /**

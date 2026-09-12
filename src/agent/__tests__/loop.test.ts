@@ -3358,6 +3358,93 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     expect(texts).toContain('结论是：检索结果已足够。');
     expect(chunks.filter((c) => c.type === 'text')).toHaveLength(1);
   });
+
+  it('A1 回抽：首轮工具步叙述已逐字流式进正文，narrate.withdrawn 携带该段原文', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    // 真实 provider 分块形状：content delta 与 toolCalls **分属不同 chunk**（toolCalls 在后）。
+    // 首轮无工具史 → deferTextToMessageEnd=false → content 已逐字流式进正文区（保 TTFT 零损失），
+    // 消息级分类前无法预判工具轮——既有同-chunk 用例（content+toolCalls 同一 chunk）覆盖不到此路径。
+    const provider = mockMultiTurnProvider([
+      [
+        { content: '我先全面探索项目结构' },
+        {
+          toolCalls: [
+            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+          ],
+        },
+      ],
+      [{ content: '这是最终结论。' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('做分析')) {
+      chunks.push(chunk);
+    }
+
+    // ① 叙述确实走过 text 通道——保 TTFT 实时流式，不改既有逐字流式契约
+    const texts = chunks
+      .filter((c): c is Extract<AgentChunk, { type: 'text' }> => c.type === 'text')
+      .map((c) => c.content)
+      .join('');
+    expect(texts).toContain('我先全面探索项目结构');
+    expect(texts).toContain('这是最终结论。');
+
+    // ② narrate 携带回抽原文（消费者据此从正文撤回该段），content 含该段全文
+    const narrates = chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'narrate' }> => c.type === 'narrate',
+    );
+    expect(narrates).toHaveLength(1);
+    expect(narrates[0]!.content).toBe('我先全面探索项目结构');
+    expect(narrates[0]!.withdrawn).toBe('我先全面探索项目结构');
+  });
+
+  it('A1 回抽：工具执行后的延迟分类轮叙述不带 withdrawn（回抽仅首轮流式路径）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('结果');
+    const provider = mockMultiTurnProvider([
+      [
+        { content: '首轮叙述' },
+        {
+          toolCalls: [
+            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+          ],
+        },
+      ],
+      // 工具已执行（deferTextToMessageEnd=true）→ 本消息整段缓冲，从未经 text 通道流式 → 无需回抽
+      [
+        { content: '二轮叙述' },
+        {
+          toolCalls: [
+            { id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } },
+          ],
+        },
+      ],
+      [{ content: '最终结论。' }],
+    ]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('做分析')) {
+      chunks.push(chunk);
+    }
+
+    const narrates = chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'narrate' }> => c.type === 'narrate',
+    );
+    expect(narrates).toHaveLength(2);
+    // 首轮（已流式进正文）→ 带回抽原文；二轮（缓冲，从未进正文）→ 无回抽（回抽是首轮专属）
+    expect(narrates[0]!.withdrawn).toBe('首轮叙述');
+    expect(narrates[1]!.withdrawn).toBeUndefined();
+    expect(narrates[1]!.content).toBe('二轮叙述');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

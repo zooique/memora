@@ -3337,6 +3337,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         else scheduleStreamRender();
       }
       scrollToBottom(messages);
+    } else if (msg.type === 'narrate_withdraw') {
+      // 回抽（A1，2026-09-12）：首轮工具步的叙述文本曾被逐字流式进正文区（消息级分类前无法
+      // 预判工具轮）——内核确认工具轮后下发该段原文，此处把它从正文撤出。正文是全量重渲染自
+      // streamingRaw，故去掉该后缀 + 重渲染即可（无需移 DOM 节点）；该段随即由 narrate 过程
+      // 事件渲染进过程叙述行（撤正文 → 补过程，两次 post 保证顺序）。
+      if (msg.text && streamingRaw.endsWith(msg.text)) {
+        streamingRaw = streamingRaw.slice(0, streamingRaw.length - msg.text.length);
+        renderStreamBody();
+      } else if (msg.text && streamingRaw.includes(msg.text)) {
+        // 防御：正文含其它文本（多轮复用块等）→ 删除最后一次出现处，防残留窜入正文
+        const i = streamingRaw.lastIndexOf(msg.text);
+        streamingRaw = streamingRaw.slice(0, i) + streamingRaw.slice(i + msg.text.length);
+        renderStreamBody();
+      }
     } else if (msg.type === 'retry') {
       // LLM 失败重试 → 低扰提示条（活动透明，对齐 UX 基线）
       showActivity('info', `LLM 调用重试 ${msg.attempt}/${msg.maxRetries}…`);

@@ -3227,3 +3227,61 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('未回答×1');
   });
 });
+
+// ═══════════════════════════════════════════════════════════════
+// A1 回抽 · 首轮工具步叙述从正文撤回，改由过程叙述承载（2026-09-12）
+// ═══════════════════════════════════════════════════════════════
+
+describe('chatView narrate_withdraw 回抽', () => {
+  /** 本轮 assistant 正文容器（正文 = 该轮唯一 .msg-body） */
+  const assistantBody = (): HTMLElement =>
+    document.querySelector('.msg.assistant .msg-body') as HTMLElement;
+
+  it('撤回已流式进正文的叙述段：正文去该段、叙述进过程区，收尾后仅余结论', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // 首轮无工具史：叙述已逐字流式进正文（消息级分类前无法预判工具轮）
+    dispatch({ type: 'chunk', content: '我先全面探索项目结构' });
+    expect(assistantBody().textContent).toContain('我先全面探索项目结构');
+
+    // 内核确认工具轮 → 回抽该段（正文全量重渲染自 streamingRaw，去后缀即生效）
+    dispatch({ type: 'narrate_withdraw', text: '我先全面探索项目结构' });
+    expect(assistantBody().textContent).not.toContain('我先全面探索项目结构');
+
+    // 该段改由 narrate 过程事件承载（运行时过程平铺容器）
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先全面探索项目结构' } } });
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    expect(flow.querySelector('.process-flow__narrate')?.textContent).toContain('我先全面探索项目结构');
+    expect(assistantBody().textContent).not.toContain('我先全面探索项目结构');
+
+    // 后续最终结论照常进正文（流式节流 150ms，终态在 done 收敛渲染后断言）
+    dispatch({ type: 'chunk', content: '这是最终结论。' });
+
+    // 收尾：过程（叙述）折入 round-block 并收起，正文仅余结论——「外面只有结论」
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLDetailsElement;
+    expect(rb.open).toBe(false);
+    expect(rb.textContent).toContain('我先全面探索项目结构');
+    expect(assistantBody().textContent).not.toContain('我先全面探索项目结构');
+    expect(assistantBody().textContent).toContain('这是最终结论。');
+  });
+
+  it('防御分支：撤回段非正文后缀（正文另含其它文本）时按最后出现位置删除，不误伤其余正文', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '叙述段' });
+    dispatch({ type: 'chunk', content: '结论段' });
+    dispatch({ type: 'narrate_withdraw', text: '叙述段' });
+    expect(assistantBody().textContent).toContain('结论段');
+    expect(assistantBody().textContent).not.toContain('叙述段');
+  });
+
+  it('撤回文本不在正文中：无副作用（幂等守卫，不误删正文）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+    dispatch({ type: 'narrate_withdraw', text: '不相干的文本' });
+    expect(assistantBody().textContent).toContain('正文');
+  });
+});

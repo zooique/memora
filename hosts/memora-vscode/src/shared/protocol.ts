@@ -428,6 +428,18 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'interrupted'; roundId?: string }
   /**
+   * 回抽正文（A1，2026-09-12）
+   *
+   * 成因：首轮（无工具史）消息级分类前无法预判是否工具轮，为保 TTFT 零损失叙述文本已逐字
+   * 流式进正文区；内核收到 toolCalls 确认工具轮后，随 narrate chunk 下发 withdrawn 原文，
+   * 宿主透传本消息让 webview 把该段从正文移除（正文全量重渲染自 streamingRaw，去后缀即可），
+   * 该段随后由 narrate 过程事件渲染进过程叙述折叠行——运行时与后续轮同构。
+   *
+   * 运行时瞬态：不入 processEvents、不落盘。重放的一致由 Round.assistantMessage 已在
+   * 持久化侧（内核 consumeExecutionStream）扣除该段保证，不依赖本消息。
+   */
+  | { type: 'narrate_withdraw'; text: string }
+  /**
    * 过程事件（运行时单形态渲染投影，v1.5 协议纯化）
    *
    * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；

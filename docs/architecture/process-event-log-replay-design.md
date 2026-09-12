@@ -145,6 +145,12 @@ ProcessEvent = {
 | `aborted`          | `reason`                                                           | 「已停止」标记               |
 | `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/success`             | 顶栏耗时 + § 执行指标         |
 
+> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）与 `step_boundary`（`{stepId?, title?}`，步级折叠边界）两个事件类型在上表定稿后新增，未补入表格；两者均已落盘（[roundStore.ts](../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
+>
+> **运行时专有字段约定（2026-09-12，A1 回抽）**：`narrate` 的 **`withdrawn?`** 是**运行时专有**字段——它承载「该段叙述曾被逐字流式进正文区、须先撤回」的信息（首轮消息级分类前无法预判工具轮）。它**刻意不落 ProcessEvent、不持久化**：重放的一致由**持久化侧扣除**保证（`Agent.consumeExecutionStream` 按此后缀扣除 `assistantMessage`）。**勿把它补进 ProcessEvent schema**——那会让「重放依赖运行时字段」的假依赖成立，而重放实际只需读 `Round.assistantMessage`（已扣除）。同理，宿主侧的 `narrate_withdraw` 协议消息亦为瞬态。
+>
+> **两端撤回判定差分（设计留档 2026-09-12，勿随 A1 误「统一」）**：内核 `Agent.consumeExecutionStream` 对持久化正文**只认后缀精确匹配**（不符 → warn 忽略，宁多一段叙述、不误删真实答案——持久化不可逆取保守）；宿主 `chatView` 对 UI 正文**后缀优先、`lastIndexOf` 兜底尽力删除**（UI 瞬时可全量重渲染取激进防御）。这是职责边界（可逆性不同）× 风险偏好差异，**非代码漂移**：`withdrawn` 语义单一真理源 = `AgentChunk.narrate`，两端各自消费。
+
 > **meta 粒度定案（2026-08-28 评审修正，v1.5 单源收紧）**：`meta` 是 **round 级**而非会话首轮——用户可在同一会话内随时切换 LLM 与角色包（`chat_set_provider` / `roles_set_active`），首轮快照无法还原后续轮次的状态。每轮首条写 `meta`，重放时该轮 meta 写入**本轮身份** `currentRoundMeta`、该轮 AI 消息按它挂对应角色/模型标签；**不覆盖会话级顶栏**（顶栏唯一真理源 = `chat_role_pack`，见 §3.7——删除「顶栏 = 最后重放轮 meta」的伪真理源表述）。`meta.role` 存角色**显示名**（displayName ?? name，与 AI 消息标签同源）、`meta.llm` 存模型**显示名**（displayName ?? name）——重放不依赖 ProviderStore / RolePackManager 即可渲染。
 >
 > **metrics 聚合事件（2026-08-28 评审补充）**：`metrics` 是每轮**流结束时写一条的聚合事件**（数据源 = `agent.getMetrics()` + vscodeTracer 指纹），承载 §3.8.1 summary 行的耗时与 § 执行指标。事件型计数（工具×N / 记忆×N / 审查×N）不落 metrics，由重放时对 `tool_start` / `recall` / `self_review` 事件直接统计（SSOT：明细即计数源，避免双写）。

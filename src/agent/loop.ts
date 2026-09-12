@@ -959,9 +959,16 @@ export class AgentLoop {
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
       // P2 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
       // 供宿主渲染「过程叙述」折叠行——正文已在流式阶段剥离（未见工具轮文本）。
-      const narration = llmResult.pendingNarrate.trim();
+      // A1 回抽（2026-09-12）：首轮（无工具史）消息级分类前无法预判工具轮，文本已为保 TTFT
+      // 逐字流式进正文区（streamedText 非空）——该段实为叙述，须先撤回再并入叙述内容：
+      // withdrawn 告知消费者从正文移除该段（内核扣持久化 / 宿主移渲染），content 含其全文。
+      const narration = (llmResult.streamedText + llmResult.pendingNarrate).trim();
       if (narration) {
-        yield { type: 'narrate', content: narration };
+        yield {
+          type: 'narrate',
+          content: narration,
+          ...(llmResult.streamedText ? { withdrawn: llmResult.streamedText } : {}),
+        };
       }
       return yield* this.handleToolCalls(llmResult, effectiveSignal);
     }
