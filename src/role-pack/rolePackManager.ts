@@ -675,14 +675,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       return null;
     }
 
-    // 接入格式校验器——校验失败记录 warning，不阻塞装载（草案演进期宽松容错）
+    // 接入格式校验器——error 级拒绝装载，与 manifest 解析失败同一失败语义（跳过 + warn），
+    // 杜绝「校验了却不拦」的折衷：带 error 的角色包不该进系统。
+    // warning 级仍装载，issues 全量透进装配（见文末 G29 健康徽章）。
     const validation = validateManifest(manifest);
     if (!validation.valid) {
       const errors = validation.issues.filter((i) => i.severity === 'error');
       getLogger().warn(
         { file: manifestPath, errors: errors.map((e) => e.message) },
-        '角色包校验未通过（警告级，暂不拒绝装载）',
+        '角色包校验未通过（error 级），跳过装载',
       );
+      return null;
     }
 
     // 解析元数据（manifest 唯一权威）

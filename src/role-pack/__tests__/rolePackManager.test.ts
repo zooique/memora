@@ -1093,10 +1093,8 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       );
       await writeFile(
         join(packsDir, '文档专家', 'manifest.json'),
-        JSON.stringify({
-          name: '文档专家',
-          skills: { 'skills/doc-gen/SKILL.md': {} },
-        }),
+        // 不声明 skills → 走目录全量扫描（声明须为对象数组 [{ file }]，否则 validator 判 error 并拒绝装载）
+        JSON.stringify({ name: '文档专家' }),
         'utf-8',
       );
 
@@ -1121,10 +1119,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await writeFile(join(skillPack, 'references', 'modes.md'), 'Modes 参考文档内容', 'utf-8');
       await writeFile(
         join(packsDir, '文档专家2', 'manifest.json'),
-        JSON.stringify({
-          name: '文档专家2',
-          skills: { 'skills/doc-gen/SKILL.md': {} },
-        }),
+        JSON.stringify({ name: '文档专家2' }),
         'utf-8',
       );
 
@@ -1148,7 +1143,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
       await writeFile(
         join(packsDir, '脚本包', 'manifest.json'),
-        JSON.stringify({ name: '脚本包', skills: { 'skills/script-tool/SKILL.md': {} } }),
+        JSON.stringify({ name: '脚本包' }),
         'utf-8',
       );
 
@@ -1177,7 +1172,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await writeFile(join(skillPack, 'scripts', '运行.py'), 'print(1)', 'utf-8');
       await writeFile(
         join(packsDir, '脚本包', 'manifest.json'),
-        JSON.stringify({ name: '脚本包', skills: { 'skills/script-tool/SKILL.md': {} } }),
+        JSON.stringify({ name: '脚本包' }),
         'utf-8',
       );
 
@@ -1203,7 +1198,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
       await writeFile(
         join(packsDir, '资源包', 'manifest.json'),
-        JSON.stringify({ name: '资源包', skills: { 'skills/res-tool/SKILL.md': {} } }),
+        JSON.stringify({ name: '资源包' }),
         'utf-8',
       );
 
