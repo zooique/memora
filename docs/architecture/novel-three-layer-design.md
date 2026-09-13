@@ -123,9 +123,9 @@
 2. **角色包演进落地**（按 G1-G9 优先级，2026-09-13）：
    - persona.md / rules.md / manifest.json：三层方法论 + `web:search` 已随 **共鸣小说家** 角色包落地（原小说助手收敛更名，4 技法技能 git rename 吸收）；
    - skills/：已落地 6 技能——`need-finder`（G1/G2 需求层）、`core-extractor`（G3/G4 内核层）、`three-layer-check`（G5 一致性）、`pacing-hook`（G7 节奏钩子）、`world-builder`（G8 世界观）、`self-review`（G9 写后自检）；
-   - 缺口续已落地：`logline-craft`（G10 高概念）、`relationship-web`（G11 关系网/对手）、`story-bible`（G12 设定圣经）、`empathy-craft`（G19 共情）、`style-weaver`（G20 文风）、`scene-craft`（G13 场景写作）、`emotion-wave`（G15 情绪波浪线）、`outline-expand`（G16 大纲→成文）；
-   - 待补：G6（全流程流水线编排，persona/rules 层引导）与 G17（修改打磨）、G18（长篇防崩）。
-3. **验证触发**：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
+   - 缺口续已落地：`logline-craft`（G10 高概念）、`relationship-web`（G11 关系网/对手）、`story-bible`（G12 设定圣经）、`empathy-craft`（G19 共情）、`style-weaver`（G20 文风）、`scene-craft`（G13 场景写作）、`emotion-wave`（G15 情绪波浪线）、`outline-expand`（G16 大纲→成文）、`polish-method`（G17 修改打磨）、`longform-guard`（G18 长篇防崩）；
+   - G6 已落地：persona.md 工作方式升级为**全流程七阶段流水线**（需求洞察→内核锁定→一致性闸门→概念包装→组织搭建→大纲成文→打磨体检）+ rules.md 补流水线顺序与闸门硬关卡纪律。
+   - **缺口全部闭合（G1-G20）**。验证触发：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
 
 ## 六、已知风险（对抗式自查）
 
