@@ -203,6 +203,12 @@ export type ProcessEvent =
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
   | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
   /**
+   * 模型思考流（2026-09-13，Turn 意图理解与模型思考展示设计）：reasoning_content 增量累积结果。
+   * 仅供重放重建「思考」折叠块；展示轨承载，正文轨/记忆轨不消费（CoT 防护）。
+   * payload.content 超长由宿主落盘前截断（MAX_REASONING_PAYLOAD_LENGTH，SSOT 常量单点定义于 chatPanel）。
+   */
+  | { type: 'reasoning'; seq: number; ts: string; payload: { content: string } }
+  /**
    * 步级折叠边界（阶段二，2026-09-08 路 B′）：active 任务表步骤推进时由 loop 产，
    * 宿主落盘此事件把后续 narrate/tool/问答归到对应 step 分组。无任务表不产。
    */

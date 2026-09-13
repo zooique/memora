@@ -342,6 +342,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
               choices?: Array<{
                 delta?: {
                   content?: string | null;
+                  /** 模型思考增量（deepseek 等思考模型，OpenAI 兼容扩展字段） */
+                  reasoning_content?: string | null;
                   tool_calls?: Array<{
                     index?: number;
                     id?: string;
@@ -388,6 +390,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
             const chunk: LlmChunk = {};
             // delta.content 可能为 null（tool_calls 场景），truthy 检查即可
             if (choice.delta?.content) chunk.content = choice.delta.content;
+            // 模型思考（reasoning_content）：增量透传，与 content 并列（R3 增量语义，消费侧自行累积）
+            if (choice.delta?.reasoning_content) chunk.reasoning = choice.delta.reasoning_content;
 
             // 累积 tool_calls delta
             if (choice.delta?.tool_calls) {

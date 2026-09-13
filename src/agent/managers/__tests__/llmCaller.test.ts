@@ -8,11 +8,12 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { determineTaskType, LlmCaller, type LlmCallerDeps } from '@/agent/managers/llmCaller.js';
+import { determineTaskType, LlmCaller, type LlmCallerDeps, type LlmCallResult } from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
 import { NOOP_TRACER } from '@/agent/tracer.js';
-import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { TaskType } from '@/llm/types.js';
+import type { AgentChunk } from '@/agent/types.js';
 
 function makeProvider(name: string): LlmProvider {
   return {
@@ -138,5 +139,61 @@ describe('LlmCaller.resolveProvider', () => {
     expect(caller.resolveProvider([userMsg('你好')]).name).toBe('v1');
     current = makeProvider('v2');
     expect(caller.resolveProvider([userMsg('你好')]).name).toBe('v2');
+  });
+});
+
+// ─── reasoning 透传（2026-09-13，Turn 意图理解与模型思考展示设计，CoT 防护核心断言）──
+
+describe('LlmCaller.callWithRetry · reasoning 透传', () => {
+  /** 构造带 reasoning 流的 mock Provider（deepseek 时序：思考增量 → 正文 → tool_calls） */
+  function makeDepsWithReasoningProvider(): LlmCallerDeps {
+    const reasoningProvider: LlmProvider = {
+      name: 'reasoning',
+      async *chat() {
+        yield { reasoning: '用户问 A/B 方案对比' };
+        yield { reasoning: '，先查资料' };
+        yield { content: '我先搜索相关资料' };
+        yield {
+          toolCalls: [{ id: 'c1', type: 'function', function: { name: 'web_search', arguments: '{}' } }],
+        };
+      },
+    } as unknown as LlmProvider;
+    return {
+      metrics: new LoopMetrics(),
+      getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
+      getProvider: () => reasoningProvider,
+      getProviderRouter: () => undefined,
+      getCachedProvider: () => undefined,
+      setCachedProvider: () => {},
+      contextManager: { estimateTokens: () => 0 },
+      tracer: NOOP_TRACER,
+      hasToolExecutedThisTurn: () => false,
+    };
+  }
+
+  it('reasoning 增量实时透传为 AgentChunk，且永不拼入 fullContent（CoT 防护）', async () => {
+    const caller = new LlmCaller(makeDepsWithReasoningProvider());
+    const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
+    // 手动迭代：chunk 从 yield 收，LlmCallResult 从 return 收。
+    // IteratorResult<AgentChunk, LlmCallResult> 的 done 非判别联合，value 需按位断言收窄（测试惯用法）。
+    const chunks: AgentChunk[] = [];
+    let step = await gen.next();
+    while (!step.done) {
+      chunks.push(step.value as AgentChunk);
+      step = await gen.next();
+    }
+    const result = step.value as LlmCallResult;
+
+    // 增量透传：每条 chunk 只带新增片段（R3）
+    const reasonings = chunks
+      .filter((c): c is { type: 'reasoning'; content: string } => c.type === 'reasoning')
+      .map((c) => c.content);
+    expect(reasonings).toEqual(['用户问 A/B 方案对比', '，先查资料']);
+
+    // CoT 防护（R11）：正文轨 fullContent 只拼 content，不含任何 reasoning 文本
+    expect(result?.fullContent).toBe('我先搜索相关资料');
+    expect(result?.fullContent).not.toContain('用户问 A/B');
+    // 工具调用正常累积（reasoning 与 tool_calls 并存不互相干扰）
+    expect(result?.toolCalls).toHaveLength(1);
   });
 });

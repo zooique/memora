@@ -14,6 +14,12 @@ export interface LlmChunk {
   content?: string;
   toolCalls?: ToolCall[];
   finishReason?: 'stop' | 'tool_calls' | 'length' | 'error';
+  /**
+   * 模型思考增量片段（OpenAI 兼容 `delta.reasoning_content`，deepseek 等思考模型）。
+   * 与 content 同为增量语义（消费侧自行累积）；仅供 UI 折叠展示，**不进正文/记忆**（CoT 防护）。
+   * 非思考模型恒 undefined，自然降级。
+   */
+  reasoning?: string;
   /** 实际 API 用量统计（仅在流结束时的最终 chunk 携带，部分 Provider 不支持） */
   usage?: {
     /** 输入 token 数（prompt_tokens） */

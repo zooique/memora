@@ -42,6 +42,12 @@ export type AgentChunk = (
       blocked?: boolean;
     }
   /**
+   * 模型思考流（2026-09-13，Turn 意图理解与模型思考展示设计）：LLM 的 reasoning_content 增量片段。
+   * 仅供宿主折叠展示，**不进正文/记忆**（CoT 防护）；落盘走 ProcessEvent（roundStore.ts 新增
+   * `type: 'reasoning'` 成员），重启重放可见。瞬态流：中断不补发。
+   */
+  | { type: 'reasoning'; content: string }
+  /**
    * 过程叙述（2026-09-02）：LLM 在工具迭代前产出的行动叙述文本
    * （如「让我先查看所有文档」「现在逐一读取它们的内容」）。
    * 与 text（回答正文）语义分离：narrate 只供宿主渲染「过程叙述」折叠行，
