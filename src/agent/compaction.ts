@@ -7,6 +7,7 @@
  */
 
 import type { Message } from '@/llm/provider.js';
+import { estimateTokensText } from '@/agent/contextManager.js';
 import { writeFile, mkdir } from 'node:fs/promises';
 import path from 'node:path';
 import { randomBytes } from 'node:crypto';
@@ -250,7 +251,7 @@ export class OffloadCompactionStrategy implements ICompactionStrategy {
     // 检查是否有超大的工具结果
     for (const msg of messages) {
       if (msg.role === 'tool' && msg.toolCallId) {
-        const tokens = estimateTokens(msg.content);
+        const tokens = estimateTokensText(msg.content);
         if (tokens > this.thresholdTokens) {
           return true;
         }
@@ -273,7 +274,7 @@ export class OffloadCompactionStrategy implements ICompactionStrategy {
     const toOffload: Array<{ msg: Message; originalTokens: number }> = [];
     for (const msg of messages) {
       if (msg.role === 'tool' && msg.toolCallId) {
-        const tokens = estimateTokens(msg.content);
+        const tokens = estimateTokensText(msg.content);
         if (tokens > this.thresholdTokens) {
           toOffload.push({ msg, originalTokens: tokens });
         }
@@ -357,12 +358,7 @@ export class OffloadCompactionStrategy implements ICompactionStrategy {
   }
 }
 
-/**
- * 简单 Token 估算工具（chars/4 启发式，无需第三方 tokenizer）
- *
- * 与 Claude Code 的 approach 一致：4 字符 ≈ 1 token（中文约 1.5-2 token/字，
- * 英文约 0.75 token/word，取折中值 4 字符/token 足够保守）。
- */
-export function estimateTokens(text: string): number {
-  return Math.ceil(text.length / 4);
-}
+// 注：本文件曾自带一个 `estimateTokens(text) = ceil(len / 4)` 的局部估算器，
+// 已于 2026-09-13 删除 —— 它与全库正式估算器（`contextManager.estimateTokensText`，
+// CJK 1.5 / 其他 3 字符每 token）**不同源**，中文场景下把 token 数低估近 2.7 倍，
+// 而它的原注释却自称「足够保守」（保守应高估）。估算器只允许有一个。

@@ -12,6 +12,8 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { ToolExecutor, sanitizeExternalText, BUILTIN_TOOLS } from '@/agent/toolExecutor.js';
+import { LOOP_CONSTANTS } from '@/agent/constants.js';
+import { estimateTokensText } from '@/agent/contextManager.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
@@ -852,15 +854,89 @@ describe('工具执行器（6 个工具）', () => {
       }
     });
 
-    it('超大文件内容应被截断（长度上限净化，防长上下文注入）', async () => {
-      // 构造远超 FILE_READ_MAX_LEN（50_000）的大文件
-      const bigContent = 'x'.repeat(60_000);
+    it('超大文件按 token 预算分段：明示行号区间与续读 offset（不再静默截断）', async () => {
+      // 2000 行 × 100 字符 ≈ 200,000 字符，远超单次读取预算
       const bigFile = 'src/big-file.txt';
-      await executor.execute('write_file', JSON.stringify({ path: bigFile, content: bigContent }));
+      writeFileSync(
+        join(tmpProject, bigFile),
+        Array.from({ length: 2000 }, (_, i) => `L${i + 1}:` + 'x'.repeat(96)).join('\n'),
+        'utf-8',
+      );
+
       const result = await executor.execute('read_file', JSON.stringify({ path: bigFile }));
-      // 读回被截断（≤50000 + 省略号），而非整段 60_000 字符进上下文
-      expect(result.length).toBeLessThanOrEqual(50_001);
-      expect(result.endsWith('…')).toBe(true);
+
+      // 1. 同源不变量：任何返回路径（含脚注）都不超单次读取预算
+      expect(estimateTokensText(result)).toBeLessThanOrEqual(
+        LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS,
+      );
+      // 2. 诚实告知：已显示区间 / 总行数 / 续读入口三者齐备
+      expect(result).toContain('[read_file 分段]');
+      expect(result).toContain('共 2000 行');
+      expect(result).toContain('继续读用 offset=');
+      // 3. 确实是分段而非全量（末行不在首段里）
+      expect(result).not.toContain('L2000:');
+    });
+
+    it('offset/limit 续读不重不漏（行号语义精确）', async () => {
+      const file = 'src/seg.txt';
+      writeFileSync(
+        join(tmpProject, file),
+        Array.from({ length: 50 }, (_, i) => `L${i + 1}`).join('\n'),
+        'utf-8',
+      );
+
+      const first = await executor.execute('read_file', JSON.stringify({ path: file, limit: '10' }));
+      expect(first.split('\n').slice(0, 10)).toEqual(
+        Array.from({ length: 10 }, (_, i) => `L${i + 1}`),
+      );
+      expect(first).toContain('已显示第 1–10 行（共 50 行）');
+      expect(first).toContain('继续读用 offset=11');
+
+      // 按脚注给出的 offset 续读 → 恰好接上第 11 行，不重不漏
+      const second = await executor.execute(
+        'read_file',
+        JSON.stringify({ path: file, offset: '11', limit: '10' }),
+      );
+      expect(second.split('\n').slice(0, 10)).toEqual(
+        Array.from({ length: 10 }, (_, i) => `L${i + 11}`),
+      );
+      expect(second).toContain('已显示第 11–20 行（共 50 行）');
+    });
+
+    it('读到文件末尾时不追加脚注（零噪音）', async () => {
+      const file = 'src/tail.txt';
+      writeFileSync(join(tmpProject, file), 'a\nb\nc', 'utf-8');
+
+      const result = await executor.execute('read_file', JSON.stringify({ path: file }));
+
+      expect(result).toBe('a\nb\nc');
+      expect(result).not.toContain('[read_file 分段]');
+    });
+
+    it('offset 超出文件末尾 → 如实告知而非返回空串', async () => {
+      const file = 'src/short.txt';
+      writeFileSync(join(tmpProject, file), 'x\ny', 'utf-8');
+
+      const result = await executor.execute('read_file', JSON.stringify({ path: file, offset: '99' }));
+
+      expect(result).toContain('共 2 行');
+      expect(result).toContain('超出文件末尾');
+    });
+
+    it('中文大文件同样守住单次读取预算（CJK 密度更高，字符上限会失准）', async () => {
+      const file = 'src/cn-big.txt';
+      writeFileSync(
+        join(tmpProject, file),
+        Array.from({ length: 3000 }, (_, i) => `第${i + 1}行` + '中文内容片段'.repeat(14)).join('\n'),
+        'utf-8',
+      );
+
+      const result = await executor.execute('read_file', JSON.stringify({ path: file }));
+
+      expect(estimateTokensText(result)).toBeLessThanOrEqual(
+        LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS,
+      );
+      expect(result).toContain('[read_file 分段]');
     });
 
     it('含控制字符的文件内容应被净化（去控制字符）', async () => {

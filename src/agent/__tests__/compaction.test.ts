@@ -11,12 +11,12 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Message } from '@/llm/provider.js';
+import { estimateTokensText } from '@/agent/contextManager.js';
 import {
   ResultReplacementStrategy,
   OffloadCompactionStrategy,
   ReplaceRoundsStrategy,
   DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
-  estimateTokens,
 } from '@/agent/compaction.js';
 
 describe('ResultReplacementStrategy', () => {
@@ -160,8 +160,37 @@ describe('OffloadCompactionStrategy', () => {
 
     it('当所有工具结果都小于阈值时返回 false', () => {
       const strategy = new OffloadCompactionStrategy(offloadDir, 20_000);
-      const messages = createLargeToolMessages(1000); // 4000 tokens，小于阈值
+      const messages = createLargeToolMessages(1000); // 1000 chars ASCII ≈ 334 tokens，小于阈值
       expect(strategy.shouldCompact(messages)).toBe(false);
+    });
+
+    it('触发判据与上下文估算器同源（CJK 感知）：÷4 字符近似会漏判中文大结果', () => {
+      const threshold = 20_000;
+      const text = '中'.repeat(45_000);
+      // 前提自检：本用例只有在两口径判别方向相反时才具守卫力（否则会静默退化成无判别力用例）
+      expect(estimateTokensText(text)).toBeGreaterThan(threshold); // 正式口径 ≈ 30,000
+      expect(Math.ceil(text.length / 4)).toBeLessThanOrEqual(threshold); // 字符近似 = 11,250
+
+      const strategy = new OffloadCompactionStrategy(offloadDir, threshold);
+      const messages: Message[] = [{ role: 'tool', content: text, toolCallId: 'call_cjk' }];
+      expect(strategy.shouldCompact(messages)).toBe(true);
+    });
+
+    it('触发边界恰为「token 数 > 阈值」，与 estimateTokensText 精确对齐（非本地近似）', () => {
+      const threshold = 300;
+      const strategy = new OffloadCompactionStrategy(offloadDir, threshold);
+
+      // ASCII 口径 token = ceil(len / 3)：len = 3×阈值 → 恰好等于阈值 → 不触发（判据是 >）
+      const exact = 'a'.repeat(3 * threshold);
+      expect(estimateTokensText(exact)).toBe(threshold);
+      expect(strategy.shouldCompact([{ role: 'tool', content: exact, toolCallId: 'c1' }])).toBe(
+        false,
+      );
+
+      // 多 1 字符 → 阈值 + 1 → 触发（÷4 近似在 901 chars 下只有 226，会漏判）
+      const over = 'a'.repeat(3 * threshold + 1);
+      expect(estimateTokensText(over)).toBe(threshold + 1);
+      expect(strategy.shouldCompact([{ role: 'tool', content: over, toolCallId: 'c2' }])).toBe(true);
     });
   });
 
@@ -196,6 +225,19 @@ describe('OffloadCompactionStrategy', () => {
       // 回给 LLM 的引用路径必须以注入目录为前缀 —— 否则 read_file 读不回（信任根外被拦）
       const toolMsg = messages.find((m) => m.role === 'tool')!;
       expect(toolMsg.content).toContain(join(offloadDir, files[0]!));
+    });
+
+    it('compact 与 shouldCompact 同源：中文结果按同一 token 口径判超阈并落盘', async () => {
+      const threshold = 20_000;
+      const text = '中'.repeat(45_000);
+      const messages: Message[] = [{ role: 'tool', content: text, toolCallId: 'call_cjk' }];
+
+      await new OffloadCompactionStrategy(offloadDir, threshold).compact(messages);
+
+      // 落盘 → 原文替换为「路径 + 预览」；若判据退回 ÷4（11,250 ≤ 20,000）则此处仍是原文
+      expect(messages[0]!.content).not.toBe(text);
+      expect(messages[0]!.content).toContain('已卸载至');
+      expect(await readdir(offloadDir)).toHaveLength(1);
     });
 
     it('降级处理：当 mkdir 失败时截断而非报错', async () => {
@@ -272,22 +314,11 @@ describe('OffloadCompactionStrategy', () => {
   });
 });
 
-describe('estimateTokens', () => {
-  it('准确估算中文 Token 数', () => {
-    // 中文字符约 1.5-2 token，4 字符/token 保守估算
-    const text = '你好世界'; // 4 个汉字 ≈ 6-8 tokens
-    expect(estimateTokens(text)).toBe(1); // ceil(4/4) = 1
-  });
-
-  it('准确估算英文 Token 数', () => {
-    const text = 'Hello World'; // 11 字符 ≈ 2-3 tokens
-    expect(estimateTokens(text)).toBe(3); // ceil(11/4) = 3
-  });
-
-  it('对空字符串返回 0', () => {
-    expect(estimateTokens('')).toBe(0);
-  });
-});
+// 注：此处原有 `describe('estimateTokens')` 三个用例，已于 2026-09-13 删除。
+// 它们断言的是本模块自带的孤儿估算器 `ceil(len / 4)`，而用例自身就写着
+// 「中文字符约 1.5-2 token」「4 个汉字 ≈ 6-8 tokens」却断言 `toBe(1)`——
+// 用例名、注释、断言三者互相矛盾，等于把错误固化成预期。估算器现已统一到
+// `contextManager.estimateTokensText`（CJK 感知），其正确性由 contextManager.test.ts 守。
 
 describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
   /** 构造 N 轮问答消息（system + 每轮 user/assistant），每轮 user/assistant 自带 roundId */

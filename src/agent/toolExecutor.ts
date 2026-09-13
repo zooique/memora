@@ -134,27 +134,41 @@ function computeBudgetCappedMaxResults(remainingTokens: number | undefined): num
 }
 
 // ─── read_skill / read_resource 注入防御常量 ─────────────────
-/** read_skill 技能正文单次返回最大长度（防超长技能正文注入上下文；静态文档对齐 read_file 的 FILE_READ_MAX_LEN） */
+/** read_skill 技能正文单次返回最大长度（防超长技能正文注入上下文；静态角色包内容走字符上限，与 read_file 的 token 预算分段是不同通道） */
 const SKILL_CONTENT_MAX_LEN = 50_000;
 /** read_resource 资源正文单次返回最大长度（防超长资源注入上下文；与 read_skill 同标准） */
 const RESOURCE_CONTENT_MAX_LEN = 50_000;
 
 /**
+ * 去 ANSI 转义序列与不可打印控制字符（**不限长**）
+ *
+ * 净化规则的单一真理源。外部不可信内容（web_search / 子进程输出 / 文件正文）注入 LLM 上下文前
+ * 须剥掉控制字符，防转义/终端注入。
+ *
+ * @param text 原始文本
+ * @returns 净化后的文本
+ */
+export function stripControlChars(text: string): string {
+  // 去 ANSI 转义序列（CSI：ESC [ 参数 + 终结符；2026-09-08 env 继承后子进程可能继承
+  // FORCE_COLOR 输出色码，单剥 ESC 会留 `[33m` 残渣——整个序列须剥净）
+  const withoutAnsi = text.replace(/\u001B\[[0-9;?]*[a-zA-Z]/g, '');
+  // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
+  return withoutAnsi.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+}
+
+/**
  * 外部工具返回净化：去控制字符 + 长度上限
  *
- * web_search 返回的是外部不可信内容，注入 LLM 上下文前须净化：
- * 去掉控制字符（防转义/终端注入），再按上限截断（防长上下文注入）。
+ * 净化规则本身抽为 `stripControlChars`（**单一真理源**），供需要「净化但不限长」的调用方复用——
+ * 例如 `read_file`：它的长度由 **token 预算分段**（`sliceFileByLineBudget`）收口，不走字符上限，
+ * 但仍须剥掉 ANSI/控制字符。否则它只能传一个假的上限（如 MAX_SAFE_INTEGER）来迁就本函数签名。
  *
  * @param text 外部原始文本
  * @param maxLen 最大长度
  * @returns 净化后的文本
  */
 export function sanitizeExternalText(text: string, maxLen: number): string {
-  // 去 ANSI 转义序列（CSI：ESC [ 参数 + 终结符；2026-09-08 env 继承后子进程可能继承
-  // FORCE_COLOR 输出色码，单剥 ESC 会留 `[33m` 残渣——整个序列须剥净）
-  const withoutAnsi = text.replace(/\u001B\[[0-9;?]*[a-zA-Z]/g, '');
-  // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
-  const cleaned = withoutAnsi.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+  const cleaned = stripControlChars(text);
   return cleaned.length > maxLen ? `${cleaned.slice(0, maxLen)}…` : cleaned;
 }
 
@@ -709,7 +723,11 @@ export class ToolExecutor {
     // 内置工具调用委托给 BuiltinToolHandlers
     switch (name) {
       case 'read_file':
-        return this.builtinHandlers.readFile(strArg('path'));
+        return this.builtinHandlers.readFile(
+          strArg('path'),
+          strArg('offset') || undefined,
+          strArg('limit') || undefined,
+        );
       case 'write_file':
         return this.builtinHandlers.writeFile(
           strArg('path'),

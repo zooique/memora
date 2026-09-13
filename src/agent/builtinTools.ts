@@ -345,12 +345,20 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
 export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_file',
-    description: '读取项目内文件内容。路径必须相对项目根目录。',
+    description:
+      '读取项目内文件内容（按行分段返回）。路径必须相对项目根目录。' +
+      '大文件不会一次全给：返回末尾的「[read_file 分段]」脚注会告知已显示的行号区间与总行数，' +
+      '继续读用 offset 指定起始行。',
     readonly: true,
     parameters: {
       type: 'object',
       properties: {
         path: { type: 'string', description: '相对项目根目录的文件路径' },
+        offset: {
+          type: 'string',
+          description: '起始行号（从 1 开始）。省略则从第 1 行读；续读时用上一段脚注给出的 offset',
+        },
+        limit: { type: 'string', description: '最多返回的行数。省略则按单次读取预算尽可能多读' },
       },
       required: ['path'],
     },

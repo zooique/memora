@@ -135,6 +135,26 @@ export const LOOP_CONSTANTS = {
    */
   SUMMARY_LAYER_TOKEN_RATIO: 0.3,
 
+  /**
+   * 单条工具结果进入上下文的最大 token 数（≈ 上下文窗口的 5%）。
+   *
+   * **同源红线（目标态：同一个键两处引用，且只按 token 判定）**：
+   *   · `read_file` 单次输出上限 = 本键（**已生效**，`builtinToolHandlers.sliceFileByLineBudget`
+   *     按本键的 token 预算逐行填充 → 输出 token 数**恒 ≤ 本键**）；
+   *   · 入口关落盘阈值 = 本键（**待 Step 1b**——`OffloadCompactionStrategy` 现用构造器字面量
+   *     `20_000`，`loop.ts` 无参构造故生产值即 20,000；1b 把它搬进本对象时两处才真正同源）。
+   *
+   * **不变量 = 阈值严格大于本键**：当前 20,000 > 6,000（3.3× 边际）。读回 offload 产物时
+   * `read_file` 输出恒 ≤6,000 < 20,000 → 不再落盘 → 无嵌套；一旦本键被调到 ≥ 阈值（或阈值被
+   * 调到 ≤ 本键），读回产物即再次超阈 → 再落盘 → 拿到新路径 → **无限嵌套**。
+   * `ToolResultCache` 拦不住这种嵌套：产物文件名含时间戳与随机串，每次去重 key 都不同。
+   *
+   * ⚠️ 故本键**不可**改写成「24,000 字符」这类字符数限额 —— 同一字符数在中英文下 token 数
+   * 相差近 2 倍（CJK `CJK_CHARS_PER_TOKEN=1.5` vs 其他 `CHARS_PER_TOKEN=3`），按字符限额必然
+   * 让其中一侧实际越界。字符只是 token 的估算输入，不是限额本身。
+   */
+  SINGLE_TOOL_RESULT_MAX_TOKENS: 6_000,
+
   /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
   SUMMARY_CACHE_TTL_MSGS: 10,
 

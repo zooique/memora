@@ -30,11 +30,13 @@ import { getSessionDisplayName } from '@/memory/sessionStore.js';
 import { splitSessionId } from '@/utils/time.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
-import { sanitizeExternalText } from '@/agent/toolExecutor.js';
+import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 import { touchScores } from '@/memory/recall.js';
 import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
-import { AGENT_CONSTANTS } from '@/agent/constants.js';
+import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
+// token 估算唯一真理源（CJK 感知）——read_file 的分段预算与上下文占用/截断同口径
+import { estimateTokensText } from '@/agent/contextManager.js';
 
 /** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
@@ -48,13 +50,52 @@ const LIST_SESSIONS_MAX = 30;
 const LIST_SESSIONS_SUMMARY_CHARS = 200;
 
 /**
- * 文件读取返回的最大字符数（防长上下文注入）
+ * 目录树返回的最大字符数（防超大目录整段进上下文）
  *
- * read_file 返回的项目文件内容同为工具结果——按哲学"工具结果做基础净化与长度上限"
- * 对齐 web_search/web_fetch/run_code 的防御：超大文件内容不整段进入 LLM 上下文，
- * 避免撑爆 ContextManager token 上限、与控制字符注入面回归一致。
+ * ⚠️ 旧名 `FILE_READ_MAX_LEN`（50_000）名不副实：它同时被 read_file 与 list_dir 复用。
+ * 2026-09-13 起 read_file 改走 **token 预算分段**（`LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS`），
+ * 不再使用字符上限；本常量专职 list_dir，故改名——名字须与它实际约束的东西一致。
  */
-const FILE_READ_MAX_LEN = 50_000;
+const DIR_LIST_MAX_LEN = 50_000;
+
+/** 解析 LLM 传入的正整数参数（缺省/非法/非正 → undefined，默认语义交给调用方） */
+function parsePositiveInt(raw: string | undefined): number | undefined {
+  if (raw === undefined) return undefined;
+  const n = Number.parseInt(raw, 10);
+  return Number.isNaN(n) || n < 1 ? undefined : n;
+}
+
+/**
+ * read_file 分段脚注（截断诚实化的唯一文案出口）
+ *
+ * 静默截断 = 假阴性：LLM 既不知道后面还有内容，也没有续读手段
+ * （与 SEARCH-1「零命中丢失截断标记」同族缺陷）。故截断必须如实回报行号区间与续读入口。
+ */
+function segmentationFooter(startLine: number, endLine: number, totalLines: number): string {
+  return (
+    `[read_file 分段] 已显示第 ${startLine}–${endLine} 行（共 ${totalLines} 行）。` +
+    `继续读用 offset=${endLine + 1}。`
+  );
+}
+
+/**
+ * 按 token 预算反推字符数截断单行（仅用于「单行本身即超预算」的病态退化分支）
+ *
+ * 先按其他字符比例（`CHARS_PER_TOKEN`）取字符上限，再按实测比值迭代收敛——
+ * 不用固定比例是因为中文密度近英文 2 倍（CJK 1.5 vs 其他 3），固定比例必有一侧失准。
+ * 每次迭代都严格缩小 chars（tokens > budget ⇒ 新 chars < 旧 chars），故必收敛。
+ */
+function clampCharsToTokenBudget(line: string, budget: number): string {
+  let chars = Math.max(1, Math.floor(budget * LOOP_CONSTANTS.CHARS_PER_TOKEN));
+  let slice = line.slice(0, chars);
+  let tokens = estimateTokensText(slice);
+  while (tokens > budget && chars > 1) {
+    chars = Math.max(1, Math.floor((chars * budget) / tokens));
+    slice = line.slice(0, chars);
+    tokens = estimateTokensText(slice);
+  }
+  return slice;
+}
 
 /**
  * 脚本文件读取最大长度（run_code script_path 模式）
@@ -197,9 +238,18 @@ export class BuiltinToolHandlers {
   // ─── 内置工具实现 ──────────────────────────────────────
 
   /**
-   * 读取文件（带路径白名单校验）
+   * 读取文件（带路径白名单校验；支持按行分段）
+   *
+   * **分段语义（大文本统一通道 Step 1a，2026-09-13）**
+   * - `offset`：起始行号（1-based，默认 1）；`limit`：最多返回行数（省略 = 尽可能多）。
+   * - **同源不变量**：返回内容的 token 数**恒 ≤ `LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS`**。
+   *   这保证 read_file 的结果永不触发入口关落盘（阈值同键）→「路径即引用」不会自我嵌套
+   *   （详见该常量注释）。故本方法**不**使用字符数上限，而是按 token 预算逐行填充。
+   * - **截断诚实化**：一旦未能读到文件末尾，脚注给出「已显示第 X–Y 行（共 M 行）」与续读
+   *   offset。旧实现是静默追加 `…`——LLM 既不知道后面还有内容，也没有续读手段（SEARCH-1
+   *   同族的「静默截断 = 假阴性」）。
    */
-  async readFile(relativePath: string): Promise<string> {
+  async readFile(relativePath: string, offset?: string, limit?: string): Promise<string> {
     if (!relativePath) {
       throw toolError(
         'read_file 工具调用缺少 path 参数',
@@ -233,9 +283,9 @@ export class BuiltinToolHandlers {
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
-      // 返回净化：工具结果同哲学"长度上限 + 去控制字符"（超大文件不整段进上下文，防注入/撑爆）
+      // 返回净化（去控制字符/ANSI，**不做字符数截断**——按行分段的 token 预算在下方收口）
       // 注：作品投影改为用户主动触发（register_work 工具），read_file 不再自动生成
-      return sanitizeExternalText(content, FILE_READ_MAX_LEN);
+      return this.sliceFileByLineBudget(stripControlChars(content), relativePath, offset, limit);
     } catch (err) {
       const e = toError(err);
       // 区分 ENOENT（文件不存在）和其他 IO 错误
@@ -262,6 +312,83 @@ export class BuiltinToolHandlers {
         ToolErrorCode.UNKNOWN,
       );
     }
+  }
+
+  /**
+   * 按行分段 + token 预算切片（read_file 返回形态的**单一收口**）
+   *
+   * 算法：
+   *   1. 解析 `offset`（1-based 起始行）/ `limit`（行数上限）；offset 超出末尾 → 如实告知；
+   *   2. 期望区间 = offset .. min(offset+limit−1, 总行数)；
+   *   3. 若**不需要**截断（读到末尾且预算够）→ 返回原文，**不追加脚注**（零噪音）；
+   *   4. 否则先为脚注预留 token，再**二分**出最大可容纳行数（token 随行数单调增 → 二分成立）；
+   *   5. 脚注如实告知「已显示第 X–Y 行（共 M 行）」与续读 `offset=Y+1`。
+   *
+   * 退化情形（病态长行：单行本身就超预算）→ 该行按估算比反推字符数截断，并明示已截断。
+   *
+   * **不变量**：任何返回路径的 token 数都 ≤ `SINGLE_TOOL_RESULT_MAX_TOKENS`（**含脚注**）。
+   * 脚注预留用最坏位数（endLine = 总行数）估算，故实际脚注必不超预留。
+   *
+   * @param content 已净化的文件全文
+   * @param displayPath 用于文案的相对路径（越界/退化提示可读）
+   * @param offset LLM 传入的起始行号字符串（可选）
+   * @param limit LLM 传入的行数上限字符串（可选）
+   */
+  private sliceFileByLineBudget(
+    content: string,
+    displayPath: string,
+    offset?: string,
+    limit?: string,
+  ): string {
+    const budget = LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS;
+    const lines = content.split('\n');
+    const total = lines.length;
+
+    const start = parsePositiveInt(offset) ?? 1;
+    if (start > total) {
+      return `[read_file] ${displayPath} 共 ${total} 行；offset=${start} 已超出文件末尾，无可显示内容。`;
+    }
+
+    const limitNum = parsePositiveInt(limit);
+    const wantedEnd = limitNum === undefined ? total : Math.min(start + limitNum - 1, total);
+
+    // 是否需要截断（= 是否需要脚注）：用户 limit 截短了，或整个尾段本身超预算
+    const tailTokens = estimateTokensText(lines.slice(start - 1).join('\n'));
+    const needFooter = wantedEnd < total || tailTokens > budget;
+    if (!needFooter) {
+      return lines.slice(start - 1).join('\n');
+    }
+
+    // 脚注预留：按最坏位数（endLine 取总行数）估算，实际脚注必不超此预留
+    const reserve = estimateTokensText(`\n${segmentationFooter(start, total, total)}`);
+    const bodyBudget = budget - reserve;
+
+    // 二分最大可容纳行数 k ∈ [0, wantedEnd − start + 1]
+    const maxK = wantedEnd - start + 1;
+    let lo = 0;
+    let hi = maxK;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const tokens = estimateTokensText(lines.slice(start - 1, start - 1 + mid).join('\n'));
+      if (tokens <= bodyBudget) lo = mid;
+      else hi = mid - 1;
+    }
+    const endLine = start + lo - 1;
+
+    if (lo === 0) {
+      // 退化：单行即超预算 → 按估算比反推字符数，明示已截断
+      const marker = '[该行超过单次读取预算，已截断] ';
+      const fillBudget = Math.max(1, bodyBudget - estimateTokensText(marker));
+      return (
+        `${marker}${clampCharsToTokenBudget(lines[start - 1]!, fillBudget)}\n` +
+        segmentationFooter(start, start, total)
+      );
+    }
+
+    // 二分下界保证 body 不超 bodyBudget；脚注按 ceil 可加性不超 reserve
+    return (
+      `${lines.slice(start - 1, endLine).join('\n')}\n${segmentationFooter(start, endLine, total)}`
+    );
   }
 
   /**
@@ -752,10 +879,10 @@ export class BuiltinToolHandlers {
     if (entries.length === 0) {
       return `（目录为空或所有条目都被忽略）${absolutePath}`;
     }
-    // 返回净化：目录树同为工具结果，做长度上限（避免超大目录整段进上下文，与 read_file 防御一致）
+    // 返回净化：目录树同为工具结果，做长度上限（避免超大目录整段进上下文）
     return sanitizeExternalText(
       `目录 ${absolutePath} 共有 ${entries.length} 个条目：\n${entries.map((e) => `  ${e}`).join('\n')}`,
-      FILE_READ_MAX_LEN,
+      DIR_LIST_MAX_LEN,
     );
   }
 
