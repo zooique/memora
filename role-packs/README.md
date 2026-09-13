@@ -31,4 +31,11 @@
 
 > **本表不枚举技能**：只描述包的能力定位，不列技能名、不复述工作流程。技能清单的 SSOT 是各包 `skills/` 目录，使用时机的 SSOT 是 `persona.md` / `rules.md`——在此复述会形成第三份副本，技能增删时静默过期。引用覆盖由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 守卫。
 
+> **两包 strategy 参数差异是设计取向，不是疏漏**（勿当缺陷"对齐"）：
+> **共鸣小说家**取 `multiStepReasoning: manual`（即 `reasoning_effort=low`）+ 单步输出保持默认 + 高温度 + 多步预算，
+> 把复杂性外化到七阶段流水线与 21 个领域技能——**靠 step 编排而非模型单步深度推理**完成任务
+> （与「代码做确定性、模型做不确定性」一致）；自检同理走领域化——`selfReview` 关闭，改由 `craft-review` 技能承担领域自检。
+> **白话方案设计师**取默认推理深度 + 大单步输出 + 低温度，设计收敛本身依赖模型推演。
+> 二者是同一哲学在两类任务上的不同落点，参数不可互抄。
+
 > 两个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
