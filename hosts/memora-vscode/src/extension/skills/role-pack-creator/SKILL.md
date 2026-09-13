@@ -114,7 +114,9 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - **persona.md**：在工作流程/阶段里挂技能（如"阶段6 对白即行动（用 dialogue-craft）"）；
 - **rules.md**：写成触发式纪律（如"伏笔必须回收：埋得轻、收得重（用 foreshadow 维护埋点清单）"）。
 
-**覆盖自查**：交付前逐个核对——每个内置 skill 在 persona/rules **至少一处**标注使用时机，避免"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口）。
+**覆盖自查**：交付前逐个核对——每个内置 skill 在 persona/rules **至少一处**标注使用时机，避免"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）。
+
+> 完整规范与论证见内核仓库 `docs/architecture/role-pack-authoring-guide.md` §2.5；覆盖完整性由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫（新增未引用技能会红）。
 
 ### 第五步：交付
 

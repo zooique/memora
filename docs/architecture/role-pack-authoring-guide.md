@@ -83,13 +83,15 @@
 
 > **推荐（2026-09-13 双锚点结论）**：角色包每内置一个 `skills/*.md`，都应在设定文本（persona.md 工作流程 / rules.md 纪律）里为它补一处**「使用时机」引导**——明示「什么情况使用这个 skill」。
 
-**为什么**：技能元数据虽由内核从 `skills/` 目录自动注入（L1 清单，见 [role-pack-skills-progressive-disclosure.md](./role-pack-skills-progressive-disclosure.md) 三级渐进披露），但那是扁平 name+description；LLM 的"何时调用"判断若只靠猜 description 是脆弱的。把触发场景写进 persona/rules，调用决策由**场景契约**驱动。能力定义仍以技能文件为唯一真理源，设定文本只写"何时用"、不复述怎么做。
+**为什么**：技能元数据虽由内核从 `skills/` 目录自动注入（L1 清单，即技能三级渐进披露的「目录扫描」层；完整三级模型见仓库内 `docs/architecture/role-pack-skills-progressive-disclosure.md`，非随包文档），但那是扁平 name+description；LLM 的"何时调用"判断若只靠猜 description 是脆弱的。把触发场景写进 persona/rules，调用决策由**场景契约**驱动。能力定义仍以技能文件为唯一真理源，设定文本只写"何时用"、不复述怎么做。
 
 **写法示例**（取自共鸣小说家）：
 - persona 工作流程挂到对应阶段：`阶段6 大纲与成文（…+ dialogue-craft + …）——对白即行动、带潜台词`
 - rules 写成触发式纪律：`- 伏笔必须回收：…（用 foreshadow 维护埋点清单：埋得轻、收得重、埋收必对）`
 
-**覆盖完整性（强推荐自查）**：收录后逐个核对——每个内置 skill 在 persona/rules **至少有一处**标注使用时机。未标注的技能会沦为"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口，补全后 21/21 覆盖）。
+**覆盖完整性（强推荐自查）**：收录后逐个核对——每个内置 skill 在 persona/rules **至少有一处**标注使用时机。未标注的技能会沦为"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）。内核已由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫：扫描 `role-packs/*/skills/*.md`，任一技能在所属包 persona/rules 零引用即红。
+
+**命名避撞（约定，非校验项）**：技能名避免与 manifest `strategy` 策略键**语义重复**（例：技能 `self-review` 与 `reflect.selfReview`）。二者运行时完全隔离，但同名近义会让作者与 LLM 分不清「设定内容」与「行为开关」。此类冲突是语义层的，**字面校验抓不到**（技能名 kebab-case 与策略键 camelCase 永不相等，同名检测会是永远绿的装饰性断言），故仅在此约定，不进 `validator`。
 
 ***
 
