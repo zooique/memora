@@ -1,21 +1,23 @@
 /**
- * D2 · 大记忆库性能基准验证
+ * D2 · 大记忆库（宿主 WorkspaceStorage）性能基准验证
  *
- * 目的：验证「千/万级记忆」下两个性能敏感点的耗时是否在可接受阈值内：
- *   1. 内核 InMemoryStorage.decayScores() —— O(n) 全量遍历 + 指数衰减，每小时 DECAY_INTERVAL_MS=3.6M 触发一次
- *   2. 宿主 WorkspaceStorage.save()/load() —— 每次写入全量 JSON.stringify(null,2) + atomicWrite（无 SQLite）
+ * 目的：验证宿主 WorkspaceStorage 在千/万级记忆下的两个高频写入路径是否在可接受阈值内：
+ *   1. 单次增量 save —— 每次 upsert 触发一次全量 JSON.stringify + atomicWrite（无 SQLite）
+ *   2. load（冷启动全量读取）
+ *
+ * 注（2026-09-13 整理）：原「第 1 部分」测的是 `InMemoryStorage.decayScores()`——该方法随
+ * score 机制于 2026-09-09 整体物理退役而删除，故脚本此前一跑即崩（「演进后脚本露馅」的实证）。
+ * 已将该段移除，仅保留仍有效的宿主 WorkspaceStorage 基准；下一个 >500KB 触发线仍是 C3 SQLite 升级信号。
  *
  * 用法：
  *   npx tsx scripts/bench-large-memory.ts
  *
  * 可接受阈值（对抗式定标）：
- *   - decayScores 每小时 1 次 → 单次 < 200ms 可接受（10 万级）
  *   - save/load 每次写入触发 → 单次 < 50ms 可接受（1 万级）；> 500KB 触发 C3 SQLite 升级
  */
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { InMemoryStorage } from '../src/memory/inMemoryStorage.js';
 import { WorkspaceStorage } from '../hosts/memora-vscode/src/extension/host/workspaceStorage.js';
 import type { Memory } from '../src/memory/types.js';
 
@@ -34,7 +36,7 @@ function printBanner(text: string): void {
   console.log(`\n${'━'.repeat(70)}\n  ${text}\n${'━'.repeat(70)}`);
 }
 
-/** 构造 N 条治理源记忆（content 源），含衰减可触发的分散 accessedAt */
+/** 构造 N 条治理源记忆（content 源） */
 function makeMemories(count: number): Memory[] {
   const now = Date.now();
   const list: Memory[] = [];
@@ -54,22 +56,9 @@ function makeMemories(count: number): Memory[] {
 // ─── 主函数 ──────────────────────────────────
 
 function main(): void {
-  printBanner('D2 · 大记忆库性能基准验证');
+  printBanner('D2 · 大记忆库（宿主 WorkspaceStorage）性能基准验证');
 
-  // ── 第 1 部分：内核 decayScores 内存遍历 ──
-  printBanner('第 1 部分：InMemoryStorage.decayScores()（O(n) 全量遍历）');
-  for (const size of [1_000, 10_000, 100_000]) {
-    const storage = new InMemoryStorage();
-    for (const m of makeMemories(size)) storage.upsert(m);
-    // 预热 + 计时（1 小时衰减周期内单次执行）
-    const t0 = process.hrtime.bigint();
-    storage.decayScores(['content'], new Date());
-    const ms = Number(process.hrtime.bigint() - t0) / 1e6;
-    report(`decayScores  ${size.toLocaleString()} 条`, ms, 200);
-  }
-
-  // ── 第 2 部分：宿主 WorkspaceStorage JSON 全量读写 ──
-  printBanner('第 2 部分：WorkspaceStorage JSON 全量 save/load（每次写入触发）');
+  printBanner('宿主 WorkspaceStorage JSON 全量 save/load（每次写入触发）');
   for (const size of [1_000, 10_000]) {
     const dir = mkdtempSync(join(tmpdir(), 'memora-bench-'));
     try {
@@ -106,7 +95,7 @@ function main(): void {
 
   printBanner(`D2 基准 ${failures === 0 ? '全部通过 ✅' : `失败 ${failures} 项 ❌`}`);
   if (failures === 0) {
-    console.log('结论：decayScores 在 10 万级单次 54ms 安全；WorkspaceStorage 单次增量 save/load 1 万级 <50ms 安全。');
+    console.log('结论：宿主 WorkspaceStorage 单次增量 save/load 1 万级 <50ms 安全。');
     console.log('注意：1 万条记忆文件已达 3MB（>500KB 触发线），C3 SQLite 升级从「暂缓」提前为「应规划」。');
   }
 }

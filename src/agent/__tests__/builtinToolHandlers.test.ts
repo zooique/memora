@@ -19,7 +19,7 @@ import { join, resolve } from 'node:path';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
+import { MemoryInspector, type AgentSearchHit } from '@/agent/managers/memoryInspector.js';
 import { awaitBackgroundTasks } from '@/utils/backgroundTask.js';
 import { MemoraError, ToolErrorCode } from '@/utils/errors.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
@@ -674,6 +674,38 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     await handlers.searchMemories('不存在的关键词', '10', 'match');
 
     expect(cb).not.toHaveBeenCalled();
+  });
+
+  it('搜索超时降级为空结果，不挂死工具调用（响应性护栏档 1）', async () => {
+    // 桩 MemoryInspector：searchHybrid 永不返回（模拟 embedding 远程挂起）
+    const hangingInspector = Object.create(null) as unknown as MemoryInspector;
+    hangingInspector.searchHybrid = () => new Promise<AgentSearchHit[]>(() => {});
+    handlers.setMemoryInspector(hangingInspector);
+
+    vi.useFakeTimers();
+    try {
+      // 发起搜索（挂起中），用醒目词确保若降级为「未找到」
+      const promise = handlers.searchMemories('任意查询', '10', 'match');
+      // 推进超过 5s 超时线 + 缓冲，触发 withMemorySearchTimeout 的 race 超时分支
+      await vi.advanceTimersByTimeAsync(6_000);
+
+      // 超时降级返回空结果 → 走「未找到匹配」文案，而非抛错/挂起
+      await expect(promise).resolves.toContain('未找到匹配');
+    } finally {
+      vi.useRealTimers();
+      // 清掉桩，避免污染后续用例（关键词后端回退）
+      handlers.setMemoryInspector(null as unknown as MemoryInspector);
+    }
+  });
+
+  it('正常搜索不受响应性护栏影响（5s 内返回）', async () => {
+    // 未注入 memoryInspector → 走同步关键词后端，应为即时返回（非超时）
+    const t0 = Date.now();
+    const result = await handlers.searchMemories('TypeScript', '10', 'match');
+    const elapsed = Date.now() - t0;
+    expect(result).toContain('ts-note');
+    // 同步后端应远低于 5s 护栏（宽松断言：不超护栏即可）
+    expect(elapsed).toBeLessThan(5_000);
   });
 });
 

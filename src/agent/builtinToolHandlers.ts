@@ -976,19 +976,23 @@ export class BuiltinToolHandlers {
 
     // memory-tool-recall-design §3.3：注入 MemoryInspector 后走语义混合搜索（searchHybrid
     // = 语义 + 关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。
-    const hits: AgentSearchHit[] = this.memoryInspector
-      ? await this.memoryInspector.searchHybrid(query, limit, excludedRoundIds)
-      : this.memoryIndex
-          .search(query, limit)
-          .map((m) => ({
-            id: m.id,
-            name: m.name,
-            source: m.source,
-            contentPreview: m.content,
-            // 溯源 roundId 用于互斥过滤（与 searchHybrid 排除口径一致）
-            roundId: m.roundId,
-          }))
-          .filter((h) => !(h.roundId && excludedRoundIds.has(h.roundId)));
+    // 包进带超时的函数：底部 search_memories 是有用户感知的读工具，语义 embed 是远程调用，
+    // 响应性护栏 MEMORY_SEARCH_TIMEOUT_MS（5s）超时降级为提示，不挂死工具调用（排雷见 constants.ts）。
+    const hits: AgentSearchHit[] = await this.withMemorySearchTimeout(async () =>
+      this.memoryInspector
+        ? await this.memoryInspector.searchHybrid(query, limit, excludedRoundIds)
+        : this.memoryIndex
+            .search(query, limit)
+            .map((m) => ({
+              id: m.id,
+              name: m.name,
+              source: m.source,
+              contentPreview: m.content,
+              // 溯源 roundId 用于互斥过滤（与 searchHybrid 排除口径一致）
+              roundId: m.roundId,
+            }))
+            .filter((h) => !(h.roundId && excludedRoundIds.has(h.roundId))),
+    );
 
     // near 模式（仅关键词后端）：过滤只保留所有关键词都命中的结果
     if (!this.memoryInspector && modeStr === 'near' && hits.length > 0) {
@@ -1048,6 +1052,36 @@ export class BuiltinToolHandlers {
         hits.map((h) => h.id),
       ),
     );
+  }
+
+  /**
+   * `search_memories` 响应性护栏包装：给整次记忆搜索（语义 embed + 关键词后端）设上限。
+   *
+   * 排雷背景（2026-09-13）：embedding 层自身有 60s 请求超时，网络不会无限挂；但 60s 远超
+   * 「用户可感知工具调用」的合理上限。这里收窄为 MEMORY_SEARCH_TIMEOUT_MS（5s）——超时
+   * 降级为「搜索超时」提示（空结果语义），而非挂死工具或抛错中断对话。超时不阻断底层 embed
+   * （Promise.race 只是不再等待），LLM 若重试可命中 EmbeddingProvider 的 LRU 缓存。
+   *
+   * @param run 返回记忆搜索结果的函数（同步或异步）
+   * @returns 搜索完成后返回全量命中；超时则返回空数组（降级提示由调用方近零命中分支承担）
+   */
+  private async withMemorySearchTimeout(run: () => Promise<AgentSearchHit[]>): Promise<AgentSearchHit[]> {
+    const timeout = new Promise<AgentSearchHit[]>((_, reject) => {
+      const id = setTimeout(() => {
+        clearTimeout(id);
+        reject(new Error('记忆搜索超时'));
+      }, LOOP_CONSTANTS.MEMORY_SEARCH_TIMEOUT_MS);
+      // 让定时器不阻塞 Node 事件循环退出（测试/关停场景无悬挂定时器）
+      if (typeof (id as { unref?: () => void }).unref === 'function') id.unref();
+    });
+
+    try {
+      return await Promise.race([run(), timeout]);
+    } catch (err) {
+      // 超时降级：记日志 + 返回空（近零命中分支已有「未找到匹配」文案兜底，不重复造文案）
+      logger.warn({ err: toError(err).message }, 'search_memories 搜索超时，已降级为空结果');
+      return [];
+    }
   }
 
   /**
