@@ -12,6 +12,7 @@
  *   - 角色相关功能统一由 RolePackManager 承载
  */
 
+import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
 import { ToolExecutor } from '@/agent/toolExecutor.js';
 import { MessageHistory } from '@/agent/messageHistory.js';
@@ -484,6 +485,10 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     tracer,
     messages,
     enableContextSummary,
+    // 卸载式压缩落盘目录：项目级 .memora/outputs。两条约束同时满足——在 SecurityGuard 信任根
+    // （memoraDir）内 → read_file 可回取；`.memora` 属 IGNORED_DIR_NAMES → search_project/list_dir
+    // 不命中，不污染项目检索（故不落用户级 ~/.memora，那在信任根外，引用读不回）
+    offloadDir: join(pctx.memoraDir, 'outputs'),
     // 替换式压缩第一级：按 roundId 取已存 round-summary（无摘要返回 null，该轮不替换交第二级压缩）
     getRoundSummary: (roundId: string): string | null => {
       try {

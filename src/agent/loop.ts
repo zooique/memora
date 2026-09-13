@@ -115,6 +115,9 @@ export interface AgentLoopOptions {
   getRoundSummary?: (roundId: string) => string | null;
   /** 替换式压缩保留最近正文轮数（默认 DEFAULT_REPLACE_KEEP_RECENT_ROUNDS=5，LRU 最早先换） */
   replaceRoundsKeepRecent?: number;
+  /** 卸载式压缩的落盘目录（装配注入项目 `memoraDir` 下的 outputs 子目录）。
+   *  未注入则不注册卸载策略——内核不派生此路径，防产出信任根外、`read_file` 读不回的假引用 */
+  offloadDir?: string;
   /** 重复工具调用拦截器。每轮工具执行后调用 check() 决定注入 warning 或 block；
    *  未注入时用 DefaultDuplicateCallInterceptor（哈希机械检测），宿主可注入差异化策略 */
   duplicateCallInterceptor?: DuplicateCallInterceptor;
@@ -304,7 +307,8 @@ export class AgentLoop {
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
     this.compactionStrategy = opts.compactionStrategy ?? new ResultReplacementStrategy();
     // 两级空间管理压缩链：第一级替换（LRU 内核自动，取已存摘要，无摘要 no-op）→
-    // 第二级 tool_result 占位（宿主注入或默认 ResultReplacementStrategy）→ 第二级超大结果卸载兜底
+    // 第二级 tool_result 占位（宿主注入或默认 ResultReplacementStrategy）→ 第二级超大结果卸载
+    // 卸载档仅当装配注入落盘目录时注册（内核不派生路径：信任根外路径 read_file 读不回，等于假引用）
     this.compactionStrategies = [
       new ReplaceRoundsStrategy({
         keepRecentRounds: opts.replaceRoundsKeepRecent ?? DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
@@ -319,7 +323,7 @@ export class AgentLoop {
         isContextTruncated: () => this.isLastContextTruncated,
       }),
       this.compactionStrategy,
-      new OffloadCompactionStrategy(),
+      ...(opts.offloadDir ? [new OffloadCompactionStrategy(opts.offloadDir)] : []),
     ];
     this.duplicateCallInterceptor =
       opts.duplicateCallInterceptor ?? new DefaultDuplicateCallInterceptor(3);
@@ -989,7 +993,7 @@ export class AgentLoop {
 
     // ─── 两级空间管理压缩链 ─────────────────────────────────────
     // 第一级：替换（内核自动 LRU，取已存记忆摘要换越界轮次正文，无摘要 no-op）
-    // 第二级：tool_result 占位（ResultReplacementStrategy）+ 超大结果卸载兜底（OffloadCompactionStrategy）
+    // 第二级：tool_result 占位（ResultReplacementStrategy）+ 超大结果卸载（OffloadCompactionStrategy，仅注入 offloadDir 时在链上）
     //
     // 视图说明（截断轮一致性，2026-09-11 打磨备注）：截断时 safeMessages 为截断后新数组（本次
     // 发往 LLM 的视图），this.messages 经 replaceContext 为同元素引用的浅拷贝。ResultReplacement

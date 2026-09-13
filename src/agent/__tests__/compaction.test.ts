@@ -6,7 +6,10 @@
  * - OffloadCompactionStrategy: 卸载式压缩（异步）
  */
 
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Message } from '@/llm/provider.js';
 import {
   ResultReplacementStrategy,
@@ -112,6 +115,21 @@ describe('ResultReplacementStrategy', () => {
 });
 
 describe('OffloadCompactionStrategy', () => {
+  /**
+   * 卸载落盘目录（tmp 隔离）。
+   * 内核不再派生卸载路径——`offloadDir` 由装配注入（项目 .memora/outputs），
+   * 测试须显式给目录；历史默认值 `~/.memora/outputs` 曾让单测往真实主目录累积上千文件。
+   */
+  let offloadDir: string;
+
+  beforeEach(async () => {
+    offloadDir = await mkdtemp(join(tmpdir(), 'memora-offload-'));
+  });
+
+  afterEach(async () => {
+    await rm(offloadDir, { recursive: true, force: true });
+  });
+
   /** 生成超大工具结果消息 */
   function createLargeToolMessages(size: number = 100_000): Message[] {
     const largeContent = 'x'.repeat(size); // 创建超大字符串
@@ -135,13 +153,13 @@ describe('OffloadCompactionStrategy', () => {
 
   describe('shouldCompact', () => {
     it('当存在超大工具结果时返回 true', () => {
-      const strategy = new OffloadCompactionStrategy(undefined, 1000);
+      const strategy = new OffloadCompactionStrategy(offloadDir, 1000);
       const messages = createLargeToolMessages(5000);
       expect(strategy.shouldCompact(messages)).toBe(true);
     });
 
     it('当所有工具结果都小于阈值时返回 false', () => {
-      const strategy = new OffloadCompactionStrategy(undefined, 20_000);
+      const strategy = new OffloadCompactionStrategy(offloadDir, 20_000);
       const messages = createLargeToolMessages(1000); // 4000 tokens，小于阈值
       expect(strategy.shouldCompact(messages)).toBe(false);
     });
@@ -149,7 +167,7 @@ describe('OffloadCompactionStrategy', () => {
 
   describe('compact', () => {
     it('将超大结果写入文件系统并替换为占位符', async () => {
-      const strategy = new OffloadCompactionStrategy(undefined, 1000);
+      const strategy = new OffloadCompactionStrategy(offloadDir, 1000);
       const messages = createLargeToolMessages(5000);
 
       await strategy.compact(messages);
@@ -166,6 +184,20 @@ describe('OffloadCompactionStrategy', () => {
       }
     });
 
+    it('卸载产物与引用同落在注入目录内（引用可回取的前提）', async () => {
+      const strategy = new OffloadCompactionStrategy(offloadDir, 1000);
+      const messages = createLargeToolMessages(5000);
+
+      await strategy.compact(messages);
+
+      // 落盘文件数 = 被卸载结果数
+      const files = await readdir(offloadDir);
+      expect(files).toHaveLength(1);
+      // 回给 LLM 的引用路径必须以注入目录为前缀 —— 否则 read_file 读不回（信任根外被拦）
+      const toolMsg = messages.find((m) => m.role === 'tool')!;
+      expect(toolMsg.content).toContain(join(offloadDir, files[0]!));
+    });
+
     it('降级处理：当 mkdir 失败时截断而非报错', async () => {
       // 使用注入的 mock 模拟 mkdir 失败
       const mockFsOps = {
@@ -173,7 +205,7 @@ describe('OffloadCompactionStrategy', () => {
         writeFile: vi.fn(), // 不应被调用
       };
       
-      const strategy = new OffloadCompactionStrategy(undefined, 1000, 1000, mockFsOps);
+      const strategy = new OffloadCompactionStrategy(offloadDir, 1000, 1000, mockFsOps);
       const messages = createLargeToolMessages(5000);
 
       // 不应抛出异常
@@ -211,7 +243,7 @@ describe('OffloadCompactionStrategy', () => {
         },
       ];
       
-      const strategy = new OffloadCompactionStrategy(undefined, 1000, 1000, mockFsOps);
+      const strategy = new OffloadCompactionStrategy(offloadDir, 1000, 1000, mockFsOps);
 
       await strategy.compact(messages);
 
@@ -226,7 +258,7 @@ describe('OffloadCompactionStrategy', () => {
     });
 
     it('保留原始内容的前 N 字符作为预览', async () => {
-      const strategy = new OffloadCompactionStrategy(undefined, 1000, 500);
+      const strategy = new OffloadCompactionStrategy(offloadDir, 1000, 500);
       const messages = createLargeToolMessages(10_000);
 
       await strategy.compact(messages);

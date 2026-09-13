@@ -2,7 +2,10 @@
  * Agent Loop 单元测试
  * 覆盖 processUserInput 流式输出 + 工具调用循环 + 最大迭代限制
  */
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { mkdtemp, rm, readdir } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
@@ -4163,5 +4166,77 @@ describe('AgentLoop · T3 预算预警档（上下文空间提示）', () => {
     const messages = loop.getMessages();
     expect(messages.some((m) => m.content.includes('SOFT_LIMIT'))).toBe(true);
     // 预警不叠加（else-if 分支互斥；此处容量与摘要层双达 → 走收尾）
+  });
+});
+
+describe('AgentLoop · 卸载式压缩落点（引用可回取）', () => {
+  /** 落盘目录由装配注入；内核不派生路径（历史默认 ~/.memora/outputs 在信任根外，read_file 读不回） */
+  let offloadDir: string;
+
+  beforeEach(async () => {
+    offloadDir = await mkdtemp(join(tmpdir(), 'memora-loop-offload-'));
+  });
+
+  afterEach(async () => {
+    await rm(offloadDir, { recursive: true, force: true });
+  });
+
+  /** 200_000 字符 → estimateTokens = 50_000 > 阈值 20_000，必然触发卸载 */
+  const HUGE_RESULT = 'x'.repeat(200_000);
+
+  /** 一轮工具调用 + 一轮收尾 */
+  function toolThenText(): ChunkItem[][] {
+    return [
+      [
+        {
+          toolCalls: [
+            {
+              id: 'call_big',
+              type: 'function',
+              function: { name: 'big_tool', arguments: '{}' },
+            },
+          ],
+        },
+      ],
+      [{ content: '收尾回答' }],
+    ];
+  }
+
+  it('注入 offloadDir → 超大工具结果卸载到该目录，且回给 LLM 的引用指向它', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider(toolThenText()),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue(HUGE_RESULT),
+      offloadDir,
+    });
+
+    for await (const chunk of loop.processUserInput('读大文件')) {
+      void chunk;
+    }
+
+    // 落盘 1 份，且产物确实在注入目录内
+    expect(await readdir(offloadDir)).toHaveLength(1);
+    // 上下文里的工具结果已被替换为「路径 + 预览」——引用前缀必须是注入目录
+    const toolMsg = loop.getMessages().find((m) => m.role === 'tool');
+    expect(toolMsg).toBeDefined();
+    expect(toolMsg!.content).toContain('输出已卸载至');
+    expect(toolMsg!.content).toContain(offloadDir);
+  });
+
+  it('未注入 offloadDir → 不注册卸载策略，工具结果原样留在上下文', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider(toolThenText()),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue(HUGE_RESULT),
+    });
+
+    for await (const chunk of loop.processUserInput('读大文件')) {
+      void chunk;
+    }
+
+    // 未注册卸载策略 → 原文整段仍在上下文（结果被 <tool_result> 隔离标记包裹，故用 contains）
+    const toolMsg = loop.getMessages().find((m) => m.role === 'tool');
+    expect(toolMsg!.content).toContain(HUGE_RESULT);
+    expect(toolMsg!.content).not.toContain('输出已卸载至');
   });
 });

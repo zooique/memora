@@ -223,13 +223,14 @@ export class OffloadCompactionStrategy implements ICompactionStrategy {
   };
 
   /**
-   * @param offloadDir 卸载文件存储目录（默认 ~/.memora/outputs/）
+   * @param offloadDir 卸载文件存储目录（**必传**——由装配注入项目 `memoraDir` 下的 outputs 子目录；
+   *   内核不派生此路径，避免产出落在信任根外、`read_file` 读不回的假引用）
    * @param thresholdTokens 卸载阈值（tokens，默认 20000，约 80000 字符）
    * @param previewChars 预览字符数（默认 1000）
    * @param fsOps 自定义文件系统操作（可选，用于测试或自定义存储）
    */
   constructor(
-    offloadDir: string = path.join(process.env.HOME ?? process.cwd(), '.memora', 'outputs'),
+    offloadDir: string,
     thresholdTokens: number = 20_000,
     previewChars: number = 1_000,
     fsOps?: { mkdir?: typeof mkdir; writeFile?: typeof writeFile },
