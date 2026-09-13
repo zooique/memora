@@ -13,7 +13,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
-import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL } from '@/agent/builtinTools.js';
+import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL, REMEMBER_INTEL_TOOL } from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
   UIMessages,
@@ -143,6 +143,12 @@ export interface AgentLoopOptions {
 type InterruptRequest =
   | { readonly kind: 'pause' }
   | { readonly kind: 'interject'; readonly content: string };
+
+/** 情报区（LLM 私有工作笔记）system 消息前导：注入起点判定 + 私有/禁复述约束（与返回字段同源） */
+const INTEL_INTRO =
+  '[情报区 · 仅供你私有查看并作为后续作答的参考]。此区内容不要向用户复述或写进项目文档。' +
+  '当你从大文本/工具结果获取到新的关键信息时，可用一句简短状态反馈用户进展（如：原来是这样… / 掌握了关键信息 / ' +
+  '有一个问题… / 基本收集完毕），但不要在反馈中复述笔记/原文细节。';
 
 export class AgentLoop {
   private messages: Message[] = [];
@@ -290,6 +296,8 @@ export class AgentLoop {
   private readonly compactionStrategies: ICompactionStrategy[];
   /** 入口关落盘目录（装配注入；未注入则入口关不生效）。消费点：appendToolMessage */
   private readonly offloadDir?: string;
+  /** 情报区（LLM 私有工作笔记，Step 2）：LLM 经 remember_intel 自写累积，装配时作为尾部私有 system 消息注入 */
+  private intelNote = '';
   /** Provider 路由缓存（单轮内缓存同一 taskType，避免每轮重复路由计算），跨轮清空不复用 */
   private providerRouteCache = new Map<TaskType, LlmProvider>();
 
@@ -1018,6 +1026,9 @@ export class AgentLoop {
     }
     // ─── 压缩链结束 ─────────────────────────────────────────────
 
+    // 情报区注入（Step 2）：LLM 私有工作笔记，作为单条尾部私有 system 消息（非 executionTemp → 跨 turn 自持）
+    this.injectIntelNote();
+
     // TS-7 搜索收敛护栏：本闭环成功联网搜索达阈值后，注入收敛提示引导 LLM 停止搜索直接作答。
     // 幂等：一轮内仅注入一次（executionTemp 随下一闭环入口清冗；计数随 resetTurnState 清零）
     if (
@@ -1492,7 +1503,9 @@ export class AgentLoop {
       toolPromises.push(
         tc.function.name === COMPRESS_CONTEXT_TOOL.name
           ? this.compressContext(tc.function.arguments, signal)
-          : this.toolRunner.runOne(tc, signal),
+          : tc.function.name === REMEMBER_INTEL_TOOL.name
+            ? Promise.resolve(this.handleRememberIntel(tc.function.arguments))
+            : this.toolRunner.runOne(tc, signal),
       );
     }
 
@@ -2242,6 +2255,60 @@ export class AgentLoop {
       toolCallId,
       roundId: this.currentRoundId,
     });
+  }
+
+  /**
+   * 情报区写回（remember_intel 工具实现，CLoop 拦截执行）：把 LLM 私有笔记追加到情报区。
+   *
+   * 累积为 `intelNote`（跨 turn 自持）；超 `MAX_INTEL_PREFIX_LEN` 裁最旧（保留最新）。返回给 LLM 的
+   * ack **不回填 note 原文**（工具结果只回「已记录」），note 原文只进情报区 system 消息 → 不在用户流。
+   *
+   * @param args remember_intel 的 JSON arguments
+   * @returns 简短 ack（作为该工具调用的 tool 结果）
+   */
+  private handleRememberIntel(args: string): string {
+    let note: string | undefined;
+    try {
+      const parsed = JSON.parse(args) as { note?: unknown };
+      note = typeof parsed?.note === 'string' && parsed.note.trim() ? parsed.note.trim() : undefined;
+    } catch {
+      note = undefined;
+    }
+    if (!note) {
+      return '[情报区] 未写入：note 为空或缺少该参数。';
+    }
+    const prev = this.intelNote;
+    this.intelNote = prev ? `${prev}\n${note}` : note;
+    // 数据上限：超限裁最旧（保留最新），防单 turn 内多次写入把笔记撑爆
+    if (this.intelNote.length > LOOP_CONSTANTS.MAX_INTEL_PREFIX_LEN) {
+      this.intelNote = this.intelNote.slice(-LOOP_CONSTANTS.MAX_INTEL_PREFIX_LEN);
+    }
+    return '[情报区] 已记录（对你私有，不会展示给用户）。';
+  }
+
+  /**
+   * 每轮装配把情报区注入为**单条尾部私有 system 消息**（Step 2）。
+   *
+   * - 复用 Message[] 视图：不新增对象，情报区 = 一条 system 消息正文；
+   * - 已存在则更新原文（保持单条），被截断删除则重建 → 参与 `truncateMessages` 尾部淘汰（B 语义）；
+   * - 非 executionTemp → 跨 turn 自持（每轮 `_prepareContext` 注入最新版）。
+   *
+   * **时序注（2026-09-13，诚实声明）**：`_prepareContext` 先算 `safeMessages`、后注入本消息——
+   * 在**截断轮**（截断重排后安全快照 ≠ this.messages）里，本轮被发送的 `safeMessages` 不含本情报区，
+   * 下一轮 `_prepareContext` 重算后才可见（瞬时，非死锁）。此与 search 收敛提示 / taskTable 等所有
+   * 既有动态注入提示的时序一致（库级既有行为），非本机制特例。
+   */
+  private injectIntelNote(): void {
+    if (!this.intelNote) return;
+    const content = `${INTEL_INTRO}\n\n${this.intelNote}`;
+    const existing = this.messages.find(
+      (m) => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(INTEL_INTRO),
+    );
+    if (existing) {
+      existing.content = content;
+    } else {
+      this.messages.push({ role: 'system', content });
+    }
   }
 
   /**

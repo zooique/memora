@@ -4375,3 +4375,114 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
   });
 });
+
+describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
+  /** 情报区 system 消息前导（与 loop.ts INTEL_INTRO 前缀对齐；唯一确定性判据） */
+  const INTEL_HEAD = '[情报区';
+  /** 单次 remember_intel 工具轮 */
+  function rememberTurn(note: string): ChunkItem[] {
+    return [
+      {
+        toolCalls: [
+          {
+            id: 'ci1',
+            type: 'function',
+            function: { name: 'remember_intel', arguments: JSON.stringify({ note }) },
+          },
+        ],
+      },
+    ];
+  }
+  /** 收尾纯文本轮 */
+  const answerTurn: ChunkItem[] = [{ content: '整合完成' }];
+  /** 从 getMessages 取情报区 system 消息（尾部私有笔记） */
+  function intelMsgs(loop: AgentLoop): Array<{ content: string }> {
+    return loop
+      .getMessages()
+      .filter(
+        (m): m is Message & { content: string } =>
+          m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(INTEL_HEAD),
+      );
+  }
+
+  it('写回闭环：remember_intel 写入情报区；注入为单条尾部私有 system；对用户流零展示', async () => {
+    const NOTE = '架构采用单一真理源';
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([rememberTurn(NOTE), answerTurn]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const c of loop.processUserInput('收集情报')) chunks.push(c);
+
+    // 写回 + 单条注入：情报区恰一条 system 且含笔记
+    const msgs = intelMsgs(loop);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.content).toContain(NOTE);
+    // ack 工具结果存在（配对 assistant.tool_calls，OpenAI 兼容端 400 防护）
+    expect(loop.getMessages().some((m) => typeof m.content === 'string' && m.content.includes('已记录'))).toBe(
+      true,
+    );
+    // 零展示：narrate/text 用户可见流不含笔记原文
+    const visible = chunks
+      .filter((c): c is Extract<AgentChunk, { type: 'narrate' | 'text' }> => c.type === 'narrate' || c.type === 'text')
+      .map((c) => c.content)
+      .join('\n');
+    expect(visible).not.toContain(NOTE);
+  });
+
+  it('同轮内多次写入仍保持情报区为单条 system 消息，且累积全部笔记', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'a', type: 'function', function: { name: 'remember_intel', arguments: JSON.stringify({ note: '要点甲' }) } },
+              { id: 'b', type: 'function', function: { name: 'remember_intel', arguments: JSON.stringify({ note: '要点乙' }) } },
+            ],
+          },
+        ],
+        answerTurn,
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    for await (const c of loop.processUserInput('收集')) void c;
+
+    const msgs = intelMsgs(loop);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.content).toContain('要点甲');
+    expect(msgs[0]!.content).toContain('要点乙');
+  });
+
+  it('空/缺失 note → 拒绝写入，且不创建情报区', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [{ id: 'x', type: 'function', function: { name: 'remember_intel', arguments: '{}' } }] }],
+        answerTurn,
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    for await (const c of loop.processUserInput('收集')) void c;
+
+    expect(intelMsgs(loop)).toHaveLength(0);
+    expect(loop.getMessages().some((m) => typeof m.content === 'string' && m.content.includes('未写入'))).toBe(true);
+  });
+
+  it('跨 turn 自持：情报区非 executionTemp，下个 processUserInput 后仍保留', async () => {
+    const NOTE = '跨 turn 仍记得';
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([rememberTurn(NOTE), answerTurn, [{ content: '第二问回答' }]]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    for await (const c of loop.processUserInput('第一问')) void c;
+    // 第一个闭环已写完情报；开第二个闭环（resetTurnState 不应清 executionTemp 之外的情报区）
+    for await (const c of loop.processUserInput('第二问')) void c;
+
+    const msgs = intelMsgs(loop);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0]!.content).toContain(NOTE);
+  });
+});

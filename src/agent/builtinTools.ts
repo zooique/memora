@@ -245,6 +245,34 @@ export const ASK_USER_TOOL: ToolDefinition = {
 };
 
 /**
+ * remember_intel 内置工具定义（情报区写回，大文本统一通道 Step 2）
+ *
+ * LLM **私有工作笔记**的写回通道（scratchpad 模式）：当你从大文本/工具结果获取到值得记住的
+ * 关键信息时，调用本工具把它写进你的私有情报区。
+ *
+ * **语义边界**：
+ * - 情报区**仅你私有**，装配时作为隐藏的尾部 system 消息注入，**不对用户展示**、不入文档/记忆库；
+ * - 写入即记入，可多次调用累积；已记录的旧笔记会自动保留并参与上下文淘汰；
+ * - **不要**在 `note` 里写长篇原文——只写你要长期记住的精炼要点。
+ *
+ * 独立导出常量（同 COMPRESS_CONTEXT_TOOL 的「loop 拦截执行」模式，见 loop.appendIntel）。
+ */
+export const REMEMBER_INTEL_TOOL: ToolDefinition = {
+  name: 'remember_intel',
+  description:
+    '把一条关键信息写入你的私有情报区（工作笔记）。当你从大文本或工具结果中得到需要长期记住的要点时使用；' +
+    '信息对你私有、不会展示给用户、不会写入项目文件。可多次调用，写成精炼要点而非原文。',
+  readonly: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      note: { type: 'string', description: '要记住的精炼要点（一句话到几行）' },
+    },
+    required: ['note'],
+  },
+};
+
+/**
  * web_fetch 工具定义（独立导出，条件性包含）
  *
  * 与 web_search 成对构成「搜索→抓取」闭环：web_search 返回候选链接，web_fetch 读取正文。
@@ -452,6 +480,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   COMPRESS_CONTEXT_TOOL,
   // ── 主动提问（ask_user 工具，loop 检出挂起；2026-09-04 唯一提问通道）──
   ASK_USER_TOOL,
+  // ── 情报区写回（remember_intel，LLM 私有笔记；loop 拦截执行）──
+  REMEMBER_INTEL_TOOL,
   // ── 任务表管理工具 ──────────────────────────────
   {
     name: 'task_table_write',

@@ -75,23 +75,24 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('BUILTIN_TOOLS 注册表', () => {
-    it('应注册 18 个内置工具', () => {
+    it('应注册 19 个内置工具', () => {
       const names = BUILTIN_TOOLS.map((t) => t.name);
-      expect(names.length).toBe(18);
+      expect(names.length).toBe(19);
       expect(names).toContain('delete_file');
     });
 
     it('builtinDefinitions 应含全部内置 + 条件工具（只读闸查询源，不受白名单影响）', () => {
       const defs = executor.builtinDefinitions;
       const names = defs.map((t) => t.name);
-      // 始终内置 18 + 条件 4（web_search / web_fetch / run_code / search_project）
-      expect(names.length).toBe(22);
+      // 始终内置 19 + 条件 4（web_search / web_fetch / run_code / search_project）
+      expect(names.length).toBe(23);
       expect(names).toContain('write_file');
       expect(names).toContain('web_search');
       expect(names).toContain('web_fetch');
       expect(names).toContain('run_code');
       expect(names).toContain('search_project');
       expect(names).toContain('compress_context');
+      expect(names).toContain('remember_intel');
       // 只读闸语义完整性：写/执行工具非只读（falsy），读工具只读（含 web_search 4-2 修复）
       expect(defs.find((t) => t.name === 'write_file')!.readonly).toBeFalsy();
       expect(defs.find((t) => t.name === 'run_code')!.readonly).toBeFalsy();

@@ -166,6 +166,15 @@ export const LOOP_CONSTANTS = {
    */
   TOOL_RESULT_WRAP_OVERHEAD_TOKENS: 100,
 
+  /**
+   * 情报区（LLM 私有工作笔记，大文本统一通道 Step 2）字符数上限。
+   *
+   * LLM 经 `remember_intel` 自写的私有笔记累积；超限裁最旧（保留最新）。这是**数据上限**
+   * （防单 turn 内多次写入把笔记撑爆），**不是预算维度** —— 情报区仍作为尾部 system 消息
+   * 参与现有 `truncateMessages` 窗口淘汰（锚点 C：不新增第 5 个预算维度）。
+   */
+  MAX_INTEL_PREFIX_LEN: 4_000,
+
   /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
   SUMMARY_CACHE_TTL_MSGS: 10,
 
