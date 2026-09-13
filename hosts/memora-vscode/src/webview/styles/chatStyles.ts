@@ -1464,6 +1464,25 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
   }
+  /* 思考折叠行/块（2026-09-13，Turn 意图理解与模型思考展示设计）：模型 reasoning 流，
+   * <details> 折叠；process-flow 运行时与 round-block finalize/重放共用同构形态（按 seq 平铺）。
+   * summary = 「思考」标签 + 首行预览，展开看全文；颜色沿用 narrate token，无新色。 */
+  .process-flow__reasoning, .round-block__reasoning { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
+  .process-flow__reasoning summary, .round-block__reasoning summary {
+    cursor: pointer; font-size: var(--font-xs, 11px);
+    color: var(--text-primary, #e0e0e0);
+    word-break: break-all; white-space: pre-wrap;
+  }
+  .process-flow__reasoning summary::marker, .round-block__reasoning summary::marker {
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .process-flow__reasoning-body, .round-block__reasoning-body {
+    margin-top: var(--sp-1, 2px); padding: var(--sp-2, 6px);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    font-size: var(--font-xs, 11px); line-height: 1.7;
+    color: var(--text-secondary, #9aa0a6);
+    white-space: pre-wrap; word-break: break-all;
+  }
   .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);

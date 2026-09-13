@@ -55,6 +55,13 @@ const MAX_HISTORY_MESSAGES = 200;
 const MAX_HISTORY_ROUNDS = 60;
 
 /**
+ * reasoning 落盘截断上限（字符，2026-09-13，Turn 意图理解与模型思考展示设计）：
+ * 模型思考可能很长（deepseek 深度思考数千 token），落盘前截断防 Round 文件膨胀
+ * （SSOT 常量：仅宿主落盘侧消费；展示侧流式全量，不受影响）。
+ */
+export const MAX_REASONING_PAYLOAD_LENGTH = 4000;
+
+/**
  * ask_user 提问等待超时（ms，2026-09-08）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
  * + resumeExecution('timeout') 自动续跑（LLM 自决）。0/负值 = 禁用超时保底。
  * 语义 = 保底而非打扰：选项/自由输入仍是唯一主动通道，无「跳过」按钮。
@@ -2483,6 +2490,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             this.post({ type: 'narrate_withdraw', text: chunk.withdrawn });
           }
           emitEvent('narrate', { content: chunk.content });
+        } else if (chunk.type === 'reasoning') {
+          // 模型思考（reasoning）→ 过程事件（webview 渲染「思考」折叠块，不进正文流）。
+          // 落盘前超长截断（SSOT 常量 MAX_REASONING_PAYLOAD_LENGTH）：展示侧流式全量，
+          // 存储侧受控；重启重放可见（ProcessEvent union 已含 reasoning 成员）。
+          emitEvent('reasoning', {
+            // 常量语义 = 含省略标记的总上限（slice MAX-1 + '…' 恒 ≤ MAX）
+            content:
+              chunk.content.length > MAX_REASONING_PAYLOAD_LENGTH
+                ? `${chunk.content.slice(0, MAX_REASONING_PAYLOAD_LENGTH - 1)}…`
+                : chunk.content,
+          });
         } else if (chunk.type === 'step_boundary') {
           // 步级折叠边界（阶段二，2026-09-08）：active 任务表步骤推进 → 落盘 step_boundary 事件。
           // webview 据此把后续过程事件归入对应 step 分组；重放与运行时同一边界（同构）。

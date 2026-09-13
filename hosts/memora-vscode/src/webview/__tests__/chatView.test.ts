@@ -3284,4 +3284,41 @@ describe('chatView narrate_withdraw 回抽', () => {
     dispatch({ type: 'narrate_withdraw', text: '不相干的文本' });
     expect(assistantBody().textContent).toContain('正文');
   });
+
+  it('reasoning 思考折叠块：运行时平铺 + finalize 后 round-block 折叠组（2026-09-13）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // 运行时：思考增量汇入 process-flow 平铺
+    dispatch({ type: 'process_event', event: { type: 'reasoning', seq: 2, ts: '', payload: { content: '用户问 A/B，先查资料' } } });
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    const runningRow = flow.querySelector('.process-flow__reasoning') as HTMLDetailsElement;
+    expect(runningRow).not.toBeNull();
+    expect(runningRow.textContent).toContain('思考');
+    expect(runningRow.textContent).toContain('用户问 A/B，先查资料');
+    // 思考不污染正文
+    expect(assistantBody().textContent).not.toContain('用户问 A/B');
+    // finalize：round-block 出现折叠组
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const doneRow = rb.querySelector('.round-block__reasoning') as HTMLDetailsElement;
+    expect(doneRow).not.toBeNull();
+    expect(doneRow.textContent).toContain('思考');
+    expect(doneRow.textContent).toContain('用户问 A/B，先查资料');
+  });
+
+  it('reasoning 与 narrate/tool 按 seq 平铺（时序忠实，思考是过程轨迹一部分）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'reasoning', seq: 2, ts: '', payload: { content: '思考：先搜索' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } } });
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 5, ts: '', payload: { content: '再看文档' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const nodes = Array.from(rb.querySelectorAll('.round-block__reasoning, .round-block__tool, .round-block__narrate'));
+    // 按 seq 平铺：reasoning(2) → tool(3) → narrate(5)
+    expect(nodes[0].className).toContain('round-block__reasoning');
+    expect(nodes[1].className).toContain('round-block__tool');
+    expect(nodes[2].className).toContain('round-block__narrate');
+  });
 });

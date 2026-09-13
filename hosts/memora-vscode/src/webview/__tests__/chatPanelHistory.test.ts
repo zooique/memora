@@ -20,7 +20,7 @@ import { todayDate } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
 import { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
-import { MemoraChatViewProvider } from '../panels/chatPanel.js';
+import { MemoraChatViewProvider, MAX_REASONING_PAYLOAD_LENGTH } from '../panels/chatPanel.js';
 
 // mock vscode：仅提供 chatPanel / ProviderStore 用到的最小 API
 vi.mock('vscode', async () => {
@@ -764,6 +764,44 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1')).toBe(true);
     expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(false);
     expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
+  });
+
+  it('reasoning 思考流落盘为 processEvents（超长截断），重启重放可重建（2026-09-13）', async () => {
+    const { store, roundStore, provider } = setup();
+    provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '对比方案', ts: 't0' },
+      { role: 'assistant', content: '结论', ts: 't1' },
+    ]);
+    const longReasoning = 'x'.repeat(MAX_REASONING_PAYLOAD_LENGTH + 100);
+    // mock chat：思考 → 工具 → 超长思考 → 正文（reasoning 与 tool 并存）
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'reasoning', content: '思考：先查 A/B 资料', roundId: 'round-1' };
+          yield { type: 'tool_start', toolCallId: 't1', name: 'web_search', args: '{}', roundId: 'round-1' };
+          yield { type: 'tool_result', toolCallId: 't1', name: 'web_search', ok: true, summary: 's', roundId: 'round-1' };
+          yield { type: 'reasoning', content: longReasoning, roundId: 'round-1' };
+          yield { type: 'text', content: '结论', roundId: 'round-1' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('对比方案');
+
+    const r1 = roundStore.getById('round-1')!;
+    const reasonings =
+      r1.processEvents?.filter((e): e is Extract<ProcessEvent, { type: 'reasoning' }> => e.type === 'reasoning') ?? [];
+    expect(reasonings).toHaveLength(2);
+    // 短思考原文落盘
+    expect(reasonings[0].payload.content).toBe('思考：先查 A/B 资料');
+    // 超长思考落盘截断（SSOT 常量，不超上限；省略标记 …）
+    expect(reasonings[1].payload.content.length).toBeLessThanOrEqual(MAX_REASONING_PAYLOAD_LENGTH);
+    // 与 tool 并存且按 seq 顺序（思考先于工具）
+    const types = r1.processEvents?.map((e) => e.type) ?? [];
+    expect(types.indexOf('reasoning')).toBeLessThan(types.indexOf('tool_start'));
+    expect(types.indexOf('tool_start')).toBeLessThan(types.lastIndexOf('reasoning'));
   });
 
   it('连续两次 chat()（第二次问答）：第二次 processEvents 独立落盘到新 Round，不覆盖第一次', async () => {
