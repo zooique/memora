@@ -412,7 +412,7 @@ export interface IMcpTransport {
 
 * **僵尸键（实现内部技术债）**：参考实现内部的已定义但零消费字段（如 memora `types.ts` 中的 `toolWhitelist`/`toolBlacklist` 等）。**只标注不动，不剪枝、不进标准**；不得因"定义过"就主张其进入标准。
 
-* **预留键（设计空间预留）**：为未来行为分支预留的字段。这些字段在代码中会明确标记为「预留键，不承诺当前生效」。预留键**承载设计空间全景**，但在当前版本**内核不消费，声明不生效**，仅作为未来扩展的占位符。消费方应参照 `types.ts` `BehaviorStrategy` 接口的「诚实化声明」清单，区分实际生效键与预留键，避免误以为"声明即生效"。（注：早期 `understandingConfirm`/`costBudget` 曾属此类，现已分别落地为「内核消费」与「已撤键」——`costBudget` 因内核无定价能力、宿主无执行者，于 2026-08-28 从标准撤下；`taskClassification`/`safetyRule` 经审查已清除。当前标准无纯预留键。）
+* **预留键（设计空间预留）**：为未来行为分支预留的字段。这些字段在代码中会明确标记为「预留键，不承诺当前生效」。预留键**承载设计空间全景**，但在当前版本**内核不消费，声明不生效**，仅作为未来扩展的占位符。消费方应参照 `types.ts` `BehaviorStrategy` 接口的「诚实化声明」清单，区分实际生效键与预留键，避免误以为"声明即生效"。（注：早期 `understandingConfirm`/`costBudget` 曾属此类，现已分别落地为「已回收（并入 ask_user 通道）」与「已撤键」——`costBudget` 因内核无定价能力、宿主无执行者，于 2026-08-28 从标准撤下；`understandingConfirm` 因 confirm 语义与 `askOn['confirm']`/ask_user 通道重叠、echo 由内核 Turn 起始策略覆盖，于 2026-09-13 回收；`taskClassification`/`safetyRule` 经审查已清除。当前标准无纯预留键。）
 
 **命名归标准原则**：实现内部旧命名（如 memora 旧 `act.toolCalls` / `reflect.endingHandoff`）通过解析层**别名迁移**到标准键名（旧键 → 新键，warn 降级提示），消费方一律读标准键——实现向标准看齐，而非标准向实现看齐（§九）。
 

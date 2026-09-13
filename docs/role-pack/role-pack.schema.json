@@ -69,11 +69,6 @@
           "type": "object",
           "description": "回答前阶段策略",
           "properties": {
-            "understandingConfirm": {
-              "type": "string",
-              "enum": ["off", "echo", "confirm"],
-              "description": "理解确认模式：off=直接生成 / echo=复述不等待 / confirm=预检停顿后确认（默认 off）"
-            },
             "summaryFocus": {
               "type": "string",
               "minLength": 1,

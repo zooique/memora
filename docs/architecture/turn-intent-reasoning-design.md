@@ -2,7 +2,7 @@
 
 > **状态**：探索中（2026-09-13）——可逆设计，先落 `docs/` 验证，不占 ADR 编号、不改决策 README 索引；验证稳定、被真实场景复现消费后按需固化为 ADR。
 > **版本归属**：3.1.0 增强包（3.0.0 已就绪，不受本设计影响）。
-> **探索期边界**：**不动现有角色包**（3 个示例包保留 `understandingConfirm: confirm` 原样运行）；回收的迁移对齐是**定案后的一次性收尾动作**，非探索期工作（见 Part 3）。
+> **阶段进度**：A（reasoning 采集展示）/ B（Turn 起始策略指令）/ C（回收 understandingConfirm）**均已实施**（2026-09-13）；真机验证待真实 LLM 环境。
 > **土壤来源**：Plan-and-Execute / Pre-Act / Think Tool 模式、Anthropic thinking / Fable 5 prompt 指南、Open WebUI reasoning 折叠实践、Claude Code Plan Mode 剖析（搜索于 2026-09-13，详见关联）。
 
 ## 一、背景与目标
@@ -117,11 +117,11 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 - 策略叙述复用 narrate 通道（D3）：LLM 在工具轮前本就倾向输出"我先查一下"，以 narrate **平铺展示**、不进正文（LLM 叙述不由指令强求，仅边界引导）。
 - 位置待定：`buildSystemPromptPrefix`（[assembler.ts](../src/agent/assembler.ts)）或角色包 persona 尾部；实现时按装配顺序择一，**单点注入、无第二副本**。
 
-### Part 3：回收 understandingConfirm（③，定案期一次性收尾）
+### Part 3：回收 understandingConfirm（③）——**已实施（2026-09-13）**
 
-**探索期（现在）**：不动角色包——3 个示例包保留 `understandingConfirm: confirm` 原样运行，与本设计并行，互不干扰。
+**实施动作**：硬删键 + 3 个示例包同步迁移（小说助手删键；方案设计师/文档设计师 askOn 加 `'confirm'` 后删键）；validator 零改动（未知键 warning+忽略属既有机制）。清理面已覆盖：`UnderstandingConfirm` 类型、`resolveUnderstandingConfirm`、默认值与键规则、`assembleRolePack` 注入段、3 个 manifest、schema、role-pack-spec / authoring-guide / 开放键指南 / 策略键消费矩阵 / 接入指南 / role-pack-creator SKILL 模板 / README。
 
-**定案期（验证稳定后，一次性对齐）**：
+**回收语义**：
 
 | 语义 | 去向 |
 | --- | --- |
@@ -199,9 +199,9 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 **阶段 B 出口**：真机验证——简单问题直接答（无多余叙述）；复杂问题工具调用前有"我先…"叙述（narrate 平铺可见）；涉及历史时 LLM 主动 search_memories（不新增引导，靠既有工具描述）。
 
-### 阶段 C：Part 3 回收 understandingConfirm（定案期，不实施）
+### 阶段 C：Part 3 回收 understandingConfirm —— **已实施（2026-09-13）**
 
-探索期不动角色包；定案后按设计文档 Part 3 一次性收尾（硬删 + 3 个示例包迁移 + 文档/schema/测试清理）。
+硬删键 + 3 个示例包迁移（确认场景统一走 ask_user 通道）+ 文档/schema/测试全量清理；内核 typecheck + 全量测试绿后提交推送。
 
 ### 风险与回滚
 

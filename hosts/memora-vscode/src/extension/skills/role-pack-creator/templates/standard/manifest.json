@@ -11,7 +11,7 @@
   "handoffPrompt": "{{PACK_HANDOFF}}",
   "strategy": {
     "prepare": {
-      "understandingConfirm": "off"
+      "summaryFocus": "示例：聚焦本轮值得记的维度"
     },
     "act": {
       "toolMode": "allow",

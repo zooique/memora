@@ -29,7 +29,7 @@
   "formatVersion": "1.0.0",
   "interactionType": "tool_assistant",
   "strategy": {
-    "prepare": { "understandingConfirm": "confirm", "summaryFocus": "以文档设计视角提炼要点" },
+    "prepare": { "summaryFocus": "以文档设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
     "reflect": { "selfReview": 1 },
     "global": { "tokenBudget": 12000, "stepBudget": 60 }
@@ -85,11 +85,9 @@
 
 ### 3.1 prepare 组（回答前·认知）
 
-> **阶段2（2026-09-09，memory-tool-recall-design）注记**：本组 6 个召回键 `memoryRecall` / `memoryRecallPercent` / `minFallback` / `contextAssembly` / `recallConfidence` / `summaryRecall` 已**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除。记忆检索改由 `memory_search` 工具触发（`source` 过滤承接 `summaryRecall` 语义）；上下文装配恒为 hybrid。**召回保底机制亦已彻底退役**（2026-09-10 剪枝：`DEFAULT_MIN_FALLBACK` 随 `recall()` 召回编排一并删除，见 memory-tool-recall-design 补记）。**记忆层 cap 常数 `DEFAULT_MEMORY_CAP_RATIO` 亦已于 2026-09-10 删除**（G39 P2-2：自动注入退役后无约束消费者）——现行预算模型无记忆维度。本组现存 2 键：
+> **阶段2（2026-09-09，memory-tool-recall-design）注记**：本组 6 个召回键 `memoryRecall` / `memoryRecallPercent` / `minFallback` / `contextAssembly` / `recallConfidence` / `summaryRecall` 已**整体退役**——记忆纯工具化召回后，prepare 无自动注入消费端，6 键与解析函数/常量一并移除。记忆检索改由 `memory_search` 工具触发（`source` 过滤承接 `summaryRecall` 语义）；上下文装配恒为 hybrid。**召回保底机制亦已彻底退役**（2026-09-10 剪枝：`DEFAULT_MIN_FALLBACK` 随 `recall()` 召回编排一并删除，见 memory-tool-recall-design 补记）。**记忆层 cap 常数 `DEFAULT_MEMORY_CAP_RATIO` 亦已于 2026-09-10 删除**（G39 P2-2：自动注入退役后无约束消费者）——现行预算模型无记忆维度。**`understandingConfirm` 亦已回收（2026-09-13，turn-intent-reasoning-design Part 3）**——confirm 并入 `askOn['confirm']`/ask_user 通道，echo 由内核 Turn 起始策略覆盖，不再作为开放键。本组现存 1 键：
 
 | 键                      | 类型 / 枚举                      | 合法区间            | 默认       | 含义                                             | 示例              |
-| ---------------------- | ---------------------------- | --------------- | -------- | ---------------------------------------------- | --------------- |
-| `understandingConfirm` | `off` / `echo` / `confirm`   | —               | `off`    | 理解确认模式：off=直接生成 / echo=复述不等待 / confirm=预检停顿后确认 | `"confirm"`     |
 | `summaryFocus`         | string                       | `1 ~ 500` 字符    | 无        | 提炼视角：决定 round-summary「值得记什么」                   | `"聚焦架构决策与接口契约"` |
 
 ### 3.2 act 组（回答中·行动）
@@ -167,9 +165,9 @@
 
 | 状态          | 含义          | 键             |
 | ----------- | ----------- | ------------- |
-| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 17 键（prepare 2 / act 7 / reflect 3 / global 5） |
+| **已消费（冻结）** | 内核真实读取并影响行为 | 上述 §三 全部 16 键（prepare 1 / act 7 / reflect 3 / global 5） |
 
-> 全部策略键现均已落地，无纯预留死键：`understandingConfirm` 经 `assembleRolePack` 注入 persona prompt 行为指令（off=直接答 / echo=复述不等待 / confirm=复述并等待确认）。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）、`toolApproval`（2026-09-11，审批链无执行方的展示性假承诺）、`streaming`（2026-09-11，写而不读的假旋钮——内核 provider 恒 `stream:true`）、`loopContinue`（2026-09-11，v0.13- 别名；安装基数 0 → 兼容防的是从未发生的场景，按版本契约分面「作者输入面可不兼容」删除）——**无消费者 / 无真实兼容对象的策略键不保留**。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
+> 全部策略键现均已落地，无纯预留死键。`understandingConfirm` 已回收（2026-09-13，turn-intent-reasoning-design Part 3）：confirm 并入 `askOn['confirm']`/ask_user 工具通道，echo 由内核 Turn 起始策略指令覆盖——确认场景统一走 ask_user 单一通道，不再作为开放键。已撤键先例：`costBudget`（2026-08-28，内核无定价能力、宿主无执行者）、`taskLoopLimit`（2026-09-06，多 turn 编排删除 + 会议确定性预置退役后无常量消费方）、prepare 召回策略键族 6 键（2026-09-09 阶段2，记忆纯工具化召回后无自动注入消费端）、`toolApproval`（2026-09-11，审批链无执行方的展示性假承诺）、`streaming`（2026-09-11，写而不读的假旋钮——内核 provider 恒 `stream:true`）、`loopContinue`（2026-09-11，v0.13- 别名；安装基数 0 → 兼容防的是从未发生的场景，按版本契约分面「作者输入面可不兼容」删除）——**无消费者 / 无真实兼容对象的策略键不保留**。诚实化声明见 `src/role-pack/types.ts` `BehaviorStrategy` 注释。
 
 ***
 
