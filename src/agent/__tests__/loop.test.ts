@@ -7,6 +7,7 @@ import { mkdtemp, rm, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
+import { ResultReplacementStrategy } from '@/agent/compaction.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
@@ -4245,5 +4246,132 @@ describe('AgentLoop · 入口关（工具结果超阈落盘，引用可回取）
     const toolMsg = loop.getMessages().find((m) => m.role === 'tool');
     expect(toolMsg!.content).toContain(HUGE_RESULT);
     expect(toolMsg!.content).not.toContain('工具结果已卸载至磁盘');
+  });
+});
+
+describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路同源）', () => {
+  /**
+   * 防重缓存（ToolResultCache）**只在闭环内有效** —— `resetTurnState` 于 turn 入口 `clear()`。
+   * 故本组用例全部在**一次** `processUserInput` 内构造多步迭代；跨 turn 编排会因缓存已清而
+   * 「因错误的原因通过」（假绿），须避免。
+   *
+   * 不变量（三者同源，缺一即死锁或空转）：
+   *   ① **判定**：key 必须含读取区间 —— 否则 1a 的分段续读被自己拦死（R-1 回归）；
+   *   ② **前提**：仅当结果**确实仍在上下文**才拦 —— 内容已被压缩链换成占位符还拦 = 死锁（R-2）；
+   *   ③ **文案**：只陈述事实 + 给出路，不得指令「基于已有信息继续」（R-3 同源撒谎）。
+   */
+  const call = (id: string, name: string, args: string) => ({
+    id,
+    type: 'function' as const,
+    function: { name, arguments: args },
+  });
+
+  it('A · 同一文件的分段续读不被拦截（去重 key 含 offset/limit）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('片段内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 第 1 步：整读（无 offset → 缺省从第 1 行起）
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 第 2 步：换区间续读 —— 与第 1 步是**不同请求**，必须放行
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":200,"limit":100}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('分段读大文件')) {
+      void chunk;
+    }
+
+    // 若提取器丢掉 offset/limit（R-1 回归），两次调用同 key → 第 2 步被拦 → 此处为 1
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+  });
+
+  it('B+C · 完全相同的重复读取被拦截，文案只陈述事实并给出路（不再指令「基于已有信息继续」）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件正文');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 同 path、同区间（都缺省）→ 真正的重复请求
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('重复读同一文件')) {
+      void chunk;
+    }
+
+    // 第 2 步被拦在 loop 层，不落 ToolExecutor
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    const blocked = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(blocked).toBeDefined();
+    // 文案归真：陈述「仍在上下文中」这一事实（并给出处）
+    expect(blocked!.content).toContain('仍在你的当前上下文中');
+    // 不得再出现指令性撒谎——内容若已被换掉，这句话就是死锁的扳机
+    expect(blocked!.content).not.toContain('基于已有信息继续');
+    // 出路：告知如何取该文件的其它部分（否则「其它部分」无从下手）
+    expect(blocked!.content).toContain('offset/limit');
+  });
+
+  it('D-1 · 文件被写入后旧缓存（含带区间条目）一并失效 → 重读放行', async () => {
+    const toolExecutor = vi.fn().mockImplementation((name: string) =>
+      Promise.resolve(name === 'write_file' ? '已写入' : 'v1'),
+    );
+    const ranged = '{"path":"docs/a.md","offset":1,"limit":50}';
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', ranged)] }],
+        [{ toolCalls: [call('c2', 'write_file', '{"path":"docs/a.md","content":"new"}')] }],
+        // 写后按**同一区间**重读：缓存必须已失效，否则读到的是陈旧内容的「已被拦」
+        [{ toolCalls: [call('c3', 'read_file', ranged)] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('改后重读')) {
+      void chunk;
+    }
+
+    // 若 invalidateFile 退回「read_file:${path}」前缀精确匹配，带区间的条目不会被清 → 此处为 2
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+  });
+
+  it('D-2 · 结果已被压缩链替换为占位符 → 重读必须放行（死锁守卫，CTX-1 根因②）', async () => {
+    const toolExecutor = vi.fn().mockImplementation((name: string) =>
+      Promise.resolve(name === 'read_file' ? '正文内容' : ''),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 读第二个文件 → 使工具结果条数超过 keepRecent，逼压缩链在下一步前替换掉 a.md 的结果
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
+        // 此时 a.md 结果已被换成 [Previous: used read_file]，LLM 手边无内容 → 必须放行重读
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('压缩后重读')) {
+      void chunk;
+    }
+
+    // 前置自检：压缩确实发生过，否则本用例没打到守卫分支（会假绿）
+    expect(
+      loop.getMessages().some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
+    ).toBe(true);
+    // 内容已不在手上 → 必须放行；若去掉 isCachedResultStillInContext 判定，此处为 2（死锁）
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
   });
 });

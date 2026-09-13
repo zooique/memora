@@ -29,6 +29,7 @@ import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { isTimeoutAbortSignal } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { roundTo } from '@/utils/math.js';
+import { sha256Fingerprint } from '@/utils/hash.js';
 import { logger } from '@/logging/logger.js';
 import type { ICompactionStrategy } from '@/agent/compaction.js';
 import {
@@ -48,7 +49,12 @@ import type { LlmCallResult } from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
 import type { DuplicateCallInterceptor, DuplicateCheckContext } from '@/agent/types.js';
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
-import { ToolResultCache, DEDUP_KEY_EXTRACTORS } from '@/agent/toolResultCache.js';
+import {
+  ToolResultCache,
+  DEDUP_SUBJECT_EXTRACTORS,
+  formatDedupSubject,
+  type CacheEntry,
+} from '@/agent/toolResultCache.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
@@ -1456,21 +1462,26 @@ export class AgentLoop {
         continue;
       }
       // 工具结果防重拦截（read_file/list_dir/web_search 等信息获取型工具）：
-      // 闭环内同 toolName + 同去重 key 的重复调用 → blocked=true + [ALREADY_READ] 拒绝文案。
+      // 闭环内同 toolName + 同请求主体（路径 + 读取区间 / query）的重复调用 → blocked=true + [ALREADY_READ]。
       // 与 web_search MAX_WEB_SEARCH_CALLS / ask_user askLimit 同级的确定性拦截，
       // 终结 LLM 在同一批文件/同一 query 上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线）。
+      //
+      // 拦截前提（不可省）：**该结果确实仍在当前上下文中**。否则内容已被截断裁剪、或已被压缩链
+      // 换成 `[Previous: used x]` 占位符，LLM 手边已无内容却被告知「基于已有信息继续」——
+      // 指令性撒谎 + 重读被拦 = 死锁（CTX-1 根因②）。判定见 isCachedResultStillInContext。
       // 文件被 write_file/delete_file 修改 → 结果处理循环主动 invalidateFile 放行后续合法重读。
-      const dedupExtractor = DEDUP_KEY_EXTRACTORS[tc.function.name];
-      if (dedupExtractor) {
-        const dedupKey = dedupExtractor(tc.function.arguments);
-        if (dedupKey) {
-          const hit = this.toolResultCache.check(tc.function.name, dedupKey);
-          if (hit) {
+      const subjectExtractor = DEDUP_SUBJECT_EXTRACTORS[tc.function.name];
+      if (subjectExtractor) {
+        const subject = subjectExtractor(tc.function.arguments);
+        if (subject) {
+          const hit = this.toolResultCache.check(tc.function.name, subject);
+          if (hit && this.isCachedResultStillInContext(hit)) {
             blockedFlags.push(true);
             toolPromises.push(
               Promise.resolve(
-                `[ALREADY_READ] 你已在第 ${hit.cachedAtIteration} 步读取过此内容（${tc.function.name}:${dedupKey}），` +
-                  `请基于已有信息继续分析或作答，不要重复读取。`,
+                `[ALREADY_READ] 该结果仍在你的当前上下文中（第 ${hit.cachedAtIteration} 步获取：` +
+                  `${formatDedupSubject(tc.function.name, subject)}），无需重复获取。` +
+                  `如需该文件的其它部分，请用 offset/limit 指定行区间。`,
               ),
             );
             continue;
@@ -1503,10 +1514,17 @@ export class AgentLoop {
       }
       // 工具结果防重缓存：仅成功且是 info-fetch 类型的工具才写入（失败/拦截不缓存——
       // 失败可能是临时问题，拦截是我们主动挡的）。
-      const resultExtractor = DEDUP_KEY_EXTRACTORS[tc.function.name];
+      // 一并记录 toolCallId + 内容指纹：拦截前据此判定「该结果是否仍在当前上下文中」。
+      // 指纹按进入上下文的包裹口径计算（复用 wrapToolResult 同一函数 → 同源，不会因模板改动失配）。
+      const resultExtractor = DEDUP_SUBJECT_EXTRACTORS[tc.function.name];
       if (ok && resultExtractor) {
-        const key = resultExtractor(tc.function.arguments);
-        if (key) this.toolResultCache.set(tc.function.name, key, this.currentIteration);
+        const subject = resultExtractor(tc.function.arguments);
+        if (subject) {
+          this.toolResultCache.set(tc.function.name, subject, this.currentIteration, {
+            toolCallId: tc.id,
+            fingerprint: sha256Fingerprint(wrapToolResult(tc.function.name, result)),
+          });
+        }
       }
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
       // 覆盖 write_file/delete_file 两类会修改文件系统状态的工具
@@ -2224,6 +2242,25 @@ export class AgentLoop {
       toolCallId,
       roundId: this.currentRoundId,
     });
+  }
+
+  /**
+   * 缓存条目对应的工具结果是否**仍在当前上下文中** —— 防重拦截的前提（调用点见 handleToolCalls）。
+   *
+   * 三道判据全过才算「在」：① 条目带 toolCallId 与指纹；② `this.messages` 中仍有该 toolCallId 的
+   * tool 消息；③ 其内容指纹与记录一致（内容未被压缩链替换成 `[Previous: used x]` 占位符）。
+   *
+   * **保守方向：宁可放行，不可误拦。** 找不到消息 / 指纹不符 / 条目缺元信息 → 一律 false（放行）。
+   * 误放行的代价是「多读一次」；误拦的代价是「内容已不在手上却读不回来 = 死锁」——两者不对称。
+   *
+   * 注：超阈结果经入口关落盘后，上下文里留的是「路径 + 预览」，与记录指纹（包裹后的原文）不符
+   * → 判为「不在」，重读放行。这是正确语义：原文确实已不在上下文中。
+   */
+  private isCachedResultStillInContext(entry: CacheEntry): boolean {
+    if (entry.toolCallId === undefined || entry.fingerprint === undefined) return false;
+    const msg = this.messages.find((m) => m.role === 'tool' && m.toolCallId === entry.toolCallId);
+    if (!msg) return false;
+    return sha256Fingerprint(msg.content) === entry.fingerprint;
   }
 
   /** 整体替换执行上下文（截断落盘 / 恢复历史 / 装配重排：传入的数组已是完整上下文） */
