@@ -2293,6 +2293,9 @@ export class AgentLoop {
    * - 已存在则更新原文（保持单条），被截断删除则重建 → 参与 `truncateMessages` 尾部淘汰（B 语义）；
    * - 非 executionTemp → 跨 turn 自持（每轮 `_prepareContext` 注入最新版）。
    *
+   * **归属注**：对已存在消息的 `existing.content = ...` 属**单条尾部私有消息的幂等刷新**（同
+   * `ResultReplacement` 只改 content），**不是装配重排**——不违背 loop「只追加、不重装配」的编排原则。
+   *
    * **时序注（2026-09-13，诚实声明）**：`_prepareContext` 先算 `safeMessages`、后注入本消息——
    * 在**截断轮**（截断重排后安全快照 ≠ this.messages）里，本轮被发送的 `safeMessages` 不含本情报区，
    * 下一轮 `_prepareContext` 重算后才可见（瞬时，非死锁）。此与 search 收敛提示 / taskTable 等所有
