@@ -163,6 +163,23 @@
    - AI 能力波次已落地（§四-2 结论 → 角色包）：`craft-review` 升级**反 AI 叙事特征治理**（说教/闭环/无支线/节拍器/主角驱动五检测）、`style-weaver` 升级**文风杂交 + 多文体 A/B**、新增 `idea-lever`（G21 创意穷举）；协作定位定稿"目标产出完整成稿 + 过程讨论"。
    - **缺口全部闭合（G1-G21）**，技能全景 **21 个**：need-finder / core-extractor / three-layer-check / logline-craft / relationship-web / world-builder / story-bible / outline-expand / scene-craft / pacing-hook / emotion-wave / polish-method / longform-guard / craft-review / empathy-craft / style-weaver / idea-lever + 4 原技法（story-structure / character-sheet / dialogue-craft / foreshadow）。验证触发：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
 
+#### 技能可发现性双锚点（2026-09-13 探索结论，落地时复现实证）
+
+敏感点：内置 skills 的"可发现性"有两个来源，二者分工不同、**可删一不可**：
+
+| 锚点 | 机制 | 作用 |
+|---|---|---|
+| **L1 清单（系统兜底）** | `buildSystemPrompt` 从 skills/ 目录扫描 name+description 拼入 system prompt | 保证技能文件存在即可见，不依赖作者记得写——删了系统级兜底就没了 |
+| **设定文本引导（叙述触发）** | persona 工作流程 / rules 纪律里高亮"什么情况用什么 skill" | 让 LLM 的调用决策由**场景契约**驱动，而非靠猜扁平 description |
+
+**实证（反例即教训）**：共鸣最初 persona/rules 只引用 16/21 技能，`idea-lever` + 4 原技法（story-structure / character-sheet / dialogue-craft / foreshadow）**零引用**——若不借 L1 兜底，立即沦为"存在但永不调用"的僵尸技能。故达三条结论：
+
+1. **保留 L1** 作系统可发现性兜底：零副本、实时生成，SSOT 仍是技能文件；
+2. **设定文本只承载「何时用」的时机引导**、不复述能力：能力定义以技能文件为唯一真理源，文本引用仅是技能文件的"使用时机副本"，属合理叙述、非能力级二源；
+3. **覆盖完整性强制自查**：每个内置 skill 须在 persona/rules **至少一处**标注使用时机。补全后共鸣覆盖达 **21/21**（2026-09-13 落地）。
+
+> 通用方法论（写给所有角色包作者）见 [role-pack-authoring-guide.md §2.5 技能使用引导](./role-pack-authoring-guide.md)。
+
 ## 六、已知风险（对抗式自查）
 
 | 风险 | 说明 |
