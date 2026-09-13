@@ -693,7 +693,7 @@ describe('OpenAICompatibleProvider · 请求参数边界（maxTokens/timeoutMs �
 // ─── reasoning_content 解析（2026-09-13，Turn 意图理解与模型思考展示设计）──
 
 describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
-  it('delta.reasoning_content 增量透传到 chunk.reasoning（与 tool_calls 并存时序）', async () => {
+  it('delta.reasoning_content 增量透传到 chunk.thought（与 tool_calls 并存时序）', async () => {
     // deepseek 典型时序：思考增量先行 → 正文 → tool_calls
     server.use(
       http.post('*/chat/completions', () => {
@@ -716,18 +716,18 @@ describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
     const chunks = await collectChunks(makeProvider());
 
     // 增量语义（R3）：每条 chunk 只带新增片段，消费侧自行累积
-    const reasonings = chunks.map((c) => c.reasoning).filter((r): r is string => r !== undefined);
-    expect(reasonings).toEqual(['用户问 A/B 方案对比', '，先查资料']);
+    const thoughts = chunks.map((c) => c.thought).filter((r): r is string => r !== undefined);
+    expect(thoughts).toEqual(['用户问 A/B 方案对比', '，先查资料']);
     // 与 tool_calls 并存：同一流内两者均被正确解析
     const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
     expect(toolCallChunk).toBeDefined();
   });
 
-  it('非思考模型无 reasoning_content 时 chunk.reasoning 恒 undefined（自然降级，R9）', async () => {
+  it('非思考模型无 reasoning_content 时 chunk.thought 恒 undefined（自然降级，R9）', async () => {
     server.use(http.post('*/chat/completions', () => createSseResponse('普通回答')));
     const chunks = await collectChunks(makeProvider());
     for (const c of chunks) {
-      expect(c.reasoning).toBeUndefined();
+      expect(c.thought).toBeUndefined();
     }
   });
 });

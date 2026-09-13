@@ -390,8 +390,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
             const chunk: LlmChunk = {};
             // delta.content 可能为 null（tool_calls 场景），truthy 检查即可
             if (choice.delta?.content) chunk.content = choice.delta.content;
-            // 模型思考（reasoning_content）：增量透传，与 content 并列（R3 增量语义，消费侧自行累积）
-            if (choice.delta?.reasoning_content) chunk.reasoning = choice.delta.reasoning_content;
+            // 模型思考（协议字段 reasoning_content → LlmChunk.thought）：增量透传，与 content 并列
+            // （R3 增量语义，消费侧自行累积）。thought 命名避开路由 TaskType='reasoning' 与相位 'thinking'。
+            if (choice.delta?.reasoning_content) chunk.thought = choice.delta.reasoning_content;
 
             // 累积 tool_calls delta
             if (choice.delta?.tool_calls) {

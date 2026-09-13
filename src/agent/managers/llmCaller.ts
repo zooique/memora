@@ -275,10 +275,11 @@ export class LlmCaller {
               yield { type: 'text', content: chunk.content, stage };
             }
           }
-          // 模型思考（reasoning）：实时透传展示，**永不拼入 fullContent**（CoT 防护，R11 双轨隔离——
-          // 正文轨与记忆轨不碰 reasoning，仅展示轨消费）。增量片段，宿主自行累积。
-          if (chunk.reasoning) {
-            yield { type: 'reasoning', content: chunk.reasoning };
+          // 模型思考内容（thought）：实时透传展示，**永不拼入 fullContent**（CoT 防护，R11 双轨隔离——
+          // 正文轨与记忆轨不碰 thought，仅展示轨消费）。增量片段，宿主自行累积。命名用 thought
+          // 避开多模型路由任务 TaskType='reasoning' 与 ProcessEvent 既有相位 'thinking'。
+          if (chunk.thought) {
+            yield { type: 'thought', content: chunk.thought };
           }
           if (chunk.toolCalls) {
             toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];

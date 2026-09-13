@@ -851,23 +851,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 思考折叠块（2026-09-13，Turn 意图理解与模型思考展示设计）：模型 reasoning 流累积结果。
+   * 思考折叠块（2026-09-13，Turn 意图理解与模型思考展示设计）：模型 thought 流累积结果。
    * summary 固定「思考」标签 + 首行预览（截断），展开看全文；按 seq 与 narrate/tool 平铺
    * （思考是过程轨迹的一部分，保时序忠实）。textContent 构建防注入。
    */
-  function createReasoningGroup(
-    ev: Extract<ProcessEvent, { type: 'reasoning' }>,
+  function createThoughtGroup(
+    ev: Extract<ProcessEvent, { type: 'thought' }>,
     openByDefault = false,
   ): HTMLDetailsElement {
     const row = document.createElement('details');
-    row.className = 'round-block__reasoning';
+    row.className = 'round-block__thought';
     row.open = openByDefault;
     row.dataset.seq = String(ev.seq);
     const summary = document.createElement('summary');
     const text = ev.payload.content.trim();
     summary.textContent = text.length > 80 ? `思考 · ${text.slice(0, 80)}…` : `思考 · ${text}`;
     const body = document.createElement('div');
-    body.className = 'round-block__reasoning-body';
+    body.className = 'round-block__thought-body';
     body.textContent = text;
     row.append(summary, body);
     return row;
@@ -1169,9 +1169,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
     // 实时相位行是进行中专属（details 直接子元素，非小节），收尾先移除
     details.querySelector('.round-block__phase')?.remove();
-    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、reasoning、step 容器等增量元素，避免重复渲染
+    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、thought、step 容器等增量元素，避免重复渲染
     details.querySelectorAll(
-      '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__reasoning, .round-block__step',
+      '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__thought, .round-block__step',
     ).forEach((el) => el.remove());
     // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；阶段二有 step_boundary 时归入步级折叠块）
     const narrates = events
@@ -1191,13 +1191,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertStepInOrder(host, row, t.seq);
       }
     }
-    // § 思考（reasoning 折叠块）：按 seq 与 narrate/tool 平铺（保时序；finalize 默认收起）
-    const reasonings = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'reasoning' }> => e.type === 'reasoning')
+    // § 思考（thought 折叠块）：按 seq 与 narrate/tool 平铺（保时序；finalize 默认收起）
+    const thoughts = events
+      .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
-    for (const r of reasonings) {
+    for (const r of thoughts) {
       const { host } = stepContainerFor(details, events, r.seq);
-      insertStepInOrder(host, createReasoningGroup(r), r.seq);
+      insertStepInOrder(host, createThoughtGroup(r), r.seq);
     }
     // § 过程轨迹（thinking 阶段：聚合计数，2026-09-09 去噪——同一相位 N 条 thinking 事件
     //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
@@ -1346,20 +1346,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = stepContainerFor(flow, events, n.seq);
       insertStepInOrder(host, row, n.seq);
     }
-    // 2.5) reasoning 思考折叠行：按 seq 插入（<details> 折叠；textContent 防注入；运行时默认收起）
-    const reasonings = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'reasoning' }> => e.type === 'reasoning')
+    // 2.5) thought 思考折叠行：按 seq 插入（<details> 折叠；textContent 防注入；运行时默认收起）
+    const thoughts = events
+      .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
-    for (const r of reasonings) {
-      if (flow.querySelector(`.process-flow__reasoning[data-seq="${r.seq}"]`)) continue;
+    for (const r of thoughts) {
+      if (flow.querySelector(`.process-flow__thought[data-seq="${r.seq}"]`)) continue;
       const row = document.createElement('details');
-      row.className = 'process-flow__reasoning';
+      row.className = 'process-flow__thought';
       row.dataset.seq = String(r.seq);
       const summaryEl = document.createElement('summary');
       summaryEl.textContent = '思考';
       row.appendChild(summaryEl);
       const body = document.createElement('div');
-      body.className = 'process-flow__reasoning-body';
+      body.className = 'process-flow__thought-body';
       body.textContent = r.payload.content.trim();
       row.appendChild(body);
       const { host } = stepContainerFor(flow, events, r.seq);

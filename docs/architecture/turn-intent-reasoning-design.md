@@ -33,12 +33,12 @@
 | R1 | **understandingConfirm 不是死键**：3 个示例角色包实际配置 `confirm`，直接回收会静默丢失"复述确认"行为 | 探索期**不动角色包**（用户拍板，2026-09-13）；定案时一次性迁移对齐（Part 3） |
 | R2 | **validator 对未知策略键是 warning+忽略**（键级渐进）——若定案后角色包仍声明已删键，不报错但静默失效 | 这是 validator **既有**宽容机制（非为回收新写），不算带伤；定案时角色包同步迁移消除残留，**不为兼容写任何新代码** |
 | R3 | **reasoning 流式语义**：若每个 chunk 带全量累积值 → O(n²) 拼接 + 宿主重复渲染 | reasoning 走**增量**（每 chunk 只带新增片段），消费侧自行累积（与 content 同构） |
-| R4 | **AgentChunk 新增类型 = 协议变更**：需同步 IPC 通道治理（100/130 阈值）、宿主渲染、过程事件回放 | reasoning 走**现有 ProcessEvent 落盘机制**（新增 `type: 'reasoning'` 成员，随 Round 重放重建）——不落独立存储、不新建回放路径（process-event-log-replay-design 明确"新增事件类型只需扩展折叠区小节 + ProcessEvent union 成员"） |
+| R4 | **AgentChunk 新增类型 = 协议变更**：需同步 IPC 通道治理（100/130 阈值）、宿主渲染、过程事件回放 | reasoning 走**现有 ProcessEvent 落盘机制**（新增 `type: 'thought'` 成员，随 Round 重放重建）——不落独立存储、不新建回放路径（process-event-log-replay-design 明确"新增事件类型只需扩展折叠区小节 + ProcessEvent union 成员"） |
 | R5 | **prompt 软约束的固有风险**：LLM 可能在不该啰嗦的场景输出叙述，无 tool_calls 时不会被 narrate 分类拦截，污染正文 | 接受软约束定位：指令是**边界引导非步骤脚本**（约束式极简）；单元测试只覆盖注入正确性，行为验证靠人工/集成 |
 | R6 | **内核固定指令 vs 角色包自由度**：创作类角色（小说助手）可能反感"策略决策叙述" | 指令收敛为**边界式约束**：只画"何时调查/何时规划"的行为边界，不强制输出模板、不写步骤脚本；输出形态由 LLM 裁量（对齐 Anthropic"目标+约束"指南） |
 | R7 | **内核固定指令 vs 角色包边界规则（R1）**："怎么做事"归角色包，指令可能被判定越界 | 边界论证：本指令是**内核 turn 结构语义**（同 loop 的 step 边界、selfReview 注入），非角色包设定记忆 |
 | R8 | **现有测试断言**：loop/agent 测试可能断言 systemPrompt 或 personaPrompt 内容，注入新段会挂 | 改动前 grep 断言点；新增用例只断言"指令注入存在" |
-| R9 | **非 reasoning 模型的降级**：普通模型 `chunk.reasoning` 恒 undefined | 宿主折叠块空则不渲染，自然降级，无需特判 |
+| R9 | **非 reasoning 模型的降级**：普通模型 `chunk.thought` 恒 undefined | 宿主折叠块空则不渲染，自然降级，无需特判 |
 | R10 | **usage 与 reasoning 合并边界**：deepseek 的 reasoning_content 在 `choices.delta` 内，正常走 content 分支 | 解析放 `choices.delta` 分支，与 content 并列，不碰 usage 独立 yield 路径 |
 | R11 | **reasoning 不回写记忆的约束点**：必须在 llmCaller/loop 层拦截，不拼进 fullContent、不进 appendAssistant、不进 round-summary 输入；但**进 ProcessEvent（展示轨）** | 实现约束写入 Part 1：双轨分离——正文轨（assistantMessage）与记忆轨（round-summary）**永不碰 reasoning**，展示轨（processEvents）承载 |
 | R12 | **3.0.0 发布窗口**：改动不得影响 3.0.0 | 全部改动标 3.1.0；3.0.0 发布不阻塞 |
@@ -85,18 +85,18 @@
 改动链（自底向上）：
 
 ```
-LlmChunk.reasoning（增量片段）
-  ↑ SSE 解析：choices.delta.reasoning_content → chunk.reasoning
+LlmChunk.thought（增量片段）
+  ↑ SSE 解析：choices.delta.reasoning_content → chunk.thought
   ↑ llmCaller.callWithRetry：累积 fullReasoning，逐 chunk 透传
-  ↑ AgentChunk 新增 { type: 'reasoning'; content: string }
+  ↑ AgentChunk 新增 { type: 'thought'; content: string }
   ↑ 宿主 consumeFlow：reasoning chunk → events[] 缓冲（与 narrate 同路径）
-  ↑ 流结束 → 附到 Round.processEvents 落盘（ProcessEvent 新增 type: 'reasoning' 成员）
+  ↑ 流结束 → 附到 Round.processEvents 落盘（ProcessEvent 新增 type: 'thought' 成员）
   ↑ 重载 → 按 seq 重放 → 折叠块"思考中"重建（与运行时同一渲染函数）
 ```
 
 实现约束（R11）：
 - `fullContent` 只拼 `chunk.content`，**reasoning 永不拼入** → 不进 appendAssistant（正文轨）、不进 round-summary 输入（记忆轨）——CoT 污染防护。
-- reasoning 走**展示轨**：进 `Round.processEvents`（新增 `type: 'reasoning'`，`payload: { content }`），随 Round 生命周期（删 round 即删、分叉即共享、截断即覆盖），**不落独立存储**（对齐 process-event-log-replay-design 单文件内聚）。
+- reasoning 走**展示轨**：进 `Round.processEvents`（新增 `type: 'thought'`，`payload: { content }`），随 Round 生命周期（删 round 即删、分叉即共享、截断即覆盖），**不落独立存储**（对齐 process-event-log-replay-design 单文件内聚）。
 - 超长防护：`payload.content` 超长截断（对齐现有 `tool_args` 截断先例，常量 + 省略标记）；首期存原文，观察区记录"是否降级摘要"。
 - 与 narrate.withdrawn 无关：reasoning 本就不进正文，无首轮回抽需求。
 
@@ -146,7 +146,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 | LlmChunk | 类型含 reasoning 字段（类型测试） |
 | llmCaller | 累积透传；断言 reasoning 不拼入 fullContent（CoT 防护） |
 | AgentChunk | reasoning chunk 透传（loop 测试） |
-| ProcessEvent | 新增 `type: 'reasoning'` 成员 + 截断常量；宿主缓冲 → 附 Round 落盘 → 重放重建（对齐 process-event-log-replay-design 的 diff 对齐完成定义） |
+| ProcessEvent | 新增 `type: 'thought'` 成员 + 截断常量；宿主缓冲 → 附 Round 落盘 → 重放重建（对齐 process-event-log-replay-design 的 diff 对齐完成定义） |
 | prompt 注入 | 断言 systemPrompt 含 "Turn 起始策略" 段（注入正确性；LLM 是否遵守属软约束，不单测） |
 | 回收（定案时） | strategyResolver / strategyKeys / types / validator 测试移除或改写；3 个示例包迁移后校验通过（无 warning） |
 | 回归 | 全量 vitest 绿；IPC 协议测试通过（R4，100/130 阈值余量核算） |
@@ -177,11 +177,11 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 | # | 文件 | 改动 | 验证口径 |
 | --- | --- | --- | --- |
-| A1 | [llm/types.ts](../src/llm/types.ts) `LlmChunk` | 加 `reasoning?: string`（注释：增量片段，OpenAI 兼容 `delta.reasoning_content`） | 类型测试 |
-| A2 | [openaiCompatible.ts](../src/llm/openaiCompatible.ts)（SSE 解析 ~L388-390） | 类型扩展 `delta.reasoning_content?`；解析分支：`if (choice.delta?.reasoning_content) chunk.reasoning = ...`（增量，与 content 并列；不碰 usage 独立分支） | mock SSE 含 reasoning_content 流 → 增量解析 + 与 tool_calls 并存时序 |
-| A3 | [llmCaller.ts](../src/agent/managers/llmCaller.ts)（流式循环 ~L265-281） | `if (chunk.reasoning) yield { type: 'reasoning', content: chunk.reasoning }` 实时透传；**fullContent 只拼 chunk.content**（CoT 防护）；LlmCallResult 不加 reasoning（流式已消费，中断不补发——瞬态展示） | 累积透传 + fullContent 不含 reasoning |
-| A4 | [agent/types.ts](../src/agent/types.ts) `AgentChunk`（narrate ~L49 附近） | 新增 `{ type: 'reasoning'; content: string }` + RoundTagged（注释：模型思考流，折叠展示、不进正文、落盘走 ProcessEvent） | 类型测试 |
-| A5 | [roundStore.ts](../src/memory/roundStore.ts) `ProcessEvent` union（~L169-211） | 新增 `\| { type: 'reasoning'; seq; ts; payload: { content } }`；截断常量 `MAX_REASONING_PAYLOAD_LENGTH`（SSOT 单点定义于宿主 chatPanel，落盘前截断防膨胀） | 类型测试 + 截断单测 |
+| A1 | [llm/types.ts](../src/llm/types.ts) `LlmChunk` | 加 `thought?: string`（注释：增量片段，对应协议 `delta.reasoning_content`；命名 thought 与路由 `TaskType='reasoning'`、既有相位 `type:'thinking'` 语义分离） | 类型测试 |
+| A2 | [openaiCompatible.ts](../src/llm/openaiCompatible.ts)（SSE 解析 ~L388-390） | 类型扩展 `delta.reasoning_content?`；解析分支：`if (choice.delta?.reasoning_content) chunk.thought = ...`（增量，与 content 并列；不碰 usage 独立分支） | mock SSE 含 reasoning_content 流 → 增量解析 + 与 tool_calls 并存时序 |
+| A3 | [llmCaller.ts](../src/agent/managers/llmCaller.ts)（流式循环 ~L265-281） | `if (chunk.thought) yield { type: 'thought', content: chunk.thought }` 实时透传；**fullContent 只拼 chunk.content**（CoT 防护）；LlmCallResult 不加 reasoning（流式已消费，中断不补发——瞬态展示） | 累积透传 + fullContent 不含 reasoning |
+| A4 | [agent/types.ts](../src/agent/types.ts) `AgentChunk`（narrate ~L49 附近） | 新增 `{ type: 'thought'; content: string }` + RoundTagged（注释：模型思考流，折叠展示、不进正文、落盘走 ProcessEvent） | 类型测试 |
+| A5 | [roundStore.ts](../src/memory/roundStore.ts) `ProcessEvent` union（~L169-211） | 新增 `\| { type: 'thought'; seq; ts; payload: { content } }`；截断常量 `MAX_THOUGHT_PAYLOAD_LENGTH`（SSOT 单点定义于宿主 chatPanel，落盘前截断防膨胀） | 类型测试 + 截断单测 |
 | A6 | 宿主 [chatPanel.ts](../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `consumeFlow`（narrate 分支 ~L2477 附近） | 新增 `chunk.type === 'reasoning'` 分支 → `emitEvent('reasoning', { content })`（落盘前截断）；mergeProcessEvents/checkpointRound 自动支持新 union 成员 | 落盘 + 幂等合并（无重复） |
 | A7 | 宿主 [chatView.ts](../hosts/memora-vscode/src/webview/scripts/chatView.ts) | ① 运行时 process-flow：reasoning **折叠行** `.process-flow__reasoning`（`<details>`，与 narrate 平铺同 seq 插入，textContent 防注入）② `renderRoundBlock`（~L1079）：新增「§ 思考」小节渲染 reasoning 事件（finalize/重放共用） | 运行时折叠展示 + 重放重建一致 |
 | A8 | 协议 | `process_event` / `replay_events` **复用**（ProcessEvent union 扩展自动传导），**不新增消息类型** → IPC 通道治理阈值（100/130）不变 | 协议测试通过 |
@@ -206,5 +206,5 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 ### 风险与回滚
 
 - 阶段 A/B 独立提交；异常 git 回退对应提交。
-- 阶段 A 纯新增，非 reasoning 模型 `chunk.reasoning` 恒 undefined → 自然降级（R9）；reasoning 不进正文/记忆（R11 双轨隔离）。
+- 阶段 A 纯新增，非 reasoning 模型 `chunk.thought` 恒 undefined → 自然降级（R9）；reasoning 不进正文/记忆（R11 双轨隔离）。
 - 阶段 B 注入 `buildSystemPromptPrefix` 影响所有会话，若真机行为异常（角色包不适配）→ 回退 B1 单提交。

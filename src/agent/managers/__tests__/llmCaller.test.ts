@@ -142,16 +142,16 @@ describe('LlmCaller.resolveProvider', () => {
   });
 });
 
-// ─── reasoning 透传（2026-09-13，Turn 意图理解与模型思考展示设计，CoT 防护核心断言）──
+// ─── thought 透传（2026-09-13，Turn 意图理解与模型思考展示设计，CoT 防护核心断言）──
 
-describe('LlmCaller.callWithRetry · reasoning 透传', () => {
-  /** 构造带 reasoning 流的 mock Provider（deepseek 时序：思考增量 → 正文 → tool_calls） */
-  function makeDepsWithReasoningProvider(): LlmCallerDeps {
-    const reasoningProvider: LlmProvider = {
-      name: 'reasoning',
+describe('LlmCaller.callWithRetry · thought 透传', () => {
+  /** 构造带 thought 流的 mock Provider（deepseek 时序：思考增量 → 正文 → tool_calls） */
+  function makeDepsWithThoughtProvider(): LlmCallerDeps {
+    const thoughtProvider: LlmProvider = {
+      name: 'thought-model',
       async *chat() {
-        yield { reasoning: '用户问 A/B 方案对比' };
-        yield { reasoning: '，先查资料' };
+        yield { thought: '用户问 A/B 方案对比' };
+        yield { thought: '，先查资料' };
         yield { content: '我先搜索相关资料' };
         yield {
           toolCalls: [{ id: 'c1', type: 'function', function: { name: 'web_search', arguments: '{}' } }],
@@ -161,7 +161,7 @@ describe('LlmCaller.callWithRetry · reasoning 透传', () => {
     return {
       metrics: new LoopMetrics(),
       getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
-      getProvider: () => reasoningProvider,
+      getProvider: () => thoughtProvider,
       getProviderRouter: () => undefined,
       getCachedProvider: () => undefined,
       setCachedProvider: () => {},
@@ -171,8 +171,8 @@ describe('LlmCaller.callWithRetry · reasoning 透传', () => {
     };
   }
 
-  it('reasoning 增量实时透传为 AgentChunk，且永不拼入 fullContent（CoT 防护）', async () => {
-    const caller = new LlmCaller(makeDepsWithReasoningProvider());
+  it('thought 增量实时透传为 AgentChunk，且永不拼入 fullContent（CoT 防护）', async () => {
+    const caller = new LlmCaller(makeDepsWithThoughtProvider());
     const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
     // 手动迭代：chunk 从 yield 收，LlmCallResult 从 return 收。
     // IteratorResult<AgentChunk, LlmCallResult> 的 done 非判别联合，value 需按位断言收窄（测试惯用法）。
@@ -185,15 +185,15 @@ describe('LlmCaller.callWithRetry · reasoning 透传', () => {
     const result = step.value as LlmCallResult;
 
     // 增量透传：每条 chunk 只带新增片段（R3）
-    const reasonings = chunks
-      .filter((c): c is { type: 'reasoning'; content: string } => c.type === 'reasoning')
+    const thoughts = chunks
+      .filter((c): c is { type: 'thought'; content: string } => c.type === 'thought')
       .map((c) => c.content);
-    expect(reasonings).toEqual(['用户问 A/B 方案对比', '，先查资料']);
+    expect(thoughts).toEqual(['用户问 A/B 方案对比', '，先查资料']);
 
-    // CoT 防护（R11）：正文轨 fullContent 只拼 content，不含任何 reasoning 文本
+    // CoT 防护（R11）：正文轨 fullContent 只拼 content，不含任何 thought 文本
     expect(result?.fullContent).toBe('我先搜索相关资料');
     expect(result?.fullContent).not.toContain('用户问 A/B');
-    // 工具调用正常累积（reasoning 与 tool_calls 并存不互相干扰）
+    // 工具调用正常累积（thought 与 tool_calls 并存不互相干扰）
     expect(result?.toolCalls).toHaveLength(1);
   });
 });

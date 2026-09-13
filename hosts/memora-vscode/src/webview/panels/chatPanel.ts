@@ -55,11 +55,11 @@ const MAX_HISTORY_MESSAGES = 200;
 const MAX_HISTORY_ROUNDS = 60;
 
 /**
- * reasoning 落盘截断上限（字符，2026-09-13，Turn 意图理解与模型思考展示设计）：
- * 模型思考可能很长（deepseek 深度思考数千 token），落盘前截断防 Round 文件膨胀
- * （SSOT 常量：仅宿主落盘侧消费；展示侧流式全量，不受影响）。
+ * thought 落盘截断上限（字符，2026-09-13，Turn 意图理解与模型思考展示设计）：
+ * 模型思考内容可能很长（deepseek 深度思考数千 token），落盘前截断防 Round 文件膨胀
+ * （SSOT 常量：仅宿主落盘侧消费；展示侧流式全量，不受影响）。命名与既有 thinking 相位事件无关。
  */
-export const MAX_REASONING_PAYLOAD_LENGTH = 4000;
+export const MAX_THOUGHT_PAYLOAD_LENGTH = 4000;
 
 /**
  * ask_user 提问等待超时（ms，2026-09-08）：超时未答 → cancelAsk（[ASK_ABORTED] 占位）
@@ -2490,15 +2490,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             this.post({ type: 'narrate_withdraw', text: chunk.withdrawn });
           }
           emitEvent('narrate', { content: chunk.content });
-        } else if (chunk.type === 'reasoning') {
-          // 模型思考（reasoning）→ 过程事件（webview 渲染「思考」折叠块，不进正文流）。
-          // 落盘前超长截断（SSOT 常量 MAX_REASONING_PAYLOAD_LENGTH）：展示侧流式全量，
-          // 存储侧受控；重启重放可见（ProcessEvent union 已含 reasoning 成员）。
-          emitEvent('reasoning', {
+        } else if (chunk.type === 'thought') {
+          // 模型思考内容（thought）→ 过程事件（webview 渲染「思考」折叠块，不进正文流）。
+          // 落盘前超长截断（SSOT 常量 MAX_THOUGHT_PAYLOAD_LENGTH）：展示侧流式全量，
+          // 存储侧受控；重启重放可见（ProcessEvent union 已含 thought 成员；与既有 thinking 相位事件区分）。
+          emitEvent('thought', {
             // 常量语义 = 含省略标记的总上限（slice MAX-1 + '…' 恒 ≤ MAX）
             content:
-              chunk.content.length > MAX_REASONING_PAYLOAD_LENGTH
-                ? `${chunk.content.slice(0, MAX_REASONING_PAYLOAD_LENGTH - 1)}…`
+              chunk.content.length > MAX_THOUGHT_PAYLOAD_LENGTH
+                ? `${chunk.content.slice(0, MAX_THOUGHT_PAYLOAD_LENGTH - 1)}…`
                 : chunk.content,
           });
         } else if (chunk.type === 'step_boundary') {

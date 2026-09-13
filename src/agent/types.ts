@@ -42,11 +42,12 @@ export type AgentChunk = (
       blocked?: boolean;
     }
   /**
-   * 模型思考流（2026-09-13，Turn 意图理解与模型思考展示设计）：LLM 的 reasoning_content 增量片段。
+   * 模型思考内容流（2026-09-13，Turn 意图理解与模型思考展示设计）：LLM 的 reasoning_content 增量片段。
    * 仅供宿主折叠展示，**不进正文/记忆**（CoT 防护）；落盘走 ProcessEvent（roundStore.ts 新增
-   * `type: 'reasoning'` 成员），重启重放可见。瞬态流：中断不补发。
+   * `type: 'thought'` 成员），重启重放可见。瞬态流：中断不补发。命名用 thought，与多模型
+   * 路由任务类型 `TaskType='reasoning'`、ProcessEvent 既有相位 `type:'thinking'` 语义分离。
    */
-  | { type: 'reasoning'; content: string }
+  | { type: 'thought'; content: string }
   /**
    * 过程叙述（2026-09-02）：LLM 在工具迭代前产出的行动叙述文本
    * （如「让我先查看所有文档」「现在逐一读取它们的内容」）。
