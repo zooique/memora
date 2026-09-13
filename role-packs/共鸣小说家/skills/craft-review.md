@@ -1,9 +1,9 @@
 ---
-name: self-review
+name: craft-review
 description: 写后自检：价值转变、情绪达成、留存思维、三层一致性 + 反 AI 叙事特征治理
 ---
 
-# self-review：写后自检
+# craft-review：写后自检
 
 ## 用途
 

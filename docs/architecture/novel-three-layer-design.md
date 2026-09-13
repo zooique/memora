@@ -148,7 +148,7 @@
 - **协作定位（历经 3 轮演进定稿）**：~~不代笔关键选择~~（过绝对）→ ~~人机协同四步循环~~（过流程化）→ ~~直接产出完整成稿~~（过绝对）→ **目标产出完整成稿**：以完整成稿为交付目标，过程中方向性问题（内核锁定/转折走向/主角命运）主动提问、有更好的建议直接提出，与用户讨论推进——不闷头写完也不每题必问；成稿是候选稿，由用户审阅定稿；
 - **明确排除**：交互式实时写作（连载引擎/读者投票续写/个性化版本）是**新系统**，超出角色包职责（角色包本质仍是"写一部文字小说"），记为未来系统方向。
 
-**反 AI 叙事特征治理**（StoryScope 实证 → self-review 落地）：AI 五大结构性缺陷可枚举、可检测、可清除——说教强迫（直接点题）、闭环强迫（全员交代结局）、无支线（单线直推）、节拍器句长（均匀无 burstiness）、主角驱动过度（每冲突主角亲手解决）。
+**反 AI 叙事特征治理**（StoryScope 实证 → craft-review 落地）：AI 五大结构性缺陷可枚举、可检测、可清除——说教强迫（直接点题）、闭环强迫（全员交代结局）、无支线（单线直推）、节拍器句长（均匀无 burstiness）、主角驱动过度（每冲突主角亲手解决）。
 
 **AI 独有优势落地**（扬长）：文风杂交（骨架+血肉：鲁迅×刘慈欣）+ 多文体 A/B（同场景 2-3 版候选，以量换最优）→ `style-weaver`；创意穷举（内核→N 个候选，每个带成本，作者挑选）→ `idea-lever`。
 
@@ -157,11 +157,11 @@
 1. **先收敛方法论本身**：本文三层结构 + 缺口清单经用户确认后，才进入角色包改造。
 2. **角色包演进落地**（按 G1-G9 优先级，2026-09-13）：
    - persona.md / rules.md / manifest.json：三层方法论 + `web:search` 已随 **共鸣小说家** 角色包落地（原小说助手收敛更名，4 技法技能 git rename 吸收）；
-   - skills/：已落地 6 技能——`need-finder`（G1/G2 需求层）、`core-extractor`（G3/G4 内核层）、`three-layer-check`（G5 一致性）、`pacing-hook`（G7 节奏钩子）、`world-builder`（G8 世界观）、`self-review`（G9 写后自检）；
+   - skills/：已落地 6 技能——`need-finder`（G1/G2 需求层）、`core-extractor`（G3/G4 内核层）、`three-layer-check`（G5 一致性）、`pacing-hook`（G7 节奏钩子）、`world-builder`（G8 世界观）、`craft-review`（G9 写后自检）；
    - 缺口续已落地：`logline-craft`（G10 高概念）、`relationship-web`（G11 关系网/对手）、`story-bible`（G12 设定圣经）、`empathy-craft`（G19 共情）、`style-weaver`（G20 文风）、`scene-craft`（G13 场景写作）、`emotion-wave`（G15 情绪波浪线）、`outline-expand`（G16 大纲→成文）、`polish-method`（G17 修改打磨）、`longform-guard`（G18 长篇防崩）；
    - G6 已落地：persona.md 工作方式升级为**全流程七阶段流水线**（需求洞察→内核锁定→一致性闸门→概念包装→组织搭建→大纲成文→打磨体检）+ rules.md 补流水线顺序与闸门硬关卡纪律。
-   - AI 能力波次已落地（§四-2 结论 → 角色包）：`self-review` 升级**反 AI 叙事特征治理**（说教/闭环/无支线/节拍器/主角驱动五检测）、`style-weaver` 升级**文风杂交 + 多文体 A/B**、新增 `idea-lever`（G21 创意穷举）；协作定位定稿"目标产出完整成稿 + 过程讨论"。
-   - **缺口全部闭合（G1-G21）**，技能全景 **21 个**：need-finder / core-extractor / three-layer-check / logline-craft / relationship-web / world-builder / story-bible / outline-expand / scene-craft / pacing-hook / emotion-wave / polish-method / longform-guard / self-review / empathy-craft / style-weaver / idea-lever + 4 原技法（story-structure / character-sheet / dialogue-craft / foreshadow）。验证触发：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
+   - AI 能力波次已落地（§四-2 结论 → 角色包）：`craft-review` 升级**反 AI 叙事特征治理**（说教/闭环/无支线/节拍器/主角驱动五检测）、`style-weaver` 升级**文风杂交 + 多文体 A/B**、新增 `idea-lever`（G21 创意穷举）；协作定位定稿"目标产出完整成稿 + 过程讨论"。
+   - **缺口全部闭合（G1-G21）**，技能全景 **21 个**：need-finder / core-extractor / three-layer-check / logline-craft / relationship-web / world-builder / story-bible / outline-expand / scene-craft / pacing-hook / emotion-wave / polish-method / longform-guard / craft-review / empathy-craft / style-weaver / idea-lever + 4 原技法（story-structure / character-sheet / dialogue-craft / foreshadow）。验证触发：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
 
 ## 六、已知风险（对抗式自查）
 

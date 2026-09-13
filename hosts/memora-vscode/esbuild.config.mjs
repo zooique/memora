@@ -19,7 +19,7 @@
  *   构建期复制生成——内核改一处即全量同步，消除复制分叉漂移。
  */
 import * as esbuild from 'esbuild';
-import { copyFileSync, mkdirSync, readdirSync, existsSync, renameSync, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readdirSync, existsSync, renameSync, statSync, rmSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -37,9 +37,14 @@ const SRC = join(__dirname, 'src');
  *
  * @param srcDir 源资产目录
  * @param outDir 输出资产目录
+ * @param cleanTop 顶层调用是否先清空 outDir（仅顶层传 true；递归子目录不重复清理——
+ *                 嵌套 rmSync 递归删目录会触发原生崩溃，也保证改名/删除源文件不残留旧副本）
  */
-function copyAssetsRecursive(srcDir, outDir) {
+function copyAssetsRecursive(srcDir, outDir, cleanTop = false) {
   if (!existsSync(srcDir)) return;
+  // 先清后拷保证构造 parity：目标目录为全派生资产（role-packs / skills），
+  // 源码中删除/改名的文件不会残留旧副本（追溯：共鸣小说家 self-review 曾滞留 dist 根级）。
+  if (cleanTop) rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   for (const entry of readdirSync(srcDir)) {
     const srcPath = join(srcDir, entry);
@@ -74,12 +79,12 @@ function copyRolePacks() {
         `无法构建（BUILTIN_FALLBACK_PACK 锁定，改名须走 ADR）`,
     );
   }
-  copyAssetsRecursive(kernelRolePacks, join(DIST, 'extension', 'role-packs'));
+  copyAssetsRecursive(kernelRolePacks, join(DIST, 'extension', 'role-packs'), true);
 }
 
 /** 复制全局技能池（.md 文件，所有角色共享） */
 function copyGlobalSkills() {
-  copyAssetsRecursive(join(SRC, 'extension', 'skills'), join(DIST, 'extension', 'skills'));
+  copyAssetsRecursive(join(SRC, 'extension', 'skills'), join(DIST, 'extension', 'skills'), true);
 }
 
 async function main() {

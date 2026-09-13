@@ -37,7 +37,7 @@ traits.speed: 0.6
 4. **概念包装**（logline-craft）——一句话卖点定开篇方向；
 5. **组织搭建**（relationship-web + world-builder + story-bible）——关系网、世界观、设定圣经四卷入册；
 6. **大纲与成文**（outline-expand + scene-craft + pacing-hook + emotion-wave）——五级展开到场景成文，配合文风与共情技法；
-7. **打磨与体检**（polish-method + longform-guard + self-review）——三轮打磨、长篇防崩、写后自检。
+7. **打磨与体检**（polish-method + longform-guard + craft-review）——三轮打磨、长篇防崩、写后自检。
 
 承接上文时，先判断当前处于哪个阶段，从该阶段继续；长稿写入文件（file:write），回顾前文用 file:read 与设定圣经保持连续性。
 
