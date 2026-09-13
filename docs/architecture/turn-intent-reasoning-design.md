@@ -21,7 +21,7 @@
 | SSE 解析 | [openaiCompatible.ts](../src/llm/openaiCompatible.ts) 只取 `delta.content` + `tool_calls`，`reasoning_content` 丢弃 |
 | LlmChunk | [llm/types.ts](../src/llm/types.ts) 仅 content/toolCalls/finishReason/usage，无 reasoning 字段 |
 | loop 第一步 | [loop.ts](../src/agent/loop.ts) `runIterationLoop` → `handleIteration` 直接"想+调工具"，无意图理解/策略决策 step |
-| understandingConfirm | 开放键，唯一消费 = [strategyResolver.ts](../src/role-pack/strategyResolver.ts) `assembleRolePack` 注入 persona prompt 指令；**3 个示例角色包实际配置 `confirm`**（方案设计师/文档设计师/小说助手） |
+| understandingConfirm | 开放键，唯一消费 = [strategyResolver.ts](../src/role-pack/strategyResolver.ts) `assembleRolePack` 注入 persona prompt 指令；**2 个示例角色包实际配置 `confirm`**（白话方案设计师/小说助手；方案设计师/文档设计师已于 0ba12c55 退役） |
 | confirm 通道重叠 | `askOn['confirm']` + `ask_user` 工具已机制级承载"需要用户确认"；understandingConfirm.confirm 是绕过该真源的裸 prompt 指令（**带伤，见 §四**） |
 | narrate 机制 | 已存在（2026-09-02）：工具轮行动叙述，**平铺展示**（纯文本块直展，v1.8 step 分型；结束后随过程收进任务过程折叠块）、不进正文，**落盘进 `Round.processEvents`**（roundStore.ts 联合类型为真源），含首轮回抽（withdrawn 瞬态）——"策略叙述"的现成载体 |
 | 过程事件落盘 | **已存在**（[process-event-log-replay-design.md](./process-event-log-replay-design.md)）：运行时过程事件（thinking/tool_*/narrate/self_review/metrics）缓冲后附到 `Round.processEvents` 落盘，重载按序重放重建 UI（对标 Claude Code JSONL 事件日志）——**reasoning 落盘 = 扩展该机制，非新存储** |
@@ -130,7 +130,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 迁移映射（定案时同步执行）：
 - 小说助手：askOn 已含 `confirm`（[manifest.json](../role-packs/小说助手/manifest.json)）→ 仅删 understandingConfirm 键，行为由既有 ask_user 通道继续承载。
-- 方案设计师 / 文档设计师：askOn 加 `'confirm'` 后删键（行为从"每轮必复述确认"变为"需要时提问确认"——对设计协作场景更合理：模糊时对齐、清晰时直接推进）。
+- 方案设计师 / 文档设计师：askOn 加 `'confirm'` 后删键（行为从"每轮必复述确认"变为"需要时提问确认"——对设计协作场景更合理：模糊时对齐、清晰时直接推进）。两包随后于 0ba12c55 退役，其设计方法论与文档编排由白话方案设计师吸收承接。
 
 清理面（定案时）：`UnderstandingConfirm` 类型、`resolveUnderstandingConfirm`、`prepare.understandingConfirm` 默认值与键规则、`assembleRolePack` 注入段、3 个 manifest、schema 与文档（role-pack-spec / authoring-guide / 开放键指南 / 策略键消费矩阵 / role-pack-creator SKILL 模板 / README）。
 

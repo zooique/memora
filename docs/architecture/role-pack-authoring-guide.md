@@ -22,14 +22,14 @@
 
 ```json
 {
-  "name": "doc-writer",
-  "displayName": "文档设计师",
-  "description": "技术文档设计角色包",
+  "name": "plain-designer",
+  "displayName": "白话方案设计师",
+  "description": "白话方案设计角色包",
   "version": "1.0.0",
   "formatVersion": "1.0.0",
   "interactionType": "tool_assistant",
   "strategy": {
-    "prepare": { "summaryFocus": "以文档设计视角提炼要点" },
+    "prepare": { "summaryFocus": "以方案设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
     "reflect": { "selfReview": 1 },
     "global": { "tokenBudget": 12000, "stepBudget": 60 }
@@ -38,7 +38,7 @@
     { "capability": "file:write", "description": "写文件" },
     { "capability": "web:search", "description": "搜索" }
   ],
-  "handoffPrompt": "你好，我是文档设计师，请告诉我你想设计什么文档。"
+  "handoffPrompt": "你好，我是白话方案设计师，请告诉我你想解决什么模糊想法或痛点。"
 }
 ```
 
