@@ -16,9 +16,16 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
+import { validateManifestText } from '@/role-pack/validator.js';
+import { RolePackManager } from '@/role-pack/rolePackManager.js';
 
 /** 仓库根 role-packs/（内置角色包唯一内容源，随内核发布并供宿主构建期同步） */
 const ROLE_PACKS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'role-packs');
+
+/** 内置包目录名列表（含无 skills/ 的兜底契约包） */
+function listPackDirs(): string[] {
+  return readdirSync(ROLE_PACKS_DIR).filter((e) => statSync(join(ROLE_PACKS_DIR, e)).isDirectory());
+}
 
 const SKILL_EXT = '.md';
 
@@ -93,5 +100,33 @@ describe('内置角色包技能可发现性守卫', () => {
       }
     }
     expect(mismatched).toEqual([]);
+  });
+
+  it('每个内置包 manifest 须通过格式校验（error 级会被拒绝装载）', () => {
+    const invalid: string[] = [];
+    for (const name of listPackDirs()) {
+      const manifestPath = join(ROLE_PACKS_DIR, name, 'manifest.json');
+      if (!existsSync(manifestPath)) {
+        invalid.push(`${name}: 缺 manifest.json`);
+        continue;
+      }
+      const result = validateManifestText(readFileSync(manifestPath, 'utf8'));
+      const errors = result.issues.filter((i) => i.severity === 'error');
+      if (errors.length > 0) {
+        invalid.push(`${name}: ${errors.map((e) => `${e.code}@${e.path}`).join(', ')}`);
+      }
+    }
+    expect(invalid).toEqual([]);
+  });
+
+  it('目录内每个内置包都须实际装载成功（防校验 error 导致静默跳过）', async () => {
+    // 场景溯源：共鸣小说家曾把 capabilities 写成字符串数组（契约要求对象数组），
+    // validator 报 error → RolePackManager 跳过装载且仅打一条 warn，包在运行时
+    // 彻底消失、UI 无人察觉。此用例即从装载结果侧堵住该类静默失效。
+    const expected = listPackDirs().length;
+    expect(expected).toBeGreaterThanOrEqual(3);
+    const manager = new RolePackManager(join(ROLE_PACKS_DIR, '..'));
+    const loaded = await manager.load();
+    expect(loaded).toBe(expected);
   });
 });

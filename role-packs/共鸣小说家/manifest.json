@@ -10,7 +10,10 @@
   "minorProtection": "required",
   "handoffPrompt": "我已准备好开始小说创作。请告诉我：写给谁看（目标读者）、想回应什么痛点或精神需求、有无想借鉴的经典内核或已有故事雏形？若承接上文，请先概述当前情节进度、主要人物与待推进的冲突。",
   "capabilities": [
-    "web:search"
+    {
+      "capability": "web:search",
+      "description": "搜索当前社会热点事件与现象，反推读者精神需求缺口（需求层依赖外部信息）"
+    }
   ],
   "strategy": {
     "prepare": {
