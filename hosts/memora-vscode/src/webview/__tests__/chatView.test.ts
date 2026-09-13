@@ -1672,7 +1672,7 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     expect(hint.textContent).toBe('中英互译与润色');
   });
 
-  it('MVP：空状态示例提问随 showcase 角色特化（方案设计师种子收敛引导，其余回退通用）', () => {
+  it('MVP：空状态示例提问随 showcase 角色特化（白话方案设计师种子收敛引导，其余回退通用）', () => {
     mountChatView();
     const chipLabels = () =>
       Array.from(document.querySelectorAll('.suggestion-chip')).map((c) => c.textContent);
@@ -1681,8 +1681,8 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     // 非 showcase 角色（文档打磨）：仍回退通用引导
     dispatch({ type: 'chat_role_pack', rolePack: '文档打磨' });
     expect(chipLabels()).toEqual(['审阅架构', '精简表达', '对齐实现']);
-    // showcase 角色（方案设计师）：渲染专属"种子收敛"引导，一键体验 memora 设计魅力
-    dispatch({ type: 'chat_role_pack', rolePack: '方案设计师' });
+    // showcase 角色（白话方案设计师）：渲染专属"种子收敛"引导，一键体验 memora 设计魅力
+    dispatch({ type: 'chat_role_pack', rolePack: '白话方案设计师' });
     expect(chipLabels()).toEqual(['设计知识库', '设计记忆系统', '找最小单元']);
   });
 });

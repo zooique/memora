@@ -20,7 +20,7 @@ import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
  * 仅当 agent 未装配/无角色包时回退此默认值。
  * 单一真理源（2026-08-24）：宿主不再自持角色包，使用内核 role-packs 的一员。
  */
-const BUILTIN_ROLE_PACK = '文档设计师';
+const BUILTIN_ROLE_PACK = '白话方案设计师';
 
 /**
  * 打开对话面板（聚焦侧边栏视图）

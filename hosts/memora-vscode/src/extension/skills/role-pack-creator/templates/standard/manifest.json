@@ -28,7 +28,7 @@
       "userFollowup": "silent"
     },
     "global": {
-      "askOn": ["ambiguity", "decision", "missing_info"],
+      "askOn": ["ambiguity", "decision", "missing_info", "confirm"],
       "askLimit": 3,
       "errorHandling": "retry",
       "tokenBudget": 0,

@@ -364,7 +364,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 同一体验原则）。displayName 缺省时回退内部名（name）——显示名单一来源 =
    * `displayName ?? name`，替代原 UI 层硬编码 `rolePackDisplayName` 映射。
    *
-   * @param rolePack 角色包内部名（如 '文档设计师'）
+   * @param rolePack 角色包内部名（如 '白话方案设计师'）
    * @returns UI 展示名（displayName 或回退 name）
    */
   private roleDisplayName(rolePack: string): string {
@@ -441,7 +441,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 对话面板为通用宿主，定位由内置角色包承载；角色包名在就绪回放时推送给
    * webview 的 AI 消息头部标签 + 空状态标题（角色切换入口已独立到「角色」视图，2026-08-17）。
    *
-   * @param rolePack 角色包内部名（如 '文档设计师'）
+   * @param rolePack 角色包内部名（如 '白话方案设计师'）
    */
   public setRolePack(rolePack: string): void {
     this._activeRolePack = rolePack;
@@ -2826,7 +2826,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
          标题/提示加 id（P3，2026-08-15 空状态角色化）：由 chatView 随激活角色包动态更新，
          切换角色不产生定位错位；示例 chips 由 chatView 随 showcase 角色动态渲染
-         （方案设计师展示"种子收敛"引导，其余角色回退通用打磨引导），容器留空由脚本填充。 -->
+         （白话方案设计师展示"种子收敛"引导，其余角色回退通用打磨引导），容器留空由脚本填充。 -->
     <div id="emptyState" class="empty-state" hidden>
       <div id="emptyTitle" class="empty-title">开始打磨你的设计文档</div>
       <div id="emptyHint" class="empty-hint">在下方输入你的想法，或点击示例提问快速开始</div>

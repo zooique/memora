@@ -52,7 +52,7 @@ interface Suggestion {
  * 空状态示例提问集（SSOT，MVP 2026-08-16）
  *
  * ROLE_SUGGESTION_SETS 按角色显示名特化示例提问：命中展示专属示例，未命中回退通用。
- * showcase 角色（方案设计师）展示"种子收敛"引导——让用户一键体验 memora 最吸引人的
+ * showcase 角色（白话方案设计师）展示"种子收敛"引导——让用户一键体验 memora 最吸引人的
  * 「给模糊想法 → 引导收敛最小单元」设计魅力；其余角色保持通用打磨引导，
  * 避免为每条角色特化造成维护成本（新增 showcase 角色时在此追加映射即可）。
  */
@@ -63,7 +63,7 @@ const DEFAULT_SUGGESTIONS: Suggestion[] = [
 ];
 
 const ROLE_SUGGESTION_SETS: Record<string, Suggestion[]> = {
-  方案设计师: [
+  白话方案设计师: [
     { prompt: '我想做一个个人知识库，帮我设计一个方案', label: '设计知识库' },
     { prompt: '我想做一个记忆系统，帮我找出最小单元', label: '设计记忆系统' },
     { prompt: '我想做一个待办工具，帮我找出最小功能', label: '找最小单元' },
@@ -1946,7 +1946,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const activePack = currentRolePacks.find((p) => p.displayName === currentRoleName);
     emptyHint.textContent =
       activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
-    // 示例提问随 showcase 角色特化（方案设计师展示"种子收敛"引导，其余回退通用）
+    // 示例提问随 showcase 角色特化（白话方案设计师展示"种子收敛"引导，其余回退通用）
     renderEmptySuggestions(name);
   }
 
@@ -1978,7 +1978,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 空状态示例提问 Chips：随激活角色动态渲染（SSOT，事件委托兼容动态元素）。
    *
-   * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如方案设计师的"种子收敛"引导，
+   * 命中 ROLE_SUGGESTION_SETS 的角色展示专属示例（showcase，如白话方案设计师的"种子收敛"引导，
    * 让 memora 设计魅力一键可体验）；未命中回退 DEFAULT_SUGGESTIONS 通用打磨引导
    * （避免为每条角色特化造成维护成本）。textContent 赋值防注入。 */
   function renderEmptySuggestions(name: string): void {

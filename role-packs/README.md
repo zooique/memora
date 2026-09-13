@@ -24,10 +24,9 @@
 | 角色包 | 说明 | 覆盖能力面 |
 |--------|------|-----------|
 | **memora助手** | **兜底契约包**（非示例，名字由内核常量 `BUILTIN_FALLBACK_PACK` 锁定，改名须走 ADR；**宿主 UI 禁删 + 构建期 existsSync 硬校验**）：领域无关的最小兜底角色，负责通用对话与任务执行 | 领域无关最小集：无 skills / 无 capabilities（省略 = 全部暴露）/ 无 strategy（走内核默认） |
-| 文档设计师 | 示例：工具型角色包——技术文档设计（API 文档 / 教程 / 架构说明） | 真实 skills/ 文件（read_skill L2）+ capabilities（web:search 特权）+ strategy（toolMode:allow / 低温度）+ handoffPrompt |
 | 小说助手 | 示例：创作型角色包——小说写作（结构 / 人物 / 对白 / 伏笔） | 真实 skills/ 文件 + capabilities（`[]` 仅默认常驻，纯本地不开放特权）+ strategy（高温度 / askOn 主动提问）+ handoffPrompt |
-| 方案设计师 | 示例：方法论型角色包——基于 memora 设计哲学（单一真理源·最小单元·网络为土壤）从模糊想法设计自洽方案 | 真实 skills/ 文件（种子收敛/土壤吸收/SSOT 自检）+ capabilities（web:search 特权 / llm:summarize）+ strategy（askOn 含 confirm 确认提问 / summaryFocus）+ handoffPrompt |
+| 白话方案设计师 | 示例：方法论型角色包——融合方案设计（单一真理源·最小单元·网络为土壤）与文档编排，先用白话把设计讲清楚，再落实为可开发的专业文档 | 真实 skills/ 文件（种子收敛/土壤吸收/SSOT 自检 + 文档骨架/风格规范/API 写法）+ capabilities（web:search 特权 / llm:summarize）+ strategy（白话优先 / askOn 含 confirm / 受众先定）+ handoffPrompt |
 
 > 兜底契约包与示例包**同目录但性质不同**：示例可删，契约包不可删（宿主 UI 禁删 + 构建期校验）；二者均随 `copyRolePacks()` 同步进宿主 `dist/extension/role-packs/`。
 
-> 三个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
+> 两个示例包**全面覆盖当前角色包设计**：**内容文件零声明**（persona.md / rules.md 约定名 + skills/ 目录扫描，manifest 不含任何内容路径注册）、顶层 capabilities（能力面）、strategy 策略、handoffPrompt 衔接提示词。开放键使用与消费方说明见 [role-pack-开放键指南](../docs/role-pack-开放键指南.md)；完整中立规范见 [role-pack-spec.md](../docs/architecture/role-pack-spec.md)（仓库内文档）。
