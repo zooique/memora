@@ -58,6 +58,19 @@ import { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
 
 /**
+ * Turn 起始策略固定段（内核行为约束，2026-09-13，Turn 意图理解与模型思考展示设计 Part 2）。
+ *
+ * 约束式极简：只画"何时该查 / 何时该规划"的行为边界，不写步骤脚本
+ * （对齐 Anthropic「目标+约束」指南——脚本化指示降低输出质量）。输出形态由 LLM 裁量。
+ * 边界：与 search_memories 工具描述 / loop「记忆回想」软引导**不重复**——此处不点名"先回忆"
+ * （记忆引导已两处，三处重复即带伤）。SSOT：本常量唯一真源，仅 buildSystemPromptPrefix 消费。
+ */
+const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
+需要外部信息时，先调用工具调查再回答，不要凭记忆猜测；
+任务需要多步推进时，使用任务表工具规划执行；
+简单问题直接回答。`;
+
+/**
  * 构建 systemPromptPrefix 的共享函数（SSOT）
  *
  * 初始化时和刷新时都必须使用此函数，确保前缀包含：
@@ -96,6 +109,10 @@ export function buildSystemPromptPrefix(
   });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
+  // 内核固定行为段（Part 2）：Turn 起始策略，放时间戳后（最接近用户消息，LLM 注意力位）。
+  // 单点注入（SSOT）：TURN_START_STRATEGY_PROMPT 常量唯一真源，本函数是唯一消费点；
+  // 初始化/刷新共用本函数，角色切换不丢失。
+  systemPrefixParts.push(TURN_START_STRATEGY_PROMPT);
   return (
     systemPrefixParts.filter(Boolean).join('\n\n') +
     (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '')

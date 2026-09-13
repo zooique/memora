@@ -20,7 +20,7 @@ import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assembleComponents } from '@/agent/assembler.js';
+import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
 import type { AssembleInput, AgentHooks } from '@/agent/assembler.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
@@ -568,5 +568,27 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     );
     expect(out.contextPreparer).toBeDefined();
     expect(out.memoryInspector).toBeDefined();
+  });
+});
+
+// ─── buildSystemPromptPrefix · Turn 起始策略注入（2026-09-13，Part 2）──
+
+describe('buildSystemPromptPrefix · Turn 起始策略', () => {
+  it('systemPromptPrefix 含三行边界指令（约束式，非步骤脚本）', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    expect(prefix).toContain('## Turn 起始策略');
+    expect(prefix).toContain('需要外部信息时，先调用工具调查再回答，不要凭记忆猜测');
+    expect(prefix).toContain('任务需要多步推进时，使用任务表工具规划执行');
+    expect(prefix).toContain('简单问题直接回答');
+  });
+
+  it('策略段在时间戳之后注入（注意力位），分隔线前收尾', () => {
+    const prefix = buildSystemPromptPrefix('persona', 'skills', 'zh-CN');
+    const tsIdx = prefix.indexOf('当前时间：');
+    const strategyIdx = prefix.indexOf('## Turn 起始策略');
+    const sepIdx = prefix.indexOf('\n\n---\n\n');
+    expect(tsIdx).toBeGreaterThan(-1);
+    expect(strategyIdx).toBeGreaterThan(tsIdx);
+    expect(sepIdx).toBeGreaterThan(strategyIdx);
   });
 });
