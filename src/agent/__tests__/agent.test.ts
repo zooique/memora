@@ -2789,7 +2789,6 @@ describe('Agent · L2 行为策略消费', () => {
 
     const strategy = agent.getActiveStrategy();
     // 验证默认策略的 prepare 维度
-    expect(strategy.prepare?.understandingConfirm).toBe('off');
     expect(strategy.prepare?.summaryFocus).toBeUndefined();
     // 验证默认策略的 act 维度（标准键 act.toolMode）
     expect(strategy.act?.toolMode).toBe('allow');

@@ -22,10 +22,9 @@ import type { BehaviorStrategy } from '@/role-pack/types.js';
 describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
   it('角色包仅声明部分键时，其余键保留内核默认（兜底）', () => {
     const merged = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
-      prepare: { understandingConfirm: 'echo' },
+      prepare: { summaryFocus: '聚焦方案维度' },
     } as unknown as BehaviorStrategy);
-    expect(merged.prepare?.understandingConfirm).toBe('echo');
-    expect(merged.prepare?.summaryFocus).toBeUndefined();
+    expect(merged.prepare?.summaryFocus).toBe('聚焦方案维度');
     expect(merged.act?.toolMode).toBe('allow');
     expect(merged.reflect?.summary).toBe('on');
   });
@@ -39,7 +38,6 @@ describe('mergeStrategy · 角色包覆盖后的默认兜底', () => {
     const merged = mergeStrategy(DEFAULT_BEHAVIOR_STRATEGY, {
       prepare: undefined,
     } as unknown as BehaviorStrategy);
-    expect(merged.prepare?.understandingConfirm).toBe('off');
     expect(merged.prepare?.summaryFocus).toBeUndefined();
   });
 });

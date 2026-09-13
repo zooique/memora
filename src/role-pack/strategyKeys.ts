@@ -116,8 +116,6 @@ export function isAskOn(value: unknown): boolean {
  */
 export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
-    // 理解确认模式（内核已消费：assembleRolePack 注入 persona prompt 行为指令）
-    understandingConfirm: { kind: 'enum', values: ['off', 'echo', 'confirm'] },
     // 领域无关机制，内容由角色包提供（≤ MAX_SUMMARY_FOCUS_LENGTH 字符）
     summaryFocus: { kind: 'check', check: isSummaryFocus, range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH } },
   },

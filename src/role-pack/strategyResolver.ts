@@ -22,7 +22,6 @@ import type {
   MultiStepReasoning,
   ToolReadonly,
   ToolMode,
-  UnderstandingConfirm,
   RolePack,
   RolePackAssembly,
   RolePackCapability,
@@ -57,7 +56,6 @@ const FALLBACK_TOKEN_BUDGET = 80_000;
  */
 export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
   prepare: {
-    understandingConfirm: 'off',
     summaryFocus: undefined, // undefined = 通用浓缩（角色包未声明时使用默认摘要策略）
   },
   act: {
@@ -242,15 +240,6 @@ export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): Too
   return normalizeEnum(strategy?.act?.toolReadonly, ['full', 'readonly'], 'full');
 }
 
-/**
- * 解析理解确认模式（内核已消费）：非法值归位 'off'
- * —— off=直接生成 / echo=复述用户意图但不等待 / confirm=预检复述并等待确认。
- * 消费点在 assembleRolePack，将模式转为 persona prompt 行为指令。
- */
-export function resolveUnderstandingConfirm(strategy: BehaviorStrategy | undefined): UnderstandingConfirm {
-  return normalizeEnum(strategy?.prepare?.understandingConfirm, ['off', 'echo', 'confirm'], 'off');
-}
-
 // ════════════════════════════════════════════════════════════
 // L2 运行时策略（loop 运行态）装配
 // ════════════════════════════════════════════════════════════
@@ -373,16 +362,6 @@ export function assembleRolePack(pack: RolePack): RolePackAssembly {
         `## 主动提问规则\n${triggerLabels.map((l) => `- 当${l}时，主动向用户提问`).join('\n')}\n- 每次回答中最多提问 ${askLimit} 次（按一次用户输入计，turn 粒度防打扰）\n- 提问必须调用 ask_user 工具（参数：question 问题文本 + 可选 options 选项数组/allowCustom 是否允许自定义回答）——系统据此在 step 边界暂停等你的回答，用户答案会作为工具结果返回给你`,
       );
     }
-  }
-
-  // 理解确认指令注入：understandingConfirm 非 off 时，将确认模式转为 LLM 行为指令
-  const understandingConfirm = resolveUnderstandingConfirm(strategy);
-  if (understandingConfirm !== 'off') {
-    const confirmInstruction =
-      understandingConfirm === 'echo'
-        ? '回答前，先用一句话复述你对用户意图的理解（仅复述、不等待用户确认），再正式作答。'
-        : '回答前，先用一句话复述你对用户意图的理解并向用户确认；待用户确认后再正式作答。';
-    promptParts.push(`## 理解确认\n${confirmInstruction}`);
   }
 
   const personaPrompt = promptParts.join('\n\n');

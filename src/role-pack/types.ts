@@ -11,11 +11,10 @@ import type { RolePackValidationIssue } from './validator.js';
 
 // ── 回答前（Prepare）：认知策略 ──
 
-/** 理解确认模式：off=直接生成 / echo=复述但不等待 / confirm=预检停顿后确认 */
-export type UnderstandingConfirm = 'off' | 'echo' | 'confirm';
-
 // 自动注入召回 6 键（ContextAssembly/MemoryRecallMode/SummaryRecall 等）随 memory-tool-recall-design
 // 阶段2 删除——记忆纯工具化召回后 prepare 无自动注入消费端，键族整体退役（strategyResolver/strategyKeys 同步）。
+// understandingConfirm 已回收（2026-09-13，turn-intent-reasoning-design Part 3）：confirm 并入
+// askOn['confirm']/ask_user 通道，echo 由 Turn 起始策略指令覆盖——不再作为开放键保留。
 
 // ── 回答中（Act）：行动策略 ──
 
@@ -57,8 +56,6 @@ export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm'
  * 所有字段可选，未配置的维度使用全局默认值；角色只"选择"不"定义"。
  */
 export interface PrepareStrategy {
-  /** 理解确认模式（默认 off；内核已消费：assembleRolePack 注入 persona prompt 行为指令） */
-  readonly understandingConfirm?: UnderstandingConfirm;
   /** 角色包提炼视角（默认 undefined=通用浓缩；供 round-summary 生成判断「值得记什么」，内核已消费） */
   readonly summaryFocus?: string;
 }
@@ -109,10 +106,10 @@ export interface GlobalStrategy {
  * L2 行为策略全集
  * 角色包经此集合声明行为偏好，未配置维度用全局默认值；所有维度为预定义可选值，角色只做"选择"。
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
- * prepare 的 understandingConfirm（注入 persona prompt 行为指令）/summaryFocus（round-summary 提炼视角；自动注入召回 6 键已随阶段2退役）；
+ * prepare 的 summaryFocus（round-summary 提炼视角）；
  * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
  * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
- * 边界纪律：understandingConfirm 内核已消费；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
+ * 边界纪律：understandingConfirm 已回收（2026-09-13，见文件头注）；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */

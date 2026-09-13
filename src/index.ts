@@ -59,7 +59,6 @@ export type {
   ActStrategy,
   ReflectStrategy,
   GlobalStrategy,
-  UnderstandingConfirm,
   ToolReadonly,
   ProviderRouting,
   MultiStepReasoning,

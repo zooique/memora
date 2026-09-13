@@ -21,7 +21,6 @@ import {
   resolveStepBudget,
   resolveMultiStepReasoning,
   resolveToolReadonly,
-  resolveUnderstandingConfirm,
   mergeStrategy,
   assembleRolePack,
   resolveL2Strategy,
@@ -81,7 +80,6 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 
   it('prepare 维度包含全部必需字段', () => {
     const p = DEFAULT_BEHAVIOR_STRATEGY.prepare!;
-    expect(p.understandingConfirm).toBe('off');
     expect(p.summaryFocus).toBeUndefined();
   });
 
@@ -206,19 +204,7 @@ describe('resolve* 函数 — 基础策略解析', () => {
     });
   });
 
-  // ── resolveUnderstandingConfirm ──
-  describe('resolveUnderstandingConfirm', () => {
-    it('合法值透传', () => {
-      expect(resolveUnderstandingConfirm({ prepare: { understandingConfirm: 'echo' } })).toBe('echo');
-      expect(resolveUnderstandingConfirm({ prepare: { understandingConfirm: 'confirm' } })).toBe('confirm');
-    });
-
-    it('非法/缺失值回退默认 off', () => {
-      expect(resolveUnderstandingConfirm({ prepare: { understandingConfirm: 'bad' as never } })).toBe('off');
-      expect(resolveUnderstandingConfirm(undefined)).toBe('off');
-      expect(resolveUnderstandingConfirm({})).toBe('off');
-    });
-  });
+  // ── 无 resolveUnderstandingConfirm（2026-09-13 回收：键已删，解析函数随之移除）──
 });
 
 // ════════════════════════════════════════════════════════
@@ -360,7 +346,6 @@ describe('mergeStrategy — 策略合并', () => {
     });
     expect(result.reflect!.summary).toBe('off');
     // 其他维度不变
-    expect(result.prepare!.understandingConfirm).toBe('off');
     expect(result.act!.toolMode).toBe('allow');
   });
 
@@ -378,11 +363,10 @@ describe('mergeStrategy — 策略合并', () => {
 
   it('空值覆盖不影响已有字段', () => {
     const result = mergeStrategy(base, {
-      prepare: { understandingConfirm: 'echo' },
+      prepare: { summaryFocus: '聚焦方案维度' },
     });
-    // 其他 prepare 字段保持默认
-    expect(result.prepare!.understandingConfirm).toBe('echo');
-    expect(result.prepare!.summaryFocus).toBeUndefined();
+    // 覆盖生效；未覆盖字段保持默认
+    expect(result.prepare!.summaryFocus).toBe('聚焦方案维度');
   });
 });
 
@@ -475,37 +459,6 @@ describe('assembleRolePack — 角色包装配', () => {
     const result = assembleRolePack(pack);
 
     expect(result.personaPrompt).not.toContain('主动提问规则');
-  });
-
-  it('understandingConfirm=off 时不注入理解确认指令', () => {
-    const pack = makeRolePackWithStrategy({ prepare: { understandingConfirm: 'off' } });
-    const result = assembleRolePack(pack);
-
-    expect(result.personaPrompt).not.toContain('## 理解确认');
-  });
-
-  it('understandingConfirm=echo 时注入"复述但不等待"指令', () => {
-    const pack = makeRolePackWithStrategy({ prepare: { understandingConfirm: 'echo' } });
-    const result = assembleRolePack(pack);
-
-    expect(result.personaPrompt).toContain('## 理解确认');
-    expect(result.personaPrompt).toContain('复述你对用户意图的理解');
-    expect(result.personaPrompt).toContain('不等待用户确认');
-  });
-
-  it('understandingConfirm=confirm 时注入"复述并等待确认"指令', () => {
-    const pack = makeRolePackWithStrategy({ prepare: { understandingConfirm: 'confirm' } });
-    const result = assembleRolePack(pack);
-
-    expect(result.personaPrompt).toContain('## 理解确认');
-    expect(result.personaPrompt).toContain('待用户确认后再正式作答');
-  });
-
-  it('默认（未声明）不注入理解确认指令', () => {
-    const pack = makeRolePack();
-    const result = assembleRolePack(pack);
-
-    expect(result.personaPrompt).not.toContain('## 理解确认');
   });
 
   it('装配后的 strategy 所有维度都有值', () => {

@@ -131,7 +131,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   const EXPECTED_KEYS: Record<Phase, string[]> = {
     prepare: [
       'summaryFocus',
-      'understandingConfirm',
     ],
     act: [
       'toolMode',
@@ -247,11 +246,6 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     it('global.errorHandling 枚举值正确', () => {
       const rule = STRATEGY_KEY_RULES.global!.errorHandling!;
       expect(rule).toEqual({ kind: 'enum', values: ['retry', 'degrade', 'stop'] });
-    });
-
-    it('prepare.understandingConfirm 枚举值正确', () => {
-      const rule = STRATEGY_KEY_RULES.prepare!.understandingConfirm!;
-      expect(rule).toEqual({ kind: 'enum', values: ['off', 'echo', 'confirm'] });
     });
   });
 
