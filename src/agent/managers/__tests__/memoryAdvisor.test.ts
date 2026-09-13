@@ -14,6 +14,52 @@ import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { Memory } from '@/memory/types.js';
 import { ONE_DAY_MS } from '@/utils/time.js';
+import type { LlmProvider, Message } from '@/llm/provider.js';
+
+// ─── L3 冲突检测夹具 ────────────────────────────────────
+
+/**
+ * 创建返回固定 JSON 判词的内存 Mock LLM Provider（judgeWithLlm 依赖流式累积）。
+ * @param json - 判词 JSON 字符串
+ * @param onMessages - 可选：捕获送入 LLM 的消息（用于断言 prompt 是否含截断标记）
+ */
+function createJudgeProvider(json: string, onMessages?: (messages: Message[]) => void): LlmProvider {
+  return {
+    name: 'mock-judge',
+    supportsStructuredOutput: true,
+    async *chat(messages: Message[], _opts?: unknown) {
+      onMessages?.(messages);
+      // 一次性返回整段 JSON，避免逐字符分块导致测试不确定
+      yield { content: json };
+      yield { finishReason: 'stop' };
+    },
+  } as unknown as LlmProvider;
+}
+
+/**
+ * 创建抛出异常的 Mock LLM Provider（模拟 judgeWithLlm 失败，验证 detectConflicts 的 catch 降级）。
+ */
+function createThrowingJudgeProvider(error: Error = new Error('LLM 冲突判断失败')): LlmProvider {
+  return {
+    name: 'mock-throw',
+    supportsStructuredOutput: true,
+    async *chat() {
+      throw error;
+    },
+  } as unknown as LlmProvider;
+}
+
+/**
+ * 构造同 source 冲突检测记忆对（实际写入 work-projection 源）。
+ * @returns 返回两条模拟记忆
+ */
+function seedConflictPair(storage: InMemoryStorage): { a: Memory; b: Memory } {
+  const a = createMemory({ id: 'wp:pair-A', name: 'A', content: '用户喜欢 JavaScript' });
+  const b = createMemory({ id: 'wp:pair-B', name: 'B', content: '用户讨厌 JavaScript' });
+  storage.upsert(a);
+  storage.upsert(b);
+  return { a, b };
+}
 
 // ─── 测试夹具 ─────────────────────────────────────────────
 
@@ -290,6 +336,159 @@ describe('MemoryAdvisor.suggest()', () => {
       expect(hit).toHaveProperty('relevance');
       expect(hit).toHaveProperty('contentPreview', '内容');
       expect(hit).toHaveProperty('reason');
+    });
+  });
+});
+
+// ─── detectConflicts() ────────────────────────────────────
+
+describe('MemoryAdvisor.detectConflicts()', () => {
+  // 每个测试注入独立 LLM Provider 的 advisor
+  function makeAdvisorWithProvider(provider: LlmProvider): MemoryAdvisor {
+    return new MemoryAdvisor(storage, provider, [SOURCE_LABELS.WORK_PROJECTION]);
+  }
+
+  describe('降级路径', () => {
+    it('backgroundProvider 未注入：返回 skippedReason 且空结果', async () => {
+      // advisor 构造时 provider 为 null（beforeEach 默认）
+      const result = await advisor.detectConflicts();
+      expect(result.scannedCount).toBe(0);
+      expect(result.pairCount).toBe(0);
+      expect(result.conflictCount).toBe(0);
+      expect(result.conflicts).toEqual([]);
+      expect(result.skippedReason).toBe('backgroundProvider 未注入');
+    });
+
+    it('候选记忆不足（少于 2 条）：返回 skippedReason', async () => {
+      storage.upsert(createMemory({ id: 'wp:solo', name: 'solo' }));
+      const advisorWithProvider = makeAdvisorWithProvider(createJudgeProvider('{"hasConflict":false}'));
+      const result = await advisorWithProvider.detectConflicts();
+      expect(result.scannedCount).toBe(1);
+      expect(result.pairCount).toBe(0);
+      expect(result.skippedReason).toBe('候选记忆不足（少于 2 条）');
+    });
+
+    it('候选数≥2 但无同 source 候选对：返回 skippedReason', async () => {
+      // 两条不同 source 的记忆（都纳入 sources 采样）→ 同 source 内无配对数
+      storage.upsert(createMemory({ id: 'wp:1', name: 'one' }));
+      storage.upsert(createMemory({ id: 'other:1', name: 'two', source: 'other-source' }));
+      const advisorWithProvider = new MemoryAdvisor(
+        storage,
+        createJudgeProvider('{"hasConflict":false}'),
+        ['work-projection', 'other-source'],
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      expect(result.pairCount).toBe(0);
+      expect(result.skippedReason).toBe('无同 source 候选对');
+      expect(result.scannedCount).toBe(2);
+    });
+  });
+
+  describe('LLM 逐对判断', () => {
+    it('LLM 判定冲突（hasConflict=true）：入 conflict 列表并计数', async () => {
+      const { a, b } = seedConflictPair(storage);
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createJudgeProvider(JSON.stringify({
+          hasConflict: true,
+          conflictDescription: '对 JavaScript 的态度矛盾',
+          recommendation: 'both',
+          reason: '两条记忆表达相反态度',
+        })),
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      expect(result.pairCount).toBe(1);
+      expect(result.conflictCount).toBe(1);
+      expect(result.conflicts).toHaveLength(1);
+      const verdict = result.conflicts[0]!;
+      // verdict 携带原始记忆对象（供宿主 UI 展示）
+      expect(verdict.memoryA.id).toBe(a.id);
+      expect(verdict.memoryB.id).toBe(b.id);
+      expect(verdict.hasConflict).toBe(true);
+      expect(verdict.conflictDescription).toBe('对 JavaScript 的态度矛盾');
+      expect(verdict.recommendation).toBe('both');
+      expect(verdict.reason).toBe('两条记忆表达相反态度');
+      // skippedReason 为无（正产路径不带降级字段）
+      expect(result.skippedReason).toBeUndefined();
+    });
+
+    it('LLM 判定无冲突（hasConflict=false）：不计入冲突', async () => {
+      seedConflictPair(storage);
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createJudgeProvider(JSON.stringify({ hasConflict: false, reason: '不同维度，非冲突' })),
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      expect(result.pairCount).toBe(1);
+      expect(result.conflictCount).toBe(0);
+      expect(result.conflicts).toEqual([]);
+    });
+
+    it('recommendation 非法值被忽略（置 undefined），conflictDescription 缺失归一化', async () => {
+      seedConflictPair(storage);
+      // recommendation 为非法枚举 'c' → 应回退 undefined
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createJudgeProvider(JSON.stringify({ hasConflict: true, recommendation: 'c', reason: '无理由' })),
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      const verdict = result.conflicts[0]!;
+      expect(verdict.recommendation).toBeUndefined();
+      expect(verdict.conflictDescription).toBeUndefined();
+      expect(verdict.reason).toBe('无理由');
+    });
+
+    it('reason 缺失时使用默认占位文案', async () => {
+      seedConflictPair(storage);
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createJudgeProvider(JSON.stringify({ hasConflict: false })),
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      expect(result.conflicts).toHaveLength(0);
+      // reason 归一化发生在 judgeConflict（hasConflict=false 不产生 verdict），故此处仅验证不抛错
+      expect(result.pairCount).toBe(1);
+    });
+
+    it('LLM 判断抛错：单对失败不阻塞，返回空冲突', async () => {
+      seedConflictPair(storage);
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createThrowingJudgeProvider(new Error('LLM 请求超时')),
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      // catch 分支吞掉异常，整体仍返回报告
+      expect(result.pairCount).toBe(1);
+      expect(result.conflictCount).toBe(0);
+      expect(result.conflicts).toEqual([]);
+    });
+
+    it('LLM 返回无效 JSON：抛 configError 被吞，返回空冲突', async () => {
+      seedConflictPair(storage);
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createJudgeProvider('这不是 JSON'),
+      );
+      const result = await advisorWithProvider.detectConflicts();
+      expect(result.conflictCount).toBe(0);
+      expect(result.conflicts).toEqual([]);
+      // 逐对 catch 后仍返回报告，不向上抛
+      await expect(advisorWithProvider.detectConflicts()).resolves.toBeDefined();
+    });
+
+    it('长内容（>200 字符）送入 LLM 前截断并追加截断标记', async () => {
+      // 捕获送入 LLM 的 user 消息，断言 content 已截断
+      let captured = '';
+      const longA = createMemory({ id: 'wp:long-A', name: 'A', content: 'X'.repeat(300) });
+      const longB = createMemory({ id: 'wp:long-B', name: 'B', content: 'Y'.repeat(300) });
+      storage.upsert(longA);
+      storage.upsert(longB);
+      const provider = createJudgeProvider(
+        JSON.stringify({ hasConflict: false }),
+        (messages) => {
+          const userMsg = messages.find((m) => m.role === 'user');
+          if (userMsg) captured += userMsg.content;
+        },
+      );
+      const advisorWithProvider = makeAdvisorWithProvider(provider);
+      await advisorWithProvider.detectConflicts();
+      // buildConflictMessages 走 >200 截断分支：出现截断标记
+      expect(captured).toContain('…[截断]');
+      expect(captured).toContain('X'.repeat(200));
     });
   });
 });

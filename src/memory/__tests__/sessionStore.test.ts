@@ -19,6 +19,8 @@ import type {
 // 内核真实实现（测试替身改名 TestInMemorySessionStore 后，本名恢复独占，无需再取别名区分）
 import { InMemorySessionStore } from '../inMemorySessionStore.js';
 import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
+import { createPendingRound, completeRound } from '../roundStore.js';
+import { getSessionDisplayName, getSessionAutoName } from '../sessionStore.js';
 
 // ══════════════════════════════════════════════════════════════
 // 1. 最小内存实现（用于验证接口契约）
@@ -458,5 +460,175 @@ describe('内核 InMemorySessionStore（真实实现）· listSessionMetas 排�
       '2026-08-02-c',
       '2026-08-01-a',
     ]);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 6. 内核 InMemorySessionStore（真实实现）round-based 行为全覆盖
+// ══════════════════════════════════════════════════════════════
+
+describe('内核 InMemorySessionStore（真实实现）· round-based 行为', () => {
+  let store: InMemorySessionStore;
+  let roundStore: InMemoryRoundStore;
+
+  beforeEach(() => {
+    roundStore = new InMemoryRoundStore();
+    store = new InMemorySessionStore(roundStore);
+  });
+
+  /** 创建一个 complete Round（含 assistant 消息）并保存 */
+  function saveCompleteRound(seed: string): string {
+    const round = createPendingRound(`问题 ${seed}`);
+    const completed = completeRound(round, `回答 ${seed}`);
+    roundStore.save(completed);
+    return completed.id;
+  }
+
+  /** 创建一个 pending Round（无 assistant 消息）并保存 */
+  function savePendingRound(seed: string): string {
+    const round = createPendingRound(`待处理 ${seed}`);
+    roundStore.save(round);
+    return round.id;
+  }
+
+  it('loadMessages：complete Round 展开为 user+assistant 两条', () => {
+    const roundId = saveCompleteRound('A');
+    store.appendRoundId('2026-09-13-main', roundId);
+    const messages = store.loadMessages('2026-09-13', 'main');
+    expect(messages).toHaveLength(2);
+    expect(messages[0]!.role).toBe('user');
+    expect(messages[1]!.role).toBe('assistant');
+    expect(messages[0]!.roundId).toBe(roundId);
+    expect(messages[1]!.roundId).toBe(roundId);
+  });
+
+  it('loadMessages：无 assistant 消息的轮只展开 user 消息', () => {
+    const roundId = savePendingRound('P');
+    store.appendRoundId('2026-09-13-main', roundId);
+    const messages = store.loadMessages('2026-09-13', 'main');
+    // pending 状态 → 仅 user 消息
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.role).toBe('user');
+  });
+
+  it('loadMessages：不存在的会话返回空数组', () => {
+    expect(store.loadMessages('2026-09-13', 'nonexistent')).toEqual([]);
+  });
+
+  it('listSessions：从 roundIds 与 metas 收集去重并排序', () => {
+    store.appendRoundId('2026-09-13-a', 'r1');
+    store.createSession({ sessionId: '2026-09-13-b', updatedAt: 't', messageCount: 0 });
+    store.createSession({ sessionId: '2026-09-13-a', updatedAt: 't2', messageCount: 0 });
+    expect(store.listSessions()).toEqual(['2026-09-13-a', '2026-09-13-b']);
+  });
+
+  it('setSessionTitle：已存在 meta 时更新 displayName', () => {
+    const roundId = saveCompleteRound('A');
+    store.appendRoundId('2026-09-13-main', roundId);
+    store.setSessionTitle('2026-09-13-main', '标题');
+    expect(store.getSessionMeta('2026-09-13-main')?.displayName).toBe('标题');
+    // 再次设置覆盖
+    store.setSessionTitle('2026-09-13-main', '新标题');
+    expect(store.getSessionMeta('2026-09-13-main')?.displayName).toBe('新标题');
+  });
+
+  it('setSessionTitle：不存在 meta 时新建并推断 messageCount', () => {
+    const roundId = saveCompleteRound('A');
+    store.appendRoundId('2026-09-13-main', roundId);
+    store.setSessionTitle('2026-09-13-main', '新建标题');
+    const meta = store.getSessionMeta('2026-09-13-main')!;
+    expect(meta.displayName).toBe('新建标题');
+    // appendRoundId 已更新 messageCount = 1 * 2
+    expect(meta.messageCount).toBe(2);
+  });
+
+  it('updateSessionMeta：已存在 meta 时合并字段', () => {
+    store.createSession({ sessionId: '2026-09-13-main', autoName: '旧', updatedAt: 't', messageCount: 0 });
+    store.updateSessionMeta('2026-09-13-main', { keyTopics: ['ts'], summary: '摘要' });
+    const meta = store.getSessionMeta('2026-09-13-main')!;
+    expect(meta.autoName).toBe('旧');
+    expect(meta.keyTopics).toEqual(['ts']);
+    expect(meta.summary).toBe('摘要');
+  });
+
+  it('updateSessionMeta：不存在 meta 时按 seed 新建', () => {
+    store.updateSessionMeta('2026-09-13-main', { autoName: '自动名' });
+    const meta = store.getSessionMeta('2026-09-13-main')!;
+    expect(meta.sessionId).toBe('2026-09-13-main');
+    expect(meta.autoName).toBe('自动名');
+  });
+
+  it('appendRoundId 追加后 getRoundIds 反映 + messageCount 更新', () => {
+    const id1 = saveCompleteRound('A');
+    const id2 = saveCompleteRound('B');
+    // 先创建会话 meta（updateMessageCount 在无 meta 时提前返回）
+    store.createSession({ sessionId: '2026-09-13-main', updatedAt: 't0', messageCount: 0 });
+    store.appendRoundId('2026-09-13-main', id1);
+    store.appendRoundId('2026-09-13-main', id2);
+    expect(store.getRoundIds('2026-09-13-main')).toEqual([id1, id2]);
+    expect(store.getSessionMeta('2026-09-13-main')?.messageCount).toBe(4);
+  });
+
+  it('appendRoundIds 批量追加 / setRoundIds 完整替换', () => {
+    const id1 = saveCompleteRound('A');
+    const id2 = saveCompleteRound('B');
+    store.appendRoundIds('2026-09-13-main', [id1, id2]);
+    expect(store.getRoundIds('2026-09-13-main')).toEqual([id1, id2]);
+
+    const id3 = saveCompleteRound('C');
+    store.setRoundIds('2026-09-13-main', [id3]);
+    expect(store.getRoundIds('2026-09-13-main')).toEqual([id3]);
+  });
+
+  it('deleteSession：清空 meta 与 roundIds 并递减 Round 引用', () => {
+    // 构造 refCount=2 的 complete Round（save 前设置以持久化）
+    const round = createPendingRound('删除测试');
+    const completed = completeRound(round, '回答');
+    completed.refCount = 2; // 被 2 个会话引用
+    roundStore.save(completed);
+    const roundId = completed.id;
+    store.createSession({ sessionId: '2026-09-13-main', updatedAt: 't', messageCount: 0 });
+    store.appendRoundId('2026-09-13-main', roundId);
+    store.deleteSession('2026-09-13-main');
+
+    expect(store.getSessionMeta('2026-09-13-main')).toBeUndefined();
+    expect(store.getRoundIds('2026-09-13-main')).toEqual([]);
+    // 引用递减 1（2 → 1）
+    expect(roundStore.getById(roundId)!.refCount).toBe(1);
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 7. 会话显示名回退（SSOT 单一语义）
+// ══════════════════════════════════════════════════════════════
+
+describe('getSessionDisplayName / getSessionAutoName', () => {
+  const base: SessionMeta = {
+    sessionId: '2026-09-13-main',
+    updatedAt: 't',
+    messageCount: 0,
+  };
+
+  it('getSessionDisplayName：displayName 优先（含去空白）', () => {
+    expect(getSessionDisplayName({ ...base, displayName: ' 我的会话 ', autoName: '自动名' })).toBe('我的会话');
+  });
+
+  it('getSessionDisplayName：displayName 空白时回退 autoName', () => {
+    expect(getSessionDisplayName({ ...base, displayName: '   ', autoName: '自动名' })).toBe('自动名');
+  });
+
+  it('getSessionDisplayName：仅 autoName 时用 autoName', () => {
+    expect(getSessionDisplayName({ ...base, autoName: '自动名' })).toBe('自动名');
+  });
+
+  it('getSessionDisplayName：均缺失返回空串', () => {
+    expect(getSessionDisplayName(base)).toBe('');
+    expect(getSessionDisplayName(undefined)).toBe('');
+  });
+
+  it('getSessionAutoName：仅取 autoName，无则空串', () => {
+    expect(getSessionAutoName({ ...base, autoName: ' 自动名 ' })).toBe('自动名');
+    expect(getSessionAutoName(base)).toBe('');
+    expect(getSessionAutoName(undefined)).toBe('');
   });
 });

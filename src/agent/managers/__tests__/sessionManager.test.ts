@@ -918,4 +918,92 @@ describe('SessionManager', () => {
     });
   });
 
+  // ── 工具执行日志 + 补偿降级 + 计划查询 + 心跳（补充分支） ──
+
+  describe('工具执行日志与补偿降级（补充分支）', () => {
+    /** 构造一条工具执行记录 */
+    function makeRecord(name: string, idempotent: 'non-idempotent' | 'idempotent' = 'non-idempotent') {
+      return {
+        name,
+        argsSignature: '{"path":"x"}',
+        executedAt: Date.now(),
+        resultSummary: 'ok',
+        ok: true,
+        idempotent,
+      };
+    }
+
+    it('无检查点时 logToolExecution 静默 no-op（不抛错）', () => {
+      expect(manager.getCheckpoint()).toBeNull();
+      expect(() => manager.logToolExecution(makeRecord('write_file'))).not.toThrow();
+    });
+
+    it('logToolExecution 追加到 completedToolCalls', () => {
+      manager.createCheckpoint('测试');
+      manager.logToolExecution(makeRecord('write_file'));
+      manager.logToolExecution(makeRecord('run_project_script', 'idempotent'));
+      const calls = manager.getCheckpoint()!.completedToolCalls ?? [];
+      expect(calls).toHaveLength(2);
+      expect(calls[0]!.name).toBe('write_file');
+    });
+
+    it('compensateTool：生成人工确认文案并记录日志', () => {
+      const msg = manager.compensateTool(makeRecord('write_file'));
+      expect(msg).toContain('write_file');
+      expect(msg).toContain('非幂等工具');
+    });
+
+    it('compensateAllNonIdempotent：无检查点返回空数组', () => {
+      expect(manager.compensateAllNonIdempotent()).toEqual([]);
+    });
+
+    it('compensateAllNonIdempotent：仅记录非幂等工具，幂等工具被过滤', () => {
+      manager.createCheckpoint('测试');
+      manager.logToolExecution(makeRecord('write_file')); // non-idempotent
+      manager.logToolExecution(makeRecord('run_project_script', 'idempotent')); // idempotent
+      const msgs = manager.compensateAllNonIdempotent();
+      // 只有非幂等工具进入补偿清单
+      expect(msgs).toHaveLength(1);
+      expect(msgs[0]).toContain('write_file');
+    });
+
+    it('heartbeat：有检查点时刷新时间戳（不抛错）', () => {
+      manager.createCheckpoint('测试');
+      expect(() => manager.heartbeat()).not.toThrow();
+    });
+
+    it('getActiveStep / getNextPendingStep：无检查点返回 null', () => {
+      expect(manager.getActiveStep()).toBeNull();
+      expect(manager.getNextPendingStep()).toBeNull();
+    });
+
+    it('getActiveStep / getNextPendingStep：有 plan 时返回 active 与下一个 pending 步骤', () => {
+      manager.createCheckpoint('测试');
+      const plan = manager.writePlan('overwrite', [
+        { description: '步骤一' },
+        { description: '步骤二' },
+      ]);
+      // writePlan 后 ensureActiveStep 激活第一个步骤
+      const active = manager.getActiveStep();
+      expect(active?.id).toBe(plan[0]!.id);
+      // 第一个已 active（非 pending），下一个 pending 是步骤二
+      const next = manager.getNextPendingStep();
+      expect(next?.id).toBe(plan[1]!.id);
+    });
+
+    it('isPlanAllBlocked：全部 blocked 时返回 true，存在非 blocked 时返回 false', () => {
+      manager.createCheckpoint('测试');
+      const plan = manager.writePlan('overwrite', [
+        { description: '步骤一' },
+        { description: '步骤二' },
+      ]);
+      // 未全 blocked → false
+      expect(manager.isPlanAllBlocked()).toBe(false);
+      // 两步都标 blocked → true（active 推进被 blocked 占位）
+      manager.updatePlanStepStatus(plan[0]!.id, 'blocked');
+      manager.updatePlanStepStatus(plan[1]!.id, 'blocked');
+      expect(manager.isPlanAllBlocked()).toBe(true);
+    });
+  });
+
 });

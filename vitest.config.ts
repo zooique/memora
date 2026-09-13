@@ -38,7 +38,7 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/index.ts'],
+      exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/index.ts', 'hosts/**', 'hosts/memora-vscode/src/**'],
       thresholds: {
         // 1.0 发布阈值：当前实际覆盖率 91.38/83.35/93.28/92.46，阈值设为略低于实际值以留缓冲
         // 0% 文件（agent/types.ts, llm/types.ts, memory/*Interface.ts 等）为纯类型/接口文件，无运行时代码

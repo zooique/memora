@@ -139,6 +139,55 @@ describe('MessageHistory · forkSession', () => {
   });
 });
 
+describe('MessageHistory · forkSession 错误分支', () => {
+  /** 捕获 forkSession 抛出的 MemoraError，返回 detail 用于断言具体原因 */
+  function catchForkDetail(fn: () => unknown): string | undefined {
+    try {
+      fn();
+      return undefined;
+    } catch (e) {
+      const err = e as { detail?: string };
+      return err.detail;
+    }
+  }
+
+  it('未注入 sessionStore 时抛错', () => {
+    const history = new MessageHistory(undefined, '2026-01-01', 'main');
+    expect(catchForkDetail(() => history.forkSession('r1'))).toContain('ISessionStore 未注入');
+  });
+
+  it('当前会话不存在时抛错', () => {
+    const store = new InMemorySessionStore(new InMemoryRoundStore());
+    const history = new MessageHistory(store, '2026-01-01', 'main');
+    expect(catchForkDetail(() => history.forkSession('r1'))).toContain('当前会话不存在');
+  });
+
+  it('当前会话无问答闭环时抛错', () => {
+    const store = new InMemorySessionStore(new InMemoryRoundStore());
+    store.createSession({ sessionId: '2026-01-01-main', updatedAt: 't', messageCount: 0 });
+    const history = new MessageHistory(store, '2026-01-01', 'main');
+    expect(catchForkDetail(() => history.forkSession('r1'))).toContain('无问答闭环');
+  });
+
+  it('分叉点 Round 不存在于会话时抛错', () => {
+    const store = new InMemorySessionStore(new InMemoryRoundStore());
+    store.createSession({ sessionId: '2026-01-01-main', updatedAt: 't', messageCount: 0 });
+    store.setRoundIds('2026-01-01-main', ['r1', 'r2']);
+    const history = new MessageHistory(store, '2026-01-01', 'main');
+    expect(catchForkDetail(() => history.forkSession('r9'))).toContain('Round 不存在');
+  });
+
+  it('目标会话当天已存在时抛错', () => {
+    const store = new InMemorySessionStore(new InMemoryRoundStore());
+    store.createSession({ sessionId: '2026-01-01-main', updatedAt: 't', messageCount: 0 });
+    store.setRoundIds('2026-01-01-main', ['r1']);
+    // 预置一个"今天"的同名目标会话
+    store.createSession({ sessionId: `${todayDate()}-dup`, updatedAt: 't2', messageCount: 0 });
+    const history = new MessageHistory(store, '2026-01-01', 'main');
+    expect(catchForkDetail(() => history.forkSession('r1', 'dup'))).toContain('已存在');
+  });
+});
+
 describe('MessageHistory · pendingArchives', () => {
   it('registerPendingArchive 应注册并等待完成', async () => {
     const history = new MessageHistory();

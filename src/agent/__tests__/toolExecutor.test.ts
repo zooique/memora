@@ -169,6 +169,23 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('stdout-ok');
     });
 
+    it('args 传入单字符串时被类型修正为数组（array 类型自动修正分支）', async () => {
+      // scripts/ 放脚本，读取 argv 验证 args 在修正后以数组形式透传
+      mkdirSync(join(tmpProject, 'scripts'), { recursive: true });
+      writeFileSync(
+        join(tmpProject, 'scripts/env-argv.js'),
+        "process.argv.forEach((a, i) => console.log('ARG', i, a));",
+        'utf-8',
+      );
+      // args 传 JSON 字符串（非数组）→ validateAndCoerceArgs 修正为 [单值]
+      const result = await executor.execute(
+        'run_project_script',
+        JSON.stringify({ script_path: 'scripts/env-argv.js', args: 'hello' }),
+      );
+      // 修正后 args=['hello'] 进入脚本 argv
+      expect(result).toContain('hello');
+    });
+
     it('路径越界（../ 穿越项目根）时拒绝执行', async () => {
       const result = await executor.execute(
         'run_project_script',

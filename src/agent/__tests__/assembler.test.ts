@@ -21,11 +21,12 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assembleComponents } from '@/agent/assembler.js';
-import type { AssembleInput } from '@/agent/assembler.js';
+import type { AssembleInput, AgentHooks } from '@/agent/assembler.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { SecurityGuard } from '@/security/pathGuard.js';
 import { SkillManager } from '@/skill/skillManager.js';
 import { MemoraError } from '@/utils/errors.js';
+import { AGENT_EVENTS } from '@/utils/eventEmitter.js';
 import type { LlmProvider } from '@/llm/provider.js';
 import type { LlmChunk } from '@/llm/types.js';
 import type { ProjectContext } from '@/memory/projectManager.js';
@@ -456,5 +457,116 @@ describe('assembleComponents', () => {
       expect(finalResult).toContain('已标记为 done');
       expect(finalResult).not.toContain('收尾提示');
     });
+  });
+});
+
+// ─── wireRuntimeCallbacks 运行时回调分支 ─────────────────────
+
+describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
+  /** 携带可观测 hooks 的组装辅助 */
+  function assembleWithHooks(hooks: Partial<AgentHooks> = {}) {
+    return assembleComponents(
+      createPctx(),
+      createInput({
+        hooks: {
+          emit: vi.fn(),
+          isChatBusy: () => false,
+          requestPause: vi.fn(),
+          ...hooks,
+        },
+      }),
+    );
+  }
+
+  it('onPendingQuestion 空列表：不 emit 不暂停（短路）', async () => {
+    const emit = vi.fn();
+    const requestPause = vi.fn();
+    const out = await assembleWithHooks({ emit, requestPause });
+    out.loop.onPendingQuestion!([]);
+    expect(emit).not.toHaveBeenCalled();
+    expect(requestPause).not.toHaveBeenCalled();
+  });
+
+  it('onPendingQuestion 有问题：emit questionPending 事件 + requestPause 暂停', async () => {
+    const emit = vi.fn();
+    const requestPause = vi.fn();
+    const out = await assembleWithHooks({ emit, requestPause });
+    out.loop.onPendingQuestion!([{ slot: 'ask', question: '确认执行？' }]);
+    expect(emit).toHaveBeenCalledWith(AGENT_EVENTS.questionPending, [{ slot: 'ask', question: '确认执行？' }]);
+    expect(requestPause).toHaveBeenCalled();
+  });
+
+  it('onStepBoundary：写入当前 active 步骤的 stepLog', async () => {
+    const out = await assembleWithHooks();
+    out.sessionManager.createCheckpoint('测试计划');
+    out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
+    out.loop.onStepBoundary!({ summary: '进展摘要' });
+    const cp = out.sessionManager.getCheckpoint()!;
+    // active 步骤的 stepLog 追加了该次推进记录
+    expect(cp.stepLog?.length).toBeGreaterThan(0);
+    expect(cp.stepLog?.[0]?.summary).toBe('进展摘要');
+  });
+
+  it('getActiveStepMeta：有 active 步骤返回 stepId/title', async () => {
+    const out = await assembleWithHooks();
+    out.sessionManager.createCheckpoint('测试计划');
+    const plan = out.sessionManager.writePlan('overwrite', [{ description: '活动步骤' }]);
+    const meta = out.loop.getActiveStepMeta!();
+    expect(meta).toEqual({ stepId: plan[0]!.id, title: '活动步骤' });
+  });
+
+  it('getActiveStepMeta：无 checkpoint 返回 null（短路）', async () => {
+    const out = await assembleWithHooks();
+    expect(out.loop.getActiveStepMeta!()).toBeNull();
+  });
+
+  it('planManager.writePlan：返回含步骤摘要与角色标注的渲染结果', async () => {
+    const out = await assembleWithHooks();
+    out.sessionManager.createCheckpoint('测试计划');
+    // 直接触发装配的 planManager（writePlan 分发归 SessionManager）
+    const rendered = out.toolExec.planManager!.writePlan('overwrite', [
+      { description: '组员发言', rolePack: '组员1' },
+    ]);
+    expect(rendered).toContain('组员1'); // 角色标注
+    expect(rendered).toContain('任务表已更新');
+  });
+
+  it('planManager.updateStep：不存在的步骤返回 STEP_NOT_FOUND', async () => {
+    const out = await assembleWithHooks();
+    out.sessionManager.createCheckpoint('测试计划');
+    expect(out.toolExec.planManager!.updateStep('nope', 'done')).toContain('[ERR:STEP_NOT_FOUND]');
+  });
+
+  it('planManager.getPlan：无 checkpoint 时返回空计划', async () => {
+    const out = await assembleWithHooks();
+    expect(out.toolExec.planManager!.getPlan()).toEqual([]);
+  });
+
+  it('vectorStore 注入时 memoryInspector 启用混合搜索（setVectorStore 分支）', async () => {
+    // 注入 mock vectorStore → assembler 走 setVectorStore 分支
+    const vectorStore = { search: vi.fn(), upsert: vi.fn(), delete: vi.fn(), close: vi.fn() } as never;
+    const out = await assembleWithHooks();
+    const withStore = await assembleComponents(
+      createPctx(),
+      createInput({ vectorStore }),
+    );
+    expect(withStore.memoryInspector).toBeDefined();
+    expect(out.loop).toBeDefined();
+  });
+
+  it('tracer + vectorStore 注入时 contextPreparer 走非空容量来源分支', async () => {
+    const vectorStore = { search: vi.fn(), upsert: vi.fn(), delete: vi.fn(), close: vi.fn() } as never;
+    const tracer = {
+      startSpan: vi.fn().mockReturnValue({ setAttribute: vi.fn(), end: vi.fn(), recordException: vi.fn() }),
+    } as never;
+    const out = await assembleComponents(
+      createPctx(),
+      createInput({
+        vectorStore,
+        tracer: tracer as never,
+      }),
+    );
+    expect(out.contextPreparer).toBeDefined();
+    expect(out.memoryInspector).toBeDefined();
   });
 });

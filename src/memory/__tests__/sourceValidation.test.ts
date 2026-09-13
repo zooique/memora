@@ -8,13 +8,42 @@
  * 安全边界（路径遍历、null 字节）必须拒绝。
  */
 import { describe, expect, it } from 'vitest';
-import { escapeLike, validateSource } from '@/memory/sourceValidation.js';
+import { escapeLike, escapeLikeSnippet, validateSource, levenshtein } from '@/memory/sourceValidation.js';
 
 describe('escapeLike 工具函数', () => {
   it('应该转义 % 和 _ 通配符', () => {
     expect(escapeLike('100%')).toBe('100\\%');
     expect(escapeLike('test_value')).toBe('test\\_value');
     expect(escapeLike('normal text')).toBe('normal text');
+  });
+});
+
+describe('escapeLikeSnippet（截断 + 转义）', () => {
+  it('短输入原样截断并转义', () => {
+    expect(escapeLikeSnippet('abc%def')).toBe('abc\\%def');
+  });
+
+  it('超长输入被截断到 maxLen', () => {
+    const long = 'x'.repeat(100);
+    expect(escapeLikeSnippet(long)).toHaveLength(50);
+    // 自定义 maxLen
+    expect(escapeLikeSnippet(long, 10)).toHaveLength(10);
+  });
+});
+
+describe('levenshtein 编辑距离', () => {
+  it('空串距离 = 对方长度', () => {
+    expect(levenshtein('', 'abc')).toBe(3);
+    expect(levenshtein('abc', '')).toBe(3);
+    expect(levenshtein('', '')).toBe(0);
+  });
+
+  it('相同串距离为 0', () => {
+    expect(levenshtein('kitten', 'kitten')).toBe(0);
+  });
+
+  it('典型编辑距离', () => {
+    expect(levenshtein('kitten', 'sitting')).toBe(3);
   });
 });
 

@@ -58,6 +58,30 @@ describe('config/loader · loadConfig', () => {
     expect(config.llm.providers!.deepseek!.apiKey).toBe('sk-test123');
   });
 
+  it('temperature 超出 0-2 范围时应抛错（校验器分支）', async () => {
+    const configPath = writeConfig(tmpHome, {
+      llm: {
+        providers: { deepseek: { provider: 'deepseek', model: 'm', apiKey: 'k', temperature: 3 } },
+        active: 'deepseek',
+      },
+    });
+    await expect(loadConfig(configPath)).rejects.toThrow('temperature');
+  });
+
+  it('maxContextTokens 超出上下限时应抛错', async () => {
+    const configPath = writeConfig(tmpHome, {
+      memory: { dataDir: '~/.memora', maxContextTokens: 10 ** 9 },
+    });
+    await expect(loadConfig(configPath)).rejects.toThrow('maxContextTokens');
+  });
+
+  it('security.permission 为非法值时应抛错', async () => {
+    const configPath = writeConfig(tmpHome, {
+      security: { permission: 'hacker', confirmWrites: true, allowedPaths: [] },
+    });
+    await expect(loadConfig(configPath)).rejects.toThrow('permission');
+  });
+
   it('apiKey 为 ${ENV_VAR} 格式时应展开为环境变量', async () => {
     const configPath = writeConfig(tmpHome, {
       llm: {

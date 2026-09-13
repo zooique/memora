@@ -8,7 +8,31 @@
  *   - 多次调用返回值单调非递减
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { nowIso, formatDateKey, todayDate, buildSessionId, splitSessionId, isValidSessionId } from '@/utils/time.js';
+import { nowIso, formatDateKey, todayDate, buildSessionId, splitSessionId, isValidSessionId, daysBetween } from '@/utils/time.js';
+
+describe('utils/time · daysBetween', () => {
+  it('非法时间字符串返回 NaN', () => {
+    expect(daysBetween('not-a-date')).toBeNaN();
+  });
+
+  it('计算完整天数差（向下取整）', () => {
+    // 2026-06-21 到 2026-06-24 = 3 天
+    expect(daysBetween('2026-06-24T00:00:00Z', Date.parse('2026-06-21T00:00:00Z'))).toBe(3);
+  });
+
+  it('未来时间返回负数', () => {
+    expect(daysBetween('2026-06-21T00:00:00Z', Date.parse('2026-06-24T00:00:00Z'))).toBe(-3);
+  });
+
+  it('不足一天返回 0', () => {
+    expect(daysBetween('2026-06-21T10:00:00Z', Date.parse('2026-06-21T09:00:00Z'))).toBe(0);
+  });
+
+  it('省略 now 时使用当前时间', () => {
+    vi.setSystemTime(new Date('2026-06-21T00:00:00.000Z'));
+    expect(daysBetween('2026-06-21T00:00:00.000Z')).toBe(0);
+  });
+});
 
 describe('utils/time', () => {
   afterEach(() => {

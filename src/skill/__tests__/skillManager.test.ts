@@ -606,3 +606,107 @@ description: 联网搜索资料
     });
   });
 });
+
+describe('SkillManager · 补充分支路径', () => {
+  let testDir: string;
+  let skillsDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `memora-skill-comp-${Date.now()}`);
+    skillsDir = join(testDir, 'skills');
+    mkdirSync(skillsDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    rmSync(testDir, { recursive: true, force: true });
+  });
+
+  describe('formatSkillForPrompt（静态格式化 SSOT）', () => {
+    it('无技能名且无 fallbackName：返回空串', () => {
+      expect(SkillManager.formatSkillForPrompt(undefined)).toBe('');
+      expect(SkillManager.formatSkillForPrompt({})).toBe('');
+    });
+
+    it('有 layer3（含资源/脚本）时追加标记', () => {
+      const out = SkillManager.formatSkillForPrompt({
+        name: 'run',
+        description: '执行脚本',
+        layer3: { resources: [{ path: 'a' } as never], scripts: [] },
+      });
+      expect(out).toContain('（含资源/脚本）');
+    });
+
+    it('compress=true 且描述超 20 字：截断为 20 字 + …', () => {
+      const out = SkillManager.formatSkillForPrompt(
+        { name: 'compress', description: '这是一个超过二十个字符很长的描述文本用于验证压缩截断' },
+        undefined,
+        true,
+      );
+      expect(out).toContain('…');
+      // 20 字原文被截断，不应包含完整描述
+      expect(out).not.toContain('用于验证压缩截断');
+    });
+
+    it('compress=false 保留完整描述', () => {
+      const longDesc = '这是一个超过二十个字符很长的描述文本用于验证不压缩';
+      const out = SkillManager.formatSkillForPrompt({ name: 'full', description: longDesc });
+      expect(out).toContain(longDesc);
+    });
+  });
+
+  describe('buildSystemPrompt 边界', () => {
+    it('name 提供但技能不存在：返回空串', async () => {
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      expect(manager.buildSystemPrompt('不存在的技能')).toBe('');
+    });
+  });
+
+  describe('validateFile 余下分支', () => {
+    const m = new SkillManager();
+    it('正文为空 → error body', async () => {
+      const p = join(skillsDir, 'empty-body.md');
+      createSkillFile(skillsDir, 'empty-body.md', '---\nname: x\ndescription: d\n---\n  ');
+      const v = await m.validateFile(p);
+      expect(v.ok).toBe(false);
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'body' }));
+    });
+
+    it('layer 非法值 → warning（回退 project）', async () => {
+      const p = join(skillsDir, 'bad-layer.md');
+      createSkillFile(skillsDir, 'bad-layer.md', '---\nname: x\ndescription: d\nlayer: invalid\n---\n正文');
+      const v = await m.validateFile(p);
+      expect(v.ok).toBe(true); // warning 不引发 error
+      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'warning', field: 'layer' }));
+    });
+  });
+
+  describe('readResource 边界', () => {
+    it('技能不存在：返回 null', async () => {
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      expect(await manager.readResource('不存在的技能', 'a.md')).toBeNull();
+    });
+  });
+
+  describe('loadExtraDir（用户技能目录注入）', () => {
+    it('加载用户技能 + 跳过与内置重名的技能', async () => {
+      // 内置技能：同名 dup
+      createSkillFile(skillsDir, 'dup.md', '---\nname: dup\ndescription: d\n---\n内置版本');
+      const manager = new SkillManager(testDir);
+      await manager.load();
+
+      // 用户目录：dup（重名，应跳过）+ 一个新的 extra
+      const extraDir = join(testDir, 'user-skills');
+      mkdirSync(extraDir, { recursive: true });
+      createSkillFile(extraDir, 'dup.md', '---\nname: dup\ndescription: d2\n---\n用户版本');
+      createSkillFile(extraDir, 'extra.md', '---\nname: extra\ndescription: e\n---\n用户额外技能');
+
+      const count = await manager.loadExtraDir(extraDir);
+      // 只新增 extra（dup 重名跳过）
+      expect(count).toBe(1);
+      expect(manager.get('dup')?.content).toBe('内置版本'); // 内置优先
+      expect(manager.get('extra')?.content).toBe('用户额外技能');
+    });
+  });
+});

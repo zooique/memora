@@ -2,7 +2,7 @@
  * 单元测试：垃圾回收服务（GC Service）
  * 验证引用计数和孤立 Round 清理机制
  */
-import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { GCService, createDefaultGCService } from '@/memory/gcService.js';
@@ -10,6 +10,7 @@ import {
   createPendingRound,
   completeRound,
 } from '@/memory/roundStore.js';
+import type { IRoundStore } from '@/memory/roundStore.js';
 import type { Memory } from '@/memory/types.js';
 import type { IVectorStore } from '@/memory/vectorStore.js';
 
@@ -336,5 +337,129 @@ describe('垃圾回收服务', () => {
       // 等待 fire-and-forget 的 catch 链完成（无断言，仅防未处理 rejection）
       await new Promise((r) => setTimeout(r, 10));
     });
+  });
+});
+
+describe('GC 补充分支路径', () => {
+  let roundStore: InMemoryRoundStore;
+  let memoryStorage: InMemoryStorage;
+
+  beforeEach(() => {
+    roundStore = new InMemoryRoundStore();
+    memoryStorage = new InMemoryStorage();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** 构造一个游离的 complete Round（refCount=0） */
+  function seedOrphan(): void {
+    const round = createPendingRound('孤儿');
+    const completed = completeRound(round, '回答');
+    completed.refCount = 0;
+    roundStore.save(completed);
+  }
+
+  it('verbose=true 时覆盖详细日志分支（不抛错，扫描/孤儿计数正确）', () => {
+    seedOrphan();
+    const gc = new GCService(roundStore, memoryStorage, {
+      minAgeMs: 0,
+      batchSize: 10,
+      cleanUpMemory: false,
+      verbose: true,
+    });
+    const result = gc.run();
+    // verbose 分支仅影响日志输出，结果统计与常规一致
+    expect(result.deleted).toBe(1);
+    expect(result.orphaned).toBe(1);
+  });
+
+  it('startPeriodic 重复调用被忽略，定时器唯一', () => {
+    vi.useFakeTimers();
+    const gc = new GCService(roundStore, memoryStorage, {
+      minAgeMs: 0,
+      batchSize: 10,
+      cleanUpMemory: false,
+      verbose: false,
+    });
+    // spy run 以计数定时触发的执行次数
+    const runSpy = vi.spyOn(gc, 'run');
+    gc.startPeriodic(1000);
+    gc.startPeriodic(1000); // 重复调用：timer 已存在 → 应被忽略（仅一次定时器）
+    vi.advanceTimersByTime(2000);
+    // 期望：1 次启动即执行 + 2 次 tick = 3 次；重复 startPeriodic 不再新增
+    expect(runSpy).toHaveBeenCalledTimes(3);
+    gc.stopPeriodic();
+  });
+
+  it('stopPeriodic 清除定时器后再次 startPeriodic 可重启', () => {
+    vi.useFakeTimers();
+    const gc = new GCService(roundStore, memoryStorage, {
+      minAgeMs: 0,
+      batchSize: 10,
+      cleanUpMemory: false,
+      verbose: false,
+    });
+    const runSpy = vi.spyOn(gc, 'run');
+    gc.startPeriodic(1000);
+    gc.stopPeriodic(); // 清除 timer → 置 null
+    gc.startPeriodic(1000); // timer 已 null → 走新定时器分支，无 warn
+    vi.advanceTimersByTime(1000);
+    // 1 次启动 + 2 次启动触发 2 次 run 内联 + 新定时器 1 tick = 3
+    expect(runSpy).toHaveBeenCalledTimes(3);
+    gc.stopPeriodic();
+  });
+
+  it('stopPeriodic 在无定时器时不抛错', () => {
+    const gc = new GCService(roundStore, memoryStorage);
+    // 尚无定时器 → stopPeriodic 的 if(timer) 走不成立分支，应安全返回
+    expect(() => gc.stopPeriodic()).not.toThrow();
+  });
+
+  it('Round 删除失败计入 failedDueToRefCount（绕过多引用保护）', () => {
+    // 注入 listOrphaned 返回孤儿但 delete 返回 false 的 mock store，覆盖 delete=false 分支
+    const mockStore = {
+      listOrphaned: () => [{ id: 'r1' }],
+      listAll: () => [],
+      delete: () => false,
+    } as unknown as IRoundStore;
+    const gc = new GCService(mockStore, memoryStorage, { minAgeMs: 0, batchSize: 10 });
+    const result = gc.run();
+    expect(result.failedDueToRefCount).toBe(1);
+    expect(result.deleted).toBe(0);
+  });
+
+  it('向量索引删除失败仅记录不阻断 GC 主流程（catch 分支）', async () => {
+    const round = createPendingRound('向量失败');
+    const completed = completeRound(round, '回答');
+    completed.refCount = 0;
+    roundStore.save(completed);
+    const summaryId = `round-summary:2026-09-10-main:${round.id}`;
+    memoryStorage.upsert({
+      id: summaryId,
+      content: '摘要',
+      source: 'round-summary',
+      name: round.id,
+      roundId: round.id,
+      createdAt: new Date().toISOString(),
+      accessedAt: new Date().toISOString(),
+    } as Memory);
+
+    // 向量 delete 返回 reject → 走 .catch 降级分支（记录不抛错）
+    const failingVector = {
+      delete: vi.fn().mockRejectedValue(new Error('向量服务不可用')),
+    } as unknown as IVectorStore;
+    const gcWithFailingVector = new GCService(
+      roundStore,
+      memoryStorage,
+      { minAgeMs: 0, batchSize: 10, cleanUpMemory: true, syncVectorDelete: true, verbose: false },
+      failingVector,
+    );
+    const result = gcWithFailingVector.run();
+    expect(result.deleted).toBe(1);
+    expect(result.memoryCleaned).toBe(1);
+    // 等待 catch 链执行完毕（防未处理 rejection）
+    await new Promise((r) => setTimeout(r, 10));
   });
 });

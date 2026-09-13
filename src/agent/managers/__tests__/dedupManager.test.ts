@@ -139,3 +139,159 @@ describe('DedupManager · M6 合并内容落库', () => {
     expect(storage.getById('content:b')).toBeNull();
   });
 });
+
+describe('DedupManager · 降级与异常路径', () => {
+  /**
+   * 创建返回预设 JSON 的 mock provider（封装响应解析）
+   */
+  function providerReturning(json: string): LlmProvider {
+    return createMockProvider(json);
+  }
+
+  /** 创建抛出异常的 mock provider（验证 catch 降级不阻塞） */
+  function throwingProvider(error: Error): LlmProvider {
+    return {
+      name: 'mock-throw',
+      chat: async function* () {
+        throw error;
+      },
+    } as unknown as LlmProvider;
+  }
+
+  /** 构造两条指定 name 的 work-projection 记忆 */
+  function seedMemories(storage: IMemoryStorage, nameA: string, nameB: string): void {
+    storage.upsert({
+      id: 'content:a',
+      source: SOURCE_LABELS.WORK_PROJECTION,
+      name: nameA,
+      content: '内容 A',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      accessedAt: '2026-01-01T00:00:00.000Z',
+    });
+    storage.upsert({
+      id: 'content:b',
+      source: SOURCE_LABELS.WORK_PROJECTION,
+      name: nameB,
+      content: '内容 B',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      accessedAt: '2026-01-01T00:00:00.000Z',
+    });
+  }
+
+  it('backgroundProvider 未注入：返回 skippedReason 且空结果', async () => {
+    const storage = createMockStorage();
+    seedMemories(storage, '用户偏好', '用户偏好设置');
+    const manager = new DedupManager(storage, null, undefined, [SOURCE_LABELS.WORK_PROJECTION]);
+
+    const report = await manager.deduplicateMemories();
+    expect(report.scannedCount).toBe(0);
+    expect(report.pairCount).toBe(0);
+    expect(report.deduplicatedCount).toBe(0);
+    expect(report.skippedReason).toBe('backgroundProvider 未注入');
+  });
+
+  it('未发现名称相似的记忆对：返回 skippedReason', async () => {
+    const storage = createMockStorage();
+    // 名称差异大（无包含关系，归一化距离 = 3/3 = 1 > 0.3）→ 不构成候选对
+    seedMemories(storage, 'abc', 'xyz');
+    const manager = new DedupManager(
+      storage,
+      providerReturning('{"isDuplicate":false}'),
+      undefined,
+      [SOURCE_LABELS.WORK_PROJECTION],
+    );
+
+    const report = await manager.deduplicateMemories();
+    expect(report.pairCount).toBe(0);
+    expect(report.deduplicatedCount).toBe(0);
+    expect(report.skippedReason).toBe('未发现名称相似的记忆对');
+    expect(report.scannedCount).toBe(2);
+  });
+
+  it('LLM 判定非重复（isDuplicate=false）：不降级任何记忆', async () => {
+    const storage = createMockStorage();
+    seedMemories(storage, '用户偏好', '用户偏好设置');
+    const manager = new DedupManager(
+      storage,
+      providerReturning(JSON.stringify({ isDuplicate: false, reason: 'B 是 A 的细化，非等价' })),
+      undefined,
+      [SOURCE_LABELS.WORK_PROJECTION],
+    );
+
+    const report = await manager.deduplicateMemories();
+    expect(report.pairCount).toBe(1);
+    expect(report.deduplicatedCount).toBe(0);
+    expect(report.demotedIds).toEqual([]);
+    // 两条记忆均保留
+    expect(storage.getById('content:a')).not.toBeNull();
+    expect(storage.getById('content:b')).not.toBeNull();
+  });
+
+  it('LLM 判断抛错：单对失败不阻塞，返回空降级结果', async () => {
+    const storage = createMockStorage();
+    seedMemories(storage, '用户偏好', '用户偏好设置');
+    const manager = new DedupManager(
+      storage,
+      throwingProvider(new Error('LLM 去重请求超时')),
+      undefined,
+      [SOURCE_LABELS.WORK_PROJECTION],
+    );
+
+    const report = await manager.deduplicateMemories();
+    expect(report.pairCount).toBe(1);
+    expect(report.deduplicatedCount).toBe(0);
+    expect(report.demotedIds).toEqual([]);
+    // 记忆仍保留（未误删）
+    expect(storage.getById('content:b')).not.toBeNull();
+  });
+
+  it('isDuplicate 且 mergedContent 缺失：reason 使用默认占位', async () => {
+    const storage = createMockStorage();
+    seedMemories(storage, '用户偏好', '用户偏好设置');
+    // LLM 返回 isDuplicate=true 但无 reason
+    const manager = new DedupManager(
+      storage,
+      providerReturning(JSON.stringify({ isDuplicate: true })),
+      undefined,
+      [SOURCE_LABELS.WORK_PROJECTION],
+    );
+
+    const report = await manager.deduplicateMemories();
+    expect(report.deduplicatedCount).toBe(1);
+    expect(report.verdicts?.[0]?.reason).toBe('(LLM 未提供理由)');
+  });
+
+  it('onCompleted 回调在完成时触发并携带报告', async () => {
+    const storage = createMockStorage();
+    seedMemories(storage, '用户偏好', '用户偏好设置');
+    const onCompleted = vi.fn();
+    const manager = new DedupManager(
+      storage,
+      providerReturning(JSON.stringify({ isDuplicate: true, mergedContent: '合并', reason: '等价' })),
+      onCompleted,
+      [SOURCE_LABELS.WORK_PROJECTION],
+    );
+
+    await manager.deduplicateMemories();
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    const payload = onCompleted.mock.calls[0]![0] as { demotedIds: string[]; deduplicatedCount: number };
+    expect(payload.demotedIds).toContain('content:b');
+    expect(payload.deduplicatedCount).toBe(1);
+  });
+
+  it('空名称记忆不与其他记忆构成相似对（computeNameSimilarity 防御）', async () => {
+    const storage = createMockStorage();
+    // nameA 为空字符串 → 与任何名称相似度视为 1（不同），不构成候选对
+    seedMemories(storage, '用户偏好', '');
+    const manager = new DedupManager(
+      storage,
+      providerReturning('{"isDuplicate":false}'),
+      undefined,
+      [SOURCE_LABELS.WORK_PROJECTION],
+    );
+
+    const report = await manager.deduplicateMemories();
+    expect(report.pairCount).toBe(0);
+    expect(report.skippedReason).toBe('未发现名称相似的记忆对');
+  });
+});

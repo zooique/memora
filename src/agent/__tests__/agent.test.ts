@@ -338,6 +338,9 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.rolePack).toBeNull();
     expect(agent.tools).toBeNull();
     expect(agent.memory).toBeNull();
+    expect(agent.skills).toBeNull();
+    expect(agent.rolePacks).toBeNull();
+    expect(agent.security).toBeNull();
 
     // init
     const ctx = await agent.init();
@@ -349,6 +352,9 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.rolePack).not.toBeNull();
     expect(agent.tools).not.toBeNull();
     expect(agent.memory).not.toBeNull();
+    expect(agent.skills).not.toBeNull();
+    expect(agent.rolePacks).not.toBeNull();
+    expect(agent.security).not.toBeNull();
 
     // chat（流式）
     const chunks: string[] = [];
@@ -388,6 +394,9 @@ describe('Agent · 生命周期 E2E', () => {
     expect(agent.works).not.toBeNull();
     expect(agent.sessionManager).not.toBeNull();
     expect(agent.polish).not.toBeNull();
+    expect(agent.skills).not.toBeNull();
+    expect(agent.rolePacks).not.toBeNull();
+    expect(agent.security).not.toBeNull();
 
     // close 调用 nullifyAllComponents，应 null 化全部 13 个组件字段
     await agent.close();
