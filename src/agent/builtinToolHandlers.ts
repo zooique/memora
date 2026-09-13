@@ -37,6 +37,8 @@ import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryIns
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 // token 估算唯一真理源（CJK 感知）——read_file 的分段预算与上下文占用/截断同口径
 import { estimateTokensText } from '@/agent/contextManager.js';
+// 正整数解析唯一真理源（read_file 分段 offset/limit 与 toolResultCache 去重主体共用）
+import { positiveInt } from '@/utils/math.js';
 
 /** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
@@ -57,13 +59,6 @@ const LIST_SESSIONS_SUMMARY_CHARS = 200;
  * 不再使用字符上限；本常量专职 list_dir，故改名——名字须与它实际约束的东西一致。
  */
 const DIR_LIST_MAX_LEN = 50_000;
-
-/** 解析 LLM 传入的正整数参数（缺省/非法/非正 → undefined，默认语义交给调用方） */
-function parsePositiveInt(raw: string | undefined): number | undefined {
-  if (raw === undefined) return undefined;
-  const n = Number.parseInt(raw, 10);
-  return Number.isNaN(n) || n < 1 ? undefined : n;
-}
 
 /**
  * read_file 分段脚注（截断诚实化的唯一文案出口）
@@ -348,12 +343,12 @@ export class BuiltinToolHandlers {
     const lines = content.split('\n');
     const total = lines.length;
 
-    const start = parsePositiveInt(offset) ?? 1;
+    const start = positiveInt(offset) ?? 1;
     if (start > total) {
       return `[read_file] ${displayPath} 共 ${total} 行；offset=${start} 已超出文件末尾，无可显示内容。`;
     }
 
-    const limitNum = parsePositiveInt(limit);
+    const limitNum = positiveInt(limit);
     const wantedEnd = limitNum === undefined ? total : Math.min(start + limitNum - 1, total);
 
     // 是否需要截断（= 是否需要脚注）：用户 limit 截短了，或整个尾段本身超预算

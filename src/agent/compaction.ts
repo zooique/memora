@@ -193,8 +193,3 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
     }
   }
 }
-
-// 注：本文件曾自带一个 `estimateTokens(text) = ceil(len / 4)` 的局部估算器，
-// 已于 2026-09-13 删除 —— 它与全库正式估算器（`contextManager.estimateTokensText`，
-// CJK 1.5 / 其他 3 字符每 token）**不同源**，中文场景下把 token 数低估近 2.7 倍，
-// 而它的原注释却自称「足够保守」（保守应高估）。估算器只允许有一个。

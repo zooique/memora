@@ -1,4 +1,4 @@
-﻿/**
+/**
  * ToolResultCache 单元测试
  * 覆盖闭环内工具防重缓存的全部公开 API + DEDUP_SUBJECT_EXTRACTORS 内置生成器
  *
@@ -247,7 +247,7 @@ describe('DEDUP_SUBJECT_EXTRACTORS.read_file', () => {
     expect(cache.check('read_file', extract('{"path":"docs/a.md","offset":"01"}')!)?.cachedAtIteration).toBe(7);
   });
 
-  it('非法 / 越界区间退回缺省（与 parsePositiveInt 同规则：NaN / <1 → 缺省）', () => {
+  it('非法 / 越界区间退回缺省（与 math.positiveInt 单一真源同规则：NaN / <1 → 缺省）', () => {
     const bare = extract('{"path":"docs/a.md"}');
     expect(extract('{"path":"docs/a.md","offset":"0"}')).toEqual(bare);
     expect(extract('{"path":"docs/a.md","offset":"-3"}')).toEqual(bare);

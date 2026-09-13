@@ -17,6 +17,8 @@
  * 不防重：write_file / run_code / run_skill_script 等副作用型工具。
  */
 import path from 'node:path';
+// 正整数解析单一真源（read_file 去重主体 offset/limit 与 builtinToolHandlers 分段预算同规）
+import { positiveInt } from '@/utils/math.js';
 
 /**
  * 去重主体：这次请求「要什么」的结构化表达 —— key 生成与失效匹配的唯一依据。
@@ -73,13 +75,6 @@ export function normalizePathKey(raw: string): string {
   const unified = raw.trim().replace(/\\/g, '/');
   const normalized = path.posix.normalize(unified);
   return normalized.length > 1 ? normalized.replace(/\/+$/, '') : normalized;
-}
-
-/** 正整数解析（缺省 / 非法 / <1 → undefined）—— 与 `builtinToolHandlers.parsePositiveInt` 同规则 */
-function positiveInt(raw: unknown): number | undefined {
-  if (typeof raw !== 'string' && typeof raw !== 'number') return undefined;
-  const n = Number.parseInt(String(raw), 10);
-  return Number.isNaN(n) || n < 1 ? undefined : n;
 }
 
 /** 安全解析 args JSON（非法 / 非对象 → undefined） */
