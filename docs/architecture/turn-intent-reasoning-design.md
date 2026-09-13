@@ -188,7 +188,9 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 **阶段 A 出口**：tsc 零错误 + 全量 vitest 绿（声明层数/skip 口径）+ 真机验证——deepseek 对话思考折叠块显示；重启会话思考重放可见；round-summary 不含思考（CoT 防护实证）。
 
-### 阶段 B：Part 2 Turn 起始策略指令（一行注入，低风险）
+### 阶段 B：Part 2 Turn 起始策略指令（一行注入，低风险）——**已实施（2026-09-13）**
+
+> 验证结果：内核 typecheck 零错 + assembler 29 绿（新增 2 用例）+ agent 目录 1386 绿（R8 风险解除——prompt 注入不破坏既有 mock 测试断言）；commit `7876d663` 已推送。注入位置定案：`buildSystemPromptPrefix` 时间戳后（注意力位），SSOT 常量 `TURN_START_STRATEGY_PROMPT` 单点消费。
 
 | # | 文件 | 改动 | 验证口径 |
 | --- | --- | --- | --- |
