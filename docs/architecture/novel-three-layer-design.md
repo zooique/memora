@@ -123,7 +123,8 @@
 2. **角色包演进落地**（按 G1-G9 优先级，2026-09-13）：
    - persona.md / rules.md / manifest.json：三层方法论 + `web:search` 已随 **共鸣小说家** 角色包落地（原小说助手收敛更名，4 技法技能 git rename 吸收）；
    - skills/：已落地 6 技能——`need-finder`（G1/G2 需求层）、`core-extractor`（G3/G4 内核层）、`three-layer-check`（G5 一致性）、`pacing-hook`（G7 节奏钩子）、`world-builder`（G8 世界观）、`self-review`（G9 写后自检）；
-   - 待补：G6（全流程流水线编排，persona/rules 层引导）与 §三 缺口续 G10-G18。
+   - 缺口续已落地：`logline-craft`（G10 高概念）、`relationship-web`（G11 关系网/对手）、`story-bible`（G12 设定圣经）、`empathy-craft`（G19 共情）、`style-weaver`（G20 文风）；
+   - 待补：G6（全流程流水线编排，persona/rules 层引导）与 G13（场景写作）、G15（情绪波浪线）、G16（大纲→成文）、G17（修改打磨）、G18（长篇防崩）。
 3. **验证触发**：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
 
 ## 六、已知风险（对抗式自查）
