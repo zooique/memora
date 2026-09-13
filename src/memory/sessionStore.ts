@@ -10,7 +10,18 @@ import type { MessageRole } from '@/memory/types.js';
  */
 export interface ISessionStore {
   // ── 会话消息读写（round-based 单一真相源） ───────────
-  /** 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开），不存在返回空数组 */
+  /**
+   * 加载指定会话的完整消息列表（从 roundIds → RoundStore 展开），不存在返回空数组。
+   *
+   * **只返回 `user` / `assistant` 两种角色**：tool 结果属执行中间态，不落会话消息。这不是实现自由，
+   * 而是接口契约 —— 上下文中 tool 消息的**唯一来源**是 `AgentLoop.appendToolMessage`（入口关
+   * 落盘 + 单条上限），历史回注（`restoreHistory` ← 本方法）不含 tool。两个实现（宿主
+   * `hosts/memora-vscode/.../host/sessionStore.ts`、内核 `inMemorySessionStore.ts`）逐字同构。
+   *
+   * ⚠️ 改此契约（如让 tool 消息也入历史）须同步评估 `docs/大文本统一通道-探索方案.md` §6.2：
+   * 压缩链的「超大 tool 结果卸载级」正是因本契约而删除（读者先亡 → 写者后死）；若历史重新携带
+   * tool 消息，该级的存在前提会复活。
+   */
   loadMessages(date: string, session: string): SessionMessage[];
 
   // ── 通用方法 ─────────────────────────────────────────

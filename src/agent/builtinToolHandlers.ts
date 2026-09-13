@@ -326,8 +326,10 @@ export class BuiltinToolHandlers {
    *
    * 退化情形（病态长行：单行本身就超预算）→ 该行按估算比反推字符数截断，并明示已截断。
    *
-   * **不变量**：任何返回路径的 token 数都 ≤ `SINGLE_TOOL_RESULT_MAX_TOKENS`（**含脚注**）。
-   * 脚注预留用最坏位数（endLine = 总行数）估算，故实际脚注必不超预留。
+   * **不变量**：任何返回路径的 token 数都 ≤ `SINGLE_TOOL_RESULT_MAX_TOKENS −
+   * TOOL_RESULT_WRAP_OVERHEAD_TOKENS`（**含脚注**）—— 即 wrapped 入上下文后仍 ≤ 单条上限，
+   * 从而**结构性不触发**入口关落盘（否则 LLM 每次读文件只看得到路径）。脚注预留用最坏位数
+   * （endLine = 总行数）估算，故实际脚注必不超预留。
    *
    * @param content 已净化的文件全文
    * @param displayPath 用于文案的相对路径（越界/退化提示可读）
@@ -340,7 +342,9 @@ export class BuiltinToolHandlers {
     offset?: string,
     limit?: string,
   ): string {
-    const budget = LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS;
+    // 预算扣除包裹开销：使 wrapped 后仍 ≤ 单条上限（见 TOOL_RESULT_WRAP_OVERHEAD_TOKENS 注释）
+    const budget =
+      LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS - LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS;
     const lines = content.split('\n');
     const total = lines.length;
 

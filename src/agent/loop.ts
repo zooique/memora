@@ -34,9 +34,9 @@ import type { ICompactionStrategy } from '@/agent/compaction.js';
 import {
   ResultReplacementStrategy,
   ReplaceRoundsStrategy,
-  OffloadCompactionStrategy,
   DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
 } from '@/agent/compaction.js';
+import { offloadLargeToolResult } from '@/agent/toolResultOffload.js';
 import { deriveDialogueRounds } from '@/agent/budget.js';
 import {
   parseAskCalls,
@@ -115,8 +115,9 @@ export interface AgentLoopOptions {
   getRoundSummary?: (roundId: string) => string | null;
   /** 替换式压缩保留最近正文轮数（默认 DEFAULT_REPLACE_KEEP_RECENT_ROUNDS=5，LRU 最早先换） */
   replaceRoundsKeepRecent?: number;
-  /** 卸载式压缩的落盘目录（装配注入项目 `memoraDir` 下的 outputs 子目录）。
-   *  未注入则不注册卸载策略——内核不派生此路径，防产出信任根外、`read_file` 读不回的假引用 */
+  /** 工具结果卸载（入口关）的落盘目录（装配注入项目 `memoraDir` 下的 outputs 子目录）。
+   *  未注入则入口关不生效（超阈结果原样入上下文）——内核不派生此路径，防产出信任根外、
+   *  `read_file` 读不回的假引用（OFFLOAD-1 教训） */
   offloadDir?: string;
   /** 重复工具调用拦截器。每轮工具执行后调用 check() 决定注入 warning 或 block；
    *  未注入时用 DefaultDuplicateCallInterceptor（哈希机械检测），宿主可注入差异化策略 */
@@ -279,8 +280,10 @@ export class AgentLoop {
   private rolePackBaseTokens: number | undefined;
   /** 最近一次 _prepareContext 是否发生截断重排（替换层据此跳过——截断提取 key messages 重插中间，roundId 尾部对齐失效） */
   private isLastContextTruncated = false;
-  /** 两级空间管理压缩链（第一级替换 → 第二级 tool_result 占位 → 第二级超大结果卸载兜底） */
+  /** 两级空间管理压缩链（第一级替换 → 第二级 tool_result 占位）。超大结果卸载已在入口关处理，不在链上 */
   private readonly compactionStrategies: ICompactionStrategy[];
+  /** 入口关落盘目录（装配注入；未注入则入口关不生效）。消费点：appendToolMessage */
+  private readonly offloadDir?: string;
   /** Provider 路由缓存（单轮内缓存同一 taskType，避免每轮重复路由计算），跨轮清空不复用 */
   private providerRouteCache = new Map<TaskType, LlmProvider>();
 
@@ -306,9 +309,13 @@ export class AgentLoop {
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
     this.compactionStrategy = opts.compactionStrategy ?? new ResultReplacementStrategy();
+    // 入口关落盘目录（大文本统一通道 §6.2）：消费点在 appendToolMessage，不挂压缩链
+    this.offloadDir = opts.offloadDir;
     // 两级空间管理压缩链：第一级替换（LRU 内核自动，取已存摘要，无摘要 no-op）→
-    // 第二级 tool_result 占位（宿主注入或默认 ResultReplacementStrategy）→ 第二级超大结果卸载
-    // 卸载档仅当装配注入落盘目录时注册（内核不派生路径：信任根外路径 read_file 读不回，等于假引用）
+    // 第二级 tool_result 占位（宿主注入或默认 ResultReplacementStrategy）。
+    // 注：超大工具结果卸载**已在入口关处理**（appendToolMessage，门前换鞋），
+    // 故不再有第三级「卸载档」——上下文中 tool 消息只由该写点产生，事后扫描恒不触发
+    // （⛔ 勿恢复为压缩链一级：那会与入口关构成同语义两处实现，见探索方案 §6.2 结论二）。
     this.compactionStrategies = [
       new ReplaceRoundsStrategy({
         keepRecentRounds: opts.replaceRoundsKeepRecent ?? DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
@@ -323,7 +330,6 @@ export class AgentLoop {
         isContextTruncated: () => this.isLastContextTruncated,
       }),
       this.compactionStrategy,
-      ...(opts.offloadDir ? [new OffloadCompactionStrategy(opts.offloadDir)] : []),
     ];
     this.duplicateCallInterceptor =
       opts.duplicateCallInterceptor ?? new DefaultDuplicateCallInterceptor(3);
@@ -993,12 +999,12 @@ export class AgentLoop {
 
     // ─── 两级空间管理压缩链 ─────────────────────────────────────
     // 第一级：替换（内核自动 LRU，取已存记忆摘要换越界轮次正文，无摘要 no-op）
-    // 第二级：tool_result 占位（ResultReplacementStrategy）+ 超大结果卸载（OffloadCompactionStrategy，仅注入 offloadDir 时在链上）
+    // 第二级：tool_result 占位（ResultReplacementStrategy）
+    // 注：超大工具结果卸载**不在链上** —— 它是入口关（appendToolMessage），见 toolResultOffload.ts
     //
     // 视图说明（截断轮一致性，2026-09-11 打磨备注）：截断时 safeMessages 为截断后新数组（本次
     // 发往 LLM 的视图），this.messages 经 replaceContext 为同元素引用的浅拷贝。ResultReplacement
-    // 原地改对象 content（引用共享 → 对发送视图同样生效）；Offload 若 splice 移除消息，则当轮
-    // 发送视图仍含未卸载内容、下一迭代自然生效——无信息丢失，属预期延迟，非缺陷。
+    // 原地改对象 content（引用共享 → 对发送视图同样生效）。
     for (const strategy of this.compactionStrategies) {
       if (strategy.shouldCompact(this.messages)) {
         await strategy.compact(this.messages);
@@ -2201,9 +2207,23 @@ export class AgentLoop {
     });
   }
 
-  /** 追加一条 tool 消息（executeToolCalls 结果回填）；附当前轮次 roundId */
+  /**
+   * 追加一条 tool 消息（loop **唯一** tool 写点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` 三处皆经此）。
+   *
+   * **入口关**（大文本统一通道 §6.2）：单条内容超 `SINGLE_TOOL_RESULT_MAX_TOKENS` → 原文落盘，
+   * 上下文只留「路径 + 预览 + 续读提示」。收口在此而非 `_processToolResults`：后者只覆盖工具结果，
+   * 会漏掉 `answerQuestion` 的 `[ASK_ANSWER]` —— 用户被问「请提供需求文档」后直接贴长文即可超阈。
+   */
   private appendToolMessage(content: string, toolCallId: string): void {
-    this.messages.push({ role: 'tool', content, toolCallId, roundId: this.currentRoundId });
+    const finalContent = this.offloadDir
+      ? offloadLargeToolResult(content, { offloadDir: this.offloadDir }).content
+      : content;
+    this.messages.push({
+      role: 'tool',
+      content: finalContent,
+      toolCallId,
+      roundId: this.currentRoundId,
+    });
   }
 
   /** 整体替换执行上下文（截断落盘 / 恢复历史 / 装配重排：传入的数组已是完整上下文） */

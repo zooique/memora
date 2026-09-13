@@ -865,9 +865,11 @@ describe('工具执行器（6 个工具）', () => {
 
       const result = await executor.execute('read_file', JSON.stringify({ path: bigFile }));
 
-      // 1. 同源不变量：任何返回路径（含脚注）都不超单次读取预算
+      // 1. 同源不变量：产出（含脚注）≤ 单条上限 − 包裹开销 → wrapped 入上下文后仍 ≤ 上限
+      //    口径必须含「− 包裹开销」：若用键本身作断言，「预算漏扣余量」这一变异不会红 = 假闸门
       expect(estimateTokensText(result)).toBeLessThanOrEqual(
-        LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS,
+        LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS -
+          LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS,
       );
       // 2. 诚实告知：已显示区间 / 总行数 / 续读入口三者齐备
       expect(result).toContain('[read_file 分段]');
@@ -933,8 +935,10 @@ describe('工具执行器（6 个工具）', () => {
 
       const result = await executor.execute('read_file', JSON.stringify({ path: file }));
 
+      // 口径同前：含脚注产出 ≤ 键 − 包裹开销（CJK 密度高，字符上限必失准，故按 token 判）
       expect(estimateTokensText(result)).toBeLessThanOrEqual(
-        LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS,
+        LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS -
+          LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS,
       );
       expect(result).toContain('[read_file 分段]');
     });

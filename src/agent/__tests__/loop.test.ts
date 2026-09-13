@@ -4169,8 +4169,12 @@ describe('AgentLoop · T3 预算预警档（上下文空间提示）', () => {
   });
 });
 
-describe('AgentLoop · 卸载式压缩落点（引用可回取）', () => {
-  /** 落盘目录由装配注入；内核不派生路径（历史默认 ~/.memora/outputs 在信任根外，read_file 读不回） */
+describe('AgentLoop · 入口关（工具结果超阈落盘，引用可回取）', () => {
+  /**
+   * 落盘目录由装配注入；内核不派生路径（历史默认 ~/.memora/outputs 在信任根外，read_file 读不回）。
+   * 入口关在 `appendToolMessage`（loop 唯一 tool 写点）—— 超阈结果**根本不进入上下文**，
+   * 与旧的「压缩链事后扫描替换」不同：不依赖压缩是否触发，写入即判定。
+   */
   let offloadDir: string;
 
   beforeEach(async () => {
@@ -4181,7 +4185,7 @@ describe('AgentLoop · 卸载式压缩落点（引用可回取）', () => {
     await rm(offloadDir, { recursive: true, force: true });
   });
 
-  /** 200_000 字符 → estimateTokens = 50_000 > 阈值 20_000，必然触发卸载 */
+  /** 200_000 字符 → estimateTokensText ≈ 66,667 > 阈值 6,000，必然触发落盘 */
   const HUGE_RESULT = 'x'.repeat(200_000);
 
   /** 一轮工具调用 + 一轮收尾 */
@@ -4202,7 +4206,7 @@ describe('AgentLoop · 卸载式压缩落点（引用可回取）', () => {
     ];
   }
 
-  it('注入 offloadDir → 超大工具结果卸载到该目录，且回给 LLM 的引用指向它', async () => {
+  it('注入 offloadDir → 超大工具结果落盘到该目录，回给 LLM 的引用指向它', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider(toolThenText()),
       bootstrapMemories: [],
@@ -4215,15 +4219,18 @@ describe('AgentLoop · 卸载式压缩落点（引用可回取）', () => {
     }
 
     // 落盘 1 份，且产物确实在注入目录内
-    expect(await readdir(offloadDir)).toHaveLength(1);
+    const files = await readdir(offloadDir);
+    expect(files).toHaveLength(1);
     // 上下文里的工具结果已被替换为「路径 + 预览」——引用前缀必须是注入目录
     const toolMsg = loop.getMessages().find((m) => m.role === 'tool');
     expect(toolMsg).toBeDefined();
-    expect(toolMsg!.content).toContain('输出已卸载至');
-    expect(toolMsg!.content).toContain(offloadDir);
+    expect(toolMsg!.content).toContain('工具结果已卸载至磁盘');
+    expect(toolMsg!.content).toContain(join(offloadDir, files[0]!));
+    // 入口关的意义：原文没有「进来又被换掉」，而是压根没进来
+    expect(toolMsg!.content).not.toContain(HUGE_RESULT);
   });
 
-  it('未注入 offloadDir → 不注册卸载策略，工具结果原样留在上下文', async () => {
+  it('未注入 offloadDir → 入口关不生效，工具结果原样留在上下文', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider(toolThenText()),
       bootstrapMemories: [],
@@ -4234,9 +4241,9 @@ describe('AgentLoop · 卸载式压缩落点（引用可回取）', () => {
       void chunk;
     }
 
-    // 未注册卸载策略 → 原文整段仍在上下文（结果被 <tool_result> 隔离标记包裹，故用 contains）
+    // 入口关不生效 → 原文整段仍在上下文（结果被 <tool_result> 隔离标记包裹，故用 contains）
     const toolMsg = loop.getMessages().find((m) => m.role === 'tool');
     expect(toolMsg!.content).toContain(HUGE_RESULT);
-    expect(toolMsg!.content).not.toContain('输出已卸载至');
+    expect(toolMsg!.content).not.toContain('工具结果已卸载至磁盘');
   });
 });

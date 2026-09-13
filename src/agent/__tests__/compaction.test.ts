@@ -3,18 +3,17 @@
  *
  * 覆盖：
  * - ResultReplacementStrategy: 结果替换（同步）
- * - OffloadCompactionStrategy: 卸载式压缩（异步）
+ * - ReplaceRoundsStrategy: 轮次替换（第一级 LRU）
+ *
+ * 注：`OffloadCompactionStrategy` 已于 2026-09-13 **整级删除** —— 超大工具结果改为在
+ * **入口关**（`AgentLoop.appendToolMessage`）落盘，不再作为压缩链一级。原语与不变量见
+ * `src/agent/toolResultOffload.ts` 及其单测；读码论证见 `docs/大文本统一通道-探索方案.md` §6.2。
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdtemp, rm, readdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { describe, it, expect, vi } from 'vitest';
 import type { Message } from '@/llm/provider.js';
-import { estimateTokensText } from '@/agent/contextManager.js';
 import {
   ResultReplacementStrategy,
-  OffloadCompactionStrategy,
   ReplaceRoundsStrategy,
   DEFAULT_REPLACE_KEEP_RECENT_ROUNDS,
 } from '@/agent/compaction.js';
@@ -110,206 +109,6 @@ describe('ResultReplacementStrategy', () => {
 
       const newContents = messages.filter(m => m.role === 'tool').map(m => m.content);
       expect(newContents).toEqual(originalContents);
-    });
-  });
-});
-
-describe('OffloadCompactionStrategy', () => {
-  /**
-   * 卸载落盘目录（tmp 隔离）。
-   * 内核不再派生卸载路径——`offloadDir` 由装配注入（项目 .memora/outputs），
-   * 测试须显式给目录；历史默认值 `~/.memora/outputs` 曾让单测往真实主目录累积上千文件。
-   */
-  let offloadDir: string;
-
-  beforeEach(async () => {
-    offloadDir = await mkdtemp(join(tmpdir(), 'memora-offload-'));
-  });
-
-  afterEach(async () => {
-    await rm(offloadDir, { recursive: true, force: true });
-  });
-
-  /** 生成超大工具结果消息 */
-  function createLargeToolMessages(size: number = 100_000): Message[] {
-    const largeContent = 'x'.repeat(size); // 创建超大字符串
-    return [
-      { role: 'system', content: 'System prompt' },
-      { role: 'user', content: 'User question' },
-      {
-        role: 'assistant',
-        content: 'Assistant thinking...',
-        toolCalls: [
-          {
-            id: 'call_1',
-            type: 'function' as const,
-            function: { name: 'large_tool', arguments: '{}' },
-          },
-        ],
-      },
-      { role: 'tool', content: largeContent, toolCallId: 'call_1' },
-    ];
-  }
-
-  describe('shouldCompact', () => {
-    it('当存在超大工具结果时返回 true', () => {
-      const strategy = new OffloadCompactionStrategy(offloadDir, 1000);
-      const messages = createLargeToolMessages(5000);
-      expect(strategy.shouldCompact(messages)).toBe(true);
-    });
-
-    it('当所有工具结果都小于阈值时返回 false', () => {
-      const strategy = new OffloadCompactionStrategy(offloadDir, 20_000);
-      const messages = createLargeToolMessages(1000); // 1000 chars ASCII ≈ 334 tokens，小于阈值
-      expect(strategy.shouldCompact(messages)).toBe(false);
-    });
-
-    it('触发判据与上下文估算器同源（CJK 感知）：÷4 字符近似会漏判中文大结果', () => {
-      const threshold = 20_000;
-      const text = '中'.repeat(45_000);
-      // 前提自检：本用例只有在两口径判别方向相反时才具守卫力（否则会静默退化成无判别力用例）
-      expect(estimateTokensText(text)).toBeGreaterThan(threshold); // 正式口径 ≈ 30,000
-      expect(Math.ceil(text.length / 4)).toBeLessThanOrEqual(threshold); // 字符近似 = 11,250
-
-      const strategy = new OffloadCompactionStrategy(offloadDir, threshold);
-      const messages: Message[] = [{ role: 'tool', content: text, toolCallId: 'call_cjk' }];
-      expect(strategy.shouldCompact(messages)).toBe(true);
-    });
-
-    it('触发边界恰为「token 数 > 阈值」，与 estimateTokensText 精确对齐（非本地近似）', () => {
-      const threshold = 300;
-      const strategy = new OffloadCompactionStrategy(offloadDir, threshold);
-
-      // ASCII 口径 token = ceil(len / 3)：len = 3×阈值 → 恰好等于阈值 → 不触发（判据是 >）
-      const exact = 'a'.repeat(3 * threshold);
-      expect(estimateTokensText(exact)).toBe(threshold);
-      expect(strategy.shouldCompact([{ role: 'tool', content: exact, toolCallId: 'c1' }])).toBe(
-        false,
-      );
-
-      // 多 1 字符 → 阈值 + 1 → 触发（÷4 近似在 901 chars 下只有 226，会漏判）
-      const over = 'a'.repeat(3 * threshold + 1);
-      expect(estimateTokensText(over)).toBe(threshold + 1);
-      expect(strategy.shouldCompact([{ role: 'tool', content: over, toolCallId: 'c2' }])).toBe(true);
-    });
-  });
-
-  describe('compact', () => {
-    it('将超大结果写入文件系统并替换为占位符', async () => {
-      const strategy = new OffloadCompactionStrategy(offloadDir, 1000);
-      const messages = createLargeToolMessages(5000);
-
-      await strategy.compact(messages);
-
-      const toolMsg = messages.find((m) => m.role === 'tool');
-      expect(toolMsg).toBeDefined();
-      if (toolMsg) {
-        // 检查内容被替换（不再是原始超长内容）
-        expect(toolMsg.content.length).toBeLessThan(10_000);
-        // 检查包含卸载路径信息
-        expect(toolMsg.content).toContain('输出已卸载至');
-        // 检查包含预览
-        expect(toolMsg.content).toContain('预览');
-      }
-    });
-
-    it('卸载产物与引用同落在注入目录内（引用可回取的前提）', async () => {
-      const strategy = new OffloadCompactionStrategy(offloadDir, 1000);
-      const messages = createLargeToolMessages(5000);
-
-      await strategy.compact(messages);
-
-      // 落盘文件数 = 被卸载结果数
-      const files = await readdir(offloadDir);
-      expect(files).toHaveLength(1);
-      // 回给 LLM 的引用路径必须以注入目录为前缀 —— 否则 read_file 读不回（信任根外被拦）
-      const toolMsg = messages.find((m) => m.role === 'tool')!;
-      expect(toolMsg.content).toContain(join(offloadDir, files[0]!));
-    });
-
-    it('compact 与 shouldCompact 同源：中文结果按同一 token 口径判超阈并落盘', async () => {
-      const threshold = 20_000;
-      const text = '中'.repeat(45_000);
-      const messages: Message[] = [{ role: 'tool', content: text, toolCallId: 'call_cjk' }];
-
-      await new OffloadCompactionStrategy(offloadDir, threshold).compact(messages);
-
-      // 落盘 → 原文替换为「路径 + 预览」；若判据退回 ÷4（11,250 ≤ 20,000）则此处仍是原文
-      expect(messages[0]!.content).not.toBe(text);
-      expect(messages[0]!.content).toContain('已卸载至');
-      expect(await readdir(offloadDir)).toHaveLength(1);
-    });
-
-    it('降级处理：当 mkdir 失败时截断而非报错', async () => {
-      // 使用注入的 mock 模拟 mkdir 失败
-      const mockFsOps = {
-        mkdir: vi.fn().mockRejectedValue(new Error('Permission denied')),
-        writeFile: vi.fn(), // 不应被调用
-      };
-      
-      const strategy = new OffloadCompactionStrategy(offloadDir, 1000, 1000, mockFsOps);
-      const messages = createLargeToolMessages(5000);
-
-      // 不应抛出异常
-      await expect(strategy.compact(messages)).resolves.not.toThrow();
-
-      const toolMsg = messages.find((m) => m.role === 'tool');
-      expect(toolMsg).toBeDefined();
-      if (toolMsg) {
-        // 检查降级为截断（不是卸载）
-        expect(toolMsg.content).toContain('输出过大，已截断');
-        expect(toolMsg.content.length).toBeLessThan(5000);
-      }
-      
-      // 验证 mkdir 被调用，writeFile 未被调用
-      expect(mockFsOps.mkdir).toHaveBeenCalledOnce();
-      expect(mockFsOps.writeFile).not.toHaveBeenCalled();
-    });
-
-    it('降级处理：当 writeFile 部分失败时，失败项截断成功项卸载', async () => {
-      // 模拟 mkdir 成功，但第一个文件写入失败
-      const mockFsOps = {
-        mkdir: vi.fn().mockResolvedValue(undefined),
-        writeFile: vi.fn()
-          .mockResolvedValueOnce(undefined) // 第一个成功
-          .mockRejectedValueOnce(new Error('Disk full')), // 第二个失败
-      };
-      
-      // 创建两个大结果
-      const messages = [
-        ...createLargeToolMessages(5000),
-        {
-          role: 'tool' as const,
-          content: 'y'.repeat(6000), // 另一个大内容
-          toolCallId: 'call_2',
-        },
-      ];
-      
-      const strategy = new OffloadCompactionStrategy(offloadDir, 1000, 1000, mockFsOps);
-
-      await strategy.compact(messages);
-
-      const toolMessages = messages.filter((m) => m.role === 'tool');
-      
-      // 第一个消息应该被卸载（成功）
-      expect(toolMessages[0]!.content).toContain('输出已卸载至');
-      
-      // 第二个消息应该被截断（失败）
-      expect(toolMessages[1]!.content).toContain('输出过大，已截断');
-      expect(toolMessages[1]!.content).not.toContain('输出已卸载至');
-    });
-
-    it('保留原始内容的前 N 字符作为预览', async () => {
-      const strategy = new OffloadCompactionStrategy(offloadDir, 1000, 500);
-      const messages = createLargeToolMessages(10_000);
-
-      await strategy.compact(messages);
-
-      const toolMsg = messages.find((m) => m.role === 'tool');
-      if (toolMsg) {
-        // 检查预览包含原始内容的前 500 字符
-        expect(toolMsg.content).toContain('x'.repeat(500));
-      }
     });
   });
 });

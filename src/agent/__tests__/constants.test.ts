@@ -107,12 +107,23 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     expect(LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS).toBe(6_000);
   });
 
+  it('包裹开销预留应为 100 token（read_file 分段预算须扣除，否则自身产出反被入口关落盘）', () => {
+    expect(LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS).toBe(100);
+    // 扣除方向不可反：预算 = 上限 − 本键，必须保证 0 < 本键 < 上限，否则预算非正 / 不收紧
+    expect(LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS).toBeGreaterThan(0);
+    expect(LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS).toBeLessThan(
+      LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS,
+    );
+  });
+
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    // 21 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
+    // 22 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
     // LLM_TIMEOUT_MS / CONTEXT_TOKENS_BUFFER_RATIO / SUMMARY_LAYER_TOKEN_RATIO /
     // SINGLE_TOOL_RESULT_MAX_TOKENS（单条工具结果上限，2026-09-13 新增——
     // read_file 分段预算与入口关落盘阈值同源）/
+    // TOOL_RESULT_WRAP_OVERHEAD_TOKENS（包裹模板开销预留，2026-09-13 新增——
+    // read_file 分段预算扣除本键，否则自身产出超限反被入口关落盘）/
     // SUMMARY_CACHE_TTL_MSGS /
     // TOKEN_BUDGET_REACHED_PLACEHOLDER / DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，2026-08-21 新增，
     // loop 与 orchestrator 共用）/
@@ -121,7 +132,7 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // TOOL_NARRATION_DISCIPLINE（工具导语纪律，2026-09-02 分区式 UI 配套）/
     // SUMMARY_MSG_COUNT / SUMMARY_CONTENT_SLICE / SUMMARY_MAX_TOKENS /
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(21);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(22);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {
