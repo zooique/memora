@@ -210,16 +210,16 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 卡片级组队：无队伍 → ribbon「暂无队伍」+ 创建按钮 → 弹窗排除自身、勾选保存', () => {
     const { postMessage } = mountRolesView();
     const packs = [
-      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
       { name: '编辑', displayName: '编辑', capabilities: [] },
       { name: '评论家', displayName: '评论家', capabilities: [] },
       { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
     ];
-    dispatchLoaded(packs, '小说助手', []); // 无队伍
+    dispatchLoaded(packs, '共鸣小说家', []); // 无队伍
 
     // 无队伍 → 「暂无队伍」+ 「创建队伍」入口
     const card = Array.from(document.querySelectorAll('.card')).find(
-      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+      (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
     expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('暂无队伍');
     (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
@@ -233,7 +233,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // 弹窗：显示队长（当前卡片角色）+ 排除自身后的其余角色
     const modal = document.querySelector('.team-modal');
     expect(modal).not.toBeNull();
-    expect(modal?.querySelector('.team-modal-title')?.textContent).toContain('小说助手');
+    expect(modal?.querySelector('.team-modal-title')?.textContent).toContain('共鸣小说家');
     const items = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
     expect(items).toHaveLength(3); // 编辑 / 评论家 / memora 助手（排除队长自身）
     items.find((cb) => cb.value === '编辑')!.checked = true;
@@ -241,7 +241,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     (modal?.querySelector('.btn-primary') as HTMLButtonElement).click();
     expect(postMessage).toHaveBeenCalledWith({
       type: 'roles_team_save',
-      leader: '小说助手',
+      leader: '共鸣小说家',
       members: ['编辑', '评论家'],
     });
   });
@@ -249,15 +249,15 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 卡片级组队：既有队伍 → ribbon 显示阵容 + 编辑态回显 + 删除队伍入口', () => {
     const { postMessage } = mountRolesView();
     const packs = [
-      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
       { name: '编辑', displayName: '编辑', capabilities: [] },
       { name: '评论家', displayName: '评论家', capabilities: [] },
       { name: 'memora助手', displayName: 'memora 助手', capabilities: [], isFallback: true },
     ];
-    dispatchLoaded(packs, '小说助手', [{ leader: '小说助手', members: ['编辑', '评论家'] }]);
+    dispatchLoaded(packs, '共鸣小说家', [{ leader: '共鸣小说家', members: ['编辑', '评论家'] }]);
 
     const card = Array.from(document.querySelectorAll('.card')).find(
-      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+      (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
     // ribbon 显示阵容（成员 displayName 拼接）
     expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('队伍：编辑 / 评论家');
@@ -271,22 +271,22 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(cbs.find((cb) => cb.value === '编辑')?.checked).toBe(true);
     // 删除队伍（仅编辑态提供）→ postMessage roles_team_delete
     (modal?.querySelector('.team-modal-del') as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_team_delete', leader: '小说助手' });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'roles_team_delete', leader: '共鸣小说家' });
   });
 
   it('② 卡片组队弹窗：5 人组上限（队长 1 + 组员 ≤ 4），第 5 名勾选被拒绝', () => {
     mountRolesView();
     const packs = [
-      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
       { name: '编辑', displayName: '编辑', capabilities: [] },
       { name: '评论家', displayName: '评论家', capabilities: [] },
       { name: '校对', displayName: '校对', capabilities: [] },
       { name: '排版', displayName: '排版', capabilities: [] },
       { name: '发行', displayName: '发行', capabilities: [] },
     ];
-    dispatchLoaded(packs, '小说助手', []);
+    dispatchLoaded(packs, '共鸣小说家', []);
     const card = Array.from(document.querySelectorAll('.card')).find(
-      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+      (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
     (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
 
@@ -306,7 +306,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
   it('② 存量超限队伍：卡片标注实际参会人数，不虚报（名单原样展示）', () => {
     mountRolesView();
     const packs = [
-      { name: '小说助手', displayName: '小说助手', capabilities: [] },
+      { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
       { name: '编辑', displayName: '编辑', capabilities: [] },
       { name: '评论家', displayName: '评论家', capabilities: [] },
       { name: '校对', displayName: '校对', capabilities: [] },
@@ -316,11 +316,11 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     // 存量数据：5 名组员（超上限 4）
     dispatchLoaded(
       packs,
-      '小说助手',
-      [{ leader: '小说助手', members: ['编辑', '评论家', '校对', '排版', '发行'] }],
+      '共鸣小说家',
+      [{ leader: '共鸣小说家', members: ['编辑', '评论家', '校对', '排版', '发行'] }],
     );
     const card = Array.from(document.querySelectorAll('.card')).find(
-      (c) => c.querySelector('.card-name')?.textContent === '小说助手',
+      (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
     const label = card?.querySelector('.team-ribbon-label') as HTMLElement;
     // 名单原样展示（用户可自行删减）

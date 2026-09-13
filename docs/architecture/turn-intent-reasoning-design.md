@@ -21,7 +21,7 @@
 | SSE 解析 | [openaiCompatible.ts](../src/llm/openaiCompatible.ts) 只取 `delta.content` + `tool_calls`，`reasoning_content` 丢弃 |
 | LlmChunk | [llm/types.ts](../src/llm/types.ts) 仅 content/toolCalls/finishReason/usage，无 reasoning 字段 |
 | loop 第一步 | [loop.ts](../src/agent/loop.ts) `runIterationLoop` → `handleIteration` 直接"想+调工具"，无意图理解/策略决策 step |
-| understandingConfirm | 开放键，唯一消费 = [strategyResolver.ts](../src/role-pack/strategyResolver.ts) `assembleRolePack` 注入 persona prompt 指令；**2 个示例角色包实际配置 `confirm`**（白话方案设计师/小说助手；方案设计师/文档设计师已于 0ba12c55 退役） |
+| understandingConfirm | 开放键，唯一消费 = [strategyResolver.ts](../src/role-pack/strategyResolver.ts) `assembleRolePack` 注入 persona prompt 指令；**2 个示例角色包实际配置 `confirm`**（白话方案设计师/共鸣小说家；方案设计师/文档设计师已于 0ba12c55 退役，原小说助手更名共鸣小说家） |
 | confirm 通道重叠 | `askOn['confirm']` + `ask_user` 工具已机制级承载"需要用户确认"；understandingConfirm.confirm 是绕过该真源的裸 prompt 指令（**带伤，见 §四**） |
 | narrate 机制 | 已存在（2026-09-02）：工具轮行动叙述，**平铺展示**（纯文本块直展，v1.8 step 分型；结束后随过程收进任务过程折叠块）、不进正文，**落盘进 `Round.processEvents`**（roundStore.ts 联合类型为真源），含首轮回抽（withdrawn 瞬态）——"策略叙述"的现成载体 |
 | 过程事件落盘 | **已存在**（[process-event-log-replay-design.md](./process-event-log-replay-design.md)）：运行时过程事件（thinking/tool_*/narrate/self_review/metrics）缓冲后附到 `Round.processEvents` 落盘，重载按序重放重建 UI（对标 Claude Code JSONL 事件日志）——**reasoning 落盘 = 扩展该机制，非新存储** |
@@ -35,7 +35,7 @@
 | R3 | **reasoning 流式语义**：若每个 chunk 带全量累积值 → O(n²) 拼接 + 宿主重复渲染 | reasoning 走**增量**（每 chunk 只带新增片段），消费侧自行累积（与 content 同构） |
 | R4 | **AgentChunk 新增类型 = 协议变更**：需同步 IPC 通道治理（100/130 阈值）、宿主渲染、过程事件回放 | reasoning 走**现有 ProcessEvent 落盘机制**（新增 `type: 'thought'` 成员，随 Round 重放重建）——不落独立存储、不新建回放路径（process-event-log-replay-design 明确"新增事件类型只需扩展折叠区小节 + ProcessEvent union 成员"） |
 | R5 | **prompt 软约束的固有风险**：LLM 可能在不该啰嗦的场景输出叙述，无 tool_calls 时不会被 narrate 分类拦截，污染正文 | 接受软约束定位：指令是**边界引导非步骤脚本**（约束式极简）；单元测试只覆盖注入正确性，行为验证靠人工/集成 |
-| R6 | **内核固定指令 vs 角色包自由度**：创作类角色（小说助手）可能反感"策略决策叙述" | 指令收敛为**边界式约束**：只画"何时调查/何时规划"的行为边界，不强制输出模板、不写步骤脚本；输出形态由 LLM 裁量（对齐 Anthropic"目标+约束"指南） |
+| R6 | **内核固定指令 vs 角色包自由度**：创作类角色（如共鸣小说家）可能反感"策略决策叙述" | 指令收敛为**边界式约束**：只画"何时调查/何时规划"的行为边界，不强制输出模板、不写步骤脚本；输出形态由 LLM 裁量（对齐 Anthropic"目标+约束"指南） |
 | R7 | **内核固定指令 vs 角色包边界规则（R1）**："怎么做事"归角色包，指令可能被判定越界 | 边界论证：本指令是**内核 turn 结构语义**（同 loop 的 step 边界、selfReview 注入），非角色包设定记忆 |
 | R8 | **现有测试断言**：loop/agent 测试可能断言 systemPrompt 或 personaPrompt 内容，注入新段会挂 | 改动前 grep 断言点；新增用例只断言"指令注入存在" |
 | R9 | **非 reasoning 模型的降级**：普通模型 `chunk.thought` 恒 undefined | 宿主折叠块空则不渲染，自然降级，无需特判 |
@@ -129,7 +129,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 | `confirm`（复述并等待确认） | 并入 `askOn['confirm']` + ask_user 工具通道（机制级真源），删除 |
 
 迁移映射（定案时同步执行）：
-- 小说助手：askOn 已含 `confirm`（[manifest.json](../role-packs/小说助手/manifest.json)）→ 仅删 understandingConfirm 键，行为由既有 ask_user 通道继续承载。
+- 共鸣小说家（原小说助手）：askOn 已含 `confirm` → 仅删 understandingConfirm 键，行为由既有 ask_user 通道继续承载（包随更名，原 manifest 路径已不适用）。
 - 方案设计师 / 文档设计师：askOn 加 `'confirm'` 后删键（行为从"每轮必复述确认"变为"需要时提问确认"——对设计协作场景更合理：模糊时对齐、清晰时直接推进）。两包随后于 0ba12c55 退役，其设计方法论与文档编排由白话方案设计师吸收承接。
 
 清理面（定案时）：`UnderstandingConfirm` 类型、`resolveUnderstandingConfirm`、`prepare.understandingConfirm` 默认值与键规则、`assembleRolePack` 注入段、3 个 manifest、schema 与文档（role-pack-spec / authoring-guide / 开放键指南 / 策略键消费矩阵 / role-pack-creator SKILL 模板 / README）。

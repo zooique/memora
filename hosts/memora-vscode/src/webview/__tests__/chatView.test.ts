@@ -152,17 +152,17 @@ describe('chatView clear_ok 消息区清理', () => {
     const icons = () => document.querySelectorAll('.team-meeting-icon');
 
     // 无队伍 → 懒创建不触发，不渲染图标（不白占 DOM）
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手' });
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
     expect(icons()).toHaveLength(0);
 
     // 带队伍推送 → 创建 1 个图标并显示，tooltip 给出组长/组员
-    const team = { leader: '小说助手', members: ['编辑', '评论家'] };
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手', team });
+    const team = { leader: '共鸣小说家', members: ['编辑', '评论家'] };
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team });
     expect(icons()).toHaveLength(1);
     const icon = icons()[0] as HTMLElement;
     expect(icon.parentElement?.classList.contains('composer-status')).toBe(true);
     expect(icon.hidden).toBe(false);
-    expect(icon.title).toContain('组长：小说助手');
+    expect(icon.title).toContain('组长：共鸣小说家');
     expect(icon.title).toContain('组员：编辑、评论家');
 
     // 点击 → 输入框填充「小组会议：」前缀（启动小组会议的唯一交互入口）
@@ -172,22 +172,22 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(input.value).toBe('小组会议：讨论选题');
 
     // 回归（启动时 replaySession + 装配后补推各推一次）→ 复用同一元素，不得出现第 2 个图标
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手', team });
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手', team });
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team });
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team });
     expect(icons()).toHaveLength(1);
     expect(icon.isConnected).toBe(true);
 
     // 队员名单变化 → 复用同一元素，仅刷新 tooltip
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手', team: { leader: '小说助手', members: ['校对'] } });
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team: { leader: '共鸣小说家', members: ['校对'] } });
     expect(icons()).toHaveLength(1);
     expect(icons()[0]).toBe(icon);
     expect(icon.title).toContain('组员：校对');
 
     // 队伍清空（切到非组长 / 无队伍）→ 隐藏但保留单例（再次推送仍复用）
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手' });
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家' });
     expect(icon.hidden).toBe(true);
     expect(icons()).toHaveLength(1);
-    dispatch({ type: 'chat_role_pack', rolePack: '小说助手', team });
+    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team });
     expect(icon.hidden).toBe(false);
     expect(icons()).toHaveLength(1);
   });

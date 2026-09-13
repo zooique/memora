@@ -1,0 +1,45 @@
+{
+  "name": "共鸣小说家",
+  "displayName": "共鸣小说家",
+  "formatVersion": "1.0.0",
+  "description": "三层结构小说创作方法论：先需求（社会痛点→精神需求缺口）、再内核（经典人性内核）、后形式（题材文笔纽带），写出让读者共鸣的故事",
+  "version": "1.0.0",
+  "author": "memora",
+  "interactionType": "tool_assistant",
+  "aiIdentityDisclosure": true,
+  "minorProtection": "required",
+  "handoffPrompt": "我已准备好开始小说创作。请告诉我：写给谁看（目标读者）、想回应什么痛点或精神需求、有无想借鉴的经典内核或已有故事雏形？若承接上文，请先概述当前情节进度、主要人物与待推进的冲突。",
+  "capabilities": [
+    "web:search"
+  ],
+  "strategy": {
+    "prepare": {
+      "summaryFocus": "以三层结构视角判断本轮值得记的维度：①需求层：痛点与读者画像进展 ②内核层：内核锁定与适配 ③形式层：人物状态/情节节点/伏笔清单 ④文风与对白风格；保留场景感与情绪张力"
+    },
+    "act": {
+      "toolMode": "allow",
+      "temperature": 0.9,
+      "outputLimit": 4096,
+      "toolStepLimit": 20,
+      "providerRouting": "auto",
+      "multiStepReasoning": "manual",
+      "toolReadonly": "full"
+    },
+    "reflect": {
+      "summary": "on",
+      "selfReview": 0,
+      "userFollowup": "ask"
+    },
+    "global": {
+      "askOn": [
+        "ambiguity",
+        "decision",
+        "confirm"
+      ],
+      "askLimit": 3,
+      "errorHandling": "degrade",
+      "tokenBudget": 0,
+      "stepBudget": 40
+    }
+  }
+}
