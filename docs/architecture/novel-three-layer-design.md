@@ -111,11 +111,10 @@
 ## 五、落地路径（探索中，不定案）
 
 1. **先收敛方法论本身**：本文三层结构 + 缺口清单经用户确认后，才进入角色包改造。
-2. **角色包演进候选**（按 G1-G9 优先级）：
-   - persona.md：补充三层方法论总纲（"先需求、再内核、后形式"创作顺序 + 三层一致性意识）
-   - rules.md：补充创作顺序规则、内核-需求适配规则、三层一致性检查规则
-   - skills/：新增 `need-finder`（G1/G2 需求层）、`core-extractor`（G3/G4 内核层）、`three-layer-check`（G5 一致性）、`pacing-hook`（G7）、`world-builder`（G8）、`self-review`（G9）
-   - manifest.json：capabilities 增 `web:search`（需求层搜索依赖）
+2. **角色包演进落地**（按 G1-G9 优先级，2026-09-13）：
+   - persona.md / rules.md / manifest.json：三层方法论 + `web:search` 已随 **共鸣小说家** 角色包落地（原小说助手收敛更名，4 技法技能 git rename 吸收）；
+   - skills/：已落地 6 技能——`need-finder`（G1/G2 需求层）、`core-extractor`（G3/G4 内核层）、`three-layer-check`（G5 一致性）、`pacing-hook`（G7 节奏钩子）、`world-builder`（G8 世界观）、`self-review`（G9 写后自检）；
+   - 待补：G6（全流程流水线编排，persona/rules 层引导）与 §三 缺口续 G10-G18。
 3. **验证触发**：真实场景（实际写一本小说）复现消费后，按 S2 固化；探索期不写 ADR。
 
 ## 六、已知风险（对抗式自查）
