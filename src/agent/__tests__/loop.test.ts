@@ -4401,8 +4401,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
   it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
     // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点，R1）→ 写侧记录覆盖度摘要。
-    // 注：此处脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**——这是分支②在
-    //   P0-1b 下能命中「无 limit 重读」的前提（见 isRequestInsideCoverage：未指 limit 须 coverEnd==totalLines）。
+    // 注：脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**，coverEnd(200)>0——满足
+    //   shouldEchoLedgerStub 的「无 limit 整读有覆盖即拦」，故重读被分支②回显摘要而非放行。
     const toolExecutor = vi.fn().mockImplementation(
       (name: string) =>
         Promise.resolve(

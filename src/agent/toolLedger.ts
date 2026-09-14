@@ -79,23 +79,34 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
 }
 
 /**
- * 判断一次 read_file 请求是否完全落在既定覆盖区间内（P0-1b 完整层）。
+ * 判定一次 read_file 请求是否应回显台账摘要（分支②语义的**单一真理源**，2026-09-14 收敛）。
  *
- * 规则（保守方向）：**仅当整个请求区间都在已覆盖内**视为冗余重读 → 可由拦截回显摘要；请求触及
- * 覆盖之外的任何前向/越界读取 → 一律放行（宁可多读，不可误拦死锁）。
+ * 收敛说明：此前该判定分裂为 `isRequestInsideCoverage`（无 limit 要求"读到尽"）与 loop 分支②
+ * 内联的 `coverEnd > 0`（无 limit 只要读过一截就拦）两处**矛盾**实现，且前者无 limit 分支已被
+ * 调用方绕过而成死代码。本函数统一为唯一实现，删除分歧/死码。
+ *
+ * 语义（区分「无区间整读」与「续读区间」两类冗余）：
+ * - 该文件尚未覆盖过正文（coverEnd<=0）→ 不拦（无摘要可回显，放行）。
+ * - **无 limit 整读**（LLM 要「全文」的语义重复）：只要覆盖过正文即视为冗余 → 拦，由
+ *   formatLedgerStub 回显摘要 + 引导 `offset=coverEnd+1` 续读，避免大文件截断后反复整读重试。
+ * - **offset/limit 续读**：仅当整个请求区间落在已覆盖区间内才视为冗余 → 拦；触及覆盖之外
+ *   （`offset+limit-1 > coverEnd` 或 `offset < coverStart`）→ 放行（宁可多读不误拦，G2 守卫）。
  *
  * @param subj read_file 去重主体的区间字段（offset/limit，缺省语义与 handler 一致）
- * @param cov  该文件已覆盖度
- * @returns true = 请求区间已完全覆盖（冗余重读）
+ * @param cov  该文件已覆盖度台账条目
+ * @returns true = 应回显摘要（拦截分支②），false = 放行真实执行
  */
-export function isRequestInsideCoverage(
+export function shouldEchoLedgerStub(
   subj: { offset?: number; limit?: number },
   cov: FileCoverage,
 ): boolean {
+  // 未覆盖过正文：无摘要可回显，放行
+  if (cov.coverEnd <= 0) return false;
+  // 无 limit 整读：只要有覆盖即冗余（回显摘要引导续读）
+  if (subj.limit === undefined) return true;
+  // 区间续读：完全落在已覆盖区间内才算冗余；触及覆盖之外放行
   const start = subj.offset ?? 1;
   if (start < cov.coverStart) return false;
-  // 未指定 limit → 读到文件尾；只有文件已读到尽（coverEnd=totalLines）才算完全覆盖
-  if (subj.limit === undefined) return cov.coverEnd >= cov.totalLines;
   return start + (subj.limit - 1) <= cov.coverEnd;
 }
 
