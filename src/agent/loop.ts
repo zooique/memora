@@ -67,6 +67,7 @@ import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
+import { detectNeedsPlanning, PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
 
 /** P0-2 失败硬闸的主体 key（工具名 + 规范化 path/query）：同主体连续失败计数用，粒度=同参（N2 修正） */
 function failureSubjectKey(toolName: string, subject: CacheEntry['subject']): string {
@@ -89,6 +90,9 @@ export interface AgentLoopOptions {
   rolePackBaseTokens?: number;
   /** 情感基调前缀，插在 systemPromptPrefix 与 bootstrapMemories 之间（injectAffect 设置，角色切换时保留） */
   affectPrefix?: string;
+  /** 任务表触发覆盖钩子（2026-09-14 层1）：宿主可覆写 needsPlanning 判定。
+   *  缺省用内核内置 detectNeedsPlanning（确定性判定）。返回 true → 首迭代注入命令式强引导。 */
+  needsPlanningOverride?: (text: string) => boolean;
   /** 工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
   toolDefinitions?: ToolDefinition[];
   /** 内置工具定义列表，仅含内置工具，供只读模式（toolReadonly）查询 readonly 标记 */
@@ -212,6 +216,11 @@ export class AgentLoop {
    *  每个新 turn（新用户输入）重新注入一次（每轮回答都需要收敛提醒），
    *  防的是「同 turn 多步迭代各注一条」的刷屏（V1 修复，口径与搜索收敛 flag 同构）。 */
   private softLimitWrapupInjected = false;
+  /** 层1（2026-09-14）：本 turn 是否判定为需任务表规划（processUserInput 入口由检测结果设值，
+   *  continueAfterPause 续跑不重判——plan 已建则无需 nudge） */
+  private planNeedsNudge = false;
+  /** 层1：本 turn 是否已注入命令式引导（幂等，仅首迭代一次，随 resetTurnState 重置） */
+  private planNudgeInjected = false;
   /** 工具结果防重缓存（闭环内有效，每轮 resetTurnState 清空）。
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
    *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
@@ -524,6 +533,11 @@ export class AgentLoop {
       // askLimit 计数按「一次用户输入」重置（turn 粒度：暂停-续跑跨续跑累计）——仅入口清，
       // continueAfterPause 不清（防续跑段被重复允许提问）
       this.resetAskBudget();
+      // 层1：任务表规划判定（在 resetTurnState 之后设值——续跑入口复用 resetTurnState 会清为 false，
+      // 故此处重判为新 turn 的确定性结论；continueAfterPause 不复用，plan 已建无需 nudge）
+      this.planNeedsNudge = this.opts.needsPlanningOverride
+        ? this.opts.needsPlanningOverride(userInput)
+        : detectNeedsPlanning(userInput);
 
       // 单轮 step 循环（runIterationLoop）：本 turn 的 step 编排执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
       // 所有复杂度（含 LLM 动态建任务表、会议机制角色切换）在一个 turn 内承载（2026-09-04 收敛：多 turn 编排已砍）。
@@ -722,6 +736,10 @@ export class AgentLoop {
     this.infoToolFailureBySubject.clear();
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
+    // 层1：任务表 nudge 注入标记随轮重置（下一 turn 重新判定注入）；planNeedsNudge 也随轮清，
+    // 但 processUserInput 在 resetTurnState 之后会重判设值（续跑入口不复用因此不重判）
+    this.planNeedsNudge = false;
+    this.planNudgeInjected = false;
   }
 
   /** 重置 askLimit 计数（turn 入口，2026-09-04）：仅 processUserInput 调用，continueAfterPause 不动，
@@ -988,6 +1006,8 @@ export class AgentLoop {
     const activeStepId = activeStepMeta?.stepId;
     if (activeStepMeta && activeStepId && activeStepId !== this.lastBoundaryStepId) {
       this.lastBoundaryStepId = activeStepId;
+      // 层0 观测：step_boundary 产出累计（实证布局骨血是否空转）
+      this.metrics.stepBoundaryCount++;
       // roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带
       yield {
         type: 'step_boundary',
@@ -1131,6 +1151,16 @@ export class AgentLoop {
         this.messages.filter((m) => !(m.role === 'system' && m.content.startsWith('[任务进度:'))),
       );
       this.appendSystemMessage(taskTable, { executionTemp: true });
+    }
+
+    // 层1：needsPlanning 判定为真时，首迭代注入命令式强引导（任务表触发确定性化）。
+    // 幂等：planNudgeInjected 保证同一 turn 仅首迭代注入一次，不污染后续轮；
+    // executionTemp → turn 结束即弃，跨 turn 由 cleanExecutionTemporary 清冗。
+    // 与任务表"替换式"注入不同：nudge 是一过式指令，仅需一次，勿每迭代重复。
+    if (this.planNeedsNudge && !this.planNudgeInjected) {
+      this.planNudgeInjected = true;
+      this.appendSystemMessage(PLAN_NUDGE_PROMPT, { executionTemp: true });
+      logger.info({}, '任务表触发：needsPlanning 命中，已注入命令式强引导');
     }
 
     return { chatOpts, safeMessages };
@@ -1449,6 +1479,8 @@ export class AgentLoop {
     const blockedFlags: boolean[] = [];
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
+      // 层0 观测：task_table_write 调用累计（实证任务表是否被触发）
+      if (tc.function.name === 'task_table_write') this.metrics.planTaskTableWriteCount++;
       const isSearch = tc.function.name === 'web_search';
       if (isSearch) this.searchCallCount++;
       yield {
@@ -2166,6 +2198,10 @@ export class AgentLoop {
         ...(this.rolePackBaseTokens !== undefined
           ? { rolePackBaseTokens: this.rolePackBaseTokens }
           : {}),
+      },
+      plan: {
+        taskTableWriteCount: this.metrics.planTaskTableWriteCount,
+        stepBoundaryCount: this.metrics.stepBoundaryCount,
       },
       tasks: {
         totalCount: this.metrics.taskTotalCount,

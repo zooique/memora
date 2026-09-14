@@ -287,6 +287,80 @@ describe('AgentLoop · 上下文管理指标', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// AgentLoop · 任务表观测量（实证任务表是否被 LLM 触发）
+// ═══════════════════════════════════════════════════════════════
+
+describe('AgentLoop · 任务表观测量', () => {
+  it('调用 task_table_write 后 plan.taskTableWriteCount 累加', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{
+          toolCalls: [
+            {
+              id: 'tc1',
+              type: 'function',
+              function: {
+                name: 'task_table_write',
+                arguments: '{"mode":"overwrite","steps":[{"description":"步骤1"},{"description":"步骤2"}]}',
+              },
+            },
+          ],
+        }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('[OK] 任务表已更新'),
+    });
+
+    await consumeGenerator(loop.processUserInput('执行多步任务'));
+
+    const metrics = loop.getMetrics();
+    expect(metrics.plan.taskTableWriteCount).toBe(1);
+  });
+
+  it('产生 active step 边界后 plan.stepBoundaryCount 累加', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '完成' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 模拟已有任务表 active step（真实场景由 assembler 装配 getActiveStepMeta）
+    loop.getActiveStepMeta = () => ({ stepId: 's1', title: '步骤1' });
+
+    await consumeGenerator(loop.processUserInput('任务'));
+
+    const metrics = loop.getMetrics();
+    expect(metrics.plan.stepBoundaryCount).toBe(1);
+  });
+
+  it('needsPlanning 命中 → 首迭代注入命令式任务表引导', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '完成' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      needsPlanningOverride: () => true,
+    });
+
+    await consumeGenerator(loop.processUserInput('重构这个模块'));
+
+    expect(loop.getMessages().some((m) => m.content.includes('任务表强制提示'))).toBe(true);
+  });
+
+  it('needsPlanning 未命中 → 零打扰（不注入任务表引导）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([{ content: '完成' }]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      needsPlanningOverride: () => false,
+    });
+
+    await consumeGenerator(loop.processUserInput('你好，简单回答即可'));
+
+    expect(loop.getMessages().some((m) => m.content.includes('任务表强制提示'))).toBe(false);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // AgentMetrics 类型结构验证
 // ═══════════════════════════════════════════════════════════════
 
@@ -328,6 +402,10 @@ describe('AgentMetrics · 类型结构', () => {
     expect(metrics.tasks).toHaveProperty('failureCount');
     expect(metrics.tasks).toHaveProperty('successRate');
     expect(metrics.tasks).toHaveProperty('avgDurationMs');
+
+    // 验证 plan 维度字段（2026-09-14 层0：任务表触发观测量）
+    expect(metrics.plan).toHaveProperty('taskTableWriteCount');
+    expect(metrics.plan).toHaveProperty('stepBoundaryCount');
   });
 
   it('recordBudget 后 getMetrics().context.budget 透出（④ 预算可视化）', () => {

@@ -47,4 +47,10 @@ export class LoopMetrics {
   get taskAvgDurationMs(): number {
     return this.taskTotalCount > 0 ? Math.round(this.taskTotalDurationMs / this.taskTotalCount) : 0;
   }
+
+  // ─── 任务表触发观测量（2026-09-14 层0：先实证"任务表从未被 LLM 触发"，再决定触发修复是否起效）──
+  /** 累计调用 task_table_write 次数（= 任务表建表/重建次数） */
+  planTaskTableWriteCount = 0;
+  /** 累计产出 step_boundary 次数（= 思考折叠分块的边界数） */
+  stepBoundaryCount = 0;
 }

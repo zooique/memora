@@ -486,11 +486,13 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_write',
     description:
-      '写入或更新任务表。overwrite 清空现有任务表后写入新步骤（重写/重开计划，2026-09-06 与实现对齐）；' +
-      'append 在现有任务表后追加新步骤；' +
-      'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
-      '每个步骤可声明可选 rolePack 字段（小组会议用：该步骤的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
-      '输出格式为 Markdown 表格，包含进度行和状态标记。',
+      '写入或更新任务表（命令式：多步任务必须先用本工具把任务拆解为子步骤写入任务表，随后按任务表逐步执行，禁止跳过拆解一次性盲目执行）。' +
+        'overwrite 清空现有任务表后写入新步骤（重写/重开计划，2026-09-06 与实现对齐）；' +
+        'append 在现有任务表后追加新步骤；' +
+        'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
+        '写入后按任务表逐步推进，每完成一步用 task_table_update 标记状态。' +
+        '每个步骤可声明可选 rolePack 字段（小组会议用：该步骤的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
+        '输出格式为 Markdown 表格，包含进度行和状态标记。',
     parameters: {
       type: 'object',
       properties: {
@@ -520,8 +522,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_update',
     description:
-      '更新任务表中指定步骤的状态。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。' +
-      'step_id 传任务表「#」列序号（1 开始，如 "1" = 第一行）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
+      '更新任务表中指定步骤的状态（命令式：一次只更新一个步骤）。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。' +
+        '每完成一步调用一次本工具标记，只有最后一步完成后才宣告任务完成，禁止一次性批量标记所有步骤。' +
+        'step_id 传任务表「#」列序号（1 开始，如 "1" = 第一行）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
       properties: {

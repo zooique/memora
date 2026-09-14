@@ -393,6 +393,23 @@ describe('builtinTools · SEARCH_PROJECT_TOOL（项目内搜索，等价 IDE 全
   });
 });
 
+describe('builtinTools · 任务表描述命令式强化', () => {
+  it('task_table_write 描述应命令式引导「先拆解再逐步执行」并衔接 task_table_update', () => {
+    const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_write')!;
+    // 命令式强化：多步任务必须拆解建表，禁止跳过拆解一次性盲目执行
+    expect(def.description).toContain('多步任务必须先用本工具把任务拆解');
+    expect(def.description).toContain('禁止跳过拆解一次性盲目执行');
+    // 行为闭环：写表后明确用 task_table_update 逐步标记
+    expect(def.description).toContain('task_table_update');
+  });
+
+  it('task_table_update 描述应明确「一次只更新一步」并禁止批量宣告完成', () => {
+    const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
+    expect(def.description).toContain('一次只更新一个步骤');
+    expect(def.description).toContain('禁止一次性批量标记所有步骤');
+  });
+});
+
 describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
   it('task_table_write 保守标记 non-idempotent（mode 依赖：overwrite/update 同参幂等，append 非幂等）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
