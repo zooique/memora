@@ -47,6 +47,14 @@ export interface ProviderEntryConfig {
   temperature?: number;
   /** 上下文窗口（token），未配置时回退到 memory.maxContextTokens */
   contextWindow?: number;
+  /**
+   * 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
+   * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，搬到配置显式声明。
+   * 与 supportsStructuredOutput 互斥（response_format 不能与 tools 同用），2026-09-14 阶段0。
+   */
+  supportsToolCalling?: boolean;
+  /** 是否支持结构化输出（response_format / JSON mode） */
+  supportsStructuredOutput?: boolean;
 }
 
 /** 后台通道配置（多 Provider 路由预留）：不配时后台操作复用前台 llm 配置，零破坏性 */

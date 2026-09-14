@@ -31,6 +31,9 @@ export async function createProvider(
         model: active.model,
         apiKey: active.apiKey,
         provider: active.provider,
+        // 能力位透传（互斥双能力位，2026-09-14 阶段0）：undefined → 内核回落 true
+        supportsToolCalling: active.supportsToolCalling,
+        supportsStructuredOutput: active.supportsStructuredOutput,
       });
     }
   }
@@ -79,6 +82,9 @@ export async function createBackgroundProvider(
     model: background.model,
     apiKey: background.apiKey,
     provider: background.provider,
+    // 能力位透传：后台通道与前台同构（2026-09-14 阶段0）
+    supportsToolCalling: background.supportsToolCalling,
+    supportsStructuredOutput: background.supportsStructuredOutput,
   });
 }
 

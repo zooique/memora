@@ -15,6 +15,10 @@ export interface OpenAICompatibleConfig {
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
+  /** 是否支持原生工具调用（OpenAI Function Calling tools 协议），默认 false（2026-09-14 阶段0） */
+  supportsToolCalling?: boolean;
+  /** 是否支持结构化输出（response_format / JSON mode），默认 false */
+  supportsStructuredOutput?: boolean;
 }
 
 /** 错误响应体截断长度（字符数）：统一 4 处 errorText.slice(0,200) 的常量，避免魔法数字 */
@@ -67,6 +71,18 @@ export class OpenAICompatibleProvider extends LlmProvider {
   ) {
     super();
     this.name = name;
+    this._setCapabilities(config);
+  }
+
+  /**
+   * 能力位赋值（内置为只读，外部不可改）：默认 true 保留存量云 LLM「有工具集即走原生 FC」行为，
+   * 本地运行时（Ollama/LM Studio 等）无原生 FC 须在宿主配置时显式置 false（2026-09-14 阶段0）。
+   * @param config 构造时的能力位声明（undefined → 回落默认）
+   */
+  private _setCapabilities(config: OpenAICompatibleConfig): void {
+    (this as { supportsToolCalling: boolean }).supportsToolCalling = config.supportsToolCalling ?? true;
+    (this as { supportsStructuredOutput: boolean }).supportsStructuredOutput =
+      config.supportsStructuredOutput ?? false;
   }
 
   /** 默认请求超时：120 秒 */

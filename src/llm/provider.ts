@@ -60,6 +60,20 @@ export interface ChatOptions {
 export abstract class LlmProvider {
   abstract readonly name: string;
 
+  /**
+   * 是否支持原生工具调用（OpenAI Function Calling 的 tools 协议）。
+   *
+   * 与 supportsStructuredOutput 互斥（response_format 不能与 tools 同时使用，OpenAI 协议限制）：
+   * - 支持 tools → loop 走原生工具通道（列工具 + 传 tools 参数）。
+   * - 支持 structured → loop 传 response_format（JSON mode 回落）。
+   * - 两者皆 false → 无工具能力，loop 收起工具清单并显式告知（可观测，不静默）。
+   *
+   * 默认 **true**（存量行为）：云 LLM 绝大多数支持原生 FC（有工具集就传 tools，与历史一致）。
+   * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，须在宿主配置时
+   * 显式置 false（2026-09-14 阶段0·互斥双能力位）。
+   */
+  readonly supportsToolCalling: boolean = true;
+
   /** 是否支持结构化输出（默认 false）。注意：response_format 不能与 tools 同时使用（OpenAI 协议限制） */
   readonly supportsStructuredOutput: boolean = false;
 

@@ -36,6 +36,14 @@ export interface LlmProviderConfig {
   /** Provider 标识（'cloud' | 'local'） */
   provider?: string;
   /**
+   * 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
+   * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，由用户在配置面板显式声明；
+   * 未填（undefined）→ 内核回落 true（保留存量云 LLM 工具行为，2026-09-14 阶段0·互斥双能力位）。
+   */
+  supportsToolCalling?: boolean;
+  /** 是否支持结构化输出（response_format / JSON mode），与 supportsToolCalling 互斥（OpenAI 协议限制）；未填 → 回落 false */
+  supportsStructuredOutput?: boolean;
+  /**
    * 上下文窗口上限（token）—— 该 LLM 唯一真理源
    *
    * 每个用户添加的 LLM 独立配置自己的上下文上限（如 deepseek-chat 64K、gpt-4o 128K、

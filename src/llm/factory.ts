@@ -21,6 +21,16 @@ export interface ProviderConfig {
   apiKey?: string;
   /** Provider 标识（仅用于日志，不影响路由） */
   provider?: string;
+  /**
+   * 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
+   *
+   * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，须宿主显式置 false；
+   * 未填（undefined）→ OpenAICompatibleProvider 内回落 true（保留存量云 LLM 工具行为，
+   * 2026-09-14 阶段0·互斥双能力位）。
+   */
+  supportsToolCalling?: boolean;
+  /** 是否支持结构化输出（response_format / JSON mode）；未填 → 回落 false */
+  supportsStructuredOutput?: boolean;
 }
 
 /** 从单个 Provider 配置创建 LlmProvider 实例（多 Provider 管理场景：为 providers 映射表中每个条目调用） */
@@ -61,6 +71,9 @@ export function createProviderFromConfig(
     baseUrl: resolvedBaseUrl,
     apiKey: apiKey ?? '',
     defaultModel: model,
+    // 能力位透传：默认 undefined → OpenAICompatibleProvider 内回落 true
+    supportsToolCalling: providerConfig.supportsToolCalling,
+    supportsStructuredOutput: providerConfig.supportsStructuredOutput,
   });
 }
 
@@ -145,6 +158,9 @@ export function createProviderRouter(config: Config): ProviderRouter {
           model: (providerConfig as { model: string }).model,
           baseUrl: (providerConfig as { baseUrl?: string }).baseUrl ?? '',
           apiKey: (providerConfig as { apiKey?: string }).apiKey,
+          // 能力位透传（互斥双能力位，2026-09-14 阶段0）
+          supportsToolCalling: (providerConfig as { supportsToolCalling?: boolean }).supportsToolCalling,
+          supportsStructuredOutput: (providerConfig as { supportsStructuredOutput?: boolean }).supportsStructuredOutput,
         }),
       );
     }

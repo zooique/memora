@@ -306,6 +306,11 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
       contextWindow: validateContextWindow(p.contextWindow),
+      // 能力位（互斥双能力位，2026-09-14 阶段0）：仅显式 true 时置位，其余保持 undefined
+      // （undefined → OpenAICompatibleProvider 内回落 true 保留存量工具行为；非「===false」，
+      //  免除默认云 LLM 因缺字段被误判为无工具能力）
+      supportsToolCalling: p.supportsToolCalling === true ? true : undefined,
+      supportsStructuredOutput: p.supportsStructuredOutput === true ? true : undefined,
     };
   }
 

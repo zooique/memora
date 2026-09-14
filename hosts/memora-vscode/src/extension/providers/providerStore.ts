@@ -375,6 +375,9 @@ export class ProviderStore {
         model: config.model.trim(),
         apiKey: config.apiKey.trim(),
         provider: config.provider,
+        // 能力位透传（互斥双能力位，2026-09-14 阶段0）：undefined → 内核回落 true
+        supportsToolCalling: config.supportsToolCalling,
+        supportsStructuredOutput: config.supportsStructuredOutput,
       });
       // 发起一次最小对话，验证连通性
       let reply = '';

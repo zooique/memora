@@ -15,6 +15,7 @@ import { TRACE_SPANS, type ISpan, type ITracer } from '@/agent/tracer.js';
 import * as hashModule from '@/utils/hash.js';
 import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
+import { logger } from '@/logging/logger.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -4505,5 +4506,144 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
     const msgs = intelMsgs(loop);
     expect(msgs).toHaveLength(1);
     expect(msgs[0]!.content).toContain(NOTE);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 测试：互斥双能力位（F0-F4，2026-09-14 阶段0·本地 LLM 前置）
+// 工具通道确定性选择 + 无工具能力显式回落（可观测、不静默）
+// ═══════════════════════════════════════════════════════════════
+describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStructuredOutput）', () => {
+  // 捕获每次 LLM 调用的 opts（tools / response_format），供 F1/F3 断言
+  type CapturedChatOptions = Record<string, unknown> & {
+    tools?: Array<{ function: { name: string } }>;
+    response_format?: unknown;
+  };
+
+  /**
+   * 构造带能力位声明的 mock Provider，并捕获每次 chat() 收到的 opts。
+   * @param caps 能力位声明片段（未覆盖字段回落 LlmProvider 默认）
+   * @param chunks 每轮返回的 chunk 数组
+   */
+  function capabilityProvider(
+    caps: { supportsToolCalling?: boolean; supportsStructuredOutput?: boolean },
+    chunks: ChunkItem[][],
+  ): { provider: LlmProvider; captured: CapturedChatOptions[] } {
+    const captured: CapturedChatOptions[] = [];
+    let ti = 0;
+    const provider = {
+      ...caps,
+      name: 'capability-mock',
+      async *chat(_messages: unknown[], options?: CapturedChatOptions) {
+        captured.push(options ?? {});
+        for (const c of chunks[ti] ?? []) yield c;
+        ti++;
+      },
+    } as unknown as LlmProvider;
+    return { provider, captured };
+  }
+
+  it('F1: supportsToolCalling=false → buildChatOptions 不产出 tools 参数（收起原生 FC 通道）', async () => {
+    // 无原生工具能力：即使配置了工具集，也不应通过 tools 参数对外暴露
+    const { provider, captured } = capabilityProvider(
+      { supportsToolCalling: false },
+      [[{ content: '直接回答' }]],
+    );
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+
+    for await (const {} of loop.processUserInput('做分析')) void 0;
+
+    // 所有 chat 调用均未携带 tools 参数（原生工具通道被确定性收起）
+    expect(captured.length).toBeGreaterThan(0);
+    for (const opts of captured) {
+      expect(opts.tools).toBeUndefined();
+    }
+  });
+
+  it('F1b: supportsToolCalling=true（默认）→ 保留 tools 参数（存量云 LLM 行为不破坏）', async () => {
+    const { provider, captured } = capabilityProvider(
+      { supportsToolCalling: true },
+      [[{ content: '直接回答' }]],
+    );
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+
+    for await (const {} of loop.processUserInput('做分析')) void 0;
+
+    // 原生工具通道照常对外提供
+    expect(captured[0]?.tools).toBeDefined();
+    const names = (captured[0]?.['tools'] ?? []).map((t) => t.function.name);
+    expect(names).toContain('web_search');
+  });
+
+  it('F2: supportsToolCalling=false → buildSystemPrompt 收起工具清单（不列工具描述）', async () => {
+    const { provider } = capabilityProvider({ supportsToolCalling: false }, [[{ content: '回答' }]]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+
+    // 装配期生成的 system prompt（getMessages()[0]）不应包含工具名/描述——收起诱导，
+    // 杜绝模型吐文本工具骨架（避免复现旧伤）
+    const systemPrompt = loop.getMessages()[0]!.content;
+    expect(systemPrompt).not.toContain('web_search');
+    expect(systemPrompt).not.toContain('## 可用工具');
+  });
+
+  it('F3: supportsStructuredOutput=true（且无原生工具）→ 产出 response_format（JSON mode 回落）', async () => {
+    const { provider, captured } = capabilityProvider(
+      { supportsToolCalling: false, supportsStructuredOutput: true },
+      [[{ content: '直接回答' }]],
+    );
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+
+    for await (const {} of loop.processUserInput('做分析')) void 0;
+
+    // 无原生 tools → 走显式结构化回落（response_format JSON mode），而非静默丢弃工具意图
+    expect(captured[0]?.response_format).toBeDefined();
+  });
+
+  it('F4: 两者皆 false → 收起清单 + logger.warn 显式声明「无工具通道」且 system prompt 明示', async () => {
+    // spy logger.warn 断言非静默跳过（可观测留痕）
+    const loggerSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
+    const { provider } = capabilityProvider(
+      { supportsToolCalling: false, supportsStructuredOutput: false },
+      [[{ content: '直接回答' }]],
+    );
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
+
+    for await (const {} of loop.processUserInput('做分析')) void 0;
+
+    // 无工具通道 → 系统提示明确告知模型「工具不可用」，不诱导假装调用工具
+    const systemPrompt = loop.getMessages()[0]!.content;
+    expect(systemPrompt).toContain('工具不可用');
+    expect(systemPrompt).not.toContain('## 可用工具');
+    // 留下可观测 warn 信号（防止「静默跳过」——F4 防静默语义）
+    expect(loggerSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.stringContaining('无工具通道'),
+    );
+    loggerSpy.mockRestore();
   });
 });

@@ -1751,7 +1751,10 @@ export class AgentLoop {
     // 追加工具描述（让 LLM 知道可用工具及其参数）
     // TS-7 搜索硬上限命中后：同步剔除 web_search 描述，避免「描述存在但工具不可用」不一致
     const tools = this.resolveActiveTools();
-    if (tools && tools.length > 0) {
+    // 工具通道门控（互斥双能力位，2026-09-14 阶段0）：仅当 provider 声明支持原生工具调用时
+    // 才列出工具清单并引导调用——无工具能力时列清单会诱导模型吐文本工具骨架（复现旧伤）。
+    const supportsToolCalling = this.toolCallingEnabled();
+    if (tools && tools.length > 0 && supportsToolCalling) {
       const toolDescs = tools
         .map((t) => {
           const params = Object.entries(t.parameters.properties)
@@ -1799,6 +1802,17 @@ export class AgentLoop {
       }
     }
 
+    // 工具能力缺失的显式告知（互斥双能力位回落，F4 防静默）：系统配置了工具集、但当前 provider
+    // 既无原生工具调用也无结构化输出时，显式告知 LLM「工具不可用」——让其直接给出文本作答，
+    // **不诱导**其试图用文本骨架"调用"工具（避免复现文本 tool_call 旧伤）。logger.warn 留痕可观测。
+    if (tools && tools.length > 0 && !supportsToolCalling && !this.structuredOutputEnabled()) {
+      logger.warn(
+        { provider: this.opts.provider?.name },
+        '当前 provider 无工具通道（supportsToolCalling=false 且 supportsStructuredOutput=false），工具清单收起并显式告知 LLM',
+      );
+      prompt += `\n\n## 工具不可用\n当前模型不支持工具调用（无原生工具协议，也无可用的结构化输出回落）。请直接用文本回答，不要假装调用工具。`;
+    }
+
     return prompt;
   }
 
@@ -1828,6 +1842,28 @@ export class AgentLoop {
   }
 
   /**
+   * 当前 provider 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
+   *
+   * 读 provider 的互斥双能力位（2026-09-14 阶段0）：
+   * - true → loop 走原生工具通道（列工具 + 传 tools）。
+   * - false → 工具通道不可用，须收起工具清单走显式回落（见 buildSystemPrompt / buildChatOptions）。
+   * provider 未配置（undefined）时按支持处理（默认 true，与存量「有工具集即传 tools」一致）。
+   */
+  private toolCallingEnabled(): boolean {
+    return this.opts.provider?.supportsToolCalling ?? true;
+  }
+
+  /**
+   * 当前 provider 是否支持结构化输出（response_format / JSON mode）。
+   *
+   * 与 toolCallingEnabled 互斥：response_format 不能与 tools 同用（OpenAI 协议限制）。
+   * 作为「无原生工具能力」时的显式回落通道（产出机器可读 JSON，而非静默丢弃工具）。
+   */
+  private structuredOutputEnabled(): boolean {
+    return this.opts.provider?.supportsStructuredOutput ?? false;
+  }
+
+  /**
    * 解析「本轮可用工具集」——单一真源（SSOT）
    *
    * 工具可用性事实本来被写作两处（buildSystemPrompt 文本出口 + buildChatOptions 原生出口），
@@ -1841,14 +1877,22 @@ export class AgentLoop {
   }
 
   /**
-   * 构建 LLM 调用选项。（为何不生成 response_format：它约束最终响应体，而 tool_calls 是通过
-   * tools 参数触发的独立流式协议，两者不能并存；response_format 保留供调用方按需显式传入）
+   * 构建 LLM 调用选项（互斥双能力位的确定性通道选择，2026-09-14 阶段0）。
+   *
+   * 通道取当前 provider 的能力位：
+   *   - 支持原生工具调用（supportsToolCalling）→ 走 tools 原生 FC 通道（唯一可调用通道）；
+   *   - 否则若支持结构化输出（supportsStructuredOutput）→ 走 response_format（JSON mode 回落）；
+   *   - 两者皆否 → 不传任何通道（工具不可用，见 buildSystemPrompt 展示的显式回落告知，不静默）。
+   *
+   * 不传 response_format 的原因（既有纪律保留）：它约束最终响应体，而 tool_calls 是通过
+   * tools 参数触发的独立流式协议，两者不能并存；此处仅在「无 tools 能力」时作为落回通道拉通。
    */
   private buildChatOptions(): ChatOptions {
     const tools = this.resolveActiveTools();
     const baseOptions: ChatOptions = {};
 
-    if (tools.length > 0) {
+    const supportsToolCalling = this.toolCallingEnabled();
+    if (tools.length > 0 && supportsToolCalling) {
       baseOptions.tools = tools.map((t) => ({
         type: 'function' as const,
         function: {
@@ -1857,6 +1901,35 @@ export class AgentLoop {
           parameters: t.parameters as Record<string, unknown>,
         },
       }));
+    }
+
+    // 无原生工具通道 → 显式回落 response_format（仅 provider 声明支持 JSON mode 时）
+    if (tools.length > 0 && !supportsToolCalling && this.structuredOutputEnabled()) {
+      // 回落 schema：把工具名 + 描述交给模型，让它以 JSON 结构返回「欲调用的工具」，由内核兜底处理。
+      // 不为 persistence 承诺闭合——此处是「无原生 FC 时的可观测出口」，非被攻破可执行通道。
+      baseOptions.response_format = {
+        type: 'json_schema',
+        json_schema: {
+          name: 'tool_selection',
+          strict: false,
+          schema: {
+            type: 'object',
+            properties: {
+              tools: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  properties: {
+                    name: { type: 'string', description: '欲调用的工具名' },
+                    arguments: { type: 'object', description: '工具参数' },
+                  },
+                  required: ['name', 'arguments'],
+                },
+              },
+            },
+          },
+        },
+      };
     }
 
     // 角色包策略覆盖项（temperature / outputLimit 等）

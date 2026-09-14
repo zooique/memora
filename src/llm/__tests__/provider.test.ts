@@ -48,6 +48,27 @@ describe('LlmProvider · supportsStructuredOutput 默认值', () => {
   });
 });
 
+// ─── supportsToolCalling 能力位（F0，2026-09-14 阶段0） ──
+
+describe('LlmProvider · supportsToolCalling 能力位', () => {
+  it('未覆盖时默认为 true（保留存量云 LLM 工具行为）', () => {
+    const provider = new TestProvider();
+    expect(provider.supportsToolCalling).toBe(true);
+  });
+
+  it('本地模型可显式覆盖为 false（无原生工具协议）', () => {
+    class NoToolProvider extends LlmProvider {
+      readonly name = 'no-tool';
+      readonly supportsToolCalling = false;
+      async *chat(): AsyncIterable<LlmChunk> {
+        yield { content: 'ok' };
+      }
+    }
+    const provider = new NoToolProvider();
+    expect(provider.supportsToolCalling).toBe(false);
+  });
+});
+
 // ─── name 抽象属性 ────────────────────────────────────────
 
 describe('LlmProvider · name 抽象属性', () => {
