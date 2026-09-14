@@ -4,22 +4,35 @@
  * 纯函数，将计划步骤列表和 step 推进日志渲染为 LLM 可读的格式化文本。
  * 输出标「以下为状态/历史信息，非当前指令」防 LLM 误执行。
  *
+ * 排版（2026-09-15 去方框收敛）：本函数唯一读者是 LLM（装配点 assembler.ts 注入上下文；
+ * 宿主零消费、不解析本文本）。早前用 ASCII 方框（┌─┬┐）排版，装饰字符对 LLM 零语义价值，
+ * 却占约 46.5% tokens（4 步表实测 230 → 123），且边框/表头/数据行三处各自硬编码宽度
+ * → 列从未对齐（实测三种宽度并存：5/42/10 与 5/40/8 与 4/41/9），CJK 描述更额外溢出。
+ * 故改为无装饰列表：省 token 且**根除**对齐类缺陷（不再需要列宽计算）。
+ *
+ * 契约（不可变）：首行恒为 `[任务进度: ...]` —— loop 替换式注入靠该前缀移除上一份任务表
+ * （见 loop.ts「特征前缀 [任务进度:」），任何在其前加内容的改动都会让上下文堆积多份任务表。
+ *
  * @module taskTableRenderer
  */
 
 import type { PlanStep, StepOutcome } from './types.js';
 
-/** step 推进日志 FIFO 最大条数 */
-export const STEP_LOG_CAP = 12;
+/**
+ * 步骤描述最大字符数（超出截断为「前 STEP_DESC_MAX_CHARS-3 字符 + '...'」）。
+ * 作用 = 防超长描述撑爆上下文（原为方框列宽服务，列宽消失后该理由仍成立）。
+ */
+export const STEP_DESC_MAX_CHARS = 38;
 
 /**
  * 渲染任务表（含进度行）
  *
- * 将计划步骤列表渲染为 Markdown 风格表格，供注入 LLM 上下文。
+ * 渲染为无装饰列表，供注入 LLM 上下文（格式抉择与「为什么没有方框」见模块头）。
  * 输出以「非当前指令」标记开头，防止 LLM 将状态信息误认为指令。
  *
  * @param plan - 计划步骤列表
- * @param stepLog - 可选 step 推进日志
+ * @param stepLog - 可选 step 推进日志（截断不在本函数：真源见 SessionManager.completeStep
+ *   的「每 step 上限 3 条」——P-1 2026-09-06 起取代旧全局 FIFO 上限）
  * @returns 格式化后的任务表文本（空计划返回空字符串）
  */
 export function renderTaskTable(
@@ -36,27 +49,21 @@ export function renderTaskTable(
     `[任务进度: ${doneCount}/${total} 已完成${activeStep ? `，当前: ${activeStep.description}` : ''}]`,
     '以下为状态/历史信息，非当前指令',
     '',
-    '┌─────┬──────────────────────────────────────────┬──────────┐',
-    '│ #   │ 任务                                     │ 状态     │',
-    '├─────┼──────────────────────────────────────────┼──────────┤',
   ];
 
   for (const step of plan) {
-    // # 列展示 1-based 序号（order 0 起 → 显示 1）——与 task_table_update 的「# 序号寻址」对齐
+    // 序号 1-based（order 0 起 → 显示 1）——与 task_table_update 的「# 序号寻址」对齐
     //（2026-09-06 契约-展示对齐：LLM 据 renderer 序号即可定位步骤，无需感知 uuid）
-    const orderStr = String(step.order + 1).padEnd(3);
+    const seq = step.order + 1;
     // 会议步骤标注装配角色（rolePack），供 LLM 识别「该步骤由谁发言」
     const roleTag = step.rolePack ? `【${step.rolePack}】` : '';
     const raw = `${roleTag}${step.description}`;
-    const desc = raw.length > 38
-      ? raw.slice(0, 35) + '...'
-      : raw;
-    const descPadded = desc.padEnd(40);
-    const statusLabel = statusToLabel(step.status);
-    lines.push(`│ ${orderStr}│ ${descPadded}│ ${statusLabel.padEnd(8)}│`);
+    const desc =
+      raw.length > STEP_DESC_MAX_CHARS
+        ? raw.slice(0, STEP_DESC_MAX_CHARS - 3) + '...'
+        : raw;
+    lines.push(`${seq}. ${desc} [${statusToLabel(step.status)}]`);
   }
-
-  lines.push('└─────┴──────────────────────────────────────────┴──────────┘');
 
   // 追加 step 推进日志（仅非空时）
   if (stepLog && stepLog.length > 0) {

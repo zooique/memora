@@ -2,24 +2,26 @@
 
 > **SSOT**：本文件是内核测试并发策略与 flake 判定的唯一权威。配置侧声明见 `vitest.config.ts` 的 `fileParallelism` 注释。
 >
-> **适用边界**：内核（`@zooique/memora`）纯逻辑库，100 个测试文件（`src/**/__tests__/*.test.ts`）。宿主（vscode）各自的 vitest 配置不在本文件范围，但 flake 判定思想通用。
+> **适用边界**：内核（`@zooique/memora`）纯逻辑库 —— 根 vitest 配置实跑 **117 个测试文件**（内核 `src/**/__tests__/*.test.ts` **107** 个 + 根配置另行纳入的宿主 `webview/__tests__` 与 `shared/__tests__/protocolGuard.test.ts` 共 **10** 个）。宿主（vscode）**其余**测试各自配置不在本文件范围，但 flake 判定思想通用。
 
 ## 1. 当前并发策略（显式声明）
 
 - **文件级并发保持开启**（`vitest.config.ts: fileParallelism: true`，即 vitest 默认）。
 - 含义：vitest 在多个 worker 进程**并行跑不同测试文件**；单文件内测试仍可并发。
-- **为什么开**：跨文件并发是本地与 CI 速度的主要来源。全量并发约 4 分钟，若禁用（`--no-file-parallelism`）翻倍至约 9 分钟。
+- **为什么开**：跨文件并发是本地与 CI 速度的主要来源。**实测（2026-09-14，提交 e771d262）：并行 57s，串行（`--no-file-parallelism`）136s ≈ 2.4x**。（此前版记「约 4 分钟 / 约 9 分钟」，已按实测校正。）
 - **代价（已知）**：跨文件共享态竞争会引发偶发 flake（见 §2）。这是**速度换确定性**的取舍，团队选择保速度、用 SOP 兜底，而非默认序列化。
 
 ## 2. 已知 flake 根因（对抗式实锤）
 
 | 测试 | 现象 | 根因 | 是否缺陷 |
 | --- | --- | --- | --- |
-| `agent.test.ts:190` `memory.snapshot().working 应反映 AgentLoop 当前消息数` | 仅**并发**跑随机红；单独跑 / 加 `--no-file-parallelism` 全量均绿 | 跨文件共享态竞争（同工作区 `.memora` / 单例未隔离，时序敏感） | **否**（flake，非逻辑缺陷） |
-| `llmIntegration.test.ts` ×3 | 需真实 LLM 网络 + API 凭据，沙箱无凭据→失败 | 真实网络集成测试，环境缺凭据 | **否**（环境缺失，非代码） |
+| `agent.test.ts:189` `memory.snapshot().working 应反映 AgentLoop 当前消息数` | 仅**并发**跑随机红；单独跑 / 加 `--no-file-parallelism` 全量均绿 | 跨文件共享态竞争（同工作区 `.memora` / 单例未隔离，时序敏感） | **否**（flake，非逻辑缺陷） |
+| `llmIntegration.test.ts` ×3 | **配好凭据后真跑**，偶发 `MemoraError: 对话繁忙`（实测两次并行：一次 3 红、一次全绿；单文件复跑绿） | **文件内共享态**：3 个 `it` 共享 `beforeAll` 创建的 agent，chat 结束后仍有后置后台任务（测试内 `await setTimeout(2000)` 即等它）→ 前一个 it 未收尾时下一个撞 `ChatLockManager.isBusy`；并行负载放大该时序窗口。**非跨文件共享锁**——`ChatLockManager` 是纯实例级字段（无模块级单例） | **否**（测试自身共享态，非生产缺陷——生产为单会话串行） |
 | `roundRefLifecycle.test.ts` ×2 | 基线偶发失败（与报告环境一致） | 基线脆弱，非本次改动引入 | **否**（基线，非回归） |
 
-> **判定铁证**：`agent.test.ts` 在并发下失败数波动（子集 2 / 全量① 9 / 全量② 5），通过数随运行浮动 → 为 flake 非回归。
+> **判定铁证**：`agent.test.ts` 在并发下失败数波动（子集 2 / 全量① 9 / 全量② 5，历史观测），通过数随运行浮动 → 为 flake 非回归。
+>
+> **时效校正（2026-09-14 双向实测，提交 e771d262）**：并行 **117 files / 3006 passed / 1 skipped / 0 failed**（57s），串行 `--no-file-parallelism` **同数字**（136s）→ 上表三类 flake **本次均未复现**。其中 `llmIntegration` 已有「两次并行一红一绿」的实证 = **偶发确认**；另两类**一次全绿 ≠ 消失**（flake 本为偶发，**勿因单次全绿删除登记**）。**同时校正**：本表上一版将 `llmIntegration` 失败归因为「沙箱无凭据」→ **该结论成立于配置凭据之前，已过期**。
 
 ## 3. flake 判定 SOP（三步，勿跳步）
 
@@ -53,6 +55,6 @@
 
 - `vitest.config.ts`：`fileParallelism: true`（显式声明策略意图，= vitest 默认，行为零变更）＋ 注释指向本 SOP。
 - `package.json`：`"test": "vitest run"`（不带 `--no-file-parallelism`，保持并发加速）。
-- CI（`.github/workflows/build.yml` 三处 `npx vitest run` / `kernel-ci.yml` `npm test`）：保持并发；偶然红按 §3 重跑判定，不盲目 revert。
+- CI（`.github/workflows/kernel-ci.yml` 的 `npm test`）：保持并发；偶然红按 §3 重跑判定，不盲目 revert。（上一版记「`build.yml` 三处 `npx vitest run`」——该 workflow 文件**已不存在**，2026-09-14 实测仅剩 `kernel-ci.yml`。）
 
-> 本 SOP 对应 `tasks/待完成任务.md` **T5**。对抗式实锤：grep 确认 `agent.test.ts:190` 为唯一内核跨文件共享态 flake；全仓 100 测试文件无 `fileParallelism`/`pool`/`retry` 配置；CI 三处均无 `--no-file-parallelism`。
+> 对抗式实锤（2026-09-14 复核实测）：grep 确认 `agent.test.ts:189` 为唯一内核**跨文件共享态** flake（`llmIntegration` 属**文件内**共享态，另一类）；全仓 **117** 测试文件无 `fileParallelism: false`/`pool`/`retry` 配置（仅 `vitest.config.ts` 一处 `fileParallelism: true` 显式声明策略意图）；CI（`kernel-ci.yml`）无 `--no-file-parallelism`。**另**：本 SOP 为并发策略与 flake 判定的**唯一权威**，不依赖 `tasks/` 编号（原记「对应 T5」——该编号已不在台账，勿据它回溯）。

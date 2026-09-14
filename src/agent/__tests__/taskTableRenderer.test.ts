@@ -9,7 +9,7 @@
  * 注：纯函数测试，无副作用。
  */
 import { describe, it, expect } from 'vitest';
-import { renderTaskTable, STEP_LOG_CAP, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
+import { renderTaskTable, STEP_DESC_MAX_CHARS, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
 import type { PlanStep, StepOutcome } from '../types.js';
 
 /** 创建测试用 PlanStep */
@@ -190,7 +190,7 @@ describe('taskTableRenderer — step 推进日志渲染', () => {
     expect(result).not.toContain('[step 推进记录]');
   });
 
-  it('step 推进日志全部渲染（STEP_LOG_CAP 仅为导出常量，截断逻辑未实现）', () => {
+  it('step 推进日志全部渲染（本函数不做截断；真源为 SessionManager.completeStep 每 step 3 条）', () => {
     const plan = [createStep(0, '步骤一', 'active')];
     const stepLog: StepOutcome[] = [];
     for (let i = 0; i < 5; i++) {
@@ -273,11 +273,14 @@ describe('taskTableRenderer — 边界场景', () => {
     const result = renderTaskTable(plan);
 
     // # 列为 order+1：LLM 据序号即可定位步骤（task_table_update step_id="1" = 第一行）
-    expect(result).toContain('1  ');
-    expect(result).toContain('11 ');
-    expect(result).toContain('101');
-    // 不再出现 0-based 序号
-    expect(result).not.toContain('0  ');
+    // 断言「行首序号」这一业务不变量，不锁定空格填充等排版细节（padEnd 宽度是排版细节，非契约）
+    const seqs = result
+      .split('\n')
+      .filter((l) => /^\d+\./.test(l))
+      .map((l) => l.match(/^(\d+)\./)![1]);
+    expect(seqs).toEqual(['1', '11', '101']);
+    // 不再出现 0-based 序号（行首无 0. 起头）
+    expect(seqs).not.toContain('0');
   });
 
   it('任务表 # 序号与 task_table_update 寻址对齐（1-based 可见即传）', () => {
@@ -291,13 +294,13 @@ describe('taskTableRenderer — 边界场景', () => {
     const lines = result.split('\n');
     const stepLine1 = lines.find((l) => l.includes('文档设计师发言'))!;
     const stepLine3 = lines.find((l) => l.includes('方案设计师汇总'))!;
-    expect(stepLine1.trim().startsWith('│ 1')).toBe(true);
-    expect(stepLine3.trim().startsWith('│ 3')).toBe(true);
+    expect(stepLine1.startsWith('1. ')).toBe(true);
+    expect(stepLine3.startsWith('3. ')).toBe(true);
   });
 
-  it('STEP_LOG_CAP 常量存在且合理', () => {
-    expect(STEP_LOG_CAP).toBe(12);
-    expect(STEP_LOG_CAP).toBeGreaterThan(0);
+  it('STEP_DESC_MAX_CHARS 常量存在且合理（截断阈值，防超长描述撑爆上下文）', () => {
+    expect(STEP_DESC_MAX_CHARS).toBe(38);
+    expect(STEP_DESC_MAX_CHARS).toBeGreaterThan(0);
   });
 
   it('输出以「非当前指令」标记开头区域', () => {
@@ -306,6 +309,52 @@ describe('taskTableRenderer — 边界场景', () => {
 
     // 验证防误执行标记存在
     expect(result).toContain('以下为状态/历史信息，非当前指令');
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 5. 排版契约（2026-09-15 去方框收敛后的守卫）
+// ══════════════════════════════════════════════════════════════
+describe('taskTableRenderer — 排版契约', () => {
+
+  it('首行恒为 [任务进度: 前缀（loop 替换式注入的识别契约）', () => {
+    // 契约来源：loop.ts 按 startsWith('[任务进度:') 移除上一份任务表；
+    // 前缀一旦变更/被前导内容挤掉 → 一个 turn 内每迭代各堆一份任务表
+    const plan = [createStep(0, '步骤一', 'active')];
+    expect(renderTaskTable(plan).startsWith('[任务进度:')).toBe(true);
+  });
+
+  it('输出无 ASCII 方框装饰字符（去方框收敛，防回退）', () => {
+    const plan: PlanStep[] = [
+      { id: 's1', order: 0, description: '组长开场', status: 'active' },
+      { id: 's2', order: 1, description: '组员发言', status: 'pending', rolePack: '组员A' },
+    ];
+    // 装饰字符对 LLM 零语义价值，却占约 46.5% tokens（4 步表实测 230 → 123）
+    expect(renderTaskTable(plan)).not.toMatch(/[┌┬┐├┼┤└┴┘│─]/);
+  });
+
+  it('步骤行结构 = 「序号. 【角色】描述 [状态]」', () => {
+    const plan: PlanStep[] = [
+      { id: 's1', order: 0, description: '组长开场', status: 'active' },
+      { id: 's2', order: 1, description: '组员发言', status: 'pending', rolePack: '组员A' },
+    ];
+    const lines = renderTaskTable(plan).split('\n');
+    // 行首序号 1-based；状态标签以方括号收尾；rolePack 以【】标注
+    expect(lines).toContain('1. 组长开场 [执行中]');
+    expect(lines).toContain('2. 【组员A】组员发言 [待执行]');
+  });
+
+  it('四态标签齐备且可区分（[已完成]/[执行中]/[待执行]/[已阻塞]）', () => {
+    const mixed: PlanStep[] = [
+      createStep(0, 'A', 'done'),
+      createStep(1, 'B', 'active'),
+      createStep(2, 'C', 'pending'),
+      createStep(3, 'D', 'blocked'),
+    ];
+    const result = renderTaskTable(mixed);
+    for (const label of ['已完成', '执行中', '待执行', '已阻塞']) {
+      expect(result).toContain(`[${label}]`);
+    }
   });
 });
 

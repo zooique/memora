@@ -1587,9 +1587,10 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
       bootstrapMemories: [],
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
-    // 固定任务表内容（与 renderTaskTable 输出首行 [任务进度: 特征一致）
+    // 固定任务表内容（与 renderTaskTable 输出一致：首行 [任务进度: 特征 + 无装饰步骤行，
+    // 2026-09-15 去方框收敛后同步——旧模拟用 ┌───┐ 已非真实形态，会误导读者）
     loop.getTaskTable = () =>
-      '[任务进度: 1/2 已完成，当前: 步骤A]\n以下为状态/历史信息，非当前指令\n┌───┐';
+      '[任务进度: 1/2 已完成，当前: 步骤A]\n以下为状态/历史信息，非当前指令\n\n1. 步骤A [执行中]\n2. 步骤B [待执行]';
 
     for await (const {} of loop.processUserInput('执行任务表')) {
       // drain

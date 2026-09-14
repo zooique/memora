@@ -185,7 +185,7 @@
 
 | 模块文件                         | 状态     | 测试文件                                             | 质量说明                             |
 | ---------------------------- | ------ | ------------------------------------------------ | -------------------------------- |
-| `agent/taskTableRenderer.ts` | 🟢 已打磨 | `__tests__/taskTableRenderer.test.ts` (22 tests) | 任务进度渲染/状态标签映射/回合日志追加/描述截断/防误执行标记 |
+| `agent/taskTableRenderer.ts` | 🟢 已打磨 | `__tests__/taskTableRenderer.test.ts` (34 tests · 2026-09-15 实测) | 任务进度渲染/状态标签映射/回合日志追加/描述截断/防误执行标记/**排版契约守卫**（首行前缀 / 无方框装饰防回退 / 行结构 / 四态标签） |
 
 ### 3.4 网络搜索（web-search/ · 具体工具）
 
@@ -283,7 +283,7 @@
 | 模块文件                                    | 状态     | 测试文件                                                                                         | 质量说明                                                                            |
 | --------------------------------------- | ------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `managers/sessionManager.ts`            | 🟢 已打磨 | `__tests__/sessionManager.test.ts` (98 tests)                                                | 会话生命周期管理：切换、分叉、恢复、消息加载 + 检查点内存态生命周期（跨重启恢复链 2026-09-10 退役）                                         |
-| `memory/sessionStore.ts`                | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (22 tests) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + meta 可选方法 + 双层命名（autoName/displayName）类型验证（checkpoint 相关方法已随减法删除） |
+| `memory/sessionStore.ts`                | 🟢 已打磨 | `__tests__/sessionStore.test.ts` (34 tests · 2026-09-15 实测) + `agent/__tests__/sessionStoreContract.test.ts` | ISessionStore 契约：必需方法 + meta 可选方法 + 双层命名（autoName/displayName）类型验证（checkpoint 相关方法已随减法删除） |
 
 > **生长说明**：
 >
