@@ -1252,7 +1252,7 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
-  describe('task_table_update（2026-09-06 寻址契约收口：renderer # 序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
+  describe('task_table_update（2026-09-06 寻址契约收口：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
     /** 默认三步骤桩（id 前缀各异，8 位短 id 可唯一命中） */
     const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> = [
       { id: 'a1b2c3d4-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
@@ -1276,7 +1276,7 @@ describe('工具执行器（6 个工具）', () => {
       return { updateCalls };
     }
 
-    it('step_id 传 # 序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
+    it('step_id 传行首序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
       const { updateCalls } = injectPlanManager();
       const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '1', status: 'done' }));
       expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
@@ -1322,7 +1322,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(updateCalls).toEqual(['12345678-abcd-4efg']);
     });
 
-    it('step_id 短 id 前缀多命中 → INVALID_ARG 歧义提示（改用 # 序号）', async () => {
+    it('step_id 短 id 前缀多命中 → INVALID_ARG 歧义提示（改用行首序号）', async () => {
       const { updateCalls } = injectPlanManager([
         { id: 'dup-prefix-aaaa', description: 'A', status: 'pending', order: 0 },
         { id: 'dup-prefix-bbbb', description: 'B', status: 'pending', order: 1 },
@@ -1333,7 +1333,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 8 位短 id 无命中 → STEP_NOT_FOUND（提示改用 # 序号）', async () => {
+    it('step_id 8 位短 id 无命中 → STEP_NOT_FOUND（提示改用行首序号）', async () => {
       const { updateCalls } = injectPlanManager();
       const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'zzzzzzzz', status: 'done' }));
       expect(result).toContain('[ERR:STEP_NOT_FOUND]');

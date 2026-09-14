@@ -249,14 +249,14 @@ interface StepIdPlanRef {
  *
  * LLM 可见的步骤标识有三种来源，缺一不可达即断链：
  *   1. task_table_write 返回的短 id（uuid 前 8 位，恒 8 hex；见 assembler writePlan 渲染）；
- *   2. 任务表 renderer 的 # 列序号（1-based）；
+ *   2. 任务表 renderer 的行首序号（1-based，渲染形如「3. 描述 [状态]」）；
  *   3. 完整 uuid（stepLog 等展示）。
  *
  * 解析顺序（防歧义）：
  *   - 完整 uuid 全等命中 → 直用；
  *   - 长度恰为 8 的标识 → 按 uuid 前 8 位前缀语义解析（uuid 前 8 位理论可全数字
  *     (10/16)^8≈2.3%，8 位数字绝不可能是任务表序号 → 恒按短 id 语义，杜绝错配）；
- *   - 其余纯数字 → # 序号（1-based，按 order 匹配——与 renderer「order+1 展示」同键，
+ *   - 其余纯数字 → 行首序号（1-based，按 order 匹配——与 renderer「order+1 展示」同键，
  *     不依赖「order==数组下标」弱不变量）；
  *   - 其余 → 未找到（提示可用格式）。
  *
@@ -271,24 +271,24 @@ function resolveStepId(stepId: string, plan: StepIdPlanRef[]): StepIdResolve {
     const matches = plan.filter((s) => s.id.startsWith(stepId));
     if (matches.length === 1) return { ok: true, id: matches[0]!.id };
     if (matches.length > 1) {
-      return { ok: false, error: `[ERR:INVALID_ARG] 步骤短 id "${stepId}" 不唯一（对应 ${matches.length} 个步骤），请改用任务表 # 序号定位` };
+      return { ok: false, error: `[ERR:INVALID_ARG] 步骤短 id "${stepId}" 不唯一（对应 ${matches.length} 个步骤），请改用任务表行首序号定位` };
     }
     return {
       ok: false,
-      error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"：短 id 需为 task_table_write 返回的 8 位标识，或改用任务表 # 序号`,
+      error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"：短 id 需为 task_table_write 返回的 8 位标识，或改用任务表行首序号`,
     };
   }
-  // 3. 纯数字 → # 序号（1-based，按 order 匹配）
+  // 3. 纯数字 → 行首序号（1-based，按 order 匹配）
   if (/^\d+$/.test(stepId)) {
     const idx = Number(stepId) - 1;
     const step = plan.find((s) => s.order === idx);
     if (step) return { ok: true, id: step.id };
-    return { ok: false, error: `[ERR:INVALID_ARG] 步骤序号 ${stepId} 超出任务表范围（当前共 ${plan.length} 步，# 列从 1 开始）` };
+    return { ok: false, error: `[ERR:INVALID_ARG] 步骤序号 ${stepId} 超出任务表范围（当前共 ${plan.length} 步，行首序号从 1 开始）` };
   }
   // 4. 未知标识
   return {
     ok: false,
-    error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"（可用任务表 # 序号或 task_table_write 返回的短 id 定位）`,
+    error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"（可用任务表行首序号或 task_table_write 返回的短 id 定位）`,
   };
 }
 
@@ -1055,9 +1055,9 @@ export class ToolExecutor {
         if (!stepId) {
           return '[ERR:INVALID_ARG] step_id 不能为空';
         }
-        // 寻址统一解析（2026-09-06 契约收口，见 resolveStepId）：renderer 只向 LLM 展示 # 序号（1-based），
+        // 寻址统一解析（2026-09-06 契约收口，见 resolveStepId）：renderer 只向 LLM 展示行首序号（1-based），
         // task_table_write 返回 uuid 前 8 位短 id，stepLog 展示完整 uuid——三种来源全部归一为真实 uuid 后
-        // 再走 updateStep（全等写点）。此前只支持 # 序号，短 id 断链（描述承诺了但无解析实现）。
+        // 再走 updateStep（全等写点）。此前只支持行首序号，短 id 断链（描述承诺了但无解析实现）。
         const plan = this.planManager.getPlan?.() ?? [];
         const resolved = resolveStepId(stepId, plan);
         if (!resolved.ok) {

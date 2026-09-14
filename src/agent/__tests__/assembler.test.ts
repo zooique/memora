@@ -366,7 +366,7 @@ describe('assembleComponents', () => {
       expect(cp.plan.find((s) => s.id === fullId)!.status).toBe('blocked');
     });
 
-    it('# 序号经 task_table_update 在真实装配链同样命中（order 与 id 映射一致）', async () => {
+    it('行首序号经 task_table_update 在真实装配链同样命中（order 与 id 映射一致）', async () => {
       const output = await assembleReal();
       output.sessionManager.createCheckpoint('测试计划');
       const newPlan = output.sessionManager.writePlan('overwrite', [

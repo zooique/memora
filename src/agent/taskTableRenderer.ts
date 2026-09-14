@@ -52,8 +52,10 @@ export function renderTaskTable(
   ];
 
   for (const step of plan) {
-    // 序号 1-based（order 0 起 → 显示 1）——与 task_table_update 的「# 序号寻址」对齐
+    // 行首序号 1-based（order 0 起 → 显示 1）——与 task_table_update 的「行首序号寻址」对齐
     //（2026-09-06 契约-展示对齐：LLM 据 renderer 序号即可定位步骤，无需感知 uuid）
+    // 去方框后任务表是**列表**不是表格，工具描述里的寻址说法须同步为「行首序号」
+    // （旧版方框有「#」列，说「# 列」成立；列表版无列概念，再说「列」即描述失真）
     const seq = step.order + 1;
     // 会议步骤标注装配角色（rolePack），供 LLM 识别「该步骤由谁发言」
     const roleTag = step.rolePack ? `【${step.rolePack}】` : '';

@@ -100,7 +100,7 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
     case 'task_table_update': {
       const status = String(args.status ?? 'done');
       const stepId = String(args.step_id ?? '');
-      // 简化寻址：支持 # 序号（1-based）或短 id 前缀匹配
+      // 简化寻址：支持行首序号（1-based）或短 id 前缀匹配
       const idx = /^\d+$/.test(stepId) ? Number(stepId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(stepId));
       if (idx < 0 || idx >= mockPlan.length) {
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"`;

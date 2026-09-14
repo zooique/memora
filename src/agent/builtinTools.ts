@@ -524,11 +524,11 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     description:
       '更新任务表中指定步骤的状态（命令式：一次只更新一个步骤）。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。' +
         '每完成一步调用一次本工具标记，只有最后一步完成后才宣告任务完成，禁止一次性批量标记所有步骤。' +
-        'step_id 传任务表「#」列序号（1 开始，如 "1" = 第一行）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
+        'step_id 传任务表行首序号（1 开始，如 "1" = 第一个步骤）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
       properties: {
-        step_id: { type: 'string', description: '步骤定位：# 列序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
+        step_id: { type: 'string', description: '步骤定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
         status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
       },
       required: ['step_id', 'status'],

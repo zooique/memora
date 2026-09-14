@@ -435,6 +435,27 @@ describe('builtinTools · 任务表 how 单源守卫', () => {
   it('会议团队上下文块不复述状态取值（how 指向工具描述）', () => {
     expect(buildTeamContextBlockText('组长A', ['组员1', '组员2'])).not.toMatch(HOW_LEAK_RE);
   });
+
+  /**
+   * 寻址说明 ↔ 渲染形态 一致性守卫（2026-09-15 补）
+   *
+   * 起因：task_table_update 描述称「# **列**序号」——旧版方框表头确有「#」列，措辞成立；
+   * 2026-09-15 渲染去方框改列表（`N. 描述 [状态]`）后**列概念消失**，描述却未同批更新
+   * → LLM 被要求去任务表里找一个不存在的「列」（描述失真，且跨文件无任何守卫）。
+   *
+   * 判据：任务表现在是**列表**，寻址说明里不得出现表格术语「列」。取「列」而非「# 列」
+   * 特异串——后者只挡得住原样回退，「列序号」等变体仍会漏。
+   */
+  it('寻址说明与渲染形态一致：任务表是列表，描述中不出现「列」', () => {
+    const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
+    const visibleText = def.description + JSON.stringify(def.parameters);
+    expect(visibleText).not.toContain('列');
+  });
+
+  it('寻址说明自检：描述必须给出序号定位锚点（防上条正则失明 → 守卫假绿）', () => {
+    const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
+    expect(def.description).toContain('行首序号');
+  });
 });
 
 describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
