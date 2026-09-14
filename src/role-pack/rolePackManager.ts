@@ -4,12 +4,24 @@
  * manifest.json 为唯一核心控制文件，内容文件独立按路径注册装载。
  */
 import { readFile, readdir, access, stat } from 'node:fs/promises';
-import { existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir, discoverLayer3, resolveSafePath, isFolderFormSkill, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir, resolveSafePath, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import {
+  discoverSkillLayer3,
+  resolveSkillDir,
+  findLayer3Resource,
+  findLayer3Script,
+  resolveLayer3ResourcePath,
+  resolveLayer3ScriptPath,
+} from '@/skill/skillLayer3.js';
+import {
+  DEFAULT_MAX_CONTENT_LEN,
+  readFileCapped,
+  existsSyncSafe,
+} from '@/utils/fileSafe.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import {
   validateManifest,
@@ -40,12 +52,6 @@ const DEFAULT_RULES_FILENAME = 'rules.md';
 
 /** persona 约定文件名：manifest 未声明 persona 路径时回退 persona.md（与 rules.md 对称） */
 const DEFAULT_PERSONA_FILENAME = 'persona.md';
-
-/**
- * 内容文件正文最大长度（字符）：persona/rules/skills 全文防膨胀，超限截断。
- * 外部可控内容（角色包正文）装载进内存/上下文前统一限长，对齐 toolExecutor 外部内容防护。
- */
-const MAX_CONTENT_FILE_LEN = 200_000;
 
 /**
  * manifest.json 最大长度（字符）：JSON 必须完整解析不可截断，超限直接跳过装载。
@@ -114,12 +120,11 @@ async function scanPackSkills(
     if (relPath.startsWith('/') || relPath.startsWith('\\')) relPath = relPath.slice(1);
     relPath = relPath.replace(/\\/g, '/');
 
-    // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流，与 skillManager.createEntry 同源）：
+    // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流）：
     // 仅「文件夹形态」（入口为 SKILL.md）发现 resources/ scripts/；顶层裸 .md 的目录 = 技能池共享根，
     // 同级扫描会误并入其他技能的资源/脚本 → 污染。故裸 .md 为纯 L1/L2，带 L3 必须用文件夹+SKILL.md。
-    const skillDir = dirname(absPath);
-    const isFolderForm = isFolderFormSkill(absPath);
-    const l3 = isFolderForm ? await discoverLayer3(skillDir) : { resources: [], scripts: [] };
+    // 该规则与 skillManager.createEntry **逐字同构**，已收口于 skillLayer3.discoverSkillLayer3（SSOT）。
+    const l3 = await discoverSkillLayer3(absPath);
     const hasL3 = l3.resources.length > 0 || l3.scripts.length > 0;
 
     return {
@@ -263,18 +268,23 @@ function parseRules(content: string): string[] {
 }
 
 /**
- * 安全读取内容文件，失败按缺省返回空串（内容文件可选）；超长截断防膨胀。
+ * 安全读取内容文件（persona / rules / 技能正文），失败按缺省返回空串（内容文件可选）。
+ *
+ * 外部可控内容装载进内存/上下文前统一限长，对齐 toolExecutor 外部内容防护；
+ * 长度上限 SSOT 在 utils/fileSafe.DEFAULT_MAX_CONTENT_LEN（与全局技能共用）。
+ *
  * @param filePath 文件绝对路径
- * @param maxLen 最大长度（字符），超限截断（默认 MAX_CONTENT_FILE_LEN）
+ * @param maxLen 最大长度（字符），超限截断
  */
-async function readContentSafe(filePath: string, maxLen = MAX_CONTENT_FILE_LEN): Promise<string> {
-  try {
-    const content = await readFile(filePath, 'utf-8');
-    return content.length > maxLen ? content.slice(0, maxLen) : content;
-  } catch {
+async function readContentSafe(filePath: string, maxLen = DEFAULT_MAX_CONTENT_LEN): Promise<string> {
+  // 读取与截断收口于 fileSafe.readFileCapped（SSOT，与全局技能共用）；
+  // 本包装只负责角色包语义：失败降级为空串 + 告警（内容文件可选）
+  const content = await readFileCapped(filePath, maxLen);
+  if (content === null) {
     getLogger().warn({ file: filePath }, '角色包内容文件读取失败，按缺省处理');
     return '';
   }
+  return content;
 }
 
 /**
@@ -1036,20 +1046,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return { pack, skill };
   }
 
-  /** 解析技能所在目录（SKILL.md 所在目录或 .md 文件所在目录），供 L3 资源/脚本访问 */
-  private resolveSkillDir(skillName: string, packName?: string): string | null {
+  /**
+   * 按技能名定位其所在目录（角色包内），供 L3 资源/脚本访问
+   *
+   * 与 skillLayer3.resolveSkillDir 的分工：本方法负责「技能名 → 技能文件绝对路径」
+   * （需 packName 作用域，一个技能名可跨包重名）；目录形态解析（文件夹 SKILL.md /
+   * 单文件 .md / file 直指目录）委托给后者（SSOT，与全局技能共用同一份规则）。
+   */
+  private locateSkillDir(skillName: string, packName?: string): string | null {
     const found = this.findSkillByName(skillName, packName);
     if (!found || !found.skill.file) return null;
-    const skillFilePath = found.skill.file;
-    const { pack } = found;
-
-    const fullSkillPath = join(dirname(pack.filePath), skillFilePath);
-    // 技能目录：SKILL.md 在文件夹内 → 文件夹根；单文件 .md → 文件所在目录
-    const skillStat = statSyncSafe(fullSkillPath);
-    if (skillStat?.isDirectory()) {
-      return fullSkillPath; // 文件夹形式：skills/my-skill/SKILL.md → skills/my-skill/
-    }
-    return dirname(fullSkillPath); // 单文件形式：skills/write.md → skills/
+    return resolveSkillDir(join(dirname(found.pack.filePath), found.skill.file));
   }
 
   /** 读取技能 L3 资源文件内容（渐进披露 L3），不存在或读取失败返回 null */
@@ -1057,16 +1064,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // layer3 白名单前置检查：资源必须已由 scanPackSkills 发现并登记（与全局 SkillManager 同标准），
     // 防止未在清单内的路径（含兄弟目录前缀、escape 符）被 resolveSafePath 误放行
     const found = this.findSkillByName(skillName, packName);
-    const resourceMeta = found?.skill.layer3?.resources.find((r) => r.path === resourcePath);
-    if (!resourceMeta) return null;
+    const layer3 = found?.skill.layer3;
+    if (!findLayer3Resource(layer3, resourcePath)) return null;
 
-    const skillDir = this.resolveSkillDir(skillName, packName);
+    const skillDir = this.locateSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀。
+    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（收口于 skillLayer3，SSOT）。
     // 读取基目录按条目来源 subdir 选择（resources/ 或 references/，B1 兼容主流 references/ 目录）
-    const baseDir = resourceMeta.subdir ?? 'resources';
-    const resourceFullPath = resolveSafePath(join(skillDir, baseDir), resourcePath);
+    const resourceFullPath = resolveLayer3ResourcePath(skillDir, layer3, resourcePath);
     if (!resourceFullPath) {
       getLogger().warn(
         { skill: skillName, resourcePath },
@@ -1096,16 +1102,16 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // layer3 白名单前置检查：脚本必须已由 scanPackSkills 发现并登记（与 getSkillScriptInfo 同标准），
     // 防止未在清单内的路径被 resolveSafePath 误放行（对齐 readSkillResource 的双层防护）
     const found = this.findSkillByName(skillName, packName);
-    const registered = found && found.skill.layer3?.scripts.some((s) => s.path === scriptPath);
-    if (!registered) return null;
+    const layer3 = found?.skill.layer3;
+    if (!findLayer3Script(layer3, scriptPath)) return null;
 
-    const skillDir = this.resolveSkillDir(skillName, packName);
+    const skillDir = this.locateSkillDir(skillName, packName);
     if (!skillDir) return null;
 
-    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（确保 scriptPath 不逃逸技能 scripts/ 目录）
-    const fullPath = resolveSafePath(join(skillDir, 'scripts'), scriptPath);
+    // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（收口于 skillLayer3，SSOT）
+    const fullPath = resolveLayer3ScriptPath(skillDir, layer3, scriptPath);
     if (!fullPath) return null;
-    if (accessSyncSafe(fullPath)) {
+    if (existsSyncSafe(fullPath)) {
       return fullPath;
     }
     return null;
@@ -1172,24 +1178,4 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 }
 
-/**
- * 安全的 stat 同步调用（内部工具，不对外导出）
- */
-function statSyncSafe(path: string): { isDirectory(): boolean } | null {
-  try {
-    return statSync(path);
-  } catch {
-    return null;
-  }
-}
-
-/**
- * 安全的 exists 同步调用（内部工具，不对外导出）
- */
-function accessSyncSafe(path: string): boolean {
-  try {
-    return existsSync(path);
-  } catch {
-    return false;
-  }
-}
+// statSyncSafe / existsSyncSafe 已收口到 utils/fileSafe（SSOT，与全局技能共用同一实现）

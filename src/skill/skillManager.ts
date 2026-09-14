@@ -7,11 +7,17 @@ import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import type { SkillEntry, SkillLayer3, SkillIssue, SkillValidation } from '@/skill/types.js';
-import { discoverLayer3, resolveSafePath, scanMarkdownDir, isFolderFormSkill } from '@/utils/scanner.js';
+import { scanMarkdownDir } from '@/utils/scanner.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
-import { readFile } from 'node:fs/promises';
-import { join, dirname } from 'node:path';
+import {
+  discoverSkillLayer3,
+  resolveSkillDir,
+  findLayer3Resource,
+  resolveLayer3ResourcePath,
+  resolveLayer3ScriptPath,
+} from '@/skill/skillLayer3.js';
+import { readFileCapped, existsSyncSafe } from '@/utils/fileSafe.js';
 
 /**
  * L1 阈值保护：技能数超过此值时压缩 L1 描述为 20 字摘要。
@@ -155,10 +161,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   async validateFile(filePath: string): Promise<SkillValidation> {
     const issues: SkillIssue[] = [];
-    let raw: string;
-    try {
-      raw = await readFile(filePath, 'utf-8');
-    } catch {
+    // 读取收口于 fileSafe.readFileCapped（统一长度上限保护，与角色包内容读取同级）
+    const raw = await readFileCapped(filePath);
+    if (raw === null) {
       return { ok: false, issues: [{ level: 'error', field: 'file', message: '无法读取技能文件' }] };
     }
     const { frontmatter, body } = parseFrontmatter(raw);
@@ -191,24 +196,22 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     const skill = this.get(skillName);
     if (!skill) return null;
 
-    // 确认资源在 layer3 中 + 按条目来源子目录选择读取基目录 + 路径穿越防护
-    const res = skill.layer3?.resources.find((r) => r.path === resourcePath);
-    if (res) {
-      const skillDir = dirname(skill.filePath);
-      const baseDir = res.subdir ?? 'resources';
-      const resourceFullPath = resolveSafePath(join(skillDir, baseDir), resourcePath);
-      if (!resourceFullPath) {
-        logger.warn({ skill: skillName, resourcePath }, 'read_resource 路径穿越被阻止');
-        return null;
-      }
-      try {
-        return await readFile(resourceFullPath, 'utf-8');
-      } catch (err) {
-        logger.warn({ skill: skillName, resourcePath, err }, '读取 L3 资源失败');
-        return null;
-      }
+    // 白名单前置：资源须已由扫描登记在 layer3 中（未登记 → 静默 null，与历史行为一致）
+    if (!findLayer3Resource(skill.layer3, resourcePath)) return null;
+    // 路径解析（按条目来源子目录选基目录 + 路径穿越防护）收口于 skillLayer3（SSOT）
+    const skillDir = resolveSkillDir(skill.filePath);
+    const resourceFullPath = resolveLayer3ResourcePath(skillDir, skill.layer3, resourcePath);
+    if (!resourceFullPath) {
+      logger.warn({ skill: skillName, resourcePath }, 'read_resource 路径穿越被阻止');
+      return null;
     }
-    return null;
+    // 读取收口于 fileSafe.readFileCapped：长度上限保护与角色包内嵌技能同级（差异点取更全面形态）
+    const content = await readFileCapped(resourceFullPath);
+    if (content === null) {
+      logger.warn({ skill: skillName, resourcePath }, '读取 L3 资源失败');
+      return null;
+    }
+    return content;
   }
 
   /**
@@ -232,9 +235,12 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   getScriptPath(skillName: string, scriptPath: string): string | null {
     const skill = this.get(skillName);
-    if (!skill?.layer3?.scripts.some((s) => s.path === scriptPath)) return null;
-    const skillDir = dirname(skill.filePath);
-    return resolveSafePath(join(skillDir, 'scripts'), scriptPath);
+    if (!skill) return null;
+    const skillDir = resolveSkillDir(skill.filePath);
+    const fullPath = resolveLayer3ScriptPath(skillDir, skill.layer3, scriptPath);
+    if (!fullPath) return null;
+    // 存在性校验与角色包内嵌技能对齐（差异点取更全面形态）：防止交出指向缺失脚本的路径
+    return existsSyncSafe(fullPath) ? fullPath : null;
   }
 
   // ── 基类抽象方法实现 ──────────────────────────────
@@ -275,26 +281,24 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流）：仅「文件夹形态」（入口为 SKILL.md）才发现
     // resources/ scripts/。顶层裸 .md 单文件技能目录 = 技能池共享根，同级扫描会把别的技能的
     // resources/scripts 误归给自己 → 污染。故裸 .md 为纯 L1/L2，需要 L3 资源/脚本必须用文件夹+SKILL.md。
+    //
+    // 该规则与角色包内嵌技能**逐字同构**，已收口于 skillLayer3.discoverSkillLayer3（SSOT）。
     let layer3: SkillLayer3 | undefined;
-    const isFolderForm = isFolderFormSkill(entry.filePath);
-    if (isFolderForm) {
-      const skillDir = dirname(entry.filePath);
-      const discovered = await discoverLayer3(skillDir);
-      if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
-        layer3 = {
-          resources: discovered.resources.map((r) => ({
-            path: r.path,
-            size: r.size,
-            // 资源来源子目录（resources/references），read_resource 据此选择读取基目录
-            subdir: r.subdir,
-          })),
-          scripts: discovered.scripts.map((s) => ({
-            path: s.path,
-            runtime: s.runtime,
-            size: s.size,
-          })),
-        };
-      }
+    const discovered = await discoverSkillLayer3(entry.filePath);
+    if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
+      layer3 = {
+        resources: discovered.resources.map((r) => ({
+          path: r.path,
+          size: r.size,
+          // 资源来源子目录（resources/references），read_resource 据此选择读取基目录
+          subdir: r.subdir,
+        })),
+        scripts: discovered.scripts.map((s) => ({
+          path: s.path,
+          runtime: s.runtime,
+          size: s.size,
+        })),
+      };
     }
 
     return {
