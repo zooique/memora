@@ -78,6 +78,27 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
   return { content, totalLines, coverStart, coverEnd };
 }
 
+/**
+ * 判断一次 read_file 请求是否完全落在既定覆盖区间内（P0-1b 完整层）。
+ *
+ * 规则（保守方向）：**仅当整个请求区间都在已覆盖内**视为冗余重读 → 可由拦截回显摘要；请求触及
+ * 覆盖之外的任何前向/越界读取 → 一律放行（宁可多读，不可误拦死锁）。
+ *
+ * @param subj read_file 去重主体的区间字段（offset/limit，缺省语义与 handler 一致）
+ * @param cov  该文件已覆盖度
+ * @returns true = 请求区间已完全覆盖（冗余重读）
+ */
+export function isRequestInsideCoverage(
+  subj: { offset?: number; limit?: number },
+  cov: FileCoverage,
+): boolean {
+  const start = subj.offset ?? 1;
+  if (start < cov.coverStart) return false;
+  // 未指定 limit → 读到文件尾；只有文件已读到尽（coverEnd=totalLines）才算完全覆盖
+  if (subj.limit === undefined) return cov.coverEnd >= cov.totalLines;
+  return start + (subj.limit - 1) <= cov.coverEnd;
+}
+
 /** 文件覆盖度台账（读账：谁读过、读到哪、顶头讲了什么） */
 export class FileExposureLedger {
   /** 规范化路径（同 `toolResultCache` 的 `subject.path` 口径）→ 覆盖度条目 */

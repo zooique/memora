@@ -860,14 +860,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     contents: readonly string[],
     openByDefault = false,
   ): HTMLDetailsElement {
-    const chunks = contents.map((c) => c.trim()).filter(Boolean);
-    const text = chunks.join('\n');
+    // 思考事件存的是**增量 delta 片段**（如 "Now let me also read" / "the" / "gap analysis."），
+    // 按序**原样连续拼接**（无分隔符、不逐条 trim，保留片段的天然间隔）→ 还原真正的连续思考流，
+    // 而非「每段一行」的碎片化（P3 之二：确保 step 间连贯）。仅外层做 trim 去首尾空白。
+    const text = contents.join('').trim();
     const preview = text.slice(0, 80);
+    const cnt = contents.filter((c) => c.trim() !== '').length;
     const row = document.createElement('details');
     row.className = 'round-block__thought';
     row.open = openByDefault;
     const summary = document.createElement('summary');
-    summary.textContent = chunks.length > 1 ? `思考 · ${preview}…` : `思考 · ${preview}`;
+    summary.textContent =
+      cnt > 1 ? `思考 · ${preview}${text.length > preview.length ? '…' : ''}` : preview ? `思考 · ${preview}` : '思考';
     const body = document.createElement('div');
     body.className = 'round-block__thought-body';
     body.textContent = text;
@@ -1359,8 +1363,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = stepContainerFor(flow, events, n.seq);
       insertStepInOrder(host, row, n.seq);
     }
-    // 2.5) thought 思考折叠（聚合为单块，2026-09-14）：流式碎片增量累积进**一个**折叠块，
-    //   data-merged-seq 记账防重复拼接（幂等）；修复满屏「思考」小折叠（P3）。
+    // 2.5) thought 思考折叠（聚合为单块，2026-09-14）：流式碎片**原样连续拼接**进**一个**折叠块
+    //   （无换行分隔符、不逐条 trim → 连续思考流而非每段一行）；data-merged-seq 记账防重复拼接。
     const thoughts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
@@ -1384,8 +1388,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       let last = Number(row.dataset.mergedSeq ?? '0');
       for (const t of thoughts) {
         if (t.seq <= last) continue;
-        const txt = t.payload.content.trim();
-        if (txt) body.textContent = body.textContent ? `${body.textContent}\n${txt}` : txt;
+        // 原样追加（不 trim、不加换行）：增量片段的天然间隔保留 → 连贯
+        body.textContent += t.payload.content;
         last = t.seq;
         row.dataset.mergedSeq = String(t.seq);
       }

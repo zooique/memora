@@ -3322,24 +3322,36 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(nodes[2].className).toContain('round-block__narrate');
   });
 
-  it('P3：同一轮多个 thought 碎片聚合成一个折叠块（修复满屏小折叠）', () => {
+  it('P3：同一轮多个 thought 碎片聚合成一个折叠块且连续（修复满屏小折叠与断断续续）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '用户想要理解' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '项目并生成' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '白' } } });
-    // 运行时：仍是**单个** process-flow__thought，正文增量累积（data-merged-seq 防重复拼接）
+    // 运行时：仍是**单个** process-flow__thought，增量**原样连续**累积（data-merged-seq 防重复拼接）
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRows = flow.querySelectorAll('.process-flow__thought');
     expect(runningRows.length).toBe(1);
-    expect(runningRows[0]!.textContent).toContain('用户想要理解');
-    expect(runningRows[0]!.textContent).toContain('项目并生成');
-    // finalize：round-block 亦为**单个**折叠块，全部碎片聚合
+    // 连贯：碎片拼接无换行 → 一次性连续文本（不逐段一行）
+    expect(runningRows[0]!.textContent).toBe('思考用户想要理解项目并生成白');
+    // finalize：round-block 亦为**单个**折叠块，连续拼接
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const doneRows = rb.querySelectorAll('.round-block__thought');
     expect(doneRows.length).toBe(1);
-    expect(doneRows[0]!.textContent).toContain('用户想要理解');
-    expect(doneRows[0]!.textContent).toContain('白');
+    expect(doneRows[0]!.textContent).toContain('用户想要理解项目并生成白');
+  });
+
+  it('P3：连续性——英文增量粒度的天然空格保留（逐 delta 不回退、不 trim 空格）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // 模拟增量片段：真实流式里每个 delta 可能是词/短语，天然携带间隔
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: 'Now let me also read ' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: 'the project report' } } });
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const done = rb.querySelector('.round-block__thought') as HTMLDetailsElement;
+    // 连续拼接 → 一句完整文本（中间有空格，非分行的碎片）
+    expect(done.textContent).toContain('Now let me also read the project report');
   });
 });

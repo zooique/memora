@@ -4400,12 +4400,14 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   });
 
   it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
-    // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点，R1）→ 写侧记录覆盖度摘要
+    // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点，R1）→ 写侧记录覆盖度摘要。
+    // 注：此处脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**——这是分支②在
+    //   P0-1b 下能命中「无 limit 重读」的前提（见 isRequestInsideCoverage：未指 limit 须 coverEnd==totalLines）。
     const toolExecutor = vi.fn().mockImplementation(
       (name: string) =>
         Promise.resolve(
           name === 'read_file'
-            ? '第1行内容\n[read_file 分段] 已显示第 1–1 行（共 200 行）。继续读用 offset=2。'
+            ? '第1行内容\n[read_file 分段] 已显示第 1–200 行（共 200 行）。继续读用 offset=201。'
             : '',
         ),
     );
@@ -4438,6 +4440,68 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // 非空拦：回显覆盖度 + 已读正文替身（LLM 手边有内容，不会死锁）
     expect(stub!.content).toContain('共 200 行');
     expect(stub!.content).toContain('第1行内容');
+  });
+
+  it('G1 · P0-1b：不同区间但完全落在已覆盖范围内 → 分支②回显摘要（分段狂读的回头小读收敛）', async () => {
+    // c1 读到 1–100；c2 以 offset=10 limit=20 重读（key 不同，非 exact hit），但区间整体在覆盖内
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) =>
+        Promise.resolve(
+          name === 'read_file'
+            ? '头部内容\n[read_file 分段] 已显示第 1–100 行（共 200 行）。继续读用 offset=101。'
+            : '',
+        ),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":10,"limit":20}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('回头重读已覆盖段')) {
+      void chunk;
+    }
+
+    // c2 被拦截回显摘要，不落 ToolExecutor → 仍只执行 1 次
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    expect(stub!.content).toContain('第 1–100 行');
+  });
+
+  it('G2 · P0-1b：请求触及覆盖之外 → 分支③放行（前向合法读取不误拦）', async () => {
+    // c1 读到 1–20；c2 请求 offset=30（覆盖外前向新区间）→ 必须放行真实执行
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) =>
+        Promise.resolve(
+          name === 'read_file' ? '前段内容\n[read_file 分段] 已显示第 1–20 行（共 200 行）。继续读用 offset=21。' : '',
+        ),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":30,"limit":20}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('前向读新区间')) {
+      void chunk;
+    }
+
+    // c2 放行执行（读到尚未覆盖的 30–49 行）→ 共 2 次，且无 [ALREADY_READ] 拦截 a.md 的新区间
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(
+      loop.getMessages().some((m) => m.role === 'tool' && m.content.startsWith('[ALREADY_READ]')),
+    ).toBe(false);
   });
 
   it('F · 同主体连续失败达阈值 → 执行前硬拦（N2 同主体粒度，治幻觉文件风暴）', async () => {

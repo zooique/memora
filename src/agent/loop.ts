@@ -60,6 +60,7 @@ import {
   FileExposureLedger,
   parseReadFileCoverage,
   formatLedgerStub,
+  isRequestInsideCoverage,
   READ_DIGEST_CHARS,
 } from '@/agent/toolLedger.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
@@ -1542,15 +1543,21 @@ export class AgentLoop {
               );
               continue;
             }
-            // 分支②：结果已被压缩链清出上下文，但台账有该文件覆盖度摘要 → 回显摘要（非空拦、非放行）
-            const cov = subject.path ? this.fileExposure.get(subject.path) : undefined;
-            if (cov) {
-              blockedFlags.push(true);
-              toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
-              continue;
-            }
-            // 分支③（保守）：无摘要可回显 → 放行（宁可多读一次，不可死锁，CTX-1 根因②）
+            // （原文已压缩 → 落入分支②递增判断，见下）
           }
+          // 分支②（P0-1b 完整层）：该文件已有覆盖度台账，且本次请求**完全落在已覆盖区间内**
+          //   → 回显摘要（替身），不重读、不空拦。覆盖两类冗余重读：
+          //   a. 同参命中但原文被压缩（原分支②，结果不再引用 `hit`，改由覆盖区间承接）；
+          //   b. 不同区间但整体落在已读范围内（分段狂读里的回头小读，P0-1b 新增收敛）。
+          //   **一旦请求触及覆盖之外**（offset<coverStart 或前向 offset+limit-1>coverEnd）→ 放行到
+          //   分支③真实执行——宁可多读一次，不可误拦前向合法读取（死锁，CTX-1 根因②）。
+          const cov = subject.path ? this.fileExposure.get(subject.path) : undefined;
+          if (cov && isRequestInsideCoverage(subject, cov)) {
+            blockedFlags.push(true);
+            toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
+            continue;
+          }
+          // 分支③（保守）：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁，CTX-1 根因②）
         }
       }
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor

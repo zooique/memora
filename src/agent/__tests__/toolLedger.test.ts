@@ -2,13 +2,14 @@
  * 文件覆盖度台账（工具读取防重 & 压缩协同 P0 侧）单元测试
  *
  * 覆盖：parseReadFileCoverage（脚注解析，R1"按需"信号）+ FileExposureLedger（记录/读回/失效/清空）
- *      + formatLedgerStub（分支②回显文案，非空拦）。
+ *      + formatLedgerStub（分支②回显文案，非空拦）+ isRequestInsideCoverage（P0-1b 区间全覆盖判定）。
  */
 import { describe, it, expect } from 'vitest';
 import {
   FileExposureLedger,
   parseReadFileCoverage,
   formatLedgerStub,
+  isRequestInsideCoverage,
   formatSegmentationFooter,
   READ_DIGEST_CHARS,
   type FileCoverage,
@@ -102,5 +103,37 @@ describe('formatLedgerStub（分支②回显文案）', () => {
   it('单行覆盖用「X 行」表达', () => {
     const cov: FileCoverage = { totalLines: 50, coverStart: 3, coverEnd: 3, digest: 'd', cachedAtIteration: 1 };
     expect(formatLedgerStub(cov)).toContain('覆盖 3 行');
+  });
+});
+
+describe('isRequestInsideCoverage（P0-1b 区间全覆盖判定）', () => {
+  // 覆盖区间 1–20，总 100 行
+  const cov: FileCoverage = { totalLines: 100, coverStart: 1, coverEnd: 20, digest: 'd', cachedAtIteration: 1 };
+
+  it('完全落在覆盖内 → true（冗余重读，应回显摘要）', () => {
+    expect(isRequestInsideCoverage({ offset: 1, limit: 20 }, cov)).toBe(true);
+    expect(isRequestInsideCoverage({ offset: 5, limit: 10 }, cov)).toBe(true);
+    expect(isRequestInsideCoverage({ offset: 20, limit: 1 }, cov)).toBe(true);
+  });
+
+  it('未指 offset（默认第 1 行起）且 limit 落在覆盖内 → true', () => {
+    expect(isRequestInsideCoverage({ offset: undefined, limit: 20 }, cov)).toBe(true);
+    expect(isRequestInsideCoverage({ limit: 10 }, cov)).toBe(true);
+  });
+
+  it('请求触及覆盖起始之前 → false（回读前向区间，放行）', () => {
+    expect(isRequestInsideCoverage({ offset: 0, limit: 20 }, cov)).toBe(false);
+  });
+
+  it('请求触及覆盖结束之后 → false（前向读取新区间，放行）', () => {
+    expect(isRequestInsideCoverage({ offset: 21, limit: 20 }, cov)).toBe(false);
+    expect(isRequestInsideCoverage({ offset: 1, limit: 21 }, cov)).toBe(false);
+  });
+
+  it('未指 limit（读到文件尾）→ 仅当文件已读到尽才算全覆盖', () => {
+    expect(isRequestInsideCoverage({ offset: 1 }, cov)).toBe(false); // coverEnd(20) < totalLines(100)
+    const fullCov: FileCoverage = { ...cov, coverEnd: 100 };
+    expect(isRequestInsideCoverage({ offset: 1 }, fullCov)).toBe(true);
+    expect(isRequestInsideCoverage({ offset: 100 }, fullCov)).toBe(true);
   });
 });
