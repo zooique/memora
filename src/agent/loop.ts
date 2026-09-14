@@ -1362,6 +1362,24 @@ export class AgentLoop {
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
+    // 文本工具意图收敛（2026-09-14 静默失败修复）：纯文本结束路径意味着本轮未产出原生
+    // toolCalls，若 fullContent 仍带 <tool_call>/<function=> 骨架（文本出口不再宣告可调用
+    // 通道后模型偶发模仿残留），说明「想调用工具却未走原生协议」——既往被当普通文本交付，
+    // 宿主净化后为空 → 显示空白且被静默盖「完成」。此处：告警 + 计数 + 剔除骨架出交付文本。
+    const nonSkeletonText = llmResult.fullContent
+      ? this.stripToolIntentSkeleton(llmResult.fullContent)
+      : null;
+    if (nonSkeletonText !== null) {
+      logger.warn(
+        `检测到未解析的文本工具意图（无原生 toolCalls），已从正文剔除并计数。原正文：${llmResult.fullContent}`,
+      );
+      this.metrics.unparsedToolIntentCount++;
+      if (nonSkeletonText) {
+        this.appendAssistantText(nonSkeletonText);
+      }
+      yield { type: 'done' };
+      return 'done';
+    }
     if (llmResult.fullContent) {
       this.appendAssistantText(llmResult.fullContent);
     } else {
@@ -1732,9 +1750,7 @@ export class AgentLoop {
 
     // 追加工具描述（让 LLM 知道可用工具及其参数）
     // TS-7 搜索硬上限命中后：同步剔除 web_search 描述，避免「描述存在但工具不可用」不一致
-    const tools = this.searchDisabled
-      ? (this.opts.toolDefinitions ?? []).filter((t) => t.name !== 'web_search')
-      : this.opts.toolDefinitions;
+    const tools = this.resolveActiveTools();
     if (tools && tools.length > 0) {
       const toolDescs = tools
         .map((t) => {
@@ -1746,7 +1762,11 @@ export class AgentLoop {
           return `  - ${t.name}${required}: ${t.description}\n${params}`;
         })
         .join('\n');
-      prompt += `\n\n## 可用工具\n\n你可以通过 tool_call 调用以下工具：\n${toolDescs}`;
+      // 工具清单导语（SSOT 纪律）：只描述工具存在及其参数，**不出现「tool_call」等调用语法字样**——
+      // 文本出口不是可调用通道，原生工具宣告唯一真源是 buildChatOptions 的 tools 参数。
+      // 曾写作「你可以通过 tool_call 调用以下工具」诱导模型模仿文本标签（mimo 即产出过
+      // 未闭合的 <tool_call> 且被当普通文本交付 → 静默失败），故收敛为中性纯描述。
+      prompt += `\n\n## 可用工具\n\n以下是当前可用工具及其参数说明：\n${toolDescs}`;
 
       // 工具导语纪律（分区式 UI 配套）：正文只承载最终交付；调用工具前意图说明压到一句话，
       // 抑制长导语混入正文（首轮工具步在消息级分类前仍逐字流式，纪律把残余降到可忽略）
@@ -1788,16 +1808,44 @@ export class AgentLoop {
   }
 
   /**
+   * 剔除文本工具调用骨架（SSOT 纪律的收口）。
+   *
+   * 返回语义：
+   * - 全文**不含**任何文本工具骨架标签 → `null`（正常路径，交付原文不动）；
+   * - 含**任一**骨架标签（`<tool_call` / `<function=` / `<parameter` 及闭合）→ 剔除全部
+   *   骨架后返回字符串（可能为空串，代表「纯工具意图、无正文交付」）。
+   *
+   * 宽匹配 + 不校验闭合：针对未闭合/残缺骨架（测试样本即 `<function=list_dir</parameter>`）也能命中。
+   * 仅用于「文本出口已不宣告可调用通道」后的防御性收敛，正常模型不应触发。
+   */
+  private stripToolIntentSkeleton(content: string): string | null {
+    // 宽松匹配「文本工具调用」骨架标签（含残缺/未闭合变体）。
+    // 允许尾随 = / > / < / 空格 等，命中 `<function=` 这种「属性式起始标签」而不误伤正文英文。
+    const SKELETON = /<\/?(?:tool_call|function|parameter)[<>=/\s]?/gi;
+    if (!SKELETON.test(content)) return null;
+    // 逐段剔除：把每个命中的片段替换为空（含标签本身及其紧随的属性片段）
+    return content.replace(SKELETON, '').replace(/\n{3,}/g, '\n\n').trim();
+  }
+
+  /**
+   * 解析「本轮可用工具集」——单一真源（SSOT）
+   *
+   * 工具可用性事实本来被写作两处（buildSystemPrompt 文本出口 + buildChatOptions 原生出口），
+   * 属「同语义多实现」带伤。TS-7 搜索硬上限命中后两处都要剔除 web_search，故把排除谓词收敛到本方法。
+   * 不修改 opts.toolDefinitions，仅按轮过滤，随 resetTurnState 自然恢复。
+   */
+  private resolveActiveTools(): readonly ToolDefinition[] {
+    const all = this.opts.toolDefinitions ?? [];
+    // TS-7 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸）
+    return this.searchDisabled ? all.filter((t) => t.name !== 'web_search') : all;
+  }
+
+  /**
    * 构建 LLM 调用选项。（为何不生成 response_format：它约束最终响应体，而 tool_calls 是通过
    * tools 参数触发的独立流式协议，两者不能并存；response_format 保留供调用方按需显式传入）
    */
   private buildChatOptions(): ChatOptions {
-    const allTools = this.opts.toolDefinitions ?? [];
-    // TS-7 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸；
-    // 不修改 opts.toolDefinitions，仅按轮过滤，随 resetTurnState 自然恢复）
-    const tools = this.searchDisabled
-      ? allTools.filter((t) => t.name !== 'web_search')
-      : allTools;
+    const tools = this.resolveActiveTools();
     const baseOptions: ChatOptions = {};
 
     if (tools.length > 0) {
@@ -1962,6 +2010,7 @@ export class AgentLoop {
       tools: {
         callCount: this.metrics.toolCallCount,
         failureCount: this.metrics.toolFailureCount,
+        unparsedToolIntentCount: this.metrics.unparsedToolIntentCount,
       },
       context: {
         truncationCount: this.contextManager.truncationCount,

@@ -149,8 +149,17 @@ export interface ProcessMetricsPayload {
   tokenOut: number;
   /** 工具调用失败次数 */
   toolFailureCount: number;
-  /** 本轮是否成功完成（false = 中断/失败） */
+  /**
+   * 本轮是否正常收尾（false = 中断/暂停）。
+   * 语义是「这段流程跑完了没有」，不是「任务达成了没有」——
+   * 任务达成与否由 unparsedToolIntentCount / toolFailureCount 等信号承载，勿混淆。
+   */
   success: boolean;
+  /**
+   * 本轮未解析文本工具意图数（2026-09-14，选填/旧数据缺省）
+   * 「想调用工具却未走原生协议」的诚实信号；>0 时宿主不应显示为成功收尾。
+   */
+  unparsedToolIntentCount?: number;
 }
 
 /**

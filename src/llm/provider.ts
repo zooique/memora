@@ -34,7 +34,12 @@ export interface ChatOptions {
       parameters: Record<string, unknown>; // JSON Schema
     };
   }>;
-  /** 结构化输出约束：Provider 不支持时静默跳过，fallback 到纯文本 tool_call */
+  /**
+   * 结构化输出约束（OpenAI Function Calling 响应格式约束）。
+   * 注意：response_format 不能与 tools 同时使用（OpenAI 协议限制），故 AgentLoop 默认不生成它
+   * （见 loop.ts buildChatOptions 注释）——此处仅为调用方显式传入时的可选能力孔，不宣称任何
+   * 「fallback 到纯文本 tool_call」的静默降级（文本出口不是可调用通道，2026-09-14 收敛）。
+   */
   response_format?: {
     type: 'json_schema';
     json_schema: {

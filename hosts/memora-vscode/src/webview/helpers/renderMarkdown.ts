@@ -39,6 +39,24 @@ function fixIncompleteMarkdown(raw: string): string {
   return fixed;
 }
 
+const HTML_ESCAPE_MAP: Record<string, string> = {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;',
+};
+
+/**
+ * HTML 转义（防注入）——纯函数实现，无 DOM 依赖。
+ *
+ * 仅在「净化后为空 → 回退显示原文」这一纵深防线路径使用；Node 端渲染安全
+ * （本模块保持 Node-safe 契约，不 import dompurify，这里也不碰 document）。
+ */
+function escapeHtml(text: string): string {
+  return text.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
+}
+
 /**
  * 渲染 Markdown 为已消毒的 HTML 字符串
  *
@@ -50,6 +68,11 @@ function fixIncompleteMarkdown(raw: string): string {
  * 调用方在 webview 浏览器环境经 createSanitizer 构造消毒器，以 SanitizeFn
  * 回调注入，实现「渲染逻辑」与「浏览器环境」的职责分离（契约见 sanitizer.ts）。
  *
+ * 纵深防线（2026-09-14 静默失败修复）：若原文有可读字符、净化后却为空串——
+ * 通常是「全文本工具标签」（如模型吐出 <tool_call> 骨架）被 DOMPurify 撕成空，
+ * 显示空白且误导。判据为「净化前有非空白 & 净化结果为空」，回退转义显原文
+ * （此时原文是提示性安全标签，非可执行脚本；转义后 innerHTML 安全）。
+ *
  * @param text 原始 Markdown 文本
  * @param sanitize 消毒函数（SanitizeFn），由调用方在 webview 环境构造并注入
  * @returns 可安全 innerHTML 的 HTML 片段
@@ -58,5 +81,10 @@ export function renderMarkdown(text: string, sanitize: SanitizeFn): string {
   // 半截子补全后交给解析器（async:false 同步返回 string，无异步扩展）
   const html = marked.parse(fixIncompleteMarkdown(text), { async: false }) as string;
   // 消毒：LLM 生成内容不可控，必须过滤 XSS（sanitize 由调用方在 webview 浏览器环境构造）
-  return sanitize(html);
+  const clean = sanitize(html);
+  // 纵深防线：原文有可读内容、净化后为空 → 回退为转义原文（如全标签型输出），避免空白误导
+  if (/\S/.test(text) && clean === '') {
+    return `<p>${escapeHtml(text)}</p>`;
+  }
+  return clean;
 }

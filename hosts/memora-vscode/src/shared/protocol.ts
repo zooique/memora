@@ -493,6 +493,11 @@ export type ExtensionToWebviewMessage =
       metrics: {
         llmCallCount: number;
         toolFailureCount: number;
+        /**
+         * 未解析文本工具意图累计数（2026-09-14 静默失败修复，诊断面板透出）。
+         * 与过程轨增量 unparsedToolIntentCount 同源（AgentMetrics.tools），累计口径。
+         */
+        unparsedToolIntentCount?: number;
         truncationCount: number;
         /** D（alignment-iteration.md）：LLM token 用量（输入/输出） */
         llmTokenIn?: number;

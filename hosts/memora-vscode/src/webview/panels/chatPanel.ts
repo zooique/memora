@@ -2369,6 +2369,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const metricsBefore = {
       in: this._agent.getMetrics().llm.totalInputTokens,
       out: this._agent.getMetrics().llm.totalOutputTokens,
+      // 未解析工具意图累计基准（2026-09-14）：本流增量 = 终结时累计 - 本基准
+      unparsed: this._agent.getMetrics().tools.unparsedToolIntentCount,
     };
     // 过程事件缓冲 + 单形态投影（v1.5 协议纯化）：流式期间攒内存、逐条 post process_event，
     // 流结束按 turn roundId 分组附到各 Round.processEvents 落盘。
@@ -2567,6 +2569,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         toolFailureCount: [...eventsByRound.values()]
           .flat()
           .filter((e) => e.type === 'tool_result' && !e.payload.ok && !e.payload.blocked).length,
+        // 本轮未解析文本工具意图增量（2026-09-14）：「想调用工具却未走原生协议」不得显示为成功收尾
+        unparsedToolIntentCount: Math.max(
+          0,
+          this._agent.getMetrics().tools.unparsedToolIntentCount - metricsBefore.unparsed,
+        ),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });
       // step 原子检查点（2026-09-09 档2）：流尾最终落盘复用同一合并语义（SSOT）——
@@ -2716,6 +2723,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       metrics: {
         llmCallCount: m.llm.callCount,
         toolFailureCount: m.tools.failureCount,
+        // 未解析工具意图（2026-09-14 静默失败修复）：累计数与内核口径一致，供诊断面板观察
+        unparsedToolIntentCount: m.tools.unparsedToolIntentCount,
         truncationCount: m.context.truncationCount,
         // D（alignment-iteration.md）：补齐 token 用量
         llmTokenIn: m.llm.totalInputTokens,

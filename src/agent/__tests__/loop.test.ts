@@ -211,6 +211,27 @@ describe('AgentLoop · processUserInput 纯文本流式输出', () => {
     expect(messages[2]!.role).toBe('assistant');
     expect(messages[2]!.content).toBe('回复内容');
   });
+
+  it('模型吐出文本工具调用骨架（<tool_call> 但无原生 toolCalls）→ 计数 + 剔除正文，且不得静默完成（守卫·L16/L16b）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([
+        { content: '<tool_call>\n<function=list_dir</parameter>\n</function>\n</tool_call>' },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    for await (const chunk of loop.processUserInput('读目录')) {
+      void chunk;
+    }
+
+    // 未解析工具意图计数 +1（隐喻模型「想调用工具却没走原生协议」不能当成功收尾）
+    expect(loop.getMetrics().tools.unparsedToolIntentCount).toBe(1);
+    // 骨架被剔除出正文——assistant 交付不残留 <tool_call> 标签（防污染显示/摘要）
+    const assistant = loop.getMessages().find((m) => m.role === 'assistant');
+    expect(assistant?.content).not.toContain('<tool_call>');
+    expect(assistant?.content).not.toContain('<function');
+  });
 });
 
 describe('AgentLoop · getRecentHistoryWithinBudget（动态轮数 + 第一条必在场）', () => {

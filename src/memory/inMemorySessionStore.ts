@@ -103,7 +103,7 @@ export class InMemorySessionStore implements ISessionStore {
         updatedAt: new Date().toISOString(),
       });
     } else {
-      const messageCount = this.countMessages(sessionId);
+      const messageCount = this.deriveMessageCount(sessionId);
       this.metas.set(sessionId, {
         sessionId,
         displayName: title,
@@ -125,7 +125,7 @@ export class InMemorySessionStore implements ISessionStore {
         updatedAt: new Date().toISOString(),
       });
     } else {
-      const messageCount = this.countMessages(sessionId);
+      const messageCount = this.deriveMessageCount(sessionId);
       this.metas.set(sessionId, {
         sessionId,
         updatedAt: new Date().toISOString(),
@@ -215,30 +215,22 @@ export class InMemorySessionStore implements ISessionStore {
 
   /**
    * 更新会话的消息计数（round-based 固有语义缓存：每个完整轮 = User+AI 2 条）。
-   * SSOT 边界：此估算在 append 时点轮已完成，故与精确 countMessagesInRounds 等价；
-   * 它是免加载物理 Round 的 O(1) 缓存；精确计算（countMessagesInRounds）仅用于需展开的场景。
-   * 真源取自 roundIdsMap（方案 A：meta 不再持有 roundIds）。
+   * 派生逻辑单一真源 = deriveMessageCount（本方法仅做「写回 meta」副作用）。
    */
   private updateMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);
     if (!meta) return;
-
-    const roundIds = this.roundIdsMap.get(sessionId) ?? [];
-    const messageCount = roundIds.length * 2;
-
     this.metas.set(sessionId, {
       ...meta,
-      messageCount,
+      messageCount: this.deriveMessageCount(sessionId),
       updatedAt: new Date().toISOString(),
     });
   }
 
   /**
-   * 统计会话消息数（round-based 固有语义：roundIds.length * 2）。
-   * SSOT 边界同 updateMessageCount：估算（*2）与精确 countMessagesInRounds 在 append 时点等价。
-   * 真源取自 roundIdsMap（方案 A：meta 不再持有 roundIds）。
+   * 派生会话消息数（round-based 固有语义：roundIds.length * 2）——**单一真源**。
    */
-  private countMessages(sessionId: string): number {
+  private deriveMessageCount(sessionId: string): number {
     const roundIds = this.roundIdsMap.get(sessionId) ?? [];
     return roundIds.length * 2;
   }

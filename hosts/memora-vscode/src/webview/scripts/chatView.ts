@@ -1238,7 +1238,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const reviewTexts = events.filter((e): e is Extract<ProcessEvent, { type: 'text_self_review' }> => e.type === 'text_self_review');
     if (reviews.length > 0 || reviewTexts.length > 0) {
       const { listEl } = sectionOf(details, '自审查输出');
-      reviews.forEach((e) => {
+      reviews.forEach((_e) => {
         const row = document.createElement('div');
         row.className = 'round-block__row';
         row.textContent = '自审查终审';
@@ -1266,11 +1266,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
     if (metrics) {
       const { listEl } = sectionOf(details, '执行指标');
+      // 未解析文本工具意图（2026-09-14 静默失败修复）：>0 表示「想调用工具却未走原生协议」，
+      // 不得显示为成功收尾——与 success 判据（流程跑完）正交，这是新增的诚实信号。
+      const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
+      const finalSuccess = metrics.payload.success && unparsed === 0;
       const lines = [
         `耗时：${fmtDuration(metrics.payload.durationMs)}`,
         `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
         `工具失败：${metrics.payload.toolFailureCount} 次`,
-        `完成：${metrics.payload.success ? '是' : '否（中断/失败）'}`,
+        ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
+        `完成：${finalSuccess ? '是' : '否（中断/失败）'}`,
       ];
       lines.forEach((line) => {
         const row = document.createElement('div');
@@ -3021,9 +3026,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 指纹行：只显示 hash，不显示内容（可追溯性边界）
       '本轮指纹：' +
         (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
-      // 累计指标行
+      // 累计指标行（2026-09-14：补未解析工具意图累计，诊断面板可见文本 tool_call 静默失败）
       '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 工具失败 ' +
-        msg.metrics.toolFailureCount + ' · 截断 ' + msg.metrics.truncationCount,
+        msg.metrics.toolFailureCount +
+        (msg.metrics.unparsedToolIntentCount && msg.metrics.unparsedToolIntentCount > 0
+          ? ' · 未解析工具意图 ' + msg.metrics.unparsedToolIntentCount
+          : '') +
+        ' · 截断 ' + msg.metrics.truncationCount,
       // D（alignment-iteration.md）：token 用量（可选字段，缺省不显示）
       'Tokens：' +
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +

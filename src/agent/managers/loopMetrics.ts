@@ -20,6 +20,14 @@ export class LoopMetrics {
   toolCallCount = 0;
   toolFailureCount = 0;
 
+  // ─── 未解析工具意图（2026-09-14 静默失败修复）──────────────────────
+  /**
+   * 疑似工具调用但无原生 toolCalls 的文本意图数。
+   * 文本出口不再宣告可调用通道后，模型仍可能吐出 <tool_call>/<function=> 骨架——
+   * 本计数让「想干活却一步没干成」不再被静默盖章「完成」（宿主据此不显示 success）。
+   */
+  unparsedToolIntentCount = 0;
+
   // ─── 任务级 SLO 度量 ──────────────────────
   /** 任务总执行次数（每次 processUserInput 算一次） */
   taskTotalCount = 0;

@@ -115,6 +115,12 @@ export interface AgentMetrics {
     callCount: number;
     /** 失败次数（结果以 [ERR 开头） */
     failureCount: number;
+    /**
+     * 未解析工具意图数（文本骨架 <tool_call>/<function=> 但无常原生 toolCalls）。
+     * 2026-09-14 静默失败修复：让「想干活却一步没干成」不再被静默盖「完成」；
+     * 宿主可据 N>0 不显示该轮成功收尾。
+     */
+    unparsedToolIntentCount: number;
   };
   /** 上下文管理指标 */
   context: {

@@ -713,7 +713,11 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
   function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>): Agent {
     return {
       chat: chatFn,
-      getMetrics: () => ({ llm: { totalInputTokens: 0, totalOutputTokens: 0 } }),
+      getMetrics: () => ({
+        llm: { totalInputTokens: 0, totalOutputTokens: 0 },
+        // 对齐 AgentMetrics 契约：流尾 emitEvent 读取 tools.unparsedToolIntentCount（2026-09-14）
+        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
+      }),
       sessionManager: {
         getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
         switchToSession: async () => 0,
