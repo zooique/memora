@@ -1426,6 +1426,21 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <div id="apikeyHint" class="key-hint" hidden></div>
           </div>
           <div class="field">
+            <label for="f-providertype">来源类型</label>
+            <select id="f-providertype" name="provider">
+              <option value="cloud">云端 API（DeepSeek / 豆包 / 通义等）</option>
+              <option value="local">本地运行时（Ollama / LM Studio）</option>
+            </select>
+            <div class="key-hint">云端服务商默认启用原生工具调用；本地运行时是否支持工具调用由下方显式声明（无法从地址推断）。</div>
+          </div>
+          <div id="toolcalling-field" class="field" hidden>
+            <label class="checkbox-label" for="f-toolcalling">
+              <input id="f-toolcalling" name="supportsToolCalling" type="checkbox" checked />
+              <span>支持原生工具调用（OpenAI Function Calling）</span>
+            </label>
+            <div class="key-hint">勾选：本地模型可调用工具（联网搜索 / 读写文件 / 建记忆等）；取消：仅文本对话，工具通道自动收起并告知模型不可用。</div>
+          </div>
+          <div class="field">
             <label for="f-contextwindow">上下文窗口上限（K）</label>
             <input id="f-contextwindow" name="contextWindow" type="text" inputmode="decimal" placeholder="如 128（留空用默认 120K）" autocomplete="off" />
             <div class="key-hint">填千单位（K），如 128 表示 128K = 128,000 tokens；支持小数（如 1.5）；留空使用默认 120K。</div>

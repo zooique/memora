@@ -46,6 +46,13 @@ const HTML = `
           <input id="f-model" />
           <input id="f-baseurl" />
           <input id="f-apikey" />
+          <select id="f-providertype">
+            <option value="cloud">云端 API</option>
+            <option value="local">本地运行时</option>
+          </select>
+          <div id="toolcalling-field" class="field" hidden>
+            <label class="checkbox-label" for="f-toolcalling"><input id="f-toolcalling" type="checkbox" /></label>
+          </div>
           <input id="f-contextwindow" type="text" />
           <div id="f-contextwindow-feedback" hidden></div>
           <div id="apikeyHint" hidden></div>
@@ -83,14 +90,15 @@ function dispatchLoaded(providers: unknown[], activeName?: string, backgroundNam
 }
 
 /** 构造一个 Provider 对象 */
-function makeProvider(name: string, opts: { displayName?: string; model?: string; baseUrl?: string; contextWindow?: number } = {}) {
+function makeProvider(name: string, opts: { displayName?: string; model?: string; baseUrl?: string; contextWindow?: number; provider?: string; supportsToolCalling?: boolean } = {}) {
   return {
     name,
     displayName: opts.displayName || name,
     model: opts.model || name + '-model',
     baseUrl: opts.baseUrl || 'https://api.example.com/v1',
-    provider: 'remote',
+    provider: opts.provider,
     contextWindow: opts.contextWindow,
+    supportsToolCalling: opts.supportsToolCalling,
   };
 }
 
@@ -441,5 +449,74 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     const { postMessage } = mountConfigView();
     (document.getElementById('btnClearEmbedding') as HTMLButtonElement).click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'cfg_clear_embedding' });
+  });
+});
+
+// ─── 本地 LLM 能力声明（阶段1·2026-09-14） ───
+
+describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 打开「添加 API」弹窗 → 填基础字段 → 提交，返回 cfg_save 的 config */
+  function submitConfig(extra: () => void = () => void 0): { provider?: string; supportsToolCalling?: boolean } {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'local-ollama';
+    (document.getElementById('f-display') as HTMLInputElement).value = '本地 Ollama';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'qwen3';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'http://localhost:11434/v1';
+    (document.getElementById('f-apikey') as HTMLInputElement).value = 'local';
+    extra();
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[] | undefined;
+    return (call?.[0] as { config: { provider?: string; supportsToolCalling?: boolean } })?.config ?? {};
+  }
+
+  it('默认（云类型）：provider=cloud，且不落 supportsToolCalling（undefined → 内核回落 true，云行为不变）', () => {
+    const config = submitConfig();
+    expect(config.provider).toBe('cloud');
+    expect(config.supportsToolCalling).toBeUndefined();
+  });
+
+  it('切换 local：工具能力位字段显隐联动（切本地显示、切回云隐藏）', () => {
+    mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    const sel = document.getElementById('f-providertype') as HTMLSelectElement;
+    const field = document.getElementById('toolcalling-field') as HTMLElement;
+    // 默认云 → 字段隐藏
+    expect(field.hidden).toBe(true);
+    // 切本地 → 字段显示
+    sel.value = 'local';
+    sel.dispatchEvent(new Event('change'));
+    expect(field.hidden).toBe(false);
+    // 切回云 → 字段隐藏
+    sel.value = 'cloud';
+    sel.dispatchEvent(new Event('change'));
+    expect(field.hidden).toBe(true);
+  });
+
+  it('local + 工具能力勾选（默认）→ provider=local，supportsToolCalling=true', () => {
+    const config = submitConfig(() => {
+      (document.getElementById('f-providertype') as HTMLSelectElement).value = 'local';
+      (document.getElementById('f-toolcalling') as HTMLInputElement).checked = true;
+    });
+    expect(config.provider).toBe('local');
+    expect(config.supportsToolCalling).toBe(true);
+  });
+
+  it('local + 取消工具能力勾选 → supportsToolCalling=false（显式声明不支持，回落文本通道）', () => {
+    const config = submitConfig(() => {
+      (document.getElementById('f-providertype') as HTMLSelectElement).value = 'local';
+      (document.getElementById('f-toolcalling') as HTMLInputElement).checked = false;
+    });
+    expect(config.provider).toBe('local');
+    expect(config.supportsToolCalling).toBe(false);
   });
 });

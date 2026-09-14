@@ -44,6 +44,8 @@ const HTML = `
         <h3 id="modalTitle"></h3>
         <form id="cfgForm">
           <input id="f-name" /><input id="f-display" /><input id="f-model" /><input id="f-baseurl" /><input id="f-apikey" />
+          <select id="f-providertype"><option value="cloud">云端</option><option value="local">本地</option></select>
+          <div id="toolcalling-field"><label class="checkbox-label" for="f-toolcalling"><input id="f-toolcalling" type="checkbox" /></label></div>
           <input id="f-contextwindow" type="text" />
           <div id="f-contextwindow-feedback" hidden></div>
           <div id="apikeyHint" hidden></div><div id="testResult" hidden></div>

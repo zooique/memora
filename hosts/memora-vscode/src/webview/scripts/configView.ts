@@ -71,6 +71,11 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fContextWindow = root.querySelector('#f-contextwindow') as HTMLInputElement;
   // 上下文上限输入的即时报错/换算提示（输入非法时展示就地错误，不依赖 host 往返）
   const cwFeedback = root.querySelector('#f-contextwindow-feedback') as HTMLElement;
+  // Provider 类型（'cloud' | 'local'）：cloud=云端 API（默认，工具通道走原生 FC）；
+  // local=本地运行时（Ollama/LM Studio）——是否支持原生工具调用须用户显式声明（阶段0 能力位语义）
+  const fProviderType = root.querySelector('#f-providertype') as HTMLSelectElement;
+  // 本地运行时「是否支持原生工具调用」复选框（仅 provider=local 时显示；勾选 → supportsToolCalling=true）
+  const fToolCalling = root.querySelector('#f-toolcalling') as HTMLInputElement;
   const apikeyHint = root.querySelector('#apikeyHint') as HTMLElement;
   const testResult = root.querySelector('#testResult') as HTMLElement;
   const btnTest = root.querySelector('#btnTest') as HTMLButtonElement;
@@ -121,6 +126,16 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     cwFeedback.classList.toggle('err', isError && !!text);
   }
 
+  /**
+   * 工具能力位字段显隐（阶段1·本地 LLM 能力声明）：
+   * 仅「本地运行时」类型展示该复选框——云 LLM 的 supportsToolCalling 恒回落 undefined（内核默认 true），
+   * 无需也不应由用户在表单声明。字段父节点由 id=toolcalling-field 承载，hidden 切换。
+   */
+  function setToolCallingFieldVisible(): void {
+    const field = root.querySelector('#toolcalling-field') as HTMLElement | null;
+    if (field) field.hidden = fProviderType.value !== 'local';
+  }
+
   function readForm(): {
     name: string;
     displayName: string;
@@ -128,8 +143,16 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     baseUrl: string;
     apiKey: string;
     contextWindow: number | undefined;
+    provider: 'cloud' | 'local';
+    supportsToolCalling: boolean | undefined;
   } {
     const parsed = parseTokenInput(fContextWindow.value);
+    // Provider 类型 + 工具能力位（阶段1·本地 LLM 能力声明）：
+    // - cloud（默认）→ 不落 supportsToolCalling（undefined → 内核回落 true，存量云行为不变，零回归）；
+    // - local → 显式声明工具能力：勾选=support，取消=不支撑（可观测回落，不静默承诺）。
+    //   provider 字段随类型落（卡片已有「（本地）」展示逻辑）。
+    const provider = fProviderType.value === 'local' ? 'local' : 'cloud';
+    const supportsToolCalling = provider === 'local' ? fToolCalling.checked : undefined;
     return {
       name: fName.value.trim(),
       displayName: fDisplay.value.trim(),
@@ -138,6 +161,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       apiKey: fApiKey.value,
       // 无法识别（NaN）由 submit 前置校验阻断，此处不落 undefined（避免静默回落默认值）
       contextWindow: Number.isNaN(parsed) ? undefined : parsed,
+      provider,
+      supportsToolCalling,
     };
   }
 
@@ -169,6 +194,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
       // 上下文窗口上限回填（per-LLM 真理源；K 值回显，整千整数/非整千小数，label 已标 K 单位）
       fContextWindow.value = target?.contextWindow ? tokensToKValue(target.contextWindow) : '';
+      // Provider 类型回填：已存 type=local → local，否则默认 cloud（存量云配置零改动）
+      fProviderType.value = target?.provider === 'local' ? 'local' : 'cloud';
+      // 工具能力位回填：本地类型时按已存声明勾选（缺省勾选=本地默认支持原生 FC）；
+      // 云类型该字段不显示、强制回落 undefined（不走 DOM，避免误改云行为）
+      fToolCalling.checked = target?.supportsToolCalling !== false;
+      setToolCallingFieldVisible();
     } else {
       fName.value = '';
       fName.disabled = false;
@@ -180,6 +211,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       apikeyHint.hidden = true;
       apikeyHint.textContent = '';
       fContextWindow.value = '';
+      // 新增默认云类型 + 工具能力默认勾选（local 时为支持原生 FC）
+      fProviderType.value = 'cloud';
+      fToolCalling.checked = true;
+      setToolCallingFieldVisible();
     }
     modal.classList.add('visible');
     fName.focus();
@@ -364,6 +399,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     vscode.postMessage({ type: 'cfg_clear_embedding' });
   });
   btnCancel.addEventListener('click', closeModal);
+  // Provider 类型切换时联动工具能力位字段显隐（阶段1·本地 LLM 能力声明）
+  fProviderType.addEventListener('change', setToolCallingFieldVisible);
   // 上下文上限输入改键时实时反馈：换算提示（如 200K → = 200000 tokens）或非法就地报错
   fContextWindow.addEventListener('input', () => {
     setCwFeedback('', false);
