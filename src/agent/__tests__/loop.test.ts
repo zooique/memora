@@ -4504,6 +4504,42 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     ).toBe(false);
   });
 
+  it('H · T1：无区间整读被截断后再次整读 → 分支②回显摘要引导续读（收敛整读重试）', async () => {
+    // c1 整读 a.md 被截断（覆盖 1–20 / 共 200，coverEnd<totalLines）；c2 读 b.md 把 a.md 挤出
+    // keepRecent → c3 依旧无 offset/limit 整读 a.md：按 T1 判定，无 limit + 已有覆盖度 → 应回显
+    // 摘要（引导 offset=21 续读），而非放行重试（真机 217 次无区间整读的根因场景）。
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) =>
+        Promise.resolve(
+          name === 'read_file'
+            ? '头段内容\n[read_file 分段] 已显示第 1–20 行（共 200 行）。继续读用 offset=21。'
+            : '',
+        ),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('整读已读半截文件')) {
+      void chunk;
+    }
+
+    // c3 整读被拦回显摘要，不落 ToolExecutor → 仍执行 c1、c2 共 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    expect(stub!.content).toContain('第 1–20 行'); // 覆盖度
+    expect(stub!.content).toContain('offset=21'); // 引导续读而非整读
+  });
+
   it('F · 同主体连续失败达阈值 → 执行前硬拦（N2 同主体粒度，治幻觉文件风暴）', async () => {
     // 读一个始终失败（不存在）的文件：返回 [ERR → 触发失败硬闸
     const toolExecutor = vi.fn().mockResolvedValue('[ERR 文件不存在：幻想文档.md]');

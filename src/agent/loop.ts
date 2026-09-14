@@ -1545,16 +1545,19 @@ export class AgentLoop {
             }
             // （原文已压缩 → 落入分支②递增判断，见下）
           }
-          // 分支②（P0-1b 完整层）：该文件已有覆盖度台账，且本次请求**完全落在已覆盖区间内**
-          //   → 回显摘要（替身），不重读、不空拦。覆盖两类冗余重读：
-          //   a. 同参命中但原文被压缩（原分支②，结果不再引用 `hit`，改由覆盖区间承接）；
-          //   b. 不同区间但整体落在已读范围内（分段狂读里的回头小读，P0-1b 新增收敛）。
-          //   **一旦请求触及覆盖之外**（offset<coverStart 或前向 offset+limit-1>coverEnd）→ 放行到
-          //   分支③真实执行——宁可多读一次，不可误拦前向合法读取（死锁，CTX-1 根因②）。
+          // 分支②（P0-1b + T1 修正，2026-09-14）：已有覆盖度台账时，区分「无区间整读」与「续读区间」：
+          //   - **无 limit 整读**（LLM 要「全文」的语义重复）：只要该文件覆盖过正文（coverEnd>0）就拦，
+          //     回显摘要 + 引导 `offset=${coverEnd+1}` 续读——避免大文件截断后（coverEnd<totalLines）
+          //     反复整读重试（真机轮 217 次无区间整读的根因）。
+          //   - **offset/limit 续读**：按 isRequestInsideCoverage，完全落在已覆盖区间内才拦；触及覆盖
+          //     之外（前向 offset+limit-1>coverEnd）放行到分支③真实执行（宁可多读不误拦，G2 守卫）。
           const cov = subject.path ? this.fileExposure.get(subject.path) : undefined;
-          if (cov && isRequestInsideCoverage(subject, cov)) {
+          const stubEligible =
+            cov !== undefined &&
+            (subject.limit === undefined ? cov.coverEnd > 0 : isRequestInsideCoverage(subject, cov));
+          if (stubEligible) {
             blockedFlags.push(true);
-            toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
+            toolPromises.push(Promise.resolve(formatLedgerStub(cov!)));
             continue;
           }
           // 分支③（保守）：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁，CTX-1 根因②）
