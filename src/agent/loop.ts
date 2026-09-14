@@ -1153,14 +1153,16 @@ export class AgentLoop {
       this.appendSystemMessage(taskTable, { executionTemp: true });
     }
 
-    // 层1：needsPlanning 判定为真时，首迭代注入命令式强引导（任务表触发确定性化）。
-    // 幂等：planNudgeInjected 保证同一 turn 仅首迭代注入一次，不污染后续轮；
-    // executionTemp → turn 结束即弃，跨 turn 由 cleanExecutionTemporary 清冗。
-    // 与任务表"替换式"注入不同：nudge 是一过式指令，仅需一次，勿每迭代重复。
+    // needsPlanning 命中时首迭代注入一过式命令式引导：executionTemp → 跨 turn 由
+    // cleanExecutionTemporary 清冗；planNudgeInjected 保证本 turn 仅决策一次（非每迭代重复，
+    // 与任务表"替换式"注入区分）。P1 收口：已有在途任务表（会议骨架 / 续会，getActiveStepMeta
+    // 非空）时不灌「先拆解建表」——骨架已预置 / 续会本有步进，nudge 反而冗余误导；无表才诱导建表。
     if (this.planNeedsNudge && !this.planNudgeInjected) {
       this.planNudgeInjected = true;
-      this.appendSystemMessage(PLAN_NUDGE_PROMPT, { executionTemp: true });
-      logger.info({}, '任务表触发：needsPlanning 命中，已注入命令式强引导');
+      if (!this.getActiveStepMeta?.()) {
+        this.appendSystemMessage(PLAN_NUDGE_PROMPT, { executionTemp: true });
+        logger.info({}, '任务表触发：needsPlanning 命中且无在途任务表，已注入命令式强引导');
+      }
     }
 
     return { chatOpts, safeMessages };
