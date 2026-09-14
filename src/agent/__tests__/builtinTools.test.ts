@@ -19,6 +19,8 @@ import {
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
 import { isReservedTaskTableFile } from '@/agent/builtinToolHandlers.js';
+import { PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
+import { buildTeamContextBlockText } from '@/role-pack/rolePackManager.js';
 import type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 
 describe('builtinToolHandlers · isReservedTaskTableFile（任务表保留名，2026-09-07 伪建表根治）', () => {
@@ -407,6 +409,31 @@ describe('builtinTools · 任务表描述命令式强化', () => {
     const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
     expect(def.description).toContain('一次只更新一个步骤');
     expect(def.description).toContain('禁止一次性批量标记所有步骤');
+  });
+});
+
+describe('builtinTools · 任务表 how 单源守卫', () => {
+  /**
+   * 状态取值（done / blocked）与标注方法属「工具用法」（how），唯一真源 = task_table_update 工具描述。
+   * 任何**提示文案**复述该取值即构成双源——改工具描述后文案静默失配（历史的 nudge 双源即同型）。
+   * 判据与不变量同源：文案里不得出现只有工具描述才该定义的**取值字面量**。
+   *
+   * 断言口径说明：取「取值字面量」而非「工具名/动作词」——工具名（task_table_write 等）是 when/通道
+   * 语义，允许在文案出现；被复述即失配的是取值本身。
+   */
+  const HOW_LEAK_RE = /\b(done|blocked)\b/;
+
+  it('真源自检：工具描述本身必须定义状态取值（防正则失明 → 守卫假绿）', () => {
+    const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
+    expect(def.description).toMatch(HOW_LEAK_RE);
+  });
+
+  it('PLAN_NUDGE_PROMPT 不复述状态取值（how 指向工具描述）', () => {
+    expect(PLAN_NUDGE_PROMPT).not.toMatch(HOW_LEAK_RE);
+  });
+
+  it('会议团队上下文块不复述状态取值（how 指向工具描述）', () => {
+    expect(buildTeamContextBlockText('组长A', ['组员1', '组员2'])).not.toMatch(HOW_LEAK_RE);
   });
 });
 

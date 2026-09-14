@@ -101,7 +101,9 @@ describe('SeedPrepare 回答前', () => {
 
   it('会议机制（骨架预置守卫）：在途计划存在时「小组会议」输入不预置（续会交由 LLM 按任务表推进）', async () => {
     const { mocks, deps } = createHarness();
-    // 在途会议：plan 已有 pending 步骤（骨架预置后、未完成）
+    // 在途谓词（SSOT = SessionManager.hasInflightPlan）须显式声明：默认 false 会落到「新会议」分支
+    mocks.sessionManager.hasInflightPlan.mockReturnValue(true);
+    // 在途会议：plan 已有未完成步骤（骨架预置后、未完成）
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       plan: [
         { id: 's1', description: '组长 主持开场：讨论X', status: 'done', order: 0 },

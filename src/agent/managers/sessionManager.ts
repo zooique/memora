@@ -842,6 +842,22 @@ export class SessionManager {
     }
   }
 
+  /**
+   * 是否存在「在途计划」= 有未完成步骤（pending 或 active）。
+   *
+   * SSOT：全库该命题唯一实现。消费方两处——会议骨架预置守卫（prepare，判断续会不重开）
+   * 与任务表 nudge 跳过（loop，已有在途表则不再诱导建表）。禁任一消费方自行内联谓词。
+   *
+   * 口径取 pending||active（非仅 active）：与 ensureActiveStep 的补偿语义对齐——
+   * plan 非空时恒有一个 active（见 :826 场景 1/2），全 done/blocked 时无 active（场景 3），
+   * 两种判法在「有未完成步」上等价，但本口径直接表达「未完成」而非「借 active 存在性」。
+   */
+  hasInflightPlan(): boolean {
+    return (this.checkpoint?.plan ?? []).some(
+      (s) => s.status === 'pending' || s.status === 'active',
+    );
+  }
+
   /** 完成一个 step（SSOT 唯一写点）：单函数内顺序写步骤状态 + stepLog + heartbeat 保证原子性 */
   completeStep(options: { planStepId?: string; summary: string }): void {
     if (!this.checkpoint) return;

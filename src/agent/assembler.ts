@@ -364,6 +364,11 @@ function wireRuntimeCallbacks(
       : null;
   };
 
+  // 在途任务表判定回调（单一真理源 = SessionManager.hasInflightPlan）：loop 注入 needsPlanning
+  // nudge 前询问「是否已有在途任务表」。与 prepare 的会议骨架守卫共用同一谓词——同一命题
+  // 禁两处各自实现（曾为 prepare 内联谓词 + loop 借 getActiveStepMeta 存在性两处）。
+  loop.hasInflightPlan = () => sessionManager.hasInflightPlan();
+
   // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
   loop.getTaskTable = () => {
     const cp = sessionManager.getCheckpoint();

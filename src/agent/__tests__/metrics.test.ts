@@ -359,17 +359,18 @@ describe('AgentLoop · 任务表观测量', () => {
     expect(loop.getMessages().some((m) => m.content.includes('任务表强制提示'))).toBe(false);
   });
 
-  it('已有在途任务表（getActiveStepMeta 非空）→ 命中 needsPlanning 也不注入引导', async () => {
+  it('已有在途任务表（hasInflightPlan 为真）→ 命中 needsPlanning 也不注入引导', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '完成' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
       needsPlanningOverride: () => true,
     });
-    // P1 信号：已有在途任务表（会议骨架 / 续会，真实场景由 assembler 装配 getActiveStepMeta）
-    loop.getActiveStepMeta = () => ({ stepId: 's1', title: '组长开场' });
+    // 在途信号由装配注入（真实来源 = assembler 装配 SessionManager.hasInflightPlan；
+    // 装配链端到端见 assembler.test「在途任务表判定」用例）
+    loop.hasInflightPlan = () => true;
 
-    // P1-不带伤：已建表时 nudge 的「先拆解建表」是冗余/误导 → 不注入
+    // 已建表时 nudge 的「先拆解建表」是冗余/误导 → 不注入
     await consumeGenerator(loop.processUserInput('小组会议：继续讨论 A、B、C 的选型'));
 
     expect(loop.getMessages().some((m) => m.content.includes('任务表强制提示'))).toBe(false);

@@ -520,6 +520,25 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(out.loop.getActiveStepMeta!()).toBeNull();
   });
 
+  it('hasInflightPlan：装配链上写入计划后为真（存在未完成步骤）', async () => {
+    const out = await assembleWithHooks();
+    out.sessionManager.createCheckpoint('测试计划');
+    // 空 plan → 不在途
+    expect(out.loop.hasInflightPlan!()).toBe(false);
+    out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
+    // 写入后 ensureActiveStep 激活首个 pending → 在途
+    expect(out.loop.hasInflightPlan!()).toBe(true);
+  });
+
+  it('hasInflightPlan：全部 done → 为假（ensureActiveStep 场景 3，无 pending/active）', async () => {
+    const out = await assembleWithHooks();
+    out.sessionManager.createCheckpoint('测试计划');
+    const plan = out.sessionManager.writePlan('overwrite', [{ description: '唯一步骤' }]);
+    out.sessionManager.updatePlanStepStatus(plan[0]!.id, 'done');
+    // 全 done：既无 active 也无 pending → 不在途（区别于「表存在」口径）
+    expect(out.loop.hasInflightPlan!()).toBe(false);
+  });
+
   it('planManager.writePlan：返回含步骤摘要与角色标注的渲染结果', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');

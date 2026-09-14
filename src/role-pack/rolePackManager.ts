@@ -288,6 +288,26 @@ async function readContentSafe(filePath: string, maxLen = DEFAULT_MAX_CONTENT_LE
 }
 
 /**
+ * 会议团队上下文块文案（纯函数；`buildTeamContextBlock` 委托本函数）。
+ *
+ * **how 单源纪律**：状态取值（done/blocked）与标注方法属「工具用法」，唯一真源 =
+ * `task_table_update` 工具描述（builtinTools.ts）；本函数只承载**会议场景编排**
+ * （何时增步 / 何时声明 rolePack / 何时回到组长视角），不复述工具用法——
+ * 与 PLAN_NUDGE_PROMPT 同构（when/what 在此，how 指向描述）。守卫见 builtinTools.test。
+ */
+export function buildTeamContextBlockText(leader: string, members: readonly string[]): string {
+  return (
+    `【小组会议角色（组长：${leader}；组员：${members.join(' / ')}）】` +
+    `用户以「小组会议：主题」发起时，系统不自动预置完整流程，但已确定性预置骨架任务表` +
+    `（组长开场 → 每位组员各一步发言 → 汇总），你只需按骨架逐项执行；` +
+    `如需追加讨论轮次可自行用 task_table_write 增步，并在此步声明 rolePack=对应组员` +
+    `（执行到该步时切换为该组员视角作答）；汇总步到达后不声明 rolePack（回到组长视角收尾）。` +
+    `每完成一步即标记该步状态（状态取值与操作方法见 task_table_update 工具描述）。` +
+    `禁止用 write_file 创建或修改任务表文件（如 .memora/task-table.md）——任务表只能经 task_table_write 建表。`
+  );
+}
+
+/**
  * 角色包管理器
  */
 export class RolePackManager extends ConfigResourceManager<RolePack> {
@@ -479,6 +499,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 构建「组长 + 组员名单」上下文块（会议机制实施前提②：组/成员清单暴露给 LLM，防编造角色名）。
    * 仅当 activePack 是某个组的组长且名单非空时产出；非组长返回空串（不注入）。
    *
+   * 文案正文在模块级 buildTeamContextBlockText（纯函数，供 how 单源守卫直测；本方法只做前置守卫）。
    * 文案指挥 LLM 用 `task_table_write` 自主建表（确定性骨架预置见 tryBuildMeetingPlan，
    * 二者互补：骨架补首轮确定性，文案约束 LLM 后续走 task_table 单通道）：
    * 明确组员发言步需声明 `rolePack` 以触发表层装配切换，汇总步不声明回到组长视角；
@@ -489,15 +510,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!this.activePackName) return '';
     const members = this.activeTeamMembers;
     if (members.length === 0) return '';
-    return (
-      `【小组会议角色（组长：${this.activePackName}；组员：${members.join(' / ')}）】` +
-      `用户以「小组会议：主题」发起时，系统不自动预置完整流程，但已确定性预置骨架任务表` +
-      `（组长开场 → 每位组员各一步发言 → 汇总），你只需按骨架逐项执行；` +
-      `如需追加讨论轮次可自行用 task_table_write 增步，并在此步声明 rolePack=对应组员` +
-      `（执行到该步时切换为该组员视角作答）；汇总步到达后不声明 rolePack（回到组长视角收尾）。` +
-      `每完成一步用 task_table_update 将该步标记 done 或 blocked。` +
-      `禁止用 write_file 创建或修改任务表文件（如 .memora/task-table.md）——任务表只能经 task_table_write 建表、task_table_update 标记。`
-    );
+    return buildTeamContextBlockText(this.activePackName, members);
   }
 
   /**

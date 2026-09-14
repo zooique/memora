@@ -69,9 +69,9 @@ export class SeedPrepare {
     //   已有未完成计划（pending/active 存在）→ 跳过骨架预置 = 续会语义：第二轮「继续小组会议」等输入
     //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
     //   重开已推进会议需显式手段（宿主清空任务表 / LLM task_table_write），非自然语言自动触发。
-    const hasInflightPlan = (checkpoint?.plan ?? []).some(
-      (s) => s.status === 'pending' || s.status === 'active',
-    );
+    // 在途判定经 SessionManager.hasInflightPlan 单点（SSOT）：与 loop 侧「已有在途任务表则跳过
+    // nudge」共用同一命题口径，禁此处再内联谓词（曾为 `plan.some(pending||active)` 独立实现）。
+    const hasInflightPlan = sessionManager?.hasInflightPlan() ?? false;
     const meetingSteps = hasInflightPlan
       ? null
       : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);

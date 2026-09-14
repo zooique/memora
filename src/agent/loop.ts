@@ -281,6 +281,12 @@ export class AgentLoop {
    *  与 onStepBoundary 搭配：onStepBoundary 只管写 stepLog（推进投影），本回调供 loop 判断
    *  「active step 是否已推进」，变化才产 step_boundary 事件（宿主据此按步分组渲染）。 */
   getActiveStepMeta?: () => { stepId?: string; title?: string } | null;
+  /** 在途任务表判定回调：本 turn 是否已有未完成的计划步骤（会议骨架预置 / 续会）。
+   *  装配来源 = SessionManager.hasInflightPlan（单一真理源）；用途 = needsPlanning nudge 注入前
+   *  判断「是否已有在途表」，有则不重复灌「先拆解建表」。
+   *  刻意**不复用** getActiveStepMeta 的存在性——后者原生职责是 step_boundary 事件信号，
+   *  借它回答本命题属语义借用（二者在 ensureActiveStep 不变量下当前等价，但职责须分离）。 */
+  hasInflightPlan?: () => boolean;
   /** 上一步级边界 ID（阶段二去噪）：记录最近一次已 emit step_boundary 的 stepId，
    *  仅当 getActiveStepMeta 返回的 stepId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
   private lastBoundaryStepId?: string;
@@ -1155,11 +1161,11 @@ export class AgentLoop {
 
     // needsPlanning 命中时首迭代注入一过式命令式引导：executionTemp → 跨 turn 由
     // cleanExecutionTemporary 清冗；planNudgeInjected 保证本 turn 仅决策一次（非每迭代重复，
-    // 与任务表"替换式"注入区分）。P1 收口：已有在途任务表（会议骨架 / 续会，getActiveStepMeta
-    // 非空）时不灌「先拆解建表」——骨架已预置 / 续会本有步进，nudge 反而冗余误导；无表才诱导建表。
+    // 与任务表"替换式"注入区分）。P1 收口：已有在途任务表（会议骨架 / 续会）时不灌「先拆解建表」——骨架已预置 / 续会本有步进，nudge 冗余误导；无表才诱导建表。
+    // 判定经 hasInflightPlan 回调（与 SessionManager 同源谓词），不复用 getActiveStepMeta 的存在性（职责分离）。
     if (this.planNeedsNudge && !this.planNudgeInjected) {
       this.planNudgeInjected = true;
-      if (!this.getActiveStepMeta?.()) {
+      if (!this.hasInflightPlan?.()) {
         this.appendSystemMessage(PLAN_NUDGE_PROMPT, { executionTemp: true });
         logger.info({}, '任务表触发：needsPlanning 命中且无在途任务表，已注入命令式强引导');
       }
