@@ -256,6 +256,8 @@ description: 把成稿写入本地文件
 >
 > * 两级同构避免「通用技能在每个角色包复制一份」——全局一份，角色包只声明角色特有技能。
 
+**技能引用格式（内容面约定）**：技能名同时是**文件名**与**引用名**——**名字即契约**（`skills/<name>.md` 的 `name` 与载入标识一致，改名属破坏性变更）。设定文本（persona / rules）引用技能时须用**反引号包裹技能名**（写成 `foreshadow` 这样的形式），使引用可被机器**双向校验**：每个技能至少被引用一次（防僵尸技能）+ 每条引用都指向真实存在的技能（防改名残留的悬空引用）。完整作者侧规范见 [role-pack-authoring-guide.md](./role-pack-authoring-guide.md) §2.6。
+
 **具体连接桥（L2 可选，`mcp.json`）**：capabilities 是**抽象能力声明**（要什么能力、实现无关）；当角色包需要**开箱即用**的具象连接时，可在文件夹根放 `mcp.json`（对齐 Agent Plugins 1.0 的 transport 声明：`stdio` / `streamable-http` / `http+sse`），由实现映射到自有运行时。两者不冲突：**capabilities 是 L1 中立契约，mcp.json 是 L2 可选实现加速**——不声明 mcp.json 的角色包仍可被任何实现按 capabilities 装载。
 
 > **`[草案]`（2026-09-08 状态收敛）**：`mcp.json` 为 L2 可选机制，当前**无参考实现消费**（memora 参考实现不装载 mcp.json，实现按「未知文件忽略」回退 L1 capabilities）。按 §六 双闸门纪律标注 `[草案]`，征集实现验证后冻结。

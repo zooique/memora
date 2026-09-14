@@ -40,7 +40,7 @@ layer: agent
 | 能力面 | `capabilities`（特权键，或省略 = 全部暴露；`[]` = 仅默认常驻） |
 | 行为偏好 | 温度 / 主动提问 / 召回等 → strategy 键 |
 
-需求不足时按 [memora 角色包开放键指南](../../../../../docs/role-pack-开放键指南.md) 或直接补问，不臆造。
+需求不足时按 [memora 角色包开放键指南](../../../../../../docs/role-pack-开放键指南.md) 或直接补问，不臆造。
 
 ### 第二步：脚本初始化骨架
 
@@ -76,7 +76,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 | `code:execute` | `run_code`（LLM 现写代码执行特权；需宿主注入执行器） |
 | `task:plan` | `task_table_write` / `task_table_update`（任务规划特权） |
 
-> ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../docs/architecture/tool-exposure-model.md)。
+> ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../../docs/architecture/tool-exposure-model.md)。
 
 #### strategy 键速查（16 键；未改动的键可删除 = 内核默认）
 
@@ -111,12 +111,19 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 **每个内置 skill 都应在 persona.md/rules.md 里补一处使用时机引导**——明示「什么情况用这个 skill」。技能能力定义仍以技能文件为唯一真理源，设定文本只写**何时用**、不复述做法；调用决策由**场景契约**驱动，而非靠猜扁平 description。
 
-- **persona.md**：在工作流程/阶段里挂技能（如"阶段6 对白即行动（用 dialogue-craft）"）；
-- **rules.md**：写成触发式纪律（如"伏笔必须回收：埋得轻、收得重（用 foreshadow 维护埋点清单）"）。
+- **persona.md**：在工作流程/阶段里挂技能（如"阶段6 对白即行动（用 `dialogue-craft`）"）；
+- **rules.md**：写成触发式纪律（如"伏笔必须回收：埋得轻、收得重（用 `foreshadow` 维护埋点清单）"）。
 
-**覆盖自查**：交付前逐个核对——每个内置 skill 在 persona/rules **至少一处**标注使用时机，避免"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）。
+**引用格式（强制）**：引用技能时**必须用反引号把技能名括起来**（写成 `dialogue-craft` 这样的形式）——这是设定文本里技能引用的唯一合法形式。两条硬约束：
 
-> 完整规范与论证见内核仓库 `docs/architecture/role-pack-authoring-guide.md` §2.5；覆盖完整性由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫（新增未引用技能会红）。
+1. **技能名 = kebab-case**，与文件名（`skills/x.md`）/ 目录名（`skills/x/SKILL.md`）严格一致；改名须同步全部引用。
+2. **保留字规则**：persona/rules 里反引号包裹的 kebab 词**一律判定为技能引用**——所以这两个文件里不要反引号包裹非技能标识（如 `local-first`），需要提到时写普通文本。
+
+**覆盖自查（双向）**：交付前逐个核对——
+- **正向**：每个内置 skill 在 persona/rules **至少一处**被引用，避免"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）；
+- **反向**：每条引用都指向真实存在的技能——防改名后残留的**悬空引用**（改了 `skills/` 里的名字却漏改设定文本）。
+
+> 完整规范与论证见内核仓库 `docs/architecture/role-pack-authoring-guide.md` §2.5（使用引导）与 §2.6（引用格式）；两个方向均由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫（新增未引用技能 / 引用不存在的技能都会红）。
 
 ### 第五步：交付
 
@@ -131,7 +138,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - 精修只在产出文件内进行，产出后逐项跑校验清单。
 - `capabilities` 写数组前确认每个键都是特权键（web/code/task）；纯本地角色写 `[]`（仅常驻工具）；需要全部暴露才省略字段。
 - `skills/*.md` 一律带 frontmatter `name` + `description`，且 description 按[四问规范](#四问规范软自查)写清 做什么/何时用/输入/返回。
-- 每个内置 skill 都在 persona.md/rules.md **至少一处**高亮"何时用"，并逐个核对覆盖完整（避免"存在但永不调用"的僵尸技能，见[技能使用引导](#技能使用引导personarules高亮何时用)）。
+- 每个内置 skill 都在 persona.md/rules.md **至少一处**高亮"何时用"，且**引用一律用反引号包裹技能名**（如 `foreshadow`）；交付前双向核对：无僵尸技能（每个技能被引用）+ 无悬空引用（每条引用都存在），见[技能使用引导](#技能使用引导personarules高亮何时用)。
 
 ### ❌ 禁止做
 
@@ -144,7 +151,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 ## 不适用场景
 
 - **修改已有角色包**：已存在角色包需调整 → 直接编辑目标文件，不重跑骨架。
-- **概念咨询**："什么是角色包/策略键" → 引导用户读 [role-pack-spec.md](../../../../../docs/architecture/role-pack-spec.md)。
+- **概念咨询**："什么是角色包/策略键" → 引导用户读 [role-pack-spec.md](../../../../../../docs/architecture/role-pack-spec.md)。
 - **宿主安装/安放**：把现成角色包放进某宿主目录 → 由用户自行复制，本技能不代劳。
 - **非 memora 角色**：为其他框架/Agent 建角色 → 与本技能无关，不激活。
 
@@ -163,5 +170,6 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 ## 规范唯一真相源（SSOT）
 
-- 策略键速查 / 校验区间以 [strategyKeys.ts](../../../../../src/role-pack/strategyKeys.ts) 与 [role-pack-spec.md](../../../../../docs/architecture/role-pack-spec.md) 为准（本文件速查表与之一致）。
+- 策略键速查 / 校验区间以 [strategyKeys.ts](../../../../../../src/role-pack/strategyKeys.ts) 与 [role-pack-spec.md](../../../../../../docs/architecture/role-pack-spec.md) 为准（本文件速查表与之一致）。
+- 技能引用格式（反引号包裹技能名 + 双向守卫）以 [role-pack-authoring-guide.md](../../../../../../docs/architecture/role-pack-authoring-guide.md) §2.6 为准。
 - 若发现本文件键速查与内核出现分歧，以内核为准并**更新本文件**（本 skill 跟随内核同步，不是独立权威）。

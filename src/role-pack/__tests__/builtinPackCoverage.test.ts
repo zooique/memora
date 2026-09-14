@@ -15,6 +15,12 @@
  * `scanner.scanMarkdownDir`——与内核真实装载共用同一份枚举规则（覆盖文件夹形态
  * `skills/x/SKILL.md` 与 README/`.`/`_` 排除规则），避免「守卫看到的技能」与
  * 「内核实际装载的技能」分叉。技能名仍取磁盘命名（见 skillNameOf）。
+ *
+ * 引用口径（2026-09-14 收口，SSOT：docs/architecture/role-pack-authoring-guide.md §2.6）：
+ * 设定文本引用技能的唯一合法形式 = **反引号包裹 kebab-case 技能名**。正向（每个技能至少
+ * 被引用一次）与反向（每条引用都指向真实存在的技能）**共用同一份提取器**
+ * `extractSkillReferences`——禁用两侧各写一份正则，否则「守卫看到的引用」与「真实引用」
+ * 会分叉（同源才可能同真同假）。反向守卫专堵「改名后残留的悬空引用」。
  */
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -42,6 +48,25 @@ const SKILL_EXT = '.md';
  */
 function skillNameOf(filePath: string): string {
   return isFolderFormSkill(filePath) ? basename(dirname(filePath)) : basename(filePath, SKILL_EXT);
+}
+
+/**
+ * 技能引用提取器（SSOT：§2.6）。正/反两个方向的守卫共用它。
+ *
+ * 只提取 **kebab 形态**（小写字母 / 数字 / 连字符）的反引号内容——非 kebab 的反引号内容
+ * （如 `file:write` / `manifest.json`）本就不是技能引用，不参与判定（否则反向守卫必然误报）。
+ * 裸词（无反引号）不是引用：这正是「引用必须有确定性形式」的理由，也是本正则不会误判的原因。
+ */
+const SKILL_REFERENCE_RE = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g;
+
+/** 提取设定文本中的全部技能引用（保留出现顺序与重复，调用方自行去重） */
+function extractSkillReferences(text: string): string[] {
+  const refs: string[] = [];
+  for (const m of text.matchAll(SKILL_REFERENCE_RE)) {
+    const name = m[1];
+    if (name !== undefined) refs.push(name);
+  }
+  return refs;
 }
 
 interface PackScan {
@@ -97,16 +122,40 @@ describe('内置角色包技能可发现性守卫', () => {
     expect(packs.filter((p) => p.skillNames.length === 0).map((p) => p.name)).toEqual([]);
     // 已知锚点：craft-review（self-review 更名产物）——改名须同步此处，防守卫静默失焦
     expect(packs.some((p) => p.skillNames.includes('craft-review'))).toBe(true);
+
+    // 引用提取器自守（防守卫正则失明 → 正 / 反两个方向**同时**假绿）：
+    // ① 必须真提取出引用；② 总量不少于技能数（每技能至少一处引用）；
+    // ③ 锚点 craft-review 只在 persona.md；④ 锚点 foreshadow **只在 rules.md**
+    //    ——若 settingText 漏扫 rules.md，仅凭 ③ 抓不到，故必须 persona / rules 两侧各锚一个。
+    const refs = packs.flatMap((p) => extractSkillReferences(p.settingText));
+    expect(refs).toContain('craft-review');
+    expect(refs).toContain('foreshadow');
+    expect(refs.length).toBeGreaterThanOrEqual(total);
   });
 
-  it('每个内置技能须在所属包 persona/rules 至少一处被引用（防僵尸技能）', async () => {
+  it('每个内置技能须在所属包 persona/rules 至少被引用一次（反引号形式，防僵尸技能）', async () => {
     const missing: string[] = [];
     for (const pack of await scanBuiltinPacks()) {
+      const refs = new Set(extractSkillReferences(pack.settingText));
       for (const skill of pack.skillNames) {
-        if (!pack.settingText.includes(skill)) missing.push(`${pack.name}/${skill}`);
+        if (!refs.has(skill)) missing.push(`${pack.name}/${skill}`);
       }
     }
     expect(missing).toEqual([]);
+  });
+
+  it('设定文本引用的技能必须真实存在（防改名后残留的悬空引用）', async () => {
+    // 场景溯源：技能改名（如 self-review → craft-review）后若漏改设定文本，旧名成为
+    // 「指向已不存在技能」的悬空引用。旧守卫只做正向包含检查（新名已被引用 → 不会红），
+    // 故此类残留长期无人发现。反向检查即堵此缺口。
+    const dangling: string[] = [];
+    for (const pack of await scanBuiltinPacks()) {
+      const known = new Set(pack.skillNames);
+      for (const ref of extractSkillReferences(pack.settingText)) {
+        if (!known.has(ref)) dangling.push(`${pack.name} → \`${ref}\``);
+      }
+    }
+    expect(dangling).toEqual([]);
   });
 
   it('技能 frontmatter name 与文件名一致（防 L1 清单名与设定文本引用名失配）', async () => {
@@ -149,5 +198,18 @@ describe('内置角色包技能可发现性守卫', () => {
     const manager = new RolePackManager(join(ROLE_PACKS_DIR, '..'));
     const loaded = await manager.load();
     expect(loaded).toBe(expected);
+  });
+});
+
+describe('技能引用提取器（正则自锚，SSOT §2.6）', () => {
+  it('提取反引号包裹的 kebab 技能名，拒绝非 kebab 反引号内容与裸词', () => {
+    expect(extractSkillReferences('用 `dialogue-craft` 与 `foreshadow` 各一次')).toEqual([
+      'dialogue-craft',
+      'foreshadow',
+    ]);
+    // 非 kebab 的反引号内容不是技能引用（工具名 / 带点文件名）——否则反向守卫必然误报
+    expect(extractSkillReferences('非技能标识 `manifest.json` / `file:write` 不参与判定')).toEqual([]);
+    // 裸词（无反引号）不是引用——这正是「引用必须有确定性形式」的理由
+    expect(extractSkillReferences('用 dialogue-craft 裸写')).toEqual([]);
   });
 });

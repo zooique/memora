@@ -89,9 +89,32 @@
 - persona 工作流程挂到对应阶段：`阶段6 大纲与成文（…+ dialogue-craft + …）——对白即行动、带潜台词`
 - rules 写成触发式纪律：`- 伏笔必须回收：…（用 foreshadow 维护埋点清单：埋得轻、收得重、埋收必对）`
 
-**覆盖完整性（强推荐自查）**：收录后逐个核对——每个内置 skill 在 persona/rules **至少有一处**标注使用时机。未标注的技能会沦为"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）。内核已由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫：扫描 `role-packs/*/skills/*.md`，任一技能在所属包 persona/rules 零引用即红。
+**覆盖完整性（强推荐自查）**：收录后逐个核对——每个内置 skill 在 persona/rules **至少有一处**标注使用时机（**引用须用反引号包裹技能名**，形式见 §2.6）。未标注的技能会沦为"存在但永不调用"的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口；白话方案设计师曾 6/6 全部零引用）。内核已由 `src/role-pack/__tests__/builtinPackCoverage.test.ts` 自动守卫：扫描 `role-packs/*/skills/*.md`，任一技能在所属包 persona/rules 零引用即红；**反向**（引用指向不存在的技能 = 改名残留的悬空引用）同由此守卫拦截。
 
 **命名避撞（约定，非校验项）**：技能名避免与 manifest `strategy` 策略键**语义重复**（例：技能 `self-review` 与 `reflect.selfReview`）。二者运行时完全隔离，但同名近义会让作者与 LLM 分不清「设定内容」与「行为开关」。此类冲突是语义层的，**字面校验抓不到**（技能名 kebab-case 与策略键 camelCase 永不相等，同名检测会是永远绿的装饰性断言），故仅在此约定，不进 `validator`。
+
+### 2.6 技能引用规范（设定文本里怎么「点名」技能）
+
+> **规范（2026-09-14 定稿）**：设定文本（`persona.md` / `rules.md`）里引用技能时，**用反引号把技能名括起来**——例如 `foreshadow`、`dialogue-craft`。这是技能引用的**唯一合法形式**。
+
+**为什么要有「形式」约束**：技能名是**契约**——它既是文件名（`skills/<name>.md` 或 `skills/<name>/SKILL.md`），又是设定文本里的引用名。改名（例：`self-review` → `craft-review`）若不改引用，就留下**悬空引用**。要让悬空引用可被机器发现，引用就必须有**确定性形式**——自然语言里的裸 kebab 词（如 `local-first`）与技能名无法区分，正则必然误判。
+
+**三条约定**：
+
+1. **技能名 = kebab-case**（小写字母 / 数字 / 连字符），且与文件名（单文件形态 `skills/x.md`）或目录名（文件夹形态 `skills/x/SKILL.md`）严格一致。**改名 = 破坏性变更**，须同步全部引用。
+2. **引用形式 = 反引号包裹技能名**，可出现在任意语境：
+   - persona 工作流程：阶段6 大纲与成文（`outline-expand` + `dialogue-craft` + …）
+   - rules 触发式纪律：伏笔必须回收——埋得轻、收得重（用 `foreshadow` 维护埋点清单）
+3. **保留字规则**：`persona.md` / `rules.md` 里**反引号包裹的 kebab 词一律判定为技能引用**——所以这两个文件里不要反引号包裹非技能标识（如 `local-first`、`role-pack-spec`），需要提到时写普通文本。
+
+**双向守卫**（`src/role-pack/__tests__/builtinPackCoverage.test.ts`；两个方向**共用同一个引用提取器**，SSOT）：
+
+| 方向 | 断言 | 防的是 |
+| --- | --- | --- |
+| 正向 | 每个内置技能至少被引用一次 | 「存在但永不调用」的僵尸技能 |
+| 反向 | 每条引用都指向真实存在的技能 | 改名后残留的**悬空引用** |
+
+**行业依据（2026-09-14 外部调研）**：Anthropic 官方 Skill authoring best practices 要求 `name` 只用小写字母 / 数字 / 连字符，并指出**一致的命名让技能更容易被引用与讨论**；Agent Skills 规范（agentskills.io）要求 `name` **必须与父目录名一致**；社区约定进一步把已发布的技能名当作 **API 契约——改名属 semver-major 变更**。本规范即把该契约收敛为「引用必须可机器校验」。
 
 ***
 
