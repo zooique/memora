@@ -28,14 +28,15 @@ description: 带伤设计（历史折衷残痕）审查规则——区分「正�
 > ② 去掉"兼容旧 XX"这一层，核心是否仍完整？
 > ③ 是否在 SSOT 边界之外另开了一条手写通道？
 
-## 3. 四类带伤模式（模块级识别信号）
+## 3. 五类带伤模式（模块级识别信号）
 
 | 模式 | 识别信号 | 已收敛实例 |
 | ---- | ---- | ---- |
 | **双轨镜像** | 两处存同一份状态，靠 `sync*`/`synchronize`/双写函数对齐；两字段语义重叠需保持一致 | `meta.roundIds` + `roundIdsStore`（已删字段，收敛到 `getRoundIds()` 真源） |
-| **降级兜底残留** | "优先 X、否则降级 Y"，而 Y 永不触达；或 `??` 回退恒右侧、`||` 回退恒死 | ViewLoader 优先真源/降级 `meta.roundIds`（已删降级分支） |
+| **降级兜底残留** | "优先 X、否则降级 Y"，而 Y 永不触达；或 `??` 回退恒右侧、`||` 回退恒死；或**布尔式恒真**（如 `!aborted && !paused` 正常轮恒 true）导致"想干活却一步没干成"被当成功 | ViewLoader 优先真源/降级 `meta.roundIds`（已删降级分支） |
 | **类型 hack** | `as unknown as` / `as any` / `@ts-ignore` 侥幸绕过类型约束（生产代码多处） | 多为良性（库类型缺口），如 DOMPurify 参数桥接 |
 | **重复实现** | 同语义不同名的函数/正则/常量散落；相同魔法数/哈希硬编码多处 | `SESSION_ID_PATTERN` vs `splitSessionId`（已收敛到 `isValidSessionId`） |
+| **僵尸声明** | 宣称"能力/事实"却生产代码零消费：注释宣称零实现的能力、能力位恒 false 零消费、派生字段零消费者、对外宣告通道零验收。**识别关键**：该通道不可观测、不设防、失败被静默（验收位问"跑完没有"而非"干成没有"） | `provider.ts` "fallback 到纯文本 tool_call" 注释（null 实现了静默降级）→ 已纠为中实注释 |
 
 ## 4. 实证判定流程（关键：先读码，再定类）
 
@@ -58,13 +59,14 @@ description: 带伤设计（历史折衷残痕）审查规则——区分「正�
 
 ## 6. 已收敛残留清单（避免重复审查）
 
-以下为已收敛的带伤点，新审查直接跳过：
+以下为已收敛的带伤点，新审查直接跳过。**按「模式级」记录**：同时登记「已收敛的模式」与其「复发识别信号」，当信号再次出现（即使字段名不同）即按同一模式收敛，而不是当作新 bug 另起炉灶。
 
-- `SessionMeta.roundIds` 双轨镜像 → 已删字段，收敛到 `ISessionStore.getRoundIds()/setRoundIds()` 真源
-- `sanitizeToolResult` 重复实现 → 已删除，统一走 `sanitizeExternalText`
-- `SESSION_ID_PATTERN` 正则重复实现 → 已删，收敛到 `isValidSessionId` + `splitSessionId`
-- `flattenRoundsToMessages`/`truncateRoundsUpTo`/`countMessagesInRounds`/`extractKeywords` 误暴露导出 → 已收回
-- `DEFAULT_L2_STRATEGY` / `askLimit` 默认值二次写入 → 已收敛到 `resolveL2Strategy(undefined)` 单点派生
-- `trace_summary` schema 双真源 → 已收敛 `BUILTIN_TOOLS` 引用 `TRACE_SUMMARY_TOOL`
+| 模式 | 已收敛实例 | 复发识别信号（信号再现即按本模式收敛） |
+| ---- | ---- | ---- |
+| **双轨镜像** | `SessionMeta.roundIds` 双轨镜像 → 已删字段，收敛到 `ISessionStore.getRoundIds()/setRoundIds()` 真源；`trace_summary` schema 双真源 → 已收敛 `BUILTIN_TOOLS` 引用 `TRACE_SUMMARY_TOOL` | 出现新字段与某真源同时存同一份状态、靠 sync 对齐；同一 schema/常量被两处各自 import |
+| **重复实现** | `sanitizeToolResult` → 已删，统一走 `sanitizeExternalText`；`SESSION_ID_PATTERN` → 已删，收敛到 `isValidSessionId`+`splitSessionId`；`messageCount` 重复派生 → 已删，收敛到 `deriveMessageCount` 单点；工具 `filter(web_search)` 两处 → 已收敛到 `resolveActiveTools` | 同语义不同名的函数/正则/常量 ≥2 处；同一算式在两方法各写一遍 |
+| **僵尸声明** | `provider.ts` "fallback 到纯文本 tool_call" 注释 → 已纠为中实注释 | 注释宣称零实现的能力 / 能力位恒 false 零消费 / 派生字段零消费者 / 对外宣告通道零验收 |
+| **降级兜底残留** | `flattenRoundsToMessages` 等 4 导出误暴露 → 已收回；`DEFAULT_L2_STRATEGY`/`askLimit` 二次写入 → 已收敛 `resolveL2Strategy(undefined)` | `??` 回退恒右 / `||` 回退恒死 / 布尔式恒真 / 已收回的导出再次暴露 |
+| **派生量缓存进 DTO** | `messageCount` 曾缓存在 `SessionMeta`，认 `?? 0` 造值、失效不重算（**复发案例：2026-09-14，同模式另一实例**） | 真源可 O(1) 派生、却被缓存进 DTO 且消费方为 0；`??` 造默认值掩盖缺失 |
 
 > 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)、[progressive-refactor-rules.md](./progressive-refactor-rules.md)
