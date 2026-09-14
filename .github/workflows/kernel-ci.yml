@@ -15,6 +15,14 @@
 #   仅需 ubuntu-latest + Node.js 22 LTS 即可完成全部检查。
 #   CI 验证不需要上传产物（节省 Actions 存储配额），
 #   如需发布请使用专门的 Release 工作流。
+#
+# 零残留策略（2026-09-14）：本流水线「只跑门禁，不产出任何持久资产」——
+#   ① 只读权限（permissions: contents: read）② 不使用 Actions Cache
+#   ③ 不 upload-artifact ④ 不创建 Release。
+#   动机：历史上 Sprite 打包流水线（已在 81468568 删除的 build.yml）会上传
+#   Electron 安装包（.exe/.zip，百 MB 级）+ Electron 二进制缓存（数百 MB–1GB）
+#   + 跨仓 Release（永久不过期），三者叠加把 GitHub 存储配额塞满。
+#   内核 CI 无任何需要留存的产物 → 从机制上排除这一类残留。
 
 name: Kernel CI
 
@@ -30,6 +38,11 @@ on:
   #     - main
   #     - master
   workflow_dispatch:
+
+# 只读权限：杜绝任何写（仓库内容 / packages / releases）。
+# 即使未来误加写入类 action，也会因权限不足而失败，而非静默产生残留。
+permissions:
+  contents: read
 
 jobs:
   # ─── 内核质量门禁 ──────────────────────────────────────────
@@ -50,8 +63,9 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-          cache: 'pnpm'
-          cache-dependency-path: pnpm-lock.yaml
+          # 刻意不启用 cache: 'pnpm' —— 本流水线零残留策略：不写 GitHub Actions Cache。
+          # 代价 = 每次重新 pnpm install（零依赖内核约 1–2 分钟）；收益 = 运行后无任何持久残留。
+          # cache-dependency-path: pnpm-lock.yaml
 
       - name: 安装依赖
         run: pnpm install --frozen-lockfile
