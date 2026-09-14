@@ -53,12 +53,24 @@ import {
   ToolResultCache,
   DEDUP_SUBJECT_EXTRACTORS,
   formatDedupSubject,
+  normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
+import {
+  FileExposureLedger,
+  parseReadFileCoverage,
+  formatLedgerStub,
+  READ_DIGEST_CHARS,
+} from '@/agent/toolLedger.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
+
+/** P0-2 失败硬闸的主体 key（工具名 + 规范化 path/query）：同主体连续失败计数用，粒度=同参（N2 修正） */
+function failureSubjectKey(toolName: string, subject: CacheEntry['subject']): string {
+  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.query ?? ''}`;
+}
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -203,6 +215,13 @@ export class AgentLoop {
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
    *  终结 LLM 在同一批文件上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线） */
   private readonly toolResultCache = new ToolResultCache();
+  /** 文件覆盖度台账（账本・解耦侧）：读到的行区间 + 轻量替身摘要。
+   *  闭环内有效（resetTurnState 清），与 toolResultCache 同生命周期。
+   *  分支②据此在「原文已压缩」时回显摘要，而非放行重读（永动机）或空拦（死锁）。 */
+  private readonly fileExposure = new FileExposureLedger();
+  /** P0-2 同主体连续失败硬闸（N1 真 block / N2 同主体粒度）：subject-key → 连续失败次数。
+   *  失败记录于结果处理循环；达阈值后前置拦截（执行前）返回 [READ_FAILED_LIMIT]，治幻觉文件重读风暴。 */
+  private readonly infoToolFailureBySubject = new Map<string, number>();
   /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。private 读写器，内部消费点：
    *  _routePausedIfTimeoutAndPause（读）/ resetTurnState（清）/ requestPause/clearPauseRequest（写） */
   private get pauseRequested(): boolean {
@@ -322,7 +341,17 @@ export class AgentLoop {
     this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
-    this.compactionStrategy = opts.compactionStrategy ?? new ResultReplacementStrategy();
+    this.compactionStrategy =
+      opts.compactionStrategy ??
+      new ResultReplacementStrategy(
+        // P1 摘要替代：默认压缩策略下，read_file 结果被压缩链清出时替换为它**自己的**台账摘要（非空占位）。
+        // 无摘要（未触发脚注 / 小文件读到底）→ 回调返回 undefined → 回退空占位。
+        undefined,
+        (path) => {
+          const cov = this.fileExposure.get(normalizePathKey(path));
+          return cov ? formatLedgerStub(cov) : undefined;
+        },
+      );
     // 入口关落盘目录（大文本统一通道 §6.2）：消费点在 appendToolMessage，不挂压缩链
     this.offloadDir = opts.offloadDir;
     // 两级空间管理压缩链：第一级替换（LRU 内核自动，取已存摘要，无摘要 no-op）→
@@ -347,7 +376,8 @@ export class AgentLoop {
     ];
     this.duplicateCallInterceptor =
       opts.duplicateCallInterceptor ?? new DefaultDuplicateCallInterceptor(3);
-    this.duplicateToolCallThreshold = 3;
+    // N3 排雷修正：阈值取拦截器自身（宿主注入自定义阈值时文案/硬闸/context.threshold 同步），未实现回落默认 3
+    this.duplicateToolCallThreshold = this.duplicateCallInterceptor.getThreshold?.() ?? 3;
     this.onPendingQuestion = opts.onPendingQuestion;
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
@@ -685,6 +715,10 @@ export class AgentLoop {
     this.softLimitWrapupInjected = false;
     // 工具结果防重缓存：闭环内有效，新闭环开始即清空（跨闭环不复用，避免上一轮已读文件"误伤"本轮合法重读）
     this.toolResultCache.clear();
+    // 文件覆盖度台账同步清空（与防重缓存同生命周期）
+    this.fileExposure.clear();
+    // P0-2 失败硬闸计数随轮清空（跨闭环复用时若残留，会误拒本轮合法的新失败重试）
+    this.infoToolFailureBySubject.clear();
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
   }
@@ -1157,6 +1191,48 @@ export class AgentLoop {
       return yield* this.handleAskUser(llmResult, effectiveToolCalls);
     }
 
+    // ─── 重复工具调用检测（拦截器模式 · **前移到执行前** = N1 真 block）───
+    // 重复检测委托给 DuplicateCallInterceptor（默认哈希机械检测，宿主可注入差异化策略）。
+    // 判定在工具执行**前**：warn → 注入负反馈后继续执行；block → 注入阻断并跳过执行（真阻止，
+    // 不再"事后宣告已自动阻止"的假 block，N1 排雷修正）。
+    const currentHash = DefaultDuplicateCallInterceptor.hash(effectiveToolCalls);
+    if (currentHash !== '' && currentHash === this.lastToolCallsHash) {
+      this.duplicateToolCallCount++;
+    } else {
+      this.duplicateToolCallCount = 0;
+    }
+    const checkContext: DuplicateCheckContext = {
+      iteration: this.currentIteration,
+      duplicateCount: this.duplicateToolCallCount,
+      lastHash: this.lastToolCallsHash,
+      currentHash,
+      threshold: this.duplicateToolCallThreshold,
+    };
+    const dupVerdict = this.duplicateCallInterceptor.check(effectiveToolCalls, checkContext);
+    if (dupVerdict === 'warn') {
+      // 警告：注入负反馈强制 LLM 改策略，但**不跳过**本轮执行（软提醒）
+      this.appendSystemMessage(this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold), {
+        executionTemp: true,
+      });
+      logger.warn({ hash: currentHash, count: this.duplicateToolCallCount, interceptor: this.duplicateCallInterceptor.name ?? 'anonymous' }, '重复工具调用拦截器触发 warning（执行前）');
+      this.duplicateToolCallCount = 0;
+      this.lastToolCallsHash = '';
+    } else if (dupVerdict === 'block') {
+      // 硬拦截：真阻止——不执行任何工具，注入阻断并结束本轮（工具尚未执行，诚实）
+      this.appendSystemMessage(
+        `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已阻止本次工具执行。` +
+          `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
+        { executionTemp: true },
+      );
+      logger.warn({ hash: currentHash, count: this.duplicateToolCallCount, interceptor: this.duplicateCallInterceptor.name ?? 'anonymous' }, '重复工具调用拦截器触发 block（执行前阻止）');
+      this.duplicateToolCallCount = 0;
+      this.lastToolCallsHash = '';
+      return 'done';
+    } else {
+      this.lastToolCallsHash = currentHash;
+    }
+    // ─── 拦截器检测结束 ──────────────────────────────────────
+
     const execResult = yield* this.executeToolCalls(
       effectiveToolCalls,
       llmResult.fullContent,
@@ -1177,72 +1253,6 @@ export class AgentLoop {
       };
       return 'aborted';
     }
-
-    // ─── 重复工具调用检测（拦截器模式） ──────────────────────
-    // 重复检测委托给 DuplicateCallInterceptor（默认基于哈希的机械检测，宿主可注入差异化策略）
-    const currentHash = DefaultDuplicateCallInterceptor.hash(effectiveToolCalls);
-    // 先更新计数（拦截器判定需要最新的 duplicateCount）
-    if (currentHash !== '' && currentHash === this.lastToolCallsHash) {
-      this.duplicateToolCallCount++;
-    } else {
-      this.duplicateToolCallCount = 0;
-    }
-
-    const checkContext: DuplicateCheckContext = {
-      iteration: this.currentIteration,
-      duplicateCount: this.duplicateToolCallCount,
-      lastHash: this.lastToolCallsHash,
-      currentHash,
-      threshold: this.duplicateToolCallThreshold,
-    };
-    const verdict = this.duplicateCallInterceptor.check(effectiveToolCalls, checkContext);
-
-    switch (verdict) {
-      case 'warn': {
-        // 注入负反馈，强制 LLM 改变策略
-        this.appendSystemMessage(
-          this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold),
-          { executionTemp: true },
-        );
-        logger.warn(
-          {
-            hash: currentHash,
-            count: this.duplicateToolCallCount,
-            interceptor: this.duplicateCallInterceptor.name ?? 'anonymous',
-          },
-          '重复工具调用拦截器触发 warning',
-        );
-        // 注入后重置计数+清空 hash，防止持续注入相同 warning 造成上下文噪音
-        this.duplicateToolCallCount = 0;
-        this.lastToolCallsHash = '';
-        break;
-      }
-      case 'block': {
-        // 硬拦截：注入更强系统消息，明确拒绝继续
-        this.appendSystemMessage(
-          `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已自动阻止。` +
-            `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
-          { executionTemp: true },
-        );
-        logger.warn(
-          {
-            hash: currentHash,
-            count: this.duplicateToolCallCount,
-            interceptor: this.duplicateCallInterceptor.name ?? 'anonymous',
-          },
-          '重复工具调用拦截器触发 block',
-        );
-        this.duplicateToolCallCount = 0;
-        this.lastToolCallsHash = '';
-        break;
-      }
-      case 'ok':
-      default: {
-        this.lastToolCallsHash = currentHash;
-        break;
-      }
-    }
-    // ─── 拦截器检测结束 ──────────────────────────────────────
 
     // Reflection：本轮工具结果含 retryable 错误时，追加反思提示帮 LLM 聚焦修正而非放弃
     // slice 按实际执行的 effectiveToolCalls.length 取窗口——旧实现按 LLM 原始请求条数
@@ -1503,17 +1513,43 @@ export class AgentLoop {
       if (subjectExtractor) {
         const subject = subjectExtractor(tc.function.arguments);
         if (subject) {
-          const hit = this.toolResultCache.check(tc.function.name, subject);
-          if (hit && this.isCachedResultStillInContext(hit)) {
+          // P0-2 失败硬闸（N1 真 block / N2 同主体粒度）：该同主体已连续失败达阈值 → 执行前硬拦，不再执行。
+          // 治「幻觉文件重读风暴」（前一次结果已 [ERR 失败，此处按其主体累计拒绝后续同参重试）。
+          const failCount = this.infoToolFailureBySubject.get(
+            failureSubjectKey(tc.function.name, subject),
+          );
+          if (failCount !== undefined && failCount >= this.duplicateToolCallThreshold) {
             blockedFlags.push(true);
             toolPromises.push(
               Promise.resolve(
-                `[ALREADY_READ] 该结果仍在你的当前上下文中（第 ${hit.cachedAtIteration} 步获取：` +
-                  `${formatDedupSubject(tc.function.name, subject)}），无需重复获取。` +
-                  `如需该文件的其它部分，请用 offset/limit 指定行区间。`,
+                `[READ_FAILED_LIMIT] 该目标已连续失败 ${failCount} 次（阈值 ${this.duplicateToolCallThreshold}），` +
+                  `可能不存在。请先用 list_dir 确认路径，或改用其它目标。`,
               ),
             );
             continue;
+          }
+          const hit = this.toolResultCache.check(tc.function.name, subject);
+          if (hit) {
+            // 分支①：结果仍在上下文 → 拦（现状：同参重读 = 纯浪费）
+            if (this.isCachedResultStillInContext(hit)) {
+              blockedFlags.push(true);
+              toolPromises.push(
+                Promise.resolve(
+                  `[ALREADY_READ] 该结果仍在你的当前上下文中（第 ${hit.cachedAtIteration} 步获取：` +
+                    `${formatDedupSubject(tc.function.name, subject)}），无需重复获取。` +
+                    `如需该文件的其它部分，请用 offset/limit 指定行区间。`,
+                ),
+              );
+              continue;
+            }
+            // 分支②：结果已被压缩链清出上下文，但台账有该文件覆盖度摘要 → 回显摘要（非空拦、非放行）
+            const cov = subject.path ? this.fileExposure.get(subject.path) : undefined;
+            if (cov) {
+              blockedFlags.push(true);
+              toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
+              continue;
+            }
+            // 分支③（保守）：无摘要可回显 → 放行（宁可多读一次，不可死锁，CTX-1 根因②）
           }
         }
       }
@@ -1555,6 +1591,34 @@ export class AgentLoop {
             toolCallId: tc.id,
             fingerprint: sha256Fingerprint(wrapToolResult(tc.function.name, result)),
           });
+          // 文件覆盖度台账写侧：read_file 返回分段脚注（= 文件确实大/被截断，R1 修正的"按需"信号）
+          // 时记录覆盖区间 + 轻量替身摘要——供拦截分支②在原文被压缩后回显（防重读永动机 / 空拦死锁）。
+          if (tc.function.name === 'read_file' && subject.path) {
+            const cov = parseReadFileCoverage(result);
+            if (cov) {
+              this.fileExposure.record(subject.path, {
+                totalLines: cov.totalLines,
+                coverStart: cov.coverStart,
+                coverEnd: cov.coverEnd,
+                // 替身 = 已读正文前 READ_DIGEST_CHARS 字符（轻量启发式，零 LLM 成本）
+                digest: cov.content.slice(0, READ_DIGEST_CHARS),
+                cachedAtIteration: this.currentIteration,
+              });
+            }
+          }
+        }
+      }
+      // P0-2 失败硬闸计数：真实失败（执行了且返回 [ERR，非拦截）的 info 工具 → 同主体累加；
+      // 成功 → 清除该主体失败计数（恢复）。治「幻觉文件重读风暴」。
+      if (resultExtractor) {
+        const fSubject = resultExtractor(tc.function.arguments);
+        if (fSubject) {
+          const key = failureSubjectKey(tc.function.name, fSubject);
+          if (ok) {
+            this.infoToolFailureBySubject.delete(key);
+          } else if (!blocked) {
+            this.infoToolFailureBySubject.set(key, (this.infoToolFailureBySubject.get(key) ?? 0) + 1);
+          }
         }
       }
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
@@ -1562,7 +1626,11 @@ export class AgentLoop {
       if (ok && (tc.function.name === 'write_file' || tc.function.name === 'delete_file')) {
         try {
           const a = JSON.parse(tc.function.arguments) as { path?: string };
-          if (a.path) this.toolResultCache.invalidateFile(a.path);
+          if (a.path) {
+            this.toolResultCache.invalidateFile(a.path);
+            // 台账同步失效：文件内容变了，旧覆盖度替身作废（防分支②回显陈旧摘要 → 放行合法重读）
+            this.fileExposure.invalidate(a.path);
+          }
         } catch {
           /* 参数非 JSON → 忽略 */
         }

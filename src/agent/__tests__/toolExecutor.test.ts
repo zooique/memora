@@ -943,6 +943,22 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('超出文件末尾');
     });
 
+    it('P2：读取不存在的文件 → 报错附同级目录实际内容（失败即给证据，助模型自查）', async () => {
+      // 制造"名字猜错、但旁边有正确文件"场景：同目录放一个真实文件，再读一个猜错的名字
+      writeFileSync(join(tmpProject, 'real-guide.md'), '真实文件名', 'utf-8');
+      let caught: MemoraError | undefined;
+      try {
+        await executor.execute('read_file', JSON.stringify({ path: '猜错的名字.md' }));
+      } catch (e) {
+        caught = e as MemoraError;
+      }
+      expect(caught).toBeDefined();
+      // 正文（detail）附同级目录内容
+      expect(caught!.detail).toContain('同级目录内容');
+      // 证据要能帮到模型：标注里应出现同级目录里那个真实存在的文件名
+      expect(caught!.detail).toContain('real-guide.md');
+    });
+
     it('中文大文件同样守住单次读取预算（CJK 密度更高，字符上限会失准）', async () => {
       const file = 'src/cn-big.txt';
       writeFileSync(

@@ -428,6 +428,12 @@ export interface DuplicateCallInterceptor {
 
   /** 拦截器唯一标识（用于日志/调试，可选但建议实现） */
   readonly name?: string;
+
+  /**
+   * 当前阈值（可选）。宿主注入自定义拦截器时，loop 的失败硬闸 / 警告文案 / `context.threshold`
+   * 都应取**本拦截器**的阈值，而非 loop 自身硬编码（N3 排雷修正）。未实现则回落默认 3。
+   */
+  getThreshold?(): number;
 }
 
 /** 提供给拦截器的只读运行时信息，供宿主策略做精确判定 */

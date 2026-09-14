@@ -37,6 +37,7 @@ description: Memora 关键决策年轮
 | [ADR-028](./ADR-028-role-pack-manual-switch-teams-meeting.md) | 角色包体系：手动切换 + 组（组长+组员）+ 小组会议（任务表应用，内核零会议代码） | ✅ 已接受 | 架构 |
 | [ADR-029](./ADR-029-context-window-resolution-host-injection.md) | 上下文窗口解析归宿主注入（内核只消费不解析，resolveContextWindow 单一公式，角色包不声明绝对 token 配额） | ✅ 已接受 | 架构 |
 | [ADR-030](./ADR-030-context-occupancy-input-indicator.md) | 输入区上下文占用指示器（内核算、宿主传、webview 渲，输入区常驻比例条 + hover 明细） | ✅ 已接受 | 架构 |
+| [ADR-031](./ADR-031-tool-read-ledger-account-vs-occupancy.md) | 工具读取台账：账本与占用解耦（判据只记「发生过」，结构化台账 + 拦截三分支 + 压缩摘要替代 + 失败硬闸，CTX-1b 定案） | ✅ 已接受 | 架构 |
 
 ### 插件宿主（VC 系列）
 
@@ -61,7 +62,7 @@ description: Memora 关键决策年轮
 | 运行时 | 1    | ADR-001 |
 | 数据层 | 2    | ADR-002, ADR-016 |
 | 集成层 | 2    | ADR-003, ADR-017-web-search |
-| 架构   | 13   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~030 |
+| 架构   | 14   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031 |
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
 | 工程   | 2    | ADR-008, ADR-017 |

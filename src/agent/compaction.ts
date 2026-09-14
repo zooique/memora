@@ -27,12 +27,18 @@ export interface ICompactionStrategy {
  */
 export class ResultReplacementStrategy implements ICompactionStrategy {
   private readonly keepRecent: number;
+  /** P1 摘要替代回调：给定 read_file 的 path，返回应写入占位的台账摘要；无摘要返回 undefined → 回退空占位。
+   *  由 loop 装配注入（取 `FileExposureLedger` 的覆盖度摘要），压缩时把 read_file 结果换成它**自己的**摘要，
+   *  而非空 `[Previous: used read_file]`（§方案 P1：摘要替代，非空占位；摘要只产一次、三处同源）。 */
+  private readonly readFileReplacement?: (path: string) => string | undefined;
 
   /**
    * @param keepRecent 保留最近多少次工具调用的完整结果（默认 3）
+   * @param readFileReplacement read_file 结果的替代处理器（可选；返回 vacuous 时回退空占位）
    */
-  constructor(keepRecent: number = 3) {
+  constructor(keepRecent: number = 3, readFileReplacement?: (path: string) => string | undefined) {
     this.keepRecent = keepRecent;
+    this.readFileReplacement = readFileReplacement;
   }
 
   /** @inheritdoc */
@@ -63,13 +69,15 @@ export class ResultReplacementStrategy implements ICompactionStrategy {
       return;
     }
 
-    // 2. 构建工具调用 ID -> 工具名称的映射
-    //    从 assistant 消息中的 toolCalls 提取
+    // 2. 构建工具调用 ID -> 工具名称 / 参数的映射
+    //    从 assistant 消息中的 toolCalls 提取（参数用于 P1：定位 read_file 的 path 以取台账摘要）
     const toolNameMap = new Map<string, string>();
+    const toolArgsMap = new Map<string, string>();
     for (const msg of messages) {
       if (msg.role === 'assistant' && msg.toolCalls) {
         for (const tc of msg.toolCalls) {
           toolNameMap.set(tc.id, tc.function.name);
+          toolArgsMap.set(tc.id, tc.function.arguments);
         }
       }
     }
@@ -79,11 +87,27 @@ export class ResultReplacementStrategy implements ICompactionStrategy {
 
     // 4. 执行替换
     for (const resultMsg of toReplace) {
-      const toolName =
-        toolNameMap.get(resultMsg.toolCallId!) ?? 'unknown';
+      const toolName = toolNameMap.get(resultMsg.toolCallId!) ?? 'unknown';
+      // P1 摘要替代：read_file 且能定位 path 且台账有摘要 → 用摘要（非空占位）；否则回退 [Previous: used x]
+      let replacement: string | undefined;
+      if (toolName === 'read_file' && this.readFileReplacement) {
+        const path = readFilePathFromArgs(toolArgsMap.get(resultMsg.toolCallId!));
+        if (path) replacement = this.readFileReplacement(path);
+      }
       // 关键：保留工具名以维持语义连贯性，替换完整内容
-      resultMsg.content = `[Previous: used ${toolName}]`;
+      resultMsg.content = replacement ?? `[Previous: used ${toolName}]`;
     }
+  }
+}
+
+/** 从 read_file 工具调用参数里提取 path（供 P1 摘要替代定位台账摘要）；非 JSON / 无 path → undefined */
+function readFilePathFromArgs(argsJson: string | undefined): string | undefined {
+  if (argsJson === undefined) return undefined;
+  try {
+    const a = JSON.parse(argsJson) as { path?: unknown };
+    return typeof a?.path === 'string' && a.path.trim() !== '' ? a.path : undefined;
+  } catch {
+    return undefined;
   }
 }
 

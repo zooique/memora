@@ -313,6 +313,7 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   'trace_summary',
   'list_sessions',
   'compress_context',
+  'remember_intel', // 情报区写回（LLM 私有笔记累积，随每轮装配注入）——上下文维护基建，与 compress_context 同族
   'ask_user',
   'register_work',
   // 技能域（判据 A+B：来源可信；既定豁免）

@@ -41,6 +41,11 @@ export class DefaultDuplicateCallInterceptor implements DuplicateCallInterceptor
     this.threshold = threshold;
   }
 
+  /** 当前阈值（N3 排雷修正：loop 据此 SSOT 取阈值，不硬编码） */
+  getThreshold(): number {
+    return this.threshold;
+  }
+
   /**
    * 检查工具调用是否构成重复死循环
    *

@@ -16,6 +16,8 @@ import * as hashModule from '@/utils/hash.js';
 import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
 import { logger } from '@/logging/logger.js';
+import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
+import type { DuplicateCallInterceptor } from '@/agent/types.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -4395,6 +4397,103 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // 内容已不在手上 → 必须放行；若去掉 isCachedResultStillInContext 判定，此处为 2（死锁）
     expect(toolExecutor).toHaveBeenCalledTimes(3);
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+  });
+
+  it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
+    // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点，R1）→ 写侧记录覆盖度摘要
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) =>
+        Promise.resolve(
+          name === 'read_file'
+            ? '第1行内容\n[read_file 分段] 已显示第 1–1 行（共 200 行）。继续读用 offset=2。'
+            : '',
+        ),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 读第二个文件 → 工具结果数超 keepRecent，逼压缩链在下一步前替换掉 a.md 的结果
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
+        // a.md 原文已被换成 [Previous: used read_file]，但台账仍有其覆盖度摘要 → 分支②应回显摘要
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('压缩后重读有摘要')) {
+      void chunk;
+    }
+
+    // 前置自检：压缩确实发生过（a.md 结果已换占位符），否则用例没打到分支②
+    expect(
+      loop.getMessages().some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
+    ).toBe(true);
+    // c3 同参重读 → 分支②拦（回显台账摘要），不落 ToolExecutor → 仍为 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    // 非空拦：回显覆盖度 + 已读正文替身（LLM 手边有内容，不会死锁）
+    expect(stub!.content).toContain('共 200 行');
+    expect(stub!.content).toContain('第1行内容');
+  });
+
+  it('F · 同主体连续失败达阈值 → 执行前硬拦（N2 同主体粒度，治幻觉文件风暴）', async () => {
+    // 读一个始终失败（不存在）的文件：返回 [ERR → 触发失败硬闸
+    const toolExecutor = vi.fn().mockResolvedValue('[ERR 文件不存在：幻想文档.md]');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/幻想.md"}')] }],
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/幻想.md"}')] }],
+        // 第 3 次同主体 → 失败计数达阈值 2 → 执行前硬拦，不落 ToolExecutor
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/幻想.md"}')] }],
+        [{ content: '改用 list_dir 查证' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      duplicateCallInterceptor: new DefaultDuplicateCallInterceptor(2),
+    });
+
+    for await (const chunk of loop.processUserInput('读不存在的文件')) {
+      void chunk;
+    }
+
+    // 前 2 次真失败执行；第 3 次被失败硬闸拦在前置（执行前）→ 仍为 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    const limited = loop.getMessages().find((m) => m.content.includes('[READ_FAILED_LIMIT]'));
+    expect(limited).toBeDefined();
+    expect(limited!.content).toContain('可能不存在');
+  });
+
+  it('G · 整批重复判定前移：block 拦截器 → 工具不执行（N1 真 block，非事后撒谎）', async () => {
+    // 注入一个恒返回 block 的拦截器：判定在**执行前**，工具绝不运行
+    const blockInterceptor: DuplicateCallInterceptor = {
+      name: 'always-block',
+      getThreshold: () => 1,
+      check: () => 'block',
+    };
+    const toolExecutor = vi.fn().mockResolvedValue('本不该执行');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '我换思路' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      duplicateCallInterceptor: blockInterceptor,
+    });
+
+    for await (const chunk of loop.processUserInput('触发阻断')) {
+      void chunk;
+    }
+
+    // N1：工具实际未执行（0 次），而非"已自动阻止"却已跑完
+    expect(toolExecutor).not.toHaveBeenCalled();
+    const blocked = loop.getMessages().find((m) => m.content.includes('DUPLICATE_TOOL_CALL_BLOCKED'));
+    expect(blocked).toBeDefined();
+    expect(blocked!.content).toContain('已阻止本次工具执行');
   });
 });
 

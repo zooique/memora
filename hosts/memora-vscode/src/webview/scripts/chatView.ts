@@ -851,21 +851,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 思考折叠块（2026-09-13，Turn 意图理解与模型思考展示设计）：模型 thought 流累积结果。
-   * summary 固定「思考」标签 + 首行预览（截断），展开看全文；按 seq 与 narrate/tool 平铺
-   * （思考是过程轨迹的一部分，保时序忠实）。textContent 构建防注入。
+   * 思考折叠块（聚合版，2026-09-14）：把同一轮 assistant 应答的**全部** thought 碎片聚合成
+   * **一个**折叠块，正文为各碎片累积拼接 —— 修复「thinking>LLM 流式把 reasoning 切成几十个片段 →
+   * 满屏"思考"小折叠」（P3）。summary 固定「思考」+ 首行预览；textContent 构建防注入。
+   * streaming 时默认展开（openByDefault=true 由调用方按运行期传），finalize 默认收起。
    */
-  function createThoughtGroup(
-    ev: Extract<ProcessEvent, { type: 'thought' }>,
+  function createAggregatedThought(
+    contents: readonly string[],
     openByDefault = false,
   ): HTMLDetailsElement {
+    const chunks = contents.map((c) => c.trim()).filter(Boolean);
+    const text = chunks.join('\n');
+    const preview = text.slice(0, 80);
     const row = document.createElement('details');
     row.className = 'round-block__thought';
     row.open = openByDefault;
-    row.dataset.seq = String(ev.seq);
     const summary = document.createElement('summary');
-    const text = ev.payload.content.trim();
-    summary.textContent = text.length > 80 ? `思考 · ${text.slice(0, 80)}…` : `思考 · ${text}`;
+    summary.textContent = chunks.length > 1 ? `思考 · ${preview}…` : `思考 · ${preview}`;
     const body = document.createElement('div');
     body.className = 'round-block__thought-body';
     body.textContent = text;
@@ -1191,13 +1193,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertStepInOrder(host, row, t.seq);
       }
     }
-    // § 思考（thought 折叠块）：按 seq 与 narrate/tool 平铺（保时序；finalize 默认收起）
+    // § 思考（thought 聚合折叠块，2026-09-14）：同一轮全部碎片聚合成**一个**块，按首个 seq 与
+    // narrate/tool 平铺（保时序；finalize 默认收起）。修复碎片化「满屏思考小折叠」（P3）。
     const thoughts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
-    for (const r of thoughts) {
-      const { host } = stepContainerFor(details, events, r.seq);
-      insertStepInOrder(host, createThoughtGroup(r), r.seq);
+    if (thoughts.length > 0) {
+      const first = thoughts[0]!;
+      const { host } = stepContainerFor(details, events, first.seq);
+      insertStepInOrder(
+        host,
+        createAggregatedThought(thoughts.map((t) => t.payload.content)),
+        first.seq,
+      );
     }
     // § 过程轨迹（thinking 阶段：聚合计数，2026-09-09 去噪——同一相位 N 条 thinking 事件
     //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
@@ -1351,24 +1359,36 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = stepContainerFor(flow, events, n.seq);
       insertStepInOrder(host, row, n.seq);
     }
-    // 2.5) thought 思考折叠行：按 seq 插入（<details> 折叠；textContent 防注入；运行时默认收起）
+    // 2.5) thought 思考折叠（聚合为单块，2026-09-14）：流式碎片增量累积进**一个**折叠块，
+    //   data-merged-seq 记账防重复拼接（幂等）；修复满屏「思考」小折叠（P3）。
     const thoughts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
-    for (const r of thoughts) {
-      if (flow.querySelector(`.process-flow__thought[data-seq="${r.seq}"]`)) continue;
-      const row = document.createElement('details');
-      row.className = 'process-flow__thought';
-      row.dataset.seq = String(r.seq);
-      const summaryEl = document.createElement('summary');
-      summaryEl.textContent = '思考';
-      row.appendChild(summaryEl);
-      const body = document.createElement('div');
-      body.className = 'process-flow__thought-body';
-      body.textContent = r.payload.content.trim();
-      row.appendChild(body);
-      const { host } = stepContainerFor(flow, events, r.seq);
-      insertStepInOrder(host, row, r.seq);
+    if (thoughts.length > 0) {
+      let row = flow.querySelector('.process-flow__thought') as HTMLDetailsElement | null;
+      if (!row) {
+        row = document.createElement('details');
+        row.className = 'process-flow__thought';
+        row.dataset.mergedSeq = '0';
+        const summaryEl = document.createElement('summary');
+        summaryEl.textContent = '思考';
+        row.appendChild(summaryEl);
+        const bodyEl = document.createElement('div');
+        bodyEl.className = 'process-flow__thought-body';
+        row.appendChild(bodyEl);
+        const first = thoughts[0]!;
+        const { host } = stepContainerFor(flow, events, first.seq);
+        insertStepInOrder(host, row, first.seq);
+      }
+      const body = row.querySelector('.process-flow__thought-body') as HTMLDivElement;
+      let last = Number(row.dataset.mergedSeq ?? '0');
+      for (const t of thoughts) {
+        if (t.seq <= last) continue;
+        const txt = t.payload.content.trim();
+        if (txt) body.textContent = body.textContent ? `${body.textContent}\n${txt}` : txt;
+        last = t.seq;
+        row.dataset.mergedSeq = String(t.seq);
+      }
     }
     for (const t of toolStarts) {
       if (flow.querySelector(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`)) continue;

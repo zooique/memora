@@ -3321,4 +3321,25 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(nodes[1].className).toContain('round-block__tool');
     expect(nodes[2].className).toContain('round-block__narrate');
   });
+
+  it('P3：同一轮多个 thought 碎片聚合成一个折叠块（修复满屏小折叠）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '用户想要理解' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '项目并生成' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '白' } } });
+    // 运行时：仍是**单个** process-flow__thought，正文增量累积（data-merged-seq 防重复拼接）
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    const runningRows = flow.querySelectorAll('.process-flow__thought');
+    expect(runningRows.length).toBe(1);
+    expect(runningRows[0]!.textContent).toContain('用户想要理解');
+    expect(runningRows[0]!.textContent).toContain('项目并生成');
+    // finalize：round-block 亦为**单个**折叠块，全部碎片聚合
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const doneRows = rb.querySelectorAll('.round-block__thought');
+    expect(doneRows.length).toBe(1);
+    expect(doneRows[0]!.textContent).toContain('用户想要理解');
+    expect(doneRows[0]!.textContent).toContain('白');
+  });
 });

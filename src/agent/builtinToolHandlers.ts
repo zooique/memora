@@ -28,6 +28,8 @@ import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），sessionId 兜底留在调用端
 import { getSessionDisplayName } from '@/memory/sessionStore.js';
 import { splitSessionId } from '@/utils/time.js';
+// read_file 分段脚注格式单一真理源（生成侧在此用作「截断诚实化」文案）
+import { formatSegmentationFooter } from '@/agent/toolLedger.js';
 // 使用 import type 避免运行时循环依赖：WriteExtensions 类型定义在 toolExecutor.ts
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
@@ -59,19 +61,6 @@ const LIST_SESSIONS_SUMMARY_CHARS = 200;
  * 不再使用字符上限；本常量专职 list_dir，故改名——名字须与它实际约束的东西一致。
  */
 const DIR_LIST_MAX_LEN = 50_000;
-
-/**
- * read_file 分段脚注（截断诚实化的唯一文案出口）
- *
- * 静默截断 = 假阴性：LLM 既不知道后面还有内容，也没有续读手段
- * （与 SEARCH-1「零命中丢失截断标记」同族缺陷）。故截断必须如实回报行号区间与续读入口。
- */
-function segmentationFooter(startLine: number, endLine: number, totalLines: number): string {
-  return (
-    `[read_file 分段] 已显示第 ${startLine}–${endLine} 行（共 ${totalLines} 行）。` +
-    `继续读用 offset=${endLine + 1}。`
-  );
-}
 
 /**
  * 按 token 预算反推字符数截断单行（仅用于「单行本身即超预算」的病态退化分支）
@@ -293,7 +282,7 @@ export class BuiltinToolHandlers {
       ) {
         throw toolError(
           'read_file 文件不存在',
-          `${absolutePath}：文件不存在`,
+          `${absolutePath}：文件不存在${await this.siblingDirHint(absolutePath)}`,
           ['确认路径正确', '使用 list_dir 查看目录结构'],
           e,
           ToolErrorCode.FILE_NOT_FOUND,
@@ -306,6 +295,26 @@ export class BuiltinToolHandlers {
         e,
         ToolErrorCode.UNKNOWN,
       );
+    }
+  }
+
+  /**
+   * P2 失败即给证据：read_file 目标不存在（ENOENT）时，返回其**同级目录实际条目**的紧凑清单，
+   * 让模型自查真实文件名（优于单纯拒绝；配合 P0-2 失败硬闸在首次失败就给路，比硬拦更止妖）。
+   * 父目录不可读 / 无可见条目 → 返回空串（不掩盖原始错误）。条目经 shouldIgnore 过滤，join 拼接。
+   */
+  private async siblingDirHint(filePath: string): Promise<string> {
+    try {
+      const parent = dirname(filePath);
+      const names = await readdir(parent);
+      const visible = names.filter((n) => !this.shouldIgnore(n)).sort();
+      if (visible.length === 0) return '';
+      const sample = visible.slice(0, 20);
+      const tail = visible.length > sample.length ? `…（共 ${visible.length} 项）` : '';
+      return `\n[同级目录内容，供比对] ${sample.join('、')}${tail}`;
+    } catch {
+      // 父目录不可读/权限问题时放弃证据（不把次要失败盖过原始 ENOENT）
+      return '';
     }
   }
 
@@ -359,7 +368,7 @@ export class BuiltinToolHandlers {
     }
 
     // 脚注预留：按最坏位数（endLine 取总行数）估算，实际脚注必不超此预留
-    const reserve = estimateTokensText(`\n${segmentationFooter(start, total, total)}`);
+    const reserve = estimateTokensText(`\n${formatSegmentationFooter(start, total, total)}`);
     const bodyBudget = budget - reserve;
 
     // 二分最大可容纳行数 k ∈ [0, wantedEnd − start + 1]
@@ -380,13 +389,13 @@ export class BuiltinToolHandlers {
       const fillBudget = Math.max(1, bodyBudget - estimateTokensText(marker));
       return (
         `${marker}${clampCharsToTokenBudget(lines[start - 1]!, fillBudget)}\n` +
-        segmentationFooter(start, start, total)
+        formatSegmentationFooter(start, start, total)
       );
     }
 
     // 二分下界保证 body 不超 bodyBudget；脚注按 ceil 可加性不超 reserve
     return (
-      `${lines.slice(start - 1, endLine).join('\n')}\n${segmentationFooter(start, endLine, total)}`
+      `${lines.slice(start - 1, endLine).join('\n')}\n${formatSegmentationFooter(start, endLine, total)}`
     );
   }
 
