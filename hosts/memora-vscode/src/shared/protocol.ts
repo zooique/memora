@@ -18,7 +18,9 @@ import type { InteractiveInputKind, ProcessEvent } from '@zooique/memora';
  * - name 为唯一别名（持久化 key，编辑时禁用）
  * - apiKey 存 SecretStorage（不落盘 settings.json），模型/baseUrl 存用户级 configuration
  *   （ConfigurationTarget.Global，2026-08-17 由 Workspace 迁至 Global——Provider 是用户级偏好）
- * - provider 标识（'cloud'|'local'），仅用于日志/模式展示
+ * - provider 标识（'cloud'|'local'）——阶段1 起升格为**行为锚点**（非纯展示标签）：
+ *   驱动「支持原生工具调用」能力位落值——cloud → supportsToolCalling=undefined（内核回落 true，
+ *   存量云行为零回归）；local → 用户在配置面板显式声明（默认 true）。见下方 supportsToolCalling 字段。
  */
 export interface LlmProviderConfig {
   /** 唯一别名（持久化 key，仅允许英文数字.-_） */
