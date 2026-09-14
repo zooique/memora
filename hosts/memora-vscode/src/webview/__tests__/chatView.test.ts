@@ -3354,4 +3354,34 @@ describe('chatView narrate_withdraw 回抽', () => {
     // 连续拼接 → 一句完整文本（中间有空格，非分行的碎片）
     expect(done.textContent).toContain('Now let me also read the project report');
   });
+
+  it('P3：per-step 分桶——不同 step 的思考各自独立折叠，同 step 内碎片连续', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '分析需求' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '第一' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '步' } } });
+    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 5, ts: '', payload: { stepId: 's2', title: '编写代码' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 6, ts: '', payload: { content: '第二' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 7, ts: '', payload: { content: '步' } } });
+    // 流式：s1、s2 各 1 个折叠块（同 step 内连续），各自独立
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    const flowSteps = flow.querySelectorAll('.round-block__step');
+    expect(flowSteps.length).toBe(2);
+    const s1f = flowSteps[0]!.querySelectorAll('.process-flow__thought');
+    const s2f = flowSteps[1]!.querySelectorAll('.process-flow__thought');
+    expect(s1f.length).toBe(1);
+    expect(s1f[0]!.textContent).toContain('第一步');
+    expect(s2f.length).toBe(1);
+    expect(s2f[0]!.textContent).toContain('第二步');
+    // finalize：round-block 内同样每 step 一个折叠块
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const rbSteps = rb.querySelectorAll('.round-block__step');
+    expect(rbSteps.length).toBe(2);
+    expect(rbSteps[0]!.querySelectorAll('.round-block__thought').length).toBe(1);
+    expect(rbSteps[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第一步');
+    expect(rbSteps[1]!.querySelectorAll('.round-block__thought').length).toBe(1);
+    expect(rbSteps[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
+  });
 });

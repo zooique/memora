@@ -951,6 +951,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     grp.dataset.seq = String(boundSeq);
   }
 
+  /**
+   * 思考碎片按「所属 step」分桶（SSOT；finalize 与流式两类上下文共用）。
+   *
+   * 语义（2026-09-14 修正）：**一个 step 一个思考折叠块**，而非整轮合成一个。分桶键 = 该碎片
+   * 生效的 step 边界 stepId（无边界 → 'root'）。同一桶内碎片保序**原样连续**拼接（连贯）；
+   * 不同 step 各自独立折叠（不跨步混批）。含 anchorSeq（桶内最早碎片的 seq，做插入锚点）。
+   */
+  function groupThoughtBuckets(events: ProcessEvent[]): {
+    key: string;
+    anchorSeq: number;
+    items: { seq: number; content: string }[];
+  }[] {
+    const thoughts = events
+      .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
+      .sort((a, b) => a.seq - b.seq);
+    const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.seq - b.seq);
+    const buckets = new Map<string, { key: string; anchorSeq: number; items: { seq: number; content: string }[] }>();
+    for (const t of thoughts) {
+      // 归属最近生效的 step 边界（slice 顺序同 stepContainerFor，保证「哪步思考进哪桶」一致）
+      const active = [...bounds].reverse().find((b) => b.seq <= t.seq);
+      const key = active?.payload.stepId ?? 'root';
+      const bucket = buckets.get(key) ?? { key, anchorSeq: t.seq, items: [] };
+      bucket.items.push({ seq: t.seq, content: t.payload.content });
+      buckets.set(key, bucket);
+    }
+    return [...buckets.values()].sort((a, b) => a.anchorSeq - b.anchorSeq);
+  }
+
   function insertStepInOrder(details: HTMLElement, el: HTMLElement, seq: number): void {
     // v1.8 剪枝：平铺容器（process-flow）内排序识别 .process-flow__narrate / .round-block__tool；
     // round-block（finalize/重放）内识别 .round-block__narrate / .round-block__tool——
@@ -1197,18 +1225,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertStepInOrder(host, row, t.seq);
       }
     }
-    // § 思考（thought 聚合折叠块，2026-09-14）：同一轮全部碎片聚合成**一个**块，按首个 seq 与
-    // narrate/tool 平铺（保时序；finalize 默认收起）。修复碎片化「满屏思考小折叠」（P3）。
-    const thoughts = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
-      .sort((a, b) => a.seq - b.seq);
-    if (thoughts.length > 0) {
-      const first = thoughts[0]!;
-      const { host } = stepContainerFor(details, events, first.seq);
+    // § 思考（per-step 聚合折叠块，2026-09-14）：**一个 step 一个折叠块**（同 step 碎片原样
+    // 连续拼接，不同 step 各自独立），按各自最早 seq 与 narrate/tool 平铺（finalize 默认收起）。
+    // 修复「整轮合成一个」「满屏 thinking 小折叠」两个极端（P3 + 本轮 step 分桶修正）。
+    const thoughtBuckets = groupThoughtBuckets(events);
+    for (const b of thoughtBuckets) {
+      const { host } = stepContainerFor(details, events, b.anchorSeq);
       insertStepInOrder(
         host,
-        createAggregatedThought(thoughts.map((t) => t.payload.content)),
-        first.seq,
+        createAggregatedThought(b.items.map((i) => i.content)),
+        b.anchorSeq,
       );
     }
     // § 过程轨迹（thinking 阶段：聚合计数，2026-09-09 去噪——同一相位 N 条 thinking 事件
@@ -1363,16 +1389,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = stepContainerFor(flow, events, n.seq);
       insertStepInOrder(host, row, n.seq);
     }
-    // 2.5) thought 思考折叠（聚合为单块，2026-09-14）：流式碎片**原样连续拼接**进**一个**折叠块
-    //   （无换行分隔符、不逐条 trim → 连续思考流而非每段一行）；data-merged-seq 记账防重复拼接。
-    const thoughts = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
-      .sort((a, b) => a.seq - b.seq);
-    if (thoughts.length > 0) {
-      let row = flow.querySelector('.process-flow__thought') as HTMLDetailsElement | null;
+    // 2.5) thought 思考折叠（per-step 聚合，2026-09-14）：**一个 step 一个折叠块**（同 step 碎片
+    //   原样连续拼接，不同 step 各自独立）；每个块维护自己 data-merged-seq 防重复拼接，修复
+    //   「整轮合成一个」和「满屏小折叠」两个极端。
+    const thoughtBuckets = groupThoughtBuckets(events);
+    for (const b of thoughtBuckets) {
+      // 复用 step 容器定位 → 与最终分桶位置一致，流式与 finalize 不偏移
+      const { host } = stepContainerFor(flow, events, b.anchorSeq);
+      // 查找或创建本 step 的折叠块（key = stepId，无边界为'root'）
+      const selector = `.process-flow__thought[data-step-bucket="${b.key}"]`;
+      let row = host.querySelector<HTMLDetailsElement>(selector);
       if (!row) {
         row = document.createElement('details');
         row.className = 'process-flow__thought';
+        row.dataset.stepBucket = b.key;
         row.dataset.mergedSeq = '0';
         const summaryEl = document.createElement('summary');
         summaryEl.textContent = '思考';
@@ -1380,18 +1410,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const bodyEl = document.createElement('div');
         bodyEl.className = 'process-flow__thought-body';
         row.appendChild(bodyEl);
-        const first = thoughts[0]!;
-        const { host } = stepContainerFor(flow, events, first.seq);
-        insertStepInOrder(host, row, first.seq);
+        insertStepInOrder(host, row, b.anchorSeq);
       }
       const body = row.querySelector('.process-flow__thought-body') as HTMLDivElement;
       let last = Number(row.dataset.mergedSeq ?? '0');
-      for (const t of thoughts) {
-        if (t.seq <= last) continue;
+      for (const item of b.items) {
+        if (item.seq <= last) continue;
         // 原样追加（不 trim、不加换行）：增量片段的天然间隔保留 → 连贯
-        body.textContent += t.payload.content;
-        last = t.seq;
-        row.dataset.mergedSeq = String(t.seq);
+        body.textContent += item.content;
+        last = item.seq;
+        row.dataset.mergedSeq = String(item.seq);
       }
     }
     for (const t of toolStarts) {
