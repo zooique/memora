@@ -159,8 +159,19 @@ export function resolveSubdir(configDir: string | undefined, sub: string): strin
   return resolve(configDir, sub);
 }
 
-/** L3 资源来源子目录：resources/（memora 自有约定）+ references/（TRAE / Agent Skills 主流辅助文档目录） */
-export type ResourceSubdir = 'resources' | 'references';
+// ── L3 目录名约定（单一真理源）──
+// 扫描侧（本模块）与路径解析侧（`skill/skillLayer3`）需要同一份目录名。
+// 此前两侧各写一遍字面量 → 目录名一旦调整，解析侧不会同步，且失配是静默的。
+
+/** 资源主目录（memora 自有约定；条目未标 subdir 时路径解析的回退基目录） */
+export const DEFAULT_RESOURCE_SUBDIR = 'resources';
+/** 资源兼容目录（TRAE / Agent Skills 主流辅助文档目录，B1 兼容） */
+export const REFERENCES_SUBDIR = 'references';
+/** 脚本目录 */
+export const SCRIPTS_SUBDIR = 'scripts';
+
+/** L3 资源来源子目录（取值从常量派生，防类型与字面量两处各写） */
+export type ResourceSubdir = typeof DEFAULT_RESOURCE_SUBDIR | typeof REFERENCES_SUBDIR;
 
 /** L3 资源/脚本发现结果 */
 export interface DiscoveredLayer3 {
@@ -203,12 +214,12 @@ const RESOURCE_EXTENSIONS = new Set([
 export async function discoverLayer3(skillDir: string): Promise<DiscoveredLayer3> {
   // resources/ 与 references/ 均纳入资源索引，条目标注来源子目录
   const resources = [
-    ...(await scanResourceSubdir(skillDir, 'resources')),
-    ...(await scanResourceSubdir(skillDir, 'references')),
+    ...(await scanResourceSubdir(skillDir, DEFAULT_RESOURCE_SUBDIR)),
+    ...(await scanResourceSubdir(skillDir, REFERENCES_SUBDIR)),
   ];
 
   // 扫描 scripts/ 目录
-  const scriptsDir = join(skillDir, 'scripts');
+  const scriptsDir = join(skillDir, SCRIPTS_SUBDIR);
   let scripts: DiscoveredLayer3['scripts'] = [];
   try {
     await access(scriptsDir);

@@ -8,14 +8,19 @@
  * 否则退化为「存在但永不调用」的僵尸技能（共鸣小说家最初 5 个技能零引用即此缺口）。
  *
  * 自守（防守卫失明，本类守卫最高频失效模式）：
- * 首条用例断言扫描到的包数 / 技能数达标 + 已知锚点技能存在，
+ * 首条用例断言扫描到的包数 / 技能数达标 + 无空包 + 已知锚点技能存在，
  * 防「路径解析失败 → 空集合 → 循环不执行 → 假绿」。
+ *
+ * 枚举口径（2026-09-14 收口）：技能清单**不由本文件手写目录遍历**，而走内核
+ * `scanner.scanMarkdownDir`——与内核真实装载共用同一份枚举规则（覆盖文件夹形态
+ * `skills/x/SKILL.md` 与 README/`.`/`_` 排除规则），避免「守卫看到的技能」与
+ * 「内核实际装载的技能」分叉。技能名仍取磁盘命名（见 skillNameOf）。
  */
 import { describe, it, expect } from 'vitest';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { parseFrontmatter } from '@/utils/frontmatter.js';
+import { isFolderFormSkill, scanMarkdownDir } from '@/utils/scanner.js';
 import { validateManifestText } from '@/role-pack/validator.js';
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
 
@@ -29,6 +34,16 @@ function listPackDirs(): string[] {
 
 const SKILL_EXT = '.md';
 
+/**
+ * 技能名 = 磁盘命名（文件夹形态取所在目录名；单文件形态取文件名去扩展名）。
+ *
+ * 刻意**不用** `scanMarkdownDir` 返回的 `name`——它优先取 `frontmatter.name`，
+ * 若守卫用它，「frontmatter name 与文件名一致」这条用例会退化为恒真。
+ */
+function skillNameOf(filePath: string): string {
+  return isFolderFormSkill(filePath) ? basename(dirname(filePath)) : basename(filePath, SKILL_EXT);
+}
+
 interface PackScan {
   /** 角色包目录名 */
   name: string;
@@ -40,7 +55,7 @@ interface PackScan {
   settingText: string;
 }
 
-function scanBuiltinPacks(): PackScan[] {
+async function scanBuiltinPacks(): Promise<PackScan[]> {
   const packs: PackScan[] = [];
   for (const entry of readdirSync(ROLE_PACKS_DIR)) {
     const packDir = join(ROLE_PACKS_DIR, entry);
@@ -48,14 +63,18 @@ function scanBuiltinPacks(): PackScan[] {
     const skillsDir = join(packDir, 'skills');
     if (!existsSync(skillsDir)) continue;
 
+    // 技能枚举收口于内核 scanner（SSOT）：同时覆盖「裸 .md」与「文件夹形态 skills/x/SKILL.md」，
+    // 并继承其排除规则（README/CHANGELOG/LICENSE、`.`/`_` 前缀）。
+    // 手写 readdirSync + endsWith('.md') 会静默跳过文件夹形态技能——而内核 L3 特性
+    // （resources/ scripts/ 归属权）只授予文件夹形态，故该形态必然会在内置包中出现。
+    const scanned = await scanMarkdownDir(skillsDir);
+
     const skillNames: string[] = [];
     const declaredNames: Record<string, string> = {};
-    for (const file of readdirSync(skillsDir)) {
-      if (!file.endsWith(SKILL_EXT)) continue;
-      const skillName = file.slice(0, -SKILL_EXT.length);
+    for (const skill of scanned) {
+      const skillName = skillNameOf(skill.filePath);
       skillNames.push(skillName);
-      const { frontmatter } = parseFrontmatter(readFileSync(join(skillsDir, file), 'utf8'));
-      declaredNames[skillName] = frontmatter.name ?? '';
+      declaredNames[skillName] = skill.frontmatter['name'] ?? '';
     }
 
     const settingText = ['persona.md', 'rules.md']
@@ -68,19 +87,21 @@ function scanBuiltinPacks(): PackScan[] {
 }
 
 describe('内置角色包技能可发现性守卫', () => {
-  it('守卫自身不失明：须扫到真实内置包与技能，且含已知锚点', () => {
-    const packs = scanBuiltinPacks();
+  it('守卫自身不失明：须扫到真实内置包与技能，且含已知锚点', async () => {
+    const packs = await scanBuiltinPacks();
     // 防路径解析失败 → 空集合 → 后续用例循环不执行 → 全绿假象
     expect(packs.length).toBeGreaterThanOrEqual(2);
     const total = packs.reduce((n, p) => n + p.skillNames.length, 0);
     expect(total).toBeGreaterThanOrEqual(21);
+    // 每个带 skills/ 的包都必须扫到技能——防「整包形态变更后枚举静默为空」时其余用例空转通过
+    expect(packs.filter((p) => p.skillNames.length === 0).map((p) => p.name)).toEqual([]);
     // 已知锚点：craft-review（self-review 更名产物）——改名须同步此处，防守卫静默失焦
     expect(packs.some((p) => p.skillNames.includes('craft-review'))).toBe(true);
   });
 
-  it('每个内置技能须在所属包 persona/rules 至少一处被引用（防僵尸技能）', () => {
+  it('每个内置技能须在所属包 persona/rules 至少一处被引用（防僵尸技能）', async () => {
     const missing: string[] = [];
-    for (const pack of scanBuiltinPacks()) {
+    for (const pack of await scanBuiltinPacks()) {
       for (const skill of pack.skillNames) {
         if (!pack.settingText.includes(skill)) missing.push(`${pack.name}/${skill}`);
       }
@@ -88,9 +109,9 @@ describe('内置角色包技能可发现性守卫', () => {
     expect(missing).toEqual([]);
   });
 
-  it('技能 frontmatter name 与文件名一致（防 L1 清单名与设定文本引用名失配）', () => {
+  it('技能 frontmatter name 与文件名一致（防 L1 清单名与设定文本引用名失配）', async () => {
     const mismatched: string[] = [];
-    for (const pack of scanBuiltinPacks()) {
+    for (const pack of await scanBuiltinPacks()) {
       for (const skill of pack.skillNames) {
         const declared = pack.declaredNames[skill];
         // 未声明 name 的由内核回退为文件名，不构成失配，跳过

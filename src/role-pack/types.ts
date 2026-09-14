@@ -7,6 +7,7 @@
 
 // 策略维度名称与可选值定型后不得随意修改——它是未来角色包文件格式的字段契约
 
+import type { ResourceSubdir } from '@/utils/scanner.js';
 import type { RolePackValidationIssue } from './validator.js';
 
 // ── 回答前（Prepare）：认知策略 ──
@@ -277,8 +278,8 @@ export interface RolePackManifestSkill {
     readonly resources: ReadonlyArray<{
       readonly path: string;
       readonly size: number;
-      /** 资源来源子目录（resources/references，B1 兼容主流 references/ 辅助文档目录），read_resource 据此选择读取基目录 */
-      readonly subdir?: 'resources' | 'references';
+      /** 资源来源子目录（resources/references，B1 兼容主流 references/ 辅助文档目录），read_resource 据此选择读取基目录；取值 SSOT 在 `utils/scanner` */
+      readonly subdir?: ResourceSubdir;
     }>;
     readonly scripts: ReadonlyArray<{
       readonly path: string;

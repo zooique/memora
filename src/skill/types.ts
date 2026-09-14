@@ -6,6 +6,8 @@
  * L3 资源/脚本：resources + references + scripts → read_resource / run_skill_script 按需调用
  */
 
+import type { ResourceSubdir } from '@/utils/scanner.js';
+
 /** L3 资源条目（resources/ 或 references/ 目录下的参考文件） */
 export interface SkillResource {
   /** 资源相对路径（相对技能目录根，如 "resources/api-spec.md"） */
@@ -17,8 +19,9 @@ export interface SkillResource {
   /**
    * 资源来源子目录（resources / references）。
    * references/ 为 TRAE / Agent Skills 主流辅助文档目录（B1 兼容），read_resource 据此选择读取基目录。
+   * 取值 SSOT 在 `utils/scanner`（目录名常量派生），此处只引用类型不重复字面量。
    */
-  subdir?: 'resources' | 'references';
+  subdir?: ResourceSubdir;
 }
 
 /** L3 脚本条目（scripts/ 目录下的可执行脚本） */

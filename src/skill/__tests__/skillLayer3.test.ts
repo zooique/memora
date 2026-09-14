@@ -128,6 +128,17 @@ describe('skillLayer3 · L3 发现（仅文件夹形态有归属权）', () => {
   });
 });
 
+describe('skillLayer3 · 目录名约定（外部标准锚点）', () => {
+  // 目录名是 Agent Skills 开放标准的对外契约（L3 归属 scripts/ 与 resources/），不是内部实现细节——
+  // 故此处锚定**字面量**而非引用常量自身：本文件其余用例用 `join(skillDir, SCRIPTS_SUBDIR, …)`
+  // 构造期望值，期望与被测同源 → 常量值被改错也恒绿（实测：改成 'scripts-probe' 仍 14 passed）。
+  // 该盲区在 role-pack 层由硬编码字面量的用例间接兜底，此处把契约显式锚定，不再依赖他人副作用。
+  it('常量取值须等于标准约定的目录名', () => {
+    expect(DEFAULT_RESOURCE_SUBDIR).toBe('resources');
+    expect(SCRIPTS_SUBDIR).toBe('scripts');
+  });
+});
+
 describe('skillLayer3 · 脚本路径解析', () => {
   it('白名单命中 → 返回 scripts/ 下绝对路径', () => {
     const p = resolveLayer3ScriptPath(skillDir, layer3, 'build.mjs');

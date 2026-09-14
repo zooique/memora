@@ -23,15 +23,32 @@ import {
   resolveSafePath,
   discoverLayer3,
   isFolderFormSkill,
+  DEFAULT_RESOURCE_SUBDIR,
+  SCRIPTS_SUBDIR,
   type DiscoveredLayer3,
+  type ResourceSubdir,
 } from '@/utils/scanner.js';
 import { statSyncSafe } from '@/utils/fileSafe.js';
+
+/**
+ * 目录名常量转发（真源在 `utils/scanner`——扫描侧与本模块的路径解析侧共用同一事实）
+ *
+ * 保留此处导出以维持既有引用面；调整目录名约定只改 scanner 一处，两侧同时生效
+ * （此前两处各写一遍字面量，改名即静默失配）。
+ */
+export { DEFAULT_RESOURCE_SUBDIR, SCRIPTS_SUBDIR };
 
 /** L3 资源条目的最小结构契约（全局技能与角色包技能均兼容） */
 export interface Layer3ResourceLike {
   readonly path: string;
-  /** 来源子目录（resources / references），缺省按 DEFAULT_RESOURCE_SUBDIR 处理 */
-  readonly subdir?: string;
+  /**
+   * 来源子目录（resources / references）。
+   *
+   * 可选是为兼容「未装载 L3 的入参」（`undefined` / `{}`）；**真实生产者
+   * `scanner.discoverLayer3` 恒标注该项**，故 `resolveLayer3ResourcePath` 的
+   * 缺省回退分支只在非扫描来源（测试构造）下触达。
+   */
+  readonly subdir?: ResourceSubdir;
 }
 
 /** L3 脚本条目的最小结构契约 */
@@ -44,12 +61,6 @@ export interface SkillLayer3Like {
   readonly resources?: readonly Layer3ResourceLike[];
   readonly scripts?: readonly Layer3ScriptLike[];
 }
-
-/** 资源默认来源子目录（条目未声明 subdir 时） */
-export const DEFAULT_RESOURCE_SUBDIR = 'resources';
-
-/** 脚本固定来源子目录 */
-export const SCRIPTS_SUBDIR = 'scripts';
 
 /**
  * 解析技能目录（双形态 SSOT）
