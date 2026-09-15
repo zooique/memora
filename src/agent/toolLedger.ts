@@ -85,12 +85,17 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
  * 内联的 `coverEnd > 0`（无 limit 只要读过一截就拦）两处**矛盾**实现，且前者无 limit 分支已被
  * 调用方绕过而成死代码。本函数统一为唯一实现，删除分歧/死码。
  *
- * 语义（区分「无区间整读」与「续读区间」两类冗余）：
+ * 语义（区分「无区间整读」「limit 变体整读」「续读区间」三类冗余）：
  * - 该文件尚未覆盖过正文（coverEnd<=0）→ 不拦（无摘要可回显，放行）。
  * - **无 limit 整读**（LLM 要「全文」的语义重复）：只要覆盖过正文即视为冗余 → 拦，由
  *   formatLedgerStub 回显摘要 + 引导 `offset=coverEnd+1` 续读，避免大文件截断后反复整读重试。
+ * - **limit 变体整读（2026-09-15 真机逃逸）**：请求 `offset+limit-1 >= totalLines` =「物理读到
+ *   文件末尾」。此时再大的 limit 对同一文件读到内容一致（handler `Math.min` 截到 total），故
+ *   一旦此前已覆盖到末尾（coverEnd >= totalLines）即视为同参整读 → 拦，封死「变 limit 从头重读」
+ *   的逃逸（真机 151 次 read_file 主力，宪法等被 limit 500→250→400 重复整读）。
  * - **offset/limit 续读**：仅当整个请求区间落在已覆盖区间内才视为冗余 → 拦；触及覆盖之外
- *   （`offset+limit-1 > coverEnd` 或 `offset < coverStart`）→ 放行（宁可多读不误拦，G2 守卫）。
+ *   （尚未读到末尾、`offset+limit-1 > coverEnd` 或 `offset < coverStart`）→ 放行（宁可多读不误拦，
+ *   G2 守卫）——未覆盖到末尾的较大 limit 仍视为合法续读新内容，不误拦。
  *
  * @param subj read_file 去重主体的区间字段（offset/limit，缺省语义与 handler 一致）
  * @param cov  该文件已覆盖度台账条目
@@ -104,10 +109,14 @@ export function shouldEchoLedgerStub(
   if (cov.coverEnd <= 0) return false;
   // 无 limit 整读：只要有覆盖即冗余（回显摘要引导续读）
   if (subj.limit === undefined) return true;
-  // 区间续读：完全落在已覆盖区间内才算冗余；触及覆盖之外放行
   const start = subj.offset ?? 1;
+  const reqEnd = start + (subj.limit - 1);
+  // limit 变体整读：请求覆盖到文件末尾（物理读完整段）→ 此前已覆盖到末尾即视为同参整读 → 拦。
+  // （真机逃逸修复：LLM 改 limit 变体、offset 恒=1，对不同短文件导致重复整读被放行。）
+  if (reqEnd >= cov.totalLines) return cov.coverEnd >= cov.totalLines;
+  // 区间续读：完全落在已覆盖区间内才算冗余；触及覆盖之外（尚未读到末尾）放行
   if (start < cov.coverStart) return false;
-  return start + (subj.limit - 1) <= cov.coverEnd;
+  return reqEnd <= cov.coverEnd;
 }
 
 /** 文件覆盖度台账（读账：谁读过、读到哪、顶头讲了什么） */

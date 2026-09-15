@@ -4504,12 +4504,23 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   });
 
   it('A · 同一文件的分段续读不被拦截（去重 key 含 offset/limit）', async () => {
-    const toolExecutor = vi.fn().mockResolvedValue('片段内容');
+    // 大文件：c1 整读返回**分段脚注**（已读到 1–100，共 1000 行）→ 台账 totalLines=1000、coverEnd=100。
+    // c2 的续读区间 200–299 落在覆盖之外且未触达文件末尾 → 是合法前向续读，必须放行
+    // （若 mock 是短内容整读，limit 变体归一会把 c2 也判为重复——那是真机逃逸修复的正确语义；
+    //   故此 mock 必须给出真实 large totalLines，保住「区间续读放行」的原始 R-1 回归意图）。
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) =>
+        Promise.resolve(
+          name === 'read_file'
+            ? '第1行内容\n[read_file 分段] 已显示第 1–100 行（共 1000 行）。继续读用 offset=101。'
+            : '',
+        ),
+    );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        // 第 1 步：整读（无 offset → 缺省从第 1 行起）
+        // 第 1 步：整读大文件（无 offset → 缺省从第 1 行起；超预算返回分段脚注）
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
-        // 第 2 步：换区间续读 —— 与第 1 步是**不同请求**，必须放行
+        // 第 2 步：换区间续读 200–299 —— 与第 1 步是**不同请求**，覆盖之外、未触末尾 → 放行
         [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":200,"limit":100}')] }],
         [{ content: '完成' }],
       ]),
@@ -4686,6 +4697,41 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
     expect(stub).toBeDefined();
     // 回显的是全覆盖替身（共 3 行），非空拦
+    expect(stub!.content).toContain('共 3 行');
+  });
+
+  it('F · limit 变体整读（真机逃逸）→ 已覆盖到末尾后，同文件换大 limit 重读被归一拦截', async () => {
+    // 真机：宪法等短文件被 LLM 用 limit 500→250→400 反复 offset=1 整读，共 151 次 read_file。
+    // 此前 limit 纳入 DEDUP key → 每次变 limit 判为「不同主体」全放行（漏网）。
+    // 修复：台账判定里「请求覆盖到文件末尾(offset+limit-1>=totalLines) 且 已覆盖到末尾(coverEnd>=totalLines)」
+    //   → 归一为同参整读 → 分支②拦 + 回显摘要，封死 limit 变体逃逸。
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) => Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // c1 整读 a.md（3 行，无脚注 → ADR-031 补缝记全覆盖 coverEnd=3=totalLines）
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 读第二个文件 → 逼压缩链替换掉 a.md 的结果（keepRecent=1）
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
+        // c3 用 limit=500（覆盖到末尾的**变体重读**）→ 物理内容与 c1 相同 → 归一拦，不该落 ToolExecutor
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md","offset":1,"limit":500}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('limit 变体重读')) {
+      void chunk;
+    }
+
+    // c3 limit 变体整读 → 分支②拦 → 不落 ToolExecutor → 仍为 2 次（c1、c2）
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    // 回显全覆盖替身（共 3 行），非空拦
     expect(stub!.content).toContain('共 3 行');
   });
 

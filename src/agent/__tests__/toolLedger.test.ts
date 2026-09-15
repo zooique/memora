@@ -142,4 +142,36 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
     expect(shouldEchoLedgerStub({ offset: 1, limit: 20 }, none)).toBe(false);
     expect(shouldEchoLedgerStub({ offset: 1 }, none)).toBe(false);
   });
+
+  it('limit 变体整读：已覆盖到末尾 + 请求覆盖到末尾 → true（归一拦截，真机逃逸修复）', () => {
+    // 真机场景：文件仅 200 行，已整读覆盖到末尾（coverEnd=200=totalLines）。
+    // 之后 LLM 用 limit 500 / 250 / 400 反复 offset=1 重读 → 全部物理读到末尾，内容一致 → 全应拦。
+    const cov: FileCoverage = {
+      totalLines: 200,
+      coverStart: 1,
+      coverEnd: 200,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 500 }, cov)).toBe(true);
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 250 }, cov)).toBe(true);
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 400 }, cov)).toBe(true);
+    // 未指 offset 但极限覆盖到末尾 → 同样归一
+    expect(shouldEchoLedgerStub({ offset: undefined, limit: 999 }, cov)).toBe(true);
+  });
+
+  it('limit 变体但尚未读到末尾 → false（合法前向续读新内容，不误拦）', () => {
+    // 文件 200 行，但当前只覆盖到前 80 行；LLM 用大 limit 续读剩余 → 请求未覆盖到 totalLines，放行。
+    const cov: FileCoverage = {
+      totalLines: 200,
+      coverStart: 1,
+      coverEnd: 80,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
+    // reqEnd = 1+120-1 = 120 < 200 → 未触达末尾归一，走续读判定：120 > 80 → 放行
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 120 }, cov)).toBe(false);
+    // 完全落在已覆盖内 → 拦（保持原语义不受影响）
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 80 }, cov)).toBe(true);
+  });
 });
