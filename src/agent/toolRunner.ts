@@ -96,7 +96,13 @@ export class ToolRunner {
       span.recordException(e);
       if (err instanceof MemoraError) {
         const code = err.errorCode ?? 'UNKNOWN';
-        const result = `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}`;
+        // 失败串末尾附带 suggestions（人读的「下一步」也要进 LLM 上下文）：
+        // 此前建议只在 `error.format()` 给宿主 UI，LLM 只收 title+detail——首击失败后
+        // LLM 收不到「使用 list_dir 查看目录结构」这类确切指令，只能凭证据自己悟（多绕一次）。
+        // B3 证据（siblingDirHint 清单）在 detail 内，本拼接补上命令式建议，双管齐下。
+        const result =
+          `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}` +
+          (err.suggestions.length > 0 ? ` 建议：${err.suggestions.join('；')}` : '');
         logger.warn(
           { tool: tc.function.name, errorCode: code, title: err.title },
           '工具执行失败，错误已回传给 LLM',

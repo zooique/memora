@@ -137,7 +137,30 @@ describe('ToolRunner 单工具执行', () => {
     const result = await runner.runOne(tc());
 
     expect(result.startsWith('[ERR:TOOL:')).toBe(true);
+    // B3/建议送达：suggestions 从「人读」下沉进「LLM 上下文」，可执行确切的下一步指令
+    expect(result).toContain('建议：检查权限');
+    expect(result).toContain('磁盘只读'); // detail 仍保留
     expect(onToolExecuted).toHaveBeenCalledWith('echo', expect.any(String), result, false);
+  });
+
+  it('工具抛 MemoraError 且无 suggestions → 失败串不加「建议：」后缀（零噪音）', async () => {
+    const boom = new MemoraError({
+      title: '未知工具',
+      detail: undefined,
+      suggestions: [],
+      category: 'tool',
+    });
+    const deps = makeDeps({
+      execute: vi.fn(async () => {
+        throw boom;
+      }),
+    });
+    const runner = new ToolRunner(deps);
+
+    const result = await runner.runOne(tc());
+
+    expect(result).toBe('[ERR:TOOL:UNKNOWN] 错误：未知工具');
+    expect(result).not.toContain('建议：');
   });
 
   it('signal 提前 abort → 返回 ABORTED，不触发 execute', async () => {
