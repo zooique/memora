@@ -69,17 +69,24 @@ export function wrapToolResult(toolName: string, result: string): string {
 }
 
 /**
- * 服务端对 tool_call 函数名的字符集约束 —— **逐字取自 OpenAI 兼容端 400 错文**
+ * 服务端对 tool_call 函数名的约束 —— **字符集逐字取自 OpenAI 兼容端 400 错文**
  * （`function.name does not match pattern '^[a-zA-Z0-9_-]+$'`）。
  *
- * 不得收严：定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）不容连字符，
- * 拿它作判据会把服务端**接受**的 `read-file` 误判为非法。
+ * 判据关系（2026-09-15 G2 并入）：**定义期判据 ≠ 服务端判据**。
+ *   - 定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）**不容连字符**——拿它作判据，
+ *     会把服务端**接受**的 `read-file` 误判为非法（FAIL-1 血训，勿收严至此）。
+ *   - 本判据 = 服务端判据的**完整面**：字符集（正则）+ 长度上界（OpenAI 规范 `function.name` 上限
+ *     64 字符）。长度上界是**服务端约束**，补它只会让判据更贴近服务端，不会像定义期规则那样误伤。
+ *   - 内置 23 个工具名最长 16 字符，全部满足；无守卫锁死该事实——若未来新增超长名应在此回归。
  */
 const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
 
-/** 函数名是否可发往服务端（非空 + 匹配服务端字符集）。 */
+/** 服务端对 tool_call 函数名的长度上界（OpenAI 规范 `function.name` ≤ 64 字符）。 */
+const TOOL_NAME_MAX_LENGTH = 64;
+
+/** 函数名是否可发往服务端（非空 + 匹配服务端字符集 + 长度不超服务端上界）。 */
 export function isCallableToolName(name: string): boolean {
-  return TOOL_NAME_PATTERN.test(name);
+  return name.length <= TOOL_NAME_MAX_LENGTH && TOOL_NAME_PATTERN.test(name);
 }
 
 /**

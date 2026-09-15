@@ -203,6 +203,13 @@ describe('isCallableToolName', () => {
   it('非 ASCII（中文）→ false', () => {
     expect(isCallableToolName('读取文件')).toBe(false);
   });
+
+  it('★ 长度上界（G2）：恰好 64 字符 → true，65 字符 → false（服务端规范 `function.name` ≤ 64）', () => {
+    const within = 'a'.repeat(64);
+    const over = 'a'.repeat(65);
+    expect(isCallableToolName(within)).toBe(true);
+    expect(isCallableToolName(over)).toBe(false);
+  });
 });
 
 describe('filterCallableToolCalls', () => {
@@ -227,5 +234,13 @@ describe('filterCallableToolCalls', () => {
   it('★ 关键性质：不按参数合法与否过滤（name 合法、args 为空者保留 —— 走既有可重试错误路径）', () => {
     const calls = [{ id: 'a', type: 'function' as const, function: { name: 'read_file', arguments: '' } }];
     expect(filterCallableToolCalls(calls)).toHaveLength(1);
+  });
+
+  it('★ 超长函数名（>64 字符）→ 滤除（G2 落入 FAIL-1 同一过滤面）', () => {
+    const calls = [
+      { id: 'long', type: 'function' as const, function: { name: 'a'.repeat(65), arguments: '{}' } },
+      { id: 'ok', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
+    ];
+    expect(filterCallableToolCalls(calls).map((c) => c.id)).toEqual(['ok']);
   });
 });
