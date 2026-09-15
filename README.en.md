@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-3077%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-3082%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -252,7 +252,7 @@ src/
 |--------|-------|
 | Source | 118 production files (src/, zero third-party runtime deps) |
 | Tests | 117 test files (107 kernel + 10 host, run by the root vitest config) |
-| Tests Passing | 3,077 passed / 1 skipped |
+| Tests Passing | 3,082 passed / 1 skipped |
 | Statement Coverage | 90.2% |
 | Branch Coverage | 84.7% |
 | Function Coverage | 92.3% |
