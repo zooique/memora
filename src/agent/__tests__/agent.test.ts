@@ -2166,7 +2166,11 @@ class AbortThrowingProvider extends LlmProvider {
  * 无任何 abort 触发（宿主 signal 未 abort），却在流式过程中主动抛 AbortError——
  * 模拟真实网络/代理内部中断（连接被抽断）。
  * 内核应判为「连接中断」而非「用户取消」：agent 层输出 error chunk + failed，
- * 不会产出 aborted chunk，history 不写中断标记。
+ * 不会产出 aborted chunk，**不谎报用户取消**。
+ * 注（2026-09-15 修正）：本注释曾写「history 不写中断标记」——那是修复前的行为。
+ * failed 与 aborted 现同属「本轮未正常完成」，在 `seed/orchestrator.act()` 共用
+ * `appendInterrupted` 收口（SSOT），已产出文本 + 中断标记**照常写史**；
+ * 不变的只有「不产出 aborted chunk / 不谎报用户取消」这一点。
  */
 class ConnectionInterruptedProvider extends LlmProvider {
   readonly name = 'connection-interrupted';
@@ -2187,6 +2191,24 @@ class ConnectionInterruptedProvider extends LlmProvider {
     }
     // 无 abort 的外部原因直接抛 AbortError（模拟连接中断）
     throw new DOMException('The connection was interrupted', 'AbortError');
+  }
+}
+
+/**
+ * HTTP 失败 Mock Provider（2026-09-15 真机故障回归专用）
+ *
+ * 首次调用即抛**非 AbortError** 的普通 Error，模拟 `openaiCompatible` 在服务端返回
+ * 任意 4xx（含 413）时抛出的 `llmError('LLM 请求格式错误', 'HTTP <码>：<body>')`。
+ * 关键特征与真机故障轮一致：**零文本产出**（故障发生在纯工具阶段，narrate 不计入 content）。
+ *
+ * 内核路径：loop 内 provider 抛错 → `consumeExecutionStream` catch 非 abort 分支
+ * （agent.ts:697）→ yield error chunk + 返回 `failed: true`。
+ */
+class HttpFailProvider extends LlmProvider {
+  readonly name = 'http-fail';
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    throw new Error('LLM 请求格式错误：HTTP 400：maximum context length exceeded');
   }
 }
 
@@ -2390,6 +2412,52 @@ describe('Agent · chat() 中断保留文本', () => {
     expect(errors.some((c) => c.message.includes('connection was interrupted'))).toBe(true);
     // 语义分类走 category 字段，error message 不再携带裸前缀
     expect(errors.some((c) => c.message.includes('[连接中断]'))).toBe(false);
+  }, 15000);
+
+  it('LLM 错误（非 abort）零产出 → 轮即收场 complete 且可被会话加载（真机故障回归）', async () => {
+    // 真机故障（2026-09-15 07:47 互动叙事平台方案）：12 次 LLM 调用 / 26 次 read_file 后
+    // 第 12 次调用被服务端 4xx 拒绝 → consumeExecutionStream 返回 failed:true。
+    // 修复前：act() 的 `if (streamResult.failed) return` 直接返回 → 轮停在 pending + refCount=0，
+    // 运行期无人收尾 → 宿主表现为「中止后重启，这一轮没有被重新渲染」（用户实测）。
+    // 现收口到 appendInterrupted（与用户手动中止**同一原语**）→ 运行期即落 complete + 登记会话。
+    const roundStore = new InMemoryRoundStore();
+    const sessionStore = new InMemorySessionStore(roundStore);
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new HttpFailProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      sessionStore,
+      roundStore,
+      // 关闭自动归档：避免后台摘要 LLM 调用干扰（与 A1 回抽用例同策略）
+      archiveMode: 'manual',
+    });
+    await agent.init();
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('测试')) chunks.push(chunk);
+
+    // 前置事实（不变量生效的前提，先断言再下结论）：确为错误流，且零文本产出
+    expect(chunks.some((c) => c.type === 'error')).toBe(true);
+    expect(chunks.some((c) => c.type === 'text')).toBe(false);
+
+    const rounds = roundStore.listAll();
+    expect(rounds).toHaveLength(1);
+
+    // 核心回归：轮已收场（修复前此处为 'pending'）→ 可被正常加载/渲染
+    expect(rounds[0]!.status).toBe('complete');
+    // 零产出 → 不写空 assistantMessage（沿用 appendInterrupted 既有语义：无产出也按 stop 收场）
+    expect(rounds[0]!.assistantMessage).toBeUndefined();
+
+    // 端到端「可被加载」：宿主重启加载链正是 loadMessages(date, session) → roundIds → RoundStore
+    const loaded = sessionStore.loadMessages(todayDate(), 'main');
+    expect(loaded.some((m) => m.roundId === rounds[0]!.id)).toBe(true);
+    expect(loaded.some((m) => m.role === 'assistant')).toBe(false);
+
+    // 孤儿打捞队列不再含该轮（运行期已收尾，无需等重启）
+    expect(roundStore.listInterruptedRecent(todayDate())).toHaveLength(0);
   }, 15000);
 });
 

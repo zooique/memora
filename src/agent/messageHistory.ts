@@ -399,12 +399,19 @@ export class MessageHistory {
   }
 
   /**
-   * 中断轮收场：把崩溃残留轮升级为正常 stop turn 并入会话（T1，2026-09-09）。
+   * 中断轮收场：把「未正常完成」的轮升级为正常 stop turn 并入会话（T1，2026-09-09）。
    *
    * 语义定案（step-atomic-persistence.md §一·五）：崩溃残留轮（pending/error + refCount=0 + 有已
    * 落盘 processEvents）= 等同于用户点「停止」的正常 turn——可删、入会话 roundIds、作后续上下文，
    * **不是**半成品草稿/孤儿。宿主经 `IRoundStore.listInterruptedRecent` 打捞后再调本方法完成
    * 「升级登记」，恢复为普通 turn 渲染无需特殊草稿卡。
+   *
+   * **两个调用时机（2026-09-15 补充第二处）**：
+   * 1. 崩溃/断电后重启——宿主 `chatPanel.upgradeInterruptedRounds` 打捞后调用（原设计时机）；
+   * 2. **运行期非正常收场**——`seed/orchestrator.act()` 在中断（用户取消/超时）与失败
+   *    （LLM/网络错误）两条路径上就地调用（SSOT 收口，见该处注释）。运行期即收尾可避免
+   *    留下 pending 孤儿轮、须等下次重启才打捞（真实故障：LLM 4xx 中断的长任务轮）。
+   *    依据 = `memory/roundStore.ts` RoundStatus 文档「运行时失败不翻状态机，一律按中断处理」。
    *
    * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status complete +
    * completedAt + isReappend 防重复登记），Round schema / 存储格式不变；
@@ -414,9 +421,12 @@ export class MessageHistory {
    * - 中断标记统一追加默认文案（LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK），与运行期两条
    *   中断收场路径（loop 流式中断 / orchestrator 历史写入）的默认降级同源（SSOT）。
    *
-   * @param roundId 崩塌残留轮 ID（须已存在于 RoundStore；缺失仅记日志不抛错，防御性降级）
-   * @param opts.content 恢复的助手文本（宿主从 processEvents 的 narrate 内容拼接派生；
-   *        缺省/空则**不写** assistantMessage，仍按 stop 语义收场）
+   * 幂等：已 complete 的轮再调直接返回（宿主打捞与运行期收尾可能对同一轮各触发一次）。
+   *
+   * @param roundId 待收场轮 ID（须已存在于 RoundStore 或本实例 pendingRounds；缺失仅记日志不抛错，防御性降级）
+   * @param opts.content 已产出的助手文本（运行期由 consumeExecutionStream 累积；宿主打捞时
+   *        从 processEvents 的 narrate 内容拼接派生）。缺省/空则**不写** assistantMessage，
+   *        仍按 stop 语义收场
    * @param opts.interruptedMark 中断标记（缺省用 LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK）
    */
   async appendInterrupted(

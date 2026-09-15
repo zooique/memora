@@ -27,9 +27,13 @@ import type { BehaviorStrategy } from '@/role-pack/types.js';
 /**
  * 流消费结果（consumeExecutionStream 的返回约定）
  *
- * content = 累积的文本；aborted = 是否被中断（含 appendAssistant 中断标记前置）；
- * paused = 是否在 step 边界软暂停挂起（回合未完成，摘要应推迟到续跑最终轮，保摘要 1:1）；
- * failed = 是否执行出错（错误 chunk 已 yield 给调用方，本结果为提前返回信号）。
+ * content = 累积的文本；aborted = 是否被中断（用户取消/超时）；paused = 是否在 step 边界
+ * 软暂停挂起（回合未完成，摘要应推迟到续跑最终轮，保摘要 1:1）；failed = 是否执行出错
+ * （错误 chunk 已 yield 给调用方）。
+ *
+ * aborted 与 failed **同属「本轮未正常完成」**：act() 对二者走同一收尾收口
+ * （appendInterrupted → Round 落 complete），差异仅在返回值里保留各自的布尔位，
+ * 供调用方决定后续动作（如是否触发续跑）。见 orchestrator.act 的 SSOT 收口注释。
  */
 export interface StreamConsumeResult {
   content: string;

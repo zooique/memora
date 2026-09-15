@@ -103,6 +103,11 @@ export interface RoundInteractiveInput extends RoundMessage {
  *   `yield { type:'error' }` 事件流上报，**不翻 Round 状态机**，一律按「中断」处理
  *   （appendInterrupted → complete），因为「中断」对用户是可理解的、而「出错」需要
  *   区分语义——目前无此产品需求。
+ * - **实现落点**（2026-09-15 对齐核实）：`seed/orchestrator.act()` 把中断（aborted）与失败
+ *   （failed）收口到同一尾处理，两条路径都调 `history.appendInterrupted(roundId, { content })`。
+ *   ⚠️ 本条裁决此前**只有文字、无实现**——failed 分支当时直接 return，aborted 分支也仅在
+ *   「有产出文本」时才写史，两者都会留下 refCount=0 的 pending 孤儿轮（须等宿主下次重启由
+ *   `upgradeInterruptedRounds` 打捞）；现已补齐为运行期即时收场。
  * - **但它不是死代码**：`listInterruptedRecent`（内核 `inMemoryRoundStore` + 宿主
  *   `workspaceRoundStore` 两端）的打捞条件为 `pending || error`，error 是该条件的组成部分。
  * - **纪律**：勿因「grep 到零写点」而删此成员或改窄打捞条件；若未来出现「整轮失败且

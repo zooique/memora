@@ -172,7 +172,7 @@ export class SeedOrchestrator {
   }
 
   /** 回答中：消费 produce() 生成的 loop 执行流，统一尾处理。
-   * chat/resume 路径共用（驱动不同 loop 入口），中断/追加助手消息尾处理收在此。
+   * chat/resume 路径共用（驱动不同 loop 入口），非正常收场/追加助手消息尾处理收在此。
    * @param produce 生成 loop 执行流的闭包
    * @param signal 中止信号（透传 consumeExecutionStream 区分真取消 vs 连接中断）
    */
@@ -182,33 +182,42 @@ export class SeedOrchestrator {
   ): AsyncGenerator<AgentChunk, StreamConsumeResult, unknown> {
     // 流消费统一收口于门面的 consumeExecutionStream（对话/事件/续跑共用同构实现）
     const streamResult = yield* this.deps.consumeExecutionStream(produce(), signal);
-    if (streamResult.failed) return streamResult;
+
+    // ── 非正常收场统一收口（SSOT，2026-09-15）────────────────────────────
+    // 中断（用户取消/超时）与失败（LLM/网络错误）同属「本轮未正常完成」，共用同一收尾原语
+    // appendInterrupted。既定裁决见 `memory/roundStore.ts` 的 RoundStatus 文档：运行时失败
+    // **不翻 Round 状态机**，一律按「中断」处理（appendInterrupted → complete），
+    // 因为「中断」对用户可理解而「区分出错语义」当前无产品需求。
+    //
+    // 修复前：failed 分支直接 return、aborted 分支仅在「有产出文本」时才写史 → 两者都会在
+    // 无产出时留下 refCount=0 的 pending 孤儿轮——运行期无人收尾，宿主须等下次重启才由
+    // chatPanel.upgradeInterruptedRounds 打捞升级（真实故障：LLM 4xx 中断的长任务轮）。
+    // appendInterrupted 同时覆盖两种形态：有产出 → 写 assistantMessage + 标记；无产出 →
+    // 不写 assistantMessage，仍按 stop 语义收场（该原语的存在理由即此）。
+    if (streamResult.aborted || streamResult.failed) {
+      const parts = this.deps.getParts();
+      // 中断标记默认文案与 loop 统一走 LOOP_CONSTANTS（SSOT），避免宿主未注入 messages 时两处降级不一致
+      const interruptedMark =
+        this.deps.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK;
+      try {
+        await parts.history.appendInterrupted(parts.loop.getCurrentRoundId(), {
+          content: streamResult.content,
+          interruptedMark,
+        });
+      } catch (err) {
+        logger.warn({ err }, '非正常收场轮历史写入失败');
+      }
+      return {
+        content: streamResult.content,
+        aborted: streamResult.aborted,
+        paused: false,
+        failed: streamResult.failed,
+      } satisfies StreamConsumeResult;
+    }
 
     const assistantContent = streamResult.content;
     const history = this.deps.getParts().history;
     const loop = this.deps.getParts().loop;
-
-    // 中断：保留已产出文本 + 中断标记写入历史后返回（不进回答后摘要）
-    if (streamResult.aborted) {
-      if (assistantContent.trim()) {
-        // 中断标记默认文案与 loop 统一走 LOOP_CONSTANTS（SSOT），避免宿主未注入 messages 时两处降级不一致
-        const interruptedMark = this.deps.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK;
-        try {
-          await history.appendAssistant(
-            assistantContent + interruptedMark,
-            loop.getCurrentRoundId(),
-          );
-        } catch (err) {
-          logger.warn({ err }, '中断消息历史写入失败');
-        }
-      }
-      return {
-        content: assistantContent,
-        aborted: true,
-        paused: false,
-        failed: false,
-      } satisfies StreamConsumeResult;
-    }
 
     // 正常完成：助手消息写历史（失败仅记日志，不阻断回答后）
     try {

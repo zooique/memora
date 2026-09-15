@@ -48,6 +48,8 @@ export interface SeedMocks {
   history: {
     appendUser: ReturnType<typeof vi.fn>;
     appendAssistant: ReturnType<typeof vi.fn>;
+    // 非正常收场统一收口（2026-09-15）：orchestrator.act 对 aborted/failed 共用本原语
+    appendInterrupted: ReturnType<typeof vi.fn>;
     registerPendingArchive: ReturnType<typeof vi.fn>;
   };
   sessionManager: {
@@ -175,6 +177,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     history: {
       appendUser: vi.fn(async () => {}),
       appendAssistant: vi.fn(async () => {}),
+      appendInterrupted: vi.fn(async () => {}),
       registerPendingArchive: vi.fn(),
     },
     sessionManager: {

@@ -124,15 +124,39 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.history.appendAssistant).not.toHaveBeenCalled();
   });
 
-  it('runChat 回答中失败：不触发回答后', async () => {
+  it('runChat 回答中失败：不触发回答后，且与中断同收口（appendInterrupted）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
-    consumeControl.result = { content: '', aborted: false, paused: false, failed: true };
+    consumeControl.result = { content: '半截产出', aborted: false, paused: false, failed: true };
 
     await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
+    // 非正常收场统一收口（SSOT，2026-09-15）：failed 与 aborted 共用 appendInterrupted。
+    // 修复前此处直接 `return streamResult`，轮停在 pending + refCount=0，运行期无人收尾
+    // → 孤儿轮（宿主须等下次重启才由 upgradeInterruptedRounds 打捞）。
+    expect(mocks.history.appendInterrupted).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ content: '半截产出' }),
+    );
+    expect(mocks.history.appendAssistant).not.toHaveBeenCalled();
+  });
+
+  it('runChat 回答中无产出即失败：仍按 stop 语义收场（真实故障轮形态）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '');
+    // 真实故障轮形态：LLM 4xx 中断在纯工具阶段，content 为空（narrate 不计入 content）
+    consumeControl.result = { content: '', aborted: false, paused: false, failed: true };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 无产出也必须登记收场（appendAssistant 会跳过空内容，故必须走 appendInterrupted）
+    expect(mocks.history.appendInterrupted).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ content: '' }),
+    );
   });
 
   it('runChat 回答中中断：不触发回答后', async () => {
@@ -143,10 +167,12 @@ describe('SeedOrchestrator 最小 turn', () => {
     await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(
-      expect.stringContaining('部分'),
+    // 非正常收场统一收口（SSOT，2026-09-15）：中断也改走 appendInterrupted（原为 appendAssistant）
+    expect(mocks.history.appendInterrupted).toHaveBeenCalledWith(
       expect.any(String),
+      expect.objectContaining({ content: '部分' }),
     );
+    expect(mocks.history.appendAssistant).not.toHaveBeenCalled();
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
   });
 
