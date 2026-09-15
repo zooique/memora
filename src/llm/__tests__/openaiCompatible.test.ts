@@ -548,6 +548,27 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
     expect(toolCallChunk!.toolCalls![0]!.id).toBe('call_0');
   });
 
+  it('G3：id 缺失的多次迭代 → 兜底 id 跨批唯一（不再两次迭代都产 call_0 导致配对错位）', async () => {
+    // 复用同一 provider 实例打两批 id-缺失的 tool_calls：序列应各自递增，杜绝重复 id
+    const provider = makeProvider();
+    const idLessBatch = (idx: number) =>
+      createToolCallsSseResponse(
+        [{ tool_calls: [{ index: idx, type: 'function', function: { name: 'no_id_func', arguments: '{}' } }] }],
+        'tool_calls',
+      );
+
+    server.use(http.post('*/chat/completions', () => idLessBatch(0)));
+    const first = await collectChunks(provider);
+    server.use(http.post('*/chat/completions', () => idLessBatch(1)));
+    const second = await collectChunks(provider);
+
+    const id_0 = first.find((c) => c.toolCalls && c.toolCalls.length > 0)!.toolCalls![0]!.id;
+    const id_1 = second.find((c) => c.toolCalls && c.toolCalls.length > 0)!.toolCalls![0]!.id;
+    expect(id_0).toBe('call_0');
+    expect(id_1).toBe('call_1');
+    expect(id_0).not.toBe(id_1);
+  });
+
   it('tool_calls 与文本内容混合：文本 chunk 实时输出，tool_calls 累积后输出', async () => {
     // LLM 可能先输出部分文本，再发起 tool_calls
     server.use(

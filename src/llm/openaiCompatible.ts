@@ -88,6 +88,11 @@ export class OpenAICompatibleProvider extends LlmProvider {
   /** 默认请求超时：120 秒 */
   private static readonly DEFAULT_TIMEOUT_MS = 120_000;
 
+  /** tool_call id 兜底的自增序列（G3，2026-09-15）：id 缺失时给出**跨批唯一**的占位，
+   *  而非旧的本批内下标 `call_${idx}`——否则同一 turn 的两次迭代各产 `call_0`，
+   *  服务端按 tool_call_id 配对时错位。实例级自增，杜绝模块级全局态（架构约束）。 */
+  private toolCallIdSeq = 0;
+
   async *chat(messages: Message[], opts: ChatOptions = {}): AsyncIterable<LlmChunk> {
     const url = `${this.config.baseUrl}/chat/completions`;
     const model = opts.model ?? this.config.defaultModel;
@@ -453,14 +458,15 @@ export class OpenAICompatibleProvider extends LlmProvider {
     }
   }
 
-  /** 从累积器构建完整 toolCalls 数组（finish_reason='tool_calls' 场景） */
+  /** 从累积器构建完整 toolCalls 数组（finish_reason='tool_calls' 场景）。
+   *  id 缺失时兜底为 `call_<toolCallIdSeq++>`（跨批唯一），不因两次迭代都缺 id 而产出重复 id。 */
   private buildToolCallsFromAccumulators(
     accs: Map<number, { id: string; name: string; arguments: string }>,
   ): ToolCall[] {
     const calls: ToolCall[] = [];
-    for (const [idx, acc] of accs) {
+    for (const [, acc] of accs) {
       calls.push({
-        id: acc.id || `call_${idx}`,
+        id: acc.id || `call_${this.toolCallIdSeq++}`,
         type: 'function',
         function: { name: acc.name, arguments: acc.arguments },
       });
