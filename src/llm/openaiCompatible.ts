@@ -287,19 +287,36 @@ export class OpenAICompatibleProvider extends LlmProvider {
     // 流式 tool_calls 累积器：同一 tool_call 的 name/arguments 可能跨多个 delta 分片到达
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
 
-    // chunk 级读超时：无超时则连接半挂（NAT/代理不关 TCP）会永久等待，用 setTimeout + reader.cancel 让 read() reject；
-    // 区分首 chunk（reasoning 思考数十秒，120s）与 chunk 间（连接已正常，60s）
-    // 有效事件停滞监视：收到任意 data: 行即重置；长时间无事件（即便有字节）触发 cancel。
-    // 与 chunk 级超时互补——chunk 超时按 read 重置会漏掉「服务端发 keep-alive 字节但无进展」。
+    // chunk 级读超时：无超时则连接半挂（NAT/代理不关 TCP）会永久等待；
+    // 区分首 chunk（reasoning 思考数十秒，120s）与 chunk 间（连接已正常，60s）；
+    // 另有有效事件停滞监视（收到任意 data: 行即重置），补 chunk 超时漏掉的
+    // 「服务端持续发 keep-alive 字节但无进展」真空区。
+    //
+    // ⚠️ **超时必须经竞速闸 reject，不得用 `reader.cancel()` 表达——本看门狗成立的前提，勿回改**：
+    // `reader.cancel(reason)` 的语义是「关闭流并让**挂起的 read() 以 `{done:true}` 收尾**」，
+    // reason **不会**出现在任何抛出物上（WHATWG 规范行为；Node 22 / undici 实测：cancel 后
+    // read 产 `{done:true}`；对照 `AbortController.abort(reason)` 才会让 read reject reason）。
+    // 旧实现把 cancel 当作「让 read 抛错」→ 超时被读成「流正常结束且零产出」→ 落「空响应重试」
+    // 通道 → **超时被静默吞成重试**。真机故障（2026-09-15 09:03:22→09:08:27，
+    // `round-1789462982489`）：中断源在 reasoning 结束后停摆，60s（chunk 间）+120s+120s
+    // （两次重试首 chunk）三段超时全被吞成静默重试，期间**零 UI 事件**（tokenOut 恒 0），
+    // 用户干等 5 分 5 秒后手动取消。
+    // 故看门狗只负责「以真超时驳回当前读」；底层连接的释放仍由 finally 的 reader.cancel() 负责。
+    /** 看门狗已到期的超时（竞速闸未挂起时的落账处：下一轮读之前立即抛，账面不丢） */
+    let overdueTimeout: DOMException | null = null;
+    /** 竞速闸的驳回句柄（仅在一次读的存活期内非空） */
+    let pendingReadReject: ((err: DOMException) => void) | null = null;
+    /** 看门狗统一出口：以真超时驳回当前读；两读之间到期则记账，由循环顶部补抛 */
+    const failCurrentRead = (reason: string): void => {
+      overdueTimeout ??= new DOMException(reason, 'TimeoutError');
+      pendingReadReject?.(overdueTimeout);
+    };
+
     let stallTimer: ReturnType<typeof setTimeout> | null = null;
     const stallReset = (): void => {
       if (stallTimer) clearTimeout(stallTimer);
       stallTimer = setTimeout(() => {
-        reader.cancel(new DOMException('LLM 流长时间无有效事件（有字节但无 data 事件）', 'TimeoutError')).catch(
-          (err: unknown) => {
-            logger.debug({ err: toError(err).message }, 'reader.cancel 失败（事件停滞超时）');
-          },
-        );
+        failCurrentRead('LLM 流长时间无有效事件（有字节但无 data 事件）');
       }, EVENT_STALL_TIMEOUT_MS);
     };
     // 进入流读取即启动停滞监视（首事件前的“有字节无事件”同样覆盖）
@@ -313,23 +330,30 @@ export class OpenAICompatibleProvider extends LlmProvider {
         if (signal?.aborted) {
           throw new DOMException('LLM 流读取被中止', signal.reason?.name ?? 'AbortError');
         }
+        // 两读之间到期的超时不丢账：读之前先补抛
+        if (overdueTimeout) throw overdueTimeout;
 
-        // 根据是否收到首 chunk 选不同超时阈值；reader.cancel() 让 pending read() 抛 AbortError
+        // 根据是否收到首 chunk 选不同超时阈值（到期经 failCurrentRead 驳回当前读，见上方注释）
         const chunkTimeoutMs = firstChunkReceived ? INTER_CHUNK_TIMEOUT_MS : FIRST_CHUNK_TIMEOUT_MS;
         const chunkTimer = setTimeout(() => {
-          // cancel 失败不影响，reader 可能已 done 或被其他路径 cancel，记日志排查偶发连接泄漏
-          const reason = firstChunkReceived ? 'LLM chunk 间读取超时' : 'LLM 首 chunk 读取超时';
-          reader.cancel(new DOMException(reason, 'TimeoutError')).catch((err: unknown) => {
-            logger.debug({ err: toError(err).message }, 'reader.cancel 失败（超时清理路径）');
-          });
+          failCurrentRead(firstChunkReceived ? 'LLM chunk 间读取超时' : 'LLM 首 chunk 读取超时');
         }, chunkTimeoutMs);
+
+        // 超时竞速闸：read 与超时赛跑。超时先到 → 本读以真超时 reject；被落空的 read 仍挂起，
+        // 待 finally 释放连接时自然收尾，其无人观察的 resolve 无副作用。
+        const timeoutGate = new Promise<never>((_, reject) => {
+          pendingReadReject = reject;
+        });
+        // 兜底观察者：闸被「已被真实数据抢先的读」落空时，其拒绝不得变成无人处理的拒绝
+        void timeoutGate.catch(() => undefined);
 
         let readResult;
         try {
-          readResult = await reader.read();
+          readResult = await Promise.race([reader.read(), timeoutGate]);
         } finally {
-          // read 完成（无论成功/失败）都清理 chunk timer，避免泄漏
+          // read 完成（无论成功/失败）都清理 chunk timer 与竞速闸句柄，避免泄漏
           clearTimeout(chunkTimer);
+          pendingReadReject = null;
         }
 
         const { done, value } = readResult;

@@ -2,7 +2,7 @@
  * 集成测试：LLM 适配层（Mock LLM via MSW）
  * 验证 OpenAI 兼容 Provider 的流式响应 + 错误处理
  */
-import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll, afterEach, vi } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
@@ -669,6 +669,65 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
         void chunk;
       }
     }).rejects.toThrow('LLM 请求超时');
+  });
+
+  it('SSE 阶段停摆超时必须抛真超时（不得被 reader.cancel 伪造成流正常结束）', async () => {
+    // 回归靶点（真机 2026-09-15 09:03:22→09:08:27，round-1789462982489）：上游 reasoning
+    // 结束后流式停摆 305s 零事件，用户只能手动取消。实测口径（Node 22 / undici，与 WHATWG 一致）：
+    //   reader.cancel(reason) → 挂起中的 read() **resolve {done:true}**，reason 不外抛；
+    //   （对照：abortController.abort(reason) 才会让 read() reject reason）
+    // 旧实现把 cancel 当作「让 read 抛错」，于是一个超时被读成「流正常结束 + 零产出」→
+    // 落「空响应静默重试」→ 60s+120s+120s 三段全被吞，用户侧表现为「卡死无提示」。
+    // 本用例锁死不变量：看门狗触发后 chat() 必须**抛真超时**，不得静默收尾。
+    // 只伪造 setTimeout/clearTimeout：全量伪造会连 setImmediate/queueMicrotask 一起接管，
+    // 使流机制内部的微任务时序错位而误报"未处理拒绝"（非被测行为）
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    // 先吐一个 reasoning 分片（对齐真机：首 chunk 已到、连接正常），随后不再 enqueue / 不 close
+    const stalledBody = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            'data: {"choices":[{"delta":{"reasoning_content":"思考中"},"finish_reason":null}]}\n\n',
+          ),
+        );
+      },
+    });
+    // 刻意用「Response 形对象」而非 new Response(stream)：后者会包装转发流，
+    // 干扰被测契约（被测只用 ok/status/body）。
+    vi.stubGlobal('fetch', async () => ({
+      ok: true,
+      status: 200,
+      headers: new Headers({ 'Content-Type': 'text/event-stream' }),
+      body: stalledBody,
+      text: async () => '',
+    }));
+    try {
+      const provider = makeProvider();
+      const iter = provider.chat([{ role: 'user', content: 'hi' }])[Symbol.asyncIterator]();
+      // 首分片正常到达（证明走「chunk 间读取超时」分支，而非「首 chunk 超时」）
+      const first = await iter.next();
+      expect(first.value?.thought).toBe('思考中');
+
+      const pending = iter.next();
+      // 只推进过 INTER_CHUNK_TIMEOUT_MS(60s)、不到 EVENT_STALL_TIMEOUT_MS(120s)：
+      // 只让 chunk 间看门狗触发（生产中请求级总超时已被清除，不存在看门狗同拍）。
+      // 用同步版 advance（非 Async 版）：拒绝在测试自身的同步流里产生并随即被 await 观察，
+      // 避免 Async 版在伪造计时器语境下把该拒绝误报为未处理（实测为 vitest 假阳性）
+      vi.advanceTimersByTime(70_000);
+
+      // 不变量：超时必须以 **真超时（DOMException/TimeoutError）上抛**，不得静默收尾。
+      // 旧实现此处 resolve({done:true})（静默收尾）→ 上游读成「空响应」→ 静默重试吞掉超时。
+      const err = await pending.then(
+        (r: IteratorResult<LlmChunk>) =>
+          new Error(`预期抛真超时，实际静默收尾：${JSON.stringify(r)}`),
+        (e: unknown) => e,
+      );
+      expect(err).toBeInstanceOf(DOMException);
+      expect((err as DOMException).name).toBe('TimeoutError');
+    } finally {
+      vi.unstubAllGlobals();
+      vi.useRealTimers();
+    }
   });
 });
 
