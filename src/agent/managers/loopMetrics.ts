@@ -53,4 +53,9 @@ export class LoopMetrics {
   planTaskTableWriteCount = 0;
   /** 累计产出 step_boundary 次数（= 思考折叠分块的边界数） */
   stepBoundaryCount = 0;
+
+  // ─── TOOLPAIR-2 发送边界守卫（2026-09-15 Step 2）──────────────────
+  /** 发送边界守卫命中次数（tool_call 批次成形违规被拒发）。健康态应恒 0——
+   *  命中 = 构造期散点回归（内核 bug 信号），见 toolCallHelpers.auditToolCallPairing */
+  llmPairingGuardFires = 0;
 }

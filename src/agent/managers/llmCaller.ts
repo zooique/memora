@@ -33,7 +33,7 @@ import type { ITracer } from '@/agent/tracer.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { LoopMetrics } from '@/agent/managers/loopMetrics.js';
-import { filterCallableToolCalls } from '@/agent/managers/toolCallHelpers.js';
+import { filterCallableToolCalls, auditToolCallPairing } from '@/agent/managers/toolCallHelpers.js';
 import { isAbortError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
@@ -222,6 +222,24 @@ export class LlmCaller {
         .map((m) => m.content)
         .join('\n');
       llmSpan.setAttribute('systemPromptHash', sha256Fingerprint(systemPrompt));
+    }
+
+    // ─── 发送边界守卫（TOOLPAIR-2 Step 2）───
+    // 坏批次（assistant.tool_calls 未成形）绝不上线路：在发往前拦截、fail-fast。
+    // 健康态散点（FAIL-1/G1/G2/G3）已按构造保证成形，故此处**健康态恒零命中**；
+    // 命中 = 某散点回归（内核 bug 信号），须响亮暴露而非静默吞/重试（坏批次重试无益且掩盖根因），
+    // 故抛**非临时错误**，经 loop（processUserInput rethrow）外显到宿主出错面，止损本轮 token。
+    const pairingViolations = auditToolCallPairing(safeMessages);
+    if (pairingViolations.length > 0) {
+      metrics.llmPairingGuardFires++;
+      const cause = pairingViolations.map((v) => `${v.kind}:${v.toolCallId}`).join(', ');
+      logger.error(
+        { violations: pairingViolations, messageCount: safeMessages.length },
+        `发送边界守卫拒绝：tool_call 批次成形违规（${cause}），将不发送本请求（= 构造期散点回归）`,
+      );
+      llmSpan.recordException(new Error(`发送边界守卫拒绝：${cause}`));
+      llmSpan.end();
+      throw new Error(`发送边界守卫拒绝：tool_call 批次成形违规（${cause}）`);
     }
 
     for (let attempt = 0; attempt <= LOOP_CONSTANTS.MAX_LLM_RETRIES; attempt++) {

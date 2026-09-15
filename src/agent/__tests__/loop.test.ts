@@ -1174,7 +1174,10 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
 
 describe('AgentLoop · processUserInput 最大迭代限制', () => {
   it('达到 maxIterations 后应该停止', async () => {
-    // 每轮都返回 toolCalls，迫使循环直到上限
+    // 每轮都返回 toolCalls，迫使循环直到上限。
+    // 注：用单条 tool call（而非 Array(5).fill 的同响应 5 重复）——后者是「同批次重复 id」的
+    // 畸形批次，会被 TOOLPAIR-2 发送边界守卫正确拦截而不会走迭代上限；跨迭代复用同 id 属
+    // 跨消息场景（守卫不判、G3 已保证真实内核唯一），故单条即纯逼迭代上限。
     const toolCall = {
       toolCalls: [
         { id: 'c1', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
@@ -1182,7 +1185,7 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
     };
 
     const loop = new AgentLoop({
-      provider: mockProvider(Array(5).fill(toolCall)),
+      provider: mockProvider([toolCall]),
       bootstrapMemories: [],
       toolExecutor: vi.fn().mockResolvedValue('result'),
       maxIterations: 3,

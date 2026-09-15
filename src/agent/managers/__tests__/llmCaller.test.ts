@@ -197,3 +197,69 @@ describe('LlmCaller.callWithRetry · thought 透传', () => {
     expect(result?.toolCalls).toHaveLength(1);
   });
 });
+
+// ─── 发送边界守卫（TOOLPAIR-2 Step 2）───
+
+describe('LlmCaller.callWithRetry · 发送边界守卫', () => {
+  function makeDeps(provider: LlmProvider, metrics: LoopMetrics): LlmCallerDeps {
+    return {
+      metrics,
+      getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
+      getProvider: () => provider,
+      getProviderRouter: () => undefined,
+      getCachedProvider: () => undefined,
+      setCachedProvider: () => {},
+      contextManager: { estimateTokens: () => 0 },
+      tracer: NOOP_TRACER,
+      hasToolExecutedThisTurn: () => false,
+    };
+  }
+
+  it('畸形批次（assistant.tool_calls 无配对 tool 消息）→ 拒发：provider.chat 不被调用、抛守卫错误、计数 +1', async () => {
+    const metrics = new LoopMetrics();
+    const chatSpy = vi.fn(function* () {
+      yield { content: '不应发出' };
+    });
+    const caller = new LlmCaller(
+      makeDeps({ name: 'p', chat: chatSpy } as unknown as LlmProvider, metrics),
+    );
+    const malformed = [
+      {
+        role: 'assistant' as const,
+        content: '要读文件',
+        toolCalls: [
+          { id: 'c1', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
+        ],
+      },
+    ] as Message[];
+
+    const gen = caller.callWithRetry(malformed, {} as ChatOptions, undefined, 1);
+    // 生成器在首个 .next() 即抛（守卫在重试循环前 fail-fast）
+    await expect(gen.next()).rejects.toThrow('发送边界守卫拒绝');
+    expect(chatSpy).not.toHaveBeenCalled();
+    expect(metrics.llmPairingGuardFires).toBe(1);
+  });
+
+  it('健康态（无工具轮）→ 守卫零触发、照常发送', async () => {
+    const metrics = new LoopMetrics();
+    const chatSpy = vi.fn(function* () {
+      yield { content: 'ok' };
+    });
+    const caller = new LlmCaller(
+      makeDeps({ name: 'p', chat: chatSpy } as unknown as LlmProvider, metrics),
+    );
+
+    const chunks: AgentChunk[] = [];
+    const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
+    let step = await gen.next();
+    while (!step.done) {
+      chunks.push(step.value as AgentChunk);
+      step = await gen.next();
+    }
+    const result = step.value as LlmCallResult;
+
+    expect(chatSpy).toHaveBeenCalledTimes(1);
+    expect(metrics.llmPairingGuardFires).toBe(0);
+    expect(result?.fullContent).toBe('ok');
+  });
+});
