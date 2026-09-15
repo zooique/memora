@@ -310,7 +310,7 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     return { roundStore, sessionStore };
   }
 
-  it('中断轮（带恢复文本）升级为 complete：写 assistantMessage（含中断标记）+ refCount 0→1 + 入 roundIds', async () => {
+  it('中断轮（带恢复文本）升级为 interrupted：写 assistantMessage（含中断标记）+ refCount 0→1 + 入 roundIds', async () => {
     const { roundStore, sessionStore } = createCrashScene();
     const roundId = generateRoundId();
     const first = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
@@ -323,7 +323,7 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     await restarted.appendInterrupted(roundId, { content: '已整理出一版草稿' });
 
     const round = roundStore.getById(roundId)!;
-    expect(round.status).toBe('complete');
+    expect(round.status).toBe('interrupted');
     expect(round.completedAt).toBeDefined();
     // 收场文本 = 恢复内容 + 默认中断标记（与运行期中断收场默认文案同源 SSOT）
     expect(round.assistantMessage?.content).toBe(
@@ -333,7 +333,7 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);
   });
 
-  it('无恢复文本的中断轮仍按 stop 语义收场：complete 但无 assistantMessage，照样登记会话', async () => {
+  it('无恢复文本的中断轮仍按 stop 语义收场：interrupted 但无 assistantMessage，照样登记会话', async () => {
     const { roundStore, sessionStore } = createCrashScene();
     // 工具阶段崩溃：无任何 narrate 文本，processEvents 仅有 tool 事件
     const roundId = generateRoundId();
@@ -354,7 +354,7 @@ describe('MessageHistory · appendInterrupted（崩溃残留轮升级为 stop tu
     await restarted.appendInterrupted(roundId, { content: '' });
 
     const round = roundStore.getById(roundId)!;
-    expect(round.status).toBe('complete');
+    expect(round.status).toBe('interrupted');
     expect(round.assistantMessage).toBeUndefined(); // §一·五：无摘要也按 stop 语义收场
     expect(round.refCount).toBe(1);
     expect(sessionStore.getRoundIds(`${todayDate()}-main`)).toContain(roundId);

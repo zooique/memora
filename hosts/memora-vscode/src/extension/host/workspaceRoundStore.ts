@@ -406,7 +406,9 @@ export class WorkspaceRoundStore implements IRoundStore {
     //
     // ⚠️ `'error'` 是**预留态**（2026-09-10 G36 裁决②「明示收起」，与内核
     // `inMemoryRoundStore.listInterruptedRecent` 同款语义）——全仓零写点，仅与 'pending'
-    // 共用本打捞条件。**勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
+    // 共用本打捞条件。⚠️ `interrupted` **不入本打捞口**（2026-09-15 新增状态）：运行期收场已
+    // 即时标 interrupted 且 refCount 0→1，不再符合 `refCount===0` 的崩溃孤儿条件，属"已收场的
+    // 停 turn"。**勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
     const candidates = Array.from(this.index.values())
       .filter((e) => e.refCount === 0 && (e.status === 'pending' || e.status === 'error'))
       .filter((e) => e.createdAt.startsWith(date))

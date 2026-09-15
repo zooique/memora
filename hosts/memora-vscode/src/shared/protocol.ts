@@ -462,8 +462,10 @@ export type ExtensionToWebviewMessage =
    *
    * 与 process_event 同路径：webview 把 events 一次性塞入当前轮 events[] 渲染。
    * 按 round 交织发送（meta 先于该轮 assistant 正文写入 currentRoundMeta）。
+   * `interrupted`（2026-09-15）：中断轮（Round.status==='interrupted'）标志——webview 据此把
+   * 过程独立平铺可见、不挂 assistant 折叠块。
    */
-  | { type: 'replay_events'; roundId: string; events: ProcessEvent[] }
+  | { type: 'replay_events'; roundId: string; events: ProcessEvent[]; interrupted?: boolean }
   /**
    * 任务看板更新（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
    *

@@ -405,11 +405,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 本轮过程事件缓冲（渲染唯一真相源，运行时与重放同源） */
   let currentEvents: ProcessEvent[] = [];
-  /** 交互行（qa/supp）是否已插入当前闭环（SSOT 收窄 2026-09-08）：
-   *  meta 三态判定据此阻断「交互输入后 resume 原位续写」——交互行已插则后续正文开新续接块，
-   *  与重放 sendRoundView 按时间序穿插的形态同构（QA/补充行恒位于两段之间，而非完整回答之后）。
-   *  与 resumePending 同清理纪律（meta 消费 / 新闭环 user / done·interrupted / clear_ok）。 */
-  let interactiveRowInserted = false;
   /** 本轮身份（meta 事件写入）：该轮 AI 消息挂的角色/模型标签（与会话级 chat_role_pack 分离） */
   let currentRoundMeta: { role: string; llm: string } | undefined;
   /** 当前轮 round-block 容器（挂在本轮首个 assistant 块；null = 正文块尚未创建） */
@@ -721,22 +716,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 确保当前轮**运行时过程平铺容器**（v1.8 剪枝，2026-09-09）存在并挂在本轮首个 assistant 块上
+   * 确保当前轮**过程平铺容器**存在（v1.8 剪枝，2026-09-09 运行时；2026-09-15 增重放中断轮孤儿挂载）
    *
-   * 挂载规则与 ensureRoundBlock 同源（label 之后、正文 body 之前——「过程在上 · 报告在下」）。
-   * 与 ensureRoundBlock 互斥：运行时（非 finalize）优先平铺容器的存在，round-block 仅在
-   * finalize（done/interrupted/重放）时经 renderRoundBlock 创建——运行时绝不出现大折叠壳。
+   * 常规挂载规则与 ensureRoundBlock 同源（label 之后、正文 body 之前——「过程在上 · 报告在下」），
+   * 挂在当前 assistant 块（activeAssistantEl）上。`orphan` 模式（2026-09-15）：用于**重放中断轮**——
+   * 该轮无 assistant 正文块（tokenOut:0 未产 assistantMessage），无法依赖 activeAssistantEl；此时
+   * 把平铺容器直接挂到消息流末尾（本轮 user 块之后），用 data-round-id 记录所属轮，实现「过程独立
+   * 可见、不收进折叠块」。
    *
-   * @returns 平铺容器（正文块未创建 / 无过程事件时返回 null）
+   * @param opts.orphan 是否以孤儿模式挂载（无 assistant host 时挂消息流尾）
+   * @param opts.roundId 所属轮 ID（孤儿模式记录 data-round-id，防跨轮串扰；常规模式非必需）
+   * @returns 平铺容器（无 host 且非孤儿、或无过程事件时返回 null）
    */
-  function ensureProcessFlow(): HTMLElement | null {
+  function ensureProcessFlow(opts?: { orphan?: boolean; roundId?: string }): HTMLElement | null {
     if (flowEl && flowEl.isConnected) return flowEl;
     const host = activeAssistantEl;
-    if (!host || currentEvents.length === 0) return null;
+    const orphan = !!opts?.orphan;
+    if ((!host && !orphan) || currentEvents.length === 0) return null;
     flowEl?.remove();
     const flow = document.createElement('div');
     flow.className = 'process-flow';
-    // 插入点：.msg-ai-label 之后、.msg-body（报告正文）之前
+    if (!host) {
+      // 孤儿模式：本轮无 assistant 块 → 平铺容器挂消息流尾 + 记录所属轮（防跨轮串扰）
+      if (opts?.roundId) flow.dataset.roundId = opts.roundId;
+      messages.appendChild(flow);
+      flowEl = flow;
+      return flow;
+    }
+    // 常规：插入点 .msg-ai-label 之后、.msg-body（报告正文）之前
     const label = host.querySelector(':scope > .msg-ai-label');
     const msgBody = host.querySelector(':scope > .msg-body');
     if (msgBody) {
@@ -1436,6 +1443,55 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         updateToolRowState(flow, e as Extract<ProcessEvent, { type: 'tool_result' }>);
       }
     }
+  }
+
+  /**
+   * 中断轮重放收尾标记（2026-09-15 方案：中断轮过程独立平铺可见，不收进折叠块）
+   *
+   * 内核把中断/失败轮落盘为 status='interrupted'（不再伪 complete），processEvents 保留 aborted +
+   * metrics。重放中断轮时过程经 renderProcessFlow 平铺到孤儿容器，本节在平铺流末尾追加：
+   * - §已停止 行（aborted 事件 → stopReasonLabel 语义映射）
+   * - §执行指标 行（计时/Tokens/工具失败/完成与否——沿用 round-block finalize 的 finalSuccess 判定）
+   *
+   * 幂等守卫：已渲染过该轮标记（data-interrupted-marker）则不再重绘，防 replay 重复投递叠加。
+   *
+   * @param flow 中断轮平铺容器（orphan 挂载）
+   * @param events 该轮 processEvents（含 aborted/metrics）
+   */
+  function flagInterruptedMarker(flow: HTMLElement, events: ProcessEvent[]): void {
+    if (flow.querySelector('[data-interrupted-marker]')) return;
+    const marker = document.createElement('div');
+    marker.className = 'process-flow__interrupted';
+    marker.dataset.interruptedMarker = 'true';
+    // §已停止：aborted 事件 → 语义映射（无 aborted 事件的中断轮仍显示 generic 停文案）
+    const aborted = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
+    );
+    const stopped = document.createElement('div');
+    stopped.className = 'process-flow__stopped-row';
+    stopped.textContent = aborted
+      ? stopReasonLabel(aborted.payload)
+      : stopReasonLabel({ reason: 'interrupted' });
+    marker.appendChild(stopped);
+    // §执行指标：metrics 事件（有才显示）
+    const metrics = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
+    );
+    if (metrics) {
+      const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
+      const finalSuccess = metrics.payload.success && unparsed === 0;
+      const meta = document.createElement('div');
+      meta.className = 'process-flow__metrics-row';
+      meta.textContent = [
+        `耗时：${fmtDuration(metrics.payload.durationMs)}`,
+        `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
+        `工具失败：${metrics.payload.toolFailureCount} 次`,
+        ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
+        `完成：${finalSuccess ? '是' : '否（中断/失败）'}`,
+      ].join(' · ');
+      marker.appendChild(meta);
+    }
+    flow.appendChild(marker);
   }
 
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
@@ -2314,7 +2370,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clarifyBar.classList.remove('visible');
       inputBar.hidden = false;
     }
-    interactiveRowInserted = true; // SSOT 收窄：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
     let inserted: HTMLElement | null = null;
     try {
       inserted = appendInlineInputRow(text, kind, roundId, question, options);
@@ -3253,11 +3308,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         clearPendingWait(); // 骨架接管：移除等待指示器
         clearToolElapsed(); // TS-11c：切轮清工具等待计时（瞬态，防跨轮残留）
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
-        const pausedResume =
-          pausedAssistantEl !== null &&
-          pausedAssistantEl.isConnected &&
-          !interactiveRowInserted; // SSOT 收窄（2026-09-08）：交互行（qa/supp）已插入的 resume 不走
-        // 原位续写——落入 resumePending 分支开新续接块，QA/补充行恒位于两段之间（与重放穿插同构）
+        // 方案 C（2026-09-15 收敛，问题2 根因）：交互输入（qa/supp/timeout）不再制造 turn 分段——
+        // ask/补充的 resume 一律原位续写同一回合，最终「单一折叠块 + 单一报告」，与重放整 round 折叠同构。
+        // 原 `!interactiveRowInserted` 门控已移除：那门控让交互 resume 改走 resumePending 建续接骨架 B，
+        // 把同 turn 在 DOM 上分裂成 [块A][问/答][块B]，折叠块被夹在报告中间（问题3，重排后才归位）。
+        const pausedResume = pausedAssistantEl !== null && pausedAssistantEl.isConnected;
+        // 有暂停锚 → 原位续写同回合（不建新段，QA/补充行作为 turn 内过程，finalize 随折叠块折入）；
+        // 无锚但有续跑期待（生成中 interject 打断补充）→ 续接骨架（打断分段，非 turn 内补问）
         if (pausedResume) {
           // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
           // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费。
@@ -3283,7 +3340,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           currentEvents.push(ev);
           prepareFlowShell();
         }
-        interactiveRowInserted = false; // 消费式：meta 判定后即清（防残留阻断下一「无输入 continue」原位续写）
+        // 方案 C（2026-09-15）：交互（qa/supp/timeout）不再制造 turn 分段，resume 一律原位续写同回合
       } else {
         if (ev.type === 'memory_added') {
           showActivity('info', `已沉淀：${ev.payload.name || ev.payload.id}`);
@@ -3321,8 +3378,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (metaEv) {
         currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
       }
-      // 重放整批：任务过程折叠区（含工具/思考/召回/审查/metrics）一次性渲染（finalize=true，收起态）
-      renderRoundBlock(currentEvents, true);
+      // 中断轮（2026-09-15 方案：Round.status==='interrupted'，host 已透出 interrupted 标志）：
+      // 该轮无 assistant 正文块（tokenOut:0 未产 assistantMessage），round-block 折叠块无法挂载
+      // → 过程独立平铺可见（复用 renderProcessFlow 平铺容器），不收进折叠块，保留思考/工具/中断标记
+      if (msg.interrupted) {
+        // 孤儿平铺容器挂 messages 尾：逐个处理中断轮时先清理上一轮孤儿容器（防跨轮堆积残留）
+        const prevOrphan = messages.querySelector<HTMLElement>('.process-flow[data-round-id]');
+        if (prevOrphan && prevOrphan !== flowEl) prevOrphan.remove();
+        flowEl?.remove();
+        flowEl = null;
+        const flow = ensureProcessFlow({ orphan: true, roundId: msg.roundId });
+        if (flow) {
+          renderProcessFlow(currentEvents);
+          flagInterruptedMarker(flow, currentEvents);
+        }
+      } else {
+        // 普通轮：任务过程折叠区（含工具/思考/召回/审查/metrics）一次性渲染（finalize=true，收起态）
+        renderRoundBlock(currentEvents, true);
+      }
     } else if (msg.type === 'user') {
       // 无缝插话（缺口 B）+ UX-9 A：生成中收到用户补充 → 打断当前流式正文：结清旧块的
       // 流式态（光标/定时器），但保留块引用 —— 打断分条将插在该块之后，后续 chunk 以「续接」
@@ -3379,8 +3452,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 新闭环同时清暂停续写锚（2026-09-07 对称雷修复）：残留会让下一轮 meta 误判 pausedResume，
         // 新问题正文被原位续写到上一个暂停块
         pausedAssistantEl = null;
-        // 新闭环也清交互行已插标志（2026-09-08 SSOT 收窄同纪律）：防跨轮残留阻断下轮原位续写
-        interactiveRowInserted = false;
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
@@ -3510,8 +3581,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       flowShellEl = null;
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
       resumePending = false; // 同节奏清续跑期待（P-1 对称：防中断/补充后残留污染下轮判定）
-      interactiveRowInserted = false; // 同纪律（2026-09-08）：闭环结束清交互行标志
-      // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
+    // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
       // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式光标
       // （G31 方案1：QA 不再留在折叠块与报告之间）
       commitRoundId(msg.roundId);
@@ -3528,7 +3598,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       flowShellEl = null;
       pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
       resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
-      interactiveRowInserted = false; // 同纪律（2026-09-08）：中断结束清交互行标志
       // 同 done 顺序纪律：先回填 roundId（供 fold 归属过滤）→ 收起任务过程折叠区 → 收敛 QA → 关流式
       commitRoundId(msg.roundId);
       finalizeRound();
@@ -3610,10 +3679,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'clear_ok') {
       // 清空消息区须同时清 .msg、.msg-wrapper（用户消息外层壳）、.round-block、.date-divider、
-      // .followup、.interrupt-divider（UX-9 行内打断切分条，与 .msg 平级）
+      // .followup、.interrupt-divider（UX-9 行内打断切分条，与 .msg 平级）、.process-flow
+      // （2026-09-15 中断轮重放孤儿平铺容器，挂 messages 尾、随会话切换一并清理）
       // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa, .round-group').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa, .round-group, .process-flow').forEach((el) => el.remove());
       // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
       removeAllPlanBoards();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
@@ -3638,7 +3708,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
       lastAssistantRoundId = undefined;
       resumePending = false;
-      interactiveRowInserted = false; // 同纪律（2026-09-08）：清空会话清交互行标志
       roundGroupEl = null;
       lastShownDate = undefined;
       updateEmptyState();

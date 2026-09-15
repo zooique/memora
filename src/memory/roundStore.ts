@@ -94,26 +94,30 @@ export interface RoundInteractiveInput extends RoundMessage {
 /**
  * 问答闭环状态机
  *
- * 状态流转（**实测口径**，2026-09-10 G36 核实）：
+ * 状态流转（**实测口径**，2026-09-10 G36 核实 + 2026-09-15 修正）：
  * - pending → complete：AI 回复生成完成（真实路径）
+ * - pending → interrupted：被用户中断/运行失败（appendInterrupted 收场，2026-09-15 起不再伪 complete）
  * - error：**预留态，当前无写点**（2026-09-10 G36 裁决②「明示收起」）
+ *
+ * ⚠️ 关于 `interrupted`（2026-09-15 修正「假性 complete 吞现场」）：
+ * - **中断/失败轮落盘为 `interrupted`，不再标 `complete`**。原实现把中断统一 appendInterrupted →
+ *   `status:'complete'`，使未完成任务被伪装成正常完成轮，且重放时因缺 assistant 正文块丢失
+ *   过程（思考/工具/中断标记）。修正后中断轮保留 `processEvents` 原始现场、状态诚实区分。
+ * - **实现落点**：`seed/orchestrator.act()`（中断 aborted / 失败 failed 收口到同一尾处理）
+ *   → `history.appendInterrupted` 写 `status:'interrupted'`。
+ * - **打捞关系**：`listInterruptedRecent`（内核 + 宿主两端）打捞条件仍为 `pending || error`，
+ *   **不含 interrupted**——因为运行期收场已即时标 interrupted 且 refCount 0→1，不再符合
+ *   `refCount===0 && pending` 的崩溃孤儿条件；interrupted 轮是"已收场的停 turn"，不属崩溃残留。
  *
  * ⚠️ 关于 `error`（防未来误判）：
  * - **不存在** `pending → error` 的流转——全仓 grep 零写点（生产代码）；运行时失败走
- *   `yield { type:'error' }` 事件流上报，**不翻 Round 状态机**，一律按「中断」处理
- *   （appendInterrupted → complete），因为「中断」对用户是可理解的、而「出错」需要
- *   区分语义——目前无此产品需求。
- * - **实现落点**（2026-09-15 对齐核实）：`seed/orchestrator.act()` 把中断（aborted）与失败
- *   （failed）收口到同一尾处理，两条路径都调 `history.appendInterrupted(roundId, { content })`。
- *   ⚠️ 本条裁决此前**只有文字、无实现**——failed 分支当时直接 return，aborted 分支也仅在
- *   「有产出文本」时才写史，两者都会留下 refCount=0 的 pending 孤儿轮（须等宿主下次重启由
- *   `upgradeInterruptedRounds` 打捞）；现已补齐为运行期即时收场。
- * - **但它不是死代码**：`listInterruptedRecent`（内核 `inMemoryRoundStore` + 宿主
- *   `workspaceRoundStore` 两端）的打捞条件为 `pending || error`，error 是该条件的组成部分。
+ *   `yield { type:'error' }` 事件流上报，**不翻 Round 状态机**，并与中断并轨为 `interrupted`，
+ *   因为「中断/停顿」对用户是可理解的、而「出错」目前无独立产品语义（并入 interrupted）。
+ * - **它不是死代码**：`listInterruptedRecent` 打捞条件为 `pending || error`，error 是组成。
  * - **纪律**：勿因「grep 到零写点」而删此成员或改窄打捞条件；若未来出现「整轮失败且
  *   需与中断区分展示」的真实需求，再补写点，签名无需变更。
  */
-export type RoundStatus = 'pending' | 'complete' | 'error';
+export type RoundStatus = 'pending' | 'complete' | 'error' | 'interrupted';
 
 // ─── 过程事件（ProcessEvent）────────────────────────────
 // 每轮「过程事件」= UI 状态重建的最小信息（运行时与重放共用同一份数据，

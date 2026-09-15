@@ -2414,12 +2414,12 @@ describe('Agent · chat() 中断保留文本', () => {
     expect(errors.some((c) => c.message.includes('[连接中断]'))).toBe(false);
   }, 15000);
 
-  it('LLM 错误（非 abort）零产出 → 轮即收场 complete 且可被会话加载（真机故障回归）', async () => {
+  it('LLM 错误（非 abort）零产出 → 轮即收场 interrupted 且可被会话加载（真机故障回归）', async () => {
     // 真机故障（2026-09-15 07:47 互动叙事平台方案）：12 次 LLM 调用 / 26 次 read_file 后
     // 第 12 次调用被服务端 4xx 拒绝 → consumeExecutionStream 返回 failed:true。
     // 修复前：act() 的 `if (streamResult.failed) return` 直接返回 → 轮停在 pending + refCount=0，
     // 运行期无人收尾 → 宿主表现为「中止后重启，这一轮没有被重新渲染」（用户实测）。
-    // 现收口到 appendInterrupted（与用户手动中止**同一原语**）→ 运行期即落 complete + 登记会话。
+    // 现收口到 appendInterrupted（与用户手动中止**同一原语**）→ 运行期即落 interrupted + 登记会话。
     const roundStore = new InMemoryRoundStore();
     const sessionStore = new InMemorySessionStore(roundStore);
     agent = new Agent({
@@ -2446,8 +2446,9 @@ describe('Agent · chat() 中断保留文本', () => {
     const rounds = roundStore.listAll();
     expect(rounds).toHaveLength(1);
 
-    // 核心回归：轮已收场（修复前此处为 'pending'）→ 可被正常加载/渲染
-    expect(rounds[0]!.status).toBe('complete');
+    // 核心回归：轮已收场（修复前此处为 'pending'）→ 可被正常加载/渲染；
+    // 2026-09-15 起中断/失败轮落盘为 'interrupted'（不再伪 complete）
+    expect(rounds[0]!.status).toBe('interrupted');
     // 零产出 → 不写空 assistantMessage（沿用 appendInterrupted 既有语义：无产出也按 stop 收场）
     expect(rounds[0]!.assistantMessage).toBeUndefined();
 

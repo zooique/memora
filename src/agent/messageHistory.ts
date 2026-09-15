@@ -413,7 +413,7 @@ export class MessageHistory {
    *    留下 pending 孤儿轮、须等下次重启才打捞（真实故障：LLM 4xx 中断的长任务轮）。
    *    依据 = `memory/roundStore.ts` RoundStatus 文档「运行时失败不翻状态机，一律按中断处理」。
    *
-   * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status complete +
+   * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status interrupted +
    * completedAt + isReappend 防重复登记），Round schema / 存储格式不变；
    * **有意不直接复用 appendAssistant**，两处差异：
    * - appendAssistant 顶层跳过空内容 → 无文本中断轮无法收场；本方法允许多段「即使无
@@ -421,7 +421,7 @@ export class MessageHistory {
    * - 中断标记统一追加默认文案（LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK），与运行期两条
    *   中断收场路径（loop 流式中断 / orchestrator 历史写入）的默认降级同源（SSOT）。
    *
-   * 幂等：已 complete 的轮再调直接返回（宿主打捞与运行期收尾可能对同一轮各触发一次）。
+   * 幂等：已收场（complete / interrupted 终态）的轮再调直接返回（宿主打捞与运行期收尾可能对同一轮各触发一次）。
    *
    * @param roundId 待收场轮 ID（须已存在于 RoundStore 或本实例 pendingRounds；缺失仅记日志不抛错，防御性降级）
    * @param opts.content 已产出的助手文本（运行期由 consumeExecutionStream 累积；宿主打捞时
@@ -441,9 +441,10 @@ export class MessageHistory {
         logger.warn({ roundId }, 'appendInterrupted: Round 未找到，跳过升级');
         return;
       }
-      // 已收场（幂等重跑 / 防御）：不再二次登记会话引用，防止 roundIds 重复堆叠、refCount 虚增
-      if (existing.status === 'complete') {
-        logger.debug({ roundId }, 'appendInterrupted: 轮已收场，跳过重复升级');
+      // 已收场（幂等重跑 / 防御）：complete / interrupted 均为终态（正常完成 或 中断收场），
+      // 不再二次登记会话引用，防止 roundIds 重复堆叠、refCount 虚增
+      if (existing.status === 'complete' || existing.status === 'interrupted') {
+        logger.debug({ roundId, status: existing.status }, 'appendInterrupted: 轮已收场，跳过重复升级');
         return;
       }
       // 有恢复文本才写 assistantMessage（§一·五：无 assistantMessage 总结也按 stop 语义收场）
@@ -462,7 +463,7 @@ export class MessageHistory {
               } as RoundMessage,
             }
           : {}),
-        status: 'complete',
+        status: 'interrupted',
         completedAt: nowIso(),
       };
       this.pendingRounds.delete(roundId);

@@ -202,9 +202,12 @@ export class InMemoryRoundStore implements IRoundStore {
     //
     // ⚠️ `'error'` 是**预留态**（2026-09-10 G36 裁决②「明示收起」）：
     // 全仓**无任何写点**把 Round.status 置为 'error'（写点仅 pending → complete /
-    // appendInterrupted → complete）——它在此处与 'pending' **共用同一条打捞条件**，
-    // 故保留字段本身零成本、删除反而是无谓改动。保留的是「接口形状」而非「当前行为」：
-    // 若未来出现「整轮失败且需与中断区分」的真实需求，可在此分支补齐语义，无需改签名。
+    // appendInterrupted → interrupted，2026-09-15 起中断轮不再伪 complete）——它在此处与
+    // 'pending' **共用同一条打捞条件**，故保留字段本身零成本、删除反而是无谓改动。
+    // 保留的是「接口形状」而非「当前行为」：若未来出现「整轮失败且需与中断区分」的
+    // 真实需求，可在此分支补齐语义，无需改签名。
+    // ⚠️ `interrupted` **不入本打捞口**：运行期收场已即时标 interrupted 且 refCount 0→1，
+    // 不再符合 `refCount===0` 的崩溃孤儿条件；interrupted 轮是「已收场的停 turn」，不属崩溃残留。
     // 纪律：勿因「grep 到零写点」而删该字段（它是打捞条件的组成部分，非死代码）。
     const interrupted = Array.from(this.rounds.values())
       .filter((r) => r.refCount === 0 && (r.status === 'pending' || r.status === 'error'))

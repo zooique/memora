@@ -312,25 +312,22 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'paused' });
     // ③ 暂停态补充输入（宿主 handleSend paused 分支：post user(kind=supplement) + resumeExecution(input)）
     dispatch({ type: 'user', text: '补充：成本标准改 <¥0.5', ts: '2026-09-07T11:00:00.000Z', kind: 'supplement' });
-    // ④ resume 重发 meta——交互行已插入（interactiveRowInserted）→ 阻断原位续写，走 resumePending
-    //    分支建续接骨架（修复前 pausedResume 恒优先原位续写，补充行被顶到完整回答之后）
+    // ④ resume 重发 meta——方案 C（2026-09-15）交互 resume 一律原位续写同回合：pausedResume 判定优先
+    //   （移除旧 `!interactiveRowInserted` 门控），补充行作 turn 内过程、不进续接骨架分块
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    // ⑤ resume 后正文 chunk（同 roundId）：复用续接骨架成第 2 块
+    // ⑤ resume 后正文 chunk（同 roundId）：原位续写原暂停块（单一折叠块语义，与重放整 round 折叠同构）
     dispatch({ type: 'chunk', content: '已按补充调整成本标准', roundId: 'r1' });
-    // 运行时态（done 前）：补充行恒在两段之间——[块A] → [补充行] → [块B 续接]（2026-09-07 修复语义）
+    // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
+    dispatch({ type: 'done', roundId: 'r1' });
+    // 方案 C（2026-09-15）：补充行作 turn 内过程随折叠块折入，正文原位续写合并为单块
     const assistants = messages.querySelectorAll('.msg.assistant');
-    expect(assistants).toHaveLength(2);
-    expect(collectAllBodyText(assistants[0])).toBe('暂停前正文');
-    expect(collectAllBodyText(assistants[1])).toBe('已按补充调整成本标准');
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('暂停前正文已按补充调整成本标准');
     const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
     expect(qaRow).not.toBeNull();
-    const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
-    expect(order.indexOf(assistants[0])).toBeLessThan(order.indexOf(qaRow));
-    expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
-    dispatch({ type: 'done', roundId: 'r1' });
   });
 
-  it('error 终态不清交互行门控：补充行已插 → resume 前 error → 再 resume 仍分块续接（2026-09-08 二查回退 182e5b8c 补清理）', () => {
+  it('error 后可继续：补充行已插 → resume 前 error → 再 resume 原位续写（2026-09-15 方案 C 撤销分块门控）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
@@ -339,58 +336,52 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'chunk', content: '前序正文', roundId: 'r1' });
     // ② 暂停（置 pausedAssistantEl=块1）
     dispatch({ type: 'paused' });
-    // ③ 暂停态补充输入（interactiveRowInserted=true + resumePending=true，无骨架——resume 尚未开始）
+    // ③ 暂停态补充输入（交互行上屏，无骨架——resume 尚未开始）
     dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:05:00.000Z', kind: 'supplement' });
     // ④ resume 流启动即失败（宿主 runFlow 同步抛错路径：error 在 meta 前到达）——
-    //    不得清 interactiveRowInserted：error 属可恢复中断，交互行已插则后续正文恒分块
-    //    （182e5b8c 曾补清标志，二查定论其与 28d50f19 收窄语义相反而回退）
+    //    error 属可恢复中断
     dispatch({ type: 'error', message: 'boom' });
-    // ⑤ 用户再次继续 → resume meta：门控仍在（未清）→ 不进 pausedResume 原位续写 → resumePending 分支建骨架
+    // ⑤ 用户再次继续 → resume meta：方案 C 无分块门控 → pausedResume 原位续写原暂停块
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '错误后续写', roundId: 'r1' });
-    // 运行时态（done 前）：块1 不被原位续写合并（回退前 error 清标志 → ⑤ pausedResume 原位续写 → 块1 被追加 '错误后续写'）
+    // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
+    dispatch({ type: 'done', roundId: 'r1' });
+    // 方案 C（2026-09-15）：块1 被原位续写合并（不再分第 2 块）
     const assistants = messages.querySelectorAll('.msg.assistant');
-    expect(assistants.length).toBeGreaterThanOrEqual(2);
-    expect(collectAllBodyText(assistants[0])).toBe('前序正文');
-    // 错误后正文在独立新块（分块续接语义：补充行恒位于两段之间，而非被顶到完整回答之后）
-    const texts = Array.from(assistants).map((a) => collectAllBodyText(a));
-    expect(texts[1]).toBe('错误后续写');
+    expect(assistants.length).toBe(1);
+    expect(collectAllBodyText(assistants[0])).toBe('前序正文错误后续写');
     const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
     expect(qaRow).not.toBeNull();
-    const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
-    expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]!));
-    dispatch({ type: 'done', roundId: 'r1' });
   });
 
-  it('暂停态补充输入后再次继续：resumePending 已消费，下轮不误建续接骨架（2026-09-07 P-1 排雷修复，2026-09-08 收窄更新）', () => {
+  it('暂停补充后再追问：补充轮原位续写、下轮不误续写（2026-09-15 方案 C：resumePending 已消费）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮：meta + 正文（roundId r1）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
-    // ② 暂停 → 补充输入（置 resumePending=true + interactiveRowInserted=true）
+    // ② 暂停 → 补充输入（置 resumePending）
     dispatch({ type: 'paused' });
     dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:01:00.000Z', kind: 'supplement' });
-    // ③ resume meta：交互行已插 → resumePending 分支（消费 resumePending + 建续接骨架）
+    // ③ resume meta：方案 C pausedResume 优先原位续写（消费 resumePending，不建续接骨架）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '续写', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
-    // ④ 新闭环（无 kind）：真新轮应清空锚点建新骨架（不受残留 resumePending/interactiveRowInserted 影响）
+    // ④ 新闭环（无 kind）：真新轮应清空锚点建新骨架（不受残留 resumePending 影响）
     dispatch({ type: 'user', text: '新问题', ts: '2026-09-07T11:02:00.000Z' });
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '新回答', roundId: 'r2' });
     dispatch({ type: 'done', roundId: 'r2' });
 
-    // 三段各自独立：补充行所在轮分块（第一段/续写），新问题不误续写到暂停块
+    // 补充轮合并为 1 块（原位续写→单一折叠块语义）、新问题独立建块不误续写
     const assistants = messages.querySelectorAll('.msg.assistant');
-    expect(assistants).toHaveLength(3);
-    expect(collectAllBodyText(assistants[0])).toBe('第一段');
-    expect(collectAllBodyText(assistants[1])).toBe('续写');
-    expect(collectAllBodyText(assistants[2])).toBe('新回答');
+    expect(assistants).toHaveLength(2);
+    expect(collectAllBodyText(assistants[0])).toBe('第一段续写');
+    expect(collectAllBodyText(assistants[1])).toBe('新回答');
   });
 
-  it('ask_user 问答：paused → QA 行 → resume meta 分块续接（QA 恒在两段之间，运行时=重放形态）', () => {
+  it('ask_user 问答：paused → QA 行 → resume meta 原位续写（QA 作 turn 内过程，2026-09-15 方案 C）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
@@ -401,25 +392,20 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'paused' });
     // ③ 用户回答：宿主 post user(kind=question-answer)（G26 运行时无 question 回顾行，仅回答行）
     dispatch({ type: 'user', text: '选方案 A', ts: '2026-09-07T12:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
-    // ④ resume 重发 meta——交互行已插入 → 阻断 pausedResume 原位续写，开续接骨架（修复前 QA 被顶到完整回答后）
+    // ④ resume 重发 meta——方案 C：pausedResume 优先原位续写（不移除 QA 锚、不开续接骨架分块）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    // ⑤ 续跑最终正文（同 roundId）：进续接块（is-continued）
+    // ⑤ resume 后正文 chunk（同 roundId）：原位续写原暂停块（单一折叠块语义，与重放整 round 折叠同构）
     dispatch({ type: 'chunk', content: '已按方案 A 执行完毕', roundId: 'r1' });
-    // 运行时态（done 前）：形态 = 重放 sendRoundView 段穿插： [块A 提问前正文] [你答行] [块B 最终正文（续接）]
+    // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
+    dispatch({ type: 'done', roundId: 'r1' });
+    // 方案 C（2026-09-15）：单一连续正文块 + QA 行作 turn 内过程随折叠块折入（不分段）
     const assistants = messages.querySelectorAll('.msg.assistant');
-    expect(assistants).toHaveLength(2);
-    expect(collectAllBodyText(assistants[0])).toBe('提问前正文');
-    expect(collectAllBodyText(assistants[1])).toBe('已按方案 A 执行完毕');
-    // 你答行位于两段之间（文档树序断言，round-group 容器化下同样成立）
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('提问前正文已按方案 A 执行完毕');
+    // 你答行进入本轮折叠块（过程位，随折叠折入）
     const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
     expect(qaRow).not.toBeNull();
     expect(qaRow.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
-    const order = Array.from(messages.querySelectorAll('.msg.assistant, .msg-qa'));
-    expect(order.indexOf(assistants[0])).toBeLessThan(order.indexOf(qaRow));
-    expect(order.indexOf(qaRow)).toBeLessThan(order.indexOf(assistants[1]));
-    // 最终正文块带同环续接标记（与重放 is-continued 一致）
-    expect(assistants[1].classList.contains('is-continued')).toBe(true);
-    dispatch({ type: 'done', roundId: 'r1' });
   });
 
   it('同轮连环 ask：resume 无正文再问 → 第二轮 QA 恒插第一轮后（运行时=重放 ts 序，2026-09-09 T2）', () => {
@@ -477,7 +463,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(seq.indexOf(askRows[0] as HTMLElement)).toBeLessThan(seq.indexOf(ansRows[1] as HTMLElement));
   });
 
-  it('交互行渲染异常 → 兜底降级可见：用户输入不丢，resume 后仍分块（ensureUserInputVisible）', () => {
+  it('交互行渲染异常 → 兜底降级可见：用户输入不丢，resume 后原位续写（ensureUserInputVisible，2026-09-15 方案 C）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
@@ -500,13 +486,13 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(fb.textContent).toBe('我的回答');
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[memora] 用户输入渲染失败'), expect.anything());
 
-    // ⑤ 交互行标志已置位 → resume 后仍分块（渲染异常不破坏分块结构判定）
+    // ⑤ resume 后原位续写原暂停块（渲染异常不破坏单一折叠块语义）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '最终正文', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
     const assistants = messages.querySelectorAll('.msg.assistant');
-    expect(assistants).toHaveLength(2);
-    expect(collectAllBodyText(assistants[1])).toBe('最终正文');
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('前序正文最终正文');
 
     warnSpy.mockRestore();
   });
@@ -1324,6 +1310,37 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb?.textContent).toContain('旧记忆');
     expect(rb?.textContent).toContain('已停止');
+  });
+
+  it('中断轮重放：interrupted 标志 → 过程独立平铺可见、不进折叠块（2026-09-15 方案）', () => {
+    mountChatView();
+    const events = [
+      { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+      { type: 'thought', seq: 2, ts: '', payload: { content: '先梳理上下文' } },
+      { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{}' } },
+      { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: false } },
+      { type: 'aborted', seq: 5, ts: '', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } },
+      {
+        type: 'metrics', seq: 6, ts: '',
+        payload: { durationMs: 5000, tokenIn: 100, tokenOut: 0, toolFailureCount: 1, unparsedToolIntentCount: 0, success: false },
+      },
+    ];
+    // 中断轮：独立 replay_events（interrupted 标志，无 assistant 正文块）
+    dispatch({ type: 'replay_events', roundId: 'r2', events, interrupted: true });
+
+    // 过程独立平铺：process-flow 容器存在，不产生 round-block 折叠块（无 assistant 宿主可挂）
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    expect(flow.dataset.roundId).toBe('r2');
+    expect(document.querySelector('.round-block')).toBeNull();
+    // 思考/工具行保留（平铺）
+    expect(flow.querySelector('.process-flow__thought')?.textContent).toContain('思考');
+    const toolRow = flow.querySelector('.round-block__tool') as HTMLElement;
+    expect(toolRow?.textContent).toContain('read_file');
+    expect(toolRow?.textContent).toContain('失败');
+    // 中断标记行：§已停止 + 执行指标（独立平铺行，非折叠块小节）
+    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain('用户停止了对话');
+    expect(flow.querySelector('.process-flow__metrics-row')?.textContent).toContain('完成：否');
   });
 
   it('阶段二步级折叠：replay_events 含 step_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {

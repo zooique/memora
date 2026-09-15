@@ -186,8 +186,9 @@ export class SeedOrchestrator {
     // ── 非正常收场统一收口（SSOT，2026-09-15）────────────────────────────
     // 中断（用户取消/超时）与失败（LLM/网络错误）同属「本轮未正常完成」，共用同一收尾原语
     // appendInterrupted。既定裁决见 `memory/roundStore.ts` 的 RoundStatus 文档：运行时失败
-    // **不翻 Round 状态机**，一律按「中断」处理（appendInterrupted → complete），
-    // 因为「中断」对用户可理解而「区分出错语义」当前无产品需求。
+    // **不翻 Round 状态机**，与中断并轨为「interrupted」收场（appendInterrupted →
+    // status:'interrupted'，不再伪 complete），因为「中断」对用户可理解而「区分出错语义」
+    // 当前无产品需求。中断轮保留 processEvents 原始现场、状态诚实区分（防「假性 complete 吞现场」）。
     //
     // 修复前：failed 分支直接 return、aborted 分支仅在「有产出文本」时才写史 → 两者都会在
     // 无产出时留下 refCount=0 的 pending 孤儿轮——运行期无人收尾，宿主须等下次重启才由

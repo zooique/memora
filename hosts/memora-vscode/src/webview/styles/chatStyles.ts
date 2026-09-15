@@ -1424,6 +1424,22 @@ export const chatStyles = `
     color: var(--text-primary, #e0e0e0);
     white-space: pre-wrap; word-break: break-all;
   }
+  /* 中断轮重放收尾标记（2026-09-15：中断轮过程独立平铺可见，不收进折叠块） */
+  .process-flow__interrupted {
+    margin-top: var(--sp-1, 4px); padding: var(--sp-1, 2px) 0;
+    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.4));
+    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
+  }
+  .process-flow__stopped-row {
+    font-size: var(--font-sm, 11px); line-height: 1.6; font-weight: 600;
+    color: var(--danger, #f14c4c);
+    word-break: break-all;
+  }
+  .process-flow__metrics-row {
+    font-size: var(--font-xs, 10px); line-height: 1.6;
+    color: var(--text-secondary, #9aa0a6);
+    word-break: break-all;
+  }
   .round-block__section-title {
     font-size: var(--font-xs, 10px); letter-spacing: 0.3px;
     color: var(--text-secondary, #9aa0a6);

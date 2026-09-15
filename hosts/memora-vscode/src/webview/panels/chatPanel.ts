@@ -87,6 +87,8 @@ interface ReplayRound {
   user?: { content: string; ts?: string };
   /** AI 消息（仅 complete 轮有） */
   assistant?: { content: string; ts?: string };
+  /** 是否为中断轮（Round.status === 'interrupted'，2026-09-15）：重放过程独立平铺可见，不进折叠块 */
+  interrupted?: boolean;
   /** 该轮过程事件（Round.processEvents；无过程数据则空数组，只回放正文） */
   processEvents: ProcessEvent[];
   /** 问答闭环内交互输入（TS-9：主动提问回答/补充，折叠块渲染，不分裂新轮） */
@@ -1838,6 +1840,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             round.assistantMessage?.content && round.status === 'complete'
               ? { content: round.assistantMessage.content, ts: round.assistantMessage.timestamp }
               : undefined,
+          // 中断轮（status==='interrupted'，2026-09-15）：重放过程独立平铺可见，不进折叠块
+          interrupted: round.status === 'interrupted' ? true : undefined,
           // 过程事件从 Round 同文件读取；无 processEvents（纯问答轮/异常轮）为空数组
           processEvents: this._eventLogRoundStore?.getById(round.id)?.processEvents ?? [],
           // 交互输入与前序 assistant 段（TS-9：同一闭环节点内，不分裂新轮）
@@ -1887,7 +1891,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 整批统一发 replay_events（含 meta）：拆分 meta 走 process_event 会让 webview 端把
       // 该轮当「运行时新轮」触发骨架创建，产生重复消息块（原因见方法注释，勿再拆分）
       if (r.processEvents.length > 0) {
-        this.post({ type: 'replay_events', roundId: r.roundId, events: r.processEvents });
+        // interrupted 标志随 replay_events 透出：webview 据此把中断轮过程独立平铺、不进折叠块
+        this.post({
+          type: 'replay_events',
+          roundId: r.roundId,
+          events: r.processEvents,
+          ...(r.interrupted ? { interrupted: true } : {}),
+        });
       }
       // —— 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原真实时序）——
       const middle: {
