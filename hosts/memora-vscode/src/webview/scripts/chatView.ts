@@ -3379,7 +3379,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
       }
       // 中断轮（2026-09-15 方案：Round.status==='interrupted'，host 已透出 interrupted 标志）：
-      // 该轮无 assistant 正文块（tokenOut:0 未产 assistantMessage），round-block 折叠块无法挂载
+      // 该轮**不渲染 assistant 正文块**（host 侧 loadRoundBasedHistory 只对 complete 轮挂正文）——
+      // ⚠️ 注意中断轮**可能确有** assistantMessage：`MessageHistory.appendInterrupted` 在「有恢复文本」
+      // 时写入，来源 = narrate 过程事件拼接 + 中断标记（运行期 `orchestrator.act` 传
+      // streamResult.content、崩溃打捞 `upgradeInterruptedRounds` 传 narrate 拼接）。不挂正文的
+      // 真正理由是**同源去双份**——该文本与下方 processEvents 同源，平铺已完整呈现；
+      // （订正：旧注释作「tokenOut:0 未产 assistantMessage」，与 appendInterrupted 行为相反）
       // → 过程独立平铺可见（复用 renderProcessFlow 平铺容器），不收进折叠块，保留思考/工具/中断标记
       if (msg.interrupted) {
         // 孤儿平铺容器挂 messages 尾：逐个处理中断轮时先清理上一轮孤儿容器（防跨轮堆积残留）

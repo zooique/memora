@@ -8,7 +8,7 @@ import {
   truncateRoundsUpTo,
   countMessagesInRounds,
 } from '@/memory/sessionViewLoader.js';
-import { createPendingRound, completeRound } from '@/memory/roundStore.js';
+import { createPendingRound, completeRound, type Round } from '@/memory/roundStore.js';
 
 describe('会话视图加载器', () => {
   describe('flattenRoundsToMessages', () => {
@@ -56,6 +56,21 @@ describe('会话视图加载器', () => {
     it('应该处理空列表', () => {
       const messages = flattenRoundsToMessages([]);
       expect(messages).toHaveLength(0);
+    });
+
+    it('应保留中断轮（interrupted）的 AI 消息——定案 §一·五「可作后续上下文」', () => {
+      // 中断轮 = 等同用户点停止的正常 turn（assistantMessage 含半截正文 + 中断标记）。
+      // 回归点：appendInterrupted 曾伪 complete 而恰好放行；改落 interrupted 后若判据仍自写
+      // 'complete'，中断轮回复会静默从会话视图 / LLM 历史消失。判据 SSOT = isRoundSettled。
+      const round = createPendingRound('被取消的提问');
+      const interrupted: Round = { ...completeRound(round, '半截回答'), status: 'interrupted' };
+
+      const messages = flattenRoundsToMessages([interrupted]);
+
+      expect(messages).toHaveLength(2);
+      expect(messages[0]!.content).toBe('被取消的提问');
+      expect(messages[1]!.role).toBe('assistant');
+      expect(messages[1]!.content).toBe('半截回答');
     });
   });
 
@@ -150,6 +165,16 @@ describe('会话视图加载器', () => {
     it('应该处理空列表', () => {
       const count = countMessagesInRounds([]);
       expect(count).toBe(0);
+    });
+
+    it('中断轮同样计 2 条——与宿主 O(1) 缓存（roundIds.length * 2）口径等价', () => {
+      // 会话的 roundIds 只登记已收场轮（appendAssistant / appendInterrupted 均仅在终态登记），
+      // 故「每已收场轮 = User+AI 两条」的 O(1) 缓存与本节精确口径必须恒等；
+      // 若只认 'complete'，中断轮在精确口径算 1 条、在缓存口径算 2 条 → 上下文占用指示器口径分叉。
+      const round = createPendingRound('被取消的提问');
+      const interrupted: Round = { ...completeRound(round, '半截回答'), status: 'interrupted' };
+
+      expect(countMessagesInRounds([interrupted])).toBe(2);
     });
   });
 });

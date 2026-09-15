@@ -219,6 +219,9 @@ export {
   generateMessageId,
   createPendingRound,
   completeRound,
+  // 「轮是否已收场」判据单一收口点：宿主与内核共用（禁止各端自写 status === 'complete'，
+  // 否则中断轮会被静默排除出会话视图与 LLM 历史）
+  isRoundSettled,
 } from '@/memory/roundStore.js';
 
 // ─── 会话视图加载器导出 ─────────────────────────────────────

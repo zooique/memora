@@ -119,6 +119,30 @@ export interface RoundInteractiveInput extends RoundMessage {
  */
 export type RoundStatus = 'pending' | 'complete' | 'error' | 'interrupted';
 
+/**
+ * 轮是否「已收场」（终态）——**判据单一收口点（SSOT）**。
+ *
+ * - `complete`：正常问答闭环完成（appendAssistant 收场）。
+ * - `interrupted`：中断/失败收场（appendInterrupted 收场）。语义定案见
+ *   `docs/architecture/step-atomic-persistence.md §一·五`——中断轮 = 等同用户点「停止」的
+ *   正常 turn：**可删、入会话 roundIds、作后续上下文**，不是半成品草稿/孤儿。
+ *
+ * **为什么必须收口**：v3.0.0 把中断轮从「伪 complete」改为 `interrupted` 后，凡以
+ * `status === 'complete'` 判「该轮是否已闭合」的读取方都会被静默改行为——中断轮的
+ * assistantMessage 会被排除出会话视图与 LLM 历史（`ISessionStore.loadMessages` 是
+ * `restoreHistory` 的唯一上游），违背上述定案。故凡「是否计入会话视图 / LLM 历史」
+ * 「是否已登记会话引用」的判据**一律调用本函数**，禁止各处自写 `status === 'complete'`。
+ *
+ * ⚠️ **勿与渲染分流混用**：`status === 'interrupted'` 只用于「中断轮独立平铺渲染 + 中断标记」，
+ * 回答的是「怎么画」，不是「是否已收场」。两者常在同一函数相邻出现，勿互替。
+ *
+ * @param status - 轮状态
+ * @returns 该轮是否已进入终态（可作后续上下文）
+ */
+export function isRoundSettled(status: RoundStatus): boolean {
+  return status === 'complete' || status === 'interrupted';
+}
+
 // ─── 过程事件（ProcessEvent）────────────────────────────
 // 每轮「过程事件」= UI 状态重建的最小信息（运行时与重放共用同一份数据，
 // 见 docs/architecture/process-event-log-replay-design.md §3.3）。

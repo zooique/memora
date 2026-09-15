@@ -3,6 +3,8 @@
  * 验证 InMemoryRoundStore 的核心功能
  */
 import { describe, expect, it, beforeEach } from 'vitest';
+import { readFileSync, readdirSync } from 'node:fs';
+import { join, sep } from 'node:path';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import {
   createPendingRound,
@@ -338,5 +340,153 @@ describe('问答闭环存储', () => {
       // Round 不持有摘要反向指针（summaryId 字段已删除）
       expect('summaryId' in completed).toBe(false);
     });
+  });
+});
+
+// ══════════════════════════════════════════════════════════════
+// 判据单源守卫：「轮是否已收场」只许走 isRoundSettled（2026-09-15）
+// ══════════════════════════════════════════════════════════════
+//
+// 背景：v3.0.0 把中断/失败轮从「伪 complete」改为 'interrupted' 后，各处**自写**的
+// `status === 'complete'` 会静默改行为——中断轮的 assistantMessage 被排除出会话视图与
+// LLM 历史（`ISessionStore.loadMessages` 是 `restoreHistory` 的唯一上游），违背定案
+// `docs/architecture/step-atomic-persistence.md §一·五`「中断轮可作后续上下文」。
+// 修复方式不是逐处补 `|| 'interrupted'`（并列 = 腐化），而是收敛到单一判据；本守卫防其再散开。
+
+/**
+ * 剥离行尾注释，返回该行的**代码部分**（保守处理单/双/反引号字符串，识别引号外的首个 `//`）。
+ *
+ * 为什么必须剥：判据行可能被「行尾注释」形态注释掉，如 `assistant: undefined, // <旧判据>`——
+ * 此时该行**不再消费**判据，但豁免片段文本仍在行内，`includes` 会通过 → 静默放行。
+ * 变异验证实测到该假阴性（改注释后守卫仍全绿），故所有判定一律用代码部分。
+ */
+function stripTrailingLineComment(line: string): string {
+  let quote: string | null = null;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (quote) {
+      if (ch === '\\') i++; // 转义字符跳过（防误判引号闭合）
+      else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "'" || ch === '"' || ch === '`') {
+      quote = ch;
+      continue;
+    }
+    if (ch === '/' && line[i + 1] === '/') return line.slice(0, i);
+  }
+  return line;
+}
+
+describe('isRoundSettled 判据单源守卫', () => {
+  /**
+   * 豁免清单（每条必须给出「为何不是收场判据」的理由，不得为省事豁免）
+   *
+   * **按行内容精确匹配**豁免，而非整文件 / 行号：
+   * - 整文件豁免 = 该文件其余位置再自写判据可蒙混过关（chatPanel 是宿主最大文件，口子最宽）；
+   * - 行号豁免 = 无关改动导致漂移时误红。
+   * 并有「僵尸豁免」闭环：豁免片段必须在目标文件中真实存在，判据删改后仍在 = 敞开的后门。
+   *
+   * - `chatPanel.loadRoundBasedHistory`：**渲染分流**判据「是否挂 assistant 正文块」，
+   *   回答的是「怎么画」而非「是否已收场」。中断轮**可能确有** assistantMessage
+   *   （`appendInterrupted` 有恢复文本即写，来源 = narrate 拼接 / 运行期 streamResult.content），
+   *   不挂正文的真正理由 = **同源去双份**（该文本与 processEvents 平铺区内容相同）。
+   *   语义与收场判据不同，故保留 `'complete'`。
+   */
+  const ALLOWED_LINES: Record<string, string[]> = {
+    'hosts/memora-vscode/src/webview/panels/chatPanel.ts': [
+      "round.assistantMessage?.content && round.status === 'complete'",
+    ],
+  };
+
+  // 守卫自身的「测量工具」先自证（纪律：先验证测量工具本身，再信它的结论）
+  it('stripTrailingLineComment：剥行尾注释，但保留引号内的 //', () => {
+    expect(stripTrailingLineComment('const x = 1; // status === \'complete\'')).toBe('const x = 1; ');
+    expect(stripTrailingLineComment("const u = 'https://a'; y")).toBe("const u = 'https://a'; y");
+    expect(stripTrailingLineComment('const u = "a\\"//b"; y')).toBe('const u = "a\\"//b"; y');
+    expect(stripTrailingLineComment('const s = `a//b`; y')).toBe('const s = `a//b`; y');
+    expect(stripTrailingLineComment('const x = 1;')).toBe('const x = 1;');
+  });
+
+  it('生产代码中不得自写 status ==/!= /=== /!== \'complete\' 收场判据（豁免须登记理由）', () => {
+    const roots = ['src', 'hosts/memora-vscode/src'];
+    // 只认比较运算，不匹配写点（`status: 'complete'` 是 appendAssistant / completeRound 的合法落盘）
+    const forbidden = /status\s*(?:===|!==|==|!=)\s*'complete'/;
+    const hits: string[] = [];
+    /** isRoundSettled 定义体出现次数：判据必须**恰好定义一处**（与上方豁免互为闭环，防豁免被滥用） */
+    let settledDefCount = 0;
+    /** 实际用到的豁免条目（用于末尾「僵尸豁免」闭环：登记了却没命中 = 判据已变质而豁免仍在） */
+    const usedAllowed = new Set<string>();
+
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          // 测试自身与依赖不参与（守卫只约束生产代码）
+          if (entry.name === '__tests__' || entry.name === 'node_modules') continue;
+          walk(full);
+          continue;
+        }
+        if (!entry.name.endsWith('.ts')) continue;
+        const rel = full.split(sep).join('/');
+        const allowedHere = ALLOWED_LINES[rel] ?? [];
+        // 定义体豁免按「行区间」而非「整文件」给出——否则该文件内其余位置再自写判据就能蒙混过关
+        let insideSettledDef = false;
+        readFileSync(full, 'utf8')
+          .split(/\r?\n/)
+          .forEach((line, i) => {
+            if (line.startsWith('export function isRoundSettled')) {
+              settledDefCount += 1;
+              insideSettledDef = true;
+              return;
+            }
+            if (insideSettledDef) {
+              if (line === '}') insideSettledDef = false;
+              return;
+            }
+            const code = line.trim();
+            // 判定一律用「剥掉行尾注释后的代码部分」——否则 `x, // <被判据>` 形态会被静默放行
+            const codePart = stripTrailingLineComment(line);
+            // 跳过整行注释（SSOT 文档本身会引用该反模式作为反面说明）
+            if (code.startsWith('*') || code.startsWith('//') || code.startsWith('/*')) return;
+            if (!forbidden.test(codePart)) return;
+            // 行内容精确豁免：仅当该行**正是**登记过的渲染分流判据才放行——同文件新增另一处
+            // 自写判据仍会命中（这是把豁免从「整文件」收窄到「行」的全部意义）
+            const allowedHit = allowedHere.find((allowed) => codePart.includes(allowed));
+            if (allowedHit !== undefined) {
+              usedAllowed.add(`${rel}::${allowedHit}`);
+              return;
+            }
+            hits.push(`${rel}:${i + 1} → ${code}`);
+          });
+      }
+    };
+    for (const root of roots) walk(root);
+
+    // 失败时 hits 直接指出「哪个文件哪一行」——断言口径 = 不变量本身（判据单源），非装饰
+    expect(hits).toEqual([]);
+    // 闭环一：判据定义必须唯一（0 = 判据被删/改名，>1 = 又长出并列判据）
+    expect(settledDefCount).toBe(1);
+    // 闭环二：豁免表不得留僵尸——登记片段必须在目标文件中真实存在。判据被改写/删除而豁免仍在，
+    // 等于敞开的后门：该位置下次自写同类判据会被静默放行，而豁免理由已与事实脱节。
+    const zombieAllowed: string[] = [];
+    for (const [relPath, allowedList] of Object.entries(ALLOWED_LINES)) {
+      const text = readFileSync(relPath, 'utf8');
+      for (const allowed of allowedList) {
+        if (!text.includes(allowed)) zombieAllowed.push(`${relPath} :: ${allowed}`);
+      }
+    }
+    expect(zombieAllowed).toEqual([]);
+    // 闭环三：登记了却零命中 = 该片段存在但已不被判据行消费（如判据被注释掉）——豁免须与
+    // 活跃判据一一对应，否则「豁免」变成了对该文件的一张空白通行证
+    const unusedAllowed: string[] = [];
+    for (const [relPath, allowedList] of Object.entries(ALLOWED_LINES)) {
+      for (const allowed of allowedList) {
+        if (!usedAllowed.has(`${relPath}::${allowed}`)) {
+          unusedAllowed.push(`${relPath}::${allowed}`);
+        }
+      }
+    }
+    expect(unusedAllowed).toEqual([]);
   });
 });

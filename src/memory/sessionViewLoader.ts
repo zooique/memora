@@ -12,6 +12,7 @@
  * 3. 支持独立存储：Round 数据只存一份
  */
 
+import { isRoundSettled } from '@/memory/roundStore.js';
 import type { Round, RoundMessage } from '@/memory/roundStore.js';
 import type { SessionMeta } from '@/memory/sessionStore.js';
 
@@ -150,8 +151,9 @@ export function flattenRoundsToMessages(rounds: Round[]): RoundMessage[] {
     // 始终添加用户消息
     messages.push(round.userMessage);
 
-    // 仅添加已完成的 AI 消息
-    if (round.assistantMessage && round.status === 'complete') {
+    // 仅添加已收场的 AI 消息（complete 正常完成 / interrupted 中断收场——后者按定案
+    // §一·五「可作后续上下文」同样计入，判据收口在 isRoundSettled，勿自写 'complete'）
+    if (round.assistantMessage && isRoundSettled(round.status)) {
       messages.push(round.assistantMessage);
     }
   }
@@ -184,8 +186,8 @@ export function countMessagesInRounds(rounds: Round[]): number {
   let count = 0;
   for (const round of rounds) {
     count += 1; // 用户消息
-    if (round.status === 'complete') {
-      count += 1; // AI 消息（仅完成状态）
+    if (isRoundSettled(round.status)) {
+      count += 1; // AI 消息（仅已收场：complete / interrupted）
     }
   }
   return count;

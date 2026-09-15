@@ -1836,6 +1836,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           user: round.userMessage?.content
             ? { content: stripDocContextPrefix(round.userMessage.content), ts: round.userMessage.timestamp }
             : undefined,
+          // assistant 正文块仅 complete 轮挂载 —— **渲染分流判据，非收场判据**（勿替换为
+          // isRoundSettled）。中断轮**可能确有** assistantMessage：`MessageHistory.appendInterrupted`
+          // 在「有恢复文本」时才写，运行期走 `orchestrator.act` 的 streamResult.content、崩溃打捞走
+          // `upgradeInterruptedRounds` 的 narrate 拼接。不挂正文的真正理由 = **同源去双份**：该文本
+          // 与下方 processEvents 平铺区内容相同（narrate 即其唯一来源），再挂一块会重复显示。
+          // 「是否计入会话视图 / LLM 历史」的判据是 isRoundSettled（见 roundStore.RoundStatus 文档）。
           assistant:
             round.assistantMessage?.content && round.status === 'complete'
               ? { content: round.assistantMessage.content, ts: round.assistantMessage.timestamp }

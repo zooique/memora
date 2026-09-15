@@ -6,6 +6,7 @@
  * 会话仅持有 roundIds，不再另存扁平消息列表。
  */
 import type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
+import { isRoundSettled } from '@/memory/roundStore.js';
 import type {
   InteractiveInputKind,
   IRoundStore,
@@ -346,10 +347,11 @@ export class MessageHistory {
 
       if (completed) {
         this.roundStore.save(completed);
-        // 首次 complete 才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理。
+        // 首次收场才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理。
         // 续写同一闭环节点（assistantLog：跨暂停-续跑多次 appendAssistant 到同一 roundId）不重复登记——
         // 否则 roundIds 同 id 重复堆叠、refCount 虚增，会话视图出现「一个问答闭环多次登记」（TS-9 分裂残留）
-        const isReappend = existing?.status === 'complete';
+        // 判据 = isRoundSettled（非自写 'complete'）：已是终态（含 interrupted）就不得再登记一次
+        const isReappend = existing !== null && existing !== undefined && isRoundSettled(existing.status);
         if (!isReappend) {
           this.roundStore.incrementRef(roundId);
           const sessionId = this.currentSessionName;
@@ -360,7 +362,7 @@ export class MessageHistory {
           }
         } else {
           logger.debug(
-            { roundId, status: existing.status },
+            { roundId, status: existing?.status },
             'appendAssistant: 闭环节点续写段但不重复登记会话引用',
           );
         }
@@ -414,7 +416,8 @@ export class MessageHistory {
    *    依据 = `memory/roundStore.ts` RoundStatus 文档「运行时失败不翻状态机，一律按中断处理」。
    *
    * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status interrupted +
-   * completedAt + isReappend 防重复登记），Round schema / 存储格式不变；
+   * completedAt + isReappend 防重复登记，两处终态判据同为 `isRoundSettled`），Round schema /
+   * 存储格式不变；
    * **有意不直接复用 appendAssistant**，两处差异：
    * - appendAssistant 顶层跳过空内容 → 无文本中断轮无法收场；本方法允许多段「即使无
    *   assistantMessage 总结也按 stop 语义收场」（§一·五验收口径）。
@@ -442,8 +445,8 @@ export class MessageHistory {
         return;
       }
       // 已收场（幂等重跑 / 防御）：complete / interrupted 均为终态（正常完成 或 中断收场），
-      // 不再二次登记会话引用，防止 roundIds 重复堆叠、refCount 虚增
-      if (existing.status === 'complete' || existing.status === 'interrupted') {
+      // 不再二次登记会话引用，防止 roundIds 重复堆叠、refCount 虚增（判据 SSOT = isRoundSettled）
+      if (isRoundSettled(existing.status)) {
         logger.debug({ roundId, status: existing.status }, 'appendInterrupted: 轮已收场，跳过重复升级');
         return;
       }

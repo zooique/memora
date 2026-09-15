@@ -16,6 +16,7 @@ import { join } from 'node:path';
 import {
   buildSessionId,
   defaultSessionTitle,
+  isRoundSettled,
   type IRoundStore,
   type ISessionStore,
   type Round,
@@ -111,7 +112,10 @@ export class WorkspaceSessionStore implements ISessionStore {
         timestamp: round.userMessage.timestamp,
         roundId: round.id,
       });
-      if (round.assistantMessage && round.status === 'complete') {
+      // 判据收口 isRoundSettled：中断轮（interrupted）同样计入——本方法是 LLM 历史注入
+      // （restoreHistory）唯一上游，漏计会让中断轮回复从上下文消失（与内核
+      // inMemorySessionStore.loadMessages 逐字同构，勿单侧改判据）
+      if (round.assistantMessage && isRoundSettled(round.status)) {
         messages.push({
           role: round.assistantMessage.role,
           content: round.assistantMessage.content,
@@ -352,9 +356,9 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 更新 round-based 会话的消息计数
    *
-   * SSOT 边界（与 inMemorySessionStore 同口径）：*2 是「每个完整轮 = User+AI」的固有语义缓存，
-   * 在 append 时点轮已完成，与精确 countMessagesInRounds 等价；免加载物理 Round（O(1)）。
-   * 真源取自 roundIdsStore（方案 A：meta 不再持有 roundIds）。
+   * SSOT 边界（与 inMemorySessionStore 同口径）：*2 是「每个已收场轮 = User+AI」的固有语义缓存，
+   * 在 append 时点轮已收场，与精确 countMessagesInRounds 等价（两者判据同为 isRoundSettled）；
+   * 免加载物理 Round（O(1)）。真源取自 roundIdsStore（方案 A：meta 不再持有 roundIds）。
    */
   private updateRoundBasedMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);

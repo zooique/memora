@@ -19,7 +19,11 @@ import { getSessionDisplayName } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../sessionStore.js';
 import { WorkspaceRoundStore } from '../workspaceRoundStore.js';
 
-/** 播种一轮问答闭环（round-based：user/assistant 成对写入 RoundStore 并登记 roundId） */
+/** 播种一轮问答闭环（round-based：user/assistant 成对写入 RoundStore 并登记 roundId）
+ *
+ *  @param status 覆盖轮状态（缺省 assistant ? 'complete' : 'pending'）——
+ *        用于播种「中断收场轮」（'interrupted'）等非 complete 终态
+ */
 function seedRound(
   store: WorkspaceSessionStore,
   roundStore: WorkspaceRoundStore,
@@ -27,6 +31,7 @@ function seedRound(
   session: string,
   user: { content: string; ts: string },
   assistant?: { content: string; ts: string },
+  status?: Round['status'],
 ): string {
   const roundId = `round-${roundStore.size() + 1}`;
   const round: Round = {
@@ -47,7 +52,7 @@ function seedRound(
           },
         }
       : {}),
-    status: assistant ? 'complete' : 'pending',
+    status: status ?? (assistant ? 'complete' : 'pending'),
     createdAt: user.ts,
     ...(assistant ? { completedAt: assistant.ts } : {}),
     refCount: 1,
@@ -167,6 +172,26 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const list = store.loadMessages('2026-08-17', 'main');
     list[0]!.content = '篡改';
     expect(store.loadMessages('2026-08-17', 'main')[0]?.content).toBe('原内容');
+  });
+
+  it('loadMessages：interrupted 轮同样展开 user+assistant（与内核同口径，漏计即丢 LLM 上下文）', () => {
+    // 与内核 inMemorySessionStore.loadMessages 逐字同构；判据同为 isRoundSettled。
+    // 中断轮 = 等同用户点停止的正常 turn，重开会话后须能把该轮回复注入 LLM 历史。
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-17',
+      'main',
+      { content: '被取消的提问', ts: 'i1' },
+      { content: '半截回答', ts: 'i2' },
+      'interrupted',
+    );
+    const list = store.loadMessages('2026-08-17', 'main');
+    expect(list).toHaveLength(2);
+    expect(list[1]?.role).toBe('assistant');
+    expect(list[1]?.content).toBe('半截回答');
+    // O(1) 缓存口径（roundIds.length * 2）与精确口径仍等价
+    expect(store.getSessionMeta('2026-08-17-main')?.messageCount).toBe(2);
   });
 
   it('持久化往返：新实例 load 可恢复消息/标题', () => {

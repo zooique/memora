@@ -19,7 +19,7 @@ import type {
 // 内核真实实现（测试替身改名 TestInMemorySessionStore 后，本名恢复独占，无需再取别名区分）
 import { InMemorySessionStore } from '../inMemorySessionStore.js';
 import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
-import { createPendingRound, completeRound } from '../roundStore.js';
+import { createPendingRound, completeRound, type Round } from '../roundStore.js';
 import { getSessionDisplayName, getSessionAutoName } from '../sessionStore.js';
 
 // ══════════════════════════════════════════════════════════════
@@ -491,6 +491,14 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
     return round.id;
   }
 
+  /** 创建一个 interrupted Round（中断/失败收场，含半截正文 + 中断标记）并保存 */
+  function saveInterruptedRound(seed: string): string {
+    const round = createPendingRound(`被取消 ${seed}`);
+    const interrupted: Round = { ...completeRound(round, `半截回答 ${seed}`), status: 'interrupted' };
+    roundStore.save(interrupted);
+    return interrupted.id;
+  }
+
   it('loadMessages：complete Round 展开为 user+assistant 两条', () => {
     const roundId = saveCompleteRound('A');
     store.appendRoundId('2026-09-13-main', roundId);
@@ -509,6 +517,19 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
     // pending 状态 → 仅 user 消息
     expect(messages).toHaveLength(1);
     expect(messages[0]!.role).toBe('user');
+  });
+
+  it('loadMessages：interrupted 轮同样展开 user+assistant（本方法是 LLM 历史注入唯一上游）', () => {
+    // SessionManager.applySessionToLoop ← loadMessages 是 restoreHistory 的唯一上游。
+    // 中断轮若被排除，用户取消后说「继续」时模型将看不到上一轮的部分产出
+    // （定案见 docs/architecture/step-atomic-persistence.md §一·五）。
+    const roundId = saveInterruptedRound('I');
+    store.appendRoundId('2026-09-13-main', roundId);
+    const messages = store.loadMessages('2026-09-13', 'main');
+    expect(messages).toHaveLength(2);
+    expect(messages[1]!.role).toBe('assistant');
+    expect(messages[1]!.content).toBe('半截回答 I');
+    expect(messages[1]!.roundId).toBe(roundId);
   });
 
   it('loadMessages：不存在的会话返回空数组', () => {

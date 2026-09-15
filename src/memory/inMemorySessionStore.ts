@@ -11,6 +11,7 @@
  * - roundStore: IRoundStore — 问答闭环物理存储（真相源）
  */
 
+import { isRoundSettled } from '@/memory/roundStore.js';
 import type { IRoundStore } from '@/memory/roundStore.js';
 import type {
   ISessionStore,
@@ -52,7 +53,9 @@ export class InMemorySessionStore implements ISessionStore {
         timestamp: round.userMessage.timestamp,
         roundId: round.id,
       });
-      if (round.assistantMessage && round.status === 'complete') {
+      // 判据收口 isRoundSettled：中断轮（interrupted）同样计入——本方法是 LLM 历史注入
+      // （restoreHistory）唯一上游，漏计会让中断轮回复从上下文消失（见该函数文档）
+      if (round.assistantMessage && isRoundSettled(round.status)) {
         messages.push({
           role: round.assistantMessage.role,
           content: round.assistantMessage.content,
