@@ -3066,15 +3066,40 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     const names = assistant?.toolCalls?.map((tc) => tc.function.name);
     expect(names).toContain('read_file');
     expect(names).toContain('ask_user');
+    // 配对不变量（**本条此前只断言 assistant 侧**，真机上 read_file 无配对 tool 消息 → 400）：
+    // 挂起态 `read_file` 已拿到「未执行」占位；恢复后整批逐条闭合。
+    const suspendedToolMsgs = messages.filter((m) => m.role === 'tool');
+    expect(suspendedToolMsgs.map((m) => m.toolCallId)).toEqual(['c1']);
+    expect(suspendedToolMsgs[0]!.content).toContain('[ASK_SUSPENDED]');
     expect(chunks[chunks.length - 1]!.type).toBe('paused');
 
     // 用户回答后：answerQuestion 回填 tool 结果（与 assistant.tool_calls 配对，结构合法）→ 续跑
     expect(loop.answerQuestion(['a.ts'])).toBe(true);
+    // 恢复态：**该挂起批次**整批闭合 = 占位（非 ask `c1`）+ 答案（ask `c2`）各一条。
+    // 口径锚定「本批次」而非「全局 tool 消息数」——续跑时 mock provider 会重放同一批次，
+    // 全局计数必然出现重复 id（首版断言即因此误红：`['c1','c1','c2']` vs `['c1','c2']`）。
+    // 断言必须与不变量同源：「每条 assistant.tool_calls 都有配对 tool 消息」，而非「总条数相等」。
+    const afterAnswer = loop.getMessages();
+    expect(
+      afterAnswer
+        .filter((m) => m.role === 'tool')
+        .map((m) => m.toolCallId)
+        .slice()
+        .sort(),
+    ).toEqual(['c1', 'c2']);
     const chunks2: AgentChunk[] = [];
     for await (const chunk of loop.continueAfterPause()) {
       chunks2.push(chunk);
     }
     expect(chunks2.some((c) => c.type === 'aborted')).toBe(false);
+    // 无孤立 tool_call：每条 assistant.tool_calls 的 id 都能在 tool 消息里找到（不锚定物理顺序——
+    // 服务端以 tool_call_id 配对，顺序非契约，避免把实现细节固化成契约）。
+    const settled = loop.getMessages();
+    const assistantIds = settled
+      .filter((m) => m.role === 'assistant' && m.toolCalls)
+      .flatMap((m) => m.toolCalls!.map((tc) => tc.id));
+    const toolIds = settled.filter((m) => m.role === 'tool').map((m) => m.toolCallId);
+    for (const id of assistantIds) expect(toolIds).toContain(id);
   });
 
   it('answerQuestion 以 tool result 回填用户答案（结构化配对）', async () => {

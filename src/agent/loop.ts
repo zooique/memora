@@ -1319,8 +1319,9 @@ export class AgentLoop {
    * ask_user 提问挂起（step 边界气口，2026-09-04）：把提问作为普通工具轮落地，挂起等用户作答。
    *
    * 与插话/暂停统一的「申请 → 气口生效」语义：
-   * - assistant(toolCalls) 结构完整入史（含 ask_user），不再「撕掉」工具——OpenAI 兼容端
-   *   assistant.tool_calls 后必有配对 tool 消息（用户答案），结构恒合法；
+   * - assistant(toolCalls) 结构完整入史（含 ask_user），不再「撕掉」工具——OpenAI 兼容端要求
+   *   assistant.tool_calls **逐条**有配对 tool 消息：ask 的结果由用户答案回填，同批的**非 ask**
+   *   调用补「未执行」占位（见方法内注释），整批闭合；
    * - 解析各 ask_user 参数为结构化 AskQuestion，yield question_pending 供宿主渲染提问 UI；
    * - yield paused 挂起（consumeExecutionStream 统一翻 PAUSED + 写 pauseMeta），
    *   用户作答后宿主调 answerQuestion() 回填 tool 结果，再 continueAfterPause() 续跑。
@@ -1336,6 +1337,25 @@ export class AgentLoop {
     // turn 粒度计数：提问落地即累计（askLimit 硬护栏，防 LLM 反复提问刷打扰次数）
     this.askCountThisTurn += questions.length;
     this.pendingAsk = { toolCallIds: askCalls.map((tc) => tc.id), questions };
+    // 同批被挂起的**非 ask** 调用：补说明性占位结果，闭合配对不变量。
+    //
+    // 为什么必须有：挂起意味着「本轮其余工具不执行」（提问是决策关口），但调用条目已随
+    // assistant 消息入史——缺配对 tool 消息即被 OpenAI 兼容端以 400 拒绝（与「空 name 幻影」
+    // 同一不变量的另一个入口）。此处与 `cancelAsk` 的 `[ASK_ABORTED]` 同源：**不执行 ≠ 不回答**，
+    // 用占位把「未执行」这一事实显式告诉模型，避免它以为工具已跑过而产生幻觉。
+    //
+    // 文案纪律：只声明「未执行」，不得暗示任何执行结果；工具名用**原始调用名**（非 ask_user）。
+    // 不 yield chunk：宿主 UI 不为占位渲染工具行（与 `[ASK_ABORTED]` 同构）。
+    for (const tc of toolCalls) {
+      if (tc.function.name === ASK_USER_TOOL.name) continue;
+      this.appendToolMessage(
+        wrapToolResult(
+          tc.function.name,
+          '[ASK_SUSPENDED] 该调用与用户提问同批：因等待回答，本轮未执行。如需其结果，请在恢复后重新发起。',
+        ),
+        tc.id,
+      );
+    }
     // 挂起等待用户作答（非自主工具步执行中，复位可续跑信号）
     this.inAutonomousStep = false;
     // loop 只回调不处理 UI：宿主应答 questionPending 事件渲染提问
@@ -2477,7 +2497,8 @@ export class AgentLoop {
   }
 
   /**
-   * 追加一条 tool 消息（loop **唯一** tool 写点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` 三处皆经此）。
+   * 追加一条 tool 消息（loop **唯一** tool 写点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` /
+   * `[ASK_SUSPENDED]` 四处皆经此）。
    *
    * **入口关**（大文本统一通道 §6.2）：单条内容超 `SINGLE_TOOL_RESULT_MAX_TOKENS` → 原文落盘，
    * 上下文只留「路径 + 预览 + 续读提示」。收口在此而非 `_processToolResults`：后者只覆盖工具结果，
