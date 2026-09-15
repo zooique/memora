@@ -1343,6 +1343,56 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(flow.querySelector('.process-flow__metrics-row')?.textContent).toContain('完成：否');
   });
 
+  it('中断轮重放：error 事件 → §已停止行显示失败原因（LEG-1 缺口②：失败原因重放可见）', () => {
+    mountChatView();
+    // 真机形态：SSE 停摆看门狗抛 TimeoutError → agent.ts catch → yield error(category:'timeout')
+    // → orchestrator.act 收为 interrupted 轮；此前该 chunk 不落 processEvents → 重放只剩 generic
+    const events = [
+      { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+      { type: 'thought', seq: 2, ts: '', payload: { content: '正在读取文件' } },
+      {
+        type: 'error', seq: 3, ts: '',
+        payload: { message: 'LLM request timed out (no response)', category: 'timeout' },
+      },
+    ];
+    dispatch({ type: 'replay_events', roundId: 'r3', events, interrupted: true });
+
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    // category 映射为友好文案 —— 而非 generic「对话已中断」（修复前形态）
+    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain(
+      '对话处理超时，请稍后重试',
+    );
+    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).not.toContain('对话已中断');
+  });
+
+  it('中断轮重放：error 无 category → §已停止行回退原始 message（不吞技术细节）', () => {
+    mountChatView();
+    const events = [
+      { type: 'error', seq: 1, ts: '', payload: { message: 'HTTP 400: invalid request' } },
+    ];
+    dispatch({ type: 'replay_events', roundId: 'r4', events, interrupted: true });
+
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain(
+      'HTTP 400: invalid request',
+    );
+  });
+
+  it('中断轮重放：error 与 aborted 并存时 error 优先（保守排序，正常路径二者互斥）', () => {
+    mountChatView();
+    const events = [
+      { type: 'aborted', seq: 1, ts: '', payload: { reason: 'User cancelled', stopReason: 'user' } },
+      { type: 'error', seq: 2, ts: '', payload: { message: 'socket hang up', category: 'connection' } },
+    ];
+    dispatch({ type: 'replay_events', roundId: 'r5', events, interrupted: true });
+
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain(
+      '对话连接中断，已保留部分回答，请检查网络后重试',
+    );
+  });
+
   it('阶段二步级折叠：replay_events 含 step_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });

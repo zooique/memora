@@ -38,6 +38,8 @@ import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
+// 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
+import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
@@ -2536,14 +2538,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支，雷-3）。
           // TS-10b：按内核产出的 category 映射友好文案（connection/timeout/unknown），
           // 无 category（普通错误）回退原始 message——语义分类走结构化字段，不做裸前缀/字符串匹配。
-          const friendlyByCategory: Record<string, string> = {
-            connection: '对话连接中断，已保留部分回答，请检查网络后重试',
-            timeout: '对话处理超时，请稍后重试',
-          };
+          // 映射 SSOT = shared/errorText（原内联 friendlyByCategory 已收敛，见该文件头）。
           this.post({
             type: 'error',
-            message: chunk.category ? (friendlyByCategory[chunk.category] ?? chunk.message) : chunk.message,
+            message: friendlyErrorMessage(chunk.category, chunk.message),
             category: chunk.category,
+          });
+          // 重放可见性（2026-09-15，LEG-1 缺口②）：error 此前**只 post 不落 processEvents** →
+          // 实时有提示条，回看历史却只剩 generic「对话已中断」= 失败原因永久丢失。
+          // 落盘存**原始 message + category**（非友好文案）——与 `aborted` 存 reason + stopReason
+          // 的既有范式同构：事件是「UI 重建真相源」，文案由展示层每次映射（文案改版对历史同样生效）。
+          emitEvent('error', {
+            message: chunk.message,
+            ...(chunk.category ? { category: chunk.category } : {}),
           });
         }
       }

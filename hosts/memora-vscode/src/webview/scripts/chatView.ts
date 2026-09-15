@@ -16,6 +16,8 @@ import type {
 } from '../../shared/protocol.js';
 // ProcessThinkingPhase 纯类型导入，仅编译期用（esbuild 剥离，不影响 bundle）
 import type { ProcessEvent, ProcessThinkingPhase } from '@zooique/memora';
+// 错误文案映射单一真理源（与 Node 侧 chatPanel 实时提示条共用，防文案双源漂移）
+import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
@@ -1463,15 +1465,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const marker = document.createElement('div');
     marker.className = 'process-flow__interrupted';
     marker.dataset.interruptedMarker = 'true';
-    // §已停止：aborted 事件 → 语义映射（无 aborted 事件的中断轮仍显示 generic 停文案）
+    // §已停止：原因优先取 error（失败：超时 / 连接中断），其次 aborted（中断：用户停止 / 锁超时），
+    // 两者皆无则 generic 停文案（旧数据）。error 优先于 aborted 是保守排序——二者本应互斥
+    // （failed 路径 signal 未 abort，见 loop/agent 收口），此序仅防异常组合，不改变正常语义。
+    const errorEv = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'error' }> => e.type === 'error',
+    );
     const aborted = events.find(
       (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
     );
     const stopped = document.createElement('div');
     stopped.className = 'process-flow__stopped-row';
-    stopped.textContent = aborted
-      ? stopReasonLabel(aborted.payload)
-      : stopReasonLabel({ reason: 'interrupted' });
+    // error 落盘存原始 message + category（与 aborted 存 reason + stopReason 同范式）→ 此处映射
+    // error 落盘存原始 message + category（与 aborted 存 reason + stopReason 同范式）→ 此处映射
+    stopped.textContent = errorEv
+      ? friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message)
+      : aborted
+        ? stopReasonLabel(aborted.payload)
+        : stopReasonLabel({ reason: 'interrupted' });
     marker.appendChild(stopped);
     // §执行指标：metrics 事件（有才显示）
     const metrics = events.find(

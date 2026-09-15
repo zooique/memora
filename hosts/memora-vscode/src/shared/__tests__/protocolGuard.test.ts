@@ -150,3 +150,92 @@ describe('Agent 事件宿主消费对账守卫（V-2）', () => {
     ).toEqual([]);
   });
 });
+
+// ──────────────────────────────────────────────────────────────
+// V-3：ProcessEvent 宿主桥接对账守卫（2026-09-15）
+//
+// 治理背景：`ProcessEvent` 是「UI 状态重建真相源」（重放轨）。宿主 `chatPanel.consumeFlow`
+// 是内核 AgentChunk → ProcessEvent 的**唯一桥接入库点**（`emitEvent`），新增 union 成员时若
+// 忘记在此桥接，该类事件**永不落盘** → 重放静默缺失。
+//
+// 为何必须有守卫（本次修复的现场教训）：消费侧一律 `e.type === 'x'` **正匹配**、无穷尽 switch，
+// 且 `emitEvent` 签名是弱类型（`payload: ProcessEvent['payload']` + `as ProcessEvent`）——
+// 因此「新增成员却无人落盘」**不会产生任何编译错误或类型检查拦截**，只能靠守卫兜住。
+//
+// 实例：`error` chunk 长期只 `post`（实时提示条）不 `emitEvent`（重放轨）→ 实时可见、回看不可见，
+// 失败原因永久丢失（LEG-1 缺口②，2026-09-15 修）。
+//
+// 守卫语义：内核联合成员集（真理源）与宿主桥接集求差集，差集非空即失败 —— 强制新增事件时
+// 同步桥接点，而非靠记忆自觉。
+// ──────────────────────────────────────────────────────────────
+
+/** roundStore.ts 路径（__dirname → shared → src → memora-vscode → hosts → 项目根 → src/memory） */
+const ROUND_STORE_PATH = join(__dirname, '../../../../../src/memory/roundStore.ts');
+
+/**
+ * 从 roundStore.ts 提取 ProcessEvent 联合成员类型集（真理源）。
+ *
+ * 切片锚 = `export type ProcessEvent =` → `// ─── 问答闭环`；结构漂移时**抛错**而非静默返回空集
+ * （空集会让差集恒空 = 假绿，是本守卫最危险的失效形态）。
+ */
+function extractProcessEventTypes(source: string): Set<string> {
+  const blockStart = source.indexOf('export type ProcessEvent =');
+  const blockEnd = source.indexOf('// ─── 问答闭环', blockStart);
+  if (blockStart < 0 || blockEnd < 0) {
+    throw new Error('无法定位 ProcessEvent 联合块（roundStore.ts 结构可能已变）');
+  }
+  // 剥注释：联合内注释含 `type:'x'` 形式的说明文字，不剥会误计为成员
+  const block = source.slice(blockStart, blockEnd);
+  const noBlockComments = block.replace(/\/\*[\s\S]*?\*\//g, '');
+  const noComments = noBlockComments.replace(/\/\/[^\n]*/g, '');
+  const types = new Set<string>();
+  const re = /type:\s*'([a-z_]+)'/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(noComments)) !== null) {
+    types.add(m[1]);
+  }
+  return types;
+}
+
+/** 从 chatPanel 源码提取 `emitEvent('x', ...)` 桥接的 ProcessEvent 类型名集（剥注释，防注释示例误计） */
+function extractHostBridgedEventTypes(source: string): Set<string> {
+  const noBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
+  const noComments = noBlockComments.replace(/\/\/[^\n]*/g, '');
+  const types = new Set<string>();
+  const re = /emitEvent\(\s*'([a-z_]+)'/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(noComments)) !== null) {
+    types.add(m[1]);
+  }
+  return types;
+}
+
+describe('ProcessEvent 宿主桥接对账守卫（V-3）', () => {
+  it('测量工具自证：剥注释有效（注释/块注释内的 emitEvent 示例不得计入）', () => {
+    const fake =
+      "// emitEvent('ghost', {})\nconst x = 1;\n/* emitEvent('phantom', {}) */\n";
+    expect(extractHostBridgedEventTypes(fake).size).toBe(0);
+  });
+
+  it('ProcessEvent 每个成员都应有宿主 emitEvent 桥接点（否则永不落盘 → 重放静默缺失）', () => {
+    const kernelTypes = extractProcessEventTypes(readFileSync(ROUND_STORE_PATH, 'utf-8'));
+    const bridged = extractHostBridgedEventTypes(readFileSync(CHAT_PANEL_PATH, 'utf-8'));
+
+    // 前置事实（防「因错误的原因通过」）：两集均须非空且含已知成员 —— 若正则失配导致双空，
+    // 差集也会空而假绿；这两条断言把该失效形态钉死。
+    expect(kernelTypes.size, 'ProcessEvent 成员解析为空（切片/正则失配）').toBeGreaterThan(0);
+    expect(bridged.size, 'emitEvent 桥接解析为空（正则失配）').toBeGreaterThan(0);
+    expect(kernelTypes.has('aborted')).toBe(true);
+    expect(bridged.has('aborted')).toBe(true);
+
+    const missing: string[] = [];
+    for (const t of kernelTypes) {
+      if (!bridged.has(t)) missing.push(t);
+    }
+    expect(
+      missing,
+      `以下 ProcessEvent 成员在内核定义但宿主 chatPanel 无 emitEvent 桥接：[${missing.join(', ')}]。` +
+        `该事件将永不落盘 → 重放静默缺失（无编译错误）。新增成员时须同步桥接点。`,
+    ).toEqual([]);
+  });
+});
