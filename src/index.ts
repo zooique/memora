@@ -10,6 +10,7 @@ export type {
   AgentChunk,
   ThinkingPhase,
   AbortStopReason,
+  LlmErrorCategory,
   UIMessages,
   ArchiveMode,
   AgentOptions,

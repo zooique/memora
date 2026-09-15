@@ -13,7 +13,7 @@
  */
 
 import type { MessageRole } from '@/memory/types.js';
-import type { AbortStopReason } from '@/agent/types.js';
+import type { AbortStopReason, LlmErrorCategory } from '@/agent/types.js';
 
 // ─── 问答闭环消息 ───────────────────────────────────────
 
@@ -258,6 +258,23 @@ export type ProcessEvent =
    */
   | { type: 'step_boundary'; seq: number; ts: string; payload: { stepId?: string; title?: string } }
   | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }
+  /**
+   * 流式错误（重放可见性，2026-09-15）：失败轮在**实时流**里已有 `AgentChunk.error`（宿主据此即时弹
+   * 提示条），但该 chunk **不落 processEvents** → 回看历史时原因丢失、只剩 generic「对话已中断」，
+   * 用户无法回答「这轮为什么没答完」（LEG-1 缺口②）。本变体把 error 落进重放轨，宿主桥接点 =
+   * `chatPanel.consumeFlow` 的 `error` 分支。
+   *
+   * 与 `aborted` 的分工（**禁互相承载**，见 `agent/types.ts` 的 `AbortStopReason` 注释）：`aborted`
+   * 由 AbortSignal 触因产生（用户停止 / 锁超时），答「谁让它停的」；本变体答「出了什么错」。
+   * 二者在 failed 路径互斥（`signal.aborted === false` 才抛错），故不构成同轮双写。
+   * `category` 与 `AgentChunk.error.category` **同源**（`LlmErrorCategory`）——展示面文案映射共用一份。
+   */
+  | {
+      type: 'error';
+      seq: number;
+      ts: string;
+      payload: { message: string; category?: LlmErrorCategory };
+    }
   | { type: 'metrics'; seq: number; ts: string; payload: ProcessMetricsPayload };
 
 // ─── 问答闭环 ───────────────────────────────────────────

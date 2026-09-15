@@ -88,7 +88,7 @@ export type AgentChunk = (
    * 宿主按 category 映射友好展示文案；无 category（null）时宿主回退原始 message，
    * 保留调试可追溯性。不承载裸前缀（如 `[连接中断]`）——语义分类走结构化字段。
    */
-  | { type: 'error'; message: string; category?: 'connection' | 'timeout' | 'unknown' }
+  | { type: 'error'; message: string; category?: LlmErrorCategory }
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'paused' }
   /**
@@ -113,6 +113,17 @@ export type AgentChunk = (
  * 中断语义分类（TS-12a）：'user' = 用户主动停止/插话；'interrupted'/'connection' 为预留语义（当前无产生点）。
  */
 export type AbortStopReason = 'user' | 'timeout' | 'interrupted' | 'connection';
+
+/**
+ * 流式错误语义分类（error chunk 的 category 字段，TS-10a）—— **具名类型 = 跨层单一真理源**。
+ *
+ * 两个消费面共用同一份字面量集合，故必须同名同源（各写一份会静默漂移）：
+ * 1. 实时：`AgentChunk.error.category`（本文件）→ 宿主映射友好文案；
+ * 2. 重放：`ProcessEvent` 的 `error` 变体（`memory/roundStore.ts`）→ 回看历史时呈现失败原因。
+ * 与 `AbortStopReason` 的分工：aborted 答「谁让它停的」（signal 触因），error 答「出了什么错」，
+ * 两者语义不同、**禁互相承载**（见上方 aborted 的 'connection' 预留说明）。
+ */
+export type LlmErrorCategory = 'connection' | 'timeout' | 'unknown';
 
 /**
  * 文本块阶段标识：供宿主区分正常交付与自审查应答，做独立分段展示。
