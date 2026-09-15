@@ -8,6 +8,12 @@ import { describe, it, expect } from 'vitest';
 import { detectNeedsPlanning, PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
 
 describe('needsPlanning · 确定性判定', () => {
+  it('改动类动词命中 → true（更新/修改/修复，承接自规划轮的明确改动指令）', () => {
+    expect(detectNeedsPlanning('基于上述结论，执行更新')).toBe(true);
+    expect(detectNeedsPlanning('修改这个文档的缺口状态')).toBe(true);
+    expect(detectNeedsPlanning('修复刚发现的 bug')).toBe(true);
+  });
+
   it('强工程命令词命中 → true（重构/迁移/搭建/批量等）', () => {
     expect(detectNeedsPlanning('重构这个模块的登录逻辑')).toBe(true);
     expect(detectNeedsPlanning('把数据从 A 迁移到 B')).toBe(true);

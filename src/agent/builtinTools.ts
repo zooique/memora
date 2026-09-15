@@ -394,7 +394,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'write_file',
     description:
-      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。支持三种写入模式：overwrite（默认，全量覆盖）、append（追加到末尾）、insert（在指定行号前插入）。',
+      '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。支持三种写入模式：overwrite（默认，全量覆盖）、append（追加到末尾）、insert（在指定行号前插入）。若改动只是「文末追加一段 / 单点插入新内容」，优先用 mode=append 或 mode=insert，不要 overwrite 全量重写整份文件（省 token）；只有结构性多处分改才用 overwrite。',
     parameters: {
       type: 'object',
       properties: {
