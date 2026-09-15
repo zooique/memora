@@ -17,6 +17,7 @@ import {
   isCallableToolName,
   filterCallableToolCalls,
   isRetryableToolError,
+  auditToolCallPairing,
 } from '@/agent/managers/toolCallHelpers.js';
 
 // ─── parseAskCalls ────────────────────────────────────
@@ -242,5 +243,86 @@ describe('filterCallableToolCalls', () => {
       { id: 'ok', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
     ];
     expect(filterCallableToolCalls(calls).map((c) => c.id)).toEqual(['ok']);
+  });
+});
+
+// ─── auditToolCallPairing ──────────────────────────────
+
+describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', () => {
+  // 构造消息的精简助手：把 `{id,name}` 映射为真实 ToolCall 形状 `{id, function:{name}}`
+  const assistant = (toolCalls: { id: string; name: string }[]) => ({
+    role: 'assistant',
+    toolCalls: toolCalls.map((tc) => ({ id: tc.id, type: 'function' as const, function: { name: tc.name } })),
+  });
+  const tool = (toolCallId: string) => ({ role: 'tool', toolCallId });
+  const text = (role: 'system' | 'user') => ({ role });
+
+  it('健康态（逐条配对 + 名字合法 + id 唯一）→ 零违规', () => {
+    const msgs = [
+      text('system'),
+      assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
+      tool('c1'),
+      tool('c2'),
+    ];
+    expect(auditToolCallPairing(msgs)).toEqual([]);
+  });
+
+  it('纯文本 / 无工具轮 → 零违规（不误报）', () => {
+    // assistant 无 toolCalls（纯回复）与空消息列表都应零违规
+    expect(auditToolCallPairing([text('user'), { role: 'assistant' }])).toEqual([]);
+    expect(auditToolCallPairing([])).toEqual([]);
+  });
+
+  it('unpairedAssistantCall：有 assistant 调用、无配对 tool 消息', () => {
+    const msgs = [assistant([{ id: 'c1', name: 'read_file' }])];
+    expect(auditToolCallPairing(msgs)).toEqual([{ kind: 'unpairedAssistantCall', toolCallId: 'c1' }]);
+  });
+
+  it('orphanToolMessage：有 tool 消息、无对应 assistant 调用', () => {
+    const msgs = [tool('c9')];
+    expect(auditToolCallPairing(msgs)).toEqual([{ kind: 'orphanToolMessage', toolCallId: 'c9' }]);
+  });
+
+  it('emptyName：空函数名 → 报空名违规', () => {
+    const msgs = [assistant([{ id: 'cx', name: '' }]), tool('cx')];
+    expect(auditToolCallPairing(msgs)).toEqual([{ kind: 'emptyName', toolCallId: 'cx' }]);
+  });
+
+  it('nameTooLong：64 字符合法、65 字符违规（与 isCallableToolName 同源判据）', () => {
+    const ok = [assistant([{ id: 'a', name: 'x'.repeat(64) }]), tool('a')];
+    const tooLong = [assistant([{ id: 'b', name: 'x'.repeat(65) }]), tool('b')];
+    expect(auditToolCallPairing(ok)).toEqual([]);
+    expect(auditToolCallPairing(tooLong)).toEqual([{ kind: 'nameTooLong', toolCallId: 'b', length: 65 }]);
+  });
+
+  it('duplicateId：同批次内 id 重复 → 报重复（第二次出现时）', () => {
+    const msgs = [
+      assistant([{ id: 'dup', name: 'read_file' }, { id: 'dup', name: 'list_dir' }]),
+      tool('dup'),
+      tool('dup'),
+    ];
+    expect(auditToolCallPairing(msgs)).toEqual([{ kind: 'duplicateId', toolCallId: 'dup' }]);
+  });
+
+  it('★ 跨消息同名 id（如 mock 续跑重放同一批次）→ 不判重复、不误报', () => {
+    // G1 场景：continueAfterPause 后 mock 重放同一批次 → c1/c2 各出现在两条 assistant 消息
+    const msgs = [
+      assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
+      tool('c1'),
+      tool('c2'),
+      assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
+      tool('c1'),
+      tool('c2'),
+    ];
+    expect(auditToolCallPairing(msgs)).toEqual([]);
+  });
+
+  it('多违规可全部列出（unpaired + nameTooLong 同批），顺序稳定', () => {
+    const msgs = [assistant([{ id: 'c1', name: 'x'.repeat(65) }])];
+    // 65 字符名 + 无配对 tool 消息 → 同时两类，顺序：nameTooLong 在 unpaired 之前（同批顺序稳定）
+    expect(auditToolCallPairing(msgs)).toEqual([
+      { kind: 'nameTooLong', toolCallId: 'c1', length: 65 },
+      { kind: 'unpairedAssistantCall', toolCallId: 'c1' },
+    ]);
   });
 });

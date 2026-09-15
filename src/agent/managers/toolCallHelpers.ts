@@ -118,3 +118,73 @@ export function isRetryableToolError(result: string): boolean {
 
 /** 供调用方复用的类型（避免深导入 agent/types） */
 export type { AskQuestion };
+
+/** 结构化最小形状：只取配对审计所需的字段，避免深耦合完整 Message 联合类型 */
+export type ToolPairingCandidate = {
+  role: string;
+  toolCalls?: readonly { id: string; function: { name: string } }[];
+  toolCallId?: string;
+};
+
+/** 批次成形违规之一。逐一携带 `id + 违反的约束`，供 fail-fast 精确诊断 */
+export type PairingViolation =
+  | { kind: 'unpairedAssistantCall'; toolCallId: string } // 有 assistant 调用、无配对 tool 消息
+  | { kind: 'orphanToolMessage'; toolCallId: string } // 有 tool 消息、无对应 assistant 调用
+  | { kind: 'emptyName'; toolCallId: string } // 空函数名
+  | { kind: 'nameTooLong'; toolCallId: string; length: number } // 超服务端上界
+  | { kind: 'duplicateId'; toolCallId: string }; // 同批次内 id 重复
+
+/**
+ * 批次成形审计（发送边界守卫的纯谓词，TOOLPAIR-2）：
+ * 「发往 OpenAI 兼容端的 assistant.toolCalls 必须成形」这一不变量的**单一真源**——
+ * 逐条配对、名字合法、id 唯一。纯函数、无状态、只读。
+ *
+ * SSOT 关系：构造期散点（FAIL-1/G1/G2/G3）已按此保证成形，故健康态应零违规；
+ * 一旦命中 = 某散点回归（内核 bug），由调用方 fail-fast（记录并停止发送）。
+ * 测试断言助手 `expectWellFormedToolPairing` 是它的**薄壳**，实现判据与断言同源。
+ *
+ * 使用时机：对**最终定型**的消息流（turn 完成 / 恢复态）审计；挂起中间态
+ * （ask 尚未回答那半批）刻意暂缺 ask 调用配对，不在本守卫覆盖范围。
+ *
+ * 作用域语义：`duplicateId` 按**单条 assistant 消息内**判重（同批次内重复才是恶性）；
+ * 跨消息的 id 重复（如 mock 重放同一批次）不算违规——G3 已在构造期用实例自增保证
+ * 跨批唯一。配对（unpaired/orphan）则按整条历史全局判。
+ */
+export function auditToolCallPairing(
+  messages: readonly ToolPairingCandidate[],
+): PairingViolation[] {
+  const violations: PairingViolation[] = [];
+
+  // 先收集全部 assistant tool_call id + 整条历史的 tool 消息 id（配对须全局判）
+  const assistantIds = new Set<string>();
+  const toolIds = messages
+    .filter((m) => m.role === 'tool')
+    .map((m) => m.toolCallId)
+    .filter((id): id is string => id !== null && id !== undefined);
+  const toolIdSet = new Set(toolIds);
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    for (const tc of m.toolCalls ?? []) assistantIds.add(tc.id);
+  }
+
+  // 逐条审计（顺序稳定，便于诊断与测试断言）
+  for (const m of messages) {
+    if (m.role !== 'assistant') continue;
+    // 同一条 assistant 消息内的 id 判重（批次内唯一）；跨消息不在此判
+    const seenInMessage = new Set<string>();
+    for (const tc of m.toolCalls ?? []) {
+      if (tc.function.name.length === 0) violations.push({ kind: 'emptyName', toolCallId: tc.id });
+      if (tc.function.name.length > TOOL_NAME_MAX_LENGTH) {
+        violations.push({ kind: 'nameTooLong', toolCallId: tc.id, length: tc.function.name.length });
+      }
+      if (!toolIdSet.has(tc.id)) violations.push({ kind: 'unpairedAssistantCall', toolCallId: tc.id });
+      if (seenInMessage.has(tc.id)) violations.push({ kind: 'duplicateId', toolCallId: tc.id });
+      seenInMessage.add(tc.id);
+    }
+  }
+  for (const id of toolIds) {
+    if (!assistantIds.has(id)) violations.push({ kind: 'orphanToolMessage', toolCallId: id });
+  }
+
+  return violations;
+}
