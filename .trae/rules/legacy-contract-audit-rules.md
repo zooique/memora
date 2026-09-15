@@ -69,4 +69,14 @@ description: 带伤设计（历史折衷残痕）审查规则——区分「正�
 | **降级兜底残留** | `flattenRoundsToMessages` 等 4 导出误暴露 → 已收回；`DEFAULT_L2_STRATEGY`/`askLimit` 二次写入 → 已收敛 `resolveL2Strategy(undefined)` | `??` 回退恒右 / `||` 回退恒死 / 布尔式恒真 / 已收回的导出再次暴露 |
 | **派生量缓存进 DTO** | `messageCount` 曾缓存在 `SessionMeta`，认 `?? 0` 造值、失效不重算（**复发案例：2026-09-14，同模式另一实例**） | 真源可 O(1) 派生、却被缓存进 DTO 且消费方为 0；`??` 造默认值掩盖缺失 |
 
+## 7 待验证带伤候选与预警信号（探索期登记，未固化）
+
+> 与 §6 不同：这里是**尚未定类/尚未复现、仅登记待查**的带伤候选与可观测预警信号。原则：**先记录、不贸然动内核**——根因未明或样本不足时，改动即制造新带伤。当候选被真机复现并走完实证判定，再决定收敛或降级回 docs/。
+
+| 登记点 | 现象 / 信号 | 待验证问题 | 处置路径 |
+| ---- | ---- | ---- | ---- |
+| **规避行为红旗（2026-09-15 真机）** | 桌面互动叙事项目 round 内，LLM 表达"绕过压缩缓存"，弃 read_file 改 shell 脚本/搜索引擎拿全文 | read_file 通道在 LLM 眼里"失真"——被压缩链 + 台账 400 字替身叠加后拿不回整份视角 | 宿主侧把"绕 read_file 改脚本"标记为可观测 trace；复现后定类 |
+| **ADR-031 补缝过度拦截候选（2026-09-15 登记）** | 上一轮补"整读小文件也记全覆盖"（防 182 次重读永动机）后，可能反向拦截"LLM 合法重读拿回视角" | 整读小文件记全覆盖 + 压缩后重读回显摘要，是否让「对齐评估/全文比对」任务被迫绕路 | 真机复现确认是否过度拦截；不确认不动 |
+| **主流差距（远期打磨方向，非现在做）** | 主流 read_file：大文件强制 `query` 意图参数；工具结果 offload 到 scratch 文件；read>N 未产出收敛暂停门 | 是否吸收进本项目 read_file 分段策略 | 待主流方向与本项目耦合需求明确后单独立项 |
+
 > 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)、[progressive-refactor-rules.md](./progressive-refactor-rules.md)
