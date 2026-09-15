@@ -767,7 +767,8 @@ interface ProjectTextSearchResult {
   truncated: boolean;                        // 检索被截断（零命中时也须如实回报）
   truncatedBy?: 'results' | 'files';         // 截断主因：结果达上限 / 扫描达文件上限
   scannedFiles?: number;                     // 实际参与匹配的文件数（宿主上报的数据）
-  oversizedSkipped?: number;                 // 因超大被整文件跳过的文件数
+  partialReadFiles?: number;                 // 只检索了前一部分（过大）的文件数（**参与了**检索，非跳过）
+  unreadableSkipped?: number;                // 读取失败（权限/被删/悬空链接）完全未参与检索的文件数
   perFileCapped?: boolean;                   // 有文件的命中被单文件上限截断
   failed?: boolean;                          // 检索自身失败（超时/抛错）≠ 真零命中
   relaxed?: boolean;                         // 已放宽为分词匹配 → 结果**非精确**命中
@@ -789,7 +790,8 @@ interface IProjectSearchProvider {
 
 1. **精确优先 + 零命中回退**：先按 `pattern` 整串字面量匹配；整串零命中**且** `terms` 非空时，才用 `terms` 做一次 OR 放宽，并置 `relaxed` + 回填 `termsUsed`（多词无需拆开传，**任一分词命中即算**，不是"全部包含"）。整串已命中时不得放宽——否则精确命中会退化成"可能不是精确命中"。
 2. **三态必须可区分**：`failed`（没搜完/搜坏了）/ `truncated`（没搜全）/ 真零命中，三者不得再压成同一个空数组——`[]` 承载不了任何元信息，会把"没搜到"与"没搜完"变成逐字同形。失败**不要**返回工具错误（"no results is not an error"），如实回报 `failed` 即可，由内核分流文案。
-3. **预算量以数据上报，不提升为内核常量**：`scannedFiles` / `oversizedSkipped` / `perFileCapped` 是宿主内部预算（扫描文件数 / 单文件字节 / 单文件命中数）的**事实**；内核从不扫描，因此不持有这些常量，只把它们写进给 LLM 的文案。同理，`truncatedBy` 由宿主判定（只有宿主知道自己是因何停下）。
+3. **预算量以数据上报，不提升为内核常量**：`scannedFiles` / `partialReadFiles` / `unreadableSkipped` / `perFileCapped` 是宿主内部预算（扫描文件数 / 单文件字节 / 单文件命中数）与**读取结果**的事实；内核从不扫描，因此不持有这些常量，只把它们写进给 LLM 的文案。同理，`truncatedBy` 由宿主判定（只有宿主知道自己是因何停下）。
+   ⚠️ `partialReadFiles`（看了但没看全）与 `unreadableSkipped`（根本没看上）**必须分开上报**：两者都是「零命中 ≠ 不存在」的依据，但补救动作不同——前者换更具体的关键词或 `read_file` 精读，后者可重试。
 
 **放宽词表（内核侧）**：`buildSearchTerms(query)` 采用「显式片段优先」——空白分隔的片段是一等公民，不含 CJK 的片段原样保留（`Next.js` 不会被切成 `next` + `js`），含 CJK 的片段交给分词 SSOT。调用方（内核 `ToolExecutor`）会剔除与整串等价的词，因此单段查询通常不会触发放宽轮。
 
