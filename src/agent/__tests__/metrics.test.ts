@@ -555,3 +555,21 @@ describe('AgentMetrics · 类型结构', () => {
     expect(loop.getMetrics().context.rolePackBaseTokens).toBe(9_000);
   });
 });
+
+describe('AgentLoop · 空响应兜底计数（2026-09-15 边界补缝）', () => {
+  it('provider 恒空 → 重试耗尽后兜底文案可见 + metrics.llm.emptyResponseCount 递增', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]), // 空 chunks = 200 但 0 token 的空响应
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    await consumeGenerator(loop.processUserInput('你好'));
+
+    // 兜底命中计数（空响应最终落到 loop 英文兜底 = 用户看到零产出的可量化信号）
+    expect(loop.getMetrics().llm.emptyResponseCount).toBe(1);
+    // 兜底文案出现在 assistant 消息（未把模型拒绝/瞬态空误当合法产出）
+    expect(
+      loop.getMessages().some((m) => m.role === 'assistant' && String(m.content).includes('empty response')),
+    ).toBe(true);
+  });
+});

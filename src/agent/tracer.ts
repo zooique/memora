@@ -108,6 +108,11 @@ export interface AgentMetrics {
     actualInputTokens: number;
     /** 实际 API 返回的输出 token 累计值（仅在 Provider 支持 usage 时填充，否则为 0） */
     actualOutputTokens: number;
+    /**
+     * LLM 空响应兜底次数（2026-09-15 边界补缝观测）：200 但 0 token 时用户看到兜底文案、
+     * 任务零产出却被 success 盖章。宿主据此识别「瞬态抽风」（可期望重试救回）vs「模型拒绝」（重试也空）。
+     */
+    emptyResponseCount: number;
   };
   /** 工具调用指标 */
   tools: {

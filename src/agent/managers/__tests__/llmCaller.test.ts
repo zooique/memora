@@ -198,6 +198,76 @@ describe('LlmCaller.callWithRetry · thought 透传', () => {
   });
 });
 
+// ─── 空响应重试（2026-09-15 边界补缝）───
+
+describe('LlmCaller.callWithRetry · 空响应重试', () => {
+  function makeDeps(provider: LlmProvider): LlmCallerDeps {
+    return {
+      metrics: new LoopMetrics(),
+      getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
+      getProvider: () => provider,
+      getProviderRouter: () => undefined,
+      getCachedProvider: () => undefined,
+      setCachedProvider: () => {},
+      contextManager: { estimateTokens: () => 0 },
+      tracer: NOOP_TRACER,
+      hasToolExecutedThisTurn: () => false,
+    };
+  }
+
+  it('空响应未耗尽重试 → 自动重试并救回内容（不再一次定生死交兜底）', async () => {
+    // 第一次 provider 正常结束但不 yield 任何内容（= 200 但 0 token 的瞬态抽风）；第二次才有正文
+    let chatCalls = 0;
+    const provider: LlmProvider = {
+      name: 'empty-then-fill',
+      async *chat() {
+        chatCalls++;
+        if (chatCalls === 1) return;
+        yield { content: '第二次有内容' };
+      },
+    } as unknown as LlmProvider;
+    const caller = new LlmCaller(makeDeps(provider));
+    const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
+    const chunks: AgentChunk[] = [];
+    let step = await gen.next();
+    while (!step.done) {
+      chunks.push(step.value as AgentChunk);
+      step = await gen.next();
+    }
+    const result = step.value as LlmCallResult;
+
+    // 空响应视为失败重试：chat 共调 2 次，最终拿到第二次内容（而非英文兜底）
+    expect(chatCalls).toBe(2);
+    expect(result?.fullContent).toBe('第二次有内容');
+    // 走既有 retry 通道：发射 retry chunk（attempt>=1）
+    expect(chunks.some((c) => c.type === 'retry')).toBe(true);
+  });
+
+  it('耗尽重试仍空 → 返回空结果交 loop 兜底（不无限重试）', async () => {
+    // 模型静默拒绝（始终空）：重试 MAX 次后仍应返回空，交给 loop 的英文兜底文案
+    const provider: LlmProvider = {
+      name: 'always-empty',
+      async *chat() {
+        return; // 恒空
+      },
+    } as unknown as LlmProvider;
+    const caller = new LlmCaller(makeDeps(provider));
+    // 用假时钟避免真实退避等待：直接 mock safeSetTimeout 不生效，故仅验证耗尽后返回空结果
+    const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
+    const chunks: AgentChunk[] = [];
+    let step = await gen.next();
+    while (!step.done) {
+      chunks.push(step.value as AgentChunk);
+      step = await gen.next();
+    }
+    const result = step.value as LlmCallResult;
+
+    // 最终仍为空（不把「模型拒绝」当产出），loop 可据此走 emptyResponseFallback
+    expect(result?.fullContent ?? '').toBe('');
+    expect(result?.toolCalls ?? []).toHaveLength(0);
+  });
+});
+
 // ─── 发送边界守卫（TOOLPAIR-2 Step 2）───
 
 describe('LlmCaller.callWithRetry · 发送边界守卫', () => {

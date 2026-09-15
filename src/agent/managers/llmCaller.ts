@@ -317,6 +317,22 @@ export class LlmCaller {
         metrics.totalOutputTokens += contextManager.estimateTokens([
           { role: 'assistant', content: fullContent },
         ]);
+        // 空响应重试（2026-09-15 边界补缝，审计：真机空响应一次定生死不入重试）：
+        // 此前 for await 正常结束后无论内容是否空都 `break` 跳出，空响应（200 但 0 token 的
+        // provider 瞬态抽风）直接落到 loop 的英文兜底文案，用户被迫重发——与「网络错误会重试」
+        // 不对称。此处在未耗尽重试次数时把「全空结果」视为一次失败，`continue` 走既有 retry
+        // 退避（attempt++ → waitForRetryWithAbort + 重置流式状态），给瞬态一次纠偏机会。
+        // 耗尽仍空则照常 break，交 loop 兜底。不把「模型拒绝/静默空」错当合法产出反复重试。
+        const isEmptyResponse =
+          !aborted &&
+          !fullContent &&
+          !pendingNarrate &&
+          !streamedText &&
+          (!toolCalls || toolCalls.length === 0);
+        if (isEmptyResponse && attempt < LOOP_CONSTANTS.MAX_LLM_RETRIES) {
+          lastError = new Error('LLM 返回空响应');
+          continue;
+        }
         break;
       } catch (err) {
         const e = toError(err);

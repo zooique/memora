@@ -20,6 +20,10 @@ export class LoopMetrics {
   toolCallCount = 0;
   toolFailureCount = 0;
 
+  /** 空响应兜底次数（2026-09-15 边界补缝观察：LLM 200 但 0 token）。为真说明用户看到英文兜底文案、
+   *  任务零产出却被 success 盖章——宿主据此识别「瞬态抽风」vs「模型拒绝」，不再被静默掩盖 */
+  emptyResponseCount = 0;
+
   // ─── 未解析工具意图（2026-09-14 静默失败修复）──────────────────────
   /**
    * 疑似工具调用但无原生 toolCalls 的文本意图数。

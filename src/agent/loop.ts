@@ -1455,6 +1455,8 @@ export class AgentLoop {
     } else {
       // LLM 返回空响应（无文本无工具调用）的兜底，正常不会发生但 provider 边界情况可能触发
       logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
+      // 观测：空响应兜底命中累计——为真即用户看到兜底文案、任务零产出（success 掩盖），可量化
+      this.metrics.emptyResponseCount++;
       // 文案走 ui 通道（默认英文，宿主可经 messages.emptyResponseFallback 覆盖，与其它 UI 文案一致）
       this.appendAssistantText(this.ui.emptyResponseFallback);
       yield { type: 'text', content: this.ui.emptyResponseFallback };
@@ -2234,6 +2236,7 @@ export class AgentLoop {
         totalOutputTokens: this.metrics.totalOutputTokens,
         actualInputTokens: this.metrics.actualInputTokens,
         actualOutputTokens: this.metrics.actualOutputTokens,
+        emptyResponseCount: this.metrics.emptyResponseCount,
       },
       tools: {
         callCount: this.metrics.toolCallCount,
