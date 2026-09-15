@@ -121,6 +121,13 @@ export interface AgentMetrics {
      * 宿主可据 N>0 不显示该轮成功收尾。
      */
     unparsedToolIntentCount: number;
+    /**
+     * read_file 覆盖度台账回显（分支② `formatLedgerStub` 拦截）命中次数。
+     * 2026-09-15 落地：观测 ADR-031「补缝过度拦截」带伤候选——诚然 0 代表防重没在替身层拦截
+     * （可能是护住也可是拦不住），N 增大代表替身频繁顶替「拿回整份视角」的合法重读（铁证「规避行为红旗」）。
+     * 健康判定需连同真机规避信号交叉看，本计数仅提供可观测的量化基线。
+     */
+    ledgerStubEchoCount: number;
   };
   /** 上下文管理指标 */
   context: {

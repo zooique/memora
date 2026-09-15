@@ -1614,6 +1614,13 @@ export class AgentLoop {
           //   与「offset/limit 续读」（完全落覆盖内才拦）；触及覆盖之外放行分支③（G2 守卫）。
           const cov = subject.path ? this.fileExposure.get(subject.path) : undefined;
           if (cov && shouldEchoLedgerStub(subject, cov)) {
+            // 观测 ADR-031「补缝过度拦截」候选：台账替身回显命中累加。
+            // logger.debug 留痕（含文件 + 覆盖区间），供真机对照「替身是否在顶替合法重读拿整份视角」。
+            this.metrics.ledgerStubEchoCount++;
+            logger.debug(
+              { path: subject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
+              'read_file 台账替身回显（分支②）：已用摘要顶替整读',
+            );
             blockedFlags.push(true);
             toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
             continue;
@@ -2232,6 +2239,7 @@ export class AgentLoop {
         callCount: this.metrics.toolCallCount,
         failureCount: this.metrics.toolFailureCount,
         unparsedToolIntentCount: this.metrics.unparsedToolIntentCount,
+        ledgerStubEchoCount: this.metrics.ledgerStubEchoCount,
       },
       context: {
         truncationCount: this.contextManager.truncationCount,

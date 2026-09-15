@@ -58,4 +58,9 @@ export class LoopMetrics {
   /** 发送边界守卫命中次数（tool_call 批次成形违规被拒发）。健康态应恒 0——
    *  命中 = 构造期散点回归（内核 bug 信号），见 toolCallHelpers.auditToolCallPairing */
   llmPairingGuardFires = 0;
+
+  // ─── 读取防重的台账替身回显观测（2026-09-15，观测 ADR-031 过度拦截候选）──
+  /** read_file 覆盖度台账回显（分支② formatLedgerStub 命中）累计次数。
+   *  仅作观测基线：与「规避行为红旗」交叉判定防重是否过度顶替合法重读（见 AgentMetrics 该字段 JSDoc）。 */
+  ledgerStubEchoCount = 0;
 }

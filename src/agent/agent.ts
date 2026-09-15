@@ -1822,7 +1822,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (!this.loop) {
       return {
         llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0, actualInputTokens: 0, actualOutputTokens: 0 },
-        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
+        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0, ledgerStubEchoCount: 0 },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
         plan: { taskTableWriteCount: 0, stepBoundaryCount: 0 },
         tasks: { totalCount: 0, successCount: 0, failureCount: 0, successRate: 0, avgDurationMs: 0 },

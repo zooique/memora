@@ -4698,6 +4698,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(stub).toBeDefined();
     // 回显的是全覆盖替身（共 3 行），非空拦
     expect(stub!.content).toContain('共 3 行');
+    // 分支②命中 → ledgerStubEchoCount 计 1（观测 ADR-031 过度拦截的量化基线）
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(1);
   });
 
   it('F · limit 变体整读（真机逃逸）→ 已覆盖到末尾后，同文件换大 limit 重读被归一拦截', async () => {
@@ -4733,6 +4735,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(stub).toBeDefined();
     // 回显全覆盖替身（共 3 行），非空拦
     expect(stub!.content).toContain('共 3 行');
+    // 分支②归一拦命中 → ledgerStubEchoCount 计 1
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(1);
   });
 
   it('G1 · P0-1b：不同区间但完全落在已覆盖范围内 → 分支②回显摘要（分段狂读的回头小读收敛）', async () => {
@@ -4795,6 +4799,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(
       loop.getMessages().some((m) => m.role === 'tool' && m.content.startsWith('[ALREADY_READ]')),
     ).toBe(false);
+    // 分支③放行（非替身回显）→ ledgerStubEchoCount 保持 0，不被合法前向读污染
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
   it('A边界回归 · 大文件 coverEnd<total（脚注源真实总行数）时越界 limit 续读 → 放行（非归一拦）', async () => {
@@ -4831,6 +4837,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(
       loop.getMessages().some((m) => m.role === 'tool' && m.content.startsWith('[ALREADY_READ]')),
     ).toBe(false);
+    // 放行同 G2：ledgerStubEchoCount 保持 0（越界续读不触发替身回显）
+    expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
   it('H · T1：无区间整读被截断后再次整读 → 分支②回显摘要引导续读（收敛整读重试）', async () => {
