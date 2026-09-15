@@ -174,4 +174,37 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
     // 完全落在已覆盖内 → 拦（保持原语义不受影响）
     expect(shouldEchoLedgerStub({ offset: 1, limit: 80 }, cov)).toBe(true);
   });
+
+  it('边界A · totalLines 为真实总行数（分段脚注源）：coverEnd 未达末尾 + 越界 limit 续读 → 放行', () => {
+    // 大文件 1000 行，分段读到前 100 行（coverEnd=100）。totalLines=1000 是**文件真实总行数**（脚注源），
+    // 与整读小文件场景的「totalLines=实际读行数」异构——必须保证新判据在此不误把 coverEnd 当 total。
+    const cov: FileCoverage = {
+      totalLines: 1000,
+      coverStart: 1,
+      coverEnd: 100,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
+    // reqEnd = 950+100-1 = 1049 ≥ 1000 → 覆盖到末尾归一，但 coverEnd(100) ≥ total(1000)? 否 → 放行（续读尾部真内容）
+    expect(shouldEchoLedgerStub({ offset: 950, limit: 100 }, cov)).toBe(false);
+    // 越界大 limit：offset=1(实际从 1 起), limit=3000 → reqEnd=3000 ≥ 1000，coverEnd 100 < 1000 → 放行
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 3000 }, cov)).toBe(false);
+    // 对照：完全落在已覆盖内的小段仍拦（旧语义不受损）
+    expect(shouldEchoLedgerStub({ offset: 1, limit: 100 }, cov)).toBe(true);
+  });
+
+  it('边界B · 已整读覆盖到末尾后回读中段 → 拦（完整落已覆盖区间，落既有区间判据）', () => {
+    // 文件 1000 行，已整读 coverEnd=1000=total。LLM 因对**中段某行 token** 有精确需求回读 offset=500 limit=100。
+    // reqEnd=599 < 1000 → 不触发新归一判据，走既有「区间完整落在覆盖内」判据 → 拦 + 替身回显（非死锁）。
+    const cov: FileCoverage = {
+      totalLines: 1000,
+      coverStart: 1,
+      coverEnd: 1000,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
+    expect(shouldEchoLedgerStub({ offset: 500, limit: 100 }, cov)).toBe(true);
+    // 未指 offset（默认第 1 行起）的整段也在覆盖内 → 拦
+    expect(shouldEchoLedgerStub({ offset: undefined, limit: 500 }, cov)).toBe(true);
+  });
 });

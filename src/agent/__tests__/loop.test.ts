@@ -4797,6 +4797,42 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     ).toBe(false);
   });
 
+  it('A边界回归 · 大文件 coverEnd<total（脚注源真实总行数）时越界 limit 续读 → 放行（非归一拦）', async () => {
+    // 边界 A 在 loop 层的真实链路：c1 读到 1–100（共 1000，coverEnd=100<totalLines=1000）。
+    // c2 请求 offset=950 limit=100（reqEnd=1049 ≥ 1000 触顶），但 coverEnd(100) 远未达 total(1000)。
+    // 新归一判据必须判 **放行**（续读 950–1000 尾部真内容），否则就是把未读段错当已读 = 误拦死锁。
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) =>
+        Promise.resolve(
+          name === 'read_file'
+            ? '头段内容\n[read_file 分段] 已显示第 1–100 行（共 1000 行）。继续读用 offset=101。'
+            : '',
+        ),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 越界大 limit 续读尾部 → 逻辑位于覆盖之外（950>coverEnd=100），must NOT 归一拦
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md","offset":950,"limit":100}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('越界极限续读')) {
+      void chunk;
+    }
+
+    // c2 应放行真实执行（工具省不省拦截都要落 executor）→ 共 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 关键：不得把「未读到尾部」误判为「已整读」→ 不产生针对续读的 ALREADY_READ 误拦
+    expect(
+      loop.getMessages().some((m) => m.role === 'tool' && m.content.startsWith('[ALREADY_READ]')),
+    ).toBe(false);
+  });
+
   it('H · T1：无区间整读被截断后再次整读 → 分支②回显摘要引导续读（收敛整读重试）', async () => {
     // c1 整读 a.md 被截断（覆盖 1–20 / 共 200，coverEnd<totalLines）；c2 读 b.md 把 a.md 挤出
     // keepRecent → c3 依旧无 offset/limit 整读 a.md：按 T1 判定，无 limit + 已有覆盖度 → 应回显
