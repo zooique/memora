@@ -69,6 +69,32 @@ export function wrapToolResult(toolName: string, result: string): string {
 }
 
 /**
+ * 服务端对 tool_call 函数名的字符集约束 —— **逐字取自 OpenAI 兼容端 400 错文**
+ * （`function.name does not match pattern '^[a-zA-Z0-9_-]+$'`）。
+ *
+ * 不得收严：定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）不容连字符，
+ * 拿它作判据会把服务端**接受**的 `read-file` 误判为非法。
+ */
+const TOOL_NAME_PATTERN = /^[a-zA-Z0-9_-]+$/;
+
+/** 函数名是否可发往服务端（非空 + 匹配服务端字符集）。 */
+export function isCallableToolName(name: string): boolean {
+  return TOOL_NAME_PATTERN.test(name);
+}
+
+/**
+ * 滤出可发出的工具调用（判据见 `isCallableToolName`）。
+ *
+ * 滤掉的是模型偶发吐出的「只有 id、无 function 载荷」条目（name 与 arguments 皆空串）——
+ * 它一旦写入对话历史，下一次请求必被服务端以 400 拒绝，而本地失败只报 args 解析错、不露真因。
+ */
+export function filterCallableToolCalls<T extends { function: { name: string } }>(
+  calls: readonly T[],
+): T[] {
+  return calls.filter((tc) => isCallableToolName(tc.function.name));
+}
+
+/**
  * 判断工具错误结果是否可重试。
  *
  * **不锚定行首**：结果被 `<tool_result>` 标签包裹后 `[ERR:TOOL:` 前缀位于标签之后，

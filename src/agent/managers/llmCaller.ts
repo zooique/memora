@@ -33,6 +33,7 @@ import type { ITracer } from '@/agent/tracer.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import type { LoopMetrics } from '@/agent/managers/loopMetrics.js';
+import { filterCallableToolCalls } from '@/agent/managers/toolCallHelpers.js';
 import { isAbortError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { sha256Fingerprint } from '@/utils/hash.js';
@@ -282,7 +283,15 @@ export class LlmCaller {
             yield { type: 'thought', content: chunk.thought };
           }
           if (chunk.toolCalls) {
-            toolCalls = [...(toolCalls ?? []), ...chunk.toolCalls];
+            // 只收可发出的调用：模型偶发的「只有 id、无 function 载荷」条目若写入历史，下一次
+            // 请求必被服务端以 400 拒绝。丢弃在**写入历史之前**，故 assistant.tool_calls 与随后
+            // 逐项回填的 tool 消息仍同源同长（配对不变量不破）；整批皆非法时 toolCalls 保持
+            // undefined，自然落回既有纯文本路径（无需新分支）。
+            const callable = filterCallableToolCalls(chunk.toolCalls);
+            if (callable.length > 0) {
+              toolCalls = [...(toolCalls ?? []), ...callable];
+            }
+            // 文本分流按**原始** chunk 置位：叙述归类不因丢弃而改变
             isToolCallTurn = true;
           }
         }

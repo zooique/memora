@@ -1,18 +1,21 @@
 /**
  * 工具调用辅助纯函数单元测试
  *
- * 覆盖 `managers/toolCallHelpers` 三个纯函数的边界行为：
- *   parseAskCalls          — 参数解析（合法/非法 JSON/缺字段/options 过滤/allowCustom）
- *   wrapToolResult         — 结果注入隔离包裹
- *   isRetryableToolError   — 错误码识别（含「被 <tool_result> 包裹后仍能识别」的关键性质）
+ * 覆盖 `managers/toolCallHelpers` 各纯函数的边界行为：
+ *   parseAskCalls                      — 参数解析（合法/非法 JSON/缺字段/options 过滤/allowCustom）
+ *   wrapToolResult                     — 结果注入隔离包裹
+ *   isCallableToolName / filterCallableToolCalls — 函数名合法性（服务端字符集）+ 入历史前过滤
+ *   isRetryableToolError               — 错误码识别（含「被 <tool_result> 包裹后仍能识别」的关键性质）
  *
- * 设计意图：这三个函数从 AgentLoop 提取（ARCH-2/ARCH-3 F2 族拆分），本测试是它们的
+ * 设计意图：这些函数从 AgentLoop 提取（ARCH-2/ARCH-3 F2 族拆分），本测试是它们的
  * **直接单测**——loop.test.ts 的间接覆盖之外，补齐边界用例（后者只覆盖集成路径）。
  */
 import { describe, it, expect } from 'vitest';
 import {
   parseAskCalls,
   wrapToolResult,
+  isCallableToolName,
+  filterCallableToolCalls,
   isRetryableToolError,
 } from '@/agent/managers/toolCallHelpers.js';
 
@@ -169,5 +172,60 @@ describe('isRetryableToolError', () => {
 
   it('大小写敏感：小写错误码不识别（错误码为约定大写枚举）', () => {
     expect(isRetryableToolError('[ERR:TOOL:file_not_found] x')).toBe(false);
+  });
+});
+
+// ─── isCallableToolName / filterCallableToolCalls ─────
+
+describe('isCallableToolName', () => {
+  it('常规工具名（字母/数字/下划线）→ true', () => {
+    expect(isCallableToolName('read_file')).toBe(true);
+    expect(isCallableToolName('web_search')).toBe(true);
+    expect(isCallableToolName('list_dir2')).toBe(true);
+  });
+
+  it('★ 关键性质：连字符合法（服务端模式允许，不得按定义期规则收严）', () => {
+    expect(isCallableToolName('read-file')).toBe(true);
+  });
+
+  it('空串 / 纯空白 → false（模型偶发吐出的「无 function 载荷」条目即此形态）', () => {
+    expect(isCallableToolName('')).toBe(false);
+    expect(isCallableToolName(' ')).toBe(false);
+  });
+
+  it('空格 / 点号 / 斜杠 / 括号 → false（不在服务端字符集内）', () => {
+    expect(isCallableToolName('read file')).toBe(false);
+    expect(isCallableToolName('a.b')).toBe(false);
+    expect(isCallableToolName('a/b')).toBe(false);
+    expect(isCallableToolName('fn()')).toBe(false);
+  });
+
+  it('非 ASCII（中文）→ false', () => {
+    expect(isCallableToolName('读取文件')).toBe(false);
+  });
+});
+
+describe('filterCallableToolCalls', () => {
+  it('滤掉空函数名条目，保序保留其余调用', () => {
+    const calls = [
+      { id: 'p', type: 'function' as const, function: { name: '', arguments: '' } },
+      { id: 'a', type: 'function' as const, function: { name: 'read_file', arguments: '{"path":"a.md"}' } },
+      { id: 'b', type: 'function' as const, function: { name: 'list_dir', arguments: '{}' } },
+    ];
+    expect(filterCallableToolCalls(calls).map((c) => c.id)).toEqual(['a', 'b']);
+  });
+
+  it('全部非法 → 空数组（调用方据此保持 toolCalls 为 undefined）', () => {
+    const calls = [{ id: 'p', type: 'function' as const, function: { name: '', arguments: '' } }];
+    expect(filterCallableToolCalls(calls)).toEqual([]);
+  });
+
+  it('空数组 → 空数组（不抛错）', () => {
+    expect(filterCallableToolCalls([])).toEqual([]);
+  });
+
+  it('★ 关键性质：不按参数合法与否过滤（name 合法、args 为空者保留 —— 走既有可重试错误路径）', () => {
+    const calls = [{ id: 'a', type: 'function' as const, function: { name: 'read_file', arguments: '' } }];
+    expect(filterCallableToolCalls(calls)).toHaveLength(1);
   });
 });

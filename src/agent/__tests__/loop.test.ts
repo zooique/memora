@@ -795,6 +795,80 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     expect(messages[3]!.content).toContain('工具执行结果');
   });
 
+  it('★ 空函数名的畸形调用在写入历史前被丢弃，且配对不变量成立（与合法调用同批）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            content: '继续读取',
+            toolCalls: [
+              // 真机形态：同批「只有 id、无 function 载荷的幻影」+ 一条合法调用
+              { id: 'call_phantom', type: 'function', function: { name: '', arguments: '' } },
+              {
+                id: 'call_real',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.md"}' },
+              },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取')) {
+      chunks.push(chunk);
+    }
+
+    // 配对不变量（首要断言）：assistant.tool_calls 与 tool 消息同源同长，且不含空函数名
+    // （空函数名条目即真机 400 的直接成因，此断言失败时会直接打印该条目）
+    const messages = loop.getMessages();
+    const callsInHistory = messages.flatMap((m) => m.toolCalls ?? []);
+    const toolMsgs = messages.filter((m) => m.role === 'tool');
+    expect(callsInHistory.filter((tc) => tc.function.name === '')).toEqual([]);
+    expect(callsInHistory).toHaveLength(toolMsgs.length);
+    expect(callsInHistory).toHaveLength(1);
+    expect(toolMsgs[0]!.toolCallId).toBe('call_real');
+
+    // 幻影未被下发执行（否则本地只报 args 解析错，掩盖真因）
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.md"}');
+    expect(chunks.filter((c) => c.type === 'tool_start')).toHaveLength(1);
+  });
+
+  it('★ 整批工具调用皆非法 → 不入历史、落回既有纯文本路径（零孤立 tool 消息）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            content: '想调用工具但没吐出函数名',
+            toolCalls: [
+              { id: 'call_phantom', type: 'function', function: { name: '', arguments: '' } },
+            ],
+          },
+        ],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取')) {
+      chunks.push(chunk);
+    }
+
+    expect(toolExecutor).not.toHaveBeenCalled();
+    const messages = loop.getMessages();
+    expect(messages.flatMap((m) => m.toolCalls ?? [])).toHaveLength(0);
+    expect(messages.filter((m) => m.role === 'tool')).toHaveLength(0);
+    expect(chunks.some((c) => c.type === 'done')).toBe(true);
+  });
+
   it('多个工具调用应该全部执行', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('done');
 
