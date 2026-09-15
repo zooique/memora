@@ -352,6 +352,27 @@ describe('DEDUP_SUBJECT_EXTRACTORS.trace_summary（记忆回溯原文）', () =>
   });
 });
 
+describe('DEDUP_SUBJECT_EXTRACTORS.search_memories（记忆粗筛，与 web_search 同构）', () => {
+  it('正确提取并保留原始 query', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.search_memories!('{"query":"闭环设计"}')).toEqual({
+      query: '闭环设计',
+    });
+  });
+
+  it('query 缺失 / 空串 / 非法 JSON → undefined', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.search_memories!('{"limit":"5"}')).toBeUndefined();
+    expect(DEDUP_SUBJECT_EXTRACTORS.search_memories!('{"query":""}')).toBeUndefined();
+    expect(DEDUP_SUBJECT_EXTRACTORS.search_memories!('{bad')).toBeUndefined();
+  });
+
+  it('同 query 命中缓存（忽略 limit/mode，避免伪变体放行重爬）', () => {
+    const cache = new ToolResultCache();
+    cache.set('search_memories', { query: '闭环设计' }, 1);
+    expect(cache.check('search_memories', { query: '闭环设计' })?.cachedAtIteration).toBe(1);
+    expect(cache.check('search_memories', { query: '闭环设计2' })).toBeUndefined();
+  });
+});
+
 describe('normalizePathKey', () => {
   it('归并等价写法，且保持绝对 / 相对语义不混同', () => {
     expect(normalizePathKey('./docs/a.md')).toBe('docs/a.md');

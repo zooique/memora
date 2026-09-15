@@ -3651,6 +3651,37 @@ describe('web_fetch / trace_summary 复用统一防重通道', () => {
     // 拦截文案渲染为「会话 · 轮」
     expect(blk!.content).toContain('s-1 · r5');
   });
+
+  it('search_memories 同 query 重复粗筛被拦（与 web_search 同构）；不落 ToolExecutor', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('命中候选：片段…');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          toolCalls: [
+            { id: 'm1', type: 'function', function: { name: 'search_memories', arguments: '{"query":"闭环设计","limit":"5"}' } },
+          ],
+        },
+      ],
+      [
+        {
+          toolCalls: [
+            { id: 'm2', type: 'function', function: { name: 'search_memories', arguments: '{"query":"闭环设计","limit":"10"}' } },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    for await (const chunk of loop.processUserInput('检索记忆')) {
+      void chunk;
+    }
+
+    // m2 同 query（仅 limit 变体）→ 拦截，不落 ToolExecutor → 仅 1 次
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    const blk = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(blk).toBeDefined();
+    expect(blk!.content).toContain('闭环设计');
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════

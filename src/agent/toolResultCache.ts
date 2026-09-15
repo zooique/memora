@@ -135,6 +135,12 @@ export const DEDUP_SUBJECT_EXTRACTORS: Readonly<Record<string, DedupSubjectExtra
     const roundId = a ? nonEmptyString(a.roundId) : undefined;
     return { query: sessionId.trim(), item: roundId?.trim() };
   },
+  /** search_memories 主体 = query（与 web_search 同构：只按检索词判重；追更多候选应换 query 或改用 trace_summary 精取） */
+  search_memories: (argsJson) => {
+    const a = parseArgs(argsJson);
+    const query = a ? nonEmptyString(a.query) : undefined;
+    return query ? { query } : undefined;
+  },
 };
 
 /** 主体 → 缓存 key（本模块唯一的 key 构造点；用不可打印分隔符，避免与路径 / query / item 内容冲突） */
