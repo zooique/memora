@@ -4592,7 +4592,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
   });
 
-  it('D-2 · 结果已被压缩链替换为占位符 → 重读必须放行（死锁守卫，CTX-1 根因②）', async () => {
+  it('D-2 · 结果已被压缩链替换为占位符 → 台账有覆盖 → 回显非空摘要而非放行（防死锁靠替身自带信息，非靠放行）', async () => {
     const toolExecutor = vi.fn().mockImplementation((name: string) =>
       Promise.resolve(name === 'read_file' ? '正文内容' : ''),
     );
@@ -4622,6 +4622,12 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // （非空替身 + offset 续读指引，不构成死锁；老契约「无信息必须放行」已由本场景演进为「有信息拦+回显」）
     expect(toolExecutor).toHaveBeenCalledTimes(2);
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(true);
+    // 新契约的「不死锁」保证不在「放行」，而在**替身必须自带可用信息**，故此处锁死两条：
+    // ① 摘要非空（「要点：」之后必须有内容）② 给出续读出路（offset=）
+    // 只断言 [ALREADY_READ] 出现是不够的——digest 被吞掉时该断言仍绿，而 LLM 拿不回任何视角。
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'))?.content ?? '';
+    expect(stub).toMatch(/要点：\S/);
+    expect(stub).toContain('offset=');
   });
 
   it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {

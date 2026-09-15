@@ -98,6 +98,11 @@ describe('formatLedgerStub（分支②回显文案）', () => {
     expect(stub).toContain('[ALREADY_READ]');
     expect(stub).toContain('第 1–20 行 / 共 100 行');
     expect(stub).toContain('offset=21');
+    // 「不死锁」的核心保证：替身必须**自带内容**。
+    // 上面三条（标记 / 区间 / offset）都守不住它——digest 被静默吞掉时三条仍全绿，
+    // 而 LLM 拿到的是一份「有框架、无内容」的替身 = CTX-1 根因②死锁复现。
+    expect(stub).toContain(cov.digest);
+    expect(stub).toMatch(/要点：\S/);
   });
 
   it('单行覆盖用「X 行」表达', () => {

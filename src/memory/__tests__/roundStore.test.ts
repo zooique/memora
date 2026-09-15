@@ -411,7 +411,11 @@ describe('isRoundSettled 判据单源守卫', () => {
   it('生产代码中不得自写 status ==/!= /=== /!== \'complete\' 收场判据（豁免须登记理由）', () => {
     const roots = ['src', 'hosts/memora-vscode/src'];
     // 只认比较运算，不匹配写点（`status: 'complete'` 是 appendAssistant / completeRound 的合法落盘）
-    const forbidden = /status\s*(?:===|!==|==|!=)\s*'complete'/;
+    // 单 / 双引号都认：本项目 singleQuote 仅为 prettier 约定，而 prettier **不进门禁**——
+    // 只认单引号等于留一条静默逃逸缝（`status === "complete"` 同样绕开了 isRoundSettled）。
+    // 已知未覆盖：解构别名（`const { status: st } = round` 之后写 `st === 'complete'`）——
+    // 别名无法静态可靠判定，强行放宽会引入假红。缺口登记在此，不做无效加固。
+    const forbidden = /status\s*(?:===|!==|==|!=)\s*['"]complete['"]/;
     const hits: string[] = [];
     /** isRoundSettled 定义体出现次数：判据必须**恰好定义一处**（与上方豁免互为闭环，防豁免被滥用） */
     let settledDefCount = 0;
