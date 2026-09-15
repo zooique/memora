@@ -78,5 +78,6 @@ description: 带伤设计（历史折衷残痕）审查规则——区分「正�
 | **规避行为红旗（2026-09-15 真机）** | 桌面互动叙事项目 round 内，LLM 表达"绕过压缩缓存"，弃 read_file 改 shell 脚本/搜索引擎拿全文 | read_file 通道在 LLM 眼里"失真"——被压缩链 + 台账 400 字替身叠加后拿不回整份视角 | 宿主侧把"绕 read_file 改脚本"标记为可观测 trace；复现后定类 |
 | **ADR-031 补缝过度拦截候选（2026-09-15 登记）** | 上一轮补"整读小文件也记全覆盖"（防 182 次重读永动机）后，可能反向拦截"LLM 合法重读拿回视角" | 整读小文件记全覆盖 + 压缩后重读回显摘要，是否让「对齐评估/全文比对」任务被迫绕路 | 真机复现确认是否过度拦截；不确认不动 |
 | **主流差距（远期打磨方向，非现在做）** | 主流 read_file：大文件强制 `query` 意图参数；工具结果 offload 到 scratch 文件；read>N 未产出收敛暂停门 | 是否吸收进本项目 read_file 分段策略 | 待主流方向与本项目耦合需求明确后单独立项 |
+| **会议空响应零推进（2026-09-15 真机）** | 「小组会议」round 内 `tokenOut:0`（空响应），会议骨架完全未建、无任何 tool_call | 会议预置若是确定性角色分配，理论上不应依赖 LLM 首发才推进——空响应下会议应仍有兜底产物而非零推进 | 真机复现确认会议空响应是否需首发豁免；样本不足暂不贸然动 |
 
 > 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)、[progressive-refactor-rules.md](./progressive-refactor-rules.md)
