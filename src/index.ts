@@ -174,6 +174,7 @@ export type {
   ProjectFileSearchOptions,
   ProjectTextMatch,
   ProjectTextSearchOptions,
+  ProjectTextSearchResult,
 } from '@/project-search/types.js';
 // safeSearchProjectFiles/safeSearchProjectText：带超时保护的项目搜索包装（宿主可复用）
 export {

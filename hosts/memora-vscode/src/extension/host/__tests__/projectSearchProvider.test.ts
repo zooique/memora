@@ -6,11 +6,10 @@
  *   - searchFiles：query 省略时默认列出项目全部文件
  *   - searchFiles：Windows 反斜杠统一为正斜杠
  *   - searchText：真实临时目录 fs 扫描（content 模式 = 宿主 Node fs 受限实现）
- *     · 按关键词命中 路径:行号:预览
- *     · 忽略标准目录（node_modules 等，对齐内核 list_dir）
- *     · exclude 路径段过滤
- *     · 大小写不敏感
- *     · 无命中返回空数组
+ *     · 按关键词命中 路径:行号:预览 / 大小写不敏感 / exclude 过滤 / 忽略标准目录 / mtime 缓存
+ *     · 诚实化上报（SEARCH-1）：截断与主因 / 已扫文件数 / 超大跳过 / 单文件上限精确判定
+ *     · 精确优先 + 零命中回退（F1）：整串命中不放宽，整串零命中才用内核下发的 terms 放宽
+ *     · 🔴 Canary：自埋唯一 token 必被搜到（仪器自检——"你从没见它非零过的零不是证据"）
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
 import * as vscode from 'vscode';
@@ -26,6 +25,11 @@ vi.mock('vscode', () => ({
 }));
 
 import { createVscodeProjectSearchProvider } from '../projectSearchProvider.js';
+
+/** 建一个独立临时项目目录（调用方负责 finally 里 rmSync） */
+function makeTmp(): string {
+  return mkdtempSync(join(tmpdir(), 'memora-search-'));
+}
 
 describe('VscodeProjectSearchProvider', () => {
   const root = 'C:/proj';
@@ -103,7 +107,7 @@ describe('VscodeProjectSearchProvider', () => {
     let tmp: string;
 
     beforeEach(() => {
-      tmp = mkdtempSync(join(tmpdir(), 'memora-search-'));
+      tmp = makeTmp();
       mkdirSync(join(tmp, 'src'), { recursive: true });
       mkdirSync(join(tmp, 'node_modules'), { recursive: true });
       writeFileSync(join(tmp, 'src/index.ts'), 'export const x = 1;\nconst TODO = "fix me";\n', 'utf-8');
@@ -120,21 +124,31 @@ describe('VscodeProjectSearchProvider', () => {
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO' });
       // 命中 3 个文件（node_modules 被忽略）
-      const paths = result.map((m) => m.path);
+      const paths = result.matches.map((m) => m.path);
       expect(paths).toContain('src/index.ts');
       expect(paths).toContain('src/utils.ts');
       expect(paths).toContain('README.md');
       expect(paths).not.toContain('node_modules/ignored.ts');
       // 行号 1 起 + 预览片段
-      const indexHit = result.find((m) => m.path === 'src/index.ts')!;
+      const indexHit = result.matches.find((m) => m.path === 'src/index.ts')!;
       expect(indexHit.line).toBe(2);
       expect(indexHit.preview).toContain('TODO');
+    });
+
+    it('scannedFiles = 实际参与匹配的文件数（超大/不可读不计入）', async () => {
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'TODO' });
+      // 语料 = README.md + src/index.ts + src/utils.ts（node_modules 整目录忽略）
+      expect(result.scannedFiles).toBe(3);
+      expect(result.truncated).toBe(false);
+      expect(result.truncatedBy).toBeUndefined();
+      expect(result.oversizedSkipped).toBeUndefined();
     });
 
     it('大小写不敏感匹配（对齐全局搜索缺省）', async () => {
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'todo' });
-      expect(result.length).toBeGreaterThan(0);
+      expect(result.matches.length).toBeGreaterThan(0);
     });
 
     it('exclude 路径段过滤（排除 docs 目录）', async () => {
@@ -142,7 +156,7 @@ describe('VscodeProjectSearchProvider', () => {
       writeFileSync(join(tmp, 'docs/guide.md'), 'TODO guide\n', 'utf-8');
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO', exclude: 'docs' });
-      const paths = result.map((m) => m.path);
+      const paths = result.matches.map((m) => m.path);
       expect(paths).not.toContain('docs/guide.md');
       expect(paths).toContain('README.md');
     });
@@ -150,25 +164,28 @@ describe('VscodeProjectSearchProvider', () => {
     it('忽略 node_modules 目录（对齐内核 list_dir 忽略规则）', async () => {
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO' });
-      expect(result.some((m) => m.path.startsWith('node_modules'))).toBe(false);
+      expect(result.matches.some((m) => m.path.startsWith('node_modules'))).toBe(false);
     });
 
     it('默认忽略 + exclude 独立叠加：exclude 无法取消默认忽略（G5 合并语义）', async () => {
       // 即使显式用 exclude 试图"取消忽略" node_modules，默认忽略仍无条件生效（AND 叠加）
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO', exclude: '!node_modules' });
-      expect(result.some((m) => m.path.startsWith('node_modules'))).toBe(false);
+      expect(result.matches.some((m) => m.path.startsWith('node_modules'))).toBe(false);
       // 非默认忽略目录不受影响：docs 仍可通过 exclude 命中排除
       mkdirSync(join(tmp, 'docs'), { recursive: true });
       writeFileSync(join(tmp, 'docs/guide.md'), 'TODO guide\n', 'utf-8');
       const filtered = await provider.searchText({ pattern: 'TODO', exclude: 'docs' });
-      expect(filtered.some((m) => m.path.startsWith('docs'))).toBe(false);
+      expect(filtered.matches.some((m) => m.path.startsWith('docs'))).toBe(false);
     });
 
-    it('无命中时返回空数组', async () => {
+    it('无命中时返回空列表，且截断字段如实为 false（反向守卫：宿主不得"永远喊截断"）', async () => {
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: '绝不存在的关键词xyz' });
-      expect(result).toEqual([]);
+      expect(result.matches).toEqual([]);
+      expect(result.truncated).toBe(false);
+      expect(result.truncatedBy).toBeUndefined();
+      expect(result.failed).toBeUndefined();
     });
 
     it('glob exclude 通配（**）跳过整棵子树', async () => {
@@ -176,32 +193,40 @@ describe('VscodeProjectSearchProvider', () => {
       writeFileSync(join(tmp, 'src/sub/a.ts'), 'TODO in nested\n', 'utf-8');
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO', exclude: 'src/**' });
-      const paths = result.map((m) => m.path);
+      const paths = result.matches.map((m) => m.path);
       // src 整棵子树被排除（含嵌套），README 仍命中
       expect(paths).not.toContain('src/index.ts');
       expect(paths).not.toContain('src/sub/a.ts');
       expect(paths).toContain('README.md');
     });
 
-    it('达到结果上限时携带 truncated 标记（截断诚实化）', async () => {
-      // 造 5 个命中文件，请求上限 3 → 达上限提前停止并置 truncated
+    it('达到结果上限时上报 truncated + truncatedBy="results"（截断诚实化）', async () => {
+      // 造 5 个命中文件，请求上限 3 → 达上限提前停止并记录主因
       for (let i = 0; i < 5; i++) {
         writeFileSync(join(tmp, `src/file${i}.ts`), `TODO item ${i}\n`, 'utf-8');
       }
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO', maxResults: 3 });
-      expect(result.length).toBe(3);
-      // 每条结果携带全局截断标记，供内核提示 LLM 勿误判「项目仅此这些」
-      expect(result.every((m) => m.truncated)).toBe(true);
+      expect(result.matches.length).toBe(3);
+      expect(result.truncated).toBe(true);
+      expect(result.truncatedBy).toBe('results');
     });
 
-    it('单文件命中数上限（MAX_MATCHES_PER_FILE=3，防单文件刷屏）', async () => {
-      const many = 'TODO a\nTODO b\nTODO c\nTODO d\nTODO e\n';
-      writeFileSync(join(tmp, 'src/many.ts'), many, 'utf-8');
+    it('单文件命中数上限（MAX_MATCHES_PER_FILE=3）+ perFileCapped 精确判定', async () => {
+      writeFileSync(join(tmp, 'src/many.ts'), 'TODO a\nTODO b\nTODO c\nTODO d\nTODO e\n', 'utf-8');
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO' });
-      const manyHits = result.filter((m) => m.path === 'src/many.ts');
-      expect(manyHits.length).toBe(3);
+      expect(result.matches.filter((m) => m.path === 'src/many.ts').length).toBe(3);
+      // 真有第 4 条命中 → 精确置位（不是"可能还有"的保守猜测）
+      expect(result.perFileCapped).toBe(true);
+    });
+
+    it('恰好命中 3 条时不置 perFileCapped（精确判定的反向守卫）', async () => {
+      writeFileSync(join(tmp, 'src/exact.ts'), 'TODO a\nTODO b\nTODO c\n', 'utf-8');
+      const provider = createVscodeProjectSearchProvider(tmp);
+      const result = await provider.searchText({ pattern: 'TODO' });
+      expect(result.matches.filter((m) => m.path === 'src/exact.ts').length).toBe(3);
+      expect(result.perFileCapped).toBeUndefined();
     });
 
     it('mtime 快照缓存：文件修改后重新搜索返回新内容（缓存按 mtime 失效）', async () => {
@@ -213,7 +238,131 @@ describe('VscodeProjectSearchProvider', () => {
       // 等待 mtime 变化（同毫秒写入可能 mtimeMs 相同导致缓存漏检）
       await new Promise((r) => setTimeout(r, 20));
       const result = await provider.searchText({ pattern: 'NEW_FLAG' });
-      expect(result.some((m) => m.path === 'src/index.ts' && m.preview?.includes('NEW_FLAG'))).toBe(true);
+      expect(result.matches.some((m) => m.path === 'src/index.ts' && m.preview?.includes('NEW_FLAG'))).toBe(
+        true,
+      );
     });
+  });
+
+  describe('searchText · 诚实化上报与放宽（SEARCH-1）', () => {
+    it('🔴 Canary：自埋唯一 token 必被搜到（仪器自检）', async () => {
+      // 依据："你从没见它非零过的零，不是证据"——先证仪器可用，再谈"没搜到"是否可信
+      const tmp = makeTmp();
+      try {
+        const token = 'CANARY_TOKEN_9f3a1c';
+        writeFileSync(join(tmp, 'canary.md'), `# 自埋标记\n${token}\n`, 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: token });
+        expect(result.matches.map((m) => m.path)).toContain('canary.md');
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('超大文件（>64KB）被整文件跳过时上报 oversizedSkipped（F4-lite：不再静默）', async () => {
+      const tmp = makeTmp();
+      try {
+        writeFileSync(join(tmp, 'small.md'), 'needle_small\n', 'utf-8');
+        // > 64KB → 当前实现整文件不可搜（S2 改为部分读后此断言需同步修订）
+        writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_big\n`, 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: 'needle_small' });
+        expect(result.matches.map((m) => m.path)).toEqual(['small.md']);
+        expect(result.oversizedSkipped).toBe(1);
+        expect(result.scannedFiles).toBe(1);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('零命中 + 有超大跳过 → 两者同时上报（内核据此不把"没搜到"说成"不存在"）', async () => {
+      const tmp = makeTmp();
+      try {
+        writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_big\n`, 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: 'needle_big' });
+        // 词就在 big.md 里，但该文件被整文件跳过 —— 这正是必须上报的原因
+        expect(result.matches).toEqual([]);
+        expect(result.oversizedSkipped).toBe(1);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('整串零命中 → 用内核下发的 terms 放宽，并回填 relaxed/termsUsed（修 F1）', async () => {
+      const tmp = makeTmp();
+      try {
+        writeFileSync(join(tmp, 'a.md'), '核心能力清单\n', 'utf-8');
+        writeFileSync(join(tmp, 'b.md'), '愿景与实现\n', 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+
+        // ① 不给 terms：整串 `核心 愿景` 无此连续子串 → 零命中（现状行为）
+        const strict = await provider.searchText({ pattern: '核心 愿景' });
+        expect(strict.matches).toEqual([]);
+        expect(strict.relaxed).toBeUndefined();
+
+        // ② 给了 terms：放宽为 OR → 两个文件都命中，且如实标注"非精确命中"
+        const relaxed = await provider.searchText({ pattern: '核心 愿景', terms: ['核心', '愿景'] });
+        expect(relaxed.matches.map((m) => m.path)).toEqual(['a.md', 'b.md']);
+        expect(relaxed.relaxed).toBe(true);
+        expect(relaxed.termsUsed).toEqual(['核心', '愿景']);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('验收 §六.1：`核心|愿景` / `核心 愿景` / `核心/愿景` 三种写法放宽后命中条数相同且 > 0', async () => {
+      const tmp = makeTmp();
+      try {
+        writeFileSync(join(tmp, 'a.md'), '核心能力清单\n', 'utf-8');
+        writeFileSync(join(tmp, 'b.md'), '愿景与实现\n', 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const terms = ['核心', '愿景'];
+        const counts: number[] = [];
+        for (const pattern of ['核心|愿景', '核心 愿景', '核心/愿景']) {
+          const r = await provider.searchText({ pattern, terms });
+          counts.push(r.matches.length);
+        }
+        expect(counts).toEqual([2, 2, 2]);
+        expect(counts.every((c) => c > 0)).toBe(true);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('整串命中时不再放宽（保持精度：不把精确命中变成"可能不是精确命中"）', async () => {
+      const tmp = makeTmp();
+      try {
+        writeFileSync(join(tmp, 'a.md'), '核心 愿景 都在这行\n', 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: '核心 愿景', terms: ['核心', '愿景'] });
+        expect(result.matches.map((m) => m.path)).toEqual(['a.md']);
+        expect(result.relaxed).toBeUndefined();
+        expect(result.termsUsed).toBeUndefined();
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    // 本用例建 501 个真实文件并走满 500 次扫描（隔离态 ≈0.9s），默认 5s 上限在
+    // 与其他测试套件并发 / 磁盘争用时会被 I/O 拖爆（非逻辑失败）→ 显式放宽上限。
+    it('扫描达文件上限（500）时上报 truncatedBy="files"（F2：没搜完 ≠ 没搜到）', async () => {
+      const tmp = makeTmp();
+      try {
+        const many = join(tmp, 'many');
+        mkdirSync(many, { recursive: true });
+        for (let i = 0; i < 501; i++) {
+          writeFileSync(join(many, `f${String(i).padStart(4, '0')}.txt`), 'nothing here\n', 'utf-8');
+        }
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: '绝不出现的词', maxResults: 20 });
+        expect(result.matches).toEqual([]);
+        expect(result.truncated).toBe(true);
+        expect(result.truncatedBy).toBe('files');
+        expect(result.scannedFiles).toBe(500);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }, 30_000);
   });
 });

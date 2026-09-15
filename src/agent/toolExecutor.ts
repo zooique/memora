@@ -25,8 +25,12 @@ import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 import { formatExecutionResult, formatScriptResult, runSkillScript } from '@/skill/skillScriptRunner.js';
 import { resolveSafePath } from '@/utils/scanner.js';
-import type { IProjectSearchProvider } from '@/project-search/types.js';
+import type {
+  IProjectSearchProvider,
+  ProjectTextSearchResult,
+} from '@/project-search/types.js';
 import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
+import { buildSearchTerms } from '@/project-search/terms.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
 
@@ -131,6 +135,76 @@ function computeBudgetCappedMaxResults(remainingTokens: number | undefined): num
   if (remainingTokens === undefined) return PROJECT_SEARCH_RESULT_MAX_LEN;
   const tier = SEARCH_BUDGET_TIERS.find((t) => remainingTokens >= t.minRemaining);
   return tier?.cap ?? SEARCH_BUDGET_TIERS.at(-1)!.cap;
+}
+
+/**
+ * search_project（content 模式）结果格式化 —— 诚实化收口（SEARCH-1）
+ *
+ * 三态分流（对齐 ripgrep 的 exit 0 / 1 / 2）：
+ *   - `failed`              → 检索**未完成**，不得表述为"未找到"（F3：搜索坏了 ≠ 项目里没有）；
+ *   - `matches.length === 0` → 零命中，但必须交代「这个零为什么可以信」：截断（F2）/ 超大文件跳过（F4）/ 已放宽（F1）；
+ *   - 有命中               → 列结果 + 标注放宽 / 截断 / 单文件上限（F5/F6）。
+ *
+ * ⚠️ 放宽用词**只**从 `result.termsUsed` 取（**不**回退到调用方自己下发的 `terms`）：两份副本要
+ * 保持一致就是双轨镜像；唯一真值 = 宿主回报的"实际用了哪些词"。
+ * ⚠️ 文案不重复宿主内部的魔法数（如单文件上限 3）：内核从不扫描，把宿主的内部预算写进内核文案
+ * 就是跨层常量镜像（D4 判定律），故只说"被单文件上限截断"而不说"仅显示前 3 条"。
+ */
+function formatProjectTextSearch(result: ProjectTextSearchResult, query: string): string {
+  if (result.failed) {
+    return (
+      `（项目内容检索未完成（超时或出错），"${query}" 是否存在尚无结论——这不是"没搜到"。` +
+      '可重试一次，或换更短/更具体的关键词）'
+    );
+  }
+
+  const scanned = result.scannedFiles ?? 0;
+  const skipped = result.oversizedSkipped ?? 0;
+  const relaxedNote = result.relaxed
+    ? `；整串未命中，已按分词放宽为 ${(result.termsUsed ?? []).join('、')} 后仍未命中`
+    : '';
+
+  if (result.matches.length === 0) {
+    // 零命中的"可信度缺口"：有哪些文件/范围根本没被检索过
+    const gaps: string[] = [];
+    if (result.truncated) {
+      gaps.push(
+        result.truncatedBy === 'files'
+          ? `已扫描 ${scanned} 个文件后达扫描上限，项目仍有未检索的文件`
+          : '结果与扫描均已达上限，项目可能仍有未检索的文件',
+      );
+    }
+    if (skipped > 0) gaps.push(`另有 ${skipped} 个超大文件未参与检索`);
+    if (gaps.length > 0) {
+      return (
+        `（未找到包含 "${query}" 的文件${relaxedNote}；但${gaps.join('，')}——` +
+        '因此这个"未找到"不等于"不存在"，可缩小 exclude 范围或换更具体的关键词后重试）'
+      );
+    }
+    return `（未找到包含 "${query}" 的文件${relaxedNote}；已检索 ${scanned} 个文件，无截断、无跳过）`;
+  }
+
+  const lines = result.matches
+    .map((m, i) => `${i + 1}. ${m.path}${m.line ? `:${m.line}` : ''}${m.preview ? ` — ${m.preview}` : ''}`)
+    .join('\n');
+  const notes: string[] = [];
+  if (result.relaxed) {
+    notes.push(
+      `整串未精确命中，以下为按分词放宽（${(result.termsUsed ?? []).join('、')}）后的匹配，可能不是精确命中`,
+    );
+  }
+  if (result.perFileCapped) {
+    notes.push('部分文件的命中被单文件上限截断（该文件内可能还有更多命中，可用 read_file 精读）');
+  }
+  if (result.truncated) {
+    notes.push(
+      result.truncatedBy === 'files'
+        ? `已扫描 ${scanned} 个文件后达扫描上限，项目可能仍有更多匹配`
+        : `结果可能已截断：仅返回前 ${result.matches.length} 条，项目可能仍有更多匹配`,
+    );
+  }
+  if (skipped > 0) notes.push(`另有 ${skipped} 个超大文件未参与检索`);
+  return notes.length > 0 ? `${lines}\n（${notes.join('；')}）` : lines;
 }
 
 // ─── read_skill / read_resource 注入防御常量 ─────────────────
@@ -992,22 +1066,16 @@ export class ToolExecutor {
           if (!query) {
             return '[ERR:INVALID_ARG] content 模式需要 query 内容关键词';
           }
-          const textMatches = await safeSearchProjectText(this.projectSearchProvider, {
+          // 放宽词表（D1 精确优先 + 零命中回退）：剔除与整串等价的词——否则宿主会做一轮与
+          // 精确轮逐字相同的徒劳扫描，并回报一个名不副实的 relaxed
+          const terms = buildSearchTerms(query).filter((t) => t.toLowerCase() !== query.trim().toLowerCase());
+          const search = await safeSearchProjectText(this.projectSearchProvider, {
             pattern: query,
+            ...(terms.length > 0 ? { terms } : {}),
             exclude,
             maxResults,
           });
-          if (textMatches.length === 0) {
-            return `（未在项目中找到包含 "${query}" 的文件）`;
-          }
-          const textLines = textMatches
-            .map((m, i) => `${i + 1}. ${m.path}${m.line ? `:${m.line}` : ''}${m.preview ? ` — ${m.preview}` : ''}`)
-            .join('\n');
-          // 截断诚实化：结果达上限或宿主标记截断时，提示 LLM 勿误判"项目仅此这些"（避免缩小范围后漏答）
-          const truncated = textMatches.length >= maxResults || textMatches.some((m) => m.truncated);
-          return truncated
-            ? `${textLines}\n（结果可能已截断：仅返回前 ${textMatches.length} 条，项目可能仍有更多匹配；如需精确定位请换更具体的关键词）`
-            : textLines;
+          return formatProjectTextSearch(search, query);
         }
         // name 模式：query 为文件名 glob（省略时列出项目全部文件）
         const fileMatches = await safeSearchProjectFiles(this.projectSearchProvider, {

@@ -6,9 +6,12 @@
  *   - content 模式：宿主 Node fs 受限实现（workspace.findTextInFiles 为 proposed API，非 stable，
  *     不可用于生产；故用受控递归扫描 + 正则匹配；忽略目录与结果上限 import 自内核单一真理源）
  *
- * 三项可靠性设计：
+ * 四项可靠性设计：
  *   - exclude 语义统一：content 模式按 glob 通配匹配相对路径（支持 ** / * / ?），与 name 模式一致；
- *   - 截断诚实化：扫描达文件/结果上限时置 truncated 标记，通知内核提示 LLM 勿误判"项目仅此这些"；
+ *   - 诚实化上报（SEARCH-1）：截断及其主因 / 已扫文件数 / 超大跳过数 / 单文件上限 / 是否放宽 —— 一律回报
+ *     内核，零命中不再与"没搜完""搜坏了"逐字同形（截断挂在逐条命中上时，空数组没有载体）；
+ *   - 精确优先 + 零命中回退：content 模式先按整串字面量匹配，整串零命中**且**内核下发了 `terms` 才做一次
+ *     分词 OR 放宽（放宽的判定留在这里：只有宿主知道扫了多少、扫完没有）；
  *   - mtime 快照缓存：同一 provider 实例内复用未变更文件的读取内容，跳过重复 readFile IO。
  *
  * 相对路径约定：返回相对项目根的 posix 路径（正斜杠），与 read_file / list_dir 的相对路径
@@ -25,6 +28,7 @@ import {
   type ProjectFileSearchOptions,
   type ProjectTextMatch,
   type ProjectTextSearchOptions,
+  type ProjectTextSearchResult,
 } from '@zooique/memora';
 
 /** content 搜索最大扫描文件数（防超大项目遍历失控卡死主循环） */
@@ -68,32 +72,128 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
     /**
      * 按内容全文搜索（宿主 Node fs 受限实现；对齐内核 list_dir 忽略规则 + 上限保护）
      *
-     * @param options pattern 为内容关键词（正则语义，大小写不敏感）；exclude 排除路径子串
-     * @returns 命中文件路径 + 行号 + 预览片段（供 read_file 精读定位）
+     * 两轮语义（精确优先 + 零命中回退）：先按 `pattern` **字面量**整串匹配（大小写不敏感，
+     * 对齐全局搜索缺省）；整串零命中**且**内核下发了 `terms` 时，才用 `terms` 做一次 OR 放宽，
+     * 并以 `relaxed` + `termsUsed` 如实回报。
+     *
+     * 注：`pattern` 是**字面量**而非正则（原注释误称"正则语义"，下一行就被 `escapeRegExp` 撤销——
+     * 属断言与实现相悖的僵尸声明，2026-09-15 随 SEARCH-1 一并纠正）。
+     *
+     * @param options pattern 为内容关键词（字面量，大小写不敏感）；terms 为内核下发的放宽词表；
+     *                exclude 排除路径 glob
+     * @returns 命中列表 + 本次检索的元信息（截断/主因/已扫数/超大跳过/单文件上限/是否放宽）
      */
-    async searchText(options: ProjectTextSearchOptions): Promise<ProjectTextMatch[]> {
-      const matches: ProjectTextMatch[] = [];
+    async searchText(options: ProjectTextSearchOptions): Promise<ProjectTextSearchResult> {
       const maxResults = Math.min(options.maxResults ?? 20, PROJECT_SEARCH_RESULT_MAX_LEN);
-      // 关键词按正则（escape 后精确匹配；大小写不敏感对齐全局搜索缺省）
-      const re = new RegExp(escapeRegExp(options.pattern), 'i');
       // exclude 语义与 name 模式统一：glob 通配匹配相对路径（支持 ** / * / ?）
       const excludeRe = options.exclude ? globToRegExp(options.exclude) : null;
-      // 扫描计数：scanned 记录已扫描文件数；truncated 标记是否达上限提前停止（截断诚实化）
-      const counter = { scanned: 0, truncated: false };
-      await walkText(
+      // 第一轮：整串字面量（精确优先）
+      const primary = await scanText(
         root,
-        root,
-        re,
-        excludeRe,
-        matches,
+        escapeRegExp(options.pattern),
         maxResults,
-        counter,
+        excludeRe,
         contentCache,
       );
-      // 截断诚实化：达上限提前停止时，为每条结果携带全局截断标记（内核据此提示 LLM）
-      return matches.map((m) => ({ ...m, truncated: counter.truncated }));
+      const terms = options.terms ?? [];
+      if (primary.matches.length > 0 || terms.length === 0) return toTextResult(primary);
+      // 第二轮：零命中且内核下发了放宽词表 → 分词 OR 放宽（任一命中即算，非"全部包含"）
+      const relaxed = await scanText(
+        root,
+        terms.map(escapeRegExp).join('|'),
+        maxResults,
+        excludeRe,
+        contentCache,
+      );
+      return { ...toTextResult(relaxed), relaxed: true, termsUsed: [...terms] };
     },
   };
+}
+
+/**
+ * 一次内容扫描的事实收集（截断/跳过**一律回报**，不做静默）
+ */
+interface TextScanState {
+  /** 是否达上限提前停止（还有结果/文件未返回） */
+  truncated: boolean;
+  /** 截断主因：results 结果达上限 / files 扫描达文件上限 */
+  truncatedBy?: 'results' | 'files';
+  /** 实际参与匹配的文件数（超大/不可读的不计入） */
+  scannedFiles: number;
+  /** 因超过单文件读取上限而被整文件跳过的文件数 */
+  oversizedSkipped: number;
+  /** 是否有文件的命中数被单文件上限截断（精确判定：真见到第 CAP+1 条命中才置位） */
+  perFileCapped: boolean;
+}
+
+/** 一次扫描的产出 */
+interface TextScan {
+  matches: ProjectTextMatch[];
+  state: TextScanState;
+}
+
+/**
+ * 执行一次内容扫描（一次扫描 = 一个正则 + 一份状态）
+ *
+ * @param root 项目根绝对路径
+ * @param patternSource 已转义的正则源（调用方负责逃生：字面量或 `a|b` 词表）
+ * @param maxResults 结果条数上限
+ * @param excludeRe exclude glob 转正则（null 表示不过滤）
+ * @param cache content 缓存（mtime 快照，复用未变更文件内容）
+ */
+async function scanText(
+  root: string,
+  patternSource: string,
+  maxResults: number,
+  excludeRe: RegExp | null,
+  cache: Map<string, { mtimeMs: number; size: number; content: string }>,
+): Promise<TextScan> {
+  const matches: ProjectTextMatch[] = [];
+  const state: TextScanState = {
+    truncated: false,
+    scannedFiles: 0,
+    oversizedSkipped: 0,
+    perFileCapped: false,
+  };
+  const re = new RegExp(patternSource, 'i');
+  await walkText(root, root, re, excludeRe, matches, maxResults, state, cache);
+  return { matches, state };
+}
+
+/**
+ * 扫描状态 → 结果对象（可选字段仅在"真的发生了"时才带上，避免 `undefined` 占位被误读为"否"）
+ */
+function toTextResult(scan: TextScan): ProjectTextSearchResult {
+  const { state } = scan;
+  return {
+    matches: scan.matches,
+    truncated: state.truncated,
+    ...(state.truncatedBy !== undefined ? { truncatedBy: state.truncatedBy } : {}),
+    scannedFiles: state.scannedFiles,
+    ...(state.oversizedSkipped > 0 ? { oversizedSkipped: state.oversizedSkipped } : {}),
+    ...(state.perFileCapped ? { perFileCapped: true } : {}),
+  };
+}
+
+/**
+ * 是否已达上限需要停止（并记录截断主因）
+ *
+ * 结果上限优先于文件上限：结果已满 = 更靠前的停因，也是更可操作的信息（换更精确的关键词）。
+ *
+ * @returns true 表示应立即停止本次遍历
+ */
+function shouldStop(matchCount: number, state: TextScanState, maxResults: number): boolean {
+  if (matchCount >= maxResults) {
+    state.truncated = true;
+    state.truncatedBy = 'results';
+    return true;
+  }
+  if (state.scannedFiles >= MAX_FILES_SCANNED) {
+    state.truncated = true;
+    state.truncatedBy = 'files';
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -109,7 +209,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
  * @param excludeRe exclude glob 转正则（匹配相对路径；null 表示不过滤）
  * @param matches 结果收集（超 maxResults 停止）
  * @param maxResults 结果上限
- * @param counter 扫描计数（scanned 已扫描文件数；truncated 达上限提前停止标记）
+ * @param state 扫描状态（截断/已扫数/超大跳过/单文件上限）
  * @param cache content 缓存（mtime 快照，复用未变更文件内容）
  */
 async function walkText(
@@ -119,14 +219,11 @@ async function walkText(
   excludeRe: RegExp | null,
   matches: ProjectTextMatch[],
   maxResults: number,
-  counter: { scanned: number; truncated: boolean },
+  state: TextScanState,
   cache: Map<string, { mtimeMs: number; size: number; content: string }>,
 ): Promise<void> {
-  // 达上限提前停止：标记截断（还有更多结果/文件未返回），由 searchText 统一带出
-  if (matches.length >= maxResults || counter.scanned >= MAX_FILES_SCANNED) {
-    counter.truncated = true;
-    return;
-  }
+  // 达上限提前停止：记录截断与主因（还有更多结果/文件未返回），由 searchText 统一带出
+  if (shouldStop(matches.length, state, maxResults)) return;
 
   let names: string[];
   try {
@@ -137,10 +234,7 @@ async function walkText(
   names.sort();
 
   for (const name of names) {
-    if (matches.length >= maxResults || counter.scanned >= MAX_FILES_SCANNED) {
-      counter.truncated = true;
-      return;
-    }
+    if (shouldStop(matches.length, state, maxResults)) return;
     // 忽略标准目录（import 自内核单一真理源 IGNORED_DIR_NAMES，与 list_dir 规则一致）
     if (IGNORED_DIR_NAMES.includes(name)) continue;
 
@@ -154,15 +248,19 @@ async function walkText(
       if (s.isDirectory()) {
         // 目录级 exclude：目录自身或其子路径前缀命中即跳过整棵子树（如 exclude "docs/**" 跳过 docs 目录）
         if (excludeRe && (excludeRe.test(rel) || excludeRe.test(`${rel}/`))) continue;
-        await walkText(root, abs, re, excludeRe, matches, maxResults, counter, cache);
+        await walkText(root, abs, re, excludeRe, matches, maxResults, state, cache);
       } else {
         // 读取文件文本（带 mtime 快照缓存）；超大文件/读取失败返回 null 跳过
         const loaded = await readTextCached(abs, cache);
         if (loaded === null) continue;
-        // 跳过超大文件（单文件读取上限防内存/性能风险）
-        if (loaded.size > MAX_FILE_BYTES) continue;
-        counter.scanned++;
-        await matchFileText(rel, re, loaded.content, matches, maxResults);
+        // 跳过超大文件（单文件读取上限防内存/性能风险）——跳过数**必须上报**：
+        // 静默跳过 = 调用方会把"这部分没搜"读成"项目里没有"（F4-lite）
+        if (loaded.size > MAX_FILE_BYTES) {
+          state.oversizedSkipped++;
+          continue;
+        }
+        state.scannedFiles++;
+        await matchFileText(rel, re, loaded.content, matches, maxResults, state);
       }
     } catch {
       // 单个文件 stat/读失败：跳过（权限/并发删除等）
@@ -171,13 +269,19 @@ async function walkText(
 }
 
 /**
- * 读取单个文件文本并收集内容匹配（内容只读前 MAX_FILE_BYTES 字节，单文件最多 MAX_MATCHES_PER_FILE 条）
+ * 收集单个文件的内容匹配（单文件最多 MAX_MATCHES_PER_FILE 条）
+ *
+ * 单文件上限是"精确判定"而非保守猜测：命中满 CAP 后**继续探测**是否还有第 CAP+1 条命中，
+ * 真见到才置 `perFileCapped`（否则"还剩更多"是我猜的，而不是事实）。代价 ≈ 一个正则扫描。
+ *
+ * 注：`content` 由 `readTextCached` 提供（当前实现为整文件读入后截断，见该函数注释的 S2 待办）。
  *
  * @param rel 文件相对项目根的 posix 路径
  * @param re 内容匹配正则
- * @param content 文件内容（前 MAX_FILE_BYTES 字节，由 readTextCached 提供）
+ * @param content 文件内容
  * @param matches 结果收集
  * @param maxResults 结果上限
+ * @param state 扫描状态（置 perFileCapped）
  */
 async function matchFileText(
   rel: string,
@@ -185,14 +289,19 @@ async function matchFileText(
   content: string,
   matches: ProjectTextMatch[],
   maxResults: number,
+  state: TextScanState,
 ): Promise<void> {
   if (matches.length >= maxResults) return;
 
   const lines = content.split('\n');
   let hits = 0;
-  for (let i = 0; i < lines.length && hits < MAX_MATCHES_PER_FILE; i++) {
+  for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!;
     if (!re.test(line)) continue;
+    if (hits >= MAX_MATCHES_PER_FILE) {
+      state.perFileCapped = true;
+      return;
+    }
     // 预览片段：去控制字符 + 限长（防不可见字符/超长行注入上下文）
     const preview = line.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, 200);
     matches.push({ path: rel, line: i + 1, preview });
@@ -206,7 +315,13 @@ async function matchFileText(
  *
  * @param abs 文件绝对路径
  * @param cache content 缓存（provider 闭包持有）
- * @returns { size, content } 文件大小与前 MAX_FILE_BYTES 字节文本；读取失败返回 null
+ * @returns { size, content } 文件大小与内容（当前为整文件读入）；读取失败返回 null
+ *
+ * ⚠️ **已知未达成的宣称**（F4，S2 待办）：本函数当前为 `readFile` **全量读入**后再由调用方按
+ * `size > MAX_FILE_BYTES` 跳过——也就是说 `MAX_FILE_BYTES` 的"防大文件读爆内存"保护**尚未生效**，
+ * 且超大文件是**整文件不可搜**（而非只搜前 N 字节）。S2 改为：`size` 预检前移到 `readFile` 之前
+ * + `fs.open`/`read` 只读前 64KB + UTF-8 字节边界按 `lastIndexOf('\n')` 收口。
+ * 本次（S1）只把"跳过了多少个"如实上报，不动 IO。
  */
 async function readTextCached(
   abs: string,
@@ -219,7 +334,7 @@ async function readTextCached(
     if (hit && hit.mtimeMs === s.mtimeMs) {
       return { size: hit.size, content: hit.content };
     }
-    // 只读前 MAX_FILE_BYTES 字节（对齐 size 预检双保险，防读取中途文件膨胀）
+    // 整文件读入后截断到 MAX_FILE_BYTES 字节（S2 将改为只读前 N 字节，见函数注释）
     const buf = await readFile(abs);
     const content = buf.subarray(0, MAX_FILE_BYTES).toString('utf-8');
     // 缓存上限保护：超限清空（简单策略，防内存无界增长）

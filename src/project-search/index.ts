@@ -8,5 +8,6 @@ export type {
   ProjectFileSearchOptions,
   ProjectTextMatch,
   ProjectTextSearchOptions,
+  ProjectTextSearchResult,
 } from '@/project-search/types.js';
 export { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
