@@ -69,9 +69,10 @@ import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
 import { detectNeedsPlanning, PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
 
-/** P0-2 失败硬闸的主体 key（工具名 + 规范化 path/query）：同主体连续失败计数用，粒度=同参（N2 修正） */
+/** P0-2 失败硬闸的主体 key（工具名 + 规范化 path/query/item）：同主体连续失败计数用，粒度=同参（N2 修正） */
 function failureSubjectKey(toolName: string, subject: CacheEntry['subject']): string {
-  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.query ?? ''}`;
+  // item 纳入：trace_summary 同 sessionId 不同 roundId 计为不同主体，不把「任一 round 失败」误并到整个会话
+  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.query ?? ''}\u0002${subject.item ?? ''}`;
 }
 
 export interface AgentLoopOptions {
@@ -1598,7 +1599,10 @@ export class AgentLoop {
                 Promise.resolve(
                   `[ALREADY_READ] 该结果仍在你的当前上下文中（第 ${hit.cachedAtIteration} 步获取：` +
                     `${formatDedupSubject(tc.function.name, subject)}），无需重复获取。` +
-                    `如需该文件的其它部分，请用 offset/limit 指定行区间。`,
+                    // 「offset/limit 引导」仅对 read_file 有意义（文件可分区间续读）；URL/会话/query 等主体无此语义
+                    (tc.function.name === 'read_file'
+                      ? `如需该文件的其它部分，请用 offset/limit 指定行区间。`
+                      : `直接基于已有内容继续即可。`),
                 ),
               );
               continue;
@@ -1666,6 +1670,18 @@ export class AgentLoop {
                 coverEnd: cov.coverEnd,
                 // 替身 = 已读正文前 READ_DIGEST_CHARS 字符（轻量启发式，零 LLM 成本）
                 digest: cov.content.slice(0, READ_DIGEST_CHARS),
+                cachedAtIteration: this.currentIteration,
+              });
+            } else {
+              // 整读无脚注（= 已读到文件末尾 / 文件未超单段预算，CTX-1 Step1a「读到末尾零噪音」）：
+              // 同样记「全文件覆盖」——否则小文件整读后无台账 → 分支②永不触发 → 压缩后重读狂飙
+              // （真机 182 次 read_file 复发根因正是小文件不记；见 ADR-031 补缝）。
+              const totalLines = result.split('\n').length;
+              this.fileExposure.record(subject.path, {
+                totalLines,
+                coverStart: 1,
+                coverEnd: totalLines,
+                digest: result.slice(0, READ_DIGEST_CHARS),
                 cachedAtIteration: this.currentIteration,
               });
             }

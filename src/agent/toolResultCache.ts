@@ -28,10 +28,12 @@ import { positiveInt } from '@/utils/math.js';
  * 这是刻意的：二者在 handler 里读的确实是同一区间，若当成两个 key，真正的重复调用就会被放过。
  */
 export interface DedupSubject {
-  /** 文件 / 目录路径（read_file、list_dir）—— 已经过 `normalizePathKey` */
+  /** 文件 / 目录路径（read_file、list_dir）—— 已经过 `normalizePathKey`；**纯文件语义**，供覆盖度台账分支②按文件回显 */
   path?: string;
-  /** 检索词（web_search） */
+  /** 查询目标主定位（web_search.query / web_fetch.url / trace_summary.sessionId）—— query 槽统一承载"查什么" */
   query?: string;
+  /** 子定位标识（trace_summary 的 roundId 等）：同一主定位下的细分目标，纳入去重 span，文案渲染为「主定位 · 子定位」 */
+  item?: string;
   /** read_file 起始行（1-based；缺省 1） */
   offset?: number;
   /** read_file 行数上限（缺省 = 读到末尾） */
@@ -118,14 +120,30 @@ export const DEDUP_SUBJECT_EXTRACTORS: Readonly<Record<string, DedupSubjectExtra
     const query = a ? nonEmptyString(a.query) : undefined;
     return query ? { query } : undefined;
   },
+  /** web_fetch 主体 = 规范化 URL（搜索→抓取闭环第二段；同 URL 抓取两次正文无增量） */
+  web_fetch: (argsJson) => {
+    const a = parseArgs(argsJson);
+    const url = a ? nonEmptyString(a.url) : undefined;
+    // URL 只做 trim 归一并滤空 —— 不做路径 normalize（避免 `..`/尾部斜杠误并不同 target）
+    return url ? { query: url.trim() } : undefined;
+  },
+  /** trace_summary 主体 = sessionId（主定位，query 槽）+ roundId（可选子定位，item 槽）—— 同会话不同轮仍是合法增量读取 */
+  trace_summary: (argsJson) => {
+    const a = parseArgs(argsJson);
+    const sessionId = a ? nonEmptyString(a.sessionId) : undefined;
+    if (!sessionId) return undefined;
+    const roundId = a ? nonEmptyString(a.roundId) : undefined;
+    return { query: sessionId.trim(), item: roundId?.trim() };
+  },
 };
 
-/** 主体 → 缓存 key（本模块唯一的 key 构造点；用不可打印分隔符，避免与路径 / query 内容冲突） */
+/** 主体 → 缓存 key（本模块唯一的 key 构造点；用不可打印分隔符，避免与路径 / query / item 内容冲突） */
 function keyOf(toolName: string, subject: DedupSubject): string {
   return [
     toolName,
     subject.path ?? '',
     subject.query ?? '',
+    subject.item ?? '',
     subject.offset ?? '',
     subject.limit ?? '',
   ].join('\u0001');
@@ -137,6 +155,11 @@ function keyOf(toolName: string, subject: DedupSubject): string {
  * 文案面向 LLM，**不暴露内部 key 格式**：它需要知道的是「哪个文件的哪一段已经在你手上」。
  */
 export function formatDedupSubject(toolName: string, subject: DedupSubject): string {
+  // 查询/会话类主体（web_search / web_fetch / trace_summary）：主定位 + 可选子定位（session·round）
+  if (subject.query !== undefined) {
+    return subject.item !== undefined ? `${subject.query} · ${subject.item}` : subject.query;
+  }
+  // 文件类主体（read_file 渲染区间；list_dir 仅路径）
   if (subject.path !== undefined) {
     if (toolName !== 'read_file') return subject.path;
     const range =
@@ -145,7 +168,7 @@ export function formatDedupSubject(toolName: string, subject: DedupSubject): str
         : `第 ${subject.offset} 行起`;
     return `${subject.path} · ${range}`;
   }
-  return subject.query ?? '';
+  return '';
 }
 
 /**

@@ -311,6 +311,47 @@ describe('DEDUP_SUBJECT_EXTRACTORS.web_search', () => {
   });
 });
 
+describe('DEDUP_SUBJECT_EXTRACTORS.web_fetch（搜索→抓取闭环第二段）', () => {
+  it('正确提取并 trim 规范化 URL → 落入 query 槽位', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.web_fetch!('{"url":"  https://example.com/a  "}')).toEqual({
+      query: 'https://example.com/a',
+    });
+  });
+
+  it('url 缺失 / 空串 / 非法 JSON → undefined', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.web_fetch!('{}')).toBeUndefined();
+    expect(DEDUP_SUBJECT_EXTRACTORS.web_fetch!('{"url":""}')).toBeUndefined();
+    expect(DEDUP_SUBJECT_EXTRACTORS.web_fetch!('not-json')).toBeUndefined();
+  });
+});
+
+describe('DEDUP_SUBJECT_EXTRACTORS.trace_summary（记忆回溯原文）', () => {
+  it('仅 sessionId → query 主定位槽，无 item', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.trace_summary!('{"sessionId":"s-2026-01"}')).toEqual({
+      query: 's-2026-01',
+      item: undefined,
+    });
+  });
+
+  it('sessionId + roundId → query 主定位 + item 子定位（同会话不同轮互不判重）', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.trace_summary!('{"sessionId":"s-1","roundId":"r5"}')).toEqual({
+      query: 's-1',
+      item: 'r5',
+    });
+    // 同 session 不同 round：主体不同 → 缓存互不命中（合法增量读取不被误拦）
+    const cache = new ToolResultCache();
+    cache.set('trace_summary', { query: 's-1', item: 'r5' }, 1);
+    expect(cache.check('trace_summary', { query: 's-1', item: 'r6' })).toBeUndefined();
+    expect(cache.check('trace_summary', { query: 's-1', item: 'r5' })?.cachedAtIteration).toBe(1);
+  });
+
+  it('sessionId 缺失 / 空串 / 非法 JSON → undefined', () => {
+    expect(DEDUP_SUBJECT_EXTRACTORS.trace_summary!('{"roundId":"r5"}')).toBeUndefined();
+    expect(DEDUP_SUBJECT_EXTRACTORS.trace_summary!('{"sessionId":""}')).toBeUndefined();
+    expect(DEDUP_SUBJECT_EXTRACTORS.trace_summary!('{broken')).toBeUndefined();
+  });
+});
+
 describe('normalizePathKey', () => {
   it('归并等价写法，且保持绝对 / 相对语义不混同', () => {
     expect(normalizePathKey('./docs/a.md')).toBe('docs/a.md');
@@ -339,5 +380,13 @@ describe('formatDedupSubject', () => {
   it('list_dir 只渲染路径；web_search 只渲染 query', () => {
     expect(formatDedupSubject('list_dir', { path: 'docs' })).toBe('docs');
     expect(formatDedupSubject('web_search', { query: 'memora' })).toBe('memora');
+  });
+
+  it('web_fetch 渲染 URL；trace_summary 渲染「会话 · 轮」', () => {
+    expect(formatDedupSubject('web_fetch', { query: 'https://example.com/a' })).toBe(
+      'https://example.com/a',
+    );
+    expect(formatDedupSubject('trace_summary', { query: 's-1', item: 'r5' })).toBe('s-1 · r5');
+    expect(formatDedupSubject('trace_summary', { query: 's-1' })).toBe('s-1');
   });
 });

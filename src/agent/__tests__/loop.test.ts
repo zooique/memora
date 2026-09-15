@@ -3573,6 +3573,87 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：web_fetch / trace_summary 并入统一 DEDUP 防重通道
+// 动机：作品投影精读(read_file)、搜索情报(web_search)已吃满同参防重；
+//       补 web_fetch(网页正文)、trace_summary(记忆回溯原文)复用同一套 channel，
+//       终结 LLM 在同 URL / 同 session-round 上重复拉取导致的上下文重复注入。
+// 语义边界：trace_summary 同 sessionId 不同 roundId 是合法增量读取，不判重。
+// ═══════════════════════════════════════════════════════════════
+describe('web_fetch / trace_summary 复用统一防重通道', () => {
+  it('web_fetch 同 URL 重复抓取被拦 → 不落 ToolExecutor；且无 read_file 专属的 offset/limit 引导句', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('网页正文');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          toolCalls: [
+            { id: 'f1', type: 'function', function: { name: 'web_fetch', arguments: '{"url":"https://example.com/a"}' } },
+          ],
+        },
+      ],
+      [
+        {
+          toolCalls: [
+            { id: 'f2', type: 'function', function: { name: 'web_fetch', arguments: '{"url":"https://example.com/a"}' } },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    for await (const chunk of loop.processUserInput('抓取')) {
+      void chunk;
+    }
+
+    // 第二次同 URL → 分支①拦截（结果仍在上下文），不落 ToolExecutor → 仅 1 次
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    const blk = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(blk).toBeDefined();
+    expect(blk!.content).toContain('https://example.com/a');
+    // URL 主体无「分区间续读」语义 → 不应出现 offset/limit 引导句
+    expect(blk!.content).not.toContain('offset/limit');
+  });
+
+  it('trace_summary 同 session+round 重复回溯被拦；不同 round 放行（增量读取不误拦）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('原始对话');
+    const provider = mockMultiTurnProvider([
+      [
+        {
+          toolCalls: [
+            { id: 't1', type: 'function', function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r5"}' } },
+          ],
+        },
+      ],
+      [
+        {
+          toolCalls: [
+            { id: 't2', type: 'function', function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r5"}' } },
+          ],
+        },
+      ],
+      [
+        {
+          toolCalls: [
+            { id: 't3', type: 'function', function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r6"}' } },
+          ],
+        },
+      ],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    for await (const chunk of loop.processUserInput('回溯')) {
+      void chunk;
+    }
+
+    // t2 同参被拦；t3 不同 round 放行 → ToolExecutor 共 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    const blk = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(blk).toBeDefined();
+    // 拦截文案渲染为「会话 · 轮」
+    expect(blk!.content).toContain('s-1 · r5');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：建议B埋点（"模型看到了什么"可追溯）
 // 覆盖：LLM_CALL span 记录 systemPromptHash /
 //       NOOP tracer 下跳过指纹计算（零开销边界）
@@ -4495,9 +4576,10 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(
       loop.getMessages().some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
     ).toBe(true);
-    // 内容已不在手上 → 必须放行；若去掉 isCachedResultStillInContext 判定，此处为 2（死锁）
-    expect(toolExecutor).toHaveBeenCalledTimes(3);
-    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
+    // 整读（无分段脚注）已记「全覆盖」台账 → 压缩后 a.md 属「有覆盖信息」→ 分支②拦 + 回显摘要
+    // （非空替身 + offset 续读指引，不构成死锁；老契约「无信息必须放行」已由本场景演进为「有信息拦+回显」）
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(true);
   });
 
   it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
@@ -4541,6 +4623,39 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // 非空拦：回显覆盖度 + 已读正文替身（LLM 手边有内容，不会死锁）
     expect(stub!.content).toContain('共 200 行');
     expect(stub!.content).toContain('第1行内容');
+  });
+
+  it('E’ · 未分段整读（小文件无脚注）也记全覆盖 → 压缩后重读被分支②回显（补 ADR-031 缝）', async () => {
+    // read_file 返回的是**整文件、无分段脚注**（小文件未超单段预算，CTX-1 Step1a「读到末尾零噪音」）。
+    // 修复前 parseReadFileCoverage 返回 undefined → 不记台账 → 分支②永不触发 → 压缩后重读放行（永动机，
+    // 真机 182 次 read_file 复发根因）。修复后：整读也记「全文件覆盖」，压缩后重读仍被分支②回显。
+    const toolExecutor = vi.fn().mockImplementation(
+      (name: string) => Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 读第二个文件 → 逼压缩链在下一步前替换掉 a.md 的结果（keepRecent=1）
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/b.md"}')] }],
+        // a.md 原文已换成 [Previous: used read_file]，但台账已有「全覆盖」→ 分支②应回显摘要
+        [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+      compactionStrategy: new ResultReplacementStrategy(1),
+    });
+
+    for await (const chunk of loop.processUserInput('整读小文件压缩后重读')) {
+      void chunk;
+    }
+
+    // c3 同参重读 → 分支②拦（回显台账摘要），不落 ToolExecutor → 仍为 2 次
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'));
+    expect(stub).toBeDefined();
+    // 回显的是全覆盖替身（共 3 行），非空拦
+    expect(stub!.content).toContain('共 3 行');
   });
 
   it('G1 · P0-1b：不同区间但完全落在已覆盖范围内 → 分支②回显摘要（分段狂读的回头小读收敛）', async () => {
