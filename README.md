@@ -6,7 +6,7 @@
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-3010%20passed-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-3025%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -251,7 +251,7 @@ src/
 |------|------|
 | 源码 | 118 个生产文件（src/，零第三方运行时依赖） |
 | 测试 | 117 个测试文件（内核 107 + 宿主 10，根 vitest 统一跑） |
-| 测试通过 | 3,010 通过 / 1 skip |
+| 测试通过 | 3,025 通过 / 1 skip |
 | 语句覆盖 | 90.0% |
 | 分支覆盖 | 84.4% |
 | 函数覆盖 | 92.0% |
