@@ -7,7 +7,7 @@
  *   - searchFiles：Windows 反斜杠统一为正斜杠
  *   - searchText：真实临时目录 fs 扫描（content 模式 = 宿主 Node fs 受限实现）
  *     · 按关键词命中 路径:行号:预览 / 大小写不敏感 / exclude 过滤 / 忽略标准目录 / mtime 缓存
- *     · 诚实化上报（SEARCH-1）：截断与主因 / 已扫文件数 / 超大跳过 / 单文件上限精确判定
+ *     · 诚实化上报（SEARCH-1）：截断与主因 / 已扫文件数 / 部分检索 / 读取失败 / 单文件上限精确判定
  *     · 精确优先 + 零命中回退（F1）：整串命中不放宽，整串零命中才用内核下发的 terms 放宽
  *     · 🔴 Canary：自埋唯一 token 必被搜到（仪器自检——"你从没见它非零过的零不是证据"）
  */
@@ -23,6 +23,28 @@ vi.mock('vscode', () => ({
     findFiles: vi.fn(),
   },
 }));
+
+// 模拟 OS 级「不可读」：本环境**造不出**真不可读文件（2026-09-16 实测三条路全断——
+// ① chmod 0o000 后 readFileSync 仍成功；② symlinkSync 在临时目录静默失败（existsSync=false、
+// readdir 不列该项）；③ 在仓库目录则退化为空文件（stat 成功）。故对 stat/open 打桩抛 EACCES。
+const { failStat, failOpen } = vi.hoisted(() => ({
+  failStat: new Set<string>(),
+  failOpen: new Set<string>(),
+}));
+
+vi.mock('node:fs/promises', async (importOriginal) => {
+  type FsPromises = typeof import('node:fs/promises');
+  const actual = await importOriginal<FsPromises>();
+  const denied = (p: string) =>
+    Object.assign(new Error(`EACCES: permission denied, open '${p}'`), { code: 'EACCES' });
+  return {
+    ...actual,
+    stat: (p: Parameters<FsPromises['stat']>[0]) =>
+      failStat.has(String(p)) ? Promise.reject(denied(String(p))) : actual.stat(p),
+    open: (p: Parameters<FsPromises['open']>[0]) =>
+      failOpen.has(String(p)) ? Promise.reject(denied(String(p))) : actual.open(p, 'r'),
+  };
+});
 
 import { createVscodeProjectSearchProvider } from '../projectSearchProvider.js';
 
@@ -135,14 +157,16 @@ describe('VscodeProjectSearchProvider', () => {
       expect(indexHit.preview).toContain('TODO');
     });
 
-    it('scannedFiles = 实际参与匹配的文件数（超大/不可读不计入）', async () => {
+    it('scannedFiles = 实际参与匹配的文件数（不可读不计入；"部分检索"计入）', async () => {
       const provider = createVscodeProjectSearchProvider(tmp);
       const result = await provider.searchText({ pattern: 'TODO' });
       // 语料 = README.md + src/index.ts + src/utils.ts（node_modules 整目录忽略）
       expect(result.scannedFiles).toBe(3);
       expect(result.truncated).toBe(false);
       expect(result.truncatedBy).toBeUndefined();
-      expect(result.oversizedSkipped).toBeUndefined();
+      // 反向守卫：无缺口时不得凭空报数（否则"诚实"沦为噪音，与"永远喊截断"同病）
+      expect(result.partialReadFiles).toBeUndefined();
+      expect(result.unreadableSkipped).toBeUndefined();
     });
 
     it('大小写不敏感匹配（对齐全局搜索缺省）', async () => {
@@ -259,32 +283,85 @@ describe('VscodeProjectSearchProvider', () => {
       }
     });
 
-    it('超大文件（>64KB）被整文件跳过时上报 oversizedSkipped（F4-lite：不再静默）', async () => {
+    it('大文件（>64KB）不再整文件跳过：前段 token 可命中 + 上报 partialReadFiles（F4-full）', async () => {
       const tmp = makeTmp();
       try {
-        writeFileSync(join(tmp, 'small.md'), 'needle_small\n', 'utf-8');
-        // > 64KB → 当前实现整文件不可搜（S2 改为部分读后此断言需同步修订）
-        writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_big\n`, 'utf-8');
+        // token 在**前 64KB 内**（文件总长 70KB）→ S2 后可搜到；S1 时该文件被整文件跳过、必然搜不到
+        writeFileSync(join(tmp, 'big.md'), `needle_front\n${'x'.repeat(70 * 1024)}\n`, 'utf-8');
         const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: 'needle_small' });
-        expect(result.matches.map((m) => m.path)).toEqual(['small.md']);
-        expect(result.oversizedSkipped).toBe(1);
-        expect(result.scannedFiles).toBe(1);
+        const result = await provider.searchText({ pattern: 'needle_front' });
+        expect(result.matches.map((m) => m.path)).toEqual(['big.md']);
+        expect(result.partialReadFiles).toBe(1); // 参与了检索，但只覆盖前一部分
+        expect(result.scannedFiles).toBe(1); // 计入已扫（确实被搜过，不是被跳过）
       } finally {
         rmSync(tmp, { recursive: true, force: true });
       }
     });
 
-    it('零命中 + 有超大跳过 → 两者同时上报（内核据此不把"没搜到"说成"不存在"）', async () => {
+    it('大文件后半段的词仍搜不到，但覆盖缺口必须上报（F4-full 的诚实边界：搜不到 ≠ 不存在）', async () => {
       const tmp = makeTmp();
       try {
-        writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_big\n`, 'utf-8');
+        // token 在 64KB **之后**（只搜前 64KB → 必然搜不到）
+        writeFileSync(join(tmp, 'big.md'), `${'x'.repeat(70 * 1024)}\nneedle_tail\n`, 'utf-8');
         const provider = createVscodeProjectSearchProvider(tmp);
-        const result = await provider.searchText({ pattern: 'needle_big' });
-        // 词就在 big.md 里，但该文件被整文件跳过 —— 这正是必须上报的原因
-        expect(result.matches).toEqual([]);
-        expect(result.oversizedSkipped).toBe(1);
+        const result = await provider.searchText({ pattern: 'needle_tail' });
+        expect(result.matches).toEqual([]); // 搜不到是事实
+        expect(result.partialReadFiles).toBe(1); // 但必须说明"没看全"，否则又是静默假阴性
       } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('部分读按 UTF-8 边界收口：横跨读取上限的不完整残行被整行丢弃（不留 U+FFFD 污染）', async () => {
+      const tmp = makeTmp();
+      try {
+        // 对照组：同一个 token 也在小文件里 → 证明"big.md 没命中"是收口所致，而非压根没读它
+        writeFileSync(join(tmp, 'small.md'), 'needle_boundary\n', 'utf-8');
+        // big.md：65494 个 'a' + 换行 = 65495 字节；残行从边界**前**开始并**横跨** 64KB 上限，
+        // 且无结尾换行 —— 未收口时残行会被读到并命中（变异验证：去掉换行回退 → 本断言变红）
+        const head = `${'a'.repeat(65494)}\n`;
+        writeFileSync(join(tmp, 'big.md'), head + 'needle_boundary中文'.repeat(20), 'utf-8');
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: 'needle_boundary' });
+        expect(result.matches.map((m) => m.path)).toEqual(['small.md']); // 残行不产出命中
+        expect(result.partialReadFiles).toBe(1);
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('不可读文件（stat 抛 EACCES）计入 unreadableSkipped 而非静默跳过（修 P5）', async () => {
+      const tmp = makeTmp();
+      const locked = join(tmp, 'locked.md');
+      try {
+        writeFileSync(join(tmp, 'ok.md'), 'needle_ok\n', 'utf-8');
+        writeFileSync(locked, 'needle_locked\n', 'utf-8');
+        failStat.add(locked); // 模拟 OS 级不可读（真不可读在本环境造不出，见文件头注释）
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: 'needle_ok' });
+        expect(result.matches.map((m) => m.path)).toEqual(['ok.md']);
+        expect(result.unreadableSkipped).toBe(1);
+        expect(result.scannedFiles).toBe(1); // 完全没读上的不计入已扫
+      } finally {
+        failStat.delete(locked);
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    });
+
+    it('open 失败与「部分检索」分别上报（修 P5 / F4-full：两者补救动作不同，不可混为一谈）', async () => {
+      const tmp = makeTmp();
+      const broken = join(tmp, 'broken-read.md');
+      try {
+        writeFileSync(join(tmp, 'big.md'), `needle_front\n${'x'.repeat(70 * 1024)}\n`, 'utf-8');
+        writeFileSync(broken, 'needle_broken\n', 'utf-8');
+        failOpen.add(broken); // stat 成功但读不了 —— 与「过大」完全是两回事
+        const provider = createVscodeProjectSearchProvider(tmp);
+        const result = await provider.searchText({ pattern: 'needle_front' });
+        expect(result.matches.map((m) => m.path)).toEqual(['big.md']);
+        expect(result.unreadableSkipped).toBe(1); // 读取失败：完全没参与检索
+        expect(result.partialReadFiles).toBe(1); // 过大：参与了，但只覆盖前一部分
+      } finally {
+        failOpen.delete(broken);
         rmSync(tmp, { recursive: true, force: true });
       }
     });

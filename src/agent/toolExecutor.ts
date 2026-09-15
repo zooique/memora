@@ -142,7 +142,7 @@ function computeBudgetCappedMaxResults(remainingTokens: number | undefined): num
  *
  * 三态分流（对齐 ripgrep 的 exit 0 / 1 / 2）：
  *   - `failed`              → 检索**未完成**，不得表述为"未找到"（F3：搜索坏了 ≠ 项目里没有）；
- *   - `matches.length === 0` → 零命中，但必须交代「这个零为什么可以信」：截断（F2）/ 超大文件跳过（F4）/ 已放宽（F1）；
+ *   - `matches.length === 0` → 零命中，但必须交代「这个零为什么可以信」：截断（F2）/ 只检索了前一部分（F4）/ 读取失败（P5）/ 已放宽（F1）；
  *   - 有命中               → 列结果 + 标注放宽 / 截断 / 单文件上限（F5/F6）。
  *
  * ⚠️ 放宽用词**只**从 `result.termsUsed` 取（**不**回退到调用方自己下发的 `terms`）：两份副本要
@@ -159,7 +159,8 @@ function formatProjectTextSearch(result: ProjectTextSearchResult, query: string)
   }
 
   const scanned = result.scannedFiles ?? 0;
-  const skipped = result.oversizedSkipped ?? 0;
+  const partial = result.partialReadFiles ?? 0;
+  const unreadable = result.unreadableSkipped ?? 0;
   const relaxedNote = result.relaxed
     ? `；整串未命中，已按分词放宽为 ${(result.termsUsed ?? []).join('、')} 后仍未命中`
     : '';
@@ -174,7 +175,8 @@ function formatProjectTextSearch(result: ProjectTextSearchResult, query: string)
           : '结果与扫描均已达上限，项目可能仍有未检索的文件',
       );
     }
-    if (skipped > 0) gaps.push(`另有 ${skipped} 个超大文件未参与检索`);
+    if (partial > 0) gaps.push(`另有 ${partial} 个文件只检索了前一部分（文件过大，后半段未覆盖）`);
+    if (unreadable > 0) gaps.push(`另有 ${unreadable} 个文件读取失败，完全未参与检索`);
     if (gaps.length > 0) {
       return (
         `（未找到包含 "${query}" 的文件${relaxedNote}；但${gaps.join('，')}——` +
@@ -203,7 +205,8 @@ function formatProjectTextSearch(result: ProjectTextSearchResult, query: string)
         : `结果可能已截断：仅返回前 ${result.matches.length} 条，项目可能仍有更多匹配`,
     );
   }
-  if (skipped > 0) notes.push(`另有 ${skipped} 个超大文件未参与检索`);
+  if (partial > 0) notes.push(`另有 ${partial} 个文件只检索了前一部分（文件过大，后半段未覆盖）`);
+  if (unreadable > 0) notes.push(`另有 ${unreadable} 个文件读取失败，完全未参与检索`);
   return notes.length > 0 ? `${lines}\n（${notes.join('；')}）` : lines;
 }
 

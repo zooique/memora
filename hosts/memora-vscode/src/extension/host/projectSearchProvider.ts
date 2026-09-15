@@ -8,7 +8,7 @@
  *
  * 四项可靠性设计：
  *   - exclude 语义统一：content 模式按 glob 通配匹配相对路径（支持 ** / * / ?），与 name 模式一致；
- *   - 诚实化上报（SEARCH-1）：截断及其主因 / 已扫文件数 / 超大跳过数 / 单文件上限 / 是否放宽 —— 一律回报
+ *   - 诚实化上报（SEARCH-1）：截断及其主因 / 已扫文件数 / 部分检索数 / 读取失败数 / 单文件上限 / 是否放宽 —— 一律回报
  *     内核，零命中不再与"没搜完""搜坏了"逐字同形（截断挂在逐条命中上时，空数组没有载体）；
  *   - 精确优先 + 零命中回退：content 模式先按整串字面量匹配，整串零命中**且**内核下发了 `terms` 才做一次
  *     分词 OR 放宽（放宽的判定留在这里：只有宿主知道扫了多少、扫完没有）；
@@ -18,7 +18,7 @@
  * 语义对齐——LLM 拿到搜索命中路径后可无缝 read_file 精读。
  */
 import * as vscode from 'vscode';
-import { readdir, readFile, stat } from 'node:fs/promises';
+import { open, readdir, stat, type FileHandle } from 'node:fs/promises';
 import { relative, join } from 'node:path';
 import {
   IGNORED_DIR_NAMES,
@@ -33,8 +33,22 @@ import {
 
 /** content 搜索最大扫描文件数（防超大项目遍历失控卡死主循环） */
 const MAX_FILES_SCANNED = 500;
-/** content 搜索单文件读取上限（字节，防大文件/二进制读爆内存） */
+/**
+ * content 搜索单文件读取上限（字节）：超过它的文件**只读前 N 字节**而非整文件跳过——
+ * 既是内存上限，也是「部分检索」的窗口。宿主自定，内核不持有该常量（D4 判定律）。
+ */
 const MAX_FILE_BYTES = 64 * 1024;
+
+/** content 缓存条目（mtime 快照：mtime+size 未变则复用；只缓存完整内容，部分读不入缓存） */
+interface ContentCacheEntry {
+  mtimeMs: number;
+  size: number;
+  content: string;
+  partial: boolean;
+}
+
+/** content 搜索内容缓存（绝对路径 → 条目） */
+type ContentCache = Map<string, ContentCacheEntry>;
 /** content 搜索单文件最大命中数（防单文件刷屏撑爆上下文） */
 const MAX_MATCHES_PER_FILE = 3;
 /** content 搜索内容缓存上限条目数（防内存无界增长；对齐 MAX_FILES_SCANNED 量级） */
@@ -49,7 +63,7 @@ const MAX_CONTENT_CACHE_ENTRIES = 500;
 export function createVscodeProjectSearchProvider(root: string): IProjectSearchProvider {
   // content 搜索性能缓存（mtime 快照）：绝对路径 → { mtimeMs, size, content }；
   // mtime 未变时复用上次读取内容，跳过重复 readFile IO（同一 provider 实例内持续生效）
-  const contentCache = new Map<string, { mtimeMs: number; size: number; content: string }>();
+  const contentCache: ContentCache = new Map();
   return {
     /**
      * 按文件名 glob 搜索（workspace.findFiles，stable API）
@@ -81,7 +95,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
      *
      * @param options pattern 为内容关键词（字面量，大小写不敏感）；terms 为内核下发的放宽词表；
      *                exclude 排除路径 glob
-     * @returns 命中列表 + 本次检索的元信息（截断/主因/已扫数/超大跳过/单文件上限/是否放宽）
+     * @returns 命中列表 + 本次检索的元信息（截断/主因/已扫数/部分检索/读取失败/单文件上限/是否放宽）
      */
     async searchText(options: ProjectTextSearchOptions): Promise<ProjectTextSearchResult> {
       const maxResults = Math.min(options.maxResults ?? 20, PROJECT_SEARCH_RESULT_MAX_LEN);
@@ -118,10 +132,12 @@ interface TextScanState {
   truncated: boolean;
   /** 截断主因：results 结果达上限 / files 扫描达文件上限 */
   truncatedBy?: 'results' | 'files';
-  /** 实际参与匹配的文件数（超大/不可读的不计入） */
+  /** 实际参与匹配的文件数（读取失败的不计入；仅「部分检索」的计入——它确实被搜过） */
   scannedFiles: number;
-  /** 因超过单文件读取上限而被整文件跳过的文件数 */
-  oversizedSkipped: number;
+  /** 因文件过大只检索了前一部分（后半段未覆盖）的文件数 */
+  partialReadFiles: number;
+  /** 读取失败（权限/已被删除/悬空链接/IO 错）而完全未参与检索的文件数 */
+  unreadableSkipped: number;
   /** 是否有文件的命中数被单文件上限截断（精确判定：真见到第 CAP+1 条命中才置位） */
   perFileCapped: boolean;
 }
@@ -146,13 +162,14 @@ async function scanText(
   patternSource: string,
   maxResults: number,
   excludeRe: RegExp | null,
-  cache: Map<string, { mtimeMs: number; size: number; content: string }>,
+  cache: ContentCache,
 ): Promise<TextScan> {
   const matches: ProjectTextMatch[] = [];
   const state: TextScanState = {
     truncated: false,
     scannedFiles: 0,
-    oversizedSkipped: 0,
+    partialReadFiles: 0,
+    unreadableSkipped: 0,
     perFileCapped: false,
   };
   const re = new RegExp(patternSource, 'i');
@@ -170,7 +187,8 @@ function toTextResult(scan: TextScan): ProjectTextSearchResult {
     truncated: state.truncated,
     ...(state.truncatedBy !== undefined ? { truncatedBy: state.truncatedBy } : {}),
     scannedFiles: state.scannedFiles,
-    ...(state.oversizedSkipped > 0 ? { oversizedSkipped: state.oversizedSkipped } : {}),
+    ...(state.partialReadFiles > 0 ? { partialReadFiles: state.partialReadFiles } : {}),
+    ...(state.unreadableSkipped > 0 ? { unreadableSkipped: state.unreadableSkipped } : {}),
     ...(state.perFileCapped ? { perFileCapped: true } : {}),
   };
 }
@@ -209,7 +227,7 @@ function shouldStop(matchCount: number, state: TextScanState, maxResults: number
  * @param excludeRe exclude glob 转正则（匹配相对路径；null 表示不过滤）
  * @param matches 结果收集（超 maxResults 停止）
  * @param maxResults 结果上限
- * @param state 扫描状态（截断/已扫数/超大跳过/单文件上限）
+ * @param state 扫描状态（截断/已扫数/部分检索/读取失败/单文件上限）
  * @param cache content 缓存（mtime 快照，复用未变更文件内容）
  */
 async function walkText(
@@ -220,7 +238,7 @@ async function walkText(
   matches: ProjectTextMatch[],
   maxResults: number,
   state: TextScanState,
-  cache: Map<string, { mtimeMs: number; size: number; content: string }>,
+  cache: ContentCache,
 ): Promise<void> {
   // 达上限提前停止：记录截断与主因（还有更多结果/文件未返回），由 searchText 统一带出
   if (shouldStop(matches.length, state, maxResults)) return;
@@ -250,20 +268,21 @@ async function walkText(
         if (excludeRe && (excludeRe.test(rel) || excludeRe.test(`${rel}/`))) continue;
         await walkText(root, abs, re, excludeRe, matches, maxResults, state, cache);
       } else {
-        // 读取文件文本（带 mtime 快照缓存）；超大文件/读取失败返回 null 跳过
-        const loaded = await readTextCached(abs, cache);
-        if (loaded === null) continue;
-        // 跳过超大文件（单文件读取上限防内存/性能风险）——跳过数**必须上报**：
-        // 静默跳过 = 调用方会把"这部分没搜"读成"项目里没有"（F4-lite）
-        if (loaded.size > MAX_FILE_BYTES) {
-          state.oversizedSkipped++;
+        // 读取文本（部分读 + mtime 缓存；stat 已在上方取得 → 大小预检前移，不重复 stat）
+        // 判别联合取代二义的 null：读取失败 ≠ 文件过大，两者分别计数上报（P5：不得静默）
+        const loaded = await readTextCached(abs, s, cache);
+        if (loaded.kind === 'unreadable') {
+          state.unreadableSkipped++;
           continue;
         }
+        // 超大文件**不再整文件跳过**（F4-full）：搜前 N 字节，但如实标记覆盖不完整
+        if (loaded.partial) state.partialReadFiles++;
         state.scannedFiles++;
         await matchFileText(rel, re, loaded.content, matches, maxResults, state);
       }
     } catch {
-      // 单个文件 stat/读失败：跳过（权限/并发删除等）
+      // stat 失败（权限/已被删除/悬空符号链接）等意外：计入不可读，**不静默吞掉**
+      state.unreadableSkipped++;
     }
   }
 }
@@ -274,7 +293,7 @@ async function walkText(
  * 单文件上限是"精确判定"而非保守猜测：命中满 CAP 后**继续探测**是否还有第 CAP+1 条命中，
  * 真见到才置 `perFileCapped`（否则"还剩更多"是我猜的，而不是事实）。代价 ≈ 一个正则扫描。
  *
- * 注：`content` 由 `readTextCached` 提供（当前实现为整文件读入后截断，见该函数注释的 S2 待办）。
+ * 注：`content` 由 `readTextCached` 提供；超大文件为**前 N 字节的部分内容**（行号仍自 1 起算，不受影响）。
  *
  * @param rel 文件相对项目根的 posix 路径
  * @param re 内容匹配正则
@@ -311,39 +330,79 @@ async function matchFileText(
 }
 
 /**
- * 读取文件文本（带 mtime 快照缓存：mtime 未变时复用上次内容，跳过重复 readFile IO）
+ * `readTextCached` 的返回：**判别联合**取代二义的 `null`
+ *
+ * 为什么不是 `{ size, content } | null`：null 同时代表「文件过大」「读取失败」「stat 失败」，
+ * 三者的补救动作完全不同（换关键词 / 可重试 / 忽略），压成一个值就只能静默跳过——正是 F4 / P5
+ * 的病根（调用方把"这部分没搜"读成"项目里没有"）。
+ */
+type LoadedText =
+  | { kind: 'text'; size: number; content: string; partial: boolean }
+  | { kind: 'unreadable' };
+
+/**
+ * 读取文件文本（**部分读** + mtime 快照缓存）
+ *
+ * 大小预检在 `read` **之前**完成（`size` 由调用方已取得的 stat 提供，不再重复 stat）：
+ * 超大文件**只读前 MAX_FILE_BYTES 字节**——既真正达成内存保护（不再整文件 `readFile`），
+ * 也不再"整文件不可搜"（原病），改为「搜得到前半段 + 如实上报覆盖不完整」。
  *
  * @param abs 文件绝对路径
+ * @param s 调用方已取得的 stat 快照（size / mtimeMs；预检前移的前提）
  * @param cache content 缓存（provider 闭包持有）
- * @returns { size, content } 文件大小与内容（当前为整文件读入）；读取失败返回 null
- *
- * ⚠️ **已知未达成的宣称**（F4，S2 待办）：本函数当前为 `readFile` **全量读入**后再由调用方按
- * `size > MAX_FILE_BYTES` 跳过——也就是说 `MAX_FILE_BYTES` 的"防大文件读爆内存"保护**尚未生效**，
- * 且超大文件是**整文件不可搜**（而非只搜前 N 字节）。S2 改为：`size` 预检前移到 `readFile` 之前
- * + `fs.open`/`read` 只读前 64KB + UTF-8 字节边界按 `lastIndexOf('\n')` 收口。
- * 本次（S1）只把"跳过了多少个"如实上报，不动 IO。
+ * @returns 文本（含 `partial`）或 `unreadable`（读取失败，由调用方计数上报）
  */
 async function readTextCached(
   abs: string,
-  cache: Map<string, { mtimeMs: number; size: number; content: string }>,
-): Promise<{ size: number; content: string } | null> {
-  try {
-    const s = await stat(abs);
-    const hit = cache.get(abs);
-    // mtime 未变：复用缓存内容（省 readFile IO；同一会话多次搜索不同关键词时显著加速）
-    if (hit && hit.mtimeMs === s.mtimeMs) {
-      return { size: hit.size, content: hit.content };
-    }
-    // 整文件读入后截断到 MAX_FILE_BYTES 字节（S2 将改为只读前 N 字节，见函数注释）
-    const buf = await readFile(abs);
-    const content = buf.subarray(0, MAX_FILE_BYTES).toString('utf-8');
-    // 缓存上限保护：超限清空（简单策略，防内存无界增长）
-    if (cache.size >= MAX_CONTENT_CACHE_ENTRIES) cache.clear();
-    cache.set(abs, { mtimeMs: s.mtimeMs, size: s.size, content });
-    return { size: s.size, content };
-  } catch {
-    return null;
+  s: { size: number; mtimeMs: number },
+  cache: ContentCache,
+): Promise<LoadedText> {
+  const size = s.size;
+  const partial = size > MAX_FILE_BYTES;
+  const hit = cache.get(abs);
+  // mtime 与 size 均未变：复用缓存内容（省 read IO；同一会话多次搜索不同关键词时显著加速）
+  if (hit && hit.mtimeMs === s.mtimeMs && hit.size === size) {
+    return { kind: 'text', size, content: hit.content, partial: hit.partial };
   }
+
+  let handle: FileHandle | undefined;
+  try {
+    handle = await open(abs, 'r');
+    const want = Math.min(size, MAX_FILE_BYTES);
+    const buf = Buffer.allocUnsafe(want);
+    let off = 0;
+    // 循环读满：`read` 不保证一次读满请求长度（管道 / 网络文件系统常见）
+    while (off < want) {
+      const { bytesRead } = await handle.read(buf, off, want - off, off);
+      if (bytesRead === 0) break;
+      off += bytesRead;
+    }
+    const content = decodeUtf8Prefix(buf, off, partial);
+    // 只缓存完整内容：缓存部分内容会让"搜过一次"固化为"永远只看前 N 字节"，且放大内存占用
+    if (!partial) {
+      if (cache.size >= MAX_CONTENT_CACHE_ENTRIES) cache.clear();
+      cache.set(abs, { mtimeMs: s.mtimeMs, size, content, partial: false });
+    }
+    return { kind: 'text', size, content, partial };
+  } catch {
+    return { kind: 'unreadable' };
+  } finally {
+    // 关闭失败无需处理（句柄随进程回收；此处只保证正常路径不泄漏）
+    await handle?.close().catch(() => {});
+  }
+}
+
+/**
+ * 缓冲区前 `len` 字节 → 字符串（被切断时按 UTF-8 边界收口）
+ *
+ * 仅**部分读**（`partial`）需要收口：回退到最后一个 `\n` 之后。换行符是 ASCII，不会出现在 UTF-8
+ * 多字节序列的续字节中 → 按它切断**一定落在字符边界**，不会有 U+FFFD 污染命中预览。
+ * 极端情况（前 N 字节内一个换行都没有，如超长单行）无处回退，接受尾部一个不完整字符。
+ */
+function decodeUtf8Prefix(buf: Buffer, len: number, partial: boolean): string {
+  if (!partial) return buf.subarray(0, len).toString('utf-8');
+  const nl = buf.lastIndexOf(0x0a, len - 1);
+  return buf.subarray(0, nl >= 0 ? nl + 1 : len).toString('utf-8');
 }
 
 /**

@@ -628,16 +628,25 @@ describe('工具执行器（6 个工具）', () => {
         relaxed: true,
         termsUsed: ['zebra'],
       },
-      // 单文件上限（F6）+ 超大文件跳过（F4-lite）
+      // 单文件上限（F6）+ 部分检索（F4-full）+ 读取失败（P5）
       单文件上限: {
         matches: [{ path: 'src/many.ts', line: 1, preview: 'a' }],
         truncated: false,
         scannedFiles: 7,
         perFileCapped: true,
-        oversizedSkipped: 2,
+        partialReadFiles: 2,
+        unreadableSkipped: 1,
       },
       // 真零命中（无截断、无跳过）
       零命中: { matches: [], truncated: false, scannedFiles: 5 },
+      // 零命中 + 覆盖缺口（部分检索 / 读取失败）：F4-full / P5 的诚实化主路径
+      零命中带缺口: {
+        matches: [],
+        truncated: false,
+        scannedFiles: 3,
+        partialReadFiles: 1,
+        unreadableSkipped: 2,
+      },
     };
 
     const mockProjectProvider: IProjectSearchProvider = {
@@ -732,7 +741,8 @@ describe('工具执行器（6 个工具）', () => {
         expect(result).toContain('未找到');
         // 反向守卫（验收 §六.7）：防"永远喊截断"被当成诚实
         expect(result).not.toContain('扫描上限');
-        expect(result).not.toContain('超大文件');
+        expect(result).not.toContain('只检索了前一部分');
+        expect(result).not.toContain('读取失败');
       });
 
       it('零命中 + 扫描达上限：文案必须同时给"未找到"与"没搜完"（修 F2/F5，缺一即红）', async () => {
@@ -776,15 +786,27 @@ describe('工具执行器（6 个工具）', () => {
         expect(byResults).not.toContain('扫描上限');
       });
 
-      it('单文件上限与超大跳过均如实上报（修 F6/F4-lite），且不重复宿主魔法数', async () => {
+      it('单文件上限 / 部分检索 / 读取失败均如实上报（修 F6/F4-full/P5），且不重复宿主魔法数', async () => {
         const result = await execWithProject.execute(
           'search_project',
           JSON.stringify({ query: '单文件上限', mode: 'content' }),
         );
         expect(result).toContain('单文件上限');
-        expect(result).toContain('2 个超大文件'); // 宿主上报数字
+        expect(result).toContain('2 个文件只检索了前一部分'); // 宿主上报数字
+        expect(result).toContain('1 个文件读取失败');
         // 内核文案不得复述宿主的单文件上限值（跨越层常量镜像，D4 判定律）
         expect(result).not.toContain('前 3 条');
+      });
+
+      it('零命中 + 覆盖缺口：缺口必须写进文案（F4-full/P5：不得让 LLM 把"没搜到"读成"不存在"）', async () => {
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: '零命中带缺口', mode: 'content' }),
+        );
+        expect(result).toContain('未找到'); // 零命中事实
+        expect(result).toContain('1 个文件只检索了前一部分'); // 部分检索事实
+        expect(result).toContain('2 个文件读取失败'); // 读取失败事实
+        expect(result).toContain('不等于'); // 不得把"没搜到"说成"不存在"
       });
 
       it('单段 ASCII 查询不下发放宽词表（与整串等价 → 避免一次徒劳的放宽轮）', async () => {
