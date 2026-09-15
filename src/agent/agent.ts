@@ -48,7 +48,13 @@ import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
 // 输入增强管线（角色/记忆/技能增强，Agent 只保留编排调用点）
 import type { ContextPreparer } from '@/agent/contextPreparer.js';
-import { chatBusyError, configError, isAbortError, isTimeoutAbortSignal } from '@/utils/errors.js';
+import {
+  chatBusyError,
+  configError,
+  isAbortError,
+  isTimeoutAbortSignal,
+  isTimeoutError,
+} from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 // SessionManager 实例由组装器创建，Agent 仅持有类型引用
 import type { SessionManager, AgentForkResult } from '@/agent/managers/sessionManager.js';
@@ -694,7 +700,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         };
         return { content, aborted, paused, failed: true };
       }
-      yield { type: 'error', message: err instanceof Error ? err.message : String(err) };
+      // 超时（典型 = SSE 停摆看门狗 reject 的 DOMException TimeoutError）补结构化分类：
+      // 不补 → 宿主 `friendlyByCategory` 无键可映射 → 用户只能读到原始技术文案。
+      // 判据 SSOT = isTimeoutError（与上方 isTimeoutAbortSignal 同族，同一 name 判据、不同载体）。
+      // 注：非 abort 路径故不入 aborted 分支，它属「失败」并由本 catch 收口。
+      yield {
+        type: 'error',
+        ...(isTimeoutError(err) ? { category: 'timeout' as const } : {}),
+        message: err instanceof Error ? err.message : String(err),
+      };
       return { content, aborted, paused, failed: true };
     } finally {
       // 释放暂停幂等锁覆盖三路——残留会让 requestPause 的幂等检查永久拒绝后续暂停请求

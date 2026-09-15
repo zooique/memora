@@ -14,6 +14,8 @@ import {
   ToolErrorCode,
   isRetryableErrorCode,
   isAbortError,
+  isTimeoutAbortSignal,
+  isTimeoutError,
 } from '@/utils/errors.js';
 
 describe('MemoraError · 错误信息友好化', () => {
@@ -243,5 +245,49 @@ describe('isAbortError · AbortError 统一判定', () => {
   it('Error 子类（如 TypeError）不应识别', () => {
     expect(isAbortError(new TypeError('type error'))).toBe(false);
     expect(isAbortError(new RangeError('range error'))).toBe(false);
+  });
+});
+
+// ─── isTimeoutError 超时判定（非 abort 载体） ─────────────────────
+
+describe('isTimeoutError · 超时错误判定（与 isAbortError 互斥）', () => {
+  it('DOMException with name=TimeoutError 应识别（SSE 停摆看门狗的真实载体）', () => {
+    expect(isTimeoutError(new DOMException('SSE 阶段停摆超时', 'TimeoutError'))).toBe(true);
+  });
+
+  it('普通 Error with name=TimeoutError 应识别（兼容非 DOMException 载体）', () => {
+    const err = new Error('请求超时');
+    err.name = 'TimeoutError';
+    expect(isTimeoutError(err)).toBe(true);
+  });
+
+  it('互斥性：AbortError 不得被判为超时（否则用户取消会谎报成超时）', () => {
+    const abortErr = new DOMException('用户取消', 'AbortError');
+    expect(isTimeoutError(abortErr)).toBe(false);
+    expect(isAbortError(abortErr)).toBe(true);
+  });
+
+  it('互斥性：TimeoutError 不得被判为取消（否则超时会谎报成用户取消）', () => {
+    const timeoutErr = new DOMException('停摆', 'TimeoutError');
+    expect(isAbortError(timeoutErr)).toBe(false);
+    expect(isTimeoutError(timeoutErr)).toBe(true);
+  });
+
+  it('两种载体语义同源：signal.reason 与抛出错误判据一致（同一 name 常量）', () => {
+    // 同一 DOMException 分别作为「signal.reason」与「抛出的错误」——两个判据须给出一致结论
+    const reason = new DOMException('停摆', 'TimeoutError');
+    const ctrl = new AbortController();
+    ctrl.abort(reason);
+    expect(isTimeoutAbortSignal(ctrl.signal)).toBe(true);
+    expect(isTimeoutError(reason)).toBe(true);
+  });
+
+  it('普通 Error / MemoraError / 非 Error 类型应安全返回 false（不抛错）', () => {
+    expect(isTimeoutError(new Error('普通错误'))).toBe(false);
+    expect(isTimeoutError(configError('a', 'b', []))).toBe(false);
+    expect(isTimeoutError(null)).toBe(false);
+    expect(isTimeoutError(undefined)).toBe(false);
+    expect(isTimeoutError('TimeoutError')).toBe(false);
+    expect(isTimeoutError({ name: 'TimeoutError' })).toBe(false);
   });
 });

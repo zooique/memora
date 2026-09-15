@@ -163,3 +163,23 @@ export function isTimeoutAbortSignal(signal: AbortSignal | undefined): boolean {
     signal.reason.name === 'TimeoutError'
   );
 }
+
+/**
+ * 判断**抛出的错误**是否为「超时」（非 abort 路径的载体）。
+ *
+ * 与 `isTimeoutAbortSignal` 是**同一语义的两种载体**（同判 `name === 'TimeoutError'`）：
+ * 前者看 `signal.reason`（signal 被 abort 的路径），本函数看**被抛出的错误对象**——
+ * 典型场景 = `openaiCompatible.parseSseStream` 的 SSE 停摆看门狗（`Promise.race` 竞速闸
+ * reject `DOMException('…','TimeoutError')`），它不经过 abort signal，故被归类为「失败」
+ * 而非「中断」，最终由 `consumeExecutionStream` 的通用 catch 收口。
+ *
+ * **用途（否则宿主文案不可达）**：把超时归入 `error.category = 'timeout'`，让宿主
+ * `chatPanel` 的 `friendlyByCategory.timeout`（「对话处理超时，请稍后重试」）真正生效；
+ * 缺该分类时宿主只能回退**原始技术文案**（DOMException message），用户读到的是侦探材料。
+ *
+ * 注：`toError()` 对 Error 实例原样返回（实测 `DOMException instanceof Error === true`），
+ * 故经 `llmCaller` 的 `toError(err)` 再 rethrow 后 `name` 不丢，本判据在链路末端依然成立。
+ */
+export function isTimeoutError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'TimeoutError';
+}

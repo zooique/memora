@@ -2212,6 +2212,23 @@ class HttpFailProvider extends LlmProvider {
   }
 }
 
+/**
+ * 首分片后停摆超时的 Provider——复刻 `openaiCompatible.parseSseStream` 看门狗的真实形态：
+ * **先 yield 一段内容**（使 llmCaller 的 `streamStarted` 为真 → 不重试、直接上抛，与真机
+ * 「首 token 已到、转正文前停摆」一致），再抛 `DOMException('…','TimeoutError')`。
+ *
+ * 与 `ConnectionInterruptedProvider` 的关键差异：那个抛 **AbortError**（→ category 'connection'），
+ * 本类抛 **TimeoutError**（非 AbortError）→ 在修复前落到通用 catch 的**无分类**分支。
+ */
+class TimeoutAfterChunkProvider extends LlmProvider {
+  readonly name = 'timeout-after-chunk';
+
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+    yield { content: '思考中' };
+    throw new DOMException('SSE 阶段停摆超时', 'TimeoutError');
+  }
+}
+
 describe('Agent · chat() 中断保留文本', () => {
   let tmpProject: string;
   let tmpConfig: string;
@@ -2459,6 +2476,39 @@ describe('Agent · chat() 中断保留文本', () => {
 
     // 孤儿打捞队列不再含该轮（运行期已收尾，无需等重启）
     expect(roundStore.listInterruptedRecent(todayDate())).toHaveLength(0);
+  }, 15000);
+
+  it('LLM 超时（非 abort · 首分片后停摆）→ error chunk 带 category=timeout（宿主友好文案可达）', async () => {
+    // 场景 = 问题2 真机形态：首 token 已到达、转正文前停摆 → 看门狗以 DOMException TimeoutError
+    // reject（本批已改为 Promise.race 竞速闸）。该错误**不经过 abort signal**，故归「失败」路径、
+    // 由 consumeExecutionStream 的通用 catch 收口。
+    // 修复前：通用 catch 不判超时 → 无 category → 宿主 `friendlyByCategory` 无键可映射 → 用户只
+    // 能读到原始 DOMException 技术文案（「对话处理超时，请稍后重试」永不生效 = 僵尸文案）。
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider: new TimeoutAfterChunkProvider(),
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+      archiveMode: 'manual',
+    });
+    await agent.init();
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of agent.chat('测试')) chunks.push(chunk);
+
+    // 前置事实（不变量生效的前提，先断言再下结论①）：确为「失败」而非「中断」——无 aborted chunk
+    expect(chunks.some((c) => c.type === 'aborted')).toBe(false);
+    // 前置事实②：首分片确已产出（即 llmCaller 的 streamStarted=true 形态，故不进入重试循环）
+    expect(chunks.some((c) => c.type === 'text')).toBe(true);
+
+    const errors = chunks.filter((c): c is Extract<AgentChunk, { type: 'error' }> => c.type === 'error');
+    expect(errors).toHaveLength(1);
+    // 核心断言：超时被结构化分类——宿主 friendlyByCategory.timeout 由此可达
+    expect(errors[0]!.category).toBe('timeout');
+    // message 保留原始细节（调试可追溯）：分类走字段，不引入裸前缀
+    expect(errors[0]!.message).toContain('SSE 阶段停摆超时');
   }, 15000);
 });
 
