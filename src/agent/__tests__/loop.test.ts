@@ -18,6 +18,7 @@ import type { ToolDefinition } from '@/agent/builtinTools.js';
 import { logger } from '@/logging/logger.js';
 import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
 import type { DuplicateCallInterceptor } from '@/agent/types.js';
+import { expectWellFormedToolPairing } from './toolCallPairing.js';
 
 /**
  * 创建测试用 Memory 对象
@@ -833,6 +834,8 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     expect(callsInHistory).toHaveLength(toolMsgs.length);
     expect(callsInHistory).toHaveLength(1);
     expect(toolMsgs[0]!.toolCallId).toBe('call_real');
+    // 共享助手：双向配对不变量（恶名过滤后仍无孤立——幻影 id 不残留孤立 tool 消息）
+    expectWellFormedToolPairing(messages);
 
     // 幻影未被下发执行（否则本地只报 args 解析错，掩盖真因）
     expect(toolExecutor).toHaveBeenCalledTimes(1);
@@ -3092,14 +3095,9 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
       chunks2.push(chunk);
     }
     expect(chunks2.some((c) => c.type === 'aborted')).toBe(false);
-    // 无孤立 tool_call：每条 assistant.tool_calls 的 id 都能在 tool 消息里找到（不锚定物理顺序——
-    // 服务端以 tool_call_id 配对，顺序非契约，避免把实现细节固化成契约）。
-    const settled = loop.getMessages();
-    const assistantIds = settled
-      .filter((m) => m.role === 'assistant' && m.toolCalls)
-      .flatMap((m) => m.toolCalls!.map((tc) => tc.id));
-    const toolIds = settled.filter((m) => m.role === 'tool').map((m) => m.toolCallId);
-    for (const id of assistantIds) expect(toolIds).toContain(id);
+    // 无孤立 tool_call：双向配对不变量（每条 assistant.tool_calls 的 id ↔ tool 消息 toolCallId）。
+    // 用集合包含而非物理顺序/总条数——服务端以 tool_call_id 配对、续跑重放批次，顺序非契约。
+    expectWellFormedToolPairing(loop.getMessages());
   });
 
   it('answerQuestion 以 tool result 回填用户答案（结构化配对）', async () => {
