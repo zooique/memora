@@ -111,7 +111,7 @@ async function main(): Promise<void> {
     const listNames = executor.list.map((t) => t.name);
     assert(listNames.includes('run_project_script'), '仅常驻白名单下 run_project_script 仍暴露（默认开放）');
     assert(listNames.includes('read_file'), '常驻工具 read_file 仍暴露');
-    assert(!listNames.includes('task_table_write'), '特权工具 task_table_write 被过滤（需 task:plan 声明）');
+    assert(listNames.includes('task_table_write'), '任务表是内核常驻必要基建（2026-09-16 拍板直接暴露），仅常驻白名单仍可见');
     assert(!listNames.includes('run_code'), '特权工具 run_code 不在工具面（未注入 provider 且需 code:execute）');
     executor.setToolWhitelist(null);
 

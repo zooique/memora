@@ -49,7 +49,7 @@
 这一层是**为宿主 / 跨实现接入预留的中立契约**——角色包不绑具体实现，由各实现自己消费：
 
 - **`capabilities`（能力声明）**：以**中立能力命名空间**声明（`域:动作`，如 `file:write` / `web:search`），不绑具体工具。**各实现（memora 是 reference implementation）自行映射到自有工具**：
-  - **特权声明模型（2026-09-08，tool-exposure-model）**：memora 侧映射表在 `src/role-pack/capabilityMap.ts`（SSOT）——仅 `web:search` / `web:fetch` / `code:execute` / `task:plan` 映射为**特权工具白名单**；`file:*` / `memory:recall` 属**默认常驻工具**（`toolExecutor.DEFAULT_EXPOSED_TOOLS`），声明与否都不影响可见性、不再映射；
+  - **特权声明模型（2026-09-08 定，2026-09-16 扩）**：memora 侧映射表在 `src/role-pack/capabilityMap.ts`（SSOT）——仅 `web:search` / `web:fetch` / `code:execute` 映射为**特权工具白名单**；`file:*` / `memory:recall` / **`task:plan`（对应任务表）** 属**默认常驻工具**（`toolExecutor.DEFAULT_EXPOSED_TOOLS`），声明与否都不影响可见性、不再映射。任务表系内核多步任务必要基建（2026-09-16 用户拍板），非角色包可选的领域深度能力；
   - **宿主可以有自己的映射表**：例如 `code:execute` 需宿主注入 `ICodeExecutionProvider` 才真正暴露；
   - 未知能力（不在映射表）跳过，不阻塞装载。
   - 角色包声明 `capabilities` 后，工具暴露面 = 常驻豁免集 + 能力白名单内的特权工具（换角色 → 特权工具集切换）。

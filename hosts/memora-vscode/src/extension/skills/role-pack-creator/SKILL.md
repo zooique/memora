@@ -74,7 +74,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 |-----------|---------|
 | `web:search` / `web:fetch` | `web_search` / `web_fetch`（外部网络特权） |
 | `code:execute` | `run_code`（LLM 现写代码执行特权；需宿主注入执行器） |
-| `task:plan` | `task_table_write` / `task_table_update`（任务规划特权） |
+> 注：`task:plan` 不再映射——任务表（`task_table_write` / `task_table_update`）是内核**常驻必要基建**（2026-09-16 用户拍板直接暴露），任何角色无论是否声明 `task:plan` 都可使用；声明与否行为一致，故不再作为特权能力映射（见 tool-exposure-model.md）。
 
 > ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../../docs/architecture/tool-exposure-model.md)。
 

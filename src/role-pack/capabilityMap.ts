@@ -25,8 +25,10 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'web:fetch': ['web_fetch'],
   // 通用计算域：LLM 现写任意代码（判据 A+B：无轨迹）。宿主注入 ICodeExecutionProvider 才真正暴露
   'code:execute': ['run_code'],
-  // 任务域：深度领域规划，风格差异大（判据 A）
-  'task:plan': ['task_table_write', 'task_table_update'],
+  // 任务域：task_table_* 已移出能力门控（2026-09-16 用户拍板：任务表是内核多步任务必要基建，
+  // 与 compress_context 同属默认常驻，见 toolExecutor.DEFAULT_EXPOSED_TOOLS）→ 不再由 rolePack
+  // 声明解锁，故**不映射**到白名单（映射=假特权：声明与否行为全同，徒增困惑）。task:plan 仅保留
+  // 作中立能力字典条目（供其他实现消费，memora 侧无工具映射），同 llm:summarize 的口径。
   // 内核内部能力（无工具映射，仅声明存在；实现按自身能力实现）
   'llm:summarize': [],
 };

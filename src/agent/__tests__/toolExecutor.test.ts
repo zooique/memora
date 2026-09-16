@@ -125,7 +125,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('task_table_write');
     });
 
-    it('空白名单（[]）时：常驻工具仍暴露，特权工具被过滤', () => {
+    it('空白名单（[]）时：常驻工具仍暴露（含任务表——2026-09-16 起为内核必要基建，非特权）', () => {
       executor.setToolWhitelist([]);
       const names = executor.list.map((t) => t.name);
       // 常驻豁免集（判据 A：项目内/内核自有）不受白名单影响
@@ -133,17 +133,20 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('write_file');
       expect(names).toContain('run_project_script');
       expect(names).toContain('read_skill');
-      // 特权工具（task:plan / 外部网络）被过滤
-      expect(names).not.toContain('task_table_write');
-      expect(names).not.toContain('task_table_update');
+      // 任务表是内核多步任务必要基建（用户 2026-09-16 拍板直接暴露）→ 空白名单仍可见
+      expect(names).toContain('task_table_write');
+      expect(names).toContain('task_table_update');
+      // 外部网络 / 任意代码类特权仍被过滤
+      expect(names).not.toContain('run_code');
     });
 
-    it('声明 web:search 白名单时：常驻 + web_search 特权暴露，task 特权仍过滤', () => {
-      // 未注入 webSearchProvider 时 web_search 条件工具不进入 baseTools，故仅验证常驻与 task 过滤
+    it('声明 web:search 白名单时：常驻 + 任务表暴露，外部网络特权按注入过滤', () => {
+      // 未注入 webSearchProvider 时 web_search 条件工具不进入 baseTools；任务表为常驻不受影响
       executor.setToolWhitelist(['web_search']);
       const names = executor.list.map((t) => t.name);
       expect(names).toContain('read_file');
-      expect(names).not.toContain('task_table_write');
+      // 任务表是内核必要基建，非特权 → 声明 web_search 白名单仍暴露
+      expect(names).toContain('task_table_write');
     });
 
     it('白名单过滤后执行路由不受影响（暴露面控制 ≠ execute 拦截）——call 不存在工具直接参数报错', async () => {

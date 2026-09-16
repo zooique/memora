@@ -33,13 +33,19 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 
 > search_project 不在豁免集内：宿主注入即暴露（注入例外，`list` 白名单过滤后追加），与 `file:read` 只读语义同档。
 
-### 角色启动（走能力白名单）—— 3 组
+### 角色启动（走能力白名单）—— 2 组
 
 | 工具 | 能力键 | 归类依据 |
 | --- | --- | --- |
 | web_search / web_fetch | web:search / web:fetch | 判据 A：外部网络副作用 |
 | run_code | code:execute | 判据 A+B：LLM 现写任意代码，无轨迹 |
-| task_table_write / task_table_update | task:plan | 判据 A：任务规划是领域深度能力，风格差异大（深度规划 vs 快速执行） |
+
+> **任务表移出特权集（2026-09-16 用户拍板）**：`task_table_write` / `task_table_update` 原属
+> 本表（需 `task:plan` 解锁）。实测暴露缺陷：TURN_START_STRATEGY_PROMPT / PLAN_NUDGE 对**所有**
+> 角色无条件引导"用任务表工具"，而无 `task:plan` 能力的角色其任务表工具根本不可见 → LLM 找不到
+> 工具只能放弃（round-1789531625618 thought seq244-300 铁证）。任务表是内核完成多步任务的**必要基建**
+> （与 compress_context 同判据），故移入 `DEFAULT_EXPOSED_TOOLS` 强制暴露。`task:plan` 仅保留为
+> 中立能力字典条目（其他实现消费），memora 侧不再映射工具。
 
 ## 三、机制影响
 
@@ -50,8 +56,8 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 
 ## 四、实现落点
 
-- `src/agent/toolExecutor.ts` `list` getter：新增常驻豁免集常量（`DEFAULT_EXPOSED_TOOLS`，共 16 个），对豁免集跳过白名单过滤、特权工具（web_* / run_code / task_table_*）仍按现有 `toolWhitelist` 过滤——即 baseTools 拆「豁免 ∪ 特权」两段拼接。
-- `src/role-pack/capabilityMap.ts`：裁剪不再控制可见性的能力键（file:read/write/list、memory:recall、project:search），收敛为特权能力映射（web:search / web:fetch / code:execute / task:plan）。
+- `src/agent/toolExecutor.ts` `list` getter：常驻豁免集常量（`DEFAULT_EXPOSED_TOOLS`，含任务表共 18 个），对豁免集跳过白名单过滤；特权工具（web_* / run_code）仍按现有 `toolWhitelist` 过滤——即 baseTools 拆「豁免 ∪ 特权」两段拼接。
+- `src/role-pack/capabilityMap.ts`：裁剪不再控制可见性的能力键（file:read/write/list、memory:recall、project:search、**task:plan**），收敛为特权能力映射（web:search / web:fetch / code:execute）。
 - `src/agent/types.ts` / `agent.ts`：白名单语义微调（null=全部；[]=仅常驻；非空=常驻+名单内特权），现有 `setToolWhitelist` 通道与 onToolsChanged 刷新链路不变。
 
 ## 五、验证方式

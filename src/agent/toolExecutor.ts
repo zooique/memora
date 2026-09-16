@@ -376,8 +376,13 @@ function resolveStepId(stepId: string, plan: StepIdPlanRef[]): StepIdResolve {
  * 判据 B（来源可信）：执行对象已在仓库/技能目录沉淀 → 常驻。
  * 豁免能力白名单：角色包声明 capabilities 不影响这些工具的暴露面。
  *
- * 特权工具（不在此集，受 toolWhitelist 过滤）：web_search / web_fetch（外部网络），
- * run_code（LLM 现写代码），task_table_write / task_table_update（领域深度规划）。
+ * 特权工具（不在此集，受 toolWhitelist 过滤）：web_search / web_fetch（外部网络，
+ * 有真实副作用面，判据 A），run_code（LLM 现写任意代码）。
+ * task_table_write / task_table_update 曾在此特权集（需 task:plan capability 解锁）——
+ * 2026-09-16 用户拍板改为**直接暴露**：任务表是内核 agent 完成多步任务的**必要基建**
+ * （与 compress_context / remember_intel 同属"内核自有上下文维护"判据），不应由角色包
+ * 能力声明决定是否可用（否则无 task:plan 能力时，引导语提示用任务表而工具不可见 = 死胡同，
+ * LLM 只能放弃改用 write_file 硬拆，实测 round-1789531625618 thought seq244-300 铁证）。
  */
 export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   // 项目内读写（判据 A；写删的危险度由 confirmWrites/guest 确认层管）
@@ -391,6 +396,9 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   'list_sessions',
   'compress_context',
   'remember_intel', // 情报区写回（LLM 私有笔记累积，随每轮装配注入）——上下文维护基建，与 compress_context 同族
+  // 任务表管理（2026-09-16 直接暴露：内核多步任务必要基建，非角色包可选能力）
+  'task_table_write',
+  'task_table_update',
   'ask_user',
   'register_work',
   // 技能域（判据 A+B：来源可信；既定豁免）

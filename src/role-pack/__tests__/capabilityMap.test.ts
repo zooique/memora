@@ -56,9 +56,10 @@ describe('resolveCapabilityTools（中立能力 → memora 特权工具白名单
     expect(isToolInCapabilities('read_file', undefined)).toBe(false);
   });
 
-  it('task:plan 映射到任务表工具', () => {
+  it('task:plan 不再映射工具（2026-09-16：任务表已是常驻工具，能力键只保留中立字典位）', () => {
     const tools = resolveCapabilityTools([{ capability: 'task:plan' }]);
-    expect(tools).toEqual(['task_table_write', 'task_table_update']);
+    // 任务表直接暴露（DEFAULT_EXPOSED_TOOLS），不入白名单 → task:plan 无工具映射（同 llm:summarize）
+    expect(tools).toEqual([]);
   });
 
   it('web:fetch 映射到 web_fetch 工具（搜索→抓取闭环第二段）', () => {
