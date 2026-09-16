@@ -41,6 +41,8 @@ import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 import { estimateTokensText } from '@/agent/contextManager.js';
 // 正整数解析唯一真理源（read_file 分段 offset/limit 与 toolResultCache 去重主体共用）
 import { positiveInt } from '@/utils/math.js';
+// run_team_meeting 工具内嵌 LLM 调用：Message 构型 + LlmProvider 抽象（chat 流式）
+import type { LlmProvider, Message } from '@/llm/provider.js';
 
 /** trace_summary 溯源原始对话的最大消息数（规模控制） */
 const TRACE_MESSAGE_LIMIT = 5;
@@ -52,6 +54,9 @@ const LIST_SESSIONS_DEFAULT = 10;
 const LIST_SESSIONS_MAX = 30;
 /** list_sessions 单条路标摘要的最大字符数（LLM 生成，过 sanitize 防注入） */
 const LIST_SESSIONS_SUMMARY_CHARS = 200;
+
+/** run_team_meeting 返回的评审文本最大字符数（多角色 persona 拼入 + 产出长文，防超长注入撑爆上下文） */
+const MEETING_RESULT_MAX_LEN = 20_000;
 
 /**
  * 目录树返回的最大字符数（防超大目录整段进上下文）
@@ -1279,4 +1284,120 @@ export class BuiltinToolHandlers {
       '如需查看某个会话的问答摘要，用 trace_summary 并传入该会话的 sessionId（不传 roundId 即返回该会话最近若干轮）。'
     );
   }
+}
+
+/**
+ * 拼装 run_team_meeting 的多角色 system prompt（纯函数，可单测）
+ *
+ * 把各角色 persona 全文按「组长置前、组员随后」顺序拼接，并在头部声明任务——
+ * 让模型以各角色设定与专业视角独立评估议题，最后以组长视角汇总。
+ * 组长在 prompt 中显式标注为「组长」，承担唯一汇总视角。
+ *
+ * @param roles 参与会议的角色（name + persona 全文；已过滤未装载的空 persona）
+ * @param leaderName 组长的角色包名（唯一汇总视角）
+ * @param topic 要评估的议题
+ * @returns 完成拼装的多角色 system prompt
+ */
+function buildTeamMeetingPrompt(
+  roles: ReadonlyArray<{ name: string; persona: string }>,
+  leaderName: string,
+  topic: string,
+): string {
+  const roleLines = roles
+    .map((r, i) => {
+      const tag = r.name === leaderName ? `角色${i + 1}（组长）` : `角色${i + 1}（组员）`;
+      return `── ${tag}名称：${r.name} ──\n${r.persona}`;
+    })
+    .join('\n\n');
+  return (
+    `请以以下各角色的设定与专业视角，分别独立评估议题「${topic}」，给出各自的立场与理由` +
+    `（每个视角一段），最后以组长「${leaderName}」视角做简短汇总。\n\n${roleLines}`
+  );
+}
+
+/**
+ * run_team_meeting 执行实现（工具内嵌 LLM 调用，一次 chat() 完成）
+ *
+ * 串联既有原语实现「评估/评审型小组会议」：解析组名 → 取各角色 persona 全文 → 拼多角色
+ * system prompt → 单次 provider.chat() → 返回评审文本。依赖经参数注入（不持有全局状态），
+ * 由装配层在后续注入时把 rolePackManager 与 provider 收敛进闭包。
+ *
+ * 边界（探索方案 §5.3 实证）：
+ * - 只覆盖评估/评审型（各视角独立观点 + 组长汇总），不覆盖你来我往的讨论型会议；
+ * - 角色数隐式受组解析截断约束（组长 1 + 组员 ≤ 4），persona 全文 token 成本高。
+ *
+ * @param params 依赖注入 + 工具入参（resolveTeam/buildPersona/provider 由装配层提供）
+ * @returns 多角色评估文本（已净化 + 长度上限）
+ * @throws 参数缺失 / 组不存在 / 组角色未装载 → MemoraError
+ */
+export async function runTeamMeetingAssessment(params: {
+  /** 组解析：按组名返回队长 + 组员名单（null = 组不存在） */
+  resolveTeam: (group: string) => { leader: string; members: readonly string[] } | null;
+  /** 角色 persona 取全文（如 rolePackManager.buildSystemPrompt(name)） */
+  buildPersona: (name: string) => string;
+  /** 前台 LLM provider（评审为 turn 内工具，走主通道） */
+  provider: LlmProvider;
+  /** 组名（= 组长角色包名） */
+  group: string;
+  /** 要评估的议题 */
+  topic: string;
+}): Promise<string> {
+  const { group, topic } = params;
+  if (!group || !group.trim()) {
+    throw toolError(
+      'run_team_meeting 缺少 group 参数',
+      '未传组名（组名 = 组长角色包名）',
+      ['传组名，如 run_team_meeting("设计组", "议题")'],
+      undefined,
+      ToolErrorCode.ARGUMENT_ERROR,
+    );
+  }
+  if (!topic || !topic.trim()) {
+    throw toolError(
+      'run_team_meeting 缺少 topic 参数',
+      '未传要评估的议题',
+      ['传一句议题，越具体越好'],
+      undefined,
+      ToolErrorCode.ARGUMENT_ERROR,
+    );
+  }
+
+  // 组解析：组名 = 组长角色包名；未命中即组不存在
+  const team = params.resolveTeam(group);
+  if (!team) {
+    throw toolError(
+      'run_team_meeting 组不存在',
+      `未找到组长为「${group}」的组`,
+      ['确认组名与组长角色包名一致', '确认该组已在组名单中配置'],
+      undefined,
+      ToolErrorCode.ARGUMENT_ERROR,
+    );
+  }
+
+  // 取各角色 persona 全文；未装载（buildPersona 返回空）的角色跳过，保证拼入的都有效
+  const roles = [team.leader, ...team.members]
+    .map((name) => ({ name, persona: params.buildPersona(name) }))
+    .filter((r) => r.persona.length > 0);
+  if (roles.length === 0) {
+    throw toolError(
+      'run_team_meeting 组角色未装载',
+      `组「${group}」的成员角色包均未装载，无法开会`,
+      ['确认组长与组员角色包已装载'],
+      undefined,
+      ToolErrorCode.ARGUMENT_ERROR,
+    );
+  }
+
+  // 一次 chat() 完成多角色评估 + 组长汇总（拼装见 buildTeamMeetingPrompt）
+  const systemPrompt = buildTeamMeetingPrompt(roles, team.leader, topic);
+  const messages: Message[] = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: '请按上述要求给出各角色观点与组长汇总的正式评估。' },
+  ];
+  let response = '';
+  for await (const chunk of params.provider.chat(messages)) {
+    if (chunk.content) response += chunk.content;
+  }
+  if (!response.trim()) return '（会议未产生输出）';
+  return sanitizeExternalText(response, MEETING_RESULT_MAX_LEN);
 }

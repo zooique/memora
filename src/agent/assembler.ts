@@ -54,6 +54,8 @@ import { AGENT_EVENTS, type AgentEventName } from '@/utils/eventEmitter.js';
 import { configError } from '@/utils/errors.js';
 // 角色包管理器（唯一角色真理源）
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
+// run_team_meeting 会议实现（工具内嵌 LLM 调用；装配层持 provider + rolePackManager 闭包注入）
+import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 // L3 脚本执行器（静态导入，避免每次调用动态加载）
 import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
 
@@ -701,6 +703,18 @@ export async function assembleComponents(
 
   // 激活角色包的 L1 persona（角色包唯一；无激活角色包时为空串）
   const rolePackPrompt = rolePackManager.buildSystemPrompt();
+
+  // run_team_meeting：注入评估/评审型会议回调（工具内嵌一次 LLM 调用）
+  // rolePackManager 建于 toolExec 之后，用回调注入解耦时序（同 readSkill/registerWork 模式）。
+  // 闭包收敛 rolePackManager（getTeam 组解析 + buildSystemPrompt persona 全文）与前台 provider（单次 chat）。
+  toolExec.runTeamMeeting = async (group: string, topic: string) =>
+    runTeamMeetingAssessment({
+      resolveTeam: (g) => rolePackManager.getTeam(g),
+      buildPersona: (n) => rolePackManager.buildSystemPrompt(n),
+      provider,
+      group,
+      topic,
+    });
 
   // 渐进披露 L2：注入 read_skill 技能正文读取回调（read_skill 工具数据源）
   // 两级技能统一渐进披露：先查激活角色包内嵌技能，再查全局通用技能池。

@@ -540,6 +540,16 @@ export class ToolExecutor {
    */
   registerWork?: (sourcePath: string, description: string) => Promise<string>;
 
+  /**
+   * run_team_meeting 评估/评审型会议回调（由 agent 装配时注入，处理 run_team_meeting）
+   *
+   * 工具内嵌 LLM 调用的新形态：回调持有 rolePackManager（组解析 + persona 全文）与
+   * 前台 provider（单次 chat），在装配层闭包中实现一次调用注入多角色 persona 的会议。
+   * 委托装配层注入的回调，避免 ToolExecutor 与 rolePackManager/llm 强耦合（同 readSkill 模式）。
+   * 未注入时 run_team_meeting 返回不可用提示。
+   */
+  runTeamMeeting?: (group: string, topic: string) => Promise<string>;
+
   constructor(
     projectPath: string,
     security: SecurityGuard,
@@ -1274,6 +1284,34 @@ export class ToolExecutor {
           return '[ERR:INVALID_ARG] register_work 需要 path（相对项目根）与 description（一句话说明）参数';
         }
         return await this.registerWork(path, description);
+      }
+      case 'run_team_meeting': {
+        // 评估/评审型小组会议（runTeamMeeting 回调由 agent 装配注入；工具内嵌一次 LLM 调用）
+        if (!this.runTeamMeeting) {
+          return '[ERR:TOOL:NOT_AVAILABLE] run_team_meeting 不可用：未装配小组会议回调';
+        }
+        const group = strArg('group');
+        const topic = strArg('topic');
+        // 参数缺失由回调内 runTeamMeetingAssessment 统一抛 ARGUMENT_ERROR，此处前置兜底给不可信入参
+        if (!group) {
+          throw toolError(
+            'run_team_meeting 缺少 group 参数',
+            '未传组名（组名 = 组长角色包名）',
+            ['传组名，如 run_team_meeting("设计组", "议题")'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        if (!topic) {
+          throw toolError(
+            'run_team_meeting 缺少 topic 参数',
+            '未传要评估的议题',
+            ['传一句议题，越具体越好'],
+            undefined,
+            ToolErrorCode.ARGUMENT_ERROR,
+          );
+        }
+        return await this.runTeamMeeting(group, topic);
       }
       default: {
         // 自定义工具 fallback：查找 customTools Map

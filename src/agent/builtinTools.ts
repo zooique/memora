@@ -101,6 +101,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   run_code: 'non-idempotent',
   // search_project：读操作（只读搜索），永不跳过（read-only）
   search_project: 'read-only',
+  // run_team_meeting：评估型会议（注入多角色 persona 一次调用），产出可变、代价高 → read-only（永不跳过）
+  run_team_meeting: 'read-only',
 };
 
 /**
@@ -362,6 +364,38 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
       maxResults: { type: 'string', description: '返回结果数量上限，默认 "20"，最大 "100"' },
     },
     required: [],
+  },
+};
+
+/**
+ * run_team_meeting 内置工具定义（评估/评审型小组会议，单次 LLM 调用注入多角色 persona）
+ *
+ * 语义：一次调用内读取组内 组长+组员 各角色的完整设定（buildSystemPrompt 取的 persona 全文），
+ * 拼成多角色 system prompt，让模型以各角色视角独立评估同一议题，最后以组长视角汇总。
+ * 这是「工具内嵌 LLM 调用」的新形态（vs 纯函数工具），只做串联、一次 chat() 完成。
+ *
+ * **定位边界**：评估/评审型会议（各视角独立观点 + 组长汇总）；**不覆盖**你来我往的讨论型会议。
+ * **角色数上限**：按组解析时经 `MAX_TEAM_MEMBERS` 截断，队长 1 + 组员 ≤ 4 = 5 人组（persona 全文
+ * token 成本高，约束同 `MAX_TEAM_MEMBERS`）——组员超限部分不参与本次会议。
+ *
+ * 独立导出常量（同 COMPRESS_CONTEXT_TOOL/ASK_USER_TOOL 的「独立导出」模式），
+ * BUILTIN_TOOLS 数组引用同一常量，避免散落字符串工具名。
+ */
+export const RUN_TEAM_MEETING_TOOL: ToolDefinition = {
+  name: 'run_team_meeting',
+  description:
+    '召开评估/评审型小组会议：一次调用注入组内各角色（组长+组员，队长 1 + 组员 ≤ 4）的完整设定，' +
+    '以各角色视角独立评估同一议题（每视角一段），最后以组长视角汇总。适用于「直接产出多角度评审意见」，' +
+    '不适用于需要你来我往逐轮对齐的讨论型会议。',
+  // 读操作语义（readonly 模式保留）：不修改项目状态，产出可变 → 永不跳过（read-only 幂等）
+  readonly: true,
+  parameters: {
+    type: 'object',
+    properties: {
+      group: { type: 'string', description: '组名（= 组长的角色包名，须已在组名单中）' },
+      topic: { type: 'string', description: '要评估的议题（一句话，越具体越好）' },
+    },
+    required: ['group', 'topic'],
   },
 };
 
@@ -650,4 +684,6 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['path', 'description'],
     },
   },
+  // ── 评估/评审型小组会议（单次 LLM 调用注入多角色 persona）──
+  RUN_TEAM_MEETING_TOOL,
 ];

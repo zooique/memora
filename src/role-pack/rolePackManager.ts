@@ -384,6 +384,22 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
+   * 按组长名取队伍快照（run_team_meeting 等任意组解析入口，SSOT 与 getActiveTeam 同截断口径）。
+   *
+   * 与 getActiveTeam 的区别：不依赖当前激活角色，显式按组名称解析（组名 = 组长的角色包名）。
+   * 组员名单同样经 MAX_TEAM_MEMBERS 截断（队长 1 + 组员 ≤ 4 = 5 人组，超出部分不参与会议）。
+   *
+   * @param group 组名（= 组长的角色包名）
+   * @returns 队伍快照（组长 + 截断后的组员）；未找到该组时返回 null
+   */
+  getTeam(group: string): RolePackTeam | null {
+    if (!group) return null;
+    const team = this.rolePackTeams.find((t) => t.leader === group);
+    if (!team) return null;
+    return { leader: team.leader, members: team.members.slice(0, MAX_TEAM_MEMBERS) };
+  }
+
+  /**
    * 组数据校验（S4，装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 / 组长组员互斥 → warning（不阻塞装载）。
    * 组员失效 → 会议时缺员跳过（resolveRoundAssemblyRole 内判定）；组长失效 → 该组失效（仅影响会议）。
    */
