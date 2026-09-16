@@ -15,7 +15,8 @@ export interface OpenAICompatibleConfig {
   baseUrl: string;
   apiKey: string;
   defaultModel: string;
-  /** 是否支持原生工具调用（OpenAI Function Calling tools 协议），默认 false（2026-09-14 阶段0） */
+  /** 是否支持原生工具调用（OpenAI Function Calling tools 协议）。三态透传：仅 undefined 回落默认 true，
+   *  显式 false 保留关闭工具通道（本地 LLM 如 Ollama/LM Studio 无原生 FC 时由宿主配置 false）。 */
   supportsToolCalling?: boolean;
   /** 是否支持结构化输出（response_format / JSON mode），默认 false */
   supportsStructuredOutput?: boolean;

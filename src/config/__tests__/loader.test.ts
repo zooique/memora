@@ -591,6 +591,60 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
 
       expect(config.memory.maxContextTokens).toBe(120_000);
     });
+
+    // ─── 能力位三态保真：仅未配置回落默认，显式 true/false 如实透传 ──
+    it('supportsToolCalling 显式 false 应保真透传（本地 LLM 关工具通道）', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            local: {
+              provider: 'ollama',
+              model: 'qwen2.5-coder',
+              supportsToolCalling: false,
+              supportsStructuredOutput: false,
+            },
+          },
+          active: 'local',
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      // 显式 false 必须如实保留，不得被下游 `?? true` 静默回滚为 true
+      expect(config.llm.providers!.local!.supportsToolCalling).toBe(false);
+      expect(config.llm.providers!.local!.supportsStructuredOutput).toBe(false);
+    });
+
+    it('supportsToolCalling 显式 true 应保真透传', async () => {
+      const configPath = writeConfigFile({
+        llm: {
+          providers: {
+            cloud: {
+              provider: 'deepseek',
+              model: 'deepseek-chat',
+              supportsToolCalling: true,
+              supportsStructuredOutput: true,
+            },
+          },
+          active: 'cloud',
+        },
+      });
+
+      const config = await loadConfig(configPath);
+
+      expect(config.llm.providers!.cloud!.supportsToolCalling).toBe(true);
+      expect(config.llm.providers!.cloud!.supportsStructuredOutput).toBe(true);
+    });
+
+    it('能力位未配置时应为 undefined（交给下游 Provider 回落默认）', async () => {
+      const configPath = writeConfigFile();
+
+      const config = await loadConfig(configPath);
+
+      const provider = config.llm.providers!.deepseek!;
+      expect(provider.supportsToolCalling).toBeUndefined();
+      expect(provider.supportsStructuredOutput).toBeUndefined();
+    });
   });
 });
 
