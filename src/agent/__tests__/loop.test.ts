@@ -16,7 +16,7 @@ import * as hashModule from '@/utils/hash.js';
 import { WEB_SEARCH_TOOL } from '@/agent/builtinTools.js';
 import type { ToolDefinition } from '@/agent/builtinTools.js';
 import { logger } from '@/logging/logger.js';
-import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js';
+
 import type { DuplicateCallInterceptor } from '@/agent/types.js';
 import { expectWellFormedToolPairing } from './toolCallPairing.js';
 
@@ -4592,6 +4592,37 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(loop.getMessages().some((m) => m.content.includes('[ALREADY_READ]'))).toBe(false);
   });
 
+  it('WRITE-LOOP · 连续重写同一路径达阈值 → 硬拦注入 [WRITE_LOOP_STOP]（不误伤合法改写）', async () => {
+    // 治实测病根（round-1789539624589）：write_file「写→读回→见重复→再写」自环 17 分钟不自停。
+    // 写侧止损与 read 去重同构：仅拦截连续重写**同一文件**且达阈值（WRITE_LOOP_THRESHOLD=5）者；
+    // 前 4 次放行执行（与重复拦截器"软警告"递进，不重叠），第 5 次硬拦。
+    const toolExecutor = vi.fn().mockResolvedValue('已写入');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'write_file', '{"path":"docs/a.md","content":"v1"}')] }],
+        [{ toolCalls: [call('c2', 'write_file', '{"path":"docs/a.md","content":"v2"}')] }],
+        [{ toolCalls: [call('c3', 'write_file', '{"path":"docs/a.md","content":"v3"}')] }],
+        // 合法改写前 4 次放行执行（内容不断变化，重复拦截器不管）
+        [{ toolCalls: [call('c4', 'write_file', '{"path":"docs/a.md","content":"v4"}')] }],
+        // 第 5 次同路径重写 → 命中阈值，被拦在 loop 层（不落地 ToolExecutor）
+        [{ toolCalls: [call('c5', 'write_file', '{"path":"docs/a.md","content":"v5"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('反复重写同一文件')) {
+      void chunk;
+    }
+
+    // 前 4 次真实执行，第 5 次被硬拦
+    expect(toolExecutor).toHaveBeenCalledTimes(4);
+    const blk = loop.getMessages().find((m) => m.content.includes('[WRITE_LOOP_STOP]'));
+    expect(blk).toBeDefined();
+    expect(blk!.content).toContain('docs/a.md');
+  });
+
   it('D-2 · 结果已被压缩链替换为占位符 → 台账有覆盖 → 回显非空摘要而非放行（防死锁靠替身自带信息，非靠放行）', async () => {
     const toolExecutor = vi.fn().mockImplementation((name: string) =>
       Promise.resolve(name === 'read_file' ? '正文内容' : ''),
@@ -4890,21 +4921,22 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/幻想.md"}')] }],
         [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/幻想.md"}')] }],
-        // 第 3 次同主体 → 失败计数达阈值 2 → 执行前硬拦，不落 ToolExecutor
         [{ toolCalls: [call('c3', 'read_file', '{"path":"docs/幻想.md"}')] }],
+        // 第 4 次同主体 → 失败计数达静态真源阈值 3（GUARD_THRESHOLDS.readFailed）→ 执行前硬拦，不落 ToolExecutor
+        [{ toolCalls: [call('c4', 'read_file', '{"path":"docs/幻想.md"}')] }],
         [{ content: '改用 list_dir 查证' }],
       ]),
       bootstrapMemories: [],
       toolExecutor,
-      duplicateCallInterceptor: new DefaultDuplicateCallInterceptor(2),
     });
 
     for await (const chunk of loop.processUserInput('读不存在的文件')) {
       void chunk;
     }
 
-    // 前 2 次真失败执行；第 3 次被失败硬闸拦在前置（执行前）→ 仍为 2 次
-    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 前 3 次真失败执行；第 4 次被失败硬闸拦在前置（执行前）→ 仍为 3 次。
+    // 读取失败阈值独立自 GUARD_THRESHOLDS.readFailed（不再借 duplicateCallInterceptor 阈值），故注入拿掉。
+    expect(toolExecutor).toHaveBeenCalledTimes(3);
     const limited = loop.getMessages().find((m) => m.content.includes('[READ_FAILED_LIMIT]'));
     expect(limited).toBeDefined();
     expect(limited!.content).toContain('可能不存在');

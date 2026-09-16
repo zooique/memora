@@ -52,10 +52,15 @@ import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js
 import {
   ToolResultCache,
   DEDUP_SUBJECT_EXTRACTORS,
-  formatDedupSubject,
+  failureSubjectKey,
   normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
+import {
+  createDefaultGuards,
+  GUARD_THRESHOLDS,
+  type GuardThresholds,
+} from '@/agent/guardRail.js';
 import {
   FileExposureLedger,
   parseReadFileCoverage,
@@ -68,12 +73,6 @@ import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
 import { ToolRunner } from '@/agent/toolRunner.js';
 import { detectNeedsPlanning, PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
-
-/** P0-2 失败硬闸的主体 key（工具名 + 规范化 path/query/item）：同主体连续失败计数用，粒度=同参（N2 修正） */
-function failureSubjectKey(toolName: string, subject: CacheEntry['subject']): string {
-  // item 纳入：trace_summary 同 sessionId 不同 roundId 计为不同主体，不把「任一 round 失败」误并到整个会话
-  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.query ?? ''}\u0002${subject.item ?? ''}`;
-}
 
 export interface AgentLoopOptions {
   provider: LlmProvider;
@@ -230,9 +229,21 @@ export class AgentLoop {
    *  闭环内有效（resetTurnState 清），与 toolResultCache 同生命周期。
    *  分支②据此在「原文已压缩」时回显摘要，而非放行重读（永动机）或空拦（死锁）。 */
   private readonly fileExposure = new FileExposureLedger();
-  /** P0-2 同主体连续失败硬闸（N1 真 block / N2 同主体粒度）：subject-key → 连续失败次数。
-   *  失败记录于结果处理循环；达阈值后前置拦截（执行前）返回 [READ_FAILED_LIMIT]，治幻觉文件重读风暴。 */
-  private readonly infoToolFailureBySubject = new Map<string, number>();
+  /** P0-2 同主体连续失败硬闸（N1 真 block / N2 同主体粒度）+ write_file 同路径连写止损的**运行态计数容器**。
+   *  S2-S5 收敛：判定逻辑 / 文案 / 阈值归 guardRail.ts（guardState 只存状态，由 loop 在结果处理 / 写侧持久化处喂数）；
+   *  原散落的 infoToolFailureBySubject / lastWritePath / samePathWriteStreak 三字段合并于此（消除散落运行态）。 */
+  private readonly guardState: {
+    /** 同路径连写计数（最近写入路径 + 连续同路径写次数）—— write_loop 用 */
+    write: { lastWritePath: string | null; samePathWriteStreak: number };
+    /** 同主体连续失败计数（subject-key（failureSubjectKey 口径）→ 次数）—— read_failed 用 */
+    readFailBySubject: Map<string, number>;
+  } = {
+    write: { lastWritePath: null, samePathWriteStreak: 0 },
+    readFailBySubject: new Map(),
+  };
+  /** 运行时护栏注册表（SSOT，S2 起真拦截）：判定序 / 文案 / 阈值单一真理源在 guardRail.ts；
+   *  本字段只是 loop 的装载点（createDefaultGuards 出厂即覆盖 5 类前置拦截型护栏）。 */
+  private readonly guardier = createDefaultGuards();
   /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。private 读写器，内部消费点：
    *  _routePausedIfTimeoutAndPause（读）/ resetTurnState（清）/ requestPause/clearPauseRequest（写） */
   private get pauseRequested(): boolean {
@@ -740,7 +751,9 @@ export class AgentLoop {
     // 文件覆盖度台账同步清空（与防重缓存同生命周期）
     this.fileExposure.clear();
     // P0-2 失败硬闸计数随轮清空（跨闭环复用时若残留，会误拒本轮合法的新失败重试）
-    this.infoToolFailureBySubject.clear();
+    this.guardState.readFailBySubject.clear();
+    // 写侧同路径连写止损计数随轮清空（写环护栏同生命周期，防上一轮残留影响本轮新写入路径判定）
+    this.guardState.write = { lastWritePath: null, samePathWriteStreak: 0 };
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
     // 层1：任务表 nudge 注入标记随轮重置（下一 turn 重新判定注入）；planNeedsNudge 也随轮清，
@@ -1508,6 +1521,16 @@ export class AgentLoop {
     const toolPromises: Promise<string>[] = [];
     /** 策略拦截标记（按 toolCalls 顺序平行记录）：确定性拒绝（如搜索硬上限）的工具 blocked=true */
     const blockedFlags: boolean[] = [];
+    // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
+    //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
+    //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
+    //  提问=strategy.askLimit、搜索=LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS（动态真源，不入静态默认）。
+    const guardThresholds: GuardThresholds = {
+      writeLoop: GUARD_THRESHOLDS.writeLoop,
+      readFailed: GUARD_THRESHOLDS.readFailed,
+      askLimit: this.strategy.askLimit,
+      maxWebSearch: LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS,
+    };
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
       // 层0 观测：task_table_write 调用累计（实证任务表是否被触发）
@@ -1520,16 +1543,31 @@ export class AgentLoop {
         name: tc.function.name,
         args: tc.function.arguments,
       };
-      // 搜索硬上限（TS-7 升级）：单闭环 web_search 超过上限后确定性拒绝——不执行、回填拒绝文案，
-      // 不依赖 LLM 听从软收敛提示。LLM 看到的是一条「被拒绝」的 tool 消息，据此停止搜索直接作答。
-      if (isSearch && this.searchCallCount > LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS) {
-        // 双闸第二闸：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
-        // （buildChatOptions 确定性过滤），并在本轮注入「视为未找到更多相关→继续下一步」提示，
-        // 双管齐下终结「被拒→重搜→再被拒」拒绝风暴耗尽迭代/上下文导致问答闭环中断。
-        // 首次置位时同步重建 system prompt（V2 修复）：buildSystemPrompt 按 searchDisabled
-        // 过滤 web_search 描述，剔除「描述存在但工具不可用」不一致——此前 messages[0] 只在
-        // 构造 / refresh* 时机重建，描述残留到闭环结束。仅首次置位重建（幂等，同一闭环
-        // 多次超限搜索不再重复拼装；rebuildSystemMessage 只替换 messages[0]，不动注入消息）。
+
+      // ===== 统一护栏判定（GuardRail SSOT，S2-S5 迁移后为真拦截）=====
+      // 判定逻辑 / 命中文案（衔接提示词）/ 阈值收敛到 guardRail.ts（createDefaultGuards，见收敛方案）。
+      // loop 仅保留最小职责：① 组 GuardContext（运行态计数 + 运行时阈值覆盖 + 防重依赖）；② 调 evaluateBlocked
+      // 按注册序取首个硬拦命中；③ 处理 search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层所以留 loop）；
+      // ④ 被拦则回填 guard 渲染的拒绝文案。
+      // 台账分支②/③（文件覆盖度替身回显）形态不同、**不收敛**（见 guardRail.ts 收敛边界），仍在下方内联。
+      const guardHit = this.guardier.evaluateBlocked({
+        toolName: tc.function.name,
+        argsJson: tc.function.arguments,
+        toolCallId: tc.id,
+        toolResultCache: this.toolResultCache,
+        isCachedResultStillInContext: (hit) => this.isCachedResultStillInContext(hit),
+        thresholds: guardThresholds,
+        counters: {
+          searchCallCount: this.searchCallCount,
+          askCountThisTurn: this.askCountThisTurn,
+          ...this.guardState,
+        },
+      });
+      // search_limit 命中（双闸第二闸）：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
+      // （buildChatOptions 确定性过滤），并在本轮注入「视为未找到更多相关→继续下一步」提示，双管齐下终结
+      // 「被拒→重搜→再被拒」拒绝风暴耗尽迭代/上下文导致问答闭环中断。首次置位重建 system prompt（幂等，
+      // rebuildSystemMessage 只替换 messages[0]）。本分支在 push(false) 之前（与既有搜索闸节奏一致，维持逐 i 对齐）。
+      if (guardHit?.guardId === 'search_limit') {
         if (!this.searchDisabled) {
           this.searchDisabled = true;
           this.rebuildSystemMessage();
@@ -1543,91 +1581,49 @@ export class AgentLoop {
           );
         }
         blockedFlags.push(true);
-        toolPromises.push(
-          Promise.resolve(
-            `[SEARCH_LIMIT_REACHED] 已执行 ${LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS} 次联网搜索，信息应已足够；` +
-              `请停止调用 web_search，直接基于现有搜索结果作答。`,
-          ),
-        );
+        toolPromises.push(Promise.resolve(guardHit.message));
         continue;
       }
+      // 默认非阻塞占位（与既有实现节奏一致）；其余护栏命中 → 硬拦回填拒绝文案。
       blockedFlags.push(false);
-      // ask_user 硬护栏（askLimit 超限，2026-09-04）：拒绝该提问并回填拒绝文案。
-      // 走到这里说明未达上限的提问已在 handleToolCalls 检出挂起——此分支只兜「单轮内多次提问
-      // 超限」或「检出后计数已满」（同轮多个 ask_user 跨上限），拒绝后其余工具照常执行。
-      if (tc.function.name === ASK_USER_TOOL.name && this.askCountThisTurn >= this.strategy.askLimit) {
+      if (guardHit) {
         blockedFlags.push(true);
-        toolPromises.push(
-          Promise.resolve(
-            `[ASK_LIMIT] 本问答闭环已提问 ${this.strategy.askLimit} 次（上限），请基于现有信息继续，不要再调用 ask_user。`,
-          ),
-        );
+        toolPromises.push(Promise.resolve(guardHit.message));
         continue;
       }
-      // 工具结果防重拦截（read_file/list_dir/web_search 等信息获取型工具）：
-      // 闭环内同 toolName + 同请求主体（路径 + 读取区间 / query）的重复调用 → blocked=true + [ALREADY_READ]。
-      // 与 web_search MAX_WEB_SEARCH_CALLS / ask_user askLimit 同级的确定性拦截，
-      // 终结 LLM 在同一批文件/同一 query 上反复轮询导致的死循环（token 爆炸 + maxIterations 撞线）。
-      //
-      // 拦截前提（不可省）：**该结果确实仍在当前上下文中**。否则内容已被截断裁剪、或已被压缩链
-      // 换成 `[Previous: used x]` 占位符，LLM 手边已无内容却被告知「基于已有信息继续」——
-      // 指令性撒谎 + 重读被拦 = 死锁（CTX-1 根因②）。判定见 isCachedResultStillInContext。
-      // 文件被 write_file/delete_file 修改 → 结果处理循环主动 invalidateFile 放行后续合法重读。
-      const subjectExtractor = DEDUP_SUBJECT_EXTRACTORS[tc.function.name];
-      if (subjectExtractor) {
-        const subject = subjectExtractor(tc.function.arguments);
-        if (subject) {
-          // P0-2 失败硬闸（N1 真 block / N2 同主体粒度）：该同主体已连续失败达阈值 → 执行前硬拦，不再执行。
-          // 治「幻觉文件重读风暴」（前一次结果已 [ERR 失败，此处按其主体累计拒绝后续同参重试）。
-          const failCount = this.infoToolFailureBySubject.get(
-            failureSubjectKey(tc.function.name, subject),
+      // 写侧连写计数持久化：护栏 write_loop 按「判定前状态」推断递增值，故本处在判定通过后把这次写入并入连写状态
+      // （换路径复位 1、同路径累加）。write 成功会 invalidateFile 使 read 缓存失效 → 读回永远新鲜，这正是写环
+      // 自愈的土壤；仅拦截连续重写同一文件达阈值者（write_loop guard 负责），不误伤合法改写。
+      if (tc.function.name === 'write_file') {
+        let writePath: string | null = null;
+        try {
+          const a = JSON.parse(tc.function.arguments) as { path?: string };
+          if (typeof a?.path === 'string' && a.path.trim()) writePath = normalizePathKey(a.path);
+        } catch {
+          /* 参数非 JSON → 不并入连写状态 */
+        }
+        if (writePath) {
+          const w = this.guardState.write;
+          w.samePathWriteStreak = w.lastWritePath === writePath ? w.samePathWriteStreak + 1 : 1;
+          w.lastWritePath = writePath;
+        }
+      }
+      // 台账分支②（文件覆盖度替身回显，不收敛）：原文已压缩/分段脚注时用摘要或引导 offset 续读替代重读。
+      // 分支③（保守）：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁——CTX-1 根因②）。
+      // 文件被 write/delete 修改 → 结果处理循环 invalidate 台账，放行合法重读。
+      const ledgerSubject = DEDUP_SUBJECT_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
+      if (ledgerSubject?.path) {
+        const cov = this.fileExposure.get(ledgerSubject.path);
+        if (cov && shouldEchoLedgerStub(ledgerSubject, cov)) {
+          // 观测 ADR-031「补缝过度拦截」候选：台账替身回显命中累加。
+          this.metrics.ledgerStubEchoCount++;
+          logger.debug(
+            { path: ledgerSubject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
+            'read_file 台账替身回显（分支②）：已用摘要顶替整读',
           );
-          if (failCount !== undefined && failCount >= this.duplicateToolCallThreshold) {
-            blockedFlags.push(true);
-            toolPromises.push(
-              Promise.resolve(
-                `[READ_FAILED_LIMIT] 该目标已连续失败 ${failCount} 次（阈值 ${this.duplicateToolCallThreshold}），` +
-                  `可能不存在。请先用 list_dir 确认路径，或改用其它目标。`,
-              ),
-            );
-            continue;
-          }
-          const hit = this.toolResultCache.check(tc.function.name, subject);
-          if (hit) {
-            // 分支①：结果仍在上下文 → 拦（现状：同参重读 = 纯浪费）
-            if (this.isCachedResultStillInContext(hit)) {
-              blockedFlags.push(true);
-              toolPromises.push(
-                Promise.resolve(
-                  `[ALREADY_READ] 该结果仍在你的当前上下文中（第 ${hit.cachedAtIteration} 步获取：` +
-                    `${formatDedupSubject(tc.function.name, subject)}），无需重复获取。` +
-                    // 「offset/limit 引导」仅对 read_file 有意义（文件可分区间续读）；URL/会话/query 等主体无此语义
-                    (tc.function.name === 'read_file'
-                      ? `如需该文件的其它部分，请用 offset/limit 指定行区间。`
-                      : `直接基于已有内容继续即可。`),
-                ),
-              );
-              continue;
-            }
-            // （原文已压缩 → 落入分支②递增判断，见下）
-          }
-          // 分支②（P0-1b + T1 收敛，2026-09-14）：已有覆盖度台账时，是否回显摘要的判定**唯一**收敛到
-          //   `shouldEchoLedgerStub`（SSOT）——区分「无 limit 整读」（有覆盖即拦、回显引导 offset 续读）
-          //   与「offset/limit 续读」（完全落覆盖内才拦）；触及覆盖之外放行分支③（G2 守卫）。
-          const cov = subject.path ? this.fileExposure.get(subject.path) : undefined;
-          if (cov && shouldEchoLedgerStub(subject, cov)) {
-            // 观测 ADR-031「补缝过度拦截」候选：台账替身回显命中累加。
-            // logger.debug 留痕（含文件 + 覆盖区间），供真机对照「替身是否在顶替合法重读拿整份视角」。
-            this.metrics.ledgerStubEchoCount++;
-            logger.debug(
-              { path: subject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
-              'read_file 台账替身回显（分支②）：已用摘要顶替整读',
-            );
-            blockedFlags.push(true);
-            toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
-            continue;
-          }
-          // 分支③（保守）：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁，CTX-1 根因②）
+          blockedFlags.push(true);
+          toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
+          continue;
         }
       }
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
@@ -1712,9 +1708,12 @@ export class AgentLoop {
         if (fSubject) {
           const key = failureSubjectKey(tc.function.name, fSubject);
           if (ok) {
-            this.infoToolFailureBySubject.delete(key);
+            this.guardState.readFailBySubject.delete(key);
           } else if (!blocked) {
-            this.infoToolFailureBySubject.set(key, (this.infoToolFailureBySubject.get(key) ?? 0) + 1);
+            this.guardState.readFailBySubject.set(
+              key,
+              (this.guardState.readFailBySubject.get(key) ?? 0) + 1,
+            );
           }
         }
       }
@@ -1977,6 +1976,12 @@ export class AgentLoop {
       );
       prompt += `\n\n## 工具不可用\n当前模型不支持工具调用（无原生工具协议，也无可用的结构化输出回落）。请直接用文本回答，不要假装调用工具。`;
     }
+
+    // 注：曾计划追加 `## 行为护栏` 通用声明节（this.guardier.buildPromptSection()），已收敛去掉——
+    // 常量注入会改变每个 turn 的 system prompt token 预算，撞破「极小预算触发截断」类测试标定，
+    // 且让 `[TAG]` 令牌在常驻 system prompt 出现而与运行时拒绝消息定位冲突（行为护栏的「衔接提示词」
+    // 以运行时 GUARD_RAIL_PROMPTS 即时渲染为准，见 guardRail.ts）。buildPromptSection 保留为宿主可按需选用
+    // 的通用约束产出能力（单元测试覆盖其正确性），不入内核默认装配路径。
 
     return prompt;
   }

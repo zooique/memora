@@ -178,6 +178,20 @@ export function formatDedupSubject(toolName: string, subject: DedupSubject): str
 }
 
 /**
+ * 同主体失败硬闸的主体 key（工具名 + 规范化 path/query/item）：同一工具 + 同一请求主体的
+ * 连续失败计数用，粒度=同参。
+ *
+ * 原子分隔符 `\u0002`：不可打印，避免与 path/query/item 的合法内容（文件路径、URL、会话 id）冲突。
+ *
+ * @param toolName 工具名
+ * @param subject  请求主体（由 `DEDUP_SUBJECT_EXTRACTORS` 产出）
+ */
+export function failureSubjectKey(toolName: string, subject: DedupSubject): string {
+  // item 纳入：trace_summary 同 sessionId 不同 roundId 计为不同主体，不把「任一 round 失败」误并到整个会话
+  return `${toolName}\u0002${subject.path ?? ''}\u0002${subject.query ?? ''}\u0002${subject.item ?? ''}`;
+}
+
+/**
  * 闭环内工具结果防重缓存
  *
  * 只负责「同 tool + 同主体」的重复检测。mtime 放行不需要——

@@ -1,4 +1,4 @@
-﻿# Loop 模块设计 —— 对 step 的编排（turn 回答中阶段）
+# Loop 模块设计 —— 对 step 的编排（turn 回答中阶段）
 
 > **2026-09-04 收敛补记（一）**：本文论述的「多 turn 任务编排 = orchestrator 对 turn 的串联」（`externalTaskLoop`/`completeExternalTask`）已整体废弃并删除。**loop.ts 本身未变**——`runIterationLoop`（单 turn step 循环引擎）是唯一剩存的 Loop 概念。收敛后架构简化为：一个 turn 内，step 循环承载全部复杂度（含动态建任务表、会议多角色、暂停续跑），不再跨 turn 串联。
 >
@@ -164,10 +164,21 @@
 
 ---
 
-## 八、关联文档
+## 八、运行时护栏收敛（GuardRail SSOT，2026-09-16）
+
+> 收敛自 [loop运行时护栏SSOT收敛方案](../../.trae/documents/loop运行时护栏SSOT收敛方案.md)。带伤问题：loop 曾把「联网搜索上限 / 提问上限 / 同路径连写止损 / 读取失败硬闸 / 重复读取拦截」5 种前置拦截型护栏以「内联 if + 独立计数字段 + 各自文案 + 各自阈值」散布主循环，每加一种护栏都改主循环。
+
+**收敛设计（自然生长，非重写）**：判定逻辑、命中文案（衔接提示词 `GUARD_RAIL_PROMPTS`）、阈值（`GUARD_THRESHOLDS`）单一真理源收敛到 [`src/agent/guardRail.ts`](../../src/agent/guardRail.ts)（`createDefaultGuards` 注册 5 闸，判定序 read_failed 先于 read_dedup）。loop 在 `executeToolCalls` 处仅保留最小职责：组 GuardContext → 调 `evaluateBlocked` 取首个硬拦 → search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层故留 loop）→ 被拦回填文案。运行态计数（读失败 / 连写）合并进 `this.guardState`，由 loop 在结果处理 / 写侧持久化处喂数（loop 是执行结果权威）。
+
+**不收敛的异构护栏**（维持各自为政，见 guardRail.ts 收敛边界）：`duplicateToolCallInterceptor` 软警告、maxIterations/stepBudget/tokenBudget 循环终止、self_review 后处理、interruptQueue/pause/ask 续跑、文件覆盖度台账替身回显（分支②/③）。
+
+> 收敛取舍记录：曾计划在 system prompt 追加「## 行为护栏」通用声明节，已去掉——常量注入改变每 turn 的 token 预算（撞破极小预算截断测试标定）且让 `[TAG]` 令牌在常驻 system prompt 出现而干扰运行时拒绝消息定位。衔接提示词以运行时即时渲染为准，`buildPromptSection` 保留为宿主可选能力。
+
+## 九、关联文档
 
 - [agent-design-philosophy.md](./agent-design-philosophy.md) —— 设计哲学真理源（turn/step/loop/多 turn 任务编排/Handoff/气口相关章节）
 - [task-driven-closed-loop.md](./task-driven-closed-loop.md) —— 多 turn 任务编排语义化：任务驱动的多 turn 收敛模型（已实现的实现记录）
-- [module-inventory.md](./module-inventory.md) —— 模块清单（loop.ts 🟢 76 tests）
+- [module-inventory.md](./module-inventory.md) —— 模块清单（loop.ts）
 - `src/agent/loop.ts` —— 实现
+- `src/agent/guardRail.ts` —— 运行时护栏 SSOT（衔接提示词/阈值/判定）
 - `src/agent/agent.ts` —— 调用边界
