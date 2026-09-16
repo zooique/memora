@@ -11,13 +11,18 @@
  * 与 CI 的差异（刻意）：
  *   1. CI 只跑内核；本脚本**补跑宿主**（hosts/memora-vscode）——真机行为在宿主侧，
  *      内核全绿而宿主红的情况历史上出现过（宿主软链内核 dist，改内核会影响宿主）。
- *   2. `npm audit` 默认不跑（需网络、且 CI 本身 continue-on-error），用 `--audit` 开启。
- *   3. 默认**不 fail-fast**：全部步骤跑完再汇总，一次拿到完整体检结果。
+ *   2. 补跑**覆盖率闸门**（`npm run test:cov`）——`testing_rules.md §3` 要求，但此前
+ *      `npm test` 不带 `--coverage`、CI 也不跑，等于闸门从未接上任何会跑的链路。
+ *      代价约 +40s（覆盖率会重跑一遍测试），可用 `--skip-cov` 跳过。
+ *   3. `npm audit` 默认不跑（需网络、且 CI 本身 continue-on-error），用 `--audit` 开启。
+ *   4. 默认**不 fail-fast**：全部步骤跑完再汇总，一次拿到完整体检结果。
  *
  * 用法：
- *   node scripts/local-ci.mjs                 # 全量（内核 4 步 + 宿主 3 步）
- *   node scripts/local-ci.mjs --kernel-only   # 只跑内核（等价于 CI 原范围）
- *   node scripts/local-ci.mjs --skip-build    # 跳过生产构建（最快的内环）
+ *   node scripts/local-ci.mjs                 # 全量（内核 5 步 + 宿主 3 步）
+ *   node scripts/local-ci.mjs --kernel-only   # 只跑内核（≈ CI 原范围 + 覆盖率）
+ *   node scripts/local-ci.mjs --skip-cov      # 跳过覆盖率闸门（省 ~40s）
+ *   node scripts/local-ci.mjs --skip-build    # 跳过生产构建
+ *   node scripts/local-ci.mjs --skip-cov --skip-build   # 最快内环
  *   node scripts/local-ci.mjs --from=host:test# 从指定步骤开始
  *   node scripts/local-ci.mjs --audit         # 额外跑依赖安全审计（允许失败）
  *
@@ -48,6 +53,17 @@ const ALL_STEPS = [
   { id: 'kernel:typecheck', name: '内核 TypeScript 类型检查', cmd: 'npm run typecheck', cwd: ROOT, required: true },
   { id: 'kernel:lint', name: '内核 ESLint（含 --max-warnings 0）', cmd: 'npm run lint', cwd: ROOT, required: true },
   { id: 'kernel:test', name: '内核单元测试', cmd: 'npm run test', cwd: ROOT, required: true },
+  {
+    id: 'kernel:coverage',
+    name: '内核覆盖率闸门',
+    cmd: 'npm run test:cov',
+    cwd: ROOT,
+    required: true,
+    optionalFlag: 'skip-cov',
+    // 覆盖率跑前会 clean，本环境的 safe-delete guard 会把它拦成崩溃（前提=有残留）；
+    // 置空 NODE_OPTIONS 可绕过（实测可行）。
+    env: { NODE_OPTIONS: '' },
+  },
   { id: 'kernel:build', name: '内核生产构建', cmd: 'npm run build', cwd: ROOT, required: true, optionalFlag: 'skip-build' },
   { id: 'host:typecheck', name: '宿主 TypeScript 类型检查', cmd: 'npm run typecheck', cwd: HOST, required: true },
   { id: 'host:lint', name: '宿主 ESLint（含 --max-warnings 0）', cmd: 'npm run lint', cwd: HOST, required: true },
@@ -59,6 +75,7 @@ function selectSteps() {
   let steps = ALL_STEPS.slice();
   if (has('--kernel-only')) steps = steps.filter((s) => s.id.startsWith('kernel:'));
   if (has('--skip-build')) steps = steps.filter((s) => s.optionalFlag !== 'skip-build');
+  if (has('--skip-cov')) steps = steps.filter((s) => s.optionalFlag !== 'skip-cov');
   // audit 默认关闭：需网络且 CI 本身 continue-on-error，不让它影响本地门禁稳定性
   if (!has('--audit')) steps = steps.filter((s) => s.id !== 'audit');
   const from = argOf('from');
@@ -98,7 +115,7 @@ function runStep(step, index, total) {
     const child = spawn(step.cmd, {
       cwd: step.cwd,
       shell: true,
-      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
+      env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1', ...(step.env ?? {}) },
     });
     const timer = setTimeout(() => {
       child.kill('SIGKILL');

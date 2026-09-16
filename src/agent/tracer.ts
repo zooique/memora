@@ -113,6 +113,15 @@ export interface AgentMetrics {
      * 任务零产出却被 success 盖章。宿主据此识别「瞬态抽风」（可期望重试救回）vs「模型拒绝」（重试也空）。
      */
     emptyResponseCount: number;
+    /**
+     * tool_call 批次成形守卫（TOOLPAIR-2 Step 2 `auditToolCallPairing` 发送边界）实际拒发次数。
+     * 2026-09-16 补出：此前该计数只自增、不进 `AgentMetrics` 输出 → 宿主 / tracer 零消费者
+     * （命中「僵尸声明：派生字段零消费者」）。
+     * N>0 代表内核真拦下了坏批次（孤立 tool 消息 / 空函数名 / 重复 id / 名称超长）。
+     * 与 `unparsedToolIntentCount` 互补：后者是「模型想干却没干成」（模型侧），
+     * 本值是「内核拦下了会发出去的坏批次」（内核侧守门）。
+     */
+    pairingGuardFires: number;
   };
   /** 工具调用指标 */
   tools: {

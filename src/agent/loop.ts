@@ -2237,6 +2237,7 @@ export class AgentLoop {
         actualInputTokens: this.metrics.actualInputTokens,
         actualOutputTokens: this.metrics.actualOutputTokens,
         emptyResponseCount: this.metrics.emptyResponseCount,
+        pairingGuardFires: this.metrics.llmPairingGuardFires,
       },
       tools: {
         callCount: this.metrics.toolCallCount,

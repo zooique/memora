@@ -40,12 +40,14 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/index.ts', 'hosts/**', 'hosts/memora-vscode/src/**'],
       thresholds: {
-        // 1.0 发布阈值：当前实际覆盖率 91.38/83.35/93.28/92.46，阈值设为略低于实际值以留缓冲
+        // 实测基线（2026-09-16，`npm run test:cov`，列序 = Stmts / Branch / Funcs / Lines）：
+        //   90.31 / 84.78 / 92.35 / 91.52 —— 四项阈值均低于实际值，留缓冲防日常波动。
         // 0% 文件（agent/types.ts, llm/types.ts, memory/*Interface.ts 等）为纯类型/接口文件，无运行时代码
         lines: 80,
-        // 函数覆盖率阈值下调至 83 → 匹配实际值 83.35%，保留 ~0.35% 缓冲。
-        // 未覆盖函数主要来自 eval/memory/skill 模块的部分导出函数（待后续补充测试后回升至 88）。
-        functions: 83,
+        // 与 `.trae/rules/testing_rules.md` §3「函数 ≥ 88%」对齐（该文档声明「文档是配置的描述
+        // 而非独立目标」，故以文档为准）。原值 83 系漂移（99edf24c），与文档 88 不一致；
+        // 实测 92.35%，提到 88 后仍有约 4.3 点缓冲。
+        functions: 88,
         branches: 75,
         statements: 80,
       },

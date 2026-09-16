@@ -573,3 +573,21 @@ describe('AgentLoop · 空响应兜底计数（2026-09-15 边界补缝）', () =
     ).toBe(true);
   });
 });
+
+describe('AgentLoop · 配对守卫计数出闸（2026-09-16 僵尸声明消缺）', () => {
+  it('getMetrics().llm 必须带 pairingGuardFires —— 只自增不外露的计数等于没记', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 职责分工：**计数会不会递增**由 `llmCaller.test.ts` 守住（守卫真拒发 → +1）；
+    // 此处只守**出闸**——内核拦下坏批次是守门行为，宿主 / tracer 看不见即为「僵尸声明」
+    // （派生字段零消费者）：花了成本拦，却无人能观测到拦过。
+    // 变异验证：删掉出闸行 → tsc(TS2741) 与本用例**双重变红**。
+    // **已知未覆盖**：写成硬编码常量（`pairingGuardFires: 0`）时本用例绿——类型仍合规，
+    // 而「计数会不会递增」另有 llmCaller.test.ts 守住。补源码扫描守卫可覆盖该形态，
+    // 但会锚定代码书写格式（格式微调即误红），性价比低，故登记缺口而非加固。
+    expect(loop.getMetrics().llm.pairingGuardFires).toBe(0);
+  });
+});
