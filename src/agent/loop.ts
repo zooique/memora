@@ -52,7 +52,6 @@ import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js
 import {
   ToolResultCache,
   DEDUP_SUBJECT_EXTRACTORS,
-  failureSubjectKey,
   normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
@@ -229,20 +228,10 @@ export class AgentLoop {
    *  闭环内有效（resetTurnState 清），与 toolResultCache 同生命周期。
    *  分支②据此在「原文已压缩」时回显摘要，而非放行重读（永动机）或空拦（死锁）。 */
   private readonly fileExposure = new FileExposureLedger();
-  /** P0-2 同主体连续失败硬闸（N1 真 block / N2 同主体粒度）+ write_file 同路径连写止损的**运行态计数容器**。
-   *  S2-S5 收敛：判定逻辑 / 文案 / 阈值归 guardRail.ts（guardState 只存状态，由 loop 在结果处理 / 写侧持久化处喂数）；
-   *  原散落的 infoToolFailureBySubject / lastWritePath / samePathWriteStreak 三字段合并于此（消除散落运行态）。 */
-  private readonly guardState: {
-    /** 同路径连写计数（最近写入路径 + 连续同路径写次数）—— write_loop 用 */
-    write: { lastWritePath: string | null; samePathWriteStreak: number };
-    /** 同主体连续失败计数（subject-key（failureSubjectKey 口径）→ 次数）—— read_failed 用 */
-    readFailBySubject: Map<string, number>;
-  } = {
-    write: { lastWritePath: null, samePathWriteStreak: 0 },
-    readFailBySubject: new Map(),
-  };
-  /** 运行时护栏注册表（SSOT，S2 起真拦截）：判定序 / 文案 / 阈值单一真理源在 guardRail.ts；
-   *  本字段只是 loop 的装载点（createDefaultGuards 出厂即覆盖 5 类前置拦截型护栏）。 */
+  /** 运行时护栏注册表（SSOT）：判定序 / 文案 / 阈值单一真理源在 guardRail.ts；
+   *  本字段只是 loop 的装载点（createDefaultGuards 出厂即覆盖 5 类前置拦截型护栏）。
+   *  write_loop/read_failed 的计数状态内聚进其 guard 实例闭包，loop 仅负责
+   *  装载 registry + 调 evaluateBlocked 判定 + 调 notifyExec 写侧喂数 + reset 归零。 */
   private readonly guardier = createDefaultGuards();
   /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。private 读写器，内部消费点：
    *  _routePausedIfTimeoutAndPause（读）/ resetTurnState（清）/ requestPause/clearPauseRequest（写） */
@@ -750,10 +739,9 @@ export class AgentLoop {
     this.toolResultCache.clear();
     // 文件覆盖度台账同步清空（与防重缓存同生命周期）
     this.fileExposure.clear();
-    // P0-2 失败硬闸计数随轮清空（跨闭环复用时若残留，会误拒本轮合法的新失败重试）
-    this.guardState.readFailBySubject.clear();
-    // 写侧同路径连写止损计数随轮清空（写环护栏同生命周期，防上一轮残留影响本轮新写入路径判定）
-    this.guardState.write = { lastWritePath: null, samePathWriteStreak: 0 };
+    // 失败硬闸 + 写侧连写止损计数随轮清空（guard 内部闭包状态由 reset('perStep') 归零；
+    // 跨闭环复用时若残留，会误拒本轮合法的新失败重试 / 误判新写入路径）
+    this.guardier.reset('perStep');
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
     // 层1：任务表 nudge 注入标记随轮重置（下一 turn 重新判定注入）；planNeedsNudge 也随轮清，
@@ -1561,7 +1549,6 @@ export class AgentLoop {
         counters: {
           searchCallCount: this.searchCallCount,
           askCountThisTurn: this.askCountThisTurn,
-          ...this.guardState,
         },
       });
       // search_limit 命中（双闸第二闸）：命中即停搜——置 searchDisabled，下一轮 LLM 调用的工具集剔除 web_search
@@ -1588,23 +1575,6 @@ export class AgentLoop {
       if (guardHit) {
         toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
         continue;
-      }
-      // 写侧连写计数持久化：护栏 write_loop 按「判定前状态」推断递增值，故本处在判定通过后把这次写入并入连写状态
-      // （换路径复位 1、同路径累加）。write 成功会 invalidateFile 使 read 缓存失效 → 读回永远新鲜，这正是写环
-      // 自愈的土壤；仅拦截连续重写同一文件达阈值者（write_loop guard 负责），不误伤合法改写。
-      if (tc.function.name === 'write_file') {
-        let writePath: string | null = null;
-        try {
-          const a = JSON.parse(tc.function.arguments) as { path?: string };
-          if (typeof a?.path === 'string' && a.path.trim()) writePath = normalizePathKey(a.path);
-        } catch {
-          /* 参数非 JSON → 不并入连写状态 */
-        }
-        if (writePath) {
-          const w = this.guardState.write;
-          w.samePathWriteStreak = w.lastWritePath === writePath ? w.samePathWriteStreak + 1 : 1;
-          w.lastWritePath = writePath;
-        }
       }
       // 台账分支②（文件覆盖度替身回显，不收敛）：原文已压缩/分段脚注时用摘要或引导 offset 续读替代重读。
       // 分支③（保守）：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁——CTX-1 根因②）。
@@ -1700,22 +1670,14 @@ export class AgentLoop {
           }
         }
       }
-      // P0-2 失败硬闸计数：真实失败（执行了且返回 [ERR，非拦截）的 info 工具 → 同主体累加；
-      // 成功 → 清除该主体失败计数（恢复）。治「幻觉文件重读风暴」。
-      if (resultExtractor) {
-        const fSubject = resultExtractor(tc.function.arguments);
-        if (fSubject) {
-          const key = failureSubjectKey(tc.function.name, fSubject);
-          if (ok) {
-            this.guardState.readFailBySubject.delete(key);
-          } else if (!blocked) {
-            this.guardState.readFailBySubject.set(
-              key,
-              (this.guardState.readFailBySubject.get(key) ?? 0) + 1,
-            );
-          }
-        }
-      }
+      // 写侧喂数（护栏内聚状态的下发点）：对每个 toolCall 调 notifyExec 分发 onExec，
+      // 按三态喂入（blocked=被拦未执行 / ok=成功 / failed=失败）。write_loop/read_failed 据此自持更新计数。
+      this.guardier.notifyExec({
+        toolName: tc.function.name,
+        argsJson: tc.function.arguments,
+        toolCallId: tc.id,
+        outcome: blocked ? 'blocked' : ok ? 'ok' : 'failed',
+      });
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
       // 覆盖 write_file/delete_file 两类会修改文件系统状态的工具
       if (ok && (tc.function.name === 'write_file' || tc.function.name === 'delete_file')) {

@@ -14,16 +14,16 @@
  * - interruptQueue/pause/ask 续跑（暂停-质问-续跑设计，另有定稿文档，不动）；
  * - 文件覆盖度台账（fileExposure 分支②回显，见 toolLedger.ts）——形态不同，不收敛。
  *
- * S1 阶段（shadow evaluate）：本模块已能按注册序对 5 闸做纯函数判定（不改变 loop 行为，
- * 只作复现验证的土壤），S2-S5 逐步把 loop 内联判定替换为 GuardRail，S6 收尾阈值统一 + 注入
- * systemPrompt「## 行为护栏」节。
+ * 收敛现状：本模块已按注册序对 5 闸做**真拦截判定**（evaluateBlocked 由 loop 调用，命中回填拒绝文案），
+ * loop 只保留最小职责（组 GuardContext + 调 evaluateBlocked 判定 + 调 notifyExec 写侧喂数、
+ * reset 归零内部计数状态）。「## 行为护栏」节由 buildPromptSection 收敛注入。
  */
 import {
   DEDUP_SUBJECT_EXTRACTORS,
   formatDedupSubject,
   failureSubjectKey,
   normalizePathKey,
-  type ToolResultCache,
+  ToolResultCache,
   type CacheEntry,
   type DedupSubject,
 } from '@/agent/toolResultCache.js';
@@ -44,16 +44,23 @@ export type GuardRailPromptId =
   | 'read_failed_limit'
   | 'already_read';
 
-/** 护栏运行态计数（loop 维护；S1 shadow 由 loop 注入初值，S2-S5 迁移后由 guard onExec 自持更新） */
+/** 护栏运行态计数（loop 注入，仅承载 search_limit / ask_limit 两枚；write_loop 连写 / read_failed 失败
+ *  计数内聚进各自 guard 实例闭包，经 onExec 自持更新） */
 export interface GuardCounters {
   /** 本闭环内 web_search 调用次数（含被拒绝的）—— search_limit 用 */
   searchCallCount: number;
   /** 本用户输入的提问累计数（life:'perInput'）—— ask_limit 用 */
   askCountThisTurn: number;
-  /** 同路径连写状态（最近写入路径 + 连续同路径写得次数）—— write_loop 用 */
-  write: { lastWritePath: string | null; samePathWriteStreak: number };
-  /** 同主体连续失败计数（subject-key → 次数）—— read_failed 用 */
-  readFailBySubject: ReadonlyMap<string, number>;
+}
+
+/** onExec 写侧喂数上下文：结果处理阶段由 loop 构造，仅承载 feeds 所需字段 + 本次执行结果 */
+export interface GuardExecContext {
+  toolName: string;
+  /** 原始工具参数 JSON 串（用于 path/subject 提取） */
+  argsJson: string;
+  toolCallId: string;
+  /** 本次执行结果：ok=真实成功 / failed=执行失败 / blocked=被护栏或台账拦截（未真正执行） */
+  outcome: 'ok' | 'failed' | 'blocked';
 }
 
 /** 护栏阈值（运行时由调用方注入 GuardContext；真源分配见下） */
@@ -89,7 +96,7 @@ export interface GuardContext {
   isCachedResultStillInContext: (hit: CacheEntry) => boolean;
   /** 护栏阈值（loop 构造时填实际值；缺省回落 GUARD_THRESHOLDS） */
   thresholds: GuardThresholds;
-  /** 运行态计数（S1 shadow 由 loop 注入；S2-S5 后由 guard onExec 自持） */
+  /** 运行态计数（loop 注入，供 search_limit/ask_limit 用；write_loop/read_failed 的计数已在 guard 闭包内） */
   counters: GuardCounters;
 }
 
@@ -111,8 +118,11 @@ export interface GuardRailDef {
   life: 'perInput' | 'perStep';
   /** 副钩（仅 search）：命中后置 searchDisabled + rebuild system message；须幂等 */
   afterBlock?: (c: GuardContext) => void;
-  /** 写侧钩子：结果处理阶段喂计数（失败+1 / 成功清0 / 连写递增），S2-S5 挂载 */
-  onExec?: (c: GuardContext) => void;
+  /** 写侧钩子：结果处理阶段由 loop 对每个 toolCall 调 notifyExec 分发本钩子喂计数
+   *  （失败+1 / 成功清0 / 连写递增 / 拦截不计）。守卫自持闭包状态的统一入口。 */
+  onExec?: (c: GuardExecContext) => void;
+  /** 归零 guard 自身内部计数状态（life 过期 / 轮边界由 GuardRail.reset 统一调用） */
+  reset?: () => void;
   /** 注入 systemPrompt「## 行为护栏」节的通用约束声明（不强塞逐轮计数） */
   promptGuideline?: string;
 }
@@ -127,6 +137,17 @@ export interface GuardHit {
 export function extractSubject(toolName: string, argsJson: string): DedupSubject | undefined {
   const extractor = DEDUP_SUBJECT_EXTRACTORS[toolName];
   return extractor ? extractor(argsJson) : undefined;
+}
+
+/** 解析 write_file 参数里的路径并归一（非 JSON / 空路径 → null，即不参与连写判定） */
+function parseWritePath(argsJson: string): string | null {
+  try {
+    const a = JSON.parse(argsJson) as { path?: string };
+    if (typeof a?.path === 'string' && a.path.trim()) return normalizePathKey(a.path);
+  } catch {
+    /* 参数非 JSON → 不参与连写 */
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -188,7 +209,8 @@ const GUIDELINES: Readonly<Record<GuardRailId, string | undefined>> = {
  * 判定纪律：`evaluateBlocked` 按注册顺序遍历，返回**首个** `matches && shouldBlock` 的硬拦命中。
  * 注册顺序即判定优先级（read_failed 必须先于 read_dedup——失败先于去重判定，与 loop 既有语义一致）。
  *
- * S1（shadow）只判不改：evaluate 进入 loop 只作复现验证的土壤，不触碰 blockedFlags/计数。
+ * 判定与状态均为真拦截/真状态：evaluateBlocked 由 loop 调用并回填拒绝文案；
+ * write_loop/read_failed 的计数状态内聚进 guard 实例闭包，由 notifyExec 写侧喂数、reset 归零。
  */
 export class GuardRail {
   /** 有序注册表（注册序即判定序） */
@@ -217,10 +239,28 @@ export class GuardRail {
     return undefined;
   }
 
-  /** 写侧喂数钩子分发：结果处理阶段由 loop 对每个 toolCall 调此方法（S2-S5 挂载后生效） */
-  notifyExec(c: GuardContext): void {
+  /** 写侧喂数钩子分发：结果处理阶段由 loop 对每个 toolCall 调此方法。
+   *  matches 校验复用 GuardContext 判定（构造最小临时 ctx）；命中即调 g.onExec 喂计数。 */
+  notifyExec(c: GuardExecContext): void {
+    // 构造最小临时 GuardContext：matches 仅依赖 toolName，其余字段占位即可
+    const matchCtx: GuardContext = {
+      toolName: c.toolName,
+      argsJson: c.argsJson,
+      toolCallId: c.toolCallId,
+      toolResultCache: new ToolResultCache(),
+      isCachedResultStillInContext: () => false,
+      thresholds: GUARD_THRESHOLDS as GuardThresholds,
+      counters: { searchCallCount: 0, askCountThisTurn: 0 },
+    };
     for (const g of this.registry) {
-      if (g.matches(c)) g.onExec?.(c);
+      if (g.matches(matchCtx)) g.onExec?.(c);
+    }
+  }
+
+  /** 归零指定生命周期 guard 的内部计数状态（life 轮边界由 loop 调 resetTurnState 统一触发） */
+  reset(life: 'perInput' | 'perStep'): void {
+    for (const g of this.registry) {
+      if (g.life === life) g.reset?.();
     }
   }
 
@@ -240,6 +280,18 @@ export class GuardRail {
  * 提供静态判定的**纯函数默认集**，loop 接入时可整表注册；阈值经 ctx.thresholds 由 loop 覆盖为实际值。
  */
 export function createDefaultGuards(): GuardRail {
+  // write_loop / read_failed 的计数状态各归本函数闭包（createDefaultGuards 每实例一份，
+  // loop 每个实例都 new 一个守卫容器 → 状态每实例独立，安全），经 onExec 喂数、reset 归零。
+  let write = { lastWritePath: null as string | null, samePathWriteStreak: 0 };
+  const readFailBySubject = new Map<string, number>();
+  // 期望连写递增后值（读闭包 write，不做状态迁移；迁移交给 onExec）
+  const nextWriteStreak = (p: string): number =>
+    write.lastWritePath === p ? write.samePathWriteStreak + 1 : 1;
+  // read_failed 的 subject-key 提取（无 subject → null）
+  const readFailKey = (toolName: string, argsJson: string): string | null => {
+    const subject = extractSubject(toolName, argsJson);
+    return subject ? failureSubjectKey(toolName, subject) : null;
+  };
   return new GuardRail()
     .register({
       id: 'search_limit',
@@ -265,60 +317,57 @@ export function createDefaultGuards(): GuardRail {
       id: 'write_loop',
       matches: (c) => c.toolName === 'write_file',
       // 现有 loop 语义：同路径则 streak+1、换路径则复位为 1，达到阈值拦。
-      // 只读推断期望的递增后值，不改自身状态（状态迁移交给 onExec，S3 挂载）
+      // 计数读闭包 write，只读推断期望递增后值、不改自身状态（迁移交给 onExec）。
       shouldBlock: (c) => {
-        let writePath: string | null = null;
-        try {
-          const a = JSON.parse(c.argsJson) as { path?: string };
-          if (typeof a?.path === 'string' && a.path.trim()) writePath = normalizePathKey(a.path);
-        } catch {
-          /* 参数非 JSON → 不拦截 */
-        }
-        if (!writePath) return false;
-        const streak =
-          c.counters.write.lastWritePath === writePath
-            ? c.counters.write.samePathWriteStreak + 1
-            : 1;
-        return streak >= c.thresholds.writeLoop;
+        const p = parseWritePath(c.argsJson);
+        if (!p) return false;
+        return nextWriteStreak(p) >= c.thresholds.writeLoop;
       },
       blocked: true,
       promptId: 'write_loop_stop',
       promptArgs: (c) => {
-        let writePath: string | null = null;
-        try {
-          const a = JSON.parse(c.argsJson) as { path?: string };
-          if (typeof a?.path === 'string' && a.path.trim()) writePath = normalizePathKey(a.path);
-        } catch {
-          writePath = c.counters.write.lastWritePath ?? '';
+        const p = parseWritePath(c.argsJson);
+        if (!p) return { n: c.thresholds.writeLoop, subject: '' };
+        return { n: Math.max(nextWriteStreak(p), c.thresholds.writeLoop), subject: p };
+      },
+      onExec: (c) => {
+        // blocked = 未真正执行，不累计连写（否则被拒后的同路径重写会把 streak 虚抬，误伤后续合法写入）
+        if (c.outcome === 'blocked') return;
+        const p = parseWritePath(c.argsJson);
+        if (p) {
+          write.samePathWriteStreak = nextWriteStreak(p);
+          write.lastWritePath = p;
         }
-        const streak =
-          c.counters.write.lastWritePath === writePath
-            ? c.counters.write.samePathWriteStreak + 1
-            : 1;
-        return { n: Math.max(streak, c.thresholds.writeLoop), subject: writePath ?? '' };
+      },
+      reset: () => {
+        write = { lastWritePath: null, samePathWriteStreak: 0 };
       },
       life: 'perStep',
     })
     .register({
       id: 'read_failed',
       matches: (c) => DEDUP_SUBJECT_EXTRACTORS[c.toolName] !== undefined,
+      // 计数读闭包 readFailBySubject，状态迁移交给 onExec
       shouldBlock: (c) => {
-        const subject = extractSubject(c.toolName, c.argsJson);
-        if (!subject) return false;
-        const failCount = c.counters.readFailBySubject.get(
-          failureSubjectKey(c.toolName, subject),
-        );
+        const key = readFailKey(c.toolName, c.argsJson);
+        if (key === null) return false;
+        const failCount = readFailBySubject.get(key);
         return failCount !== undefined && failCount >= c.thresholds.readFailed;
       },
       blocked: true,
       promptId: 'read_failed_limit',
       promptArgs: (c) => {
-        const subject = extractSubject(c.toolName, c.argsJson);
-        const failCount = subject
-          ? c.counters.readFailBySubject.get(failureSubjectKey(c.toolName, subject))
-          : undefined;
-        return { n: failCount ?? 0, limit: c.thresholds.readFailed };
+        const key = readFailKey(c.toolName, c.argsJson);
+        return { n: key ? (readFailBySubject.get(key) ?? 0) : 0, limit: c.thresholds.readFailed };
       },
+      onExec: (c) => {
+        const key = readFailKey(c.toolName, c.argsJson);
+        if (key === null) return;
+        if (c.outcome === 'ok') readFailBySubject.delete(key);
+        else if (c.outcome === 'failed') readFailBySubject.set(key, (readFailBySubject.get(key) ?? 0) + 1);
+        // blocked 不计失败（未真正执行）
+      },
+      reset: () => readFailBySubject.clear(),
       life: 'perStep',
     })
     .register({

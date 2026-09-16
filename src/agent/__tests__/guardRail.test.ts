@@ -10,13 +10,11 @@ import {
 } from '@/agent/guardRail.js';
 import { ToolResultCache, normalizePathKey, type DedupSubject } from '@/agent/toolResultCache.js';
 
-/** 构造默认计数（全部为零值） */
+/** 构造默认计数（全部为零值；write/readFailBySubject 内聚在 guard 闭包内，不由此注入） */
 function emptyCounters(): GuardCounters {
   return {
     searchCallCount: 0,
     askCountThisTurn: 0,
-    write: { lastWritePath: null, samePathWriteStreak: 0 },
-    readFailBySubject: new Map<string, number>(),
   };
 }
 
@@ -91,49 +89,45 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
     expect(blocked?.guardId).toBe('ask_limit');
   });
 
-  it('write_loop：同路径达阈值拦，换路径重置放行', () => {
-    const ctx = makeCtx({
-      toolName: 'write_file',
-      argsJson: '{"path":"a.md"}',
-      counters: { ...emptyCounters(), write: { lastWritePath: normalizePathKey('a.md'), samePathWriteStreak: 4 } },
-    });
-    const blocked = guards.evaluateBlocked(ctx);
+  it('write_loop：同路径达阈值拦，换路径重置放行（计数经 onExec 喂数自持）', () => {
+    // 计数内聚进 guard 闭包：需先 notifyExec 喂数，而非注入 counters.write
+    const g = freshGuards();
+    // 同路径连续写入 4 次（repeatedly feed）→ 第 5 次判定达阈值拦
+    for (let i = 0; i < 4; i++) {
+      feed(g, 'write_file', '{"path":"a.md"}', 'ok');
+    }
+    const blocked = g.evaluateBlocked(
+      makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' }),
+    );
     expect(blocked?.guardId).toBe('write_loop');
     expect(blocked?.message).toContain('[WRITE_LOOP_STOP]');
-    // 换路径：streak 复位为 1 → 放行
-    const reset = guards.evaluateBlocked(
-      makeCtx({
-        toolName: 'write_file',
-        argsJson: '{"path":"b.md"}',
-        counters: { ...emptyCounters(), write: { lastWritePath: normalizePathKey('a.md'), samePathWriteStreak: 4 } },
-      }),
+    // 换路径 b：onExec 把 streak 复位为 1 → 放行
+    const reset = g.evaluateBlocked(
+      makeCtx({ toolName: 'write_file', argsJson: '{"path":"b.md"}' }),
     );
     expect(reset).toBeUndefined();
   });
 
-  it('read_failed：同主体连续失败达阈值拦', () => {
-    const counters = emptyCounters();
-    counters.readFailBySubject = new Map([
-      [`read_file\u0002a.md\u0002\u0002`, 3],
-    ]);
-    const blocked = guards.evaluateBlocked(
-      makeCtx({ toolName: 'read_file', argsJson: '{"path":"a.md"}', counters }),
+  it('read_failed：同主体连续失败达阈值拦（计数经 onExec 喂数自持）', () => {
+    const g = freshGuards();
+    // 同一主体连续失败 3 次喂数（阈值 readFailed=3）→ 第 4 次判定达阈值拦
+    for (let i = 0; i < 3; i++) {
+      feed(g, 'read_file', '{"path":"a.md"}', 'failed');
+    }
+    const blocked = g.evaluateBlocked(
+      makeCtx({ toolName: 'read_file', argsJson: '{"path":"a.md"}' }),
     );
     expect(blocked?.guardId).toBe('read_failed');
   });
 
   it('read_failed 先于 read_dedup（同主体既失败达阈值又命中缓存 → 报失败闸）', () => {
-    const counters = emptyCounters();
-    const ctx = makeCtx({
-      toolName: 'read_file',
-      argsJson: '{"path":"a.md"}',
-      counters,
-    });
-    counters.readFailBySubject = new Map([
-      [`read_file\u0002a.md\u0002\u0002`, 3],
-    ]);
+    const g = freshGuards();
+    for (let i = 0; i < 3; i++) {
+      feed(g, 'read_file', '{"path":"a.md"}', 'failed');
+    }
+    const ctx = makeCtx({ toolName: 'read_file', argsJson: '{"path":"a.md"}' });
     ctx.toolResultCache.set('read_file', readSubject('a.md'), 1);
-    const blocked = guards.evaluateBlocked(ctx);
+    const blocked = g.evaluateBlocked(ctx);
     expect(blocked?.guardId).toBe('read_failed');
   });
 
@@ -167,6 +161,80 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
   });
 });
 
+describe('GuardRail onExec 写侧喂数状态机（计数自持闭包）', () => {
+  it('write_loop 换路径复位：同路径喂两次后第三次判定为「第3次」预测；换路径后 streak 复位为 1', () => {
+    const g = freshGuards();
+    // 同路径连写两次（喂 ok）→ 闭包 streak=2；第三次判定同路径 → 期望递增后=3（阈值 5 不拦）
+    feed(g, 'write_file', '{"path":"a.md"}', 'ok');
+    feed(g, 'write_file', '{"path":"a.md"}', 'ok');
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' })),
+    ).toBeUndefined(); // streak=3 < 5 → 不拦（验证「第3次」预测）
+    // 换路径 b 喂一次 → onExec 复位 streak=1 且 lastWritePath 切到 b
+    feed(g, 'write_file', '{"path":"b.md"}', 'ok');
+    // 再评估 a：a 已非最近路径，从 b 出发推断 a 为「首次」→ streak=1，放行
+    // （换路径须复位 streak，否则同路径会残留高 streak 造成误拦——防语义漂移）
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' })),
+    ).toBeUndefined();
+    // b 判定：从 b（streak=1）推断递增后=2 → 放行
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"b.md"}' })),
+    ).toBeUndefined();
+  });
+
+  it('write_loop 阈值命中：同路径连续喂 4 次，第 5 次判定 blocked===true', () => {
+    const g = freshGuards();
+    for (let i = 0; i < 4; i++) feed(g, 'write_file', '{"path":"a.md"}', 'ok');
+    const hit = g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' }));
+    expect(hit?.guardId).toBe('write_loop');
+    expect(hit?.message).toContain('连续 5 次');
+  });
+
+  it('read_failed 成功清零：同主体喂 2 次 failed 后第 3 次喂 ok → 判定不再 blocked', () => {
+    const g = freshGuards();
+    const args = '{"path":"a.md"}';
+    feed(g, 'read_file', args, 'failed');
+    feed(g, 'read_file', args, 'failed');
+    feed(g, 'read_file', args, 'ok'); // 成功 → 清除该主体失败计数
+    expect(g.evaluateBlocked(makeCtx({ toolName: 'read_file', argsJson: args }))).toBeUndefined();
+  });
+
+  it('read_failed 失败递增命中阈值：同主体喂 3 次 failed，第 4 次判定 blocked===true', () => {
+    const g = freshGuards();
+    const args = '{"path":"a.md"}';
+    for (let i = 0; i < 3; i++) feed(g, 'read_file', args, 'failed');
+    const hit = g.evaluateBlocked(makeCtx({ toolName: 'read_file', argsJson: args }));
+    expect(hit?.guardId).toBe('read_failed');
+    expect(hit?.message).toContain('连续失败 3 次');
+  });
+
+  it('write_loop blocked / read_failed blocked 不累计（被拦未执行不喂数）', () => {
+    const g = freshGuards();
+    // blocked 不累计连写：喂 4 次同路径 blocked → streak 仍 0 → 判定放行
+    for (let i = 0; i < 4; i++) feed(g, 'write_file', '{"path":"a.md"}', 'blocked');
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' })),
+    ).toBeUndefined();
+    // blocked 不计失败：喂 3 次 blocked → 判定放行
+    const args = '{"path":"a.md"}';
+    for (let i = 0; i < 3; i++) feed(g, 'read_file', args, 'blocked');
+    expect(g.evaluateBlocked(makeCtx({ toolName: 'read_file', argsJson: args }))).toBeUndefined();
+  });
+
+  it('reset(perStep) 归零闭包计数：喂数后 reset → 同路径判定放行', () => {
+    const g = freshGuards();
+    for (let i = 0; i < 4; i++) feed(g, 'write_file', '{"path":"a.md"}', 'ok');
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' }))?.guardId,
+    ).toBe('write_loop');
+    g.reset('perStep');
+    expect(
+      g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' })),
+    ).toBeUndefined();
+  });
+});
+
 describe('buildPromptSection 通用行为护栏节', () => {
   it('聚合各护栏通用声明（不含逐轮计数）', () => {
     const sec = registerAll(new GuardRail(), createDefaultGuardsShim()).buildPromptSection();
@@ -189,4 +257,18 @@ function createDefaultGuardsShim() {
 function registerAll(rail: GuardRail, defs: readonly GuardRailDef[]): GuardRail {
   for (const d of defs) rail.register(d);
   return rail;
+}
+/** 全新护栏：createDefaultGuards 直接工厂，闭包状态独立（避免相邻用例共享闭包计数导致串扰）。
+ *  阈值经 makeCtx 注入默认值，判定序与生产一致。 */
+function freshGuards(): GuardRail {
+  return createDefaultGuards();
+}
+/** 写侧喂数便捷封装：对指定工具+参数+结果态调 notifyExec（等价 loop 结果循环的单次喂数） */
+function feed(
+  rail: GuardRail,
+  toolName: string,
+  argsJson: string,
+  outcome: 'ok' | 'failed' | 'blocked',
+): void {
+  rail.notifyExec({ toolName, argsJson, toolCallId: `tc-${Math.random()}`, outcome });
 }
