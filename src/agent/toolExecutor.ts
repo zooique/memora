@@ -394,12 +394,12 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   'search_memories',
   'trace_summary',
   'list_sessions',
-  'compress_context',
-  'remember_intel', // 情报区写回（LLM 私有笔记累积，随每轮装配注入）——上下文维护基建，与 compress_context 同族
+  'compress_context', // ⚠️ loop 专有通道：不在本文件 execute() switch，由 loop 分派（loop.ts:1633-1639 compressContext，与 remember_intel 同三元分支）
+  'remember_intel', // 情报区写回（LLM 私有笔记累积，随每轮装配注入）——上下文维护基建；⚠️ loop 专有通道：不在本 execute() switch，由 loop 分派（loop.ts handleRememberIntel）
   // 任务表管理（2026-09-16 直接暴露：内核多步任务必要基建，非角色包可选能力）
   'task_table_write',
   'task_table_update',
-  'ask_user',
+  'ask_user', // ⚠️ loop 专有通道：不在本 execute() switch，由 loop.handleAskUser 检出挂起（loop.ts willSuspendForAsk → handleAskUser）
   'register_work',
   // 技能域（判据 A+B：来源可信；既定豁免）
   'read_skill',
