@@ -1004,6 +1004,22 @@ describe('SessionManager', () => {
       manager.updatePlanStepStatus(plan[1]!.id, 'blocked');
       expect(manager.isPlanAllBlocked()).toBe(true);
     });
+
+    it('writePlan：未创建 checkpoint 时写点自愈（先建 checkpoint 再写，不再静默返回空）', () => {
+      // 复现实测病根（round-1789539624589）：生产流程无一处先建 checkpoint，task_table_write / 约会骨架
+      // 直接调 writePlan → 此前 `if(!this.checkpoint) return []` 静默空 → LLM 收到 ok:true + 0 步 → 反复重写。
+      // 修复后写点自愈建 checkpoint 并返回真实步骤。
+      expect(manager.getCheckpoint()).toBeNull();
+      const plan = manager.writePlan('overwrite', [
+        { description: '步骤一' },
+        { description: '步骤二' },
+      ]);
+      expect(plan).toHaveLength(2);
+      expect(manager.getCheckpoint()).not.toBeNull();
+      expect(manager.getCheckpoint()!.plan).toHaveLength(2);
+      // writePlan 后 ensureActiveStep 应激活第一个步骤
+      expect(manager.getActiveStep()?.id).toBe(plan[0]!.id);
+    });
   });
 
 });

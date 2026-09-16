@@ -766,12 +766,15 @@ export class SessionManager {
     mode: 'overwrite' | 'append' | 'update',
     steps: Array<{ description: string; rolePack?: string }>,
   ): PlanStep[] {
-    if (!this.checkpoint) return [];
-    const existingPlan = this.checkpoint.plan;
+    // 写点自愈：checkpoint 未就绪时先创建（任务表写点 = 任务上下文就绪点）。
+    // 此前静默 return [] 让 LLM 收到 ok:true + 0 步 → 伪成功 → 反复重写（实测 6 次）。
+    // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架 prepare.ts:80 与普通 task_table_write 一并治愈。
+    const cp = this.checkpoint ?? this.createCheckpoint();
+    const existingPlan = cp.plan;
     if (mode === 'overwrite' || mode === 'append') {
       // overwrite 真清空：order 由 appendPlanStep 按清空后 plan.length 从 0 重建，自洽无需额外维护
       if (mode === 'overwrite') {
-        this.checkpoint.plan = [];
+        cp.plan = [];
       }
       for (const step of steps) {
         this.appendPlanStep(step.description, step.rolePack);
@@ -793,7 +796,7 @@ export class SessionManager {
     }
     // 确保新写入/追加/更新后的 plan 有 active step（overwrite 清空后全 pending → 激活第一个）
     this.ensureActiveStep();
-    return this.checkpoint.plan;
+    return cp.plan;
   }
 
   /**
