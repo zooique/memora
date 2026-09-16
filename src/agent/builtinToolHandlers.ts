@@ -280,9 +280,17 @@ export class BuiltinToolHandlers {
         'code' in err &&
         (err as { code: unknown }).code === 'ENOENT'
       ) {
+        // 前置兄弟目录提示：siblingDirHint 是"失败即给证据"（CTX-1b·P2）——但内核事件
+        // 落盘 summary 只取前 100 字符（loop.ts tool_result）。若把它拼接在长路径**之后**，
+        // 危害：路径串本身（盘根+文件名）往往已占满 100 字 → 兄弟目录清单被整个截掉，
+        // LLM 重放/治理只见「文件不存在」却看不到同级真实文件名（HALL-1 实测 seq261/262
+        // 的 summary 停在 `[同` 即此）。故**前置**清单：保证 summary 前 100 字先到达证据，
+        // 而非路径。路径本身对"自查文件名"零贡献，放后面不损失。
+        const hint = await this.siblingDirHint(absolutePath);
+        const evidenceFirst = hint ? `${hint}\n${absolutePath}：文件不存在` : `${absolutePath}：文件不存在`;
         throw toolError(
           'read_file 文件不存在',
-          `${absolutePath}：文件不存在${await this.siblingDirHint(absolutePath)}`,
+          evidenceFirst,
           ['确认路径正确', '使用 list_dir 查看目录结构'],
           e,
           ToolErrorCode.FILE_NOT_FOUND,

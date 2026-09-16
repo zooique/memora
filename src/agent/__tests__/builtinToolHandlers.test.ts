@@ -143,6 +143,23 @@ describe('BuiltinToolHandlers.readFile', () => {
     });
   });
 
+  it('ENOENT 时兄弟目录证据前置（HALL-1 守卫：防 100 字 summary 截掉近邻候选）', async () => {
+    // 真实存在一个文件，却去读它的错拼名 → FILE_NOT_FOUND 应把同级目录清单放在 message 最前，
+    // 而非长路径（后者会占满事件 summary 前 100 字，导致重放/治理看不到真实文件名——HALL-1 实测根因）。
+    await writeFile(join(projectPath, 'real-file.md'), 'x');
+    try {
+      await handlers.readFile('real-flie.md');
+      expect.unreachable('应抛 FILE_NOT_FOUND');
+    } catch (err) {
+      expect(err).toMatchObject({ errorCode: ToolErrorCode.FILE_NOT_FOUND });
+      const msg = (err as MemoraError).detail as string;
+      // 证据前置：message 从兄弟清单开始（而非长路径）
+      expect(msg).toMatch(/^\n?\[同级目录内容/);
+      // 近邻候选确实在其中（供 LLM 自查真实文件名）
+      expect(msg).toContain('real-file.md');
+    }
+  });
+
   it('路径指向目录（EISDIR 场景）→ 抛可执行指引错误，而非原生 EISDIR', async () => {
     // read_file 语义是读文件：目标是目录时给出明确指引（LLM 据此改用 list_dir）
     await expect(handlers.readFile('.')).rejects.toMatchObject({
