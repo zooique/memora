@@ -160,6 +160,21 @@ type InterruptRequest =
   | { readonly kind: 'pause' }
   | { readonly kind: 'interject'; readonly content: string };
 
+/*
+ * 职责边界登记（P1-2 降级，2026-09-16）
+ *
+ * 曾拟把「上下文准备」下沉 contextPreparer.ts、「中断/暂停」下沉 sessionStateMachine.ts，
+ * 经实证两者与目标模块现有契约冲突，改为「职责登记而非代码拆分」（自然生长触发前不动契约）：
+ *   - _prepareContext（资源边界副操作：截断/压缩/预算/情报/任务表注入）深读深写 this.messages
+ *     并依赖 ≥15 个私有状态/方法，本质是 step 编排的一部分——不并入 contextPreparer
+ *     （其契约「只依赖 Agent 注入稳定能力、不反向依赖 Agent 私有状态」本就排除此形态）。
+ *   - 中断/暂停（interruptQueue + _handleInterrupt + interject 追加用户消息、step 边界 yield paused）
+ *     与 sessionStateMachine 的「纯三态 + pendingPause」语义不同源（后者不承载 interject 追加与
+ *     step 边界产出）——不并入，维持 loop 自持。
+ * 结论：loop 为「功能内聚门面」（职责虽多但共享同一可变 messages 工作记忆），按 progressive-refactor-rules
+ * §1 软阈值保留监控，待真实场景触发「去重/拼接/总线慢」等修改成本证据再评估拆分。
+ */
+
 /** 情报区（LLM 私有工作笔记）system 消息前导：注入起点判定 + 私有/禁复述约束（与返回字段同源） */
 const INTEL_INTRO =
   '[情报区 · 仅供你私有查看并作为后续作答的参考]。此区内容不要向用户复述或写进项目文档。' +
@@ -1259,7 +1274,9 @@ export class AgentLoop {
       this.duplicateToolCallCount = 0;
       this.lastToolCallsHash = '';
     } else if (dupVerdict === 'block') {
-      // 硬拦截：真阻止——不执行任何工具，注入阻断并结束本轮（工具尚未执行，诚实）
+      // 硬拦截：真阻止——不执行任何工具，注入阻断并结束本轮（工具尚未执行，诚实）。
+      // 注（P1-1 正交登记 a 轨）：默认 DefaultDuplicateCallInterceptor.check 只返 ok/warn，
+      // **永不返回 block**——本分支仅宿主注入型拦截器可达，属批级软去重的扩展能力位而非默认路径。
       this.appendSystemMessage(
         `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已阻止本次工具执行。` +
           `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,

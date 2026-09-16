@@ -8,8 +8,15 @@
  * 本模块收敛目标：**新增一种护栏 = 注册一个 guard（matches/shouldBlock/文案/阈值/life/可选 write 钩子），
  * 主循环零改动**。护栏判定逻辑、判定顺序、提示词、阈值全部收敛到本文件，消除散落重复。
  *
+ * 防重双轨正交登记（P1-1 收口，二者粒度不同不可合并）：
+ * - a（批级·软提示）：duplicateToolCallInterceptor，作用于**整批工具调用**（跨迭代哈希），
+ *   语义 = 叙事级死循环提醒（默认实现只返 ok/warn，永不 block），见 loop.handleIteration；
+ * - b（主体级·硬拦）：本文件 read_dedup 护栏，作用于**同一读取主体**（闭环内同工具+同参数），
+ *   语义 = 事实级去重拦截（命中后回填 `[ALREADY_READ]`），前提前 `isCachedResultStillInContext`。
+ *   两套去重同一时刻开启、判据/阈值/生命周期互不共享，靠本条登记维系语义边界。
+ *
  * 收敛边界（不硬吞的异构护栏，维持各自为政）：
- * - duplicateToolCallInterceptor（软警告，作用于整体工具集），见 loop.handleIteration；
+ * - duplicateToolCallInterceptor（批级·软提示，见上「防重双轨正交登记」a 轨）；
  * - maxIterations/stepBudget/tokenBudget（循环终止）、self_review（后处理）；
  * - interruptQueue/pause/ask 续跑（暂停-质问-续跑设计，另有定稿文档，不动）；
  * - 文件覆盖度台账（fileExposure 分支②回显，见 toolLedger.ts）——形态不同，不收敛。
