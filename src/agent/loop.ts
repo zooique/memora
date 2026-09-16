@@ -1673,6 +1673,10 @@ export class AgentLoop {
           if (tc.function.name === 'read_file' && subject.path) {
             const cov = parseReadFileCoverage(result);
             if (cov) {
+              logger.debug(
+                { path: subject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}`, src: 'footnote', peek: result.slice(0, 80) },
+                'read_file 台账写入（分段脚注）',
+              );
               this.fileExposure.record(subject.path, {
                 totalLines: cov.totalLines,
                 coverStart: cov.coverStart,
@@ -1686,6 +1690,10 @@ export class AgentLoop {
               // 同样记「全文件覆盖」——否则小文件整读后无台账 → 分支②永不触发 → 压缩后重读狂飙
               // （真机 182 次 read_file 复发根因正是小文件不记；见 ADR-031 补缝）。
               const totalLines = result.split('\n').length;
+              logger.debug(
+                { path: subject.path, totalLines, src: 'whole-read', peek: result.slice(0, 80) },
+                'read_file 台账写入（整读无脚注）',
+              );
               this.fileExposure.record(subject.path, {
                 totalLines,
                 coverStart: 1,
