@@ -118,6 +118,9 @@ run_team_meeting(group, topic)
 
 - 被真实场景复现消费（用户实际用 run_team_meeting 开会）且稳定；
 - 新通道验证"真实注入各角色文本 + 各视角评估"效果达标；
-- 评估淘汰旧会议骨架（独立剪枝，另行排期）。
+- **会议双形态分流定案（2026-09-16，用户拍板·分流/降权）**：run_team_meeting 吃**评审型**默认路径（LLM 自主判断该评审时调它）；旧 task_table 会议骨架**不淘汰**，降级为「可打断/可续会/可中途挂工具/过程可见」的**显式可交互会议**通道（宿主「小组会议」UI 入口保留）。
+  - **不带伤判据（stack/实证）**：可交互形态是仍在用的真实能力（宿主有专属 UI 入口）；ME-8 已证违约的只是「多角色轮流发言」的**软指令可靠度**（常退化为一次性多视角，恰为 run_team_meeting 形态），**不否定** task_table 的**确定性结构能力**（可打断/续会/挂工具/过程可见）。故不能一刀删。
+  - **可淘汰层收窄为会议专用层**：`tryBuildMeetingPlan` / `buildTeamContextBlock`（指挥建表部分）/ T1 会议视角切换。`task_table` 主干与 `rolePackTeams` 数据源（run_team_meeting 与宿主 UI 继续消费）须保留。
+  - **去留由实证定**：保留期采集双通道真实使用频次，触发 = 真实会议长时间（约一个发布周期）无可交互/续会消费 → 届时评估整体移除会议专用层。
 
-> 关联：`.trae/rules/exploration-decision-sedimentation-rules.md`（S1 探索期落地）、`single-truth-source-mindset.md`（最小单元）、`progressive-refactor-rules.md`（渐进，先并行走证再拆）。
+> 关联：`.trae/rules/exploration-decision-sedimentation-rules.md`（S1 探索期落地）、`single-truth-source-mindset.md`（最小单元）、`progressive-refactor-rules.md`（渐进，先并行走证再拆）、`legacy-contract-audit-rules.md`（不带伤：不砍还在用的能力）。
