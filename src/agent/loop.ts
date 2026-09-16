@@ -176,6 +176,13 @@ type InterruptRequest =
  *     并回调 refreshOccupancyDialogue（**写消息→触发观测，跨域**），不满足 progressive-refactor-rules
  *     §2.2 模式 B「职责正交（不共享状态 / 不互相调用）」前提；模式 A（领域容器提取）只搬字段不搬逻辑，
  *     收益不足以覆盖改点面。保留监控，待自然生长触发。
+ *   - V5（搜索生命周期，2026-09-16 收口登记）：软上限/硬上限混沌形同构但为**同一意图的三级级联**——
+ *     软提示 threshold=2「劝」（successfulWebSearchCount + searchConvergenceHintInjected）→
+ *     硬拦截 MAX=6「挡」（searchCallCount + searchDisabledHintInjected）→ 工具集剔除「断」searchDisabled。
+ *     阈值已单源（constants.ts LOOP_CONSTANTS.SEARCH_*）。5 个运行时状态字段仍散在 loop（私有、
+ *     经 counters 一致注入、随 resetTurnState 邻接重置，无 V1 平行数组错位风险），曾判「V5 未收口」。
+ *     现声明：这是 loop 私有生命周期状态，非 guardRail 护栏注册表项，不做对象化提取（避免提前抽象、
+ *     兜旁白），维持现状即为已声明设计。
  * 结论：loop 为「功能内聚门面」（职责虽多但共享同一可变 messages 工作记忆），按 progressive-refactor-rules
  * §1 软阈值保留监控，待真实场景触发「去重/拼接/总线慢」等修改成本证据再评估拆分。
  */
