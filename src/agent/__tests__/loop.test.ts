@@ -3242,6 +3242,160 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
   });
 });
 
+describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工具应上报 blocked，2026-09-16）', () => {
+  // 判据真源：loop.ts executeToolCalls 里 blocked 与执行 promise 曾分居两条平行数组，
+  // 护栏命中时先 push(false) 又 push(true)（同一工具压两条 flag 而 promise 只一条），
+  // 从首次命中起索引整体错位 → 读到工具「被拦」标记时记反：护栏命中的工具被标 ok、
+  // 相邻成功工具被误标 blocked。收敛目标：blocked 与 promise 同一结构体耦合、每个工具一条，
+  // 索引天然对齐，错位在型层面不可能再发生。
+  const call = (id: string, name: string, args: string) => ({
+    id,
+    type: 'function' as const,
+    function: { name, arguments: args },
+  });
+  /** 从 chunk 流取指定工具名的 tool_result（保留原始顺序） */
+  const toolResults = (chunks: AgentChunk[], name: string) =>
+    chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'tool_result' }> =>
+        c.type === 'tool_result' && c.name === name,
+    );
+
+  it('read_dedup 命中：被拦的重复读取上报 blocked=true && ok=false（此前被读成 false）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件正文');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 同 path、同区间 → 防重命中 read_dedup，应被拦截
+        [{ toolCalls: [call('c2', 'read_file', '{"path":"docs/a.md"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('重复读')) {
+      chunks.push(chunk);
+    }
+    const reads = toolResults(chunks, 'read_file');
+    // 两次 read_file 都产出 tool_result；第二次是被拦截的
+    expect(reads).toHaveLength(2);
+    const deduped = reads[1]!;
+    expect(deduped.blocked).toBe(true);
+    expect(deduped.ok).toBe(false);
+    expect(deduped.summary).toContain('[ALREADY_READ]');
+  });
+
+  it('混批：护栏命中的工具不得把相邻成功工具误判为 blocked（索引错位杀伤面）', async () => {
+    const toolExecutor = vi.fn().mockImplementation((name: string) =>
+      Promise.resolve(name === 'web_search' ? '结果A\n结果B' : '文件正文'),
+    );
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
+        // 同一批：read_file(a.md) 命中 read_dedup（拦），web_search 是全新请求（应正常 ok）
+        [
+          {
+            toolCalls: [
+              call('c2', 'read_file', '{"path":"docs/a.md"}'),
+              call('s1', 'web_search', '{"query":"Q"}'),
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('混批')) {
+      chunks.push(chunk);
+    }
+    // 批内只有一次 read_dedup 命中
+    const deduped = toolResults(chunks, 'read_file').filter((r) => (r.summary ?? '').includes('[ALREADY_READ]'));
+    expect(deduped).toHaveLength(1);
+    expect(deduped[0]!.blocked).toBe(true);
+    expect(deduped[0]!.ok).toBe(false);
+    // 相邻的 web_search 是成功执行，绝不能被误标 blocked（错位会让它读成 true）
+    const ws = toolResults(chunks, 'web_search');
+    expect(ws).toHaveLength(1);
+    expect(ws[0]!.blocked).not.toBe(true);
+    expect(ws[0]!.ok).toBe(true);
+  });
+
+  it('write_loop：第 5 次连续重写同一文件被拦且上报 blocked=true && ok=false', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('已写入');
+    const turns: ChunkItem[][] = [];
+    for (let i = 0; i < 5; i++) {
+      turns.push([{ toolCalls: [call(`w${i}`, 'write_file', '{"path":"docs/a.md","content":"x"}')] }]);
+    }
+    turns.push([{ content: '完成' }]);
+    const loop = new AgentLoop({ provider: mockMultiTurnProvider(turns), bootstrapMemories: [], toolExecutor });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('连写')) {
+      chunks.push(chunk);
+    }
+    const writes = toolResults(chunks, 'write_file');
+    // 5 次 write_file 都产出 tool_result
+    expect(writes).toHaveLength(5);
+    // 前 4 次正常执行非拦截；第 5 次触发 write_loop 硬拦
+    expect(writes[0]!.blocked).not.toBe(true);
+    expect(writes[4]!.blocked).toBe(true);
+    expect(writes[4]!.ok).toBe(false);
+  });
+
+  it('read_failed：同一目标第 4 次连续失败被拦且上报 blocked=true && ok=false', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('[ERR:TOOL:FILE] 不存在');
+    const turns: ChunkItem[][] = [];
+    for (let i = 0; i < 4; i++) {
+      turns.push([{ toolCalls: [call(`r${i}`, 'read_file', '{"path":"ghost.md"}')] }]);
+    }
+    turns.push([{ content: '完成' }]);
+    const loop = new AgentLoop({ provider: mockMultiTurnProvider(turns), bootstrapMemories: [], toolExecutor });
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('连续失败')) {
+      chunks.push(chunk);
+    }
+    const reads = toolResults(chunks, 'read_file');
+    // 4 次 read_file 都产出 tool_result（前 3 次真实执行返回失败结果，第 4 次被硬拦）
+    expect(reads).toHaveLength(4);
+    expect(reads[3]!.blocked).toBe(true);
+    expect(reads[3]!.ok).toBe(false);
+  });
+
+  it('ask_limit 超限：被拒的 ask_user 上报 blocked=true && ok=false', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [call('q1', 'ask_user', '{"question":"先确认"}')] }],
+        [{ toolCalls: [call('q2', 'ask_user', '{"question":"再确认"}')] }],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    loop.setStrategy({ askLimit: 1 });
+    const chunks1: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('任务')) {
+      chunks1.push(chunk);
+    }
+    // q1 提问挂起，askCountThisTurn 递增为 1
+    expect(chunks1[chunks1.length - 1]!.type).toBe('paused');
+    loop.answerQuestion(['好']);
+    const chunks2: AgentChunk[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      chunks2.push(chunk);
+    }
+    // q2 超限被拦 → 上报 blocked
+    const asks = chunks2.filter(
+      (c): c is Extract<AgentChunk, { type: 'tool_result' }> =>
+        c.type === 'tool_result' && c.name === 'ask_user',
+    );
+    expect(asks).toHaveLength(1);
+    expect(asks[0]!.blocked).toBe(true);
+    expect(asks[0]!.ok).toBe(false);
+  });
+});
+
 describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
   it('连续成功联网搜索达阈值后注入收敛提示，幂等一次（防 LLM 反复搜索不收敛触迭代上限）', async () => {
     // 每轮工具执行统一返回成功结果（web_search ok=true）

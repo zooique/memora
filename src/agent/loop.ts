@@ -1518,9 +1518,10 @@ export class AgentLoop {
     this.inAutonomousStep = true;
 
     // yield tool_start 并并发发起所有工具执行（不 await，由 Promise.all 统一等待）
-    const toolPromises: Promise<string>[] = [];
-    /** 策略拦截标记（按 toolCalls 顺序平行记录）：确定性拒绝（如搜索硬上限）的工具 blocked=true */
-    const blockedFlags: boolean[] = [];
+    // P0-1 收敛（2026-09-16）：blocked 与执行 promise 耦合为同一结构体，每个工具恰好一条。
+    // 每个工具一次 push 一个 { blocked, promise }，结果按工具顺序对齐取出，
+    // 保证护栏拦截标记永不与执行结果错位（避免平行数组各自 push 导致索引漂移）。
+    const toolExecs: Array<{ blocked: boolean; promise: Promise<string> }> = [];
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
     //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
@@ -1580,15 +1581,12 @@ export class AgentLoop {
             { executionTemp: true },
           );
         }
-        blockedFlags.push(true);
-        toolPromises.push(Promise.resolve(guardHit.message));
+        toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
         continue;
       }
-      // 默认非阻塞占位（与既有实现节奏一致）；其余护栏命中 → 硬拦回填拒绝文案。
-      blockedFlags.push(false);
+      // 其余护栏命中 → 硬拦回填拒绝文案（blocked 与拒绝 promise 一体推出）；未命中 → 下方正常执行。
       if (guardHit) {
-        blockedFlags.push(true);
-        toolPromises.push(Promise.resolve(guardHit.message));
+        toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
         continue;
       }
       // 写侧连写计数持久化：护栏 write_loop 按「判定前状态」推断递增值，故本处在判定通过后把这次写入并入连写状态
@@ -1621,22 +1619,23 @@ export class AgentLoop {
             { path: ledgerSubject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
             'read_file 台账替身回显（分支②）：已用摘要顶替整读',
           );
-          blockedFlags.push(true);
-          toolPromises.push(Promise.resolve(formatLedgerStub(cov)));
+          toolExecs.push({ blocked: true, promise: Promise.resolve(formatLedgerStub(cov)) });
           continue;
         }
       }
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
-      toolPromises.push(
-        tc.function.name === COMPRESS_CONTEXT_TOOL.name
-          ? this.compressContext(tc.function.arguments, signal)
-          : tc.function.name === REMEMBER_INTEL_TOOL.name
-            ? Promise.resolve(this.handleRememberIntel(tc.function.arguments))
-            : this.toolRunner.runOne(tc, signal),
-      );
+      toolExecs.push({
+        blocked: false,
+        promise:
+          tc.function.name === COMPRESS_CONTEXT_TOOL.name
+            ? this.compressContext(tc.function.arguments, signal)
+            : tc.function.name === REMEMBER_INTEL_TOOL.name
+              ? Promise.resolve(this.handleRememberIntel(tc.function.arguments))
+              : this.toolRunner.runOne(tc, signal),
+      });
     }
 
-    const results = await Promise.all(toolPromises);
+    const results = await Promise.all(toolExecs.map((e) => e.promise));
 
     this._processToolResults(toolCalls, results);
 
@@ -1646,7 +1645,7 @@ export class AgentLoop {
       const result = results[i]!;
       // 第三态（2026-09-02）：策略拦截 blocked=true 非成功亦非失败——ok=false 且不计成功搜索数；
       // 失败（[ERR 前缀）与拦截区分开，UI 显示「已拦截」，metrics 失败数不把拦截算作失败
-      const blocked = blockedFlags[i] === true;
+      const blocked = toolExecs[i]!.blocked;
       const ok = !blocked && !result.startsWith('[ERR');
       // TS-7 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
