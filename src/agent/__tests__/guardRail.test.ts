@@ -263,7 +263,12 @@ function registerAll(rail: GuardRail, defs: readonly GuardRailDef[]): GuardRail 
 function freshGuards(): GuardRail {
   return createDefaultGuards();
 }
-/** 写侧喂数便捷封装：对指定工具+参数+结果态调 notifyExec（等价 loop 结果循环的单次喂数） */
+/**
+ * 写侧喂数便捷封装：**直接对本护栏实例的闭包计数喂数，不经过 loop 集成点**。
+ * loop→guard 连线的覆盖在 `loop.test.ts`（write_loop / read_failed 用例）——变异实证：
+ * 注释掉 `loop.ts` 的 `this.guardier.notifyExec(...)` 时本文件全绿、该两用例转红，
+ * 故本文件绿不等于连线完好。
+ */
 function feed(
   rail: GuardRail,
   toolName: string,

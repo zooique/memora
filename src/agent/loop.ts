@@ -171,6 +171,11 @@ type InterruptRequest =
  *   - 中断/暂停（interruptQueue + _handleInterrupt + interject 追加用户消息、step 边界 yield paused）
  *     与 sessionStateMachine 的「纯三态 + pendingPause」语义不同源（后者不承载 interject 追加与
  *     step 边界产出）——不并入，维持 loop 自持。
+ *   - P2-1（消息写入口 append* / clean* + 观测埋点 recordBudget/recordOccupancy/refreshOccupancyDialogue）同判
+ *     不拆：写入口持有 messages / currentRoundId / executionTempSystem / offloadDir 四项 loop 私有状态，
+ *     并回调 refreshOccupancyDialogue（**写消息→触发观测，跨域**），不满足 progressive-refactor-rules
+ *     §2.2 模式 B「职责正交（不共享状态 / 不互相调用）」前提；模式 A（领域容器提取）只搬字段不搬逻辑，
+ *     收益不足以覆盖改点面。保留监控，待自然生长触发。
  * 结论：loop 为「功能内聚门面」（职责虽多但共享同一可变 messages 工作记忆），按 progressive-refactor-rules
  * §1 软阈值保留监控，待真实场景触发「去重/拼接/总线慢」等修改成本证据再评估拆分。
  */
@@ -1958,8 +1963,9 @@ export class AgentLoop {
     // 注：曾计划追加 `## 行为护栏` 通用声明节（this.guardier.buildPromptSection()），已收敛去掉——
     // 常量注入会改变每个 turn 的 system prompt token 预算，撞破「极小预算触发截断」类测试标定，
     // 且让 `[TAG]` 令牌在常驻 system prompt 出现而与运行时拒绝消息定位冲突（行为护栏的「衔接提示词」
-    // 以运行时 GUARD_RAIL_PROMPTS 即时渲染为准，见 guardRail.ts）。buildPromptSection 保留为宿主可按需选用
-    // 的通用约束产出能力（单元测试覆盖其正确性），不入内核默认装配路径。
+    // 以运行时 GUARD_RAIL_PROMPTS 即时渲染为准，见 guardRail.ts）。buildPromptSection 保留为**内核内部**通用约束
+    // 产出能力（单元测试覆盖其正确性），不入内核默认装配路径。注：它**未在 src/index.ts 出闸导出**，宿主当前
+    // 访问不到——若宿主确需，须先出闸（按 legacy-contract-audit-rules §3，未出闸的能力不算"已声明可消费"）。
 
     return prompt;
   }

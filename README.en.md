@@ -250,15 +250,15 @@ src/
 
 | Metric | Value |
 |--------|-------|
-| Source | 118 production files (src/, zero third-party runtime deps) |
-| Tests | 117 test files (107 kernel + 10 host, run by the root vitest config) |
-| Tests Passing | 3,082 passed / 1 skipped |
+| Source | 120+ production files (src/, zero third-party runtime deps) |
+| Tests | Dual vitest suites (kernel + host), run by the root vitest config (100+ files) |
+| Tests Passing | 3000+ passed / 1 skipped |
 | Statement Coverage | 90.2% |
 | Branch Coverage | 84.7% |
 | Function Coverage | 92.3% |
 | Line Coverage | 91.4% |
 | Runtime Dependencies | **0** |
-| Architecture Decision Records | 24 ADRs |
+| Architecture Decision Records | 26 ADRs |
 
 ## Development
 
