@@ -2452,6 +2452,31 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
+  it('ask 点选项自动 continue → resume 原位续写单块（问题回归：防建块 B 致双复制条/错位）', () => {
+    const { postMessage } = mountChatView();
+    // ① 建块 A：meta + 正文（同 roundId r1）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '提问前的正文', roundId: 'r1' });
+    // ② ask 弹窗（内联选择题）
+    dispatch({
+      type: 'need_clarify',
+      questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
+    });
+    // ③ 点击选项 → commitAskAnswer（2026-09-16 修复：应把块 A 记为 pausedAssistantEl 续写锚）
+    const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
+    (btns[0] as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '方案 A' });
+    // ④ resume 重发 meta（宿主收到 clarify_answer 后自动继续 runFlow）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // ⑤ 续写正文（同 roundId）→ done 收敛
+    dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    // 回归断言：不得出现第二个 assistant 块（修复前 prepareFlowShell 建块 B = 双复制条/角色名分裂）
+    const assistants = document.querySelectorAll('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('提问前的正文已按方案 A 继续');
+  });
+
   it('无 options 的 need_clarify 不渲染选项按钮（仅补充输入通道）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });

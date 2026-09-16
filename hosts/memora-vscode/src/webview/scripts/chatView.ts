@@ -2699,6 +2699,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function commitAskAnswer(text: string): void {
     resumePending = true;
+    // 修复（2026-09-16）：ask 弹出选择题点选提交时，记录当前 assistant 块（块 A）为**原位续写锚**，
+    // 对称于 paused 消息的 pausedAssistantEl 置位（单一续写锚语义，两路径同构）。
+    // 修复前：ask 提交只置 resumePending、不设锚 → resume meta 落入 resumePending 分支走
+    // prepareFlowShell 新建块 B → 与块 A 同 round 并存 = 「2 个复制条」+ 锚点悬空致
+    // 用户输入/补充行错位 + 块 B label 无名（实测四症状）。
+    // 修复后：pausedResume 分支（3311 排雷判定首位）优先命中 → 原位续写块 A，不建块 B。
+    if (activeAssistantEl && activeAssistantEl.isConnected) {
+      pausedAssistantEl = activeAssistantEl;
+    }
     vscode.postMessage({ type: 'clarify_answer', text });
   }
 
