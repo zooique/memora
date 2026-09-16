@@ -40,13 +40,18 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/index.ts', 'hosts/**', 'hosts/memora-vscode/src/**'],
       thresholds: {
-        // 实测基线（2026-09-16，`npm run test:cov`，列序 = Stmts / Branch / Funcs / Lines）：
-        //   90.31 / 84.78 / 92.35 / 91.52 —— 四项阈值均低于实际值，留缓冲防日常波动。
+        // 实测基线（2026-09-16，`vitest run --coverage`，列序 = Stmts / Branch / Funcs / Lines）：
+        //   90.30 / 84.78 / 92.27 / 91.52 —— 四项阈值均低于实际值，留缓冲防日常波动。
         // 0% 文件（agent/types.ts, llm/types.ts, memory/*Interface.ts 等）为纯类型/接口文件，无运行时代码
         lines: 80,
-        // 与 `.trae/rules/testing_rules.md` §3「函数 ≥ 88%」对齐（该文档声明「文档是配置的描述
-        // 而非独立目标」，故以文档为准）。原值 83 系漂移（99edf24c），与文档 88 不一致；
-        // 实测 92.35%，提到 88 后仍有约 4.3 点缓冲。
+        // 覆盖率阈值的**判据 SSOT = 本文件**（机器只执行此处的量）。`.trae/rules/testing_rules.md` §3
+        // 与本处同源对齐；冲突时**以本文件为准并回填文档**，不得反向。
+        // 原注释的错法（已于 2026-09-16 订正）：引「文档是配置的描述，而非独立目标」推出「故以文档为准」——
+        // 引文说文档是描述，结论却说文档是权威，**引文与结论反向**，属自相矛盾。
+        // functions 由 83 恢复到 88：88 是 testing_rules.md §3 标注的「1.0 发布阈值」（**意图来源**，
+        // 非本处推导），83 系 99edf24c 的漂移；实测 92.27%，置 88 后仍有约 4.3 点缓冲。
+        // 已知不齐：functions 缓冲（≈4.3）明显小于另三项（≈10）——成因是它按「恢复原始意图」而非
+        // 「按实测留量」定值。若要统一口径，须作为「改判据」动作带观测 + 退出条件后再动，不顺手改。
         functions: 88,
         branches: 75,
         statements: 80,

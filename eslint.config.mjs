@@ -105,12 +105,48 @@ export default [
       'max-lines': 'off',
     },
   },
+  // D4 修复（2026-09-16）：根目录 .mjs 配置与 scripts/*.mjs 此前**不在任何门内**——
+  // 上面 `files: ['**/*.ts']` 不匹配 .mjs，而 package.json 的 `--ext .ts` 在 flat config 下
+  // **不生效**（覆盖范围实际由 files 决定）→ 双不匹配，脚本可随意写而无人察。
+  // 独立成块并用默认解析器（espree）：**勿**把 .mjs 塞进含 tsparser 的对象，parser 会解析失败。
+  {
+    files: ['**/*.mjs'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        URLSearchParams: 'readonly',
+        fetch: 'readonly',
+        AbortController: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+        setInterval: 'readonly',
+        clearInterval: 'readonly',
+        queueMicrotask: 'readonly',
+      },
+    },
+    rules: {
+      'no-undef': 'error',
+      'no-unused-vars': ['error', { argsIgnorePattern: '^_' }],
+      'prefer-const': 'error',
+      'no-var': 'error',
+      eqeqeq: ['error', 'always'],
+      'no-console': 'off', // 门禁 / 构建脚本本身就是 CLI 输出
+    },
+  },
   {
     ignores: [
       'dist/**',
       'node_modules/**',
       'coverage/**',
       'public/**',
+      // 工具内部状态（.gitignore 已忽略）：内含易腐的临时探针脚本，
+      // 纳入 lint 会让门禁红在「与本次改动无关的一次性文件」上 → 诱发 --no-verify
+      '.workbuddy/**',
       '*.config.js',
       '*.config.ts',
       // 宿主项目：各自拥有独立的构建与 lint 配置，根项目不扫描

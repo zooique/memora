@@ -38,6 +38,7 @@ description: Memora 关键决策年轮
 | [ADR-029](./ADR-029-context-window-resolution-host-injection.md) | 上下文窗口解析归宿主注入（内核只消费不解析，resolveContextWindow 单一公式，角色包不声明绝对 token 配额） | ✅ 已接受 | 架构 |
 | [ADR-030](./ADR-030-context-occupancy-input-indicator.md) | 输入区上下文占用指示器（内核算、宿主传、webview 渲，输入区常驻比例条 + hover 明细） | ✅ 已接受 | 架构 |
 | [ADR-031](./ADR-031-tool-read-ledger-account-vs-occupancy.md) | 工具读取台账：账本与占用解耦（判据只记「发生过」，结构化台账 + 拦截三分支 + 压缩摘要替代 + 失败硬闸，CTX-1b 定案） | ✅ 已接受 | 架构 |
+| [ADR-032](./ADR-032-gate-ownership-loop.md) | 门禁所有权闭环（本地钩子接管闸门：分层 fast/full + 步骤单一定义 + 收据；补 `host:build` 与 `verify:dist-contract`，**不承诺强制**） | ✅ 已接受 | 工程 |
 
 ### 插件宿主（VC 系列）
 
@@ -65,7 +66,7 @@ description: Memora 关键决策年轮
 | 架构   | 14   | ADR-004, ADR-010~011, ADR-015, ADR-021~025, ADR-027~031 |
 | 安全   | 1    | ADR-006 |
 | 质量   | 1    | ADR-007 |
-| 工程   | 2    | ADR-008, ADR-017 |
+| 工程   | 3    | ADR-008, ADR-017, ADR-032 |
 | 前端   | 1    | ADR-018 |
 | 形态   | 1    | ADR-VC-001 |
 

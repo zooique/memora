@@ -24,5 +24,7 @@ node_modules/**
 .svscodeignore
 *.vsix
 dist/**/*.map
+# 构建戳（仅本地门禁 verify-dist-contract 消费，运行时不读，不入包）
+dist/.build-stamp.json
 # 编译产物中的测试文件（tsc 会把 src/__tests__ 一并编译进 dist，分发时排除）
 **/__tests__/**

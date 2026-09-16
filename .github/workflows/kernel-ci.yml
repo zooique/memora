@@ -5,11 +5,17 @@
 #   - 拉取请求（PR）            ← 大改期间暂停（2026-08-27），见下方注释
 #   - 手动触发（workflow_dispatch） ← 保留，随时可恢复 CI
 #
-# 检查项：
+# 检查项（**范围 ≠ 本地门禁**，见下方「等价物」）：
 #   - TypeScript 类型检查（tsc --noEmit）
 #   - ESLint 代码规范检查
-#   - Vitest 单元测试（2337 用例）
+#   - Vitest 单元测试（不含覆盖率闸门）
 #   - 生产构建（tsc + tsc-alias）
+#
+# ⚠️ 等价物（ADR-032，2026-09-16）：本流水线的**自动触发已停用**（见下方 `on:` 注释）。
+#   当前门禁的等价物 = `npm run ci:local`（本地，10 步）。它**多出**四项本流水线没有的检查：
+#   覆盖率闸门、宿主（hosts/memora-vscode）typecheck/lint/test、宿主构建、dist 契约
+#   （宿主 bundle 与内核 dist 同代）。故**不要**把本文件当成「门禁清单」的 SSOT——
+#   步骤清单的唯一收口是 `scripts/local-ci.mjs`。
 #
 # 说明：内核是纯逻辑库，零 native 依赖，
 #   仅需 ubuntu-latest + Node.js 22 LTS 即可完成全部检查。

@@ -12,18 +12,36 @@
  *   ├── shared/protocol.js        ← 类型声明（webview 编译用，不打包）
  *   ├── webview (各面板)          ← webview 侧代码（不打包，不依赖内核）
  *   ├── extension/role-packs      ← 内置角色包（manifest.json + persona/rules/skills .md，copy 处理）
- *   └── extension/skills          ← 全局技能池（.md，所有角色共享，SkillManager 扫描）
+ *   ├── extension/skills          ← 全局技能池（.md，所有角色共享，SkillManager 扫描）
+ *   └── .build-stamp.json         ← 构建戳（记录构建时的内核 dist 哈希）
+ *
+ * 构建戳（2026-09-16）：
+ *   内联意味着「内核改了、宿主 bundle 仍是旧的」是一种**静默**失败——门禁看不见。
+ *   故构建期把内核 dist 内容哈希写进 dist/.build-stamp.json，由
+ *   `scripts/verify-dist-contract.mjs` 在门禁里比对，判「用户实际运行的 bundle 是否与内核同代」。
  *
  * 角色包单一真理源（2026-08-24 机制化同步）：
  *   宿主不再自持角色包源，dist/extension/role-packs 从内核 role-packs/（仓库根）
  *   构建期复制生成——内核改一处即全量同步，消除复制分叉漂移。
  */
 import * as esbuild from 'esbuild';
-import { copyFileSync, mkdirSync, readdirSync, existsSync, renameSync, statSync, rmSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdirSync,
+  readdirSync,
+  existsSync,
+  renameSync,
+  statSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// 内核 dist 内容哈希：与 scripts/verify-dist-contract.mjs 共用**同一实现**（SSOT，勿各自重写）
+import { hashKernelDist } from '../../scripts/lib/dist-hash.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const KERNEL_ROOT = join(__dirname, '..', '..');
 const DIST = join(__dirname, 'dist');
 const SRC = join(__dirname, 'src');
 
@@ -138,6 +156,15 @@ async function main() {
     });
   }
   console.log('✅ esbuild webview 打包完成：dist/webview/scripts/');
+
+  // 4. 写构建戳：记录本次构建所基于的内核 dist 内容哈希（供 verify-dist-contract 判同代）
+  const kernelDistHash = hashKernelDist(KERNEL_ROOT);
+  writeFileSync(
+    join(DIST, '.build-stamp.json'),
+    `${JSON.stringify({ schema: 1, kernelDistHash, builtAt: new Date().toISOString() }, null, 2)}\n`,
+    'utf8',
+  );
+  console.log(`✅ 构建戳写入：dist/.build-stamp.json（kernelDistHash=${String(kernelDistHash).slice(0, 12)}）`);
 }
 
 main().catch((err) => {

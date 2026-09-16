@@ -1,26 +1,33 @@
-# Lefthook pre-commit 钩子配置
-# 在每次 git commit 前自动执行代码质量检查
+# Lefthook 钩子配置 — 门禁的**触发器**（步骤定义不在这里，见 .trae/decisions/ADR-032）
 #
-# 检查链（按序执行，任一步骤失败则阻止提交）：
-#   1. lint-staged  —— 只检查 staged .ts 文件（快速）
-#   2. typecheck     —— 全量类型检查（必须）
+# 分层（2026-09-16）：
+#   pre-commit → fast 档（两侧 tsc，≤60s）  —— 提交时便宜，默认路径才有人走
+#   pre-push   → full 档（10 步，≤8min）    —— 推送前完整体检，含宿主构建与 dist 契约
 #
-# 不在 pre-commit 运行 vitest（15s+），应在 CI 或手动 pre-push 中运行
-# 详见 .trae/rules/project-rules.md §6 提交规范
+# 步骤清单**只**在 scripts/local-ci.mjs 定义；本文件只传 --preset，禁止在此复制步骤
+# （复制即产生第二份"要跑什么"的清单 = 并列，见 single-truth-source-mindset.md）。
+#
+# 为何内核 tsc 不再单列：fast 档已含 kernel:typecheck（同一条 `npm run typecheck`），
+# 单列即与 preset 重复；故收敛给 preset，本文件只留 preset 不含的 lint-staged 自动修复。
+#
+# 诚实结论（不承诺强制）：本地钩子物理上不可强制（LEFTHOOK=0 / --no-verify / 删钩子都能绕）。
+# 设计只保证「① 默认路径便宜 ② 绕过可被外部发现」——每次运行落盘带 tree/head 收据的日志，
+# 绕过一次即无收据，发布前检查清单一行比对即可发现。详见 ADR-032。
+#
+# 提交规范（conventional commits）见 .trae/rules/project-rules.md §6
 
 pre-commit:
   parallel: false
   commands:
-    # 步骤 1：ESLint 检查 staged 的 TypeScript 文件
+    # fast 档前的「就地修复」：只扫 staged 的 .ts 并自动修格式（preset 刻意不含全量 lint）
     lint-staged:
       glob: "*.ts"
       run: npx eslint {staged_files} --max-warnings 0 --no-warn-ignored
       stage_fixed: true
 
-    # 步骤 2：全量 TypeScript 类型检查
-    typecheck:
-      glob: "*.ts"
-      run: npx tsc --noEmit
+    # 门禁 fast 档：内核 tsc + 宿主 tsc（落盘收据日志）
+    gate-fast:
+      run: npm run ci:local -- --preset=fast
 
 # 提交信息规范校验（commitlint）
 # 强制执行 conventional commits 规范，详见 commitlint.config.mjs
@@ -29,8 +36,9 @@ commit-msg:
     commitlint:
       run: npx commitlint --edit {1}
 
-# 可选：pre-push 阶段运行测试（较慢，按需启用）
-# pre-push:
-#   commands:
-#     test:
-#       run: npx vitest run
+# 门禁 full 档：10 步 —— 内核 typecheck/lint/test/coverage/build
+# + 宿主 typecheck/lint/test/build + dist 契约（宿主 bundle 与内核同代）
+pre-push:
+  commands:
+    gate-full:
+      run: npm run ci:local -- --preset=full
