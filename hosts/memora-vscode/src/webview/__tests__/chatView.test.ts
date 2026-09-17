@@ -9,6 +9,11 @@
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { createChatView } from '../scripts/chatView.js';
+import {
+  REAL_ROUND,
+  PLAN_SNAPSHOTS,
+  buildRealRoundTimeline,
+} from './fixtures/realRound-1789565571934.js';
 
 /**
  * 收集一条 AI 消息块内全部正文的 textContent（单容器结构：正文 = 该轮唯一 .msg-body）。
@@ -36,6 +41,15 @@ const HTML = `
   <div id="historyDd" class="treedd session-history" data-treedd data-on-select="__historyOnSelect">
     <button id="historyBtn" class="treedd__trigger"><span class="btn-icon" data-icon="history"></span></button>
     <div id="historyMenu" class="treedd__menu"></div>
+  </div>
+  <div id="planBar" class="plan-bar" hidden>
+    <button id="planBarHead" class="plan-bar__head" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="planBarPanel">
+      <span id="planBarCount" class="plan-bar__count"></span>
+      <span class="plan-bar__progress"><span id="planBarFill" class="plan-bar__fill"></span></span>
+      <span id="planBarCurrent" class="plan-bar__current"></span>
+      <span id="planBarChevron" class="plan-bar__chevron" aria-hidden="true"></span>
+    </button>
+    <div id="planBarPanel" class="plan-bar__panel" hidden></div>
   </div>
   <div id="activityBar" class="activity-bar" hidden></div>
   <details id="activityDetail" class="activity-detail" hidden>
@@ -1593,6 +1607,194 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(rb2[0].textContent).toContain('角色包');
     expect(rb2[0].textContent).toContain('任务表');
   });
+
+  it('定向复现：任务表现在（task_table 工具）无 narrate + 自审二次输出，done 后折叠块/光标/进度条收口（2026-09-16 round-1789565571934）', () => {
+    mountChatView();
+    // 真实 round 事件序：meta → chunk(正文全文) → step_boundary → task_table_update 工具 → self_review → text_self_review → thinking(archiving) → metrics → done
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '【组长开场】\n\n## 第一步', roundId: 'r1' });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } } });
+    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 3, ts: '', payload: { stepId: 's1', title: '文档收束' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
+    // 大事件量（逼近真实 round：1358 个事件中绝大多数是 thought 碎片）
+    let seq = 6;
+    for (let i = 0; i < 400; i++) {
+      dispatch({ type: 'process_event', event: { type: 'thought', seq, ts: '', payload: { content: `思考碎片含会议记录质量评估第${i}段` } } });
+      seq += 1;
+    }
+    dispatch({ type: 'process_event', event: { type: 'self_review', seq, ts: '', payload: {} } }); seq += 1;
+    dispatch({ type: 'process_event', event: { type: 'text_self_review', seq, ts: '', payload: { content: '本次会议结论：文档收束 → 项目骨架 → 第一个 API。' } } }); seq += 1;
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } } }); seq += 1;
+    dispatch({ type: 'process_event', event: { type: 'metrics', seq, ts: '', payload: { durationMs: 120000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
+    dispatch({ type: 'done', roundId: 'r1' });
+
+    // 现象1/3：任务过程应收进折叠块（round-block 存在且含工具行）
+    const rb = document.querySelector('.round-block') as HTMLElement | null;
+    expect(rb).not.toBeNull();
+    // 现象2：会话结束后光标（is-streaming）消失
+    const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
+    expect(body?.classList.contains('is-streaming')).toBe(false);
+    // 过程平铺容器（进度条）finalize 后被移除，不在消息流底部残留
+    expect(document.querySelector('.process-flow')).toBeNull();
+  });
+
+  it('定向复现：任务表看板在流中刷新（plan_update 非空）→ 收尾 plan_update(空) + done，全局看板清 + 无残留进度条/光标', () => {
+    mountChatView();
+    // ① meta → 正文流开启（cursor 亮）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '【组长开场】', roundId: 'r1' });
+    // ② 任务表现在：step_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
+    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '文档收束' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
+    // ≥3 步计划才常驻（对齐内核 needsPlanning 阈值）——3 步触发常驻条
+    dispatch({
+      type: 'plan_update',
+      steps: [
+        { order: 0, id: '0', description: '文档收束', status: 'active', stepLog: [] },
+        { order: 1, id: '1', description: '补充说明', status: 'pending', stepLog: [] },
+        { order: 2, id: '2', description: '整理结论', status: 'pending', stepLog: [] },
+      ],
+    });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
+    // 流中常驻条应出现（任务表模式 ≥3 步 → 单轨 planBar；合并单轨 PLAN-UI-1）
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
+    // ③ 大事件量 thought 洪流 + 自审二次输出 + archiving + metrics
+    let seq = 5;
+    for (let i = 0; i < 400; i++) {
+      dispatch({ type: 'process_event', event: { type: 'thought', seq, ts: '', payload: { content: `思考碎片含会议记录质量评估第${i}段` } } });
+      seq += 1;
+    }
+    dispatch({ type: 'process_event', event: { type: 'self_review', seq, ts: '', payload: {} } }); seq += 1;
+    dispatch({ type: 'process_event', event: { type: 'text_self_review', seq, ts: '', payload: { content: '本次会议结论。' } } }); seq += 1;
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } } }); seq += 1;
+    dispatch({ type: 'process_event', event: { type: 'metrics', seq, ts: '', payload: { durationMs: 120000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
+    // ④ 宿主流尾：postPlanUpdate() 空计划（清理看板）→ done
+    dispatch({ type: 'plan_update', steps: [] });
+    dispatch({ type: 'done', roundId: 'r1' });
+
+    // 折叠块存在（任务过程收起）
+    expect(document.querySelector('.round-block')).not.toBeNull();
+    // 常驻条已隐藏（不再滞留底部/顶部）；完成快照已留在 assistant 块（合并单轨 PLAN-UI-1）
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
+    expect(document.querySelector('.plan-inline.plan-inline-done')).not.toBeNull();
+    // 光标消失
+    const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
+    expect(body?.classList.contains('is-streaming')).toBe(false);
+    // 过程平铺容器已收
+    expect(document.querySelector('.process-flow')).toBeNull();
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 真实 round 回放回归护栏（2026-09-16 用户实测三个 UI 现象）
+//
+// 数据来源：round-1789565571934 的真实 processEvents（1356 条 / seq 3..1358），
+// 经 scripts 层压缩为 fixtures/realRound-1789565571934.ts，事件**类型相对顺序**、
+// 7 对工具调用（task_table_write + 4×task_table_update + search_memories + list_dir）、
+// 4 个 step_boundary、1324 条 thought 的分布均保持真实。
+//
+// R1–R3 = 现象现状；R4 = 唯一变量「补发 done」的对照组，用于归因。
+// ─────────────────────────────────────────────────────────────────────────────
+describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16 用户实测）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /**
+   * 回放真实 round（含运行期流式 chunk；done 是否补发由入参控制——R4 的唯一变量）。
+   *
+   * @param withDone 是否在 metrics 之后补发 done（原落盘文件末尾没有 done）
+   */
+  function replayRealRound(withDone: boolean): void {
+    mountChatView();
+    const msgs = buildRealRoundTimeline({ withStreaming: true, withDone });
+    for (const m of msgs) dispatch(m);
+  }
+
+  /** el 在 parent 子元素序列中的下标（-1 = 不存在） */
+  function childIndex(parent: Element, el: Element | null): number {
+    return el ? Array.from(parent.children).indexOf(el) : -1;
+  }
+
+  // 【2026-09-16 删除说明】原「R1-现状快照」断言 .plan-inline 位于 .msg-body 之后，
+  // 它固化的是 F1 缺陷行为本身（锚点退化为 appendChild）。F1 修复后该行为不复存在，
+  // 保留只会把缺陷锁进用例。正向断言由下方「R1-期望断言」承担。
+
+  it('R1-期望断言：任务完成快照应挂在报告正文之前（F1 修复后应转绿；合并单轨 PLAN-UI-1 后快照为唯一内嵌投影）', () => {
+    mountChatView();
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+    });
+    dispatch({ type: 'chunk', content: '【组长开场】介绍会议主题和讨论框架', roundId: REAL_ROUND.id });
+    // ≥3 步计划 → 常驻条出现（运行时无 inline 轨）
+    dispatch({ type: 'plan_update', steps: PLAN_SNAPSHOTS[0]! });
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
+    expect(document.querySelector('.plan-inline')).toBeNull();
+    // plan 清空 → 常驻条隐藏，最近 assistant 块顶部留静态完成快照
+    dispatch({ type: 'plan_update', steps: [] });
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    const body = assistant.querySelector(':scope > .msg-body');
+    const snapshot = assistant.querySelector(':scope > .plan-inline');
+    // 期望（与 ensureProcessFlow / ensureRoundBlock 共享的 insertBeforeBody 三段式降级锚点）：
+    // 过程在上、报告在下 —— 快照应排在 .msg-body 之前。F1 修复后本用例已转绿。
+    expect(snapshot).not.toBeNull();
+    expect(childIndex(assistant, snapshot)).toBeLessThan(childIndex(assistant, body));
+  });
+
+  it('R2 现象2：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后光标保留 —— 语义快照（非缺陷）', () => {
+    replayRealRound(false);
+    // 语义快照（2026-09-17 QA 复验定论：**非缺陷**）：done 是宿主 post-message、不落盘为 ProcessEvent，
+    // 故 fixtures 末尾无 done 纯属持久化产物。真实 round 的 status=complete 证明宿主正常完成路径**必发 done**
+    // （chatPanel.ts:2626）。因此「metrics 之后无 done」只会来自暂停（pausedOnPurpose，chatPanel.ts:2622-2624）
+    // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body.is-streaming 保留，是正确语义（轮次未收口，可 resume）。
+    // 用户实测的「光标不消失」根因是 F2（finalizeRound 抛 NotFoundError 打断收口），与 done 是否发送无关。
+    expect(document.querySelector('.msg-body.is-streaming')).not.toBeNull();
+  }, 15000);
+
+  it('R3 现象3：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后过程保持平铺 —— 语义快照（非缺陷）', () => {
+    replayRealRound(false);
+    // 语义快照（同 R2）：轮次未收口 → 不 finalize → 平铺容器 .process-flow 保留、尚未建立 round-block 折叠块。
+    expect(document.querySelector('.process-flow')).not.toBeNull();
+    expect(document.querySelector('.round-block')).toBeNull();
+  }, 15000);
+
+  it('R4 对照：补发 done 后三现象全部收口（round-block 建立 / 过程折叠 / 光标消失）—— F2 修复态', () => {
+    // 根因护栏（2026-09-17 QA 补强，变异验证加固）：onMessage 的兜底 console.error 是本轮
+    // 唯一异常出口。若 insertStepInOrder 的「直接子节点」限定被回退，异常会在此被观测到。
+    // ⚠️ 必要性：下面三条「收口」断言可被 finalizeRound 的 finally **单独**满足——
+    // 实测回退 :scope > 限定后，flowEl/光标仍被 finally 收掉，三条断言全绿（假绿）。
+    // 唯有「兜底未被触发」+「折叠内容完整性」两条能把「根治」与「兜底掩盖」区分开。
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // 与 R2/R3 事件序列完全一致（同一 fixture、同一 withStreaming），唯一变量是末尾补发 done
+    replayRealRound(true);
+    // 兜底路径未被触发 ⇒ 异常已根治，而非被 onMessage 的 try/catch 吞掉。
+    // 判据**不依赖 catch 文案**（2026-09-17 收口 2）：旧写法按 `[chatView]` 前缀 filter 后再断言
+    // 长度 —— 一旦前缀被改或换到 logger 模块，filter 恒返回空数组 → 断言依然绿 → 又变回假绿，
+    // 且这次无人察觉。故直接对全部 console.error 调用断言（方案 A）。
+    // 实测该用例路径内 console.error 唯一来源 = onMessage 兜底（chatView.ts:3875）；webview 侧
+    // 其余异常出口是 console.warn（chatView.ts:2338），不在本判据范围内。
+    expect(errorSpy).not.toHaveBeenCalled();
+    // done → finalizeRound 全量重建 round-block 折叠块（任务过程收进折叠区）
+    expect(document.querySelector('.round-block')).not.toBeNull();
+    // F2 修复态：finalizeRound 不再被 insertStepInOrder 的 NotFoundError 打断 →
+    // 运行时平铺容器 .process-flow 被移除（原来因异常跳过 flowEl.remove() 而残留）
+    expect(document.querySelector('.process-flow')).toBeNull();
+    // 且 finalizeStreaming 被执行到 → 流式光标收
+    expect(document.querySelector('.msg-body.is-streaming')).toBeNull();
+    // 折叠内容完整性（兜底掩盖防线）：折叠块必须真的装进过程内容（思考折叠 + 小节）。
+    // 若 renderRoundBlock 中途抛错，finally 虽收掉 flow/光标，折叠块却只剩 step 空骨架
+    // ——实测回退后 thought/section 双双归零、折叠文本从 37282 字符塌成 1366 字符。
+    expect(document.querySelectorAll('.round-block__thought').length).toBeGreaterThan(0);
+    expect(document.querySelectorAll('.round-block__section').length).toBeGreaterThan(0);
+    // ⇒ 归因闭环：F2 根治（insertStepInOrder 候选限定直接子节点）+ 兜底（收口进 finally）
+    //   让「补发 done」这一唯一变量真正完成收口，现象2/3 消失。
+  }, 15000);
 });
 
 describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 重构）', () => {
@@ -2082,7 +2284,7 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
   });
 });
 
-describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', () => {
+describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2026-09-17 合并单轨 PLAN-UI-1）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';
   });
@@ -2090,7 +2292,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     vi.restoreAllMocks();
   });
 
-  it('plan_update → 渲染任务看板（标题 N/M + 任务节点折叠列表）', () => {
+  it('plan_update ≥3 步 → 常驻条渲染（N/M + 当前步骤 + 浮层全量步骤列表）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
@@ -2100,12 +2302,20 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
         { id: 's3', description: '编写文档', status: 'pending', order: 2, stepLog: [] },
       ],
     });
-    const board = document.querySelector('.plan-board') as HTMLElement;
-    expect(board).not.toBeNull();
-    // 标题：完成的 N/total
-    expect(board.querySelector('.plan-board-header')?.textContent).toBe('任务进度：1/3');
-    // 步骤：按 order 序号 + 描述（任务节点折叠）；状态 class 按 status 映射
-    const steps = board.querySelectorAll('.plan-step');
+    const bar = document.querySelector('#planBar') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(bar.hidden).toBe(false);
+    // 头行：N/M（完成的 N/total）+ 当前 active step 摘要
+    expect(bar.querySelector('#planBarCount')?.textContent).toBe('1/3');
+    expect(bar.querySelector('#planBarCurrent')?.textContent).toBe('设计方案');
+    // 浮层懒构建：收起态面板隐藏且不建 DOM（省运行期开销）
+    const panel = bar.querySelector('#planBarPanel') as HTMLElement;
+    expect(panel.hidden).toBe(true);
+    expect(panel.childElementCount).toBe(0);
+    // 点击展开 → 从当前快照补建全量步骤列表（按 order 序号 + 描述；状态 class 按 status 映射）
+    (bar.querySelector('#planBarHead') as HTMLElement).click();
+    expect(panel.hidden).toBe(false);
+    const steps = panel.querySelectorAll('.plan-step');
     expect(steps).toHaveLength(3);
     expect(steps[0].querySelector('.plan-step-title')?.textContent).toBe('1. 收集需求');
     expect(steps[0].classList.contains('plan-step-done')).toBe(true);
@@ -2118,17 +2328,20 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     expect(steps[2].querySelector('.plan-step-badge')?.textContent).toBe('待执行');
   });
 
-  it('plan_update 携带 stepLog → 任务节点展开显示该步骤的 step 推进记录', () => {
+  it('plan_update 携带 stepLog → 浮层步骤节点展开显示该步骤的 step 推进记录', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
       steps: [
         { id: 's1', description: '收集需求', status: 'done', order: 0, stepLog: [{ planStepId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
         { id: 's2', description: '设计方案', status: 'active', order: 1, stepLog: [] },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2, stepLog: [] },
       ],
     });
-    const board = document.querySelector('.plan-board') as HTMLElement;
-    const steps = board.querySelectorAll('.plan-step');
+    const panel = document.querySelector('#planBarPanel') as HTMLElement;
+    // 展开浮层（懒构建）后检查步骤节点
+    (document.querySelector('#planBarHead') as HTMLElement).click();
+    const steps = panel.querySelectorAll('.plan-step');
     // 有关联推进记录的步骤：details 携带摘要 body（折叠态，仅标题常显）
     const withRounds = steps[0] as HTMLDetailsElement;
     expect(withRounds.open).toBe(false);
@@ -2142,44 +2355,104 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23）', 
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] }],
+      steps: [
+        { id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] },
+        { id: 's2', description: '第二步', status: 'pending', order: 1, stepLog: [] },
+        { id: 's3', description: '第三步', status: 'pending', order: 2, stepLog: [] },
+      ],
     });
     dispatch({
       type: 'plan_update',
       steps: [
         { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
         { id: 's2', description: '第二步', status: 'active', order: 1, stepLog: [] },
+        { id: 's3', description: '第三步', status: 'pending', order: 2, stepLog: [] },
       ],
     });
-    const board = document.querySelector('.plan-board') as HTMLElement;
-    expect(board).not.toBeNull();
-    // 仅一个看板容器
-    expect(document.querySelectorAll('.plan-board')).toHaveLength(1);
-    // 步骤被新快照覆盖（3 步全替换为 2 步），标题同步
-    expect(board.querySelectorAll('.plan-step')).toHaveLength(2);
-    expect(board.querySelector('.plan-board-header')?.textContent).toBe('任务进度：1/2');
+    const bar = document.querySelector('#planBar') as HTMLElement;
+    expect(bar).not.toBeNull();
+    // 仅一个常驻条容器
+    expect(document.querySelectorAll('#planBar')).toHaveLength(1);
+    // 展开浮层 → 步骤被新快照覆盖，N/M 同步
+    (bar.querySelector('#planBarHead') as HTMLElement).click();
+    expect(bar.querySelectorAll('.plan-step')).toHaveLength(3);
+    expect(bar.querySelector('#planBarCount')?.textContent).toBe('1/3');
   });
 
-  it('plan_update 空 steps → 移除看板', () => {
+  it('plan_update <3 步 → 常驻条不出现（对齐内核 needsPlanning 阈值）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepLog: [] }],
+      steps: [
+        { id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] },
+        { id: 's2', description: '第二步', status: 'pending', order: 1, stepLog: [] },
+      ],
     });
-    expect(document.querySelector('.plan-board')).not.toBeNull();
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
+    // 运行时无 inline 轨（合并单轨）
+    expect(document.querySelector('.plan-inline')).toBeNull();
+  });
+
+  it('plan_update 空 steps → 常驻条隐藏 + 最近 assistant 块留完成快照', () => {
+    mountChatView();
+    // 建块（快照挂载需要 activeAssistantEl）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
+    dispatch({
+      type: 'plan_update',
+      steps: [
+        { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
+        { id: 's2', description: '第二步', status: 'done', order: 1, stepLog: [] },
+        { id: 's3', description: '第三步', status: 'done', order: 2, stepLog: [] },
+      ],
+    });
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     dispatch({ type: 'plan_update', steps: [] });
-    expect(document.querySelector('.plan-board')).toBeNull();
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
+    // 完成快照：最近 assistant 块顶部（3/3 ✓ 已完成）
+    const snapshot = document.querySelector('.plan-inline.plan-inline-done') as HTMLElement;
+    expect(snapshot).not.toBeNull();
+    expect(snapshot.textContent).toContain('3/3');
   });
 
-  it('clear_ok → 移除任务看板（切换会话不残留）', () => {
+  it('点击常驻条头部 → 展开/收起锚定浮层（aria-expanded 同步）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [{ id: 's1', description: '第一步', status: 'pending', order: 0, stepLog: [] }],
+      steps: [
+        { id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] },
+        { id: 's2', description: '第二步', status: 'pending', order: 1, stepLog: [] },
+        { id: 's3', description: '第三步', status: 'pending', order: 2, stepLog: [] },
+      ],
     });
-    expect(document.querySelector('.plan-board')).not.toBeNull();
+    const head = document.querySelector('#planBarHead') as HTMLElement;
+    const panel = document.querySelector('#planBarPanel') as HTMLElement;
+    expect(panel.hidden).toBe(true);
+    head.click();
+    expect(panel.hidden).toBe(false);
+    expect(head.getAttribute('aria-expanded')).toBe('true');
+    head.click();
+    expect(panel.hidden).toBe(true);
+    expect(head.getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('clear_ok → 移除常驻条与完成快照（切换会话不残留）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
+    dispatch({
+      type: 'plan_update',
+      steps: [
+        { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
+        { id: 's2', description: '第二步', status: 'done', order: 1, stepLog: [] },
+        { id: 's3', description: '第三步', status: 'done', order: 2, stepLog: [] },
+      ],
+    });
+    dispatch({ type: 'plan_update', steps: [] });
+    expect(document.querySelector('.plan-inline-done')).not.toBeNull();
     dispatch({ type: 'clear_ok' });
-    expect(document.querySelector('.plan-board')).toBeNull();
+    expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
+    expect(document.querySelector('.plan-inline-done')).toBeNull();
   });
 
 });
@@ -3477,3 +3750,4 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(rbSteps[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
   });
 });
+

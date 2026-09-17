@@ -1224,36 +1224,67 @@ export const chatStyles = `
   }
 
 
-  /* ============ Components：任务看板（H4 任务驱动多步闭环，2026-08-23） ============ */
-  /* LLM 调用 task_table_write/update 建表时插入消息区顶部的计划进度看板：标题（N/M 完成）
-   * + 步骤列表。只读展示内核 checkpoint.plan，状态色约定
+  /* ============ Components：任务进度常驻条（H4 任务驱动多步闭环，2026-08-23 → 2026-09-17 单轨） ============ */
+  /* LLM 调用 task_table_write/update 建表时显示的顶部常驻进度条（#planBar）：默认一行
+   * N/M + 进度条 + 当前 active step 摘要，点击展开锚定浮层看全量步骤 + stepLog。
+   * 单轨设计：与 #messages **同级**的固定插槽（非其子节点——滚动容器内一滚即消失）；
+   * 运行时不再渲染 inline 轨。只读展示内核 checkpoint.plan，状态色约定
    * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。
    * 属于 checkpoint 执行态展示，不参与 round-block 过程事件复原（v1.5）。 */
-  .plan-board {
-    padding: var(--sp-3, 8px) var(--sp-5, 12px);
-    font-size: var(--font-md, 12px);
-    line-height: 1.6;
-    color: var(--text-secondary, #9aa0a6);
+  .plan-bar {
+    position: relative; /* 锚定浮层以本插槽为定位基准（top:100% 紧贴其下） */
+    flex: 0 0 auto; /* 与 session-title-bar 同级非缩放，不随 #messages 滚动 */
+    z-index: 10; /* 高于消息区（z-index:1），浮层展开时可覆盖对话内容 */
     background: var(--surface-card, #252526);
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    border-left: 3px solid var(--accent, #0e639c);
   }
-  .plan-board-header {
+  .plan-bar[hidden] { display: none; }
+  .plan-bar__head {
     display: flex; align-items: center; gap: var(--sp-3, 8px);
-    font-weight: 600;
-    color: var(--text-primary, #cccccc);
-    margin-bottom: var(--sp-2, 6px);
+    width: 100%; padding: var(--sp-2, 6px) var(--sp-5, 12px);
+    background: transparent; border: none; cursor: pointer;
+    font: inherit; color: inherit;
   }
-  .plan-board-progress-wrap {
-    flex: 1; height: 4px;
+  .plan-bar__head:hover { background: var(--surface-hover, rgba(128,128,128,.1)); }
+  .plan-bar__head:focus-visible { box-shadow: inset 0 0 0 1px var(--vscode-focusBorder); outline: none; }
+  .plan-bar__count {
+    flex-shrink: 0; font-size: var(--font-xs, 11px); font-weight: 600;
+    color: var(--text-primary, #cccccc);
+  }
+  .plan-bar__progress {
+    flex: 1; height: 4px; min-width: 60px;
     background: var(--border-panel, rgba(128,128,128,.4));
     border-radius: 2px; overflow: hidden;
   }
-  .plan-board-progress {
-    height: 100%; background: var(--accent, #0e639c);
+  .plan-bar__fill {
+    display: block; height: 100%;
+    background: var(--accent, #0e639c);
     border-radius: 2px;
     transition: width .3s ease-out;
   }
+  .plan-bar__current {
+    flex-shrink: 0; max-width: 40%;
+    font-size: var(--font-xs, 11px);
+    color: var(--text-secondary, #9aa0a6);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .plan-bar__chevron {
+    flex-shrink: 0; font-size: 10px;
+    color: var(--text-muted, #6e7681);
+  }
+  /* 锚定浮层：紧贴常驻条下方（top:100%），全量步骤列表 + stepLog；卡片 + 阴影浮于对话上方。
+   * 非 modal（无遮罩）：看进度时需同时看正文。max-height 超限滚动 */
+  .plan-bar__panel {
+    position: absolute; left: 0; right: 0; top: 100%;
+    padding: var(--sp-2, 6px) var(--sp-5, 12px) var(--sp-3, 8px);
+    background: var(--surface-card, #252526);
+    border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
+    max-height: 320px; overflow-y: auto;
+    font-size: var(--font-md, 12px); line-height: 1.6;
+    color: var(--text-secondary, #9aa0a6);
+  }
+  .plan-bar__panel[hidden] { display: none; }
   .plan-board-list {
     list-style: none;
     margin: 0;
@@ -1286,11 +1317,11 @@ export const chatStyles = `
   .plan-step-active { color: var(--accent, #0e639c); font-weight: 500; }
   .plan-step-active .plan-step-title { font-weight: 600; }
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
-  /* pending：默认次级灰（继承 .plan-board 的 text-secondary，无需额外规则） */
+  /* pending：默认次级灰（继承 .plan-bar__panel 的 text-secondary，无需额外规则） */
 
-  /* ============ Components：plan-inline（对话流内嵌进度条，2026-09-05 Phase 4.1 双轨升级） ============ */
-  /* inline 版：一行紧凑头部，挂在 assistant 块内、round-block 上方。随对话自然向下流动，
-     不再像顶部独立面板那样反向 prepend 成"导航浮窗"。 */
+  /* ============ Components：plan-inline（任务完成静态快照，2026-09-05 → 2026-09-17 仅快照） ============ */
+  /* plan 全部 done 清空时在最近 assistant 块顶部留的静态完成快照（运行时 inline 轨已移除，
+     单轨 PLAN-UI-1）。进度条 + N/M 已完成文案，视觉弱化（plan-inline-done）。 */
   .plan-inline {
     margin: var(--sp-2, 6px) var(--sp-5, 12px) var(--sp-1, 2px);
     padding: var(--sp-2, 4px) var(--sp-3, 8px);

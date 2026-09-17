@@ -343,8 +343,10 @@ function wireRuntimeCallbacks(
     hooks?.requestPause(reason, 'agent');
   };
 
-  // step 边界回调（每次 LLM 迭代完成后触发）：写 stepLog 关联任务表步骤（取 active 步骤 ID）。
-  // 单向引用——plan 仍是任务状态真理源，stepLog 是其时间轴投影（避免双写）
+  // step 边界回调（每次 LLM 迭代完成后、工具执行前触发）：写 stepLog 关联任务表步骤（取 active
+  // 步骤 ID）**并**经 completeStep 标记该步 done + 推进下一 pending（内核自动推进语义）。
+  // 单向引用——plan 仍是任务状态真理源，stepLog 是其时间轴投影；step 状态变更收口
+  // SessionManager.updatePlanStepStatus 单一写点（避免双写旁路）。
   loop.onStepBoundary = (stepInfo) => {
     const activeStepId = sessionManager
       .getCheckpoint()
@@ -355,9 +357,11 @@ function wireRuntimeCallbacks(
     });
   };
 
-  // active step 元信息回调（阶段二步级折叠，2026-09-08 路 B′）：loop 迭代完成时取当前
-  // active 步骤 { stepId, title }，供 loop 对比推进产 step_boundary 事件。无任务表返回 null，
-  // 宿主端据此不产边界（静默）。与 onStepBoundary 同源取 active step，真理源一致。
+  // active step 元信息回调（阶段二步级折叠，2026-09-08 路 B′）：loop 经 _maybeEmitStepBoundary
+  // 在本迭代工具落定后取当前 active 步骤 { stepId, title }，供 loop 对比推进产 step_boundary
+  // 事件。无任务表返回 null，宿主端据此不产边界（静默）。与 onStepBoundary 读同一 checkpoint.plan
+  // 真源，但读取时刻不同（2026-09-17 收敛）：前者读工具前（本迭代完成的那一步），本回调读工具后
+  // （工具改写 plan 生效后当前所在的那一步）——时序分叉是设计语义。
   loop.getActiveStepMeta = () => {
     const cp = sessionManager.getCheckpoint();
     const active = cp?.plan.find((s) => s.status === 'active');

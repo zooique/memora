@@ -148,7 +148,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const capabilityBadge = document.getElementById('currentCapabilityBadge') as HTMLElement | null;
   // 当前角色队伍快照（小组会议启动图标用；由 chat_role_pack.team 填充）
   let currentActiveTeam: { leader: string; members: readonly string[] } | null = null;
-  // 小组会议启动图标单例（懒创建，同 globalPlanBoard 范式）：身份即本引用。
+  // 小组会议启动图标单例（懒创建，同计划常驻条 getPlanBarEl 范式）：身份即本引用。
   // 不得改用字符串键（getElementById/querySelector）复查找回——创建键与查找键一旦不一致
   // 就会每次推送各新建一个，表现为重复图标（SSOT：单例身份只有这一个声明）。
   let teamMeetingIcon: HTMLElement | null = null;
@@ -185,16 +185,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  操作上移容器级 footer（复制整链/分叉/删除）；user 主输入在容器外，与 AI 作答单元分离 */
   let roundGroupEl: HTMLElement | null = null;
 
-  /** 消息区顶部状态块插入协议（P1-0，2026-08-24）：
-   * 后插入的状态块恒排在已感知的任务看板（planBoard）之前，避免后 prepend 者被先者遮挡。 */
-  function prependStatusBlock(el: HTMLElement): void {
-    if (globalPlanBoard && el !== globalPlanBoard) {
-      messages.insertBefore(el, globalPlanBoard);
-    } else {
-      messages.prepend(el);
-    }
-  }
-
   // 当前 Provider 列表（由 chat_providers 消息填充）
   // limitTokens = 宿主经内核 resolveContextWindow 解析的上下文窗口上限
   // （用户 per-LLM 配置的 contextWindow，未配置回落内核默认 120K）
@@ -208,131 +198,147 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentActive: string | undefined;
 
   /**
-   * 任务看板（H4 任务驱动多步闭环）—— 2026-09-05 Phase 4.1 双轨升级
+   * 任务看板（H4 任务驱动多步闭环）—— 2026-09-05 Phase 4.1 双轨升级 → 2026-09-17 合并单轨（PLAN-UI-1）
    *
-   * 双轨呈现（参考 Trae Work 体验）：
-   *   ① globalPlanBoard：顶部独立面板（prependStatusBlock 状态栈第 2 层），完整 step 列表 +
-   *      折叠 stepLog，进度条 + N/M 文字。用于全局任务清单一览。
-   *   ② inlinePlanBoard：对话流内嵌（挂到 activeAssistantEl 内、round-block 上方），
-   *      一行简化头部（进度条 + N/M + 当前 active step 摘要）。随对话自然向下流动。
+   * 单轨呈现：
+   *   ① planBar：顶部固定插槽（#planBar，与 #messages **同级**、非其子节点——#messages 是
+   *      overflow-y:auto 滚动容器，插进它内部一滚即滚出视野）。默认一行
+   *      N/M + 进度条 + 当前 active step 摘要，点击展开**锚定浮层**看全量步骤 + stepLog。
+   *      常驻门槛 ≥3 步（对齐内核 needsPlanning 阈值，2 步小任务不常驻成噪音）。
+   *   ② 运行时**不渲染 inline 轨**；plan 全部 done 清空时在最近 assistant 块顶部留一条
+   *      静态完成快照（历史保留）。
    *
    * 数据源头：plan_update 协议消息（plan 数据由内核 checkpoint.plan 驱动，宿主 postPlanUpdate
-   * 做只读快照推送）。webview 只消费不写，SSOT 不变。
+   * 做只读快照推送）。webview 只消费不写，SSOT 不变。**零新增协议字段。**
    */
-  let globalPlanBoard: HTMLElement | null = null;
-  /** 当前计划快照缓存（供 round-block step 标签、inline 复用，零新增协议） */
+  /** 顶部常驻进度条插槽（HTML #planBar；hidden 由 renderPlanBoard 直控）。惰性查询（getPlanBarEl） */
+  let planBarEl: HTMLElement | null = null;
+  /** 锚定浮层展开态（点击 head 切换；浮层非 modal——看进度时需同时看正文） */
+  let planBarExpanded = false;
+  /** 当前计划快照缓存（供 round-block step 标签、完成快照复用，零新增协议）。
+   *  保持「最近一次非空 plan」：plan 清空时不覆写，供完成快照消费 */
   let currentPlanSteps: PlanStepDto[] = [];
-  /** plan_update 早于 beginStreaming 时的 defer：activeAssistantEl 还没创建，暂存等 assistant 块就绪后挂载 */
-  let pendingInlinePlan: PlanStepDto[] | null = null;
 
-  /** 移除所有任务看板（global 清 + inline 全部转静态快照 + 状态缓存重置）
-   *  注意：clear_ok/切换会话时调用，和 autoClearPlan 的"inline 留快照"语义不同——
-   *  clear_ok 意味着完全重置对话区，inline 也应一起清 */
+  /** 惰性获取常驻条插槽（单例：同一 DOM 节点，避免每次渲染重新 getElementById） */
+  function getPlanBarEl(): HTMLElement | null {
+    if (!planBarEl) planBarEl = document.getElementById('planBar');
+    return planBarEl;
+  }
+
+  /** 移除所有任务看板（常驻条隐藏 + 浮层收起 + 对话区内完成快照清 + 状态缓存重置）。
+   *  注意：clear_ok/切换会话时调用，与 autoClearPlan 的「留完成快照」语义不同——
+   *  clear_ok 意味着完全重置对话区，快照也应一起清 */
   function removeAllPlanBoards(): void {
-    globalPlanBoard?.remove();
-    globalPlanBoard = null;
-    // clear_ok 时 inline 也全清（对话区整体清空）
-    messages.querySelectorAll('.plan-inline').forEach((el) => el.remove());
+    setPlanBarVisible(false);
+    // clear_ok 时对话区内的完成快照也全清（对话区整体清空）
+    messages.querySelectorAll('.plan-inline-done').forEach((el) => el.remove());
     currentPlanSteps = [];
-    pendingInlinePlan = null;
   }
 
-  /** snapshot 所有 inlinePlanBoard：plan 清空时调用，把运行态进度条转静态 done 快照（历史保留） */
-  function snapshotAllInlinePlanBoards(): void {
-    messages.querySelectorAll('.plan-inline').forEach((el) => {
-      el.classList.add('plan-inline-done');
-    });
-  }
-
-  /** 在 activeAssistantEl 内挂载/刷新 inlinePlanBoard（累积式：每个 assistant 块有自己的 inline） */
-  function mountInlinePlanBoard(steps: PlanStepDto[]): void {
-    if (!activeAssistantEl || !activeAssistantEl.isConnected) {
-      // assistant 块还没创建（plan_update 早于 beginStreaming）：defer
-      pendingInlinePlan = steps;
+  /**
+   * 「过程在上 · 报告在下」挂载锚点（SSOT，2026-09-16）：把过程类元素插到 assistant 块报告正文之前。
+   *
+   * 三处挂载点共用同一实现，杜绝措辞/语义漂移：
+   *   ① renderPlanSnapshot（任务完成快照 .plan-inline-done）
+   *   ② ensureProcessFlow（运行时平铺容器 .process-flow）
+   *   ③ ensureRoundBlock（finalize 折叠区 .round-block）
+   *
+   * 三段式降级：`.msg-body` 存在 → 插到它之前；否则紧随 `.msg-ai-label`；再否则 prepend。
+   *
+   * v1.8 剪枝（2026-09-09）后运行时**无 round-block**，因此锚点不得依赖它——历史以它为锚时
+   * querySelector 恒返回 null，而 insertBefore(el, null) 按 DOM 规范退化为 appendChild，
+   * 元素落到 assistant 块最末（正文 .msg-body 与 .msg-footer 之后）= 会话内容底部。
+   *
+   * @param host assistant 容器（.msg.assistant）
+   * @param el 待挂载的过程类元素
+   */
+  function insertBeforeBody(host: HTMLElement, el: HTMLElement): void {
+    const msgBody = host.querySelector(':scope > .msg-body');
+    if (msgBody) {
+      host.insertBefore(el, msgBody);
       return;
     }
-    // 查找当前 assistant 块上是否已有 inline：有则刷新，无则新建（累积式，不替换历史 assistant 块）
-    let inlineEl = activeAssistantEl.querySelector(':scope .plan-inline') as HTMLElement | null;
-    if (!inlineEl) {
-      inlineEl = document.createElement('div');
-      inlineEl.className = 'plan-inline';
-      inlineEl.setAttribute('role', 'status');
-      inlineEl.setAttribute('aria-label', '当前任务进度');
-      // 插到 assistant 块内、round-block 之前（和对话流同方向）
-      const rb = activeAssistantEl.querySelector(':scope .round-block');
-      activeAssistantEl.insertBefore(inlineEl, rb);
+    const label = host.querySelector(':scope > .msg-ai-label');
+    if (label) {
+      label.after(el);
+      return;
     }
-    renderInlinePlanBoard(inlineEl, steps);
-    pendingInlinePlan = null;
+    host.prepend(el);
   }
 
-  /** inline 版：一行简化头部（进度条 + N/M + 当前 active step），挂在 round-block 上方 */
-  function renderInlinePlanBoard(el: HTMLElement, steps: PlanStepDto[]): void {
-    if (!el) return;
+  /** 常驻条可见性切换（幂等：hidden 布尔直控；隐藏时同步收起浮层，防浮层孤儿） */
+  function setPlanBarVisible(visible: boolean): void {
+    const bar = getPlanBarEl();
+    if (!bar) return;
+    bar.hidden = !visible;
+    if (!visible) setPlanBarExpanded(false);
+  }
+
+  /** 锚定浮层展开/收起（点击 head 切换；浮层非 modal——看进度时需同时看正文）。
+   *  展开态同时写 aria-expanded（可访问性）与 chevron 方向（▸ 收起态/▾ 展开态）。
+   *  懒构建：展开时才从当前快照补建面板（收起态 renderPlanBar 不建 DOM，省运行期开销） */
+  function setPlanBarExpanded(expanded: boolean): void {
+    planBarExpanded = expanded;
+    const bar = getPlanBarEl();
+    const head = bar?.querySelector<HTMLElement>('#planBarHead');
+    const panel = bar?.querySelector<HTMLElement>('#planBarPanel');
+    const chevron = bar?.querySelector<HTMLElement>('#planBarChevron');
+    if (head) head.setAttribute('aria-expanded', String(expanded));
+    if (panel) {
+      // 展开且面板尚未构建（收起态跳过建 DOM）→ 从当前快照补建
+      if (expanded && panel.childElementCount === 0 && currentPlanSteps.length > 0) {
+        renderPlanBarPanel(currentPlanSteps);
+      }
+      panel.hidden = !expanded;
+    }
+    if (chevron) chevron.textContent = expanded ? '▾' : '▸';
+  }
+
+  /** 渲染常驻条（一行头 + 锚定浮层内容）。头 = N/M + 进度条 + 当前 active step 摘要。
+   *  浮层懒构建：仅展开态重建面板（运行时 plan_update 频繁，收起态不建 DOM——省开销） */
+  function renderPlanBar(steps: PlanStepDto[]): void {
+    const bar = getPlanBarEl();
+    if (!bar) return;
     const doneCount = steps.filter((s) => s.status === 'done').length;
     const total = steps.length;
     const percent = total > 0 ? (doneCount / total) * 100 : 0;
     const activeStep = steps.find((s) => s.status === 'active');
-    // 构建一行 DOM：progress-wrap（进度条）+ text（N/M + step 摘要）
-    el.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.className = 'plan-inline-wrap';
-    const barWrap = document.createElement('div');
-    barWrap.className = 'plan-inline-progress-wrap';
-    const bar = document.createElement('div');
-    bar.className = 'plan-inline-progress';
-    bar.style.width = `${percent}%`;
-    barWrap.appendChild(bar);
-    wrap.appendChild(barWrap);
-    const text = document.createElement('div');
-    text.className = 'plan-inline-text';
-    // 右侧文案：N/M + active step 摘要（done 时显示"已完成"）
-    if (doneCount === total && total > 0) {
-      text.textContent = `${doneCount}/${total}  ✓ 已完成`;
-    } else if (activeStep) {
-      const brief = activeStep.description.length > 28 ? `${activeStep.description.slice(0, 28)}…` : activeStep.description;
-      text.textContent = `${doneCount}/${total}  🔵 ${brief}`;
-    } else {
-      text.textContent = `${doneCount}/${total}`;
+    // 头行各槽位（HTML #planBar 内固定 id；零新增协议）
+    const countEl = bar.querySelector<HTMLElement>('#planBarCount');
+    const fillEl = bar.querySelector<HTMLElement>('#planBarFill');
+    const currentEl = bar.querySelector<HTMLElement>('#planBarCurrent');
+    if (countEl) countEl.textContent = `${doneCount}/${total}`;
+    if (fillEl) fillEl.style.width = `${percent}%`;
+    if (currentEl) {
+      if (doneCount === total && total > 0) {
+        currentEl.textContent = '已完成';
+      } else if (activeStep) {
+        const brief =
+          activeStep.description.length > 28
+            ? `${activeStep.description.slice(0, 28)}…`
+            : activeStep.description;
+        currentEl.textContent = brief;
+      } else {
+        currentEl.textContent = '';
+      }
     }
-    wrap.appendChild(text);
-    el.appendChild(wrap);
+    if (planBarExpanded) {
+      renderPlanBarPanel(steps); // 展开态：面板跟随最新快照重建
+    }
+    setPlanBarExpanded(planBarExpanded); // 保持展开态（aria/chevron 同步；收起态不建面板）
   }
 
-  /** global 版：顶部独立面板（完整 step 列表 + 折叠 stepLog + 进度条 + N/M） */
-  function renderGlobalPlanBoard(steps: PlanStepDto[]): void {
-    if (!globalPlanBoard) {
-      globalPlanBoard = document.createElement('div');
-      globalPlanBoard.className = 'plan-board';
-      globalPlanBoard.setAttribute('role', 'region');
-      globalPlanBoard.setAttribute('aria-label', '任务进度');
-      // 插到消息区顶部状态栈（协议：任务看板恒在检查点横幅之下），与历史重放/新轮计划同步可见
-      prependStatusBlock(globalPlanBoard);
-    }
-    const doneCount = steps.filter((s) => s.status === 'done').length;
-    const total = steps.length;
-    const percent = total > 0 ? (doneCount / total) * 100 : 0;
-    // 标题行 + 进度条（header 内：N/M 文字 + 4px 进度条）
-    let header = globalPlanBoard.querySelector(':scope .plan-board-header') as HTMLElement;
-    if (!header) {
-      header = document.createElement('div');
-      header.className = 'plan-board-header';
-      globalPlanBoard.appendChild(header);
-    }
-    header.innerHTML = '';
-    const headerLeft = document.createElement('span');
-    headerLeft.textContent = `任务进度：${doneCount}/${total}`;
-    header.appendChild(headerLeft);
-    const barWrap = document.createElement('div');
-    barWrap.className = 'plan-board-progress-wrap';
-    const bar = document.createElement('div');
-    bar.className = 'plan-board-progress';
-    bar.style.width = `${percent}%`;
-    barWrap.appendChild(bar);
-    header.appendChild(barWrap);
-    // 步骤列表：全量重建（简单确定性——步骤量小，重建成本可忽略）
-    const list = globalPlanBoard.querySelector(':scope .plan-board-list') as HTMLElement;
-    if (list) list.remove();
+  /** 渲染锚定浮层内容（全量步骤列表 + 折叠 stepLog；结构与旧 global 看板同源） */
+  function renderPlanBarPanel(steps: PlanStepDto[]): void {
+    const bar = getPlanBarEl();
+    const panel = bar?.querySelector<HTMLElement>('#planBarPanel');
+    if (!panel) return;
+    panel.innerHTML = '';
+    panel.appendChild(buildPlanStepList(steps));
+  }
+
+  /** 构建全量步骤列表（ul.plan-board-list；浮层与完成快照共用——步骤结构单一实现） */
+  function buildPlanStepList(steps: PlanStepDto[]): HTMLUListElement {
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
     for (const step of steps) {
@@ -377,24 +383,61 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       ul.appendChild(item);
     }
-    globalPlanBoard.appendChild(ul);
+    return ul;
   }
 
-  /** 渲染/刷新双轨任务看板（收到 plan_update 消息时调用） */
+  /** 完成静态快照：plan 全部 done 清空时在最近 assistant 块顶部留一条静态 done 快照。
+   *  运行时无 inline 轨，快照是对话流内唯一的看板投影（历史保留）。
+   *  .plan-inline 样式类仅此一用（进度条 + 完成态弱化）；activeAssistantEl 未就绪（如重放
+   *  未建块）则静默跳过。 */
+  function renderPlanSnapshot(steps: PlanStepDto[]): void {
+    if (!activeAssistantEl || !activeAssistantEl.isConnected) return;
+    if (steps.length === 0) return;
+    const doneCount = steps.filter((s) => s.status === 'done').length;
+    const total = steps.length;
+    const percent = total > 0 ? (doneCount / total) * 100 : 0;
+    const el = document.createElement('div');
+    el.className = 'plan-inline plan-inline-done';
+    el.setAttribute('role', 'status');
+    el.setAttribute('aria-label', '任务已完成');
+    const wrap = document.createElement('div');
+    wrap.className = 'plan-inline-wrap';
+    const barWrap = document.createElement('div');
+    barWrap.className = 'plan-inline-progress-wrap';
+    const bar = document.createElement('div');
+    bar.className = 'plan-inline-progress';
+    bar.style.width = `${percent}%`;
+    barWrap.appendChild(bar);
+    wrap.appendChild(barWrap);
+    const text = document.createElement('div');
+    text.className = 'plan-inline-text';
+    text.textContent = `${doneCount}/${total}  ✓ 已完成`;
+    wrap.appendChild(text);
+    el.appendChild(wrap);
+    // 过程在上 · 报告在下：插到报告正文之前（锚点语义详见 insertBeforeBody）
+    insertBeforeBody(activeAssistantEl, el);
+  }
+
+  /** 渲染/刷新单轨任务看板（收到 plan_update 消息时调用）。
+   *  非空 plan → 缓存 + 常驻条（≥3 步才显示，对齐内核 needsPlanning 阈值）；
+   *  空 plan → 若此前有常驻看板，留静态完成快照后隐藏常驻条 */
   function renderPlanBoard(steps: PlanStepDto[]): void {
-    // 缓存快照（供 round-block step 标签复用）
-    currentPlanSteps = steps;
     if (steps.length === 0) {
-      // 空计划 → global 清顶部面板 + inline 全部转静态 done 快照（历史保留）
-      globalPlanBoard?.remove();
-      globalPlanBoard = null;
-      snapshotAllInlinePlanBoards();
+      // 空计划 → 完成态：此前有常驻看板（≥3 步计划）则留静态 done 快照（历史保留）
+      const bar = getPlanBarEl();
+      if (bar && !bar.hidden) {
+        renderPlanSnapshot(currentPlanSteps);
+      }
+      setPlanBarVisible(false);
       return;
     }
-    // global：顶部独立面板（始终渲染，全局概览）
-    renderGlobalPlanBoard(steps);
-    // inline：对话流内嵌（defer 机制：activeAssistantEl 存在时立即挂载，否则等 beginStreaming 消费）
-    mountInlinePlanBoard(steps);
+    // 非空计划：缓存（供 round-block step 标签 + 完成快照复用）；plan 清空时不清此缓存
+    currentPlanSteps = steps;
+    // 常驻门槛 ≥3 步（对齐内核 needsPlanning 阈值，2 步小任务不常驻成噪音）
+    setPlanBarVisible(steps.length >= 3);
+    if (steps.length >= 3) {
+      renderPlanBar(steps);
+    }
   }
   // 当前角色包列表（由 chat_role_packs 消息填充；description 供空状态提示副文案）。
   // 角色切换已独立到「角色」视图（2026-08-17），本面板仅消费角色名用于展示，不再承载切换。
@@ -709,10 +752,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     flowShellEl = div;
     // 挂载运行时过程平铺容器（meta 已在 currentEvents 首条）：过程按 step 时序平铺（无大折叠壳）
     renderProcessFlow(currentEvents);
-    // plan_update 先于 beginStreaming 的 defer 消费：现在 activeAssistantEl 已就绪，挂载 inlinePlanBoard
-    if (pendingInlinePlan) {
-      mountInlinePlanBoard(pendingInlinePlan);
-    }
     scrollToBottom(messages);
     updateEmptyState();
   }
@@ -784,16 +823,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const body = document.createElement('div');
     body.className = 'round-block__details';
     rb.appendChild(body);
-    // 插入点：.msg-ai-label 之后、.msg-body（报告正文）之前
-    const label = host.querySelector(':scope > .msg-ai-label');
-    const msgBody = host.querySelector(':scope > .msg-body');
-    if (msgBody) {
-      host.insertBefore(rb, msgBody);
-    } else if (label) {
-      label.after(rb);
-    } else {
-      host.prepend(rb);
-    }
+    // 挂载点：报告正文（.msg-body）之前——「过程在上 · 报告在下」，锚点语义详见 insertBeforeBody
+    insertBeforeBody(host, rb);
     roundBlockEl = rb;
     roundBlockHostEl = host;
     return rb;
@@ -947,7 +978,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 步级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
   function insertStepGroupInOrder(root: HTMLElement, grp: HTMLElement, boundSeq: number): void {
-    const existingGrps = Array.from(root.querySelectorAll<HTMLElement>('.round-block__step'));
+    // 候选限定为 root 的**直接子节点**（2026-09-16 V4-1）：与 insertStepInOrder 同构隐患，
+    // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，
+    // 按 DOM 规范抛 NotFoundError（F2 同类失败模式的另一半）。当前 step 分组恒为容器直接子节点
+    // （静态上 root 只会是 flow / details，绝不会是 step 分组自身），故本次为防御性、零行为变更。
+    const existingGrps = Array.from(root.querySelectorAll<HTMLElement>(':scope > .round-block__step'));
     const next = existingGrps.find((g) => {
       const gBoundSeq = Number(g.dataset.seq ?? Infinity);
       return gBoundSeq > boundSeq;
@@ -992,9 +1027,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // v1.8 剪枝：平铺容器（process-flow）内排序识别 .process-flow__narrate / .round-block__tool；
     // round-block（finalize/重放）内识别 .round-block__narrate / .round-block__tool——
     // 共用同一插入通道，覆盖两套容器类名。
+    // 候选限定为 details 的**直接子节点**（2026-09-16 F2 修复）：存在 step_boundary 时同款元素
+    // 嵌套在 .round-block__step 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
+    // details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
     const existing = Array.from(
       details.querySelectorAll<HTMLElement>(
-        '.process-flow__narrate, .round-block__narrate, .round-block__tool, .process-flow__tool',
+        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool',
       ),
     ).filter((e) => e !== el);
     const next = existing.find((e) => Number(e.dataset.seq ?? Infinity) > seq);
@@ -1971,7 +2009,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 交互：hover 显示队员名单（title），点击 → 填充「小组会议：」前缀到输入框并聚焦。
    *
    * 数据源：currentActiveTeam 由 chat_role_pack.team 消息填充（SSOT：内核 rolePackManager.getActiveTeam 截断过滤后下发）。
-   * 实现：单例引用 teamMeetingIcon（懒创建，同 globalPlanBoard 范式）+ 复用 icons.ts 统一图标管理。
+   * 实现：单例引用 teamMeetingIcon（懒创建，同计划常驻条 getPlanBarEl 范式）+ 复用 icons.ts 统一图标管理。
    *      幂等：chat_role_pack 可能多次到达（replaySession 与装配后补推各一次），
    *      重复调用只切换显隐，不重复创建。
    */
@@ -3020,11 +3058,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  narrate/tool 已由 renderRoundBlock(finalize=true) 全量小节承载，无需物理搬运；QA 行不在
    *  折叠区内（独立 .msg-qa 行），仍由 foldPendingQaIntoRoundBlock 折入。 */
   function finalizeRound(): void {
-    renderRoundBlock(currentEvents, true);
-    flowEl?.remove();
-    flowEl = null;
-    foldPendingQaIntoRoundBlock();
-    finalizeStreaming();
+    // 2026-09-16 F2：renderRoundBlock 曾在 step_boundary 嵌套场景抛 NotFoundError，导致后续
+    // 「移除 flowEl / 收敛 QA / 关流式光标」全部不执行（过程不折叠 + 光标不消失，且异常在事件
+    // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
+    // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。
+    try {
+      renderRoundBlock(currentEvents, true);
+    } finally {
+      flowEl?.remove();
+      flowEl = null;
+      foldPendingQaIntoRoundBlock();
+      finalizeStreaming();
+    }
   }
 
   /** 最近一次新闭环用户输入时间戳（删除按钮 ts 锚回填源；'user' 无 kind 分支记录，追问/回放同源） */
@@ -3301,7 +3346,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // 处理 extension → webview 消息（流式渲染 / 状态机 / 单一过程事件 / 下拉数据）
-  function onMessage(event: MessageEvent<ExtensionToWebviewMessage>): void {
+  function handleMessage(event: MessageEvent<ExtensionToWebviewMessage>): void {
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
@@ -3822,6 +3867,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
   }
 
+  /**
+   * message 事件监听入口（2026-09-16 F2 取证补漏）：唯一职责 = 异常兜底 + 可观测输出。
+   *
+   * 背景：webview 事件监听器内的异常会被宿主**静默吞掉**（既不向 dispatchEvent 传播，也不进
+   * 宿主日志），用户只见现象（任务过程不折叠 / 流式光标不消失）不见任何报错——F2 的 NotFoundError
+   * 正是这样藏了整轮。此处统一 console.error 暴露堆栈（复制 Extension Host 的 Console 即可定位
+   * 现场），纪律同源：既有用户输入渲染兜底「异常不再静默」（见 ensureUserInputVisible 调用点）。
+   *
+   * 注意：这里只做观测兜底，**不掩盖根因**——根因由 insertStepInOrder 直接子节点限定根治。
+   */
+  function onMessage(event: MessageEvent<ExtensionToWebviewMessage>): void {
+    try {
+      handleMessage(event);
+    } catch (err) {
+      console.error('[chatView] 消息处理异常（已兜底，UI 可能不完整）：', err);
+    }
+  }
+
   window.addEventListener('message', onMessage);
 
   // textarea 自适应高度（Enter 发送 / Shift+Enter 换行）
@@ -3966,6 +4029,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 历史按钮：开合由 treedd 管理（initDropdowns），本层只负责「打开时请求最新列表」——
   // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）
   historyBtn.addEventListener('click', () => vscode.postMessage({ type: 'session_list' }));
+
+  // 任务常驻条（PLAN-UI-1 合并单轨，2026-09-17）：点击头部展开/收起锚定浮层；浮层轻交互——
+  // 点击浮层外区域收起（非 modal：看进度时需同时看正文，故不遮罩全屏）
+  const planBarHead = document.getElementById('planBarHead');
+  planBarHead?.addEventListener('click', () => {
+    setPlanBarExpanded(!planBarExpanded);
+  });
+  document.addEventListener('click', (e) => {
+    const bar = getPlanBarEl();
+    if (planBarExpanded && bar && !bar.contains(e.target as Node)) {
+      setPlanBarExpanded(false);
+    }
+  });
 
   // 空状态示例提问 chips：点击填入输入框并聚焦（ui-redesign.md §6.1 空状态引导）。
   // 事件委托于 document，兼容 renderEmptySuggestions 动态渲染的 chips（角色切换后新增元素）。

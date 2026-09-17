@@ -299,15 +299,19 @@ export class AgentLoop {
   private inAutonomousStep = false;
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
-  /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要，step 级推进记录；
-   *  planStepId 由消费方自查 active step，loop 不传——签名不再留空头支票） */
+  /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要）。消费方在本回调内自查
+   *  active step 并完成 step 推进：assembler 实现经 completeStep 写 stepLog **并**标记该步 done +
+   *  推进下一个 pending（内核自动推进语义）。planStepId 由消费方自查，loop 不传——签名不留空头支票。
+   *  检出时机 = 本迭代 LLM 调用后、工具前（读「本迭代服务的那一步」）。 */
   onStepBoundary?: (stepInfo: { summary: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
-  /** active step 元信息回调（阶段二，2026-09-08 步级折叠路 B′）：loop 每次迭代完成时调用，
-   *  返回当前 active 任务表步骤 { stepId, title }；无任务表/无 active step 返回 null。
-   *  与 onStepBoundary 搭配：onStepBoundary 只管写 stepLog（推进投影），本回调供 loop 判断
-   *  「active step 是否已推进」，变化才产 step_boundary 事件（宿主据此按步分组渲染）。 */
+  /** active step 元信息回调（阶段二，2026-09-08 步级折叠路 B′）：供 _maybeEmitStepBoundary
+   *  在迭代收口时调用，返回当前 active 任务表步骤 { stepId, title }；无任务表/无 active step
+   *  返回 null。与 onStepBoundary **时序分叉**（2026-09-17 收敛）：前者读工具前的 active
+   *  （本迭代完成的那一步），本回调经 _maybeEmitStepBoundary 读工具后的 active（工具落定后
+   *  当前所在的那一步）——step_boundary 事件据此判定「active step 是否已推进」并分组渲染。
+   *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。 */
   getActiveStepMeta?: () => { stepId?: string; title?: string } | null;
   /** 在途任务表判定回调：本 turn 是否已有未完成的计划步骤（会议骨架预置 / 续会）。
    *  装配来源 = SessionManager.hasInflightPlan（单一真理源）；用途 = needsPlanning nudge 注入前
@@ -1024,31 +1028,16 @@ export class AgentLoop {
       return 'aborted';
     }
 
-    // step 边界回调（每次迭代完成后触发，用于 stepLog 记录；step 级推进事件，非 turn 边界）。
+    // step 边界回调（每次迭代完成后触发，用于 stepLog 记录 + 推进投影；step 级推进事件，非 turn 边界）。
     // 挂起型迭代不消耗 step（与用户暂停对称，2026-09-07）：含 ask_user 将挂起的迭代不自动
     // done 当前 active step——问答对归当前步，回答续跑后由后续完整迭代在此边界完成该步；
     // 判定经 willSuspendForAsk 单收口，与 handleToolCalls 挂起检出共用（防双判漂移）。
+    // 检出时机 = 迭代的 LLM 调用后、工具前：此刻的 active step 是本迭代 LLM 实际服务的那一步，
+    // 由 onStepBoundary 将其标记 done 并经 ensureActiveStep 推进到下一步（内核自动推进语义）。
     if (this.onStepBoundary && !this.willSuspendForAsk(llmResult.toolCalls)) {
       this.onStepBoundary({
         summary: llmResult.fullContent.slice(0, 200),
       });
-    }
-    // 步级折叠边界事件（阶段二，2026-09-08 路 B′）：迭代完成后比较 active step 是否已推进。
-    // 推进才产 step_boundary（宿主按步分组后续事件），且比 narrate/tool yield 更早——保证
-    // 该步的第一条过程事件从边界后开始（语义="推进到这一步时记录边界"）。无任务表（null）
-    // 或 stepId 未变则不产（lastBoundaryStepId 去噪，避免每迭代发一条空边界）。
-    const activeStepMeta = this.getActiveStepMeta?.();
-    const activeStepId = activeStepMeta?.stepId;
-    if (activeStepMeta && activeStepId && activeStepId !== this.lastBoundaryStepId) {
-      this.lastBoundaryStepId = activeStepId;
-      // 层0 观测：step_boundary 产出累计（实证布局骨血是否空转）
-      this.metrics.stepBoundaryCount++;
-      // roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带
-      yield {
-        type: 'step_boundary',
-        stepId: activeStepId,
-        title: activeStepMeta.title,
-      };
     }
 
     // ④ 结果路由：工具分支 / 纯文本结束分支
@@ -1069,13 +1058,43 @@ export class AgentLoop {
           ...(llmResult.streamedText ? { withdrawn: llmResult.streamedText } : {}),
         };
       }
-      return yield* this.handleToolCalls(llmResult, effectiveSignal);
+      const toolResult = yield* this.handleToolCalls(llmResult, effectiveSignal);
+      // 步级折叠边界事件（阶段二，2026-09-08 路 B′；检出时机 2026-09-17 收敛到工具落定后）：
+      // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active step
+      // 保证第一步拿到自己的边界（工具落定前检出会被「离开第一步」吃掉）。判据不变（推进才产 +
+      // lastBoundaryStepId 去噪），只换检出时刻。时序分叉是设计语义：onStepBoundary（上述）读
+      // 工具前的 active（本迭代完成的那一步），本处读工具后的 active（当前所在的那一步）。
+      yield* this._maybeEmitStepBoundary();
+      return toolResult;
     }
+    // 无工具路径：plan 本迭代不被改写，检出时机（LLM 调用后）与工具落定后等价，保持原位。
+    yield* this._maybeEmitStepBoundary();
     // K1 补发：工具闭环内延迟分类的纯文本消息（收尾交付）从未流式 yield → 先补发整段正文再收尾
     if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
       yield { type: 'text', content: llmResult.fullContent, stage: textStage };
     }
     return yield* this.handleTextResponse(llmResult);
+  }
+
+  /** 步级折叠边界事件产出（阶段二，2026-09-08 路 B′）：比较 active step 是否已推进，推进才产
+   *  step_boundary（宿主按步分组后续事件）。无任务表（null）或 stepId 未变则不产
+   *  （lastBoundaryStepId 去噪，避免每迭代发一条空边界）。
+   *  检出时机由调用方决定：工具分支在 handleToolCalls 之后（工具可能改写 plan）、无工具分支在
+   *  LLM 调用后——两处都保证「读到的 active step = 本迭代结束后当前所在的那一步」。
+   *  roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带。 */
+  private *_maybeEmitStepBoundary(): Generator<AgentChunk, void, unknown> {
+    const activeStepMeta = this.getActiveStepMeta?.();
+    const activeStepId = activeStepMeta?.stepId;
+    if (activeStepMeta && activeStepId && activeStepId !== this.lastBoundaryStepId) {
+      this.lastBoundaryStepId = activeStepId;
+      // 层0 观测：step_boundary 产出累计（实证布局骨血是否空转）
+      this.metrics.stepBoundaryCount++;
+      yield {
+        type: 'step_boundary',
+        stepId: activeStepId,
+        title: activeStepMeta.title,
+      };
+    }
   }
 
   /** 上下文准备：摘要截断 → 同步工作记忆 → 微压缩 → tokenBudget 检查 → 任务表注入。

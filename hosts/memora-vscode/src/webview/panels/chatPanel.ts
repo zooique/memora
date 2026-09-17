@@ -2482,6 +2482,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             summary: chunk.summary,
             ...(chunk.blocked ? { blocked: true } : {}),
           });
+          // N/M 闪骨架计数（2026-09-17）：tool_start 时读到的 plan 是工具执行前的旧状态
+          // （如会议骨架 2 步），工具落定后才是新 plan（如 4 步）——tool_result 补推一次快照，
+          // 消除「1/2 → 1/4」的一次性闪烁
+          if (chunk.name === 'task_table_write' || chunk.name === 'task_table_update') {
+            this.postPlanUpdate();
+          }
         } else if (chunk.type === 'selfReview') {
           // 自审查终审开始 → 过程事件（§ 自审查输出 头部）
           emitEvent('self_review', {});
@@ -2853,6 +2859,18 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       </button>
       <div id="historyMenu" class="treedd__menu" role="menu"></div>
     </div>
+  </div>
+  <!-- ③ 任务进度常驻条（PLAN-UI-1 单轨，2026-09-17）：与 #messages **同级**的固定插槽——
+       #messages 是 overflow-y:auto 滚动容器，插进它内部一滚即消失；默认一行
+       N/M + 进度条 + 当前步骤，点击展开锚定浮层看全量。隐藏态由 chatView 控制。 -->
+  <div id="planBar" class="plan-bar" hidden>
+    <button id="planBarHead" class="plan-bar__head" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="planBarPanel">
+      <span id="planBarCount" class="plan-bar__count"></span>
+      <span class="plan-bar__progress"><span id="planBarFill" class="plan-bar__fill"></span></span>
+      <span id="planBarCurrent" class="plan-bar__current"></span>
+      <span id="planBarChevron" class="plan-bar__chevron" aria-hidden="true"></span>
+    </button>
+    <div id="planBarPanel" class="plan-bar__panel" hidden></div>
   </div>
   <div id="messages">
     <!-- 空状态引导：标题 + 提示 + 示例提问 chips（点击填入输入框，主动引导新用户）。
