@@ -11,7 +11,7 @@
  *     - sourceHealth() 委托 memoryAdvisor.sourceHealth()
  *     - suggest() 委托 memoryAdvisor.suggest()
  *
- * 治理模型（2026-08-27 收敛）：supersede（写时取代）+ boost（越常用越重要），衰减已移除。
+ * 治理模型：supersede（写时取代）+ 命中刷新 accessedAt（只 touch、不做重要度加权），衰减已移除。
  * MemoryGovernance 仅聚合去重 / 冲突 / 诊断，构造签名两参 (dedupManager, memoryAdvisor)。
  *
  * 测试范式：mock 底层 Manager，验证降级返回值 + 委托调用。

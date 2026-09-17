@@ -273,7 +273,6 @@ export class BuiltinToolHandlers {
     try {
       const content = await readFile(absolutePath, 'utf-8');
       // 返回净化（去控制字符/ANSI，**不做字符数截断**——按行分段的 token 预算在下方收口）
-      // 注：作品投影改为用户主动触发（register_work 工具），read_file 不再自动生成
       return this.sliceFileByLineBudget(stripControlChars(content), relativePath, offset, limit);
     } catch (err) {
       const e = toError(err);
@@ -1034,8 +1033,8 @@ export class BuiltinToolHandlers {
     }
 
     // 命中即 touch（§3.4/§3.3「命中 touch」行）：fire-and-forget 刷新 accessedAt（backgroundTask + touchScores）。
-    // 只 touch 不 +score（§5.2 定案）：accessedAt 是「使用轨迹」唯一事实源，touchScores 用 incrementScore(id, 0)
-    // 保持 score 不变仅刷新访问时间——命中 = 被 LLM 想起 = 记忆强化，与人类记忆隐喻对齐（回忆强化记忆）。查询低频，无自强化（自动注入退役后根除正反馈）。
+    // 只 touch 不加权（§5.2 定案）：accessedAt 是「使用轨迹」唯一事实源，touchScores 内部只调 storage.touch
+    // 刷新访问时间、不写任何重要度字段——命中 = 被 LLM 想起，仅用于排序，不做记忆强化加权。查询低频，无自反馈（自动注入退役后根除正反馈）。
     this.touchHits(hits);
 
     // memoryRecalled 事件（§2.4「保留改语义」定案）：LLM 查询记忆命中 N 条 → 宿主感知提示。
@@ -1058,13 +1057,13 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * 命中即 touch：fire-and-forget 刷新命中记忆的 accessedAt（保持 score 不变）。
+   * 命中即 touch：fire-and-forget 刷新命中记忆的 accessedAt（不涉及任何重要度字段）。
    *
-   * 收敛到 recall.ts 的单一真理源 touchScores（§5.2 只 touch 不 +score，incrementScore(id, 0)
-   * 原子更新 accessedAt、不改 score）——不为工具命中另造 setScore 循环。backgroundTask 保证
-   * fire-and-forget 不阻塞搜索返回，且统一并发限流；失败兜底记日志即可（touch 是强化副作用，非主线流程）。
+   * 收敛到 recall.ts 的单一真理源 touchScores（§5.2 只 touch 不加权，内部只调 storage.touch）——
+   * 不为工具命中另造写分路径。backgroundTask 保证 fire-and-forget 不阻塞搜索返回，
+   * 且统一并发限流；失败兜底记日志即可（touch 是排序副作用，非主线流程）。
    *
-   * @param hits 搜索命中项（取其 id 定位，score 交由 touchScores 内部 incrementScore 保持）
+   * @param hits 搜索命中项（取其 id 定位，实际写入交由 touchScores 收敛）
    */
   private touchHits(hits: readonly AgentSearchHit[]): void {
     if (hits.length === 0) return;

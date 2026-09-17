@@ -1,11 +1,11 @@
 /**
  * 后台任务统一收口门面 —— 一个「后台副作用」的单一启动/观测入口。
  *
- * 收敛散落的 `fire-and-forget`（摘要生成 / boost 打分 / 会话命名 / 时效评估 / 向量清理）：
+ * 收敛散落的 `fire-and-forget`（摘要生成 round-summary / 命中刷新 search_memories.touch / 会话命名 session-title / 向量清理 vector-delete）：
  * - 统一启动：不阻塞调用方，业务 Promise 交给门面兜底；
  * - 统一观测：按 label 累计 pending/completed/failed，宿主可读后台健康度；
  * - 统一兜底：失败统一记日志，业务侧补救经 onFailure 挂载（如宿主事件 emit）；
- * - 统一限流：最大并发槽位防止 boost/摘要/命名/时效任务无界并发耗尽资源。
+ * - 统一限流：最大并发槽位防止上述四类任务无界并发耗尽资源。
  *
  * 与模块级 logger 同模式（全局单例，组件直接 import，零注入成本）。
  */
@@ -112,7 +112,7 @@ export function getBackgroundTaskStats(): BackgroundTaskStats {
 
 /**
  * 等待所有在途后台任务完成（带超时保护，防止任务永不返回阻塞 close）。
- * Agent.close() 必须调用此函数——否则后台 boost/摘要生成等任务可能在 storage 关闭后 upsert 失效。
+ * Agent.close() 必须调用此函数——否则后台命中刷新/摘要生成等任务可能在 storage 关闭后 upsert 失效。
  *
  * @param timeoutMs 超时时间（毫秒），默认 5000ms
  * @returns 实际等待到的 pending 任务数（0 表示无在途任务）

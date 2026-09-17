@@ -1200,7 +1200,6 @@ export class AgentLoop {
     // 注入前先移除已有的任务表消息（特征前缀 [任务进度:，renderTaskTable 输出首行），
     // 保证一个 turn 内经 N 次迭代上下文恒 1 份任务表，不重复灌指令浪费 token。
     // 同时标记 executionTemp——跨 turn 由 cleanExecutionTemporary 在下一闭环入口统一清冗
-    // （旧实现不带标记，跨 turn 同样累积，本次一并收口）
     const taskTable = this.getTaskTable?.();
     if (taskTable) {
       this.replaceContext(

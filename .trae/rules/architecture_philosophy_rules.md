@@ -86,9 +86,9 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 
 ## 8. 自然遗忘优于完美记忆
 
-**无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ boost（召回加权）**；物理清理靠回收站（默认保留 30 天）。
+**无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ 命中刷新 accessedAt（只 touch、不做重要度加权；score 已于 2026-09-09 物理退役）**；物理清理靠回收站（默认保留 30 天）。
 
-- round-summary 记忆有效性由 superseded 写时取代 + 召回 boost 承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
+- round-summary 记忆有效性由 superseded 写时取代 + 召回相关性承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
 - `purgeExpiredMemories(before)` 清理过期软删除记忆；内核不做主动衰减/沉底清理（记忆无时间归档语义）。
 
 **禁止**：❌ 永不删除任何记忆；❌ 所有记忆一视同仁；❌ 召回越多越好（会击穿上下文窗口）。
