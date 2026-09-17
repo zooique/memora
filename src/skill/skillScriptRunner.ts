@@ -122,28 +122,58 @@ export async function runSkillScript(
       });
     });
 
-  let result = await runOnce(command, cmdArgs);
+  const result = await runOnce(command, cmdArgs);
 
-  // L2（2026-09-08）：Windows python 9009 兜底——python 命令不存在（现代 Python 安装
-  // 仅提供 py 启动器）时，首次 ENOENT 自动换 `py -3` 重试一次（成功/其它错误原样返回）
-  if (result.enoent && shouldFallbackPythonToPy(runtime, process.platform)) {
-    result = await runOnce('py', ['-3', scriptPath, ...args]);
+  // L2（2026-09-08）+ L3（2026-09-17）：Windows python 不可用兜底链。python 命令在本机
+  // 不可用有两种形态：① spawn ENOENT（现代 Python 只装 py 启动器、无 python 命令）；
+  // ② 退出码 9009（spawn 命中 Windows Store 空壳启动器 python.exe，它启动即退出 9009；
+  // 非 ENOENT，故不能只看 enoent 标记）。命中即在两个候选解释器间逐级替换重试：
+  //   ① `py -3`（py 启动器）② `cmd /c python`（shell 派发——cmd 按 PATHEXT 解析 .bat shim，
+  //   pyenv/conda 的 python.bat 由此生效；原生 spawn 不解析 .bat 的跨层缺环在此补上）。
+  if (shouldFallbackPythonToPy(runtime, process.platform) && isPythonUnavailable(result, process.platform)) {
+    // ① py 启动器重试：任一成功（上已判定不可用、此命令=解释器本体）即返回
+    const pyResult = await runOnce('py', ['-3', scriptPath, ...args]);
+    if (!isPythonUnavailable(pyResult, process.platform)) {
+      return pyResult;
+    }
+    // ② shell 派发兜底：cmd /c python —— 经 cmd 的 PATHEXT 解析让 pyenv/conda shim 生效
+    return await runOnce('cmd', ['/c', 'python', scriptPath, ...args]);
   }
   return result;
 }
 
 /**
- * L2 兜底判定：python runtime 在 Windows 下可用 py 启动器替换（纯函数，平台参数化可测）
+ * L2 兜底判定：python runtime 在 Windows 下进入兜底链（纯函数，平台参数化可测）
  *
  * @param runtime  脚本运行时
  * @param platform 当前平台（process.platform；参数化便于测试）
- * @returns 是否应换 py -3 重试一次
+ * @returns 是否应进入「py -3 → cmd /c python」兜底链
  */
 export function shouldFallbackPythonToPy(
   runtime: 'node' | 'python' | 'shell',
   platform: NodeJS.Platform,
 ): boolean {
   return runtime === 'python' && platform === 'win32';
+}
+
+/**
+ * python 是否不可用（判定「要不要继续走兜底链」）
+ *
+ * 两种失败形态任一命中即不可用：
+ *   ① enoent —— spawn 未找到 python 命令（PATH 缺 python / 只装 py 启动器）
+ *   ② exitCode 9009 —— spawn 命中 Windows Store 空壳启动器 python.exe，它非文件缺失、
+ *     而是启动后立即以 9009（Windows「命令未找到」）退出。此形态 spawn 不报 ENOENT、
+ *     `enoent` 标记为 false，必须靠退出码识别，否则 python 被误判「执行失败」而非「不可用」。
+ *
+ * @param result  单次执行结果（含 enoent/exitCode 标记）
+ * @param platform 当前平台（win32 之外的平台不判 9009——非 Windows「命令未找到」语义）
+ */
+export function isPythonUnavailable(
+  result: ScriptExecutionResult & { enoent: boolean },
+  platform: NodeJS.Platform,
+): boolean {
+  if (platform !== 'win32') return result.enoent;
+  return result.enoent || result.exitCode === 9009;
 }
 
 /**

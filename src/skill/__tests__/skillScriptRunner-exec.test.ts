@@ -113,4 +113,55 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）'
     expect(result.exitCode).toBe(-1);
     expect(result.stderr).toContain('ENOENT');
   });
+
+  // ── L3：9009 空壳启动器 → cmd /c python 兜底（2026-09-17） ──
+  it.runIf(IS_WINDOWS)('Windows python 退出码 9009（Store 空壳启动器）→ py 亦 9009 → cmd /c python 成功', async () => {
+    const calls: { cmd: string }[] = [];
+    mockedSpawn.mockImplementation(((cmd: string) => {
+      calls.push({ cmd });
+      if (calls.length === 1 || calls.length === 2) {
+        // 前两次：python + py -3 均 spawn 成功但以 9009 退出（本机无 py 启动器、仅 store 空壳）
+        return fakeChild((e) => queueMicrotask(() => e.emit('close', 9009, null)));
+      }
+      // 第三次 cmd /c python：cmd 按 PATHEXT 解析让 pyenv shim 生效 → 成功
+      return fakeChild((e) => queueMicrotask(() => e.emit('close', 0, null)));
+    }) as never);
+
+    const result = await runSkillScript('scripts/test.py', 'python');
+
+    // python(9009) → py -3(9009) → cmd /c python(0)：共 3 次 spawn
+    expect(calls).toHaveLength(3);
+    expect(calls[0]!.cmd).toBe('python');
+    expect(calls[1]!.cmd).toBe('py');
+    expect(calls[2]!.cmd).toBe('cmd');
+    // cmd /c python 的 argv 形态：['/c','python',scriptPath,args...]
+    expect(mockedSpawn.mock.calls[2]?.[1]).toEqual(['/c', 'python', 'scripts/test.py']);
+    expect(result.exitCode).toBe(0);
+  });
+
+  // ── L3 负向：py -3 与 cmd 均不可用（全不可用才返回最后一次失败） ──
+  it.runIf(IS_WINDOWS)('python 9009 且 py/cmd 均 ENOENT → 返回最后一次失败（不掩盖根因）', async () => {
+    const calls: { cmd: string }[] = [];
+    mockedSpawn.mockImplementation(((cmd: string) => {
+      calls.push({ cmd });
+      if (calls.length === 1) {
+        return fakeChild((e) => queueMicrotask(() => e.emit('close', 9009, null)));
+      }
+      // py 与 cmd 均 ENOENT：走 error 事件（enoent=true）
+      return fakeChild((e) =>
+        queueMicrotask(() =>
+          e.emit('error', Object.assign(new Error(`spawn ${cmd} ENOENT`), { code: 'ENOENT' })),
+        ),
+      );
+    }) as never);
+
+    const result = await runSkillScript('scripts/test.py', 'python');
+
+    expect(calls).toHaveLength(3);
+    expect(calls[0]!.cmd).toBe('python');
+    expect(calls[1]!.cmd).toBe('py');
+    expect(calls[2]!.cmd).toBe('cmd');
+    // 全不可用 → 返回最后一次（cmd）的失败态：非零退出码或 stderr 含错误，陈述根因
+    expect(result.exitCode).not.toBe(0);
+  });
 });

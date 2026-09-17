@@ -16,6 +16,7 @@ import {
   formatScriptResult,
   formatExecutionResult,
   shouldFallbackPythonToPy,
+  isPythonUnavailable,
   type ScriptExecutionResult,
 } from '../skillScriptRunner.js';
 import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
@@ -366,5 +367,30 @@ describe('skillScriptRunner — shouldFallbackPythonToPy 判定（2026-09-08）'
 
   it('linux + python → 不兜底（POSIX 无 py 启动器语义）', () => {
     expect(shouldFallbackPythonToPy('python', 'linux')).toBe(false);
+  });
+});
+
+describe('skillScriptRunner — isPythonUnavailable 判定（2026-09-17）', () => {
+  // Windows python 空壳启动器 9009：spawn 成功但进程以 9009（命令未找到）退出，
+  // 非 ENOENT——必须靠退出码识别「不可用」，否则误判「执行失败」永不兜底。
+  it('win32 + 退出码 9009 → 不可用（Store 空壳启动器场景）', () => {
+    expect(isPythonUnavailable({ enoent: false, exitCode: 9009 } as never, 'win32')).toBe(true);
+  });
+
+  it('win32 + ENOENT → 不可用（无 python 命令场景）', () => {
+    expect(isPythonUnavailable({ enoent: true, exitCode: -1 } as never, 'win32')).toBe(true);
+  });
+
+  it('win32 + 其他非零退出码 → 可用（真 Python 执行报错，非命令缺失）', () => {
+    expect(isPythonUnavailable({ enoent: false, exitCode: 2 } as never, 'win32')).toBe(false);
+  });
+
+  it('linux + 9009 → 不可用 仅看 enoent（非 Windows「命令未找到」语义）', () => {
+    expect(isPythonUnavailable({ enoent: false, exitCode: 9009 } as never, 'linux')).toBe(false);
+    expect(isPythonUnavailable({ enoent: true, exitCode: 9009 } as never, 'linux')).toBe(true);
+  });
+
+  it('win32 + 成功(0) → 可用', () => {
+    expect(isPythonUnavailable({ enoent: false, exitCode: 0 } as never, 'win32')).toBe(false);
   });
 });
