@@ -410,6 +410,16 @@ describe('builtinTools · 任务表描述命令式强化', () => {
     expect(def.description).toContain('一次只更新一个步骤');
     expect(def.description).toContain('禁止一次性批量标记所有步骤');
   });
+
+  it('任务表描述应包含「先产出、后标记」顺序纪律（L1，2026-09-17：形态② 单写者语义）', () => {
+    // 形态② 下 plan 推进唯一写者 = LLM 的 task_table_update；标记 done 前必须先完成该步实际产出
+    //（先标后产会让内容错归下一步 + 渲染器「已完成」误导 LLM 不再产出）。两处工具描述同步锁死。
+    const update = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
+    expect(update.description).toContain('先产出、后标记');
+    expect(update.description).toContain('禁止先标记 done 再补产出');
+    const write = BUILTIN_TOOLS.find((t) => t.name === 'task_table_write')!;
+    expect(write.description).toContain('先产出、后标记');
+  });
 });
 
 describe('builtinTools · 任务表 how 单源守卫', () => {

@@ -533,7 +533,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
         'overwrite 清空现有任务表后写入新步骤（重写/重开计划，2026-09-06 与实现对齐）；' +
         'append 在现有任务表后追加新步骤；' +
         'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
-        '写入后按任务表逐步推进，每完成一步用 task_table_update 标记状态。' +
+        '写入后按任务表逐步推进：每步先完成该步的实际产出（正文回答/写入文件/工具结果），再用 task_table_update 标记 done（先产出、后标记）。' +
         '每个步骤可声明可选 rolePack 字段（小组会议用：该步骤的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
         '输出格式为 Markdown 表格，包含进度行和状态标记。',
     parameters: {
@@ -567,6 +567,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     description:
       '更新任务表中指定步骤的状态（命令式：一次只更新一个步骤）。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。' +
         '每完成一步调用一次本工具标记，只有最后一步完成后才宣告任务完成，禁止一次性批量标记所有步骤。' +
+        '顺序纪律：调用本工具标记 done 前，必须已完成该步的实际产出（正文回答/写入文件/工具结果）——先产出、后标记；' +
+        '禁止先标记 done 再补产出（标记后该步即视为完成，之后的内容会错归下一步）。' +
         'step_id 传任务表行首序号（1 开始，如 "1" = 第一个步骤）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
