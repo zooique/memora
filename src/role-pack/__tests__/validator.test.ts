@@ -14,7 +14,7 @@ const validStrategy = {
   prepare: { summaryFocus: '聚焦核心逻辑' },
   act: { toolMode: 'allow', temperature: 0.7, outputLimit: 4096 },
   reflect: { summary: 'on', selfReview: 0, userFollowup: 'silent' },
-  global: { askOn: ['ambiguity', 'decision'], askLimit: 3 },
+  global: { askOn: ['ambiguity', 'decision'], askLimit: 10 },
 };
 
 /** 合法基础 manifest（元数据 + 合规 + strategy + skills） */

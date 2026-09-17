@@ -99,7 +99,7 @@ export interface GlobalStrategy {
   readonly errorHandling?: ErrorHandling;
   /** 主动提问触发场景（默认 ['ambiguity', 'decision', 'missing_info']） */
   readonly askOn?: AskOnTrigger | readonly AskOnTrigger[];
-  /** 主动提问次数上限：按一次用户输入（turn 粒度）计，防单次输入被打断过多次（默认 3） */
+  /** 主动提问次数上限：按一次用户输入（turn 粒度）计，防单次输入被打断过多次（默认 10） */
   readonly askLimit?: number;
 }
 

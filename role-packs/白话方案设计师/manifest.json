@@ -44,7 +44,7 @@
         "missing_info",
         "confirm"
       ],
-      "askLimit": 3,
+      "askLimit": 10,
       "errorHandling": "retry",
       "tokenBudget": 0,
       "stepBudget": 100

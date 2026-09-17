@@ -54,7 +54,7 @@ interface GuardRailDef {
 // 阈值真源（S6 审查后炼化定案 2026-09-16）：静态表只承载纯静态护栏，剔除死值/僵尸键
 const GUARD_THRESHOLDS = { writeLoop: 5, readFailed: 3 } as const;
 // 动态真源（不入静态表，调用方运行时组装 ctx.thresholds 时注入，避免"静态默认"与"运行时覆盖"双轨矛盾）：
-//   askLimit     = role-pack strategy.askLimit（默认 3，按角色包可配置）
+//   askLimit     = role-pack strategy.askLimit（默认 10，按角色包可配置）
 //   maxWebSearch = LOOP_CONSTANTS.MAX_WEB_SEARCH_CALLS（=6）
 // 注：初版曾把 duplicateToolCall/askLimit:20/maxWebSearch:8 塞进静态表（duplicateToolCall 无 guard 消费、
 // askLimit/maxWebSearch 运行时恒被覆盖 → 均为死值），且 readFailed 误复用 duplicateToolCallThreshold

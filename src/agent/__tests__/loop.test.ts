@@ -3215,7 +3215,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
       bootstrapMemories: [],
       toolExecutor,
     });
-    // 硬护栏上限 = 1（默认 3）
+    // 硬护栏上限 = 1（默认 10）
     loop.setStrategy({ askLimit: 1 });
 
     // turn1：提问挂起

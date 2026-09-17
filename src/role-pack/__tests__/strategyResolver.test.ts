@@ -108,7 +108,7 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
     expect(g.stepBudget).toBe(0);
     expect(g.errorHandling).toBe('retry');
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
-    expect(g.askLimit).toBe(3);
+    expect(g.askLimit).toBe(10);
   });
 });
 
@@ -172,11 +172,11 @@ describe('resolve* 函数 — 基础策略解析', () => {
       expect(resolveAskLimit({ global: { askLimit: 5 } })).toBe(5);
     });
 
-    it('非法/缺失值回退默认 3', () => {
-      expect(resolveAskLimit({ global: { askLimit: 0 } })).toBe(3);
-      expect(resolveAskLimit({ global: { askLimit: 99 } })).toBe(3);
-      expect(resolveAskLimit({ global: { askLimit: '3' as never } })).toBe(3);
-      expect(resolveAskLimit(undefined)).toBe(3);
+    it('非法/缺失值回退默认 10', () => {
+      expect(resolveAskLimit({ global: { askLimit: 0 } })).toBe(10);
+      expect(resolveAskLimit({ global: { askLimit: 99 } })).toBe(10);
+      expect(resolveAskLimit({ global: { askLimit: '3' as never } })).toBe(10);
+      expect(resolveAskLimit(undefined)).toBe(10);
     });
   });
 

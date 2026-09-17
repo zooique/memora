@@ -78,7 +78,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     stepBudget: 0,
     errorHandling: 'retry',
     askOn: ['ambiguity', 'decision', 'missing_info'],
-    askLimit: 3,
+    askLimit: 10,
   },
 } as const;
 
@@ -179,7 +179,7 @@ export function resolveProviderRouting(strategy: BehaviorStrategy | undefined): 
 }
 
 /**
- * 解析主动提问次数上限（内核已消费）：整数且 ∈ [1, MAX_ASK_LIMIT] 才采用，缺失/越界回退默认 3。
+ * 解析主动提问次数上限（内核已消费）：整数且 ∈ [1, MAX_ASK_LIMIT] 才采用，缺失/越界回退默认 10。
  * ask_user 工具的 turn 粒度硬护栏取值（SSOT：assembleRolePack 的 prompt 引导与 loop 拦截共用）。
  */
 export function resolveAskLimit(strategy: BehaviorStrategy | undefined): number {

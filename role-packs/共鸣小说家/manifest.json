@@ -39,7 +39,7 @@
         "decision",
         "confirm"
       ],
-      "askLimit": 3,
+      "askLimit": 10,
       "errorHandling": "degrade",
       "tokenBudget": 0,
       "stepBudget": 40
