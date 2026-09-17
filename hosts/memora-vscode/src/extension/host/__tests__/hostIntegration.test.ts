@@ -11,13 +11,19 @@
  * 用法：
  *   npx vitest run src/extension/host/__tests__/hostIntegration.test.ts
  *
- * 注意：此测试需要环境变量 MEMORA_API_KEY 配置有效的 DeepSeek API Key
+ * 注意：
+ *   - **真实 LLM 对话测试（「宿主 Agent 真实对话」组）默认跳过**——依赖外部 LLM API
+ *     （mimo-v2.5），慢/波动会随机红，不适合进常规 vitest / pre-push 门禁。
+ *   - 显式触发：`MEMORA_E2E=1 npx vitest run ...`（仍需 MEMORA_API_KEY 有效配置）。
  */
 // @vitest-environment node
 import { describe, it, expect, beforeAll, afterAll, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+
+// 真实 LLM 集成测试显式触发开关（2026-09-17）：默认关闭——外部 LLM 依赖不进 push 门禁
+const runE2E = process.env.MEMORA_E2E === '1';
 
 // ─── mock vscode（宿主测试不需要真实 VS Code API）────────────────
 vi.mock('vscode', () => ({
@@ -349,7 +355,8 @@ describe('宿主集成端到端测试', () => {
   });
 
   // ─── T6：宿主 Agent 真实对话集成 ────────────────────────────────
-  describe('宿主 Agent 真实对话', () => {
+  // 真实 LLM 测试（2026-09-17）：默认跳过（runE2E 显式开关），LLM 慢/波动不再随机红进 push 门禁
+  describe.skipIf(!runE2E)('宿主 Agent 真实对话', () => {
     it('完整对话流程（初始化 → chat → close）', async () => {
       const apiKey = process.env.MEMORA_API_KEY;
       if (!apiKey) {
