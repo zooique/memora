@@ -618,7 +618,7 @@ for (const chapter of chapters) {
 preExecutionCheck: () => ({ skip: false }),  // 放行，等价于 allow
 ```
 
-**理由**（见 `hosts/memora-vscode/src/extension/host/assemble.ts` L264-267）：
+**理由**（宿主装配注入点见仓库内参考实现 `hosts/memora-vscode/src/extension/host/assemble.ts`，**非随包产物**）：
 1. 宿主运行在用户本地，天然信任模型；
 2. 工具审计已由 `tool_start` / `tool_result` chunk + `tool.execute` span 承担，不重复记录。
 
@@ -680,19 +680,19 @@ chatProvider.setAgentFactory((projectPath) =>
 - [ ] **跨进程 / 多窗口宿主须加文件锁或单实例守卫**：单例只防同进程双实例，不防同工作区双开各自写同一 `sessions.json`；原子写保证不损坏但不保证不丢更新，须进程锁兜底；
 - [ ] 测试覆盖：模拟"面板先写、Agent 后写"或反之，断言最终落盘含两侧写入（防回归双实例覆盖写）。
 
-> 本约束对应 `tasks/待完成任务.md` **T1**：原仅存于 `extension.ts` 注释（L51 / L188 "杜绝双实例覆盖写"），现提升为宿主接入契约基线，避免新宿主对接踩坑。原子写实锤已具备（`atomicWriteFileSync`），单例 + 原子写已对齐主流硬化做法（grida / Chatbox 同款 tmp+rename）；唯一真实残留为跨进程锁，已列入检查清单第 4 项。
+> 本约束原仅存于宿主实现注释（`extension.ts` 的"杜绝双实例覆盖写"；仓库内参考实现，**非随包产物**），现提升为宿主接入契约基线，避免新宿主对接踩坑。原子写实锤已具备（`atomicWriteFileSync`），单例 + 原子写已对齐主流硬化做法（grida / Chatbox 同款 tmp+rename）；唯一真实残留为跨进程锁，已列入检查清单第 4 项。
 
-## 十.7、策略键消费矩阵（17 键 SSOT 落点）📌 参考
+## 十.7、策略键消费矩阵（16 键 SSOT 落点）📌 参考
 
-> 逐键矩阵（17 键 × 内核消费位置 × UI 侧消费）为仓库内开发文档（SSOT：`src/role-pack/strategyKeys.ts`），**不随包发布**；宿主对接所需的键语义见 [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) §三。此处只给新宿主对接必知的结论与边界。
+> 逐键矩阵（16 键 × 内核消费位置 × UI 侧消费）为仓库内开发文档（SSOT：`src/role-pack/strategyKeys.ts`），**不随包发布**；宿主对接所需的键语义见 [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) §三。此处只给新宿主对接必知的结论与边界。
 
 - **16 键全部被内核真实消费、零 `[草案]`**（prepare 1 / act 7 / reflect 3 / global 5）。解析层 `rolePackManager` + `strategyResolver` 84 项测试守护，消费层跨 `contextPreparer` / `loop` / `agent` / `managers/llmCaller` / `toolRunner` / `orchestrator` / `prepare` 多文件覆盖。
 - **三类流向，单一收口无镜像**：
   1. act 5 键（`toolMode`/`toolStepLimit`/`providerRouting`/`multiStepReasoning`/`toolReadonly`）+ `selfReview` + global 4 键（`errorHandling`/`tokenBudget`/`stepBudget`/`askLimit`），统一经 `resolveL2Strategy()` 聚合注入 `L2RuntimeStrategy`，loop 经 `this.strategy.<field>` 读取；`act.temperature`/`outputLimit` 由 `agent.ts` 直映射 `ChatOptions`（不经聚合）；
-  2. prepare 键经 `resolveActiveStrategy()` 单一真理源流入 `contextPreparer` / `recall` / `roundSummaryGenerator`；
+  2. prepare 键经 `resolveActiveStrategy()` 单一真理源流入 `contextPreparer` / `roundSummaryGenerator`；
   3. persona 指令类（`userFollowup`/`askOn`/`askLimit`）由 `assembleRolePack()` 单收口注入。
 - **⚠️ 边界纠正：`toolReadonly` 内核已执行，非「无宿主执行方」**。`toolRunner.ts` 只剩两层闸：闸①（只读闸 `toolReadonly==='readonly'`）**由内核执行**；闸③（宿主 `preExecutionCheck` 注入点）当前 VS Code 宿主恒放行（`assemble.ts` 恒返回 `() => ({ skip: false })`）只是单用户信任模型下的显式让行（关联 十.5 / 设计纪律 D5），未来多用户/服务端须替换真实审批。原闸② `toolApproval` 审批链已随 3.0.0 删键（2026-09-11，故代码注释 ①/③ 编号保留）：单用户本地无真实审批场景，原"通知宿主 + UI 需审批 chip"是展示性假承诺——整键删除，新宿主切勿再期待 `onToolApproval` 回调或 `toolApproval==='confirm'` 语义，审批须自行在 `preExecutionCheck` 实现。
-- **UI 侧 6 键有呈现**：`rolesView.ts` 策略 chip 5 键（`toolReadonly` / `summaryFocus` / `outputLimit` / `temperature` / `multiStepReasoning`）+ `toolMode` 经 `chatView.ts` capability badge 渲染（'纯 LLM' / '全部工具'）。`capabilityLabels.ts` 是能力名映射，**与策略键无关**，勿混淆。
+- **UI 侧 6 键有呈现**：宿主角色列表视图渲染策略 chip 5 键（`toolReadonly` / `summaryFocus` / `outputLimit` / `temperature` / `multiStepReasoning`）+ `toolMode` 经对话视图 capability badge 渲染（'纯 LLM' / '全部工具'）。能力名映射与策略键无关，**勿混淆**。（上述 UI 实现均为仓库内宿主参考实现，**非随包产物**。）
 
 ---
 

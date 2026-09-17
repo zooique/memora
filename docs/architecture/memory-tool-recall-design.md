@@ -233,8 +233,8 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 | 消费端 | 处置 | 理由 |
 |---|---|---|
 | `hybridMerge` score×0.4 | **退役**：排序纯化 = 单语义分 `vectorScore` 降序 | score 单调不减无区分度（P0-1）；`只 touch 不 +score`（§5.2）后 score 不再更新，排序残件。同贴题下的次序交由 LLM 依据暴露的 `accessedAt` 字段决策（§5.2 定案：代码不预排时间主序） |
-| `boostScore`（recall.ts 副本提升） | **删除**：收敛为 touch | 唯一排序消费者（hybridMerge score 项）退役后，boost 副作用失效；touchScores `incrementScore(id,0)` 已落地（只刷 accessedAt），是唯一写位 |
-| `SCORE_FLOOR` | **保留**作存储 clamp 下限 | touch 仍走 `incrementScore`（clamp 到 floor），是存储不变量、非排序语义；勿随排序批拆除误伤 touch 读路径 |
+| `boostScore`（recall.ts 副本提升） | **删除**：收敛为 touch | 唯一排序消费者（hybridMerge score 项）退役后，boost 副作用失效；`touchScores` 内部只调 `storage.touch(id, now)` 已落地（只刷 accessedAt），是唯一写位 |
+| `SCORE_FLOOR` | **已删除** | 与 `BOOST_INCREMENT` / `SCORE_CEILING` 同批随阶段3 清理（`src/memory/__tests__/governance.test.ts:10` 留有记录，`src/` 已无定义与消费）；原「保留作存储 clamp 下限」的理由随 score 物理退役（2026-09-09）一并失效 |
 | `memoryAdvisor` avgScore 健康判定 | **回退判定基准**（本周另议指标，候选=accessedAt 冷度｜弃用 status） | G34 已定性记忆无沉底语义、`listFading` 更名「冷记忆观测」；score 不再更新 → avgScore 冻结失去时效含义，健康判定基础消失 |
 | 工具返回 `(score=...)` | **保留**作诊断展示 | 字段物理保留故可展示，只读回溯价值（已实现只读不改） |
 | `BOOST_INCREMENT` / `SCORE_CEILING` | 3B 后查孤儿：若 boostScore 删除且无 q 排写提升位，常量失消费 → 另批清理 | 同「预留键 vs 僵尸键」纪律，勿留空转 |
@@ -242,7 +242,7 @@ SeedPrepare.run（seed/prepare.ts:99，策略解析 memoryRecallMode/contextAsse
 **批次序（渐进重构 + progressive-refactor，每批独立提交 + 全量回归）**：
 
 - **3A 排序纯化**：`hybridMerge` 移除 `memoryScoreWeight` 项与 `HybridWeights` 权重参数 → 变量 `sort 单向量分`；recall() 与 searchHybrid() 同步生效（同一函数，一处改处处生效）。`keyword-only` 回退通道（vectorScore=0）失去 score 打破平局 → 次序依赖 stable-sort 插入序，可接受（兜底后端，语义缺失本就无主序）。
-- **3B boost 收敛**：recall.ts 删除 `boostScore`（:491/:271 副本提升段），确认 `touchScores` 为唯一写位（`incrementScore(id,0)`）。
+- **3B boost 收敛**：recall.ts 删除 `boostScore`，确认 `touchScores`（内部只调 `storage.touch(id, now)`）为唯一写位。
 - **3C 判定回退**：`memoryAdvisor` 健康状态改基准（拍板见下表①），`SOURCE_HEALTH_THRESHOLDS` 随速随拆记录在案（2026-09-09 教训：新增后未住即拆，勿留孤儿）。
 - **3D 常量清理**：`BOOST_INCREMENT`/`SCORE_CEILING` 去孤儿（3B 后 grep 消费方归零则删，`src/index.ts:139` 导出面同步）。
 

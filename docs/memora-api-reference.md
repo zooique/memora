@@ -465,10 +465,9 @@ interface IMemoryStorage {
   getDeletedById(id: string): Memory | null;    // 按 ID 获取单条软删除记忆（restore/purge 前存在性校验）
   purgeExpired(before: Date): number;           // 清理过期回收站（物理删除 deletedAt 早于 before 的，返回清理数量）
 
-  // ─── 统计与维护（3 方法） ───
-  incrementScore(id: string, delta: number, now: string): boolean;  // 原子递增 score（消除 read-modify-write 并发冲突）
-  setScore(id: string, newScore: number, now: string): boolean;     // 直接设置 score
-  getAllSources(): Map<string, number>;               // 获取所有 source 标签及其活跃记忆数量
+  // ─── 统计与维护（2 方法） ───
+  touch(id: string, now: string): boolean;  // 刷新 accessedAt（score 退役后唯一写位；不写 score、无 clamp 语义）
+  getAllSources(): Map<string, number>;     // 获取所有 source 标签及其活跃记忆数量
 
   // ─── 可选（1 方法） ───
   close?(): void;

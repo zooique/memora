@@ -163,7 +163,7 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 10,
-              "description": "每轮主动提问次数上限（默认 3；userFollowup=ask 时生效）"
+              "description": "每轮主动提问次数上限（默认 10，区间 1~10；userFollowup=ask 时生效）"
             },
             "errorHandling": {
               "type": "string",

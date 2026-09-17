@@ -25,7 +25,7 @@
 
 Memora is an **Agent memory kernel** — framework-agnostic, cloud-independent, focused on one thing: **giving your agent cross-session, cross-topic long-term memory that stays clean.**
 
-"Clean" means: semantic deduplication, conflict detection, write-time supersede, and recall boost (the more a memory is used, the more it matters) — not just stuffing history into the context window.
+"Clean" means: semantic deduplication, conflict detection, write-time supersede, and last-used refresh (accessedAt, used for ordering) — no importance weighting, and not just stuffing history into the context window.
 
 ```typescript
 import { Agent, createProviderFromConfig } from '@zooique/memora';
@@ -46,7 +46,7 @@ for await (const chunk of agent.chat('I love TypeScript')) {
   process.stdout.write(chunk.content);
 }
 
-// Next session — agent recalls automatically
+// Next session — the LLM can call search_memories to retrieve this memory
 const reply = await agent.chatSync('What language do I like?');
 
 // Memory governance — dedup / conflict detection / source health
@@ -92,9 +92,9 @@ Memora is a **brain kernel that cannot run standalone** — it has interfaces bu
 
 | Capability | Description |
 |-----------|-------------|
-| **Long-term Memory** | Cross-session, cross-topic memory persistence with intelligent recall |
-| **Dual-channel Recall** | Semantic vector search + keyword search, hybridMerge fusion ranking |
-| **Memory Governance** | Write-time supersede + recall boost + semantic dedup + conflict detection via `agent.governance` facade (dedup / conflict judged by LLM) |
+| **Long-term Memory** | Cross-session, cross-topic memory persistence with tool-based recall (`search_memories`; no automatic injection) |
+| **Dual-channel Recall** | Semantic vector search + keyword search, hybridMerge fusion ranking (inside `search_memories`) |
+| **Memory Governance** | Write-time supersede + last-used refresh (`accessedAt` used for ordering; no importance weighting) + semantic dedup + conflict detection via `agent.governance` facade (dedup / conflict judged by LLM) |
 | **Agent-Persona Separation** | Agent is a pure memory engine; persona is a personality vessel. Switch personas without losing memories |
 | **Unified Memory Model** | Everything is a "Memory" primitive, distinguished by open-string `source` — no closed enums |
 | **Domain-agnostic** | Same architecture, different memory configs → different domains |
@@ -145,9 +145,9 @@ for await (const chunk of agent.chat('Hi, remember that I love TypeScript')) {
   }
 }
 
-// Next session — the agent automatically recalls "loves TypeScript"
+// Next session — the LLM can call search_memories to retrieve "loves TypeScript"
 const reply = await agent.chatSync('What language do I like?');
-// → Answers based on recalled memory
+// → Answers based on the memories the LLM retrieved
 ```
 
 ### Memory Management
@@ -186,11 +186,11 @@ await agent.close();
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora Kernel (Agent)                   │               │
 │  │  - chat(input) → streaming response      │               │
-│  │  - Dual-channel recall (semantic+keyword)│               │
+│  │  - Dual-channel search (semantic+keyword)│               │
 │  │  - Memory governance (dedup/conflict/supersede) │         │
 │  │  - Role pack matching / Skill matching   │               │
 │  │  - Tool registration / execution         │               │
-│  │  - Session archive / external task loop  │               │
+│  │  - Session archive / round persistence   │               │
 │  └──────────────────────────────────────────┘               │
 └────────────────────────────────────────────────────────────┘
 ```
