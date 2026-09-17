@@ -337,7 +337,7 @@ describe('chatView clear_ok 消息区清理', () => {
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('暂停前正文已按补充调整成本标准');
-    const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
+    const qaRow = messages.querySelector('.round-block__input') as HTMLElement;
     expect(qaRow).not.toBeNull();
   });
 
@@ -364,7 +364,7 @@ describe('chatView clear_ok 消息区清理', () => {
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants.length).toBe(1);
     expect(collectAllBodyText(assistants[0])).toBe('前序正文错误后续写');
-    const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
+    const qaRow = messages.querySelector('.round-block__input') as HTMLElement;
     expect(qaRow).not.toBeNull();
   });
 
@@ -417,9 +417,9 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('提问前正文已按方案 A 执行完毕');
     // 你答行进入本轮折叠块（过程位，随折叠折入）
-    const qaRow = messages.querySelector('.msg-qa') as HTMLElement;
+    const qaRow = messages.querySelector('.round-block__input') as HTMLElement;
     expect(qaRow).not.toBeNull();
-    expect(qaRow.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
+    expect(qaRow.querySelector('.round-block__input-tag')?.textContent).toBe('你答');
   });
 
   it('同轮连环 ask：resume 无正文再问 → 第二轮 QA 恒插第一轮后（运行时=重放 ts 序，2026-09-09 T2）', () => {
@@ -444,16 +444,14 @@ describe('chatView clear_ok 消息区清理', () => {
       type: 'user', text: '选方案 B', ts: '2026-09-08T10:01:00.000Z', kind: 'question-answer', roundId: 'r1',
       question: '确认改为 B？', options: ['方案 B', '方案 A'],
     });
-    // 运行时形态（done 前）：第二轮 QA 必须归属本轮 round-group 容器、紧跟第一轮之后——
-    // 不得因 assistant 锚回退/失效散落消息流层（:last-of-type 匹配失败 → appendChild 消息流尾 = 缺陷）
-    const rgRun = messages.querySelector<HTMLElement>('.round-group');
-    expect(rgRun).not.toBeNull();
-    const rgQaRun = rgRun
-      ? Array.from(rgRun.querySelectorAll<HTMLElement>('.msg-qa--ask, details.msg-qa'))
-      : [];
-    expect(rgQaRun).toHaveLength(4);
+    // 运行时形态（done 前）：第二轮 QA 条目必须归属本轮 process-flow 过程容器、紧跟第一轮之后——
+    // 不得因 assistant 锚回退/失效散落消息流层（形态甲：QA 按 ts 归位过程容器，SSOT 无第二渲染体系）
+    const flowRun = document.querySelector<HTMLElement>('.process-flow');
+    expect(flowRun).not.toBeNull();
+    const flowInputsRun = flowRun ? Array.from(flowRun.querySelectorAll<HTMLElement>('.round-block__input')) : [];
+    expect(flowInputsRun).toHaveLength(2);
     const strayRun = Array.from(messages.children).filter(
-      (el) => el instanceof HTMLElement && el.classList.contains('msg-qa'),
+      (el) => el instanceof HTMLElement && el.classList.contains('round-block__input'),
     );
     expect(strayRun).toHaveLength(0);
 
@@ -462,19 +460,16 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'chunk', content: '已按方案 B 继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
 
-    // 期望 = 重放 ts 交织序：[块A] → 问1 → 答1 → 问2 → 答2 → [正文续接]（运行时=重放同构）
-    const askRows = Array.from(messages.querySelectorAll<HTMLElement>('.msg-qa--ask'));
-    const ansRows = Array.from(messages.querySelectorAll<HTMLElement>('details.msg-qa'));
-    expect(askRows).toHaveLength(2);
-    expect(ansRows).toHaveLength(2);
-    expect(askRows[0]?.textContent).toContain('选哪个方案？');
-    expect(askRows[1]?.textContent).toContain('确认改为 B？');
-    expect(ansRows[0]?.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
-    // 时序断言（文档树序，折叠与否均成立）：问1 在问2 前、答1 在答2 前、问1 在答2 前
-    const seq = Array.from(messages.querySelectorAll<HTMLElement>('.msg-qa--ask, details.msg-qa'));
-    expect(seq.indexOf(askRows[0] as HTMLElement)).toBeLessThan(seq.indexOf(askRows[1] as HTMLElement));
-    expect(seq.indexOf(ansRows[0] as HTMLElement)).toBeLessThan(seq.indexOf(ansRows[1] as HTMLElement));
-    expect(seq.indexOf(askRows[0] as HTMLElement)).toBeLessThan(seq.indexOf(ansRows[1] as HTMLElement));
+    // 期望 = 重放 ts 交织序：[块A] → 条目1（问1+你答1）→ 条目2（问2+你答2）→ [正文续接]（运行时=重放同构）
+    // 形态甲：问行+答行合并为单条目（.round-block__input 内含 .input-q 回顾行），按 ts 归位
+    const inputs = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0]!.querySelector('.round-block__input-q')?.textContent).toContain('选哪个方案？');
+    expect(inputs[1]!.querySelector('.round-block__input-q')?.textContent).toContain('确认改为 B？');
+    expect(inputs[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
+    // 时序断言（文档树序，ts 归位）：条目1 在 条目2 前（运行时=重放 ts 序不倒挂）
+    const seq = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
+    expect(seq.indexOf(inputs[0] as HTMLElement)).toBeLessThan(seq.indexOf(inputs[1] as HTMLElement));
   });
 
   it('交互行渲染异常 → 兜底降级可见：用户输入不丢，resume 后原位续写（ensureUserInputVisible，2026-09-15 方案 C）', () => {
@@ -487,8 +482,9 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'chunk', content: '前序正文', roundId: 'r1' });
     // ② ask_user 暂停（pausedAssistantEl = 块A）
     dispatch({ type: 'paused' });
-    // ③ 注入 DOM 异常：qa 行经 Element.after 插入时抛错（仅拦截下一次调用）
-    const spy = vi.spyOn(Element.prototype, 'after').mockImplementationOnce(() => {
+    // ③ 注入 DOM 异常：qa 条目经 appendChild 渲染时抛错（形态甲：条目构建走 appendChild/append，
+    //    仅拦截下一次调用）
+    const spy = vi.spyOn(Element.prototype, 'appendChild').mockImplementationOnce(() => {
       throw new Error('injected-dom-failure');
     });
     dispatch({ type: 'user', text: '我的回答', ts: '2026-09-08T15:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
@@ -2895,23 +2891,23 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // D3 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
     dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
-    // 被打断补充（streaming 中 supplement）→ 内联子行「你补充」：与 question-answer 共用 msg-qa 形态
+    // 被打断补充（streaming 中 supplement）→ 过程条目「你补充」：与 question-answer 共用 round-block__input 形态
     dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });
-    const supRow = document.querySelector('.msg-qa') as HTMLElement;
+    const supRow = document.querySelector('.round-block__input') as HTMLElement;
     expect(supRow).not.toBeNull();
-    expect(supRow.querySelector('.msg-qa__tag')?.textContent).toBe('你补充');
+    expect(supRow.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
     expect(supRow.textContent).toContain('不要联网搜索');
-    // 子行插在被打断的 assistant 块之后（打断点归位），与消息流平级
-    const interrupted = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
-    expect(interrupted.nextElementSibling).toBe(supRow);
-    // 后续 chunk（同 roundId）→ 新「续接」块（is-continued + ↻ 续接 chip），位于子行之后
+    // 形态甲（2026-09-17）：补充条目进过程容器（process-flow），按 ts 归位——不再与 assistant 块消息流平级
+    const flow = document.querySelector('.process-flow') as HTMLElement | null;
+    expect(flow).not.toBeNull();
+    expect(flow?.contains(supRow)).toBe(true);
+    // 后续 chunk（同 roundId）→ 新「续接」块（is-continued + ↻ 续接 chip）
     dispatch({ type: 'chunk', content: '好的，按你的要求继续', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     const continued = blocks[1] as HTMLElement;
     expect(continued.classList.contains('is-continued')).toBe(true);
     expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
-    expect(supRow.nextElementSibling).toBe(continued);
     expect(collectAllBodyText(continued)).toContain('按你的要求继续');
   });
 
@@ -2922,15 +2918,15 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // 同轮连续两条补充（运行时：roundId 均未回填，历史上会误合并成「你补充 N 条」）
     dispatch({ type: 'user', text: '补充：先看配置', ts: 't1', kind: 'supplement', roundId: '' });
     dispatch({ type: 'user', text: '补充：再看日志', ts: 't2', kind: 'supplement', roundId: '' });
-    const supRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa')).filter(
-      (el) => el.querySelector('.msg-qa__tag')?.textContent?.startsWith('你补充'),
+    const supRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
+      (el) => el.querySelector('.round-block__input-tag')?.textContent?.startsWith('你补充'),
     );
     // 两颗钉子独立成块：不合并、无「你补充了 N 条」标签、各自含完整内容
     expect(supRows).toHaveLength(2);
     expect(supRows[0]!.textContent).toContain('先看配置');
     expect(supRows[1]!.textContent).toContain('再看日志');
-    expect(supRows[0]!.querySelector('.msg-qa__tag')?.textContent).toBe('你补充');
-    expect(supRows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你补充');
+    expect(supRows[0]!.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
+    expect(supRows[1]!.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
   });
 
   it('D3 单轨：运行时 qa 回答后 resume，骨架初始即标识续接（2026-09-08 同构收窄：交互已插=必然续接，不闪「新开回答」）', () => {
@@ -2940,10 +2936,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     // 用户回答（question-answer，带提问原文——运行时同构：host 透出 question，渲染「问」回顾行）
     dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1', question: '需要先确认哪个方案？' });
-    const qaRows = document.querySelectorAll('.msg-qa');
+    const qaRows = document.querySelectorAll('.round-block__input');
     expect(qaRows.length).toBeGreaterThanOrEqual(1);
-    // 提问明文在对话流（msg-qa--ask 回顾行 + 你答行）：trae work 形态，问答对可回看
-    const askRow = document.querySelector('.msg-qa--ask') as HTMLElement;
+    // 提问明文在条目内（.round-block__input-q 回顾行 + 内容行）：trae work 形态，问答对可回看
+    const askRow = document.querySelector('.round-block__input-q') as HTMLElement;
     expect(askRow).not.toBeNull();
     expect(askRow.textContent).toContain('需要先确认哪个方案？');
     expect(askRow.textContent).toContain('问');
@@ -2955,8 +2951,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const skeleton = blocks[1] as HTMLElement;
     expect(skeleton.classList.contains('is-continued')).toBe(true);
     expect(skeleton.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
-    // 骨架挂在交互行之后（[块A] → [问/答行] → [块B 续接] 顺序同构）
-    expect(qaRows[qaRows.length - 1]!.nextElementSibling).toBe(skeleton);
+    // 骨架挂在消息流 assistant 链尾（[块A] → [块B 续接]；交互条目在过程容器内，不参与消息流兄弟链）
+    expect((blocks[0] as HTMLElement).nextElementSibling).toBe(skeleton);
     // 首个 chunk（同 roundId）→ flowShellEl 复用骨架，正文流入续接块（chip 幂等不重复）
     dispatch({ type: 'chunk', content: '好，开始执行方案A', roundId: 'round-1' });
     const continued = document.querySelectorAll('.msg.assistant')[1] as HTMLElement;
@@ -3017,22 +3013,21 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect((blocks2[2] as HTMLElement).classList.contains('is-continued')).toBe(false);
   });
 
-  it('UX-9 C：question-answer 渲染为消息流内联子行（提问块下方，非折叠收纳）', () => {
+  it('UX-9 C：question-answer 渲染为过程条目行（运行时进 process-flow，即时可见，2026-09-17 形态甲）', () => {
     mountChatView();
-    beginRound(); // meta + chunk：骨架建块并挂载 round-block（有过程事件）
-    // 用户对提问的回答 → 内联子行「你答：xxx」插在提问块（activeAssistantEl）之后
+    beginRound(); // meta + chunk：骨架建块并挂载过程平铺容器（process-flow）
+    // 用户对提问的回答 → 过程条目「你答：xxx」按 ts 插入 process-flow（对应 step 分组）
     dispatch({ type: 'user', text: '选方案A', ts: '2026-09-03T03:15:05Z', kind: 'question-answer', roundId: 'round-1' });
-    const qa = document.querySelector('.msg-qa') as HTMLElement;
+    const qa = document.querySelector('.round-block__input') as HTMLElement;
     expect(qa).not.toBeNull();
-    expect(qa.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
-    expect(qa.querySelector('.msg-qa__text')?.textContent).toContain('选方案A');
-    // 位置：提问块（assistant）之后，与消息流平级（不在 round-block 折叠内部）
-    const ask = document.querySelectorAll('.msg.assistant')[0] as HTMLElement;
-    expect(ask.nextElementSibling).toBe(qa);
-    // v1.8：运行时无 round-block 折叠壳，QA 平铺在消息流（不在 process-flow 过程容器内）
+    expect(qa.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
+    expect(qa.querySelector('.round-block__input-row .round-block__input-text')?.textContent).toContain('选方案A');
+    // 形态甲（2026-09-17）：QA 条目进过程容器（process-flow），按 ts 归位——运行时即时可见（硬约束）
     const flow = document.querySelector('.process-flow') as HTMLElement | null;
-    expect(document.querySelector('.round-block')).toBeNull(); // 无大折叠壳
-    expect(flow?.querySelector('.msg-qa')).toBeNull(); // 交互输入不混入过程平铺，保持两段独立
+    expect(flow).not.toBeNull();
+    expect(flow?.contains(qa)).toBe(true);
+    // 运行时无大折叠壳（QA 在平铺容器内，非 round-block 折叠内部）
+    expect(document.querySelector('.round-block')).toBeNull();
   });
 
   it('G26：重放 question-answer 携带 question/options → 先渲染只读「问」回顾行再「你答」', () => {
@@ -3048,17 +3043,18 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       question: '你想读哪个文件？',
       options: ['probe.txt', 'config.json'],
     });
-    const qRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa'));
-    expect(qRows).toHaveLength(2); // 提问回顾行 + 回答行
-    const askRow = qRows[0]!;
-    expect(askRow.classList.contains('msg-qa--ask')).toBe(true);
-    expect(askRow.querySelector('.msg-qa__tag')?.textContent).toBe('问');
-    expect(askRow.querySelector('.msg-qa__text')?.textContent).toContain('你想读哪个文件？');
-    expect(askRow.querySelector('.msg-qa__opts')?.textContent).toContain('probe.txt');
-    // 阅读序：回顾行在前、回答行紧随其后
-    expect(askRow.nextElementSibling).toBe(qRows[1]);
-    expect(qRows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
-    expect(qRows[1]!.querySelector('.msg-qa__text')?.textContent).toContain('读 probe.txt');
+    // 形态甲（2026-09-17）：问行+答行合并为单条目（.round-block__input），重放进 round-block details
+    const qRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
+    expect(qRows).toHaveLength(1); // 单条目 = 问回顾行 + 你答行
+    const entry = qRows[0]!;
+    const askRow = entry.querySelector('.round-block__input-q') as HTMLElement;
+    expect(askRow).not.toBeNull();
+    expect(askRow.querySelector('.round-block__input-tag')?.textContent).toBe('问');
+    expect(askRow.querySelector('.round-block__input-text')?.textContent).toContain('你想读哪个文件？');
+    expect(askRow.querySelector('.round-block__input-opts')?.textContent).toContain('probe.txt');
+    // 阅读序：条目内问回顾行在前、内容行紧随其后
+    expect(entry.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
+    expect(entry.querySelector('.round-block__input-row .round-block__input-text')?.textContent).toContain('读 probe.txt');
   });
 
   it('G26：无 question 的 question-answer（运行时/旧数据）不渲染回顾行，退化为现状', () => {
@@ -3066,10 +3062,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'user', text: '问题', ts: 't1' });
     dispatch({ type: 'assistant', text: '回答', ts: 't2' });
     dispatch({ type: 'user', text: '选A', ts: 't3', kind: 'question-answer', roundId: 'round-1' });
-    const qRows = document.querySelectorAll('.msg-qa');
+    const qRows = document.querySelectorAll('.round-block__input');
     expect(qRows).toHaveLength(1); // 仅「你答」行
-    expect(document.querySelector('.msg-qa--ask')).toBeNull();
-    expect(document.querySelector('.msg-qa__opts')).toBeNull();
+    expect(document.querySelector('.round-block__input-q')).toBeNull();
+    expect(document.querySelector('.round-block__input-opts')).toBeNull();
   });
 
   it('UX-9 C 兜底：无 assistant 锚点时 qa 内联子行落消息流，不丢失', () => {
@@ -3077,7 +3073,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'user', text: '问题', ts: 't1' });
     dispatch({ type: 'assistant', text: '回答', ts: 't2' }); // 无过程事件 → 无 round-block
     dispatch({ type: 'user', text: '补充说明', ts: 't3', kind: 'question-answer' });
-    const qa = document.querySelector('.msg-qa') as HTMLElement;
+    const qa = document.querySelector('.round-block__input') as HTMLElement;
     expect(qa).not.toBeNull();
     expect(qa.textContent).toContain('补充说明');
   });
@@ -3095,7 +3091,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
     // 最终回答 → 同环续接
     dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
-    const qa = document.querySelector('.msg-qa') as HTMLElement;
+    const qa = document.querySelector('.round-block__input') as HTMLElement;
     expect(qa).not.toBeNull();
     expect(qa.textContent).toContain('选方案A');
     // A/B：前序段与 final 同 roundId → final 为续接链；无打断轮不出现「补充」子行
@@ -3103,15 +3099,15 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(blocks).toHaveLength(2);
     expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
     // 仅「补充」tag 不存在（本轮是 qa 回答，不渲染 supplement 子行）；「你答」子行仍应在
-    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa')).filter(
-      (el) => el.querySelector('.msg-qa__tag')?.textContent === '你补充',
+    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
+      (el) => el.querySelector('.round-block__input-tag')?.textContent === '你补充',
     );
     expect(supplementRows).toHaveLength(0);
     // G31 方案1（2026-09-08 收敛落地）：有 round-block 时 QA 最终折入任务折叠块
     // （不再平铺于折叠块与最终回答之间污染两段式）——qa 行收进 .round-block__details 内
     const roundBlock = document.querySelector('.round-block') as HTMLElement;
     expect(roundBlock).not.toBeNull();
-    const qaInsideBlock = roundBlock.querySelector('.msg-qa');
+    const qaInsideBlock = roundBlock.querySelector('.round-block__input');
     expect(qaInsideBlock).not.toBeNull();
     expect(qaInsideBlock!.textContent).toContain('选方案A');
     // 消息流层面干净：assistant 前序段与续接 final 直接相邻（两段式：折叠块 + 纯文字报告）
@@ -3133,14 +3129,14 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'assistant', text: '第二轮回答', ts: 't6', roundId: 'r2' });
 
     // 两轮补充各自独立成行（tag=你补充），不跨轮合并成「你补充了 2 条」
-    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa')).filter(
-      (el) => el.querySelector('.msg-qa__tag')?.textContent?.startsWith('你补充'),
+    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
+      (el) => el.querySelector('.round-block__input-tag')?.textContent?.startsWith('你补充'),
     );
     expect(supplementRows).toHaveLength(2);
     // 各含自己的补充内容（第二轮没并进第一轮）
     expect(supplementRows[0]!.textContent).toContain('第一轮补充');
     expect(supplementRows[1]!.textContent).toContain('第二轮补充');
-    expect(supplementRows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你补充'); // 非「你补充了 2 条」
+    expect(supplementRows[1]!.querySelector('.round-block__input-tag')?.textContent).toBe('你补充'); // 非「你补充了 2 条」
   });
 
   it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（平铺归组 + 容器级 footer）', () => {
@@ -3489,23 +3485,6 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(forkAfter.disabled).toBe(false);
   });
 
-  it('运行时交互行 roundId 随 done 回填：qa/supp 行与重放自带 roundId 对齐（2026-09-08 同构收口）', () => {
-    mountChatView();
-    // 流式首段（提问）→ 用户回答（qa 行，运行时无 roundId）→ resume 续接 → done 携带 roundId
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '需要确认？', roundId: 'r1' });
-    dispatch({ type: 'user', text: '选A', ts: 't', kind: 'question-answer', question: '需要确认？' });
-    const qaRow = document.querySelector('.msg-qa') as HTMLElement;
-    expect(qaRow).not.toBeNull();
-    // done 前：运行时 qa 行 roundId 未知（空）——与重放带 roundId 的差异点
-    expect(qaRow.dataset.roundId ?? '').toBe('');
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '好，继续', roundId: 'r1' });
-    dispatch({ type: 'done', roundId: 'r1' });
-    // done 后：commitRoundId 回填交互行（防历史展开/未来宿主按 roundId 归属时落空）
-    expect(qaRow.dataset.roundId).toBe('r1');
-  });
-
   it('G31 方案1：运行时 done 收敛 QA 进折叠块——消息流干净、摘要含你答×N（2026-09-08 落地）', () => {
     mountChatView();
     // 有过程事件（narrate/tool）→ round-block 存在；过程中用户问答平铺消息流
@@ -3516,7 +3495,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'chunk', content: '正在执行，需要确认方案', roundId: 'r1' });
     // 用户回答（运行时 qa，roundId 未知）
     dispatch({ type: 'user', text: '选方案A', ts: 't', kind: 'question-answer' });
-    const qaRow = document.querySelector('.msg-qa') as HTMLElement;
+    const qaRow = document.querySelector('.round-block__input') as HTMLElement;
     expect(qaRow).not.toBeNull();
     // 运行中（v1.8）：无 round-block 壳，过程平铺 .process-flow；QA 平铺消息流（折入未触发）
     expect(document.querySelector('.round-block')).toBeNull(); // 运行时绝无大折叠壳
@@ -3531,7 +3510,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(rb).not.toBeNull();
     // 运行时平铺容器已移除（过程收进折叠块，无残留平铺）
     expect(document.querySelector('.process-flow')).toBeNull();
-    const rbQa = rb?.querySelector('.round-block__details .msg-qa');
+    const rbQa = rb?.querySelector('.round-block__details .round-block__input');
     expect(rbQa).not.toBeNull();
     expect(rbQa!.textContent).toContain('选方案A');
     // narrate/tool 已由 finalize 全量承载进折叠块（收尾后过程在折叠内）
@@ -3565,11 +3544,11 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'assistant', text: '好的', ts: 't4', roundId: 'round-1' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    // 折叠块内成对完整：问回顾行 + 你答块
-    const inBlock = rb.querySelectorAll<HTMLElement>('.round-block__details .msg-qa');
-    expect(inBlock.length).toBe(2);
-    expect(inBlock[0]!.classList.contains('msg-qa--ask')).toBe(true);
-    expect(inBlock[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('你答');
+    // 形态甲（2026-09-17）：折叠块内单条目 = 问回顾行 + 你答行（合并形态，非两元素成对）
+    const inBlock = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
+    expect(inBlock.length).toBe(1);
+    expect(inBlock[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
+    expect(inBlock[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
     // 消息流层面干净：assistant 前序段与 final 直接相邻（无残留 QA 块污染两段式）
     const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(blocks[0]!.nextElementSibling).toBe(blocks[1]);
@@ -3589,19 +3568,18 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     // 宿主超时自动续跑：先投递「未回答」交互行（timeout 消息到达即销毁提问框）
     dispatch({ type: 'user', text: '用户未在时限内回答，已自动继续', ts: 't2', roundId: 'round-1', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] });
     expect(document.querySelector('.ask-inline')).toBeNull(); // 提问框已销毁（不再等用户）
-    const rows = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa'));
-    // 问回顾行 + 未回答折叠块（阅读序）
-    expect(rows.length).toBe(2);
-    expect(rows[0]!.classList.contains('msg-qa--ask')).toBe(true);
-    expect(rows[0]!.textContent).toContain('你想读哪个文件？');
-    expect(rows[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('未回答');
-    expect(rows[1]!.textContent).toContain('已自动继续');
+    const rows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
+    // 形态甲（2026-09-17）：单条目 = 问回顾行 + 未回答行（合并形态，非两元素）
+    expect(rows.length).toBe(1);
+    expect(rows[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
+    expect(rows[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('未回答');
+    expect(rows[0]!.textContent).toContain('已自动继续');
     // done → 收敛折入折叠块 + 摘要未回答×1
     dispatch({ type: 'chunk', content: '好的，按默认继续。', roundId: 'round-1' });
     dispatch({ type: 'done', roundId: 'round-1' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .msg-qa');
-    expect(rbQa.length).toBe(2); // 问回顾行 + 未回答块成对折入
+    const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
+    expect(rbQa.length).toBe(1); // 单条目（问回顾行 + 未回答行）
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('未回答×1');
   });
 
@@ -3617,15 +3595,45 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'user', text: '用户未在时限内回答，已自动继续', ts: 't3', roundId: 'round-1', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] });
     dispatch({ type: 'assistant', text: '好的，按默认继续。', ts: 't4', roundId: 'round-1' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .msg-qa');
-    expect(rbQa.length).toBe(2);
-    expect(rbQa[0]!.classList.contains('msg-qa--ask')).toBe(true);
-    expect(rbQa[1]!.querySelector('.msg-qa__tag')?.textContent).toBe('未回答');
-    expect(rbQa[1]!.textContent).toContain('已自动继续');
+    const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
+    // 形态甲（2026-09-17）：单条目 = 问回顾行 + 未回答行（合并形态）
+    expect(rbQa.length).toBe(1);
+    expect(rbQa[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
+    expect(rbQa[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('未回答');
+    expect(rbQa[0]!.textContent).toContain('已自动继续');
     // 消息流干净 + 摘要
     const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(blocks[0]!.nextElementSibling).toBe(blocks[1]);
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('未回答×1');
+  });
+
+  it('形态甲：QA 条目按 ts 归位对应 step 分组（补充挂刚结束的 step 间隙，2026-09-17 位置确定性防回归）', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '任务', ts: 't0', roundId: 'r1' });
+    dispatch({
+      type: 'replay_events',
+      roundId: 'r1',
+      events: [
+        { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+        { type: 'step_boundary', seq: 2, ts: 't2', payload: { stepId: 's1', title: '第一步' } },
+        { type: 'narrate', seq: 3, ts: 't3', payload: { content: '步骤一执行' } },
+        { type: 'step_boundary', seq: 4, ts: 't4', payload: { stepId: 's2', title: '第二步' } },
+        { type: 'narrate', seq: 5, ts: 't5', payload: { content: '步骤二执行' } },
+        { type: 'metrics', seq: 6, ts: 't6', payload: { durationMs: 100, tokenIn: 1, tokenOut: 1, toolFailureCount: 0, success: true } },
+      ] as never,
+    });
+    // 前序 assistant 段（sendRoundView 真实顺序：user → replay_events → 前序 seg）→ 建块并挂载 round-block
+    dispatch({ type: 'assistant', text: '前序段', ts: 't2.5', roundId: 'r1' });
+    // 用户补充：ts 在 step1 边界之后、step2 边界之前 → 归 step1 分组（刚结束的 step 间隙）
+    dispatch({ type: 'user', text: '补充：改一下', ts: 't3.5', roundId: 'r1', kind: 'supplement' });
+    dispatch({ type: 'assistant', text: '已按补充调整', ts: 't7', roundId: 'r1' });
+    const steps = document.querySelectorAll('.round-block__step');
+    expect(steps.length).toBe(2);
+    // 条目归 step1（ts 定位），不飘忽：不在 details 顶层、不在 step2
+    expect(steps[0]!.querySelector('.round-block__input')?.textContent).toContain('补充：改一下');
+    const detailsInputs = Array.from(document.querySelectorAll<HTMLElement>('.round-block__details > .round-block__input'));
+    expect(detailsInputs).toHaveLength(0);
+    expect(steps[1]!.querySelector('.round-block__input')).toBeNull();
   });
 });
 

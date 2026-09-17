@@ -632,62 +632,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * G31 方案1（2026-09-08 收敛落地）：把 QA 行折入任务折叠块
-   *
-   * 运行时最终收敛（done/interrupted）与重放路径共用同一归宿：交互行（问/答/补充）
-   * 平铺消息流后，最终一并移入 round-block 折叠块——完成任务态「任务折叠块 + 纯文字报告」
-   * 两段式纯净（QA 不再插在折叠块与报告之间污染阅读序）。
-   * 移动语义：元素已存在则直接「搬家」（appendChild 天然移动），避免复制产生重复节点。
-   */
-  function moveQaIntoRoundBlock(rb: HTMLElement, el: HTMLElement): void {
-    // 折叠块默认展开（进行中刚答完即时可见；收敛后随 round-block 收起态联动，可手动展开）
-    const detailsBody = rb.querySelector<HTMLElement>('.round-block__details');
-    if (!detailsBody) return;
-    // 成对携带必须在移动前捕获 prev——appendChild 先移走 el 后 previousElementSibling
-    // 已落在 detailsBody 内（空尾 → null），「先移后查」令 direct 调用（重放即时折入）
-    // 的成对携带恒失效（2026-09-08 修复：曾致带 question 的 qa 折入残缺/ask 行残留消息流）。
-    const prev = el.previousElementSibling;
-    const prevIsAsk =
-      !!prev &&
-      prev.classList.contains('msg-qa--ask') &&
-      prev.parentNode !== detailsBody; // ask 行尚未折入即带（宿主容器 = messages 或 round-group，
-    // 不能限定 parentNode === messages——A 容器化下 QA 行落在 round-group 内，判定恒 false 漏带）
-    // 顺序：先搬 ask 回顾行、再搬 el（回答折叠块）→ [ask][details] 阅读序；幂等：元素
-    // 已在 detailsBody 时 appendChild 为无操作移动（foldPending 全量扫的重复调用天然去重）。
-    if (prevIsAsk) detailsBody.appendChild(prev);
-    detailsBody.appendChild(el);
-  }
-
-  /** G31 方案1：刷新 round-block 收起态摘要中的 QA 计数（你答×N · 你补充×N）
-   *
-   * 幂等设计：每次调用按 details 内**当前**已折入的 QA 行全量重算 QA 段，
-   * 与既有统计（工具/耗时等）拼接——重放多轮 QA 各自触发 refresh 时不会累积重复。
-   */
-  function refreshRoundBlockQaStats(rb: HTMLElement): void {
-    const summary = rb.querySelector<HTMLElement>('.round-block__stats');
-    if (!summary) return;
-    // 统计 details 内已折入的 QA 行：回答/补充/超时未答各计；提问平铺行只承载上下文不算交互计数
-    let answers = 0;
-    let supplements = 0;
-    let unanswered = 0;
-    rb.querySelectorAll<HTMLElement>('.round-block__details .msg-qa').forEach((el) => {
-      const tag = el.querySelector<HTMLElement>('.msg-qa__tag')?.textContent ?? '';
-      if (tag.includes('你答')) answers += 1;
-      else if (tag.includes('你补充')) supplements += 1;
-      else if (tag.includes('未回答')) unanswered += 1; // timeout（2026-09-08）
-    });
-    const qaParts: string[] = [];
-    if (answers > 0) qaParts.push(`你答×${answers}`);
-    if (supplements > 0) qaParts.push(`你补充×${supplements}`);
-    if (unanswered > 0) qaParts.push(`未回答×${unanswered}`);
-    const qaText = qaParts.join(' · ');
-    // 基础统计（工具/耗时等）标到 span.dataset.baseStats，每次拼接 base + qa，防重复追加
-    if (!summary.dataset.baseStats) summary.dataset.baseStats = summary.textContent ?? '';
-    const base = summary.dataset.baseStats;
-    summary.textContent = qaText ? (base ? `${base} · ${qaText}` : qaText) : base;
-  }
-
-  /**
    * 创建流式骨架块（meta 到达即调用，TTFT 前即时反馈）
    *
    * 骨架 = 空正文的 assistant 块（label 已用本轮身份 currentRoundMeta）+ round-block（运行状态）。
@@ -839,8 +783,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 展开态（2026-09-02 拍板）：运行中（增量投影）默认展开——过程叙述直显，
     // 保持「任务过程可见」体验；收尾/回放（finalize 重建）默认收起，与 round-block 一致
     row.open = openByDefault;
-    // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertStepInOrder）
+    // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertStepInOrder）；ts 时间键：统一排序（2026-09-17）
     row.dataset.seq = String(ev.seq);
+    row.dataset.ts = ev.ts;
     const summary = document.createElement('summary');
     const text = ev.payload.content.trim();
     summary.textContent = text.length > 80 ? `${text.slice(0, 80)}…` : text;
@@ -860,6 +805,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function createAggregatedThought(
     contents: readonly string[],
     openByDefault = false,
+    ts?: string,
+    seq?: number,
   ): HTMLDetailsElement {
     // 思考事件存的是**增量 delta 片段**（如 "Now let me also read" / "the" / "gap analysis."），
     // 按序**原样连续拼接**（无分隔符、不逐条 trim，保留片段的天然间隔）→ 还原真正的连续思考流，
@@ -870,6 +817,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const row = document.createElement('details');
     row.className = 'round-block__thought';
     row.open = openByDefault;
+    // ts 时间键（2026-09-17 统一排序）：锚点事件 ts，供 insertStepInOrder 时间序归位；
+    // seq 兜底比较（同 ts/空串时回落 seq 序，与 narrate/tool 平铺同构）
+    if (ts) row.dataset.ts = ts;
+    if (seq !== undefined) row.dataset.seq = String(seq);
     const summary = document.createElement('summary');
     summary.textContent =
       cnt > 1 ? `思考 · ${preview}${text.length > preview.length ? '…' : ''}` : preview ? `思考 · ${preview}` : '思考';
@@ -958,19 +909,27 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return e.type === 'step_boundary';
   }
 
-  /** 定位事件应插入的 step 容器（seq 为该事件真实顺序号）；无边界回退 details（整轮一组） */
+  /**
+   * 定位条目应插入的 step 容器（ts 为该条目的时间键；processEvents 行与 interactiveInputs
+   * 条目共用，2026-09-17 形态甲统一时间序）。无边界回退 details（整轮一组）。
+   *
+   * 同 ts（含全空串的历史/测试数据）回落 seq 兜底：boundary 在条目之前（boundary.seq <= 条目 seq）
+   * 才归该步；QA 条目无 seq（undefined）时同 ts 归最近 boundary，靠写入序稳定。
+   */
   function stepContainerFor(
     root: HTMLElement,
     events: ProcessEvent[],
-    seq: number,
+    ts: string,
+    seq?: number,
   ): {
     host: HTMLElement;
     bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[];
   } {
-    const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.seq - b.seq);
+    const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.ts.localeCompare(b.ts) || a.seq - b.seq);
     if (bounds.length === 0) return { host: root, bounds };
-    // 找到 seq 前最近的边界（含本条边界自身）——本条边界之前（seq < 首边界）事件归 details 顶层
-    const active = [...bounds].reverse().find((b) => b.seq <= seq);
+    // 找到 ts 前最近的边界（含本条边界自身）——本条边界之前（ts < 首边界）条目归 details 顶层；
+    // 同 ts 时边界须已发生（boundary.seq <= 条目 seq），否则跨到后续 step
+    const active = [...bounds].reverse().find((b) => b.ts < ts || (b.ts === ts && (seq === undefined || b.seq <= seq)));
     if (!active) return { host: root, bounds };
     return { host: getOrCreateStepGroup(root, active, bounds), bounds };
   }
@@ -1027,42 +986,58 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function groupThoughtBuckets(events: ProcessEvent[]): {
     key: string;
     anchorSeq: number;
-    items: { seq: number; content: string }[];
+    anchorTs: string;
+    items: { seq: number; ts: string; content: string }[];
   }[] {
     const thoughts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
     const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.seq - b.seq);
-    const buckets = new Map<string, { key: string; anchorSeq: number; items: { seq: number; content: string }[] }>();
+    const buckets = new Map<string, { key: string; anchorSeq: number; anchorTs: string; items: { seq: number; ts: string; content: string }[] }>();
     for (const t of thoughts) {
       // 归属最近生效的 step 边界（slice 顺序同 stepContainerFor，保证「哪步思考进哪桶」一致）
       const active = [...bounds].reverse().find((b) => b.seq <= t.seq);
       const key = active?.payload.stepId ?? 'root';
-      const bucket = buckets.get(key) ?? { key, anchorSeq: t.seq, items: [] };
-      bucket.items.push({ seq: t.seq, content: t.payload.content });
+      const bucket = buckets.get(key) ?? { key, anchorSeq: t.seq, anchorTs: t.ts, items: [] };
+      bucket.items.push({ seq: t.seq, ts: t.ts, content: t.payload.content });
       buckets.set(key, bucket);
     }
     return [...buckets.values()].sort((a, b) => a.anchorSeq - b.anchorSeq);
   }
 
-  function insertStepInOrder(details: HTMLElement, el: HTMLElement, seq: number): void {
-    // v1.8 剪枝：平铺容器（process-flow）内排序识别 .process-flow__narrate / .round-block__tool；
-    // round-block（finalize/重放）内识别 .round-block__narrate / .round-block__tool——
-    // 共用同一插入通道，覆盖两套容器类名。
-    // 候选限定为 details 的**直接子节点**（2026-09-16 F2 修复）：存在 step_boundary 时同款元素
-    // 嵌套在 .round-block__step 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
-    // details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
+  /**
+   * 过程条目按统一时间键（data-ts）插入容器顶层。
+   *
+   * 2026-09-17 形态甲：排序键统一为 **ts（时间键）**——processEvents 行（narrate/tool/thought）
+   * 与 interactiveInputs 条目（QA，无 seq）共用同一时间序，用户输入自然归位到对应 step 间隙。
+   * 行创建点统一挂 `data-ts`（ISO 字符串，localeCompare 同值比较即时间序）；无 data-ts 的
+   * 异常节点（如 pending 工具行）视为最大键（恒末尾，与 appendChild 流尾语义一致）。
+   *
+   * 候选限定为 details 的**直接子节点**（2026-09-16 F2 修复）：存在 step_boundary 时同款元素
+   * 嵌套在 .round-block__step 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
+   * details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
+   * 候选类型 = narrate/tool/thought + 运行时输入条目（input，形态甲新增）。
+   */
+  function insertStepInOrder(details: HTMLElement, el: HTMLElement, ts: string): void {
     const existing = Array.from(
       details.querySelectorAll<HTMLElement>(
-        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool',
+        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool, :scope > .round-block__thought, :scope > .process-flow__thought, :scope > .round-block__input, :scope > .process-flow__input',
       ),
     ).filter((e) => e !== el);
-    const next = existing.find((e) => Number(e.dataset.seq ?? Infinity) > seq);
+    const next = existing.find((e) => {
+      const t = e.dataset.ts ?? '';
+      // 排序键 = ts（统一时间序）；同 ts（含全空串的历史/测试数据）回落 seq 兜底：
+      // processEvents 行挂 data-seq，seq 大者排后；QA 条目无 seq 视为 0，靠写入序保持稳定
+      if (t !== ts) return t > ts;
+      const s = Number(e.dataset.seq ?? 0);
+      const myS = Number(el.dataset.seq ?? 0);
+      return s > myS;
+    });
     if (next) {
       details.insertBefore(el, next);
     } else {
-      // 无更高 seq → append 到末尾。注意：不用 phase.after(el)（phase 在 prepend 后居首，
-      // phase.after 会把元素插到第二位置，破坏与低 seq 平铺元素——如 narrate——的 seq 序，v1.8 排雷）
+      // 无更高 ts → append 到末尾。注意：不用 phase.after(el)（phase 在 prepend 后居首，
+      // phase.after 会把元素插到第二位置，破坏与低 ts 平铺元素——如 narrate——的时间序，v1.8 排雷）
       details.appendChild(el);
     }
   }
@@ -1128,9 +1103,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const { label: status, open, running } = toolRowStatus(result);
     const row = document.createElement('details');
     row.className = 'round-block__tool';
-    // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertStepInOrder）
+    // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertStepInOrder）；ts 时间键（2026-09-17）
     row.dataset.toolCallId = start.payload.toolCallId;
     row.dataset.seq = String(start.seq);
+    row.dataset.ts = start.ts;
     row.open = open;
     // TS-11b：进行中态 class（未出结果时高亮；result 到达由 updateToolRowState 移除）
     row.classList.toggle('is-tool-running', running);
@@ -1199,10 +1175,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * - 进行中（finalize=false）：折叠区自动展开，实时相位行 + 工具行增量追加（任务过程实时可见）
    * - 完成（finalize=true）：折叠区自动收起，只留摘要（工具×N · 耗时），全量小节供展开查阅
    *
+   * 形态甲（2026-09-17）：finalize 全量重建从**合并流**渲染——processEvents 行 + 运行时输入
+   * 条目（interactiveInputs）按统一时间键（ts）归位到对应 step 分组；运行时输入不搬家、
+   * 不追加末尾，位置唯一确定（修复「QA 位置飘忽」根因）。
+   *
    * @param events    当前轮全部过程事件
    * @param finalize  是否为本轮收尾
+   * @param interactiveInputs 运行时输入缓存（finalize 传；重放路径 QA 经 appendInteractiveInput
+   *                          增量插入 round-block，不重复渲染）
    */
-  function renderRoundBlock(events: ProcessEvent[], finalize: boolean): void {
+  function renderRoundBlock(events: ProcessEvent[], finalize: boolean, interactiveInputs?: RuntimeInteractiveInput[]): void {
     const rb = ensureRoundBlock();
     if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
     // summary：统计摘要（计数 + 耗时）
@@ -1272,7 +1254,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
     // 实时相位行是进行中专属（details 直接子元素，非小节），收尾先移除
     details.querySelector('.round-block__phase')?.remove();
-    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、thought、step 容器等增量元素，避免重复渲染
+    // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、thought、step 容器等增量元素，避免重复渲染。
+    // 形态甲（2026-09-17）：运行时输入条目**快照保留**（重放 seg 消息触发的重建跨轮保留已插入 QA，
+    // 重建后按 ts 重插归位——否则 step 分组清理会连根拔起 QA 致重放丢失）。
+    const existingInputs = Array.from(details.querySelectorAll<HTMLElement>('.round-block__input'));
     details.querySelectorAll(
       '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__thought, .round-block__step',
     ).forEach((el) => el.remove());
@@ -1284,14 +1269,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
       .sort((a, b) => a.seq - b.seq);
     for (const n of narrates) {
-      const { host } = stepContainerFor(details, events, n.seq);
-      insertStepInOrder(host, createNarrateGroup(n), n.seq);
+      const { host } = stepContainerFor(details, events, n.ts, n.seq);
+      insertStepInOrder(host, createNarrateGroup(n), n.ts);
     }
     for (const t of toolStarts) {
       const row = renderToolRow(t, events);
       if (row) {
-        const { host } = stepContainerFor(details, events, t.seq);
-        insertStepInOrder(host, row, t.seq);
+        const { host } = stepContainerFor(details, events, t.ts, t.seq);
+        insertStepInOrder(host, row, t.ts);
       }
     }
     // § 思考（per-step 聚合折叠块，2026-09-14）：**一个 step 一个折叠块**（同 step 碎片原样
@@ -1299,12 +1284,31 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 修复「整轮合成一个」「满屏 thinking 小折叠」两个极端（P3 + 本轮 step 分桶修正）。
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
-      const { host } = stepContainerFor(details, events, b.anchorSeq);
+      const { host } = stepContainerFor(details, events, b.anchorTs, b.anchorSeq);
       insertStepInOrder(
         host,
-        createAggregatedThought(b.items.map((i) => i.content)),
-        b.anchorSeq,
+        createAggregatedThought(b.items.map((i) => i.content), false, b.anchorTs, b.anchorSeq),
+        b.anchorTs,
       );
+    }
+    // § 运行时输入（形态甲，2026-09-17）：跨重建快照条目 + finalize 合并流条目统一按统一时间键（ts）
+    //   归位到对应 step 分组（补充挂刚结束的 step 间隙），不搬家、不追加末尾。data-ts 去重防双轨重复。
+    const renderedInputTs = new Set<string>();
+    for (const el of existingInputs) {
+      const tsKey = el.dataset.ts ?? '';
+      if (!tsKey || renderedInputTs.has(tsKey)) continue;
+      renderedInputTs.add(tsKey);
+      const { host } = stepContainerFor(details, events, tsKey);
+      insertStepInOrder(host, el, tsKey);
+    }
+    for (const qa of interactiveInputs ?? []) {
+      const tsKey = qa.ts ?? '';
+      if (!tsKey || renderedInputTs.has(tsKey)) continue;
+      renderedInputTs.add(tsKey);
+      const item = renderQaItem(qa.text, qa.kind, qa.question, qa.options);
+      item.dataset.ts = tsKey;
+      const { host } = stepContainerFor(details, events, tsKey);
+      insertStepInOrder(host, item, tsKey);
     }
     // § 过程轨迹（thinking 阶段：聚合计数，2026-09-09 去噪——同一相位 N 条 thinking 事件
     //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
@@ -1391,11 +1395,40 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
-    // G31 方案1（2026-09-08 收敛落地）：finalize 重建后统一补算已折入 QA 的摘要计数。
-    // 重放/运行时时序：QA 可能晚于本次重建到达（重放 assistant 后折入/运行时 done 后折入），
-    // 故此处只配合「details 内已存在」的 QA 刷新（幂等）；晚到折入由 appendInteractiveInput /
-    // foldPendingQaIntoRoundBlock 各自再 refresh。双保险保证收起态摘要始终含「你答×N/你补充×N」。
-    if (finalize) refreshRoundBlockQaStats(rb);
+    // § 收起态摘要补 QA 计数（形态甲，2026-09-17）：从合并流（快照 + interactiveInputs）统计——
+    // 替代旧 refreshRoundBlockQaStats 的 DOM 扫描；stats span 已在函数开头重建，此处追加幂等。
+    // 独立去重集合（不读 renderedInputTs——渲染循环已消费该集合，读它会误跳过本次计数）
+    if (finalize) {
+      const statsSpan = rb.querySelector('.round-block__stats');
+      if (statsSpan) {
+        const kindTag = (kind: 'question-answer' | 'supplement' | 'timeout'): string | null =>
+          kind === 'question-answer' ? '你答' : kind === 'supplement' ? '你补充' : '未回答';
+        const qaCount = new Map<string, number>();
+        const countedTs = new Set<string>();
+        // 快照条目：tag 取内容行（.input-row .input-tag），避免误取「问」回顾行 tag
+        for (const el of existingInputs) {
+          const tag = el.querySelector<HTMLElement>('.round-block__input-row .round-block__input-tag')?.textContent ?? '';
+          if (!tag) continue;
+          const elTs = el.dataset.ts ?? '';
+          if (elTs && countedTs.has(elTs)) continue;
+          if (elTs) countedTs.add(elTs);
+          qaCount.set(tag, (qaCount.get(tag) ?? 0) + 1);
+        }
+        // 合并流条目：按 kind 映射 tag（data-ts 去重同渲染循环）
+        for (const qa of interactiveInputs ?? []) {
+          const tag = kindTag(qa.kind);
+          if (!tag || !qa.ts || countedTs.has(qa.ts)) continue;
+          countedTs.add(qa.ts);
+          qaCount.set(tag, (qaCount.get(tag) ?? 0) + 1);
+        }
+        const qaParts: string[] = [];
+        for (const [tag, n] of qaCount) qaParts.push(`${tag}×${n}`);
+        if (qaParts.length > 0) {
+          const base = statsSpan.textContent ?? '';
+          statsSpan.textContent = base ? `${base} · ${qaParts.join(' · ')}` : qaParts.join(' · ');
+        }
+      }
+    }
   }
 
   /**
@@ -1451,12 +1484,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const row = document.createElement('div');
       row.className = 'process-flow__narrate';
       row.dataset.seq = String(n.seq);
+      row.dataset.ts = n.ts; // 时间键（2026-09-17 统一排序）
       // 叙述冒号：结尾无标点时补「：」（用户定案「AI 说什么：」后接工具块）——文本防注入
       const text = n.payload.content.trim();
       row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
       // 任务表例外：有 step_boundary 归入步级折叠块（复用阶段二 getOrCreateStepGroup 容器）
-      const { host } = stepContainerFor(flow, events, n.seq);
-      insertStepInOrder(host, row, n.seq);
+      const { host } = stepContainerFor(flow, events, n.ts, n.seq);
+      insertStepInOrder(host, row, n.ts);
     }
     // 2.5) thought 思考折叠（per-step 聚合，2026-09-14）：**一个 step 一个折叠块**（同 step 碎片
     //   原样连续拼接，不同 step 各自独立）；每个块维护自己 data-merged-seq 防重复拼接，修复
@@ -1464,7 +1498,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
       // 复用 step 容器定位 → 与最终分桶位置一致，流式与 finalize 不偏移
-      const { host } = stepContainerFor(flow, events, b.anchorSeq);
+      const { host } = stepContainerFor(flow, events, b.anchorTs, b.anchorSeq);
       // 查找或创建本 step 的折叠块（key = stepId，无边界为'root'）
       const selector = `.process-flow__thought[data-step-bucket="${b.key}"]`;
       let row = host.querySelector<HTMLDetailsElement>(selector);
@@ -1473,13 +1507,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         row.className = 'process-flow__thought';
         row.dataset.stepBucket = b.key;
         row.dataset.mergedSeq = '0';
+        row.dataset.ts = b.anchorTs; // 时间键（2026-09-17 统一排序）
+        row.dataset.seq = String(b.anchorSeq); // seq 兜底比较（同 ts/空串回落）
         const summaryEl = document.createElement('summary');
         summaryEl.textContent = '思考';
         row.appendChild(summaryEl);
         const bodyEl = document.createElement('div');
         bodyEl.className = 'process-flow__thought-body';
         row.appendChild(bodyEl);
-        insertStepInOrder(host, row, b.anchorSeq);
+        insertStepInOrder(host, row, b.anchorTs);
       }
       const body = row.querySelector('.process-flow__thought-body') as HTMLDivElement;
       let last = Number(row.dataset.mergedSeq ?? '0');
@@ -1503,8 +1539,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       const row = renderToolRow(t, events);
       if (row) {
-        const { host } = stepContainerFor(flow, events, t.seq);
-        insertStepInOrder(host, row, t.seq);
+        const { host } = stepContainerFor(flow, events, t.ts, t.seq);
+        insertStepInOrder(host, row, t.ts);
       }
     }
     // 3) tool_result 到达更新工具行状态（详情/展开态/等待时长）
@@ -2392,12 +2428,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *     （脱离同轮容器、视觉断裂，折叠收敛只靠「树序巧合」救回）；
    *   - 无容器/无 footer 的轮 → 命中首 assistant 段 → 第二轮 QA 被顶到第一轮之前
    *     （[A][问2][答2][问1][答1]，与重放 ts 序倒挂）。
-   * 修法：锚 = assistant 段之后**连续同轮交互元素**的末位（问行 .msg-qa--ask /
-   * 折叠块 details.msg-qa / 提问框 .ask-inline）——运行时轮内交互元素链式紧随
-   * assistant 段（round-group 内、footer 前），遇非交互元素即停。新正文段渲染后
-   * activeAssistantEl 已指向新段（其自身即新锚），无需维护额外状态。
-   * 跨轮安全：纯 DOM 兄弟链判定（运行时 roundId 到 done 才回填，不依赖数据）；
-   * 已折叠进 rb 的 QA 在段内、不在兄弟链上，不会被扫到。
+   * 修法：锚 = assistant 段之后**连续同轮交互元素**的末位（提问框 .ask-inline）——运行时轮内
+   * 交互元素链式紧随 assistant 段（round-group 内、footer 前），遇非交互元素即停。新正文段
+   * 渲染后 activeAssistantEl 已指向新段（其自身即新锚），无需维护额外状态。
+   * 形态甲（2026-09-17）：QA 条目已收敛进过程容器（process-flow/round-block），消息流兄弟链
+   * 只余提问框；跨轮安全：纯 DOM 兄弟链判定（运行时 roundId 到 done 才回填，不依赖数据）。
    */
   function resolveInteractionAnchor(): HTMLElement | null {
     const all = messages.querySelectorAll<HTMLElement>('.msg.assistant');
@@ -2408,7 +2443,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     let anchor: HTMLElement = base;
     let cur = base.nextElementSibling;
     while (cur instanceof HTMLElement) {
-      if (cur.classList.contains('msg-qa') || cur.classList.contains('ask-inline')) {
+      if (cur.classList.contains('ask-inline')) {
         anchor = cur;
         cur = cur.nextElementSibling;
         continue;
@@ -2418,17 +2453,30 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return anchor;
   }
 
+  /** 运行时输入条目缓存（形态甲，2026-09-17）：finalize 合并流重建 QA 的数据源（落盘分源、渲染合并投影） */
+  interface RuntimeInteractiveInput {
+    text: string;
+    ts?: string;
+    kind: 'question-answer' | 'supplement' | 'timeout';
+    roundId?: string;
+    question?: string;
+    options?: string[];
+  }
+  /** 本轮运行时输入累积（新闭环重置）；finalize 由 renderRoundBlock 从合并流重建归位 */
+  let runtimeInteractiveInputs: RuntimeInteractiveInput[] = [];
+
   /**
-   * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口：
-   * - 置位 interactiveRowInserted（SSOT 收窄）：交互输入一旦上屏即阻断本轮原位续写（resume 分块续接）
-   * - 委托 appendInlineInputRow 渲染内联子行；异常时兜底降级（ensureUserInputVisible）——
-   *   交互输入即便渲染失败也恒可见（与无 kind user 分支同纪律），且分块结构判定不受影响
-   *   （标志先置位再渲染）。
+   * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口（形态甲，2026-09-17）：
+   * - 渲染为**过程条目行**（renderQaItem），按 ts 插入 process-flow / round-block 对应 step 分组
+   *   （与 thought/tool 同源同序，统一时间键）；无过程容器（纯问答轮）降级消息流。
+   * - 同步缓存 runtimeInteractiveInputs（finalize 合并流重建 QA 的数据源）。
+   * - 异常兜底降级（ensureUserInputVisible）——交互输入即便渲染失败也恒可见。
    *
    * @param text 输入全文（timeout 时为超时通知文案，与内核落盘 content 同值）
-   * @param ts 时间戳（日期分隔线）
+   * @param ts 时间戳（排序键；缺失时兜底当前时刻）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充 / timeout=提问超时未答）
-   * @param question G26 提问原文（qa/timeout 携带时，行上方先渲染只读「问」回顾行）
+   * @param roundId 所属轮（随 user(kind) 消息透传）
+   * @param question G26 提问原文（qa/timeout 携带时，条目上方渲染只读「问」回顾行）
    * @param options G26 候选选项（静态文本随回顾行展示）
    */
   function appendInteractiveInput(
@@ -2440,7 +2488,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     options?: string[],
   ): void {
     // 显示逻辑统一（2026-09-07 排雷收敛）：supplement / question-answer / timeout 同为
-    // 「闭环内用户交互」（数据同构 interactiveInputs.kind），共用内联子行形态（msg-qa），
+    // 「闭环内用户交互」（数据同构 interactiveInputs.kind），共用过程条目行形态，
     // 仅 tag 文案区分语义：补充 →「你补充」；回答 →「你答」；超时未答 →「未回答」。
     // timeout 到达即提问等待结束（宿主已自动续跑）——先销毁提问交互 UI（ask-inline /
     // 兜底 clarifyBar），避免「提问框 + 未回答行」同屏残留。
@@ -2449,113 +2497,79 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clarifyBar.classList.remove('visible');
       inputBar.hidden = false;
     }
-    let inserted: HTMLElement | null = null;
+    // 缓存（finalize 合并流重建 QA 的数据源；重放路径同源累积，最终态一致）
+    runtimeInteractiveInputs.push({ text, ts, kind, roundId, question, options });
     try {
-      inserted = appendInlineInputRow(text, kind, roundId, question, options);
-      // G31 方案1（2026-09-08 收敛落地）：运行时（round-block 展开态/未 finalize）QA 平铺消息流；
-      // 重放路径中 round-block 已 finalize（收起态）→ 新行立即折入折叠块（与 done 批量折入同一归宿）。
-      const rb = roundBlockEl;
-      if (inserted && rb && rb.isConnected && !rb.classList.contains('is-running')) {
-        moveQaIntoRoundBlock(rb, inserted);
-        refreshRoundBlockQaStats(rb);
+      const item = renderQaItem(text, kind, question, options);
+      const tsKey = ts ?? new Date().toISOString();
+      item.dataset.ts = tsKey;
+      // 目标容器：运行时 process-flow > 完成态/重放 round-block > 降级消息流（纯问答轮无过程容器）
+      const flow = flowEl?.isConnected ? flowEl : null;
+      const rbDetails = roundBlockEl?.isConnected ? roundBlockEl.querySelector('.round-block__details') : null;
+      const root = (flow ?? rbDetails) as HTMLElement | null;
+      if (root) {
+        const { host } = stepContainerFor(root, currentEvents, tsKey);
+        insertStepInOrder(host, item, tsKey);
+      } else {
+        messages.appendChild(item);
       }
     } catch (err) {
       // 交互行渲染兜底（2026-09-08 审查扩展）：异常不静默 + 文本降级，"用户输入恒可见"纪律统一
       ensureUserInputVisible(text, err);
     }
-  }
-
-  /** 内联子行统一渲染（supplement / question-answer / timeout 共用）：
-   *  位置 = 当前 assistant 块之后（打断点/提问块下方，阅读位置连贯，同环连续体节点）。
-   *  独立性（2026-09-09 剪枝定案）：每个补充 = 一颗钉子 = 独立折叠块，不合并、
-   *  无「补充 N 条」标签；question-answer 每答一行不合并。跨轮补充天然独立
-   *  （重放逐条重建，无合并周期，无跨轮错位风险——删除 _lastInterruptDivider 机制后
-   *  roundId 不再参与合并判定，本函数恒返回新渲染的折叠块）。 */
-  function appendInlineInputRow(
-    text: string,
-    kind: 'question-answer' | 'supplement' | 'timeout',
-    roundId?: string,
-    question?: string,
-    options?: string[],
-  ): HTMLElement | null {
-    // 阶段一定案（2026-09-08，不兼容旧内联形态）：用户交互输入统一收为**折叠块**——
-    //   回答 / 补充 → `<details class="msg-qa">`（summary=tag「你答/你补充」，body=全文）；
-    //   提问 → 平铺文字行 `.msg-qa--ask`（记录在对话流，非折叠）。
-    // 移除旧的 60/120 字符硬截断（折叠块天然收住长文，不再设魔法数）。
-    // 返回新渲染的回答折叠块（恒非 null；2026-09-09 剪枝后无合并路径）——
-    //   G31 方案1 折入 round-block 时据此「折也不重插」；带 question 时提问回顾行
-    //   （.msg-qa--ask）为折叠块前兄弟，由 moveQaIntoRoundBlock 成对携带搬入
-    //   （2026-09-08 修复：曾返回 ask 行致重放折入只搬问行、答块残留消息流）。
-    // 插入锚 = 同轮交互链末位（2026-09-09 连环 ask）：resume 骨架被 user(kind) 移除后
-    // activeAssistantEl 悬空回退旧段，此处后移到已渲染的问答对之后（防第二轮问答对
-    // 顶到第一轮之前 / 散落容器外）
-    const host = resolveInteractionAnchor();
-    // 提问回顾行：question-answer/timeout 携带 question 时，折叠块上方先渲染只读「问」平铺文字行
-    // （问题原文 + 候选选项静态文本）——回看历史还原「当时 LLM 问了什么 + 用户怎么回应/未回应」。
-    // 运行时 / 重放同构：宿主 handleResume/handleAskTimeout 已将 question/options 透出到 user 消息 → 同一渲染路径。
-    let qReviewRow: HTMLElement | null = null;
-    if ((kind === 'question-answer' || kind === 'timeout') && question) {
-      qReviewRow = document.createElement('div');
-      qReviewRow.className = 'msg-qa msg-qa--ask';
-      const qTag = document.createElement('span');
-      qTag.className = 'msg-qa__tag';
-      qTag.textContent = '问';
-      const qTxt = document.createElement('span');
-      qTxt.className = 'msg-qa__text';
-      qTxt.textContent = question; // 完整平铺，不截断（折叠块承载回答，提问正文自然记录）
-      qTxt.title = question;
-      qReviewRow.append(qTag, qTxt);
-      if (options && options.length > 0) {
-        const opts = document.createElement('span');
-        opts.className = 'msg-qa__opts';
-        opts.textContent = `候选：${options.join(' ｜ ')}`;
-        qReviewRow.appendChild(opts);
-      }
-    }
-    // supplement 独立块路径（2026-09-09 剪枝定案）：每个补充 = 一颗独立钉子 = 独立折叠块，
-    // 不做同轮合并（删除 _lastInterruptDivider 焊接机制）——连续补充天然自然平铺，
-    // 免「补充 N 条」标签与合并周期的状态维护；无合并即无缺口1 过度合并风险，落盘/重放语义不变
-    // （重放按真实 roundId 逐条重建，同样独立成块）。
-    // 新建折叠块（supplement / question-answer 回答）
-    const details = document.createElement('details');
-    details.className = 'msg-qa';
-    const summary = document.createElement('summary');
-    const tag = document.createElement('span');
-    tag.className = 'msg-qa__tag';
-    // tag 语义映射：回答 →「你答」；补充 →「你补充」；超时未答 →「未回答」（用户无主动输入，用陈述式）
-    tag.textContent = kind === 'supplement' ? '你补充' : kind === 'timeout' ? '未回答' : '你答';
-    summary.appendChild(tag);
-    details.appendChild(summary);
-    // 折叠块 body：条目容器（每次交互输入独立成块，恒单条）
-    const body = document.createElement('div');
-    body.className = 'msg-qa__body';
-    const row = document.createElement('div');
-    row.className = 'msg-qa__row';
-    const txt = document.createElement('span');
-    txt.className = 'msg-qa__text';
-    txt.textContent = text; // 完整文本，不截断
-    txt.title = text;
-    row.appendChild(txt);
-    body.appendChild(row);
-    details.appendChild(body);
-    // 插入：提问平铺行先占 host 后位，回答折叠块紧随其后（保持「问 → 你答」阅读序）
-    if (qReviewRow) {
-      if (host?.parentNode) {
-        host.after(qReviewRow);
-      } else {
-        messages.appendChild(qReviewRow);
-      }
-      qReviewRow.after(details);
-    } else if (host?.parentNode) {
-      host.after(details);
-    } else {
-      messages.appendChild(details);
-    }
     scrollToBottom(messages);
     updateEmptyState();
-    // 返回回答折叠块（带 question 时提问回顾行是其前兄弟，成对搬运由 moveQaIntoRoundBlock
-    // 负责携带——返回 ask 行会造成折入只搬问行、答块残留消息流的失配，2026-09-08 修复）
-    return details;
+  }
+
+  /**
+   * 运行时输入条目行（形态甲，2026-09-17）：question-answer / supplement / timeout 统一形态，
+   * 对齐 thought/tool 过程行样式（非独立折叠块）。条目 = 提问回顾行（可选）+ 内容行，
+   * 来源以 tag 区分（「你答 / 你补充 / 未回答」）。textContent 构建防注入。
+   *
+   * @param text 输入全文
+   * @param kind 交互类型
+   * @param question 提问原文（qa/timeout 携带时渲染「问」回顾行）
+   * @param options 候选选项（随回顾行展示）
+   */
+  function renderQaItem(
+    text: string,
+    kind: 'question-answer' | 'supplement' | 'timeout',
+    question?: string,
+    options?: string[],
+  ): HTMLElement {
+    const row = document.createElement('div');
+    row.className = 'round-block__input';
+    // 提问回顾行：question-answer/timeout 携带 question 时先渲染只读「问」行（还原提问上下文）
+    if ((kind === 'question-answer' || kind === 'timeout') && question) {
+      const q = document.createElement('div');
+      q.className = 'round-block__input-q';
+      const qTag = document.createElement('span');
+      qTag.className = 'round-block__input-tag';
+      qTag.textContent = '问';
+      const qTxt = document.createElement('span');
+      qTxt.className = 'round-block__input-text';
+      qTxt.textContent = question;
+      q.append(qTag, qTxt);
+      if (options && options.length > 0) {
+        const opts = document.createElement('span');
+        opts.className = 'round-block__input-opts';
+        opts.textContent = `候选：${options.join(' ｜ ')}`;
+        q.appendChild(opts);
+      }
+      row.appendChild(q);
+    }
+    // 内容行：tag 语义映射（回答 →「你答」；补充 →「你补充」；超时未答 →「未回答」）
+    const main = document.createElement('div');
+    main.className = 'round-block__input-row';
+    const tag = document.createElement('span');
+    tag.className = 'round-block__input-tag';
+    tag.textContent = kind === 'supplement' ? '你补充' : kind === 'timeout' ? '未回答' : '你答';
+    const txt = document.createElement('span');
+    txt.className = 'round-block__input-text';
+    txt.textContent = text;
+    main.append(tag, txt);
+    row.appendChild(main);
+    return row;
   }
 
   /**
@@ -3039,65 +3053,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function commitRoundId(roundId?: string): void {
     if (!roundId || !activeAssistantEl) return;
     activeAssistantEl.dataset.roundId = roundId;
-    // 交互行（qa/supp）roundId 回填（2026-09-08 运行时同构收口）：运行时 user(kind) 消息
-    // 先于 resume meta 到达、此刻 roundId 未知——随 done 一并回填，与重放自带 roundId 对齐
-    // （防历史展开/未来分叉类宿主按 roundId 归属时，运行时交互行落空）。
-    const qaRows = messages.querySelectorAll<HTMLElement>('.msg-qa:not([data-round-id])');
-    for (const row of qaRows) row.dataset.roundId = roundId;
+    // 形态甲（2026-09-17）：QA 条目在过程容器（process-flow / round-block）内，天然归属本轮
+    // assistant 块，无需消息流扫描回填（旧 .msg-qa 消息流体系已删）。
     // 回填后立即让全局锁重新评估 disabled 状态（commitRoundId 不直接设 disabled，
     // 统一走 updateSessionControlsLock 的「locked || !dataset.roundId」判定）
     updateSessionControlsLock(sessionControlsLocked);
   }
 
-  /**
-   * G31 方案1（2026-09-08 收敛落地）：完成态批量折入 QA 行
-   *
-   * 运行时 done/interrupted 调用：此刻 round-block 已 finalize（收起态），消息流中仍散落
-   * 本轮平铺的 QA 行（问/答/补充）——全部搬入折叠块，保证任务完成后「任务折叠块 + 纯文字
-   * 报告」两段式纯净。幂等：重复调用（如 done 后又有覆写）不产生重复节点（appendChild 移动）。
-   * 注意：重放路径不走此函数（QA 已逐行折入，见 appendInteractiveInput）。
-   */
-  function foldPendingQaIntoRoundBlock(): void {
-    const rb = roundBlockEl;
-    if (!rb || !rb.isConnected) return;
-    // 消息流中的 QA 行：运行时经 A 容器化可能在 .round-group 内、重放直接落 messages 层，
-    // 故全量扫描 .msg-qa（排除已折入 details 的——用父级判断）
-    const detailsBody = rb.querySelector('.round-block__details');
-    const pending = Array.from(document.querySelectorAll<HTMLElement>('.msg-qa'));
-    for (const el of pending) {
-      if (detailsBody && el.parentNode === detailsBody) continue;
-      // 归属过滤：只折入「本轮」QA——当前运行时 rb 挂在 roundBlockHostEl（本轮 assistant 块），
-      // QA 经 host.after 插在其后（同 round-group 或紧随其后）；重放无此问题（已逐行折入）。
-      // 判定：QA 的父链中出现 round-group 时，其 roundId 须与 rb 宿主块 roundId 一致；
-      // 无 round-group（纯消息流）时视作本轮（单轮残留，保守折入）。
-      const hostBlock = roundBlockHostEl;
-      const hostRoundId = hostBlock?.dataset.roundId;
-      if (hostRoundId) {
-        const group = el.closest('.round-group') as HTMLElement | null;
-        const groupRoundId = group?.dataset.roundId;
-        if (groupRoundId && groupRoundId !== hostRoundId) continue;
-        if (group && !groupRoundId) continue; // 有容器无归属标记的异常情况跳过，避免跨轮误收
-      }
-      moveQaIntoRoundBlock(rb, el);
-    }
-    refreshRoundBlockQaStats(rb);
-  }
-
-  /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 收敛 QA 行进折叠块 + 关流式光标。
-   *  v1.8 剪枝（2026-09-09）：finalize 全量重建 round-block 后**移除运行时平铺容器**（flowEl）——
-   *  narrate/tool 已由 renderRoundBlock(finalize=true) 全量小节承载，无需物理搬运；QA 行不在
-   *  折叠区内（独立 .msg-qa 行），仍由 foldPendingQaIntoRoundBlock 折入。 */
+  /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 关流式光标。
+   *  形态甲（2026-09-17）：finalize 全量重建（合并流含运行时输入）+ 移除运行时平铺容器——
+   *  QA 已由 renderRoundBlock 从合并流归位到对应 step 分组，无需再搬运（foldPending 已删）。 */
   function finalizeRound(): void {
     // 2026-09-16 F2：renderRoundBlock 曾在 step_boundary 嵌套场景抛 NotFoundError，导致后续
     // 「移除 flowEl / 收敛 QA / 关流式光标」全部不执行（过程不折叠 + 光标不消失，且异常在事件
     // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
     // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。
     try {
-      renderRoundBlock(currentEvents, true);
+      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
     } finally {
       flowEl?.remove();
       flowEl = null;
-      foldPendingQaIntoRoundBlock();
       finalizeStreaming();
     }
   }
@@ -3433,6 +3408,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           prepareFlowShell({ continued: true, mountAfter: resolveInteractionAnchor() ?? undefined });
         } else {
           currentEvents = [];
+          runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
           roundBlockEl = null;
           roundBlockHostEl = null;
           flowEl = null; // 新轮：运行时平铺容器引用失效（随 skeleton 重建）
@@ -3544,6 +3520,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 新问答闭环开始：重置同环判定（防 qa/supp 后缺 final 的异常数据跨轮误标）
         lastAssistantRoundId = undefined;
         resumePending = false;
+        runtimeInteractiveInputs = []; // 新闭环：运行时输入累积重置（形态甲）
         roundBlockEl = null;
         roundBlockHostEl = null;
         flowEl = null; // 新闭环：运行时平铺容器引用失效
@@ -3788,7 +3765,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // （2026-09-15 中断轮重放孤儿平铺容器，挂 messages 尾、随会话切换一并清理）
       // ——漏清 .msg-wrapper 会让切换/新建会话后残留空壳块，污染重放视图。
       // 不替换 messages 全部子节点（保留 #emptyState 占位）。
-      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .msg-qa, .round-group, .process-flow').forEach((el) => el.remove());
+      messages.querySelectorAll('.msg, .msg-wrapper, .round-block, .date-divider, .followup, .interrupt-divider, .ask-inline, .round-group, .process-flow').forEach((el) => el.remove());
       // H4：清空/切换会话时移除任务看板（global + inline 双轨 + 缓存，避免旧计划残留污染新会话）
       removeAllPlanBoards();
       // 流式锚点失效：清空/重放后由下次 append 重建（排雷 P0-1）
