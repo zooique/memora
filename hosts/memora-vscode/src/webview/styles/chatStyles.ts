@@ -1319,45 +1319,6 @@ export const chatStyles = `
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-bar__panel 的 text-secondary，无需额外规则） */
 
-  /* ============ Components：plan-inline（任务完成静态快照，2026-09-05 → 2026-09-17 仅快照） ============ */
-  /* plan 全部 done 清空时在最近 assistant 块顶部留的静态完成快照（运行时 inline 轨已移除，
-     单轨 PLAN-UI-1）。进度条 + N/M 已完成文案，视觉弱化（plan-inline-done）。 */
-  .plan-inline {
-    margin: var(--sp-2, 6px) var(--sp-5, 12px) var(--sp-1, 2px);
-    padding: var(--sp-2, 4px) var(--sp-3, 8px);
-    background: var(--surface-card, #252526);
-    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    border-left: 3px solid var(--accent, #0e639c);
-    border-radius: var(--radius-sm, 4px);
-  }
-  .plan-inline-wrap {
-    display: flex; align-items: center; gap: var(--sp-3, 8px);
-  }
-  .plan-inline-progress-wrap {
-    flex: 1; height: 4px; min-width: 40px;
-    background: var(--border-panel, rgba(128,128,128,.4));
-    border-radius: 2px; overflow: hidden;
-  }
-  .plan-inline-progress {
-    height: 100%; background: var(--accent, #0e639c);
-    border-radius: 2px;
-    transition: width .3s ease-out;
-  }
-  .plan-inline-text {
-    flex-shrink: 0;
-    font-size: var(--font-xs, 11px);
-    color: var(--text-secondary, #9aa0a6);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-    max-width: 260px;
-  }
-  /* P-3：inline 任务完成后转静态快照（plan-inline-done），视觉弱化：进度条变灰 + 左边框改成功色 */
-  .plan-inline.plan-inline-done {
-    border-left-color: var(--success, #2ea043);
-    opacity: 0.85;
-  }
-  .plan-inline.plan-inline-done .plan-inline-progress {
-    background: var(--success, #2ea043);
-  }
   /* P-2：plan-board stepLog 行内相对时间标签 */
   .plan-step-round-time {
     display: inline-block;

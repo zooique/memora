@@ -1675,9 +1675,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
     // 折叠块存在（任务过程收起）
     expect(document.querySelector('.round-block')).not.toBeNull();
-    // 常驻条已隐藏（不再滞留底部/顶部）；完成快照已留在 assistant 块（合并单轨 PLAN-UI-1）
+    // 常驻条已隐藏（不再滞留底部/顶部）；内容区零卡片（完成快照已删，过程全在折叠块）
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
-    expect(document.querySelector('.plan-inline.plan-inline-done')).not.toBeNull();
+    expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
     // 光标消失
     const body = document.querySelector<HTMLElement>('.msg.assistant .msg-body');
     expect(body?.classList.contains('is-streaming')).toBe(false);
@@ -1715,16 +1715,11 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     for (const m of msgs) dispatch(m);
   }
 
-  /** el 在 parent 子元素序列中的下标（-1 = 不存在） */
-  function childIndex(parent: Element, el: Element | null): number {
-    return el ? Array.from(parent.children).indexOf(el) : -1;
-  }
-
   // 【2026-09-16 删除说明】原「R1-现状快照」断言 .plan-inline 位于 .msg-body 之后，
   // 它固化的是 F1 缺陷行为本身（锚点退化为 appendChild）。F1 修复后该行为不复存在，
   // 保留只会把缺陷锁进用例。正向断言由下方「R1-期望断言」承担。
 
-  it('R1-期望断言：任务完成快照应挂在报告正文之前（F1 修复后应转绿；合并单轨 PLAN-UI-1 后快照为唯一内嵌投影）', () => {
+  it('R1-期望断言：plan 清空 → 常驻条隐藏、内容区零完成卡片（2026-09-17 删完成快照后转绿）', () => {
     mountChatView();
     dispatch({
       type: 'process_event',
@@ -1735,16 +1730,10 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     dispatch({ type: 'plan_update', steps: PLAN_SNAPSHOTS[0]! });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     expect(document.querySelector('.plan-inline')).toBeNull();
-    // plan 清空 → 常驻条隐藏，最近 assistant 块顶部留静态完成快照
+    // plan 清空 → 常驻条隐藏，内容区不留完成快照（过程全由 round-block 折叠块承载）
     dispatch({ type: 'plan_update', steps: [] });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
-    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
-    const body = assistant.querySelector(':scope > .msg-body');
-    const snapshot = assistant.querySelector(':scope > .plan-inline');
-    // 期望（与 ensureProcessFlow / ensureRoundBlock 共享的 insertBeforeBody 三段式降级锚点）：
-    // 过程在上、报告在下 —— 快照应排在 .msg-body 之前。F1 修复后本用例已转绿。
-    expect(snapshot).not.toBeNull();
-    expect(childIndex(assistant, snapshot)).toBeLessThan(childIndex(assistant, body));
+    expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
   });
 
   it('R2 现象2：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后光标保留 —— 语义快照（非缺陷）', () => {
@@ -2393,9 +2382,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(document.querySelector('.plan-inline')).toBeNull();
   });
 
-  it('plan_update 空 steps → 常驻条隐藏 + 最近 assistant 块留完成快照', () => {
+  it('plan_update 空 steps → 常驻条隐藏、内容区不留完成卡片', () => {
     mountChatView();
-    // 建块（快照挂载需要 activeAssistantEl）
+    // 建块（正文块存在）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
     dispatch({
@@ -2409,10 +2398,8 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     dispatch({ type: 'plan_update', steps: [] });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
-    // 完成快照：最近 assistant 块顶部（3/3 ✓ 已完成）
-    const snapshot = document.querySelector('.plan-inline.plan-inline-done') as HTMLElement;
-    expect(snapshot).not.toBeNull();
-    expect(snapshot.textContent).toContain('3/3');
+    // 内容区零卡片：不再留完成快照（过程全由 round-block 折叠块承载）
+    expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
   });
 
   it('点击常驻条头部 → 展开/收起锚定浮层（aria-expanded 同步）', () => {
@@ -2436,7 +2423,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(head.getAttribute('aria-expanded')).toBe('false');
   });
 
-  it('clear_ok → 移除常驻条与完成快照（切换会话不残留）', () => {
+  it('clear_ok → 移除常驻条（切换会话不残留）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
@@ -2449,7 +2436,8 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
       ],
     });
     dispatch({ type: 'plan_update', steps: [] });
-    expect(document.querySelector('.plan-inline-done')).not.toBeNull();
+    // 内容区零完成卡片（清空前已无；断言锁死后门残留）
+    expect(document.querySelector('.plan-inline-done')).toBeNull();
     dispatch({ type: 'clear_ok' });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('.plan-inline-done')).toBeNull();

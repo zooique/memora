@@ -205,8 +205,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *      overflow-y:auto 滚动容器，插进它内部一滚即滚出视野）。默认一行
    *      N/M + 进度条 + 当前 active step 摘要，点击展开**锚定浮层**看全量步骤 + stepLog。
    *      常驻门槛 ≥3 步（对齐内核 needsPlanning 阈值，2 步小任务不常驻成噪音）。
-   *   ② 运行时**不渲染 inline 轨**；plan 全部 done 清空时在最近 assistant 块顶部留一条
-   *      静态完成快照（历史保留）。
+   *   ② 运行时**不渲染 inline 轨**，内容区零卡片：任务过程全部由 round-block 折叠块承载，
+   *      plan 清空（turn 收尾）时顶部条随空 plan_update 收起，不在对话流里留投影。
    *
    * 数据源头：plan_update 协议消息（plan 数据由内核 checkpoint.plan 驱动，宿主 postPlanUpdate
    * 做只读快照推送）。webview 只消费不写，SSOT 不变。**零新增协议字段。**
@@ -215,8 +215,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let planBarEl: HTMLElement | null = null;
   /** 锚定浮层展开态（点击 head 切换；浮层非 modal——看进度时需同时看正文） */
   let planBarExpanded = false;
-  /** 当前计划快照缓存（供 round-block step 标签、完成快照复用，零新增协议）。
-   *  保持「最近一次非空 plan」：plan 清空时不覆写，供完成快照消费 */
+  /** 当前计划快照缓存（供 round-block step 标签 + 浮层复用，零新增协议）。
+   *  保持「最近一次非空 plan」：plan 清空时不覆写（round-block 重建时步骤标签仍可读） */
   let currentPlanSteps: PlanStepDto[] = [];
 
   /** 惰性获取常驻条插槽（单例：同一 DOM 节点，避免每次渲染重新 getElementById） */
@@ -225,23 +225,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return planBarEl;
   }
 
-  /** 移除所有任务看板（常驻条隐藏 + 浮层收起 + 对话区内完成快照清 + 状态缓存重置）。
-   *  注意：clear_ok/切换会话时调用，与 autoClearPlan 的「留完成快照」语义不同——
-   *  clear_ok 意味着完全重置对话区，快照也应一起清 */
+  /** 移除所有任务看板（常驻条隐藏 + 浮层收起 + 状态缓存重置）。
+   *  注意：clear_ok/切换会话时调用，与 plan 清空（autoClearPlan）的「顶部条收起」语义不同——
+   *  clear_ok 意味着完全重置对话区，缓存也应一起清 */
   function removeAllPlanBoards(): void {
     setPlanBarVisible(false);
-    // clear_ok 时对话区内的完成快照也全清（对话区整体清空）
-    messages.querySelectorAll('.plan-inline-done').forEach((el) => el.remove());
     currentPlanSteps = [];
   }
 
   /**
    * 「过程在上 · 报告在下」挂载锚点（SSOT，2026-09-16）：把过程类元素插到 assistant 块报告正文之前。
    *
-   * 三处挂载点共用同一实现，杜绝措辞/语义漂移：
-   *   ① renderPlanSnapshot（任务完成快照 .plan-inline-done）
-   *   ② ensureProcessFlow（运行时平铺容器 .process-flow）
-   *   ③ ensureRoundBlock（finalize 折叠区 .round-block）
+   * 两处挂载点共用同一实现，杜绝措辞/语义漂移：
+   *   ① ensureProcessFlow（运行时平铺容器 .process-flow）
+   *   ② ensureRoundBlock（finalize 折叠区 .round-block）
    *
    * 三段式降级：`.msg-body` 存在 → 插到它之前；否则紧随 `.msg-ai-label`；再否则 prepend。
    *
@@ -337,7 +334,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     panel.appendChild(buildPlanStepList(steps));
   }
 
-  /** 构建全量步骤列表（ul.plan-board-list；浮层与完成快照共用——步骤结构单一实现） */
+  /** 构建全量步骤列表（ul.plan-board-list；浮层与 round-block step 标签共用——步骤结构单一实现） */
   function buildPlanStepList(steps: PlanStepDto[]): HTMLUListElement {
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
@@ -386,52 +383,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return ul;
   }
 
-  /** 完成静态快照：plan 全部 done 清空时在最近 assistant 块顶部留一条静态 done 快照。
-   *  运行时无 inline 轨，快照是对话流内唯一的看板投影（历史保留）。
-   *  .plan-inline 样式类仅此一用（进度条 + 完成态弱化）；activeAssistantEl 未就绪（如重放
-   *  未建块）则静默跳过。 */
-  function renderPlanSnapshot(steps: PlanStepDto[]): void {
-    if (!activeAssistantEl || !activeAssistantEl.isConnected) return;
-    if (steps.length === 0) return;
-    const doneCount = steps.filter((s) => s.status === 'done').length;
-    const total = steps.length;
-    const percent = total > 0 ? (doneCount / total) * 100 : 0;
-    const el = document.createElement('div');
-    el.className = 'plan-inline plan-inline-done';
-    el.setAttribute('role', 'status');
-    el.setAttribute('aria-label', '任务已完成');
-    const wrap = document.createElement('div');
-    wrap.className = 'plan-inline-wrap';
-    const barWrap = document.createElement('div');
-    barWrap.className = 'plan-inline-progress-wrap';
-    const bar = document.createElement('div');
-    bar.className = 'plan-inline-progress';
-    bar.style.width = `${percent}%`;
-    barWrap.appendChild(bar);
-    wrap.appendChild(barWrap);
-    const text = document.createElement('div');
-    text.className = 'plan-inline-text';
-    text.textContent = `${doneCount}/${total}  ✓ 已完成`;
-    wrap.appendChild(text);
-    el.appendChild(wrap);
-    // 过程在上 · 报告在下：插到报告正文之前（锚点语义详见 insertBeforeBody）
-    insertBeforeBody(activeAssistantEl, el);
-  }
-
   /** 渲染/刷新单轨任务看板（收到 plan_update 消息时调用）。
    *  非空 plan → 缓存 + 常驻条（≥3 步才显示，对齐内核 needsPlanning 阈值）；
-   *  空 plan → 若此前有常驻看板，留静态完成快照后隐藏常驻条 */
+   *  空 plan → 收起常驻条（内容区零投影——任务过程由 round-block 折叠块承载，不留完成卡片） */
   function renderPlanBoard(steps: PlanStepDto[]): void {
     if (steps.length === 0) {
-      // 空计划 → 完成态：此前有常驻看板（≥3 步计划）则留静态 done 快照（历史保留）
-      const bar = getPlanBarEl();
-      if (bar && !bar.hidden) {
-        renderPlanSnapshot(currentPlanSteps);
-      }
+      // 空计划（turn 收尾 autoClearPlan / LLM 写入空表）→ 收起顶部条
       setPlanBarVisible(false);
       return;
     }
-    // 非空计划：缓存（供 round-block step 标签 + 完成快照复用）；plan 清空时不清此缓存
+    // 非空计划：缓存（供 round-block step 标签 + 浮层复用）；plan 清空时不清此缓存
     currentPlanSteps = steps;
     // 常驻门槛 ≥3 步（对齐内核 needsPlanning 阈值，2 步小任务不常驻成噪音）
     setPlanBarVisible(steps.length >= 3);

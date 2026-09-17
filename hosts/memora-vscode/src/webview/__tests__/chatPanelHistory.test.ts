@@ -770,6 +770,49 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
   });
 
+  it('流首 chunk 补推 plan_update：prepare 预置骨架（不经 task_table 工具事件）顶部条开局即可见', async () => {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '小组会议', ts: 't0' },
+      { role: 'assistant', content: '开场', ts: 't1' },
+    ]);
+    // mock agent：checkpoint 已带 prepare 期预置的会议骨架（3 步）；chat 流首 chunk 前无
+    // task_table_* 工具事件（骨架预置走 writePlan 不经工具）——顶部条唯一可见机会 = 首 chunk 补推
+    provider.setAgent({
+      chat: async function* () {
+        yield { type: 'thinking', phase: 'processing', roundId: 'round-1' };
+        yield { type: 'text', content: '会议开场', roundId: 'round-1' };
+        yield { type: 'done' };
+      },
+      getMetrics: () => ({
+        llm: { totalInputTokens: 0, totalOutputTokens: 0 },
+        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
+      }),
+      sessionManager: {
+        getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
+        switchToSession: async () => 0,
+      },
+      on: vi.fn(),
+      off: vi.fn(),
+      memory: { softDeleteRoundSummaries: vi.fn() },
+      getCheckpoint: () => ({
+        plan: [
+          { id: 's1', description: '主持人开场', status: 'active', order: 0 },
+          { id: 's2', description: '成员一发言', status: 'pending', order: 1 },
+          { id: 's3', description: '汇总观点', status: 'pending', order: 2 },
+        ],
+      }),
+    } as unknown as Agent);
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('小组会议');
+
+    // 首个 plan_update 即携带骨架（3 步）——顶部条开局可见，不再等首次 task_table_update
+    const planMsgs = posted.filter((m) => (m as { type: string }).type === 'plan_update') as { steps: unknown[] }[];
+    expect(planMsgs.length).toBeGreaterThanOrEqual(1);
+    expect(planMsgs[0]!.steps).toHaveLength(3);
+  });
+
   it('thought 思考流落盘为 processEvents（超长截断），重启重放可重建（2026-09-13）', async () => {
     const { store, roundStore, provider } = setup();
     provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入

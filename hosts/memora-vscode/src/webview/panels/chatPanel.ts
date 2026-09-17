@@ -2419,8 +2419,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     };
     // Phase 4：暂停标记——当轮是否收到 paused chunk（软暂停状态）
     let pausedOnPurpose = false;
+    // 流首 plan 快照补推标记（2026-09-17，PLAN-UI-1 后续）：prepare 期预置的会议骨架/续会计划
+    // 不经 task_table_* 工具调用（无 tool_start/tool_result 事件）→ 若不补推，顶部 #planBar 要等
+    // 首次 task_table_update 才出现（turn 大半程不可见）。首 chunk 到达时 prepare 已完成、
+    // checkpoint 已就绪 → 补推一次即可（幂等：plan 空则推空消息，无害）。
+    let planPushedOnce = false;
     try {
       for await (const chunk of gen) {
+        if (!planPushedOnce) {
+          planPushedOnce = true;
+          this.postPlanUpdate();
+        }
         // 待发送区同步（SSOT，2026-09-07 修复弹窗残留）：step 边界推进 = 队列消费的直接信号
         // ——interject 在 _handleInterrupt splice(0) 消费后，本 for-await 必然收到下一个 chunk，
         // 此刻从内核读队列（已变空）→ 长度变化 → post 空 items → webview 隐藏待发送区。
@@ -2632,7 +2641,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.replaySession();
     }
     // plan 快照对齐：generator close 后内核 autoClearPlanIfAllDone 已清 plan（暂停态 guard 不清），
-    // 此处推一次快照让 webview 同步——正常/中断 → 空 steps（global 消失 + inline 快照）；
+    // 此处推一次快照让 webview 同步——正常/中断 → 空 steps（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
     if (controller.signal.aborted) {
