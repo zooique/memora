@@ -1020,6 +1020,64 @@ describe('SessionManager', () => {
       // writePlan 后 ensureActiveStep 应激活第一个步骤
       expect(manager.getActiveStep()?.id).toBe(plan[0]!.id);
     });
+
+    it('logStepBoundary：只写 stepLog 不改 plan 状态（形态② 迭代边界语义）', () => {
+      manager.createCheckpoint('测试');
+      const plan = manager.writePlan('overwrite', [{ description: '步骤一' }]);
+      const stepId = plan[0]!.id;
+
+      manager.logStepBoundary({ planStepId: stepId, summary: '本迭代进展' });
+
+      const cp = manager.getCheckpoint()!;
+      // 日志已写且关联 active 步骤
+      expect(cp.stepLog?.[0]).toMatchObject({ planStepId: stepId, summary: '本迭代进展' });
+      // 状态不被改变（active 仍是 active——推进唯一写者 = task_table_update）
+      expect(cp.plan[0]!.status).toBe('active');
+    });
+
+    it('concludeActiveStepIfPlanFullyReached：无 pending 且有 active → 闭合最后到达步（LLM 未显式 update 即收尾）', () => {
+      manager.createCheckpoint('测试');
+      const plan = manager.writePlan('overwrite', [
+        { description: '步骤一' },
+        { description: '步骤二' },
+      ]);
+      // 显式完成步骤一（LLM task_table_update）→ active 推进到步骤二
+      manager.updatePlanStepStatus(plan[0]!.id, 'done');
+      expect(manager.getActiveStep()?.id).toBe(plan[1]!.id);
+
+      // 无 pending（步骤二为最后到达步）→ 兜底闭合
+      manager.concludeActiveStepIfPlanFullyReached('最终交付摘要');
+      const cp = manager.getCheckpoint()!;
+      expect(cp.plan.every((s) => s.status === 'done')).toBe(true);
+      expect(cp.plan[1]!.status).toBe('done');
+      // 闭合经 completeStep → stepLog 补一条收尾记录
+      expect(cp.stepLog?.some((r) => r.planStepId === plan[1]!.id)).toBe(true);
+    });
+
+    it('concludeActiveStepIfPlanFullyReached：有 pending 不闭合（真实多轮任务的可续跑语义）', () => {
+      manager.createCheckpoint('测试');
+      manager.writePlan('overwrite', [
+        { description: '步骤一' },
+        { description: '步骤二' },
+      ]);
+      // 步骤二仍是 pending → 计划未「全部到达」，active 步骤一保持 active
+      manager.concludeActiveStepIfPlanFullyReached('半程交付');
+      const cp = manager.getCheckpoint()!;
+      expect(cp.plan[0]!.status).toBe('active');
+      expect(cp.plan[1]!.status).toBe('pending');
+    });
+
+    it('concludeActiveStepIfPlanFullyReached：无 active / 空计划直接早退（幂等）', () => {
+      manager.createCheckpoint('测试');
+      // 空计划：早退不抛错
+      expect(() => manager.concludeActiveStepIfPlanFullyReached('摘要')).not.toThrow();
+      // 全 done 无 active：早退（不重复写日志）
+      const plan = manager.writePlan('overwrite', [{ description: '唯一步骤' }]);
+      manager.updatePlanStepStatus(plan[0]!.id, 'done');
+      const stepLogLenBefore = manager.getCheckpoint()!.stepLog?.length ?? 0;
+      manager.concludeActiveStepIfPlanFullyReached('重复摘要');
+      expect(manager.getCheckpoint()!.stepLog?.length ?? 0).toBe(stepLogLenBefore);
+    });
   });
 
 });

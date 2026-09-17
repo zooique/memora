@@ -848,8 +848,9 @@ export class SessionManager {
   /**
    * 是否存在「在途计划」= 有未完成步骤（pending 或 active）。
    *
-   * SSOT：全库该命题唯一实现。消费方两处——会议骨架预置守卫（prepare，判断续会不重开）
-   * 与任务表 nudge 跳过（loop，已有在途表则不再诱导建表）。禁任一消费方自行内联谓词。
+   * SSOT：全库该命题唯一实现。消费方三处——会议骨架预置守卫（prepare，判断续会不重开）、
+   * 任务表 nudge 跳过（loop，已有在途表则不再诱导建表）、canContinueWithoutInput（agent，
+   * 可续跑信号）。禁任一消费方自行内联谓词。
    *
    * 口径取 pending||active（非仅 active）：与 ensureActiveStep 的补偿语义对齐——
    * plan 非空时恒有一个 active（见 :826 场景 1/2），全 done/blocked 时无 active（场景 3），
@@ -861,7 +862,10 @@ export class SessionManager {
     );
   }
 
-  /** 完成一个 step（SSOT 唯一写点）：单函数内顺序写步骤状态 + stepLog + heartbeat 保证原子性 */
+  /** 完成一个 step（显式完成原语）：单函数内顺序写步骤状态 + stepLog + heartbeat 保证原子性。
+   *  消费方 = turn 收尾兜底 concludeActiveStepIfPlanFullyReached（LLM 未显式 task_table_update
+   *  的最后一步补标）；迭代边界（onStepBoundary）已降级为只写日志的 logStepBoundary，
+   *  不再经本方法推进（PLAN-SYNC-1 ①）。 */
   completeStep(options: { planStepId?: string; summary: string }): void {
     if (!this.checkpoint) return;
 
@@ -871,8 +875,48 @@ export class SessionManager {
       this.updatePlanStepStatus(planStepId, 'done');
     }
 
-    // 追加 step 日志（step 级推进记录；P-1 2026-09-06 起按 planStepId 分组截断，每 step 最多 3 条——
-    // 原全局 FIFO 12 条在 5+ step 任务中会把旧 step 的运行记录整段截没，用户翻旧 done step 摘要看到「空」）
+    this.appendStepLog({ planStepId, summary });
+
+    // 心跳 + 落盘：step 边界即检查点语义边界，崩溃后可从该边界无损续跑
+    this.touchCheckpoint();
+    this.settleCheckpoint();
+  }
+
+  /** 写 step 边界日志（时间轴投影，不改 plan 状态）。形态②（PLAN-SYNC-1 ①）下迭代边界
+   *  onStepBoundary 只做本写——plan 状态推进唯一写者 = LLM 的 task_table_update。 */
+  logStepBoundary(options: { planStepId?: string; summary: string }): void {
+    if (!this.checkpoint) return;
+    this.appendStepLog(options);
+    this.touchCheckpoint();
+    this.settleCheckpoint();
+  }
+
+  /**
+   * 形态② 兜底收尾（「LLM 未显式 update 即收尾」）：turn 正常完成且计划已「全部到达」——
+   * 存在 active step 且无 pending step（LLM 已显式完成所有更早步骤、当前步为最后到达的一步）——
+   * 时闭合该 active 步（completeStep：标 done + stepLog）。LLM 忘标最后一步时由本兜底补上，
+   * 使计划达到全 done（autoClearPlanIfAllDone 顺路清空）；真实多轮任务（有 pending）不受影响。
+   * 触发点 = seed/orchestrator.act 正常收尾分支（非暂停/中断/失败）。
+   */
+  concludeActiveStepIfPlanFullyReached(summary: string): void {
+    if (!this.checkpoint) return;
+    const plan = this.checkpoint.plan;
+    if (plan.length === 0) return;
+    // 仍有 pending = 后续步未到达 → 真实多轮可续跑语义，不闭合
+    if (plan.some((s) => s.status === 'pending')) return;
+    const active = plan.find((s) => s.status === 'active');
+    if (!active) return;
+    this.completeStep({ planStepId: active.id, summary });
+  }
+
+  /**
+   * 追加 step 日志（completeStep / logStepBoundary 共用）。P-1 2026-09-06 起按 planStepId
+   * 分组截断，每 step 最多 3 条——原全局 FIFO 12 条在 5+ step 任务中会把旧 step 的运行记录
+   * 整段截没，用户翻旧 done step 摘要看到「空」。
+   */
+  private appendStepLog(options: { planStepId?: string; summary: string }): void {
+    if (!this.checkpoint) return;
+    const { planStepId, summary } = options;
     const outcome: StepOutcome = {
       planStepId,
       summary,
@@ -895,10 +939,6 @@ export class SessionManager {
         return true;
       });
     }
-
-    // 心跳 + 落盘：step 边界即检查点语义边界，崩溃后可从该边界无损续跑
-    this.touchCheckpoint();
-    this.settleCheckpoint();
   }
 
   /** 卸载运行态挂载物：任务流结束/转 idle 时清空 plan/stepLog（SSOT 资源层 vs 状态层模型），回到"空闲=无挂载物"常态；与 updatePlan（运行态维护）正交 */

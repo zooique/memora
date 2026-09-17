@@ -31,8 +31,8 @@ export const STEP_DESC_MAX_CHARS = 38;
  * 输出以「非当前指令」标记开头，防止 LLM 将状态信息误认为指令。
  *
  * @param plan - 计划步骤列表
- * @param stepLog - 可选 step 推进日志（截断不在本函数：真源见 SessionManager.completeStep
- *   的「每 step 上限 3 条」——P-1 2026-09-06 起取代旧全局 FIFO 上限）
+ * @param stepLog - 可选 step 推进日志（截断不在本函数：真源见 SessionManager.appendStepLog
+ *   的「每 step 上限 3 条」（completeStep / logStepBoundary 共用）——P-1 2026-09-06 起取代旧全局 FIFO 上限）
  * @returns 格式化后的任务表文本（空计划返回空字符串）
  */
 export function renderTaskTable(

@@ -496,15 +496,21 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(requestPause).toHaveBeenCalled();
   });
 
-  it('onStepBoundary：写入当前 active 步骤的 stepLog', async () => {
+  it('onStepBoundary：写入当前 active 步骤的 stepLog（形态②：不改 plan 状态）', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
-    out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
+    const plan = out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
+    const stepId = plan[0]!.id;
+    // 变更前快照：active 未 done（LLM 未显式 update，边界不得自动推进）
+    expect(out.sessionManager.getCheckpoint()!.plan[0]!.status).toBe('active');
     out.loop.onStepBoundary!({ summary: '进展摘要' });
     const cp = out.sessionManager.getCheckpoint()!;
     // active 步骤的 stepLog 追加了该次推进记录
     expect(cp.stepLog?.length).toBeGreaterThan(0);
     expect(cp.stepLog?.[0]?.summary).toBe('进展摘要');
+    expect(cp.stepLog?.[0]?.planStepId).toBe(stepId);
+    // 形态② 契约：边界只写日志不推进——步骤状态保持 active，不被自动 done（推进唯一写者 = task_table_update）
+    expect(cp.plan[0]!.status).toBe('active');
   });
 
   it('getActiveStepMeta：有 active 步骤返回 stepId/title', async () => {

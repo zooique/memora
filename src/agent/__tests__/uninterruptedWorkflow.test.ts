@@ -1693,9 +1693,10 @@ class AskThenResumeProvider extends LlmProvider {
 /**
  * plan + ask_user 组合（缝隙 A 防回归，2026-09-07）Provider：
  * - 首轮调 ask_user 工具挂起（在既有 plan 之上提问，不预写任务表——plan 由测试直接
- *   push 进 checkpoint，聚焦「提问迭代与 step 推进」的交互语义）；
+ *   push 进 checkpoint，聚焦「提问迭代与 step 日志归属」的交互语义）；
  * - 续跑轮（上下文含 [ASK_ANSWER] 回答 tool 结果）纯文本收尾（不调工具）——
- *   由 onStepBoundary 在续跑迭代边界完成提问步（若提问轮已提前 done 步，则此处会错完成下一步）。
+ *   形态②（PLAN-SYNC-1 ①）下边界只写 stepLog、不推进：提问步 S1 保持 active 不被自动 done
+ *   （若旧码在提问轮已提前 done 步，则续跑轮会错完成下一步 → 转红）。
  * 复用 AskThenResumeProvider 的 summarizer / sessionNamer 分岔守卫（不消耗主对话分岔状态）。
  */
 class AskInPlanProvider extends LlmProvider {
@@ -2000,8 +2001,9 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
   // 旧缺陷：onStepBoundary（:955）先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
   // 先把当前 active step 自动 done、推进到下一步，再挂起等答案——回答续跑后问答产出被
   // 归到「下一步」，提问步无继续表达通道（与用户暂停在迭代边界挂起、不推进 step 不对称）。
-  // 修复：含 ask_user 将挂起的迭代不触发 step 边界完成（willSuspendForAsk 排除），
-  // 问答对归当前步；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
+  // 修复：含 ask_user 将挂起的迭代不触发 step 边界日志（willSuspendForAsk 排除）；
+  // 形态②（PLAN-SYNC-1 ①）后 onStepBoundary 本就不推进（唯一写者 = task_table_update），
+  // 故问答对恒归当前步；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
 
   it('缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）', { timeout: 30000 }, async () => {
     agent = new Agent({
@@ -2058,8 +2060,9 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       void _chunk; // 仅消费流：续跑轮纯文本收尾（无工具）
     }
     const cp = agent.getCheckpoint()!;
-    // 续跑迭代在边界完成「提问步」本身（旧码此时完成的是已提前激活的 S2 → 转红）
-    expect(cp.plan.find((s) => s.id === 'ask-plan-s1')!.status).toBe('done');
+    // 形态②（PLAN-SYNC-1 ①）：续跑轮纯文本收尾、无 task_table_update → 提问步 S1 保持 active
+    //（不被自动完成——推进唯一写者 = LLM 显式 update）；S2 恒不被提前消费（旧码此时完成 S2 → 转红）
+    expect(cp.plan.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
     expect(cp.plan.find((s) => s.id === 'ask-plan-s2')!.status).not.toBe('done');
     // stepLog 末条归 S1（提问步的问答产出时间轴归位，不跳步）
     const stepLog = cp.stepLog ?? [];

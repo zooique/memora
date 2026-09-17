@@ -215,4 +215,54 @@ describe('SeedOrchestrator 最小 turn', () => {
     // reflect 走摘要
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
   });
+
+  // ── 形态② 兜底收尾（PLAN-SYNC-1 ①，2026-09-17）────────────────────────
+  it('runChat 正常完成：act 触发「LLM 未显式 update 即收尾」兜底（摘要前 200 字作 stepLog 摘要）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '完成回复');
+    consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    // 正常收尾分支调用兜底（与助手消息入史同一路径）
+    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).toHaveBeenCalledTimes(1);
+    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).toHaveBeenCalledWith(
+      '完成回复'.slice(0, 200),
+    );
+  });
+
+  it('runChat 暂停轮：不触发兜底（现场保留供续跑）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '问题？');
+    consumeControl.result = { content: '问题？', aborted: false, paused: true, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).not.toHaveBeenCalled();
+  });
+
+  it('runChat 预算触顶（content 含占位标记）：不触发兜底（切断轮保留现场，防假完成）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    const placeholder = LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER;
+    stubProcessUserInput(mocks, placeholder);
+    consumeControl.result = { content: placeholder, aborted: false, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).not.toHaveBeenCalled();
+  });
+
+  it('runChat 中断/失败轮：不触发兜底（与 appendInterrupted 同路径提前返回）', async () => {
+    const { mocks, deps, consumeControl } = createHarness();
+    stubProcessUserInput(mocks, '半截');
+    consumeControl.result = { content: '半截', aborted: true, paused: false, failed: false };
+
+    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
+    await new Promise((r) => setTimeout(r, 0));
+
+    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).not.toHaveBeenCalled();
+  });
 });

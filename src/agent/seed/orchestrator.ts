@@ -232,6 +232,17 @@ export class SeedOrchestrator {
       return streamResult satisfies StreamConsumeResult;
     }
 
+    // 形态② 兜底收尾（PLAN-SYNC-1 ①，2026-09-17）：「LLM 未显式 update 即收尾」——turn 正常
+    // 完成（非暂停/中断/失败）且计划已「全部到达」（无 pending 步）时，闭合当前 active 步，
+    // 使计划达到全 done 由 agent finally 的 autoClearPlanIfAllDone 顺路清空；真实多轮任务
+    // （仍有 pending）不受影响。预算触顶轮（content 含占位标记）不算正常完成：LLM 被切断可能
+    // 仍在本步中途，闭合会造成「假完成」，须保留现场供续跑（与 runSummary 跳过摘要同族判定）。
+    if (!assistantContent.includes(LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER)) {
+      this.deps
+        .getParts()
+        .sessionManager?.concludeActiveStepIfPlanFullyReached(assistantContent.slice(0, 200));
+    }
+
     yield { type: 'thinking', phase: 'archiving' };
     return streamResult satisfies StreamConsumeResult;
   }

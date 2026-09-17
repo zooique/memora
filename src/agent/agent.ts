@@ -953,7 +953,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * turn 结束自动收尾：所有 plan step = done + 非暂停态 → clearPlan
+   * turn 结束自动收尾：所有 plan step = done + 非暂停态 → clearPlan。
+   * 形态②（PLAN-SYNC-1 ①）链路：LLM 显式 task_table_update 标完各步 → 全 done；
+   * 若 LLM 漏标最后一步，orchestrator.act 正常收尾兜底（concludeActiveStepIfPlanFullyReached）
+   * 已先行把最后 active 步补标 done（本方法只在 turn 真正结束时读到的全 done 才清）。
    * 运行时状态（plan/stepLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史
    * 挂点：chat() / continueAfterPause 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）
    */
@@ -980,11 +983,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 错误态不展示"继续"：error 态由检查点恢复回填进入，须显式处理（重新开始或 recover），避免点了静默无反应
     if (this._sessionManager?.status === 'error') return false;
     // 仅 pending/active（可推进）步骤计入"可续跑"——blocked 不续（全 blocked 由 isPlanAllBlocked 拦，
-    // 避免全 blocked 计划按钮可点但 resumeExecution 早退）
-    const hasPendingPlan =
-      this._sessionManager
-        ?.getCheckpoint()
-        ?.plan.some((s) => s.status === 'pending' || s.status === 'active') ?? false;
+    // 避免全 blocked 计划按钮可点但 resumeExecution 早退）。判定走 SessionManager.hasInflightPlan
+    // 单一真理源（禁内联谓词，SSOT 见 sessionManager.ts hasInflightPlan 注释），与 prepare/loop 同源。
+    const hasPendingPlan = this._sessionManager?.hasInflightPlan() ?? false;
     return this.requireLoop.isInAutonomousStep || hasPendingPlan;
   }
 

@@ -60,6 +60,8 @@ export interface SeedMocks {
     clearPlan: ReturnType<typeof vi.fn>;
     // 在途计划谓词（SSOT = SessionManager.hasInflightPlan）：会议骨架预置守卫消费
     hasInflightPlan: ReturnType<typeof vi.fn>;
+    // 形态② 兜底收尾（PLAN-SYNC-1 ①）：act 正常收尾分支触发，测试可断言调用/不调用
+    concludeActiveStepIfPlanFullyReached: ReturnType<typeof vi.fn>;
   };
   rolePackManager: {
     getActive: ReturnType<typeof vi.fn>;
@@ -186,6 +188,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
       clearPlan: vi.fn(),
       // 默认「无在途计划」；需在途语义的用例显式 mockReturnValue(true)
       hasInflightPlan: vi.fn(() => false),
+      concludeActiveStepIfPlanFullyReached: vi.fn(),
     },
     rolePackManager: {
       getActive: vi.fn(() => null),

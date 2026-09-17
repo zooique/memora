@@ -190,7 +190,7 @@ describe('taskTableRenderer — step 推进日志渲染', () => {
     expect(result).not.toContain('[step 推进记录]');
   });
 
-  it('step 推进日志全部渲染（本函数不做截断；真源为 SessionManager.completeStep 每 step 3 条）', () => {
+  it('step 推进日志全部渲染（本函数不做截断；真源为 SessionManager.appendStepLog 每 step 3 条）', () => {
     const plan = [createStep(0, '步骤一', 'active')];
     const stepLog: StepOutcome[] = [];
     for (let i = 0; i < 5; i++) {

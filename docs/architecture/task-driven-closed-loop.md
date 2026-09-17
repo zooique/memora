@@ -138,6 +138,8 @@ turn（问答闭环）是**单一真理源**——无论简单还是复杂，都
 > **定案**：主动提问收敛为 **`ask_user` 内置工具**（对齐 Claude Code AskUserQuestion 机制）——LLM 调 `ask_user(question, options?, allowCustom?)` 时，loop 检出后**整轮挂起**（step 边界气口），用户答案经 `answerQuestion()` 以 **tool result 回填**（与 assistant.tool_calls 配对，结构恒合法），再 `continueAfterPause` 续跑。
 >
 > **收敛补记（2026-09-07）——提问轮不推进 step**：挂起型迭代（含将挂起的 `ask_user`）不触发 step 边界自动完成——问答对归当前 active step，回答续跑后由后续完整迭代在边界完成该步。与用户暂停（迭代边界挂起、不推进 step）对称；否则提问迭代会在 `onStepBoundary` 先把当前步 done 再挂起，回答产出被错归下一步（判定经 `willSuspendForAsk` 单收口，与挂起检出共用）。
+>
+> **形态② 收敛补记（2026-09-17，PLAN-SYNC-1 ①）**：`onStepBoundary` 已降级为**只写 stepLog 不推进**——plan 状态推进唯一写者 = LLM 的 `task_table_update`（`updatePlanStepStatus`）。本段旧机制描述（「在边界完成该步」）随之失效：提问轮/任何迭代都不再自动 done 步骤；LLM 未显式 update 的最后一步由 turn 收尾兜底（`orchestrator.act` 正常收尾分支 → `SessionManager.concludeActiveStepIfPlanFullyReached`，仅当无 pending 时闭合）补上，使计划达到全 done 由 `autoClearPlanIfAllDone` 顺路清空。真实多轮任务（仍有 pending）与暂停/中断轮不受影响。
 
 | 形态 | 行为 |
 |------|------|
