@@ -1530,8 +1530,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const t of toolStarts) {
       const existing = flow.querySelector<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`);
       if (existing) {
-        // 升级路径（2026-09-17）：此前已建「准备中」行（renderPendingToolRow）→ 转执行态，
-        // 不重建 DOM（参数此刻完整，叙述/状态/高亮同步复位）；正式行（非 pending）保持原跳过语义
+        // pending 行（renderPendingToolRow 已建）→ 转执行态，不重建 DOM（参数此刻完整，
+        // 叙述/状态/高亮同步复位）；正式行（非 pending）保持跳过
         if (existing.classList.contains('is-tool-pending')) {
           upgradePendingToolRow(existing, t);
         }
@@ -2422,7 +2422,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 运行时同轮可多次 ask_user（连环确认）。resume 续接骨架（prepareFlowShell 建的
    * 空正文段）在用户下次回答提交时被 user(kind) 分支移除（flowShellEl.remove）→
-   * activeAssistantEl 悬空回退「最后 .msg.assistant」——原实现用 :last-of-type 选择器：
+   * activeAssistantEl 悬空回退「最后 .msg.assistant」——若改用 :last-of-type 选择器会失配：
    *   - assistant 段在同轮 .round-group 内时，:last-of-type 受容器 footer（同为 div）
    *     干扰匹配失败 → host=null → 回答行 appendChild 消息流尾 = 第二轮 QA 散落容器外
    *     （脱离同轮容器、视觉断裂，折叠收敛只靠「树序巧合」救回）；
@@ -2781,12 +2781,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function commitAskAnswer(text: string): void {
     resumePending = true;
-    // 修复（2026-09-16）：ask 弹出选择题点选提交时，记录当前 assistant 块（块 A）为**原位续写锚**，
-    // 对称于 paused 消息的 pausedAssistantEl 置位（单一续写锚语义，两路径同构）。
-    // 修复前：ask 提交只置 resumePending、不设锚 → resume meta 落入 resumePending 分支走
-    // prepareFlowShell 新建块 B → 与块 A 同 round 并存 = 「2 个复制条」+ 锚点悬空致
-    // 用户输入/补充行错位 + 块 B label 无名（实测四症状）。
-    // 修复后：pausedResume 分支（3311 排雷判定首位）优先命中 → 原位续写块 A，不建块 B。
+    // ask 弹出选择题点选提交时，记录当前 assistant 块为**原位续写锚**，
+    // 对称于 paused 消息的 pausedAssistantEl 置位（单一续写锚语义，两路径同构）——
+    // 否则 resume meta 落入 resumePending 分支会新建块，与当前块同 round 并存（复制条 + 锚点悬空）。
     if (activeAssistantEl && activeAssistantEl.isConnected) {
       pausedAssistantEl = activeAssistantEl;
     }
@@ -3142,9 +3139,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 优先级：P0 显示期间 P1 不覆盖（错误优先保护，P1 仅记历史）；新 P0 覆盖旧 P0。
    * 停留时长按档位分级——error 醒目停留更久，info 低扰短暂（对齐排雷雷-4 语义分离）。
    *
-   * A2（2026-08-24）：支持可选 action 按钮——当宿主标记错误为「可重试」时，
-   * action.label 显示按钮文案，action.onClick 绑定重试回调。当前宿主暂未接入，
-   * 框架先行就绪，保持 backward compatible：不传 action 时行为与原实现完全一致。
+   * 支持可选 action 按钮：当宿主标记错误为「可重试」时，action.label 显示按钮文案、
+   * action.onClick 绑定重试回调。当前宿主暂未接入（框架先行就绪），不传 action 时该能力不生效。
    */
   function showActivity(
     level: 'error' | 'info',

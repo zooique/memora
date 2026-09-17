@@ -60,7 +60,7 @@
 |---|---|---|
 | 会话标题条 `.session-title-bar` | 会话管理（改名/新建/历史） | 常驻顶部，身份锚 |
 | 主活动条 `.activity-bar` | 会话异常 / 低扰 info | 常驻，error/info 分级 |
-| 断点续跑横幅 `.checkpoint-banner` | 软暂停持久化检查点 | 临时，可续跑/关闭 |
+| 暂停态提示 | 软暂停（**同进程内存态，不落盘**） | 暂停时可续跑/关闭 |
 | 任务看板 `.plan-board` | task_table_write/update（H4） | 临时，N/M 进度 |
 | 主动提问条 `#clarifyBar` | needClarify / questionPending | 等待用户输入 |
 | 记忆治理区 `.governance` | 记忆清理（cleanup，G4；记忆无衰减语义） | 统计卡 + 操作 |

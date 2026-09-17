@@ -9,7 +9,7 @@
 ## 功能
 
 - **通用对话**：打开侧边栏与 AI 对话，定位由角色包决定
-- **跨会话记忆**：记得你之前定过的决策，新会话自动召回
+- **跨会话记忆**：记得你之前定过的决策，新会话中 LLM 可自行调用 `search_memories` 取回
 - **主动提问**：关键节点 AI 会停下来问你，不闷头写偏
 - **角色包定位（出厂自带 doc-review）**：
   - **文档自洽检查**：在对话中让 AI 审阅文档的矛盾 / 缺口 / 悬空引用
@@ -87,7 +87,7 @@ set MEMORA_API_KEY=你的key
 
 | 层级 | 位置 | 内容 |
 |------|------|------|
-| 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json` / 会话检查点（一个项目一份，随项目走） |
+| 项目级 | 工作区 `.memora/` 目录 | 会话记录 `sessions.json` / 记忆 `memories.json`（**不含内核会话检查点**——`SessionCheckpoint` 为同进程内存态、不落盘；宿主另有「step 原子检查点」，把当前轮已产过程落盘到 pending Round 以便 UI 复原，二者同名不同物） |
 | 用户级 | VS Code 用户设置 `settings.json` | 大模型 Provider 配置（别名 / 模型 / Base URL，**不含 API Key**） |
 | 用户级 | VS Code 全局存储 `globalStorage` | 激活角色包（跨项目共享） |
 | 用户级 | VS Code 安全存储 `SecretStorage` | API Key（加密存储） |

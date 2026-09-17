@@ -839,7 +839,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * Phase 4 E2：同步推送 capability_badge —— 工具权限徽章，展示当前角色的工具模式与能力列表。
    */
   private readonly onRolePackSwitched = (info: { from: string | null; to: string }): void => {
-    // SSOT 修复（2026-08-17）：从同一 rolePackSwitched 事件维护内部激活角色状态，
+    // SSOT：从同一 rolePackSwitched 事件维护内部激活角色状态，
     // 使其与内核 rolePackManager.activeName 一致，成为 replaySession 的单一真相源。
     // 此前仅 post 给当时可能已被 dispose 的 webview（被静默忽略），未更新 _activeRolePack
     // → 用户从「角色」视图切换后聚焦对话（chat 视图重解析），ensureAgent 因 _agent 已存在

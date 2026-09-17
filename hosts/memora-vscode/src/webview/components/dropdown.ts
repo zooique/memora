@@ -69,8 +69,8 @@ function setDropdownOpen(el: HTMLElement, open: boolean): void {
  * 顶缘（如 toolbar 里的历史选择器）时向上会溢出被裁。以「菜单不溢出视口」为通用
  * 规则，打开时测量可用空间决定方向——而非按容器位置场景化配置方向。
  *
- * 复用 .treedd--drop-down 类让 CSS 改为向下弹出（默认 .treedd__menu 本就是向下，
- * capule 向上是特例，故翻转仅需覆盖 capsule 的 bottom 定位）。
+ * 复用 .treedd--drop-down 类让 CSS 向下弹出（默认 .treedd__menu 本就是向下，
+ * capsule 向上是特例，故翻转仅需覆盖 capsule 的 bottom 定位）。
  *
  * @param el 下拉容器（.treedd）
  */

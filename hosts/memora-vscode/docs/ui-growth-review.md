@@ -3,6 +3,7 @@
 > **定位**：本文件是 `hosts/memora-vscode/docs/` 的**常驻 UI 审查文档**——随 UI 迭代持续更新，记录当前视觉缺陷与整改清单。
 > 历史对齐结论与视觉重构落地形态见 [host-overview.md](./host-overview.md)（单一事实入口）；目录结构见 [directory-structure.md](./directory-structure.md)。
 > 日期：2026-08-24（首版）
+> ⚠️ **失效提示（2026-09-18 复核）**：文中 `.checkpoint-banner`（G3 断点续跑横幅）**已从代码移除**（宿主 `src/` 零命中；`chatView.ts` 现为「不再弹硬编码 banner」），且 `chatView.ts:166`/`:200` 等行号引用**已漂**。以下相关小节保留为历史审查快照，**勿据此定位代码或推断现行 UI**。
 > 方法论：visual-design-philosopher skill（先布局后样式 / 三层分类 / 视觉层级四维 / 聚合隔离 / 评审十问）+ 对抗式实锤核验
 > 审查范围：`hosts/memora-vscode/src/webview/**` 全部样式与渲染现状
 

@@ -148,7 +148,7 @@ export const tokens = `
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚
-     * Footer 改为两行布局：Actions 行(模型+发送) + Context 行(角色+能力徽章) */
+     * Footer 布局：Actions 行(模型+发送) + Context 行(角色+能力徽章) */
     --input-wrap-min-h: 128px; /* 输入卡片最小总高（textarea 72 + footer ~56） */
     --input-min-h: 72px;       /* textarea 默认双行舒适高度（内容区 ~48px = 2.3 行） */
     --input-max-h: 180px;      /* textarea 展开上限（~7 行，超限显示滚动条） */

@@ -372,7 +372,7 @@ export const chatStyles = `
    *     [.round-block             任务过程折叠区（进行中展开·实时相位+工具追加；完成收起只留摘要）]
    *     [.msg-body                报告正文（单一连续 markdown，不被工具切碎）]
    *     [.msg-footer              复制/分叉/删除 + 时间戳]
-   * 不再用侧边头像（避免每条回复都挤占一行），改为顶部弱标签标「谁在说」，
+   * 顶部弱标签标「谁在说」而非侧边头像（后者每条回复都挤占一行），
    * 正文直接铺满宽度，信息密度更高（ui-redesign 迭代）。 */
   .msg.assistant {
     align-self: stretch;
