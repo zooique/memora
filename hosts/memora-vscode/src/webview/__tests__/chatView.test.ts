@@ -3373,6 +3373,54 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.textContent).toContain('(成功)');
   });
 
+  it('TS-11d 工具意图预告：tool_pending「准备中」→ tool_start 升级执行态 → tool_result 收敛（不重建）', () => {
+    // 2026-09-17：写文件等大参数工具的参数生成段可能数十秒——name 成形即提前渲染
+    // 「准备中」行（is-tool-pending、静态浅环、不转 spinner），消除生成段 UI 真空。
+    mountChatView();
+    beginRound();
+    // ① 参数生成段：tool_pending（瞬态顶层消息，不走 process_event/不落盘）
+    dispatch({ type: 'tool_pending', toolCallId: 'call_w', name: 'write_file' });
+    let row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
+    expect(row).not.toBeNull();
+    expect(row.classList.contains('is-tool-pending')).toBe(true);
+    expect(row.classList.contains('is-tool-running')).toBe(false); // 准备 ≠ 执行
+    expect(row.textContent).toContain('准备中');
+    expect(row.open).toBe(true);
+    // ② 参数成形 tool_start 到达 → 同一行升级执行态（不重建：DOM 引用不换）
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 'call_w', name: 'write_file', args: '{"path":"b.md","content":"x"}' } } });
+    row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
+    expect(row.classList.contains('is-tool-pending')).toBe(false);
+    expect(row.classList.contains('is-tool-running')).toBe(true);
+    expect(row.textContent).toContain('进行中');
+    // 叙述复原（参数完整，写环工具行动叙述生成器同路）
+    expect(row.textContent).toContain('写入文件：b.md');
+    // ③ tool_result 收敛终态（成功收起，非运行态）
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 'call_w', name: 'write_file', ok: true, summary: '已写入' } } });
+    expect(row.classList.contains('is-tool-running')).toBe(false);
+    expect(row.open).toBe(false);
+    expect(row.textContent).toContain('(成功)');
+  });
+
+  it('TS-11d 并行工具独立预告：多个 tool_pending 各自成行、各自升级互不干扰', () => {
+    mountChatView();
+    beginRound();
+    dispatch({ type: 'tool_pending', toolCallId: 'call_a', name: 'read_file' });
+    dispatch({ type: 'tool_pending', toolCallId: 'call_b', name: 'write_file' });
+    const rows = document.querySelectorAll('.round-block__tool');
+    expect(rows).toHaveLength(2);
+    rows.forEach((r) => {
+      expect((r as HTMLElement).classList.contains('is-tool-pending')).toBe(true);
+    });
+    // 只升级 a（按 toolCallId 精确配对），b 保持准备中
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 'call_a', name: 'read_file', args: '{"path":"a.ts"}' } } });
+    const rowA = document.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="call_a"]');
+    const rowB = document.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="call_b"]');
+    expect(rowA!.classList.contains('is-tool-running')).toBe(true);
+    expect(rowA!.classList.contains('is-tool-pending')).toBe(false);
+    expect(rowB!.classList.contains('is-tool-running')).toBe(false);
+    expect(rowB!.classList.contains('is-tool-pending')).toBe(true);
+  });
+
   describe('TS-11c 工具等待时长（瞬态，不落库）', () => {
     beforeEach(() => {
       vi.useFakeTimers();

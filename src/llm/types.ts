@@ -21,6 +21,13 @@ export interface LlmChunk {
    * 类型 `TaskType='reasoning'` 语义分离，也避开 ProcessEvent 既有 `type:'thinking'` 相位事件。
    */
   thought?: string;
+  /**
+   * 流式工具意图预告（2026-09-17）：tool_call 的 name 在流式 delta 中**成形即上报**，
+   * 无需等到 finish_reason='tool_calls'。写文件等大参数工具的参数生成段可能长达数十秒，
+   * 此字段让 UI 提前渲染「准备中」工具行，消除事件真空期。瞬态展示轨，不落盘。
+   * 非 tool_calls 流 / 非 OpenAI 兼容 provider 恒 undefined，自然降级。
+   */
+  partialToolCall?: { id: string; name: string };
   /** 实际 API 用量统计（仅在流结束时的最终 chunk 携带，部分 Provider 不支持） */
   usage?: {
     /** 输入 token 数（prompt_tokens） */

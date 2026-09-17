@@ -450,6 +450,13 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'narrate_withdraw'; text: string }
   /**
+   * 工具意图预告（2026-09-17）：内核在 LLM 流式生成 tool_call 参数期间（name 一成形即触发）
+   * 上报的瞬态消息——工具**尚未执行**。webview 据此提前渲染「准备中」工具行，消除大参数工具
+   * （如 write_file 全量写入）数十秒参数生成段的 UI 真空。属展示轨：**不入 processEvents、不落盘**；
+   * 后续 tool_start（process_event）按 toolCallId 与前置 pending 行配对升级为执行态。
+   */
+  | { type: 'tool_pending'; toolCallId?: string; name: string; roundId?: string }
+  /**
    * 过程事件（运行时单形态渲染投影，v1.5 协议纯化）
    *
    * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；

@@ -49,6 +49,14 @@ export type AgentChunk = (
    */
   | { type: 'thought'; content: string }
   /**
+   * 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 一成形即触发），
+   * 工具**尚未执行**。与 tool_start 的区别：start 表示 Runtime 确定要执行（参数已完成）；
+   * pending 让宿主提前渲染「准备中」工具行，消除大参数工具（如 write_file 全量写入）
+   * 数十秒参数生成段的 UI 真空。瞬态展示轨：**不落 ProcessEvent、不进正文/记忆**，
+   * 中断或收尾后由折叠区重建自然消失。非流式 name 缺失时 toolCallId 可为空串。
+   */
+  | { type: 'tool_pending'; toolCallId?: string; name: string }
+  /**
    * 过程叙述（2026-09-02）：LLM 在工具迭代前产出的行动叙述文本
    * （如「让我先查看所有文档」「现在逐一读取它们的内容」）。
    * 与 text（回答正文）语义分离：narrate 只供宿主渲染「过程叙述」折叠行，

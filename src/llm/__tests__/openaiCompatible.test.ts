@@ -597,6 +597,63 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
     expect(toolCallChunk).toBeDefined();
     expect(toolCallChunk!.toolCalls![0]!.function.name).toBe('read_file');
   });
+
+  it('工具意图预告：name 成形即产出 partialToolCall，且每 idx 只发一次', async () => {
+    // 2026-09-17：参数生成段可能数十秒（大参数工具），name 一成形就应上报让 UI 提前渲染
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            // 第 1 片：tool_call id + name 开头 → 本片即应产出 partialToolCall
+            { tool_calls: [{ index: 0, id: 'call_abc', type: 'function', function: { name: 'write_', arguments: '' } }] },
+            // 第 2 片：续 name → 不应再产出 partialToolCall（防 delta 风暴），只累積入 acc
+            { tool_calls: [{ index: 0, function: { name: 'file', arguments: '{"path":"a.ts"' } }] },
+            // 第 3 片：arguments 续片完整
+            { tool_calls: [{ index: 0, function: { arguments: ',"content":"x"}' } }] },
+          ],
+          'tool_calls',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    const pendings = chunks.filter((c) => c.partialToolCall);
+
+    // 仅首个 delta（name 成形）发一次
+    expect(pendings).toHaveLength(1);
+    expect(pendings[0]!.partialToolCall).toEqual({ id: 'call_abc', name: 'write_' });
+
+    // 最终完整 toolCalls 不受影响
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+    expect(toolCallChunk!.toolCalls![0]!.function.name).toBe('write_file');
+  });
+
+  it('工具意图预告：id 缺失时合成的 call_${seq} 与最终 toolCalls 同源', async () => {
+    // 2026-09-17：provider 不发 id（或 id 与 name 不同片）时，pending 合成的 id 必须
+    // 写回累积器，保证 finish_reason 时 buildToolCallsFromAccumulators 复用同一 id，
+    // 宿主侧才可按 id 把「准备中」行升级为「执行中」行。
+    server.use(
+      http.post('*/chat/completions', () => {
+        return createToolCallsSseResponse(
+          [
+            { tool_calls: [{ index: 0, type: 'function', function: { name: 'no_id_pending', arguments: '{}' } }] },
+          ],
+          'tool_calls',
+        );
+      }),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    const pending = chunks.find((c) => c.partialToolCall);
+    const toolCallChunk = chunks.find((c) => c.toolCalls && c.toolCalls.length > 0);
+
+    expect(pending).toBeDefined();
+    expect(toolCallChunk).toBeDefined();
+    // 同一 id：call_0（新实例首计）；pending 与最终 toolCalls 可配对升级
+    expect(pending!.partialToolCall!.id).toBe('call_0');
+    expect(toolCallChunk!.toolCalls![0]!.id).toBe(pending!.partialToolCall!.id);
+    expect(toolCallChunk!.toolCalls![0]!.function.name).toBe('no_id_pending');
+  });
 });
 
 // ─── 超时机制（fetch 阶段与 SSE 阶段超时职责分离）──

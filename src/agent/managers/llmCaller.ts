@@ -300,6 +300,15 @@ export class LlmCaller {
           if (chunk.thought) {
             yield { type: 'thought', content: chunk.thought };
           }
+          // 工具意图预告（2026-09-17）：tool_call name 成形即透传，宿主提前渲染「准备中」工具行。
+          // 瞬态展示轨：不落 ProcessEvent（宿主侧据此不 emitEvent）；id 可能为空串（provider 未发）
+          if (chunk.partialToolCall) {
+            yield {
+              type: 'tool_pending',
+              toolCallId: chunk.partialToolCall.id || undefined,
+              name: chunk.partialToolCall.name,
+            };
+          }
           if (chunk.toolCalls) {
             // 只收可发出的调用：模型偶发的「只有 id、无 function 载荷」条目若写入历史，下一次
             // 请求必被服务端以 400 拒绝。丢弃在**写入历史之前**，故 assistant.tool_calls 与随后

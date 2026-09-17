@@ -2444,6 +2444,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           }
           continue;
         }
+        if (chunk.type === 'tool_pending') {
+          // 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 成形即上报），
+          // 工具尚未执行。瞬态展示轨：**必须 continue、不 emitEvent**（不落盘、不进 eventsByRound、
+          // 不吃 seq），roundId 自带在消息上（不依赖 currentRoundKey 变量），webview 据此渲染
+          // 「准备中」工具行；后续 tool_start 过程事件按 toolCallId 与该行配对升级。
+          this.post({
+            type: 'tool_pending',
+            toolCallId: chunk.toolCallId,
+            name: chunk.name,
+            roundId: chunk.roundId,
+          });
+          continue;
+        }
         if (chunk.type === 'aborted') {
           // 用户 stop/插话 → 内核 abort 应答。⚠ 不要 break：break 会触发 async iterator 的
           // return() 提前终止整条 yield* 链（chat → runChat → act → consumeExecutionStream），

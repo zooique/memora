@@ -287,6 +287,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     // 流式 tool_calls 累积器：同一 tool_call 的 name/arguments 可能跨多个 delta 分片到达
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
+    // 已发射过「工具意图预告」的累积器 idx（2026-09-17）：同一工具只提前上报一次，防 delta 风暴。
+    // 必须是本生成器局部变量——随流结束/中断自然回收，防跨请求泄漏。
+    const emittedPendingIndexes = new Set<number>();
 
     // chunk 级读超时：无超时则连接半挂（NAT/代理不关 TCP）会永久等待；
     // 区分首 chunk（reasoning 思考数十秒，120s）与 chunk 间（连接已正常，60s）；
@@ -449,6 +452,16 @@ export class OpenAICompatibleProvider extends LlmProvider {
                 if (tc.function?.name) acc.name += tc.function.name;
                 if (tc.function?.arguments) acc.arguments += tc.function.arguments;
                 toolCallAccumulators.set(idx, acc);
+                // 工具意图预告（2026-09-17）：name 首次由空变非空即上报，不必等 finish_reason——
+                // 写文件等大参数工具的参数生成段可能数十秒，UI 需提前显示「准备中」工具行。
+                // 每 idx 只发一次（emittedPendingIndexes 去重防风暴）；id 缺失时按与最终构建
+                // 同一规则合成并**写回 acc.id**（acc.id || `call_${seq}`），保证 finish_reason
+                // 时 buildToolCallsFromAccumulators 复用同一 id，宿主侧可按 id 配对升级。
+                if (acc.name && !emittedPendingIndexes.has(idx)) {
+                  emittedPendingIndexes.add(idx);
+                  if (!acc.id) acc.id = `call_${this.toolCallIdSeq++}`;
+                  chunk.partialToolCall = { id: acc.id, name: acc.name };
+                }
               }
             }
 

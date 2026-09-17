@@ -920,6 +920,67 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * 工具意图预告行（2026-09-17）：LLM 流式生成 tool_call 参数期间提前渲染的「准备中」行。
+   *
+   * 与 renderToolRow 同构（summary = 工具名 + 状态），但参数未成形——无叙述生成、无 seq：
+   * append 到 process-flow 流尾（流式期间"新的在最下"语义正确，finalize/重放全量重建时
+   * 天然消失，不落盘不占 seq）。tool_start 到达后经 renderProcessFlow 升级路径转执行态。
+   *
+   * @param pending 工具意图预告消息（toolCallId 可能为空串——provider 未发 id 的降级）
+   */
+  function renderPendingToolRow(pending: Extract<ExtensionToWebviewMessage, { type: 'tool_pending' }>): void {
+    const flow = ensureProcessFlow({ orphan: true, roundId: pending.roundId ?? undefined });
+    if (!flow) return;
+    // 幂等：同工具已渲染（含升级后的正式行）不重复创建；无 id（降级）时按 name 去重
+    const selector = pending.toolCallId
+      ? `.round-block__tool[data-tool-call-id="${pending.toolCallId}"]`
+      : `.round-block__tool[data-tool-pending-name="${pending.name}"]`;
+    if (flow.querySelector(selector)) return;
+    const row = document.createElement('details');
+    row.className = 'round-block__tool is-tool-pending';
+    if (pending.toolCallId) row.dataset.toolCallId = pending.toolCallId;
+    else row.dataset.toolPendingName = pending.name;
+    row.open = true; // 准备中默认展开——让「正在准备工具」直接可见
+    const summary = document.createElement('summary');
+    summary.className = 'round-block__tool-name';
+    const labelSpan = document.createElement('span');
+    labelSpan.className = 'round-block__tool-label';
+    // 参数未成形，无法生成行动叙述 → 直显工具名（与 renderToolRow 的兜底回退同语义）
+    labelSpan.textContent = pending.name;
+    const statusSpan = document.createElement('span');
+    statusSpan.className = 'round-block__tool-status';
+    statusSpan.textContent = ' (准备中)';
+    summary.append(labelSpan, statusSpan);
+    row.appendChild(summary);
+    flow.appendChild(row);
+  }
+
+  /**
+   * 工具行升级（2026-09-17）：pending「准备中」行在 tool_start 到达时转执行态，不重建 DOM——
+   * 与 renderToolRow 新建的执行态行同构（叙述/状态/进行中高亮），后续 tool_result 更新
+   * （updateToolRowState 按 data-tool-call-id）天然复用，无需特判。
+   */
+  function upgradePendingToolRow(
+    row: HTMLDetailsElement,
+    start: Extract<ProcessEvent, { type: 'tool_start' }>,
+  ): void {
+    row.classList.remove('is-tool-pending');
+    row.classList.add('is-tool-running');
+    const labelEl = row.querySelector<HTMLElement>('.round-block__tool-label');
+    // 参数此刻已完整，按既有多参数叙述生成器复原（renderToolRow 同路）
+    if (labelEl) labelEl.textContent = toolActionLabel(start.payload.name, start.payload.args);
+    const statusEl = row.querySelector<HTMLElement>('.round-block__tool-status');
+    if (statusEl) statusEl.textContent = ' (进行中)';
+    // 参数补挂（与 renderToolRow 的 args pre 同构）：展开可看本次调用入参
+    if (start.payload.args && !row.querySelector(':scope > .round-block__pre')) {
+      const pre = document.createElement('pre');
+      pre.className = 'round-block__pre';
+      pre.textContent = start.payload.args;
+      row.appendChild(pre);
+    }
+  }
+
+  /**
    * 步骤行按 seq 顺序插入 details 顶层（narrate 与 tool 共用，扁平化平铺）。
    * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
    * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
@@ -1470,7 +1531,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     }
     for (const t of toolStarts) {
-      if (flow.querySelector(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`)) continue;
+      const existing = flow.querySelector<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`);
+      if (existing) {
+        // 升级路径（2026-09-17）：此前已建「准备中」行（renderPendingToolRow）→ 转执行态，
+        // 不重建 DOM（参数此刻完整，叙述/状态/高亮同步复位）；正式行（非 pending）保持原跳过语义
+        if (existing.classList.contains('is-tool-pending')) {
+          upgradePendingToolRow(existing, t);
+        }
+        continue;
+      }
       const row = renderToolRow(t, events);
       if (row) {
         const { host } = stepContainerFor(flow, events, t.seq);
@@ -3357,6 +3426,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'pending_queue_update') {
       // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
       updatePendingQueueBar(msg.items);
+    } else if (msg.type === 'tool_pending') {
+      // 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 成形即上报），
+      // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与
+      // currentEvents（finalize 全量重建时天然消失），后续 tool_start 按 toolCallId 升级。
+      renderPendingToolRow(msg);
     } else if (msg.type === 'process_event') {
       // 运行时单形态渲染投影（v1.5）：一律汇入当前轮 events[] 由 renderRoundBlock 渲染。
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生

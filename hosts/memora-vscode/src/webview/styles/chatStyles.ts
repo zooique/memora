@@ -1569,20 +1569,40 @@ export const chatStyles = `
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
-  /* TS-11b：进行中工具行——高亮左缘 + 主色名称 + 尾部呼吸点，让「正在执行的工具」一眼可见；
-     result 到达即移除（updateToolRowState 切 class），收尾全量渲染天然不带该态 */
+  /* TS-11b：进行中工具行——高亮左缘 + 主色名称 + summary 前置旋转圆环，让「正在执行的工具」一眼可见；
+     result 到达即移除（updateToolRowState 切 class），收尾全量渲染天然不带该态。
+     环与正文 ▋ 光标互斥（同块在途工具时熄灭正文光标），见下方 :has 抑制规则 */
   .round-block__tool.is-tool-running {
     border-left-color: var(--accent, #0e639c);
     background: var(--surface-thought, rgba(128,128,128,.05));
   }
   .round-block__tool.is-tool-running > summary { color: var(--text-primary, #e6e6e6); font-weight: 600; }
-  .round-block__tool.is-tool-running > summary::after {
-    content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%;
-    margin-left: var(--sp-2, 6px); background: var(--accent, #0e639c);
-    animation: selfReviewPulse 1.2s ease-in-out infinite;
+  .round-block__tool.is-tool-running > summary::before {
+    content: ''; display: inline-block; width: 10px; height: 10px;
+    margin-right: var(--sp-2, 6px); vertical-align: -1px;
+    border: 1.5px solid transparent; border-top-color: var(--accent, #0e639c);
+    border-radius: 50%; box-sizing: border-box;
+    animation: toolSpinner .7s linear infinite;
   }
+  @keyframes toolSpinner { to { transform: rotate(360deg); } }
+  /* 工具准备中态（2026-09-17）：LLM 流式生成 tool_call 参数期间的「准备中」行——静态浅环
+     （与执行中 is-tool-running 的旋转环相区分，语义分层「准备中 / 执行中」）。 */
+  .round-block__tool.is-tool-pending {
+    border-left-color: var(--border-panel, rgba(128,128,128,.4));
+  }
+  .round-block__tool.is-tool-pending > summary::before {
+    content: ''; display: inline-block; width: 10px; height: 10px;
+    margin-right: var(--sp-2, 6px); vertical-align: -1px;
+    border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 50%; box-sizing: border-box;
+  }
+  /* 工具运行期间抑制正文流式光标（2026-09-17）：「工具在途」= 动态指示统一由工具旋转图标承担，
+     同 assistant 块正文的 ▋ 光标熄灭，只留"正在生成正文"时亮。单条 :has 规则、零 JS——class 切换
+     （updateToolRowState/renderProcessFlow）即驱动，无第二套状态轨道。仅作用于含在途工具行的块，
+     早前已定稿的块不受影响。 */
+  .msg.assistant:has(.round-block__tool.is-tool-running) .msg-body.is-streaming::after { content: none; animation: none; }
   @media (prefers-reduced-motion: reduce) {
-    .round-block__tool.is-tool-running > summary::after { animation: none; }
+    .round-block__tool.is-tool-running > summary::before { animation: none; }
   }
   /* TS-11c：工具等待时长标签（瞬态，仅进行中工具行显示「Ns」） */
   .round-block__elapsed {
