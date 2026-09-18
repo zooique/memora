@@ -48,15 +48,6 @@ export function expandEnvVars(config: Config): Config {
       }
     : undefined;
 
-  // 展开 embedding 向量嵌入通道的环境变量
-  const expandedEmbedding = config.embedding
-    ? {
-        ...config.embedding,
-        apiKey: expand(config.embedding.apiKey),
-        baseUrl: expand(config.embedding.baseUrl),
-      }
-    : undefined;
-
   return {
     ...config,
     llm: {
@@ -64,6 +55,5 @@ export function expandEnvVars(config: Config): Config {
       providers: expandedProviders,
       background: expandedBackground,
     },
-    embedding: expandedEmbedding,
   };
 }

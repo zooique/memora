@@ -12,7 +12,6 @@ import {
 } from '@/memory/roundStore.js';
 import type { IRoundStore } from '@/memory/roundStore.js';
 import type { Memory } from '@/memory/types.js';
-import type { IVectorStore } from '@/memory/vectorStore.js';
 
 describe('垃圾回收服务', () => {
   let roundStore: InMemoryRoundStore;
@@ -259,7 +258,6 @@ describe('垃圾回收服务', () => {
       expect(config.minAgeMs).toBe(5 * 60 * 1000);
       expect(config.batchSize).toBe(100);
       expect(config.cleanUpMemory).toBe(true);
-      expect(config.syncVectorDelete).toBe(true);
       expect(config.verbose).toBe(false);
     });
 
@@ -296,27 +294,9 @@ describe('垃圾回收服务', () => {
       expect(roundStore.size()).toBe(0);
     });
 
-    it('purge 摘要时同步删除向量索引', async () => {
-      // 注入 mock vectorStore
-      const mockVectorStore = {
-        delete: vi.fn().mockResolvedValue(undefined),
-      } as unknown as IVectorStore;
-
-      const gcWithVector = new GCService(
-        roundStore,
-        memoryStorage,
-        {
-          minAgeMs: 0,
-          batchSize: 10,
-          cleanUpMemory: true,
-          syncVectorDelete: true,
-          verbose: false,
-        },
-        mockVectorStore,
-      );
-
+    it('purge 摘要时正常物理删除记忆（B0 收编后向量同步已移除）', async () => {
       // 孤立的 complete Round + 关联摘要（规范两段式 ID：round-summary:{session}:{roundId}）
-      const round = createPendingRound('向量同步');
+      const round = createPendingRound('摘要清理');
       const completed = completeRound(round, '回答');
       completed.refCount = 0;
       roundStore.save(completed);
@@ -331,11 +311,9 @@ describe('垃圾回收服务', () => {
         accessedAt: new Date().toISOString(),
       } as Memory);
 
-      gcWithVector.run();
-      expect(mockVectorStore.delete).toHaveBeenCalledWith(summaryId);
-
-      // 等待 fire-and-forget 的 catch 链完成（无断言，仅防未处理 rejection）
-      await new Promise((r) => setTimeout(r, 10));
+      gc.run();
+      // 摘要物理删除（不可恢复）
+      expect(memoryStorage.getById(summaryId)).toBeNull();
     });
   });
 });
@@ -430,8 +408,8 @@ describe('GC 补充分支路径', () => {
     expect(result.deleted).toBe(0);
   });
 
-  it('向量索引删除失败仅记录不阻断 GC 主流程（catch 分支）', async () => {
-    const round = createPendingRound('向量失败');
+  it('示例：摘要清理主流程不受影响（B0 收编后向量 catch 分支已移除）', async () => {
+    const round = createPendingRound('清理验证');
     const completed = completeRound(round, '回答');
     completed.refCount = 0;
     roundStore.save(completed);
@@ -446,20 +424,9 @@ describe('GC 补充分支路径', () => {
       accessedAt: new Date().toISOString(),
     } as Memory);
 
-    // 向量 delete 返回 reject → 走 .catch 降级分支（记录不抛错）
-    const failingVector = {
-      delete: vi.fn().mockRejectedValue(new Error('向量服务不可用')),
-    } as unknown as IVectorStore;
-    const gcWithFailingVector = new GCService(
-      roundStore,
-      memoryStorage,
-      { minAgeMs: 0, batchSize: 10, cleanUpMemory: true, syncVectorDelete: true, verbose: false },
-      failingVector,
-    );
-    const result = gcWithFailingVector.run();
+    const gc = new GCService(roundStore, memoryStorage, { minAgeMs: 0, batchSize: 10, cleanUpMemory: true, verbose: false });
+    const result = gc.run();
     expect(result.deleted).toBe(1);
     expect(result.memoryCleaned).toBe(1);
-    // 等待 catch 链执行完毕（防未处理 rejection）
-    await new Promise((r) => setTimeout(r, 10));
   });
 });

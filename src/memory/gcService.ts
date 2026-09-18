@@ -15,7 +15,6 @@
 
 import type { IRoundStore, Round } from '@/memory/roundStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { IVectorStore } from '@/memory/vectorStore.js';
 import { logger } from '@/logging/logger.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 
@@ -41,21 +40,13 @@ export interface GCConfig {
   batchSize: number;
 
   /**
-   * 是否同时清理关联的记忆摘要
+   * 是否清理关联的记忆摘要
    *
    * - true：删除 Round 时同时删除 round-summary 记忆
    * - false：只删除 Round，保留摘要（可能导致孤立摘要）
    * - 默认 true（推荐）
    */
   cleanUpMemory: boolean;
-
-  /**
-   * 是否清理向量索引（可选依赖）
-   *
-   * 摘要物理删除时同步删除对应向量，防止向量索引脏数据累积
-   * - 默认 true（推荐）
-   */
-  syncVectorDelete: boolean;
 
   /**
    * 是否记录详细日志
@@ -110,8 +101,6 @@ export interface GCResult {
 export class GCService {
   private readonly roundStore: IRoundStore;
   private readonly memoryStorage: IMemoryStorage;
-  /** 向量存储（可选）：摘要 purge 时同步删向量，防脏索引累积 */
-  private readonly vectorStore?: IVectorStore;
   private readonly config: GCConfig;
   private timer: ReturnType<typeof setInterval> | null = null;
 
@@ -119,16 +108,13 @@ export class GCService {
     roundStore: IRoundStore,
     memoryStorage: IMemoryStorage,
     config?: Partial<GCConfig>,
-    vectorStore?: IVectorStore,
   ) {
     this.roundStore = roundStore;
     this.memoryStorage = memoryStorage;
-    this.vectorStore = vectorStore;
     this.config = {
       minAgeMs: config?.minAgeMs ?? 5 * 60 * 1000, // 5 分钟
       batchSize: config?.batchSize ?? 100,
       cleanUpMemory: config?.cleanUpMemory ?? true,
-      syncVectorDelete: config?.syncVectorDelete ?? true,
       verbose: config?.verbose ?? false,
       shouldSkip: config?.shouldSkip,
     };
@@ -248,19 +234,13 @@ export class GCService {
   }
 
   /**
-   * 物理删除摘要并同步清理向量索引
+   * 物理删除摘要（round-summary 随 Round 引用归零联动清理）
    *
    * @param summaryId - 摘要记忆 ID
    */
   private purgeSummary(summaryId: string): void {
     // purge = 物理删除（不可恢复），孤儿摘要是系统治理决定，不进用户回收站
     this.memoryStorage.purge(summaryId);
-    // 向量索引同步删除（fire-and-forget，失败仅记录不阻断 GC 主流程）
-    if (this.config.syncVectorDelete && this.vectorStore) {
-      void this.vectorStore.delete(summaryId).catch((err) => {
-        logger.debug({ err, summaryId }, 'GC: 向量索引删除失败（脏索引由读侧 getById 兜底过滤）');
-      });
-    }
   }
 
   /**
@@ -323,14 +303,12 @@ export class GCService {
  * @param roundStore - 问答闭环存储
  * @param memoryStorage - 记忆存储
  * @param shouldSkip - 忙碌检查回调（可选：对话进行中跳过本次）
- * @param vectorStore - 向量存储（可选：摘要 purge 时同步删向量）
  * @returns GC 服务实例
  */
 export function createDefaultGCService(
   roundStore: IRoundStore,
   memoryStorage: IMemoryStorage,
   shouldSkip?: () => boolean,
-  vectorStore?: IVectorStore,
 ): GCService {
   return new GCService(
     roundStore,
@@ -339,10 +317,8 @@ export function createDefaultGCService(
       minAgeMs: 5 * 60 * 1000, // 5 分钟最小存活时间
       batchSize: 100,
       cleanUpMemory: true,
-      syncVectorDelete: true,
       verbose: false,
       shouldSkip,
     },
-    vectorStore,
   );
 }

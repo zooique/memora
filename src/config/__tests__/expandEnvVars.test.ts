@@ -4,8 +4,7 @@
  * 覆盖范围：
  *   1. llm.providers 多 Provider 映射表
  *   2. llm.background 后台通道
- *   3. embedding 向量嵌入通道
- *   4. 边界场景：undefined 值、不存在的环境变量、字符串中多个占位符
+ *   3. 边界场景：undefined 值、不存在的环境变量、字符串中多个占位符
  *
  * 注：apiKey/baseUrl 只存在于 providers/background 中（主通道扁平字段为唯一 providers 格式）。
  */
@@ -38,11 +37,6 @@ function createConfigWithPlaceholders(): Config {
         baseUrl: '${TEST_BG_BASE_URL}',
         temperature: 0.5,
       },
-    },
-    embedding: {
-      model: 'embedding-model',
-      apiKey: '${TEST_EMBEDDING_KEY}',
-      baseUrl: '${TEST_EMBEDDING_URL}',
     },
     memory: {
       dataDir: '',
@@ -77,7 +71,6 @@ describe('expandEnvVars — Providers 映射表', () => {
 
     const config: Config = {
       ...createConfigWithPlaceholders(),
-      embedding: undefined,
     };
     const result = expandEnvVars(config);
     expect(result.llm.providers).toBeDefined();
@@ -92,7 +85,6 @@ describe('expandEnvVars — Providers 映射表', () => {
     process.env.TEST_PROVIDER1_MODEL = 'mimo-v2.5';
     const config: Config = {
       ...createConfigWithPlaceholders(),
-      embedding: undefined,
       llm: {
         ...createConfigWithPlaceholders().llm,
         providers: {
@@ -118,8 +110,7 @@ describe('expandEnvVars — Providers 映射表', () => {
         providers: undefined,
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers).toBeUndefined();
   });
@@ -140,8 +131,7 @@ describe('expandEnvVars — Providers 映射表', () => {
         },
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.onlyKey!.apiKey).toBe('sk-key');
     expect(result.llm.providers!.onlyKey!.baseUrl).toBeUndefined();
@@ -169,8 +159,7 @@ describe('expandEnvVars — Background 后台通道', () => {
         ...createConfigWithPlaceholders().llm,
         providers: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.background).toBeDefined();
     expect(result.llm.background!.apiKey).toBe('sk-bg-key');
@@ -188,56 +177,9 @@ describe('expandEnvVars — Background 后台通道', () => {
         background: undefined,
         providers: undefined,
       },
-      embedding: undefined,
     };
     const result = expandEnvVars(config);
     expect(result.llm.background).toBeUndefined();
-  });
-});
-
-// ══════════════════════════════════════════════════════════════
-// 3. Embedding 向量嵌入通道展开
-// ══════════════════════════════════════════════════════════════
-
-describe('expandEnvVars — Embedding 向量嵌入通道', () => {
-
-  beforeEach(() => {
-    delete process.env.TEST_EMBEDDING_KEY;
-    delete process.env.TEST_EMBEDDING_URL;
-  });
-
-  it('展开 embedding 的 apiKey 和 baseUrl', () => {
-    process.env.TEST_EMBEDDING_KEY = 'sk-embed-key';
-    process.env.TEST_EMBEDDING_URL = 'https://embed.example.com';
-
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        providers: undefined,
-        background: undefined,
-      },
-    };
-    const result = expandEnvVars(config);
-    expect(result.embedding).toBeDefined();
-    expect(result.embedding!.apiKey).toBe('sk-embed-key');
-    expect(result.embedding!.baseUrl).toBe('https://embed.example.com');
-    // 验证 embedding 保留了其他字段
-    expect(result.embedding!.model).toBe('embedding-model');
-  });
-
-  it('embedding 为 undefined 时保留 undefined', () => {
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        providers: undefined,
-        background: undefined,
-      },
-      embedding: undefined,
-    };
-    const result = expandEnvVars(config);
-    expect(result.embedding).toBeUndefined();
   });
 });
 
@@ -263,8 +205,7 @@ describe('expandEnvVars — 边界场景', () => {
         },
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('');
   });
@@ -284,8 +225,7 @@ describe('expandEnvVars — 边界场景', () => {
         },
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBeUndefined();
   });
@@ -307,8 +247,7 @@ describe('expandEnvVars — 边界场景', () => {
         },
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('aaa:bbb');
     delete process.env.VAR_A;
@@ -330,8 +269,7 @@ describe('expandEnvVars — 边界场景', () => {
         },
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('hardcoded-key-123');
     expect(result.llm.providers!.only!.baseUrl).toBe('https://fixed.url.com');
@@ -352,8 +290,7 @@ describe('expandEnvVars — 边界场景', () => {
         },
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('');
     expect(result.llm.providers!.only!.baseUrl).toBe('');
@@ -366,8 +303,7 @@ describe('expandEnvVars — 边界场景', () => {
         ...createConfigWithPlaceholders().llm,
         background: undefined,
       },
-      embedding: undefined,
-    };
+      };
     const originalApiKey = config.llm.providers!['provider1']!.apiKey;
     expandEnvVars(config);
     // 原对象不应被修改

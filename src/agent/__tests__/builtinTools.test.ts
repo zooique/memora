@@ -176,12 +176,14 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
     expect(searchMemories!.parameters.properties.mode).toBeDefined();
   });
 
-  it('search_memories 描述含混合检索与按需召回的引导（§3.3 工具升级定案）', () => {
+  it('search_memories 描述含关键词检索与按需召回 + 换词重试引导（§3.3 工具升级定案 / B0 收编）', () => {
     const searchMemories = BUILTIN_TOOLS.find((t) => t.name === 'search_memories');
-    // 引导：语义+关键词混合检索，涉及过往决定/偏好/项目背景时主动按需召回；揭示 accessedAt/sim 辅助排序
-    expect(searchMemories!.description).toContain('语义+关键词混合检索记忆库');
+    // 引导：纯关键词检索（语义向量通道已随 B0 收编移除），涉及过往决定/偏好/项目背景时主动按需召回；
+    // 揭示 accessedAt 辅助排序；未命中提示换词重试（LLM 承担词汇桥梁）
+    expect(searchMemories!.description).toContain('关键词检索记忆库');
     expect(searchMemories!.description).toContain('按需召回');
     expect(searchMemories!.description).toContain('accessedAt');
+    expect(searchMemories!.description).toContain('换表述重试');
   });
 
   // ─── ToolDefinition 类型守卫 ──────────────────────────────

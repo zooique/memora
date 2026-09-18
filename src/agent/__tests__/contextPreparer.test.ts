@@ -56,7 +56,6 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     getIndex: () => storage,
     config: {
       tracer: null,
-      vectorStore: null,
       messages: undefined,
       maxContextTokens: 120_000,
     },

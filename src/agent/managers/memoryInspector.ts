@@ -6,13 +6,10 @@
 import type { Memory } from '@/memory/types.js';
 import { SOURCE_LABELS } from '@/memory/types.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
 import { truncate } from '@/utils/strings.js';
-import { logger } from '@/logging/logger.js';
-import { backgroundTask } from '@/utils/backgroundTask.js';
 // 融合排序算法 + 常量从 hybridMerge 导入（消除对 recall.ts 内部常量的依赖）
 import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 
@@ -104,9 +101,6 @@ export interface AgentStats {
 // ─── 类 ──────────────────────────────────────────────────
 
 export class MemoryInspector {
-  /** 向量存储（可选，提供时 searchHybrid 启用语义搜索） */
-  private vectorStore: IVectorStore | null = null;
-
   /**
    * 构造记忆管理器。sourceHealth/suggest 由 Agent 门面直连 MemoryAdvisor，本类不持有 advisor（消除 3 层代理）。
    */
@@ -115,11 +109,6 @@ export class MemoryInspector {
     private readonly loop: AgentLoop,
     private readonly history: MessageHistory,
   ) {}
-
-  /** 注入向量存储（Agent 初始化后调用，解决构造时序） */
-  setVectorStore(vs: IVectorStore | null): void {
-    this.vectorStore = vs;
-  }
 
   // ─── 只读查询（IMemoryStorage 透传） ───────────────────
 
@@ -222,14 +211,18 @@ export class MemoryInspector {
   }
 
   /**
-   * 混合搜索记忆（语义 + 关键词双通道）。VectorStore 可用时补强语义缺口，向量搜索失败静默降级到关键词。
-   * 融合排序委托 hybridMerge（避免跨模块常量依赖）。
+   * 搜索记忆（纯关键词单通道）。融合排序委托 hybridMerge。
    *
    * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——保持融合排序
    * **不分层分轨**：不应用 L1/L2 分层、不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配
    * （capTokens / minSemanticShare）。分层分轨原属「召回编排」`recall()`——该方法已连同其唯一消费者
    * （跨重启恢复链的 `checkpointRestoreCoordinator.warmRecall`）于 2026-09-10 整体退役，故**现行实现中
-   * 已无任何召回编排**；搜索工具只暴露融合相关性结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
+   * 已无任何召回编排**；搜索工具只暴露过滤后的结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
+   *
+   * 语义（向量）通道已于 2026-09-18 收编（B0 裁决）：embedding 写端缺失导致语义通道在生产从未生效，
+   * 属于「宣称能力零消费」的僵尸；且主流 agent（Anthropic Memory tool / Claude Code / Librarian Pattern）
+   * 已实证「LLM 消费者 + 小语料」下纯关键词足用——LLM 会自主改述重试（工具描述已提示）。向量语义检索
+   * 的 cache 形态方案记入探索期文档候选，等真实「关键词搜不到」复现再按缓存重算形态补回。
    *
    * @param excludeRoundIds 排除的轮次 ID 集合（可选）：这些轮次的 round-summary 已被装配期载入正文，
    *                       不重复返回（工具召回与装配期正文互斥，§5.1）；缺省不过滤。
@@ -250,36 +243,14 @@ export class MemoryInspector {
       ]);
     }
 
+    // 单个通道：关键词搜索（B0 收编后无向量通道）
     const merged = new Map<string, { memory: Memory; vectorScore: number }>();
-
-    // 通道 1：语义搜索（VectorStore 可用时）
-    if (this.vectorStore && this.vectorStore.size > 0) {
-      try {
-        const vectorResults = await this.vectorStore.search(
-          query,
-          limit * RECALL_LIMIT_MULTIPLIER,
-          0.3,
-        );
-        for (const vr of vectorResults) {
-          const memory = this.index.getById(vr.id);
-          if (memory) {
-            merged.set(memory.id, { memory, vectorScore: vr.similarity });
-          }
-        }
-      } catch (err) {
-        logger.debug({ err }, '语义搜索失败，降级到关键词');
-      }
-    }
-
-    // 通道 2：关键词搜索（补齐语义通道未覆盖的）
     const keywordResults = this.index.search(query, limit * RECALL_LIMIT_MULTIPLIER);
     for (const m of keywordResults) {
-      if (!merged.has(m.id)) {
-        merged.set(m.id, { memory: m, vectorScore: 0 });
-      }
+      merged.set(m.id, { memory: m, vectorScore: 0 });
     }
 
-    // 融合排序（hybridMerge 纯函数）。
+    // 融合排序（hybridMerge 纯函数；纯关键词时 vectorScore 恒 0 → 依赖 stable-sort 插入序，可接受）。
     // 前置 superseded 过滤：被 supersededBy 取代的摘要不作为当前事实
     // 返回（仍保留可回溯，trace_summary 可精确取原文）。在排序前过滤，避免占据 top-N 槽位挤掉有效命中。
     const active = [...merged.values()].filter((e) => !e.memory.supersededBy);
@@ -293,13 +264,13 @@ export class MemoryInspector {
         : active;
     const sorted = hybridMerge(unexcluded, limit);
 
-    // 排序语义（§5.2 定案）：仅返回 hybridMerge 融合序（语义相关主），不引入 accessedAt 时间主序——
+    // 排序语义（§5.2 定案）：仅返回 hybridMerge 融合序，不引入 accessedAt 时间主序——
     // accessedAt 只作为事实字段揭示（工具命中 touch 刷新），优先级判断归 LLM 结合任务定夺。
-    return sorted.map(({ memory, vectorScore }) => ({
+    return sorted.map(({ memory }) => ({
       id: memory.id,
       name: memory.name,
       source: memory.source,
-      similarity: vectorScore,
+      similarity: 0,
       contentPreview: truncate(memory.content, SEARCH_PREVIEW_LEN),
       createdAt: memory.createdAt,
       accessedAt: memory.accessedAt,
@@ -371,31 +342,14 @@ export class MemoryInspector {
   }
 
   /**
-   * 物理删除记忆（不可恢复）。同时清理向量防孤儿向量被语义召回。
-   * delete 异步、本方法同步签名（宿主 IPC 同步消费），故 fire-and-forget + catch 降级（内存立即失效）。
+   * 物理删除记忆（不可恢复）。delete 异步、本方法同步签名（宿主 IPC 同步消费），故 fire-and-forget + catch 降级（内存立即失效）。
    */
   writePurge(id: string): void {
-    if (this.vectorStore) {
-      backgroundTask('vector-delete', () => this.vectorStore!.delete(id));
-    }
     this.index.purge(id);
   }
 
   /** 清理 deletedAt 早于 before 的软删除记忆（宿主定时器调用，默认 30 天保留期） */
   writePurgeExpired(before: Date): number {
-    // 先过滤待清理候选，避免清理未过期记忆
-    const beforeMs = before.getTime();
-    const candidates = this.index
-      .listDeleted()
-      .filter((m) => m.deletedAt && new Date(m.deletedAt).getTime() < beforeMs);
-
-    // 同步清理向量防孤儿向量（fire-and-forget；delete 异步但内存立即失效，持久化失败仅影响冷启动复活）
-    if (this.vectorStore && candidates.length > 0) {
-      for (const m of candidates) {
-        backgroundTask('vector-delete', () => this.vectorStore!.delete(m.id));
-      }
-    }
-
     return this.index.purgeExpired(before);
   }
 }

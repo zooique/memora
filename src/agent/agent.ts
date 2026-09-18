@@ -189,7 +189,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       allowedPaths: opts.allowedPaths ?? [],
       confirmWrites: opts.confirmWrites ?? false,
       confirmScripts: opts.confirmScripts ?? false,
-      vectorStore: opts.vectorStore,
       storage: opts.storage,
       sessionStore: opts.sessionStore,
       roundStore: opts.roundStore,
@@ -366,8 +365,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         this.#config.storage,
         // 忙碌检查：chatLock busy = 对话/长任务进行中，跳过本次 GC
         () => this.internals.chatLockManager?.isBusy ?? false,
-        // 摘要 purge 时同步删向量索引
-        this.#config.vectorStore ?? undefined,
       );
       this.internals.gcService.startPeriodic(AGENT_CONSTANTS.GC_INTERVAL_MS);
     }
@@ -1188,7 +1185,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: this.#config.fetchProvider,
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
-      vectorStore: this.#config.vectorStore,
       existingSkillManager: this.skillManager,
       // 宿主装配级策略覆盖（能力边界）：透传组装器 → ContextPreparer（策略解析唯一链）
       strategyOverride: this.#config.strategyOverride,

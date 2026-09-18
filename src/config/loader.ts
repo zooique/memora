@@ -78,18 +78,6 @@ interface SecurityConfig {
   confirmWrites: boolean;
 }
 
-/**
- * Embedding 配置（复用 OpenAI 兼容 /embeddings 端点；不配置时降级为纯关键词召回）
- */
-interface EmbeddingConfig {
-  /** Embedding 模型名称 */
-  model: string;
-  /** API 基础 URL（可选） */
-  baseUrl?: string;
-  /** API 密钥（可选，从环境变量读取） */
-  apiKey?: string;
-}
-
 /** 完整配置接口 */
 export interface Config {
   /** LLM 配置 */
@@ -100,8 +88,6 @@ export interface Config {
   security: SecurityConfig;
   /** 允许的路径白名单（绝对路径） */
   allowedPaths: string[];
-  /** Embedding 配置（可选） */
-  embedding?: EmbeddingConfig;
 }
 
 // 单一真理源：所有默认值只由 DEFAULT_CONFIG 声明，parseConfig({}) 即得完整默认配置。
@@ -161,14 +147,11 @@ export function parseConfig(raw: unknown): Config {
 
   const allowedPaths = validateAllowedPaths(input.allowedPaths);
 
-  const embedding = parseEmbedding(input.embedding);
-
   return {
     llm,
     memory,
     security,
     allowedPaths,
-    embedding,
   };
 }
 
@@ -376,25 +359,6 @@ function parseTaskRouter(value: unknown): Partial<Record<string, string>> | unde
   }
 
   return Object.keys(router).length > 0 ? router : undefined;
-}
-
-/**
- * 解析 Embedding 配置
- */
-function parseEmbedding(value: unknown): EmbeddingConfig | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const emb = value as Record<string, unknown>;
-
-  const embModel = assertString(emb.model, 'embedding.model');
-
-  return {
-    model: embModel,
-    baseUrl: typeof emb.baseUrl === 'string' ? emb.baseUrl : undefined,
-    apiKey: typeof emb.apiKey === 'string' ? emb.apiKey : undefined,
-  };
 }
 
 /**

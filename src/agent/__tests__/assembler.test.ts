@@ -567,27 +567,13 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(out.toolExec.planManager!.getPlan()).toEqual([]);
   });
 
-  it('vectorStore 注入时 memoryInspector 启用混合搜索（setVectorStore 分支）', async () => {
-    // 注入 mock vectorStore → assembler 走 setVectorStore 分支
-    const vectorStore = { search: vi.fn(), upsert: vi.fn(), delete: vi.fn(), close: vi.fn() } as never;
-    const out = await assembleWithHooks();
-    const withStore = await assembleComponents(
-      createPctx(),
-      createInput({ vectorStore }),
-    );
-    expect(withStore.memoryInspector).toBeDefined();
-    expect(out.loop).toBeDefined();
-  });
-
-  it('tracer + vectorStore 注入时 contextPreparer 走非空容量来源分支', async () => {
-    const vectorStore = { search: vi.fn(), upsert: vi.fn(), delete: vi.fn(), close: vi.fn() } as never;
+  it('tracer 注入时 contextPreparer 走非空容量来源分支', async () => {
     const tracer = {
       startSpan: vi.fn().mockReturnValue({ setAttribute: vi.fn(), end: vi.fn(), recordException: vi.fn() }),
     } as never;
     const out = await assembleComponents(
       createPctx(),
       createInput({
-        vectorStore,
         tracer: tracer as never,
       }),
     );

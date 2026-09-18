@@ -191,13 +191,6 @@ export { IGNORED_DIR_NAMES } from '@/agent/builtinToolHandlers.js';
 export { ProjectRegistry } from '@/memory/projectRegistry.js';
 export type { ProjectEntry } from '@/memory/projectRegistry.js';
 export { LockManager } from '@/memory/lockManager.js';
-// 向量存储：宿主注入 EmbeddingService 创建 JsonVectorStore 启用语义搜索，或实现 IVectorStore 注入自定义向量库
-export { JsonVectorStore } from '@/memory/vectorStore.js';
-export type { IVectorStore, EmbeddingService } from '@/memory/vectorStore.js';
-// Embedding Provider：OpenAI 兼容 /embeddings 端点实现（满足 EmbeddingService 接口）
-export { EmbeddingProvider } from '@/llm/embedding.js';
-export type { EmbeddingConfig, EmbeddingResult } from '@/llm/embedding.js';
-export type { EmbeddingOptions } from '@/llm/embedding.js';
 // 会话存储抽象：宿主项目可实现 ISessionStore 接口注入 Agent
 export type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），宿主从内核取，避免重复实现

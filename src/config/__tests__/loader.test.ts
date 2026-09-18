@@ -453,57 +453,6 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
     });
   });
 
-  describe('embedding 配置', () => {
-    it('配置 embedding 时应正确解析', async () => {
-      const configPath = writeConfigFile({
-        embedding: { model: 'text-embedding-3-small', apiKey: 'sk-emb' },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.embedding).toBeDefined();
-      expect(config.embedding!.model).toBe('text-embedding-3-small');
-    });
-
-    it('不配置 embedding 时应为 undefined（降级为关键词召回）', async () => {
-      const configPath = writeConfigFile();
-
-      const config = await loadConfig(configPath);
-
-      expect(config.embedding).toBeUndefined();
-    });
-
-    // embedding 通道环境变量展开（与 background 同类）
-    it('embedding.apiKey 为 ${ENV} 格式时应展开', async () => {
-      const configPath = writeConfigFile({
-        embedding: { model: 'text-embedding-3-small', apiKey: '${MEMORA_EMB_API_KEY}' },
-      });
-      process.env.MEMORA_EMB_API_KEY = 'env-emb-key';
-      try {
-        const config = await loadConfig(configPath);
-        expect(config.embedding!.apiKey).toBe('env-emb-key');
-      } finally {
-        delete process.env.MEMORA_EMB_API_KEY;
-      }
-    });
-
-    it('embedding.baseUrl 为 ${ENV} 格式时应展开', async () => {
-      const configPath = writeConfigFile({
-        embedding: {
-          model: 'text-embedding-3-small',
-          baseUrl: '${MEMORA_EMB_BASE_URL}',
-        },
-      });
-      process.env.MEMORA_EMB_BASE_URL = 'https://emb.api.custom.com/v1';
-      try {
-        const config = await loadConfig(configPath);
-        expect(config.embedding!.baseUrl).toBe('https://emb.api.custom.com/v1');
-      } finally {
-        delete process.env.MEMORA_EMB_BASE_URL;
-      }
-    });
-  });
-
   describe('schema 校验', () => {
     it('providers 内 temperature=0 应通过（边界值）', async () => {
       const configPath = writeConfigFile({
@@ -765,14 +714,8 @@ describe('config/loader · 错误路径覆盖', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('background.provider');
   });
 
-  // ── #6: embedding 缺 model 字段 ─────────────────────────────
-
-  it('embedding 缺 model 字段时应抛 configError', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      embedding: { apiKey: 'sk-emb' }, // 缺 model 字段
-    }));
-    await expect(loadConfig(configPath)).rejects.toThrow('embedding.model');
-  });
+  // ── #6（B0 收编后空位保留）─────────────────────────────
+  // 原 #6 为 embedding 缺 model 校验，已随 embedding 段整体移除（2026-09-18 B0 收编），编号不再回填。
 
   // ── #7: allowedPaths 含非字符串元素 ─────────────────────────
 

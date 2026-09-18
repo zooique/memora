@@ -387,7 +387,6 @@ export interface AskQuestion {
 // ─── Agent 门面类型 ─────────────────────────────────────
 
 import type { LlmProvider } from '@/llm/provider.js';
-import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import type { IRoundStore } from '@/memory/roundStore.js';
@@ -515,8 +514,6 @@ export interface AgentOptions {
   confirmWrites?: boolean;
   /** 脚本/代码执行确认（独立于写入确认；true 时 run_code/run_project_script 执行前弹窗，默认 false 不弹窗） */
   confirmScripts?: boolean;
-  /** 向量存储（可选，提供时启用语义召回；宿主可注入任意实现） */
-  vectorStore?: IVectorStore;
   /** 外部注入的存储实例（不传则内部创建 InMemoryStorage） */
   storage?: IMemoryStorage;
   /** 外部注入的会话存储（round-based 唯一模式；未注入则消息仅内存保存） */

@@ -486,16 +486,18 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'search_memories',
     description:
-      '语义+关键词混合检索记忆库。涉及过往决定、历史事实、用户偏好、项目背景，或回答' +
-      '不确定时，优先调用本工具按需召回（理解意图 → 搜记忆，结构性前置）。命中返回该记忆的' +
-      '语义相似度 sim 与最近使用时间 accessedAt（被想起/命中即刷新，反映近期使用的工作连续性）。' +
-      '优先级判据：语义贴合度为主；多个候选贴合度相近时，accessedAt 较新者优先（勿让时间压倒语义贴合度）。' +
+      '关键词检索记忆库（纯关键词通道，2026-09-18 B0 收编：语义向量通道已移除）。涉及过往决定、历史事实、' +
+      '用户偏好、项目背景，或回答不确定时，优先调用本工具按需召回（理解意图 → 搜记忆，结构性前置）。' +
+      '命中返回该记忆的最近使用时间 accessedAt（被想起/命中即刷新，反映近期使用的工作连续性）。' +
+      '关键词=字面匹配：语义近义/换说法（如「性能优化」vs「QPS 提升」）不会命中——首次未命中时主动' +
+      '换等价关键词、换表述重试 2~3 次（LLM 承担词汇桥梁，勿因一次空结果就断言记忆不存在）。' +
+      '优先级判据：命中贴合度为主；多个候选贴合度相近时，accessedAt 较新者优先（勿让时间压倒贴合度）。' +
       '先粗筛返回的预览候选，对真正相关的条目再调 trace_summary 精取原文，避免一次拉取过多内容。',
     readonly: true,
     parameters: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: '搜索关键词或语义描述' },
+        query: { type: 'string', description: '搜索关键词（字面匹配；未命中建议换词重试）' },
         limit: { type: 'string', description: '返回结果数量上限，默认 "5"' },
         mode: { type: 'string', description: '"match"（默认，任一）或 "near"（必须全部）' },
       },

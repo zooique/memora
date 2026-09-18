@@ -3,11 +3,11 @@
  *
  * MemoryInspector 负责记忆的查询 + 写入操作，写方法以 writeXxx 前缀命名。
  * 本测试覆盖 MemoryInspector 全部公开方法：
- *   - constructor + setVectorStore：依赖注入
+ *   - constructor：依赖注入
  *   - 只读查询：getById / getDeletedById / listDeleted / getBySource / list
  *   - snapshot：3 层快照（工作记忆 + Bootstrap + 归档）
  *   - search：关键词搜索（空 query 抛错 + limit 校验 + 内容截断）
- *   - searchHybrid：混合搜索（语义 + 关键词双通道 + 降级）
+ *   - searchHybrid：纯关键词搜索（语义通道已随 B0 收编移除，2026-09-18）
  *   - stats：记忆库统计
  *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *
@@ -17,13 +17,11 @@
  * Mock 策略：
  *   - InMemoryStorage 用真实实现（测试夹具，已被 store.test.ts 验证）
  *   - loop / history 用 Partial<T> as T 单层断言（仅实现被测方法）
- *   - VectorStore 用 mock 对象（search 返回固定结果）
  *   - 写操作测试通过 writeXxx 写入后用只读方法读取验证（读写同源）
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-import type { IVectorStore } from '@/memory/vectorStore.js';
 import type { Memory } from '@/memory/types.js';
 import type { Message } from '@/llm/provider.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -76,22 +74,6 @@ function createMockHistory(
   } as unknown as MessageHistory;
 }
 
-/**
- * 创建 Mock VectorStore
- *
- * @param searchResults - search 方法返回的固定结果
- * @param size - 向量存储大小（0 时跳过语义搜索）
- */
-function createMockVectorStore(
-  searchResults: Array<{ id: string; similarity: number }> = [],
-  size = 10,
-): IVectorStore {
-  return {
-    size,
-    search: vi.fn().mockResolvedValue(searchResults),
-  } as unknown as IVectorStore;
-}
-
 describe('MemoryInspector', () => {
   let storage: InMemoryStorage;
   let loop: AgentLoop;
@@ -107,10 +89,10 @@ describe('MemoryInspector', () => {
   });
 
   // ════════════════════════════════════════════════════════
-  // 1. constructor + setVectorStore（3 测试）
+  // 1. constructor 依赖注入
   // ════════════════════════════════════════════════════════
 
-  describe('constructor + setVectorStore', () => {
+  describe('constructor 依赖注入', () => {
     it('应正确接收 3 个必选依赖（index/loop/history）', () => {
       // 通过 snapshot() 间接验证依赖已存储
       const snap = inspector.snapshot();
@@ -118,15 +100,6 @@ describe('MemoryInspector', () => {
       expect(snap.working).toBeDefined();
       expect(snap.bootstrap).toBeDefined();
       expect(snap.archive).toBeDefined();
-    });
-
-    it('setVectorStore 应注入向量存储（searchHybrid 启用语义通道）', () => {
-      const vs = createMockVectorStore();
-      inspector.setVectorStore(vs);
-      // 注入后 searchHybrid 应调用 vectorStore.search（通过 spy 验证）
-      storage.upsert(createMemory({ id: 'content:test', name: 'test' }));
-      inspector.searchHybrid('query');
-      expect(vs.search).toHaveBeenCalled();
     });
   });
 
@@ -301,90 +274,47 @@ describe('MemoryInspector', () => {
       await expect(inspector.searchHybrid('query', 0)).rejects.toThrow('无效 limit');
     });
 
-    it('vectorStore 未注入时：纯关键词搜索', async () => {
+    it('纯关键词搜索（B0 收编：无向量通道）', async () => {
       storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword test' }));
       const hits = await inspector.searchHybrid('keyword');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('k1');
-      // 纯关键词时 similarity 为 0
+      // 纯关键词时 similarity 恒 0
       expect(hits[0]!.similarity).toBe(0);
     });
 
-    it('vectorStore size=0 时：跳过语义搜索（纯关键词）', async () => {
-      const vs = createMockVectorStore([], 0);
-      inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword' }));
-      const hits = await inspector.searchHybrid('keyword');
-      expect(hits).toHaveLength(1);
-      // size=0 不调用 vectorStore.search
-      expect(vs.search).not.toHaveBeenCalled();
+    it('语义近义词不命中（字面匹配；LLM 须换词重试）', async () => {
+      storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: '性能优化方案' }));
+      // 「提速」与「性能优化」语义近义但字面不匹配 → 纯关键词 0 命中
+      const hits = await inspector.searchHybrid('提速');
+      expect(hits).toHaveLength(0);
+      // 换词（用记忆里的字面词）→ 命中
+      const retry = await inspector.searchHybrid('性能优化');
+      expect(retry).toHaveLength(1);
     });
 
-    it('vectorStore 正常时：语义 + 关键词合并去重', async () => {
-      // 语义搜索返回 content:vec，关键词搜索返回 content:kw
-      const vs = createMockVectorStore([{ id: 'content:vec', similarity: 0.8 }]);
-      inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'content:vec', source: 'content', name: 'vec', content: 'shared' }));
-      storage.upsert(createMemory({ id: 'content:kw', source: 'content', name: 'kw', content: 'shared' }));
-      const hits = await inspector.searchHybrid('shared');
-      expect(hits).toHaveLength(2);
-      // 两条都应返回（语义 + 关键词各贡献一条）
-      const names = hits.map((h) => h.name);
-      expect(names).toContain('vec');
-      expect(names).toContain('kw');
-    });
-
-    it('vectorStore 抛错时：降级到纯关键词（logger.debug 记录）', async () => {
-      const vs = createMockVectorStore();
-      vs.search = vi.fn().mockRejectedValue(new Error('vector error'));
-      inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword' }));
-      const hits = await inspector.searchHybrid('keyword');
-      // 降级后仍返回关键词结果
-      expect(hits).toHaveLength(1);
-      expect(hits[0]!.name).toBe('k1');
-    });
-
-    it('综合排序：单 vectorScore 降序（score 已物理退役）', async () => {
-      // vec 向量命中（vectorScore=0.9）；kw 仅关键词命中（vectorScore=0）
-      const vs = createMockVectorStore([{ id: 'content:vec', similarity: 0.9 }]);
-      inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'content:vec', source: 'content', name: 'vec', content: 'shared' }));
-      storage.upsert(createMemory({ id: 'content:kw', source: 'content', name: 'kw', content: 'shared' }));
-      const hits = await inspector.searchHybrid('shared');
-      // vec vectorScore=0.9 > kw vectorScore=0，vec 应排第一
-      expect(hits[0]!.name).toBe('vec');
-      expect(hits[1]!.name).toBe('kw');
-    });
-
-    it('返回结果含 similarity 字段 + 长内容截断', async () => {
+    it('返回结果含 similarity 字段（恒 0）+ 长内容截断', async () => {
       const longContent = 'C'.repeat(150);
-      const vs = createMockVectorStore([{ id: 'content:long', similarity: 0.7 }]);
-      inspector.setVectorStore(vs);
       storage.upsert(createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }));
       const hits = await inspector.searchHybrid('C');
       expect(hits).toHaveLength(1);
-      expect(hits[0]!.similarity).toBe(0.7);
+      expect(hits[0]!.similarity).toBe(0);
       // 长内容截断到 120 + '…'
       expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
     });
 
     it('superseded 过滤：被 supersededBy 取代的摘要不返回（§3.3 过滤行）', async () => {
-      // 旧摘要被新摘要取代 → 不出现；有效摘要正常返回
-      const vs = createMockVectorStore([{ id: 'round-summary:s:old', similarity: 0.9 }]);
-      inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'round-summary:s:old', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '旧摘要', supersededBy: 'round-summary:s:new' }));
-      storage.upsert(createMemory({ id: 'round-summary:s:new', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '新摘要', content: '最新内容' }));
-      const hits = await inspector.searchHybrid('新');
+      // 旧摘要被新摘要取代 → 不出现；有效摘要正常返回（关键词命中两者，过滤后仅剩新）
+      storage.upsert(createMemory({ id: 'round-summary:s:old', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '旧摘要', supersededBy: 'round-summary:s:new', content: '共享内容' }));
+      storage.upsert(createMemory({ id: 'round-summary:s:new', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '新摘要', content: '共享内容' }));
+      const hits = await inspector.searchHybrid('共享内容');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('新摘要');
     });
 
     it('命中揭示 accessedAt + 溯源 sessionId/roundId（§3.3 返回行，round-summary 直通 trace_summary）', async () => {
-      const vs = createMockVectorStore([{ id: 'round-summary:2026-08-28-main:r1', similarity: 0.8 }]);
-      inspector.setVectorStore(vs);
       storage.upsert(createMemory({ id: 'round-summary:2026-08-28-main:r1', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r1', name: '摘要1', content: '决策内容', accessedAt: '2026-09-01T00:00:00Z' }));
-      const hits = await inspector.searchHybrid('决策');
+      const hits = await inspector.searchHybrid('决策内容');
       expect(hits[0]!.accessedAt).toBe('2026-09-01T00:00:00Z');
       // 溯源字段 = trace_summary 参数直通（sessionName 即 sessionId）
       expect(hits[0]!.sessionId).toBe('2026-08-28-main');
@@ -392,16 +322,11 @@ describe('MemoryInspector', () => {
     });
 
     it('excludeRoundIds：排除已载入正文轮次的 round-summary（§5.1 工具召回与装配期正文互斥）', async () => {
-      // 两条 round-summary 均语义命中；exclude r1 → 仅返回 r2（不补位凑满）
-      const vs = createMockVectorStore([
-        { id: 'round-summary:s:r1', similarity: 0.9 },
-        { id: 'round-summary:s:r2', similarity: 0.85 },
-      ]);
-      inspector.setVectorStore(vs);
-      storage.upsert(createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '摘要1', content: '内容一' }));
-      storage.upsert(createMemory({ id: 'round-summary:s:r2', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '摘要2', content: '内容二' }));
+      // 两条 round-summary 均关键词命中；exclude r1 → 仅返回 r2（不补位凑满）
+      storage.upsert(createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '摘要1', content: '共同内容' }));
+      storage.upsert(createMemory({ id: 'round-summary:s:r2', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '摘要2', content: '共同内容' }));
 
-      const hits = await inspector.searchHybrid('查询', 10, new Set(['r1']));
+      const hits = await inspector.searchHybrid('共同内容', 10, new Set(['r1']));
 
       expect(hits.map((h) => h.roundId)).toEqual(['r2']);
     });
@@ -516,41 +441,7 @@ describe('MemoryInspector', () => {
       expect(inspector.getDeletedById('rule:2')).toBeNull();
     });
 
-    it('writePurgeExpired 应同步清理过期记忆的向量（防孤儿向量被召回）', () => {
-      const mem1 = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
-      const mem2 = createMemory({ id: 'rule:2', source: 'rule', name: 'r2' });
-      inspector.writeUpsert(mem1);
-      inspector.writeUpsert(mem2);
-      inspector.writeDelete('rule:1');
-      inspector.writeDelete('rule:2');
-
-      // 注入 vectorStore，delete 为 vi.fn（跟踪调用，语义上等同 JsonVectorStore.delete 的同步内存删除）
-      const del = vi.fn().mockResolvedValue(undefined);
-      inspector.setVectorStore({ size: 2, search: vi.fn(), delete: del } as unknown as IVectorStore);
-
-      const before = new Date(Date.now() + 1000);
-      const purgedCount = inspector.writePurgeExpired(before);
-      expect(purgedCount).toBe(2);
-      // 向量同步清理：两个过期记忆的向量均被删除
-      expect(del).toHaveBeenCalledTimes(2);
-      expect(del).toHaveBeenCalledWith('rule:1');
-      expect(del).toHaveBeenCalledWith('rule:2');
-    });
-
-    it('writePurge 应同步清理向量（手动 purge 不产生孤儿向量）', () => {
-      const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
-      inspector.writeUpsert(mem);
-
-      const del = vi.fn().mockResolvedValue(undefined);
-      inspector.setVectorStore({ size: 1, search: vi.fn(), delete: del } as unknown as IVectorStore);
-
-      inspector.writePurge('rule:1');
-      // 手动 purge 也同步清理向量
-      expect(del).toHaveBeenCalledTimes(1);
-      expect(del).toHaveBeenCalledWith('rule:1');
-    });
-
-    it('writePurgeExpired 在 vectorStore 未注入时应正常清理记忆（降级）', () => {
+    it('writePurgeExpired 在无向量通道时应正常清理记忆（B0 收编后常态）', () => {
       const mem = createMemory({ id: 'rule:1', source: 'rule', name: 'r1' });
       inspector.writeUpsert(mem);
       inspector.writeDelete('rule:1');

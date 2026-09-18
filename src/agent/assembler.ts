@@ -197,7 +197,6 @@ type AssembleRuntimeParams = Pick<
   | 'fetchProvider'
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
-  | 'vectorStore'
   | 'strategyOverride'
 >;
 
@@ -642,7 +641,6 @@ export async function assembleComponents(
     enableContextSummary,
     existingSkillManager,
     locale,
-    vectorStore,
   } = input;
   const hooks = input.hooks;
 
@@ -872,12 +870,8 @@ export async function assembleComponents(
   roundSummaryGenerator.setOnMemoryAdded((info) => {
     hooks?.emit(AGENT_EVENTS.memoryAdded, info);
   });
-  // 注入 VectorStore 到 MemoryInspector，启用混合搜索
-  if (vectorStore) {
-    memoryInspector.setVectorStore(vectorStore);
-  }
-  // 接线 search_memories 语义后端：toolExec 先于 memoryInspector 构造，故此处后注入；
-  // 注入后 search_memories 走 searchHybrid（语义+关键词+superseded 过滤+accessedAt/溯源揭示，§3.3）
+  // 接线 search_memories 后端：toolExec 先于 memoryInspector 构造，故此处后注入；
+  // 注入后 search_memories 走 searchHybrid（关键词+superseded 过滤+accessedAt/溯源揭示，§3.3；语义通道已随 B0 收编）
   toolExec.setMemoryInspector(memoryInspector);
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
   // 「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发 memoryRecalled。
@@ -897,7 +891,6 @@ export async function assembleComponents(
     config: {
       // 组装器可选字段（undefined）收窄为 deps 的显式 null（关闭语义）
       tracer: tracer ?? null,
-      vectorStore: vectorStore ?? null,
       messages,
       // 上下文预算装配的容量来源（动态轮数派生基准）
       maxContextTokens,
