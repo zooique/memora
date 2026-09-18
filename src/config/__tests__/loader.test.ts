@@ -1,7 +1,7 @@
 /**
  * 配置加载器单元测试
  *
- * 覆盖 loadConfig / expandEnvVars / mergeWithDefaults
+ * 覆盖 loadConfig / expandEnvVars（默认值合并走 parseConfig）
  * 未覆盖分支：expandEnvVars 空值分支、默认配置降级
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';

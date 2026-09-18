@@ -316,19 +316,20 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
  * 加载配置。
  * 单一真理源：所有默认值由 DEFAULT_CONFIG 声明，不维护独立 schema。
  * 查找顺序：显式 configPath → 项目级 .memora/config.json → 内置默认值（apply env 展开）。
+ * 默认值合并走 parseConfig（不 spread DEFAULT_CONFIG，避免覆盖 schema 默认）。
  */
 export async function loadConfig(configPath?: string): Promise<Config> {
   // 1. 显式指定
   if (configPath) {
     const config = await readJsonFile(configPath);
-    return expandEnvVars(mergeWithDefaults(config));
+    return expandEnvVars(parseConfig(config));
   }
 
   // 2. 项目级
   const projectPath = resolve(process.cwd(), '.memora/config.json');
   try {
     const config = await readJsonFile(projectPath);
-    return expandEnvVars(mergeWithDefaults(config));
+    return expandEnvVars(parseConfig(config));
   } catch (err) {
     // 项目级不可用（不存在/损坏/权限）时用默认值；排除 ENOENT（正常），其他错误暴露根因
     if (!isEnoent(err)) {
@@ -362,13 +363,5 @@ async function readJsonFile(path: string): Promise<unknown> {
  */
 function isEnoent(err: unknown): boolean {
   return err instanceof Object && 'code' in err && (err as Record<string, unknown>).code === 'ENOENT';
-}
-
-/**
- * 合并用户配置与默认值：直接 parseConfig(userConfig) 让默认值填充缺失字段，
- * 不 spread DEFAULT_CONFIG（避免覆盖 schema 默认）
- */
-function mergeWithDefaults(userConfig: unknown): Config {
-  return parseConfig(userConfig);
 }
 
