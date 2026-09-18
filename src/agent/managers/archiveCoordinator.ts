@@ -22,8 +22,6 @@ export interface ArchiveCoordinatorOptions {
   readonly getArchiveMode: () => ArchiveMode;
   /** 事件发射回调（Agent 注入 this.emit） */
   readonly emit: EmitCallback;
-  /** 会话归档模式：auto=自动（默认）/ manual=仅手动；未注入回退 getArchiveMode */
-  readonly getSessionArchiveMode?: () => 'auto' | 'manual';
 }
 
 /**
@@ -33,23 +31,25 @@ export interface ArchiveCoordinatorOptions {
 export interface ArchiveTriggerOptions {
   /** 系统自动触发（默认 false=手动触发，不受模式限制） */
   autoTriggered?: boolean;
-  /** 是否含工作上下文（plan 快照），仅当前活会话有效，便于恢复时了解任务进度 */
-  includeWorkContext?: boolean;
-  /** 工作上下文 plan 快照（调用方从 getCheckpoint().plan 提取传入，includeWorkContext 时必填） */
-  workContextPlan?: Array<{ order: number; description: string; status: string }>;
 }
 
 export class ArchiveCoordinator {
   private readonly getSessionArchiver: () => SessionArchiver | null;
   private readonly getArchiveMode: () => ArchiveMode;
   private readonly emit: EmitCallback;
-  private readonly getSessionArchiveMode?: () => 'auto' | 'manual';
 
   constructor(opts: ArchiveCoordinatorOptions) {
     this.getSessionArchiver = opts.getSessionArchiver;
     this.getArchiveMode = opts.getArchiveMode;
     this.emit = opts.emit;
-    this.getSessionArchiveMode = opts.getSessionArchiveMode;
+  }
+
+  /**
+   * 派生会话归档自动触发允许性（archiveMode → 是否自动归档的唯一显式映射）：
+   * ArchiveMode 'full' → 自动触发允许；'manual' → 仅手动。轮次摘要不受本映射影响（无模式开关，总是生成）。
+   */
+  private resolveAutoArchiveAllowed(): boolean {
+    return this.getArchiveMode() === 'full';
   }
 
   /**
@@ -62,11 +62,10 @@ export class ArchiveCoordinator {
     session: string,
     options?: ArchiveTriggerOptions,
   ): Promise<SessionArchiveResult> {
-    // manual 且自动触发 → 跳过（优先于 archiveMode）
-    const archiveMode = this.getSessionArchiveMode?.() ?? (this.getArchiveMode() === 'full' ? 'auto' : 'manual');
-    if (options?.autoTriggered && archiveMode === 'manual') {
+    // 手动触发无条件执行；自动触发受 resolveAutoArchiveAllowed 门控
+    if (options?.autoTriggered && !this.resolveAutoArchiveAllowed()) {
       logger.debug(
-        { mode: archiveMode, stage: 'session' },
+        { mode: this.getArchiveMode(), stage: 'session' },
         'sessionArchive=manual 跳过自动会话归档',
       );
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
@@ -76,7 +75,7 @@ export class ArchiveCoordinator {
       return { updatedFields: [], sessionLabel: `${date}-${session}`, messageCount: 0 };
     }
     try {
-      const result = await sessionArchiver.archiveSession(date, session, options);
+      const result = await sessionArchiver.archiveSession(date, session);
       return result;
     } catch (err) {
       this.handleArchiveError('session', err);

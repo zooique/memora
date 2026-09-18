@@ -99,7 +99,7 @@ describe('ArchiveCoordinator', () => {
       const result = await coordinator.archiveSession('2026-07-04', 'session-1');
 
       expect(result).toBe(archiveResult);
-      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 'session-1', undefined);
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 'session-1');
     });
 
     it('SessionArchiver 返回空 updatedFields 时不应发射事件', async () => {
@@ -209,7 +209,7 @@ describe('ArchiveCoordinator', () => {
       const result = await coordinator.archiveSession('2026-07-04', 's-1', { autoTriggered: true });
 
       expect(result.updatedFields).toHaveLength(1);
-      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1', { autoTriggered: true });
+      expect(sessionArchiver.archiveSession).toHaveBeenCalledWith('2026-07-04', 's-1');
     });
 
     it('autoTriggered + manual 模式 → 跳过', async () => {

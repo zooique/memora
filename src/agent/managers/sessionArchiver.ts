@@ -10,14 +10,6 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { ISessionStore, SessionMessage } from '@/memory/sessionStore.js';
 import { accumulateStream } from '@/agent/managers/streamAccumulator.js';
 
-/** 归档选项（归档时包含工作上下文） */
-export interface SessionArchiveOptions {
-  /** 是否包含工作上下文（plan 快照），true 时归档追加 plan 步骤列表，使元数据含工作进度信息 */
-  includeWorkContext?: boolean;
-  /** 工作上下文 plan 快照（调用方从 SessionManager.getCheckpoint().plan 提取；includeWorkContext 时必填） */
-  workContextPlan?: Array<{ order: number; description: string; status: string }>;
-}
-
 /** 会话归档结果 */
 export interface SessionArchiveResult {
   /** 更新的元数据字段（keyTopics / summary / autoName 等） */
@@ -73,7 +65,6 @@ export class SessionArchiver {
   async archiveSession(
     date: string,
     session: string,
-    options?: SessionArchiveOptions,
   ): Promise<SessionArchiveResult> {
     const sessionLabel = `${date}-${session}`;
     const emptyResult: SessionArchiveResult = {
@@ -95,7 +86,7 @@ export class SessionArchiver {
     }
 
     // LLM 异常向上抛出，由 ArchiveCoordinator 统一 catch
-    const meta = await this.generateSessionMeta(messages, sessionLabel, options);
+    const meta = await this.generateSessionMeta(messages);
     if (!meta) {
       logger.debug({ sessionLabel }, 'SessionArchiver: LLM 判断无摘要价值');
       return { ...emptyResult, messageCount: messages.length };
@@ -141,8 +132,6 @@ export class SessionArchiver {
    */
   private async generateSessionMeta(
     messages: SessionMessage[],
-    _sessionLabel: string,
-    _options?: SessionArchiveOptions,
   ): Promise<{
     summary: string;
     keyTopics: string[];

@@ -1015,8 +1015,9 @@ export class BuiltinToolHandlers {
             .filter((h) => !(h.roundId && excludedRoundIds.has(h.roundId))),
     );
 
-    // near 模式（仅关键词后端）：过滤只保留所有关键词都命中的结果
-    if (!this.memoryInspector && modeStr === 'near' && hits.length > 0) {
+    // near 模式（"must all keywords" 严格过滤）：不论后端（searchHybrid 或 memoryIndex）
+    // 一律在候选结果上做「所有关键词都命中」后置过滤，保证 mode 参数语义恒生效。
+    if (modeStr === 'near' && hits.length > 0) {
       const keywords = segmentLower(query);
       if (keywords.length > 1) {
         const filtered = hits.filter((m) => {
@@ -1029,7 +1030,7 @@ export class BuiltinToolHandlers {
     }
 
     if (hits.length === 0) {
-      return `（未找到匹配 "${query}" 的记忆${!this.memoryInspector && modeStr === 'near' ? '（near 模式：所有关键词必须命中）' : ''}）`;
+      return `（未找到匹配 "${query}" 的记忆${modeStr === 'near' ? '（near 模式：所有关键词必须命中）' : ''}）`;
     }
 
     // 命中即 touch（§3.4/§3.3「命中 touch」行）：fire-and-forget 刷新 accessedAt（backgroundTask + touchScores）。
