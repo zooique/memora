@@ -131,24 +131,22 @@ postProcess → 使用 round-5 生成摘要
 
 > **恒定规则**：**「摘要 ↔ 外部输入 恒 1:1」——一次外部输入恰好产出一条 round-summary。**
 >
-> **构成**：loop 内部的 tool/反思 step 不是 turn（见 §2.4），不单独摘要；多 turn 任务编排的内部子 turn（规划/步）虽各占 `roundId`（用于消息溯源/互斥排除），**同样不单独摘要**——内部子 turn 是否拆分为独立 roundId 只影响溯源粒度，不影响摘要数量。
+> **构成**：loop 内部的 tool/反思 step 不是 turn（见 §2.4），不单独摘要；多 turn 任务编排（档2）已废弃（2026-09-04），复杂任务收敛为**单 turn 内 step 循环**（task_table 动态规划）——无内部子 turn，摘要数量恒等于外部输入数。
 
-- **来源**（「简单直接」与「多 turn 任务编排收尾汇报」是同一规则的两种取值，都指向"答完/收尾那轮"）：
-  - 直接回答（简单）= 答完那轮即答案 → 提炼该答案；
-  - 多 turn 任务编排·复杂收敛 = 收尾汇报 turn → 提炼汇报（阶段 2+3 `reflect.runReported` 以汇报文本为单源）。
+- **来源**：一次外部输入 → 一个 turn → 答完即提炼该轮答案（复杂任务亦为单 turn step 循环，答完=收敛，无"收尾汇报 turn"）。
 - **触发时刻**：turn「答完/收尾」即触发（非 tool step、非暂停边界）。对话 `wait` 态（答完等用户）同样答完即摘要——"结束指令"非此处触发条件。
 - **硬中止（abort / 用户取消）**：不打完 → **不摘要**（残缺半成品不入记忆）；但已产出内容以 `[已中断]` 标记写进对话历史（保真留存，供 `traceSummary` 回溯）。历史保细节、记忆不收纳残缺，两者分离。
 - **软暂停（requestPause，可续跑）**：暂停时**不立即摘要**；若后续续跑并真正答完 → 该轮**仍会**摘要。
 
-> 该定案已由 `seed/orchestrator.ts` 落地：普通回答 → `reflect.run(input, 答完内容)`；复杂且收敛的多 turn 任务编排 → 收尾 `reflect.runReported(汇报单源)`（规划/步子 turn 不单产摘要）；复杂但未收敛 → 以规划 turn 产出走普通单条摘要；`act` 返回 aborted → 不摘要。三者均保证一次外部输入恰产一条 round-summary（摘要 ↔ 外部输入 1:1）。
+> 该定案已由 `seed/orchestrator.ts` 落地：`runChat`/`runResume` 收尾经 `reflect(input, assistantContent)`（`orchestrator.ts` L248）生成 round-summary；`reflect.summary='off'` 或生成器不存在 → 不摘要（L265）。保证一次外部输入恰产一条 round-summary（摘要 ↔ 外部输入 1:1）。
 
 > **两级摘要防混淆（补充澄清）**：系统有**两轨摘要**，职责不同、互不顶替——
 > - **round-summary（记忆轨）**：跨会话沉淀，即本 §2.5 规则对象。一次外部输入恒 1:1，**决策点唯一**。
-> - **context summary（运行时轨）**：loop 内部 `_prepareContext`/compact 把溢出窗口的旧轮压成骨架注入，保证多轮内部一致性。**内部子 turn 的"摘要欲"归这一轨**，不产 round-summary、不入记忆库。
-> - **单一决策点**：「恒1:1」不违背「turn 一摘要」——把"外部输入"视为**最外层 turn**（Trigger=输入；Act=规划+步序列；Reflect=收尾汇报），收尾汇报 turn 即该最外层 turn 的 Reflect。故**摘要决策点唯一（最外层收尾）**，内部子 turn 复用 turn 机制但不设 round-summary 决策点。
+> - **context summary（运行时轨）**：loop 内部 `_prepareContext`/compact 把溢出窗口的旧轮压成骨架注入，保证多轮内部一致性。**旧轮压缩的"摘要欲"归这一轨**，不产 round-summary、不入记忆库。
+> - **单一决策点**：「恒1:1」不违背「turn 一摘要」——一次外部输入即一个 turn（Trigger=输入；Act=step 循环；Reflect=答完内容），Reflect 即该 turn 的摘要决策点。故**摘要决策点唯一（turn 收尾）**。
 > - **上下文注入自洽**：loop 多轮时，被挤出窗口的历史靠 context summary 骨架保留，**不依赖也不应依赖** round-summary 兜底（否则职责错位）；骨架对 code/diff/table 的保真由角色包 `summaryFocus` 承担。
-> - **无实质收尾仍恒 1:1**：收敛但汇报为空/仅 token 预算占位（无真实收尾）→ 回退以该外部输入的主答（阶段 2）/规划产出（阶段 3）走普通单条（`runReportAndReflect`，[orchestrator.ts](../../src/agent/seed/orchestrator.ts)），**不是 0 条**。
-> - **组合溯源（head id，已落地）**：多 turn 任务编排的 round-summary 挂在**组合 head id**（= `prepare` 分配、`appendUser` 的 roundId，即"这次外部输入"），而非最后一步——`externalTaskLoop` 收尾时把 roundId 回指 head，使汇报文本与 round-summary 与用户消息同 roundId（组合内溯源自洽）。步 turn 仍用独立 sub roundId（消息溯源/互斥排除），但收尾摘要锚定 head。
+> - **无实质收尾仍恒 1:1**：turn 答完即摘要；仅 `reflect.summary='off'` 或生成器缺失时跳过（`orchestrator.ts` L265）——跳过属显式关闭/降级，不产生额外摘要源。
+> - **组合溯源（head id，已随多 turn 编排废弃）**：多 turn 任务编排（档2）已删，无 head id / sub roundId 概念；round-summary 的 roundId 即该次外部输入的 turn roundId，消息溯源与摘要锚点天然同源。
 
 ---
 

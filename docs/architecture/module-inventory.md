@@ -273,9 +273,9 @@
 
 ***
 
-## 五、多 turn 任务编排生长 · 会话延续（L5）
+## 五、会话生命周期 · 会话延续（L5）
 
-> **生长来源**：turn 回答后的 Handoff='loop'（自动续跑）或任务链驱动，就长出多 turn 任务编排；turn 内 loop（对 step 编排）仍在 L0 `loop.ts` 内。本层是让 turn 能跨 turn 延续、跨会话切换的配套模块：会话生命周期、会话记录底座（检查点恢复随 2026-09-10 减法退役）。
+> **生长来源**：回答后的沉淀不止轮次摘要，还长出**会话级**生命周期配套：会话切换/分叉/恢复 + 会话记录底座（SessionMeta.summary/keyTopics）。多 turn 任务编排（档2）已废弃（2026-09-04）——复杂任务收敛在单 turn step 循环内承载；检查点恢复随 2026-09-10 减法退役。
 
 | 模块文件                                    | 状态     | 测试文件                                                                                         | 质量说明                                                                            |
 | --------------------------------------- | ------ | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
@@ -284,9 +284,7 @@
 
 > **生长说明**：
 >
-> * **档1 turn 本体在 L0**：`loop.ts` 的 `processUserInput` 即单 turn 最小复用单元，对话/多 turn 任务编排（步 turn）/续跑共用同一 turn；档2 多 turn 任务编排（turn 串联）在 seed/orchestrator（`externalTaskLoop`/`completeExternalTask`，[loop-design.md](./loop-design.md)）。
->
-> * **多 turn 任务编排语义化（已落地）**：复杂问题由任务链驱动多 turn + 收敛汇报 turn 已实现于 seed/orchestrator（difficulty 难度分级 + `externalTaskLoop` 步 turn 序列 + `runReport` 收尾汇报 turn → 汇报单源摘要），现状真理源见 [agent-design-philosophy.md](./agent-design-philosophy.md)，原文见 [task-driven-closed-loop.md](./task-driven-closed-loop.md) 头部索引（正文已随 2026-09-18 瘦身）。
+> * **单 turn 本体在 L0**：`loop.ts` 的 `processUserInput` 即单 turn 最小复用单元，对话/续跑共用同一 turn；复杂任务（task_table_write + 动态规划）在单 turn step 循环内承载（多 turn 任务编排档2 已废弃，2026-09-04，见 [loop-design.md](./loop-design.md)）。
 >
 > * **会话记录底座**：`sessionStore.ts` 物理位置在 `memory/`，由宿主实现 `ISessionStore`，承载对话记录——是记忆溯源（traceSummary）与会话延续的共用底座。
 >

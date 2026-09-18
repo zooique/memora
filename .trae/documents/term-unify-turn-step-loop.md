@@ -9,7 +9,7 @@
 1. **执行闭环 = 问答闭环 = turn**：现有文档把「执行闭环（最小单元）」和「问答闭环（容器）」区分为两层，实际是一次「用户输入 → 最终回答」就是最小单元，两者是同一实体（一个 roundId）。用户确认：**执行闭环就是问答闭环**。
 2. **迭代 / 内循环 = step**：`runIterationLoop` 内的每次 LLM 调用 + 可选工具执行，官方叫 **step**（一次 LLM 交互）。
 3. **loop = 对 step 的编排（Agent Loop）**：官方概念中 loop（Agent Loop）= 框架在 turn 内部反复执行多个 step（LLM 推理 → 工具 → 结果回填 → 再推理），即 memora 的 `runIterationLoop`。用户原以为「loop 也是执行闭环」——这是认识错位：执行闭环就是问答闭环（turn），loop 是 turn 内部的 step 编排，不是执行闭环本身。
-4. **externalTaskLoop = 多 turn 任务编排，不叫 loop**：复杂任务时对多个 turn 的编排（规划 turn → 步 turn 序列 → 收尾 turn）是**任务编排（task orchestration）**，与官方「loop = 对 step 的编排」不同义，不应占用 loop 一词。
+4. **多 turn 任务编排，不叫 loop（已废弃）**：复杂任务时对多个 turn 的编排（规划 turn → 步 turn 序列 → 收尾 turn）原称"任务编排（task orchestration）"，与官方「loop = 对 step 的编排」不同义，不应占用 loop 一词。**该编排层已废弃（2026-09-04）**，`externalTaskLoop`/`completeExternalTask` 等符号已删除，复杂任务收敛为单 turn step 循环。
 5. **气口在 step 之间，不是只有 turn 之间**：气口（提问暂停/插话/暂停续跑）发生在 step 之间；turn 边界（用户重新输入）是**新的问答闭环**，不是气口，不应混为一谈。
 
 **目标**：按官方命名统一 memora 的概念表述，纠正认识错位。**纯文档+注释层面的术语收敛，零代码逻辑变更，不改代码标识符。**
@@ -21,12 +21,12 @@
 | **turn（问答闭环）** | turn / 问答闭环 | `processUserInput`/`continueAfterPause` 一次完整执行（一个 roundId） | 执行闭环、单轮闭环、单轮执行闭环 |
 | **step** | step（一次 LLM 调用 + 可选工具执行） | `runIterationLoop` 内每次迭代 | 迭代、iteration、内循环 |
 | **loop（Agent Loop）** | loop = 对 step 的编排 | `runIterationLoop`（turn 回答中阶段） | 内循环、迭代循环 |
-| **多 turn 任务编排** | 任务编排（对多个 turn 的编排） | `externalTaskLoop`/`completeExternalTask` | Loop 编排、外循环 |
+| **多 turn 任务编排** | 任务编排（对多个 turn 的编排） | ~~`externalTaskLoop`/`completeExternalTask`~~（**已废弃，2026-09-04 代码已删**；复杂任务收敛为单 turn step 循环） | Loop 编排、外循环（历史别名） |
 | **气口** | 气口 = step 之间的暂停点 | 迭代边界暂停 | 闭环边界暂停点（旧称 Handoff 出口，2026-09-05 已废弃；保留脉络） |
 
 关键校正：
-- 「执行闭环 ⊂ Loop ⊂ 目标模式」三层 → **「turn（内部含 step 循环 loop）→ 多 turn 任务编排 → 目标模式」**。
-- **loop = 对 step 的编排**（turn 内部 Agent Loop）；**externalTaskLoop = 对多个 turn 的编排**（复杂任务任务编排），两者概念不同义，`externalTaskLoop` 不再称 Loop。
+- 「执行闭环 ⊂ Loop ⊂ 目标模式」三层 → **「turn（内部含 step 循环 loop）→ 多 turn 任务编排 → 目标模式」**（多 turn 编排层 2026-09-04 废弃，剩「turn → 目标模式」）。
+- **loop = 对 step 的编排**（turn 内部 Agent Loop）；**多 turn 任务编排 = 对多个 turn 的编排**（`externalTaskLoop` 等符号已随 2026-09-04 废弃删除，复杂任务收敛为单 turn step 循环），两者概念不同义，多 turn 编排不再称 Loop。
 - 气口定位：**step 之间**（提问/插话/暂停续跑）；turn 之间是新的问答闭环，非气口。
 
 ## 改动范围
@@ -55,7 +55,7 @@
 - `src/agent/loop.ts` 头注释（L1-11）：「执行闭环 act 引擎」→「turn（问答闭环）act 引擎」；runIterationLoop 说明为 step 循环。
 - `src/agent/seed/orchestrator.ts` 头注释（L1-20）：三层模型表述同步；「档1 执行闭环」→「turn」。
 - `src/agent/seed/types.ts` 头注释（L1-13）：「最小执行闭环」→「turn（问答闭环）」。
-- `src/agent/seed/difficulty.ts` 头注释（L1-14）：档1 单闭环 → 档1 单 turn。
+- ~~`src/agent/seed/difficulty.ts` 头注释（L1-14）：档1 单闭环 → 档1 单 turn。~~（`difficulty.ts` 已删除，2026-09-04 随多 turn 编排废弃，本条不再适用）
 - `src/agent/agent.ts` L145-150（seedOrchestrator 注释）：「最小执行闭环编排」→「turn 编排」。
 - `src/memory/roundStore.ts` L1-13（Round 头注释）：保持「问答闭环（Round）= turn」表述，与术语表一致。
 - `src/agent/types.ts` L36（执行闭环归属标记注释）、`src/agent/constants.ts`、`src/agent/budget.ts`、`src/agent/builtinTools.ts` 中「执行闭环」措辞 → 视上下文替换为「turn/问答闭环」或「该轮」。
@@ -67,7 +67,7 @@
 
 ## 不做的事
 
-- ❌ 不改任何代码标识符（`runIterationLoop`、`currentIteration`、`iteration`、`externalTaskLoop`、`AgentLoop`、`Round` 等保持原名）。
+- ❌ 不改任何代码标识符（`runIterationLoop`、`currentIteration`、`iteration`、`AgentLoop`、`Round` 等保持原名；`externalTaskLoop` 已随多 turn 编排废弃删除，不在此列）。
 - ❌ 不做全库逐字替换（会引入大量无意义 diff），只在**概念定义处**统一口径。
 - ❌ 不新增 ADR（可逆探索期，先落 docs/ 验证；若被 src/rules 引用固化再补 ADR）。
 - ❌ 不膨胀注释（遵守 comment-doc-slimming-rules 三分法）。

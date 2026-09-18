@@ -107,10 +107,10 @@ activePack 解析（单一函数，所有场景共用）：
 * **组员发言 = 视角性意见，不是完整能力**：键不切意味着组员的身份与行为配置可能错配（例：翻译组员的发言用的是组长写作者的 temperature 等键）——会议定位是"多视角征求意见"，不是"以该角色执行任务"。**需要某角色的完整能力（键 + 工具）时，应手动切换该角色**（完整切换），而不是用会议。
 * **`summaryFocus` 恒为组长**（已知取舍）：会议记忆按组长视角过滤沉淀，其他视角要点靠 `search_memories` 按需检索兜底。
 
-* **装配驱动点（2026-08-29 步粒度补强）**：表层装配由 `refreshAssemblyForRolePack(rolePack?)` **单一收口**（SSOT 单函数），两个驱动点共用：
-  * **步入口（复杂任务步序列，权威）**：`runStepSequence` 每步开始前按该步（pending）`rolePack` 刷新——一次会议各步按本步角色**真灌成员文档**（"真意见"），而非全部步共享入口人格/组长；
-  * **prepare 期（简单任务续跑 / event 路径）**：闭包入口按 active 步 `rolePack` 刷新——无步序列时生效；复杂任务路径下被步入口覆盖（冗余无害，装配语义见上条「步入口」）；
-  * **步内多轮不重复刷新**（防抖动）：装配源读「正要跑的 pending 步」而非 active 步（解"首轮无 active 步 → 硬切换不触发"缺口）。
+* **装配驱动点（2026-08-29 步粒度补强；符号于 2026-09-18 核对）**：表层装配由 `refreshAssemblyForRolePack(deps, rolePack?)` **单一收口**（SSOT 单函数，`src/agent/seed/prepare.ts` L137），两个驱动点共用：
+  * **prepare 期（每次回答前，权威）**：`prepare.run` 开头按 checkpoint **active 步** `rolePack` 刷新（`prepare.ts` L58）——复杂任务 step 循环每轮重跑 prepare，一次会议各步按本步角色**真灌成员文档**（"真意见"），而非全部步共享入口人格/组长；
+  * **续跑路径（runResume）**：续跑不走 prepare（不重装配上下文），`orchestrator.runResume` 开头对称按 resume active 步 `rolePack` 刷新（`orchestrator.ts` L122）；
+  * **步内多轮不重复刷新**（防抖动）：装配源读「正要跑的 active 步」而非入口角色（解"首轮无 active 步 → 硬切换不触发"缺口，无步序列时回落 activePack 组长）。
 
 ### 4.4 组（组长附属的会议名单）
 
@@ -226,7 +226,7 @@ interface PlanStep {
 | --- | --- |
 | `AgentOptions.rolePackTeams` / `builtinFallbackRole`；**`activeRolePack` 既有键，语义扩展为解析链第一层**（§4.1） | `src/agent/types.ts` |
 | 选择解析单链（§4.1）+ `activePack` 唯一状态（§4.0） | `src/role-pack/rolePackManager.ts` / `seed/prepare.ts` |
-| **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + 表层装配分支（§4.3：**prepare 期 + `runStepSequence` 步入口**，skills 加载跟随装配视角）+ 范围校验 | `src/agent/types.ts` / `builtinTools.ts` / `seed/prepare.ts` / `seed/orchestrator.ts` / `assembler.ts` |
+| **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + 表层装配分支（§4.3：**prepare 期 + 续跑路径**，skills 加载跟随装配视角）+ 范围校验 | `src/agent/types.ts` / `builtinTools.ts` / `seed/prepare.ts` / `seed/orchestrator.ts` / `assembler.ts` |
 | 内核兜底契约包 `<BUILTIN_FALLBACK_PACK>/` + 常量 | `role-packs/` / `src/role-pack/constants` |
 | 组数据校验（组长唯一 / 名单非空 / 引用悬空 warning） | `src/role-pack/rolePackManager.ts`（装配时校验） |
 
@@ -239,7 +239,7 @@ interface PlanStep {
 | S2 | **删除自动匹配全链**（autoSwitch / autoMatch / LLM 匹配 / 粘性 / 阈值常量）；接管 `load()/reload()` 默认激活路径为 §4.1 单链 | 默认路径不接管则单链被绕过 |
 | S3 | 新增 `rolePackTeams` / `builtinFallbackRole` 装配参数；**`activeRolePack` 语义扩展为解析链第一层**（§4.0-4.4：activePack 唯一状态 + 单链解析 + 组数据校验） | |
 | S4 | 装载后校验：组悬空 / 组长唯一 / 引用悬空 → warning（不阻塞装载）；兜底包存在性校验 | |
-| S5 | **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + prepare 期**表层装配**分支（skills 加载跟随装配视角）+ 范围校验 + **checkpoint schemaVersion 升版** | 内核到此无"会议"概念。**步粒度补强（2026-08-29）**：装配源从「active 步」扩为「prepare 期 + `runStepSequence` 每步入口读 pending 步 `rolePack`」——一次会议各步按本步角色真灌成员文档；工具面恒锁组长（`setChatOptions` 恒读 activePack），loop 零改动。决策追溯方案 `tasks/方案-会议步粒度硬切换-20260829.md` 已随 2026-09-04 tasks 整理删除，本节为现行权威表述 |
+| S5 | **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + prepare 期**表层装配**分支（skills 加载跟随装配视角）+ 范围校验 + **checkpoint schemaVersion 升版** | 内核到此无"会议"概念。**步粒度补强（2026-08-29）**：装配源从「active 步」扩为「prepare 期 + 续跑路径」（`refreshAssemblyForRolePack` 两驱动点，见 §4.3）——一次会议各步按本步角色真灌成员文档；工具面恒锁组长（`setChatOptions` 恒读 activePack），loop 零改动。决策追溯方案 `tasks/方案-会议步粒度硬切换-20260829.md` 已随 2026-09-04 tasks 整理删除，本节为现行权威表述 |
 | S6 | 示例角色包清理（移除 `exclusiveWith`） | |
 | S7 | 宿主接入：组管理 UI（建组/拉组员/成员排序）+ 组员名单展示（"小组会议用"标注）+ 选择持久化（沿用 globalState）+ 会议入口（提示 LLM 可用任务表组织会议） | **门面 `switchRolePack` 与 IPC 协议不变**（选择对象只有角色包） |
 | S8 | 测试与文档 + 规则对齐：删自动匹配/exclusiveWith 用例，增单链兜底/表层装配/skills 跟随/范围校验用例；`role-pack-spec.md` 字段清理；§11.2 删除 + ADR；README 同步 | |

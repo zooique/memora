@@ -6,7 +6,7 @@ description: "memora 内核 Web 搜索模块——IWebSearchProvider 接口 + Fe
 # ADR-017 · Web 搜索模块
 
 > **状态**：✅ 已接受（2026-07-30，回溯补录）
-> **依赖**：ADR-010（Agent 工具注册机制）、ADR-016（接口注入模式）
+> **依赖**：ADR-010（Agent 工具注册机制）
 
 ## 背景
 
@@ -18,11 +18,11 @@ v2.0 版本的 Agent 内置工具列表不含网络搜索能力。用户需求�
 
 ## 决策
 
-采用 **接口 + 条件注入** 模式，与 ADR-016（IVectorStore）保持一致的架构风格。
+采用 **接口 + 条件注入** 模式（与内核其余可注入能力同构的通用接口注入模式）。
 
 ### 1. 接口定义（`src/web-search/types.ts`）
 
-`WebSearchResult { title; url; snippet }` + `IWebSearchProvider.search(query, options?): Promise<WebSearchResult[]>`。完整定义以源码为准，此处不内嵌。
+`SearchResult { title; url; snippet }` + `IWebSearchProvider.search(query, options?): Promise<SearchResult[]>`。完整定义以源码为准，此处不内嵌。
 
 ### 2. 内置实现（`src/web-search/fetchWebSearchProvider.ts`）
 
@@ -63,7 +63,7 @@ src/web-search/
 ### 正面
 
 - LLM 能力补全——实时信息查询不再依赖训练数据截止日期
-- 架构一致性——与 ADR-016 保持相同的接口注入模式
+- 架构一致性——接口注入模式与内核其余可注入能力同构
 - 宿主灵活性——搜索后端可替换，不绑定特定服务
 
 ### 负面
