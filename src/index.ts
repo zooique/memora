@@ -123,7 +123,7 @@ export type { ITracer, ISpan, AgentMetrics } from '@/agent/tracer.js';
 export { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 
 // ─── 记忆层导出 ──────────────────────────────────────────
-export { SOURCE_LABELS } from '@/memory/types.js';
+export { SOURCE_LABELS, SUMMARY_TYPES } from '@/memory/types.js';
 // 冲突检测基于 supersededBy 判定，无需记忆关系图谱
 export type { Memory, SummaryType } from '@/memory/types.js';
 /**
