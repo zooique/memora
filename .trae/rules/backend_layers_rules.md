@@ -30,7 +30,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 层 | 职责 | 不该做什么 |
 | --- | --- | --- |
 | `agent/` | Agent 门面 + AgentLoop + ContextManager + 工具执行 + 内置工具处理器 + 专职 Manager/服务类 + 对话快照 + 作品投影 | 直接调 LLM HTTP（经 provider 接口） |
-| `memory/` | 记忆存储、索引、召回（语义 + 关键词双通道，向量可选） | 调 LLM（经 EmbeddingService 注入除外） |
+| `memory/` | 记忆存储、索引、关键词召回（search_memories 纯关键词，语义向量通道已随 2026-09-18 B0 收编） | 调 LLM |
 | `skill/` | 技能文件扫描、关键词匹配、prompt 注入 | 直接调 LLM |
 | `llm/` | LLM 适配、协议解析、流式处理 | 读写文件 |
 | `security/` | 路径白名单、写入确认（fail-closed，未注入即拒绝）、Prompt 注入防御 | 业务逻辑、终端 I/O |
@@ -52,9 +52,8 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 
 ```
 agent/ → llm/（Provider）、memory/（存储+召回+supersededBy）、role-pack/（RolePackManager）、skill/（SkillManager）、security/（路径校验）
-memory/ → utils/（frontmatter+segmenter）、security/（type-only）；vectorStore import type llm/embedding 的 EmbeddingOptions（例外）
+memory/ → utils/（frontmatter+segmenter）、security/（type-only）
 skill/ → utils/（frontmatter+segmenter+scanner）；不依赖 memory/（纯文件+内存缓存）
-llm/ → memory/（type-only：EmbeddingService 接口定义在 memory/）
 role-pack/ → utils/（纯数据）
 web-search/ → utils/（errors.ts）；被 agent/ 经 AgentOptions 条件注入
 config/ · logging/ · utils/ → 被所有层依赖

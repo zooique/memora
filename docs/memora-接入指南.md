@@ -89,8 +89,8 @@ npm install @zooique/memora
 ### 2. 创建 Provider + Agent
 
 ```typescript
-import { Agent, createProviderFromConfig, JsonVectorStore, setLogger } from '@zooique/memora';
-import type { IMemoryStorage, ILogger, EmbeddingService } from '@zooique/memora';
+import { Agent, createProviderFromConfig, setLogger } from '@zooique/memora';
+import type { IMemoryStorage, ILogger } from '@zooique/memora';
 
 // 宿主职责：创建 LLM Provider（Agent 不关心 API Key）
 // createProviderFromConfig 是"单个 provider"入口；多 provider + active 随 loadConfig 路由见 api-reference §十 Provider 管理
@@ -115,10 +115,6 @@ const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db');
 // 可选：全局替换日志实现（不调用则使用内置 console logger；pino 为可选 peer 依赖，动态 import 懒加载）
 setLogger(myCustomLogger);
 
-// 可选：向量存储（提供后启用语义搜索召回）
-const embeddingService: EmbeddingService = myEmbeddingService;
-const vectorStore = new JsonVectorStore('/path/to/vectors.json', embeddingService);
-
 // 创建 Agent
 const agent = new Agent({
   projectPath: '/path/to/novel-project',
@@ -132,7 +128,6 @@ const agent = new Agent({
   allowedPaths: ['.'],
   confirmWrites: false,
   storage,               // 存储层注入（可选）
-  vectorStore,           // 向量存储（可选，启用语义搜索）
   tracer: myOtelTracer,  // 可观测性 Tracer（可选，不传则静默丢弃所有 span）
 });
 
@@ -461,8 +456,6 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `createProviderFromConfig(name, config)` | 从命名配置创建单个 Provider 实例（扁平参数） |
 | `loadConfig(path?)` | 加载 `.memora/config.json` 项目级配置文件（或传入显式 configPath） |
 | `InMemoryStorage` | IMemoryStorage 的纯内存实现（测试用） |
-| `JsonVectorStore` | 向量存储内置实现（实现 IVectorStore 接口，宿主注入 EmbeddingService 后创建，启用语义搜索） |
-| `EmbeddingProvider` | OpenAI 兼容 Embedding 端点实现（满足 EmbeddingService 接口） |
 | `setLogger(logger)` | 替换全局日志实现 |
 | `logger` | 全局日志实例 |
 | `segmentText(text)` | 中文分词工具 |

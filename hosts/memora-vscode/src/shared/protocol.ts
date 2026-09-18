@@ -57,18 +57,6 @@ export interface LlmProviderConfig {
   contextWindow?: number;
 }
 
-/** 向量检索（Embedding）配置回显（G1 记忆语义检索，2026-08-23） */
-export interface EmbeddingInfoDto {
-  /** 是否已配置（model + baseUrl 非空） */
-  enabled: boolean;
-  /** Embedding 模型名 */
-  model?: string;
-  /** OpenAI 兼容 /embeddings Base URL */
-  baseUrl?: string;
-  /** 是否已配置 API Key（不回传真实值，仅标记） */
-  keyConfigured: boolean;
-}
-
 /** Webview → extension 消息 */
 /**
  * 内部网页搜索引擎设置值（方案 A 2026-09-02，与内核 SearchEngineName + auto 对齐）
@@ -216,19 +204,6 @@ export type WebviewToExtensionMessage =
    * 相同，不清除后台任务通道），并热更新 agent.setBackgroundProvider。
    */
   | { type: 'cfg_set_background'; name: string }
-  /**
-   * 保存向量检索（Embedding）配置（G1 记忆语义检索，2026-08-23）
-   *
-   * 大模型面板「向量检索」区提交：host 持久化 model/baseUrl（Global）+ apiKey（SecretStorage，
-   * 留空=保留原值），随后重装 Agent 以注入 JsonVectorStore 启用语义召回。
-   */
-  | { type: 'cfg_save_embedding'; config: { model: string; baseUrl: string; apiKey: string } }
-  /**
-   * 清除向量检索（Embedding）配置（G1）
-   *
-   * host 清空 embedding 配置（含 SecretStorage apiKey），重装 Agent 回退关键词搜索。
-   */
-  | { type: 'cfg_clear_embedding' }
   /** 测试 Provider 连接 */
   | { type: 'cfg_test'; config: LlmProviderConfig }
   // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
@@ -773,8 +748,6 @@ export type ExtensionToWebviewMessage =
       providers: LlmProviderConfig[];
       activeName: string | undefined;
       backgroundName?: string;
-      /** 向量检索（Embedding）配置回显（G1：enabled + 非敏感字段 + 是否已配 key） */
-      embedding?: EmbeddingInfoDto;
     }
   /** 配置操作结果（保存/删除/设当前/测试） */
   | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' }

@@ -27,7 +27,6 @@
 | `ICodeExecutionProvider` | 可选 | `src/code-exec/types.ts` | 通用代码执行（沙箱由宿主提供），不注入则不启用 |
 | `IProjectSearchProvider` | 可选 | `src/project-search/types.ts` | 项目内搜索（等价 IDE 全局搜索），不注入则不暴露 `search_project`（见 §8.6） |
 | `ILogger` | 可选 | `src/logging/loggerInterface.ts` | 日志，默认内置 |
-| `IVectorStore` | 可选 | `src/memory/vectorStore.ts` | 语义召回，注入才启用向量搜索（否则降级关键词召回） |
 | `backgroundProvider` (`LlmProvider`) | 可选 | AgentOptions | 后台通道（归档/投影），不配复用前台 |
 
 \* 不传则内核自动用 `InMemoryStorage` / 内存会话（仅内存不落盘）；做产品必须实现。
@@ -182,7 +181,7 @@ new Agent({
 | `allowedPaths` | `string[]` | ❌ | 路径白名单（默认 [] = 全部允许） |
 | `confirmWrites` | `boolean` | ❌ | 写入确认（默认 false） |
 | `storage` | `IMemoryStorage` | ❌ | 存储层注入（默认 InMemoryStorage） |
-| `vectorStore` | `IVectorStore` | ❌ | 向量存储接口（提供时启用语义搜索召回；内置实现 JsonVectorStore） |
+| ~~`vectorStore`~~ | ~~`IVectorStore`~~ | — | **已删除（2026-09-18 B0 收编）**：向量语义召回通道此前**写端缺失、从未在生产生效**（`upsert` 零调用 → 库恒空 → 语义分支永不触发 = 僵尸能力）。经主流 agent 调研（Anthropic Memory/Claude Code/Librarian Pattern 实证「LLM 消费者 + 小语料」纯关键词足用）拍板收编：`IVectorStore` 接口、`JsonVectorStore`、`EmbeddingProvider` 及 `config.embedding` 段全链删除；`search_memories` 走纯关键词，未命中提示 LLM 换词重试 |
 | ~~`recallExcludeSources`~~ | ~~`string[]`~~ | — | **已删除（2026-09-11）**：该配置随召回编排 `recall()` 退役后成为零消费者死配置，全链（AgentOptions → AgentConfig → AssembleInput → ContextPreparerDeps）物理删除。关联推荐的实际排除走 `Agent.governance.suggest(query, { excludeSources })` 显式参数 |
 | `sessionStore` | `ISessionStore` | ❌ | 会话存储注入 |
 | `tracer` | `ITracer` | ❌ | 可观测性 Tracer 注入（不传则使用 NoopTracer 静默丢弃所有 span） |
@@ -1057,12 +1056,6 @@ export type { ForkResult } from '@zooique/memora';
 export { ProjectRegistry } from '@zooique/memora';
 export type { ProjectEntry } from '@zooique/memora';
 export { LockManager } from '@zooique/memora';
-
-// 向量存储
-export { JsonVectorStore } from '@zooique/memora';
-export type { IVectorStore, EmbeddingService } from '@zooique/memora';
-export { EmbeddingProvider } from '@zooique/memora';
-export type { EmbeddingConfig, EmbeddingResult, EmbeddingOptions } from '@zooique/memora';
 
 // 事件系统
 export { TypedEventEmitter } from '@zooique/memora';

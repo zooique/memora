@@ -26,10 +26,6 @@ const CFG_PROVIDERS = 'providers';
 const CFG_ACTIVE = 'activeProvider';
 /** backgroundProvider 配置键（G5 后台模型通道，2026-08-23：空 = 与实时对话相同） */
 const CFG_BACKGROUND = 'backgroundProvider';
-/** embedding 配置键（G1 向量检索，2026-08-23：非敏感字段 model/baseUrl） */
-const CFG_EMBEDDING = 'embedding';
-/** embedding apiKey 的 SecretStorage key */
-const EMBEDDING_SECRET = 'memora.embedding.apiKey';
 /** SecretStorage apiKey key 前缀 */
 const SECRET_PREFIX = 'memora.provider';
 
@@ -304,61 +300,6 @@ export class ProviderStore {
     if (!name) return undefined;
     const all = await this.list();
     return all.find((p) => p.name === name);
-  }
-
-  /**
-   * 读取向量检索（Embedding）配置（G1 记忆语义检索）
-   *
-   * enabled = 已配置 model 且 baseUrl 非空；apiKey 不在此暴露真实值（由 getEmbeddingSecret 读取）。
-   *
-   * @returns embedding 配置（若未配置 enabled=false）
-   */
-  async getEmbeddingConfig(): Promise<{ enabled: boolean; model?: string; baseUrl?: string }> {
-    const cfg = vscode.workspace.getConfiguration(CFG_SECTION).get<{ model?: string; baseUrl?: string }>(CFG_EMBEDDING);
-    const model = cfg?.model?.trim();
-    const baseUrl = cfg?.baseUrl?.trim();
-    return { enabled: Boolean(model && baseUrl), model, baseUrl };
-  }
-
-  /** 读取 embedding apiKey（真实值，供创建 EmbeddingProvider） */
-  async getEmbeddingSecret(): Promise<string> {
-    return (await this.secrets.get(EMBEDDING_SECRET)) ?? '';
-  }
-
-  /**
-   * 保存向量检索（Embedding）配置（G1）
-   *
-   * model/baseUrl 写 configuration（Global）；apiKey 留空 = 保留原值（对齐 Provider 编辑语义）。
-   *
-   * @param input embedding 配置（model/baseUrl 必填；apiKey 可空=保留）
-   * @returns 成功返回 {ok:true}；校验失败返回 {ok:false,message}
-   */
-  async saveEmbedding(input: { model: string; baseUrl: string; apiKey: string }): Promise<{ ok: boolean; message?: string }> {
-    const model = input.model.trim();
-    const baseUrl = input.baseUrl.trim();
-    if (!model || !baseUrl) {
-      return { ok: false, message: '请填写 Embedding 模型与 Base URL' };
-    }
-    await vscode.workspace
-      .getConfiguration(CFG_SECTION)
-      .update(CFG_EMBEDDING, { model, baseUrl }, vscode.ConfigurationTarget.Global);
-    // apiKey 非空才写（空 = 保留原值）
-    if (input.apiKey.trim()) {
-      await this.secrets.store(EMBEDDING_SECRET, input.apiKey.trim());
-    }
-    return { ok: true };
-  }
-
-  /**
-   * 清除向量检索（Embedding）配置（G1）
-   *
-   * 清空非敏感字段 + SecretStorage apiKey；装配侧配置缺失即回退关键词搜索，零破坏性。
-   */
-  async clearEmbedding(): Promise<void> {
-    await vscode.workspace
-      .getConfiguration(CFG_SECTION)
-      .update(CFG_EMBEDDING, undefined, vscode.ConfigurationTarget.Global);
-    await this.secrets.delete(EMBEDDING_SECRET);
   }
 
   /**

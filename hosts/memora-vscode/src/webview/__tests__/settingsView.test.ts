@@ -37,7 +37,6 @@ const HTML = `
   <div id="config-root" hidden>
     <div class="header"><h2>大模型配置</h2><span id="statBar" class="stat-bar" hidden></span><button id="btnAdd" class="btn">添加 API</button></div>
     <div class="cfg-bg"><label for="bgModel">后台模型（可选）</label><select id="bgModel"><option value="">同实时对话</option></select><p class="cfg-bg-hint"></p></div>
-    <details id="embeddingCfg" class="embedding-cfg"><summary>向量检索（Embedding，可选）</summary><div class="embedding-fields"><div class="field"><input id="e-model" type="text" /><input id="e-baseurl" type="url" /><input id="e-apikey" type="password" /></div><div class="embedding-actions"><button id="btnSaveEmbedding"></button><button id="btnClearEmbedding"></button></div><p id="embeddingStatus" hidden></p></div></details>
     <div id="list"></div>
     <div id="modal" class="modal-mask">
       <div class="modal">

@@ -5,7 +5,8 @@ description: 向量存储接口化——IVectorStore 接口 + JsonVectorStore �
 
 # ADR-016 · 向量存储接口化（IVectorStore + JsonVectorStore）
 
-> **状态**：✅ 已接受 **日期**：2026-07-08（1.0 接口稳定化）
+> **状态**：❌ 已废弃（2026-09-18 B0 收编） **原接受日期**：2026-07-08（1.0 接口稳定化）
+> **废弃理由**：见文末「2026-09-18 收编 · 本 ADR 整体废弃」。**序号 016 不再使用，不因废弃回填**。
 > **来源**：1.0 审查报告 P0-2 + 迭代文档 Phase 0.2
 
 ## 背景
@@ -61,3 +62,17 @@ v0.3 版本的 `VectorStore` 是一个**具体类**，直接 `import { readFileS
 
 - [ADR-002](./ADR-002-storage-layer.md) · 存储层抽象（IMemoryStorage）—— IVectorStore 与之同构
 - ADR-014 · 记忆关系侧车（IMemoryRelationStore）—— IVectorStore 与之同构（已废弃，git 历史可溯）
+
+---
+
+## 2026-09-18 收编 · 本 ADR 整体废弃
+
+> **驱动**：B0 裁决（用户拍板，台账 `MEM-EMB-1`）。**本 ADR 描述的接口与实现已全链删除，序号 016 废弃不再复用**。
+>
+> **废弃因果（实锤）**：向量语义召回通道**写端从未接线**——生产代码对 `JsonVectorStore.upsert/batchUpsert` **零调用**（仅测试/验证脚本消费），`searchHybrid` 的 `size > 0` 守卫恒 false → 语义通道生产上从未生效，`search_memories` 恒走纯关键词 = **「宣称能力零消费」的僵尸声明**。本 ADR 的接口化设计本身无伤，但其所承载的能力从未被真实消费。
+>
+> **土壤调研（2026-09-18）**：Anthropic Memory tool / Claude Code / Librarian Pattern（挪威语生产系统：SQLite FTS5 零 embedding 胜出）均实证「LLM 消费者 + 小语料（单用户千级 round-summary）」下纯关键词足用——LLM 自主改述重试是天然词汇桥梁；Mem0 的语义增益（+26% 准确率）属大语料/文档检索场景，不适用。
+>
+> **收编内容**：`IVectorStore` / `JsonVectorStore` / `EmbeddingService` / `EmbeddingProvider` 全删；`AgentOptions.vectorStore`、`config.embedding` 段、宿主 `createVectorStore`、设置面板向量检索 UI（`cfg_save/clear_embedding`）同步删除；`search_memories` 纯关键词 + 工具描述补「未命中换词重试」。
+>
+> **重建候选（探索期，不预支）**：若真实复现「关键词换词多轮仍搜不到、语义上确实存在」→ 按 **cache 可重算形态**回补（记忆库=唯一事实源，向量库=派生缓存：装配期幂等 batchUpsert 全量重建 + 单一写总线增量同步）。**任何回补不得散点双写**（否则回到 §3 双轨镜像带伤）。

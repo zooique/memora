@@ -19,7 +19,7 @@ import type { ILogger } from '@zooique/memora';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
 import { join } from 'node:path';
-import { createProvider, createBackgroundProvider, createVectorStore } from './llmConfig.js';
+import { createProvider, createBackgroundProvider } from './llmConfig.js';
 import { createLocalCodeExecutor } from './codeExecutor.js';
 import { createVscodeProjectSearchProvider } from './projectSearchProvider.js';
 import { WorkspaceStorage } from './workspaceStorage.js';
@@ -228,8 +228,6 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   const provider = await createProvider(providerStore, env ?? process.env);
   // 1.0 创建后台模型 Provider（G5：后台任务走独立轻量模型；未配置回退与实时对话相同）
   const backgroundProvider = await createBackgroundProvider(providerStore);
-  // 1.0b 创建向量存储（G1：配置 Embedding 时启用记忆语义检索；未配置回退关键词搜索）
-  const vectorStore = await createVectorStore(providerStore, join(projectPath, '.memora'));
   // 1.1 创建 Provider 路由策略（激活 AgentLoop 路由缓存优化；单 Provider 时直接返回同一实例）
   const providerRouter = createProviderRouter(provider);
 
@@ -293,8 +291,6 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     projectSearchProvider: projectSearchRoot
       ? createVscodeProjectSearchProvider(projectSearchRoot)
       : undefined,
-    // 向量存储（G1：配置 Embedding 时启用语义召回；undefined 则 searchHybrid 回退关键词）
-    vectorStore,
     // UI 消息中文化（P0：内核默认英文，覆盖为中文）
     messages: CHINESE_MESSAGES,
     // 角色包**只用手动切换**（v0.13：内核已移除自动匹配全链，无需 strategyOverride 覆盖——
