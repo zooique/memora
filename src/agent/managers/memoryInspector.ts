@@ -10,8 +10,6 @@ import type { MessageHistory } from '@/agent/messageHistory.js';
 import type { AgentLoop } from '@/agent/loop.js';
 import { configError } from '@/utils/errors.js';
 import { truncate } from '@/utils/strings.js';
-// 融合排序算法 + 常量从 hybridMerge 导入（消除对 recall.ts 内部常量的依赖）
-import { hybridMerge, RECALL_LIMIT_MULTIPLIER } from '@/memory/hybridMerge.js';
 
 // ─── 常量 ────────────────────────────────────────────────
 
@@ -209,11 +207,11 @@ export class MemoryInspector {
   }
 
   /**
-   * 搜索记忆（纯关键词单通道）。融合排序委托 hybridMerge。
+   * 搜索记忆（纯关键词单通道，B0 收编后无向量通道、无融合排序）。
    *
-   * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——保持融合排序
-   * **不分层分轨**：不应用 L1/L2 分层、不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配
-   * （capTokens / minSemanticShare）。分层分轨原属「召回编排」`recall()`——该方法已连同其唯一消费者
+   * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——不应用 L1/L2 分层、
+   * 不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配（capTokens / minSemanticShare）。
+   * 分层分轨原属「召回编排」`recall()`——该方法已连同其唯一消费者
    * （跨重启恢复链的 `checkpointRestoreCoordinator.warmRecall`）于 2026-09-10 整体退役，故**现行实现中
    * 已无任何召回编排**；搜索工具只暴露过滤后的结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
    *
@@ -241,30 +239,24 @@ export class MemoryInspector {
       ]);
     }
 
-    // 单个通道：关键词搜索（B0 收编后无向量通道）
-    const merged = new Map<string, { memory: Memory; vectorScore: number }>();
-    const keywordResults = this.index.search(query, limit * RECALL_LIMIT_MULTIPLIER);
-    for (const m of keywordResults) {
-      merged.set(m.id, { memory: m, vectorScore: 0 });
-    }
-
-    // 融合排序（hybridMerge 纯函数；纯关键词时 vectorScore 恒 0 → 依赖 stable-sort 插入序，可接受）。
+    // 单个通道：纯关键词搜索（B0 收编后无向量通道、无融合排序，FTS 索引已按相关性返回）
+    const keywordResults = this.index.search(query, limit);
     // 前置 superseded 过滤：被 supersededBy 取代的摘要不作为当前事实
-    // 返回（仍保留可回溯，trace_summary 可精确取原文）。在排序前过滤，避免占据 top-N 槽位挤掉有效命中。
-    const active = [...merged.values()].filter((e) => !e.memory.supersededBy);
+    // 返回（仍保留可回溯，trace_summary 可精确取原文）。在截断前过滤，避免占据 top-N 槽位挤掉有效命中。
+    const active = keywordResults.filter((m) => !m.supersededBy);
     // 工具召回与装配期内容互斥（§5.1）：排除「正文或摘要已在眼前」轮次的 round-summary，
     // 避免 LLM 拿回眼前内容的摘要重复（excludeRoundIds 由调用方按 loop.getExclusionRoundIds 精确派生，
     // = 视图内 ∪ 被替换 ∪ 在途，天然不含当轮）。
     // 被排除者不补位（工具语义）：返回更聚焦的结果即可，不强制凑满 limit。
     const unexcluded =
       excludeRoundIds && excludeRoundIds.size > 0
-        ? active.filter((e) => !e.memory.roundId || !excludeRoundIds.has(e.memory.roundId))
+        ? active.filter((m) => !m.roundId || !excludeRoundIds.has(m.roundId))
         : active;
-    const sorted = hybridMerge(unexcluded, limit);
-
-    // 排序语义（§5.2 定案）：仅返回 hybridMerge 融合序，不引入 accessedAt 时间主序——
+    // 截断到 limit；不引入 accessedAt 时间主序（§5.2 定案）——
     // accessedAt 只作为事实字段揭示（工具命中 touch 刷新），优先级判断归 LLM 结合任务定夺。
-    return sorted.map(({ memory }) => ({
+    const result = unexcluded.slice(0, limit);
+
+    return result.map((memory) => ({
       id: memory.id,
       name: memory.name,
       source: memory.source,

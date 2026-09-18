@@ -1058,7 +1058,7 @@ export class BuiltinToolHandlers {
   /**
    * 命中即 touch：fire-and-forget 刷新命中记忆的 accessedAt（不涉及任何重要度字段）。
    *
-   * 收敛到 recall.ts 的单一真理源 touchScores（§5.2 只 touch 不加权，内部只调 storage.touch）——
+   * 收敛到 keywordsTouch.ts 的单一真理源 touchScores（§5.2 只 touch 不加权，内部只调 storage.touch）——
    * 不为工具命中另造写分路径。backgroundTask 保证 fire-and-forget 不阻塞搜索返回，
    * 且统一并发限流；失败兜底记日志即可（touch 是排序副作用，非主线流程）。
    *

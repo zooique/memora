@@ -230,12 +230,11 @@
 
 ### 4.2 记忆底座（memory/ · 存储与召回）
 
-> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。检索为纯关键词单通道：`keywordsTouch.ts` 提供关键词提取/命中回写，结果经 `hybridMerge` 融合排序（B0 收编后无向量通道）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
+> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。检索为纯关键词单通道：`keywordsTouch.ts` 提供关键词提取/命中回写，由 `memoryInspector.searchHybrid` 直接取 FTS 相关性命中（无向量通道、无融合排序，见 §5.4）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
 
 | 模块文件                         | 状态     | 测试文件                                   | 质量说明                                  |
 | ---------------------------- | ------ | -------------------------------------- | ------------------------------------- |
 | `memory/keywordsTouch.ts`     | 🟡 已收敛 | `__tests__/keywordsTouch.test.ts`      | 原名 `recall.ts`（2026-09-18 更名对齐职责）；仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
-| `memory/hybridMerge.ts`      | 🟢 已打磨 | `__tests__/hybridMerge.test.ts`        | 融合排序（纯关键词单通道，vectorScore 预留键）              |
 | `memory/types.ts`            | 🟢 已打磨 | `__tests__/types.test.ts`              | 记忆类型定义                                |
 | `memory/governance.ts`       | 🟢 已打磨 | `__tests__/governance.test.ts`         | 治理常量（boost 增量/上下限 + 健康度阈值 + 治理源）      |
 | `memory/inMemoryStorage.ts`  | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts`    | 内存存储实现                                |

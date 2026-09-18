@@ -20,18 +20,6 @@
 - **审查问题**：注释/文档字面与实现 gate 是否一致？措辞是否全局统一（grep 关键词排查矛盾措辞）？
 - **落地证据**：`recall.ts` 注释统一 + `memory-as-summary.md` §4.3 补「查询意图 gate」条目。
 
-### 3. 排序 / 裁剪 / 分配的执行顺序
-- **现象**：`hybridMerge` 在 cap 分配前按最终 `limit` 裁剪候选 → 语义轨（fact/decision/general）被挤出，`minSemanticShare` 保底失效。
-- **根因**：先裁剪、后按规则分配的顺序被破坏——裁剪吃掉了分配所需的候选集。
-- **审查问题**：是否存在「先裁剪、后按规则分配/保底」的顺序？保底机制是否依赖裁剪前的完整候选集？
-- **落地证据**：超集 limit（×`RECALL_LIMIT_MULTIPLIER`）+ `applyCapAllocation` 的 limit 槽位兜底。
-
-### 4. 双约束协同（token 配额 × 条数上限）
-- **现象**：`limit` 条数远小于 cap token 允许条数时，条数截断使 token 层语义保底失效。
-- **根因**：两类约束独立作用，条数主导时未给 token 层保底预留条数预算。
-- **审查问题**：token 类配额与条数类上限是否协同？一方主导时另一方是否被架空？
-- **落地证据**：`semanticSlots`（条数保底）+ `semanticFloor`（token 保底）双轨。
-
 ### 5. 机制参数 vs 角色包开放边界
 - **现象**：`minSemanticShare` 若升为角色包 `prepare` 键，需过 `strategyKeys` 四件套，为默认 0 的备用参数不值。
 - **根因**：未区分「角色意图」（开放）与「召回机制」（内核默认）。

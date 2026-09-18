@@ -17,7 +17,8 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 /**
  * 记忆基元接口：id/content/source/name/createdAt/accessedAt 6 个基础字段
  * + deletedAt 可选（软删除）
- * score 字段已物理删除（2026-09-09 阶段3 退役）：排序收敛为单语义分 vectorScore，使用轨迹唯一事实源为 accessedAt
+ * score 字段已物理删除（2026-09-09 阶段3 退役）；向量语义通道已随 B0 收编（2026-09-18），
+ * 检索为纯关键词单通道，无持久化排序分字段，使用轨迹唯一事实源为 accessedAt
  */
 export interface Memory {
   /** 唯一标识，格式 source:name，如 'rule:core'、'round-summary:session:r1' */
