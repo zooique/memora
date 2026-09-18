@@ -7,6 +7,8 @@
  */
 
 import type { Message } from '@/llm/provider.js';
+// 软上限摘要 marker（生成侧与检测侧共用同一文本源）
+import { SOFT_LIMIT_SUMMARY_MARKER_ROUND } from '@/agent/contextManager.js';
 
 /**
  * 压缩策略接口（可插拔）
@@ -208,7 +210,7 @@ export class ReplaceRoundsStrategy implements ICompactionStrategy {
       const replacement: Message = {
         role: 'system',
         content:
-          `[Round summary · roundId: ${roundId}]\n${summary}\n` +
+          `[${SOFT_LIMIT_SUMMARY_MARKER_ROUND} ${roundId}]\n${summary}\n` +
           `（该轮正文已替换为记忆摘要，细节可经 trace_summary 回溯原始对话）`,
       };
       messages.splice(round.start, round.end - round.start + 1, replacement);

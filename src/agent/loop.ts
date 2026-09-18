@@ -24,7 +24,7 @@ import type {
 import type { ITracer, AgentMetrics } from '@/agent/tracer.js';
 import type { ContextBudget, ContextOccupancy } from '@/agent/budget.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
-import { ContextManager } from '@/agent/contextManager.js';
+import { ContextManager, SOFT_LIMIT_SUMMARY_MARKER_COMPRESS } from '@/agent/contextManager.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
 import { isTimeoutAbortSignal } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
@@ -1775,7 +1775,7 @@ export class AgentLoop {
       // 替换为目标内容为临时摘要 system 消息（executionTemp：loop 收尾即弃）
       const tempSummaryMsg: Message = {
         role: 'system',
-        content: `[Compressed context · 临时压缩摘要（loop 收尾即弃，细节可能丢失）]\n${summary}`,
+        content: `[${SOFT_LIMIT_SUMMARY_MARKER_COMPRESS} · 临时压缩摘要（loop 收尾即弃，细节可能丢失）]\n${summary}`,
       };
       const first = targetMsgs[0]!;
       const last = targetMsgs[targetMsgs.length - 1]!;

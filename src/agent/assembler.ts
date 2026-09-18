@@ -43,7 +43,6 @@ import type { LlmProvider } from '@/llm/provider.js';
 import type { ProviderRouter } from '@/llm/types.js';
 import type {
   AgentConfig,
-  FileConsistencyCheck,
   PreExecutionResult,
   ToolExecutionRecord,
   IdempotencyLevel,
@@ -148,8 +147,6 @@ export interface AgentHooks {
    * 审批/审计/参数改写/幂等去重途经的宿主闸门。放行后由组装器内部幂等检查续接。
    */
   preExecutionCheck?: (name: string, args: string) => PreExecutionResult;
-  /** 文件层前置条件断言回调（可选，两段式契约结构化；预留键，暂未被消费） */
-  fileConsistencyCheck?: FileConsistencyCheck;
   /**
    * 角色包激活后应用工具暴露面（检查点恢复协议角色契约重注入触发）
    *

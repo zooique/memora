@@ -208,7 +208,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
       projectSearchProvider: opts.projectSearchProvider,
-      fileConsistencyCheck: opts.fileConsistencyCheck,
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
       // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy），
@@ -1201,7 +1200,6 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           this.requestPause(reason, source);
         },
         preExecutionCheck: this.#config.preExecutionCheck,
-        fileConsistencyCheck: this.#config.fileConsistencyCheck,
         // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
