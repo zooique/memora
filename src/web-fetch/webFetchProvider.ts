@@ -15,16 +15,13 @@ export async function safeFetch(
   url: string,
   options?: FetchOptions,
 ): Promise<FetchedPage> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<FetchedPage>((_, reject) => {
-    const id = setTimeout(() => {
-      clearTimeout(id);
-      reject(new Error('网页抓取超时（30s）'));
-    }, FETCH_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error('网页抓取超时（30s）')), FETCH_TIMEOUT_MS);
   });
 
   try {
-    const page = await Promise.race([provider.fetch(url, options), timeoutPromise]);
-    return page;
+    return await Promise.race([provider.fetch(url, options), timeoutPromise]);
   } catch (err) {
     // 抓取失败不抛异常，返回降级提示页
     const message = err instanceof Error ? err.message : String(err);
@@ -33,5 +30,8 @@ export async function safeFetch(
       title: '网页抓取暂不可用',
       content: `抓取失败：${message}。请稍后重试，或检查网络连接。`,
     };
+  } finally {
+    // 成功/失败均清理超时定时器，防残留定时器拖住进程
+    clearTimeout(timer);
   }
 }

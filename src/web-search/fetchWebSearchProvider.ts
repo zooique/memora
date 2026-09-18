@@ -4,6 +4,7 @@
  * 使用 Node.js 18+ 内置 fetch，零依赖。仅用于"开箱即用"场景，生产环境建议宿主实现 IWebSearchProvider 用专用搜索 API。
  */
 import type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-search/types.js';
+import { BROWSER_UA, fetchWithTimeout } from '@/utils/http.js';
 
 /** 单端点请求超时（ms）：Bing 通常 1-2s 返回，10s 覆盖慢网络且不至于拖死主循环 */
 const ENDPOINT_TIMEOUT_MS = 10_000;
@@ -14,10 +15,6 @@ interface SearchEndpoint {
   buildUrl(query: string): string;
   parse(html: string, limit: number): SearchResult[];
 }
-
-/** 通用浏览器 User-Agent（避免被搜索引擎当作爬虫拒绝） */
-const BROWSER_UA =
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 /**
  * 从 Bing 结果页 HTML 提取结果：标题+链接在 <h2><a>，摘要在 <p class="b_lineclamp*">。
@@ -203,10 +200,10 @@ export class FetchWebSearchProvider implements IWebSearchProvider {
 
     for (const endpoint of this.endpoints) {
       try {
-        const response = await this.fetchWithTimeout(
+        const response = await fetchWithTimeout(
           endpoint.buildUrl(query),
-          BROWSER_UA,
           ENDPOINT_TIMEOUT_MS,
+          BROWSER_UA,
         );
 
         if (!response.ok) {
@@ -233,26 +230,5 @@ export class FetchWebSearchProvider implements IWebSearchProvider {
     }
     // 全部失败 → 抛聚合错误，由 safeSearch 降级为友好提示
     throw new Error(`所有搜索端点均失败：${errors.join('；')}`);
-  }
-
-  /**
-   * 带超时控制的 fetch：手动 AbortController + setTimeout（兼容性优于 AbortSignal.timeout），
-   * 防某端点不可达时挂起整个搜索。
-   */
-  private async fetchWithTimeout(
-    url: string,
-    userAgent: string,
-    timeoutMs: number,
-  ): Promise<Response> {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), timeoutMs);
-    try {
-      return await fetch(url, {
-        headers: { 'User-Agent': userAgent },
-        signal: controller.signal,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
   }
 }

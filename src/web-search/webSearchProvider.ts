@@ -15,19 +15,13 @@ export async function safeSearch(
   query: string,
   options?: WebSearchOptions,
 ): Promise<SearchResult[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<SearchResult[]>((_, reject) => {
-    const id = setTimeout(() => {
-      clearTimeout(id);
-      reject(new Error('网络搜索超时（30s）'));
-    }, SEARCH_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error('网络搜索超时（30s）')), SEARCH_TIMEOUT_MS);
   });
 
   try {
-    const results = await Promise.race([
-      provider.search(query, options),
-      timeoutPromise,
-    ]);
-    return results;
+    return await Promise.race([provider.search(query, options), timeoutPromise]);
   } catch (err) {
     // 搜索失败不抛异常，返回降级提示
     const message = err instanceof Error ? err.message : String(err);
@@ -38,5 +32,8 @@ export async function safeSearch(
         snippet: `搜索失败：${message}。请稍后重试，或检查网络连接。`,
       },
     ];
+  } finally {
+    // 成功/失败均清理超时定时器，防残留定时器拖住进程
+    clearTimeout(timer);
   }
 }
