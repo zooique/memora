@@ -557,7 +557,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
     const result = await handlers.searchMemories('决策', '10', 'match');
 
     // 关键词后端路径：头部标记 + 溯源字段揭示 + accessedAt 揭示
-    expect(result).toContain('关键词');
+    expect(result).toContain('match 模式');
     expect(result).toContain('trace(2026-08-28-main, round=r1)');
     expect(result).toContain('accessedAt=2026-01-01T00:00:00Z');
 

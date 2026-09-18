@@ -1052,7 +1052,7 @@ export class BuiltinToolHandlers {
       // 命中项仅保留 accessedAt/trace
       return `${i + 1}. [${m.source}:${m.name}] (${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
     });
-    return `搜索 "${query}" 找到 ${hits.length} 条（关键词）：\n${lines.join('\n')}`;
+    return `搜索 "${query}" 找到 ${hits.length} 条（${modeStr} 模式）：\n${lines.join('\n')}`;
   }
 
   /**
