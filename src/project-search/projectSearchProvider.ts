@@ -22,11 +22,9 @@ export async function safeSearchProjectFiles(
   provider: IProjectSearchProvider,
   options?: ProjectFileSearchOptions,
 ): Promise<ProjectFileMatch[]> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<ProjectFileMatch[]>((_, reject) => {
-    const id = setTimeout(() => {
-      clearTimeout(id);
-      reject(new Error('项目文件搜索超时（30s）'));
-    }, PROJECT_SEARCH_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error('项目文件搜索超时（30s）')), PROJECT_SEARCH_TIMEOUT_MS);
   });
 
   try {
@@ -34,6 +32,9 @@ export async function safeSearchProjectFiles(
   } catch {
     // 搜索失败不抛异常，降级为空结果
     return [];
+  } finally {
+    // 成功/失败均清理超时定时器，防残留定时器拖住进程
+    clearTimeout(timer);
   }
 }
 
@@ -52,11 +53,9 @@ export async function safeSearchProjectText(
   provider: IProjectSearchProvider,
   options: ProjectTextSearchOptions,
 ): Promise<ProjectTextSearchResult> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<ProjectTextSearchResult>((_, reject) => {
-    const id = setTimeout(() => {
-      clearTimeout(id);
-      reject(new Error('项目内容搜索超时（30s）'));
-    }, PROJECT_SEARCH_TIMEOUT_MS);
+    timer = setTimeout(() => reject(new Error('项目内容搜索超时（30s）')), PROJECT_SEARCH_TIMEOUT_MS);
   });
 
   try {
@@ -64,5 +63,8 @@ export async function safeSearchProjectText(
   } catch {
     // 失败不抛异常，但**不再伪装成可信的零命中**
     return { matches: [], truncated: false, failed: true };
+  } finally {
+    // 成功/失败均清理超时定时器，防残留定时器拖住进程
+    clearTimeout(timer);
   }
 }
