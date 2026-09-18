@@ -846,17 +846,24 @@ describe('config/loader · 配置边界校验', () => {
     expect(config.allowedPaths).toHaveLength(50);
   });
 
-  it('contextWindow 越界应回退 undefined（不声明）', async () => {
-    const configPath = writeConfig({
+  it('contextWindow 只做自身防御（非正数→undefined），正数原样生效（内核不做区间裁决）', async () => {
+    // ① 非正数 → undefined（纯自身防御）
+    const cfgZero = writeConfig({
       llm: {
-        providers: {
-          // 低于下限 1000，视为未声明
-          deepseek: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 100 },
-        },
+        providers: { deepseek: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 0 } },
         active: 'deepseek',
       },
     });
-    const config = await loadConfig(configPath);
-    expect(config.llm.providers!.deepseek!.contextWindow).toBeUndefined();
+    expect((await loadConfig(cfgZero)).llm.providers!.deepseek!.contextWindow).toBeUndefined();
+
+    // ② 小正数原样生效 —— 旧实现把 <1000 视作越界静默丢弃，该裁决已于 2026-09-18 拍板删除
+    //    （内核不替用户裁决「模型能吃多大」；静默替换会造成「UI 显示值 ≠ 真实生效值」）
+    const cfgSmall = writeConfig({
+      llm: {
+        providers: { deepseek: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 100 } },
+        active: 'deepseek',
+      },
+    });
+    expect((await loadConfig(cfgSmall)).llm.providers!.deepseek!.contextWindow).toBe(100);
   });
 });

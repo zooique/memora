@@ -27,9 +27,19 @@ const DEFAULT_MAX_CONTEXT_TOKENS = 120_000;
 const MIN_MAX_CONTEXT_TOKENS = 1000;
 /** maxContextTokens 上限：2_000_000 覆盖 2M 上下文窗口（与 MAX_CONTEXT_WINDOW 同量级，对齐 Gemini/MiMo 等旗舰模型） */
 const MAX_MAX_CONTEXT_TOKENS = 2_000_000;
-/** contextWindow 下限：低于此无意义（provider 上下文窗口声明） */
-const MIN_CONTEXT_WINDOW = 1000;
-/** contextWindow 上限：2M 覆盖当前所有模型上下文窗口 */
+/**
+ * contextWindow 的**告警参考上界**：2M（当前主流旗舰模型窗口量级）。
+ *
+ * ⚠️ **这不是裁决上界**（2026-09-18 拍板）：内核**不做区间裁决** —— 超出此值仅 `logger.warn`（观测），
+ * 值仍**原样生效**。理由：「模型能吃多大」是只有 provider/API 知道的事实，内核替用户猜会造成
+ * 「UI 显示值 ≠ 真实生效值」的静默失真（旧实现填 3M → 静默丢弃 → 兜底 120K，全程无提示）；
+ * 且 ADR-029 已定「用户配置的 contextWindow 是预算唯一来源」。超模型能力时由 **API 报错**（真实层可见失败）。
+ * 若将来必须恢复拦截，**只允许显式报错，不得回到静默**。
+ *
+ * ⚠️ 与 `src/role-pack/strategyKeys.ts` 的 `MAX_CONTEXT_LIMIT`（角色包 contextLimit 声明上界）**同值对齐，改一处须同步另一处**；
+ * 两者语义不同（provider 声明的告警参考 vs 角色包声明上界），故按本仓对 `DEFAULT_MAX_CONTEXT_TOKENS` 的既有做法
+ * 「重复 + 双向注释对冲」处理，**不跨层 import**（config 层不依赖 role-pack）。
+ */
 const MAX_CONTEXT_WINDOW = 2_000_000;
 /** allowedPaths 最大条数：路径白名单防膨胀 */
 const MAX_ALLOWED_PATHS = 50;
@@ -229,12 +239,22 @@ function validateMaxContextTokens(value: unknown, defaultValue: number): number 
 }
 
 /**
- * 验证 contextWindow（可选，provider 上下文窗口声明）：类型非法或超出范围返回 undefined（不声明）。
- * 越界回退 undefined 而非报错——窗口声明是提示性字段，缺失时内核按 active 配置兜底。
+ * 验证 contextWindow（可选，provider 上下文窗口声明）。
+ *
+ * **只做自身防御**（类型非法 / 非有限数 / 非正数 → undefined = 未声明），**不做区间裁决**（2026-09-18 拍板）：
+ * 「模型能吃多大」是只有 provider/API 知道的事实，内核替用户裁决会造成「UI 显示值 ≠ 真实生效值」的静默失真
+ * （旧实现：填 3M → 宿主接受 → 内核静默丢弃 → 兜底 120K，全程无提示）。现在值**原样生效**，
+ * 超模型能力时由 **API 报错**（真实层可见失败）；超出常规量级仅 `warn` 作**观测**、**不改变行为**。
  */
 function validateContextWindow(value: unknown): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  if (value < MIN_CONTEXT_WINDOW || value > MAX_CONTEXT_WINDOW) return undefined;
+  if (value <= 0) return undefined;
+  if (value > MAX_CONTEXT_WINDOW) {
+    logger.warn(
+      { contextWindow: value, warnAbove: MAX_CONTEXT_WINDOW },
+      'contextWindow 超出常规模型窗口量级：内核不裁决，按原值生效；若模型不支持将由 API 报错',
+    );
+  }
   return value;
 }
 

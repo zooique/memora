@@ -60,7 +60,9 @@ export const MAX_ASK_LIMIT = 10;
  */
 export const MAX_CONTEXT_LIMIT = 2_000_000;
 /**
- * 上下文上限的**正数声明下限**：120_000（= 内核默认窗口兜底 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`）。
+ * 上下文上限的**正数声明下限**：120_000。
+ * ⚠️ **真源 = `src/agent/constants.ts` 的 `DEFAULT_MAX_CONTEXT_TOKENS`**，本键是其**镜像**（改真源须同步本值；
+ * 依赖方向为 `agent → role-pack` 单向，本层不可 import agent，故按本仓既有做法「重复 + 注释对冲」）。
  * 语义与 `MIN_STEP_BUDGET` 同构：`0` = 不设额外上限（走 provider 窗口）；
  * 非 0 声明必须落在 [本值, MAX_CONTEXT_LIMIT]——低于内核默认窗口的「收紧」无实际意义。
  */

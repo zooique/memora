@@ -5,13 +5,15 @@
  * 常量本身是字面量，测试断言其预期值，任何非预期变更将被捕获。
  *
  * 跨模块一致性说明：
- * - AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 应与 config/loader.ts 的
- *   DEFAULT_MAX_CONTEXT_TOKENS 保持一致（两处独立声明，不跨层引用，详见
- *   config/loader.ts 文件头注释）。下方用例通过 parseConfig({}) 默认合并路径
- *   断言两处一致，将人工保证升级为自动回归（测试文件不在生产依赖图内，不破坏分层）。
+ * - AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 为**真源**，另有两处镜像：
+ *   ① config/loader.ts 的 DEFAULT_MAX_CONTEXT_TOKENS；② role-pack/strategyKeys.ts 的 MIN_CONTEXT_LIMIT。
+ *   三处独立声明、不跨层 import（依赖方向 agent → role-pack 单向），靠「注释对冲 + 本文件护栏测试」维系。
+ *   下方两用例分别断言 loader 与 strategyKeys 两处镜像与真源一致，将人工保证升级为自动回归
+ *   （测试文件不在生产依赖图内，故跨层 import 不破坏分层）。
  */
 import { describe, expect, it } from 'vitest';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
+import { MIN_CONTEXT_LIMIT } from '@/role-pack/strategyKeys.js';
 import { parseConfig } from '@/config/loader.js';
 
 describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
@@ -35,6 +37,12 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
     // parseConfig({}) 走 DEFAULT_CONFIG 默认合并路径；若 loader 与 agent/constants
     // 两处 120_000 任一被改而另一未同步，本用例将捕获漂移。
     expect(parseConfig({}).memory.maxContextTokens).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
+  });
+
+  it('strategyKeys 的 MIN_CONTEXT_LIMIT 应与真源一致（跨模块护栏 · 第三处镜像）', () => {
+    // role-pack 层不可 import agent（依赖方向 agent → role-pack 单向），故 120_000 存在第三份镜像。
+    // 本用例把既有「两处护栏」升级为「三处护栏」：真源漂移时该镜像不会静默失配。
+    expect(MIN_CONTEXT_LIMIT).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
   });
 
   it('默认 locale 应为 zh-CN（项目母语，可被 AssembleInput.locale 覆盖）', () => {

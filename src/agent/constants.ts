@@ -30,7 +30,11 @@ export const AGENT_CONSTANTS = {
   /** chat() 输入最大长度（字节）。128KB。 */
   CHAT_INPUT_MAX_LENGTH: 128 * 1024,
 
-  /** AgentConfig.maxContextTokens 默认值。120K tokens。 */
+  /**
+   * AgentConfig.maxContextTokens 默认值。120K tokens。
+   * ⚠️ **本键为真源**；另有两处镜像须同步（分层约束不可 import，故按本仓既有做法「重复 + 注释对冲」）：
+   * ① `src/config/loader.ts` 的 `DEFAULT_MAX_CONTEXT_TOKENS`；② `src/role-pack/strategyKeys.ts` 的 `MIN_CONTEXT_LIMIT`。
+   */
   DEFAULT_MAX_CONTEXT_TOKENS: 120_000,
 
   /**
