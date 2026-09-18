@@ -231,11 +231,11 @@
 
 ### 4.2 记忆底座（memory/ · 存储与召回）
 
-> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。`recall.ts`/`hybridMerge.ts`/`vectorStore.ts` 在 L2 回答前被召回消费（见 §二 2.4）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
+> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。`keywordsTouch.ts`/`hybridMerge.ts`/`vectorStore.ts` 在 L2 回答前被召回消费（见 §二 2.4）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
 
 | 模块文件                         | 状态     | 测试文件                                   | 质量说明                                  |
 | ---------------------------- | ------ | -------------------------------------- | ------------------------------------- |
-| `memory/recall.ts`           | 🟡 已收敛 | `__tests__/recall.test.ts`             | 仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
+| `memory/keywordsTouch.ts`     | 🟡 已收敛 | `__tests__/keywordsTouch.test.ts`      | 原名 `recall.ts`（2026-09-18 更名对齐职责）；仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
 | `memory/hybridMerge.ts`      | 🟢 已打磨 | `__tests__/hybridMerge.test.ts`        | 混合检索（向量 0.6 + score 0.4）              |
 | `memory/vectorStore.ts`      | 🟢 已打磨 | `__tests__/vectorStore.test.ts`        | 向量存储                                  |
 | `memory/types.ts`            | 🟢 已打磨 | `__tests__/types.test.ts`              | 记忆类型定义                                |

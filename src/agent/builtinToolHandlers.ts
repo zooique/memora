@@ -34,7 +34,7 @@ import { formatSegmentationFooter } from '@/agent/toolLedger.js';
 import type { WriteExtensions } from '@/agent/toolExecutor.js';
 import { sanitizeExternalText, stripControlChars } from '@/agent/toolExecutor.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
-import { touchScores } from '@/memory/recall.js';
+import { touchScores } from '@/memory/keywordsTouch.js';
 import type { AgentSearchHit, MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 // token 估算唯一真理源（CJK 感知）——read_file 的分段预算与上下文占用/截断同口径

@@ -7,7 +7,7 @@
  * 原文件中的 recall 相关用例（双通道融合排序 / 降级策略 / 分层分轨 / cap 分配）一并退役。
  */
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { extractKeywords, touchScores } from '@/memory/recall.js';
+import { extractKeywords, touchScores } from '@/memory/keywordsTouch.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 
 describe('extractKeywords · 关键词提取', () => {

@@ -11,7 +11,7 @@
  * 即"假阴性换成了假阳性"。
  */
 import { describe, it, expect } from 'vitest';
-import { extractKeywords } from '@/memory/recall.js';
+import { extractKeywords } from '@/memory/keywordsTouch.js';
 import { buildSearchTerms } from '@/project-search/terms.js';
 
 describe('buildSearchTerms（R5 · 显式片段优先）', () => {

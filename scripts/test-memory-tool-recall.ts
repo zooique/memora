@@ -24,7 +24,7 @@ import { MemoryInspector, type AgentSearchHit } from '../src/agent/managers/memo
 import { BuiltinToolHandlers } from '../src/agent/builtinToolHandlers.js';
 import { SecurityGuard } from '../src/security/pathGuard.js';
 import { awaitBackgroundTasks } from '../src/utils/backgroundTask.js';
-import { touchScores } from '../src/memory/recall.js';
+import { touchScores } from '../src/memory/keywordsTouch.js';
 import { nowIso } from '../src/utils/time.js';
 import type { Memory } from '../src/memory/types.js';
 import type { MessageHistory } from '../src/agent/messageHistory.js';

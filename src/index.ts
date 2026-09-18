@@ -251,7 +251,7 @@ export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 export type { SessionCheckpoint, PauseMeta, StepOutcome, PlanStep } from '@/agent/types.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
-// 注：extractKeywords 为 recall 模块内部的关键词提取工具（供 search_memories 召回使用），
+// 注：extractKeywords 为 keywordsTouch 模块内部的关键词提取工具（供 search_memories 召回使用），
 // 宿主生产代码零直接消费，属纯内部实现，不再挂公共面（收回误暴露）。
 
 // ─── 日志抽象 ────────────────────────────────────────────

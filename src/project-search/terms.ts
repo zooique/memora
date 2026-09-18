@@ -19,7 +19,7 @@
  *   2. 含 CJK 的片段走内核分词 SSOT（`extractKeywords`），**不新造第二套分词器**；
  *   3. 词表中**不得出现原查询里不存在的 ASCII 碎片**（`next` / `js`）。
  */
-import { extractKeywords } from '@/memory/recall.js';
+import { extractKeywords } from '@/memory/keywordsTouch.js';
 
 /** 含 CJK（汉字/扩展区 + CJK 标点 + 全角形式）的片段 → 需分词；其余（ASCII、拉丁扩展）原样保留 */
 const CONTAINS_CJK = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;

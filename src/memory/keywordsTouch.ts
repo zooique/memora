@@ -1,9 +1,14 @@
 /**
- * 记忆召回工具函数 —— 关键词提取 / 访问轨迹刷新。
+ * 记忆搜索后端工具 —— 关键词提取 / 访问轨迹刷新。
+ * 模块原名 `recall.ts`，2026-09-18 更名对齐实际职责（原名误导为「召回编排」，实际已无该职责）。
  *
  * 注（「减法」2026-09-10）：原 `recall()` 召回编排（双通道 + 分层分轨 + cap 内分配）已退役——
  * 它是「检查点恢复的温记忆召回」的唯一消费者，随跨重启恢复链整体退役而消亡；
  * 运行时记忆召回改由 `search_memories` 工具（`searchHybrid`）承担，见 docs/白话设计文档.md 第二步。
+ *
+ * 本模块现存两函数均为 search_memories / 项目搜索复用：
+ * - `extractKeywords`：内核分词 SSOT（`project-search/terms.ts` 用同源断言钉死，不另造分词器）；
+ * - `touchScores`：命中后只刷 `accessedAt`（`storage.touch` 唯一写位，score 已物理退役）。
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';

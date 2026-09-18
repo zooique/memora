@@ -266,7 +266,7 @@ coverage-tmp/lcov-report/memory/loader.ts.html
 coverage-tmp/lcov-report/memory/lockManager.ts.html
 coverage-tmp/lcov-report/memory/projectManager.ts.html
 coverage-tmp/lcov-report/memory/projectRegistry.ts.html
-coverage-tmp/lcov-report/memory/recall.ts.html
+coverage-tmp/lcov-report/memory/keywordsTouch.ts.html
 coverage-tmp/lcov-report/memory/relationStore.ts.html
 coverage-tmp/lcov-report/memory/sessionStore.ts.html
 coverage-tmp/lcov-report/memory/sourceValidation.ts.html
@@ -318,7 +318,7 @@ coverage-tmp/memory/loader.ts.html
 coverage-tmp/memory/lockManager.ts.html
 coverage-tmp/memory/projectManager.ts.html
 coverage-tmp/memory/projectRegistry.ts.html
-coverage-tmp/memory/recall.ts.html
+coverage-tmp/memory/keywordsTouch.ts.html
 coverage-tmp/memory/relationStore.ts.html
 coverage-tmp/memory/sessionStore.ts.html
 coverage-tmp/memory/sourceValidation.ts.html
