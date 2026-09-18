@@ -217,8 +217,8 @@ export type WebviewToExtensionMessage =
   /**
    * 请求搜索记忆（记忆视图搜索框触发，query 非空才发送）
    *
-   * host 调 MemoryInspector.searchHybrid(query, limit)（语义+关键词混合检索），
-   * 返回带 similarity/accessedAt 的命中列表。空 query 不应发送本消息（走 memory_load）。
+   * host 调 MemoryInspector.searchHybrid(query, limit)（纯关键词检索，B0 收编后无向量通道），
+   * 返回带 accessedAt 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
   | { type: 'memory_search'; query: string; limit?: number }
   /**

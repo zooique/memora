@@ -365,9 +365,11 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 
 > **历史说明（落地状态已被撤回，2026-09-10）**：本节伪代码对应的 `recall()` 及其三函数（`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation`）**已随召回编排物理删除**（见头部收敛补记）——「已由 `src/memory/recall.ts` 落地」不成立，`recall.ts` 现仅存 `extractKeywords` / `touchScores`。`metadata?.summaryType / sessionName / roundId` 提升为顶层持久化字段与 §4.4 候选超集裁剪修复**仍现行**（与召回编排无关）；本节其余"落地状态"表述均属退役前语义。
 
-### 4.5 hybridMerge 融合排序（保留）
+### 4.5 hybridMerge 融合排序（退化为纯关键词恒序，预留补回）
 
-语义召回内部仍使用 `hybridMerge`（`vectorScore*0.6 + memory.score*0.4`）选拔候选，但**不再做第二次排序覆盖**。`hybridMerge` 的结果直接返回，由外层按分层分轨规则合并排序。
+> **B0 收编失效标注（2026-09-18）**：语义向量通道已随 B0 收编整体移除（`vectorStore`/embedding），`searchHybrid` 现为**纯关键词**，`hybridMerge` 的 `vectorScore` 唯一产出恒 0 → 排序退化为「插入序 + slice 取前 limit」（stable-sort 保序，无实际排序动作）。本节下文的「语义召回」「vectorScore×0.6 + score×0.4」均属**退役前语义**——`memory.score` 权重已随阶段3排序纯化退役，语义通道已随 B0 删除。`vectorScore` 字段与排序函数保留为**预留键**：语义检索的 cache-recompute 形态记入探索期文档候选，等真实「关键词搜不到」复现再按缓存重算形态补回（见 `memoryInspector.ts` searchHybrid 注释），补回前恒 0。
+
+原设计（退役前）：语义召回内部使用 `hybridMerge` 按语义分选拔候选，但**不再做第二次排序覆盖**。`hybridMerge` 的结果直接返回，由外层按分层分轨规则合并排序。
 
 **与 v2 的区别**：v2 中 `hybridMerge` 的排序被"会话优先 + 时间"完全覆盖（双重排序问题）。v3 中 `hybridMerge` 只负责"选拔候选"，排序由分层分轨规则统一处理。
 
