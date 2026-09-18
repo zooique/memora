@@ -231,8 +231,6 @@ export type {
 // 内存版实现（用于测试和开发）
 export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 
-// ─── 会话管理器接口导出（单一分叉真理源见 MessageHistory.forkSession） ──
-export type { ISessionManager } from '@/memory/sessionManager.js';
 // 内存版实现（用于测试和开发）
 export { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 export { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
