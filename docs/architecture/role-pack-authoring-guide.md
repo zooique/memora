@@ -32,7 +32,7 @@
     "prepare": { "summaryFocus": "以方案设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
     "reflect": { "selfReview": 1 },
-    "global": { "tokenBudget": 12000, "stepBudget": 60 }
+    "global": { "contextLimit": 0, "stepBudget": 60 }
   },
   "capabilities": [
     { "capability": "file:write", "description": "写文件" },
@@ -154,12 +154,15 @@
 | `askOn`         | 数组（元素见下）                     | 1\~4 个元素             | `[ambiguity, decision, missing_info]` | 主动提问触发场景（可组合） | `["ambiguity", "decision"]` |
 | `askLimit`      | 整数                           | `1 ~ 10`             | `3`                                   | 每轮主动提问次数上限    | `2`                         |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
-| `tokenBudget`   | 整数                           | `0 ~ 1000000`（0=不限制） | 未声明→`0`（不限制）                           | 每轮总 token 上限  | `12000`                     |
+| `contextLimit`   | 整数                           | `0` 或 `120000 ~ 2000000` | 未声明→`0`（跟随 provider 窗口）                           | 角色包上下文上限（**推荐 0**）  | `0`                     |
 | `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `50`                                  | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
 
 > `askOn` 元素枚举：`ambiguity`（模糊）/ `decision`（需决策）/ `missing_info`（缺信息）/ `confirm`（需确认）。
 > `userFollowup` 须为 `ask` 时 `askOn`/`askLimit` 才生效。
-> `tokenBudget` 为**软上限**：仅当本轮累计估算 token ≥ 该值才提前收尾。**声明值须小于上下文窗口**（内核默认 120000），否则永不触发；`0` 或未声明 = 完全不检查（**内置示例包即声明 `0` = 不设限**）。
+> `contextLimit` 为**角色包级**的上下文上限：与 provider 窗口**取小值**后成为**有效窗口**（截断 / 软上限 / 占用快照均按有效窗口计算），超限时在**截断层裁剪、不终止本轮**。三点须知：
+> 1. **推荐填 0**（内置示例包即如此）：`0` 或未声明 = 不设额外上限，有效窗口 = provider 窗口；要整体缩小上下文规模也可直接调 provider 配置；
+> 2. **典型用法**：provider 声明 1M，但某角色只需 300k → 该角色声明 `300000`，有效窗口取小值 300k，把模型能力留给真正需要的角色；
+> 3. **只会取小、绝不放大**：声明值大于 provider 窗口时按 provider 窗口算；**终止职责归 `stepBudget`**，本键只管规模。
 
 ***
 
@@ -176,7 +179,7 @@
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
 | `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）       |
 | `askLimit`            | 1    | 10      | error           | 回退默认 `3`           |
-| `tokenBudget`         | 0    | 1000000 | error           | 回退内核兜底 `80000`      |
+| `contextLimit`         | 0    | 1000000 | error           | 回退内核兜底 `80000`      |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
 
 ***
@@ -194,7 +197,7 @@
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |
 
 > 数值键越界报错信息会带合法区间提示，如：
-> `strategy.global.tokenBudget 取值 999999 不符合约束，合法区间 [0, 1000000]`
+> `strategy.global.contextLimit 取值 999999 不符合约束，合法区间 [0, 1000000]`
 
 ***
 
@@ -213,7 +216,7 @@
 | ❌ 错误写法                                              | ✅ 正确写法                                           | 原因                    |
 | --------------------------------------------------- | ------------------------------------------------ | --------------------- |
 | `"outputLimit": 999999`                             | `"outputLimit": 8192`                            | 越上界 `65536`，防输出失控     |
-| `"tokenBudget": -100`                               | `"tokenBudget": 12000`                           | 负值非法，应为 `0 ~ 1000000` |
+| `"contextLimit": -100`                               | `"contextLimit": 0`                               | 负值非法，应为 `0 ~ 1000000`；推荐 `0`（不限制） |
 | `"selfReview": 999`                                 | `"selfReview": 1`                                | 越上界 `10` 非法；布尔数字语义下任意正整数只表示"自审查一次"，写 `1` 最清晰 |
 | `"capabilities": [{"capability": "WriteFile"}]`     | `"capabilities": [{"capability": "file:write"}]` | 能力名必须 `域:动作` 小写格式     |
 | `"strategy": { "prepare": { "unknownKey": true } }` | 去掉该键                                             | 未知键 warning + 忽略，不生效  |

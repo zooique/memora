@@ -15,7 +15,7 @@
 
 ### 1.2 自动切换与自动流转废弃（角色包 = 键 + 表层文本）
 
-角色包不只是提示词：`strategy` 键（memoryRecall / toolMode / temperature / tokenBudget / summaryFocus / summary…）是 **Agent 运行的确定性行为配置**。因此角色包拆为两层：
+角色包不只是提示词：`strategy` 键（memoryRecall / toolMode / temperature / contextLimit / summaryFocus / summary…）是 **Agent 运行的确定性行为配置**。因此角色包拆为两层：
 
 ```
 底层键（strategy）   = "怎么工作"（行为配置：召回模式、工具面、预算、记忆视角…）

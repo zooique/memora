@@ -137,7 +137,7 @@
   "strategy": {
     "prepare": { "summaryFocus": "以方案设计视角提炼要点" },
     "act": { "toolMode": "allow", "temperature": 0.3 },
-    "global": { "tokenBudget": 12000 }
+    "global": { "contextLimit": 0 }
   },
   "capabilities": [
     { "capability": "file:write", "description": "写文件" },

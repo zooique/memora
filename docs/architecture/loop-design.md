@@ -34,7 +34,7 @@
 | ~~Handoff = turn 出口衔接决策~~ | ~~内部控制信号，非对外衔接~~ | **已废弃（2026-09-05）** |
 | 触发源决定召回 | `_shouldSkipRecallInjection`（Token 紧时跳过召回）；`_injectRecall` 仅外部输入触发（loop 内部 step 不触发） | ✅ 高 |
 | 策略层 = 参数化配置 | `setStrategy(L2RuntimeStrategy)`：工具权限/步数/预算/自审查/插话 全量参数化 | ✅ 高 |
-| 终止条件三类（目标/上限/中断） | 目标达成：`done` 分支；上限：`maxIterations`/`stepBudget`/`tokenBudget`/`toolStepLimit`；中断：`abort`/`pause`/`interject` | ✅ 高 |
+| 终止条件三类（目标/上限/中断） | 目标达成：`done` 分支；上限：`maxIterations`/`stepBudget`/`toolStepLimit`；中断：`abort`/`pause`/`interject` | ✅ 高 |
 
 **结论**：现状已高度对齐设计哲学——**loop（step 编排）是 turn Act 内部的自然属性，没有独立于 turn 之外的第二套引擎（原档2 多 turn 编排已废弃）**；~~多 turn 任务编排由 orchestrator 在 turn 出口处串联~~（已废弃）。
 
@@ -84,7 +84,7 @@
 | # | 对齐点 | 收敛状态 | 现状（实证） |
 |---|--------|---------|------------|
 | 1 | 概念命名"step" vs "turn" | **已收敛**（术语表 2026-09-03） | step = `runIterationLoop` 内每次 LLM 调用 + 工具；turn = `processUserInput` 一次完整执行（一个 roundId）；loop = 对 step 的编排（`runIterationLoop`） |
-| 2 | 终止条件分散 | **已语义化**（多 turn 任务编排） | 任务编排终止由任务链收敛承担（orchestrator 按 pending 步驱动、耗尽即收尾汇报）；loop 以 `toolStepLimit` 约束深度；turn 整体以 `stepBudget`/`tokenBudget`/`maxIterations` 兜底。统一表述为「**Handoff 决策的输入集合**」：目标达成 / 资源上限 / 用户中断（对齐哲学"终止条件三分类"） |
+| 2 | 终止条件分散 | **已语义化**（多 turn 任务编排） | 任务编排终止由任务链收敛承担（orchestrator 按 pending 步驱动、耗尽即收尾汇报）；loop 以 `toolStepLimit` 约束深度；turn 整体以 `stepBudget`/`maxIterations` 兜底。统一表述为「**Handoff 决策的输入集合**」：目标达成 / 资源上限 / 用户中断（对齐哲学"终止条件三分类"） |
 | 3 | 目标模式接口形状未预留 | 待实现（远期锚点） | 仍不实现；明确定位：未来目标模式 = 回答后插入对齐环节（差距分析 → 新 Trigger），插入点收敛在 orchestrator（闭环编排容器），仍复用 `processUserInput` 的 turn |
 
 **反模式自查**（对照哲学「递归边界确定性」「模式统一论」）：
@@ -170,7 +170,7 @@
 
 **收敛设计（自然生长，非重写）**：判定逻辑、命中文案（衔接提示词 `GUARD_RAIL_PROMPTS`）、阈值（`GUARD_THRESHOLDS`）单一真理源收敛到 [`src/agent/guardRail.ts`](../../src/agent/guardRail.ts)（`createDefaultGuards` 注册 5 闸，判定序 read_failed 先于 read_dedup）。loop 在 `executeToolCalls` 处仅保留最小职责：组 GuardContext → 调 `evaluateBlocked` 取首个硬拦 → search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层故留 loop）→ 被拦回填文案。运行态计数（读失败 / 连写）合并进 `this.guardState`，由 loop 在结果处理 / 写侧持久化处喂数（loop 是执行结果权威）。
 
-**不收敛的异构护栏**（维持各自为政，见 guardRail.ts 收敛边界）：`duplicateToolCallInterceptor` 软警告、maxIterations/stepBudget/tokenBudget 循环终止、self_review 后处理、interruptQueue/pause/ask 续跑、文件覆盖度台账替身回显（分支②/③）。
+**不收敛的异构护栏**（维持各自为政，见 guardRail.ts 收敛边界）：`duplicateToolCallInterceptor` 软警告、maxIterations/stepBudget 循环终止、self_review 后处理、interruptQueue/pause/ask 续跑、文件覆盖度台账替身回显（分支②/③）。
 
 > 收敛取舍记录：曾计划在 system prompt 追加「## 行为护栏」通用声明节，已去掉——常量注入改变每 turn 的 token 预算（撞破极小预算截断测试标定）且让 `[TAG]` 令牌在常驻 system prompt 出现而干扰运行时拒绝消息定位。衔接提示词以运行时即时渲染为准，`buildPromptSection` 保留为宿主可选能力。
 
