@@ -221,7 +221,7 @@ export function resolveMultiStepReasoning(
 
 /**
  * 解析召回置信度阈值（recallConfidence）与摘要召回开关（summaryRecall）随阶段2 键族退役——
- * 记忆纯工具化召回后由 memory_search 工具语义通道天然承载，prepare 无消费端，此处不再解析。
+ * 记忆纯工具化召回后由 search_memories 工具语义通道天然承载，prepare 无消费端，此处不再解析。
  *
  * 解析工具只读模式：非法值归位 'full'
  *
