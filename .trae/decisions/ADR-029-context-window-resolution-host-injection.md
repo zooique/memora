@@ -41,6 +41,8 @@ description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 
 - **动态获取是顶层非地基**：`provider.contextWindow` 配置 + 静态表已覆盖 DeepSeek/Claude 等 90% 场景；Gemini/Ollama/OpenAI 动态 API 是加分项，按顺序后做。
 - **窗口量级边界不跨层引用**：内核 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS` 与 sprite `loader.DEFAULT_MAX_CONTEXT_TOKENS` 是**既有刻意独立声明**（见 `constants.test.ts` 护栏），本 ADR 不导出 MIN/MAX 给宿主；bounds 在配置 schema 层声明（vscode package.json `minimum/maximum`、sprite loader `MIN_CONTEXT_WINDOW/MAX_CONTEXT_WINDOW`），宿主编排不复制常量。越界手改 settings.json 时内核预算非负收敛降级，不崩溃。
 
+> **⚠️ 本条末两句已失效（2026-09-18 裁决，见「上下文窗口区间裁决 —— 2026-09-18 演进」）**：`MIN_CONTEXT_WINDOW` 已删除、`MAX_CONTEXT_WINDOW` 不再作为裁决上界（仅 `logger.warn` 观测、值仍原样生效），「越界收敛降级」行为随之撤销 —— 超模型能力由 API 报错（可见失败），不再被任何一层静默替换。
+
 ## 理由
 
 1. **SSOT 单一控制源**：窗口数字一个真相源（宿主注入的 `maxContextTokens`），解析公式收口内核单一函数；角色包零窗口责任。
@@ -108,3 +110,17 @@ description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 
 - ✅ `memora.maxContextTokens` 废弃（`package.json` 配置段删除）+ 一次性迁移（`providerStore.migrateMaxContextTokens`：旧全局值并入首个未配 contextWindow 的 provider 并清除旧键；`extension.activate` 调用）。
 - ⏸ 可选「自动探测上限」预填按钮（**非 SSOT、推迟**）：仅当用户显式选 Ollama/Gemini 类型且 `base_url` 可达时，探测结果写入用户 `contextWindow` 字段（仍由用户值作真理，不另立来源）。属 ADR-029 原规划的顶层加分项，非核心 SSOT。
 - 质量门：vscode `tsc --noEmit` 0 错、`eslint --max-warnings 0` 0 警告（src）、host 全量测试 272 通过（含新增 `providerStore.test.ts` 9 + `configView.test.ts` 扩展 4）。
+
+---
+
+## 上下文窗口区间裁决 —— 2026-09-18 演进
+
+> **驱动**：V1 观察项（`contextWindow` 区间双定义 + 静默回退）。内核 `src/config/loader.ts` 存 `MIN/MAX_CONTEXT_WINDOW=1000/2M`，越界**静默 `return undefined`** → 兜底 120K；而宿主 `providerStore.ts` 存 `1024/10M`，越界**弹窗拒绝**。后果：填 3M → 宿主接受（<10M）→ 内核静默丢弃 → **UI 显示 3M / 真实生效 120K，全程零提示**。
+>
+> **裁决**：
+> 1. **内核删除上界裁决**：`validateContextWindow` 只留自身防御（非数 / 非有限 / 非正数 → `undefined`），越界仅 `logger.warn`（**观测，不改行为**）；`MIN_CONTEXT_WINDOW` 删除，`MAX_CONTEXT_WINDOW` 降级为「告警参考量级」（2M = 主流旗舰窗口量级，非裁决）。
+> 2. **否决**「宿主护栏升级为权威拒绝 + 上界对齐 2M」：上界本质是对「最大模型窗口」这一**外部事实的猜测**，该事实只有 provider/API 掌握——猜宽（防呆 10M）是保守、猜准（2M）是冒险（未来 4M 模型上线即被拒）。
+> 3. **值原样生效** → 超模型能力由 **API 报错**（真实层可见失败），不再被任何一层静默替换。
+> 4. **退出条件（登记于台账 `V1-RULING`）**：若出现「超大 contextWindow 导致 API 4xx / 超时显著上升」→ 回滚为**显式报错**；⚠️ 硬约束：**任何回滚都不得回到静默**。
+>
+> **对齐本 ADR**：核心决策「窗口数字唯一真理源 = 用户 per-LLM `contextWindow`、内核只消费不解析」**不变且被强化**（删掉静默替换后「UI 显示值 = 真实生效值」更成立）。本演进只改「bounds 声明层」执行细节：bounds 的**唯一裁决方** = 宿主 `providerStore` 的 sanity bound（1024~10M，纯防呆）；内核不再持有第二份区间定义。
