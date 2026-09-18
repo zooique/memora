@@ -250,11 +250,11 @@ export type { ILogger } from '@/logging/loggerInterface.js';
 export { setLogger, logger } from '@/logging/logger.js';
 
 // ─── 工具导出 ────────────────────────────────────────────
-// 以下工具为宿主项目依赖（分词/类型守卫/Frontmatter/安全定时器）
+// 以下工具供宿主复用（分词/类型守卫/Frontmatter/安全定时器）；宿主按需接入，非强依赖
 export { segmentText, segmentLower } from '@/utils/segmenter.js';
 export { isPlainObject } from '@/utils/objects.js';
 export { parseFrontmatter, serializeFrontmatter } from '@/utils/frontmatter.js';
-// 宿主主进程统一使用 safeSetTimeout/safeSetInterval 跟踪清理定时器
+// 安全定时器工具：供宿主主进程复用，统一跟踪清理定时器（防原生 setTimeout/setInterval 泄漏）
 export {
   safeSetTimeout,
   safeSetInterval,
@@ -281,7 +281,7 @@ export { toError } from '@/utils/toError.js';
 export type { ToolErrorCodeValue } from '@/utils/errors.js';
 
 // ─── 通用工具导出 ────────────────────────────────────────
-// 宿主主进程统一从 'memora' 导入通用工具，消除 shared/ 跨层副本（渲染进程因浏览器环境保留副本）
+// 通用工具供宿主复用：主进程可直接 import 本入口（渲染进程因浏览器环境保留 shared 副本）
 export {
   truncate,
   isValidConfigName,
