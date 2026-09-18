@@ -188,12 +188,6 @@ export const LOOP_CONSTANTS = {
   /** 摘要缓存 TTL：消息数增长超过此值时缓存过期，需重新生成摘要。 */
   SUMMARY_CACHE_TTL_MSGS: 10,
 
-  /**
-   * Token 预算耗尽占位文本（SSOT）：会话/汇报在上下文预算触顶时的兜底输出。
-   * orchestrator 需以此判定"无实质收尾"（走回退摘要而非当作真实内容），故集中于此。
-   */
-  TOKEN_BUDGET_REACHED_PLACEHOLDER: '[Token budget reached]',
-
   /** 流式中断的默认追加标记（SSOT）：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"。
    * loop（流式响应中断）与 orchestrator（历史写入中断标记）必须用同一份默认文案，
    * 避免宿主未注入 messages 时两条路径降级出不同文案（此前 orchestrator 回退为短" [已中断]"）。

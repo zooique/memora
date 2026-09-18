@@ -2353,43 +2353,45 @@ describe('AgentLoop · 预算与软上限防护（2026-09-11 批次）', () => {
     expect(chunks.some((c) => c.type === 'tool_result')).toBe(true);
   });
 
-  it('tokenBudget 触顶走独立终止信号：不注入自审查（预算耗尽续跑审查纯烧 token）', async () => {
-    // 第一轮触发工具执行（toolExecutedThisTurn=true），第二轮上下文触顶 tokenBudget
-    const toolExecutor = vi.fn().mockResolvedValue('R'.repeat(300));
-    const provider = mockMultiTurnProvider([
-      [
-        {
-          toolCalls: [
-            { id: 't1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } },
-          ],
-        },
-      ],
-      [{ content: '任务完成' }],
-    ]);
-    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+  it('角色包 contextLimit 与 provider 窗口取小值为有效窗口（终止路径已删除，改由截断层生效）', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      maxContextTokens: 120_000,
+    });
 
-    // 预算控制：system + user（含 <user_input> 包裹）后仅多 +5 token 余量，
-    // 工具轮必然增大上下文（assistant toolCalls + 300 字符 tool 结果 >> 5）→ 第二轮触顶
-    const input = 'translate it';
-    const sysTokens = loop.estimateTokens(loop.getMessages());
-    const userTokens = loop.estimateTokens([{ role: 'user', content: `<user_input>${input}</user_input>` }]);
-    loop.setStrategy({ selfReviewEnabled: true, tokenBudget: sysTokens + userTokens + 5 });
+    // 初始：contextLimit 默认 0 → 有效窗口 = provider 窗口
+    expect(loop.getEffectiveContextWindow()).toBe(120_000);
 
-    const chunks: AgentChunk[] = [];
-    for await (const chunk of loop.processUserInput(input)) {
-      chunks.push(chunk);
-    }
+    // 角色包声明更小上限 → 取小值（角色包得以收紧上下文规模）
+    loop.setStrategy({ contextLimit: 30_000 });
+    expect(loop.getEffectiveContextWindow()).toBe(30_000);
 
-    // 预算触顶占位文本已产出（触顶路径被走过），且该轮无 LLM 回复文本
-    expect(
-      chunks.some((c) => c.type === 'text' && c.content.includes('Token budget reached')),
-    ).toBe(true);
-    // 修复核心断言（V3）：即使本轮执行过工具且自审查开启，预算触顶后不得注入 SELF_REVIEW 续跑——
-    // 'budget' 独立终止信号直接 return false，绕过 handleIterationResult 的 done→自审查分支
-    expect(chunks.filter((c) => c.type === 'selfReview')).toHaveLength(0);
-    expect(
-      loop.getMessages().filter((m) => m.role === 'system' && m.content.includes('SELF_REVIEW')),
-    ).toHaveLength(0);
+    // 角色包上限大于 provider 窗口 → 仍取 provider 窗口（绝不放大）
+    loop.setStrategy({ contextLimit: 200_000 });
+    expect(loop.getEffectiveContextWindow()).toBe(120_000);
+
+    // 清回 0 → 不设额外上限，跟随 provider 窗口
+    loop.setStrategy({ contextLimit: 0 });
+    expect(loop.getEffectiveContextWindow()).toBe(120_000);
+
+    // provider 窗口热切换 → 与当前角色包上限重算（两入口共用同一计算点）
+    loop.setStrategy({ contextLimit: 50_000 });
+    loop.setContextWindow(80_000);
+    expect(loop.getEffectiveContextWindow()).toBe(50_000);
+    loop.setContextWindow(20_000);
+    expect(loop.getEffectiveContextWindow()).toBe(20_000);
+
+    // 分发断言：有效窗口变更必须通知外部持有窗口拷贝的组件
+    // （ContextManager 在 loop 内同步；ContextPreparer 靠 onContextWindowChanged 回调）
+    // 防「只改 loop 数字、不分发」——删掉 recompute 里的分发语句本断言即红。
+    const notified: number[] = [];
+    loop.onContextWindowChanged = (tokens: number) => notified.push(tokens);
+    loop.setStrategy({ contextLimit: 0 }); // 先解除上限（provider 仍 20k，有效窗口不变→不通知）
+    loop.setContextWindow(200_000); // provider 放大 → 有效窗口随之变大（通知 1）
+    loop.setStrategy({ contextLimit: 150_000 }); // 角色包收紧 → 取小值 150k（通知 2）
+    expect(notified).toEqual([200_000, 150_000]);
   });
 });
 

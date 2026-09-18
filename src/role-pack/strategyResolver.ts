@@ -12,7 +12,8 @@ import {
   MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
-  MAX_TOKEN_BUDGET,
+  MAX_CONTEXT_LIMIT,
+  MIN_CONTEXT_LIMIT,
   MAX_TOOL_STEP_LIMIT,
 } from './strategyKeys.js';
 import type {
@@ -40,13 +41,6 @@ import type { RolePackManager } from './rolePackManager.js';
 // loop 构造时 opts.maxIterations 也用同一个 DEFAULT_MAX_ITERATIONS 源头对齐）
 // ════════════════════════════════════════════════════════════
 
-/**
- * Token 预算缺省回退值。角色包 tokenBudget 不合法/越界时使用。
- * 80_000 ≤ AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS=120_000（Provider 硬墙），
- * 保证软预算检查能真的在硬墙之前触发——200K 方向错误（永远触不到）。
- */
-const FALLBACK_TOKEN_BUDGET = 80_000;
-
 // 记忆召回相关默认常量（DEFAULT_MEMORY_RECALL_PERCENT 等）随阶段2 召回策略键族退役：
 // 记忆纯工具化召回后 prepare 无自动注入消费端，memoryRecallPercent/recallConfidence 等不再由策略层解析。
 
@@ -73,7 +67,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
     userFollowup: 'silent',
   },
   global: {
-    tokenBudget: 0, // 0 = 不限制（软闸不触发）；FALLBACK_TOKEN_BUDGET 仅兜底非法/越界值
+    contextLimit: 0, // 0 = 不设额外上限（有效窗口 = provider 窗口）；非法/越界值同样回退 0
     // 0 或未声明 → 内核兜底 DEFAULT_MAX_ITERATIONS（无「不限步数」路径，符合防死循环设计）
     stepBudget: 0,
     errorHandling: 'retry',
@@ -193,15 +187,17 @@ export function resolveAskLimit(strategy: BehaviorStrategy | undefined): number 
   return valid ? candidate : DEFAULT_BEHAVIOR_STRATEGY.global!.askLimit!;
 }
 
-/** 解析 Token 预算：角色包 tokenBudget 合法（整数 ∈ [0, MAX_TOKEN_BUDGET]）则采用，否则回退 FALLBACK_TOKEN_BUDGET。0=不限制。 */
-export function resolveTokenBudget(strategy: BehaviorStrategy | undefined): number {
-  const candidate = strategy?.global?.tokenBudget;
+/**
+ * 解析角色包上下文上限。合法 = `0`（不设额外上限）或整数 ∈ [MIN_CONTEXT_LIMIT, MAX_CONTEXT_LIMIT]；
+ * 其余（未声明 / 越界 / 小数 / 非数）→ 0（不设额外上限，有效窗口 = provider 窗口）。
+ */
+export function resolveContextLimit(strategy: BehaviorStrategy | undefined): number {
+  const candidate = strategy?.global?.contextLimit;
   const valid =
     typeof candidate === 'number' &&
     Number.isInteger(candidate) &&
-    candidate >= 0 &&
-    candidate <= MAX_TOKEN_BUDGET;
-  return valid ? candidate : FALLBACK_TOKEN_BUDGET;
+    (candidate === 0 || (candidate >= MIN_CONTEXT_LIMIT && candidate <= MAX_CONTEXT_LIMIT));
+  return valid ? candidate : 0;
 }
 
 /** 解析步数预算：0 或未声明 → DEFAULT_MAX_ITERATIONS 兜底；stepBudget ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]
@@ -278,7 +274,7 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
     toolStepLimit: resolveToolStepLimit(strategy),
     errorHandling: resolveErrorHandling(strategy),
     providerRouting: resolveProviderRouting(strategy),
-    tokenBudget: resolveTokenBudget(strategy),
+    contextLimit: resolveContextLimit(strategy),
     stepBudget: resolveStepBudget(strategy),
     multiStepReasoning: resolveMultiStepReasoning(strategy),
     askLimit: resolveAskLimit(strategy),

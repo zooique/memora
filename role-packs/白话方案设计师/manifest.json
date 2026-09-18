@@ -46,7 +46,7 @@
       ],
       "askLimit": 10,
       "errorHandling": "retry",
-      "tokenBudget": 0,
+      "contextLimit": 0,
       "stepBudget": 100
     }
   }

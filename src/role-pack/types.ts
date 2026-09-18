@@ -91,8 +91,8 @@ export interface ReflectStrategy {
 
 /** 跨阶段全局策略集合 */
 export interface GlobalStrategy {
-  /** 每轮总 token 上限（0=不限制；未声明即 0=不限制，仅非法/越界值才回退内核兜底 80000） */
-  readonly tokenBudget?: number;
+  /** 角色包上下文上限（0=不设额外上限，跟随 provider 窗口；与 provider 窗口取小值后成为有效窗口） */
+  readonly contextLimit?: number;
   /** 每轮工具步数上限（默认 50；内核已消费） */
   readonly stepBudget?: number;
   /** 异常时的处理策略（默认 retry） */
@@ -109,7 +109,7 @@ export interface GlobalStrategy {
  * 诚实化声明：本集合是"设计空间"非"承诺面"——被实际消费的字段为
  * prepare 的 summaryFocus（round-summary 提炼视角）；
  * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
- * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/tokenBudget/stepBudget。
+ * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/contextLimit/stepBudget。
  * 边界纪律：understandingConfirm 已回收（2026-09-13，见文件头注）；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {
@@ -143,8 +143,8 @@ export interface L2RuntimeStrategy {
   readonly errorHandling: ErrorHandling;
   /** Provider 路由策略（act.providerRouting） */
   readonly providerRouting: ProviderRouting;
-  /** Token 预算上限（global.tokenBudget：0=不限制） */
-  readonly tokenBudget: number;
+  /** 角色包上下文上限（global.contextLimit：0=不设额外上限，有效窗口 = provider 窗口） */
+  readonly contextLimit: number;
   /** 步数预算上限（global.stepBudget：0=未声明，走内核 maxIterations 兜底——非「不限」） */
   readonly stepBudget: number;
   /** 多步推理模式（act.multiStepReasoning） */

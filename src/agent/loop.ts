@@ -196,8 +196,11 @@ const INTEL_INTRO =
 export class AgentLoop {
   private messages: Message[] = [];
   private readonly maxIterations: number;
-  /** 上下文窗口 token 上限（默认 120_000，对齐 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS）。
-   *  非 readonly：模型热切换（Agent.setContextWindow）经 setContextWindow 同步。 */
+  /** provider 上下文窗口（原始声明值，默认 120_000）。模型热切换经 setContextWindow 写入。 */
+  private providerContextWindow: number;
+  /** **有效上下文窗口** = min(providerContextWindow, strategy.contextLimit>0 ? contextLimit : ∞)。
+   *  派生值（非独立真源）：由 #recomputeEffectiveWindow 在「provider 窗口变更」与「角色策略变更」
+   *  两个入口重算；是截断 / 软上限 / 占用快照统一消费的唯一窗口数字。 */
   private maxContextTokens: number;
   /** 可观测性 Tracer（默认 NOOP_TRACER 零开销） */
   private readonly tracer: ITracer;
@@ -282,6 +285,9 @@ export class AgentLoop {
   private interruptQueue: InterruptRequest[] = [];
   /** 主动提问回调（LLM 调 ask_user 工具时调用，Agent 注入，loop 只回调不处理 UI） */
   onPendingQuestion?: (questions: AskQuestion[]) => void;
+  /** 有效窗口变更回调（Agent 注入）：把 loop 算出的**有效窗口**分发给 loop 之外仍持有窗口拷贝的
+   *  组件（ContextPreparer 等）。计算点唯一在 loop（#recomputeEffectiveWindow），本回调只做分发。 */
+  onContextWindowChanged?: (effectiveTokens: number) => void;
   /** 单工具执行器（独立可测单元；strategy/回调经闭包读最新） */
   private readonly toolRunner: ToolRunner;
   /** L2 运行时策略（单一策略对象）。Agent 每轮经 setStrategy 注入，构造期默认 DEFAULT_L2_STRATEGY */
@@ -388,7 +394,10 @@ export class AgentLoop {
     //   strategy.stepBudget > 0 → 角色包声明的步数预算（配多少给多少）
     //   strategy.stepBudget = 0 → 这里的 maxIterations 兜底
     this.maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-    this.maxContextTokens = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
+    this.providerContextWindow = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
+    // 有效窗口初值 = provider 窗口（构造期 strategy 为默认策略，contextLimit=0 → 不设额外上限）；
+    // 后续 setStrategy / setContextWindow 任一变更都会经 #recomputeEffectiveWindow 重算。
+    this.maxContextTokens = this.providerContextWindow;
     this.tracer = opts.tracer ?? NOOP_TRACER;
     this.maxReflectionRetries = opts.maxReflectionRetries ?? 2;
     this.compactionStrategy =
@@ -668,9 +677,11 @@ export class AgentLoop {
     }
   }
 
-  /** 设置 L2 运行时策略（与现策略浅合并）。默认值仅在策略解析层 resolveL2Strategy 归一，loop 不再兜底 */
+  /** 设置 L2 运行时策略（与现策略浅合并）。默认值仅在策略解析层 resolveL2Strategy 归一，loop 不再兜底。
+   *  策略含 contextLimit → 变更后重算有效窗口（截断 / 软上限 / 占用快照随之生效）。 */
   setStrategy(partial: Partial<L2RuntimeStrategy>): void {
     this.strategy = { ...this.strategy, ...partial };
+    this.#recomputeEffectiveWindow();
   }
 
   /**
@@ -834,12 +845,9 @@ export class AgentLoop {
   /** 处理一次迭代结果（processUserInput/continueAfterPause 共享）。
    *  continue→继续；paused→终止（step 边界挂起待续跑）；aborted→终止（硬中止，排队插话已留档）；
    *  done→有自审查/排队插话待注入则继续，否则终止。返回 false 表示调用方应终止循环 */
-  private handleIterationResult(result: 'aborted' | 'budget' | 'done' | 'continue' | 'paused'): boolean {
+  private handleIterationResult(result: 'aborted' | 'done' | 'continue' | 'paused'): boolean {
     // continue（工具结果已回填）无需特殊处理
     if (result === 'continue') return true;
-    // budget（tokenBudget 触顶，V3）：终止循环。预算已耗尽时自审查续跑纯烧 token，
-    // 与 'done'（自然收尾，可能注入审查）区分——_callAndRoute prep==='done' 分支产出。
-    if (result === 'budget') return false;
     // paused（软暂停/提问在 step 边界生效）：终止本轮循环，保留现场待续跑
     if (result === 'paused') return false;
     // aborted（用户取消/超时）：硬中止，终止循环；排队插话已由 _handleInterrupt 消费进上下文留档
@@ -891,7 +899,7 @@ export class AgentLoop {
   private async *handleIteration(
     iteration: number,
     signal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'budget' | 'done' | 'continue' | 'paused', unknown> {
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
     logger.debug({ iteration, messageCount: this.messages.length }, 'Agent Loop 迭代');
 
     // 中断检查：软暂停（边界挂起可续跑）/ 硬中止（不可续跑）；
@@ -975,16 +983,9 @@ export class AgentLoop {
   private async *_callAndRoute(
     iteration: number,
     effectiveSignal: AbortSignal | undefined,
-  ): AsyncGenerator<AgentChunk, 'aborted' | 'budget' | 'done' | 'continue' | 'paused', unknown> {
-    // ─── 上下文准备：截断 + 微压缩 + tokenBudget 检查 ────────────
+  ): AsyncGenerator<AgentChunk, 'aborted' | 'done' | 'continue' | 'paused', unknown> {
+    // ─── 上下文准备：截断 + 微压缩（上下文规模上限由有效窗口在截断层生效）────
     const prep = await this._prepareContext(effectiveSignal);
-    if (prep === 'done') {
-      yield { type: 'text', content: `\n\n${LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER}` };
-      // 预算触顶走独立终止信号 'budget'（V3 修复）而非 'done'：
-      // 'done' 会经 handleIterationResult 触发自审查续跑，而预算已耗尽时续跑审查纯烧 token；
-      // 'budget' 分支直接终止循环，不注入 SELF_REVIEW（可在职责上与「自然收尾」区分）。
-      return 'budget';
-    }
 
     // LLM 调用前 emit thinking，让宿主 UI 在首 token 到达前展示"正在思考"反馈，消除空白等待
     yield { type: 'thinking', phase: 'llm_calling' };
@@ -1099,13 +1100,14 @@ export class AgentLoop {
     }
   }
 
-  /** 上下文准备：摘要截断 → 同步工作记忆 → 微压缩 → tokenBudget 检查 → 任务表注入。
-   *  返回 { chatOpts, safeMessages } 供调用方送 LLM；返回 'done' 表示达到预算上限终止本轮。
-   *  截断/压缩/预算改造 this.messages 的工作记忆，是"资源边界"职责的收敛点。
-   *  纯 async（非生成器）：达到预算上限时返回 'done'，由调用方负责 emit text + 终止。 */
+  /** 上下文准备：摘要截断 → 同步工作记忆 → 微压缩 → 任务表注入。
+   *  返回 { chatOpts, safeMessages } 供调用方送 LLM。
+   *  截断/压缩改造 this.messages 的工作记忆，是"资源边界"职责的收敛点。
+   *  上下文规模上限由**有效窗口**（min(provider 窗口, 角色包 contextLimit)）在截断层生效；
+   *  不再有「预算触顶即终止」路径 —— 终止职责归 stepBudget。 */
   private async _prepareContext(
     effectiveSignal: AbortSignal | undefined,
-  ): Promise<{ chatOpts: ChatOptions; safeMessages: readonly Message[] } | 'done'> {
+  ): Promise<{ chatOpts: ChatOptions; safeMessages: readonly Message[] }> {
     // 调用 LLM（带重试 + 截断保护）
     const chatOpts = this.buildChatOptions();
 
@@ -1182,18 +1184,6 @@ export class AgentLoop {
         },
         '上下文预算预警：容量到线未饱和，注入压缩/收敛提示',
       );
-    }
-
-    // tokenBudget 软上限检查（0=不限制）
-    if (this.strategy.tokenBudget > 0) {
-      const estimatedTokens = this.contextManager.estimateTokens(this.messages);
-      if (estimatedTokens >= this.strategy.tokenBudget) {
-        logger.info(
-          { estimatedTokens, tokenBudget: this.strategy.tokenBudget },
-          '达到 Token 预算上限',
-        );
-        return 'done';
-      }
     }
 
     // 每次迭代 LLM 调用前统一注入任务表 —— 替换式注入（T9 2026-09-11）：
@@ -2134,16 +2124,40 @@ export class AgentLoop {
   }
 
   /**
-   * 运行时更新上下文窗口上限（token）
+   * 重算**有效上下文窗口** = min(providerContextWindow, strategy.contextLimit)。
    *
-   * 与 setProvider 配套：模型热切换时同步窗口，令截断 / 软上限 / 召回注入警戒线
-   * （装配期值拷贝字段）随新模型窗口调整。只改窗口数字，不重建对话/不触碰消息。
+   * contextLimit = 0 / 未声明 → 不设额外上限（有效窗口 = provider 窗口）。
+   * 两个触发入口：setContextWindow（provider 窗口变）与 setStrategy（角色策略变）；
+   * 计算点**唯一**在此 —— 否则会出现「loop 用有效窗口截断、其他组件仍用 provider 窗口」的不一致。
+   * 变更时同步 contextManager，并经 onContextWindowChanged 分发给 loop 之外持有窗口拷贝的组件。
+   */
+  #recomputeEffectiveWindow(): void {
+    const limit = this.strategy.contextLimit;
+    const effective =
+      limit > 0 ? Math.min(this.providerContextWindow, limit) : this.providerContextWindow;
+    if (effective === this.maxContextTokens) return;
+    this.maxContextTokens = effective;
+    this.contextManager.setMaxContextTokens(effective);
+    this.onContextWindowChanged?.(effective);
+  }
+
+  /**
+   * 运行时更新 **provider 上下文窗口**（token）
    *
-   * @param tokens 新窗口 token 数
+   * 与 setProvider 配套：模型热切换时同步窗口。本方法只记录 provider 原始声明值，
+   * 有效窗口由 #recomputeEffectiveWindow 按 min(provider 窗口, 角色包 contextLimit) 重算，
+   * 令截断 / 软上限 / 占用快照随新模型与当前角色策略调整。只改窗口数字，不重建对话/不触碰消息。
+   *
+   * @param tokens provider 声明的窗口 token 数
    */
   setContextWindow(tokens: number): void {
-    this.maxContextTokens = tokens;
-    this.contextManager.setMaxContextTokens(tokens);
+    this.providerContextWindow = tokens;
+    this.#recomputeEffectiveWindow();
+  }
+
+  /** 当前**有效上下文窗口** = min(provider 窗口, 角色包 contextLimit)（诊断 / 测试读取面）。 */
+  getEffectiveContextWindow(): number {
+    return this.maxContextTokens;
   }
 
   /** 刷新角色包 prompt（角色切换时只替换 prefix，保留 bootstrapMemories 与 toolDefinitions） */

@@ -41,7 +41,7 @@
       ],
       "askLimit": 10,
       "errorHandling": "degrade",
-      "tokenBudget": 0,
+      "contextLimit": 0,
       "stepBudget": 40
     }
   }

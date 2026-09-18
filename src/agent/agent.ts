@@ -1216,6 +1216,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     this.history = result.history;
     this.loop = result.loop;
+    // 有效窗口变更 → 同步 ContextPreparer。有效窗口的**唯一计算点在 loop**
+    // （min(provider 窗口, 角色包 contextLimit)），此处只做分发；用闭包读最新
+    // internals.contextPreparer，避免与装配顺序耦合。
+    this.loop.onContextWindowChanged = (effectiveTokens: number) => {
+      this.internals.contextPreparer?.setMaxContextTokens(effectiveTokens);
+    };
     this.toolExec = result.toolExec;
     this.skillManager = result.skillManager;
     this._rolePackManager = result.rolePackManager;
@@ -1261,12 +1267,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.assertNotBusy('切换上下文窗口');
     this.#config.maxContextTokens = tokens;
     if (this.loop) {
+      // loop 内部按 min(provider 窗口, 角色包 contextLimit) 重算**有效窗口**，并经
+      // onContextWindowChanged 回调把有效值同步到 contextPreparer —— 计算点唯一（在 loop）。
       this.loop.setContextWindow(tokens);
-    }
-    if (this.internals.contextPreparer) {
+    } else if (this.internals.contextPreparer) {
+      // loop 尚未装配（早期阶段）：无角色策略可叠加，直接用 provider 窗口
       this.internals.contextPreparer.setMaxContextTokens(tokens);
     }
-    logger.info({ maxContextTokens: tokens }, '上下文窗口上限已更新');
+    logger.info({ providerWindow: tokens }, 'provider 上下文窗口已更新');
   }
 
   setBackgroundProvider(provider: LlmProvider | null): void {

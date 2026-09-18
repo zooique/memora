@@ -22,7 +22,8 @@ import {
   MAX_TOOL_STEP_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_ASK_LIMIT,
-  MAX_TOKEN_BUDGET,
+  MAX_CONTEXT_LIMIT,
+  MIN_CONTEXT_LIMIT,
   MAX_STEP_BUDGET,
   MIN_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
@@ -146,7 +147,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'selfReview',
       'userFollowup',
     ],
-    global: ['askOn', 'askLimit', 'errorHandling', 'tokenBudget', 'stepBudget'],
+    global: ['askOn', 'askLimit', 'errorHandling', 'contextLimit', 'stepBudget'],
   };
 
   it('四个阶段都存在', () => {
@@ -288,7 +289,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       { key: 'act.toolStepLimit', rule: STRATEGY_KEY_RULES.act!.toolStepLimit!, min: 0, max: MAX_TOOL_STEP_LIMIT, probe: MAX_TOOL_STEP_LIMIT + 1 },
       { key: 'reflect.selfReview', rule: STRATEGY_KEY_RULES.reflect!.selfReview!, min: 0, max: MAX_SELF_REVIEW_ROUNDS, probe: MAX_SELF_REVIEW_ROUNDS + 1 },
       { key: 'global.askLimit', rule: STRATEGY_KEY_RULES.global!.askLimit!, min: 1, max: MAX_ASK_LIMIT, probe: MAX_ASK_LIMIT + 1 },
-      { key: 'global.tokenBudget', rule: STRATEGY_KEY_RULES.global!.tokenBudget!, min: 0, max: MAX_TOKEN_BUDGET, probe: MAX_TOKEN_BUDGET + 1 },
+      { key: 'global.contextLimit', rule: STRATEGY_KEY_RULES.global!.contextLimit!, min: MIN_CONTEXT_LIMIT, max: MAX_CONTEXT_LIMIT, probe: MAX_CONTEXT_LIMIT + 1 },
       { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
     ];
 
@@ -422,7 +423,7 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
     { phase: 'act', key: 'toolStepLimit', expectedMax: MAX_TOOL_STEP_LIMIT },
     { phase: 'reflect', key: 'selfReview', expectedMax: MAX_SELF_REVIEW_ROUNDS },
     { phase: 'global', key: 'askLimit', expectedMax: MAX_ASK_LIMIT },
-    { phase: 'global', key: 'tokenBudget', expectedMax: MAX_TOKEN_BUDGET },
+    { phase: 'global', key: 'contextLimit', expectedMax: MAX_CONTEXT_LIMIT },
     { phase: 'global', key: 'stepBudget', expectedMax: MAX_STEP_BUDGET },
   ];
 
@@ -456,14 +457,14 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
       return rule!.range!.min;
     };
 
-    // 与 schema 比对的具体键（不含 stepBudget：其 schema 层 minimum=0 是 JSON-Schema 接受层，
-    // 与代码 MIN_STEP_BUDGET=10 的"正数声明区间"语义不同，已在文件头注释说明、不在此强比对）
+    // 与 schema 比对的具体键（不含 stepBudget / contextLimit：二者的 schema 层 minimum=0 是
+    // JSON-Schema 的「接受 0」层，与代码 MIN_* 的"正数声明区间下限"语义不同，
+    // 已在文件头与常量注释说明，不在此强比对）
     const MIN_CASES = [
       { phase: 'act', key: 'outputLimit' },
       { phase: 'act', key: 'toolStepLimit' },
       { phase: 'reflect', key: 'selfReview' },
       { phase: 'global', key: 'askLimit' },
-      { phase: 'global', key: 'tokenBudget' },
     ] as const;
 
     for (const { phase, key } of MIN_CASES) {

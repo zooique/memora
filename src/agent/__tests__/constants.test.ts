@@ -118,14 +118,14 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
 
   it('常量对象应为 readonly（as const）', () => {
     // as const 编译期检查，运行时仅验证字段存在
-    // 22 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
+    // 23 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
     // LLM_TIMEOUT_MS / CONTEXT_TOKENS_BUFFER_RATIO / SUMMARY_LAYER_TOKEN_RATIO /
     // SINGLE_TOOL_RESULT_MAX_TOKENS（单条工具结果上限，2026-09-13 新增——
     // read_file 分段预算与入口关落盘阈值同源）/
     // TOOL_RESULT_WRAP_OVERHEAD_TOKENS（包裹模板开销预留，2026-09-13 新增——
     // read_file 分段预算扣除本键，否则自身产出超限反被入口关落盘）/
     // SUMMARY_CACHE_TTL_MSGS /
-    // TOKEN_BUDGET_REACHED_PLACEHOLDER / DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，2026-08-21 新增，
+    // DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，2026-08-21 新增，
     // loop 与 orchestrator 共用）/
     // CONTEXT_PRESSURE_HINT（T3 预算预警提示，2026-09-01 新增）/
     // SEARCH_CONVERGENCE_THRESHOLD / SEARCH_CONVERGENCE_HINT / MAX_WEB_SEARCH_CALLS（TS-7 搜索收敛，2026-09-02）/
@@ -134,7 +134,7 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW /
     // MAX_INTEL_PREFIX_LEN（情报区数据上限，2026-09-13 新增——LLM 私有笔记长度栓）/
     // MEMORY_SEARCH_TIMEOUT_MS（search_memories 响应性护栏，2026-09-13 新增——embed 挂起降级）
-    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(24);
+    expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(23);
   });
 
   it('TOOL_NARRATION_DISCIPLINE 为工具导语纪律（抑制工具步前长文规划，与 narrate 分区配套）', () => {

@@ -17,7 +17,7 @@
  *
  * 收敛边界（不硬吞的异构护栏，维持各自为政）：
  * - duplicateToolCallInterceptor（批级·软提示，见上「防重双轨正交登记」a 轨）；
- * - maxIterations/stepBudget/tokenBudget（循环终止）、self_review（后处理）；
+ * - maxIterations/stepBudget（循环终止）、self_review（后处理）——`contextLimit` 已不属此类（它只缩放有效窗口，不终止）；
  * - interruptQueue/pause/ask 续跑（暂停-质问-续跑设计，另有定稿文档，不动）；
  * - 文件覆盖度台账（fileExposure 分支②回显，见 toolLedger.ts）——形态不同，不收敛。
  *

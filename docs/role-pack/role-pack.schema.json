@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://role-pack.dev/schemas/1.0.0/role-pack.schema.json",
   "title": "RolePack Spec v1.0.0",
-  "description": "memora 参考实现 JSON Schema —— 角色包标准 v1.0.0（含 memora 特有扩展键，如 tokenBudget/stepBudget 等未入中立标准 spec §六 的键）。适用于文件夹形态角色包的 manifest.json 校验（元数据 + strategy + capabilities 注册 + skills 白名单）。内容文件（persona.md/rules.md/skills/）约定俗成，不注册路径（零声明）。字段上限与 src/role-pack/strategyKeys.ts 对齐（SSOT）。中立标准键集见 role-pack-spec.md §六；memora 扩展键以 strategyKeys.ts 为准。",
+  "description": "memora 参考实现 JSON Schema —— 角色包标准 v1.0.0（含 memora 特有扩展键，如 contextLimit/stepBudget 等未入中立标准 spec §六 的键）。适用于文件夹形态角色包的 manifest.json 校验（元数据 + strategy + capabilities 注册 + skills 白名单）。内容文件（persona.md/rules.md/skills/）约定俗成，不注册路径（零声明）。字段上限与 src/role-pack/strategyKeys.ts 对齐（SSOT）。中立标准键集见 role-pack-spec.md §六；memora 扩展键以 strategyKeys.ts 为准。",
   "type": "object",
   "required": ["name", "formatVersion"],
 
@@ -170,11 +170,11 @@
               "enum": ["retry", "degrade", "stop"],
               "description": "异常处理策略（默认 retry）"
             },
-            "tokenBudget": {
+            "contextLimit": {
               "type": "integer",
               "minimum": 0,
-              "maximum": 1000000,
-              "description": "每轮总 token 预算上限（0=不限制，未声明即 0=不限制；非法/越界值回退内核兜底 80000。声明值须小于上下文窗口，否则软闸永不触发；上界对齐 MAX_TOKEN_BUDGET=1M）"
+              "maximum": 2000000,
+              "description": "角色包上下文上限（与 provider 窗口取小值后成为有效窗口；超限时在截断层裁剪，不终止本轮）。0 = 不设额外上限（未声明即 0，跟随 provider 窗口）；正数声明须 ∈ [120000, 2000000]（低于 120k 的收紧无意义，且上界对齐 provider 窗口），越界/小数回退 0"
             },
             "stepBudget": {
               "type": "integer",

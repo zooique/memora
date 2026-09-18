@@ -52,8 +52,19 @@ export const MAX_TOOL_STEP_LIMIT = 100;
 export const MAX_SELF_REVIEW_ROUNDS = 10;
 /** 主动提问次数上限：按一次用户输入（turn 粒度）计，10 次防打扰失控 */
 export const MAX_ASK_LIMIT = 10;
-/** 每轮总 token 预算上限：1_000_000 覆盖 1M 上下文窗口（mimo-v2.5-pro 等旗舰模型） */
-export const MAX_TOKEN_BUDGET = 1_000_000;
+/**
+ * 角色包上下文上限的**声明上界**：2_000_000，与 provider 窗口上界对齐（`src/config/loader.ts`
+ * 的 `MAX_CONTEXT_WINDOW`）—— 使角色包在任何 provider 窗口下都能表达「收紧」意图。
+ * 因有效窗口**取小值**，本上界永不放大窗口（2M provider 下声明 2M 等价于不设上限）。
+ * 语义 = 角色包自设的上下文规模上限，与 provider 窗口取小值后成为有效窗口（非独立资源池、非终止条件）。
+ */
+export const MAX_CONTEXT_LIMIT = 2_000_000;
+/**
+ * 上下文上限的**正数声明下限**：120_000（= 内核默认窗口兜底 `AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS`）。
+ * 语义与 `MIN_STEP_BUDGET` 同构：`0` = 不设额外上限（走 provider 窗口）；
+ * 非 0 声明必须落在 [本值, MAX_CONTEXT_LIMIT]——低于内核默认窗口的「收紧」无实际意义。
+ */
+export const MIN_CONTEXT_LIMIT = 120_000;
 /** 步数预算声明下限：角色包 stepBudget 声明区间下限（0=未声明走兜底，正数声明不得低于此），低于此视为越界回退默认值 */
 export const MIN_STEP_BUDGET = 10;
 /**
@@ -141,8 +152,17 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     // 每轮主动提问次数（1~MAX_ASK_LIMIT）
     askLimit: intRange(1, MAX_ASK_LIMIT),
     errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
-    // 每轮总 token 预算（0~MAX_TOKEN_BUDGET，0=不限制）
-    tokenBudget: intRange(0, MAX_TOKEN_BUDGET),
+    // 角色包上下文上限：0 = 不设额外上限（跟随 provider 窗口）∪ [MIN_CONTEXT_LIMIT, MAX_CONTEXT_LIMIT]。
+    // 与 stepBudget 同构（0 承载"未声明"语义、正数走声明区间），故不用 intRange 而自定义 check；
+    // range.min 是"正数声明下限"（schema 层 minimum=0 是 JSON-Schema 接受层，见守卫测试说明）。
+    contextLimit: {
+      kind: 'check',
+      check: (value) =>
+        typeof value === 'number' &&
+        Number.isInteger(value) &&
+        (value === 0 || (value >= MIN_CONTEXT_LIMIT && value <= MAX_CONTEXT_LIMIT)),
+      range: { min: MIN_CONTEXT_LIMIT, max: MAX_CONTEXT_LIMIT },
+    },
     // 每轮步数预算：0 或未声明 = 不声明（loop 侧落 maxIterations 兜底），或 ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]（角色包声明区间）
     // 注意：0 ≠「不限步数」——stepBudget 无不受限路径（防死循环设计），0 仅表示走内核兜底
     stepBudget: {

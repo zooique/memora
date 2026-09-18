@@ -11,7 +11,6 @@
 
 import { describe, it, expect, vi } from 'vitest';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
-import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import {
   createHarness,
   collectGen,
@@ -87,21 +86,6 @@ describe('SeedOrchestrator 最小 turn', () => {
       expect.any(String),
       focus,
     );
-  });
-
-  it('reflect 守卫：预算触顶占位内容跳过摘要生成（V5 意图落实）', async () => {
-    const { mocks, deps, consumeControl } = createHarness();
-    // 预算触顶时 loop yield 占位文本（无实质回答）——round-summary 不应基于占位生成低质摘要
-    const placeholder = LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER;
-    stubProcessUserInput(mocks, placeholder);
-    consumeControl.result = { content: placeholder, aborted: false, paused: false, failed: false };
-
-    await collectGen(new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal));
-    await new Promise((r) => setTimeout(r, 0));
-
-    // 占位文本检测命中 → 跳过摘要生成（回退普通「无实质收尾」），但助手消息仍入史（回答可见）
-    expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
-    expect(mocks.history.appendAssistant).toHaveBeenCalledWith(placeholder, expect.any(String));
   });
 
   it('runChat 回答前中断：yield aborted，不进回答中', async () => {
@@ -236,18 +220,6 @@ describe('SeedOrchestrator 最小 turn', () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '问题？');
     consumeControl.result = { content: '问题？', aborted: false, paused: true, failed: false };
-
-    await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
-    await new Promise((r) => setTimeout(r, 0));
-
-    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).not.toHaveBeenCalled();
-  });
-
-  it('runChat 预算触顶（content 含占位标记）：不触发兜底（切断轮保留现场，防假完成）', async () => {
-    const { mocks, deps, consumeControl } = createHarness();
-    const placeholder = LOOP_CONSTANTS.TOKEN_BUDGET_REACHED_PLACEHOLDER;
-    stubProcessUserInput(mocks, placeholder);
-    consumeControl.result = { content: placeholder, aborted: false, paused: false, failed: false };
 
     await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));

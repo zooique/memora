@@ -17,7 +17,7 @@ import {
   resolveErrorHandling,
   resolveProviderRouting,
   resolveAskLimit,
-  resolveTokenBudget,
+  resolveContextLimit,
   resolveStepBudget,
   resolveMultiStepReasoning,
   resolveToolReadonly,
@@ -29,7 +29,7 @@ import {
 import {
   MAX_TOOL_STEP_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
-  MAX_TOKEN_BUDGET,
+  MAX_CONTEXT_LIMIT,
   MAX_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
 } from '@/role-pack/strategyKeys.js';
@@ -103,8 +103,8 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 
   it('global 维度包含全部必需字段', () => {
     const g = DEFAULT_BEHAVIOR_STRATEGY.global!;
-    // 0 = 角色包不声明，resolve 函数缺省回退 FALLBACK_TOKEN_BUDGET=80K / DEFAULT_MAX_ITERATIONS=50
-    expect(g.tokenBudget).toBe(0);
+    // 0 = 角色包不声明，resolve 函数缺省回退 contextLimit=0（不设额外上限） / DEFAULT_MAX_ITERATIONS=50
+    expect(g.contextLimit).toBe(0);
     expect(g.stepBudget).toBe(0);
     expect(g.errorHandling).toBe('retry');
     expect(g.askOn).toEqual(['ambiguity', 'decision', 'missing_info']);
@@ -264,30 +264,34 @@ describe('resolve* 函数 — 数值解析', () => {
     });
   });
 
-  // ── resolveTokenBudget ──
-  describe('resolveTokenBudget', () => {
-    it('合法正整数采用', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: 16000 } })).toBe(16000);
+  // ── resolveContextLimit ──
+  describe('resolveContextLimit', () => {
+    it('合法声明值采用（≥ MIN_CONTEXT_LIMIT）', () => {
+      expect(resolveContextLimit({ global: { contextLimit: 200_000 } })).toBe(200_000);
     });
 
-    it('0 表示不限制', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: 0 } })).toBe(0);
+    it('低于 MIN_CONTEXT_LIMIT 回退 0（低于内核默认窗口的收紧无意义）', () => {
+      expect(resolveContextLimit({ global: { contextLimit: 16_000 } })).toBe(0);
     });
 
-    it('负数回退默认 80000', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: -1 } })).toBe(80_000);
+    it('0 表示不设额外上限（跟随 provider 窗口）', () => {
+      expect(resolveContextLimit({ global: { contextLimit: 0 } })).toBe(0);
     });
 
-    it('小数回退默认 80000', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: 8000.5 } })).toBe(80_000);
+    it('负数回退 0（不设额外上限）', () => {
+      expect(resolveContextLimit({ global: { contextLimit: -1 } })).toBe(0);
     });
 
-    it('越上界回退默认 80000（防无条件填写）', () => {
-      expect(resolveTokenBudget({ global: { tokenBudget: MAX_TOKEN_BUDGET + 1 } })).toBe(80_000);
+    it('小数回退 0（不设额外上限）', () => {
+      expect(resolveContextLimit({ global: { contextLimit: 8000.5 } })).toBe(0);
     });
 
-    it('缺失回退默认 80000', () => {
-      expect(resolveTokenBudget(undefined)).toBe(80_000);
+    it('越上界回退 0（防无条件填写）', () => {
+      expect(resolveContextLimit({ global: { contextLimit: MAX_CONTEXT_LIMIT + 1 } })).toBe(0);
+    });
+
+    it('缺失回退 0（不设额外上限）', () => {
+      expect(resolveContextLimit(undefined)).toBe(0);
     });
   });
 
@@ -582,9 +586,9 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
   it('act/global 声明值覆盖对应维度', () => {
     const s = resolveL2Strategy({
       act: { toolReadonly: 'readonly' },
-      global: { tokenBudget: 120 },
+      global: { contextLimit: 300_000 },
     } as BehaviorStrategy);
     expect(s.toolReadonly).toBe('readonly');
-    expect(s.tokenBudget).toBe(120);
+    expect(s.contextLimit).toBe(300_000);
   });
 });
