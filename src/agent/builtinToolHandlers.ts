@@ -1048,12 +1048,11 @@ export class BuiltinToolHandlers {
       const trace = m.sessionId
         ? ` trace(${m.sessionId}${m.roundId ? `, round=${m.roundId}` : ''})`
         : '';
-      // 附语义相似度（语义后端可用时），供 LLM 评估贴合度
-      const sim = m.similarity !== undefined ? ` sim=${m.similarity.toFixed(2)}` : '';
-      // score 已随阶段3 物理退役（2026-09-09）：命中项不再展示 score，仅保留 sim/accessedAt/trace
-      return `${i + 1}. [${m.source}:${m.name}] (${sim}${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
+      // sim 语义相似度已随 B0 恒 0 字段删除（2026-09-18）；score 已随阶段3 物理退役（2026-09-09）
+      // 命中项仅保留 accessedAt/trace
+      return `${i + 1}. [${m.source}:${m.name}] (${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
     });
-    return `搜索 "${query}" 找到 ${hits.length} 条${this.memoryInspector ? '（语义+关键词）' : `（${modeStr} 模式）`}：\n${lines.join('\n')}`;
+    return `搜索 "${query}" 找到 ${hits.length} 条（关键词）：\n${lines.join('\n')}`;
   }
 
   /**

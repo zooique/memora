@@ -8,9 +8,9 @@
 >
 > **2026-09-10 收敛补记（G39 P2-2 收口）**：上述替代物 `DEFAULT_MEMORY_CAP_RATIO` **亦已删除**——记忆自动注入退役后该 cap 无任何约束消费者（`recalledMemories` 恒空），属「为不存在的量算上限」。连带清理 `budget` 的 `memoryLayerCapTokens` 与占用快照的 `memoryTokens`/`memoryCount`。**现行预算/占用模型均无记忆维度**。
 >
-> **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」不是记忆权重，仍然健在**——但承载它的 `RecalledMemorySummary`（recall chunk 载荷）已随自动召回展示链于 2026-09-10 物理删除，现行载体为搜索命中返回值 `AgentSearchHit.similarity`。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
+> **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」不是记忆权重**——但语义通道已随 2026-09-18 B0 收编删除（`searchHybrid` 纯关键词，`AgentSearchHit.similarity` 恒 0，连同字段一并物理删除），无现行载体；排序 = 关键词命中序 + `accessedAt` 事实项。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
 >
-> **2026-09-10 收敛补记（recall() 物理删除）**：**§四 全章（4.0-4.8 分层分轨召回）、§6 影响中的依赖链、§7 形态表、附录参照，所描述的 `recall()` 召回编排函数已物理删除**（同批「减法」，文件 `src/memory/recall.ts` 现仅存 `extractKeywords` / `touchScores` 两个工具函数，2026-09-18 更名为 `keywordsTouch.ts` 对齐职责）——`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation` 三函数与 `recall()` 签名一体消失，L1/L2 分层、分轨进池、cap 内分配、minFallback 保底等**均为退役前设计语义，不再有现行实现**。**现行召回 = `search_memories` 工具**（`searchHybrid` 双通道融合，LLM 主动取用），prepare 不注入任何记忆、预算无记忆维度。下文凡提及 `recall()` 者请勿按现行机制解读。
+> **2026-09-10 收敛补记（recall() 物理删除）**：**§四 全章（4.0-4.8 分层分轨召回）、§6 影响中的依赖链、§7 形态表、附录参照，所描述的 `recall()` 召回编排函数已物理删除**（同批「减法」，文件 `src/memory/recall.ts` 现仅存 `extractKeywords` / `touchScores` 两个工具函数，2026-09-18 更名为 `keywordsTouch.ts` 对齐职责）——`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation` 三函数与 `recall()` 签名一体消失，L1/L2 分层、分轨进池、cap 内分配、minFallback 保底等**均为退役前设计语义，不再有现行实现**。**现行召回 = `search_memories` 工具**（`searchHybrid` 纯关键词，LLM 主动取用），prepare 不注入任何记忆、预算无记忆维度。下文凡提及 `recall()` 者请勿按现行机制解读。
 >
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >

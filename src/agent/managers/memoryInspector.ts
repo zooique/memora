@@ -78,8 +78,6 @@ export interface AgentSearchHit {
   source: string;
   /** 内容预览（截断到 120 字符） */
   contentPreview: string;
-  /** 语义相似度（0-1，仅 searchHybrid 返回） */
-  similarity?: number;
   /** 创建时间（ISO 8601，供 UI 时间筛选） */
   createdAt?: string;
   /** 最近使用时间（ISO 8601，工具命中即 touch 刷新，§3.3/§5.2 事实字段：LLM 按此定「最近使用优先」） */
@@ -270,7 +268,6 @@ export class MemoryInspector {
       id: memory.id,
       name: memory.name,
       source: memory.source,
-      similarity: 0,
       contentPreview: truncate(memory.content, SEARCH_PREVIEW_LEN),
       createdAt: memory.createdAt,
       accessedAt: memory.accessedAt,

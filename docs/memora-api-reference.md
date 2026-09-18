@@ -308,7 +308,7 @@ type AgentChunk =
   | { type: 'done' };                                      // 结束标记
 ```
 
-> **记忆召回展示链已退役（2026-09-10）**：`recall` chunk 分支与 `RecalledMemorySummary` 类型已随自动注入退役**物理删除**。记忆纯工具化后，「召回了什么」由 `memory_search` 工具的 `tool_start` / `tool_result` 过程事件天然展示；检索结果语义相似度分见 `AgentSearchHit.similarity`。
+> **记忆召回展示链已退役（2026-09-10）**：`recall` chunk 分支与 `RecalledMemorySummary` 类型已随自动注入退役**物理删除**。记忆纯工具化后，「召回了什么」由 `memory_search` 工具的 `tool_start` / `tool_result` 过程事件天然展示；检索命中含 `accessedAt` / 溯源字段（`sessionId`/`roundId`）。
 
 `ThinkingPhase` 取值：`'recalling' | 'processing' | 'archiving'`
 
@@ -359,9 +359,7 @@ interface AgentSearchHit {
   id: string;             // 记忆唯一标识（source:name 格式，供 showMemory/deleteMemory 等操作使用）
   name: string;           // 记忆名称
   source: string;         // 来源标签
-  score: number;          // 权重（0-1）
   contentPreview: string; // 内容预览（截断到 120 字符）
-  similarity?: number;    // 语义相似度（0-1，仅 searchHybrid 返回；纯关键词搜索时无此字段）
   createdAt?: string;     // 创建时间（ISO 8601，供 UI 层时间筛选/排序使用）
 }
 ```
@@ -404,7 +402,7 @@ agent.memory.getById(id: string): Memory | null;               // 按 ID 获取�
 agent.memory.getBySource(source: string): Memory[];            // 按 source 获取
 agent.memory.listDeleted(limit?: number): Memory[];            // 回收站（软删除记忆）
 agent.memory.getDeletedById(id: string): Memory | null;
-agent.memory.searchHybrid(query: string, limit?: number): Promise<AgentSearchHit[]>; // 语义 + 关键词双通道
+agent.memory.searchHybrid(query: string, limit?: number): Promise<AgentSearchHit[]>; // 纯关键词通道
 ```
 
 > **注意**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露（`.suggest()` / `.sourceHealth()`），不挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。

@@ -279,8 +279,6 @@ describe('MemoryInspector', () => {
       const hits = await inspector.searchHybrid('keyword');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('k1');
-      // 纯关键词时 similarity 恒 0
-      expect(hits[0]!.similarity).toBe(0);
     });
 
     it('语义近义词不命中（字面匹配；LLM 须换词重试）', async () => {
@@ -293,12 +291,11 @@ describe('MemoryInspector', () => {
       expect(retry).toHaveLength(1);
     });
 
-    it('返回结果含 similarity 字段（恒 0）+ 长内容截断', async () => {
+    it('长内容截断到预览上限', async () => {
       const longContent = 'C'.repeat(150);
       storage.upsert(createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }));
       const hits = await inspector.searchHybrid('C');
       expect(hits).toHaveLength(1);
-      expect(hits[0]!.similarity).toBe(0);
       // 长内容截断到 120 + '…'
       expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
     });

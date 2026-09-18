@@ -90,7 +90,7 @@ async function main(): Promise<void> {
   report('已配置后台通道 → 返回 LlmProvider 实例', bg !== undefined, `createBackgroundProvider=${bg ? bg.name : 'undefined'}`);
 
   // ─── 2. search_memories 纯关键词链路 ──────────────────────────
-  // B0 收编（2026-09-18）：无向量通道，searchHybrid 纯关键词；similarity 恒 0、命中=字面匹配。
+  // B0 收编（2026-09-18）：无向量通道，searchHybrid 纯关键词；命中=字面匹配。
   console.log('\n=== search_memories 纯关键词链路 ===');
   const agent = await makeAgent(workspace);
   const hits = await agent.memory.searchHybrid('JSON 零依赖');

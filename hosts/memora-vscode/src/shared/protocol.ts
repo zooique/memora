@@ -766,7 +766,7 @@ export type ExtensionToWebviewMessage =
   /**
    * 记忆搜索结果（对 memory_search 的应答）
    *
-   * hits 为 searchHybrid 命中（带 similarity/accessedAt），content 为截断预览
+   * hits 为 searchHybrid 命中（带 accessedAt），content 为截断预览
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
@@ -970,8 +970,6 @@ export interface MemoryItemDto {
   accessedAt?: string;
   /** 软删除时间（ISO 8601，仅回收站条目携带，可选） */
   deletedAt?: string;
-  /** 语义相似度（0-1，仅搜索命中携带；独立于记忆权重的相似度分，非 Memory.score） */
-  similarity?: number;
   /** round-summary 摘要类型（preference/fact/decision/intent/general），仅 round-summary 有意义；对齐内核 SummaryType */
   summaryType?: 'preference' | 'fact' | 'decision' | 'intent' | 'general';
   /** round-summary 归属会话标识（${date}-${session}），供会话内/外分层召回 */

@@ -1200,7 +1200,7 @@ function toItemDto(m: {
   };
 }
 
-/** 内核 AgentSearchHit → 记忆条目 DTO（透传 similarity 语义相似度 + accessedAt 排序依据） */
+/** 内核 AgentSearchHit → 记忆条目 DTO（透传 accessedAt 排序依据） */
 function toSearchDto(h: {
   id: string;
   name: string;
@@ -1208,7 +1208,6 @@ function toSearchDto(h: {
   contentPreview: string;
   createdAt?: string;
   accessedAt?: string;
-  similarity?: number;
 }): MemoryItemDto {
   return {
     id: h.id,
@@ -1217,7 +1216,6 @@ function toSearchDto(h: {
     content: h.contentPreview,
     createdAt: h.createdAt,
     accessedAt: h.accessedAt,
-    similarity: h.similarity,
   };
 }
 
