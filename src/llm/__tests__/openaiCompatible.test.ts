@@ -868,3 +868,76 @@ describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
     }
   });
 });
+
+// ─── usage token 统计解析（2026-09-18 双出口收敛后补测）──
+
+describe('OpenAICompatibleProvider · usage token 统计', () => {
+  /** 构造 SSE 事件序列响应（每条事件为完整 payload，供 usage/choices 组合场景） */
+  function createUsageSseResponse(events: Array<Record<string, unknown>>): HttpResponse<ReadableStream> {
+    const stream = new ReadableStream({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const event of events) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+        }
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'));
+        controller.close();
+      },
+    });
+    return new HttpResponse(stream, {
+      headers: { 'Content-Type': 'text/event-stream' },
+    });
+  }
+
+  it('纯 usage 事件（choices 为空数组）应产出单 chunk 且带完整用量', async () => {
+    server.use(
+      http.post('*/chat/completions', () =>
+        createUsageSseResponse([
+          {
+            id: 'mock-1',
+            object: 'chat.completion.chunk',
+            created: Date.now(),
+            model: 'mock-model',
+            choices: [],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          },
+        ]),
+      ),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]!.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+  });
+
+  it('usage 与 choices 并存时合并到同一 chunk（单出口，content 不重复）', async () => {
+    server.use(
+      http.post('*/chat/completions', () =>
+        createUsageSseResponse([
+          {
+            id: 'mock-1',
+            object: 'chat.completion.chunk',
+            created: Date.now(),
+            model: 'mock-model',
+            choices: [{ index: 0, delta: { content: '你好' }, finish_reason: 'stop' }],
+            usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 },
+          },
+        ]),
+      ),
+    );
+
+    const chunks = await collectChunks(makeProvider());
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0]!.usage).toEqual({ inputTokens: 10, outputTokens: 5, totalTokens: 15 });
+    expect(chunks[0]!.content).toBe('你好');
+    expect(chunks[0]!.finishReason).toBe('stop');
+  });
+
+  it('usage 缺失时正常 chunk 不带 usage 字段（自然降级）', async () => {
+    server.use(http.post('*/chat/completions', () => createSseResponse('普通回答')));
+    const chunks = await collectChunks(makeProvider());
+    for (const c of chunks) {
+      expect(c.usage).toBeUndefined();
+    }
+  });
+});

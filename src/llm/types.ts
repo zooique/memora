@@ -64,19 +64,6 @@ export interface ProviderEntryConfig {
   supportsStructuredOutput?: boolean;
 }
 
-/** 后台通道配置（多 Provider 路由预留）：不配时后台操作复用前台 llm 配置，零破坏性 */
-export interface BackgroundConfig {
-  /** Provider 名称 */
-  provider: string;
-  model: string;
-  /** API 基础 URL（可选） */
-  baseUrl?: string;
-  /** API 密钥（可选，从环境变量读取） */
-  apiKey?: string;
-  /** 该通道的 temperature */
-  temperature: number;
-}
-
 /** LLM 任务类型：按任务复杂度路由到不同 Provider/模型（simple/reasoning/code/summary） */
 export type TaskType = 'simple' | 'reasoning' | 'code' | 'summary';
 

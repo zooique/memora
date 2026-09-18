@@ -6,7 +6,7 @@
  * apiKey 由下游 LLM 服务决定是否必需，内核不校验。
  */
 import { describe, it, expect } from 'vitest';
-import { createLlmProvider, createProviderFromConfig, createProviderRouter } from '@/llm/factory.js';
+import { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 import type { Config } from '@/config/loader.js';
 
 
@@ -266,100 +266,5 @@ describe('createProviderFromConfig · 单 Provider 独立创建', () => {
       baseUrl: 'http://localhost:11434/v1',
     });
     expect(provider.name).toBe('local-provider');
-  });
-});
-
-describe('createProviderRouter · 多模型路由', () => {
-  it('无 providers 配置时应抛出 configError', () => {
-    const config = makeConfig({ providers: undefined, active: undefined });
-    expect(() => createProviderRouter(config)).toThrow('providers 未配置');
-  });
-
-  it('有 providers 但无 taskRouter 时应返回统一 active Provider', () => {
-    const config = makeMultiProviderConfig(
-      {
-        fast: { provider: 'mock', model: 'fast-model', baseUrl: 'https://fast.api/v1' },
-        smart: { provider: 'mock', model: 'smart-model', baseUrl: 'https://smart.api/v1' },
-      },
-      'fast',
-    );
-    const router = createProviderRouter(config);
-    const p = router('simple');
-    expect(p.name).toBe('mock');
-    // 所有任务类型返回同一个 Provider（active = fast）
-    expect(router('reasoning')).toBe(p);
-    expect(router('code')).toBe(p);
-  });
-
-  it('有 providers + taskRouter 时应按任务类型路由到对应 Provider', () => {
-    const config = makeMultiProviderConfig(
-      {
-        fast: { provider: 'mock', model: 'fast-model', baseUrl: 'https://fast.api/v1' },
-        smart: { provider: 'mock', model: 'smart-model', baseUrl: 'https://smart.api/v1' },
-      },
-      'fast',
-    );
-    // 手动注入 taskRouter（makeMultiProviderConfig 不传 taskRouter）
-    config.llm.taskRouter = {
-      simple: 'fast',
-      reasoning: 'smart',
-      code: 'smart',
-      summary: 'fast',
-    };
-
-    const router = createProviderRouter(config);
-    const simpleP = router('simple');
-    const reasoningP = router('reasoning');
-    const codeP = router('code');
-    const summaryP = router('summary');
-
-    // simple 和 summary 走 fast
-    expect(simpleP).toBe(summaryP);
-    // reasoning 和 code 走 smart
-    expect(reasoningP).toBe(codeP);
-    // fast 和 smart 是不同的实例
-    expect(simpleP).not.toBe(reasoningP);
-  });
-
-  it('taskRouter 引用不存在的 provider 名时应回退到兜底 Provider', () => {
-    const config = makeMultiProviderConfig(
-      {
-        fast: { provider: 'mock', model: 'fast-model', baseUrl: 'https://fast.api/v1' },
-      },
-      'fast',
-    );
-    config.llm.taskRouter = {
-      simple: 'fast',
-      reasoning: 'nonexistent', // 不存在的 provider
-    };
-
-    const router = createProviderRouter(config);
-    const simpleP = router('simple');
-    const reasoningP = router('reasoning');
-
-    // simple 走 fast
-    expect(simpleP.name).toBe('mock');
-    // reasoning 走兜底（fallbackProvider）
-    expect(reasoningP.name).toBe('mock');
-    // 兜底和 fast 不是同一个实例
-    expect(simpleP).not.toBe(reasoningP);
-  });
-
-  it('taskRouter 中未配置的任务类型应回退到兜底 Provider', () => {
-    const config = makeMultiProviderConfig(
-      {
-        fast: { provider: 'mock', model: 'fast-model', baseUrl: 'https://fast.api/v1' },
-      },
-      'fast',
-    );
-    // 只配置部分任务类型
-    config.llm.taskRouter = { simple: 'fast' };
-
-    const router = createProviderRouter(config);
-    // reasoning 未在 taskRouter 中 → 回退到兜底
-    const reasoningP = router('reasoning');
-    expect(reasoningP.name).toBe('mock');
-    // 兜底和 fast 不是同一个实例
-    expect(router('simple')).not.toBe(reasoningP);
   });
 });

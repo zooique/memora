@@ -410,33 +410,24 @@ export class OpenAICompatibleProvider extends LlmProvider {
             };
 
             // 提取 usage 数据（部分 Provider 在流式响应末尾携带 token 用量统计）
-            if (json.usage) {
-              const usage = json.usage;
-              // 构建带 usage 的 chunk，即使没有 choices 也 yield（纯 usage 事件）
-              const usageChunk: LlmChunk = {
-                usage: {
-                  inputTokens: usage.prompt_tokens ?? 0,
-                  outputTokens: usage.completion_tokens ?? 0,
-                  totalTokens: usage.total_tokens,
-                },
-              };
-              // 若同时有 choices，合并到同一 chunk
-              const choice = json.choices?.[0];
-              if (choice) {
-                if (choice.delta?.content) usageChunk.content = choice.delta.content;
-                if (choice.finish_reason) {
-                  usageChunk.finishReason = choice.finish_reason as LlmChunk['finishReason'];
+            const usage = json.usage
+              ? {
+                  inputTokens: json.usage.prompt_tokens ?? 0,
+                  outputTokens: json.usage.completion_tokens ?? 0,
+                  totalTokens: json.usage.total_tokens,
                 }
-              }
-              yield usageChunk;
-              // 若只有 usage 无 choices，跳过后续 choices 处理
-              if (!json.choices || json.choices.length === 0) continue;
-            }
+              : undefined;
 
             const choice = json.choices?.[0];
-            if (!choice) continue;
+            // 纯 usage 事件（末尾统计块，choices 为空数组）：单独 yield，跳过 choices 处理
+            if (!choice) {
+              if (usage) yield { usage };
+              continue;
+            }
 
             const chunk: LlmChunk = {};
+            // usage 与 choices 并存时合并到同一 chunk（单出口，防同事件双 yield 致 content 重复）
+            if (usage) chunk.usage = usage;
             // delta.content 可能为 null（tool_calls 场景），truthy 检查即可
             if (choice.delta?.content) chunk.content = choice.delta.content;
             // 模型思考（协议字段 reasoning_content → LlmChunk.thought）：增量透传，与 content 并列

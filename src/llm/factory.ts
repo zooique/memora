@@ -9,7 +9,6 @@ import { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
 import { logger } from '@/logging/logger.js';
 import { configError } from '@/utils/errors.js';
 import { safeSetTimeout } from '@/utils/safeTimer.js';
-import type { ProviderRouter, TaskType } from '@/llm/types.js';
 
 /** 单个 Provider 配置（createProviderFromConfig 入参）：baseUrl 可选，缺失时内部抛 configError */
 export interface ProviderConfig {
@@ -121,57 +120,4 @@ class MockProvider extends LlmProvider {
     }
     yield { finishReason: 'stop' as const };
   }
-}
-
-/**
- * 创建 Provider 路由选择器（多模型路由）：
- * 有 providers 无 taskRouter → 所有任务类型用 active Provider；
- * 有 taskRouter → 按任务类型路由到对应 Provider
- */
-export function createProviderRouter(config: Config): ProviderRouter {
-  const { llm } = config;
-
-  if (!llm.providers || Object.keys(llm.providers).length === 0) {
-    throw configError(
-      'LLM providers 未配置',
-      'llm.providers 映射表为空或未定义',
-      ['在配置文件中配置 llm.providers（如 deepseek/openai 等）'],
-    );
-  }
-
-  const taskRouter = llm.taskRouter;
-  if (!taskRouter || Object.keys(taskRouter).length === 0) {
-    // 无 taskRouter → 所有任务类型使用 active Provider
-    const activeProvider = createLlmProvider(config);
-    return () => activeProvider;
-  }
-
-  // 预创建所有引用的 Provider 实例
-  const providerCache = new Map<string, LlmProvider>();
-  for (const providerName of new Set(Object.values(taskRouter))) {
-    const providerConfig = llm.providers[providerName as string] as Record<string, unknown> | undefined;
-    if (providerConfig) {
-      providerCache.set(
-        providerName as string,
-        createProviderFromConfig(providerName as string, {
-          provider: (providerConfig as { provider?: string }).provider ?? providerName as string,
-          model: (providerConfig as { model: string }).model,
-          baseUrl: (providerConfig as { baseUrl?: string }).baseUrl ?? '',
-          apiKey: (providerConfig as { apiKey?: string }).apiKey,
-          // 能力位透传（互斥双能力位，2026-09-14 阶段0）
-          supportsToolCalling: (providerConfig as { supportsToolCalling?: boolean }).supportsToolCalling,
-          supportsStructuredOutput: (providerConfig as { supportsStructuredOutput?: boolean }).supportsStructuredOutput,
-        }),
-      );
-    }
-  }
-
-  // 兜底 Provider：taskRouter 引用了不存在的 provider 名时使用
-  const fallbackProvider = createLlmProvider(config);
-
-  return (taskType: TaskType): LlmProvider => {
-    const providerName = taskRouter[taskType];
-    if (!providerName) return fallbackProvider;
-    return providerCache.get(providerName) ?? fallbackProvider;
-  };
 }

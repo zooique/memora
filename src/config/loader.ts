@@ -3,14 +3,14 @@
  *
  * 查找顺序：显式 configPath → 项目级 .memora/config.json → 内置默认值。
  * 内核只提供机制，不预设厂商/路径策略；API Key 从环境变量读取，不写文件。
- * 多 Provider（唯一格式）：providers 映射表 + active 激活别名 + taskRouter 任务路由。
+ * 多 Provider（唯一格式）：providers 映射表 + active 激活别名。
  */
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { configError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
-import type { ProviderEntryConfig, BackgroundConfig } from '@/llm/types.js';
+import type { ProviderEntryConfig } from '@/llm/types.js';
 import { expandEnvVars } from '@/config/expandEnvVars.js';
 
 /**
@@ -53,13 +53,6 @@ interface LlmConfig {
   providers?: Record<string, ProviderEntryConfig>;
   /** 激活的 Provider 别名，必须与 providers 某 key 一致；不配时取第一个 key */
   active?: string;
-  /** 后台通道配置：不配时所有消费者复用前台 llm 配置；配置后归档/投影走此通道降成本 */
-  background?: BackgroundConfig;
-  /**
-   * 任务类型 → Provider 别名的路由映射（如 simple/reasoning/code/summary）。
-   * 不配置时所有任务使用 active Provider。
-   */
-  taskRouter?: Partial<Record<'simple' | 'reasoning' | 'code' | 'summary', string>>;
 }
 
 /** 内存配置接口 */
@@ -124,8 +117,6 @@ export function parseConfig(raw: unknown): Config {
   const llm: LlmConfig = {
     providers: parseProviders(llmInput.providers),
     active: typeof llmInput.active === 'string' ? llmInput.active : undefined,
-    background: parseBackground(llmInput.background),
-    taskRouter: parseTaskRouter(llmInput.taskRouter),
   };
 
   const memoryInput = asRecordIfObject(input.memory);
@@ -319,46 +310,6 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
   }
 
   return Object.keys(providers).length > 0 ? providers : undefined;
-}
-
-/**
- * 解析后台通道配置
- */
-function parseBackground(value: unknown): BackgroundConfig | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const bg = value as Record<string, unknown>;
-
-  const bgProvider = assertString(bg.provider, 'background.provider');
-  const bgModel = assertString(bg.model, 'background.model');
-
-  return {
-    provider: bgProvider,
-    model: bgModel,
-    baseUrl: typeof bg.baseUrl === 'string' ? bg.baseUrl : undefined,
-    apiKey: typeof bg.apiKey === 'string' ? bg.apiKey : undefined,
-    temperature: bg.temperature !== undefined ? validateTemperature(bg.temperature, 0.5) : 0.5,
-  };
-}
-
-/**
- * 解析 taskRouter 配置（key/value 均为字符串，非字符串跳过；不配置时为 undefined）
- */
-function parseTaskRouter(value: unknown): Partial<Record<string, string>> | undefined {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    return undefined;
-  }
-
-  const router: Record<string, string> = {};
-  for (const [taskType, providerName] of Object.entries(value as Record<string, unknown>)) {
-    if (typeof taskType !== 'string' || !taskType) continue;
-    if (typeof providerName !== 'string' || !providerName) continue;
-    router[taskType] = providerName;
-  }
-
-  return Object.keys(router).length > 0 ? router : undefined;
 }
 
 /**

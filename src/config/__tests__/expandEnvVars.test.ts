@@ -3,10 +3,9 @@
  *
  * 覆盖范围：
  *   1. llm.providers 多 Provider 映射表
- *   2. llm.background 后台通道
- *   3. 边界场景：undefined 值、不存在的环境变量、字符串中多个占位符
+ *   2. 边界场景：undefined 值、不存在的环境变量、字符串中多个占位符
  *
- * 注：apiKey/baseUrl 只存在于 providers/background 中（主通道扁平字段为唯一 providers 格式）。
+ * 注：apiKey/baseUrl 只存在于 providers 中（主通道扁平字段为唯一 providers 格式）。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
 import { expandEnvVars } from '../expandEnvVars.js';
@@ -29,13 +28,6 @@ function createConfigWithPlaceholders(): Config {
           baseUrl: '${TEST_PROVIDER2_URL}',
           model: 'test-model',
         },
-      },
-      background: {
-        provider: 'deepseek',
-        model: 'bg-model',
-        apiKey: '${TEST_BG_API_KEY}',
-        baseUrl: '${TEST_BG_BASE_URL}',
-        temperature: 0.5,
       },
     },
     memory: {
@@ -108,7 +100,6 @@ describe('expandEnvVars — Providers 映射表', () => {
       llm: {
         ...createConfigWithPlaceholders().llm,
         providers: undefined,
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
@@ -129,57 +120,11 @@ describe('expandEnvVars — Providers 映射表', () => {
             model: 'test-model',
           },
         },
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.onlyKey!.apiKey).toBe('sk-key');
     expect(result.llm.providers!.onlyKey!.baseUrl).toBeUndefined();
-  });
-});
-
-// ══════════════════════════════════════════════════════════════
-// 2. Background 后台通道展开
-// ══════════════════════════════════════════════════════════════
-
-describe('expandEnvVars — Background 后台通道', () => {
-
-  beforeEach(() => {
-    delete process.env.TEST_BG_API_KEY;
-    delete process.env.TEST_BG_BASE_URL;
-  });
-
-  it('展开 background 的 apiKey 和 baseUrl', () => {
-    process.env.TEST_BG_API_KEY = 'sk-bg-key';
-    process.env.TEST_BG_BASE_URL = 'https://bg.example.com';
-
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        providers: undefined,
-      },
-      };
-    const result = expandEnvVars(config);
-    expect(result.llm.background).toBeDefined();
-    expect(result.llm.background!.apiKey).toBe('sk-bg-key');
-    expect(result.llm.background!.baseUrl).toBe('https://bg.example.com');
-    // 验证 background 保留了其他字段
-    expect(result.llm.background!.provider).toBe('deepseek');
-    expect(result.llm.background!.model).toBe('bg-model');
-  });
-
-  it('background 为 undefined 时保留 undefined', () => {
-    const config: Config = {
-      ...createConfigWithPlaceholders(),
-      llm: {
-        ...createConfigWithPlaceholders().llm,
-        background: undefined,
-        providers: undefined,
-      },
-    };
-    const result = expandEnvVars(config);
-    expect(result.llm.background).toBeUndefined();
   });
 });
 
@@ -203,7 +148,6 @@ describe('expandEnvVars — 边界场景', () => {
             baseUrl: undefined,
           },
         },
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
@@ -223,7 +167,6 @@ describe('expandEnvVars — 边界场景', () => {
             baseUrl: undefined,
           },
         },
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
@@ -245,7 +188,6 @@ describe('expandEnvVars — 边界场景', () => {
             baseUrl: undefined,
           },
         },
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
@@ -267,7 +209,6 @@ describe('expandEnvVars — 边界场景', () => {
             baseUrl: 'https://fixed.url.com',
           },
         },
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
@@ -288,7 +229,6 @@ describe('expandEnvVars — 边界场景', () => {
             baseUrl: '',
           },
         },
-        background: undefined,
       },
       };
     const result = expandEnvVars(config);
@@ -301,7 +241,6 @@ describe('expandEnvVars — 边界场景', () => {
       ...createConfigWithPlaceholders(),
       llm: {
         ...createConfigWithPlaceholders().llm,
-        background: undefined,
       },
       };
     const originalApiKey = config.llm.providers!['provider1']!.apiKey;

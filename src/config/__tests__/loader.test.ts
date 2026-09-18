@@ -180,7 +180,7 @@ describe('config/loader · 项目级/用户级配置回退', () => {
   });
 });
 
-// ─── K3：多 Provider + background + schema 校验 + 回退降级 ──
+// ─── K3：多 Provider + schema 校验 + 回退降级 ──
 
 describe('config/loader · K3 多 Provider 与高级配置', () => {
   let tmpHome: string;
@@ -281,175 +281,6 @@ describe('config/loader · K3 多 Provider 与高级配置', () => {
       const config = await loadConfig(configPath);
 
       expect(config.llm.providers).toBeUndefined();
-    });
-  });
-
-  describe('taskRouter 多模型路由', () => {
-    it('配置 taskRouter 时应正确解析', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          providers: {
-            fast: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-fast' },
-            smart: { provider: 'deepseek', model: 'deepseek-reasoner', apiKey: 'sk-smart' },
-          },
-          active: 'fast',
-          taskRouter: {
-            simple: 'fast',
-            reasoning: 'smart',
-            code: 'smart',
-            summary: 'fast',
-          },
-        },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.taskRouter).toBeDefined();
-      expect(config.llm.taskRouter!.simple).toBe('fast');
-      expect(config.llm.taskRouter!.reasoning).toBe('smart');
-      expect(config.llm.taskRouter!.code).toBe('smart');
-      expect(config.llm.taskRouter!.summary).toBe('fast');
-    });
-
-    it('不配置 taskRouter 时应为 undefined', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          providers: {
-            deepseek: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-test' },
-          },
-          active: 'deepseek',
-        },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.taskRouter).toBeUndefined();
-    });
-
-    it('taskRouter 为无效类型时应为 undefined', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          providers: { fast: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-fast' } },
-          active: 'fast',
-          taskRouter: 'invalid', // 字符串类型，非对象
-        },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.taskRouter).toBeUndefined();
-    });
-
-    it('taskRouter 中有无效项时应跳过', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          providers: { fast: { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-fast' } },
-          active: 'fast',
-          taskRouter: {
-            simple: 'fast',
-            reasoning: '', // 空字符串，应跳过
-            code: 123,     // 非字符串，应跳过
-          },
-        },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.taskRouter).toBeDefined();
-      // simple 应保留（有效）
-      expect(config.llm.taskRouter!.simple).toBe('fast');
-      // reasoning 和 code 应被跳过
-      expect(config.llm.taskRouter!.reasoning).toBeUndefined();
-      expect(config.llm.taskRouter!.code).toBeUndefined();
-    });
-  });
-
-  describe('background 后台通道配置', () => {
-    it('配置 background 时应正确解析', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-          background: {
-            provider: 'doubao',
-            model: 'doubao-pro',
-            apiKey: 'sk-bg',
-            temperature: 0.3,
-          },
-        },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.background).toBeDefined();
-      expect(config.llm.background!.provider).toBe('doubao');
-      expect(config.llm.background!.model).toBe('doubao-pro');
-      expect(config.llm.background!.temperature).toBe(0.3);
-    });
-
-    it('不配置 background 时应为 undefined（向后兼容）', async () => {
-      const configPath = writeConfigFile();
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.background).toBeUndefined();
-    });
-
-    it('background.temperature 默认值应为 0.5', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-          background: { provider: 'doubao', model: 'doubao-pro' },
-        },
-      });
-
-      const config = await loadConfig(configPath);
-
-      expect(config.llm.background!.temperature).toBe(0.5);
-    });
-
-    // background 通道环境变量展开
-    it('background.apiKey 为 ${ENV} 格式时应展开', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-          background: {
-            provider: 'doubao',
-            model: 'doubao-pro',
-            apiKey: '${MEMORA_BG_API_KEY}',
-          },
-        },
-      });
-      process.env.MEMORA_BG_API_KEY = 'env-bg-key';
-      try {
-        const config = await loadConfig(configPath);
-        expect(config.llm.background!.apiKey).toBe('env-bg-key');
-      } finally {
-        delete process.env.MEMORA_BG_API_KEY;
-      }
-    });
-
-    it('background.baseUrl 为 ${ENV} 格式时应展开', async () => {
-      const configPath = writeConfigFile({
-        llm: {
-          provider: 'deepseek',
-          model: 'deepseek-chat',
-          background: {
-            provider: 'custom',
-            model: 'bg-model',
-            baseUrl: '${MEMORA_BG_BASE_URL}',
-          },
-        },
-      });
-      process.env.MEMORA_BG_BASE_URL = 'https://bg.api.custom.com/v1';
-      try {
-        const config = await loadConfig(configPath);
-        expect(config.llm.background!.baseUrl).toBe('https://bg.api.custom.com/v1');
-      } finally {
-        delete process.env.MEMORA_BG_BASE_URL;
-      }
     });
   });
 
@@ -701,17 +532,6 @@ describe('config/loader · 错误路径覆盖', () => {
       },
     }));
     await expect(loadConfig(configPath)).rejects.toThrow('providers.bad.model');
-  });
-
-  // ── #5: background 缺 provider 字段 ──────────────────────────
-
-  it('background 缺 provider 字段时应抛 configError', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      llm: {
-        background: { model: 'bg-model' }, // 缺 provider 字段
-      },
-    }));
-    await expect(loadConfig(configPath)).rejects.toThrow('background.provider');
   });
 
   // ── #6（B0 收编后空位保留）─────────────────────────────
