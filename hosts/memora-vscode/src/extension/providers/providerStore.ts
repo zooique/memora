@@ -169,8 +169,11 @@ export class ProviderStore {
   async save(config: LlmProviderConfig, isEditing: boolean): Promise<{ ok: boolean; message?: string }> {
     const trimmed = { ...config, name: config.name.trim(), model: config.model.trim(), baseUrl: config.baseUrl.trim() };
 
-    // contextWindow 护栏（sanity bound，非模型真上限）：正整数 + 合理范围，
-    // 防 0 / 防天文数字撑爆预算。仅此一道护栏，不构成第二真理源（真理源 = 用户填写值本身）。
+    // contextWindow 护栏（**纯防呆 sanity bound**，非模型真上限、也非权威裁决）：正整数 + 宽松范围，
+    // 防 0 / 防天文数字撑爆预算。
+    // ⚠️ 内核侧**不做区间裁决**（2026-09-18 拍板）：此前内核对 >2M 静默丢弃，导致「UI 显示值 ≠ 真实生效值」，
+    // 该裁决已删除。故本护栏是**唯一**的输入边界，但它只防手滑 —— 真实上限由模型/API 决定，
+    // 超出模型能力时由 API 报错（可见），不再被任何一层静默替换。
     if (trimmed.contextWindow !== undefined) {
       if (
         !Number.isInteger(trimmed.contextWindow) ||
