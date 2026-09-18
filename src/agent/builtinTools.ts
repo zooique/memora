@@ -585,7 +585,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'read_skill',
     description:
-      '读取激活角色包内嵌技能的完整正文（渐进披露 L2，按需装载）。当需要执行角色包声明的某项技能时，先读取其正文获取详细步骤。技能名来自角色包声明的技能清单。',
+      '读取技能完整正文（渐进披露 L2，按需装载）：先查激活角色包内嵌技能，再查全局通用技能池。当需要执行某项技能时，先读取其正文获取详细步骤。技能名来自技能清单（角色包声明或全局通用技能）。',
     parameters: {
       type: 'object',
       properties: {

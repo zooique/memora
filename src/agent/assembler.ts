@@ -742,11 +742,11 @@ export async function assembleComponents(
     if (rolePackPath) {
       const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
       if (scriptInfo) {
+        // 执行超时走内核默认（60s，上限 600s，见 skillScriptRunner 常量）——脚本级超时无配置通道
         const result = await runSkillScript(
           rolePackPath,
           scriptInfo.runtime,
           args,
-          scriptInfo.timeout,
         );
         return formatScriptResult(result);
       }
@@ -761,7 +761,6 @@ export async function assembleComponents(
           globalPath,
           scriptInfo.runtime,
           args,
-          scriptInfo.timeout,
         );
         return formatScriptResult(result);
       }
@@ -791,7 +790,10 @@ export async function assembleComponents(
   // 渐进披露 L1 补充：注入 list_skills 技能清单回调 (使用 SkillManager.formatSkillForPrompt SSOT)
   toolExec.listSkills = async () => {
     const lines: string[] = ['【全局通用技能】'];
-    const allGlobalSkills = skillManager.list;
+    // 可用性过滤对齐 SkillManager.buildSkillList（G22 同一事实）：缺 description 的技能不进入
+    // LLM 可用清单——渐进披露层面模型不知何时激活（「未生效」由宿主 UI 健康徽章显式标注）。
+    // 工具侧与 L1 枚举侧同为 LLM 消费，过滤标准必须一致，否则两通道清单出现差异（双轨镜像）。
+    const allGlobalSkills = skillManager.list.filter((s) => s.description?.trim());
     for (const skill of allGlobalSkills) {
       const formatted = SkillManager.formatSkillForPrompt(skill);
       if (formatted) lines.push(formatted);

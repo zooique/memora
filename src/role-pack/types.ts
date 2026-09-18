@@ -267,7 +267,7 @@ export interface RolePackAssembly {
 
 /** manifest.json 中注册的技能对象：以对象数组引用包内技能文件（相对包根路径），可选 name/description */
 export interface RolePackManifestSkill {
-  /** 技能文件路径（相对角色包文件夹根）；生态兼容指针，内核不预装载正文，正文经渐进披露 L2（read_skill）按需装载 */
+  /** 技能文件路径（相对角色包文件夹根）；装载时由 parseManifestPack 预缓存正文（skillsWithContent），正文经渐进披露 L2（read_skill）直取缓存，磁盘 IO 已消除 */
   readonly file?: string;
   /** 技能名（可选，缺省取文件名去扩展名） */
   readonly name?: string;

@@ -28,12 +28,10 @@ export interface SkillResource {
 export interface SkillScript {
   /** 脚本相对路径（相对技能目录根，如 "scripts/lint.ts"） */
   path: string;
-  /** 运行时 */
+  /** 运行时（由目录扫描按扩展名推断，SSOT 在 utils/scanner.SCRIPT_RUNTIME_MAP） */
   runtime: 'node' | 'python' | 'shell';
   /** 脚本描述（可选） */
   description?: string;
-  /** 执行超时（秒，默认 30） */
-  timeout?: number;
 }
 
 /** L3 层数据（资源 + 脚本，可选） */

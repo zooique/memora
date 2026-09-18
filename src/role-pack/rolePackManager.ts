@@ -1146,12 +1146,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     return null;
   }
 
-  /** 获取技能 L3 脚本元信息（runtime 从扩展名或 SKILL.md frontmatter 的 scripts 声明推断） */
+  /**
+   * 获取技能 L3 脚本元信息（runtime 来源：scanPackSkills 目录扫描按扩展名推断，SSOT 在
+   * utils/scanner；layer3 未命中时回退扩展名推断兜底——防御性分支，正常路径不可达）
+   */
   getSkillScriptInfo(
     skillName: string,
     scriptPath: string,
     packName?: string,
-  ): { runtime: 'node' | 'python' | 'shell'; timeout?: number } | null {
+  ): { runtime: 'node' | 'python' | 'shell' } | null {
     // 优先使用已扫描的 L3 数据（scanPackSkills 已发现 layer3.scripts）
     const found = this.findSkillByName(skillName, packName);
     if (found?.skill.layer3?.scripts) {
