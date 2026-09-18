@@ -1,7 +1,7 @@
 /**
  * AbortSignal 合并工具
  *
- * 从 openaiCompatible.ts 和 embedding.ts 提取的公共"外部信号 + 超时信号"合并逻辑（二者同构）。
+ * 从 openaiCompatible.ts 提取的公共"外部信号 + 超时信号"合并逻辑。
  *
  * 确保用户取消（optsSignal）和请求超时都能中断 fetch 和流读取。
  */
@@ -16,7 +16,7 @@
  *
  * @param optsSignal 外部传入的 AbortSignal（可选，用户取消信号）
  * @param timeoutMs 超时毫秒数
- * @param timeoutErrorName 超时错误名称（如 'LLM 请求超时' / 'Embedding 请求超时'）
+ * @param timeoutErrorName 超时错误名称（如 'LLM 请求超时'）
  * @returns { signal, clearTimer, dispose } 合并后的 signal 和清理函数
  */
 export function mergeAbortSignals(

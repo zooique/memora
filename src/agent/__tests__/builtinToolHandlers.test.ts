@@ -694,7 +694,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
   });
 
   it('搜索超时降级为空结果，不挂死工具调用（响应性护栏档 1）', async () => {
-    // 桩 MemoryInspector：searchHybrid 永不返回（模拟 embedding 远程挂起）
+    // 桩 MemoryInspector：searchHybrid 永不返回（模拟底层搜索挂起的慢响应护栏场景）
     const hangingInspector = Object.create(null) as unknown as MemoryInspector;
     hangingInspector.searchHybrid = () => new Promise<AgentSearchHit[]>(() => {});
     handlers.setMemoryInspector(hangingInspector);

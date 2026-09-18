@@ -171,12 +171,10 @@ export const LOOP_CONSTANTS = {
   TOOL_RESULT_WRAP_OVERHEAD_TOKENS: 100,
 
   /**
-   * `search_memories` 工具响应性护栏：整个搜索调用（语义 embed + 关键词后端）的上限。
+   * `search_memories` 工具响应性护栏：整次关键词搜索的上限。
    *
-   * 背景（2026-09-13 排雷）：embedding 层自身有 60s 请求超时（EmbeddingProvider），网络层不会无限挂；
-   * 但 60s 远超「用户可感知工具调用」的合理上限。本项目 web/project search 均用 30s 超时先例
-   * （webSearchProvider.ts），本地记忆搜索更快，故收窄为 5s——超时降级为提示文案而非挂死工具，
-   * 底部 Promise.race 不阻断底层 embed，超时后 LLM 若重试可命中 EmbeddingProvider 的 LRU 缓存。
+   * 背景：搜索服务为网络调用（web/project search）时以 30s 超时为先例（webSearchProvider.ts），
+   * 本地记忆搜索更快，故收窄为 5s——超时降级为提示文案而非挂死工具。
    */
   MEMORY_SEARCH_TIMEOUT_MS: 5_000,
 

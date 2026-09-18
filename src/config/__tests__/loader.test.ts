@@ -180,7 +180,7 @@ describe('config/loader · 项目级/用户级配置回退', () => {
   });
 });
 
-// ─── K3：多 Provider + background + embedding + schema 校验 + 回退降级 ──
+// ─── K3：多 Provider + background + schema 校验 + 回退降级 ──
 
 describe('config/loader · K3 多 Provider 与高级配置', () => {
   let tmpHome: string;

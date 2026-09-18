@@ -1076,12 +1076,10 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * `search_memories` 响应性护栏包装：给整次记忆搜索（语义 embed + 关键词后端）设上限。
+   * `search_memories` 响应性护栏包装：给整次记忆搜索设上限。
    *
-   * 排雷背景（2026-09-13）：embedding 层自身有 60s 请求超时，网络不会无限挂；但 60s 远超
-   * 「用户可感知工具调用」的合理上限。这里收窄为 MEMORY_SEARCH_TIMEOUT_MS（5s）——超时
-   * 降级为「搜索超时」提示（空结果语义），而非挂死工具或抛错中断对话。超时不阻断底层 embed
-   * （Promise.race 只是不再等待），LLM 若重试可命中 EmbeddingProvider 的 LRU 缓存。
+   * 背景：搜索服务为网络调用时超时远长于本地上限，这里收窄为 MEMORY_SEARCH_TIMEOUT_MS（5s）——
+   * 超时降级为「搜索超时」提示（空结果语义），而非挂死工具或抛错中断对话。
    *
    * @param run 返回记忆搜索结果的函数（同步或异步）
    * @returns 搜索完成后返回全量命中；超时则返回空数组（降级提示由调用方近零命中分支承担）
