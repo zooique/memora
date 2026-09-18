@@ -46,15 +46,25 @@ interface SearchResultPayload {
   hits: MemoryItemDto[];
 }
 
-/** source → 徽章样式类映射（未知 source 回退中性，开放字符串不应穷举） */
-const SOURCE_BADGE_CLASS: Record<string, string> = {
+/**
+ * source → 徽章样式类映射。
+ *
+ * 对齐约束：键集合须 ⊆ 内核 SOURCE_LABELS 值集合（漂移哨兵见 __tests__/memoryView.test.ts），
+ * 禁止新增内核零存在的幽灵 source（如 2026-09-18 删除的 'profile'）。
+ * 未知 source 回退中性样式（开放字符串不应穷举）。
+ */
+export const SOURCE_BADGE_CLASS: Record<string, string> = {
   'round-summary': 'source-badge-round-summary',
-  profile: 'source-badge-profile',
   'work-projection': 'source-badge-work-projection',
 };
 
-/** SummaryType → 中文徽章文案（round-summary 子类型，对齐内核 SummaryType 硬契约） */
-const TYPE_BADGE_LABEL: Record<string, string> = {
+/**
+ * SummaryType → 中文徽章文案（round-summary 子类型）。
+ *
+ * 对齐约束：键集合须 ⊆ 内核 SUMMARY_TYPES（漂移哨兵见 __tests__/memoryView.test.ts），
+ * 新增摘要类型需同步补文案，否则回退原值展示。
+ */
+export const TYPE_BADGE_LABEL: Record<string, string> = {
   preference: '偏好',
   fact: '事实',
   decision: '决策',

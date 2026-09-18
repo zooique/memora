@@ -76,7 +76,6 @@ export const memoryStyles = `
     color: var(--text-secondary, #9aa0a6);
   }
   #memory-root .source-badge-round-summary { background: var(--accent, #0e639c); color: var(--accent-foreground, #ffffff); }
-  #memory-root .source-badge-profile { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
   #memory-root .source-badge-work-projection { background: var(--surface-card, #252526); color: var(--text-secondary, #9aa0a6); }
 
   /* 类型徽章：round-summary 子类型（SummaryType），与 source 徽章互补 */

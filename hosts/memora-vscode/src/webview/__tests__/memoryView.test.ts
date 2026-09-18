@@ -12,7 +12,8 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
-import { createMemoryView } from '../scripts/memoryView.js';
+import { SOURCE_LABELS, SUMMARY_TYPES } from '@zooique/memora';
+import { createMemoryView, SOURCE_BADGE_CLASS, TYPE_BADGE_LABEL } from '../scripts/memoryView.js';
 import type { GovernanceStatsDto, MemoryItemDto, MemoryStatsDto } from '../../shared/protocol.js';
 
 /** 覆盖 createMemoryView 全部查询引用的最小 HTML 骨架（子视图挂载在 #memory-root 根容器内，
@@ -568,5 +569,24 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       );
       expect((document.querySelector('.pager-bar') as HTMLElement).hidden).toBe(true);
     });
+  });
+});
+
+// ─── 展示层映射 vs 内核契约 漂移哨兵（2026-09-18） ───
+// webview 沙箱无法 import 内核（硬约束），映射键集合须显式对齐内核契约；
+// 本哨兵在 node 测试环境 import 内核 SOURCE_LABELS/SUMMARY_TYPES，
+// 断言「映射键 ⊆ 内核契约值」，防止新增幽灵 source/type 键（如已删除的 'profile'）。
+describe('memoryView 展示层映射对齐内核契约', () => {
+  it('SOURCE_BADGE_CLASS 键 ⊆ SOURCE_LABELS 值集合（无幽灵 source）', () => {
+    const kernelSources = Object.values(SOURCE_LABELS);
+    for (const key of Object.keys(SOURCE_BADGE_CLASS)) {
+      expect(kernelSources).toContain(key);
+    }
+  });
+
+  it('TYPE_BADGE_LABEL 键 ⊆ SUMMARY_TYPES（无幽灵摘要类型）', () => {
+    for (const key of Object.keys(TYPE_BADGE_LABEL)) {
+      expect(SUMMARY_TYPES).toContain(key);
+    }
   });
 });
