@@ -25,19 +25,9 @@ const level = process.env['MEMORA_LOG_LEVEL'] ?? 'info';
 const SENSITIVE_KEY_PATTERN = /api[_-]?key|token|password|secret|authorization|credential/i;
 
 /**
- * pino redact 路径配置（与 console fallback 的 SENSITIVE_KEY_PATTERN 一致）
- * `*.apiKey` 匹配任意层级的 apiKey 字段，支持嵌套对象脱敏
- */
-const PINO_REDACT_PATHS = [
-  'apiKey', 'token', 'password', 'secret', 'authorization', 'credential',
-  '*.apiKey', '*.token', '*.password', '*.secret',
-  '*.authorization', '*.credential',
-  '*.*.apiKey', '*.*.token', '*.*.password', '*.*.secret',
-];
-
-/**
  * 对象脱敏：深拷贝并将敏感键值替换为 [REDACTED]
- * 仅用于 console fallback 的 JSON.stringify 路径，防止敏感数据泄漏到 stderr。
+ * 单一脱敏实现：console fallback 与 pino 统一经此脱敏（任意嵌套层级 + 变体 + 大小写不敏感），
+ * 不依赖 pino redact 精确路径列表（其类型仅收 string[] 且区分大小写，覆盖弱于正则）。
  */
 function redactSensitiveKeys(obj: Record<string, unknown>): Record<string, unknown> {
   const redacted: Record<string, unknown> = {};
@@ -101,18 +91,29 @@ function createConsoleLogFn(targetLevel: 'info' | 'warn' | 'error' | 'debug'): L
   };
 }
 
-/** pino → ILogger 包装器：显式提取 4 个日志方法，避免 as unknown as ILogger 双重断言 */
+/**
+ * pino → ILogger 包装器：显式提取 4 个日志方法（避免 as unknown as ILogger 双重断言），
+ * 并对对象入参统一做 redactSensitiveKeys 脱敏——pino 与 console fallback 共用同一脱敏实现。
+ */
 function wrapPinoAsLogger(pinoInst: {
   info: LogFn;
   warn: LogFn;
   error: LogFn;
   debug: LogFn;
 }): ILogger {
+  const call = (method: LogFn) => (objOrMsg: Record<string, unknown> | string, msg?: string): void => {
+    // 对象路径脱敏后交 pino（嵌套任意层级，与 console fallback 行为一致）
+    if (typeof objOrMsg === 'object') {
+      method.call(pinoInst, redactSensitiveKeys(objOrMsg), msg);
+    } else {
+      method.call(pinoInst, objOrMsg, msg);
+    }
+  };
   return {
-    info: pinoInst.info.bind(pinoInst),
-    warn: pinoInst.warn.bind(pinoInst),
-    error: pinoInst.error.bind(pinoInst),
-    debug: pinoInst.debug.bind(pinoInst),
+    info: call(pinoInst.info),
+    warn: call(pinoInst.warn),
+    error: call(pinoInst.error),
+    debug: call(pinoInst.debug),
   };
 }
 
@@ -165,11 +166,11 @@ async function tryCreatePinoLogger(): Promise<ILogger | null> {
     }
 
     if (streams.length === 0) {
-      // 通过包装器适配 ILogger；config redact 防敏感信息写入
-      return wrapPinoAsLogger(pino({ level, redact: PINO_REDACT_PATHS }));
+      // 通过包装器适配 ILogger（对象入参脱敏在 wrapPinoAsLogger 内统一处理）
+      return wrapPinoAsLogger(pino({ level }));
     }
 
-    return wrapPinoAsLogger(pino({ level, redact: PINO_REDACT_PATHS }, pino.multistream(streams)));
+    return wrapPinoAsLogger(pino({ level }, pino.multistream(streams)));
   } catch (err) {
     // pino 未安装，回退到 console logger
     if (process.env['MEMORA_DEBUG']) process.stderr.write(`[memora] pino 加载失败：${errMsg(err)}\n`);
