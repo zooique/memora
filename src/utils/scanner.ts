@@ -181,8 +181,13 @@ export interface DiscoveredLayer3 {
   scripts: Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }>;
 }
 
-/** 可执行脚本扩展名 → runtime 映射 */
-const SCRIPT_RUNTIME_MAP: Record<string, 'node' | 'python' | 'shell'> = {
+/**
+ * 可执行脚本扩展名 → runtime 映射（SSOT 单一真源，供 rolePackManager / toolExecutor 共用）。
+ *
+ * '.ts' 语义声明（唯一一处）：node 无法直接解析 TS——映射仅作兜底推断，实际可用性
+ * 取决于宿主执行器是否具备转译能力（如 vscode codeExecutor 仅别名 .js/.mjs/.cjs）。
+ */
+export const SCRIPT_RUNTIME_MAP: Readonly<Record<string, 'node' | 'python' | 'shell'>> = {
   '.ts': 'node',
   '.js': 'node',
   '.mjs': 'node',
@@ -192,6 +197,16 @@ const SCRIPT_RUNTIME_MAP: Record<string, 'node' | 'python' | 'shell'> = {
   '.bash': 'shell',
   '.zsh': 'shell',
 };
+
+/**
+ * 按脚本扩展名推断 runtime（未知扩展名返回 undefined，缺省策略由调用方自定：
+ * toolExecutor 兜底 node / rolePackManager 返回 null / 扫描跳过）。
+ *
+ * @param ext 小写扩展名（含点，如 '.py'）
+ */
+export function inferRuntimeFromExt(ext: string): 'node' | 'python' | 'shell' | undefined {
+  return SCRIPT_RUNTIME_MAP[ext];
+}
 
 /** 资源文件扩展名（纳入 resources 索引） */
 const RESOURCE_EXTENSIONS = new Set([
@@ -310,7 +325,7 @@ async function readScriptFiles(
       results.push(...subResults);
     } else {
       const ext = getExt(entry);
-      const runtime = SCRIPT_RUNTIME_MAP[ext];
+      const runtime = inferRuntimeFromExt(ext);
       if (runtime) {
         results.push({ path: relPath, runtime, size: statInfo.size });
       }

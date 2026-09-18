@@ -24,7 +24,7 @@ import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 import { formatExecutionResult, formatScriptResult, runSkillScript } from '@/skill/skillScriptRunner.js';
-import { resolveSafePath } from '@/utils/scanner.js';
+import { resolveSafePath, inferRuntimeFromExt } from '@/utils/scanner.js';
 import type {
   IProjectSearchProvider,
   ProjectTextSearchResult,
@@ -54,37 +54,11 @@ const RUN_CODE_LANGUAGE_MAX_LEN = 32;
 /** run_code 单次结果字段最大长度（防长输出撑爆上下文） */
 const RUN_CODE_RESULT_MAX_LEN = 20_000;
 
-// ─── run_code script_path 模式：脚本扩展名 → 语言推断 ─────────────────
-
-/** 脚本文件扩展名 → 执行语言映射（script_path 模式省略 language 时推断用；可用性仍取决于宿主执行器） */
-const SCRIPT_EXT_LANGUAGE: Record<string, string> = {
-  '.js': 'node',
-  '.mjs': 'node',
-  '.cjs': 'node',
-  '.py': 'python',
-  '.sh': 'shell',
-  '.bash': 'shell',
-  '.zsh': 'shell',
-  // 注：'.ts' 不在可靠支持集合——node 无法直接解析 TS，省略 language 时交由下方兜底 'node'，
-  // 是否真能执行取决于宿主执行器是否具备 TS 转译能力（如 vscode codeExecutor 仅别名 .js/.mjs/.cjs）。
-};
-/** 无法识别扩展名时的兜底语言（脚本模式默认按 Node 执行） */
-const SCRIPT_LANGUAGE_FALLBACK = 'node';
-
-/**
- * 按脚本文件扩展名推断执行语言（run_code script_path 模式）
- *
- * 纯字符串解析（不引入 node:path 依赖，保持 toolExecutor 零 node 依赖的编排层纯度）。
- *
- * @param scriptPath 相对项目根的脚本路径
- * @returns 推断的语言名；无法识别时回退 SCRIPT_LANGUAGE_FALLBACK
- */
-function inferLanguageFromScriptPath(scriptPath: string): string {
-  // 取最后一个点号后的扩展名（含点）并小写；无扩展名则回退兜底语言
-  const lastDot = scriptPath.lastIndexOf('.');
-  const ext = lastDot >= 0 ? scriptPath.slice(lastDot).toLowerCase() : '';
-  return SCRIPT_EXT_LANGUAGE[ext] ?? SCRIPT_LANGUAGE_FALLBACK;
-}
+// ─── run_code script_path 模式：脚本扩展名 → 运行时推断 ─────────────────
+// 扩展名 → runtime 映射的单一真理源在 utils/scanner.ts（SCRIPT_RUNTIME_MAP/inferRuntimeFromExt），
+// 此处不复制表；'.ts' 是否可靠支持在 scanner.ts 的映射处唯一声明（node 无法直接解析 TS，
+// 实际可用性取决于宿主执行器是否具备转译能力）。未知扩展名兜底 node（script_path 模式下
+// 宁尝试执行，能否跑由宿主执行器裁决）。
 
 /**
  * 语言名收敛为脚本运行时白名单三档（node/python/shell）
@@ -816,7 +790,9 @@ export class ToolExecutor {
       return typeof val === 'string' ? val : (fallback ?? '');
     };
 
-    // 内置工具调用委托给 BuiltinToolHandlers
+    // 内置工具二分落点契约：构造态可独立可用（缺注入降级）→ BuiltinToolHandlers；
+    // 可用性本身依赖装配注入（缺注入即 NOT_AVAILABLE）→ 留在本 switch 内联。
+    // 新增内置工具先按此判别归属，勿凭参照漂移。
     switch (name) {
       case 'read_file':
         return this.builtinHandlers.readFile(
@@ -982,7 +958,9 @@ export class ToolExecutor {
         if (scriptPath) {
           // 读取脚本文件原样执行（路径白名单 + 长度上限由 readScriptFile 负责，截断会破坏语法）
           execCode = await this.builtinHandlers.readScriptFile(scriptPath);
-          execLanguage = language || inferLanguageFromScriptPath(scriptPath);
+          // 扩展名推断 runtime（SSOT：scanner.inferRuntimeFromExt）；未知扩展名兜底 node
+          const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
+          execLanguage = language || inferRuntimeFromExt(ext) || 'node';
         } else {
           // 传统 code 模式：language + code 均必填
           if (!language) {
@@ -1243,7 +1221,8 @@ export class ToolExecutor {
           return '[ERR:SCRIPT_DECLINE] 脚本运行未获确认（用户拒绝或未注入确认回调，fail-closed）';
         }
         // ③ 运行时白名单：扩展名推断并收敛到 node/python/shell 三档（推断即可信，不规则兜底 node）
-        const runtime = normalizeScriptRuntime(inferLanguageFromScriptPath(scriptPath));
+        const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
+        const runtime = normalizeScriptRuntime(inferRuntimeFromExt(ext) ?? 'node');
         // timeout_ms（秒，可选）→ 毫秒透传内核执行器（默认 60s，上限 600s，见 skillScriptRunner 常量）；
         // 脚本内 API 调用/批处理等长耗时任务由 LLM 按需传参，避免误超时
         const timeoutMs = Number.isFinite(args['timeout_ms']) ? Number(args['timeout_ms']) * 1000 : undefined;

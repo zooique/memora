@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir, resolveSafePath, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir, resolveSafePath, inferRuntimeFromExt, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import {
   discoverSkillLayer3,
   resolveSkillDir,
@@ -1160,14 +1160,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
         return { runtime: scriptMeta.runtime };
       }
     }
-    // 回退：从扩展名推断 runtime
+    // 回退：从扩展名推断 runtime（SSOT 共享出口；未知扩展名返回 undefined → null）
     const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
-    const runtimeMap: Record<string, 'node' | 'python' | 'shell'> = {
-      '.ts': 'node', '.js': 'node', '.mjs': 'node', '.cjs': 'node',
-      '.py': 'python',
-      '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell',
-    };
-    const runtime = runtimeMap[ext];
+    const runtime = inferRuntimeFromExt(ext);
     if (!runtime) return null;
     return { runtime };
   }

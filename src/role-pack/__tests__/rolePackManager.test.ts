@@ -1181,7 +1181,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
 
       // 已登记脚本：runtime 从 scanPackSkills 的 layer3 扫描结果获取（shell）
       expect(manager.getSkillScriptInfo('脚本工具', 'run.sh')).toEqual({ runtime: 'shell' });
-      // 未登记但扩展名可推断：回退 runtimeMap 分支（1116-1133）
+      // 未登记但扩展名可推断：回退共享 runtime 映射（scanner.inferRuntimeFromExt）分支
       expect(manager.getSkillScriptInfo('脚本工具', '运行.py')).toEqual({ runtime: 'python' });
       // 无法识别的扩展名 → null
       expect(manager.getSkillScriptInfo('脚本工具', 'data.bin')).toBeNull();
