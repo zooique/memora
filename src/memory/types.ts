@@ -62,9 +62,16 @@ export interface Memory {
 }
 
 /**
+ * round-summary 摘要类型取值集合（单一真源：运行时校验与类型声明均从此派生）。
+ * 新增取值只改此处——若类型与运行时校验集双写，类型扩展会静默漏掉校验集，
+ * 导致新类型摘要被兜底为 'general'（行为漂移无编译报错）。
+ */
+export const SUMMARY_TYPES = ['preference', 'fact', 'decision', 'intent', 'general'] as const;
+
+/**
  * round-summary 记忆的摘要类型，摘要生成时由 LLM 自动判断，无独立分类器
  */
-export type SummaryType = 'preference' | 'fact' | 'decision' | 'intent' | 'general';
+export type SummaryType = (typeof SUMMARY_TYPES)[number];
 
 /**
  * 记忆解析器 — 验证原始数据并转换为 Memory
@@ -171,3 +178,19 @@ export const SOURCE_LABELS = {
   /** 未知来源（未被已知标签覆盖时的兜底值） */
   UNKNOWN: 'unknown',
 } as const;
+
+// ─── round-summary 规范 ID 构造（单一真源） ────────────────
+
+/**
+ * round-summary 记忆的规范 ID：`{source}:{sessionName}:{roundId}`。
+ * 读写/过滤侧一律经本函数构造，禁止散落 `round-summary:` 字面量——
+ * 溯源标签变更只需同步 SOURCE_LABELS，此处自动跟随。
+ */
+export function roundSummaryMemoryId(sessionName: string, roundId: string): string {
+  return `${SOURCE_LABELS.ROUND_SUMMARY}:${sessionName}:${roundId}`;
+}
+
+/** 会话级前缀（定位某会话的全部摘要记忆），与 roundSummaryMemoryId 同源 */
+export function roundSummarySessionPrefix(sessionName: string): string {
+  return `${SOURCE_LABELS.ROUND_SUMMARY}:${sessionName}:`;
+}

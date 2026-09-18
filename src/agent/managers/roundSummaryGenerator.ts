@@ -6,7 +6,7 @@
 
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory, SummaryType } from '@/memory/types.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
+import { SOURCE_LABELS, SUMMARY_TYPES, roundSummaryMemoryId, roundSummarySessionPrefix } from '@/memory/types.js';
 import { extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
@@ -139,16 +139,15 @@ export class RoundSummaryGenerator {
         return;
       }
 
-      // 验证摘要类型（LLM 输出可能不合法，兜底为 'general'）
-      const validTypes: SummaryType[] = ['preference', 'fact', 'decision', 'intent', 'general'];
-      const summaryType: SummaryType = validTypes.includes(result.type as SummaryType)
+      // 验证摘要类型（LLM 输出可能不合法，兜底为 'general'）；取值集合单源：SUMMARY_TYPES（memory/types）
+      const summaryType: SummaryType = SUMMARY_TYPES.includes(result.type as SummaryType)
         ? (result.type as SummaryType)
         : 'general';
 
       // 构建带溯源标记的记忆条目（round-summary + sessionName + roundId）
       // 溯源/分类字段走顶层持久化字段（summaryType/sessionName/roundId），不塞 metadata：
       // 宿主 SQLite 不持久化 metadata，而分轨召回/会话优先须跨会话可靠读取（A1 边界定案，见 types.ts）
-      const memoryId = `round-summary:${sessionName}:${roundId}`;
+      const memoryId = roundSummaryMemoryId(sessionName, roundId);
       const now = nowIso();
       const memory: Memory = {
         id: memoryId,
@@ -184,7 +183,7 @@ export class RoundSummaryGenerator {
   private getSessionCandidates(newMemory: Memory): Memory[] {
     const sessionName = newMemory.sessionName;
     if (!sessionName) return [];
-    const sessionPrefix = `round-summary:${sessionName}:`;
+    const sessionPrefix = roundSummarySessionPrefix(sessionName);
 
     const all = this.storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
     // 同 session + 未取代（排除自身）：按 createdAt 降序，取最近 N 条作候选

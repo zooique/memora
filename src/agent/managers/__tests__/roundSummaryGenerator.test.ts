@@ -10,7 +10,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
+import { SOURCE_LABELS, roundSummaryMemoryId } from '@/memory/types.js';
 import type { SummaryType } from '@/memory/types.js';
 import type { LlmProvider } from '@/llm/provider.js';
 
@@ -35,7 +35,7 @@ function seedSummary(
 ): void {
   const now = new Date().toISOString();
   storage.upsert({
-    id: `round-summary:${sessionName}:${roundId}`,
+    id: roundSummaryMemoryId(sessionName, roundId),
     content,
     source: SOURCE_LABELS.ROUND_SUMMARY,
     name: `轮次摘要 ${sessionName} ${roundId}`,

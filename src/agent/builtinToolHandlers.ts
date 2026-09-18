@@ -23,7 +23,7 @@ import { logger } from '@/logging/logger.js';
 import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
-import { SOURCE_LABELS } from '@/memory/types.js';
+import { SOURCE_LABELS, roundSummarySessionPrefix } from '@/memory/types.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 // 会话显示名回退单一真理源（displayName→autoName），sessionId 兜底留在调用端
 import { getSessionDisplayName } from '@/memory/sessionStore.js';
@@ -1133,7 +1133,8 @@ export class BuiltinToolHandlers {
     const allSummaries = this.memoryIndex.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
 
     // 按 sessionId 过滤
-    const sessionPrefix = `round-summary:${sessionId}:`;
+    // 会话级前缀与写侧同源（roundSummarySessionPrefix，memory/types）：标签变更无需同步两处
+    const sessionPrefix = roundSummarySessionPrefix(sessionId);
     const matched = allSummaries.filter((m) => m.id.startsWith(sessionPrefix));
 
     if (roundId) {
