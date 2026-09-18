@@ -10,6 +10,8 @@
 >
 > **2026-09-09 收敛补记（阶段3 score 物理退役）**：本文件正文中作为记忆权重论述的 `score` 字段（§3 字段表、`hybridMerge` 的 `vectorScore*0.6 + score*0.4` 融合、召回保底「按 score 降序」、boost 加分 `m.score + 0.05` 等）**已随阶段3 从 `Memory` 接口物理删除**——score 单调不减导致区分度趋零，且「只 touch 不 +score」后无写位。现状：排序 = 单语义分 `vectorScore` 降序，使用轨迹唯一事实源为 `accessedAt`，命中即刷新 `accessedAt`（不再加分）；读档经 `parseMemory` 白名单构造，旧档 score 自动剥离。注意与上一类补记区分：**「语义相似度分」不是记忆权重，仍然健在**——但承载它的 `RecalledMemorySummary`（recall chunk 载荷）已随自动召回展示链于 2026-09-10 物理删除，现行载体为搜索命中返回值 `AgentSearchHit.similarity`。下文 score 相关表述除明确指相似度者外，均为退役前设计语义。
 >
+> **2026-09-10 收敛补记（recall() 物理删除）**：**§四 全章（4.0-4.8 分层分轨召回）、§6 影响中的依赖链、§7 形态表、附录参照，所描述的 `recall()` 召回编排函数已物理删除**（同批「减法」，文件 `src/memory/recall.ts` 现仅存 `extractKeywords` / `touchScores` 两个工具函数，2026-09-18 更名为 `keywordsTouch.ts` 对齐职责）——`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation` 三函数与 `recall()` 签名一体消失，L1/L2 分层、分轨进池、cap 内分配、minFallback 保底等**均为退役前设计语义，不再有现行实现**。**现行召回 = `search_memories` 工具**（`searchHybrid` 双通道融合，LLM 主动取用），prepare 不注入任何记忆、预算无记忆维度。下文凡提及 `recall()` 者请勿按现行机制解读。
+>
 > **定位**：设计文档，描述"记忆即摘要"架构——以摘要为唯一记忆单元，通过溯源标识实现记忆与对话记录的松耦合关联。
 >
 > **关联**：[agent-design-philosophy.md](agent-design-philosophy.md)（turn 公理）· role-pack-spec.md（记忆键 SSOT）
@@ -220,6 +222,8 @@ export interface SessionMessage {
 
 ### 4.0 设计演进概述
 
+> **⚠️ 本章整体已失效（2026-09-10）**：v3「分层分轨召回」的 `recall()` 编排已物理删除，记忆召回现行形态 = `search_memories` 工具（见头部收敛补记）。本节及 4.1-4.8 保留为**历史设计演进参考**，不再反映现行实现。
+
 记忆召回经历了三代设计：
 
 | 代 | 排序策略 | 治理机制 | 问题 |
@@ -359,7 +363,7 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 }
 ```
 
-> **说明（落地状态，2026-08-27）**：以上伪代码已由 `src/memory/recall.ts` 落地——`applyTrackPolicy()`（分轨进池）、`sortByLayer()`（分层排序）、`applyCapAllocation()`（cap 内分配）三函数与伪代码一一对应；分配示意函数 `previewTakePreference` / `takeByRelevance` 不引入独立函数，内联在 `applyCapAllocation` 单次填充循环中。`metadata?.summaryType / sessionName / roundId` 已提升为**顶层持久化字段**（A1 边界定案，宿主 SQLite 已加列），伪代码与实现均使用顶层字段。**候选超集裁剪**（§4.4 第 3 步）为 2026-08-27 修复：hybridMerge/reranker 不再提前裁到最终 `limit`，保证分轨语义轨在 cap 分配前保留候选，测试见 `recall.test.ts`「cap 分配」套件。
+> **历史说明（落地状态已被撤回，2026-09-10）**：本节伪代码对应的 `recall()` 及其三函数（`applyTrackPolicy` / `sortByLayer` / `applyCapAllocation`）**已随召回编排物理删除**（见头部收敛补记）——「已由 `src/memory/recall.ts` 落地」不成立，`recall.ts` 现仅存 `extractKeywords` / `touchScores`。`metadata?.summaryType / sessionName / roundId` 提升为顶层持久化字段与 §4.4 候选超集裁剪修复**仍现行**（与召回编排无关）；本节其余"落地状态"表述均属退役前语义。
 
 ### 4.5 hybridMerge 融合排序（保留）
 
@@ -367,7 +371,7 @@ async function recall(storage, query, options: RecallOptions): Promise<Memory[]>
 
 **与 v2 的区别**：v2 中 `hybridMerge` 的排序被"会话优先 + 时间"完全覆盖（双重排序问题）。v3 中 `hybridMerge` 只负责"选拔候选"，排序由分层分轨规则统一处理。
 
-> **边界标注（D2，2026-08-27）**：`memoryInspector.searchHybrid()` 与 `recall()` **共享** `hybridMerge` 融合排序，但 searchHybrid 是「记忆搜索工具」**不是召回管线**——保持融合排序**不分层分轨**（不应用 L1/L2 分层、不进池策略、不做 cap 内分配）。分层分轨仅属 `recall()` 召回编排（contextPreparer 调用）；搜索工具暴露纯融合相关性结果，供宿主/上层按需自取。两者不互调用，边界清晰（见 `memoryInspector.ts` searchHybrid 注释）。
+> **边界标注（D2，2026-08-27）**：`memoryInspector.searchHybrid()` 与 `recall()` **共享** `hybridMerge` 融合排序，但 searchHybrid 是「记忆搜索工具」**不是召回管线**——保持融合排序**不分层分轨**（不应用 L1/L2 分层、不进池策略、不做 cap 内分配）。搜索工具暴露纯融合相关性结果，供宿主/上层按需自取。两者不互调用，边界清晰（见 `memoryInspector.ts` searchHybrid 注释）。**（2026-09-10 修订：`recall()` 已随召回编排物理删除，"分层分轨仅属 recall() 召回编排（contextPreparer 调用）"半句失效——现行唯一记忆检索入口 = `searchHybrid`；本条意图「searchHybrid 不分层分轨、暴露纯融合结果」仍现行）**。
 
 ### 4.6 差异化召回（按 type）的历史与演进
 
