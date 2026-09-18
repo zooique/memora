@@ -58,6 +58,8 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 
 ### 内容护栏（Guardrails）
 
+> **废弃标注（2026-09-18）**：本节 `source:'guardrail'` 记忆轨设计与输入/输出护栏已摘除（见 `.trae/rules/memory-role-pack-boundary-rules.md`——"guardrail 已摘除，不新增 guardrail 代码；无空转链"）。护栏能力改为即时注入形态：`pathGuard.ts` 承载 SecurityGuard（文件写权限守卫）+ 角色包 rule 软约束兜底，不再以记忆轨存储。本节以下表格保留历史记录，不作为现行设计。
+
 在原有路径白名单 + 写入确认的基础上，新增**内容级护栏**：
 
 | 维度 | 设计 |
@@ -65,7 +67,7 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 | 护栏类型 | 输入护栏（用户输入注入前）+ 输出护栏（LLM 响应返回前） |
 | 规则存储 | 以 `source: "guardrail"` 记忆形式存储，融入"万物皆记忆"模型 |
 | 规则格式 | 每条规则包含 `pattern`（正则表达式）和 `action`（`block` / `warn`） |
-| 规则来源 | `configDir/rules/guardrails/` 下的 `.md` 文件，启动时由 MemoryLoader 扫描加载 |
+| 规则来源 | `configDir/rules/guardrails/` 下的 `.md` 文件（历史设计；`MemoryLoader` 已删，见上方废弃标注） |
 | 降级策略 | 护栏自身异常（正则编译失败等）降级为"放行 + 记日志"，永远不阻断用户对话 |
 
 **输入/输出护栏共享同一规则集**，AgentLoop 在对话输入和输出阶段分别调用 `runInputGuardrails()` / `runOutputGuardrails()`。
@@ -93,7 +95,7 @@ Agent 自动调用工具（文件操作、Shell 命令、外部 API）存在风�
 ### 设计哲学
 
 - **护栏不阻断对话**：护栏自身异常时降级放行，这是降级优先原则的直接要求
-- **万物皆记忆**：护栏规则以 `source: "guardrail"` 融入记忆统一模型，不创建独立子系统
+- **万物皆记忆（现状 2026-09-18 修正）**：护栏规则**不再走记忆轨**（`source:'guardrail'` 已随 guardrail 摘除）。护栏能力 = 角色包 rule 软约束 + `pathGuard` SecurityGuard 即时注入；与"万物皆记忆/摘要即记忆单轨"边界并存，不回溯为旧统一存储口径。（原"护栏以 guardrail 入记忆"的观点已废止，见本文件废弃标注。）
 - **反思是增强而非替代**：LLM 原本就能看到错误消息并自行修正，Reflection 只是在可重试场景下给 LLM 一个明确的"请重试"信号
 
 ## 补充说明（2026-07-02 · 渲染进程 CSP 与内联样式）
