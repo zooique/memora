@@ -263,20 +263,22 @@ export class AgentLoop {
    *  write_loop/read_failed 的计数状态内聚进其 guard 实例闭包，loop 仅负责
    *  装载 registry + 调 evaluateBlocked 判定 + 调 notifyExec 写侧喂数 + reset 归零。 */
   private readonly guardier = createDefaultGuards();
-  /** 软暂停请求标志——已收敛为 interruptQueue（2026-09-06）。private 读写器，内部消费点：
-   *  _routePausedIfTimeoutAndPause（读）/ resetTurnState（清）/ requestPause/clearPauseRequest（写） */
-  private get pauseRequested(): boolean {
+  // 软暂停申请操作（SSOT：pause 条目统一存 interruptQueue，读写统一经下面三个方法）
+  /** 队列中是否有待消费的 pause 申请 */
+  private hasPendingPause(): boolean {
     return this.interruptQueue.some((r) => r.kind === 'pause');
   }
-  private set pauseRequested(v: boolean) {
-    if (v) {
-      // 置位：确保队列有 pause 条目（幂等，不重复追加）
-      if (!this.interruptQueue.some((r) => r.kind === 'pause')) {
-        this.interruptQueue.push({ kind: 'pause' });
-      }
-    } else {
-      // 清除：过滤掉 pause 条目（保留 interject 条目）
-      this.interruptQueue = this.interruptQueue.filter((r) => r.kind !== 'pause');
+  /** 幂等申请 pause 入队（已存在则不重复追加） */
+  private requestPauseEntry(): void {
+    if (!this.hasPendingPause()) {
+      this.interruptQueue.push({ kind: 'pause' });
+    }
+  }
+  /** 移除队列中的 pause 条目（保留 interject 条目） */
+  private cancelPauseEntry(): void {
+    const idx = this.interruptQueue.findIndex((r) => r.kind === 'pause');
+    if (idx !== -1) {
+      this.interruptQueue.splice(idx, 1);
     }
   }
   /** step 边界气口申请统一队列（2026-09-06 收敛：替代 pauseRequested flag + pendingInterjections[]）。
@@ -545,72 +547,41 @@ export class AgentLoop {
     signal?: AbortSignal,
     roundId?: string,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 任务级 SLO 追踪：记录任务开始时间
-    const taskStartAt = Date.now();
-    // 标记任务进行中
-    this.metrics.taskTotalCount++;
-    // 任务是否成功（默认失败，runIterationLoop 正常完成后置为成功）
-    let taskSucceeded = false;
+    // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
+    this.currentRoundId = roundId ?? this.allocRoundId();
 
-    // 创建顶层 response span，由 try/finally 统一管理生命周期
+    // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
+    this.providerRouteCache.clear();
+
+    // 闭环入口自动清理执行期临时残留（上轮 self-review/reflection/duplicate 等）
+    // （装配注入「最近对话」不属于 executionTemp，不受影响）
+    this.cleanExecutionTemporary();
+
+    // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力，受控写入口统一包裹）
+    this.appendUserMessage(userInput);
+
+    // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
+    this.resetTurnState();
+    // 新增问题入口清理残留补充输入（对称缺口修复，2026-09-06）：
+    // abort/host close 等异常路径可能让上一轮 interject 残留 interruptQueue，若不清，
+    // 会被本 turn 首 step 边界 _handleInterrupt 误消费注入到新问题。
+    // 不能在 resetTurnState 清——它也被 continueAfterPause 复用，会误杀「暂停后 interject → resume 注入」
+    // 的合法语义（loop.test「暂停后 interject()」用例验证）；只在新问题入口清。
+    this.clearPendingInterjections();
+    // askLimit 计数按「一次用户输入」重置（turn 粒度：暂停-续跑跨续跑累计）——仅入口清，
+    // continueAfterPause 不清（防续跑段被重复允许提问）
+    this.resetAskBudget();
+    // 层1：任务表规划判定（在 resetTurnState 之后设值——续跑入口复用 resetTurnState 会清为 false，
+    // 故此处重判为新 turn 的确定性结论；continueAfterPause 不复用，plan 已建无需 nudge）
+    this.planNeedsNudge = this.opts.needsPlanningOverride
+      ? this.opts.needsPlanningOverride(userInput)
+      : detectNeedsPlanning(userInput);
+
+    // 顶层 response span（任务级指标随流结束统一写属性）
     const responseSpan = this.tracer.startSpan(TRACE_SPANS.RESPONSE, {
       inputLength: userInput.length,
     });
-
-    try {
-      // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
-      this.currentRoundId = roundId ?? this.allocRoundId();
-
-      // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
-      this.providerRouteCache.clear();
-
-      // 闭环入口自动清理执行期临时残留（上轮 self-review/reflection/duplicate 等）
-      // （装配注入「最近对话」不属于 executionTemp，不受影响）
-      this.cleanExecutionTemporary();
-
-      // 用户消息 push（用 <user_input> 标签包裹，增强 LLM 对注入攻击的免疫力，受控写入口统一包裹）
-      this.appendUserMessage(userInput);
-
-      // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
-      this.resetTurnState();
-      // 新增问题入口清理残留补充输入（对称缺口修复，2026-09-06）：
-      // abort/host close 等异常路径可能让上一轮 interject 残留 interruptQueue，若不清，
-      // 会被本 turn 首 step 边界 _handleInterrupt 误消费注入到新问题。
-      // 不能在 resetTurnState 清——它也被 continueAfterPause 复用，会误杀「暂停后 interject → resume 注入」
-      // 的合法语义（loop.test「暂停后 interject()」用例验证）；只在新问题入口清。
-      this.clearPendingInterjections();
-      // askLimit 计数按「一次用户输入」重置（turn 粒度：暂停-续跑跨续跑累计）——仅入口清，
-      // continueAfterPause 不清（防续跑段被重复允许提问）
-      this.resetAskBudget();
-      // 层1：任务表规划判定（在 resetTurnState 之后设值——续跑入口复用 resetTurnState 会清为 false，
-      // 故此处重判为新 turn 的确定性结论；continueAfterPause 不复用，plan 已建无需 nudge）
-      this.planNeedsNudge = this.opts.needsPlanningOverride
-        ? this.opts.needsPlanningOverride(userInput)
-        : detectNeedsPlanning(userInput);
-
-      // 单轮 step 循环（runIterationLoop）：本 turn 的 step 编排执行引擎，stepBudget 软上限与 maxIterations 兜底在此收敛；
-      // 所有复杂度（含 LLM 动态建任务表、会议机制角色切换）在一个 turn 内承载（2026-09-04 收敛：多 turn 编排已砍）。
-      // 经 withRound 附加当前 turn roundId（SSOT：过程事件归属由内核唯一提供）
-      taskSucceeded = true;
-      yield* this.withRound(this.runIterationLoop(signal));
-    } catch (err) {
-      // 任务级 SLO：捕获未处理异常，标记任务失败
-      taskSucceeded = false;
-      throw err;
-    } finally {
-      // 任务级 SLO 度量：记录耗时与结果
-      const durationMs = Date.now() - taskStartAt;
-      this.metrics.taskTotalDurationMs += durationMs;
-      if (taskSucceeded) {
-        this.metrics.taskSuccessCount++;
-      } else {
-        this.metrics.taskFailureCount++;
-      }
-      // 记录任务耗时到 response span
-      responseSpan.setAttribute('taskDurationMs', durationMs);
-      responseSpan.setAttribute('taskSucceeded', taskSucceeded);
-      responseSpan.end();
-    }
+    yield* this._runWithSlo(responseSpan, () => this.withRound(this.runIterationLoop(signal)));
   }
 
   /**
@@ -622,11 +593,6 @@ export class AgentLoop {
     input?: string,
     signal?: AbortSignal,
   ): AsyncGenerator<AgentChunk, void, unknown> {
-    // 任务级 SLO 追踪：记录任务开始时间
-    const taskStartAt = Date.now();
-    this.metrics.taskTotalCount++;
-    let taskSucceeded = false;
-
     // 补充输入作为新 user 消息进入上下文（仅当有文本）
     if (input && input.trim()) {
       // 先清执行期临时残留，再接续跑输入，保证续跑上下文干净（与 processUserInput 入口一致）
@@ -640,21 +606,43 @@ export class AgentLoop {
     // 重置本轮运行计数状态（与 processUserInput 一致），确保续跑干净
     this.resetTurnState();
 
+    // 续跑路径无 span，SLO 包装传 null
+    yield* this._runWithSlo(null, () => this.withRound(this.runIterationLoop(signal)));
+  }
+
+  /**
+   * turn 入口通用 SLO 包装：统一任务计数 + 耗时累加 + 成功/失败判定 + 可选 tracer span 写属性。
+   *
+   * @param span 可选 tracer span（processUserInput 有 responseSpan；续跑路径无 span 传 null）
+   * @param genFn 生成迭代器的工厂函数（惰性求值：在 try 块内调用，保证异常被 catch）
+   */
+  private async *_runWithSlo(
+    span: ReturnType<ITracer['startSpan']> | null,
+    genFn: () => AsyncGenerator<AgentChunk, void, unknown>,
+  ): AsyncGenerator<AgentChunk, void, unknown> {
+    const taskStartAt = Date.now();
+    this.metrics.taskTotalCount++;
+    let taskSucceeded = false;
+
     try {
-      // 重新进入 step 循环引擎，从保留的 this.messages 续跑（续跑延续同一 turn roundId，经 withRound 附加）
       taskSucceeded = true;
-      yield* this.withRound(this.runIterationLoop(signal));
+      yield* genFn();
     } catch (err) {
       taskSucceeded = false;
       throw err;
     } finally {
-      // 任务级 SLO 度量：记录耗时与结果
       const durationMs = Date.now() - taskStartAt;
       this.metrics.taskTotalDurationMs += durationMs;
       if (taskSucceeded) {
         this.metrics.taskSuccessCount++;
       } else {
         this.metrics.taskFailureCount++;
+      }
+      // 可选 span 属性写入（续跑路径无 span）
+      if (span) {
+        span.setAttribute('taskDurationMs', durationMs);
+        span.setAttribute('taskSucceeded', taskSucceeded);
+        span.end();
       }
     }
   }
@@ -686,18 +674,18 @@ export class AgentLoop {
 
   /**
    * 请求在下一 step 边界挂起（软暂停申请入队）。
-   * 委托 interruptQueue（pauseRequested setter 已实现幂等），step 边界由 _handleInterrupt 消费。
+   * 委托 requestPauseEntry（幂等入队），step 边界由 _handleInterrupt 消费。
    * 仅挂起不 abort，可经 continueAfterPause 续跑——与硬停止（signal.abort 无法续跑）严格区分；
    * 暂停语义与持久化由状态机持有，本方法只控制挂起时机。
    */
   requestPause(): void {
-    this.pauseRequested = true; // setter → interruptQueue push {kind:'pause'}（幂等）
+    this.requestPauseEntry();
   }
 
-  /** 清除在途的软暂停申请（与 requestPause 对称：用户取消/流结束清理/暂停超时清扫共用）
-   *  委托 interruptQueue 过滤掉 pause 条目（保留 interject 条目） */
+  /** 清除在途的软暂停申请（与 requestPause 对称：用户取消/流结束清理/暂停超时清扫共用）。
+   *  委托 cancelPauseEntry 移除 pause 条目（保留 interject 条目） */
   clearPauseRequest(): void {
-    this.pauseRequested = false; // setter → interruptQueue filter
+    this.cancelPauseEntry();
   }
 
   /** 插话（申请入队）：把用户补充输入作为 InterruptRequest{kind:'interject'} 入 interruptQueue。
@@ -764,7 +752,7 @@ export class AgentLoop {
     this.lastToolCallsHash = '';
     this.duplicateToolCallCount = 0;
     this.inAutonomousStep = false;
-    this.pauseRequested = false;
+    this.cancelPauseEntry();
     this.selfReviewDone = false;
     // TS-14 每轮独立重置「工具步发生」标记（自审查触发门槛）：新问答闭环入口即续跑入口都复位，
     // 避免续跑段未执行工具却被上次的 true 触发自审查（消除 processUserInput 单独重置的 SSOT 漂移）
@@ -971,8 +959,8 @@ export class AgentLoop {
    *  注：step 边界（_handleInterrupt）的气口消费是另一机制——那里 pause 在 abort 之前被优先消费，
    *  不属 abort 路由，故不经本方法。返回 paused chunk 或 null。 */
   private _routePausedIfTimeoutAndPause(signal: AbortSignal | undefined): AgentChunk | null {
-    // 突变验证靶标：删除 `&& this.pauseRequested` → 负例测试（超时无暂停应 aborted）转红
-    if (isTimeoutAbortSignal(signal) && this.pauseRequested) {
+    // 突变验证靶标：删除 `&& this.hasPendingPause()` → 负例测试（超时无暂停应 aborted）转红
+    if (isTimeoutAbortSignal(signal) && this.hasPendingPause()) {
       return { type: 'paused' };
     }
     return null;
