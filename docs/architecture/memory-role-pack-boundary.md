@@ -36,7 +36,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 
 - **记忆库**：只有**摘要记忆单轨**——`round-summary`（轮次级，唯一自动轨，见 [memory-as-summary.md §2.2](memory-as-summary.md)）。会话级摘要归会话记录存储 `SessionMeta`（summary/keyTopics，不写记忆库）；`content` 为历史残留 source——无自动生产路径，`writeUpsert` 仅可编辑已有记忆、无新建入口（2026-09-09 剪枝定性，见规则 R5）。profile / work-projection 已随收敛移出记忆库（作品投影落项目级目录 `<memoraDir>/projections/`，见 [memora-api-reference.md §九](../memora-api-reference.md)）。guardrail 空转链已摘除（零规则、无扫描映射、无消费者）。
 - **角色包**：`<configDir>/role-packs/<名>/`，`manifest.json` 唯一权威 + `persona.md` / `rules.md` / `skills/*` 内容文件（见 [role-pack-spec.md §2.2](role-pack-spec.md)）。
-- **召回**：只对摘要记忆生效（双通道相关性召回 + 会话窗口/时间排序，见 [memory-as-summary.md §4](memory-as-summary.md)）；type 是纯语义标签，不设时效。设定记忆不再进召回面。
+- **召回**：只对摘要记忆生效（纯关键词检索，见 [memory-as-summary.md §4](memory-as-summary.md)）；type 是纯语义标签，不设时效。设定记忆不再进召回面。
 
 ## 三、执行规则（收敛纪律）
 

@@ -9,7 +9,7 @@
  *   - 读档校验：load 逐条经内核 parseMemory 白名单构造，未知字段（旧档 score）剥离即清洗
  *
  * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
- * 后续阶段：如需高性能/向量索引，可换 SQLite 或 JsonVectorStore。
+ * 后续阶段：如需高性能检索，可换 SQLite 等更强实现。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

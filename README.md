@@ -93,7 +93,7 @@ Memora 是一个**无法独立运行**的智能大脑内核——它只有接口
 | 能力 | 说明 |
 |------|------|
 | **长期记忆沉淀** | 跨会话、跨话题的记忆持久化 + 工具化召回（`search_memories`；**不自动注入**） |
-| **双通道召回** | 语义向量搜索 + 关键词搜索，hybridMerge 融合排序（`search_memories` 内部机制） |
+| **记忆检索工具** | 纯关键词检索（`search_memories`），命中刷新 `accessedAt`（语义向量通道已随 B0 收编，2026-09-18） |
 | **记忆治理** | supersede 写时取代 + 命中刷新（`accessedAt` 参与排序，**不做重要度加权**）+ 语义去重 + 冲突检测，经 `agent.governance` 门面暴露（去重 / 冲突由 LLM 判断） |
 | **Agent 与角色分离** | Agent 是纯记忆引擎，角色是人格载体。换角色不丢记忆 |
 | **统一记忆模型** | 一切统一为「记忆」，通过 `source` 开放字符串区分，无封闭枚举 |
@@ -185,7 +185,7 @@ await agent.close();
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora 内核（Agent）                    │               │
 │  │  - chat(input) → 流式响应                │               │
-│  │  - 双通道记忆检索（语义 + 关键词）       │               │
+│  │  - 纯关键词记忆检索（search_memories）    │               │
 │  │  - 记忆治理机制（去重/冲突/写时取代）   │               │
 │  │  - 角色 / 技能匹配（渐进披露）          │               │
 │  │  - 工具注册 / 工具执行 / 反思重试        │               │
@@ -201,7 +201,6 @@ await agent.close();
 | 接口 | 职责 | 内置实现 | 宿主注意 |
 |------|------|----------|----------|
 | `IMemoryStorage` | 记忆 CRUD + 搜索 + 按 source 查询 | `InMemoryStorage`（**仅内存占位，不持久化**） | 生产须宿主实现持久化（如 SQLite）；重启后数据依赖宿主实现 |
-| `IVectorStore` | 语义向量索引 | `JsonVectorStore` | 无 |
 | `ISessionStore` | 会话历史 + 标题元数据持久化 | 无（宿主实现） | **不含检查点持久化**（2026-09-10 减法：跨重启恢复链整体退役）——中止/断电一律把未完成 turn 补全为完整 turn 身份、下次会话按历史加载；运行时暂停是同 turn 内续跑（内存态），无需跨进程载体 |
 | `ILogger` | 日志输出 | console fallback | 无 |
 | `ITracer` | 可观测性 span | `NOOP_TRACER` | 无 |
@@ -218,10 +217,10 @@ src/
 │   ├── contextManager.ts / contextPreparer.ts / toolExecutor.ts / toolRunner.ts ···
 │   ├── seed/         # turn（prepare → act/difficulty → reflect，含多 turn 任务编排）
 │   └── managers/     # 16 个专职 Manager/服务类（memoryInspector / memoryGovernance / roundSummaryGenerator / sessionManager / sessionArchiver / archiveCoordinator / workProjection / textPolishManager / chatLockManager 等）
-├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 召回 / 混合排序 / 向量 / 治理常量）
+├── memory/           # 记忆引擎（IMemoryStorage + InMemoryStorage + 纯关键词召回 / 融合排序 / 治理常量）
 ├── role-pack/        # 角色包（manifest 解析 + validator + strategyResolver + 能力映射）
 ├── skill/            # 技能管理（全局池 + 角色包绑定，渐进披露 + skillScriptRunner）
-├── llm/              # LLM 适配层（provider + openaiCompatible + factory + embedding）
+├── llm/              # LLM 适配层（provider + openaiCompatible + factory）
 ├── security/         # 安全策略（路径守卫 / 写入确认）
 ├── config/           # 配置加载
 ├── code-exec/        # 通用代码执行抽象（条件暴露）
@@ -239,7 +238,6 @@ src/
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现） | ADR-002 |
 | LLM 协议 | OpenAI Chat Completions 兼容（流式 SSE + Tool Calling） | ADR-003 |
 | 记忆模型 | source 开放字符串基元驱动（万物皆记忆 v2） | ADR-004 |
-| 向量检索 | IVectorStore 接口 + 内置 JsonVectorStore（纯 JS 余弦相似度） | ADR-002 |
 | 冲突消解 | Memory 冲突改用 supersededBy 布尔标记 | ADR-021 |
 | 形态 | 纯逻辑库（零 native 依赖，CLI/UI 由宿主提供） | ADR-002 |
 | 安全 | 两级权限 + 路径白名单 + 审计日志 | ADR-006 |
@@ -274,7 +272,7 @@ npm run build        # 编译到 dist/
 - [接入指南](docs/memora-接入指南.md) — 宿主项目开发者完整接入手册
 - [API 参考](docs/memora-api-reference.md) — 公共 API 速查
 - [角色包开放键指南](docs/role-pack-开放键指南.md) — manifest.json 开放键使用指南（三层消费方 + 速查）
-- [配置示例](config.example.json) — LLM / Embedding / 安全配置模板
+- [配置示例](config.example.json) — LLM / 安全配置模板
 
 ## 示例角色包（随包发布）
 
@@ -282,7 +280,7 @@ npm 包内置 `role-packs/` 示例角色库（`共鸣小说家` / `白话方案�
 
 ## 宿主项目
 
-[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、双通道召回、角色包管理与记忆视图。
+[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、纯关键词召回、角色包管理与记忆视图。
 
 ## 贡献
 

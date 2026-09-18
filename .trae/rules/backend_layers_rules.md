@@ -65,7 +65,6 @@ config/ · logging/ · utils/ → 被所有层依赖
 
 - `IMemoryStorage` 全部**同步**（与 better-sqlite3 对齐）；Node.js 专用内核，不支持浏览器直跑；浏览器经宿主 Web 通道 HTTP 路由。
 - 不支持异步存储后端；需 IndexedDB 等异步后端须先启动 `IAsyncMemoryStorage` 预研。
-- **VectorStore 例外**：`search()` 返回 `Promise<Memory[]>`（网络调用必须异步），与同步接口并行无冲突。
 
 ## 模块内结构约定（快照，非冻结契约）
 

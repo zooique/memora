@@ -1,11 +1,11 @@
 /**
  * 后台任务统一收口门面 —— 一个「后台副作用」的单一启动/观测入口。
  *
- * 收敛散落的 `fire-and-forget`（摘要生成 round-summary / 命中刷新 search_memories.touch / 会话命名 session-title / 向量清理 vector-delete）：
+ * 收敛散落的 `fire-and-forget`（摘要生成 round-summary / 命中刷新 search_memories.touch / 会话命名 session-title）：
  * - 统一启动：不阻塞调用方，业务 Promise 交给门面兜底；
  * - 统一观测：按 label 累计 pending/completed/failed，宿主可读后台健康度；
  * - 统一兜底：失败统一记日志，业务侧补救经 onFailure 挂载（如宿主事件 emit）；
- * - 统一限流：最大并发槽位防止上述四类任务无界并发耗尽资源。
+ * 统一限流：最大并发槽位防止上述三类任务无界并发耗尽资源。
  *
  * 与模块级 logger 同模式（全局单例，组件直接 import，零注入成本）。
  */

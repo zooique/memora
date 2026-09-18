@@ -6,6 +6,7 @@
 > **更新日期**：2026-08-28
 > **状态**：已确认，作为 Memora 会话管理的唯一真理源
 > **2026-09-10 剪枝补记**：本文 Round 独立存储主体（roundIds 指针 + RoundStore 物理真相源）**仍现行有效**。但文中涉及 `recall()` 的段落已失效——§4.4「`minFallback` 保底通道」「恢复路径对称（`checkpointRestoreCoordinator.warmRecall` 透传）」及实施清单中「适配 Recall 召回逻辑」行，均随**跨重启恢复链整体退役**（`recall()` 零消费者连带退役、`DEFAULT_MIN_FALLBACK` 删除、checkpoint 持久化删除）。记忆检索改由 `search_memories` 工具承载。
+> **2026-09-18 补记（B0 收编）**：本文 §5.2「purge 同步删向量索引」、§5.3 接线段「传 vectorStore」、§1 依赖 §0 引用区的向量索引同步描述**已失效**——向量语义通道随 B0 整体收编（`JsonVectorStore` / `IVectorStore` / `EmbeddingProvider` / `config.embedding` / 宿主 `createVectorStore` 全删），`gcService` 不再删向量。Round 独立存储主体不受影响、仍现行有效。
 
 ### 变更记录
 

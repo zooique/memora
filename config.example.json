@@ -23,11 +23,6 @@
       "temperature": 0.5
     }
   },
-  "embedding": {
-    "model": "text-embedding-3-small",
-    "apiKey": "${MEMORA_EMBEDDING_API_KEY}",
-    "baseUrl": "https://api.openai.com/v1"
-  },
   "memory": {
     "dataDir": "~/.memora",
     "maxContextTokens": 1000000

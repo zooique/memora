@@ -114,7 +114,6 @@ new Agent({
   storage,                // IMemoryStorage 实现（缺省 InMemoryStorage）
   sessionStore,           // ISessionStore 实现（缺省仅内存保存）
   webSearchProvider,      // 网络搜索
-  vectorStore,            // 语义召回
   tracer,                 // 可观测
   maxContextTokens,       // 默认 120000
   permission, allowedPaths, confirmWrites,   // 安全

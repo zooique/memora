@@ -65,7 +65,6 @@
 | 主动提问条 `#clarifyBar` | needClarify / questionPending | 等待用户输入 |
 | 记忆治理区 `.governance` | 记忆清理（cleanup，G4；记忆无衰减语义） | 统计卡 + 操作 |
 | 后台模型通道 `.cfg-bg` | 独立 backgroundProvider（G5） | 配置子视图分区 |
-| Embedding 配置 `.embedding-cfg` | 向量检索（G1） | 折叠区 |
 | 写入审批开关 `.security-*` | 二次确认（H0） | toggle |
 | 技能选项卡 | 全局技能池（2026-08-22 新增） | 卡片列表 |
 

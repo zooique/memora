@@ -148,7 +148,7 @@
 
 ### 2.4 记忆召回（知识内容 · 消费 L4 记忆系统）
 
-> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchHybrid`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts / vectorStore.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
+> **生长闭环（2026-09-10 更新：记忆纯工具化）**：记忆召回改由 LLM 按需调用 `search_memories` 工具触发（`memoryInspector.searchHybrid`），prepare 期**无自动注入**。原 `recall()` 召回编排（双通道 / 互斥排除 / minFallback 保底）唯一消费者是跨重启恢复链的 warmRecall，随该链整体退役。**其物理实现位于 L4 记忆系统**（hybridMerge.ts，见 §四 4.2）——这是「闭环 → 回答后沉淀记忆 → 下次按需召回」的生长闭环：记忆在 L4 诞生，在 L2 被消费。
 >
 > 召回相关设计详见 [memory-as-summary.md](./memory-as-summary.md)（含互斥前置过滤语义）。
 
@@ -165,7 +165,6 @@
 | `llm/provider.ts`                      | 🟢 已打磨 | `__tests__/provider.test.ts`         | Provider 抽象基类 |
 | `llm/openaiCompatible.ts`              | 🟢 已打磨 | `__tests__/openaiCompatible.test.ts` | OpenAI 兼容实现   |
 | `llm/factory.ts`                       | 🟢 已打磨 | `__tests__/factory.test.ts`          | Provider 工厂   |
-| `llm/embedding.ts`                     | 🟢 已打磨 | `__tests__/embedding.test.ts`        | 嵌入服务          |
 | `llm/abortSignal.ts`                   | 🟢 已打磨 | `__tests__/abortSignal.test.ts`      | 中止信号          |
 | `llm/types.ts`                         | ⚪ 工具   | 无独立测试                                | LLM 类型定义      |
 | `llm/__tests__/llmIntegration.test.ts` | 🟢 已打磨 | 集成测试                                 | LLM 集成测试      |
@@ -231,13 +230,12 @@
 
 ### 4.2 记忆底座（memory/ · 存储与召回）
 
-> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。`keywordsTouch.ts`/`hybridMerge.ts`/`vectorStore.ts` 在 L2 回答前被召回消费（见 §二 2.4）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
+> **生长说明**：记忆存储由宿主实现 `IMemoryStorage` 注入，内核通过接口读写。检索为纯关键词单通道：`keywordsTouch.ts` 提供关键词提取/命中回写，结果经 `hybridMerge` 融合排序（B0 收编后无向量通道）。`sessionStore.ts`（会话记录底座）另见 §五 L5。
 
 | 模块文件                         | 状态     | 测试文件                                   | 质量说明                                  |
 | ---------------------------- | ------ | -------------------------------------- | ------------------------------------- |
 | `memory/keywordsTouch.ts`     | 🟡 已收敛 | `__tests__/keywordsTouch.test.ts`      | 原名 `recall.ts`（2026-09-18 更名对齐职责）；仅余 `extractKeywords`（关键词提取）+ `touchScores`（命中回写）；召回编排 `recall()` 已随跨重启恢复链退役（2026-09-10） |
-| `memory/hybridMerge.ts`      | 🟢 已打磨 | `__tests__/hybridMerge.test.ts`        | 混合检索（向量 0.6 + score 0.4）              |
-| `memory/vectorStore.ts`      | 🟢 已打磨 | `__tests__/vectorStore.test.ts`        | 向量存储                                  |
+| `memory/hybridMerge.ts`      | 🟢 已打磨 | `__tests__/hybridMerge.test.ts`        | 融合排序（纯关键词单通道，vectorScore 预留键）              |
 | `memory/types.ts`            | 🟢 已打磨 | `__tests__/types.test.ts`              | 记忆类型定义                                |
 | `memory/governance.ts`       | 🟢 已打磨 | `__tests__/governance.test.ts`         | 治理常量（boost 增量/上下限 + 健康度阈值 + 治理源）      |
 | `memory/inMemoryStorage.ts`  | 🟢 已打磨 | `__tests__/inMemoryStorage.test.ts`    | 内存存储实现                                |
@@ -306,7 +304,7 @@
 | 模块文件                      | 状态     | 测试文件                                         | 质量说明                                                 |
 | ------------------------- | ------ | -------------------------------------------- | ---------------------------------------------------- |
 | `config/loader.ts`        | 🟢 已打磨 | `__tests__/loader.test.ts`                   | 配置加载主入口                                              |
-| `config/expandEnvVars.ts` | 🟢 已打磨 | `__tests__/expandEnvVars.test.ts` (16 tests) | 4 通道环境变量展开（llm/providers/background/embedding）+ 边界场景 |
+| `config/expandEnvVars.ts` | 🟢 已打磨 | `__tests__/expandEnvVars.test.ts` (16 tests) | 环境变量展开（providers/background 通道，embedding 已随 B0 收编）+ 边界场景 |
 
 ### 6.2 工具库（utils/）
 

@@ -582,11 +582,11 @@ export class ToolExecutor {
   }
 
   /**
-   * 注入 MemoryInspector，启用 search_memories 的语义混合搜索后端（memory-tool-recall-design §3.3）。
+   * 注入 MemoryInspector，启用 search_memories 的纯关键词检索后端（B0 收编后无向量后端）。
    * assembler 中它依赖 loop/history、后于 toolExec 构造，故用「构造后注入」——装配期经
-   * toolExec.setMemoryInspector(...) 接线，未注入时 search_memories 保持旧关键词行为。
+   * toolExec.setMemoryInspector(...) 接线，未注入时 search_memories 保持基础内存查询行为。
    *
-   * @param inspector 记忆搜索器（含语义向量后端 + superseded 过滤 + 溯源揭示）
+   * @param inspector 记忆搜索器（纯关键词，含 superseded 过滤 + 溯源揭示）
    */
   setMemoryInspector(inspector: MemoryInspector): void {
     this.builtinHandlers.setMemoryInspector(inspector);
