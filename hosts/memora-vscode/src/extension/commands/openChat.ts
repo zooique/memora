@@ -17,8 +17,8 @@ import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
  * 内置角色包名（面板徽章展示当前激活角色，在装配处声明，主动可见）
  *
  * 兜底值：装配后以 agent 实际激活角色为准（由持久化的用户选择或内核默认首个决定），
- * 仅当 agent 未装配/无角色包时回退此默认值。
- * 单一真理源（2026-08-24）：宿主不再自持角色包，使用内核 role-packs 的一员。
+ * 仅当 agent 未装配/无角色包时回退此默认值。该名字段与 role-packs/ 目录名保持一员的
+ * 约定（随内核随包目录核对），宿主不承载角色包内容。
  */
 const BUILTIN_ROLE_PACK = '白话方案设计师';
 
