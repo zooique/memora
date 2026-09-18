@@ -19,6 +19,8 @@ import { MemoraChatViewProvider } from '../../webview/panels/chatPanel.js';
  * 兜底值：装配后以 agent 实际激活角色为准（由持久化的用户选择或内核默认首个决定），
  * 仅当 agent 未装配/无角色包时回退此默认值。该名字段与 role-packs/ 目录名保持一员的
  * 约定（随内核随包目录核对），宿主不承载角色包内容。
+ * 语义边界：本常量是「UI 徽章回退展示名」，与内核 BUILTIN_FALLBACK_PACK（'memora助手'，
+ * 兜底契约包，构建期校验）是两个不同概念——勿混用/合并。
  */
 const BUILTIN_ROLE_PACK = '白话方案设计师';
 

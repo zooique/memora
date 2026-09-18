@@ -165,6 +165,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
   /** 当前打磨文档上下文（2026-08-17 A 层：实时跟随活动编辑器，非一次性快照） */
   private _docContext: string | undefined;
+  /** 活动编辑器追踪订阅（vscode.window 全局事件，需随面板销毁显式释放，见 ensureEditorTracking） */
+  private _editorSub: vscode.Disposable | null = null;
   /** 大模型配置存储（用于底部模型下拉框 + 切换） */
   private readonly _providerStore: ProviderStore;
   /** Agent 懒装配工厂（由 extension 注入，打开面板即装配，不依赖先执行 open 命令） */
@@ -296,7 +298,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 原 docContext 仅在 memora.open 命令路径注入一次快照，点活动栏图标打开面板完全
     // 不注入 → Agent 看不到当前文档（bug 根因）。此处持续跟随 activeTextEditor，
     // 任何打开方式（点图标/命令/首次就绪）都生效，切换文档自动更新。
-    vscode.window.onDidChangeActiveTextEditor((editor) => {
+    // 监听生命周期：面板关闭（onDidDispose）释放，面板重建（resolveWebviewView）幂等重注册，
+    // 避免折叠/展开反复重建时全局监听泄漏（vscode.window 为全局事件，不随 webview 自动释放）。
+    this.ensureEditorTracking();
+  }
+
+  /**
+   * 注册/重注册活动编辑器追踪监听（幂等：先释放旧订阅再注册，防止重复监听累积）
+   */
+  private ensureEditorTracking(): void {
+    this._editorSub?.dispose();
+    this._editorSub = vscode.window.onDidChangeActiveTextEditor((editor) => {
       this._docContext = snapshotDocContext(editor);
     });
     this._docContext = snapshotDocContext(vscode.window.activeTextEditor);
@@ -489,6 +501,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     _token: vscode.CancellationToken,
   ): void {
     this._view = webviewView;
+    // 面板重建（折叠/展开）时幂等重注册编辑器追踪（先释放旧订阅），保证监听存活
+    this.ensureEditorTracking();
     // 视图重建代数自增：本次流若跨重建，流尾据此补移植（见 _viewEpoch 注释）
     this._viewEpoch += 1;
     // 折叠/展开（对话卡 ↔ 设置卡切换、侧边栏收起再展开）会触发 resolve 重建 HTML。
@@ -510,9 +524,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 打开面板即确保 Agent 装配（不依赖先执行 open 命令），避免发送无反应
     void this.ensureAgent();
 
-    // 视图被销毁（折叠/关闭）时清理引用，避免向已销毁 webview postMessage
+    // 视图被销毁（折叠/关闭）时清理引用，避免向已销毁 webview postMessage；
+    // 同时释放全局编辑器监听（vscode.window 事件不随 webview 自动释放）
     webviewView.onDidDispose(() => {
       if (this._view === webviewView) this._view = undefined;
+      this._editorSub?.dispose();
+      this._editorSub = null;
     });
 
     // 处理来自 webview 的用户输入

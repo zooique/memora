@@ -31,7 +31,7 @@
 | 插件 → UI | composer 附加能力 chip（角色包 capabilities 驱动的联网指示） | ✅ |
 | 插件 → UI | 指标面板（Tokens / 记忆摘要 / 工具失败等）折叠区展示 | ✅ |
 
-**角色包清单（出厂自带，2 个）**：白话方案设计师 / 共鸣小说家。定位由维护于内核 `role-packs/` 的 manifest 声明（宿主构建期经 esbuild 从内核同步，单一真理源——宿主不再自持副本），内核 `RolePackManager` 自动扫描激活，插件不自定性（ADR-VC-001 决策）。
+**角色包清单（出厂自带，3 个）**：memora助手（兜底契约包，`BUILTIN_FALLBACK_PACK`）/ 白话方案设计师 / 共鸣小说家。定位由维护于内核 `role-packs/` 的 manifest 声明（宿主构建期经 esbuild 从内核同步，单一真理源——宿主不再自持副本），内核 `RolePackManager` 自动扫描激活，插件不自定性（ADR-VC-001 决策）。
 
 ---
 
