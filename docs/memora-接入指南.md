@@ -30,11 +30,11 @@
 
 **Memora 是一个无法独立运行的智能大脑内核。** 它只有接口，没有"形态"——宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（角色包 persona/rules/skills —— Agent 的骨骼，.md 文件 + 内存缓存，唯一归角色包、确定性注入不经过召回）和**对话记忆**（摘要记忆 round-summary/content —— Agent 的血肉，SQLite + 语义召回，带 `summaryType` 语义标签）。二者边界一刀切：记忆系统不再承载设定、角色包不承载对话（ADR-025）；偏好类信息沉淀为摘要记忆，不设独立"用户画像"记忆层。
+**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（角色包 persona/rules/skills —— Agent 的骨骼，.md 文件 + 内存缓存，唯一归角色包、确定性注入不经过召回）和**对话记忆**（摘要记忆 round-summary —— Agent 的血肉，SQLite + **纯关键词召回**，带 `summaryType` 语义标签）。二者边界一刀切：记忆系统不再承载设定、角色包不承载对话（ADR-025）；偏好类信息沉淀为摘要记忆，不设独立"用户画像"记忆层。
 
 **单 Agent 模型。** 所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
 
-**配置文件是真理源，对话记忆走 SQLite 索引。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary/content 摘要记忆，带 `summaryType` 标签）走 SQLite + 语义召回。
+**配置文件是真理源，对话记忆走 SQLite 索引。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary 摘要记忆，带 `summaryType` 标签）走 SQLite + **纯关键词召回**（向量语义通道已随 2026-09-18 B0 收编移除，见 §十.1）。
 
 **内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
@@ -235,7 +235,7 @@ console.log('引导记忆:', snap.bootstrap.total, '条');
 
 // 关键词搜索
 const hits = agent.memory.search('世界观');
-hits.forEach(h => console.log(`${h.source}:${h.name} (${h.score})`));
+hits.forEach(h => console.log(`${h.source}:${h.name}`));
 
 // 记忆库统计
 const stats = agent.memory.stats();

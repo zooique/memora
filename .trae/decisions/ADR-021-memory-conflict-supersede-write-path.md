@@ -110,6 +110,6 @@ WeightedJaccard(A, B) = Σ(交集关键词权重) / Σ(并集关键词权重)
 
 - 架构文档：[memory-as-summary.md](../../docs/architecture/memory-as-summary.md) §5.4 / §5.2 / §4.7
 - 架构文档：[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §2.1 / §13 / §13.x / §14.3
-- 架构文档：[mvp-scope.md](../../docs/architecture/mvp-scope.md) §三
+- 架构文档：[mvp-scope.md](../../docs/architecture/mvp-scope.md)（正文已随 2026-09-18 瘦身）
 - 架构文档：[role-pack-spec.md](../../docs/architecture/role-pack-spec.md) §三 L2
 - 关联：[ADR-004](./ADR-004-memory-unification.md) 记忆 source 基元模型

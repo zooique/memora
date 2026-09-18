@@ -188,7 +188,7 @@
 
 ### 3.4 网络搜索（web-search/ · 具体工具）
 
-> **生长来源**：网络搜索是回答中工具能力的一个**具体实现**——经 `IWebSearchProvider` 接口由宿主注入，条件性暴露给 LLM（[mvp-scope.md](./mvp-scope.md) §四）。
+> **生长来源**：网络搜索是回答中工具能力的一个**具体实现**——经 `IWebSearchProvider` 接口由宿主注入，条件性暴露给 LLM（[mvp-scope.md](./mvp-scope.md)，正文已随 2026-09-18 瘦身）。
 
 | 模块文件                                   | 状态     | 测试文件                                       | 质量说明            |
 | -------------------------------------- | ------ | ------------------------------------------ | --------------- |
@@ -286,7 +286,7 @@
 >
 > * **档1 turn 本体在 L0**：`loop.ts` 的 `processUserInput` 即单 turn 最小复用单元，对话/多 turn 任务编排（步 turn）/续跑共用同一 turn；档2 多 turn 任务编排（turn 串联）在 seed/orchestrator（`externalTaskLoop`/`completeExternalTask`，[loop-design.md](./loop-design.md)）。
 >
-> * **多 turn 任务编排语义化（已落地）**：复杂问题由任务链驱动多 turn + 收敛汇报 turn 已实现于 seed/orchestrator（difficulty 难度分级 + `externalTaskLoop` 步 turn 序列 + `runReport` 收尾汇报 turn → 汇报单源摘要），实现记录见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)。
+> * **多 turn 任务编排语义化（已落地）**：复杂问题由任务链驱动多 turn + 收敛汇报 turn 已实现于 seed/orchestrator（difficulty 难度分级 + `externalTaskLoop` 步 turn 序列 + `runReport` 收尾汇报 turn → 汇报单源摘要），现状真理源见 [agent-design-philosophy.md](./agent-design-philosophy.md)，原文见 [task-driven-closed-loop.md](./task-driven-closed-loop.md) 头部索引（正文已随 2026-09-18 瘦身）。
 >
 > * **会话记录底座**：`sessionStore.ts` 物理位置在 `memory/`，由宿主实现 `ISessionStore`，承载对话记录——是记忆溯源（traceSummary）与会话延续的共用底座。
 >
@@ -335,7 +335,7 @@
 | ----------------------- | ------ | ----------------------------- | -------------------------------------------------------------------------------- |
 | `security/pathGuard.ts` | 🟢 已打磨 | `__tests__/pathGuard.test.ts` | 路径白名单/黑名单守卫 + SecurityGuard（写入二次确认 + 审计日志，未注入 confirmationHandler 时 fail-closed） |
 
-> **SecurityGuard 定位**：`pathGuard.ts` 同时承载 **SecurityGuard**——文件写权限守卫（4 类允许根 + 28 类禁止规则 + 写入二次确认 + 审计日志）。它由 `projectManager` 经 `createSecurityGuard` 工厂注入、被 `toolExecutor`/`builtinToolHandlers` 消费，是"角色包 rule 软约束护栏 + 即时注入防御"的物理落地（[agent-design-philosophy.md](./agent-design-philosophy.md) §6.3 信任边界；[mvp-scope.md](./mvp-scope.md) §二）。
+> **SecurityGuard 定位**：`pathGuard.ts` 同时承载 **SecurityGuard**——文件写权限守卫（4 类允许根 + 28 类禁止规则 + 写入二次确认 + 审计日志）。它由 `projectManager` 经 `createSecurityGuard` 工厂注入、被 `toolExecutor`/`builtinToolHandlers` 消费，是"角色包 rule 软约束护栏 + 即时注入防御"的物理落地（[agent-design-philosophy.md](./agent-design-philosophy.md) §6.3 信任边界；[mvp-scope.md](./mvp-scope.md)，正文已随 2026-09-18 瘦身）。
 
 ### 6.4 日志（logging/）
 

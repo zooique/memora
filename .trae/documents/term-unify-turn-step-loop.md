@@ -46,11 +46,9 @@
 - §5.1 接口契约（L120-128）：`processUserInput` = turn 最小复用单元；`handleIteration` = step 处理。
 - §四 偏差点表（L80-84）：概念命名口径同步。
 
-**3. `docs/architecture/external-task-pause-resume-design.md`**
-- §一 目标语义（L8-16）：气口 = 步（step）之间；loop = 对 turn 的编排。
+**3. `docs/architecture/external-task-pause-resume-design.md`**（已随 2026-09-18 清理瘦身为头部索引，原 §一「气口 = 步（step）之间；loop = 对 turn 的编排」等同步项随正文删除，不再适用）
 
-**4. `docs/architecture/task-driven-closed-loop.md`**
-- 〇核心命题、决策 A 内/外循环表（L61-70）：执行闭环→turn、内循环→step、外循环→loop 编排。
+**4. `docs/architecture/task-driven-closed-loop.md`**（已随 2026-09-18 清理瘦身为头部索引，原〇核心命题、决策 A 内/外循环表（L61-70）等同步项随正文删除，不再适用）
 
 ### 二、代码头注释（必改，仅注释不改逻辑/标识符）
 

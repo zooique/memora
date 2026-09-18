@@ -227,7 +227,7 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
 
-> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/search/searchHybrid/stats/list/getById/getBySource/listDeleted 等）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired/writeBoost）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
+> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/search/searchHybrid/stats/list/getById/getBySource/listDeleted 等）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
 
 ### 2.5 内部组件访问器（高级）
 
@@ -307,7 +307,7 @@ type AgentChunk =
   | { type: 'done' };                                      // 结束标记
 ```
 
-> **记忆召回展示链已退役（2026-09-10）**：`recall` chunk 分支与 `RecalledMemorySummary` 类型已随自动注入退役**物理删除**。记忆纯工具化后，「召回了什么」由 `memory_search` 工具的 `tool_start` / `tool_result` 过程事件天然展示；检索命中含 `accessedAt` / 溯源字段（`sessionId`/`roundId`）。
+> **记忆召回展示链已退役（2026-09-10）**：`recall` chunk 分支与 `RecalledMemorySummary` 类型已随自动注入退役**物理删除**。记忆纯工具化后，「召回了什么」由 `search_memories` 工具的 `tool_start` / `tool_result` 过程事件天然展示；检索命中含 `accessedAt` / 溯源字段（`sessionId`/`roundId`）。
 
 `ThinkingPhase` 取值：`'recalling' | 'processing' | 'archiving'`
 
@@ -389,14 +389,13 @@ agent.agentLoop.getMessages(): readonly Message[]
 ```typescript
 // ─── 写入（writeXxx 前缀） ───
 agent.memory.writeUpsert(memory: Memory): void;                 // 插入或更新记忆
-agent.memory.writeBoost(id: string, increment?: number): boolean; // 提升 score（用户采纳反哺，默认 +0.05）
 agent.memory.writeDelete(id: string): void;                    // 软删除（写入 deletedAt）
 agent.memory.writeRestore(id: string): void;                   // 恢复软删除
 agent.memory.writePurge(id: string): void;                     // 物理删除（不可恢复）
 agent.memory.writePurgeExpired(before: Date): number;          // 清理过期回收站
 
 // ─── 只读扩展查询 ───
-agent.memory.list(limit?: number): Memory[];                   // 列出所有记忆（按 score 降序）
+agent.memory.list(limit?: number): Memory[];                   // 列出所有记忆（按 accessedAt 降序；score 已随 2026-09-09 退役）
 agent.memory.getById(id: string): Memory | null;               // 按 ID 获取活跃记忆
 agent.memory.getBySource(source: string): Memory[];            // 按 source 获取
 agent.memory.listDeleted(limit?: number): Memory[];            // 回收站（软删除记忆）
@@ -418,30 +417,34 @@ interface Memory {
   name: string;       // 可读名称
   createdAt: string;  // 创建时间（ISO 8601）
   accessedAt: string; // 最后访问时间（每次召回时刷新）
-  score: number;      // 权重（0-1，召回时用于排序）
   deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理）
   metadata?: Record<string, string>; // 配置文件 frontmatter 额外元数据（仅配置文件写入时使用，SQLite 不存储此字段）
+  summaryType?: SummaryType; // round-summary 摘要类型（preference/fact/decision/intent/general；顶层持久化字段）
+  sessionName?: string;  // round-summary 归属会话标识（顶层持久化字段，仅 round-summary 有意义）
+  roundId?: string;      // round-summary 归属轮次标识（顶层持久化字段，仅 round-summary 有意义）
+  isModified?: boolean;  // 摘要是否已被人工修改（仅 round-summary 有意义）
+  supersededBy?: string; // 写路径取代标记：非 undefined 表示已被更新的摘要覆盖，召回时确定性过滤
 }
 ```
 
-> **8 字段基元**（v2.1 软删除扩展）：7 个基础字段 + 1 个可选 `deletedAt`。所有查询方法（getById/getBySource/search/count/countBySource/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
+> **字段基线**（score 已退役）：`score` 字段已随 2026-09-09 阶段3 物理删除（无持久化排序分字段，使用轨迹唯一事实源为 `accessedAt`）；向量语义通道已随 2026-09-18 B0 收编（检索为纯关键词单通道）。round-summary 溯源/分类字段（summaryType/sessionName/roundId）已提升为顶层持久化字段（宿主 SQLite 不存储 metadata）。所有查询方法（getById/getBySource/search/count/countBySource/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
 
 **常用 source 标签（`SOURCE_LABELS` 常量）：**
 
 | 常量 | 值 | 用途 |
 |------|----|------|
-| `SOURCE_LABELS.PERSONA` | `'persona'` | 角色人格 |
-| `SOURCE_LABELS.RULE` | `'rule'` | 创作规则 |
-| `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义 |
-| `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影 |
-| `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（写入型 source 之一，另含 `content` 会话归档） |
+| `SOURCE_LABELS.PERSONA` | `'persona'` | 角色人格（残留兼容标签，已随 ADR-025 归角色包、不进记忆库） |
+| `SOURCE_LABELS.RULE` | `'rule'` | 创作规则（残留兼容标签，已随 ADR-025 归角色包、不进记忆库） |
+| `SOURCE_LABELS.SKILL` | `'skill'` | 技能定义（残留兼容标签，已随 ADR-025 归角色包、不进记忆库） |
+| `SOURCE_LABELS.WORK_PROJECTION` | `'work-projection'` | 作品投影（已移出记忆库，2026-08-20 落项目目录 projections/） |
+| `SOURCE_LABELS.ROUND_SUMMARY` | `'round-summary'` | 轮次摘要（当前实际写入记忆库的主要 source） |
 | `SOURCE_LABELS.UNKNOWN` | `'unknown'` | 未知来源（未被已知标签覆盖时的兜底值） |
 
-> source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。
+> source 是开放字符串，宿主可自定义新标签。`validateSource()` 可检测常见 typo（基于 Levenshtein 距离）。PERSONA/RULE/SKILL/WORK_PROJECTION 四标签**仅作历史兼容与 typo 检测**保留，已不进入治理范围（`GOVERNANCE_SOURCES`）——当前写入记忆库的主要 source 为 `round-summary`。
 
 ### 5.2 `IMemoryStorage` 接口
 
-宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **17 方法**（含可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
+宿主实现此接口注入 Agent，替代默认的 `InMemoryStorage`。共 **15 方法**（14 必需 + 可选 `close`），所有方法同步（与 better-sqlite3 API 对齐，`await` 同步值安全）。所有查询方法自动过滤已软删除的记忆（`deletedAt != undefined`）。
 
 ```typescript
 interface IMemoryStorage {
@@ -898,7 +901,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` |
-| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeBoost()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
+| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 

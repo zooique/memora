@@ -160,7 +160,7 @@
 | 触顶硬终止 | 任务链 pending 耗尽收敛；触顶兜底报告进度 + 列未完成 |
 | 无收尾 | 收尾汇报 turn（`runReport`）→ 汇报单源摘要（摘要恒 1:1） |
 
-> 根与枝叶关系不变：本文证明"loop 是 turn Act 内部对 step 的编排"这个根；task-driven 文档在此根上长出"多 turn 任务驱动 + 汇报"的枝叶——其角色已由「目标」转为「实现记录」。演进关系见 [task-driven-closed-loop.md §七](./task-driven-closed-loop.md)。
+> 根与枝叶关系不变：本文证明"loop 是 turn Act 内部对 step 的编排"这个根；task-driven 文档在此根上长出"多 turn 任务驱动 + 汇报"的枝叶——其角色已由「目标」转为「实现记录」。演进关系见 [task-driven-closed-loop.md](./task-driven-closed-loop.md)（正文已随 2026-09-18 docs 清理瘦身为头部索引）。
 
 ---
 
