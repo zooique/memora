@@ -68,10 +68,25 @@ describe('safeExecuteCode', () => {
   });
 
   it('执行超时时应降级返回结果而非抛出异常', async () => {
+    // 模拟执行器抛异常（即使文案含"超时"）→ 降级为执行失败（非超时，无兜底标记）
     const provider = createFailingProvider('代码执行超时（外层兜底）');
     const result = await safeExecuteCode(provider, 'while True: pass', 'python');
     expect(result.exitCode).toBe(-1);
     expect(result.stderr).toContain('执行失败');
+  });
+
+  it('外层兜底超时（执行器无响应）应返回 timedOut=true 的超时结果', async () => {
+    // 执行器永不返回 → 外层兜底定时器触发 reject（带超时标记），降级为超时而非普通失败
+    const provider: ICodeExecutionProvider = {
+      async execute() {
+        // 故意永不 resolve/reject，模拟执行器挂死
+        return new Promise<CodeExecutionResult>(() => {});
+      },
+    };
+    const result = await safeExecuteCode(provider, 'while True: pass', 'python', { timeoutMs: 50 });
+    expect(result.timedOut).toBe(true);
+    expect(result.exitCode).toBe(-1);
+    expect(result.stderr).toContain('执行超时');
   });
 
   it('非 Error 类型的异常应降级处理', async () => {
