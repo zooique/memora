@@ -141,9 +141,6 @@ function truncateForDiff(content: string | null | undefined): string | null | un
 
 export class SecurityGuard {
   private readonly listeners: AuditListener[] = [];
-  /** 审计事件缓冲（最近 N 条，供调试与回溯） */
-  private readonly auditBuffer: AuditEvent[] = [];
-  private readonly bufferLimit = 100;
   /**
    * 注入式写入确认回调：宿主注册后走自定义 UI；不注册时回退到终端 readline（CLI 场景）。
    */
@@ -253,11 +250,6 @@ export class SecurityGuard {
       const i = this.listeners.indexOf(listener);
       if (i >= 0) this.listeners.splice(i, 1);
     };
-  }
-
-  /** 获取最近审计事件（深拷贝，外部不可修改内部缓冲） */
-  getRecentAudits(limit = 10): AuditEvent[] {
-    return this.auditBuffer.slice(-limit).map((e) => ({ ...e }));
   }
 
   /**
@@ -455,13 +447,8 @@ export class SecurityGuard {
     }
   }
 
-  /** 触发审计事件：缓冲 + 写日志 + 通知订阅者 */
+  /** 触发审计事件：写日志 + 通知订阅者 */
   private emitAudit(event: AuditEvent): void {
-    this.auditBuffer.push(event);
-    if (this.auditBuffer.length > this.bufferLimit) {
-      this.auditBuffer.shift();
-    }
-
     if (event.type === 'path-deny' || event.type === 'write-decline') {
       logger.warn({ audit: event }, '安全审计：拒绝');
     } else {

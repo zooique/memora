@@ -4,10 +4,20 @@
  * 覆盖：符号链接逃逸 + 包管理器凭证 + 系统目录覆盖
  */
 import { describe, expect, it, beforeEach } from 'vitest';
-import { SecurityGuard, type WriteConfirmationInfo } from '@/security/pathGuard.js';
+import { SecurityGuard, type WriteConfirmationInfo, type AuditEvent } from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
+
+/**
+ * 收集审计事件辅助：替代已删除的 getRecentAudits 缓冲查询——
+ * onAudit 订阅是审计事件的唯一读取通道（流式），断言前订阅、操作后取最后一条。
+ */
+function collectAudits(guard: SecurityGuard): AuditEvent[] {
+  const events: AuditEvent[] = [];
+  guard.onAudit((e) => events.push(e));
+  return events;
+}
 
 describe('SecurityGuard · 路径白名单', () => {
   let projectPath: string;
@@ -348,10 +358,10 @@ describe('SecurityGuard · 审计日志', () => {
 
   it('应该为允许的路径生成 path-allow 审计事件', () => {
     const guard = new SecurityGuard(projectPath, dataDir, []);
+    const audits = collectAudits(guard);
     const filePath = join(projectPath, 'src/index.ts');
     guard.assertPathAllowed(filePath, 'read_file');
 
-    const audits = guard.getRecentAudits();
     expect(audits.length).toBeGreaterThan(0);
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('path-allow');
@@ -360,10 +370,10 @@ describe('SecurityGuard · 审计日志', () => {
 
   it('应该为拒绝的路径生成 path-deny 审计事件', () => {
     const guard = new SecurityGuard(projectPath, dataDir, []);
+    const audits = collectAudits(guard);
     const filePath = join(projectPath, '.ssh/id_rsa');
     expect(() => guard.assertPathAllowed(filePath, 'read_file')).toThrow();
 
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('path-deny');
     expect(last.reason).toMatch(/黑名单/);
@@ -407,10 +417,10 @@ describe('SecurityGuard · 写入二次确认', () => {
 
   it('owner + confirmWrites=false 应该自动批准（不读取 stdin）', async () => {
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner');
+    const audits = collectAudits(guard);
     const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
     expect(ok).toBe(true);
 
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('write-auto');
     expect(last.decision).toBe('auto-approved');
@@ -419,11 +429,11 @@ describe('SecurityGuard · 写入二次确认', () => {
   it('owner + confirmWrites=true + 未注入 handler 应 fail-closed 拒绝', async () => {
     // 未注入 confirmationHandler 时直接拒绝写入
     const guard = new SecurityGuard(projectPath, dataDir, [], true, 'owner');
+    const audits = collectAudits(guard);
     const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
     expect(ok).toBe(false);
 
     // 审计应记录拒绝事件，reason 标注 fail-closed
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('write-decline');
     expect(last.decision).toBe('declined');
@@ -434,10 +444,10 @@ describe('SecurityGuard · 写入二次确认', () => {
     // guest 强制需要确认，未注入 handler 时同样 fail-closed
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'guest');
     expect(guard.permission).toBe('guest');
+    const audits = collectAudits(guard);
     const ok = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
     expect(ok).toBe(false);
 
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('write-decline');
     expect(last.decision).toBe('declined');
@@ -542,10 +552,10 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
   it('owner + confirmScripts=false 应该自动批准（审计 write-auto）', async () => {
     // 默认不弹窗：脚本执行自动放行，审计仍记录
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner');
+    const audits = collectAudits(guard);
     const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
     expect(ok).toBe(true);
 
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('write-auto');
     expect(last.decision).toBe('auto-approved');
@@ -554,10 +564,10 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
   it('owner + confirmScripts=true + 未注入 handler 应 fail-closed 拒绝', async () => {
     // confirmScripts 打开但宿主没接确认 UI → 拒绝（安全优先，审计标注 fail-closed）
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
+    const audits = collectAudits(guard);
     const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
     expect(ok).toBe(false);
 
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('write-decline');
     expect(last.decision).toBe('declined');
@@ -573,6 +583,7 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
 
   it('confirmScripts=true + 注入 handler 返回 true 应确认放行', async () => {
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
+    const audits = collectAudits(guard);
     guard.onWriteConfirmation(async (info) => {
       expect(info.tool).toBe('run_project_script');
       expect(info.needsConfirm).toBe(true);
@@ -582,7 +593,6 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
     const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script', '运行项目脚本 scripts/test.py');
     expect(ok).toBe(true);
 
-    const audits = guard.getRecentAudits();
     const last = audits[audits.length - 1]!;
     expect(last.type).toBe('write-confirm');
     expect(last.decision).toBe('confirmed');
