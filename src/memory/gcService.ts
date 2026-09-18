@@ -192,9 +192,6 @@ export class GCService {
             result.failedDueToRefCount++;
           }
         }
-
-        // 可选：让出事件循环，避免长时间阻塞
-        // await new Promise(resolve => setImmediate(resolve));
       }
 
       if (this.config.verbose) {
