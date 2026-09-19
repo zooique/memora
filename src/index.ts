@@ -131,7 +131,7 @@ export type { Memory, SummaryType } from '@/memory/types.js';
  * 白名单构造：剥离未知字段（旧档 score 等），见 src/memory/types.ts
  */
 export { parseMemory } from '@/memory/types.js';
-export { escapeLike, validateSource } from '@/memory/sourceValidation.js';
+export { escapeLike, escapeLikeSnippet, validateSource } from '@/memory/sourceValidation.js';
 export type { SourceValidationSeverity } from '@/memory/sourceValidation.js';
 // 存储层抽象：宿主项目可实现 IMemoryStorage 接口注入 Agent
 export type { IMemoryStorage } from '@/memory/storageInterface.js';

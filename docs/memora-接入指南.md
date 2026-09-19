@@ -468,6 +468,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
+| `escapeLikeSnippet(text, maxLen?)` | 截断至 maxLen（默认 50）后转义 LIKE 通配符——搜索输入防超长解析 + 防通配符注入（SQLite 后端检索的配套动作） |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
 | `toError(err)` | 将任意值转为 Error（浏览器端安全，不引入 `logging/` 模块） |

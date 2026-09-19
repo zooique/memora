@@ -1051,7 +1051,7 @@ export type { WorkProjectionEntry } from '@zooique/memora';
 // 记忆
 export { SOURCE_LABELS } from '@zooique/memora';
 export type { Memory } from '@zooique/memora';
-export { escapeLike, validateSource } from '@zooique/memora';
+export { escapeLike, escapeLikeSnippet, validateSource } from '@zooique/memora';
 export type { SourceValidationSeverity } from '@zooique/memora';
 export type { IMemoryStorage } from '@zooique/memora';
 export { InMemoryStorage } from '@zooique/memora';
