@@ -1338,19 +1338,25 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 中断轮：独立 replay_events（interrupted 标志，无 assistant 正文块）
     dispatch({ type: 'replay_events', roundId: 'r2', events, interrupted: true });
 
-    // 过程独立平铺：process-flow 容器存在，不产生 round-block 折叠块（无 assistant 宿主可挂）
-    const flow = document.querySelector('.process-flow') as HTMLElement;
-    expect(flow).not.toBeNull();
-    expect(flow.dataset.roundId).toBe('r2');
-    expect(document.querySelector('.round-block')).toBeNull();
-    // 思考/工具行保留（平铺）
-    expect(flow.querySelector('.process-flow__thought')?.textContent).toContain('思考');
-    const toolRow = flow.querySelector('.round-block__tool') as HTMLElement;
+    // 孤儿折叠宿主（2026-09-19 形态定案：与 done 轮同构——过程折叠 + 停止行平铺，非孤儿平铺）
+    const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
+    expect(host).not.toBeNull();
+    expect(host.dataset.roundId).toBe('r2');
+    // 身份标签恢复（角色·模型）
+    expect(host.querySelector('.msg-ai-label__role')?.textContent).toBe('AI');
+    // 过程收进折叠块（round-block），不再走 process-flow 平铺（呼吸相位行连带消失）
+    const rb = host.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(document.querySelector('.process-flow')).toBeNull();
+    // 思考/工具行保留在折叠块 details 内（已完成 step 不丢）
+    expect(rb.querySelector('.round-block__thought')?.textContent).toContain('思考');
+    const toolRow = rb.querySelector('.round-block__details .round-block__tool') as HTMLElement;
     expect(toolRow?.textContent).toContain('read_file');
     expect(toolRow?.textContent).toContain('失败');
-    // 中断标记行：§已停止 + 执行指标（独立平铺行，非折叠块小节）
-    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain('用户停止了对话');
-    expect(flow.querySelector('.process-flow__metrics-row')?.textContent).toContain('完成：否');
+    // 「用户停止了对话」平铺折叠块外（收起态常驻可见）
+    expect(host.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
+    // 收起态摘要含耗时（指标留折叠块，不重复平铺）
+    expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
 
   it('中断轮重放：error 事件 → §已停止行显示失败原因（LEG-1 缺口②：失败原因重放可见）', () => {
@@ -1367,13 +1373,12 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     ];
     dispatch({ type: 'replay_events', roundId: 'r3', events, interrupted: true });
 
-    const flow = document.querySelector('.process-flow') as HTMLElement;
-    expect(flow).not.toBeNull();
-    // category 映射为友好文案 —— 而非 generic「对话已中断」（修复前形态）
-    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain(
-      '对话处理超时，请稍后重试',
-    );
-    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).not.toContain('对话已中断');
+    const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
+    expect(host).not.toBeNull();
+    // 停止行平铺在折叠块外（error → 友好文案，非 generic「对话已中断」）
+    const row = host.querySelector('.round-block__interrupted') as HTMLElement;
+    expect(row?.textContent).toContain('对话处理超时，请稍后重试');
+    expect(row?.textContent).not.toContain('对话已中断');
   });
 
   it('中断轮重放：error 无 category → §已停止行回退原始 message（不吞技术细节）', () => {
@@ -1383,8 +1388,8 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     ];
     dispatch({ type: 'replay_events', roundId: 'r4', events, interrupted: true });
 
-    const flow = document.querySelector('.process-flow') as HTMLElement;
-    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain(
+    const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
+    expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
       'HTTP 400: invalid request',
     );
   });
@@ -1397,10 +1402,45 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     ];
     dispatch({ type: 'replay_events', roundId: 'r5', events, interrupted: true });
 
-    const flow = document.querySelector('.process-flow') as HTMLElement;
-    expect(flow.querySelector('.process-flow__stopped-row')?.textContent).toContain(
+    const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
+    expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
       '对话连接中断，已保留部分回答，请检查网络后重试',
     );
+  });
+
+  it('运行时中断（RT 形态定案 2026-09-19）：掐半截正文 + 过程折叠 + 「用户停止了对话」平铺折叠块外', () => {
+    mountChatView();
+    dispatch({ type: 'user', text: '读文件', ts: 't0', roundId: 'r1' });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+    });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'tool_start', seq: 3, ts: 't1.2', payload: { toolCallId: 't1', name: 'read_file', args: '{}' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'tool_result', seq: 4, ts: 't1.3', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
+    });
+    // 半截正文已流式上屏
+    dispatch({ type: 'chunk', content: '正在读取…', roundId: 'r1' });
+    // 中断：正文随之作废（丢弃运行中 step 的内容）
+    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 5, ts: 't1.4', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } } });
+    dispatch({ type: 'interrupted', roundId: 'r1' });
+    // 过程收进折叠块（保留已完成 tool step）
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(rb.querySelector('.round-block__details .round-block__tool')?.textContent).toContain('read_file');
+    // 半截正文被掐断：assistant 块不再有正文容器
+    const assistant = document.querySelector('.msg.assistant') as HTMLElement;
+    expect(assistant.querySelector('.msg-body')).toBeNull();
+    // 「用户停止了对话」平铺折叠块外（收起态常驻可见）+ 身份标签保留
+    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
+    expect(assistant.querySelector('.msg-ai-label__role')?.textContent).toBe('白话方案设计师');
+    // 运行时平铺容器已收走（不残留 process-flow 呼吸相位行）
+    expect(document.querySelector('.process-flow')).toBeNull();
   });
 
   it('阶段二步级折叠：replay_events 含 step_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
@@ -1885,21 +1925,23 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     vi.restoreAllMocks();
   });
 
-  it('interrupted（aborted 事件）→ round-block § 已停止 标记渲染，半截正文保留', () => {
+  it('interrupted（aborted 事件）→ round-block §已停止 + 「用户停止了对话」平铺折叠块外，半截正文掐断（2026-09-19 形态定案）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '半截回答' });
-    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'User cancelled the conversation' } } });
+    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } } });
     dispatch({ type: 'interrupted', roundId: 'r1' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
+    // 折叠块内 §已停止（详情完整，stopReasonLabel 映射友好文案）
     expect(rb.textContent).toContain('已停止');
-    expect(rb.textContent).toContain('User cancelled the conversation');
+    expect(rb.textContent).toContain('用户停止了对话');
     // 收尾即停止呼吸（is-running 收敛）
     expect(rb.classList.contains('is-running')).toBe(false);
-    // 半截正文保留（取消 ≠ 丢弃）
-    const body = document.querySelector('.msg.assistant .msg-body');
-    expect(body?.textContent?.trim()).toBe('半截回答');
+    // 停止行平铺折叠块外（收起态常驻可见，语义映射为「用户停止了对话」）
+    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
+    // 半截正文掐断（丢弃运行中 step 的内容，与重放中断轮不显示正文同构）
+    expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
   });
 
   it('P3：空状态标题/提示随激活角色包动态生成（切换角色不错位）', () => {

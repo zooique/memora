@@ -1402,20 +1402,12 @@ export const chatStyles = `
     color: var(--text-primary, #e0e0e0);
     white-space: pre-wrap; word-break: break-all;
   }
-  /* 中断轮重放收尾标记（2026-09-15：中断轮过程独立平铺可见，不收进折叠块） */
-  .process-flow__interrupted {
-    margin-top: var(--sp-1, 4px); padding: var(--sp-1, 2px) 0;
+  /* 中断轮平铺收尾行（2026-09-19 形态定案：过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
+  .round-block__interrupted {
+    margin: var(--sp-2, 6px) 0 2px; padding: var(--sp-1, 2px) 0;
     border-top: 1px dashed var(--border-panel, rgba(128,128,128,.4));
-    display: flex; flex-direction: column; gap: var(--sp-1, 2px);
-  }
-  .process-flow__stopped-row {
     font-size: var(--font-sm, 11px); line-height: 1.6; font-weight: 600;
     color: var(--danger, #f14c4c);
-    word-break: break-all;
-  }
-  .process-flow__metrics-row {
-    font-size: var(--font-xs, 10px); line-height: 1.6;
-    color: var(--text-secondary, #9aa0a6);
     word-break: break-all;
   }
   .round-block__section-title {

@@ -662,13 +662,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 确保当前轮**过程平铺容器**存在（v1.8 剪枝，2026-09-09 运行时；2026-09-15 增重放中断轮孤儿挂载）
+   * 确保当前轮**过程平铺容器**存在（v1.8 剪枝，2026-09-09 运行时）
    *
    * 常规挂载规则与 ensureRoundBlock 同源（label 之后、正文 body 之前——「过程在上 · 报告在下」），
-   * 挂在当前 assistant 块（activeAssistantEl）上。`orphan` 模式（2026-09-15）：用于**重放中断轮**——
-   * 该轮无 assistant 正文块（tokenOut:0 未产 assistantMessage），无法依赖 activeAssistantEl；此时
-   * 把平铺容器直接挂到消息流末尾（本轮 user 块之后），用 data-round-id 记录所属轮，实现「过程独立
-   * 可见、不收进折叠块」。
+   * 挂在当前 assistant 块（activeAssistantEl）上。`orphan` 模式：当前仅服务 `tool_pending` 兜底
+   * （renderPendingToolRow——运行时平铺容器恰缺时把「准备中」行挂消息流尾，防丢预告；
+   * 2026-09-19 起重放中断轮不再走孤儿平铺，改孤儿折叠宿主 renderInterruptedRound）。
    *
    * @param opts.orphan 是否以孤儿模式挂载（无 assistant host 时挂消息流尾）
    * @param opts.roundId 所属轮 ID（孤儿模式记录 data-round-id，防跨轮串扰；常规模式非必需）
@@ -1552,61 +1551,66 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 中断轮重放收尾标记（2026-09-15 方案：中断轮过程独立平铺可见，不收进折叠块）
+   * 中断轮平铺收尾行（2026-09-19 形态定案：RT/RP 同构——过程收进折叠块、「用户停止了对话」平铺折叠块外）
    *
-   * 内核把中断/失败轮落盘为 status='interrupted'（不再伪 complete），processEvents 保留 aborted +
-   * metrics。重放中断轮时过程经 renderProcessFlow 平铺到孤儿容器，本节在平铺流末尾追加：
-   * - §已停止 行（aborted 事件 → stopReasonLabel 语义映射）
-   * - §执行指标 行（计时/Tokens/工具失败/完成与否——沿用 round-block finalize 的 finalSuccess 判定）
+   * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：用户停止/锁超时），
+   * 皆无则 generic 停文案（旧数据）。error 优先是保守排序——二者本应互斥（failed 路径 signal 未 abort），
+   * 此序仅防异常组合。执行指标留在折叠块 §执行指标/摘要（收起态摘要含耗时），停止行只承担
+   * 「这轮为何停」的常驻提示，不重复指标。data-interrupted-row 去重幂等（重放重复投递防叠加）。
    *
-   * 幂等守卫：已渲染过该轮标记（data-interrupted-marker）则不再重绘，防 replay 重复投递叠加。
-   *
-   * @param flow 中断轮平铺容器（orphan 挂载）
-   * @param events 该轮 processEvents（含 aborted/metrics）
+   * @param host  折叠块宿主（RT = 当前 assistant 块；RP = 孤儿折叠宿主 .is-interrupted-host）
+   * @param events 本轮 processEvents（含 error/aborted/metrics）
    */
-  function flagInterruptedMarker(flow: HTMLElement, events: ProcessEvent[]): void {
-    if (flow.querySelector('[data-interrupted-marker]')) return;
-    const marker = document.createElement('div');
-    marker.className = 'process-flow__interrupted';
-    marker.dataset.interruptedMarker = 'true';
-    // §已停止：原因优先取 error（失败：超时 / 连接中断），其次 aborted（中断：用户停止 / 锁超时），
-    // 两者皆无则 generic 停文案（旧数据）。error 优先于 aborted 是保守排序——二者本应互斥
-    // （failed 路径 signal 未 abort，见 loop/agent 收口），此序仅防异常组合，不改变正常语义。
+  function appendInterruptedRow(host: HTMLElement, events: ProcessEvent[]): void {
+    if (host.querySelector('[data-interrupted-row]')) return;
+    const row = document.createElement('div');
+    row.className = 'round-block__interrupted';
+    row.dataset.interruptedRow = 'true';
     const errorEv = events.find(
       (e): e is Extract<ProcessEvent, { type: 'error' }> => e.type === 'error',
     );
     const aborted = events.find(
       (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
     );
-    const stopped = document.createElement('div');
-    stopped.className = 'process-flow__stopped-row';
-    // error 落盘存原始 message + category（与 aborted 存 reason + stopReason 同范式）→ 此处映射
-    // error 落盘存原始 message + category（与 aborted 存 reason + stopReason 同范式）→ 此处映射
-    stopped.textContent = errorEv
+    row.textContent = errorEv
       ? friendlyErrorMessage(errorEv.payload.category, errorEv.payload.message)
       : aborted
         ? stopReasonLabel(aborted.payload)
         : stopReasonLabel({ reason: 'interrupted' });
-    marker.appendChild(stopped);
-    // §执行指标：metrics 事件（有才显示）
-    const metrics = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
-    );
-    if (metrics) {
-      const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
-      const finalSuccess = metrics.payload.success && unparsed === 0;
-      const meta = document.createElement('div');
-      meta.className = 'process-flow__metrics-row';
-      meta.textContent = [
-        `耗时：${fmtDuration(metrics.payload.durationMs)}`,
-        `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
-        `工具失败：${metrics.payload.toolFailureCount} 次`,
-        ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
-        `完成：${finalSuccess ? '是' : '否（中断/失败）'}`,
-      ].join(' · ');
-      marker.appendChild(meta);
+    // 挂载点：折叠块（round-block）之后——「过程折叠 · 停止行平铺在外」
+    const rb = host.querySelector(':scope > .round-block');
+    if (rb) rb.after(row);
+    else host.appendChild(row);
+  }
+
+  /**
+   * 重放中断轮孤儿宿主渲染（2026-09-19 形态定案：与 done 轮同构——过程折叠 + 停止行平铺）
+   *
+   * 中断轮无 assistant 正文块（host 只对 complete 轮挂正文，避免半截文本与过程事件同源双份），
+   * 但折叠收尾仍需要宿主——孤儿宿主 = 复用 buildAssistantShell 的 label/footer（单一实现）+ 移除
+   * body（中断轮不显示半截正文），挂 messages 尾并记 data-round-id；随后临时锚定 activeAssistantEl
+   * 让 renderRoundBlock 挂折叠块，再平铺停止行。旧「孤儿 process-flow 平铺 + flagInterruptedMarker」
+   * （2026-09-15 方案）随之退役，闪烁相位行（process-flow__phase 呼吸点）连根消失。
+   *
+   * @param roundId 本轮 ID（孤儿宿主归属标记）
+   */
+  function renderInterruptedRound(roundId?: string): void {
+    const host = document.createElement('div');
+    host.className = 'msg assistant is-interrupted-host';
+    buildAssistantShell(host, new Date().toISOString(), roundId, { pending: false });
+    host.querySelector('.msg-body')?.remove();
+    if (roundId) host.dataset.roundId = roundId;
+    messages.appendChild(host);
+    const prevAssistant = activeAssistantEl;
+    activeAssistantEl = host;
+    roundBlockEl = null;
+    roundBlockHostEl = null;
+    try {
+      renderRoundBlock(currentEvents, true);
+      appendInterruptedRow(host, currentEvents);
+    } finally {
+      activeAssistantEl = prevAssistant;
     }
-    flow.appendChild(marker);
   }
 
   // 在日期交界插入日期分隔线（跨天合并分组，textContent 构建防注入）。
@@ -3454,25 +3458,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (metaEv) {
         currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
       }
-      // 中断轮（2026-09-15 方案：Round.status==='interrupted'，host 已透出 interrupted 标志）：
+      // 中断轮（2026-09-15 起：Round.status==='interrupted'，host 已透出 interrupted 标志）：
       // 该轮**不渲染 assistant 正文块**（host 侧 loadRoundBasedHistory 只对 complete 轮挂正文）——
       // ⚠️ 注意中断轮**可能确有** assistantMessage：`MessageHistory.appendInterrupted` 在「有恢复文本」
       // 时写入，来源 = narrate 过程事件拼接 + 中断标记（运行期 `orchestrator.act` 传
       // streamResult.content、崩溃打捞 `upgradeInterruptedRounds` 传 narrate 拼接）。不挂正文的
-      // 真正理由是**同源去双份**——该文本与下方 processEvents 同源，平铺已完整呈现；
-      // （订正：旧注释作「tokenOut:0 未产 assistantMessage」，与 appendInterrupted 行为相反）
-      // → 过程独立平铺可见（复用 renderProcessFlow 平铺容器），不收进折叠块，保留思考/工具/中断标记
+      // 真正理由是**同源去双份**——该文本与 processEvents 同源，半截正文已随中断丢弃；
+      // 形态定案（2026-09-19）：中断轮终态与 done 轮同构 = 过程收进折叠块 + 「用户停止了对话」
+      // 平铺折叠块外（收起态常驻可见），孤儿宿主承载折叠（label/折叠块/停止行，半截正文不显示），
+      // 与运行时 interrupted 共用同一渲染链（renderRoundBlock + appendInterruptedRow）。
       if (msg.interrupted) {
-        // 孤儿平铺容器挂 messages 尾：逐个处理中断轮时先清理上一轮孤儿容器（防跨轮堆积残留）
-        const prevOrphan = messages.querySelector<HTMLElement>('.process-flow[data-round-id]');
-        if (prevOrphan && prevOrphan !== flowEl) prevOrphan.remove();
+        // 孤儿宿主挂 messages 尾：逐个处理中断轮时先清理上一轮孤儿宿主（防跨轮堆积残留）
+        messages.querySelector<HTMLElement>('.msg.is-interrupted-host')?.remove();
         flowEl?.remove();
         flowEl = null;
-        const flow = ensureProcessFlow({ orphan: true, roundId: msg.roundId });
-        if (flow) {
-          renderProcessFlow(currentEvents);
-          flagInterruptedMarker(flow, currentEvents);
-        }
+        renderInterruptedRound(msg.roundId);
       } else {
         // 普通轮：任务过程折叠区（含工具/思考/召回/审查/metrics）一次性渲染（finalize=true，收起态）
         renderRoundBlock(currentEvents, true);
@@ -3682,18 +3682,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 回填删除按钮 ts 锚（运行时流式块 dataset.ts 恒空 → 删除按钮恒禁用修复）
       commitTurnTs();
     } else if (msg.type === 'interrupted') {
-      // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 低扰提示「已停止生成」
-      // 等待指示器同步收尾（③ 排雷补漏 2026-08-30）：done/error 均清，唯独中断漏清——
-      // 残留的 pending-wait 会悬挂「已等待 Ns」且 1s 定时器空转，直到下次用户输入才被清掉。
+      // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 等待指示器同步收尾
+      // （③ 排雷补漏 2026-08-30）：done/error 均清，唯独中断漏清——残留的 pending-wait 会悬挂
+      // 「已等待 Ns」且 1s 定时器空转，直到下次用户输入才被清掉。
       clearPendingWait();
       clearToolElapsed(); // TS-11c：中断同样清工具等待计时（防定时器残留空转）
       clearArchivingFallback();
       flowShellEl = null;
       pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
       resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
-      // 同 done 顺序纪律：先回填 roundId（供 fold 归属过滤）→ 收起任务过程折叠区 → 收敛 QA → 关流式
+      // 同 done 顺序纪律：先回填 roundId（供 fold 归属过滤）→ 收起任务过程折叠区 → 收敛 QA → 关流式。
+      // 形态定案（2026-09-19，与重放同构）：中断 = 掐断运行中的 step 内容（半截正文丢弃）→
+      // 过程收进折叠块（保留已完成 step）→ 「用户停止了对话」平铺折叠块外（收起态常驻可见）。
       commitRoundId(msg.roundId);
       finalizeRound();
+      const interruptedHost = activeAssistantEl;
+      if (interruptedHost?.isConnected) {
+        // 丢弃半截正文（运行中 step 的内容因中断作废，与重放中断轮不显示正文同源同形）
+        interruptedHost.querySelector<HTMLElement>(':scope > .msg-body')?.remove();
+        appendInterruptedRow(interruptedHost, currentEvents);
+      }
       // 打断也可能产生部分回答：同样回填 roundId，允许从该轮分叉
       commitTurnTs();
       showActivity('info', '已停止生成');

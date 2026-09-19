@@ -2,7 +2,7 @@
  * 流式错误 category → 用户可见文案（**单一真理源**，Node 侧与 webview 侧共用）
  *
  * 为何必须放 `shared/`：同一份映射被两端同时需要 —— ① Node 侧 `chatPanel.consumeFlow` 的 `error`
- * 分支（实时提示条）；② webview 侧 `chatView.flagInterruptedMarker`（重放回看历史失败原因）。
+ * 分支（实时提示条）；② webview 侧 `chatView.appendInterruptedRow`（中断轮平铺停止行，含失败原因）。
  * 各写一份即「文案双源漂移」（`chatView.stopReasonLabel` 的注释已就此告警）。
  * `shared/` 是两端唯一共同可引层（`protocol.ts` / `constants.ts` 同处）。
  *
