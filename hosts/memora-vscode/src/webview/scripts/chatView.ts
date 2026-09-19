@@ -2511,6 +2511,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const { host } = stepContainerFor(root, currentEvents, tsKey);
         insertStepInOrder(host, item, tsKey);
       } else {
+        // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程）落消息流。有 roundId 时打
+        // 归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（2026-09-19 形态甲回归修复，
+        // 否则条目散落「用户提问 ↔ 最终回答」之间且无搬运时机）
+        if (roundId) item.dataset.roundId = roundId;
         messages.appendChild(item);
       }
     } catch (err) {
@@ -3533,8 +3537,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     } else if (msg.type === 'assistant') {
       append('assistant', msg.text, msg.ts, msg.roundId);
-      // 历史回放正文块创建后补挂任务过程折叠区（meta/replay_events 若先于正文到达，此处才挂得上）
-      renderRoundBlock(currentEvents, true);
+      // 历史回放正文块创建后补挂任务过程折叠区（meta/replay_events 若先于正文到达，此处才挂得上）。
+      // 形态甲回归修复（2026-09-19，round-1789642310661 实证）：补传运行时输入合并流重建——
+      // 纯 QA 轮（无 assistantLog 前序段）时 replay_events 先于正文到达、round-block 挂不上，
+      // QA 曾降级散落消息流「用户提问 ↔ 最终回答」之间且无搬运时机；合并流重建收进折叠块，
+      // 同轮 fallback 残留（data-round-id 标记）在此回收，避免双份
+      renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
+      // 仅当本轮建起折叠区（有过程事件）才回收 fallback 残留——合并流重建已把同轮条目收进
+      // details；纯问答轮（无 processEvents）不建折叠区，fallback 是唯一投影，不得删除
+      if (msg.roundId && roundBlockEl?.isConnected) {
+        messages
+          .querySelectorAll<HTMLElement>(`.round-block__input[data-round-id="${msg.roundId}"]`)
+          .forEach((el) => el.remove());
+      }
     } else if (msg.type === 'chunk') {
       // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
       // 自审查输出不再走 chunk（host 已按 text_self_review 过程事件转发，渲染进折叠区）。

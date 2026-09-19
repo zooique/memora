@@ -3116,6 +3116,50 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(document.querySelector('.round-block__stats')?.textContent).toContain('你答×1');
   });
 
+  it('形态甲回归：纯 QA 轮重放（有过程事件 + 无前序段）问答条目收进折叠块、不散落消息流（round-1789642310661 复现）', () => {
+    mountChatView();
+    // 重放时序（sendRoundView）：主输入 → 整批过程事件（含 meta）→ 提问回答×3（无 assistantLog）→ 最终回答
+    dispatch({ type: 'user', text: '把上述问题使用ask工具提问我', ts: 't1', roundId: 'round-1' });
+    dispatch({
+      type: 'replay_events',
+      roundId: 'round-1',
+      events: [
+        { type: 'meta', seq: 1, ts: 't1', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+        { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } },
+        { type: 'narrate', seq: 3, ts: 't1.2', payload: { content: '提问中…' } },
+        {
+          type: 'metrics', seq: 4, ts: 't2', payload: {
+            durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true,
+          },
+        },
+      ] as never,
+    });
+    dispatch({
+      type: 'user', text: '互动性——用户能参与影响故事走向', ts: 't2.1', roundId: 'round-1',
+      kind: 'question-answer', question: 'Q1：核心价值是什么？',
+    });
+    dispatch({
+      type: 'user', text: '内容平台——让读者来读', ts: 't2.2', roundId: 'round-1',
+      kind: 'question-answer', question: 'Q2：创作工具还是内容平台？',
+    });
+    dispatch({ type: 'user', text: '专业作者/签约作者', ts: 't2.3', roundId: 'round-1', kind: 'question-answer' });
+    dispatch({ type: 'assistant', text: '基于已回答的三个问题，最终回答…', ts: 't3', roundId: 'round-1' });
+    // 问答条目全部收进折叠块 details 内（与运行时 finalize 合并流重建一致）
+    const roundBlock = document.querySelector('.round-block') as HTMLElement;
+    expect(roundBlock).not.toBeNull();
+    const inputsInBlock = roundBlock.querySelectorAll('.round-block__details .round-block__input');
+    expect(inputsInBlock).toHaveLength(3);
+    expect(inputsInBlock[0]!.textContent).toContain('互动性');
+    expect(inputsInBlock[1]!.textContent).toContain('内容平台');
+    expect(inputsInBlock[2]!.textContent).toContain('专业作者');
+    // 消息流层无残留：折叠块 details 在 #messages 子树内，故用直接子元素 `:scope >` 判定
+    // （修复前 fallback 条目作为 #messages 直子，散落在用户提问与最终回答之间）
+    const messages = document.getElementById('messages') as HTMLElement;
+    expect(messages.querySelectorAll(':scope > .round-block__input')).toHaveLength(0);
+    // 收起态摘要含「你答×3」
+    expect(roundBlock.querySelector('.round-block__stats')?.textContent).toContain('你答×3');
+  });
+
   it('重放跨轮 supplement 不合并：各 roundId 补充独立成行（2026-09-07 跨轮合并 bug 修复）', () => {
     mountChatView();
     // 两轮问答，各带一条 supplement（重放时序：user → 中间段supp → 最终回答）
