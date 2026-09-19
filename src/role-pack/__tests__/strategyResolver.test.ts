@@ -119,12 +119,14 @@ describe('DEFAULT_BEHAVIOR_STRATEGY — 默认值完整性', () => {
 describe('resolve* 函数 — 基础策略解析', () => {
   // ── resolveToolMode ──
   describe('resolveToolMode', () => {
-    it('合法值透传', () => {
+    it('合法值透传（allow / block 双向）', () => {
+      expect(resolveToolMode({ act: { toolMode: 'allow' } })).toBe('allow');
       expect(resolveToolMode({ act: { toolMode: 'block' } })).toBe('block');
     });
 
     it('非法/缺失值回退默认 allow', () => {
       expect(resolveToolMode({ act: { toolMode: 'bad' as never } })).toBe('allow');
+      expect(resolveToolMode({ act: { toolMode: undefined } })).toBe('allow');
       expect(resolveToolMode(undefined)).toBe('allow');
     });
   });
@@ -224,6 +226,10 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('纯空白字符串回退 undefined', () => {
       expect(resolveSummaryFocus({ prepare: { summaryFocus: '   ' } })).toBeUndefined();
+    });
+
+    it('非字符串（类型越界）回退 undefined', () => {
+      expect(resolveSummaryFocus({ prepare: { summaryFocus: 42 as never } })).toBeUndefined();
     });
 
     it('自动 trim 空白', () => {
@@ -365,12 +371,21 @@ describe('mergeStrategy — 策略合并', () => {
     expect(result.act!.temperature).toBe(0.7);
   });
 
-  it('空值覆盖不影响已有字段', () => {
+  it('部分覆盖 prepare.summaryFocus 生效', () => {
     const result = mergeStrategy(base, {
       prepare: { summaryFocus: '聚焦方案维度' },
     });
     // 覆盖生效；未覆盖字段保持默认
     expect(result.prepare!.summaryFocus).toBe('聚焦方案维度');
+  });
+
+  it('整段声明 undefined 时该段保留基础默认（用有真默认值的 act 段取证）', () => {
+    const result = mergeStrategy(base, { act: undefined });
+    // act 段基础默认见 strategyResolver.ts:55-63。此处必须断言「有真值」的字段：
+    // 若换成默认值本身即 undefined 的字段（如 prepare.summaryFocus），
+    // 「{...base.act, ...undefined}」「?? {}」「整段清空」三种实现都会通过 = 因错误的原因通过。
+    expect(result.act!.toolMode).toBe('allow');
+    expect(result.act!.temperature).toBe(0.7);
   });
 });
 
