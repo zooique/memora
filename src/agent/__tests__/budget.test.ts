@@ -2,7 +2,8 @@
  * budget.ts 纯函数测试——上下文预算装配（role-pack-spec §C/§D）
  *
  * 覆盖：
- *   1. computeContextBudget：预算公式数值派生（可用/锚点/剩余/对话层/记忆层 cap）
+ *   1. computeContextBudget：预算公式数值派生（可用/锚点/剩余/对话层）
+ *      （记忆层 cap 已随记忆维度整体退役，2026-09-10，见 budget.ts 头注释）
  *   2. 边界：输入超大（剩余预算归零，供装配前判负判定）、窗口过小（各级归零）
  *   3. deriveDialogueRounds：从最近往回塞 + 第一条必在场（次级锚点）
  */

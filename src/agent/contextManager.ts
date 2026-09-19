@@ -7,6 +7,8 @@
  *   3. 关键消息提取（extractKeyMessages）—— 按重要性权重贪心选取
  *   4. 上下文摘要生成（generateContextSummary）—— LLM 生成"遗忘补偿"
  *   5. 摘要缓存管理（getOrCreateSummary）—— 缓存 TTL + 过期重生成
+ *   6. 软上限判定（shouldInjectSoftLimitWrapup）—— 摘要层饱和注入收尾信号（自 AgentLoop 迁入）
+ *   7. 压力预警（shouldInjectContextPressureHint）—— 容量到线但摘要健康的前一级提示（T3）
  *
  * 设计理由：AgentLoop 1151 行超阈值，上下文管理是独立职责，
  * 拆分后 AgentLoop 聚焦对话循环，ContextManager 聚焦上下文窗口管理。
