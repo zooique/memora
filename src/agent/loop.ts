@@ -443,7 +443,8 @@ export class AgentLoop {
     this.ui = {
       abortedByUser: opts.messages?.abortedByUser ?? 'User cancelled the conversation',
       abortedByTimeout: opts.messages?.abortedByTimeout ?? 'LLM request timed out (no response)',
-      maxIterationsReached: opts.messages?.maxIterationsReached ?? '\n\n[Max iterations reached]',
+      maxIterationsReached:
+        opts.messages?.maxIterationsReached ?? LOOP_CONSTANTS.DEFAULT_MAX_ITERATIONS_REACHED_MARK,
       // 流式中断标记：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"（SSOT：默认文案下沉 LOOP_CONSTANTS）
       interrupted: opts.messages?.interrupted ?? LOOP_CONSTANTS.DEFAULT_INTERRUPTED_MARK,
       contextTruncated:

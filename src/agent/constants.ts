@@ -197,6 +197,10 @@ export const LOOP_CONSTANTS = {
   DEFAULT_INTERRUPTED_MARK:
     '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
 
+  /** 达到最大迭代/步数预算的默认追加标记（SSOT）：loop 的撞线收尾文案默认值，
+   *  宿主可经 messages.maxIterationsReached 覆盖（与 DEFAULT_INTERRUPTED_MARK 同族文案）。 */
+  DEFAULT_MAX_ITERATIONS_REACHED_MARK: '\n\n[Max iterations reached]',
+
   /**
    * 上下文预算预警提示（T3 2026-09-01）：容量逼近警戒线但摘要层未饱和时注入的温和提示，
    * 引导 LLM 主动压缩 / 收敛——软上限（收尾信号）的前一级。低压通用文案不走 UIMessages 覆盖层，
