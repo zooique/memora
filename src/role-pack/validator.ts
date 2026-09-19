@@ -65,18 +65,20 @@ const SEMVER_PATTERN = /^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/;
 const CAPABILITY_PATTERN = /^[a-z]+:[a-zA-Z0-9._-]+$/;
 
 // ════════════════════════════════════════════════════════════
-// 非策略键字段上限常量（SSOT：validator 校验报错 + rolePackManager 运行时兜底共用）
-// 策略键数值区间在 strategyKeys.ts；此处管策略键之外的开放字段，防止无条件填写导致资源失控
+// 非策略键字段上限常量（validator 模块内部上限，唯一例外见下）
+// 策略键数值区间在 strategyKeys.ts；此处管策略键之外的开放字段，防止无条件填写导致资源失控。
+// ⚠️ 仅 MAX_HANDOFF_PROMPT_LEN 跨模块共用（rolePackManager 运行时截断兜底）；
+//    其余三个只服务 validator 自身报错，勿声称「共用」。
 // ════════════════════════════════════════════════════════════
 
 /** skills 白名单最大数量：与 L1 列表工具阈值同量级，防止白名单膨胀 */
-export const MAX_MANIFEST_SKILLS = 50;
+const MAX_MANIFEST_SKILLS = 50;
 /** capabilities 最大数量：防止能力声明面膨胀 */
-export const MAX_CAPABILITIES = 50;
-/** handoffPrompt 最大长度（字符）：接手话术防巨型注入 prompt */
+const MAX_CAPABILITIES = 50;
+/** handoffPrompt 最大长度（字符）：接手话术防巨型注入 prompt（rolePackManager 截断兜底复用） */
 export const MAX_HANDOFF_PROMPT_LEN = 2000;
 /** 元数据字符串字段（name/description/author 等）最大长度（字符） */
-export const MAX_META_STRING_LEN = 200;
+const MAX_META_STRING_LEN = 200;
 
 // ── 校验实现 ──────────────────────────────────────
 

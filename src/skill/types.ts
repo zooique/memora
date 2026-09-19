@@ -32,6 +32,14 @@ export interface SkillScript {
   runtime: 'node' | 'python' | 'shell';
   /** 脚本描述（可选） */
   description?: string;
+  /**
+   * 脚本文件大小（字节），由 `utils/scanner.discoverLayer3` 发现时产出
+   * （经 skillLayer3.projectDiscoveredLayer3 投影写入）。
+   *
+   * 内核当前无读取方（`resources.size` 才有：`agent/assembler.ts` 的 list_resources 回调输出）；
+   * 保留该字段是为让「L3 投影」在脚本侧与资源侧同构，不丢已发现的事实。
+   */
+  size?: number;
 }
 
 /** L3 层数据（资源 + 脚本，可选） */
@@ -55,8 +63,9 @@ export interface SkillEntry {
   /**
    * 来源层（agent / project）
    *
-   * skillManager 写入（project 层扫描），精灵宿主通过 systemHandlers 读取
-   * 并在 settingsPanelManager 中渲染"全局/项目"标签。
+   * skillManager 写入（project 层扫描）。
+   * ⚠️ 展示语义不由本字段单独决定：宿主以 filePath 前缀为主判据，
+   * 本字段仅在无路径/未命中时兜底（project → 用户源，agent → 内置源）。
    */
   layer: 'agent' | 'project';
   /**
