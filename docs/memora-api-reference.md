@@ -945,12 +945,20 @@ import { NOOP_TRACER } from '@zooique/memora';
 ```typescript
 import { TRACE_SPANS } from '@zooique/memora';
 
-TRACE_SPANS.LLM_CALL   // 'llm.call'         — LLM API 调用
-TRACE_SPANS.TOOL_EXEC  // 'tool.execute'     — 工具执行
-TRACE_SPANS.RESPONSE   // 'response.generate' — 整轮响应
+TRACE_SPANS.LLM_CALL         // 'llm.call'           — LLM API 调用
+TRACE_SPANS.TOOL_EXEC        // 'tool.execute'       — 工具执行
+TRACE_SPANS.RESPONSE         // 'response.generate'  — 整轮响应
+TRACE_SPANS.CONTEXT_SUMMARY  // 'context.summary'    — 上下文摘要生成（消息超窗触发截断时）
+TRACE_SPANS.POST_PROCESS     // 'archive.postProcess' — 每轮 chat() 后的归档处理
+TRACE_SPANS.DIFFICULTY       // 'round.difficulty'   — 难度分级（预留名）
+TRACE_SPANS.REPORT           // 'round.report'       — 汇报闭环（预留名）
 ```
 
-> `TRACE_SPANS.RECALL`（`'recall.recall'`）与 `TRACE_SPANS.RECALL_ACTUAL`（`'recall.actual'`）常量仍在，但自动注入退役后**已无 emit 点**（记忆检索移交 `memory_search` 工具）。
+> 共 **7** 个常量（数量由 `src/agent/__tests__/tracer.test.ts` 锁定）。
+>
+> **预留名**：`DIFFICULTY` / `REPORT` 内核当前**零 emit 点**——宿主按名建监控面板暂时收不到这两个 span 的数据，不要据此判定链路异常。
+>
+> **已删除**：`TRACE_SPANS.RECALL`（`'recall.recall'`）与 `TRACE_SPANS.RECALL_ACTUAL`（`'recall.actual'`）已于 **2026-09-11 物理删除**（自动记忆召回退役后无 emit 点，不留幽灵契约）；现行记忆检索耗时看 `TOOL_EXEC`（`search_memories` 工具）。
 
 ---
 

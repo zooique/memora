@@ -505,11 +505,15 @@ interface ISpan {
 
 | Span 名称 | 常量 | 触发时机 | 关键属性 |
 |-----------|------|---------|---------|
-| `llm.call` | `TRACE_SPANS.LLM_CALL` | LLM API 调用 | `model`, `messageCount`, `iteration` |
-| `tool.execute` | `TRACE_SPANS.TOOL_EXEC` | 工具执行 | `toolName` |
-| `response.generate` | `TRACE_SPANS.RESPONSE` | 整轮响应 | `inputLength` |
+| `llm.call` | `TRACE_SPANS.LLM_CALL` | LLM API 调用（含重试循环） | `model`, `messageCount`, `iteration`，另写 `inputTokens` |
+| `tool.execute` | `TRACE_SPANS.TOOL_EXEC` | 工具执行（并发时多个 span 时间重叠） | `toolName`，另写 `args`（被拒时 `denied`） |
+| `response.generate` | `TRACE_SPANS.RESPONSE` | 整轮响应 | `inputLength`（任务级指标随流结束统一补写） |
+| `context.summary` | `TRACE_SPANS.CONTEXT_SUMMARY` | 消息超 `maxContextTokens` 触发截断、生成"遗忘补偿"摘要 | `messageCount`, `summarizingMessages` |
+| `archive.postProcess` | `TRACE_SPANS.POST_PROCESS` | 每轮 `chat()` 后归档（round-summary、角色/技能匹配） | `archiveMode` |
+| `round.difficulty` | `TRACE_SPANS.DIFFICULTY` | **预留名，内核当前零 emit 点** | — |
+| `round.report` | `TRACE_SPANS.REPORT` | **预留名，内核当前零 emit 点** | — |
 
-> `TRACE_SPANS.RECALL` / `TRACE_SPANS.RECALL_ACTUAL`（`recall.recall` / `recall.actual`）常量仍在，但**自动注入退役后已无 emit 点**（记忆检索移交 `memory_search` 工具）——宿主无需为其编写 span 处理逻辑。
+> 共 **7** 个常量。`TRACE_SPANS.RECALL` / `TRACE_SPANS.RECALL_ACTUAL`（`recall.recall` / `recall.actual`）已于 **2026-09-11 物理删除**（自动记忆召回退役后无 emit 点）——宿主无需为其编写 span 处理逻辑；记忆检索耗时看 `tool.execute`（`search_memories` 工具）。
 
 ### 宿主接入示例（OpenTelemetry）
 
