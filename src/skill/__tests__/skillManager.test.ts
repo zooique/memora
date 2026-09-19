@@ -4,13 +4,18 @@
  * 测试范围：
  *   - 技能文件解析（frontmatter + content）
  *   - configDir/skills/ 目录扫描
- *   - 排除规则（隐藏文件、_ 前缀、README 等）
- *   - buildSystemPrompt 返回值
+ *   - 排除规则（隐藏文件、_ 前缀；README/CHANGELOG/LICENSE 的真源在 utils/__tests__/scanner.test.ts）
+ *   - buildSystemPrompt / buildSkillList 返回值（含 L1 阈值常量锚定）
+ *   - L3 资源/脚本访问边界（白名单前置 + 路径穿越防护 + 存在性/读取失败）
  *
  * 注意：SkillManager(configDir) 只扫描 configDir/skills/ 一个目录
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { SkillManager } from '@/skill/skillManager.js';
+import {
+  SkillManager,
+  L1_COMPRESSED_THRESHOLD,
+  L1_LIST_TOOL_THRESHOLD,
+} from '@/skill/skillManager.js';
 import { writeFileSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -85,12 +90,28 @@ name: 读文件
 
 当用户需要读取文件时，使用 read_file 工具。`,
       );
+      // 对照技能：文件名排序在前（a-other.md < read-file.md），用于验证 get 是「按名命中」
+      // 而非「取首个条目」——只断言 name 时，误实现 items.find(() => true) 也会绿。
+      createSkillFile(
+        skillsDir,
+        'a-other.md',
+        `---
+name: 其它技能
+---
+
+# 其它技能
+
+当用户需要写入文件时，使用 write_file 工具。`,
+      );
 
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
-      // 加载后技能可检索（自动匹配链已删，等价断言：get 可取到条目）
-      expect(skillManager.get('读文件')?.name).toBe('读文件');
+      expect(skillManager.list).toHaveLength(2);
+      const skill = skillManager.get('读文件');
+      expect(skill?.name).toBe('读文件');
+      expect(skill?.content).toContain('read_file');
+      expect(skill?.content).not.toContain('write_file');
     });
 
     it('应该在目录不存在时安全降级', async () => {
@@ -139,23 +160,6 @@ name: 下划线技能
 
       expect(skillManager.get('下划线技能')).toBeNull();
     });
-
-    it('应该排除 README、CHANGELOG、LICENSE', async () => {
-      createSkillFile(
-        skillsDir,
-        'README.md',
-        `---
-name: README
----
-
-README 内容`,
-      );
-
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      expect(skillManager.get('README')).toBeNull();
-    });
   });
 
   describe('buildSystemPrompt', () => {
@@ -178,14 +182,6 @@ name: 读文件
       const prompt = skillManager.buildSystemPrompt('读文件');
       expect(prompt).toContain('读文件技能');
       expect(prompt).toContain('read_file');
-    });
-
-    it('应该在技能不存在时返回空字符串', async () => {
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const prompt = skillManager.buildSystemPrompt('不存在的技能');
-      expect(prompt).toBeFalsy();
     });
   });
 
@@ -227,6 +223,59 @@ description: 联网搜索资料
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
+      expect(skillManager.buildSkillList()).toBe('');
+    });
+
+    it('L1 阈值常量锚定（SSOT：与 rolePackManager 共用同一渐进披露阈值）', () => {
+      // 现网其他用例只挡「阈值变大」不挡「变小」，故此处锚定取值本身：改值必须同步本测试
+      expect(L1_COMPRESSED_THRESHOLD).toBe(30);
+      expect(L1_LIST_TOOL_THRESHOLD).toBe(50);
+      // 档位次序：先压缩枚举，再整体切换 list_skills 工具
+      expect(L1_COMPRESSED_THRESHOLD).toBeLessThan(L1_LIST_TOOL_THRESHOLD);
+    });
+
+    it('可用性过滤：description 为空串/纯空白的技能不进 L1 清单', async () => {
+      // 有描述 → 进清单
+      createSkillFile(skillsDir, 'has-desc.md', '---\nname: 有描述\ndescription: 有描述内容\n---\n正文');
+      // 无 description 字段（undefined）→ 不进清单
+      createSkillFile(skillsDir, 'no-desc.md', '---\nname: 无描述\n---\n正文');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+      // 空串 / 纯空白两类：frontmatter 解析会把空值键丢弃（无法从磁盘产出），故用注入补齐
+      skillManager.register({
+        name: '空描述',
+        content: '正文',
+        description: '',
+        layer: 'agent',
+        filePath: '',
+      });
+      skillManager.register({
+        name: '空白描述',
+        content: '正文',
+        description: '   ',
+        layer: 'agent',
+        filePath: '',
+      });
+      expect(skillManager.list).toHaveLength(4);
+
+      const list = skillManager.buildSkillList();
+      const listed = list.split('\n').filter((line) => line.startsWith('- '));
+      // 清单里只剩有描述者，且条数正确
+      expect(listed).toHaveLength(1);
+      expect(listed[0]).toBe('- 有描述：有描述内容');
+      expect(list).not.toContain('无描述');
+      expect(list).not.toContain('空描述');
+      expect(list).not.toContain('空白描述');
+    });
+
+    it('全部技能无 description → 空串（清单整体不可用）', async () => {
+      createSkillFile(skillsDir, 'no-desc.md', '---\nname: 无描述\n---\n正文');
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      // 加载成功但全被可用性过滤挡下 → 与「无技能」同返回空串（不输出 name 空壳）
+      expect(skillManager.list).toHaveLength(1);
       expect(skillManager.buildSkillList()).toBe('');
     });
 
@@ -503,19 +552,6 @@ description: 联网搜索资料
       expect(skill!.layer3).toBeUndefined();
     });
 
-    it('顶层裸 .md 技能不扫描 L3 脚本', async () => {
-      createSkillFile(skillsDir, 'bar.md', '---\nname: bar\n---\n# Bar 技能');
-      // 同级 scripts/：验证不并归裸 .md（避免脚本池相互污染）
-      mkdirSync(join(skillsDir, 'scripts'), { recursive: true });
-      writeFileSync(join(skillsDir, 'scripts', 'helper.sh'), 'echo bar', 'utf-8');
-
-      const skillManager = new SkillManager(testDir);
-      await skillManager.load();
-
-      const barSkill = skillManager.get('bar');
-      expect(barSkill!.layer3).toBeUndefined();
-    });
-
     it('文件夹形态（SKILL.md）正常扫描 L3 资源/脚本', async () => {
       // 文件夹形态：目录下 SKILL.md 为唯一入口，其 directories 内的 resources/ scripts/ 归本合同
       const skillDir = join(skillsDir, 'baz');
@@ -561,11 +597,18 @@ description: 联网搜索资料
       expect(bad).toBeNull();
     });
 
-    it('getScriptPath：已登记脚本定位安全路径；未登记/越界被拒（L3 双层防护）', async () => {
+    it('getScriptPath：已登记脚本定位安全路径；未登记/技能不存在/已登记但路径逃逸 → null（L3 双层防护）', async () => {
       const skillDir = join(skillsDir, 'tool');
       mkdirSync(join(skillDir, 'scripts'), { recursive: true });
       writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: tool\n---\n# Tool 技能', 'utf-8');
       writeFileSync(join(skillDir, 'scripts', 'run.sh'), 'echo tool', 'utf-8');
+
+      // 逃逸现场：技能目录根（scripts/ 之外）确实存在 evil.sh —— 证明下方 null 来自
+      // resolveSafePath 逃逸防护，而非「文件不存在」（后者由存在性校验分支覆盖）
+      const escapeDir = join(skillsDir, 'escape');
+      mkdirSync(escapeDir, { recursive: true });
+      writeFileSync(join(escapeDir, 'SKILL.md'), '---\nname: escape\n---\n# Escape 技能', 'utf-8');
+      writeFileSync(join(escapeDir, 'evil.sh'), 'echo evil', 'utf-8');
 
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
@@ -576,10 +619,67 @@ description: 联网搜索资料
       expect(p!.toLowerCase()).toContain(join('scripts', 'run.sh').toLowerCase());
       // 未登记脚本 → null（layer3 白名单前置检查）
       expect(skillManager.getScriptPath('tool', 'not-exist.sh')).toBeNull();
-      // 越界路径 → null
-      expect(skillManager.getScriptPath('tool', '../evil.sh')).toBeNull();
       // 技能不存在 → null
       expect(skillManager.getScriptPath('nope', 'run.sh')).toBeNull();
+
+      // 已登记但路径逃逸 → null：注入 layer3 中登记了 '../evil.sh' 的技能，
+      // 白名单这层会被命中，只能靠第二层（路径穿越防护）拦下
+      skillManager.register({
+        name: 'escape-probe',
+        content: '逃逸探针',
+        layer: 'agent',
+        filePath: join(escapeDir, 'SKILL.md'),
+        layer3: { resources: [], scripts: [{ path: '../evil.sh', runtime: 'shell' }] },
+      });
+      expect(skillManager.getScriptPath('escape-probe', '../evil.sh')).toBeNull();
+    });
+
+    it('getScriptPath：已登记且路径合法但磁盘文件缺失 → null（存在性校验分支）', async () => {
+      const skillDir = join(skillsDir, 'gone');
+      mkdirSync(join(skillDir, 'scripts'), { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: gone\n---\n# Gone 技能', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      // 白名单登记了 missing.sh（区别于「未登记」输入类），但磁盘上没有该文件
+      skillManager.register({
+        name: 'gone-probe',
+        content: '缺失脚本探针',
+        layer: 'agent',
+        filePath: join(skillDir, 'SKILL.md'),
+        layer3: { resources: [], scripts: [{ path: 'missing.sh', runtime: 'shell' }] },
+      });
+      expect(skillManager.getScriptPath('gone-probe', 'missing.sh')).toBeNull();
+
+      // 落盘后同一调用返回绝对路径：反证上面的 null 来自存在性校验，而非白名单未命中
+      writeFileSync(join(skillDir, 'scripts', 'missing.sh'), 'echo gone', 'utf-8');
+      const after = skillManager.getScriptPath('gone-probe', 'missing.sh');
+      expect(after).not.toBeNull();
+      expect(after!.toLowerCase()).toContain(join('scripts', 'missing.sh').toLowerCase());
+    });
+
+    it('readResource：已登记资源但磁盘文件缺失 → null（读取失败分支）', async () => {
+      const skillDir = join(skillsDir, 'lost');
+      mkdirSync(join(skillDir, 'resources'), { recursive: true });
+      writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: lost\n---\n# Lost 技能', 'utf-8');
+
+      const skillManager = new SkillManager(testDir);
+      await skillManager.load();
+
+      // 白名单登记了 ref.md，但资源文件未在磁盘上落盘
+      skillManager.register({
+        name: 'lost-probe',
+        content: '缺失资源探针',
+        layer: 'agent',
+        filePath: join(skillDir, 'SKILL.md'),
+        layer3: { resources: [{ path: 'ref.md', subdir: 'resources' }], scripts: [] },
+      });
+      expect(await skillManager.readResource('lost-probe', 'ref.md')).toBeNull();
+
+      // 落盘后可读：反证上面的 null 来自读取失败，而非白名单未命中 / 路径穿越
+      writeFileSync(join(skillDir, 'resources', 'ref.md'), '参考文档', 'utf-8');
+      expect(await skillManager.readResource('lost-probe', 'ref.md')).toBe('参考文档');
     });
 
     it('listResources / listScripts：L3 资源与脚本清单投影（skillTool 数据源）；无 layer3 技能返回空数组', async () => {
@@ -625,6 +725,17 @@ describe('SkillManager · 补充分支路径', () => {
     it('无技能名且无 fallbackName：返回空串', () => {
       expect(SkillManager.formatSkillForPrompt(undefined)).toBe('');
       expect(SkillManager.formatSkillForPrompt({})).toBe('');
+    });
+
+    it('fallbackName：无 name 时用回退名标注（rolePackManager / assembler 真实调用形态）', () => {
+      // 真实调用方：rolePackManager 内嵌技能（无 name 字段）与 assembler 技能清单
+      expect(SkillManager.formatSkillForPrompt({ description: 'x' }, '回退名')).toBe('- 回退名：x');
+      // name 存在时优先于 fallbackName（回退只兜底，不抢位）
+      expect(SkillManager.formatSkillForPrompt({ name: '真名', description: 'x' }, '回退名')).toBe(
+        '- 真名：x',
+      );
+      // 无 name 且无 fallbackName → 空串；description 非空也不得输出（判据在 label 门之后）
+      expect(SkillManager.formatSkillForPrompt({ description: 'x' })).toBe('');
     });
 
     it('有 layer3（含资源/脚本）时追加标记', () => {

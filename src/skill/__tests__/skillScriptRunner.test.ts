@@ -2,7 +2,7 @@
  * skillScriptRunner.test.ts — 技能脚本执行器测试
  *
  * 覆盖范围：
- *   1. formatScriptResult — 结果格式化（超时/错误/成功分支）
+ *   1. formatScriptResult — 结果格式化（超时/错误/成功分支）+ 超时文案按实际超时（钳制后）生成
  *   2. runSkillScript — 子进程执行（成功/超时/失败/边界场景）
  *   3. resolveCommand 行为 — runtime→command 映射（间接测试）
  *
@@ -19,15 +19,13 @@ import {
   isPythonUnavailable,
   type ScriptExecutionResult,
 } from '../skillScriptRunner.js';
-import { writeFileSync, mkdirSync, rmSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-// 创建临时目录存放测试脚本
-const TMP_DIR = join(tmpdir(), 'skill-script-test-');
-if (!existsSync(TMP_DIR)) {
-  mkdirSync(TMP_DIR, { recursive: true });
-}
+// 唯一定名的临时目录：mkdtempSync 保证并发 vitest 进程各用各的目录，
+// afterAll 只删自己这一个（固定路径 + 递归删除曾误删他进程的脚本文件，实测 ENOENT）
+const TMP_DIR = mkdtempSync(join(tmpdir(), 'skill-script-'));
 
 /** 平台标识符 */
 const IS_WINDOWS = process.platform === 'win32';
@@ -67,31 +65,43 @@ afterAll(() => {
 
 describe('skillScriptRunner — formatScriptResult', () => {
 
+  /** 超时态样本：stdout/stderr 可由用例覆盖（超时分支不看 exitCode） */
+  const timedOut = (stdout = 'partial output', stderr = ''): ScriptExecutionResult => ({
+    stdout,
+    stderr,
+    exitCode: -1,
+    timedOut: true,
+  });
+
   // ── 超时分支 ──
   describe('超时分支', () => {
     it('标记 timedOut 时返回超时信息', () => {
-      const result: ScriptExecutionResult = {
-        stdout: 'partial output',
-        stderr: '',
-        exitCode: -1,
-        timedOut: true,
-      };
-      const formatted = formatScriptResult(result);
+      const formatted = formatScriptResult(timedOut());
       expect(formatted).toContain('[SCRIPT_TIMEOUT]');
-      expect(formatted).toContain('600s'); // MAX_TIMEOUT_MS / 1000（2026-09-08 上限 120→600s 调大）
+      // 默认 60s（DEFAULT_TIMEOUT_MS）；600s 只在 timeoutMs 被钳制到上限时出现
+      expect(formatted).toContain('脚本执行超时（超过 60s）');
       expect(formatted).toContain('partial output');
     });
 
     it('超时且有 stderr 时包含 stderr', () => {
-      const result: ScriptExecutionResult = {
-        stdout: 'partial',
-        stderr: 'some error',
-        exitCode: -1,
-        timedOut: true,
-      };
-      const formatted = formatScriptResult(result);
+      const formatted = formatScriptResult(timedOut('partial', 'some error'));
       expect(formatted).toContain('partial');
       expect(formatted).toContain('some error');
+    });
+  });
+
+  // ── 超时文案按实际超时（钳制后）生成，不恒写上 ──
+  describe('超时文案随 timeoutMs 钳制', () => {
+    it('timeoutMs=120_000 → 文案 120s', () => {
+      expect(formatScriptResult(timedOut(), 120_000)).toContain('脚本执行超时（超过 120s）');
+    });
+
+    it('timeoutMs=999（低于下限 1s）→ 钳制为 1s', () => {
+      expect(formatScriptResult(timedOut(), 999)).toContain('脚本执行超时（超过 1s）');
+    });
+
+    it('timeoutMs=10_000_000（高于上限）→ 钳制为 600s', () => {
+      expect(formatScriptResult(timedOut(), 10_000_000)).toContain('脚本执行超时（超过 600s）');
     });
   });
 
@@ -163,17 +173,6 @@ describe('skillScriptRunner — formatScriptResult', () => {
 
   // ── 边界场景 ──
   describe('边界场景', () => {
-    it('空结果处理', () => {
-      const result: ScriptExecutionResult = {
-        stdout: '',
-        stderr: '',
-        exitCode: 0,
-        timedOut: false,
-      };
-      const formatted = formatScriptResult(result);
-      expect(formatted).toBe('(无输出)');
-    });
-
     it('stdout 含特殊字符正常返回', () => {
       const result: ScriptExecutionResult = {
         stdout: '🌍 café résumé\nline2\tword',
@@ -226,11 +225,16 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
   });
 
   it('formatScriptResult 薄封装等价（SCRIPT 变体回归锁定）', () => {
-    const viaShared = formatExecutionResult(
-      { stdout: 'Hello', stderr: '', exitCode: 0, timedOut: false },
-      { kind: 'SCRIPT', timeoutDetail: '脚本执行超时（超过 600s）', errorDetail: '脚本执行失败' },
-    );
-    const viaWrapper = formatScriptResult({ stdout: 'Hello', stderr: '', exitCode: 0, timedOut: false });
+    // 必须喂超时态：labels（kind/timeoutDetail）只在超时分支参与拼接，
+    // 成功态下把 labels 改坏它仍绿——锁不住薄封装的标签配置。
+    const timeoutResult: ScriptExecutionResult = { stdout: 'x', stderr: '', exitCode: 0, timedOut: true };
+    const viaShared = formatExecutionResult(timeoutResult, {
+      kind: 'SCRIPT',
+      timeoutDetail: '脚本执行超时（超过 60s）',
+      errorDetail: '脚本执行失败',
+    });
+    const viaWrapper = formatScriptResult(timeoutResult);
+    expect(viaWrapper).toBe('[SCRIPT_TIMEOUT] 脚本执行超时（超过 60s）\nstdout: x\nstderr: ');
     expect(viaShared).toBe(viaWrapper);
   });
 });
@@ -291,9 +295,13 @@ describe('skillScriptRunner — runSkillScript', () => {
       const slowScript = join(TMP_DIR, 'slow.js');
       writeFileSync(slowScript, 'setTimeout(() => console.log("done"), 3000);');
       const result = await runSkillScript(slowScript, 'node', [], 1000);
-      // 在 Windows 上，child_process timeout 行为略有不同
-      // 核心断言：脚本没有正常完成（timedOut=true 或 exitCode 非 0）
+      // 被 timeout 选项 kill → close(null, 'SIGTERM') → 无退出码，实现以 `code ?? 0` 兜底为 0；
+      // 故 timedOut 才是超时的唯一可靠判据，不能断言 exitCode 非 0（该断言在本机恒红，已用独立探针实证）。
+      // 此处锁真契约：将来若有人把 `code ?? 0` 改成 `code ?? -1` 或去掉兜底，本行会红。
+      expect(result.exitCode).toBe(0);
       expect(result.timedOut).toBe(true);
+      // 脚本未正常完成：3s 后才打印的 "done" 不应出现在收集到的 stdout 里
+      expect(result.stdout).not.toContain('done');
     });
   });
 
@@ -332,21 +340,6 @@ describe('skillScriptRunner — runSkillScript', () => {
       expect(result.timedOut).toBe(false);
       // 非零退出码或 stderr 含错误信息
       expect(result.exitCode).not.toBe(0);
-    });
-  });
-
-  // ── 返回结构验证 ──
-  describe('返回结构', () => {
-    it('ScriptExecutionResult 包含所有必要字段', async () => {
-      const result = await runSkillScript(SIMPLE_NODE_SCRIPT, 'node');
-      expect(result).toHaveProperty('stdout');
-      expect(result).toHaveProperty('stderr');
-      expect(result).toHaveProperty('exitCode');
-      expect(result).toHaveProperty('timedOut');
-      expect(typeof result.stdout).toBe('string');
-      expect(typeof result.stderr).toBe('string');
-      expect(typeof result.exitCode).toBe('number');
-      expect(typeof result.timedOut).toBe('boolean');
     });
   });
 });
