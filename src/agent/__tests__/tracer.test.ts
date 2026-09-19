@@ -5,7 +5,8 @@
  *   - NoopSpan 三个方法（setAttribute/end/recordException）静默不抛错
  *   - NoopTracer.startSpan 返回共享的 NOOP_SPAN 单例
  *   - NOOP_TRACER 单例身份稳定
- *   - TRACE_SPANS 5 个预定义 Span 名称常量
+ *   - TRACE_SPANS 7 个预定义 Span 名称常量（数量由下方 toHaveLength(7) 锁定）
+ *     ⚠️ 其中 DIFFICULTY / REPORT 是**预留名**——内核零 emit 点，勿据此断言链路行为
  *   - 自定义 ITracer 注入后按接口契约工作
  *   - AgentMetrics 类型契约（纯类型，仅做编译时校验）
  */

@@ -69,6 +69,10 @@ export const NOOP_TRACER: ITracer = new NoopTracer();
  * 注：原 RECALL / RECALL_ACTUAL 常量已于 2026-09-11 物理删除——两 span 在内核
  * 已无 emit 点（自动记忆召回退役 + recall() 物理删除），为幽灵 API 保留契约
  * 即为幻觉留门。现行记忆检索耗时可看 TOOL_EXEC span（search_memories 工具）。
+ *
+ * 与「已删除」不同的一类：DIFFICULTY / REPORT 是**预留名**（规划能力尚未落地），
+ * 内核同样零 emit 点，但不得把它们的注释写成正在进行的行为——宿主按名建监控
+ * 面板会永远收不到数据（2026-09-19 订正原「回答前判定…」进行时描述）。
  */
 export const TRACE_SPANS = {
   /** LLM API 调用 */
@@ -81,9 +85,9 @@ export const TRACE_SPANS = {
   CONTEXT_SUMMARY: 'context.summary',
   /** 对话后归档处理——每轮 chat() 后 postProcess（round-summary 生成、角色/技能匹配）；观察归档耗时/失败率 */
   POST_PROCESS: 'archive.postProcess',
-  /** 难度分级——回答前判定简单/复杂（种子聚类） */
+  /** 难度分级——**预留名**：规划能力（回答前判定简单/复杂），内核当前**零 emit 点** */
   DIFFICULTY: 'round.difficulty',
-  /** 汇报闭环——复杂任务收敛后独立汇报产出 */
+  /** 汇报闭环——**预留名**：规划能力（复杂任务收敛后独立汇报），内核当前**零 emit 点** */
   REPORT: 'round.report',
 } as const;
 
