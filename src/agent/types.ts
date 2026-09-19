@@ -5,6 +5,9 @@
  * error 事件替代裸 throw，让宿主优雅展示错误并清理 UI（避免未处理 rejection 静默卡死）。
  */
 
+/** 工具调用元素契约（OpenAI 协议结构）——单一真源，供 ChatMessage.toolCalls 引用 */
+import type { ToolCall } from '@/llm/types.js';
+
 /** thinking 事件的阶段标识 */
 export type ThinkingPhase = 'assembling' | 'processing' | 'archiving' | 'llm_calling';
 
@@ -282,12 +285,8 @@ export interface ChatMessage {
   content: string;
   /** 来源名称（与 LLM Message.name 对齐） */
   name?: string;
-  /** 工具调用（assistant 消息） */
-  toolCalls?: Array<{
-    id: string;
-    type: 'function';
-    function: { name: string; arguments: string };
-  }>;
+  /** 工具调用（assistant 消息）——形状真源 llm/types.ToolCall（与 toolRunner 同源，单契约） */
+  toolCalls?: Array<ToolCall>;
   /** 工具调用 ID（tool 消息） */
   toolCallId?: string;
 }

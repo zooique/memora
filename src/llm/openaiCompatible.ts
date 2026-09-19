@@ -27,7 +27,8 @@ const MAX_ERROR_BODY_LEN = 200;
 
 // ─── LLM 请求参数边界（外部注入防失控） ─────────────────
 
-/** maxTokens 上限：65536 覆盖当前所有模型 max_tokens 能力上限（与 strategyKeys.MAX_OUTPUT_LIMIT 一致） */
+/** maxTokens 上限：65536 覆盖当前所有模型 max_tokens 能力上限（独立于策略层
+ *  MAX_OUTPUT_LIMIT——同值但约束不同语义，非共享常量，勿当「一致性」联动改） */
 const MAX_MAX_TOKENS = 65536;
 /** timeoutMs 上限：5 分钟，防配置超大值导致请求等待失控（下限不设，测试/调试用小值模拟超时） */
 const MAX_TIMEOUT_MS = 300_000;

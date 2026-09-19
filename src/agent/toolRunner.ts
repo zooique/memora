@@ -18,12 +18,11 @@ import { MemoraError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 
-/** 一次工具调用（LLM 输出的工具调用元素；与 Message.toolCalls 元素同构） */
-export type ToolCall = {
-  id: string;
-  type: 'function';
-  function: { name: string; arguments: string };
-};
+/** 工具调用元素契约（OpenAI 协议结构）——单一真源 llm/types.ToolCall（Message.toolCalls 同源） */
+import type { ToolCall } from '@/llm/types.js';
+
+/** 一次工具调用（LLM 输出的工具调用元素）——SSOT：形状真源在 llm/types.ToolCall（协议契约单一实现；re-export 保留本文件测试判据点） */
+export type { ToolCall };
 
 /** 执行前检查决策：单点聚合的多重顺序检查结果（denied 拒绝 / skip 幂等跳过 / execute 放行） */
 type PreCheckDecision =
