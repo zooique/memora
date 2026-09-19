@@ -31,10 +31,11 @@ import {
 import { statSyncSafe } from '@/utils/fileSafe.js';
 
 /**
- * 目录名常量转发（真源在 `utils/scanner`——扫描侧与本模块的路径解析侧共用同一事实）
+ * 目录名常量转发（真源在 `utils/scanner`——扫描侧与本模块的路径解析侧共用同一事实，
+ * 调整目录名约定只改 scanner 一处，两侧同时生效）
  *
- * 保留此处导出以维持既有引用面；调整目录名约定只改 scanner 一处，两侧同时生效
- * （此前两处各写一遍字面量，改名即静默失配）。
+ * 引用面现状：生产代码零引用，唯一消费方是模块内测试 `skill/__tests__/skillLayer3.test.ts`
+ * （按「模块内测试消费 = 活」判据，导出保留）。
  */
 export { DEFAULT_RESOURCE_SUBDIR, SCRIPTS_SUBDIR };
 
@@ -85,6 +86,40 @@ export function resolveSkillDir(skillFilePath: string): string {
 export async function discoverSkillLayer3(skillFilePath: string): Promise<DiscoveredLayer3> {
   if (!isFolderFormSkill(skillFilePath)) return { resources: [], scripts: [] };
   return discoverLayer3(dirname(skillFilePath));
+}
+
+/**
+ * 「发现结果」投影为可落地的 layer3 结构（两种技能载体兼容）
+ *
+ * 字段与 `role-pack/types.ts` 的 `RolePackManifestSkill.layer3` 对齐：真实生产者
+ * `scanner.discoverLayer3` 恒产出 size，故此处 size 为必填 number（不可写成可选）。
+ */
+export interface ProjectedLayer3 {
+  readonly resources: Array<{
+    readonly path: string;
+    readonly size: number;
+    readonly subdir?: ResourceSubdir;
+  }>;
+  readonly scripts: Array<{
+    readonly path: string;
+    readonly runtime: 'node' | 'python' | 'shell';
+    readonly size: number;
+  }>;
+}
+
+/**
+ * 把 L3 发现结果投影为 layer3 落地结构（resources 与 scripts 皆空时返回 undefined）
+ *
+ * 两种技能载体（全局 SkillManager / 角色包 RolePackManager）此前**各写一遍**该投影，
+ * 注释却互相宣称已收口——实则只有「发现」收口了，「投影」改一处即静默漂移。
+ * 本函数是 discovered → layer3 投影的唯一收口（SSOT）。
+ */
+export function projectDiscoveredLayer3(discovered: DiscoveredLayer3): ProjectedLayer3 | undefined {
+  if (discovered.resources.length === 0 && discovered.scripts.length === 0) return undefined;
+  return {
+    resources: discovered.resources.map((r) => ({ path: r.path, size: r.size, subdir: r.subdir })),
+    scripts: discovered.scripts.map((s) => ({ path: s.path, runtime: s.runtime, size: s.size })),
+  };
 }
 
 /**

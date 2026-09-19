@@ -12,6 +12,7 @@ import { parseFrontmatter } from '@/utils/frontmatter.js';
 import type { ScannedMarkdownEntry } from '@/utils/scanner.js';
 import {
   discoverSkillLayer3,
+  projectDiscoveredLayer3,
   resolveSkillDir,
   findLayer3Resource,
   resolveLayer3ResourcePath,
@@ -282,24 +283,11 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     // resources/ scripts/。顶层裸 .md 单文件技能目录 = 技能池共享根，同级扫描会把别的技能的
     // resources/scripts 误归给自己 → 污染。故裸 .md 为纯 L1/L2，需要 L3 资源/脚本必须用文件夹+SKILL.md。
     //
-    // 该规则与角色包内嵌技能**逐字同构**，已收口于 skillLayer3.discoverSkillLayer3（SSOT）。
-    let layer3: SkillLayer3 | undefined;
+    // 该规则与角色包内嵌技能**逐字同构**；发现与投影均已收口于 skillLayer3
+    // （discoverSkillLayer3 + projectDiscoveredLayer3，SSOT）——此前两侧各写一遍投影，
+    // 改一处即静默漂移。
     const discovered = await discoverSkillLayer3(entry.filePath);
-    if (discovered.resources.length > 0 || discovered.scripts.length > 0) {
-      layer3 = {
-        resources: discovered.resources.map((r) => ({
-          path: r.path,
-          size: r.size,
-          // 资源来源子目录（resources/references），read_resource 据此选择读取基目录
-          subdir: r.subdir,
-        })),
-        scripts: discovered.scripts.map((s) => ({
-          path: s.path,
-          runtime: s.runtime,
-          size: s.size,
-        })),
-      };
-    }
+    const layer3 = projectDiscoveredLayer3(discovered);
 
     return {
       name: entry.name,
@@ -307,7 +295,8 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       content: entry.body.trim(),
       filePath: entry.filePath,
       // 来源层（agent / project）：解析 frontmatter.layer，非法/缺失回退 project（与现状默认一致）。
-      // 宿主按此渲染「全局/项目」分层标签（host-alignment 约定 layer: agent 声明）。
+      // ⚠️ 展示语义不由本字段单独决定：宿主以 filePath 前缀为主判据，
+      // 本字段仅在无路径/未命中时兜底（project → 用户源，agent → 内置源）。
       layer: resolveLayer(entry.frontmatter['layer']),
       layer3,
     };

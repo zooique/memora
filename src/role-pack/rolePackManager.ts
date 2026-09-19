@@ -11,6 +11,7 @@ import { ConfigResourceManager } from '@/utils/configResourceManager.js';
 import { resolveSubdir, scanMarkdownDir, resolveSafePath, inferRuntimeFromExt, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import {
   discoverSkillLayer3,
+  projectDiscoveredLayer3,
   resolveSkillDir,
   findLayer3Resource,
   findLayer3Script,
@@ -123,18 +124,16 @@ async function scanPackSkills(
     // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流）：
     // 仅「文件夹形态」（入口为 SKILL.md）发现 resources/ scripts/；顶层裸 .md 的目录 = 技能池共享根，
     // 同级扫描会误并入其他技能的资源/脚本 → 污染。故裸 .md 为纯 L1/L2，带 L3 必须用文件夹+SKILL.md。
-    // 该规则与 skillManager.createEntry **逐字同构**，已收口于 skillLayer3.discoverSkillLayer3（SSOT）。
+    // 该规则与 skillManager.createEntry **逐字同构**；发现与投影均已收口于 skillLayer3
+    // （discoverSkillLayer3 + projectDiscoveredLayer3，SSOT）——此前两侧各写一遍投影，
+    // 改一处即静默漂移。
     const l3 = await discoverSkillLayer3(absPath);
-    const hasL3 = l3.resources.length > 0 || l3.scripts.length > 0;
 
     return {
       file: relPath,
       name: entry.name,
       description: entry.frontmatter['description'] ?? undefined,
-      layer3: hasL3 ? {
-        resources: l3.resources.map((r) => ({ path: r.path, size: r.size, subdir: r.subdir })),
-        scripts: l3.scripts.map((s) => ({ path: s.path, runtime: s.runtime, size: s.size })),
-      } : undefined,
+      layer3: projectDiscoveredLayer3(l3),
     };
   });
   const resolved = await Promise.all(skills);
