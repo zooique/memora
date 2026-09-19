@@ -1235,7 +1235,8 @@ export class ToolExecutor {
           this.builtinHandlers.projectPath,
         );
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）
-        return sanitizeExternalText(formatScriptResult(result), RUN_SCRIPT_RESULT_MAX_LEN);
+        // 超时文案按本次实际超时生成（未传 timeout_ms → 内核默认 60s，见上），不恒报上限 600s
+        return sanitizeExternalText(formatScriptResult(result, timeoutMs), RUN_SCRIPT_RESULT_MAX_LEN);
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单

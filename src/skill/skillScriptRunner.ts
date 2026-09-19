@@ -23,6 +23,19 @@ const DEFAULT_TIMEOUT_MS = 60_000;
 const MAX_TIMEOUT_MS = 600_000;
 
 /**
+ * 超时钳制真理源（SSOT）：实际超时 = clamp(timeoutMs, 1s, MAX_TIMEOUT_MS)
+ *
+ * 执行侧（spawn 的 timeout 选项）与文案侧（formatScriptResult 的「超过 Ns」）必须同源，
+ * 否则两处漂移会重现「实际 60s 超时却告知超过 600s」的谎报。
+ *
+ * @param timeoutMs 调用方传入的超时（毫秒；toolExecutor 由 LLM 的 timeout_ms 秒值 ×1000 得到）
+ * @returns 钳制后的实际超时（毫秒，落在 [1_000, MAX_TIMEOUT_MS] 区间内）
+ */
+function normalizeTimeoutMs(timeoutMs: number): number {
+  return Math.min(Math.max(timeoutMs, 1_000), MAX_TIMEOUT_MS);
+}
+
+/**
  * 执行技能脚本：在隔离子进程中运行，收集 stdout/stderr/exitCode/timedOut
  *
  * @param scriptPath 脚本绝对路径
@@ -39,8 +52,8 @@ export async function runSkillScript(
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   cwd?: string,
 ): Promise<ScriptExecutionResult> {
-  // 超时限制在 [1s, MAX_TIMEOUT_MS] 内
-  const effectiveTimeout = Math.min(Math.max(timeoutMs, 1_000), MAX_TIMEOUT_MS);
+  // 超时限制在 [1s, MAX_TIMEOUT_MS] 内（与超时文案同源，见 normalizeTimeoutMs）
+  const effectiveTimeout = normalizeTimeoutMs(timeoutMs);
 
   const { command, args: cmdArgs } = resolveCommand(runtime, scriptPath, args);
 
@@ -241,11 +254,20 @@ export function formatExecutionResult(
 
 /**
  * 格式化脚本执行结果为可读字符串（供 tool 返回值）：formatExecutionResult 的 SCRIPT 变体
+ *
+ * 超时文案的「超过 Ns」取本次**实际**超时（经 normalizeTimeoutMs 钳制），不再恒写上限 600s：
+ * 默认 60s 超时却报「超过 600s」是对 LLM 的谎报，会诱导它盲目调大 timeout_ms 重试。
+ *
+ * @param result 执行结果
+ * @param timeoutMs 本次实际超时（毫秒）；省略则用 DEFAULT_TIMEOUT_MS（与执行侧默认同源）
  */
-export function formatScriptResult(result: ScriptExecutionResult): string {
+export function formatScriptResult(
+  result: ScriptExecutionResult,
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): string {
   return formatExecutionResult(result, {
     kind: 'SCRIPT',
-    timeoutDetail: `脚本执行超时（超过 ${MAX_TIMEOUT_MS / 1000}s）`,
+    timeoutDetail: `脚本执行超时（超过 ${Math.round(normalizeTimeoutMs(timeoutMs) / 1000)}s）`,
     errorDetail: '脚本执行失败',
   });
 }
