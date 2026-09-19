@@ -10,16 +10,16 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
-    // 内核测试 + protocolGuard 守卫（纯源码解析无宿主运行时依赖）
-    // webview 测试（chatView 等）需 jsdom 环境，用 test.files 条件匹配
+    // 覆盖边界 = 内核 src/ + protocolGuard 守卫。protocolGuard 是纯源码解析（无宿主运行时
+    // 依赖），保留在根路径供内核门禁独立守协议 SSOT（shared/protocol.ts）。
+    // 宿主测试（含 webview jsdom）一律归宿主 vitest 独立跑（host:test），
+    // 不在此 include —— 曾因双 include 导致 webview 全套被跑两遍且根门禁被它的
+    // 30s 重放用例拖慢/超时（2026-09-19 chatView R3/R4 flake），已收敛。
+    // webview 的 jsdom 环境由各测试文件头部 `@vitest-environment jsdom` per-file 声明
+    // （12 文件均有），不再依赖本文件的 environmentMatchGlobs。
     include: [
       'src/**/__tests__/**/*.test.ts',
       'hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts',
-      'hosts/memora-vscode/src/webview/__tests__/**/*.test.ts',
-    ],
-    // jsdom 环境：webview 测试用 DOM API（document / dispatchEvent），其他保持 node
-    environmentMatchGlobs: [
-      ['hosts/memora-vscode/src/webview/**', 'jsdom'],
     ],
     // ── 并发确定性策略（SSOT：见 docs/测试并发确定性与flake判定SOP.md）──
     // 文件级并发保持开启（fileParallelism=true 即 vitest 默认，此处显式声明策略意图）：

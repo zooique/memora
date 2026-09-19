@@ -36,8 +36,8 @@
  * 分层（2026-09-16，ADR-032）：
  *   步骤定义**只在本文件**，钩子只是触发器（`lefthook.yml` 传 --preset）。分层判据：
  *   ① 输入可被 staged 集合限定 ② 单步 ≤30s ③ 失败可归因本次改动。
- *   测试（内核 98s / 宿主 119s）与覆盖率（40s+）**不进 fast** —— `vitest.config.ts:29`
- *   自记已知跨文件 flake，假红会直接诱发 `--no-verify`（长默认路径本身就是绕过诱因）。
+ *   测试（内核 98s / 宿主 119s）与覆盖率（40s+）**不进 fast** —— 根 `vitest.config.ts`
+ *   的 `fileParallelism` 处自记已知跨文件 flake，假红会直接诱发 `--no-verify`（长默认路径本身就是绕过诱因）。
  *
  * 退出码：任一 required 步骤失败 → 1；全绿 → 0。
  * 完整输出落盘 `.workbuddy/tmp/local-ci-<时间戳>.log`，**头部含收据行**（when/preset/head/tree/dirty/steps）
