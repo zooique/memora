@@ -98,7 +98,7 @@ export interface AuditEvent {
   timestamp: string;
 }
 
-/** 审计日志订阅器：默认输出到 pino logger，可被业务层重定向到独立审计文件 */
+/** 审计日志订阅器：默认经内核 logger 单例输出，可被业务层重定向到独立审计文件 */
 export type AuditListener = (event: AuditEvent) => void;
 
 /**

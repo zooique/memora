@@ -216,7 +216,7 @@ export class BuiltinToolHandlers {
         e.message,
         [
           '确认路径在白名单内（项目目录/数据目录/显式 allowedPaths）',
-          '查看审计日志：~/.memora/logs/memora.log',
+          '查看审计日志：路径拒绝事件经内核 logger 输出，见宿主日志通道（IDE 输出面板 / 终端 stderr）',
         ],
         e,
         ToolErrorCode.PATH_NOT_ALLOWED,

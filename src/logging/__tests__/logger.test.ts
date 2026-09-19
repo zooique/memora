@@ -1,39 +1,24 @@
 /**
  * Logging 模块单元测试
- * 覆盖 console fallback logger、setLogger 切换、敏感数据脱敏、覆盖警告、环境变量展开
+ * 覆盖：内置 console fallback（字符串/对象两路径 + 脱敏 + 级别过滤）、
+ * setLogger 切换不变量、多次注入覆盖警告。
  *
- * 注意：pino 作为可选依赖已安装，首次日志调用时会懒触发异步升级（确保 import 零 fs 副作用）。
- * 脱敏测试通过 setLogger 注入自定义 logger 来验证，
- * console fallback 的脱敏行为通过直接构造 console logger 验证。
+ * 说明：默认实现即内置 console fallback（同步可用，零 fs 副作用），
+ * 无异步升级；`logger` 门面为对当前实现的委托闭包，setLogger 注入后立即生效。
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { logger, setLogger } from '@/logging/logger.js';
 import type { ILogger } from '@/logging/loggerInterface.js';
-import { homedir } from 'node:os';
-import { resolve } from 'node:path';
+import { getLogger } from '@/utils/loggerHolder.js';
 
-/**
- * 敏感键正则（与 logger.ts 中 SENSITIVE_KEY_PATTERN 保持一致）
- * 用于验证 console fallback 的脱敏行为
- */
-const SENSITIVE_KEY_PATTERN = /api[_-]?key|token|password|secret|authorization|credential/i;
-
-/**
- * 对象脱敏（与 logger.ts 中 redactSensitiveKeys 逻辑一致）
- * 用于验证脱敏行为是否正确
- */
-function redactSensitiveKeys(obj: Record<string, unknown>): Record<string, unknown> {
-  const redacted: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (SENSITIVE_KEY_PATTERN.test(key)) {
-      redacted[key] = '[REDACTED]';
-    } else if (value && typeof value === 'object' && !Array.isArray(value)) {
-      redacted[key] = redactSensitiveKeys(value as Record<string, unknown>);
-    } else {
-      redacted[key] = value;
-    }
-  }
-  return redacted;
+/** 构造一次性 mock ILogger（各方法为 vi.fn） */
+function createMockLogger(): ILogger {
+  return {
+    info: vi.fn(),
+    warn: vi.fn(),
+    error: vi.fn(),
+    debug: vi.fn(),
+  };
 }
 
 describe('Logging · 默认 console fallback logger', () => {
@@ -45,12 +30,7 @@ describe('Logging · 默认 console fallback logger', () => {
   });
 
   it('应能调用 info 方法而不抛错', () => {
-    const customLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const customLogger = createMockLogger();
     setLogger(customLogger);
     logger.info('测试消息');
     expect(customLogger.info).toHaveBeenCalledWith('测试消息');
@@ -58,12 +38,7 @@ describe('Logging · 默认 console fallback logger', () => {
   });
 
   it('应能调用 warn 方法而不抛错', () => {
-    const customLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const customLogger = createMockLogger();
     setLogger(customLogger);
     logger.warn('警告消息');
     expect(customLogger.warn).toHaveBeenCalledWith('警告消息');
@@ -71,12 +46,7 @@ describe('Logging · 默认 console fallback logger', () => {
   });
 
   it('应能调用 error 方法而不抛错', () => {
-    const customLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const customLogger = createMockLogger();
     setLogger(customLogger);
     logger.error('错误消息');
     expect(customLogger.error).toHaveBeenCalledWith('错误消息');
@@ -84,12 +54,7 @@ describe('Logging · 默认 console fallback logger', () => {
   });
 
   it('应能调用 debug 方法而不抛错', () => {
-    const customLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const customLogger = createMockLogger();
     setLogger(customLogger);
     logger.debug('调试消息');
     expect(customLogger.debug).toHaveBeenCalledWith('调试消息');
@@ -121,130 +86,62 @@ describe('Logging · setLogger() 切换', () => {
     expect(customInfo).toHaveBeenCalledWith('自定义消息');
   });
 
-  it('应将 undefined 传入 setLogger 恢复默认 logger', async () => {
-    const customLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+  it('应将 undefined 传入 setLogger 恢复内置 console fallback', () => {
+    const customLogger = createMockLogger();
+    // 抑制 console 输出并捕获内置 fallback 的写入
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
     setLogger(customLogger);
-    // 恢复默认（同步恢复到 console fallback；pino 懒触发）
     setLogger(undefined);
 
-    // 懒初始化模式下，setLogger(undefined) 不主动触发 pino 升级
-    // 下一次 logger.info 调用才会懒触发，但触发后异步加载期间 _logger 仍是 console fallback
-    await new Promise(resolve => setTimeout(resolve, 50));
+    logger.info('恢复后消息');
 
     // 恢复后应不再调用 customLogger
-    const customInfo = customLogger.info as ReturnType<typeof vi.fn>;
-    const prevCallCount = customInfo.mock.calls.length;
-    logger.info('恢复后消息');
-    expect(customInfo.mock.calls.length).toBe(prevCallCount);
+    expect(customLogger.info).not.toHaveBeenCalled();
+    // 恢复后走内置 console fallback 的字符串路径（写 stderr）
+    expect(spy).toHaveBeenCalledWith('[INFO] 恢复后消息');
+
+    spy.mockRestore();
   });
 });
 
-describe('Logging · 敏感数据脱敏', () => {
-  /**
-   * 脱敏测试策略：
-   * redactSensitiveKeys 是模块内部函数（未导出），无法直接测试。
-   * 但 console fallback logger 在输出前会调用它脱敏。
-   *
-   * 验证方式：
-   * 1. 通过自定义 logger 验证原始对象正确传递（API 契约）
-   * 2. 通过 redactSensitiveKeys 的本地复现验证脱敏逻辑正确性
-   *    （本地复现与 logger.ts 中的实现保持一致）
-   * 3. 通过 console fallback 的输出验证端到端脱敏
-   */
-
-  it('应将 api_key 的值替换为 [REDACTED]', () => {
-    const input = { api_key: 'sk-secret-12345', normal: 'visible' };
-    const result = redactSensitiveKeys(input);
-    expect(result.api_key).toBe('[REDACTED]');
-    expect(result.normal).toBe('visible');
+describe('Logging · 内置 console fallback 输出与脱敏', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    // 复位为内置 console fallback，保证每条用例都在真实默认实现上验证
+    setLogger(undefined);
   });
 
-  it('应将 token 的值替换为 [REDACTED]', () => {
-    const input = { token: 'bearer-abc123', name: 'test' };
-    const result = redactSensitiveKeys(input);
-    expect(result.token).toBe('[REDACTED]');
-    expect(result.name).toBe('test');
+  it('字符串入参：写 stderr 并带级别前缀', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logger.warn('磁盘空间不足');
+    expect(spy).toHaveBeenCalledWith('[WARN] 磁盘空间不足');
   });
 
-  it('应将 password 的值替换为 [REDACTED]', () => {
-    const input = { password: 'p@ssw0rd', user: 'alice' };
-    const result = redactSensitiveKeys(input);
-    expect(result.password).toBe('[REDACTED]');
-    expect(result.user).toBe('alice');
-  });
-
-  it('应将 secret 的值替换为 [REDACTED]', () => {
-    const input = { secret: 'my-secret-value', public: 'ok' };
-    const result = redactSensitiveKeys(input);
-    expect(result.secret).toBe('[REDACTED]');
-    expect(result.public).toBe('ok');
-  });
-
-  it('应递归脱敏嵌套对象中的敏感键', () => {
-    const input = { config: { api_key: 'nested-secret' }, name: 'app' };
-    const result = redactSensitiveKeys(input);
-    expect((result.config as Record<string, unknown>).api_key).toBe('[REDACTED]');
-    expect(result.name).toBe('app');
-  });
-
-  it('应通过 console fallback 端到端脱敏', () => {
-    // 验证 console fallback 的输出中不包含敏感值
+  it('对象入参：端到端脱敏，敏感键替换为 [REDACTED]、非敏感键保留', () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
 
-    // 注入一个模拟 console fallback 的 logger，直接调用 console.error
-    // 这样可以绕过 pino 的异步替换问题
-    const consoleFallbackLogger: ILogger = {
-      info: (objOrMsg, msg) => {
-        const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-        if (typeof objOrMsg === 'object') {
-          console.error(`[INFO] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-        } else {
-          console.error(`[INFO] ${text}`);
-        }
-      },
-      warn: (objOrMsg, msg) => {
-        const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-        if (typeof objOrMsg === 'object') {
-          console.error(`[WARN] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-        } else {
-          console.error(`[WARN] ${text}`);
-        }
-      },
-      error: (objOrMsg, msg) => {
-        const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-        if (typeof objOrMsg === 'object') {
-          console.error(`[ERROR] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-        } else {
-          console.error(`[ERROR] ${text}`);
-        }
-      },
-      debug: (objOrMsg, msg) => {
-        const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
-        if (typeof objOrMsg === 'object') {
-          console.error(`[DEBUG] ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
-        } else {
-          console.error(`[DEBUG] ${text}`);
-        }
-      },
-    };
+    logger.info(
+      { api_key: 'sk-test-key', nested: { token: 'bearer-abc123' }, normal: 'visible' },
+      '端到端脱敏测试',
+    );
 
-    setLogger(consoleFallbackLogger);
-    logger.info({ api_key: 'sk-test-key', normal: 'visible' }, '端到端脱敏测试');
+    expect(spy).toHaveBeenCalledTimes(1);
+    const output = spy.mock.calls.map((call) => call.join(' ')).join(' ');
+    // 级别前缀 + 消息文本保留
+    expect(output).toContain('[INFO] 端到端脱敏测试');
+    // 敏感值（含嵌套层级）不泄漏
+    expect(output).not.toContain('sk-test-key');
+    expect(output).not.toContain('bearer-abc123');
+    // 敏感键被替换、非敏感键保留
+    expect(output).toContain('[REDACTED]');
+    expect(output).toContain('visible');
+  });
 
-    expect(spy).toHaveBeenCalled();
-    const callArgs = spy.mock.calls.map(call => call.join(' ')).join(' ');
-    expect(callArgs).not.toContain('sk-test-key');
-    expect(callArgs).toContain('[REDACTED]');
-    expect(callArgs).toContain('visible');
-
-    spy.mockRestore();
-    setLogger(undefined);
+  it('shouldLog 级别过滤：默认级别 info 下 debug 不输出', () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    logger.debug('不应输出');
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
@@ -254,19 +151,8 @@ describe('Logging · 多次 setLogger 覆盖警告', () => {
   });
 
   it('应在第二次 setLogger 注入不同实例时发出警告', () => {
-    const firstLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    const secondLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const firstLogger = createMockLogger();
+    const secondLogger = createMockLogger();
 
     // 第一次注入
     setLogger(firstLogger);
@@ -281,12 +167,7 @@ describe('Logging · 多次 setLogger 覆盖警告', () => {
   });
 
   it('应在注入相同实例时不发出警告', () => {
-    const customLogger: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
+    const customLogger = createMockLogger();
 
     setLogger(customLogger);
     // 再次注入同一个实例
@@ -297,113 +178,54 @@ describe('Logging · 多次 setLogger 覆盖警告', () => {
   });
 });
 
-describe('Logging · 环境变量展开 (~ → homedir)', () => {
-  it('应将 MEMORA_DATA_DIR 中的 ~ 展开为用户主目录', () => {
-    // 环境变量展开发生在 tryCreatePinoLogger 中
-    // 验证逻辑正确性：dataDir 中 ~ 被替换为 homedir()
-    const dataDir = '~/.memora';
-    const resolvedDataDir = resolve(dataDir.replace(/^~/, homedir()));
-
-    // 验证 ~ 被替换
-    expect(resolvedDataDir).not.toContain('~');
-    // 验证路径包含 .memora
-    expect(resolvedDataDir).toContain('.memora');
-  });
-
-  it('应正确处理不含 ~ 的路径', () => {
-    const dataDir = '/var/lib/memora';
-    const resolvedDataDir = resolve(dataDir);
-
-    expect(resolvedDataDir).not.toContain('~');
-    expect(resolvedDataDir).toContain('memora');
-  });
-});
-
-// ─── 竞态守卫测试 ──────────────────────────────────
-
-describe('Logging · setLogger 与 pino 异步加载竞态守卫', () => {
+describe('Logging · setLogger 切换不变量', () => {
   afterEach(() => {
     setLogger(undefined);
   });
 
-  it('setLogger(custom) 后异步 pino 加载不应覆盖 custom', async () => {
-    // 模拟场景：模块加载触发 tryCreatePinoLogger（已 resolve），
-    // 之后宿主调用 setLogger(custom)，再触发 setLogger(undefined) 的异步 pino 加载，
-    // 在 pino resolve 之前再次 setLogger(custom2)
-    const custom1: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-    const custom2: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    // Step 1: 注入 custom1
-    setLogger(custom1);
-    // Step 2: 触发异步 pino 加载（恢复默认）
-    setLogger(undefined);
-    // Step 3: 在 pino resolve 之前再次注入 custom2
-    setLogger(custom2);
-
-    // Step 4: 等待足够时间让 pino 异步加载完成
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // 验证：custom2 仍是当前 logger，未被 pino 覆盖
-    logger.info('守卫验证');
-    expect(custom2.info).toHaveBeenCalledWith('守卫验证');
-    // custom1 不应被调用（已被 custom2 覆盖）
-    expect(custom1.info).not.toHaveBeenCalled();
-  });
-
-  it('setLogger(undefined) 后异步 pino 加载期间再次 setLogger 应保留新注入', async () => {
-    // 模拟场景：恢复默认 → pino 异步加载中 → 宿主注入 custom
-    // pino resolve 时应跳过覆盖（_loggerInjected=true）
-    const custom: ILogger = {
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
-
-    // 先注入一个 logger 让 _loggerInjected=true
-    setLogger(custom);
-    // 恢复默认（触发异步 pino 加载）
-    setLogger(undefined);
-    // 立即再次注入 custom（在 pino resolve 之前）
-    setLogger(custom);
-
-    // 等待异步 pino 加载完成
-    await new Promise(resolve => setTimeout(resolve, 100));
-
-    // 验证：custom 仍是当前 logger，未被 pino 覆盖
-    logger.info('二次守卫验证');
-    expect(custom.info).toHaveBeenCalledWith('二次守卫验证');
-  });
-
-  it('连续多次 setLogger 应保留最后一次注入的 logger', async () => {
-    // 模拟连续多次注入，最终保留最后一个
-    const loggers: ILogger[] = Array.from({ length: 3 }, () => ({
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    }));
+  it('连续多次 setLogger 应保留最后一次注入的 logger', () => {
+    const loggers: ILogger[] = Array.from({ length: 3 }, () => createMockLogger());
 
     for (const l of loggers) setLogger(l);
 
-    // 等待任何挂起的异步 pino 加载完成
-    await new Promise(resolve => setTimeout(resolve, 100));
+    logger.info('连续注入验证');
 
     // 验证：最后一个 logger 仍是当前 logger
-    logger.info('连续注入验证');
     expect(loggers[2]!.info).toHaveBeenCalledWith('连续注入验证');
     // 前两个不应被调用
     expect(loggers[0]!.info).not.toHaveBeenCalled();
     expect(loggers[1]!.info).not.toHaveBeenCalled();
+  });
+
+  it('setLogger(undefined) 复位后再注入应保留新注入', () => {
+    const first = createMockLogger();
+    const second = createMockLogger();
+
+    setLogger(first);
+    setLogger(undefined);
+    setLogger(second);
+
+    logger.info('复位后注入验证');
+
+    expect(second.info).toHaveBeenCalledWith('复位后注入验证');
+    expect(first.info).not.toHaveBeenCalled();
+  });
+});
+
+describe('Logging · setLogger 注入桥接 utils 层（loggerHolder）', () => {
+  afterEach(() => {
+    setLogger(undefined);
+  });
+
+  it('注入 custom 后 holder 应取到同一实例，复位后不再是 custom', () => {
+    const custom = createMockLogger();
+
+    setLogger(custom);
+    // 注入即唯一出口：utils 层 holder 必须同步指向注入实现
+    expect(getLogger()).toBe(custom);
+
+    setLogger(undefined);
+    // 复位后 utils 层不应再持有 custom（回到内置 console fallback）
+    expect(getLogger()).not.toBe(custom);
   });
 });

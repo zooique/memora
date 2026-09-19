@@ -276,7 +276,7 @@ export type {
 
 // ─── 错误类型导出 ────────────────────────────────────────
 export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@/utils/errors.js';
-// toError 独立导出：浏览器端可直接 import 而不引入 logging（pino）依赖
+// toError 独立导出：浏览器端可直接 import 而不引入 logging/ 模块
 export { toError } from '@/utils/toError.js';
 export type { ToolErrorCodeValue } from '@/utils/errors.js';
 

@@ -2,7 +2,7 @@
  * 纯逻辑 toError — 零依赖，浏览器 / Node.js 通用
  *
  * 将 catch 块中的 unknown 值安全转换为 Error 对象。
- * 从 errors.ts 中提取，确保浏览器端可直接 import 而不引入 logging（pino）依赖。
+ * 从 errors.ts 中提取，确保浏览器端可直接 import 而不引入 logging/ 模块。
  *
  * 转换规则（5 分支，与精灵 shared/toError.ts 行为对齐）：
  *   1. Error 实例：原样返回
