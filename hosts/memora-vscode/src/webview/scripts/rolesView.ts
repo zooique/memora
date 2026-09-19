@@ -18,6 +18,7 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { createPager, PagerController } from './pager.js';
+import { getIconSvg } from './icons.js';
 
 /** 「其他角色」每页条数（2026-09-08 分页组件；激活角色恒显不参与分页） */
 const ROLE_PAGE_SIZE = 8;
@@ -216,7 +217,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     title.textContent = `创建队伍 · 队长 ${p.displayName}`;
     const close = document.createElement('button');
     close.className = 'btn team-modal-close';
-    close.textContent = '×';
+    close.innerHTML = getIconSvg('close', 12, 12);
     close.title = '关闭';
     close.addEventListener('click', () => overlay.remove());
     head.appendChild(title);

@@ -76,6 +76,10 @@ export const configStyles = `
   #config-root .test-result { font-size: var(--font-md, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); margin-bottom: var(--sp-4, 10px); word-break: break-all; }
   #config-root .test-result.ok { background: var(--feedback-info-bg); color: var(--feedback-info-fg); }
   #config-root .test-result.err { background: var(--feedback-error-bg); color: var(--feedback-error-fg); }
+  /* 测试连接结果图标（原 ✅/❌ emoji 的 SVG 替代，2026-09-19 图标语言收口）：
+   * 结果块是纯文本容器，图标以 inline-flex 内联，vertical-align 微调与文字基线对齐 */
+  #config-root .test-result__icon { display: inline-flex; align-items: center; vertical-align: -2px; margin-right: var(--sp-1, 4px); }
+  #config-root .test-result__icon svg { display: block; }
   #config-root .modal-actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; margin-top: var(--sp-5, 12px); }
 
   /* ============ Components：Toast ============ */

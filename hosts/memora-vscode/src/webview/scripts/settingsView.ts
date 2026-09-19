@@ -335,7 +335,11 @@ function renderSkills(
 
   // 空状态（列表渲染由分页组件 renderPage 负责——renderSkillItems 空数组不覆盖）
   if (skills.length === 0) {
-    listEl.innerHTML = '<p class="hint">暂无技能。<br>📁 用户技能目录：<code>VS Code 全局存储 / skills /</code><br>在该目录下创建 <code>.md</code> 文件即可添加自定义技能。</p>';
+    listEl.innerHTML =
+      '<p class="hint">暂无技能。<br><span class="btn-icon hint-icon" data-icon="folder"></span> 用户技能目录：<code>VS Code 全局存储 / skills /</code><br>在该目录下创建 <code>.md</code> 文件即可添加自定义技能。</p>';
+    // 运行期设置 innerHTML → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充
+    // （图标语言唯一 = icons.ts 柔和线条 SVG，原 📁 emoji 剪除，2026-09-19）
+    populateIcons(listEl);
     return [];
   }
 
@@ -402,11 +406,14 @@ function createSecurityView({
       rows.push(
         `<li class="allowed-path-row">` +
           `<span class="allowed-path-text" title="${escapeHtml(p)}">${escapeHtml(p)}</span>` +
-          `<button class="allowed-path-remove btn btn-ghost" type="button" data-index="${i}" aria-label="删除 ${escapeHtml(p)}">✕</button>` +
+          `<button class="allowed-path-remove btn btn-ghost" type="button" data-index="${i}" aria-label="删除 ${escapeHtml(p)}"><span class="btn-icon" data-icon="close"></span></button>` +
         `</li>`,
       );
     });
     listEl.innerHTML = rows.join('');
+    // 运行期设置 innerHTML → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充
+    // （图标语言唯一 = icons.ts 柔和线条 SVG，原 ✕ 字符剪除，2026-09-19）
+    populateIcons(listEl);
     listEl.querySelectorAll<HTMLButtonElement>('.allowed-path-remove').forEach((btn) => {
       btn.addEventListener('click', () => {
         const idx = Number(btn.dataset.index);

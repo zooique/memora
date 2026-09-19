@@ -46,6 +46,7 @@ import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
 import { stripDocContextPrefix } from '../helpers/docContext.js';
+import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import { listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 
@@ -1069,13 +1070,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 生成唯一请求 ID，用于匹配 write_confirm_answer
       const requestId = `wc_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       const fileName = info.targetPath.split(/[\\/]/).pop() ?? info.targetPath;
-      const toolMap: Record<string, string> = {
-        write_file: '写文件',
-        edit_file: '编辑文件',
-        create_file: '创建文件',
-        append_file: '追加写入',
-      };
-      const toolLabel = toolMap[info.tool] ?? info.tool;
+      // 工具中文名走 toolNameMap 单一真源（2026-09-19 收口）：原此处自带 toolMap，四键中
+      // edit_file / create_file / append_file 为**幽灵键**（内核 builtinTools 零存在——唯一
+      // 写入工具是 write_file），且 write_file 另起异名「写文件」（toolNameMap = 「写入文件」）
+      // → 同工具双中文名。改为复用公开入口，内核工具更名/新增时不再有第二处需同步。
+      const toolLabel = getToolDisplayName(info.tool);
       // 超时保护：30 秒无响应自动拒绝（fail-closed）
       const timeoutMs = 30000;
       return new Promise<boolean>((resolve) => {
@@ -2968,7 +2967,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   </div>
   <div id="inputBar">
     <!-- Grok 式：选中 Skill 后在输入框上方以「名称 + × 可移除」chip 展示（chatView renderSkillChip 动态构建）；
-         entry 仍是 Row1 的 ⚡ 触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
+         entry 仍是 Row1 的 bolt 图标触发器，此处只呈现已挂载的技能状态，保证透明 + 可控 -->
     <div id="skillChips" class="skill-chip-row" hidden></div>
     <div id="inputWrap">
       <textarea id="input" rows="1" placeholder="在文档上打磨你的想法……（Enter 发送，Shift+Enter 换行）" aria-label="消息输入"></textarea>
@@ -2977,9 +2976,9 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         <div class="composer-row composer-row--main">
           <!-- 左侧功能群：Skill + 模型选择 + 润色（次级功能，弱化展示） -->
           <div class="composer-left">
-            <!-- Skill 选择器：单图标（⚡）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
+            <!-- Skill 选择器：单图标（bolt SVG，图标语言唯一 = icons.ts 柔和线条）胶囊触发器，与模型选择器共用 capsule 变体；选择后作为 system prompt 传给 LLM。
                  Skill 名不常显（节省窄窗横向空间），当前项由菜单内 is-active 高亮 + 触发器 accent 边框 + title 兜底 -->
-            ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', onSelect: '__skillPickerOnSelect', triggerLabel: '⚡', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
+            ${buildDropdownHtml([], { extraClass: 'skill-picker treedd--capsule', onSelect: '__skillPickerOnSelect', triggerLabel: '<span class="btn-icon" data-icon="bolt"></span>', triggerTitle: '选择 Skill', triggerAriaLabel: '选择 Skill' })}
             <!-- 模型选择器：共用 capsule 变体，名称省略/菜单尺寸由 .model-picker 差异定制 -->
             ${buildDropdownHtml([], { extraClass: 'model-picker treedd--capsule', onSelect: '__modelPickerOnSelect', triggerLabel: '选择模型', triggerTitle: '选择模型', triggerAriaLabel: '选择模型' })}
             <!-- 文本润色按钮：图标化，降低视觉权重 -->

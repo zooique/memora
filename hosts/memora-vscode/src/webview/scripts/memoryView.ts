@@ -22,6 +22,7 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState } from '../helpers/cardList.js';
 import { createPager } from './pager.js';
+import { getIconSvg } from './icons.js';
 
 /** memoryView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface MemoryViewDeps {
@@ -195,7 +196,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     // 删除按钮（G19）：stopPropagation 避免触发卡片展开，独立走 memory_delete
     const delBtn = document.createElement('button');
     delBtn.className = 'mem-del-btn';
-    delBtn.textContent = '✕';
+    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ✕ 字符剪除，2026-09-19 图标语言收口）
+    delBtn.innerHTML = getIconSvg('close', 12, 12);
     delBtn.title = '删除这条记忆（进入回收站，可恢复）';
     delBtn.setAttribute('aria-label', '删除记忆');
     delBtn.addEventListener('click', (e) => {
@@ -205,7 +207,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     // 编辑按钮（G19 内联 edit，2026-08-25）：stopPropagation 避免触发卡片展开，独立走 memory_edit
     const editBtn = document.createElement('button');
     editBtn.className = 'mem-edit-btn';
-    editBtn.textContent = '✎';
+    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ✎ 字符剪除，2026-09-19）
+    editBtn.innerHTML = getIconSvg('edit', 12, 12);
     editBtn.title = '编辑这条记忆的内容';
     editBtn.setAttribute('aria-label', '编辑记忆');
     editBtn.addEventListener('click', (e) => {

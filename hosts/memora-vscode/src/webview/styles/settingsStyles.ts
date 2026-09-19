@@ -264,6 +264,10 @@ export const settingsStyles = `
   .allowed-path-tag { font-size: var(--font-xs, 10px); color: var(--text-secondary); flex-shrink: 0; margin-left: var(--sp-2, 6px); }
   /* 移除按钮：行内图标操作复用 .btn-ghost 基类；hover 保留危险红（语义差异 context 覆盖，SSOT 收敛 2026-08-25） */
   .allowed-path-remove { flex-shrink: 0; }
+  /* 安全面板内联图标容器（与 #roles-root / #skills-root 同模式：各 root 自带 .btn-icon 收敛；
+   * 图标语言唯一 = icons.ts 柔和线条 SVG，原 ✕ 字符剪除，2026-09-19） */
+  #security-root .btn-icon { display: inline-flex; align-items: center; justify-content: center; color: currentColor; }
+  #security-root .btn-icon svg { display: block; }
   .allowed-path-remove:hover { color: var(--text-error, #f14c4c); border-color: var(--text-error, #f14c4c); }
   .allowed-paths-add { display: flex; gap: var(--sp-2, 6px); margin-top: var(--sp-2, 6px); }
   .allowed-paths-input {

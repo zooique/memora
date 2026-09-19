@@ -206,38 +206,6 @@ export const chatStyles = `
     opacity: 1; transform: translateY(0);
   }
   .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  /* TS-9 问答闭环内交互输入折叠块（用户提问/用户补充）：轻量折叠条，默认收起 */
-  .msg.user.is-interactive {
-    background: transparent;
-    padding: 0;
-    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
-    border-radius: var(--radius, 6px);
-    color: var(--text-secondary, #9aa0a6);
-  }
-  .msg.user.is-interactive[open] { background: var(--surface-hover, rgba(128, 128, 128, 0.12)); }
-  .msg.user.is-interactive .msg-interactive-summary {
-    display: flex; align-items: center; gap: var(--sp-2, 6px);
-    padding: var(--sp-2, 6px) var(--sp-3, 8px);
-    cursor: pointer; user-select: none;
-    list-style: none;
-  }
-  .msg.user.is-interactive .msg-interactive-summary::-webkit-details-marker { display: none; }
-  .msg.user.is-interactive .msg-interactive-summary::before {
-    content: '▸'; flex-shrink: 0; transition: transform 0.15s ease;
-  }
-  .msg.user.is-interactive[open] .msg-interactive-summary::before { transform: rotate(90deg); }
-  .msg.user.is-interactive .msg-interactive-label {
-    flex-shrink: 0; font-size: var(--font-xs, 10px);
-    color: var(--accent, #0e639c); font-weight: 600;
-  }
-  .msg.user.is-interactive .msg-interactive-preview {
-    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    font-size: var(--font-md, 12px);
-  }
-  .msg.user.is-interactive .msg-body {
-    padding: var(--sp-1, 4px) var(--sp-3, 8px) var(--sp-3, 8px);
-    font-size: var(--font-md, 12px);
-  }
   /* UX-9 提问内联选择题（2026-09-03，提问形态内联化）：
    * 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
    * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */
@@ -471,7 +439,7 @@ export const chatStyles = `
     padding-top: var(--sp-1, 4px);
   }
   .msg-ai-label__cont {
-    display: inline-flex; align-items: center;
+    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
     flex-shrink: 0;
     font-size: var(--font-xs, 10px);
     color: var(--text-secondary, #9aa0a6);
@@ -480,6 +448,8 @@ export const chatStyles = `
     padding: 1px var(--sp-2, 5px);
     white-space: nowrap;
   }
+  /* 续接 chip 的 refresh 图标（原 ↻ 字符的 SVG 替代，2026-09-19） */
+  .msg-ai-label__cont svg { display: block; }
   /* UX-9 闭环同体感（2026-09-03）：续接块隐藏重复的角色/模型身份标签——
    * 同一问答闭环的续答不再是「独立新消息」，只保留「↻ 续接」chip + 时间戳，
    * 从视觉上让提问→回答→再答 呈现为同一条回答的延续 */
@@ -736,6 +706,8 @@ export const chatStyles = `
     opacity: 0.9;
   }
   /* 单条删除按钮：平时透明，hover 行时显现 */
+  /* 单条删除按钮内的 close 图标（原 × 字符的 SVG 替代，2026-09-19） */
+  .pending-queue-bar__item-del svg { display: block; }
   .pending-queue-bar__item-del {
     flex-shrink: 0;
     display: inline-flex;
@@ -1070,8 +1042,11 @@ export const chatStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
   }
-  .skill-chip__icon { font-size: 11px; line-height: 1; flex-shrink: 0; }
+  .skill-chip__icon { font-size: 11px; line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
+  .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* 移除按钮内的 close 图标（原 × 字符的 SVG 替代，2026-09-19） */
+  .skill-chip__remove svg { display: block; }
   .skill-chip__remove {
     flex-shrink: 0;
     display: inline-flex;
@@ -1370,12 +1345,16 @@ export const chatStyles = `
   .round-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   /* round-block step 标签：active step 提示。prepend 到 details 最前（summary 上方） */
   .round-block__plan-tag {
+    display: flex; align-items: center; gap: var(--sp-1, 4px);
     font-size: var(--font-xs, 10px);
     color: var(--accent, #0e639c);
     padding: 0 0 var(--sp-1, 2px);
     border-bottom: 1px dashed var(--border-panel, rgba(128,128,128,.3));
     margin-bottom: var(--sp-1, 2px);
   }
+  /* target 图标（原 📍 emoji 的 SVG 替代，2026-09-19 图标语言收口）：跟随 accent 色，不收缩 */
+  .round-block__plan-tag__icon { display: inline-flex; align-items: center; flex-shrink: 0; }
+  .round-block__plan-tag__icon svg { display: block; }
   .round-block__dot {
     width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0;
     background: var(--text-secondary, #9aa0a6);
@@ -1501,7 +1480,6 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
   }
-  .round-block__recall-meta { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); flex-shrink: 0; }
   .round-block__pre {
     margin: var(--sp-1, 2px) 0; padding: var(--sp-2, 6px);
     background: var(--surface-code, rgba(0,0,0,.2));

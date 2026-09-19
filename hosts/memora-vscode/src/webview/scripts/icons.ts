@@ -43,7 +43,8 @@ export type IconName =
   | 'send'          // 发送（上箭头）
   | 'stop'          // 停止（方块）
   | 'play'          // 继续/播放（三角）
-  | 'team';         // 小组会议（双人轮廓，柔和线条）
+  | 'team'          // 小组会议（双人轮廓，柔和线条）
+  | 'target';       // 当前执行位置（同心圆靶心；plan-tag「正在执行 step-N」锚点）
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
@@ -93,6 +94,8 @@ const ICON_PATHS: Record<IconName, string> = {
   'scroll-bottom': '<path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/>',
   // 小组会议：双人轮廓（小在前大在后，柔和线条）
   team: '<circle cx="5.5" cy="6" r="1.5"/><circle cx="10.5" cy="6.5" r="2"/><path d="M3 13c0-1.5 1.1-2.5 2.5-2.5S8 11.5 8 13"/><path d="M8.5 13c0-1.7 1.5-3 3-3s3 1.3 3 3"/>',
+  // 当前执行位置：同心圆靶心（替换原 emoji 📍 的 plan-tag 锚点，2026-09-19 图标语言收口）
+  target: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
 };
 
 /** SVG 通用属性（Trae 柔和风格） */
@@ -130,16 +133,6 @@ export function createIcon(name: IconName, title: string, extraClass?: string): 
   svg.innerHTML = ICON_PATHS[name];
   btn.appendChild(svg);
   return btn;
-}
-
-/**
- * 获取图标 SVG 路径字符串（用于直接插入 HTML）
- *
- * @param name 图标名称
- * @returns SVG path 字符串
- */
-export function getIconPath(name: IconName): string {
-  return ICON_PATHS[name];
 }
 
 /**
@@ -187,6 +180,3 @@ export function populateIcons(root: HTMLElement): void {
     applyIcon(el, name);
   });
 }
-
-/** 图标名称列表（供枚举/遍历使用） */
-export const ICON_NAMES: IconName[] = Object.keys(ICON_PATHS) as IconName[];

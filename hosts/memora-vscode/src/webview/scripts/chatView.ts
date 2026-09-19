@@ -22,6 +22,7 @@ import { fmtTime } from '../helpers/fmtTime.js';
 import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
+import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
@@ -491,7 +492,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 对齐 Trae「执行过程」的工程侧人话渲染（"调用了 X 技能 / 浏览了 N 个网页"）：
    * 由工具名 + args 关键参数确定性生成「读取文件：path」式叙述，零 LLM 成本。
    * 参数名与 src/agent/builtinTools.ts（ToolDefinition.parameters）一一对应。
-   * 兜底纪律：未收录工具 / 参数缺失 / args 非 JSON 均回退原生工具名（角色包自定义工具零遗漏）；
+   * 兜底纪律：未收录工具 / 参数缺失 / args 非 JSON 均回退中文显示名（toolNameMap 单一真源）；
+   * 中文名亦未收录的角色包自定义工具才落到原生英文名（零遗漏）；
    * 原始 args JSON 仍保留在折叠 pre 中（细节不丢）。
    */
   type ToolActionFn = (args: Readonly<Record<string, unknown>>) => string | undefined;
@@ -587,9 +589,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
   }
 
-  /** 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退原生工具名（未知工具零遗漏） */
+  /**
+   * 工具行动叙述：命中映射且参数齐备 → 人话描述；否则回退中文显示名（再回退原生工具名）
+   *
+   * 兜底走 toolNameMap.getToolDisplayName（**工具中文名的唯一真源**）。2026-09-19 接入前此处
+   * 直接回退 name，使两类场景在 UI 上裸露英文工具名：①未收录工具——ask_user /
+   * remember_intel / run_project_script / run_team_meeting（均无可叙述参数，故不入
+   * TOOL_ACTION_LABELS）；②已收录但本次 args 缺参（如 read_file 无 path）。
+   */
   function toolActionLabel(name: string, argsRaw: string | undefined): string {
-    return TOOL_ACTION_LABELS[name]?.(parseToolArgs(argsRaw)) ?? name;
+    return TOOL_ACTION_LABELS[name]?.(parseToolArgs(argsRaw)) ?? getToolDisplayName(name);
   }
 
   /** 工具动作分型（收尾叙述句的分组依据，语义与 TOOL_ACTION_LABELS 对齐） */
@@ -866,8 +875,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     summary.className = 'round-block__tool-name';
     const labelSpan = document.createElement('span');
     labelSpan.className = 'round-block__tool-label';
-    // 参数未成形，无法生成行动叙述 → 直显工具名（与 renderToolRow 的兜底回退同语义）
-    labelSpan.textContent = pending.name;
+    // 参数未成形，无法生成行动叙述 → 直显中文显示名（与 toolActionLabel 兜底同源：toolNameMap）
+    labelSpan.textContent = getToolDisplayName(pending.name);
     const statusSpan = document.createElement('span');
     statusSpan.className = 'round-block__tool-status';
     statusSpan.textContent = ' (准备中)';
@@ -1233,17 +1242,28 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // T4：round-block step 标签——如果有 active step，在 summary 上方显示"📍 执行 step-N: xxx"
     // 从 currentPlanSteps 缓存读（plan_update 消息存，零新增协议）；每次重建保证始终正确
-    const existingTag = rb.querySelector(':scope .round-block__plan-tag');
+    const existingTag = rb.querySelector(':scope .round-block__plan-tag') as HTMLElement | null;
     if (currentPlanSteps.length > 0) {
       const activeStep = currentPlanSteps.find((s) => s.status === 'active');
       if (activeStep) {
         const brief = activeStep.description.length > 36 ? `${activeStep.description.slice(0, 36)}…` : activeStep.description;
+        const tagText = `执行 step-${activeStep.order + 1}: ${brief}`;
         if (existingTag) {
-          existingTag.textContent = `📍 执行 step-${activeStep.order + 1}: ${brief}`;
+          // 只改文本节点：图标节点保持稳定，且 brief 源自 LLM → 必须走 textContent（防注入）
+          const textEl = existingTag.querySelector('.round-block__plan-tag__text');
+          if (textEl) textEl.textContent = tagText;
         } else {
           const tag = document.createElement('div');
           tag.className = 'round-block__plan-tag';
-          tag.textContent = `📍 执行 step-${activeStep.order + 1}: ${brief}`;
+          const tagIcon = document.createElement('span');
+          tagIcon.className = 'round-block__plan-tag__icon';
+          tagIcon.setAttribute('aria-hidden', 'true');
+          tagIcon.innerHTML = getIconSvg('target', 11, 11); // 静态 SVG，无外部输入
+          tag.appendChild(tagIcon);
+          const tagLabel = document.createElement('span');
+          tagLabel.className = 'round-block__plan-tag__text';
+          tagLabel.textContent = tagText;
+          tag.appendChild(tagLabel);
           rb.prepend(tag);
         }
       } else if (existingTag) {
@@ -1766,11 +1786,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           <span class="pending-queue-bar__badge"></span>
           <span class="pending-queue-bar__label">待发送</span>
           <span class="pending-queue-bar__hint">补充将紧随当前步骤后注入</span>
-          <button class="pending-queue-bar__clear" type="button" title="清空全部">✕</button>
+          <button class="pending-queue-bar__clear" type="button" title="清空全部" aria-label="清空全部待发送"><span class="btn-icon" data-icon="close"></span></button>
         </div>
         <div class="pending-queue-bar__list"></div>
       `;
       inputBar.parentNode?.insertBefore(_pendingQueueBar, inputBar);
+      // 本节点运行期创建 → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充 data-icon
+      populateIcons(_pendingQueueBar);
       const clearBtn = _pendingQueueBar.querySelector('.pending-queue-bar__clear');
       clearBtn?.addEventListener('click', () => {
         // Phase 4：清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
@@ -1804,7 +1826,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       delBtn.className = 'pending-queue-bar__item-del';
       delBtn.type = 'button';
       delBtn.title = '删除这条';
-      delBtn.textContent = '×';
+      // 图标语言唯一 = icons.ts 柔和线条 SVG（原 × 字符剪除，2026-09-19；注意 × 兼作语义乘号，
+      // 如「工具×3」——“乘号”与“关闭图标”须靠位置区分，不可机械替换）
+      delBtn.innerHTML = getIconSvg('close', 10, 10);
       delBtn.addEventListener('click', () => {
         vscode.postMessage({ type: 'remove_pending_item', index: idx });
       });
@@ -2814,7 +2838,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 消费方（SSOT 单一实现，两处共用）：
    * - buildAssistantShell：建块时 div 已带 is-continued → 直接打 chip；
    * - chunk 流式复用骨架分支：骨架建块时无 roundId 未判续接，chunk 到达补类后补 chip。
-   * 幂等：label 已有 chip 时不重复插（防多次 chunk 补类叠加）。
+   * 幂等：label 已有 chip 时不重复插（整行 JSDoc 注释）（防多次 chunk 补类叠加）。
    *
    * @param label 消息身份标签（.msg-ai-label），chip 插至最前
    */
@@ -2822,7 +2846,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (label.querySelector('.msg-ai-label__cont')) return;
     const contEl = document.createElement('span');
     contEl.className = 'msg-ai-label__cont';
-    contEl.textContent = '↻ 续接';
+    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ↻ 字符剪除，2026-09-19）
+    contEl.innerHTML = getIconSvg('refresh', 10, 10);
+    contEl.appendChild(document.createTextNode('续接'));
     contEl.title = '与上一条属同一问答闭环，为继续作答';
     label.prepend(contEl);
   }
@@ -3910,7 +3936,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function renderWriteConfirmCard(msg: Extract<ExtensionToWebviewMessage, { type: 'write_confirm_request' }>): void {
     if (!writeConfirmCard || !writeConfirmTool || !writeConfirmPath || !writeConfirmDesc || !writeConfirmDiff) return;
     // 全部字段用 textContent 填充（SSOT：不信任 host 输入，防注入——与消息区渲染同纪律）
-    writeConfirmTool.textContent = msg.tool;
+    // 工具名走中文显示名单一真源（与工具行 toolActionLabel 同源）：接入前直显 msg.tool 英文名
+    writeConfirmTool.textContent = getToolDisplayName(msg.tool);
     writeConfirmPath.textContent = msg.targetPath;
     writeConfirmDesc.textContent = msg.description ?? '';
     // diff 预览：afterContent 为写入后的完整内容（beforeContent 为 null 时即新建文件）
@@ -4187,7 +4214,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     chip.className = 'skill-chip';
     const icon = document.createElement('span');
     icon.className = 'skill-chip__icon';
-    icon.textContent = '⚡';
+    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 emoji ⚡ 剪除，2026-09-19 图标语言收口）
+    icon.innerHTML = getIconSvg('bolt', 11, 11);
     icon.setAttribute('aria-hidden', 'true');
     chip.appendChild(icon);
     const name = document.createElement('span');
@@ -4197,7 +4225,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
-    remove.textContent = '×';
+    remove.innerHTML = getIconSvg('close', 11, 11);
     remove.setAttribute('title', '移除 Skill');
     remove.setAttribute('aria-label', '移除 Skill：' + currentSkill.name);
     remove.addEventListener('click', () => {

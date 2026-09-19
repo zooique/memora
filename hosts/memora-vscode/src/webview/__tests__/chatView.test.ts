@@ -1118,6 +1118,18 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(postMessage).toHaveBeenCalledWith({ type: 'clear_pending_queue' });
   });
 
+  it('运行期创建节点的图标走 SVG 补填充（图标语言唯一 = icons.ts，2026-09-19）', () => {
+    // pending-queue-bar 由 chatView **运行期**创建 → 初始化时的 populateIcons(document.body)
+    // 覆盖不到，故在插入 DOM 后显式 populateIcons(_pendingQueueBar) 补填充。
+    // 本断言锁死这条链路：若补填充丢失，按钮会静默变成空白（原实现为字符 ✕ 不会空白）。
+    mountChatView();
+    dispatch({ type: 'status', state: 'thinking' });
+    dispatch({ type: 'pending_queue_update', items: ['插队内容'] });
+    const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLElement;
+    expect(clearBtn.querySelector('svg'), '清空按钮缺 SVG 图标 → populateIcons 补填充链路已断').not.toBeNull();
+    expect(clearBtn.textContent, '清空按钮不应再有字符图标').toBe('');
+  });
+
   // ─── send click 路由统一（验证宿主路由契约） ───
 
   it('thinking + 空输入点击 send → post stop（停止）', () => {
@@ -1368,7 +1380,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 思考/工具行保留在折叠块 details 内（已完成 step 不丢）
     expect(rb.querySelector('.round-block__thought')?.textContent).toContain('思考');
     const toolRow = rb.querySelector('.round-block__details .round-block__tool') as HTMLElement;
-    expect(toolRow?.textContent).toContain('read_file');
+    expect(toolRow?.textContent).toContain('读取文件');
     expect(toolRow?.textContent).toContain('失败');
     // 「用户停止了对话」平铺折叠块外（收起态常驻可见）
     expect(host.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
@@ -1449,7 +1461,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 过程收进折叠块（保留已完成 tool step）
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    expect(rb.querySelector('.round-block__details .round-block__tool')?.textContent).toContain('read_file');
+    expect(rb.querySelector('.round-block__details .round-block__tool')?.textContent).toContain('读取文件');
     // 半截正文被掐断：assistant 块不再有正文容器
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.querySelector('.msg-body')).toBeNull();
@@ -1487,12 +1499,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 步1内：narrate 与 tool 归入第 1 个 step 容器（边界切组、步内平铺）
     const step1Host = steps[0]!.querySelector('.round-block__narrate') as HTMLElement;
     expect(step1Host?.textContent).toContain('正在分析需求文档');
-    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).toContain('read_file');
+    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).toContain('读取文件');
     // 步2内：narrate 与 tool 归入第 2 个 step 容器，不越界混入步1
     const step2Host = steps[1]!.querySelector('.round-block__narrate') as HTMLElement;
     expect(step2Host?.textContent).toContain('开始编写实现代码');
-    expect(steps[1]!.querySelector('.round-block__tool')?.textContent).toContain('write_file');
-    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('write_file');
+    expect(steps[1]!.querySelector('.round-block__tool')?.textContent).toContain('写入文件');
+    // 负向断言：步 1 不含步 2 的工具——标记物须同步为中文名，否则接入后恒真（因错误的原因通过）
+    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('写入文件');
   });
 
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
@@ -2904,18 +2917,20 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't99', name: 'my_custom_tool', args: '{"foo":"bar"}' } } });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
-    // 无 result → 进行中；未收录映射 → 原生名
+    // 无 result → 进行中；TOOL_META 亦未收录（角色包自定义工具）→ 原生英文名
+    // （2026-09-19 接入 toolNameMap 后，这是**唯一**仍落到英文名的路径——内置 24 工具均已中文）
     expect(tool.querySelector('summary')?.textContent).toBe('my_custom_tool (进行中)');
   });
 
-  it('args 非合法 JSON 时回退原生工具名（解析兜底，不抛错）', () => {
+  it('args 非合法 JSON 时走兜底中文显示名（解析兜底，不抛错）', () => {
     mountChatView();
     beginRound();
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: 'not-json{{{[' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
-    expect(tool.querySelector('summary')?.textContent).toBe('read_file (成功)');
+    // 解析失败 → 参数为空 → 叙述生成器返回 undefined → 兜底 toolNameMap 中文名（2026-09-19 接入前为英文原名）
+    expect(tool.querySelector('summary')?.textContent).toBe('读取文件 (成功)');
   });
 
   it('多分型工具 → 收尾叙述句「执行 N 步工具（读取 x · 搜索 y · 写入 z）」，描述收口清晰', () => {
@@ -3491,6 +3506,24 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.textContent).toContain('(成功)');
   });
 
+  it('工具中文名接入（2026-09-19）：无参数可叙述的未收录工具与参数缺失场景均显中文名，不裸露英文名', () => {
+    // 背景：toolActionLabel 兜底原为 `?? name`（英文原名）——使两类场景在 UI 裸露英文工具名：
+    // ①未收录工具（ask_user / remember_intel / run_project_script / run_team_meeting，均无可叙述
+    //   参数，故不入 TOOL_ACTION_LABELS）；②已收录但本次 args 缺参（如 read_file 无 path）。
+    // 接入 toolNameMap.getToolDisplayName 后统一回退中文名，本条锁死该回退契约。
+    mountChatView();
+    beginRound();
+    // ① 准备中态（renderPendingToolRow）：直显中文名
+    dispatch({ type: 'tool_pending', toolCallId: 'call_m', name: 'run_team_meeting' });
+    const pendingRow = document.querySelector('.round-block__tool') as HTMLElement;
+    expect(pendingRow.textContent).toContain('团队会议');
+    expect(pendingRow.textContent).not.toContain('run_team_meeting');
+    // ② 升级为执行态（upgradePendingToolRow → toolActionLabel 兜底）：仍为中文名
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 'call_m', name: 'run_team_meeting', args: '{}' } } });
+    expect(pendingRow.textContent).toContain('团队会议');
+    expect(pendingRow.textContent).not.toContain('run_team_meeting');
+  });
+
   it('TS-11d 并行工具独立预告：多个 tool_pending 各自成行、各自升级互不干扰', () => {
     mountChatView();
     beginRound();
@@ -3925,7 +3958,7 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       afterContent: 'new',
     });
     expect(card.hasAttribute('hidden')).toBe(false);
-    expect(document.getElementById('writeConfirmTool')!.textContent).toBe('write_file');
+    expect(document.getElementById('writeConfirmTool')!.textContent).toBe('写入文件');
     expect(document.getElementById('writeConfirmPath')!.textContent).toBe('/workspace/src/foo.ts');
     expect(document.getElementById('writeConfirmDesc')!.textContent).toBe('写文件：foo.ts');
     // diff 预览：before → after（textContent 防注入，与消息区同纪律；纯内容对比，不含描述）

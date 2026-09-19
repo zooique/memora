@@ -219,6 +219,10 @@ export const memoryStyles = `
   #memory-root .mem-edit-btn:focus-visible { opacity: 1; }
   #memory-root .mem-edit-btn:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
   #memory-root .mem-edit-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
+  /* 卡片头按钮图标（原 ✕/✎ 字符的 SVG 替代，2026-09-19 图标语言收口）：
+   * 按钮本身已是 inline-flex + center，此处只需消除 svg 的 inline 基线间隙 */
+  #memory-root .mem-del-btn svg,
+  #memory-root .mem-edit-btn svg { display: block; }
 
   /* 内联编辑区（G19 内联 edit，2026-08-25）：textarea + 操作按钮 */
   #memory-root .mem-edit-wrap {

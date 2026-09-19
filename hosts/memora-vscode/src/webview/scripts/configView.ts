@@ -15,6 +15,7 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { fmtTokens, TOKENS_PER_K } from '../helpers/fmtTokens.js';
+import { getIconSvg } from './icons.js';
 
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ConfigViewDeps {
@@ -342,8 +343,17 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
         btnTest.disabled = false;
         testResult.hidden = false;
         testResult.className = 'test-result ' + (msg.ok ? 'ok' : 'err');
-        testResult.textContent =
-          (msg.ok ? '✅ 连接成功' : '❌ 连接失败') + (msg.message ? '：' + msg.message : '');
+        // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ✅/❌ emoji 剪除，2026-09-19 图标语言收口）；
+        // msg.message 来自宿主 → 文本走 createTextNode（防注入）
+        testResult.textContent = '';
+        const resultIcon = document.createElement('span');
+        resultIcon.className = 'test-result__icon';
+        resultIcon.setAttribute('aria-hidden', 'true');
+        resultIcon.innerHTML = getIconSvg(msg.ok ? 'check' : 'cancel', 12, 12);
+        testResult.appendChild(resultIcon);
+        testResult.appendChild(
+          document.createTextNode((msg.ok ? '连接成功' : '连接失败') + (msg.message ? '：' + msg.message : '')),
+        );
       } else {
         if (msg.ok) {
           showToast(msg.message || '操作成功', true);

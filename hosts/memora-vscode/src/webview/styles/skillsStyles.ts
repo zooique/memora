@@ -54,6 +54,10 @@ export const skillsStyles = `
     margin-bottom: var(--sp-3, 8px);
   }
 
+  /* 空态提示内联图标（原 📁 emoji 的 SVG 替代，2026-09-19 图标语言收口）：
+   * .hint 为左对齐说明文字，图标以 inline 内联、vertical-align 与文字基线对齐 */
+  #skills-root .hint-icon { vertical-align: -2px; }
+
   #skills-root .hint code {
     background: var(--surface-hover, rgba(128,128,128,.2));
     padding: 1px 4px;

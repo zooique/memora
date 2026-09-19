@@ -59,10 +59,8 @@ export const tokens = `
     --accent-foreground: var(--vscode-button-foreground, #ffffff);
 
     /* === L2 语义令牌：品牌主色（角色标签/强调标识） ===
-   * --brand 保留自定义（产品品牌设定，不跟随主题）；
-   * --brand-subtle 改用 VSCode 变量（交互淡背景，跟随主题）。 */
+   * --brand 保留自定义（产品品牌设定，不跟随主题）。 */
     --brand: #4a9eff;
-    --brand-subtle: var(--vscode-list-hoverBackground, rgba(74, 158, 255, 0.08));
 
     /* === L2 语义令牌：反馈状态色（校验/信息/错误/警告） ===
      * 供提示条 / 记忆条 / 主动提问条 / 测试结果 / 错误消息使用。
@@ -75,8 +73,7 @@ export const tokens = `
     --feedback-warn-fg: var(--vscode-descriptionForeground, #d7ba7d);
     --feedback-warn-accent: var(--vscode-charts-yellow, #d7ba7d);
 
-    /* === L2 语义令牌：状态指示色（工具执行中/成功/失败） === */
-    --status-info: var(--vscode-editorInfo-foreground, #3794ff);
+    /* === L2 语义令牌：状态指示色（工具成功/失败） === */
     --status-pass: var(--vscode-testing-iconPassed, #4ec9b0);
     --status-fail: var(--vscode-errorForeground, #b3261e);
 
@@ -110,14 +107,13 @@ export const tokens = `
      * 对齐 ui-redesign.md §5：仅新增真正需要的语义令牌，其余一律复用已有令牌。
      *   --surface-ai-avatar：AI 头像底色（badge 背景，克制弱化的品牌色）
      *   --surface-thought：思考折叠块底色（编辑器控件背景，与消息区分）
-     * 工具状态色复用 --status-info/pass/fail；日期分隔线复用 --text-secondary；
+     * 工具状态色复用 --status-pass/fail；日期分隔线复用 --text-secondary；
      * composer 附加能力 chip 复用 --btn-secondary-bg —— 均不重复造令牌。 */
     --surface-ai-avatar: var(--vscode-badge-background, rgba(14, 99, 156, 0.25));
     --surface-thought: var(--vscode-editorWidget-background, #252526);
 
     /* === L2 语义令牌：技能来源（skillsStyles 引用，2026-08-24 收敛裸值） ===
-     * 复用已有语义令牌，不造裸色：内置技能 = accent（品牌/当前），用户技能 = status-pass（个人/通过）。
-     * --accent-subtle 此前被 skillsStyles 引用但未定义（回退裸值），此处补定义收口。 */
+     * 复用已有语义令牌，不造裸色：内置技能 = accent（品牌/当前），用户技能 = status-pass（个人/通过）。 */
     --skill-agent-accent: var(--accent, #0e639c);
     --skill-user-accent: var(--status-pass, #4ec9b0);
     /* 角色包技能来源（2026-08-25 三分类新增）：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)
@@ -135,16 +131,12 @@ export const tokens = `
     --accent-bg-hover: var(--vscode-list-hoverBackground, rgba(14, 99, 156, 0.06));
     --accent-bg-subtle: var(--vscode-editor-inactiveSelectionBackground, rgba(14, 99, 156, 0.08));
     --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(14, 99, 156, 0.1));
-    --accent-subtle: var(--vscode-inputValidation-infoBackground, rgba(14, 99, 156, 0.15));
 
-    /* === L2 语义令牌：上下文占用分段色（chatStyles 引用，2026-08-30 收敛裸值） ===
-     * 输入区占用条 5 个数据层（角色包设定/记忆/对话/输入锚点/输出预留）各自独立着色。
-     * 改用 VSCode charts.* 系列，跟随主题自动适配亮/暗模式（对齐 --skill-rolepack-accent 先例）。 */
-    --occ-rolepack: var(--vscode-charts-purple, #a78bfa);
-    --occ-memory: var(--vscode-charts-teal, #4ec9b0);
+    /* === L2 语义令牌：上下文占用充能色（chatStyles 引用，2026-08-30 收敛裸值） ===
+     * 占用指示器现为圆环充能形态（单弧随占用率填充），只需一个充能色；令牌沿用 dialogue
+     * 命名——占用增长主要来自对话层。若恢复「按数据层分段着色」，按
+     * --occ-rolepack / --occ-memory / --occ-input / --occ-output 命名重建（原 5 段令牌已随形态演进退役）。 */
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
-    --occ-input: var(--vscode-charts-orange, #caa23b);
-    --occ-output: var(--vscode-charts-red, #f14c4c);
 
     /* === L2 语义令牌：遗留引用收口（2026-09-19 全量审查） ===
      * 此前多个样式文件以 var(--xxx, 裸值) 引用 tokens 未定义的「幽灵令牌」（仅靠 fallback
