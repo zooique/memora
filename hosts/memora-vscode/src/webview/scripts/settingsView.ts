@@ -204,7 +204,7 @@ function createSkillsView({
           ? `<ul class="skill-problems">${s.issues.map((i) => `<li class="prob-${i.level}">${escapeHtml(i.message)}</li>`).join('')}</ul>`
           : ''
       }
-      <div class="skill-content" style="display:none" ${cached ? '' : 'data-pending="1"'}>${cached}</div>
+      <div class="skill-content" style="display:none" ${cached ? '' : 'data-pending="1"'}>${escapeHtml(cached)}</div>
     </div>
   `;
       })

@@ -353,3 +353,52 @@ describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全�
     expect(toast.textContent).toContain('<img');
   });
 });
+
+/**
+ * 技能正文翻页重渲染防注入（HOST-S16，2026-09-20）
+ *
+ * 背景：renderSkillItems 走 innerHTML 拼接，其中「已缓存正文」分支（contentMap 命中）
+ * 是唯一把外部可控文本（用户技能目录下的 .md 正文）原样注入 innerHTML 的路径；
+ * 同一份正文在首次加载（skill_content 消息）与点击展开时都走 textContent，唯翻页重渲染例外。
+ * 危害等级受限于 webview CSP（default-src 'none' → 脚本不可执行），但 style-src 仍
+ * 'unsafe-inline'，未转义注入可造成 DOM 结构破坏与 UI 伪装，故按「同一数据两个汇点」
+ * 的不一致收口为必测项。
+ */
+describe('技能正文翻页重渲染防注入（HOST-S16）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  /** 分发 skills_loaded（15 条 → 触发分页，为「翻页重渲染」提供入口） */
+  function dispatchSkills(skills: unknown[]): void {
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'skills_loaded', skills } }));
+  }
+
+  it('翻页回第 1 页：已缓存正文原样转义落 DOM（不产生 <b>/<img> 元素）', () => {
+    mountSettingsView();
+    dispatchSkills(
+      Array.from({ length: 15 }, (_, i) => ({
+        name: `skill-${String(i).padStart(2, '0')}`,
+        description: `技能 ${i}`,
+        layer: 'builtin',
+      })),
+    );
+    // 首次加载正文（走 textContent 安全路径）→ 写入 contentMap 缓存
+    const payload = '<b>粗体</b><img src=x onerror=alert(1)>';
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'skill_content', skillName: 'skill-00', content: payload } }),
+    );
+    // 翻到第 2 页再回第 1 页 → 触发 renderSkillItems 重渲染（命中缓存 → innerHTML 分支）
+    const btns = document.querySelectorAll<HTMLButtonElement>('#skills-root .pager-btn');
+    btns[1]!.click();
+    btns[0]!.click();
+
+    const contentEl = document.querySelector('.skill-item .skill-content') as HTMLElement;
+    expect(contentEl.querySelector('b')).toBeNull();
+    expect(contentEl.querySelector('img')).toBeNull();
+    expect(contentEl.textContent).toBe(payload);
+  });
+});

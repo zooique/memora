@@ -15,8 +15,13 @@ export default defineConfig({
     // 宿主测试（含 webview jsdom）一律归宿主 vitest 独立跑（host:test），
     // 不在此 include —— 曾因双 include 导致 webview 全套被跑两遍且根门禁被它的
     // 30s 重放用例拖慢/超时（2026-09-19 chatView R3/R4 flake），已收敛。
-    // webview 的 jsdom 环境由各测试文件头部 `@vitest-environment jsdom` per-file 声明
-    // （12 文件均有），不再依赖本文件的 environmentMatchGlobs。
+    // webview 的 jsdom 环境由**需要 DOM 的测试文件**在自身头部声明 `@vitest-environment jsdom`
+    // （移除 environmentMatchGlobs 后，per-file 声明是唯一来源）。
+    // ⚠️ **实测并非「全部已声明」**：webview/** 下仍有一批纯逻辑测试文件不带该声明 → 按宿主
+    // 配置默认跑 node。已逐个核验它们**零 DOM 引用**，故与先前 jsdom 相比**无功能差异**。
+    // **缺声明不存在静默风险**：届时访问 DOM 会直接 ReferenceError 报红（失败响亮而非静默），
+    // 因此**不额外加守卫生效**（重复保护）。**新增依赖 DOM 的用例必须自带该声明**，
+    // 否则将以「document is not defined」失败。
     include: [
       'src/**/__tests__/**/*.test.ts',
       'hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts',
