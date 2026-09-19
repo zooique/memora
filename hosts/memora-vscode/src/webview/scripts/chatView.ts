@@ -283,7 +283,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 锚定浮层展开/收起（点击 head 切换；浮层非 modal——看进度时需同时看正文）。
-   *  展开态同时写 aria-expanded（可访问性）与 chevron 方向（▸ 收起态/▾ 展开态）。
+   *  展开态同时写 aria-expanded（可访问性）与 chevron 图标（chevron-right 收起态 /
+   *  chevron-down 展开态；2026-09-19 HOST-S8：由 ▸/▾ 字符收敛为 icons.ts 的 SVG）。
    *  懒构建：展开时才从当前快照补建面板（收起态 renderPlanBar 不建 DOM，省运行期开销） */
   function setPlanBarExpanded(expanded: boolean): void {
     planBarExpanded = expanded;
@@ -299,7 +300,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       panel.hidden = !expanded;
     }
-    if (chevron) chevron.textContent = expanded ? '▾' : '▸';
+    if (chevron) applyIcon(chevron, expanded ? 'chevron-down' : 'chevron-right');
   }
 
   /** 渲染常驻条（一行头 + 锚定浮层内容）。头 = N/M + 进度条 + 当前 active step 摘要。
@@ -3516,7 +3517,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'user') {
       // 无缝插话（缺口 B）+ UX-9 A：生成中收到用户补充 → 打断当前流式正文：结清旧块的
       // 流式态（光标/定时器），但保留块引用 —— 打断分条将插在该块之后，后续 chunk 以「续接」
-      // 段出现在分条之后（还原内核 interject() abort→续跑语义，loop.ts:617）
+      // 段出现在分条之后（还原内核 interject() 的 abort→续跑语义）
       if (streamingActive) {
         // 打断旧流必须同时移除旧块流式光标（is-streaming ▋）——否则旧块光标残留闪烁：
         // 该块只是"被打断的半截回答"，不再有新 chunk，finalizeStreaming 也不会再被调用

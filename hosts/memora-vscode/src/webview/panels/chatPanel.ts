@@ -1905,7 +1905,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 交互输入挂靠 round-block）的共同底座，纯展示判定，不做内核落库改造。
    *
    * 时序还原说明（A）：打断补充（supplement）插在它打断的那段 AI 正文之后、最终回答之前，
-   * 由 webview 渲染为行内打断切分条，语义还原内核 interject() abort→续跑（loop.ts:617）。
+   * 由 webview 渲染为行内打断切分条，语义还原内核 interject() 的 abort→续跑语义（符号定位：内核 loop 的 interject；不写行号——行号无 SSOT）。
    * 交互输入按 ts 升序与前序 assistant 段交织：ts 缺失时保持稳定序（段 → 提问回答 → 补充）。
    */
   private sendRoundView(rounds: ReplayRound[]): void {

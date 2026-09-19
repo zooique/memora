@@ -33,8 +33,8 @@ export type IconName =
   | 'trash'         // 永久删除
   | 'save'          // 保存
   | 'cancel'        // 取消
-  | 'chevron-down'  // 下拉箭头
-  | 'chevron-up'    // 上拉箭头
+  | 'chevron-down'  // 向下尖角（plan-bar 展开态；消费者是折叠开关，非下拉组件）
+  | 'chevron-right' // 右箭头（折叠态）
   | 'fork'          // 分叉会话
   | 'plus'          // 新建会话/加号
   | 'history'       // 历史记录/时钟
@@ -44,6 +44,7 @@ export type IconName =
   | 'stop'          // 停止（方块）
   | 'play'          // 继续/播放（三角）
   | 'team'          // 小组会议（双人轮廓，柔和线条）
+  | 'ellipsis'      // 更多操作（三点；原 ⋯ 字符，2026-09-19 HOST-S8 收口）
   | 'target';       // 当前执行位置（同心圆靶心；plan-tag「正在执行 step-N」锚点）
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
@@ -82,8 +83,8 @@ const ICON_PATHS: Record<IconName, string> = {
   cancel: '<circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5"/><path d="M10.5 5.5l-5 5"/>',
   // 下拉箭头
   'chevron-down': '<path d="M3.5 5.5l4.5 4.5 4.5-4.5"/>',
-  // 上拉箭头
-  'chevron-up': '<path d="M3.5 10.5l4.5-4.5 4.5 4.5"/>',
+  // 右箭头（收起态；与 chevron-down 同曲率，但为独立 path —— 非 transform 旋转）
+  'chevron-right': '<path d="M5.5 3.5l4.5 4.5-4.5 4.5"/>',
   // 分叉：带分支的节点
   fork: '<circle cx="4" cy="4" r="1.5"/><circle cx="4" cy="12" r="1.5"/><circle cx="12" cy="8" r="1.5"/><path d="M5.5 4H9a3 3 0 0 1 3 3"/><path d="M5.5 12H9a3 3 0 0 0 3-3"/>',
   // 加号：新建会话
@@ -94,6 +95,9 @@ const ICON_PATHS: Record<IconName, string> = {
   'scroll-bottom': '<path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/>',
   // 小组会议：双人轮廓（小在前大在后，柔和线条）
   team: '<circle cx="5.5" cy="6" r="1.5"/><circle cx="10.5" cy="6.5" r="2"/><path d="M3 13c0-1.5 1.1-2.5 2.5-2.5S8 11.5 8 13"/><path d="M8.5 13c0-1.7 1.5-3 3-3s3 1.3 3 3"/>',
+  // 更多操作：三点（替换原『⋯』字符，2026-09-19 HOST-S8 图标语言收口；
+  // 实心点局部覆盖 SVG_BASE_ATTRS 的 fill=none——16px 下描边小圆会糊成环）
+  ellipsis: '<circle cx="4" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none"/>',
   // 当前执行位置：同心圆靶心（替换原 emoji 📍 的 plan-tag 锚点，2026-09-19 图标语言收口）
   target: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
 };

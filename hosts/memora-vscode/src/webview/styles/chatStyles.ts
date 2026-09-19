@@ -1262,9 +1262,11 @@ export const chatStyles = `
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .plan-bar__chevron {
-    flex-shrink: 0; font-size: 10px;
+    flex-shrink: 0; display: inline-flex; align-items: center;
     color: var(--text-muted, #6e7681);
   }
+  /* SVG 指示器尺寸适配（2026-09-19 HOST-S8：原 ▸/▾ 字符 → icons.ts 的 SVG） */
+  .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
   /* 锚定浮层：紧贴常驻条下方（top:100%），全量步骤列表 + stepLog；卡片 + 阴影浮于对话上方。
    * 非 modal（无遮罩）：看进度时需同时看正文。max-height 超限滚动 */
   .plan-bar__panel {

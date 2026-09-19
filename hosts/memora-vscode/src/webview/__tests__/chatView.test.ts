@@ -1809,7 +1809,8 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     replayRealRound(false);
     // 语义快照（2026-09-17 QA 复验定论：**非缺陷**）：done 是宿主 post-message、不落盘为 ProcessEvent，
     // 故 fixtures 末尾无 done 纯属持久化产物。真实 round 的 status=complete 证明宿主正常完成路径**必发 done**
-    // （chatPanel.ts:2626）。因此「metrics 之后无 done」只会来自暂停（pausedOnPurpose，chatPanel.ts:2622-2624）
+    // （宿主发 done 的路径，见 chatPanel 的 finalizeStreaming）。因此「metrics 之后无 done」只会来自暂停
+// （pausedOnPurpose，见 chatPanel 的 pause 分支）
     // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body.is-streaming 保留，是正确语义（轮次未收口，可 resume）。
     // 用户实测的「光标不消失」根因是 F2（finalizeRound 抛 NotFoundError 打断收口），与 done 是否发送无关。
     expect(document.querySelector('.msg-body.is-streaming')).not.toBeNull();
@@ -1835,8 +1836,8 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 判据**不依赖 catch 文案**（2026-09-17 收口 2）：旧写法按 `[chatView]` 前缀 filter 后再断言
     // 长度 —— 一旦前缀被改或换到 logger 模块，filter 恒返回空数组 → 断言依然绿 → 又变回假绿，
     // 且这次无人察觉。故直接对全部 console.error 调用断言（方案 A）。
-    // 实测该用例路径内 console.error 唯一来源 = onMessage 兜底（chatView.ts:3875）；webview 侧
-    // 其余异常出口是 console.warn（chatView.ts:2338），不在本判据范围内。
+    // 实测该用例路径内 console.error 唯一来源 = chatView 的 onMessage 兜底分支；webview 侧
+    // 其余异常出口是 chatView 的 console.warn 分支，不在本判据范围内。
     expect(errorSpy).not.toHaveBeenCalled();
     // done → finalizeRound 全量重建 round-block 折叠块（任务过程收进折叠区）
     expect(document.querySelector('.round-block')).not.toBeNull();
@@ -2485,13 +2486,20 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     });
     const head = document.querySelector('#planBarHead') as HTMLElement;
     const panel = document.querySelector('#planBarPanel') as HTMLElement;
+    const chevron = document.querySelector('#planBarChevron') as HTMLElement;
+    // HOST-S8（2026-09-19）：折叠指示由 ▸/▾ 字符收敛为 icons.ts 的 SVG。
+    // 图标守卫的 FORBIDDEN 字符集不含 U+25BE/U+25B8，故此处显式锁住「不得回退为字符」。
+    expect(chevron.textContent, '折叠指示不得回退为字符图标').toBe('');
+    expect(chevron.querySelector('svg'), '折叠指示必须是 SVG').not.toBeNull();
     expect(panel.hidden).toBe(true);
     head.click();
     expect(panel.hidden).toBe(false);
     expect(head.getAttribute('aria-expanded')).toBe('true');
+    expect(chevron.dataset.icon).toBe('chevron-down');
     head.click();
     expect(panel.hidden).toBe(true);
     expect(head.getAttribute('aria-expanded')).toBe('false');
+    expect(chevron.dataset.icon).toBe('chevron-right');
   });
 
   it('clear_ok → 移除常驻条（切换会话不残留）', () => {

@@ -52,6 +52,24 @@ describe('dropdown 键盘可访问性', () => {
     document.body.innerHTML = '';
   });
 
+  it('默认触发器 = 内联 ellipsis SVG（HOST-S8：自足，不依赖 populateIcons）', () => {
+    // 本用例直接挂载组件产物、不走 chatView 初始化流程（mountDropdown 只做 innerHTML +
+    // initDropdowns），即「消费方未调 populateIcons」的形态——锁的是组件的**自足性契约**。
+    // 注（2026-09-19 订正）：当前两处生产调用点位于 chatPanel.buildHtml 的静态模板内、由初始化
+    // populateIcons 覆盖，故本用例属**前瞻性锁定**（防未来动态调用点踩坑），非复现现存缺陷；
+    // 若默认值退回 data-icon 占位 span，此处只会拿到空 span（.treedd__trigger 固定 26px/
+    // 透明背景/无边框 → 隐形可点区域）。
+    const { trigger } = mountDropdown();
+    const svg = trigger.querySelector('svg');
+    expect(svg, '默认触发器必须是内联 <svg>').not.toBeNull();
+    expect(svg!.querySelectorAll('circle').length, 'ellipsis 为三点').toBe(3);
+    expect(svg!.getAttribute('stroke')).toBe('currentColor');
+    expect(svg!.getAttribute('fill')).toBe('none');
+    expect(svg!.getAttribute('width')).toBe('14');
+    // 反向守卫：不得残留字符图标（触发器文本必须为空）
+    expect(trigger.textContent).toBe('');
+  });
+
   it('初始闭合态：aria-expanded=false 且菜单未展开', () => {
     const { el, trigger, menu } = mountDropdown();
     expect(trigger.getAttribute('aria-expanded')).toBe('false');

@@ -11,7 +11,16 @@
  *     支持动态渲染的选项（模型列表等），杜绝 forEach 静态绑定漏绑问题；
  *   - 初始化遍历所有 .treedd 实例，而非只取第一个；
  *   - 样式见 styles/dropdown.ts；本组件导出 HTML 模板 + 初始化绑定两部分。
+ *   - 依赖方向（2026-09-19 HOST-S8 记录）：本组件引 `../scripts/icons.js`（纯叶子：常量 +
+ *     纯函数，零副作用、零外部 import）供默认触发器取图标，并引 `../styles/dropdown.js`。
+ *     注意 scripts/chatView.ts 反向引本组件 → 目录层面构成 **components ⇄ scripts 双向**。
+ *     当前因 icons.ts 为零依赖叶子故无真实循环；若本组件日后需要更多 scripts/ 能力，应先
+ *     考虑把图标源下沉到 helpers/（scripts/chatView.ts 已正向引 helpers/*，方向更顺）。
+ *   - 图标注入的两条路径（勿视为重复实现）：外部经 `triggerLabel` 注入（生产调用点用法）与
+ *     内部默认值 `getIconSvg`（自足兜底），二者**同源于 icons.ts**；SSOT 未破，破的是
+ *     「注入机制单一路径」，已登记台账。
  */
+import { getIconSvg } from '../scripts/icons.js';
 import { dropdownStyles } from '../styles/dropdown.js';
 
 export interface DropdownItem {
@@ -23,7 +32,7 @@ export interface DropdownItem {
   danger?: boolean;
 }
 
-/** 生成下拉组件 HTML（默认触发器「⋯」；onSelect 指定该项点击后调用的全局回调名）
+/** 生成下拉组件 HTML（默认触发器 = ellipsis 内联 SVG；onSelect 指定该项点击后调用的全局回调名）
  *  SSOT 优化：触发器文本/title/aria-label 可通过 opts 自定义，避免硬编码「更多操作」
  *  对选择器场景（Skill/Model picker）语义不当。未指定时保持向后兼容默认值。 */
 export function buildDropdownHtml(
@@ -33,7 +42,15 @@ export function buildDropdownHtml(
   const extra = opts?.extraClass ? ` ${opts.extraClass}` : '';
   // 实例级回调：data-on-select 指向全局回调名；缺省回退 __treeddOnSelect
   const onSelectAttr = opts?.onSelect ? ` data-on-select="${opts.onSelect}"` : '';
-  const triggerLabel = opts?.triggerLabel ?? '⋯';
+  // 默认触发器 = ellipsis 内联 SVG（2026-09-19 HOST-S8：原 '⋯' 字符收敛为 icons.ts 的唯一图标语言）。
+  // 取「内联」而非 data-icon 占位 span 的真实理由（2026-09-19 订正，原注释误称「面板在运行时拼进
+  // 动态 DOM」——实测两处生产调用点均在 chatPanel.buildHtml 的静态模板内，由 chatView 初始化的
+  // populateIcons(document.body) 覆盖，并非动态插入）：
+  //   本函数是**返回字符串的纯生成器**，调用上下文（初始化模板 / 运行期拼接）由消费者决定，生成器
+  //   无从约束。内联 SVG 使产物**自足**，消除「消费上下文是否覆盖 populateIcons」这一隐式契约；
+  //   data-icon 占位形态在该契约不成立时静默空白（.treedd__trigger 固定 26px、背景透明、无边框
+  //   → 空内容等同隐形可点区域）。故本改动属**契约收紧**（防未来调用点踩坑），非修补现存缺陷。
+  const triggerLabel = opts?.triggerLabel ?? getIconSvg('ellipsis', 14, 14);
   const triggerTitle = opts?.triggerTitle ?? '更多操作';
   const triggerAriaLabel = opts?.triggerAriaLabel ?? '更多操作';
   const itemHtml = items

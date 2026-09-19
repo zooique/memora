@@ -7,14 +7,33 @@
  * （emoji 与装饰符号）是**第二套语言**：彩色像素图、跨平台渲染不一、不跟随主题色。
  * 2026-09-19 收口时清理了 8 处（输入框技能触发器与 chip 的 ⚡、清空按钮 ✕、记忆卡按钮
  * ✕/✎、续接 chip ↻、step 锚点 📍、连接测试 ✅/❌、技能空态 📁），并剪除 toolNameMap 的
- * 24 键 emoji 表。本守卫防其回潮：**代码**中出现字符图标即红。
+ * 24 键 emoji 表。同日 HOST-S8 追加收口 3 处（plan-bar 折叠指示 ▸/▾ → `applyIcon`、
+ * dropdown 默认触发器 ⋯ → `getIconSvg('ellipsis')` **内联**自足 SVG；另补齐缺失的
+ * `chevron-right`、删零消费的 `chevron-up`），并将下述三个**逃逸**字符点名纳入禁止集。
+ * 本守卫防其回潮：**代码**中出现字符图标即红。
  *
  * **判据边界（有意为之，勿随意扩大）**：
  *   · 注释里的符号不管——不渲染进 DOM，且项目文风以 ⚠️ 作警示标记（如「⚠️ 勿回退」）；
  *   · 语义箭头 `→ ← ↔ ⇒` 不管——表意（「A → B」）而非图标；故 U+2190–21FF 整体放行，
  *     仅把循环箭头 `↺ ↻`（U+21BA/21BB，属图标性质）拦下；
- *   · CSS `content` 的单色几何字符（`▾ ▸ · ▋`）不管——它们跟随 `color`，不构成语言冲突，
- *     且 CSS content 无法承载 SVG；其中 `▾` 与 icons 的 `chevron-down` 语义重复已单独登记台账；
+ *   · CSS `content` 的几何字符——**两类语义不同，勿混为一谈**：
+ *     (a) `▾`(U+25BE) / `▸`(U+25B8)：**已点名纳入 FORBIDDEN**，但仅 `styles/` 层的
+ *         `content` 行受**窄豁免**放行（伪元素**无法持有 DOM 节点** → 字形不可能换成
+ *         <svg>）。豁免面由下方守卫以**结构性约束**锁死（须在 `styles/`、值须 ≤1 字符）。
+ *         现存于 dropdown capsule caret / roles details summary 两处（描述性快照，**非
+ *         处数断言**——处数随 UI 需求漂移、无 SSOT，写死即每改一次过期一次），经 HOST-S8
+ *         裁决保留：把指示器搬进 HTML 需改 dropdown/roles 组件契约，收益不抵成本；
+ *     (b) `·`(U+00B7) / `▋`(U+258B)：**完全未纳入 FORBIDDEN**，任何层均放行（排版分隔 /
+ *         流式光标，代码侧 30+ 处在用，纳入即大面积误报）；
+ *   · **逃逸已点名收口（HOST-S10 部分闭环，2026-09-19）**：禁止集是**黑名单**式，无法
+ *     枚举「图标性字符」全集。实证：`▸`(U+25B8) / `▾`(U+25BE) / `⋯`(U+22EF) 三者
+ *     **均不在**原区间内（落在 `2600–27BF` 之外）——即 `chatView.ts` 原先的 `'▾':'▸'`
+ *     折叠指示器**从未被本守卫拦过**，其收口靠人工发现而非守卫。现已逐个点名纳入
+ *     FORBIDDEN（全库重扫：命中 0→2，且 2 处全在 CSS content → 被上条豁免）；
+ *     但 `·`(U+00B7) / `▋`(U+258B) **不纳入**——代码侧 30+ 处在用（排版分隔、单位、
+ *     流式光标），纳入即大面积误报。残余盲区仍存（黑名单永远漏），CSS 侧判据的稳健
+ *     方向是反转为**白名单**（`content` 非空仅允许 `''`/`'·'`/`'▋'`）——本次先以结构性
+ *     约束控住豁免面，未动白名单化（改判据须带观测与退出条件）；
  *   · VS Code OutputChannel 的纯文本报告（`extension/commands/demo.ts` 的 `✓ ✖ ➤`）不管——
  *     文本通道无法渲染 SVG，且不在 webview 渲染面；
  *   · `×`（U+00D7）**不纳入禁止集**——同一字符在本项目兼作**语义乘号**（`工具×${n}`、
@@ -32,10 +51,25 @@ import { getIconSvg } from '../scripts/icons.js';
 const UI_ROOT = join(__dirname, '..');
 
 /**
- * 禁止字符集：图形 emoji + 杂项装饰符号 + 图形符号补充 + 循环箭头 + 变体选择符。
- * 不含 U+2190–21FF 语义箭头，不含 U+2500 段几何字符（见文件头「判据边界」）。
+ * 禁止字符集：图形 emoji + 杂项装饰符号 + 图形符号补充 + 循环箭头 + 变体选择符，
+ * 并**逐个点名**三个曾逃逸出区间的图标性字符：`▸`(U+25B8) / `▾`(U+25BE) / `⋯`(U+22EF)。
+ * 不含 U+2190–21FF 语义箭头；`·`(U+00B7) / `▋`(U+258B) 属排版分隔与流式光标且代码侧
+ * 30+ 处在用，**不纳入**（见文件头「判据边界」）。
  */
-const FORBIDDEN = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{21BA}\u{21BB}\u{FE0F}]/u;
+const FORBIDDEN = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{21BA}\u{21BB}\u{FE0F}\u25B8\u25BE\u22EF]/u;
+
+/**
+ * CSS `content` 值豁免（HOST-S8 裁决保留的 2 处）：伪元素**无法持有 DOM 节点**，
+ * 故其字形不可能换成 <svg>。豁免面由下方守卫以**结构性约束**锁死（须在 styles/、值须单字符），
+ * 不锁数字——数字无 SSOT，每改即过期。
+ */
+const CSS_CONTENT_ROW = /content:\s*['"][^'"]*['"]/;
+
+/** 样式层目录前缀（路径已正斜杠归一后比较） */
+const STYLE_LAYER = 'styles/';
+
+/** 相对 UI_ROOT 的路径，统一正斜杠——Windows 下 join 产出反斜杠，直接 startsWith 会恒 false */
+const relPath = (f: string): string => f.slice(UI_ROOT.length + 1).split('\\').join('/');
 
 /** 递归收集 UI 层源码（排除测试目录与测试文件本身） */
 function collectUiSources(dir: string, out: string[] = []): string[] {
@@ -92,6 +126,10 @@ function findCharIcons(): { file: string; line: number; char: string }[] {
   const offenders: { file: string; line: number; char: string }[] = [];
   let scannedLines = 0;
   for (const file of collectUiSources(UI_ROOT)) {
+    const rel = relPath(file);
+    // 豁免只在样式层生效：JS 对象属性也叫 content（`post({ content: '' })`），
+    // 若全局豁免，那种行里的字符图标会被静默放过
+    const styleLayer = rel.startsWith(STYLE_LAYER);
     const lines = readFileSync(file, 'utf8').split('\n');
     lines.forEach((raw, idx) => {
       const trimmed = raw.trim();
@@ -99,13 +137,17 @@ function findCharIcons(): { file: string; line: number; char: string }[] {
       if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
       const code = stripTrailingComment(raw);
       scannedLines++;
+      // CSS content 值豁免——伪元素无法持有 DOM 节点（详见 CSS_CONTENT_ROW 注释）
+      if (styleLayer && CSS_CONTENT_ROW.test(code)) return;
       const hit = code.match(FORBIDDEN);
       if (hit) {
-        offenders.push({ file: file.slice(UI_ROOT.length + 1), line: idx + 1, char: hit[0] });
+        offenders.push({ file: rel, line: idx + 1, char: hit[0] });
       }
     });
   }
-  // 非空反向守卫：扫描面塌陷（路径错误 / 目录改名）立即红，防「空集假绿」
+  // 非空反向守卫：扫描面塌陷（路径错误 / 目录改名）立即红，防「空集假绿」。
+  // 此为**单调安全下限**（源码行数只增不减，实际量级远高于此），与上文「不锁处数」不冲突：
+  // 处数断言会随 UI 需求漂移（每改即过期），行数下限只会随代码增长而更宽松、不会假红。
   expect(scannedLines, '扫描到的代码行数为 0——守卫的路径或提取逻辑已失效').toBeGreaterThan(500);
   return offenders;
 }
@@ -126,6 +168,30 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
       return /from '[^']*icons\.js'/.test(s) && !f.endsWith('icons.ts');
     });
     expect(consumers.length, `引用 icons.js 的 UI 模块过少：${consumers.join(', ')}`).toBeGreaterThanOrEqual(3);
+  });
+
+  it('CSS content 豁免面结构受控（防漏检面膨胀 / 防豁免逻辑失效）', () => {
+    const exemptRows: { path: string; value: string }[] = [];
+    for (const file of collectUiSources(UI_ROOT)) {
+      const rel = relPath(file);
+      // 豁免面只在样式层统计：JS 对象属性也叫 content（`post({ content: '' })`），不是 CSS
+      if (!rel.startsWith(STYLE_LAYER)) continue;
+      readFileSync(file, 'utf8').split('\n').forEach((raw) => {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
+        const m = stripTrailingComment(raw).match(CSS_CONTENT_ROW);
+        if (m) exemptRows.push({ path: rel, value: m[0] });
+      });
+    }
+    // 非空反向守卫：豁免正则失效时立即红——否则被豁免的字形会被静默放行
+    expect(exemptRows.length, 'CSS content 豁免行为 0——正则或提取逻辑已失效').toBeGreaterThan(0);
+    // 结构性约束：content 值至多 1 个字符——防有人塞长串/SVG 借豁免绕过
+    expect(
+      exemptRows
+        .filter((r) => Array.from(r.value.replace(/^content:\s*['"]|['"]$/g, '')).length > 1)
+        .map((r) => `${r.path} → ${r.value}`),
+      'content 值必须至多单字符（防借豁免塞入 SVG/长串）',
+    ).toEqual([]);
   });
 
   it('getIconSvg 产物可在 jsdom 下解析为 SVG 元素（所有 innerHTML 接入点的前提）', () => {

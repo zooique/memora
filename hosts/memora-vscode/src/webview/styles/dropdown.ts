@@ -23,6 +23,9 @@ export const dropdownStyles = `
     font-size: var(--font-lg, 14px); line-height: 1;
   }
   .treedd__trigger:hover { background: var(--surface-hover, rgba(128,128,128,.2)); }
+  /* 触发器内的 SVG 块级化，消除行内基线空隙（默认 ellipsis 与调用方自定义 SVG 共用）。
+   * 2026-09-19 HOST-S8：原 '⋯' 字符触发器收敛为 icons.ts 的 SVG。 */
+  .treedd__trigger svg { display: block; }
   .treedd__menu {
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));
     min-width: 168px; z-index: 100; /* 浮层高 z-index，确保覆盖而非挤压布局 */
@@ -60,7 +63,7 @@ export const dropdownStyles = `
   /* ===== 胶囊变体（.treedd--capsule）=====
    * 模型选择 / 历史切换等「紧凑胶囊触发器」的通用外观，集中定义一次，面板复用。
    * 相比各面板以 !important 覆写组件默认样式（层叠污染的架构反模式），此变体以
-   * 更高特异性选择器在组件内自然覆盖默认「⋯」图标按钮，无需 !important
+   * 更高特异性选择器在组件内自然覆盖默认 ellipsis 图标按钮，无需 !important
    * （对抗评估 P2-2/P2-4）。
    * 差异通过 CSS 变量定制：--dd-trigger-max-w（触发器最大宽，超长省略兜底）、
    * --dd-menu-min-w / --dd-menu-max-w（菜单尺寸）。 */
