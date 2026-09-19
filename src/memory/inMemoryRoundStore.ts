@@ -4,7 +4,7 @@
  * 设计理念：
  * - 零依赖零 IO，用于单元测试、临时占位
  * - 不持久化（进程退出即丢失），仅限测试/开发
- * - 生产请宿主注入 FileRoundStore 或 SqliteRoundStore
+ * - 生产由宿主注入持久化实现（FileRoundStore 或宿主自选后端）
  */
 
 import type {

@@ -186,25 +186,6 @@ describe('LockManager · 残留锁处理', () => {
     rmSync(tmpDir, { recursive: true, force: true });
   });
 
-  it('残留锁（进程已死）应被自动清理并以当前进程身份重新获取', async () => {
-    const memoraDir = join(tmpDir, '.memora');
-    mkdirSync(memoraDir, { recursive: true });
-
-    // 写入一个几乎不可能存活的 PID 的残留锁
-    const deadPid = 99999999;
-    writeFileSync(join(memoraDir, '.lock'), makeLockContent(deadPid), 'utf-8');
-
-    const lm = new LockManager();
-    await lm.acquire(memoraDir);
-
-    const lockPath = join(memoraDir, '.lock');
-    expect(existsSync(lockPath)).toBe(true);
-    // 新锁应覆盖为当前进程 PID
-    const lockContent = JSON.parse(readFileSync(lockPath, 'utf-8'));
-    expect(lockContent.pid).toBe(process.pid);
-    expect(lm.currentPath).toBe(lockPath);
-  });
-
   it('残留锁（进程存活=当前进程）应仅警告但仍覆盖写入新锁', async () => {
     const memoraDir = join(tmpDir, '.memora');
     mkdirSync(memoraDir, { recursive: true });

@@ -359,7 +359,7 @@ export interface Round {
  *
  * 设计原则：
  * 1. 同步语义（对齐 IMemoryStorage）
- * 2. 宿主实现：生产环境用 SQLite，测试用内存实现
+ * 2. 宿主实现：生产由宿主注入持久化存储（当前 vscode 宿主为 JSON 文件落地），测试用内存实现
  * 3. 可选方法：部分方法可由宿主选择性实现
  */
 export interface IRoundStore {
