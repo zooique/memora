@@ -60,7 +60,7 @@ Memora 对话过程中，webview 展示大量**运行时状态**：
 
 ### 1.2 根因
 
-这些运行时内容全部来自同一条**有序事件流**（[AgentChunk](../src/agent/types.ts) 的 `recall/thinking/tool_start/tool_result/selfReview/aborted/…`）+ 宿主事件（`memoryRecalled/memoryAdded/rolePackSwitched`），但它们**从未被持久化**——只有正文文本进了 RoundStore。即：
+这些运行时内容全部来自同一条**有序事件流**（[AgentChunk](../../src/agent/types.ts) 的 `recall/thinking/tool_start/tool_result/selfReview/aborted/…`）+ 宿主事件（`memoryRecalled/memoryAdded/rolePackSwitched`），但它们**从未被持久化**——只有正文文本进了 RoundStore。即：
 
 ```
 运行时 = 事件流（实时投影，不落盘）
@@ -145,7 +145,7 @@ ProcessEvent = {
 | `aborted`          | `reason`                                                           | 「已停止」标记               |
 | `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/success`             | 顶栏耗时 + § 执行指标         |
 
-> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）与 `step_boundary`（`{stepId?, title?}`，步级折叠边界）两个事件类型在上表定稿后新增，未补入表格；两者均已落盘（[roundStore.ts](../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
+> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）与 `step_boundary`（`{stepId?, title?}`，步级折叠边界）两个事件类型在上表定稿后新增，未补入表格；两者均已落盘（[roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
 >
 > **运行时专有字段约定（2026-09-12，A1 回抽）**：`narrate` 的 **`withdrawn?`** 是**运行时专有**字段——它承载「该段叙述曾被逐字流式进正文区、须先撤回」的信息（首轮消息级分类前无法预判工具轮）。它**刻意不落 ProcessEvent、不持久化**：重放的一致由**持久化侧扣除**保证（`Agent.consumeExecutionStream` 按此后缀扣除 `assistantMessage`）。**勿把它补进 ProcessEvent schema**——那会让「重放依赖运行时字段」的假依赖成立，而重放实际只需读 `Round.assistantMessage`（已扣除）。同理，宿主侧的 `narrate_withdraw` 协议消息亦为瞬态。
 >
@@ -159,7 +159,7 @@ ProcessEvent = {
 
 ### 3.4 存储形态：并入 Round 文件（v1.4 合案定案）
 
-* **事件存于 Round 文件内**：`rounds/{roundId}.json` 的新增可选字段 `processEvents?: ProcessEvent[]`（[Round 类型](../src/memory/roundStore.ts) 现有 `Round` 结构追加；`IRoundStore` 接口不变，宿主/内核存储的 JSON 透传天然保留该字段）
+* **事件存于 Round 文件内**：`rounds/{roundId}.json` 的新增可选字段 `processEvents?: ProcessEvent[]`（[Round 类型](../../src/memory/roundStore.ts) 现有 `Round` 结构追加；`IRoundStore` 接口不变，宿主/内核存储的 JSON 透传天然保留该字段）
 
 * **生命周期天然原子**（合案核心收益，撤销 v1.3 双路径 GC 联动的复杂度）：
 
@@ -173,7 +173,7 @@ ProcessEvent = {
 
 **核心约束**：宿主流式期间拿不到当前 roundId（roundId 由内核 `loop.allocRoundId()` 在 Prepare 阶段生成，无宿主导出通道；仅流结束后可从 `sessionStore.getSessionMeta().roundIds` 取到）。故写入采用**「流式期间内存缓冲 → 流结束后附到 Round 一次性落盘」**：
 
-* 宿主在统一消费点 [consumeFlow](../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `for await` 内，对上述类型事件**追加到内存 `events[]` 缓冲**（不逐 chunk 写盘，天然免节流）
+* 宿主在统一消费点 [consumeFlow](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `for await` 内，对上述类型事件**追加到内存 `events[]` 缓冲**（不逐 chunk 写盘，天然免节流）
 
 * **缓冲首条 = `meta`**（当前角色**显示名** + 激活 LLM **显示名**，从 host 状态读取：`_activeRolePack` + `providerStore.getActiveName()`）——不依赖「首轮快照即会话全程」的错误假设，同一会话中途切模型/切角色包也能逐轮还原
 
@@ -187,7 +187,7 @@ ProcessEvent = {
 
 ### 3.6 重放路径（加载会话，v1.4 修订）
 
-* 宿主实际加载路径为 `loadHistory → loadRoundBasedHistory()`（[chatPanel.ts](../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）：每个 round 读出时**正文与 `processEvents` 天然同源同轮**（同一对象），不再有"两个存储凑一份视图"的问题
+* 宿主实际加载路径为 `loadHistory → loadRoundBasedHistory()`（[chatPanel.ts](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）：每个 round 读出时**正文与 `processEvents` 天然同源同轮**（同一对象），不再有"两个存储凑一份视图"的问题
 
 * **按 round 交织重放**（数据源同一，v1.6.1 收敛时序）：每轮 `user` → `replay_events`（整批含 meta，webview 端自行提取 meta 写入「本轮身份」`currentRoundMeta`）→ `assistant` 正文（携带 roundId）。严禁拆分 meta 单独发 `process_event`——webview 端会把该轮当「运行时新轮」触发骨架块创建，与正文块重复成两条独立消息（v1.6.1 实测回归根因）。`buildAssistantShell` 渲染该轮 AI 消息时读 `currentRoundMeta` 挂角色/模型标签——运行时与重放同一机制（v1.5 单源修正）
 
@@ -308,7 +308,7 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 * **提问（LLM 的 ask）→ 无徽章的轻量前缀行 `.msg-qa--ask`**：问题原文 + 候选选项自然记录在对话流（`问` 前缀弱化显示、无容器边框），完整显示不截断。元素身份保留（`.msg-qa__tag` + `.msg-qa--ask`），供成对搬运（`moveQaIntoRoundBlock`）与折叠计数判定——「无 tag」是视觉口径而非删除元素（2026-09-08 措辞校准）。
 * **回答 / 补充 / 未答（用户输入）→ 折叠块 `.msg-qa`**：`<details>` 结构，summary 标签区分「你答 / 你补充 N 条 / 未回答（ask 超时）」，正文完整显示；补充同 roundId 合并成一条。
 * **超时兜底（ask 未答，2026-09-08 T4 增补）**：宿主 120s 内无回答 → `cancelAsk`（tool result 注入 `[ASK_ABORTED] 用户未回答该提问`）+ `resumeExecution('timeout')` 自动续跑——**不设人工跳过按钮**（选项 + 自由输入即主动通道，超时仅保底）；内核落一条 `kind='timeout'` 交互记录（随行 question/options，content = 超时通知文案「用户未在时限内回答，已自动继续」）→ 渲染「未回答」折叠块并计入折叠摘要「未回答×N」。LLM 收到「用户未答」明示后自行选择最优候选并说明依据——**不伪造用户选择了某选项**（诚实性红线）。
-* **排序即任务时序**：交互输入经 `host.after()` 插在**当前 assistant 块之后**（[chatView.ts](../hosts/memora-vscode/src/webview/scripts/chatView.ts) `appendInlineInputRow`），提问行先占位、回答折叠紧随其后（「问 → 你答」阅读序）——即"暂停在哪一步，输入就嵌在哪一步之后"，天然内嵌于任务时间线，而非挪到独立区域。
+* **排序即任务时序**：交互输入经 `host.after()` 插在**当前 assistant 块之后**（[chatView.ts](../../hosts/memora-vscode/src/webview/scripts/chatView.ts) `appendInlineInputRow`），提问行先占位、回答折叠紧随其后（「问 → 你答」阅读序）——即"暂停在哪一步，输入就嵌在哪一步之后"，天然内嵌于任务时间线，而非挪到独立区域。
 
 **任务表场景（v1.7 任务表例外，2026-09-09 修正废除）**：早期曾规定——一旦触发任务表，运行时过程按任务表收纳进对应步级折叠块（`step-boundary` 分组），避免长任务过程拖成超长平铺。**该分支已废除**（实锤：宿主曾把 narrate/tool 自 meta 起就收进 round-block 大容器 + `step-boundary` 折叠组，运行时对话流只剩折叠标题，v1.8「纯文本平铺」在任务场景完全不可见——用户运行验证为错误收敛）。修正后：**有无任务表共用同一渲染路径**（§3.8.6 两态投影）——运行时一律自然平铺（文本直展 + 非文本折叠块按序嵌入），结束后统一收紧进任务过程折叠块；任务表（plan）的当前步骤指示（📍 step-N 标签 / plan board）是**执行态投影**，不改变过程内容的平铺形态。
 
@@ -372,7 +372,7 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 
 | 步骤     | 内容                                                                                                                                                                                                                     | 预估影响                     |
 | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------ |
-| **S1** | 内核：`ProcessEvent` 事件类型定义 + `Round.processEvents?` 可选字段（[roundStore.ts](../src/memory/roundStore.ts)）+ 类型/透传测试。**落位修正（实施定案）**：ProcessEvent 是 Round 的组成部分（存储面），定义于 memory/roundStore.ts（thinking 阶段用本地字面量 `ProcessThinkingPhase`，与 agent ThinkingPhase 同值，避免 memory → agent 反向依赖） | 内核小改，纯加法                 |
+| **S1** | 内核：`ProcessEvent` 事件类型定义 + `Round.processEvents?` 可选字段（[roundStore.ts](../../src/memory/roundStore.ts)）+ 类型/透传测试。**落位修正（实施定案）**：ProcessEvent 是 Round 的组成部分（存储面），定义于 memory/roundStore.ts（thinking 阶段用本地字面量 `ProcessThinkingPhase`，与 agent ThinkingPhase 同值，避免 memory → agent 反向依赖） | 内核小改，纯加法                 |
 | **S2** | 宿主：① 渲染类消息协议纯化——consumeFlow 缓冲 ProcessEvent（meta 首条/thinking/recall/memory\_added/tool/aborted/text\_self\_review/metrics 末条），流结束读 Round→附加 `processEvents`→save；实时转发改 post `process_event` 单形态消息；② 重放读 `round.processEvents` 按 round 交织发 `replay_events`（meta 先写 currentRoundMeta），截断按 round 粒度；③ webview `renderRoundBlock()`（渲染真相源=当前轮 events[]）+ 删除 tool-card/review-block/activity-detail/recall-detail 旧外壳与 thinking/tool\_start/memory 等旧渲染分支 | 宿主中等，覆盖 90% 痛点 + 展示层统一收敛 |
 | **S3** | 宿主：自审查分段并入折叠区 § 自审查输出 + 流式过程中极简胶囊指示器（完成后收进折叠）                                                                                                                                                                          | 宿主小改                     |
 | **S4** | 收尾验证：round 删除/分叉/截断时 `processEvents` 随动（单测）+ 全量回归（完成定义 1-5）                                                                                                                                                              | 收尾验证                     |

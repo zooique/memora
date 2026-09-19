@@ -106,7 +106,7 @@ skills/
 
 **目录约定（B1 兼容主流）**：
 - `resources/`：memora 原生参考资料目录；
-- `references/`：Agent Skills / TRAE 主流辅助文档目录（[modes-guide](../../../.trae/skills/big-tree-grower/references) 等大量开放技能使用此目录），为兼容直接复制来的主流技能而支持。
+- `references/`：Agent Skills / TRAE 主流辅助文档目录（[modes-guide](../../.trae/skills/big-tree-grower/references) 等大量开放技能使用此目录），为兼容直接复制来的主流技能而支持。
 
 **工具接口**：
 ```typescript

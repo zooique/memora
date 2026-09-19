@@ -18,8 +18,8 @@
 当前 turn 落盘时序：
 
 1. `appendUser` → 创建 pending Round（userMessage 落盘，refCount=0）
-2. 流运行期间：内核产 chunk → **宿主**派生 ProcessEvent → 暂存内存 `eventsByRound`（[chatPanel.ts#L2309-2335](../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）
-3. 流结束：内核 `appendAssistant` 完成 Round（写 assistantMessage）+ 宿主流尾把 `eventsByRound` 附各 Round.processEvents 落盘（[chatPanel.ts#L2498-2517](../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）
+2. 流运行期间：内核产 chunk → **宿主**派生 ProcessEvent → 暂存内存 `eventsByRound`（[chatPanel.ts#L2309-2335](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）
+3. 流结束：内核 `appendAssistant` 完成 Round（写 assistantMessage）+ 宿主流尾把 `eventsByRound` 附各 Round.processEvents 落盘（[chatPanel.ts#L2498-2517](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）
 
 **崩溃窗口** = `eventsByRound` 内存缓冲 + 未写的 `assistantMessage`。进程被杀 → 过程全丢，只剩 userMessage 的 pending 孤儿轮。
 
@@ -44,11 +44,11 @@
 
 ## 二、探明的关键事实（决定改动面）
 
-- **过程事件是宿主派生的，非内核写**（[roundStore.ts#L165](../src/memory/roundStore.ts)）：宿主从原始 AgentChunk 翻译成带 seq 的 ProcessEvent。恢复"过程渲染"正依赖这批派生后数据 → **落盘动作必须在宿主**（SSOT，避免内核重复派生）。
-- **step 边界信号内核已具备**：`step_boundary` chunk（[loop.ts#L978-986](../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
-- **pending Round 可覆盖写**：roundStore.save 覆盖 pending（[roundStore.test.ts 增量覆盖用例](../src/memory/roundStore.ts) 已验证）。
+- **过程事件是宿主派生的，非内核写**（[roundStore.ts#L165](../../src/memory/roundStore.ts)）：宿主从原始 AgentChunk 翻译成带 seq 的 ProcessEvent。恢复"过程渲染"正依赖这批派生后数据 → **落盘动作必须在宿主**（SSOT，避免内核重复派生）。
+- **step 边界信号内核已具备**：`step_boundary` chunk（[loop.ts#L978-986](../../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
+- **pending Round 可覆盖写**：roundStore.save 覆盖 pending（[roundStore.test.ts 增量覆盖用例](../../src/memory/roundStore.ts) 已验证）。
 - **崩溃轮是孤儿**：`refCount=0`、`status=pending`、`appendRoundId` 只在 complete 时登记 → **不在正式会话 roundIds 里**，会话重放遍历不到。**修订（§一·五）**：这不是目标态——中断轮应**升级为正常 stop turn 并登记进 roundIds**，「孤儿」只是升级前的中间态。
-- **GC 回收崩溃残留轮**（[gcService.ts#L6](../src/memory/gcService.ts)：refCount=0 且超龄，pending/error 不分状态）。**修订（§一·五）**：中断轮升级为正常 turn 后不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）；`listInterruptedRecent` 打捞口只服务「崩溃后尚未升级」的短暂窗口。
+- **GC 回收崩溃残留轮**（[gcService.ts#L6](../../src/memory/gcService.ts)：refCount=0 且超龄，pending/error 不分状态）。**修订（§一·五）**：中断轮升级为正常 turn 后不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）；`listInterruptedRecent` 打捞口只服务「崩溃后尚未升级」的短暂窗口。
 
 ## 三、分两侧判断「要不要改内核」
 

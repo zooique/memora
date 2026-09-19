@@ -64,7 +64,7 @@
 
 > **content 零声明**：`persona.md` / `rules.md` / `skills/` 全部约定俗成，manifest **不注册内容路径**（防路径写错静默丢内容）。
 >
-> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝），运行时按上限截断兜底（宽容容错）。
+> **字段上限 SSOT**：上表的数量/长度上限以 `src/role-pack/validator.ts` 为唯一真理源（`MAX_MANIFEST_SKILLS` / `MAX_CAPABILITIES` / `MAX_HANDOFF_PROMPT_LEN` / `MAX_META_STRING_LEN`）。超限时校验报 error（开发期拒绝、跳过装载）；运行时兜底**仅 `handoffPrompt`** 按 `MAX_HANDOFF_PROMPT_LEN` 截断（宽容容错），其余上限无运行时消费（2026-09-19 订正原「运行时按上限截断兜底」泛化失实）。
 
 ### 2.4 rules.md 写法（ADR-025 档 3：规则语义对齐）
 

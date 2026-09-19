@@ -96,7 +96,7 @@
 
 ## 4. 跑测流程与装载建议
 
-1. **装载器 + 可达性自检**：[scripts/test-memory-tool-recall-benchmark.ts](../scripts/test-memory-tool-recall-benchmark.ts)（新增，独立于 [test-memory-tool-recall.ts](../scripts/test-memory-tool-recall.ts) 的机制脚手架）——`loadBenchmarkSeed()` 按表逐 case 写入**隔离会话** `2026-09-01-benchmark`（content/preference 落普通字段；round-summary 用旧轮 `r9-bench-seed`，双保险避开组装互斥），再对每个 case 用理想查询 `search_memories` 断言目标**实体词被检索返回**（可达性自检：证明「果实可及」，种子措辞不失效才值得上真实 LLM）。脚本末尾打印判定记录表骨架供实跑填写。
+1. **装载器 + 可达性自检**：[scripts/test-memory-tool-recall-benchmark.ts](../../scripts/test-memory-tool-recall-benchmark.ts)（新增，独立于原机制脚手架 `test-memory-tool-recall.ts`——该脚本**已删除**，此处不再作为链接，保留原叙述以存历史）——`loadBenchmarkSeed()` 按表逐 case 写入**隔离会话** `2026-09-01-benchmark`（content/preference 落普通字段；round-summary 用旧轮 `r9-bench-seed`，双保险避开组装互斥），再对每个 case 用理想查询 `search_memories` 断言目标**实体词被检索返回**（可达性自检：证明「果实可及」，种子措辞不失效才值得上真实 LLM）。脚本末尾打印判定记录表骨架供实跑填写。
 2. **跑测**：真实 LLM（云端/本地各一套）驱动新会话，注入问题输入，捕获：是否调用 `search_memories`、返回是否含目标 roundId。
 3. **同题复现**：A 系每个 case 建议跑 ≥3 次以判定"本地 < 云端一半且 ≥3 复现"是否触发 C 路径。
 4. **阈值冻结**：B=100% 硬门槛 + A 对照阈值在首轮跑测前冻结，事后不调标。

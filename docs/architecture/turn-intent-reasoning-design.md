@@ -18,10 +18,10 @@
 
 | 项 | 现状 |
 | --- | --- |
-| SSE 解析 | [openaiCompatible.ts](../src/llm/openaiCompatible.ts) 只取 `delta.content` + `tool_calls`，`reasoning_content` 丢弃 |
-| LlmChunk | [llm/types.ts](../src/llm/types.ts) 仅 content/toolCalls/finishReason/usage，无 reasoning 字段 |
-| loop 第一步 | [loop.ts](../src/agent/loop.ts) `runIterationLoop` → `handleIteration` 直接"想+调工具"，无意图理解/策略决策 step |
-| understandingConfirm | 开放键，唯一消费 = [strategyResolver.ts](../src/role-pack/strategyResolver.ts) `assembleRolePack` 注入 persona prompt 指令；**2 个示例角色包实际配置 `confirm`**（白话方案设计师/共鸣小说家；方案设计师/文档设计师已于 0ba12c55 退役，原小说助手更名共鸣小说家） |
+| SSE 解析 | [openaiCompatible.ts](../../src/llm/openaiCompatible.ts) 只取 `delta.content` + `tool_calls`，`reasoning_content` 丢弃 |
+| LlmChunk | [llm/types.ts](../../src/llm/types.ts) 仅 content/toolCalls/finishReason/usage，无 reasoning 字段 |
+| loop 第一步 | [loop.ts](../../src/agent/loop.ts) `runIterationLoop` → `handleIteration` 直接"想+调工具"，无意图理解/策略决策 step |
+| understandingConfirm | 开放键，唯一消费 = [strategyResolver.ts](../../src/role-pack/strategyResolver.ts) `assembleRolePack` 注入 persona prompt 指令；**2 个示例角色包实际配置 `confirm`**（白话方案设计师/共鸣小说家；方案设计师/文档设计师已于 0ba12c55 退役，原小说助手更名共鸣小说家） |
 | confirm 通道重叠 | `askOn['confirm']` + `ask_user` 工具已机制级承载"需要用户确认"；understandingConfirm.confirm 是绕过该真源的裸 prompt 指令（**带伤，见 §四**） |
 | narrate 机制 | 已存在（2026-09-02）：工具轮行动叙述，**平铺展示**（纯文本块直展，v1.8 step 分型；结束后随过程收进任务过程折叠块）、不进正文，**落盘进 `Round.processEvents`**（roundStore.ts 联合类型为真源），含首轮回抽（withdrawn 瞬态）——"策略叙述"的现成载体 |
 | 过程事件落盘 | **已存在**（[process-event-log-replay-design.md](./process-event-log-replay-design.md)）：运行时过程事件（thinking/tool_*/narrate/self_review/metrics）缓冲后附到 `Round.processEvents` 落盘，重载按序重放重建 UI（对标 Claude Code JSONL 事件日志）——**reasoning 落盘 = 扩展该机制，非新存储** |
@@ -115,7 +115,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 - **记忆引导不重复（排雷）**：memora 已对"先回忆"做了两处软引导——`search_memories` 工具描述触发词（涉及过往决定/历史事实/用户偏好/项目背景/不确定时优先调用）+ loop"记忆回想"无条件注入。Part 2 指令**不重复写"先回忆"**（三处软引导重复 = 带伤"同语义多实现"）；本指令"需要外部信息时先调用工具调查"已天然涵盖"需要历史 → search_memories"。
 - 历史背书：记忆召回曾尝试"首轮工具面硬收窄"（结构性强制先搜记忆），2026-09-11 因实现缺陷+预支复杂度砍除、保留软引导（[memory-tool-recall-design.md](./memory-tool-recall-design.md)）——与"约束式边界、非硬机制"同向，佐证本指令定位。
 - 策略叙述复用 narrate 通道（D3）：LLM 在工具轮前本就倾向输出"我先查一下"，以 narrate **平铺展示**、不进正文（LLM 叙述不由指令强求，仅边界引导）。
-- 位置待定：`buildSystemPromptPrefix`（[assembler.ts](../src/agent/assembler.ts)）或角色包 persona 尾部；实现时按装配顺序择一，**单点注入、无第二副本**。
+- 位置待定：`buildSystemPromptPrefix`（[assembler.ts](../../src/agent/assembler.ts)）或角色包 persona 尾部；实现时按装配顺序择一，**单点注入、无第二副本**。
 
 ### Part 3：回收 understandingConfirm（③）——**已实施（2026-09-13）**
 
@@ -177,13 +177,13 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 | # | 文件 | 改动 | 验证口径 |
 | --- | --- | --- | --- |
-| A1 | [llm/types.ts](../src/llm/types.ts) `LlmChunk` | 加 `thought?: string`（注释：增量片段，对应协议 `delta.reasoning_content`；命名 thought 与路由 `TaskType='reasoning'`、既有相位 `type:'thinking'` 语义分离） | 类型测试 |
-| A2 | [openaiCompatible.ts](../src/llm/openaiCompatible.ts)（SSE 解析 ~L388-390） | 类型扩展 `delta.reasoning_content?`；解析分支：`if (choice.delta?.reasoning_content) chunk.thought = ...`（增量，与 content 并列；不碰 usage 独立分支） | mock SSE 含 reasoning_content 流 → 增量解析 + 与 tool_calls 并存时序 |
-| A3 | [llmCaller.ts](../src/agent/managers/llmCaller.ts)（流式循环 ~L265-281） | `if (chunk.thought) yield { type: 'thought', content: chunk.thought }` 实时透传；**fullContent 只拼 chunk.content**（CoT 防护）；LlmCallResult 不加 reasoning（流式已消费，中断不补发——瞬态展示） | 累积透传 + fullContent 不含 reasoning |
-| A4 | [agent/types.ts](../src/agent/types.ts) `AgentChunk`（narrate ~L49 附近） | 新增 `{ type: 'thought'; content: string }` + RoundTagged（注释：模型思考流，折叠展示、不进正文、落盘走 ProcessEvent） | 类型测试 |
-| A5 | [roundStore.ts](../src/memory/roundStore.ts) `ProcessEvent` union（~L169-211） | 新增 `\| { type: 'thought'; seq; ts; payload: { content } }`；截断常量 `MAX_THOUGHT_PAYLOAD_LENGTH`（SSOT 单点定义于宿主 chatPanel，落盘前截断防膨胀） | 类型测试 + 截断单测 |
-| A6 | 宿主 [chatPanel.ts](../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `consumeFlow`（narrate 分支 ~L2477 附近） | 新增 `chunk.type === 'reasoning'` 分支 → `emitEvent('reasoning', { content })`（落盘前截断）；mergeProcessEvents/checkpointRound 自动支持新 union 成员 | 落盘 + 幂等合并（无重复） |
-| A7 | 宿主 [chatView.ts](../hosts/memora-vscode/src/webview/scripts/chatView.ts) | ① 运行时 process-flow：reasoning **折叠行** `.process-flow__reasoning`（`<details>`，与 narrate 平铺同 seq 插入，textContent 防注入）② `renderRoundBlock`（~L1079）：新增「§ 思考」小节渲染 reasoning 事件（finalize/重放共用） | 运行时折叠展示 + 重放重建一致 |
+| A1 | [llm/types.ts](../../src/llm/types.ts) `LlmChunk` | 加 `thought?: string`（注释：增量片段，对应协议 `delta.reasoning_content`；命名 thought 与路由 `TaskType='reasoning'`、既有相位 `type:'thinking'` 语义分离） | 类型测试 |
+| A2 | [openaiCompatible.ts](../../src/llm/openaiCompatible.ts)（SSE 解析 ~L388-390） | 类型扩展 `delta.reasoning_content?`；解析分支：`if (choice.delta?.reasoning_content) chunk.thought = ...`（增量，与 content 并列；不碰 usage 独立分支） | mock SSE 含 reasoning_content 流 → 增量解析 + 与 tool_calls 并存时序 |
+| A3 | [llmCaller.ts](../../src/agent/managers/llmCaller.ts)（流式循环 ~L265-281） | `if (chunk.thought) yield { type: 'thought', content: chunk.thought }` 实时透传；**fullContent 只拼 chunk.content**（CoT 防护）；LlmCallResult 不加 reasoning（流式已消费，中断不补发——瞬态展示） | 累积透传 + fullContent 不含 reasoning |
+| A4 | [agent/types.ts](../../src/agent/types.ts) `AgentChunk`（narrate ~L49 附近） | 新增 `{ type: 'thought'; content: string }` + RoundTagged（注释：模型思考流，折叠展示、不进正文、落盘走 ProcessEvent） | 类型测试 |
+| A5 | [roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` union（~L169-211） | 新增 `\| { type: 'thought'; seq; ts; payload: { content } }`；截断常量 `MAX_THOUGHT_PAYLOAD_LENGTH`（SSOT 单点定义于宿主 chatPanel，落盘前截断防膨胀） | 类型测试 + 截断单测 |
+| A6 | 宿主 [chatPanel.ts](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `consumeFlow`（narrate 分支 ~L2477 附近） | 新增 `chunk.type === 'reasoning'` 分支 → `emitEvent('reasoning', { content })`（落盘前截断）；mergeProcessEvents/checkpointRound 自动支持新 union 成员 | 落盘 + 幂等合并（无重复） |
+| A7 | 宿主 [chatView.ts](../../hosts/memora-vscode/src/webview/scripts/chatView.ts) | ① 运行时 process-flow：reasoning **折叠行** `.process-flow__reasoning`（`<details>`，与 narrate 平铺同 seq 插入，textContent 防注入）② `renderRoundBlock`（~L1079）：新增「§ 思考」小节渲染 reasoning 事件（finalize/重放共用） | 运行时折叠展示 + 重放重建一致 |
 | A8 | 协议 | `process_event` / `replay_events` **复用**（ProcessEvent union 扩展自动传导），**不新增消息类型** → IPC 通道治理阈值（100/130）不变 | 协议测试通过 |
 
 **阶段 A 出口**：tsc 零错误 + 全量 vitest 绿（声明层数/skip 口径）+ 真机验证——deepseek 对话思考折叠块显示；重启会话思考重放可见；round-summary 不含思考（CoT 防护实证）。
@@ -194,8 +194,8 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 | # | 文件 | 改动 | 验证口径 |
 | --- | --- | --- | --- |
-| B1 | [assembler.ts](../src/agent/assembler.ts) `buildSystemPromptPrefix`（~L80-103） | 固定段追加（**内核固定、单点注入**，不开放键、不依赖角色包）：`## Turn 起始策略\n需要外部信息时，先调用工具调查再回答，不要凭记忆猜测；\n任务需要多步推进时，使用任务表工具规划执行；\n简单问题直接回答。` | 断言 systemPromptPrefix 含 "Turn 起始策略" |
-| B2 | [assembler.test.ts](../src/agent/__tests__/assembler.test.ts) | 新增断言（注入正确性；LLM 是否遵守属软约束，不单测） | 全量 vitest 绿 |
+| B1 | [assembler.ts](../../src/agent/assembler.ts) `buildSystemPromptPrefix`（~L80-103） | 固定段追加（**内核固定、单点注入**，不开放键、不依赖角色包）：`## Turn 起始策略\n需要外部信息时，先调用工具调查再回答，不要凭记忆猜测；\n任务需要多步推进时，使用任务表工具规划执行；\n简单问题直接回答。` | 断言 systemPromptPrefix 含 "Turn 起始策略" |
+| B2 | [assembler.test.ts](../../src/agent/__tests__/assembler.test.ts) | 新增断言（注入正确性；LLM 是否遵守属软约束，不单测） | 全量 vitest 绿 |
 
 **阶段 B 出口**：真机验证——简单问题直接答（无多余叙述）；复杂问题工具调用前有"我先…"叙述（narrate 平铺可见）；涉及历史时 LLM 主动 search_memories（不新增引导，靠既有工具描述）。
 

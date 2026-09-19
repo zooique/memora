@@ -79,5 +79,5 @@ description: 基于梁文锋视角对抗审查的落地——①摘要即记忆�
 
 - 架构文档：[agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §12.2（截断策略）/ §6.3（信任边界）
 - 架构文档：[memory-as-summary.md](../../docs/architecture/memory-as-summary.md) §5.2 / §5.4
-- 相关代码：[loop.ts](../../src/agent/loop.ts)、[contextManager.ts](../../src/agent/contextManager.ts)、[recall.ts](../../src/memory/recall.ts)、[roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts)
+- 相关代码：[loop.ts](../../src/agent/loop.ts)、[contextManager.ts](../../src/agent/contextManager.ts)、`recall.ts`（已随召回编排退役删除，链接去化）、[roundSummaryGenerator.ts](../../src/agent/managers/roundSummaryGenerator.ts)
 - 关联：[ADR-021](./ADR-021-memory-conflict-supersede-write-path.md)、[ADR-022](./ADR-022-context-trust-boundary-and-agent-evals.md)
