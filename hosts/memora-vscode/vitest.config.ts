@@ -15,11 +15,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     include: ['src/**/__tests__/**/*.test.ts'],
-    // 禁用 pino 文件日志 + 强制颜色，避免跨终端差异
+    // 强制颜色，避免跨终端差异
     env: {
       FORCE_COLOR: '1',
       NO_COLOR: '',
-      MEMORA_LOG_FILE: '0',
     },
   },
 });

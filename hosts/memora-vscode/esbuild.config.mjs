@@ -124,8 +124,8 @@ async function main() {
     sourcemap: true,
     minify: false,
     keepNames: true,
-    // vscode / pino 为宿主或可选依赖，不打包
-    external: ['vscode', 'pino'],
+    // vscode 由宿主运行时提供，不打包
+    external: ['vscode'],
   });
   // 用打包产物替换原生编译产物
   renameSync(tmp, entry);
