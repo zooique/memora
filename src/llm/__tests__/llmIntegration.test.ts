@@ -6,8 +6,9 @@
  * 自动从项目级 .memora/config.json 读取 LLM 配置（loadConfig() 无参数时的查找路径）
  * apiKey 支持 ${ENV_VAR} 格式从环境变量展开（如 ${MEMORA_API_KEY}），避免明文落盘
  *
- * 运行方式：
- *   npx vitest run src/llm/__tests__/llmIntegration.test.ts
+ * 运行方式（2026-09-19 对齐宿主 E2E 纪律，见 hostIntegration.test.ts 先例）：
+ *   真实 LLM 依赖外部 API（慢/波动），**不进常规门禁**（pre-push full 档会因外部
+ *   响应超时随机红）。默认跳过；显式触发：`MEMORA_E2E=1 npx vitest run src/llm/__tests__/llmIntegration.test.ts`
  */
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
@@ -41,10 +42,16 @@ function detectHasApiKey(): boolean {
   }
 }
 
-/** 是否有可用的 LLM API key（离线/未配置时整套件 skip，避免空转 pass 污染"全绿"口径） */
+/** 真实 LLM 集成测试显式触发开关（默认关闭——外部 LLM 依赖不进 push 门禁，对齐宿主先例） */
+const runE2E = process.env.MEMORA_E2E === '1';
+
+/** 探测到可用 LLM key（appKey 展开后存在才算；离线/未配置时不应再依赖其跳过——E2E 开关已优先闸口） */
 const hasApiKey = detectHasApiKey();
 
-describe.skipIf(!hasApiKey)('真实 LLM 集成测试', () => {
+/** 是否启用本套件：E2E 显式开启**且**探测到可用 LLM key（双条件——E2E 开但无 key 时不空跑） */
+const shouldRun = runE2E && hasApiKey;
+
+describe.skipIf(!shouldRun)('真实 LLM 集成测试', () => {
   let tmpDir: string;
   let tmpHome: string;
   let agent: Agent;
