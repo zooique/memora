@@ -32,8 +32,10 @@ export const AGENT_CONSTANTS = {
 
   /**
    * AgentConfig.maxContextTokens 默认值。120K tokens。
-   * ⚠️ **本键为真源**；另有两处镜像须同步（分层约束不可 import，故按本仓既有做法「重复 + 注释对冲」）：
-   * ① `src/config/loader.ts` 的 `DEFAULT_MAX_CONTEXT_TOKENS`；② `src/role-pack/strategyKeys.ts` 的 `MIN_CONTEXT_LIMIT`。
+   * ⚠️ **本键为真源**；镜像一处须同步 = `src/config/loader.ts` 的 `DEFAULT_MAX_CONTEXT_TOKENS`
+   * （同语义同值：配置层默认窗口，分层不可 import，按本仓既有做法「重复 + 注释对冲」）。
+   * 注意：`strategyKeys.MIN_CONTEXT_LIMIT` **不是镜像**——它是角色包 contextLimit 的声明
+   * 下限语义（正数声明不得低于默认窗口，「收紧」无意义），取值依赖本键但不得随本键联动改。
    */
   DEFAULT_MAX_CONTEXT_TOKENS: 120_000,
 
