@@ -830,7 +830,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 与 pause() 对称：pause 创建检查点；discardCurrentCheckpoint 销毁检查点。
    * 宿主 handleStop 在 paused 态调用——用户决定彻底放弃暂停执行，不再 resume。
    *
-   * T2 修复：除转发 SessionManager.discardCheckpoint（删存储 + 清内存 + 状态机 resetToRunning），
+   * T2 修复：除转发 SessionManager.discardCheckpoint（清内存 + 状态机 resetToRunning——检查点不落盘，无存储清理动作），
    *  追加协同 loop.clearPendingInterjections() 清排队插话——pause 生效时 step 边界优先返回不消费 queue，
    *  原实现只清 checkpoint 留 queue 成孤儿数据，下次 chat() 第一个 step 会误消费残留。
    *  返回值以 checkpoint 清理为主（queue 残留不是失败）。
@@ -838,7 +838,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   discardCurrentCheckpoint(): boolean {
     this.assertInitialized('discardCurrentCheckpoint');
-    // 协同清理暂停上下文的两个组成部分：checkpoint（持久化暂停点）+ pendingInterjections（排队插话）
+    // 协同清理暂停上下文的两个组成部分：checkpoint（内存态暂停点，不落盘）+ pendingInterjections（排队插话）
     //  暂停上下文 = checkpoint + queue，stop 语义下两者必须同清，不留孤儿
     const checkpointCleared = this._sessionManager?.discardCheckpoint() ?? false;
     // queue 清理独立：即使 checkpoint 已不存在（空闲态调），残留 queue 也应顺手清掉
@@ -1004,7 +1004,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 创建会话检查点：快照当前运行时状态（热记忆、角色、标准等），生成可序列化检查点
+   * 创建会话检查点：快照当前运行时状态（热记忆、角色、标准等），生成纯内存态快照
+   * （2026-09-10 减法后不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）
    */
   createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint | null {
     this.assertInitialized('createCheckpoint');
@@ -1459,7 +1460,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 配置重载（事件驱动） ───────────────────────
 
   /**
-   * 重载配置类记忆：从 configDir 重新扫描指定 source 并更新内存缓存 + SQLite 索引，使当前会话立即生效（无需重启）。
+   * 重载配置类记忆：从 configDir 重新扫描指定 source 并更新内存缓存（设定记忆纯文件装载，不写记忆库/SQLite 索引），使当前会话立即生效（无需重启）。
    * - 'skill' → SkillManager.reload() 重扫 skills/
    * - 'rolePack' → RolePackManager.reload() 重扫 role-packs/（保持激活角色，刷新 AgentLoop 前缀）
    * - 'rule' → 经角色包管理机制热更新（即 rolePack）
@@ -1680,7 +1681,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         { reason: pendingInfo?.reason, source: pendingInfo?.source },
         'close() 时存在未消费的暂停请求，已自动清理',
       );
-      // 若状态机仍 running，同步翻 paused 使检查点落盘准确（无需触发挂起，仅修正一致性）；
+      // 若状态机仍 running，同步翻 paused 使检查点内存态一致（无需触发挂起，仅修正一致性）；
       // 系统清理不消耗 P4 配额 → lowRisk=true
       if (sm.status === 'running') {
         sm.pause('close 清理残留暂停', 'system', true);

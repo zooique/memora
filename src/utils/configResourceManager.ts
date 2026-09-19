@@ -67,7 +67,7 @@ export abstract class ConfigResourceManager<
 
   /**
    * 重载资源——不能整体覆盖 items：那会抹除无磁盘真理源的运行时注入项
-   * （如 Agent.addSkill 注入，SQLite 侧索引仍在），两侧就此分叉。
+   * （如 SkillManager.register 注入的运行时技能，纯内存态、无 SQLite 索引），两侧就此分叉。
    * 判据取 runtimeNames 显式记账；同名冲突以磁盘（更强真理源）为准并注销登记。
    */
   async reload(): Promise<number> {
