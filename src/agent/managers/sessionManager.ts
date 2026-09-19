@@ -179,7 +179,7 @@ export class SessionManager {
       ]);
     }
 
-    // 检查点是当前会话的工作状态，切换时 flush 落盘并清空内存态
+    // 检查点是当前会话的工作状态，切换时清空内存态（检查点不落盘，2026-09-10 减法）
     if (this.checkpoint && this.checkpoint.sessionId !== newSession) {
       this.settleCheckpoint(true);
       this.checkpoint = null;
@@ -271,7 +271,7 @@ export class SessionManager {
     const sessionMessages = history.loadRoundBasedMessages(result.roundIds);
     this.applySessionToLoop(sessionMessages);
 
-    // 关键修复：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话持久化检查点。
+    // 关键修复：分叉后清空 checkpoint，防止新分支的 plan/goal 写入源会话检查点。
     if (this.checkpoint) {
       this.settleCheckpoint(true);
       this.checkpoint = null;
@@ -444,7 +444,7 @@ export class SessionManager {
       lastHeartbeat: Date.now(),
     };
 
-    // 检查点内容已整体重算，强制落盘
+    // 检查点内容已整体重算，强制清脏（纯内存，无落盘）
     this.settleCheckpoint(true);
 
     return this.checkpoint;
@@ -452,7 +452,7 @@ export class SessionManager {
 
   /**
    * 标记检查点已变更（内存写点统一入口）。刷新心跳并置脏标记。
-   * 所有修改 this.checkpoint 的方法都必须调用本方法，不得直接赋值 lastHeartbeat——否则变更不被后续 flush 感知，内存与磁盘静默分叉。
+   * 所有修改 this.checkpoint 的方法都必须调用本方法，不得直接赋值 lastHeartbeat——否则变更不被后续清脏感知，内存与清脏链路静默分叉。
    */
   private touchCheckpoint(): void {
     if (!this.checkpoint) return;
@@ -485,7 +485,7 @@ export class SessionManager {
   pause(reason: string, source: PauseSource = 'user', lowRisk: boolean = false): boolean {
     const result = this.stateMachine.pause(reason, source);
     if (result.allowed) {
-      // 先在 createCheckpoint 前记 pausedAt，检查点经 spread 继承，合并为单次落盘
+      // 先在 createCheckpoint 前记 pausedAt，检查点经 spread 继承，省去 pause() 内的二次补设分支
       if (this.checkpoint) {
         this.checkpoint.pausedAt = Date.now();
       }
@@ -537,10 +537,10 @@ export class SessionManager {
         this.checkpoint.status = this.stateMachine.status;
         // 收口暂停态残留（TS-9）：pausedAt 是「暂停起点」标记，恢复即应卸载——
         // 否则检查点长期残留 pausedAt（status=running + pausedAt 并列的脏快照），
-        // 且下一次暂停超时判定会被旧起点污染。随 setPauseMeta 落盘一并持久化。
+        // 且下一次暂停超时判定会被旧起点污染。随 setPauseMeta 一并更新（纯内存）。
         delete this.checkpoint.pausedAt;
         // 卸载 pauseMeta 状态层挂载物（仅含展示信息，恢复即"回到运行"应卸载，否则任务面板残留"继续"按钮）。
-        // 走 setPauseMeta 唯一写入口而非内联赋值，避免绕过其兜底与落盘链路（其内部已含 touch+flush，此处不再重复调用）
+        // 走 setPauseMeta 唯一写入口而非内联赋值，避免绕过其兜底链路（其内部已含 touch+settle，此处不再重复调用）
         this.setPauseMeta(undefined);
       }
       // 连续暂停计数在暂停超时处理（checkPauseTimeout）对称重置，
@@ -553,7 +553,7 @@ export class SessionManager {
     return result.allowed;
   }
 
-  /** 触发异常（仅 RUNNING 态）。异常时自动创建检查点；createCheckpoint 会从状态机投影 status/error 落盘，不再手工赋值避免并列真理源 */
+  /** 触发异常（仅 RUNNING 态）。异常时自动创建检查点；createCheckpoint 会从状态机投影 status/error，不再手工赋值避免并列真理源 */
   triggerError(cause: string): boolean {
     const result = this.stateMachine.triggerError(cause);
     if (result.allowed) {
@@ -690,7 +690,7 @@ export class SessionManager {
     this.checkpoint.currentGoal = newGoal;
     this.checkpoint.goalChangeSeq++;
     this.touchCheckpoint();
-    // 目标变更是会话的语义骨架，立即落盘
+    // 目标变更是会话的语义骨架，立即清脏（纯内存，无落盘）
     this.settleCheckpoint();
 
     // 检测到漂移则发射 goalDriftDetected 事件；drift 级自动低风险暂停强制用户确认（不计入连续计数）
@@ -801,7 +801,7 @@ export class SessionManager {
 
   /**
    * 更新计划步骤状态（plan 步骤状态的唯一写点）。必须经此写点置 checkpointDirty，
-   * 否则状态变更可能永不落盘，计划变更与标脏在此原子完成。
+   * 否则状态变更可能丢失标脏，计划变更与标脏在此原子完成。
    *
    * 写完后自动 ensureActiveStep：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
    * 则推进下一个 pending → active。这保证任何时刻 plan 中恰好有一个 active step。
@@ -877,7 +877,7 @@ export class SessionManager {
 
     this.appendStepLog({ planStepId, summary });
 
-    // 心跳 + 落盘：step 边界即检查点语义边界，崩溃后可从该边界无损续跑
+    // 心跳 + 清脏：step 边界即检查点语义边界（纯内存态；检查点不落盘，崩溃走中断轮补全）
     this.touchCheckpoint();
     this.settleCheckpoint();
   }
@@ -950,7 +950,7 @@ export class SessionManager {
     this.settleCheckpoint();
   }
 
-  /** 设置暂停元数据；传 undefined 清除。写后必须落盘（清除也落盘，避免磁盘残留与内存分叉） */
+  /** 设置暂停元数据；传 undefined 清除。写后必须清脏（清除也清脏，纯内存态无磁盘残留） */
   setPauseMeta(meta: PauseMeta | undefined): void {
     // 调用方保证检查点已存在：pauseMeta 总在 pause()（建检查点）之后写入（暂停收口统一写）
     if (!this.checkpoint) return;
@@ -986,9 +986,10 @@ export class SessionManager {
   // ── 工具执行日志（outbox 模式）；补偿管线已降级，以下仅保留日志 ──
 
   /**
-   * 记录工具执行：追加到检查点日志（append-only）供恢复时 outbox 检查。
-   * 落盘策略：仅标脏不即时落盘（completeStep step 边界统一 flush、createCheckpoint 暂停/异常强制落盘）。
-   * 回合中途崩溃最坏丢最近一条记录，outbox 视为"未执行"恢复后重跑，对幂等工具安全；IO 从每工具调用降为每回合。
+   * 记录工具执行：追加到检查点日志（append-only，内存态）。
+   * 标脏策略：仅标脏不即时清脏（completeStep step 边界统一清脏、createCheckpoint 暂停/异常强制清脏）。
+   * 检查点不落盘（2026-09-10 减法）：completedToolCalls 仅内存态，回合中途崩溃即整体丢弃、走中断轮补全恢复；
+   * 「工具重跑排重」仅在单进程存活期内有效，无跨重启持久化。
    */
   logToolExecution(record: ToolExecutionRecord): void {
     if (!this.checkpoint) return;
@@ -1007,7 +1008,7 @@ export class SessionManager {
       }
     }
     this.touchCheckpoint();
-    // 依赖 completeStep / createCheckpoint 在 step 边界统一 flush
+    // 依赖 completeStep / createCheckpoint 在 step 边界统一清脏
   }
 
   /** 记录非幂等工具执行（补偿降级后仅日志）：不再逐副作用执行补偿，仅记录事实供宿主/人工排查 */
@@ -1101,13 +1102,15 @@ export class SessionManager {
     this.stopPauseTimeoutTimer();
   }
 
-  /** 关闭时 flush 脏检查点落盘（Agent 关闭、destroy 前调用）：覆盖 logToolExecution 标脏后未到 completeStep 的关闭窗口，确保脏检查点不丢失 */
+  /** 关闭时清脏（纯内存，无落盘）：Agent 关闭、destroy 前调用。检查点不落盘，
+   *  本方法为保留语义边界的 no-op 清脏（2026-09-10 减法后无持久化动作） */
   flushOnShutdown(): void {
     this.settleCheckpoint(true);
   }
 
-  /** 立即 flush 脏检查点落盘（D1-②，2026-08-26）：非只读工具完成后调用，持久化其 completedToolCalls
-   * 幂等标记，使「工具重跑排重」在进程崩溃/重启后仍生效（逼近事件溯源），而非仅依赖 turn 边界/关闭 */
+  /** 立即清脏（纯内存，无落盘）：非只读工具完成后调用。⚠️ 检查点不落盘，completedToolCalls 仅内存态——
+   *  「工具重跑排重」仅在单进程存活期内生效，进程崩溃/重启后失效（走中断轮补全）。D1-② 落盘设计已随
+   *  2026-09-10 减法退役，本方法为保留语义边界的 no-op 清脏 */
   flushNow(): void {
     this.settleCheckpoint(true);
   }

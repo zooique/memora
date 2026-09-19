@@ -466,9 +466,9 @@ export function activate(context: vscode.ExtensionContext): void {
 /**
  * 插件停用入口
  *
- * D1-①（2026-08-26）：优雅关闭前落盘未收尾轮的检查点。内核 Agent.close() 内部调用
- * sessionManager.flushOnShutdown()——覆盖「logToolExecution 标脏后、未到 completeStep」
- * 的关闭窗口，避免进行中工具结果与幂等标记在正常关闭时丢失。失败不阻塞插件退出。
+ * 内核 Agent.close() 内部调用 sessionManager.flushOnShutdown()（D1-① 2026-08-26 设计，
+ * 已随检查点不落盘减法【2026-09-10】退役为纯内存清脏 no-op——检查点不落盘，进行中工具
+ * 结果与幂等标记仅内存态，正常关闭即整体丢弃，无持久化保障）。失败不阻塞插件退出。
  */
 export async function deactivate(): Promise<void> {
   if (!agentPromise) return;

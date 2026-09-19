@@ -215,13 +215,13 @@ describe('SessionManager', () => {
     });
 
     it('K2 分叉后应清空检查点（防新分支状态写回源会话）', () => {
-      // 先创建检查点，模拟源会话已有持久化检查点
+      // 先创建检查点，模拟源会话已有检查点
       manager.createCheckpoint('源会话目标');
       expect(manager.getCheckpoint()).not.toBeNull();
       expect(manager.getCheckpoint()?.sessionId).toBe('2026-06-27-main');
 
-      // 分叉后检查点必须被清空——否则 updateGoal→flushCheckpoint 会把新分支
-      // 的 plan/goal 状态写入源会话的持久化检查点（跨会话数据污染）
+      // 分叉后检查点必须被清空——否则 updateGoal 会把新分支
+      // 的 plan/goal 状态写入源会话检查点（跨会话数据污染）
       manager.forkSession();
       expect(manager.getCheckpoint()).toBeNull();
     });

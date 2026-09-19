@@ -57,18 +57,20 @@ export const AGENT_CONSTANTS = {
 
   // ─── completedToolCalls FIFO 封顶 ─────────────────
   //
-  // 工具执行日志无上限时，检查点序列化开销随会话寿命线性增长。
+  // 工具执行日志无上限时，检查点内存快照开销随会话寿命线性增长。
   // 48 条 ≈ 多回合工具调用上限，远超单回合调用量。
   // 截断策略：优先丢弃幂等工具的最早记录，非幂等永不丢弃。
   COMPLETED_TOOL_CALLS_MAX: 48,
 
   /**
-   * 检查点结构版本（K1 持久化加固，2026-08-23；v2 2026-08-29）。
+   * 检查点结构版本（历史字段，2026-08-23 K1 引入；v2 2026-08-29）。
    *
-   * SessionCheckpoint 序列化/反序列化版本标识。版本路由见 sessionManager.normalizeCheckpoint。
+   * SessionCheckpoint 结构版本标识。⚠️ 2026-09-10 检查点不再落盘后，本键仅由
+   * createCheckpoint 写入、无恢复链读取（序列化/反序列化路径已退役，原
+   * sessionManager.normalizeCheckpoint 版本路由随之移除）。
    * - v1：初始版本（无迁移映射）。
    * - v2：PlanStep 新增可选 rolePack（会议表层装配角色）——可选字段对旧检查点天然兼容
-   *   （缺失即 undefined = 非会议），v1→v2 迁移为无操作（结构保持）。
+   *   （缺失即 undefined = 非会议）。
    */
   CHECKPOINT_SCHEMA_VERSION: 2,
 } as const;

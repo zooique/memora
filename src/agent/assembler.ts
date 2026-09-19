@@ -392,7 +392,7 @@ function wireRuntimeCallbacks(
     },
     updateStep: (stepId, status) => {
       // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）。
-      // 必须经此写点置 checkpointDirty，否则计划变更可能永不落盘
+      // 必须经此写点置 checkpointDirty，否则计划变更可能丢失标脏（纯内存态）
       if (!sessionManager.updatePlanStepStatus(stepId, status)) {
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
       }
@@ -549,15 +549,12 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
         idempotent,
       };
       sessionManager.logToolExecution(record);
-      // D1-②：有写副作用且需在崩溃/重启后保留执行记录的工具，执行完成后立即落盘
-      // completedToolCalls——使「工具重跑排重 / 补偿」在进程崩溃/重启后仍生效（幂等契约跨重启可靠）。
-      // 分级落盘依据（对照四态语义）：
-      //   - non-idempotent：记录供补偿回滚（compensateAllNonIdempotent）使用，必须落盘；
-      //   - idempotent-key：记录供恢复时排重（避免重复写入），需落盘；
-      //   - idempotent（task_table_update）：重跑安全，无需立即落盘（会话收尾/其它 flush 点兜底）；
-      //   - read-only：永不跳过且重跑无害，落盘纯属 IO 浪费，不落盘。
+      // D1-② 落盘设计（2026-08-26）已随检查点不落盘减法（2026-09-10）退役：
+      // completedToolCalls 仅内存态，「工具重跑排重 / 补偿」仅在单进程存活期内生效，
+      // 崩溃/重启后失效（走中断轮补全）。此处 flushNow() 为保留语义边界的 no-op 清脏，
+      // 调用无害但无持久化效果——幂等分级（non-idempotent/idempotent-key 优先清脏）仅作调用纪律保留。
       if (idempotent === 'non-idempotent' || idempotent === 'idempotent-key') {
-        // 有写副作用且需持久化记录的工具：完成后立即落盘 completedToolCalls（SessionManager 恒实现）
+        // 有写副作用且需持久化记录的工具：完成后立即清脏（SessionManager 恒实现，纯内存）
         sessionManager.flushNow();
       }
     },
