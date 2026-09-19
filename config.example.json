@@ -1,8 +1,8 @@
 {
   "llm": {
     "providers": {
-      "deepseek": {
-        "provider": "deepseek",
+      "mimimo": {
+        "provider": "mimimo",
         "model": "deepseek-chat",
         "apiKey": "${MEMORA_API_KEY}",
         "baseUrl": "https://api.xiaomimimo.com/v1"
@@ -14,7 +14,7 @@
         "baseUrl": "https://api.openai.com/v1"
       }
     },
-    "active": "deepseek",
+    "active": "mimimo",
     "background": {
       "provider": "doubao",
       "model": "doubao-pro",
