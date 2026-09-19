@@ -9,6 +9,8 @@ date: 2026-06-11
 
 > **状态**：✅ 已接受 **日期**：2026-06-02 **播种批次**：Memora 模式 A v1
 > **来源**：(历史设计文档已归档：项目决策表.md §八)
+>
+> **2026-09-19 补记（退役回扫）**：下文「年轮修订 v0.2」提及的 `embedding.ts` / `vectorStore.ts` 已于 **2026-09-18** 随 B0 收编**全链删除**（`IVectorStore` / `JsonVectorStore` / `EmbeddingProvider` / `EmbeddingService` / `config.embedding` / 宿主 `createVectorStore` 全删）；原因与范围见 [ADR-016](./ADR-016-vector-store-interface.md)（该 ADR 已被标记为「❌ 已废弃」）。下文的 v0.2 叙述保留为历史留档，仅供追溯，**不代表当前目录结构**。
 
 ## 背景
 

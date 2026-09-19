@@ -228,7 +228,7 @@ export type {
   SessionView,
   SessionSummary,
 } from '@/memory/sessionViewLoader.js';
-// 内存版实现（用于测试和开发）
+// 通用会话视图加载器实现（宿主注入存储后直接委托；非仅测试/开发用）
 export { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 
 // 内存版实现（用于测试和开发）
@@ -242,8 +242,8 @@ export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 export type { SessionCheckpoint, PauseMeta, StepOutcome, PlanStep } from '@/agent/types.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
-// 注：extractKeywords 为 keywordsTouch 模块内部的关键词提取工具（供 search_memories 召回使用），
-// 宿主生产代码零直接消费，属纯内部实现，不再挂公共面（收回误暴露）。
+// 注：extractKeywords 为 keywordsTouch 导出的内核分词 SSOT（project-search/terms.ts 同源消费，不另造分词器），
+// 宿主生产代码零直接消费，故不再挂公共面（收回误暴露）。
 
 // ─── 日志抽象 ────────────────────────────────────────────
 export type { ILogger } from '@/logging/loggerInterface.js';

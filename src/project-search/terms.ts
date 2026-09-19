@@ -10,7 +10,7 @@
  *   → ["技术","fastapi","next.js","postgresql","next","js"]
  *                                          ^^^^^^ ^^^^  原查询中不存在的碎片
  * ```
- * 根因：`recall.ts:19` 的英文补充 `input.match(/[a-z]{2,}/gi)` 在 `.` 处切断 `Next.js`；
+ * 根因：`keywordsTouch.ts:24` 的英文补充 `input.match(/[a-z]{2,}/gi)` 在 `.` 处切断 `Next.js`；
  * 而碎片 `js` 会命中一切 `JSON` / `Node.js` 写法 —— 实测 20 条放宽命中里 **10 条纯靠 `js` 命中**
  * （假阴性换成假阳性，同样违反诚实化）。R5 把「空白分隔的片段」当一等公民，碎片噪声 10/20 → 0/20。
  *

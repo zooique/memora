@@ -6,6 +6,7 @@ import { describe, expect, it, beforeEach, vi, afterEach } from 'vitest';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { GCService, createDefaultGCService } from '@/memory/gcService.js';
+import { logger } from '@/logging/logger.js';
 import {
   createPendingRound,
   completeRound,
@@ -339,7 +340,7 @@ describe('GC 补充分支路径', () => {
     roundStore.save(completed);
   }
 
-  it('verbose=true 时覆盖详细日志分支（不抛错，扫描/孤儿计数正确）', () => {
+  it('verbose=true 不改变结果统计，且确实走到详细日志分支', () => {
     seedOrphan();
     const gc = new GCService(roundStore, memoryStorage, {
       minAgeMs: 0,
@@ -347,10 +348,18 @@ describe('GC 补充分支路径', () => {
       cleanUpMemory: false,
       verbose: true,
     });
+    // verbose 分支的唯一可观测效果就是调用 logger.info（对 result 零影响），故用 spy 绑定它；
+    // 守卫改成 if (false) 时下面这条断言变红
+    const infoSpy = vi.spyOn(logger, 'info');
     const result = gc.run();
     // verbose 分支仅影响日志输出，结果统计与常规一致
     expect(result.deleted).toBe(1);
     expect(result.orphaned).toBe(1);
+    expect(infoSpy).toHaveBeenCalledWith(
+      { total: 1, orphaned: 1 },
+      'GC: 发现孤立问答闭环',
+    );
+    infoSpy.mockRestore();
   });
 
   it('startPeriodic 重复调用被忽略，定时器唯一', () => {

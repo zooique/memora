@@ -137,7 +137,7 @@ export class InMemoryStorage implements IMemoryStorage {
       .map((m) => ({ ...m }));
   }
 
-  /** 文本搜索活跃记忆（segmentLower 与 SqliteStorage/recall 一致），accessedAt 降序，limit 默认 10 */
+  /** 文本搜索活跃记忆（segmentLower 与 SqliteStorage/keywordsTouch 一致），accessedAt 降序，limit 默认 10 */
   search(query: string, limit = 10): Memory[] {
     const activeMemories = Array.from(this.memories.values()).filter(
       (m) => m.deletedAt === undefined,

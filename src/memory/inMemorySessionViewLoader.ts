@@ -4,9 +4,10 @@
  * 职责：将 Session（Round ID 列表）+ RoundStore（物理存储）组合成完整视图
  *
  * 使用场景：
+ * - 宿主生产：宿主封装本类并注入文件系统存储（VS Code 宿主 WorkspaceSessionViewLoader
+ *   即委托本类，入口 extension.ts → sessionViewLoader.ts:delegate）
  * - 测试环境（零依赖）
  * - 开发调试
- * - 宿主注入前的占位实现
  */
 
 import type { IRoundStore } from '@/memory/roundStore.js';
@@ -154,22 +155,9 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
    * @returns 消息数量（User + AI）
    */
   getMessageCount(sessionId: string): number {
-    // 获取会话元数据
     const meta = this.getSessionMeta(sessionId);
     if (!meta) return 0;
-
-    // 如果 meta 有 messageCount 字段，直接返回
-    if (meta.messageCount !== undefined) {
-      return meta.messageCount;
-    }
-
-    // 否则计算
-    const roundIds = this.getRoundIds(sessionId);
-    if (roundIds.length === 0) return 0;
-
-    // 加载 Round 并计算
-    const rounds = this.roundStore.getByIds(roundIds);
-    return countMessagesInRounds(rounds);
+    return meta.messageCount;
   }
 
   /**

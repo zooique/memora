@@ -13,11 +13,12 @@
  *   - 使用 mkdtempSync 创建隔离临时目录，afterEach 强制清理
  *   - 零 @ts-ignore / as any，遵循镜像原则
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir, hostname } from 'node:os';
 import { LockManager } from '@/memory/lockManager.js';
+import { logger } from '@/logging/logger.js';
 
 /**
  * 构造一份合法的 LockInfo 锁文件内容（用于写入残留锁场景）
@@ -221,6 +222,41 @@ describe('LockManager · 残留锁处理', () => {
     // 锁文件应被当前进程覆盖
     const lockContent = JSON.parse(readFileSync(lockPath, 'utf-8'));
     expect(lockContent.pid).toBe(process.pid);
+  });
+
+  it('残留锁（pid 指向已死进程）确实走到清理分支：logger.info 记录清理', async () => {
+    const memoraDir = join(tmpDir, '.memora');
+    mkdirSync(memoraDir, { recursive: true });
+
+    // 构造合法残留锁，其 pid 由下方 process.kill spy 判定为"已死"
+    const deadPid = 99999999;
+    const lockPath = join(memoraDir, '.lock');
+    writeFileSync(lockPath, makeLockContent(deadPid), 'utf-8');
+
+    // 让 isProcessAlive(deadPid) 必为 false：process.kill 抛 ESRCH，与真实死进程一致
+    const killSpy = vi.spyOn(process, 'kill').mockImplementation(() => {
+      throw new Error('ESRCH');
+    });
+    // 绑定「进程已死 → 清理残留锁」分支的唯一可观测效果（logger.info）；
+    // 仅断言锁文件被重写无法区分该分支与"进程存活仅警告"分支（两者最终都写入当前 pid），
+    // 故必须断言清理日志本身——把 isProcessAlive 的 return false 改成 true 时此断言变红
+    const infoSpy = vi.spyOn(logger, 'info');
+
+    try {
+      const lm = new LockManager();
+      await lm.acquire(memoraDir);
+
+      expect(infoSpy).toHaveBeenCalledWith(
+        { pid: deadPid },
+        '清理残留锁文件（进程已退出）',
+      );
+      // 清理后以当前进程身份重新获取锁
+      expect(lm.currentPath).toBe(lockPath);
+      expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid);
+    } finally {
+      infoSpy.mockRestore();
+      killSpy.mockRestore();
+    }
   });
 });
 

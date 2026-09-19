@@ -40,7 +40,8 @@ export interface SessionView {
    * 展开后的消息列表（扁平结构）
    *
    * 顺序：round1.userMessage → round1.assistantMessage → round2.userMessage → ...
-   * 仅包含 complete 状态的 assistantMessage
+   * 仅包含**已收场**状态的 assistantMessage（complete 正常完成 / interrupted 中断收场，
+   * 判据收口在 isRoundSettled，勿自写 'complete'）
    */
   messages: RoundMessage[];
 }
@@ -96,8 +97,8 @@ export interface ISessionViewLoader {
    * 加载会话的简化摘要（用于历史列表等轻量场景）
    *
    * 与 loadView 的区别：
-   * - 不加载完整 Round 数据
-   * - 只返回元数据和统计信息
+   * - 不加载全量 Round：仅读最后 1 个 Round 生成 lastMessagePreview
+   * - 只返回元数据、统计信息与末条 AI 预览
    *
    * @param sessionId - 会话 ID
    * @returns 会话摘要

@@ -37,6 +37,8 @@ memora 是 **Node.js 纯逻辑库**（零依赖，靠宿主注入存储/LLM/UI�
 
 `Agent` / `AgentOptions` / `createLlmProvider` / `OpenAICompatibleProvider` / `IMemoryStorage` / `ISessionStore` / `JsonVectorStore` / `recall` / `RolePackManager` / `validateRolePack` / `TRACE_SUMMARY_TOOL`。
 
+> **2026-09-19 订正（退役回扫）**：上列历史清单中，`JsonVectorStore` 已于 **2026-09-18** 随 B0 收编**全链删除**（见 [ADR-016](./ADR-016-vector-store-interface.md)，已废弃）；`recall` 为内核旧模块名，已于 2026-09-18 更名 `keywordsTouch`。经在 `hosts/memora-vscode/src` 全量检索，宿主当前对 `JsonVectorStore` / `recall` **均零命中**（不再消费这两个符号）。上列保留为决策时快照，仅供追溯。
+
 ### 决策 4：骨架结构
 
 ```

@@ -4,7 +4,7 @@
  * 职责：
  * - escapeLike：转义 SQL LIKE 通配符
  * - validateSource：校验 source 字段安全性和拼写
- * - levenshtein：简单编辑距离计算（仅用于短字符串 typo 检测）
+ * - levenshtein：简单编辑距离计算（输入限短字符串；本文件 :121 用于标签 typo 检测，另导出供 DedupManager 名称相似度复用）
  *
  * 设计原则：
  * - source 是开放字符串，新增来源无需改代码
@@ -135,7 +135,7 @@ export function validateSource(source: string): {
 /**
  * 简单 Levenshtein 距离计算（仅用于短字符串，不做优化）
  *
- * 导出供 MemoryInspector 等模块复用（语义去重场景的名称相似度判断）。
+ * 同文件 :121 用于标签 typo 检测；另导出供 DedupManager（语义去重场景的名称相似度）复用。
  */
 export function levenshtein(a: string, b: string): number {
   if (a.length === 0) return b.length;

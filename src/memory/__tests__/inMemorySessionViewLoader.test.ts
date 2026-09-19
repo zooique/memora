@@ -5,7 +5,7 @@
  *   - loadView：会话不存在抛错 / 正常加载视图
  *   - loadSummary：会话不存在返回 null / 短/长 AI 消息预览截断 / 标题回退（displayName→autoName→sessionId）
  *   - loadBatchSummaries：按 updatedAt 降序
- *   - getMessageCount：无 meta / 命中 meta.messageCount / 空 roundIds / 计算
+ *   - getMessageCount：无 meta 返回 0 / 命中 meta.messageCount 直接返回
  *   - loadViewUpTo：截断视图 + 消息数更新
  *   - getSessionMeta：getSessionMeta 优先 + listSessionMetas 兜底
  */
@@ -119,12 +119,6 @@ describe('InMemorySessionViewLoader', () => {
     it('命中 meta.messageCount：直接返回', () => {
       sessionStore.createSession({ sessionId: SID, updatedAt: 't', messageCount: 7 });
       expect(loader.getMessageCount(SID)).toBe(7);
-    });
-
-    it('无 meta.messageCount 且无 roundIds：返回 0', () => {
-      // 通过 listSessionMetas 兜底返回含 messageCount 的 meta（此处用 autoName 触发兜底路径）
-      sessionStore.createSession({ sessionId: SID, updatedAt: 't', messageCount: undefined as unknown as number });
-      expect(loader.getMessageCount(SID)).toBe(0);
     });
   });
 
