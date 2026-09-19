@@ -1789,6 +1789,9 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
   });
 
+  // 超时放宽至 30s（2026-09-19）：R1-R4 是全量真实轮重放（fixture 数千事件），
+  // 单跑 ~5.5s；pre-push full 档并发（fileParallelism=true）下被挤爆 15s → 历史 flake
+  // （kernel:test/kernel:coverage 命中 R2/R3/R4 超时）。放宽不改断言，只消除并发挤占假红。
   it('R2 现象2：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后光标保留 —— 语义快照（非缺陷）', () => {
     replayRealRound(false);
     // 语义快照（2026-09-17 QA 复验定论：**非缺陷**）：done 是宿主 post-message、不落盘为 ProcessEvent，
@@ -1797,14 +1800,14 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body.is-streaming 保留，是正确语义（轮次未收口，可 resume）。
     // 用户实测的「光标不消失」根因是 F2（finalizeRound 抛 NotFoundError 打断收口），与 done 是否发送无关。
     expect(document.querySelector('.msg-body.is-streaming')).not.toBeNull();
-  }, 15000);
+  }, 30000);
 
   it('R3 现象3：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后过程保持平铺 —— 语义快照（非缺陷）', () => {
     replayRealRound(false);
     // 语义快照（同 R2）：轮次未收口 → 不 finalize → 平铺容器 .process-flow 保留、尚未建立 round-block 折叠块。
     expect(document.querySelector('.process-flow')).not.toBeNull();
     expect(document.querySelector('.round-block')).toBeNull();
-  }, 15000);
+  }, 30000);
 
   it('R4 对照：补发 done 后三现象全部收口（round-block 建立 / 过程折叠 / 光标消失）—— F2 修复态', () => {
     // 根因护栏（2026-09-17 QA 补强，变异验证加固）：onMessage 的兜底 console.error 是本轮
@@ -1836,7 +1839,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     expect(document.querySelectorAll('.round-block__section').length).toBeGreaterThan(0);
     // ⇒ 归因闭环：F2 根治（insertStepInOrder 候选限定直接子节点）+ 兜底（收口进 finally）
     //   让「补发 done」这一唯一变量真正完成收口，现象2/3 消失。
-  }, 15000);
+  }, 30000);
 });
 
 describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 重构）', () => {

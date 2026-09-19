@@ -242,7 +242,10 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
 // ══════════════════════════════════════════════════════════════
 // 2. runSkillScript 子进程执行测试
 // ══════════════════════════════════════════════════════════════
-
+// 容器超时放宽至 30s（2026-09-19）：这些用例真实 spawn 子进程，全量并发
+// （fileParallelism=true）时 5s 默认超时被挤爆（历史 pre-push full 档 flake：
+// kernel:test/kernel:coverage 命中 5 例超时）。子进程执行本身受机器负载影响，
+// 非逻辑缺陷——放宽容器超时不改断言、只消除并发挤占假红。
 describe('skillScriptRunner — runSkillScript', () => {
 
   // ── Node runtime 测试 ──
@@ -342,7 +345,7 @@ describe('skillScriptRunner — runSkillScript', () => {
       expect(result.exitCode).not.toBe(0);
     });
   });
-});
+}, 30000);
 
 // ══════════════════════════════════════════════════════════════
 // 3. L2 兜底判定纯函数（spawn 行为锁定见 skillScriptRunner-exec.test.ts）
