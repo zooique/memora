@@ -23,7 +23,7 @@ description: Memora 关键决策年轮
 | [ADR-008](./ADR-008-directory-structure.md) | 目录结构按"职责分层"而非"按类型分层"                      | ✅ 已接受 | 工程   |
 | [ADR-010](./ADR-010-agent-facade.md)        | Agent 门面类（宿主项目接入入口）                          | ✅ 已接受 | 架构   |
 | [ADR-011](./ADR-011-multi-project.md)       | 多项目并发（ProjectManager + 锁文件）                     | ✅ 已接受 | 架构   |
-| [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式三态控制（full / insights-only / manual，GAP-2 已落地 2026-07-03）   | ✅ 已接受 | 架构   |
+| [ADR-015](./ADR-015-archive-mode.md)        | Agent 归档模式二态控制（full / manual，insights-only 已随洞察层移除收敛，GAP-2 已落地 2026-07-03）   | ✅ 已接受 | 架构   |
 | [ADR-016](./ADR-016-vector-store-interface.md) | 向量存储接口化（IVectorStore + JsonVectorStore）       | ❌ 已废弃（2026-09-18 B0 收编，序号不再复用） | 数据层 |
 | [ADR-017](./ADR-017-natural-growth-redefinition.md) | 自然生长原则重新定义：分层适用（架构先行 + 枝叶 2 次提取） | ✅ 已接受 | 工程 |
 | [ADR-017-web-search](./ADR-017-web-search-module.md) | Web 搜索模块（IWebSearchProvider 接口 + FetchWebSearchProvider，条件暴露给 LLM） | ✅ 已接受 | 集成层 |

@@ -132,7 +132,7 @@ chore: 升级 dependencies
 | 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
 | 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
 | 跨文档引用 / 新增模块 | [cross-document-reference.md](./cross-document-reference.md) / [new-module-guide.md](./new-module-guide.md) |
-| 决策记录（37 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
+| 决策记录（26 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
 
 > 任务追踪统一在根 `tasks/`（唯一真理源）。
 >

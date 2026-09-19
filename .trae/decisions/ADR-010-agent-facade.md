@@ -8,6 +8,8 @@ description: Agent 门面类（宿主项目接入入口）
 > **状态**：✅ 已接受
 > **日期**：2026-06-03（年轮审判补写，原始实现日期 2026-06-02）
 > **来源**：backend_layers_rules.md（历史文档已归档）
+>
+> **2026-09-19 退役回扫注记**：下文「关键实现」组件表与「Manager 访问器」表为 **2026-06 决策时点快照**，多行已退役/重构——`agent.persona`（PersonaManager → 角色包体系）、`agent.config`（ConfigManager）、`agent.insight`（InsightExtractor / UserFactExtractor，随洞察层移除）、`MemoryDecay`（衰减退役）、`RelationBuilder`（ADR-014 已删）、`AutoConfigRefiner` 均已不存在；`ChatLock` 已重构为 `chatLockManager`；ArchiveCoordinator 的 profile/insight 归档阶段随洞察层移除。**现行 Manager 清单以 `src/agent/managers/` 目录为准，现行访问器以 `agent.ts` getter（tools/skills/memory/security/works/sessionManager/polish）为准。**
 
 ## 背景
 
