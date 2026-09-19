@@ -53,15 +53,3 @@ export function resolveCapabilityTools(
   }
   return [...tools];
 }
-
-/**
- * 判断某工具名是否为某能力白名单内
- *
- * 供测试/校验使用：验证「换角色 → 特权工具集切换」时工具暴露面正确。
- */
-export function isToolInCapabilities(
-  toolName: string,
-  capabilities: readonly { capability: string }[] | undefined,
-): boolean {
-  return resolveCapabilityTools(capabilities).includes(toolName);
-}

@@ -7,10 +7,7 @@
  * 默认常驻工具（见 toolExecutor.DEFAULT_EXPOSED_TOOLS），不产生白名单映射。
  */
 import { describe, it, expect } from 'vitest';
-import {
-  resolveCapabilityTools,
-  isToolInCapabilities,
-} from '@/role-pack/capabilityMap.js';
+import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 
 describe('resolveCapabilityTools（中立能力 → memora 特权工具白名单）', () => {
   it('映射项目总监角色包：web:search 生效，file:* 已收敛为常驻工具不再映射', () => {
@@ -46,14 +43,6 @@ describe('resolveCapabilityTools（中立能力 → memora 特权工具白名单
       { capability: 'file:list' },
     ]);
     expect(tools).toEqual([]);
-  });
-
-  it('isToolInCapabilities：特权白名单内为 true，外为 false', () => {
-    const caps = [{ capability: 'web:search' }];
-    expect(isToolInCapabilities('web_search', caps)).toBe(true);
-    expect(isToolInCapabilities('write_file', caps)).toBe(false);
-    // 无能力声明时视为在白名单外（由 list() null/常驻分支控制）
-    expect(isToolInCapabilities('read_file', undefined)).toBe(false);
   });
 
   it('task:plan 不再映射工具（2026-09-16：任务表已是常驻工具，能力键只保留中立字典位）', () => {
