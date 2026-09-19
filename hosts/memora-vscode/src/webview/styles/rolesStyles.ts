@@ -126,8 +126,6 @@ export const rolesStyles = `
   }
   #roles-root .strategy-chip.readonly { background: rgba(255, 165, 0, 0.2); color: #ffa500; }
   #roles-root .strategy-chip.full { background: rgba(76, 175, 80, 0.2); color: #4caf50; }
-  #roles-root .strategy-chip.confirm { background: rgba(244, 67, 54, 0.2); color: #f44336; }
-  #roles-root .strategy-chip.auto { background: rgba(33, 150, 243, 0.2); color: #2196f3; }
   #roles-root .strategy-chip.temp-high { background: rgba(156, 39, 176, 0.2); color: #9c27b0; }
   #roles-root .strategy-chip.temp-mid { background: rgba(0, 150, 136, 0.2); color: #009688; }
   #roles-root .strategy-chip.temp-low { background: rgba(33, 150, 243, 0.2); color: #2196f3; }

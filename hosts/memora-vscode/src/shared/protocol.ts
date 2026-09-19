@@ -822,13 +822,11 @@ export type ExtensionToWebviewMessage =
 
   // ─── 设置视图消息（2026-08-17 选项卡合并） ───
   /** 切换设置视图的子选项卡（host → webview 指令） */
-  | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' | 'skills' }
+  | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' | 'skills' | 'security' }
 
   // ─── 技能管理面板消息（2026-08-22 新增） ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
   | { type: 'skills_loaded'; skills: SkillDto[] }
-  /** L2 渐进披露：请求读取技能正文（按需加载，不预装载到 L1 列表） */
-  | { type: 'skills_read_content'; skillName: string }
   /** L2 渐进披露：技能正文响应（对 skills_read_content 的应答） */
   | { type: 'skill_content'; skillName: string; content: string }
   // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───

@@ -26,6 +26,21 @@ export const settingsStyles = `
     background: var(--surface-page, #1e1e1e);
   }
 
+  /* ============ Components：全局通知 toast（settingsPanel→notice，2026-09-19 补全断链） ============ */
+  .settings-toast {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    max-width: 88%; padding: var(--sp-2, 6px) var(--sp-4, 10px);
+    font-size: var(--font-sm, 11px); line-height: 1.4;
+    border-radius: var(--radius, 6px);
+    background: var(--surface-card, #252526); color: var(--text-primary, #cccccc);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+    opacity: 0; pointer-events: none; transition: opacity .18s ease;
+    z-index: 1000;
+  }
+  .settings-toast.show { opacity: 1; }
+  .settings-toast.error { background: rgba(200, 60, 50, .18); color: var(--text-error, #f48771); border-color: rgba(244, 135, 113, .4); }
+
   /* ============ Components：选项卡栏 ============ */
   .tabs {
     display: flex;

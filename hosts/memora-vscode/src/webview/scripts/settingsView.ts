@@ -88,7 +88,39 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   window.addEventListener('message', (event: MessageEvent<ExtensionToWebviewMessage>) => {
     const msg = event.data;
     if (msg.type === 'settings_switch_tab') switchTab(msg.tab);
+    else if (msg.type === 'notice') showSettingsNotice(msg.level, msg.message);
   });
+
+  /** 通知 toast 自动隐藏计时器（连续 notice 复用同元素，需 clearTimeout 重置） */
+  let toastTimer: number | null = null;
+
+  /**
+   * 展示设置面板全局通知 toast（settingsPanel 通过 notice 推送操作反馈）。
+   *
+   * 2026-09-19 补全：此前 settings 视图无 notice 消费，角色/模型/引擎/审批等操作反馈
+   * 被静默丢弃（SSOT 跨侧断链）。实现为最小侵入——不复用 chatView 的 activity-history
+   * 复杂度，仅单条临时胶囊条，textContent 渲染防注入。
+   *
+   * @param level 级别（error 标红醒目，info 常规）
+   * @param message 文本正文
+   */
+  function showSettingsNotice(level: 'info' | 'error', message: string): void {
+    let toast = document.getElementById('settings-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'settings-toast';
+      toast.className = 'settings-toast';
+      document.body.appendChild(toast);
+    }
+    // textContent 渲染（XXS 纪律：用户可控文本不进 innerHTML）
+    toast.className = 'settings-toast' + (level === 'error' ? ' error' : '');
+    toast.textContent = message;
+    // 强制重排以重启过渡动画（同元素连续展示时 opacity transition 不自动重触发）
+    void toast.offsetWidth;
+    toast.classList.add('show');
+    window.clearTimeout(toastTimer as number);
+    toastTimer = window.setTimeout(() => toast?.classList.remove('show'), 2500);
+  }
 
   // 挂载三个子视图（config/memory 先，roles 后；全部用共享 vscode 实例）。
   // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求 2026-08-17）。
@@ -450,7 +482,4 @@ function createSecurityView({
   });
 }
 
-/**
- * 记忆诊断子视图初始化与渲染（已移除：2026-08-24 第一性原理复盘，诊断粒度超越主流且
- * 明文 JSON 已可读，内核治理机制（取代/加权）强制自动跑，无终端用户场景）
- */
+

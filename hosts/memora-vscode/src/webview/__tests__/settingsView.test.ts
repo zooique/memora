@@ -307,3 +307,49 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect(document.querySelectorAll('.skill-item')).toHaveLength(6);
   });
 });
+
+describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全，2026-09-19）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it('notice(info) → 渲染 #settings-toast 并显示文案与 .show', () => {
+    mountSettingsView();
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'notice', level: 'info', message: '已切换网页搜索引擎' } }),
+    );
+    const toast = document.getElementById('settings-toast') as HTMLElement;
+    expect(toast).not.toBeNull();
+    expect(toast.textContent).toBe('已切换网页搜索引擎');
+    expect(toast.classList.contains('show')).toBe(true);
+    expect(toast.classList.contains('error')).toBe(false);
+  });
+
+  it('notice(error) 标红 + 2500ms 后自动隐藏（重触发需 clearTimeout 重置）', () => {
+    mountSettingsView();
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'notice', level: 'error', message: '角色包不存在：x' } }),
+    );
+    const toast = document.getElementById('settings-toast') as HTMLElement;
+    expect(toast.classList.contains('error')).toBe(true);
+    vi.advanceTimersByTime(2500);
+    expect(toast.classList.contains('show')).toBe(false);
+  });
+
+  it('textContent 渲染防注入（XXS：`<img onerror>` 不进 DOM）', () => {
+    mountSettingsView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'notice', level: 'info', message: '<img src=x onerror=alert(1)>' },
+      }),
+    );
+    const toast = document.getElementById('settings-toast') as HTMLElement;
+    expect(toast.querySelector('img')).toBeNull();
+    expect(toast.textContent).toContain('<img');
+  });
+});

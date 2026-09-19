@@ -6,7 +6,7 @@
  *   - 选择器统一以 `#memory-root` 前缀限定 —— 设置视图合并后三个子视图共存于同一文档，
  *     共享类名（.header / .empty-state 等）靠根容器前缀隔离，避免跨子视图样式串扰；
  *   - 分区：Layout（header / search / list）→ Components（card / source-badge / detail）；
- *   - source 徽章颜色约定：round-summary=accent，profile=中性，work-projection=灰色，
+ *   - source 徽章颜色约定：round-summary=accent，work-projection=灰色，
  *     未知 source 回退中性（开放字符串，不应穷举）。
  */
 export const memoryStyles = `
@@ -144,7 +144,7 @@ export const memoryStyles = `
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  /* 统计卡：三列（活跃 / 回收站 / 加权次数） */
+  /* 统计卡：三列（活跃 / 回收站 / 已被取代） */
   #memory-root .governance-stats {
     display: flex;
     gap: var(--sp-3, 8px);
@@ -163,7 +163,7 @@ export const memoryStyles = `
   }
   #memory-root .gov-num { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); }
   #memory-root .gov-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  /* 操作按钮：取代/加权（低扰次按钮）+ 清理（强调不可逆性） */
+  /* 操作按钮：清理过期（不可逆性强调；取代/加权已随旧治理语义移除） */
   #memory-root .governance-actions { display: flex; gap: var(--sp-2, 6px); }
   /* 政区按钮撑满等宽（布局性差异不混入通用 .btn 基类，SSOT 收敛 2026-08-25） */
   #memory-root .governance-actions .btn { flex: 1; }
