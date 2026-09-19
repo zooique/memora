@@ -153,8 +153,8 @@ new Agent({
 ```
 
 **设计原则**：
-- **零运行时依赖**（核心层零 npm 运行时依赖；`pino` 为可选 peer 依赖，通过动态 `import('pino')` 懒加载，加载失败时静默降级为内置 console logger；持久化由宿主通过 `IMemoryStorage` 接口注入）
-- **零控制台输出**（核心库不调用 `console.*`）
+- **零运行时依赖**（核心层零 npm 运行时依赖、**零运行时模块解析**；日志默认内置 console fallback，宿主经 `setLogger()` 注入自定义实现；持久化由宿主通过 `IMemoryStorage` 接口注入）
+- **内核模块不直接调用 `console.*`**（唯一日志出口是 `logging/` 单例 `logger`；默认实现为内置 console fallback，写 stderr）
 - **零写用户文件**（配置文件是真理源，Agent 只读）
 - **零 LLM 配置加载**（Agent 不知道 `apiKey`，宿主传入 `LlmProvider` 实例）
 - **Manager 委托模式**：Agent 面类只做编排，领域操作委托给专职 Manager
@@ -193,7 +193,7 @@ new Agent({
 | `fileConsistencyCheck` | `FileConsistencyCheck` | ❌ | 文件层前置条件断言回调（可选，未注入则完全降级为现状） |
 | `preExecutionCheck` | `(name, args) => PreExecutionResult` | ❌ | 工具执行前检查回调（宿主审批/审计/参数改写通道；装配时与内部幂等检查组合为单点入口） |
 
-> **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十七 类型导出），pino 升级为懒初始化（首次日志调用时触发，import 零副作用）。
+> **Logger 注入方式**：v1.0 起 `AgentOptions` 不再含 `logger` 字段。日志通过全局 `setLogger(customLogger)` 注入（详见 §十七 类型导出）；未注入时使用内核内置 console fallback（写 stderr，级别由 `MEMORA_LOG_LEVEL` 控制），内核不做任何运行时模块解析。注入即内核唯一日志出口，对**所有内核模块（含 utils 层）**生效。
 
 ### 2.2 生命周期方法
 

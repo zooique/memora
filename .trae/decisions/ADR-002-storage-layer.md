@@ -47,7 +47,7 @@ Memora 需要彻底独立于具体数据库实现。宿主项目（如泊文 Ele
 
 - **内核零 native 依赖**：`node_modules` 不含 C++ 编译模块，`git push` 无需 rebuild
 - **宿主全权持有数据库**：宿主主进程管理 better-sqlite3 生命周期，Memora 不感知
-- **宿主可注入日志**：pino 走可选 peerDep（动态 import，零配置时 fallback console）；宿主可注入自定义 ILogger
+- **宿主可注入日志**：内核暴露 `ILogger` + `setLogger()`，零配置时用内置 console fallback（写 stderr）；内核不加载任何第三方日志库
 - **测试零 IO + 零 native**：InMemoryStorage 让测试不需要文件系统、不需要编译
 - **向后兼容**：`storage` 可选，不传则用 InMemoryStorage 兜底
 - **CLI 由宿主提供**：memora 定位纯库
@@ -59,18 +59,50 @@ IMemoryStorage **保持同步语义**，不新增 IAsyncMemoryStorage 兄弟接�
 ## 补充 · Logger 懒初始化 + 定位定论（v0.9，2026-07-30）
 
 **Logger 懒初始化**：`src/logging/logger.ts` 不得在模块顶层触发 fs 副作用（import 即 mkdir/createWriteStream 污染测试环境）。改为 Proxy getter 首次日志调用时异步触发 pino 升级，console fallback 同步可用，`setLogger(undefined)` 重置守卫。
+（2026-09-19 现状：该条款**由构造消失**——`logger.ts` 已无任何 fs 副作用，无需再靠懒加载规避 import 期污染；原 Proxy getter 改为普通委托闭包。详见下补充节。）
 
 **定位定论 — 约束语义精确化**：从"零依赖内核"修正为"**Node.js 专属 + 零第三方运行时依赖**"：
 
 | 约束项 | 状态 | 说明 |
 |--------|------|------|
 | ✅ 依赖 `node:*` 内置模块 | 合法 | fs/path/os/crypto/http 是 Node.js 专属内核的正常依赖 |
-| ✅ 可选 peerDep（pino） | 合法 | 动态 import，宿主不装则 fallback console |
+| ❌ 运行时第三方模块解析 | 禁止 | 2026-09-19 撤回 peerDep 例外，见下补充节；`peerDependencies` 不再声明 |
 | ❌ 第三方运行时依赖 | 禁止 | `dependencies` 为空 |
 | ❌ native 编译模块 | 禁止 | better-sqlite3/electron 等不进入内核 |
 | ❌ 宿主专属 API | 禁止 | Electron/browser API 不进入内核 |
 
-原因：v0.7~v0.8"零 native 依赖"表述与实现脱节——12 个生产文件依赖 node:* 模块，催生了 logger 用动态 import 规避静态分析的补丁代码（坏味道）。修正后承认依赖 Node 运行时，保留真正有价值的"零第三方依赖"，消除"内核可脱离 node"的伪可移植性。内核是 **Node.js 专用纯逻辑库**，"浏览器可 import"仅在有价值模块层面实现（如 logger）。
+原因：v0.7~v0.8"零 native 依赖"表述与实现脱节——12 个生产文件依赖 node:* 模块，催生了 logger 用动态 import 规避静态分析的补丁代码（坏味道；该补丁已于 2026-09-19 移除，见下补充节）。修正后承认依赖 Node 运行时，保留真正有价值的"零第三方依赖"，消除"内核可脱离 node"的伪可移植性。内核是 **Node.js 专用纯逻辑库**，"浏览器可 import"仅在有价值模块层面实现（如 logger）。
+
+## 补充 · 内核零运行时模块解析（2026-09-19，撤回 peerDep 例外）
+
+**撤回声明**：本 ADR「定位定论」（2026-07-30）中「✅ 可选 peerDep（pino）| 合法」条款**自本日起不再成立**。该条款保留原文以存证历史，但已非实现依据；上表对应行已就地标注为「❌ 运行时第三方模块解析 | 禁止」。
+
+**背景（实证）**：
+- `src/logging/logger.ts` 中的 `await import('pino')` 是内核**唯一**的运行时第三方模块解析点，把内核运行时行为绑定到**宿主的模块图**。
+- 实证：VS Code 宿主 bundle 内联了这条对宿主未声明包的动态导入——`hosts/memora-vscode/dist/extension/extension.js:813`；而宿主 `dependencies` 只有 `dompurify` / `marked`，**未声明 pino** → 宿主要么被迫安装，要么吃一次失败的模块解析。
+- 本 ADR「原因」段此前已自评该写法为「用动态 import 规避静态分析的补丁代码（坏味道）」。
+- `CHANGELOG.md` v3.0.0 自述「零第三方运行时依赖」，与该 peerDep 例外**自相矛盾**；本次改动正是让声明变真。
+
+**新边界**：内核只持有日志**接口**职责——`ILogger` 契约 + `setLogger()` 注入点 + 零依赖默认实现（内置 console fallback，写 stderr，级别由 `MEMORA_LOG_LEVEL` 控制）。日志的**通道 / 落盘 / 格式**全归宿主，内核不决定日志去哪。真实注入点：`hosts/memora-vscode/src/extension/host/assemble.ts`（`setLogger(createVscodeLogger(outputChannel))`）。
+
+**注入即唯一出口**：`setLogger` 注入时**同时桥接 utils 层**（`utils/loggerHolder`），内核所有模块（含 utils 层 `scanner` / `eventEmitter` / `rolePackManager`）统一走注入实现——避免注入后 utils 侧仍停留在旧 console fallback（2026-09-19 修复，此前仅注入 logging 门面）。
+
+**随之退场的隐式契约**：`MEMORA_DATA_DIR`、`MEMORA_LOG_FILE`。二者仅为内核侧文件日志而存在，属进程级隐式契约，宿主从未设置；随文件日志一并移除，全库零消费者。
+
+**替代方案对比**：
+
+| 方案 | 放弃原因 |
+|------|----------|
+| ① 保留 peerDep（原状） | 内核仍做运行时模块解析，把内核运行时绑到宿主模块图；且与 CHANGELOG「零第三方运行时依赖」自相矛盾 |
+| ② 手写 fs 写流替掉 pino 以保住文件日志 | 内核重新承担「日志落盘」职责（与边界冲突），凭空引入 fs 副作用，并需自行处理轮转 / 进程退出竞态 |
+| ③ 抽成宿主可调用的 helper（`createFileLogger(dir)`）由宿主注入 | 当前**零消费者** = 投机生长，违反 [ADR-017](./ADR-017-natural-growth-redefinition.md) 枝叶「2 次提取」——等第 2 个真实需求出现再评估 |
+
+**影响**：
+- 「Logger 懒初始化」（见上 v0.9 补充）条款**由构造消失**：`logger.ts` 已无任何 fs 副作用，无需再靠懒加载规避 import 期污染；该条款保留但仅存历史意义。
+- `logger` 门面由 4 个 getter（其唯一目的是懒触发 pino 升级）改为**普通委托闭包**：getter 的动因随升级机制删除而消失；委托闭包保证 `setLogger()` 注入/复位对所有持有者仍实时生效，且函数身份稳定（外部可将 `logger.info` 直接作回调传递而不丢 `this`）。
+- `package.json` 删除 `peerDependencies` / `peerDependenciesMeta` 整块（pino 为唯一条目），`devDependencies` 删除 `pino` / `pino-pretty`。
+
+**何时回顾**：出现第 2 个需要内核侧文件日志的宿主时（届时按 [ADR-017](./ADR-017-natural-growth-redefinition.md)「2 次提取」评估方案 ③ 的 helper）。
 
 ## 何时回顾
 

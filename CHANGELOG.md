@@ -8,6 +8,19 @@
 
 ## [3.0.0] - 2026-08-20
 
+### Changed（内核零运行时模块解析：移除 pino 可选 peer 与内核侧文件日志）
+
+内核定位「零第三方运行时依赖」的收口——移除内核**唯一**的运行时第三方模块解析点，让声明与实现一致。
+
+- **移除 `import('pino')`**：删除 `tryCreatePinoLogger()` / `wrapPinoAsLogger()` / `maybeUpgradeToPino()` 及配套懒升级机制；内核不再加载任何第三方日志库、不做任何运行时模块解析（此前该动态导入会被宿主 bundle 内联，把内核运行时绑到宿主模块图）
+- **`package.json`**：删除 `peerDependencies` / `peerDependenciesMeta`（pino 为唯一条目）；`devDependencies` 删除 `pino` / `pino-pretty`
+- **内核侧文件日志退场**：随之删除 `MEMORA_DATA_DIR` / `MEMORA_LOG_FILE` 两个进程级隐式契约（仅文件日志在用，宿主从未设置）
+- **日志形态对宿主零影响**：仍为「默认内置 console fallback（写 stderr，级别由 `MEMORA_LOG_LEVEL` 控制）+ 宿主经 `setLogger()` 注入」，VS Code 宿主注入通道（`hosts/memora-vscode/src/extension/host/assemble.ts`）不变；`logger` 门面由 getter 改为普通委托闭包（函数身份稳定）
+- **`setLogger` 注入即唯一出口**：注入分支补齐 utils 层桥接（`utils/loggerHolder`），`scanner` / `eventEmitter` / `rolePackManager` 等 utils 侧模块随宿主注入统一切换（此前注入只覆盖 `logging/` 门面，utils 侧停留在 console fallback）
+- **文档收口**：api-reference / 接入指南 / ADR-002 补充节同步订正「零控制台输出」「pino 可选 peer」等过时表述
+
+> 非破坏性变更：宿主注入通道与 `ILogger` 契约不变；未注入时行为从「尝试 pino、失败降级 console」变为「始终内置 console fallback」。README 双语（console fallback 口径）此前已一致，无需变更。
+
 ### Added（外部世界工具族：`web_fetch` 搜索→抓取闭环 + `run_code` 通用代码执行）
 
 源自工具面盘点（tool-surface-roadmap.md）：`web_search` 只搜不抓、通用计算缺失。沿既有范式（接口注入 + 条件性暴露 + 降级优先 + 零依赖边界）补齐两个「连接外部世界」的条件工具。

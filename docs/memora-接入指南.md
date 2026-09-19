@@ -36,7 +36,7 @@
 
 **配置文件是真理源，对话记忆走 SQLite 索引。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary 摘要记忆，带 `summaryType` 标签）走 SQLite + **纯关键词召回**（向量语义通道已随 2026-09-18 B0 收编移除，见 §十.1）。
 
-**内核零越界。** 核心库不调用 `console.*`、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
+**内核零越界。** 核心库模块不直接调用 `console.*`（唯一日志出口为 `logging/` 单例，默认实现写 stderr）、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
 **Manager 委托模式。** Agent 面类只做编排，领域操作委托给专职 Manager：`agent.rolePack`（角色包）/ `agent.tools`（工具）/ `agent.skills`（技能）/ `agent.memory`（记忆查询+写入）/ `agent.governance`（记忆治理）/ `agent.works`（作品投影）/ `agent.polish`（文本润色）共 7 个业务 Manager（另有 `projects` / `security` / `sessionManager` 等）。
 
@@ -112,7 +112,7 @@ const backgroundProvider = createProviderFromConfig('background', {
 // 可选：注入存储层（不传则使用 InMemoryStorage）
 const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db');
 
-// 可选：全局替换日志实现（不调用则使用内置 console logger；pino 为可选 peer 依赖，动态 import 懒加载）
+// 可选：全局替换日志实现（不调用则使用内核内置 console fallback，写 stderr；宿主可注入任意 ILogger 实现）
 setLogger(myCustomLogger);
 
 // 创建 Agent
@@ -470,7 +470,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符 |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
-| `toError(err)` | 将任意值转为 Error（浏览器端安全，不引入 pino） |
+| `toError(err)` | 将任意值转为 Error（浏览器端安全，不引入 `logging/` 模块） |
 | `NOOP_TRACER` | ITracer 的空实现（静默丢弃所有 span，零开销） |
 | `TRACE_SPANS` | AgentLoop 预定义 Span 名称常量（RECALL / LLM_CALL / TOOL_EXEC / RESPONSE） |
 | `ToolErrorCode` | 工具错误码枚举（10 种，含 PATH_NOT_ALLOWED / FILE_NOT_FOUND 等） |
