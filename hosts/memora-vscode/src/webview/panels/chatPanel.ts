@@ -592,9 +592,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       } else if (msg.type === 'resume') {
         // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
         void this.handleResumeFromPause();
-      } else if (msg.type === 'polish_text') {
-        // H5 文本润色：调 agent.polish(text) 润色用户消息
-        void this.handlePolishText(msg.text, msg.msgId);
+      } else if (msg.type === 'polish_input') {
+        // H5 文本润色（输入框入口，2026-08-27）：调 agent.polish(text) 润色输入框内容，
+        // 回执 polish_input_result（无 msgId——输入框润色不回写单条消息）
+        void this.handlePolishInput(msg.text);
       } else if (msg.type === 'write_confirm_answer') {
         // H0 写入审批卡回传：用户确认/拒绝写入操作
         const pending = this._pendingWriteConfirmations.get(msg.requestId);
@@ -1623,38 +1624,37 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 文本润色处理（H5 文本润色入口）
+   * 文本润色处理（H5 文本润色入口，输入框版本）
    *
-   * 调 agent.polish(text) 调用内核 TextPolishManager 润色用户消息。
-   * 内核已实现 2000 字上限和 15s 超时控制，润色完成后将结果回写到 webview。
+   * 调 agent.polish(text) 调用内核 TextPolishManager 润色输入框内容。
+   * 内核已实现 2000 字上限和 15s 超时控制，润色完成后回执 polish_input_result
+   * （输入框润色无 msgId 概念——结果整体替换输入框，不按单条消息回写）。
    *
-   * @param text 待润色的文本
-   * @param msgId 消息唯一标识，用于结果回写
+   * @param text 待润色的文本（输入框当前内容）
    */
-  private async handlePolishText(text: string, msgId: string): Promise<void> {
+  private async handlePolishInput(text: string): Promise<void> {
     const agent = await this.getAgentOrWarn();
     if (!agent) {
-      this.post({ type: 'polish_result', ok: false, msgId, message: 'Agent 未就绪' });
+      this.post({ type: 'polish_input_result', ok: false, message: 'Agent 未就绪' });
       return;
     }
     const polisher = agent.polish;
     if (!polisher) {
-      this.post({ type: 'polish_result', ok: false, msgId, message: '润色服务不可用' });
+      this.post({ type: 'polish_input_result', ok: false, message: '润色服务不可用' });
       return;
     }
     try {
       const result = await polisher.polish(text);
       if (result.changed && result.polished) {
-        this.post({ type: 'polish_result', ok: true, msgId, text: result.polished });
+        this.post({ type: 'polish_input_result', ok: true, text: result.polished });
       } else {
         // 文本未变化，直接返回原文
-        this.post({ type: 'polish_result', ok: true, msgId, text });
+        this.post({ type: 'polish_input_result', ok: true, text });
       }
     } catch (err) {
       this.post({
-        type: 'polish_result',
+        type: 'polish_input_result',
         ok: false,
-        msgId,
         message: err instanceof Error ? err.message : String(err),
       });
     }
@@ -2927,6 +2927,26 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       title="回到底部" aria-label="回到底部">
       <span class="btn-icon" data-icon="scroll-bottom"></span>
     </button>
+    <!-- 写入审批卡（H0，2026-09-19 补全）：confirmWrites=true 时写文件触发，
+         host 推送 write_confirm_request，webview 渲染此卡；用户确认/拒绝回传
+         write_confirm_answer。默认隐藏，由脚本按需显示（fail-closed：超时即拒） -->
+    <div id="writeConfirmCard" class="write-confirm-card" hidden>
+      <div class="write-confirm-card__body">
+        <div class="write-confirm-card__head">
+          <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
+          <span class="write-confirm-card__path" id="writeConfirmPath"></span>
+        </div>
+        <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
+        <details class="write-confirm-card__diff">
+          <summary>查看写入内容</summary>
+          <pre id="writeConfirmDiff"></pre>
+        </details>
+        <div class="write-confirm-card__actions">
+          <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
+          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认写入</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ③ 活动状态区（P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）

@@ -130,6 +130,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const clarifyText = document.getElementById('clarifyText') as HTMLElement;
   const clarifyOptions = document.getElementById('clarifyOptions') as HTMLElement;
   const clarifyInput = document.getElementById('clarifyInput') as HTMLInputElement;
+  // 写入审批卡（H0，2026-09-19 补全）：confirmWrites=true 时写文件触发，渲染审批卡
+  // 供用户确认/拒绝；回传 write_confirm_answer（fail-closed：host 30s 超时即自动拒绝）
+  const writeConfirmCard = document.getElementById('writeConfirmCard') as HTMLElement | null;
+  const writeConfirmTool = document.getElementById('writeConfirmTool') as HTMLElement | null;
+  const writeConfirmPath = document.getElementById('writeConfirmPath') as HTMLElement | null;
+  const writeConfirmDesc = document.getElementById('writeConfirmDesc') as HTMLElement | null;
+  const writeConfirmDiff = document.getElementById('writeConfirmDiff') as HTMLElement | null;
+  const writeConfirmOk = document.getElementById('writeConfirmOk') as HTMLButtonElement | null;
+  const writeConfirmReject = document.getElementById('writeConfirmReject') as HTMLButtonElement | null;
+  let pendingWriteConfirmRequestId: string | null = null;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
   let currentRoleName = '';
@@ -3750,20 +3760,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.steps);
-    } else if (msg.type === 'polish_result') {
-      // H5 文本润色结果：ok=true 替换消息内容；ok=false 提示失败
-      const msgEl = messages.querySelector(`.msg[data-msg-id="${msg.msgId}"]`) as HTMLElement | null;
-      if (msgEl) {
-        msgEl.classList.remove('polishing');
-        const body = msgEl.querySelector(':scope .msg-body');
-        if (body && msg.ok && msg.text) {
-          body.textContent = msg.text;
-          (msgEl as HTMLElement).dataset.rawText = msg.text;
-        }
-      }
-      if (!msg.ok && msg.message) {
-        showActivity('info', `润色失败：${msg.message}`);
-      }
     } else if (msg.type === 'polish_input_result') {
       // 输入框润色结果：ok=true 替换输入框内容；ok=false 提示失败
       if (msg.ok && msg.text) {
@@ -3895,7 +3891,51 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const pct = Math.round(msg.similarity * 100);
       const levelLabel = msg.level === 'drift' ? '严重偏离' : '需要确认';
       showActivity('info', `目标漂移（${levelLabel}，相似度 ${pct}%）：${msg.newGoal}`);
+    } else if (msg.type === 'write_confirm_request') {
+      // H0 写入审批卡：confirmWrites=true 时写文件触发 → 渲染审批卡等待用户确认/拒绝；
+      // 用户点击后回传 write_confirm_answer。多请求同一时刻只展示最新（前一张被新请求覆盖，
+      // 与 host 侧「每个 requestId 独立超时 fail-closed」语义兼容——旧请求由超时自动拒绝）。
+      renderWriteConfirmCard(msg);
     }
+  }
+
+  /**
+   * H0 写入审批卡渲染（2026-09-19 补全，webview 侧唯一实现点）
+   *
+   * 填充卡片字段（工具名 / 目标文件 / 描述 / 写入内容 diff 预览）并显示；
+   * 记录当前 requestId，供确认/拒绝按钮回传 write_confirm_answer。
+   *
+   * @param msg write_confirm_request 载荷（host 推送）
+   */
+  function renderWriteConfirmCard(msg: Extract<ExtensionToWebviewMessage, { type: 'write_confirm_request' }>): void {
+    if (!writeConfirmCard || !writeConfirmTool || !writeConfirmPath || !writeConfirmDesc || !writeConfirmDiff) return;
+    // 全部字段用 textContent 填充（SSOT：不信任 host 输入，防注入——与消息区渲染同纪律）
+    writeConfirmTool.textContent = msg.tool;
+    writeConfirmPath.textContent = msg.targetPath;
+    writeConfirmDesc.textContent = msg.description ?? '';
+    // diff 预览：afterContent 为写入后的完整内容（beforeContent 为 null 时即新建文件）
+    const before = msg.beforeContent ?? '(新建文件)';
+    writeConfirmDiff.textContent = before === msg.afterContent ? before : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
+    pendingWriteConfirmRequestId = msg.requestId;
+    writeConfirmCard.hidden = false;
+  }
+
+  /** H0 审批卡按钮事件（确认/拒绝 → 回传 write_confirm_answer + 隐藏卡片） */
+  if (writeConfirmOk && writeConfirmReject && writeConfirmCard) {
+    writeConfirmOk.addEventListener('click', () => {
+      if (pendingWriteConfirmRequestId !== null) {
+        vscode.postMessage({ type: 'write_confirm_answer', requestId: pendingWriteConfirmRequestId, approved: true });
+      }
+      writeConfirmCard.hidden = true;
+      pendingWriteConfirmRequestId = null;
+    });
+    writeConfirmReject.addEventListener('click', () => {
+      if (pendingWriteConfirmRequestId !== null) {
+        vscode.postMessage({ type: 'write_confirm_answer', requestId: pendingWriteConfirmRequestId, approved: false });
+      }
+      writeConfirmCard.hidden = true;
+      pendingWriteConfirmRequestId = null;
+    });
   }
 
   /**

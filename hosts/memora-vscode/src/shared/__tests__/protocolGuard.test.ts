@@ -13,8 +13,8 @@
  * 口径说明：
  *   - 仅统计联合类型中的 `type: '...'` 字面量（去重：同名消息类型 W→E 与 E→W 共用一条通道，
  *     如 skills_read_content 双向同名，按 1 条计）；
- *   - 排除 MESSAGE_TYPES 历史常量表——其与联合类型不同步，非真实通道定义（含已废弃的
- *     response_complete 等残留），统计它会把死键当通道虚增计数。
+ *   - 联合类型是消息类型唯一权威源——曾存在的 MESSAGE_TYPES 运行时镜像表已删除
+ *     （2026-09-19）：其与联合类型长期不同步、纯僵尸镜像，统计只会把死键虚增计数。
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -29,7 +29,7 @@ function extractMessageTypes(source: string): Set<string> {
   const noBlockComments = source.replace(/\/\*[\s\S]*?\*\//g, '');
   // 去行注释（// ...）：同上，防注释内 type: 'xxx' 误计
   const noComments = noBlockComments.replace(/\/\/[^\n]*/g, '');
-  // 匹配联合类型成员中的 type 字面量（MESSAGE_TYPES 常量表为 KEY: 'value' 形式，无 type: 前缀，天然排除）
+  // 匹配联合类型成员中的 type 字面量（协议无常量表镜像，联合类型即唯一权威源）
   const types = new Set<string>();
   const re = /type:\s*'([^']+)'/g;
   let m: RegExpExecArray | null;

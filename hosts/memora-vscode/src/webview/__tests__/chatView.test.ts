@@ -64,6 +64,23 @@ const HTML = `
       <div id="emptySuggestions" class="empty-suggestions"></div>
     </div>
     <button id="scrollToBottomBtn" class="scroll-to-bottom" hidden><span class="btn-icon" data-icon="scroll-bottom"></span></button>
+    <div id="writeConfirmCard" class="write-confirm-card" hidden>
+      <div class="write-confirm-card__body">
+        <div class="write-confirm-card__head">
+          <span class="write-confirm-card__tool" id="writeConfirmTool"></span>
+          <span class="write-confirm-card__path" id="writeConfirmPath"></span>
+        </div>
+        <div class="write-confirm-card__desc" id="writeConfirmDesc"></div>
+        <details class="write-confirm-card__diff">
+          <summary>查看写入内容</summary>
+          <pre id="writeConfirmDiff"></pre>
+        </details>
+        <div class="write-confirm-card__actions">
+          <button id="writeConfirmReject" class="write-confirm-card__btn--reject">拒绝</button>
+          <button id="writeConfirmOk" class="write-confirm-card__btn--ok">确认写入</button>
+        </div>
+      </div>
+    </div>
   </div>
   <div id="clarifyBar">
     <div id="clarifyText"></div>
@@ -3878,6 +3895,118 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(rbSteps[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第一步');
     expect(rbSteps[1]!.querySelectorAll('.round-block__thought').length).toBe(1);
     expect(rbSteps[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
+  });
+});
+
+// ─── H0 写入审批卡（2026-09-19 补全 webview 侧）────────────────────
+// 背景：write_confirm_request 此前仅 host 发送、webview 无任何消费 → 开启「写入二次确认」后
+// 审批卡永不弹出、30s 超时自动拒绝（fail-closed）导致写入功能不可用。本组护栏验证：
+// 1) 收到 request 渲染审批卡（工具/路径/描述/diff 全部字段 textContent 填充，防注入）；
+// 2) 确认按钮回传 write_confirm_answer(approved=true) 并隐藏卡片；
+// 3) 拒绝按钮回传 write_confirm_answer(approved=false) 并隐藏卡片；
+// 4) 覆盖渲染：新请求覆盖旧请求（旧 requestId 由 host 30s 超时独立兜底，无泄漏）。
+describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
+  it('write_confirm_request 渲染审批卡：工具/路径/描述/diff 填充且卡片可见', () => {
+    mountChatView();
+    const card = document.getElementById('writeConfirmCard') as HTMLElement;
+    // 初始隐藏
+    expect(card.hasAttribute('hidden')).toBe(true);
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_test1',
+      targetPath: '/workspace/src/foo.ts',
+      tool: 'write_file',
+      description: '写文件：foo.ts',
+      permission: '',
+      beforeContent: 'old',
+      afterContent: 'new',
+    });
+    expect(card.hasAttribute('hidden')).toBe(false);
+    expect(document.getElementById('writeConfirmTool')!.textContent).toBe('write_file');
+    expect(document.getElementById('writeConfirmPath')!.textContent).toBe('/workspace/src/foo.ts');
+    expect(document.getElementById('writeConfirmDesc')!.textContent).toBe('写文件：foo.ts');
+    // diff 预览：before → after（textContent 防注入，与消息区同纪律；纯内容对比，不含描述）
+    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('--- 写入前 ---');
+    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('old');
+    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('+++ 写入后 +++');
+    expect(document.getElementById('writeConfirmDiff')!.textContent).toContain('new');
+  });
+
+  it('confirmWrites 审批卡：确认按钮回传 write_confirm_answer(approved=true) 并隐藏', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_ok',
+      targetPath: '/workspace/a.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: 'hello',
+    });
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'write_confirm_answer',
+      requestId: 'wc_ok',
+      approved: true,
+    });
+    expect((document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden')).toBe(true);
+  });
+
+  it('confirmWrites 审批卡：拒绝按钮回传 write_confirm_answer(approved=false) 并隐藏', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_no',
+      targetPath: '/workspace/b.ts',
+      tool: 'edit_file',
+      description: '',
+      permission: '',
+      beforeContent: 'a',
+      afterContent: 'b',
+    });
+    (document.getElementById('writeConfirmReject') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'write_confirm_answer',
+      requestId: 'wc_no',
+      approved: false,
+    });
+    expect((document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden')).toBe(true);
+  });
+
+  it('审批卡覆盖渲染：新请求只展示最新（旧 requestId 由 host 超时独立兜底，卡片无状态泄漏）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_first',
+      targetPath: '/workspace/1.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: '1',
+    });
+    dispatch({
+      type: 'write_confirm_request',
+      requestId: 'wc_second',
+      targetPath: '/workspace/2.ts',
+      tool: 'write_file',
+      description: '',
+      permission: '',
+      beforeContent: null,
+      afterContent: '2',
+    });
+    // 点击确认（只回传最新 requestId；过滤初始化 ready 消息，仅统计 write_confirm_answer）
+    (document.getElementById('writeConfirmOk') as HTMLButtonElement).click();
+    const confirmAnswers = postMessage.mock.calls.filter(
+      (args) => (args[0] as { type?: string }).type === 'write_confirm_answer',
+    );
+    expect(confirmAnswers.length).toBe(1);
+    expect(confirmAnswers[0]![0]).toEqual({
+      type: 'write_confirm_answer',
+      requestId: 'wc_second',
+      approved: true,
+    });
   });
 });
 

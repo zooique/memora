@@ -356,7 +356,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-﻿  // 命令：立即执行孤儿 Round 垃圾回收（agent.gcNow() 手动触发入口）
+// 命令：立即执行孤儿 Round 垃圾回收（agent.gcNow() 手动触发入口）
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.runGc', async () => {
       const agent = await getAgentForCommand();

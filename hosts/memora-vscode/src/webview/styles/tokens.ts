@@ -146,6 +146,39 @@ export const tokens = `
     --occ-input: var(--vscode-charts-orange, #caa23b);
     --occ-output: var(--vscode-charts-red, #f14c4c);
 
+    /* === L2 语义令牌：遗留引用收口（2026-09-19 全量审查） ===
+     * 此前多个样式文件以 var(--xxx, 裸值) 引用 tokens 未定义的「幽灵令牌」（仅靠 fallback
+     * 兜底，tokens 变更不跟随）——本块统一补定义，值取既有主要 fallback，视觉零变化。
+     * 收口后此类令牌与其它语义令牌同源：样式文件引用即契约，tokens 修改全局跟随。 */ 
+    --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
+    --border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
+    --focus: var(--vscode-focusBorder, #007fd4);
+    --text-tertiary: var(--vscode-descriptionForeground, #6e7681);
+    --text-muted: var(--vscode-descriptionForeground, #9a9a9a);
+    --accent-hover: var(--vscode-button-hoverBackground, #1177bb);
+    --accent-soft: var(--accent-bg-subtle, rgba(14, 99, 156, 0.12));
+    --danger: var(--vscode-errorForeground, #f14c4c);
+    --surface: var(--surface-page, #252526);
+    --surface-normal: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.16));
+    --surface-inverse: var(--vscode-foreground, #ffffff);
+    --surface-track: var(--vscode-progressBar-background, #2a2a2a);
+    --surface-tip: var(--vscode-editorWidget-background, #2d2d2d);
+    --surface-inset: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.12));
+    --surface-panel: var(--vscode-sideBar-background, #1e1e1e);
+    --surface-active: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.24));
+    --radius-md: var(--radius, 6px);
+    --radius-full: var(--radius-pill, 999px);
+    --warn: var(--vscode-charts-yellow, #cca700);
+    --text-error: var(--vscode-errorForeground, #f14c4c);
+
+    /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用，SSOT 收口） === */
+    --dd-trigger-max-w: 200px;   /* 胶囊触发器最大宽（超长省略兜底） */
+    --dd-menu-min-w: 160px;      /* 胶囊菜单最小宽 */
+    --dd-menu-max-w: 240px;      /* 胶囊菜单最大宽 */
+
+    /* === L1 基础令牌：动画时长（chatStyles 引用，SSOT 收口） === */
+    --trae-duration-fast: 120ms; /* 快速过渡（hover 等），全库唯一动画时长源 */
+
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */
     /* Composer 默认双行起步（大厂惯例），内容撑开自动增高，超限才滚
      * Footer 布局：Actions 行(模型+发送) + Context 行(角色+能力徽章) */

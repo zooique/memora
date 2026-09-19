@@ -327,23 +327,24 @@ describe('宿主集成端到端测试', () => {
 
   // ─── T5：协议消息类型完整性 ────────────────────────────────
   describe('协议消息类型完整性', () => {
-    it('宿主定义的协议消息类型全部存在', async () => {
-      const protocolModule = await import('../../../shared/protocol.js');
-
-      // 安全相关消息类型：验证关键类型在 MESSAGE_TYPES 常量中存在
-      const messageTypes = protocolModule.MESSAGE_TYPES as Record<string, string>;
-      expect(messageTypes).toBeDefined();
-      expect(messageTypes.WRITE_CONFIRM_REQUEST).toBe('write_confirm_request');
-      expect(messageTypes.WRITE_CONFIRM_ANSWER).toBe('write_confirm_answer');
-      expect(messageTypes.SET_SECURITY_TOGGLE).toBe('security_toggle');
-      expect(messageTypes.SECURITY_STATUS).toBe('security_status');
-
-      // 验证消息类型常量与 TypeScript 联合类型一致
-      const allValues = Object.values(messageTypes);
-      expect(allValues).toContain('write_confirm_request');
-      expect(allValues).toContain('write_confirm_answer');
-      expect(allValues).toContain('security_toggle');
-      expect(allValues).toContain('security_status');
+    it('关键协议消息类型在 protocol.ts 联合类型中定义', async () => {
+      // SSOT：协议联合类型（WebviewToExtensionMessage / ExtensionToWebviewMessage）
+      // 是消息类型的唯一权威源。此处读取协议源码断言关键 type 字面量存在——
+      // 与 shared/__tests__/protocolGuard.test.ts 同构（源码级对账，不维护运行时镜像表；
+      // 原 MESSAGE_TYPES 常量表已删除，2026-09-19——其与联合类型长期不同步属僵尸镜像）。
+      const fs = await import('node:fs');
+      const protocolSource = fs.readFileSync(
+        join(__dirname, '../../../shared/protocol.ts'),
+        'utf-8',
+      );
+      // 剥注释：联合类型注释中可能出现 type 字样，须先剥离防误判
+      const noBlock = protocolSource.replace(/\/\*[\s\S]*?\*\//g, '');
+      const noComments = noBlock.replace(/\/\/[^\n]*/g, '');
+      // 关键安全/写入审批消息类型（W→E 或 E→W 至少一侧以 type 字面量定义）
+      expect(noComments).toContain("type: 'write_confirm_request'");
+      expect(noComments).toContain("type: 'write_confirm_answer'");
+      expect(noComments).toContain("type: 'security_toggle'");
+      expect(noComments).toContain("type: 'security_status'");
     });
 
     it('CONFIRM_WRITES_KEY 常量存在', async () => {

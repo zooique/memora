@@ -288,6 +288,56 @@ export const chatStyles = `
   }
   .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
   .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  /* 写入审批卡（H0，2026-09-19 补全）：confirmWrites=true 写文件时浮现于消息区底部。
+   * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
+   * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */
+  .write-confirm-card {
+    margin: var(--sp-3, 8px) 0;
+    padding: var(--sp-5, 12px);
+    background: var(--surface-card, #252526);
+    border: 1px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: var(--radius-lg, 8px);
+    box-shadow: var(--shadow-card, 0 2px 8px rgba(0,0,0,.15));
+  }
+  .write-confirm-card__body { display: flex; flex-direction: column; gap: var(--sp-2, 6px); min-width: 0; }
+  .write-confirm-card__head { display: flex; align-items: center; gap: var(--sp-2, 6px); min-width: 0; }
+  .write-confirm-card__tool {
+    flex-shrink: 0; font-size: var(--font-sm, 11px); font-weight: 600;
+    color: var(--accent, #0e639c);
+    border: 1px solid var(--accent, #0e639c);
+    border-radius: var(--radius-sm, 2px);
+    padding: 1px var(--sp-2, 6px);
+  }
+  .write-confirm-card__path {
+    flex: 1 1 auto; min-width: 0;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-size: var(--font-md, 12px); color: var(--text-primary, #cccccc);
+    unicode-bidi: plaintext;
+  }
+  .write-confirm-card__desc { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); }
+  .write-confirm-card__diff { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
+  .write-confirm-card__diff summary { cursor: pointer; font-size: var(--font-xs, 10px); }
+  .write-confirm-card__diff pre {
+    margin: var(--sp-2, 6px) 0 0;
+    padding: var(--sp-3, 8px);
+    white-space: pre-wrap; word-break: break-all;
+    background: var(--surface-input, #3c3c3c);
+    color: var(--text-primary, #cccccc);
+    border-radius: var(--radius, 6px);
+    max-height: 160px; overflow-y: auto;
+  }
+  .write-confirm-card__actions { display: flex; gap: var(--sp-3, 8px); justify-content: flex-end; }
+  .write-confirm-card__btn--ok, .write-confirm-card__btn--reject {
+    font-size: var(--font-md, 12px);
+    border: none; border-radius: var(--radius-sm, 2px);
+    padding: 4px var(--sp-5, 12px); cursor: pointer;
+  }
+  .write-confirm-card__btn--ok { background: var(--status-pass, #4ec9b0); color: #fff; }
+  .write-confirm-card__btn--reject { background: var(--surface-input, #3c3c3c); color: var(--text-primary, #cccccc); }
+  .write-confirm-card__btn--ok:focus-visible,
+  .write-confirm-card__btn--reject:focus-visible {
+    outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px;
+  }
   /* 运行时输入条目行（形态甲，2026-09-17）：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
    * 区分（「你答 / 你补充 / 未回答」）。样式同源 .msg-qa 收敛而来（折叠 → 条目行）。 */
@@ -582,24 +632,6 @@ export const chatStyles = `
    * （避免「续接正文底部又有操作按钮」的重复入口） */
   .msg.assistant .msg-footer { display: none; }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  /* 润色按钮（H5 文本润色入口，2026-08-23）：用户消息专属，调用内核润色服务。
-   * 与复制按钮同尺寸，用强调色区分（--accent），润色中态用 opacity 降提示。
-   * 复用现有语义令牌 --accent，不新增冗余 token。 */
-  .msg-polish {
-    padding: var(--sp-0, 2px) var(--sp-2, 6px); font-size: var(--font-sm, 11px);
-    border: none; border-radius: var(--radius, 6px);
-    background: transparent; color: var(--accent, #007acc);
-    cursor: pointer;
-  }
-  .msg-polish:hover {
-    background: var(--surface-hover, rgba(128,128,128,.2));
-    color: var(--accent, #007acc);
-  }
-  .msg.polishing .msg-polish { opacity: .7; pointer-events: none; }
-  .msg-polish:focus-visible {
-    outline: 2px solid var(--border-focus, #0e639c);
-    outline-offset: 2px;
-  }
 
   /* ============ Components：底部输入卡片 ============
    * 结构（SSOT 单层视觉源）：
