@@ -72,6 +72,8 @@ description: 安全规范（最小权限、显式允许、审计可追溯）
 
 ## 7. 渲染进程 CSP 与内联样式约定
 
+> **适用范围（2026-09-19 标注）**：原约束对象 `renderer/index.html` 与 `float.html` 属 memora-sprite 宿主（已独立仓库，不在本仓库）。memora-vscode 为 webview 架构、无本地渲染进程 html。本节作为**通用 Electron 渲染进程 CSP 安全纪律**保留，遇新宿主含渲染进程 html 时适用；审查清单仅对存在 `index.html` 渲染进程的宿主执行。
+
 > 详见 [ADR-006 · 安全模型补充说明（2026-07-02）](../decisions/ADR-006-security-model.md)
 
 ### 7.1 三条硬约束

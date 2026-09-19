@@ -32,7 +32,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 | source | 召回策略 |
 | --- | --- |
 | `persona` | 设定记忆，不参与 recall |
-| `rule` | 100% 启动加载（bootstrap） |
+| `rule` | 设定记忆，不参与 recall（角色包 rules.md 确定性注入，始终在线） |
 | `skill` | 设定记忆，不参与 recall |
 | `content` | 按相关度增量召回（治理页手动写入轨，非内核自动） |
 | `work-projection` | 不参与 recall（落项目 `<memoraDir>/projections/`） |
@@ -47,7 +47,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 
 **代码做确定性工作（信号采集），模型做不确定性工作（语义判断）**。
 
-- ✅ 代码：关键词匹配、频次统计、阈值比较等确定性计算，结果作为信号注入 LLM prompt（如 AffectController 采集温暖度/直接度信号）。
+- ✅ 代码：关键词匹配、频次统计、阈值比较等确定性计算，结果作为信号注入 LLM prompt（如关键词命中/频次统计等确定性信号）。
 - ❌ 代码做语义判断（理解意图、生成情绪化回应）——由 LLM 完成。
 - 判断标准：能写成"if 关键词命中 then 数值 += delta"是信号采集；需理解上下文语义才决策是语义判断。
 
@@ -84,7 +84,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 **无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ 命中刷新 accessedAt（只 touch、不做重要度加权；score 已于 2026-09-09 物理退役）**；物理清理靠回收站（默认保留 30 天）。
 
 - round-summary 记忆有效性由 superseded 写时取代 + 召回相关性承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
-- `purgeExpiredMemories(before)` 清理过期软删除记忆；内核不做主动衰减/沉底清理（记忆无时间归档语义）。
+- `writePurgeExpired(before)`（memoryInspector）清理过期软删除记忆；内核不做主动衰减/沉底清理（记忆无时间归档语义）。
 
 **禁止**：❌ 永不删除任何记忆；❌ 所有记忆一视同仁；❌ 召回越多越好（会击穿上下文窗口）。
 
@@ -101,7 +101,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 Memora 被宿主接入后即该程序唯一 Agent，`memora.db` 是 Agent 级共享资源，不随子项目切换重建。**配置文件是真理源，SQLite 是运行时索引**。
 
 - 项目级 `projectPath/.memora/` 只放 rules/skills，不放 memora.db；用户记忆（dataDir）存 memora.db + sessions/，纯数据。
-- `config.addRule()` 是运行时注入（会话级，不经配置文件）；`config.confirm()` 写配置文件（持久化）。
+- 设定记忆经角色包/技能池纯文件装载（内核只读，不写 SQLite / 记忆库）；配置持久化由宿主直接落文件（历史 `ConfigManager` 两段式契约已随角色包边界收敛移除）。
 
 **禁止**：❌ 每个子项目独立 memora.db；❌ 项目切换时关闭/重建数据库；❌ 将配置直接写入 SQLite 作为持久化存储。
 

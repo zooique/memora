@@ -3,7 +3,6 @@
  *
  * 覆盖核心方法：
  * - memory.snapshot() · 3 层记忆快照（working / bootstrap / archive）
- * - addRule() · Q-701
  * - getMessages()
  *
  * 设计原则：
@@ -11,8 +10,7 @@
  * - 用 tmpdir 做项目根目录，不污染真实 .memora/
  * - 每个测试独立 tmp 目录
  *
- * 基元驱动记忆模型：
- * - MemoryType/Permanence 枚举 → source 开放字符串
+ * 记忆模型：source 开放字符串（persona/rule/skill/content/round-summary 等，superseded 写时取代）
  */
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';

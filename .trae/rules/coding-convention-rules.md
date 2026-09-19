@@ -144,7 +144,7 @@ description: 通用编码约束规则（TS/JS 适用，兼顾 Electron、Node �
 | DON'T | 核心业务主键、状态用兜底默认值覆盖——问题显性抛出 |
 | DON'T | 滥用兜底默认值掩盖参数错误、数据缺失 |
 
-**Memora 适配**：`archiveMode` 三态控制（full/insights-only/manual）属核心状态，禁止兜底为 `full`（详见 [ADR-015](../decisions/ADR-015-archive-mode.md)）。
+**Memora 适配**：`archiveMode` 二态控制（full/manual，insights-only 已随洞察层移除）属核心状态，禁止兜底为 `full`（详见 [ADR-015](../decisions/ADR-015-archive-mode.md)）。
 
 ## 8. 工程分层
 

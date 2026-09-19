@@ -19,9 +19,7 @@ description: 后端分层规范（src/ 各模块的职责边界 + 核心库 vs �
 | 领域工具实现 | — | handler，委托内置工具 | ✅ |
 | 人格/规则/技能 | Manager + 加载机制 | 编写 `.md` 配置 | ✅ |
 | UI 界面 | — | 自行实现（CLI/Web/TUI） | ✅ |
-| Diff 确认写入 | Differ + DiffRenderer | 决定何时展示 diff | ✅ |
-| Markdown 渲染 | MarkdownRenderer | 决定是否启用 | ✅ |
-| 自我进化机制 | `config.onSuggestion()`/`confirm()` + `memory.snapshot()`/`search()`/`suggest()` | 决定进化呈现方式 | ✅ |
+| 记忆查询与建议 | `MemoryInspector.snapshot()`（快照）+ `search_memories` 工具（召回）+ `MemoryAdvisor.suggest()`（关联推荐） | 决定呈现方式 | ✅ |
 
 **新功能归属判断**：是否与特定领域耦合？是 → 宿主；否 → 是否所有宿主都需要？是 → 核心库（须经抽象接口）；否 → 暂缓（≥2 处真实复用再落地，ADR-017）。
 
@@ -68,7 +66,7 @@ config/ · logging/ · utils/ → 被所有层依赖
 
 ## 模块内结构约定（快照，非冻结契约）
 
-- 各模块 = `index.ts` + `types.ts` + `core.ts`/`helpers.ts`；`agent/` 含 `agent.ts`/`assembler.ts`/`loop.ts`/`contextPreparer.ts` + `managers/`（专职 Manager，清单以源码为准，当前 15 个）+ `seed/`（最小闭环唯一编排真理源，`seed/orchestrator.ts` 聚合 prepare/act/reflect；handoff 已于 2026-09-05 废弃，见 `orchestrator.ts` L35「不再产出 handoff chunk」）。（原 `checkpointRestoreCoordinator.ts` 已随跨重启恢复链于 2026-09-10 剪枝删除。）
+- 各模块 = `index.ts` + `types.ts` + `core.ts`/`helpers.ts`；`agent/` 含 `agent.ts`/`assembler.ts`/`loop.ts`/`contextPreparer.ts` + `managers/`（专职 Manager，清单以源码为准）+ `seed/`（最小闭环唯一编排真理源，`seed/orchestrator.ts` 聚合 prepare/act/reflect；handoff 已于 2026-09-05 废弃，见 `orchestrator.ts` SeedOrchestrator 类注释「不再对外产出 handoff chunk」）。（原 `checkpointRestoreCoordinator.ts` 已随跨重启恢复链于 2026-09-10 剪枝删除。）
 - **具体文件清单以 `src/` 源码为真理源，不在此冻结**。
 
 新增模块流程见 [new-module-guide.md](./new-module-guide.md)。

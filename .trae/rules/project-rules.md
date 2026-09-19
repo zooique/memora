@@ -197,5 +197,5 @@ chore: 升级 dependencies
 | 类型 | 规则 |
 | ---- | ---- |
 | DO | 新增 IPC 通道前确认是否可通过现有通道组合达成，避免重复注册 |
-| DO | IPC 通道总数接近 150 条时启动治理评估（当前约 125 条） |
+| DO | IPC 通道总数接近 130 条时启动治理评估（当前 103 条，2026-09-19 实测；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`） |
 | DO | 新增模块前先走 [new-module-guide.md](./new-module-guide.md) 评估流程 |
