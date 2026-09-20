@@ -4,7 +4,7 @@
  * 详见 Intl.Segmenter 中文分词
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
+import { segmentText, segmentLower, extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
 
 describe('中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -48,6 +48,17 @@ describe('中文分词器（Intl.Segmenter）', () => {
       expect(tokens).toContain('24');
       expect(tokens).toContain('LTS');
     });
+  });
+});
+
+describe('segmentLower（public API · 大小写不敏感匹配基础）', () => {
+  it('输出恒为小写', () => {
+    expect(segmentLower('Hello WORLD')).toContain('hello');
+    expect(segmentLower('Memora 记忆')).toContain('memora');
+  });
+
+  it('空输入返回空数组', () => {
+    expect(segmentLower('')).toEqual([]);
   });
 });
 
