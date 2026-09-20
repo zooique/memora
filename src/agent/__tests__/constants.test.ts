@@ -13,8 +13,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
-import { MIN_CONTEXT_LIMIT } from '@/role-pack/strategyKeys.js';
-import { parseConfig } from '@/config/loader.js';
+import { MAX_CONTEXT_LIMIT, MIN_CONTEXT_LIMIT } from '@/role-pack/strategyKeys.js';
+import { MAX_CONTEXT_WINDOW, parseConfig } from '@/config/loader.js';
 
 describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
   it('chat() 并发锁超时应为 180s（LLM 120s + 60s 缓冲）', () => {
@@ -43,6 +43,13 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
     // role-pack 层不可 import agent（依赖方向 agent → role-pack 单向），故 120_000 存在第三份镜像。
     // 本用例把既有「两处护栏」升级为「三处护栏」：真源漂移时该镜像不会静默失配。
     expect(MIN_CONTEXT_LIMIT).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
+  });
+
+  it('strategyKeys 的 MAX_CONTEXT_LIMIT 应与 loader 告警参考上界一致（跨模块护栏 · 2M 镜像对）', () => {
+    // 2M 值在 loader.MAX_CONTEXT_WINDOW（provider 窗口告警参考上界）与
+    // strategyKeys.MAX_CONTEXT_LIMIT（角色包 contextLimit 声明上界）两处独立声明、注释对冲，
+    // 此前无自动回归——任一被改而另一未同步即静默失配（改一处须同步另一处）。
+    expect(MAX_CONTEXT_LIMIT).toBe(MAX_CONTEXT_WINDOW);
   });
 
   it('默认 locale 应为 zh-CN（项目母语，可被 AssembleInput.locale 覆盖）', () => {

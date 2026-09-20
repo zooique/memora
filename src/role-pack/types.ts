@@ -8,6 +8,7 @@
 // 策略维度名称与可选值定型后不得随意修改——它是未来角色包文件格式的字段契约
 
 import type { ResourceSubdir } from '@/utils/scanner.js';
+import type { ASK_TRIGGERS } from './strategyKeys.js';
 import type { RolePackValidationIssue } from './validator.js';
 
 // ── 回答前（Prepare）：认知策略 ──
@@ -47,8 +48,8 @@ export type UserFollowup = 'ask' | 'silent';
 /** 错误处理策略：retry=重试 / degrade=降级 / stop=终止 */
 export type ErrorHandling = 'retry' | 'degrade' | 'stop';
 
-/** 主动提问触发场景：ambiguity=模糊 / decision=需决策 / missing_info=缺信息 / confirm=确认 */
-export type AskOnTrigger = 'ambiguity' | 'decision' | 'missing_info' | 'confirm';
+/** 主动提问触发场景（SSOT 推导自 strategyKeys.ASK_TRIGGERS，增删触发词只改一处） */
+export type AskOnTrigger = (typeof ASK_TRIGGERS)[number];
 
 // ── 策略集合接口 ──
 

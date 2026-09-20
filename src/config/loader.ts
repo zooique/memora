@@ -39,8 +39,9 @@ const MAX_MAX_CONTEXT_TOKENS = 2_000_000;
  * ⚠️ 与 `src/role-pack/strategyKeys.ts` 的 `MAX_CONTEXT_LIMIT`（角色包 contextLimit 声明上界）**同值对齐，改一处须同步另一处**；
  * 两者语义不同（provider 声明的告警参考 vs 角色包声明上界），故按本仓对 `DEFAULT_MAX_CONTEXT_TOKENS` 的既有做法
  * 「重复 + 双向注释对冲」处理，**不跨层 import**（config 层不依赖 role-pack）。
+ * 导出仅供跨模块护栏测试断言同值（constants.test.ts），非 API 承诺。
  */
-const MAX_CONTEXT_WINDOW = 2_000_000;
+export const MAX_CONTEXT_WINDOW = 2_000_000;
 /** allowedPaths 最大条数：路径白名单防膨胀 */
 const MAX_ALLOWED_PATHS = 50;
 

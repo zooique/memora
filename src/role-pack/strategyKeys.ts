@@ -104,21 +104,21 @@ export function isSummaryFocus(value: unknown): boolean {
   );
 }
 
+/** askOn 触发枚举（SSOT 单一来源：类型推导与运行时校验共用，types.ts 的 AskOnTrigger 由本数组推导） */
+export const ASK_TRIGGERS = ['ambiguity', 'decision', 'missing_info', 'confirm'] as const;
+
+/** askOn 触发枚举运行时集合（由 ASK_TRIGGERS 派生，O(1) 判定） */
+const ASK_TRIGGER_SET: ReadonlySet<string> = new Set(ASK_TRIGGERS);
+
 /** askOn 断言：单枚举或元素∈四枚举的数组（可组合）；数组长度 ≤ 枚举数（防重复堆叠） */
 export function isAskOn(value: unknown): boolean {
-  const ASK_TRIGGERS: ReadonlySet<string> = new Set([
-    'ambiguity',
-    'decision',
-    'missing_info',
-    'confirm',
-  ]);
-  if (typeof value === 'string') return ASK_TRIGGERS.has(value);
+  if (typeof value === 'string') return ASK_TRIGGER_SET.has(value);
   return (
     Array.isArray(value) &&
     value.length > 0 &&
     // 数量上限：可组合触发项最多 4 个（去重后），防重复堆叠膨胀 prompt 注入指令
-    value.length <= ASK_TRIGGERS.size &&
-    value.every((v) => typeof v === 'string' && ASK_TRIGGERS.has(v))
+    value.length <= ASK_TRIGGERS.length &&
+    value.every((v) => typeof v === 'string' && ASK_TRIGGER_SET.has(v))
   );
 }
 
