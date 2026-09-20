@@ -22,11 +22,11 @@ import type {
   ToolExecutionRecord,
   StepOutcome,
   PauseMeta,
+  PauseSource,
 } from '@/agent/types.js';
 import { GoalConsistencyChecker } from '@/agent/managers/goalConsistencyChecker.js';
 import type { GoalConsistencyResult } from '@/agent/managers/goalConsistencyChecker.js';
 import { SessionStateMachine } from '@/agent/sessionStateMachine.js';
-import type { PauseSource } from '@/agent/sessionStateMachine.js';
 
 /**
  * 分叉操作结果（round-based 模式）

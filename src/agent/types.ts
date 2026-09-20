@@ -224,12 +224,15 @@ export interface StepOutcome {
   completedAt: number;
 }
 
+/** 暂停来源（唯一真源，2026-09-20 站 43 收口）：供 PauseMeta 与 SessionStateMachine 共用，防类型级双轨漂移 */
+export type PauseSource = 'user' | 'agent' | 'system';
+
 /** 暂停上下文，用于渲染层展示和恢复决策 */
 export interface PauseMeta {
   /** 暂停原因 */
   reason: string;
-  /** 暂停来源 */
-  source: 'user' | 'agent' | 'system';
+  /** 暂停来源（引用 PauseSource，与 SessionStateMachine 同源） */
+  source: PauseSource;
 }
 
 /**

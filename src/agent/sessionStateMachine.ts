@@ -13,14 +13,11 @@
  * 生产运行时异常走 `yield { type:'error' }` 事件流（agent.ts），不翻状态机。若要让运行时异常自动翻状态机，需在 yield error 处接线 triggerError（行为变更，需产品决策）。
  * 单实例事件队列串行处理，无并发写路径。
  */
-import type { SessionCheckpoint, StatusTransition, SessionStatus } from '@/agent/types.js';
+import type { SessionCheckpoint, StatusTransition, SessionStatus, PauseSource } from '@/agent/types.js';
 
-/** 暂停来源 */
-export type PauseSource = 'user' | 'agent' | 'system';
-
-// SessionStatus 在 agent/types.ts 定义，本文件直接导入共用
 /**
  * 会话状态机：管理三态流转确保转换合法且可追溯，实例绑定单会话由 SessionManager 持有。
+ * PauseSource 定义于 agent/types.ts（PauseMeta.source 同源共用，2026-09-20 站 43 收口类型级双轨）。
  */
 export class SessionStateMachine {
   /** 当前状态 */
