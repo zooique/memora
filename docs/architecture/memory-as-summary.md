@@ -138,14 +138,14 @@ postProcess → 使用 round-5 生成摘要
 - **硬中止（abort / 用户取消）**：不打完 → **不摘要**（残缺半成品不入记忆）；但已产出内容以 `[已中断]` 标记写进对话历史（保真留存，供 `traceSummary` 回溯）。历史保细节、记忆不收纳残缺，两者分离。
 - **软暂停（requestPause，可续跑）**：暂停时**不立即摘要**；若后续续跑并真正答完 → 该轮**仍会**摘要。
 
-> 该定案已由 `seed/orchestrator.ts` 落地：`runChat`/`runResume` 收尾经 `reflect(input, assistantContent)`（`orchestrator.ts` L248）生成 round-summary；`reflect.summary='off'` 或生成器不存在 → 不摘要（L265）。保证一次外部输入恰产一条 round-summary（摘要 ↔ 外部输入 1:1）。
+> 该定案已由 `seed/orchestrator.ts` 落地：`runChat`/`runResume` 收尾经 `reflect(input, assistantContent)` 生成 round-summary；`reflect.summary='off'` 或生成器不存在 → 不摘要。保证一次外部输入恰产一条 round-summary（摘要 ↔ 外部输入 1:1）。
 
 > **两级摘要防混淆（补充澄清）**：系统有**两轨摘要**，职责不同、互不顶替——
 > - **round-summary（记忆轨）**：跨会话沉淀，即本 §2.5 规则对象。一次外部输入恒 1:1，**决策点唯一**。
 > - **context summary（运行时轨）**：loop 内部 `_prepareContext`/compact 把溢出窗口的旧轮压成骨架注入，保证多轮内部一致性。**旧轮压缩的"摘要欲"归这一轨**，不产 round-summary、不入记忆库。
 > - **单一决策点**：「恒1:1」不违背「turn 一摘要」——一次外部输入即一个 turn（Trigger=输入；Act=step 循环；Reflect=答完内容），Reflect 即该 turn 的摘要决策点。故**摘要决策点唯一（turn 收尾）**。
 > - **上下文注入自洽**：loop 多轮时，被挤出窗口的历史靠 context summary 骨架保留，**不依赖也不应依赖** round-summary 兜底（否则职责错位）；骨架对 code/diff/table 的保真由角色包 `summaryFocus` 承担。
-> - **无实质收尾仍恒 1:1**：turn 答完即摘要；仅 `reflect.summary='off'` 或生成器缺失时跳过（`orchestrator.ts` L265）——跳过属显式关闭/降级，不产生额外摘要源。
+> - **无实质收尾仍恒 1:1**：turn 答完即摘要；仅 `reflect.summary='off'` 或生成器缺失时跳过——跳过属显式关闭/降级，不产生额外摘要源。
 > - **组合溯源（head id，已随多 turn 编排废弃）**：多 turn 任务编排（档2）已删，无 head id / sub roundId 概念；round-summary 的 roundId 即该次外部输入的 turn roundId，消息溯源与摘要锚点天然同源。
 
 ---

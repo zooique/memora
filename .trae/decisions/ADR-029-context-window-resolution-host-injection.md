@@ -6,6 +6,7 @@ description: 上下文窗口数字的单一真理源 = 宿主构造内核 Agent 
 # ADR-029 · 上下文窗口解析归宿主注入（内核只消费、不解析）
 
 > **状态**：✅ 已接受
+> **坐标**：正文行号为**历史记录的时点快照**，代码演进后不再核对——定位请按符号名检索，勿依赖行号。
 > **日期**：2026-08-30
 > **来源**：用户 SSOT 审查（上下文窗口 + 角色包职责边界，`docs/根基/` 设计日志 + 本会话对抗式复核）
 > **依赖**：[ADR-010](./ADR-010-agent-facade.md)（Agent 门面 = 宿主接入入口）、[ADR-025](./ADR-025-memory-role-pack-boundary.md)（角色包只承载设定）、[role-pack-spec.md §C/§D](../../docs/architecture/role-pack-spec.md)（上下文预算装配）

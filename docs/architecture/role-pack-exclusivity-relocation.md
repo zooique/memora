@@ -107,9 +107,9 @@ activePack 解析（单一函数，所有场景共用）：
 * **组员发言 = 视角性意见，不是完整能力**：键不切意味着组员的身份与行为配置可能错配（例：翻译组员的发言用的是组长写作者的 temperature 等键）——会议定位是"多视角征求意见"，不是"以该角色执行任务"。**需要某角色的完整能力（键 + 工具）时，应手动切换该角色**（完整切换），而不是用会议。
 * **`summaryFocus` 恒为组长**（已知取舍）：会议记忆按组长视角过滤沉淀，其他视角要点靠 `search_memories` 按需检索兜底。
 
-* **装配驱动点（2026-08-29 步粒度补强；符号于 2026-09-18 核对）**：表层装配由 `refreshAssemblyForRolePack(deps, rolePack?)` **单一收口**（SSOT 单函数，`src/agent/seed/prepare.ts` L137），两个驱动点共用：
-  * **prepare 期（每次回答前，权威）**：`prepare.run` 开头按 checkpoint **active 步** `rolePack` 刷新（`prepare.ts` L58）——复杂任务 step 循环每轮重跑 prepare，一次会议各步按本步角色**真灌成员文档**（"真意见"），而非全部步共享入口人格/组长；
-  * **续跑路径（runResume）**：续跑不走 prepare（不重装配上下文），`orchestrator.runResume` 开头对称按 resume active 步 `rolePack` 刷新（`orchestrator.ts` L122）；
+* **装配驱动点（2026-08-29 步粒度补强；符号于 2026-09-18 核对）**：表层装配由 `refreshAssemblyForRolePack(deps, rolePack?)` **单一收口**（SSOT 单函数，`src/agent/seed/prepare.ts`），两个驱动点共用：
+  * **prepare 期（每次回答前，权威）**：`prepare.run` 开头按 checkpoint **active 步** `rolePack` 刷新——复杂任务 step 循环每轮重跑 prepare，一次会议各步按本步角色**真灌成员文档**（"真意见"），而非全部步共享入口人格/组长；
+  * **续跑路径（runResume）**：续跑不走 prepare（不重装配上下文），`orchestrator.runResume` 开头对称按 resume active 步 `rolePack` 刷新；
   * **步内多轮不重复刷新**（防抖动）：装配源读「正要跑的 active 步」而非入口角色（解"首轮无 active 步 → 硬切换不触发"缺口，无步序列时回落 activePack 组长）。
 
 ### 4.4 组（组长附属的会议名单）

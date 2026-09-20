@@ -1,6 +1,7 @@
 # Turn 意图理解与模型思考展示设计（探索中）
 
 > **状态**：探索中（2026-09-13）——可逆设计，先落 `docs/` 验证，不占 ADR 编号、不改决策 README 索引；验证稳定、被真实场景复现消费后按需固化为 ADR。
+> **坐标**：正文行号为**撰写时点快照**（A2–A7/B1 改动清单中的行号为当时的作业坐标），实施前须按符号名复核，勿直接照行号定位。
 > **版本归属**：3.1.0 增强包（3.0.0 已就绪，不受本设计影响）。
 > **阶段进度**：A（reasoning 采集展示）/ B（Turn 起始策略指令）/ C（回收 understandingConfirm）**均已实施**（2026-09-13）；真机验证待真实 LLM 环境。
 > **土壤来源**：Plan-and-Execute / Pre-Act / Think Tool 模式、Anthropic thinking / Fable 5 prompt 指南、Open WebUI reasoning 折叠实践、Claude Code Plan Mode 剖析（搜索于 2026-09-13，详见关联）。

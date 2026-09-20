@@ -648,7 +648,7 @@ preExecutionCheck: () => ({ skip: false }),  // 放行，等价于 allow
 
 ### 规范模式（VS Code 宿主实证）
 
-在 `activate()` 中创建一次，注入两侧（见 `hosts/memora-vscode/src/extension/extension.ts` L51 / L173 / L194-195）：
+在 `activate()` 中创建一次，注入两侧（见仓库内参考实现 `hosts/memora-vscode/src/extension/extension.ts`，**非随包产物**：`activate()` 内 `new WorkspaceRoundStore(...)` 与 `new WorkspaceSessionStore(workspacePath, roundStore)` 各建一次；面板侧经 `new MemoraChatViewProvider(..., sessionStore, ...)` 与 `settingsProvider.setAgentFactory(...)`，Agent 侧经 `getOrCreateAgent(..., sessionStore, roundStore, ...)` → `assembleAgent(...)`）：
 
 ```ts
 // 单例：activate 中创建一次
@@ -667,7 +667,7 @@ chatProvider.setAgentFactory((projectPath) =>
 ### 单例 / 原子写各防什么（边界辨析）
 
 - **单例**防**同进程内**两个代码路径各 `new` 一份 store → 内存分叉 → 互相覆盖写。VS Code 单宿主下，单例已彻底封死这条路。
-- **原子写**（`atomicWriteFileSync`：先写 `.tmp` 再 `renameSync`）防**写一半进程崩了**导致文件损坏——落盘要么旧内容、要么完整新内容，不会半截。memora 已实现（`sessionStore.ts:96` 等）。
+- **原子写**（`atomicWriteFileSync`：先写 `.tmp` 再 `renameSync`）防**写一半进程崩了**导致文件损坏——落盘要么旧内容、要么完整新内容，不会半截。memora 已实现，且**内核与宿主各有一份**：内核 `src/utils/atomicWrite.ts` 的 `atomicWriteFile`（异步，当前生产消费者为 `WorkProjectionManager`）；宿主 `hosts/memora-vscode/src/extension/host/atomicWriteSync.ts` 的 `atomicWriteFileSync`（同步，供 `WorkspaceSessionStore` / `WorkspaceRoundStore` / `WorkspaceStorage` 等宿主存储消费，**非随包产物**）。
 - **两者都不防"跨进程双开"**：同工作区开两个窗口 / 两个宿主进程 = 两个 `sessionStore` 单例 = 两个进程各原子写同一 `*.memora/sessions.json`。原子写保"不损坏"但不保"不丢更新"（后 rename 覆盖先 rename）。此场景须靠**进程锁 / 单实例守卫**兜底（参考 grida 对 `sessions.db` 加进程锁、重复启动直接拒绝）。
 
 ### 新宿主接入检查清单

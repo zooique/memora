@@ -172,11 +172,11 @@ run_skill_script: {
 ### 2.4 L3 实现清单
 
 - [x] 设计文档（本文件）
-- [x] `skill/types.ts`：添加 `SkillResource`、`SkillScript`、`SkillLayer3` 类型（[types.ts](../../src/skill/types.ts#L10-L36)）
+- [x] `skill/types.ts`：添加 `SkillResource`、`SkillScript`、`SkillLayer3` 类型（[types.ts](../../src/skill/types.ts)）
 - [x] `skillManager.ts`：扫描时发现 `resources/` 和 `scripts/` 目录（`discovered.resources/scripts`，[skillManager.ts](../../src/skill/skillManager.ts)）
 - [x] `SkillManager` / `RolePackManager`：暴露 `listResources()`、`readResource()`、`listScripts()` 方法（[skillManager.ts](../../src/skill/skillManager.ts)）
-- [x] `read_resource` 工具实现（[assembler.ts](../../src/agent/assembler.ts) L387 注入回调）
-- [x] `run_skill_script` 工具实现（含沙箱执行、超时控制、结果捕获，[skillScriptRunner.ts](../../src/skill/skillScriptRunner.ts)；assembler L395 注入）
+- [x] `read_resource` 工具实现（[assembler.ts](../../src/agent/assembler.ts) 注入回调）
+- [x] `run_skill_script` 工具实现（含沙箱执行、超时控制、结果捕获，[skillScriptRunner.ts](../../src/skill/skillScriptRunner.ts)；assembler 注入）
 - [x] system prompt L1 清单附加 L3 提示（"本技能含资源/脚本"，[skillManager.ts](../../src/skill/skillManager.ts)）
 
 ---

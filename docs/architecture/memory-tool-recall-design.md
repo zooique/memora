@@ -1,6 +1,7 @@
 # 记忆纯工具化召回设计（告别自动注入）
 
 > **状态**：阶段1自动注入机制退役 **已实现**（步进A/B/C/D/E 落地，全量回归 2946 通过）；阶段2 6 键族删除 **已实现**（commit 4f318407）+ 工具互斥落地（search_memories 排除已载入正文轮次 + limit 收紧 10→5 + trace_summary 精取引导，commit 89d0ff26）；阶段3 score 退役 **已实现**（2026-09-09：Memory.score 字段物理删除、hybridMerge 排序纯化单 vectorScore、boost→touch 收敛、memoryAdvisor 弃 status 健康判定、宿主 workspaceStorage/protocol/webview 同步；全量回归 2864 通过）。A4 检索召回质量问题与 score 无关（实证见 .trae/documents/a4-fix-or-phase3-sequencing.md），作为独立开放项留待本地小模型对照后裁决。
+> **坐标**：正文行号为**历史记录的时点快照**——详见下方「⚠️ 批次级失效声明」，所列行号对应符号多已物理删除、**照行号检索将全部 miss**；定位请按符号名检索。
 > **2026-09-10 补记（剪枝）**：文中「`checkpointRestoreCoordinator.warmRecall` 保留例外」（§4.2 表 / §开放点 1）已随**跨重启恢复链整体退役**而失效——`checkpointRestoreCoordinator.ts` 整文件删除，`recall()` 召回编排因此**零消费者连带退役**（`recall.ts` 仅余 `extractKeywords` / `touchScores`，`recallDefaults.ts` 的 `DEFAULT_MIN_FALLBACK` 删除，内核 `ISessionStore` 的 checkpoint 三方法删除）。记忆检索现**完全**由 `search_memories` 工具承载（含首轮确定性收窄），无任何自动召回路径。下文相关段落为退役前语义，不再代表当前实现。
 > **2026-09-11 补记（发倔回退，T12，务必先读）**：§3.2「首步记忆检索（确定性）」的**首轮硬收窄已整体砍除**（3.0.0 发倔，commit `681978a6`）——**§1.3 回退预案被启用**。「有查询意图 → 首轮只暴露只读探查面 + 双闸过滤」机制（件①代码预筛 `extractKeywords`、件②工具面收窄/指令注入、状态位 `narrowFirstRound`/`PROBE_MEMORY_TOOLS` 及全部收窄用例）已物理删除，首轮 LLM 调用 tools 参数**恒为全量**（新断言守护）。**砍除理由**：硬收窄是实现缺陷载体（首轮后描述面不恢复）+ 预支复杂度（D6 无触发样本）。**保留的软引导**：「记忆回想」指令一句改无条件注入（工具描述块存在即注入，`toolCallsBlocked` 确定性屏蔽时排除）——「被想起为主」的职责定位（§1.4）由文档化引导继续承载，但「判断机会结构性保证」由代码降级为提示语。**恢复条件**：若记忆侧要恢复「强制首轮检索」，须重新立项走完整闭环（清单移交注记）。下文 §3.2 及其引用段（§0 条目 6/7、§5.3、§6 开放点）为定案当时语义，不再代表当前实现。
 >

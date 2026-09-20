@@ -1,5 +1,7 @@
 # 修复中断轮假性 complete 吞没（问题 3）
 
+> **坐标**：正文行号为**历史记录的时点快照**，代码演进后不再核对——定位请按符号名检索，勿依赖行号。
+
 ## Context（为什么做）
 
 用户在互动叙事平台 `.memora` 真实回放中，LLE 任务被停止/中断后重启，发现**只剩用户提问、过程（思考/工具/中断标记）全丢**。实证于 `round-1789462982489.json`：中断轮被落盘为 `status:"complete"`（假性完成），`processEvents` 有完整过程（ten 条 thought、三次 FILE_NOT_FOUND 后成功的 read_file、aborted/metrics），但无 `assistantMessage`。

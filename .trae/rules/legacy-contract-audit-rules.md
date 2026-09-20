@@ -33,7 +33,7 @@ description: 带伤设计（历史折衷残痕）审查规则——区分「正�
 | 模式 | 识别信号 | 已收敛实例 |
 | ---- | ---- | ---- |
 | **双轨镜像** | 两处存同一份状态，靠 `sync*`/`synchronize`/双写函数对齐；两字段语义重叠需保持一致 | `meta.roundIds` + `roundIdsStore`（已删字段，收敛到 `getRoundIds()` 真源） |
-| **降级兜底残留** | "优先 X、否则降级 Y"，而 Y 永不触达；或 `??` 回退恒右侧、`||` 回退恒死；或**布尔式恒真**（如 `!aborted && !paused` 正常轮恒 true）导致"想干活却一步没干成"被当成功 | ViewLoader 优先真源/降级 `meta.roundIds`（已删降级分支） |
+| **降级兜底残留** | "优先 X、否则降级 Y"，而 Y 永不触达；或 `??` 回退恒右侧、`\|\|` 回退恒死；或**布尔式恒真**（如 `!aborted && !paused` 正常轮恒 true）导致"想干活却一步没干成"被当成功 | ViewLoader 优先真源/降级 `meta.roundIds`（已删降级分支） |
 | **类型 hack** | `as unknown as` / `as any` / `@ts-ignore` 侥幸绕过类型约束（生产代码多处） | 多为良性（库类型缺口），如 DOMPurify 参数桥接 |
 | **重复实现** | 同语义不同名的函数/正则/常量散落；相同魔法数/哈希硬编码多处 | `SESSION_ID_PATTERN` vs `splitSessionId`（已收敛到 `isValidSessionId`） |
 | **僵尸声明** | 宣称"能力/事实"却生产代码零消费：注释宣称零实现的能力、能力位恒 false 零消费、派生字段零消费者、对外宣告通道零验收。**识别关键**：该通道不可观测、不设防、失败被静默（验收位问"跑完没有"而非"干成没有"） | `provider.ts` "fallback 到纯文本 tool_call" 注释（null 实现了静默降级）→ 已纠为中实注释 |
@@ -121,7 +121,7 @@ description: 带伤设计（历史折衷残痕）审查规则——区分「正�
 | **双轨镜像** | `SessionMeta.roundIds` 双轨镜像 → 已删字段，收敛到 `ISessionStore.getRoundIds()/setRoundIds()` 真源；`trace_summary` schema 双真源 → 已收敛 `BUILTIN_TOOLS` 引用 `TRACE_SUMMARY_TOOL` | 出现新字段与某真源同时存同一份状态、靠 sync 对齐；同一 schema/常量被两处各自 import |
 | **重复实现** | `sanitizeToolResult` → 已删，统一走 `sanitizeExternalText`；`SESSION_ID_PATTERN` → 已删，收敛到 `isValidSessionId`+`splitSessionId`；`messageCount` 重复派生 → 已删，收敛到 `deriveMessageCount` 单点；工具 `filter(web_search)` 两处 → 已收敛到 `resolveActiveTools` | 同语义不同名的函数/正则/常量 ≥2 处；同一算式在两方法各写一遍 |
 | **僵尸声明** | `provider.ts` "fallback 到纯文本 tool_call" 注释 → 已纠为中实注释 | 注释宣称零实现的能力 / 能力位恒 false 零消费 / 派生字段零消费者 / 对外宣告通道零验收 |
-| **降级兜底残留** | `flattenRoundsToMessages` 等 4 导出误暴露 → 已收回；`DEFAULT_L2_STRATEGY`/`askLimit` 二次写入 → 已收敛 `resolveL2Strategy(undefined)` | `??` 回退恒右 / `||` 回退恒死 / 布尔式恒真 / 已收回的导出再次暴露 |
+| **降级兜底残留** | `flattenRoundsToMessages` 等 4 导出误暴露 → 已收回；`DEFAULT_L2_STRATEGY`/`askLimit` 二次写入 → 已收敛 `resolveL2Strategy(undefined)` | `??` 回退恒右 / `\|\|` 回退恒死 / 布尔式恒真 / 已收回的导出再次暴露 |
 | **派生量缓存进 DTO** | `messageCount` 曾缓存在 `SessionMeta`，认 `?? 0` 造值、失效不重算（**复发案例：2026-09-14，同模式另一实例**） | 真源可 O(1) 派生、却被缓存进 DTO 且消费方为 0；`??` 造默认值掩盖缺失 |
 
 ## 7 待验证带伤候选与预警信号（探索期登记，未固化）
