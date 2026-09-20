@@ -32,6 +32,7 @@ import {
   MAX_CONTEXT_LIMIT,
   MAX_STEP_BUDGET,
   MAX_SUMMARY_FOCUS_LENGTH,
+  MIN_STEP_BUDGET,
 } from '@/role-pack/strategyKeys.js';
 import type {
   BehaviorStrategy,
@@ -309,6 +310,14 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('0 采用（loop 侧等同未声明 → maxIterations 兜底，非「不限」）', () => {
       expect(resolveStepBudget({ global: { stepBudget: 0 } })).toBe(0);
+    });
+
+    it('下界以下（< MIN_STEP_BUDGET 且非 0）回退默认 50（与 validator 区间对齐）', () => {
+      expect(resolveStepBudget({ global: { stepBudget: MIN_STEP_BUDGET - 1 } })).toBe(50);
+    });
+
+    it('下界 MIN_STEP_BUDGET 采用', () => {
+      expect(resolveStepBudget({ global: { stepBudget: MIN_STEP_BUDGET } })).toBe(MIN_STEP_BUDGET);
     });
 
     it('负数回退默认 50', () => {

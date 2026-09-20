@@ -15,6 +15,7 @@ import {
   MAX_SUMMARY_FOCUS_LENGTH,
   MAX_CONTEXT_LIMIT,
   MIN_CONTEXT_LIMIT,
+  MIN_STEP_BUDGET,
   MAX_TOOL_STEP_LIMIT,
   MULTI_STEP_REASONINGS,
   PROVIDER_ROUTINGS,
@@ -201,15 +202,14 @@ export function resolveContextLimit(strategy: BehaviorStrategy | undefined): num
   return valid ? candidate : 0;
 }
 
-/** 解析步数预算：0 或未声明 → DEFAULT_MAX_ITERATIONS 兜底；stepBudget ∈ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]
- * 按声明采用。不存在「不限步数」路径——0 在 loop 侧等同未声明（effectiveMax 取 maxIterations 兜底）。 */
+/** 解析步数预算：0 或未声明 → DEFAULT_MAX_ITERATIONS 兜底；stepBudget ∈ {0} ∪ [MIN_STEP_BUDGET, MAX_STEP_BUDGET]
+ * 按声明采用（与 validator 区间同一来源，防双轨镜像）。不存在「不限步数」路径——0 在 loop 侧等同未声明（effectiveMax 取 maxIterations 兜底）。 */
 export function resolveStepBudget(strategy: BehaviorStrategy | undefined): number {
   const candidate = strategy?.global?.stepBudget;
   const valid =
     typeof candidate === 'number' &&
     Number.isInteger(candidate) &&
-    candidate >= 0 &&
-    candidate <= MAX_STEP_BUDGET;
+    (candidate === 0 || (candidate >= MIN_STEP_BUDGET && candidate <= MAX_STEP_BUDGET));
   return valid ? candidate : DEFAULT_MAX_ITERATIONS;
 }
 
