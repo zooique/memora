@@ -6,7 +6,7 @@
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk, ToolCall } from '@/llm/types.js';
-import { llmError, networkError, configError } from '@/utils/errors.js';
+import { llmError, networkError, configError, isAbortError, isTimeoutError } from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import { mergeAbortSignals } from '@/llm/abortSignal.js';
@@ -136,8 +136,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
     } catch (err) {
       abort.dispose();
       const e = toError(err);
-      // 区分超时错误和网络错误
-      if (e.name === 'AbortError' || e.name === 'TimeoutError') {
+      // 区分超时错误和网络错误（复用 errors.ts 探测器 SSOT，避免手写 name 判断双源漂移）
+      if (isAbortError(e) || isTimeoutError(e)) {
         throw networkError(
           'LLM 请求超时',
           `${this.config.baseUrl} 请求超过 ${timeoutMs / 1000}s 未响应`,
