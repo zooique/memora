@@ -768,7 +768,7 @@ export class SessionManager {
   ): PlanStep[] {
     // 写点自愈：checkpoint 未就绪时先创建（任务表写点 = 任务上下文就绪点）。
     // 此前静默 return [] 让 LLM 收到 ok:true + 0 步 → 伪成功 → 反复重写（实测 6 次）。
-    // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架 prepare.ts:80 与普通 task_table_write 一并治愈。
+    // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架（SeedPrepare 内 writePlan('overwrite')）与普通 task_table_write 一并治愈。
     const cp = this.checkpoint ?? this.createCheckpoint();
     const existingPlan = cp.plan;
     if (mode === 'overwrite' || mode === 'append') {

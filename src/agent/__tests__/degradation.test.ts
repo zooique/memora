@@ -132,7 +132,8 @@ describe('降级策略 · P2 归档降级', () => {
     const history = new MessageHistory(undefined);
 
     // 注册一个会 reject 的 Promise（模拟归档失败）
-    // 注意：实际代码中 .catch() 在注册前已附加（如 agent.ts:516），
+    // 注意：生产代码同样为挂起归档挂载错误回调避免 unhandled rejection
+    // （SeedOrchestrator 内 registerPendingArchive 之后以 summaryPromise.then(onOk, onErr) 挂载），
     // 这里同样附加 .catch() 避免 unhandled rejection
     const failingPromise = Promise.reject(new Error('归档失败')).catch(() => {});
     history.registerPendingArchive(failingPromise);

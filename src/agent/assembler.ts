@@ -396,7 +396,7 @@ function wireRuntimeCallbacks(
       if (!sessionManager.updatePlanStepStatus(stepId, status)) {
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
       }
-      // updatePlanStepStatus 返回 true ⇒ checkpoint/plan 必存在（sessionManager.ts:1154 早退契约），用非空断言保证
+      // updatePlanStepStatus 返回 true ⇒ checkpoint/plan 必存在（SessionManager.updatePlanStepStatus 早退契约），用非空断言保证
       const plan = sessionManager.getCheckpoint()!.plan;
       const step = plan.find((s) => s.id === stepId);
       // 收尾验证 nudge（2026-09-07 ME-10）：把最后一步标 done = LLM 宣称任务完成——

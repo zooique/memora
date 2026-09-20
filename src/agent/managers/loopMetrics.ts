@@ -1,5 +1,5 @@
 /**
- * AgentLoop 运行时指标纯状态容器（ARCH-3 P3-6 从 loop.ts:162-211 下沉）
+ * AgentLoop 运行时指标纯状态容器（ARCH-3 P3-6 从 AgentLoop 下沉）
  *
  * 零 AgentLoop 依赖的自包含值对象：9 个计数字段 + 3 个派生 getter。
  * 置入 `managers/` 而非 loop.ts 的理由：度量「定义」与度量「消费」应分离——

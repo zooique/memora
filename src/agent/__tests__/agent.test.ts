@@ -2200,7 +2200,7 @@ class ConnectionInterruptedProvider extends LlmProvider {
  * 关键特征与真机故障轮一致：**零文本产出**（故障发生在纯工具阶段，narrate 不计入 content）。
  *
  * 内核路径：loop 内 provider 抛错 → `consumeExecutionStream` catch 非 abort 分支
- * （agent.ts:697）→ yield error chunk + 返回 `failed: true`。
+ * （Agent.consumeExecutionStream 的非 abort catch 分支）→ yield error chunk + 返回 `failed: true`。
  */
 class HttpFailProvider extends LlmProvider {
   readonly name = 'http-fail';

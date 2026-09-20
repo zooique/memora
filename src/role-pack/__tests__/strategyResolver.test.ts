@@ -381,7 +381,7 @@ describe('mergeStrategy — 策略合并', () => {
 
   it('整段声明 undefined 时该段保留基础默认（用有真默认值的 act 段取证）', () => {
     const result = mergeStrategy(base, { act: undefined });
-    // act 段基础默认见 strategyResolver.ts:55-63。此处必须断言「有真值」的字段：
+    // act 段基础默认见 DEFAULT_BEHAVIOR_STRATEGY.act。此处必须断言「有真值」的字段：
     // 若换成默认值本身即 undefined 的字段（如 prepare.summaryFocus），
     // 「{...base.act, ...undefined}」「?? {}」「整段清空」三种实现都会通过 = 因错误的原因通过。
     expect(result.act!.toolMode).toBe('allow');

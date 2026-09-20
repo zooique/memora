@@ -1740,11 +1740,11 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
 describe('AgentLoop · P1-01 超时-abort 与暂停竞态路由', () => {
   /**
    * 关键时序约束（对抗式排雷）：
-   * _handleInterrupt 在 step 边界（loop.ts L863）会先判 `signal?.aborted`——
+   * _handleInterrupt 在 step 边界会先判 `signal?.aborted`——
    * 若信号在 processUserInput 启动前就 abort，会直接短路返回 aborted，
-   * 永远到不了 L909 的 P1-01 路由。因此信号必须在首步 _handleInterrupt 放行后、
-   * LLM 调用前（借 thinking chunk）才 abort。thinking 在 _callAndRoute L895 产出，
-   * 早于 callLlmWithRetry（L901）→ 恰好落在放行之后、LLM 调用之前。
+   * 永远到不了 _callAndRoute 内的 P1-01 路由。因此信号必须在首步 _handleInterrupt 放行后、
+   * LLM 调用前（借 thinking chunk）才 abort。thinking 在 _callAndRoute 产出，
+   * 早于 callLlmWithRetry → 恰好落在放行之后、LLM 调用之前。
    */
   it('[P1-01] 超时 abort + 用户已申请暂停 → 路由 paused（续跑）而非 aborted', async () => {
     const loop = new AgentLoop({

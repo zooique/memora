@@ -1297,7 +1297,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    * 场景 E：task_table_update 更新步骤必须标脏
    *
    * 旧缺陷：updateStep 手写 lastHeartbeat 绕过 touchCheckpoint → checkpointDirty 未置位
-   * → 计划状态变更永不落盘（flushCheckpoint 见脏才写，sessionManager.ts:418）。
+   * → 计划状态变更的脏标记永不置位（settleCheckpoint 见脏才清脏，未置脏即静默早退）。
    *
    * 断言策略：直接 spy touchCheckpoint（运行时存在，TS private 仅编译期约束）。
    * 行为级断言（updateStep 后触发 flush 看写盘）不可靠——chatSync 路径存在其他

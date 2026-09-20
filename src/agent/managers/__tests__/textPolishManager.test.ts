@@ -88,7 +88,7 @@ describe('TextPolishManager', () => {
       // When
       const result = await manager.polish('原始文本');
 
-      // Then：changed 判定包含 polished.length > 0 防御（见 textPolishManager.ts:135）
+      // Then：changed 判定包含 polished.length > 0 防御（见 TextPolishManager.polish 内 changed 判定）
       expect(result.polished).toBe('原始文本');
       expect(result.changed).toBe(false);
     });
@@ -123,7 +123,7 @@ describe('TextPolishManager', () => {
       }) as unknown as LlmProvider;
       const manager = new TextPolishManager(provider);
 
-      // When / Then：异常应向上传播（textPolishManager.ts:128-131 仅 log 不吞异常）
+      // When / Then：异常应向上传播（TextPolishManager.polish 的 catch 仅 log 不吞异常）
       await expect(manager.polish('原始文本')).rejects.toThrow('LLM 服务不可用');
     });
   });
