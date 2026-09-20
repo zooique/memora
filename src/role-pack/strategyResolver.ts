@@ -96,13 +96,8 @@ export function resolveActiveStrategy(
   override?: Partial<BehaviorStrategy>,
 ): BehaviorStrategy {
   const base = rolePackManager?.getActive()?.strategy ?? DEFAULT_BEHAVIOR_STRATEGY;
-  if (!override) return base;
-  return {
-    prepare: { ...base.prepare, ...override.prepare },
-    act: { ...base.act, ...override.act },
-    reflect: { ...base.reflect, ...override.reflect },
-    global: { ...base.global, ...(override.global ?? {}) },
-  };
+  // 合并逻辑复用 mergeStrategy（单一 SSOT）——消解与通用合并的两处手写同形实现（双轨漂移隐患）
+  return mergeStrategy(base, override);
 }
 
 
@@ -220,9 +215,6 @@ export function resolveMultiStepReasoning(
 }
 
 /**
- * 解析召回置信度阈值（recallConfidence）与摘要召回开关（summaryRecall）随阶段2 键族退役——
- * 记忆纯工具化召回后由 search_memories 工具语义通道天然承载，prepare 无消费端，此处不再解析。
- *
  * 解析工具只读模式：非法值归位 'full'
  *
  * 控制工具操作权限范围：
@@ -295,7 +287,7 @@ export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2Run
  */
 export function mergeStrategy(
   base: BehaviorStrategy,
-  override: BehaviorStrategy | undefined,
+  override: Partial<BehaviorStrategy> | undefined,
 ): BehaviorStrategy {
   if (!override) return base;
 
