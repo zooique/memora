@@ -37,6 +37,10 @@ import {
 } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+// 兜底契约包名：取内核常量（SSOT），不在本构建脚本另写字面量——
+// 宿主 bundle 本就要解析 @zooique/memora，此处复用同一依赖、无新增耦合；
+// 内核未 build 时构建即失败（fail fast，优于静默沿用旧值漂移）。
+import { BUILTIN_FALLBACK_PACK } from '@zooique/memora';
 // 内核 dist 内容哈希：与 scripts/verify-dist-contract.mjs 共用**同一实现**（SSOT，勿各自重写）
 import { hashKernelDist } from '../../scripts/lib/dist-hash.mjs';
 
@@ -89,8 +93,8 @@ function copyAssetsRecursive(srcDir, outDir, cleanTop = false) {
 function copyRolePacks() {
   // 仓库根 role-packs/（内核角色包，随 npm 发布，兼作宿主生产角色包源）
   const kernelRolePacks = join(__dirname, '..', '..', 'role-packs');
-  // 内核常量 BUILTIN_FALLBACK_PACK 锁定名（与 src/role-pack/constants.ts 对齐，构建期契约）
-  const fallbackPackDir = 'memora助手';
+  // 内核常量 BUILTIN_FALLBACK_PACK 锁定名（SSOT：直接取内核导出，不在此处镜像字面量）
+  const fallbackPackDir = BUILTIN_FALLBACK_PACK;
   if (!existsSync(join(kernelRolePacks, fallbackPackDir))) {
     throw new Error(
       `[BUILD:ROLE_PACK] 兜底契约包缺失：role-packs/${fallbackPackDir}/ 不存在，` +

@@ -419,8 +419,10 @@ export class ToolExecutor {
    * - `[]`：仅暴露常驻豁免集（配合 toolMode=block 即全禁）。
    *
    * 语义（tool-exposure-model 探索草稿：默认常驻 vs 角色启动）：
-   * 角色包声明 capabilities = 声明超越默认边界的**特权**（web:search / code:execute / task:plan
-   * 等），而非逐项打开本地能力。本地只读/项目内/内核基建工具默认常驻，不受白名单过滤——
+   * 角色包声明 capabilities = 声明超越默认边界的**特权**（web:search / web:fetch / code:execute
+   * 等——须在 capabilityMap 映射表内有实际工具映射），而非逐项打开本地能力。
+   * ⚠️ `task:plan` **不是**特权：任务表已默认常驻（见上方 DEFAULT_EXPOSED_TOOLS 注释），映射表
+   * 不为它保留条目，声明与否行为全同（假特权）。本地只读/项目内/内核基建工具默认常驻，不受白名单过滤——
    * 修正「声明任意能力即误杀常驻工具」的暴露面不对称。
    * 白名单只控制**暴露面**（LLM 可见/可调），不改变 execute 路由。
    */

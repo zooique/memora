@@ -12,7 +12,10 @@ import { cp, readFile, writeFile, mkdir, access } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// 兜底契约包名（memora 内置角色，禁止同名创建；与内核 BUILTIN_FALLBACK_PACK 一致）
+// 兜底契约包名（memora 内置角色，禁止同名创建）
+// ⚠️ 镜像点（刻意为之，勿强行收口）：本脚本遵守文件头声明的「纯 Node 标准库、零第三方依赖」
+// 约束，不能 import 内核 @zooique/memora 取该常量，故在此保留字面量。
+// 内核真源：src/role-pack/constants.ts（改名须走 ADR 并同步此处）。
 const BUILTIN_FALLBACK_PACK = 'memora助手';
 // 角色名合法字符（中文+CJK、字母、数字、下划线、连字符），长度 1~64
 const NAME_RE = /^[A-Za-z0-9\u4e00-\u9fa5_-]{1,64}$/;

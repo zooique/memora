@@ -45,9 +45,10 @@ describe('resolveCapabilityTools（中立能力 → memora 特权工具白名单
     expect(tools).toEqual([]);
   });
 
-  it('task:plan 不再映射工具（2026-09-16：任务表已是常驻工具，能力键只保留中立字典位）', () => {
+  it('task:plan 不再映射工具（2026-09-16：任务表已是常驻工具，映射表不为它保留条目）', () => {
     const tools = resolveCapabilityTools([{ capability: 'task:plan' }]);
-    // 任务表直接暴露（DEFAULT_EXPOSED_TOOLS），不入白名单 → task:plan 无工具映射（同 llm:summarize）
+    // 任务表直接暴露（DEFAULT_EXPOSED_TOOLS），不入白名单 → task:plan 无工具映射。
+    // 与 llm:summarize 的区别：后者在映射表内有空数组占位，前者连条目都没有——但**行为等价**（均不产出工具）
     expect(tools).toEqual([]);
   });
 
