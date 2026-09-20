@@ -89,8 +89,15 @@ function clampCharsToTokenBudget(line: string, budget: number): string {
 /**
  * 脚本文件读取最大长度（run_code script_path 模式）
  *
- * 脚本代码要原样交给执行器，截断会破坏语法——故上限比 read_file 更宽松，
- * 但仍是外部内容，防超大脚本滥用（对齐 write_file 的 MAX_CONTENT_FILE_LEN 量级）。
+ * 脚本代码要原样交给执行器，截断会破坏语法——故超限**直接报错**（不静默截断）。
+ * 与 read_file 不同：read_file 自 2026-09-13 起改走 token 预算分段
+ * （LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS），已不再使用字符上限，
+ * 故本常量与 read_file 不在同一量纲，无「谁更宽松」的可比关系。
+ *
+ * 与 utils/fileSafe.DEFAULT_MAX_CONTENT_LEN 同为 200_000 属**异义同值**，勿误合并：
+ *   - 本常量：脚本原样读取上限（超限报错，内容交执行器）；
+ *   - DEFAULT_MAX_CONTENT_LEN：内容文件读取上限（超限截断，内容入上下文）。
+ * 两者各自独立演进，改一侧不联动另一侧。
  */
 const SCRIPT_READ_MAX_LEN = 200_000;
 
