@@ -190,8 +190,8 @@ export class DedupManager {
     const allPairs: Array<{ a: Memory; b: Memory; nameSimilarity: number }> = [];
     for (let i = 0; i < candidates.length; i++) {
       for (let j = i + 1; j < candidates.length; j++) {
-        const a = candidates[i]!; // i 循环内 score 较高
-        const b = candidates[j]!; // j>i score 较低或相等
+        const a = candidates[i]!; // i 前 j 后：candidates 已按 accessedAt 降序（score 已退役，2026-09-09），a 为更近使用方（保留候选）
+        const b = candidates[j]!; // b 为较远使用方（重复候选）
         const similarity = DedupManager.computeNameSimilarity(a.name, b.name);
         if (similarity <= DEDUP_NAME_SIMILARITY_THRESHOLD) {
           allPairs.push({ a, b, nameSimilarity: similarity });

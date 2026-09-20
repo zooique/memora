@@ -7,6 +7,20 @@
 /** 漂移等级：same(>0.7 自动应用)/confirm(0.4-0.7 建议确认)/drift(<0.4 需确认) */
 export type DriftLevel = 'same' | 'confirm' | 'drift';
 
+/** 约束关键词单一真源：提取 pattern（全文匹配）与剥离前缀（checkConstraintsConsistent 用）共用，防双列表漂移（2026-09-20 站 47 收口） */
+const CONSTRAINT_KEYWORDS = [
+  '必须',
+  '不能',
+  '需要',
+  '确保',
+  '禁止',
+  '只能',
+  '至少',
+  '不允许',
+  '应当',
+  '不得',
+] as const;
+
 /** 一致性校验结果 */
 export interface GoalConsistencyResult {
   /** 漂移等级 */
@@ -29,19 +43,10 @@ export class GoalConsistencyChecker {
 
     const constraints: string[] = [];
 
-    // 约束关键词匹配模式——直接提取包含约束关键词的文本片段
-    const constraintPatterns = [
-      /必须[^，。！？；\n,;.!?]*/g,
-      /不能[^，。！？；\n,;.!?]*/g,
-      /需要[^，。！？；\n,;.!?]*/g,
-      /确保[^，。！？；\n,;.!?]*/g,
-      /禁止[^，。！？；\n,;.!?]*/g,
-      /只能[^，。！？；\n,;.!?]*/g,
-      /至少[^，。！？；\n,;.!?]*/g,
-      /不允许[^，。！？；\n,;.!?]*/g,
-      /应当[^，。！？；\n,;.!?]*/g,
-      /不得[^，。！？；\n,;.!?]*/g,
-    ];
+    // 约束关键词匹配模式——由 CONSTRAINT_KEYWORDS 单一真源生成（全文匹配）
+    const constraintPatterns = CONSTRAINT_KEYWORDS.map(
+      (kw) => new RegExp(`${kw}[^，。！？；\n,;.!?]*`, 'g'),
+    );
 
     for (const pattern of constraintPatterns) {
       const matches = goal.match(pattern);
@@ -130,10 +135,10 @@ export class GoalConsistencyChecker {
     return { constraintsConsistent: true };
   }
 
-  /** 提取约束核心词：去除标记词保留核心名词短语（如"必须使用TypeScript" → "使用TypeScript"），再按分隔符切分 */
+  /** 提取约束核心词：去除标记词保留核心名词短语（如"必须使用TypeScript" → "使用TypeScript"），再按分隔符切分；剥离前缀由 CONSTRAINT_KEYWORDS 生成 */
   private extractKeywords(constraint: string): string[] {
     const cleaned = constraint
-      .replace(/^(必须|不能|需要|确保|禁止|只能|至少|不允许|应当|不得)/, '')
+      .replace(new RegExp(`^(${CONSTRAINT_KEYWORDS.join('|')})`), '')
       .trim();
     const parts = cleaned.split(/[,，、\s]+/).filter(Boolean);
     return parts.length > 0 ? parts : [cleaned];
