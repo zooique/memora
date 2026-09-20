@@ -15,7 +15,6 @@ export type {
   ArchiveMode,
   AgentOptions,
   AgentContext,
-  AgentProjectEntry,
 } from '@/agent/types.js';
 // 重复工具调用拦截器（宿主可自定义判重策略）
 export type {

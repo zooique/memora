@@ -7,14 +7,13 @@
  *   - loadBatchSummaries：按 updatedAt 降序
  *   - getMessageCount：无 meta 返回 0 / 命中 meta.messageCount 直接返回
  *   - loadViewUpTo：截断视图 + 消息数更新
- *   - getSessionMeta：getSessionMeta 优先 + listSessionMetas 兜底
+ *   - getSessionMeta：直走 sessionStore.getSessionMeta（接口必选方法，无兜底）
  */
 import { describe, expect, it, beforeEach } from 'vitest';
 import { InMemorySessionViewLoader } from '@/memory/inMemorySessionViewLoader.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { createPendingRound, completeRound } from '@/memory/roundStore.js';
-import type { ISessionStore } from '@/memory/sessionStore.js';
 
 describe('InMemorySessionViewLoader', () => {
   let roundStore: InMemoryRoundStore;
@@ -133,28 +132,6 @@ describe('InMemorySessionViewLoader', () => {
       expect(view.rounds[0]!.id).toBe(id1);
       expect(view.messages).toHaveLength(2);
       expect(view.meta.messageCount).toBe(2);
-    });
-  });
-
-  describe('getSessionMeta 兜底（listSessionMetas fallback）', () => {
-    it('无 getSessionMeta 方法时从 listSessionMetas 查找', () => {
-      sessionStore.createSession({ sessionId: SID, autoName: '兜底会话', updatedAt: 't', messageCount: 0 });
-      // 显式构造缺 getSessionMeta 的 store：listSessionMetas 兜底命中
-      const noGetMeta: ISessionStore = {
-        getRoundIds: (id: string) => sessionStore.getRoundIds(id),
-        listSessionMetas: () => sessionStore.listSessionMetas(),
-      } as unknown as ISessionStore;
-      const loaderNoMeta = new InMemorySessionViewLoader(roundStore, noGetMeta);
-      const s = loaderNoMeta.loadSummary(SID)!;
-      expect(s.sessionId).toBe(SID);
-      expect(s.title).toBe('兜底会话');
-      expect(s.roundCount).toBe(0);
-    });
-
-    it('两者都不可用时 loadSummary 返回 null', () => {
-      const emptyStore = { getRoundIds: () => [] } as unknown as ISessionStore;
-      const loaderEmpty = new InMemorySessionViewLoader(roundStore, emptyStore);
-      expect(loaderEmpty.loadSummary(SID)).toBeNull();
     });
   });
 });

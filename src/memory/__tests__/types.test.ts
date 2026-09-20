@@ -185,4 +185,39 @@ describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清�
       /Memory 解析失败/,
     );
   });
+
+  it('可选语义字段非法类型应抛错（summaryType 非法取值）', () => {
+    // 兑现 SUMMARY_TYPES「运行时校验与类型声明同源」承诺：非法类型不再 as 断言透传
+    expect(() => parseMemory({ ...legacyMemory(), summaryType: 'bogus' })).toThrow(
+      /Memory 解析失败/,
+    );
+  });
+
+  it('可选语义字段非法类型应抛错（isModified/metadata/sessionName/roundId/supersededBy）', () => {
+    expect(() => parseMemory({ ...legacyMemory(), isModified: 'yes' })).toThrow(
+      /Memory 解析失败/,
+    );
+    expect(() => parseMemory({ ...legacyMemory(), metadata: 42 })).toThrow(/Memory 解析失败/);
+    expect(() => parseMemory({ ...legacyMemory(), sessionName: 123 })).toThrow(
+      /Memory 解析失败/,
+    );
+    expect(() => parseMemory({ ...legacyMemory(), roundId: true })).toThrow(/Memory 解析失败/);
+    expect(() => parseMemory({ ...legacyMemory(), supersededBy: ['x'] })).toThrow(
+      /Memory 解析失败/,
+    );
+  });
+
+  it('合法可选字段应通过校验', () => {
+    expect(() =>
+      parseMemory({
+        ...legacyMemory(),
+        metadata: { tag: 'v1' },
+        summaryType: 'fact',
+        sessionName: '2026-06-02-main',
+        roundId: 'r1',
+        isModified: false,
+        supersededBy: 'round-summary:2026-06-02-main:r2',
+      }),
+    ).not.toThrow();
+  });
 });

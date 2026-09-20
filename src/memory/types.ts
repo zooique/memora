@@ -3,6 +3,7 @@
  */
 
 import { configError } from '@/utils/errors.js';
+import { isPlainObject } from '@/utils/objects.js';
 
 // ─── 共享类型：消息角色（SSOT 单一真理源） ──────────────
 
@@ -131,6 +132,53 @@ export function parseMemory(raw: unknown): Memory {
         ['检查数据源中 deletedAt 字段的格式'],
       );
     }
+  }
+
+  // 验证可选语义字段的类型（2026-09-20 站 51 补齐）：兑现头注释「校验字段类型」与
+  // SUMMARY_TYPES「运行时校验与类型声明同源」的承诺——此前均为 as 断言透传零校验，
+  // 不可信磁盘 JSON 的非法值（如 summaryType: 'bogus' / isModified: 'yes'）会致
+  // round-summary 分轨召回与编辑标记消费行为漂移（无编译报错）。
+  if (obj.metadata !== undefined && !isPlainObject(obj.metadata)) {
+    throw configError(
+      'Memory 解析失败',
+      `metadata 必须是对象（当前为 ${typeof obj.metadata}）`,
+      ['检查数据源中 metadata 字段的类型'],
+    );
+  }
+  if (obj.summaryType !== undefined && !SUMMARY_TYPES.includes(obj.summaryType as SummaryType)) {
+    throw configError(
+      'Memory 解析失败',
+      `summaryType 必须是合法摘要类型之一：${SUMMARY_TYPES.join(' / ')}（当前为 ${JSON.stringify(obj.summaryType)}）`,
+      ['检查数据源中 summaryType 字段的取值'],
+    );
+  }
+  if (obj.sessionName !== undefined && typeof obj.sessionName !== 'string') {
+    throw configError(
+      'Memory 解析失败',
+      `sessionName 必须是字符串（当前为 ${typeof obj.sessionName}）`,
+      ['检查数据源中 sessionName 字段的类型'],
+    );
+  }
+  if (obj.roundId !== undefined && typeof obj.roundId !== 'string') {
+    throw configError(
+      'Memory 解析失败',
+      `roundId 必须是字符串（当前为 ${typeof obj.roundId}）`,
+      ['检查数据源中 roundId 字段的类型'],
+    );
+  }
+  if (obj.isModified !== undefined && typeof obj.isModified !== 'boolean') {
+    throw configError(
+      'Memory 解析失败',
+      `isModified 必须是布尔值（当前为 ${typeof obj.isModified}）`,
+      ['检查数据源中 isModified 字段的类型'],
+    );
+  }
+  if (obj.supersededBy !== undefined && typeof obj.supersededBy !== 'string') {
+    throw configError(
+      'Memory 解析失败',
+      `supersededBy 必须是字符串（当前为 ${typeof obj.supersededBy}）`,
+      ['检查数据源中 supersededBy 字段的类型'],
+    );
   }
 
   return {

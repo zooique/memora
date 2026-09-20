@@ -198,34 +198,22 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
   /**
    * 获取会话元数据
    *
-   * 优先使用 getSessionMeta 方法，不存在时返回 null
+   * 直接走 sessionStore.getSessionMeta——ISessionStore 接口**必选**方法（sessionStore.ts 契约），
+   * 宿主与内核实现均齐备；历史「listSessionMetas 兜底」为类型兜底残留（接口已保证存在，
+   * 运行时存在性判断恒真），2026-09-20 站 50 收口。返回浅拷贝防外部改 meta 污染存储。
    */
   private getSessionMeta(sessionId: string): SessionMeta | null {
-    // 尝试从 sessionStore 获取
-    const getMeta = this.sessionStore.getSessionMeta;
-    if (getMeta) {
-      const meta = getMeta.call(this.sessionStore, sessionId);
-      if (meta) return { ...meta };
-    }
-
-    // 尝试从 listSessionMetas 查找
-    const listMetas = this.sessionStore.listSessionMetas;
-    if (listMetas) {
-      const metas = listMetas.call(this.sessionStore);
-      const found = metas.find((m) => m.sessionId === sessionId);
-      if (found) return { ...found };
-    }
-
-    return null;
+    const meta = this.sessionStore.getSessionMeta(sessionId);
+    return meta ? { ...meta } : null;
   }
 
   /**
    * 获取会话的 Round ID 列表（SSOT：唯一真源为 sessionStore.getRoundIds）
    *
-   * SessionMeta 已回归纯展示 DTO（无 roundIds 字段），轮次一律经真源方法读取
+   * SessionMeta 已回归纯展示 DTO（无 roundIds 字段），轮次一律经真源方法读取。
+   * 接口契约保证返回 string[]（非空数组也可能），直接展开即可，无需存在性判断。
    */
   private getRoundIds(sessionId: string): string[] {
-    const roundIds = this.sessionStore.getRoundIds(sessionId);
-    return roundIds ? [...roundIds] : [];
+    return [...this.sessionStore.getRoundIds(sessionId)];
   }
 }

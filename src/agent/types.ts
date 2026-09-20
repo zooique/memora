@@ -525,13 +525,6 @@ export interface AgentOptions {
 /** Agent 初始化后暴露的运行时上下文 */
 export type AgentContext = ProjectContext;
 
-/** Agent 项目条目（来自 ProjectManager 注册表） */
-export interface AgentProjectEntry {
-  name: string;
-  path: string;
-  lastOpened: string;
-}
-
 /**
  * Agent 内部配置（构造参数解析默认值后的形态）。派生自 AgentOptions：
  * Omit 掉「不进入内部配置」的字段；覆盖「构造时 `?? 默认值` 解析后必填」的字段；
