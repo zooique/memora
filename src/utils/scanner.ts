@@ -62,7 +62,7 @@ export function isFolderFormSkill(filePath: string): boolean {
  * 排除规则（文件夹）：
  *   - 目录名以 `.` 开头的隐藏目录
  *   - 目录名以 `_` 开头的私有目录
- *   - 子目录内无 SKILL.md 则跳过
+ *   - 子目录内无技能主文件（SKILL.md，大小写不敏感判定）则跳过
  *
  * @param dir 目录路径
  * @returns 解析后的条目列表
@@ -127,13 +127,22 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
     }
     if (!isDir) continue;
 
-    // 检查目录内是否存在 SKILL.md
-    const skillPath = join(itemPath, SKILL_MAIN_FILE);
+    // 探测目录内技能主文件：复用 isFolderFormSkill 大小写不敏感判定（SSOT），
+    // 兼容 skill.md / SKILL.MD 变体落盘；filePath 取真实落盘文件名。
+    let skillMainName: string | undefined;
     try {
-      await access(skillPath);
+      for (const name of await readdir(itemPath)) {
+        if (isFolderFormSkill(join(itemPath, name))) {
+          skillMainName = name;
+          break;
+        }
+      }
     } catch {
       continue;
     }
+    if (!skillMainName) continue;
+
+    const skillPath = join(itemPath, skillMainName);
 
     try {
       const raw = await readFile(skillPath, 'utf-8');

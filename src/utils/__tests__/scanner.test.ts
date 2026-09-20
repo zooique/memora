@@ -163,6 +163,26 @@ description: 测试技能
       expect(result[0]?.name).toBe('fallback-dir');
     });
 
+    it('文件夹形式大小写变体（skill.md）应被扫描——探测端与判定端同语义', async () => {
+      // 落盘为小写变体的技能应识别为文件夹形态，并返回真实落盘文件名
+      await mkdir(join(tempDir, 'my-skill'));
+      await writeFile(
+        join(tempDir, 'my-skill', 'skill.md'),
+        `---
+name: my-skill
+description: 变体技能
+---
+# 变体正文`,
+      );
+      const result = await scanMarkdownDir(tempDir);
+      expect(result).toHaveLength(1);
+      expect(result[0]?.name).toBe('my-skill');
+      expect(result[0]?.frontmatter['description']).toBe('变体技能');
+      expect(result[0]?.body).toContain('# 变体正文');
+      // filePath 应指向真实落盘文件名（skill.md），而非规范名 SKILL.md
+      expect(result[0]?.filePath).toBe(join(tempDir, 'my-skill', 'skill.md'));
+    });
+
     it('应扫描多个文件夹形式的 SKILL.md', async () => {
       await mkdir(join(tempDir, 'skill-a'));
       await mkdir(join(tempDir, 'skill-b'));
