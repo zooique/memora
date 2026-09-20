@@ -470,6 +470,24 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(manager.getActive()!.meta.name).toBe('代码助手');
   });
 
+  it('getActiveRules：返回激活角色包的规则列表（无激活返回空数组）', async () => {
+    const packsDir = join(dir, 'role-packs');
+    await mkdir(packsDir, { recursive: true });
+    await writePack(packsDir, '技术文档工程师', MANIFEST_TECH, {
+      persona: '你是一位技术文档工程师。',
+      rules: '- 术语保持一致\n- 不编造 API',
+    });
+
+    const manager = new RolePackManager(dir);
+    await manager.load('技术文档工程师');
+    // 设定记忆归角色包后，规则以角色包为准（ADR-025 收敛语义）
+    expect(manager.getActiveRules()).toEqual(['术语保持一致', '不编造 API']);
+
+    // 无激活时返回空数组（§7 降级优先：不装配失败）
+    const emptyManager = new RolePackManager(join(dir, 'empty'));
+    expect(emptyManager.getActiveRules()).toEqual([]);
+  });
+
   it('reload 保留 loadExtraDir 注入的用户角色包（运行时注入项无磁盘真理源）', async () => {
     // 内置角色包目录（configDir/role-packs/，扫描真理源）
     const packsDir = join(dir, 'role-packs');

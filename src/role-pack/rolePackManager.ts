@@ -8,7 +8,15 @@ import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir, resolveSafePath, inferRuntimeFromExt, isFolderFormSkill, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import {
+  resolveSubdir,
+  scanMarkdownDir,
+  resolveSafePath,
+  inferRuntimeFromExt,
+  isFolderFormSkill,
+  type ScriptRuntime,
+  type ScannedMarkdownEntry,
+} from '@/utils/scanner.js';
 import {
   discoverSkillLayer3,
   projectDiscoveredLayer3,
@@ -1153,7 +1161,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     skillName: string,
     scriptPath: string,
     packName?: string,
-  ): { runtime: 'node' | 'python' | 'shell' } | null {
+  ): { runtime: ScriptRuntime } | null {
     // 优先使用已扫描的 L3 数据（scanPackSkills 已发现 layer3.scripts）
     const found = this.findSkillByName(skillName, packName);
     if (found?.skill.layer3?.scripts) {
