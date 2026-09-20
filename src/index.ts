@@ -83,7 +83,6 @@ export {
 export type {
   RolePackValidationIssue,
   RolePackValidationResult,
-  RolePackValidateInput,
   RolePackIssueSeverity,
 } from '@/role-pack/validator.js';
 export type {

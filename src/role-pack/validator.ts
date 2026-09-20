@@ -30,12 +30,6 @@ export interface RolePackValidationResult {
   issues: readonly RolePackValidationIssue[];
 }
 
-/** 校验输入（manifest.json 解析后的对象） */
-export interface RolePackValidateInput {
-  /** 解析后的 manifest.json 对象 */
-  manifest: Record<string, unknown>;
-}
-
 // ════════════════════════════════════════════════════════════
 // 规则常量
 // ════════════════════════════════════════════════════════════
