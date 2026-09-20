@@ -185,12 +185,18 @@ export const SCRIPTS_SUBDIR = 'scripts';
 /** L3 资源来源子目录（取值从常量派生，防类型与字面量两处各写） */
 export type ResourceSubdir = typeof DEFAULT_RESOURCE_SUBDIR | typeof REFERENCES_SUBDIR;
 
+/**
+ * 脚本运行时（SSOT 单一来源：值域由 SCRIPT_RUNTIME_MAP 语义派生，本类型单点定义）。
+ * role-pack/skill 层的脚本运行时字段经此引用，勿在别处复写字面量联合。
+ */
+export type ScriptRuntime = 'node' | 'python' | 'shell';
+
 /** L3 资源/脚本发现结果 */
 export interface DiscoveredLayer3 {
   /** 资源列表（resources/ 与 references/ 两个目录合并，条目带来源子目录） */
   resources: Array<{ path: string; size: number; subdir: ResourceSubdir }>;
   /** 脚本列表（scripts/ 目录下的文件） */
-  scripts: Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }>;
+  scripts: Array<{ path: string; runtime: ScriptRuntime; size: number }>;
 }
 
 /**
@@ -199,7 +205,7 @@ export interface DiscoveredLayer3 {
  * '.ts' 语义声明（唯一一处）：node 无法直接解析 TS——映射仅作兜底推断，实际可用性
  * 取决于宿主执行器是否具备转译能力（如 vscode codeExecutor 仅别名 .js/.mjs/.cjs）。
  */
-export const SCRIPT_RUNTIME_MAP: Readonly<Record<string, 'node' | 'python' | 'shell'>> = {
+export const SCRIPT_RUNTIME_MAP: Readonly<Record<string, ScriptRuntime>> = {
   '.ts': 'node',
   '.js': 'node',
   '.mjs': 'node',
@@ -216,7 +222,7 @@ export const SCRIPT_RUNTIME_MAP: Readonly<Record<string, 'node' | 'python' | 'sh
  *
  * @param ext 小写扩展名（含点，如 '.py'）
  */
-export function inferRuntimeFromExt(ext: string): 'node' | 'python' | 'shell' | undefined {
+export function inferRuntimeFromExt(ext: string): ScriptRuntime | undefined {
   return SCRIPT_RUNTIME_MAP[ext];
 }
 
@@ -321,8 +327,8 @@ async function readResourceFiles(
 async function readScriptFiles(
   dir: string,
   basePath = '',
-): Promise<Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }>> {
-  const results: Array<{ path: string; runtime: 'node' | 'python' | 'shell'; size: number }> = [];
+): Promise<Array<{ path: string; runtime: ScriptRuntime; size: number }>> {
+  const results: Array<{ path: string; runtime: ScriptRuntime; size: number }> = [];
   const entries = await readdir(dir);
 
   for (const entry of entries) {

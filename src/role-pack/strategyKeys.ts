@@ -122,6 +122,27 @@ export function isAskOn(value: unknown): boolean {
   );
 }
 
+// ════════════════════════════════════════════════════════════
+// 策略枚举值常量（SSOT 单一来源：types.ts 类型推导 + validator 校验 + resolver 归位共用）
+// 与 ASK_TRIGGERS 同构——枚举键值域单点定义，增删取值只改此处，类型/校验/归位自动跟随，
+// 杜绝「类型字面量 / KeyRule.values / normalizeEnum 白名单」三副本漂移。
+// ════════════════════════════════════════════════════════════
+
+/** 工具调用模式枚举值（SSOT：types.ts ToolMode 推导 + act.toolMode 校验/归位） */
+export const TOOL_MODES = ['allow', 'block'] as const;
+/** 工具操作范围枚举值（SSOT：types.ts ToolReadonly 推导 + act.toolReadonly 校验/归位） */
+export const TOOL_READONLY_MODES = ['full', 'readonly'] as const;
+/** Provider 路由策略枚举值（SSOT：types.ts ProviderRouting 推导 + act.providerRouting 校验/归位） */
+export const PROVIDER_ROUTINGS = ['auto', 'fixed'] as const;
+/** 多步推理模式枚举值（SSOT：types.ts MultiStepReasoning 推导 + act.multiStepReasoning 校验/归位） */
+export const MULTI_STEP_REASONINGS = ['auto', 'manual'] as const;
+/** 摘要生成开关枚举值（SSOT：types.ts Summary 推导 + reflect.summary 校验/归位） */
+export const SUMMARY_MODES = ['on', 'off'] as const;
+/** 用户追问策略枚举值（SSOT：types.ts UserFollowup 推导 + reflect.userFollowup 校验） */
+export const USER_FOLLOWUPS = ['ask', 'silent'] as const;
+/** 错误处理策略枚举值（SSOT：types.ts ErrorHandling 推导 + global.errorHandling 校验/归位） */
+export const ERROR_HANDLINGS = ['retry', 'degrade', 'stop'] as const;
+
 /**
  * L2 策略键集：camelCase 统一命名。无标注 = 冻结（memora 真实消费）；
  * [草案] = 尚无消费，保留征集验证。只有被消费的键保留在校验器；未知键 validator 报 warning。
@@ -133,27 +154,27 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     summaryFocus: { kind: 'check', check: isSummaryFocus, range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH } },
   },
   act: {
-    toolMode: { kind: 'enum', values: ['allow', 'block'] },
+    toolMode: { kind: 'enum', values: TOOL_MODES },
     // 角色包可控温度（0.0~2.0）/输出长度（1~MAX_OUTPUT_LIMIT token）
     temperature: { kind: 'check', check: isTemperature, range: { min: 0, max: 2 } },
     outputLimit: intRange(1, MAX_OUTPUT_LIMIT),
     // 工具步数上限（0~MAX_TOOL_STEP_LIMIT，0=无限制）
     toolStepLimit: intRange(0, MAX_TOOL_STEP_LIMIT),
-    providerRouting: { kind: 'enum', values: ['auto', 'fixed'] },
-    multiStepReasoning: { kind: 'enum', values: ['auto', 'manual'] },
-    toolReadonly: { kind: 'enum', values: ['full', 'readonly'] },
+    providerRouting: { kind: 'enum', values: PROVIDER_ROUTINGS },
+    multiStepReasoning: { kind: 'enum', values: MULTI_STEP_REASONINGS },
+    toolReadonly: { kind: 'enum', values: TOOL_READONLY_MODES },
   },
   reflect: {
-    summary: { kind: 'enum', values: ['on', 'off'] },
+    summary: { kind: 'enum', values: SUMMARY_MODES },
     // 自审查（布尔数字：0=关闭；正整数>0 收敛为 1=自审查一次，大于 1 算 1；校验区间 0~MAX_SELF_REVIEW_ROUNDS）
     selfReview: intRange(0, MAX_SELF_REVIEW_ROUNDS),
-    userFollowup: { kind: 'enum', values: ['ask', 'silent'] },
+    userFollowup: { kind: 'enum', values: USER_FOLLOWUPS },
   },
   global: {
     askOn: { kind: 'check', check: isAskOn },
     // 每轮主动提问次数（1~MAX_ASK_LIMIT）
     askLimit: intRange(1, MAX_ASK_LIMIT),
-    errorHandling: { kind: 'enum', values: ['retry', 'degrade', 'stop'] },
+    errorHandling: { kind: 'enum', values: ERROR_HANDLINGS },
     // 角色包上下文上限：0 = 不设额外上限（跟随 provider 窗口）∪ [MIN_CONTEXT_LIMIT, MAX_CONTEXT_LIMIT]。
     // 与 stepBudget 同构（0 承载"未声明"语义、正数走声明区间），故不用 intRange 而自定义 check；
     // range.min 是"正数声明下限"（schema 层 minimum=0 是 JSON-Schema 接受层，见守卫测试说明）。

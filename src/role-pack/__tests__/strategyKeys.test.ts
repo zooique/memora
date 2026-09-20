@@ -15,6 +15,14 @@ import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import {
   STRATEGY_KEY_RULES,
+  TOOL_MODES,
+  TOOL_READONLY_MODES,
+  PROVIDER_ROUTINGS,
+  MULTI_STEP_REASONINGS,
+  SUMMARY_MODES,
+  USER_FOLLOWUPS,
+  ERROR_HANDLINGS,
+  ASK_TRIGGERS,
   isTemperature,
   isSummaryFocus,
   isAskOn,
@@ -247,6 +255,43 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     it('global.errorHandling 枚举值正确', () => {
       const rule = STRATEGY_KEY_RULES.global!.errorHandling!;
       expect(rule).toEqual({ kind: 'enum', values: ['retry', 'degrade', 'stop'] });
+    });
+  });
+
+  // ── SSOT 枚举常量同源守卫（防三副本漂移：类型推导 / KeyRule.values / resolver 白名单）──
+  describe('枚举常量同源守卫（identity）', () => {
+    // 各枚举键的 values 必须与命名常量同一引用——若未来有人重新手写字面量数组
+    // 破坏 SSOT，此守卫红（类型推导与 validator 校验将各自漂移）
+    it('act 枚举键 values 与 SSOT 常量同源', () => {
+      expect((STRATEGY_KEY_RULES.act!.toolMode! as { values: readonly unknown[] }).values).toBe(TOOL_MODES);
+      expect((STRATEGY_KEY_RULES.act!.providerRouting! as { values: readonly unknown[] }).values).toBe(
+        PROVIDER_ROUTINGS,
+      );
+      expect((STRATEGY_KEY_RULES.act!.multiStepReasoning! as { values: readonly unknown[] }).values).toBe(
+        MULTI_STEP_REASONINGS,
+      );
+      expect((STRATEGY_KEY_RULES.act!.toolReadonly! as { values: readonly unknown[] }).values).toBe(
+        TOOL_READONLY_MODES,
+      );
+    });
+
+    it('reflect/global 枚举键 values 与 SSOT 常量同源', () => {
+      expect((STRATEGY_KEY_RULES.reflect!.summary! as { values: readonly unknown[] }).values).toBe(SUMMARY_MODES);
+      expect((STRATEGY_KEY_RULES.reflect!.userFollowup! as { values: readonly unknown[] }).values).toBe(
+        USER_FOLLOWUPS,
+      );
+      expect((STRATEGY_KEY_RULES.global!.errorHandling! as { values: readonly unknown[] }).values).toBe(
+        ERROR_HANDLINGS,
+      );
+    });
+
+    it('ASK_TRIGGERS 为 askOn 白名单真源（types.ts AskOnTrigger 推导 + isAskOn 校验共用）', () => {
+      // 增删触发词只改此处：类型推导（AskOnTrigger）与运行时校验（isAskOn）自动跟随
+      expect(ASK_TRIGGERS).toEqual(['ambiguity', 'decision', 'missing_info', 'confirm']);
+      for (const t of ASK_TRIGGERS) {
+        expect(isAskOn(t), `触发词 ${t} 应通过 isAskOn 单值校验`).toBe(true);
+      }
+      expect(isAskOn([...ASK_TRIGGERS])).toBe(true);
     });
   });
 

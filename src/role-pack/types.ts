@@ -7,8 +7,17 @@
 
 // 策略维度名称与可选值定型后不得随意修改——它是未来角色包文件格式的字段契约
 
-import type { ResourceSubdir } from '@/utils/scanner.js';
-import type { ASK_TRIGGERS } from './strategyKeys.js';
+import type { ResourceSubdir, ScriptRuntime } from '@/utils/scanner.js';
+import type {
+  ASK_TRIGGERS,
+  ERROR_HANDLINGS,
+  MULTI_STEP_REASONINGS,
+  PROVIDER_ROUTINGS,
+  SUMMARY_MODES,
+  TOOL_MODES,
+  TOOL_READONLY_MODES,
+  USER_FOLLOWUPS,
+} from './strategyKeys.js';
 import type { RolePackValidationIssue } from './validator.js';
 
 // ── 回答前（Prepare）：认知策略 ──
@@ -20,33 +29,33 @@ import type { RolePackValidationIssue } from './validator.js';
 
 // ── 回答中（Act）：行动策略 ──
 
-/** 工具调用模式：allow=允许 / block=只回答不执行（标准键 act.toolMode） */
-export type ToolMode = 'allow' | 'block';
+/** 工具调用模式：allow=允许 / block=只回答不执行（标准键 act.toolMode；值域 SSOT = strategyKeys.TOOL_MODES） */
+export type ToolMode = (typeof TOOL_MODES)[number];
 
-/** 工具操作范围：readonly=仅允许只读操作 / full=完整权限 */
-export type ToolReadonly = 'readonly' | 'full';
+/** 工具操作范围：readonly=仅允许只读操作 / full=完整权限（值域 SSOT = strategyKeys.TOOL_READONLY_MODES） */
+export type ToolReadonly = (typeof TOOL_READONLY_MODES)[number];
 
-/** Provider 路由策略：auto=按任务类型换模型 / fixed=固定模型 */
-export type ProviderRouting = 'auto' | 'fixed';
+/** Provider 路由策略：auto=按任务类型换模型 / fixed=固定模型（值域 SSOT = strategyKeys.PROVIDER_ROUTINGS） */
+export type ProviderRouting = (typeof PROVIDER_ROUTINGS)[number];
 
-/** 多步推理模式：auto=自动深度思考 / manual=快速回答 */
-export type MultiStepReasoning = 'auto' | 'manual';
+/** 多步推理模式：auto=自动深度思考 / manual=快速回答（值域 SSOT = strategyKeys.MULTI_STEP_REASONINGS） */
+export type MultiStepReasoning = (typeof MULTI_STEP_REASONINGS)[number];
 
 // ── 回答后（Reflect）：沉淀策略 ──
 
 /** 自审查开关（布尔数字语义，2026-09-12 定案）：0=关闭 / 任意正整数 >0 = 自审查一次（单次终审，>1 收敛为 1） */
 export type SelfReviewRounds = number;
 
-/** 摘要生成开关（on=生成摘要 / off=不生成） */
-export type Summary = 'on' | 'off';
+/** 摘要生成开关（on=生成摘要 / off=不生成；值域 SSOT = strategyKeys.SUMMARY_MODES） */
+export type Summary = (typeof SUMMARY_MODES)[number];
 
-/** 用户追问策略：ask=主动引导对话 / silent=只等输入 */
-export type UserFollowup = 'ask' | 'silent';
+/** 用户追问策略：ask=主动引导对话 / silent=只等输入（值域 SSOT = strategyKeys.USER_FOLLOWUPS） */
+export type UserFollowup = (typeof USER_FOLLOWUPS)[number];
 
 // ── 跨阶段：全局策略 ──
 
-/** 错误处理策略：retry=重试 / degrade=降级 / stop=终止 */
-export type ErrorHandling = 'retry' | 'degrade' | 'stop';
+/** 错误处理策略：retry=重试 / degrade=降级 / stop=终止（值域 SSOT = strategyKeys.ERROR_HANDLINGS） */
+export type ErrorHandling = (typeof ERROR_HANDLINGS)[number];
 
 /** 主动提问触发场景（SSOT 推导自 strategyKeys.ASK_TRIGGERS，增删触发词只改一处） */
 export type AskOnTrigger = (typeof ASK_TRIGGERS)[number];
@@ -284,7 +293,8 @@ export interface RolePackManifestSkill {
     }>;
     readonly scripts: ReadonlyArray<{
       readonly path: string;
-      readonly runtime: 'node' | 'python' | 'shell';
+      /** 运行时（值域 SSOT = utils/scanner.ScriptRuntime，由 SCRIPT_RUNTIME_MAP 扩展名映射推断） */
+      readonly runtime: ScriptRuntime;
       readonly size: number;
     }>;
   };

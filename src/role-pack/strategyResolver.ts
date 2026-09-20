@@ -8,6 +8,7 @@
 // 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
 import {
   DEFAULT_MAX_ITERATIONS,
+  ERROR_HANDLINGS,
   MAX_ASK_LIMIT,
   MAX_SELF_REVIEW_ROUNDS,
   MAX_STEP_BUDGET,
@@ -15,6 +16,11 @@ import {
   MAX_CONTEXT_LIMIT,
   MIN_CONTEXT_LIMIT,
   MAX_TOOL_STEP_LIMIT,
+  MULTI_STEP_REASONINGS,
+  PROVIDER_ROUTINGS,
+  SUMMARY_MODES,
+  TOOL_MODES,
+  TOOL_READONLY_MODES,
 } from './strategyKeys.js';
 import type {
   BehaviorStrategy,
@@ -133,14 +139,14 @@ export function resolveSummaryFocus(strategy: BehaviorStrategy | undefined): str
     : undefined;
 }
 
-/** 解析工具调用模式（SSOT）：非法值归位 'allow' */
+/** 解析工具调用模式（SSOT）：非法值归位 'allow'（白名单引用 strategyKeys.TOOL_MODES，防漂移） */
 export function resolveToolMode(strategy: BehaviorStrategy | undefined): ToolMode {
-  return normalizeEnum(strategy?.act?.toolMode, ['allow', 'block'], 'allow');
+  return normalizeEnum(strategy?.act?.toolMode, TOOL_MODES, 'allow');
 }
 
-/** 解析摘要生成开关（内核已消费）：非法值归位 'on' */
+/** 解析摘要生成开关（内核已消费）：非法值归位 'on'（白名单引用 strategyKeys.SUMMARY_MODES） */
 export function resolveSummary(strategy: BehaviorStrategy | undefined): Summary {
-  return normalizeEnum(strategy?.reflect?.summary, ['on', 'off'], 'on');
+  return normalizeEnum(strategy?.reflect?.summary, SUMMARY_MODES, 'on');
 }
 
 /** 解析工具调用步数上限（内核已消费）：整数且 ∈ [0, MAX_TOOL_STEP_LIMIT] 才采用，非法/越界回退默认 0（不限制） */
@@ -155,16 +161,16 @@ export function resolveToolStepLimit(strategy: BehaviorStrategy | undefined): nu
   return valid ? candidate : 0;
 }
 
-/** 解析错误处理策略（内核已消费）：非法值归位 'retry'——retry=自动重试 / degrade=降级文本 / stop=终止抛出错误 */
+/** 解析错误处理策略（内核已消费）：非法值归位 'retry'（白名单引用 strategyKeys.ERROR_HANDLINGS）——retry=自动重试 / degrade=降级文本 / stop=终止抛出错误 */
 export function resolveErrorHandling(strategy: BehaviorStrategy | undefined): ErrorHandling {
-  return normalizeEnum(strategy?.global?.errorHandling, ['retry', 'degrade', 'stop'], 'retry');
+  return normalizeEnum(strategy?.global?.errorHandling, ERROR_HANDLINGS, 'retry');
 }
 
 /**
- * 解析 Provider 路由策略（内核已消费）：非法值归位 'auto'——auto=按任务类型路由 / fixed=固定当前 Provider
+ * 解析 Provider 路由策略（内核已消费）：非法值归位 'auto'（白名单引用 strategyKeys.PROVIDER_ROUTINGS）——auto=按任务类型路由 / fixed=固定当前 Provider
  */
 export function resolveProviderRouting(strategy: BehaviorStrategy | undefined): ProviderRouting {
-  return normalizeEnum(strategy?.act?.providerRouting, ['auto', 'fixed'], 'auto');
+  return normalizeEnum(strategy?.act?.providerRouting, PROVIDER_ROUTINGS, 'auto');
 }
 
 /**
@@ -207,11 +213,11 @@ export function resolveStepBudget(strategy: BehaviorStrategy | undefined): numbe
   return valid ? candidate : DEFAULT_MAX_ITERATIONS;
 }
 
-/** 解析多步推理模式（内核已消费）：非法值归位 'auto'——auto=Provider 决定 / manual=强制快速回答 */
+/** 解析多步推理模式（内核已消费）：非法值归位 'auto'（白名单引用 strategyKeys.MULTI_STEP_REASONINGS）——auto=Provider 决定 / manual=强制快速回答 */
 export function resolveMultiStepReasoning(
   strategy: BehaviorStrategy | undefined,
 ): MultiStepReasoning {
-  return normalizeEnum(strategy?.act?.multiStepReasoning, ['auto', 'manual'], 'auto');
+  return normalizeEnum(strategy?.act?.multiStepReasoning, MULTI_STEP_REASONINGS, 'auto');
 }
 
 /**
@@ -225,7 +231,7 @@ export function resolveMultiStepReasoning(
  * @returns 合法的工具模式
  */
 export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): ToolReadonly {
-  return normalizeEnum(strategy?.act?.toolReadonly, ['full', 'readonly'], 'full');
+  return normalizeEnum(strategy?.act?.toolReadonly, TOOL_READONLY_MODES, 'full');
 }
 
 // ════════════════════════════════════════════════════════════
