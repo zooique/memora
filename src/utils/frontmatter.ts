@@ -1,8 +1,8 @@
 /**
  * Frontmatter 通用解析/序列化工具
  *
- * 直接消费者为 utils/scanner.ts、role-pack/rolePackManager.ts（skills 目录 frontmatter 解析）、
- * agent/builtinToolHandlers.ts（角色包技能 frontmatter 解析），并经 index.ts 导出供宿主复用。
+ * 直接消费者为 utils/scanner.ts、skill/skillManager.ts、role-pack/rolePackManager.ts（frontmatter 解析），
+ * 并经 index.ts 导出供宿主复用。
  */
 
 /**
