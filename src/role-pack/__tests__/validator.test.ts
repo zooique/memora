@@ -352,6 +352,12 @@ describe('validateManifest：合规分档', () => {
     expect(result.valid).toBe(true);
   });
 
+  it('显式非法 minorProtection（非 required）→ INVALID_MINOR_PROTECTION error（阻塞装载）', () => {
+    const result = validate({ minorProtection: 'optional' });
+    expect(findByCode(result.issues, 'INVALID_MINOR_PROTECTION')).toHaveLength(1);
+    expect(result.valid).toBe(false);
+  });
+
   it('companion 缺失 aiIdentityDisclosure → COMPANION_MISSING_AI_DISCLOSURE error', () => {
     const result = validate({ interactionType: 'companion', aiIdentityDisclosure: undefined });
     expect(findByCode(result.issues, 'COMPANION_MISSING_AI_DISCLOSURE')).toHaveLength(1);
