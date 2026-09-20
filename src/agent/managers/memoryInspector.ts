@@ -146,7 +146,8 @@ export class MemoryInspector {
     const working = workingFull.slice(-WORKING_PREVIEW);
 
     // 第 2 层 Bootstrap 恒空：设定记忆唯一归角色包，索引不再新增，rolePackPrompt 承载规则注入。
-    // 保留空壳接口供 UI 层调用，避免宿主代码变更。
+    // 保留空壳形状兼容。实证 2026-09-20：宿主治理面走 stats/list/searchHybrid，不消费本层；
+    // 原「供 UI 层调用，避免宿主代码变更」表述=谎报，已订正。
 
     // 第 3 层：归档记忆计数（round-summary，记忆库唯一对话记忆）
     const roundSummaryCount = this.index.countBySource(SOURCE_LABELS.ROUND_SUMMARY);
@@ -181,7 +182,11 @@ export class MemoryInspector {
 
   // ─── 搜索 ─────────────────────────────────────────────
 
-  /** 搜索记忆（关键词 + FTS5 索引），返回 CLI 友好扁平结构（已截断） */
+  /**
+   * 搜索记忆（关键词 + FTS5 索引），返回 CLI 友好扁平结构（已截断）。
+   * ⚠️ 本同步通道已退役 2026-09-20：功能被 searchHybrid() 取代（后者含 superseded 过滤 /
+   * excludeRoundIds 互斥 / accessedAt + 溯源揭示）；实证无生产/宿主消费方，保留仅为兼容历史 API，勿新增调用。
+   */
   search(query: string, limit = 10): AgentSearchHit[] {
     // 空 query 会让 search() 退化为"返回所有"，对宿主程序是静默误导
     if (!query || query.trim() === '') {
@@ -331,7 +336,8 @@ export class MemoryInspector {
   }
 
   /**
-   * 物理删除记忆（不可恢复）。delete 异步、本方法同步签名（宿主 IPC 同步消费），故 fire-and-forget + catch 降级（内存立即失效）。
+   * 物理删除记忆（不可恢复）。IMemoryStorage.purge 为同步 void（无返回值、无异步弧），
+   * 宿主经 IPC 同步消费——无 fire-and-forget/catch 可言，注释按事实陈述。
    */
   writePurge(id: string): void {
     this.index.purge(id);
