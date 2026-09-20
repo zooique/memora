@@ -32,3 +32,21 @@ export function positiveInt(v: unknown): number | undefined {
   const n = Number.parseInt(String(v), 10);
   return Number.isNaN(n) || n < 1 ? undefined : n;
 }
+
+/**
+ * 工具 limit 参数解析 + 上限钳制（单一真源）
+ *
+ * 收口 builtinToolHandlers 三个工具（search_memories / trace_summary / list_sessions）
+ * 各自手写的「parseInt + NaN/负→默认值 + 超上限钳制」三份。语义与 positiveInt 一致：
+ * 非法输入回退默认值；合法但超上限则钳制到上限（各工具上限是自身契约，由调用方传入）。
+ *
+ * @param value 参数原始字符串（undefined 时直接回退默认值）
+ * @param defaultValue 非法 / 缺失时的回退值
+ * @param max 上限（钳制，应 ≥ defaultValue）
+ * @returns 解析后的 limit 值
+ */
+export function parseLimit(value: string | undefined, defaultValue: number, max: number): number {
+  if (value === undefined) return Math.min(defaultValue, max);
+  const n = positiveInt(value);
+  return Math.min(n ?? defaultValue, max);
+}

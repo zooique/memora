@@ -8,7 +8,7 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { configError } from '@/utils/errors.js';
-import { toError } from '@/utils/toError.js';
+import { toError, isNodeErrorCode } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import type { ProviderEntryConfig } from '@/llm/types.js';
 import { expandEnvVars } from '@/config/expandEnvVars.js';
@@ -333,7 +333,7 @@ export async function loadConfig(configPath?: string): Promise<Config> {
     return expandEnvVars(parseConfig(config));
   } catch (err) {
     // 项目级不可用（不存在/损坏/权限）时用默认值；排除 ENOENT（正常），其他错误暴露根因
-    if (!isEnoent(err)) {
+    if (!isNodeErrorCode(err, 'ENOENT')) {
       logger.warn({ path: projectPath, err: toError(err) }, '项目级配置加载失败，使用默认值');
     }
   }
@@ -357,12 +357,5 @@ async function readJsonFile(path: string): Promise<unknown> {
       ['检查配置文件语法（逗号、引号配对、尾随逗号）'],
     );
   }
-}
-
-/**
- * 判断错误是否为 ENOENT（文件不存在）
- */
-function isEnoent(err: unknown): boolean {
-  return err instanceof Object && 'code' in err && (err as Record<string, unknown>).code === 'ENOENT';
 }
 

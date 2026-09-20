@@ -18,7 +18,7 @@ import { constants } from 'node:fs';
 import { resolve, isAbsolute, join, relative, dirname, basename } from 'node:path';
 import type { SecurityGuard } from '@/security/pathGuard.js';
 import { toolError, MemoraError, ToolErrorCode } from '@/utils/errors.js';
-import { toError } from '@/utils/toError.js';
+import { toError, isNodeErrorCode } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import { segmentLower } from '@/utils/segmenter.js';
 import { truncate } from '@/utils/strings.js';
@@ -40,7 +40,7 @@ import { AGENT_CONSTANTS, LOOP_CONSTANTS } from '@/agent/constants.js';
 // token 估算唯一真理源（CJK 感知）——read_file 的分段预算与上下文占用/截断同口径
 import { estimateTokensText } from '@/agent/contextManager.js';
 // 正整数解析唯一真理源（read_file 分段 offset/limit 与 toolResultCache 去重主体共用）
-import { positiveInt } from '@/utils/math.js';
+import { positiveInt, parseLimit } from '@/utils/math.js';
 // run_team_meeting 工具内嵌 LLM 调用：Message 构型 + LlmProvider 抽象（chat 流式）
 import type { LlmProvider, Message } from '@/llm/provider.js';
 
@@ -224,6 +224,40 @@ export class BuiltinToolHandlers {
     }
   }
 
+  /**
+   * 读前预检：目标是目录时抛语义化工具错误（read_file 与 run_code script_path 共用）
+   *
+   * 两处曾各自实现同一段「stat + isDirectory 判定 + MemoraError 移交」；文案因工具而异，
+   * 故工具名与提示参数化。stat 失败（ENOENT/权限）不在此处理——移交调用方统一异常路径。
+   *
+   * @param absolutePath 目标绝对路径（已过白名单校验）
+   * @param displayPath 用于文案的相对路径（可读性）
+   * @param toolLabel 工具显示名（如 'read_file' / 'run_code script_path'）
+   * @param hint 目录误用时的行动指引
+   */
+  private async assertFileNotDir(
+    absolutePath: string,
+    displayPath: string,
+    toolLabel: string,
+    hint: string,
+  ): Promise<void> {
+    try {
+      const stats = await stat(absolutePath);
+      if (stats.isDirectory()) {
+        throw toolError(
+          `${toolLabel} 目标是目录`,
+          `${displayPath}：这是目录，不是文件`,
+          [hint],
+          undefined,
+          ToolErrorCode.ARGUMENT_ERROR,
+        );
+      }
+    } catch (err) {
+      // stat 失败（如 ENOENT/权限）移交下方异常路径统一报错；工具错误直接抛出
+      if (err instanceof MemoraError) throw err;
+    }
+  }
+
   // ─── 内置工具实现 ──────────────────────────────────────
 
   /**
@@ -252,23 +286,9 @@ export class BuiltinToolHandlers {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'read_file');
 
-    try {
-      // 读前预检：目标是目录时给出可执行指引（read_file 语义是读文件；
-      // EISDIR 原生错误对 LLM 无意义，直接提示改用 list_dir）
-      const stats = await stat(absolutePath);
-      if (stats.isDirectory()) {
-        throw toolError(
-          'read_file 目标是目录',
-          `${relativePath}：这是目录，不是文件`,
-          ['改用 list_dir 列出该目录下的内容'],
-          undefined,
-          ToolErrorCode.ARGUMENT_ERROR,
-        );
-      }
-    } catch (err) {
-      // stat 失败（如 ENOENT/权限）移交下方 readFile 异常路径统一报错；工具错误直接抛出
-      if (err instanceof MemoraError) throw err;
-    }
+    // 读前预检：目标是目录时给出可执行指引（read_file 语义是读文件；
+    // EISDIR 原生错误对 LLM 无意义，直接提示改用 list_dir）
+    await this.assertFileNotDir(absolutePath, relativePath, 'read_file', '改用 list_dir 列出该目录下的内容');
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
@@ -278,12 +298,7 @@ export class BuiltinToolHandlers {
       const e = toError(err);
       // 区分 ENOENT（文件不存在）和其他 IO 错误
       if (e instanceof MemoraError) throw e;
-      if (
-        err !== null &&
-        typeof err === 'object' &&
-        'code' in err &&
-        (err as { code: unknown }).code === 'ENOENT'
-      ) {
+      if (isNodeErrorCode(err, 'ENOENT')) {
         // 前置兄弟目录提示：siblingDirHint 是"失败即给证据"（CTX-1b·P2）——但内核事件
         // 落盘 summary 只取前 100 字符（loop.ts tool_result）。若把它拼接在长路径**之后**，
         // 危害：路径串本身（盘根+文件名）往往已占满 100 字 → 兄弟目录清单被整个截掉，
@@ -434,22 +449,8 @@ export class BuiltinToolHandlers {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'run_code');
 
-    try {
-      // 读前预检：目标是目录时给出可执行指引（脚本语义是文件）
-      const stats = await stat(absolutePath);
-      if (stats.isDirectory()) {
-        throw toolError(
-          'run_code script_path 目标是目录',
-          `${relativePath}：这是目录，不是脚本文件`,
-          ['传入脚本文件路径'],
-          undefined,
-          ToolErrorCode.ARGUMENT_ERROR,
-        );
-      }
-    } catch (err) {
-      // stat 失败（如 ENOENT）移交下方统一报错；工具错误直接抛出
-      if (err instanceof MemoraError) throw err;
-    }
+    // 读前预检：目标是目录时给出可执行指引（脚本语义是文件）
+    await this.assertFileNotDir(absolutePath, relativePath, 'run_code script_path', '传入脚本文件路径');
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
@@ -466,12 +467,7 @@ export class BuiltinToolHandlers {
     } catch (err) {
       if (err instanceof MemoraError) throw err;
       const e = toError(err);
-      if (
-        err !== null &&
-        typeof err === 'object' &&
-        'code' in err &&
-        (err as { code: unknown }).code === 'ENOENT'
-      ) {
+      if (isNodeErrorCode(err, 'ENOENT')) {
         throw toolError(
           'run_code 脚本文件不存在',
           `${absolutePath}：文件不存在`,
@@ -529,14 +525,9 @@ export class BuiltinToolHandlers {
         );
       }
     } catch (err) {
-      // stat 失败（如 ENOENT）视为"已删除"，返回成功（幂等性）；判断方式对齐 readScriptFile（code === 'ENOENT'）
+      // stat 失败（如 ENOENT）视为"已删除"，返回成功（幂等性）；判定收口 isNodeErrorCode
       if (err instanceof MemoraError) throw err;
-      if (
-        err !== null &&
-        typeof err === 'object' &&
-        'code' in err &&
-        (err as { code: unknown }).code === 'ENOENT'
-      ) {
+      if (isNodeErrorCode(err, 'ENOENT')) {
         return `✅ 文件不存在（已删除）：${absolutePath}`;
       }
       const e = toError(err);
@@ -856,12 +847,7 @@ export class BuiltinToolHandlers {
       stats = await stat(absolutePath);
     } catch (err) {
       // stat 调用失败：区分 ENOENT（不存在）和其他 IO 错误
-      if (
-        err !== null &&
-        typeof err === 'object' &&
-        'code' in err &&
-        (err as { code: unknown }).code === 'ENOENT'
-      ) {
+      if (isNodeErrorCode(err, 'ENOENT')) {
         const e = toError(err);
         throw toolError(
           'list_dir 路径不存在',
@@ -980,13 +966,8 @@ export class BuiltinToolHandlers {
       );
     }
 
-    let limit = Number.parseInt(limitStr, 10);
-    if (Number.isNaN(limit) || limit < 1) {
-      limit = AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT;
-    }
-    if (limit > 50) {
-      limit = 50;
-    }
+    // limit 解析统一收口 parseLimit（非法→默认值，超上限钳制到 50）
+    const limit = parseLimit(limitStr, AGENT_CONSTANTS.DEFAULT_RECALL_LIMIT, 50);
 
     // 工具召回与装配期内容互斥（§5.1）：排除「正文或摘要已在眼前」的轮次 round-summary
     // （正文已在眼前，避免重复返回）。由装配期注入的 exclusionRoundIdsProvider 提供
@@ -1125,9 +1106,8 @@ export class BuiltinToolHandlers {
       );
     }
 
-    let limit = Number.parseInt(limitStr ?? '5', 10);
-    if (Number.isNaN(limit) || limit < 1) limit = 5;
-    if (limit > 20) limit = 20;
+    // limit 解析统一收口 parseLimit（非法→默认 5，超上限钳制到 20）
+    const limit = parseLimit(limitStr, 5, 20);
 
     // 获取所有 round-summary 类型的记忆
     const allSummaries = this.memoryIndex.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
@@ -1229,9 +1209,8 @@ export class BuiltinToolHandlers {
    * @returns 格式化的会话路标列表；无会话存储 / 无会话时返回说明文本（不抛错）
    */
   async listSessions(limitStr?: string): Promise<string> {
-    const parsed = Number.parseInt(limitStr ?? String(LIST_SESSIONS_DEFAULT), 10);
-    let limit = Number.isNaN(parsed) || parsed < 1 ? LIST_SESSIONS_DEFAULT : parsed;
-    if (limit > LIST_SESSIONS_MAX) limit = LIST_SESSIONS_MAX;
+    // limit 解析统一收口 parseLimit（非法→默认 10，超上限钳制到 30）
+    const limit = parseLimit(limitStr, LIST_SESSIONS_DEFAULT, LIST_SESSIONS_MAX);
 
     // 未注入会话存储：降级为说明文本（与 trace_summary 的降级哲学一致，不阻塞对话）
     if (!this.sessionStore) return '（未配置会话存储，无法列出历史会话）';

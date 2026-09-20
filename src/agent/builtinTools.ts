@@ -87,6 +87,9 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
   task_table_update: 'idempotent',
   read_skill: 'read-only',
   read_resource: 'read-only',
+  // list_resources / list_skills：读操作（列举技能 L3 清单 / 技能清单），永不跳过（read-only，同 read_skill）
+  list_resources: 'read-only',
+  list_skills: 'read-only',
   run_skill_script: 'non-idempotent',
   // run_project_script：运行项目内已有脚本，结果不可预期，禁止跳过（同 run_skill_script）
   run_project_script: 'non-idempotent',
@@ -114,8 +117,8 @@ export const BUILTIN_TOOL_IDEMPOTENCY: Record<string, IdempotencyLevel> = {
  * - 幂等工具（idempotent / idempotent-key）仅当上次执行**成功**（ok === true）时跳过；
  *   上次失败（ok === false）不拦截重试，否则失败操作会被静默吞掉。
  *
- * 此判断是幂等契约的 SSOT：agent.ts preExecutionCheck 委托本函数，
- * 避免闭包内重复实现导致契约漂移。
+ * 此判断是幂等契约的 SSOT：assembler.ts 的 preExecutionCheck 装配
+ * （工具分发器 dispatchTool，:570）委托本函数，避免闭包内重复实现导致契约漂移。
  *
  * @param records 检查点中的工具执行记录（completedToolCalls）
  * @param name 工具名
@@ -274,6 +277,11 @@ export const REMEMBER_INTEL_TOOL: ToolDefinition = {
   },
 };
 
+/** web_fetch 正文单次返回最大长度（防长上下文注入；schema 文案与 toolExecutor 执行钳制同源） */
+export const WEB_FETCH_CONTENT_MAX_LEN = 50_000;
+/** web_fetch 正文默认返回长度（limit 省略时；schema 文案与 toolExecutor 默认值同源） */
+export const WEB_FETCH_CONTENT_DEFAULT_LEN = 8_000;
+
 /**
  * web_fetch 工具定义（独立导出，条件性包含）
  *
@@ -289,7 +297,10 @@ export const WEB_FETCH_TOOL: ToolDefinition = {
     type: 'object',
     properties: {
       url: { type: 'string', description: '要抓取的网页完整 URL（http/https）' },
-      limit: { type: 'string', description: '返回正文最大字符数，默认 "8000"，最大 "50000"' },
+      limit: {
+        type: 'string',
+        description: `返回正文最大字符数，默认 "${WEB_FETCH_CONTENT_DEFAULT_LEN}"，最大 "${WEB_FETCH_CONTENT_MAX_LEN}"`,
+      },
     },
     required: ['url'],
   },

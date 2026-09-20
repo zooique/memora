@@ -38,3 +38,23 @@ export function toError(err: unknown): Error {
   // 5. 基础类型（number/boolean/symbol/null/undefined）
   return new Error(String(err ?? '未知错误'));
 }
+
+/**
+ * 判断错误对象是否带指定 Node.js 错误码（如 ENOENT）
+ *
+ * 收口「catch 块判断 err.code」的同语义多实现：builtinToolHandlers 4 处与
+ * config/loader 1 处曾各自手写同一判定（typeof/code in/=== 三连）。node:fs 抛出的
+ * 错误为 Error & { code }，IPC 序列化错误亦带 code 字段；非对象/null 安全返回 false。
+ *
+ * @param err catch 块捕获的 unknown 值
+ * @param code 目标错误码（如 'ENOENT'）
+ * @returns 是否命中指定错误码
+ */
+export function isNodeErrorCode(err: unknown, code: string): boolean {
+  return (
+    err !== null &&
+    typeof err === 'object' &&
+    'code' in err &&
+    (err as { code: unknown }).code === code
+  );
+}

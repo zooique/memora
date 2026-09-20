@@ -27,6 +27,7 @@ import {
   SCRIPTS_SUBDIR,
   type DiscoveredLayer3,
   type ResourceSubdir,
+  type ScriptRuntime,
 } from '@/utils/scanner.js';
 import { statSyncSafe } from '@/utils/fileSafe.js';
 
@@ -102,7 +103,7 @@ export interface ProjectedLayer3 {
   }>;
   readonly scripts: Array<{
     readonly path: string;
-    readonly runtime: 'node' | 'python' | 'shell';
+    readonly runtime: ScriptRuntime;
     readonly size: number;
   }>;
 }

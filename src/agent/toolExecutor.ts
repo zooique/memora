@@ -14,7 +14,16 @@ import { logger } from '@/logging/logger.js';
 import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
-import { BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL, type ToolDefinition } from '@/agent/builtinTools.js';
+import {
+  BUILTIN_TOOLS,
+  WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
+  WEB_FETCH_CONTENT_MAX_LEN,
+  WEB_FETCH_CONTENT_DEFAULT_LEN,
+  RUN_CODE_TOOL,
+  SEARCH_PROJECT_TOOL,
+  type ToolDefinition,
+} from '@/agent/builtinTools.js';
 import { BuiltinToolHandlers } from '@/agent/builtinToolHandlers.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { IWebSearchProvider } from '@/web-search/types.js';
@@ -24,7 +33,7 @@ import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 import { formatExecutionResult, formatScriptResult, runSkillScript } from '@/skill/skillScriptRunner.js';
-import { resolveSafePath, inferRuntimeFromExt } from '@/utils/scanner.js';
+import { resolveSafePath, inferRuntimeFromExt, type ScriptRuntime } from '@/utils/scanner.js';
 import type {
   IProjectSearchProvider,
   ProjectTextSearchResult,
@@ -45,8 +54,6 @@ const WEB_SEARCH_RESULT_MAX_LEN = 500;
 
 /** web_fetch 的 url 最大长度（防超长/恶意 URL 滥用） */
 const WEB_FETCH_URL_MAX_LEN = 2000;
-/** web_fetch 正文单次返回最大长度（防长上下文注入，对齐 BUILTIN_TOOLS 的 limit 上限） */
-const WEB_FETCH_CONTENT_MAX_LEN = 50_000;
 /** run_code 的 code 最大长度（防超长代码滥用） */
 const RUN_CODE_CODE_MAX_LEN = 50_000;
 /** run_code 的 language 最大长度（防超长语言名滥用） */
@@ -66,7 +73,7 @@ const RUN_CODE_RESULT_MAX_LEN = 20_000;
  * run_project_script 的内核子进程执行器只接受三档运行时；
  * 从扩展名推断的语言若落在白名单外一律兜底 'node'（推断即可信来源，不规则值不回传执行器）。
  */
-function normalizeScriptRuntime(language: string): 'node' | 'python' | 'shell' {
+function normalizeScriptRuntime(language: string): ScriptRuntime {
   if (language === 'python') return 'python';
   if (language === 'shell') return 'shell';
   return 'node';
@@ -913,7 +920,9 @@ export class ToolExecutor {
           );
         }
         const maxChars = Math.min(
-          Number.parseInt(strArg('limit', '8000'), 10) || 8000,
+          // limit 默认值与钳制上限同源（builtinTools WEB_FETCH_TOOL schema 文案，SSOT 收敛）
+          Number.parseInt(strArg('limit', String(WEB_FETCH_CONTENT_DEFAULT_LEN)), 10) ||
+            WEB_FETCH_CONTENT_DEFAULT_LEN,
           WEB_FETCH_CONTENT_MAX_LEN,
         );
         const page = await safeFetch(this.fetchProvider, url, { maxChars });

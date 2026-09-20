@@ -9,7 +9,7 @@
  *   - 基础类型（number/boolean/symbol/null/undefined）转换
  */
 import { describe, expect, it } from 'vitest';
-import { toError } from '@/utils/toError.js';
+import { toError, isNodeErrorCode } from '@/utils/toError.js';
 
 describe('utils/toError · toError', () => {
   // ─── 1. Error 实例 ───────────────────────────────────────
@@ -133,5 +133,31 @@ describe('utils/toError · toError', () => {
     const result = toError(sym);
     expect(result).toBeInstanceOf(Error);
     expect(result.message).toBe(sym.toString());
+  });
+});
+
+describe('utils/toError · isNodeErrorCode', () => {
+  it('命中指定错误码应返回 true（node:fs 错误形态）', () => {
+    const err = Object.assign(new Error('ENOENT: no such file'), { code: 'ENOENT' });
+    expect(isNodeErrorCode(err, 'ENOENT')).toBe(true);
+  });
+
+  it('IPC 序列化错误（带 code 字段）应识别', () => {
+    expect(isNodeErrorCode({ code: 'ENOENT', message: 'x' }, 'ENOENT')).toBe(true);
+  });
+
+  it('错误码不匹配应返回 false', () => {
+    const err = Object.assign(new Error('permission denied'), { code: 'EACCES' });
+    expect(isNodeErrorCode(err, 'ENOENT')).toBe(false);
+  });
+
+  it('无 code 字段的普通错误应返回 false', () => {
+    expect(isNodeErrorCode(new Error('plain'), 'ENOENT')).toBe(false);
+  });
+
+  it('非对象输入应安全返回 false（不抛错）', () => {
+    expect(isNodeErrorCode(null, 'ENOENT')).toBe(false);
+    expect(isNodeErrorCode(undefined, 'ENOENT')).toBe(false);
+    expect(isNodeErrorCode('ENOENT', 'ENOENT')).toBe(false);
   });
 });

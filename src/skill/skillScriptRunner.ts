@@ -13,6 +13,7 @@
 import * as childProcess from 'node:child_process';
 import type { CodeExecutionResult } from '@/code-exec/types.js';
 import { logger } from '@/logging/logger.js';
+import type { ScriptRuntime } from '@/utils/scanner.js';
 
 /** 脚本执行结果（= CodeExecutionResult，复用代码执行结果形态，SSOT 不重复定义） */
 export type ScriptExecutionResult = CodeExecutionResult;
@@ -47,7 +48,7 @@ function normalizeTimeoutMs(timeoutMs: number): number {
  */
 export async function runSkillScript(
   scriptPath: string,
-  runtime: 'node' | 'python' | 'shell',
+  runtime: ScriptRuntime,
   args: string[] = [],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   cwd?: string,
@@ -163,7 +164,7 @@ export async function runSkillScript(
  * @returns 是否应进入「py -3 → cmd /c python」兜底链
  */
 export function shouldFallbackPythonToPy(
-  runtime: 'node' | 'python' | 'shell',
+  runtime: ScriptRuntime,
   platform: NodeJS.Platform,
 ): boolean {
   return runtime === 'python' && platform === 'win32';
@@ -193,7 +194,7 @@ export function isPythonUnavailable(
  * 根据 runtime 解析执行命令：node/python 直接执行，shell 依平台用 cmd /c（Windows）或 sh -c
  */
 function resolveCommand(
-  runtime: 'node' | 'python' | 'shell',
+  runtime: ScriptRuntime,
   scriptPath: string,
   args: string[],
 ): { command: string; args: string[] } {
