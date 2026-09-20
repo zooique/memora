@@ -8,7 +8,7 @@ import { join, dirname } from 'node:path';
 import { logger } from '@/logging/logger.js';
 import { getLogger } from '@/utils/loggerHolder.js';
 import { ConfigResourceManager } from '@/utils/configResourceManager.js';
-import { resolveSubdir, scanMarkdownDir, resolveSafePath, inferRuntimeFromExt, SKILL_MAIN_FILE, type ScannedMarkdownEntry } from '@/utils/scanner.js';
+import { resolveSubdir, scanMarkdownDir, resolveSafePath, inferRuntimeFromExt, isFolderFormSkill, type ScannedMarkdownEntry } from '@/utils/scanner.js';
 import {
   discoverSkillLayer3,
   projectDiscoveredLayer3,
@@ -1048,8 +1048,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   deriveSkillNameFromFile(file: string): string {
     const parts = file.split(/[\\/]/);
     const last = parts.pop() ?? '';
-    // 判定「文件夹形态」复用 SKILL_MAIN_FILE 常量（SSOT），兼容 Windows 大小写变体（SKILL.MD）
-    if (last.toLowerCase() === SKILL_MAIN_FILE.toLowerCase()) {
+    // 判定「文件夹形态」复用 scanner.isFolderFormSkill（SSOT，内置 Windows 大小写变体兼容）
+    if (isFolderFormSkill(last)) {
       return parts.pop() ?? ''; // 文件夹形式
     }
     return last.replace(/\.(md|markdown)$/i, ''); // 单文件形式

@@ -19,6 +19,7 @@ import {
   scanMarkdownDir,
   resolveSubdir,
   resolveSafePath,
+  isFolderFormSkill,
 } from '@/utils/scanner.js';
 import { setLogger } from '@/utils/loggerHolder.js';
 
@@ -264,6 +265,21 @@ description: 测试技能
       expect(resolveSafePath('/base/skills/myskill', 'resource/api.md')).toBe(
         resolve('/base/skills/myskill', 'resource/api.md'),
       );
+    });
+  });
+
+  describe('isFolderFormSkill', () => {
+    it('文件夹形态（队尾为 SKILL.md）应为真', () => {
+      expect(isFolderFormSkill('/pack/skills/my-skill/SKILL.md')).toBe(true);
+    });
+
+    it('顶层裸 .md（非 SKILL.md）应为假', () => {
+      expect(isFolderFormSkill('/pack/skills/readme-tool.md')).toBe(false);
+    });
+
+    it('主文件名大小写变体（skill.md / SKILL.MD）应为真（Windows 落盘兼容）', () => {
+      expect(isFolderFormSkill('/pack/skills/my-skill/skill.md')).toBe(true);
+      expect(isFolderFormSkill('/pack/skills/my-skill/SKILL.MD')).toBe(true);
     });
   });
 });

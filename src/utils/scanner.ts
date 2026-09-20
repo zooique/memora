@@ -35,13 +35,16 @@ export const SKILL_MAIN_FILE = 'SKILL.md';
  *
  * 主流（Agent Skills 开放标准）：技能 = 文件夹 + 强制 SKILL.md，L3（resources/ scripts/）
  * 仅归属于文件夹形态；顶层裸 .md 是轻量单文件兼容形态（纯 L1/L2），不拥有 L3。
- * skillManager / rolePackManager 均复用此判定，杜绝重复硬编码 `basename === SKILL_MAIN_FILE`。
+ * skillManager（经 skillLayer3）与 rolePackManager 均复用此判定，杜绝重复硬编码主文件名判定。
  *
  * @param filePath 技能文件绝对路径（SKILL.md 或裸 .md）
  * @returns true 表示文件夹形态（拥有 L3 资源/脚本归属权）
  */
 export function isFolderFormSkill(filePath: string): boolean {
-  return basename(filePath) === SKILL_MAIN_FILE;
+  // 大小写不敏感（吸收 rolePackManager 早先的 toLowerCase 手写版本语义，收敛为本函数唯一判定）：
+  // Windows 文件系统大小写不敏感，技能复制可能落盘为 skill.md / SKILL.MD 等变体；
+  // 统一按主文件名判定，避免「skillLayer3 判非文件夹形态、rolePackManager 判文件夹形态」的分裂。
+  return basename(filePath).toLowerCase() === SKILL_MAIN_FILE.toLowerCase();
 }
 
 /**
