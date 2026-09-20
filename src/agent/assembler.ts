@@ -114,10 +114,9 @@ export function buildSystemPromptPrefix(
   // 单点注入（SSOT）：TURN_START_STRATEGY_PROMPT 常量唯一真源，本函数是唯一消费点；
   // 初始化/刷新共用本函数，角色切换不丢失。
   systemPrefixParts.push(TURN_START_STRATEGY_PROMPT);
-  return (
-    systemPrefixParts.filter(Boolean).join('\n\n') +
-    (systemPrefixParts.length > 0 ? '\n\n---\n\n' : '')
-  );
+  // 时间戳与 Turn 起始策略无条件 push，systemPrefixParts 恒非空（len ≥ 2）——
+  // 分隔线无条件追加（此前的恒真三元 + 二次 filter(Boolean) 已删，见站 21 审查）。
+  return systemPrefixParts.join('\n\n') + '\n\n---\n\n';
 }
 
 /**
@@ -194,7 +193,6 @@ type AssembleRuntimeParams = Pick<
   | 'fetchProvider'
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
-  | 'strategyOverride'
 >;
 
 /** 组装器输入参数 */
@@ -301,7 +299,7 @@ export interface AssembleOutput {
  *   1. 无依赖组件：history, workProjection, toolExec
  *   2. 依赖 Provider 的组件：skillManager, rolePackManager
  *   3. AgentLoop（依赖 toolExec + systemPromptPrefix）
- *   4. 依赖 Loop 的组件：configManager, memoryInspector
+ *   4. 依赖 Loop 的组件：memoryAdvisor, memoryInspector, dedupManager
  *
  * @param pctx 项目上下文
  * @param input 组装参数
@@ -468,23 +466,21 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   // 截断时优先复用已存 round-summary，避免现调 LLM 生成上下文摘要
   // 仅取当前会话 roundIds 对应的摘要（round-based：会话由 roundIds 列表定义，摘要以 roundId 溯源）——
   // 防止其他会话（分叉分支/会话切换遗留）的摘要渗入当前上下文"遗忘补偿"。
-  // sessionStore 缺失（未注入）时降级为全量最近摘要（保底可用性），不阻断截断。
+  // sessionStore 缺失或当前会话未就绪时降级返回空（防渗入优先），回退 LLM 现场摘要；不阻断截断。
+  // （站 21 收口：此前降级放行全库会话摘要，语义反转；改返回 '' 使「防跨会话渗入」使命一致。）
   const roundSummaryLoader = (): string => {
     try {
-      // 惰性求取当前会话 roundIds：checkpoint 未就绪时降级全量（新会话无历史摘要可复用）
-      let allowedRoundIds: ReadonlySet<string> | null = null;
+      // 惰性求取当前会话 roundIds：限定摘要只取本会话。
+      // sessionStore 缺失或 checkpoint 未就绪（sessionId 空）→ 降级返回空而非全量，
+      // 杜绝跨会话/分叉分支摘要渗入当前上下文"遗忘补偿"，交由 LLM 现场摘要兜底。
       const sessionId = sessionManager?.getCheckpoint()?.sessionId ?? '';
-      if (sessionStore && sessionId) {
-        const ids = sessionStore.getRoundIds(sessionId);
-        allowedRoundIds = new Set(Array.isArray(ids) ? ids : []);
-      }
+      if (!sessionStore || !sessionId) return '';
+      const ids = sessionStore.getRoundIds(sessionId);
+      const allowedRoundIds = new Set(Array.isArray(ids) ? ids : []);
+      if (allowedRoundIds.size === 0) return '';
       const summaries = pctx.index
         .getBySource(SOURCE_LABELS.ROUND_SUMMARY)
-        .filter(
-          (s) =>
-            allowedRoundIds === null ||
-            (s.roundId !== undefined && allowedRoundIds.has(s.roundId)),
-        )
+        .filter((s) => s.roundId !== undefined && allowedRoundIds.has(s.roundId))
         .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
         .slice(0, ROUND_SUMMARY_LOADER_MAX);
       if (summaries.length === 0) return '';

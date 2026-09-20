@@ -15,7 +15,6 @@
 
 import type { AgentLoop } from '@/agent/loop.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
-import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { computeContextBudget, isInputTooLarge, estimateOccupancy } from '@/agent/budget.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { UIMessages } from '@/agent/types.js';
@@ -47,8 +46,6 @@ export interface ContextPreparerDeps {
   };
   /** 事件发射（桥接到 Agent 强类型 emit） */
   emit: (event: AgentEventName, data: unknown) => void;
-  /** 宿主装配级策略覆盖（可选）：压过角色包声明 */
-  strategyOverride?: Partial<BehaviorStrategy>;
 }
 
 /**

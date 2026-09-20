@@ -1186,8 +1186,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
       existingSkillManager: this.skillManager,
-      // 宿主装配级策略覆盖（能力边界）：透传组装器 → ContextPreparer（策略解析唯一链）
-      strategyOverride: this.#config.strategyOverride,
+      // 策略覆盖不经组装器：AssembleInput 零消费（站 21 审查移除），真实消费链 = 本类
+      // 构造 SeedOrchestrator deps 时直传（见 #createSeedOrchestrator 的 strategyOverride），
+      // 经 resolveActiveStrategy 压过角色包声明——策略解析唯一链在 seed 侧。
       // Agent 稳定能力（emit/守卫/暂停/角色切换）：接线下沉后仅传能力，接线语义在组装器唯一实现
       hooks: {
         // 桥接 SessionManager 宽类型事件到 Agent 强类型 emit（校验事件名在 AgentEventMap 内，避免不安全断言）
