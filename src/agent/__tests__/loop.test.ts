@@ -1124,11 +1124,56 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
       chunks.push(chunk);
     }
 
-    // 应有 aborted chunk（executeToolCalls 循环结束后 signal.aborted 检查触发）
+    // 应有 aborted chunk。触发点订正（2026-09-20 站 20 实测）：预先 abort 的 signal
+    // 使 **LLM 调用本身**即返回 aborted（runIteration 中 llmResult.aborted 分支），
+    // 根本不会进入 executeToolCalls —— 故不是「工具循环结束后那次 abort 检查」所触发。
+    // （后者 = executeToolCalls 循环尾部的 abort 复查；真正走 executeToolCalls **入口处**
+    //   abort 前置检查的路径，其配对不变量由下方「★ 工具执行前 abort」用例锁定。）
     const aborted = chunks.filter((c) => c.type === 'aborted');
     expect(aborted.length).toBeGreaterThan(0);
     // toolExecutor 不应被调用（signal 已 abort，raceToolWithSignal 直接返回 ABORTED）
     expect(toolExecutor).not.toHaveBeenCalled();
+  });
+
+  it('★ 工具执行前 abort（executeToolCalls 早退）→ 不得遗留未配对的 assistant.toolCalls（FAIL-1）', async () => {
+    // 场景：signal 在「assistant(toolCalls) 已入史」之后、「工具执行与结果回填」之前被 abort
+    // → executeToolCalls 在入口处的 abort 前置检查早退，_processToolResults 不再执行。
+    // 不变量（FAIL-1）：发往 OpenAI 兼容端的 assistant.toolCalls 必须逐条配对 tool 消息；
+    // 否则下一次请求要么被服务端 400 拒绝，要么被 llmCaller 发送边界守卫 auditToolCallPairing
+    // 拒发并抛非临时错误（llmPairingGuardFires++）——用户在该会话的下一次发言即硬失败。
+    // 断言复用生产谓词（expectWellFormedToolPairing 复测 auditToolCallPairing），口径与实现同源。
+    const ac = new AbortController();
+    // 拦截器位于「LLM 已产出 toolCalls → 工具执行前」的窗口内（executeToolCalls 入口
+    // 检查之前的 duplicateCallInterceptor.check 调用处），在此触发 abort 即确定性复现
+    // executeToolCalls 入口 abort 前置检查的早退（而非靠时序竞态）。
+    const abortInWindow: DuplicateCallInterceptor = {
+      name: 'abort-in-pre-exec-window',
+      check: () => {
+        ac.abort();
+        return 'ok';
+      },
+    };
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('不应执行到这里'),
+      duplicateCallInterceptor: abortInWindow,
+    });
+
+    for await (const chunk of loop.processUserInput('测试', ac.signal)) {
+      void chunk;
+    }
+
+    expectWellFormedToolPairing(loop.getMessages());
   });
 
   it('signal 在工具执行中 abort 时应解除 generator 阻塞', async () => {

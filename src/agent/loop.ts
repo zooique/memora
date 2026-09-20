@@ -1524,6 +1524,22 @@ export class AgentLoop {
     // 工具并行执行（保持顺序的并发）：Promise.all 并发所有工具（总耗时≈最慢工具），
     // 但 tool_start/tool_result 与 messages 均按原始顺序 yield/push，保证 Reflection slice 正确
     if (signal?.aborted) {
+      // 中止早退：assistant(toolCalls) 已在上一步入史，而工具一条都未执行 →
+      // 必须为**每条**调用补「未执行」占位结果，否则即留下孤立 tool 消息（FAIL-1 破口）：
+      // 下一次请求要么被 OpenAI 兼容端以 400 拒绝，要么被 llmCaller 发送边界守卫
+      // `auditToolCallPairing` 拒发并抛**非临时**错误（llmPairingGuardFires++）
+      // → 表现为「用户中止一次后，该会话后续每次发言都硬失败」。
+      // 与 [ASK_SUSPENDED] / [ASK_ABORTED] 同源纪律：**不执行 ≠ 不回答**；
+      // 文案只声明未执行、不暗示任何执行结果（防模型误以为工具已跑过而产生幻觉）。
+      for (const tc of toolCalls) {
+        this.appendToolMessage(
+          wrapToolResult(
+            tc.function.name,
+            '[TOOL_ABORTED] 该调用因本轮被中止而未执行。如需其结果，请重新发起。',
+          ),
+          tc.id,
+        );
+      }
       return { aborted: true };
     }
 
@@ -2553,7 +2569,7 @@ export class AgentLoop {
 
   /**
    * 追加一条 tool 消息（loop **唯一** tool 写点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` /
-   * `[ASK_SUSPENDED]` 四处皆经此）。
+   * `[ASK_SUSPENDED]` / `[TOOL_ABORTED]` 五处皆经此）。
    *
    * **入口关**（大文本统一通道 §6.2）：单条内容超 `SINGLE_TOOL_RESULT_MAX_TOKENS` → 原文落盘，
    * 上下文只留「路径 + 预览 + 续读提示」。收口在此而非 `_processToolResults`：后者只覆盖工具结果，

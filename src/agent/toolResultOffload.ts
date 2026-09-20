@@ -6,7 +6,8 @@
  * 上下文只留「路径 + 预览 + 续读提示」。
  *
  * **单一原语 + 单一收口**：本函数是唯一的落盘实现；唯一调用点是 `AgentLoop.appendToolMessage`
- * （loop 唯一 tool 写点，一处覆盖四个调用点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` / `[ASK_SUSPENDED]`）。
+ * （loop 唯一 tool 写点，一处覆盖五个调用点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` /
+ * `[ASK_SUSPENDED]` / `[TOOL_ABORTED]`）。
  * 压缩链那级 `OffloadCompactionStrategy` 已随之**整级删除** —— 上下文中 tool 消息只可能由该写点
  * 产生，入口关覆盖后事后扫描恒不触发（「读者先亡、写者后死」；实证见 §6.2 结论二）。
  *
