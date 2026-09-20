@@ -196,22 +196,6 @@ export type ArchiveMode = 'full' | 'manual';
 /** 会话状态（三态状态机） */
 export type SessionStatus = 'running' | 'paused' | 'error';
 
-/** 会话级角色，定义行为边界和语气风格，可中途变更 */
-export interface Role {
-  /** 角色名（如 "developer"） */
-  name: string;
-  /** 角色描述（用于 system prompt 注入） */
-  description?: string;
-}
-
-/** 定义任务完成的质量标准与约束条件，用户可随时更新 */
-export interface Standard {
-  /** 质量标准描述（如 "代码必须通过所有测试"） */
-  quality: string;
-  /** 约束条件列表（如 ["不使用第三方库"]） */
-  constraints: string[];
-}
-
 /** 计划中单个步骤，用于目标漂移检测（文本相似度）和进度追踪 */
 export interface PlanStep {
   /** 步骤唯一标识 */
@@ -225,7 +209,7 @@ export interface PlanStep {
   /**
    * 会议用：该任务项的表层装配角色（组长或组员）。仅会议内临时生效，不改 activePack——
    * prepare 期经 RolePackManager.resolveRoundAssemblyRole 范围校验（∈ {组长} ∪ {组员}，越界忽略 + warning）。
-   * 进 checkpoint（schemaVersion 升版 + 迁移映射）；缺失/旧检查点走缺省 undefined（非会议）。
+   * 缺失/旧检查点走缺省 undefined（非会议）。
    */
   rolePack?: string;
 }
@@ -298,12 +282,6 @@ export interface ChatMessage {
  * 恢复前须校验 error.recovered===true 且 cause 已解除）。
  */
 export interface SessionCheckpoint {
-  /**
-   * 检查点结构版本（历史字段：2026-08-23 K1 引入的序列化版本标识；2026-09-10 检查点
-   * 不再落盘后无恢复链消费——仅 createCheckpoint 写入，无跨进程恢复读取方，字段保留
-   * 仅作结构标记，勿据其推导「持久化/跨版本恢复」能力）。
-   */
-  schemaVersion: number;
   /** 会话唯一标识 */
   sessionId: string;
   /** 三态状态（ERROR 独立可见） */
@@ -328,10 +306,6 @@ export interface SessionCheckpoint {
   goalChangeSeq: number;
   /** 执行计划步骤列表 */
   plan: PlanStep[];
-  /** 当前角色（可中途变更） */
-  role: Role;
-  /** 当前执行标准（可更新） */
-  standard: Standard;
   /**
    * 工具执行日志（outbox 模式）：FIFO，超上限时优先丢弃「幂等或已补偿」的最早记录，
    * 非幂等未补偿记录永不丢弃。

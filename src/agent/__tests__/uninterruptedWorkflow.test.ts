@@ -262,15 +262,12 @@ describe('SessionStateMachine · 三态流转', () => {
       sm.triggerError('LLM 超时');
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
-        schemaVersion: 1,
         status: 'error',
         error: { cause: 'LLM 超时', at: Date.now(), recovered: true },
         mainGoal: 'test',
         currentGoal: 'test',
         goalChangeSeq: 0,
         plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
         lastHeartbeat: Date.now(),
       };
       const result = sm.recover(checkpoint);
@@ -283,15 +280,12 @@ describe('SessionStateMachine · 三态流转', () => {
       sm.triggerError('LLM 超时');
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
-        schemaVersion: 1,
         status: 'error',
         error: { cause: 'LLM 超时', at: Date.now(), recovered: false },
         mainGoal: 'test',
         currentGoal: 'test',
         goalChangeSeq: 0,
         plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
         lastHeartbeat: Date.now(),
       };
       const result = sm.recover(checkpoint);
@@ -302,14 +296,11 @@ describe('SessionStateMachine · 三态流转', () => {
     it('RUNNING 状态恢复应失败', () => {
       const checkpoint: SessionCheckpoint = {
         sessionId: 'test',
-        schemaVersion: 1,
         status: 'running',
         mainGoal: 'test',
         currentGoal: 'test',
         goalChangeSeq: 0,
         plan: [],
-        role: { name: 'assistant' },
-        standard: { quality: '', constraints: [] },
         lastHeartbeat: Date.now(),
       };
       const result = sm.recover(checkpoint);
@@ -374,15 +365,13 @@ describe('SessionManager · 检查点管理', () => {
 
   describe('createCheckpoint', () => {
     it('应创建包含所有必要字段的检查点', () => {
-      const cp = manager.createCheckpoint('测试目标', { name: 'developer' }, { quality: '高质量', constraints: ['无bug'] });
+      const cp = manager.createCheckpoint('测试目标');
       expect(cp).toHaveProperty('sessionId');
       expect(cp).toHaveProperty('status');
       expect(cp).toHaveProperty('mainGoal');
       expect(cp).toHaveProperty('currentGoal');
       expect(cp).toHaveProperty('goalChangeSeq');
       expect(cp).toHaveProperty('plan');
-      expect(cp).toHaveProperty('role');
-      expect(cp).toHaveProperty('standard');
       expect(cp).toHaveProperty('lastHeartbeat');
     });
 
@@ -390,14 +379,6 @@ describe('SessionManager · 检查点管理', () => {
       const cp = manager.createCheckpoint('写一个排序函数');
       expect(cp.mainGoal).toBe('写一个排序函数');
       expect(cp.currentGoal).toBe('写一个排序函数');
-    });
-
-    it('role 和 standard 应正确设置', () => {
-      const cp = manager.createCheckpoint('测试', { name: 'reviewer', description: '代码审查' }, { quality: '无bug', constraints: ['ESLint 通过'] });
-      expect(cp.role.name).toBe('reviewer');
-      expect(cp.role.description).toBe('代码审查');
-      expect(cp.standard.quality).toBe('无bug');
-      expect(cp.standard.constraints).toContain('ESLint 通过');
     });
 
     it('goalChangeSeq 应从 0 开始', () => {
@@ -536,23 +517,6 @@ describe('SessionManager · 检查点管理', () => {
 
     });
 
-  describe('updateStandard / updateRole', () => {
-    it('updateStandard 应更新执行标准', () => {
-      manager.createCheckpoint('测试');
-      manager.updateStandard({ quality: '高质量', constraints: ['测试覆盖'] });
-      const cp = manager.getCheckpoint()!;
-      expect(cp.standard.quality).toBe('高质量');
-      expect(cp.standard.constraints).toContain('测试覆盖');
-    });
-
-    it('updateRole 应更新角色', () => {
-      manager.createCheckpoint('测试');
-      manager.updateRole({ name: 'developer', description: '开发工程师' });
-      const cp = manager.getCheckpoint()!;
-      expect(cp.role.name).toBe('developer');
-      expect(cp.role.description).toBe('开发工程师');
-    });
-  });
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -1079,10 +1043,9 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
 
-      const cp = agent.createCheckpoint('测试目标', { name: 'developer' });
+      const cp = agent.createCheckpoint('测试目标');
       expect(cp).not.toBeNull();
       expect(cp!.mainGoal).toBe('测试目标');
-      expect(cp!.role.name).toBe('developer');
     });
 
     it('getCheckpoint 应返回当前检查点', async () => {
@@ -1164,10 +1127,9 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 1. 创建检查点
-    const cp = agent.createCheckpoint('编写一个 CLI 工具', { name: 'developer' });
+    const cp = agent.createCheckpoint('编写一个 CLI 工具');
     expect(cp).not.toBeNull();
     expect(cp!.mainGoal).toBe('编写一个 CLI 工具');
-    expect(cp!.role.name).toBe('developer');
 
     // 2. 暂停会话
     const pauseResult = agent.pause('用户需要休息一下', 'user');
@@ -1217,7 +1179,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 1. 创建检查点
-    agent.createCheckpoint('处理文件', { name: 'assistant' });
+    agent.createCheckpoint('处理文件');
 
     // 2. 触发异常
     const errorResult = agent.triggerError('LLM 请求超时');
@@ -1317,7 +1279,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 创建检查点
-    agent.createCheckpoint('测试目标', { name: 'developer' });
+    agent.createCheckpoint('测试目标');
 
     // 模拟已存在的任务表：直接塞一个 pending 步骤
     agent.getCheckpoint()!.plan.push({
@@ -1474,7 +1436,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     // 创建检查点
-    agent.createCheckpoint('测试循环暂停恢复', { name: 'developer' });
+    agent.createCheckpoint('测试循环暂停恢复');
 
     // 执行 3 轮暂停-恢复循环
     for (let i = 0; i < 3; i++) {

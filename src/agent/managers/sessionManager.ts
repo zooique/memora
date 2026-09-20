@@ -9,7 +9,7 @@ import { chatBusyError, configError } from '@/utils/errors.js';
 // 会话标识格式契约（SSOT）：恢复最近会话时把 sessionId 拆成 (date, session) 供 loadMessages
 import { isValidSessionId, splitSessionId } from '@/utils/time.js';
 import type { AgentLoop } from '@/agent/loop.js';
-import type { MessageHistory } from '@/agent/messageHistory.js';
+import type { MessageHistory, ForkResult } from '@/agent/messageHistory.js';
 import type { SessionMessage } from '@/memory/sessionStore.js';
 import type { ISessionStore, SessionMeta } from '@/memory/sessionStore.js';
 import type { Message } from '@/llm/provider.js';
@@ -18,8 +18,6 @@ import { type AgentEventName } from '@/utils/eventEmitter.js';
 import type {
   SessionCheckpoint,
   SessionStatus,
-  Role,
-  Standard,
   PlanStep,
   ToolExecutionRecord,
   StepOutcome,
@@ -33,19 +31,13 @@ import type { PauseSource } from '@/agent/sessionStateMachine.js';
 /**
  * 分叉操作结果（round-based 模式）
  *
- * Agent.forkSession() 返回值类型，相对 MessageHistory 内部 ForkResult 的简化封装，
- * 只暴露宿主需要字段。
+ * 在 MessageHistory 内部 ForkResult（newSession/date/roundIds）之上附加 roundCount，
+ * 基础字段派生复用，不再手写重复声明。
  */
-export interface AgentForkResult {
-  /** 新会话名（不含日期前缀，平等普通会话） */
-  newSession: string;
-  /** 新会话日期（YYYY-MM-DD，供分叉会话命名等按会话键定位的场景使用） */
-  date: string;
+export type AgentForkResult = ForkResult & {
   /** 新会话的 Round ID 数量（问答闭环个数） */
   roundCount: number;
-  /** 新会话的 Round ID 列表 */
-  roundIds: string[];
-}
+};
 
 /** 会话管理器：经回调访问 Agent 当前组件状态，支持 Agent 重建后自动取最新引用 */
 export class SessionManager {
@@ -388,26 +380,19 @@ export class SessionManager {
    */
   private static checkpointDefaults(): Pick<
     SessionCheckpoint,
-    | 'mainGoal'
-    | 'currentGoal'
-    | 'goalChangeSeq'
-    | 'plan'
-    | 'role'
-    | 'standard'
+    'mainGoal' | 'currentGoal' | 'goalChangeSeq' | 'plan'
   > {
     return {
       mainGoal: '',
       currentGoal: '',
       goalChangeSeq: 0,
       plan: [],
-      role: { name: 'assistant' },
-      standard: { quality: '', constraints: [] },
     };
   }
 
   /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成 SessionCheckpoint（纯内存态，
    *  「减法」2026-09-10 起不再落盘——中止/断电走中断轮补全，运行时暂停同 turn 内存续跑） */
-  createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint {
+  createCheckpoint(mainGoal?: string): SessionCheckpoint {
     const history = this.getHistory();
 
     const prev = this.checkpoint;
@@ -420,9 +405,6 @@ export class SessionManager {
       ...(prev ?? {}),
 
       // 以下字段由本次快照重算，覆写基底
-      // schemaVersion 恒为当前版本：合并语义下 prev 可能出于旧版本无此字段，
-      // 须显式覆写（旧版本 createCheckpoint 未写 schemaVersion → 绝对版本路由）
-      schemaVersion: AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION,
       sessionId: history.currentSessionName,
       // 状态真理源是状态机，检查点只是其投影
       status: this.stateMachine.status,
@@ -439,8 +421,6 @@ export class SessionManager {
       currentGoal: mainGoal ?? prev?.currentGoal ?? prev?.mainGoal ?? defaults.currentGoal,
       goalChangeSeq: prev?.goalChangeSeq ?? defaults.goalChangeSeq,
       plan: prev?.plan ?? defaults.plan,
-      role: role ?? prev?.role ?? defaults.role,
-      standard: standard ?? prev?.standard ?? defaults.standard,
       lastHeartbeat: Date.now(),
     };
 
@@ -721,20 +701,6 @@ export class SessionManager {
     this.touchCheckpoint();
   }
 
-  /** 更新检查点执行标准 */
-  updateStandard(standard: Standard): void {
-    if (!this.checkpoint) return;
-    this.checkpoint.standard = standard;
-    this.touchCheckpoint();
-  }
-
-  /** 更新检查点角色 */
-  updateRole(role: Role): void {
-    if (!this.checkpoint) return;
-    this.checkpoint.role = role;
-    this.touchCheckpoint();
-  }
-
   // ── 执行计划管理：SSOT 写点 ──────────────────────────────
 
   /** 追加计划步骤：在 plan 末尾追加新步骤，不重排已有 order。rolePack 为会议表层装配角色（可选） */
@@ -952,7 +918,8 @@ export class SessionManager {
 
   /** 设置暂停元数据；传 undefined 清除。写后必须清脏（清除也清脏，纯内存态无磁盘残留） */
   setPauseMeta(meta: PauseMeta | undefined): void {
-    // 调用方保证检查点已存在：pauseMeta 总在 pause()（建检查点）之后写入（暂停收口统一写）
+    // 意图：pauseMeta 通常随 pause()（建检查点后）写入，但检查点不一定已存在（首轮/未知状态），
+    // 故保留防御性守卫——无检查点时静默 no-op，不抛弃 pause/resume 链路的其余语义。
     if (!this.checkpoint) return;
     this.checkpoint.pauseMeta = meta;
     this.touchCheckpoint();

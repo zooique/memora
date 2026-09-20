@@ -14,8 +14,6 @@ import type {
   AgentOptions,
   AgentContext,
   AgentConfig,
-  Role,
-  Standard,
   ToolExecutionRecord,
   SessionCheckpoint,
 } from '@/agent/types.js';
@@ -1004,12 +1002,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 创建会话检查点：快照当前运行时状态（热记忆、角色、标准等），生成纯内存态快照
-   * （2026-09-10 减法后不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）
+   * 创建会话检查点：快照当前运行时状态（热记忆等），生成纯内存态快照
+   * （2026-09-10 减法后不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）。
+   * 能力位（role/standard 会话能力位）已随幽灵能力位收敛移除，createCheckpoint 仅收 mainGoal。
    */
-  createCheckpoint(mainGoal?: string, role?: Role, standard?: Standard): SessionCheckpoint | null {
+  createCheckpoint(mainGoal?: string): SessionCheckpoint | null {
     this.assertInitialized('createCheckpoint');
-    return this.requireSessionManager.createCheckpoint(mainGoal, role, standard);
+    return this.requireSessionManager.createCheckpoint(mainGoal);
   }
 
   /**

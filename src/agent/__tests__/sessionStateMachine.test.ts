@@ -19,17 +19,13 @@ import type { SessionCheckpoint, StatusTransition } from '@/agent/types.js';
 function makeErrorCheckpoint(cause: string, recovered = false): SessionCheckpoint {
   return {
     sessionId: 'test-session',
-    schemaVersion: 1,
     status: 'error',
     error: { cause, at: Date.now(), recovered },
     mainGoal: 'test',
     currentGoal: 'test',
     goalChangeSeq: 1,
     plan: [],
-    role: { name: 'assistant' },
-    standard: { quality: '', constraints: [] },
     lastHeartbeat: Date.now(),
-    
   };
 }
 
@@ -37,16 +33,12 @@ function makeErrorCheckpoint(cause: string, recovered = false): SessionCheckpoin
 function makeNoErrorCheckpoint(): SessionCheckpoint {
   return {
     sessionId: 'test-session',
-    schemaVersion: 1,
     status: 'running',
     mainGoal: 'test',
     currentGoal: 'test',
     goalChangeSeq: 1,
     plan: [],
-    role: { name: 'assistant' },
-    standard: { quality: '', constraints: [] },
     lastHeartbeat: Date.now(),
-    
   };
 }
 
@@ -290,16 +282,12 @@ describe('SessionStateMachine — ERROR 恢复校验', () => {
     // 状态是 error，但检查点无 error 信息（不匹配）
     const checkpoint: SessionCheckpoint = {
       sessionId: 'test',
-      schemaVersion: 1,
       status: 'error',
       mainGoal: 'test',
       currentGoal: 'test',
       goalChangeSeq: 1,
       plan: [],
-      role: { name: 'assistant' },
-      standard: { quality: '', constraints: [] },
       lastHeartbeat: Date.now(),
-      
     };
     const result = sm.recover(checkpoint);
 
