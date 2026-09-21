@@ -17,6 +17,8 @@ import { marked } from 'marked';
 // import type：仅编译期引用契约，esbuild/tsc 剥离后不产生运行时依赖——Node 端 import
 // 本模块永不加载 sanitizer.js（含 dompurify），保持渲染纯函数的跨环境安全
 import type { SanitizeFn } from './sanitizer.js';
+// escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛 2026-09-21，见 escapeHtml.ts）
+import { escapeHtml } from './escapeHtml.js';
 
 /**
  * 动态补全不完整的 Markdown（仅渲染用，不污染原始文本）
@@ -37,24 +39,6 @@ function fixIncompleteMarkdown(raw: string): string {
   const boldCount = (raw.match(/\*\*/g) || []).length;
   if (boldCount % 2 !== 0) fixed += '**';
   return fixed;
-}
-
-const HTML_ESCAPE_MAP: Record<string, string> = {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;',
-};
-
-/**
- * HTML 转义（防注入）——纯函数实现，无 DOM 依赖。
- *
- * 仅在「净化后为空 → 回退显示原文」这一纵深防线路径使用；Node 端渲染安全
- * （本模块保持 Node-safe 契约，不 import dompurify，这里也不碰 document）。
- */
-function escapeHtml(text: string): string {
-  return text.replace(/[&<>"']/g, (ch) => HTML_ESCAPE_MAP[ch]);
 }
 
 /**

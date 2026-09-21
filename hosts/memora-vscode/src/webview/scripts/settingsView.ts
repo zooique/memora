@@ -27,6 +27,8 @@ import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
 import { populateIcons } from './icons.js';
 import { createPager, PagerController } from './pager.js';
+// escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛 2026-09-21，见 helpers/escapeHtml.ts）
+import { escapeHtml } from '../helpers/escapeHtml.js';
 
 /** settingsView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface SettingsViewDeps {
@@ -360,13 +362,6 @@ function renderSkills(
     if (oa !== ob) return oa - ob;
     return a.name.localeCompare(b.name);
   });
-}
-
-/** HTML 转义（防注入） */
-function escapeHtml(str: string): string {
-  const div = document.createElement('div');
-  div.textContent = str;
-  return div.innerHTML;
 }
 
 /**
