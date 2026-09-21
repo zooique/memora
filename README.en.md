@@ -289,6 +289,10 @@ npm run build        # Compile to dist/
 | Embeddable | ✅ Any Node.js host | ❌ API calls only | ⚠️ Framework-bound |
 | Relation graph | ✅ Built-in sidecar | ❌ Rare | ❌ Rare |
 
+## Feedback
+
+Found a bug or have a suggestion? Please open an issue at [Gitee Issues](https://gitee.com/zooique/memora/issues) (primary repository) or [GitHub Issues](https://github.com/zooique/memora/issues) (mirror).
+
 ## Contributing
 
 This project follows the "Big Tree Model" engineering philosophy. Architecture Decision Records (ADRs) are in the repository [.trae/decisions/](https://gitee.com/zooique/memora/tree/main/.trae/decisions).
