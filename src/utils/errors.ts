@@ -1,7 +1,18 @@
 /**
  * 统一错误类型——把"系统 Error + 英文 stack"包装成"分类清晰 + 中文友好 + 有下一步建议"。
- * 4 大类：ConfigError（配置）/ NetworkError（网络）/ LlmError（LLM）/ ToolError（工具）。
  * 展示：标题（一眼看出问题）+ 详情（排查用）+ 建议（怎么修复）。
+ *
+ * **形态**：错误类只有 `MemoraError` 一个（承载 title/detail/suggestions/category）；
+ * 分类不靠子类，靠 `category` 字段 —— 工厂函数按分类建实例：
+ * `configError` / `networkError` / `llmError` / `toolError` / `securityError`，
+ * 另有统一文案模板 `chatBusyError`（对话繁忙，内部走 configError）。
+ * ⚠️ 旧注释曾写「4 大类 ConfigError/NetworkError/…」——**本文件不存在这些 PascalCase 类名**
+ * （既非类也非工厂名），且实为 **6 个 category 值**：`security` 由 securityError 产出、
+ * 被 security/pathGuard 生产消费 4 处；`unknown` 为兜底值（当前无工厂产出，供直接构造保留）。
+ * 勿按旧注释去改分类集合。
+ *
+ * ⚠️ 与宿主 `LlmErrorCategory`（'connection'|'timeout'|'unknown'）**不是同一个联合**：
+ * 后者是**流式 error chunk** 的分类（见 hosts shared/protocol.ts），本文件只管 MemoraError。
  */
 
 type ErrorCategory = 'config' | 'network' | 'llm' | 'tool' | 'security' | 'unknown';

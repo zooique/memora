@@ -1668,7 +1668,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       const awaited = await awaitBackgroundTasks(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
       if (awaited > 0) {
-        logger.debug({ awaited }, 'close: 已等待背景任务完成');
+        logger.debug({ awaited }, 'close: 背景任务等待结束（awaited = 初始在途数，超时放弃时非完成数）');
       }
     } catch (err) {
       logger.warn({ err: toError(err) }, 'close: awaitBackgroundTasks 失败');

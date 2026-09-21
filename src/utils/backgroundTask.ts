@@ -115,7 +115,10 @@ export function getBackgroundTaskStats(): BackgroundTaskStats {
  * Agent.close() 必须调用此函数——否则后台命中刷新/摘要生成等任务可能在 storage 关闭后 upsert 失效。
  *
  * @param timeoutMs 超时时间（毫秒），默认 5000ms
- * @returns 实际等待到的 pending 任务数（0 表示无在途任务）
+ * @returns **等待开始时**的在途任务数（0 = 进入本函数时无在途任务）。
+ *   ⚠️ 该值是「曾经在途」而非「已等到完成」：超时放弃剩余任务时返回值仍为初始在途数，
+ *   不代表实际完成数。调用方据此判断「是否有在途任务」是正确的（如 `Agent.close()` 的
+ *   `awaited > 0`），但**不可当作已完成计数**使用。
  */
 export async function awaitBackgroundTasks(timeoutMs = 5000): Promise<number> {
   const initialPending = stats.pending;
