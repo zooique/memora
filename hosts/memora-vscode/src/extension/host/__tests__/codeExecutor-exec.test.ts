@@ -38,6 +38,18 @@ function fakeChild() {
   return fake;
 }
 
+/** 构造「spawn 启动失败」假子进程：只发 error（如 execPath 不可用/权限被拒），close 不跟发 */
+function fakeSpawnErrorChild(err = new Error('spawn ENOENT')) {
+  const fake = new EventEmitter() as EventEmitter & {
+    stdout: EventEmitter;
+    stderr: EventEmitter;
+  };
+  fake.stdout = new EventEmitter();
+  fake.stderr = new EventEmitter();
+  queueMicrotask(() => fake.emit('error', err));
+  return fake;
+}
+
 describe('codeExecutor — spawn 行为锁定（2026-09-08 新枝破土扫描②·内核 exec 同构）', () => {
   const mockedSpawn = vi.mocked(childProcess.spawn);
   afterEach(() => {
@@ -78,5 +90,16 @@ describe('codeExecutor — spawn 行为锁定（2026-09-08 新枝破土扫描②
 
     const opts = mockedSpawn.mock.calls[0]![2] as Record<string, unknown>;
     expect(opts.cwd).toBe('/tmp/memora-exec-test');
+  });
+
+  it('spawn 启动失败（error 事件，如 execPath 不可用）→ 降级 exitCode -1 且不误报超时', async () => {
+    const exe = createLocalCodeExecutor();
+    mockedSpawn.mockImplementation((() => fakeSpawnErrorChild()) as never);
+
+    const r = await exe.execute('console.log(1)', 'js');
+    // error 分支契约（codeExecutor）：stderr 带「执行失败：<err.message>」、timedOut 保持 false
+    expect(r.exitCode).toBe(-1);
+    expect(r.timedOut).toBe(false);
+    expect(r.stderr).toContain('执行失败：spawn ENOENT');
   });
 });

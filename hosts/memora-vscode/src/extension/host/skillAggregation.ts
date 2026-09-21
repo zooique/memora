@@ -91,20 +91,25 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
 
 /**
  * 按技能名生成提示块（composer 选中技能后注入内核，SSOT 彻底化）。
- * 两级回退与内核 read_skill 同序：全局 SkillManager → 激活角色包内嵌技能。
+ * 两级回退与内核 read_skill **同序**（SSOT 见 assembler.toolExec.readSkill）：
+ * 先查激活角色包内嵌技能（当前人格视角，readSkillContent），再回退全局通用技能池
+ * （SkillManager 条目，格式由内核 buildSystemPrompt 统一）。
+ * ⚠️ 顺序是契约（2026-09-21 站 64 订正）：此前全局优先与内核相反，同名技能双存时
+ * composer 注入正文与内核 read_skill 返回分叉；角色包优先 = 当前人格的专属覆盖生效。
  * 返回空串表示技能不存在（host 不注入，不影响正常发送）。
  */
 export async function skillPromptFor(agent: Agent, skillName: string): Promise<string> {
-  const sm = agent.skills;
-  const global = sm ? sm.get(skillName) : null;
-  if (global) {
-    // buildSystemPrompt 输出「【当前技能】name\ncontent」（SSOT 统一格式）
-    return sm!.buildSystemPrompt(skillName);
-  }
+  // 第一级：激活角色包内嵌技能（与内核 read_skill 同序——角色包优先）
   const rpm = agent.rolePackManager;
   if (rpm) {
     const content = await rpm.readSkillContent(skillName);
     if (content) return `【当前技能】${skillName}\n${content}`;
+  }
+  // 第二级：全局通用技能池（SkillManager 直查，buildSystemPrompt 输出「【当前技能】name\ncontent」SSOT 格式）
+  const sm = agent.skills;
+  const global = sm ? sm.get(skillName) : null;
+  if (global) {
+    return sm!.buildSystemPrompt(skillName);
   }
   return '';
 }

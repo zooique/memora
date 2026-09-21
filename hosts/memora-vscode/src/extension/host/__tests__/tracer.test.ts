@@ -64,3 +64,31 @@ describe('VscodeTracer.getRecentTraces', () => {
     expect(tracer.getRecentTraces()).toHaveLength(1);
   });
 });
+
+describe('VscodeTracer · 采集边界 + 指纹提取', () => {
+  it('环形缓冲上限 200：超限 FIFO 截断（最旧被挤出）', () => {
+    const tracer = new VscodeTracer();
+    // 201 条：第 1 条应被挤出，保留最近 200 条
+    for (let i = 0; i < 201; i++) tracer.startSpan(TRACE_SPANS.LLM_CALL).end();
+    // limit 250 越过缓冲容量，验证实际只保留 200 条（有界采集核心不变量）
+    const traces = tracer.getRecentTraces(250);
+    expect(traces).toHaveLength(200);
+  });
+
+  it('getLatestFingerprints：取最近一条 llm.call 的系统提示指纹（不含内容）', () => {
+    const tracer = new VscodeTracer();
+    tracer.startSpan(TRACE_SPANS.LLM_CALL, { systemPromptHash: 'hash-old' }).end();
+    // 中间夹一条工具 span，确认检索按 span 名过滤而不被中断
+    tracer.startSpan(TRACE_SPANS.TOOL_EXEC).end();
+    tracer.startSpan(TRACE_SPANS.LLM_CALL, { systemPromptHash: 'hash-new' }).end();
+
+    expect(tracer.getLatestFingerprints()).toEqual({ systemPromptHash: 'hash-new' });
+  });
+
+  it('getLatestFingerprints：无 llm.call span 时字段缺省（undefined）', () => {
+    const tracer = new VscodeTracer();
+    tracer.startSpan(TRACE_SPANS.CONTEXT_SUMMARY).end();
+
+    expect(tracer.getLatestFingerprints()).toEqual({ systemPromptHash: undefined });
+  });
+});

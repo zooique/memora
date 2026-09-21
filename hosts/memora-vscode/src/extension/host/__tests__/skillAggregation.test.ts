@@ -5,7 +5,7 @@
  *   1. 来源判定：filePath 前缀 → builtin/user；rolePackManager → rolepack
  *   2. 同名去重：内置优先
  *   3. 排序：内置 → 角色包 → 用户
- * 以及 skillPromptFor 的两级回退（全局 SkillManager → 激活角色包）。
+ * 以及 skillPromptFor 的两级回退（激活角色包 → 全局 SkillManager，与内核 read_skill 同序）。
  */
 import { describe, it, expect } from 'vitest';
 import type { Agent } from '@zooique/memora';
@@ -81,20 +81,29 @@ describe('listVisibleSkills · 三源技能聚合', () => {
   });
 });
 
-describe('skillPromptFor · 两级回退', () => {
-  it('先查全局 SkillManager，命中返回内核 buildSystemPrompt', async () => {
+describe('skillPromptFor · 两级回退（与内核 read_skill 同序：角色包优先）', () => {
+  it('角色包未命中回退全局 SkillManager（buildSystemPrompt，SSOT 格式）', async () => {
     const agent = makeAgent({
       global: [{ name: 'g', filePath: join(configDir, 'skills', 'g.md') }],
     });
     expect(await skillPromptFor(agent, 'g')).toBe('【当前技能】g');
   });
 
-  it('全局未命中回退激活角色包内嵌技能正文', async () => {
+  it('先查激活角色包内嵌技能：命中即返回角色包正文（不再看全局）', async () => {
     const agent = makeAgent({
       global: [],
       roleContent: { r: '角色包正文' },
     });
     expect(await skillPromptFor(agent, 'r')).toBe('【当前技能】r\n角色包正文');
+  });
+
+  it('同名双存：角色包优先于全局（与内核 read_skill 同序——当前人格专属覆盖生效）', async () => {
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
+      roleContent: { 同名: '角色包覆盖正文' },
+    });
+    // 正本防回归：此前全局优先与内核相反，同名时 composer 注入全局版、read_skill 取角色包版 → 内容分叉
+    expect(await skillPromptFor(agent, '同名')).toBe('【当前技能】同名\n角色包覆盖正文');
   });
 
   it('两级均未命中返回空串（host 不注入）', async () => {
