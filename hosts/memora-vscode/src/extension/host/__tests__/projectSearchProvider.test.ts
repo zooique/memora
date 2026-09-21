@@ -74,7 +74,7 @@ describe('VscodeProjectSearchProvider', () => {
         '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
         100,
       );
-      expect(result).toEqual([
+      expect(result.matches).toEqual([
         { path: 'src/index.ts' },
         { path: 'README.md' },
       ]);
@@ -99,7 +99,7 @@ describe('VscodeProjectSearchProvider', () => {
       ] as never);
       const provider = createVscodeProjectSearchProvider('C:\\proj');
       const result = await provider.searchFiles({});
-      expect(result).toEqual([{ path: 'src/index.ts' }]);
+      expect(result.matches).toEqual([{ path: 'src/index.ts' }]);
     });
 
     it('用户 exclude 与默认忽略目录合并后传给 findFiles', async () => {
@@ -122,6 +122,55 @@ describe('VscodeProjectSearchProvider', () => {
         '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
         100,
       );
+    });
+
+    it('裸词零命中且下发 terms：按名称子串 OR 放宽并回报 relaxed/termsUsed（SEARCH-1）', async () => {
+      const provider = createVscodeProjectSearchProvider(root);
+      // 第一轮 query 原样 glob 零命中；第二轮才按词包 `**/*{term}*/` 子串命中
+      vi.mocked(vscode.workspace.findFiles)
+        .mockResolvedValueOnce([] as never)
+        .mockResolvedValueOnce([{ fsPath: 'C:/proj/product.md' }] as never);
+      const result = await provider.searchFiles({ query: 'product', terms: ['product'] });
+      expect(result.matches).toEqual([{ path: 'product.md' }]);
+      expect(result.relaxed).toBe(true); // 放宽只发生在第二轮
+      expect(result.termsUsed).toEqual(['product']); // 唯一真值 = 宿主回报
+      // 放宽轮用名称子串 glob（相对路径、正斜杠语义一致）
+      expect(vscode.workspace.findFiles).toHaveBeenLastCalledWith(
+        '**/*product*/',
+        '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
+        100,
+      );
+    });
+
+    it('裸词零命中但未下发 terms：不进入放宽（可信零）', async () => {
+      vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([] as never);
+      const provider = createVscodeProjectSearchProvider(root);
+      const result = await provider.searchFiles({ query: 'product' });
+      expect(result.matches).toEqual([]);
+      expect(result.relaxed).toBeUndefined();
+      expect(vscode.workspace.findFiles).toHaveBeenCalledTimes(1); // 仅精确一轮
+    });
+
+    it('query 含 glob 元字符零命中：不进入放宽（保 glob 语义）', async () => {
+      vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([] as never);
+      const provider = createVscodeProjectSearchProvider(root);
+      // 即使宿主收到 terms，"*.md" 含元字符 → 精确 glob 语义优先，不放宽
+      const result = await provider.searchFiles({ query: '*.md', terms: ['md'] });
+      expect(result.matches).toEqual([]);
+      expect(result.relaxed).toBeUndefined();
+      expect(vscode.workspace.findFiles).toHaveBeenCalledTimes(1);
+    });
+
+    it('首轮即命中时不进入放宽（保持精度）', async () => {
+      vi.mocked(vscode.workspace.findFiles).mockResolvedValueOnce([
+        { fsPath: 'C:/proj/src/index.ts' },
+      ] as never);
+      const provider = createVscodeProjectSearchProvider(root);
+      const result = await provider.searchFiles({ query: '**/*.ts', terms: ['ts'] });
+      expect(result.matches).toEqual([{ path: 'src/index.ts' }]);
+      expect(result.relaxed).toBeUndefined();
+      expect(result.termsUsed).toBeUndefined();
+      expect(vscode.workspace.findFiles).toHaveBeenCalledTimes(1);
     });
   });
 
