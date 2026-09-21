@@ -298,6 +298,22 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(feedback.textContent).toContain('请填 K 单位数字');
   });
 
+  it('非法 contextWindow 点「测试连接」→ 就地报错并阻断发送（不发出 cfg_test，防以默认窗口测错配置）', () => {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('f-contextwindow') as HTMLInputElement).value = 'abc';
+    (document.getElementById('btnTest') as HTMLButtonElement).click();
+    // 旧实现：btnTest 直接 readForm() 未经校验 → NaN 落 undefined 静默以默认 120K 测连接
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_test' }));
+    const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
+    expect(feedback.hidden).toBe(false);
+    expect(feedback.textContent).toContain('请填 K 单位数字');
+  });
+
   it('输入合法简写时实时反馈换算（200K → = 200,000 tokens）', () => {
     mountConfigView();
     dispatchLoaded([]);

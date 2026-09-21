@@ -305,7 +305,9 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       if (ev.target === overlay) overlay.remove();
     });
     overlay.appendChild(modal);
-    document.getElementById('roles-root')?.appendChild(overlay);
+    // 挂载到注入 root（id 空间隔离约定：不用 document.getElementById 全局查找，
+    // 与 createRolesView 收受依赖的 root 一致——测试/多实例下 root 可能非 #roles-root）
+    root.appendChild(overlay);
   }
 
   /**

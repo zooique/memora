@@ -141,11 +141,20 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     console.error('[memora-settings] rolesView 挂载失败:', err);
   }
 
-  // 技能子视图初始化（2026-08-22 新增）
-  createSkillsView({ vscode, window, root: roots.skills });
+  // 技能子视图初始化（2026-08-22 新增）：独立 try/catch（对齐上方三挂载），
+  // 防单视图挂载异常截断后续 security 挂载与 ready 握手（ready 未发 → host 不推数据，全面板空白）
+  try {
+    createSkillsView({ vscode, window, root: roots.skills });
+  } catch (err) {
+    console.error('[memora-settings] skillsView 挂载失败:', err);
+  }
 
   // 安全子视图初始化（H0 写入审批）
-  createSecurityView({ vscode, window, root: roots.security });
+  try {
+    createSecurityView({ vscode, window, root: roots.security });
+  } catch (err) {
+    console.error('[memora-settings] securityView 挂载失败:', err);
+  }
 
   // ready 握手：三个子视图全部挂载（消息监听器已注册）后，由容器统一通知 host 就绪；
   // host 收到后统一推送三个子视图数据（对齐 chatPanel replaySession 的 ready 时序修复，

@@ -150,7 +150,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       model: fModel.value.trim(),
       baseUrl: fBaseUrl.value.trim(),
       apiKey: fApiKey.value,
-      // 无法识别（NaN）由 submit 前置校验阻断，此处不落 undefined（避免静默回落默认值）
+      // 上下文上限输入无法识别（NaN）由 submit 与 test 双重前置校验阻断（见 submit/test 处理器），
+      // 此处 NaN 分支为类型收窄防御：正常路径下不可达（避免静默回落默认值）
       contextWindow: Number.isNaN(parsed) ? undefined : parsed,
       provider,
       supportsToolCalling,
@@ -386,23 +387,35 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
     }
   });
-  // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
-  cfgForm.addEventListener('submit', (e) => {
-    e.preventDefault();
-    // 前置校验：上下文上限输入无法识别时就地报错并阻断提交（防静默回落默认值）
+  /** 上下文上限输入前置校验（submit 与 test 双路径共用，防非法值静默回落）：
+   *  非法（NaN）→ 就地报错并聚焦，返回 false 阻断发送；空串合法（回落默认 120K）。 */
+  function validateContextWindow(): boolean {
     const cwRaw = fContextWindow.value.trim();
     if (cwRaw) {
       const parsed = parseTokenInput(cwRaw);
       if (parsed === undefined || Number.isNaN(parsed)) {
         setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
         fContextWindow.focus();
-        return;
+        return false;
       }
     }
+    return true;
+  }
+
+  // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
+  cfgForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    // 前置校验：上下文上限输入无法识别时就地报错并阻断提交（防静默回落默认值）
+    if (!validateContextWindow()) return;
     const config = readForm();
     vscode.postMessage({ type: 'cfg_save', config, isEditing: editName !== '' });
   });
   btnTest.addEventListener('click', () => {
+    // 测试连接同走前置校验：输入非法 K 数时就地报错并阻断（与保存对称，防测错窗口）
+    if (!validateContextWindow()) {
+      btnTest.disabled = false;
+      return;
+    }
     // 测试进行中禁用按钮，避免重复提交；结果在 cfg_result 回来后恢复
     btnTest.disabled = true;
     testResult.hidden = false;

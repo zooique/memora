@@ -331,6 +331,30 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(label.title).toContain('超出上限的 1 名不参与');
   });
 
+  it('② 组队弹窗挂载到注入 root（不依赖全局 #roles-root——多 Webview/测试环境 id 可不同）', () => {
+    // 注入 root 使用与默认 #roles-root 不同的 id，验证 overlay 挂到注入 root 而非全局查找
+    document.body.innerHTML = HTML.replace('id="roles-root"', 'id="custom-pane"');
+    const postMessage = vi.fn();
+    const root = document.getElementById('custom-pane') as HTMLElement;
+    createRolesView({ vscode: { postMessage }, window: window as unknown as Window, root });
+    dispatchLoaded(
+      [
+        { name: '共鸣小说家', displayName: '共鸣小说家', capabilities: [] },
+        { name: '编辑', displayName: '编辑', capabilities: [] },
+      ],
+      '共鸣小说家',
+      [],
+    );
+    const card = Array.from(document.querySelectorAll('.card')).find(
+      (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
+    );
+    (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
+    // overlay 应挂载在注入 root 内（全文档可查询，但父节点必须是注入 root）
+    const overlay = document.querySelector('.team-modal-overlay') as HTMLElement;
+    expect(overlay).not.toBeNull();
+    expect(overlay.parentElement).toBe(root);
+  });
+
   describe('「其他角色」分页（2026-09-08 通用分页组件，激活角色恒显）', () => {
     it('激活 1 + 其他 11 → 激活角色 + 其他第 1 页（8 张）+ 分页条「第 1 / 2 页」', () => {
       mountRolesView();
