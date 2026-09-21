@@ -34,12 +34,12 @@ export const settingsStyles = `
     border-radius: var(--radius, 6px);
     background: var(--surface-card, #252526); color: var(--text-primary, #cccccc);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
-    box-shadow: 0 2px 8px rgba(0, 0, 0, .3);
+    box-shadow: var(--shadow-toast);
     opacity: 0; pointer-events: none; transition: opacity .18s ease;
     z-index: 1000;
   }
   .settings-toast.show { opacity: 1; }
-  .settings-toast.error { background: rgba(200, 60, 50, .18); color: var(--text-error, #f48771); border-color: rgba(244, 135, 113, .4); }
+  .settings-toast.error { background: var(--feedback-error-toast-bg); color: var(--text-error, #f48771); border-color: var(--feedback-error-toast-border); }
 
   /* ============ Components：选项卡栏 ============ */
   .tabs {

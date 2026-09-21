@@ -36,6 +36,8 @@ export const tokens = `
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.15);
     --shadow-card-focus: 0 4px 14px rgba(0, 0, 0, 0.25), 0 0 0 2px rgba(14, 99, 156, 0.35);
     --shadow-modal: 0 4px 16px rgba(0, 0, 0, 0.3);
+    --shadow-toast: 0 2px 8px rgba(0, 0, 0, 0.3); /* 全局通知 toast 浮层阴影（2026-09-21 收敛裸值） */
+    --overlay-mask: rgba(0, 0, 0, 0.4); /* 模态遮罩底（config modal-mask 与 roles team-modal 共用，2026-09-21 收敛镜像漂移） */
 
     /* === L2 语义令牌：表面 === */
     --surface-page: var(--vscode-editor-background, #1e1e1e);
@@ -69,6 +71,8 @@ export const tokens = `
     --feedback-info-fg: var(--vscode-inputValidation-infoForeground, #75beff);
     --feedback-error-bg: var(--vscode-inputValidation-errorBackground, #442726);
     --feedback-error-fg: var(--vscode-inputValidation-errorForeground, #f48771);
+    --feedback-error-toast-bg: rgba(200, 60, 50, 0.18); /* settings toast 错误态底（2026-09-21 收敛裸值） */
+    --feedback-error-toast-border: rgba(244, 135, 113, 0.4); /* settings toast 错误态边框（2026-09-21 收敛裸值） */
     --feedback-warn-bg: var(--vscode-inputValidation-warningBackground, rgba(196, 160, 0, 0.15));
     --feedback-warn-fg: var(--vscode-descriptionForeground, #d7ba7d);
     --feedback-warn-accent: var(--vscode-charts-yellow, #d7ba7d);

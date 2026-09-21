@@ -156,7 +156,7 @@ export const rolesStyles = `
     flex-shrink: 0;
   }
   #roles-root .role-health-badge.health-error {
-    color: #ffffff;
+    color: var(--accent-foreground, #ffffff);
     background: var(--skill-health-error);
   }
   #roles-root .role-health-badge.health-warn {
@@ -254,7 +254,7 @@ export const rolesStyles = `
   /* 组队弹窗：遮罩 + 电话本式多选 + 反馈区 */
   #roles-root .team-modal-overlay {
     position: fixed; inset: 0; z-index: 1000;
-    background: rgba(0, 0, 0, 0.45);
+    background: var(--overlay-mask);
     display: flex; align-items: center; justify-content: center;
     animation: roles-fade-in 0.15s ease;
   }

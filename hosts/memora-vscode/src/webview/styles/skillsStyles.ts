@@ -146,7 +146,7 @@ export const skillsStyles = `
     flex-shrink: 0;
   }
   #skills-root .health-badge.health-error {
-    color: #ffffff;
+    color: var(--accent-foreground, #ffffff);
     background: var(--skill-health-error);
   }
   #skills-root .health-badge.health-warn {

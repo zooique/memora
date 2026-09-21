@@ -247,7 +247,7 @@ export const chatStyles = `
   .ask-inline__send {
     flex-shrink: 0;
     font-size: var(--font-sm, 11px);
-    color: #fff;
+    color: var(--accent-foreground, #ffffff);
     background: var(--accent, #0e639c);
     border: none;
     border-radius: var(--radius-sm, 3px);
