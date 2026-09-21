@@ -5,8 +5,8 @@
 [![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-3000%2B%20passed-brightgreen)](https://vitest.dev)
+[![Coverage](https://img.shields.io/badge/coverage-covered-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2700%2B%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -255,11 +255,11 @@ src/
 |------|------|
 | 源码 | 117 个生产文件（src/，零第三方运行时依赖） |
 | 测试 | 内核 + 宿主双套 vitest，根配置统一跑（100+ 文件） |
-| 测试通过 | 3000+ 通过 / 1 skip |
-| 语句覆盖 | 91.75% |
-| 分支覆盖 | 84.9% |
-| 函数覆盖 | 92.34% |
-| 行覆盖 | 91.75% |
+| 测试通过 | 2700+ 通过 / 1 skip |
+| 语句覆盖 | 90.65% |
+| 分支覆盖 | 84.83% |
+| 函数覆盖 | 92.41% |
+| 行覆盖 | 91.79% |
 | 运行时依赖 | **0** |
 | 架构决策记录 | 26 个 ADR |
 

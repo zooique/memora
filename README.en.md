@@ -5,8 +5,8 @@
 [![npm](https://img.shields.io/npm/v/@zooique/memora)](https://www.npmjs.com/package/@zooique/memora)
 [![Node.js](https://img.shields.io/badge/Node.js-22%20LTS-339933)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue)](https://www.typescriptlang.org)
-[![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen)](https://vitest.dev)
-[![Tests](https://img.shields.io/badge/tests-3000%2B%20passed-brightgreen)](https://vitest.dev)
+[![Coverage](https://img.shields.io/badge/coverage-covered-brightgreen)](https://vitest.dev)
+[![Tests](https://img.shields.io/badge/tests-2700%2B%20passed-brightgreen)](https://vitest.dev)
 [![Dependencies](https://img.shields.io/badge/runtime%20deps-0-yellowgreen)](package.json)
 [![License](https://img.shields.io/badge/license-MIT-yellow)](LICENSE)
 
@@ -250,11 +250,11 @@ src/
 |--------|-------|
 | Source | 117 production files (src/, zero third-party runtime deps) |
 | Tests | Dual vitest suites (kernel + host), run by the root vitest config (100+ files) |
-| Tests Passing | 3000+ passed / 1 skipped |
-| Statement Coverage | 91.75% |
-| Branch Coverage | 84.9% |
-| Function Coverage | 92.34% |
-| Line Coverage | 91.75% |
+| Tests Passing | 2700+ passed / 1 skipped |
+| Statement Coverage | 90.65% |
+| Branch Coverage | 84.83% |
+| Function Coverage | 92.41% |
+| Line Coverage | 91.79% |
 | Runtime Dependencies | **0** |
 | Architecture Decision Records | 26 ADRs |
 
