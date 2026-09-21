@@ -28,10 +28,8 @@ export type IconName =
   | 'check'         // 勾选/确认
   | 'close'         // 关闭/叉号
   | 'edit'          // 编辑/重命名/润色
-  | 'restore'       // 恢复
   | 'bolt'          // 闪电/Skill 触发（原 play 重命名）
   | 'trash'         // 永久删除
-  | 'save'          // 保存
   | 'cancel'        // 取消
   | 'chevron-down'  // 向下尖角（plan-bar 展开态；消费者是折叠开关，非下拉组件）
   | 'chevron-right' // 右箭头（折叠态）
@@ -63,8 +61,6 @@ const ICON_PATHS: Record<IconName, string> = {
   close: '<path d="M4 4l8 8"/><path d="M12 4l-8 8"/>',
   // 编辑：铅笔（用于重命名）
   edit: '<path d="M11 2.5l2.5 2.5-8 8-3 .5.5-3 8-8z"/>',
-  // 恢复：左箭头循环
-  restore: '<path d="M12 10a5 5 0 1 1-2-3.5"/><path d="M10 5.5l2 1.5-2 1.5"/>',
   // 闪电：Skill 触发器
   bolt: '<path d="M8 2l-4 7h3l-1 5 5-7H8l2-5z"/>',
   // 暂停：双竖线
@@ -77,8 +73,6 @@ const ICON_PATHS: Record<IconName, string> = {
   play: '<path d="M5 3.5l7 4.5-7 4.5z"/>',
   // 永久删除：带叉垃圾桶
   trash: '<path d="M5.5 2.5h5"/><path d="M4 2.5h8l-.5 9.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1L4 2.5z"/><path d="M6.5 6.5l3.5 3.5"/><path d="M10 6.5L6.5 10"/>',
-  // 保存：磁盘
-  save: '<rect x="3" y="2" width="10" height="12" rx="1.5"/><path d="M6 2v3h4V2"/><rect x="5" y="9" width="6" height="4" rx="1"/>',
   // 取消：圆叉
   cancel: '<circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5"/><path d="M10.5 5.5l-5 5"/>',
   // 下拉箭头
