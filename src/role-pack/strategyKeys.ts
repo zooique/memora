@@ -92,8 +92,8 @@ function intRange(min: number, max: number): KeyRule & { readonly kind: 'check' 
   };
 }
 
-/** 温度断言：0.0~2.0（act.temperature） */
-export function isTemperature(value: unknown): boolean {
+/** 温度断言：0.0~2.0（act.temperature）。类型谓词，供装配端复用同一 SSOT 边界做窄化 */
+export function isTemperature(value: unknown): value is number {
   return typeof value === 'number' && value >= 0 && value <= 2;
 }
 

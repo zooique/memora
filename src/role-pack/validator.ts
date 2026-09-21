@@ -1,7 +1,7 @@
 /**
  * 角色包格式校验器：独立于任何实现、只吃解析后的 manifest.json 对象，按 spec 严格判定
  * （manager 宽松容错，二者互补）。文件夹形态，manifest.json 为核心控制文件。
- * 校验：必填字段（name/formatVersion）、键名合法性（未知键 warning+忽略）、版本语义、
+ * 校验：必填字段（name）、键名合法性（未知键 warning+忽略）、版本语义（formatVersion 可选，缺省 1.0.0）、
  * 合规分档（interactionType/aiIdentityDisclosure/minorProtection）、策略键、内容路径、
  * skills/capabilities 格式。companion 内容红线由装载方在读取内容后调用 checkCompanionContentRedline。
  * 零依赖、纯函数。

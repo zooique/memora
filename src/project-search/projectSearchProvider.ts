@@ -51,8 +51,8 @@ export async function safeSearchProjectFiles(
  * 区分这两态，内核此前把三态压成了两态）。失败→上报 `failed: true`（**不是** error，对齐
  * "no results is not an error"：不置错、不重试，只在文案里如实说明检索未完成），由调用方分流表述。
  *
- * 注：`safeSearchProjectFiles`（name 模式）保持数组形状不变（D5 边界：本次不动 name 模式），
- * 其失败→`[]` 的同类静默问题已单独登记为候选，不合并进本次变更。
+ * 注：`safeSearchProjectFiles`（name 模式）已随 SEARCH-1 与 content 对齐——返回值同步升级为
+ * `ProjectFileSearchResult` 对象、失败→`failed: true`（不再是扁平数组 + 静默空），两者同一套元信息载体。
  */
 export async function safeSearchProjectText(
   provider: IProjectSearchProvider,

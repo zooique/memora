@@ -25,7 +25,7 @@ import { SecurityGuard } from '@/security/pathGuard.js';
 import type { SkillManager } from '@/skill/skillManager.js';
 import type { RolePackManager } from '@/role-pack/rolePackManager.js';
 import { DEFAULT_BEHAVIOR_STRATEGY } from '@/role-pack/strategyResolver.js';
-import { MAX_OUTPUT_LIMIT } from '@/role-pack/strategyKeys.js';
+import { isTemperature, MAX_OUTPUT_LIMIT } from '@/role-pack/strategyKeys.js';
 import type { BehaviorStrategy } from '@/role-pack/types.js';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 import type { SessionArchiver, SessionArchiveResult } from '@/agent/managers/sessionArchiver.js';
@@ -1417,9 +1417,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const chatOptions: Partial<ChatOptions> = {};
     const act = strategy.act;
 
-    // act.temperature → ChatOptions.temperature（限 0-2）
+    // act.temperature → ChatOptions.temperature（限 0-2；边界 SSOT = strategyKeys.isTemperature，不重复字面量）
     const temperature = act?.temperature;
-    if (typeof temperature === 'number' && temperature >= 0 && temperature <= 2) {
+    if (isTemperature(temperature)) {
       chatOptions.temperature = temperature;
     }
 

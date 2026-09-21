@@ -428,7 +428,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
       if (team.members.includes(team.leader)) {
         getLogger().warn(
           { leader: team.leader },
-          '组长与组员身份互斥：组长不能同时是组员（该组成员名单含组长，会议时按组员跳过）',
+          '组长与组员身份互斥：组员名单含组长（互斥校验提示，不阻塞装载；会议解析时组长身份恒优先）',
         );
       }
       for (const member of team.members) {

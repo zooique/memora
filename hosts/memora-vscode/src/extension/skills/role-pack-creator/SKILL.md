@@ -83,11 +83,11 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 `prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 已回收（2026-09-13）——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；2026-09-09（memory-tool-recall-design 阶段2）起 `memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键已退役——记忆检索改由 `memory_search` 工具触发，勿再填写。
 `act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
 `reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
-`global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`errorHandling`=retry｜`contextLimit`=0(0~1000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=50(0~500)
+`global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`errorHandling`=retry｜`contextLimit`=0(0~2000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=0(0~500，0=走内核兜底)
 
 ### 第四步：校验（写→验→用闭环）
 
-1. `manifest.json` 为合法 JSON；`formatVersion` 必填（x.y.z）。
+1. `manifest.json` 为合法 JSON；`formatVersion` 建议声明（semver x.y.z；缺省按 1.0.0，绑定固定 schema URL）。
 2. 所有数值/枚举在上述区内；`summaryFocus` ≤500 字符。
 3. `name` 有效（1~64 位，中文/字母/数字/下划线/连字符，不以 `.` 开头）。
 4. `skills/*.md` 均含 frontmatter 且带 `description`（缺则技能不可用）。
@@ -145,7 +145,7 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 - 禁止手写 manifest.json 结构（一律从模板生成，防止键名/区间漂移）。
 - 禁止把产物复制进任何宿主目录（memora 的 role-packs/、用户 skills 目录均不负责）。
 - 禁止创建保留名 `memora助手`。
-- 禁止遗漏 `formatVersion` / 允许数值超出速查区间。
+- 禁止漏校验：数值超出速查区间必须拦截。
 - 禁止交付未校验的产物。
 
 ## 不适用场景

@@ -81,7 +81,7 @@
 | 键 | 类型 | 消费方 | 上限 | 说明 |
 |----|------|--------|------|------|
 | `name` | string | ③ UI / 内核标识 | ≤200 字符 | 唯一标识（缺失用文件夹名兜底） |
-| `formatVersion` | string | ① 内核校验（**必填**） | semver（x.y.z） | 格式版本，绑定固定 schema URL，发布后不变 |
+| `formatVersion` | string | ① 内核校验（可选，缺省 `1.0.0`） | semver（x.y.z） | 格式版本，绑定固定 schema URL，发布后不变；建议声明 |
 | `displayName` | string | ③ UI | ≤200 字符 | UI 展示名，缺省回退 `name` |
 | `description` | string | ③ UI | ≤200 字符 | 角色包描述 |
 | `author` | string | ③ UI | ≤200 字符 | 作者/来源 |
