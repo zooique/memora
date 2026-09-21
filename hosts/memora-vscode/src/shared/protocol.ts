@@ -232,14 +232,14 @@ export type WebviewToExtensionMessage =
   /**
    * 删除单条记忆（记忆列表「删除」按钮）
    *
-   * host 弹确认框后调 agent.memory.delete(id) 软删除（进入回收站，可恢复），
+   * host 弹确认框后调 agent.memory.writeDelete(id) 软删除（进入回收站，可恢复），
    * 完成后推送 memory_deleted + 刷新记忆列表与治理统计。
    */
   | { type: 'memory_delete'; id: string }
   /**
    * 恢复单条记忆（回收站「恢复」按钮）
    *
-   * host 调 agent.memory.restore(id) 从回收站恢复，完成后推送 memory_restored + 刷新。
+   * host 调 agent.memory.writeRestore(id) 从回收站恢复，完成后推送 memory_restored + 刷新。
    */
   | { type: 'memory_restore'; id: string }
   /** 加载回收站列表（回收站展开时触发） */
@@ -374,14 +374,15 @@ export type ExtensionToWebviewMessage =
    *
    * 注（v1.5）：自审查文本不再走本通道（host 已按 text_self_review 过程事件转发，
    * 渲染进 round-block § 自审查输出）——chunk 只负责最终答案正文。
-   * guardrailBlocked：对齐内核 text chunk 的护栏阻断标记（§7.2.1 结构化信号）。
-   * 仅护栏阻断的那一条 chunk 携带 true；webview 据此渲染「护栏阻断」提示条。
+   * 本变体**不携带任何安全信号**：曾有的 guardrailBlocked 字段随内核内容护栏退役一并删除
+   * （2026-08-17 排雷：阻断文案改由内核 content 承载，宿主刻意不弹 banner——避免双份提示 +
+   * 输入/输出语义错位）。当前唯一真实安全信号是 metrics.securityAudit（见下），新增安全类
+   * UI 请挂那里，勿在本变体重建护栏标记。
    */
   | {
       type: 'chunk';
       content: string;
       ts?: string;
-      guardrailBlocked?: boolean;
       /**
        * turn roundId（D3 单轨，2026-09-03）：宿主从内核 chunk.roundId 透传，
        * webview 端「同环续接」判定统一走 roundId 相等（运行时与重放共用单一判定源，
@@ -533,7 +534,11 @@ export type ExtensionToWebviewMessage =
         rolePackBaseTokens: number;
         /** 完整对话层实际占用（最近轮次注入正文） */
         dialogueTokens: number;
-        /** 完整对话层注入的对话条数（user+assistant 消息总数，与 dialogueTokens 同源） */
+        /**
+         * 完整对话层注入的对话条数 = **user 消息数**（计数标准：一个问答闭环 = 1，
+         * 残缺回答如实记录）。与 dialogueTokens 取自同一消息数组但**投影不同**：
+         * 条数只数 user，token 计全量消息。口径 SSOT = 内核 loop/contextPreparer。
+         */
         dialogueCount: number;
         /** 当前输入锚点（本轮用户输入独立划块） */
         inputAnchorTokens: number;
@@ -646,7 +651,7 @@ export type ExtensionToWebviewMessage =
    *
    * 由 extension host 转发的非消息区通知，webview 用同一提示条分级呈现：
    *   - info：记忆召回/沉淀、上下文截断、记忆冲突等低扰信息（短暂显示）
-   *   - error：会话异常/恢复失败/guardrail 失败等错误级反馈（醒目、停留更久）
+   *   - error：会话异常/恢复失败/写入确认超时等错误级反馈（醒目、停留更久）
    * 统一走提示条而不插入消息区，避免污染对话历史（功能→UI 对齐排雷的雷-4 修正）。
    * 注（v1.5）：运行时的「已召回 N 条 / 已沉淀：xx」提示由 webview 解析 process_event 本地派生，
    * 不经本消息通道（记忆活动已收口到 ProcessEvent 单源）。
