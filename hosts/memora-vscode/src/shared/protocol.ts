@@ -270,15 +270,16 @@ export type WebviewToExtensionMessage =
   /**
    * 请求加载记忆治理数据（记忆视图挂载/治理操作后触发）
    *
-   * host 返回 GovernanceStatsDto：活跃数 + 回收站（软删除）数 + 来源分布 +
-   * 活跃数 + 回收站（软删除）数 + 来源分布。agent.memory 未就绪时返回全零统计。
+   * host 返回 GovernanceStatsDto：活跃数 + 回收站（软删除）数 + 来源分布 + 已被取代数。
+   * agent.memory 未就绪时返回全零统计。
    */
   | { type: 'governance_load' }
   /**
    * 清理过期软删除记忆（治理区「清理过期」按钮）
    *
-   * host 弹确认框后调 agent.memory.writePurgeExpired(30 天前) 永久删除软删除记忆，
-   * 完成后推送 governance_result + 刷新治理数据与记忆列表（复刻 memora.cleanupMemories 语义）。
+   * host 弹确认框后调 agent.memory.writePurgeExpired(now - 保留期) 永久删除软删除记忆，
+   * 保留期取自 shared/constants 的 MEMORY_RECYCLE_RETENTION_DAYS（与 memora.cleanupMemories
+   * 命令同源）；完成后推送 governance_result + 刷新治理数据与记忆列表。
    */
   | { type: 'governance_cleanup' }
   // ─── 技能管理面板消息（2026-08-22 新增） ───

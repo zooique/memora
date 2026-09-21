@@ -27,7 +27,7 @@ import type {
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
 import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY } from '../../shared/constants.js';
+import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 // 内核常量（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
 //   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview。
@@ -50,8 +50,6 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private _agentPromise: Promise<Agent | undefined> | undefined;
   /** 是否已绑定 rolePackSwitched 事件（角色切换可观测，只绑定一次避免重复监听） */
   private _rolePackBound = false;
-  /** rolePackSwitchLocked handler 执行标记（同步 emit，activateRole ok=false 分支据此区分"被锁"vs"不存在"） */
-  private _lockedNoticeShown = false;
   /** Agent 懒装配工厂（由 extension 注入，与 chat 面板同一 getOrCreateAgent） */
   private _getAgent: ((projectPath: string) => Promise<Agent>) | undefined;
   /** 全局状态存储（持久化激活角色包，用户级） */
@@ -398,9 +396,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     void this.loadRoles();
   };
 
-  /** rolePackSwitchLocked：切换被锁时弹 info 提示 + 设置标记让 activateRole 不重复弹"不存在" */
+  /**
+   * rolePackSwitchLocked：**触发**锁定的那一次切换弹 info 提示。
+   * 注意该次切换本身是成功的（内核 activate 返回 true），被锁期间的后续切换不发射本事件。
+   */
   private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
-    this._lockedNoticeShown = true;
     this.post({
       type: 'notice',
       level: 'info',
@@ -412,17 +412,30 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private async activateRole(name: string): Promise<boolean> {
     const agent = await this.ensureAgent();
     if (!agent) return false;
-    // 重置标记——rolePackSwitchLocked 是同步 emit，handler 会在 switchRolePack 返回前执行并置 true
-    this._lockedNoticeShown = false;
     // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。
     // 角色视图刷新由 rolePackSwitched 事件驱动（onRolePackSwitched → loadRoles），不再显式
     // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT 剪枝，2026-08-17）。
     const ok = agent.switchRolePack(name);
     if (ok) {
       this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
-    } else if (!this._lockedNoticeShown) {
-      // ok=false 且没收到锁定事件 → 真正的"角色包不存在"
-      this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+    } else {
+      // ok=false 有两种成因，须用内核公开判据区分（2026-09-21 深审订正）：
+      // rolePackSwitchLocked 只在**触发锁定**那一次发射（该次返回 true），被锁期间的切换
+      // 直接 return false 且不发射任何事件——故「未收到事件」不能推断为"角色包不存在"。
+      const lock = agent.getRolePackSwitchLockStatus();
+      if (lock.locked) {
+        const remain = lock.unlockAt === null ? null : Math.max(0, Math.ceil((lock.unlockAt - Date.now()) / 1000));
+        this.post({
+          type: 'notice',
+          level: 'info',
+          message:
+            remain === null
+              ? '角色包切换已被限流锁定，请稍后再试'
+              : `角色包切换已被限流锁定，${remain} 秒后再试`,
+        });
+      } else {
+        this.post({ type: 'notice', level: 'error', message: `角色包不存在：${name}` });
+      }
     }
     return ok;
   }
@@ -745,7 +758,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     // 空回收站：无需确认，直接回报 0
-    const deleted = memory.listDeleted(1000);
+    // 取全部（不传 limit）——本函数把 deleted 同时用作「删除操作集合」与「上报条数」，
+    // 任何截断都会造成部分清理 + 谎报条数（2026-09-21 深审订正原 listDeleted(1000)）。
+    const deleted = memory.listDeleted();
     if (deleted.length === 0) {
       this.post({ type: 'memory_recycle_cleared', ok: true, count: 0 });
       return;
@@ -816,14 +831,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'memory_recycle_loaded', items: [] });
       return;
     }
-    const items = memory.listDeleted(1000).map(toItemDto);
+    // 全量列举：内核契约 listDeleted(缺省) = 全部；回收站视图无分页，截断会静默丢条目
+    const items = memory.listDeleted().map(toItemDto);
     this.post({ type: 'memory_recycle_loaded', items });
   }
 
   // ─── 记忆治理数据加载（G4，2026-08-23） ───
-
-  /** 治理数据清理阈值：永久删除 N 天前的软删除记忆（与 memora.cleanupMemories 命令对齐） */
-  private static readonly CLEANUP_DAYS = 30;
 
   /**
    * 加载记忆治理统计（governance_load 应答）
@@ -847,9 +860,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const stats = memory.stats();
-    const deleted = memory.listDeleted(1000).length;
-    // supersede 治理模型：统计已被取代的活跃记忆（supersededBy 非空），对齐内核写路径取代语义
-    const superseded = memory.list(1000).filter((m) => m.supersededBy !== undefined).length;
+    // 回收站数：listDeleted(缺省) = 全部（原 1000 上限使超量时低报）
+    const deleted = memory.listDeleted().length;
+    // supersede 治理模型：统计已被取代的活跃记忆（supersededBy 非空），对齐内核写路径取代语义。
+    // list() 默认仅 50 条，须按 stats().total（精确活跃数）取全量，否则超量时低报。
+    const superseded = memory.list(stats.total).filter((m) => m.supersededBy !== undefined).length;
     const governance: GovernanceStatsDto = {
       active: stats.total,
       deleted,
@@ -862,8 +877,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /**
    * 清理过期软删除记忆（governance_cleanup）
    *
-   * 破坏性操作：弹确认框后调 agent.memory.writePurgeExpired(N 天前) 永久删除，
-   * 完成后刷新治理统计与记忆列表（复刻 memora.cleanupMemories 命令语义）。
+   * 破坏性操作：弹确认框后调 agent.memory.writePurgeExpired(保留期前) 永久删除，
+   * 完成后刷新治理统计与记忆列表（与 memora.cleanupMemories 命令同语义、同保留期常量）。
    */
   private async runCleanup(): Promise<void> {
     const agent = await this.ensureAgent();
@@ -872,14 +887,14 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const confirmed = await vscode.window.showWarningMessage(
-      `将永久删除 ${MemoraSettingsViewProvider.CLEANUP_DAYS} 天前的软删除记忆，此操作不可撤销。`,
+      `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
       { modal: true },
       '确认清理',
       '取消',
     );
     if (confirmed !== '确认清理') return;
     try {
-      const cutoff = new Date(Date.now() - MemoraSettingsViewProvider.CLEANUP_DAYS * 24 * 60 * 60 * 1000);
+      const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
       const purged = agent.memory.writePurgeExpired(cutoff);
       this.post({
         type: 'governance_result',
@@ -1281,7 +1296,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
         </div>
       </div>
       <div class="governance-actions">
-        <button id="btnCleanup" class="btn btn-danger" title="永久删除 30 天前的软删除记忆（不可撤销）">清理过期</button>
+        <button id="btnCleanup" class="btn btn-danger" title="永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆（不可撤销）">清理过期</button>
       </div>
       <p id="govDetail" class="governance-detail" hidden></p>
     </div>

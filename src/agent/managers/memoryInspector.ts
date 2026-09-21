@@ -113,7 +113,7 @@ export class MemoryInspector {
     return this.index.listDeleted(limit);
   }
 
-  /** 按 ID 获取软删除记忆（用于 restore/purge 前存在性校验，避免 listDeleted 默认 50 上限导致超量时操作失效） */
+  /** 按 ID 获取软删除记忆（用于 restore/purge 前存在性校验，单条精确查询免全量扫描） */
   getDeletedById(id: string): Memory | null {
     return this.index.getDeletedById(id);
   }
@@ -129,8 +129,10 @@ export class MemoryInspector {
   }
 
   /**
-   * 列出所有记忆（供宿主记忆管理面板）。允许空查询，返回按 accessedAt 降序列表。
-   * search() 拒绝空查询防"静默全量返回"误用；list() 是显式声明列举全部。
+   * 列出活跃记忆（供宿主记忆管理面板），按 accessedAt 降序。
+   * search() 拒绝空查询防"静默全量返回"误用；list() 是显式声明列举——但**默认仍带 50 条上限**
+   * （安全默认，与 listDeleted 的 undefined=全部 语义刻意不同）。需要全量的调用方须
+   * 显式传入上限（如 stats().total），否则静默截断。
    */
   list(limit = 50): Memory[] {
     return this.index.search('', limit);

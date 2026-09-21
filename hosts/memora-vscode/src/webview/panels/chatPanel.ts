@@ -930,8 +930,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /**
-   * rolePackSwitchLocked：角色包切换被锁定时提示用户（核心交互补全——rolesView 点"设为当前"
-   * 但内核判定上一轮未完成/自审查中等原因拒绝切换时，此前用户点击无反馈属 silent failure）
+   * rolePackSwitchLocked：角色包切换被**限流锁定**时提示用户（补全 silent failure——用户在
+   * 角色视图点「设为当前」触达限流阈值后，此前点击无任何反馈）。
+   *
+   * 触发面：内核 activate() 仅在**触发锁定**的那一次切换发射本事件（该次切换成功）；
+   * 被锁期间的后续切换直接返回 false 且不发射，其提示由 settingsPanel.activateRole 经
+   * getRolePackSwitchLockStatus() 分支补发。
    */
   private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
     this.post({

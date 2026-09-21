@@ -48,13 +48,15 @@ export interface IMemoryStorage {
 
   /**
    * 按 ID 获取单条软删除记忆；用于 restore/purge 前的存在性校验，
-   * 规避 listDeleted 默认 50 上限导致第 51 条之后无法操作
+   * 单条精确查询，免去拉取整个回收站列表做 O(n) 扫描
    * @returns 软删除记忆（浅拷贝），不存在或未软删除时返回 null
    */
   getDeletedById(id: string): Memory | null;
 
   /**
-   * 物理删除所有 deletedAt 早于 before 的记忆；由宿主定时器调用（默认 30 天保留期）
+   * 物理删除所有 deletedAt 早于 before 的记忆；由宿主治理入口显式调用
+   * （命令 memora.cleanupMemories / 设置面板「清理过期」）。内核不持定时器，
+   * 回收站保留期策略（天数）归宿主决定
    * @returns 被清理的记忆数量
    */
   purgeExpired(before: Date): number;

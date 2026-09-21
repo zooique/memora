@@ -1419,7 +1419,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 角色包系统的唯一切换入口（自动匹配 + 手动切换共用）：activate 更新激活态 → 发射 rolePackSwitched 事件
    * → 刷新 AgentLoop 前缀 → 同步工具白名单。
-   * @returns 是否切换成功（不存在返回 false 且不触发事件；同名切换幂等返回 true）
+   * @returns 是否切换成功。false 有两种成因（**均不发射切换事件**）：角色包不存在、
+   * 切换锁已激活（30s 内超 5 次限流）；调用方须以 getRolePackSwitchLockStatus() 区分，
+   * 不可由「返回 false + 未收到 rolePackSwitchLocked」推断为"不存在"（被锁时该事件不发射，
+   * 仅在**触发锁定**的那一次切换中发射，而那一次返回 true）。同名切换幂等返回 true。
    */
   switchRolePack(name: string): boolean {
     this.assertInitialized('switchRolePack');

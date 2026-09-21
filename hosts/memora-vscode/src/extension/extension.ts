@@ -27,7 +27,7 @@ import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY } from '../shared/constants.js';
+import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../shared/constants.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -314,16 +314,16 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const mem = agent.memory;
-      const activeCount = mem?.list(1000).length ?? 0;
-      const deletedCount = mem?.listDeleted(1000).length ?? 0;
-      // 来源分布：从 list() 结果自行统计（MemoryInspector 未暴露 getAllSources 公开方法）
-      const sourceMap = new Map<string, number>();
-      if (mem) {
-        for (const m of mem.list(1000)) {
-          sourceMap.set(m.source, (sourceMap.get(m.source) ?? 0) + 1);
-        }
-      }
-      const sourceSummary = [...sourceMap.entries()].map(([src, cnt]) => `${src}: ${cnt}`).join(', ') || '—';
+      // 统计口径 SSOT = 内核 memory.stats()（total = 活跃数，bySource = 来源分布；走
+      // sourceCountCache / getAllSources 增量缓存，精确且免全量列举）。此前用 list(1000)
+      // 自行聚合，superseded 与来源分布超 1000 条时双双低报（2026-09-21 深审订正）。
+      const stats = mem?.stats();
+      const activeCount = stats?.total ?? 0;
+      const deletedCount = mem?.listDeleted().length ?? 0;
+      const sourceSummary =
+        Object.entries(stats?.bySource ?? {})
+          .map(([src, cnt]) => `${src}: ${cnt}`)
+          .join(', ') || '—';
       vscode.window.showInformationMessage(
         `记忆统计：活跃 ${activeCount} 条，回收站 ${deletedCount} 条 | 来源分布：${sourceSummary}`,
       );
@@ -340,15 +340,16 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       // 确认对话框——防止误操作
       const confirmed = await vscode.window.showWarningMessage(
-        '将永久删除 30 天前的软删除记忆，此操作不可撤销。',
+        `将永久删除 ${MEMORY_RECYCLE_RETENTION_DAYS} 天前的软删除记忆，此操作不可撤销。`,
         { modal: true },
         '确认清理',
         '取消',
       );
       if (confirmed !== '确认清理') return;
       try {
-        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-        const purged = agent.memory.writePurgeExpired(thirtyDaysAgo);
+        // 保留期 SSOT = shared/constants（与设置面板「清理过期」同源，改一处即两侧同步）
+        const cutoff = new Date(Date.now() - MEMORY_RECYCLE_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+        const purged = agent.memory.writePurgeExpired(cutoff);
         vscode.window.showInformationMessage(`已清理 ${purged} 条过期记忆`);
       } catch (err) {
         vscode.window.showErrorMessage(`清理失败：${err instanceof Error ? err.message : String(err)}`);

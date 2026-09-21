@@ -30,3 +30,9 @@ export const CONFIRM_WRITES_KEY = 'memora.confirmWrites';
  *  作用域为用户级（globalState）——安全偏好是用户级设置，跨项目共享。
  *  注意：这是「执行前是否询问」开关，不是脚本能力总开关（run_project_script 始终默认开放）。 */
 export const CONFIRM_SCRIPTS_KEY = 'memora.confirmScripts';
+
+/** 回收站保留期（天）：`memora.cleanupMemories` 命令与设置面板「清理过期」共用的单一真理源。
+ *  此前两处各自硬编码 30（命令用字面量、面板用私有静态常量 CLEANUP_DAYS），改保留期需手工
+ *  同步两侧——下沉到本文件消除漂移（2026-09-21 深审）。内核不持定时器，保留期策略归宿主，
+ *  且只在用户显式触发清理时生效（无自动清理）。 */
+export const MEMORY_RECYCLE_RETENTION_DAYS = 30;

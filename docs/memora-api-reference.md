@@ -417,7 +417,7 @@ interface Memory {
   name: string;       // 可读名称
   createdAt: string;  // 创建时间（ISO 8601）
   accessedAt: string; // 最后访问时间（每次召回时刷新）
-  deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除，回收站保留 30 天后自动物理清理）
+  deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除。回收站**无自动清理**：保留期清理由宿主入口显式触发，见 writePurgeExpired）
   metadata?: Record<string, string>; // 配置文件 frontmatter 额外元数据（仅配置文件写入时使用，SQLite 不存储此字段）
   summaryType?: SummaryType; // round-summary 摘要类型（preference/fact/decision/intent/general；顶层持久化字段）
   sessionName?: string;  // round-summary 归属会话标识（顶层持久化字段，仅 round-summary 有意义）
@@ -460,7 +460,7 @@ interface IMemoryStorage {
   delete(id: string): void;           // 软删除（写入 deletedAt，不物理移除；对已软删除的 no-op）
   restore(id: string): void;          // 恢复软删除记忆（清除 deletedAt；对活跃记忆 no-op）
   purge(id: string): void;            // 物理删除（不可恢复，用于回收站"彻底删除"）
-  listDeleted(limit?: number): Memory[];        // 列出回收站（按 deletedAt 降序，默认 50）
+  listDeleted(limit?: number): Memory[];        // 列出回收站（按 deletedAt 降序；limit 缺省/≤0 = 全部，正整数 = 最近 N 条）
   getDeletedById(id: string): Memory | null;    // 按 ID 获取单条软删除记忆（restore/purge 前存在性校验）
   purgeExpired(before: Date): number;           // 清理过期回收站（物理删除 deletedAt 早于 before 的，返回清理数量）
 
