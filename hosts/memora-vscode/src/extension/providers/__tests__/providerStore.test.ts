@@ -103,3 +103,45 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
     expect((h.store['providers'] as Array<Record<string, unknown>>)[0].contextWindow).toBeUndefined();
   });
 });
+
+describe('ProviderStore · save/remove 语义（站 65 好面补测）', () => {
+  let store: ProviderStore;
+  beforeEach(() => {
+    h.store['providers'] = [];
+    delete h.store['maxContextTokens'];
+    delete h.store['activeProvider'];
+    delete h.store['backgroundProvider'];
+    for (const k of Object.keys(secretsStore)) delete secretsStore[k];
+    store = new ProviderStore(secrets as unknown as import('vscode').SecretStorage);
+  });
+
+  it('save isEditing 且 apiKey 留空 → 保留原 apiKey（不覆盖既有 secret）', async () => {
+    // 编辑模式 apiKey 留空 = 保留原值契约（providerStore.save 注释）
+    secretsStore['memora.provider.deepseek.apiKey'] = 'orig-key';
+    const res = await store.save(
+      { name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1', apiKey: '' },
+      true,
+    );
+    expect(res.ok).toBe(true);
+    // secret 不被覆盖 —— 用户编辑时留空不应清掉原 key
+    expect(secretsStore['memora.provider.deepseek.apiKey']).toBe('orig-key');
+  });
+
+  it('remove 删除的若是后台 Provider → 同步清空后台引用（防悬空指向不存在的 name）', async () => {
+    h.store['providers'] = [{ name: 'bg', displayName: 'BG', model: 'm', baseUrl: 'http://x/v1' }];
+    h.store['backgroundProvider'] = 'bg';
+    const res = await store.remove('bg');
+    expect(res.ok).toBe(true);
+    expect(h.store['providers']).toHaveLength(0);
+    // ProviderStore.remove 的防悬空清理：后台引用随删除一并清空
+    expect(h.store['backgroundProvider']).toBeUndefined();
+  });
+
+  it('remove 删除的是激活 Provider → 拒绝并提示先切换', async () => {
+    h.store['providers'] = [{ name: 'act', displayName: 'Act', model: 'm', baseUrl: 'http://x/v1' }];
+    h.store['activeProvider'] = 'act';
+    const res = await store.remove('act');
+    expect(res.ok).toBe(false);
+    expect(res.message).toContain('激活');
+  });
+});

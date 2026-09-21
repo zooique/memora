@@ -3,8 +3,8 @@
  *
  * 目的：让用户「一键看到内核能力」——在全局隔离演示区（~/.memora-demo）装配独立
  * Agent，注入编排好的演示提示词，消费 agent.chat() 流式写入 output channel，结束后
- * dump 操作流（ITracer span 标签）+ 累计指标。完整展示内核的角色包 / loop / 记忆 /
- * 工具 / 可观测五大能力。
+ * dump 操作流（ITracer span 标签）；累计指标的展示收敛在对话面板透明区（memora.showMetrics），
+ * 演示区不重复渲染。完整展示内核的角色包 / loop / 记忆 / 工具 / 可观测五大能力。
  *
  * 隔离设计（关键）：
  *   - projectPath 指向全局隔离目录（~/.memora-demo），不与当前工作区共用记忆/会话/
@@ -107,7 +107,8 @@ export async function runDemoCommand(configDir: string): Promise<void> {
     await agent.close();
   }
 
-  // 演示结束：dump 操作流（trace）与累计指标，展示可观测面
+  // 演示结束：dump 操作流（可观测面之一）；累计指标已由对话面板透明区（memora.showMetrics）
+  // 收敛展示，演示区只 dump 操作流、不重复渲染指标（单一真源：chatPanel.postMetrics）
   output.appendLine('');
   dumpObservability(output, agent2RecentTraces());
   output.appendLine('═'.repeat(48));
@@ -179,7 +180,9 @@ function agent2RecentTraces(): { label: string }[] {
 }
 
 /**
- * 在 Output Channel 末尾 dump 可观测数据（操作流 + 累计指标）
+ * 在 Output Channel 末尾 dump 操作流（演示可观测面之一）。
+ * 注意：仅 dump 操作流标签——累计指标的展示收敛在对话面板透明区（chatPanel.postMetrics，
+ * memora.showMetrics 开关），演示区不重复实现指标渲染（避免同语义多实现，SSOT）。
  *
  * @param output Output Channel
  * @param traces 最近操作流（span 标签，新→旧）
