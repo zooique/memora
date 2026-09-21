@@ -1713,7 +1713,8 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // ② 任务表现在：step_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
     dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '文档收束' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
-    // ≥3 步计划才常驻（对齐内核 needsPlanning 阈值）——3 步触发常驻条
+    // ≥3 步计划才常驻（**webview 展示层自身门槛**，非内核 needsPlanning——后者是关键词/
+    // 结构式布尔判定、无步数阈值）——3 步触发常驻条
     dispatch({
       type: 'plan_update',
       steps: [
@@ -2440,7 +2441,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(bar.querySelector('#planBarCount')?.textContent).toBe('1/3');
   });
 
-  it('plan_update <3 步 → 常驻条不出现（对齐内核 needsPlanning 阈值）', () => {
+  it('plan_update <3 步 → 常驻条不出现（webview 展示层 ≥3 步门槛；与内核 needsPlanning 无关）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',

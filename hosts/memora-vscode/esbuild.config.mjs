@@ -9,8 +9,15 @@
  * 输出结构：
  *   dist/
  *   ├── extension/extension.js    ← 主入口（内联内核 + 插件代码）
- *   ├── shared/protocol.js        ← 类型声明（webview 编译用，不打包）
- *   ├── webview (各面板)          ← webview 侧代码（不打包，不依赖内核）
+ *   ├── shared/protocol.js        ← 类型声明（webview 编译用；tsc 直出、不再打包）
+ *   ├── webview/panels/*.js       ← 面板源码（tsc 直出、不再打包；import vscode + 内核运行时
+ *   │                                ⇒ 运行在**扩展宿主**侧，不在 webview 里）
+ *   ├── webview/scripts/*.js      ← webview **运行时入口**（**由本文件步骤 3 另行 esbuild
+ *   │                                打包**为 browser/iife，如 chatView.js / settingsView.js）；
+ *   │                                scripts|helpers|components|styles 的浏览器侧代码随入口
+ *   │                                一并 bundle 进 IIFE。webview 运行时对内核只有 import type、
+ *   │                                无运行时依赖 ⇒ webview 侧任何内核语义（如日期键格式化）
+ *   │                                只能**镜像**，不能 import
  *   ├── extension/role-packs      ← 内置角色包（manifest.json + persona/rules/skills .md，copy 处理）
  *   ├── extension/skills          ← 全局技能池（.md，所有角色共享，SkillManager 扫描）
  *   └── .build-stamp.json         ← 构建戳（记录构建时的内核 dist 哈希）

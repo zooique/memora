@@ -215,7 +215,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *   ① planBar：顶部固定插槽（#planBar，与 #messages **同级**、非其子节点——#messages 是
    *      overflow-y:auto 滚动容器，插进它内部一滚即滚出视野）。默认一行
    *      N/M + 进度条 + 当前 active step 摘要，点击展开**锚定浮层**看全量步骤 + stepLog。
-   *      常驻门槛 ≥3 步（对齐内核 needsPlanning 阈值，2 步小任务不常驻成噪音）。
+   *      常驻门槛 ≥3 步 —— **webview 展示层自身的门槛**（2 步小任务常驻成噪音）。
+   *      ⚠️ 与内核 `detectNeedsPlanning` **无对应关系**：后者是关键词/结构命中式**布尔判定**
+   *      （src/agent/needsPlanning.ts），**不含任何步数阈值**。旧注释称「对齐内核
+   *      needsPlanning 阈值」是**虚构的对齐关系**（会诱导去内核找「3 步阈值」而找不到，
+   *      进而误把二者当作需互相「同步」的一对）。二者职责正交：本门槛只管**是否常驻展示**，
+   *      内核判定只管**是否注入规划引导**。（内核另有 `taskTableRenderer` 的 `plan.length < 3`
+   *      收尾验证门槛，同数字但别义，亦非同源——见 renderPlanBoard 内注释。）
    *   ② 运行时**不渲染 inline 轨**，内容区零卡片：任务过程全部由 round-block 折叠块承载，
    *      plan 清空（turn 收尾）时顶部条随空 plan_update 收起，不在对话流里留投影。
    *
@@ -396,7 +402,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 渲染/刷新单轨任务看板（收到 plan_update 消息时调用）。
-   *  非空 plan → 缓存 + 常驻条（≥3 步才显示，对齐内核 needsPlanning 阈值）；
+   *  非空 plan → 缓存 + 常驻条（≥3 步才显示；该门槛属**展示层自身决策**，与内核
+   *  needsPlanning 的布尔判定无对应关系——详见上方任务看板设计注释）；
    *  空 plan → 收起常驻条（内容区零投影——任务过程由 round-block 折叠块承载，不留完成卡片） */
   function renderPlanBoard(steps: PlanStepDto[]): void {
     if (steps.length === 0) {
@@ -406,7 +413,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 非空计划：缓存（供 round-block step 标签 + 浮层复用）；plan 清空时不清此缓存
     currentPlanSteps = steps;
-    // 常驻门槛 ≥3 步（对齐内核 needsPlanning 阈值，2 步小任务不常驻成噪音）
+    // 常驻门槛 ≥3 步：webview 展示层自身决策（2 步小任务常驻成噪音）。
+    // ⚠️ 勿称「对齐内核 needsPlanning 阈值」——内核 detectNeedsPlanning 是关键词/结构式
+    // 布尔判定，**无步数阈值**；二者无对应关系，也**不构成需互相同步的一致约束**。
+    // ⚠️ 另注意别把内核里那个同数字的 `plan.length < 3` 当成本门槛的真源：它属
+    // `agent/taskTableRenderer.buildCompletionVerifyNudge`（≥3 步才注入「补验证步」nudge，
+    // 理由是「太短不值得打断」）——**收尾验证门槛，与 UI 是否常驻无关**。两处同为 3 属巧合，
+    // 改任一处**不需要**同步另一处。
     setPlanBarVisible(steps.length >= 3);
     if (steps.length >= 3) {
       renderPlanBar(steps);
@@ -456,7 +469,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 日期分隔线：跨天合并视图在日期交界插入分组（ui-redesign.md §4.1 ②）
   let lastShownDate: string | undefined;
 
-  /** 本地时区 YYYY-MM-DD 日期键 */
+  /** 本地时区 YYYY-MM-DD 日期键。
+   *  ⚠️ **镜像点（刻意为之，勿强行收口）**：内核同语义真源 = `src/utils/time.ts` 的
+   *  `formatDateKey`（宿主 Node 侧 chatPanel / sessionStore 即 import 它）。webview 侧**不能**
+   *  复用——本文件由 esbuild 以 `platform: 'browser'` / `format: 'iife'` 单独打包
+   *  （esbuild.config.mjs 步骤 3），webview 运行时对内核只有 `import type`、无运行时依赖。
+   *  故此处为**必要镜像**：改判定口径（换格式 / 改时区）须**两侧同改**。
+   *  等价关系：内核 `todayDate()` = 本文件 `toDateKey(new Date())`。
+   *  背景：用本地时区（getFullYear/getMonth/getDate）而非 `toISOString().slice(0,10)`（UTC）——
+   *  Asia/Shanghai 凌晨 00:00–08:00 期间 UTC 仍是前一天，会导致跨天分组错位。 */
   function toDateKey(d: Date): string {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
       d.getDate(),
@@ -476,7 +497,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return `${days}d 前`;
   }
 
-  /** thinking 阶段 → 中文标签（对齐内核 ThinkingPhase，Webview 展示面） */
+  /** thinking 阶段 → 中文标签（展示面）。相位取值来自内核 **`ProcessThinkingPhase`**
+   *  （memory/roundStore.ts，随 ProcessEvent 下发）；勿误引 agent 层类型 `ThinkingPhase`
+   *  ——那是 agent/types.ts 的**另一个类型**（当前同值，但非同一符号、非本条数据来源）。 */
   function phaseLabel(phase: ProcessThinkingPhase): string {
     const map: Record<ProcessThinkingPhase, string> = {
       assembling: '装配上下文中…',
@@ -484,6 +507,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       processing: '处理中…',
       archiving: '归档记忆中…',
     };
+    // `?? '思考中…'` 是**有意保留的兜底，不属「类型兜底残留」**——勿按本文件
+    // STEP_STATUS_LABEL 的「枚举固定、无需运行时兜底」原则删掉它：
+    // 相位经 postMessage 跨进程到达且**未经运行时校验**，且 **replay 会把旧持久化轮的
+    // 事件原样重放**——`recalling` 相位已于 2026-09-11 退役为 `assembling`，但退役前落盘的
+    // 轮文件仍可能携带该值。删兜底 → 旧数据渲染出 `undefined`（用户可见的破图）。
     return map[phase] ?? '思考中…';
   }
 
