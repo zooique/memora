@@ -182,10 +182,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let streamingRaw = '';
 
   // UX-9 问答闭环可视化（2026-09-03，纯展示层）：
-  //   lastAssistantRoundId — 上一个 assistant 块的 roundId（B 同环续接判定唯一依据：同 roundId
-  //                          的第 2+ 段 → is-continued，圆环连线表达「同一问答闭环的多段连续」）。
-  //                          D3 单轨收敛（2026-09-03）：宿主透传 chunk.roundId 后，运行时与重放
-  //                          统一走「roundId 相等」判定，无独立时序标志（原 expectContinueNext 已删）。
+  //   lastAssistantRoundId — 上一个 assistant 块的 roundId（同轮结构归位唯一依据：chunk 到达时判
+  //                          骨架留原容器 / 新轮建新容器）。D3 单轨收敛（2026-09-03）：宿主透传
+  //                          chunk.roundId 后，运行时与重放统一走「roundId 相等」判定，无独立时序
+  //                          标志（原 expectContinueNext 已删）。「↻ 续接」视觉已于 2026-09-21
+  //                          整体退役（is-continued / chip / CSS 全剪，见 append 注释）。
   //   resumePending        — 问答/补充续跑期待：交互输入（qa/supplement）或内联提问提交后置位，
   //                          下一个 process_event meta 消费为「同闭环续跑的 meta」而非新轮——
   //                          保留 currentEvents 与 round-block 锚点（折叠留在闭环首块），
@@ -291,7 +292,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 锚定浮层展开/收起（点击 head 切换；浮层非 modal——看进度时需同时看正文）。
    *  展开态同时写 aria-expanded（可访问性）与 chevron 图标（chevron-right 收起态 /
    *  chevron-down 展开态；2026-09-19 HOST-S8：由 ▸/▾ 字符收敛为 icons.ts 的 SVG）。
-   *  懒构建：展开时才从当前快照补建面板（收起态 renderPlanBar 不建 DOM，省运行期开销） */
+   *  懒构建：展开时才从当前快照补建面板（收起态 renderPlanBar 不建 DOM，省运行期开销）。
+   *  ⚠ 收起时清空面板内容（回归修复 2026-09-21）：plan 清空（收尾 autoClearPlan）后 setPlanBarVisible(false)
+   *  把 planBarExpanded 置 false，但旧面板 DOM 仍在——再次展开时懒构建门 childElementCount===0 被残留 DOM
+   *  挡住不重建，任务表保持第一次展开的快照（数字更新但完成状态不更新，宿主症状 2）。清空后展开必重建为最新快照。 */
   function setPlanBarExpanded(expanded: boolean): void {
     planBarExpanded = expanded;
     const bar = getPlanBarEl();
@@ -303,6 +307,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 展开且面板尚未构建（收起态跳过建 DOM）→ 从当前快照补建
       if (expanded && panel.childElementCount === 0 && currentPlanSteps.length > 0) {
         renderPlanBarPanel(currentPlanSteps);
+      } else if (!expanded) {
+        // 收起即视为「未构建」：清空面板，防残留 DOM 挡住下次展开的懒构建重建
+        panel.innerHTML = '';
       }
       panel.hidden = !expanded;
     }
@@ -685,17 +692,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 骨架 = 空正文的 assistant 块（label 已用本轮身份 currentRoundMeta）+ round-block（运行状态）。
    * 首个 text chunk 到达时由正文流复用此块，不新建第二条消息（见 chunk 分支）。
    */
-  function prepareFlowShell(opts?: { continued?: boolean; mountAfter?: HTMLElement }): void {
+  function prepareFlowShell(opts?: { mountAfter?: HTMLElement }): void {
     // 清理异常路径可能残留的旧骨架（正常路径下 meta 每次新轮都会先清除引用）
     flowShellEl?.remove();
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // 交互续跑（提问/补充答后 resume 2026-09-08）：骨架初始即标识「↻ 续接」（is-continued），
-    // 不闪成「新开回答」——接着前序块/交互行连续作答（与重放分块同构 [块A]→[问/答]→[块B 续接]）
-    if (opts?.continued) div.classList.add('is-continued');
+    // 身份标签直连角色名——「↻ 续接」chip 已随续接视觉整体退役（2026-09-21 剪枝：运行时补充/问答有独立
+    // 交互条目行分隔，流式断流续跑不存在，无同轮多段历史数据，见 append 注释）。骨架空转至 done 时
+    // 即为普通轮（无任何续接视觉残留，运行时形态与重放一致）。
     // 流式未完成：footer 初始隐藏（is-pending 由 buildAssistantShell 加类），finalize 时展示。
-    // D3 单轨：骨架此刻无 roundId（meta 不带），is-continued 判定延后到首个 chunk 到达时
-    // 在复用骨架分支补类（见 chunk 分支 flowShellEl 路径）——骨架是空等待态，补类时机无感
+    // D3 单轨：骨架此刻无 roundId（meta 不带），roundId 由首个 chunk 到达时回填（dataset + 归位判定）
     buildAssistantShell(div, new Date().toISOString(), undefined, { pending: true });
     activeAssistantEl = div;
     streamBodyRendered = false;
@@ -2413,11 +2419,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (role === 'assistant') {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
-      // UX-9 B 同环续接标识（D3 单轨）：同 roundId 的第 2+ 段（assistantLog 段们在 final 之前的
-      // 续接、运行时打断/回答后的续接段）统一按「roundId 相等」标记 is-continued —— 圆环连线 +
-      // 「续接」chip，让提问→回答→再答 / 半截→补充→续接 呈连续链而非三条孤立消息
-      const isContinued = isSameRoundContinue(roundId);
-      if (isContinued) div.classList.add('is-continued');
+      // （2026-09-21 剪枝）同轮第 2+ 段不再标记 is-continued / 「↻ 续接」chip：运行时补充与问答
+      // 已由独立交互条目行（.round-block__input）上屏分隔，流式断流续跑场景不存在（中断=独立新轮），
+      // 且系统从未发布过同轮多段历史数据——续接视觉为零真实场景消费，整体退役（含 CSS 与测试断言）。
+      // 同轮归位语义（同 roundId 段进同一 .round-group 容器）仍由 isSameRoundContinue 判——保留
       // roundId 记录为本轮标识（无 roundId 的块不覆盖，重放每轮都有）
       if (roundId) lastAssistantRoundId = roundId;
       // AI 消息：复用骨架构建（label + content + body + footer），
@@ -2577,6 +2582,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (root) {
         const { host } = stepContainerFor(root, currentEvents, tsKey);
         insertStepInOrder(host, item, tsKey);
+        // 归位宿主为 step 分组（details）时展开该分组（回归修复 2026-09-21）：step 分组默认收起，
+        // 交互条目（补充/回答）被归位进收起分组内用户看不到——「任务表运行中输入补充内容不可见、
+        // 结束后才见」即此因。插入即展开，保证用户输入恒可见（与 ensureUserInputVisible 纪律一致）。
+        const stepHost = host as HTMLDetailsElement;
+        if (stepHost.tagName === 'DETAILS' && stepHost.classList.contains('round-block__step')) stepHost.open = true;
       } else {
         // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程）落消息流。有 roundId 时打
         // 归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（2026-09-19 形态甲回归修复，
@@ -2644,14 +2654,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * D3 单轨同环判定：是否有 roundId 且与上一 assistant 段同环（同问答闭环第 2+ 段 = 续接）
+   * 同轮判定：是否有 roundId 且与上一 assistant 段同轮（同一问答闭环归位判定）
    *
-   * 三个建块入口共用（SSOT 单一判定，取代双轨时序标志）：
-   * - append（重放路径）：assistant 段/final 建块；
-   * - beginStreaming（流式无骨架路径）：运行时打断/续跑首 chunk 建块；
-   * - chunk 流式复用骨架分支：meta 骨架补判。
+   * （2026-09-21 更新）续接**视觉**已整体退役（is-continued / 「↻ 续接」chip 全剪，见 append 注释）；
+   * 本判定仅剩**结构归位**用途——chunk 到达时判骨架所属容器：
+   * 同轮 → 骨架留在原 .round-group；新轮 → 建新容器（L3666 骨架归位分支）
    *
-   * @param roundId 待判 roundId（chunk/消息携带；undefined 一律非续接）
+   * @param roundId 待判 roundId（chunk/消息携带；undefined 一律非同轮）
    */
   function isSameRoundContinue(roundId: string | undefined): boolean {
     return !!roundId && roundId === lastAssistantRoundId;
@@ -2862,27 +2871,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 同环续接标记 chip：在身份标签前置「↻ 续接」（UX-9 B，D3 单轨）
-   *
-   * 消费方（SSOT 单一实现，两处共用）：
-   * - buildAssistantShell：建块时 div 已带 is-continued → 直接打 chip；
-   * - chunk 流式复用骨架分支：骨架建块时无 roundId 未判续接，chunk 到达补类后补 chip。
-   * 幂等：label 已有 chip 时不重复插（整行 JSDoc 注释）（防多次 chunk 补类叠加）。
-   *
-   * @param label 消息身份标签（.msg-ai-label），chip 插至最前
-   */
-  function attachContinueChip(label: HTMLElement): void {
-    if (label.querySelector('.msg-ai-label__cont')) return;
-    const contEl = document.createElement('span');
-    contEl.className = 'msg-ai-label__cont';
-    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ↻ 字符剪除，2026-09-19）
-    contEl.innerHTML = getIconSvg('refresh', 10, 10);
-    contEl.appendChild(document.createTextNode('续接'));
-    contEl.title = '与上一条属同一问答闭环，为继续作答';
-    label.prepend(contEl);
-  }
-
-  /**
    * 构建 AI 消息骨架（label + content + body + footer[复制 + 时间戳]）
    *
    * assistant 一次性消息与流式消息共用骨架，差异仅在 body 内容（markdown 渲染 vs
@@ -2901,12 +2889,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     roundId?: string,
     opts?: { pending?: boolean },
   ): { body: HTMLElement; footer: HTMLElement } {
-    // 顶部身份标签（极简风格）：[续接chip][小圆点]角色名[·]模型名
+    // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
-    // UX-9 B 同环续接 chip：is-continued 块（同 roundId 第 2+ 段 / 被打断后续接段）
-    // 在身份标签前置「↻ 续接」，配合块间虚线把提问→回答→再答 连成连续链
-    if (div.classList.contains('is-continued')) attachContinueChip(label);
+    // （2026-09-21 剪枝）「↻ 续接」chip 随 is-continued 视觉整体退役（见 append 注释），身份标签直连
     // 角色名：优先级 = 本轮身份（meta）→ 会话级角色（chat_role_pack），品牌色 + 小圆点
     const roleName = currentRoundMeta?.role || currentRoleName || 'AI';
     const roleEl = document.createElement('span');
@@ -2984,9 +2970,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     renderDateDivider(ts);
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // UX-9 A/B（D3 单轨）：打断补充/问答后的后续正文 = 同环续接段（chunk 携带 turn roundId，
-    // 「roundId 相等」判定与重放路径共用——运行时不再依赖独立时序标志）
-    if (isSameRoundContinue(roundId)) div.classList.add('is-continued');
+    // （2026-09-21 剪枝）同轮续接视觉已整体退役（见 append 注释），此处不再标记 is-continued
     if (roundId) lastAssistantRoundId = roundId;
     const { body } = buildAssistantShell(div, ts, roundId, { pending: true });
     // 流式期间：is-streaming 类驱动 CSS ::after 闪烁光标（markdown 由增量渲染填充）
@@ -3470,11 +3454,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           resumePending = false;
         } else if (resumePending) {
           resumePending = false;
-          // 交互续跑（提问/补充答后 resume）：骨架初始即标识续接（is-continued，不闪「新开回答」），
-          // 挂载到交互链末位之后——与重放分块同构：[块A] → [问/你答行] → [块B 续接]（2026-09-08 运行时同构；
-          // 2026-09-09 连环 ask：统一 resolveInteractionAnchor，取代全范围「最后 .msg-qa」扫描——
+          // 交互续跑（提问/补充答后 resume）：建**续接骨架**（无任何续接视觉标识，2026-09-21 剪枝——
+          // 「↻ 续接」chip 已整体退役；补充/问答由独立交互条目行分隔，见 append 注释），挂载到交互链末位
+          // 之后——保持 [块A] → [问/你答行] → [块B] 的顺序（2026-09-08 运行时同构；2026-09-09 连环
+          // ask：统一 resolveInteractionAnchor，取代全范围「最后 .msg-qa」扫描——
           // 后者在 QA 已折入 rb / 前轮残留时会跨轮误取）
-          prepareFlowShell({ continued: true, mountAfter: resolveInteractionAnchor() ?? undefined });
+          prepareFlowShell({ mountAfter: resolveInteractionAnchor() ?? undefined });
         } else {
           currentEvents = [];
           runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
@@ -3625,15 +3610,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         clearPendingWait(); // 正文开启：等待指示器退场（骨架已接管）
         if (flowShellEl) {
           // 复用骨架：正文流入同一块（不新建第二条 assistant 消息）
-          // D3 单轨：骨架在 meta 时无 roundId，此处置该块的同环续接判定（chunk 到达才有数据）；
-          // 与 beginStreaming 同用「roundId 相等」判定 + dataset 回填（分叉按钮早期可用）
-          if (isSameRoundContinue(msg.roundId)) {
-            flowShellEl.classList.add('is-continued');
-            // 补「↻ 续接」chip：骨架 buildAssistantShell 时无 is-continued 未建 chip，
-            // 与 beginStreaming 的 chip 创建共用 attachContinueChip（SSOT 单一实现）
-            const label = flowShellEl.querySelector<HTMLElement>(':scope > .msg-ai-label');
-            if (label) attachContinueChip(label);
-          }
+          // 同轮归位判定（chunk 到达才有 roundId）：同轮骨架继续留在原 round-group、新轮走新容器；
+          // is-continued / 「↻ 续接」chip 已随续接视觉整体退役（2026-09-21 剪枝，见 append 注释）
           if (msg.roundId) {
             lastAssistantRoundId = msg.roundId;
             flowShellEl.dataset.roundId = msg.roundId;

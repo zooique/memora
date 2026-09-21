@@ -430,39 +430,8 @@ export const chatStyles = `
     margin-right: var(--sp-1, 4px);
     color: var(--border-panel, rgba(128,128,128,.4));
   }
-  /* UX-9 B 同环续接：同 roundId 第 2+ 段的 assistant 块（提问→回答→再答 / 半截→补充→续接）。
-   * 顶部虚线分隔表达「上一条被打断/提问、本条继续」，身份标签前置「↻ 续接」chip 弱化标识 ——
-   * 克制呈现（圆环 + 灰字），不突出大卡片、不抢正文视觉。 */
-  .msg.assistant.is-continued {
-    border-top: 1px dashed var(--border-panel, rgba(128,128,128,.24));
-    margin-top: var(--sp-1, 2px);
-    padding-top: var(--sp-1, 4px);
-  }
-  .msg-ai-label__cont {
-    display: inline-flex; align-items: center; gap: var(--sp-1, 4px);
-    flex-shrink: 0;
-    font-size: var(--font-xs, 10px);
-    color: var(--text-secondary, #9aa0a6);
-    background: var(--surface-hover, rgba(128,128,128,.12));
-    border-radius: var(--radius-sm, 3px);
-    padding: 1px var(--sp-2, 5px);
-    white-space: nowrap;
-  }
-  /* 续接 chip 的 refresh 图标（原 ↻ 字符的 SVG 替代，2026-09-19） */
-  .msg-ai-label__cont svg { display: block; }
-  /* UX-9 闭环同体感（2026-09-03）：续接块隐藏重复的角色/模型身份标签——
-   * 同一问答闭环的续答不再是「独立新消息」，只保留「↻ 续接」chip + 时间戳，
-   * 从视觉上让提问→回答→再答 呈现为同一条回答的延续 */
-  .msg.assistant.is-continued .msg-ai-label__role,
-  .msg.assistant.is-continued .msg-ai-label__model {
-    display: none;
-  }
-  /* UX-9 闭环同体感（2026-09-03）：续接段隐藏 footer（复制/分叉/删除 + 时间戳）——
-   * 整条回答的操作归属首段，续接段纯正文延续（无独立消息感，对齐 TraeWork 单消息多段落）。
-   * 时间戳同样只留首段带，续接段不再重复出现「第二消息」痕迹 */
-  .msg.assistant.is-continued .msg-footer {
-    display: none;
-  }
+  /* （2026-09-21 剪枝）「↻ 续接」chip 与 is-continued 块样式随续接视觉整体退役：
+  * 运行时补充/问答由独立交互条目行分隔、断流续跑不存在、无同轮多段历史数据（见 chatView append 注释） */
 
   /* ============ Components：AI 回复 Markdown 渲染（吸收养分，2026-08-16） ============
    * 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读。

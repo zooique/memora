@@ -2987,13 +2987,14 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const flow = document.querySelector('.process-flow') as HTMLElement | null;
     expect(flow).not.toBeNull();
     expect(flow?.contains(supRow)).toBe(true);
-    // 后续 chunk（同 roundId）→ 新「续接」块（is-continued + ↻ 续接 chip）
+    // 后续 chunk（同 roundId）→ 第 2 段正文块（2026-09-21 剪枝后无 is-continued / 续接 chip，
+    // 补充内容已由独立条目行分隔）
     dispatch({ type: 'chunk', content: '好的，按你的要求继续', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     const continued = blocks[1] as HTMLElement;
-    expect(continued.classList.contains('is-continued')).toBe(true);
-    expect(continued.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
+    expect(continued.classList.contains('is-continued')).toBe(false);
+    expect(continued.querySelector('.msg-ai-label__cont')).toBeNull();
     expect(collectAllBodyText(continued)).toContain('按你的要求继续');
   });
 
@@ -3015,7 +3016,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(supRows[1]!.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
   });
 
-  it('D3 单轨：运行时 qa 回答后 resume，骨架初始即标识续接（2026-09-08 同构收窄：交互已插=必然续接，不闪「新开回答」）', () => {
+  it('D3 单轨：运行时 qa 回答后 resume，骨架为普通第 2 段块（无续接视觉，2026-09-21 剪枝：补充卡片已分隔）', () => {
     mountChatView();
     // 第一段回答（提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
@@ -3030,20 +3031,20 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(askRow.textContent).toContain('需要先确认哪个方案？');
     expect(askRow.textContent).toContain('问');
     // resumeExecution → 新 runFlow 的 meta → resumePending 分支建续接骨架：
-    // 交互行已插 = 必然续接 → 骨架初始即 is-continued + 「↻ 续接」chip（不再零状态闪成新开回答）
+    // 2026-09-21 剪枝：续接视觉整体退役——骨架是普通第 2 段块（无 is-continued / 无 chip），
+    // 补充/问答内容已由独立交互条目行（.round-block__input）上屏分隔
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     const skeleton = blocks[1] as HTMLElement;
-    expect(skeleton.classList.contains('is-continued')).toBe(true);
-    expect(skeleton.querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
-    // 骨架挂在消息流 assistant 链尾（[块A] → [块B 续接]；交互条目在过程容器内，不参与消息流兄弟链）
+    expect(skeleton.classList.contains('is-continued')).toBe(false);
+    expect(skeleton.querySelector('.msg-ai-label__cont')).toBeNull();
+    // 骨架挂在消息流 assistant 链尾（[块A] → [块B]；交互条目在过程容器内，不参与消息流兄弟链）
     expect((blocks[0] as HTMLElement).nextElementSibling).toBe(skeleton);
-    // 首个 chunk（同 roundId）→ flowShellEl 复用骨架，正文流入续接块（chip 幂等不重复）
+    // 首个 chunk（同 roundId）→ flowShellEl 复用骨架，正文流入第 2 段块
     dispatch({ type: 'chunk', content: '好，开始执行方案A', roundId: 'round-1' });
     const continued = document.querySelectorAll('.msg.assistant')[1] as HTMLElement;
     expect(continued).toBe(skeleton);
-    expect(continued.classList.contains('is-continued')).toBe(true);
     expect(collectAllBodyText(continued)).toContain('开始执行方案A');
   });
 
@@ -3077,7 +3078,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(blocks[1].querySelector('.process-flow')).toBeNull();
   });
 
-  it('UX-9 B：重放同 roundId 多段 AI（assistantLog + final）呈连续链，第 2 段起标记续接', () => {
+  it('UX-9 B：重放同 roundId 两段 AI（assistantLog + final）同容器连续，无续接视觉（2026-09-21 剪枝）', () => {
     mountChatView();
     // 普通新闭环用户输入（重置上轮同环判定）
     dispatch({ type: 'user', text: '任务A', ts: 't1', roundId: 'round-1' });
@@ -3085,14 +3086,14 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'assistant', text: '需要先确认哪个方案？', ts: 't2', roundId: 'round-1' });
     // 用户回答（question-answer）
     dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
-    // 最终回答（同 roundId）→ 同环续接
+    // 最终回答（同 roundId）→ 第 2 段（同容器连续，无续接视觉标记）
     dispatch({ type: 'assistant', text: '好，开始执行方案A', ts: 't4', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     expect((blocks[0] as HTMLElement).classList.contains('is-continued')).toBe(false);
-    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
-    expect((blocks[1] as HTMLElement).querySelector('.msg-ai-label__cont')?.textContent).toContain('续接');
-    // 下一轮（新 roundId）→ 不再误标续接
+    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
+    expect((blocks[1] as HTMLElement).querySelector('.msg-ai-label__cont')).toBeNull();
+    // 下一轮（新 roundId）→ 同样无续接视觉
     dispatch({ type: 'user', text: '任务B', ts: 't5', roundId: 'round-2' });
     dispatch({ type: 'assistant', text: '回答B', ts: 't6', roundId: 'round-2' });
     const blocks2 = document.querySelectorAll('.msg.assistant');
@@ -3164,7 +3165,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(qa.textContent).toContain('补充说明');
   });
 
-  it('UX-9 重放路径：replay_events + 前序段 + qa 内联子行、final 为续接（A/B/C 同框回归）', () => {
+  it('UX-9 重放路径：replay_events + 前序段 + qa 内联子行、final 为同容器第 2 段（2026-09-21 剪枝，无续接视觉）', () => {
     mountChatView();
     // 主输入 → 整批过程事件（含 meta）→ 提问前序段
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
@@ -3180,10 +3181,11 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const qa = document.querySelector('.round-block__input') as HTMLElement;
     expect(qa).not.toBeNull();
     expect(qa.textContent).toContain('选方案A');
-    // A/B：前序段与 final 同 roundId → final 为续接链；无打断轮不出现「补充」子行
+    // A/B：前序段与 final 同 roundId → 同容器第 2 段（无续接视觉）；无打断轮不出现「补充」子行
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
-    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(true);
+    expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
+    expect((blocks[1] as HTMLElement).querySelector('.msg-ai-label__cont')).toBeNull();
     // 仅「补充」tag 不存在（本轮是 qa 回答，不渲染 supplement 子行）；「你答」子行仍应在
     const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
       (el) => el.querySelector('.round-block__input-tag')?.textContent === '你补充',
