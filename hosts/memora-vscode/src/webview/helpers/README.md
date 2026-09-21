@@ -1,6 +1,6 @@
 # src/webview/helpers/
 
-Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、文档前缀剥离、滚动等），
+Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、上下文信封剥离、滚动等），
 无副作用、可独立 vitest 测试。
 
 阶段 B（对抗评估 P2-1）后，helpers 统一为**纯函数/纯工具导出**（非「内联脚本字符串」），
@@ -13,7 +13,9 @@ Webview 渲染层纯函数 / 工具（时间格式化、工具名映射、文档
   注意：本文件被 **host 侧**设置面板（`panels/settingsPanel.ts`）使用（host 翻译后推 webview），
   归入 helpers 因其是「能力名 → 中文标签」的展示层纯映射，与 toolNameMap 同类；既可为 host
   侧面板服务，也可被 webview 脚本 import（无 DOM 副作用，esbuild 各端安全）。
-- `docContext.ts` — 剥离宿主注入的「当前打磨文档内容」前缀，导出 `stripDocContextPrefix`。
+- `docContext.ts` — 对话上下文信封的构造与剥离：导出 `buildDocContextBlock` +
+  `buildInjectedContextEnvelope` + `stripInjectedContextPrefix`（技能块 / 文档块的
+  写入与剥离**同文件对偶**，防两侧格式漂移）。
 - `scrollToBottom.ts` — 智能吸底滚动（rAF 节流，仅吸底时滚动，上滚阅读不被拽走），
   chatView 共用；导出 `scrollToBottom` + `trackScroll`（滚动事件处理器，更新吸底状态）。
 - `cardList.ts` — 列表分区渲染纯函数（`createGroupTitle` + `createEmptyState`），

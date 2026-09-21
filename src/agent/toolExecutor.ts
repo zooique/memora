@@ -577,7 +577,8 @@ export class ToolExecutor {
 
   /**
    * 注入 memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」，§2.4 保留改语义定案）。
-   * 转发给 builtinHandlers：search_memories 命中记忆时触发，与 warmRecall 的 memoryRecalled 并为仅存两个触发位。
+   * 转发给 builtinHandlers：search_memories 命中记忆时触发，为全库**唯一** memoryRecalled
+   * 发射位（warmRecall 恢复例外已随跨重启恢复链 2026-09-10 整体退役）。
    *
    * @param callback 命中回调（count 命中条数 / query 检索词），缺省注入则工具静默（无宿主 no-op）
    */

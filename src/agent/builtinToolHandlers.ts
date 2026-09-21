@@ -174,7 +174,9 @@ export class BuiltinToolHandlers {
 
   /**
    * 注入 memoryRecalled 事件发射回调（宿主消费，§2.4「保留改语义」定案）。
-   * 搜索工具命中记忆时触发，文案语义 =「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发。
+   * 搜索工具命中记忆时触发，文案语义 =「LLM 查询记忆命中 N 条」。
+   * **唯一触发位**：warmRecall 恢复例外已随跨重启恢复链于 2026-09-10 整体退役
+   * （勿按旧注释去找「第二处发射点」，全库仅本类 emit memoryRecalled）。
    * 缺省不注入则静默跳过（内置工具也可被测试/脚本直调，无宿主时 no-op）。
    */
   setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
@@ -1027,7 +1029,7 @@ export class BuiltinToolHandlers {
     this.touchHits(hits);
 
     // memoryRecalled 事件（§2.4「保留改语义」定案）：LLM 查询记忆命中 N 条 → 宿主感知提示。
-    // 与 warmRecall（恢复路径）的 memoryRecalled 发射并列为仅存的两个触发位。
+    // 唯一发射位：warmRecall（恢复路径）2026-09-10 已随跨重启恢复链退役，此处是全库唯一 emit。
     this.onMemoryRecalled?.({ count: hits.length, query });
 
     const lines = hits.map((m, i) => {

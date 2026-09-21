@@ -866,7 +866,8 @@ export async function assembleComponents(
   // 注入后 search_memories 走 searchHybrid（关键词+superseded 过滤+accessedAt/溯源揭示，§3.3；语义通道已随 B0 收编）
   toolExec.setMemoryInspector(memoryInspector);
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
-  // 「LLM 查询记忆命中 N 条」；warmRecall（恢复例外）由 Agent 门面另发 memoryRecalled。
+  // 「LLM 查询记忆命中 N 条」。唯一发射位 = search_memories 命中
+  // （warmRecall 恢复例外已随跨重启恢复链 2026-09-10 整体退役）。
   toolExec.setOnMemoryRecalled((info) => hooks?.emit(AGENT_EVENTS.memoryRecalled, info));
   // 接线工具召回与装配期内容互斥（§5.1）：search_memories 排除「正文或摘要已在眼前」的轮次
   // round-summary，避免 LLM 拿回眼前内容的摘要重复。排除集从 loop 工作记忆视图精确派生

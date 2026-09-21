@@ -45,7 +45,11 @@ import { createProvider } from '../../extension/host/llmConfig.js';
 import { vscodeTracer } from '../../extension/host/tracer.js';
 import { buildDropdownHtml, dropdownStyles } from '../components/dropdown.js';
 import { chatStyles } from '../styles/chatStyles.js';
-import { stripDocContextPrefix } from '../helpers/docContext.js';
+import {
+  buildDocContextBlock,
+  buildInjectedContextEnvelope,
+  stripInjectedContextPrefix,
+} from '../helpers/docContext.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import { listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
@@ -1828,8 +1832,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 从 sessionStore 恢复当前会话的完整历史（round-based 模式，v1.5 交织重放）
    *
    * 每轮恢复策略：
-   *   - user 消息：剥离 `[当前打磨文档内容]` 前缀（该前缀为宿主注入的当前任务上下文，
-   *     不属于用户实际输入，仅用于 LLM 上下文，不应回显）。
+   *   - user 消息：剥离宿主注入的上下文信封前缀（技能块 + `[当前打磨文档内容]` 文档块，
+   *     二者均属宿主注入的当前任务上下文，不属于用户实际输入，仅用于 LLM 上下文，
+   *     不应回显 —— 与实时回显发裸 input 对称）。
    *   - assistant 消息：完整内容（避免拼接不完整流；仅 complete 状态恢复）。
    *   - processEvents：该轮过程事件（正文与过程同源同轮，与运行时同一渲染数据源）。
    *   - 内核注入的 `<user_input>` 系统消息跳过（由内核 appendUser 持久化的 user 消息替代）。
@@ -1852,7 +1857,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         rounds.push({
           roundId: round.id,
           user: round.userMessage?.content
-            ? { content: stripDocContextPrefix(round.userMessage.content), ts: round.userMessage.timestamp }
+            ? { content: stripInjectedContextPrefix(round.userMessage.content), ts: round.userMessage.timestamp }
             : undefined,
           // assistant 正文块仅 complete 轮挂载 —— **渲染分流判据，非收场判据**（勿替换为
           // isRoundSettled）。中断轮**可能确有** assistantMessage：`MessageHistory.appendInterrupted`
@@ -1993,7 +1998,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
           | 'user'
           | 'assistant',
-        content: m.role === 'user' ? stripDocContextPrefix(m.content) : m.content,
+        content: m.role === 'user' ? stripInjectedContextPrefix(m.content) : m.content,
         ts: m.timestamp,
         roundId: m.roundId,
       });
@@ -2091,13 +2096,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         skillBlock = '';
       }
     }
-    // 注入文档上下文（当前任务上下文，不进入记忆召回）
-    const docBlock = this._docContext
-      ? `[当前打磨文档内容]\n${this._docContext}\n[/当前打磨文档内容]`
-      : '';
-    const chatInput = skillBlock || docBlock
-      ? `${[skillBlock, docBlock].filter(Boolean).join('\n\n')}\n\n用户请求：${input}`
-      : input;
+    // 注入文档上下文（当前任务上下文，不进入记忆召回）。
+    // 信封构造与剥离同源收口在 helpers/docContext（技能块在前、文档块在后；无任何块时
+    // **不加信封**，不注入「用户请求：」分隔符），回放侧因此可安全以分隔符为界还原用户请求。
+    const docBlock = this._docContext ? buildDocContextBlock(this._docContext) : '';
+    const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock], input);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
     await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
