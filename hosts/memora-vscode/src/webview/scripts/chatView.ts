@@ -3544,9 +3544,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         streamBodyRendered = false;
         // 注意：不置 activeAssistantEl = null —— 打断点引用保留给打断分条定位（见下）
       }
-      // 交互输入/问答：清残留骨架 + 等待指示器（后续段形态由 chunk/meta 决定）
-      flowShellEl?.remove();
-      flowShellEl = null;
+      // 交互输入/问答：清残留骨架 + 等待指示器（后续段形态由 chunk/meta 决定）。
+      // 2026-09-21 骨架期 ask 回归修复：ask 挂起（question-answer/timeout）时骨架是原位续写锚
+      // （flowShellEl + pausedAssistantEl 双引用）——删除会使 resume meta 的 pausedResume 判定失效
+      // （isConnected=false）→ 误走 resumePending → prepareFlowShell 挂 resolveInteractionAnchor 兜底位
+      // （消息流最后 assistant 块 = 上一轮）致回答错位，且 flowEl 随骨架消散使「你答」条目兜底挂
+      // 消息流尾（实证：ask 点选项后 LLM 回答接上一 turn、用户输入/补充孤零零在底部）。
+      // 保留骨架与引用：后续 chunk 走 flowShellEl 分支复用开启正文流（原位续写单块，与重放同构）。
+      // supplement（打断补充 interject）维持删除语义：打断后由 beginStreaming 新建块 + 容器化归位，
+      // 空壳骨架无保留价值。
+      if (msg.kind === 'supplement') {
+        flowShellEl?.remove();
+        flowShellEl = null;
+        // 防御：被删骨架若持 pausedAssistantEl 锚（罕见混合态），同步失效防悬空续写误判
+        if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
+      }
       clearPendingWait();
       // UX-9：带 kind 的交互输入 → 行内打断分条（supplement）/ 消息流内联子行（qa）。
       // D3 单轨：后续 assistant 段是否续接由 chunk 携带的 roundId 与 lastAssistantRoundId

@@ -2818,6 +2818,56 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(collectAllBodyText(assistants[0])).toBe('提问前的正文已按方案 A 继续');
   });
 
+  it('骨架期 ask：LLM 未输出正文即提问——点选项后回发 user(kind) 不删骨架，resume 原位续写单块（2026-09-21 回归）', () => {
+    const { postMessage } = mountChatView();
+    // ① meta 建骨架（此后无任何正文 chunk —— 骨架未转正，LLM 首动作即 ask_user 的真实链路）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
+    // ② ask 弹窗（内联选择题）
+    dispatch({
+      type: 'need_clarify',
+      questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
+    });
+    // ③ 点击选项 → commitAskAnswer（pausedAssistantEl = 骨架）
+    const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
+    (btns[0] as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '方案 A' });
+    // ④ 宿主 handleResume 回发 user(kind='question-answer') —— 真实链路关键：骨架在此不得被删
+    dispatch({ type: 'user', text: '方案 A', ts: 't2', kind: 'question-answer' });
+    // ⑤ resume 重发 meta → pausedResume 原位续写判定（骨架必须仍在 DOM，isConnected 恒真）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: 't2', payload: { role: 'AI', llm: 'm' } } });
+    // ⑥ 续写正文（同轮）→ done 收敛
+    dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    // 回归断言：单块续写（骨架复用开启正文流，不新建块 B）——修复前骨架被删 → pausedResume
+    // 判定失效（isConnected=false）→ 误走 resumePending → prepareFlowShell 挂 resolveInteractionAnchor
+    // 兜底位（消息流最后 assistant 块 = 上一轮）→ 回答错位；flowEl 随骨架消散 → 「你答」条目孤儿底部
+    const assistants = document.querySelectorAll<HTMLElement>('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    expect(collectAllBodyText(assistants[0])).toBe('已按方案 A 继续');
+    // done 后：运行时平铺容器已收敛（过程收进折叠块，G31 设计行为），QA 折入折叠块、无孤儿残留
+    expect(document.querySelector('.process-flow')).toBeNull();
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(rb).not.toBeNull();
+    expect(assistants[0].contains(rb)).toBe(true);
+    expect(rb.querySelector('.round-block__details .round-block__input')?.textContent).toContain('方案 A');
+  });
+
+  it('骨架期 ask 修复核心：普通（非 ask）交互回发 user(kind) 时骨架仍保留——过程流与骨架同源不孤儿', () => {
+    mountChatView();
+    // 骨架期（无正文 chunk）+ 交互回答提交（点选项后宿主回发 user(kind)）——骨架不得被删
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'user', text: '方案 A', ts: 't2', kind: 'question-answer' });
+    // 骨架仍在 DOM（含过程流），「你答」条目进骨架过程流、不孤儿挂消息流尾
+    const assistants = document.querySelectorAll<HTMLElement>('.msg.assistant');
+    expect(assistants).toHaveLength(1);
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    expect(assistants[0].contains(flow)).toBe(true);
+    const qaRow = document.querySelector('.round-block__input') as HTMLElement;
+    expect(qaRow).not.toBeNull();
+    expect(flow.contains(qaRow)).toBe(true);
+  });
+
   it('无 options 的 need_clarify 不渲染选项按钮（仅补充输入通道）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
