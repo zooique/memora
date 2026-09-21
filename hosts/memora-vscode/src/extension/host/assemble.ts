@@ -29,10 +29,16 @@ import { vscodeTracer } from './tracer.js';
 import type { ProviderStore } from '../providers/providerStore.js';
 
 /**
- * 宿主可覆盖的 UI 消息中文化（P0，激进对齐 UIMessages 契约）
+ * 宿主 UI 消息中文化（P0）
  *
- * 内核默认英文 UI 文案（如 abortedByUser），插件为中文用户，全部覆盖为中文。
- * 未启用的场景（如自审查 selfReviewPrompt）覆盖后无害——不触发即不消费。
+ * UIMessages 全键可选，未覆盖即用内核默认。本对象只覆盖**内核默认非中文、且能到用户眼前**的键；
+ * 以下三类刻意不覆盖，各有理由（判据不同，不是遗漏）：
+ *   - `softLimitWrapup` / `duplicateToolCallWarning`：内核默认本就是中文，复制一份到宿主即双轨镜像
+ *     （内核改文案宿主不跟随），故只依赖内核默认文案；
+ *   - `abortedByTimeout`：内核默认虽为英文，但渲染层按 `aborted.stopReason` 重贴中文
+ *     （chatView 的 stopReasonLabel：timeout → 「对话处理超时」；内核恒带 stopReason），文案真源在渲染层；
+ *   - 已覆盖键中的低频场景（如自审查 selfReviewPrompt）：覆盖后无害——不触发即不消费。
+ * ⚠️ 覆盖边界即本清单：内核若新增英文默认的 UI 键，须回来补此处，勿假定「全键已覆盖」。
  */
 const CHINESE_MESSAGES: UIMessages = {
   // 对话取消 / 达上限 / 流式中断（三者均为「对话末尾状态标记」）
@@ -291,10 +297,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     projectSearchProvider: projectSearchRoot
       ? createVscodeProjectSearchProvider(projectSearchRoot)
       : undefined,
-    // UI 消息中文化（P0：内核默认英文，覆盖为中文）
+    // UI 消息中文化（P0：覆盖内核的英文默认文案；**覆盖边界**见 CHINESE_MESSAGES 注释，勿当全键覆盖）
     messages: CHINESE_MESSAGES,
-    // 角色包**只用手动切换**（v0.13：内核已移除自动匹配全链，无需 strategyOverride 覆盖——
-    // 切换入口唯一走角色管理视图的 agent.switchRolePack；保留既有键语义扩展为 §4.1 解析链第一层）
+    // 角色包**只用手动切换**（v0.13：内核已移除自动匹配全链）；切换入口唯一走角色管理视图的
+    // agent.switchRolePack，`activeRolePack` 键保留并扩展为 §4.1 解析链第一层。
+    // 此处不传 `strategyOverride`：它与「自动匹配」无关——是宿主**产品能力边界**覆盖（内核 types 明示
+    // 「本机制保留供宿主能力边界使用」，活着、非废弃）；宿主当前不就任何策略键声明边界，故留空。
+    // 未来若需从产品侧压过角色包声明（如强制关 userFollowup），入口即此键。
     // 执行前检查：单用户桌面场景恒放行（intentionally left blank）。
     // 理由：1) VSCode 插件运行在用户本地，天然信任模型；2) 工具审计已由
     // tool_start/tool_result chunk + tool.execute span 承担，不重复记录。

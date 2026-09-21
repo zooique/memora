@@ -319,7 +319,8 @@ export class ProviderStore {
         model: config.model.trim(),
         apiKey: config.apiKey.trim(),
         provider: config.provider,
-        // 能力位透传（互斥双能力位，2026-09-14 阶段0）：undefined → 内核回落 true
+        // 能力位透传（互斥双能力位，2026-09-14 阶段0）：未声明由内核按**各自方向**回落——
+        // supportsToolCalling → true；supportsStructuredOutput → false（勿读成「默认都开」）。
         supportsToolCalling: config.supportsToolCalling,
         supportsStructuredOutput: config.supportsStructuredOutput,
       });

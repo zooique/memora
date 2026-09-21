@@ -70,7 +70,8 @@ export function createProviderFromConfig(
     baseUrl: resolvedBaseUrl,
     apiKey: apiKey ?? '',
     defaultModel: model,
-    // 能力位透传：默认 undefined → OpenAICompatibleProvider 内回落 true
+    // 能力位透传：未填（undefined）由 OpenAICompatibleProvider 内按**各自方向**回落——
+    // supportsToolCalling → true，supportsStructuredOutput → false（见上方字段文档；勿读成「默认都开」）。
     supportsToolCalling: providerConfig.supportsToolCalling,
     supportsStructuredOutput: providerConfig.supportsStructuredOutput,
   });
