@@ -2641,6 +2641,47 @@ describe('Agent · chat() 锁超时机制', () => {
     expect(abortedChunks.length).toBe(0);
   }, 30000);
 
+  it('回归修复：锁超时释放后（isBusy=false）流仍在产出 → requestPause 应返回 true（不再误判任务已结束）', async () => {
+    const provider = new HungProvider();
+    agent = new Agent({
+      projectPath: tmpProject,
+      provider,
+      configDir: tmpConfig,
+      dataDir: tmpData,
+      permission: 'owner',
+      allowedPaths: [tmpData],
+    });
+    await agent.init();
+
+    // 启动 chat，消费第一个 chunk 进入流中
+    const gen = agent.chat('超时暂停回归');
+    await gen.next();
+    expect(agent.isBusy).toBe(true);
+
+    // 推进 time 触发锁超时——锁释放（isBusy=false）但不中断生成流
+    await advanceToLockTimeout();
+    expect(agent.isBusy).toBe(false);
+
+    // 关键断言：流仍在产出（未被中断），requestPause 不得因锁超时被误作废。
+    // 回归来源：2026-09-03 cc6cae13 锁超时仅释放锁不再中断流，requestPause 空闲守卫
+    // 用 isBusy（锁语义）判「任务已结束」→ 长任务运行超锁期后暂停申请被误拒。
+    // 修复：空闲守卫改用 _flowActive（流生命周期，chat()/resumeExecution 显式维护）。
+    expect(agent.requestPause('锁超时后暂停', 'user')).toBe(true);
+    // 申请已注册（pending），可取消
+    agent.cancelPauseRequest();
+    expect(agent.isPausePending()).toBe(false);
+
+    // 清理：解除 HungProvider 阻塞，消费剩余 chunk
+    provider.outerResolve();
+    try {
+      for await (const {} of gen) {
+        // drain
+      }
+    } catch {
+      // 超时后 generator 可能抛错，忽略
+    }
+  }, 30000);
+
   it('锁超时后新调用应能获取锁（不抛"对话繁忙"）', async () => {
     const provider = new HungProvider();
     agent = new Agent({

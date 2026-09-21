@@ -171,6 +171,13 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /** 最近一次 chat() 调用的时间戳 */
   private _lastInteractionAt: Date | null = null;
   /**
+   * 流活跃标志：chat()/resumeExecution() 的 AsyncGenerator 生命周期内置 true、finally 置 false。
+   * 与 chatLock.isBusy（并发锁，180s 超时后自动释放但**不中断生成流**）语义解耦——
+   * requestPause 空闲守卫必须用「流是否在产出」而非「锁是否持有」判任务是否结束，
+   * 否则长任务运行超锁期后点暂停会被误判为「任务已结束」（2026-09-03 cc6cae13 锁语义变更 + 09-07 收紧叠加回归）。
+   */
+  private _flowActive = false;
+  /**
    * 对话中因 chatLock 冲突暂存的配置重载请求（锁释放后补执行，兑现"对话后自动加载"）；
    * 用 Set 去重——同一 source 只需补执行一次。
    */
@@ -447,6 +454,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const lockCtx = this.acquireChatLock(signal);
     const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
     try {
+      // 流活跃置位：requestPause 空闲守卫据此判「任务进行中」——锁 180s 超时释放后
+      // isBusy=false 但流仍在产出，必须以流生命周期（而非锁持有）为准（09-03 锁语义变更回归修补）
+      this._flowActive = true;
       // 状态机翻转是副作用，必须在并发闸门内执行——PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
       if (!this.autoResumeIfPaused()) {
         yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话', category: 'timeout' };
@@ -457,6 +467,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 委托种子编排器：对话路径完整闭环（prepare → act → reflect）
       yield* this.internals.seedOrchestrator!.runChat(input, combinedSignal);
     } finally {
+      // 流已退出：清除活跃标志（与置位对称；无论正常/异常退出都复位）
+      this._flowActive = false;
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
@@ -575,6 +587,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const lockCtx = this.acquireChatLock(signal);
     const { myToken, combinedSignal, cleanupExternalSignal } = lockCtx;
     try {
+      // 流活跃置位：与 chat() 同构（requestPause 空闲守卫判据——续跑也是活跃流）
+      this._flowActive = true;
       // 翻状态机为 RUNNING（触发 sessionResumed）
       if (!this.resume()) {
         // resume() 返回 false 时 yield error + 发事件，让宿主感知失败原因而非静默吞没
@@ -600,6 +614,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 预判短路与锁/状态机守卫留在门面，执行语义收在编排器内。
       yield* this.internals.seedOrchestrator!.runResume(input, combinedSignal, kind);
     } finally {
+      // 流已退出：清除活跃标志（与置位对称；无论正常/异常退出都复位）
+      this._flowActive = false;
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
@@ -780,12 +796,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       return false;
     }
 
-    // 空闲守卫（2026-09-07 收紧，用户拍板）：无活跃流时暂停无消费方——此前直接同步翻状态机并落盘
-    // checkpoint，导致「turn 已完成后的暂停」把会话钉在 paused，后续新输入被宿主路由成 supplement
-    // （新意图被吞成"上一个回答的补充"，毒化闭环节点；loop 无流消费的延迟翻转亦无意义）。
+    // 空闲守卫（2026-09-07 收紧，用户拍板；2026-09-21 判据修正）：无活跃流时暂停无消费方——此前直接
+    // 同步翻状态机并落盘 checkpoint，导致「turn 已完成后的暂停」把会话钉在 paused，后续新输入被宿主路由成
+    // supplement（新意图被吞成"上一个回答的补充"，毒化闭环节点；loop 无流消费的延迟翻转亦无意义）。
     // 任务已结束 = 暂停申请作废，返回 false 供宿主明确反馈；系统/Agent 触发（ask_user/drift）均在
-    // 流中（isBusy=true）不经过此分支，不受影响。
-    if (!this.isBusy) {
+    // 流中（_flowActive=true）不经过此分支，不受影响。
+    // ⚠ 判据修正（回归修复）：从 chatLock.isBusy（锁持有）改为 _flowActive（流活跃）——chatLock 锁
+    // 180s 超时后自动释放（不中断生成流，2026-09-03 cc6cae13），长任务运行超锁期后 isBusy=false 但流
+    // 仍在产出，旧判据会把「进行中的暂停申请」误作废成「任务已结束」；_flowActive 由 chat()/resumeExecution()
+    // 的流生命周期显式维护，与锁超时无关，是「任务是否仍在运行」的准确判据。
+    if (!this._flowActive) {
       logger.debug({ reason, source }, 'requestPause 空闲守卫：任务已结束，暂停申请作废');
       return false;
     }
