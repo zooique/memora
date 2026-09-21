@@ -682,6 +682,8 @@ loop 内溢出时：对话记录 ──压缩──▶ 压缩摘要（loop 内�
 
 ### 12.4 上下文装配策略：触发源决定召回行为
 
+> **⚠️ 本节已整体失效（2026-09-10 核实）**：本节所述「装配时 `recall()` 自动注入记忆/摘要」机制已随**记忆纯工具化**全部退役——`recall()` 召回编排（含 `recallAndInject`，已改名 `assembleContext`）不复存在，prepare 不再注入任何记忆。**现行装配 = 纯上下文拼接**（system + 对话层 + 输入），记忆检索唯一入口 = `search_memories` 工具，由 LLM 主动取用（详见 [memory-tool-recall-design.md](memory-tool-recall-design.md)）。下文为退役前的设计推导记录，勿据以实施。
+
 装配上下文的策略，取决于**本轮由谁触发**，而非是否在同一会话。
 
 ```
