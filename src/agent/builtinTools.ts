@@ -645,7 +645,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '可按需传 timeout_ms 秒，如脚本内调用 API 耗时较长）、工作目录=项目根、继承宿主用户环境变量' +
       '（用户本地 shell 语义，脚本可读 API key/工作区变量等）。扩展名推断运行时：.py→python、.js/.mjs/.cjs→node、.sh/.bash/.zsh→shell。' +
       '与 run_code(script_path) 的区别：本工具运行**仓库既有**脚本（默认开放、内核执行）；' +
-      'run_code 面向 LLM 现写的一次性临时脚本（特权 code:execute + 宿主沙箱，写→执行→删闭环）。',
+      'run_code 面向 LLM 现写的一次性临时脚本（特权 code:execute + 宿主沙箱，写→执行→删闭环）。' +
+      '文件组织类操作（批量移动/重命名/归档/复制）优先用脚本一次完成（fs 重命名或一行 mv），避免逐文件 read→write→delete 的多轮低效操作。',
     parameters: {
       type: 'object',
       properties: {
