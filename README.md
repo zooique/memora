@@ -59,6 +59,8 @@ await agent.close();
 
 > **边界声明**：memora 是**不可独立运行的纯逻辑内核**——持久化 / 沙箱 / 可观测 / CLI·UI 均由宿主注入。内核保证**接口契约 + 单测验证的逻辑正确性**，agent 级行为评估由宿主自行承担。
 
+> **零依赖如何成立（2026-09-21 审计）**：「零依赖」特指**零第三方运行时依赖**。内核仅使用 Node 内置模块（`node:fs` / `node:path` / `node:crypto` / `node:os` / `node:child_process`），6 类共见于 18 个生产文件，全部必要、无冗余。文件落盘（记忆 / 角色包 / 原子写 / 技能脚本执行）走**接口 + 内存默认实现**（如 `ISessionStore` → `InMemorySessionStore`），持久化 sink 交由宿主注入 `WorkspaceSessionStore` 等实现替换——这既支撑「本地、私有、零依赖」卖点，也遵守「持久化由宿主注入」边界。
+
 ---
 
 ## 为什么选择 Memora？
@@ -72,7 +74,11 @@ await agent.close();
 | **角色/记忆分离** | ✅ 角色包边界纪律 | ❌ 无角色概念 | ⚠️ 简单 prompt |
 | **Embeddable** | ✅ 任何 Node.js 宿主 | ✅ 独立库 | ❌ 框架内使用 |
 
-**一句话定位**：如果你想要一个**不绑定框架、有治理能力、零依赖**的记忆层，Memora 是目前 npm 上唯一的选择。
+**一句话定位**：如果你想要一个**不绑定框架、有治理能力、零依赖**的 memory + agent 内核，Memora 有清晰的差异化——它不是一个记忆 server / CLI / MCP 工具，而是一个可嵌入宿主、含完整执行闭环（loop / 工具 / 上下文 / 角色包 / 记忆即摘要）的纯逻辑内核。
+
+> **生态定位（2026-09-21 实证）**：npm 上 agent 类包已分两轴——**引擎轴**（loop/工具执行：`@ownware/loom`、`@hbbio/nanoagent`、`@imzx/imzx`、`thoth-agent` 等）与**记忆层轴**（`@agentmemory/agentmemory`、`mem0`、`flair`、`honcho`、`engram`、`agentic-memory` 等）。Memora 同时触及两轴，但**具体组合无人占据**：① 引擎轴同等竞品均有运行时依赖或绑定特定 runtime（loom=7 deps、imzx=11 deps、nanoagent 绑定 bun），而 Memora 是**纯 Node 零第三方运行时依赖**；② 记忆层包（engram / agentic-memory 等）只做记忆，**不提供执行内核**；③ 引擎轴包（loom 等）只做**会话内**上下文 / checkpoint，**没有跨会话被治理的长期记忆**（内存治理：去重 / 冲突检测 / supersede 写时取代 / 角色包隔离）。**护城河 = 治理型长期记忆 + 角色包隔离，以纯 Node 零依赖、宿主内嵌形态交付**。引擎轴上有 [loom](https://www.npmjs.com/package/@ownware/loom) 这样的强对手，不应与其在「引擎」轴上对拼；竞争力聚焦在「被治理的记忆 + 角色包」这一 layer。
+
+> **可被复用去开发 Agent（是）**：Memora 生来就是**宿主注入型的内核库**——`Agent` 门面 + `loop` 执行闭环 + 工具注入接口（web_search / web_fetch / run_code / search_project）+ `createProviderFromConfig`（可接任意 OpenAI 兼容 LLM），任何 Node.js 宿主都能用它搭出**带记忆和角色的自有 Agent**（聊天框、桌面精灵、文档助理、运算 worker……）。这正是设计意图：它只有接口、没有形态，形态由宿主定义。唯一前提是宿主需提供持久化 / 沙箱 / UI 等外围（内核不内置 sink）。
 
 ---
 
