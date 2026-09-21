@@ -36,6 +36,7 @@ import { formatExecutionResult, formatScriptResult, runSkillScript } from '@/ski
 import { resolveSafePath, inferRuntimeFromExt, type ScriptRuntime } from '@/utils/scanner.js';
 import type {
   IProjectSearchProvider,
+  ProjectFileSearchResult,
   ProjectTextSearchResult,
 } from '@/project-search/types.js';
 import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
@@ -189,6 +190,57 @@ function formatProjectTextSearch(result: ProjectTextSearchResult, query: string)
   if (partial > 0) notes.push(`另有 ${partial} 个文件只检索了前一部分（文件过大，后半段未覆盖）`);
   if (unreadable > 0) notes.push(`另有 ${unreadable} 个文件读取失败，完全未参与检索`);
   return notes.length > 0 ? `${lines}\n（${notes.join('；')}）` : lines;
+}
+
+/**
+ * name 模式检索结果格式化（SEARCH-1 · 语义对齐 content 的两轮放宽）
+ *
+ * name 模式两轮语义：先按 query 原样作 glob 精确匹配；零命中且 query 不含 glob 元字符、
+ * 且内核下发了 `terms` 时，宿主按名称子串逐词 OR 放宽。故零命中同样要交代这个零是否可信：
+ * 放宽过（可信零）/ 检索失败（无结论）/ 截断过（不可信零）。
+ *
+ * ⚠️ 放宽用词**只**从 `result.termsUsed` 取（同 content，不回退到内核自己下发的 `terms`）：
+ * 唯一真值 = 宿主回报的"实际用了哪些词"。
+ */
+function formatProjectFileSearch(result: ProjectFileSearchResult, query: string): string {
+  if (result.failed) {
+    return (
+      `（项目文件检索未完成（超时或出错），"${query}" 是否存在尚无结论——这不是"没搜到"。` +
+      '可重试一次，或换更具体的文件名模式）'
+    );
+  }
+
+  // 放宽用词只取宿主回报，文案与 content 同构（"整串"→"整串 glob"的自洽表述）
+  const relaxedNote = result.relaxed
+    ? `；整串未精确命中，已按名称放宽为 ${(result.termsUsed ?? []).join('、')} 后仍未命中`
+    : '';
+
+  if (result.matches.length === 0) {
+    // 零命中的"可信度缺口"：检索被截断 → 不一定是"不存在"（name 模式截断仅 results 主因）
+    if (result.truncated) {
+      return (
+        `（未在项目中找到匹配 "${query}" 的文件${relaxedNote}；但检索已达上限、项目仍有未检索的文件——` +
+        '这个"未找到"不等于"不存在"，可换更具体的 glob 重试）'
+      );
+    }
+    // 可信零：原文案不变（未放宽 = 原样 glob 精确匹配的零；放宽过则追加放宽说明）
+    return `（未在项目中找到匹配 "${query}" 的文件${relaxedNote}）`;
+  }
+
+  const fileLines = result.matches.map((m, i) => `${i + 1}. ${m.path}`).join('\n');
+  const notes: string[] = [];
+  if (result.relaxed) {
+    notes.push(
+      `整串未精确命中，以下为按名称放宽（${(result.termsUsed ?? []).join('、')}）后的匹配，可能不是精确命中`,
+    );
+  }
+  // name 模式由宿主 findFiles 按 maxResults 截断：达上限即提示可能截断（与 content 文案同构）
+  if (result.truncated) {
+    notes.push(
+      `结果可能已截断：仅返回前 ${result.matches.length} 条，项目可能仍有更多匹配；如需精确定位请换更具体的 glob`,
+    );
+  }
+  return notes.length > 0 ? `${fileLines}\n（${notes.join('；')}）` : fileLines;
 }
 
 // ─── read_skill / read_resource 注入防御常量 ─────────────────
@@ -1088,20 +1140,23 @@ export class ToolExecutor {
           });
           return formatProjectTextSearch(search, query);
         }
-        // name 模式：query 为文件名 glob（省略时列出项目全部文件）
-        const fileMatches = await safeSearchProjectFiles(this.projectSearchProvider, {
-          query: query || '**/*',
+        // name 模式：query 为文件名 glob（省略时列出项目全部文件）。
+        // SEARCH-1：与 content 对齐两轮语义——原样 glob 精确匹配；仅当 query 不含 glob 元字符
+        // 时，才有"零命中→按名称子串放宽"的余地（裸词=关键词才需要模糊。含 glob 则精准匹配）。
+        const nameQuery = query || '**/*';
+        const hasGlobMeta = /[*?{}[\]]/.test(nameQuery);
+        // 放宽词表：复用 content 同一生产函数 buildSearchTerms（SSOT，无第二份放宽节奏）；
+        // 剔除与整串等价的词——否则宿主会做一轮与精确轮逐字相同的徒劳扫描并回报名不副实的 relaxed。
+        const nameTerms = !hasGlobMeta
+          ? buildSearchTerms(nameQuery).filter((t) => t.toLowerCase() !== nameQuery.toLowerCase())
+          : undefined;
+        const fileSearch = await safeSearchProjectFiles(this.projectSearchProvider, {
+          query: nameQuery,
+          ...(nameTerms && nameTerms.length > 0 ? { terms: nameTerms } : {}),
           exclude,
           maxResults,
         });
-        if (fileMatches.length === 0) {
-          return `（未在项目中找到匹配 "${query || '**/*'}" 的文件）`;
-        }
-        const fileLines = fileMatches.map((m, i) => `${i + 1}. ${m.path}`).join('\n');
-        // name 模式由宿主 findFiles 按 maxResults 截断：返回数达上限即提示可能截断
-        return fileMatches.length >= maxResults
-          ? `${fileLines}\n（结果可能已截断：仅返回前 ${fileMatches.length} 条，项目可能仍有更多匹配；如需精确定位请换更具体的 glob）`
-          : fileLines;
+        return formatProjectFileSearch(fileSearch, nameQuery);
       }
       case 'task_table_write': {
         // 写入任务表（overwrite / append / update）；steps 每项可选 rolePack（会议表层装配角色）

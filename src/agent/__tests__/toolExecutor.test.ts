@@ -654,16 +654,31 @@ describe('工具执行器（6 个工具）', () => {
     };
 
     const mockProjectProvider: IProjectSearchProvider = {
-      async searchFiles(options: { query?: string; maxResults?: number }) {
-        // name 模式：按 query 过滤（省略 query 时列出全部）；返回 { path } 对象数组
+      async searchFiles(options: { query?: string; maxResults?: number; terms?: string[] }) {
+        // name 模式：先按 query 原样 glob 精确匹配；零命中且内核下发 terms 才按名称子串放宽。
+        // 返回结果对象（与 content 同构：放宽/截断各有载体）。
         const all = [
           { path: 'src/index.ts' },
           { path: 'src/utils.ts' },
           { path: 'README.md' },
         ];
-        if (!options.query || options.query === '**/*') return all.slice(0, options.maxResults);
-        if (options.query === '**/*.ts') return [all[0]!, all[1]!];
-        return [];
+        const include = options.query || '**/*';
+        if (include === '**/*') {
+          const m = all.slice(0, options.maxResults);
+          return {
+            matches: m,
+            ...(m.length >= (options.maxResults ?? all.length)
+              ? { truncated: true, truncatedBy: 'results' as const }
+              : {}),
+          };
+        }
+        if (include === '**/*.ts') return { matches: [all[0]!, all[1]!] };
+        // 原样 glob 零命中 → 有 terms 才按名称子串放宽（模拟宿主两轮语义）；
+        // 进入放宽轮即标 relaxed（零命中也记"曾放宽"，与真实宿主 toResult 一致）
+        const terms = options.terms ?? [];
+        if (terms.length === 0) return { matches: [] };
+        const relaxed = all.filter((f) => terms.some((t) => f.path.toLowerCase().includes(t.toLowerCase())));
+        return { matches: relaxed, relaxed: true, termsUsed: terms };
       },
       async searchText(options: { pattern: string; maxResults?: number; terms?: string[] }) {
         // 抛错 → 由 safeSearchProjectText 统一转为 failed 位（端到端覆盖宿主失败路径）
@@ -713,6 +728,37 @@ describe('工具执行器（6 个工具）', () => {
         expect(result).toContain('src/index.ts');
         expect(result).toContain('src/utils.ts');
         expect(result).not.toContain('README.md');
+      });
+
+      it('name 模式裸词放宽命中：标注非精确命中，用词只取宿主回报的 termsUsed', async () => {
+        // "index main" 经 buildSearchTerms → ['index','main']（与整串不等价），走放宽轮
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: 'index main', mode: 'name' }),
+        );
+        expect(result).toContain('src/index.ts'); // 名称子串命中
+        expect(result).toContain('放宽');
+        expect(result).toContain('index'); // 宿主回报的实际用词
+      });
+
+      it('name 模式裸词放宽仍零命中：文案给"未找到"+放宽说明（可信零，非"不存在"）', async () => {
+        // "totally missing" 无任何文件命中 → 放宽轮也零 → 说明放宽但仍是可信零
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: 'totally missing', mode: 'name' }),
+        );
+        expect(result).toContain('未在项目中找到');
+        expect(result).toContain('已按名称放宽'); // 明确交代放宽过，避免把放宽零当成精确零
+      });
+
+      it('name 模式含 glob 元字符零命中：不进入放宽（原文案可信零）', async () => {
+        // "*.md" 含 glob 元字符 → 整串 glob 精确匹配；零命中也**不**放宽（保 glob 语义）
+        const result = await execWithProject.execute(
+          'search_project',
+          JSON.stringify({ query: '*.md', mode: 'name' }),
+        );
+        expect(result).toContain('未在项目中找到');
+        expect(result).not.toContain('放宽'); // 含 glob 元字符不得放宽（否则破坏 glob 语义）
       });
 
       it('省略 query 时列出项目全部文件（受 maxResults 限制）', async () => {
@@ -817,7 +863,7 @@ describe('工具执行器（6 个工具）', () => {
         const seen: Array<string[] | undefined> = [];
         const spyProvider: IProjectSearchProvider = {
           async searchFiles() {
-            return [];
+            return { matches: [] };
           },
           async searchText(options) {
             seen.push(options.terms);
@@ -877,7 +923,13 @@ describe('工具执行器（6 个工具）', () => {
       const manyFilesProvider = {
         async searchFiles(options: { query?: string; maxResults?: number }) {
           const all = Array.from({ length: 50 }, (_, i) => ({ path: `src/file${i}.ts` }));
-          return all.slice(0, options.maxResults);
+          const m = all.slice(0, options.maxResults);
+          return {
+            matches: m,
+            ...(m.length >= (options.maxResults ?? all.length)
+              ? { truncated: true, truncatedBy: 'results' as const }
+              : {}),
+          };
         },
         async searchText() {
           return { matches: [], truncated: false };

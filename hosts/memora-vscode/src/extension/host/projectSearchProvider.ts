@@ -26,6 +26,7 @@ import {
   type IProjectSearchProvider,
   type ProjectFileMatch,
   type ProjectFileSearchOptions,
+  type ProjectFileSearchResult,
   type ProjectTextMatch,
   type ProjectTextSearchOptions,
   type ProjectTextSearchResult,
@@ -68,10 +69,16 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
     /**
      * 按文件名 glob 搜索（workspace.findFiles，stable API）
      *
-     * @param options query 为文件名 glob（省略时列出项目全部文件）；exclude 排除 glob
-     * @returns 相对项目根的文件路径列表
+     * 两轮语义（SEARCH-1 · 与 content 对齐）：先按 query 原样作 glob 精确匹配（保会写 glob 的用法）；
+     * 零命中**且** 内核下发了 `terms`、且 query 不含 glob 元字符时，才逐词按名称子串做一次
+     * OR 放宽，并以 `relaxed` + `termsUsed` 如实回报。放宽的**判定**留在这里（宿主是唯一知道
+     * findFiles 扫到几成的主体），`termsUsed` 唯一真值 = 本返回值。
+     *
+     * @param options query 为文件名 glob（省略时列出项目全部文件）；terms 为内核下发的放宽词表；
+     *                exclude 排除 glob
+     * @returns 命中列表 + 本次检索的元信息（放宽/使用词/截断/失败）
      */
-    async searchFiles(options?: ProjectFileSearchOptions): Promise<ProjectFileMatch[]> {
+    async searchFiles(options?: ProjectFileSearchOptions): Promise<ProjectFileSearchResult> {
       const include = options?.query || '**/*';
       // name 模式与 content 模式忽略语义对齐：findFiles 显式排除 IGNORED_DIR_NAMES（含 .memora），
       // 否则 LLM 会搜到数据目录内的 task-table.md 等内核管理文件，形成「伪建表」自我强化
@@ -79,8 +86,41 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
       const ignoreGlob = IGNORED_DIR_NAMES.map((d) => `**/${d}/**`).join(',');
       const exclude = options?.exclude ? `${ignoreGlob},${options.exclude}` : ignoreGlob;
       const maxResults = Math.min(options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN, PROJECT_SEARCH_RESULT_MAX_LEN);
-      const uris = await vscode.workspace.findFiles(include, exclude, maxResults);
-      return uris.map((u) => ({ path: toProjectRelative(root, u.fsPath) }));
+      // 相对路径化 + 截断判定（name 模式截断仅 results 主因：findFiles 达 maxResults 上限）
+      const toResult = (matches: ProjectFileMatch[], relaxed: boolean, termsUsed?: string[]): ProjectFileSearchResult => ({
+        matches,
+        ...(relaxed ? { relaxed: true } : {}),
+        ...(termsUsed && termsUsed.length > 0 ? { termsUsed: [...termsUsed] } : {}),
+        ...(matches.length >= maxResults ? { truncated: true, truncatedBy: 'results' as const } : {}),
+      });
+
+      // 第一轮：query 原样作 glob 精确匹配（保会写 glob 的用法）
+      const primaryUris = await vscode.workspace.findFiles(include, exclude, maxResults);
+      const primaryMatches = primaryUris.map((u) => ({ path: toProjectRelative(root, u.fsPath) }));
+      if (primaryMatches.length > 0) return toResult(primaryMatches, false);
+
+      // 第二轮：零命中且内核下发了放宽词表、且 query 无 glob 元字符才放宽（判定留宿主）
+      const terms = options?.terms ?? [];
+      const hasGlobMeta = /[*?{}[\]]/.test(include);
+      if (terms.length === 0 || hasGlobMeta) return toResult([], false);
+
+      const seen = new Set<string>();
+      const relaxedMatches: ProjectFileMatch[] = [];
+      for (const term of terms) {
+        if (seen.size >= maxResults) break;
+        // 词含 glob 元字符会破坏 `**/*{term}*/` 的 glob 语义，跳过该词（可信：不强行放宽）
+        if (/[*?{}[\]]/.test(term)) continue;
+        // 名称子串 OR：任一词在路径中出现即命中（相对项目根、正斜杠）
+        const uris = await vscode.workspace.findFiles(`**/*${term}*/`, exclude, maxResults - seen.size);
+        for (const u of uris) {
+          const rel = toProjectRelative(root, u.fsPath);
+          if (!seen.has(rel)) {
+            seen.add(rel);
+            relaxedMatches.push({ path: rel });
+          }
+        }
+      }
+      return toResult(relaxedMatches, true, terms);
     },
 
     /**

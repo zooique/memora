@@ -10,31 +10,43 @@ import { describe, it, expect, vi } from 'vitest';
 import type { IProjectSearchProvider } from '@/project-search/types.js';
 import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
 
-/** 只关心 searchText 行为的提供者（searchFiles 恒空） */
+/** 只关心 searchText 行为的提供者（searchFiles 恒空结果对象） */
 function providerWithText(searchText: IProjectSearchProvider['searchText']): IProjectSearchProvider {
   return {
     async searchFiles() {
-      return [];
+      return { matches: [] };
     },
     searchText,
   };
 }
 
 describe('safeSearchProjectFiles', () => {
-  it('成功时透传提供者返回的文件列表', async () => {
+  it('成功时透传提供者返回的结果对象（含本次检索的元信息）', async () => {
     const provider: IProjectSearchProvider = {
       async searchFiles() {
-        return [{ path: 'src/index.ts' }, { path: 'src/utils.ts' }];
+        return {
+          matches: [{ path: 'src/index.ts' }, { path: 'src/utils.ts' }],
+          relaxed: true,
+          termsUsed: ['index'],
+          truncated: true,
+          truncatedBy: 'results',
+        };
       },
       async searchText() {
         return { matches: [], truncated: false };
       },
     };
     const result = await safeSearchProjectFiles(provider, { query: '**/*.ts' });
-    expect(result).toEqual([{ path: 'src/index.ts' }, { path: 'src/utils.ts' }]);
+    expect(result).toEqual({
+      matches: [{ path: 'src/index.ts' }, { path: 'src/utils.ts' }],
+      relaxed: true,
+      termsUsed: ['index'],
+      truncated: true,
+      truncatedBy: 'results',
+    });
   });
 
-  it('提供者抛错时降级为空数组（不抛异常）', async () => {
+  it('提供者抛错时上报 failed 位，且**不**伪装成可信的零命中', async () => {
     const provider: IProjectSearchProvider = {
       async searchFiles() {
         throw new Error('搜索服务异常');
@@ -44,10 +56,11 @@ describe('safeSearchProjectFiles', () => {
       },
     };
     const result = await safeSearchProjectFiles(provider, {});
-    expect(result).toEqual([]);
+    // 关键：不得是 `[]`（那与"真零命中"逐字同形）；须是可分流的结果对象
+    expect(result).toEqual({ matches: [], truncated: false, failed: true });
   });
 
-  it('提供者超时（30s）时降级为空数组（fake timers 触发真实超时分支）', async () => {
+  it('提供者超时（30s）时同样上报 failed 位（fake timers 触发真实超时分支）', async () => {
     vi.useFakeTimers();
     try {
       const provider: IProjectSearchProvider = {
@@ -60,9 +73,9 @@ describe('safeSearchProjectFiles', () => {
         },
       };
       const promise = safeSearchProjectFiles(provider, {});
-      // 推进到内部超时点（30s），触发 setTimeout reject → race 走 catch 降级
+      // 推进到内部超时点（30s），触发 setTimeout reject → race 走 catch 上报 failed
       vi.advanceTimersByTime(30_000);
-      await expect(promise).resolves.toEqual([]);
+      await expect(promise).resolves.toEqual({ matches: [], truncated: false, failed: true });
     } finally {
       vi.useRealTimers();
     }

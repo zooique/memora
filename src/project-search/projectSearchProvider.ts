@@ -5,8 +5,8 @@
  */
 import type {
   IProjectSearchProvider,
-  ProjectFileMatch,
   ProjectFileSearchOptions,
+  ProjectFileSearchResult,
   ProjectTextSearchOptions,
   ProjectTextSearchResult,
 } from '@/project-search/types.js';
@@ -15,23 +15,28 @@ import type {
 const PROJECT_SEARCH_TIMEOUT_MS = 30_000;
 
 /**
- * 带超时和错误处理的按文件名搜索包装：超时或失败时不抛异常，返回空数组（降级）。
- * 供 ToolExecutor 调用，避免宿主实现卡死主循环。
+ * 带超时和错误处理的按文件名搜索包装：超时或失败时不抛异常。
+ *
+ * **为什么失败不返回空数组**（SEARCH-1 · F3，name 模式同 content）：`[]` 与「真零命中」在调用侧
+ * **逐字同形**，于是「搜索坏了」被当成「项目里没有」——name 模式此前的扁平数组返回正是这类
+ * 假阴性的温床（D5 已在本批收敛：返回升级为 `ProjectFileSearchResult`，放宽/截断/失败各有载体）。
+ * 失败→上报 `failed: true`（**不是** error：不置错、不重试，只在文案里如实说明检索未完成），
+ * 由调用方分流表述。
  */
 export async function safeSearchProjectFiles(
   provider: IProjectSearchProvider,
   options?: ProjectFileSearchOptions,
-): Promise<ProjectFileMatch[]> {
+): Promise<ProjectFileSearchResult> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeoutPromise = new Promise<ProjectFileMatch[]>((_, reject) => {
+  const timeoutPromise = new Promise<ProjectFileSearchResult>((_, reject) => {
     timer = setTimeout(() => reject(new Error('项目文件搜索超时（30s）')), PROJECT_SEARCH_TIMEOUT_MS);
   });
 
   try {
     return await Promise.race([provider.searchFiles(options), timeoutPromise]);
   } catch {
-    // 搜索失败不抛异常，降级为空结果
-    return [];
+    // 失败不抛异常，但**不再伪装成可信的零命中**
+    return { matches: [], truncated: false, failed: true };
   } finally {
     // 成功/失败均清理超时定时器，防残留定时器拖住进程
     clearTimeout(timer);

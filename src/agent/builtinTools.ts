@@ -352,7 +352,9 @@ export const RUN_CODE_TOOL: ToolDefinition = {
 export const SEARCH_PROJECT_TOOL: ToolDefinition = {
   name: 'search_project',
   description:
-    '在当前项目（当前工作区文件夹）中搜索文件。mode="name" 按文件名 glob（如 "**/*.ts"）；' +
+    '在当前项目（当前工作区文件夹）中搜索文件。mode="name" 按文件名 glob（如 "**/*.ts"），' +
+    // name 裸词语义（SEARCH-1）：无通配符时自动按名称子串/分词放宽，避免"精确路径匹配"假阴性
+    '也可写裸文件名（如 "product"）——无通配符的 word 会自动放宽为名称子串/分词匹配；' +
     'mode="content" 按内容关键词（如 "TODO"）搜索，返回 路径:行号:预览。' +
     // 多词语义显式化：LLM 不知道该写"整串"还是"拆词"时，会把一次能问清的事问成多次（甚至放弃）
     'content 模式的多词语义：**先按整串精确匹配，整串零命中才自动放宽为分词匹配' +
@@ -369,7 +371,7 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
-      query: { type: 'string', description: '文件名 glob（mode=name，如 "**/*.ts"）或内容关键词（mode=content，如 "TODO"）；省略时列出项目文件清单' },
+      query: { type: 'string', description: '文件名 glob（mode=name，如 "**/*.ts"）或裸文件名/内容关键词（mode=content，如 "TODO"）；name 模式无通配符时自动按名称子串/分词放宽；省略时列出项目文件清单' },
       mode: { type: 'string', description: '"name"（按文件名搜索，默认）或 "content"（按内容全文搜索）' },
       exclude: { type: 'string', description: '排除 glob/路径（可选，如 "**/node_modules/**" 或 "docs"）' },
       maxResults: { type: 'string', description: '返回结果数量上限，默认 "20"，最大 "100"' },

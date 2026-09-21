@@ -170,6 +170,7 @@ export type {
   IProjectSearchProvider,
   ProjectFileMatch,
   ProjectFileSearchOptions,
+  ProjectFileSearchResult,
   ProjectTextMatch,
   ProjectTextSearchOptions,
   ProjectTextSearchResult,
