@@ -625,7 +625,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const memory = await this.ensureMemory();
     if (!memory) return;
     try {
-      const hits = await memory.searchHybrid(query, limit ?? MEMORY_SEARCH_LIMIT);
+      const hits = await memory.searchByKeyword(query, limit ?? MEMORY_SEARCH_LIMIT);
       this.post({ type: 'memory_search_result', query, hits: hits.map(toSearchDto) });
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

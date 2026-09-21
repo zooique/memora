@@ -227,7 +227,7 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `agent.works` | `WorkProjectionManager \| null` | 作品投影（工作内容摘要） |
 | `agent.polish` | `TextPolishManager \| null` | 文本润色（LLM 语法修正 + 表达优化） |
 
-> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/search/searchHybrid/stats/list/getById/getBySource/listDeleted 等）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
+> **读写统一入口**：`agent.memory`（MemoryInspector）同时负责记忆的查询与写入——只读方法（snapshot/search/searchByKeyword/stats/list/getById/getBySource/listDeleted 等）与写方法（`writeXxx` 前缀：writeUpsert/writeDelete/writeRestore/writePurge/writePurgeExpired。`writeBoost` 已随 score 字段退役删除，2026-09-09）。旧的 `memoryMutator`/`MemoryMutator` 拆分已在后续迭代中合并回 `MemoryInspector`，二者均不再存在。
 
 ### 2.5 内部组件访问器（高级）
 
@@ -350,6 +350,7 @@ interface MemorySnapshot {
 ### 4.2 `search(query, limit?)` — 记忆搜索
 
 ```typescript
+// ⚠️ @deprecated 同步通道已退役（2026-09-20），改用 searchByKeyword()。实证无生产/宿主消费方。
 agent.memory.search(query: string, limit?: number): AgentSearchHit[]
 ```
 
@@ -400,7 +401,7 @@ agent.memory.getById(id: string): Memory | null;               // 按 ID 获取�
 agent.memory.getBySource(source: string): Memory[];            // 按 source 获取
 agent.memory.listDeleted(limit?: number): Memory[];            // 回收站（软删除记忆）
 agent.memory.getDeletedById(id: string): Memory | null;
-agent.memory.searchHybrid(query: string, limit?: number): Promise<AgentSearchHit[]>; // 纯关键词通道
+agent.memory.searchByKeyword(query: string, limit?: number): Promise<AgentSearchHit[]>; // 纯关键词通道
 ```
 
 > **注意**：`suggest()` / `sourceHealth()` 经 `agent.governance` 暴露（`.suggest()` / `.sourceHealth()`），不挂在 `agent.memory` 下，避免经 MemoryInspector 转发产生多余代理层。
@@ -901,7 +902,7 @@ Agent 不再管理 Provider 映射表，宿主自行管理。
 | `agent.tools` | `ToolExecutor` | `.list` / `.registerTool()` / `.execute()` |
 | `agent.skills` | `SkillManager` | `.list` / `.match()` / `.register()` / `.buildSystemPrompt()` |
 | `agent.governance` | `MemoryGovernance` | `.deduplicate()` / `.detectConflicts()` / `.sourceHealth()` / `.suggest()` |
-| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchHybrid()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
+| `agent.memory` | `MemoryInspector` | 读：`.snapshot()` / `.search()` / `.searchByKeyword()` / `.stats()` / `.list()` / `.getById()` / `.getBySource()` / `.listDeleted()`；写：`.writeUpsert()` / `.writeDelete()` / `.writeRestore()` / `.writePurge()` / `.writePurgeExpired()` |
 | `agent.works` | `WorkProjectionManager` | `.ensureProjection(filePath, content, fileName?)` / `.getProjection(filePath)` / `.loadAll()` |
 | `agent.polish` | `TextPolishManager` | `.polish(...)`（文本润色：LLM 语法修正 + 表达优化） |
 
@@ -1083,7 +1084,7 @@ export type { ILogger } from '@zooique/memora';
 export { setLogger, logger } from '@zooique/memora';
 
 // 召回（2026-09-10 减法：`recall()` 召回编排 + `RecallOptions` 已退役——
-// 唯一消费者是跨重启恢复链的 warmRecall，随之整体下线；记忆检索走 `search_memories` 工具 → `searchHybrid`）
+// 唯一消费者是跨重启恢复链的 warmRecall，随之整体下线；记忆检索走 `search_memories` 工具 → `searchByKeyword`）
 export { extractKeywords } from '@zooique/memora';
 
 // 网络搜索

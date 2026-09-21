@@ -4,7 +4,7 @@
  *
  * 注（「减法」2026-09-10）：原 `recall()` 召回编排（双通道 + 分层分轨 + cap 内分配）已退役——
  * 它是「检查点恢复的温记忆召回」的唯一消费者，随跨重启恢复链整体退役而消亡；
- * 运行时记忆召回改由 `search_memories` 工具（`searchHybrid`）承担，见 docs/白话设计文档.md 第二步。
+ * 运行时记忆召回改由 `search_memories` 工具（`searchByKeyword`）承担，见 docs/白话设计文档.md 第二步。
  *
  * 本模块现存两函数均为 search_memories / 项目搜索复用：
  * - `extractKeywords`：内核分词 SSOT（`project-search/terms.ts` 用同源断言钉死，不另造分词器）；

@@ -863,7 +863,7 @@ export async function assembleComponents(
     hooks?.emit(AGENT_EVENTS.memoryAdded, info);
   });
   // 接线 search_memories 后端：toolExec 先于 memoryInspector 构造，故此处后注入；
-  // 注入后 search_memories 走 searchHybrid（关键词+superseded 过滤+accessedAt/溯源揭示，§3.3；语义通道已随 B0 收编）
+  // 注入后 search_memories 走 searchByKeyword（关键词+superseded 过滤+accessedAt/溯源揭示，§3.3；语义通道已随 B0 收编）
   toolExec.setMemoryInspector(memoryInspector);
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
   // 「LLM 查询记忆命中 N 条」。唯一发射位 = search_memories 命中

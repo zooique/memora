@@ -537,7 +537,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
   });
 
   it('注入 MemoryInspector 后走语义搜索：揭示 accessedAt/溯源，命中即 touch 刷新访问时间（§3.3）', async () => {
-    // 真实 MemoryInspector 接线（同 storage），searchHybrid 语义命中 + 溯源字段给出
+    // 真实 MemoryInspector 接线（同 storage），searchByKeyword 语义命中 + 溯源字段给出
     const inspector = new MemoryInspector(storage, {} as never, {} as never);
     handlers.setMemoryInspector(inspector);
     // 当前访问时间戳
@@ -694,9 +694,9 @@ describe('BuiltinToolHandlers.searchMemories', () => {
   });
 
   it('搜索超时降级为空结果，不挂死工具调用（响应性护栏档 1）', async () => {
-    // 桩 MemoryInspector：searchHybrid 永不返回（模拟底层搜索挂起的慢响应护栏场景）
+    // 桩 MemoryInspector：searchByKeyword 永不返回（模拟底层搜索挂起的慢响应护栏场景）
     const hangingInspector = Object.create(null) as unknown as MemoryInspector;
-    hangingInspector.searchHybrid = () => new Promise<AgentSearchHit[]>(() => {});
+    hangingInspector.searchByKeyword = () => new Promise<AgentSearchHit[]>(() => {});
     handlers.setMemoryInspector(hangingInspector);
 
     vi.useFakeTimers();

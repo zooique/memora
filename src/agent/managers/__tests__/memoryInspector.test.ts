@@ -7,7 +7,7 @@
  *   - 只读查询：getById / getDeletedById / listDeleted / getBySource / list
  *   - snapshot：3 层快照（工作记忆 + Bootstrap + 归档）
  *   - search：关键词搜索（空 query 抛错 + limit 校验 + 内容截断）
- *   - searchHybrid：纯关键词搜索（语义通道已随 B0 收编移除，2026-09-18）
+ *   - searchByKeyword：纯关键词搜索（语义通道已随 B0 收编移除，2026-09-18）
  *   - stats：记忆库统计
  *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *
@@ -262,21 +262,21 @@ describe('MemoryInspector', () => {
   });
 
   // ════════════════════════════════════════════════════════
-  // 5. searchHybrid（8 测试）
+  // 5. searchByKeyword（8 测试）
   // ════════════════════════════════════════════════════════
 
-  describe('searchHybrid', () => {
+  describe('searchByKeyword', () => {
     it('空 query 应抛 configError', async () => {
-      await expect(inspector.searchHybrid('')).rejects.toThrow('搜索关键词为空');
+      await expect(inspector.searchByKeyword('')).rejects.toThrow('搜索关键词为空');
     });
 
     it('limit <= 0 应抛 configError', async () => {
-      await expect(inspector.searchHybrid('query', 0)).rejects.toThrow('无效 limit');
+      await expect(inspector.searchByKeyword('query', 0)).rejects.toThrow('无效 limit');
     });
 
     it('纯关键词搜索（B0 收编：无向量通道）', async () => {
       storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword test' }));
-      const hits = await inspector.searchHybrid('keyword');
+      const hits = await inspector.searchByKeyword('keyword');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('k1');
     });
@@ -284,17 +284,17 @@ describe('MemoryInspector', () => {
     it('语义近义词不命中（字面匹配；LLM 须换词重试）', async () => {
       storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: '性能优化方案' }));
       // 「提速」与「性能优化」语义近义但字面不匹配 → 纯关键词 0 命中
-      const hits = await inspector.searchHybrid('提速');
+      const hits = await inspector.searchByKeyword('提速');
       expect(hits).toHaveLength(0);
       // 换词（用记忆里的字面词）→ 命中
-      const retry = await inspector.searchHybrid('性能优化');
+      const retry = await inspector.searchByKeyword('性能优化');
       expect(retry).toHaveLength(1);
     });
 
     it('长内容截断到预览上限', async () => {
       const longContent = 'C'.repeat(150);
       storage.upsert(createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }));
-      const hits = await inspector.searchHybrid('C');
+      const hits = await inspector.searchByKeyword('C');
       expect(hits).toHaveLength(1);
       // 长内容截断到 120 + '…'
       expect(hits[0]!.contentPreview.endsWith('…')).toBe(true);
@@ -304,14 +304,14 @@ describe('MemoryInspector', () => {
       // 旧摘要被新摘要取代 → 不出现；有效摘要正常返回（关键词命中两者，过滤后仅剩新）
       storage.upsert(createMemory({ id: 'round-summary:s:old', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '旧摘要', supersededBy: 'round-summary:s:new', content: '共享内容' }));
       storage.upsert(createMemory({ id: 'round-summary:s:new', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '新摘要', content: '共享内容' }));
-      const hits = await inspector.searchHybrid('共享内容');
+      const hits = await inspector.searchByKeyword('共享内容');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('新摘要');
     });
 
     it('命中揭示 accessedAt + 溯源 sessionId/roundId（§3.3 返回行，round-summary 直通 trace_summary）', async () => {
       storage.upsert(createMemory({ id: 'round-summary:2026-08-28-main:r1', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r1', name: '摘要1', content: '决策内容', accessedAt: '2026-09-01T00:00:00Z' }));
-      const hits = await inspector.searchHybrid('决策内容');
+      const hits = await inspector.searchByKeyword('决策内容');
       expect(hits[0]!.accessedAt).toBe('2026-09-01T00:00:00Z');
       // 溯源字段 = trace_summary 参数直通（sessionName 即 sessionId）
       expect(hits[0]!.sessionId).toBe('2026-08-28-main');
@@ -323,7 +323,7 @@ describe('MemoryInspector', () => {
       storage.upsert(createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '摘要1', content: '共同内容' }));
       storage.upsert(createMemory({ id: 'round-summary:s:r2', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '摘要2', content: '共同内容' }));
 
-      const hits = await inspector.searchHybrid('共同内容', 10, new Set(['r1']));
+      const hits = await inspector.searchByKeyword('共同内容', 10, new Set(['r1']));
 
       expect(hits.map((h) => h.roundId)).toEqual(['r2']);
     });

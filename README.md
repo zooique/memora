@@ -159,7 +159,7 @@ const reply = await agent.chatSync('我喜欢什么语言？');
 
 ```typescript
 // 搜索记忆（limit 为数字）
-const hits = await agent.memory.searchHybrid('TypeScript 偏好', 5);
+const hits = await agent.memory.searchByKeyword('TypeScript 偏好', 5);
 
 // 记忆治理（经 agent.governance 门面委托暴露，LLM 判断）
 const report = await agent.governance.deduplicate();

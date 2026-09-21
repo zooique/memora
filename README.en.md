@@ -153,8 +153,8 @@ const reply = await agent.chatSync('What language do I like?');
 ### Memory Management
 
 ```typescript
-// Search memories (hybrid: semantic + keyword), limit is a number
-const hits = await agent.memory.searchHybrid('TypeScript preference', 5);
+// Search memories (keyword-only; semantic vector channel removed via B0, 2026-09-18), limit is a number
+const hits = await agent.memory.searchByKeyword('TypeScript preference', 5);
 
 // Governance (exposed via agent.governance facade, LLM-judged)
 const report = await agent.governance.deduplicate();
@@ -186,7 +186,7 @@ await agent.close();
 │  ┌──────────────────────────────────────────┐               │
 │  │  Memora Kernel (Agent)                   │               │
 │  │  - chat(input) → streaming response      │               │
-│  │  - Dual-channel search (semantic+keyword)│               │
+│  │  - Keyword-only search (semantic vector channel removed via B0)│               │
 │  │  - Memory governance (dedup/conflict/supersede) │         │
 │  │  - Role pack matching / Skill matching   │               │
 │  │  - Tool registration / execution         │               │

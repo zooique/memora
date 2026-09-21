@@ -164,9 +164,9 @@ export class BuiltinToolHandlers {
   private onMemoryRecalled: ((info: { count: number; query: string }) => void) | null = null;
 
   /**
-   * 注入 MemoryInspector，启用 search_memories 的语义混合搜索后端（memory-tool-recall-design §3.3）。
+   * 注入 MemoryInspector，启用 search_memories 的纯关键词搜索后端（memory-tool-recall-design §3.3）。
    * 装配依赖 loop/history，toolExec 在 assembler 中先于它构造，故用「构造后注入」而非构造参数。
-   * 注入后 search_memories 走 searchHybrid（语义+关键词+superseded 过滤+溯源揭示），未注入保持旧关键词行为。
+   * 注入后 search_memories 走 searchByKeyword（纯关键词 + superseded 过滤 + 溯源揭示），未注入保持旧关键词行为。
    */
   setMemoryInspector(inspector: MemoryInspector): void {
     this.memoryInspector = inspector;
@@ -985,13 +985,13 @@ export class BuiltinToolHandlers {
       ? this.exclusionRoundIdsProvider()
       : new Set<string>();
 
-    // memory-tool-recall-design §3.3：注入 MemoryInspector 后走语义混合搜索（searchHybrid
-    // = 语义 + 关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。
+    // memory-tool-recall-design §3.3：注入 MemoryInspector 后走纯关键词搜索（searchByKeyword
+    // = 纯关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。
     // 包进带超时的函数：底部 search_memories 是有用户感知的读工具，语义 embed 是远程调用，
     // 响应性护栏 MEMORY_SEARCH_TIMEOUT_MS（5s）超时降级为提示，不挂死工具调用（排雷见 constants.ts）。
     const hits: AgentSearchHit[] = await this.withMemorySearchTimeout(async () =>
       this.memoryInspector
-        ? await this.memoryInspector.searchHybrid(query, limit, excludedRoundIds)
+        ? await this.memoryInspector.searchByKeyword(query, limit, excludedRoundIds)
         : this.memoryIndex
             .search(query, limit)
             .map((m) => ({
@@ -999,13 +999,13 @@ export class BuiltinToolHandlers {
               name: m.name,
               source: m.source,
               contentPreview: m.content,
-              // 溯源 roundId 用于互斥过滤（与 searchHybrid 排除口径一致）
+              // 溯源 roundId 用于互斥过滤（与 searchByKeyword 排除口径一致）
               roundId: m.roundId,
             }))
             .filter((h) => !(h.roundId && excludedRoundIds.has(h.roundId))),
     );
 
-    // near 模式（"must all keywords" 严格过滤）：不论后端（searchHybrid 或 memoryIndex）
+    // near 模式（"must all keywords" 严格过滤）：不论后端（searchByKeyword 或 memoryIndex）
     // 一律在候选结果上做「所有关键词都命中」后置过滤，保证 mode 参数语义恒生效。
     if (modeStr === 'near' && hits.length > 0) {
       const keywords = segmentLower(query);

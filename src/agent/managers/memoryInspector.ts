@@ -148,7 +148,7 @@ export class MemoryInspector {
     const working = workingFull.slice(-WORKING_PREVIEW);
 
     // 第 2 层 Bootstrap 恒空：设定记忆唯一归角色包，索引不再新增，rolePackPrompt 承载规则注入。
-    // 保留空壳形状兼容。实证 2026-09-20：宿主治理面走 stats/list/searchHybrid，不消费本层；
+    // 保留空壳形状兼容。实证 2026-09-20：宿主治理面走 stats/list/searchByKeyword，不消费本层；
     // 原「供 UI 层调用，避免宿主代码变更」表述=谎报，已订正。
 
     // 第 3 层：归档记忆计数（round-summary，记忆库唯一对话记忆）
@@ -185,9 +185,10 @@ export class MemoryInspector {
   // ─── 搜索 ─────────────────────────────────────────────
 
   /**
+   * @deprecated 本同步通道已退役（2026-09-20）。功能已由 `searchByKeyword()` 取代（后者含
+   * superseded 过滤 / excludeRoundIds 互斥 / accessedAt + 溯源揭示）。实证无生产/宿主消费方，
+   * 保留仅为兼容历史 API，**勿新增调用**。
    * 搜索记忆（关键词 + FTS5 索引），返回 CLI 友好扁平结构（已截断）。
-   * ⚠️ 本同步通道已退役 2026-09-20：功能被 searchHybrid() 取代（后者含 superseded 过滤 /
-   * excludeRoundIds 互斥 / accessedAt + 溯源揭示）；实证无生产/宿主消费方，保留仅为兼容历史 API，勿新增调用。
    */
   search(query: string, limit = 10): AgentSearchHit[] {
     // 空 query 会让 search() 退化为"返回所有"，对宿主程序是静默误导
@@ -216,7 +217,7 @@ export class MemoryInspector {
   /**
    * 搜索记忆（纯关键词单通道，B0 收编后无向量通道、无融合排序）。
    *
-   * 边界声明（v3 分层分轨，2026-08-27）：searchHybrid 是「记忆搜索工具」，不是召回管线——不应用 L1/L2 分层、
+   * 边界声明（v3 分层分轨，2026-08-27）：searchByKeyword 是「记忆搜索工具」，不是召回管线——不应用 L1/L2 分层、
    * 不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配（capTokens / minSemanticShare）。
    * 分层分轨原属「召回编排」`recall()`——该方法已连同其唯一消费者
    * （跨重启恢复链的 `checkpointRestoreCoordinator.warmRecall`）于 2026-09-10 整体退役，故**现行实现中
@@ -230,13 +231,13 @@ export class MemoryInspector {
    * @param excludeRoundIds 排除的轮次 ID 集合（可选）：这些轮次的 round-summary 已被装配期载入正文，
    *                       不重复返回（工具召回与装配期正文互斥，§5.1）；缺省不过滤。
    */
-  async searchHybrid(
+  async searchByKeyword(
     query: string,
     limit = 10,
     excludeRoundIds?: ReadonlySet<string>,
   ): Promise<AgentSearchHit[]> {
     if (!query || query.trim() === '') {
-      throw configError('搜索关键词为空', 'searchHybrid() 需要非空 query', [
+      throw configError('搜索关键词为空', 'searchByKeyword() 需要非空 query', [
         '传入非空字符串关键词',
       ]);
     }

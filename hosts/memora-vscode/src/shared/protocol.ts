@@ -217,7 +217,7 @@ export type WebviewToExtensionMessage =
   /**
    * 请求搜索记忆（记忆视图搜索框触发，query 非空才发送）
    *
-   * host 调 MemoryInspector.searchHybrid(query, limit)（纯关键词检索，B0 收编后无向量通道），
+   * host 调 MemoryInspector.searchByKeyword(query, limit)（纯关键词检索，B0 收编后无向量通道），
    * 返回带 accessedAt 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
   | { type: 'memory_search'; query: string; limit?: number }
@@ -766,7 +766,7 @@ export type ExtensionToWebviewMessage =
   /**
    * 记忆搜索结果（对 memory_search 的应答）
    *
-   * hits 为 searchHybrid 命中（带 accessedAt），content 为截断预览
+   * hits 为 searchByKeyword 命中（带 accessedAt），content 为截断预览
    * （与列表的全文 content 区分——搜索场景看相关性即可）。
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
