@@ -187,7 +187,7 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 同步元数据（roundIds 真源为 roundIdsStore，读时派生；此处仅更新 messageCount）
     const existing = this.metas.get(sessionId);
     if (existing) {
-      this.metas.set(sessionId, { ...existing, messageCount: kept.length * 2 });
+      this.metas.set(sessionId, { ...existing, messageCount: this.deriveMessageCount(sessionId) });
     }
     this.save();
     return { ok: true, removedIds };
@@ -221,7 +221,7 @@ export class WorkspaceSessionStore implements ISessionStore {
         sessionId,
         displayName: defaultSessionTitle(),
         updatedAt: new Date().toISOString(),
-        messageCount: roundIds.length * 2,
+        messageCount: this.deriveMessageCount(sessionId),
       };
     }
     return undefined;
@@ -233,24 +233,44 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 由用户手动改名（renameSession）写入。setSessionTitle 亦收口于此，避免双路径分叉
    * （此前漏实现导致内核 updateSessionMeta 调用静默 no-op，自动命名/改名失效）。
    *
-   * 合并语义：以既有 meta 为基底展开 Partial 覆盖——
-   *   - autoName 不覆盖（手动改名保留 LLM 只读名，双层命名解耦）
-   *   - displayName 优先用传入值，否则保留既有（含占位）
-   *   - updatedAt/messageCount 保留（改名非活跃事件、命名不重置计数）
+   * 合并语义 = **既有 meta 基底 + 传入 Partial 覆盖**（与内核
+   * `inMemorySessionStore.updateSessionMeta` 同构），使非本次入参字段（`createdAt` 等）
+   * 一并留存——纯白名单式重建会静默丢弃它们，而内核在分叉路径显式传 `createdAt`
+   * （`messageHistory.forkSession` 内的 `updateSessionMeta(newSessionId, { createdAt })`），
+   * 丢一次即永久不可恢复（本文件是落盘真相源）。
+   *
+   * 末位显式覆盖三项（不用纯 spread 的理由与语义）：
+   *   - autoName/displayName/keyTopics/summary：调用方可传显式 `undefined`（`Partial` 允许）
+   *     → 语义是「缺省 = 保留既有」，`?? existing` 才是该语义；纯 spread 会把既有值抹掉
+   *   - updatedAt：改名/命名都不是活跃事件（ADR-024）→ 保留既有，不刷新
+   *   - messageCount：命名不重置计数 → 保留既有；**无既有 meta 时由
+   *     `deriveMessageCount` 派生，禁写 0**
+   *
+   * ⚠️ 无既有 meta 分支为何必须派生（2026-09-21 站 62 实锤）：内核
+   * `messageHistory.forkSession` 是「先 `setRoundIds(newSessionId, ...)` 再
+   * `updateSessionMeta(newSessionId, {createdAt})`」——调用时刻 roundIds 已就位而 meta
+   * 尚不存在（`setRoundIds` 内的计数回写因 `if (!meta) return` 提前退出）。写 0 会让
+   * 分叉会话在 meta 上留下假值 0，而 `getSessionMeta` 见 meta 即直接返回（不再走
+   * roundIds 占位兜底），于是 `getMessageCount()` 对它返回 0（真值 N*2）。
    *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
-   * @param meta 部分元数据（autoName/displayName/keyTopics/summary）
+   * @param meta 部分元数据（autoName/displayName/keyTopics/summary/createdAt）
    */
   updateSessionMeta(sessionId: string, meta: Partial<SessionMeta>): void {
     const existing = this.metas.get(sessionId);
     const updated: SessionMeta = {
+      // 基底 + 覆盖：非本次入参字段（createdAt 等）随基底留存，不被白名单重建丢弃
+      ...existing,
+      ...meta,
       sessionId,
+      // 以下显式行：入参未给时回退既有值（而非被 spread 抹成 undefined）
       autoName: meta.autoName ?? existing?.autoName,
       displayName: meta.displayName ?? existing?.displayName ?? defaultSessionTitle(),
       keyTopics: meta.keyTopics ?? existing?.keyTopics,
       summary: meta.summary ?? existing?.summary,
+      // 改名/命名非活跃事件：不重置 updatedAt（ADR-024）与计数
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
-      messageCount: existing?.messageCount ?? 0,
+      messageCount: existing?.messageCount ?? this.deriveMessageCount(sessionId),
     };
     this.metas.set(sessionId, updated);
     this.save();
@@ -364,13 +384,24 @@ export class WorkspaceSessionStore implements ISessionStore {
     const meta = this.metas.get(sessionId);
     if (!meta) return;
 
-    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
-    const messageCount = roundIds.length * 2; // 每个 Round 包含 User + AI
-
     this.metas.set(sessionId, {
       ...meta,
-      messageCount,
+      messageCount: this.deriveMessageCount(sessionId),
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  /**
+   * 派生会话消息数（round-based 固有语义：`roundIds.length * 2`）——**单一真源**。
+   *
+   * 与内核 `inMemorySessionStore.deriveMessageCount` 同款（内核注释明示「派生逻辑单一真源
+   * = deriveMessageCount」）：本文件四处消费（`getSessionMeta` 占位兜底、`truncateFrom`
+   * 截断同步、`append/setRoundIds` 计数回写、`updateSessionMeta` 无 meta 兜底）一律经本
+   * 方法，**禁止各写一遍 `length * 2`**——派生口径一旦变化（如改为只计已收场轮），
+   * 散落实现必漏改其一，meta 与 roundIds 立刻分叉。
+   */
+  private deriveMessageCount(sessionId: string): number {
+    const roundIds = this.roundIdsStore.get(sessionId) ?? [];
+    return roundIds.length * 2;
   }
 }

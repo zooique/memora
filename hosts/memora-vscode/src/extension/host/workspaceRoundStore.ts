@@ -449,12 +449,9 @@ export class WorkspaceRoundStore implements IRoundStore {
     return this.index.size;
   }
 
-  /**
-   * 清除缓存（索引保留）
-   *
-   * 用于内存优化，不影响持久化数据
-   */
-  clearCache(): void {
-    this.cache.clear();
-  }
+  // ⚠️ 曾有 `clearCache()`（清空 cache、保留 index）于 2026-09-21 站 62 删除：
+  // 全仓零调用、零测试，且它会破坏 `cache.refCount ≡ index.refCount ≡ 文件 refCount`
+  // 不变量——incrementRef/decrementRef 只在 cached 命中时回写 Round 文件，清缓存会让
+  // 文件里的 refCount 停在旧值（索引与文件分叉，重载后 round.refCount 读到脏值）。
+  // 需要回收内存时应删「条目」而非「整体清空」（走 delete() 语义）。
 }

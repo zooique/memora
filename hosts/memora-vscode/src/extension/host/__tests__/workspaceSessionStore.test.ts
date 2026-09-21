@@ -343,6 +343,32 @@ describe('WorkspaceSessionStore.updateSessionMeta（ADR-024 双层命名写点�
     store.updateSessionMeta('2026-08-26-main', { displayName: '改名' });
     expect(store.getSessionMeta('2026-08-26-main')?.updatedAt).toBe(before);
   });
+
+  it('无既有 meta 时 messageCount 由 roundIds 派生（分叉路径禁写 0）+ createdAt 不丢', () => {
+    // 复刻内核 messageHistory.forkSession 时序（setRoundIds → updateSessionMeta）：分叉只搬
+    // Round 指针 + 写 createdAt，**不预建 meta**。此刻 setRoundIds 内的计数回写因
+    // `if (!meta) return` 提前退出，故 updateSessionMeta 走的是「无既有 meta」分支——
+    // 该分支若写 0，分叉会话的 meta 就留下假值 0（getSessionMeta 见 meta 即返回，
+    // 不再走占位兜底）。
+    store.setRoundIds('2026-09-21-forked', ['round-f1', 'round-f2', 'round-f3']);
+    // meta 尚未落库 → getSessionMeta 走 roundIds 占位兜底（真值 3 轮 = 6 条）
+    expect(store.getSessionMeta('2026-09-21-forked')?.messageCount).toBe(6);
+
+    store.updateSessionMeta('2026-09-21-forked', { createdAt: '2026-09-21T00:00:00.000Z' });
+
+    const meta = store.getSessionMeta('2026-09-21-forked');
+    // 与内核 InMemorySessionStore.deriveMessageCount 同源：roundIds.length * 2
+    expect(meta?.messageCount).toBe(6);
+    // 合并语义是「基底 + 覆盖」而非白名单重建：内核传入的 createdAt 必须留存
+    expect(meta?.createdAt).toBe('2026-09-21T00:00:00.000Z');
+
+    // 落盘真相源复核：createdAt 一旦丢弃即不可恢复，须经 JSON 往返仍在
+    const reopened = new WorkspaceSessionStore(dir);
+    reopened.load();
+    const persisted = reopened.getSessionMeta('2026-09-21-forked');
+    expect(persisted?.createdAt).toBe('2026-09-21T00:00:00.000Z');
+    expect(persisted?.messageCount).toBe(6);
+  });
 });
 
 describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（v1.5 单文件内聚）', () => {
