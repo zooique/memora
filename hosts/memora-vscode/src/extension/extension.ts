@@ -55,6 +55,44 @@ function resolveProjectSearchRoot(): string | undefined {
 let agentPromise: Promise<Agent> | null = null;
 
 /**
+ * 读取「禁用的技能名」配置（S4 技能启停，**唯一读取点**）
+ *
+ * 三处消费共用本函数：① 装配期注入；② 配置变更监听；③ 手动重载命令。
+ * 各自内联 `getConfiguration` 会让**键名与默认值**在三个地方各存一份，改一处漏两处。
+ *
+ * ⚠️ 真源是内核 `disabledNames`（本函数只负责把配置取出来喂给它）；宿主不自存副本、
+ * UI 不另读本配置 —— 否则 `reloadConfig` 重设后两源分叉，出现「UI 说已禁用、实际仍生效」。
+ */
+function readDisabledSkills(): string[] {
+  return vscode.workspace.getConfiguration('memora').get<string[]>('disabledSkills', []);
+}
+
+/**
+ * 技能启停（S4）同步：把宿主配置的禁用集喂给内核 + 刷新**两条** UI 消费通道。
+ *
+ * 单一实现 —— 配置变更监听与「Memora: 重载技能与角色包」命令共用，防两处各写一份。
+ *
+ * 消费通道必须枚举完整（缺一即「只刷一半」，SKILL-S2 血训）：
+ *   ① 对话区技能下拉 + chip 标注 → `chatProvider.refreshSkillList()`
+ *   ② 设置页技能卡片（「已禁用」徽章 + health） → `settingsProvider.refreshSkillList()`
+ *
+ * 内核侧 `setDisabledSkills` 为纯内存 clear+add（幂等、无 IO），故本函数可安全重复调用。
+ */
+function syncDisabledSkills(
+  agent: Agent,
+  chatProvider: MemoraChatViewProvider,
+  settingsProvider: MemoraSettingsViewProvider,
+): void {
+  agent.skills?.setDisabledSkills(readDisabledSkills());
+  chatProvider.refreshSkillList();
+  // 设置页刷新为异步（含逐项 health 校验）：显式接住 rejection —— 刷新失败只影响设置页
+  // 展示（下次打开设置页会重新加载），不得冒泡成未处理异常打断调用方
+  void settingsProvider.refreshSkillList().catch((err) => {
+    console.warn('Memora 技能清单刷新（设置页）失败', err);
+  });
+}
+
+/**
  * 获取（或创建）指定工作区的 Agent 实例
  *
  * @param projectPath 工作区路径
@@ -97,11 +135,10 @@ function getOrCreateAgent(
     const searchEngine = vscode.workspace
       .getConfiguration('memora')
       .get<'auto' | 'bing' | 'baidu' | 'sogou'>('searchEngine', 'auto');
-    // 禁用的技能名清单（S4，配置形态启停，2026-09-22）：命中技能对 LLM 全链不可用，
-    // 宿主 settingsView 依据同名设置标注「已禁用」徽章
-    const disabledSkills = vscode.workspace
-      .getConfiguration('memora')
-      .get<string[]>('disabledSkills', []);
+    // 禁用的技能名清单（S4，配置形态启停，2026-09-22）：命中技能对 LLM 全链不可用
+    // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
+    // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
+    const disabledSkills = readDisabledSkills();
     agentPromise = assembleAgent({
       projectPath,
       // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
@@ -329,14 +366,10 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage('Memora Agent 未就绪，无法重载技能');
         return;
       }
-      // 禁用集同步（S4 启停闭环）：`disabledSkills` 原本只在 Agent 装配时注入一次，
-      // 用户改设置后若只跑 reloadConfig，技能池会重扫但禁用集仍是旧的
-      // ⇒ 表现为「改了设置、点了重载、没反应」（与「配置形态启停」的承诺不符）。
-      // 故先按当前配置重设（幂等：内核 setDisabledSkills 为全量替换语义）。
-      // ⚠️ 真源仍是内核（此处只是把宿主配置喂给它）；UI 徽章读内核那份，不另读配置副本。
-      agent.skills?.setDisabledSkills(
-        vscode.workspace.getConfiguration('memora').get<string[]>('disabledSkills', []),
-      );
+      // 禁用集 + UI 同步（S4 启停闭环）：配置变更本身已由 onDidChangeConfiguration 监听
+      // 自动完成；此处保留为**幂等兜底**——reloadConfig 会重扫技能池（增删技能后清单变化），
+      // 重设一次保证「手动重载后 UI 与内核一致」，且万一监听未触发仍有手动救济路径。
+      syncDisabledSkills(agent, chatProvider, settingsProvider);
       if (agent.isBusy) {
         // allSettled：忙碌态两次调用都会以 chatBusyError 结束（守门发生在任何 IO 之前），
         // 属预期路径，不该冒泡成未处理异常。
@@ -360,6 +393,34 @@ export function activate(context: vscode.ExtensionContext): void {
           `技能重载失败：${err instanceof Error ? err.message : String(err)}`,
         );
       }
+    }),
+  );
+
+  // ─── 技能启停（S4）配置变更自动同步（SKILL-S3b，2026-09-22） ───
+  //
+  // 背景：`memora.disabledSkills` 此前只在 Agent 装配期读一次 ⇒ 用户改设置后**不生效**，
+  // 必须手动跑「Memora: 重载技能与角色包」（配置项描述里也是这么写的）——属静默失效：
+  // 「配置形态启停」承诺的是改完即生效，实际却要求用户记得跑一条命令。
+  //
+  // 为何不必调 reloadConfig（生效路径实证，非推断）：禁用集是**读期过滤**——内核
+  // `listAvailable()` 与 `get()` 读同一个 `disabledNames` 集合，而 loop 前缀由
+  // `SeedPrepare.run` **每轮重建**（prepare.ts：每次回答前刷新装配视角，
+  // `buildSkillList()` 无缓存、直读 listAvailable）⇒ 下一次回答即对模型生效。
+  // 技能文件本身未变，重扫磁盘无意义，还会引入「忙碌态需排队」的额外语义。
+  //
+  // 未装配则不动作：下次装配本就按新配置注入，不该为「改一次设置」付整个 Agent 装配成本
+  //（故**不用** getAgentForCommand —— 它会懒装配；此处只读已存在的 agentPromise）。
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (!e.affectsConfiguration('memora.disabledSkills')) return;
+      void (async () => {
+        const agent = agentPromise ? await agentPromise.catch(() => null) : null;
+        if (!agent) return;
+        syncDisabledSkills(agent, chatProvider, settingsProvider);
+      })().catch((err) => {
+        // 降级优先：同步失败不打断用户当前操作——禁用集在下次装配时仍会按新配置注入
+        console.warn('Memora 技能启停配置同步失败', err);
+      });
     }),
   );
 

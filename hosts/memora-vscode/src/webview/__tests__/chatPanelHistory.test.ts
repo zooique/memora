@@ -1139,3 +1139,94 @@ describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2
     expect(posted.filter((m) => (m as { type: string }).type === 'notice')).toHaveLength(0);
   });
 });
+
+// ───────────────────────────────────────────────────────────────────────────
+// SKILL-S3b（2026-09-22）：配置变更 / 手动重载后重推技能清单
+//
+// 背景：`memora.disabledSkills` 变更此前**不刷新**对话区下拉 ⇒ 改完设置界面零变化
+//（「配置形态启停」承诺改完即生效，实际停在旧快照）。修复 = extension 侧监听配置变更
+//（及手动重载命令）后调本入口重推。
+//
+// 本组锁住的是**入口语义**：重推必须读内核**实时**快照（非装配期缓存），且未就绪时不抛。
+// ⚠️ 「监听是否注册」发生在 extension.ts（零测试覆盖区，无 vscode mock 基建），
+// 本组覆盖不到 —— 该段由 tsc/eslint + 编译产物实读兜底，勿把本组当作闭环证明。
+describe('技能启停：重推清单入口（SKILL-S3b）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /**
+   * agent 桩：禁用集**可变**——模拟内核 `disabledNames` 被 extension 监听重设后的状态。
+   * `disabledSkillNames` 必须用 getter 实时读：若桩快照成常量数组，本组第一条用例
+   * 会因「读不到变化」而变成测不到的假绿。
+   */
+  function mutableSkillStub(state: { disabled: string[] }): Agent {
+    const globalSkills = [
+      { name: '启用技能', content: 'a', description: 'd' },
+      { name: '禁用技能', content: 'b', description: 'd' },
+    ];
+    return {
+      skills: {
+        list: globalSkills,
+        get: (n: string) => globalSkills.find((s) => s.name === n) ?? null,
+        buildSystemPrompt: (n: string) => `【当前技能】${n}`,
+        get disabledSkillNames(): string[] {
+          return state.disabled;
+        },
+      },
+      rolePackManager: {
+        listMeta: () => [],
+        listSkills: () => [],
+        readSkillContent: async () => null,
+        getActive: () => null,
+      },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
+  }
+
+  /** 取最后一次 skills_loaded 携带的技能项（重推即取最新一条） */
+  function lastSkills(posted: unknown[]): { name: string; disabled?: boolean }[] {
+    const lists = ofType<{ type: string; skills: { name: string; disabled?: boolean }[] }>(
+      posted,
+      'skills_loaded',
+    );
+    return lists.at(-1)?.skills ?? [];
+  }
+
+  it('重推读到内核**最新**禁用集（非装配期缓存）', () => {
+    const { provider, posted } = setup();
+    provider.setSkillDirs('/mock/conf', '/mock/user');
+    const state = { disabled: [] as string[] };
+    provider.setAgent(mutableSkillStub(state));
+
+    // 基线显式走一次重推（不依赖 setAgent 内部补推时序）：此刻未禁用
+    provider.refreshSkillList();
+    expect(lastSkills(posted).find((s) => s.name === '禁用技能')?.disabled).toBeUndefined();
+
+    // 模拟 extension 监听把新禁用集喂给内核（真源变更），随后重推
+    state.disabled = ['禁用技能'];
+    provider.refreshSkillList();
+
+    expect(lastSkills(posted).find((s) => s.name === '禁用技能')?.disabled).toBe(true);
+    // 同名未禁用技能不得被连坐（防「整表打标」式实现）
+    expect(lastSkills(posted).find((s) => s.name === '启用技能')?.disabled).toBeUndefined();
+  });
+
+  it('未装配 agent：不推送且不抛（反向守卫）', () => {
+    const { provider, posted } = setup();
+    provider.setSkillDirs('/mock/conf', '/mock/user');
+    expect(() => provider.refreshSkillList()).not.toThrow();
+    expect(ofType(posted, 'skills_loaded')).toHaveLength(0);
+  });
+
+  it('面板未打开（_view 为空）：静默不抛', () => {
+    const { provider, posted } = setup();
+    provider.setSkillDirs('/mock/conf', '/mock/user');
+    provider.setAgent(mutableSkillStub({ disabled: [] }));
+    const before = ofType(posted, 'skills_loaded').length;
+    (provider as unknown as { _view: unknown })._view = undefined;
+    expect(() => provider.refreshSkillList()).not.toThrow();
+    expect(ofType(posted, 'skills_loaded')).toHaveLength(before);
+  });
+});

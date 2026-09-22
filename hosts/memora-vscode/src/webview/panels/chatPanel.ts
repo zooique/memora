@@ -379,6 +379,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
+   * 重推技能清单（供 extension 在「技能启停」配置变更 / 手动重载后调用，SKILL-S3b 2026-09-22）
+   *
+   * 存在理由：`skills_loaded` 是本面板技能下拉 + chip 的数据源，而两件触发事由**都发生在本面板之外**
+   * ——① `memora.disabledSkills` 配置变更；② `memora.reloadSkills` 命令重扫技能池（清单本身会变）。
+   * 无本入口时二者都不刷新 ⇒ 下拉「已禁用」标注停留在旧快照、新增技能不出现。
+   *
+   * 安全：面板未打开时 `post` 静默忽略（`_view` 为空，见 `post` 注释）；agent 未装配时
+   * `pushSkillList` 内已有 guard 直接返回 —— 两条路径均不抛，调用方无需 try。
+   */
+  public refreshSkillList(): void {
+    this.pushSkillList();
+  }
+
+  /**
    * 角色包内部名 → UI 展示名（SSOT，2026-08-15 演进）
    *
    * 从内核 RolePackManager.listMeta() 反查 manifest.displayName（与工具名中文化
