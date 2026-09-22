@@ -191,3 +191,25 @@ export function isSkillDisabled(agent: Agent, skillName: string): boolean {
   if (rpm && rpm.listSkills ? rpm.listSkills().some((s) => s.name === skillName) : false) return false;
   return sm.list.some((s) => s.name === skillName);
 }
+
+/**
+ * 找出禁用集里**未匹配任何技能**的名字（D，2026-09-22）。
+ *
+ * 语义（用户定案）：**「未找到需要禁用的技能」**——如实报告匹配结果，不归咎用户写错，
+ * 从而兼容「提前禁用尚未安装的技能」（配置随仓库/机器分发时合法）。提示是非阻断的
+ * UI 展示，不影响禁用判定本身。
+ *
+ * 判据：`disabledNames`（内核真源）∖ 三源清单名集（`listVisibleSkills` 聚合结果）。
+ * ⚠️ 名单只用 `listVisibleSkills` **同一次聚合**，不得自造第二份技能名集 —— 否则与
+ * UI 展示的清单分叉（SKILL-S2 血训：同一清单多通道仅改一处）。因此入参直接收
+ * 已聚合的 `SkillDto[]` 而非重新聚合，调用方（settingsPanel.loadSkills）复用既有结果。
+ *
+ * @param disabledNames 禁用名（内核 `agent.skills.disabledSkillNames`，真源）
+ * @param visibleSkills 三源聚合清单（`listVisibleSkills` 的结果，与 UI 展示同名集）
+ * @returns 未匹配的禁用名（保持配置填写顺序）
+ */
+export function findUnmatchedDisabled(disabledNames: string[], visibleSkills: SkillDto[]): string[] {
+  if (disabledNames.length === 0) return [];
+  const visible = new Set(visibleSkills.map((s) => s.name));
+  return disabledNames.filter((n) => !visible.has(n));
+}

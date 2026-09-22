@@ -321,6 +321,25 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect((document.querySelector('#skills-root .pager-bar') as HTMLElement).hidden).toBe(true);
     expect(document.querySelectorAll('.skill-item')).toHaveLength(6);
   });
+
+  it('D 未匹配提示：unmatchedDisabled 有值 → 渲染「未找到需要禁用的技能」提示行', () => {
+    mountSettingsView();
+    window.dispatchEvent(
+      new MessageEvent('message', {
+        data: { type: 'skills_loaded', skills: [makeSkill(0)], unmatchedDisabled: ['typo-skill', 'ghost-skill'] },
+      }),
+    );
+    const tip = document.querySelector('#skills-root .skill-unmatched-tip');
+    expect(tip).not.toBeNull();
+    expect(tip?.textContent).toContain('未找到需要禁用的技能');
+    expect(tip?.textContent).toContain('typo-skill、ghost-skill');
+  });
+
+  it('D 未匹配提示：空/undefined → 不渲染提示行（不打扰正常清单）', () => {
+    mountSettingsView();
+    dispatchSkills([makeSkill(0)]);
+    expect(document.querySelector('#skills-root .skill-unmatched-tip')).toBeNull();
+  });
 });
 
 describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全，2026-09-19）', () => {

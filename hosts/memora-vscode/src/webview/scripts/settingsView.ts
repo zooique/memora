@@ -280,6 +280,9 @@ function createSkillsView({
     if (msg.type === 'skills_loaded') {
       // renderSkills 更新计数 + 处理空态，返回按三源排序的全量数组 → 分页组件回第 1 页
       allSkills = renderSkills(listEl, countEl, msg.skills);
+      // D（2026-09-22）：禁用集「未找到需要禁用的技能」提示（非阻断，只进 UI）。
+      // 语义 = 如实报告匹配结果，不归咎用户写错；允许提前禁用尚未安装的技能。
+      renderUnmatchedDisabledTip(countEl, msg.unmatchedDisabled);
       contentMap.clear();
       pager.show(1, allSkills.slice(0, SKILL_PAGE_SIZE), allSkills.length);
     } else if (msg.type === 'skill_content') {
@@ -363,6 +366,23 @@ function renderSkills(
     if (oa !== ob) return oa - ob;
     return a.name.localeCompare(b.name);
   });
+}
+
+/**
+ * 渲染「禁用集未匹配任何技能」的非阻断提示（D，2026-09-22）。
+ *
+ * 语义 = **「未找到需要禁用的技能」**：如实报告匹配结果，不归咎用户写错，
+ * 兼容「提前禁用尚未安装的技能」。插在计数行之后、列表之前；每次 skills_loaded
+ * 重建（移除旧提示再插新提示），避免重复堆积。
+ */
+function renderUnmatchedDisabledTip(countEl: HTMLElement, unmatched: string[] | undefined): void {
+  // 清理上一次的提示（skills_loaded 可能连发，防堆积）；countEl 相邻节点即旧提示
+  document.querySelector('.skill-unmatched-tip')?.remove();
+  if (!unmatched || unmatched.length === 0) return;
+  const tip = document.createElement('p');
+  tip.className = 'skill-unmatched-tip';
+  tip.textContent = `未找到需要禁用的技能：${unmatched.join('、')}`;
+  countEl.after(tip);
 }
 
 /**

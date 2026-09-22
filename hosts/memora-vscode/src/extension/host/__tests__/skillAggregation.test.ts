@@ -1,4 +1,4 @@
-/**
+﻿/**
  * 宿主技能三源聚合单元测试（SSOT 收紧，2026-08-25）
  *
  * 锁住三类不变量，防「内置显示为用户」类来源错标复发：
@@ -10,8 +10,9 @@
  */
 import { describe, it, expect } from 'vitest';
 import type { Agent } from '@zooique/memora';
+import type { SkillDto } from '../../../shared/protocol.js';
 import { join } from 'node:path';
-import { isSkillDisabled, listVisibleSkills, resolveSkill, skillPromptFor } from '../skillAggregation.js';
+import { findUnmatchedDisabled, isSkillDisabled, listVisibleSkills, resolveSkill, skillPromptFor } from '../skillAggregation.js';
 
 const configDir = 'C:/app/dist/extension';
 const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';
@@ -292,5 +293,34 @@ describe('isSkillDisabled · 与 resolveSkill 判据同源', () => {
     // 反向：启用 ⇒ 注入成功 + 判定为假（不得误报，防「无条件报错」）
     expect(await skillPromptFor(agent, '启用中')).not.toBe('');
     expect(isSkillDisabled(agent, '启用中')).toBe(false);
+  });
+});
+
+describe('findUnmatchedDisabled · 禁用集「未找到需要禁用的技能」判据（D，2026-09-22）', () => {
+  /**
+   * SSOT 判定点：`findUnmatchedDisabled` 消费的是 `listVisibleSkills` 的**同一次聚合结果**，
+   * 差集 = 禁用名 ∖ 三源清单名集（内置/角色包/用户）。角色包同名命中 → 不算未匹配
+   * （与 `isSkillDisabled` 作用域语义一致：禁用集对角色包无管辖权）。
+   */
+  const skill = (name: string): SkillDto => ({ name, description: '', layer: 'builtin' } as SkillDto);
+
+  it('禁用名在三源清单中不存在才判为未匹配', () => {
+    const disabled = ['typo-skill', 'code-review', 'ghost'];
+    // 三源清单：内置 + 用户 + 角色包同名（code-review 命中角色包 → 不算未匹配）
+    const visible = [skill('code-review'), skill('builtin-a'), skill('user-b')];
+    expect(findUnmatchedDisabled(disabled, visible)).toEqual(['typo-skill', 'ghost']);
+  });
+
+  it('禁用集为空 → 空结果（不渲染提示）', () => {
+    expect(findUnmatchedDisabled([], [skill('a')])).toEqual([]);
+  });
+
+  it('全命中 → 空结果', () => {
+    expect(findUnmatchedDisabled(['a', 'b'], [skill('a'), skill('b')])).toEqual([]);
+  });
+
+  it('保持配置填写顺序（未匹配名按用户填序输出）', () => {
+    // 只有 y 存在，x/z 未匹配 → 按填序输出
+    expect(findUnmatchedDisabled(['x', 'y', 'z'], [skill('y')])).toEqual(['x', 'z']);
   });
 });

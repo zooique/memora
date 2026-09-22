@@ -25,7 +25,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
-import { listVisibleSkills, resolveSkill } from '../../extension/host/skillAggregation.js';
+import { findUnmatchedDisabled, listVisibleSkills, resolveSkill } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 // 内核常量（宿主不复制字面量，SSOT 单一来源）：
@@ -946,7 +946,27 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         }
       }),
     );
-    this.post({ type: 'skills_loaded', skills: validated });
+    // D（2026-09-22）：禁用集里「未找到需要禁用的技能」的名字（非阻断提示，只进 UI）。
+    // 判定复用**同一份** `skills` 聚合结果（与 UI 展示同名集），不自造第二份名单。
+    const unmatchedDisabled = findUnmatchedDisabled(
+      sm?.disabledSkillNames ?? [],
+      skills.map((s) => ({ name: s.name }) as SkillDto),
+    );
+    this.post({ type: 'skills_loaded', skills: validated, unmatchedDisabled });
+  }
+
+  /**
+   * 重推技能清单（供 extension 在「技能启停」配置变更 / 手动重载后调用，SKILL-S3b 2026-09-22）
+   *
+   * 复用 `loadSkills()` **单一实现**而非另写一份：该方法同时承载 G22 health 校验与
+   * 「已禁用」标注，配置变更后两条标注都需按最新禁用集/最新文件重算 —— 分开写迟早分叉
+   * （SKILL-S2 血训：改可见集只刷一半消费通道）。
+   *
+   * 代价说明：`loadSkills` 对带 filePath 的技能逐项 `validateFile`（读盘）。配置变更是低频
+   * 用户操作，且健康态是设置页卡片的**既有展示维度**，省掉校验会让卡片回退成无 health 快照。
+   */
+  public async refreshSkillList(): Promise<void> {
+    await this.loadSkills();
   }
 
   /**

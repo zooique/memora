@@ -832,7 +832,17 @@ export type ExtensionToWebviewMessage =
 
   // ─── 技能管理面板消息（2026-08-22 新增） ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
-  | { type: 'skills_loaded'; skills: SkillDto[] }
+  | {
+      type: 'skills_loaded';
+      skills: SkillDto[];
+      /**
+       * 禁用集里**未匹配任何技能**的名字（D，2026-09-22）：即用户填进 `memora.disabledSkills`
+       * 但三源清单（内置/角色包/用户）中找不到对应技能的名字。供设置页渲染非阻断提示——语义是
+       * 「未找到需要禁用的技能」（如实报告匹配结果），不是「用户写错了」（不归咎、允许提前
+       * 禁用尚未安装的技能）。判定真源 = `listVisibleSkills` 聚合结果（与 UI 展示同一份名单）。
+       */
+      unmatchedDisabled?: string[];
+    }
   /** L2 渐进披露：技能正文响应（对 skills_read_content 的应答） */
   | { type: 'skill_content'; skillName: string; content: string }
   // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───

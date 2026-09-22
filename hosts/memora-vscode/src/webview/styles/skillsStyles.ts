@@ -75,6 +75,19 @@ export const skillsStyles = `
     border-radius: var(--radius, 6px);
   }
 
+  /* D（2026-09-22）：禁用集「未找到需要禁用的技能」提示（非阻断弱化样式；
+     复用既有 warn 语义令牌 --feedback-warn-*（chatStyles 澄清提示 same-form：前景+背景+border），
+     不造新令牌——CSS 令牌单一真源（tokens.ts），禁硬编码） */
+  #skills-root .skill-unmatched-tip {
+    margin: 0 0 var(--sp-2, 6px);
+    padding: var(--sp-2, 6px) var(--sp-3, 8px);
+    font-size: var(--font-sm, 11px);
+    color: var(--feedback-warn-fg);
+    background: var(--feedback-warn-bg);
+    border-left: 3px solid var(--feedback-warn-accent);
+    border-radius: var(--radius-sm, 2px);
+  }
+
   /* 用户技能：左侧绿色边框标识（语义令牌 --skill-user-accent，复用 status-pass 系） */
   #skills-root .skill-item.skill-user {
     border-left: 3px solid var(--skill-user-accent);
