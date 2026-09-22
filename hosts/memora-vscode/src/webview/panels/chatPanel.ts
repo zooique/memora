@@ -51,7 +51,7 @@ import {
   stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
-import { listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
+import { isSkillDisabled, listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
@@ -2098,6 +2098,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         skillBlock = await skillPromptFor(this._agent, skillName);
       } catch {
         skillBlock = '';
+      }
+      // 响亮失败（SKILL-S2，2026-09-22）：技能被禁用时注入**静默落空**（`skillPromptFor` 按既有
+      // 契约返回空串 = 技能不存在，消息照常发出），用户零反馈。此处补上提示 —— 对照主流
+      // （Claude Code / WorkBuddy 的 `off` 态）按名调用明确报错。
+      // 三个边界不变：① 仍**照常发送**（拒绝发送 = 改发送语义，不在本次范围）；
+      // ② 判定走 `isSkillDisabled`（收口到与 `resolveSkill` 同序的真源，非自读配置副本）；
+      // ③ `notice` 只进 UI 不喂模型 ⇒ 不侵犯 S4「禁用对 LLM 静默」语义。
+      // 前置 `!skillBlock`：仅在**确实发生落空**时报，避免「判定说禁用、实际却注入成功」的假报。
+      if (!skillBlock && isSkillDisabled(this._agent, skillName)) {
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: `技能「${skillName}」已禁用，本次未注入（消息已照常发送）。可在设置 → 技能中启用后重试。`,
+        });
       }
     }
     // 注入文档上下文（当前任务上下文，不进入记忆召回）。

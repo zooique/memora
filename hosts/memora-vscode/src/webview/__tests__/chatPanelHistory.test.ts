@@ -1037,3 +1037,105 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
     expect((provider as unknown as { _salvageUpgraded: boolean })._salvageUpgraded).toBe(false);
   });
 });
+
+// ═══════════════════════════════════════════════════════════
+// 技能启停 · 用户通道「响亮失败」（SKILL-S2，2026-09-22）
+// ═══════════════════════════════════════════════════════════
+// 缺陷：composer 选中已禁用技能后发送 → `skillPromptFor` 按既有契约返回空串
+// （= 技能不存在，**不影响正常发送**），于是消息照常发出、技能未注入、界面零提示。
+// 契约不改（返回空串是对的），补的是调用方的**响亮失败**。三种落空必须分流：
+//   ① 已禁用  → 报（用户配置所致，可自行修复）
+//   ② 不存在  → 不报（属另一类缺陷，未在本次范围，勿混报）
+//   ③ 未带名  → 不报（普通发送）
+describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** agent 桩：技能两源（全局池 + 空角色包）+ chat 空流（只走 handleSend 前置链路） */
+  function skillAgentStub(disabledSkills: string[]): Agent {
+    const globalSkills = [
+      { name: '启用技能', content: '启用正文', description: 'd' },
+      { name: '禁用技能', content: '禁用正文', description: 'd' },
+    ];
+    return {
+      chat: async function* () {
+        yield { type: 'done' };
+      },
+      getMetrics: () => ({
+        llm: { totalInputTokens: 0, totalOutputTokens: 0 },
+        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
+      }),
+      sessionManager: {
+        getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
+        switchToSession: async () => 0,
+      },
+      on: vi.fn(),
+      off: vi.fn(),
+      memory: { softDeleteRoundSummaries: vi.fn() },
+      getCheckpoint: () => null,
+      skills: {
+        list: globalSkills,
+        // 与真实 SkillManager.get 同构：禁用名短路 null（桩若漏此判据，「注入落空」前提即假绿）
+        get: (n: string) =>
+          disabledSkills.includes(n) ? null : (globalSkills.find((s) => s.name === n) ?? null),
+        buildSystemPrompt: (n: string) => `【当前技能】${n}`,
+        disabledSkillNames: disabledSkills,
+      },
+      // setAgent → refreshAfterAssemble 会读 listMeta（推角色包清单）；listSkills/readSkillContent
+      // 供 listVisibleSkills / resolveSkill 走通。三者缺一即桩不全（与本用例断言无关的前置链路）。
+      rolePackManager: {
+        listMeta: () => [],
+        listSkills: () => [],
+        readSkillContent: async () => null,
+        getActive: () => null,
+      },
+    } as unknown as Agent;
+  }
+
+  /** 驱动一次带技能名的发送，返回 provider post 出的全部消息 */
+  async function sendWithSkill(skillName: string): Promise<unknown[]> {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '你好', ts: 't0' },
+      { role: 'assistant', content: '回复', ts: 't1' },
+    ]);
+    provider.setAgent(skillAgentStub(['禁用技能']));
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string, s?: string): Promise<void> }).handleSend(
+      '你好',
+      skillName,
+    );
+    return posted;
+  }
+
+  it('禁用技能：发 error notice 指名技能与「未注入」，且消息仍照常发送（不拒绝）', async () => {
+    const posted = await sendWithSkill('禁用技能');
+    const notices = posted.filter((m) => (m as { type: string }).type === 'notice') as {
+      level: string;
+      message: string;
+    }[];
+    expect(notices).toHaveLength(1);
+    expect(notices[0]!.level).toBe('error');
+    expect(notices[0]!.message).toContain('禁用技能');
+    expect(notices[0]!.message).toContain('未注入');
+    // 不拒绝（变异锁）：修「静默」不得改成「禁止发送」——用户消息仍上屏
+    expect(posted.some((m) => (m as { type: string }).type === 'user')).toBe(true);
+  });
+
+  it('启用技能：无 notice（反向守卫，防「无条件报错」）', async () => {
+    const posted = await sendWithSkill('启用技能');
+    expect(posted.filter((m) => (m as { type: string }).type === 'notice')).toHaveLength(0);
+  });
+
+  it('技能不存在：无 notice（「不存在」≠「已禁用」，两类落空语义分流）', async () => {
+    const posted = await sendWithSkill('根本没有的技能');
+    expect(posted.filter((m) => (m as { type: string }).type === 'notice')).toHaveLength(0);
+  });
+
+  it('未带技能名：无 notice（普通发送不受影响）', async () => {
+    const posted = await sendWithSkill('');
+    expect(posted.filter((m) => (m as { type: string }).type === 'notice')).toHaveLength(0);
+  });
+});
