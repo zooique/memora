@@ -93,12 +93,27 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     }
   }
 
-  return [...byName.values()].sort((a, b) => {
-    if (SOURCE_ORDER[a.layer ?? 'builtin'] !== SOURCE_ORDER[b.layer ?? 'builtin']) {
-      return SOURCE_ORDER[a.layer ?? 'builtin'] - SOURCE_ORDER[b.layer ?? 'builtin'];
-    }
-    return a.name.localeCompare(b.name);
-  });
+  // 禁用标记（S4 启停，2026-09-22）：真源 = 内核 `disabledSkillNames`（即 `get()` 判据的同一集合）。
+  // 宿主**不自读**一份 workspace 配置——两源会在 reloadConfig 重设禁用集后分叉，
+  // 出现「UI 说已禁用、实际仍生效」（或反之）。此处只做**标注**，不隐藏条目（见 SkillDto.disabled）。
+  //
+  // ⚠️ **作用域限全局技能池（builtin/user）**：`disabledNames` 是 `SkillManager` 的判据集，
+  // 而角色包技能走 `rolePackManager`、**不经** `SkillManager.get()` ⇒ 对角色包技能禁用本就无效。
+  // 故此处不得给 `rolepack` 层打标——那是 UI 谎报（本次复核刚清理过同类「声明与实现不同源」）。
+  // 角色包技能启停是**独立设计问题**（技能随角色激活，需先定「禁用是全局还是按角色」），
+  // 不在本次范围（登记 3.1.0）。
+  const disabledNames = new Set(sm?.disabledSkillNames ?? []);
+  return [...byName.values()]
+    .map((s) => {
+      const inGlobalPool = s.layer === 'builtin' || s.layer === 'user';
+      return inGlobalPool && disabledNames.has(s.name) ? { ...s, disabled: true } : s;
+    })
+    .sort((a, b) => {
+      if (SOURCE_ORDER[a.layer ?? 'builtin'] !== SOURCE_ORDER[b.layer ?? 'builtin']) {
+        return SOURCE_ORDER[a.layer ?? 'builtin'] - SOURCE_ORDER[b.layer ?? 'builtin'];
+      }
+      return a.name.localeCompare(b.name);
+    });
 }
 
 /** 技能正文解析结果（含命中来源，供调用方决定组装格式） */
@@ -148,4 +163,31 @@ export async function skillPromptFor(agent: Agent, skillName: string): Promise<s
     return agent.skills.buildSystemPrompt(skillName);
   }
   return `【当前技能】${skillName}\n${resolved.content}`;
+}
+
+/**
+ * 技能是否因「已禁用」而不可用（SKILL-S2，2026-09-22）。
+ *
+ * 为何需要：用户通道（composer 下拉按名指定）在技能被禁用时**静默落空** ——
+ * `skillPromptFor` 按既有契约返回空串「技能不存在，不影响正常发送」（该契约本身是对的，
+ * 此处不改），于是消息照常发出、技能未注入、界面零提示。对照主流（Claude Code / WorkBuddy
+ * 的 `off` 态）按名调用**明确报错**。本函数供调用方补上「响亮失败」所需的判据。
+ *
+ * 判据与 `resolveSkill` **同序**（角色包 → 全局池），不可自行反序：
+ *   ① 角色包内嵌同名技能命中 → **未禁用**（`disabledNames` 是 `SkillManager` 的判据集，
+ *      对 `rolePackManager` 无管辖权；见 `listVisibleSkills` 同款作用域说明）；
+ *   ② 全局池快照（`list`，**含**禁用项）内确实存在该名且命中 `disabledSkillNames` → 已禁用。
+ *
+ * ⚠️ 判据源必须是内核 `disabledSkillNames`（**实际生效集**），**不得**改读宿主 workspace 配置：
+ * 两源会在 `reloadConfig` 重设禁用集后分叉，导致「UI 说已禁用、实际仍生效」（或反之）。
+ *
+ * 名字既不在角色包也不在全局池 ⇒ 属「技能不存在」而非「已禁用」，返回 false ——
+ * 两种落空的用户提示语义不同，由调用方分流；本函数只回答「禁用与否」这一问。
+ */
+export function isSkillDisabled(agent: Agent, skillName: string): boolean {
+  const sm = agent.skills;
+  if (!sm || !sm.disabledSkillNames.includes(skillName)) return false;
+  const rpm = agent.rolePackManager;
+  if (rpm && rpm.listSkills ? rpm.listSkills().some((s) => s.name === skillName) : false) return false;
+  return sm.list.some((s) => s.name === skillName);
 }

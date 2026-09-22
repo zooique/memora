@@ -300,6 +300,21 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe('第 2 / 2 页（共 15 条）');
   });
 
+  it('已禁用徽章（S4 启停）：disabled=true 渲染「已禁用」且**条目保留**，未禁用不渲染', () => {
+    mountSettingsView();
+    dispatchSkills([
+      { name: 'skill-on', description: '启用中的技能', layer: 'builtin' },
+      { name: 'skill-off', description: '已禁用的技能', layer: 'builtin', disabled: true },
+    ]);
+    // 2026-09-22 复核实锤 G2：5 处注释声称「宿主 UI 标注已禁用徽章」而实现为零 →
+    // 用户无法确认启停是否生效。本用例锁住徽章存在 + 条目不被隐藏（两条都要）。
+    const off = document.querySelector('.skill-item[data-skill-name="skill-off"]');
+    const on = document.querySelector('.skill-item[data-skill-name="skill-on"]');
+    expect(off).not.toBeNull(); // 不隐藏：静默消失会让人误判「启停没做」
+    expect(off?.querySelector('.disabled-badge')?.textContent).toBe('已禁用');
+    expect(on?.querySelector('.disabled-badge')).toBeNull();
+  });
+
   it('技能数 ≤ 10 → 分页条自动隐藏（小数据量无分页 UI）', () => {
     mountSettingsView();
     dispatchSkills(Array.from({ length: 6 }, (_, i) => makeSkill(i)));

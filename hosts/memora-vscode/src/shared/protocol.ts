@@ -996,6 +996,14 @@ export interface SkillDto {
   filePath?: string;
   /** 技能来源三分类（SSOT 收紧，2026-08-25）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
   layer?: 'builtin' | 'rolepack' | 'user';
+  /**
+   * 是否已被用户禁用（S4 配置形态启停，2026-09-22）：true = 对模型语义不存在
+   * （不进技能清单 / read_skill 读不到 / L3 资源与脚本不可达），但本 UI **不隐藏**它，
+   * 而是以「已禁用」徽章标注——便于用户对照确认启停是否生效（静默消失会造成
+   * 「功能没做」的误判）。
+   * 真源 = 内核 `SkillManager.disabledSkillNames`（实际生效的判据集），宿主不自读配置副本。
+   */
+  disabled?: boolean;
   /** 健康状态（G22 写→验→用，2026-08-25）：error=未生效（不进 LLM 清单）/ warn=可加载但可优化 / 缺省=角色包等未校验项按可用处理 */
   health?: 'ok' | 'warn' | 'error';
   /** 校验问题清单（health!=='ok' 时携带，供列表/展开区错误定位） */

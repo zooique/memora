@@ -11,7 +11,7 @@
 import { describe, it, expect } from 'vitest';
 import type { Agent } from '@zooique/memora';
 import { join } from 'node:path';
-import { listVisibleSkills, resolveSkill, skillPromptFor } from '../skillAggregation.js';
+import { isSkillDisabled, listVisibleSkills, resolveSkill, skillPromptFor } from '../skillAggregation.js';
 
 const configDir = 'C:/app/dist/extension';
 const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';
@@ -23,6 +23,8 @@ function makeAgent(opts: {
   roleContent?: { [name: string]: string };
   /** 全局技能正文（真实 SkillEntry 恒有 content；缺省给非空值，防「假空」掩盖解析分支） */
   globalContent?: { [name: string]: string };
+  /** 内核**实际生效**的禁用集（S4）：listVisibleSkills 据此标注 disabled，不自读配置副本 */
+  disabledSkills?: string[];
 }): Agent {
   return {
     skills: {
@@ -33,11 +35,16 @@ function makeAgent(opts: {
         layer: (g.layer ?? 'project') as 'agent' | 'project',
       })),
       get: (n: string) => {
+        // 与真实 SkillManager.get 同构（S4）：禁用名**短路返回 null**。
+        // 桩若漏此判据，「禁用 ⇒ 注入落空」这一前提就测不出来（假绿）——
+        // SKILL-S2 的 isSkillDisabled 测试依赖本短路成立。
+        if (opts.disabledSkills?.includes(n)) return null;
         const g = opts.global.find((x) => x.name === n);
         if (!g) return null;
         return { ...g, content: opts.globalContent?.[n] ?? `全局正文:${n}` };
       },
       buildSystemPrompt: (n: string) => `【当前技能】${n}`,
+      disabledSkillNames: opts.disabledSkills ?? [],
     },
     rolePackManager: {
       listSkills: () => opts.roleSkills ?? [],
@@ -99,6 +106,35 @@ describe('listVisibleSkills · 三源技能聚合', () => {
     const out = listVisibleSkills({ agent, configDir, userSkillsDir });
     expect(out).toHaveLength(1);
     expect(out[0].layer).toBe('user');
+  });
+
+  it('禁用标注：命中内核禁用集 → disabled=true，且条目**保留不隐藏**（供用户对照确认启停）', () => {
+    const agent = makeAgent({
+      global: [
+        { name: '启用中', filePath: join(configDir, 'skills', 'on.md') },
+        { name: '已禁用', filePath: join(configDir, 'skills', 'off.md') },
+      ],
+      disabledSkills: ['已禁用'],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    // 条目保留：静默消失会让用户误判「启停根本没做」（2026-09-22 复核的 G2 正是此伤）
+    expect(out).toHaveLength(2);
+    expect(out.filter((s) => s.disabled).map((s) => s.name)).toEqual(['已禁用']);
+    expect(out.find((s) => s.name === '启用中')?.disabled).toBeUndefined();
+  });
+
+  it('禁用标注作用域守卫：只标全局池，角色包层同名**不得**打标（防 UI 谎报「已禁用」）', () => {
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
+      roleSkills: [{ name: '同名' }],
+      disabledSkills: ['同名'],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    // 去重后胜出者是角色包（DEDUP_PRIORITY 角色包优先），而禁用只作用于全局池
+    // （角色包技能走 rolePackManager、不经 SkillManager.get）⇒ 打标即 UI 谎报，回退此判断即红
+    const winner = out.find((s) => s.name === '同名');
+    expect(winner?.layer).toBe('rolepack');
+    expect(winner?.disabled).toBeUndefined();
   });
 
   it('无路径回退：内核 layer=project 视作用户、agent 视作内置', () => {
@@ -194,5 +230,67 @@ describe('三面同源：列表保留 / 预览正文 / composer 注入 必须指
     const out = listVisibleSkills({ agent, configDir, userSkillsDir });
     expect(out.filter((s) => s.name === '同名')).toHaveLength(1);
     expect(out.find((s) => s.name === '同名')?.layer).toBe('rolepack');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// isSkillDisabled · 用户通道「响亮失败」的判据（SKILL-S2，2026-09-22）
+// ═══════════════════════════════════════════════════════════
+// 用途：composer 按名指定技能时，注入落空需给用户可见反馈（此前静默）。判据必须与
+// `resolveSkill` **同序**，否则「角色包有同名技能」的场景会**假报错**（实际注入成功却报已禁用）。
+describe('isSkillDisabled · 与 resolveSkill 判据同源', () => {
+  it('全局池命中禁用集 → true；未命中 → false', () => {
+    const agent = makeAgent({
+      global: [
+        { name: '启用中', filePath: join(configDir, 'skills', 'on.md') },
+        { name: '已禁用', filePath: join(configDir, 'skills', 'off.md') },
+      ],
+      disabledSkills: ['已禁用'],
+    });
+    expect(isSkillDisabled(agent, '已禁用')).toBe(true);
+    expect(isSkillDisabled(agent, '启用中')).toBe(false);
+  });
+
+  it('判据同源守卫：角色包存在同名技能 → false（禁用集对角色包无管辖权，报「已禁用」即假报）', () => {
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
+      roleSkills: [{ name: '同名' }],
+      roleContent: { 同名: '角色包正文' },
+      disabledSkills: ['同名'],
+    });
+    // 与 resolveSkill 同序（角色包先）：命中角色包即注入成功 ⇒ 不得报「已禁用」。
+    // 若把本函数改成「只查 disabledSkillNames」（反序/漏角色包）→ 本用例红。
+    expect(isSkillDisabled(agent, '同名')).toBe(false);
+  });
+
+  it('名字不存在 → false（「不存在」与「已禁用」是两种落空，提示语义须分流）', () => {
+    const agent = makeAgent({
+      global: [{ name: '存在', filePath: join(configDir, 'skills', 'a.md') }],
+      // 误配场景：禁用清单里写了根本不存在的技能名
+      disabledSkills: ['幽灵技能'],
+    });
+    expect(isSkillDisabled(agent, '幽灵技能')).toBe(false);
+    expect(isSkillDisabled(agent, '存在')).toBe(false);
+  });
+
+  it('无 skills 子系统（未装配）→ false，不抛', () => {
+    const agent = { skills: undefined } as unknown as Agent;
+    expect(isSkillDisabled(agent, '任意')).toBe(false);
+  });
+
+  it('链路一致性（变异锁）：skillPromptFor 落空 ⟺ isSkillDisabled 为真', async () => {
+    const agent = makeAgent({
+      global: [
+        { name: '启用中', filePath: join(configDir, 'skills', 'on.md') },
+        { name: '已禁用', filePath: join(configDir, 'skills', 'off.md') },
+      ],
+      disabledSkills: ['已禁用'],
+    });
+    // 正向：禁用 ⇒ 注入落空 + 判定为真（宿主据此发 notice）
+    expect(await skillPromptFor(agent, '已禁用')).toBe('');
+    expect(isSkillDisabled(agent, '已禁用')).toBe(true);
+    // 反向：启用 ⇒ 注入成功 + 判定为假（不得误报，防「无条件报错」）
+    expect(await skillPromptFor(agent, '启用中')).not.toBe('');
+    expect(isSkillDisabled(agent, '启用中')).toBe(false);
   });
 });

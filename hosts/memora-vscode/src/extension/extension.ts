@@ -329,6 +329,14 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage('Memora Agent 未就绪，无法重载技能');
         return;
       }
+      // 禁用集同步（S4 启停闭环）：`disabledSkills` 原本只在 Agent 装配时注入一次，
+      // 用户改设置后若只跑 reloadConfig，技能池会重扫但禁用集仍是旧的
+      // ⇒ 表现为「改了设置、点了重载、没反应」（与「配置形态启停」的承诺不符）。
+      // 故先按当前配置重设（幂等：内核 setDisabledSkills 为全量替换语义）。
+      // ⚠️ 真源仍是内核（此处只是把宿主配置喂给它）；UI 徽章读内核那份，不另读配置副本。
+      agent.skills?.setDisabledSkills(
+        vscode.workspace.getConfiguration('memora').get<string[]>('disabledSkills', []),
+      );
       if (agent.isBusy) {
         // allSettled：忙碌态两次调用都会以 chatBusyError 结束（守门发生在任何 IO 之前），
         // 属预期路径，不该冒泡成未处理异常。

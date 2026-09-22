@@ -97,6 +97,13 @@
           ],
           "default": "auto",
           "description": "内部网页搜索引擎（web_search 工具使用的后端）。auto 为内置降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。用户级偏好，随用户而非随项目。修改后重建会话（或重载窗口）生效。"
+        },
+        "memora.disabledSkills": {
+          "type": "array",
+          "items": { "type": "string" },
+          "scope": "application",
+          "default": [],
+          "description": "禁用的技能名列表（配置形态启停）。作用域 = 全局技能池（内置技能 + 用户技能）；激活角色包的内嵌技能是「随角色激活」的另一套语义，不受本设置影响。命中者对模型语义 = 不存在：不进技能清单、read_skill 读不到、L3 资源与脚本不可达；技能页仍保留条目并加「已禁用」徽章（便于对照确认是否生效，不静默消失）。技能名 = 技能清单中列出的名称（Agent Skills 规范：kebab，如 code-review）。用户级偏好，随用户而非随项目。修改后执行「Memora: 重载技能与角色包」即生效，无需重载窗口。"
         }
       }
     },

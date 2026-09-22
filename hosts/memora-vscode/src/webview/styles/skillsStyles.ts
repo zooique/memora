@@ -153,6 +153,18 @@ export const skillsStyles = `
     color: var(--skill-health-warn);
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
+  /* S4 配置形态启停（2026-09-22）：已禁用徽章。语义 = 对模型不存在，仅 UI 对照显示
+     （不隐藏条目，否则用户无法确认启停是否生效）。复用 health-warn 色 token：
+     不取红（避免与「未生效」错误态混淆），不取纯灰（灰易被当成装饰忽略） */
+  #skills-root .disabled-badge {
+    font-size: var(--font-xs, 10px);
+    font-weight: 600;
+    padding: 2px 6px;
+    border-radius: var(--radius-pill, 999px);
+    flex-shrink: 0;
+    color: var(--skill-health-warn);
+    background: var(--surface-hover, rgba(128,128,128,.2));
+  }
   #skills-root .skill-problems {
     list-style: none;
     margin: 0 0 var(--sp-2, 6px);
