@@ -259,6 +259,29 @@ export const chatStyles = `
   }
   .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
   .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
+  /* P2 多 ask 聚合（2026-09-22）：多提问合并一个卡片，逐题点选/输入（全部答完才提交）。
+   * is-selected = 该题已作答（实心品牌色，可再点改选）；submit 为底部一次性提交按钮，
+   * 全部题目有答案才 enabled（disabled 降透明度 + not-allowed 光标，语义直显）。纯开关无动画。 */
+  .ask-inline__opt.is-selected {
+    color: var(--accent-foreground, #ffffff);
+    background: var(--accent, #0e639c);
+    border-color: var(--accent, #0e639c);
+  }
+  .ask-inline__submit {
+    align-self: flex-end;
+    font-size: var(--font-sm, 11px);
+    color: var(--accent-foreground, #ffffff);
+    background: var(--accent, #0e639c);
+    border: none;
+    border-radius: var(--radius-sm, 3px);
+    padding: 4px var(--sp-4, 10px);
+    cursor: pointer;
+  }
+  .ask-inline__submit:disabled {
+    opacity: .4;
+    cursor: not-allowed;
+  }
+  .ask-inline__submit:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
   /* 写入审批卡（H0，2026-09-19 补全）：confirmWrites=true 写文件时浮现于消息区底部。
    * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
    * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */

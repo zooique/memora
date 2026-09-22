@@ -565,6 +565,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         void vscode.commands.executeCommand('memora.configureModel');
       } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
         void this.handleResume(msg.text.trim());
+      } else if (msg.type === 'clarify_answers' && msg.answers.length > 0) {
+        // P2 多 ask 聚合回答（2026-09-22）：answers 与提问按序一对一，全部答完一次性投递
+        void this.handleResume(msg.answers);
       } else if (msg.type === 'new_session') {
         // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史（2026-08-17 会话管理重构）
         void this.newSessionFromCommand();
@@ -1642,6 +1645,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // _agent 未装配完成时本调用静默跳过，由装配后收口点 refreshAfterAssemble 兜底再推
     // （两条装配入口——memora.open 命令与懒装配——都经该收口点，不漏路径）。
     this.postHistoryOccupancy();
+    // P3（2026-09-22）：重放补推任务表看板——replaySession 只认实时 plan_update 消息，
+    // 重启/重开面板后不推则「重新渲染任务表消失」（任务表跨 turn 持久是既有设计，内核
+    // checkpoint.plan 仍在，缺的只是 UI 重放投递）。_agent 未装配时 postPlanUpdate 静默跳过。
+    this.postPlanUpdate();
   }
 
   /**
@@ -2190,33 +2197,45 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     await this.runFlow((signal) => this._agent!.resumeExecution(undefined, signal, 'timeout'));
   }
 
-  /** 处理用户对主动提问的回答：answerQuestion 结构化回填 + resumeExecution 续跑
+  /**
+   * 处理用户对主动提问的回答：answerQuestion 结构化回填 + resumeExecution 续跑
    *  2026-09-04：内核提问收敛为 ask_user 工具——先 answerQuestion 以 tool result 回填
    *  （与 assistant.tool_calls 配对，结构合法），再由 resumeExecution 续跑（回答 text
    *  作为新 user 输入注入并记录交互归属 question-answer，round 不分裂）。
-   *  TS-9：回答落盘由内核 runResume 按交互归属写入同闭环节点，宿主不双写 */
-  private async handleResume(input: string): Promise<void> {
+   *  TS-9：回答落盘由内核 runResume 按交互归属写入同闭环节点，宿主不双写。
+   *  P2（2026-09-22）：支持 string | string[] —— 多 ask 聚合回答（clarify_answers）传入
+   *  数组，answers 与提问按序一对一：逐条 post 透出「你答」交互行 + answerQuestion(answers)
+   *  数组回填 + resumeExecution 以 join 全文注入（内核 answerQuestion 原生支持数组）。
+   * @param input 单条回答文本 / 多问聚合回答数组
+   */
+  private async handleResume(input: string | string[]): Promise<void> {
     if (!this._agent) return;
     this.clearAskTimeout(); // 提问被回答：关闭超时保底
     // 竞态守卫（2026-09-08 超时保底引入）：提问已超时自动续跑（RUNNING）或流异常结束 →
     // 迟到回答丢弃——resume 前提 = paused，此处前置防「UI 已渲染你答行却无续跑」的分叉
     if (this._agent.sessionManager?.status !== 'paused') return;
+    const answers = Array.isArray(input) ? input.map((a) => a.trim()).filter(Boolean) : [input.trim()];
+    if (answers.length === 0) return;
     const now = new Date().toISOString();
     // 回答上屏（折叠块标记；与重放 qa 行同构——question/options 透出，webview 渲染「问→你答」回顾行）；
-    // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写
-    const pendingQ = this._lastPendingQuestions[0];
-    this._lastPendingQuestions = []; // 消费式：一次提问只透出一次（防跨提问残留串题）
-    this.post({
-      type: 'user',
-      text: input,
-      ts: now,
-      kind: 'question-answer',
-      ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
-    });
+    // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写。
+    // P2：多问按序逐条透出，question/options 与答案同序配对
+    const pendingQs = this._lastPendingQuestions.splice(0); // 消费式：一次提问只透出一次（防跨提问残留串题）
+    for (let i = 0; i < answers.length; i++) {
+      const pendingQ = pendingQs[i];
+      this.post({
+        type: 'user',
+        text: answers[i],
+        ts: now,
+        kind: 'question-answer',
+        ...(pendingQ?.question ? { question: pendingQ.question, options: pendingQ.options } : {}),
+      });
+    }
     await this.runFlow((signal) => {
-      // ask_user 工具：答案先行回填为 tool 结果（幂等：无在途提问时 no-op 返回 false）
-      this._agent!.answerQuestion([input]);
-      return this._agent!.resumeExecution(input, signal, 'question-answer');
+      // ask_user 工具：答案先行回填为 tool 结果（幂等：无在途提问时 no-op 返回 false）。
+      // 数组按序一对一回填；join 全文作为持续输入注入（多答合并为一条会话语义）
+      this._agent!.answerQuestion(answers);
+      return this._agent!.resumeExecution(answers.join('\n'), signal, 'question-answer');
     });
   }
 

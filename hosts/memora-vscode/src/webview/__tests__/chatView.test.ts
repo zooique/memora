@@ -2832,6 +2832,44 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
+  it('多 ask 聚合（P2）：逐题点选高亮 is-selected，全部答完才可提交 clarify_answers 数组', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'need_clarify',
+      questions: [
+        { slot: 'q1', question: '写作风格？', options: ['中文', '英文'] },
+        { slot: 'q2', question: '篇幅长度？', options: ['短篇', '长篇'] },
+      ],
+    });
+    const box = document.querySelector('.ask-inline') as HTMLElement;
+    expect(box).not.toBeNull();
+    // 多问：每题渲染一个 item（两题各自选项组 + 每题输入框），非单问的全局 input-row
+    expect(box.querySelectorAll('.ask-inline__item')).toHaveLength(2);
+    // 提交按钮初始 disabled（全部答完才可提交）
+    const submit = box.querySelector('.ask-inline__submit') as HTMLButtonElement;
+    expect(submit).not.toBeNull();
+    expect(submit.disabled).toBe(true);
+    // 只答第 1 题：不提交任何回答、按钮仍 disabled（修复前点一个即提交、其余被跳过）
+    const btns = box.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
+    expect(btns).toHaveLength(4);
+    (btns[0] as HTMLButtonElement).click(); // 第一题「中文」
+    // 未全部答完：不提交任何回答（postMessage 在此仅 mount ready 调用）
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clarify_answer' }));
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clarify_answers' }));
+    expect(submit.disabled).toBe(true);
+    // 已答题按钮高亮 is-selected（可再点改选）
+    expect((btns[0] as HTMLElement).classList.contains('is-selected')).toBe(true);
+    expect((btns[1] as HTMLElement).classList.contains('is-selected')).toBe(false);
+    // 答完第 2 题 → 提交按钮 enabled → 一次性提交 answers 数组（与提问按序一对一）
+    (btns[3] as HTMLButtonElement).click(); // 第二题「长篇」
+    expect(submit.disabled).toBe(false);
+    submit.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['中文', '长篇'] });
+    // 提交后内联块移除（聚合卡片任务完成，不再等待）
+    expect(document.querySelector('.ask-inline')).toBeNull();
+  });
+
   it('ask 点选项自动 continue → resume 原位续写单块（问题回归：防建块 B 致双复制条/错位）', () => {
     const { postMessage } = mountChatView();
     // ① 建块 A：meta + 正文（同 roundId r1）
@@ -3103,6 +3141,45 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(supRows[1]!.textContent).toContain('再看日志');
     expect(supRows[0]!.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
     expect(supRows[1]!.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
+  });
+
+  it('骨架期补充（正文未开即 supplement）→ 后续同轮 chunk 必须开启正文块渲染（2026-09-22 实证回归）', () => {
+    mountChatView();
+    // 发送第一问：骨架期（meta 先到建骨架，正文流未开始，streamingActive=false）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // 马上补充输入（host handleSend interject 分支：post user(supplement) 先行上屏）
+    dispatch({ type: 'user', text: '补充：先做第一步', ts: '2026-09-03T04:16:00Z', kind: 'supplement' });
+    // 内核同轮续接（_handleInterrupt 注入同 roundId），正文 chunk 续至
+    dispatch({ type: 'chunk', content: '好的，已按补充继续：第一步完成', roundId: 'round-1' });
+    dispatch({ type: 'done' });
+    const bodyTexts = Array.from(
+      document.querySelectorAll<HTMLElement>('.msg.assistant .msg-body'),
+    ).map((b) => b.textContent ?? '');
+    // 补充后的正文必须渲染（此前退化表现：无任何 assistant 正文块，UI 视觉卡在「吸收补充」）
+    expect(bodyTexts.join('')).toContain('第一步完成');
+  });
+
+  it('真实 IO 时序：骨架期补充后过程事件交错再正文续接（round-1790065416420 实证，2026-09-22）', () => {
+    mountChatView();
+    // ① 发送第一问：meta（骨架建立）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'llm_calling' } } });
+    // ② 马上补充（supplement 上屏，删除骨架）
+    dispatch({ type: 'user', text: '其实就是上一轮的结论', ts: '2026-09-22T08:23:48.977Z', kind: 'supplement' });
+    // ③ 补充后过程事件交错（narrate/tool/thought 先到，同轮）
+    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 65, ts: '', payload: { content: '我先查一下，请稍候' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 66, ts: '', payload: { toolCallId: 'c1', name: 'search_project', args: '{}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 69, ts: '', payload: { toolCallId: 'c1', name: 'search_project', ok: true, summary: '未命中' } } });
+    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 70, ts: '', payload: { phase: 'llm_calling' } } });
+    // ④ 正文 chunk 同轮续接（长回答，多段）
+    dispatch({ type: 'chunk', content: '好，那就直说——**有道理，但只对了一半**。', roundId: 'round-1790065416420' });
+    dispatch({ type: 'chunk', content: '先定内核，种子才找得对。', roundId: 'round-1790065416420' });
+    dispatch({ type: 'done' });
+    // 补充后的正文必须实时渲染（30 秒空洞期间用户看到的是"卡住"的根因即此处断链）
+    const bodyTexts = Array.from(
+      document.querySelectorAll<HTMLElement>('.msg.assistant .msg-body'),
+    ).map((b) => b.textContent ?? '');
+    expect(bodyTexts.join('')).toContain('只对了一半');
   });
 
   it('D3 单轨：运行时 qa 回答后 resume，骨架为普通第 2 段块（无续接视觉，2026-09-21 剪枝：补充卡片已分隔）', () => {

@@ -77,6 +77,13 @@ export type WebviewToExtensionMessage =
   /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
   | { type: 'clarify_answer'; text: string }
   /**
+   * 用户对多个 Agent 主动提问（need_clarify 多问）的聚合回答（P2，2026-09-22）
+   *
+   * 多 ask 合并一个卡片，全部答完一次性提交：answers 与提问按序一对一
+   * （内核 answerQuestion(answers[]) 支持数组回填；单问路径仍走 clarify_answer 不走此类型）。
+   */
+  | { type: 'clarify_answers'; answers: string[] }
+  /**
    * 新建会话（标题条「＋」按钮触发，2026-08-17 会话管理重构）
    *
    * 由标题条新建按钮触发，host 调 newSessionFromCommand 生成唯一会话名并切入空会话；

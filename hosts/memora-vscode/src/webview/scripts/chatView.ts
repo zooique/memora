@@ -711,6 +711,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     flowShellEl = div;
     // 挂载运行时过程平铺容器（meta 已在 currentEvents 首条）：过程按 step 时序平铺（无大折叠壳）
     renderProcessFlow(currentEvents);
+    // 骨架期暂存条目迁移（P1，2026-09-22）：骨架建立（flowEl 就绪）后，把 meta 前补充/回答
+    // 的 fallback 条目从消息流尾归位进过程容器（按 ts 重排序），消除「补充选项卡贴输入框下方」错位
+    flushSkeletonPendingItems();
     scrollToBottom(messages);
     updateEmptyState();
   }
@@ -2553,6 +2556,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   /** 本轮运行时输入累积（新闭环重置）；finalize 由 renderRoundBlock 从合并流重建归位 */
   let runtimeInteractiveInputs: RuntimeInteractiveInput[] = [];
+  /** 骨架期交互行暂存（P1，2026-09-22）：过程容器（flowEl/round-block）尚未建立时
+   *  fallback 渲染的补充/回答行 —— 先落消息流尾保「用户输入恒可见」，待骨架建立后
+   *  由 flushSkeletonPendingItems 迁移进过程容器，修复「补充选项卡贴输入框下方」
+   *  的视觉错位（重启重放正常 = 重放路径容器已建，根因是运行时骨架期挂载点缺失）。 */
+  let skeletonPendingItems: HTMLElement[] = [];
 
   /**
    * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口（形态甲，2026-09-17）：
@@ -2605,11 +2613,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const stepHost = host as HTMLDetailsElement;
         if (stepHost.tagName === 'DETAILS' && stepHost.classList.contains('round-block__step')) stepHost.open = true;
       } else {
-        // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程）落消息流。有 roundId 时打
-        // 归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（2026-09-19 形态甲回归修复，
-        // 否则条目散落「用户提问 ↔ 最终回答」之间且无搬运时机）
+        // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程 / 骨架期 meta 未到）落消息流。
+        // 有 roundId 时打归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（2026-09-19
+        // 形态甲回归修复，否则条目散落「用户提问 ↔ 最终回答」之间且无搬运时机）
         if (roundId) item.dataset.roundId = roundId;
         messages.appendChild(item);
+        // 骨架期暂存（P1，2026-09-22）：此刻 round-block/flowEl 尚未建立（meta 首 token 未到），
+        // 条目只会落消息流尾——「补充选项卡贴输入框下方」的视觉错位即由此来。暂存引用，
+        // 待 meta 骨架建立时由 flushSkeletonPendingItems 迁移进过程容器（重放路径容器已建，
+        // 序号入 flow 不暂存，故重启重放正常）。DOM 已落消息流保「用户输入恒可见」，
+        // 暂存仅作迁移引用，不重复持有 DOM。
+        if (!flowEl?.isConnected && !roundBlockEl?.isConnected) {
+          skeletonPendingItems.push(item);
+        }
       }
     } catch (err) {
       // 交互行渲染兜底（2026-09-08 审查扩展）：异常不静默 + 文本降级，"用户输入恒可见"纪律统一
@@ -2617,6 +2633,41 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     scrollToBottom(messages);
     updateEmptyState();
+  }
+
+  /**
+   * 骨架期暂存条目迁移（P1，2026-09-22）
+   *
+   * meta 骨架建立（prepareFlowShell 内 renderProcessFlow 后）调用：把 meta 到达前 fallback
+   * 落消息流尾的交互行（skeletonPendingItems）按 ts 归位进过程容器——修正「补充选项卡直接
+   * 显示在输入框下方」的骨架期挂载错位，同时保留「补充输入早于首 token」的排队语义
+   * （不砍插话，只是搬到正确的容器）。
+   *
+   * 迁移目标与 appendInteractiveInput 正常路径同源（flow > round-block details），
+   * 复用 stepContainerFor + insertStepInOrder 按 tsKey 排序插入，不破坏既有事件时序。
+   * 容器仍不可用（纯 QA 轮始终无过程容器）时静默保持消息流现状——条目已渲染可见，
+   * 迁移是增强不是必需，不影响「用户输入恒可见」纪律。
+   */
+  function flushSkeletonPendingItems(): void {
+    if (skeletonPendingItems.length === 0) return;
+    const flow = flowEl?.isConnected ? flowEl : null;
+    const rbDetails = roundBlockEl?.isConnected
+      ? roundBlockEl.querySelector('.round-block__details')
+      : null;
+    const root = (flow ?? rbDetails) as HTMLElement | null;
+    if (!root) return; // 无过程容器：条目留在消息流（fallback 已保证可见）
+    for (const item of skeletonPendingItems) {
+      if (!item.isConnected) continue; // 防御：条目已被其他路径（如折叠清空）移除
+      const tsKey = item.dataset.ts ?? new Date().toISOString();
+      const { host } = stepContainerFor(root, currentEvents, tsKey);
+      insertStepInOrder(host, item, tsKey);
+      // 归位进 step 分组（details）时展开该分组，保证用户输入恒可见（与 append 侧纪律一致）
+      const stepHost = host as HTMLDetailsElement;
+      if (stepHost.tagName === 'DETAILS' && stepHost.classList.contains('round-block__step')) {
+        stepHost.open = true;
+      }
+    }
+    skeletonPendingItems = [];
   }
 
   /**
@@ -2788,6 +2839,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 点击选项即答（无需二次回车），也可直接打字补充后发送。渲染在提问块下方，
    * 不替换底部输入栏（clarifyBar 仅异常兜底）。
    *
+   * P2 多 ask 聚合（2026-09-22）：多提问（questions.length > 1）合并一个卡片——逐题
+   * 点选/输入，answers[i] 逐题累计，全部答完才可点底部「提交全部回答」一次性提交
+   * （全部选择完毕才开始，修复「点一个其余被跳过」）；单问保持「点选即答」原交互。
+   *
    * @param questions 提问列表（question + 候选 options，可选）
    * @returns 内联块元素；无可用 assistant 锚点时返回 null（调用方走 clarifyBar 兜底）
    */
@@ -2812,7 +2867,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       box.remove();
       scrollToBottom(messages);
     };
-    for (const q of questions) {
+    // P2 多问聚合（2026-09-22）：answers[i] 逐题累计（选项点选 or 输入框），提交按钮全部答完才 enabled
+    const multi = questions.length > 1;
+    const answers: (string | undefined)[] = questions.map(() => undefined);
+    let submitBtn: HTMLButtonElement | null = null;
+    const syncSubmit = (): void => {
+      if (submitBtn) submitBtn.disabled = !answers.every((a) => a && a.trim().length > 0);
+    };
+    // 强制单选：任一题带 options 且 allowCustom=false → 全部隐藏输入框（仅限点选，语义对齐内核 ask_user）
+    const forceChoose = questions.some(
+      (q) => q.options && q.options.length > 0 && q.allowCustom === false,
+    );
+    // 每题构建：question 标题 + 选项按钮组（点选即答/或标记已答）+ 多问每题独立输入框
+    for (const [i, q] of questions.entries()) {
       const item = document.createElement('div');
       item.className = 'ask-inline__item';
       const qEl = document.createElement('div');
@@ -2826,44 +2893,88 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           const b = document.createElement('button');
           b.className = 'ask-inline__opt';
           b.textContent = opt;
-          b.addEventListener('click', () => commit(opt)); // 点击即答
+          b.addEventListener('click', () => {
+            if (multi) {
+              // 多问：点选标记该题已答（is-selected 高亮，可再点改选），不立即提交
+              answers[i] = opt;
+              opts.querySelectorAll<HTMLElement>('.ask-inline__opt').forEach((o) =>
+                o.classList.toggle('is-selected', o === b),
+              );
+              syncSubmit();
+            } else {
+              commit(opt); // 单问：点击即答
+            }
+          });
           opts.appendChild(b);
         }
         item.appendChild(opts);
       }
+      // 每题输入框：多问各自独立（forceChoose 时隐藏，见下）；单问改走循环外 inputRow（既有形态）
+      if (multi) {
+        const input = document.createElement('input');
+        input.className = 'ask-inline__input';
+        input.placeholder = '输入你的回答…';
+        input.addEventListener('input', () => {
+          answers[i] = input.value;
+          syncSubmit();
+        });
+        input.addEventListener('keydown', (e) => {
+          if (e.isComposing) return;
+          if (e.key === 'Enter') submitBtn?.click(); // 多问回车等价点提交（未全部答完时按钮 disabled 无效）
+        });
+        // forceChoose：该题的输入被禁用则仅点选（隐藏输入框）
+        if (forceChoose) input.hidden = true;
+        item.appendChild(input);
+      }
       box.appendChild(item);
     }
-    // 补充通道：不选选项、直接打字输入（「选择题 + 自由补充」双通道）
-    // 强制单选：任一提问带 options 且 allowCustom=false → 隐藏自由输入行（仅限点选，语义对齐内核 ask_user）。
-    // 向后兼容：allowCustom 缺省（undefined/true）时保持「点选 + 自由输入」双通道。
-    const forceChoose = questions.some(
-      (q) => q.options && q.options.length > 0 && q.allowCustom === false,
-    );
-    const inputRow = document.createElement('div');
-    inputRow.className = 'ask-inline__input-row';
-    const askInput = document.createElement('input');
-    askInput.className = 'ask-inline__input';
-    askInput.placeholder = '也可直接输入你的选择/补充…';
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'ask-inline__send';
-    sendBtn.textContent = '发送';
-    const submit = (): void => {
-      const t = askInput.value.trim();
-      if (!t) return;
-      askInput.value = '';
-      commit(t);
-    };
-    sendBtn.addEventListener('click', submit);
-    askInput.addEventListener('keydown', (e) => {
-      if (e.isComposing) return;
-      if (e.key === 'Enter') submit();
-    });
-    inputRow.append(askInput, sendBtn);
-    if (forceChoose) inputRow.hidden = true; // 强制单选：隐藏自由输入行，仅可点选
-    box.appendChild(inputRow);
+    // 多问聚合：底部「提交全部回答」（全部答完才 enabled）——单问无此按钮（点击即答）
+    if (multi) {
+      submitBtn = document.createElement('button');
+      submitBtn.className = 'ask-inline__submit';
+      submitBtn.textContent = '提交全部回答';
+      submitBtn.disabled = true;
+      submitBtn.addEventListener('click', () => {
+        // 全部题目答案按序一对一回填（filter 保序：跳过未答题，与按序对话保持对应）
+        const filled = answers.reduce<string[]>((acc, a) => {
+          const t = (a ?? '').trim();
+          if (t) acc.push(t);
+          return acc;
+        }, []);
+        commitAskAnswers(filled);
+        box.remove();
+        scrollToBottom(messages);
+      });
+      box.appendChild(submitBtn);
+    } else {
+      // 单问（原形态）：全局补充通道——不选选项、直接打字输入（「选择题 + 自由补充」双通道）
+      const inputRow = document.createElement('div');
+      inputRow.className = 'ask-inline__input-row';
+      const askInput = document.createElement('input');
+      askInput.className = 'ask-inline__input';
+      askInput.placeholder = '也可直接输入你的选择/补充…';
+      const sendBtn = document.createElement('button');
+      sendBtn.className = 'ask-inline__send';
+      sendBtn.textContent = '发送';
+      const submit = (): void => {
+        const t = askInput.value.trim();
+        if (!t) return;
+        askInput.value = '';
+        commit(t);
+      };
+      sendBtn.addEventListener('click', submit);
+      askInput.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') submit();
+      });
+      inputRow.append(askInput, sendBtn);
+      if (forceChoose) inputRow.hidden = true; // 强制单选：隐藏自由输入行，仅可点选
+      box.appendChild(inputRow);
+    }
     host.after(box);
-    // 焦点：连同输入行可见时才给输入框（强制单选时无从聚焦）
-    if (!forceChoose) askInput.focus();
+    // 焦点：连同输入行可见时才给输入框（强制单选时无从聚焦；多问聚焦首题输入框）
+    const firstInput = box.querySelector<HTMLInputElement>('.ask-inline__input');
+    if (firstInput && !firstInput.hidden) firstInput.focus();
     scrollToBottom(messages);
     return box;
   }
@@ -2877,14 +2988,36 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param text 用户回答（选项文本或自由输入）
    */
   function commitAskAnswer(text: string): void {
+    armAskResumeAnchor();
+    vscode.postMessage({ type: 'clarify_answer', text });
+  }
+
+  /**
+   * 提交多问答聚合回答（P2，2026-09-22）：多 ask 全部答完一次性投递 answers 数组
+   *
+   * 与单条 commitAskAnswer 相同置位语义（resumePending + 原位续写锚），仅载荷不同：
+   * answers 与提问按序一对一，内核 answerQuestion(answers[]) 逐条回填 tool result。
+   *
+   * @param answers 用户回答数组（按提问顺序）
+   */
+  function commitAskAnswers(answers: string[]): void {
+    armAskResumeAnchor();
+    vscode.postMessage({ type: 'clarify_answers', answers });
+  }
+
+  /**
+   * ask 回答提交共用置位（SSOT，2026-09-22 从两提交函数抽取）：resumePending + 原位续写锚
+   *
+   * 置 resumePending：提问后的 resume 新 runFlow meta 将识别为「同闭环续跑」，保留
+   * currentEvents 与 round-block 锚点（折叠留在闭环首块，不在续接块复制）。
+   * 原位续写锚对称于 paused 消息的 pausedAssistantEl 置位（单一续写锚语义，两路径同构）——
+   * 否则 resume meta 落入 resumePending 分支会新建块，与当前块同 round 并存（复制条 + 锚点悬空）。
+   */
+  function armAskResumeAnchor(): void {
     resumePending = true;
-    // ask 弹出选择题点选提交时，记录当前 assistant 块为**原位续写锚**，
-    // 对称于 paused 消息的 pausedAssistantEl 置位（单一续写锚语义，两路径同构）——
-    // 否则 resume meta 落入 resumePending 分支会新建块，与当前块同 round 并存（复制条 + 锚点悬空）。
     if (activeAssistantEl && activeAssistantEl.isConnected) {
       pausedAssistantEl = activeAssistantEl;
     }
-    vscode.postMessage({ type: 'clarify_answer', text });
   }
 
   /**
@@ -3480,6 +3613,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         } else {
           currentEvents = [];
           runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
+          skeletonPendingItems = []; // 新轮：骨架期暂存重置（P1，2026-09-22）——残留条目已 DOM 落地，清引用即可
           roundBlockEl = null;
           roundBlockHostEl = null;
           flowEl = null; // 新轮：运行时平铺容器引用失效（随 skeleton 重建）
@@ -3602,6 +3736,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         lastAssistantRoundId = undefined;
         resumePending = false;
         runtimeInteractiveInputs = []; // 新闭环：运行时输入累积重置（形态甲）
+        skeletonPendingItems = []; // 新闭环：骨架期暂存重置（P1，2026-09-22）
         roundBlockEl = null;
         roundBlockHostEl = null;
         flowEl = null; // 新闭环：运行时平铺容器引用失效
