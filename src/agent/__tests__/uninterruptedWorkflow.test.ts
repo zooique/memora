@@ -1303,13 +1303,15 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     });
 
   /**
-   * 场景 G：stepLog 关联 active 步骤
+   * 场景 G：turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）
    *
-   * 旧缺陷：loop.onStepBoundary → completeStep 不传 planStepId（恒 undefined）→
-   * stepLog 与 plan 无法关联，「哪个 step 推进了哪一步」不可追溯。
-   * onStepBoundary 取当前 active 步骤 ID 传入，stepLog 成为 plan 的时间轴投影。
+   * 新契约（2026-09-22）：chat() 流退出（turn 真正结束）时，无论步骤是否全部标记完成，
+   * 都清空 checkpoint.plan 与 stepLog —— 宏任务一个 turn 完不成则兜底丢弃，下个 turn 重新规划。
+   * 本用例为端到端回归锁：即使存在 pending 步骤（未全 done），turn 结束后任务表也必须被清理。
+   * stepLog 关联 active 步骤的细节由 assembler.test「onStepBoundary：写入当前 active 步骤的 stepLog」
+   * 直接覆盖（turn 中途观察；本测试跑完整轮后 plan 已被清，无法在 turn 后断言 stepLog）。
    */
-  it('场景 G：stepLog 应记录 active 步骤 ID', { timeout: 30000 }, async () => {
+  it('场景 G：turn 结束无条件清理任务表（即使存在 pending 步骤）', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1329,7 +1331,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       status: 'active',
       order: 1,
     });
-    // 加一个 pending step 防止 chatSync 跑完后 allDone 触发 autoClearPlan（不影响 stepLog 关联逻辑验证）
+    // 加一个 pending step：即使 turn 结束未全 done，也必须兜底清空（不跨 turn 残留）
     agent.getCheckpoint()!.plan.push({
       id: 'step-pending-2',
       description: '后续步骤',
@@ -1337,13 +1339,13 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
       order: 2,
     });
 
-    // 触发一轮对话 → loop step 边界 → onStepBoundary → completeStep
+    // 触发一轮对话 → turn 结束时兜底清理任务表
     await agent.chatSync('推进任务');
 
-    const stepLog = agent.getCheckpoint()!.stepLog ?? [];
-    expect(stepLog.length).toBeGreaterThan(0);
-    // stepLog 的 planStepId 应关联当前 active 步骤
-    expect(stepLog[stepLog.length - 1]!.planStepId).toBe(stepId);
+    // 新契约：turn 结束后任务表已清空（plan 与 stepLog 均不残留）
+    const cp = agent.getCheckpoint()!;
+    expect(cp.plan).toHaveLength(0);
+    expect(cp.stepLog ?? []).toHaveLength(0);
   });
 
   /**

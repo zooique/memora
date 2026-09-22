@@ -476,9 +476,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 仅当本调用仍是当前锁持有者时才清理资源（token 校验）
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
-      // turn 结束自动收尾：plan 全 done → 清运行时挂载物
-      this.autoClearPlanIfAllDone();
-      // 补执行对话期间暂存的配置重载请求
+      // turn 结束自动收尾：非暂停态无条件清理任务表（turn 内能力，不跨 turn 残留）
+      this.clearPlanOnTurnEnd();
       await this.flushPendingConfigReload();
     }
   }
@@ -623,7 +622,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 与 chat() 同构：释放锁 + 清理外部 signal
       this.internals.chatLockManager?.release(myToken);
       cleanupExternalSignal();
-      // turn 结束自动收尾：plan 全 done → 清运行时挂载物
+      // 续跑轮（resumeExecution）仍是同一 turn 内的继续推进（ask_user 问答/暂停补充）：
+      // 仅当计划全部 done 才清空（turn 未真正结束，任务表保留供后续子步推进）
       this.autoClearPlanIfAllDone();
     }
   }
@@ -971,19 +971,41 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * turn 结束自动收尾：所有 plan step = done + 非暂停态 → clearPlan。
-   * 形态②（PLAN-SYNC-1 ①）链路：LLM 显式 task_table_update 标完各步 → 全 done；
-   * 若 LLM 漏标最后一步，orchestrator.act 正常收尾兜底（concludeActiveStepIfPlanFullyReached）
-   * 已先行把最后 active 步补标 done（本方法只在 turn 真正结束时读到的全 done 才清）。
-   * 运行时状态（plan/stepLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史
-   * 挂点：chat() / continueAfterPause 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）
+   * turn 结束自动收尾：非暂停态 → 无条件 clearPlan（任务表收紧为 turn 内能力，不跨 turn 残留）。
+   *
+   * 任务表生命周期 = 单个 turn：LLM 在 turn 内编排并完成任务表；chat() 流退出（turn 真正结束）
+   * 时，无论步骤是否全部标记完成，都清空运行时挂载物（checkpoint.plan 与 stepLog）。这样：
+   * ① 宏任务一个 turn 完不成 → 本 turn 结束兜底丢弃，下个 turn 由 LLM 重新规划全新任务表；
+   * ② 续跑轮（resumeExecution = ask_user 问答/暂停补充）是同一 turn 的闭环推进，走
+   * autoClearPlanIfAllDone（仅全 done 才清），移交此处时 plan 仍在内存中不被误清。
+   *
+   * 唯一例外是暂停态（pauseMeta）：turn 尚未真正结束，暂停恢复后要继续用 plan 推进，
+   * 故保留不清；恢复完成后该 turn 最终退出时仍会走本方法无条件清空。
+   *
+   * 运行时状态（plan/stepLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史（不落盘删除）。
+   * 挂点：chat() 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）
+   */
+  private clearPlanOnTurnEnd(): void {
+    const sm = this._sessionManager;
+    if (!sm) return;
+    const cp = sm.getCheckpoint();
+    if (!cp?.plan || cp.plan.length === 0) return;
+    if (cp.pauseMeta) return; // 暂停态：turn 未真正结束，恢复时需继续用 plan，保留不清
+    sm.clearPlan();
+  }
+
+  /**
+   * 续跑轮（resumeExecution）结束自动收尾：所有 plan step = done + 非暂停态 → clearPlan。
+   * 续跑轮仍是同一 turn 内的继续推进（ask_user 问答/暂停补充），turn 未真正结束——
+   * 故仅当任务表全部完成才清空；半程保留供下一子步继续推进（与 chat() 的 turn 结束
+   * 无条件清理 clearPlanOnTurnEnd 语义区分）。暂停态不清（恢复时继续用 plan）。
    */
   private autoClearPlanIfAllDone(): void {
     const sm = this._sessionManager;
     if (!sm) return;
     const cp = sm.getCheckpoint();
     if (!cp?.plan || cp.plan.length === 0) return;
-    if (cp.pauseMeta) return; // 暂停态不清，恢复时要继续用 plan
+    if (cp.pauseMeta) return; // 暂停态，恢复时要继续用 plan
     if (cp.plan.every((s) => s.status === 'done')) {
       sm.clearPlan();
     }

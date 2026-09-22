@@ -861,7 +861,7 @@ export class SessionManager {
    * 形态② 兜底收尾（「LLM 未显式 update 即收尾」）：turn 正常完成且计划已「全部到达」——
    * 存在 active step 且无 pending step（LLM 已显式完成所有更早步骤、当前步为最后到达的一步）——
    * 时闭合该 active 步（completeStep：标 done + stepLog）。LLM 忘标最后一步时由本兜底补上，
-   * 使计划达到全 done（autoClearPlanIfAllDone 顺路清空）；真实多轮任务（有 pending）不受影响。
+   * 使计划达到全 done（任务表 turn 内收敛，turn 结束兜底清理）；真实多轮任务（有 pending）不受影响。
    * 触发点 = seed/orchestrator.act 正常收尾分支（非暂停/中断/失败）。
    */
   concludeActiveStepIfPlanFullyReached(summary: string): void {

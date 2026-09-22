@@ -234,7 +234,7 @@ export class SeedOrchestrator {
 
     // 形态② 兜底收尾（PLAN-SYNC-1 ①，2026-09-17）：「LLM 未显式 update 即收尾」——turn 正常
     // 完成（非暂停/中断/失败）且计划已「全部到达」（无 pending 步）时，闭合当前 active 步，
-    // 使计划达到全 done 由 agent finally 的 autoClearPlanIfAllDone 顺路清空；真实多轮任务
+    // 使计划达到全 done（仍可能残留改为 blocked 的步，交由 turn 结束兜底清理）；真实多轮任务
     // （仍有 pending）不受影响。
     this.deps
       .getParts()
