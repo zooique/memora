@@ -55,7 +55,7 @@
     "eval:budget:check": "tsx scripts/eval-context-budget-snapshot.ts --check",
     "docs:links": "tsx scripts/check-publish-links.ts",
     "prepare": "lefthook install || true",
-    "prepublishOnly": "npx rimraf dist && npm run build"
+    "prepublishOnly": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build"
   },
   "engines": {
     "node": ">=22.0.0"
