@@ -50,6 +50,11 @@
         "title": "Memora: 运行能力演示（隔离演示区）"
       },
       {
+        "command": "memora.reloadSkills",
+        "title": "Memora: 重载技能与角色包",
+        "icon": "$(refresh)"
+      },
+      {
         "command": "memora.registerWork",
         "title": "Memora: 登记作品投影",
         "icon": "$(file-text)"

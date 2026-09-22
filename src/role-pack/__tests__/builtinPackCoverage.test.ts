@@ -59,6 +59,14 @@ function skillNameOf(filePath: string): string {
  */
 const SKILL_REFERENCE_RE = /`([a-z0-9]+(?:-[a-z0-9]+)*)`/g;
 
+/**
+ * 技能 name 合法字符集（Agent Skills 规范，agentskills.io/specification）：
+ * 仅小写字母 / 数字 / 连字符；不得以连字符开头或结尾、不得含连续连字符。
+ * 与 `SKILL_REFERENCE_RE` **共用同一字母表**——正因 name 受限，引用才可能被机器提取；
+ * 放宽 name 字符集等于同时让提取器失焦。
+ */
+const KEBAB_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
 /** 提取设定文本中的全部技能引用（保留出现顺序与重复，调用方自行去重） */
 function extractSkillReferences(text: string): string[] {
   const refs: string[] = [];
@@ -156,6 +164,23 @@ describe('内置角色包技能可发现性守卫', () => {
       }
     }
     expect(dangling).toEqual([]);
+  });
+
+  it('技能名须符合 kebab 字符集（Agent Skills 规范，防引用提取器失焦）', async () => {
+    // 场景溯源（2026-09-22）：技能名若含中文 / 大写 / 下划线，`SKILL_REFERENCE_RE` 便无法
+    // 把它当引用提取——「存在却不可被引用」。故 name 与磁盘命名**双双**限定为 kebab：
+    // 磁盘命名是引用提取的实际比对对象，frontmatter name 是 L1 清单与 read_skill 的寻址键。
+    const invalid: string[] = [];
+    for (const pack of await scanBuiltinPacks()) {
+      for (const skill of pack.skillNames) {
+        if (!KEBAB_RE.test(skill)) invalid.push(`${pack.name}/${skill}: 文件命名非 kebab`);
+        const declared = pack.declaredNames[skill] ?? '';
+        if (declared !== '' && !KEBAB_RE.test(declared)) {
+          invalid.push(`${pack.name}/${skill}: frontmatter name "${declared}" 非 kebab`);
+        }
+      }
+    }
+    expect(invalid).toEqual([]);
   });
 
   it('技能 frontmatter name 与文件名一致（防 L1 清单名与设定文本引用名失配）', async () => {

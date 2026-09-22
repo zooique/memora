@@ -116,6 +116,10 @@
 
 **行业依据（2026-09-14 外部调研）**：Anthropic 官方 Skill authoring best practices 要求 `name` 只用小写字母 / 数字 / 连字符，并指出**一致的命名让技能更容易被引用与讨论**；Agent Skills 规范（agentskills.io）要求 `name` **必须与父目录名一致**；社区约定进一步把已发布的技能名当作 **API 契约——改名属 semver-major 变更**。本规范即把该契约收敛为「引用必须可机器校验」。
 
+**关于全局技能池（`<configDir>/skills/`）的引用**（2026-09-22 补充）：上述约定**对两类技能统一适用**——全局技能池的 `name` 同样是 **kebab 且与文件名一致**（当前内置 4 个：`code-review` / `summarize` / `web-search` / `role-pack-creator`），引用形式完全相同（反引号包裹技能名）。
+
+⚠️ **但不要在角色包设定文本里引用全局技能**：双向守卫的视野**只覆盖仓库根 `role-packs/`**（`builtinPackCoverage.test.ts` 的 `ROLE_PACKS_DIR`），看不到宿主全局技能池 ⇒ 引用全局技能会被**反向守卫判成悬空引用**（测试红）。全局技能靠 L1 清单被模型发现即可，无需设定文本引导。（当前三个内置包对全局技能零引用，符合此约定。）
+
 ***
 
 ## 三、strategy 策略键（逐键填写指导）

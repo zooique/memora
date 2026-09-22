@@ -95,7 +95,7 @@ Skills 系统的核心设计是**渐进披露（Progressive Disclosure）**—�
 **单文件形式（轻量兼容，纯 L1/L2）**：
 ```
 skills/
-  └── 代码审查.md           # 顶层裸 .md：纯 L1/L2（无 resources/scripts）
+  └── code-review.md         # 顶层裸 .md：纯 L1/L2（无 resources/scripts）
 ```
 
 > **用户视角取舍**：主流开放标准（Claude Code / Codex / Cursor）只认文件夹形式；memora 作为落地项目，额外兼容单文件形式降低轻量技能的使用门槛——一条快忘的指令写成裸 `.md` 即可生效。二者加载语义一致（L1/L2），差异仅在 L3 归属，不会造成双标准割裂。
@@ -116,10 +116,10 @@ read_resource: {
   parameters: {
     type: 'object',
     properties: {
-      skillName: { type: 'string', description: '技能名' },
-      resourcePath: { type: 'string', description: '相对 resources/ 或 references/ 的路径' }
+      skill_name: { type: 'string', description: '技能名' },
+      resource_path: { type: 'string', description: '相对 resources/ 或 references/ 的路径' }
     },
-    required: ['skillName', 'resourcePath']
+    required: ['skill_name', 'resource_path']
   }
 }
 ```
@@ -128,43 +128,28 @@ read_resource: {
 
 **用途**：存放可执行脚本。脚本在宿主环境中执行，**源代码不进入 LLM 上下文**——只有执行结果注入。
 
-**脚本执行规则**：
-1. 脚本必须声明 `runtime`（`node` | `python` | `shell`）
-2. 脚本接受参数（从 LLM 的工具调用中传入）
-3. 脚本的 stdout/stderr 捕获后作为工具返回值
-4. 脚本执行有超时限制（默认 60s，最大 600s，可传 timeout_ms；2026-09-08 调大适配长耗时 API 调用）
-5. 脚本执行在隔离子进程中，继承宿主用户环境（用户本地 shell 语义——密钥默认经 SecretStorage 不经 env，env 回退模式下可见，owner 信任模型；2026-09-08 反转，原「不暴露宿主环境」已废弃）
+**脚本执行规则**（对齐实现，2026-09-22 订正）：
+1. **runtime 由脚本扩展名推断，无需声明**——单一真理源 `SCRIPT_RUNTIME_MAP`（[scanner.ts](../../src/utils/scanner.ts)）：`.js`/`.mjs`/`.cjs`/`.ts` → `node`；`.py` → `python`；`.sh`/`.bash`/`.zsh`/`.bat`/`.cmd` → `shell`。
+2. 脚本接受参数（从 LLM 的工具调用中传入，`args: string[]`）
+3. 脚本的 stdout/stderr 捕获后作为工具返回值（脚本源码不进上下文）
+4. 脚本执行有超时限制：内核默认 60s、上限 600s。`run_skill_script`（L3 工具）**不暴露超时参数**，恒走内核默认；`timeout_ms` 仅 `run_project_script` 支持（**单位是秒**，如传 `30` = 30 秒）
+5. 脚本执行在隔离子进程中，继承宿主用户环境（用户本地 shell 语义——密钥默认经 SecretStorage 不经 env，env 回退模式下可见，owner 信任模型）
 
-**脚本 frontmatter 声明**（嵌入 SKILL.md 的 frontmatter，或脚本文件自身的 frontmatter）：
-```yaml
----
-name: 代码审查
-description: 审查代码质量
-scripts:
-  - path: scripts/lint.ts
-    runtime: node
-    description: 运行代码 lint 检查
-    timeout: 30
-  - path: scripts/analyze.py
-    runtime: python
-    description: 分析代码复杂度
-    timeout: 60
----
-```
+**脚本无需在 frontmatter 声明**（2026-09-22 订正）：脚本的发现完全靠目录扫描——`scripts/` 下的文件即被索引为 L3 脚本，runtime 由扩展名推断（见上方规则 1）。SKILL.md 的 frontmatter **只认 `name` + `description`**（必填，error 级，对齐 agentskills.io / TRAE 标准）；写入 `scripts:` 块不会被任何代码读取（**静默忽略**）。
 
-**工具接口**：
+**工具接口**（参数名为 snake_case，与 [`builtinTools.ts`](../../src/agent/builtinTools.ts) 一致）：
 ```typescript
 run_skill_script: {
   name: 'run_skill_script',
-  description: '执行技能的可执行脚本（渐进披露 L3，脚本结果返回，源码不进上下文）',
+  description: '执行技能的可执行脚本（渐进披露 L3）。脚本源码不进入上下文，仅执行结果返回。当技能含 scripts/ 目录时可调用。',
   parameters: {
     type: 'object',
     properties: {
-      skillName: { type: 'string', description: '技能名' },
-      scriptPath: { type: 'string', description: '相对 scripts/ 的路径' },
-      args: { type: 'array', items: { type: 'string' }, description: '传递给脚本的参数' }
+      skill_name: { type: 'string', description: '技能名' },
+      script_path: { type: 'string', description: '相对 scripts/ 的路径（如 "lint.ts"）' },
+      args: { type: 'array', items: { type: 'string' }, description: '传递给脚本的参数数组（可选）' }
     },
-    required: ['skillName', 'scriptPath']
+    required: ['skill_name', 'script_path']
   }
 }
 ```

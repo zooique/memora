@@ -25,7 +25,7 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
-import { listVisibleSkills } from '../../extension/host/skillAggregation.js';
+import { listVisibleSkills, resolveSkill } from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
 import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
 // 内核常量（宿主不复制字面量，SSOT 单一来源）：
@@ -952,8 +952,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /**
    * L2 渐进披露：按需读取技能正文（不预装载到 L1 列表，用户点击展开时才读取）
    *
-   * 从 SkillManager 或 RolePackManager 获取技能 content，返回给 webview 渲染。
-   * 优先从 SkillManager（全局技能）读取，回退到 RolePackManager（角色包内嵌技能）。
+   * 解析顺序收口于 `skillAggregation.resolveSkill`（角色包 → 全局，与内核 `read_skill` 同序）——
+   * 本方法此前自带一份「全局优先」实现，与 composer 注入相反（同名技能双存时预览与实际注入分叉）。
+   * 现只取正文交给 webview 渲染，**不再自写两级回退**。
    */
   private async readSkillContent(skillName: string): Promise<void> {
     const agent = await this.ensureAgent();
@@ -961,26 +962,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'skill_content', skillName, content: '' });
       return;
     }
-    // 1. 优先从全局 SkillManager 读取（内置 + 用户技能）
-    const sm = agent.skills;
-    if (sm) {
-      const skill = sm.get(skillName);
-      if (skill?.content) {
-        this.post({ type: 'skill_content', skillName, content: skill.content });
-        return;
-      }
-    }
-    // 2. 回退到 RolePackManager（角色包内嵌技能）
-    const rpm = agent.rolePackManager;
-    if (rpm) {
-      const content = await rpm.readSkillContent(skillName);
-      if (content) {
-        this.post({ type: 'skill_content', skillName, content });
-        return;
-      }
-    }
-    // 未找到 → 返回空内容
-    this.post({ type: 'skill_content', skillName, content: '' });
+    const resolved = await resolveSkill(agent, skillName);
+    this.post({ type: 'skill_content', skillName, content: resolved?.content ?? '' });
   }
 
   /** 在系统文件管理器中打开指定目录（revealFileInOS 失败回退 showItemInFolder；供技能/角色包目录共用，SSOT 消除重复） */
