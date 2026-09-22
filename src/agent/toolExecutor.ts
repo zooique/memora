@@ -1054,7 +1054,7 @@ export class ToolExecutor {
           throw toolError(
             'run_code language 参数过长',
             `language 超过 ${RUN_CODE_LANGUAGE_MAX_LEN} 字符上限`,
-            ['使用简短的语言名，如 "python"、"node"'],
+            ['使用简短的语言名（具体可用集合由宿主执行器决定，如 "js"、"node"）'],
             undefined,
             ToolErrorCode.ARGUMENT_ERROR,
           );

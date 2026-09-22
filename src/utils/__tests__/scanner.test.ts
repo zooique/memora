@@ -10,6 +10,8 @@
  *   - scanMarkdownDir：文件夹形式 SKILL.md 扫描
  *   - scanMarkdownDir：混合形式（单文件 + 文件夹）扫描
  *   - resolveSubdir：configDir 为 undefined 返回 undefined
+ *   - isFolderFormSkill：文件夹形态判定
+ *   - inferRuntimeFromExt：扩展名 → runtime 映射（含 Windows 批处理 .bat/.cmd 归 shell 档）
  */
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
@@ -20,6 +22,7 @@ import {
   resolveSubdir,
   resolveSafePath,
   isFolderFormSkill,
+  inferRuntimeFromExt,
 } from '@/utils/scanner.js';
 import { setLogger } from '@/utils/loggerHolder.js';
 
@@ -300,6 +303,35 @@ description: 变体技能
     it('主文件名大小写变体（skill.md / SKILL.MD）应为真（Windows 落盘兼容）', () => {
       expect(isFolderFormSkill('/pack/skills/my-skill/skill.md')).toBe(true);
       expect(isFolderFormSkill('/pack/skills/my-skill/SKILL.MD')).toBe(true);
+    });
+  });
+
+  describe('inferRuntimeFromExt（SCRIPT_RUNTIME_MAP）', () => {
+    it('POSIX 脚本扩展名 → shell', () => {
+      expect(inferRuntimeFromExt('.sh')).toBe('shell');
+      expect(inferRuntimeFromExt('.bash')).toBe('shell');
+      expect(inferRuntimeFromExt('.zsh')).toBe('shell');
+    });
+
+    it('Windows 批处理 .bat/.cmd → shell（缺映射会被兜底成 node 而必炸）', () => {
+      // 背景（2026-09-22 实测）：run_project_script 按扩展名推断 runtime，未知扩展名由
+      // toolExecutor.normalizeScriptRuntime 兜底 'node'。此前 .bat/.cmd 不在映射表 → 实际
+      // 执行 `node foo.bat`（拿批处理语法喂 node）必炸；本机实测 `cmd /c foo.bat` status=0
+      // 且 stdout 正确（.cmd 同），故二者必须显式归入 shell 档。本条锁死该映射防回归。
+      expect(inferRuntimeFromExt('.bat')).toBe('shell');
+      expect(inferRuntimeFromExt('.cmd')).toBe('shell');
+    });
+
+    it('node/python 档按表映射；未知扩展名返回 undefined（兜底策略由调用方自定）', () => {
+      expect(inferRuntimeFromExt('.ts')).toBe('node');
+      expect(inferRuntimeFromExt('.js')).toBe('node');
+      expect(inferRuntimeFromExt('.mjs')).toBe('node');
+      expect(inferRuntimeFromExt('.cjs')).toBe('node');
+      expect(inferRuntimeFromExt('.py')).toBe('python');
+      // .ps1 **刻意不映射**：shell 档在 win32 派发 `cmd /c <path>`，而 cmd 不起 PowerShell
+      // （实测 .ps1 静默空跑、stdout/stderr 全空）——补进 shell 档是「看起来修好了」的假修复。
+      expect(inferRuntimeFromExt('.ps1')).toBeUndefined();
+      expect(inferRuntimeFromExt('')).toBeUndefined();
     });
   });
 });

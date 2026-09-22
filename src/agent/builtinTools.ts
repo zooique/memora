@@ -330,7 +330,10 @@ export const RUN_CODE_TOOL: ToolDefinition = {
     properties: {
       language: {
         type: 'string',
-        description: '代码语言，如 "python"、"node"、"shell"（可用性取决于宿主执行器；script_path 模式省略时按文件扩展名推断）',
+        description:
+          '代码语言（可选；script_path 模式省略时按文件扩展名推断）。**具体支持哪些语言由宿主执行器决定，内核不预设**——' +
+          '不确定时优先用 script_path 模式（先 write_file 写文件再执行，按扩展名推断运行时），或先观察项目里已有脚本的扩展名；' +
+          '若直接传 code 而语言不被支持，执行器会明确回知可用语言，据此改用即可。',
       },
       code: { type: 'string', description: '要执行的代码内容（与 script_path 二选一）' },
       script_path: {
@@ -645,7 +648,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '运行项目内已有的脚本文件（默认开放，与角色包能力声明无关）。脚本路径相对项目根，越界（项目外路径）拒绝执行。' +
       '脚本源码不进入上下文，仅执行结果（stdout/stderr/退出码）返回。由内核子进程执行：超时默认 60s（上限 600s，' +
       '可按需传 timeout_ms 秒，如脚本内调用 API 耗时较长）、工作目录=项目根、继承宿主用户环境变量' +
-      '（用户本地 shell 语义，脚本可读 API key/工作区变量等）。扩展名推断运行时：.py→python、.js/.mjs/.cjs→node、.sh/.bash/.zsh→shell。' +
+      '（用户本地 shell 语义，脚本可读 API key/工作区变量等）。扩展名推断运行时：.py→python、.js/.mjs/.cjs/.ts→node、.sh/.bash/.zsh/.bat/.cmd→shell。' +
+      '⚠️ 跨平台提示：.sh 需要系统有 sh/bash 解释器——Windows 无 Git Bash 时会**静默空跑**（退出码 0 但 stdout/stderr 全空，不是执行成功），' +
+      'Windows 上请优先写 .bat/.cmd（cmd 原生可执行）或 .js/.py；不要写 .ps1（shell 档不起 PowerShell，同样静默空跑）。' +
       '与 run_code(script_path) 的区别：本工具运行**仓库既有**脚本（默认开放、内核执行）；' +
       'run_code 面向 LLM 现写的一次性临时脚本（特权 code:execute + 宿主沙箱，写→执行→删闭环）。' +
       '文件组织类操作（批量移动/重命名/归档/复制）优先用脚本一次完成（fs 重命名或一行 mv），避免逐文件 read→write→delete 的多轮低效操作。',

@@ -204,6 +204,12 @@ export interface DiscoveredLayer3 {
  *
  * '.ts' 语义声明（唯一一处）：node 无法直接解析 TS——映射仅作兜底推断，实际可用性
  * 取决于宿主执行器是否具备转译能力（如 vscode codeExecutor 仅别名 .js/.mjs/.cjs）。
+ *
+ * '.bat'/'.cmd' 语义声明（2026-09-22）：Windows 批处理——shell 档在 win32 派发
+ * `cmd /c <path>`（skillScriptRunner.resolveCommand），批处理是 cmd 的原生可执行类型
+ * （实测 status=0、stdout 正确）。**缺映射时会被 toolExecutor 兜底成 node 而必炸**
+ * （拿批处理语法喂 node），故必须显式归入 shell 档。POSIX 下 `sh <path>` 跑批处理无
+ * 意义，但**不额外加平台分支**——跨平台同表比按平台分叉简单，且 POSIX 侧不会产出 .bat。
  */
 export const SCRIPT_RUNTIME_MAP: Readonly<Record<string, ScriptRuntime>> = {
   '.ts': 'node',
@@ -214,6 +220,8 @@ export const SCRIPT_RUNTIME_MAP: Readonly<Record<string, ScriptRuntime>> = {
   '.sh': 'shell',
   '.bash': 'shell',
   '.zsh': 'shell',
+  '.bat': 'shell',
+  '.cmd': 'shell',
 };
 
 /**

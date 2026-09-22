@@ -20,8 +20,8 @@
  * OS 级容器/沙箱（如专用受限用户 + rlimit + 网络隔离），不在本执行器范围。
  *
  * 语言支持：仅 JavaScript（javascript / js / nodejs / node）。其他语言由 LLM 提示词约束避开。
- * 「node」别名对齐内核 run_code 的规范语言名（工具描述「如 python、node、shell」，
- * script_path 模式按扩展名推断 .js/.mjs/.cjs/.ts 即产出 node）。
+ * 内核 run_code 工具描述已如实声明「具体支持哪些语言由宿主执行器决定，内核不预设」——
+ * 本执行器实际支持如上四别名；「node」对齐 script_path 模式按扩展名推断（.js/.mjs/.cjs/.ts → node）。
  */
 import { spawn } from 'node:child_process';
 import type {
