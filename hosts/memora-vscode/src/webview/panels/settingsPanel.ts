@@ -1363,9 +1363,8 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <h2>角色</h2>
       <span id="statBar" class="stat-bar" hidden></span>
       <div class="header-actions">
-        <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-text" title="打开用户角色包目录">
+        <button id="btnOpenRolePacksDir" class="btn btn-secondary btn-icon-solo" title="打开用户角色包目录">
           <span class="btn-icon" data-icon="folder"></span>
-          <span>打开目录</span>
         </button>
       </div>
     </div>
@@ -1460,13 +1459,11 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <h2>全局技能</h2>
       <span id="skillCount" class="stat-bar" hidden></span>
       <div class="header-actions">
-        <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-text" title="打开用户技能目录">
+        <button id="btnOpenSkillsDir" class="btn btn-secondary btn-icon-solo" title="打开用户技能目录">
           <span class="btn-icon" data-icon="folder"></span>
-          <span>打开目录</span>
         </button>
-        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-text">
+        <button id="btnRefreshSkills" class="btn btn-secondary btn-icon-solo" title="刷新技能列表">
           <span class="btn-icon" data-icon="refresh"></span>
-          <span>刷新</span>
         </button>
       </div>
     </div>

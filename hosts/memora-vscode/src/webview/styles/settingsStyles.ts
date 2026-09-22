@@ -141,10 +141,11 @@ export const settingsStyles = `
     display: flex;
     gap: var(--sp-2, 6px);
   }
-  #roles-root .btn-icon-text {
+  #roles-root .btn-icon-solo {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1, 4px);
+    justify-content: center;
+    padding: var(--sp-2, 6px);
   }
   #roles-root .btn-icon {
     display: inline-flex;

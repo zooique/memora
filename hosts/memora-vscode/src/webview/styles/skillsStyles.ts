@@ -32,11 +32,13 @@ export const skillsStyles = `
     gap: var(--sp-2, 6px);
   }
 
-  /* 图标按钮通用样式 */
-  #skills-root .btn-icon-text {
+  /* 纯图标按钮陈（2026-09-22：去掉「打开目录/刷新」冗余文字，仅保留图标）：
+     紧凑方块（padding --sp-2 覆盖 .btn 的左右 12px），图标 flex 居中，hover 提示走 title */
+  #skills-root .btn-icon-solo {
     display: inline-flex;
     align-items: center;
-    gap: var(--sp-1, 4px);
+    justify-content: center;
+    padding: var(--sp-2, 6px);
   }
   #skills-root .btn-icon {
     display: inline-flex;
