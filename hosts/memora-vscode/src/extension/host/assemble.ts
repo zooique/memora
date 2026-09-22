@@ -190,6 +190,15 @@ export interface AssembleOptions {
    */
   searchEngine?: 'auto' | SearchEngineName;
   /**
+   * 禁用的技能名清单（S4，2026-09-22）
+   *
+   * 由 extension 从 workspace 设置 memora.disabledSkills 读取注入，配置形态启停：
+   * 命中技能对 LLM 全链不可用（L1 清单剔除 / L2 read_skill / L3 资源脚本），
+   * 语义 = 技能不存在；宿主 settingsView 依据同名设置标注「已禁用」徽章。
+   * 修改需重建会话（装配是 activation 期一次性注入）。
+   */
+  disabledSkills?: string[];
+  /**
    * VSCode 输出通道（G7：日志对接）
    *
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
@@ -222,7 +231,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, confirmScripts, allowedPaths, outputChannel } = options;
+  const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, confirmScripts, allowedPaths, outputChannel, disabledSkills } = options;
 
   // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
@@ -318,6 +327,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     confirmWrites: confirmWrites ?? false,
     // 脚本/代码执行确认（2026-09-08：与写入确认同模式，开则 run_code/run_project_script 执行前询问）
     confirmScripts: confirmScripts ?? false,
+    // 禁用技能清单（S4，配置形态启停）：命中技能对 LLM 全链不可用（L1/L2/L3），
+    // 宿主 settingsView 依据同名设置标注「已禁用」徽章
+    disabledSkills: disabledSkills ?? [],
   });
 
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）

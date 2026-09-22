@@ -7,8 +7,8 @@
  *   3. 用户本地目录 —— <userSkillsDir>/（SkillManager.loadExtraDir 运行时注入）
  *
  * settingsPanel / chatPanel 共用本模块，避免两处各自拼接清单造成第二份来源。
- * 来源判定用 filePath 前缀（configDir 与 userSkillsDir 天然不重叠，同名技能已被内核 loadExtraDir
- * 的「内置优先去重」保证不冲突），不改内核 SkillEntry 契约。
+ * 来源判定用 filePath 前缀（configDir 与 userSkillsDir 天然不重叠，同名冲突按
+ * 去重表 DEDUP_PRIORITY 裁决——用户可覆盖内置，见下），不改内核 SkillEntry 契约。
  */
 import type { Agent } from '@zooique/memora';
 import { join } from 'node:path';
@@ -47,22 +47,34 @@ function sourceOf(
 }
 
 /**
+ * 同名去重优先级（数值小 = 胜出）。**角色包 > 用户 > 内置**（2026-09-22 反转 builtin/user 位，
+ * 对齐主流「用户可覆盖内置」）——与（a）内核装载层 loadExtraDir 用户同名覆盖内置（S5）同向；
+ * （b）注入面（`skillPromptFor` / 内核 `read_skill`）同向：角色包优先、全局池次之。
+ * 反转前为「内置 > 用户」——与内核装载层方向相反，UI 呈现与实际生效者错位。
+ *
+ * ⚠️ 与 `SOURCE_ORDER` 是两件事，不可合并：本表管**同名时留谁**，`SOURCE_ORDER` 管**列表怎么排**。
+ */
+const DEDUP_PRIORITY: Record<SkillSource, number> = { rolepack: 0, user: 1, builtin: 2 };
+
+/**
  * 三源聚合技能清单（settingsPanel / chatPanel 共用，单一真理源）。
- * 同名去重（内置优先）；按来源排序（内置 → 角色包 → 用户），组内按名。
+ * 同名去重（**角色包 > 用户 > 内置**，DEDUP_PRIORITY 裁决）；按来源排序
+ * （内置 → 角色包 → 用户，SOURCE_ORDER），组内按名。
  */
 export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   const { agent, configDir, userSkillsDir } = ctx;
-  const out: SkillDto[] = [];
-  const seen = new Set<string>();
+  const byName = new Map<string, SkillDto>();
   const push = (
     layer: SkillSource,
     name: string,
     description: string | undefined,
     filePath?: string,
   ): void => {
-    if (!name || seen.has(name)) return;
-    seen.add(name);
-    out.push({ name, description: description ?? '', filePath, layer });
+    if (!name) return;
+    const prev = byName.get(name);
+    // 新来源优先级不高于已有 → 保留已有（去重方向必须对齐注入面，故不可用「先到先得」）
+    if (prev && DEDUP_PRIORITY[prev.layer ?? 'builtin'] <= DEDUP_PRIORITY[layer]) return;
+    byName.set(name, { name, description: description ?? '', filePath, layer });
   };
 
   // 源 1 + 3：SkillManager.list（内置 configDir/skills + 用户 loadExtraDir 注入）
@@ -81,7 +93,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     }
   }
 
-  return out.sort((a, b) => {
+  return [...byName.values()].sort((a, b) => {
     if (SOURCE_ORDER[a.layer ?? 'builtin'] !== SOURCE_ORDER[b.layer ?? 'builtin']) {
       return SOURCE_ORDER[a.layer ?? 'builtin'] - SOURCE_ORDER[b.layer ?? 'builtin'];
     }
@@ -89,27 +101,51 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   });
 }
 
+/** 技能正文解析结果（含命中来源，供调用方决定组装格式） */
+export interface ResolvedSkill {
+  /** 技能正文（不含任何包装） */
+  content: string;
+  /** 命中来源：rolepack = 角色包内嵌技能；global = 全局技能池（内置 + 用户目录） */
+  source: 'rolepack' | 'global';
+}
+
 /**
- * 按技能名生成提示块（composer 选中技能后注入内核，SSOT 彻底化）。
- * 两级回退与内核 read_skill **同序**（SSOT 见 assembler.toolExec.readSkill）：
- * 先查激活角色包内嵌技能（当前人格视角，readSkillContent），再回退全局通用技能池
- * （SkillManager 条目，格式由内核 buildSystemPrompt 统一）。
- * ⚠️ 顺序是契约（2026-09-21 站 64 订正）：此前全局优先与内核相反，同名技能双存时
- * composer 注入正文与内核 read_skill 返回分叉；角色包优先 = 当前人格的专属覆盖生效。
- * 返回空串表示技能不存在（host 不注入，不影响正常发送）。
+ * 技能正文解析**唯一收口**（SSOT）：角色包 → 全局（与内核 `read_skill` 同序）。
+ *
+ * ⚠️ 顺序是契约（2026-09-22 收口）：此前宿主有**两份**各自实现且**方向相反**——
+ * composer 注入（本模块，2026-09-21 订正为角色包优先）与设置面板 L2 预览
+ * （settingsPanel 原「全局优先」未同步），同名技能双存时「面板里点开看到的正文」
+ * 与「composer 注入 / LLM `read_skill` 拿到的正文」分叉。
+ * 现统一收口到本函数：**新增消费点一律调它，勿再自写两级回退**。
+ *
+ * @returns 命中则返回 `{ content, source }`；两源都没有返回 null（空态由调用方决定）
  */
-export async function skillPromptFor(agent: Agent, skillName: string): Promise<string> {
-  // 第一级：激活角色包内嵌技能（与内核 read_skill 同序——角色包优先）
+export async function resolveSkill(agent: Agent, skillName: string): Promise<ResolvedSkill | null> {
+  // 第一级：激活角色包内嵌技能（当前人格视角）
   const rpm = agent.rolePackManager;
   if (rpm) {
     const content = await rpm.readSkillContent(skillName);
-    if (content) return `【当前技能】${skillName}\n${content}`;
+    if (content) return { content, source: 'rolepack' };
   }
-  // 第二级：全局通用技能池（SkillManager 直查，buildSystemPrompt 输出「【当前技能】name\ncontent」SSOT 格式）
+  // 第二级：全局技能池（内置 + 用户目录）
   const sm = agent.skills;
   const global = sm ? sm.get(skillName) : null;
-  if (global) {
-    return sm!.buildSystemPrompt(skillName);
+  if (global?.content) return { content: global.content, source: 'global' };
+  return null;
+}
+
+/**
+ * 按技能名生成提示块（composer 选中技能后注入内核，SSOT 彻底化）。
+ *
+ * 解析顺序收口于 `resolveSkill`（角色包 → 全局）；格式沿用内核 SSOT：命中全局时走
+ * `SkillManager.buildSystemPrompt`（内核唯一格式源），命中角色包时按同格式组装。
+ * 返回空串表示技能不存在（host 不注入，不影响正常发送）。
+ */
+export async function skillPromptFor(agent: Agent, skillName: string): Promise<string> {
+  const resolved = await resolveSkill(agent, skillName);
+  if (!resolved) return '';
+  if (resolved.source === 'global' && agent.skills) {
+    return agent.skills.buildSystemPrompt(skillName);
   }
-  return '';
+  return `【当前技能】${skillName}\n${resolved.content}`;
 }

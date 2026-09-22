@@ -97,6 +97,11 @@ function getOrCreateAgent(
     const searchEngine = vscode.workspace
       .getConfiguration('memora')
       .get<'auto' | 'bing' | 'baidu' | 'sogou'>('searchEngine', 'auto');
+    // 禁用的技能名清单（S4，配置形态启停，2026-09-22）：命中技能对 LLM 全链不可用，
+    // 宿主 settingsView 依据同名设置标注「已禁用」徽章
+    const disabledSkills = vscode.workspace
+      .getConfiguration('memora')
+      .get<string[]>('disabledSkills', []);
     agentPromise = assembleAgent({
       projectPath,
       // 项目搜索根 = 真实工作区文件夹（无 folder 时 undefined → 不注入 search_project）
@@ -113,6 +118,7 @@ function getOrCreateAgent(
       confirmWrites,
       confirmScripts,
       allowedPaths,
+      disabledSkills,
       outputChannel,
     }).catch(
       (err) => {
@@ -304,6 +310,50 @@ export function activate(context: vscode.ExtensionContext): void {
       return null;
     }
   };
+
+  // 命令：重载技能与角色包（技能系统热重载入口，2026-09-22）
+  // 内核 agent.reloadConfig() 早已可用而宿主此前零调用点 → 改/加技能文件后必须 Reload Window
+  // 才生效（技能是角色包作者的高频手改对象，故补此显式入口）。
+  //
+  // ⚠ 忙碌态必须「分两次带 source」调用 —— 判据同源：agent.isBusy 读的正是内核
+  // reloadConfig 守门用的同一个 chatLockManager.isBusy。
+  //   内核在对话中**只暂存带 source 的请求**（agent.ts：「undefined（全量）不暂存——无具体来源，
+  // 补执行语义不明」）⇒ 原实现的「无参调用 + 通用 catch」在对话中会把用户的重载请求**静默丢弃**
+  // （既没重载、也没排队），而提示语写作「重载失败」亦不实（内核在守门处即返回，未尝试重载）。
+  //   修正：空闲走一次全量；忙碌则分两次带 source 调用（两条都进 pendingConfigReload，
+  // 由 flushPendingConfigReload 在 turn 结束后补执行），并如实告知「已提交」而非「失败」。
+  context.subscriptions.push(
+    vscode.commands.registerCommand('memora.reloadSkills', async () => {
+      const agent = await getAgentForCommand();
+      if (!agent) {
+        vscode.window.showWarningMessage('Memora Agent 未就绪，无法重载技能');
+        return;
+      }
+      if (agent.isBusy) {
+        // allSettled：忙碌态两次调用都会以 chatBusyError 结束（守门发生在任何 IO 之前），
+        // 属预期路径，不该冒泡成未处理异常。
+        await Promise.allSettled([
+          agent.reloadConfig('skill'),
+          agent.reloadConfig('rolePack'),
+        ]);
+        // 措辞须对两种时序都成立：判据为真后锁可能瞬间释放（此时两次调用会真的立即生效）。
+        vscode.window.showInformationMessage(
+          '技能重载请求已提交；若对话仍在进行，将在对话空闲时自动生效',
+        );
+        return;
+      }
+      try {
+        const result = await agent.reloadConfig();
+        vscode.window.showInformationMessage(
+          `技能已重载：全局技能 ${result.skill} 个 / 角色包技能 ${result.rolePack} 个`,
+        );
+      } catch (err) {
+        vscode.window.showWarningMessage(
+          `技能重载失败：${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }),
+  );
 
   // 命令：查看记忆统计（agent.memory + agent.getMetrics()）
   context.subscriptions.push(

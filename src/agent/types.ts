@@ -510,6 +510,20 @@ export interface AgentOptions {
   codeExecutionProvider?: ICodeExecutionProvider;
   /** 项目搜索提供者（可选，不配则不启用 search_project；等价 IDE 全局搜索，由宿主实现） */
   projectSearchProvider?: IProjectSearchProvider;
+  /**
+   * node 可执行文件路径（可选，S3，2026-09-22）：宿主注入真实 node 路径
+   * （如 IDE 内置 node / 用户配置的 node）给 L3 脚本执行器（run_skill_script /
+   * run_project_script 的 node runtime 分支）。缺省走 'node'（PATH 查找），
+   * 行为与旧版完全一致；宿主机无独立 node 时注入可避免 .js/.mjs 脚本 ENOENT。
+   */
+  scriptNodePath?: string;
+  /**
+   * 禁用的技能名清单（可选，S4，2026-09-22）：宿主配置形态启停——命中的技能
+   * 从 L1 清单消失、L2/L3 访问（read_skill/read_resource/run_skill_script）不可用。
+   * 对 LLM 语义 = 技能不存在（不暴露「禁用」细节）；宿主 UI 依据同名设置标注「已禁用」徽章。
+   * 缺省空 = 全量技能可用（向后兼容）。
+   */
+  disabledSkills?: string[];
   /** 文件层前置条件断言回调（可选，未注入则完全降级为现状） */
   fileConsistencyCheck?: FileConsistencyCheck;
   /**

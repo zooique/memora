@@ -495,6 +495,9 @@ export class ToolExecutor {
   /** 项目搜索提供者（可选，注入时启用 search_project 工具；等价 IDE 全局搜索） */
   private readonly projectSearchProvider?: IProjectSearchProvider;
 
+  /** node 可执行文件路径（S3，可选）：run_project_script 的 node runtime 分支注入真实 node 路径 */
+  private readonly scriptNodePath?: string;
+
   /**
    * 剩余对话预算提供者（可选，G4 预算联动，2026-08-31）
    *
@@ -599,11 +602,15 @@ export class ToolExecutor {
     codeExecutionProvider?: ICodeExecutionProvider,
     /** 项目搜索提供者（可选，不传则不启用 search_project 工具） */
     projectSearchProvider?: IProjectSearchProvider,
+    /** node 可执行文件路径（S3，可选）：run_project_script 的 node runtime 分支注入真实 node 路径 */
+    scriptNodePath?: string,
   ) {
     this.webSearchProvider = webSearchProvider;
     this.fetchProvider = fetchProvider;
     this.codeExecutionProvider = codeExecutionProvider;
     this.projectSearchProvider = projectSearchProvider;
+    // L3 脚本执行 node 路径（S3）：存实例属性，run_project_script 分支透传给内核执行器
+    this.scriptNodePath = scriptNodePath;
     // 转存 SecurityGuard 引用：执行型工具（run_code/run_project_script）执行前确认用
     this.security = security;
     // 内置工具实现 + 路径安全委托给 BuiltinToolHandlers
@@ -1211,7 +1218,7 @@ export class ToolExecutor {
         }
         const content = await this.readSkill(strArg('name'));
         if (content === null) {
-          return `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包未声明该技能，或技能正文读取失败）`;
+          return `[ERR:SKILL_NOT_FOUND] 未找到技能 "${strArg('name')}"（角色包 skills/ 与全局技能池均无此名，或技能正文读取失败）`;
         }
         // 返回净化：技能正文当外部内容去控制字符 + 长度上限（防超长技能正文撑爆上下文）
         return sanitizeExternalText(content, SKILL_CONTENT_MAX_LEN);
@@ -1300,6 +1307,8 @@ export class ToolExecutor {
           timeoutMs,
           // cwd=项目根：项目脚本可加载项目本地依赖/相对数据文件
           this.builtinHandlers.projectPath,
+          // node 路径（S3，可选）：node runtime 分支走宿主注入的真实 node，避免无独立 node 时 ENOENT
+          this.scriptNodePath,
         );
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）
         // 超时文案按本次实际超时生成（未传 timeout_ms → 内核默认 60s，见上），不恒报上限 600s

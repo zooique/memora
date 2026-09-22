@@ -3,14 +3,15 @@
  *
  * 锁住三类不变量，防「内置显示为用户」类来源错标复发：
  *   1. 来源判定：filePath 前缀 → builtin/user；rolePackManager → rolepack
- *   2. 同名去重：内置优先
+ *   2. 同名去重：**角色包 > 用户 > 内置**（2026-09-22 反转——此前「内置优先」与注入面相反）
  *   3. 排序：内置 → 角色包 → 用户
- * 以及 skillPromptFor 的两级回退（激活角色包 → 全局 SkillManager，与内核 read_skill 同序）。
+ * 以及 `resolveSkill`（正文解析唯一收口：角色包 → 全局，与内核 read_skill 同序）与
+ * `skillPromptFor`（composer 注入，格式沿用内核 buildSystemPrompt）。
  */
 import { describe, it, expect } from 'vitest';
 import type { Agent } from '@zooique/memora';
 import { join } from 'node:path';
-import { listVisibleSkills, skillPromptFor } from '../skillAggregation.js';
+import { listVisibleSkills, resolveSkill, skillPromptFor } from '../skillAggregation.js';
 
 const configDir = 'C:/app/dist/extension';
 const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';
@@ -20,6 +21,8 @@ function makeAgent(opts: {
   global: Array<{ name: string; filePath: string; description?: string; layer?: string }>;
   roleSkills?: Array<{ name: string; description?: string }>;
   roleContent?: { [name: string]: string };
+  /** 全局技能正文（真实 SkillEntry 恒有 content；缺省给非空值，防「假空」掩盖解析分支） */
+  globalContent?: { [name: string]: string };
 }): Agent {
   return {
     skills: {
@@ -29,7 +32,11 @@ function makeAgent(opts: {
         filePath: g.filePath,
         layer: (g.layer ?? 'project') as 'agent' | 'project',
       })),
-      get: (n: string) => opts.global.find((g) => g.name === n) ?? null,
+      get: (n: string) => {
+        const g = opts.global.find((x) => x.name === n);
+        if (!g) return null;
+        return { ...g, content: opts.globalContent?.[n] ?? `全局正文:${n}` };
+      },
       buildSystemPrompt: (n: string) => `【当前技能】${n}`,
     },
     rolePackManager: {
@@ -56,7 +63,7 @@ describe('listVisibleSkills · 三源技能聚合', () => {
     ]);
   });
 
-  it('同名去重：内置优先于用户', () => {
+  it('同名去重：用户优先于内置（S5 反转，2026-09-22，对齐内核装载层「用户覆盖内置」）', () => {
     const agent = makeAgent({
       global: [
         { name: '同名', filePath: join(configDir, 'skills', 'dup.md') },
@@ -65,7 +72,33 @@ describe('listVisibleSkills · 三源技能聚合', () => {
     });
     const out = listVisibleSkills({ agent, configDir, userSkillsDir });
     expect(out).toHaveLength(1);
-    expect(out[0].layer).toBe('builtin');
+    expect(out[0].layer).toBe('user');
+  });
+
+  it('守卫变异锁：三方同名时角色包 > 用户 > 内置（反转后胜者链，回退即失败）', () => {
+    const agent = makeAgent({
+      global: [
+        { name: '三方', filePath: join(configDir, 'skills', 'a.md') },
+        { name: '三方', filePath: join(userSkillsDir, 'b.md') },
+      ],
+      roleSkills: [{ name: '三方' }],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out.filter((s) => s.name === '三方')).toHaveLength(1);
+    // 胜者链：rolepack(0) > user(1) > builtin(2)；任一方向回退（如内置 > 用户）即红
+    expect(out.find((s) => s.name === '三方')?.layer).toBe('rolepack');
+  });
+
+  it('守卫变异锁：角色包未参与时，用户胜于内置（DEDUP_PRIORITY 的 user/builtin 位序）', () => {
+    const agent = makeAgent({
+      global: [
+        { name: '同名', filePath: join(userSkillsDir, 'dup.md') },
+        { name: '同名', filePath: join(configDir, 'skills', 'dup.md') },
+      ],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out).toHaveLength(1);
+    expect(out[0].layer).toBe('user');
   });
 
   it('无路径回退：内核 layer=project 视作用户、agent 视作内置', () => {
@@ -109,5 +142,57 @@ describe('skillPromptFor · 两级回退（与内核 read_skill 同序：角色�
   it('两级均未命中返回空串（host 不注入）', async () => {
     const agent = makeAgent({ global: [] });
     expect(await skillPromptFor(agent, '不存在')).toBe('');
+  });
+});
+
+describe('resolveSkill · 正文解析唯一收口（角色包 → 全局）', () => {
+  it('同名双存：角色包胜出，source 标注 rolepack', async () => {
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
+      globalContent: { 同名: '全局正文' },
+      roleContent: { 同名: '角色包正文' },
+    });
+    expect(await resolveSkill(agent, '同名')).toEqual({ content: '角色包正文', source: 'rolepack' });
+  });
+
+  it('角色包未命中 → 回退全局池，source 标注 global', async () => {
+    const agent = makeAgent({
+      global: [{ name: 'g', filePath: join(configDir, 'skills', 'g.md') }],
+      globalContent: { g: '全局正文' },
+    });
+    expect(await resolveSkill(agent, 'g')).toEqual({ content: '全局正文', source: 'global' });
+  });
+
+  it('两源均无此名 → null（空态由调用方决定）', async () => {
+    const agent = makeAgent({ global: [] });
+    expect(await resolveSkill(agent, '不存在')).toBeNull();
+  });
+});
+
+describe('三面同源：列表保留 / 预览正文 / composer 注入 必须指向同一来源', () => {
+  it('同名双存时三面一致取角色包（防「UI 列出的」与「实际生效的」不是同一个）', async () => {
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
+      globalContent: { 同名: '全局正文' },
+      roleSkills: [{ name: '同名' }],
+      roleContent: { 同名: '角色包正文' },
+    });
+    // ① 列表（settingsPanel 数据源）：同名只留一条，且是角色包来源
+    const listed = listVisibleSkills({ agent, configDir, userSkillsDir }).filter((s) => s.name === '同名');
+    expect(listed).toHaveLength(1);
+    expect(listed[0].layer).toBe('rolepack');
+    // ② 预览（settingsPanel L2 展开）+ ③ 注入（composer）——同一解析单点，同取角色包正文
+    expect((await resolveSkill(agent, '同名'))?.content).toBe('角色包正文');
+    expect(await skillPromptFor(agent, '同名')).toBe('【当前技能】同名\n角色包正文');
+  });
+
+  it('列表去重方向：角色包优先于内置（与注入面同向）', () => {
+    const agent = makeAgent({
+      global: [{ name: '同名', filePath: join(configDir, 'skills', 'dup.md') }],
+      roleSkills: [{ name: '同名' }],
+    });
+    const out = listVisibleSkills({ agent, configDir, userSkillsDir });
+    expect(out.filter((s) => s.name === '同名')).toHaveLength(1);
+    expect(out.find((s) => s.name === '同名')?.layer).toBe('rolepack');
   });
 });

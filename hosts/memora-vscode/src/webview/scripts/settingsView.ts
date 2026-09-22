@@ -207,7 +207,7 @@ function createSkillsView({
         <h3 class="skill-name">${escapeHtml(s.name)}</h3>
         <span class="skill-badge ${meta.badge}">${meta.label}</span>
         ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
-        <button class="skill-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
+        <button class="skill-content-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
       ${
@@ -254,7 +254,7 @@ function createSkillsView({
 
   // L2：事件委托——点击「查看正文」按钮时请求内容或展开/折叠缓存内容
   listEl.addEventListener('click', (ev) => {
-    const btn = (ev.target as HTMLElement).closest('.skill-toggle') as HTMLButtonElement | null;
+    const btn = (ev.target as HTMLElement).closest('.skill-content-toggle') as HTMLButtonElement | null;
     if (!btn) return;
     const skillName = btn.dataset.skillName;
     if (!skillName) return;
@@ -290,7 +290,7 @@ function createSkillsView({
         contentMap.set(msg.skillName, '');
       }
       if (item) {
-        const btn = item.querySelector('.skill-toggle') as HTMLButtonElement | null;
+        const btn = item.querySelector('.skill-content-toggle') as HTMLButtonElement | null;
         const contentEl = item.querySelector('.skill-content') as HTMLElement | null;
         if (btn && contentEl) {
           if (msg.content) {

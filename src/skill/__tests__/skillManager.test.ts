@@ -801,23 +801,74 @@ describe('SkillManager · 补充分支路径', () => {
   });
 
   describe('loadExtraDir（用户技能目录注入）', () => {
-    it('加载用户技能 + 跳过与内置重名的技能', async () => {
+    it('加载用户技能 + 同名覆盖内置（S5，2026-09-22 反转：用户 > 内置，对齐主流）', async () => {
       // 内置技能：同名 dup
       createSkillFile(skillsDir, 'dup.md', '---\nname: dup\ndescription: d\n---\n内置版本');
       const manager = new SkillManager(testDir);
       await manager.load();
 
-      // 用户目录：dup（重名，应跳过）+ 一个新的 extra
+      // 用户目录：dup（重名，应覆盖内置）+ 一个新的 extra
       const extraDir = join(testDir, 'user-skills');
       mkdirSync(extraDir, { recursive: true });
       createSkillFile(extraDir, 'dup.md', '---\nname: dup\ndescription: d2\n---\n用户版本');
       createSkillFile(extraDir, 'extra.md', '---\nname: extra\ndescription: e\n---\n用户额外技能');
 
       const count = await manager.loadExtraDir(extraDir);
-      // 只新增 extra（dup 重名跳过）
-      expect(count).toBe(1);
-      expect(manager.get('dup')?.content).toBe('内置版本'); // 内置优先
+      // dup + extra 均注入（dup 覆盖内置而非跳过）
+      expect(count).toBe(2);
+      expect(manager.get('dup')?.content).toBe('用户版本'); // 用户覆盖内置
       expect(manager.get('extra')?.content).toBe('用户额外技能');
+    });
+
+    it('受覆盖的内置技能 reload 后仍以用户版为准（reload 扫描回内置版不反超）', async () => {
+      // 内置技能：同名 dup
+      createSkillFile(skillsDir, 'dup.md', '---\nname: dup\ndescription: d\n---\n内置版本');
+      // 用户目录：dup 覆盖版
+      const extraDir = join(testDir, 'user-skills');
+      mkdirSync(extraDir, { recursive: true });
+      createSkillFile(extraDir, 'dup.md', '---\nname: dup\ndescription: d2\n---\n用户版本');
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      await manager.loadExtraDir(extraDir);
+
+      // reload：磁盘（内置）重扫 → 用户覆盖版须保留、内置版不得反超
+      await manager.reload();
+      expect(manager.get('dup')?.content).toBe('用户版本');
+
+      // 二次 reload 仍稳定（覆盖记账保留）
+      await manager.reload();
+      expect(manager.get('dup')?.content).toBe('用户版本');
+      // 无同名双存：同名技能仅一个条目
+      expect(manager.list.filter((s) => s.name === 'dup')).toHaveLength(1);
+    });
+  });
+
+  describe('禁用技能（S4 配置形态启停）', () => {
+    it('禁用技能：get=null（L2 read_skill 短路）+ L1 清单剔除 + L3 不可用', async () => {
+      createSkillFile(
+        skillsDir,
+        'a.md',
+        '---\nname: a\ndescription: 技能A\n---\n正文A',
+      );
+      createSkillFile(
+        skillsDir,
+        'b.md',
+        '---\nname: b\ndescription: 技能B\n---\n正文B',
+      );
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      manager.setDisabledSkills(['a']);
+
+      // get：禁用返回 null（read_skill 语义 = 不存在），未禁用不受影响
+      expect(manager.get('a')).toBeNull();
+      expect(manager.get('b')?.name).toBe('b');
+      // L1 清单：禁用技能不枚举（用独立单词匹配，避免 "read_skill" 中的 'a' 误匹配）
+      expect(manager.buildSkillList()).not.toMatch(/\ba\b/);
+      expect(manager.buildSkillList()).toContain('- b：');
+      // 非禁用技能仍不可见风险：未设置禁用集则全部可见（向后兼容）
+      const manager2 = new SkillManager(testDir);
+      await manager2.load();
+      expect(manager2.buildSkillList()).toContain('a');
     });
   });
 });

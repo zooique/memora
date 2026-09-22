@@ -193,6 +193,8 @@ type AssembleRuntimeParams = Pick<
   | 'fetchProvider'
   | 'codeExecutionProvider'
   | 'projectSearchProvider'
+  | 'scriptNodePath'
+  | 'disabledSkills'
 >;
 
 /** 组装器输入参数 */
@@ -661,6 +663,8 @@ export async function assembleComponents(
     input.fetchProvider,
     input.codeExecutionProvider,
     input.projectSearchProvider,
+    // L3 脚本执行 node 路径（S3，可选）：透传 run_project_script 分支
+    input.scriptNodePath,
   );
 
   // ── 会话管理器（先于 loop 创建）──
@@ -683,6 +687,11 @@ export async function assembleComponents(
 
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
+  // 禁用技能过滤（S4，配置形态启停）：load 后再设禁用集（load 的 loadItems 会整体替换 items，
+  // 顺序无冲突；复用 existingSkillManager 时若有旧禁用集会被本轮覆盖——装配期一次性注入）
+  if (input.disabledSkills && input.disabledSkills.length > 0) {
+    skillManager.setDisabledSkills(input.disabledSkills);
+  }
 
   // M1 角色包清单：创建角色包管理器，角色相关功能的唯一真理源
   // activeRolePack：宿主注入持久化的用户角色包选择，§4.1 单链优先激活；未配置/包不存在落兜底包（不再回退 items[0]）
@@ -736,10 +745,14 @@ export async function assembleComponents(
       const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
       if (scriptInfo) {
         // 执行超时走内核默认（60s，上限 600s，见 skillScriptRunner 常量）——脚本级超时无配置通道
+        // nodePath 沿用宿主注入（S3）：角色包技能脚本 node runtime 分支可走真实 node 路径
         const result = await runSkillScript(
           rolePackPath,
           scriptInfo.runtime,
           args,
+          undefined,
+          undefined,
+          input.scriptNodePath,
         );
         return formatScriptResult(result);
       }
@@ -750,10 +763,14 @@ export async function assembleComponents(
       const scripts = skillManager.listScripts(skillName);
       const scriptInfo = scripts.find((s) => s.path === scriptPath);
       if (scriptInfo) {
+        // nodePath 沿用宿主注入（S3）：全局技能脚本 node runtime 分支可走真实 node 路径
         const result = await runSkillScript(
           globalPath,
           scriptInfo.runtime,
           args,
+          undefined,
+          undefined,
+          input.scriptNodePath,
         );
         return formatScriptResult(result);
       }

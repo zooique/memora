@@ -41,6 +41,22 @@ function resolveLayer(raw: unknown): 'agent' | 'project' {
  */
 export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
+   * 已被用户技能覆盖的内置技能名（S5，2026-09-22）。
+   *
+   * 与基类 runtimeNames 记账互补：runtimeNames 说明「该项无内核扫描真理源」，
+   * 本集合说明「同名磁盘（内置）项被用户版覆盖」——reload 扫描回同名内置时
+   * 以用户版为准（基类 isUserOverride 钩子）。load()（纯内置重载）时一并清空。
+   */
+  private readonly userOverrides = new Set<string>();
+
+  /**
+   * 禁用的技能名集合（S4，2026-09-22）：宿主配置形态启停。命中者
+   * get() 返回 null（read_skill/L3 全链路经 get 短路）+ buildSkillList 不枚举。
+   * list 快照保持完整——宿主 UI 依据同名设置标注「已禁用」徽章（对 LLM 静默）。
+   */
+  private readonly disabledNames = new Set<string>();
+
+  /**
    * @param configDir 配置目录（技能文件在 <configDir>/skills/ 下）
    */
   constructor(configDir?: string) {
@@ -64,7 +80,20 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 根据技能名获取技能
    */
   get(name: string): SkillEntry | null {
+    // 禁用技能对 LLM 不可见（S4）：get=null → read_skill 报未找到、L3 全链路短路
+    if (this.disabledNames.has(name)) return null;
     return this.items.find((s) => s.name === name) ?? null;
+  }
+
+  /**
+   * 设置禁用技能清单（S4，配置形态启停；装配期一次性注入，可由 reloadConfig 重设）
+   *
+   * @param names 禁用的技能名（命中者 L1/L2/L3 全不可用；对 LLM 语义 = 不存在）
+   */
+  setDisabledSkills(names: Iterable<string>): void {
+    this.disabledNames.clear();
+    for (const name of names) this.disabledNames.add(name);
+    logger.info({ count: this.disabledNames.size }, '技能禁用集已设置');
   }
 
   /**
@@ -133,7 +162,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   buildSkillList(): string {
     // 可用性过滤（G22）：缺 description 的技能在后手来源与渐进披露层面不可用（模型不知何时激活），
     // 不进入 LLM 可用清单（「未生效」由宿主 UI 以健康徽章显式标注，而非静默隐藏）。
-    const candidates = this.items.filter((s) => s.description?.trim());
+    // 禁用过滤（S4）：disabledSkills 命中的技能不进 L1 清单（对 LLM 语义 = 不存在）。
+    const candidates = this.items.filter(
+      (s) => s.description?.trim() && !this.disabledNames.has(s.name),
+    );
     if (candidates.length === 0) return '';
     const skillCount = candidates.length;
 
@@ -263,19 +295,45 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     const entries = await scanMarkdownDir(dir);
     let count = 0;
     for (const entry of entries) {
-      // 跳过已存在的技能（内置技能优先）
-      if (this.items.some((s) => s.name === entry.name)) {
-        logger.info({ name: entry.name }, '用户技能与内置重名，跳过');
-        continue;
-      }
+      // 已是用户覆盖项（本会话此前注入过）：幂等跳过，避免同名双存重复注入
+      if (this.userOverrides.has(entry.name)) continue;
+
+      const existingIdx = this.items.findIndex((s) => s.name === entry.name);
       const skill = await this.createEntry(entry);
-      if (skill) {
-        this.registerRuntimeItem(skill);
-        count++;
+      if (!skill) continue;
+
+      // 同名覆盖（S5，2026-09-22 反转，对齐主流「用户可覆盖内置」）：
+      // 此前「内置优先跳过」——用户同名技能永远不生效、静默丢失；
+      // 现替换为「用户覆盖内置」：移除内置版（磁盘真理源，reload 可重扫）、
+      // 登记 userOverrides 供 reload 保持用户版胜出（基类 isUserOverride 钩子）
+      if (existingIdx >= 0) {
+        this.items.splice(existingIdx, 1);
+        this.userOverrides.add(entry.name);
+        logger.info({ name: entry.name }, '用户技能覆盖内置技能');
       }
+      this.registerRuntimeItem(skill);
+      count++;
     }
     logger.info({ count, dir }, '用户技能加载完成');
     return count;
+  }
+
+  /**
+   * 用户覆盖声明（S5）：userOverrides 中记录的同名技能，reload 扫描回内置版时
+   * 用户版胜出、内置版剔除（基类 retainRuntimeItems 消费）。其余同名不声明——
+   * 保持基类默认「磁盘（内置）赢」语义（如 register() 运行时技能撞内置仍内置赢）。
+   */
+  protected override isUserOverride(name: string): boolean {
+    return this.userOverrides.has(name);
+  }
+
+  /**
+   * load()（纯内置重载）后 userOverrides 一并清空——与基类 runtimeNames 同寿命：
+   * load() 整体替换 items、运行时注入全丢，账目须同步；否则残留名字会在未来
+   * loadExtraDir 同名时被幂等跳过（见其开头判定），用户技能静默丢失。
+   */
+  protected override onAfterLoad(): void {
+    this.userOverrides.clear();
   }
 
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {

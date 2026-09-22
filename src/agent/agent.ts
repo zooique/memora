@@ -213,6 +213,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
       projectSearchProvider: opts.projectSearchProvider,
+      // L3 脚本执行 node 路径（S3，可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
+      scriptNodePath: opts.scriptNodePath,
+      // 禁用技能清单（S4，配置形态启停）：透传装配 → SkillManager 过滤 L1/L2/L3
+      disabledSkills: opts.disabledSkills ?? [],
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
       // 宿主装配级策略覆盖（能力边界）：透传 #config → 装入策略解析链（resolveActiveStrategy），
@@ -1204,6 +1208,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: this.#config.fetchProvider,
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
+      // L3 脚本执行 node 路径（S3，可选）：透传装配 → toolExecutor/assembler 脚本执行回调
+      scriptNodePath: this.#config.scriptNodePath,
+      // 禁用技能清单（S4）：透传装配 → SkillManager.setDisabledSkills
+      disabledSkills: this.#config.disabledSkills,
       existingSkillManager: this.skillManager,
       // 策略覆盖不经组装器：AssembleInput 零消费（站 21 审查移除），真实消费链 = 本类
       // 构造 SeedOrchestrator deps 时直传（见 #createSeedOrchestrator 的 strategyOverride），

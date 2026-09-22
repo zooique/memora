@@ -88,9 +88,22 @@ export abstract class ConfigResourceManager<
   }
 
   /**
+   * 子类声明「用户版本覆盖磁盘同名」的条目（默认无；S5，2026-09-22）
+   *
+   * 默认语义 = 磁盘（更强真理源）赢：运行时注入项撞磁盘扫描同名时，磁盘版胜出、
+   * 运行时记账注销。SkillManager 的用户技能目录（loadExtraDir）则声明为覆盖——
+   * reload 时用户版胜出、记账保留、扫描到的内置版被剔除（见 retainRuntimeItems）。
+   * RolePackManager 不覆写，保持默认「磁盘赢」。
+   */
+  protected isUserOverride(_name: string): boolean {
+    return false;
+  }
+
+  /**
    * 将磁盘扫描结果与运行时注入项合并（子类自定义扫描的 reload 也应复用本方法）：
    * 重新扫描磁盘后，保留无磁盘真理源的运行时注入项（如 loadExtraDir 注入的用户资源），
-   * 同名冲突以磁盘（更强真理源）为准并注销运行时记账——否则注入项会被当作"磁盘上已删除"而抹掉。
+   * 同名冲突以磁盘（更强真理源）为准并注销运行时记账——除非子类将同名声明为
+   * isUserOverride（用户覆盖内置，S5）：此时用户版保留、记账保留、磁盘版被剔除。
    *
    * @param scanned 本次磁盘扫描得到的资源列表
    * @returns 合并后的完整资源列表（磁盘在前、运行时注入在后）
@@ -98,12 +111,17 @@ export abstract class ConfigResourceManager<
   protected retainRuntimeItems(scanned: T[]): T[] {
     const scannedNames = new Set(scanned.map((i) => i.name));
     const runtimeInjected = this.items.filter(
-      (i) => this.runtimeNames.has(i.name) && !scannedNames.has(i.name),
+      (i) =>
+        this.runtimeNames.has(i.name) &&
+        (!scannedNames.has(i.name) || this.isUserOverride(i.name)),
     );
     for (const name of this.runtimeNames) {
-      if (scannedNames.has(name)) this.runtimeNames.delete(name);
+      // 磁盘同名赢（覆盖项已被保留，见上过滤）→ 注销记账；覆盖项保留记账（下次 reload 仍保留）
+      if (scannedNames.has(name) && !this.isUserOverride(name)) this.runtimeNames.delete(name);
     }
-    return [...scanned, ...runtimeInjected];
+    // 覆盖项：剔除本次扫描到的磁盘同名版（用户版保留在后），避免同名双存
+    const effectiveScanned = scanned.filter((i) => !this.isUserOverride(i.name));
+    return [...effectiveScanned, ...runtimeInjected];
   }
 
   /** 从内存缓存删除资源（含注销运行时记账） */
