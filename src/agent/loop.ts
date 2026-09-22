@@ -940,6 +940,11 @@ export class AgentLoop {
     this._consumeInterjects(reqs);
 
     // ② 后处理挂起型气口（pause → yield paused）——如果队列里有 pause 申请，在 step 边界挂起
+    // ⛔ 生命周期契约（2026-09-22 显式化）：yield paused 后本 generator 立即 return 结束，
+    // **不再产出任何后续 chunk**（挂起即本流结束，续跑靠宿主另起 resumeExecution 新流）。
+    // 宿主消费方（consumeFlow）据此在 paused chunk 处 break 收尾——切勿期待 pause 后
+    // 还有剩余 chunk：那会让 for-await 挂在已结束的流上、_streaming 永不复位，
+    // 导致"暂停态输入补充"被误路由进 interject 排队而无人消费（卡死，实证见 2026-09-22 修复）。
     if (reqs.some((r) => r.kind === 'pause')) {
       // pause 消费后 clearPauseRequest 已由 splice(0) 自动完成——无需额外清 flag
       yield { type: 'paused' };

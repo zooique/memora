@@ -2068,6 +2068,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 取消暂停（因补充输入覆盖）→ 同步恢复「暂停」形态
         this.post({ type: 'pause_pending', pending: false });
       }
+      // 竞态兜底（2026-09-22，配合 consumeFlow paused 分支 break）：pause 申请已被 step
+      // 边界消费（内核已挂起 status='paused'、consumeFlow 的 _streaming 未复位的毫秒窗口）
+      // 时入队的 interject 会无 step 边界消费 → 立即 resumeExecution(undefined) 驱动，
+      // 补充内容由续跑首个 step 边界 _handleInterrupt 注入（不重复 appendUser）。
+      if (this._agent.sessionManager?.status === 'paused') {
+        await this.runFlow((signal) => this._agent!.resumeExecution(undefined, signal, 'supplement'));
+        return;
+      }
       // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
       // P2 收敛：不再维护 _pendingQueue 镜像，从内核 queue 读当前值（SSOT 源头）；
       // 2026-09-07：改走 syncPendingQueue 统一长度变化检测（入队/消费/清空/删除/step 边界共用）
@@ -2574,9 +2582,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             error: chunk.error,
           });
         } else if (chunk.type === 'paused') {
-          // Agent 暂停（输入待定/step 边界软暂停）→ 转发提示条 + 标记暂停态
+          // Agent 暂停（输入待定/step 边界软暂停）→ 转发提示条 + 标记暂停态。
+          // ⚠ 必须 break（2026-09-22 实证：暂停后输入补充卡死）：内核 yield paused 后
+          // generator 即 return 结束、无后续 chunk；此前不 break 导致 for-await 挂在已结束
+          // 的流上，finally 的 _streaming=false 永不执行 → 整个暂停期 _streaming 恒 true，
+          // handleSend 因此永远命中「interject 排队」分支——暂停态没有 step 边界消费队列，
+          // 补充输入永远卡在待发送区直到用户手动「继续」。break 让 _streaming 及时复位，
+          // 暂停态补充正确路由到 resumeExecution(input)（一步即继续，恢复历史行为）。
           this.post({ type: 'paused' });
           pausedOnPurpose = true;
+          break;
         } else if (chunk.type === 'thinking') {
           // 思考阶段 → 过程事件（webview 渲染 § 过程轨迹）
           emitEvent('thinking', { phase: chunk.phase });
