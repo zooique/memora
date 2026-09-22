@@ -53,6 +53,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 禁用的技能名集合（S4，2026-09-22）：宿主配置形态启停。命中者
    * get() 返回 null（read_skill/L3 全链路经 get 短路）+ buildSkillList 不枚举。
    * list 快照保持完整——宿主 UI 依据同名设置标注「已禁用」徽章（对 LLM 静默）。
+   *
+   * **作用域 = 全局技能池（内置/用户）**：角色包内嵌技能由 RolePackManager 持有、
+   * 不经本管理器（其启用判据 = 角色是否激活），对本集**免疫**——角色包技能
+   * 「随角色启停、不可按名禁用」系 2026-09-22 定案（见宿主 skillAggregation 定案声明）。
    */
   private readonly disabledNames = new Set<string>();
 

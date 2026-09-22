@@ -100,8 +100,12 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   // ⚠️ **作用域限全局技能池（builtin/user）**：`disabledNames` 是 `SkillManager` 的判据集，
   // 而角色包技能走 `rolePackManager`、**不经** `SkillManager.get()` ⇒ 对角色包技能禁用本就无效。
   // 故此处不得给 `rolepack` 层打标——那是 UI 谎报（本次复核刚清理过同类「声明与实现不同源」）。
-  // 角色包技能启停是**独立设计问题**（技能随角色激活，需先定「禁用是全局还是按角色」），
-  // 不在本次范围（登记 3.1.0）。
+  //
+  // **定案（2026-09-22）**：角色包技能**与禁用清单免疫**——它属于当前角色、与角色融为一体，
+  // 启停语义 = **随角色启停**（不激活该角色即不可用，切换角色即技能集切换）。不存在「按名禁用
+  // 角色包技能」的合法请求：想停 = 换角色 / 改角色包内容，而非禁用清单加名。原「独立设计问题
+  // （登记 3.1.0）」正式销项，本作用域是**定案约束**而非待定占位。测试锚点：
+  // `listVisibleSkills` 禁标守卫（rolepack 层禁打标）+ `isSkillDisabled` 判据同源守卫。
   const disabledNames = new Set(sm?.disabledSkillNames ?? []);
   return [...byName.values()]
     .map((s) => {
@@ -175,7 +179,8 @@ export async function skillPromptFor(agent: Agent, skillName: string): Promise<s
  *
  * 判据与 `resolveSkill` **同序**（角色包 → 全局池），不可自行反序：
  *   ① 角色包内嵌同名技能命中 → **未禁用**（`disabledNames` 是 `SkillManager` 的判据集，
- *      对 `rolePackManager` 无管辖权；见 `listVisibleSkills` 同款作用域说明）；
+ *      对 `rolePackManager` 无管辖权——角色包技能随角色启停、对禁用集免疫，见
+ *      `listVisibleSkills` 内的定案声明 2026-09-22）；
  *   ② 全局池快照（`list`，**含**禁用项）内确实存在该名且命中 `disabledSkillNames` → 已禁用。
  *
  * ⚠️ 判据源必须是内核 `disabledSkillNames`（**实际生效集**），**不得**改读宿主 workspace 配置：
