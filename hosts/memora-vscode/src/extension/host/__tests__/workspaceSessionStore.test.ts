@@ -137,6 +137,55 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     const meta = store.getSessionMeta('2026-08-16-main');
     expect(meta?.messageCount).toBe(2);
   });
+
+  it('删除末尾中断轮（无 assistant 收场）→ 锚定末轮删除（2026-09-22 修复：无产出中断轮跳锚 no-op）', () => {
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
+      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' }, undefined, 'interrupted');
+    // 删除按钮锚点 = 中断轮 meta ts（落在问题二之后、无 assistant 不匹配 assistant 下界）
+    const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z');
+    expect(res.ok).toBe(true);
+    expect(res.removedIds).toEqual(['round-2']);
+    const left = store.loadMessages('2026-08-16', 'main');
+    expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
+  });
+
+  it('删除中间中断轮（无 assistant 收场）→ 上折回该轮截断，防误删下一轮（2026-09-22 修复）', () => {
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
+      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' }, undefined, 'interrupted');
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题三', ts: '2026-08-16T09:00:10.000Z' },
+      { content: '回答三', ts: '2026-08-16T09:00:11.000Z' });
+    // 锚点 = 问题二轮的 meta ts（早于问题三 user 起点，assistant 下界会命中下一轮）
+    // → 应折回删除 [中断轮, 回答三]，而非误删「下一轮之后」
+    const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z');
+    expect(res.ok).toBe(true);
+    expect(res.removedIds).toEqual(['round-2', 'round-3']);
+    const left = store.loadMessages('2026-08-16', 'main');
+    expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
+  });
+
+  it('done 轮删除不误折：前一轮即使无 assistant（中断轮）也以自身 assistant ts 为锚（2026-09-22 防伪折叠）', () => {
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
+      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' }, undefined, 'interrupted');
+    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '问题三', ts: '2026-08-16T09:00:10.000Z' },
+      { content: '回答三', ts: '2026-08-16T09:00:11.000Z' });
+    // done 轮删除锚点 = 自身 assistant ts（恒 >= 自己 user ts）→ 命中第 3 轮自身，不折回中断轮
+    const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:11.000Z');
+    expect(res.ok).toBe(true);
+    expect(res.removedIds).toEqual(['round-3']);
+    const left = store.loadMessages('2026-08-16', 'main');
+    expect(left.map((m) => m.content)).toEqual(['问题一', '回答一', '问题二']);
+  });
 });
 
 describe('WorkspaceSessionStore ISessionStore 契约', () => {
