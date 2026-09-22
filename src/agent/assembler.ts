@@ -382,8 +382,9 @@ function wireRuntimeCallbacks(
     if (!table) return '';
     // P3 未完成硬约束（2026-09-22）：仍有步骤未标记 done 时追加「不得提前收尾」执行要求。
     // 实证（round-1790068191972）：ask 回答后续跑轮，LLM 已提出「重新标记步骤4」却未调
-    // task_table_update 就纯文本收尾——任务表是跨 turn 持久（checkpoint.plan 内存态），
-    // 收尾兜底不会自动补状态，故在每次注入时把「未完成 ⇏ 收尾」作为明示纪律。
+    // task_table_update 就纯文本收尾——任务表在 turn 内进行中持续存在（checkpoint.plan 内存态，
+    // 由 clearPlanOnTurnEnd 在 turn 结束才清空），收尾兜底不会自动补状态，故在每次注入时把
+    // 「未完成 ⇏ 收尾」作为明示纪律。
     // 语义边界：约束 = 「先更新任务表、交代未完成步骤再收尾」，不强制完成任务本身——
     // 放弃/降级任务仍是合法用户决策（可 task_table_write 标记 已阻塞 后收尾），防锁死。
     // 与 buildCompletionVerifyNudge（全 done 防假完成）互补：一个卡「没做完」、一个卡「做完没验证」。

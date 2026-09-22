@@ -1646,8 +1646,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // （两条装配入口——memora.open 命令与懒装配——都经该收口点，不漏路径）。
     this.postHistoryOccupancy();
     // P3（2026-09-22）：重放补推任务表看板——replaySession 只认实时 plan_update 消息，
-    // 重启/重开面板后不推则「重新渲染任务表消失」（任务表跨 turn 持久是既有设计，内核
-    // checkpoint.plan 仍在，缺的只是 UI 重放投递）。_agent 未装配时 postPlanUpdate 静默跳过。
+    // 重开面板时若 turn 进行中（generator 未 close）则 checkpoint.plan 仍在，缺的只是 UI 重放
+    // 投递——补推一次让任务表看板恢复（turn 结束后内核 clearPlanOnTurnEnd 已清 plan，见下方收口）。
+    // _agent 未装配时 postPlanUpdate 静默跳过。
     this.postPlanUpdate();
   }
 
@@ -2725,7 +2726,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (this._viewEpoch !== flowViewEpoch) {
       this.replaySession();
     }
-    // plan 快照对齐：generator close 后内核 autoClearPlanIfAllDone 已清 plan（暂停态 guard 不清），
+    // plan 快照对齐：generator close 后内核 clearPlanOnTurnEnd 已清 plan（暂停态 guard 不清），
     // 此处推一次快照让 webview 同步——正常/中断 → 空 steps（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();

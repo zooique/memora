@@ -1349,6 +1349,52 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
+   * 场景 G2（2026-09-22 真实带伤回归锁）：resume 收尾路径漏清 plan。
+   *
+   * 复现：chat() 第一半以 pause 收场（pauseMeta 挂起、plan 保留）→ 用户点「继续」续跑，
+   * 续跑以「含非 done 步、且未再次暂停」结束（如某步 task_table_update 标 blocked/active 后收尾，
+   * 属 P3 硬约束允许的正当路径）。旧实现 resumeExecution.finally 走 autoClearPlanIfAllDone
+   * （仅全 done 才清）→ plan 残留在 checkpoint → 下一个 chat() 开头无清理 → 真·跨 turn 残留。
+   * 修复：resume.finally 改用 clearPlanOnTurnEnd（与 chat() 同构，暂停态 guard 保留、否则无条件清），
+   * 两处 turn-end 清理收敛为单一收口点，plan 严格 turn 内、不跨 turn 残留。
+   *
+   * 突变验证：本用例在修复前的旧代码下 MUST FAIL（plan 残留 length=2），修复后才 PASS——
+   * 证明它抓的是真实带伤，而非因错误原因通过。守卫确保走「未重暂停」收尾分支（否则 pauseMeta
+   * guard 会保留，断言不成立）。
+   */
+  it('场景 G2：resume 收尾（非全 done 且未重暂停）无条件清理任务表，不跨 turn 残留', { timeout: 30000 }, async () => {
+    agent = makeAgent(tmpProject, tmpConfig, tmpData);
+    await agent.init();
+
+    agent.createCheckpoint('测试目标');
+    // 翻状态机为 paused（与 chat() 第一半 pause 收场等价），使 resumeExecution 可进入
+    agent.pause('测试暂停', 'user');
+    // 模拟 loop 在暂停时挂起的 pauseMeta（生产由 loop.requestPause 写入；resume() 开头会卸载）
+    agent.sessionManager!.setPauseMeta({ reason: '测试暂停', source: 'user' });
+    expect(agent.sessionManager!.status).toBe('paused');
+
+    // 模拟 chat() 第一半 pause 收场后残留的 plan（含未完成的 active/pending 步，非全 done）
+    agent.getCheckpoint()!.plan.push(
+      { id: 'step-active-1', description: '当前执行步骤', status: 'active', order: 1 },
+      { id: 'step-pending-2', description: '后续步骤', status: 'pending', order: 2 },
+    );
+
+    // 续跑：MockProvider 返回普通文本，不触发再次暂停 → resume 以「非全 done 且未重暂停」结束
+    const chunks: Array<{ type: string }> = [];
+    for await (const chunk of agent.resumeExecution()) {
+      chunks.push(chunk as { type: string });
+    }
+    // 守卫：确认走的是「未重暂停」收尾分支（若被误判为暂停收场，则本用例未覆盖目标分支，断言无效）
+    expect(chunks.some((c) => c.type === 'paused')).toBe(false);
+    expect(agent.sessionManager!.status).toBe('running');
+
+    // 核心断言：resume 收尾后任务表已清空（与 chat() 终态同构，不跨 turn 残留）
+    const cp = agent.getCheckpoint()!;
+    expect(cp.plan).toHaveLength(0);
+    expect(cp.stepLog ?? []).toHaveLength(0);
+  });
+
+  /**
    * 场景 F：暂停状态下 chat 自动恢复并继续（双通道模型 v2.0）
    *
    * 验证完整闭环：
@@ -1998,7 +2044,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(after.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
   });
 
-  it('缝隙 A：回答续跑后由提问步自身完成（S1 done、S2 不被提前消费、stepLog 归位 S1）', { timeout: 30000 }, async () => {
+  it('缝隙 A：回答续跑后 turn 收尾即清空任务表（提问步 pause 时未被自动完成）', { timeout: 30000 }, async () => {
     agent = new Agent({
       projectPath: tmpProject,
       provider: new AskInPlanProvider(),
@@ -2018,20 +2064,24 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       void _chunk; // 仅消费流：首轮提问挂起
     }
     expect(agent.sessionManager!.status).toBe('paused');
+    // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
+    expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
+    // pause 时不变量：提问步仍 active、下一步未被提前激活（修复语义，与续跑后清空不冲突）
+    const atPause = agent.getCheckpoint()!.plan;
+    expect(atPause.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
+    expect(atPause.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
+
     // 双轨道（对齐 TS-9）：answerQuestion 回填 + resumeExecution('question-answer') 续跑
     expect(agent.answerQuestion(['确认'])).toBe(true);
     for await (const _chunk of agent.resumeExecution('确认', undefined, 'question-answer')) {
       void _chunk; // 仅消费流：续跑轮纯文本收尾（无工具）
     }
     const cp = agent.getCheckpoint()!;
-    // 形态②（PLAN-SYNC-1 ①）：续跑轮纯文本收尾、无 task_table_update → 提问步 S1 保持 active
-    //（不被自动完成——推进唯一写者 = LLM 显式 update）；S2 恒不被提前消费（旧码此时完成 S2 → 转红）
-    expect(cp.plan.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
-    expect(cp.plan.find((s) => s.id === 'ask-plan-s2')!.status).not.toBe('done');
-    // stepLog 末条归 S1（提问步的问答产出时间轴归位，不跳步）
-    const stepLog = cp.stepLog ?? [];
-    expect(stepLog.length).toBeGreaterThan(0);
-    expect(stepLog[stepLog.length - 1]!.planStepId).toBe('ask-plan-s1');
+    // 2026-09-22 闭环修正：resume 收尾 = turn 结束 → 任务表无条件清空（plan 严格 turn 内，
+    // 下个 turn 由 LLM 重新规划）。旧实现 autoClearPlanIfAllDone 仅全 done 才清，
+    // 导致此处非全 done 残留 → 跨 turn 污染；修正后统一走 clearPlanOnTurnEnd。
+    expect(cp.plan).toHaveLength(0);
+    expect(cp.stepLog ?? []).toHaveLength(0);
   });
 });
 
