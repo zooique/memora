@@ -33,6 +33,9 @@ export const chatStyles = `
    * 消除模型下拉菜单展开时「挤压对话区」的错觉：菜单是覆盖而非挤入布局。 */
   #messages {
     flex: 1; overflow-y: auto; padding: var(--sp-5, 12px); box-sizing: border-box;
+    /* 滚动链隔离（主流 agent chat 容器惯例）：消息区滚到边界时，
+       不把滚轮事件继续泄漏给外层/相邻滚动容器（如输入框），避免"滚不上去"的串扰感 */
+    overscroll-behavior: contain;
     display: flex; flex-direction: column; gap: var(--sp-4, 10px);
     position: relative; z-index: 1;
   }
@@ -808,9 +811,12 @@ export const chatStyles = `
     border-color: var(--border-focus, #0e639c);
     box-shadow: var(--shadow-card-focus, 0 4px 14px rgba(0, 0, 0, 0.25));
   }
-  /* textarea：占主空间，无独立边框，与卡片融合 */
+  /* textarea：占主空间，无独立边框，与卡片融合
+   * ⚠ 高度纪律：必须 flex: 0 0 auto —— flex:1（flex-basis:0%）会忽略主轴 style.height，
+   * 使 autoResize() 的高度上限（--input-max-h）形同虚设，长文本时被压缩成底部一小截且无法滚动。
+   * 高度唯一控制权归 JS autoResize()（2026-09-22 实证修复，源自 headless Chromium 复现验证） */
   #input {
-    flex: 1;
+    flex: 0 0 auto;
     padding: var(--sp-6, 16px) var(--sp-6, 16px) var(--sp-3, 8px);
     border: none;
     background: transparent;
@@ -822,6 +828,8 @@ export const chatStyles = `
     /* 高度由 JS autoResize() 控制；默认 hidden 避免空内容时显示滚动条轨道，
      * 内容超过 --input-max-h 时 JS 切换为 auto 才显示滚动条（大厂惯例） */
     overflow-y: hidden;
+    /* 输入框内容滚动限于自身，滚到底/顶部不外泄给外层容器（主流 chat 输入惯例） */
+    overscroll-behavior: contain;
     min-height: var(--input-min-h, 72px);
     max-height: var(--input-max-h, 180px);
     box-sizing: border-box;
