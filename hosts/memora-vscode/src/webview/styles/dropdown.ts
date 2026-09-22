@@ -59,6 +59,13 @@ export const dropdownStyles = `
   }
   .treedd__item.is-danger { color: var(--status-fail); }
   .treedd__item.is-danger:hover { color: var(--status-fail); }
+  /* 后缀徽记（SKILL-S2：技能「已禁用」等）：说明「条目存在但状态受限」，
+   * 弱化呈现、不遮挡主标题。与 is-disabled 配套使用（前者表状态、后者改主色）。 */
+  .treedd__item-note {
+    margin-left: var(--sp-2, 6px);
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+  }
 
   /* ===== 胶囊变体（.treedd--capsule）=====
    * 模型选择 / 历史切换等「紧凑胶囊触发器」的通用外观，集中定义一次，面板复用。

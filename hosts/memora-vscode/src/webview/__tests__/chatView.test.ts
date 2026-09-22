@@ -98,6 +98,7 @@ const HTML = `
         <div class="composer-row composer-row--actions">
           <div class="composer-actions">
             <div class="model-picker treedd--capsule"><button class="treedd__trigger"></button><div class="treedd__menu"></div></div>
+            <div class="treedd skill-picker treedd--capsule" data-treedd data-on-select="__skillPickerOnSelect"><button class="treedd__trigger" title="选择 Skill" aria-label="选择 Skill" aria-haspopup="menu"></button><div class="treedd__menu" role="menu"></div></div>
             <button id="pauseBtn" hidden title="暂停生成" aria-label="暂停生成"><span class="btn-icon" data-icon="pause"></span></button>
             <button id="send"></button>
           </div>
@@ -4104,6 +4105,68 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       requestId: 'wc_second',
       approved: true,
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// 技能启停 · 对话区（用户通道）显式标注（SKILL-S2，2026-09-22）
+// ═══════════════════════════════════════════════════════════
+// 缺陷：`skills_loaded` 的 `disabled` 字段此前被 `map` 丢弃 ⇒ 用户通道看不出技能已禁用，
+// 选中即**静默落空**（技能不注入、界面零提示，对照主流 `off` 态按名调用明确报错）。
+// 本区块锁住两处**显示**标记（下拉项 + chip）；**拦截**刻意不落在 webview ——
+// 一次配置重载不同步（`pushSkillList` 不随配置变更重推）即会造成「配置已允许、UI 却拒绝」
+// 的假拒绝，故拒绝只在 host 侧以 `isSkillDisabled` 真源判定后发 notice。
+describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 分发 skills_loaded：一条启用 + 一条禁用（同一清单，差异只在 disabled 标记） */
+  function dispatchSkills(): void {
+    dispatch({
+      type: 'skills_loaded',
+      skills: [
+        { name: '正常技能', description: 'd', layer: 'builtin' },
+        { name: '已禁用技能', description: 'd', layer: 'builtin', disabled: true },
+      ],
+    });
+  }
+
+  it('skills_loaded 带 disabled → 下拉项标 is-disabled + 「已禁用」后缀，且条目保留不隐藏', () => {
+    mountChatView();
+    dispatchSkills();
+    const menu = document.querySelector('.skill-picker .treedd__menu') as HTMLElement;
+    const off = menu.querySelector('[data-treedd-id="已禁用技能"]') as HTMLElement;
+    const on = menu.querySelector('[data-treedd-id="正常技能"]') as HTMLElement;
+    // 标记在：弱化 + 后缀（复用设置页同一词汇，不新增术语）
+    expect(off.classList.contains('is-disabled')).toBe(true);
+    expect(off.querySelector('.treedd__item-note')?.textContent).toBe('已禁用');
+    // 标记不在：启用中的技能不得被误标（反向守卫，防「一刀切标禁用」）
+    expect(on.classList.contains('is-disabled')).toBe(false);
+    expect(on.querySelector('.treedd__item-note')).toBeNull();
+    // 条目保留：静默隐藏会让用户误判「技能消失了」（禁用的是生效性，不是存在性）
+    expect(menu.querySelector('[data-treedd-id="已禁用技能"]')).not.toBeNull();
+  });
+
+  it('选中已禁用技能 → chip 标 is-disabled + 「已禁用」（不拦截：选择本身仍是合法操作）', () => {
+    mountChatView();
+    dispatchSkills();
+    (document.querySelector('.skill-picker [data-treedd-id="已禁用技能"]') as HTMLElement).click();
+    const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
+    expect(chip.querySelector('.skill-chip__name')?.textContent).toBe('已禁用技能');
+    expect(chip.classList.contains('is-disabled')).toBe(true);
+    expect(chip.querySelector('.skill-chip__note')?.textContent).toBe('已禁用');
+    // 「不拦截」的判据 = chip 仍被创建（技能仍挂在 composer 上，发送时才由 host 判定）。
+    // 若改成「禁止选择」（currentSkill 置 null），chip 直接不存在 → 上一行断言即红。
+  });
+
+  it('选中启用技能 → chip 无禁用标记（反向守卫，防「一律标记」）', () => {
+    mountChatView();
+    dispatchSkills();
+    (document.querySelector('.skill-picker [data-treedd-id="正常技能"]') as HTMLElement).click();
+    const chip = document.querySelector('#skillChips .skill-chip') as HTMLElement;
+    expect(chip.classList.contains('is-disabled')).toBe(false);
+    expect(chip.querySelector('.skill-chip__note')).toBeNull();
   });
 });
 

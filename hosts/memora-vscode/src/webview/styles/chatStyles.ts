@@ -985,6 +985,11 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
+  /* 已禁用技能（SKILL-S2）：弱化主色 + 后缀「已禁用」徽记（.treedd__item-note 定义在 dropdown.ts）。
+   * 刻意**不隐藏**条目——与设置页同款语义（禁用的是可见性，不是存在性）；也刻意**不拦截**选择：
+   * 真源判定在 host（isSkillDisabled），webview 拒绝会在配置重载后假拒绝。
+   * 定义顺序在 .is-active 之后 ⇒ 禁用项即使被选中也保持弱化（选中态靠 font-weight 600 体现）。 */
+  .skill-picker .treedd__item.is-disabled { color: var(--text-secondary, #9aa0a6); }
 
   /* Grok 式技能 chip 行：选中 Skill 后显示在输入框上方（消息区之下、composer 之上）。
    * 与入口触发器（Row1 ⚡）分离——此处只呈现「已挂载的技能状态」，保证透明 + 可移除。 */
@@ -1011,9 +1016,22 @@ export const chatStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
   }
+  /* 已禁用技能 chip（SKILL-S2）：虚线边框 + 次要色，与「已挂载且生效」的实线 accent 形态区分。
+   * 语义 = 挂在输入框上但发送时不会注入；用户可据此自行移除或去设置里启用。 */
+  .skill-chip.is-disabled {
+    color: var(--text-secondary, #9aa0a6);
+    background: transparent;
+    border: 1px dashed var(--text-secondary, #9aa0a6);
+  }
   .skill-chip__icon { font-size: 11px; line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+  /* chip 后缀徽记（SKILL-S2）：与下拉项 .treedd__item-note 同语义、同观感（各自 BEM 归属） */
+  .skill-chip__note {
+    flex-shrink: 0;
+    font-size: var(--font-xs, 10px);
+    opacity: 0.9;
+  }
   /* 移除按钮内的 close 图标（原 × 字符的 SVG 替代，2026-09-19） */
   .skill-chip__remove svg { display: block; }
   .skill-chip__remove {

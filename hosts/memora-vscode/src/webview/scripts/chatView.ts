@@ -120,7 +120,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const skillPickerTrigger = skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
   // Grok 式技能 chip 行：输入框上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
-  let currentSkill: { name: string } | null = null;
+  let currentSkill: { name: string; disabled?: boolean } | null = null;
   // 活动状态区（三合一：P0 错误 / P1 低扰 单条主状态 + P2 指标折叠详情）
   const activityBar = document.getElementById('activityBar') as HTMLElement;
   const activityDetail = document.getElementById('activityDetail') as HTMLElement;
@@ -3909,7 +3909,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateRoleBadge();
     } else if (msg.type === 'skills_loaded') {
       // 动态技能清单（SSOT 收紧，2026-08-25）：与设置面板同一来源，重建下拉列表
-      skillOptions = msg.skills.map((s) => ({ name: s.name }));
+      // SKILL-S2（2026-09-22）：`disabled` 必须随行带出——此前 `map` 丢弃该字段，
+      // 用户通道看不出技能已禁用（选它就等于静默落空）。标记仅供显示，**不做拦截**：
+      // 真源判定在 host（`isSkillDisabled`），webview 若自行拒绝会在 reload 后假拒绝。
+      skillOptions = msg.skills.map((s) => ({ name: s.name, disabled: s.disabled }));
       if (skillPickerMenu) {
         skillPickerMenu.innerHTML = '';
         const clearItem = document.createElement('div');
@@ -3925,6 +3928,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           item.className = 'treedd__item';
           item.textContent = s.name;
           item.dataset.treeddId = s.name;
+          if (s.disabled) {
+            // 已禁用：弱化 + 后缀徽记（复用设置面板同一语义词汇，非隐蔽、不隐藏条目）
+            item.classList.add('is-disabled');
+            const note = document.createElement('span');
+            note.className = 'treedd__item-note';
+            note.textContent = '已禁用';
+            item.appendChild(note);
+          }
           skillPickerMenu.appendChild(item);
         }
       }
@@ -4183,9 +4194,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     __historyOnSelect: (id) => vscode.postMessage({ type: 'switch_session', sessionId: id }),
     // Skill 下拉：选择真实技能名后设为当前 skill（SSOT 收紧，与设置面板同一清单；发送时传技能名走内核）
     __skillPickerOnSelect: (id) => {
-      const found = skillOptions.some((s) => s.name === id);
+      const found = skillOptions.find((s) => s.name === id);
       if (found) {
-        currentSkill = { name: id };
+        // SKILL-S2：随行带出 disabled（选择时刻的快照）——仅供 chip 显示提示，
+        // 发送时的**判定**仍由 host 真源（`isSkillDisabled`）负责，webview 不拦截。
+        currentSkill = { name: id, disabled: !!found.disabled };
         updateSkillPickerLabel();
       } else if (id === '__clear_skill') {
         currentSkill = null;
@@ -4231,6 +4244,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     skillChipRow.hidden = false;
     const chip = document.createElement('span');
     chip.className = 'skill-chip';
+    // SKILL-S2：选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
+    // 术语沿用设置页同一词汇「已禁用」，不新增概念。
+    if (currentSkill.disabled) {
+      chip.classList.add('is-disabled');
+      chip.setAttribute('title', '该技能已禁用，发送时不会注入');
+    }
     const icon = document.createElement('span');
     icon.className = 'skill-chip__icon';
     // 图标语言唯一 = icons.ts 柔和线条 SVG（原 emoji ⚡ 剪除，2026-09-19 图标语言收口）
@@ -4241,6 +4260,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     name.className = 'skill-chip__name';
     name.textContent = currentSkill.name;
     chip.appendChild(name);
+    if (currentSkill.disabled) {
+      const note = document.createElement('span');
+      note.className = 'skill-chip__note';
+      note.textContent = '已禁用';
+      chip.appendChild(note);
+    }
     const remove = document.createElement('button');
     remove.type = 'button';
     remove.className = 'skill-chip__remove';
@@ -4265,8 +4290,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  /** 动态技能清单（SSOT 收紧，2026-08-25）：不再硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源 */
-  let skillOptions: { name: string }[] = [];
+  /** 动态技能清单（SSOT 收紧，2026-08-25）：不再硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源。
+   * `disabled` 随行带出（SKILL-S2）：下拉项据此弱化 + 标注「已禁用」，chip 据此提示 —— 纯显示，不拦截。 */
+  let skillOptions: { name: string; disabled?: boolean }[] = [];
   // 初始化 Skill 选择器选项：先放「不使用 Skill + 分隔线」，具体清单由 skills_loaded 动态填充
   if (skillPickerMenu) {
     skillPickerMenu.innerHTML = '';
