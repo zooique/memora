@@ -208,6 +208,17 @@ function createSkillsView({
         <span class="skill-badge ${meta.badge}">${meta.label}</span>
         ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
         ${s.disabled ? '<span class="disabled-badge" title="已在 memora.disabledSkills 中禁用：对模型不存在（不进清单 / 不可读取 / L3 不可达）">已禁用</span>' : ''}
+        ${
+          // S4 延长线开关（2026-09-22）：全局池（builtin/user）渲染真实禁用开关；角色包技能
+          // 对禁用清单免疫（定案，随角色启停），渲染弱化说明文字替代开关——避免用户在卡片上
+          // 找开关而不得。checked = 已禁用态；点击只发消息不本地翻转，以 skills_loaded 回推为准。
+          s.layer === 'rolepack'
+            ? '<span class="skill-rolepack-hint" title="角色包技能随角色启停：激活角色即启用技能集、切换角色即切换，不受禁用清单管理">随角色启停</span>'
+            : `<label class="skill-disable-toggle" title="切换「${escapeHtml(s.name)}」的禁用状态（写入 memora.disabledSkills）">
+                 <input type="checkbox" class="skill-disable-check" data-skill-name="${escapeHtml(s.name)}" aria-label="切换 ${escapeHtml(s.name)} 的禁用状态" ${s.disabled ? 'checked' : ''} />
+                 <span class="skill-disable-slider"></span>
+               </label>`
+        }
         <button class="skill-content-toggle btn btn-ghost" data-skill-name="${escapeHtml(s.name)}" title="查看技能正文">查看正文</button>
       </div>
       <p class="skill-desc">${escapeHtml(s.description)}</p>
@@ -272,6 +283,17 @@ function createSkillsView({
     // 未加载 → 请求内容
     btn.textContent = '加载中…';
     vscode.postMessage({ type: 'skills_read_content', skillName });
+  });
+
+  // S4 延长线开关：事件委托监听全局池技能卡片的禁用开关（change 事件冒泡）——
+  // 只发送消息、**不本地乐观翻转**（以 host skills_loaded 回推为准，避免「点击显示已禁
+  // 但实际未生效」的假象；host 侧写配置由既有 onDidChangeConfiguration 监听接管）
+  listEl.addEventListener('change', (ev) => {
+    const input = (ev.target as HTMLElement).closest('.skill-disable-check') as HTMLInputElement | null;
+    if (!input) return;
+    const skillName = input.dataset.skillName;
+    if (!skillName) return;
+    vscode.postMessage({ type: 'toggle_skill_disabled', name: skillName, disabled: input.checked });
   });
 
   // 监听 host 的 skills_loaded 消息

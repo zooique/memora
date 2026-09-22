@@ -340,6 +340,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.readSkillContent(msg.skillName);
       return;
     }
+    // S4 延长线开关：切换单个技能的禁用状态（写回 VS Code 配置，不在此回推列表）
+    if (msg.type === 'toggle_skill_disabled') {
+      await this.toggleSkillDisabled(msg.name, msg.disabled);
+      return;
+    }
 
     // ─── 安全子视图消息（H0 写入审批 + G8 白名单，2026-08-23 / 2026-08-25） ───
     if (msg.type === 'security_toggle') {
@@ -967,6 +972,51 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    */
   public async refreshSkillList(): Promise<void> {
     await this.loadSkills();
+  }
+
+  /**
+   * 切换单个技能的禁用状态（S4 延长线开关，2026-09-22）
+   *
+   * 方案语义（用户定案）：Memora 面板开关 = VS Code 原生设置的**延长线**，唯一动作是
+   * 写回配置 `memora.disabledSkills`（ConfigurationTarget.Global——该键 scope=application，
+   * 写 workspace settings 不生效），不造第二套状态机；后续同步全走既有
+   * `onDidChangeConfiguration` 监听（syncDisabledSkills → 内核 setDisabledSkills +
+   * chat/settings 双通道 refreshSkillList），面板不做本地乐观翻转、以 skills_loaded
+   * 回推刷新为准。
+   *
+   * 新数组基数 = 内核 `disabledSkillNames`（**实际生效集**，真源），**不重读**宿主配置副本
+   * ——两源会在 reloadConfig 重设禁用集后分叉（SKILL-S2 血训）。开关只做增量增/删：
+   * 禁用 → 补名；启用 → 移名。
+   *
+   * @param name 技能名（仅全局池 builtin/user；rolepack 免疫禁用集，不发送本消息）
+   * @param disabled 目标态：true = 禁用
+   */
+  private async toggleSkillDisabled(name: string, disabled: boolean): Promise<void> {
+    const agent = await this.ensureAgent();
+    if (!agent?.skills) {
+      this.post({ type: 'notice', level: 'error', message: 'Agent 未就绪，无法切换技能禁用状态' });
+      return;
+    }
+    // 增量增/删（base 为只读快照，不改数组内容直接得出 next）
+    const base = agent.skills.disabledSkillNames;
+    const next = disabled
+      ? base.includes(name)
+        ? base
+        : [...base, name]
+      : base.filter((n) => n !== name);
+    try {
+      // 唯一动作：整组写回用户级配置；生效与 UI 刷新交给既有配置监听接管
+      await vscode.workspace
+        .getConfiguration('memora')
+        .update('disabledSkills', next, vscode.ConfigurationTarget.Global);
+      this.post({ type: 'notice', level: 'info', message: `已${disabled ? '禁用' : '启用'}技能「${name}」` });
+    } catch (err) {
+      this.post({
+        type: 'notice',
+        level: 'error',
+        message: `设置技能禁用失败：${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   }
 
   /**

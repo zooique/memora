@@ -302,6 +302,19 @@ export type WebviewToExtensionMessage =
    * 读取技能 markdown 正文，返回 skill_content 消息。
    */
   | { type: 'skills_read_content'; skillName: string }
+  /**
+   * 切换单个技能的禁用状态（S4 延长线开关，2026-09-22）
+   *
+   * 由技能管理卡片上的真实开关触发：host 以内核生效集 `disabledSkillNames` 为基做
+   * 增量增/删（禁用=补名 / 启用=移名），随后**整组写回** `memora.disabledSkills`
+   * （ConfigurationTarget.Global——该键 scope=application，写 workspace 设置不生效）。
+   * 本消息后无需另行回推列表：配置写回即触发 host 既有 `onDidChangeConfiguration`
+   * 监听（syncDisabledSkills → 内核 setDisabledSkills + chat/settings 双通道
+   * refreshSkillList），webview 以 skills_loaded 回推刷新为准，不做本地乐观翻转。
+   * 仅全局技能池（builtin/user）携带；角色包技能对禁用清单免疫（2026-09-22 定案），
+   * 卡片不渲染开关、不发送本消息。
+   */
+  | { type: 'toggle_skill_disabled'; name: string; disabled: boolean }
   /** 输入框文本润色请求（输入框旁「润色」按钮触发，2026-08-27）
    *
    * 由输入框旁的「润色」按钮触发：对当前输入框内容进行润色，润色完成后返回 polish_input_result 消息。

@@ -342,6 +342,52 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
   });
 });
 
+describe('技能禁用延长线开关（S4 E，2026-09-22）', () => {
+  beforeEach(() => {
+    document.body.innerHTML = '';
+  });
+
+  /** 分发 skills_loaded（三源任意层） */
+  function dispatchSkills(skills: unknown[]): void {
+    window.dispatchEvent(
+      new MessageEvent('message', { data: { type: 'skills_loaded', skills } }),
+    );
+  }
+
+  it('builtin/user 技能卡片渲染真实开关；disabled=true → checked（与「已禁用」徽章同态对照）', () => {
+    mountSettingsView();
+    dispatchSkills([
+      { name: 's1', description: '启用中的内置技能', layer: 'builtin' },
+      { name: 's2', description: '已禁用的用户技能', layer: 'user', disabled: true },
+    ]);
+    const s1Toggle = document.querySelector('.skill-item[data-skill-name="s1"] .skill-disable-check') as HTMLInputElement | null;
+    const s2Toggle = document.querySelector('.skill-item[data-skill-name="s2"] .skill-disable-check') as HTMLInputElement | null;
+    expect(s1Toggle).not.toBeNull();
+    expect(s1Toggle?.checked).toBe(false);
+    expect(s2Toggle).not.toBeNull();
+    expect(s2Toggle?.checked).toBe(true);
+  });
+
+  it('rolepack 技能不渲染开关、渲染「随角色启停」说明（对禁用清单免疫，2026-09-22 定案）', () => {
+    mountSettingsView();
+    dispatchSkills([{ name: 'rp', description: '角色包技能', layer: 'rolepack' }]);
+    const rpItem = document.querySelector('.skill-item[data-skill-name="rp"]') as HTMLElement;
+    expect(rpItem.querySelector('.skill-disable-check')).toBeNull();
+    expect(rpItem.querySelector('.skill-rolepack-hint')?.textContent).toContain('随角色启停');
+  });
+
+  it('点击开关 → 发送 toggle_skill_disabled；不做本地乐观翻转（「已禁用」徽章不上屏，等回推）', () => {
+    const { postMessage } = mountSettingsView();
+    dispatchSkills([{ name: 's1', description: '技能', layer: 'builtin' }]);
+    const toggle = document.querySelector('.skill-item[data-skill-name="s1"] .skill-disable-check') as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+    toggle.click(); // 原生 click 翻转 checked 并触发 change（change 冒泡被 listEl 委托捕获）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'toggle_skill_disabled', name: 's1', disabled: true });
+    // 未本地乐观更新：点击后「已禁用」徽章不得立即出现（以 host skills_loaded 回推渲染为准）
+    expect(toggle.closest('.skill-item')?.querySelector('.disabled-badge')).toBeNull();
+  });
+});
+
 describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全，2026-09-19）', () => {
   beforeEach(() => {
     document.body.innerHTML = '';

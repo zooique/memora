@@ -178,6 +178,59 @@ export const skillsStyles = `
     color: var(--skill-health-warn);
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
+
+  /* S4 延长线开关（2026-09-22）：全局池技能卡片上的真实禁用开关。复用 settingsStyles
+     .toggle-switch/-slider 的既有形态语言（40×22 轨道 + 16px 圆点 + focus-visible 描边），
+     仅按 #skills-root 作用域重命名防串扰；配色全走既有 tokens（--border-panel 轨道 /
+     --accent 开启 / --accent-foreground 圆点 / --border-focus 键盘焦点），**不开新令牌**
+     （CSS 令牌单一真源，tokensClosure.test.ts 常驻守卫） */
+  #skills-root .skill-disable-toggle {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    flex-shrink: 0;
+    margin-left: auto; /* 推至卡片头部右侧（徽章区左侧），与「查看正文」按钮同侧 */
+  }
+  #skills-root .skill-disable-toggle input { opacity: 0; width: 0; height: 0; }
+  #skills-root .skill-disable-slider {
+    position: absolute;
+    cursor: pointer;
+    inset: 0;
+    background-color: var(--border-panel, rgba(128,128,128,.4));
+    transition: .2s;
+    border-radius: 22px;
+  }
+  #skills-root .skill-disable-slider:before {
+    position: absolute;
+    content: '';
+    height: 16px;
+    width: 16px;
+    left: 3px;
+    bottom: 3px;
+    background-color: var(--accent-foreground, #ffffff);
+    transition: .2s;
+    border-radius: 50%;
+  }
+  #skills-root .skill-disable-toggle input:checked + .skill-disable-slider {
+    background-color: var(--accent, #0e639c);
+  }
+  #skills-root .skill-disable-toggle input:checked + .skill-disable-slider:before {
+    transform: translateX(18px);
+  }
+  #skills-root .skill-disable-toggle input:focus-visible + .skill-disable-slider {
+    outline: 2px solid var(--border-focus, #0e639c);
+    outline-offset: 2px;
+  }
+
+  /* 角色包技能的「随角色启停」说明（2026-09-22）：角色包技能对禁用清单免疫（定案），
+     卡片不渲染开关、以弱化说明文字代替——语义 = 与角色融为一体、随角色启停 */
+  #skills-root .skill-rolepack-hint {
+    font-size: var(--font-xs, 10px);
+    color: var(--text-secondary, #9aa0a6);
+    flex-shrink: 0;
+    margin-left: auto; /* 与开关同侧占位，保持头部右侧元素居中对齐 */
+  }
   #skills-root .skill-problems {
     list-style: none;
     margin: 0 0 var(--sp-2, 6px);

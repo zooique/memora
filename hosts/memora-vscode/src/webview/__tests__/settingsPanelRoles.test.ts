@@ -12,15 +12,23 @@
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import * as vscode from 'vscode';
 import type { Agent } from '@zooique/memora';
 import { MemoraSettingsViewProvider } from '../panels/settingsPanel.js';
+
+// 可观测的 workspace 配置 mock（vi.hoisted：vi.mock 工厂被提升到文件顶部，闭包外变量
+// 必须先提升声明，否则工厂内引用报错）。get/update 供 toggleSkillDisabled 用例断言。
+const vscodeConfigMock = vi.hoisted(() => ({
+  cfgGet: vi.fn(() => undefined),
+  cfgUpdate: vi.fn(),
+}));
 
 // mock vscode：仅提供 settingsPanel 及其依赖在加载/构造期用到的最小 API
 vi.mock('vscode', () => ({
   Uri: { joinPath: () => ({ toString: () => 'mock://uri' }) },
   workspace: {
     workspaceFolders: [{ uri: { fsPath: '/mock/workspace' } }],
-    getConfiguration: vi.fn(() => ({ get: vi.fn(() => undefined), update: vi.fn() })),
+    getConfiguration: vi.fn(() => ({ get: vscodeConfigMock.cfgGet, update: vscodeConfigMock.cfgUpdate })),
   },
   window: {
     showWarningMessage: vi.fn(),
@@ -163,5 +171,58 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     expect(notices(posted)).toEqual([]);
     // 成功路径不需要查询锁定判据
     expect(getRolePackSwitchLockStatus).not.toHaveBeenCalled();
+  });
+});
+
+describe('settingsPanel.toggleSkillDisabled —— S4 延长线开关（2026-09-22）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 调私有 toggleSkillDisabled */
+  function handleToggle(provider: MemoraSettingsViewProvider, name: string, disabled: boolean): Promise<void> {
+    return (provider as unknown as { toggleSkillDisabled(n: string, d: boolean): Promise<void> }).toggleSkillDisabled(
+      name,
+      disabled,
+    );
+  }
+
+  it('禁用：以内核生效集为基补名，整组写回 memora.disabledSkills（ConfigurationTarget.Global）', async () => {
+    const agent = {
+      skills: { disabledSkillNames: ['a'] },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
+    const { provider, posted } = setup(agent);
+
+    await handleToggle(provider, 'b', true);
+
+    // 基数 = 内核生效集（不重读宿主配置副本），禁用 = 补名后整组写回
+    expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('disabledSkills', ['a', 'b'], vscode.ConfigurationTarget.Global);
+    expect(notices(posted)).toEqual([{ type: 'notice', level: 'info', message: '已禁用技能「b」' }]);
+  });
+
+  it('启用：从生效集中移名后整组写回', async () => {
+    const agent = {
+      skills: { disabledSkillNames: ['a', 'b'] },
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
+    const { provider, posted } = setup(agent);
+
+    await handleToggle(provider, 'b', false);
+
+    expect(vscodeConfigMock.cfgUpdate).toHaveBeenCalledWith('disabledSkills', ['a'], vscode.ConfigurationTarget.Global);
+    expect(notices(posted)).toEqual([{ type: 'notice', level: 'info', message: '已启用技能「b」' }]);
+  });
+
+  it('Agent 未装配（无 skills）→ 拒绝并提示错误，不写配置', async () => {
+    const agent = { on: vi.fn(), off: vi.fn() } as unknown as Agent;
+    const { provider, posted } = setup(agent);
+
+    await handleToggle(provider, 'b', true);
+
+    expect(vscodeConfigMock.cfgUpdate).not.toHaveBeenCalled();
+    expect(notices(posted)).toEqual([{ type: 'notice', level: 'error', message: 'Agent 未就绪，无法切换技能禁用状态' }]);
   });
 });
