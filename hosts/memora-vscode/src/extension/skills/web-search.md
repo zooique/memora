@@ -1,5 +1,5 @@
 ---
-name: 联网搜索
+name: web-search
 description: 使用 web_search 工具搜索最新网络信息，获取行业动态、技术方案、社区实践等外部养分
 ---
 

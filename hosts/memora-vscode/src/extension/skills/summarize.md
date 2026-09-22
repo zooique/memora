@@ -1,5 +1,5 @@
 ---
-name: 内容摘要
+name: summarize
 description: 对长文本或对话内容进行结构化摘要，提炼核心观点、决策和行动项
 ---
 

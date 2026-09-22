@@ -1,5 +1,5 @@
 ---
-name: 角色包制作器
+name: role-pack-creator
 description: 创建 memora 角色包（role-pack）：采集需求 → 脚本初始化骨架 → LLM 精修 → 校验 → 交付角色包目录。当用户要求新建角色/助手/人格包、初始化角色包模板、或为 memora 制作自定义角色时使用。
 layer: agent
 ---

@@ -605,7 +605,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        name: { type: 'string', description: '技能名（角色包 manifest.skills 中声明的 name，或技能文件名去扩展名）' },
+        name: { type: 'string', description: '技能名（用上方技能清单中列出的名称）' },
       },
       required: ['name'],
     },
@@ -627,7 +627,11 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'run_skill_script',
     description:
-      '执行技能的可执行脚本（渐进披露 L3）。脚本源码不进入上下文，仅执行结果返回。当技能含 scripts/ 目录时可调用。',
+      '执行技能的可执行脚本（渐进披露 L3）。脚本源码不进入上下文，仅执行结果返回。当技能含 scripts/ 目录时可调用。' +
+      '扩展名推断运行时：.py→python、.js/.mjs/.cjs/.ts→node、.sh/.bash/.zsh/.bat/.cmd→shell。' +
+      '⚠️ 跨平台提示（与 run_project_script 同源，勿省）：.sh 需要系统有 sh/bash 解释器——Windows 无 Git Bash 时' +
+      '会**静默空跑**（退出码 0 但 stdout/stderr 全空，不是执行成功）；给技能写脚本时请优先选**跨平台**的 .mjs/.js/.py，' +
+      'Windows 专属需求用 .bat/.cmd（cmd 原生可执行）；不要写 .sh（Windows 静默空跑）、不要写 .ps1（shell 档不起 PowerShell，同样静默空跑）。',
     parameters: {
       type: 'object',
       properties: {
