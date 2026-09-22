@@ -3917,7 +3917,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         skillPickerMenu.innerHTML = '';
         const clearItem = document.createElement('div');
         clearItem.className = 'treedd__item';
-        clearItem.textContent = '不使用 Skill';
+        // 顶部项语义 = 「普通对话、不挂载技能」——用中性「未选择技能」替代原「不使用 Skill」：
+        // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
+        // 命中」（当前机制是显式选择，见 title 提示）。2026-09-22 UI 细节校正。
+        clearItem.textContent = '未选择技能';
+        clearItem.title = '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
         clearItem.dataset.treeddId = '__clear_skill';
         skillPickerMenu.appendChild(clearItem);
         const divider = document.createElement('div');
@@ -4223,7 +4227,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     if (skillPickerMenu) {
       skillPickerMenu.querySelectorAll<HTMLElement>('.treedd__item').forEach((it) => {
-        // 无 Skill 时高亮「不使用 Skill」（__clear_skill），选中时高亮对应项
+        // 未选择技能时高亮「未选择技能」（__clear_skill），选中时高亮对应项
         const on = currentSkill ? it.dataset.treeddId === currentSkill.name : it.dataset.treeddId === '__clear_skill';
         it.classList.toggle('is-active', on);
       });
@@ -4298,7 +4302,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     skillPickerMenu.innerHTML = '';
     const clearItem = document.createElement('div');
     clearItem.className = 'treedd__item';
-    clearItem.textContent = '不使用 Skill';
+    clearItem.textContent = '未选择技能';
+    clearItem.title = '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
     clearItem.dataset.treeddId = '__clear_skill';
     skillPickerMenu.appendChild(clearItem);
     const divider = document.createElement('div');
