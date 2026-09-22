@@ -401,7 +401,43 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── task_table_update 全链寻址（2026-09-06 P0 断链修复，防 mock 盲区）────────────────
+  // ─── 任务表未完成硬约束（P3，2026-09-22）─────────────────────
+
+describe('任务表未完成硬约束（P3，2026-09-22）', () => {
+  it('存在未完成步骤时 getTaskTable 追加「不得收尾」执行约束（首行进度契约不变）', async () => {
+    const output = await assembleComponents(
+      createPctx(),
+      createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
+    );
+    output.sessionManager.createCheckpoint('回归：任务表未完成约束');
+    output.sessionManager.writePlan('overwrite', [
+      { description: '步骤一' },
+      { description: '步骤二' },
+    ]);
+    const table = output.loop.getTaskTable!();
+    // 首行 [任务进度: 契约不可变（loop 替换式注入靠此前缀清理旧表）
+    expect(table).toContain('[任务进度: 0/2');
+    // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，实证 round-1790068191972）
+    expect(table).toContain('（执行约束，非历史信息）仍有步骤未标记「已完成」');
+    expect(table).toContain('task_table_update');
+  });
+
+  it('全部步骤 done 时不追加约束（正常收尾不干扰）', async () => {
+    const output = await assembleComponents(
+      createPctx(),
+      createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
+    );
+    output.sessionManager.createCheckpoint('回归：任务表全 done');
+    output.sessionManager.writePlan('overwrite', [{ description: '单步完成' }]);
+    const cp = output.sessionManager.getCheckpoint()!;
+    expect(output.sessionManager.updatePlanStepStatus(cp.plan[0]!.id, 'done')).toBe(true);
+    const table = output.loop.getTaskTable!();
+    expect(table).toContain('已完成');
+    expect(table).not.toContain('（执行约束');
+  });
+});
+
+// ─── task_table_update 全链寻址（2026-09-06 P0 断链修复，防 mock 盲区）────────────────
 
   describe('task_table_update 全链寻址：短 id → 真实 sessionManager 命中', () => {
     async function assembleReal(): Promise<Awaited<ReturnType<typeof assembleComponents>>> {
