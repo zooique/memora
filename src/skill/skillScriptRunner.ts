@@ -37,6 +37,44 @@ function normalizeTimeoutMs(timeoutMs: number): number {
 }
 
 /**
+ * Windows 平台 shell 档脚本守卫（SKILL-S1 止血，2026-09-22）
+ *
+ * 缺陷事实链：`.sh` → runtime `shell`（scanner.SCRIPT_RUNTIME_MAP）→ win32 派发
+ * `cmd /c <path>`（resolveCommand shell 分支）——而 `.sh` 不是 cmd 原生可执行类型
+ * （只有 `.bat`/`.cmd` 是），命令退到「Windows 关联程序」路径：status=0 但
+ * stdout/stderr 全空（静默空跑）。`formatExecutionResult` 见 status=0 向模型报
+ * 「成功」→ 模型认定脚本已跑完 → 静默失败（与 TC-1 / SEARCH-1 F3 同族的 P0 类）。
+ * `.ps1` 同理：`cmd /c` 不起 PowerShell，同样静默空跑（S7，不新增 powershell runtime 档——
+ * 那是新能力，归 CMD-1 宿主 shell 选型一并设计）。
+ *
+ * 本守卫改的是「喂给判据的事实」（Win 下喂进 spawn 的 `cmd /c foo.sh` 只会制造假
+ * status=0），非判据本身——属止血。POSIX 不受影响（`sh <path>` 合法）。
+ *
+ * @param scriptPath 脚本路径
+ * @param runtime 运行时（node/python/shell）
+ * @param platform 当前平台（win32 才拦截；参数化便于测试）
+ * @returns 命中拦截返回显式错误文案（含替代方案），否则 null
+ */
+export function guardWindowsShellScript(
+  scriptPath: string,
+  runtime: ScriptRuntime,
+  platform: NodeJS.Platform,
+): string | null {
+  if (platform !== 'win32' || runtime !== 'shell') return null;
+  const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
+  // cmd 原生可执行类型：批处理文件（与 scanner SCRIPT_RUNTIME_MAP 注释同源，
+  // win32 派发 `cmd /c` 实测 status=0 + 输出正确，2026-09-22 实证）
+  if (ext === '.bat' || ext === '.cmd') return null;
+  return (
+    `Windows 平台 shell 档仅支持 .bat/.cmd（cmd 原生可执行类型）。当前脚本扩展名 "${ext}" ` +
+    (ext === '.ps1'
+      ? '(.ps1 静默空跑：cmd /c 不起 PowerShell，且内核未接入 PowerShell runtime档)。'
+      : '(shell 档在 Windows 依赖 sh/bash 解释器——本机无 Git Bash 时会静默空跑：退出码 0 但 stdout/stderr 全空，不是执行成功)。') +
+    '请改用跨平台脚本 .mjs/.js/.py；确需 Windows 批处理用 .bat/.cmd。'
+  );
+}
+
+/**
  * 执行技能脚本：在隔离子进程中运行，收集 stdout/stderr/exitCode/timedOut
  *
  * @param scriptPath 脚本绝对路径
@@ -45,6 +83,8 @@ function normalizeTimeoutMs(timeoutMs: number): number {
  * @param timeoutMs 超时（毫秒，限制在 [1s, MAX_TIMEOUT_MS] 内）
  * @param cwd 子进程工作目录（可选；run_project_script 以项目根为 cwd，
  *        使项目脚本可加载项目本地依赖/相对数据文件）
+ * @param nodePath node 可执行文件路径（S3，可选，缺省 'node' 走 PATH）——宿主注入
+ *        真实 node 路径用；传 undefined 保持旧行为
  */
 export async function runSkillScript(
   scriptPath: string,
@@ -52,11 +92,19 @@ export async function runSkillScript(
   args: string[] = [],
   timeoutMs: number = DEFAULT_TIMEOUT_MS,
   cwd?: string,
+  nodePath?: string,
 ): Promise<ScriptExecutionResult> {
+  // SKILL-S1 止血：win32 + shell + 非 .bat/.cmd → 在 spawn 前显式拒绝，
+  // 不让假 status=0 进入 formatExecutionResult（喂给判据的事实必须为真）
+  const guardError = guardWindowsShellScript(scriptPath, runtime, process.platform);
+  if (guardError) {
+    return { stdout: '', stderr: guardError, exitCode: -1, timedOut: false };
+  }
+
   // 超时限制在 [1s, MAX_TIMEOUT_MS] 内（与超时文案同源，见 normalizeTimeoutMs）
   const effectiveTimeout = normalizeTimeoutMs(timeoutMs);
 
-  const { command, args: cmdArgs } = resolveCommand(runtime, scriptPath, args);
+  const { command, args: cmdArgs } = resolveCommand(runtime, scriptPath, args, nodePath);
 
   /**
    * 单次子进程执行（spawn + 输出收集）。
@@ -192,15 +240,21 @@ export function isPythonUnavailable(
 
 /**
  * 根据 runtime 解析执行命令：node/python 直接执行，shell 依平台用 cmd /c（Windows）或 sh -c
+ *
+ * @param nodePath node 可执行文件路径（S3，2026-09-22 起可选）：缺省 'node'（走 PATH 查找）。
+ *        供给方（宿主）可注入真实 node 路径（如 VS Code 内置 node / 用户配置的 node），
+ *        避免「系统无独立 node → .js/.mjs 技能脚本 ENOENT」。默认 'node' 保持向后兼容，
+ *        不传与旧行为完全一致。
  */
 function resolveCommand(
   runtime: ScriptRuntime,
   scriptPath: string,
   args: string[],
+  nodePath?: string,
 ): { command: string; args: string[] } {
   switch (runtime) {
     case 'node':
-      return { command: 'node', args: [scriptPath, ...args] };
+      return { command: nodePath ?? 'node', args: [scriptPath, ...args] };
     case 'python':
       return { command: 'python', args: [scriptPath, ...args] };
     case 'shell':

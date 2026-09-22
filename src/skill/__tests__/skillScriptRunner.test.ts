@@ -15,6 +15,7 @@ import {
   runSkillScript,
   formatScriptResult,
   formatExecutionResult,
+  guardWindowsShellScript,
   shouldFallbackPythonToPy,
   isPythonUnavailable,
   type ScriptExecutionResult,
@@ -350,6 +351,56 @@ describe('skillScriptRunner — runSkillScript', () => {
 // ══════════════════════════════════════════════════════════════
 // 3. L2 兜底判定纯函数（spawn 行为锁定见 skillScriptRunner-exec.test.ts）
 // ══════════════════════════════════════════════════════════════
+
+describe('skillScriptRunner — guardWindowsShellScript（SKILL-S1 止血，2026-09-22）', () => {
+  // win32 + shell 档：非 .bat/.cmd 扩展名一律拦截（.sh 静默空跑 / .ps1 不起 PowerShell）
+  describe('win32 + shell → 拦截非批处理扩展名', () => {
+    it('.sh → 显式错误', () => {
+      expect(guardWindowsShellScript('scripts/run.sh', 'shell', 'win32')).toContain('静默空跑');
+    });
+
+    it('.bash / .zsh → 显式错误', () => {
+      expect(guardWindowsShellScript('run.bash', 'shell', 'win32')).toContain('静默空跑');
+      expect(guardWindowsShellScript('run.zsh', 'shell', 'win32')).toContain('静默空跑');
+    });
+
+    it('.ps1 → 显式错误（cmd /c 不起 PowerShell，S7）', () => {
+      const err = guardWindowsShellScript('script.ps1', 'shell', 'win32');
+      expect(err).not.toBeNull();
+      expect(err).toContain('PowerShell');
+    });
+
+    it('无扩展名 → 显式错误（同属非批处理）', () => {
+      expect(guardWindowsShellScript('script', 'shell', 'win32')).not.toBeNull();
+    });
+
+    it('.bat / .cmd → 放行（cmd 原生可执行类型）', () => {
+      expect(guardWindowsShellScript('run.bat', 'shell', 'win32')).toBeNull();
+      expect(guardWindowsShellScript('run.cmd', 'shell', 'win32')).toBeNull();
+    });
+  });
+
+  // 平台/运行时豁免：只有 win32 + shell 双命中才拦截，其余全放行
+  describe('豁免（非拦截面）', () => {
+    it('linux + shell + .sh → 放行（POSIX 有 sh 解释器，正常执行）', () => {
+      expect(guardWindowsShellScript('run.sh', 'shell', 'linux')).toBeNull();
+    });
+
+    it('win32 + node + .js → 放行', () => {
+      expect(guardWindowsShellScript('run.js', 'node', 'win32')).toBeNull();
+    });
+
+    it('win32 + python + .py → 放行', () => {
+      expect(guardWindowsShellScript('run.py', 'python', 'win32')).toBeNull();
+    });
+  });
+
+  // 变异锁：移除守卫实现中任一拦截条件应导致本组红（三条不变量各自独立被锁）
+  it('拦截文案含替代方案指引（断言完整性，防守卫退化成空串）', () => {
+    const err = guardWindowsShellScript('run.sh', 'shell', 'win32');
+    expect(err).toContain('.mjs/.js/.py');
+  });
+});
 
 describe('skillScriptRunner — shouldFallbackPythonToPy 判定（2026-09-08）', () => {
   // Windows python 9009 兜底判定：win32 + python runtime 才换 py -3 重试一次

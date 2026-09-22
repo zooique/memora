@@ -84,6 +84,47 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）'
     expect(calls[0]!.args).toEqual(['scripts/a.js', '--flag', 'v']);
   });
 
+  // ── S3（2026-09-22）：node 路径可注入 ──
+  it('nodePath 注入 → spawn 命令用注入值而非 node（命令换、args 不变）', async () => {
+    const calls: { cmd: string; args: string[] }[] = [];
+    mockedSpawn.mockImplementation(((cmd: string, args: string[]) => {
+      calls.push({ cmd, args });
+      return fakeChild((e) => queueMicrotask(() => e.emit('close', 0, null)));
+    }) as never);
+
+    await runSkillScript('scripts/b.js', 'node', ['-x'], undefined, undefined, 'C:/runtime/node.exe');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cmd).toBe('C:/runtime/node.exe');
+    expect(calls[0]!.args).toEqual(['scripts/b.js', '-x']);
+  });
+
+  it('nodePath 缺省 → 仍用 node（变异锁：注入逻辑未吞默认）', async () => {
+    const calls: { cmd: string }[] = [];
+    mockedSpawn.mockImplementation(((cmd: string) => {
+      calls.push({ cmd });
+      return fakeChild((e) => queueMicrotask(() => e.emit('close', 0, null)));
+    }) as never);
+
+    await runSkillScript('scripts/c.js', 'node');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cmd).toBe('node');
+  });
+
+  it('nodePath 注入不污染 non-node runtime（python 仍走 python；S3 边界收敛）', async () => {
+    const calls: { cmd: string }[] = [];
+    mockedSpawn.mockImplementation(((cmd: string) => {
+      calls.push({ cmd });
+      return fakeChild((e) => queueMicrotask(() => e.emit('close', 0, null)));
+    }) as never);
+
+    await runSkillScript('scripts/d.py', 'python', [], undefined, undefined, 'C:/runtime/node.exe');
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]!.cmd).toBe('python');
+  });
+
   // ── L1 补充：cwd 条件展开（run_project_script 以项目根为 cwd）──
   it('cwd 显式传入 → spawn opts.cwd 原样透传（项目脚本可加载本地依赖）', async () => {
     const calls: { opts: Record<string, unknown> }[] = [];
