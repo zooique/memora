@@ -83,8 +83,14 @@ export function guardWindowsShellScript(
  * @param timeoutMs 超时（毫秒，限制在 [1s, MAX_TIMEOUT_MS] 内）
  * @param cwd 子进程工作目录（可选；run_project_script 以项目根为 cwd，
  *        使项目脚本可加载项目本地依赖/相对数据文件）
- * @param nodePath node 可执行文件路径（S3，可选，缺省 'node' 走 PATH）——宿主注入
- *        真实 node 路径用；传 undefined 保持旧行为
+ * @param nodePath node 可执行文件路径（S3，可选，缺省 'node' 走 PATH）——供宿主注入真实
+ *        node 路径用；传 undefined 保持旧行为。
+ *        ⚠️ **现状（2026-09-22 复核实锤）：宿主尚未接入**——`hosts/memora-vscode` 零注入点，
+ *        故实际恒走缺省 `'node'`。且真解不止「传个路径」：Electron 宿主（VS Code）的
+ *        `process.execPath` 指向应用二进制，需配 `ELECTRON_RUN_AS_NODE` 一类环境变量才能以
+ *        node 语义执行 `.mjs` **文件**，而内核只收路径、不收环境（边界铁律：内核不持有平台知识）。
+ *        ⇒ **S3 真解 = 接口扩展**（宿主上报运行时环境，内核零解释转发），归 3.1.0 与 CMD-1 同批。
+ *        此处保留该可选参数：接入点已就绪，扩展时无须再动调用链。
  */
 export async function runSkillScript(
   scriptPath: string,

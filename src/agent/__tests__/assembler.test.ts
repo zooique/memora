@@ -17,6 +17,7 @@
  * - 类型导入使用 import type
  */
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -207,6 +208,78 @@ describe('assembleComponents', () => {
       const second = await assembleComponents(createPctx(), createInput({ existingSkillManager: existing }));
       // 返回值应严格等于传入引用（=== 引用相等）
       expect(second.skillManager).toBe(existing);
+    });
+  });
+
+  // ─── 技能可见集两通道同源（2026-09-22 G4 回归护栏）─────────────
+  //
+  // 背景（复核实锤）：同一份「模型可看到的技能集」有两个交付通道 ——
+  //   ① L1 枚举 `SkillManager.buildSkillList()`（写进 system prompt）
+  //   ② `list_skills` 工具（assembler 注入 toolExec.listSkills 回调，>50 技能时的动态查询）
+  // S4 禁用过滤当初只落到 ①，② 仍只过滤 description（assembler.ts 旧实现自写 filter），
+  // 而该处注释早已自称「两通道过滤标准必须一致」——注释声明与实现不同源，即本仓定义的「伤」。
+  // 后果：模型改用 list_skills 时仍能看到并激活已禁用技能，禁用形同虚设且静默。
+  //
+  // 修复 = 两侧共用唯一真理源 `SkillManager.listAvailable()`；本组直接打真实工具链
+  // （assembleComponents → toolExec.execute('list_skills')），确保任一侧回退自写 filter 即变红。
+
+  describe('技能可见集两通道同源（L1 枚举 ≡ list_skills 工具）', () => {
+    /**
+     * 建一个隔离的技能 home：<home>/skills/ 下 a（有描述）/ b（有描述）/ nodesc（缺描述）
+     * @returns 临时 home 绝对路径（调用方负责清理）
+     */
+    async function makeSkillHome(): Promise<string> {
+      const home = await mkdtemp(join(tmpdir(), 'memora-assembler-skillhome-'));
+      const dir = join(home, 'skills');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'a.md'), '---\nname: a\ndescription: 技能A\n---\n正文A', 'utf-8');
+      writeFileSync(join(dir, 'b.md'), '---\nname: b\ndescription: 技能B\n---\n正文B', 'utf-8');
+      // 缺 description：渐进披露层面不可用（G22），两通道都不该出现
+      writeFileSync(join(dir, 'nodesc.md'), '---\nname: nodesc\n---\n正文', 'utf-8');
+      return home;
+    }
+
+    it('禁用技能在 list_skills 工具通道同样不出现（与 L1 枚举同集合）', async () => {
+      const home = await makeSkillHome();
+      try {
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({ existingSkillManager: new SkillManager(home), disabledSkills: ['a'] }),
+        );
+
+        // 通道 ②：真实工具链（execute 分派 → toolExec.listSkills 回调）
+        const listed = await output.toolExec.execute('list_skills', '{}');
+
+        // 修复前：此处仍列出 a（工具侧只过滤 description）→ 断言变红
+        expect(listed).not.toContain('- a：');
+        expect(listed).toContain('- b：');
+
+        // 同源断言：通道 ① 与 ② 必须看到同一集合（判据一旦分叉即双轨镜像）
+        const l1 = output.skillManager.buildSkillList();
+        expect(l1).not.toContain('- a：');
+        expect(l1).toContain('- b：');
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
+    });
+
+    it('缺 description 的技能在 list_skills 工具通道同样不出现（G22 判据同点）', async () => {
+      const home = await makeSkillHome();
+      try {
+        // 与上例对照：不设禁用集，只留「可用性」一条判据生效
+        const output = await assembleComponents(
+          createPctx(),
+          createInput({ existingSkillManager: new SkillManager(home) }),
+        );
+
+        const listed = await output.toolExec.execute('list_skills', '{}');
+        expect(listed).not.toContain('nodesc');
+        // 同源：两判据都收口在 listAvailable，a/b 仍正常可见（防「一刀切清空」假绿）
+        expect(listed).toContain('- a：');
+        expect(listed).toContain('- b：');
+      } finally {
+        await rm(home, { recursive: true, force: true });
+      }
     });
   });
 

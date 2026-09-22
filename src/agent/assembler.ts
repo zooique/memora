@@ -800,11 +800,13 @@ export async function assembleComponents(
   // 渐进披露 L1 补充：注入 list_skills 技能清单回调 (使用 SkillManager.formatSkillForPrompt SSOT)
   toolExec.listSkills = async () => {
     const lines: string[] = ['【全局通用技能】'];
-    // 可用性过滤对齐 SkillManager.buildSkillList（G22 同一事实）：缺 description 的技能不进入
-    // LLM 可用清单——渐进披露层面模型不知何时激活（「未生效」由宿主 UI 健康徽章显式标注）。
-    // 工具侧与 L1 枚举侧同为 LLM 消费，过滤标准必须一致，否则两通道清单出现差异（双轨镜像）。
-    const allGlobalSkills = skillManager.list.filter((s) => s.description?.trim());
-    for (const skill of allGlobalSkills) {
+    // 过滤**收口于 SkillManager.listAvailable**（LLM 可见集唯一真理源，与 L1 枚举侧共用）：
+    // 可用性（G22：缺 description 模型不知何时激活）+ 禁用（S4：对模型语义不存在）两条判据
+    // 都在那里。此处**不得**自写 filter——两侧同为 LLM 消费，判据分叉即双轨镜像。
+    // ⚠️ 2026-09-22 复核实锤：本处曾只过滤 description、漏掉禁用过滤，而注释早已写明
+    // 「过滤标准必须一致」——注释声明与实现不同源，正是本仓记录过的伤。
+    const availableGlobalSkills = skillManager.listAvailable();
+    for (const skill of availableGlobalSkills) {
       const formatted = SkillManager.formatSkillForPrompt(skill);
       if (formatted) lines.push(formatted);
     }

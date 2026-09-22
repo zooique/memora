@@ -97,6 +97,20 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
+   * 当前禁用技能名快照（只读）——宿主 UI 渲染「已禁用」徽章的真源。
+   *
+   * 为何由内核提供而非宿主自读一份配置：**实际生效的禁用集在内核**（`disabledNames` 是
+   * `get()` / `buildSkillList()` 的判据）。宿主若另读 workspace 配置，会出现「UI 标注的」
+   * 与「实际生效的」两源分叉（如 reloadConfig 重设后不同步）。
+   *
+   * ⚠️ 对 **LLM** 仍然静默：本 getter 仅供宿主 UI 对照显示，
+   * **不得**出现在工具返回、L1 清单或任何进入上下文的文本里（语义 = 技能不存在）。
+   */
+  get disabledSkillNames(): string[] {
+    return [...this.disabledNames];
+  }
+
+  /**
    * 注册运行时注入的技能（如 confirmConfigSuggestion 持久化技能）；同名重复注册被拒绝。
    *
    * 必须走基类 registerRuntimeItem 登记——直接 push 进 items 会被 reload() 的磁盘扫描结果覆盖
@@ -150,6 +164,24 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
+   * 对 **LLM 可见**的技能条目——渐进披露可用性判据的**唯一真理源**。
+   *
+   * 判据两条（缺一不可）：
+   *   ① 有 `description`（渐进披露的唯一依据：缺则模型不知何时激活，G22）；
+   *   ② 未命中 `disabledNames`（S4 启停：对模型语义 = 不存在）。
+   *
+   * ⚠️ **L1 枚举**（`buildSkillList`）与 **`list_skills` 工具侧**（assembler 注入回调）
+   * 必须共用本方法：两者同为 **LLM 消费**、是同一份清单的两个交付通道，
+   * 判据一旦分叉即「双轨镜像」（同一模型在两条路径看到不同技能集）。
+   * 历史教训：S4 落地时只改了 L1 侧，`list_skills` 侧漏改（2026-09-22 复核发现）。
+   *
+   * 注：本方法**不**过滤 L3 归属，也不做排序——排序由调用方决定（两通道排序本就不同）。
+   */
+  listAvailable(): SkillEntry[] {
+    return this.items.filter((s) => s.description?.trim() && !this.disabledNames.has(s.name));
+  }
+
+  /**
    * 构建全局技能清单块（渐进披露 L1），与角色包技能清单同格式。
    * 两级技能同构：通用技能全局激活，角色包技能随角色激活；LLM 按需调 read_skill 读正文（L2）。
    * 含 resources/scripts 的技能附加 "(含资源/脚本)" 标记。
@@ -160,12 +192,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    *   > 50 技能：切换 list_skills 工具动态查询，不在 system prompt 枚举
    */
   buildSkillList(): string {
-    // 可用性过滤（G22）：缺 description 的技能在后手来源与渐进披露层面不可用（模型不知何时激活），
-    // 不进入 LLM 可用清单（「未生效」由宿主 UI 以健康徽章显式标注，而非静默隐藏）。
-    // 禁用过滤（S4）：disabledSkills 命中的技能不进 L1 清单（对 LLM 语义 = 不存在）。
-    const candidates = this.items.filter(
-      (s) => s.description?.trim() && !this.disabledNames.has(s.name),
-    );
+    // 可用性（G22）+ 禁用（S4）过滤**收口于 listAvailable**（LLM 可见集唯一真理源，
+    // 与 list_skills 工具侧共用；此处不再自写 filter，防两通道判据分叉）。
+    // 不进清单者由宿主 UI 显式标注而非静默隐藏：「未生效」= 健康徽章 / 禁用 = 「已禁用」徽章。
+    const candidates = this.listAvailable();
     if (candidates.length === 0) return '';
     const skillCount = candidates.length;
 

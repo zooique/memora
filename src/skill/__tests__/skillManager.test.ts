@@ -870,5 +870,40 @@ describe('SkillManager · 补充分支路径', () => {
       await manager2.load();
       expect(manager2.buildSkillList()).toContain('a');
     });
+
+    it('listAvailable：可用性 + 禁用两判据单点（LLM 可见集唯一真理源）', async () => {
+      createSkillFile(skillsDir, 'a.md', '---\nname: a\ndescription: 技能A\n---\n正文A');
+      createSkillFile(skillsDir, 'b.md', '---\nname: b\ndescription: 技能B\n---\n正文B');
+      // 缺 description：渐进披露层面不可用（G22），不入 LLM 可见集
+      createSkillFile(skillsDir, 'nodesc.md', '---\nname: nodesc\n---\n正文');
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      manager.setDisabledSkills(['b']);
+
+      // 两判据同时生效：禁用 b 剔除 + 缺 description 的 nodesc 剔除
+      expect(manager.listAvailable().map((s) => s.name)).toEqual(['a']);
+      // 同源断言：L1 枚举与 listAvailable 看到同一集合。
+      // `list_skills` 工具侧（assembler 注入回调）亦调用本方法 ⇒ 两通道判据不分叉
+      //（2026-09-22 G4：此前工具侧只过滤 description、漏掉禁用过滤，注释却自称「必须一致」）
+      const l1 = manager.buildSkillList();
+      expect(l1).toContain('- a：');
+      expect(l1).not.toMatch(/\bb\b/);
+      expect(l1).not.toContain('nodesc');
+    });
+
+    it('disabledSkillNames：只读快照供宿主 UI 徽章（真源 = 内核，宿主不自读配置副本）', async () => {
+      const manager = new SkillManager(testDir);
+      await manager.load();
+      expect(manager.disabledSkillNames).toEqual([]);
+
+      manager.setDisabledSkills(['x', 'y']);
+      expect(manager.disabledSkillNames).toEqual(['x', 'y']);
+      // 返回的是副本：外部改动不得旁路内核判据集（否则 get()/buildSkillList 与 UI 标注分叉）
+      manager.disabledSkillNames.push('z');
+      expect(manager.disabledSkillNames).toEqual(['x', 'y']);
+      // 全量替换语义（非累加）：重设即覆盖，供 reloadConfig 路径复用
+      manager.setDisabledSkills(['only']);
+      expect(manager.disabledSkillNames).toEqual(['only']);
+    });
   });
 });
