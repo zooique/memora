@@ -1657,20 +1657,37 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 让 renderRoundBlock 挂折叠块，再平铺停止行。旧「孤儿 process-flow 平铺 + flagInterruptedMarker」
    * （2026-09-15 方案）随之退役，闪烁相位行（process-flow__phase 呼吸点）连根消失。
    *
+   * 容器化（2026-09-22 修复）：「被停止的会话也是正常对话记录」——中断轮与 done 轮同构也收进
+   * .round-group 容器建 footer（复制整链/分叉/删除 + 时间戳），支持用户手动删除。ts 用本轮首个
+   * 过程事件时间（meta 恒为首条，真实闭环起点，对齐运行时中断块首 chunk ts），替代 new Date()
+   * 伪值——伪值会使容器 footer 的 delete_turn 锚点错位。复制整链的原始文本 = 过程叙述
+   * （narrate）拼接（半截正文已随中断丢弃，运行时同源同形）。
+   *
    * @param roundId 本轮 ID（孤儿宿主归属标记）
    */
   function renderInterruptedRound(roundId?: string): void {
     const host = document.createElement('div');
     host.className = 'msg assistant is-interrupted-host';
-    buildAssistantShell(host, new Date().toISOString(), roundId, { pending: false });
+    // 真实闭环起点（首条带 ts 的过程事件）；空事件/空 ts 兜底当前时间（旧行为，删除仍禁用）
+    const startTs = currentEvents.find((e) => e.ts)?.ts ?? new Date().toISOString();
+    buildAssistantShell(host, startTs, roundId, { pending: false });
     host.querySelector('.msg-body')?.remove();
     if (roundId) host.dataset.roundId = roundId;
+    // 复制整链语义与运行时中断轮对齐：正文已丢弃，原始文本由过程叙述（narrate）拼接供复制
+    const narrateText = (currentEvents.filter(
+      (e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate',
+    ) as Extract<ProcessEvent, { type: 'narrate' }>[])
+      .map((e) => e.payload.content)
+      .join('\n');
+    if (narrateText) host.dataset.rawText = narrateText;
     messages.appendChild(host);
     const prevAssistant = activeAssistantEl;
     activeAssistantEl = host;
     roundBlockEl = null;
     roundBlockHostEl = null;
     try {
+      // 容器化：中断轮与 done 轮同构进 .round-group（建容器 footer），已定稿传 pending=false
+      ensureRoundGroup(roundId, host, false);
       renderRoundBlock(currentEvents, true);
       appendInterruptedRow(host, currentEvents);
     } finally {
@@ -3518,8 +3535,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 平铺折叠块外（收起态常驻可见），孤儿宿主承载折叠（label/折叠块/停止行，半截正文不显示），
       // 与运行时 interrupted 共用同一渲染链（renderRoundBlock + appendInterruptedRow）。
       if (msg.interrupted) {
-        // 孤儿宿主挂 messages 尾：逐个处理中断轮时先清理上一轮孤儿宿主（防跨轮堆积残留）
-        messages.querySelector<HTMLElement>('.msg.is-interrupted-host')?.remove();
+        // 孤儿宿主挂 messages 尾：逐个处理中断轮时先清理上一轮孤儿宿主（防跨轮堆积残留）。
+        // 2026-09-22：孤儿宿主已容器化进 round-group（容器仅承载该轮孤儿宿主），连容器一并移除
+        const prevInterrupted = messages.querySelector<HTMLElement>('.msg.is-interrupted-host');
+        if (prevInterrupted) (prevInterrupted.closest('.round-group') ?? prevInterrupted).remove();
         flowEl?.remove();
         flowEl = null;
         renderInterruptedRound(msg.roundId);

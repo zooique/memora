@@ -1438,6 +1438,44 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     );
   });
 
+  it('中断轮重放：收进 round-group 容器 + footer（复制/分叉/删除 + 时间戳，2026-09-22 修复被停止会话无操作条）', () => {
+    // 修复背景：重启回放时中断轮走 renderInterruptedRound（孤儿宿主），此前不建 round-group 容器
+    // → 底部缺「复制/删除/时间」footer、用户无法删除被停止的会话；修复后与 done 轮同构容器化。
+    const { postMessage } = mountChatView();
+    // 真实重放时序：user（带 ts + roundId）→ replay_events（interrupted，events 首条 meta 带真实起始 ts）
+    dispatch({ type: 'user', text: '帮我读文件', ts: '2026-09-22T03:00:00.000Z', roundId: 'r6' });
+    const events = [
+      { type: 'meta', seq: 1, ts: '2026-09-22T03:00:05.000Z', payload: { role: 'AI', llm: 'm' } },
+      { type: 'narrate', seq: 2, ts: '2026-09-22T03:00:06.000Z', payload: { content: '开始读取文件' } },
+      { type: 'tool_start', seq: 3, ts: '2026-09-22T03:00:07.000Z', payload: { toolCallId: 't1', name: 'read_file' } },
+      { type: 'aborted', seq: 4, ts: '2026-09-22T03:00:08.000Z', payload: { reason: 'User cancelled', stopReason: 'user' } },
+    ];
+    dispatch({ type: 'replay_events', roundId: 'r6', events, interrupted: true });
+
+    // 孤儿宿主收进 round-group 容器（与 done 轮同构），记录正确 roundId
+    const g = document.querySelector('.round-group') as HTMLElement;
+    expect(g).not.toBeNull();
+    expect(g.dataset.roundId).toBe('r6');
+    const host = g.querySelector('.msg.is-interrupted-host') as HTMLElement;
+    expect(host).not.toBeNull();
+    // 容器 footer 现身：复制 / 分叉 / 删除 + 时间戳（已定稿 → 非 is-pending 直接显示）
+    const footer = g.querySelector('.round-group__footer') as HTMLElement;
+    expect(footer).not.toBeNull();
+    expect(footer.classList.contains('is-pending')).toBe(false);
+    const copyBtn = footer.querySelector('.msg-copy-icon') as HTMLButtonElement;
+    const forkBtn = footer.querySelector('.msg-fork-icon') as HTMLButtonElement;
+    const deleteBtn = footer.querySelector('.msg-delete-icon') as HTMLButtonElement;
+    expect(copyBtn).not.toBeNull();
+    // 分叉（roundId 可用）与删除（真实起始 ts 锚）均可用；时间戳 = 闭环起点（meta ts）
+    expect(forkBtn.disabled).toBe(false);
+    expect(deleteBtn.disabled).toBe(false);
+    expect(host.dataset.ts).toBe('2026-09-22T03:00:05.000Z');
+    expect(footer.querySelector('.msg-time')?.textContent?.trim().length).toBeGreaterThan(0);
+    // 删除点击 → delete_turn 携带真实 meta ts（truncateFrom 可锚定该轮，非 new Date 伪值）
+    deleteBtn.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_turn', ts: '2026-09-22T03:00:05.000Z' });
+  });
+
   it('运行时中断（RT 形态定案 2026-09-19）：掐半截正文 + 过程折叠 + 「用户停止了对话」平铺折叠块外', () => {
     mountChatView();
     dispatch({ type: 'user', text: '读文件', ts: 't0', roundId: 'r1' });
