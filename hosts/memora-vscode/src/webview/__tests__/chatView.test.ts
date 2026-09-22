@@ -2807,15 +2807,15 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(btns).toHaveLength(2);
     expect(btns[0].textContent).toBe('延续当前会话目标');
     expect(btns[1].textContent).toBe('开启新任务');
-    // 补充输入通道随内联块出现（选择题 + 自由补充双通道）
+    // 补充输入通道随内联块出现（统一形态：每题输入框 + 底部提交按钮）
     expect(box.querySelector('.ask-inline__input')).not.toBeNull();
-    expect(box.querySelector('.ask-inline__send')).not.toBeNull();
+    expect(box.querySelector('.ask-inline__submit')).not.toBeNull();
     // 底部 clarifyBar 不激活（主路径已内联）
     expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(false);
     expect(postMessage).not.toHaveBeenCalledWith({ type: 'clarify_answer' });
   });
 
-  it('点击内联选项 → 点击即答：提交 clarify_answer 并移除内联块', () => {
+  it('点击内联选项 → 标记该题已答 is-selected，再点「提交回答」提交 clarify_answers（单元素）', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
@@ -2824,10 +2824,18 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
         { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
       ],
     });
-    const btns = document.querySelectorAll('.ask-inline__opt');
+    const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
+    const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
+    // 统一形态：单问 = 一个问题的多问——点选项先标记（高亮），全部答完才可点「提交回答」
+    expect(submit.disabled).toBe(true);
     (btns[1] as HTMLButtonElement).click();
-    // 点击即答：无需二次回车，直接 postMessage clarify_answer
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '开启新任务' });
+    // 点选项不立即提交（无二次回车/即答自提交；按钮此时已答→可提交）
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clarify_answers' }));
+    expect((btns[1] as HTMLElement).classList.contains('is-selected')).toBe(true);
+    expect(submit.disabled).toBe(false);
+    submit.click();
+    // 一次性提交单元素数组（与提问按序一对一）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['开启新任务'] });
     // 内联块已移除（答案就位，不再等待）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
@@ -2844,7 +2852,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     });
     const box = document.querySelector('.ask-inline') as HTMLElement;
     expect(box).not.toBeNull();
-    // 多问：每题渲染一个 item（两题各自选项组 + 每题输入框），非单问的全局 input-row
+    // 多问：每题渲染一个 item（两题各自选项组 + 每题输入框），统一形态（单/多问同构）
     expect(box.querySelectorAll('.ask-inline__item')).toHaveLength(2);
     // 提交按钮初始 disabled（全部答完才可提交）
     const submit = box.querySelector('.ask-inline__submit') as HTMLButtonElement;
@@ -2880,10 +2888,13 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
       type: 'need_clarify',
       questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
     });
-    // ③ 点击选项 → commitAskAnswer（2026-09-16 修复：应把块 A 记为 pausedAssistantEl 续写锚）
+    // ③ 点选项标记 + 提交（2026-09-16 修复：应把块 A 记为 pausedAssistantEl 续写锚；
+    // 2026-09-22 统一形态后补点「提交回答」）
     const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
     (btns[0] as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '方案 A' });
+    const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
+    submit.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['方案 A'] });
     // ④ resume 重发 meta（宿主收到 clarify_answer 后自动继续 runFlow）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ⑤ 续写正文（同 roundId）→ done 收敛
@@ -2904,10 +2915,13 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
       type: 'need_clarify',
       questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
     });
-    // ③ 点击选项 → commitAskAnswer（pausedAssistantEl = 骨架）
+    // ③ 点选项标记（pausedAssistantEl = 骨架），统一形态再点「提交回答」→ commitAskAnswers
     const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
     (btns[0] as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '方案 A' });
+    const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+    submit.click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['方案 A'] });
     // ④ 宿主 handleResume 回发 user(kind='question-answer') —— 真实链路关键：骨架在此不得被删
     dispatch({ type: 'user', text: '方案 A', ts: 't2', kind: 'question-answer' });
     // ⑤ resume 重发 meta → pausedResume 原位续写判定（骨架必须仍在 DOM，isConnected 恒真）
@@ -2959,7 +2973,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(box.querySelector('.ask-inline__input')).not.toBeNull();
   });
 
-  it('内联补充输入：键入后回车 → 提交 clarify_answer 并移除内联块', () => {
+  it('内联补充输入：键入后回车 → 提交 clarify_answers 并移除内联块', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
@@ -2969,7 +2983,8 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const input = document.querySelector('.ask-inline__input') as HTMLInputElement;
     input.value = '我补充一点要求';
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answer', text: '我补充一点要求' });
+    // 回车等价点「提交回答」（统一形态下 Enter 触发 submitBtn.click；已答才 enabled）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['我补充一点要求'] });
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
@@ -2986,7 +3001,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(document.querySelectorAll('#clarifyOptions .opt-btn')).toHaveLength(2);
   });
 
-  it('allowCustom=false 且带 options → 强制单选：隐藏自由输入行（仅点选）', () => {
+  it('allowCustom=false 且带 options → 强制单选：隐藏自由输入框（仅点选）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
@@ -2999,13 +3014,13 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(box).not.toBeNull();
     // 选项仍在
     expect(box.querySelectorAll('.ask-inline__opt')).toHaveLength(2);
-    // 自由输入行被隐藏（强制只点选）
-    const inputRow = box.querySelector('.ask-inline__input-row') as HTMLElement;
-    expect(inputRow).not.toBeNull();
-    expect(inputRow.hidden).toBe(true);
+    // 自由输入框被隐藏（强制只点选）
+    const input = box.querySelector('.ask-inline__input') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.hidden).toBe(true);
   });
 
-  it('allowCustom 缺省/true 且带 options → 保持双通道（自由输入行可见）', () => {
+  it('allowCustom 缺省/true 且带 options → 保持每题自由输入（可见）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // allowCustom=true 显式允许自由输入
@@ -3015,9 +3030,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
         { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: true },
       ],
     });
-    const row = document.querySelector('.ask-inline__input-row') as HTMLElement;
-    expect(row).not.toBeNull();
-    expect(row.hidden).toBe(false);
+    const input = document.querySelector('.ask-inline__input') as HTMLInputElement;
+    expect(input).not.toBeNull();
+    expect(input.hidden).toBe(false);
   });
 });
 

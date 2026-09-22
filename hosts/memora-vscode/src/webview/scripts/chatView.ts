@@ -2862,13 +2862,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     document.querySelector('.ask-inline')?.remove();
     const box = document.createElement('div');
     box.className = 'ask-inline';
-    const commit = (text: string): void => {
-      commitAskAnswer(text);
-      box.remove();
-      scrollToBottom(messages);
-    };
-    // P2 多问聚合（2026-09-22）：answers[i] 逐题累计（选项点选 or 输入框），提交按钮全部答完才 enabled
-    const multi = questions.length > 1;
+    // 单一形态（2026-09-22 收敛）：
+    // 原「单问点选即答 / 多问聚合」双形态收敛为唯一形态——单问 = 只有一个问题的多问。
+    // 统一「逐题点选/输入 → 全部答完才提交」：消灭双形态各自手写的选项点击/输入/提交逻辑
+    // （SSOT 带伤收敛）。answers[i] 逐题累计，submitBtn 全部答完才 enabled；single 时按钮文案
+    // 用「提交回答」，multi 用「提交全部回答」（仅文案差异，逻辑单一同源）。
     const answers: (string | undefined)[] = questions.map(() => undefined);
     let submitBtn: HTMLButtonElement | null = null;
     const syncSubmit = (): void => {
@@ -2878,7 +2876,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const forceChoose = questions.some(
       (q) => q.options && q.options.length > 0 && q.allowCustom === false,
     );
-    // 每题构建：question 标题 + 选项按钮组（点选即答/或标记已答）+ 多问每题独立输入框
+    // 每题构建：question 标题 + 选项按钮组（点选标记该题已答，可再点改选）+ 每题输入框
     for (const [i, q] of questions.entries()) {
       const item = document.createElement('div');
       item.className = 'ask-inline__item';
@@ -2894,83 +2892,55 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           b.className = 'ask-inline__opt';
           b.textContent = opt;
           b.addEventListener('click', () => {
-            if (multi) {
-              // 多问：点选标记该题已答（is-selected 高亮，可再点改选），不立即提交
-              answers[i] = opt;
-              opts.querySelectorAll<HTMLElement>('.ask-inline__opt').forEach((o) =>
-                o.classList.toggle('is-selected', o === b),
-              );
-              syncSubmit();
-            } else {
-              commit(opt); // 单问：点击即答
-            }
+            // 点选标记该题已答（is-selected 高亮，可再点改选），不立即提交——全部答完走底部提交按钮
+            answers[i] = opt;
+            opts.querySelectorAll<HTMLElement>('.ask-inline__opt').forEach((o) =>
+              o.classList.toggle('is-selected', o === b),
+            );
+            syncSubmit();
           });
           opts.appendChild(b);
         }
         item.appendChild(opts);
       }
-      // 每题输入框：多问各自独立（forceChoose 时隐藏，见下）；单问改走循环外 inputRow（既有形态）
-      if (multi) {
-        const input = document.createElement('input');
-        input.className = 'ask-inline__input';
-        input.placeholder = '输入你的回答…';
-        input.addEventListener('input', () => {
+      // 每题输入框（forceChoose 时隐藏——仅点选，见下）
+      const input = document.createElement('input');
+      input.className = 'ask-inline__input';
+      input.placeholder = '输入你的回答…';
+      input.addEventListener('input', () => {
+        answers[i] = input.value;
+        syncSubmit();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.isComposing) return;
+        if (e.key === 'Enter') {
+          // 回车即视为提交当前输入：先同步 answers[i]（免依赖先触发 input 事件），再点提交按钮
           answers[i] = input.value;
           syncSubmit();
-        });
-        input.addEventListener('keydown', (e) => {
-          if (e.isComposing) return;
-          if (e.key === 'Enter') submitBtn?.click(); // 多问回车等价点提交（未全部答完时按钮 disabled 无效）
-        });
-        // forceChoose：该题的输入被禁用则仅点选（隐藏输入框）
-        if (forceChoose) input.hidden = true;
-        item.appendChild(input);
-      }
+          submitBtn?.click();
+        }
+      });
+      if (forceChoose) input.hidden = true;
+      item.appendChild(input);
       box.appendChild(item);
     }
-    // 多问聚合：底部「提交全部回答」（全部答完才 enabled）——单问无此按钮（点击即答）
-    if (multi) {
-      submitBtn = document.createElement('button');
-      submitBtn.className = 'ask-inline__submit';
-      submitBtn.textContent = '提交全部回答';
-      submitBtn.disabled = true;
-      submitBtn.addEventListener('click', () => {
-        // 全部题目答案按序一对一回填（filter 保序：跳过未答题，与按序对话保持对应）
-        const filled = answers.reduce<string[]>((acc, a) => {
-          const t = (a ?? '').trim();
-          if (t) acc.push(t);
-          return acc;
-        }, []);
-        commitAskAnswers(filled);
-        box.remove();
-        scrollToBottom(messages);
-      });
-      box.appendChild(submitBtn);
-    } else {
-      // 单问（原形态）：全局补充通道——不选选项、直接打字输入（「选择题 + 自由补充」双通道）
-      const inputRow = document.createElement('div');
-      inputRow.className = 'ask-inline__input-row';
-      const askInput = document.createElement('input');
-      askInput.className = 'ask-inline__input';
-      askInput.placeholder = '也可直接输入你的选择/补充…';
-      const sendBtn = document.createElement('button');
-      sendBtn.className = 'ask-inline__send';
-      sendBtn.textContent = '发送';
-      const submit = (): void => {
-        const t = askInput.value.trim();
-        if (!t) return;
-        askInput.value = '';
-        commit(t);
-      };
-      sendBtn.addEventListener('click', submit);
-      askInput.addEventListener('keydown', (e) => {
-        if (e.isComposing) return;
-        if (e.key === 'Enter') submit();
-      });
-      inputRow.append(askInput, sendBtn);
-      if (forceChoose) inputRow.hidden = true; // 强制单选：隐藏自由输入行，仅可点选
-      box.appendChild(inputRow);
-    }
+    // 底部一次性提交按钮（single「提交回答」/ multi「提交全部回答」，全部答完才 enabled）
+    submitBtn = document.createElement('button');
+    submitBtn.className = 'ask-inline__submit';
+    submitBtn.textContent = questions.length > 1 ? '提交全部回答' : '提交回答';
+    submitBtn.disabled = true;
+    submitBtn.addEventListener('click', () => {
+      // 全部题目答案按序一对一回填（filter 保序：跳过未答题，与按序对话保持对应）
+      const filled = answers.reduce<string[]>((acc, a) => {
+        const t = (a ?? '').trim();
+        if (t) acc.push(t);
+        return acc;
+      }, []);
+      commitAskAnswers(filled);
+      box.remove();
+      scrollToBottom(messages);
+    });
+    box.appendChild(submitBtn);
     host.after(box);
     // 焦点：连同输入行可见时才给输入框（强制单选时无从聚焦；多问聚焦首题输入框）
     const firstInput = box.querySelector<HTMLInputElement>('.ask-inline__input');
@@ -2980,23 +2950,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 提交问答回答（内联选择题 / 兜底 clarifyBar 共用）
+   * 提交多问答聚合回答（P2，2026-09-22）：已收敛为 ask 提交唯一入口——单/多问统一走数组
    *
-   * 置 resumePending：提问后的 resume 新 runFlow meta 将识别为「同闭环续跑」，
-   * 保留 currentEvents 与 round-block 锚点（折叠留在闭环首块，不在续接块复制）。
-   *
-   * @param text 用户回答（选项文本或自由输入）
-   */
-  function commitAskAnswer(text: string): void {
-    armAskResumeAnchor();
-    vscode.postMessage({ type: 'clarify_answer', text });
-  }
-
-  /**
-   * 提交多问答聚合回答（P2，2026-09-22）：多 ask 全部答完一次性投递 answers 数组
-   *
-   * 与单条 commitAskAnswer 相同置位语义（resumePending + 原位续写锚），仅载荷不同：
+   * 与 clarifyBar 兜底的 stopClarifyAnswer 共用同一置位语义（armAskResumeAnchor，SSOT）：
    * answers 与提问按序一对一，内核 answerQuestion(answers[]) 逐条回填 tool result。
+   * （原 commitAskAnswer 单条版已随「单问=一个问题的多问」收敛删除，同源由 clarifyBar
+   *   单条载荷 + 本数组载荷两处可读性区分，职责不变。）
    *
    * @param answers 用户回答数组（按提问顺序）
    */
@@ -4467,14 +4426,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // 主动提问回答（clarifyBar 异常兜底路径）：提交并续跑
-  // 内联选择题（主路径）走 commitAskAnswer，两者须保持同一 resumePending 置位语义
+  // 与内联选择题主路径（commitAskAnswers）共用同一置位语义 armAskResumeAnchor（SSOT 收敛，
+  // 2026-09-22：原手写 resumePending 置位与主路径重复，统一走单点置位；载荷仍为单条 clarify_answer）
   function sendClarifyAnswer(): void {
     const text = clarifyInput.value.trim();
     if (!text) return;
     clarifyInput.value = '';
     clarifyBar.classList.remove('visible');
     inputBar.hidden = false;
-    resumePending = true;
+    armAskResumeAnchor();
     vscode.postMessage({ type: 'clarify_answer', text });
   }
   clarifySend.addEventListener('click', sendClarifyAnswer);

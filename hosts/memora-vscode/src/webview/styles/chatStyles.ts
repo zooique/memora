@@ -235,7 +235,6 @@ export const chatStyles = `
   }
   .ask-inline__opt:hover { background: var(--accent-soft, rgba(14,99,156,.12)); }
   .ask-inline__opt:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
-  .ask-inline__input-row { display: flex; gap: var(--sp-2, 6px); align-items: center; }
   .ask-inline__input {
     flex: 1 1 auto; min-width: 0;
     font-size: var(--font-sm, 11px);
@@ -247,21 +246,10 @@ export const chatStyles = `
   }
   .ask-inline__input::placeholder { color: var(--text-tertiary, #6e7681); }
   .ask-inline__input:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 0; }
-  .ask-inline__send {
-    flex-shrink: 0;
-    font-size: var(--font-sm, 11px);
-    color: var(--accent-foreground, #ffffff);
-    background: var(--accent, #0e639c);
-    border: none;
-    border-radius: var(--radius-sm, 3px);
-    padding: 4px var(--sp-3, 8px);
-    cursor: pointer;
-  }
-  .ask-inline__send:hover { background: var(--accent-hover, #1177bb); }
-  .ask-inline__send:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
-  /* P2 多 ask 聚合（2026-09-22）：多提问合并一个卡片，逐题点选/输入（全部答完才提交）。
-   * is-selected = 该题已作答（实心品牌色，可再点改选）；submit 为底部一次性提交按钮，
-   * 全部题目有答案才 enabled（disabled 降透明度 + not-allowed 光标，语义直显）。纯开关无动画。 */
+  /* P2 多 ask 聚合（2026-09-22）+ 收敛（2026-09-22 统一单一形态）：ask 交互统一「逐题点选/输入 →
+   * 全部答完才提交」；is-selected = 该题已作答（实心品牌色，可再点改选）；submit 为底部一次性
+   * 提交按钮（single 时「提交回答」/ multi 时「提交全部回答」），全部题目有答案才 enabled。
+   * 纯开关无动画。注：input-row / send 样式已随单问分支收敛删除（单问=一个问题的多问，统一走 submit）。 */
   .ask-inline__opt.is-selected {
     color: var(--accent-foreground, #ffffff);
     background: var(--accent, #0e639c);
