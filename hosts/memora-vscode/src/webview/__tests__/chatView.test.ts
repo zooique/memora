@@ -968,12 +968,12 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(pauseBtn.hidden).toBe(true);
   });
 
-  // ─── pending_queue_update DOM 渲染 ───
+  // ─── pending-queue-bar DOM 渲染（M5b-1：pendingQueue 并入 turn_update 单通道） ───
 
-  it('pending_queue_update → 懒创建 .pending-queue-bar 并渲染全部条目', () => {
+  it('turn_update.pendingQueue → 懒创建 .pending-queue-bar 并渲染全部条目', () => {
     mountChatView();
-    dispatch({ type: 'status', state: 'thinking' });
-    dispatch({ type: 'pending_queue_update', items: ['我插一句话', '再来一句'] });
+    // M5b-1：待发送区渲染真源由 turn_update.pendingQueue 承载（pending_queue_update 已删）
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['我插一句话', '再来一句'] });
     const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
     expect(bar).not.toBeNull();
     expect(bar.hidden).toBe(false);
@@ -988,14 +988,13 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(bar.querySelector('.pending-queue-bar__badge')!.textContent).toBe('2');
     expect(bar.querySelector('.pending-queue-bar__label')!.textContent).toBe('待发送');
     // 清空 → 隐藏
-    dispatch({ type: 'pending_queue_update', items: [] });
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: [] });
     expect(bar.hidden).toBe(true);
   });
 
   it('pending-queue-bar 清空按钮 → post clear_pending_queue', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'status', state: 'thinking' });
-    dispatch({ type: 'pending_queue_update', items: ['插队内容'] });
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插队内容'] });
     const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLButtonElement;
     clearBtn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'clear_pending_queue' });
@@ -1006,8 +1005,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     // 覆盖不到，故在插入 DOM 后显式 populateIcons(_pendingQueueBar) 补填充。
     // 本断言锁死这条链路：若补填充丢失，按钮会静默变成空白（原实现为字符 ✕ 不会空白）。
     mountChatView();
-    dispatch({ type: 'status', state: 'thinking' });
-    dispatch({ type: 'pending_queue_update', items: ['插队内容'] });
+    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插队内容'] });
     const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLElement;
     expect(clearBtn.querySelector('svg'), '清空按钮缺 SVG 图标 → populateIcons 补填充链路已断').not.toBeNull();
     expect(clearBtn.textContent, '清空按钮不应再有字符图标').toBe('');

@@ -692,13 +692,6 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'notice'; level: 'info' | 'error'; message: string }
   /**
-   * 待发送区队列更新（Phase 4 暂停/恢复）
-   *
-   * thinking 态 interject 排队时 host 从内核 loop.pendingInterjections 读快照，立即 post 给 webview
-   * 渲染待发送区预览。sessionResumed 事件后 queue 清空，webview 同步隐藏待发送区。
-   */
-  | { type: 'pending_queue_update'; items: readonly string[] }
-  /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *
    * 面板为通用对话宿主，定位由内置角色包承载。host 在就绪回放时推送，
@@ -934,8 +927,15 @@ export type ExtensionToWebviewMessage =
    * webview 侧只维护 `rounds` + `state` 两个容器，UI 一律由 render(rounds, state) 派生。
    * 正文流式仍走 chunk 增量通道（唯一允许的局部优化，性能）。
    * M1–M4 双轨期：旧消息保留但禁止新增旧消息类型；M5 统一删除。
+   * M5b-1（2026-09-23）：`pendingQueue` 承接 `pending_queue_update` 载荷（待发送区渲染真源）。
+   * 可选字段——宿主投影 turn 时顺带携带当前内核 interject 队列快照；缺省 = 不刷新待发送区。
    */
-  | { type: 'turn_update'; rounds: RoundView[]; state: TurnState }
+  | {
+      type: 'turn_update';
+      rounds: RoundView[];
+      state: TurnState;
+      pendingQueue?: readonly string[];
+    }
   /**
    * 网页搜索引擎状态推送（设置面板加载时推送当前选择）
    *

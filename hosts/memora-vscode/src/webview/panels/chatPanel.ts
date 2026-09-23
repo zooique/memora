@@ -2080,6 +2080,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       type: 'turn_update',
       rounds,
       state: this._turnState,
+      // M5b-1：pendingQueue 承接 pending_queue_update 载荷——待发送区渲染真源。
+      // 直接读内核 interject 队列快照（SSOT 源头 loop.pendingInterjections，宿主不持镜像）；
+      // 仅当队列长度变化时由 syncPendingQueue 守卫触发本方法，避免无谓重投影。
+      pendingQueue: this._agent?.getPendingInterjections?.() ?? [],
     });
   }
 
@@ -2960,20 +2964,24 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'plan_update', items });
   }
 
-  /** 待发送区同步（SSOT 收敛，2026-09-07 修复弹窗残留）：
-   *  真理源 = 内核 queue（loop.pendingInterjections），宿主只做「长度变化检测」投影。
-   *  历史 bug：清空时机绑定 sessionResumed（resume 专有事件），普通插话（thinking 态 interject）
-   *  不触发 → 队列消费后无「空通知」→ webview 待发送区弹窗残留。本方法在调用方（入队/清空/
-   *  删除/step 边界后 chunk）统一调用，队列变空必然触发长度变化 → post 空 items → webview 隐藏。 */
+  /** 待发送区同步守卫（M5b-1，2026-09-23）：
+   *  真理源 = 内核 queue（loop.pendingInterjections），宿主只做「长度变化检测」。
+   *  队列长度变化 → 触发 `postTurnUpdate()`（其内部读内核队列快照 → `turn_update.pendingQueue`）——
+   *  不再单发 `pending_queue_update`（M5b-1 已并入 turn_update 单通道）。
+   *  历史 bug（沿用守卫意义）：清空时机绑定 sessionResumed（resume 专有事件），普通插话不触发 →
+   *  队列消费后无「空通知」→ 待发送区弹窗残留。本守卫在调用方（入队/清空/删除/step 边界后 chunk）
+   *  统一调用，队列变空必然触发长度变化 → post 空 pendingQueue → webview 隐藏。 */
   private syncPendingQueue(): void {
     if (!this._agent) return;
     // optional 调用（2026-09-07）：consumeFlow 主循环每 chunk 同步，测试桩可能缺该方法
     // （chatPanelHistory 的 mock agent 不实现 getPendingInterjections）——缺则跳过不阻断流
     const items = this._agent.getPendingInterjections?.() ?? [];
-    // 长度未变不重复 post（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次
+    // 长度未变不重复投影（同一队列状态不刷屏）；入队/消费/清空/删除均改变长度 → 必触发一次
     if (items.length === this._lastPendingQueueLen) return;
     this._lastPendingQueueLen = items.length;
-    this.post({ type: 'pending_queue_update', items });
+    // M5b-1：不再单发 pending_queue_update，改由 turn_update.pendingQueue 统一承载
+    // （此处不必传 live——待发送区是 turn 级展示，历史轮足够定位渲染输入）。
+    this.postTurnUpdate();
   }
 
   /**

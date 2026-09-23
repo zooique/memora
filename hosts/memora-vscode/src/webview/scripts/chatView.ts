@@ -3513,9 +3513,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已随 M5a 删除
       //（宿主/ webview 双端同步删，申请在途统一由 turn_update.state 承载）。
       applySkeletonState(skeletonFromTurnState(msg.state));
-    } else if (msg.type === 'pending_queue_update') {
-      // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
-      updatePendingQueueBar(msg.items);
+      // M5b-1：待发送区渲染真源并入 turn_update 单通道（pending_queue_update 已删）。
+      // pendingQueue 可选字段，缺省（旧宿主/测试构造）则不刷新待发送区（保持现状）。
+      if (msg.pendingQueue) {
+        updatePendingQueueBar(msg.pendingQueue);
+      }
     } else if (msg.type === 'tool_pending') {
       // 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 成形即上报），
       // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与
