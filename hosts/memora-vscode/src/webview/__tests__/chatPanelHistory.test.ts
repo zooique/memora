@@ -49,7 +49,7 @@ vi.mock('vscode', async () => {
 
 import * as vscode from 'vscode';
 
-/** agent 桩：仅提供会话管理相关方法（switchToSession / renameSession）+ 记忆联动（⑥） */
+/** agent 桩：仅提供会话管理相关方法（switchToSession / renameSession）+ 记忆联动（⑥）+ 暂停在途判据（replayHistory → postTurnUpdate 读取） */
 function agentStub(): {
   agent: Agent;
   switchToSession: ReturnType<typeof vi.fn>;
@@ -59,12 +59,14 @@ function agentStub(): {
   const switchToSession = vi.fn().mockResolvedValue(0);
   const renameSession = vi.fn();
   const softDeleteRoundSummaries = vi.fn().mockReturnValue(0);
-  // 最小 agent：仅暴露会话管理子对象 + 记忆联动 + 事件订阅空实现（bindAgentNoticeEvents 需要），其余方法留空
+  // 最小 agent：仅暴露会话管理子对象 + 记忆联动 + 事件订阅空实现（bindAgentNoticeEvents 需要）
+  // + 暂停在途判据（postTurnUpdate 折叠 TurnState 时读取，缺则抛错中断链路），其余方法留空
   const agent = {
     sessionManager: { switchToSession, renameSession },
     memory: { softDeleteRoundSummaries },
     on: vi.fn(),
     off: vi.fn(),
+    isPausePending: () => false,
   } as unknown as Agent;
   return { agent, switchToSession, renameSession, softDeleteRoundSummaries };
 }
@@ -524,13 +526,15 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'user', content: '问题A', ts: 't1' },
       { role: 'assistant', content: '回答A', ts: 't2' },
     ]);
-    // agent stub：getMetrics 返回含 rolePackBaseTokens 的 occupancy（角色包全局跨会话一致）
+    // agent stub：getMetrics 返回含 rolePackBaseTokens 的 occupancy（角色包全局跨会话一致）；
+    // isPausePending 为 postTurnUpdate 折叠 TurnState 的必读判据（缺则抛错中断 replayHistory 链路）
     const agent = {
       on: vi.fn(),
       off: vi.fn(),
       getMetrics: () => ({
         context: { occupancy: { rolePackBaseTokens: 15000 } },
       }),
+      isPausePending: () => false,
     } as unknown as Agent;
     provider.setAgent(agent);
     // providerStore 桩：listMasked 返回 [] + getActiveName undefined → totalTokens 回落内核默认 120K
@@ -749,13 +753,21 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // B 切入后 _currentSessionId 应更新为新的 date-sxxx
     const newId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
     expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
-    // clear_ok 之后的 post 中不应有消息类事件（B 是空会话，replay 不重放 A 的历史）
+    // clear_ok 之后的 post 中不应有消息类事件（B 是空会话，replay 不重放 A 的历史）；
+    // 旧 wire 消息清单保留作防回归守卫（M5b-3 后消息风暴已删，出现即协议回退）
     const clearIdx = posted.findIndex((m) => (m as { type: string }).type === 'clear_ok');
     expect(clearIdx).toBeGreaterThanOrEqual(0);
     const afterClear = posted.slice(clearIdx);
     const msgTypes = ['user', 'assistant', 'process_event', 'replay_events', 'chunk', 'tool_start', 'tool_result'];
     const leaked = afterClear.filter((m) => msgTypes.includes((m as { type: string }).type));
     expect(leaked).toHaveLength(0);
+    // 重放泄漏真断言（M5b-3 载体）：历史泄漏面在 turn_update.rounds——B 为空会话，
+    // 整批 rounds 必须为空；且重放链路必须走完（turn_update ≥1 条，杜绝「链路挂掉 → 断言空转」假绿）
+    const turnUpdates = ofType<{ type: string; rounds: RoundView[] }>(afterClear, 'turn_update');
+    expect(turnUpdates.length).toBeGreaterThanOrEqual(1);
+    for (const tu of turnUpdates) {
+      expect(tu.rounds).toEqual([]);
+    }
   });
 });
 

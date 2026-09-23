@@ -62,7 +62,7 @@
 | 主活动条 `.activity-bar` | 会话异常 / 低扰 info | 常驻，error/info 分级 |
 | 暂停态提示 | 软暂停（**同进程内存态，不落盘**） | 暂停时可续跑/关闭 |
 | 任务看板 `.plan-board` | task_table_write/update（H4） | 临时，N/M 进度 |
-| 主动提问条 `#clarifyBar` | needClarify / questionPending | 等待用户输入 |
+| 主动提问条 `#clarifyBar` | turn_update.state（waiting/ask 提问投影） | 等待用户输入 |
 | 记忆治理区 `.governance` | 记忆清理（cleanup，G4；记忆无衰减语义） | 统计卡 + 操作 |
 | 后台模型通道 `.cfg-bg` | 独立 backgroundProvider（G5） | 配置子视图分区 |
 | 写入审批开关 `.security-*` | 二次确认（H0） | toggle |

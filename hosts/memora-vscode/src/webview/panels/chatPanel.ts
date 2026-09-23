@@ -228,7 +228,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 待发送区排队内容（仅 thinking 态 interject 时写入）
    * UI 层（chatView）据此渲染待发送区预览 + 清空按钮。
-   * P2 收敛（Phase 5）：宿主不再维护镜像，每次 post pending_queue_update 时从内核 loop.pendingInterjections 读当前值
+   * P2 收敛（Phase 5）：宿主不再维护镜像，每次 postTurnUpdate 投影 pendingQueue 时从内核 loop.pendingInterjections 读当前值
    * 清空时机：sessionResumed 事件触发（resume 成功、loop 消费完队列） */
   // NOTE: _pendingQueue 已移除（P2 收敛），SSOT 源头 = agent.getPendingInterjections() → loop.pendingInterjections
   /** 上次推送给 webview 的待发送区长度（2026-09-07 修复：长度变化才 post，SSOT 收敛）
@@ -1471,11 +1471,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private collectHistoryMessages(): Array<{ role: 'user' | 'assistant'; content: string }> {
     const msgs: Array<{ role: 'user' | 'assistant'; content: string }> = [];
     if (this._viewLoader) {
-      // 会话无轮次记录（新建/空会话）→ 直接返回空，避免触发 loadView「会话不存在」噪音
-      // 守卫直用完整 sessionId（getRoundIds 以 sessionId 为键，无需 parse 拼回——parse 再拼回是恒等变换）
-      if (this.sessionStore.getRoundIds(this._currentSessionId).length === 0) {
-        return msgs;
-      }
+      // 空会话（无轮次记录）经 loadRoundBasedHistory 单点守卫直接返回空
       const rounds = this.loadRoundBasedHistory();
       for (const r of rounds) {
         if (r.userMessage?.content) msgs.push({ role: 'user', content: r.userMessage.content });
@@ -1886,6 +1882,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this._viewLoader) {
       // 没有 viewLoader 时返回空数组
       console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
+      return [];
+    }
+    // 空会话守卫（SSOT 单点，replayHistory / postTurnUpdate / collectHistoryMessages 共用判据）：
+    // 无轮次记录（新建/空会话）→ 返回空数组，不触发 loadView「会话不存在」抛错路径。
+    // 判据直用完整 sessionId（getRoundIds 以 sessionId 为键，parse 再拼回是恒等变换）
+    if (this.sessionStore.getRoundIds(this._currentSessionId).length === 0) {
       return [];
     }
 

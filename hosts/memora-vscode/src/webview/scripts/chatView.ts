@@ -451,7 +451,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // ─── 过程事件（ProcessEvent）渲染（v1.5 单形态）──────────────
   // 渲染真理源 = 当前轮 events[]（currentEvents）：运行时 process_event 增量与重放
-  // replay_events 整批都汇入同一数组，由 renderRoundBlock 统一渲染（SSOT：无第二套卡片 DOM）。
+  // turn_update（replay:true）RoundView.processEvents 整批都汇入同一数组，由 renderRoundBlock
+  // 统一渲染（SSOT：无第二套卡片 DOM）。
   // round-block 挂在本轮首个 assistant 块上（插话产生的后续同 roundId 块不再挂）。
 
   /** 本轮过程事件缓冲（渲染唯一真相源，运行时与重放同源） */
@@ -1791,7 +1792,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 矩阵抽出的理由 = 可单测 + 为 M3b-2b-2「真源换成 TurnState」备好唯一派生入口（此刻仍读本地态）。
    * pauseBtn 图标永远是 pause（‖），不做本地 toggle——request/cancel 的行为 toggle 完全由 host 层
    * handlePause 通过 agent.isPausePending() 判断，UI 不感知 pending 状态。
-   * 调用点 = setStatus（状态变了）+ input 事件（输入内容变了）+ pause_pending（申请在途变了）。
+   * 调用点 = applySkeletonState（骨架状态变了）+ input 事件（输入内容变了）+ sendMessage（发送/停止后复位）。
    * 不改变 disabled 态（那是 syncSendEnabled 的职责），不负责 round-block 呼吸点/导航锁（setStatus 的职责）。
    */
   function syncButtonSemantics(): void {
@@ -1829,7 +1830,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * Phase 4 待发送区（interject 队列可视化）：宿主 post pending_queue_update 时更新。
+   * Phase 4 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
    * 懒创建 DOM 元素（挂在 inputBar 前面）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮。
    * 仅 thinking 态有排队时显示；paused 宿主已清队列；done 不可能有队列。
    *
@@ -3566,14 +3567,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 单轮重放渲染（M5b-3）：由 RoundView 重建该轮 DOM
+   * 单轮重放渲染：由 RoundView 重建该轮 DOM（用户输入 → 过程事件整批 → 中间段 → 最终回答）
    *
-   * 语义与旧 sendRoundView(user→replay_events→middle→assistant) 消息风暴**逐条等价**——复用既有
-   * append / renderRoundBlock / renderInterruptedRound / appendInteractiveInput，保证重放与运行时
-   * 共用同一渲染函数（DOM 对拍 deepEqual 由 runtimeReplayParity §2 守卫）。
+   * 复用既有 append / renderRoundBlock / renderInterruptedRound / appendInteractiveInput，
+   * 重放与运行时共用同一渲染函数；两路轮级语义对拍（4 字段）由 runtimeReplayParity §2 守卫。
    */
   function renderReplayRound(r: RoundView): void {
-    // 1) 主用户输入（复刻 user 无 kind 分支：先落气泡，再复位新闭环锚点）
+    // 1) 主用户输入：先落气泡，再复位新闭环锚点
     if (r.userMessage?.content) {
       try {
         append('user', r.userMessage.content, r.userMessage.timestamp, r.id);
@@ -3583,7 +3583,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       resetForNewClosedLoop();
     }
-    // 2) 过程事件整批（复刻旧 replay_events 分支：meta 提取 + 中断/普通分流）
+    // 2) 过程事件整批：meta 提取 + 中断/普通分流
     const events = r.processEvents ?? [];
     if (events.length > 0) {
       clearPendingWait(); // 重放为历史渲染，等待指示器不适用
@@ -3624,7 +3624,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const item of middle) {
       if (!item.content) continue;
       if (item.kind === 'seg') {
-        // 复刻旧 assistant 消息分支：正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留
+        // 正文块建立后补挂任务过程折叠区 + 回收同轮 fallback 残留
         append('assistant', item.content, item.ts, r.id);
         renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);
         if (r.id && roundBlockEl?.isConnected) {
@@ -3636,7 +3636,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         resumePending = true;
         appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
       } else {
-        // supplement：删除打断骨架后照常落交互行（复刻 user 分支 supplement 语义）
+        // supplement：删除打断骨架后照常落交互行
         flowShellEl?.remove();
         flowShellEl = null;
         if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
@@ -3645,7 +3645,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         appendInteractiveInput(item.content, item.ts, item.kind, r.id, item.question, item.options);
       }
     }
-    // 4) 最终回答（复刻旧 assistant 分支，仅 complete 轮挂正文——中断轮正文与平铺 narrate 同源去双份）
+    // 4) 最终回答（仅 complete 轮挂正文——中断轮正文与平铺 narrate 同源，避免双份）
     if (r.status === 'complete' && r.assistantMessage?.content) {
       append('assistant', r.assistantMessage.content, r.assistantMessage.timestamp, r.id);
       renderRoundBlock(currentEvents, true, runtimeInteractiveInputs);

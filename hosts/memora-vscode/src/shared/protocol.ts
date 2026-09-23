@@ -200,13 +200,15 @@ export type WebviewToExtensionMessage =
   /**
    * Phase 4：清空 interject 队列（thinking 态待发送补充区的清空按钮）
    *
-   * 由 webview 待发送区触发，宿主调 agent.clearPendingInterjections() 清内核队列并 post 空 pending_queue_update。
+   * 由 webview 待发送区触发，宿主调 agent.clearPendingInterjections() 清内核队列，
+   * 经 syncPendingQueue → postTurnUpdate() 投影空 pendingQueue。
    */
   | { type: 'clear_pending_queue' }
   /**
    * Phase 4：删除单条 interject（待发送区每条的独立删除按钮）
    *
-   * 由 webview 待发送区某条补充的 × 按钮触发，宿主调 agent.removePendingInterject(index) 从内核队列删除，然后 post 更新后的 pending_queue_update。
+   * 由 webview 待发送区某条补充的 × 按钮触发，宿主调 agent.removePendingInterject(index) 从内核队列删除，
+   * 经 syncPendingQueue → postTurnUpdate() 投影更新后的 pendingQueue。
    */
   | { type: 'remove_pending_item'; index: number }
   // ─── 大模型配置面板消息 ───

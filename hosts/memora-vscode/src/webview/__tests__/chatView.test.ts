@@ -2,9 +2,9 @@
  * chatView 测试 — clear_ok 消息区清理 + 过程事件单形态（v1.5）
  *
  * clear_ok 必须同时清 type=msg 消息与 .round-block 过程块，否则切换历史/清空后
- * 旧过程块残留 DOM（P1-1 修复）。渲染层已收敛为单一形态：process_event（运行时增量）
- * 与 replay_events（重放整批）汇入同一 events[]，由 renderRoundBlock 统一渲染
- * （SSOT：不再有 tool-card / review-block / thought-block 独立卡片）。
+ * 旧过程块残留 DOM。渲染层为单一形态：process_event（运行时增量）与 turn_update
+ * （replay:true，RoundView.processEvents 整批）汇入同一 events[]，由 renderRoundBlock
+ * 统一渲染（SSOT：无 tool-card / review-block / thought-block 独立卡片）。
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
@@ -31,12 +31,10 @@ import type { ProcessEvent } from '@zooique/memora';
  * 驱动消息构造，rounds 取空数组（按钮语义不消费 rounds）。
  */
 
-// ─── M5b-3 重放驱动辅助：单条 turn_update(replay:true) 承载 rounds ─────────
+// ─── 重放驱动辅助：单条 turn_update(replay:true) 承载 rounds ─────────
 //
-// 协议收口后 webview 不再消费旧 wire 消息（replay_events / 重放 assistant），
-// 会话重放真源改为「单条 turn_update，replay:true 且 rounds[] 承载整批轮」。
-// 下列辅助把旧的「user/replay_events/assistant 消息风暴」等价转换为
-// 构造 RoundView → 单条 turn_update 分发，使重放断言不改语义地恢复通过。
+// 会话重放真源为「单条 turn_update，replay:true 且 rounds[] 承载整批轮」（webview 不消费
+// 旧 wire 消息）。下列辅助按「构造 RoundView → 单条 turn_update 分发」驱动重放断言，
 // 渲染语义对齐 chatView.ts renderReplayRound（见 protocol.ts turn_update 注释）。
 
 /**
@@ -1325,7 +1323,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(badge.textContent).toBe('代码审查员');
   });
 
-  it('replay_events 整批渲染与 process_event 同路径（重放 = 运行时同一渲染函数）', () => {
+  it('重放整批渲染与 process_event 同路径（重放 = 运行时同一渲染函数）', () => {
     mountChatView();
     // M5b-3：重放整批 processEvents 由单条 turn_update(replay:true) 承载（与运行时 process_event 同渲染函数）
     // 附 assistantMessage（复刻原 chunk『历史回答』语义）：round-block 需挂接 assistant 正文块才可见
@@ -1510,7 +1508,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.process-flow')).toBeNull();
   });
 
-  it('阶段二步级折叠：replay_events 含 plan_item_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
+  it('阶段二步级折叠：重放 processEvents 含 plan_item_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
     mountChatView();
     // M5b-3：整批 processEvents（含 plan_item_boundary）由单条 turn_update 承载
     // 附 assistantMessage（复刻原 chunk『任务开始』语义）：round-block 需挂接 assistant 正文块才可见
@@ -1626,7 +1624,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'done' });
   });
 
-  it('重放路径：replay_events（含 meta）+ assistant 只产生 1 个 assistant 块（重启不重复块）', () => {
+  it('重放路径：processEvents（含 meta）+ 最终回答只产生 1 个 assistant 块（重启不重复块）', () => {
     mountChatView();
     // M5b-3：重放整批 processEvents + 最终回答由单条 turn_update 承载（不再有独立 assistant 消息风暴）
     dispatchReplay(
@@ -3381,7 +3379,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(qa.textContent).toContain('补充说明');
   });
 
-  it('UX-9 重放路径：replay_events + 前序段 + qa 内联子行、final 为同容器第 2 段（2026-09-21 剪枝，无续接视觉）', () => {
+  it('UX-9 重放路径：重放轮 + 前序段 + qa 内联子行、final 为同容器第 2 段（2026-09-21 剪枝，无续接视觉）', () => {
     mountChatView();
     // 主输入 → 整批过程事件（含 meta）→ 提问前序段
     // M5b-3：整批 processEvents + 前序段 + 交互行 + final 由单条 turn_update 承载
@@ -3984,7 +3982,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
           { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
         ],
         assistantLog: [{ content: '在读取前需要确认：', ts: 't2' }],
-        // 重放 middle 段 timeout 行（宿主 sendRoundView 按 kind 透传；带 question/options）
+        // 重放 middle 段 timeout 行（宿主 replayHistory → postTurnUpdate 按 kind 透传；带 question/options）
         interactiveInputs: [
           { content: '用户未在时限内回答，已自动继续', ts: 't3', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
         ],

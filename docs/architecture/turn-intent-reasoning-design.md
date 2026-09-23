@@ -185,7 +185,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 | A5 | [roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` union（~L169-211） | 新增 `\| { type: 'thought'; seq; ts; payload: { content } }`；截断常量 `MAX_THOUGHT_PAYLOAD_LENGTH`（SSOT 单点定义于宿主 chatPanel，落盘前截断防膨胀） | 类型测试 + 截断单测 |
 | A6 | 宿主 [chatPanel.ts](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts) `consumeFlow`（narrate 分支 ~L2477 附近） | 新增 `chunk.type === 'reasoning'` 分支 → `emitEvent('reasoning', { content })`（落盘前截断）；mergeProcessEvents/checkpointRound 自动支持新 union 成员 | 落盘 + 幂等合并（无重复） |
 | A7 | 宿主 [chatView.ts](../../hosts/memora-vscode/src/webview/scripts/chatView.ts) | ① 运行时 process-flow：reasoning **折叠行** `.process-flow__reasoning`（`<details>`，与 narrate 平铺同 seq 插入，textContent 防注入）② `renderRoundBlock`（~L1079）：新增「§ 思考」小节渲染 reasoning 事件（finalize/重放共用） | 运行时折叠展示 + 重放重建一致 |
-| A8 | 协议 | `process_event` / `replay_events` **复用**（ProcessEvent union 扩展自动传导），**不新增消息类型** → IPC 通道治理阈值（100/130）不变 | 协议测试通过 |
+| A8 | 协议 | `process_event` **复用**（ProcessEvent union 扩展自动传导），重放随 `turn_update`（`replay: true` + `rounds`）整轮携带，**不新增消息类型** → IPC 通道治理阈值（100/130）不变 | 协议测试通过 |
 
 **阶段 A 出口**：tsc 零错误 + 全量 vitest 绿（声明层数/skip 口径）+ 真机验证——deepseek 对话思考折叠块显示；重启会话思考重放可见；round-summary 不含思考（CoT 防护实证）。
 

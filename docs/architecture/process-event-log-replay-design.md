@@ -189,7 +189,7 @@ ProcessEvent = {
 
 * 宿主实际加载路径为 `loadHistory → loadRoundBasedHistory()`（[chatPanel.ts](../../hosts/memora-vscode/src/webview/panels/chatPanel.ts)）：每个 round 读出时**正文与 `processEvents` 天然同源同轮**（同一对象），不再有"两个存储凑一份视图"的问题
 
-* **按 round 交织重放**（数据源同一，v1.6.1 收敛时序）：每轮 `user` → `replay_events`（整批含 meta，webview 端自行提取 meta 写入「本轮身份」`currentRoundMeta`）→ `assistant` 正文（携带 roundId）。严禁拆分 meta 单独发 `process_event`——webview 端会把该轮当「运行时新轮」触发骨架块创建，与正文块重复成两条独立消息（v1.6.1 实测回归根因）。`buildAssistantShell` 渲染该轮 AI 消息时读 `currentRoundMeta` 挂角色/模型标签——运行时与重放同一机制（v1.5 单源修正）
+* **按 round 整轮重放**（数据源同一）：每轮以 `RoundView` 整轮承载（user 正文 + assistant 正文 + `processEvents` 整批含 meta），经 `turn_update`（`replay: true`）推给 webview，webview 端提取 meta 写入「本轮身份」`currentRoundMeta`。严禁拆分 meta 单独发 `process_event`——webview 端会把该轮当「运行时新轮」触发骨架块创建，与正文块重复成两条独立消息（v1.6.1 实测回归根因）。`buildAssistantShell` 渲染该轮 AI 消息时读 `currentRoundMeta` 挂角色/模型标签——运行时与重放同一机制（v1.5 单源修正）
 
 * 按 `seq` 有序重放 → 产出「状态重建指令」→ host 复用现有 `post` 协议推给 webview
 
@@ -197,26 +197,27 @@ ProcessEvent = {
 
 ### 3.7 协议扩展
 
-新增 host → webview 重放批次消息（复用现有消息类型，仅改变来源）：
+重放批次由既有 `turn_update` 消息承载（`replay?: true` 标记 + `rounds: RoundView[]`），不设独立重放消息类型：
 
 ```
-replay_events: { roundId: string; events: ProcessEvent[] }
+turn_update: { replay?: true; rounds: RoundView[] }   // RoundView 整轮：user/assistant 正文 + processEvents 整批
 ```
 
-webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk 转发同路径）。
+webview 收到 `replay: true` 时走重放分支（`renderReplayFromRounds` → `renderReplayRound`），逐轮重建 user / assistant 消息与 round-block（复用运行时同一渲染函数）。
 
-**发送时序（v1.6.1 收敛，与 §3.6 交织规则配合）**：
+**发送时序（与 §3.6 整轮规则配合）**：
 
 ```
-每轮发送序列（sendRoundView 实现，勿拆分 meta）：
-  1. user 消息（append）
-  2. replay_events（整批：meta 首条 + thinking/recall/memory_added/tool_*/self_review/aborted/metrics）
-     → webview 端提取 meta 写入 currentRoundMeta（本轮身份），其余事件 append 到当前轮 events[]
-     → 由 renderRoundBlock 统一渲染
-  3. assistant 正文（append，携带 roundId，标签读 currentRoundMeta）
+单条 turn_update 携带全部待重放轮（勿拆分 meta）：
+  每个 RoundView（整轮）：
+    1. user 消息（append）
+    2. processEvents 整批（meta 首条 + thinking/recall/memory_added/tool_*/self_review/aborted/metrics）
+       → webview 端提取 meta 写入 currentRoundMeta（本轮身份），其余事件 append 到当前轮 events[]
+       → 由 renderRoundBlock 统一渲染
+    3. assistant 正文（append，携带 roundId，标签读 currentRoundMeta）
 ```
 
-> **为什么 meta 必须并入整批（v1.6.1）**：旧时序把 meta 单独以 `process_event` 发送，webview 端 `process_event(meta)` 分支会调用 `prepareFlowShell()` 建「运行时新轮」骨架块（TTFT 即时反馈专用）；重放时正文随后到达又 append 第二条消息 → 同一轮出现两条独立消息块。整批 `replay_events` 走重放分支，仅提取 meta 设身份、不触发骨架创建，时序与运行时新轮语义正确分离。
+> **为什么 meta 必须并入整批**：meta 若单独以 `process_event` 发送，webview 端 `process_event(meta)` 分支会调用 `prepareFlowShell()` 建「运行时新轮」骨架块（TTFT 即时反馈专用）；正文随后到达又 append 第二条消息 → 同一轮出现两条独立消息块。整批走重放分支，仅提取 meta 设身份、不触发骨架创建，与运行时新轮语义正确分离。
 
 **身份单源（v1.5 定案）**：`meta` 事件唯一职责 = 写入「本轮身份」`currentRoundMeta`（该轮 AI 消息挂的角色/模型标签）。会话级「当前角色」**唯一真理源 = `chat_role_pack` 消息**（顶栏/输入区徽章/空状态），由宿主在重放末尾（及实时切换时）推送——**删除「顶栏 = 最后重放轮 meta」表述**：那是与 `chat_role_pack` 冲突的伪真理源（用户切角色后未再发消息时，最后 meta 与当前激活角色不同）。两者职责分离：meta 管"每条消息谁答的"，chat_role_pack 管"现在是谁"。
 
@@ -258,7 +259,7 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 | `.activity-detail / .recall-detail` | **合并**：历史/指标/召回明细统一并入折叠区对应小节，不再有两张独立折叠面板                               |
 | `memory recalled` 独立记忆卡             | **并入**：`§ 召回记忆` 结构化列表，不渲染独立卡片外壳                                        |
 
-**受影响文件清单（S2/S3 涉及，2026-08-28 评审补充）**：`chatPanel.ts`（注入 toolCardStyles、consumeFlow 转发）、`chatView.ts`（ToolCard/thought-block/review-block/recall-detail 渲染分支 → `renderRoundBlock()`）、`components/toolCard.ts` + `styles/toolCard.ts`（删除或降级为胶囊）、`chatView.test.ts` / `chatPanelHistory.test.ts`（同步改断言）、`protocol.ts`（`replay_events` 消息类型）。
+**受影响文件清单（S2/S3 涉及，2026-08-28 评审补充）**：`chatPanel.ts`（注入 toolCardStyles、consumeFlow 转发）、`chatView.ts`（ToolCard/thought-block/review-block/recall-detail 渲染分支 → `renderRoundBlock()`）、`components/toolCard.ts` + `styles/toolCard.ts`（删除或降级为胶囊）、`chatView.test.ts` / `chatPanelHistory.test.ts`（同步改断言）、`protocol.ts`（`turn_update.replay` 标记）。
 
 #### 3.8.3 保留的最小运行时反馈（流式过程中）
 
@@ -281,11 +282,11 @@ webview 收到后按当前 `dispatch` 分支逐条渲染（与运行时 chunk �
 ```
 运行时：host 逐事件 post process_event → webview append 到 events[]
         → 实时 re-render summary（流式中）→ 流结束收进折叠区（完整 details）
-重放时：host post replay_events（整批 ProcessEvent，不用 process_event 逐条）
+重放时：host post turn_update（replay: true，rounds 整轮携带 processEvents 整批）
         → webview 一次性塞入 events[] → 一次性 render summary + details
 ```
 
-**协议纯化（v1.5）**：渲染类消息统一为单一形态——`process_event: { event: ProcessEvent }`（增量，运行时用）+ `replay_events: { roundId, events: ProcessEvent[] }`（整批，重放用）。原 thinking / tool_start / tool_result / memory(recalled_items|added) / self_review 渲染分支**全部删除**，由 process_event 承载同一笔数据；status / notice / retry / paused / interrupted / done 等控制类消息保留不变（非渲染输入）。webview 收到 process_event 时先解析 meta 写入 `currentRoundMeta`、再 append 到 events[] 触发渲染——运行时与重放处理同构。
+**协议纯化（v1.5）**：渲染类消息统一为单一形态——`process_event: { event: ProcessEvent }`（增量，运行时用）+ `turn_update`（`replay: true` + `rounds`，整批 ProcessEvent 随轮携带，重放用）。原 thinking / tool_start / tool_result / memory(recalled_items|added) / self_review 渲染分支**全部删除**，由 process_event 承载同一笔数据；status / notice / retry / paused / interrupted / done 等控制类消息保留不变（非渲染输入）。webview 收到 process_event 时先解析 meta 写入 `currentRoundMeta`、再 append 到 events[] 触发渲染——运行时与重放处理同构。
 
 好处：
 
