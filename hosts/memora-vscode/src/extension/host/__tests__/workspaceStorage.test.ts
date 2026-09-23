@@ -35,7 +35,7 @@ describe('WorkspaceStorage.search', () => {
     storage.load();
   });
 
-  it('多关键词短语应通过分词 token 匹配命中（修复整串子串缺陷）', () => {
+  it('多关键词短语应通过分词 token 匹配命中', () => {
     storage.upsert(
       makeMemory({
         id: 'm1',
@@ -43,7 +43,7 @@ describe('WorkspaceStorage.search', () => {
       }),
     );
 
-    // 旧实现用 includes 整串匹配，query 含空格无法命中；分词后任一 token 命中即返回
+    // query 含空格时按分词 token 匹配，任一 token 命中即返回
     const hits = storage.search('记忆存储方案 决策', 10);
     expect(hits.map((m) => m.id)).toContain('m1');
   });
@@ -214,6 +214,72 @@ describe('WorkspaceStorage.load 数据层清洗（阶段3 score 退役后）', (
 
     // 若 null 未归一，isActive 判 `deletedAt === undefined` 为 false → 记忆被误判已删除
     expect(storage.search('曾落盘', 10).map((m) => m.id)).toContain('test:null-deleted');
+  });
+});
+
+describe('WorkspaceStorage.migrateRetiredSettingSources（设定记忆存量清理）', () => {
+  /** 临时工作区路径 */
+  let dir: string;
+  /** 记忆文件路径：`<dir>/.memora/memories.json` */
+  let memoryFile: string;
+  /** 被测试的存储实例 */
+  let storage: WorkspaceStorage;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), 'memora-ws-migrate-'));
+    mkdirSync(join(dir, '.memora'), { recursive: true });
+    memoryFile = join(dir, '.memora', 'memories.json');
+    storage = new WorkspaceStorage(dir);
+    storage.load();
+  });
+
+  it('persona/rule/skill 存量行被软删，摘要记忆不受影响', () => {
+    storage.upsert(makeMemory({ id: 'p1', content: '旧人格设定', source: 'persona' }));
+    storage.upsert(makeMemory({ id: 'r1', content: '旧创作规则', source: 'rule' }));
+    storage.upsert(makeMemory({ id: 's1', content: '旧技能定义', source: 'skill' }));
+    storage.upsert(makeMemory({ id: 'rs1', content: '轮次摘要', source: 'round-summary' }));
+
+    expect(storage.migrateRetiredSettingSources()).toBe(3);
+
+    // 设定行退出记忆库全部活跃查询面
+    expect(storage.getById('p1')).toBeNull();
+    expect(storage.getById('r1')).toBeNull();
+    expect(storage.getById('s1')).toBeNull();
+    expect(storage.count()).toBe(1);
+    expect(storage.search('旧', 10)).toHaveLength(0);
+    // 摘要记忆原样保留
+    expect(storage.getById('rs1')).not.toBeNull();
+  });
+
+  it('软删行进回收站可兜底恢复（迁移不直删）', () => {
+    storage.upsert(makeMemory({ id: 'p1', content: '旧人格设定', source: 'persona' }));
+
+    storage.migrateRetiredSettingSources();
+
+    // 回收站可见 + restore 可恢复，数据未被物理清除
+    expect(storage.listDeleted().map((m) => m.id)).toContain('p1');
+    storage.restore('p1');
+    expect(storage.getById('p1')).not.toBeNull();
+  });
+
+  it('幂等：二次执行零动作，且不覆盖首次软删时间戳', () => {
+    storage.upsert(makeMemory({ id: 'p1', content: '旧人格设定', source: 'persona' }));
+
+    expect(storage.migrateRetiredSettingSources()).toBe(1);
+    const firstDeletedAt = storage.listDeleted()[0]!.deletedAt;
+
+    expect(storage.migrateRetiredSettingSources()).toBe(0);
+    expect(storage.listDeleted()[0]!.deletedAt).toBe(firstDeletedAt);
+  });
+
+  it('落盘为软删形态：行仍在文件中带 deletedAt（软删兼容）', () => {
+    storage.upsert(makeMemory({ id: 'p1', content: '旧人格设定', source: 'persona' }));
+
+    storage.migrateRetiredSettingSources();
+
+    const onDisk = JSON.parse(readFileSync(memoryFile, 'utf8')) as Record<string, unknown>[];
+    expect(onDisk).toHaveLength(1);
+    expect(onDisk[0]!.deletedAt).toBeTypeOf('string');
   });
 });
 

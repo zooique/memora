@@ -7,14 +7,26 @@
  *   - 软删除语义与内核一致：delete 写 deletedAt，查询自动过滤
  *   - source 校验：upsert 时调 validateSource 拦截无效 source（路径遍历/空字节/首尾空格）
  *   - 读档校验：load 逐条经内核 parseMemory 白名单构造，未知字段（旧档 score）剥离即清洗
+ *   - 设定记忆存量清理：migrateRetiredSettingSources 软删 persona/rule/skill 存量行（R4 迁移出口）
  *
  * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
  * 后续阶段：如需高性能检索，可换 SQLite 等更强实现。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { segmentLower, validateSource, parseMemory, type IMemoryStorage, type Memory } from '@zooique/memora';
+import { segmentLower, validateSource, parseMemory, SOURCE_LABELS, type IMemoryStorage, type Memory } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
+
+/**
+ * 退役 source 集合：设定记忆标签（persona/rule/skill）。
+ * 设定归角色包承载（ADR-025），记忆库单轨只留摘要记忆；
+ * 标签本身仍被内核 SOURCE_LABELS 识别（typo 检测/存量行识别），但不是可写入来源。
+ */
+const RETIRED_SETTING_SOURCES = new Set<string>([
+  SOURCE_LABELS.PERSONA,
+  SOURCE_LABELS.RULE,
+  SOURCE_LABELS.SKILL,
+]);
 
 /** 工作区记忆存储 */
 export class WorkspaceStorage implements IMemoryStorage {
@@ -134,6 +146,29 @@ export class WorkspaceStorage implements IMemoryStorage {
         this.store.delete(id);
         count++;
       }
+    }
+    if (count > 0) this.save();
+    return count;
+  }
+
+  /**
+   * 一次性迁移（R4 出口）：把设定记忆存量行（source ∈ persona/rule/skill）软删出记忆库
+   *
+   * 设定归角色包承载（ADR-025），记忆库单轨只留摘要记忆。存量行按删除语义打
+   * deletedAt——回收站可 restore 兜底，purgeExpired 定期彻底回收（迁移不直删）。
+   * 幂等：已软删行与非退役 source 行不重复标记，二次执行零动作、不重复落盘。
+   *
+   * @returns 本次软删的行数
+   */
+  migrateRetiredSettingSources(): number {
+    // 同批迁移共享同一时间戳，回收站按 deletedAt 排序时同批可见
+    const now = new Date().toISOString();
+    let count = 0;
+    for (const m of this.store.values()) {
+      if (m.deletedAt !== undefined) continue;
+      if (!RETIRED_SETTING_SOURCES.has(m.source)) continue;
+      m.deletedAt = now;
+      count++;
     }
     if (count > 0) this.save();
     return count;

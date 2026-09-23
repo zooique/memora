@@ -249,6 +249,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 2. 创建工作区记忆存储 + 会话存储（宿主注入持久化）
   const storage = new WorkspaceStorage(projectPath);
   storage.load();
+  // 设定记忆存量清理（R4 迁移出口）：persona/rule/skill 存量行软删出记忆库，幂等无残留即零动作
+  storage.migrateRetiredSettingSources();
   // SSOT：复用 extension 单例 sessionStore（与 UI 面板共享同一实例，杜绝双实例覆盖写）；
   // 未注入时（独立用途/测试）才内部新建并加载，且共享同一 roundStore 实例。
   const store: ISessionStore =
