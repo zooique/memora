@@ -780,7 +780,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       ),
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('任务');
 
     // 两次迭代边界 → 两次增量落盘；流尾终局再落一次 = 3
     expect(saves).toHaveLength(3);
@@ -810,7 +810,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       ),
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('任务');
 
     // 唯一落盘 = 流尾（含 metrics）；plan_item_boundary 到场时无独立写库 —— 两个落盘点会各写一次，
     // 且崩溃前最后一次写的快照完整性不同（时机单一 = 落盘语义可推理）
@@ -847,7 +847,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       ),
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('任务');
 
     // 每个 turn 的 processEvents 独立归属到自己的 Round（meta 段首 + 各自工具；metrics 归入收尾 turn）
     const r1 = roundStore.getById('round-1')!;
@@ -897,7 +897,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       isPausePending: () => false,
     } as unknown as Agent);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('小组会议');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('小组会议');
 
     // 首个 plan_update 即携带骨架（3 步）——顶部条开局可见，不再等首次 task_table_update
     const planMsgs = posted.filter((m) => (m as { type: string }).type === 'plan_update') as { items: unknown[] }[];
@@ -927,7 +927,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       ),
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('对比方案');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('对比方案');
 
     const r1 = roundStore.getById('round-1')!;
     const thoughts =
@@ -962,7 +962,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       ),
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('第一次');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('第一次');
     // 第二次 chat 前追加 round-2
     seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '第二次', ts: 't2' },
@@ -980,7 +980,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
         })(),
       ),
     );
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('第二次');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('第二次');
 
     // 第一次的 round-1 保留自己的工具记录（不被第二次覆盖）；metrics 归入自己的turn（单turn收尾）
     const r1 = roundStore.getById('round-1')!;
@@ -1144,7 +1144,7 @@ describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2
     vi.clearAllMocks();
   });
 
-  /** agent 桩：技能两源（全局池 + 空角色包）+ chat 空流（只走 handleSend 前置链路） */
+  /** agent 桩：技能两源（全局池 + 空角色包）+ chat 空流（只走 sendInput 前置链路） */
   function skillAgentStub(disabledSkills: string[]): Agent {
     const globalSkills = [
       { name: '启用技能', content: '启用正文', description: 'd' },
@@ -1195,7 +1195,7 @@ describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2
     ]);
     provider.setAgent(skillAgentStub(['禁用技能']));
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string, s?: string): Promise<void> }).handleSend(
+    await (provider as unknown as { sendInput(p: string, s?: string): Promise<void> }).sendInput(
       '你好',
       skillName,
     );
@@ -1358,7 +1358,7 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
       ),
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
-    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('新问题');
+    await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
     const updates = ofType<{ type: string; rounds: RoundView[]; state: TurnState }>(posted, 'turn_update');
     // 起始（无 live）+ 流尾（带 live）各一次
     expect(updates.length).toBeGreaterThanOrEqual(2);

@@ -70,25 +70,39 @@ export interface LlmProviderConfig {
  */
 export type SearchEngineSetting = 'auto' | 'bing' | 'baidu' | 'sogou';
 
+/**
+ * 输入意图（M4 输入收口，2026-09-23）——四消息合一后的意图级分类
+ *
+ * kind 是「用户意图」，非结果分类：webview 不预知自己的输入最终会成为 chat / interject /
+ * supplement / question-answer 中的哪一种——那由宿主按当前 turn 相位路由时决定（客户端-服务端
+ * 职责分离：意图由操作者声明，结果由状态机裁决）。
+ *   - `send`：把文本送进对话（宿主按相位路由：idle/settled→chat、running→interject、
+ *     waiting(pause)→带文本续跑、waiting(ask)→补充续跑（ask 卡专用入口实际不可达））
+ *   - `answer`：回答在途主动提问（恒带 answers 数组，单问=单元素；宿主 answerQuestion + 续跑）
+ *   - `resume`：纯续跑（不携带文本；仅 waiting(pause) 相位有效）
+ */
+export type WebviewInputKind = 'send' | 'answer' | 'resume';
+
 export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
-  | { type: 'send'; text: string; skillName?: string }
+  /**
+   * 输入统一入口（M4 输入收口，2026-09-23）
+   *
+   * 替代 send / clarify_answer / clarify_answers / resume 四条旧消息（旧类型已随收敛删除，
+   * 双端同步切换，无过渡兼容窗——宿主与 webview 同仓发布，保留旧类型即死代码，违背不带伤原则）。
+   * 宿主侧 handleInput 按当前 turn 相位（turn_update.state）单一路由（见 WebviewInputKind 注释）。
+   *
+   * 错位语义（R2 单一判据）：answer 仅 waiting(ask) 相位生效，resume 仅 waiting(pause) 相位
+   * 生效；相位不符（迟到回答等）静默丢弃——与原各 handler 竞态守卫行为等义，零行为变更。
+   */
+  | { type: 'input'; kind: WebviewInputKind; text?: string; answers?: string[]; skillName?: string }
   /**
    * 打开大模型配置视图（UX-1 空态引导按钮触发，2026-09-01）
    *
    * 由对话面板空态「去配置模型」引导按钮触发：host 打开大模型配置面板并切到「大模型」选项卡。
    */
   | { type: 'open_config' }
-  /** 用户对 Agent 主动提问（need_clarify）的回答，触发 resumeExecution 续跑 */
-  | { type: 'clarify_answer'; text: string }
-  /**
-   * 用户对多个 Agent 主动提问（need_clarify 多问）的聚合回答（P2，2026-09-22）
-   *
-   * 多 ask 合并一个卡片，全部答完一次性提交：answers 与提问按序一对一
-   * （内核 answerQuestion(answers[]) 支持数组回填；单问路径仍走 clarify_answer 不走此类型）。
-   */
-  | { type: 'clarify_answers'; answers: string[] }
   /**
    * 新建会话（标题条「＋」按钮触发，2026-08-17 会话管理重构）
    *
@@ -183,12 +197,6 @@ export type WebviewToExtensionMessage =
    * 发送 status:'paused' 通知 webview。
    */
   | { type: 'pause' }
-  /**
-   * 恢复生成：用户恢复已暂停的 Agent 执行（Phase 4 暂停/恢复）
-   *
-   * 由 webview 继续按钮触发，host 调 agent.resumeExecution() 续跑。
-   */
-  | { type: 'resume' }
   /**
    * Phase 4：清空 interject 队列（thinking 态待发送补充区的清空按钮）
    *
@@ -365,17 +373,6 @@ export type WebviewToExtensionMessage =
    * paths = 完整用户额外数组（不含 projectPath 基准根），host 为真理源。
    */
   | { type: 'allowed_paths_set'; paths: string[] }
-  /**
-   * 统一输入入口（SSOT 收口 M1，2026-09-23，无消费方）
-   *
-   * 覆盖「输入类」四条消息：send / clarify_answer / clarify_answers / resume。
-   * 宿主按当前 `TurnState.phase` 单一判据路由到内核既有入口
-   * （chat / interject / answerQuestion / resumeExecution），内核语义不变。
-   * **控制类**消息（pause / stop / clear_pending_queue / remove_pending_item）不属于
-   * 「输入」，不在本条收敛范围——它们改的是 turn 的控制流，不是往 turn 里塞内容。
-   * kind 沿用内核 `InteractiveInputKind`（question-answer / supplement / timeout）。
-   */
-  | { type: 'input'; text?: string; kind?: InteractiveInputKind }
   /**
    * 设置内部网页搜索引擎（search_engine_set 消息处理，2026-09-02 方案 A）
    *

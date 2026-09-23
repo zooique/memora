@@ -2949,7 +2949,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function commitAskAnswers(answers: string[]): void {
     armAskResumeAnchor();
-    vscode.postMessage({ type: 'clarify_answers', answers });
+    // M4：answer 意图恒带 answers 数组（单问=单元素），宿主 waiting(ask) 相位 answerInput 消费
+    vscode.postMessage({ type: 'input', kind: 'answer', answers });
   }
 
   /**
@@ -4141,7 +4142,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // Phase 4：用 classList 判断（syncButtonSemantics 在 paused+空输入时加 paused 类）
     const isPausedContinue = send.classList.contains('paused');
     if (isPausedContinue && !text) {
-      vscode.postMessage({ type: 'resume' });
+      // M4：resume 意图单消息（宿主按 waiting/pause 相位路由，错位静默丢弃）
+      vscode.postMessage({ type: 'input', kind: 'resume' });
       return;
     }
     if (!text) return;
@@ -4152,10 +4154,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics();
     syncSendEnabled();
     // 构建消息：选中技能传技能名（SSOT 收紧，host 按名走内核 buildSystemPrompt，取消前端硬编码提示）
-    const payload: WebviewToExtensionMessage = { type: 'send' as const, text };
-    if (currentSkill) {
-      (payload as { skillName?: string }).skillName = currentSkill.name;
-    }
+    // M4：send 意图单消息（宿主按相位路由到 chat / interject / 带文本续跑；skillName 为 input 原生成员）
+    const payload: WebviewToExtensionMessage = {
+      type: 'input' as const,
+      kind: 'send' as const,
+      text,
+      ...(currentSkill ? { skillName: currentSkill.name } : {}),
+    };
     vscode.postMessage(payload);
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
@@ -4167,7 +4172,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       vscode.postMessage({ type: 'stop' });
     } else if (send.classList.contains('paused')) {
       // paused+空输入：按钮承担「继续」职责，恢复暂停点之后的执行
-      vscode.postMessage({ type: 'resume' });
+      vscode.postMessage({ type: 'input', kind: 'resume' });
     } else {
       // 其他所有情况（done+有输入 / thinking+有输入 / paused+有输入）：统一走 sendMessage 发 type='send'
       // 宿主层 handleSend 会根据 session 状态路由到 chat() / interject() / resumeExecution()
@@ -4184,7 +4189,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         sendMessage();
       } else {
         // 空输入：纯续跑
-        vscode.postMessage({ type: 'resume' });
+        vscode.postMessage({ type: 'input', kind: 'resume' });
       }
     } else {
       // thinking 态：暂停 / 取消暂停（宿主 handlePause 根据 isPausePending 自动切换）
@@ -4418,7 +4423,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // 主动提问回答（clarifyBar 异常兜底路径）：提交并续跑
   // 与内联选择题主路径（commitAskAnswers）共用同一置位语义 armAskResumeAnchor（SSOT 收敛，
-  // 2026-09-22：原手写 resumePending 置位与主路径重复，统一走单点置位；载荷仍为单条 clarify_answer）
+  // 2026-09-22：原手写 resumePending 置位与主路径重复，统一走单点置位；载荷为单条 answer 意图）
   function sendClarifyAnswer(): void {
     const text = clarifyInput.value.trim();
     if (!text) return;
@@ -4426,7 +4431,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     clarifyBar.classList.remove('visible');
     inputBar.hidden = false;
     armAskResumeAnchor();
-    vscode.postMessage({ type: 'clarify_answer', text });
+    // M4：单问=单元素数组（answer 意图恒 answers，无 answer_multi 变体）
+    vscode.postMessage({ type: 'input', kind: 'answer', answers: [text] });
   }
   clarifySend.addEventListener('click', sendClarifyAnswer);
   clarifyInput.addEventListener('keydown', (e) => {

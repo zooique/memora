@@ -37,7 +37,10 @@ import {
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
+  WebviewInputKind,
   RoundView,
+  TurnState,
+  PendingQuestionDto,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
 import { deriveTurnState, mergeLiveRound, type PendingLiveRound } from '../../shared/turnProjection.js';
@@ -66,7 +69,7 @@ const MAX_HISTORY_ROUNDS = 60;
 /**
  * 运行一轮流的「种子」信息（M3b-2a，2026-09-23）——宿主知情、内核不回传的本轮要素。
  *
- * 之所以显式传参而非开实例字段：本轮的 userMessage 只有**调用点**知道（`handleSend` 的输入），
+ * 之所以显式传参而非开实例字段：本轮的 userMessage 只有**调用点**知道（`sendInput` 的输入），
  * 而实例字段有跨轮残留风险（`_streaming` 这类布尔碎片正是本方案要收口的对象，不该再添一个）。
  * 6 个 `runFlow` 调用点中只有 `chat()` 开新轮需要它（`resumeExecution` 各形态续同一轮、不分裂，
  * 其 userMessage 从落盘历史取）。
@@ -116,7 +119,7 @@ const MAX_DOC_CONTEXT_CHARS = 12000;
 /**
  * 从活动编辑器快照「当前文档上下文」（2026-08-17 A 层：实时跟随活动编辑器）
  *
- * 返回内容含「文件名」首行 + 文档全文（超上限截断）。宿主在 handleSend 将其作为
+ * 返回内容含「文件名」首行 + 文档全文（超上限截断）。宿主在 sendInput 将其作为
  * 「当前任务上下文」注入对话，让 Agent 能看到用户当前打开的文档，无需手动粘贴。
  *
  * @param editor 当前活动编辑器（无则返回 undefined → 不注入，退化为普通对话）
@@ -235,14 +238,22 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *  让「队列变空」这个真理源变化总能被推送到 webview（消费后必有后续 chunk 触发同步）。 */
   private _lastPendingQueueLen = 0;
   /**
-   * 最近一次在途主动提问（questionPending 事件透出，2026-09-08）
+   * 当前 turn 状态（M4 输入收口，单一路由判据的 SSOT）
    *
-   * 运行时渲染同构（SSOT：运行时 qa 行 = 重放 qa 行）：handleResume 发 user(kind='question-answer')
-   * 消息时把本次提问原文/候选透出给 webview——重放路径本就随轮带 question（G26），运行时补齐后
-   * 两端同构渲染「问→你答」回顾行（提问明文持久在对话流，对齐 TraeWork 展示）。
-   * 清空时机：resume 回答提交后（只消费一次）。
+   * 由 `postTurnUpdate` 每次投影时写回（与推给 webview 的 `turn_update.state` 同一对象），
+   * `handleInput` 按它路由四条内核入口、判定错位输入。取代旧的宿主便签镜像 `_lastPendingQuestions`：
+   * 提问原文统一从 `_turnState.waiting.questions` 读（R1），不再有独立生命周期、消费式 splice 的镜像。
    */
-  private _lastPendingQuestions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[] = [];
+  private _turnState: TurnState = { phase: 'idle' };
+  /**
+   * 在途主动提问（questionPending 事件 / 流尾兜底 chunk 的**写入源头**）
+   *
+   * 与 `_lastPendingQuestions` 的差别：overwrite 全量写入（新提问覆盖旧提问）、
+   * 读取一律经 `_turnState.waiting.questions`（postTurnUpdate 每次投影像时派生），
+   * 仅在提问被回答 / 超时 / 被新提问覆盖时整体清空——无「消费式 splice 逐条弹出」的时序约束。
+   * 提问的原始权威仍在内核 loop.pendingAsk（宿主侧仅此一处 intake，非第二真相）。
+   */
+  private _pendingQuestions: PendingQuestionDto[] = [];
   /**
    * ask 提问等待超时计时器（2026-09-08 超时保底）：onPendingQuestion / 流尾兜底提问渲染时
    * 启动（覆写式），用户回答/补充消费提问时清除；到点未答 → handleAskTimeout 自动续跑。
@@ -556,16 +567,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // ① 等 Agent 装配完成（在途即等待，见 ensureAgent 可等待化）② 打捞升级崩溃残留轮为
         // 正常 stop turn——保证升级轮随本次回放一次性投递，不与 _viewEpoch 折叠重建回放双发（T3）
         void this.handleWebviewReady();
-      } else if (msg.type === 'send' && msg.text.trim()) {
-        void this.handleSend(msg.text.trim(), msg.skillName);
+      } else if (msg.type === 'input') {
+        // M4 输入收口：send / clarify_answer / clarify_answers / resume 四消息合一，
+        // 宿主侧按当前 turn 相位单一路由（R2），错位输入静默丢弃（零行为变更）
+        void this.handleInput(msg);
       } else if (msg.type === 'open_config') {
         // UX-1 空态引导按钮：跳转大模型配置（复用既有 configureModel 命令，单一入口）
         void vscode.commands.executeCommand('memora.configureModel');
-      } else if (msg.type === 'clarify_answer' && msg.text.trim()) {
-        void this.handleResume(msg.text.trim());
-      } else if (msg.type === 'clarify_answers' && msg.answers.length > 0) {
-        // P2 多 ask 聚合回答（2026-09-22）：answers 与提问按序一对一，全部答完一次性投递
-        void this.handleResume(msg.answers);
       } else if (msg.type === 'new_session') {
         // 标题条「＋」新建会话 → 切入空会话，旧会话归档进历史（2026-08-17 会话管理重构）
         void this.newSessionFromCommand();
@@ -609,9 +617,6 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 宿主直接调内核 + 从内核读当前值渲染（SSOT 源头 = loop.pendingInterjections）
         this._agent?.removePendingInterject(msg.index);
         this.syncPendingQueue();
-      } else if (msg.type === 'resume') {
-        // Phase 4：恢复生成：调 agent.resumeExecution() 续跑
-        void this.handleResumeFromPause();
       } else if (msg.type === 'polish_input') {
         // H5 文本润色（输入框入口，2026-08-27）：调 agent.polish(text) 润色输入框内容，
         // 回执 polish_input_result（无 msgId——输入框润色不回写单条消息）
@@ -1611,13 +1616,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 恢复当前会话历史消息（ADR-024：只回放 _currentSessionId；round-based 按轮交织重放，v1.5）
     this.replayHistory();
     // 运行中兜底（2026-09-09）：折叠期间 agent 在扩展侧继续跑，重建时若仍有活动流，
-    // 补推 thinking 态让 webview 显示运行中（输入禁用 + 停止/暂停按钮），后续 chunk
+    // 补推运行中投影让 webview 显示运行中（输入禁用 + 停止/暂停按钮），后续 chunk
     // 照常流式追加；本流落盘后的全量回放由 consumeFlow 流尾 _viewEpoch 比对触发。
+    // R3（M4 输入收口）：删除旧 status:'thinking' 补推——postTurnUpdate 读 this._streaming=true
+    // → deriveTurnState ④ 兜底 running（roundId 缺省），step 状态投影是唯一补推信号。
     if (this._streaming) {
-      this.post({ type: 'status', state: 'thinking' });
-      // M3b-2b-2b：折叠重建后补推 turn_update（旧 status 只兜呼吸点/控件锁）——
-      // 否则换源后 webview 骨架在重建后拿不到运行中态，按钮不显示「停止生成」。
-      // postTurnUpdate 读 this._streaming=true → deriveTurnState ④ 兜底 running（roundId 缺省）。
       this.postTurnUpdate();
     }
     // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
@@ -2062,26 +2065,43 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const history = this._viewLoader ? this.loadRoundBasedHistory() : [];
     const rounds = mergeLiveRound(history, live);
     const last = rounds[rounds.length - 1];
-    const questions = this._lastPendingQuestions;
+    const questions = this._pendingQuestions;
+    // M4（R1）：派生结果写回宿主唯一状态——handleInput / handleAskTimeout 的提问原文
+    // 统一从 _turnState.waiting.questions 读，不再维护独立生命周期 + 消费式 splice 的镜像。
+    this._turnState = deriveTurnState({
+      streaming: this._streaming,
+      paused: this._agent?.sessionManager?.status === 'paused',
+      pausePending: this._agent?.isPausePending() ?? false,
+      pendingQuestions: questions.length > 0 ? questions : undefined,
+      liveRoundId: live?.roundId,
+      lastRound: last ? { id: last.id, status: last.status } : undefined,
+    });
     this.post({
       type: 'turn_update',
       rounds,
-      state: deriveTurnState({
-        streaming: this._streaming,
-        paused: this._agent?.sessionManager?.status === 'paused',
-        pausePending: this._agent?.isPausePending() ?? false,
-        pendingQuestions: questions.length > 0 ? questions : undefined,
-        liveRoundId: live?.roundId,
-        lastRound: last ? { id: last.id, status: last.status } : undefined,
-      }),
+      state: this._turnState,
     });
   }
 
-  /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写）
+  /**
+   * 输入统一入口（M4 输入收口，2026-09-23）
    *
-   * 插话语义（无缝注入，缺口 B）：生成中用户 Enter 输入补充 → 不中断 loop，调 agent.interject()
-   * 排队，内核在下一 step 边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。 */
-  private async handleSend(input: string, skillName?: string): Promise<void> {
+   * send / clarify_answer / clarify_answers / resume 四消息合一（旧类型已随双端收敛删除，
+   * 见 shared/protocol.ts 的 input 注释）。按 `_turnState.phase` 单一路由（R2）——每个相位
+   * 都有明确归宿，无独立 per-handler 竞态守卫：
+   *   - send：sendInput（相位 → chat / interject / 带文本续跑）；
+   *   - answer：仅 waiting(ask) 生效 → answerInput；错位（迟到回答）静默丢弃；
+   *   - resume：仅 waiting(pause) 生效 → resumeInput；错位静默丢弃。
+   * 错位语义与原各 handler 守卫行为等义（ask 超时自动续跑后的迟到回答不再污染进行中的轮）。
+   *
+   * @param msg 统一输入（kind 为用户意图，结果级分类由路由时定）
+   */
+  private async handleInput(msg: {
+    kind: WebviewInputKind;
+    text?: string;
+    answers?: string[];
+    skillName?: string;
+  }): Promise<void> {
     if (!this._agent) {
       // Agent 未装配（可能仍在懒装配中）：提示用户稍候，而非静默无反应
       void vscode.window.showWarningMessage('Memora：Agent 尚未就绪，请稍候片刻再发送');
@@ -2093,18 +2113,66 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'notice', level: 'info', message: '请先点击上方「＋」新建会话再开始对话' });
       return;
     }
+    switch (msg.kind) {
+      case 'send': {
+        const text = msg.text?.trim() ?? '';
+        if (!text) return;
+        await this.sendInput(text, msg.skillName);
+        return;
+      }
+      case 'answer': {
+        const answers = (msg.answers ?? []).map((a) => a.trim()).filter(Boolean);
+        if (answers.length === 0) return;
+        // 错位（迟到回答：提问已超时自动续跑 / 流异常结束）→ 静默丢弃，不污染进行中的轮
+        if (!this.isAskWaiting()) return;
+        await this.answerInput(answers);
+        return;
+      }
+      case 'resume':
+        // 错位（非暂停态收到继续）→ 静默丢弃（webview 按钮由 turn_update.state 驱动，实际不可达）
+        if (!this.isPauseWaiting()) return;
+        await this.resumeInput();
+        return;
+    }
+  }
+
+  /** 是否处于等待主动提问回答的相位（waiting/ask） */
+  private isAskWaiting(): boolean {
+    return this._turnState.phase === 'waiting' && this._turnState.reason === 'ask';
+  }
+
+  /** 是否处于等待暂停恢复的相位（waiting/pause，含 pausePending 在途申请） */
+  private isPauseWaiting(): boolean {
+    return this._turnState.phase === 'waiting' && this._turnState.reason === 'pause';
+  }
+
+  /**
+   * send 意图：按 turn 相位路由到内核 chat / interject / 带文本续跑（判据统一收敛到相位，R2）
+   *
+   * 插话语义（无缝注入，缺口 B）：生成中用户 Enter 输入补充 → 不中断 loop，调 agent.interject()
+   * 排队，内核在下一 step 边界并入为 user 消息继续执行；UI 即时上屏，webview 据此开新助手块。
+   * 流式插话分支保持原 `_streaming && _abortController` 判据——pausePending 窗口（相位已转
+   * waiting 但 step 未结束、流未复位）与纯运行中同走此分支，行为不变；暂停态带文本续跑分支
+   * 由 `sessionManager.status === 'paused'` 收敛为 `isPauseWaiting() || isAskWaiting()`（相位蕴含
+   * status，且区分 ask/pause 两形态由 handleInput 的 kind 分流，此处仅需「暂停可续」为真）。
+   */
+  private async sendInput(input: string, skillName?: string): Promise<void> {
+    // 防御守卫（R2 单一路由下 handleInput 已前置检查 Agent 就绪；此处局部收窄供 TS 控制流使用，
+    // 属性访问不受方法间守卫影响，需非空局部变量）
+    const agent = this._agent;
+    if (!agent) return;
     // 无缝插话（Phase 4 收敛，flag 驱动 SSOT）：生成中 Enter 补充 → 不中断 loop，调 agent.interject() 将内容排队，
     //  内核在下一 step 边界统一并入为 user 消息继续执行。不 abort 旧流、不发起新 chat——
     //  正在进行的 runFlow 继续；UI 即时上屏，排序由 webview 在收到下一条 chunk 时开新助手块。
     //  pausePending 窗口（flag=true 但 step 还没跑完）发补充 → interject + 自动 cancelPauseRequest（一行覆盖暂停操作）。
     if (this._streaming && this._abortController) {
       this.post({ type: 'user', text: input, ts: new Date().toISOString(), kind: 'supplement' });
-      this._agent.interject(input);
+      agent.interject(input);
       // 新增：pausePending 期间发补充 → 自动取消暂停（一行改动，覆盖暂停操作）
       // pause_btn_state 消息已删除（UI 本地 toggle），cancelPauseRequest 即可；
       // UI 状态会在下一次 status 切换（如后续新 runFlow thinking）时自动重置
-      if (this._agent.isPausePending()) {
-        this._agent.cancelPauseRequest();
+      if (agent.isPausePending()) {
+        agent.cancelPauseRequest();
         // 取消暂停（因补充输入覆盖）→ 同步恢复「暂停」形态
         this.post({ type: 'pause_pending', pending: false });
         // M3b-2b-2b：暂停覆盖取消同步补推 turn_update（骨架回 running）
@@ -2114,8 +2182,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 边界消费（内核已挂起 status='paused'、consumeFlow 的 _streaming 未复位的毫秒窗口）
       // 时入队的 interject 会无 step 边界消费 → 立即 resumeExecution(undefined) 驱动，
       // 补充内容由续跑首个 step 边界 _handleInterrupt 注入（不重复 appendUser）。
-      if (this._agent.sessionManager?.status === 'paused') {
-        await this.runFlow((signal) => this._agent!.resumeExecution(undefined, signal, 'supplement'));
+      if (agent.sessionManager?.status === 'paused') {
+        await this.runFlow((signal) => agent.resumeExecution(undefined, signal, 'supplement'));
         return;
       }
       // 新增：通知 webview 待发送区刷新（thinking + 有输入才显示）
@@ -2124,18 +2192,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.syncPendingQueue();
       return;
     }
-    // TS-9：暂停态补充输入 → 不发起新 chat() → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
+    // TS-9：暂停态补充输入（waiting/pause 或 waiting/ask，R2 相位判据）→ 不发起新 chat()
+    // → 走 resumeExecution 路由（保留闭环节点归属，不分裂）
     const now = new Date().toISOString();
-    if (this._agent.sessionManager && this._agent.sessionManager.status === 'paused') {
+    if (this.isPauseWaiting() || this.isAskWaiting()) {
       this.clearAskTimeout(); // 暂停态补充 = 已响应当前等待（含 ask 提问），关闭超时保底
       this.post({ type: 'user', text: input, ts: now, kind: 'supplement' });
-      await this.runFlow((signal) => this._agent!.resumeExecution(input, signal, 'supplement'));
+      await this.runFlow((signal) => agent.resumeExecution(input, signal, 'supplement'));
       return;
     }
     // 确保 Agent 对齐到当前会话（ADR-024）：用户可能打开面板后直接发送，未显式
     // 切换会话。若 Agent 内部会话与 _currentSessionId 不一致，先 switchToSession 对齐，
     // 否则内核 appendUser 会写入错误会话。会话一致时跳过（不重复加载工作记忆）。
-    const sessionManager = this._agent.sessionManager;
+    const sessionManager = agent.sessionManager;
     if (sessionManager) {
       const info = sessionManager.getCurrentSessionInfo();
       if (info && `${info.date}-${info.session}` !== this._currentSessionId) {
@@ -2159,7 +2228,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     let skillBlock = '';
     if (skillName) {
       try {
-        skillBlock = await skillPromptFor(this._agent, skillName);
+        skillBlock = await skillPromptFor(agent, skillName);
       } catch {
         skillBlock = '';
       }
@@ -2170,7 +2239,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // ② 判定走 `isSkillDisabled`（收口到与 `resolveSkill` 同序的真源，非自读配置副本）；
       // ③ `notice` 只进 UI 不喂模型 ⇒ 不侵犯 S4「禁用对 LLM 静默」语义。
       // 前置 `!skillBlock`：仅在**确实发生落空**时报，避免「判定说禁用、实际却注入成功」的假报。
-      if (!skillBlock && isSkillDisabled(this._agent, skillName)) {
+      if (!skillBlock && isSkillDisabled(agent, skillName)) {
         this.post({
           type: 'notice',
           level: 'error',
@@ -2220,11 +2289,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private async handleAskTimeout(): Promise<void> {
     if (!this._agent) return;
     this._askTimeout = undefined; // 一次性触发
-    if (this._lastPendingQuestions.length === 0) return; // 已被回答/补充消费
-    if (this._agent.sessionManager?.status !== 'paused') return; // 已离开暂停（异常/新流）
+    if (this._pendingQuestions.length === 0) return; // 已被回答/补充消费
+    if (!this.isAskWaiting()) return; // 已离开 waiting(ask)（异常/新流）；守卫从 sessionManager.status 收敛到相位判据（R2）
+    // R1：提问原文从 _turnState.waiting.questions 读（统一读取源，镜像已删）
+    const state = this._turnState;
+    const pendingQ = state.phase === 'waiting' && state.reason === 'ask' ? state.questions?.[0] : undefined;
+    this._pendingQuestions = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
     const now = new Date().toISOString();
-    const pendingQ = this._lastPendingQuestions[0];
-    this._lastPendingQuestions = []; // 消费式（与 handleResume 同构）
     this.post({
       type: 'user',
       text: ASK_TIMEOUT_NOTICE, // 镜像内核 orchestrator ASK_TIMEOUT_NOTICE（运行时 = 重放同构）
@@ -2238,29 +2309,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 处理用户对主动提问的回答：answerQuestion 结构化回填 + resumeExecution 续跑
+   * answer 意图：处理用户对主动提问的回答——answerQuestion 结构化回填 + resumeExecution 续跑
    *  2026-09-04：内核提问收敛为 ask_user 工具——先 answerQuestion 以 tool result 回填
    *  （与 assistant.tool_calls 配对，结构合法），再由 resumeExecution 续跑（回答 text
    *  作为新 user 输入注入并记录交互归属 question-answer，round 不分裂）。
    *  TS-9：回答落盘由内核 runResume 按交互归属写入同闭环节点，宿主不双写。
-   *  P2（2026-09-22）：支持 string | string[] —— 多 ask 聚合回答（clarify_answers）传入
-   *  数组，answers 与提问按序一对一：逐条 post 透出「你答」交互行 + answerQuestion(answers)
-   *  数组回填 + resumeExecution 以 join 全文注入（内核 answerQuestion 原生支持数组）。
-   * @param input 单条回答文本 / 多问聚合回答数组
+   *  P2（2026-09-22）：多 ask 聚合回答（clarify_answers）传入数组，answers 与提问按序
+   *  一对一：逐条 post 透出「你答」交互行 + answerQuestion(answers) 数组回填 +
+   *  resumeExecution 以 join 全文注入（内核 answerQuestion 原生支持数组）。
+   *  M4（2026-09-23）：守卫（Agent 就绪/会话存在）与错位拦截收归 handleInput 相位路由
+   *  （R2 单一判据），提问原文读 turn_update 投影（R1：`_turnState.waiting.questions`
+   *  单点真源，`_pendingQuestions` 仅事件写入源，非消费式 splice）。
+   * @param answers 归一后的回答数组（单问=单元素，answer 意图恒数组）
    */
-  private async handleResume(input: string | string[]): Promise<void> {
-    if (!this._agent) return;
+  private async answerInput(answers: string[]): Promise<void> {
     this.clearAskTimeout(); // 提问被回答：关闭超时保底
-    // 竞态守卫（2026-09-08 超时保底引入）：提问已超时自动续跑（RUNNING）或流异常结束 →
-    // 迟到回答丢弃——resume 前提 = paused，此处前置防「UI 已渲染你答行却无续跑」的分叉
-    if (this._agent.sessionManager?.status !== 'paused') return;
-    const answers = Array.isArray(input) ? input.map((a) => a.trim()).filter(Boolean) : [input.trim()];
-    if (answers.length === 0) return;
+    // 迟到回答（提问已超时自动续跑/流异常结束 → 相位脱离 waiting）已在 handleInput 路由层丢弃，
+    // 此处相位必为 waiting/ask；提问快照从 state 读、_pendingQuestions 整体清空（overwrite 语义）
     const now = new Date().toISOString();
     // 回答上屏（折叠块标记；与重放 qa 行同构——question/options 透出，webview 渲染「问→你答」回顾行）；
     // 持久化由内核 resumeExecution → runResume 按交互归属写入同闭环节点，宿主不双写。
     // P2：多问按序逐条透出，question/options 与答案同序配对
-    const pendingQs = this._lastPendingQuestions.splice(0); // 消费式：一次提问只透出一次（防跨提问残留串题）
+    const state = this._turnState;
+    const pendingQs =
+      state.phase === 'waiting' && state.reason === 'ask' ? (state.questions ?? []) : [];
+    this._pendingQuestions = [];
     for (let i = 0; i < answers.length; i++) {
       const pendingQ = pendingQs[i];
       this.post({
@@ -2282,7 +2355,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 运行一轮 Agent 流（chat / resumeExecution 的统一入口）
    *
-   * 抽取动机：handleSend / handleResume 原先各写一份「新建 AbortController +
+   * 抽取动机：sendInput / answerInput 原先各写一份「新建 AbortController +
    * consumeFlow + catch 清理」样板，2 处重复构成该抽却漏抽的回溯信号
    * （coding-convention §3）。内部新建本轮 controller（上一轮已在 consumeFlow
    * finally 清理），以 factory 注入 signal 供内核流使用；同步抛错（如 chatLock
@@ -2395,16 +2468,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 从暂停状态恢复执行（Phase 4 暂停/恢复）
+   * resume 意图：从暂停状态恢复执行（Phase 4 暂停/恢复）
    *
    * 复用 runFlow + agent.resumeExecution 路径，与对主动提问的回答同构。
    * 无暂停会话时内核会阻断，宿主捕获后提示用户。
+   * M4（2026-09-23）：守卫（Agent 就绪/会话存在）与错位拦截收归 handleInput 相位路由，
+   * 此处仅保证相位为 waiting/pause（handleInput 的 isPauseWaiting 已在路由层校验）。
    */
-  private async handleResumeFromPause(): Promise<void> {
-    if (!this._agent) return;
-    const agent = this._agent;
+  private async resumeInput(): Promise<void> {
+    const agent = this._agent; // handleInput 守卫保证非空
     try {
-      await this.runFlow((signal) => agent.resumeExecution(undefined, signal));
+      await this.runFlow((signal) => agent!.resumeExecution(undefined, signal));
     } catch (err) {
       this.post({
         type: 'notice',
@@ -2494,7 +2568,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     )) => {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
-      this._lastPendingQuestions = questions; // 缓存供 handleResume 透出（运行时 qa 行 question/options 同构）
+      this._pendingQuestions = questions; // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput R1）
       this.post({ type: 'need_clarify', questions });
       this.armAskTimeout(); // 超时保底（2026-09-08）：未答 → 自动续跑
     };
@@ -2670,7 +2744,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // ⚠ 必须 break（2026-09-22 实证：暂停后输入补充卡死）：内核 yield paused 后
           // generator 即 return 结束、无后续 chunk；此前不 break 导致 for-await 挂在已结束
           // 的流上，finally 的 _streaming=false 永不执行 → 整个暂停期 _streaming 恒 true，
-          // handleSend 因此永远命中「interject 排队」分支——暂停态没有 step 边界消费队列，
+          // sendInput 因此永远命中「interject 排队」分支——暂停态没有 step 边界消费队列，
           // 补充输入永远卡在待发送区直到用户手动「继续」。break 让 _streaming 及时复位，
           // 暂停态补充正确路由到 resumeExecution(input)（一步即继续，恢复历史行为）。
           this.post({ type: 'paused' });
@@ -2739,7 +2813,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 流尾兜底：本流产生提问 chunk 但事件未驱动（监听未就绪/异常）→ 用 chunk 缓存渲染提问 UI，问题不丢失
       if (!clarifyEventDriven && clarifyChunkQueue.length > 0) {
         this.post({ type: 'need_clarify', questions: clarifyChunkQueue });
-        this._lastPendingQuestions = clarifyChunkQueue;
+        this._pendingQuestions = clarifyChunkQueue;
         this.armAskTimeout(); // 兜底渲染同享超时保底（2026-09-08）
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），

@@ -728,7 +728,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     // pauseBtn 发 resume，sendBtn 发 stop
     postMessage.mockClear();
     pauseBtn.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'resume' });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'resume' });
     postMessage.mockClear();
     send.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
@@ -767,7 +767,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     input.dispatchEvent(new Event('input', { bubbles: true })); // 输入后按钮解除禁用
     expect(send.disabled).toBe(false);
     send.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '打磨这段' });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '打磨这段' });
   });
 
   it('生成中按 Enter 仍发送（插话语义：打断当前生成并重发）', () => {
@@ -776,7 +776,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     dispatch({ type: 'status', state: 'thinking' });
     input.value = '补充要求';
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-    expect(postMessage).toHaveBeenCalledWith({ type: 'send', text: '补充要求' });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '补充要求' });
   });
 
   it('中文输入法组合确认按 Enter 不误触发送（isComposing 守卫）', () => {
@@ -786,7 +786,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     input.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'Enter', isComposing: true, bubbles: true,
     }));
-    expect(postMessage).not.toHaveBeenCalledWith({ type: 'send', text: '选字中' });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '选字中' });
   });
 
   it('中文输入法在澄清输入框按 Enter 不触发澄清答复', () => {
@@ -798,7 +798,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     clarifyInput.dispatchEvent(new KeyboardEvent('keydown', {
       key: 'Enter', isComposing: true, bubbles: true,
     }));
-    expect(postMessage).not.toHaveBeenCalledWith({ type: 'clarify_answer', text: '补一段' });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['补一段'] });
   });
 
   it('interrupted 渲染「已停止生成」提示条', () => {
@@ -1039,7 +1039,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     input.value = '插队';
     input.dispatchEvent(new Event('input'));
     send.click();
-    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'send', text: '插队' }));
+    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'send', text: '插队' }));
   });
 });
 
@@ -2694,10 +2694,10 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(box.querySelector('.ask-inline__submit')).not.toBeNull();
     // 底部 clarifyBar 不激活（主路径已内联）
     expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(false);
-    expect(postMessage).not.toHaveBeenCalledWith({ type: 'clarify_answer' });
+    expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'answer' });
   });
 
-  it('点击内联选项 → 标记该题已答 is-selected，再点「提交回答」提交 clarify_answers（单元素）', () => {
+  it('点击内联选项 → 标记该题已答 is-selected，再点「提交回答」提交 input(kind=answer) 单元素', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
@@ -2712,17 +2712,17 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(submit.disabled).toBe(true);
     (btns[1] as HTMLButtonElement).click();
     // 点选项不立即提交（无二次回车/即答自提交；按钮此时已答→可提交）
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clarify_answers' }));
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'answer' }));
     expect((btns[1] as HTMLElement).classList.contains('is-selected')).toBe(true);
     expect(submit.disabled).toBe(false);
     submit.click();
     // 一次性提交单元素数组（与提问按序一对一）
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['开启新任务'] });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['开启新任务'] });
     // 内联块已移除（答案就位，不再等待）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
-  it('多 ask 聚合（P2）：逐题点选高亮 is-selected，全部答完才可提交 clarify_answers 数组', () => {
+  it('多 ask 聚合（P2）：逐题点选高亮 is-selected，全部答完才可提交 input(kind=answer) 数组', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
@@ -2745,8 +2745,8 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(btns).toHaveLength(4);
     (btns[0] as HTMLButtonElement).click(); // 第一题「中文」
     // 未全部答完：不提交任何回答（postMessage 在此仅 mount ready 调用）
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clarify_answer' }));
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'clarify_answers' }));
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'answer' }));
+    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'answer' }));
     expect(submit.disabled).toBe(true);
     // 已答题按钮高亮 is-selected（可再点改选）
     expect((btns[0] as HTMLElement).classList.contains('is-selected')).toBe(true);
@@ -2755,7 +2755,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     (btns[3] as HTMLButtonElement).click(); // 第二题「长篇」
     expect(submit.disabled).toBe(false);
     submit.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['中文', '长篇'] });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['中文', '长篇'] });
     // 提交后内联块移除（聚合卡片任务完成，不再等待）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
@@ -2776,8 +2776,8 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     (btns[0] as HTMLButtonElement).click();
     const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
     submit.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['方案 A'] });
-    // ④ resume 重发 meta（宿主收到 clarify_answer 后自动继续 runFlow）
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['方案 A'] });
+    // ④ resume 重发 meta（宿主收到 input(kind=answer) 后自动继续 runFlow）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ⑤ 续写正文（同 roundId）→ done 收敛
     dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
@@ -2803,7 +2803,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     submit.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['方案 A'] });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['方案 A'] });
     // ④ 宿主 handleResume 回发 user(kind='question-answer') —— 真实链路关键：骨架在此不得被删
     dispatch({ type: 'user', text: '方案 A', ts: 't2', kind: 'question-answer' });
     // ⑤ resume 重发 meta → pausedResume 原位续写判定（骨架必须仍在 DOM，isConnected 恒真）
@@ -2855,7 +2855,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(box.querySelector('.ask-inline__input')).not.toBeNull();
   });
 
-  it('内联补充输入：键入后回车 → 提交 clarify_answers 并移除内联块', () => {
+  it('内联补充输入：键入后回车 → 提交 input(kind=answer) 并移除内联块', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({
@@ -2866,7 +2866,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     input.value = '我补充一点要求';
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     // 回车等价点「提交回答」（统一形态下 Enter 触发 submitBtn.click；已答才 enabled）
-    expect(postMessage).toHaveBeenCalledWith({ type: 'clarify_answers', answers: ['我补充一点要求'] });
+    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['我补充一点要求'] });
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
