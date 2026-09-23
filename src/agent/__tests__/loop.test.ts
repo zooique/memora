@@ -2613,6 +2613,93 @@ describe('AgentLoop · 执行中插话', () => {
     expect(texts).toContain('收到你的补充，继续');
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   }, 15000);
+
+  it('getPendingInterjections 按序返回插话快照，pause 条目不混入', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 三种条目混排：插话 → pause（挂起申请）→ 插话
+    loop.interject('第一句');
+    loop.requestPause();
+    loop.interject('第二句');
+    // 只透出插话内容且保持入队顺序（pause 是挂起申请，不属插话）
+    expect(loop.getPendingInterjections()).toEqual(['第一句', '第二句']);
+  });
+
+  it('getPendingInterjections 返回副本：宿主改快照不影响内核队列', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    loop.interject('唯一插话');
+    // 宿主运行时若误 push 该数组，不得回写内核队列
+    (loop.getPendingInterjections() as string[]).push('越权写入');
+    expect(loop.getPendingInterjections()).toEqual(['唯一插话']);
+  });
+
+  it('removePendingInterject 按插话序号删除，混排 pause 条目时索引映射正确', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 队列形态 [插话甲, pause, 插话乙]：插话序号 1 对应全局索引 2（删除目标是乙不是 pause）
+    loop.interject('甲');
+    loop.requestPause();
+    loop.interject('乙');
+    expect(loop.removePendingInterject(1)).toBe(true);
+    expect(loop.getPendingInterjections()).toEqual(['甲']);
+    // pause 条目未被误计为插话：剩余插话仅序号 0，再取序号 1 必越界
+    expect(loop.removePendingInterject(1)).toBe(false);
+    expect(loop.removePendingInterject(0)).toBe(true);
+    expect(loop.getPendingInterjections()).toEqual([]);
+  });
+
+  it('removePendingInterject 越界/负数 index 静默 no-op', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 空队列删除必失败
+    expect(loop.removePendingInterject(0)).toBe(false);
+    loop.interject('甲');
+    expect(loop.removePendingInterject(5)).toBe(false);
+    expect(loop.removePendingInterject(-1)).toBe(false);
+    // 队列原样保留
+    expect(loop.getPendingInterjections()).toEqual(['甲']);
+  });
+
+  it('clearPendingInterjections 清空插话并计数，pause 条目保留（随后 step 边界照常挂起）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      // 「工具步 → 纯文本」双轮：工具步气口注入插话 + 软暂停申请，随即清空插话
+      provider: mockMultiTurnProvider([
+        [{ toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [{ content: '后续完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    const chunks: AgentChunk[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      chunks.push(chunk);
+      if (chunk.type === 'tool_result') {
+        loop.interject('要被清掉的插话');
+        loop.requestPause();
+        // 计数只含插话（pause 申请不计）
+        expect(loop.clearPendingInterjections()).toBe(1);
+      }
+    }
+    // pause 条目未被误清：下一 step 边界照常挂起
+    expect(chunks.filter((c) => c.type === 'paused')).toHaveLength(1);
+    // 插话已清：不注入 user 消息
+    expect(loop.getMessages().some((m) => m.content.includes('要被清掉的插话'))).toBe(false);
+  }, 15000);
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -3219,6 +3306,68 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     // 续跑正常完成（无 400 结构问题）
     expect(chunks2.some((c) => c.type === 'aborted')).toBe(false);
     expect(chunks2[chunks2.length - 1]!.type).toBe('done');
+  });
+
+  it('takeAnsweredAsk 取走已作答提问快照，取走即清；未消费时返回 undefined', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([
+        {
+          toolCalls: [
+            {
+              id: 'q1',
+              type: 'function',
+              function: { name: 'ask_user', arguments: JSON.stringify({ question: '基调选择？' }) },
+            },
+          ],
+        },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    for await (const {} of loop.processUserInput('故事')) {
+      // drain 到 paused
+    }
+
+    // 回答前无已作答快照（runResume 补充输入路径取到 undefined 的判据）
+    expect(loop.takeAnsweredAsk()).toBeUndefined();
+    expect(loop.answerQuestion(['欢快'])).toBe(true);
+    // answerQuestion 转存快照：runResume 落盘交互输入时随回答持久化「问了什么」
+    const snapshot = loop.takeAnsweredAsk();
+    expect(snapshot).toMatchObject([{ slot: 'ask', question: '基调选择？' }]);
+    // 取走即清：二次取空，防同一快照重复落盘
+    expect(loop.takeAnsweredAsk()).toBeUndefined();
+  });
+
+  it('takeAnsweredAsk 对 cancelAsk 路径同样转存（落盘「问 + 未回答」）', async () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([
+        {
+          toolCalls: [
+            {
+              id: 'q1',
+              type: 'function',
+              function: {
+                name: 'ask_user',
+                arguments: JSON.stringify({ question: '确认继续？', options: ['是', '否'] }),
+              },
+            },
+          ],
+        },
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+
+    for await (const {} of loop.processUserInput('任务')) {
+      // drain 到 paused
+    }
+
+    loop.cancelAsk();
+    // 跳过/超时路径同样留快照，runResume 可把 question/options 随「未回答」记录落盘
+    const snapshot = loop.takeAnsweredAsk();
+    expect(snapshot).toMatchObject([{ slot: 'ask', question: '确认继续？', options: ['是', '否'] }]);
+    expect(loop.takeAnsweredAsk()).toBeUndefined();
   });
 
   it('askLimit 硬护栏：turn 内超限后 ask_user 被拒绝（不挂起，回填拒绝文案）', async () => {
