@@ -579,7 +579,7 @@ describe('L2 运行时策略 resolveL2Strategy（收敛）', () => {
   });
 
   it('selfReview=正整数映射为布尔开关 selfReviewEnabled，非法值归 false', () => {
-    // 布尔数字语义（2026-09-12 定案）：任意正整数 >0 一律收敛为「开」（单次终审）
+    // 布尔数字语义：任意正整数 >0 一律归一为「开」（单次终审）
     expect(
       resolveL2Strategy({ reflect: { selfReview: 1 } } as BehaviorStrategy).selfReviewEnabled,
     ).toBe(true);

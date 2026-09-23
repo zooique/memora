@@ -1,7 +1,7 @@
 /**
  * turn（问答闭环）Act 引擎（AgentLoop）— turn 回答中阶段的 loop（对 step 的编排，官方 Agent Loop 本义）
  *
- * 概念定位（2026-09-04 收敛：档2 多 turn 任务编排已砍，所有复杂度在单 turn step 循环里承载）：
+ * 概念定位（所有复杂度在单 turn step 循环里承载，无多 turn 任务编排）：
  *   - step = 一次 LLM 调用 + 可选工具执行（runIterationLoop 内每次循环体）；
  *   - loop = 对 step 的编排：turn 回答中阶段反复拉起 step 直到输出最终回答；
  *   - 本类承载 turn（问答闭环）的 Act 引擎（含 loop=step 编排），是 turn 的身体引擎；
@@ -89,7 +89,7 @@ export interface AgentLoopOptions {
   rolePackBaseTokens?: number;
   /** 情感基调前缀，插在 systemPromptPrefix 与 bootstrapMemories 之间（injectAffect 设置，角色切换时保留） */
   affectPrefix?: string;
-  /** 任务表触发覆盖钩子（2026-09-14 层1）：宿主可覆写 needsPlanning 判定。
+  /** 任务表触发覆盖钩子：宿主可覆写 needsPlanning 判定。
    *  缺省用内核内置 detectNeedsPlanning（确定性判定）。返回 true → 首迭代注入命令式强引导。 */
   needsPlanningOverride?: (text: string) => boolean;
   /** 工具定义列表（内置 + 自定义），用于 system prompt 追加工具描述 */
@@ -147,8 +147,8 @@ export interface AgentLoopOptions {
 }
 
 /**
- * step 边界气口申请——统一三种用户申请的气口语义（SSOT 收敛）：
- *  旧设计分散为 pauseRequested flag + pendingInterjections[] 数组。2026-09-06 收敛为单一队列：
+ * step 边界气口申请——统一三种用户申请的气口语义（SSOT，单一队列）：
+ *  若分散为 pauseRequested flag + pendingInterjections[] 两处写位，易漂移不一致（坑）——统一进单一队列：
  *    - pause：宿主 requestPause → queueInterrupt({kind:'pause'})
  *    - interject：宿主 interject → queueInterrupt({kind:'interject', content})
  *    - ask_user 不走此队列（它是 LLM 工具触发的气口，在工具分支直接 yield paused，与用户申请气口不同源）
@@ -161,27 +161,27 @@ type InterruptRequest =
   | { readonly kind: 'interject'; readonly content: string };
 
 /*
- * 职责边界登记（P1-2 降级，2026-09-16）
+ * 职责边界登记（暂不拆分）
  *
- * 曾拟把「上下文准备」下沉 contextPreparer.ts、「中断/暂停」下沉 sessionStateMachine.ts，
- * 经实证两者与目标模块现有契约冲突，改为「职责登记而非代码拆分」（自然生长触发前不动契约）：
+ * 「上下文准备」不下沉 contextPreparer.ts、「中断/暂停」不下沉 sessionStateMachine.ts，
+ * 采取「职责登记而非代码拆分」（自然生长触发前不动契约）——两者与目标模块现有契约冲突：
  *   - _prepareContext（资源边界副操作：截断/压缩/预算/情报/任务表注入）深读深写 this.messages
  *     并依赖 ≥15 个私有状态/方法，本质是 step 编排的一部分——不并入 contextPreparer
  *     （其契约「只依赖 Agent 注入稳定能力、不反向依赖 Agent 私有状态」本就排除此形态）。
  *   - 中断/暂停（interruptQueue + _handleInterrupt + interject 追加用户消息、step 边界 yield paused）
  *     与 sessionStateMachine 的「纯三态 + pendingPause」语义不同源（后者不承载 interject 追加与
  *     step 边界产出）——不并入，维持 loop 自持。
- *   - P2-1（消息写入口 append* / clean* + 观测埋点 recordBudget/recordOccupancy/refreshOccupancyDialogue）同判
+ *   - 消息写入口（append* / clean* + 观测埋点 recordBudget/recordOccupancy/refreshOccupancyDialogue）同判
  *     不拆：写入口持有 messages / currentRoundId / executionTempSystem / offloadDir 四项 loop 私有状态，
  *     并回调 refreshOccupancyDialogue（**写消息→触发观测，跨域**），不满足 progressive-refactor-rules
  *     §2.2 模式 B「职责正交（不共享状态 / 不互相调用）」前提；模式 A（领域容器提取）只搬字段不搬逻辑，
  *     收益不足以覆盖改点面。保留监控，待自然生长触发。
- *   - V5（搜索生命周期，2026-09-16 收口登记）：软上限/硬上限混沌形同构但为**同一意图的三级级联**——
+ *   - V5（搜索生命周期）：软上限/硬上限混沌形同构但为**同一意图的三级级联**——
  *     软提示 threshold=2「劝」（successfulWebSearchCount + searchConvergenceHintInjected）→
  *     硬拦截 MAX=6「挡」（searchCallCount + searchDisabledHintInjected）→ 工具集剔除「断」searchDisabled。
- *     阈值已单源（constants.ts LOOP_CONSTANTS.SEARCH_*）。5 个运行时状态字段仍散在 loop（私有、
- *     经 counters 一致注入、随 resetTurnState 邻接重置，无 V1 平行数组错位风险），曾判「V5 未收口」。
- *     现声明：这是 loop 私有生命周期状态，非 guardRail 护栏注册表项，不做对象化提取（避免提前抽象、
+ *     阈值单源（constants.ts LOOP_CONSTANTS.SEARCH_*）。5 个运行时状态字段散在 loop（私有、
+ *     经 counters 一致注入、随 resetTurnState 邻接重置，无 V1 平行数组错位风险）。
+ *     声明：这是 loop 私有生命周期状态，非 guardRail 护栏注册表项，不做对象化提取（避免提前抽象、
  *     兜旁白），维持现状即为已声明设计。
  * 结论：loop 为「功能内聚门面」（职责虽多但共享同一可变 messages 工作记忆），按 progressive-refactor-rules
  * §1 软阈值保留监控，待真实场景触发「去重/拼接/总线慢」等修改成本证据再评估拆分。
@@ -215,7 +215,7 @@ export class AgentLoop {
   /**
    * 执行期临时 system 消息引用集（self-review / reflection / duplicate-warning / metaNote）。
    * 与 prepare 阶段的「装配性注入」（召回、最近对话）区分：装配注入每轮由 prepare 重建、
-   * 不算临时，吃 cleanTemporarySystemMessages；执行期临时的清理收敛为每轮闭环入口自动执行
+   * 不算临时，吃 cleanTemporarySystemMessages；执行期临时的清理由每轮闭环入口自动执行
    * （cleanExecutionTemporary），保证跨步残留不堆积。replaceContext 走浅拷贝，
    * 引用保持有效，按引用 filter 即可安全移除。
    */
@@ -229,26 +229,26 @@ export class AgentLoop {
   /** 当前轮次已推送的 REFLECTION_HINT 次数。用显式计数器而非 filter 推断，
    *  避免上下文中段消息被裁剪后计数失真 */
   private reflectionCountThisTurn: number = 0;
-  /** TS-7 搜索收敛护栏：本闭环内成功 web_search 次数（executeToolCalls 累计，_prepareContext 检查） */
+  /** 搜索收敛护栏：本闭环内成功 web_search 次数（executeToolCalls 累计，_prepareContext 检查） */
   private successfulWebSearchCount = 0;
-  /** TS-7 搜索收敛护栏：本轮是否已注入收敛提示（幂等，防迭代累积刷屏） */
+  /** 搜索收敛护栏：本轮是否已注入收敛提示（幂等，防迭代累积刷屏） */
   private searchConvergenceHintInjected = false;
-  /** TS-7 搜索硬上限：本闭环内 web_search 调用次数（含被拒绝的，达到上限后后续搜索直接拒绝） */
+  /** 搜索硬上限：本闭环内 web_search 调用次数（含被拒绝的，达到上限后后续搜索直接拒绝） */
   private searchCallCount = 0;
-  /** TS-7 搜索硬上限命中后：从后续 LLM 调用的工具集确定性移除 web_search（双闸的第二闸，
+  /** 搜索硬上限命中后：从后续 LLM 调用的工具集确定性移除 web_search（双闸的第二闸，
    *  与 system 提示互补，彻底终结「拒绝风暴」耗尽迭代/上下文导致问答闭环中断） */
   private searchDisabled = false;
-  /** TS-7 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
+  /** 搜索硬上限提示注入标记（幂等，防迭代累积重复注入） */
   private searchDisabledHintInjected = false;
   /** 软上限收尾信号注入标记（幂等，防迭代累积刷屏）：摘要层饱和是跨迭代持续态，
    *  同一 turn 内经本 flag 最多注入一次收尾信号；随 resetTurnState 重置——
    *  每个新 turn（新用户输入）重新注入一次（每轮回答都需要收敛提醒），
    *  防的是「同 turn 多步迭代各注一条」的刷屏（V1 修复，口径与搜索收敛 flag 同构）。 */
   private softLimitWrapupInjected = false;
-  /** 层1（2026-09-14）：本 turn 是否判定为需任务表规划（processUserInput 入口由检测结果设值，
+  /** 规划层：本 turn 是否判定为需任务表规划（processUserInput 入口由检测结果设值，
    *  continueAfterPause 续跑不重判——plan 已建则无需 nudge） */
   private planNeedsNudge = false;
-  /** 层1：本 turn 是否已注入命令式引导（幂等，仅首迭代一次，随 resetTurnState 重置） */
+  /** 规划层：本 turn 是否已注入命令式引导（幂等，仅首迭代一次，随 resetTurnState 重置） */
   private planNudgeInjected = false;
   /** 工具结果防重缓存（闭环内有效，每轮 resetTurnState 清空）。
    *  拦截 read_file/list_dir/web_search 的同 key 重复调用，返回 [ALREADY_READ] 拒绝文案，
@@ -256,7 +256,7 @@ export class AgentLoop {
   private readonly toolResultCache = new ToolResultCache();
   /** 文件覆盖度台账（账本・解耦侧）：读到的行区间 + 轻量替身摘要。
    *  闭环内有效（resetTurnState 清），与 toolResultCache 同生命周期。
-   *  分支②据此在「原文已压缩」时回显摘要，而非放行重读（永动机）或空拦（死锁）。 */
+   *  替身回显分支据此在「原文已压缩」时回显摘要，而非放行重读（永动机）或空拦（死锁）。 */
   private readonly fileExposure = new FileExposureLedger();
   /** 运行时护栏注册表（SSOT）：判定序 / 文案 / 阈值单一真理源在 guardRail.ts；
    *  本字段只是 loop 的装载点（createDefaultGuards 出厂即覆盖 5 类前置拦截型护栏）。
@@ -281,7 +281,7 @@ export class AgentLoop {
       this.interruptQueue.splice(idx, 1);
     }
   }
-  /** step 边界气口申请统一队列（2026-09-06 收敛：替代 pauseRequested flag + pendingInterjections[]）。
+  /** step 边界气口申请统一队列（pause/interject 统一入队，无独立 pauseRequested flag）。
    *  用户申请的气口（pause/interject）统一入队，_handleInterrupt 在 step 边界消费：
    *  先注入型（interject → appendUser），后挂起型（pause → yield paused）。 */
   private interruptQueue: InterruptRequest[] = [];
@@ -308,17 +308,17 @@ export class AgentLoop {
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
   /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要）。消费方（assembler 实现）
-   *  经 logPlanItemBoundary 写 planItemLog 关联当前 active 步骤（时间轴投影）——形态②（PLAN-SYNC-1 ①）
-   *  不再推进 plan：状态推进唯一写者 = LLM 的 task_table_update；LLM 未显式 update 的最后一步
+   *  经 logPlanItemBoundary 写 planItemLog 关联当前 active 步骤（时间轴投影）——
+   *  不推进 plan：状态推进唯一写者 = LLM 的 task_table_update；LLM 未显式 update 的最后一步
    *  由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
    *  planItemId 由消费方自查，loop 不传——签名不留空头支票。
    *  检出时机 = 本迭代 LLM 调用后、工具前（读「本迭代服务的那一步」）。 */
   onPlanItemBoundary?: (planItemInfo: { summary: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
-  /** active step 元信息回调（阶段二，2026-09-08 步级折叠路 B′）：供 _maybeEmitStepBoundary
+  /** active step 元信息回调（步级折叠）：供 _maybeEmitStepBoundary
    *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title }；无任务表/无 active step
-   *  返回 null。与 onPlanItemBoundary **时序分叉**（2026-09-17 收敛）：前者读工具前的 active
+   *  返回 null。与 onPlanItemBoundary **时序分叉**：前者读工具前的 active
    *  （本迭代完成的那一步），本回调经 _maybeEmitStepBoundary 读工具后的 active（工具落定后
    *  当前所在的那一步）——plan_item_boundary 事件据此判定「active step 是否已推进」并分组渲染。
    *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。 */
@@ -329,7 +329,7 @@ export class AgentLoop {
    *  刻意**不复用** getActivePlanItemMeta 的存在性——后者原生职责是 plan_item_boundary 事件信号，
    *  借它回答本命题属语义借用（二者在 ensureActivePlanItem 不变量下当前等价，但职责须分离）。 */
   hasInflightPlan?: () => boolean;
-  /** 上一步级边界 ID（阶段二去噪）：记录最近一次已 emit plan_item_boundary 的 planItemId，
+  /** 上一步级边界 ID（去噪）：记录最近一次已 emit plan_item_boundary 的 planItemId，
    *  仅当 getActivePlanItemMeta 返回的 planItemId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
   private lastBoundaryPlanItemId?: string;
   /** 主动提问计数（本 turn 粒度，resetTurnState 清零）：ask_user 工具触发次数（askLimit 硬护栏） */
@@ -340,10 +340,10 @@ export class AgentLoop {
    */
   private pendingAsk: { toolCallIds: string[]; questions: AskQuestion[] } | undefined = undefined;
   /**
-   * 已作答/已取消提问快照（G26，2026-09-07 answerQuestion 转存；2026-09-08 cancelAsk
-   * 对称转存）：提问消费后把 pendingAsk.questions 转存于此，供 orchestrator.runResume
+   * 已作答/已取消提问快照（answerQuestion 与 cancelAsk 消费提问后对称转存）：
+   * 提问消费后把 pendingAsk.questions 转存于此，供 orchestrator.runResume
    * 落盘交互输入时随回答/超时记录一并持久化（回放还原「问了什么+选项」）。
-   * pendingAsk 照旧即清（runIterationLoop:710 兜底 cancelAsk 依赖其为「未消费」判据）；
+   * pendingAsk 即清（runIterationLoop 兜底 cancelAsk 依赖其为「未消费」判据）；
    * 快照由 runResume takeAnsweredAsk 取走，或下次消费覆盖（残留仅进程内、单 turn，无害）。
    */
   private lastAnsweredAsk: AskQuestion[] | undefined = undefined;
@@ -357,9 +357,9 @@ export class AgentLoop {
   private readonly contextManager: ContextManager;
   /** 被替换轮 roundId 集合（第一级替换把越界轮正文换成已存摘要；装配 exclude 据此防二次召回） */
   private readonly replacedRoundIds: Set<string> = new Set();
-  /** 最近一次输入装配的上下文预算（prepare 期写入，供指标快照透出做预算可视化，④） */
+  /** 最近一次输入装配的上下文预算（prepare 期写入，供指标快照透出做预算可视化） */
   private lastBudget: ContextBudget | undefined;
-  /** 最近一次输入装配的上下文占用快照（④ 预算可视化，真实用量） */
+  /** 最近一次输入装配的上下文占用快照（预算可视化，真实用量） */
   private lastOccupancy: ContextOccupancy | undefined;
   /**
    * 当前激活角色包底盘占用（system prompt 总体 token）。
@@ -373,7 +373,7 @@ export class AgentLoop {
   private readonly compactionStrategies: ICompactionStrategy[];
   /** 入口关落盘目录（装配注入；未注入则入口关不生效）。消费点：appendToolMessage */
   private readonly offloadDir?: string;
-  /** 情报区（LLM 私有工作笔记，Step 2）：LLM 经 remember_intel 自写累积，装配时作为尾部私有 system 消息注入 */
+  /** 情报区（LLM 私有工作笔记）：LLM 经 remember_intel 自写累积，装配时作为尾部私有 system 消息注入 */
   private intelNote = '';
   /** Provider 路由缓存（单轮内缓存同一 taskType，避免每轮重复路由计算），跨轮清空不复用 */
   private providerRouteCache = new Map<TaskType, LlmProvider>();
@@ -381,7 +381,7 @@ export class AgentLoop {
   // ─── 运行时指标统计 ──────────────────────────────
   private metrics = new LoopMetrics();
 
-  /** LLM 调用族执行器（ARCH-3 P3-2）。**必须在构造函数尾部初始化**——依赖 `contextManager` /
+  /** LLM 调用族执行器。**必须在构造函数尾部初始化**——依赖 `contextManager` /
    *  `tracer` 等构造期赋值的字段（类字段初始化器按声明顺序执行，此处读会得到 undefined）。
    *  其所有 loop 侧能力均为**取值器 / 回调**：`strategy`（setStrategy 换对象）、
    *  `opts.provider`（setProvider 热切换）、`toolExecutedThisTurn`（同 turn 内 set true）
@@ -405,7 +405,7 @@ export class AgentLoop {
     this.compactionStrategy =
       opts.compactionStrategy ??
       new ResultReplacementStrategy(
-        // P1 摘要替代：默认压缩策略下，read_file 结果被压缩链清出时替换为它**自己的**台账摘要（非空占位）。
+        // 摘要替代：默认压缩策略下，read_file 结果被压缩链清出时替换为它**自己的**台账摘要（非空占位）。
         // 无摘要（未触发脚注 / 小文件读到底）→ 回调返回 undefined → 回退空占位。
         undefined,
         (path) => {
@@ -537,7 +537,7 @@ export class AgentLoop {
    * 处理一轮用户输入（编排方法：单次迭代/工具分支/纯文本结束）
    *
    * 记忆检索唯一入口 = LLM 经 `search_memories` 工具主动触发（builtinToolHandlers.searchMemories），
-   * 非由 prepare/loop 代模型猜测注入——原 recalledMemories 参数已于 2026-09-11 物理删除。
+   * prepare/loop 不代模型猜测注入（无 recalledMemories 自动注入通道）。
    *
    * @param userInput - 用户输入
    * @param signal - 可选 AbortSignal，宿主导入 controller 触发取消
@@ -563,7 +563,7 @@ export class AgentLoop {
 
     // 重置本轮运行计数状态（反思/重复检测/软暂停/自审查/工具步，每轮独立）
     this.resetTurnState();
-    // 新增问题入口清理残留补充输入（对称缺口修复，2026-09-06）：
+    // 新问题入口清理残留补充输入：
     // abort/host close 等异常路径可能让上一轮 interject 残留 interruptQueue，若不清，
     // 会被本 turn 首 step 边界 _handleInterrupt 误消费注入到新问题。
     // 不能在 resetTurnState 清——它也被 continueAfterPause 复用，会误杀「暂停后 interject → resume 注入」
@@ -572,7 +572,7 @@ export class AgentLoop {
     // askLimit 计数按「一次用户输入」重置（turn 粒度：暂停-续跑跨续跑累计）——仅入口清，
     // continueAfterPause 不清（防续跑段被重复允许提问）
     this.resetAskBudget();
-    // 层1：任务表规划判定（在 resetTurnState 之后设值——续跑入口复用 resetTurnState 会清为 false，
+    // 规划层：任务表规划判定（在 resetTurnState 之后设值——续跑入口复用 resetTurnState 会清为 false，
     // 故此处重判为新 turn 的确定性结论；continueAfterPause 不复用，plan 已建无需 nudge）
     this.planNeedsNudge = this.opts.needsPlanningOverride
       ? this.opts.needsPlanningOverride(userInput)
@@ -714,8 +714,8 @@ export class AgentLoop {
 
   /** 清空全部待注入插话（宿主「全部清空」按钮或 stop→discard 协同清理）。
    *  与 removePendingInterject 单条删除对称，覆盖宿主镜像与内核队列不对称缺口——
-   *  宿主 clear_pending_queue handler 之前只清镜像不清内核（单写 bug）；
-   *  agent.discardCurrentCheckpoint 之前只清 checkpoint 不清队列（孤儿数据 bug）。
+   *  clear_pending_queue handler 若只清镜像不清内核会成单写缺口；
+   *  agent.discardCurrentCheckpoint 若只清 checkpoint 不清队列会留孤儿数据。
    *  @returns 被清除的条目数（宿主可用于 notice 反馈） */
   clearPendingInterjections(): number {
     const cleared = this.interruptQueue.filter((r) => r.kind === 'interject').length;
@@ -733,9 +733,9 @@ export class AgentLoop {
       .map((r) => r.content);
   }
 
-  /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收敛兜底，多入口共享） */
+  /** 输出"达到最大迭代/步数预算"提示并结束（turn act 收尾兜底，多入口共享） */
   private async *emitMaxIterationsReached(): AsyncGenerator<AgentChunk, void, unknown> {
-    // 撞线收尾前消费排队插话（与 done 分支同一语义，2026-09-11 打磨）：
+    // 撞线收尾前消费排队插话（与 done 分支同一语义）：
     // 步数已到顶不会再产生下一轮迭代去消费 interruptQueue，插话若不在此入史将被静默丢弃；
     // 消费为 user 消息后下一 turn 装配（最近对话）仍可见。pause 条目保留（无迭代边界可挂起，随 resetTurnState 清）
     const consumed = this._consumeInterjects(this.interruptQueue);
@@ -755,10 +755,10 @@ export class AgentLoop {
     this.inAutonomousStep = false;
     this.cancelPauseEntry();
     this.selfReviewDone = false;
-    // TS-14 每轮独立重置「工具步发生」标记（自审查触发门槛）：新问答闭环入口即续跑入口都复位，
-    // 避免续跑段未执行工具却被上次的 true 触发自审查（消除 processUserInput 单独重置的 SSOT 漂移）
+    // 每轮独立重置「工具步发生」标记（自审查触发门槛）：新问答闭环入口即续跑入口都复位，
+    // 避免续跑段未执行工具却被上次的 true 触发自审查（重置唯一入口为本方法，processUserInput 不单独重置，防 SSOT 漂移）
     this.toolExecutedThisTurn = false;
-    // TS-7 搜索收敛护栏：本闭环内计数与注入标记随轮重置（下一闭环重新累计）
+    // 搜索护栏：本闭环内计数与注入标记随轮重置（下一闭环重新累计）
     this.successfulWebSearchCount = 0;
     this.searchConvergenceHintInjected = false;
     this.searchCallCount = 0;
@@ -777,13 +777,13 @@ export class AgentLoop {
     this.guardier.reset('perStep');
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
-    // 层1：任务表 nudge 注入标记随轮重置（下一 turn 重新判定注入）；planNeedsNudge 也随轮清，
+    // 规划层：任务表 nudge 注入标记随轮重置（下一 turn 重新判定注入）；planNeedsNudge 也随轮清，
     // 但 processUserInput 在 resetTurnState 之后会重判设值（续跑入口不复用因此不重判）
     this.planNeedsNudge = false;
     this.planNudgeInjected = false;
   }
 
-  /** 重置 askLimit 计数（turn 入口，2026-09-04）：仅 processUserInput 调用，continueAfterPause 不动，
+  /** 重置 askLimit 计数（turn 入口）：仅 processUserInput 调用，continueAfterPause 不动，
    *  保证暂停-续跑同属一次用户输入、提问次数跨续跑累计（askLimit 语义：按输入打扰防刷）。 */
   private resetAskBudget(): void {
     this.askCountThisTurn = 0;
@@ -792,7 +792,7 @@ export class AgentLoop {
   /**
    * 单轮 step 循环引擎（turn act 内 step 编排）：一次循环 = 一次 handleIteration（processUserInput/continueAfterPause 共享）。
    * stepBudget 软上限与 maxIterations 兜底在此统一收敛。
-   * 注：所有复杂度（含 LLM 动态建任务表、会议机制角色切换）在单 turn 内承载（2026-09-04 收敛：多 turn 编排已砍）。
+   * 注：所有复杂度（含 LLM 动态建任务表、会议机制角色切换）在单 turn 内承载（无多 turn 编排）。
    */
   private async *runIterationLoop(
     signal: AbortSignal | undefined,
@@ -864,11 +864,11 @@ export class AgentLoop {
    * 需同时满足：
    * 1. 启用自审查（selfReviewEnabled）；
    * 2. 非工具屏蔽（toolCallsBlocked 时 'done' 来自系统占位文本而非 LLM 回复）；
-   * 3. **单次终审语义（2026-09-12 边界归位）**：
+   * 3. **单次终审语义**：
    *    - 多轮 turn 门槛：本 turn 内实际执行过工具步（一遍过的纯文本问答不审查）；
    *    - **终审即停：本 turn 已审过（selfReviewDone）则一律不再安排**。审查轮产出后
    *      done 立即真实生效——自审只对「工具循环后的最终交付」做一次把关，不因需修改
-   *      而无限续跑空转（防 done 后反复审查拖长 turn，SELF-1）。能力迁移：深度"审查→
+   *      而无限续跑空转（防 done 后反复审查拖长 turn）。深度"审查→
    *      修正"的迭代属目标模式阶段验收，非单次问答闭环职责。
    */
   private shouldInjectSelfReview(): boolean {
@@ -876,8 +876,7 @@ export class AgentLoop {
     if (this.strategy.toolCallsBlocked) return false;
     if (!this.toolExecutedThisTurn) return false;
     // 终审即停：本 turn 已审过 → 无论满意与否都不再注入（done 真实生效）。
-    // 2026-09-13 单轮化：原 selfReviewRound 计数与「未达轮数上限」判据一并移除——
-    // 单次终审下「已审过」是布尔状态，轮次计数与上限判据均属永不生效的多轮残留。
+    // 单次终审下「已审过」是布尔状态，无需轮次计数/上限判据（多轮轮次判据在此永不生效）。
     if (this.selfReviewDone) return false;
     return true;
   }
@@ -921,7 +920,7 @@ export class AgentLoop {
 
   /** 中断检查：step 边界统一消费 interruptQueue（pause + interject）+ 硬中止检查。
    *
-   *  收敛后的单一气口出口——pauseRequested flag 和 pendingInterjections[] 都已收敛为 interruptQueue，
+   *  单一气口出口——气口申请统一收在 interruptQueue（无独立 pause flag / 插话数组写位），
    *  此处统一 queue.splice(0) 取出全部申请，按 kind 分两类处理：
    *    - 注入型（interject）：先 appendUserMessage，不暂停 loop，让补充输入立刻进入下一轮 step
    *    - 挂起型（pause）：yield {type:'paused'} + return 'paused'，generator 在 step 边界挂起
@@ -940,18 +939,18 @@ export class AgentLoop {
     this._consumeInterjects(reqs);
 
     // ② 后处理挂起型气口（pause → yield paused）——如果队列里有 pause 申请，在 step 边界挂起
-    // ⛔ 生命周期契约（2026-09-22 显式化）：yield paused 后本 generator 立即 return 结束，
+    // ⛔ 生命周期契约：yield paused 后本 generator 立即 return 结束，
     // **不再产出任何后续 chunk**（挂起即本流结束，续跑靠宿主另起 resumeExecution 新流）。
     // 宿主消费方（consumeFlow）据此在 paused chunk 处 break 收尾——切勿期待 pause 后
     // 还有剩余 chunk：那会让 for-await 挂在已结束的流上、_streaming 永不复位，
-    // 导致"暂停态输入补充"被误路由进 interject 排队而无人消费（卡死，实证见 2026-09-22 修复）。
+    // 导致"暂停态输入补充"被误路由进 interject 排队而无人消费（卡死坑）。
     if (reqs.some((r) => r.kind === 'pause')) {
       // pause 消费后 clearPauseRequest 已由 splice(0) 自动完成——无需额外清 flag
       yield { type: 'paused' };
       return 'paused';
     }
 
-    // ③ 硬中止检查：外部 signal（宿主取消/超时）。插话不再经独立 controller（单一模式，2026-09-04）
+    // ③ 硬中止检查：外部 signal（宿主取消/超时）。插话不经独立 controller（单一模式）
     if (signal?.aborted) {
       yield { type: 'aborted', reason: this.ui.abortedByUser, stopReason: 'user' };
       return 'aborted';
@@ -997,7 +996,7 @@ export class AgentLoop {
     );
 
     if (llmResult.aborted) {
-      // K1 缓冲补发：工具闭环内延迟分类的消息被中断时，缓冲文本从未流式 yield →
+      // 缓冲补发：工具闭环内延迟分类的消息被中断时，缓冲文本从未流式 yield →
       // 先补发给 UI（不带中断标记——中断提示由宿主 interrupted 消息承载，与逐字流中断一致）
       if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
         yield { type: 'text', content: llmResult.fullContent, stage: textStage };
@@ -1008,7 +1007,7 @@ export class AgentLoop {
       if (llmResult.fullContent.trim()) {
         this.appendAssistantText(llmResult.fullContent + this.ui.interrupted);
       }
-      // P1-01：timeout abort 且用户已申请暂停 → 路由 paused（续跑）而非 aborted（硬中止）。
+      // timeout abort 且用户已申请暂停 → 路由 paused（续跑）而非 aborted（硬中止）。
       // 经单一收口方法 _routePausedIfTimeoutAndPause，与工具执行 abort 点共用同一判定（SSOT）。
       const pausedChunk = this._routePausedIfTimeoutAndPause(effectiveSignal);
       if (pausedChunk) {
@@ -1026,25 +1025,25 @@ export class AgentLoop {
     }
 
     // step 边界回调（每次迭代完成后触发，用于 planItemLog 时间轴投影；step 级边界事件，非 turn 边界）。
-    // 挂起型迭代不写日志（与用户暂停对称，2026-09-07）：含 ask_user 将挂起的迭代不记 planItemLog——
+    // 挂起型迭代不写日志（与用户暂停对称）：含 ask_user 将挂起的迭代不记 planItemLog——
     // 问答对归当前步，回答续跑后由后续完整迭代在边界记录该步；判定经 willSuspendForAsk 单收口，
     // 与 handleToolCalls 挂起检出共用（防双判漂移）。
     // 检出时机 = 迭代的 LLM 调用后、工具前：此刻的 active step 是本迭代 LLM 实际服务的那一步，
-    // 由 onPlanItemBoundary 写 planItemLog 关联（形态②：只写日志、不推进——推进唯一写者 = task_table_update）。
+    // 由 onPlanItemBoundary 写 planItemLog 关联（只写日志、不推进——推进唯一写者 = task_table_update）。
     if (this.onPlanItemBoundary && !this.willSuspendForAsk(llmResult.toolCalls)) {
       this.onPlanItemBoundary({
         summary: llmResult.fullContent.slice(0, 200),
       });
     }
 
-    // ④ 结果路由：工具分支 / 纯文本结束分支
+    // 结果路由：工具分支 / 纯文本结束分支
     // 主动提问走 ask_user 内置工具（唯一通道）：提问 = 一次普通工具调用，在 handleToolCalls 检出
     // 挂起；用户答案以 tool result 回填，工具调用结构完整落地（不再「撕掉」工具），
     // OpenAI 兼容端 assistant.tool_calls 恒有配对 tool 消息。
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
-      // P2 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
+      // 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
       // 供宿主渲染「过程叙述」折叠行——正文已在流式阶段剥离（未见工具轮文本）。
-      // A1 回抽（2026-09-12）：首轮（无工具史）消息级分类前无法预判工具轮，文本已为保 TTFT
+      // 回抽：首轮（无工具史）消息级分类前无法预判工具轮，文本已为保 TTFT
       // 逐字流式进正文区（streamedText 非空）——该段实为叙述，须先撤回再并入叙述内容：
       // withdrawn 告知消费者从正文移除该段（内核扣持久化 / 宿主移渲染），content 含其全文。
       const narration = (llmResult.streamedText + llmResult.pendingNarrate).trim();
@@ -1056,7 +1055,7 @@ export class AgentLoop {
         };
       }
       const toolResult = yield* this.handleToolCalls(llmResult, effectiveSignal);
-      // 步级折叠边界事件（阶段二，2026-09-08 路 B′；检出时机 2026-09-17 收敛到工具落定后）：
+      // 步级折叠边界事件（检出时机在工具落定后）：
       // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active step
       // 保证第一步拿到自己的边界（工具落定前检出会被「离开第一步」吃掉）。判据不变（推进才产 +
       // lastBoundaryPlanItemId 去噪），只换检出时刻。时序分叉是设计语义：onPlanItemBoundary（上述）读
@@ -1066,14 +1065,14 @@ export class AgentLoop {
     }
     // 无工具路径：plan 本迭代不被改写，检出时机（LLM 调用后）与工具落定后等价，保持原位。
     yield* this._maybeEmitStepBoundary();
-    // K1 补发：工具闭环内延迟分类的纯文本消息（收尾交付）从未流式 yield → 先补发整段正文再收尾
+    // 补发：工具闭环内延迟分类的纯文本消息（收尾交付）从未流式 yield → 先补发整段正文再收尾
     if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
       yield { type: 'text', content: llmResult.fullContent, stage: textStage };
     }
     return yield* this.handleTextResponse(llmResult);
   }
 
-  /** 步级折叠边界事件产出（阶段二，2026-09-08 路 B′）：比较 active step 是否已推进，推进才产
+  /** 步级折叠边界事件产出：比较 active step 是否已推进，推进才产
    *  plan_item_boundary（宿主按步分组后续事件）。无任务表（null）或 planItemId 未变则不产
    *  （lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
    *  检出时机由调用方决定：工具分支在 handleToolCalls 之后（工具可能改写 plan）、无工具分支在
@@ -1084,7 +1083,7 @@ export class AgentLoop {
     const activePlanItemId = activePlanItemMeta?.planItemId;
     if (activePlanItemMeta && activePlanItemId && activePlanItemId !== this.lastBoundaryPlanItemId) {
       this.lastBoundaryPlanItemId = activePlanItemId;
-      // 层0 观测：plan_item_boundary 产出累计（实证布局骨血是否空转）
+      // 底层观测：plan_item_boundary 产出累计（实证布局骨血是否空转）
       this.metrics.planItemBoundaryCount++;
       yield {
         type: 'plan_item_boundary',
@@ -1094,12 +1093,12 @@ export class AgentLoop {
     }
   }
 
-  /** 迭代边界产出（档3 · 迭代原子落盘，2026-09-23）：迭代**完成且将继续下一轮**时 emit
+  /** 迭代边界产出（迭代原子落盘）：迭代**完成且将继续下一轮**时 emit
    *  `step_boundary`，宿主据此增量落盘（一次迭代一次落盘）。
    *
    *  **为什么单开一个 chunk 而不复用 plan_item_boundary**：plan_item_boundary 的语义是「任务项推进」
    *  （无任务表静默 + planItemId 未变去噪），把它当落盘时机 → 无任务表的长工具循环零增量落盘，
-   *  崩溃即全丢（档2 覆盖缺口）。本 chunk 与它语义分离：只回答「本次迭代做完了」。
+   *  崩溃即全丢。本 chunk 与它语义分离：只回答「本次迭代做完了」。
    *
    *  **条件 = result === 'continue'（硬）**：终态迭代（'done' 收尾 / 'paused' 挂起 / 'aborted'
    *  中断）之后流即结束或宿主 break → **流尾落盘**已兜底，此处不产——既避免与流尾重复写，
@@ -1147,7 +1146,7 @@ export class AgentLoop {
     // 第二级：tool_result 占位（ResultReplacementStrategy）
     // 注：超大工具结果卸载**不在链上** —— 它是入口关（appendToolMessage），见 toolResultOffload.ts
     //
-    // 视图说明（截断轮一致性，2026-09-11 打磨备注）：截断时 safeMessages 为截断后新数组（本次
+    // 视图说明（截断轮一致性）：截断时 safeMessages 为截断后新数组（本次
     // 发往 LLM 的视图），this.messages 经 replaceContext 为同元素引用的浅拷贝。ResultReplacement
     // 原地改对象 content（引用共享 → 对发送视图同样生效）。
     for (const strategy of this.compactionStrategies) {
@@ -1157,10 +1156,10 @@ export class AgentLoop {
     }
     // ─── 压缩链结束 ─────────────────────────────────────────────
 
-    // 情报区注入（Step 2）：LLM 私有工作笔记，作为单条尾部私有 system 消息（非 executionTemp → 跨 turn 自持）
+    // 情报区注入：LLM 私有工作笔记，作为单条尾部私有 system 消息（非 executionTemp → 跨 turn 自持）
     this.injectIntelNote();
 
-    // TS-7 搜索收敛护栏：本闭环成功联网搜索达阈值后，注入收敛提示引导 LLM 停止搜索直接作答。
+    // 搜索收敛护栏：本闭环成功联网搜索达阈值后，注入收敛提示引导 LLM 停止搜索直接作答。
     // 幂等：一轮内仅注入一次（executionTemp 随下一闭环入口清冗；计数随 resetTurnState 清零）
     if (
       this.successfulWebSearchCount >= LOOP_CONSTANTS.SEARCH_CONVERGENCE_THRESHOLD &&
@@ -1190,7 +1189,7 @@ export class AgentLoop {
         '软上限：摘要层达容量上限，注入收尾信号，LLM 收敛产出最终交付',
       );
     } else if (this.contextManager.shouldInjectContextPressureHint(this.messages)) {
-      // T3（2026-09-01）预算预警档：容量到线但摘要层未饱和（软上限的前一级）→ 注入温和压缩/收敛提示，
+      // 预算预警档：容量到线但摘要层未饱和（软上限的前一级）→ 注入温和压缩/收敛提示，
       // 引导 LLM 主动压缩而非直接到收尾。内容幂等：仅一轮内注入一次，防迭代累积刷屏（executionTemp 入口即弃）
       if (!this.messages.some((m) => m.role === 'system' && m.content.includes('上下文空间提示'))) {
         this.appendSystemMessage(LOOP_CONSTANTS.CONTEXT_PRESSURE_HINT, { executionTemp: true });
@@ -1204,7 +1203,7 @@ export class AgentLoop {
       );
     }
 
-    // 每次迭代 LLM 调用前统一注入任务表 —— 替换式注入（T9 2026-09-11）：
+    // 每次迭代 LLM 调用前统一注入任务表 —— 替换式注入：
     // 注入前先移除已有的任务表消息（特征前缀 [任务进度:，renderTaskTable 输出首行），
     // 保证一个 turn 内经 N 次迭代上下文恒 1 份任务表，不重复灌指令浪费 token。
     // 同时标记 executionTemp——跨 turn 由 cleanExecutionTemporary 在下一闭环入口统一清冗
@@ -1218,7 +1217,7 @@ export class AgentLoop {
 
     // needsPlanning 命中时首迭代注入一过式命令式引导：executionTemp → 跨 turn 由
     // cleanExecutionTemporary 清冗；planNudgeInjected 保证本 turn 仅决策一次（非每迭代重复，
-    // 与任务表"替换式"注入区分）。P1 收口：已有在途任务表（会议骨架 / 续会）时不灌「先拆解建表」——骨架已预置 / 续会本有步进，nudge 冗余误导；无表才诱导建表。
+    // 与任务表"替换式"注入区分）。收口：已有在途任务表（会议骨架 / 续会）时不灌「先拆解建表」——骨架已预置 / 续会本有步进，nudge 冗余误导；无表才诱导建表。
     // 判定经 hasInflightPlan 回调（与 SessionManager 同源谓词），不复用 getActivePlanItemMeta 的存在性（职责分离）。
     if (this.planNeedsNudge && !this.planNudgeInjected) {
       this.planNudgeInjected = true;
@@ -1315,7 +1314,7 @@ export class AgentLoop {
       this.lastToolCallsHash = '';
     } else if (dupVerdict === 'block') {
       // 硬拦截：真阻止——不执行任何工具，注入阻断并结束本轮（工具尚未执行，诚实）。
-      // 注（P1-1 正交登记 a 轨）：默认 DefaultDuplicateCallInterceptor.check 只返 ok/warn，
+      // 注：默认 DefaultDuplicateCallInterceptor.check 只返 ok/warn，
       // **永不返回 block**——本分支仅宿主注入型拦截器可达，属批级软去重的扩展能力位而非默认路径。
       this.appendSystemMessage(
         `[DUPLICATE_TOOL_CALL_BLOCKED] 检测到重复工具调用，已阻止本次工具执行。` +
@@ -1337,7 +1336,7 @@ export class AgentLoop {
       signal,
     );
     if (execResult.aborted) {
-      // P1-01 同构：工具执行中途 timeout abort 且用户已申请暂停 → 路由 paused（续跑）。
+      // 与 LLM 调用点同构：工具执行中途 timeout abort 且用户已申请暂停 → 路由 paused（续跑）。
       // 经单一收口方法 _routePausedIfTimeoutAndPause，与 LLM abort 点共用同一判定（SSOT）。
       const pausedChunk = this._routePausedIfTimeoutAndPause(signal);
       if (pausedChunk) {
@@ -1353,9 +1352,9 @@ export class AgentLoop {
     }
 
     // Reflection：本轮工具结果含 retryable 错误时，追加反思提示帮 LLM 聚焦修正而非放弃
-    // slice 按实际执行的 effectiveToolCalls.length 取窗口——旧实现按 LLM 原始请求条数
+    // slice 按实际执行的 effectiveToolCalls.length 取窗口——若按 LLM 原始请求条数
     // llmResult.toolCalls.length 切，toolStepLimit 截断时 slice 多看会把上一轮残留的
-    // tool 错误吸进判定窗口，误注入反思提示（T10 2026-09-11 修正）
+    // tool 错误吸进判定窗口，误注入反思提示（坑）
     const hasRetryableError = this.messages
       .slice(-effectiveToolCalls.length) // 只看本轮工具结果
       .some((m) => m.role === 'tool' && isRetryableToolError(m.content));
@@ -1375,7 +1374,7 @@ export class AgentLoop {
   }
 
   /**
-   * ask_user 提问挂起（step 边界气口，2026-09-04）：把提问作为普通工具轮落地，挂起等用户作答。
+   * ask_user 提问挂起（step 边界气口）：把提问作为普通工具轮落地，挂起等用户作答。
    *
    * 与插话/暂停统一的「申请 → 气口生效」语义：
    * - assistant(toolCalls) 结构完整入史（含 ask_user），不再「撕掉」工具——OpenAI 兼容端要求
@@ -1441,7 +1440,7 @@ export class AgentLoop {
         id,
       );
     });
-    // G26：已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 照旧清空
+    // 已作答提问转存快照（runResume 落盘交互输入时随回答持久化），pendingAsk 即清空
     this.lastAnsweredAsk = this.pendingAsk.questions;
     this.pendingAsk = undefined;
     this.inAutonomousStep = false;
@@ -1450,7 +1449,7 @@ export class AgentLoop {
   }
 
   /**
-   * 取走最近一次已作答提问快照（G26）：runResume 落盘回答交互输入前调用，取走即清。
+   * 取走最近一次已作答提问快照：runResume 落盘回答交互输入前调用，取走即清。
    * 返回 undefined = 本次续跑非提问回答路径（补充输入 / 无快照残留）。快照为
    * AskQuestion[]（多 ask_user 轮整组），调用方按需取用（当前落盘语义取 questions[0]）。
    */
@@ -1461,10 +1460,10 @@ export class AgentLoop {
   }
 
   /**
-   * 取消在途提问（宿主「跳过/取消提问」或提问超时（2026-09-08）时调用；
+   * 取消在途提问（宿主「跳过/取消提问」或提问超时时调用；
    * runIterationLoop 续跑兜底也调用）：
    * 以占位结果回填，防 assistant.tool_calls 无配对 tool 消息（OpenAI 兼容端 400）。
-   * G26 对称（2026-09-08）：与 answerQuestion 一致转存提问快照到 lastAnsweredAsk——
+   * 与 answerQuestion 对称：同样转存提问快照到 lastAnsweredAsk——
    * 超时路径（resumeExecution kind='timeout'）经 runResume takeAnsweredAsk 随「未回答」
    * 交互记录落盘 question/options，重放可渲染「问 + 未回答」行；跳过/兜底路径不消费
    * 快照时残留仅进程内单 turn，无害（下次 answerQuestion 覆盖）。
@@ -1485,15 +1484,13 @@ export class AgentLoop {
   }
 
   /** 纯文本结束（子方法 3/3）：push assistant 消息（含空响应兜底）并 yield done。
-   *  注：主动提问已收敛为 ask_user 工具（2026-09-04），本方法只处理纯文本交付，
-   *  不再承担提问暂停。 */
+   *  本方法只处理纯文本交付；提问暂停走 ask_user 工具通道。 */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
-    // 文本工具意图收敛（2026-09-14 静默失败修复）：纯文本结束路径意味着本轮未产出原生
-    // toolCalls，若 fullContent 仍带 <tool_call>/<function=> 骨架（文本出口不再宣告可调用
-    // 通道后模型偶发模仿残留），说明「想调用工具却未走原生协议」——既往被当普通文本交付，
-    // 宿主净化后为空 → 显示空白且被静默盖「完成」。此处：告警 + 计数 + 剔除骨架出交付文本。
+    // 文本工具意图守卫：纯文本结束路径意味着本轮未产出原生 toolCalls，若 fullContent 仍带
+    // <tool_call>/<function=> 骨架，说明「想调用工具却未走原生协议」——当普通文本交付会在
+    // 宿主净化后显示空白且被静默盖「完成」。此处：告警 + 计数 + 剔除骨架出交付文本。
     const nonSkeletonText = llmResult.fullContent
       ? this.stripToolIntentSkeleton(llmResult.fullContent)
       : null;
@@ -1527,7 +1524,7 @@ export class AgentLoop {
   /**
    * 调用 LLM（带指数退避重试，仅在流式输出前失败时重试；流式已开始则直接上抛，因用户已看到部分结果）。
    *
-   * 实现已迁至 `LlmCaller.callWithRetry`（ARCH-3 P3-2，~277 行）；此处保留委托壳。
+   * 实现内聚于 `LlmCaller.callWithRetry`；此处保留委托壳。
    */
   private callLlmWithRetry(
     safeMessages: readonly Message[],
@@ -1579,7 +1576,7 @@ export class AgentLoop {
     this.inAutonomousStep = true;
 
     // yield tool_start 并并发发起所有工具执行（不 await，由 Promise.all 统一等待）
-    // P0-1 收敛（2026-09-16）：blocked 与执行 promise 耦合为同一结构体，每个工具恰好一条。
+    // blocked 与执行 promise 耦合为同一结构体，每个工具恰好一条。
     // 每个工具一次 push 一个 { blocked, promise }，结果按工具顺序对齐取出，
     // 保证护栏拦截标记永不与执行结果错位（避免平行数组各自 push 导致索引漂移）。
     const toolExecs: Array<{ blocked: boolean; promise: Promise<string> }> = [];
@@ -1595,7 +1592,7 @@ export class AgentLoop {
     };
     for (const tc of toolCalls) {
       this.metrics.toolCallCount++;
-      // 层0 观测：task_table_write 调用累计（实证任务表是否被触发）
+      // 底层观测：task_table_write 调用累计（实证任务表是否被触发）
       if (tc.function.name === 'task_table_write') this.metrics.planTaskTableWriteCount++;
       const isSearch = tc.function.name === 'web_search';
       if (isSearch) this.searchCallCount++;
@@ -1606,12 +1603,12 @@ export class AgentLoop {
         args: tc.function.arguments,
       };
 
-      // ===== 统一护栏判定（GuardRail SSOT，S2-S5 迁移后为真拦截）=====
+      // ===== 统一护栏判定（GuardRail SSOT）=====
       // 判定逻辑 / 命中文案（衔接提示词）/ 阈值收敛到 guardRail.ts（createDefaultGuards，见收敛方案）。
       // loop 仅保留最小职责：① 组 GuardContext（运行态计数 + 运行时阈值覆盖 + 防重依赖）；② 调 evaluateBlocked
       // 按注册序取首个硬拦命中；③ 处理 search_limit 专属副钩（停搜 + 重建 system prompt，需触达消息层所以留 loop）；
       // ④ 被拦则回填 guard 渲染的拒绝文案。
-      // 台账分支②/③（文件覆盖度替身回显）形态不同、**不收敛**（见 guardRail.ts 收敛边界），仍在下方内联。
+      // 台账替身回显的两条分支（摘要顶替 / 保守放行）形态不同、**不收口进 guardRail**（见 guardRail.ts 边界），仍在下方内联。
       const guardHit = this.guardier.evaluateBlocked({
         toolName: tc.function.name,
         argsJson: tc.function.arguments,
@@ -1649,18 +1646,18 @@ export class AgentLoop {
         toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
         continue;
       }
-      // 台账分支②（文件覆盖度替身回显，不收敛）：原文已压缩/分段脚注时用摘要或引导 offset 续读替代重读。
-      // 分支③（保守）：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁——CTX-1 根因②）。
+      // 台账替身回显分支（摘要顶替，不收口进 guardRail）：原文已压缩/分段脚注时用摘要或引导 offset 续读替代重读。
+      // 保守放行分支：无摘要 / 区间超出覆盖 → 放行（宁可多读一次，不可死锁）。
       // 文件被 write/delete 修改 → 结果处理循环 invalidate 台账，放行合法重读。
       const ledgerSubject = DEDUP_SUBJECT_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
       if (ledgerSubject?.path) {
         const cov = this.fileExposure.get(ledgerSubject.path);
         if (cov && shouldEchoLedgerStub(ledgerSubject, cov)) {
-          // 观测 ADR-031「补缝过度拦截」候选：台账替身回显命中累加。
+          // 观测「补缝过度拦截」候选：台账替身回显命中累加。
           this.metrics.ledgerStubEchoCount++;
           logger.debug(
             { path: ledgerSubject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
-            'read_file 台账替身回显（分支②）：已用摘要顶替整读',
+            'read_file 台账替身回显：已用摘要顶替整读',
           );
           toolExecs.push({ blocked: true, promise: Promise.resolve(formatLedgerStub(cov)) });
           continue;
@@ -1686,11 +1683,11 @@ export class AgentLoop {
     for (let i = 0; i < toolCalls.length; i++) {
       const tc = toolCalls[i]!;
       const result = results[i]!;
-      // 第三态（2026-09-02）：策略拦截 blocked=true 非成功亦非失败——ok=false 且不计成功搜索数；
+      // 第三态：策略拦截 blocked=true 非成功亦非失败——ok=false 且不计成功搜索数；
       // 失败（[ERR 前缀）与拦截区分开，UI 显示「已拦截」，metrics 失败数不把拦截算作失败
       const blocked = toolExecs[i]!.blocked;
       const ok = !blocked && !result.startsWith('[ERR');
-      // TS-7 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
+      // 搜索收敛护栏：累计本闭环成功 web_search 次数（LLM 反复搜索不收敛时据此注入收敛提示）
       if (tc.function.name === 'web_search' && ok) {
         this.successfulWebSearchCount++;
       }
@@ -1706,8 +1703,8 @@ export class AgentLoop {
             toolCallId: tc.id,
             fingerprint: sha256Fingerprint(wrapToolResult(tc.function.name, result)),
           });
-          // 文件覆盖度台账写侧：read_file 返回分段脚注（= 文件确实大/被截断，R1 修正的"按需"信号）
-          // 时记录覆盖区间 + 轻量替身摘要——供拦截分支②在原文被压缩后回显（防重读永动机 / 空拦死锁）。
+          // 文件覆盖度台账写侧：read_file 返回分段脚注（= 文件确实大/被截断，按需读取信号）
+          // 时记录覆盖区间 + 轻量替身摘要——供替身回显分支在原文被压缩后回显（防重读永动机 / 空拦死锁）。
           if (tc.function.name === 'read_file' && subject.path) {
             const cov = parseReadFileCoverage(result);
             if (cov) {
@@ -1724,9 +1721,9 @@ export class AgentLoop {
                 cachedAtIteration: this.currentIteration,
               });
             } else {
-              // 整读无脚注（= 已读到文件末尾 / 文件未超单段预算，CTX-1 Step1a「读到末尾零噪音」）：
-              // 同样记「全文件覆盖」——否则小文件整读后无台账 → 分支②永不触发 → 压缩后重读狂飙
-              // （真机 182 次 read_file 复发根因正是小文件不记；见 ADR-031 补缝）。
+              // 整读无脚注（= 已读到文件末尾 / 文件未超单段预算，读到末尾零噪音）：
+              // 同样记「全文件覆盖」——否则小文件整读后无台账 → 替身回显永不触发 → 压缩后重读狂飙
+              // （真机 182 次 read_file 复发根因正是小文件不记——「补缝过度拦截」的反例）。
               const totalLines = result.split('\n').length;
               logger.debug(
                 { path: subject.path, totalLines, src: 'whole-read', peek: result.slice(0, 80) },
@@ -1758,7 +1755,7 @@ export class AgentLoop {
           const a = JSON.parse(tc.function.arguments) as { path?: string };
           if (a.path) {
             this.toolResultCache.invalidateFile(a.path);
-            // 台账同步失效：文件内容变了，旧覆盖度替身作废（防分支②回显陈旧摘要 → 放行合法重读）
+            // 台账同步失效：文件内容变了，旧覆盖度替身作废（防替身回显陈旧摘要 → 放行合法重读）
             this.fileExposure.invalidate(a.path);
           }
         } catch {
@@ -1947,9 +1944,9 @@ export class AgentLoop {
       : `基于以上设定，回应用户的问题。`;
 
     // 追加工具描述（让 LLM 知道可用工具及其参数）
-    // TS-7 搜索硬上限命中后：同步剔除 web_search 描述，避免「描述存在但工具不可用」不一致
+    // 搜索硬上限命中后：同步剔除 web_search 描述，避免「描述存在但工具不可用」不一致
     const tools = this.resolveActiveTools();
-    // 工具通道门控（互斥双能力位，2026-09-14 阶段0）：仅当 provider 声明支持原生工具调用时
+    // 工具通道门控（互斥双能力位）：仅当 provider 声明支持原生工具调用时
     // 才列出工具清单并引导调用——无工具能力时列清单会诱导模型吐文本工具骨架（复现旧伤）。
     const supportsToolCalling = this.toolCallingEnabled();
     if (tools && tools.length > 0 && supportsToolCalling) {
@@ -1964,9 +1961,8 @@ export class AgentLoop {
         })
         .join('\n');
       // 工具清单导语（SSOT 纪律）：只描述工具存在及其参数，**不出现「tool_call」等调用语法字样**——
-      // 文本出口不是可调用通道，原生工具宣告唯一真源是 buildChatOptions 的 tools 参数。
-      // 曾写作「你可以通过 tool_call 调用以下工具」诱导模型模仿文本标签（mimo 即产出过
-      // 未闭合的 <tool_call> 且被当普通文本交付 → 静默失败），故收敛为中性纯描述。
+      // 文本出口不是可调用通道，原生工具宣告唯一真源是 buildChatOptions 的 tools 参数；
+      // 出现调用语法会诱导模型模仿文本标签产出 <tool_call> 骨架，被当普通文本交付后静默失败。
       prompt += `\n\n## 可用工具\n\n以下是当前可用工具及其参数说明：\n${toolDescs}`;
 
       // 工具导语纪律（分区式 UI 配套）：正文只承载最终交付；调用工具前意图说明压到一句话，
@@ -1975,7 +1971,7 @@ export class AgentLoop {
 
       // 工具选择规则：仅对工具清单中实际存在的 create_* 工具生成指引；
       // 无 create_* 工具时（编辑类宿主直接管理角色/技能/规则配置）整个规则节不输出，
-      // 避免指引 LLM 调用不存在的工具（2026-08-28 健康度诊断 H-A）
+      // 避免指引 LLM 调用不存在的工具。
       const createTools = tools.filter((t) => /^create_/.test(t.name));
       if (createTools.length > 0) {
         const CONFIG_LABELS: Readonly<Record<string, string>> = {
@@ -1991,7 +1987,7 @@ export class AgentLoop {
         prompt += `\n\n## 工具选择规则（必须遵守）\n\n${createLines.join('\n')}\n- 以上配置文件的任何操作，永远不要使用 write_file 工具`;
       }
 
-      // 记忆回想导语句（T12 2026-09-11，砍硬收窄后保留软引导）：工具描述块存在即注入，
+      // 记忆回想导语句（软引导，不硬收窄）：工具描述块存在即注入，
       // 让 LLM 建立「涉及过往先回想」的通用良习（不依赖轮次状态/查询意图）。
       // toolCallsBlocked（确定性工具屏蔽，角色冻结态）时排除：引导调用被禁止的 search_memories
       // 属描述面不一致——其调用会被 handleToolCalls 确定性拒绝并直接 done，白费一轮 LLM 工具意图。
@@ -2000,7 +1996,7 @@ export class AgentLoop {
       }
     }
 
-    // 工具能力缺失的显式告知（互斥双能力位回落，F4 防静默）：系统配置了工具集、但当前 provider
+    // 工具能力缺失的显式告知（互斥双能力位回落，防静默）：系统配置了工具集、但当前 provider
     // 既无原生工具调用也无结构化输出时，显式告知 LLM「工具不可用」——让其直接给出文本作答，
     // **不诱导**其试图用文本骨架"调用"工具（避免复现文本 tool_call 旧伤）。logger.warn 留痕可观测。
     if (tools && tools.length > 0 && !supportsToolCalling && !this.structuredOutputEnabled()) {
@@ -2011,7 +2007,7 @@ export class AgentLoop {
       prompt += `\n\n## 工具不可用\n当前模型不支持工具调用（无原生工具协议，也无可用的结构化输出回落）。请直接用文本回答，不要假装调用工具。`;
     }
 
-    // 注：曾计划追加 `## 行为护栏` 通用声明节（this.guardier.buildPromptSection()），已收敛去掉——
+    // 注：不追加 `## 行为护栏` 通用声明节（this.guardier.buildPromptSection()）——
     // 常量注入会改变每个 turn 的 system prompt token 预算，撞破「极小预算触发截断」类测试标定，
     // 且让 `[TAG]` 令牌在常驻 system prompt 出现而与运行时拒绝消息定位冲突（行为护栏的「衔接提示词」
     // 以运行时 GUARD_RAIL_PROMPTS 即时渲染为准，见 guardRail.ts）。buildPromptSection 保留为**内核内部**通用约束
@@ -2049,7 +2045,7 @@ export class AgentLoop {
   /**
    * 当前 provider 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
    *
-   * 读 provider 的互斥双能力位（2026-09-14 阶段0）：
+   * 读 provider 的互斥双能力位：
    * - true → loop 走原生工具通道（列工具 + 传 tools）。
    * - false → 工具通道不可用，须收起工具清单走显式回落（见 buildSystemPrompt / buildChatOptions）。
    * provider 未配置（undefined）时按支持处理（默认 true，与存量「有工具集即传 tools」一致）。
@@ -2072,17 +2068,17 @@ export class AgentLoop {
    * 解析「本轮可用工具集」——单一真源（SSOT）
    *
    * 工具可用性事实本来被写作两处（buildSystemPrompt 文本出口 + buildChatOptions 原生出口），
-   * 属「同语义多实现」带伤。TS-7 搜索硬上限命中后两处都要剔除 web_search，故把排除谓词收敛到本方法。
+   * 属「同语义多实现」带伤。搜索硬上限命中后两处都要剔除 web_search，故把排除谓词收口到本方法。
    * 不修改 opts.toolDefinitions，仅按轮过滤，随 resetTurnState 自然恢复。
    */
   private resolveActiveTools(): readonly ToolDefinition[] {
     const all = this.opts.toolDefinitions ?? [];
-    // TS-7 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸）
+    // 搜索硬上限命中后：从工具集剔除 web_search（确定性停搜，与 system 提示双闸）
     return this.searchDisabled ? all.filter((t) => t.name !== 'web_search') : all;
   }
 
   /**
-   * 构建 LLM 调用选项（互斥双能力位的确定性通道选择，2026-09-14 阶段0）。
+   * 构建 LLM 调用选项（互斥双能力位的确定性通道选择）。
    *
    * 通道取当前 provider 的能力位：
    *   - 支持原生工具调用（supportsToolCalling）→ 走 tools 原生 FC 通道（唯一可调用通道）；
@@ -2238,7 +2234,7 @@ export class AgentLoop {
   }
 
   /**
-   * 记录最近一次输入装配的上下文预算（prepare 期调用，④ 预算可视化）。
+   * 记录最近一次输入装配的上下文预算（prepare 期调用，预算可视化）。
    * 只存最新一轮预算供指标快照透出，不跨轮累积。
    */
   recordBudget(budget: ContextBudget): void {
@@ -2246,7 +2242,7 @@ export class AgentLoop {
   }
 
   /**
-   * 获取最近一轮输入装配的上下文预算（G4 预算联动，2026-08-31）
+   * 获取最近一轮输入装配的上下文预算（预算联动）
    *
    * 供工具执行器在工具执行期读取剩余预算（search_project 预算下探）。
    * 未 prepare 时返回 undefined（如纯工具单元测试场景）。
@@ -2256,7 +2252,7 @@ export class AgentLoop {
   }
 
   /**
-   * 记录最近一次输入装配的上下文占用快照（prepare 期调用，④ 预算可视化）。
+   * 记录最近一次输入装配的上下文占用快照（prepare 期调用，预算可视化）。
    * 存最新一轮真实用量供指标快照/输入区指示器透出，不跨轮累积。
    */
   recordOccupancy(occupancy: ContextOccupancy): void {
@@ -2264,7 +2260,7 @@ export class AgentLoop {
   }
 
   /**
-   * 对话占用实时刷新（④ 预算可视化 · 输入区常驻指示器）。
+   * 对话占用实时刷新（预算可视化 · 输入区常驻指示器）。
    *
    * occupancy 主体在 prepare 期 record（见 contextPreparer），但 prepare 发生在 assistant
    * 生成前，故快照的 dialogue 段天然不含本轮 assistant、且单轮对话结束后不再刷新。
@@ -2351,7 +2347,7 @@ export class AgentLoop {
     return Array.from(this.replacedRoundIds);
   }
 
-  /** 当前工作记忆中实际保留的轮次 roundId 集合（装配 exclude 用，T1 2026-09-01）。
+  /** 当前工作记忆中实际保留的轮次 roundId 集合（装配 exclude 用）。
    *  扫描视图内 user 消息自带 roundId（与 ReplaceRoundsStrategy.groupRounds 同源，
    *  无外部序列/尾部对齐依赖）。覆盖截断重排后按重要性提炼保留的中间轮——其正文已在
    *  视图，round-summary 须排除防与该正文双写；被完全裁掉的旧轮不在集合内，其摘要仍可召回。 */
@@ -2513,7 +2509,7 @@ export class AgentLoop {
     const removedCount = this.messages.length - 1 - conversationHistory.length;
     this.replaceContext([permanent, ...conversationHistory]);
     // 已移除全部非永驻 system 消息：executionTempSystem 引用的消息皆不在上下文，
-    // 同步清集合消除引用滞后（双清机制一致化，2026-09-11）——否则集合保留旧引用至下次闭环入口
+    // 同步清集合消除引用滞后（双清一致）——否则集合保留旧引用至下次闭环入口
     if (this.executionTempSystem.size > 0) {
       this.executionTempSystem.clear();
     }
@@ -2646,7 +2642,7 @@ export class AgentLoop {
   }
 
   /**
-   * 每轮装配把情报区注入为**单条尾部私有 system 消息**（Step 2）。
+   * 每轮装配把情报区注入为**单条尾部私有 system 消息**。
    *
    * - 复用 Message[] 视图：不新增对象，情报区 = 一条 system 消息正文；
    * - 已存在则更新原文（保持单条），被截断删除则重建 → 参与 `truncateMessages` 尾部淘汰（B 语义）；
@@ -2655,7 +2651,7 @@ export class AgentLoop {
    * **归属注**：对已存在消息的 `existing.content = ...` 属**单条尾部私有消息的幂等刷新**（同
    * `ResultReplacement` 只改 content），**不是装配重排**——不违背 loop「只追加、不重装配」的编排原则。
    *
-   * **时序注（2026-09-13，诚实声明）**：`_prepareContext` 先算 `safeMessages`、后注入本消息——
+   * **时序注（诚实声明）**：`_prepareContext` 先算 `safeMessages`、后注入本消息——
    * 在**截断轮**（截断重排后安全快照 ≠ this.messages）里，本轮被发送的 `safeMessages` 不含本情报区，
    * 下一轮 `_prepareContext` 重算后才可见（瞬时，非死锁）。此与 search 收敛提示 / taskTable 等所有
    * 既有动态注入提示的时序一致（库级既有行为），非本机制特例。

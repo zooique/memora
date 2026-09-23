@@ -1,8 +1,8 @@
 /**
- * ProviderStore — contextWindow 校验 + 旧全局 maxContextTokens 迁移（2026-08-29 窗口模型收敛）
+ * ProviderStore — contextWindow 校验 + 旧全局 maxContextTokens 迁移
  *
  * 不引入真实 VS Code 运行时：用 vi.mock 提供内存版 workspace.getConfiguration + SecretStorage。
- * 仅覆盖本次新增的 per-LLM contextWindow 护栏与迁移逻辑（其余路径由既有集成测试覆盖）。
+ * 仅覆盖 per-LLM contextWindow 护栏与迁移逻辑（其余路径由既有集成测试覆盖）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -104,7 +104,7 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
   });
 });
 
-describe('ProviderStore · save/remove 语义（站 65 好面补测）', () => {
+describe('ProviderStore · save/remove 语义', () => {
   let store: ProviderStore;
   beforeEach(() => {
     h.store['providers'] = [];

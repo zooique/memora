@@ -3,8 +3,8 @@
  *
  * 职责：
  *   - assembleContext：上下文装配（预算派生 + 对话层注入 + 占用快照）。
- *     每轮自动记忆召回已退役（memory-tool-recall-design §3/§4），检索改由 search_memories 工具主动触发。
- *   - （角色自动匹配已随 v0.13 移除：角色包只能手动切换，无 autoMatch / LLM 语义兜底）
+ *     每轮无自动记忆召回（memory-tool-recall-design §3/§4），检索由 LLM 经 search_memories 工具主动触发。
+ *   - 角色包只能手动切换，无 autoMatch / LLM 语义兜底（无角色自动匹配）
  *
  * 设计原则：
  *   - 只依赖 Agent 注入的稳定能力（deps），不反向依赖 Agent 私有状态（与 AgentHooks 同构）
@@ -76,13 +76,12 @@ export class ContextPreparer {
   }
 
   /**
-   * 上下文装配（记忆自动注入已退役，见 memory-tool-recall-design §3/§4）
+   * 上下文装配（纯上下文装配，无自动召回）
    *
-   * 原「记忆召回 + 固定轮次注入」中的**每轮语义召回段已退役**：记忆检索改由 LLM 经
-   * search_memories 工具主动触发（builtinToolHandlers.searchMemories），本方法不再代模型
-   * 猜测"此刻需要什么记忆"。方法退化为纯**上下文装配**：预算派生 + roundId 互斥 +
-   * 对话层注入 + 上下文占用快照，不再返回任何自动召回的注入记忆。
-   * contextAssembly 策略键已随阶段2 退役，对话层注入恒走 hybrid（最近对话摘要注入）。
+   * 记忆检索由 LLM 经 search_memories 工具主动触发（builtinToolHandlers.searchMemories），
+   * 本方法不代模型猜测"此刻需要什么记忆"，只做纯**上下文装配**：预算派生 + roundId 互斥 +
+   * 对话层注入 + 上下文占用快照，不返回任何自动召回的注入记忆。
+   * 对话层注入恒走 hybrid（最近对话摘要注入），无 fixed/query 分支。
    *
    * @param input 用户输入（仅作顶级锚点预算估算，不再作为召回 query）
    */
@@ -103,10 +102,10 @@ export class ContextPreparer {
       fixedOverheadTokens,
       inputTokens,
     });
-    // 预算透出（④ 预算可视化）：暂存最近一轮预算供指标快照展示"预算花到哪"
+    // 预算透出（预算可视化）：暂存最近一轮预算供指标快照展示"预算花到哪"
     deps.loop.recordBudget?.(budget);
 
-    // ── 装配前判负（洞 3 独立路径） ──
+    // ── 装配前判负（独立路径） ──
     // 顶级锚点划走后剩余预算低于最小可运行阈值 → 该输入无法支撑至少一轮正文，
     // 装配前确定性降级（跳过召回与完整对话层注入），并通知宿主提示放文件用 read_file 读。
     // 与软上限（摘要饱和）是不同失败原因，不占用软上限统计。
@@ -126,7 +125,7 @@ export class ContextPreparer {
     // 派生完整对话层轮次集合（动态轮数 + 第一条必在场，次级锚点）
     const dialogue = loop.getRecentHistoryWithinBudget(budget.dialogueBudgetTokens);
 
-    // ── 完整对话层注入：恒 hybrid（阶段2 contextAssembly 键退役，不再有 fixed/query 分支） ──
+    // ── 完整对话层注入：恒 hybrid（无 fixed/query 分支） ──
     // 对话按预算截断，注入的最近轮次摘要提供结构化视图，避免 LLM 丢失上下文连续性。
     const recentHistory = dialogue.history;
     if (recentHistory.length > 0) {
@@ -143,19 +142,18 @@ export class ContextPreparer {
       logger.debug({ turns: recentHistory.length / 2 }, '最近对话已注入');
     }
 
-    // ── 上下文占用快照（④ 预算可视化）：记录各层真实用量，供输入区指示器展示 ──
+    // ── 上下文占用快照（预算可视化）：记录各层真实用量，供输入区指示器展示 ──
     // 单一真理源 = 本 prepare 已算出的实际值；宿主/webview 只渲染、不重算。
     //   rolePackBase = fixedOverheadTokens（system prompt：persona+rules+技能L1+工具schema）
     //   dialogue     = 问答闭环完整对话 token（全量 user+assistant，与装配模式无关——容量诚实
-    //                  统计问答闭环总和，ADR-030 口径；loop.append 侧 refreshOccupancyDialogue 以
+    //                  统计问答闭环总和；loop.append 侧 refreshOccupancyDialogue 以
     //                  同一估算器重算覆盖，prepare 与实时刷新同源同数据，无口径漂移）
     //   inputAnchor  = 顶级锚点（本轮用户输入，budget.anchorTokens）
     //   outputReserve= 窗口 × 输出预留比例（留给模型回答的容量，非已用）
     //   free         = 总容量 − 各段，≥ 0 收敛（窗口过小/输入过大时各段归零）
-    // 注：原「记忆摘要」段已随记忆自动注入退役移除（2026-09-09）——记忆不再占用上下文，
-    //     占用模型无记忆维度。
+    // 注：记忆不占用上下文，占用模型无记忆维度。
     const dialogueTokens = loop.estimateTokens(loop.getConversationMessages());
-    // 条数语义（2026-09-01 定案）：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
+    // 条数语义：以「用户输入」为计数标准——一个问答闭环（user 消息）计 1 条，
     // 哪怕 assistant 回答残缺/被中止也如实记录（尊重用户保留意图）；assistant 不计入条数，但计入 dialogueTokens 容量。
     // 关键：dialogueCount 与 dialogueTokens 统一取 loop.messages 全量（user 计数 + 全量 token），
     // 与装配模式无关——否则 hybrid 模式下 getRecentHistoryWithinBudget 按预算截取「最近 N 轮」

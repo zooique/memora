@@ -61,9 +61,8 @@ const MEETING_RESULT_MAX_LEN = 20_000;
 /**
  * 目录树返回的最大字符数（防超大目录整段进上下文）
  *
- * ⚠️ 旧名 `FILE_READ_MAX_LEN`（50_000）名不副实：它同时被 read_file 与 list_dir 复用。
- * 2026-09-13 起 read_file 改走 **token 预算分段**（`LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS`），
- * 不再使用字符上限；本常量专职 list_dir，故改名——名字须与它实际约束的东西一致。
+ * read_file 走 **token 预算分段**（`LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS`），
+ * 不使用字符上限；本常量专职 list_dir——名字须与它实际约束的东西一致。
  */
 const DIR_LIST_MAX_LEN = 50_000;
 
@@ -90,8 +89,8 @@ function clampCharsToTokenBudget(line: string, budget: number): string {
  * 脚本文件读取最大长度（run_code script_path 模式）
  *
  * 脚本代码要原样交给执行器，截断会破坏语法——故超限**直接报错**（不静默截断）。
- * 与 read_file 不同：read_file 自 2026-09-13 起改走 token 预算分段
- * （LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS），已不再使用字符上限，
+ * 与 read_file 不同：read_file 走 token 预算分段
+ * （LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS），不使用字符上限，
  * 故本常量与 read_file 不在同一量纲，无「谁更宽松」的可比关系。
  *
  * 与 utils/fileSafe.DEFAULT_MAX_CONTENT_LEN 同为 200_000 属**异义同值**，勿误合并：
@@ -117,7 +116,7 @@ export const IGNORED_DIR_NAMES: readonly string[] = [
 ];
 
 /**
- * 任务表保留文件名判定（2026-09-07 伪建表根治，write_file 守卫唯一消费）
+ * 任务表保留文件名判定（write_file 守卫唯一消费）
  *
  * 任务表是内核工具数据（task_table_write/update 管理），不落盘为 markdown 文件——`task-table.md` /
  * `任务表.md` 等文件名保留给任务表机制，禁止 write_file 写入。命中规则 = 文件名（去扩展名）即
@@ -175,8 +174,7 @@ export class BuiltinToolHandlers {
   /**
    * 注入 memoryRecalled 事件发射回调（宿主消费，§2.4「保留改语义」定案）。
    * 搜索工具命中记忆时触发，文案语义 =「LLM 查询记忆命中 N 条」。
-   * **唯一触发位**：warmRecall 恢复例外已随跨重启恢复链于 2026-09-10 整体退役
-   * （勿按旧注释去找「第二处发射点」，全库仅本类 emit memoryRecalled）。
+   * **唯一触发位**：全库仅本类 emit memoryRecalled（无其他发射点）。
    * 缺省不注入则静默跳过（内置工具也可被测试/脚本直调，无宿主时 no-op）。
    */
   setOnMemoryRecalled(callback: (info: { count: number; query: string }) => void): void {
@@ -272,14 +270,13 @@ export class BuiltinToolHandlers {
   /**
    * 读取文件（带路径白名单校验；支持按行分段）
    *
-   * **分段语义（大文本统一通道 Step 1a，2026-09-13）**
+   * **分段语义（大文本统一通道）**
    * - `offset`：起始行号（1-based，默认 1）；`limit`：最多返回行数（省略 = 尽可能多）。
    * - **同源不变量**：返回内容的 token 数**恒 ≤ `LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS`**。
    *   这保证 read_file 的结果永不触发入口关落盘（阈值同键）→「路径即引用」不会自我嵌套
    *   （详见该常量注释）。故本方法**不**使用字符数上限，而是按 token 预算逐行填充。
    * - **截断诚实化**：一旦未能读到文件末尾，脚注给出「已显示第 X–Y 行（共 M 行）」与续读
-   *   offset。旧实现是静默追加 `…`——LLM 既不知道后面还有内容，也没有续读手段（SEARCH-1
-   *   同族的「静默截断 = 假阴性」）。
+   *   offset；静默追加 `…` 会让 LLM 既不知道后面还有内容、也没有续读手段（静默截断 = 假阴性）。
    */
   async readFile(relativePath: string, offset?: string, limit?: string): Promise<string> {
     if (!relativePath) {
@@ -650,10 +647,10 @@ export class BuiltinToolHandlers {
     const absolutePath = this.resolveSafePath(relativePath);
     this.guardPathOrThrow(absolutePath, 'write_file');
 
-    // 保留名守卫（2026-09-07 伪建表根治）：任务表是内核工具数据（task_table_write/update 管理），
-    // 不落盘为 markdown 文件。历史样本实证：LLM 曾在同一会话内反复 write_file 写 .memora/task-table.md
-    // （上轮成功先例 few-shot 强化 → 下轮沿用），绕过 PlanItem 通道导致顶部任务板不渲染/视角切换失效。
-    // 软指令压不过历史先例，必须确定性拦截——命中即失败，错误样本进会话历史成为「此路不通」负面先例，
+    // 保留名守卫：任务表是内核工具数据（task_table_write/update 管理），不落盘为 markdown 文件。
+    // 若放行，LLM 会在同一会话内反复 write_file 写 .memora/task-table.md（成功先例 few-shot 强化 →
+    // 下轮沿用），绕过 PlanItem 通道导致顶部任务板不渲染/视角切换失效；软指令压不过先例，
+    // 必须确定性拦截——命中即失败，错误样本进会话历史成为「此路不通」负面先例，
     // 引导 LLM 改走 task_table_write 单通道。
     if (isReservedTaskTableFile(absolutePath)) {
       throw toolError(
@@ -1029,7 +1026,7 @@ export class BuiltinToolHandlers {
     this.touchHits(hits);
 
     // memoryRecalled 事件（§2.4「保留改语义」定案）：LLM 查询记忆命中 N 条 → 宿主感知提示。
-    // 唯一发射位：warmRecall（恢复路径）2026-09-10 已随跨重启恢复链退役，此处是全库唯一 emit。
+    // 唯一发射位：此处是全库唯一 emit。
     this.onMemoryRecalled?.({ count: hits.length, query });
 
     const lines = hits.map((m, i) => {
@@ -1039,7 +1036,6 @@ export class BuiltinToolHandlers {
       const trace = m.sessionId
         ? ` trace(${m.sessionId}${m.roundId ? `, round=${m.roundId}` : ''})`
         : '';
-      // sim 语义相似度已随 B0 恒 0 字段删除（2026-09-18）；score 已随阶段3 物理退役（2026-09-09）
       // 命中项仅保留 accessedAt/trace
       return `${i + 1}. [${m.source}:${m.name}] (${access}${trace})\n   ${preview.replace(/\n/g, ' ')}`;
     });

@@ -7,8 +7,8 @@
  *   - 不含配置型 source（persona / rule / skill）
  *   - 常量不可变（readonly 约束 + 值锁定）
  *
- * 注：score 边界常量（BOOST_INCREMENT / SCORE_CEILING / SCORE_FLOOR）已随阶段3
- * score 物理退役删除（2026-09-09），本文件不再承载对应契约。
+ * 注：无 score 边界常量（BOOST_INCREMENT / SCORE_CEILING / SCORE_FLOOR 均不存在——
+ * score 不参与排序），本文件不承载对应契约。
  */
 import { describe, expect, it } from 'vitest';
 import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
@@ -16,17 +16,17 @@ import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
     it('应为空（记忆库无独立治理源）', () => {
-      // 设计演进（2026-08-26 对齐 ADR-025 + 架构收敛）：
-      //   - persona / rule / skill 已归角色包管理，不写入记忆库
-      //   - work-projection 已移出记忆库（2026-08-20）
-      //   - profile 已收敛为 round-summary 的 type=preference 召回
+      // 各 source 的归属（对齐 ADR-025）：
+      //   - persona / rule / skill 归角色包管理，不写入记忆库
+      //   - work-projection 不入记忆库
+      //   - profile 由 round-summary 的 type=preference 召回承载
       //   - round-summary 不参与治理（事实记录语义，superseded 写时取代承载）
-      //   - content 历史残留 source 无生产写入路径（2026-09-09 剪枝清空）
+      //   - content 无生产写入路径（历史残留 source）
       expect(GOVERNANCE_SOURCES).toHaveLength(0);
     });
 
-    it('不应包含已废弃的 source（content / persona / rule / skill / work-projection / profile）', () => {
-      // 这些 source 已随架构收敛移出治理范围，不应出现在治理源中
+    it('不应包含停用 source（content / persona / rule / skill / work-projection / profile）', () => {
+      // 这些 source 不在治理范围，不应出现在治理源中
       expect(GOVERNANCE_SOURCES).not.toContain('content');
       expect(GOVERNANCE_SOURCES).not.toContain('persona');
       expect(GOVERNANCE_SOURCES).not.toContain('rule');

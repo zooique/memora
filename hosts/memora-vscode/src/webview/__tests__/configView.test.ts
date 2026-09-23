@@ -307,7 +307,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
     (document.getElementById('f-contextwindow') as HTMLInputElement).value = 'abc';
     (document.getElementById('btnTest') as HTMLButtonElement).click();
-    // 旧实现：btnTest 直接 readForm() 未经校验 → NaN 落 undefined 静默以默认 120K 测连接
+    // 必须经校验再发送（坑：btnTest 直接 readForm() 未经校验时 NaN 落 undefined，会静默以默认 120K 测连接）
     expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'cfg_test' }));
     const feedback = document.getElementById('f-contextwindow-feedback') as HTMLElement;
     expect(feedback.hidden).toBe(false);

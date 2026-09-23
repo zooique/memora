@@ -1,5 +1,5 @@
 /**
- * chatView 测试共享基建（M3b-2b-3 抽取，防对拍测试复制夹具成双份真相）
+ * chatView 测试共享基建（防对拍测试复制夹具成双份真相）
  *
  * 单一真源：`createChatView` 依赖的 HTML 骨架、挂载/分发辅助只在此一份，
  * `chatView.test.ts` 与 `runtimeReplayParity.test.ts` 均从本模块 import——

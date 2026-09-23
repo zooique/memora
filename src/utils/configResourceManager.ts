@@ -88,7 +88,7 @@ export abstract class ConfigResourceManager<
   }
 
   /**
-   * 子类声明「用户版本覆盖磁盘同名」的条目（默认无；S5，2026-09-22）
+   * 子类声明「用户版本覆盖磁盘同名」的条目（默认无）
    *
    * 默认语义 = 磁盘（更强真理源）赢：运行时注入项撞磁盘扫描同名时，磁盘版胜出、
    * 运行时记账注销。SkillManager 的用户技能目录（loadExtraDir）则声明为覆盖——

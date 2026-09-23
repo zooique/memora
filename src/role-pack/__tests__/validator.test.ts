@@ -110,17 +110,17 @@ describe('validateManifest：键名合法性', () => {
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(0);
   });
 
-  it('keywords/trigger 已废弃：按未知键 warning 宽容（不阻塞装载）', () => {
+  it('keywords/trigger 废弃键：按未知键 warning 宽容（不阻塞装载）', () => {
     // v0.13 角色包手动切换，自动匹配链死——废弃键不在已知键集，旧包带此二键
-    // 走「未知键 warning + 忽略」通道，语义与校验器历史行为等价（warning 不阻塞）。
+    // 走「未知键 warning + 忽略」通道（warning 不阻塞装载）。
     const result = validate({ keywords: ['文档', 'API'], trigger: ['测试'] });
     expect(result.valid).toBe(true);
     expect(findByCode(result.issues, 'UNKNOWN_TOP_LEVEL_KEY')).toHaveLength(2);
   });
 
   it('keywords 任何形状均宽容（废弃键走未知键 warning，不判形状）', () => {
-    // 校验器不再认识 keywords：数组/逗号串/数值/对象一律未知键 warning + 忽略，
-    // 不阻塞装载（旧包兼容等价：历史行为对合法形状放行，废弃后形状不再有语义）。
+    // 校验器不判 keywords 形状：数组/逗号串/数值/对象一律未知键 warning + 忽略，
+    // 不阻塞装载（废弃键的形状无语义，任意形状同通道）。
     const asArray = validate({ keywords: ['文档', 'API'] });
     const asNumber = validate({ keywords: 12 });
     const asObject = validate({ keywords: { a: 1 } });

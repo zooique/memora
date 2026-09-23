@@ -1,5 +1,5 @@
 /**
- * 技能视图样式 — 新增的全局技能管理选项卡样式（2026-08-22）
+ * 技能视图样式 — 全局技能管理选项卡样式
  *
  * 设计（对齐 ITCSS + tokens.ts 单一真理源）：
  *   - 以 #skills-root 前缀限定，与其他子视图样式隔离，避免串扰；
@@ -32,7 +32,7 @@ export const skillsStyles = `
     gap: var(--sp-2, 6px);
   }
 
-  /* 纯图标按钮陈（2026-09-22：去掉「打开目录/刷新」冗余文字，仅保留图标）：
+  /* 纯图标按钮（打开目录/刷新，无文字标签）：
      紧凑方块（padding --sp-2 覆盖 .btn 的左右 12px），图标 flex 居中，hover 提示走 title */
   #skills-root .btn-icon-solo {
     display: inline-flex;
@@ -56,7 +56,7 @@ export const skillsStyles = `
     margin-bottom: var(--sp-3, 8px);
   }
 
-  /* 空态提示内联图标（原 📁 emoji 的 SVG 替代，2026-09-19 图标语言收口）：
+  /* 空态提示内联图标（SVG）：
    * .hint 为左对齐说明文字，图标以 inline 内联、vertical-align 与文字基线对齐 */
   #skills-root .hint-icon { vertical-align: -2px; }
 
@@ -70,14 +70,14 @@ export const skillsStyles = `
   #skills-root .skill-item {
     padding: var(--sp-3, 8px);
     margin-bottom: var(--sp-2, 6px);
-    /* P2-1：统一卡片外壳语言——surface-hover → surface-sidebar，与角色卡/Provider 卡/记忆卡 A 类对齐
-       P3：边框不透明度 0.2→0.4，与 A 类卡片（角色/Provider/记忆）完全对齐 */
+    /* 统一卡片外壳语言——surface-sidebar，与角色卡/Provider 卡/记忆卡对齐；
+       边框不透明度 0.4，与 A 类卡片（角色/Provider/记忆）完全对齐 */
     background: var(--surface-sidebar);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: var(--radius, 6px);
   }
 
-  /* D（2026-09-22）：禁用集「未找到需要禁用的技能」提示（非阻断弱化样式；
+  /* 禁用集「未找到需要禁用的技能」提示（非阻断弱化样式；
      复用既有 warn 语义令牌 --feedback-warn-*（chatStyles 澄清提示 same-form：前景+背景+border），
      不造新令牌——CSS 令牌单一真源（tokens.ts），禁硬编码） */
   #skills-root .skill-unmatched-tip {

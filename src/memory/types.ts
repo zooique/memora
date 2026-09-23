@@ -18,7 +18,6 @@ export type MessageRole = 'system' | 'user' | 'assistant' | 'tool';
 /**
  * 记忆基元接口：id/content/source/name/createdAt/accessedAt 6 个基础字段
  * + deletedAt 可选（软删除）
- * score 字段已物理删除（2026-09-09 阶段3 退役）；向量语义通道已随 B0 收编（2026-09-18），
  * 检索为纯关键词单通道，无持久化排序分字段，使用轨迹唯一事实源为 accessedAt
  */
 export interface Memory {
@@ -44,7 +43,7 @@ export interface Memory {
   metadata?: Record<string, string>;
   /**
    * round-summary 摘要类型（preference/fact/decision/intent/general）。
-   * 顶层持久化字段（2026-08-26 自 metadata 提升，A1 边界定案）：宿主 SQLite 不持久化 metadata，
+   * 顶层持久化字段：宿主 SQLite 不持久化 metadata，
    * 而分轨召回须跨会话可靠读取，故提升为顶层列。仅 round-summary 有意义。
    */
   summaryType?: SummaryType;
@@ -77,7 +76,6 @@ export type SummaryType = (typeof SUMMARY_TYPES)[number];
 /**
  * 记忆解析器 — 验证原始数据并转换为 Memory
  * 校验：非空对象、字段类型、ISO 8601 日期
- * score 字段已退役（2026-09-09 阶段3），不再解析/默认填充
  *
  * **白名单构造**：返回值只含 Memory 接口声明的字段，源对象上的任何未知字段（如旧档残留的
  * `score`）一律剥离——宿主读旧档经此函数即完成数据层清洗，无需另写迁移脚本。
@@ -134,9 +132,8 @@ export function parseMemory(raw: unknown): Memory {
     }
   }
 
-  // 验证可选语义字段的类型（2026-09-20 站 51 补齐）：兑现头注释「校验字段类型」与
-  // SUMMARY_TYPES「运行时校验与类型声明同源」的承诺——此前均为 as 断言透传零校验，
-  // 不可信磁盘 JSON 的非法值（如 summaryType: 'bogus' / isModified: 'yes'）会致
+  // 验证可选语义字段的类型（运行时校验与类型声明同源）：不可信磁盘 JSON 的非法值
+  // （如 summaryType: 'bogus' / isModified: 'yes'）靠 as 断言透传会致
   // round-summary 分轨召回与编辑标记消费行为漂移（无编译报错）。
   if (obj.metadata !== undefined && !isPlainObject(obj.metadata)) {
     throw configError(
@@ -203,14 +200,10 @@ export function parseMemory(raw: unknown): Memory {
 /**
  * 当前使用的 source 标签约定；source 是开放字符串，新增来源无需改代码，存储时指定即可
  *
- * 设计演进（2026-08-26 对齐 ADR-025 + 架构收敛）：
- *   - persona / rule / skill 已归角色包管理，不写入记忆库
- *   - work-projection 已移出记忆库（2026-08-20，落项目目录 projections/）
- *   - 这些标签仍保留在 SOURCE_LABELS 中，用于：
- *     1. typo 检测（sourceValidation.ts：KNOWN_SOURCES 集合）
- *     2. 历史兼容（存量行/外部导入的 source 标签仍可被识别）
- *   - 它们不再出现在 GOVERNANCE_SOURCES 中（治理系统只治理实际写入记忆库的 source）
- *   - 文件路径映射/推断（sourcePaths.ts / inferSource）已于 2026-08-28 随角色包收敛移除
+ * persona / rule / skill / work-projection 为残留兼容标签：对应内容不归记忆库管理
+ * （角色包内容由角色包管理，作品投影落项目目录 projections/），标签保留用于
+ * typo 检测（sourceValidation.ts：KNOWN_SOURCES 集合）与存量行/外部导入识别；
+ * 它们不出现在 GOVERNANCE_SOURCES 中（治理系统只治理实际写入记忆库的 source）。
  */
 export const SOURCE_LABELS = {
   /** 角色人格（角色包 content/persona.md）— 残留兼容标签，不写入记忆库 */
@@ -219,7 +212,7 @@ export const SOURCE_LABELS = {
   RULE: 'rule',
   /** 技能定义（角色包 skills/ 目录）— 残留兼容标签，不写入记忆库 */
   SKILL: 'skill',
-  /** 作品投影（读取用户作品时生成的概要）— 已移出记忆库（2026-08-20，落项目目录） */
+  /** 作品投影（读取用户作品时生成的概要）— 残留兼容标签，作品落项目目录 projections/ */
   WORK_PROJECTION: 'work-projection',
   /** 轮次摘要（每轮对话后生成的溯源式摘要，记忆即摘要） */
   ROUND_SUMMARY: 'round-summary',

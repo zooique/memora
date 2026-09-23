@@ -66,13 +66,11 @@ export const NOOP_TRACER: ITracer = new NoopTracer();
  * AgentLoop 关键节点 Span 名称常量——供宿主按名过滤建监控面板。
  * 各 span 名称/用途契约（span 名是宿主监控依赖，勿改）：
  *
- * 注：原 RECALL / RECALL_ACTUAL 常量已于 2026-09-11 物理删除——两 span 在内核
- * 已无 emit 点（自动记忆召回退役 + recall() 物理删除），为幽灵 API 保留契约
- * 即为幻觉留门。现行记忆检索耗时可看 TOOL_EXEC span（search_memories 工具）。
+ * 记忆检索耗时看 TOOL_EXEC span（search_memories 工具）；内核无召回类 span 发射点，
+ * 勿凭旧契约重新加名。
  *
- * 与「已删除」不同的一类：DIFFICULTY / REPORT 是**预留名**（规划能力尚未落地），
- * 内核同样零 emit 点，但不得把它们的注释写成正在进行的行为——宿主按名建监控
- * 面板会永远收不到数据（2026-09-19 订正原「回答前判定…」进行时描述）。
+ * DIFFICULTY / REPORT 是**预留名**（规划能力尚未落地），内核同样零 emit 点——
+ * 不得把注释写成正在进行的行为，否则宿主按名建监控面板会永远收不到数据。
  */
 export const TRACE_SPANS = {
   /** LLM API 调用 */
@@ -96,8 +94,7 @@ export const TRACE_SPANS = {
 /**
  * Agent 运行时指标快照——Agent.getMetrics() 聚合 AgentLoop+Agent 两层指标产出，供宿主做监控/健康度面板。
  * 只读快照（不修改状态）、同步返回（不触发 LLM/IO）、累计值（init 起累加，close() 后清零）。
- * 分 4 维度：LLM 调用、工具调用、上下文管理、任务级 SLO（显式衰减维度已随衰减子系统移除，2026-08-27；
- * 记忆召回维度已随自动召回退役删除，2026-09-11——recallTotalCount/recallHitCount 零写点、hitRate 恒 0）。
+ * 分 4 维度：LLM 调用、工具调用、上下文管理、任务级 SLO（无衰减/记忆召回维度：对应指标零写点）。
  */
 export interface AgentMetrics {
   /** LLM 调用指标 */
@@ -113,14 +110,12 @@ export interface AgentMetrics {
     /** 实际 API 返回的输出 token 累计值（仅在 Provider 支持 usage 时填充，否则为 0） */
     actualOutputTokens: number;
     /**
-     * LLM 空响应兜底次数（2026-09-15 边界补缝观测）：200 但 0 token 时用户看到兜底文案、
+     * LLM 空响应兜底次数：200 但 0 token 时用户看到兜底文案、
      * 任务零产出却被 success 盖章。宿主据此识别「瞬态抽风」（可期望重试救回）vs「模型拒绝」（重试也空）。
      */
     emptyResponseCount: number;
     /**
-     * tool_call 批次成形守卫（TOOLPAIR-2 Step 2 `auditToolCallPairing` 发送边界）实际拒发次数。
-     * 2026-09-16 补出：此前该计数只自增、不进 `AgentMetrics` 输出 → 宿主 / tracer 零消费者
-     * （命中「僵尸声明：派生字段零消费者」）。
+     * tool_call 批次成形守卫（`auditToolCallPairing` 发送边界）实际拒发次数。
      * N>0 代表内核真拦下了坏批次（孤立 tool 消息 / 空函数名 / 重复 id / 名称超长）。
      * 与 `unparsedToolIntentCount` 互补：后者是「模型想干却没干成」（模型侧），
      * 本值是「内核拦下了会发出去的坏批次」（内核侧守门）。
@@ -135,14 +130,13 @@ export interface AgentMetrics {
     failureCount: number;
     /**
      * 未解析工具意图数（文本骨架 <tool_call>/<function=> 但无常原生 toolCalls）。
-     * 2026-09-14 静默失败修复：让「想干活却一步没干成」不再被静默盖「完成」；
-     * 宿主可据 N>0 不显示该轮成功收尾。
+     * 让「想干活却一步没干成」不被静默盖「完成」；宿主可据 N>0 不显示该轮成功收尾。
      */
     unparsedToolIntentCount: number;
     /**
      * read_file 覆盖度台账回显（分支② `formatLedgerStub` 拦截）命中次数。
-     * 2026-09-15 落地：观测 ADR-031「补缝过度拦截」带伤候选——诚然 0 代表防重没在替身层拦截
-     * （可能是护住也可是拦不住），N 增大代表替身频繁顶替「拿回整份视角」的合法重读（铁证「规避行为红旗」）。
+     * 用于观测防重补缝是否过度拦截：0 代表防重没在替身层拦截
+     * （可能是护住也可能是拦不住），N 增大代表替身频繁顶替「拿回整份视角」的合法重读（规避行为红旗）。
      * 健康判定需连同真机规避信号交叉看，本计数仅提供可观测的量化基线。
      */
     ledgerStubEchoCount: number;
@@ -155,9 +149,9 @@ export interface AgentMetrics {
     messageCount: number;
     /** 当前估算 token 数（estimateTokens） */
     estimatedTokens: number;
-    /** 最近一次输入装配的上下文预算构成（可选：prepare 计算并透出，供宿主展示预算分配，④） */
+    /** 最近一次输入装配的上下文预算构成（可选：prepare 计算并透出，供宿主展示预算分配） */
     budget?: ContextBudget;
-    /** 上下文占用快照（可选：prepare 期真实用量，供输入区指示器展示，④ 预算可视化） */
+    /** 上下文占用快照（可选：prepare 期真实用量，供输入区指示器展示） */
     occupancy?: ContextOccupancy;
     /**
      * 当前激活角色包底盘占用（system prompt 总体 token，persona+rules+技能 L1+工具 schema+全局技能+时间戳）。
@@ -179,7 +173,7 @@ export interface AgentMetrics {
     /** 平均任务耗时（毫秒，0 表示尚无数据） */
     avgDurationMs: number;
   };
-  /** 任务表触发观测量（2026-09-14 层0：实证任务表是否被 LLM 触发，驱动 plan_item_boundary/折叠） */
+  /** 任务表触发观测量（实证任务表是否被 LLM 触发，驱动 plan_item_boundary/折叠） */
   plan: {
     /** 累计调用 task_table_write 次数（= 建表/重建次数，0 = 从未触发） */
     taskTableWriteCount: number;

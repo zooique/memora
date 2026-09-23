@@ -1,11 +1,10 @@
 /**
- * 全局技能池合规守卫（Agent Skills 规范对齐，2026-09-22）
+ * 全局技能池合规守卫（Agent Skills 规范对齐）
  *
- * 背景：内置全局技能（`src/extension/skills/`）的 `name` 曾用**中文显示名**
- * （代码审查 / 内容摘要 / 联网搜索 / 角色包制作器），与 Agent Skills 规范
- * （agentskills.io：`name` 仅允许 `[a-z0-9-]`，且**必须与父目录名一致**）不符，
- * 也与角色包技能（kebab）语义分叉——同一「技能名」概念在两类载体上规则不同，
- * 令引用校验（内核 `builtinPackCoverage` 双向守卫只认 kebab）与 UI 显示相互打架。
+ * 规范契约：内置全局技能（`src/extension/skills/`）的 `name` 必须符合 Agent Skills 规范
+ * （agentskills.io：`name` 仅允许 `[a-z0-9-]`，且**必须与父目录名一致**），
+ * 且与角色包技能（kebab）对齐——同一「技能名」概念在两类载体上规则不同，
+ * 会令引用校验（内核 `builtinPackCoverage` 双向守卫只认 kebab）与 UI 显示相互打架（坑）。
  *
  * 该池**不在内核守卫覆盖范围内**（内核 `ROLE_PACKS_DIR` 只指仓库根 `role-packs/`），
  * 故在此补齐三项：kebab 字符集 / name 与文件名（目录名）一致 / description 非空。

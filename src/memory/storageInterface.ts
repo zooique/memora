@@ -21,8 +21,8 @@ import type { Memory } from '@/memory/types.js';
 export interface IMemoryStorage {
   /**
    * 插入或更新记忆；source 为开放字符串可自定义，但写入须经 validateSource 统一校验
-   *（内核 inMemoryStorage 与宿主 workspaceStorage 已接入 block/warn 分级拦截，2026-09-06 DC-1 注释对齐）。
-   * 契约（2026-08-25）：整对象覆盖、无 CAS 乐观锁——单 Agent 设计假设；
+   *（内核 inMemoryStorage 与宿主 workspaceStorage 均接入 block/warn 分级拦截）。
+   * 契约：整对象覆盖、无 CAS 乐观锁——单 Agent 设计假设；
    * 多 Agent 并发写同会话需扩展版本字段/条件更新，内核当前不承诺并发一致性。
    */
   upsert(memory: Memory): void;
@@ -84,7 +84,7 @@ export interface IMemoryStorage {
   countBySource(source: string): number;
 
   /**
-   * 刷新记忆 accessedAt（使用轨迹写位）。score 退役后（2026-09-09 阶段3）唯一写位，
+   * 刷新记忆 accessedAt（使用轨迹唯一写位）。
    * 召回命中 / 工具命中经此「被想起即刷新」；toSetting 不 +score/delta，无 clamp 语义。
    * @returns 记忆不存在/软删除时返回 false，成功返回 true
    */

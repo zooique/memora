@@ -1,16 +1,15 @@
 /**
  * capabilities → 特权工具映射测试（M2.1 → tool-exposure-model 特权声明模型）
  *
- * 语义变更（2026-09-08）：
  * capabilities = 角色包声明的超越默认边界的特权（web / code / task），
- * 不再映射本地能力——file:* / memory:recall / project:search 等已收敛为
+ * 不映射本地能力——file:* / memory:recall / project:search 等为
  * 默认常驻工具（见 toolExecutor.DEFAULT_EXPOSED_TOOLS），不产生白名单映射。
  */
 import { describe, it, expect } from 'vitest';
 import { resolveCapabilityTools } from '@/role-pack/capabilityMap.js';
 
 describe('resolveCapabilityTools（中立能力 → memora 特权工具白名单）', () => {
-  it('映射项目总监角色包：web:search 生效，file:* 已收敛为常驻工具不再映射', () => {
+  it('映射项目总监角色包：web:search 生效，file:* 为常驻工具不映射', () => {
     const caps = [
       { capability: 'file:read' },
       { capability: 'file:write' },

@@ -4,7 +4,7 @@
  * 职责：
  *   - 非敏感字段（name/displayName/model/baseUrl/provider）存 VS Code configuration
  *     （写入【用户级】settings.json 的 memora.providers；Provider 是用户级偏好，非项目级，
- *     2026-08-17 由 Workspace 迁至 Global——避免污染 .vscode/settings.json 且跨项目共享）
+ *     不落 .vscode/settings.json 且跨项目共享）
  *   - 敏感字段 apiKey 存 SecretStorage（加密存储，不落盘 settings.json）
  *   - activeProvider 记录当前激活的 Provider name
  *   - 连接测试复用内核 createProviderFromConfig + chat()
@@ -24,7 +24,7 @@ const CFG_SECTION = 'memora';
 const CFG_PROVIDERS = 'providers';
 /** activeProvider 配置键 */
 const CFG_ACTIVE = 'activeProvider';
-/** backgroundProvider 配置键（G5 后台模型通道，2026-08-23：空 = 与实时对话相同） */
+/** backgroundProvider 配置键（后台模型通道：空 = 与实时对话相同） */
 const CFG_BACKGROUND = 'backgroundProvider';
 /** SecretStorage apiKey key 前缀 */
 const SECRET_PREFIX = 'memora.provider';
@@ -167,9 +167,9 @@ export class ProviderStore {
 
     // contextWindow 护栏（**纯防呆 sanity bound**，非模型真上限、也非权威裁决）：正整数 + 宽松范围，
     // 防 0 / 防天文数字撑爆预算。
-    // ⚠️ 内核侧**不做区间裁决**（2026-09-18 拍板）：此前内核对 >2M 静默丢弃，导致「UI 显示值 ≠ 真实生效值」，
-    // 该裁决已删除。故本护栏是**唯一**的输入边界，但它只防手滑 —— 真实上限由模型/API 决定，
-    // 超出模型能力时由 API 报错（可见），不再被任何一层静默替换。
+    // ⚠️ 内核侧**不做区间裁决**：若内核对超范围值静默丢弃，会「UI 显示值 ≠ 真实生效值」（坑）。
+    // 故本护栏是**唯一**的输入边界，但它只防手滑 —— 真实上限由模型/API 决定，
+    // 超出模型能力时由 API 报错（可见），不被任何一层静默替换。
     if (trimmed.contextWindow !== undefined) {
       if (
         !Number.isInteger(trimmed.contextWindow) ||
@@ -319,7 +319,7 @@ export class ProviderStore {
         model: config.model.trim(),
         apiKey: config.apiKey.trim(),
         provider: config.provider,
-        // 能力位透传（互斥双能力位，2026-09-14 阶段0）：未声明由内核按**各自方向**回落——
+        // 能力位透传（互斥双能力位）：未声明由内核按**各自方向**回落——
         // supportsToolCalling → true；supportsStructuredOutput → false（勿读成「默认都开」）。
         supportsToolCalling: config.supportsToolCalling,
         supportsStructuredOutput: config.supportsStructuredOutput,
@@ -340,10 +340,9 @@ export class ProviderStore {
   }
 
   /**
-   * 一次性迁移：工作区 settings.json 旧残留 → 用户级（2026-08-17 存储层级收敛）
+   * 一次性迁移：工作区 settings.json 旧残留 → 用户级
    *
-   * 背景：Provider 配置原写入 Workspace（.vscode/settings.json），改为 Global（用户级）后，
-   * 若工作区仍残留旧配置，VS Code 配置合并时 Workspace 优先级高于 Global，会覆盖新值
+   * 背景：Provider 配置现写入 Global（用户级），若工作区仍残留旧配置，VS Code 配置合并时 Workspace 优先级高于 Global，会覆盖新值
    * 导致用户新配置不生效。故 activate 时检测 workspaceValue 并并入 Global 后清除。
    *
    * 合并语义：按 name 去重——Global 已有则保留（用户新改的真源），Workspace 独有并入；
@@ -373,14 +372,14 @@ export class ProviderStore {
   }
 
   /**
-   * 一次性迁移：旧全局 memora.maxContextTokens → per-LLM contextWindow（2026-08-29 窗口模型收敛）
+   * 一次性迁移：旧全局 memora.maxContextTokens → per-LLM contextWindow（窗口模型）
    *
-   * 背景：上下文窗口上限原为用户级全局设置 memora.maxContextTokens（单一值作用于所有 LLM）。
-   * 收敛为 per-LLM 配置（LlmProviderConfig.contextWindow）后，全局设置不再是真理源。
+   * 背景：memora.maxContextTokens 是用户级全局设置（单一值作用于所有 LLM）的旧键；
+   * 现真理源为 per-LLM 配置（LlmProviderConfig.contextWindow），全局键不是真理源。
    * 为不丢用户已填值：激活时把旧全局值并入首个尚未配置 contextWindow 的 Provider；
    * 随后清除旧全局键（消除双真理源残留）。无旧值 / 无 Provider 时 → 无动作。
    *
-   * 生命周期（收敛卫生项，2026-08-30 标注）：内建守卫让函数幂等空转（旧键清空后每次 early-return），
+   * 生命周期：内建守卫让函数幂等空转（旧键清空后每次 early-return），
    * 长期保留零成本，故不强制移除；如需瘦身，须确认全量用户已迁移（无评估手段）后再于版本门槛内下线，
    * 下线前删除本函数 + extension.activate 调用 + providerStore.test.ts 对应用例。
    */

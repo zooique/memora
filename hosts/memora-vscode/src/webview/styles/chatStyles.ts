@@ -1108,7 +1108,7 @@ export const chatStyles = `
 
   /* ============ Components：发送按钮（单图标突出化） ============
    * 右侧唯一主操作：固定 32px 方钮，仅图标（发/停两态），视觉焦点恒定、窄窗省空间。
-   * 文字已收敛为 title/aria-label 可访问性兜底（panel 标记 + chatView 事件）。 */
+   * 文字走 title/aria-label 可访问性兜底（panel 标记 + chatView 事件）。 */
   .send-btn-primary {
     flex-shrink: 0;
     display: inline-flex;

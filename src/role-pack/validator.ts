@@ -35,8 +35,8 @@ export interface RolePackValidationResult {
 // ════════════════════════════════════════════════════════════
 
 /** 顶层已知键（manifest 字段集：元数据 + 合规 + 策略 + 技能 + 接手衔接）。
- * 注意：keywords/trigger/extensions/minKernelVersion/homepage/repository/license 已废弃或
- * 无参考实现消费（v0.13 角色包手动切换、自动匹配链死），故意不在已知键集——带这些键的
+ * 注意：keywords/trigger/extensions/minKernelVersion/homepage/repository/license 无消费方
+ *（角色包为手动切换，无自动匹配链），故意不在已知键集——带这些键的
  * manifest 按「未知键 warning + 忽略」宽容处理（键级渐进设计，兼容演进）。 */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
   'name', 'displayName', 'formatVersion', 'version', 'description',

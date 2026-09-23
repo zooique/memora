@@ -6,9 +6,9 @@
  *
  * 用途：read_file 结果被压缩链清出上下文、LLM 又以**同参**重读时，loop 拦截分支②据此返回
  * 摘要 + 覆盖度，而非「放行重读（= 永远重读→压→重读的永动机）」或「空拦（= LLM 手边无内容
- * 却被告知已读过的死锁，CTX-1 根因②）」。
+ * 却被告知已读过的死锁）」。
  *
- * 写侧触发（R1 排雷修正）：**只在 read_file 返回分段脚注时**记录 —— 脚注出现 ⇔ 文件确实大 /
+ * 写侧触发：**只在 read_file 返回分段脚注时**记录 —— 脚注出现 ⇔ 文件确实大 /
  * 确实被截断，才是正确的"按需"信号（offload 对 read_file 结构性不触发，不能当筛子）。
  *
  * 生命周期：闭环内（每轮 resetTurnState 清），与 `toolResultCache` 同；跨闭环不复用。
@@ -44,7 +44,7 @@ export interface ReadFileExposure {
 const FOOTNOTE_RE = /\[read_file 分段\] 已显示第 (\d+)–(\d+) 行（共 (\d+) 行）。/;
 
 /**
- * read_file 分段脚注格式（单一真理源，2026-09-14 炼化归元）：
+ * read_file 分段脚注格式（单一真理源）：
  * 生成侧在 `builtinToolHandlers.sliceFileByLineBudget`（引用本函数），解析侧在本模块
  * `parseReadFileCoverage`（引用 FOOTNOTE_RE）。两处同源，改脚注格式只改这里，不再双点漂移。
  *
@@ -79,23 +79,18 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
 }
 
 /**
- * 判定一次 read_file 请求是否应回显台账摘要（分支②语义的**单一真理源**，2026-09-14 收敛）。
- *
- * 收敛说明：此前该判定分裂为 `isRequestInsideCoverage`（无 limit 要求"读到尽"）与 loop 分支②
- * 内联的 `coverEnd > 0`（无 limit 只要读过一截就拦）两处**矛盾**实现，且前者无 limit 分支已被
- * 调用方绕过而成死代码。本函数统一为唯一实现，删除分歧/死码。
+ * 判定一次 read_file 请求是否应回显台账摘要（分支②语义的**单一真理源**）。
  *
  * 语义（区分「无区间整读」「limit 变体整读」「续读区间」三类冗余）：
  * - 该文件尚未覆盖过正文（coverEnd<=0）→ 不拦（无摘要可回显，放行）。
  * - **无 limit 整读**（LLM 要「全文」的语义重复）：只要覆盖过正文即视为冗余 → 拦，由
  *   formatLedgerStub 回显摘要 + 引导 `offset=coverEnd+1` 续读，避免大文件截断后反复整读重试。
- * - **limit 变体整读（2026-09-15 真机逃逸）**：请求 `offset+limit-1 >= totalLines` =「物理读到
- *   文件末尾」。此时再大的 limit 对同一文件读到内容一致（handler `Math.min` 截到 total），故
- *   一旦此前已覆盖到末尾（coverEnd >= totalLines）即视为同参整读 → 拦，封死「变 limit 从头重读」
- *   的逃逸（真机 151 次 read_file 主力，宪法等被 limit 500→250→400 重复整读）。
+ * - **limit 变体整读**：请求 `offset+limit-1 >= totalLines` =「物理读到文件末尾」。
+ *   此时再大的 limit 对同一文件读到内容一致（handler `Math.min` 截到 total），故一旦此前已
+ *   覆盖到末尾（coverEnd >= totalLines）即视为同参整读 → 拦，封死「变 limit 从头重读」的逃逸。
  * - **offset/limit 续读**：仅当整个请求区间落在已覆盖区间内才视为冗余 → 拦；触及覆盖之外
- *   （尚未读到末尾、`offset+limit-1 > coverEnd` 或 `offset < coverStart`）→ 放行（宁可多读不误拦，
- *   G2 守卫）——未覆盖到末尾的较大 limit 仍视为合法续读新内容，不误拦。
+ *   （尚未读到末尾、`offset+limit-1 > coverEnd` 或 `offset < coverStart`）→ 放行（宁可多读不误拦）
+ *   ——未覆盖到末尾的较大 limit 仍视为合法续读新内容，不误拦。
  *
  * @param subj read_file 去重主体的区间字段（offset/limit，缺省语义与 handler 一致）
  * @param cov  该文件已覆盖度台账条目

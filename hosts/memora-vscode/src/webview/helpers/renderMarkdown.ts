@@ -17,7 +17,7 @@ import { marked } from 'marked';
 // import type：仅编译期引用契约，esbuild/tsc 剥离后不产生运行时依赖——Node 端 import
 // 本模块永不加载 sanitizer.js（含 dompurify），保持渲染纯函数的跨环境安全
 import type { SanitizeFn } from './sanitizer.js';
-// escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛 2026-09-21，见 escapeHtml.ts）
+// escapeHtml：HTML 转义纯函数单一真理源（SSOT，见 escapeHtml.ts）
 import { escapeHtml } from './escapeHtml.js';
 
 /**
@@ -52,7 +52,7 @@ function fixIncompleteMarkdown(raw: string): string {
  * 调用方在 webview 浏览器环境经 createSanitizer 构造消毒器，以 SanitizeFn
  * 回调注入，实现「渲染逻辑」与「浏览器环境」的职责分离（契约见 sanitizer.ts）。
  *
- * 纵深防线（2026-09-14 静默失败修复）：若原文有可读字符、净化后却为空串——
+ * 纵深防线：若原文有可读字符、净化后却为空串——
  * 通常是「全文本工具标签」（如模型吐出 <tool_call> 骨架）被 DOMPurify 撕成空，
  * 显示空白且误导。判据为「净化前有非空白 & 净化结果为空」，回退转义显原文
  * （此时原文是提示性安全标签，非可执行脚本；转义后 innerHTML 安全）。

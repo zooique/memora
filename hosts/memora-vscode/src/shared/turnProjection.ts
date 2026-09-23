@@ -1,7 +1,7 @@
 /**
  * turn 投影层纯函数 —— 运行时 / 重放共用同一形状
  *
- * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md（M3a）
+ * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
  *
  * 职责边界（只做投影，不做编排）：
  *   - `toRoundView`：把运行时累积的「当前轮」投影为 `RoundView`（与落盘 Round 同形状）。
@@ -83,7 +83,7 @@ export interface TurnStateInput {
  */
 export function deriveTurnState(input: TurnStateInput): TurnState {
   const questions = input.pendingQuestions ?? [];
-  // ① 在途提问（M5b-2 缺口修复，2026-09-23）
+  // ① 在途提问
   // 判据从「paused && questions>0」放宽为「questions 非空即 ask」——**不依赖 paused**。
   // 原因：ask_user 的提问是「LLM 调工具 → 内核 emit questionPending → 随后 yield paused chunk」，
   // 提问那一刻会话状态器尚未置 paused（宿主 postTurnUpdate 读 sessionManager.status）。若判据
@@ -113,7 +113,7 @@ export function deriveTurnState(input: TurnStateInput): TurnState {
 }
 
 /**
- * 运行时当前轮的「未定型」形态（M3b-2a）：`userMessage` 可能尚不可知。
+ * 运行时当前轮的「未定型」形态：`userMessage` 可能尚不可知。
  *
  * 为什么需要它：`resumeExecution` 各形态**不开新轮**（续同一轮、不分裂），宿主手上没有该轮的
  * 开轮输入——只有落盘历史里有。故合并前允许 `userMessage` 缺省，由 `mergeLiveRound` 补；
@@ -125,14 +125,14 @@ export type PendingLiveRound = Omit<LiveRoundState, 'userMessage'> & {
 };
 
 /**
- * 把运行时当前轮并入落盘历史（M3b-2a，2026-09-23）
+ * 把运行时当前轮并入落盘历史
  *
  * 合并规则（按 `id` 定位，不另立判据）：
  *   - 历史中已有同 id 轮 → **原位替换**为 live 版本（live 更完整：含尚未落盘的流式正文与增量过程事件）。
  *     原位而非追加，保证轮序不因合并而漂移。
  *   - 历史中无该轮 → 追加到末尾（新轮尚未落盘，如 `chat()` 开的新轮）。
  *   - **拿不到 `userMessage`**（既无显式 seed，历史中也没有该轮）→ 整轮不并入。
- *     这是 M3b-1 定下的「半残数据比不投更危险」的延续：缺开轮输入的轮渲染不出用户气泡，
+ *     这是「半残数据比不投更危险」的取舍：缺开轮输入的轮渲染不出用户气泡，
  *     且会让「运行时投影」与「重放投影」在字段层面对不上。宁可少一轮，不投坏一轮。
  *
  * @param history 落盘历史轮（持久化的渲染真相源）

@@ -78,9 +78,7 @@ export class DefaultDuplicateCallInterceptor implements DuplicateCallInterceptor
    * 对工具调用列表生成稳定哈希（供 AgentLoop 和外部使用）
    *
    * 静态方法，方便 AgentLoop 在不持有拦截器实例时也能计算哈希。
-   * 序列化规则唯一实现：loop 的调用哈希直接调用本方法（2026-09-20 站 44 订正——
-   * 原「与 AgentLoop.hashToolCalls 保持一致」为僵尸引用，该类方法已不存在，
-   * loop 实际消费本静态方法，单一实现无镜像）。
+   * 序列化规则唯一实现：loop 的调用哈希直接调用本方法，单一实现无镜像。
    *
    * @param toolCalls 工具调用列表
    * @returns SHA256 哈希十六进制字符串；空数组返回空字符串

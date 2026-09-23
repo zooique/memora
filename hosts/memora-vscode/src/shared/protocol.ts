@@ -23,8 +23,8 @@ import type {
  * 对齐 memora-sprite 的 LlmProviderConfig 模式 + 内核 ProviderConfig：
  * - name 为唯一别名（持久化 key，编辑时禁用）
  * - apiKey 存 SecretStorage（不落盘 settings.json），模型/baseUrl 存用户级 configuration
- *   （ConfigurationTarget.Global，2026-08-17 由 Workspace 迁至 Global——Provider 是用户级偏好）
- * - provider 标识（'cloud'|'local'）——阶段1 起升格为**行为锚点**（非纯展示标签）：
+ *   （ConfigurationTarget.Global——Provider 是用户级偏好）
+ * - provider 标识（'cloud'|'local'）是**行为锚点**（非纯展示标签）：
  *   驱动「支持原生工具调用」能力位落值——cloud → supportsToolCalling=undefined（内核回落 true，
  *   存量云行为零回归）；local → 用户在配置面板显式声明（默认 true）。见下方 supportsToolCalling 字段。
  */
@@ -46,7 +46,7 @@ export interface LlmProviderConfig {
   /**
    * 是否支持原生工具调用（OpenAI Function Calling tools 协议）。
    * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，由用户在配置面板显式声明；
-   * 未填（undefined）→ 内核回落 true（保留存量云 LLM 工具行为，2026-09-14 阶段0·互斥双能力位）。
+   * 未填（undefined）→ 内核回落 true（云 LLM 工具能力的缺省值）。
    */
   supportsToolCalling?: boolean;
   /** 是否支持结构化输出（response_format / JSON mode），与 supportsToolCalling 互斥（OpenAI 协议限制）；未填 → 回落 false */
@@ -65,13 +65,13 @@ export interface LlmProviderConfig {
 
 /** Webview → extension 消息 */
 /**
- * 内部网页搜索引擎设置值（方案 A 2026-09-02，与内核 SearchEngineName + auto 对齐）
+ * 内部网页搜索引擎设置值（与内核 SearchEngineName + auto 对齐）
  * auto = 默认降级链（Bing→DuckDuckGo）。
  */
 export type SearchEngineSetting = 'auto' | 'bing' | 'baidu' | 'sogou';
 
 /**
- * 输入意图（M4 输入收口，2026-09-23）——四消息合一后的意图级分类
+ * 输入意图——四类输入的意图级分类
  *
  * kind 是「用户意图」，非结果分类：webview 不预知自己的输入最终会成为 chat / interject /
  * supplement / question-answer 中的哪一种——那由宿主按当前 turn 相位路由时决定（客户端-服务端
@@ -87,31 +87,31 @@ export type WebviewToExtensionMessage =
   /** Webview 脚本已就绪（监听器已注册），extension 可安全回放会话/推送数据 */
   | { type: 'ready' }
   /**
-   * 输入统一入口（M4 输入收口，2026-09-23）
+   * 输入统一入口
    *
-   * 替代 send / clarify_answer / clarify_answers / resume 四条旧消息（旧类型已随收敛删除，
-   * 双端同步切换，无过渡兼容窗——宿主与 webview 同仓发布，保留旧类型即死代码，违背不带伤原则）。
+   * 宿主与 webview 同仓发布、同步切换，无过渡兼容窗：不保留已收口的旧消息类型
+   * （留着即死代码）。
    * 宿主侧 handleInput 按当前 turn 相位（turn_update.state）单一路由（见 WebviewInputKind 注释）。
    *
-   * 错位语义（R2 单一判据）：answer 仅 waiting(ask) 相位生效，resume 仅 waiting(pause) 相位
-   * 生效；相位不符（迟到回答等）静默丢弃——与原各 handler 竞态守卫行为等义，零行为变更。
+   * 错位语义（单一判据）：answer 仅 waiting(ask) 相位生效，resume 仅 waiting(pause) 相位
+   * 生效；相位不符（如迟到回答）静默丢弃。
    */
   | { type: 'input'; kind: WebviewInputKind; text?: string; answers?: string[]; skillName?: string }
   /**
-   * 打开大模型配置视图（UX-1 空态引导按钮触发，2026-09-01）
+   * 打开大模型配置视图（对话面板空态引导按钮触发）
    *
    * 由对话面板空态「去配置模型」引导按钮触发：host 打开大模型配置面板并切到「大模型」选项卡。
    */
   | { type: 'open_config' }
   /**
-   * 新建会话（标题条「＋」按钮触发，2026-08-17 会话管理重构）
+   * 新建会话（标题条「＋」按钮触发）
    *
    * 由标题条新建按钮触发，host 调 newSessionFromCommand 生成唯一会话名并切入空会话；
    * 旧会话随之归档进历史记录（可经 session_list 弹窗加载回来或删除）。
    */
   | { type: 'new_session' }
   /**
-   * 分叉当前会话（AI 回答底部「分叉」按钮触发，B3 会话生命周期补齐，2026-08-22）
+   * 分叉当前会话（AI 回答底部「分叉」按钮触发）
    *
    * webview 从目标消息 dataset.roundId 携带本轮 id；host 调 agent.forkSession() 将当前对话
    * 复制为新分支会话并切入，UI 回放新分支；无 roundId 时回退当前会话最后一个 round（兜底）。
@@ -120,7 +120,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'fork_session'; roundId?: string }
   /**
-   * 请求历史会话列表（标题条「历史」按钮触发，2026-08-17 会话管理重构）
+   * 请求历史会话列表（标题条「历史」按钮触发）
    *
    * host 返回 session_list_data（非当前会话，按 updatedAt 降序），webview 渲染模态浮层。
    */
@@ -132,7 +132,7 @@ export type WebviewToExtensionMessage =
   /**
    * 删除指定历史会话（历史浮层条目垃圾桶触发）：host 侧确认不可恢复后删除该会话记录
    *
-   * 当前会话不进历史记录（设计收敛 2026-08-17），故正常不会删除到当前会话；
+   * 当前会话不进历史记录，故正常不会删除到当前会话；
    * host 侧对目标是当前会话做保护（拒绝 + 提示）。
    */
   | { type: 'delete_session'; sessionId: string }
@@ -141,7 +141,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'rename_request' }
   /**
-   * 删除单个问答闭环（truncate-from-turn，2026-08-16 对话闭环管理）
+   * 删除单个问答闭环（truncate-from-turn）
    *
    * 由 AI 消息的「删除」按钮触发，携带该条 AI 消息的 timestamp 作锚点。host 调宿主
    * sessionStore.truncateFrom 删除【该问答及其之后所有】消息，随后 replayCurrentSession
@@ -151,7 +151,7 @@ export type WebviewToExtensionMessage =
   /** Chat Panel 切换激活 Provider（底部模型下拉框） */
   | { type: 'chat_set_provider'; name: string }
   /**
-   * 角色管理面板切换激活角色包（2026-08-17 独立视图）
+   * 角色管理面板切换激活角色包
    *
    * 由角色管理视图的「设为当前」触发，host 调 agent.switchRolePack(name) 切换（内核
    * 单一切换入口：activate + emit rolePackSwitched + 刷新 loop 前缀）；成功后持久化
@@ -160,7 +160,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_set_active'; name: string }
   /**
-   * 角色 handoff：将指定角色包带入对话（2026-08-17 后续）
+   * 角色 handoff：将指定角色包带入对话
    *
    * 由角色管理视图的「带入对话」触发：host 复用 activateRole 切换激活角色包（与
    * roles_set_active 同路径），随后聚焦对话视图（memora.chat.focus）。单 Agent 模型下
@@ -168,7 +168,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'roles_handoff'; name: string }
   /**
-   * 保存角色包组（会议名单，v0.13 S7）：组长 + 组员名单。
+   * 保存角色包组（会议名单）：组长 + 组员名单。
    *
    * 由角色管理视图的小组管理触发。host 校验后（组长唯一 / 名单非空 / 引用存在）持久化
    * 用户级 globalState（ROLE_PACK_TEAMS_KEY）+ 热更新 agent.rolePackManager.setRolePackTeams。
@@ -178,7 +178,7 @@ export type WebviewToExtensionMessage =
   /** 删除角色包组（会议名单）：host 持久化移除 + 热更新内核组数据。 */
   | { type: 'roles_team_delete'; leader: string }
   /**
-   * 打开用户角色包目录（2026-08-30 对齐技能系统）：host 调用 VS Code 命令在系统文件
+   * 打开用户角色包目录：host 调用 VS Code 命令在系统文件
    * 管理器中显示用户角色包目录（globalStorageUri/role-packs/），便于用户放置自定义角色包。
    */
   | { type: 'roles_open_dir' }
@@ -191,21 +191,21 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'stop' }
   /**
-   * 暂停生成：用户暂停当前 Agent 执行（Phase 4 暂停/恢复）
+   * 暂停生成：用户暂停当前 Agent 执行（暂停/恢复）
    *
    * 由 webview 暂停按钮触发，host 调 agent.requestPause()（step 边界软暂停），
    * 发送 status:'paused' 通知 webview。
    */
   | { type: 'pause' }
   /**
-   * Phase 4：清空 interject 队列（thinking 态待发送补充区的清空按钮）
+   * 清空 interject 队列（thinking 态待发送补充区的清空按钮）
    *
    * 由 webview 待发送区触发，宿主调 agent.clearPendingInterjections() 清内核队列，
    * 经 syncPendingQueue → postTurnUpdate() 投影空 pendingQueue。
    */
   | { type: 'clear_pending_queue' }
   /**
-   * Phase 4：删除单条 interject（待发送区每条的独立删除按钮）
+   * 删除单条 interject（待发送区每条的独立删除按钮）
    *
    * 由 webview 待发送区某条补充的 × 按钮触发，宿主调 agent.removePendingInterject(index) 从内核队列删除，
    * 经 syncPendingQueue → postTurnUpdate() 投影更新后的 pendingQueue。
@@ -221,7 +221,7 @@ export type WebviewToExtensionMessage =
   /** 设为当前激活 Provider */
   | { type: 'cfg_set_active'; name: string }
   /**
-   * 设置后台模型 Provider（G5 多 Provider 路由，2026-08-23）
+   * 设置后台模型 Provider（多 Provider 路由）
    *
    * 由大模型面板「后台模型」下拉触发：host 持久化后台 Provider 选择（空串 = 与实时对话
    * 相同，不清除后台任务通道），并热更新 agent.setBackgroundProvider。
@@ -229,7 +229,7 @@ export type WebviewToExtensionMessage =
   | { type: 'cfg_set_background'; name: string }
   /** 测试 Provider 连接 */
   | { type: 'cfg_test'; config: LlmProviderConfig }
-  // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
+  // ─── 记忆管理面板消息 ───
   /**
    * 请求加载记忆列表（记忆视图打开/刷新时触发）
    *
@@ -240,18 +240,18 @@ export type WebviewToExtensionMessage =
   /**
    * 请求搜索记忆（记忆视图搜索框触发，query 非空才发送）
    *
-   * host 调 MemoryInspector.searchByKeyword(query, limit)（纯关键词检索，B0 收编后无向量通道），
+   * host 调 MemoryInspector.searchByKeyword(query, limit)（纯关键词检索，无向量通道），
    * 返回带 accessedAt 的命中列表。空 query 不应发送本消息（走 memory_load）。
    */
   | { type: 'memory_search'; query: string; limit?: number }
   /**
-   * 请求记忆列表翻页（记忆视图分页组件「上一页/下一页」，2026-09-08）
+   * 请求记忆列表翻页（记忆视图分页组件「上一页/下一页」）
    *
    * host 调 MemoryInspector.list(page*pageSize) 取前 N 条后按页切片返回（accessedAt 降序稳定），
    * 应答 memory_page_result。首屏不发送本消息（memory_loaded 已带第 1 页数据）。
    */
   | { type: 'memory_page'; page: number; pageSize: number }
-  // ─── 记忆治理：单条删除 / 恢复 / 回收站（G19，2026-08-25 新增） ───
+  // ─── 记忆治理：单条删除 / 恢复 / 回收站 ───
   /**
    * 删除单条记忆（记忆列表「删除」按钮）
    *
@@ -268,28 +268,28 @@ export type WebviewToExtensionMessage =
   /** 加载回收站列表（回收站展开时触发） */
   | { type: 'memory_recycle_load' }
   /**
-   * 永久删除回收站单条记忆（回收站条目「永久删除」按钮，2026-08-26）
+   * 永久删除回收站单条记忆（回收站条目「永久删除」按钮）
    *
    * host 弹确认框后调 agent.memory.writePurge(id) 物理删除（不可恢复），
    * 完成后推送 memory_purged + 刷新回收站/列表/治理统计。
    */
   | { type: 'memory_purge'; id: string }
   /**
-   * 清空回收站（回收站「清空回收站」按钮，2026-08-26）
+   * 清空回收站（回收站「清空回收站」按钮）
    *
    * host 弹确认框后遍历 listDeleted() 逐个 writePurge 物理删除全部软删记忆（不可恢复），
    * 完成后推送 memory_recycle_cleared + 刷新回收站/列表/治理统计。
    */
   | { type: 'memory_recycle_clear' }
   /**
-   * 编辑记忆内容（记忆列表「编辑」按钮，G19 内联 edit 收尾，2026-08-25 新增）
+   * 编辑记忆内容（记忆列表「编辑」按钮）
    *
    * host 经 agent.memory.getById(id) 取真实 Memory 做 read-modify-write，仅改 content
    * 并标记 isModified（人工修改），再 writeUpsert 落盘，推送 memory_edited + 刷新列表/治理。
    * 零内核改动：复用既有 writeUpsert。
    */
   | { type: 'memory_edit'; id: string; content: string }
-  // ─── 记忆治理面板消息（G4，2026-08-23 新增） ───
+  // ─── 记忆治理面板消息 ───
   /**
    * 请求加载记忆治理数据（记忆视图挂载/治理操作后触发）
    *
@@ -305,7 +305,7 @@ export type WebviewToExtensionMessage =
    * 命令同源）；完成后推送 governance_result + 刷新治理数据与记忆列表。
    */
   | { type: 'governance_cleanup' }
-  // ─── 技能管理面板消息（2026-08-22 新增） ───
+  // ─── 技能管理面板消息 ───
   /**
    * 请求加载全局技能列表（技能视图打开/刷新时触发）
    *
@@ -326,7 +326,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'skills_read_content'; skillName: string }
   /**
-   * 切换单个技能的禁用状态（S4 延长线开关，2026-09-22）
+   * 切换单个技能的禁用状态（技能列表延长线开关）
    *
    * 由技能管理卡片上的真实开关触发：host 以内核生效集 `disabledSkillNames` 为基做
    * 增量增/删（禁用=补名 / 启用=移名），随后**整组写回** `memora.disabledSkills`
@@ -334,16 +334,16 @@ export type WebviewToExtensionMessage =
    * 本消息后无需另行回推列表：配置写回即触发 host 既有 `onDidChangeConfiguration`
    * 监听（syncDisabledSkills → 内核 setDisabledSkills + chat/settings 双通道
    * refreshSkillList），webview 以 skills_loaded 回推刷新为准，不做本地乐观翻转。
-   * 仅全局技能池（builtin/user）携带；角色包技能对禁用清单免疫（2026-09-22 定案），
+   * 仅全局技能池（builtin/user）携带；角色包技能对禁用清单免疫，
    * 卡片不渲染开关、不发送本消息。
    */
   | { type: 'toggle_skill_disabled'; name: string; disabled: boolean }
-  /** 输入框文本润色请求（输入框旁「润色」按钮触发，2026-08-27）
+  /** 输入框文本润色请求（输入框旁「润色」按钮触发）
    *
    * 由输入框旁的「润色」按钮触发：对当前输入框内容进行润色，润色完成后返回 polish_input_result 消息。
    */
   | { type: 'polish_input'; text: string }
-  // ─── 安全/写入审批消息（H0：W→E 方向） ───
+  // ─── 安全/写入审批消息（W→E 方向） ───
   /**
    * 切换写入二次确认开关（设置面板「安全」选项卡的 toggle 开关）
    *
@@ -352,7 +352,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'security_toggle'; enabled: boolean }
   /**
-   * 切换脚本/代码执行确认开关（设置面板「安全」选项卡的 toggle 开关，2026-09-08）
+   * 切换脚本/代码执行确认开关（设置面板「安全」选项卡的 toggle 开关）
    *
    * 由设置面板「脚本执行二次确认」开关触发：host 持久化到 globalState + 热更新
    * agent.security.setConfirmScripts()。无需重启 Agent。
@@ -376,7 +376,7 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'allowed_paths_set'; paths: string[] }
   /**
-   * 设置内部网页搜索引擎（search_engine_set 消息处理，2026-09-02 方案 A）
+   * 设置内部网页搜索引擎（search_engine_set 消息处理）
    *
    * 由设置面板「网页搜索引擎」下拉触发：host 持久化到**用户级**设置
    * （memora.searchEngine，ConfigurationTarget.Global——用户偏好不进项目 settings）。
@@ -387,10 +387,10 @@ export type WebviewToExtensionMessage =
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
   /**
-   * 用户消息（TS-9）：kind 存在 = 问答闭环内交互输入（折叠块渲染，不分裂新轮）——
+   * 用户消息：kind 存在 = 问答闭环内交互输入（折叠块渲染，不分裂新轮）——
    * question-answer=对 LLM 主动提问的回答；supplement=补充（插话/暂停续跑输入）。
    * 普通新闭环输入不携带 kind。
-   * question/options（G26）：question-answer 重放时携带该回答所对的 ask_user 提问原文与
+   * question/options：question-answer 重放时携带该回答所对的 ask_user 提问原文与
    * 候选选项（随轮落盘，roundStore RoundInteractiveInput 透出），供 webview 还原问答对；
    * supplement / 普通输入 / 旧数据不携带。
    */
@@ -406,11 +406,10 @@ export type ExtensionToWebviewMessage =
   /**
    * 流式 assistant 消息（流式输出经 chunk 拼接，仅承载主回答正文）
    *
-   * 注（v1.5）：自审查文本不再走本通道（host 已按 text_self_review 过程事件转发，
-   * 渲染进 round-block § 自审查输出）——chunk 只负责最终答案正文。
-   * 本变体**不携带任何安全信号**：曾有的 guardrailBlocked 字段随内核内容护栏退役一并删除
-   * （2026-08-17 排雷：阻断文案改由内核 content 承载，宿主刻意不弹 banner——避免双份提示 +
-   * 输入/输出语义错位）。当前唯一真实安全信号是 metrics.securityAudit（见下），新增安全类
+   * 注：自审查文本不走本通道（host 按 text_self_review 过程事件转发，
+   * 渲染进 round-block 自审查输出）——chunk 只负责最终答案正文。
+   * 本变体**不携带任何安全信号**：阻断文案由内核 content 承载，宿主刻意不弹 banner——避免双份
+   * 提示 + 输入/输出语义错位。唯一真实安全信号是 metrics.securityAudit（见下），新增安全类
    * UI 请挂那里，勿在本变体重建护栏标记。
    */
   | {
@@ -418,9 +417,9 @@ export type ExtensionToWebviewMessage =
       content: string;
       ts?: string;
       /**
-       * turn roundId（D3 单轨，2026-09-03）：宿主从内核 chunk.roundId 透传，
+       * turn roundId（单轨）：宿主从内核 chunk.roundId 透传，
        * webview 端「同环续接」判定统一走 roundId 相等（运行时与重放共用单一判定源，
-       * 不再依赖独立时序标志）。持久化落盘归属已由宿主用同源 roundId 完成，此处仅供展示判定。
+       * 不依赖独立时序标志）。持久化落盘归属由宿主用同源 roundId 完成，此处仅供展示判定。
        */
       roundId?: string;
     }
@@ -443,7 +442,7 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'interrupted'; roundId?: string }
   /**
-   * 回抽正文（A1，2026-09-12）
+   * 回抽正文
    *
    * 成因：首轮（无工具史）消息级分类前无法预判是否工具轮，为保 TTFT 零损失叙述文本已逐字
    * 流式进正文区；内核收到 toolCalls 确认工具轮后，随 narrate chunk 下发 withdrawn 原文，
@@ -455,50 +454,48 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'narrate_withdraw'; text: string }
   /**
-   * 工具意图预告（2026-09-17）：内核在 LLM 流式生成 tool_call 参数期间（name 一成形即触发）
+   * 工具意图预告：内核在 LLM 流式生成 tool_call 参数期间（name 一成形即触发）
    * 上报的瞬态消息——工具**尚未执行**。webview 据此提前渲染「准备中」工具行，消除大参数工具
    * （如 write_file 全量写入）数十秒参数生成段的 UI 真空。属展示轨：**不入 processEvents、不落盘**；
    * 后续 tool_start（process_event）按 toolCallId 与前置 pending 行配对升级为执行态。
    */
   | { type: 'tool_pending'; toolCallId?: string; name: string; roundId?: string }
   /**
-   * 过程事件（运行时单形态渲染投影，v1.5 协议纯化）
+   * 过程事件（运行时单形态渲染投影）
    *
    * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；
    * webview 一律 append 到当前轮 events[] 由 renderRoundBlock 统一渲染。
-   * 取代原 thinking / tool_start / tool_result / self_review / memory 渲染类消息。
+   * thinking / tool_start / tool_result / self_review / memory 等过程渲染统一走本通道。
    */
   | { type: 'process_event'; event: ProcessEvent }
   /**
-   * 任务看板更新（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
+   * 任务看板更新（任务驱动多步闭环 · 最小可视化）
    *
    * 由 extension host 在监听到 LLM 调用 task_table_write / task_table_update 工具时推送：
    * 从 agent.getCheckpoint().plan 提取当前计划快照，webview 据此渲染/刷新任务进度看板。
    * 仅当 plan 非空时推送（空计划不产生看板）。状态任一（pending/active/done/blocked）
    * 映射由 webview 转为中文标签 + 配色。只读展示，不参与 LLM 执行（薄壳装配铁律）。
-   * 任务看板归 checkpoint 执行态，不参与 processEvents 复原（见设计文档 §四）。
+   * 任务看板归 checkpoint 执行态，不参与 processEvents 复原。
    */
   | { type: 'plan_update'; items: PlanItemDto[] }
   /**
-   * LLM 调用重试（对齐内核 retry chunk，P1 事件流全量对齐）
+   * LLM 调用重试（对齐内核 retry chunk）
    *
    * 内核在 LLM 失败重试时产出；webview 渲染低扰提示条「LLM 重试 n/m…」。
    */
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   /**
-   * Agent 暂停（对齐内核 paused chunk，P1 事件流全量对齐）
+   * Agent 暂停（对齐内核 paused chunk）
    *
    * 内核在输入待定/step 边界软暂停时产出；webview 渲染提示条「Agent 已暂停」。
    */
   | { type: 'paused' }
   /**
-   * 活动指标快照（P2：§13.x 透明面板 + §5.2.1 指纹可见）
+   * 活动指标快照（透明面板指纹可见）
    *
    * 每轮流式结束后由 extension host 推送：本轮指纹（系统提示 hash 前 12 位，只记 hash
    * 不记内容）+ 累计指标（LLM 调用 / 工具失败 / 截断）。
    * webview 渲染为默认折叠的「活动指标」区。
-   * 注：原 attachedMemoryCount / recallHitRate 已于 2026-09-11 删除——自动记忆注入退役后
-   * 两者恒零（假指标），字段的存在本身即在宣称一件已不存在的事。
    */
   | {
       type: 'metrics';
@@ -509,15 +506,15 @@ export type ExtensionToWebviewMessage =
         llmCallCount: number;
         toolFailureCount: number;
         /**
-         * 未解析文本工具意图累计数（2026-09-14 静默失败修复，诊断面板透出）。
+         * 未解析文本工具意图累计数（诊断面板透出）。
          * 与过程轨增量 unparsedToolIntentCount 同源（AgentMetrics.tools），累计口径。
          */
         unparsedToolIntentCount?: number;
         truncationCount: number;
-        /** D（alignment-iteration.md）：LLM token 用量（输入/输出） */
+        /** LLM token 用量（输入/输出，口径见 alignment-iteration.md） */
         llmTokenIn?: number;
         llmTokenOut?: number;
-        /** ④（2026-08-29）：最近一次输入装配的上下文预算构成（可选：内核 AgentMetrics.context.budget 透传，缺省不显示） */
+        /** 最近一次输入装配的上下文预算构成（可选：内核 AgentMetrics.context.budget 透传，缺省不显示） */
         budget?: {
           availableTokens: number;
           anchorTokens: number;
@@ -526,16 +523,15 @@ export type ExtensionToWebviewMessage =
         };
       };
       /**
-       * 最近操作流（B9 可观测补齐）：透明面板渲染的操作序列 span 标签（新→旧）。
+       * 最近操作流：透明面板渲染的操作序列 span 标签（新→旧）。
        * 由 host 从 vscodeTracer 提取，只含中文展现标签不含量化属性；缺省为无。
        */
       trace?: { label: string }[];
       /**
-       * 路径守卫审计概要（G6 安全/装配透明，2026-08-23）
+       * 路径守卫审计概要（安全/装配透明）
        *
        * 累计安全审计次数 + 拒绝次数 + 最近若干条（只含 basename 路径，防折叠区冗长）。
-       * 数据源 = 内核 SecurityGuard.onAudit（路径守卫读/写/审计事件；guardrail 已从内核
-       * 移除，路径守卫是当前唯一真实安全信号）。
+       * 数据源 = 内核 SecurityGuard.onAudit（路径守卫读/写/审计事件，是当前唯一真实安全信号）。
        */
       securityAudit?: {
         total: number;
@@ -544,7 +540,7 @@ export type ExtensionToWebviewMessage =
       };
     }
   /**
-   * 上下文占用快照（④ 预算可视化 · 输入区常驻指示器数据源）
+   * 上下文占用快照（预算可视化 · 输入区常驻指示器数据源）
    *
    * 每轮流式结束后由 extension host 推送（脱离 memora.showMetrics 独立常驻）：内核
    * AgentMetrics.context.occupancy 透传，各段为 prepare 期**真实用量** token，互斥分段拼满
@@ -574,7 +570,7 @@ export type ExtensionToWebviewMessage =
       };
     }
   /**
-   * 角色能力徽章（Phase 4 工具权限 UI，E2 工具白名单可见性）
+   * 角色能力徽章（工具权限白名单可见性）
    *
    * 角色包激活时由 host 推送：工具模式（allow/block）+ 能力标签列表 + 策略指示器。
    * webview 据此在输入区角色徽章旁追加工具权限徽章，让用户直观感知「当前角色能做什么」：
@@ -587,11 +583,11 @@ export type ExtensionToWebviewMessage =
       type: 'capability_badge';
       toolMode: 'allow' | 'block';
       capabilities: { capability: string; label: string }[];
-      /** 关键策略指示器（新增，供渲染只读/审批/温度等策略徽章） */
+      /** 关键策略指示器（供渲染只读/审批/温度等策略徽章） */
       strategyHint?: RoleStrategyIndicatorDto;
     }
   /**
-   * Agent 运行状态（P0-2 状态可视化 + Phase 4 暂停/恢复）
+   * Agent 运行状态（状态可视化 + 暂停/恢复）
    *
    * 让用户看见 Agent 正在做什么，而非静默等待：
    *   - 'thinking'：Agent 正在生成（展示加载动画，输入框禁用）
@@ -603,7 +599,7 @@ export type ExtensionToWebviewMessage =
   /** 清空会话完成（webview 收到后清空消息区） */
   | { type: 'clear_ok' }
   /**
-   * 历史消息加载完成（宿主回放会话历史后推送，2026-08-24 新增）
+   * 历史消息加载完成（宿主回放会话历史后推送）
    *
    * 宿主在 replaySession() 中发送完所有历史消息后推送此信号，
    * webview 收到后强制滚到底部（不走吸底逻辑），确保打开会话时
@@ -611,17 +607,17 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'history_loaded' }
   /**
-   * 当前会话标题（ADR-024 会话标题层）
+   * 当前会话标题
    *
    * host 在会话回放/新建/切换/改名时推送当前会话标题，webview 顶部展示，
    * 让用户识别当前在哪个会话（主动可见）。title 为未命名会话时占位。
    */
   | { type: 'session_title'; title: string }
   /**
-   * 历史会话列表（对 session_list 的应答，2026-08-17 会话管理重构）
+   * 历史会话列表（对 session_list 的应答）
    *
    * host 返回非当前会话的历史列表（按 updatedAt 降序），webview 据此渲染历史模态浮层。
-   * 当前会话不进历史记录（设计收敛），故 sessions 不含当前会话——天然规避「删除当前会话」边界。
+   * 当前会话不进历史记录，故 sessions 不含当前会话——天然规避「删除当前会话」边界。
    */
   | {
       type: 'session_list_data';
@@ -642,7 +638,7 @@ export type ExtensionToWebviewMessage =
       activeName?: string;
     }
   /**
-   * 目标漂移检测提示（H2 事件：goalDriftDetected）
+   * 目标漂移检测提示（事件：goalDriftDetected）
    *
    * 由 extension host 监听内核 goalDriftDetected 事件后转发，
    * 当会话当前目标与初始目标相似度低于阈值时触发，webview 展示确认/忽略交互。
@@ -662,9 +658,9 @@ export type ExtensionToWebviewMessage =
    * 由 extension host 转发的非消息区通知，webview 用同一提示条分级呈现：
    *   - info：记忆召回/沉淀、上下文截断、记忆冲突等低扰信息（短暂显示）
    *   - error：会话异常/恢复失败/写入确认超时等错误级反馈（醒目、停留更久）
-   * 统一走提示条而不插入消息区，避免污染对话历史（功能→UI 对齐排雷的雷-4 修正）。
-   * 注（v1.5）：运行时的「已召回 N 条 / 已沉淀：xx」提示由 webview 解析 process_event 本地派生，
-   * 不经本消息通道（记忆活动已收口到 ProcessEvent 单源）。
+   * 统一走提示条而不插入消息区，避免污染对话历史。
+   * 注：运行时的「已召回 N 条 / 已沉淀：xx」提示由 webview 解析 process_event 本地派生，
+   * 不经本消息通道（记忆活动走 ProcessEvent 单源）。
    */
   | { type: 'notice'; level: 'info' | 'error'; message: string }
   /**
@@ -685,11 +681,11 @@ export type ExtensionToWebviewMessage =
       team?: { leader: string; members: readonly string[] };
     }
   /**
-   * Chat Panel 角色包列表（身份条角色切换下拉的数据，alignment-iteration.md A3）
+   * Chat Panel 角色包列表（身份条角色切换下拉的数据）
    *
    * 由 host 在就绪回放时推送：全部角色包（displayName 供下拉展示）+ 当前激活名。
    * description 为角色包定位描述（manifest.description，可选）——供下拉列表展示副标题，
-   * 让用户"查看内置角色包"时能读懂每个包的定位再决定切换（2026-08-15 UI 查看能力）。
+   * 让用户"查看内置角色包"时能读懂每个包的定位再决定切换。
    * webview 据此渲染身份条角色选择器选项；activeName 变化时高亮当前项。
    */
   | {
@@ -697,7 +693,7 @@ export type ExtensionToWebviewMessage =
       packs: { name: string; displayName: string; description?: string }[];
       activeName: string;
     }
-  // ─── 角色管理面板消息（2026-08-17 独立视图） ───
+  // ─── 角色管理面板消息 ───
   /** 角色能力项（capability 为中立能力名「域:动作」，label 为中文可读文案，由 host 生成） */
   | {
       type: 'roles_loaded';
@@ -705,7 +701,7 @@ export type ExtensionToWebviewMessage =
         name: string;
         displayName: string;
         description?: string;
-        /** 来源层（2026-08-30）：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
+        /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
         source?: 'builtin' | 'user';
         capabilities: { capability: string; label: string }[];
         /** 角色性格特征（从 persona.md frontmatter traits 解析，0-1 数值） */
@@ -718,18 +714,18 @@ export type ExtensionToWebviewMessage =
         interactionType?: 'tool_assistant' | 'companion';
         /** 版本号 */
         version?: string;
-        /** 该角色包作为组员被哪些组引用（v0.13 S7：仅小组会议用，标注展示） */
+        /** 该角色包作为组员被哪些组引用（仅小组会议用，标注展示） */
         teamMembers?: readonly string[];
         /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
         isFallback?: boolean;
-        /** manifest 校验问题（G29 健康徽章数据源，镜像 skills_loaded 的 SkillIssueDto 结构） */
+        /** manifest 校验问题（健康徽章数据源，镜像 skills_loaded 的 SkillIssueDto 结构） */
         issues?: readonly RoleIssueDto[];
       }[];
-      /** 组（会议名单）：组长 + 组员（v0.13 S7，宿主用户级数据） */
+      /** 组（会议名单）：组长 + 组员（宿主用户级数据） */
       teams: { leader: string; members: string[] }[];
       activeName: string;
       /**
-       * 小组会议组员数量上限（SSOT 下发，② 组队规格）：由宿主从内核常量
+       * 小组会议组员数量上限（SSOT 下发）：由宿主从内核常量
        * `MAX_TEAM_MEMBERS` 透传——webview 运行在浏览器沙箱，不可直连内核包，
        * 故经本字段下发，UI 侧禁止另写字面量。
        */
@@ -745,7 +741,7 @@ export type ExtensionToWebviewMessage =
     }
   /** 配置操作结果（保存/删除/设当前/测试） */
   | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' }
-  // ─── 记忆管理面板消息（2026-08-17 独立视图） ───
+  // ─── 记忆管理面板消息 ───
   /**
    * 记忆列表加载完成（对 memory_load 的应答）
    *
@@ -765,12 +761,12 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'memory_search_result'; query: string; hits: MemoryItemDto[] }
   /**
-   * 记忆列表翻页结果（对 memory_page 的应答，2026-09-08）
+   * 记忆列表翻页结果（对 memory_page 的应答）
    *
    * page 与请求页一致（webview 据 pager.getPage() 竞态校验，防滞后响应覆盖新页）。
    */
   | { type: 'memory_page_result'; page: number; items: MemoryItemDto[] }
-  // ─── 记忆治理：删除/恢复结果 + 回收站列表（G19，2026-08-25 新增） ───
+  // ─── 记忆治理：删除/恢复结果 + 回收站列表 ───
   /**
    * 删除记忆结果（对 memory_delete 的应答）
    *
@@ -786,25 +782,25 @@ export type ExtensionToWebviewMessage =
   /** 回收站列表加载完成（对 memory_recycle_load 的应答） */
   | { type: 'memory_recycle_loaded'; items: MemoryItemDto[] }
   /**
-   * 永久删除回收站单条记忆结果（对 memory_purge 的应答，2026-08-26）
+   * 永久删除回收站单条记忆结果（对 memory_purge 的应答）
    *
    * ok=true 时 host 已 writePurge（不可恢复）并刷新回收站/列表/治理；ok=false 显示错误。
    */
   | { type: 'memory_purged'; ok: boolean; id: string; message?: string }
   /**
-   * 清空回收站结果（对 memory_recycle_clear 的应答，2026-08-26）
+   * 清空回收站结果（对 memory_recycle_clear 的应答）
    *
    * ok=true 时 host 已物理删除全部软删记忆（不可恢复）；count 为清除数量。
    */
   | { type: 'memory_recycle_cleared'; ok: boolean; count: number; message?: string }
   /**
-   * 编辑记忆结果（对 memory_edit 的应答，G19 内联 edit 收尾，2026-08-25 新增）
+   * 编辑记忆结果（对 memory_edit 的应答）
    *
    * ok=true 时 host 已 writeUpsert 并刷新记忆列表 + 治理统计（webview 收到后编辑态随
    * 卡片重建自然消失）；ok=false 时 webview 显示 message 错误提示。
    */
   | { type: 'memory_edited'; ok: boolean; id: string; message?: string }
-  // ─── 记忆治理面板消息（G4，2026-08-23 新增） ───
+  // ─── 记忆治理面板消息 ───
   /**
    * 记忆治理数据加载完成（对 governance_load 的应答）
    *
@@ -820,26 +816,26 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'governance_result'; ok: boolean; message?: string; action: 'cleanup' }
 
-  // ─── 设置视图消息（2026-08-17 选项卡合并） ───
+  // ─── 设置视图消息 ───
   /** 切换设置视图的子选项卡（host → webview 指令） */
   | { type: 'settings_switch_tab'; tab: 'roles' | 'config' | 'memory' | 'skills' | 'security' }
 
-  // ─── 技能管理面板消息（2026-08-22 新增） ───
+  // ─── 技能管理面板消息 ───
   /** 全局技能列表加载完成（对 skills_load 的应答） */
   | {
       type: 'skills_loaded';
       skills: SkillDto[];
       /**
-       * 禁用集里**未匹配任何技能**的名字（D，2026-09-22）：即用户填进 `memora.disabledSkills`
+       * 禁用集里**未匹配任何技能**的名字：即用户填进 `memora.disabledSkills`
        * 但三源清单（内置/角色包/用户）中找不到对应技能的名字。供设置页渲染非阻断提示——语义是
        * 「未找到需要禁用的技能」（如实报告匹配结果），不是「用户写错了」（不归咎、允许提前
        * 禁用尚未安装的技能）。判定真源 = `listVisibleSkills` 聚合结果（与 UI 展示同一份名单）。
        */
       unmatchedDisabled?: string[];
     }
-  /** L2 渐进披露：技能正文响应（对 skills_read_content 的应答） */
+  /** 渐进披露：技能正文响应（对 skills_read_content 的应答） */
   | { type: 'skill_content'; skillName: string; content: string }
-  // ─── Follow-up 建议消息（2026-08-17 回复后关联推荐） ───
+  // ─── Follow-up 建议消息 ───
   /**
    * 回复完成后的 Follow-up 建议（对 governance.suggest() 的结果推送）
    *
@@ -849,7 +845,7 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'suggestions'; items: FollowupSuggestionDto[] }
   /**
-   * 预填输入框（角色 handoff 上下文传递，2026-08-17 后续）
+   * 预填输入框（角色 handoff 上下文传递）
    *
    * host 在 roles_handoff 切换激活角色包并聚焦对话视图后，推送一句"以新角色视角继续"的
    * 提示文案填入对话输入框（不自动发送，用户可编辑后回车）。复用 chat 面板 post 通道；
@@ -857,13 +853,13 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'prefill_input'; text: string }
   /**
-   * 输入框文本润色结果（对 polish_input 的应答，2026-08-27）
+   * 输入框文本润色结果（对 polish_input 的应答）
    *
    * ok=true 时 text 为润色后文本，webview 替换输入框内容；
    * ok=false 时 message 为失败原因（如超时、润色服务不可用）。
    */
   | { type: 'polish_input_result'; ok: boolean; text?: string; message?: string }
-  // ─── 安全/写入审批消息（H0：E→W 方向） ───
+  // ─── 安全/写入审批消息（E→W 方向） ───
   /**
    * 写入审批请求（E→W：内核触发写入确认时，由 host 推送到 chat webview）
    *
@@ -896,18 +892,15 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'allowed_paths_status'; projectPath: string; paths: string[] }
   /**
-   * turn 投影更新（SSOT 收口 M1，2026-09-23）
+   * turn 投影更新（状态 + 重放的 SSOT 通道）
    *
-   * 取代 chunk / user / assistant / process_event / replay_events / status / paused /
-   * pause_pending / pending_queue_update 的**状态职责 + 重放职责**：
-   * webview 侧只维护 `rounds` + `state` 两个容器，UI 一律由 render(rounds, state) 派生。
-   * 正文流式仍走 chunk 增量通道（唯一允许的局部优化，性能）。
-   * M1–M5 双轨期：旧消息保留但禁止新增旧消息类型；M5 统一删除。
-   * M5b-1（2026-09-23）：`pendingQueue` 承接 `pending_queue_update` 载荷（待发送区渲染真源）。
-   *   可选字段——宿主投影 turn 时顺带携带当前内核 interject 队列快照；缺省 = 不刷新待发送区。
-   * M5b-3（2026-09-23）：`replay` 承接 `replay_events` + 重放 `assistant` 的消息风暴职责——
-   *   rounds-based 会话回放改由单条 `turn_update` 承载全量 rounds，webview 收到 `replay:true` 才
-   *   整批重建；缺省 = 运行时投影（rounds 仅作骨架/后续重建备用，不触发整批渲染，杜绝 settle 重绘重复）。
+   * 承载 turn 的**状态职责 + 重放职责**：webview 侧只维护 `rounds` + `state` 两个容器，
+   * UI 一律由 render(rounds, state) 派生。正文流式仍走 chunk 增量通道（唯一允许的局部优化，性能）。
+   * `pendingQueue` 是待发送区渲染真源：宿主投影 turn 时顺带携带当前内核 interject 队列快照；
+   *   可选字段，缺省 = 不刷新待发送区。
+   * `replay` 区分重放快照与运行时投影：rounds-based 会话回放由单条 `turn_update` 承载全量
+   *   rounds，webview 收到 `replay:true` 才整批重建；缺省 = 运行时投影（rounds 仅作骨架/后续
+   *   重建备用，不触发整批渲染，杜绝 settle 重绘重复）。
    *   之所以必须显式 discriminator：运行时投影 phase 也会过 settled 且 rounds 常在，
    *   单靠 phase/reason 无法区分「重放快照」与「每次运行态投影」。
    */
@@ -916,7 +909,7 @@ export type ExtensionToWebviewMessage =
       rounds: RoundView[];
       state: TurnState;
       pendingQueue?: readonly string[];
-      /** M5b-3：true = 会话重放快照，webview 整批重建 rounds；缺省 = 运行时每步投影 */
+      /** true = 会话重放快照，webview 整批重建 rounds；缺省 = 运行时每步投影 */
       replay?: boolean;
     }
   /**
@@ -926,7 +919,7 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'search_engine_status'; engine: SearchEngineSetting };
 
-// ─── turn 投影层类型（SSOT 收口 M1，2026-09-23）────────────────────────
+// ─── turn 投影层类型（SSOT）────────────────────────
 // 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
 // 铁律：RoundView 只能是内核 `Round` 的**投影**（Pick 类型约束）——改 Round 字段名即编译报错，
 // 禁止在协议侧另立第二套 Round 字段（并列即腐化）。运行时与重放共用本结构，不走第二套形状。
@@ -964,10 +957,10 @@ export type RoundView = Pick<
 };
 
 /**
- * turn 运行时状态（UI 唯一状态源；替代 status / paused / pause_pending 三信号）
+ * turn 运行时状态（UI 唯一状态源）
  *
  * ⚠️ 内核侧 ask_user 与 pause **刻意不同源**（`InterruptRequest` 队列注释 + 工具分支独立 yield，
- * 见 docs/architecture/pause-ask-resume-design.md §一 定案），二者不在内核合一套队；
+ * 见 docs/architecture/pause-ask-resume-design.md），二者不在内核合一套队；
  * 本枚举只在**投影层**把它俩统一为「turn 正在等外部输入」，内核写入路径不动。
  */
 export type TurnState =
@@ -991,7 +984,7 @@ export type TurnState =
       pausePending?: boolean;
       questions?: PendingQuestionDto[];
     }
-  /** 已收场（turn 级；不等于 round 级判据 isRoundSettled，见文档 §3.7） */
+  /** 已收场（turn 级；不等于 round 级判据 isRoundSettled） */
   | { phase: 'settled'; roundId: string; status: RoundStatus };
 
 /** 角色策略指示器（从内核 BehaviorStrategy 提取的关键策略摘要，供 UI 渲染图标/徽章） */
@@ -1008,7 +1001,7 @@ export interface RoleStrategyIndicatorDto {
   outputLimit?: number;
 }
 
-/** Follow-up 建议条目（T2，2026-08-17：回复后关联推荐）
+/** Follow-up 建议条目（回复后关联推荐）
  *
  * 由 host 对 governance.suggest() 的 SuggestHit 归一化：label 为 chip 展示文案（记忆名），
  * prompt 为点击后填入输入框的完整下一步提问（「继续深入：{记忆名}」）。
@@ -1028,7 +1021,7 @@ export interface MemoryStatsDto {
   total: number;
 }
 
-/** 记忆治理统计（治理区，G4 2026-08-23：对齐 memory.stats + listDeleted） */
+/** 记忆治理统计（治理区：对齐 memory.stats + listDeleted） */
 export interface GovernanceStatsDto {
   /** 活跃记忆数（未软删除） */
   active: number;
@@ -1068,7 +1061,7 @@ export interface MemoryItemDto {
   supersededBy?: string;
 }
 
-/** 全局技能条目（技能视图列表，2026-08-22 新增） */
+/** 全局技能条目（技能视图列表） */
 export interface SkillIssueDto {
   /** 级别：error=不可生效 / warning=可加载但变弱 */
   level: 'error' | 'warning';
@@ -1076,7 +1069,7 @@ export interface SkillIssueDto {
   message: string;
 }
 
-/** 角色包校验问题（G29 健康徽章数据源，2026-09-08 镜像 SkillIssueDto；映射内核 RolePackValidationIssue） */
+/** 角色包校验问题（健康徽章数据源，镜像 SkillIssueDto；映射内核 RolePackValidationIssue） */
 export interface RoleIssueDto {
   /** 级别：error=拒绝装载语义 / warning=可装载但提示 */
   level: 'error' | 'warning';
@@ -1090,17 +1083,17 @@ export interface SkillDto {
   description: string;
   /** 技能文件路径（用于定位来源） */
   filePath?: string;
-  /** 技能来源三分类（SSOT 收紧，2026-08-25）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
+  /** 技能来源三分类（SSOT）：'builtin'（系统内置）/ 'rolepack'（启用角色包内置）/ 'user'（用户本地目录自定义） */
   layer?: 'builtin' | 'rolepack' | 'user';
   /**
-   * 是否已被用户禁用（S4 配置形态启停，2026-09-22）：true = 对模型语义不存在
+   * 是否已被用户禁用（配置形态启停）：true = 对模型语义不存在
    * （不进技能清单 / read_skill 读不到 / L3 资源与脚本不可达），但本 UI **不隐藏**它，
    * 而是以「已禁用」徽章标注——便于用户对照确认启停是否生效（静默消失会造成
    * 「功能没做」的误判）。
    * 真源 = 内核 `SkillManager.disabledSkillNames`（实际生效的判据集），宿主不自读配置副本。
    */
   disabled?: boolean;
-  /** 健康状态（G22 写→验→用，2026-08-25）：error=未生效（不进 LLM 清单）/ warn=可加载但可优化 / 缺省=角色包等未校验项按可用处理 */
+  /** 健康状态（写→验→用）：error=未生效（不进 LLM 清单）/ warn=可加载但可优化 / 缺省=角色包等未校验项按可用处理 */
   health?: 'ok' | 'warn' | 'error';
   /** 校验问题清单（health!=='ok' 时携带，供列表/展开区错误定位） */
   issues?: SkillIssueDto[];
@@ -1119,10 +1112,3 @@ export interface PlanItemDto {
   /** 该任务项已关联的任务项推进记录（来自 checkpoint.planItemLog 的 planItemId 关联，可为空数组） */
   planItemLog: { planItemId: string; summary: string; completedAt?: number }[];
 }
-
-// ─── 诊断 DTO 类型已移除（2026-08-24 第一性原理复盘） ───
-// 复杂治理细节（取代/加权）超越终端用户需要（ChatGPT 仅暴露「记住了什么+删改」），
-// 且记忆明文存于 .memora/memories.json 用户可直接读；内核治理机制强制自动跑，无终端用户场景。
-// 相关消息类型（governance_source_health / governance_detect_conflicts / governance_deduplicate /
-// governance_evaluate_timeliness / source_health_loaded / conflict_detection_loaded /
-// dedup_result / timeliness_result）及 DTO 一并删除，避免 orphaned 协议类型与死代码。

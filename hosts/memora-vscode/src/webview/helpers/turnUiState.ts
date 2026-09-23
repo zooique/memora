@@ -1,15 +1,13 @@
 /**
  * 骨架（会话控件）状态派生层 —— `SkeletonState` → UI 三态 → 按钮语义
  *
- * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md（M3b-2b-1 / 2b-2a）
+ * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
  *
  * 职责边界：把 webview 侧散落的骨架自变量（会话三态 / 申请在途 / 输入内容）
- * **收敛为一次纯函数派生**——本文件不读 DOM、不发消息、不碰内核，便于单测与变异验证。
+ * **集中为一次纯函数派生**——本文件不读 DOM、不发消息、不碰内核，便于单测与变异验证。
  *
- * 真源演化（本文件的定位随期推进，但不改动其判据）：
- * - **2b-2b / M5a**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——`TurnState` 可
- *   赋值给 `SkeletonState`（投影子集，`Pick` 同族手法），故换源不动派生链；legacy 过渡适配器
- *   （`skeletonFromStatus` / `skeletonFromPausePending`）已随 M5a 删除（无生产消费，死代码）。
+ * 真源：容器由 `turn_update.state`（完整 `TurnState`）直接赋值——`TurnState` 可赋值给
+ * `SkeletonState`（投影子集，`Pick` 同族手法），派生链不依赖赋值来源。
  */
 
 // TurnState 纯类型导入（仅编译期用，esbuild 剥离，不影响 browser bundle）
@@ -33,7 +31,7 @@ export type SkeletonState =
   | { phase: 'settled' };
 
 /**
- * `TurnState` → `SkeletonState` 投影（**M3b-2b-2b 换真源**：容器改由此直接赋值）
+ * `TurnState` → `SkeletonState` 投影（容器由此直接赋值）
  *
  * 剥掉骨架用不到的 `roundId` / `RoundStatus` / `questions`——`TurnState.running.roundId`
  * 可选（宿主流起始投影时未知）也不影响投影：骨架输出根本不消费它。
@@ -53,7 +51,7 @@ export function skeletonFromTurnState(state: TurnState): SkeletonState {
 }
 
 /**
- * 会话 UI 三态（与 legacy `_sessionUiState` 同域，保证 DOM 行为不变）
+ * 会话 UI 三态（骨架据此施加 DOM 按钮行为）
  *
  * - `thinking` —— 运行中：暂停按钮可用（申请在途时呈可反悔形态），发送按钮承担「停止」
  * - `paused`   —— 挂起（pause 与 ask **同形**）：暂停按钮换「继续」，发送按钮仍是硬停止
@@ -64,15 +62,14 @@ export type SessionUiState = 'thinking' | 'done' | 'paused';
 /**
  * `SkeletonState` → 会话 UI 三态
  *
- * 🔴 **判据订正（2026-09-23，2b-2a 换源前实测发现）**：`waiting{pausePending:true}`
- * （暂停申请在途）映射 **`thinking`** 而非 `paused`——用户申请了暂停但 step 边界未到，
- * turn **仍在运行**：按钮只把「暂停」切成可反悔的「继续 ▶」，**发送按钮职责不变**
- * （空输入仍是「停止生成」，不是「停止生成（丢弃检查点）」）。若映射 `paused`，
- * 发送按钮文案会在申请在途窗口被改成挂起态文案 —— 那是行为变更，而非等价迁移。
+ * 🔴 **判据**：`waiting{pausePending:true}`（暂停申请在途）映射 **`thinking`**（不映射
+ * `paused`）——用户申请了暂停但 step 边界未到，turn **仍在运行**：按钮只把「暂停」切成
+ * 可反悔的「继续 ▶」，**发送按钮职责不变**（空输入仍是「停止生成」）。若误映射 `paused`，
+ * 发送按钮文案会在申请在途窗口被改成挂起态文案（坑）。
  *
- * ask 也映射 `paused` 的依据是 legacy 实际行为：宿主对 ask 与 pause **同走** `pausedOnPurpose`
- * 分支并同样发 `status:'paused'`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问，M5b-2）；
- * 二者在 `SkeletonState.waiting.reason` 上可区分，但**骨架输出不区分**（内联提问块由
+ * ask 也映射 `paused`：宿主对 ask 与 pause **同走** `pausedOnPurpose` 分支并同样发
+ * `status:'paused'`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问）；二者在
+ * `SkeletonState.waiting.reason` 上可区分，但**骨架输出不区分**（内联提问块由
  * turn_update 分支的 renderAskPhase 自身渲染，不属骨架矩阵）。
  */
 export function deriveSessionUiState(state: SkeletonState): SessionUiState {
@@ -123,8 +120,9 @@ export interface ButtonSemantics {
 /**
  * 按钮语义矩阵：`sessionUiState × pausePending × hasInput` → 语义数据
  *
- * 与 `syncButtonSemantics` 原实现逐分支等价（文案、`loading`、`disabled` 三者均对齐），
- * 等价性由 `webview/__tests__/chatView.test.ts` 的按钮矩阵用例锁定。
+ * 与 `syncButtonSemantics` 的 DOM 施加行为逐分支等价（该函数委托本矩阵输出；文案、
+ * `loading`、`disabled` 三者均对齐），等价性由 `webview/__tests__/chatView.test.ts` 的
+ * 按钮矩阵用例锁定。
  *
  * `disabled` 判据：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
  * 都可用（有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续）。

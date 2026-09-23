@@ -1,15 +1,10 @@
 // @vitest-environment jsdom
 /**
- * 图标语言守卫（2026-09-19）——UI 渲染层禁止出现「字符图标」
+ * 图标语言守卫——UI 渲染层禁止出现「字符图标」
  *
  * **背景**：项目图标语言唯一 = `webview/scripts/icons.ts` 的 Trae 柔和线条 SVG
  * （`stroke=currentColor` / `stroke-width=1.5` / 圆端 / 用 CSS 控尺寸）。字符图标
  * （emoji 与装饰符号）是**第二套语言**：彩色像素图、跨平台渲染不一、不跟随主题色。
- * 2026-09-19 收口时清理了 8 处（输入框技能触发器与 chip 的 ⚡、清空按钮 ✕、记忆卡按钮
- * ✕/✎、续接 chip ↻、step 锚点 📍、连接测试 ✅/❌、技能空态 📁），并剪除 toolNameMap 的
- * 24 键 emoji 表。同日 HOST-S8 追加收口 3 处（plan-bar 折叠指示 ▸/▾ → `applyIcon`、
- * dropdown 默认触发器 ⋯ → `getIconSvg('ellipsis')` **内联**自足 SVG；另补齐缺失的
- * `chevron-right`、删零消费的 `chevron-up`），并将下述三个**逃逸**字符点名纳入禁止集。
  * 本守卫防其回潮：**代码**中出现字符图标即红。
  *
  * **判据边界（有意为之，勿随意扩大）**：
@@ -21,25 +16,22 @@
  *         `content` 行受**窄豁免**放行（伪元素**无法持有 DOM 节点** → 字形不可能换成
  *         <svg>）。豁免面由下方守卫以**结构性约束**锁死（须在 `styles/`、值须 ≤1 字符）。
  *         现存于 dropdown capsule caret / roles details summary 两处（描述性快照，**非
- *         处数断言**——处数随 UI 需求漂移、无 SSOT，写死即每改一次过期一次），经 HOST-S8
- *         裁决保留：把指示器搬进 HTML 需改 dropdown/roles 组件契约，收益不抵成本；
+ *         处数断言**——处数随 UI 需求漂移、无 SSOT，写死即每改一次过期一次）；保留理由：
+ *         把指示器搬进 HTML 需改 dropdown/roles 组件契约，收益不抵成本；
  *     (b) `·`(U+00B7) / `▋`(U+258B)：**完全未纳入 FORBIDDEN**，任何层均放行（排版分隔 /
  *         流式光标，代码侧 30+ 处在用，纳入即大面积误报）；
- *   · **逃逸已点名收口（HOST-S10 部分闭环，2026-09-19）**：禁止集是**黑名单**式，无法
- *     枚举「图标性字符」全集。实证：`▸`(U+25B8) / `▾`(U+25BE) / `⋯`(U+22EF) 三者
- *     **均不在**原区间内（落在 `2600–27BF` 之外）——即 `chatView.ts` 原先的 `'▾':'▸'`
- *     折叠指示器**从未被本守卫拦过**，其收口靠人工发现而非守卫。现已逐个点名纳入
- *     FORBIDDEN（全库重扫：命中 0→2，且 2 处全在 CSS content → 被上条豁免）；
- *     但 `·`(U+00B7) / `▋`(U+258B) **不纳入**——代码侧 30+ 处在用（排版分隔、单位、
- *     流式光标），纳入即大面积误报。残余盲区仍存（黑名单永远漏），CSS 侧判据的稳健
- *     方向是反转为**白名单**（`content` 非空仅允许 `''`/`'·'`/`'▋'`）——本次先以结构性
- *     约束控住豁免面，未动白名单化（改判据须带观测与退出条件）；
+ *   · **黑名单盲区（已知，明示不隐瞒）**：禁止集是**黑名单**式，无法枚举「图标性字符」全集。
+ *     `▸`(U+25B8) / `▾`(U+25BE) / `⋯`(U+22EF) 三者**均不在**图形区间内（落在 `2600–27BF`
+ *     之外），纯区间守卫拦不到（如 `'▾':'▸'` 折叠指示器不会被区间拦截），故逐个点名纳入
+ *     FORBIDDEN。残余盲区仍存（黑名单永远漏），CSS 侧判据的稳健方向是反转为**白名单**
+ *     （`content` 非空仅允许 `''`/`'·'`/`'▋'`）——当前先以结构性约束控住豁免面，
+ *     未白名单化（改判据须带观测与退出条件）；
  *   · VS Code OutputChannel 的纯文本报告（`extension/commands/demo.ts` 的 `✓ ✖ ➤`）不管——
  *     文本通道无法渲染 SVG，且不在 webview 渲染面；
  *   · `×`（U+00D7）**不纳入禁止集**——同一字符在本项目兼作**语义乘号**（`工具×${n}`、
- *     `${label} ×${count}`、`×1000` 注释），字符本身无法区分「图标」与「乘号」。3 处图标用途
- *     （待发送条目删除 / 技能 chip 移除 / 团队弹窗关闭）已于 2026-09-19 人工改为 close SVG，
- *     此后靠人工审查覆盖——**已知判据盲区，明示不隐瞒**。
+ *     `${label} ×${count}`、`×1000` 注释），字符本身无法区分「图标」与「乘号」。图标用途
+ *     （待发送条目删除 / 技能 chip 移除 / 团队弹窗关闭）一律走 close SVG，其余 × 靠人工
+ *     审查覆盖——**已知判据盲区，明示不隐瞒**。
  */
 
 import { describe, it, expect } from 'vitest';
@@ -52,14 +44,14 @@ const UI_ROOT = join(__dirname, '..');
 
 /**
  * 禁止字符集：图形 emoji + 杂项装饰符号 + 图形符号补充 + 循环箭头 + 变体选择符，
- * 并**逐个点名**三个曾逃逸出区间的图标性字符：`▸`(U+25B8) / `▾`(U+25BE) / `⋯`(U+22EF)。
+ * 并**逐个点名**三个图形区间外的图标性字符：`▸`(U+25B8) / `▾`(U+25BE) / `⋯`(U+22EF)。
  * 不含 U+2190–21FF 语义箭头；`·`(U+00B7) / `▋`(U+258B) 属排版分隔与流式光标且代码侧
  * 30+ 处在用，**不纳入**（见文件头「判据边界」）。
  */
 const FORBIDDEN = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{21BA}\u{21BB}\u{FE0F}\u25B8\u25BE\u22EF]/u;
 
 /**
- * CSS `content` 值豁免（HOST-S8 裁决保留的 2 处）：伪元素**无法持有 DOM 节点**，
+ * CSS `content` 值豁免（现存 2 处）：伪元素**无法持有 DOM 节点**，
  * 故其字形不可能换成 <svg>。豁免面由下方守卫以**结构性约束**锁死（须在 styles/、值须单字符），
  * 不锁数字——数字无 SSOT，每改即过期。
  */
@@ -162,7 +154,7 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
   it('图标单一真源在位：icons.ts 导出 getIconSvg 且被 UI 层消费', () => {
     const src = readFileSync(join(UI_ROOT, 'scripts', 'icons.ts'), 'utf8');
     expect(src, 'icons.ts 缺 getIconSvg 导出').toContain('export function getIconSvg');
-    // 消费面至少覆盖 chatView 与 settingsView（2026-09-19 起 config/memory 亦接入）
+    // 消费面至少覆盖 chatView 与 settingsView（config/memory 亦接入）
     const consumers = collectUiSources(UI_ROOT).filter((f) => {
       const s = readFileSync(f, 'utf8');
       return /from '[^']*icons\.js'/.test(s) && !f.endsWith('icons.ts');

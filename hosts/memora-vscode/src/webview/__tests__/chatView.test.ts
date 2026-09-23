@@ -276,8 +276,8 @@ describe('chatView clear_ok 消息区清理', () => {
     // ② 暂停：记录暂停块锚点（activeAssistantEl 存为 pausedAssistantEl）
     dispatch({ type: 'paused' });
     // ③ resume 后 host 重新 emit meta（真实链路 consumeFlow 每次 runFlow 重发 meta，
-    //    2026-09-07 修复前此 meta 会无条件 prepareFlowShell 建骨架 B，劫持后续 chunk
-    //    → 视觉两个独立 LLM 回答）——pausedResume 分支应不建骨架、保留锚点
+    //    pausedResume 分支须不建骨架、保留锚点——若无条件 prepareFlowShell 建块 B，会劫持
+    //    后续 chunk → 视觉上两个独立 LLM 回答（坑））
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ④ resume 后首 text chunk（同 roundId）：应原位续写暂停块，不新建第 2 块
     dispatch({ type: 'chunk', content: '暂停后正文', roundId: 'r1' });
@@ -436,7 +436,7 @@ describe('chatView clear_ok 消息区清理', () => {
     //    （骨架空正文，二次回答提交时被 user 分支移除 → activeAssistantEl 回退块A = 倒挂根源）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'paused' });
-    // ④ 第二答（同样带 question）——修复前第二轮 QA 对被顶到第一轮之前
+    // ④ 第二答（同样带 question）——第二轮 QA 对不得被顶到第一轮之前（锁顺序）
     dispatch({
       type: 'user', text: '选方案 B', ts: '2026-09-08T10:01:00.000Z', kind: 'question-answer', roundId: 'r1',
       question: '确认改为 B？', options: ['方案 B', '方案 A'],
@@ -1111,7 +1111,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
   it('运行期创建节点的图标走 SVG 补填充（图标语言唯一 = icons.ts，2026-09-19）', () => {
     // pending-queue-bar 由 chatView **运行期**创建 → 初始化时的 populateIcons(document.body)
     // 覆盖不到，故在插入 DOM 后显式 populateIcons(_pendingQueueBar) 补填充。
-    // 本断言锁死这条链路：若补填充丢失，按钮会静默变成空白（原实现为字符 ✕ 不会空白）。
+    // 本断言锁死这条链路：若补填充丢失，按钮会静默变成空白（坑）。
     mountChatView();
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插队内容'] });
     const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLElement;
@@ -1431,8 +1431,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   });
 
   it('中断轮重放：收进 round-group 容器 + footer（复制/分叉/删除 + 时间戳，2026-09-22 修复被停止会话无操作条）', () => {
-    // 修复背景：重启回放时中断轮走 renderInterruptedRound（孤儿宿主），此前不建 round-group 容器
-    // → 底部缺「复制/删除/时间」footer、用户无法删除被停止的会话；修复后与 done 轮同构容器化。
+    // 契约：重启回放时中断轮走 renderInterruptedRound（孤儿宿主）也须与 done 轮同构容器化
+    // （round-group 容器 + footer）——若不建容器，底部缺「复制/删除/时间」footer、用户无法
+    // 删除被停止的会话（坑）。
     const { postMessage } = mountChatView();
     // 真实重放时序：user（带 ts + roundId）→ 中断轮（status=interrupted，processEvents 首条 meta 带真实起始 ts）
     dispatchReplay(
@@ -1825,9 +1826,8 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     for (const m of msgs) dispatch(m);
   }
 
-  // 【2026-09-16 删除说明】原「R1-现状快照」断言 .plan-inline 位于 .msg-body 之后，
-  // 它固化的是 F1 缺陷行为本身（锚点退化为 appendChild）。F1 修复后该行为不复存在，
-  // 保留只会把缺陷锁进用例。正向断言由下方「R1-期望断言」承担。
+  // 正向断言由下方「R1-期望断言」承担；不设 .plan-inline 现状快照断言——现状快照会把缺陷
+  // 行为（锚点退化为 appendChild）锁进用例（坑）。
 
   it('R1-期望断言：plan 清空 → 常驻条隐藏、内容区零完成卡片（2026-09-17 删完成快照后转绿）', () => {
     mountChatView();
@@ -2552,7 +2552,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     const head = document.querySelector('#planBarHead') as HTMLElement;
     const panel = document.querySelector('#planBarPanel') as HTMLElement;
     const chevron = document.querySelector('#planBarChevron') as HTMLElement;
-    // HOST-S8（2026-09-19）：折叠指示由 ▸/▾ 字符收敛为 icons.ts 的 SVG。
+    // 折叠指示为 icons.ts 的 SVG（▸/▾ 字符形态禁用）。
     // 图标守卫的 FORBIDDEN 字符集不含 U+25BE/U+25B8，故此处显式锁住「不得回退为字符」。
     expect(chevron.textContent, '折叠指示不得回退为字符图标').toBe('');
     expect(chevron.querySelector('svg'), '折叠指示必须是 SVG').not.toBeNull();
@@ -2886,7 +2886,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const submit = box.querySelector('.ask-inline__submit') as HTMLButtonElement;
     expect(submit).not.toBeNull();
     expect(submit.disabled).toBe(true);
-    // 只答第 1 题：不提交任何回答、按钮仍 disabled（修复前点一个即提交、其余被跳过）
+    // 只答第 1 题：不提交任何回答、按钮仍 disabled（坑：点一个即提交会跳过其余问题）
     const btns = box.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
     expect(btns).toHaveLength(4);
     (btns[0] as HTMLButtonElement).click(); // 第一题「中文」
@@ -2917,8 +2917,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
       reason: 'ask',
       questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
     });
-    // ③ 点选项标记 + 提交（2026-09-16 修复：应把块 A 记为 pausedAssistantEl 续写锚；
-    // 2026-09-22 统一形态后补点「提交回答」）
+    // ③ 点选项标记 + 提交（应把块 A 记为 pausedAssistantEl 续写锚；统一形态下须再点「提交回答」）
     const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
     (btns[0] as HTMLButtonElement).click();
     const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
@@ -2929,7 +2928,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     // ⑤ 续写正文（同 roundId）→ done 收敛
     dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
-    // 回归断言：不得出现第二个 assistant 块（修复前 prepareFlowShell 建块 B = 双复制条/角色名分裂）
+    // 回归断言：不得出现第二个 assistant 块（若 prepareFlowShell 建块 B → 双复制条/角色名分裂（坑））
     const assistants = document.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('提问前的正文已按方案 A 继续');
@@ -2959,9 +2958,10 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     // ⑥ 续写正文（同轮）→ done 收敛
     dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
-    // 回归断言：单块续写（骨架复用开启正文流，不新建块 B）——修复前骨架被删 → pausedResume
-    // 判定失效（isConnected=false）→ 误走 resumePending → prepareFlowShell 挂 resolveInteractionAnchor
-    // 兜底位（消息流最后 assistant 块 = 上一轮）→ 回答错位；flowEl 随骨架消散 → 「你答」条目孤儿底部
+    // 回归断言：单块续写（骨架复用开启正文流，不新建块 B）——骨架须在 user(kind) 回发时不被删，
+    // 否则 pausedResume 判定失效（isConnected=false）→ 误走 resumePending → prepareFlowShell 挂
+    // resolveInteractionAnchor 兜底位（消息流最后 assistant 块 = 上一轮）→ 回答错位；flowEl 随
+    // 骨架消散 → 「你答」条目孤儿底部（坑）。
     const assistants = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('已按方案 A 继续');
@@ -3469,7 +3469,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(inputsInBlock[1]!.textContent).toContain('内容平台');
     expect(inputsInBlock[2]!.textContent).toContain('专业作者');
     // 消息流层无残留：折叠块 details 在 #messages 子树内，故用直接子元素 `:scope >` 判定
-    // （修复前 fallback 条目作为 #messages 直子，散落在用户提问与最终回答之间）
+    // （fallback 条目若作 #messages 直子，会散落在用户提问与最终回答之间（坑））
     const messages = document.getElementById('messages') as HTMLElement;
     expect(messages.querySelectorAll(':scope > .round-block__input')).toHaveLength(0);
     // 收起态摘要含「你答×3」
@@ -3483,7 +3483,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'user', text: '第一轮问题', ts: 't1', roundId: 'r1' });
     dispatch({ type: 'user', text: '第一轮补充', ts: 't2', roundId: 'r1', kind: 'supplement' });
     dispatch({ type: 'assistant', text: '第一轮回答', ts: 't3', roundId: 'r1' });
-    // 第二轮（无 setStatus 变化，模拟重放路径——修复前 _lastInterruptDivider 残留 → 误并入第一轮行）
+    // 第二轮（无 setStatus 变化，模拟重放路径——_lastInterruptDivider 若残留会误并入第一轮行（坑））
     dispatch({ type: 'user', text: '第二轮问题', ts: 't4', roundId: 'r2' });
     dispatch({ type: 'user', text: '第二轮补充', ts: 't5', roundId: 'r2', kind: 'supplement' });
     dispatch({ type: 'assistant', text: '第二轮回答', ts: 't6', roundId: 'r2' });
@@ -3934,7 +3934,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
           { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
         ],
         assistantLog: [{ content: '你想读哪个文件？', ts: 't2' }],
-        // 带 question 的 qa（G26 形态：提问回顾行 + 回答折叠块）——修复前只折入问行、答块残留消息流
+        // 带 question 的 qa（G26 形态：提问回顾行 + 回答折叠块）——问行与答块须成对折入，否则答块残留消息流（坑）
         interactiveInputs: [
           { content: '读 probe.txt', ts: 't3', kind: 'question-answer', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
         ],

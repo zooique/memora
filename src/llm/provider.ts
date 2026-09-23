@@ -38,7 +38,7 @@ export interface ChatOptions {
    * 结构化输出约束（OpenAI Function Calling 响应格式约束）。
    * 注意：response_format 不能与 tools 同时使用（OpenAI 协议限制），故 AgentLoop 默认不生成它
    * （见 loop.ts buildChatOptions 注释）——此处仅为调用方显式传入时的可选能力孔，不宣称任何
-   * 「fallback 到纯文本 tool_call」的静默降级（文本出口不是可调用通道，2026-09-14 收敛）。
+   * 「fallback 到纯文本 tool_call」的静默降级（文本出口不是可调用通道）。
    */
   response_format?: {
     type: 'json_schema';
@@ -70,7 +70,7 @@ export abstract class LlmProvider {
    *
    * 默认 **true**（存量行为）：云 LLM 绝大多数支持原生 FC（有工具集就传 tools，与历史一致）。
    * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，须在宿主配置时
-   * 显式置 false（2026-09-14 阶段0·互斥双能力位）。
+   * 显式置 false（互斥双能力位）。
    */
   readonly supportsToolCalling: boolean = true;
 

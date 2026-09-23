@@ -54,12 +54,12 @@ export class SessionManager {
   private stateMachine: SessionStateMachine;
   /** 当前会话检查点（运行时状态快照） */
   private checkpoint: SessionCheckpoint | null = null;
-  /** 检查点脏标记（内存态收口）：touchCheckpoint 置位、settleCheckpoint 清理（不再落盘，2026-09-10 减法） */
+  /** 检查点脏标记（内存态收口）：touchCheckpoint 置位、settleCheckpoint 清理（纯内存态，不落盘） */
   private checkpointDirty = false;
   /** 目标一致性校验器（目标版本一致性校验） */
   private readonly consistencyChecker: GoalConsistencyChecker;
   /**
-   * 连续暂停时间戳数组（防滥用窗口）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降级 P3。
+   * 连续暂停时间戳数组（防滥用窗口）：每次高风险暂停记录时间戳，窗口（1 小时）内连续 2 次则强制降为低风险暂停。
    * ⚠ 进程内状态，不入 SessionCheckpoint——重启归零是设计（反滥用卫生状态，非执行状态）；1h 窗口自愈防线，勿引入持久化。
    */
   private consecutivePauseTimestamps: number[] = [];
@@ -171,7 +171,7 @@ export class SessionManager {
       ]);
     }
 
-    // 检查点是当前会话的工作状态，切换时清空内存态（检查点不落盘，2026-09-10 减法）
+    // 检查点是当前会话的工作状态，切换时清空内存态（检查点纯内存态，不落盘）
     if (this.checkpoint && this.checkpoint.sessionId !== newSession) {
       this.settleCheckpoint(true);
       this.checkpoint = null;
@@ -288,9 +288,9 @@ export class SessionManager {
   /**
    * 恢复最近活跃会话：经 ISessionStore 加载最近消息到工作记忆；宿主未注入则返回 0。
    *
-   * 会话管理纯度（2026-08-29 剪枝）：会话一律手动创建（宿主标题条「＋」唯一入口），
-   * 本方法只做「恢复」、绝不隐式创建会话——旧「今天-main 优先」按天归档语义与
-   * preferredSession 参数已移除。最近活跃的唯一时间序真理源 = listSessionMetas[0]（updatedAt 降序）。
+   * 会话管理纯度：会话一律手动创建（宿主标题条「＋」唯一入口），
+   * 本方法只做「恢复」、绝不隐式创建会话——无按天归档隐式语义
+   * （「今天-main 优先」类规则），也无 preferredSession 参数。最近活跃的唯一时间序真理源 = listSessionMetas[0]（updatedAt 降序）。
    *
    * @returns 恢复的消息条数（0 = 无可恢复会话）
    */
@@ -391,7 +391,7 @@ export class SessionManager {
   }
 
   /** 从当前运行时状态创建检查点：快照消息历史与会话标识生成 SessionCheckpoint（纯内存态，
-   *  「减法」2026-09-10 起不再落盘——中止/断电走中断轮补全，运行时暂停同 turn 内存续跑） */
+   *  不落盘——中止/断电走中断轮补全，运行时暂停同 turn 内存续跑） */
   createCheckpoint(mainGoal?: string): SessionCheckpoint {
     const history = this.getHistory();
 
@@ -400,7 +400,7 @@ export class SessionManager {
 
     // 合并语义：以已有检查点为基底展开，仅覆写本次重算的字段。
     // 【禁止改回对象字面量整体重建】——整体重建≈隐式字段白名单，任何未显式列出的字段每次 pause 被静默丢弃
-    // （整体重建曾使 planItemLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
+    // （整体重建会使 planItemLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
     this.checkpoint = {
       ...(prev ?? {}),
 
@@ -441,8 +441,8 @@ export class SessionManager {
   }
 
   /**
-   * 检查点脏标记清理（**纯内存态**，「减法」2026-09-10）：
-   * `SessionCheckpoint` 不再落盘——中止/断电走「中断轮补全为完整 turn」而非跨重启恢复，
+   * 检查点脏标记清理（**纯内存态**）：
+   * `SessionCheckpoint` 不落盘——中止/断电走「中断轮补全为完整 turn」而非跨重启恢复，
    * 运行时暂停是同 turn 内续跑（内存态），无跨进程载体需求。故本方法仅清理脏标记，
    * 不再写存储层（保留方法语义边界，避免为纯净化波及 40+ 处调用点）。
    */
@@ -515,7 +515,7 @@ export class SessionManager {
       if (this.checkpoint) {
         // 从状态机投影 status（SSOT），避免写死
         this.checkpoint.status = this.stateMachine.status;
-        // 收口暂停态残留（TS-9）：pausedAt 是「暂停起点」标记，恢复即应卸载——
+        // 收口暂停态残留：pausedAt 是「暂停起点」标记，恢复即应卸载——
         // 否则检查点长期残留 pausedAt（status=running + pausedAt 并列的脏快照），
         // 且下一次暂停超时判定会被旧起点污染。随 setPauseMeta 一并更新（纯内存）。
         delete this.checkpoint.pausedAt;
@@ -563,7 +563,7 @@ export class SessionManager {
     }
   }
 
-  /** 检查连续暂停是否已达上限（防滥用）：先清理窗口外时间戳，再查窗口内暂停≥2 次则强制降级 P3。低风险不计数 */
+  /** 检查连续暂停是否已达上限（防滥用）：先清理窗口外时间戳，再查窗口内暂停≥2 次则强制降为低风险暂停。低风险不计数 */
   isPauseLimitReached(): boolean {
     this.pruneStalePauseTimestamps();
     return this.consecutivePauseTimestamps.length >= 2;
@@ -604,7 +604,7 @@ export class SessionManager {
 
     // 1. 停暂停超时定时器
     this.stopPauseTimeoutTimer();
-    // 2. 清内存态（减法后检查点不落盘，无存储清理动作）
+    // 2. 清内存态（检查点纯内存态不落盘，无存储清理动作）
     this.checkpoint = null;
     this.checkpointDirty = false;
     this.setPauseMeta(undefined);
@@ -614,7 +614,7 @@ export class SessionManager {
     return true;
   }
 
-  /** 从异常恢复：标记 error.recovered=true 并经 stateMachine.recover 校验。减法后检查点不落盘，恢复仅活在内存态 */
+  /** 从异常恢复：标记 error.recovered=true 并经 stateMachine.recover 校验。检查点不落盘，恢复仅活在内存态 */
   recover(): boolean {
     if (!this.checkpoint || !this.checkpoint.error) {
       logger.warn('无法恢复：无检查点或异常信息');
@@ -631,7 +631,7 @@ export class SessionManager {
         this.checkpoint.status = this.stateMachine.status;
         this.touchCheckpoint();
       }
-      // 内存态收口（减法后无落盘：recovered 只活内存，跨进程一律走中断补全）
+      // 内存态收口（无落盘：recovered 只活内存，跨进程一律走中断补全）
       this.settleCheckpoint();
       this.emitEvent('sessionRecovered', {
         sessionId: this.checkpoint?.sessionId,
@@ -722,19 +722,19 @@ export class SessionManager {
   /**
    * 写入执行计划（计划写入口唯一分发点）。模式语义：
    *   'overwrite'：先清空现有 plan 再逐条追加（真重写——LLM task_table_write / 会议预置都依赖此语义，
-   *                 2026-09-06 修复：此前与 'append' 同分支只追加不清空，overwrite 名存实亡）；
+   *                 若与 'append' 同分支只追加不清空，则 overwrite 名存实亡）；
    *   'append'   ：在现有 plan 后逐条追加；
    *   'update'   ：全量替换现有 plan（保留已有 id/status/rolePack，仅覆盖 description）。
    *   其它 mode 兜底 no-op。
-   * 分发逻辑原嵌 Agent 闭包无法单测，归位本类后由 sessionCheckpointLifecycle.test.ts 覆盖。
+   * 分发逻辑归本类承载，由 sessionCheckpointLifecycle.test.ts 覆盖。
    */
   writePlan(
     mode: 'overwrite' | 'append' | 'update',
     steps: Array<{ description: string; rolePack?: string }>,
   ): PlanItem[] {
     // 写点自愈：checkpoint 未就绪时先创建（任务表写点 = 任务上下文就绪点）。
-    // 此前静默 return [] 让 LLM 收到 ok:true + 0 步 → 伪成功 → 反复重写（实测 6 次）。
-    // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架（SeedPrepare 内 writePlan('overwrite')）与普通 task_table_write 一并治愈。
+    // 若静默 return [] 会让 LLM 收到 ok:true + 0 步 → 伪成功 → 反复重写（实测 6 次）。
+    // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架（SeedPrepare 内 writePlan('overwrite')）与普通 task_table_write 同路径生效。
     const cp = this.checkpoint ?? this.createCheckpoint();
     const existingPlan = cp.plan;
     if (mode === 'overwrite' || mode === 'append') {
@@ -830,8 +830,8 @@ export class SessionManager {
 
   /** 完成一个 step（显式完成原语）：单函数内顺序写步骤状态 + planItemLog + heartbeat 保证原子性。
    *  消费方 = turn 收尾兜底 concludeActivePlanItemIfPlanFullyReached（LLM 未显式 task_table_update
-   *  的最后一步补标）；迭代边界（onPlanItemBoundary）已降级为只写日志的 logPlanItemBoundary，
-   *  不再经本方法推进（PLAN-SYNC-1 ①）。 */
+   *  的最后一步补标）；迭代边界 onPlanItemBoundary 只走 logPlanItemBoundary 写日志，
+   *  不经本方法推进。 */
   completePlanItem(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
 
@@ -848,7 +848,7 @@ export class SessionManager {
     this.settleCheckpoint();
   }
 
-  /** 写 step 边界日志（时间轴投影，不改 plan 状态）。形态②（PLAN-SYNC-1 ①）下迭代边界
+  /** 写 step 边界日志（时间轴投影，不改 plan 状态）。迭代边界
    *  onPlanItemBoundary 只做本写——plan 状态推进唯一写者 = LLM 的 task_table_update。 */
   logPlanItemBoundary(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
@@ -858,7 +858,7 @@ export class SessionManager {
   }
 
   /**
-   * 形态② 兜底收尾（「LLM 未显式 update 即收尾」）：turn 正常完成且计划已「全部到达」——
+   * 兜底收尾（「LLM 未显式 update 即收尾」）：turn 正常完成且计划已「全部到达」——
    * 存在 active step 且无 pending step（LLM 已显式完成所有更早步骤、当前步为最后到达的一步）——
    * 时闭合该 active 步（completePlanItem：标 done + planItemLog）。LLM 忘标最后一步时由本兜底补上，
    * 使计划达到全 done（任务表 turn 内收敛，turn 结束兜底清理）；真实多轮任务（有 pending）不受影响。
@@ -876,8 +876,8 @@ export class SessionManager {
   }
 
   /**
-   * 追加 step 日志（completePlanItem / logPlanItemBoundary 共用）。P-1 2026-09-06 起按 planItemId
-   * 分组截断，每 step 最多 3 条——原全局 FIFO 12 条在 5+ step 任务中会把旧 step 的运行记录
+   * 追加 step 日志（completePlanItem / logPlanItemBoundary 共用）。按 planItemId
+   * 分组截断，每 step 最多 3 条——若用全局 FIFO 12 条，5+ step 任务中旧 step 的运行记录会被
    * 整段截没，用户翻旧 done step 摘要看到「空」。
    */
   private appendPlanItemLog(options: { planItemId?: string; summary: string }): void {
@@ -927,10 +927,10 @@ export class SessionManager {
   }
 
   /**
-   * 计划是否全部阻塞（2026-09-07 预判短路收窄专用判定）：仅全 blocked 视为真停滞。
+   * 计划是否全部阻塞（预判短路收窄专用判定）：仅全 blocked 视为真停滞。
    * 全 done / 计划空不视为"需要拦截"——用户主动点「继续」= 要 AI 产出，
    * 全 done 可能只是本步收尾（还有总结未说出），空计划是普通问答暂停续跑，都应放行调 LLM。
-   * （2026-09-07 清理：旧 isPlanStalled 因语义相悖——把空/全 done 也判停滞——已删除，勿复用其口径）
+   * 口径警告：不得把空计划/全 done 判为停滞，否则会误拦正常续跑。
    */
   isPlanAllBlocked(): boolean {
     if (!this.checkpoint) return false;
@@ -950,12 +950,12 @@ export class SessionManager {
     return this.checkpoint.plan.find((s) => s.status === 'active') ?? null;
   }
 
-  // ── 工具执行日志（outbox 模式）；补偿管线已降级，以下仅保留日志 ──
+  // ── 工具执行日志（outbox 模式）：补偿管线不启用，以下仅日志 ──
 
   /**
    * 记录工具执行：追加到检查点日志（append-only，内存态）。
    * 标脏策略：仅标脏不即时清脏（completePlanItem step 边界统一清脏、createCheckpoint 暂停/异常强制清脏）。
-   * 检查点不落盘（2026-09-10 减法）：completedToolCalls 仅内存态，回合中途崩溃即整体丢弃、走中断轮补全恢复；
+   * 检查点纯内存态不落盘：completedToolCalls 仅内存态，回合中途崩溃即整体丢弃、走中断轮补全恢复；
    * 「工具重跑排重」仅在单进程存活期内有效，无跨重启持久化。
    */
   logToolExecution(record: ToolExecutionRecord): void {
@@ -1002,7 +1002,7 @@ export class SessionManager {
 
   /**
    * 标记会话暂停超时（超时事实唯一写点）。广播式：超时信息经事件载荷传递，多监听器并行消费互不干扰。
-   * 由 checkPauseTimeout 调用（原 `loadPersistedCheckpoint` 启动路径调用点已随跨重启恢复链退役，2026-09-10）。
+   * 由 checkPauseTimeout 调用（唯一调用点，启动路径无跨重启恢复）。
    * 会话标识不符 YYYY-MM-DD-<会话名> 时 date/session 缺省但仍发射事件。
    */
   private markSessionTimedOut(sessionId: string, pauseDuration: number): void {
@@ -1062,7 +1062,7 @@ export class SessionManager {
     // 暂停超时意味着会话断裂，重置连续暂停计数（递增→衰减→重置闭合）
     this.resetConsecutivePauseCount();
 
-    // 记录超时会话 + 发射事件（唯一入口，与启动路径共用）
+    // 记录超时会话 + 发射事件（唯一入口）
     this.markSessionTimedOut(sessionId, pauseDuration);
 
     // 超时后不再需要继续检测
@@ -1070,14 +1070,14 @@ export class SessionManager {
   }
 
   /** 关闭时清脏（纯内存，无落盘）：Agent 关闭、destroy 前调用。检查点不落盘，
-   *  本方法为保留语义边界的 no-op 清脏（2026-09-10 减法后无持久化动作） */
+   *  本方法为保留语义边界的 no-op 清脏（无持久化动作） */
   flushOnShutdown(): void {
     this.settleCheckpoint(true);
   }
 
   /** 立即清脏（纯内存，无落盘）：非只读工具完成后调用。⚠️ 检查点不落盘，completedToolCalls 仅内存态——
-   *  「工具重跑排重」仅在单进程存活期内生效，进程崩溃/重启后失效（走中断轮补全）。D1-② 落盘设计已随
-   *  2026-09-10 减法退役，本方法为保留语义边界的 no-op 清脏 */
+   *  「工具重跑排重」仅在单进程存活期内生效，进程崩溃/重启后失效（走中断轮补全）。无落盘设计，
+   *  本方法为保留语义边界的 no-op 清脏 */
   flushNow(): void {
     this.settleCheckpoint(true);
   }

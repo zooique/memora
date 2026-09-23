@@ -2,10 +2,9 @@
  * docContext 纯函数单测：写入/剥离对偶
  * （buildInjectedContextEnvelope ↔ stripInjectedContextPrefix）
  *
- * 覆盖沿革：阶段 A P2-1（从 chatPanel.ts 抽出为可测模块）+ 固化 P1-6 修复（关闭标签
- * 锚点剥离，用户输入含「用户请求：」不被误剥）+ 站 59 修复（原实现以 startsWith
- * 文档块开标签为判据，技能块排在文档块之前时整体回显泄露 → 判据改为「消息内含宿主
- * 注入块标记」，覆盖 仅文档 / 技能+文档 / 仅技能 三态）。
+ * 覆盖面：写入/剥离对偶的三态（仅文档 / 技能+文档 / 仅技能）+ 关闭标签锚点剥离（用户输入
+ * 含「用户请求：」不被误剥）。剥离判据为「消息内含宿主注入块标记」——以 startsWith 文档块
+ * 开标签为判据，会在技能块排在文档块之前时整体回显泄露（坑）。
  */
 import { describe, it, expect } from 'vitest';
 import {
@@ -23,7 +22,7 @@ describe('stripInjectedContextPrefix', () => {
     expect(stripInjectedContextPrefix(content)).toBe(INPUT);
   });
 
-  it('技能块排在文档块之前时同样剥离（站 59 回归：原 startsWith 判据导致整块回显）', () => {
+  it('技能块排在文档块之前时同样剥离（不得用 startsWith 开标签判据，会整块回显）', () => {
     const content = buildInjectedContextEnvelope(
       [SKILL_BLOCK, buildDocContextBlock('# 设计文档')],
       INPUT,
@@ -31,7 +30,7 @@ describe('stripInjectedContextPrefix', () => {
     expect(stripInjectedContextPrefix(content)).toBe(INPUT);
   });
 
-  it('仅技能块（无文档上下文）时同样剥离（站 59 回归）', () => {
+  it('仅技能块（无文档上下文）时同样剥离', () => {
     const content = buildInjectedContextEnvelope([SKILL_BLOCK], INPUT);
     expect(stripInjectedContextPrefix(content)).toBe(INPUT);
   });
@@ -40,7 +39,7 @@ describe('stripInjectedContextPrefix', () => {
     expect(stripInjectedContextPrefix('普通对话消息')).toBe('普通对话消息');
   });
 
-  it('用户输入含「用户请求：」不被误剥（P1-6 回归）', () => {
+  it('用户输入含「用户请求：」不被误剥（关闭标签锚点）', () => {
     // 注入 marker 总紧跟关闭标签；用户 input 内的「用户请求：」出现在其后，应保留
     const content =
       `[当前打磨文档内容]\n# 设计文档\n[/当前打磨文档内容]\n\n` +

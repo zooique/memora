@@ -209,11 +209,8 @@ export class GCService {
    * 清理 Round 关联的记忆摘要
    *
    * 摘要记忆的**规范 ID** 为 `round-summary:{sessionName}:{roundId}`（由
-   * roundSummaryGenerator 构造，含会话段）——Round 侧**不持有反向指针**
-   * （`Round.summaryId` 字段已于 2026-09-10 删除：零生产写点、零生产读点的死字段），
+   * roundSummaryGenerator 构造，含会话段）——Round 侧**不持有反向指针**，
    * 故此处按 `roundId` 顶层字段反查，覆盖全部会话命名空间。
-   * （2026-09-12 收敛：删除 legacy 单段 ID `round-summary:{roundId}` 兜底寻址——
-   *   两段式下恒不命中的历史形态防御，随 generateSummaryId 一起移除）
    *
    * 系统治理删除走 purge 物理删除（不进回收站——孤儿摘要是系统清理产物，
    * 非用户主动删除的数据）。

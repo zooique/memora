@@ -729,12 +729,12 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
   });
 
   it('SSE 阶段停摆超时必须抛真超时（不得被 reader.cancel 伪造成流正常结束）', async () => {
-    // 回归靶点（真机 2026-09-15 09:03:22→09:08:27，round-1789462982489）：上游 reasoning
+    // 回归靶点（真机实证，round-1789462982489）：上游 reasoning
     // 结束后流式停摆 305s 零事件，用户只能手动取消。实测口径（Node 22 / undici，与 WHATWG 一致）：
     //   reader.cancel(reason) → 挂起中的 read() **resolve {done:true}**，reason 不外抛；
     //   （对照：abortController.abort(reason) 才会让 read() reject reason）
-    // 旧实现把 cancel 当作「让 read 抛错」，于是一个超时被读成「流正常结束 + 零产出」→
-    // 落「空响应静默重试」→ 60s+120s+120s 三段全被吞，用户侧表现为「卡死无提示」。
+    // 若把 cancel 当作「让 read 抛错」，一个超时会被读成「流正常结束 + 零产出」→
+    // 落「空响应静默重试」→ 60s+120s+120s 三段全被吞，用户侧表现为「卡死无提示」（坑）。
     // 本用例锁死不变量：看门狗触发后 chat() 必须**抛真超时**，不得静默收尾。
     // 只伪造 setTimeout/clearTimeout：全量伪造会连 setImmediate/queueMicrotask 一起接管，
     // 使流机制内部的微任务时序错位而误报"未处理拒绝"（非被测行为）
@@ -773,7 +773,7 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
       vi.advanceTimersByTime(70_000);
 
       // 不变量：超时必须以 **真超时（DOMException/TimeoutError）上抛**，不得静默收尾。
-      // 旧实现此处 resolve({done:true})（静默收尾）→ 上游读成「空响应」→ 静默重试吞掉超时。
+      // 此处若 resolve({done:true})（静默收尾）→ 上游读成「空响应」→ 静默重试吞掉超时（坑）。
       const err = await pending.then(
         (r: IteratorResult<LlmChunk>) =>
           new Error(`预期抛真超时，实际静默收尾：${JSON.stringify(r)}`),

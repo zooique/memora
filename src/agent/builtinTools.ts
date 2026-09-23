@@ -52,7 +52,7 @@ export interface ToolDefinition {
 // 注：write_file 的幂等性依赖于写入模式——overwrite 模式幂等，
 // append/insert 模式非幂等。当前统一标记为 'idempotent-key'，
 // 因 overwrite 是最常用模式，append/insert 的补偿应在调用方保证。
-// task_table_write 幂等性随 mode 而异（2026-09-06 writePlan 三分支语义后修正，勿再称「追加语义」）：
+// task_table_write 幂等性随 mode 而异（勿一概称「追加语义」）：
 //   overwrite（默认）= 清空重建，同参重跑结果一致 → 幂等，但重发会重置已推进的 plan（覆盖进行中状态）；
 //   update = 全量替换 → 幂等；
 //   append = 逐条追加，重复执行累加 → 非幂等（主要风险面）。
@@ -250,7 +250,7 @@ export const ASK_USER_TOOL: ToolDefinition = {
 };
 
 /**
- * remember_intel 内置工具定义（情报区写回，大文本统一通道 Step 2）
+ * remember_intel 内置工具定义（情报区写回，大文本统一通道）
  *
  * LLM **私有工作笔记**的写回通道（scratchpad 模式）：当你从大文本/工具结果获取到值得记住的
  * 关键信息时，调用本工具把它写进你的私有情报区。
@@ -356,7 +356,7 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
   name: 'search_project',
   description:
     '在当前项目（当前工作区文件夹）中搜索文件。mode="name" 按文件名 glob（如 "**/*.ts"），' +
-    // name 裸词语义（SEARCH-1）：无通配符时自动按名称子串/分词放宽，避免"精确路径匹配"假阴性
+    // name 裸词语义：无通配符时自动按名称子串/分词放宽，避免"精确路径匹配"假阴性
     '也可写裸文件名（如 "product"）——无通配符的 word 会自动放宽为名称子串/分词匹配；' +
     'mode="content" 按内容关键词（如 "TODO"）搜索，返回 路径:行号:预览。' +
     // 多词语义显式化：LLM 不知道该写"整串"还是"拆词"时，会把一次能问清的事问成多次（甚至放弃）
@@ -520,7 +520,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       required: ['query'],
     },
   },
-  // ── 记忆即摘要·追溯工具（引用 TRACE_SUMMARY_TOOL 单真源，2026-09-12 收敛）──
+  // ── 记忆即摘要·追溯工具（引用 TRACE_SUMMARY_TOOL 单真源）──
   TRACE_SUMMARY_TOOL,
   {
     name: 'list_sessions',
@@ -539,7 +539,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   },
   // ── 两级空间管理·第二级压缩（LLM 主动触发兜底）──────
   COMPRESS_CONTEXT_TOOL,
-  // ── 主动提问（ask_user 工具，loop 检出挂起；2026-09-04 唯一提问通道）──
+  // ── 主动提问（ask_user 工具，loop 检出挂起；唯一提问通道）──
   ASK_USER_TOOL,
   // ── 情报区写回（remember_intel，LLM 私有笔记；loop 拦截执行）──
   REMEMBER_INTEL_TOOL,

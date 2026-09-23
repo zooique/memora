@@ -17,9 +17,9 @@ const PROJECT_SEARCH_TIMEOUT_MS = 30_000;
 /**
  * 带超时和错误处理的按文件名搜索包装：超时或失败时不抛异常。
  *
- * **为什么失败不返回空数组**（SEARCH-1 · F3，name 模式同 content）：`[]` 与「真零命中」在调用侧
- * **逐字同形**，于是「搜索坏了」被当成「项目里没有」——name 模式此前的扁平数组返回正是这类
- * 假阴性的温床（D5 已在本批收敛：返回升级为 `ProjectFileSearchResult`，放宽/截断/失败各有载体）。
+ * **为什么失败不返回空数组**（name 模式同 content）：`[]` 与「真零命中」在调用侧
+ * **逐字同形**，于是「搜索坏了」被当成「项目里没有」——扁平数组返回正是这类
+ * 假阴性的温床（返回 `ProjectFileSearchResult` 对象，放宽/截断/失败各有载体）。
  * 失败→上报 `failed: true`（**不是** error：不置错、不重试，只在文案里如实说明检索未完成），
  * 由调用方分流表述。
  */
@@ -46,13 +46,13 @@ export async function safeSearchProjectFiles(
 /**
  * 带超时和错误处理的按内容搜索包装：超时或失败时不抛异常。
  *
- * **为什么失败不返回空数组**（SEARCH-1 · F3）：`[]` 与「真零命中」在调用侧**逐字同形**，
+ * **为什么失败不返回空数组**：`[]` 与「真零命中」在调用侧**逐字同形**，
  * 于是「搜索坏了」被当成「项目里没有」——这是本仓最隐蔽的一类假阴性（ripgrep 用 exit 2 与 1
- * 区分这两态，内核此前把三态压成了两态）。失败→上报 `failed: true`（**不是** error，对齐
+ * 区分这两态）。失败→上报 `failed: true`（**不是** error，对齐
  * "no results is not an error"：不置错、不重试，只在文案里如实说明检索未完成），由调用方分流表述。
  *
- * 注：`safeSearchProjectFiles`（name 模式）已随 SEARCH-1 与 content 对齐——返回值同步升级为
- * `ProjectFileSearchResult` 对象、失败→`failed: true`（不再是扁平数组 + 静默空），两者同一套元信息载体。
+ * 注：`safeSearchProjectFiles`（name 模式）与 content 同一套元信息载体
+ * （`ProjectFileSearchResult` + 失败→`failed: true`）。
  */
 export async function safeSearchProjectText(
   provider: IProjectSearchProvider,

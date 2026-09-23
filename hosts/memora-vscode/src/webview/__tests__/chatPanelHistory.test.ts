@@ -696,7 +696,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect((notices[0] as { message?: string }).message).toContain('未生效');
   });
 
-  it('handlePause：空闲态也可 toggle（不再检查 _streaming），点击即反馈', () => {
+  it('handlePause：空闲态也可 toggle，点击即反馈', () => {
     const { provider, posted } = setup();
     const { agent, requestPause } = pauseAgentStub();
     provider.setAgent(agent);

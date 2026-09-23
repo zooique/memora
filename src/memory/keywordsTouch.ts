@@ -1,12 +1,7 @@
 /**
  * 记忆搜索后端工具 —— 关键词提取 / 访问轨迹刷新。
- * 模块原名 `recall.ts`，2026-09-18 更名对齐实际职责（原名误导为「召回编排」，实际已无该职责）。
  *
- * 注（「减法」2026-09-10）：原 `recall()` 召回编排（双通道 + 分层分轨 + cap 内分配）已退役——
- * 它是「检查点恢复的温记忆召回」的唯一消费者，随跨重启恢复链整体退役而消亡；
- * 运行时记忆召回改由 `search_memories` 工具（`searchByKeyword`）承担，见 docs/白话设计文档.md 第二步。
- *
- * 本模块现存两函数均为 search_memories / 项目搜索复用：
+ * 本模块两函数均为 search_memories / 项目搜索复用：
  * - `extractKeywords`：内核分词 SSOT（`project-search/terms.ts` 用同源断言钉死，不另造分词器）；
  * - `touchScores`：命中后只刷 `accessedAt`（`storage.touch` 唯一写位，score 已物理退役）。
  */
@@ -31,8 +26,7 @@ export function extractKeywords(input: string): string[] {
 /**
  * 批量 touch（召回后 fire-and-forget 调用）：只刷新 accessedAt。
  *
- * 承接「只 touch 不 +score」定案（§5.2）并进化（2026-09-09 阶段3 score 物理退役）：
- * accessedAt 是「使用轨迹」唯一事实源（被想起即刷新），storage.touch 即唯一写位，
+ * 只刷新 accessedAt：accessedAt 是「使用轨迹」唯一事实源（被想起即刷新），storage.touch 即唯一写位，
  * 无 +score / clamp 语义。失败仅 log 不抛错，不阻塞读路径。
  */
 export async function touchScores(

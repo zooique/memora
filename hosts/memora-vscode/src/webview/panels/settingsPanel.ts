@@ -1,12 +1,12 @@
 /**
- * 设置面板 — 侧边栏 Webview 视图提供者（2026-08-17 选项卡合并）
+ * 设置面板 — 侧边栏 Webview 视图提供者（选项卡式单一视图）
  *
- * 合并角色 / 大模型 / 记忆 三个独立面板为单一"设置"视图，内部通过选项卡切换子视图。
+ * 角色 / 大模型 / 记忆 三个子视图共存于单一"设置"视图，内部通过选项卡切换子视图。
  * 三个子视图保留各自独立行为逻辑，通过共享同一 webview 文档 + root 容器 id 空间隔离共存。
  *
  * 设计（对齐单一真理源 + 自然生长）：
  *   - 渲染逻辑全部在 webview 内（postMessage 驱动），extension host 不做 DOM；
- *   - 子视图数据源与之前完全一致（roles: RolePackManager / config: ProviderStore / memory: MemoryInspector）；
+ *   - 子视图数据源（roles: RolePackManager / config: ProviderStore / memory: MemoryInspector）；
  *   - 三个子视图的 load 逻辑在 host 侧统一由 settingsPanel 分发（根据 activeTab 决定推送哪个子视图的数据）；
  *   - 选项卡切换时只切换 content 区域显示隐藏，不销毁/重建 DOM（保留子视图状态，减少闪烁）。
  */
@@ -144,7 +144,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       void this.loadConfig();
       void this.loadMemory();
       void this.loadSkills();
-      // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径（G8）+ 网页搜索引擎（方案 A）
+      // 安全子视图：推送写入二次确认开关状态 + 白名单额外路径 + 网页搜索引擎
       this.loadSecurityStatus();
       this.loadAllowedPathsStatus();
       this.loadSearchEngineStatus();
@@ -166,7 +166,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         const displayName = meta?.displayName ?? msg.name;
         // 预填衔接文本：角色包自洽声明 handoffPrompt 优先（作者定制特色接手话术），
         // 缺省回退通用话术。SSOT：提示词真理源在角色包 meta（内核透传），宿主仅兜底，
-        // 不引入跨包引用（角色包独立自洽，§11 插卡解耦）。
+        // 不引入跨包引用（角色包独立自洽，插卡解耦）。
         const fallback = `继续以「${displayName}」的视角处理以上任务`;
         this._chatProvider?.prefillInput(meta?.handoffPrompt?.trim() ? meta.handoffPrompt : fallback);
       }
@@ -195,7 +195,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this._chatProvider?.refreshActiveRolePackForTeam();
       return;
     }
-    // 打开用户角色包目录（对齐技能系统，2026-08-30）
+    // 打开用户角色包目录（与技能系统入口一致）
     if (msg.type === 'roles_open_dir') {
       this.openUserRolePacksDir();
       return;
@@ -258,7 +258,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     if (msg.type === 'cfg_set_background') {
-      // G5：设置后台模型 Provider（持久化 + 热更新 agent.setBackgroundProvider）
+      // 设置后台模型 Provider（持久化 + 热更新 agent.setBackgroundProvider）
       await this.setBackgroundProvider(msg.name);
       return;
     }
@@ -290,7 +290,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.loadMemoryPage(msg.page, msg.pageSize);
       return;
     }
-    // ─── 记忆单条删除 / 恢复 / 回收站（G19，2026-08-25） ───
+    // ─── 记忆单条删除 / 恢复 / 回收站 ───
     if (msg.type === 'memory_delete') {
       await this.deleteMemory(msg.id);
       return;
@@ -316,7 +316,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
 
-    // ─── 记忆治理消息（G4，2026-08-23） ───
+    // ─── 记忆治理消息 ───
     if (msg.type === 'governance_load') {
       await this.loadGovernance();
       return;
@@ -340,13 +340,13 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.readSkillContent(msg.skillName);
       return;
     }
-    // S4 延长线开关：切换单个技能的禁用状态（写回 VS Code 配置，不在此回推列表）
+    // 延长线开关：切换单个技能的禁用状态（写回 VS Code 配置，不在此回推列表）
     if (msg.type === 'toggle_skill_disabled') {
       await this.toggleSkillDisabled(msg.name, msg.disabled);
       return;
     }
 
-    // ─── 安全子视图消息（H0 写入审批 + G8 白名单，2026-08-23 / 2026-08-25） ───
+    // ─── 安全子视图消息（写入审批 + 路径白名单） ───
     if (msg.type === 'security_toggle') {
       await this.toggleConfirmWrites(msg.enabled);
       return;
@@ -359,7 +359,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await this.setAllowedPaths(msg.paths);
       return;
     }
-    // 网页搜索引擎（方案 A）：持久化设置 + 回显选中下拉
+    // 网页搜索引擎：持久化设置 + 回显选中下拉
     if (msg.type === 'search_engine_set') {
       await this.setSearchEngine(msg.engine);
       return;
@@ -419,12 +419,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     if (!agent) return false;
     // 走内核「单一切换入口」agent.switchRolePack：activate + emit rolePackSwitched + 刷新 loop 前缀。
     // 角色视图刷新由 rolePackSwitched 事件驱动（onRolePackSwitched → loadRoles），不再显式
-    // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT 剪枝，2026-08-17）。
+    // loadRoles——单一事件通知所有消费者，消除并行推送路径（SSOT）。
     const ok = agent.switchRolePack(name);
     if (ok) {
       this._globalState?.update(ACTIVE_ROLE_PACK_KEY, name);
     } else {
-      // ok=false 有两种成因，须用内核公开判据区分（2026-09-21 深审订正）：
+      // ok=false 有两种成因，须用内核公开判据区分：
       // rolePackSwitchLocked 只在**触发锁定**那一次发射（该次返回 true），被锁期间的切换
       // 直接 return false 且不发射任何事件——故「未收到事件」不能推断为"角色包不存在"。
       const lock = agent.getRolePackSwitchLockStatus();
@@ -467,7 +467,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return { ok: false, reason: '小组保存失败：存在不存在的组员角色包' };
     }
     if (deduped.includes(leader)) return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
-    // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，② 组队功能用户约定）：超限拒绝保存
+    // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，组队功能用户约定）：超限拒绝保存
     if (deduped.length > MAX_TEAM_MEMBERS) {
       return {
         ok: false,
@@ -516,7 +516,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       .filter((m) => m.name)
       .map((m) => {
         const pack = rpm.get(m.name);
-        // 来源层判定（2026-08-30）：用户目录命中 → user，否则内置（内置优先语义；
+        // 来源层判定：用户目录命中 → user，否则内置（内置优先语义；
         // 与技能 sourceOf 同思路，用 filePath 前缀，configDir 与用户目录天然不重叠）
         const source: 'builtin' | 'user' =
           this._userRolePacksDir && pack?.filePath?.startsWith(this._userRolePacksDir) ? 'user' : 'builtin';
@@ -553,10 +553,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           strategyHint,
           interactionType: pack?.meta.interactionType,
           version: pack?.meta.version,
-          // v0.13 S7：该包作为组员被哪些组引用（仅小组会议用）+ 兜底契约包禁删标记
+          // 该包作为组员被哪些组引用（仅小组会议用）+ 兜底契约包禁删标记
           teamMembers: memberOf.get(m.name),
           isFallback: m.name === BUILTIN_FALLBACK_PACK,
-          // G29 健康徽章：内核 validateManifest 全量 issues 透传给 webview（error/warning 均渲染）
+          // 健康徽章：内核 validateManifest 全量 issues 透传给 webview（error/warning 均渲染）
           issues: (pack?.validationIssues ?? []).map((i) => ({ level: i.severity, message: i.message })),
         };
       });
@@ -578,7 +578,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 设置后台模型 Provider（cfg_set_background，G5 多 Provider 路由）
+   * 设置后台模型 Provider（cfg_set_background，多 Provider 路由）
    *
    * 持久化后台 Provider 选择后热更新 agent.setBackgroundProvider：后台任务（摘要/归档/
    * 润色/去重等）后续走独立轻量模型；name 为空 → setBackgroundProvider(null) 回退与实时对话相同。
@@ -640,7 +640,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 记忆列表翻页（memory_page，2026-09-08 分页组件）
+   * 记忆列表翻页（memory_page）
    *
    * MemoryInspector.list 按 accessedAt 降序；翻页取「前 page*pageSize 条」后切出目标页——
    * 复用唯一检索入口（inMemoryStorage.search），零内核改动；页面浏览期间记忆库静止，
@@ -654,10 +654,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'memory_page_result', page, items });
   }
 
-  // ─── 记忆单条删除 / 恢复 / 回收站（G19，2026-08-25） ───
+  // ─── 记忆单条删除 / 恢复 / 回收站 ───
 
   /**
-   * 删除单条记忆（memory_delete，G19）
+   * 删除单条记忆（memory_delete）
    *
    * 软删除：弹确认框后调 agent.memory.writeDelete(id)（进入回收站，可恢复），
    * 完成后推送 memory_deleted + 刷新记忆列表与治理统计。取消确认不推送。
@@ -690,7 +690,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 恢复单条记忆（memory_restore，G19）
+   * 恢复单条记忆（memory_restore）
    *
    * 调 agent.memory.writeRestore(id) 从回收站恢复，完成后推送 memory_restored + 刷新
    * 记忆列表与治理统计；webview 收到 ok 后自行重新拉取回收站列表（若展开）。
@@ -717,7 +717,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 永久删除回收站单条记忆（memory_purge，2026-08-26）
+   * 永久删除回收站单条记忆（memory_purge）
    *
    * 弹确认框后调 agent.memory.writePurge(id) 物理删除（不可恢复），完成后推送 memory_purged
    * + 刷新回收站/记忆列表/治理统计。
@@ -751,7 +751,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 清空回收站（memory_recycle_clear，2026-08-26）
+   * 清空回收站（memory_recycle_clear）
    *
    * 弹确认框后遍历 listDeleted() 逐个 writePurge 物理删除全部软删记忆（不可恢复），
    * 完成后推送 memory_recycle_cleared + 刷新回收站/治理统计。
@@ -764,7 +764,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     }
     // 空回收站：无需确认，直接回报 0
     // 取全部（不传 limit）——本函数把 deleted 同时用作「删除操作集合」与「上报条数」，
-    // 任何截断都会造成部分清理 + 谎报条数（2026-09-21 深审订正原 listDeleted(1000)）。
+    // 任何截断都会造成部分清理 + 谎报条数（deleted 条数即上报 count，须取全量，不能传上限）。
     const deleted = memory.listDeleted();
     if (deleted.length === 0) {
       this.post({ type: 'memory_recycle_cleared', ok: true, count: 0 });
@@ -792,7 +792,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 编辑单条记忆内容（memory_edit，G19 内联 edit 收尾，2026-08-25）
+   * 编辑单条记忆内容（memory_edit，内联编辑）
    *
    * read-modify-write：经 agent.memory.getById(id) 取真实 Memory，仅改 content 并标记
    * isModified（人工修改），writeUpsert 落盘（保留 accessedAt/metadata 等字段，避免从
@@ -825,7 +825,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 加载回收站列表（memory_recycle_load，G19）
+   * 加载回收站列表（memory_recycle_load）
    *
    * 复用 MemoryInspector.listDeleted()（内核软删除契约，已含 writeDelete/writeRestore/listDeleted），
    * 映射为 MemoryItemDto[] 推送；agent.memory 未就绪时返回空列表。
@@ -841,7 +841,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'memory_recycle_loaded', items });
   }
 
-  // ─── 记忆治理数据加载（G4，2026-08-23） ───
+  // ─── 记忆治理数据加载 ───
 
   /**
    * 加载记忆治理统计（governance_load 应答）
@@ -865,7 +865,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     const stats = memory.stats();
-    // 回收站数：listDeleted(缺省) = 全部（原 1000 上限使超量时低报）
+    // 回收站数：listDeleted(缺省) = 全部（传上限会在超量时低报）
     const deleted = memory.listDeleted().length;
     // supersede 治理模型：统计已被取代的活跃记忆（supersededBy 非空），对齐内核写路径取代语义。
     // list() 默认仅 50 条，须按 stats().total（精确活跃数）取全量，否则超量时低报。
@@ -921,7 +921,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   // ─── 技能子视图数据加载 ───
 
-  /** 加载并推送三源技能清单（系统内置 / 启用角色包 / 用户目录，统一由 skillAggregation 聚合；含 G22 健康校验） */
+  /** 加载并推送三源技能清单（系统内置 / 启用角色包 / 用户目录，统一由 skillAggregation 聚合；含健康校验） */
   private async loadSkills(): Promise<void> {
     const agent = await this.ensureAgent();
     if (!agent || !this._configDir) {
@@ -933,7 +933,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       configDir: this._configDir,
       userSkillsDir: this._userSkillsDir ?? '',
     });
-    // G22 写→验→用（2026-08-25）：对带 filePath 的技能（builtin/user）逐项健康校验叠加 health/issues；
+    // 写→验→用：对带 filePath 的技能（builtin/user）逐项健康校验叠加 health/issues；
     // 角色包技能无绝对路径，本轮不校验（按可用处理）。error 技能 UI 标「未生效」且内核 buildSkillList 已过滤不注入 LLM。
     const sm = agent.skills;
     const validated: SkillDto[] = await Promise.all(
@@ -951,7 +951,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         }
       }),
     );
-    // D（2026-09-22）：禁用集里「未找到需要禁用的技能」的名字（非阻断提示，只进 UI）。
+    // 禁用集里「未找到需要禁用的技能」的名字（非阻断提示，只进 UI）。
     // 判定复用**同一份** `skills` 聚合结果（与 UI 展示同名集），不自造第二份名单。
     const unmatchedDisabled = findUnmatchedDisabled(
       sm?.disabledSkillNames ?? [],
@@ -961,11 +961,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 重推技能清单（供 extension 在「技能启停」配置变更 / 手动重载后调用，SKILL-S3b 2026-09-22）
+   * 重推技能清单（供 extension 在「技能启停」配置变更 / 手动重载后调用）
    *
-   * 复用 `loadSkills()` **单一实现**而非另写一份：该方法同时承载 G22 health 校验与
+   * 复用 `loadSkills()` **单一实现**而非另写一份：该方法同时承载 health 校验与
    * 「已禁用」标注，配置变更后两条标注都需按最新禁用集/最新文件重算 —— 分开写迟早分叉
-   * （SKILL-S2 血训：改可见集只刷一半消费通道）。
+   * （改可见集时只刷一半消费通道是既有教训）。
    *
    * 代价说明：`loadSkills` 对带 filePath 的技能逐项 `validateFile`（读盘）。配置变更是低频
    * 用户操作，且健康态是设置页卡片的**既有展示维度**，省掉校验会让卡片回退成无 health 快照。
@@ -975,9 +975,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 切换单个技能的禁用状态（S4 延长线开关，2026-09-22）
+   * 切换单个技能的禁用状态（面板延长线开关）
    *
-   * 方案语义（用户定案）：Memora 面板开关 = VS Code 原生设置的**延长线**，唯一动作是
+   * 语义：Memora 面板开关 = VS Code 原生设置的**延长线**，唯一动作是
    * 写回配置 `memora.disabledSkills`（ConfigurationTarget.Global——该键 scope=application，
    * 写 workspace settings 不生效），不造第二套状态机；后续同步全走既有
    * `onDidChangeConfiguration` 监听（syncDisabledSkills → 内核 setDisabledSkills +
@@ -985,7 +985,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * 回推刷新为准。
    *
    * 新数组基数 = 内核 `disabledSkillNames`（**实际生效集**，真源），**不重读**宿主配置副本
-   * ——两源会在 reloadConfig 重设禁用集后分叉（SKILL-S2 血训）。开关只做增量增/删：
+   * ——两源会在 reloadConfig 重设禁用集后分叉。开关只做增量增/删：
    * 禁用 → 补名；启用 → 移名。
    *
    * @param name 技能名（仅全局池 builtin/user；rolepack 免疫禁用集，不发送本消息）
@@ -1023,8 +1023,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * L2 渐进披露：按需读取技能正文（不预装载到 L1 列表，用户点击展开时才读取）
    *
    * 解析顺序收口于 `skillAggregation.resolveSkill`（角色包 → 全局，与内核 `read_skill` 同序）——
-   * 本方法此前自带一份「全局优先」实现，与 composer 注入相反（同名技能双存时预览与实际注入分叉）。
-   * 现只取正文交给 webview 渲染，**不再自写两级回退**。
+   * 同名技能双存时宿主解析序须与 composer 注入序一致，否则预览正文与实际注入分叉。
+   * 本方法只取正文交给 webview 渲染，不自写两级回退。
    */
   private async readSkillContent(skillName: string): Promise<void> {
     const agent = await this.ensureAgent();
@@ -1057,12 +1057,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     this.openDirInOs(this._userSkillsDir, '用户技能');
   }
 
-  /** 打开用户角色包目录（在系统文件管理器中显示，对齐技能目录入口，2026-08-30） */
+  /** 打开用户角色包目录（在系统文件管理器中显示，与技能目录入口一致） */
   private openUserRolePacksDir(): void {
     this.openDirInOs(this._userRolePacksDir, '用户角色包');
   }
 
-  // ─── 安全子视图方法（H0 写入审批，2026-08-23） ───
+  // ─── 安全子视图方法（写入审批） ───
 
   /**
    * 切换写入二次确认开关（security_toggle 消息处理）
@@ -1097,7 +1097,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 切换脚本/代码执行确认开关（security_scripts_toggle 消息处理，2026-09-08）
+   * 切换脚本/代码执行确认开关（security_scripts_toggle 消息处理）
    *
    * 持久化到 globalState + 热更新 agent.security.setConfirmScripts()。
    * 无需重启 Agent——SecurityGuard 支持运行时切换。语义：开 = run_code/run_project_script 执行前询问。
@@ -1140,9 +1140,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 设置白名单额外允许路径（allowed_paths_set 消息处理，G8）
+   * 设置白名单额外允许路径（allowed_paths_set 消息处理）
    *
-   * 归类（2026-09-02 拍板）：目录白名单 = 这台机器信任的数据目录（机器级信任，
+   * 归类：目录白名单 = 这台机器信任的数据目录（机器级信任，
    * 跨项目通用），归 ConfigurationTarget.Global——个人绝对路径不进项目
    * .vscode/settings.json（避免随项目入库泄漏本机目录结构 + 跨项目重复配置）。
    * 热更新 agent.security.setAllowedPaths()。无需重启 Agent——SecurityGuard 支持运行时热更新。
@@ -1177,7 +1177,7 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 加载并推送白名单额外路径状态（settings 视图 ready 时调用，G8）
+   * 加载并推送白名单额外路径状态（settings 视图 ready 时调用）
    *
    * 从 workspace 设置读取持久化的额外路径数组，推送给 webview 渲染初始列表。
    */
@@ -1188,11 +1188,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 设置内部网页搜索引擎（search_engine_set 消息处理，2026-09-02 方案 A）
+   * 设置内部网页搜索引擎（search_engine_set 消息处理）
    *
    * 归类：搜索引擎是**用户级偏好**（跨项目一致，与模型/provider 同属用户设置），
    * 写入 ConfigurationTarget.Global——不进项目 .vscode/settings.json，避免个人偏好
-   * 入库/跨仓漂移（与 providerStore 的 providers 同 scope，2026-09-02 归类收口）。
+   * 入库/跨仓漂移（与 providerStore 的 providers 同 scope）。
    * 装配期一次性注入，修改后需重载窗口（或重建会话）生效——此处仅持久化 + 回显，不做热装配。
    */
   private async setSearchEngine(engine: SearchEngineSetting): Promise<void> {
@@ -1325,14 +1325,14 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <p class="loading-hint">加载中…</p>
     </div>
 
-    <!-- 回收站（G19，2026-08-25：软删除记忆的可恢复暂存区） -->
+    <!-- 回收站：软删除记忆的可恢复暂存区 -->
     <details id="recycle" class="recycle" role="region" aria-label="回收站">
       <summary>回收站</summary>
       <div id="recycleList"><p class="hint">回收站为空。</p></div>
     </details>
     <p id="memHint" class="mem-hint" hidden></p>
 
-    <!-- 记忆治理区（G4，2026-08-23：统计卡 + 加权/清理操作） -->
+    <!-- 记忆治理区：统计卡 + 加权/清理操作 -->
     <div id="governance" class="governance" role="region" aria-label="记忆治理">
       <div class="governance-stats">
         <div class="governance-stat">
@@ -1381,9 +1381,9 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
       <span id="statBar" class="stat-bar" hidden></span>
       <button id="btnAdd" class="btn">添加 API</button>
     </div>
-    <!-- 模型通道分区（P1-1，2026-08-24：G5 后台 + G1 检索归入显式分区，与 Provider 列表的 group-title 语言一致） -->
+    <!-- 模型通道分区：后台 + 检索归入显式分区，与 Provider 列表的 group-title 语言一致 -->
     <div class="group-title">模型通道</div>
-    <!-- 后台模型通道（G5 多 Provider 路由，2026-08-23）：后台任务（摘要/归档/润色）独立轻量模型 -->
+    <!-- 后台模型通道（多 Provider 路由）：后台任务（摘要/归档/润色）独立轻量模型 -->
     <div class="cfg-bg">
       <label for="bgModel" class="cfg-bg-label">后台模型（可选）</label>
       <select id="bgModel" class="cfg-bg-select" aria-label="后台模型，用于后台任务（摘要/归档/润色）">
@@ -1453,7 +1453,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <div id="toast"></div>
   </div>
 
-  <!-- 技能子视图（skills 选项卡，2026-08-22 新增） -->
+  <!-- 技能子视图（skills 选项卡） -->
   <div id="skills-root" role="tabpanel" aria-label="技能" hidden>
     <div class="header">
       <h2>全局技能</h2>
@@ -1474,7 +1474,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
     <p class="footer-hint">用户技能目录：<code>VS Code 全局存储 / skills /</code></p>
   </div>
 
-  <!-- 安全子视图（security 选项卡，2026-08-23 H0 新增） -->
+  <!-- 安全子视图（security 选项卡：写入审批） -->
   <div id="security-root" role="tabpanel" aria-label="安全" hidden>
     <div class="header">
       <h2>安全</h2>

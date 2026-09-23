@@ -183,15 +183,15 @@ export class SeedOrchestrator {
     // 流消费统一收口于门面的 consumeExecutionStream（对话/事件/续跑共用同构实现）
     const streamResult = yield* this.deps.consumeExecutionStream(produce(), signal);
 
-    // ── 非正常收场统一收口（SSOT，2026-09-15）────────────────────────────
+    // ── 非正常收场统一收口（SSOT）────────────────────────────────────────
     // 中断（用户取消/超时）与失败（LLM/网络错误）同属「本轮未正常完成」，共用同一收尾原语
-    // appendInterrupted。既定裁决见 `memory/roundStore.ts` 的 RoundStatus 文档：运行时失败
+    // appendInterrupted。裁决见 `memory/roundStore.ts` 的 RoundStatus 文档：运行时失败
     // **不翻 Round 状态机**，与中断并轨为「interrupted」收场（appendInterrupted →
-    // status:'interrupted'，不再伪 complete），因为「中断」对用户可理解而「区分出错语义」
+    // status:'interrupted'，不伪 complete），因为「中断」对用户可理解而「区分出错语义」
     // 当前无产品需求。中断轮保留 processEvents 原始现场、状态诚实区分（防「假性 complete 吞现场」）。
     //
-    // 修复前：failed 分支直接 return、aborted 分支仅在「有产出文本」时才写史 → 两者都会在
-    // 无产出时留下 refCount=0 的 pending 孤儿轮——运行期无人收尾，宿主须等下次重启才由
+    // 无产出分支也必须走本原语收场：failed 直接 return 或 aborted 仅有产出才写史，都会在
+    // 无产出时留下 refCount=0 的 pending 孤儿轮——运行期无人收尾，只能等宿主重启由
     // chatPanel.upgradeInterruptedRounds 打捞升级（真实故障：LLM 4xx 中断的长任务轮）。
     // appendInterrupted 同时覆盖两种形态：有产出 → 写 assistantMessage + 标记；无产出 →
     // 不写 assistantMessage，仍按 stop 语义收场（该原语的存在理由即此）。

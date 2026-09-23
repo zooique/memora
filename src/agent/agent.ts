@@ -174,7 +174,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 流活跃标志：chat()/resumeExecution() 的 AsyncGenerator 生命周期内置 true、finally 置 false。
    * 与 chatLock.isBusy（并发锁，180s 超时后自动释放但**不中断生成流**）语义解耦——
    * requestPause 空闲守卫必须用「流是否在产出」而非「锁是否持有」判任务是否结束，
-   * 否则长任务运行超锁期后点暂停会被误判为「任务已结束」（2026-09-03 cc6cae13 锁语义变更 + 09-07 收紧叠加回归）。
+   * 否则长任务运行超锁期后点暂停会被误判为「任务已结束」——锁超时会自动释放但生成流仍在跑，
+   * 故判据只能是流活跃，不能是锁持有。
    */
   private _flowActive = false;
   /**
@@ -201,7 +202,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 启动时激活的角色包名（宿主注入持久化值，init 时优先激活——§4.1 单链第一层）
       activeRolePack: opts.activeRolePack,
       // 组（宿主装配级）：组长角色包 + 组员名单（会议名单容器，非选择对象；组员仅会议参与）
-      // P-6（2026-09-06）：内部运行态归一化必选（外部未配 = 无团队），保证装配链必传
+      // 内部运行态归一化必选（外部未配 = 无团队），保证装配链必传
       rolePackTeams: opts.rolePackTeams ?? [],
       // 程序级内置兜底角色（可选）：覆盖内核常量 BUILTIN_FALLBACK_PACK；须指向存在的包，否则回退内核常量
       builtinFallbackRole: opts.builtinFallbackRole,
@@ -213,9 +214,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: opts.fetchProvider,
       codeExecutionProvider: opts.codeExecutionProvider,
       projectSearchProvider: opts.projectSearchProvider,
-      // L3 脚本执行 node 路径（S3，可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
+      // 脚本执行 node 路径（可选）：宿主注入真实 node 路径，避免无独立 node 时 ENOENT
       scriptNodePath: opts.scriptNodePath,
-      // 禁用技能清单（S4，配置形态启停）：透传装配 → SkillManager 过滤 L1/L2/L3
+      // 禁用技能清单（配置形态启停）：透传装配 → SkillManager 过滤 L1/L2/L3
       disabledSkills: opts.disabledSkills ?? [],
       // 宿主审批/审计/参数改写通道，透传供装配阶段与内部幂等检查组合为一处执行前检查点
       preExecutionCheck: opts.preExecutionCheck,
@@ -255,7 +256,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     this.registerPauseTimeoutArchiver();
     this.registerWorkProjectionRefresh();
 
-    // 注：不再加载持久化检查点（「减法」2026-09-10）——中止/断电一律走
+    // 注：不加载持久化检查点——中止/断电一律走
     // 「中断轮补全为完整 turn 身份 → 参与下一轮」，不存在跨重启恢复；
     // 运行时暂停是同 turn 内续跑（内存态），无需磁盘载体。
     return pctx;
@@ -265,7 +266,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 登记作品投影实时刷新处理器：register_work 工具 / 右键登记成功后，
    * 内核 WorkProjectionManager 触发 workProjectionGenerated 事件（携带已写入内存 entries 的投影），
    * 立即重建 AgentLoop 的 systemPromptPrefix，使 AI 在下一轮对话即可感知新索引——
-   * 否则需切角色包 / reloadConfig / 开新会话才生效（见作品投影复盘 P1）。
+   * 否则需切角色包 / reloadConfig / 开新会话才生效。
    * 与 registerPauseTimeoutArchiver 同生命周期（init 内注册，close 的 removeAllListeners 兜底）。
    */
   private registerWorkProjectionRefresh(): void {
@@ -281,8 +282,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    */
   private registerPauseTimeoutArchiver(): void {
     this.on(AGENT_EVENTS.sessionPauseTimedOut, (payload) => {
-      // 2026-09-06 T4 收口：pendingPauseReason 已由 resetToRunning() 内部统一清理
-      //（原此处 cancelPendingPause 补丁删除——checkPauseTimeout 经 sessionManager:1361 resetToRunning 已覆盖）。
+      // pendingPauseReason 由 resetToRunning() 内部统一清理
+      //（checkPauseTimeout 经 sessionManager resetToRunning 已覆盖，此处无需再补 cancelPendingPause）。
       const { sessionId, date, session } = payload;
       if (!date || !session) return;
       // fire-and-forget：归档失败不阻塞主流程，仅记录
@@ -561,7 +562,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 驱动 loop.continueAfterPause 续跑并转发 chunk，完成后追加历史 + 后处理（同 chat 尾处理）。
    * 硬停止（signal.abort）仍是唯一霸道中止路径，与软暂停严格区分。
    *
-   * TS-9 归属：补充输入归属当前问答闭环（复用 prepare 分配的闭环节点 roundId，不分裂新轮），
+   * 归属：补充输入归属当前问答闭环（复用 prepare 分配的闭环节点 roundId，不分裂新轮），
    * 以 kind 区分交互类型（question-answer=主动提问回答 / supplement=暂停/流中补充）。
    *
    * @param input - 可选补充输入（空=续跑原路径；有=注入修正后续轮）
@@ -603,7 +604,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         return;
       }
 
-      // 预判短路（收窄，2026-09-07）：仅「计划全部 blocked」才拦——blocked=真停滞，继续调 LLM
+      // 预判短路（收窄）：仅「计划全部 blocked」才拦——blocked=真停滞，继续调 LLM
       // 只会复读卡住状态、白烧 token。全 done / 无计划不再拦：用户主动点「继续」就是要 AI 产出
       // （可能收尾总结、补建计划、继续语境），且短问答暂停续跑本就无计划，拦了就没法继续聊。
       // 判定下沉 sessionManager.isPlanAllBlocked()（仅全 blocked 拦；全 done/空计划放行）。
@@ -624,9 +625,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       cleanupExternalSignal();
       // 续跑轮（resumeExecution）是同一 turn 的收尾半程：turn 真正结束 → 与 chat() 同构，
       // 无条件清空任务表（除非再次暂停——pauseMeta 由 loop 在边界重新挂起，guard 保留）。
-      // 修复 2026-09-22 真实带伤：原 autoClearPlanIfAllDone 仅全 done 才清，导致 resume 以
-      // 非 done 且未重暂停结束（如某步标 blocked 后收尾）时 plan 残留 → 跨 turn 污染下一个 chat()。
-      // 两处 turn-end 清理现已统一为 clearPlanOnTurnEnd（单一收口点），plan 严格 turn 内、不跨 turn 残留。
+      // 必须无条件清：若仅全 done 才清，resume 以非 done 且未重暂停结束（如某步标 blocked
+      // 后收尾）时 plan 残留 → 跨 turn 污染下一个 chat()。
+      // 两处 turn-end 清理统一为 clearPlanOnTurnEnd（单一收口点），plan 严格 turn 内、不跨 turn 残留。
       this.clearPlanOnTurnEnd();
     }
   }
@@ -634,8 +635,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 消费执行流的单一真理源
    *
-   * chat() 与续跑（continueAfterPause）此前各持一份同构消费逻辑且已实证漂移
-   * （续跑漏 paused 分支导致三方分叉）；收口于此，新增 chunk 类型只需改一处。
+   * chat() 与续跑（continueAfterPause）必须共用同一份消费逻辑——两份同构实现会漂移
+   * （实证：续跑漏 paused 分支导致三方分叉）；收口于此，新增 chunk 类型只需改一处。
    * 暂停幂等锁的释放放 finally——清理是"退出本作用域的不变式"而非某分支动作，新增 return 分支无遗漏。
    *
    * @returns 消费结果；failed 为 true 时调用方应立即 return（错误 chunk 已 yield）
@@ -653,7 +654,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       for await (const chunk of source) {
         // 内核事实驱动：loop 在 step 边界真正挂起时状态机才翻 PAUSED，非申请即翻转；
-        // 与 requestPause 空闲分支同源，须传 lowRisk=true 保持同一暂停事件契约（否则流中暂停计入 P4 配额）
+        // 与 requestPause 空闲分支同源，须传 lowRisk=true 保持同一暂停事件契约（否则流中暂停计入连续暂停配额）
         if (chunk.type === 'paused') {
           const pendingInfo = this._sessionManager?.consumePendingPause();
           // 暂停收口统一写 pauseMeta：reason/source 取自 pendingPause（与状态机一致）。
@@ -673,7 +674,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         if (chunk.type === 'text' && chunk.stage !== 'self_review') {
           content += chunk.content;
         } else if (chunk.type === 'narrate' && chunk.withdrawn) {
-          // A1 回抽（2026-09-12）：首轮工具步的叙述文本曾作为 text 流式累积进正文（上面分支），
+          // 回抽：首轮工具步的叙述文本先作为 text 流式累积进正文（上面分支），
           // 确认工具轮后从**持久化正文**扣除——与宿主正文撤回同源（同一 withdrawn 字段，SSOT）。
           // 契约：该段为最近追加的正文文本（后缀）；不符（多 turn 复用流/异常序）则忽略并告警，
           // 宁可正文多一段叙述也不误删真实答案。
@@ -739,7 +740,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 暂停会话（用户/Agent/系统均可触发，暂停前自动创建检查点）
-   * @param lowRisk 低风险暂停不计入 P4 连续暂停计数（默认 false）
+   * @param lowRisk 低风险暂停不计入连续暂停计数（默认 false）
    */
   pause(reason: string, source: 'user' | 'agent' | 'system' = 'user', lowRisk = false): boolean {
     this.assertInitialized('pause');
@@ -803,14 +804,14 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       return false;
     }
 
-    // 空闲守卫（2026-09-07 收紧，用户拍板；2026-09-21 判据修正）：无活跃流时暂停无消费方——此前直接
-    // 同步翻状态机并落盘 checkpoint，导致「turn 已完成后的暂停」把会话钉在 paused，后续新输入被宿主路由成
+    // 空闲守卫：无活跃流时暂停无消费方——若此时同步翻状态机并落盘 checkpoint，
+    // 「turn 已完成后的暂停」会把会话钉在 paused，后续新输入被宿主路由成
     // supplement（新意图被吞成"上一个回答的补充"，毒化闭环节点；loop 无流消费的延迟翻转亦无意义）。
     // 任务已结束 = 暂停申请作废，返回 false 供宿主明确反馈；系统/Agent 触发（ask_user/drift）均在
     // 流中（_flowActive=true）不经过此分支，不受影响。
-    // ⚠ 判据修正（回归修复）：从 chatLock.isBusy（锁持有）改为 _flowActive（流活跃）——chatLock 锁
-    // 180s 超时后自动释放（不中断生成流，2026-09-03 cc6cae13），长任务运行超锁期后 isBusy=false 但流
-    // 仍在产出，旧判据会把「进行中的暂停申请」误作废成「任务已结束」；_flowActive 由 chat()/resumeExecution()
+    // ⚠ 判据必须用 _flowActive（流活跃）而非 chatLock.isBusy（锁持有）——chatLock 锁
+    // 180s 超时后自动释放（不中断生成流），长任务运行超锁期后 isBusy=false 但流
+    // 仍在产出，用锁判据会把「进行中的暂停申请」误作废成「任务已结束」；_flowActive 由 chat()/resumeExecution()
     // 的流生命周期显式维护，与锁超时无关，是「任务是否仍在运行」的准确判据。
     if (!this._flowActive) {
       logger.debug({ reason, source }, 'requestPause 空闲守卫：任务已结束，暂停申请作废');
@@ -843,7 +844,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 供宿主 UI 区分三态：无申请（暂停）/ 申请在途（取消暂停）/ 已暂停（继续）。
    * 状态真理源 SessionStateMachine.isPausePending()：流中 requestPause 置位、边界挂起后 consumePendingPause 消费、
    * cancelPauseRequest 主动清理；空闲态由 requestPause 空闲守卫作废（见上，return false 不触达状态机）——
-   * isPausePending 仅在流中「申请在途」时为 true（收紧后空闲不再翻 PAUSED，2026-09-07）。
+   * isPausePending 仅在流中「申请在途」时为 true（空闲态不翻 PAUSED）。
    */
   isPausePending(): boolean {
     return this._sessionManager?.isPausePending() ?? false;
@@ -855,10 +856,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 与 pause() 对称：pause 创建检查点；discardCurrentCheckpoint 销毁检查点。
    * 宿主 handleStop 在 paused 态调用——用户决定彻底放弃暂停执行，不再 resume。
    *
-   * T2 修复：除转发 SessionManager.discardCheckpoint（清内存 + 状态机 resetToRunning——检查点不落盘，无存储清理动作），
-   *  追加协同 loop.clearPendingInterjections() 清排队插话——pause 生效时 step 边界优先返回不消费 queue，
-   *  原实现只清 checkpoint 留 queue 成孤儿数据，下次 chat() 第一个 step 会误消费残留。
-   *  返回值以 checkpoint 清理为主（queue 残留不是失败）。
+   * 除转发 SessionManager.discardCheckpoint（清内存 + 状态机 resetToRunning——检查点不落盘，无存储清理动作），
+   *  还须协同 loop.clearPendingInterjections() 清排队插话——pause 生效时 step 边界优先返回不消费 queue，
+   *  只清 checkpoint 会留孤儿 queue，下次 chat() 首个 step 误消费残留（坑）。
+   *  返回值以 checkpoint 清理为主（queue 有残留不判失败）。
    * @returns true=成功清理；false=无暂停检查点（空闲态调了个空）
    */
   discardCurrentCheckpoint(): boolean {
@@ -879,9 +880,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 与 requestPause（step 边界挂起待续跑）同为「申请 → 气口生效」——不中断当前 LLM/工具执行，
    * 只在边界拿到补充输入后开始下一轮 step。插话是唯一写入口（interject → pendingInterjections 排队），
-   * 无「立即中断」模式：收紧为单一模式（2026-09-04，inputInterrupt 键已删除）。
+   * 无「立即中断」模式：只有单一申请模式（无 inputInterrupt 立即中断通道）。
    *
-   * TS-9 归属：插话同时以「补充」交互输入持久化到当前闭环节点（interactiveInputs），
+   * 归属：插话同时以「补充」交互输入持久化到当前闭环节点（interactiveInputs），
    * 保证跨重启重放时插话内容不丢失、不分裂新轮。持久化 fire-and-forget（appendUser 内部
    * 已 catch 写入失败，仅记日志），不阻塞插话本身。
    */
@@ -900,7 +901,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 删除待注入的插话（宿主 UI 层用户后悔）。与 interject 对称。
-   * 注意：interject 时已持久化到 history（TS-9 交互归属），此处只从内核队列移除，不删除已落盘记录——
+   * 注意：interject 时已持久化到 history（交互输入归属），此处只从内核队列移除，不删除已落盘记录——
    * 未来若需完整"撤回"需额外方案（如软删标记），当前先保证 step 边界不会注入已删除的补充。
    * @param index 要删除的插话在队列中的位置（宿主镜像数组与内核队列同序同长度）
    * @returns true=成功删除；false=index 越界或队列为空
@@ -913,9 +914,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 清空全部待注入插话（宿主「全部清空」按钮触发，或 stop→discard 协同清理）。
    *
-   * 逻辑下沉 loop.clearPendingInterjections 原子方法——
-   *  宿主 clear_pending_queue handler 之前只清镜像不清内核（单写 bug）；
-   *  agent.discardCurrentCheckpoint 之前只清 checkpoint 不清队列（孤儿数据 bug）。
+   * 逻辑下沉 loop.clearPendingInterjections 原子方法——清队列唯一入口在内核，
+   *  宿主不维护队列镜像，避免镜像与内核双写不一致；discardCurrentCheckpoint 经同一方法协同清理。
    *  @returns 被清除的条目数（宿主可用于 notice 反馈；无队列时返回 0）
    */
   clearPendingInterjections(): number {
@@ -925,7 +925,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 读取当前待注入插话队列快照（宿主渲染层只读镜像，不修改内核状态）。
-   * 返回副本，宿主无法暗改内核 queue。宿主从「维护 _pendingQueue 镜像数组」收敛为「每次渲染从内核读」。
+   * 返回副本，宿主无法暗改内核 queue；宿主渲染直接读本快照，不另维护队列镜像。
    */
   getPendingInterjections(): readonly string[] {
     this.assertInitialized('getPendingInterjections');
@@ -980,7 +980,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 时，无论步骤是否全部标记完成，都清空运行时挂载物（checkpoint.plan 与 planItemLog）。这样：
    * ① 宏任务一个 turn 完不成 → 本 turn 结束兜底丢弃，下个 turn 由 LLM 重新规划全新任务表；
    * ② 续跑轮（resumeExecution = ask_user 问答/暂停补充）是同一 turn 的闭环收尾，与 chat() 同构
-   * 走本方法——turn 真正结束即无条件清空，两处 turn-end 清理已收敛为单一收口点。
+   * 走本方法——turn 真正结束即无条件清空，chat() 与续跑轮共用本收口点。
    *
    * 唯一例外是暂停态（pauseMeta）：turn 尚未真正结束，暂停恢复后要继续用 plan 推进，
    * 故保留不清；恢复完成后该 turn 最终退出时仍会走本方法无条件清空。
@@ -1035,8 +1035,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 创建会话检查点：快照当前运行时状态（热记忆等），生成纯内存态快照
-   * （2026-09-10 减法后不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）。
-   * 能力位（role/standard 会话能力位）已随幽灵能力位收敛移除，createCheckpoint 仅收 mainGoal。
+   * （不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」）。
+   * 无 role/standard 会话能力位，createCheckpoint 仅收 mainGoal。
    */
   createCheckpoint(mainGoal?: string): SessionCheckpoint | null {
     this.assertInitialized('createCheckpoint');
@@ -1216,12 +1216,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       fetchProvider: this.#config.fetchProvider,
       codeExecutionProvider: this.#config.codeExecutionProvider,
       projectSearchProvider: this.#config.projectSearchProvider,
-      // L3 脚本执行 node 路径（S3，可选）：透传装配 → toolExecutor/assembler 脚本执行回调
+      // 脚本执行 node 路径（可选）：透传装配 → toolExecutor/assembler 脚本执行回调
       scriptNodePath: this.#config.scriptNodePath,
-      // 禁用技能清单（S4）：透传装配 → SkillManager.setDisabledSkills
+      // 禁用技能清单：透传装配 → SkillManager.setDisabledSkills
       disabledSkills: this.#config.disabledSkills,
       existingSkillManager: this.skillManager,
-      // 策略覆盖不经组装器：AssembleInput 零消费（站 21 审查移除），真实消费链 = 本类
+      // 策略覆盖不经组装器：AssembleInput 零消费，真实消费链 = 本类
       // 构造 SeedOrchestrator deps 时直传（见 #createSeedOrchestrator 的 strategyOverride），
       // 经 resolveActiveStrategy 压过角色包声明——策略解析唯一链在 seed 侧。
       // Agent 稳定能力（emit/守卫/暂停/角色切换）：接线下沉后仅传能力，接线语义在组装器唯一实现
@@ -1240,7 +1240,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
-        // 会议逐步切换：随 active 任务项刷新本轮装配视角（T1，2026-09-06 收口缺口）
+        // 会议逐步切换：随 active 任务项刷新本轮装配视角
         applyActivePlanItemAssembly: () => this.applyActivePlanItemAssemblyIfChanged(),
       },
     });
@@ -1367,17 +1367,17 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 角色包是 system prompt 的唯一注入源。调用时机：手动切换成功后、reloadConfig 重载后；
    * loop 为 null 时静默跳过（init 前或 close 后边界）。统一走 buildSystemPromptPrefix 真理源，
-   * 避免此前只拼 rolePackPrompt 丢失全局技能清单。等价于「按 activePack 视角刷新」（roundRole=null）。
+   * 全局技能清单也在该前缀内（不能只拼 rolePackPrompt）。等价于「按 activePack 视角刷新」（roundRole=null）。
    */
   private refreshRolePackPrefixOnLoop(): void {
     this.refreshRolePackPrefixForRound(null);
   }
 
   /**
-   * 会议阶梯推进（T1，2026-09-06 收口）：按当前 active 任务项的 rolePack 派生本轮装配视角。
+   * 会议阶梯推进：按当前 active 任务项的 rolePack 派生本轮装配视角。
    *
    * 由 assembler.getTaskTable 每轮注入时驱动（hooks.applyActivePlanItemAssembly），与任务表渲染同源，
-   * 弥补此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
+   * 保证后继 step 换角色即时生效（装配视角不能只在 prepare.run 设一次，否则展示层正确/装配层冻结）。
    * roundRole=candidate（可能为 null，无有效覆盖时回落 activePack 组长），调 refreshRolePackPrefixForRound 重建前缀。
    * 防重：candidate 与 rolePackManager 当前 roundAssemblyPerspective 一致则跳过，避免每轮迭代重复重建。
    */
@@ -1721,7 +1721,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         'close() 时存在未消费的暂停请求，已自动清理',
       );
       // 若状态机仍 running，同步翻 paused 使检查点内存态一致（无需触发挂起，仅修正一致性）；
-      // 系统清理不消耗 P4 配额 → lowRisk=true
+      // 系统清理不消耗连续暂停配额 → lowRisk=true
       if (sm.status === 'running') {
         sm.pause('close 清理残留暂停', 'system', true);
       }
@@ -1855,7 +1855,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     return this._lastInteractionAt;
   }
 
-  /** 记忆治理统一门面（语义去重 / 来源健康诊断 / 冲突检测 / 建议推荐），统一替代 Agent 上散落的管理方法（显式衰减层面已移除，2026-08-27） */
+  /** 记忆治理统一门面（语义去重 / 来源健康诊断 / 冲突检测 / 建议推荐），Agent 上的记忆管理方法统一收口于此（无显式衰减层面） */
   get governance(): MemoryGovernance | null {
     return this._governance;
   }

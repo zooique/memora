@@ -109,8 +109,8 @@ id: test-003
       expect(body).toBe('正文内容');
     });
 
-    it('M7 修复：结束 --- 无尾随换行时仍应正确解析（不丢失 frontmatter）', () => {
-      // 文件以 --- 结尾且无换行：旧实现要求结束 --- 后必须跟 \n，否则整体落入 body
+    it('结束 --- 无尾随换行时仍应正确解析（不丢失 frontmatter）', () => {
+      // 文件以 --- 结尾且无换行：若要求结束 --- 后必须跟 \n，整体会落入 body（坑）
       const raw = '---\nid: test-001\ntype: rule\n---';
       const { frontmatter, body } = parseFrontmatter(raw);
       expect(frontmatter.id).toBe('test-001');

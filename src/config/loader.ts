@@ -30,10 +30,10 @@ const MAX_MAX_CONTEXT_TOKENS = 2_000_000;
 /**
  * contextWindow 的**告警参考上界**：2M（当前主流旗舰模型窗口量级）。
  *
- * ⚠️ **这不是裁决上界**（2026-09-18 拍板）：内核**不做区间裁决** —— 超出此值仅 `logger.warn`（观测），
+ * ⚠️ **这不是裁决上界**：内核**不做区间裁决** —— 超出此值仅 `logger.warn`（观测），
  * 值仍**原样生效**。理由：「模型能吃多大」是只有 provider/API 知道的事实，内核替用户猜会造成
- * 「UI 显示值 ≠ 真实生效值」的静默失真（旧实现填 3M → 静默丢弃 → 兜底 120K，全程无提示）；
- * 且 ADR-029 已定「用户配置的 contextWindow 是预算唯一来源」。超模型能力时由 **API 报错**（真实层可见失败）。
+ * 「UI 显示值 ≠ 真实生效值」的静默失真（坑：填 3M → 静默丢弃 → 兜底 120K，全程无提示）；
+ * 预算口径定：用户配置的 contextWindow 是预算唯一来源。超模型能力时由 **API 报错**（真实层可见失败）。
  * 若将来必须恢复拦截，**只允许显式报错，不得回到静默**。
  *
  * ⚠️ 与 `src/role-pack/strategyKeys.ts` 的 `MAX_CONTEXT_LIMIT`（角色包 contextLimit 声明上界）**同值对齐，改一处须同步另一处**；
@@ -216,9 +216,9 @@ function validateMaxContextTokens(value: unknown, defaultValue: number): number 
 /**
  * 验证 contextWindow（可选，provider 上下文窗口声明）。
  *
- * **只做自身防御**（类型非法 / 非有限数 / 非正数 → undefined = 未声明），**不做区间裁决**（2026-09-18 拍板）：
- * 「模型能吃多大」是只有 provider/API 知道的事实，内核替用户裁决会造成「UI 显示值 ≠ 真实生效值」的静默失真
- * （旧实现：填 3M → 宿主接受 → 内核静默丢弃 → 兜底 120K，全程无提示）。现在值**原样生效**，
+ * **只做自身防御**（类型非法 / 非有限数 / 非正数 → undefined = 未声明），**不做区间裁决**：
+ * 「模型能吃多大」是只有 provider/API 知道的事实，内核替用户裁决会造成「UI 显示值 ≠ 真实生效值」
+ * 的静默失真（填 3M 被静默丢弃、兜底 120K，全程无提示）。值**原样生效**，
  * 超模型能力时由 **API 报错**（真实层可见失败）；超出常规量级仅 `warn` 作**观测**、**不改变行为**。
  */
 function validateContextWindow(value: unknown): number | undefined {
@@ -301,7 +301,7 @@ function parseProviders(value: unknown): Record<string, ProviderEntryConfig> | u
       apiKey: typeof p.apiKey === 'string' && p.apiKey ? p.apiKey : undefined,
       temperature: p.temperature !== undefined ? validateTemperature(p.temperature, 0) : undefined,
       contextWindow: validateContextWindow(p.contextWindow),
-      // 能力位（互斥双能力位，2026-09-14 阶段0）：三态保真透传——显式 true/false 如实保留，
+      // 能力位（互斥双能力位）：三态保真透传——显式 true/false 如实保留，
       // 仅未配置（undefined）才由下游 Provider 内回落默认（toolCalling 默认 true、structured 默认 false）。
       supportsToolCalling:
         typeof p.supportsToolCalling === 'boolean' ? p.supportsToolCalling : undefined,

@@ -41,7 +41,7 @@ export const SKILL_MAIN_FILE = 'SKILL.md';
  * @returns true 表示文件夹形态（拥有 L3 资源/脚本归属权）
  */
 export function isFolderFormSkill(filePath: string): boolean {
-  // 大小写不敏感（吸收 rolePackManager 早先的 toLowerCase 手写版本语义，收敛为本函数唯一判定）：
+  // 大小写不敏感（本函数为唯一判定，skillLayer3 与 rolePackManager 共用）：
   // Windows 文件系统大小写不敏感，技能复制可能落盘为 skill.md / SKILL.MD 等变体；
   // 统一按主文件名判定，避免「skillLayer3 判非文件夹形态、rolePackManager 判文件夹形态」的分裂。
   return basename(filePath).toLowerCase() === SKILL_MAIN_FILE.toLowerCase();
@@ -205,7 +205,7 @@ export interface DiscoveredLayer3 {
  * '.ts' 语义声明（唯一一处）：node 无法直接解析 TS——映射仅作兜底推断，实际可用性
  * 取决于宿主执行器是否具备转译能力（如 vscode codeExecutor 仅别名 .js/.mjs/.cjs）。
  *
- * '.bat'/'.cmd' 语义声明（2026-09-22）：Windows 批处理——shell 档在 win32 派发
+ * '.bat'/'.cmd' 语义声明：Windows 批处理——shell 档在 win32 派发
  * `cmd /c <path>`（skillScriptRunner.resolveCommand），批处理是 cmd 的原生可执行类型
  * （实测 status=0、stdout 正确）。**缺映射时会被 toolExecutor 兜底成 node 而必炸**
  * （拿批处理语法喂 node），故必须显式归入 shell 档。POSIX 下 `sh <path>` 跑批处理无

@@ -146,7 +146,7 @@ export function findLayer3Script(
 /**
  * 解析 L3 资源的绝对路径：白名单命中且未逃逸来源子目录时返回路径，否则 null。
  *
- * 基目录按条目来源 subdir 选择（resources/ 或 references/，B1 兼容主流 references/ 目录）。
+ * 基目录按条目来源 subdir 选择（resources/ 或 references/，兼容主流 references/ 目录）。
  */
 export function resolveLayer3ResourcePath(
   skillDir: string,

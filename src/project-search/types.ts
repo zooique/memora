@@ -22,7 +22,7 @@ export interface ProjectTextMatch {
 }
 
 /**
- * 按内容搜索的**结果对象**（SEARCH-1 修复：三态通道）
+ * 按内容搜索的**结果对象**（三态通道）
  *
  * 为什么不是一个 `ProjectTextMatch[]`：截断/失败/放宽都是**关于本次检索本身**的元信息，
  * 挂在逐条命中上时**零命中就没有载体**（空数组承载不了任何字段）——于是「没搜到」与
@@ -37,7 +37,7 @@ export interface ProjectTextSearchResult {
   /** 截断主因：`results` 结果达上限 / `files` 扫描达文件上限（二者可同时成立时以 `results` 为停因） */
   truncatedBy?: 'results' | 'files';
   /**
-   * 实际参与匹配的文件数（宿主**上报的数据**，不是内核常量——内核从不扫描，见 D4 判定律：
+   * 实际参与匹配的文件数（宿主**上报的数据**，不是内核常量——内核从不扫描；
    * 宿主内部预算量不得提升为内核常量，只能以结果对象数据上报）
    */
   scannedFiles?: number;
@@ -70,10 +70,10 @@ export interface ProjectTextSearchResult {
 }
 
 /**
- * 按文件名搜索的结果对象（SEARCH-1 name 模式修复：与 content 对齐，两轮语义）
+ * 按文件名搜索的结果对象（与 content 模式同构的两轮语义）
  *
- * 原先是扁平 `ProjectFileMatch[]`：零命中与放宽**没有载体**——空数组承载不了任何标志，
- * 于是「真零命中」与「放宽过的零命中」在调用侧逐字同形。与 `ProjectTextSearchResult`
+ * 扁平 `ProjectFileMatch[]` 无法区分零命中的两种语义——空数组承载不了任何标志，
+ * 「真零命中」与「放宽过的零命中」在调用侧逐字同形。与 `ProjectTextSearchResult`
  * 同构：放宽/截断都是**关于本次检索本身**的元信息，返回对象让各态各自可见
  * （对齐 ripgrep 的 exit 0/1/2：有匹配 / 可信的零 / 出错了）。
  */
@@ -110,7 +110,7 @@ export interface ProjectFileSearchOptions {
   /**
    * 放宽词表（由内核分词 SSOT 产出，见 `buildSearchTerms`）；宿主**仅在整串/原样 glob 零命中时**才启用，
    * 未提供则不放宽。放宽的**判定**留在宿主（只有宿主知道扫了多少、有没有扫完）。
-   * name 与 content 共用（SEARCH-1：两模式同一放宽设施，无第二套节奏）。
+   * name 与 content 共用（两模式同一放宽设施，无第二套节奏）。
    */
   terms?: string[];
 }

@@ -526,8 +526,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 文案指挥 LLM 用 `task_table_write` 自主建表（确定性骨架预置见 tryBuildMeetingPlan，
    * 二者互补：骨架补首轮确定性，文案约束 LLM 后续走 task_table 单通道）：
    * 明确组员发言步需声明 `rolePack` 以触发表层装配切换，汇总步不声明回到组长视角；
-   * 并显式禁止用 write_file 模拟任务表（2026-09-07 触发样本实证：LLM 曾用 write_file 写
-   * `.memora/task-table.md` 伪建表绕过 PlanItem 通道，导致顶部任务板不渲染）。
+   * 并显式禁止用 write_file 模拟任务表（write_file 写 `.memora/task-table.md`
+   * 伪建表会绕过 PlanItem 通道，导致顶部任务板不渲染）。
    */
   buildTeamContextBlock(): string {
     if (!this.activePackName) return '';

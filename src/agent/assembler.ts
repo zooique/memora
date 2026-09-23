@@ -59,7 +59,7 @@ import { runTeamMeetingAssessment } from '@/agent/builtinToolHandlers.js';
 import { runSkillScript, formatScriptResult } from '@/skill/skillScriptRunner.js';
 
 /**
- * Turn 起始策略固定段（内核行为约束，2026-09-13，Turn 意图理解与模型思考展示设计 Part 2）。
+ * Turn 起始策略固定段（内核行为约束）。
  *
  * 约束式极简：只画"何时该查 / 何时该规划"的行为边界，不写步骤脚本
  * （对齐 Anthropic「目标+约束」指南——脚本化指示降低输出质量）。输出形态由 LLM 裁量。
@@ -81,8 +81,8 @@ const TURN_START_STRATEGY_PROMPT = `## Turn 起始策略
  *   4. 当前时间戳
  *   5. 分隔线
  *
- * 历史：refreshPersonaPrefixOnLoop 此前只拼接 rolePackPrompt，
- * 丢失全局技能清单和时间戳——首次角色切换后全局技能永久不可见。
+ * 必须包含全局技能清单和时间戳——若只拼接 rolePackPrompt，
+ * 首次角色切换后全局技能永久不可见。
  * 本函数作为唯一真理源，两处调用均走此处。
  *
  * @param rolePackPrompt 角色包构建的 prompt（含 L1 persona + 角色包技能清单）
@@ -110,12 +110,12 @@ export function buildSystemPromptPrefix(
   });
   const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   systemPrefixParts.push(`当前时间：${timeStr}（${tz}）`);
-  // 内核固定行为段（Part 2）：Turn 起始策略，放时间戳后（最接近用户消息，LLM 注意力位）。
+  // 内核固定行为段：Turn 起始策略，放时间戳后（最接近用户消息，LLM 注意力位）。
   // 单点注入（SSOT）：TURN_START_STRATEGY_PROMPT 常量唯一真源，本函数是唯一消费点；
   // 初始化/刷新共用本函数，角色切换不丢失。
   systemPrefixParts.push(TURN_START_STRATEGY_PROMPT);
   // 时间戳与 Turn 起始策略无条件 push，systemPrefixParts 恒非空（len ≥ 2）——
-  // 分隔线无条件追加（此前的恒真三元 + 二次 filter(Boolean) 已删，见站 21 审查）。
+  // 分隔线无条件追加（各段均无条件 push，无需 filter(Boolean) 兜底）。
   return systemPrefixParts.join('\n\n') + '\n\n---\n\n';
 }
 
@@ -161,10 +161,10 @@ export interface AgentHooks {
    */
   refreshRolePackPrefixOnLoop?: () => void;
   /**
-   * 会议逐步切换（T1，2026-09-06 收口）：按当前 active 任务项的 rolePack 刷新本轮装配视角。
+   * 会议逐步切换：按当前 active 任务项的 rolePack 刷新本轮装配视角。
    *
-   * 由 taskTable 每轮注入时驱动——与任务表渲染同源（同读「当前 active step」），弥补
-   * 此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
+   * 由 taskTable 每轮注入时驱动——与任务表渲染同源（同读「当前 active step」），
+   * 保证后继 step 换角色即时生效（装配视角不能只在 prepare.run 设一次，否则展示层正确/装配层冻结）。
    * 内部防重：视角未变化则跳过，避免每轮迭代重复重建前缀。缺省 no-op（纯工厂单测不触发）。
    */
   applyActivePlanItemAssembly?: () => void;
@@ -313,10 +313,10 @@ export interface AssembleOutput {
 /**
  * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
  *
- * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
+ * 这些闭包回填在组装器——接线本质是组件间协作，
  * 属装配职责（装配逻辑单一真理源）。
- * 注：loop.onPaused 不再在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
- * 注：任务表停滞检测已迁移到单 turn step 循环内嵌（2026-09-04 收敛：多 turn 编排已砍）。
+ * 注：loop.onPaused 不在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
+ * 注：任务表停滞检测内嵌在单 turn step 循环中（无多 turn 编排）。
  *
  * @param loop AgentLoop（装配其 onPendingQuestion/onPlanItemBoundary/getTaskTable）
  * @param toolExec 工具执行器（装配其 planManager）
@@ -340,7 +340,7 @@ function wireRuntimeCallbacks(
   };
 
   // step 边界回调（每次 LLM 迭代完成后、工具执行前触发）：只写 planItemLog 关联任务表当前 active
-  // 步骤（时间轴投影）。形态②（PLAN-SYNC-1 ①）：不再 completePlanItem——plan 状态推进唯一写者 =
+  // 步骤（时间轴投影）。plan 状态推进唯一写者 =
   // LLM 的 task_table_update（updatePlanItem → updatePlanItemStatus 单一写点）；LLM 未显式 update
   // 的最后一步由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
   loop.onPlanItemBoundary = (planItemInfo) => {
@@ -353,10 +353,10 @@ function wireRuntimeCallbacks(
     });
   };
 
-  // active step 元信息回调（阶段二步级折叠，2026-09-08 路 B′）：loop 经 _maybeEmitStepBoundary
+  // active step 元信息回调（步级折叠）：loop 经 _maybeEmitStepBoundary
   // 在本迭代工具落定后取当前 active 步骤 { planItemId, title }，供 loop 对比推进产 plan_item_boundary
   // 事件。无任务表返回 null，宿主端据此不产边界（静默）。与 onPlanItemBoundary 读同一 checkpoint.plan
-  // 真源，但读取时刻不同（2026-09-17 收敛）：前者读工具前的 active（本迭代服务的步骤，只写
+  // 真源，但读取时刻不同：前者读工具前的 active（本迭代服务的步骤，只写
   // planItemLog 不推进），本回调读工具后的 active（工具改写 plan 生效后当前所在的那一步）——
   // 时序分叉是设计语义。
   loop.getActivePlanItemMeta = () => {
@@ -369,7 +369,7 @@ function wireRuntimeCallbacks(
 
   // 在途任务表判定回调（单一真理源 = SessionManager.hasInflightPlan）：loop 注入 needsPlanning
   // nudge 前询问「是否已有在途任务表」。与 prepare 的会议骨架守卫共用同一谓词——同一命题
-  // 禁两处各自实现（曾为 prepare 内联谓词 + loop 借 getActivePlanItemMeta 存在性两处）。
+  // 禁两处各自实现（prepare 内联谓词与 loop 借 getActivePlanItemMeta 存在性判定必须合一）。
   loop.hasInflightPlan = () => sessionManager.hasInflightPlan();
 
   // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
@@ -380,7 +380,7 @@ function wireRuntimeCallbacks(
     hooks?.applyActivePlanItemAssembly?.();
     const table = renderTaskTable(cp.plan, cp.planItemLog);
     if (!table) return '';
-    // P3 未完成硬约束（2026-09-22）：仍有步骤未标记 done 时追加「不得提前收尾」执行要求。
+    // 未完成硬约束：仍有步骤未标记 done 时追加「不得提前收尾」执行要求。
     // 实证（round-1790068191972）：ask 回答后续跑轮，LLM 已提出「重新标记步骤4」却未调
     // task_table_update 就纯文本收尾——任务表在 turn 内进行中持续存在（checkpoint.plan 内存态，
     // 由 clearPlanOnTurnEnd 在 turn 结束才清空），收尾兜底不会自动补状态，故在每次注入时把
@@ -418,7 +418,7 @@ function wireRuntimeCallbacks(
       // updatePlanItemStatus 返回 true ⇒ checkpoint/plan 必存在（SessionManager.updatePlanItemStatus 早退契约），用非空断言保证
       const plan = sessionManager.getCheckpoint()!.plan;
       const step = plan.find((s) => s.id === planItemId);
-      // 收尾验证 nudge（2026-09-07 ME-10）：把最后一步标 done = LLM 宣称任务完成——
+      // 收尾验证 nudge：把最后一步标 done = LLM 宣称任务完成——
       // 若全 done 且无执行性验证步骤，追加提示引导补真验证（触发条件确定性，内容交 LLM）。
       // 仅 done 路径触发（blocked 是中止宣告，无需 nudge）；判定函数返回 null = 零打扰。
       const result = `步骤 [${planItemId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
@@ -488,7 +488,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
   // 仅取当前会话 roundIds 对应的摘要（round-based：会话由 roundIds 列表定义，摘要以 roundId 溯源）——
   // 防止其他会话（分叉分支/会话切换遗留）的摘要渗入当前上下文"遗忘补偿"。
   // sessionStore 缺失或当前会话未就绪时降级返回空（防渗入优先），回退 LLM 现场摘要；不阻断截断。
-  // （站 21 收口：此前降级放行全库会话摘要，语义反转；改返回 '' 使「防跨会话渗入」使命一致。）
+  // （必须返回 '' 而非降级放行全库会话摘要：别会话内容渗入会与「防跨会话渗入」使命语义反转。）
   const roundSummaryLoader = (): string => {
     try {
       // 惰性求取当前会话 roundIds：限定摘要只取本会话。
@@ -566,9 +566,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
         idempotent,
       };
       sessionManager.logToolExecution(record);
-      // D1-② 落盘设计（2026-08-26）已随检查点不落盘减法（2026-09-10）退役：
-      // completedToolCalls 仅内存态，「工具重跑排重 / 补偿」仅在单进程存活期内生效，
-      // 崩溃/重启后失效（走中断轮补全）。此处 flushNow() 为保留语义边界的 no-op 清脏，
+      // completedToolCalls 仅内存态（不落盘）：「工具重跑排重 / 补偿」仅在单进程存活期内生效，
+      // 崩溃/重启后失效（走中断轮补全）。此处 flushNow() 为语义边界上的 no-op 清脏，
       // 调用无害但无持久化效果——幂等分级（non-idempotent/idempotent-key 优先清脏）仅作调用纪律保留。
       if (idempotent === 'non-idempotent' || idempotent === 'idempotent-key') {
         // 有写副作用且需持久化记录的工具：完成后立即清脏（SessionManager 恒实现，纯内存）
@@ -605,7 +604,7 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
 
   toolExec.setOnToolsChanged(() => loop.refreshToolDefinitions(toolExec.list));
 
-  // G4 预算联动（2026-08-31）：search_project 执行期读取 loop 最近一轮 prepare 的剩余预算，
+  // 预算联动：search_project 执行期读取 loop 最近一轮 prepare 的剩余预算，
   // 预算紧张时自动下探结果条数上限（loop 创建后注入，与 read_skill 同款时序解耦）
   toolExec.setBudgetProvider(() => loop.getLastBudget()?.remainingTokens);
 
@@ -668,7 +667,7 @@ export async function assembleComponents(
 
   // 作品投影登记/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
   // 投影落项目级目录（pctx.memoraDir/work-projections.json）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
-  // 方案（2026-08-26 剪枝）：作品投影 = 用户主动触发的极简索引（JSON 单文件），AI 按需 read_file 读取原文
+  // 作品投影 = 用户主动触发的极简索引（JSON 单文件），AI 按需 read_file 读取原文
   const workProjection = new WorkProjectionManager(pctx.memoraDir, (sourcePath, description) => {
     hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary: description });
   }, projectPath);
@@ -682,7 +681,7 @@ export async function assembleComponents(
     input.fetchProvider,
     input.codeExecutionProvider,
     input.projectSearchProvider,
-    // L3 脚本执行 node 路径（S3，可选）：透传 run_project_script 分支
+    // 脚本执行 node 路径（可选）：透传 run_project_script 分支
     input.scriptNodePath,
   );
 
@@ -706,19 +705,19 @@ export async function assembleComponents(
 
   const skillManager = existingSkillManager ?? new SkillManager(configDir);
   await skillManager.load();
-  // 禁用技能过滤（S4，配置形态启停）：load 后再设禁用集（load 的 loadItems 会整体替换 items，
+  // 禁用技能过滤（配置形态启停）：load 后再设禁用集（load 的 loadItems 会整体替换 items，
   // 顺序无冲突；复用 existingSkillManager 时若有旧禁用集会被本轮覆盖——装配期一次性注入）
   if (input.disabledSkills && input.disabledSkills.length > 0) {
     skillManager.setDisabledSkills(input.disabledSkills);
   }
 
-  // M1 角色包清单：创建角色包管理器，角色相关功能的唯一真理源
+  // 角色包清单：创建角色包管理器，角色相关功能的唯一真理源
   // activeRolePack：宿主注入持久化的用户角色包选择，§4.1 单链优先激活；未配置/包不存在落兜底包（不再回退 items[0]）
   const rolePackManager = new RolePackManager(configDir);
   // 宿主装配级参数注入：兜底角色覆盖（须存在，否则回退内核常量）+ 组数据（会议名单容器）
   rolePackManager.setBuiltinFallbackRole(builtinFallbackRole ?? null);
-  // P-6（2026-09-06）：AssembleInput.rolePackTeams 已由 AgentConfig 收敛为必选（Agent 构造 ?? [] 归一化），
-  // 此处直接透传，无 null 传播；漏传在编译期即报错
+  // rolePackTeams 为必选参数（Agent 构造 ?? [] 归一化），直接透传无 null 传播；
+  // 漏传在编译期即报错
   rolePackManager.setRolePackTeams(rolePackTeams);
   await rolePackManager.load(activeRolePack);
 
@@ -764,7 +763,7 @@ export async function assembleComponents(
       const scriptInfo = rolePackManager.getSkillScriptInfo(skillName, scriptPath);
       if (scriptInfo) {
         // 执行超时走内核默认（60s，上限 600s，见 skillScriptRunner 常量）——脚本级超时无配置通道
-        // nodePath 沿用宿主注入（S3）：角色包技能脚本 node runtime 分支可走真实 node 路径
+        // nodePath 沿用宿主注入：角色包技能脚本 node runtime 分支可走真实 node 路径
         const result = await runSkillScript(
           rolePackPath,
           scriptInfo.runtime,
@@ -782,7 +781,7 @@ export async function assembleComponents(
       const scripts = skillManager.listScripts(skillName);
       const scriptInfo = scripts.find((s) => s.path === scriptPath);
       if (scriptInfo) {
-        // nodePath 沿用宿主注入（S3）：全局技能脚本 node runtime 分支可走真实 node 路径
+        // nodePath 沿用宿主注入：全局技能脚本 node runtime 分支可走真实 node 路径
         const result = await runSkillScript(
           globalPath,
           scriptInfo.runtime,
@@ -820,10 +819,10 @@ export async function assembleComponents(
   toolExec.listSkills = async () => {
     const lines: string[] = ['【全局通用技能】'];
     // 过滤**收口于 SkillManager.listAvailable**（LLM 可见集唯一真理源，与 L1 枚举侧共用）：
-    // 可用性（G22：缺 description 模型不知何时激活）+ 禁用（S4：对模型语义不存在）两条判据
+    // 可用性（缺 description 模型不知何时激活）+ 禁用（对模型语义不存在）两条判据
     // 都在那里。此处**不得**自写 filter——两侧同为 LLM 消费，判据分叉即双轨镜像。
-    // ⚠️ 2026-09-22 复核实锤：本处曾只过滤 description、漏掉禁用过滤，而注释早已写明
-    // 「过滤标准必须一致」——注释声明与实现不同源，正是本仓记录过的伤。
+    // ⚠️ 漏过滤即带伤：若只过滤 description、漏掉禁用过滤，禁用技能仍对模型可见；
+    // 注释声明的「过滤标准必须一致」必须与实现同源。
     const availableGlobalSkills = skillManager.listAvailable();
     for (const skill of availableGlobalSkills) {
       const formatted = SkillManager.formatSkillForPrompt(skill);
@@ -901,15 +900,15 @@ export async function assembleComponents(
     hooks?.emit(AGENT_EVENTS.memoryAdded, info);
   });
   // 接线 search_memories 后端：toolExec 先于 memoryInspector 构造，故此处后注入；
-  // 注入后 search_memories 走 searchByKeyword（关键词+superseded 过滤+accessedAt/溯源揭示，§3.3；语义通道已随 B0 收编）
+  // 注入后 search_memories 走 searchByKeyword（关键词+superseded 过滤+accessedAt/溯源揭示，§3.3；纯关键词单通道，无语义通道）
   toolExec.setMemoryInspector(memoryInspector);
   // 接线 memoryRecalled 事件（§2.4 保留改语义定案）：search_memories 命中记忆 → 宿主广播
   // 「LLM 查询记忆命中 N 条」。唯一发射位 = search_memories 命中
-  // （warmRecall 恢复例外已随跨重启恢复链 2026-09-10 整体退役）。
+  // （无 warmRecall 等其他发射路径）。
   toolExec.setOnMemoryRecalled((info) => hooks?.emit(AGENT_EVENTS.memoryRecalled, info));
   // 接线工具召回与装配期内容互斥（§5.1）：search_memories 排除「正文或摘要已在眼前」的轮次
   // round-summary，避免 LLM 拿回眼前内容的摘要重复。排除集从 loop 工作记忆视图精确派生
-  // （getExclusionRoundIds = 视图内 ∪ 被替换 ∪ 在途），与模型窗口无关，取代旧的固定 20 轮代理量。
+  // （getExclusionRoundIds = 视图内 ∪ 被替换 ∪ 在途），与模型窗口无关，不用固定轮数代理量。
   toolExec.setExclusionRoundIdsProvider(() => loop.getExclusionRoundIds());
 
   // ── 输入增强管线 ──

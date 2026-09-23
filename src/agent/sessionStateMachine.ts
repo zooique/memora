@@ -5,11 +5,9 @@
  *   RUNNING→ERROR（异常：LLM 超时/工具失败/连接断开）；ERROR→RUNNING（恢复：须 error.recovered===true 且 cause 已解除）。
  * 非法转换：PAUSED→ERROR、ERROR→PAUSED 均不允许。
  * 设计意图：ERROR 态语义 =「崩溃残留 → 恢复前强制校验」。
- *   ⚠ 2026-09-10 状态：原先的三条进入路径已被剪到**仅剩公开 API 一条**——
- *     ① 宿主显式 `triggerError()`：**产品流零调用**（grep 实证）；
- *     ② 重启路径 `init → loadPersistedCheckpoint` 自动回填 status='error'：已随「断电优先」裁决删除（重启一律以 running 起；否则宿主无 recover() 入口会把用户钉死在 error 态）；
- *     ③ 显式 `restoreFromCheckpoint` 按检查点重建：已随跨重启恢复链整体退役删除。
- *   → 故**当前产品流中 ERROR 态无自动产生者**（保留为公开 API 可达的预留态，待与「G36 `Round.error` 无真实产生路径」合并评估）。
+ *   ⚠ 当前产品流中 ERROR 态无自动产生者：重启一律以 running 起（否则宿主无 recover()
+ *     入口会把用户钉死在 error 态），运行时失败也不翻状态机。ERROR 保留为公开 API
+ *     triggerError() 可达的预留态，待与 `Round.error` 无真实产生路径合并评估。
  * 生产运行时异常走 `yield { type:'error' }` 事件流（agent.ts），不翻状态机。若要让运行时异常自动翻状态机，需在 yield error 处接线 triggerError（行为变更，需产品决策）。
  * 单实例事件队列串行处理，无并发写路径。
  */
@@ -17,7 +15,7 @@ import type { SessionCheckpoint, StatusTransition, SessionStatus, PauseSource } 
 
 /**
  * 会话状态机：管理三态流转确保转换合法且可追溯，实例绑定单会话由 SessionManager 持有。
- * PauseSource 定义于 agent/types.ts（PauseMeta.source 同源共用，2026-09-20 站 43 收口类型级双轨）。
+ * PauseSource 定义于 agent/types.ts（PauseMeta.source 同源共用，类型级单一真源）。
  */
 export class SessionStateMachine {
   /** 当前状态 */

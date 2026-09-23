@@ -185,9 +185,9 @@ export class MemoryInspector {
   // ─── 搜索 ─────────────────────────────────────────────
 
   /**
-   * @deprecated 本同步通道已退役（2026-09-20）。功能已由 `searchByKeyword()` 取代（后者含
-   * superseded 过滤 / excludeRoundIds 互斥 / accessedAt + 溯源揭示）。实证无生产/宿主消费方，
-   * 保留仅为兼容历史 API，**勿新增调用**。
+   * @deprecated 本同步通道已退役，功能由 `searchByKeyword()` 承担（后者含
+   * superseded 过滤 / excludeRoundIds 互斥 / accessedAt + 溯源揭示）。当前无生产/宿主消费方，
+   * 勿新增调用。
    * 搜索记忆（关键词 + FTS5 索引），返回 CLI 友好扁平结构（已截断）。
    */
   search(query: string, limit = 10): AgentSearchHit[] {
@@ -272,9 +272,9 @@ export class MemoryInspector {
       createdAt: memory.createdAt,
       accessedAt: memory.accessedAt,
       // 结构化溯源（§3.3「返回」行）：round-summary 命中项显式附 sessionId/roundId，
-      // 与 trace_summary 参数直通——LLM 零解析直用（替代原先隐式埋在 name 的未文档化格式契约）。
+      // 与 trace_summary 参数直通——LLM 零解析直用，不得隐式编码进 name 字段。
       // 字段值源：round-summary 顶层持久化 sessionName（= YYYY-MM-DD-sessionName，即 trace_summary 的 sessionId）
-      // + roundId，A1 边界定案：宿主 SQLite 不持久化 metadata，故不从 metadata 读。
+      // + roundId；宿主 SQLite 不持久化 metadata，故不从 metadata 读。
       sessionId: memory.sessionName,
       roundId: memory.roundId,
     }));

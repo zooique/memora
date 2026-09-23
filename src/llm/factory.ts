@@ -25,7 +25,7 @@ export interface ProviderConfig {
    *
    * 本地运行时（Ollama/LM Studio 等）是否支持原生 FC 无法从 baseUrl 推断，须宿主显式置 false；
    * 未填（undefined）→ OpenAICompatibleProvider 内回落 true（保留存量云 LLM 工具行为，
-   * 2026-09-14 阶段0·互斥双能力位）。
+   * 互斥双能力位）。
    */
   supportsToolCalling?: boolean;
   /** 是否支持结构化输出（response_format / JSON mode）；未填 → 回落 false */

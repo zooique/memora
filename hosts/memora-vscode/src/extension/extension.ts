@@ -99,11 +99,11 @@ function syncDisabledSkills(
  * @param providerStore 大模型配置存储
  * @param sessionStore 会话存储单例（SSOT：与 UI 面板共享，杜绝双实例覆盖写导致会话记录加载不全）
  * @param globalState vscode 全局状态（读取持久化的激活角色包，重启后恢复用户选择；
- *   用户级而非工作区级——角色选择是用户偏好，2026-08-17 存储层级收敛）
- * @param configDir 插件内置配置目录（SSOT 修复：由 extension.extensionUri 显式定位，
- *   而非 assemble 内 import.meta.url 相对推断——esbuild bundle 后路径漂移导致角色包加载失败）
- * @param userSkillsDir 用户技能目录（可选，2026-08-22 新增）
- * @param userRolePacksDir 用户角色包目录（2026-08-22 新增，2026-08-30 已开放，与内置包同池注入）
+ *   用户级而非工作区级——角色选择是用户偏好，不随工作区漂移）
+ * @param configDir 插件内置配置目录（SSOT：由 extension.extensionUri 显式定位——
+ *   若在 assemble 内用 import.meta.url 相对推断，esbuild bundle 后路径漂移会导致角色包加载失败（坑））
+ * @param userSkillsDir 用户技能目录（可选）
+ * @param userRolePacksDir 用户角色包目录（可选，与内置包同池注入）
  * @param outputChannel VSCode 输出通道（G7：日志对接）
  */
 function getOrCreateAgent(
@@ -135,7 +135,7 @@ function getOrCreateAgent(
     const searchEngine = vscode.workspace
       .getConfiguration('memora')
       .get<'auto' | 'bing' | 'baidu' | 'sogou'>('searchEngine', 'auto');
-    // 禁用的技能名清单（S4，配置形态启停，2026-09-22）：命中技能对 LLM 全链不可用
+    // 禁用的技能名清单（配置形态启停）：命中技能对 LLM 全链不可用
     // （L1 清单 / list_skills / read_skill / L3 全不可达）。此处只是**装配期快照**；
     // 用户改设置由 activate 内的配置监听实时重设，无需重新装配。
     const disabledSkills = readDisabledSkills();
@@ -176,19 +176,19 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // 大模型配置存储（providerStore 供配置面板 + Agent 装配共用）
   const providerStore = new ProviderStore(context.secrets);
-  // 一次性迁移：工作区 settings.json 旧 Provider 配置 → 用户级（2026-08-17 存储层级收敛，
-  // 避免 Workspace 优先级覆盖 Global 新配置导致不生效）
+  // 一次性迁移：工作区 settings.json 旧 Provider 配置 → 用户级
+  // （避免 Workspace 优先级覆盖 Global 新配置导致不生效）
   void providerStore.migrateFromWorkspace();
-  // 一次性迁移：旧全局 memora.maxContextTokens → 首个 Provider 的 contextWindow（2026-08-29
-  // 窗口上限改为 per-LLM 配置，全局设置废弃；详见 ADR-029 演进）
+  // 一次性迁移：旧全局 memora.maxContextTokens → 首个 Provider 的 contextWindow
+  // （窗口上限为 per-LLM 配置，全局键仅作迁移来源；详见 ADR-029）
   void providerStore.migrateMaxContextTokens();
 
-  // 插件内置配置目录（SSOT 修复 2026-08-15）：从 extensionUri 显式定位，
-  // 指向 dist/extension（role-packs 等资源所在）。替代 assemble 内 import.meta.url
-  // 相对推断——esbuild bundle 后路径漂移导致内置角色包加载为 0。
+  // 插件内置配置目录（SSOT）：从 extensionUri 显式定位，
+  // 指向 dist/extension（role-packs 等资源所在）。若在 assemble 内用 import.meta.url
+  // 相对推断，esbuild bundle 后路径漂移会导致内置角色包加载为 0（坑）。
   const configDir = join(context.extensionUri.fsPath, 'dist', 'extension');
 
-  // 用户技能目录（2026-08-22 新增）：使用 VS Code 全局存储目录
+  // 用户技能目录：使用 VS Code 全局存储目录
   // 路径示例：C:\Users\SJ\AppData\Roaming\Code\User\globalStorage\zooique.memora-vscode\skills\
   // 与内置技能分离，支持用户独立管理；目录不存在时自动创建
   const userSkillsDir = join(context.globalStorageUri.fsPath, 'skills');
@@ -196,12 +196,12 @@ export function activate(context: vscode.ExtensionContext): void {
     // 目录创建失败不阻塞插件启动，用户技能功能不可用而已
   });
 
-  // 用户角色包目录（2026-08-22 新增，2026-08-30 已开放，对齐技能系统）
+  // 用户角色包目录（对齐技能系统）
   //
-  // ✅ 当前状态：角色包已开放给用户 —— 内置角色包（dist/extension/role-packs/，构建期从内核同步）
+  // 双池注入：内置角色包（dist/extension/role-packs/，构建期从内核同步）
   //   + 用户角色包（globalStorageUri/role-packs/，运行态经内核 loadExtraDir() 注入同池切换）。
   //
-  // 开放机制：用户在此目录放置角色包文件夹（manifest.json + persona.md/rules.md/skills/）即生效；
+  // 使用方式：用户在此目录放置角色包文件夹（manifest.json + persona.md/rules.md/skills/）即生效；
   //   同名冲突内置优先（内核 loadExtraDir 跳过重名用户包）。目录创建失败不阻塞插件启动。
   const userRolePacksDir = join(context.globalStorageUri.fsPath, 'role-packs');
   void mkdir(userRolePacksDir, { recursive: true }).catch(() => {
@@ -211,25 +211,25 @@ export function activate(context: vscode.ExtensionContext): void {
   // 侧边栏视图：对话面板（sessionStore 与 assemble 同路径 .memora/sessions.json）
   const workspacePath = resolveWorkspacePath();
 
-  // 启动清扫暂存的孤儿 Round ID（② 清扫 → 摘要软删的「对称的另一半」，2026-08-30）：
+  // 启动清扫暂存的孤儿 Round ID（清扫 → 摘要软删的「对称的另一半」）：
   // 清扫发生在 activate（Agent 尚未装配），此处暂存被清扫 Round，待 Agent 首次就绪后
   // 延迟联动软删其 round-summary 摘要。单进程内一次性消费（splice 清空）；进程退出前
   // 未消费则暂存丢失——物理轮已被删、摘要保持「无溯源独立记忆」，不构成数据错误
-  // （73d61daa 已定义该形态为合法降级，且下一轮启动清扫/GC 无重复对象）。
+  // （该形态为合法降级，且下一轮启动清扫/GC 无重复对象）。
   const pendingSweptRoundIds: string[] = [];
 
   // Round-based 存储层（SSOT：WorkspaceSessionStore 与 Agent 共享同一 WorkspaceRoundStore 实例，
   // 杜绝双实例覆盖写 / 缓存漂移——否则 UI 重载历史读不到 Agent 刚写入的 Round）
   const roundStore = new WorkspaceRoundStore(workspacePath);
   roundStore.load();
-  // 孤儿清扫（0 引用 Round 统一回收，2026-08-29）：删除会话/截断后遗留的无引用轮
+  // 孤儿清扫（0 引用 Round 统一回收）：删除会话/截断后遗留的无引用轮
   // 在启动时物理清理，防磁盘膨胀与「0 引用卡片滞留」（引用归 SessionStore、物理归 RoundStore）
   // 存活保护必须显式带上：进行中轮（pending）refCount 恒为 0，无保护会删掉
   // 「用户已提问、LLM 尚未作答」的轮（重载/崩溃重启时静默丢失用户提问）。
   const sweptIds = roundStore.sweepOrphans(DEFAULT_SWEEP_MIN_AGE_MS);
   if (sweptIds.length > 0) {
     console.info(`Memora 启动清扫无引用问答闭环 ${sweptIds.length} 条`);
-    // 对称的另一半（⑥ P0 收口，2026-08-30）：被清扫轮的 round-summary 摘要暂存，
+    // 对称的另一半：被清扫轮的 round-summary 摘要暂存，
     // 待 Agent 装配后延迟联动软删——清扫发生在启动时 Agent 尚未装配，无法直接访问记忆库。
     // 详见 setAgentFactory 处的消费逻辑。
     pendingSweptRoundIds.push(...sweptIds);
@@ -246,7 +246,7 @@ export function activate(context: vscode.ExtensionContext): void {
   chatProvider.setViewLoader(viewLoader);
   // 注入过程事件落盘目标（v1.5）：与 viewLoader 同一 WorkspaceRoundStore 单例，生命周期原子一致
   chatProvider.setRoundStore(roundStore);
-  // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT 收紧 2026-08-25）
+  // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT）
   chatProvider.setSkillDirs(configDir, userSkillsDir);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；
   // 装配复用同一 sessionStore 单例（SSOT），与 UI 面板共享，杜绝双实例覆盖写；
@@ -263,7 +263,7 @@ export function activate(context: vscode.ExtensionContext): void {
       userRolePacksDir,
       memoraOutput,
     );
-    // 孤儿轮摘要延迟联动（⑥ P0 收口，2026-08-30）：启动清扫发生 Agent 尚未装配，
+    // 孤儿轮摘要延迟联动：启动清扫发生 Agent 尚未装配，
     // Agent 首次就绪后补做「对称的另一半」——软删被清扫轮的 round-summary
     // （与手动删会话同语义：脱钩溯源 + 进回收站，可恢复为无溯源独立记忆）。
     // 消费语义：**软删成功后才清空 pending**——失败/未就绪保留待下次装配重试，
@@ -287,9 +287,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.window.registerWebviewViewProvider(MemoraChatViewProvider.viewType, chatProvider),
   );
 
-  // 侧边栏视图：设置面板（2026-08-17 选项卡合并：角色 / 大模型 / 记忆 合一）
+  // 侧边栏视图：设置面板（角色 / 大模型 / 记忆 选项卡合一）
   // 三个子视图均为低频操作（角色切换、模型配置、记忆浏览），合并为单一「设置」视图、
-  // 内部按钮切换，避免活动栏底部 4 个选项卡拥挤（用户反馈 2026-08-17）。
+  // 内部按钮切换，避免活动栏底部选项卡拥挤（用户反馈）。
   // 装配复用与 chat 面板同一 getOrCreateAgent 单例（SSOT），角色切换持久化用户级激活态；
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
@@ -300,7 +300,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
   settingsProvider.setUserSkillsDir(userSkillsDir);
   settingsProvider.setConfigDir(configDir);
-  // 注入用户角色包目录（打开目录按钮 + 角色来源判定，2026-08-30 对齐技能系统）
+  // 注入用户角色包目录（打开目录按钮 + 角色来源判定，对齐技能系统）
   settingsProvider.setUserRolePacksDir(userRolePacksDir);
   // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
@@ -320,7 +320,7 @@ export function activate(context: vscode.ExtensionContext): void {
   );
 
   // 命令：配置大模型（聚焦设置视图并切换到「大模型」子选项卡）
-  // 设置视图合并后（2026-08-17），先记录待切选项卡再聚焦；视图未就绪时由 settingsPanel
+  // 先记录待切选项卡再聚焦；视图未就绪时由 settingsPanel
   // 在 ready 握手后补发 settings_switch_tab，保证命令落点与用户意图一致。
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.configureModel', () => {
@@ -329,7 +329,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // 命令：运行能力演示（隔离演示区 → Output Channel，2026-08-22）
+  // 命令：运行能力演示（隔离演示区 → Output Channel）
   // 在全局隔离目录装配独立 Agent，注入编排提示词跑通「搜索→抓取→写文件→总结→记忆沉淀」
   // 完整链路，Output Channel 流式呈现；完整展示内核的角色包/loop/记忆/工具/可观测能力。
   // 隔离设计：独立 projectPath 且不传 sessionStore，产物绝不污染当前工作区（用户决策）。
@@ -348,17 +348,16 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  // 命令：重载技能与角色包（技能系统热重载入口，2026-09-22）
-  // 内核 agent.reloadConfig() 早已可用而宿主此前零调用点 → 改/加技能文件后必须 Reload Window
-  // 才生效（技能是角色包作者的高频手改对象，故补此显式入口）。
+  // 命令：重载技能与角色包（技能系统热重载入口）
+  // 技能是角色包作者的高频手改对象，此入口免去改/加技能文件后 Reload Window 才生效。
   //
   // ⚠ 忙碌态必须「分两次带 source」调用 —— 判据同源：agent.isBusy 读的正是内核
   // reloadConfig 守门用的同一个 chatLockManager.isBusy。
   //   内核在对话中**只暂存带 source 的请求**（agent.ts：「undefined（全量）不暂存——无具体来源，
-  // 补执行语义不明」）⇒ 原实现的「无参调用 + 通用 catch」在对话中会把用户的重载请求**静默丢弃**
-  // （既没重载、也没排队），而提示语写作「重载失败」亦不实（内核在守门处即返回，未尝试重载）。
-  //   修正：空闲走一次全量；忙碌则分两次带 source 调用（两条都进 pendingConfigReload，
-  // 由 flushPendingConfigReload 在 turn 结束后补执行），并如实告知「已提交」而非「失败」。
+  // 补执行语义不明」）⇒ 无参调用在对话中会把用户的重载请求**静默丢弃**
+  // （既没重载、也没排队），此时提示「重载失败」不实（内核在守门处即返回，未尝试重载）（坑）。
+  //   故空闲走一次全量；忙碌则分两次带 source 调用（两条都进 pendingConfigReload，
+  // 由 flushPendingConfigReload 在 turn 结束后补执行），并如实告知「已提交」。
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.reloadSkills', async () => {
       const agent = await getAgentForCommand();
@@ -396,11 +395,11 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
   );
 
-  // ─── 技能启停（S4）配置变更自动同步（SKILL-S3b，2026-09-22） ───
+  // ─── 技能启停配置变更自动同步 ───
   //
-  // 背景：`memora.disabledSkills` 此前只在 Agent 装配期读一次 ⇒ 用户改设置后**不生效**，
-  // 必须手动跑「Memora: 重载技能与角色包」（配置项描述里也是这么写的）——属静默失效：
-  // 「配置形态启停」承诺的是改完即生效，实际却要求用户记得跑一条命令。
+  // 契约：`memora.disabledSkills` 改完即生效——若只在 Agent 装配期读一次，
+  // 用户改设置后须手动跑「Memora: 重载技能与角色包」才生效，属静默失效（坑）：
+  // 「配置形态启停」承诺的是改完即生效，不该要求用户记得跑一条命令。
   //
   // 为何不必调 reloadConfig（生效路径实证，非推断）：禁用集是**读期过滤**——内核
   // `listAvailable()` 与 `get()` 读同一个 `disabledNames` 集合，而 loop 前缀由
@@ -434,8 +433,8 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const mem = agent.memory;
       // 统计口径 SSOT = 内核 memory.stats()（total = 活跃数，bySource = 来源分布；走
-      // sourceCountCache / getAllSources 增量缓存，精确且免全量列举）。此前用 list(1000)
-      // 自行聚合，superseded 与来源分布超 1000 条时双双低报（2026-09-21 深审订正）。
+      // sourceCountCache / getAllSources 增量缓存，精确且免全量列举）。若用 list(1000)
+      // 自行聚合，superseded 与来源分布超 1000 条时双双低报（坑）。
       const stats = mem?.stats();
       const activeCount = stats?.total ?? 0;
       const deletedCount = mem?.listDeleted().length ?? 0;
@@ -576,19 +575,18 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }),
   );
-  // 会话管理入口已全量收敛到 webview 标题条（2026-08-17 会话管理重构）：
+  // 会话管理入口在 webview 标题条：
   //   - 新建会话「＋」/ 历史记录（模态浮层）/ 改名笔 均由 webview 内按钮触发（W→E 消息）
-  //   - 原「清空对话」（clearChat）为伪需求，由「删除会话记录」覆盖（用户决策 2026-08-17）
-  //   - 原「会话列表」（switchSession，QuickPick 三合一）被标题条按钮 + 历史浮层取代
-  // 故 memora.clearChat / memora.switchSession 两命令不再注册。
+  // 故 memora.clearChat / memora.switchSession 两命令不注册（「清空对话」由「删除会话记录」
+  // 覆盖，会话切换走标题条按钮 + 历史浮层）。
 }
 
 /**
  * 插件停用入口
  *
- * 内核 Agent.close() 内部调用 sessionManager.flushOnShutdown()（D1-① 2026-08-26 设计，
- * 已随检查点不落盘减法【2026-09-10】退役为纯内存清脏 no-op——检查点不落盘，进行中工具
- * 结果与幂等标记仅内存态，正常关闭即整体丢弃，无持久化保障）。失败不阻塞插件退出。
+ * 内核 Agent.close() 内部调用 sessionManager.flushOnShutdown()（纯内存清脏 no-op——
+ * 检查点不落盘，进行中工具结果与幂等标记仅内存态，正常关闭即整体丢弃，无持久化保障）。
+ * 失败不阻塞插件退出。
  */
 export async function deactivate(): Promise<void> {
   if (!agentPromise) return;

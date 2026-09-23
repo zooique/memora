@@ -41,7 +41,7 @@ function resolveLayer(raw: unknown): 'agent' | 'project' {
  */
 export class SkillManager extends ConfigResourceManager<SkillEntry> {
   /**
-   * 已被用户技能覆盖的内置技能名（S5，2026-09-22）。
+   * 已被用户技能覆盖的内置技能名。
    *
    * 与基类 runtimeNames 记账互补：runtimeNames 说明「该项无内核扫描真理源」，
    * 本集合说明「同名磁盘（内置）项被用户版覆盖」——reload 扫描回同名内置时
@@ -50,13 +50,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   private readonly userOverrides = new Set<string>();
 
   /**
-   * 禁用的技能名集合（S4，2026-09-22）：宿主配置形态启停。命中者
+   * 禁用的技能名集合：宿主配置形态启停。命中者
    * get() 返回 null（read_skill/L3 全链路经 get 短路）+ buildSkillList 不枚举。
    * list 快照保持完整——宿主 UI 依据同名设置标注「已禁用」徽章（对 LLM 静默）。
    *
    * **作用域 = 全局技能池（内置/用户）**：角色包内嵌技能由 RolePackManager 持有、
    * 不经本管理器（其启用判据 = 角色是否激活），对本集**免疫**——角色包技能
-   * 「随角色启停、不可按名禁用」系 2026-09-22 定案（见宿主 skillAggregation 定案声明）。
+   * 「随角色启停、不可按名禁用」（见宿主 skillAggregation 定案声明）。
    */
   private readonly disabledNames = new Set<string>();
 
@@ -84,13 +84,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 根据技能名获取技能
    */
   get(name: string): SkillEntry | null {
-    // 禁用技能对 LLM 不可见（S4）：get=null → read_skill 报未找到、L3 全链路短路
+    // 禁用技能对 LLM 不可见：get=null → read_skill 报未找到、L3 全链路短路
     if (this.disabledNames.has(name)) return null;
     return this.items.find((s) => s.name === name) ?? null;
   }
 
   /**
-   * 设置禁用技能清单（S4，配置形态启停；装配期一次性注入，可由 reloadConfig 重设）
+   * 设置禁用技能清单（配置形态启停；装配期一次性注入，可由 reloadConfig 重设）
    *
    * @param names 禁用的技能名（命中者 L1/L2/L3 全不可用；对 LLM 语义 = 不存在）
    */
@@ -171,13 +171,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 对 **LLM 可见**的技能条目——渐进披露可用性判据的**唯一真理源**。
    *
    * 判据两条（缺一不可）：
-   *   ① 有 `description`（渐进披露的唯一依据：缺则模型不知何时激活，G22）；
-   *   ② 未命中 `disabledNames`（S4 启停：对模型语义 = 不存在）。
+   *   ① 有 `description`（渐进披露的唯一依据：缺则模型不知何时激活）；
+   *   ② 未命中 `disabledNames`（启停：对模型语义 = 不存在）。
    *
    * ⚠️ **L1 枚举**（`buildSkillList`）与 **`list_skills` 工具侧**（assembler 注入回调）
    * 必须共用本方法：两者同为 **LLM 消费**、是同一份清单的两个交付通道，
    * 判据一旦分叉即「双轨镜像」（同一模型在两条路径看到不同技能集）。
-   * 历史教训：S4 落地时只改了 L1 侧，`list_skills` 侧漏改（2026-09-22 复核发现）。
+   * 教训：启停/可用性过滤须两侧同步——单侧漏改会让禁用技能在另一通道仍可见。
    *
    * 注：本方法**不**过滤 L3 归属，也不做排序——排序由调用方决定（两通道排序本就不同）。
    */
@@ -196,7 +196,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    *   > 50 技能：切换 list_skills 工具动态查询，不在 system prompt 枚举
    */
   buildSkillList(): string {
-    // 可用性（G22）+ 禁用（S4）过滤**收口于 listAvailable**（LLM 可见集唯一真理源，
+    // 可用性 + 禁用过滤**收口于 listAvailable**（LLM 可见集唯一真理源，
     // 与 list_skills 工具侧共用；此处不再自写 filter，防两通道判据分叉）。
     // 不进清单者由宿主 UI 显式标注而非静默隐藏：「未生效」= 健康徽章 / 禁用 = 「已禁用」徽章。
     const candidates = this.listAvailable();
@@ -220,9 +220,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 校验单技能文件（G22 写→验→用闭环，宿主 UI 校验入口）。
+   * 校验单技能文件（写→验→用闭环，宿主 UI 校验入口）。
    * 复用 parser frontmatter 解析做单一真理源，不重写解析；只做确定性结构检查，不做语义 schema。
-   * 判级（三点强化，2026-08-25 吸收社区养分）：
+   * 判级（三点强化）：
    *   - error：无 frontmatter / description 缺失/空（渐进披露唯一依据，缺则技能不可用）/ 正文空
    *   - warning：layer 非法（回退 project）
    */
@@ -257,13 +257,13 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
 
   /**
    * 读取技能的 L3 资源文件（渐进披露 L3）；资源须在 layer3 中且路径不逃逸其来源子目录
-   * （resources/ 或 references/，B1 兼容主流 references/ 辅助文档目录）
+   * （resources/ 或 references/，兼容主流 references/ 辅助文档目录）
    */
   async readResource(skillName: string, resourcePath: string): Promise<string | null> {
     const skill = this.get(skillName);
     if (!skill) return null;
 
-    // 白名单前置：资源须已由扫描登记在 layer3 中（未登记 → 静默 null，与历史行为一致）
+    // 白名单前置：资源须已由扫描登记在 layer3 中（未登记 → 静默 null）
     if (!findLayer3Resource(skill.layer3, resourcePath)) return null;
     // 路径解析（按条目来源子目录选基目录 + 路径穿越防护）收口于 skillLayer3（SSOT）
     const skillDir = resolveSkillDir(skill.filePath);
@@ -336,10 +336,10 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
       const skill = await this.createEntry(entry);
       if (!skill) continue;
 
-      // 同名覆盖（S5，2026-09-22 反转，对齐主流「用户可覆盖内置」）：
-      // 此前「内置优先跳过」——用户同名技能永远不生效、静默丢失；
-      // 现替换为「用户覆盖内置」：移除内置版（磁盘真理源，reload 可重扫）、
-      // 登记 userOverrides 供 reload 保持用户版胜出（基类 isUserOverride 钩子）
+      // 同名覆盖（对齐主流「用户可覆盖内置」）：用户版生效——
+      // 移除内置版（磁盘真理源，reload 可重扫）、
+      // 登记 userOverrides 供 reload 保持用户版胜出（基类 isUserOverride 钩子）；
+      // 不覆盖则用户同名技能会被静默丢弃。
       if (existingIdx >= 0) {
         this.items.splice(existingIdx, 1);
         this.userOverrides.add(entry.name);
@@ -353,7 +353,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   /**
-   * 用户覆盖声明（S5）：userOverrides 中记录的同名技能，reload 扫描回内置版时
+   * 用户覆盖声明：userOverrides 中记录的同名技能，reload 扫描回内置版时
    * 用户版胜出、内置版剔除（基类 retainRuntimeItems 消费）。其余同名不声明——
    * 保持基类默认「磁盘（内置）赢」语义（如 register() 运行时技能撞内置仍内置赢）。
    */
@@ -371,12 +371,12 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
   }
 
   protected async createEntry(entry: ScannedMarkdownEntry): Promise<SkillEntry> {
-    // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流）：仅「文件夹形态」（入口为 SKILL.md）才发现
+    // L3 隔离纪律（对齐 Claude Code 主流）：仅「文件夹形态」（入口为 SKILL.md）才发现
     // resources/ scripts/。顶层裸 .md 单文件技能目录 = 技能池共享根，同级扫描会把别的技能的
     // resources/scripts 误归给自己 → 污染。故裸 .md 为纯 L1/L2，需要 L3 资源/脚本必须用文件夹+SKILL.md。
     //
     // 该规则与角色包内嵌技能**逐字同构**；发现与投影均已收口于 skillLayer3
-    // （discoverSkillLayer3 + projectDiscoveredLayer3，SSOT）——此前两侧各写一遍投影，
+    // （discoverSkillLayer3 + projectDiscoveredLayer3，SSOT）——两侧各写一遍投影，
     // 改一处即静默漂移。
     const discovered = await discoverSkillLayer3(entry.filePath);
     const layer3 = projectDiscoveredLayer3(discovered);

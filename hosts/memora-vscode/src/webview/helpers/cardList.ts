@@ -1,9 +1,9 @@
 /**
  * cardList — 列表分区渲染纯函数（分组标题 + 空态引导）
  *
- * SSOT 收敛（2026-08-17）：configView（激活 Provider / 其他 Provider）与
- * rolesView（当前角色 / 其他角色）各自维护了一份逐字相同的「分组标题」与
- * 「空态引导」DOM 构建；此处提取为纯函数，两面板共享同一实现（仅文案参数化）。
+ * SSOT：configView（激活 Provider / 其他 Provider）与
+ * rolesView（当前角色 / 其他角色）的「分组标题」与「空态引导」DOM 构建共用本纯函数
+ * （仅文案参数化），两面板不得各自另立一份。
  *
  * 设计（对齐 helpers 规范）：
  *   - 纯函数：接收 document 依赖（DOM 注入，可独立 vitest 测试），无闭包捕获；

@@ -6,7 +6,7 @@
  *   密钥默认经 SecretStorage→配置对象注入、不经 env（宿主默认路径）；env 回退配置模式
  *   （MEMORA_API_KEY 等，security_rules 支持）下 key 在进程 env、对脚本可见——owner 信任
  *   模型（默认自动批准）+ 脚本来源审阅（判据 B）为边界，视同用户本地 shell 语义）+ 超时
- *   限制（默认 60s，最大 600s——适配脚本内 API 调用/批处理长耗时；2026-09-08 用户实测调大）+ 白名单 runtime（node/python/shell）+ Windows 隐藏窗口
+ *   限制（默认 60s，最大 600s——适配脚本内 API 调用/批处理长耗时）+ 白名单 runtime（node/python/shell）+ Windows 隐藏窗口
  *   （windowsHide:true，不弹 conhost）。
  * 注：当前为简单子进程执行，非完整沙箱（文件系统/网络隔离由宿主在生产环境实现）。
  */
@@ -20,7 +20,7 @@ export type ScriptExecutionResult = CodeExecutionResult;
 
 /** 默认执行超时（毫秒）：脚本常用交互/构建任务在 1 分钟内完成；超长任务由 LLM 传 timeoutMs */
 const DEFAULT_TIMEOUT_MS = 60_000;
-/** 最大执行超时（毫秒）：适配脚本内 API 调用/批处理等长耗时任务（2026-09-08 用户实测调大） */
+/** 最大执行超时（毫秒）：适配脚本内 API 调用/批处理等长耗时任务 */
 const MAX_TIMEOUT_MS = 600_000;
 
 /**
@@ -37,15 +37,15 @@ function normalizeTimeoutMs(timeoutMs: number): number {
 }
 
 /**
- * Windows 平台 shell 档脚本守卫（SKILL-S1 止血，2026-09-22）
+ * Windows 平台 shell 档脚本守卫
  *
  * 缺陷事实链：`.sh` → runtime `shell`（scanner.SCRIPT_RUNTIME_MAP）→ win32 派发
  * `cmd /c <path>`（resolveCommand shell 分支）——而 `.sh` 不是 cmd 原生可执行类型
  * （只有 `.bat`/`.cmd` 是），命令退到「Windows 关联程序」路径：status=0 但
  * stdout/stderr 全空（静默空跑）。`formatExecutionResult` 见 status=0 向模型报
- * 「成功」→ 模型认定脚本已跑完 → 静默失败（与 TC-1 / SEARCH-1 F3 同族的 P0 类）。
- * `.ps1` 同理：`cmd /c` 不起 PowerShell，同样静默空跑（S7，不新增 powershell runtime 档——
- * 那是新能力，归 CMD-1 宿主 shell 选型一并设计）。
+ * 「成功」→ 模型认定脚本已跑完 → 静默失败。
+ * `.ps1` 同理：`cmd /c` 不起 PowerShell，同样静默空跑（不新增 powershell runtime 档——
+ * 那是新能力，留待宿主 shell 选型一并设计）。
  *
  * 本守卫改的是「喂给判据的事实」（Win 下喂进 spawn 的 `cmd /c foo.sh` 只会制造假
  * status=0），非判据本身——属止血。POSIX 不受影响（`sh <path>` 合法）。
@@ -63,7 +63,7 @@ export function guardWindowsShellScript(
   if (platform !== 'win32' || runtime !== 'shell') return null;
   const ext = scriptPath.slice(scriptPath.lastIndexOf('.')).toLowerCase();
   // cmd 原生可执行类型：批处理文件（与 scanner SCRIPT_RUNTIME_MAP 注释同源，
-  // win32 派发 `cmd /c` 实测 status=0 + 输出正确，2026-09-22 实证）
+  // win32 派发 `cmd /c` 实测 status=0 + 输出正确）
   if (ext === '.bat' || ext === '.cmd') return null;
   return (
     `Windows 平台 shell 档仅支持 .bat/.cmd（cmd 原生可执行类型）。当前脚本扩展名 "${ext}" ` +
@@ -83,13 +83,13 @@ export function guardWindowsShellScript(
  * @param timeoutMs 超时（毫秒，限制在 [1s, MAX_TIMEOUT_MS] 内）
  * @param cwd 子进程工作目录（可选；run_project_script 以项目根为 cwd，
  *        使项目脚本可加载项目本地依赖/相对数据文件）
- * @param nodePath node 可执行文件路径（S3，可选，缺省 'node' 走 PATH）——供宿主注入真实
- *        node 路径用；传 undefined 保持旧行为。
- *        ⚠️ **现状（2026-09-22 复核实锤）：宿主尚未接入**——`hosts/memora-vscode` 零注入点，
- *        故实际恒走缺省 `'node'`。且真解不止「传个路径」：Electron 宿主（VS Code）的
+ * @param nodePath node 可执行文件路径（可选，缺省 'node' 走 PATH）——供宿主注入真实
+ *        node 路径用。
+ *        ⚠️ 宿主尚未接入——`hosts/memora-vscode` 零注入点，故实际恒走缺省 `'node'`。
+ *        且真解不止「传个路径」：Electron 宿主（VS Code）的
  *        `process.execPath` 指向应用二进制，需配 `ELECTRON_RUN_AS_NODE` 一类环境变量才能以
  *        node 语义执行 `.mjs` **文件**，而内核只收路径、不收环境（边界铁律：内核不持有平台知识）。
- *        ⇒ **S3 真解 = 接口扩展**（宿主上报运行时环境，内核零解释转发），归 3.1.0 与 CMD-1 同批。
+ *        ⇒ 真解 = 接口扩展（宿主上报运行时环境，内核零解释转发），留待与宿主 shell 选型同批。
  *        此处保留该可选参数：接入点已就绪，扩展时无须再动调用链。
  */
 export async function runSkillScript(
@@ -100,7 +100,7 @@ export async function runSkillScript(
   cwd?: string,
   nodePath?: string,
 ): Promise<ScriptExecutionResult> {
-  // SKILL-S1 止血：win32 + shell + 非 .bat/.cmd → 在 spawn 前显式拒绝，
+  // win32 + shell + 非 .bat/.cmd → 在 spawn 前显式拒绝，
   // 不让假 status=0 进入 formatExecutionResult（喂给判据的事实必须为真）
   const guardError = guardWindowsShellScript(scriptPath, runtime, process.platform);
   if (guardError) {
@@ -128,13 +128,13 @@ export async function runSkillScript(
       try {
         child = childProcess.spawn(cmd, runArgs, {
           timeout: effectiveTimeout,
-          // 继承宿主用户环境变量（2026-09-08 决策：原 PATH/HOME 白名单过度裁剪——
+          // 继承宿主用户环境变量（不走 PATH/HOME 最小白名单——
           // 项目脚本读用户环境（API KEY/PATH/工作区变量）是合理需求；密钥默认经
           // SecretStorage→config 不经 env，env 回退模式下 key 在 env 属 owner 信任
           // 语义（见文件头安全模型）。对齐宿主 codeExecutor 持久会话环境语义）
           // 禁子进程彩色输出：FORCE_COLOR:0/NO_COLOR:1 源头禁色（对齐宿主 codeExecutor
           // 同构）；回流净化由 toolExecutor sanitizeExternalText 兜底剥残留 ANSI——
-          // 源头禁根因 + 通用防御两层不冲突（2026-09-08 同构评估采纳）
+          // 源头禁根因 + 通用防御两层不冲突
           env: { ...process.env, FORCE_COLOR: '0', NO_COLOR: '1' },
           stdio: ['ignore', 'pipe', 'pipe'],
           // 隐藏子进程窗口（Windows）：不传则每次执行弹 conhost 黑框（对齐宿主
@@ -192,7 +192,7 @@ export async function runSkillScript(
 
   const result = await runOnce(command, cmdArgs);
 
-  // L2（2026-09-08）+ L3（2026-09-17）：Windows python 不可用兜底链。python 命令在本机
+  // Windows python 不可用兜底链。python 命令在本机
   // 不可用有两种形态：① spawn ENOENT（现代 Python 只装 py 启动器、无 python 命令）；
   // ② 退出码 9009（spawn 命中 Windows Store 空壳启动器 python.exe，它启动即退出 9009；
   // 非 ENOENT，故不能只看 enoent 标记）。命中即在两个候选解释器间逐级替换重试：
@@ -211,7 +211,7 @@ export async function runSkillScript(
 }
 
 /**
- * L2 兜底判定：python runtime 在 Windows 下进入兜底链（纯函数，平台参数化可测）
+ * 兜底判定：python runtime 在 Windows 下进入兜底链（纯函数，平台参数化可测）
  *
  * @param runtime  脚本运行时
  * @param platform 当前平台（process.platform；参数化便于测试）
@@ -247,10 +247,9 @@ export function isPythonUnavailable(
 /**
  * 根据 runtime 解析执行命令：node/python 直接执行，shell 依平台用 cmd /c（Windows）或 sh -c
  *
- * @param nodePath node 可执行文件路径（S3，2026-09-22 起可选）：缺省 'node'（走 PATH 查找）。
+ * @param nodePath node 可执行文件路径（可选）：缺省 'node'（走 PATH 查找）。
  *        供给方（宿主）可注入真实 node 路径（如 VS Code 内置 node / 用户配置的 node），
- *        避免「系统无独立 node → .js/.mjs 技能脚本 ENOENT」。默认 'node' 保持向后兼容，
- *        不传与旧行为完全一致。
+ *        避免「系统无独立 node → .js/.mjs 技能脚本 ENOENT」。
  */
 function resolveCommand(
   runtime: ScriptRuntime,

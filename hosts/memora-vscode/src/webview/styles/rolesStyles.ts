@@ -270,7 +270,7 @@ export const rolesStyles = `
   #roles-root .team-modal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: var(--sp-2, 6px); }
   #roles-root .team-modal-title { font-weight: 600; font-size: var(--font-md, 12px); }
   #roles-root .team-modal-close { display: inline-flex; align-items: center; justify-content: center; padding: 0 4px; }
-  /* 关闭图标（原 × 字符的 SVG 替代，2026-09-19 图标语言收口）：按钮已改为纯图标容器，故弃 text 字号定义 */
+  /* 关闭图标（SVG）：按钮为纯图标容器，不设 text 字号定义 */
   #roles-root .team-modal-close svg { display: block; }
   #roles-root .team-modal-list { display: flex; flex-direction: column; gap: var(--sp-1, 3px); overflow-y: auto; min-height: 60px; }
   #roles-root .team-modal-item {

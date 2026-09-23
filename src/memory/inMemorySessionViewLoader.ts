@@ -199,8 +199,7 @@ export class InMemorySessionViewLoader implements ISessionViewLoader {
    * 获取会话元数据
    *
    * 直接走 sessionStore.getSessionMeta——ISessionStore 接口**必选**方法（sessionStore.ts 契约），
-   * 宿主与内核实现均齐备；历史「listSessionMetas 兜底」为类型兜底残留（接口已保证存在，
-   * 运行时存在性判断恒真），2026-09-20 站 50 收口。返回浅拷贝防外部改 meta 污染存储。
+   * 宿主与内核实现均齐备。返回浅拷贝防外部改 meta 污染存储。
    */
   private getSessionMeta(sessionId: string): SessionMeta | null {
     const meta = this.sessionStore.getSessionMeta(sessionId);

@@ -55,8 +55,8 @@ export function todayDate(): string {
 // sessionId 统一格式：`${date}-${session}`，date 固定 YYYY-MM-DD（10 位）。
 // session 名允许含连字符（如分叉产生的 main-b1），故拆解必须按「前 10 位日期」切、
 // 不能用 split('-')（会把含连字符的 session 名拆断，或把 'proj-alpha-beta' 误当日期）。
-// 此前内核/vscode/其他宿主各自手写 slice/split/正则实现，行为有细微差异；
-// 现收敛为下方两个纯函数并统一从此导出，宿主经 src/index.ts 引入，禁止再手写解析。
+// 内核/vscode/其他宿主禁止各自手写 slice/split/正则解析（各写一套会有细微行为差异）；
+// 统一以下方两个纯函数为唯一拆解口径并从此导出，宿主经 src/index.ts 引入，禁止再手写解析。
 //
 // 契约边界（本函数为纯拆解，不校验合法性）：
 //   - session 为空串：buildSessionId 返回纯 date（不产生尾 '-'）；

@@ -1,10 +1,10 @@
 /**
- * 项目内容搜索的「放宽词表」构造 —— R5 · 显式片段优先（SEARCH-1 · D1b）
+ * 项目内容搜索的「放宽词表」构造 —— 显式片段优先
  *
- * 用途：`search_project mode=content` 采用「精确优先 + 零命中回退」（D1）——先按整串字面量搜，
+ * 用途：`search_project mode=content` 采用「精确优先 + 零命中回退」——先按整串字面量搜，
  * 整串零命中才用本函数产出的词表做一次 OR 放宽。词表由内核产出、宿主执行（判定留在宿主）。
  *
- * 为什么不能直接复用 `extractKeywords(query)`（记 R0）——实测反例：
+ * 为什么不能直接复用 `extractKeywords(query)`——实测反例：
  * ```
  * extractKeywords("技术栈 FastAPI Next.js PostgreSQL")
  *   → ["技术","fastapi","next.js","postgresql","next","js"]
@@ -12,9 +12,9 @@
  * ```
  * 根因：`extractKeywords` 的英文补充 `input.match(/[a-z]{2,}/gi)` 在 `.` 处切断 `Next.js`；
  * 而碎片 `js` 会命中一切 `JSON` / `Node.js` 写法 —— 实测 20 条放宽命中里 **10 条纯靠 `js` 命中**
- * （假阴性换成假阳性，同样违反诚实化）。R5 把「空白分隔的片段」当一等公民，碎片噪声 10/20 → 0/20。
+ * （假阴性换成假阳性，同样违反诚实化）。本词表把「空白分隔的片段」当一等公民，碎片噪声 10/20 → 0/20。
  *
- * R5 不变量（测试断言对象）：
+ * 不变量（测试断言对象）：
  *   1. 空白分隔片段是一等公民：**不含 CJK 的片段原样保留**（`Next.js` 仍是 `Next.js`，不二次切分）；
  *   2. 含 CJK 的片段走内核分词 SSOT（`extractKeywords`），**不新造第二套分词器**；
  *   3. 词表中**不得出现原查询里不存在的 ASCII 碎片**（`next` / `js`）。

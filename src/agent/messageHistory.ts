@@ -213,13 +213,13 @@ export class MessageHistory {
    * 写入 RoundStore（refCount=0，未完成不登记会话）。**仅 complete 才 appendRoundId**——
    * 崩溃残留的 pending 轮是孤儿（refCount=0），可由 GC 清理，不污染会话视图。
    *
-   * 交互输入（TS-9）：opts.interactive 为真且 roundId 对应轮已存在（prepare 建 pending 或
+   * 交互输入：opts.interactive 为真且 roundId 对应轮已存在（prepare 建 pending 或
    * 暂停已完成轮）时，不再创建/覆盖新轮——按序追加到该轮 interactiveInputs，保问答闭环不分裂。
    *
    * @param content 用户输入内容
    * @param roundId 闭环节点轮次 ID（可选，交互输入必须携带 = appendUser 的 head roundId）
    * @param opts 交互输入选项（interactive=是否交互归属；kind=折叠块类型文案；
-   *        question/options=该回答所对的 ask_user 提问原文与候选选项，G26 随回答一并持久化）
+   *        question/options=该回答所对的 ask_user 提问原文与候选选项，随回答一并持久化）
    */
   async appendUser(
     content: string,
@@ -241,7 +241,7 @@ export class MessageHistory {
     // Round-based 路径：roundStore 注入且有 roundId 时写入
     if (roundId && this.roundStore) {
       try {
-        // 交互输入：同一问答闭环内续写（不新建/不覆盖轮），防闭环节点被交互输入分裂（TS-9）
+        // 交互输入：同一问答闭环内续写（不新建/不覆盖轮），防闭环节点被交互输入分裂
         if (opts?.interactive) {
           const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
           if (existing) {
@@ -251,7 +251,7 @@ export class MessageHistory {
               content,
               timestamp: message.timestamp,
               kind: opts.kind ?? 'supplement',
-              // G26：提问原文/选项随回答落盘（question-answer 携带；supplement/缺省不落，旧数据向后兼容）
+              // 提问原文/选项随回答落盘（question-answer 携带；supplement/缺省不落，旧数据向后兼容）
               ...(opts.question ? { question: opts.question } : {}),
               ...(opts.options && opts.options.length > 0 ? { options: opts.options } : {}),
             };
@@ -299,7 +299,7 @@ export class MessageHistory {
    * RoundStore 取回补全；Round 不存在（异常兜底）时创建独立 complete Round 并登记，
    * 保证用户消息不丢失。
    *
-   * 闭环节点续写（TS-9）：同一 roundId 已存在 assistantMessage（跨暂停-续跑：
+   * 闭环节点续写：同一 roundId 已存在 assistantMessage（跨暂停-续跑：
    * 暂停轮已把 ask_user 提问/中断半截落为 assistantMessage）时，旧段入 assistantLog，
    * assistantMessage 恒为末段（最终回答）——问答闭环不因续跑分裂新轮，且前序 LLM
    * 文本（如主动提问）不丢失。
@@ -349,7 +349,7 @@ export class MessageHistory {
         this.roundStore.save(completed);
         // 首次收场才登记会话引用（refCount 0→1 + 列表登记），崩溃残留 pending 保持孤儿可由 GC 清理。
         // 续写同一闭环节点（assistantLog：跨暂停-续跑多次 appendAssistant 到同一 roundId）不重复登记——
-        // 否则 roundIds 同 id 重复堆叠、refCount 虚增，会话视图出现「一个问答闭环多次登记」（TS-9 分裂残留）
+        // 否则 roundIds 同 id 重复堆叠、refCount 虚增，会话视图出现「一个问答闭环多次登记」
         // 判据 = isRoundSettled（非自写 'complete'）：已是终态（含 interrupted）就不得再登记一次
         const isReappend = existing !== null && existing !== undefined && isRoundSettled(existing.status);
         if (!isReappend) {
@@ -401,18 +401,18 @@ export class MessageHistory {
   }
 
   /**
-   * 中断轮收场：把「未正常完成」的轮升级为正常 stop turn 并入会话（T1，2026-09-09）。
+   * 中断轮收场：把「未正常完成」的轮升级为正常 stop turn 并入会话。
    *
    * 语义定案（step-atomic-persistence.md §一·五）：崩溃残留轮（pending/error + refCount=0 + 有已
    * 落盘 processEvents）= 等同于用户点「停止」的正常 turn——可删、入会话 roundIds、作后续上下文，
    * **不是**半成品草稿/孤儿。宿主经 `IRoundStore.listInterruptedRecent` 打捞后再调本方法完成
    * 「升级登记」，恢复为普通 turn 渲染无需特殊草稿卡。
    *
-   * **两个调用时机（2026-09-15 补充第二处）**：
-   * 1. 崩溃/断电后重启——宿主 `chatPanel.upgradeInterruptedRounds` 打捞后调用（原设计时机）；
+   * **两个调用时机**：
+   * 1. 崩溃/断电后重启——宿主 `chatPanel.upgradeInterruptedRounds` 打捞后调用；
    * 2. **运行期非正常收场**——`seed/orchestrator.act()` 在中断（用户取消/超时）与失败
    *    （LLM/网络错误）两条路径上就地调用（SSOT 收口，见该处注释）。运行期即收尾可避免
-   *    留下 pending 孤儿轮、须等下次重启才打捞（真实故障：LLM 4xx 中断的长任务轮）。
+   *    留下 pending 孤儿轮、须等下次重启才打捞（LLM 4xx 中断的长任务轮即此类）。
    *    依据 = `memory/roundStore.ts` RoundStatus 文档「运行时失败不翻状态机，一律按中断处理」。
    *
    * 收场约定与 appendAssistant 同一真理源（refCount 0→1 + appendRoundId + status interrupted +

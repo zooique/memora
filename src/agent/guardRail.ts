@@ -1,14 +1,14 @@
 /**
  * 守卫抽象（GuardRail）—— loop 运行时前置拦截型护栏的统一真理源
  *
- * 背景（AD-迁移自 loop 散落护栏）：loop.ts 曾把「联网搜索上限 / 提问上限 / 同路径连写止损 /
- * 读取失败硬闸 / 重复读取拦截」5 种前置拦截型护栏以「内联 if + 独立计数字段 + 各自文案 + 各自阈值」
- * 散布在主循环里，每加一种护栏就要改主循环、加字段、加 reset、加阈值，永远打补丁。
+ * 背景：联网搜索上限 / 提问上限 / 同路径连写止损 / 读取失败硬闸 / 重复读取拦截
+ * 这 5 种前置拦截型护栏统一走注册式 guard，避免以「内联 if + 独立计数字段 + 各自文案 +
+ * 各自阈值」散落在主循环里、每加一种护栏就改一遍主循环。
  *
  * 本模块收敛目标：**新增一种护栏 = 注册一个 guard（matches/shouldBlock/文案/阈值/life/可选 write 钩子），
  * 主循环零改动**。护栏判定逻辑、判定顺序、提示词、阈值全部收敛到本文件，消除散落重复。
  *
- * 防重双轨正交登记（P1-1 收口，二者粒度不同不可合并）：
+ * 防重双轨正交登记（二者粒度不同不可合并）：
  * - a（批级·软提示）：duplicateToolCallInterceptor，作用于**整批工具调用**（跨迭代哈希），
  *   语义 = 叙事级死循环提醒（默认实现只返 ok/warn，永不 block），见 loop.handleIteration；
  * - b（主体级·硬拦）：本文件 read_dedup 护栏，作用于**同一读取主体**（闭环内同工具+同参数），
@@ -159,7 +159,7 @@ function parseWritePath(argsJson: string): string | null {
 
 // ---------------------------------------------------------------------------
 // 衔接提示词统一真理源（SSOT）：命中文案收敛于此，格式统一 `[TAG] 已…/请…`
-// 运行时命中时 renderPrompt(promptId, promptArgs) 即时渲染；systemPrompt 只放通用声明（S6 注入）。
+// 运行时命中时 renderPrompt(promptId, promptArgs) 即时渲染；systemPrompt 只放通用声明、不放命中文案。
 // ---------------------------------------------------------------------------
 export const GUARD_RAIL_PROMPTS: Readonly<Record<GuardRailPromptId, string>> = {
   // 占位：{limit}=搜索上限；{tail}=补充指引（由 promptArgs 提供）

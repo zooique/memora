@@ -4,8 +4,8 @@
  * 对应大厂"微压缩层"设计（如 Claude Code MicroCompact、LangChain Deep Agents Offloading）：
  * 在每轮对话前静默执行，将旧的 tool_result 替换为占位符/摘要，回收上下文空间。
  *
- * 注：超大工具结果「卸载到文件系统」已不在本层——卸载级整级删除（2026-09-13），
- * 改为在**入口关**（AgentLoop.appendToolMessage）落盘，原语见 src/agent/toolResultOffload.ts。
+ * 边界：超大工具结果不在本层卸载——在**入口关**（AgentLoop.appendToolMessage）落盘，
+ * 原语见 src/agent/toolResultOffload.ts。
  */
 
 import type { Message } from '@/llm/provider.js';

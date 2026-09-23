@@ -5,15 +5,14 @@
  *
  * 预算公式（容量来源 × 分配偏好 → 派生轮数）：
  *   可用预算 = Provider窗口 − 固定开销(system+persona+rules+技能L1+工具schema) − 输出预留(15~20%)
- *   顶级锚点空间 = 本轮用户输入（独立划块，永不压缩；已收敛为仅当前输入，
- *     首个回答预留为多 turn 编排遗留，2026-09-11 退役）
+ *   顶级锚点空间 = 本轮用户输入（独立划块，永不压缩；仅含当前输入——「首个回答」预留属
+ *     多 turn 编排需求，不在本预算口径内）
  *   剩余预算 = 可用预算 − 顶级锚点空间
  *   完整对话层 = 剩余预算，从最近往回塞到 ~90% 止（先装，锚点不动；留 buffer 防抖）
  *   动态轮数 = 完整对话层能装几轮（派生值，不显式声明）
  *
- * 注：记忆维度**已整体退役**——记忆自动注入（2026-09-09）与记忆层 cap 常量
- * `DEFAULT_MEMORY_CAP_RATIO`（2026-09-10）先后移除。记忆改为纯工具召回
- * （`search_memories`），prepare 不再注入任何记忆、预算无记忆分段，故本模块无记忆概念。
+ * 注：本模块无记忆维度——记忆走纯工具召回（`search_memories`），prepare 不注入任何记忆、
+ * 预算无记忆分段（无记忆自动注入通道、无记忆层 cap 常量）。
  *
  * 纯函数、零依赖：token 估算由调用方（AgentLoop/ContextManager）提供，本模块只做数值派生。
  * 装配前判负（洞 3）亦基于本模块的剩余预算阈值判定。
@@ -34,7 +33,7 @@ export const DEFAULT_OUTPUT_RESERVE_RATIO = 0.15;
 /** 完整对话层填充比例默认值（~90% 止，留 10% buffer 防抖） */
 export const DEFAULT_DIALOGUE_FILL_RATIO = 0.9;
 
-/** 顶级锚点倍数：已收敛为仅当前用户输入（首个回答预留为多 turn 编排遗留，退役） */
+/** 顶级锚点倍数：仅当前用户输入（无「首个回答」预留——该预留属多 turn 编排需求） */
 export const DEFAULT_ANCHOR_ANSWER_FACTOR = 1;
 
 /** 最小可运行对话层余量（token）：剩余预算低于此值判定「输入过大」装配前判负。
@@ -60,7 +59,7 @@ export interface ContextBudgetInput {
  *
  * 唯一真理源 = 用户 per-LLM 配置的上下文上限（宿主装配时传入）；未配置 → 回退内核默认
  * DEFAULT_MAX_CONTEXT_TOKENS（120_000）。内核预算路径只吃单一数字 maxContextTokens，
- * 不认 provider/用户双来源、不施加全局封顶——用户对自己填写的参数负责（见 ADR-029）。
+ * 不认 provider/用户双来源、不施加全局封顶——用户对自己填写的参数负责。
  */
 export function resolveContextWindow(window?: number): number {
   return window ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;

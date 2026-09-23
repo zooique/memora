@@ -36,8 +36,8 @@ export const tokens = `
     --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.15);
     --shadow-card-focus: 0 4px 14px rgba(0, 0, 0, 0.25), 0 0 0 2px rgba(14, 99, 156, 0.35);
     --shadow-modal: 0 4px 16px rgba(0, 0, 0, 0.3);
-    --shadow-toast: 0 2px 8px rgba(0, 0, 0, 0.3); /* 全局通知 toast 浮层阴影（2026-09-21 收敛裸值） */
-    --overlay-mask: rgba(0, 0, 0, 0.4); /* 模态遮罩底（config modal-mask 与 roles team-modal 共用，2026-09-21 收敛镜像漂移） */
+    --shadow-toast: 0 2px 8px rgba(0, 0, 0, 0.3); /* 全局通知 toast 浮层阴影 */
+    --overlay-mask: rgba(0, 0, 0, 0.4); /* 模态遮罩底（config modal-mask 与 roles team-modal 共用） */
 
     /* === L2 语义令牌：表面 === */
     --surface-page: var(--vscode-editor-background, #1e1e1e);
@@ -71,8 +71,8 @@ export const tokens = `
     --feedback-info-fg: var(--vscode-inputValidation-infoForeground, #75beff);
     --feedback-error-bg: var(--vscode-inputValidation-errorBackground, #442726);
     --feedback-error-fg: var(--vscode-inputValidation-errorForeground, #f48771);
-    --feedback-error-toast-bg: rgba(200, 60, 50, 0.18); /* settings toast 错误态底（2026-09-21 收敛裸值） */
-    --feedback-error-toast-border: rgba(244, 135, 113, 0.4); /* settings toast 错误态边框（2026-09-21 收敛裸值） */
+    --feedback-error-toast-bg: rgba(200, 60, 50, 0.18); /* settings toast 错误态底 */
+    --feedback-error-toast-border: rgba(244, 135, 113, 0.4); /* settings toast 错误态边框 */
     --feedback-warn-bg: var(--vscode-inputValidation-warningBackground, rgba(196, 160, 0, 0.15));
     --feedback-warn-fg: var(--vscode-descriptionForeground, #d7ba7d);
     --feedback-warn-accent: var(--vscode-charts-yellow, #d7ba7d);
@@ -116,14 +116,14 @@ export const tokens = `
     --surface-ai-avatar: var(--vscode-badge-background, rgba(14, 99, 156, 0.25));
     --surface-thought: var(--vscode-editorWidget-background, #252526);
 
-    /* === L2 语义令牌：技能来源（skillsStyles 引用，2026-08-24 收敛裸值） ===
+    /* === L2 语义令牌：技能来源（skillsStyles 引用） ===
      * 复用已有语义令牌，不造裸色：内置技能 = accent（品牌/当前），用户技能 = status-pass（个人/通过）。 */
     --skill-agent-accent: var(--accent, #0e639c);
     --skill-user-accent: var(--status-pass, #4ec9b0);
-    /* 角色包技能来源（2026-08-25 三分类新增）：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)
+    /* 角色包技能来源：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)
      * 改用 VSCode charts.purple，跟随主题 */
     --skill-rolepack-accent: var(--vscode-charts-purple, #a78bfa);
-    /* 技能健康色（G22 写→验→用，2026-08-25）：error 未生效 / warn 可优化
+    /* 技能健康色：error 未生效 / warn 可优化
      * 改用 VSCode charts.yellow，跟随主题 */
     --skill-health-error: var(--text-error, #f14c4c);
     --skill-health-warn: var(--vscode-charts-yellow, #d9a22b);
@@ -136,16 +136,16 @@ export const tokens = `
     --accent-bg-subtle: var(--vscode-editor-inactiveSelectionBackground, rgba(14, 99, 156, 0.08));
     --accent-bg-active: var(--vscode-button-secondaryHoverBackground, rgba(14, 99, 156, 0.1));
 
-    /* === L2 语义令牌：上下文占用充能色（chatStyles 引用，2026-08-30 收敛裸值） ===
-     * 占用指示器现为圆环充能形态（单弧随占用率填充），只需一个充能色；令牌沿用 dialogue
-     * 命名——占用增长主要来自对话层。若恢复「按数据层分段着色」，按
-     * --occ-rolepack / --occ-memory / --occ-input / --occ-output 命名重建（原 5 段令牌已随形态演进退役）。 */
+    /* === L2 语义令牌：上下文占用充能色（chatStyles 引用） ===
+     * 占用指示器为圆环充能形态（单弧随占用率填充），只需一个充能色；令牌命名 dialogue
+     * ——占用增长主要来自对话层。若恢复「按数据层分段着色」，按
+     * --occ-rolepack / --occ-memory / --occ-input / --occ-output 命名重建。 */
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
 
-    /* === L2 语义令牌：遗留引用收口（2026-09-19 全量审查） ===
-     * 此前多个样式文件以 var(--xxx, 裸值) 引用 tokens 未定义的「幽灵令牌」（仅靠 fallback
-     * 兜底，tokens 变更不跟随）——本块统一补定义，值取既有主要 fallback，视觉零变化。
-     * 收口后此类令牌与其它语义令牌同源：样式文件引用即契约，tokens 修改全局跟随。 */ 
+    /* === L2 语义令牌：长尾引用补齐 ===
+     * 样式文件以 var(--xxx, 裸值) 引用的令牌须在此统一定义——若本文件未定义、仅靠
+     * fallback 兜底，tokens 变更不跟随（坑）。本块定义值与各引用处 fallback 保持一致；
+     * 样式文件引用即契约，tokens 修改全局跟随。 */ 
     --border: var(--vscode-panel-border, rgba(128, 128, 128, 0.25));
     --border-subtle: var(--vscode-panel-border, rgba(128, 128, 128, 0.2));
     --focus: var(--vscode-focusBorder, #007fd4);
@@ -181,7 +181,7 @@ export const tokens = `
     --input-wrap-min-h: 128px; /* 输入卡片最小总高（textarea 72 + footer ~56） */
     --input-min-h: 72px;       /* textarea 默认双行舒适高度（内容区 ~48px = 2.3 行） */
     --input-max-h: 180px;      /* textarea 展开上限（~7 行，超限显示滚动条） */
-    /* 注：--input-footer-h 已退役（Footer 现由 flex column 自适应高度，不再用固定 min-height）。
+    /* 注：不设 --input-footer-h（Footer 由 flex column 自适应高度，不用固定 min-height）。
      * 参考值：56px (Actions 28 + Context 24 + gap 4) */
     --control-h: 28px;         /* 输入区控制件统一高度 */
   }

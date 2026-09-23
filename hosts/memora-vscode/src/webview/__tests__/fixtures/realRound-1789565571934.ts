@@ -444,7 +444,7 @@ export function buildReplayTurnUpdate(roundView: RoundView = buildRoundView()): 
  *
  * 事件展开只此一份（expandEvents），本函数叠加协议消息层：流式 chunk（withStreaming）、
  * 任务表推进（plan_update，tool_start 后随工具结果推进）、收口 done（withDone）。
- * 消息顺序与原实现严格一致（chunk → tool_start → tool_result → plan_update）。
+ * 消息顺序固定为（chunk → tool_start → tool_result → plan_update）。
  */
 export function buildRealRoundTimeline(opts: TimelineOptions = {}): TimelineMsg[] {
   const msgs: TimelineMsg[] = [];

@@ -170,7 +170,7 @@ export class SecurityGuard {
     confirmScripts: boolean = false,
     /** Agent 级配置目录（personas/rules/skills 所在目录） */
     configDir?: string,
-    /** Agent 级数据目录（memora.db 所在目录；向量子存储已随 B0 收编移除） */
+    /** Agent 级数据目录（memora.db 所在目录） */
     agentDataDir?: string,
   ) {
     // 基准信任根用真实路径（resolveRealpath），与 assertPathAllowed 对齐，避免前缀匹配错位

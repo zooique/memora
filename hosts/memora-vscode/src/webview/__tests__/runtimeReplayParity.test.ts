@@ -1,17 +1,17 @@
 /**
- * 运行时 × 重放对拍测试（M3b-2b-3：消费 rounds + 对拍入库；M5b-3 重放真源切 turn_update.rounds）
+ * 运行时 × 重放对拍测试（消费 rounds + 对拍入库；重放真源为 turn_update.rounds）
  *
  * 同一真实 fixture（round-1789565571934）走两条渲染路，断言 DOM 轮级语义等价：
  *   - 运行时流式路：`{type:'user'} + buildRealRoundTimeline({withStreaming, withDone})`
  *     （process_event / chunk / plan_update / done 消息流，模拟实时生成）
  *   - 重放回合快照路：`buildReplayTurnUpdate(buildRoundView())`
- *     （单条 turn_update，replay:true + rounds 承载——M5b-3 后重放真源，替代旧 user / replay_events /
+ *     （单条 turn_update，replay:true + rounds 承载——重放真源，无 user / replay_events /
  *       assistant 消息风暴；webview 端 renderReplayFromRounds 整批重建）
  *
  * §1 数据层证据：rounds（RoundView）形状即重放渲染输入，replayTurnUpdate 只加协议壳（replay 标记）——
- *     宿主 postTurnUpdate(undefined, true) 投递的就是这份 rounds（方案 M5b-3 定义）。
+ *     宿主 postTurnUpdate(undefined, true) 投递的就是这份 rounds。
  * §2 轮级语义对拍（4 字段）：两路渲染后提取「轮级语义描述」（用户气泡 / AI 正文 / 工具行数 / 折叠块），
- *     断言等价——这是 M5b-3 删旧后「重放由 rounds 驱动」可安全替换流式重建的地基。
+ *     断言等价——这是「重放由 rounds 驱动」可安全替换流式重建的地基。
  * §3 红线守护：非 complete 轮（status=pending）不派生 assistant 正文。
  *
  * plan 常驻条为**合理差异**（重放路不还原任务表看板，既有宿主行为），排除在对拍断言外。

@@ -78,7 +78,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
   /**
    * 能力位赋值（内置为只读，外部不可改）：默认 true 保留存量云 LLM「有工具集即走原生 FC」行为，
-   * 本地运行时（Ollama/LM Studio 等）无原生 FC 须在宿主配置时显式置 false（2026-09-14 阶段0）。
+   * 本地运行时（Ollama/LM Studio 等）无原生 FC 须在宿主配置时显式置 false。
    * @param config 构造时的能力位声明（undefined → 回落默认）
    */
   private _setCapabilities(config: OpenAICompatibleConfig): void {
@@ -90,8 +90,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
   /** 默认请求超时：120 秒 */
   private static readonly DEFAULT_TIMEOUT_MS = 120_000;
 
-  /** tool_call id 兜底的自增序列（G3，2026-09-15）：id 缺失时给出**跨批唯一**的占位，
-   *  而非旧的本批内下标 `call_${idx}`——否则同一 turn 的两次迭代各产 `call_0`，
+  /** tool_call id 兜底的自增序列：id 缺失时给出**跨批唯一**的占位——
+   *  本批内下标 `call_${idx}` 会让同一 turn 的两次迭代各产 `call_0`，
    *  服务端按 tool_call_id 配对时错位。实例级自增，杜绝模块级全局态（架构约束）。 */
   private toolCallIdSeq = 0;
 
@@ -288,7 +288,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
 
     // 流式 tool_calls 累积器：同一 tool_call 的 name/arguments 可能跨多个 delta 分片到达
     const toolCallAccumulators = new Map<number, { id: string; name: string; arguments: string }>();
-    // 已发射过「工具意图预告」的累积器 idx（2026-09-17）：同一工具只提前上报一次，防 delta 风暴。
+    // 已发射过「工具意图预告」的累积器 idx：同一工具只提前上报一次，防 delta 风暴。
     // 必须是本生成器局部变量——随流结束/中断自然回收，防跨请求泄漏。
     const emittedPendingIndexes = new Set<number>();
 
@@ -301,9 +301,9 @@ export class OpenAICompatibleProvider extends LlmProvider {
     // `reader.cancel(reason)` 的语义是「关闭流并让**挂起的 read() 以 `{done:true}` 收尾**」，
     // reason **不会**出现在任何抛出物上（WHATWG 规范行为；Node 22 / undici 实测：cancel 后
     // read 产 `{done:true}`；对照 `AbortController.abort(reason)` 才会让 read reject reason）。
-    // 旧实现把 cancel 当作「让 read 抛错」→ 超时被读成「流正常结束且零产出」→ 落「空响应重试」
-    // 通道 → **超时被静默吞成重试**。真机故障（2026-09-15 09:03:22→09:08:27，
-    // `round-1789462982489`）：中断源在 reasoning 结束后停摆，60s（chunk 间）+120s+120s
+    // 若把 cancel 当作「让 read 抛错」→ 超时被读成「流正常结束且零产出」→ 落「空响应重试」
+    // 通道 → **超时被静默吞成重试**（坑）。真机故障实证（`round-1789462982489`）：
+    // 中断源在 reasoning 结束后停摆，60s（chunk 间）+120s+120s
     // （两次重试首 chunk）三段超时全被吞成静默重试，期间**零 UI 事件**（tokenOut 恒 0），
     // 用户干等 5 分 5 秒后手动取消。
     // 故看门狗只负责「以真超时驳回当前读」；底层连接的释放仍由 finally 的 reader.cancel() 负责。
@@ -432,7 +432,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
             // delta.content 可能为 null（tool_calls 场景），truthy 检查即可
             if (choice.delta?.content) chunk.content = choice.delta.content;
             // 模型思考（协议字段 reasoning_content → LlmChunk.thought）：增量透传，与 content 并列
-            // （R3 增量语义，消费侧自行累积）。thought 命名避开路由 TaskType='reasoning' 与相位 'thinking'。
+            // 增量语义：消费侧自行累积。thought 命名避开路由 TaskType='reasoning' 与相位 'thinking'。
             if (choice.delta?.reasoning_content) chunk.thought = choice.delta.reasoning_content;
 
             // 累积 tool_calls delta
@@ -444,7 +444,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
                 if (tc.function?.name) acc.name += tc.function.name;
                 if (tc.function?.arguments) acc.arguments += tc.function.arguments;
                 toolCallAccumulators.set(idx, acc);
-                // 工具意图预告（2026-09-17）：name 首次由空变非空即上报，不必等 finish_reason——
+                // 工具意图预告：name 首次由空变非空即上报，不必等 finish_reason——
                 // 写文件等大参数工具的参数生成段可能数十秒，UI 需提前显示「准备中」工具行。
                 // 每 idx 只发一次（emittedPendingIndexes 去重防风暴）；id 缺失时按与最终构建
                 // 同一规则合成并**写回 acc.id**（acc.id || `call_${seq}`），保证 finish_reason

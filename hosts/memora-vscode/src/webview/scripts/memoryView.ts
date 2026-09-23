@@ -124,7 +124,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     items.forEach((m) => list.appendChild(buildCard(m)));
   }
 
-  /** 渲染搜索结果（搜索模式专用，不分页——命中 ≤ 20 条，pager 已停用） */
+  /** 渲染搜索结果（搜索模式专用，不分页——命中 ≤ 20 条） */
   function renderSearch(hits: readonly MemoryItemDto[], query: string): void {
     if (!hits || hits.length === 0) {
       list.textContent = '';

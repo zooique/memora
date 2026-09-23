@@ -69,7 +69,7 @@ const RUN_CODE_RESULT_MAX_LEN = 20_000;
 // 宁尝试执行，能否跑由宿主执行器裁决）。
 
 /**
- * 语言名收敛为脚本运行时白名单三档（node/python/shell）
+ * 脚本运行时白名单三档（node/python/shell）
  *
  * run_project_script 的内核子进程执行器只接受三档运行时；
  * 从扩展名推断的语言若落在白名单外一律兜底 'node'（推断即可信来源，不规则值不回传执行器）。
@@ -93,7 +93,7 @@ const PROJECT_SEARCH_GLOB_MAX_LEN = 1000;
 export const PROJECT_SEARCH_RESULT_MAX_LEN = 100;
 
 /**
- * search_project 预算下探档位（G4 预算联动，2026-08-31）
+ * search_project 预算下探档位（与对话预算联动）
  *
  * 剩余对话预算（token）越紧，结果条数上限越低——防止搜索结果撑爆上下文。
  * 与 builtinTools 的 maxResults「默认 20 / 最大 100」语义叠加（取更小者）：
@@ -111,7 +111,7 @@ const SEARCH_BUDGET_TIERS: ReadonlyArray<{ minRemaining: number; cap: number }> 
  * 按剩余对话预算下探 search_project 结果条数上限
  *
  * @param remainingTokens 剩余对话预算（token）；undefined 表示无预算信息（未装配 loop / 未 prepare）
- * @returns 预算档位 cap；无预算信息时返回硬上限（保持原行为，不做下探）
+ * @returns 预算档位 cap；无预算信息时返回硬上限（不下探）
  */
 function computeBudgetCappedMaxResults(remainingTokens: number | undefined): number {
   if (remainingTokens === undefined) return PROJECT_SEARCH_RESULT_MAX_LEN;
@@ -120,17 +120,17 @@ function computeBudgetCappedMaxResults(remainingTokens: number | undefined): num
 }
 
 /**
- * search_project（content 模式）结果格式化 —— 诚实化收口（SEARCH-1）
+ * search_project（content 模式）结果格式化 —— 诚实化收口
  *
  * 三态分流（对齐 ripgrep 的 exit 0 / 1 / 2）：
- *   - `failed`              → 检索**未完成**，不得表述为"未找到"（F3：搜索坏了 ≠ 项目里没有）；
- *   - `matches.length === 0` → 零命中，但必须交代「这个零为什么可以信」：截断（F2）/ 只检索了前一部分（F4）/ 读取失败（P5）/ 已放宽（F1）；
- *   - 有命中               → 列结果 + 标注放宽 / 截断 / 单文件上限（F5/F6）。
+ *   - `failed`              → 检索**未完成**，不得表述为"未找到"（检索失败：搜索坏了 ≠ 项目里没有）；
+ *   - `matches.length === 0` → 零命中，但必须交代「这个零为什么可以信」：结果截断 / 只检索了前一部分（部分检索）/ 读取失败 / 已放宽匹配；
+ *   - 有命中               → 列结果 + 标注放宽 / 截断 / 单文件上限。
  *
  * ⚠️ 放宽用词**只**从 `result.termsUsed` 取（**不**回退到调用方自己下发的 `terms`）：两份副本要
  * 保持一致就是双轨镜像；唯一真值 = 宿主回报的"实际用了哪些词"。
  * ⚠️ 文案不重复宿主内部的魔法数（如单文件上限 3）：内核从不扫描，把宿主的内部预算写进内核文案
- * 就是跨层常量镜像（D4 判定律），故只说"被单文件上限截断"而不说"仅显示前 3 条"。
+ * 就是跨层常量镜像，故只说"被单文件上限截断"而不说"仅显示前 3 条"。
  */
 function formatProjectTextSearch(result: ProjectTextSearchResult, query: string): string {
   if (result.failed) {
@@ -193,7 +193,7 @@ function formatProjectTextSearch(result: ProjectTextSearchResult, query: string)
 }
 
 /**
- * name 模式检索结果格式化（SEARCH-1 · 语义对齐 content 的两轮放宽）
+ * name 模式检索结果格式化（语义对齐 content 的两轮放宽）
  *
  * name 模式两轮语义：先按 query 原样作 glob 精确匹配；零命中且 query 不含 glob 元字符、
  * 且内核下发了 `terms` 时，宿主按名称子串逐词 OR 放宽。故零命中同样要交代这个零是否可信：
@@ -259,7 +259,7 @@ const RESOURCE_CONTENT_MAX_LEN = 50_000;
  * @returns 净化后的文本
  */
 export function stripControlChars(text: string): string {
-  // 去 ANSI 转义序列（CSI：ESC [ 参数 + 终结符；2026-09-08 env 继承后子进程可能继承
+  // 去 ANSI 转义序列（CSI：ESC [ 参数 + 终结符；子进程经 env 继承可能拿到
   // FORCE_COLOR 输出色码，单剥 ESC 会留 `[33m` 残渣——整个序列须剥净）
   const withoutAnsi = text.replace(/\u001B\[[0-9;?]*[a-zA-Z]/g, '');
   // 去控制字符：保留可打印字符（含 \t 制表符），其余控制字符移除
@@ -355,7 +355,7 @@ interface PlanItemIdPlanRef {
 }
 
 /**
- * 解析 task_table_update 的 step_id 为真实步骤 uuid（2026-09-06 寻址契约收口——唯一解析点）。
+ * 解析 task_table_update 的 step_id 为真实步骤 uuid（唯一解析点）。
  *
  * LLM 可见的步骤标识有三种来源，缺一不可达即断链：
  *   1. task_table_write 返回的短 id（uuid 前 8 位，恒 8 hex；见 assembler writePlan 渲染）；
@@ -411,11 +411,10 @@ function resolvePlanItemId(planItemId: string, plan: PlanItemIdPlanRef[]): PlanI
  *
  * 特权工具（不在此集，受 toolWhitelist 过滤）：web_search / web_fetch（外部网络，
  * 有真实副作用面，判据 A），run_code（LLM 现写任意代码）。
- * task_table_write / task_table_update 曾在此特权集（需 task:plan capability 解锁）——
- * 2026-09-16 用户拍板改为**直接暴露**：任务表是内核 agent 完成多步任务的**必要基建**
- * （与 compress_context / remember_intel 同属"内核自有上下文维护"判据），不应由角色包
- * 能力声明决定是否可用（否则无 task:plan 能力时，引导语提示用任务表而工具不可见 = 死胡同，
- * LLM 只能放弃改用 write_file 硬拆，实测 round-1789531625618 thought seq244-300 铁证）。
+ * task_table_write / task_table_update **直接暴露**：任务表是内核 agent 完成多步任务的
+ * **必要基建**（与 compress_context / remember_intel 同属"内核自有上下文维护"判据），
+ * 不应由角色包能力声明决定是否可用——否则无 task:plan 能力时，引导语提示用任务表而工具
+ * 不可见 = 死胡同，LLM 只能放弃改用 write_file 硬拆。
  */
 export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   // 项目内读写（判据 A；写删的危险度由 confirmWrites/guest 确认层管）
@@ -429,7 +428,7 @@ export const DEFAULT_EXPOSED_TOOLS: ReadonlySet<string> = new Set([
   'list_sessions',
   'compress_context', // ⚠️ loop 专有通道：不在本文件 execute() switch，由 loop 分派（AgentLoop.executeToolCalls 内 compressContext 三元分支，与 remember_intel 同分支）
   'remember_intel', // 情报区写回（LLM 私有笔记累积，随每轮装配注入）——上下文维护基建；⚠️ loop 专有通道：不在本 execute() switch，由 loop 分派（loop.ts handleRememberIntel）
-  // 任务表管理（2026-09-16 直接暴露：内核多步任务必要基建，非角色包可选能力）
+  // 任务表管理（直接暴露：内核多步任务必要基建，非角色包可选能力）
   'task_table_write',
   'task_table_update',
   'ask_user', // ⚠️ loop 专有通道：不在本 execute() switch，由 loop.handleAskUser 检出挂起（loop.ts willSuspendForAsk → handleAskUser）
@@ -464,7 +463,7 @@ export class ToolExecutor {
   private onToolsChanged?: () => void;
 
   /**
-   * 工具白名单（capabilities → 工具映射产物，M2.1 → 特权声明模型扩展）
+   * 工具白名单（capabilities → 工具映射产物，即特权声明模型）
    *
    * - `null`（默认）：全部暴露——未声明 capabilities 的角色包/无角色包时保持现状；
    * - `string[]`：在 DEFAULT_EXPOSED_TOOLS（默认常驻豁免集）之上，追加白名单内的特权工具；
@@ -495,11 +494,11 @@ export class ToolExecutor {
   /** 项目搜索提供者（可选，注入时启用 search_project 工具；等价 IDE 全局搜索） */
   private readonly projectSearchProvider?: IProjectSearchProvider;
 
-  /** node 可执行文件路径（S3，可选）：run_project_script 的 node runtime 分支注入真实 node 路径 */
+  /** node 可执行文件路径（可选）：run_project_script 的 node runtime 分支注入真实 node 路径 */
   private readonly scriptNodePath?: string;
 
   /**
-   * 剩余对话预算提供者（可选，G4 预算联动，2026-08-31）
+   * 剩余对话预算提供者（可选，预算联动）
    *
    * 由 agent 装配时注入（读取 loop 最近一轮 prepare 的剩余预算），
    * 供 search_project 在预算紧张时下探结果条数上限。
@@ -571,7 +570,7 @@ export class ToolExecutor {
   /**
    * register_work 作品索引登记回调（由 agent 装配时注入，处理 register_work）
    *
-   * 作品投影（2026-08-26 剪枝）：用户主动触发登记一件作品（文档/代码/笔记）
+   * 作品投影：用户主动触发登记一件作品（文档/代码/笔记）
    * 为项目级 JSON 索引，写 <memoraDir>/work-projections.json（纯元数据指针）。
    * 委托装配层注入的回调，避免 ToolExecutor 与 WorkProjectionManager 强耦合
    * （与 read_skill 同款注入模式）。未注入时 register_work 返回不可用提示。
@@ -602,14 +601,14 @@ export class ToolExecutor {
     codeExecutionProvider?: ICodeExecutionProvider,
     /** 项目搜索提供者（可选，不传则不启用 search_project 工具） */
     projectSearchProvider?: IProjectSearchProvider,
-    /** node 可执行文件路径（S3，可选）：run_project_script 的 node runtime 分支注入真实 node 路径 */
+    /** node 可执行文件路径（可选）：run_project_script 的 node runtime 分支注入真实 node 路径 */
     scriptNodePath?: string,
   ) {
     this.webSearchProvider = webSearchProvider;
     this.fetchProvider = fetchProvider;
     this.codeExecutionProvider = codeExecutionProvider;
     this.projectSearchProvider = projectSearchProvider;
-    // L3 脚本执行 node 路径（S3）：存实例属性，run_project_script 分支透传给内核执行器
+    // 脚本执行 node 路径：存实例属性，run_project_script 分支透传给内核执行器
     this.scriptNodePath = scriptNodePath;
     // 转存 SecurityGuard 引用：执行型工具（run_code/run_project_script）执行前确认用
     this.security = security;
@@ -624,7 +623,7 @@ export class ToolExecutor {
   }
 
   /**
-   * 注入 MemoryInspector，启用 search_memories 的纯关键词检索后端（B0 收编后无向量后端）。
+   * 注入 MemoryInspector，启用 search_memories 的纯关键词检索后端（无向量后端）。
    * assembler 中它依赖 loop/history、后于 toolExec 构造，故用「构造后注入」——装配期经
    * toolExec.setMemoryInspector(...) 接线，未注入时 search_memories 保持基础内存查询行为。
    *
@@ -637,7 +636,7 @@ export class ToolExecutor {
   /**
    * 注入 memoryRecalled 事件发射回调（宿主感知「LLM 查询记忆命中 N 条」，§2.4 保留改语义定案）。
    * 转发给 builtinHandlers：search_memories 命中记忆时触发，为全库**唯一** memoryRecalled
-   * 发射位（warmRecall 恢复例外已随跨重启恢复链 2026-09-10 整体退役）。
+   * 发射位（无 warmRecall 等其他发射路径）。
    *
    * @param callback 命中回调（count 命中条数 / query 检索词），缺省注入则工具静默（无宿主 no-op）
    */
@@ -744,7 +743,7 @@ export class ToolExecutor {
   }
 
   /**
-   * 设置工具白名单（M2.1：换角色 → 工具集切换）
+   * 设置工具白名单（换角色 → 工具集切换）
    *
    * 角色包激活/切换时由 Agent 调用（getActiveCapabilities → resolveCapabilityTools），
    * 把中立能力声明映射为 memora 工具白名单。变更后触发 onToolsChanged，
@@ -765,7 +764,7 @@ export class ToolExecutor {
   /**
    * 获取所有工具定义（getter 风格，与 persona/skill 一致）
    *
-   * 白名单语义（M2.1 → tool-exposure-model 特权声明模型）：
+   * 白名单语义（tool-exposure-model 特权声明模型）：
    * - toolWhitelist === null：全部暴露（内置 + web_search 条件 + 自定义工具）；
    * - toolWhitelist === string[]：全部暴露命中「默认常驻豁免集 DEFAULT_EXPOSED_TOOLS」的
    *   内置工具，特权工具（web_search / web_fetch / run_code / task_table_*）按名单过滤；
@@ -928,7 +927,7 @@ export class ToolExecutor {
         if (results.length === 0) {
           return `（未找到与 "${query}" 相关的搜索结果）`;
         }
-        // 搜索来源透出（G5，2026-08-25）：同批次结果来自同一后端，取首条 endpoint 告知用户实际使用的搜索源
+        // 搜索来源透出：同批次结果来自同一后端，取首条 endpoint 告知用户实际使用的搜索源
         // （降级到 DuckDuckGo 时即透出「搜索来源：DuckDuckGo」），提升 in-flow 信任；宿主渲染工具结果文本即可见。
         const endpoint = results[0]?.endpoint;
         const sourceLine = endpoint ? `（搜索来源：${endpoint}）` : '';
@@ -1104,7 +1103,7 @@ export class ToolExecutor {
         const query = strArg('query');
         const mode = strArg('mode', 'name');
         const exclude = strArg('exclude') || undefined;
-        // 预算下探（G4）：LLM 传入的 maxResults 仍按其意愿生效，但不得超过预算档位 cap（防结果撑爆上下文）
+        // 预算下探：LLM 传入的 maxResults 仍按其意愿生效，但不得超过预算档位 cap（防结果撑爆上下文）
         const maxResults = Math.min(
           Number.parseInt(strArg('maxResults', '20'), 10) || 20,
           PROJECT_SEARCH_RESULT_MAX_LEN,
@@ -1136,7 +1135,7 @@ export class ToolExecutor {
           if (!query) {
             return '[ERR:INVALID_ARG] content 模式需要 query 内容关键词';
           }
-          // 放宽词表（D1 精确优先 + 零命中回退）：剔除与整串等价的词——否则宿主会做一轮与
+          // 放宽词表（精确优先 + 零命中回退）：剔除与整串等价的词——否则宿主会做一轮与
           // 精确轮逐字相同的徒劳扫描，并回报一个名不副实的 relaxed
           const terms = buildSearchTerms(query).filter((t) => t.toLowerCase() !== query.trim().toLowerCase());
           const search = await safeSearchProjectText(this.projectSearchProvider, {
@@ -1148,7 +1147,7 @@ export class ToolExecutor {
           return formatProjectTextSearch(search, query);
         }
         // name 模式：query 为文件名 glob（省略时列出项目全部文件）。
-        // SEARCH-1：与 content 对齐两轮语义——原样 glob 精确匹配；仅当 query 不含 glob 元字符
+        // 与 content 对齐两轮语义——原样 glob 精确匹配；仅当 query 不含 glob 元字符
         // 时，才有"零命中→按名称子串放宽"的余地（裸词=关键词才需要模糊。含 glob 则精准匹配）。
         const nameQuery = query || '**/*';
         const hasGlobMeta = /[*?{}[\]]/.test(nameQuery);
@@ -1196,9 +1195,9 @@ export class ToolExecutor {
         if (!planItemId) {
           return '[ERR:INVALID_ARG] step_id 不能为空';
         }
-        // 寻址统一解析（2026-09-06 契约收口，见 resolvePlanItemId）：renderer 只向 LLM 展示行首序号（1-based），
+        // 寻址统一解析（见 resolvePlanItemId）：renderer 只向 LLM 展示行首序号（1-based），
         // task_table_write 返回 uuid 前 8 位短 id，planItemLog 展示完整 uuid——三种来源全部归一为真实 uuid 后
-        // 再走 updatePlanItem（全等写点）。此前只支持行首序号，短 id 断链（描述承诺了但无解析实现）。
+        // 再走 updatePlanItem（全等写点），短 id 不会断链。
         const plan = this.planManager.getPlan?.() ?? [];
         const resolved = resolvePlanItemId(planItemId, plan);
         if (!resolved.ok) {
@@ -1245,7 +1244,7 @@ export class ToolExecutor {
         const skillName = strArg('skill_name');
         const scriptPath = strArg('script_path');
         const scriptArgs = Array.isArray(args['args']) ? (args['args'] as string[]) : [];
-        // 脚本执行确认（2026-09-11 定案，与 run_code/run_project_script 同判据）：
+        // 脚本执行确认（与 run_code/run_project_script 同判据）：
         // owner + confirmScripts=false 默认放行（技能脚本来源可信，判据 B，无人值守可跑）；
         // guest 恒确认（受限权限下禁止"来源可信豁免"自主执行，缝合三脚本工具语义裂缝）；
         // confirmScripts=true 时 owner 亦确认（开关语义 = "脚本执行二次确认"，对全部脚本生效）。
@@ -1307,7 +1306,7 @@ export class ToolExecutor {
           timeoutMs,
           // cwd=项目根：项目脚本可加载项目本地依赖/相对数据文件
           this.builtinHandlers.projectPath,
-          // node 路径（S3，可选）：node runtime 分支走宿主注入的真实 node，避免无独立 node 时 ENOENT
+          // node 路径（可选）：node runtime 分支走宿主注入的真实 node，避免无独立 node 时 ENOENT
           this.scriptNodePath,
         );
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）

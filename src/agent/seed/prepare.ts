@@ -70,13 +70,13 @@ export class SeedPrepare {
     //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
     //   重开已推进会议需显式手段（宿主清空任务表 / LLM task_table_write），非自然语言自动触发。
     // 在途判定经 SessionManager.hasInflightPlan 单点（SSOT）：与 loop 侧「已有在途任务表则跳过
-    // nudge」共用同一命题口径，禁此处再内联谓词（曾为 `plan.some(pending||active)` 独立实现）。
+    // nudge」共用同一命题口径，禁此处再内联谓词另起一份判定。
     const hasInflightPlan = sessionManager?.hasInflightPlan() ?? false;
     const meetingPlanItems = hasInflightPlan
       ? null
       : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);
     if (meetingPlanItems && sessionManager) {
-      // 骨架预置：overwrite 真清空（writePlan 语义修复后为真重写——新会议替换一切旧计划）
+      // 骨架预置：overwrite = 真重写，新会议替换一切旧计划
       sessionManager.writePlan('overwrite', meetingPlanItems);
     }
 

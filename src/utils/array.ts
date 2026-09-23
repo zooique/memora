@@ -12,8 +12,7 @@
 /**
  * 按 accessedAt 字段降序排序（最近使用优先）的比较函数
  *
- * score 字段已物理删除（2026-09-09 阶段3 退役），使用轨迹唯一事实源为 accessedAt；
- * 采集/推荐等需要「采样 top-N」的场景统一按 accessedAt 降序（原 byScoreDesc）。
+ * 使用轨迹唯一事实源为 accessedAt；采集/推荐等需要「采样 top-N」的场景统一按 accessedAt 降序。
  *
  * @param a 前一个元素
  * @param b 后一个元素

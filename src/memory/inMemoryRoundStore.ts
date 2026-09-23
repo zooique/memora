@@ -185,11 +185,11 @@ export class InMemoryRoundStore implements IRoundStore {
   }
 
   /**
-   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（2026-09-09 step 原子落盘·档2）。
+   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（step 原子落盘）。
    *
    * 崩溃发生在 appendAssistant 前时，该轮 refCount=0、未登记会话、orphan 但可能有已落盘
    * processEvents（step 检查点）。宿主重启后经此口「找到」中断轮，再调收场方法
-   * （MessageHistory.appendInterrupted）**升级为正常 stop turn**（§一·五：非半成品草稿，T1）。
+   * （MessageHistory.appendInterrupted）**升级为正常 stop turn**（非半成品草稿）。
    * 只读、不改写、不登记会话；升级完成（complete + refCount>0）前为打捞窗口内中间态，
    * 超龄仍未升级的中断轮由 GC 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
    *
@@ -200,9 +200,9 @@ export class InMemoryRoundStore implements IRoundStore {
   listInterruptedRecent(date: string, limit?: number): Round[] {
     // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤后倒序取最新
     //
-    // ⚠️ `'error'` 是**预留态**（2026-09-10 G36 裁决②「明示收起」）：
+    // ⚠️ `'error'` 是**预留态**（明示收起）：
     // 全仓**无任何写点**把 Round.status 置为 'error'（写点仅 pending → complete /
-    // appendInterrupted → interrupted，2026-09-15 起中断轮不再伪 complete）——它在此处与
+    // appendInterrupted → interrupted，中断轮不伪 complete）——它在此处与
     // 'pending' **共用同一条打捞条件**，故保留字段本身零成本、删除反而是无谓改动。
     // 保留的是「接口形状」而非「当前行为」：若未来出现「整轮失败且需与中断区分」的
     // 真实需求，可在此分支补齐语义，无需改签名。

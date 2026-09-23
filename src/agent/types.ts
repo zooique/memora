@@ -38,21 +38,21 @@ export type AgentChunk = (
       ok: boolean;
       summary?: string;
       /**
-       * 策略拦截标记（2026-09-02）：工具被内核确定性拒绝（如 web_search 达硬上限），
+       * 策略拦截标记：工具被内核确定性拒绝（如 web_search 达硬上限），
        * 未实际执行。ok=false + blocked=true：区别于「执行失败」，UI 显示「已拦截」，
        * 不计成功数亦不计失败数；LLM 收到的是拒绝文案而非真实结果。
        */
       blocked?: boolean;
     }
   /**
-   * 模型思考内容流（2026-09-13，Turn 意图理解与模型思考展示设计）：LLM 的 reasoning_content 增量片段。
-   * 仅供宿主折叠展示，**不进正文/记忆**（CoT 防护）；落盘走 ProcessEvent（roundStore.ts 新增
+   * 模型思考内容流：LLM 的 reasoning_content 增量片段。
+   * 仅供宿主折叠展示，**不进正文/记忆**（CoT 防护）；落盘走 ProcessEvent（roundStore.ts
    * `type: 'thought'` 成员），重启重放可见。瞬态流：中断不补发。命名用 thought，与多模型
    * 路由任务类型 `TaskType='reasoning'`、ProcessEvent 既有相位 `type:'thinking'` 语义分离。
    */
   | { type: 'thought'; content: string }
   /**
-   * 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 一成形即触发），
+   * 工具意图预告：LLM 流式生成 tool_call 参数期间（name 一成形即触发），
    * 工具**尚未执行**。与 tool_start 的区别：start 表示 Runtime 确定要执行（参数已完成）；
    * pending 让宿主提前渲染「准备中」工具行，消除大参数工具（如 write_file 全量写入）
    * 数十秒参数生成段的 UI 真空。瞬态展示轨：**不落 ProcessEvent、不进正文/记忆**，
@@ -60,7 +60,7 @@ export type AgentChunk = (
    */
   | { type: 'tool_pending'; toolCallId?: string; name: string }
   /**
-   * 过程叙述（2026-09-02）：LLM 在工具迭代前产出的行动叙述文本
+   * 过程叙述：LLM 在工具迭代前产出的行动叙述文本
    * （如「让我先查看所有文档」「现在逐一读取它们的内容」）。
    * 与 text（回答正文）语义分离：narrate 只供宿主渲染「过程叙述」折叠行，
    * 不进入最终回答正文（consumeExecutionStream 不将其拼入 content）。
@@ -69,10 +69,10 @@ export type AgentChunk = (
       type: 'narrate';
       content: string;
       /**
-       * 回抽（A1，2026-09-12）：content 中「曾逐字流式进正文区」的那一段**原文**。
+       * 回抽：content 中曾逐字流式进正文区的那一段**原文**。
        *
-       * 成因：首轮（无工具史）消息级分类前无法预判是否工具轮，为保 TTFT 零损失文本已实时
-       * 流式进正文；收到 toolCalls 后才确认为过程叙述。本字段据此让消费者先把该段从正文
+       * 成因：首轮（无工具史）消息级分类前无法预判是否工具轮，为保 TTFT 零损失，文本先实时
+       * 流式进正文；收到 toolCalls 后才确认为过程叙述。本字段让消费者先把该段从正文
        * 撤回（内核扣持久化正文 / 宿主移正文渲染），再按叙述渲染 content——首轮与后续轮同构。
        * 契约：该段为「最近追加的正文文本」（后缀），消费者按后缀精确匹配撤回。
        *
@@ -82,7 +82,7 @@ export type AgentChunk = (
       withdrawn?: string;
     }
   /**
-   * 中断（aborted chunk 的语义分类，TS-12）
+   * 中断（aborted chunk 的语义分类）
    *
    * stopReason 由内核在产生点按真实触因唯一判定，宿主按语义映射友好文案（与 error.category 同构）：
    * - 'user'：宿主 signal / 插话控制器真 abort（用户主动停止或插话介入）
@@ -93,7 +93,7 @@ export type AgentChunk = (
    */
   | { type: 'aborted'; reason: string; stopReason?: AbortStopReason }
   /**
-   * 流式错误（error chunk 的分类字段，TS-10a）
+   * 流式错误（error chunk 的分类字段）
    *
    * 类别由内核唯一判定（Signal 未 abort 却抛 AbortError = 'connection' 等），
    * 宿主按 category 映射友好展示文案；无 category（null）时宿主回退原始 message，
@@ -103,7 +103,7 @@ export type AgentChunk = (
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }
   | { type: 'paused' }
   /**
-   * 主动提问（ask_user 工具，2026-09-04 通道收敛）：LLM 调 ask_user 时 yield，
+   * 主动提问（ask_user 工具）：LLM 调 ask_user 时 yield，
    * Agent 暂停等用户在提问框回答；用户回答经 answerQuestion 回填后 continueAfterPause 续跑（非 Trigger）。
    */
   | { type: 'question_pending'; questions: AskQuestion[] }
@@ -112,19 +112,19 @@ export type AgentChunk = (
    */
   | { type: 'selfReview' }
   /**
-   * 步级折叠边界（阶段二，2026-09-08 路 B′）：迭代完成且 active 任务项**推进**时 emit。
+   * 步级折叠边界：迭代完成且 active 任务项**推进**时 emit。
    * 宿主据此把后续过程事件（narrate/tool/问答）归到对应 step 分组下渲染；无任务表不产。
    * planItemId 为推进到的新 active step ID，title 为步骤标题（供分组 summary 展示）。
    */
   | { type: 'plan_item_boundary'; planItemId?: string; title?: string }
   /**
-   * 迭代边界（档3 · 迭代原子落盘，2026-09-23）：**一次 LLM 迭代结束**时无条件 emit。
+   * 迭代边界（迭代原子落盘）：**一次 LLM 迭代结束**时无条件 emit。
    *
    * 与 `plan_item_boundary` 的关系（术语撞车的解法，见 docs/architecture/step-atomic-persistence.md §九）：
    * - `plan_item_boundary` = **任务项推进**（有任务表且 active 任务项变化才产，无任务表静默），职责是
    *   webview 步级折叠的**分组依据**；
    * - `step_boundary` = **迭代完成**（与有无任务表、有无工具无关），职责是宿主**增量落盘的时机信号**
-   *   （档2 曾把落盘挂在 plan_item_boundary 上 → 无任务表长工具循环零增量落盘，本 chunk 补该覆盖缺口）。
+   *   （落盘不能只挂在 plan_item_boundary 上——无任务表的长工具循环会零增量落盘，该场景由本信号覆盖）。
    *
    * 顺序契约（硬）：同一次迭代内 `plan_item_boundary` **先**于本 chunk 产出——保证宿主本轮落盘快照
    * 已含该步折叠边界，崩溃重放不错位。
@@ -137,12 +137,12 @@ export type AgentChunk = (
 ) & RoundTagged;
 
 /**
- * 中断语义分类（TS-12a）：'user' = 用户主动停止/插话；'interrupted'/'connection' 为预留语义（当前无产生点）。
+ * 中断语义分类：'user' = 用户主动停止/插话；'interrupted'/'connection' 为预留语义（当前无产生点）。
  */
 export type AbortStopReason = 'user' | 'timeout' | 'interrupted' | 'connection';
 
 /**
- * 流式错误语义分类（error chunk 的 category 字段，TS-10a）—— **具名类型 = 跨层单一真理源**。
+ * 流式错误语义分类（error chunk 的 category 字段）—— **具名类型 = 跨层单一真理源**。
  *
  * 两个消费面共用同一份字面量集合，故必须同名同源（各写一份会静默漂移）：
  * 1. 实时：`AgentChunk.error.category`（本文件）→ 宿主映射友好文案；
@@ -204,9 +204,9 @@ export type ArchiveMode = 'full' | 'manual';
 
 // ─── 不中断工作模型：会话状态机 + 检查点 ─────────────────
 // 核心思路：从「一问一答」升级为「开启后常驻、仅暂停不终止」，会话升级为状态机 + 检查点（SessionCheckpoint）
-// 检查点为纯内存态快照（2026-09-10 减法后不落盘、无序列化/恢复路径）。三态：RUNNING → PAUSED（双向）→ ERROR（独立可见）；
+// 检查点为纯内存态快照（不落盘、无序列化/恢复路径）。三态：RUNNING → PAUSED（双向）→ ERROR（独立可见）；
 // ERROR → RUNNING 前须 error.recovered===true 且 cause 已解除。
-// 注：原「增量事件（SessionEvent）驱动补全」整条剪枝（见 docs/architecture/），输入统一走 chat。
+// 输入统一走 chat（无增量事件驱动补全路径，见 docs/architecture/）。
 // ────────────────────────────────────────────────────────
 
 /** 会话状态（三态状态机） */
@@ -240,7 +240,7 @@ export interface PlanItemOutcome {
   completedAt: number;
 }
 
-/** 暂停来源（唯一真源，2026-09-20 站 43 收口）：供 PauseMeta 与 SessionStateMachine 共用，防类型级双轨漂移 */
+/** 暂停来源（唯一真源）：供 PauseMeta 与 SessionStateMachine 共用，防类型级双轨漂移 */
 export type PauseSource = 'user' | 'agent' | 'system';
 
 /** 暂停上下文，用于渲染层展示和恢复决策 */
@@ -295,7 +295,7 @@ export interface ChatMessage {
 }
 
 /**
- * 会话检查点，不中断工作模型的核心状态载体。纯内存态快照（2026-09-10 减法后
+ * 会话检查点，不中断工作模型的核心状态载体。纯内存态快照（
  * 不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」，运行时暂停同 turn 内存续跑）。
  * 三态：running / paused（主动暂停）/ error（异常，独立可见不自动转 PAUSED，保留 cause 供检查，
  * 恢复前须校验 error.recovered===true 且 cause 已解除）。
@@ -527,14 +527,14 @@ export interface AgentOptions {
   /** 项目搜索提供者（可选，不配则不启用 search_project；等价 IDE 全局搜索，由宿主实现） */
   projectSearchProvider?: IProjectSearchProvider;
   /**
-   * node 可执行文件路径（可选，S3，2026-09-22）：宿主注入真实 node 路径
+   * node 可执行文件路径（可选）：宿主注入真实 node 路径
    * （如 IDE 内置 node / 用户配置的 node）给 L3 脚本执行器（run_skill_script /
-   * run_project_script 的 node runtime 分支）。缺省走 'node'（PATH 查找），
-   * 行为与旧版完全一致；宿主机无独立 node 时注入可避免 .js/.mjs 脚本 ENOENT。
+   * run_project_script 的 node runtime 分支）。缺省走 'node'（PATH 查找）；
+   * 宿主机无独立 node 时注入可避免 .js/.mjs 脚本 ENOENT。
    */
   scriptNodePath?: string;
   /**
-   * 禁用的技能名清单（可选，S4，2026-09-22）：宿主配置形态启停——命中的技能
+   * 禁用的技能名清单（可选）：宿主配置形态启停——命中的技能
    * 从 L1 清单消失、L2/L3 访问（read_skill/read_resource/run_skill_script）不可用。
    * 对 LLM 语义 = 技能不存在（不暴露「禁用」细节）；宿主 UI 依据同名设置标注「已禁用」徽章。
    * 缺省空 = 全量技能可用（向后兼容）。
@@ -585,8 +585,8 @@ export type AgentConfig = Omit<
   archiveMode: ArchiveMode;
   /**
    * 组（会议名单容器）：内部运行态必选——外部 AgentOptions 可选（不配 = 无团队），
-   * Agent 构造时 `?? []` 归一化后恒为数组。P-6（2026-09-06）：
-   * 收紧内部契约保证 AssembleInput 必传，防「可选性假约束」再吞团队数据（team 启动缺口教训）。
+   * Agent 构造时 `?? []` 归一化后恒为数组。
+   * 收紧内部契约保证 AssembleInput 必传，防「可选性假约束」吞掉团队数据（team 启动缺口教训）。
    */
   rolePackTeams: RolePackTeam[];
 };

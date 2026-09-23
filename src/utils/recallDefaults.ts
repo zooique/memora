@@ -1,17 +1,16 @@
 /**
  * 召回默认值——单一真理源（记忆层与 agent 层共享）。
  *
- * `DEFAULT_MIN_FALLBACK` 已随 `recall()` 退役（「减法」2026-09-10）：该保底仅服务
- * 「检查点恢复的温记忆召回」，随跨重启恢复链整体退役而消亡（见 docs/白话设计文档.md 第六步）。
+ * 召回不设保底下限（无 `DEFAULT_MIN_FALLBACK`）——保底仅在「检查点恢复的温记忆召回」
+ * 场景有意义，该链路不在实现内（见 docs/白话设计文档.md 第六步）。
  */
 
 /**
- * 召回排除 source 默认值（空数组）——设定记忆（persona/rule/skill）已归角色包、
- * 记忆库不再写入，不再参与召回排除（memory-role-pack-boundary）。早年"默认排除三类设定
- * 记忆"的补丁式修复已随角色包解耦剪枝，此处仅保留空默认。
+ * 召回排除 source 默认值（空数组）——设定记忆（persona/rule/skill）归角色包、
+ * 记忆库不写入，不参与召回排除（memory-role-pack-boundary），此处为空默认。
  *
- * **唯一活性消费者 = `MemoryAdvisor.suggest()`**（关联推荐的 `excludeSources` 本地参数缺省值）。
- * 曾经的同名配置管道 `config.recallExcludeSources`（ContextPreparer 侧）已于 2026-09-11 全链删除
- * ——它是死配置（`assembleContext` 从不读取），勿因「两处同名」而误以为是一根链。
+ * **唯一活性消费者 = `MemoryAdvisor.suggest()`**（关联推荐的 `excludeSources` 本地参数缺省值）；
+ * 不存在同名配置管道 `config.recallExcludeSources`（ContextPreparer 侧）——`assembleContext`
+ * 从不读取该配置（死配置），勿因「两处同名」而误以为是一根链。
  */
 export const DEFAULT_RECALL_EXCLUDE_SOURCES: readonly string[] = [];

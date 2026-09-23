@@ -51,7 +51,7 @@ export interface RoundMessage {
 }
 
 /**
- * 交互输入类型（TS-9 问答闭环内交互输入归属）
+ * 交互输入类型（问答闭环内交互输入归属）
  *
  * 一次外部输入（Trigger）= 一个问答闭环。执行中的三类用户交互输入
  * （LLM 主动提问回答 / 流式中补充 / 暂停后续跑补充）均归属当前问答闭环，
@@ -59,7 +59,7 @@ export interface RoundMessage {
  *
  * - question-answer：LLM 主动提问（ask_user 工具）的用户回答（宿主 handleResume 路由）
  * - supplement：用户中途补充（插话 interject / 暂停后主输入框补充）
- * - timeout：ask_user 提问超时未答（2026-09-08：宿主计时超时 → cancelAsk 注入
+ * - timeout：ask_user 提问超时未答（宿主计时超时 → cancelAsk 注入
  *   [ASK_ABORTED] 占位 + resumeExecution('timeout') 自动续跑，LLM 自决；记录带
  *   question/options 供重放渲染「问 + 未回答」行）
  */
@@ -78,7 +78,7 @@ export interface RoundInteractiveInput extends RoundMessage {
   /** 交互输入类型（UI 折叠块文案与路由语义，不参与归属判定） */
   kind: InteractiveInputKind;
   /**
-   * LLM 提问原文（G26，2026-09-07：仅 question-answer 携带）
+   * LLM 提问原文（仅 question-answer 携带）
    *
    * 该回答所对的 ask_user 提问文本——回答落盘时随交互输入一并持久化，
    * 供回放还原「当时 LLM 问了什么 + 用户为什么这么选」上下文。
@@ -94,15 +94,15 @@ export interface RoundInteractiveInput extends RoundMessage {
 /**
  * 问答闭环状态机
  *
- * 状态流转（**实测口径**，2026-09-10 G36 核实 + 2026-09-15 修正）：
+ * 状态流转（**实测口径**）：
  * - pending → complete：AI 回复生成完成（真实路径）
- * - pending → interrupted：被用户中断/运行失败（appendInterrupted 收场，2026-09-15 起不再伪 complete）
- * - error：**预留态，当前无写点**（2026-09-10 G36 裁决②「明示收起」）
+ * - pending → interrupted：被用户中断/运行失败（appendInterrupted 收场，不伪 complete）
+ * - error：**预留态，当前无写点**（明示收起）
  *
- * ⚠️ 关于 `interrupted`（2026-09-15 修正「假性 complete 吞现场」）：
- * - **中断/失败轮落盘为 `interrupted`，不再标 `complete`**。原实现把中断统一 appendInterrupted →
- *   `status:'complete'`，使未完成任务被伪装成正常完成轮，且重放时因缺 assistant 正文块丢失
- *   过程（思考/工具/中断标记）。修正后中断轮保留 `processEvents` 原始现场、状态诚实区分。
+ * ⚠️ 关于 `interrupted`（防「假性 complete 吞现场」）：
+ * - **中断/失败轮落盘为 `interrupted`，不标 `complete`**。中断轮若伪装成正常完成轮，
+ *   重放时会因缺 assistant 正文块丢失过程（思考/工具/中断标记）。interrupted 轮保留
+ *   `processEvents` 原始现场、状态诚实区分。
  * - **实现落点**：`seed/orchestrator.act()`（中断 aborted / 失败 failed 收口到同一尾处理）
  *   → `history.appendInterrupted` 写 `status:'interrupted'`。
  * - **打捞关系**：`listInterruptedRecent`（内核 + 宿主两端）打捞条件仍为 `pending || error`，
@@ -153,10 +153,8 @@ export function isRoundSettled(status: RoundStatus): boolean {
 /**
  * 思考阶段值（与 agent ThinkingPhase 同值的本地字面量，解耦依赖方向）
  *
- * 阶段与 Agent turn 对应：assembling=上下文装配 / llm_calling=调用模型 / processing=处理 / archiving=归档。
- * planning,step,reporting 已随多 turn 任务编排（externalTaskLoop）废弃（2026-09-04），
- * 无生产发射点，移出枚举消除僵尸分支。
- * recalling → assembling（2026-09-11）：语义从"召回"退化为纯"装配"，对齐 assembleContext 改名。
+ * 阶段与 Agent turn 对应：assembling=上下文装配（对齐 assembleContext 命名）/
+ * llm_calling=调用模型 / processing=处理 / archiving=归档。枚举只保留有生产发射点的活值。
  */
 export type ProcessThinkingPhase =
   | 'assembling'
@@ -189,7 +187,7 @@ export interface ProcessMetricsPayload {
    */
   success: boolean;
   /**
-   * 本轮未解析文本工具意图数（2026-09-14，选填/旧数据缺省）
+   * 本轮未解析文本工具意图数（选填，旧数据缺省）
    * 「想调用工具却未走原生协议」的诚实信号；>0 时宿主不应显示为成功收尾。
    */
   unparsedToolIntentCount?: number;
@@ -232,12 +230,12 @@ export type ProcessEvent =
         name: string;
         ok: boolean;
         summary?: string;
-        /** 策略拦截（2026-09-02）：ok=false + blocked=true = 被确定性拒绝未执行（如搜索达硬上限） */
+        /** 策略拦截：ok=false + blocked=true = 被确定性拒绝未执行（如搜索达硬上限） */
         blocked?: boolean;
       };
     }
   /**
-   * 自审查（单次终审；2026-09-13 单轮化）：无有效载荷。
+   * 自审查（单次终审）：无有效载荷。
    * 已落盘的历史数据可能仍带 `round`（该值恒为 1，从未承载过 >1），
    * 反序列化后作为多余键忽略，不影响读取，无需迁移。
    */
@@ -245,7 +243,7 @@ export type ProcessEvent =
   | { type: 'text_self_review'; seq: number; ts: string; payload: { content: string } }
   | { type: 'narrate'; seq: number; ts: string; payload: { content: string } }
   /**
-   * 模型思考内容流（2026-09-13，Turn 意图理解与模型思考展示设计）：reasoning_content 增量累积结果。
+   * 模型思考内容流：reasoning_content 增量累积结果。
    * 仅供重放重建「思考」折叠块；展示轨承载，正文轨/记忆轨不消费（CoT 防护）。命名用 thought——
    * 区别于上方既有 `type:'thinking'`（phase 相位事件）与多模型路由任务 `TaskType='reasoning'`，
    * 三者语义分离，避免同 union 判别式重复与跨层双义。
@@ -253,15 +251,15 @@ export type ProcessEvent =
    */
   | { type: 'thought'; seq: number; ts: string; payload: { content: string } }
   /**
-   * 步级折叠边界（阶段二，2026-09-08 路 B′）：active 任务项推进时由 loop 产，
+   * 步级折叠边界：active 任务项推进时由 loop 产，
    * 宿主落盘此事件把后续 narrate/tool/问答归到对应任务项分组。无任务表不产。
    */
   | { type: 'plan_item_boundary'; seq: number; ts: string; payload: { planItemId?: string; title?: string } }
   | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }
   /**
-   * 流式错误（重放可见性，2026-09-15）：失败轮在**实时流**里已有 `AgentChunk.error`（宿主据此即时弹
+   * 流式错误（重放可见性）：失败轮在**实时流**里已有 `AgentChunk.error`（宿主据此即时弹
    * 提示条），但该 chunk **不落 processEvents** → 回看历史时原因丢失、只剩 generic「对话已中断」，
-   * 用户无法回答「这轮为什么没答完」（LEG-1 缺口②）。本变体把 error 落进重放轨，宿主桥接点 =
+   * 用户无法回答「这轮为什么没答完」。本变体把 error 落进重放轨，宿主桥接点 =
    * `chatPanel.consumeFlow` 的 `error` 分支。
    *
    * 与 `aborted` 的分工（**禁互相承载**，见 `agent/types.ts` 的 `AbortStopReason` 注释）：`aborted`
@@ -306,7 +304,7 @@ export interface Round {
   assistantMessage?: RoundMessage;
 
   /**
-   * 问答闭环内交互输入（TS-9，2026-09-02 新增）
+   * 问答闭环内交互输入
    *
    * LLM 主动提问回答 / 用户中途补充（插话 / 暂停续跑输入）按时间序追加于此处，
    * 不因交互输入分裂出新问答闭环。assistantMessage 恒为闭环节点的最终回答；
@@ -315,7 +313,7 @@ export interface Round {
   interactiveInputs?: RoundInteractiveInput[];
 
   /**
-   * 问答闭环内多段 assistant（TS-9，2026-09-02 新增）
+   * 问答闭环内多段 assistant
    *
    * 闭环节点跨暂停-续跑时，前序 assistant 段（如主动提问、中断半截）
    * 入此数组，assistantMessage 恒为末段（最终回答）。普通单段问答轮无此字段
@@ -442,12 +440,12 @@ export interface IRoundStore {
   listOrphaned?(minAgeMs?: number): Round[];
 
   /**
-   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（2026-09-09 step 原子落盘·档2）。
+   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（step 原子落盘）。
    *
    * 用途：崩溃残留轮升级前的**只读中转**——崩溃发生在 appendAssistant 完成前时，该轮
    * refCount=0、未登记进会话 roundIds，宿主无法从会话列表发现；但其过程已由 step 原子
    * 检查点落盘到 pending Round。宿主重启后经此口查回，「找到」后由宿主调用收场方法
-   * （MessageHistory.appendInterrupted）**升级为正常 stop turn** 并登记入会话（T1）。
+   * （MessageHistory.appendInterrupted）**升级为正常 stop turn** 并登记入会话。
    *
    * 语义约束（SSOT）：
    * - **只读查询**，不登记会话、不改写 Round、不改变 appendAssistant 完成语义；

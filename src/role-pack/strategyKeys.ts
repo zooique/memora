@@ -46,7 +46,7 @@ export const MAX_OUTPUT_LIMIT = 65536;
 export const MAX_TOOL_STEP_LIMIT = 100;
 /**
  * selfReview 的**输入校验上界**，非运行时上限（勿据常量名推导运行时行为）。
- * 布尔数字语义下任意正整数都在解析层收敛为 1=终审一次，故本值仅作 schema / validator 的防御上界，
+ * 布尔数字语义下任意正整数都在解析层归一为 1=终审一次，故本值仅作 schema / validator 的防御上界，
  * 不代表「可自审查 10 轮」。
  */
 export const MAX_SELF_REVIEW_ROUNDS = 10;
@@ -166,7 +166,7 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
   },
   reflect: {
     summary: { kind: 'enum', values: SUMMARY_MODES },
-    // 自审查（布尔数字：0=关闭；正整数>0 收敛为 1=自审查一次，大于 1 算 1；校验区间 0~MAX_SELF_REVIEW_ROUNDS）
+    // 自审查（布尔数字：0=关闭；正整数>0 归一为 1=自审查一次，大于 1 算 1；校验区间 0~MAX_SELF_REVIEW_ROUNDS）
     selfReview: intRange(0, MAX_SELF_REVIEW_ROUNDS),
     userFollowup: { kind: 'enum', values: USER_FOLLOWUPS },
   },

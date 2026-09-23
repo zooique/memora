@@ -243,22 +243,22 @@ export function resolveToolReadonly(strategy: BehaviorStrategy | undefined): Too
  *
  * 由 `resolveL2Strategy(undefined)` 单一推导（SSOT）：不再手动复述各 resolve* 的回退默认值，
  * 避免"回退规则改了、此处疏漏不同步"的二次写入点。真正每轮生效值来自 resolveL2Strategy，
- * 本常量仅作 loop 构造期的惰性初始值（收敛，替代 loop 内 11 个字段初始化魔数）。
+ * 本常量仅作 loop 构造期的惰性初始值（单一初值入口，免逐字段初始化魔数）。
  */
 export const DEFAULT_L2_STRATEGY: L2RuntimeStrategy = resolveL2Strategy(undefined);
 
 /**
- * 解析 L2 运行时策略（收敛：替代 Agent 层逐项 setXxx 装配）
+ * 解析 L2 运行时策略（Agent 层单一装配入口，免逐项 setXxx）
  *
  * 聚合现有各 resolveXxx（工具模式→toolCallsBlocked、工具步数、错误处理、Provider 路由、
  * Token/步数预算、多步推理、主动提问上限、工具只读）+ reflect.selfReview；
- * 非法值经各 resolve* 归位内核默认；selfReview 归一为布尔数字「0=关闭 / 正整数 >0 收敛为 1」。
+ * 非法值经各 resolve* 归位内核默认；selfReview 归一为布尔数字「0=关闭 / 正整数 >0 归一为 1」。
  *
  * @param strategy 合并后的行为策略（角色包声明，可为空）
  * @returns 注入 AgentLoop 的单一运行时策略对象
  */
 export function resolveL2Strategy(strategy: BehaviorStrategy | undefined): L2RuntimeStrategy {
-  // selfReview → 布尔数字语义（2026-09-12 定案）：0=关闭；正整数>0 一律收敛为 1=自审查一次，
+  // selfReview → 布尔数字语义：0=关闭；正整数>0 一律归一为 1=自审查一次，
   // 大于 1 的数同样算作 1（类似布尔开关）。越界（负/小数/非 number/>MAX）归 0=关闭。
   const rawSelfReview = strategy?.reflect?.selfReview;
   const selfReviewEnabled =

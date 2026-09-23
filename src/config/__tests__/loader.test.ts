@@ -619,7 +619,7 @@ describe('config/loader · 配置边界校验', () => {
     });
     expect((await loadConfig(cfgZero)).llm.providers!.deepseek!.contextWindow).toBeUndefined();
 
-    // ② 小正数原样生效 —— 旧实现把 <1000 视作越界静默丢弃，该裁决已于 2026-09-18 拍板删除
+    // ② 小正数原样生效 —— <1000 不作越界静默丢弃
     //    （内核不替用户裁决「模型能吃多大」；静默替换会造成「UI 显示值 ≠ 真实生效值」）
     const cfgSmall = writeConfig({
       llm: {

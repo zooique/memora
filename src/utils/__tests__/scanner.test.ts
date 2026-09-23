@@ -280,7 +280,7 @@ description: 变体技能
     it('兄弟目录前缀不得绕过（防前缀边界缺陷）', () => {
       // 基目录 /base/resources，兄弟目录 /base/resources-evil
       // 若只做 startsWith 无 sep 边界，"../resources-evil/x" 解析为 /base/resources-evil/x
-      // 会以 /base/resources 为前缀误放行；修复后（追加 sep 边界）应严格拒绝
+      // 会以 /base/resources 为前缀误放行；带 sep 边界则严格拒绝
       expect(resolveSafePath('/base/resources', '../resources-evil/sneaky.txt')).toBeNull();
       // 更深一层：base 的兄弟名以 base 名+额外字符开头
       expect(resolveSafePath('/base/skills/myskill', '../myskill-evil/f.txt')).toBeNull();

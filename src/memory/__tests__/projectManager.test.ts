@@ -109,7 +109,7 @@ describe('ProjectManager · initProject', () => {
     await pm.shutdown();
   });
 
-  it('对账已停用：孤儿 rule 不再被清理（设定记忆归角色包）', async () => {
+  it('对账关闭：孤儿 rule 不被清理（设定记忆归角色包）', async () => {
     const config = makeConfig(join(tmpHome, '.memora'));
     const pm = new ProjectManager({
       dataDir: config.memory.dataDir,
@@ -137,16 +137,16 @@ describe('ProjectManager · initProject', () => {
       'utf-8',
     );
 
-    // 重开项目：对账（清理无文件支撑的孤儿 rule）已停用——
-    // loader 不再扫描设定记忆进索引，「文件支撑」判定基准消失。
+    // 重开项目：对账（清理无文件支撑的孤儿 rule）为关闭态——
+    // loader 不扫描设定记忆进索引，「文件支撑」判定基准不存在。
     // 存量 rule 索引行保留为兼容数据，由宿主迁移清理。
     const ctx2 = await pm.initProject(tmpDir);
     const rules = ctx2.index.getBySource(SOURCE_LABELS.RULE);
     const names = rules.map((r) => r.name);
 
-    // 孤儿不再被自动清理（对账停用，不误删存量数据）
+    // 孤儿不被自动清理（对账关闭，不误删存量数据）
     expect(names).toContain('orphan');
-    // 文件规则也不进索引（loader 停扫）——对账会写入它，现在不会
+    // 文件规则也不进索引（loader 停扫，对账不写入）
     expect(names).not.toContain('real');
 
     await pm.shutdown();

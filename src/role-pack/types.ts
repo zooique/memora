@@ -43,7 +43,7 @@ export type MultiStepReasoning = (typeof MULTI_STEP_REASONINGS)[number];
 
 // ── 回答后（Reflect）：沉淀策略 ──
 
-/** 自审查开关（布尔数字语义，2026-09-12 定案）：0=关闭 / 任意正整数 >0 = 自审查一次（单次终审，>1 收敛为 1） */
+/** 自审查开关（布尔数字语义）：0=关闭 / 任意正整数 >0 = 自审查一次（单次终审，>1 归一为 1） */
 export type SelfReviewRounds = number;
 
 /** 摘要生成开关（on=生成摘要 / off=不生成；值域 SSOT = strategyKeys.SUMMARY_MODES） */
@@ -91,7 +91,7 @@ export interface ActStrategy {
 
 /** 回答后（Reflect）沉淀策略集合 */
 export interface ReflectStrategy {
-  /** 自审查开关（布尔数字，默认 0=关闭）：0=不自审查；正整数 >0 一律在解析层收敛为 1=自审查一次（大于 1 算 1）。仅本 turn 执行过工具步后做一次终审 */
+  /** 自审查开关（布尔数字，默认 0=关闭）：0=不自审查；正整数 >0 一律在解析层归一为 1=自审查一次（大于 1 算 1）。仅本 turn 执行过工具步后做一次终审 */
   readonly selfReview?: SelfReviewRounds;
   /** 摘要生成开关（默认 on；标准键 reflect.summary） */
   readonly summary?: Summary;

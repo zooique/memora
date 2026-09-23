@@ -8,8 +8,8 @@
  * **单一原语 + 单一收口**：本函数是唯一的落盘实现；唯一调用点是 `AgentLoop.appendToolMessage`
  * （loop 唯一 tool 写点，一处覆盖五个调用点：工具结果 / `[ASK_ANSWER]` / `[ASK_ABORTED]` /
  * `[ASK_SUSPENDED]` / `[TOOL_ABORTED]`）。
- * 压缩链那级 `OffloadCompactionStrategy` 已随之**整级删除** —— 上下文中 tool 消息只可能由该写点
- * 产生，入口关覆盖后事后扫描恒不触发（「读者先亡、写者后死」；实证见 §6.2 结论二）。
+ * 上下文中 tool 消息只可能由该写点产生，入口关覆盖后无需事后压缩扫描
+ *（「读者先亡、写者后死」；实证见 §6.2 结论二）。
  *
  * **同步实现（有意为之，勿改异步）**：`AgentLoop.answerQuestion()` 是**同步公开 API**（宿主调用后
  * 立即 `continueAfterPause()`），异步落盘会沿 `appendToolMessage → answerQuestion` 传染成内核公开

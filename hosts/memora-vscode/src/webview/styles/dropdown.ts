@@ -23,8 +23,7 @@ export const dropdownStyles = `
     font-size: var(--font-lg, 14px); line-height: 1;
   }
   .treedd__trigger:hover { background: var(--surface-hover, rgba(128,128,128,.2)); }
-  /* 触发器内的 SVG 块级化，消除行内基线空隙（默认 ellipsis 与调用方自定义 SVG 共用）。
-   * 2026-09-19 HOST-S8：原 '⋯' 字符触发器收敛为 icons.ts 的 SVG。 */
+  /* 触发器内的 SVG 块级化，消除行内基线空隙（默认 ellipsis 与调用方自定义 SVG 共用）。 */
   .treedd__trigger svg { display: block; }
   .treedd__menu {
     position: absolute; right: 0; top: calc(100% + var(--sp-1, 4px));

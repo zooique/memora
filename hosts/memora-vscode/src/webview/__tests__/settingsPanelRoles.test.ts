@@ -1,14 +1,14 @@
 /**
- * settingsPanel 角色切换失败判定回归测试（2026-09-21 站 60 深审）
+ * settingsPanel 角色切换失败判定回归测试
  *
  * 被测不变量：`activateRole` 在 `agent.switchRolePack()` 返回 false 时，**必须**用内核公开判据
  * `agent.getRolePackSwitchLockStatus().locked` 区分失败成因，不得由「未收到 rolePackSwitchLocked
  * 事件」推断「角色包不存在」。
  *
- * 背景（原缺陷）：内核 `RolePackManager.activate()` 仅在**触发锁定**的那一次切换发射
+ * 判据依据：内核 `RolePackManager.activate()` 仅在**触发锁定**的那一次切换发射
  * onSwitchLocked（该次返回 **true**）；被锁期间的后续切换在 L879-882 直接 `return false` 且
- * **不发射任何事件**。宿主原实现以 `ok===false && !_lockedNoticeShown` 判定为"不存在"，
- * 于是在锁定期内点击「设为当前」会弹出假错误「角色包不存在：X」（角色包其实存在）。
+ * **不发射任何事件**。故若以 `ok===false && !_lockedNoticeShown` 判定为"不存在"，
+ * 会在锁定期内点击「设为当前」时弹出假错误「角色包不存在：X」（角色包其实存在）（坑）。
  */
 // @vitest-environment node
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -134,7 +134,7 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
     expect(getRolePackSwitchLockStatus).toHaveBeenCalled();
     const msgs = notices(posted);
     expect(msgs).toHaveLength(1);
-    // 不得出现假错误「角色包不存在」（原缺陷）
+    // 不得出现假错误「角色包不存在」
     expect(msgs[0]?.level).toBe('info');
     expect(msgs[0]?.message).not.toContain('不存在');
     expect(msgs[0]?.message).toContain('锁定');
@@ -174,7 +174,7 @@ describe('settingsPanel.activateRole —— 切换失败两成因判定', () => 
   });
 });
 
-describe('settingsPanel.toggleSkillDisabled —— S4 延长线开关（2026-09-22）', () => {
+describe('settingsPanel.toggleSkillDisabled —— 技能启停开关', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });

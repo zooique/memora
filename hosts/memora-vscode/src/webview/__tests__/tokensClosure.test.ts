@@ -1,15 +1,15 @@
 /**
  * 设计令牌闭合守卫 — tokens.ts「定义 ↔ 消费」双向闭合
  *
- * 背景（2026-09-19 令牌双向审计）：tokens.ts 是 webview 样式层令牌的单一真理源，
- * 但「定义」与「消费」两侧曾各自漂移，且两类漂移都不会被 tsc / eslint / 现有单测发现
+ * 背景：tokens.ts 是 webview 样式层令牌的单一真理源，
+ * 但「定义」与「消费」两侧可能漂移，且两类漂移都不会被 tsc / eslint / 单测发现
  * （两侧都是 CSS 文本常量，类型系统看不见）：
  *
  *   ① 僵尸令牌：定义了却无人消费。随功能形态演进失去消费者后静默留存——
- *      实例：--brand-subtle / --status-info / --accent-subtle，以及占用指示器由
- *      「5 数据层分段着色」改为「圆环充能」后留下的 --occ-input/memory/output/rolepack；
+ *      实例：--brand-subtle / --status-info / --accent-subtle，以及「5 数据层分段着色」
+ *      形态的 --occ-input/memory/output/rolepack（现为圆环充能形态，无消费者）；
  *   ② 幽灵令牌：样式引用了 tokens 未定义的令牌，只靠 `var(--x, 裸值)` 的 fallback 兜底
- *      → tokens 变更不跟随，令牌契约与视觉脱钩（实例：早期 --accent-subtle 被 skillsStyles 引用）。
+ *      → tokens 变更不跟随，令牌契约与视觉脱钩（实例：--accent-subtle 被 skillsStyles 引用）。
  *
  * 判据：
  *   - 可达集 = 从「真实消费点」出发，沿 tokens 定义链（`--a: var(--b)`）回溯能触达的令牌

@@ -8,7 +8,7 @@
  *
  * 隔离设计（关键）：
  *   - projectPath 指向全局隔离目录（~/.memora-demo），不与当前工作区共用记忆/会话/
- *     注册表/锁文件——演示产物绝不污染用户真实项目（用户决策 2026-08-22）。
+ *     注册表/锁文件——演示产物绝不污染用户真实项目。
  *   - 不传 sessionStore → assembleAgent 内部新建独立 WorkspaceSessionStore，不与
  *     主面板单例共享，双实例不写同一文件。
  *   - 复用 vscodeTracer 单例（ITracer 采集不落盘，trace 仅在内存缓冲展示，安全）。
