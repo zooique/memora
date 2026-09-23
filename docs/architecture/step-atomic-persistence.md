@@ -1,9 +1,11 @@
 # step 原子级落盘（探索中 → 崩溃后过程可恢复）
 
-> **状态**：🔍 探索中 → **档2 部分落地 + T1 恢复接入已实现**（2026-09-09）。**可逆探索决策，不预写 ADR、不占编号、不改决策 README 索引。** 验证被真实崩溃场景消费、确认稳定后再固化为 ADR。
+> **状态**：🔍 探索中 → **档2 + T1 恢复接入 + 档3（迭代边界落盘）均已落地**（档2/T1：2026-09-09；档3：2026-09-23）。**可逆探索决策，不预写 ADR、不占编号、不改决策 README 索引。** 验证被真实崩溃场景消费、确认稳定后再固化为 ADR。
+>
+> **⚠ 术语警告（2026-09-23，§九）**：本项目有两个「step」——① **loop 迭代 step** = 一次 LLM 交互 + 其工具执行（`stepBudget` / `runIterationLoop` / `handleIteration` 属此阵营，是本文「一次 step 一次落盘」的真 step）；② **任务表 plan step**（一行任务，用户已裁定更名为 **planItem**）。`plan_item_boundary` 这个名字被阵营 ②占用 → 阵营 ①的边界信号缺失，正是 §九 档3 要补的缺口。
 >
 > **落地进度**：
-> - ✅ **写侧**（step 原子落盘）：已实现并验证——宿主 `checkpointRound` 在 `step_boundary` 时增量落盘 pending Round，流尾复用同一合并函数（SSOT 单一合并语义）；内核 / 宿主测试全绿、tsc/lint 通过。
+> - ✅ **写侧**（step 原子落盘）：已实现并验证——宿主 `checkpointRound` 增量落盘 pending Round，流尾复用同一合并函数（SSOT 单一合并语义）；内核 / 宿主测试全绿、tsc/lint 通过。**⚠ 档2 原覆盖范围有缺口：仅覆盖「有任务表且任务项推进」的 turn，无任务表长工具循环零增量落盘 → 已由 §九 档3 修复（落盘时机迁至 `step_boundary`）。**
 > - ✅ **读侧接口**（内核最小支持）：`IRoundStore.listInterruptedRecent(date, limit?)` 已在 `InMemoryRoundStore` + 宿主 `WorkspaceRoundStore` 落地，含单测。
 > - ✅ **恢复接入（T1 已实现，端到端验收待办）**：内核新增收场方法 `MessageHistory.appendInterrupted`（中断轮 → 正常 stop turn：complete + refCount 0→1 + appendRoundId，无文本也按 stop 语义收场）+ 宿主 `chatPanel.upgradeInterruptedRounds`（`ready` 流程打捞 → 升级 → 随首次回放投递），双端单测覆盖（内核 4 例 / 宿主 5 例）。**杀进程→重启端到端验收待真实插件环境**（见 §八 T1 验收）。
 >
@@ -45,7 +47,7 @@
 ## 二、探明的关键事实（决定改动面）
 
 - **过程事件是宿主派生的，非内核写**（[roundStore.ts#L165](../../src/memory/roundStore.ts)）：宿主从原始 AgentChunk 翻译成带 seq 的 ProcessEvent。恢复"过程渲染"正依赖这批派生后数据 → **落盘动作必须在宿主**（SSOT，避免内核重复派生）。
-- **step 边界信号内核已具备**：`step_boundary` chunk（[loop.ts#L978-986](../../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
+- **step 边界信号内核已具备**：`plan_item_boundary` chunk（[loop.ts#L978-986](../../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
 - **pending Round 可覆盖写**：roundStore.save 覆盖 pending（[roundStore.test.ts 增量覆盖用例](../../src/memory/roundStore.ts) 已验证）。
 - **崩溃轮是孤儿**：`refCount=0`、`status=pending`、`appendRoundId` 只在 complete 时登记 → **不在正式会话 roundIds 里**，会话重放遍历不到。**修订（§一·五）**：这不是目标态——中断轮应**升级为正常 stop turn 并登记进 roundIds**，「孤儿」只是升级前的中间态。
 - **GC 回收崩溃残留轮**（[gcService.ts#L6](../../src/memory/gcService.ts)：refCount=0 且超龄，pending/error 不分状态）。**修订（§一·五）**：中断轮升级为正常 turn 后不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）；`listInterruptedRecent` 打捞口只服务「崩溃后尚未升级」的短暂窗口。
@@ -73,7 +75,7 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 **改（宿主）**：
 1. 抽复用函数 `checkpointRound(roundId)`：读 pending Round → merge 新 events（复用 mergeProcessEvents 单一合并语义）→ save。
-2. `step_boundary` chunk 时调用 `checkpointRound`（每个 step 完成增量落盘）。
+2. `plan_item_boundary` chunk 时调用 `checkpointRound`（每个 step 完成增量落盘）。
 3. 流尾仍保留 + `checkpointRound`（语义不变，含暂停/中断末段）。
 4. 重启后用 `listInterruptedRecent(date)` 打捞中断轮 → **升级为正常 stop turn** 并入会话 roundIds → 按普通 turn 回放（§八细化）。
 
@@ -87,7 +89,7 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 ## 六、待验证 / 风险
 
-- [x] **写侧已初步验证**：`checkpointRound` 在 `step_boundary` 增量落盘 + 流尾复用同一合并语义；内核 `2955 passed`、宿主 `26 files / 443 passed`、双端 tsc/lint 通过。
+- [x] **写侧已初步验证**：`checkpointRound` 在 `plan_item_boundary` 增量落盘 + 流尾复用同一合并语义；内核 `2955 passed`、宿主 `26 files / 443 passed`、双端 tsc/lint 通过。
 - [ ] `checkpointRound` 高频覆盖写对 roundStore 写性能的影响（step 边界频率 vs 全量流尾）——待真实长任务场景采样（T4）。
 - [x] **恢复接入 + 升级登记（代码落地，单测覆盖）**——「中断轮 → 升级为正常 stop turn 入会话」已实现：内核 `appendInterrupted` + 宿主 `upgradeInterruptedRounds`，按普通 turn 渲染（复用 roundIds 回放，无需半成品分支）。**端到端验证（杀进程→重启真实插件环境）仍待办**（§八 T1 验收）。
 - [x] **与 view 折叠重建（`_viewEpoch`）互斥**——设计上已互斥：升级不打第二条回放通道，升级轮随 `ready → replaySession` 首次回放一次性投递；宿主 once-guard + 内核 `appendInterrupted` isReappend 防重（幂等断言测试，T3）。
@@ -95,7 +97,7 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 ## 七、衔接提示词（新会话专项处理用）
 
-> step 原子级落盘**已收口过半**（2026-09-09）：写侧 `checkpointRound`（宿主 chatPanel.ts，`step_boundary` 增量落盘 + 流尾共用 `mergeProcessEvents` 单一合并语义，seq 实例级单调 `_processSeq`）+ 打捞口 `IRoundStore.listInterruptedRecent`（InMemory + Workspace 均实现含单测）+ **T1 恢复接入**（内核 `MessageHistory.appendInterrupted` 收场方法 + 宿主 `chatPanel.upgradeInterruptedRounds` 打捞升级，双端单测全绿，tsc + lint 通过）。
+> step 原子级落盘**已收口过半**（2026-09-09）：写侧 `checkpointRound`（宿主 chatPanel.ts，`plan_item_boundary` 增量落盘 + 流尾共用 `mergeProcessEvents` 单一合并语义，seq 实例级单调 `_processSeq`）+ 打捞口 `IRoundStore.listInterruptedRecent`（InMemory + Workspace 均实现含单测）+ **T1 恢复接入**（内核 `MessageHistory.appendInterrupted` 收场方法 + 宿主 `chatPanel.upgradeInterruptedRounds` 打捞升级，双端单测全绿，tsc + lint 通过）。
 >
 > **语义定案（2026-09-09 用户澄清，§一·五）**：中断轮 = **正常 turn（等同用户点停止）** —— 可删、可登记进会话 roundIds、可作后续上下文。**不是**半成品草稿 / 孤儿。恢复 = 把中断轮**升级为正常 stop turn**，按普通 turn 渲染，无需特殊草稿卡。
 >
@@ -127,3 +129,76 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 ### T4 · 写性能采样 ⏳ 待真实长任务环境
 - `checkpointRound` step 高频增量写 vs 流尾全量写，真实长任务采样（本专项环境无真实 LLM 长任务，未执行）。
+
+---
+
+## 九、档3 · 迭代边界落盘（补「无任务表」覆盖缺口）
+
+> **2026-09-23 定案**。档2 的自查结论：落盘**动作**对了，落盘**时机**错了——时机挂在 `plan_item_boundary` 上，而该信号只在「有任务表且任务项推进」时才产，导致最常见形态（无任务表的长工具循环）**零增量落盘**，档2 的收益在该形态下归零。
+
+### 9.1 缺口实证
+
+| 事实 | 证据 | 推论 |
+| --- | --- | --- |
+| `plan_item_boundary` 产出条件 = 有任务表 **且** active 任务项推进 | `loop.ts` `_maybeEmitStepBoundary`：`getActivePlanItemMeta?.()` 返回 null 或 `planItemId === lastBoundaryPlanItemId` → 不 yield | 无任务表 → 恒不产 |
+| 该 chunk 的官方语义就是「任务项推进」，不是「迭代完成」 | `types.ts` `plan_item_boundary` 注释：*「迭代完成且 active 任务项**推进**时 emit……无任务表不产」* | 它从未被设计成迭代边界，是**借用** |
+| 宿主只在两处落盘：`plan_item_boundary` 分支 + 流尾 | `chatPanel.ts` `plan_item_boundary` 分支内 `checkpointRound`；流尾 `for (const [roundId, roundEvents] of eventsByRound)` | 无任务表 turn = 只有流尾一次 |
+| 内核**每次迭代都有天然单点** | `loop.ts` 工具分支（工具执行完后）与无工具分支（LLM 调用后）**均调用** `_maybeEmitStepBoundary()` | 「迭代完成」这个事实内核本来就知道，只是被 AND 掉了 |
+
+**根因 = 术语撞车**：`plan_item_boundary` 这个名字被「任务项」阵营占用，导致「迭代」阵营没有自己的边界信号（详见本文头术语警告）。
+
+### 9.2 定案
+
+**内核**：新增 `step_boundary` chunk（语义单一：一次 LLM 迭代——含其工具执行——结束）。
+
+- **命名依据**：`iteration` 是项目**既有词汇**（`runIterationLoop` / `handleIteration` / `resetTurnState`），复用而非新造；且与 `plan_item_boundary` 不再撞名。
+- **产出点**：复用 `_maybeEmitStepBoundary()` 的**两个既有调用点**（工具分支 = 工具落定后；无工具分支 = LLM 调用后），在工具分支**之后条件 yield**。不新增第三个调用点（复杂度守恒）。
+- **产出条件 = `handleToolCalls` 返回 `'continue'`（硬，实测校准）**：只有「本迭代完成**且将继续下一轮**」才产。终态迭代（`'done'` 收尾 / `'paused'` 挂起 / `'aborted'` 中断）之后流即结束或宿主 `break` → **流尾落盘**已兜底，此处不产。
+  - **为什么不无条件产（实测教训，2026-09-23）**：初版按「无条件 yield」实现 → 内核 6 个既有用例转红（`chunks.at(-1).type` 期望 `done`/`paused`，实得 `step_boundary`）。这些断言背后是**宿主 `paused` 分支依赖「终态 chunk 是末条」才会 `break`**（chatPanel 该分支的注释有 2026-09-22 实证记录）——无条件产 = 在终态之后再塞一条 chunk，破坏了宿主收场判定所依赖的流契约。条件化同时带来第二个好处：与流尾落盘不重复写。
+  - 无工具分支（`handleTextResponse`）恒为终态 → 只产折叠边界、**不产本 chunk**。
+- **顺序约束（硬）**：`plan_item_boundary`（折叠分组）**先**、`step_boundary`（落盘触发）**后**——保证本次落盘快照**包含**本步的折叠边界事件；反序会导致崩溃时丢边界、重放分组错位。实现上由 `_emitIterationBoundary(result)` 单函数内串联两者，调用方无法只取一半。
+- **不落 ProcessEvent**：它是**落盘触发信号**，不是历史内容；`Round.processEvents` / schema 零改动。重放分组仍由 `plan_item_boundary` 事件承担。
+
+**宿主**：
+
+1. 新增 `step_boundary` 分支 → 调 `checkpointRound(currentRoundKey, events)`。
+2. **删除** `plan_item_boundary` 分支里的 `checkpointRound` 调用 → **落盘时机单一**（SSOT：一个时机，不是两个）。
+3. 流尾 checkpoint 保留（末段 / 暂停 / 中断兜底）。
+
+**覆盖范围（补齐后）**：有任务表 ✅ ｜ 无任务表 ✅ ｜ 有工具 ✅ ｜ 纯文本收尾 ✅（该分支迭代即收尾，与流尾重合，无害）。
+
+### 9.3 被否决的备选（记理由，防回退）
+
+| 备选 | 内容 | 否决理由 |
+| --- | --- | --- |
+| **B · 宿主从 `tool_result` 触发落盘** | 零内核改动，收到工具结果就 checkpoint | ① **粒度错**：工具 ≠ 迭代，一次迭代 N 个并行工具 → N 次落盘（写放大）；② **判据外置（致命）**：「哪条 `tool_result` 是本次迭代的最后一条」只有内核知道，宿主只能猜 → 宿主侧第二份迭代判据，**违 SSOT**；③ 纯文本迭代仍无覆盖 |
+| **C · 放宽 `plan_item_boundary` 条件（无任务表也 emit）** | 复用现有事件，零新增 | **语义污染**：该事件兼作 webview 步级折叠的分组依据，无 `planItemId` 的空边界会造出**无标题折叠块**；且存量落盘数据里该事件语义已被消费，改条件 = 改历史解释 |
+
+### 9.4 不做 / 已知限界
+
+- **不做**断点续跑；**不改** `Round` schema / 存储格式；**不动** `appendAssistant`。
+- **ask 挂起当次迭代不产边界**：语义正确（挂起型迭代未「完成」），代价是提问等待期的过程不落盘；但此前迭代均已落盘，等待期新增量极小（一条 narrate + 一条 ask_user tool_start），流尾/续跑会补。**登记为已知限界，不修**。
+  - *机制澄清（实测校准）*：ask 并不能靠「提前 return 不经产出点」实现——`handleAskUser` 在 `handleToolCalls` 内部，返回 `'paused'` 后控制流**仍会回到工具分支后的产出点**。真正挡住它的是**产出条件 `result === 'continue'`**。故该限界与「终态不产」是**同一条判据**，不是两处特判。
+- **暂停**不受影响：`paused` chunk → 宿主 break → 流尾落盘（既有路径）。
+- **中断/失败轮**：同样由流尾兜底（宿主 `break` / 流尾 checkpoint），不依赖本 chunk。
+- **无工具迭代（纯文本收尾）**：本 chunk 不产 —— 该迭代即 turn 收尾，流尾落盘覆盖，无中间段可丢。
+- **写频次**：由「任务项推进次数」升为「迭代次数」，T4 采样项口径同步更新。
+
+### 9.5 验收口径（✅ 已落地并实测）
+
+| 层 | 判据 | 用例位置 | 实测 |
+| --- | --- | --- | --- |
+| 内核 | 无任务表 + 2 次工具迭代 → 边界数 = 2；且边界在 `tool_result` 之后、末条仍为终态 | `src/agent/__tests__/iterationBoundary.test.ts` | ✅ 7 例通过 |
+| 内核 | **档2 缺口锁**：全程无 `plan_item_boundary`（无任务表）仍产边界 | 同上 | ✅ |
+| 内核 | 终态不产：策略屏蔽（`done`）/ ask 挂起（`paused`）/ 纯文本收尾 → 0 条，末条不变 | 同上 | ✅ |
+| 内核 | **顺序契约**：`plan_item_boundary` 索引 < `step_boundary` 索引 | 同上 | ✅ |
+| 宿主 | 两次边界到达 → 两次增量落盘（第一次不含后一迭代工具）+ 流尾一次 = 3 次 `save` | `hosts/.../chatPanelHistory.test.ts`（`spySaves` 观测 save 快照） | ✅ |
+| 宿主 | 时机单一：`plan_item_boundary` 到场不写库，全程仅流尾 1 次 | 同上 | ✅ |
+| 变异 | A 删产出语句 → 内核 3 例转红；B 无条件产 → 内核 2 例转红；C 顺序倒置 → 顺序用例转红；D/E 宿主落盘条件对调 → 宿主 2 例转红 | 逐条实测执行 | ✅ 全部转红 |
+| 质量门 | 内核：`tsc` + `eslint --max-warnings 0` + `vitest`；宿主：同三件 + `tsc -p ./ && esbuild` 构建 | — | ✅ 内核 109 文件 / 2765 passed；宿主 34 文件 / 604 passed（2 skipped），构建通过 |
+
+> 实测环境：2026-09-23，Windows，Node 22.22.2，vitest 4.1.11。数字随改动漂移，引用前重测。
+
+### 9.6 关联
+
+- 术语正名（任务项 `planItem`：`PlanItem` → `PlanItem`、`planItemId` → `planItemId`、`plan_item_boundary` → `plan_item_boundary`）**独立后做**，见 [方案-turn运行时与会话渲染SSOT收口-20260923.md](../方案-turn运行时与会话渲染SSOT收口-20260923.md) §六 执行层缺口登记。**档3 不依赖正名，可独立提交早见效。**

@@ -7,7 +7,7 @@
  *     跨重启恢复链已随 2026-09-10 减法退役）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
- *   - 执行计划管理（advancePlan/completeStep/isPlanAllBlocked）
+ *   - 执行计划管理（advancePlan/completePlanItem/isPlanAllBlocked）
  *   - 目标版本一致性校验（updateGoal → goalDriftDetected）
  *   - 端到端场景（Agent 门面完整工作流）
  *
@@ -34,7 +34,7 @@ import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemorySessionStore } from '@/memory/inMemorySessionStore.js';
 import type {
   SessionCheckpoint,
-  PlanStep,
+  PlanItem,
   ToolExecutionRecord,
   PreExecutionResult,
 } from '@/agent/types.js';
@@ -421,10 +421,10 @@ describe('SessionManager · 检查点管理', () => {
     });
   });
 
-  describe('updatePlan / completeStep', () => {
+  describe('updatePlan / completePlanItem', () => {
     it('updatePlan 应更新检查点计划', () => {
       manager.createCheckpoint('测试');
-      const plan: PlanStep[] = [
+      const plan: PlanItem[] = [
         { id: 'step1', description: '步骤1', status: 'pending', order: 0 },
         { id: 'step2', description: '步骤2', status: 'pending', order: 1 },
       ];
@@ -432,42 +432,42 @@ describe('SessionManager · 检查点管理', () => {
       expect(manager.getCheckpoint()!.plan).toHaveLength(2);
     });
 
-    it('completeStep 应标记步骤为完成并记录 step 推进日志', () => {
+    it('completePlanItem 应标记步骤为完成并记录 step 推进日志', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
       ]);
-      manager.completeStep({ planStepId: 's1', summary: '测试 step' });
+      manager.completePlanItem({ planItemId: 's1', summary: '测试 step' });
       const step = manager.getCheckpoint()!.plan[0]!;
       expect(step.status).toBe('done');
-      expect(manager.getCheckpoint()!.stepLog).toHaveLength(1);
-      expect(manager.getCheckpoint()!.stepLog![0]!.summary).toBe('测试 step');
+      expect(manager.getCheckpoint()!.planItemLog).toHaveLength(1);
+      expect(manager.getCheckpoint()!.planItemLog![0]!.summary).toBe('测试 step');
     });
 
-    it('completeStep 必须走 updatePlanStepStatus 唯一写点（不得直改 status）', () => {
+    it('completePlanItem 必须走 updatePlanItemStatus 唯一写点（不得直改 status）', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
       ]);
       // 契约级断言：直接锁住「写点收口」——未来若有人改回 step.status='done' 直改，此测试必红
       const spy = vi.spyOn(
-        manager as unknown as { updatePlanStepStatus(id: string, s: string): boolean },
-        'updatePlanStepStatus',
+        manager as unknown as { updatePlanItemStatus(id: string, s: string): boolean },
+        'updatePlanItemStatus',
       );
-      manager.completeStep({ planStepId: 's1', summary: '测试 step' });
+      manager.completePlanItem({ planItemId: 's1', summary: '测试 step' });
       expect(spy).toHaveBeenCalledTimes(1);
       expect(spy).toHaveBeenCalledWith('s1', 'done');
       expect(manager.getCheckpoint()!.plan[0]!.status).toBe('done');
       spy.mockRestore();
     });
 
-    it('无 planStepId 的 completeStep 仍记录 step 推进日志（收口不破无步骤路径）', () => {
+    it('无 planItemId 的 completePlanItem 仍记录 step 推进日志（收口不破无步骤路径）', () => {
       manager.createCheckpoint('测试');
-      manager.completeStep({ summary: '自由对话迭代' });
+      manager.completePlanItem({ summary: '自由对话迭代' });
       const cp = manager.getCheckpoint()!;
-      expect(cp.stepLog).toHaveLength(1);
-      expect(cp.stepLog![0]!.summary).toBe('自由对话迭代');
-      // 无 planStepId 时不应触碰 plan 状态
+      expect(cp.planItemLog).toHaveLength(1);
+      expect(cp.planItemLog![0]!.summary).toBe('自由对话迭代');
+      // 无 planItemId 时不应触碰 plan 状态
       expect(cp.plan).toHaveLength(0);
     });
 
@@ -1258,13 +1258,13 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   /**
    * 场景 E：task_table_update 更新步骤必须标脏
    *
-   * 旧缺陷：updateStep 手写 lastHeartbeat 绕过 touchCheckpoint → checkpointDirty 未置位
+   * 旧缺陷：updatePlanItem 手写 lastHeartbeat 绕过 touchCheckpoint → checkpointDirty 未置位
    * → 计划状态变更的脏标记永不置位（settleCheckpoint 见脏才清脏，未置脏即静默早退）。
    *
    * 断言策略：直接 spy touchCheckpoint（运行时存在，TS private 仅编译期约束）。
-   * 行为级断言（updateStep 后触发 flush 看写盘）不可靠——chatSync 路径存在其他
+   * 行为级断言（updatePlanItem 后触发 flush 看写盘）不可靠——chatSync 路径存在其他
    * touchCheckpoint（如 updateGoal），会干扰 dirty 的归属，导致变异验证误绿。
-   * 契约级断言直接锁定「updateStep 必须走标脏路径」。
+   * 契约级断言直接锁定「updatePlanItem 必须走标脏路径」。
    */
   it('场景 E：task_table_update 更新步骤必须标脏', { timeout: 30000 }, async () => {
     agent = new Agent({
@@ -1294,11 +1294,11 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     const touchSpy = vi.spyOn(sm as unknown as { touchCheckpoint: () => void }, 'touchCheckpoint');
 
     // LLM 经 task_table_update 工具将步骤标记为 done
-    const result = agent.tools!.planManager!.updateStep('step-1', 'done');
+    const result = agent.tools!.planManager!.updatePlanItem('step-1', 'done');
     expect(result).toContain('已标记为 done');
     expect(agent.getCheckpoint()!.plan[0]!.status).toBe('done');
 
-      // updateStep 必须经标脏路径，touchCheckpoint 应被调用
+      // updatePlanItem 必须经标脏路径，touchCheckpoint 应被调用
       expect(touchSpy).toHaveBeenCalledTimes(1);
     });
 
@@ -1306,10 +1306,10 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    * 场景 G：turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）
    *
    * 新契约（2026-09-22）：chat() 流退出（turn 真正结束）时，无论步骤是否全部标记完成，
-   * 都清空 checkpoint.plan 与 stepLog —— 宏任务一个 turn 完不成则兜底丢弃，下个 turn 重新规划。
+   * 都清空 checkpoint.plan 与 planItemLog —— 宏任务一个 turn 完不成则兜底丢弃，下个 turn 重新规划。
    * 本用例为端到端回归锁：即使存在 pending 步骤（未全 done），turn 结束后任务表也必须被清理。
-   * stepLog 关联 active 步骤的细节由 assembler.test「onStepBoundary：写入当前 active 步骤的 stepLog」
-   * 直接覆盖（turn 中途观察；本测试跑完整轮后 plan 已被清，无法在 turn 后断言 stepLog）。
+   * planItemLog 关联 active 步骤的细节由 assembler.test「onPlanItemBoundary：写入当前 active 步骤的 planItemLog」
+   * 直接覆盖（turn 中途观察；本测试跑完整轮后 plan 已被清，无法在 turn 后断言 planItemLog）。
    */
   it('场景 G：turn 结束无条件清理任务表（即使存在 pending 步骤）', { timeout: 30000 }, async () => {
     agent = new Agent({
@@ -1324,9 +1324,9 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     await agent.init();
 
     agent.createCheckpoint('测试目标');
-    const stepId = 'step-active-1';
+    const planItemId = 'step-active-1';
     agent.getCheckpoint()!.plan.push({
-      id: stepId,
+      id: planItemId,
       description: '当前执行步骤',
       status: 'active',
       order: 1,
@@ -1342,10 +1342,10 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 触发一轮对话 → turn 结束时兜底清理任务表
     await agent.chatSync('推进任务');
 
-    // 新契约：turn 结束后任务表已清空（plan 与 stepLog 均不残留）
+    // 新契约：turn 结束后任务表已清空（plan 与 planItemLog 均不残留）
     const cp = agent.getCheckpoint()!;
     expect(cp.plan).toHaveLength(0);
-    expect(cp.stepLog ?? []).toHaveLength(0);
+    expect(cp.planItemLog ?? []).toHaveLength(0);
   });
 
   /**
@@ -1391,7 +1391,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 核心断言：resume 收尾后任务表已清空（与 chat() 终态同构，不跨 turn 残留）
     const cp = agent.getCheckpoint()!;
     expect(cp.plan).toHaveLength(0);
-    expect(cp.stepLog ?? []).toHaveLength(0);
+    expect(cp.planItemLog ?? []).toHaveLength(0);
   });
 
   /**
@@ -1705,7 +1705,7 @@ class AskThenResumeProvider extends LlmProvider {
  * - 首轮调 ask_user 工具挂起（在既有 plan 之上提问，不预写任务表——plan 由测试直接
  *   push 进 checkpoint，聚焦「提问迭代与 step 日志归属」的交互语义）；
  * - 续跑轮（上下文含 [ASK_ANSWER] 回答 tool 结果）纯文本收尾（不调工具）——
- *   形态②（PLAN-SYNC-1 ①）下边界只写 stepLog、不推进：提问步 S1 保持 active 不被自动 done
+ *   形态②（PLAN-SYNC-1 ①）下边界只写 planItemLog、不推进：提问步 S1 保持 active 不被自动 done
  *   （若旧码在提问轮已提前 done 步，则续跑轮会错完成下一步 → 转红）。
  * 复用 AskThenResumeProvider 的 summarizer / sessionNamer 分岔守卫（不消耗主对话分岔状态）。
  */
@@ -2008,11 +2008,11 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
   });
 
   // ─── 缝隙 A（2026-09-07）：plan + ask_user 组合（提问轮不消耗 step）──────────────────
-  // 旧缺陷：onStepBoundary（:955）先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
+  // 旧缺陷：onPlanItemBoundary（:955）先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
   // 先把当前 active step 自动 done、推进到下一步，再挂起等答案——回答续跑后问答产出被
   // 归到「下一步」，提问步无继续表达通道（与用户暂停在迭代边界挂起、不推进 step 不对称）。
   // 修复：含 ask_user 将挂起的迭代不触发 step 边界日志（willSuspendForAsk 排除）；
-  // 形态②（PLAN-SYNC-1 ①）后 onStepBoundary 本就不推进（唯一写者 = task_table_update），
+  // 形态②（PLAN-SYNC-1 ①）后 onPlanItemBoundary 本就不推进（唯一写者 = task_table_update），
   // 故问答对恒归当前步；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
 
   it('缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）', { timeout: 30000 }, async () => {
@@ -2081,7 +2081,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     // 下个 turn 由 LLM 重新规划）。旧实现 autoClearPlanIfAllDone 仅全 done 才清，
     // 导致此处非全 done 残留 → 跨 turn 污染；修正后统一走 clearPlanOnTurnEnd。
     expect(cp.plan).toHaveLength(0);
-    expect(cp.stepLog ?? []).toHaveLength(0);
+    expect(cp.planItemLog ?? []).toHaveLength(0);
   });
 });
 

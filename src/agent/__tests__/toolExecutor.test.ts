@@ -1457,16 +1457,16 @@ describe('工具执行器（6 个工具）', () => {
       { id: 'c9d0e1f2-step-3', description: '方案设计师汇总', status: 'pending', order: 2 },
     ];
 
-    /** 注入 planManager 桩：记录 updateStep 最终收到的 stepId（解析后应为完整 uuid） */
+    /** 注入 planManager 桩：记录 updatePlanItem 最终收到的 planItemId（解析后应为完整 uuid） */
     function injectPlanManager(
       plan: Array<{ id: string; description: string; status: string; order: number }> = DEFAULT_PLAN,
     ): { updateCalls: string[] } {
       const updateCalls: string[] = [];
       executor.planManager = {
         writePlan: () => '',
-        updateStep: (stepId: string) => {
-          updateCalls.push(stepId);
-          return `步骤 [${stepId.slice(0, 8)}] 已更新`;
+        updatePlanItem: (planItemId: string) => {
+          updateCalls.push(planItemId);
+          return `步骤 [${planItemId.slice(0, 8)}] 已更新`;
         },
         getPlan: () => plan,
       };

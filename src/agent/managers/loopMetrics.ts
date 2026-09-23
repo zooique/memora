@@ -55,8 +55,8 @@ export class LoopMetrics {
   // ─── 任务表触发观测量（2026-09-14 层0：先实证"任务表从未被 LLM 触发"，再决定触发修复是否起效）──
   /** 累计调用 task_table_write 次数（= 任务表建表/重建次数） */
   planTaskTableWriteCount = 0;
-  /** 累计产出 step_boundary 次数（= 思考折叠分块的边界数） */
-  stepBoundaryCount = 0;
+  /** 累计产出 plan_item_boundary 次数（= 思考折叠分块的边界数） */
+  planItemBoundaryCount = 0;
 
   // ─── TOOLPAIR-2 发送边界守卫（2026-09-15 Step 2）──────────────────
   /** 发送边界守卫命中次数（tool_call 批次成形违规被拒发）。健康态应恒 0——

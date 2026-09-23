@@ -161,7 +161,7 @@ export interface AgentHooks {
    */
   refreshRolePackPrefixOnLoop?: () => void;
   /**
-   * 会议逐步切换（T1，2026-09-06 收口）：按当前 active 任务表步骤的 rolePack 刷新本轮装配视角。
+   * 会议逐步切换（T1，2026-09-06 收口）：按当前 active 任务项的 rolePack 刷新本轮装配视角。
    *
    * 由 taskTable 每轮注入时驱动——与任务表渲染同源（同读「当前 active step」），弥补
    * 此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
@@ -311,14 +311,14 @@ export interface AssembleOutput {
 // ── 子工厂函数 ─────────────────────────────────────────────
 
 /**
- * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onStepBoundary/getTaskTable/planManager）
+ * 装配 loop 运行时回调 + 任务表管理（接线下沉：onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
  *
  * 这些闭包原内联在 Agent.assembleComponents 尾部，现回填到组装器——接线本质是组件间协作，
  * 属装配职责（装配逻辑单一真理源）。
  * 注：loop.onPaused 不再在此装配——暂停收口（Agent.consumeExecutionStream）统一写 pauseMeta。
  * 注：任务表停滞检测已迁移到单 turn step 循环内嵌（2026-09-04 收敛：多 turn 编排已砍）。
  *
- * @param loop AgentLoop（装配其 onPendingQuestion/onStepBoundary/getTaskTable）
+ * @param loop AgentLoop（装配其 onPendingQuestion/onPlanItemBoundary/getTaskTable）
  * @param toolExec 工具执行器（装配其 planManager）
  * @param sessionManager 会话管理器（全部闭包的操作落点）
  * @param hooks Agent 门面注入的稳定能力（emit/requestPause；可选，缺省 no-op）
@@ -339,37 +339,37 @@ function wireRuntimeCallbacks(
     hooks?.requestPause(reason, 'agent');
   };
 
-  // step 边界回调（每次 LLM 迭代完成后、工具执行前触发）：只写 stepLog 关联任务表当前 active
-  // 步骤（时间轴投影）。形态②（PLAN-SYNC-1 ①）：不再 completeStep——plan 状态推进唯一写者 =
-  // LLM 的 task_table_update（updateStep → updatePlanStepStatus 单一写点）；LLM 未显式 update
-  // 的最后一步由 turn 收尾兜底（orchestrator → concludeActiveStepIfPlanFullyReached）补上。
-  loop.onStepBoundary = (stepInfo) => {
-    const activeStepId = sessionManager
+  // step 边界回调（每次 LLM 迭代完成后、工具执行前触发）：只写 planItemLog 关联任务表当前 active
+  // 步骤（时间轴投影）。形态②（PLAN-SYNC-1 ①）：不再 completePlanItem——plan 状态推进唯一写者 =
+  // LLM 的 task_table_update（updatePlanItem → updatePlanItemStatus 单一写点）；LLM 未显式 update
+  // 的最后一步由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
+  loop.onPlanItemBoundary = (planItemInfo) => {
+    const activePlanItemId = sessionManager
       .getCheckpoint()
       ?.plan.find((s) => s.status === 'active')?.id;
-    sessionManager.logStepBoundary({
-      planStepId: activeStepId,
-      summary: stepInfo.summary,
+    sessionManager.logPlanItemBoundary({
+      planItemId: activePlanItemId,
+      summary: planItemInfo.summary,
     });
   };
 
   // active step 元信息回调（阶段二步级折叠，2026-09-08 路 B′）：loop 经 _maybeEmitStepBoundary
-  // 在本迭代工具落定后取当前 active 步骤 { stepId, title }，供 loop 对比推进产 step_boundary
-  // 事件。无任务表返回 null，宿主端据此不产边界（静默）。与 onStepBoundary 读同一 checkpoint.plan
+  // 在本迭代工具落定后取当前 active 步骤 { planItemId, title }，供 loop 对比推进产 plan_item_boundary
+  // 事件。无任务表返回 null，宿主端据此不产边界（静默）。与 onPlanItemBoundary 读同一 checkpoint.plan
   // 真源，但读取时刻不同（2026-09-17 收敛）：前者读工具前的 active（本迭代服务的步骤，只写
-  // stepLog 不推进），本回调读工具后的 active（工具改写 plan 生效后当前所在的那一步）——
+  // planItemLog 不推进），本回调读工具后的 active（工具改写 plan 生效后当前所在的那一步）——
   // 时序分叉是设计语义。
-  loop.getActiveStepMeta = () => {
+  loop.getActivePlanItemMeta = () => {
     const cp = sessionManager.getCheckpoint();
     const active = cp?.plan.find((s) => s.status === 'active');
     return active
-      ? { stepId: active.id, title: active.description ?? active.id }
+      ? { planItemId: active.id, title: active.description ?? active.id }
       : null;
   };
 
   // 在途任务表判定回调（单一真理源 = SessionManager.hasInflightPlan）：loop 注入 needsPlanning
   // nudge 前询问「是否已有在途任务表」。与 prepare 的会议骨架守卫共用同一谓词——同一命题
-  // 禁两处各自实现（曾为 prepare 内联谓词 + loop 借 getActiveStepMeta 存在性两处）。
+  // 禁两处各自实现（曾为 prepare 内联谓词 + loop 借 getActivePlanItemMeta 存在性两处）。
   loop.hasInflightPlan = () => sessionManager.hasInflightPlan();
 
   // 装配任务表注入回调：每次迭代 LLM 调用前统一注入
@@ -378,7 +378,7 @@ function wireRuntimeCallbacks(
     if (!cp) return '';
     // 会议逐步切换：每轮按当前 active step 派生装配视角（与任务表渲染同源；防重见 agent.applyActiveStepAssemblyIfChanged）
     hooks?.applyActiveStepAssembly?.();
-    const table = renderTaskTable(cp.plan, cp.stepLog);
+    const table = renderTaskTable(cp.plan, cp.planItemLog);
     if (!table) return '';
     // P3 未完成硬约束（2026-09-22）：仍有步骤未标记 done 时追加「不得提前收尾」执行要求。
     // 实证（round-1790068191972）：ask 回答后续跑轮，LLM 已提出「重新标记步骤4」却未调
@@ -409,19 +409,19 @@ function wireRuntimeCallbacks(
         .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}${s.rolePack ? `（角色：${s.rolePack}）` : ''}`)
         .join('\n')}`;
     },
-    updateStep: (stepId, status) => {
-      // 状态变更收口 SessionManager.updatePlanStepStatus（内部标脏 + 心跳，唯一写点）。
+    updatePlanItem: (planItemId, status) => {
+      // 状态变更收口 SessionManager.updatePlanItemStatus（内部标脏 + 心跳，唯一写点）。
       // 必须经此写点置 checkpointDirty，否则计划变更可能丢失标脏（纯内存态）
-      if (!sessionManager.updatePlanStepStatus(stepId, status)) {
-        return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${stepId}`;
+      if (!sessionManager.updatePlanItemStatus(planItemId, status)) {
+        return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${planItemId}`;
       }
-      // updatePlanStepStatus 返回 true ⇒ checkpoint/plan 必存在（SessionManager.updatePlanStepStatus 早退契约），用非空断言保证
+      // updatePlanItemStatus 返回 true ⇒ checkpoint/plan 必存在（SessionManager.updatePlanItemStatus 早退契约），用非空断言保证
       const plan = sessionManager.getCheckpoint()!.plan;
-      const step = plan.find((s) => s.id === stepId);
+      const step = plan.find((s) => s.id === planItemId);
       // 收尾验证 nudge（2026-09-07 ME-10）：把最后一步标 done = LLM 宣称任务完成——
       // 若全 done 且无执行性验证步骤，追加提示引导补真验证（触发条件确定性，内容交 LLM）。
       // 仅 done 路径触发（blocked 是中止宣告，无需 nudge）；判定函数返回 null = 零打扰。
-      const result = `步骤 [${stepId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
+      const result = `步骤 [${planItemId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
       if (status === 'done') {
         return result + (buildCompletionVerifyNudge(plan) ?? '');
       }
@@ -883,7 +883,7 @@ export async function assembleComponents(
     });
   loopRef = loop;
 
-  // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onStepBoundary/getTaskTable/planManager）
+  // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
   wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks);
 
   // ── 依赖 Loop 的组件 ──

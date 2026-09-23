@@ -37,8 +37,10 @@ import {
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
+  RoundView,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
+import { deriveTurnState } from '../../shared/turnProjection.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
@@ -82,35 +84,13 @@ const ASK_TIMEOUT_MS = 120_000;
 const ASK_TIMEOUT_NOTICE = '用户未在时限内回答，已自动继续';
 
 /**
- * 单轮重放视图（v1.5 交织重放）
+ * 单轮重放视图 —— **已收编为协议 `RoundView`（M2，2026-09-23）**
  *
- * 正文（user/assistant）与过程事件（processEvents）同源同轮——同一 Round 文件内读取，
- * 由 sendRoundView 按 §3.7 时序发送（user → meta → 其余 replay_events → assistant）。
+ * 原 `ReplayRound` 是宿主侧的「第二份轮投影」（扁平形状 {content,ts} + 派生字段 interrupted），
+ * 与内核 `Round` 并列即腐化：改任一字段都要两处对表。现统一走 `shared/protocol.ts` 的
+ * `RoundView`（内核 Round 的 Pick 投影，运行时与重放共用同一形状）。
+ * 派生量（`interrupted` / 「仅 complete 轮挂正文」）改由 `status` 在发送侧派生，不再存字段。
  */
-interface ReplayRound {
-  /** 问答闭环 ID */
-  roundId: string;
-  /** 用户消息（缺省 = 该轮无用户正文，如 resume 轮） */
-  user?: { content: string; ts?: string };
-  /** AI 消息（仅 complete 轮有） */
-  assistant?: { content: string; ts?: string };
-  /** 是否为中断轮（Round.status === 'interrupted'，2026-09-15）：重放过程独立平铺可见，不进折叠块 */
-  interrupted?: boolean;
-  /** 该轮过程事件（Round.processEvents；无过程数据则空数组，只回放正文） */
-  processEvents: ProcessEvent[];
-  /** 问答闭环内交互输入（TS-9：主动提问回答/补充，折叠块渲染，不分裂新轮） */
-  interactiveInputs?: {
-    content: string;
-    ts?: string;
-    kind: InteractiveInputKind;
-    /** G26：该回答所对的 ask_user 提问原文（question-answer 且随轮落盘时有） */
-    question?: string;
-    /** G26：LLM 提问候选选项（静态展示用） */
-    options?: string[];
-  }[];
-  /** 问答闭环内前序 assistant 段（TS-9：如主动提问，排在交互输入之前） */
-  assistantLog?: { content: string; ts?: string }[];
-}
 
 /** 文档上下文注入上限（字符，约 3~4k token，防大文档爆上下文） */
 const MAX_DOC_CONTEXT_CHARS = 12000;
@@ -1476,8 +1456,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       }
       const rounds = this.loadRoundBasedHistory();
       for (const r of rounds) {
-        if (r.user) msgs.push({ role: 'user', content: r.user.content });
-        if (r.assistant) msgs.push({ role: 'assistant', content: r.assistant.content });
+        if (r.userMessage?.content) msgs.push({ role: 'user', content: r.userMessage.content });
+        // 与 sendRoundView 同判据：仅 complete 轮取正文（中断轮正文与平铺 narrate 同源，不重复计）
+        if (r.status === 'complete' && r.assistantMessage?.content) {
+          msgs.push({ role: 'assistant', content: r.assistantMessage.content });
+        }
       }
       return msgs;
     }
@@ -1867,7 +1850,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * @returns 按轮分组的重放视图（按完整 round 截断，杜绝半轮不对称）
    */
-  private loadRoundBasedHistory(): ReplayRound[] {
+  private loadRoundBasedHistory(): RoundView[] {
     if (!this._viewLoader) {
       // 没有 viewLoader 时返回空数组
       console.warn('Memora：round-based 会话需要 viewLoader，但未注入');
@@ -1876,42 +1859,26 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
     try {
       const view: SessionView = this._viewLoader.loadView(this._currentSessionId);
-      const rounds: ReplayRound[] = [];
+      const rounds: RoundView[] = [];
 
-      // 从 SessionView 中提取消息并按轮分组（正文与过程事件同源同轮，v1.5 单文件内聚）
+      // 从 SessionView 中提取并投影为 RoundView（正文与过程事件同源同轮，v1.5 单文件内聚）
+      // M2：不再手工扁平化为 {content,ts} —— 直接透出 Round 形状，由 sendRoundView 在发送侧派生。
       for (const round of view.rounds) {
         rounds.push({
-          roundId: round.id,
-          user: round.userMessage?.content
-            ? { content: stripInjectedContextPrefix(round.userMessage.content), ts: round.userMessage.timestamp }
-            : undefined,
-          // assistant 正文块仅 complete 轮挂载 —— **渲染分流判据，非收场判据**（勿替换为
-          // isRoundSettled）。中断轮**可能确有** assistantMessage：`MessageHistory.appendInterrupted`
-          // 在「有恢复文本」时才写，运行期走 `orchestrator.act` 的 streamResult.content、崩溃打捞走
-          // `upgradeInterruptedRounds` 的 narrate 拼接。不挂正文的真正理由 = **同源去双份**：该文本
-          // 与下方 processEvents 平铺区内容相同（narrate 即其唯一来源），再挂一块会重复显示。
-          // 「是否计入会话视图 / LLM 历史」的判据是 isRoundSettled（见 roundStore.RoundStatus 文档）。
-          assistant:
-            round.assistantMessage?.content && round.status === 'complete'
-              ? { content: round.assistantMessage.content, ts: round.assistantMessage.timestamp }
-              : undefined,
-          // 中断轮（status==='interrupted'，2026-09-15）：重放过程独立平铺可见，不进折叠块
-          interrupted: round.status === 'interrupted' ? true : undefined,
+          id: round.id,
+          // 用户正文剥离宿主注入的上下文信封前缀（技能块 + 文档块），与实时回显发裸 input 对称
+          userMessage: {
+            ...round.userMessage,
+            content: stripInjectedContextPrefix(round.userMessage.content),
+          },
+          assistantMessage: round.assistantMessage,
+          interactiveInputs: round.interactiveInputs,
+          assistantLog: round.assistantLog,
+          status: round.status,
+          createdAt: round.createdAt,
+          completedAt: round.completedAt,
           // 过程事件从 Round 同文件读取；无 processEvents（纯问答轮/异常轮）为空数组
           processEvents: this._eventLogRoundStore?.getById(round.id)?.processEvents ?? [],
-          // 交互输入与前序 assistant 段（TS-9：同一闭环节点内，不分裂新轮）
-          interactiveInputs: round.interactiveInputs?.map((i) => ({
-            content: i.content,
-            ts: i.timestamp,
-            kind: i.kind,
-            // G26：提问原文/选项随轮落盘透出（question-answer；旧数据缺省）
-            ...(i.question ? { question: i.question } : {}),
-            ...(i.options && i.options.length > 0 ? { options: i.options } : {}),
-          })),
-          assistantLog: round.assistantLog?.map((m) => ({
-            content: m.content,
-            ts: m.timestamp,
-          })),
         });
       }
 
@@ -1939,66 +1906,77 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 由 webview 渲染为行内打断切分条，语义还原内核 interject() 的 abort→续跑语义（符号定位：内核 loop 的 interject；不写行号——行号无 SSOT）。
    * 交互输入按 ts 升序与前序 assistant 段交织：ts 缺失时保持稳定序（段 → 提问回答 → 补充）。
    */
-  private sendRoundView(rounds: ReplayRound[]): void {
+  private sendRoundView(rounds: RoundView[]): void {
     for (const r of rounds) {
       // 主用户输入（roundId 全程携带：同环连线底座，webview 依此重置「续接」判定）
-      if (r.user) this.post({ type: 'user', text: r.user.content, ts: r.user.ts, roundId: r.roundId });
+      if (r.userMessage?.content) {
+        this.post({ type: 'user', text: r.userMessage.content, ts: r.userMessage.timestamp, roundId: r.id });
+      }
       // 整批统一发 replay_events（含 meta）：拆分 meta 走 process_event 会让 webview 端把
       // 该轮当「运行时新轮」触发骨架创建，产生重复消息块（原因见方法注释，勿再拆分）
-      if (r.processEvents.length > 0) {
-        // interrupted 标志随 replay_events 透出：webview 据此把中断轮过程独立平铺、不进折叠块
+      const events = r.processEvents ?? [];
+      if (events.length > 0) {
+        // interrupted 由 status 派生（M2：不再存派生字段）：webview 据此把中断轮过程独立平铺、
+        // 不进折叠块
         this.post({
           type: 'replay_events',
-          roundId: r.roundId,
-          events: r.processEvents,
-          ...(r.interrupted ? { interrupted: true } : {}),
+          roundId: r.id,
+          events,
+          ...(r.status === 'interrupted' ? { interrupted: true } : {}),
         });
       }
       // —— 中间段：前序 assistant 段 + 交互输入按时间升序交织（还原真实时序）——
       const middle: {
-        kind: 'seg' | 'qa' | 'supp' | 'timeout';
+        kind: 'seg' | InteractiveInputKind;
         content: string;
         ts?: string;
         question?: string;
         options?: string[];
       }[] = [
-        ...(r.assistantLog ?? []).map((m) => ({ kind: 'seg' as const, content: m.content, ts: m.ts })),
-        ...(r.interactiveInputs ?? []).map((i) => {
-          // kind 归一：qa=question-answer；supp=supplement；timeout 原样透传（2026-09-08 超时保底，
-          // 渲染「未回答」行须携带提问原文，不可并入 supp/qa 丢语义）
-          const kind =
-            i.kind === 'supplement' ? ('supp' as const) : i.kind === 'timeout' ? ('timeout' as const) : ('qa' as const);
-          return {
-            kind,
-            content: i.content,
-            ts: i.ts,
-            ...(i.question ? { question: i.question } : {}),
-            ...(i.options && i.options.length > 0 ? { options: i.options } : {}),
-          };
-        }),
+        ...(r.assistantLog ?? []).map((m) => ({
+          kind: 'seg' as const,
+          content: m.content,
+          ts: m.timestamp,
+        })),
+        ...(r.interactiveInputs ?? []).map((i) => ({
+          // M2：kind 直接透出内核 InteractiveInputKind（question-answer / supplement / timeout），
+          // 不再归约为 qa/supp 短名 —— 短名映射是第二套命名，改内核枚举即漂移。
+          kind: i.kind,
+          content: i.content,
+          ts: i.timestamp,
+          question: i.question,
+          options: i.options,
+        })),
       ].sort((a, b) => (a.ts ?? '').localeCompare(b.ts ?? ''));
       for (const item of middle) {
         if (!item.content) continue;
         if (item.kind === 'seg') {
-          this.post({ type: 'assistant', text: item.content, ts: item.ts, roundId: r.roundId });
-        } else if (item.kind === 'qa' || item.kind === 'timeout') {
+          this.post({ type: 'assistant', text: item.content, ts: item.ts, roundId: r.id });
+        } else if (item.kind === 'question-answer' || item.kind === 'timeout') {
           this.post({
             type: 'user',
             text: item.content,
             ts: item.ts,
-            roundId: r.roundId,
-            kind: item.kind === 'timeout' ? 'timeout' : 'question-answer',
+            roundId: r.id,
+            kind: item.kind,
             // G26：回答所对的提问原文/选项随重放消息携带（webview 还原问题块；supp 不携）
             ...(item.question ? { question: item.question } : {}),
             ...(item.options && item.options.length > 0 ? { options: item.options } : {}),
           });
         } else {
-          this.post({ type: 'user', text: item.content, ts: item.ts, roundId: r.roundId, kind: 'supplement' });
+          this.post({ type: 'user', text: item.content, ts: item.ts, roundId: r.id, kind: 'supplement' });
         }
       }
       // 最终回答（末段）：webview 以同 roundId 判定「同环续接」（B）
-      if (r.assistant) {
-        this.post({ type: 'assistant', text: r.assistant.content, ts: r.assistant.ts, roundId: r.roundId });
+      // **渲染分流判据，非收场判据**（勿替换为 isRoundSettled）：中断轮可能确有 assistantMessage，
+      // 不挂正文是为了与平铺区 narrate 同源去双份；「是否计入会话视图/历史」才用 isRoundSettled。
+      if (r.status === 'complete' && r.assistantMessage?.content) {
+        this.post({
+          type: 'assistant',
+          text: r.assistantMessage.content,
+          ts: r.assistantMessage.timestamp,
+          roundId: r.id,
+        });
       }
     }
   }
@@ -2043,6 +2021,35 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 向 webview 发送消息 */
   private post(msg: ExtensionToWebviewMessage): void {
     void this._view?.webview.postMessage(msg);
+  }
+
+  /**
+   * 推送 turn 投影（M3b-1，2026-09-23）——与旧状态消息**并行**发送，webview 暂不消费。
+   *
+   * 双轨期纪律：只新增 `turn_update`，不改任何既有消息；M5 再删旧消息。
+   * `rounds` 一律取**落盘历史**（`loadRoundBasedHistory`）的完整轮——运行时未落盘的当前轮
+   * **不入列**，避免投递半残数据（半残比不投更危险）。待 M3b-2 补运行时 live 轮后再含当前轮。
+   * `state` 由 `deriveTurnState` 单点折叠（替代五条状态消息各自驱动一角）。
+   *
+   * @param liveRoundId 运行中的 roundId（内核 chunk 携带；无则缺省）
+   */
+  private postTurnUpdate(liveRoundId?: string): void {
+    if (!this._view) return;
+    const rounds = this._viewLoader ? this.loadRoundBasedHistory() : [];
+    const last = rounds[rounds.length - 1];
+    const questions = this._lastPendingQuestions;
+    this.post({
+      type: 'turn_update',
+      rounds,
+      state: deriveTurnState({
+        streaming: this._streaming,
+        paused: this._agent?.sessionManager?.status === 'paused',
+        pausePending: this._agent?.isPausePending() ?? false,
+        pendingQuestions: questions.length > 0 ? questions : undefined,
+        liveRoundId,
+        lastRound: last ? { id: last.id, status: last.status } : undefined,
+      }),
+    });
   }
 
   /** 处理用户输入：面板上屏 + Agent 流式对话（持久化由内核 appendUser 完成，SSOT 不双写）
@@ -2375,7 +2382,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * - 幂等去重：incoming 中 seq 已写入的丢弃（跨流不重叠，seq 全局唯一）。
    *
    * @param prior Round 既有 processEvents（前流/上次检查点产物，可为空）
-   * @param incoming 本流当前已累积事件（含刚 emit 的 step_boundary / 末轮 metrics）
+   * @param incoming 本流当前已累积事件（含刚 emit 的 plan_item_boundary / 末轮 metrics）
    * @returns 合并后数组（不改写存储，落盘由调用方决定）
    */
   private mergeProcessEvents(prior: ProcessEvent[], incoming: ProcessEvent[]): ProcessEvent[] {
@@ -2456,6 +2463,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.post({ type: 'status', state: 'thinking' });
     // 置位生成态：会话切换/新建据此拒绝（P1-3，避免重放与进行中流混血）
     this._streaming = true;
+    // M3b-1：并行推送 turn 投影（webview 暂不消费，供 M3b-2 接线对拍）
+    this.postTurnUpdate();
     // 记录流起始视图代数：流尾比对 _viewEpoch 判断「流期间 view 被折叠/展开重建过」
     // （重建后新 webview 无本流实时投影 → 落盘完成须补 replaySession 刷全，2026-09-09）
     const flowViewEpoch = this._viewEpoch;
@@ -2635,16 +2644,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
                 ? `${chunk.content.slice(0, MAX_THOUGHT_PAYLOAD_LENGTH - 1)}…`
                 : chunk.content,
           });
-        } else if (chunk.type === 'step_boundary') {
-          // 步级折叠边界（阶段二，2026-09-08）：active 任务表步骤推进 → 落盘 step_boundary 事件。
+        } else if (chunk.type === 'plan_item_boundary') {
+          // 步级折叠边界（阶段二，2026-09-08）：active 任务项推进 → 落盘 plan_item_boundary 事件。
           // webview 据此把后续过程事件归入对应 step 分组；重放与运行时同一边界（同构）。
-          emitEvent('step_boundary', {
-            ...(chunk.stepId ? { stepId: chunk.stepId } : {}),
+          // ⚠ 仅渲染分组依据（无任务表不产）；**不是落盘时机**——落盘时机 = step_boundary
+          // （档3，2026-09-23：本处曾是落盘点 → 无任务表长工具循环零增量落盘，覆盖缺口已修）。
+          emitEvent('plan_item_boundary', {
+            ...(chunk.planItemId ? { planItemId: chunk.planItemId } : {}),
             ...(chunk.title ? { title: chunk.title } : {}),
           });
-          // step 原子检查点（2026-09-09 档2）：推进到新 step 即把当前已产过程落盘 pending Round，
-          // 崩溃只丢当前 step——之前完成 step 的过程在库，重启可经 listInterruptedRecent 恢复。
-          // 幂等（seq 单调 + mergeProcessEvents），与流尾共用同一合并语义（SSOT）。
+        } else if (chunk.type === 'step_boundary') {
+          // 迭代边界（档3，2026-09-23）：一次 LLM 迭代（含其工具执行）结束 → 增量落盘当前 pending Round。
+          // 落盘时机 SSOT：全场景唯一时机（有/无任务表、有/无工具全覆盖），与流尾共用 mergeProcessEvents
+          // 同一合并语义（seq 幂等）。顺序契约：内核保证 plan_item_boundary 先于本 chunk → 本轮落盘快照已含
+          // 该步折叠边界，崩溃重放不错位。瞬态信号：不 emitEvent（不进 processEvents、不吃 seq）。
           if (currentRoundKey) {
             this.checkpointRound(currentRoundKey, eventsByRound.get(currentRoundKey) ?? []);
           }
@@ -2714,7 +2727,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         success: !controller.signal.aborted && !pausedOnPurpose,
       });
       // step 原子检查点（2026-09-09 档2）：流尾最终落盘复用同一合并语义（SSOT）——
-      // 与 step_boundary 时的增量检查点共用 mergeProcessEvents，靠 seq 幂等不重复、保序。
+      // 与 plan_item_boundary 时的增量检查点共用 mergeProcessEvents，靠 seq 幂等不重复、保序。
       // TS-9 跨流累积 / TS-12c 终态净化已收在 mergeProcessEvents 内，此处不再重复实现。
       for (const [roundId, roundEvents] of eventsByRound) {
         this.checkpointRound(roundId, roundEvents);
@@ -2733,11 +2746,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (controller.signal.aborted) {
       this.post({ type: 'interrupted', roundId: latestRoundId });
       this.post({ type: 'status', state: 'done' });
+      this.postTurnUpdate(latestRoundId);
     } else if (pausedOnPurpose) {
       // 软暂停：不推送 done/interrupted，切换为 paused 状态（允许用户继续）
       this.post({ type: 'status', state: 'paused' });
+      this.postTurnUpdate(latestRoundId);
     } else {
       this.post({ type: 'done', roundId: latestRoundId });
+      this.postTurnUpdate(latestRoundId);
       // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；
       // 5秒兜底足够抗偶发网络抖动，避免 UI 长时间卡在 thinking 态让用户困惑
@@ -2780,8 +2796,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 仅当 plan 非空时推送（空计划不产生看板）。薄壳装配：只读提取，不参与 LLM 执行，
    * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
    *
-   * 任务节点聚合：额外从 checkpoint.stepLog 提取 planStepId 关联，按步骤分组携带各 step
-   * 推进记录（stepLog），webview 展开任务节点时展示该步骤下的推进摘要。
+   * 任务节点聚合：额外从 checkpoint.planItemLog 提取 planItemId 关联，按步骤分组携带各 step
+   * 推进记录（planItemLog），webview 展开任务节点时展示该步骤下的推进摘要。
    */
   private postPlanUpdate(): void {
     if (!this._agent) return;
@@ -2796,18 +2812,18 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.post({ type: 'plan_update', steps: [] });
       return;
     }
-    // 步骤 → 关联 step 推进记录（stepLog 的 planStepId 关联，内核已写入，宿主只读消费）
-    const stepsByStep = new Map<string, { planStepId: string; summary: string; completedAt?: number }[]>();
-    for (const r of checkpoint.stepLog ?? []) {
-      if (!r.planStepId) continue;
-      const list = stepsByStep.get(r.planStepId) ?? [];
-      list.push({ planStepId: r.planStepId, summary: r.summary, completedAt: r.completedAt });
-      stepsByStep.set(r.planStepId, list);
+    // 步骤 → 关联 step 推进记录（planItemLog 的 planItemId 关联，内核已写入，宿主只读消费）
+    const stepsByStep = new Map<string, { planItemId: string; summary: string; completedAt?: number }[]>();
+    for (const r of checkpoint.planItemLog ?? []) {
+      if (!r.planItemId) continue;
+      const list = stepsByStep.get(r.planItemId) ?? [];
+      list.push({ planItemId: r.planItemId, summary: r.summary, completedAt: r.completedAt });
+      stepsByStep.set(r.planItemId, list);
     }
-    // 按 order 排序列化（内核 PlanStep 已含 order，防冗余中断序漂移）
+    // 按 order 排序列化（内核 PlanItem 已含 order，防冗余中断序漂移）
     const steps = [...checkpoint.plan]
       .sort((a, b) => a.order - b.order)
-      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, stepLog: stepsByStep.get(s.id) ?? [] }));
+      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, planItemLog: stepsByStep.get(s.id) ?? [] }));
     this.post({ type: 'plan_update', steps });
   }
 

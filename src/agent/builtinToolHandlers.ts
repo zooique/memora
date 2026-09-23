@@ -652,7 +652,7 @@ export class BuiltinToolHandlers {
 
     // 保留名守卫（2026-09-07 伪建表根治）：任务表是内核工具数据（task_table_write/update 管理），
     // 不落盘为 markdown 文件。历史样本实证：LLM 曾在同一会话内反复 write_file 写 .memora/task-table.md
-    // （上轮成功先例 few-shot 强化 → 下轮沿用），绕过 PlanStep 通道导致顶部任务板不渲染/视角切换失效。
+    // （上轮成功先例 few-shot 强化 → 下轮沿用），绕过 PlanItem 通道导致顶部任务板不渲染/视角切换失效。
     // 软指令压不过历史先例，必须确定性拦截——命中即失败，错误样本进会话历史成为「此路不通」负面先例，
     // 引导 LLM 改走 task_table_write 单通道。
     if (isReservedTaskTableFile(absolutePath)) {

@@ -10,21 +10,21 @@
  */
 import { describe, it, expect } from 'vitest';
 import { renderTaskTable, STEP_DESC_MAX_CHARS, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
-import type { PlanStep, StepOutcome } from '../types.js';
+import type { PlanItem, PlanItemOutcome } from '../types.js';
 
-/** 创建测试用 PlanStep */
+/** 创建测试用 PlanItem */
 function createStep(
   order: number,
   description: string,
-  status: PlanStep['status'] = 'pending',
+  status: PlanItem['status'] = 'pending',
   id?: string,
-): PlanStep {
+): PlanItem {
   return { id: id ?? `step-${order}`, order, description, status };
 }
 
-/** 创建测试用 StepOutcome */
-function createStepLog(summary: string, planStepId?: string): StepOutcome {
-  return { summary, planStepId, completedAt: Date.now() };
+/** 创建测试用 PlanItemOutcome */
+function createStepLog(summary: string, planItemId?: string): PlanItemOutcome {
+  return { summary, planItemId, completedAt: Date.now() };
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -72,7 +72,7 @@ describe('taskTableRenderer — 基本渲染', () => {
   });
 
   it('会议步骤（rolePack）标注装配角色（v0.13 S5）', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       { id: 's1', order: 0, description: '从编辑视角审稿', status: 'active', rolePack: '编辑' },
       { id: 's2', order: 1, description: '从评论家视角点评', status: 'pending', rolePack: '评论家' },
       { id: 's3', order: 2, description: '汇总会议结论', status: 'pending' },
@@ -95,7 +95,7 @@ describe('taskTableRenderer — 基本渲染', () => {
 describe('taskTableRenderer — 多步骤渲染', () => {
 
   it('多步骤混合状态', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       createStep(0, '需求分析', 'done'),
       createStep(1, '设计架构', 'done'),
       createStep(2, '编码实现', 'active'),
@@ -119,7 +119,7 @@ describe('taskTableRenderer — 多步骤渲染', () => {
   });
 
   it('所有步骤已完成', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       createStep(0, '步骤一', 'done'),
       createStep(1, '步骤二', 'done'),
       createStep(2, '步骤三', 'done'),
@@ -131,7 +131,7 @@ describe('taskTableRenderer — 多步骤渲染', () => {
   });
 
   it('所有步骤待执行', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       createStep(0, '步骤一', 'pending'),
       createStep(1, '步骤二', 'pending'),
     ];
@@ -142,7 +142,7 @@ describe('taskTableRenderer — 多步骤渲染', () => {
   });
 
   it('只有一个 active 步骤', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       createStep(0, '步骤一', 'active'),
       createStep(1, '步骤二', 'pending'),
     ];
@@ -160,23 +160,23 @@ describe('taskTableRenderer — step 推进日志渲染', () => {
 
   it('有 step 推进日志时追加 step 推进记录', () => {
     const plan = [createStep(0, '步骤一', 'active')];
-    const stepLog: StepOutcome[] = [
+    const planItemLog: PlanItemOutcome[] = [
       createStepLog('完成了需求分析', 'step-0'),
       createStepLog('发现一个 bug', 'step-1'),
     ];
-    const result = renderTaskTable(plan, stepLog);
+    const result = renderTaskTable(plan, planItemLog);
 
     expect(result).toContain('[step 推进记录]');
     expect(result).toContain('完成了需求分析 (步骤 step-0)');
     expect(result).toContain('发现一个 bug (步骤 step-1)');
   });
 
-  it('step 推进日志无 planStepId 时不显示步骤编号', () => {
+  it('step 推进日志无 planItemId 时不显示步骤编号', () => {
     const plan = [createStep(0, '步骤一', 'active')];
-    const stepLog: StepOutcome[] = [
+    const planItemLog: PlanItemOutcome[] = [
       createStepLog('自由对话迭代'),
     ];
-    const result = renderTaskTable(plan, stepLog);
+    const result = renderTaskTable(plan, planItemLog);
 
     expect(result).toContain('自由对话迭代');
     // 不应包含 (步骤 ...)
@@ -190,13 +190,13 @@ describe('taskTableRenderer — step 推进日志渲染', () => {
     expect(result).not.toContain('[step 推进记录]');
   });
 
-  it('step 推进日志全部渲染（本函数不做截断；真源为 SessionManager.appendStepLog 每 step 3 条）', () => {
+  it('step 推进日志全部渲染（本函数不做截断；真源为 SessionManager.appendPlanItemLog 每 step 3 条）', () => {
     const plan = [createStep(0, '步骤一', 'active')];
-    const stepLog: StepOutcome[] = [];
+    const planItemLog: PlanItemOutcome[] = [];
     for (let i = 0; i < 5; i++) {
-      stepLog.push(createStepLog(`step ${i}`));
+      planItemLog.push(createStepLog(`step ${i}`));
     }
-    const result = renderTaskTable(plan, stepLog);
+    const result = renderTaskTable(plan, planItemLog);
 
     // 验证所有 step 推进记录都被渲染
     for (let i = 0; i < 5; i++) {
@@ -284,7 +284,7 @@ describe('taskTableRenderer — 边界场景', () => {
   });
 
   it('任务表行首序号与 task_table_update 寻址对齐（1-based 可见即传）', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       createStep(0, '文档设计师发言', 'done', 's1'),
       createStep(1, '小说助手发言', 'active', 's2'),
       createStep(2, '方案设计师汇总', 'pending', 's3'),
@@ -325,7 +325,7 @@ describe('taskTableRenderer — 排版契约', () => {
   });
 
   it('输出无 ASCII 方框装饰字符（去方框收敛，防回退）', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       { id: 's1', order: 0, description: '组长开场', status: 'active' },
       { id: 's2', order: 1, description: '组员发言', status: 'pending', rolePack: '组员A' },
     ];
@@ -334,7 +334,7 @@ describe('taskTableRenderer — 排版契约', () => {
   });
 
   it('步骤行结构 = 「序号. 【角色】描述 [状态]」', () => {
-    const plan: PlanStep[] = [
+    const plan: PlanItem[] = [
       { id: 's1', order: 0, description: '组长开场', status: 'active' },
       { id: 's2', order: 1, description: '组员发言', status: 'pending', rolePack: '组员A' },
     ];
@@ -345,7 +345,7 @@ describe('taskTableRenderer — 排版契约', () => {
   });
 
   it('四态标签齐备且可区分（[已完成]/[执行中]/[待执行]/[已阻塞]）', () => {
-    const mixed: PlanStep[] = [
+    const mixed: PlanItem[] = [
       createStep(0, 'A', 'done'),
       createStep(1, 'B', 'active'),
       createStep(2, 'C', 'pending'),

@@ -215,7 +215,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 单轨呈现：
    *   ① planBar：顶部固定插槽（#planBar，与 #messages **同级**、非其子节点——#messages 是
    *      overflow-y:auto 滚动容器，插进它内部一滚即滚出视野）。默认一行
-   *      N/M + 进度条 + 当前 active step 摘要，点击展开**锚定浮层**看全量步骤 + stepLog。
+   *      N/M + 进度条 + 当前 active step 摘要，点击展开**锚定浮层**看全量步骤 + planItemLog。
    *      常驻门槛 ≥3 步 —— **webview 展示层自身的门槛**（2 步小任务常驻成噪音）。
    *      ⚠️ 与内核 `detectNeedsPlanning` **无对应关系**：后者是关键词/结构命中式**布尔判定**
    *      （src/agent/needsPlanning.ts），**不含任何步数阈值**。旧注释称「对齐内核
@@ -350,7 +350,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     setPlanBarExpanded(planBarExpanded); // 保持展开态（aria/chevron 同步；收起态不建面板）
   }
 
-  /** 渲染锚定浮层内容（全量步骤列表 + 折叠 stepLog；结构与旧 global 看板同源） */
+  /** 渲染锚定浮层内容（全量步骤列表 + 折叠 planItemLog；结构与旧 global 看板同源） */
   function renderPlanBarPanel(steps: PlanStepDto[]): void {
     const bar = getPlanBarEl();
     const panel = bar?.querySelector<HTMLElement>('#planBarPanel');
@@ -379,7 +379,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       badge.textContent = STEP_STATUS_LABEL[step.status];
       summary.appendChild(badge);
       item.appendChild(summary);
-      const logs = step.stepLog;
+      const logs = step.planItemLog;
       if (logs.length > 0) {
         const body = document.createElement('div');
         body.className = 'plan-step-rounds';
@@ -452,7 +452,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 运行时过程平铺容器（v1.8 剪枝，2026-09-09）：运行时**无 round-block 大折叠壳**——
    *  过程（narrate 冒号行 / 工具折叠行 / 思考状态）按 step 时序平铺此容器（挂 label 与
    *  body 之间，透明无边框）；done/interrupted 时 finalize 全量重建 round-block 并移除本容器。
-   *  任务表例外：有 step_boundary 时，平铺内容归入对应「step-N · 标题」折叠块（任务收纳）。 */
+   *  任务表例外：有 plan_item_boundary 时，平铺内容归入对应「step-N · 标题」折叠块（任务收纳）。 */
   let flowEl: HTMLElement | null = null;
   /** 流式骨架块（TTFT 前即时反馈，吸收 Claude Code #81659 / 骨架屏最佳实践）
    *
@@ -491,7 +491,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     ).padStart(2, '0')}`;
   }
 
-  /** 相对时间格式化（P-2：stepLog 完成时间 → "3s 前 / 2m 前 / 1h 前"） */
+  /** 相对时间格式化（P-2：planItemLog 完成时间 → "3s 前 / 2m 前 / 1h 前"） */
   function formatRelativeTime(timestamp: number, now: number = Date.now()): string {
     const diff = Math.max(0, now - timestamp);
     const seconds = Math.floor(diff / 1000);
@@ -954,15 +954,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
    */
   /**
-   * 步级折叠容器（阶段二，2026-09-08 路 B′）：把 narrate/tool 按 step_boundary 归组。
+   * 步级折叠容器（阶段二，2026-09-08 路 B′）：把 narrate/tool 按 plan_item_boundary 归组。
    * 先在清除式重建时清理旧 step 容器，再按事件 seq 定位应归入的 step 组：
-   *   - 无任何 step_boundary → 返回 details 本身（整轮一组，退回扁平现状）；
-   *   - 有 step_boundary → 返回最近一条步级边界（seq ≤ 目标 seq）所属的 step 折叠块容器，
+   *   - 无任何 plan_item_boundary → 返回 details 本身（整轮一组，退回扁平现状）；
+   *   - 有 plan_item_boundary → 返回最近一条步级边界（seq ≤ 目标 seq）所属的 step 折叠块容器，
    *     懒创建（summary 显示「step-N · 标题」），保证边界后的过程事件归入对应步骤分组。
    * 调用方用返回值替换 details 作为节点插入目标，实现「边界切组、步内平铺」。
    */
-  function isStepBoundaryEvent(e: ProcessEvent): e is Extract<ProcessEvent, { type: 'step_boundary' }> {
-    return e.type === 'step_boundary';
+  function isPlanItemBoundaryEvent(e: ProcessEvent): e is Extract<ProcessEvent, { type: 'plan_item_boundary' }> {
+    return e.type === 'plan_item_boundary';
   }
 
   /**
@@ -979,9 +979,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     seq?: number,
   ): {
     host: HTMLElement;
-    bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[];
+    bounds: Extract<ProcessEvent, { type: 'plan_item_boundary' }>[];
   } {
-    const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.ts.localeCompare(b.ts) || a.seq - b.seq);
+    const bounds = events.filter(isPlanItemBoundaryEvent).sort((a, b) => a.ts.localeCompare(b.ts) || a.seq - b.seq);
     if (bounds.length === 0) return { host: root, bounds };
     // 找到 ts 前最近的边界（含本条边界自身）——本条边界之前（ts < 首边界）条目归 details 顶层；
     // 同 ts 时边界须已发生（boundary.seq <= 条目 seq），否则跨到后续 step
@@ -993,14 +993,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 获取或创建步级折叠块（summary 显示步骤名；存在则复用，不解体既有已插入的步内元素） */
   function getOrCreateStepGroup(
     root: HTMLElement,
-    bound: Extract<ProcessEvent, { type: 'step_boundary' }>,
-    bounds: Extract<ProcessEvent, { type: 'step_boundary' }>[],
+    bound: Extract<ProcessEvent, { type: 'plan_item_boundary' }>,
+    bounds: Extract<ProcessEvent, { type: 'plan_item_boundary' }>[],
   ): HTMLElement {
-    const existing = root.querySelector<HTMLElement>(`.round-block__step[data-step="${bound.payload.stepId ?? ''}"]`);
+    const existing = root.querySelector<HTMLElement>(`.round-block__step[data-step="${bound.payload.planItemId ?? ''}"]`);
     if (existing && existing.isConnected) return existing;
     const grp = document.createElement('details');
     grp.className = 'round-block__step';
-    if (bound.payload.stepId) grp.dataset.step = bound.payload.stepId;
+    if (bound.payload.planItemId) grp.dataset.step = bound.payload.planItemId;
     // 步骤序号 = 该边界在所有边界中的排名 + 1（从 1 起）
     const order = bounds.indexOf(bound) + 1;
     const title = bound.payload.title?.trim() ?? '';
@@ -1036,7 +1036,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 思考碎片按「所属 step」分桶（SSOT；finalize 与流式两类上下文共用）。
    *
    * 语义（2026-09-14 修正）：**一个 step 一个思考折叠块**，而非整轮合成一个。分桶键 = 该碎片
-   * 生效的 step 边界 stepId（无边界 → 'root'）。同一桶内碎片保序**原样连续**拼接（连贯）；
+   * 生效的 step 边界 planItemId（无边界 → 'root'）。同一桶内碎片保序**原样连续**拼接（连贯）；
    * 不同 step 各自独立折叠（不跨步混批）。含 anchorSeq（桶内最早碎片的 seq，做插入锚点）。
    */
   function groupThoughtBuckets(events: ProcessEvent[]): {
@@ -1048,12 +1048,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const thoughts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
-    const bounds = events.filter(isStepBoundaryEvent).sort((a, b) => a.seq - b.seq);
+    const bounds = events.filter(isPlanItemBoundaryEvent).sort((a, b) => a.seq - b.seq);
     const buckets = new Map<string, { key: string; anchorSeq: number; anchorTs: string; items: { seq: number; ts: string; content: string }[] }>();
     for (const t of thoughts) {
       // 归属最近生效的 step 边界（slice 顺序同 stepContainerFor，保证「哪步思考进哪桶」一致）
       const active = [...bounds].reverse().find((b) => b.seq <= t.seq);
-      const key = active?.payload.stepId ?? 'root';
+      const key = active?.payload.planItemId ?? 'root';
       const bucket = buckets.get(key) ?? { key, anchorSeq: t.seq, anchorTs: t.ts, items: [] };
       bucket.items.push({ seq: t.seq, ts: t.ts, content: t.payload.content });
       buckets.set(key, bucket);
@@ -1069,7 +1069,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 行创建点统一挂 `data-ts`（ISO 字符串，localeCompare 同值比较即时间序）；无 data-ts 的
    * 异常节点（如 pending 工具行）视为最大键（恒末尾，与 appendChild 流尾语义一致）。
    *
-   * 候选限定为 details 的**直接子节点**（2026-09-16 F2 修复）：存在 step_boundary 时同款元素
+   * 候选限定为 details 的**直接子节点**（2026-09-16 F2 修复）：存在 plan_item_boundary 时同款元素
    * 嵌套在 .round-block__step 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
    * details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
    * 候选类型 = narrate/tool/thought + 运行时输入条目（input，形态甲新增）。
@@ -1328,7 +1328,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     details.querySelectorAll(
       '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__thought, .round-block__step',
     ).forEach((el) => el.remove());
-    // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；阶段二有 step_boundary 时归入步级折叠块）
+    // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；阶段二有 plan_item_boundary 时归入步级折叠块）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
@@ -1504,7 +1504,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *   narrate → 平铺文本行（结束补「：」——「AI 说什么：」后接工具块的叙述冒号形态）；
    *   tool  → 独立折叠行（复用 .round-block__tool 视觉，data-tool-call-id 去重）；
    *   thinking → 轻量状态行（phaseLabel，呼吸点，随最新相位更新）；
-   *   任务表例外：有 step_boundary 时 narrate/tool 归入「step-N · 标题」折叠块（offset：任务收纳）。
+   *   任务表例外：有 plan_item_boundary 时 narrate/tool 归入「step-N · 标题」折叠块（offset：任务收纳）。
    * 增量幂等：data-seq / data-tool-call-id 去重防重复渲染；narrate 平铺行按 seq 有序插入。
    * finalize（done/interrupted）时不再调此函数：全量重建 round-block + flow 容器移除（见 finalizeRound
    * ——foldPendingQaIntoRoundBlock 只折 QA；narrate/tool 已由 renderRoundBlock finalize 分支全量承载，
@@ -1539,7 +1539,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else {
       phaseRow?.remove();
     }
-    // 2) narrate 平铺行 + 工具折叠行：按 seq 平铺（step_boundary 时归入步级折叠块，任务收纳例外）
+    // 2) narrate 平铺行 + 工具折叠行：按 seq 平铺（plan_item_boundary 时归入步级折叠块，任务收纳例外）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
@@ -1555,7 +1555,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 叙述冒号：结尾无标点时补「：」（用户定案「AI 说什么：」后接工具块）——文本防注入
       const text = n.payload.content.trim();
       row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
-      // 任务表例外：有 step_boundary 归入步级折叠块（复用阶段二 getOrCreateStepGroup 容器）
+      // 任务表例外：有 plan_item_boundary 归入步级折叠块（复用阶段二 getOrCreateStepGroup 容器）
       const { host } = stepContainerFor(flow, events, n.ts, n.seq);
       insertStepInOrder(host, row, n.ts);
     }
@@ -1566,7 +1566,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     for (const b of thoughtBuckets) {
       // 复用 step 容器定位 → 与最终分桶位置一致，流式与 finalize 不偏移
       const { host } = stepContainerFor(flow, events, b.anchorTs, b.anchorSeq);
-      // 查找或创建本 step 的折叠块（key = stepId，无边界为'root'）
+      // 查找或创建本 step 的折叠块（key = planItemId，无边界为'root'）
       const selector = `.process-flow__thought[data-step-bucket="${b.key}"]`;
       let row = host.querySelector<HTMLDetailsElement>(selector);
       if (!row) {
@@ -3227,7 +3227,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *  形态甲（2026-09-17）：finalize 全量重建（合并流含运行时输入）+ 移除运行时平铺容器——
    *  QA 已由 renderRoundBlock 从合并流归位到对应 step 分组，无需再搬运（foldPending 已删）。 */
   function finalizeRound(): void {
-    // 2026-09-16 F2：renderRoundBlock 曾在 step_boundary 嵌套场景抛 NotFoundError，导致后续
+    // 2026-09-16 F2：renderRoundBlock 曾在 plan_item_boundary 嵌套场景抛 NotFoundError，导致后续
     // 「移除 flowEl / 收敛 QA / 关流式光标」全部不执行（过程不折叠 + 光标不消失，且异常在事件
     // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
     // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。

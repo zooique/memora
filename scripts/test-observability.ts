@@ -188,7 +188,7 @@ async function main(): Promise<void> {
   assert(initialMetrics.tasks.successRate === 0, '初始 tasks.successRate 为 0');
   // 层0：任务表观测量初始全零（实证"是否从没被触发"）
   assert(initialMetrics.plan.taskTableWriteCount === 0, '初始 plan.taskTableWriteCount 为 0');
-  assert(initialMetrics.plan.stepBoundaryCount === 0, '初始 plan.stepBoundaryCount 为 0');
+  assert(initialMetrics.plan.planItemBoundaryCount === 0, '初始 plan.planItemBoundaryCount 为 0');
 
   // ─── 测试 2：运行一次对话 ──────────────────────────
   console.log('\n📋 测试 2：运行一次完整对话');
@@ -235,8 +235,8 @@ async function main(): Promise<void> {
   console.log(`  📊 任务 SLO：成功率 ${(afterFirstChat.tasks.successRate * 100).toFixed(1)}%`);
   console.log(`  📊 任务 SLO：平均耗时 ${afterFirstChat.tasks.avgDurationMs}ms`);
 
-  // ─── 测试 4.5：任务表观测量（层0：实证任务表是否被触发 / step_boundary 是否产出）──
-  // 本次为简单问答（非多步工程任务）→ 预期 taskTableWriteCount/stepBoundaryCount 为 0；
+  // ─── 测试 4.5：任务表观测量（层0：实证任务表是否被触发 / plan_item_boundary 是否产出）──
+  // 本次为简单问答（非多步工程任务）→ 预期 taskTableWriteCount/planItemBoundaryCount 为 0；
   // 断言的是字段存在与如实反映，而非强行 >0（needsPlanning 假则不应建表，见层1）
   console.log('\n📋 测试 4.5：任务表观测量');
   assert(
@@ -244,11 +244,11 @@ async function main(): Promise<void> {
     'plan.taskTableWriteCount 为可观测数值',
   );
   assert(
-    typeof afterFirstChat.plan.stepBoundaryCount === 'number',
-    'plan.stepBoundaryCount 为可观测数值',
+    typeof afterFirstChat.plan.planItemBoundaryCount === 'number',
+    'plan.planItemBoundaryCount 为可观测数值',
   );
   console.log(
-    `  📊 任务表：task_table_write 调用 ${afterFirstChat.plan.taskTableWriteCount} 次 / step_boundary ${afterFirstChat.plan.stepBoundaryCount} 个`,
+    `  📊 任务表：task_table_write 调用 ${afterFirstChat.plan.taskTableWriteCount} 次 / plan_item_boundary ${afterFirstChat.plan.planItemBoundaryCount} 个`,
   );
 
   // ─── 测试 5：第二次对话更新指标 ──────────────────────────

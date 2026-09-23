@@ -308,30 +308,30 @@ export class AgentLoop {
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
   /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要）。消费方（assembler 实现）
-   *  经 logStepBoundary 写 stepLog 关联当前 active 步骤（时间轴投影）——形态②（PLAN-SYNC-1 ①）
+   *  经 logPlanItemBoundary 写 planItemLog 关联当前 active 步骤（时间轴投影）——形态②（PLAN-SYNC-1 ①）
    *  不再推进 plan：状态推进唯一写者 = LLM 的 task_table_update；LLM 未显式 update 的最后一步
-   *  由 turn 收尾兜底（orchestrator → concludeActiveStepIfPlanFullyReached）补上。
-   *  planStepId 由消费方自查，loop 不传——签名不留空头支票。
+   *  由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
+   *  planItemId 由消费方自查，loop 不传——签名不留空头支票。
    *  检出时机 = 本迭代 LLM 调用后、工具前（读「本迭代服务的那一步」）。 */
-  onStepBoundary?: (stepInfo: { summary: string }) => void;
+  onPlanItemBoundary?: (planItemInfo: { summary: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
   /** active step 元信息回调（阶段二，2026-09-08 步级折叠路 B′）：供 _maybeEmitStepBoundary
-   *  在迭代收口时调用，返回当前 active 任务表步骤 { stepId, title }；无任务表/无 active step
-   *  返回 null。与 onStepBoundary **时序分叉**（2026-09-17 收敛）：前者读工具前的 active
+   *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title }；无任务表/无 active step
+   *  返回 null。与 onPlanItemBoundary **时序分叉**（2026-09-17 收敛）：前者读工具前的 active
    *  （本迭代完成的那一步），本回调经 _maybeEmitStepBoundary 读工具后的 active（工具落定后
-   *  当前所在的那一步）——step_boundary 事件据此判定「active step 是否已推进」并分组渲染。
+   *  当前所在的那一步）——plan_item_boundary 事件据此判定「active step 是否已推进」并分组渲染。
    *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。 */
-  getActiveStepMeta?: () => { stepId?: string; title?: string } | null;
+  getActivePlanItemMeta?: () => { planItemId?: string; title?: string } | null;
   /** 在途任务表判定回调：本 turn 是否已有未完成的计划步骤（会议骨架预置 / 续会）。
    *  装配来源 = SessionManager.hasInflightPlan（单一真理源）；用途 = needsPlanning nudge 注入前
    *  判断「是否已有在途表」，有则不重复灌「先拆解建表」。
-   *  刻意**不复用** getActiveStepMeta 的存在性——后者原生职责是 step_boundary 事件信号，
-   *  借它回答本命题属语义借用（二者在 ensureActiveStep 不变量下当前等价，但职责须分离）。 */
+   *  刻意**不复用** getActivePlanItemMeta 的存在性——后者原生职责是 plan_item_boundary 事件信号，
+   *  借它回答本命题属语义借用（二者在 ensureActivePlanItem 不变量下当前等价，但职责须分离）。 */
   hasInflightPlan?: () => boolean;
-  /** 上一步级边界 ID（阶段二去噪）：记录最近一次已 emit step_boundary 的 stepId，
-   *  仅当 getActiveStepMeta 返回的 stepId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
-  private lastBoundaryStepId?: string;
+  /** 上一步级边界 ID（阶段二去噪）：记录最近一次已 emit plan_item_boundary 的 planItemId，
+   *  仅当 getActivePlanItemMeta 返回的 planItemId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
+  private lastBoundaryPlanItemId?: string;
   /** 主动提问计数（本 turn 粒度，resetTurnState 清零）：ask_user 工具触发次数（askLimit 硬护栏） */
   private askCountThisTurn = 0;
   /**
@@ -1025,14 +1025,14 @@ export class AgentLoop {
       return 'aborted';
     }
 
-    // step 边界回调（每次迭代完成后触发，用于 stepLog 时间轴投影；step 级边界事件，非 turn 边界）。
-    // 挂起型迭代不写日志（与用户暂停对称，2026-09-07）：含 ask_user 将挂起的迭代不记 stepLog——
+    // step 边界回调（每次迭代完成后触发，用于 planItemLog 时间轴投影；step 级边界事件，非 turn 边界）。
+    // 挂起型迭代不写日志（与用户暂停对称，2026-09-07）：含 ask_user 将挂起的迭代不记 planItemLog——
     // 问答对归当前步，回答续跑后由后续完整迭代在边界记录该步；判定经 willSuspendForAsk 单收口，
     // 与 handleToolCalls 挂起检出共用（防双判漂移）。
     // 检出时机 = 迭代的 LLM 调用后、工具前：此刻的 active step 是本迭代 LLM 实际服务的那一步，
-    // 由 onStepBoundary 写 stepLog 关联（形态②：只写日志、不推进——推进唯一写者 = task_table_update）。
-    if (this.onStepBoundary && !this.willSuspendForAsk(llmResult.toolCalls)) {
-      this.onStepBoundary({
+    // 由 onPlanItemBoundary 写 planItemLog 关联（形态②：只写日志、不推进——推进唯一写者 = task_table_update）。
+    if (this.onPlanItemBoundary && !this.willSuspendForAsk(llmResult.toolCalls)) {
+      this.onPlanItemBoundary({
         summary: llmResult.fullContent.slice(0, 200),
       });
     }
@@ -1059,9 +1059,9 @@ export class AgentLoop {
       // 步级折叠边界事件（阶段二，2026-09-08 路 B′；检出时机 2026-09-17 收敛到工具落定后）：
       // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active step
       // 保证第一步拿到自己的边界（工具落定前检出会被「离开第一步」吃掉）。判据不变（推进才产 +
-      // lastBoundaryStepId 去噪），只换检出时刻。时序分叉是设计语义：onStepBoundary（上述）读
-      // 工具前的 active（本迭代服务的那一步，只写 stepLog），本处读工具后的 active（当前所在的那一步）。
-      yield* this._maybeEmitStepBoundary();
+      // lastBoundaryPlanItemId 去噪），只换检出时刻。时序分叉是设计语义：onPlanItemBoundary（上述）读
+      // 工具前的 active（本迭代服务的那一步，只写 planItemLog），本处读工具后的 active（当前所在的那一步）。
+      yield* this._emitIterationBoundary(toolResult);
       return toolResult;
     }
     // 无工具路径：plan 本迭代不被改写，检出时机（LLM 调用后）与工具落定后等价，保持原位。
@@ -1074,24 +1074,48 @@ export class AgentLoop {
   }
 
   /** 步级折叠边界事件产出（阶段二，2026-09-08 路 B′）：比较 active step 是否已推进，推进才产
-   *  step_boundary（宿主按步分组后续事件）。无任务表（null）或 stepId 未变则不产
-   *  （lastBoundaryStepId 去噪，避免每迭代发一条空边界）。
+   *  plan_item_boundary（宿主按步分组后续事件）。无任务表（null）或 planItemId 未变则不产
+   *  （lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
    *  检出时机由调用方决定：工具分支在 handleToolCalls 之后（工具可能改写 plan）、无工具分支在
    *  LLM 调用后——两处都保证「读到的 active step = 本迭代结束后当前所在的那一步」。
    *  roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带。 */
   private *_maybeEmitStepBoundary(): Generator<AgentChunk, void, unknown> {
-    const activeStepMeta = this.getActiveStepMeta?.();
-    const activeStepId = activeStepMeta?.stepId;
-    if (activeStepMeta && activeStepId && activeStepId !== this.lastBoundaryStepId) {
-      this.lastBoundaryStepId = activeStepId;
-      // 层0 观测：step_boundary 产出累计（实证布局骨血是否空转）
-      this.metrics.stepBoundaryCount++;
+    const activeStepMeta = this.getActivePlanItemMeta?.();
+    const activePlanItemId = activeStepMeta?.planItemId;
+    if (activeStepMeta && activePlanItemId && activePlanItemId !== this.lastBoundaryPlanItemId) {
+      this.lastBoundaryPlanItemId = activePlanItemId;
+      // 层0 观测：plan_item_boundary 产出累计（实证布局骨血是否空转）
+      this.metrics.planItemBoundaryCount++;
       yield {
-        type: 'step_boundary',
-        stepId: activeStepId,
+        type: 'plan_item_boundary',
+        planItemId: activePlanItemId,
         title: activeStepMeta.title,
       };
     }
+  }
+
+  /** 迭代边界产出（档3 · 迭代原子落盘，2026-09-23）：迭代**完成且将继续下一轮**时 emit
+   *  `step_boundary`，宿主据此增量落盘（一次迭代一次落盘）。
+   *
+   *  **为什么单开一个 chunk 而不复用 plan_item_boundary**：plan_item_boundary 的语义是「任务项推进」
+   *  （无任务表静默 + planItemId 未变去噪），把它当落盘时机 → 无任务表的长工具循环零增量落盘，
+   *  崩溃即全丢（档2 覆盖缺口）。本 chunk 与它语义分离：只回答「本次迭代做完了」。
+   *
+   *  **条件 = result === 'continue'（硬）**：终态迭代（'done' 收尾 / 'paused' 挂起 / 'aborted'
+   *  中断）之后流即结束或宿主 break → **流尾落盘**已兜底，此处不产——既避免与流尾重复写，
+   *  也保住「终态 chunk 是末条」这一既有流契约（宿主 paused 分支据 break，其后不得再有 chunk）。
+   *  无工具分支（handleTextResponse）恒终态，故只产折叠边界、不产本 chunk。
+   *
+   *  **顺序契约（硬）**：先 yield plan_item_boundary（折叠分组），再 yield step_boundary
+   *  （落盘触发）——保证宿主本次落盘快照已含该步折叠边界，崩溃重放不错位。
+   *
+   *  @param result 本次迭代的路由结果（handleToolCalls 返回值）
+   */
+  private *_emitIterationBoundary(
+    result: 'aborted' | 'done' | 'continue' | 'paused',
+  ): Generator<AgentChunk, void, unknown> {
+    yield* this._maybeEmitStepBoundary();
+    if (result === 'continue') yield { type: 'step_boundary' };
   }
 
   /** 上下文准备：摘要截断 → 同步工作记忆 → 微压缩 → 任务表注入。
@@ -1195,7 +1219,7 @@ export class AgentLoop {
     // needsPlanning 命中时首迭代注入一过式命令式引导：executionTemp → 跨 turn 由
     // cleanExecutionTemporary 清冗；planNudgeInjected 保证本 turn 仅决策一次（非每迭代重复，
     // 与任务表"替换式"注入区分）。P1 收口：已有在途任务表（会议骨架 / 续会）时不灌「先拆解建表」——骨架已预置 / 续会本有步进，nudge 冗余误导；无表才诱导建表。
-    // 判定经 hasInflightPlan 回调（与 SessionManager 同源谓词），不复用 getActiveStepMeta 的存在性（职责分离）。
+    // 判定经 hasInflightPlan 回调（与 SessionManager 同源谓词），不复用 getActivePlanItemMeta 的存在性（职责分离）。
     if (this.planNeedsNudge && !this.planNudgeInjected) {
       this.planNudgeInjected = true;
       if (!this.hasInflightPlan?.()) {
@@ -1209,7 +1233,7 @@ export class AgentLoop {
 
   /**
    * 本迭代将因 ask_user 挂起（决策关口，与用户暂停同属挂起型气口）？
-   * 含 ask_user 且未超 askLimit、非工具屏蔽。SSOT：onStepBoundary 的 stepLog 排除判定
+   * 含 ask_user 且未超 askLimit、非工具屏蔽。SSOT：onPlanItemBoundary 的 planItemLog 排除判定
    * 与 handleToolCalls 挂起检出共用同一谓词（防两处判定漂移）——收口验收：
    * ask_user 挂起谓词字面全仓仅此一处。
    * 注：边界处传 llmResult.toolCalls（原始集）、挂起检出传 effectiveToolCalls（toolStepLimit
@@ -1258,7 +1282,7 @@ export class AgentLoop {
     // 主动提问检出（ask_user 内置工具）：提问 = 一次普通工具调用（对齐 Claude Code AskUserQuestion
     // 机制）。检出 ask_user 且未达 askLimit 上限 → 整轮挂起（其余工具不执行——提问是决策关口，
     // 答案未定前执行可能白跑），用户答案经 answerQuestion 回填为 tool 结果后由宿主续跑，
-    // LLM 基于答案重新决策。挂起判定经 willSuspendForAsk 单收口（与 onStepBoundary 排除共用）。
+    // LLM 基于答案重新决策。挂起判定经 willSuspendForAsk 单收口（与 onPlanItemBoundary 排除共用）。
     if (this.willSuspendForAsk(effectiveToolCalls)) {
       return yield* this.handleAskUser(llmResult, effectiveToolCalls);
     }
@@ -2305,7 +2329,7 @@ export class AgentLoop {
       },
       plan: {
         taskTableWriteCount: this.metrics.planTaskTableWriteCount,
-        stepBoundaryCount: this.metrics.stepBoundaryCount,
+        planItemBoundaryCount: this.metrics.planItemBoundaryCount,
       },
       tasks: {
         totalCount: this.metrics.taskTotalCount,

@@ -318,22 +318,22 @@ describe('AgentLoop · 任务表观测量', () => {
     expect(metrics.plan.taskTableWriteCount).toBe(1);
   });
 
-  it('产生 active step 边界后 plan.stepBoundaryCount 累加', async () => {
+  it('产生 active step 边界后 plan.planItemBoundaryCount 累加', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '完成' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
-    // 模拟已有任务表 active step（真实场景由 assembler 装配 getActiveStepMeta）
-    loop.getActiveStepMeta = () => ({ stepId: 's1', title: '步骤1' });
+    // 模拟已有任务表 active step（真实场景由 assembler 装配 getActivePlanItemMeta）
+    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '步骤1' });
 
     await consumeGenerator(loop.processUserInput('任务'));
 
     const metrics = loop.getMetrics();
-    expect(metrics.plan.stepBoundaryCount).toBe(1);
+    expect(metrics.plan.planItemBoundaryCount).toBe(1);
   });
 
-  // ── B6 守卫（2026-09-17，PLAN-SYNC-1 ① 后续）：lastBoundaryStepId 跨 turn 不重置的无害性实证——
+  // ── B6 守卫（2026-09-17，PLAN-SYNC-1 ① 后续）：lastBoundaryPlanItemId 跨 turn 不重置的无害性实证——
   //    active 单向链式推进 + overwrite 产生全新 UUID，去噪缓存不可能误吞跨轮首边界；
   //    且「重置」方案有害（跨 turn 延续时会重复 emit 边界 → 两用例同时锁死该回归）。
   it('B6：跨 turn 延续同一 active step 不重复 emit 边界（去噪正确，非丢边界）', async () => {
@@ -343,14 +343,14 @@ describe('AgentLoop · 任务表观测量', () => {
       toolExecutor: vi.fn(),
     });
     // 模拟 plan 残留：同一 active step 跨两个 turn 延续（多轮任务，LLM 未推进）
-    loop.getActiveStepMeta = () => ({ stepId: 's1', title: '步骤1' });
+    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '步骤1' });
 
     await consumeGenerator(loop.processUserInput('任务一'));
-    expect(loop.getMetrics().plan.stepBoundaryCount).toBe(1);
-    // turn 2：active 未变（未推进）→ 不重复 emit；若在 turn 入口重置 lastBoundaryStepId 会
+    expect(loop.getMetrics().plan.planItemBoundaryCount).toBe(1);
+    // turn 2：active 未变（未推进）→ 不重复 emit；若在 turn 入口重置 lastBoundaryPlanItemId 会
     // 对同一 step 重复发边界（UI 重复分组）→ 此处断言为 1 即锁死该回归
     await consumeGenerator(loop.processUserInput('任务二'));
-    expect(loop.getMetrics().plan.stepBoundaryCount).toBe(1);
+    expect(loop.getMetrics().plan.planItemBoundaryCount).toBe(1);
   });
 
   it('B6：overwrite 新 plan 后首边界正常 emit（新 UUID 不撞旧去噪缓存）', async () => {
@@ -360,15 +360,15 @@ describe('AgentLoop · 任务表观测量', () => {
       toolExecutor: vi.fn(),
     });
     // 模拟 active step 随计划重建变化（overwrite 后 step1 为全新 UUID）
-    let current: { stepId: string; title: string } | null = { stepId: 'old-step', title: '旧计划' };
-    loop.getActiveStepMeta = () => current;
+    let current: { planItemId: string; title: string } | null = { planItemId: 'old-step', title: '旧计划' };
+    loop.getActivePlanItemMeta = () => current;
 
     await consumeGenerator(loop.processUserInput('任务一'));
-    expect(loop.getMetrics().plan.stepBoundaryCount).toBe(1);
+    expect(loop.getMetrics().plan.planItemBoundaryCount).toBe(1);
     // turn 2：新 plan 的 step1 是新 UUID → 必须 emit 首边界（去噪缓存不得误吞）
-    current = { stepId: 'new-step', title: '新计划' };
+    current = { planItemId: 'new-step', title: '新计划' };
     await consumeGenerator(loop.processUserInput('任务二'));
-    expect(loop.getMetrics().plan.stepBoundaryCount).toBe(2);
+    expect(loop.getMetrics().plan.planItemBoundaryCount).toBe(2);
   });
 
   it('needsPlanning 命中 → 首迭代注入命令式任务表引导', async () => {
@@ -460,7 +460,7 @@ describe('AgentMetrics · 类型结构', () => {
 
     // 验证 plan 维度字段（2026-09-14 层0：任务表触发观测量）
     expect(metrics.plan).toHaveProperty('taskTableWriteCount');
-    expect(metrics.plan).toHaveProperty('stepBoundaryCount');
+    expect(metrics.plan).toHaveProperty('planItemBoundaryCount');
   });
 
   it('recordBudget 后 getMetrics().context.budget 透出（④ 预算可视化）', () => {

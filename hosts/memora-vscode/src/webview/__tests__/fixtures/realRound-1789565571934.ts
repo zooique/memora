@@ -26,7 +26,7 @@ export interface PlanStepDto {
   description: string;
   status: 'pending' | 'active' | 'done' | 'blocked';
   order: number;
-  stepLog: { planStepId: string; summary: string; completedAt?: number }[];
+  planItemLog: { planItemId: string; summary: string; completedAt?: number }[];
 }
 
 /** 原 round 元数据（供断言/命名参照） */
@@ -75,28 +75,28 @@ const PLAN_SNAPSHOT_0: PlanStepDto[] = [
     "description": "组长开场：介绍会议主题和讨论框架",
     "status": "active",
     "order": 0,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "1110041a",
     "description": "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议",
     "status": "pending",
     "order": 1,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "6f3b1624",
     "description": "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议",
     "status": "pending",
     "order": 2,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "3f5bf7fc",
     "description": "组长汇总：综合各方意见，提出具体行动方案",
     "status": "pending",
     "order": 3,
-    "stepLog": []
+    "planItemLog": []
   }
 ];
 
@@ -106,28 +106,28 @@ const PLAN_SNAPSHOT_1: PlanStepDto[] = [
     "description": "组长开场：介绍会议主题和讨论框架",
     "status": "done",
     "order": 0,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "1110041a",
     "description": "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议",
     "status": "active",
     "order": 1,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "6f3b1624",
     "description": "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议",
     "status": "pending",
     "order": 2,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "3f5bf7fc",
     "description": "组长汇总：综合各方意见，提出具体行动方案",
     "status": "pending",
     "order": 3,
-    "stepLog": []
+    "planItemLog": []
   }
 ];
 
@@ -137,28 +137,28 @@ const PLAN_SNAPSHOT_2: PlanStepDto[] = [
     "description": "组长开场：介绍会议主题和讨论框架",
     "status": "done",
     "order": 0,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "1110041a",
     "description": "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议",
     "status": "done",
     "order": 1,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "6f3b1624",
     "description": "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议",
     "status": "active",
     "order": 2,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "3f5bf7fc",
     "description": "组长汇总：综合各方意见，提出具体行动方案",
     "status": "pending",
     "order": 3,
-    "stepLog": []
+    "planItemLog": []
   }
 ];
 
@@ -168,28 +168,28 @@ const PLAN_SNAPSHOT_3: PlanStepDto[] = [
     "description": "组长开场：介绍会议主题和讨论框架",
     "status": "done",
     "order": 0,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "1110041a",
     "description": "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议",
     "status": "done",
     "order": 1,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "6f3b1624",
     "description": "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议",
     "status": "done",
     "order": 2,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "3f5bf7fc",
     "description": "组长汇总：综合各方意见，提出具体行动方案",
     "status": "active",
     "order": 3,
-    "stepLog": []
+    "planItemLog": []
   }
 ];
 
@@ -199,28 +199,28 @@ const PLAN_SNAPSHOT_4: PlanStepDto[] = [
     "description": "组长开场：介绍会议主题和讨论框架",
     "status": "done",
     "order": 0,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "1110041a",
     "description": "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议",
     "status": "done",
     "order": 1,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "6f3b1624",
     "description": "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议",
     "status": "done",
     "order": 2,
-    "stepLog": []
+    "planItemLog": []
   },
   {
     "id": "3f5bf7fc",
     "description": "组长汇总：综合各方意见，提出具体行动方案",
     "status": "done",
     "order": 3,
-    "stepLog": []
+    "planItemLog": []
   }
 ];
 
@@ -241,7 +241,7 @@ export type ScriptItem =
   | { kind: 'meta'; role: string; llm: string }
   | { kind: 'thinking'; phase: string }
   | { kind: 'thoughts'; count: number }
-  | { kind: 'step_boundary'; stepId: string; title: string }
+  | { kind: 'plan_item_boundary'; planItemId: string; title: string }
   | { kind: 'tool'; toolCallId: string; name: string; args: string; ok: boolean; summary: string }
   | { kind: 'self_review' }
   | { kind: 'text_self_review'; content: string }
@@ -252,19 +252,19 @@ export const REAL_ROUND_SCRIPT: ScriptItem[] = [
   { kind: 'meta', role: "白话方案设计师", llm: "mimo-v2.5-pro" },
   { kind: 'thinking', phase: "llm_calling" },
   { kind: 'thoughts', count: 124 },
-  { kind: 'step_boundary', stepId: "20acd4eb-1b15-4c7e-8710-86ed12ee03f2", title: "共鸣小说家 发言：给出下一个步任务建议" },
+  { kind: 'plan_item_boundary', planItemId: "20acd4eb-1b15-4c7e-8710-86ed12ee03f2", title: "共鸣小说家 发言：给出下一个步任务建议" },
   { kind: 'tool', toolCallId: "call_c34bba90b1cd4b26923fa72c", name: "task_table_write", args: "{\"mode\": \"overwrite\", \"steps\": [{\"description\": \"组长开场：介绍会议主题和讨论框架\", \"rolePack\": \"组长\"}, {\"description\": \"共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议\", \"rolePack\": \"共鸣小说家\"}, {\"description\": \"memora助手发言：从技术实现和记忆管理角度给出下一步任务建议\", \"rolePack\": \"memora助手\"}, {\"description\": \"组长汇总：综合各方意见，提出具体行动方案\", \"rolePack\": \"组长\"}]}", ok: true, summary: "任务表已更新（overwrite），当前共 4 个步骤：\n  - [68e90642] 组长开场：介绍会议主题和讨论框架（角色：组长）\n  - [1110041a] 共鸣小说家发言：从叙事和用户体验角" },
   { kind: 'thinking', phase: "llm_calling" },
   { kind: 'thoughts', count: 48 },
-  { kind: 'step_boundary', stepId: "1110041a-a036-41ac-a5a0-07dfaf288385", title: "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议" },
+  { kind: 'plan_item_boundary', planItemId: "1110041a-a036-41ac-a5a0-07dfaf288385", title: "共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议" },
   { kind: 'tool', toolCallId: "call_0683214304e740a8abef6cbb", name: "task_table_update", args: "{\"step_id\": \"1\", \"status\": \"done\"}", ok: true, summary: "步骤 [68e90642] \"组长开场：介绍会议主题和讨论框架\" 已标记为 done" },
   { kind: 'thinking', phase: "llm_calling" },
   { kind: 'thoughts', count: 55 },
-  { kind: 'step_boundary', stepId: "6f3b1624-105c-4fe1-af53-624fc8d44b5b", title: "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议" },
+  { kind: 'plan_item_boundary', planItemId: "6f3b1624-105c-4fe1-af53-624fc8d44b5b", title: "memora助手发言：从技术实现和记忆管理角度给出下一步任务建议" },
   { kind: 'tool', toolCallId: "call_2ae994b871cd41cd88943958", name: "search_memories", args: "{\"query\": \"互动叙事平台 用户 痛点 体验\", \"limit\": \"5\"}", ok: true, summary: "搜索 \"互动叙事平台 用户 痛点 体验\" 找到 2 条（语义+关键词）：\n1. [round-summary:轮次摘要 2026-09-16-smu3jqouj round-1789529804724" },
   { kind: 'thinking', phase: "llm_calling" },
   { kind: 'thoughts', count: 73 },
-  { kind: 'step_boundary', stepId: "3f5bf7fc-2b65-4161-9c9d-0fa2a0e54695", title: "组长汇总：综合各方意见，提出具体行动方案" },
+  { kind: 'plan_item_boundary', planItemId: "3f5bf7fc-2b65-4161-9c9d-0fa2a0e54695", title: "组长汇总：综合各方意见，提出具体行动方案" },
   { kind: 'tool', toolCallId: "call_ba3df8013a6d478585532d75", name: "task_table_update", args: "{\"step_id\": \"2\", \"status\": \"done\"}", ok: true, summary: "步骤 [1110041a] \"共鸣小说家发言：从叙事和用户体验角度给出下一步任务建议\" 已标记为 done" },
   { kind: 'thinking', phase: "llm_calling" },
   { kind: 'thoughts', count: 59 },
@@ -335,10 +335,10 @@ export function buildRealRoundTimeline(opts: TimelineOptions = {}): TimelineMsg[
           });
         }
         break;
-      case 'step_boundary':
+      case 'plan_item_boundary':
         msgs.push({
           type: 'process_event',
-          event: { type: 'step_boundary', seq: seq++, ts: '', payload: { stepId: item.stepId, title: item.title } },
+          event: { type: 'plan_item_boundary', seq: seq++, ts: '', payload: { planItemId: item.planItemId, title: item.title } },
         });
         break;
       case 'tool': {

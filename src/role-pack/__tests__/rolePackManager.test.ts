@@ -749,7 +749,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(block).toContain('组员1');
       expect(block).toContain('task_table_write');
       expect(block).toContain('task_table_update');
-      // 2026-09-07 文案强化：显式禁止 write_file 模拟任务表（触发样本实证 LLM 曾绕过 PlanStep 通道）
+      // 2026-09-07 文案强化：显式禁止 write_file 模拟任务表（触发样本实证 LLM 曾绕过 PlanItem 通道）
       expect(block).toContain('禁止用 write_file');
       // 切到非组长 → 空串（不注入）
       manager.activate('组员1');
@@ -767,7 +767,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(block).toContain('骨架');
       expect(block).toContain('rolePack=对应组员');
       expect(block).toContain('task_table_update');
-      // 伪建表禁令（触发样本：LLM 曾用 write_file 写 .memora/task-table.md 绕过 PlanStep 通道）
+      // 伪建表禁令（触发样本：LLM 曾用 write_file 写 .memora/task-table.md 绕过 PlanItem 通道）
       expect(block).toContain('禁止用 write_file');
     });
 

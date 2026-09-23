@@ -238,7 +238,7 @@ export { defaultTitle as defaultSessionTitle } from '@/agent/managers/sessionNam
 // 宿主可条件性控制 trace_summary 工具的可见性
 export { TRACE_SUMMARY_TOOL } from '@/agent/builtinTools.js';
 // 不中断工作模型类型（宿主 IPC 层类型声明用；增量事件类型已随 composer 剪枝移除）
-export type { SessionCheckpoint, PauseMeta, StepOutcome, PlanStep } from '@/agent/types.js';
+export type { SessionCheckpoint, PauseMeta, PlanItemOutcome, PlanItem } from '@/agent/types.js';
 // MessageHistory.forkSession() 返回值（Agent.forkSession() 返回 AgentForkResult）
 export type { ForkResult } from '@/agent/messageHistory.js';
 // 注：extractKeywords 为 keywordsTouch 导出的内核分词 SSOT（project-search/terms.ts 同源消费，不另造分词器），

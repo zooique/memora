@@ -11,12 +11,12 @@
  * 本脚本实证目标（非完整宿主装配，聚焦观测，直接复用 loop 的可写装配回调）：
  *   给真实 LLM 一个"强命令多步任务"，观察它是否决策调用 task_table_write 并分步推进 active 步骤。
  *   loop 在 toolCalls 遍历时（loop.ts L1482-1483）仅凭调用名即累计 taskTableWriteCount，
- *   且 getActiveStepMeta 返回 active 步骤变化即产 step_boundary（loop.ts L1005-1017），
- *   因此注入最小 getActiveStepMeta/getTaskTable、无需 sessionManager 完整集成，
- *   即可既实证"LLM 是否愿意建表"，又实证"step_boundary 是否随步骤推进产出"。
+ *   且 getActivePlanItemMeta 返回 active 步骤变化即产 plan_item_boundary（loop.ts L1005-1017），
+ *   因此注入最小 getActivePlanItemMeta/getTaskTable、无需 sessionManager 完整集成，
+ *   即可既实证"LLM 是否愿意建表"，又实证"plan_item_boundary 是否随步骤推进产出"。
  *
  * 注意：
- *   - getActiveStepMeta/getTaskTable 为 loop 实例可写字段，构造后直赋（对齐 assembler.ts 装配模式）。
+ *   - getActivePlanItemMeta/getTaskTable 为 loop 实例可写字段，构造后直赋（对齐 assembler.ts 装配模式）。
  *   - script 依赖三套件环境变量 MEMORA_MODEL / MEMORA_BASE_URL / MEMORA_API_KEY（.memora/config.json 占位展开）。
  */
 
@@ -47,9 +47,9 @@ function shortId(): string {
 }
 
 /**
- * 推进 active 步骤（模拟 sessionManager.ensureActiveStep 的"恰好一个 active"自维护）。
- * 找到第一个非 done/blocked 的步骤置 active；每步推进会让 getActiveStepMeta 的 stepId 变化，
- * 供 loop 识别"active 步骤已推进"并产出 step_boundary 事件（实证 step_boundary 计数）。
+ * 推进 active 步骤（模拟 sessionManager.ensureActivePlanItem 的"恰好一个 active"自维护）。
+ * 找到第一个非 done/blocked 的步骤置 active；每步推进会让 getActivePlanItemMeta 的 planItemId 变化，
+ * 供 loop 识别"active 步骤已推进"并产出 plan_item_boundary 事件（实证 plan_item_boundary 计数）。
  */
 function advanceActive(): void {
   const firstOpen = mockPlan.find((s) => s.status === 'pending');
@@ -94,20 +94,20 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
           status: 'pending',
         });
       }
-      if (mockPlan.length > 0) mockPlan[0].status = 'active'; // 模拟 ensureActiveStep：首个步骤 active
+      if (mockPlan.length > 0) mockPlan[0].status = 'active'; // 模拟 ensureActivePlanItem：首个步骤 active
       return `任务表已更新（${mode}），当前共 ${mockPlan.length} 个步骤：\n${renderPlan()}`;
     }
     case 'task_table_update': {
       const status = String(args.status ?? 'done');
-      const stepId = String(args.step_id ?? '');
+      const planItemId = String(args.step_id ?? '');
       // 简化寻址：支持行首序号（1-based）或短 id 前缀匹配
-      const idx = /^\d+$/.test(stepId) ? Number(stepId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(stepId));
+      const idx = /^\d+$/.test(planItemId) ? Number(planItemId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(planItemId));
       if (idx < 0 || idx >= mockPlan.length) {
-        return `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"`;
+        return `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"`;
       }
       mockPlan[idx].status =
         status === 'blocked' ? 'blocked' : status === 'done' ? 'done' : mockPlan[idx].status;
-      // 模拟结束步骤后自动推进下一个 active（ensureActiveStep）——驱动 step_boundary 产出
+      // 模拟结束步骤后自动推进下一个 active（ensureActivePlanItem）——驱动 plan_item_boundary 产出
       if (mockPlan[idx].status === 'done') advanceActive();
       return `步骤 [${mockPlan[idx].id}] "${mockPlan[idx].description}" 已标记为 ${status}`;
     }
@@ -130,11 +130,11 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** 打印任务表维度指标（层0 新字段：taskTableWriteCount / stepBoundaryCount） */
+/** 打印任务表维度指标（层0 新字段：taskTableWriteCount / planItemBoundaryCount） */
 function printPlanMetrics(metrics: AgentMetrics): void {
   console.log('  ┌─ 任务表维度（层0 观测）');
   console.log(`  │  task_table_write 调用（建表/重建次数）: ${metrics.plan.taskTableWriteCount}`);
-  console.log(`  │  step_boundary 产出 → step_boundary 事件数 : ${metrics.plan.stepBoundaryCount}`);
+  console.log(`  │  plan_item_boundary 产出 → plan_item_boundary 事件数 : ${metrics.plan.planItemBoundaryCount}`);
   console.log('  └──────────────');
 }
 
@@ -172,11 +172,11 @@ async function main(): Promise<void> {
     toolExecutor,
     maxIterations: 8,
   });
-  // 装配 step_boundary 实证所需的两个可写回调（对齐 assembler.ts 装配模式）：
-  // getActiveStepMeta 返回当前 active 步骤元信息，loop 据此对比演进并产 step_boundary 事件。
-  loop.getActiveStepMeta = () => {
+  // 装配 plan_item_boundary 实证所需的两个可写回调（对齐 assembler.ts 装配模式）：
+  // getActivePlanItemMeta 返回当前 active 步骤元信息，loop 据此对比演进并产 plan_item_boundary 事件。
+  loop.getActivePlanItemMeta = () => {
     const active = mockPlan.find((s) => s.status === 'active');
-    return active ? { stepId: active.id, title: active.description } : null;
+    return active ? { planItemId: active.id, title: active.description } : null;
   };
   // getTaskTable 返回当前任务表 Markdown，每次迭代注入给 LLM 感知进度
   loop.getTaskTable = () => renderPlan();
@@ -202,8 +202,8 @@ async function main(): Promise<void> {
       process.stdout.write(chunk.content);
     } else if (chunk.type === 'tool_start') {
       toolCallsSeen.push(chunk.name);
-    } else if (chunk.type === 'step_boundary') {
-      stepBoundariesSeen.push(chunk.stepId);
+    } else if (chunk.type === 'plan_item_boundary') {
+      stepBoundariesSeen.push(chunk.planItemId);
     }
   }
   const duration = Date.now() - start;
@@ -214,7 +214,7 @@ async function main(): Promise<void> {
   const metrics = loop.getMetrics();
   printPlanMetrics(metrics);
   console.log(`  🤖 LLM 实际发起的工具调用序列: ${toolCallsSeen.join(' → ') || '(无工具调用)'}`);
-  console.log(`  🚧 产出的 step_boundary 事件: ${stepBoundariesSeen.length} 个 ${stepBoundariesSeen.length ? `（${stepBoundariesSeen.join(' → ')}）` : ''}`);
+  console.log(`  🚧 产出的 plan_item_boundary 事件: ${stepBoundariesSeen.length} 个 ${stepBoundariesSeen.length ? `（${stepBoundariesSeen.join(' → ')}）` : ''}`);
   assert(response.length > 0, `有文本回复（${response.length} 字符）`);
 
   // 结论 1：taskTableWriteCount > 0 即证明层1 让任务表从未触发变为被真实 LLM 决策触发
@@ -223,11 +223,11 @@ async function main(): Promise<void> {
   } else {
     console.log('⚠️  实证1 未触发：taskTableWriteCount = 0。建议检查 needsPlanning 判定是否命中，或 nudge 文案强度。');
   }
-  // 结论 2：注入 getActiveStepMeta 后，active 步骤随 update 推进应产出 step_boundary（step_boundary_count 与思考折叠联动）
-  if (metrics.plan.stepBoundaryCount > 0) {
-    console.log(`🎉 实证2 通过：step_boundary 产出 ${metrics.plan.stepBoundaryCount} 次，任务表驱动布局骨血（思考折叠/进度看板）已苏醒。`);
+  // 结论 2：注入 getActivePlanItemMeta 后，active 步骤随 update 推进应产出 plan_item_boundary（plan_item_boundary_count 与思考折叠联动）
+  if (metrics.plan.planItemBoundaryCount > 0) {
+    console.log(`🎉 实证2 通过：plan_item_boundary 产出 ${metrics.plan.planItemBoundaryCount} 次，任务表驱动布局骨血（思考折叠/进度看板）已苏醒。`);
   } else {
-    console.log('⚠️  实证2 未产出：stepBoundaryCount = 0。可能 LLM 未分步推进 active，或一次性宣告完成。');
+    console.log('⚠️  实证2 未产出：planItemBoundaryCount = 0。可能 LLM 未分步推进 active，或一次性宣告完成。');
   }
 }
 

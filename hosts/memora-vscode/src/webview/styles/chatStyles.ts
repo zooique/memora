@@ -1225,7 +1225,7 @@ export const chatStyles = `
 
   /* ============ Components：任务进度常驻条（H4 任务驱动多步闭环，2026-08-23 → 2026-09-17 单轨） ============ */
   /* LLM 调用 task_table_write/update 建表时显示的顶部常驻进度条（#planBar）：默认一行
-   * N/M + 进度条 + 当前 active step 摘要，点击展开锚定浮层看全量步骤 + stepLog。
+   * N/M + 进度条 + 当前 active step 摘要，点击展开锚定浮层看全量步骤 + planItemLog。
    * 单轨设计：与 #messages **同级**的固定插槽（非其子节点——滚动容器内一滚即消失）；
    * 运行时不再渲染 inline 轨。只读展示内核 checkpoint.plan，状态色约定
    * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。
@@ -1273,7 +1273,7 @@ export const chatStyles = `
   }
   /* SVG 指示器尺寸适配（2026-09-19 HOST-S8：原 ▸/▾ 字符 → icons.ts 的 SVG） */
   .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
-  /* 锚定浮层：紧贴常驻条下方（top:100%），全量步骤列表 + stepLog；卡片 + 阴影浮于对话上方。
+  /* 锚定浮层：紧贴常驻条下方（top:100%），全量步骤列表 + planItemLog；卡片 + 阴影浮于对话上方。
    * 非 modal（无遮罩）：看进度时需同时看正文。max-height 超限滚动 */
   .plan-bar__panel {
     position: absolute; left: 0; right: 0; top: 100%;
@@ -1292,7 +1292,7 @@ export const chatStyles = `
     padding: 0;
   }
   /* 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标，
-     展开后展示该步骤关联的 step 推进记录（stepLog） */
+     展开后展示该步骤关联的 step 推进记录（planItemLog） */
   .plan-step {
     margin: var(--sp-1, 2px) 0;
     padding-left: var(--sp-2, 6px);
@@ -1320,7 +1320,7 @@ export const chatStyles = `
   .plan-step-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-bar__panel 的 text-secondary，无需额外规则） */
 
-  /* P-2：plan-board stepLog 行内相对时间标签 */
+  /* P-2：plan-board planItemLog 行内相对时间标签 */
   .plan-step-round-time {
     display: inline-block;
     font-size: 10px;
@@ -1396,7 +1396,7 @@ export const chatStyles = `
   /* v1.8 运行时过程平铺容器（2026-09-09 剪枝）：运行时无 round-block 大折叠壳——
      过程（narrate 冒号行 / 工具折叠行 / 思考状态）按 step 时序平铺于此，透明无壳；
      done/interrupted finalize 时移除、内容收进 round-block 折叠块。任务表例外：
-     step_boundary 时平铺内容归入 .round-block__step 折叠块（复用折叠视觉）。 */
+     plan_item_boundary 时平铺内容归入 .round-block__step 折叠块（复用折叠视觉）。 */
   .process-flow {
     display: flex; flex-direction: column; gap: var(--sp-1, 2px);
     padding: var(--sp-1, 2px) 0;
@@ -1439,9 +1439,9 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) 0; line-height: 1.6;
     word-break: break-all;
   }
-  /* 步级折叠容器（阶段二，2026-09-08 路 B′）：active 任务表步骤推进时，后续 narrate/tool
+  /* 步级折叠容器（阶段二，2026-09-08 路 B′）：active 任务项推进时，后续 narrate/tool
    * 归入对应 step 折叠块（summary 显示「step-N · 标题」），实现「边界切组、步内平铺」。
-   * 无 step_boundary 时不出现（退回整轮扁平）。默认收起——步骤过程属过程明细，报告保持简洁。 */
+   * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——步骤过程属过程明细，报告保持简洁。 */
   .round-block__step {
     margin: var(--sp-1, 4px) 0; padding-left: var(--sp-3, 8px);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));

@@ -238,7 +238,7 @@ export class SeedOrchestrator {
     // （仍有 pending）不受影响。
     this.deps
       .getParts()
-      .sessionManager?.concludeActiveStepIfPlanFullyReached(assistantContent.slice(0, 200));
+      .sessionManager?.concludeActivePlanItemIfPlanFullyReached(assistantContent.slice(0, 200));
 
     yield { type: 'thinking', phase: 'archiving' };
     return streamResult satisfies StreamConsumeResult;

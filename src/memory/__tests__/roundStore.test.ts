@@ -387,15 +387,17 @@ describe('isRoundSettled 判据单源守卫', () => {
    * - 行号豁免 = 无关改动导致漂移时误红。
    * 并有「僵尸豁免」闭环：豁免片段必须在目标文件中真实存在，判据删改后仍在 = 敞开的后门。
    *
-   * - `chatPanel.loadRoundBasedHistory`：**渲染分流**判据「是否挂 assistant 正文块」，
-   *   回答的是「怎么画」而非「是否已收场」。中断轮**可能确有** assistantMessage
-   *   （`appendInterrupted` 有恢复文本即写，来源 = narrate 拼接 / 运行期 streamResult.content），
-   *   不挂正文的真正理由 = **同源去双份**（该文本与 processEvents 平铺区内容相同）。
-   *   语义与收场判据不同，故保留 `'complete'`。
+   * - `chatPanel` 的**渲染分流**判据「是否挂 assistant 正文块」（两处消费点：`collectHistoryMessages`
+   *   收集展示历史、`replaySession` 挂最终回答），回答的是「怎么画」而非「是否已收场」。
+   *   中断轮**可能确有** assistantMessage（`appendInterrupted` 有恢复文本即写，来源 = narrate 拼接 /
+   *   运行期 streamResult.content），不挂正文的真正理由 = **同源去双份**（该文本与 processEvents
+   *   平铺区内容相同）。该处代码自带「勿替换为 isRoundSettled」注释，语义与收场判据不同，故保留。
+   *   注：片段按**当前代码形态**登记（条件顺序 + 变量名参与匹配），无关重排会使其失配——失配是
+   *   提示「去确认这行是否仍是渲染分流」，不是提示「换更宽的片段」。
    */
   const ALLOWED_LINES: Record<string, string[]> = {
     'hosts/memora-vscode/src/webview/panels/chatPanel.ts': [
-      "round.assistantMessage?.content && round.status === 'complete'",
+      "r.status === 'complete' && r.assistantMessage?.content",
     ],
   };
 

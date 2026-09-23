@@ -1511,7 +1511,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.process-flow')).toBeNull();
   });
 
-  it('阶段二步级折叠：replay_events 含 step_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
+  it('阶段二步级折叠：replay_events 含 plan_item_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '任务开始' });
@@ -1519,11 +1519,11 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       type: 'replay_events',
       roundId: 'r1',
       events: [
-        { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '分析需求' } },
+        { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } },
         { type: 'narrate', seq: 3, ts: '', payload: { content: '正在分析需求文档' } },
         { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file' } },
         { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
-        { type: 'step_boundary', seq: 6, ts: '', payload: { stepId: 's2', title: '编写代码' } },
+        { type: 'plan_item_boundary', seq: 6, ts: '', payload: { planItemId: 's2', title: '编写代码' } },
         { type: 'narrate', seq: 7, ts: '', payload: { content: '开始编写实现代码' } },
         { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'write_file' } },
         { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true } },
@@ -1715,11 +1715,11 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('定向复现：任务表现在（task_table 工具）无 narrate + 自审二次输出，done 后折叠块/光标/进度条收口（2026-09-16 round-1789565571934）', () => {
     mountChatView();
-    // 真实 round 事件序：meta → chunk(正文全文) → step_boundary → task_table_update 工具 → self_review → text_self_review → thinking(archiving) → metrics → done
+    // 真实 round 事件序：meta → chunk(正文全文) → plan_item_boundary → task_table_update 工具 → self_review → text_self_review → thinking(archiving) → metrics → done
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '【组长开场】\n\n## 第一步', roundId: 'r1' });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } } });
-    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 3, ts: '', payload: { stepId: 's1', title: '文档收束' } } });
+    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 3, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
     // 大事件量（逼近真实 round：1358 个事件中绝大多数是 thought 碎片）
@@ -1749,17 +1749,17 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // ① meta → 正文流开启（cursor 亮）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '【组长开场】', roundId: 'r1' });
-    // ② 任务表现在：step_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
-    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '文档收束' } } });
+    // ② 任务表现在：plan_item_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
+    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
     // ≥3 步计划才常驻（**webview 展示层自身门槛**，非内核 needsPlanning——后者是关键词/
     // 结构式布尔判定、无步数阈值）——3 步触发常驻条
     dispatch({
       type: 'plan_update',
       steps: [
-        { order: 0, id: '0', description: '文档收束', status: 'active', stepLog: [] },
-        { order: 1, id: '1', description: '补充说明', status: 'pending', stepLog: [] },
-        { order: 2, id: '2', description: '整理结论', status: 'pending', stepLog: [] },
+        { order: 0, id: '0', description: '文档收束', status: 'active', planItemLog: [] },
+        { order: 1, id: '1', description: '补充说明', status: 'pending', planItemLog: [] },
+        { order: 2, id: '2', description: '整理结论', status: 'pending', planItemLog: [] },
       ],
     });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
@@ -1798,7 +1798,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 // 数据来源：round-1789565571934 的真实 processEvents（1356 条 / seq 3..1358），
 // 经 scripts 层压缩为 fixtures/realRound-1789565571934.ts，事件**类型相对顺序**、
 // 7 对工具调用（task_table_write + 4×task_table_update + search_memories + list_dir）、
-// 4 个 step_boundary、1324 条 thought 的分布均保持真实。
+// 4 个 plan_item_boundary、1324 条 thought 的分布均保持真实。
 //
 // R1–R3 = 现象现状；R4 = 唯一变量「补发 done」的对照组，用于归因。
 // ─────────────────────────────────────────────────────────────────────────────
@@ -2398,9 +2398,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '收集需求', status: 'done', order: 0, stepLog: [] },
-        { id: 's2', description: '设计方案', status: 'active', order: 1, stepLog: [] },
-        { id: 's3', description: '编写文档', status: 'pending', order: 2, stepLog: [] },
+        { id: 's1', description: '收集需求', status: 'done', order: 0, planItemLog: [] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, planItemLog: [] },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2, planItemLog: [] },
       ],
     });
     const bar = document.querySelector('#planBar') as HTMLElement;
@@ -2429,14 +2429,14 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(steps[2].querySelector('.plan-step-badge')?.textContent).toBe('待执行');
   });
 
-  it('plan_update 携带 stepLog → 浮层步骤节点展开显示该步骤的 step 推进记录', () => {
+  it('plan_update 携带 planItemLog → 浮层步骤节点展开显示该步骤的 step 推进记录', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '收集需求', status: 'done', order: 0, stepLog: [{ planStepId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
-        { id: 's2', description: '设计方案', status: 'active', order: 1, stepLog: [] },
-        { id: 's3', description: '编写文档', status: 'pending', order: 2, stepLog: [] },
+        { id: 's1', description: '收集需求', status: 'done', order: 0, planItemLog: [{ planItemId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
+        { id: 's2', description: '设计方案', status: 'active', order: 1, planItemLog: [] },
+        { id: 's3', description: '编写文档', status: 'pending', order: 2, planItemLog: [] },
       ],
     });
     const panel = document.querySelector('#planBarPanel') as HTMLElement;
@@ -2457,17 +2457,17 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] },
-        { id: 's2', description: '第二步', status: 'pending', order: 1, stepLog: [] },
-        { id: 's3', description: '第三步', status: 'pending', order: 2, stepLog: [] },
+        { id: 's1', description: '第一步', status: 'active', order: 0, planItemLog: [] },
+        { id: 's2', description: '第二步', status: 'pending', order: 1, planItemLog: [] },
+        { id: 's3', description: '第三步', status: 'pending', order: 2, planItemLog: [] },
       ],
     });
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
-        { id: 's2', description: '第二步', status: 'active', order: 1, stepLog: [] },
-        { id: 's3', description: '第三步', status: 'pending', order: 2, stepLog: [] },
+        { id: 's1', description: '第一步', status: 'done', order: 0, planItemLog: [] },
+        { id: 's2', description: '第二步', status: 'active', order: 1, planItemLog: [] },
+        { id: 's3', description: '第三步', status: 'pending', order: 2, planItemLog: [] },
       ],
     });
     const bar = document.querySelector('#planBar') as HTMLElement;
@@ -2485,8 +2485,8 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] },
-        { id: 's2', description: '第二步', status: 'pending', order: 1, stepLog: [] },
+        { id: 's1', description: '第一步', status: 'active', order: 0, planItemLog: [] },
+        { id: 's2', description: '第二步', status: 'pending', order: 1, planItemLog: [] },
       ],
     });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
@@ -2502,9 +2502,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
-        { id: 's2', description: '第二步', status: 'done', order: 1, stepLog: [] },
-        { id: 's3', description: '第三步', status: 'done', order: 2, stepLog: [] },
+        { id: 's1', description: '第一步', status: 'done', order: 0, planItemLog: [] },
+        { id: 's2', description: '第二步', status: 'done', order: 1, planItemLog: [] },
+        { id: 's3', description: '第三步', status: 'done', order: 2, planItemLog: [] },
       ],
     });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
@@ -2519,9 +2519,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'active', order: 0, stepLog: [] },
-        { id: 's2', description: '第二步', status: 'pending', order: 1, stepLog: [] },
-        { id: 's3', description: '第三步', status: 'pending', order: 2, stepLog: [] },
+        { id: 's1', description: '第一步', status: 'active', order: 0, planItemLog: [] },
+        { id: 's2', description: '第二步', status: 'pending', order: 1, planItemLog: [] },
+        { id: 's3', description: '第三步', status: 'pending', order: 2, planItemLog: [] },
       ],
     });
     const head = document.querySelector('#planBarHead') as HTMLElement;
@@ -2549,9 +2549,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       steps: [
-        { id: 's1', description: '第一步', status: 'done', order: 0, stepLog: [] },
-        { id: 's2', description: '第二步', status: 'done', order: 1, stepLog: [] },
-        { id: 's3', description: '第三步', status: 'done', order: 2, stepLog: [] },
+        { id: 's1', description: '第一步', status: 'done', order: 0, planItemLog: [] },
+        { id: 's2', description: '第二步', status: 'done', order: 1, planItemLog: [] },
+        { id: 's3', description: '第三步', status: 'done', order: 2, planItemLog: [] },
       ],
     });
     dispatch({ type: 'plan_update', steps: [] });
@@ -3946,9 +3946,9 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
       roundId: 'r1',
       events: [
         { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
-        { type: 'step_boundary', seq: 2, ts: 't2', payload: { stepId: 's1', title: '第一步' } },
+        { type: 'plan_item_boundary', seq: 2, ts: 't2', payload: { planItemId: 's1', title: '第一步' } },
         { type: 'narrate', seq: 3, ts: 't3', payload: { content: '步骤一执行' } },
-        { type: 'step_boundary', seq: 4, ts: 't4', payload: { stepId: 's2', title: '第二步' } },
+        { type: 'plan_item_boundary', seq: 4, ts: 't4', payload: { planItemId: 's2', title: '第二步' } },
         { type: 'narrate', seq: 5, ts: 't5', payload: { content: '步骤二执行' } },
         { type: 'metrics', seq: 6, ts: 't6', payload: { durationMs: 100, tokenIn: 1, tokenOut: 1, toolFailureCount: 0, success: true } },
       ] as never,
@@ -4098,10 +4098,10 @@ describe('chatView narrate_withdraw 回抽', () => {
   it('P3：per-step 分桶——不同 step 的思考各自独立折叠，同 step 内碎片连续', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 2, ts: '', payload: { stepId: 's1', title: '分析需求' } } });
+    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '第一' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '步' } } });
-    dispatch({ type: 'process_event', event: { type: 'step_boundary', seq: 5, ts: '', payload: { stepId: 's2', title: '编写代码' } } });
+    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 5, ts: '', payload: { planItemId: 's2', title: '编写代码' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 6, ts: '', payload: { content: '第二' } } });
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 7, ts: '', payload: { content: '步' } } });
     // 流式：s1、s2 各 1 个折叠块（同 step 内连续），各自独立

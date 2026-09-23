@@ -201,7 +201,7 @@ describe('SeedOrchestrator 最小 turn', () => {
   });
 
   // ── 形态② 兜底收尾（PLAN-SYNC-1 ①，2026-09-17）────────────────────────
-  it('runChat 正常完成：act 触发「LLM 未显式 update 即收尾」兜底（摘要前 200 字作 stepLog 摘要）', async () => {
+  it('runChat 正常完成：act 触发「LLM 未显式 update 即收尾」兜底（摘要前 200 字作 planItemLog 摘要）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');
     consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
@@ -210,8 +210,8 @@ describe('SeedOrchestrator 最小 turn', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     // 正常收尾分支调用兜底（与助手消息入史同一路径）
-    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).toHaveBeenCalledTimes(1);
-    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).toHaveBeenCalledWith(
+    expect(mocks.sessionManager.concludeActivePlanItemIfPlanFullyReached).toHaveBeenCalledTimes(1);
+    expect(mocks.sessionManager.concludeActivePlanItemIfPlanFullyReached).toHaveBeenCalledWith(
       '完成回复'.slice(0, 200),
     );
   });
@@ -224,7 +224,7 @@ describe('SeedOrchestrator 最小 turn', () => {
     await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).not.toHaveBeenCalled();
+    expect(mocks.sessionManager.concludeActivePlanItemIfPlanFullyReached).not.toHaveBeenCalled();
   });
 
   it('runChat 中断/失败轮：不触发兜底（与 appendInterrupted 同路径提前返回）', async () => {
@@ -235,6 +235,6 @@ describe('SeedOrchestrator 最小 turn', () => {
     await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    expect(mocks.sessionManager.concludeActiveStepIfPlanFullyReached).not.toHaveBeenCalled();
+    expect(mocks.sessionManager.concludeActivePlanItemIfPlanFullyReached).not.toHaveBeenCalled();
   });
 });

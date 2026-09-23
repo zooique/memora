@@ -726,8 +726,91 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       off: vi.fn(),
       memory: { softDeleteRoundSummaries: vi.fn() },
       getCheckpoint: () => null,
+      // 暂停在途判据（M3b-1：postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
+      isPausePending: () => false,
     } as unknown as Agent;
   }
+
+  /**
+   * 包装 roundStore.save，记录**每次落盘时** processEvents 的事件类型快照。
+   *
+   * 观测法刻意不碰私有实现：只看「什么时刻写进去了什么」——落盘时机是行为，不是实现细节。
+   * 判据「含 metrics」= 流尾那次终局落盘（metrics 是流尾才 emit 的终态事件）。
+   */
+  function spySaves(roundStore: WorkspaceRoundStore): string[][] {
+    const calls: string[][] = [];
+    const orig = roundStore.save.bind(roundStore);
+    roundStore.save = (round: Round): void => {
+      calls.push((round.processEvents ?? []).map((e) => e.type));
+      orig(round);
+    };
+    return calls;
+  }
+
+  // ── 档3 落盘时机（2026-09-23）：step_boundary = 唯一点 ──────────────────────
+  // 档2 把增量落盘挂在 plan_item_boundary（任务项推进）上 → 无任务表的长工具循环零增量落盘，
+  // 崩溃即全丢。现改挂 step_boundary（迭代完成），与有无任务表无关。
+
+  it('step_boundary = 增量落盘点：每次迭代落一次（无任务表也落）', async () => {
+    const { store, roundStore, provider } = setup();
+    provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '任务', ts: 't0' },
+      { role: 'assistant', content: '上一轮回答', ts: 't1' },
+    ]);
+    const saves = spySaves(roundStore);
+    // 全程无 plan_item_boundary（无任务表）：若落盘仍挂它，这一轮全程零增量落盘
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'thinking', phase: 'processing', roundId: 'round-1' };
+          yield { type: 'step_boundary', roundId: 'round-1' };
+          yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-1' };
+          yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
+          yield { type: 'step_boundary', roundId: 'round-1' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
+
+    // 两次迭代边界 → 两次增量落盘；流尾终局再落一次 = 3
+    expect(saves).toHaveLength(3);
+    // 第一次落盘时第二迭代的工具还没发生 —— 崩溃只丢未落盘的那一段，这正是落盘的意义
+    expect(saves[0]).not.toContain('tool_start');
+    // 第二次落盘把第二迭代的工具增量补上
+    expect(saves[1]).toContain('tool_start');
+    // 末次是流尾终局（metrics 为流尾专有事件）
+    expect(saves[2]).toContain('metrics');
+  });
+
+  it('plan_item_boundary 不再是落盘点（时机单一）：它到场时不写库，全程仅流尾一次', async () => {
+    const { store, roundStore, provider } = setup();
+    provider.setRoundStore(roundStore);
+    seedSession(store, roundStore, '2026-08-15-s1', [
+      { role: 'user', content: '任务', ts: 't0' },
+      { role: 'assistant', content: '上一轮回答', ts: 't1' },
+    ]);
+    const saves = spySaves(roundStore);
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          yield { type: 'thinking', phase: 'processing', roundId: 'round-1' };
+          yield { type: 'plan_item_boundary', planItemId: 'plan-item-1', title: '第一步', roundId: 'round-1' };
+          yield { type: 'done' };
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('任务');
+
+    // 唯一落盘 = 流尾（含 metrics）；plan_item_boundary 到场时无独立写库 —— 两个落盘点会各写一次，
+    // 且崩溃前最后一次写的快照完整性不同（时机单一 = 落盘语义可推理）
+    expect(saves).toHaveLength(1);
+    expect(saves[0]).toContain('plan_item_boundary');
+    expect(saves[0]).toContain('metrics');
+  });
 
   it('一次 chat() 多turn（多 turn 任务编排）：各turn processEvents 独立落盘，不堆叠不覆盖', async () => {
     const { store, roundStore, provider } = setup();
@@ -803,6 +886,8 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
           { id: 's3', description: '汇总观点', status: 'pending', order: 2 },
         ],
       }),
+      // M3b-1：postTurnUpdate 折叠 TurnState 时读取（真实 handlePause 同 API）
+      isPausePending: () => false,
     } as unknown as Agent);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('小组会议');

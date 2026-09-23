@@ -1,4 +1,10 @@
-import type { InteractiveInputKind, ProcessEvent } from '@zooique/memora';
+import type {
+  InteractiveInputKind,
+  ProcessEvent,
+  Round,
+  RoundMessage,
+  RoundStatus,
+} from '@zooique/memora';
 
 /**
  * 消息协议 — extension host ↔ Webview 通信契约
@@ -360,6 +366,17 @@ export type WebviewToExtensionMessage =
    */
   | { type: 'allowed_paths_set'; paths: string[] }
   /**
+   * 统一输入入口（SSOT 收口 M1，2026-09-23，无消费方）
+   *
+   * 覆盖「输入类」四条消息：send / clarify_answer / clarify_answers / resume。
+   * 宿主按当前 `TurnState.phase` 单一判据路由到内核既有入口
+   * （chat / interject / answerQuestion / resumeExecution），内核语义不变。
+   * **控制类**消息（pause / stop / clear_pending_queue / remove_pending_item）不属于
+   * 「输入」，不在本条收敛范围——它们改的是 turn 的控制流，不是往 turn 里塞内容。
+   * kind 沿用内核 `InteractiveInputKind`（question-answer / supplement / timeout）。
+   */
+  | { type: 'input'; text?: string; kind?: InteractiveInputKind }
+  /**
    * 设置内部网页搜索引擎（search_engine_set 消息处理，2026-09-02 方案 A）
    *
    * 由设置面板「网页搜索引擎」下拉触发：host 持久化到**用户级**设置
@@ -649,7 +666,7 @@ export type ExtensionToWebviewMessage =
    */
   | {
       type: 'need_clarify';
-      questions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[];
+      questions: PendingQuestionDto[];
     }
   /**
    * 目标漂移检测提示（H2 事件：goalDriftDetected）
@@ -922,11 +939,84 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'allowed_paths_status'; projectPath: string; paths: string[] }
   /**
+   * turn 投影更新（SSOT 收口 M1，2026-09-23，无消费方）
+   *
+   * 取代 chunk / user / assistant / process_event / replay_events / status / paused /
+   * pause_pending / need_clarify / pending_queue_update 的**状态职责**：
+   * webview 侧只维护 `rounds` + `state` 两个容器，UI 一律由 render(rounds, state) 派生。
+   * 正文流式仍走 chunk 增量通道（唯一允许的局部优化，性能）。
+   * M1–M4 双轨期：旧消息保留但禁止新增旧消息类型；M5 统一删除。
+   */
+  | { type: 'turn_update'; rounds: RoundView[]; state: TurnState }
+  /**
    * 网页搜索引擎状态推送（设置面板加载时推送当前选择）
    *
    * 由 host 在 settings 视图 ready / 用户修改后推送，webview 据此渲染下拉选中项。
    */
   | { type: 'search_engine_status'; engine: SearchEngineSetting };
+
+// ─── turn 投影层类型（SSOT 收口 M1，2026-09-23）────────────────────────
+// 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
+// 铁律：RoundView 只能是内核 `Round` 的**投影**（Pick 类型约束）——改 Round 字段名即编译报错，
+// 禁止在协议侧另立第二套 Round 字段（并列即腐化）。运行时与重放共用本结构，不走第二套形状。
+
+/** 待回答提问（UI 投影；形状对齐 need_clarify 载荷，供 TurnState.waiting(ask) 携带） */
+export interface PendingQuestionDto {
+  /** 提问槽位标识（内核 AskQuestion.slot 同源） */
+  slot: string;
+  /** 提问原文 */
+  question: string;
+  /** 候选选项（LLM 提供时） */
+  options?: string[];
+  /** 是否允许自定义输入（非选项作答） */
+  allowCustom?: boolean;
+}
+
+/**
+ * 单轮 UI 投影 = 内核 Round 的投影（字段不漂移）
+ *
+ * 运行时（增量生长）与重放（整批重建）产出同一结构，`live` 是两者唯一差异标记。
+ */
+export type RoundView = Pick<
+  Round,
+  'id' | 'userMessage' | 'interactiveInputs' | 'assistantLog' | 'status' | 'createdAt' | 'completedAt'
+> & {
+  /** 末段回答（pending 轮无值）；跨暂停-续跑的前序段在 assistantLog */
+  assistantMessage?: RoundMessage;
+  /** 过程事件（运行时逐条增长，收场后定型；与重放同一渲染函数） */
+  processEvents?: ProcessEvent[];
+  /**
+   * 运行时标记：true = 本轮仍在流式生长（UI 显示骨架 + 停止/暂停按钮）。
+   * 收场后置 false，**不落盘**——它是运行时相位而非持久化数据。
+   */
+  live?: boolean;
+};
+
+/**
+ * turn 运行时状态（UI 唯一状态源；替代 status / paused / pause_pending / need_clarify 四信号）
+ *
+ * ⚠️ 内核侧 ask_user 与 pause **刻意不同源**（`InterruptRequest` 队列注释 + 工具分支独立 yield，
+ * 见 docs/architecture/pause-ask-resume-design.md §一 定案），二者不在内核合一套队；
+ * 本枚举只在**投影层**把它俩统一为「turn 正在等外部输入」，内核写入路径不动。
+ */
+export type TurnState =
+  /** 无进行中 turn（可发送新提问） */
+  | { phase: 'idle' }
+  /** 正在生成；roundId 与 chunk.roundId 同源，供同环续接判定 */
+  | { phase: 'running'; roundId: string }
+  /**
+   * 等待外部输入：pause（用户申请/已生效）与 ask（LLM 提问）UI 形态同构，
+   * 差别只在 reason 与是否带 questions。
+   * pausePending = 申请在途（step 边界未到）→ 沿用「站台等车」语义，UI 即时切可反悔形态。
+   */
+  | {
+      phase: 'waiting';
+      reason: 'pause' | 'ask';
+      pausePending?: boolean;
+      questions?: PendingQuestionDto[];
+    }
+  /** 已收场（turn 级；不等于 round 级判据 isRoundSettled，见文档 §3.7） */
+  | { phase: 'settled'; roundId: string; status: RoundStatus };
 
 /** 角色策略指示器（从内核 BehaviorStrategy 提取的关键策略摘要，供 UI 渲染图标/徽章） */
 export interface RoleStrategyIndicatorDto {
@@ -1040,7 +1130,7 @@ export interface SkillDto {
   issues?: SkillIssueDto[];
 }
 
-/** 任务看板步骤条目（对齐内核 PlanStep 扁平化） */
+/** 任务看板步骤条目（对齐内核 PlanItem 扁平化） */
 export interface PlanStepDto {
   /** 步骤唯一标识 */
   id: string;
@@ -1050,8 +1140,8 @@ export interface PlanStepDto {
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;
-  /** 该步骤已关联的 step 推进记录（来自 checkpoint.stepLog 的 planStepId 关联，可为空数组） */
-  stepLog: { planStepId: string; summary: string; completedAt?: number }[];
+  /** 该步骤已关联的 step 推进记录（来自 checkpoint.planItemLog 的 planItemId 关联，可为空数组） */
+  planItemLog: { planItemId: string; summary: string; completedAt?: number }[];
 }
 
 // ─── 诊断 DTO 类型已移除（2026-08-24 第一性原理复盘） ───

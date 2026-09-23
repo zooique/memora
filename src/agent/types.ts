@@ -112,11 +112,27 @@ export type AgentChunk = (
    */
   | { type: 'selfReview' }
   /**
-   * 步级折叠边界（阶段二，2026-09-08 路 B′）：迭代完成且 active 任务表步骤**推进**时 emit。
+   * 步级折叠边界（阶段二，2026-09-08 路 B′）：迭代完成且 active 任务项**推进**时 emit。
    * 宿主据此把后续过程事件（narrate/tool/问答）归到对应 step 分组下渲染；无任务表不产。
-   * stepId 为推进到的新 active step ID，title 为步骤标题（供分组 summary 展示）。
+   * planItemId 为推进到的新 active step ID，title 为步骤标题（供分组 summary 展示）。
    */
-  | { type: 'step_boundary'; stepId?: string; title?: string }
+  | { type: 'plan_item_boundary'; planItemId?: string; title?: string }
+  /**
+   * 迭代边界（档3 · 迭代原子落盘，2026-09-23）：**一次 LLM 迭代结束**时无条件 emit。
+   *
+   * 与 `plan_item_boundary` 的关系（术语撞车的解法，见 docs/architecture/step-atomic-persistence.md §九）：
+   * - `plan_item_boundary` = **任务项推进**（有任务表且 active 任务项变化才产，无任务表静默），职责是
+   *   webview 步级折叠的**分组依据**；
+   * - `step_boundary` = **迭代完成**（与有无任务表、有无工具无关），职责是宿主**增量落盘的时机信号**
+   *   （档2 曾把落盘挂在 plan_item_boundary 上 → 无任务表长工具循环零增量落盘，本 chunk 补该覆盖缺口）。
+   *
+   * 顺序契约（硬）：同一次迭代内 `plan_item_boundary` **先**于本 chunk 产出——保证宿主本轮落盘快照
+   * 已含该步折叠边界，崩溃重放不错位。
+   *
+   * 瞬态信号：**不落 ProcessEvent**（不是历史内容，只是「此刻该落盘」的触发点），
+   * `Round.processEvents` / schema 零改动。
+   */
+  | { type: 'step_boundary' }
   | { type: 'done' }
 ) & RoundTagged;
 
@@ -197,7 +213,7 @@ export type ArchiveMode = 'full' | 'manual';
 export type SessionStatus = 'running' | 'paused' | 'error';
 
 /** 计划中单个步骤，用于目标漂移检测（文本相似度）和进度追踪 */
-export interface PlanStep {
+export interface PlanItem {
   /** 步骤唯一标识 */
   id: string;
   /** 步骤描述 */
@@ -215,9 +231,9 @@ export interface PlanStep {
 }
 
 /** 一次 LLM 迭代（step）的执行结果，注入时标「非当前指令」防 LLM 误执行 */
-export interface StepOutcome {
-  /** 关联任务表步骤 ID（可为空 = 自由对话的迭代推进） */
-  planStepId?: string;
+export interface PlanItemOutcome {
+  /** 关联任务项 ID（可为空 = 自由对话的迭代推进） */
+  planItemId?: string;
   /** step 摘要（LLM 单句或截断） */
   summary: string;
   /** 完成时间戳 */
@@ -308,14 +324,14 @@ export interface SessionCheckpoint {
    */
   goalChangeSeq: number;
   /** 执行计划步骤列表 */
-  plan: PlanStep[];
+  plan: PlanItem[];
   /**
    * 工具执行日志（outbox 模式）：FIFO，超上限时优先丢弃「幂等或已补偿」的最早记录，
    * 非幂等未补偿记录永不丢弃。
    */
   completedToolCalls?: ToolExecutionRecord[];
   /** step 推进日志（LLM 迭代级时间轴，FIFO cap 10-12 条；task 步骤状态见 plan） */
-  stepLog?: StepOutcome[];
+  planItemLog?: PlanItemOutcome[];
   /** 暂停元数据 */
   pauseMeta?: PauseMeta;
   /** 心跳时间戳（毫秒），防僵尸会话 */

@@ -253,10 +253,10 @@ export type ProcessEvent =
    */
   | { type: 'thought'; seq: number; ts: string; payload: { content: string } }
   /**
-   * 步级折叠边界（阶段二，2026-09-08 路 B′）：active 任务表步骤推进时由 loop 产，
+   * 步级折叠边界（阶段二，2026-09-08 路 B′）：active 任务项推进时由 loop 产，
    * 宿主落盘此事件把后续 narrate/tool/问答归到对应 step 分组。无任务表不产。
    */
-  | { type: 'step_boundary'; seq: number; ts: string; payload: { stepId?: string; title?: string } }
+  | { type: 'plan_item_boundary'; seq: number; ts: string; payload: { planItemId?: string; title?: string } }
   | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }
   /**
    * 流式错误（重放可见性，2026-09-15）：失败轮在**实时流**里已有 `AgentChunk.error`（宿主据此即时弹

@@ -16,7 +16,7 @@
  * @module taskTableRenderer
  */
 
-import type { PlanStep, StepOutcome } from './types.js';
+import type { PlanItem, PlanItemOutcome } from './types.js';
 
 /**
  * 步骤描述最大字符数（超出截断为「前 STEP_DESC_MAX_CHARS-3 字符 + '...'」）。
@@ -31,13 +31,13 @@ export const STEP_DESC_MAX_CHARS = 38;
  * 输出以「非当前指令」标记开头，防止 LLM 将状态信息误认为指令。
  *
  * @param plan - 计划步骤列表
- * @param stepLog - 可选 step 推进日志（截断不在本函数：真源见 SessionManager.appendStepLog
- *   的「每 step 上限 3 条」（completeStep / logStepBoundary 共用）——P-1 2026-09-06 起取代旧全局 FIFO 上限）
+ * @param planItemLog - 可选 step 推进日志（截断不在本函数：真源见 SessionManager.appendPlanItemLog
+ *   的「每 step 上限 3 条」（completePlanItem / logPlanItemBoundary 共用）——P-1 2026-09-06 起取代旧全局 FIFO 上限）
  * @returns 格式化后的任务表文本（空计划返回空字符串）
  */
 export function renderTaskTable(
-  plan: PlanStep[],
-  stepLog?: StepOutcome[],
+  plan: PlanItem[],
+  planItemLog?: PlanItemOutcome[],
 ): string {
   if (plan.length === 0) return '';
 
@@ -68,10 +68,10 @@ export function renderTaskTable(
   }
 
   // 追加 step 推进日志（仅非空时）
-  if (stepLog && stepLog.length > 0) {
+  if (planItemLog && planItemLog.length > 0) {
     lines.push('', '[step 推进记录]');
-    for (const r of stepLog) {
-      lines.push(`- ${r.summary}${r.planStepId ? ` (步骤 ${r.planStepId})` : ''}`);
+    for (const r of planItemLog) {
+      lines.push(`- ${r.summary}${r.planItemId ? ` (步骤 ${r.planItemId})` : ''}`);
     }
   }
 
@@ -81,7 +81,7 @@ export function renderTaskTable(
 /**
  * 将步骤状态映射为中文标签
  */
-function statusToLabel(status: PlanStep['status']): string {
+function statusToLabel(status: PlanItem['status']): string {
   switch (status) {
     case 'pending': return '待执行';
     case 'active': return '执行中';
@@ -109,14 +109,14 @@ const VERIFY_STEP_PATTERN =
  * 触发条件全部确定性：① 计划 ≥3 步（太短不值得打断）；② 全部 done（刚被宣称完成）；
  * ③ 无执行性验证步骤。命中返回提示文本，否则返回 null（零打扰）。
  *
- * 挂载点：task_table_update 把最后一步标 done 的成功路径（assembler.updateStep 回调），
+ * 挂载点：task_table_update 把最后一步标 done 的成功路径（assembler.updatePlanItem 回调），
  * 作为工具结果附文返回——LLM 必读工具结果，nudge 有生效窗口（它可 append 验证步再执行）。
  *
  * @param plan 更新后的计划步骤列表
  * @returns 命中返回提示文案（含换行前导，便于追加到工具结果）；未命中返回 null
  */
 export function buildCompletionVerifyNudge(
-  plan: PlanStep[],
+  plan: PlanItem[],
 ): string | null {
   if (plan.length < 3) return null;
   if (!plan.every((s) => s.status === 'done')) return null;

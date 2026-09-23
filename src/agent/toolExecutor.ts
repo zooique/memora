@@ -346,10 +346,10 @@ interface CustomToolEntry {
 }
 
 /** step_id 寻址解析结果（ok = 已解析为真实步骤 uuid；fail = 错误文案直接回 LLM） */
-type StepIdResolve = { ok: true; id: string } | { ok: false; error: string };
+type PlanItemIdResolve = { ok: true; id: string } | { ok: false; error: string };
 
-/** resolveStepId 所需的 plan 投影（只读形状，不依赖完整 PlanStep） */
-interface StepIdPlanRef {
+/** resolvePlanItemId 所需的 plan 投影（只读形状，不依赖完整 PlanItem） */
+interface PlanItemIdPlanRef {
   id: string;
   order: number;
 }
@@ -360,7 +360,7 @@ interface StepIdPlanRef {
  * LLM 可见的步骤标识有三种来源，缺一不可达即断链：
  *   1. task_table_write 返回的短 id（uuid 前 8 位，恒 8 hex；见 assembler writePlan 渲染）；
  *   2. 任务表 renderer 的行首序号（1-based，渲染形如「3. 描述 [状态]」）；
- *   3. 完整 uuid（stepLog 等展示）。
+ *   3. 完整 uuid（planItemLog 等展示）。
  *
  * 解析顺序（防歧义）：
  *   - 完整 uuid 全等命中 → 直用；
@@ -370,35 +370,35 @@ interface StepIdPlanRef {
  *     不依赖「order==数组下标」弱不变量）；
  *   - 其余 → 未找到（提示可用格式）。
  *
- * 失败返回带定位提示的错误文案；成功后由调用方以完整 uuid 走 planManager.updateStep
- * （sessionManager.updatePlanStepStatus 保持全等匹配写点，不被污染）。
+ * 失败返回带定位提示的错误文案；成功后由调用方以完整 uuid 走 planManager.updatePlanItem
+ * （sessionManager.updatePlanItemStatus 保持全等匹配写点，不被污染）。
  */
-function resolveStepId(stepId: string, plan: StepIdPlanRef[]): StepIdResolve {
+function resolvePlanItemId(planItemId: string, plan: PlanItemIdPlanRef[]): PlanItemIdResolve {
   // 1. 完整 uuid 全等（含连字符，长度 36）
-  if (plan.some((s) => s.id === stepId)) return { ok: true, id: stepId };
+  if (plan.some((s) => s.id === planItemId)) return { ok: true, id: planItemId };
   // 2. 短 id（uuid 前 8 位，恒 8 字符）
-  if (stepId.length === 8) {
-    const matches = plan.filter((s) => s.id.startsWith(stepId));
+  if (planItemId.length === 8) {
+    const matches = plan.filter((s) => s.id.startsWith(planItemId));
     if (matches.length === 1) return { ok: true, id: matches[0]!.id };
     if (matches.length > 1) {
-      return { ok: false, error: `[ERR:INVALID_ARG] 步骤短 id "${stepId}" 不唯一（对应 ${matches.length} 个步骤），请改用任务表行首序号定位` };
+      return { ok: false, error: `[ERR:INVALID_ARG] 步骤短 id "${planItemId}" 不唯一（对应 ${matches.length} 个步骤），请改用任务表行首序号定位` };
     }
     return {
       ok: false,
-      error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"：短 id 需为 task_table_write 返回的 8 位标识，或改用任务表行首序号`,
+      error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"：短 id 需为 task_table_write 返回的 8 位标识，或改用任务表行首序号`,
     };
   }
   // 3. 纯数字 → 行首序号（1-based，按 order 匹配）
-  if (/^\d+$/.test(stepId)) {
-    const idx = Number(stepId) - 1;
+  if (/^\d+$/.test(planItemId)) {
+    const idx = Number(planItemId) - 1;
     const step = plan.find((s) => s.order === idx);
     if (step) return { ok: true, id: step.id };
-    return { ok: false, error: `[ERR:INVALID_ARG] 步骤序号 ${stepId} 超出任务表范围（当前共 ${plan.length} 步，行首序号从 1 开始）` };
+    return { ok: false, error: `[ERR:INVALID_ARG] 步骤序号 ${planItemId} 超出任务表范围（当前共 ${plan.length} 步，行首序号从 1 开始）` };
   }
   // 4. 未知标识
   return {
     ok: false,
-    error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${stepId}"（可用任务表行首序号或 task_table_write 返回的短 id 定位）`,
+    error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"（可用任务表行首序号或 task_table_write 返回的短 id 定位）`,
   };
 }
 
@@ -519,7 +519,7 @@ export class ToolExecutor {
       mode: 'overwrite' | 'append' | 'update',
       steps: Array<{ description: string; rolePack?: string }>,
     ) => string;
-    updateStep: (stepId: string, status: 'done' | 'blocked') => string;
+    updatePlanItem: (planItemId: string, status: 'done' | 'blocked') => string;
     getPlan: () => Array<{ id: string; description: string; status: string; order: number; rolePack?: string }>;
   };
 
@@ -1192,15 +1192,15 @@ export class ToolExecutor {
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
-        const stepId = strArg('step_id');
-        if (!stepId) {
+        const planItemId = strArg('step_id');
+        if (!planItemId) {
           return '[ERR:INVALID_ARG] step_id 不能为空';
         }
-        // 寻址统一解析（2026-09-06 契约收口，见 resolveStepId）：renderer 只向 LLM 展示行首序号（1-based），
-        // task_table_write 返回 uuid 前 8 位短 id，stepLog 展示完整 uuid——三种来源全部归一为真实 uuid 后
-        // 再走 updateStep（全等写点）。此前只支持行首序号，短 id 断链（描述承诺了但无解析实现）。
+        // 寻址统一解析（2026-09-06 契约收口，见 resolvePlanItemId）：renderer 只向 LLM 展示行首序号（1-based），
+        // task_table_write 返回 uuid 前 8 位短 id，planItemLog 展示完整 uuid——三种来源全部归一为真实 uuid 后
+        // 再走 updatePlanItem（全等写点）。此前只支持行首序号，短 id 断链（描述承诺了但无解析实现）。
         const plan = this.planManager.getPlan?.() ?? [];
-        const resolved = resolveStepId(stepId, plan);
+        const resolved = resolvePlanItemId(planItemId, plan);
         if (!resolved.ok) {
           return resolved.error;
         }
@@ -1208,7 +1208,7 @@ export class ToolExecutor {
         if (stepStatus !== 'done' && stepStatus !== 'blocked') {
           return `[ERR:INVALID_ARG] 不支持的状态 "${stepStatus}"，仅支持 done/blocked`;
         }
-        return this.planManager.updateStep(resolved.id, stepStatus);
+        return this.planManager.updatePlanItem(resolved.id, stepStatus);
       }
       case 'read_skill': {
         // 渐进披露 L2：读取激活角色包内嵌技能正文（readSkill 回调由 agent 装配注入）

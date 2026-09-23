@@ -40,7 +40,7 @@
 
 ### 3.0 统一模型（用户定案）：step = LLM + 用户 的混合产物流
 
-- **step 是时间窗口**：一次 `step_boundary` 到下一次之间，step 内发生的一切（LLM 产出的 thought/tool/narrate + 用户注入的运行时输入）都是该 step 的过程记录。补充（supplement）就是 step 结束间隙插入的内容。
+- **step 是时间窗口**：一次 `plan_item_boundary` 到下一次之间，step 内发生的一切（LLM 产出的 thought/tool/narrate + 用户注入的运行时输入）都是该 step 的过程记录。补充（supplement）就是 step 结束间隙插入的内容。
 - **产物条目统一，来源区分**：条目 = 产物类型（thought / tool / narrate / input），携带来源元数据（`llm` / `user`）。**LLM 发送的是 step 内容，用户输入是同一流中的另一来源——本质同构，仅生产者不同。**
 - **渲染统一**：过程条目行（同形态），来源以标签区分（LLM 产物按类型；用户输入带「你答 / 你补充 / 未回答」tag）。
 - **落盘分源，渲染合并投影**：`processEvents`（内核事件流）与 `interactiveInputs`（用户交互记录）**各自保持真源**；合并只发生在渲染层（SSOT：每类数据单真源，渲染为统一投影）。
@@ -51,7 +51,7 @@
 
 ```
 processItems = sortByTs([
-  ...processEvents.map(toItem),      // thought / tool_start+result / narrate / step_boundary
+  ...processEvents.map(toItem),      // thought / tool_start+result / narrate / plan_item_boundary
   ...interactiveInputs.map(toItem),  // question-answer / supplement / timeout（运行时输入，统一形态）
 ])
 ```
@@ -59,7 +59,7 @@ processItems = sortByTs([
 - **运行时输入三类（统一形态，仅 kind 语义标签区分）**：`question-answer`（ask_user 提问→用户回答）、`supplement`（用户主动补全：暂停后补充/插话）、`timeout`（提问超时未答）。均带 ts；question-answer/timeout 可带 `question`/`options`。
 
 - **排序键 = ts**（统一时间戳；同 ts 以稳定序——processEvents 用 seq、interactiveInputs 按写入序）。
-- **step 归属**：条目 ts 与 `step_boundary` 的 ts 比较 → 归入对应 step 分组（`step_boundary` 之后的条目属该 step；首个 boundary 之前属「准备段」）。
+- **step 归属**：条目 ts 与 `plan_item_boundary` 的 ts 比较 → 归入对应 step 分组（`plan_item_boundary` 之后的条目属该 step；首个 boundary 之前属「准备段」）。
 - 数据来源：
   - **运行时**：`currentEvents`（eventsByRound 累积）+ 流式交互输入（提交回答时入列）。
   - **重放**：round.processEvents + round.interactiveInputs。

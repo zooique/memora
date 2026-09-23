@@ -64,7 +64,7 @@ export class SeedPrepare {
     }
 
     // 会议机制骨架预置（2026-09-07 「最小受控起点」半反转回归，ADR-028 收敛补记 + ME-6 触发样本）。
-    // 与 buildTeamContextBlock 文案互补：骨架补首轮确定性（顶部任务板可见 + PlanStep.rolePack 装配钩子），
+    // 与 buildTeamContextBlock 文案互补：骨架补首轮确定性（顶部任务板可见 + PlanItem.rolePack 装配钩子），
     // 文案约束 LLM 后续推进走 task_table 单通道。守卫语义与 T2（2026-09-06）一致：
     //   已有未完成计划（pending/active 存在）→ 跳过骨架预置 = 续会语义：第二轮「继续小组会议」等输入
     //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。

@@ -145,7 +145,7 @@ ProcessEvent = {
 | `aborted`          | `reason`                                                           | 「已停止」标记               |
 | `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/success`             | 顶栏耗时 + § 执行指标         |
 
-> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）与 `step_boundary`（`{stepId?, title?}`，步级折叠边界）两个事件类型在上表定稿后新增，未补入表格；两者均已落盘（[roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
+> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）与 `plan_item_boundary`（`{planItemId?, title?}`，步级折叠边界）两个事件类型在上表定稿后新增，未补入表格；两者均已落盘（[roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
 >
 > **运行时专有字段约定（2026-09-12，A1 回抽）**：`narrate` 的 **`withdrawn?`** 是**运行时专有**字段——它承载「该段叙述曾被逐字流式进正文区、须先撤回」的信息（首轮消息级分类前无法预判工具轮）。它**刻意不落 ProcessEvent、不持久化**：重放的一致由**持久化侧扣除**保证（`Agent.consumeExecutionStream` 按此后缀扣除 `assistantMessage`）。**勿把它补进 ProcessEvent schema**——那会让「重放依赖运行时字段」的假依赖成立，而重放实际只需读 `Round.assistantMessage`（已扣除）。同理，宿主侧的 `narrate_withdraw` 协议消息亦为瞬态。
 >

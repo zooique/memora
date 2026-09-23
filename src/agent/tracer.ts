@@ -179,11 +179,11 @@ export interface AgentMetrics {
     /** 平均任务耗时（毫秒，0 表示尚无数据） */
     avgDurationMs: number;
   };
-  /** 任务表触发观测量（2026-09-14 层0：实证任务表是否被 LLM 触发，驱动 step_boundary/折叠） */
+  /** 任务表触发观测量（2026-09-14 层0：实证任务表是否被 LLM 触发，驱动 plan_item_boundary/折叠） */
   plan: {
     /** 累计调用 task_table_write 次数（= 建表/重建次数，0 = 从未触发） */
     taskTableWriteCount: number;
-    /** 累计产出 step_boundary 次数（= 思考折叠分块边界数，同 0 即布局骨血空转） */
-    stepBoundaryCount: number;
+    /** 累计产出 plan_item_boundary 次数（= 思考折叠分块边界数，同 0 即布局骨血空转） */
+    planItemBoundaryCount: number;
   };
 }

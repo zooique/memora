@@ -18,9 +18,9 @@ import { type AgentEventName } from '@/utils/eventEmitter.js';
 import type {
   SessionCheckpoint,
   SessionStatus,
-  PlanStep,
+  PlanItem,
   ToolExecutionRecord,
-  StepOutcome,
+  PlanItemOutcome,
   PauseMeta,
   PauseSource,
 } from '@/agent/types.js';
@@ -400,7 +400,7 @@ export class SessionManager {
 
     // 合并语义：以已有检查点为基底展开，仅覆写本次重算的字段。
     // 【禁止改回对象字面量整体重建】——整体重建≈隐式字段白名单，任何未显式列出的字段每次 pause 被静默丢弃
-    // （整体重建曾使 stepLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
+    // （整体重建曾使 planItemLog/completedToolCalls/pauseMeta 静默归零，非幂等工具恢复后重复执行）
     this.checkpoint = {
       ...(prev ?? {}),
 
@@ -695,7 +695,7 @@ export class SessionManager {
   }
 
   /** 全量替换计划步骤（与 appendPlanStep 仅追加正交；保留已有步骤 id/status）。唯一生产点：task_table_update mode='update' */
-  updatePlan(plan: PlanStep[]): void {
+  updatePlan(plan: PlanItem[]): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = plan;
     this.touchCheckpoint();
@@ -707,7 +707,7 @@ export class SessionManager {
   appendPlanStep(description: string, rolePack?: string): number {
     if (!this.checkpoint) return 0;
     const newOrder = this.checkpoint.plan.length;
-    const step: PlanStep = {
+    const step: PlanItem = {
       id: crypto.randomUUID(),
       order: newOrder,
       description,
@@ -731,7 +731,7 @@ export class SessionManager {
   writePlan(
     mode: 'overwrite' | 'append' | 'update',
     steps: Array<{ description: string; rolePack?: string }>,
-  ): PlanStep[] {
+  ): PlanItem[] {
     // 写点自愈：checkpoint 未就绪时先创建（任务表写点 = 任务上下文就绪点）。
     // 此前静默 return [] 让 LLM 收到 ok:true + 0 步 → 伪成功 → 反复重写（实测 6 次）。
     // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架（SeedPrepare 内 writePlan('overwrite')）与普通 task_table_write 一并治愈。
@@ -761,7 +761,7 @@ export class SessionManager {
       this.updatePlan(updatedPlan);
     }
     // 确保新写入/追加/更新后的 plan 有 active step（overwrite 清空后全 pending → 激活第一个）
-    this.ensureActiveStep();
+    this.ensureActivePlanItem();
     return cp.plan;
   }
 
@@ -769,15 +769,15 @@ export class SessionManager {
    * 更新计划步骤状态（plan 步骤状态的唯一写点）。必须经此写点置 checkpointDirty，
    * 否则状态变更可能丢失标脏，计划变更与标脏在此原子完成。
    *
-   * 写完后自动 ensureActiveStep：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
+   * 写完后自动 ensureActivePlanItem：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
    * 则推进下一个 pending → active。这保证任何时刻 plan 中恰好有一个 active step。
    */
-  updatePlanStepStatus(stepId: string, status: PlanStep['status']): boolean {
-    const step = this.checkpoint?.plan.find((s) => s.id === stepId);
+  updatePlanItemStatus(planItemId: string, status: PlanItem['status']): boolean {
+    const step = this.checkpoint?.plan.find((s) => s.id === planItemId);
     if (!step) return false;
     step.status = status;
     // 确保 active 步骤存在且正确推进（把 active 标记为 done/blocked 后自动激活下一个 pending）
-    this.ensureActiveStep();
+    this.ensureActivePlanItem();
     this.touchCheckpoint();
     return true;
   }
@@ -790,16 +790,16 @@ export class SessionManager {
    * 2. 有 active，且刚被标记为 done/blocked → 激活下一个 pending（推进语义）
    * 3. 无 active 且全 done/blocked → 空操作（plan 已完成）
    *
-   * 不在 updatePlanStepStatus 外部重复调用——它在每次写点后自动执行。
+   * 不在 updatePlanItemStatus 外部重复调用——它在每次写点后自动执行。
    */
-  private ensureActiveStep(): void {
+  private ensureActivePlanItem(): void {
     if (!this.checkpoint) return;
     const plan = this.checkpoint.plan;
     if (plan.length === 0) return;
 
     // 已有 active step → 什么都不做。
     // 注：如果多 active 同时存在 → 脏数据（历史 checkpoint 迁移/外部旁路写可能产生）；
-    // 此处不修、只保单调一，上层单一写点（writePlan + updatePlanStepStatus）契约保证不会产生多 active。
+    // 此处不修、只保单调一，上层单一写点（writePlan + updatePlanItemStatus）契约保证不会产生多 active。
     const hasActive = plan.some((s) => s.status === 'active');
     if (hasActive) return;
 
@@ -807,7 +807,7 @@ export class SessionManager {
     const firstPending = plan.find((s) => s.status === 'pending');
     if (firstPending) {
       firstPending.status = 'active';
-      // 不 touchCheckpoint——调用方（updatePlanStepStatus / writePlan）会统一标脏
+      // 不 touchCheckpoint——调用方（updatePlanItemStatus / writePlan）会统一标脏
     }
   }
 
@@ -818,7 +818,7 @@ export class SessionManager {
    * 任务表 nudge 跳过（loop，已有在途表则不再诱导建表）、canContinueWithoutInput（agent，
    * 可续跑信号）。禁任一消费方自行内联谓词。
    *
-   * 口径取 pending||active（非仅 active）：与 ensureActiveStep 的补偿语义对齐——
+   * 口径取 pending||active（非仅 active）：与 ensureActivePlanItem 的补偿语义对齐——
    * plan 非空时恒有一个 active（见 :826 场景 1/2），全 done/blocked 时无 active（场景 3），
    * 两种判法在「有未完成步」上等价，但本口径直接表达「未完成」而非「借 active 存在性」。
    */
@@ -828,20 +828,20 @@ export class SessionManager {
     );
   }
 
-  /** 完成一个 step（显式完成原语）：单函数内顺序写步骤状态 + stepLog + heartbeat 保证原子性。
-   *  消费方 = turn 收尾兜底 concludeActiveStepIfPlanFullyReached（LLM 未显式 task_table_update
-   *  的最后一步补标）；迭代边界（onStepBoundary）已降级为只写日志的 logStepBoundary，
+  /** 完成一个 step（显式完成原语）：单函数内顺序写步骤状态 + planItemLog + heartbeat 保证原子性。
+   *  消费方 = turn 收尾兜底 concludeActivePlanItemIfPlanFullyReached（LLM 未显式 task_table_update
+   *  的最后一步补标）；迭代边界（onPlanItemBoundary）已降级为只写日志的 logPlanItemBoundary，
    *  不再经本方法推进（PLAN-SYNC-1 ①）。 */
-  completeStep(options: { planStepId?: string; summary: string }): void {
+  completePlanItem(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
 
-    // 标记步骤状态（经 updatePlanStepStatus 单一写点，避免旁路契约）
-    const { planStepId, summary } = options;
-    if (planStepId) {
-      this.updatePlanStepStatus(planStepId, 'done');
+    // 标记步骤状态（经 updatePlanItemStatus 单一写点，避免旁路契约）
+    const { planItemId, summary } = options;
+    if (planItemId) {
+      this.updatePlanItemStatus(planItemId, 'done');
     }
 
-    this.appendStepLog({ planStepId, summary });
+    this.appendPlanItemLog({ planItemId, summary });
 
     // 心跳 + 清脏：step 边界即检查点语义边界（纯内存态；检查点不落盘，崩溃走中断轮补全）
     this.touchCheckpoint();
@@ -849,10 +849,10 @@ export class SessionManager {
   }
 
   /** 写 step 边界日志（时间轴投影，不改 plan 状态）。形态②（PLAN-SYNC-1 ①）下迭代边界
-   *  onStepBoundary 只做本写——plan 状态推进唯一写者 = LLM 的 task_table_update。 */
-  logStepBoundary(options: { planStepId?: string; summary: string }): void {
+   *  onPlanItemBoundary 只做本写——plan 状态推进唯一写者 = LLM 的 task_table_update。 */
+  logPlanItemBoundary(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
-    this.appendStepLog(options);
+    this.appendPlanItemLog(options);
     this.touchCheckpoint();
     this.settleCheckpoint();
   }
@@ -860,11 +860,11 @@ export class SessionManager {
   /**
    * 形态② 兜底收尾（「LLM 未显式 update 即收尾」）：turn 正常完成且计划已「全部到达」——
    * 存在 active step 且无 pending step（LLM 已显式完成所有更早步骤、当前步为最后到达的一步）——
-   * 时闭合该 active 步（completeStep：标 done + stepLog）。LLM 忘标最后一步时由本兜底补上，
+   * 时闭合该 active 步（completePlanItem：标 done + planItemLog）。LLM 忘标最后一步时由本兜底补上，
    * 使计划达到全 done（任务表 turn 内收敛，turn 结束兜底清理）；真实多轮任务（有 pending）不受影响。
    * 触发点 = seed/orchestrator.act 正常收尾分支（非暂停/中断/失败）。
    */
-  concludeActiveStepIfPlanFullyReached(summary: string): void {
+  concludeActivePlanItemIfPlanFullyReached(summary: string): void {
     if (!this.checkpoint) return;
     const plan = this.checkpoint.plan;
     if (plan.length === 0) return;
@@ -872,33 +872,33 @@ export class SessionManager {
     if (plan.some((s) => s.status === 'pending')) return;
     const active = plan.find((s) => s.status === 'active');
     if (!active) return;
-    this.completeStep({ planStepId: active.id, summary });
+    this.completePlanItem({ planItemId: active.id, summary });
   }
 
   /**
-   * 追加 step 日志（completeStep / logStepBoundary 共用）。P-1 2026-09-06 起按 planStepId
+   * 追加 step 日志（completePlanItem / logPlanItemBoundary 共用）。P-1 2026-09-06 起按 planItemId
    * 分组截断，每 step 最多 3 条——原全局 FIFO 12 条在 5+ step 任务中会把旧 step 的运行记录
    * 整段截没，用户翻旧 done step 摘要看到「空」。
    */
-  private appendStepLog(options: { planStepId?: string; summary: string }): void {
+  private appendPlanItemLog(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
-    const { planStepId, summary } = options;
-    const outcome: StepOutcome = {
-      planStepId,
+    const { planItemId, summary } = options;
+    const outcome: PlanItemOutcome = {
+      planItemId,
       summary,
       completedAt: Date.now(),
     };
-    if (!this.checkpoint.stepLog) {
-      this.checkpoint.stepLog = [];
+    if (!this.checkpoint.planItemLog) {
+      this.checkpoint.planItemLog = [];
     }
-    this.checkpoint.stepLog.push(outcome);
-    // 每 step 截断上限：同 planStepId（含 undefined 兜底组）超过 3 条时移除最早进入的超出记录
+    this.checkpoint.planItemLog.push(outcome);
+    // 每 step 截断上限：同 planItemId（含 undefined 兜底组）超过 3 条时移除最早进入的超出记录
     const STEP_LOG_PER_STEP_LIMIT = 3;
-    const groupCount = this.checkpoint.stepLog.filter((s) => s.planStepId === planStepId).length;
+    const groupCount = this.checkpoint.planItemLog.filter((s) => s.planItemId === planItemId).length;
     if (groupCount > STEP_LOG_PER_STEP_LIMIT) {
       let excess = groupCount - STEP_LOG_PER_STEP_LIMIT;
-      this.checkpoint.stepLog = this.checkpoint.stepLog.filter((s) => {
-        if (excess > 0 && s.planStepId === planStepId) {
+      this.checkpoint.planItemLog = this.checkpoint.planItemLog.filter((s) => {
+        if (excess > 0 && s.planItemId === planItemId) {
           excess -= 1;
           return false;
         }
@@ -907,11 +907,11 @@ export class SessionManager {
     }
   }
 
-  /** 卸载运行态挂载物：任务流结束/转 idle 时清空 plan/stepLog（SSOT 资源层 vs 状态层模型），回到"空闲=无挂载物"常态；与 updatePlan（运行态维护）正交 */
+  /** 卸载运行态挂载物：任务流结束/转 idle 时清空 plan/planItemLog（SSOT 资源层 vs 状态层模型），回到"空闲=无挂载物"常态；与 updatePlan（运行态维护）正交 */
   clearPlan(): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = [];
-    this.checkpoint.stepLog = undefined;
+    this.checkpoint.planItemLog = undefined;
     this.touchCheckpoint();
     this.settleCheckpoint();
   }
@@ -939,13 +939,13 @@ export class SessionManager {
   }
 
   /** 获取下一个 pending 步骤（只读不推进，供上下文注入） */
-  getNextPendingStep(): PlanStep | null {
+  getNextPendingStep(): PlanItem | null {
     if (!this.checkpoint) return null;
     return this.checkpoint.plan.find((s) => s.status === 'pending') ?? null;
   }
 
   /** 获取当前 active 步骤 */
-  getActiveStep(): PlanStep | null {
+  getActiveStep(): PlanItem | null {
     if (!this.checkpoint) return null;
     return this.checkpoint.plan.find((s) => s.status === 'active') ?? null;
   }
@@ -954,7 +954,7 @@ export class SessionManager {
 
   /**
    * 记录工具执行：追加到检查点日志（append-only，内存态）。
-   * 标脏策略：仅标脏不即时清脏（completeStep step 边界统一清脏、createCheckpoint 暂停/异常强制清脏）。
+   * 标脏策略：仅标脏不即时清脏（completePlanItem step 边界统一清脏、createCheckpoint 暂停/异常强制清脏）。
    * 检查点不落盘（2026-09-10 减法）：completedToolCalls 仅内存态，回合中途崩溃即整体丢弃、走中断轮补全恢复；
    * 「工具重跑排重」仅在单进程存活期内有效，无跨重启持久化。
    */
@@ -975,7 +975,7 @@ export class SessionManager {
       }
     }
     this.touchCheckpoint();
-    // 依赖 completeStep / createCheckpoint 在 step 边界统一清脏
+    // 依赖 completePlanItem / createCheckpoint 在 step 边界统一清脏
   }
 
   /** 记录非幂等工具执行（补偿降级后仅日志）：不再逐副作用执行补偿，仅记录事实供宿主/人工排查 */

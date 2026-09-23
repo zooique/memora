@@ -977,7 +977,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * turn 结束自动收尾：非暂停态 → 无条件 clearPlan（任务表收紧为 turn 内能力，不跨 turn 残留）。
    *
    * 任务表生命周期 = 单个 turn：LLM 在 turn 内编排并完成任务表；chat() 流退出（turn 真正结束）
-   * 时，无论步骤是否全部标记完成，都清空运行时挂载物（checkpoint.plan 与 stepLog）。这样：
+   * 时，无论步骤是否全部标记完成，都清空运行时挂载物（checkpoint.plan 与 planItemLog）。这样：
    * ① 宏任务一个 turn 完不成 → 本 turn 结束兜底丢弃，下个 turn 由 LLM 重新规划全新任务表；
    * ② 续跑轮（resumeExecution = ask_user 问答/暂停补充）是同一 turn 的闭环收尾，与 chat() 同构
    * 走本方法——turn 真正结束即无条件清空，两处 turn-end 清理已收敛为单一收口点。
@@ -985,7 +985,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * 唯一例外是暂停态（pauseMeta）：turn 尚未真正结束，暂停恢复后要继续用 plan 推进，
    * 故保留不清；恢复完成后该 turn 最终退出时仍会走本方法无条件清空。
    *
-   * 运行时状态（plan/stepLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史（不落盘删除）。
+   * 运行时状态（plan/planItemLog）清空，但对话记录里的 round-block 折叠块已沉淀为历史（不落盘删除）。
    * 挂点：chat() 与 resumeExecution 的 finally 块（generator close 时触发，确保所有 yield 已被宿主消费）
    */
   private clearPlanOnTurnEnd(): void {
@@ -1240,7 +1240,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
-        // 会议逐步切换：随 active 任务表步骤刷新本轮装配视角（T1，2026-09-06 收口缺口）
+        // 会议逐步切换：随 active 任务项刷新本轮装配视角（T1，2026-09-06 收口缺口）
         applyActiveStepAssembly: () => this.applyActiveStepAssemblyIfChanged(),
       },
     });
@@ -1374,7 +1374,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 会议阶梯推进（T1，2026-09-06 收口）：按当前 active 任务表步骤的 rolePack 派生本轮装配视角。
+   * 会议阶梯推进（T1，2026-09-06 收口）：按当前 active 任务项的 rolePack 派生本轮装配视角。
    *
    * 由 assembler.getTaskTable 每轮注入时驱动（hooks.applyActiveStepAssembly），与任务表渲染同源，
    * 弥补此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
@@ -1881,7 +1881,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0, actualInputTokens: 0, actualOutputTokens: 0, emptyResponseCount: 0, pairingGuardFires: 0 },
         tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0, ledgerStubEchoCount: 0 },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
-        plan: { taskTableWriteCount: 0, stepBoundaryCount: 0 },
+        plan: { taskTableWriteCount: 0, planItemBoundaryCount: 0 },
         tasks: { totalCount: 0, successCount: 0, failureCount: 0, successRate: 0, avgDurationMs: 0 },
       };
     }
