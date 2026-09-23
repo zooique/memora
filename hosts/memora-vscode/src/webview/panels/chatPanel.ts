@@ -2564,6 +2564,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this._pendingQuestions = questions; // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput R1）
+      // M5b-2：提问这一刻立即补推 turn_update——切走 need_clarify 后问答卡渲染靠 turn_update.state
+      //（waiting/ask）。此刻内核尚未 yield paused chunk（sessionStatus≈running），但 deriveTurnState 判据
+      // 已是「questions 非空即 ask」（M5b-2 缺口修复），故本投影即派生 waiting(ask)，即时渲染，不延迟。
+      this.postTurnUpdate();
       this.post({ type: 'need_clarify', questions });
       this.armAskTimeout(); // 超时保底（2026-09-08）：未答 → 自动续跑
     };

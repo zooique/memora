@@ -75,6 +75,20 @@ describe('deriveTurnState', () => {
     ).toEqual({ phase: 'waiting', reason: 'ask', questions: [{ slot: 's', question: '选哪个？' }] });
   });
 
+  it('ask 提问在途但尚未 paused → 仍是 waiting(ask)（M5b-2 缺口修复：不依赖 paused）', () => {
+    // ask_user 是「emit questionPending → 随后 yield paused chunk」，提问那一刻 sessionStatus≈running。
+    // 判据从「paused && questions>0」放宽为「questions 非空即 ask」→ 补推的 turn_update 即时派生 waiting(ask)，
+    // 提问卡渲染不延迟一个 chunk 边界。变异锚点：「questions 非空即 ask」若被改回依赖 paused，本例转红。
+    expect(
+      deriveTurnState({
+        streaming: true,
+        paused: false,
+        liveRoundId: 'round-9',
+        pendingQuestions: [{ slot: 's', question: '仍在流中就提问？' }],
+      }),
+    ).toEqual({ phase: 'waiting', reason: 'ask', questions: [{ slot: 's', question: '仍在流中就提问？' }] });
+  });
+
   it('已挂起且无提问 → waiting(pause)', () => {
     expect(deriveTurnState({ streaming: false, paused: true })).toEqual({ phase: 'waiting', reason: 'pause' });
   });
