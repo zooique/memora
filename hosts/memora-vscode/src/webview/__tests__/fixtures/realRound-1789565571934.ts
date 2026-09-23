@@ -18,7 +18,22 @@
  * ⚠️ 已知差异（推断）：processEvents 不含 chunk（chunk 是 webview 协议消息，不入 round 事件）；
  *    但 is-streaming 光标只在 chunk / beginStreaming 时出现，故「无 chunk」变体**无法**复现
  *    「光标残留」现象。因此本夹具提供 withStreaming 开关，测试需同时覆盖两种变体。
+ *
+ * M3b-2b-3：新增对拍支撑——
+ *   - `expandEvents()`：脚本 → ProcessEvent[]（单一展开源，buildRealRoundTimeline 与
+ *     `buildRoundView().processEvents` 共用，保证两路渲染输入同源）；
+ *   - `buildRoundView()`：投影为 RoundView（rounds 形状）——「消费 rounds」的数据层证据；
+ *   - `buildReplayTimeline()`：由 RoundView 派生重放路消息序列（user → replay_events → assistant，
+ *     host `sendRoundView` 语义的纯函数抽象），与运行时流式路构成对拍双路。
  */
+
+// 类型源：protocol.ts 不重导出内核类型（RoundView.processEvents 等仅引用），
+// 直接自内核导入，避免经 protocol.js 再中转（TS2459 本地声明未导出）。
+import type { ProcessEvent } from '@zooique/memora';
+import type { RoundView } from '../../../shared/protocol.js';
+
+/** 代表性正文：与 buildRealRoundTimeline 的流式 chunk 同文本，保证两路正文可对齐断言 */
+export const ASSISTANT_REPLY_TEXT = '【组长开场】介绍会议主题和讨论框架';
 
 /** 计划快照最小结构（字段对齐 hosts/memora-vscode/src/shared/protocol.ts 的 PlanItemDto） */
 export interface PlanItemDto {
@@ -239,7 +254,8 @@ const PLAN_BY_TOOL_CALL_ID: Record<string, number> = {
 // ───────────────────────── 压缩事件脚本（保序） ─────────────────────────
 export type ScriptItem =
   | { kind: 'meta'; role: string; llm: string }
-  | { kind: 'thinking'; phase: string }
+  // thinking 的 phase 必须落在内核 ProcessThinkingPhase 字面量内（expandEvents 直接透传 payload）
+  | { kind: 'thinking'; phase: 'assembling' | 'processing' | 'archiving' | 'llm_calling' }
   | { kind: 'thoughts'; count: number }
   | { kind: 'plan_item_boundary'; planItemId: string; title: string }
   | { kind: 'tool'; toolCallId: string; name: string; args: string; ok: boolean; summary: string }
@@ -308,84 +324,168 @@ export interface TimelineOptions {
 }
 
 /**
- * 展开压缩脚本 → 可直接 dispatch 的消息序列。
+ * 展开压缩脚本 → 完整 ProcessEvent[]（对拍两路共用的单一展开源）
  *
- * seq 从 3 起连续自增：因原文件 seq 严格连续，展开后末条 seq === 1358，
- * 与原文件一致（可作断言：REAL_ROUND.lastSeq）。
+ * seq 从 REAL_ROUND.firstSeq 起连续自增：原文件 seq 严格连续，展开后
+ * 末条 seq === REAL_ROUND.lastSeq，与原文件一致（可作断言）。
  */
-export function buildRealRoundTimeline(opts: TimelineOptions = {}): TimelineMsg[] {
-  const msgs: TimelineMsg[] = [];
+export function expandEvents(): ProcessEvent[] {
+  const events: ProcessEvent[] = [];
   let seq = REAL_ROUND.firstSeq;
   let thoughtIdx = 0;
-  let streamingStarted = false;
 
   for (const item of REAL_ROUND_SCRIPT) {
     switch (item.kind) {
       case 'meta':
-        msgs.push({ type: 'process_event', event: { type: 'meta', seq: seq++, ts: '', payload: { role: item.role, llm: item.llm } } });
+        events.push({ type: 'meta', seq: seq++, ts: '', payload: { role: item.role, llm: item.llm } });
         break;
       case 'thinking':
-        msgs.push({ type: 'process_event', event: { type: 'thinking', seq: seq++, ts: '', payload: { phase: item.phase } } });
+        events.push({ type: 'thinking', seq: seq++, ts: '', payload: { phase: item.phase } });
         break;
       case 'thoughts':
         for (let i = 0; i < item.count; i++) {
-          msgs.push({
-            type: 'process_event',
-            event: { type: 'thought', seq: seq++, ts: '', payload: { content: thoughtText(thoughtIdx++) } },
+          events.push({
+            type: 'thought', seq: seq++, ts: '',
+            payload: { content: thoughtText(thoughtIdx++) },
           });
         }
         break;
       case 'plan_item_boundary':
-        msgs.push({
-          type: 'process_event',
-          event: { type: 'plan_item_boundary', seq: seq++, ts: '', payload: { planItemId: item.planItemId, title: item.title } },
+        events.push({
+          type: 'plan_item_boundary', seq: seq++, ts: '',
+          payload: { planItemId: item.planItemId, title: item.title },
         });
         break;
-      case 'tool': {
-        // 真实运行期：正文先在流式区出现，随后工具执行（chunk 是协议消息，不入 round 事件）
-        if (opts.withStreaming && !streamingStarted) {
-          streamingStarted = true;
-          msgs.push({ type: 'chunk', content: '【组长开场】介绍会议主题和讨论框架', roundId: REAL_ROUND.id });
-        }
-        msgs.push({
-          type: 'process_event',
-          event: { type: 'tool_start', seq: seq++, ts: '', payload: { toolCallId: item.toolCallId, name: item.name, args: item.args } },
+      case 'tool':
+        events.push({
+          type: 'tool_start', seq: seq++, ts: '',
+          payload: { toolCallId: item.toolCallId, name: item.name, args: item.args },
         });
-        msgs.push({
-          type: 'process_event',
-          event: {
-            type: 'tool_result', seq: seq++, ts: '',
-            payload: { toolCallId: item.toolCallId, name: item.name, ok: item.ok, summary: item.summary },
-          },
+        events.push({
+          type: 'tool_result', seq: seq++, ts: '',
+          payload: { toolCallId: item.toolCallId, name: item.name, ok: item.ok, summary: item.summary },
         });
-        const snapIdx = PLAN_BY_TOOL_CALL_ID[item.toolCallId];
-        if (snapIdx !== undefined) {
-          msgs.push({ type: 'plan_update', items: PLAN_SNAPSHOTS[snapIdx] });
-        }
         break;
-      }
       case 'self_review':
-        msgs.push({ type: 'process_event', event: { type: 'self_review', seq: seq++, ts: '', payload: {} } });
+        events.push({ type: 'self_review', seq: seq++, ts: '', payload: {} });
         break;
       case 'text_self_review':
-        msgs.push({
-          type: 'process_event',
-          event: { type: 'text_self_review', seq: seq++, ts: '', payload: { content: item.content } },
+        events.push({
+          type: 'text_self_review', seq: seq++, ts: '',
+          payload: { content: item.content },
         });
         break;
       case 'metrics':
-        msgs.push({
-          type: 'process_event',
-          event: {
-            type: 'metrics', seq: seq++, ts: '',
-            payload: {
-              durationMs: item.durationMs, tokenIn: item.tokenIn, tokenOut: item.tokenOut,
-              toolFailureCount: item.toolFailureCount, unparsedToolIntentCount: item.unparsedToolIntentCount,
-              success: item.success,
-            },
+        events.push({
+          type: 'metrics', seq: seq++, ts: '',
+          payload: {
+            durationMs: item.durationMs, tokenIn: item.tokenIn, tokenOut: item.tokenOut,
+            toolFailureCount: item.toolFailureCount, unparsedToolIntentCount: item.unparsedToolIntentCount,
+            success: item.success,
           },
         });
         break;
+    }
+  }
+  return events;
+}
+
+/**
+ * 把真实轮投影为 `RoundView`（rounds 形状）——「消费 rounds」的数据层证据（M3b-2b-3）
+ *
+ * 与宿主 `loadRoundBasedHistory` 产出的形状一致（userMessage / assistantMessage /
+ * processEvents / status / createdAt / completedAt），对拍测试据此证明：
+ * **rounds 形状能完整还原重放路渲染输入**（buildReplayTimeline 由此派生）。
+ */
+export function buildRoundView(): RoundView {
+  return {
+    id: REAL_ROUND.id,
+    userMessage: {
+      // RoundMessage 的 id 为必填；宿主透出 round.userMessage 本含 id，此处对齐补全
+      id: `${REAL_ROUND.id}-user`,
+      role: 'user',
+      content: REAL_ROUND.userText,
+      timestamp: REAL_ROUND.createdAt,
+    },
+    assistantMessage: {
+      id: `${REAL_ROUND.id}-reply`,
+      role: 'assistant',
+      content: ASSISTANT_REPLY_TEXT,
+      timestamp: REAL_ROUND.completedAt,
+    },
+    // 过程事件与运行时流式路同源（expandEvents 单一展开）
+    processEvents: expandEvents(),
+    status: 'complete' as const,
+    createdAt: REAL_ROUND.createdAt,
+    completedAt: REAL_ROUND.completedAt,
+  };
+}
+
+/**
+ * 重放路消息序列：由 `RoundView`（rounds 形状）派生（M3b-2b-3）
+ *
+ * 语义对齐宿主 `sendRoundView`：user（带 roundId）→ replay_events（整批含 meta）→
+ * assistant 最终回答（仅 complete 轮挂正文）。fixture 轮无交互输入/前序段，
+ * middle 交织段为空——形状上留全，供引入带交互输入的 fixture 时自然扩展。
+ */
+export function buildReplayTimeline(roundView: RoundView = buildRoundView()): TimelineMsg[] {
+  const msgs: TimelineMsg[] = [];
+  if (roundView.userMessage?.content) {
+    msgs.push({
+      type: 'user',
+      text: roundView.userMessage.content,
+      ts: roundView.userMessage.timestamp,
+      roundId: roundView.id,
+    });
+  }
+  const events = roundView.processEvents ?? [];
+  if (events.length > 0) {
+    msgs.push({ type: 'replay_events', roundId: roundView.id, events });
+  }
+  if (roundView.status === 'complete' && roundView.assistantMessage?.content) {
+    msgs.push({
+      type: 'assistant',
+      text: roundView.assistantMessage.content,
+      ts: roundView.assistantMessage.timestamp,
+      roundId: roundView.id,
+    });
+  }
+  return msgs;
+}
+
+/**
+ * 展开压缩脚本 → 可直接 dispatch 的运行时流式消息序列。
+ *
+ * 事件展开只此一份（expandEvents），本函数叠加协议消息层：流式 chunk（withStreaming）、
+ * 任务表推进（plan_update，tool_start 后随工具结果推进）、收口 done（withDone）。
+ * 消息顺序与原实现严格一致（chunk → tool_start → tool_result → plan_update）。
+ */
+export function buildRealRoundTimeline(opts: TimelineOptions = {}): TimelineMsg[] {
+  const msgs: TimelineMsg[] = [];
+  const events = expandEvents();
+  let streamingStarted = false;
+
+  for (let i = 0; i < events.length; i++) {
+    const ev = events[i];
+    if (ev.type === 'tool_start') {
+      // 真实运行期：正文先在流式区出现，随后工具执行（chunk 是协议消息，不入 round 事件）
+      if (opts.withStreaming && !streamingStarted) {
+        streamingStarted = true;
+        msgs.push({ type: 'chunk', content: ASSISTANT_REPLY_TEXT, roundId: REAL_ROUND.id });
+      }
+      msgs.push({ type: 'process_event', event: ev });
+      // tool_result 紧随 tool_start（expandEvents 成对产出），随附一起推送保序
+      const next = events[i + 1];
+      if (next && next.type === 'tool_result') {
+        msgs.push({ type: 'process_event', event: next });
+        i++;
+      }
+      const snapIdx = PLAN_BY_TOOL_CALL_ID[ev.payload.toolCallId];
+      if (snapIdx !== undefined) {
+        msgs.push({ type: 'plan_update', items: PLAN_SNAPSHOTS[snapIdx] });
+      }
+    } else {
+      msgs.push({ type: 'process_event', event: ev });
     }
   }
 
