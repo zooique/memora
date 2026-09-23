@@ -100,3 +100,42 @@ export function deriveTurnState(input: TurnStateInput): TurnState {
   }
   return { phase: 'idle' };
 }
+
+/**
+ * 运行时当前轮的「未定型」形态（M3b-2a）：`userMessage` 可能尚不可知。
+ *
+ * 为什么需要它：`resumeExecution` 各形态**不开新轮**（续同一轮、不分裂），宿主手上没有该轮的
+ * 开轮输入——只有落盘历史里有。故合并前允许 `userMessage` 缺省，由 `mergeLiveRound` 补；
+ * 而 `toRoundView` 仍要求定型的 `LiveRoundState`（必填 userMessage）——**类型上区分
+ * 「可能缺」与「已确保有」，不用 `as` 断言把不确定性抹掉**。
+ */
+export type PendingLiveRound = Omit<LiveRoundState, 'userMessage'> & {
+  userMessage?: RoundView['userMessage'];
+};
+
+/**
+ * 把运行时当前轮并入落盘历史（M3b-2a，2026-09-23）
+ *
+ * 合并规则（按 `id` 定位，不另立判据）：
+ *   - 历史中已有同 id 轮 → **原位替换**为 live 版本（live 更完整：含尚未落盘的流式正文与增量过程事件）。
+ *     原位而非追加，保证轮序不因合并而漂移。
+ *   - 历史中无该轮 → 追加到末尾（新轮尚未落盘，如 `chat()` 开的新轮）。
+ *   - **拿不到 `userMessage`**（既无显式 seed，历史中也没有该轮）→ 整轮不并入。
+ *     这是 M3b-1 定下的「半残数据比不投更危险」的延续：缺开轮输入的轮渲染不出用户气泡，
+ *     且会让「运行时投影」与「重放投影」在字段层面对不上。宁可少一轮，不投坏一轮。
+ *
+ * @param history 落盘历史轮（持久化的渲染真相源）
+ * @param live 运行时当前轮（缺省 = 无 live，原样返回 history，零开销）
+ */
+export function mergeLiveRound(history: RoundView[], live?: PendingLiveRound): RoundView[] {
+  if (!live) return history;
+  const idx = history.findIndex((r) => r.id === live.roundId);
+  const existing = idx >= 0 ? history[idx] : undefined;
+  const userMessage = live.userMessage ?? existing?.userMessage;
+  if (!userMessage) return history;
+  const view = toRoundView({ ...live, userMessage }, existing?.status ?? 'pending');
+  if (idx < 0) return [...history, view];
+  const next = [...history];
+  next[idx] = view;
+  return next;
+}

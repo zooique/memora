@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { toRoundView, deriveTurnState, type LiveRoundState } from '../turnProjection.js';
+import { toRoundView, deriveTurnState, mergeLiveRound, type LiveRoundState } from '../turnProjection.js';
+import type { RoundView } from '../protocol.js';
 
 /**
  * turn 投影层单测（M3a，2026-09-23）
@@ -95,5 +96,94 @@ describe('deriveTurnState', () => {
     expect(deriveTurnState({ streaming: false, paused: false, lastRound: { id: 'round-3', status: 'pending' } })).toEqual(
       { phase: 'idle' },
     );
+  });
+});
+
+/**
+ * mergeLiveRound（M3b-2a，2026-09-23）：运行时当前轮并入落盘历史
+ *
+ * **变异验证锚点**（每条用例都对应一条可被改坏的判据）：
+ *  - 删 `if (!userMessage) return history` → 「两边都拿不到」转红（会投出缺开轮输入的轮）
+ *  - 「原位替换」改成 `filter + append` → 「原位替换」转红（同 id 轮被挪到末尾、轮序漂移）
+ *  - `live.userMessage ?? existing?.userMessage` 顺序反向 → 「seed 优先」转红
+ *  - 去掉 `toRoundView({ ...live, userMessage })` 里的 userMessage 覆盖 → 「resume 场景」转红
+ */
+describe('mergeLiveRound', () => {
+  const otherUser = {
+    id: 'msg-2',
+    role: 'user' as const,
+    content: '第二个问题',
+    timestamp: '2026-09-23T01:00:00.000Z',
+  };
+  /** RoundView 必填四件套：id / userMessage / status / createdAt（refCount 未被 Pick） */
+  const historyRound = (id: string, over: Partial<RoundView> = {}): RoundView => ({
+    id,
+    userMessage: userMsg,
+    status: 'complete',
+    createdAt: '2026-09-23T00:00:00.000Z',
+    ...over,
+  });
+
+  it('无 live 轮 → 原样返回历史（零开销路径，连数组都不重建）', () => {
+    const history = [historyRound('round-1')];
+    expect(mergeLiveRound(history)).toBe(history);
+  });
+
+  it('历史无该轮 → 追加末尾（chat 开的新轮尚未落盘）', () => {
+    const history = [historyRound('round-1')];
+    const merged = mergeLiveRound(history, { roundId: 'round-2', userMessage: otherUser });
+    expect(merged.map((r) => r.id)).toEqual(['round-1', 'round-2']);
+    expect(merged[1]!.live).toBe(true);
+    expect(merged[1]!.status).toBe('pending');
+  });
+
+  it('历史已有该轮 → 原位替换而非追加（防重复条目 + 轮序不漂移）', () => {
+    const history = [historyRound('round-1'), historyRound('round-2'), historyRound('round-3')];
+    const merged = mergeLiveRound(history, {
+      roundId: 'round-2',
+      userMessage: otherUser,
+      streamingText: '半截正文',
+    });
+    expect(merged).toHaveLength(3);
+    expect(merged.map((r) => r.id)).toEqual(['round-1', 'round-2', 'round-3']);
+    expect(merged[1]!.live).toBe(true);
+    expect(merged[1]!.assistantMessage?.content).toBe('半截正文');
+  });
+
+  it('resume 场景：live 无 userMessage → 取历史同 id 轮的（续同一轮不分裂）', () => {
+    const history = [historyRound('round-1', { status: 'pending', userMessage: otherUser })];
+    const merged = mergeLiveRound(history, { roundId: 'round-1', streamingText: '续跑中' });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.userMessage.content).toBe('第二个问题');
+    expect(merged[0]!.status).toBe('pending');
+    expect(merged[0]!.live).toBe(true);
+  });
+
+  it('两边都拿不到 userMessage → 整轮不并入（半残数据不投）', () => {
+    const history = [historyRound('round-1')];
+    const merged = mergeLiveRound(history, { roundId: 'round-404', streamingText: '无人认领' });
+    expect(merged).toBe(history);
+  });
+
+  it('有 seed 时优先用 seed（不沿用历史里可能过期的 userMessage）', () => {
+    const history = [historyRound('round-1', { userMessage: otherUser })];
+    const merged = mergeLiveRound(history, { roundId: 'round-1', userMessage: userMsg });
+    expect(merged[0]!.userMessage.id).toBe('msg-1');
+  });
+
+  it('历史轮状态原样保留（合并是投影，不改写轮状态）', () => {
+    const history = [historyRound('round-1', { status: 'interrupted' })];
+    const merged = mergeLiveRound(history, { roundId: 'round-1', userMessage: userMsg });
+    expect(merged[0]!.status).toBe('interrupted');
+  });
+
+  it('过程事件按 live 传入透传（与重放同形状，不做第二套）', () => {
+    const merged = mergeLiveRound([], {
+      roundId: 'round-9',
+      userMessage: userMsg,
+      processEvents: [{ type: 'tool_start', seq: 1, ts: 'ts', payload: { toolCallId: 't-1', name: 'read_file' } }],
+    });
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.processEvents).toHaveLength(1);
   });
 });

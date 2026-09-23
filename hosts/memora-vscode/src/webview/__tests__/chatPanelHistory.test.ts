@@ -16,6 +16,7 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Agent, AgentChunk, ProcessEvent, Round } from '@zooique/memora';
+import type { RoundView, TurnState } from '../../shared/protocol.js';
 import { todayDate } from '@zooique/memora';
 import { WorkspaceSessionStore } from '../../extension/host/sessionStore.js';
 import { WorkspaceRoundStore } from '../../extension/host/workspaceRoundStore.js';
@@ -154,6 +155,34 @@ function seedSession(
 /** 从 posted 中按 type 过滤消息 */
 function ofType<T extends { type: string }>(posted: unknown[], type: string): T[] {
   return posted.filter((m) => (m as { type: string }).type === type) as T[];
+}
+
+/**
+ * 构造带 chat()/getMetrics/sessionManager 的 mock agent（consumeFlow 链路用）
+ *
+ * 文件级提取（M3b-2a）：落盘时机用例与 turn 投影用例都要驱动 `consumeFlow`，
+ * 各持一份 stub 就是两套替身契约——漏补一个方法即「假故障」（M3b-1 已踩过：替身缺
+ * `isPausePending` → postTurnUpdate 抛错中断整个 consumeFlow，表现为 processEvents 未落盘）。
+ */
+function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>): Agent {
+  return {
+    chat: chatFn,
+    getMetrics: () => ({
+      llm: { totalInputTokens: 0, totalOutputTokens: 0 },
+      // 对齐 AgentMetrics 契约：流尾 emitEvent 读取 tools.unparsedToolIntentCount（2026-09-14）
+      tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
+    }),
+    sessionManager: {
+      getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
+      switchToSession: async () => 0,
+    },
+    on: vi.fn(),
+    off: vi.fn(),
+    memory: { softDeleteRoundSummaries: vi.fn() },
+    getCheckpoint: () => null,
+    // 暂停在途判据（M3b-1：postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
+    isPausePending: () => false,
+  } as unknown as Agent;
 }
 
 describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史模态浮层）', () => {
@@ -708,28 +737,6 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
   beforeEach(() => {
     vi.clearAllMocks();
   });
-
-  /** 构造带 chat()/getMetrics/sessionManager 的 mock agent（consumeFlow 落盘链路用） */
-  function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>): Agent {
-    return {
-      chat: chatFn,
-      getMetrics: () => ({
-        llm: { totalInputTokens: 0, totalOutputTokens: 0 },
-        // 对齐 AgentMetrics 契约：流尾 emitEvent 读取 tools.unparsedToolIntentCount（2026-09-14）
-        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
-      }),
-      sessionManager: {
-        getCurrentSessionInfo: () => ({ date: '2026-08-15', session: 's1' }),
-        switchToSession: async () => 0,
-      },
-      on: vi.fn(),
-      off: vi.fn(),
-      memory: { softDeleteRoundSummaries: vi.fn() },
-      getCheckpoint: () => null,
-      // 暂停在途判据（M3b-1：postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
-      isPausePending: () => false,
-    } as unknown as Agent;
-  }
 
   /**
    * 包装 roundStore.save，记录**每次落盘时** processEvents 的事件类型快照。
@@ -1313,5 +1320,117 @@ describe('技能启停：重推清单入口（SKILL-S3b）', () => {
     (provider as unknown as { _view: unknown })._view = undefined;
     expect(() => provider.refreshSkillList()).not.toThrow();
     expect(ofType(posted, 'skills_loaded')).toHaveLength(before);
+  });
+});
+
+// ═══════════════════════════════════════════════════════════
+// turn 投影含运行时 live 轮（M3b-2a，2026-09-23）
+// ═══════════════════════════════════════════════════════════
+// M3b-1 只并行发送 turn_update，且 rounds 恒取落盘历史 —— 运行时当前轮**不入列**（当时刻意为之：
+// 宿主尚无「当前轮运行时对象」）。本期补上：live 轮由 consumeFlow 流内局部数据投影
+// （正文按 roundId 分桶累积 + 过程事件分桶 + seed 的开轮输入），经 mergeLiveRound 并入。
+//
+// **变异验证锚点**：
+//  - 把 `postTurnUpdate(liveTurn)` 的实参去掉 → 「live 轮入列」转红（rounds 无 live:true 轮）
+//  - 去掉 textByRound 累积 → 「正文投影为 assistantMessage」转红
+//  - mergeLiveRound 改成追加式合并 → 「同一 id 只出现一次」转红
+describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  /** 驱动一轮 chat 流，返回**流尾**那条 turn_update（投影终态） */
+  async function driveAndGetLastUpdate(
+    chunks: AgentChunk[],
+    seedMsgs: { role: string; content: string; ts: string }[],
+  ): Promise<{ rounds: RoundView[]; state: TurnState }> {
+    const { store, roundStore, provider, posted } = setup();
+    provider.setRoundStore(roundStore);
+    // 投影的 rounds 走 loadRoundBasedHistory（依赖 _viewLoader）：不装配则恒为空数组，
+    // 断言会「假通过」——历史轮压根没进过列表，测不出「并入」还是「替换」。
+    provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
+    seedSession(store, roundStore, '2026-08-15-s1', seedMsgs);
+    provider.setAgent(
+      chatAgentStub(() =>
+        (async function* () {
+          for (const c of chunks) yield c;
+        })(),
+      ),
+    );
+    (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
+    await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('新问题');
+    const updates = ofType<{ type: string; rounds: RoundView[]; state: TurnState }>(posted, 'turn_update');
+    // 起始（无 live）+ 流尾（带 live）各一次
+    expect(updates.length).toBeGreaterThanOrEqual(2);
+    return updates[updates.length - 1]!;
+  }
+
+  const historyPair = [
+    { role: 'user', content: '历史问题', ts: 't0' },
+    { role: 'assistant', content: '历史回答', ts: 't1' },
+  ];
+
+  it('流尾：运行时当前轮并入 rounds（live:true），id 与 chunk.roundId 同源', async () => {
+    const last = await driveAndGetLastUpdate(
+      [
+        { type: 'thinking', phase: 'processing', roundId: 'round-9' },
+        { type: 'text', content: '正在回答', roundId: 'round-9' },
+        { type: 'done' },
+      ],
+      historyPair,
+    );
+    const live = last.rounds[last.rounds.length - 1]!;
+    expect(live.id).toBe('round-9');
+    expect(live.live).toBe(true);
+    // live 是「并入」而非「替换整个列表」：历史轮仍在列
+    expect(last.rounds.map((r) => r.id)).toContain('round-1');
+  });
+
+  it('流式正文投影为末段 assistantMessage（运行时与重放同形状）', async () => {
+    const last = await driveAndGetLastUpdate(
+      [
+        { type: 'text', content: '第一段', roundId: 'round-9' },
+        { type: 'text', content: '第二段', roundId: 'round-9' },
+        { type: 'done' },
+      ],
+      historyPair,
+    );
+    const live = last.rounds[last.rounds.length - 1]!;
+    expect(live.assistantMessage?.content).toBe('第一段第二段');
+    expect(live.assistantMessage?.role).toBe('assistant');
+  });
+
+  it('同一 id 在 rounds 中只出现一次（live 原位替换历史，不产生重复条目）', async () => {
+    const last = await driveAndGetLastUpdate(
+      [
+        { type: 'text', content: '回答', roundId: 'round-9' },
+        { type: 'done' },
+      ],
+      historyPair,
+    );
+    const ids = last.rounds.map((r) => r.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it('过程事件随 live 轮入列（与 eventsByRound 同源，供 UI 重建过程轨）', async () => {
+    const last = await driveAndGetLastUpdate(
+      [{ type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-9' }, { type: 'done' }],
+      historyPair,
+    );
+    const live = last.rounds[last.rounds.length - 1]!;
+    expect(live.processEvents?.some((e) => e.type === 'tool_start')).toBe(true);
+  });
+
+  it('软暂停：live 轮仍入列（该轮正在生长、未收场）', async () => {
+    const last = await driveAndGetLastUpdate(
+      [
+        { type: 'text', content: '半截', roundId: 'round-9' },
+        { type: 'paused' },
+      ],
+      historyPair,
+    );
+    const live = last.rounds[last.rounds.length - 1]!;
+    expect(live.live).toBe(true);
+    expect(live.status).toBe('pending');
   });
 });

@@ -40,7 +40,7 @@ import type {
   RoundView,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
-import { deriveTurnState } from '../../shared/turnProjection.js';
+import { deriveTurnState, mergeLiveRound, type PendingLiveRound } from '../../shared/turnProjection.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
@@ -62,6 +62,24 @@ const MAX_HISTORY_MESSAGES = 200;
 
 /** 历史回放最大轮数（round-based 模式，v1.5）：按完整 round 截断，杜绝「正文有、过程无」的半轮不对称 */
 const MAX_HISTORY_ROUNDS = 60;
+
+/**
+ * 运行一轮流的「种子」信息（M3b-2a，2026-09-23）——宿主知情、内核不回传的本轮要素。
+ *
+ * 之所以显式传参而非开实例字段：本轮的 userMessage 只有**调用点**知道（`handleSend` 的输入），
+ * 而实例字段有跨轮残留风险（`_streaming` 这类布尔碎片正是本方案要收口的对象，不该再添一个）。
+ * 6 个 `runFlow` 调用点中只有 `chat()` 开新轮需要它（`resumeExecution` 各形态续同一轮、不分裂，
+ * 其 userMessage 从落盘历史取）。
+ */
+interface FlowSeed {
+  /**
+   * 本轮开轮用户输入（与内核 `appendUser` 落盘内容同源：**含注入信封**，非 UI 上屏的原始文本）。
+   *
+   * id 用宿主临时值（内核生成的 `msg-{uuid}` 此刻未知）：轮收场落盘后由历史版本整体替换，
+   * 与 `toRoundView` 的 `assistantMessage.id = live-{roundId}` 同一范式。
+   */
+  userMessage?: RoundView['userMessage'];
+}
 
 /**
  * thought 落盘截断上限（字符，2026-09-13，Turn 意图理解与模型思考展示设计）：
@@ -2024,18 +2042,21 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   }
 
   /**
-   * 推送 turn 投影（M3b-1，2026-09-23）——与旧状态消息**并行**发送，webview 暂不消费。
+   * 推送 turn 投影（M3b-1 建立，M3b-2a 补运行时当前轮）——与旧状态消息**并行**发送，webview 暂不消费。
    *
    * 双轨期纪律：只新增 `turn_update`，不改任何既有消息；M5 再删旧消息。
-   * `rounds` 一律取**落盘历史**（`loadRoundBasedHistory`）的完整轮——运行时未落盘的当前轮
-   * **不入列**，避免投递半残数据（半残比不投更危险）。待 M3b-2 补运行时 live 轮后再含当前轮。
+   * `rounds` = 落盘历史 + 运行时当前轮（`live: true`）。当前轮按 id **原位替换**历史同名轮
+   * （live 版本更完整：含尚未落盘的流式正文与增量过程事件），不产生重复条目；收场落盘后由历史版本接管。
+   * 合并规则见 `mergeLiveRound`——取不到 `userMessage` 的轮**整轮不并入**（半残数据不投）。
    * `state` 由 `deriveTurnState` 单点折叠（替代五条状态消息各自驱动一角）。
    *
-   * @param liveRoundId 运行中的 roundId（内核 chunk 携带；无则缺省）
+   * @param live 运行时当前轮快照（由 `consumeFlow` 流内局部数据构造、显式传入；
+   *        不传 = rounds 只含落盘历史。刻意不做实例字段，避免跨轮残留）
    */
-  private postTurnUpdate(liveRoundId?: string): void {
+  private postTurnUpdate(live?: PendingLiveRound): void {
     if (!this._view) return;
-    const rounds = this._viewLoader ? this.loadRoundBasedHistory() : [];
+    const history = this._viewLoader ? this.loadRoundBasedHistory() : [];
+    const rounds = mergeLiveRound(history, live);
     const last = rounds[rounds.length - 1];
     const questions = this._lastPendingQuestions;
     this.post({
@@ -2046,7 +2067,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         paused: this._agent?.sessionManager?.status === 'paused',
         pausePending: this._agent?.isPausePending() ?? false,
         pendingQuestions: questions.length > 0 ? questions : undefined,
-        liveRoundId,
+        liveRoundId: live?.roundId,
         lastRound: last ? { id: last.id, status: last.status } : undefined,
       }),
     });
@@ -2158,7 +2179,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const chatInput = buildInjectedContextEnvelope([skillBlock, docBlock], input);
 
     // runFlow 统一管理 AbortController + consumeFlow + 同步抛错兜底
-    await this.runFlow((signal) => this._agent!.chat(chatInput, signal));
+    // seed（M3b-2a）：把开轮用户输入交给 live 轮投影。内容用 `chatInput`（与内核 `appendUser`
+    // 落盘**同源**，含注入信封），与上屏用的原始 `input` 刻意不同——运行时投影必须与重放读到的
+    // 落盘版本同形，否则对拍测试会因「同一轮两种 user 内容」失败。id/timestamp 复用上屏的 now。
+    await this.runFlow((signal) => this._agent!.chat(chatInput, signal), {
+      userMessage: { id: `live-user-${now}`, role: 'user', content: chatInput, timestamp: now },
+    });
   }
 
   /** 启动/重置 ask 等待超时计时器（覆写式；超时保底入口，2026-09-08） */
@@ -2256,15 +2282,20 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * finally 清理），以 factory 注入 signal 供内核流使用；同步抛错（如 chatLock
    * busy）时兜底给出可见错误（对抗评估 P1-2）——因从未进入 thinking 状态，输入框
    * 未被禁用，无需再补发 status done。
+   *
+   * @param seed 本轮运行时种子（M3b-2a）：`chat()` 路径传开轮用户输入；`resumeExecution` 各形态
+   *        不传（续同一轮、不分裂，其 userMessage 由落盘历史提供）。透传给 `consumeFlow` 的 live 轮投影。
    */
   private async runFlow(
     factory: (signal: AbortSignal) => AsyncGenerator<AgentChunk, void, unknown>,
+    seed?: FlowSeed,
   ): Promise<void> {
     this._abortController = new AbortController();
     try {
       this._currentFlow = this.consumeFlow(
         factory(this._abortController.signal),
         this._abortController,
+        seed,
       );
       await this._currentFlow;
     } catch (err) {
@@ -2425,10 +2456,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 消费 Agent 流：转发 text chunk，监听主动提问事件，透出运行状态，支持用户打断
    *  @param gen Agent 流（chat / resumeExecution）
    *  @param controller 本轮 AbortController：stop / 插话经 abort() 中断流；
-   *         finally 中与本轮 controller 比对后清理（避免误清下一轮的 controller） */
+   *         finally 中与本轮 controller 比对后清理（避免误清下一轮的 controller）
+   *  @param seed 本轮运行时种子（M3b-2a）：开轮用户输入，供 `postTurnUpdate` 投影 live 轮 */
   private async consumeFlow(
     gen: AsyncGenerator<AgentChunk, void, unknown>,
     controller: AbortController,
+    seed?: FlowSeed,
   ): Promise<void> {
     if (!this._agent) return;
     // TS-O3/TS-O5：提问渲染双源归一——questionPending 事件优先驱动提问 UI，question_pending chunk 作幂等兜底。
@@ -2484,6 +2517,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 不再依赖「roundIds 末尾」推断当前轮——一次 chat()（多 turn 任务编排）多 turn 各自独立落盘。
     // step 检查点按 seq 幂等合并增量落盘（seq 实例级单调，见 _processSeq，2026-09-09）。
     const eventsByRound = new Map<string, ProcessEvent[]>();
+    // 流式正文按 turn 分段累积（M3b-2a，2026-09-23）：与 eventsByRound **同构分桶**（同一 currentRoundKey
+    // 归属判据），供 live 轮投影把正文投为末段 assistantMessage。多 turn 编排各自独立成桶。
+    const textByRound = new Map<string, string>();
     let currentRoundKey: string | undefined;
     /** 当前 turn 是否已补 meta 首条（每 turn 段首条身份，角色/模型显示名） */
     let metaEmittedForRound = false;
@@ -2572,6 +2608,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 主回答正文 → 照常走 chunk 消息（markdown 渲染，属内容轨，不属于过程事件）。
           // roundId 透传（D3 单轨，2026-09-03）：运行时段同为「同环续接」判定提供数据依据，
           // 与重放路径共用「roundId 相等」单一判定源（chunk.roundId 由内核 withRound 携带）
+          // M3b-2a：同一份正文按 turn 分桶累积（live 轮投影用）。归属判据与 emitEvent 完全同源
+          // （同一 currentRoundKey），不另立判据；自审查输出已在上方 continue 分流，不会误入正文。
+          if (currentRoundKey) {
+            textByRound.set(currentRoundKey, (textByRound.get(currentRoundKey) ?? '') + chunk.content);
+          }
           this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs, roundId: chunk.roundId });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → 过程事件（webview 渲染 § 工具调用）
@@ -2705,6 +2746,19 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 附带本轮回答归属的 roundId（SSOT：来自 chunk 携带的 turn roundId，非 roundIds 末尾推断）：
     // webview 据此回填消息分叉按钮（任意 LLM 回答可分叉）。
     const latestRoundId = currentRoundKey;
+    // 运行时当前轮快照（M3b-2a）：供 turn_update 投影 live 轮，三处收场共用同一份构造。
+    // userMessage 取 seed（仅 chat 路径有）；resume 路径缺省，由 mergeLiveRound 从落盘历史补，
+    // 两边都拿不到则整轮不并入。⚠ 本期不含 interactiveInputs（补充/回答发生在别的 handler，
+    // 未在流内累积）：它的 UI 展示由 post 消息即时上屏覆盖，落盘后历史版本自会带全，
+    // 故运行时缺此字段不构成「半残轮」——待 M3b-2b 接线对拍时再定是否需要补。
+    const liveTurn: PendingLiveRound | undefined = latestRoundId
+      ? {
+          roundId: latestRoundId,
+          userMessage: seed?.userMessage,
+          processEvents: eventsByRound.get(latestRoundId),
+          streamingText: textByRound.get(latestRoundId),
+        }
+      : undefined;
     // 过程事件落盘（v1.5 收敛）：metrics 末条归入最后 turn + 按 turn roundId 分组
     // 写入各自 Round（SSOT：归属来自内核 chunk.roundId，一次 chat() 多 turn 各自独立落盘）。
     // fire-and-forget：失败仅记日志，不阻塞展示（对齐 P1 消息持久化降级语义，SSOT 不藏错）
@@ -2746,14 +2800,14 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (controller.signal.aborted) {
       this.post({ type: 'interrupted', roundId: latestRoundId });
       this.post({ type: 'status', state: 'done' });
-      this.postTurnUpdate(latestRoundId);
+      this.postTurnUpdate(liveTurn);
     } else if (pausedOnPurpose) {
       // 软暂停：不推送 done/interrupted，切换为 paused 状态（允许用户继续）
       this.post({ type: 'status', state: 'paused' });
-      this.postTurnUpdate(latestRoundId);
+      this.postTurnUpdate(liveTurn);
     } else {
       this.post({ type: 'done', roundId: latestRoundId });
-      this.postTurnUpdate(latestRoundId);
+      this.postTurnUpdate(liveTurn);
       // status:done 延后到摘要完成（或 5s 兜底）——防 done 后立即删除导致孤儿 round-summary
       // 摘要 Promise 的 then/catch 都会 emit roundSummaryGenerated（成功或失败），正常事件很快到达；
       // 5秒兜底足够抗偶发网络抖动，避免 UI 长时间卡在 thinking 态让用户困惑
