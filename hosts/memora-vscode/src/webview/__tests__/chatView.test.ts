@@ -1530,11 +1530,11 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       ],
     });
     // 两个步级折叠块：summary 显示步骤名并可展开
-    const steps = document.querySelectorAll('.round-block__step');
+    const steps = document.querySelectorAll('.round-block__plan-item');
     expect(steps.length).toBe(2);
-    expect(steps[0]!.querySelector('.round-block__step-summary')?.textContent).toContain('step-1');
-    expect(steps[0]!.querySelector('.round-block__step-summary')?.textContent).toContain('分析需求');
-    expect(steps[1]!.querySelector('.round-block__step-summary')?.textContent).toContain('编写代码');
+    expect(steps[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 1');
+    expect(steps[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('分析需求');
+    expect(steps[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('编写代码');
     // 步1内：narrate 与 tool 归入第 1 个 step 容器（边界切组、步内平铺）
     const step1Host = steps[0]!.querySelector('.round-block__narrate') as HTMLElement;
     expect(step1Host?.textContent).toContain('正在分析需求文档');
@@ -1756,7 +1756,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 结构式布尔判定、无步数阈值）——3 步触发常驻条
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { order: 0, id: '0', description: '文档收束', status: 'active', planItemLog: [] },
         { order: 1, id: '1', description: '补充说明', status: 'pending', planItemLog: [] },
         { order: 2, id: '2', description: '整理结论', status: 'pending', planItemLog: [] },
@@ -1776,7 +1776,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'process_event', event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } } }); seq += 1;
     dispatch({ type: 'process_event', event: { type: 'metrics', seq, ts: '', payload: { durationMs: 120000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
     // ④ 宿主流尾：postPlanUpdate() 空计划（清理看板）→ done
-    dispatch({ type: 'plan_update', steps: [] });
+    dispatch({ type: 'plan_update', items: [] });
     dispatch({ type: 'done', roundId: 'r1' });
 
     // 折叠块存在（任务过程收起）
@@ -1833,11 +1833,11 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     });
     dispatch({ type: 'chunk', content: '【组长开场】介绍会议主题和讨论框架', roundId: REAL_ROUND.id });
     // ≥3 步计划 → 常驻条出现（运行时无 inline 轨）
-    dispatch({ type: 'plan_update', steps: PLAN_SNAPSHOTS[0]! });
+    dispatch({ type: 'plan_update', items: PLAN_SNAPSHOTS[0]! });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     expect(document.querySelector('.plan-inline')).toBeNull();
     // plan 清空 → 常驻条隐藏，内容区不留完成快照（过程全由 round-block 折叠块承载）
-    dispatch({ type: 'plan_update', steps: [] });
+    dispatch({ type: 'plan_update', items: [] });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
   });
@@ -1865,7 +1865,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
 
   it('R4 对照：补发 done 后三现象全部收口（round-block 建立 / 过程折叠 / 光标消失）—— F2 修复态', () => {
     // 根因护栏（2026-09-17 QA 补强，变异验证加固）：onMessage 的兜底 console.error 是本轮
-    // 唯一异常出口。若 insertStepInOrder 的「直接子节点」限定被回退，异常会在此被观测到。
+    // 唯一异常出口。若 insertPlanItemInOrder 的「直接子节点」限定被回退，异常会在此被观测到。
     // ⚠️ 必要性：下面三条「收口」断言可被 finalizeRound 的 finally **单独**满足——
     // 实测回退 :scope > 限定后，flowEl/光标仍被 finally 收掉，三条断言全绿（假绿）。
     // 唯有「兜底未被触发」+「折叠内容完整性」两条能把「根治」与「兜底掩盖」区分开。
@@ -1881,7 +1881,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     expect(errorSpy).not.toHaveBeenCalled();
     // done → finalizeRound 全量重建 round-block 折叠块（任务过程收进折叠区）
     expect(document.querySelector('.round-block')).not.toBeNull();
-    // F2 修复态：finalizeRound 不再被 insertStepInOrder 的 NotFoundError 打断 →
+    // F2 修复态：finalizeRound 不再被 insertPlanItemInOrder 的 NotFoundError 打断 →
     // 运行时平铺容器 .process-flow 被移除（原来因异常跳过 flowEl.remove() 而残留）
     expect(document.querySelector('.process-flow')).toBeNull();
     // 且 finalizeStreaming 被执行到 → 流式光标收
@@ -1891,7 +1891,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // ——实测回退后 thought/section 双双归零、折叠文本从 37282 字符塌成 1366 字符。
     expect(document.querySelectorAll('.round-block__thought').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('.round-block__section').length).toBeGreaterThan(0);
-    // ⇒ 归因闭环：F2 根治（insertStepInOrder 候选限定直接子节点）+ 兜底（收口进 finally）
+    // ⇒ 归因闭环：F2 根治（insertPlanItemInOrder 候选限定直接子节点）+ 兜底（收口进 finally）
     //   让「补发 done」这一唯一变量真正完成收口，现象2/3 消失。
   }, 30000);
 });
@@ -2397,7 +2397,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '收集需求', status: 'done', order: 0, planItemLog: [] },
         { id: 's2', description: '设计方案', status: 'active', order: 1, planItemLog: [] },
         { id: 's3', description: '编写文档', status: 'pending', order: 2, planItemLog: [] },
@@ -2416,24 +2416,24 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     // 点击展开 → 从当前快照补建全量步骤列表（按 order 序号 + 描述；状态 class 按 status 映射）
     (bar.querySelector('#planBarHead') as HTMLElement).click();
     expect(panel.hidden).toBe(false);
-    const steps = panel.querySelectorAll('.plan-step');
+    const steps = panel.querySelectorAll('.plan-item');
     expect(steps).toHaveLength(3);
-    expect(steps[0].querySelector('.plan-step-title')?.textContent).toBe('1. 收集需求');
-    expect(steps[0].classList.contains('plan-step-done')).toBe(true);
-    expect(steps[0].querySelector('.plan-step-badge')?.textContent).toBe('已完成');
-    expect(steps[1].querySelector('.plan-step-title')?.textContent).toBe('2. 设计方案');
-    expect(steps[1].classList.contains('plan-step-active')).toBe(true);
-    expect(steps[1].querySelector('.plan-step-badge')?.textContent).toBe('进行中');
-    expect(steps[2].querySelector('.plan-step-title')?.textContent).toBe('3. 编写文档');
-    expect(steps[2].classList.contains('plan-step-pending')).toBe(true);
-    expect(steps[2].querySelector('.plan-step-badge')?.textContent).toBe('待执行');
+    expect(steps[0].querySelector('.plan-item-title')?.textContent).toBe('1. 收集需求');
+    expect(steps[0].classList.contains('plan-item-done')).toBe(true);
+    expect(steps[0].querySelector('.plan-item-badge')?.textContent).toBe('已完成');
+    expect(steps[1].querySelector('.plan-item-title')?.textContent).toBe('2. 设计方案');
+    expect(steps[1].classList.contains('plan-item-active')).toBe(true);
+    expect(steps[1].querySelector('.plan-item-badge')?.textContent).toBe('进行中');
+    expect(steps[2].querySelector('.plan-item-title')?.textContent).toBe('3. 编写文档');
+    expect(steps[2].classList.contains('plan-item-pending')).toBe(true);
+    expect(steps[2].querySelector('.plan-item-badge')?.textContent).toBe('待执行');
   });
 
-  it('plan_update 携带 planItemLog → 浮层步骤节点展开显示该步骤的 step 推进记录', () => {
+  it('plan_update 携带 planItemLog → 浮层任务项节点展开显示该任务项的推进记录', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '收集需求', status: 'done', order: 0, planItemLog: [{ planItemId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
         { id: 's2', description: '设计方案', status: 'active', order: 1, planItemLog: [] },
         { id: 's3', description: '编写文档', status: 'pending', order: 2, planItemLog: [] },
@@ -2442,21 +2442,21 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     const panel = document.querySelector('#planBarPanel') as HTMLElement;
     // 展开浮层（懒构建）后检查步骤节点
     (document.querySelector('#planBarHead') as HTMLElement).click();
-    const steps = panel.querySelectorAll('.plan-step');
+    const steps = panel.querySelectorAll('.plan-item');
     // 有关联推进记录的步骤：details 携带摘要 body（折叠态，仅标题常显）
     const withRounds = steps[0] as HTMLDetailsElement;
     expect(withRounds.open).toBe(false);
-    expect(withRounds.querySelector('.plan-step-round')?.textContent).toBe('梳理用户痛点并产出需求清单');
+    expect(withRounds.querySelector('.plan-item-round')?.textContent).toBe('梳理用户痛点并产出需求清单');
     // 无关联推进记录的步骤：不渲染空摘要体
     const noRounds = steps[1] as HTMLDetailsElement;
-    expect(noRounds.querySelector('.plan-step-round')).toBeNull();
+    expect(noRounds.querySelector('.plan-item-round')).toBeNull();
   });
 
   it('plan_update 覆盖旧看板（幂等更新，不堆叠）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '第一步', status: 'active', order: 0, planItemLog: [] },
         { id: 's2', description: '第二步', status: 'pending', order: 1, planItemLog: [] },
         { id: 's3', description: '第三步', status: 'pending', order: 2, planItemLog: [] },
@@ -2464,7 +2464,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     });
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '第一步', status: 'done', order: 0, planItemLog: [] },
         { id: 's2', description: '第二步', status: 'active', order: 1, planItemLog: [] },
         { id: 's3', description: '第三步', status: 'pending', order: 2, planItemLog: [] },
@@ -2476,7 +2476,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(document.querySelectorAll('#planBar')).toHaveLength(1);
     // 展开浮层 → 步骤被新快照覆盖，N/M 同步
     (bar.querySelector('#planBarHead') as HTMLElement).click();
-    expect(bar.querySelectorAll('.plan-step')).toHaveLength(3);
+    expect(bar.querySelectorAll('.plan-item')).toHaveLength(3);
     expect(bar.querySelector('#planBarCount')?.textContent).toBe('1/3');
   });
 
@@ -2484,7 +2484,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '第一步', status: 'active', order: 0, planItemLog: [] },
         { id: 's2', description: '第二步', status: 'pending', order: 1, planItemLog: [] },
       ],
@@ -2494,21 +2494,21 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(document.querySelector('.plan-inline')).toBeNull();
   });
 
-  it('plan_update 空 steps → 常驻条隐藏、内容区不留完成卡片', () => {
+  it('plan_update 空 items → 常驻条隐藏、内容区不留完成卡片', () => {
     mountChatView();
     // 建块（正文块存在）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '第一步', status: 'done', order: 0, planItemLog: [] },
         { id: 's2', description: '第二步', status: 'done', order: 1, planItemLog: [] },
         { id: 's3', description: '第三步', status: 'done', order: 2, planItemLog: [] },
       ],
     });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
-    dispatch({ type: 'plan_update', steps: [] });
+    dispatch({ type: 'plan_update', items: [] });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
     // 内容区零卡片：不再留完成快照（过程全由 round-block 折叠块承载）
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
@@ -2518,7 +2518,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     mountChatView();
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '第一步', status: 'active', order: 0, planItemLog: [] },
         { id: 's2', description: '第二步', status: 'pending', order: 1, planItemLog: [] },
         { id: 's3', description: '第三步', status: 'pending', order: 2, planItemLog: [] },
@@ -2548,13 +2548,13 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
     dispatch({
       type: 'plan_update',
-      steps: [
+      items: [
         { id: 's1', description: '第一步', status: 'done', order: 0, planItemLog: [] },
         { id: 's2', description: '第二步', status: 'done', order: 1, planItemLog: [] },
         { id: 's3', description: '第三步', status: 'done', order: 2, planItemLog: [] },
       ],
     });
-    dispatch({ type: 'plan_update', steps: [] });
+    dispatch({ type: 'plan_update', items: [] });
     // 内容区零完成卡片（清空前已无；断言锁死后门残留）
     expect(document.querySelector('.plan-inline-done')).toBeNull();
     dispatch({ type: 'clear_ok' });
@@ -3958,7 +3958,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     // 用户补充：ts 在 step1 边界之后、step2 边界之前 → 归 step1 分组（刚结束的 step 间隙）
     dispatch({ type: 'user', text: '补充：改一下', ts: 't3.5', roundId: 'r1', kind: 'supplement' });
     dispatch({ type: 'assistant', text: '已按补充调整', ts: 't7', roundId: 'r1' });
-    const steps = document.querySelectorAll('.round-block__step');
+    const steps = document.querySelectorAll('.round-block__plan-item');
     expect(steps.length).toBe(2);
     // 条目归 step1（ts 定位），不飘忽：不在 details 顶层、不在 step2
     expect(steps[0]!.querySelector('.round-block__input')?.textContent).toContain('补充：改一下');
@@ -4095,7 +4095,7 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(done.textContent).toContain('Now let me also read the project report');
   });
 
-  it('P3：per-step 分桶——不同 step 的思考各自独立折叠，同 step 内碎片连续', () => {
+  it('P3：per-plan-item 分桶——不同 step 的思考各自独立折叠，同 step 内碎片连续', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } } });
@@ -4106,10 +4106,10 @@ describe('chatView narrate_withdraw 回抽', () => {
     dispatch({ type: 'process_event', event: { type: 'thought', seq: 7, ts: '', payload: { content: '步' } } });
     // 流式：s1、s2 各 1 个折叠块（同 step 内连续），各自独立
     const flow = document.querySelector('.process-flow') as HTMLElement;
-    const flowSteps = flow.querySelectorAll('.round-block__step');
-    expect(flowSteps.length).toBe(2);
-    const s1f = flowSteps[0]!.querySelectorAll('.process-flow__thought');
-    const s2f = flowSteps[1]!.querySelectorAll('.process-flow__thought');
+    const flowPlanItems = flow.querySelectorAll('.round-block__plan-item');
+    expect(flowPlanItems.length).toBe(2);
+    const s1f = flowPlanItems[0]!.querySelectorAll('.process-flow__thought');
+    const s2f = flowPlanItems[1]!.querySelectorAll('.process-flow__thought');
     expect(s1f.length).toBe(1);
     expect(s1f[0]!.textContent).toContain('第一步');
     expect(s2f.length).toBe(1);
@@ -4117,12 +4117,12 @@ describe('chatView narrate_withdraw 回抽', () => {
     // finalize：round-block 内同样每 step 一个折叠块
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    const rbSteps = rb.querySelectorAll('.round-block__step');
-    expect(rbSteps.length).toBe(2);
-    expect(rbSteps[0]!.querySelectorAll('.round-block__thought').length).toBe(1);
-    expect(rbSteps[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第一步');
-    expect(rbSteps[1]!.querySelectorAll('.round-block__thought').length).toBe(1);
-    expect(rbSteps[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
+    const rbPlanItems = rb.querySelectorAll('.round-block__plan-item');
+    expect(rbPlanItems.length).toBe(2);
+    expect(rbPlanItems[0]!.querySelectorAll('.round-block__thought').length).toBe(1);
+    expect(rbPlanItems[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第一步');
+    expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought').length).toBe(1);
+    expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
   });
 });
 

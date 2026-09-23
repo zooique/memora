@@ -2646,7 +2646,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           });
         } else if (chunk.type === 'plan_item_boundary') {
           // 步级折叠边界（阶段二，2026-09-08）：active 任务项推进 → 落盘 plan_item_boundary 事件。
-          // webview 据此把后续过程事件归入对应 step 分组；重放与运行时同一边界（同构）。
+          // webview 据此把后续过程事件归入对应任务项分组；重放与运行时同一边界（同构）。
           // ⚠ 仅渲染分组依据（无任务表不产）；**不是落盘时机**——落盘时机 = step_boundary
           // （档3，2026-09-23：本处曾是落盘点 → 无任务表长工具循环零增量落盘，覆盖缺口已修）。
           emitEvent('plan_item_boundary', {
@@ -2740,7 +2740,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this.replaySession();
     }
     // plan 快照对齐：generator close 后内核 clearPlanOnTurnEnd 已清 plan（暂停态 guard 不清），
-    // 此处推一次快照让 webview 同步——正常/中断 → 空 steps（顶部条收起）；
+    // 此处推一次快照让 webview 同步——正常/中断 → 空 items（顶部条收起）；
     // 暂停 → 保留当前 plan（paused 分支前面，plan 还没被清，继续供 resume 消费）
     this.postPlanUpdate();
     if (controller.signal.aborted) {
@@ -2792,11 +2792,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /**
    * 推送任务看板快照（任务驱动多步闭环的最小可视化）
    *
-   * 从 agent.getCheckpoint().plan 提取当前计划步骤快照，推给 webview 渲染任务看板。
+   * 从 agent.getCheckpoint().plan 提取当前计划任务项快照，推给 webview 渲染任务看板。
    * 仅当 plan 非空时推送（空计划不产生看板）。薄壳装配：只读提取，不参与 LLM 执行，
    * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
    *
-   * 任务节点聚合：额外从 checkpoint.planItemLog 提取 planItemId 关联，按步骤分组携带各 step
+   * 任务节点聚合：额外从 checkpoint.planItemLog 提取 planItemId 关联，按任务项分组携带各任务项
    * 推进记录（planItemLog），webview 展开任务节点时展示该步骤下的推进摘要。
    */
   private postPlanUpdate(): void {
@@ -2804,27 +2804,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     const checkpoint = this._agent.getCheckpoint();
     // checkpoint 不存在时推空消息让 webview 清看板；plan 为空也推（autoClearPlan 后）
     if (!checkpoint || !checkpoint.plan) {
-      this.post({ type: 'plan_update', steps: [] });
+      this.post({ type: 'plan_update', items: [] });
       return;
     }
     // plan 为空时也推（turn 结束 autoClearPlan 或 LLM 新任务写入空 plan）
     if (checkpoint.plan.length === 0) {
-      this.post({ type: 'plan_update', steps: [] });
+      this.post({ type: 'plan_update', items: [] });
       return;
     }
-    // 步骤 → 关联 step 推进记录（planItemLog 的 planItemId 关联，内核已写入，宿主只读消费）
-    const stepsByStep = new Map<string, { planItemId: string; summary: string; completedAt?: number }[]>();
+    // 任务项 → 关联任务项推进记录（planItemLog 的 planItemId 关联，内核已写入，宿主只读消费）
+    const planItemLogById = new Map<string, { planItemId: string; summary: string; completedAt?: number }[]>();
     for (const r of checkpoint.planItemLog ?? []) {
       if (!r.planItemId) continue;
-      const list = stepsByStep.get(r.planItemId) ?? [];
+      const list = planItemLogById.get(r.planItemId) ?? [];
       list.push({ planItemId: r.planItemId, summary: r.summary, completedAt: r.completedAt });
-      stepsByStep.set(r.planItemId, list);
+      planItemLogById.set(r.planItemId, list);
     }
     // 按 order 排序列化（内核 PlanItem 已含 order，防冗余中断序漂移）
-    const steps = [...checkpoint.plan]
+    const items = [...checkpoint.plan]
       .sort((a, b) => a.order - b.order)
-      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, planItemLog: stepsByStep.get(s.id) ?? [] }));
-    this.post({ type: 'plan_update', steps });
+      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, planItemLog: planItemLogById.get(s.id) ?? [] }));
+    this.post({ type: 'plan_update', items });
   }
 
   /** 待发送区同步（SSOT 收敛，2026-09-07 修复弹窗残留）：

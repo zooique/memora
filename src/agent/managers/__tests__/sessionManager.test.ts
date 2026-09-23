@@ -972,22 +972,22 @@ describe('SessionManager', () => {
       expect(() => manager.heartbeat()).not.toThrow();
     });
 
-    it('getActiveStep / getNextPendingStep：无检查点返回 null', () => {
-      expect(manager.getActiveStep()).toBeNull();
-      expect(manager.getNextPendingStep()).toBeNull();
+    it('getActivePlanItem / getNextPendingPlanItem：无检查点返回 null', () => {
+      expect(manager.getActivePlanItem()).toBeNull();
+      expect(manager.getNextPendingPlanItem()).toBeNull();
     });
 
-    it('getActiveStep / getNextPendingStep：有 plan 时返回 active 与下一个 pending 步骤', () => {
+    it('getActivePlanItem / getNextPendingPlanItem：有 plan 时返回 active 与下一个 pending 任务项', () => {
       manager.createCheckpoint('测试');
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },
         { description: '步骤二' },
       ]);
-      // writePlan 后 ensureActivePlanItem 激活第一个步骤
-      const active = manager.getActiveStep();
+      // writePlan 后 ensureActivePlanItem 激活第一个任务项
+      const active = manager.getActivePlanItem();
       expect(active?.id).toBe(plan[0]!.id);
       // 第一个已 active（非 pending），下一个 pending 是步骤二
-      const next = manager.getNextPendingStep();
+      const next = manager.getNextPendingPlanItem();
       expect(next?.id).toBe(plan[1]!.id);
     });
 
@@ -1017,8 +1017,8 @@ describe('SessionManager', () => {
       expect(plan).toHaveLength(2);
       expect(manager.getCheckpoint()).not.toBeNull();
       expect(manager.getCheckpoint()!.plan).toHaveLength(2);
-      // writePlan 后 ensureActivePlanItem 应激活第一个步骤
-      expect(manager.getActiveStep()?.id).toBe(plan[0]!.id);
+      // writePlan 后 ensureActivePlanItem 应激活第一个任务项
+      expect(manager.getActivePlanItem()?.id).toBe(plan[0]!.id);
     });
 
     it('logPlanItemBoundary：只写 planItemLog 不改 plan 状态（形态② 迭代边界语义）', () => {
@@ -1043,7 +1043,7 @@ describe('SessionManager', () => {
       ]);
       // 显式完成步骤一（LLM task_table_update）→ active 推进到步骤二
       manager.updatePlanItemStatus(plan[0]!.id, 'done');
-      expect(manager.getActiveStep()?.id).toBe(plan[1]!.id);
+      expect(manager.getActivePlanItem()?.id).toBe(plan[1]!.id);
 
       // 无 pending（步骤二为最后到达步）→ 兜底闭合
       manager.concludeActivePlanItemIfPlanFullyReached('最终交付摘要');

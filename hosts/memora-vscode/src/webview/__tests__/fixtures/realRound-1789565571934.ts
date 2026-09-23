@@ -9,7 +9,7 @@
  *   ① 事件**类型相对顺序**逐条保留——9 类非 thought 事件的 seq 位置与先后关系与原文件一致；
  *   ② thought 洪流按「连续段落」压缩为 { kind:'thoughts', count }，count 取自真实段落长度
  *      （合计 1324，保留量级与分布特征，含尾部 419/482 两大段）；内容由 thoughtText() 确定性生成，
- *      seq 逐条唯一，以保证 step 分桶去重 / 增量拼接逻辑被真实触发；
+ *      seq 逐条唯一，以保证任务项分桶去重 / 增量拼接逻辑被真实触发；
  *   ③ tool_start/tool_result 的 name + args + summary **全量逐字保留**（1 次 task_table_write、
  *      4 次 task_table_update、search_memories、list_dir，共 7 对）；
  *   ④ text_self_review 的 payload 结构全保留（真实 Markdown：标题 + 表格 + 代码块 + 列表）；
@@ -20,8 +20,8 @@
  *    「光标残留」现象。因此本夹具提供 withStreaming 开关，测试需同时覆盖两种变体。
  */
 
-/** 计划快照最小结构（字段对齐 hosts/memora-vscode/src/shared/protocol.ts 的 PlanStepDto） */
-export interface PlanStepDto {
+/** 计划快照最小结构（字段对齐 hosts/memora-vscode/src/shared/protocol.ts 的 PlanItemDto） */
+export interface PlanItemDto {
   id: string;
   description: string;
   status: 'pending' | 'active' | 'done' | 'blocked';
@@ -69,7 +69,7 @@ export const PLAN_STEP_DEFS = [
 ] as const;
 
 // ───────────────────────── 计划快照（由任务表工具推进） ─────────────────────────
-const PLAN_SNAPSHOT_0: PlanStepDto[] = [
+const PLAN_SNAPSHOT_0: PlanItemDto[] = [
   {
     "id": "68e90642",
     "description": "组长开场：介绍会议主题和讨论框架",
@@ -100,7 +100,7 @@ const PLAN_SNAPSHOT_0: PlanStepDto[] = [
   }
 ];
 
-const PLAN_SNAPSHOT_1: PlanStepDto[] = [
+const PLAN_SNAPSHOT_1: PlanItemDto[] = [
   {
     "id": "68e90642",
     "description": "组长开场：介绍会议主题和讨论框架",
@@ -131,7 +131,7 @@ const PLAN_SNAPSHOT_1: PlanStepDto[] = [
   }
 ];
 
-const PLAN_SNAPSHOT_2: PlanStepDto[] = [
+const PLAN_SNAPSHOT_2: PlanItemDto[] = [
   {
     "id": "68e90642",
     "description": "组长开场：介绍会议主题和讨论框架",
@@ -162,7 +162,7 @@ const PLAN_SNAPSHOT_2: PlanStepDto[] = [
   }
 ];
 
-const PLAN_SNAPSHOT_3: PlanStepDto[] = [
+const PLAN_SNAPSHOT_3: PlanItemDto[] = [
   {
     "id": "68e90642",
     "description": "组长开场：介绍会议主题和讨论框架",
@@ -193,7 +193,7 @@ const PLAN_SNAPSHOT_3: PlanStepDto[] = [
   }
 ];
 
-const PLAN_SNAPSHOT_4: PlanStepDto[] = [
+const PLAN_SNAPSHOT_4: PlanItemDto[] = [
   {
     "id": "68e90642",
     "description": "组长开场：介绍会议主题和讨论框架",
@@ -225,7 +225,7 @@ const PLAN_SNAPSHOT_4: PlanStepDto[] = [
 ];
 
 /** 计划快照时间线（供测试读取：PLAN_SNAPSHOTS[0] = task_table_write 建立初始 4 步） */
-export const PLAN_SNAPSHOTS: PlanStepDto[][] = [PLAN_SNAPSHOT_0, PLAN_SNAPSHOT_1, PLAN_SNAPSHOT_2, PLAN_SNAPSHOT_3, PLAN_SNAPSHOT_4];
+export const PLAN_SNAPSHOTS: PlanItemDto[][] = [PLAN_SNAPSHOT_0, PLAN_SNAPSHOT_1, PLAN_SNAPSHOT_2, PLAN_SNAPSHOT_3, PLAN_SNAPSHOT_4];
 
 /** toolCallId → 该次任务表调用后的快照下标 */
 const PLAN_BY_TOOL_CALL_ID: Record<string, number> = {
@@ -360,7 +360,7 @@ export function buildRealRoundTimeline(opts: TimelineOptions = {}): TimelineMsg[
         });
         const snapIdx = PLAN_BY_TOOL_CALL_ID[item.toolCallId];
         if (snapIdx !== undefined) {
-          msgs.push({ type: 'plan_update', steps: PLAN_SNAPSHOTS[snapIdx] });
+          msgs.push({ type: 'plan_update', items: PLAN_SNAPSHOTS[snapIdx] });
         }
         break;
       }
@@ -389,7 +389,7 @@ export function buildRealRoundTimeline(opts: TimelineOptions = {}): TimelineMsg[
     }
   }
 
-  if (opts.withEmptyPlanUpdate) msgs.push({ type: 'plan_update', steps: [] });
+  if (opts.withEmptyPlanUpdate) msgs.push({ type: 'plan_update', items: [] });
   if (opts.withDone) msgs.push({ type: 'done', roundId: REAL_ROUND.id });
   return msgs;
 }

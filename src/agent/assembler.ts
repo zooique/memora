@@ -167,7 +167,7 @@ export interface AgentHooks {
    * 此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
    * 内部防重：视角未变化则跳过，避免每轮迭代重复重建前缀。缺省 no-op（纯工厂单测不触发）。
    */
-  applyActiveStepAssembly?: () => void;
+  applyActivePlanItemAssembly?: () => void;
 }
 
 /**
@@ -376,8 +376,8 @@ function wireRuntimeCallbacks(
   loop.getTaskTable = () => {
     const cp = sessionManager.getCheckpoint();
     if (!cp) return '';
-    // 会议逐步切换：每轮按当前 active step 派生装配视角（与任务表渲染同源；防重见 agent.applyActiveStepAssemblyIfChanged）
-    hooks?.applyActiveStepAssembly?.();
+    // 会议逐步切换：每轮按当前 active 任务项派生装配视角（与任务表渲染同源；防重见 agent.applyActivePlanItemAssemblyIfChanged）
+    hooks?.applyActivePlanItemAssembly?.();
     const table = renderTaskTable(cp.plan, cp.planItemLog);
     if (!table) return '';
     // P3 未完成硬约束（2026-09-22）：仍有步骤未标记 done 时追加「不得提前收尾」执行要求。

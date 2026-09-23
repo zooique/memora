@@ -1204,11 +1204,11 @@ export class ToolExecutor {
         if (!resolved.ok) {
           return resolved.error;
         }
-        const stepStatus = strArg('status', 'done');
-        if (stepStatus !== 'done' && stepStatus !== 'blocked') {
-          return `[ERR:INVALID_ARG] 不支持的状态 "${stepStatus}"，仅支持 done/blocked`;
+        const planItemStatus = strArg('status', 'done');
+        if (planItemStatus !== 'done' && planItemStatus !== 'blocked') {
+          return `[ERR:INVALID_ARG] 不支持的状态 "${planItemStatus}"，仅支持 done/blocked`;
         }
-        return this.planManager.updatePlanItem(resolved.id, stepStatus);
+        return this.planManager.updatePlanItem(resolved.id, planItemStatus);
       }
       case 'read_skill': {
         // 渐进披露 L2：读取激活角色包内嵌技能正文（readSkill 回调由 agent 装配注入）

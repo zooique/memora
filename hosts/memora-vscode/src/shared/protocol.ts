@@ -490,7 +490,7 @@ export type ExtensionToWebviewMessage =
    * 映射由 webview 转为中文标签 + 配色。只读展示，不参与 LLM 执行（薄壳装配铁律）。
    * 任务看板归 checkpoint 执行态，不参与 processEvents 复原（见设计文档 §四）。
    */
-  | { type: 'plan_update'; steps: PlanStepDto[] }
+  | { type: 'plan_update'; items: PlanItemDto[] }
   /**
    * LLM 调用重试（对齐内核 retry chunk，P1 事件流全量对齐）
    *
@@ -1131,7 +1131,7 @@ export interface SkillDto {
 }
 
 /** 任务看板步骤条目（对齐内核 PlanItem 扁平化） */
-export interface PlanStepDto {
+export interface PlanItemDto {
   /** 步骤唯一标识 */
   id: string;
   /** 步骤描述 */
@@ -1140,7 +1140,7 @@ export interface PlanStepDto {
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;
-  /** 该步骤已关联的 step 推进记录（来自 checkpoint.planItemLog 的 planItemId 关联，可为空数组） */
+  /** 该任务项已关联的任务项推进记录（来自 checkpoint.planItemLog 的 planItemId 关联，可为空数组） */
   planItemLog: { planItemId: string; summary: string; completedAt?: number }[];
 }
 

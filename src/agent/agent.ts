@@ -608,7 +608,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // （可能收尾总结、补建计划、继续语境），且短问答暂停续跑本就无计划，拦了就没法继续聊。
       // 判定下沉 sessionManager.isPlanAllBlocked()（仅全 blocked 拦；全 done/空计划放行）。
       if (!input && this._sessionManager?.isPlanAllBlocked() && !this.requireLoop.isInAutonomousStep) {
-        yield { type: 'text', content: '计划步骤当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划' };
+        yield { type: 'text', content: '计划任务项当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划' };
         yield { type: 'done' };
         return;
       }
@@ -956,16 +956,16 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 追加计划步骤（SESSION_APPEND_TASK 落点）：在现有 plan 末尾追加新步骤
+   * 追加计划任务项（SESSION_APPEND_TASK 落点）：在现有 plan 末尾追加新任务项
    */
-  appendPlanStep(description: string): number {
-    this.assertInitialized('appendPlanStep');
+  appendPlanItem(description: string): number {
+    this.assertInitialized('appendPlanItem');
     const sm = this.requireSessionManager;
-    return sm.appendPlanStep(description);
+    return sm.appendPlanItem(description);
   }
 
   /**
-   * 卸载运行态挂载物：清空检查点计划与 step 推进日志（宿主任务流结束/停止/异常广播 idle 前调用），
+   * 卸载运行态挂载物：清空检查点计划与任务项推进日志（宿主任务流结束/停止/异常广播 idle 前调用），
    * 回到"空闲 = 无挂载物"的资源层常态；会话历史与记忆等资源层内容不受影响。
    */
   clearPlan(): void {
@@ -1002,7 +1002,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    *
    * 真值条件：① 状态机已 paused（已软暂停必可续跑，最高优先级——pauseRequested 在下一 step 边界才挂起，
    * 彼时 inAutonomousStep 已重置为 false，仅看它会误报）；② loop 在自主工具步（可暴露暂停按钮在边界挂起）；
-   * ③ 存在未完成的计划步骤（多轮任务可续跑下一轮）。三者皆否（纯单轮、无待续目标）→ 隐藏暂停按钮（仅停止）。
+   * ③ 存在未完成的计划任务项（多轮任务可续跑下一轮）。三者皆否（纯单轮、无待续目标）→ 隐藏暂停按钮（仅停止）。
    */
   canContinueWithoutInput(): boolean {
     if (this._sessionManager?.status === 'paused') return true;
@@ -1241,7 +1241,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
         // 会议逐步切换：随 active 任务项刷新本轮装配视角（T1，2026-09-06 收口缺口）
-        applyActiveStepAssembly: () => this.applyActiveStepAssemblyIfChanged(),
+        applyActivePlanItemAssembly: () => this.applyActivePlanItemAssemblyIfChanged(),
       },
     });
 
@@ -1376,12 +1376,12 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   /**
    * 会议阶梯推进（T1，2026-09-06 收口）：按当前 active 任务项的 rolePack 派生本轮装配视角。
    *
-   * 由 assembler.getTaskTable 每轮注入时驱动（hooks.applyActiveStepAssembly），与任务表渲染同源，
+   * 由 assembler.getTaskTable 每轮注入时驱动（hooks.applyActivePlanItemAssembly），与任务表渲染同源，
    * 弥补此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效的缺口（展示层正确/装配层冻结）。
    * roundRole=candidate（可能为 null，无有效覆盖时回落 activePack 组长），调 refreshRolePackPrefixForRound 重建前缀。
    * 防重：candidate 与 rolePackManager 当前 roundAssemblyPerspective 一致则跳过，避免每轮迭代重复重建。
    */
-  private applyActiveStepAssemblyIfChanged(): void {
+  private applyActivePlanItemAssemblyIfChanged(): void {
     const plan = this._sessionManager?.getCheckpoint()?.plan ?? [];
     const active = plan.find((s) => s.status === 'active');
     const candidate = this._rolePackManager?.resolveRoundAssemblyRole(active?.rolePack) ?? null;

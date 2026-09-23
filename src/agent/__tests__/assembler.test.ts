@@ -345,12 +345,12 @@ describe('assembleComponents', () => {
   // ─── 会议逐步切换（T1，2026-09-06）────────────────────────
 
   describe('会议逐步切换：getTaskTable 驱动装配视角钩子', () => {
-    it('taskTable 每次注入都触发 applyActiveStepAssembly，active step 推进后仍触发', async () => {
+    it('taskTable 每次注入都触发 applyActivePlanItemAssembly，active 任务项推进后仍触发', async () => {
       // 缺口 A 收口：此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效。
-      // 此测试验证「任务表每轮注入 → applyActiveStepAssembly 钩子」的装配导线已接上
-      //（真实 Agent 中该钩子由 applyActiveStepAssemblyIfChanged 实现换角色；
+      // 此测试验证「任务表每轮注入 → applyActivePlanItemAssembly 钩子」的装配导线已接上
+      //（真实 Agent 中该钩子由 applyActivePlanItemAssemblyIfChanged 实现换角色；
       //  resolveRoundAssemblyRole / setRoundAssemblyRole 的判定由 rolePackManager.test S5 覆盖）。
-      const applyActiveStepAssembly = vi.fn();
+      const applyActivePlanItemAssembly = vi.fn();
       const output = await assembleComponents(
         createPctx(),
         createInput({
@@ -358,7 +358,7 @@ describe('assembleComponents', () => {
             emit: vi.fn(),
             isChatBusy: () => false,
             requestPause: vi.fn(),
-            applyActiveStepAssembly,
+            applyActivePlanItemAssembly,
           },
         }),
       );
@@ -371,19 +371,19 @@ describe('assembleComponents', () => {
       ]);
       // 首次注入：应触发钩子（随当前 active step）
       output.loop.getTaskTable!();
-      expect(applyActiveStepAssembly).toHaveBeenCalledTimes(1);
+      expect(applyActivePlanItemAssembly).toHaveBeenCalledTimes(1);
       // 组员1 发言完成 → 推进到组员2（active step 切换）
       const cp = output.sessionManager.getCheckpoint()!;
       const step1 = cp.plan.find((s) => s.description === '组员1发言')!;
       expect(output.sessionManager.updatePlanItemStatus(step1.id, 'done')).toBe(true);
       // 第二次注入：active step 已推进，钩子仍每轮触发（装配视角可随之切换）
       output.loop.getTaskTable!();
-      expect(applyActiveStepAssembly).toHaveBeenCalledTimes(2);
+      expect(applyActivePlanItemAssembly).toHaveBeenCalledTimes(2);
     });
 
     it('无 checkpoint 时 getTaskTable 不触发装配视角钩子（短路）', async () => {
       // 保护性断言：checkpoint 未建立时任务表为空，钩子不应被调用（避免空转）
-      const applyActiveStepAssembly = vi.fn();
+      const applyActivePlanItemAssembly = vi.fn();
       const output = await assembleComponents(
         createPctx(),
         createInput({
@@ -391,20 +391,20 @@ describe('assembleComponents', () => {
             emit: vi.fn(),
             isChatBusy: () => false,
             requestPause: vi.fn(),
-            applyActiveStepAssembly,
+            applyActivePlanItemAssembly,
           },
         }),
       );
       // 未 createCheckpoint → getCheckpoint 为空 → getTaskTable 返回 '' 且不触发钩子
       expect(output.loop.getTaskTable!()).toBe('');
-      expect(applyActiveStepAssembly).not.toHaveBeenCalled();
+      expect(applyActivePlanItemAssembly).not.toHaveBeenCalled();
     });
   });
 
   // ─── 任务表未完成硬约束（P3，2026-09-22）─────────────────────
 
 describe('任务表未完成硬约束（P3，2026-09-22）', () => {
-  it('存在未完成步骤时 getTaskTable 追加「不得收尾」执行约束（首行进度契约不变）', async () => {
+  it('存在未完成任务项时 getTaskTable 追加「不得收尾」执行约束（首行进度契约不变）', async () => {
     const output = await assembleComponents(
       createPctx(),
       createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
@@ -622,7 +622,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(cp.plan[0]!.status).toBe('active');
   });
 
-  it('getActivePlanItemMeta：有 active 步骤返回 planItemId/title', async () => {
+  it('getActivePlanItemMeta：有 active 任务项返回 planItemId/title', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
     const plan = out.sessionManager.writePlan('overwrite', [{ description: '活动步骤' }]);
@@ -635,7 +635,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(out.loop.getActivePlanItemMeta!()).toBeNull();
   });
 
-  it('hasInflightPlan：装配链上写入计划后为真（存在未完成步骤）', async () => {
+  it('hasInflightPlan：装配链上写入计划后为真（存在未完成任务项）', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
     // 空 plan → 不在途

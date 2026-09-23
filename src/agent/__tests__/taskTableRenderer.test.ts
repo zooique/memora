@@ -2,18 +2,18 @@
  * taskTableRenderer.test.ts — 任务表渲染器测试
  *
  * 覆盖范围：
- *   1. renderTaskTable — 空计划、单步骤、多步骤、状态渲染
- *   2. step 推进日志渲染 — 有/无推进日志、推进日志截断
+ *   1. renderTaskTable — 空计划、单任务项、多任务项、状态渲染
+ *   2. 任务项推进日志渲染 — 有/无推进日志、推进日志截断
  *   3. 边界场景 — 长描述截断、特殊字符、最大条数限制
  *
  * 注：纯函数测试，无副作用。
  */
 import { describe, it, expect } from 'vitest';
-import { renderTaskTable, STEP_DESC_MAX_CHARS, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
+import { renderTaskTable, PLAN_ITEM_DESC_MAX_CHARS, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
 import type { PlanItem, PlanItemOutcome } from '../types.js';
 
 /** 创建测试用 PlanItem */
-function createStep(
+function createPlanItem(
   order: number,
   description: string,
   status: PlanItem['status'] = 'pending',
@@ -23,7 +23,7 @@ function createStep(
 }
 
 /** 创建测试用 PlanItemOutcome */
-function createStepLog(summary: string, planItemId?: string): PlanItemOutcome {
+function createPlanItemLog(summary: string, planItemId?: string): PlanItemOutcome {
   return { summary, planItemId, completedAt: Date.now() };
 }
 
@@ -38,8 +38,8 @@ describe('taskTableRenderer — 基本渲染', () => {
     expect(result).toBe('');
   });
 
-  it('单步骤待执行状态', () => {
-    const plan = [createStep(0, '实现登录功能', 'pending')];
+  it('单任务项待执行状态', () => {
+    const plan = [createPlanItem(0, '实现登录功能', 'pending')];
     const result = renderTaskTable(plan);
 
     expect(result).toContain('任务进度: 0/1 已完成');
@@ -48,30 +48,30 @@ describe('taskTableRenderer — 基本渲染', () => {
     expect(result).toContain('非当前指令');
   });
 
-  it('单步骤执行中状态', () => {
-    const plan = [createStep(0, '编写测试用例', 'active')];
+  it('单任务项执行中状态', () => {
+    const plan = [createPlanItem(0, '编写测试用例', 'active')];
     const result = renderTaskTable(plan);
 
     expect(result).toContain('任务进度: 0/1 已完成，当前: 编写测试用例');
     expect(result).toContain('执行中');
   });
 
-  it('单步骤已完成状态', () => {
-    const plan = [createStep(0, '代码审查', 'done')];
+  it('单任务项已完成状态', () => {
+    const plan = [createPlanItem(0, '代码审查', 'done')];
     const result = renderTaskTable(plan);
 
     expect(result).toContain('任务进度: 1/1 已完成');
     expect(result).toContain('已完成');
   });
 
-  it('单步骤已阻塞状态', () => {
-    const plan = [createStep(0, '部署上线', 'blocked')];
+  it('单任务项已阻塞状态', () => {
+    const plan = [createPlanItem(0, '部署上线', 'blocked')];
     const result = renderTaskTable(plan);
 
     expect(result).toContain('已阻塞');
   });
 
-  it('会议步骤（rolePack）标注装配角色（v0.13 S5）', () => {
+  it('会议任务项（rolePack）标注装配角色（v0.13 S5）', () => {
     const plan: PlanItem[] = [
       { id: 's1', order: 0, description: '从编辑视角审稿', status: 'active', rolePack: '编辑' },
       { id: 's2', order: 1, description: '从评论家视角点评', status: 'pending', rolePack: '评论家' },
@@ -79,28 +79,28 @@ describe('taskTableRenderer — 基本渲染', () => {
     ];
     const result = renderTaskTable(plan);
 
-    // 声明 rolePack 的步骤带【角色】标注，供 LLM 识别「该步骤由谁发言」
+    // 声明 rolePack 的任务项带【角色】标注，供 LLM 识别「该任务项由谁发言」
     expect(result).toContain('【编辑】从编辑视角审稿');
     expect(result).toContain('【评论家】从评论家视角点评');
-    // 未声明 rolePack 的步骤（汇总）无标注
+    // 未声明 rolePack 的任务项（汇总）无标注
     expect(result).toContain('汇总会议结论');
     expect(result).not.toContain('【】');
   });
 });
 
 // ══════════════════════════════════════════════════════════════
-// 2. 多步骤渲染
+// 2. 多任务项渲染
 // ══════════════════════════════════════════════════════════════
 
-describe('taskTableRenderer — 多步骤渲染', () => {
+describe('taskTableRenderer — 多任务项渲染', () => {
 
-  it('多步骤混合状态', () => {
+  it('多任务项混合状态', () => {
     const plan: PlanItem[] = [
-      createStep(0, '需求分析', 'done'),
-      createStep(1, '设计架构', 'done'),
-      createStep(2, '编码实现', 'active'),
-      createStep(3, '测试', 'pending'),
-      createStep(4, '部署', 'blocked'),
+      createPlanItem(0, '需求分析', 'done'),
+      createPlanItem(1, '设计架构', 'done'),
+      createPlanItem(2, '编码实现', 'active'),
+      createPlanItem(3, '测试', 'pending'),
+      createPlanItem(4, '部署', 'blocked'),
     ];
     const result = renderTaskTable(plan);
 
@@ -118,11 +118,11 @@ describe('taskTableRenderer — 多步骤渲染', () => {
     expect(result).toContain('已阻塞');
   });
 
-  it('所有步骤已完成', () => {
+  it('所有任务项已完成', () => {
     const plan: PlanItem[] = [
-      createStep(0, '步骤一', 'done'),
-      createStep(1, '步骤二', 'done'),
-      createStep(2, '步骤三', 'done'),
+      createPlanItem(0, '步骤一', 'done'),
+      createPlanItem(1, '步骤二', 'done'),
+      createPlanItem(2, '步骤三', 'done'),
     ];
     const result = renderTaskTable(plan);
 
@@ -130,10 +130,10 @@ describe('taskTableRenderer — 多步骤渲染', () => {
     expect(result).not.toContain('当前:');
   });
 
-  it('所有步骤待执行', () => {
+  it('所有任务项待执行', () => {
     const plan: PlanItem[] = [
-      createStep(0, '步骤一', 'pending'),
-      createStep(1, '步骤二', 'pending'),
+      createPlanItem(0, '步骤一', 'pending'),
+      createPlanItem(1, '步骤二', 'pending'),
     ];
     const result = renderTaskTable(plan);
 
@@ -141,10 +141,10 @@ describe('taskTableRenderer — 多步骤渲染', () => {
     expect(result).not.toContain('当前:');
   });
 
-  it('只有一个 active 步骤', () => {
+  it('只有一个 active 任务项', () => {
     const plan: PlanItem[] = [
-      createStep(0, '步骤一', 'active'),
-      createStep(1, '步骤二', 'pending'),
+      createPlanItem(0, '步骤一', 'active'),
+      createPlanItem(1, '步骤二', 'pending'),
     ];
     const result = renderTaskTable(plan);
 
@@ -153,62 +153,62 @@ describe('taskTableRenderer — 多步骤渲染', () => {
 });
 
 // ══════════════════════════════════════════════════════════════
-// 3. step 推进日志渲染
+// 3. 任务项推进日志渲染
 // ══════════════════════════════════════════════════════════════
 
-describe('taskTableRenderer — step 推进日志渲染', () => {
+describe('taskTableRenderer — 任务项推进日志渲染', () => {
 
-  it('有 step 推进日志时追加 step 推进记录', () => {
-    const plan = [createStep(0, '步骤一', 'active')];
+  it('有任务项推进日志时追加任务项推进记录', () => {
+    const plan = [createPlanItem(0, '步骤一', 'active')];
     const planItemLog: PlanItemOutcome[] = [
-      createStepLog('完成了需求分析', 'step-0'),
-      createStepLog('发现一个 bug', 'step-1'),
+      createPlanItemLog('完成了需求分析', 'step-0'),
+      createPlanItemLog('发现一个 bug', 'step-1'),
     ];
     const result = renderTaskTable(plan, planItemLog);
 
-    expect(result).toContain('[step 推进记录]');
-    expect(result).toContain('完成了需求分析 (步骤 step-0)');
-    expect(result).toContain('发现一个 bug (步骤 step-1)');
+    expect(result).toContain('[任务项推进记录]');
+    expect(result).toContain('完成了需求分析 (任务项 step-0)');
+    expect(result).toContain('发现一个 bug (任务项 step-1)');
   });
 
-  it('step 推进日志无 planItemId 时不显示步骤编号', () => {
-    const plan = [createStep(0, '步骤一', 'active')];
+  it('任务项推进日志无 planItemId 时不显示任务项编号', () => {
+    const plan = [createPlanItem(0, '步骤一', 'active')];
     const planItemLog: PlanItemOutcome[] = [
-      createStepLog('自由对话迭代'),
+      createPlanItemLog('自由对话迭代'),
     ];
     const result = renderTaskTable(plan, planItemLog);
 
     expect(result).toContain('自由对话迭代');
-    // 不应包含 (步骤 ...)
-    expect(result).not.toContain('(步骤');
+    // 不应包含 (任务项 ...)
+    expect(result).not.toContain('(任务项');
   });
 
-  it('step 推进日志为空数组时不追加推进记录', () => {
-    const plan = [createStep(0, '步骤一', 'active')];
+  it('任务项推进日志为空数组时不追加推进记录', () => {
+    const plan = [createPlanItem(0, '步骤一', 'active')];
     const result = renderTaskTable(plan, []);
 
-    expect(result).not.toContain('[step 推进记录]');
+    expect(result).not.toContain('[任务项推进记录]');
   });
 
-  it('step 推进日志全部渲染（本函数不做截断；真源为 SessionManager.appendPlanItemLog 每 step 3 条）', () => {
-    const plan = [createStep(0, '步骤一', 'active')];
+  it('任务项推进日志全部渲染（本函数不做截断；真源为 SessionManager.appendPlanItemLog 每任务项 3 条）', () => {
+    const plan = [createPlanItem(0, '步骤一', 'active')];
     const planItemLog: PlanItemOutcome[] = [];
     for (let i = 0; i < 5; i++) {
-      planItemLog.push(createStepLog(`step ${i}`));
+      planItemLog.push(createPlanItemLog(`step ${i}`));
     }
     const result = renderTaskTable(plan, planItemLog);
 
-    // 验证所有 step 推进记录都被渲染
+    // 验证所有任务项推进记录都被渲染
     for (let i = 0; i < 5; i++) {
       expect(result).toContain(`step ${i}`);
     }
   });
 
-  it('不传 step 推进日志时不追加推进记录', () => {
-    const plan = [createStep(0, '步骤一', 'active')];
+  it('不传任务项推进日志时不追加推进记录', () => {
+    const plan = [createPlanItem(0, '步骤一', 'active')];
     const result = renderTaskTable(plan);
 
-    expect(result).not.toContain('[step 推进记录]');
+    expect(result).not.toContain('[任务项推进记录]');
   });
 });
 
@@ -222,7 +222,7 @@ describe('taskTableRenderer — 边界场景', () => {
     // 使用 ASCII 字符确保长度可控（> 38 触发截断）
     const longDesc = 'A'.repeat(45);
     expect(longDesc.length).toBeGreaterThan(38);
-    const plan = [createStep(0, longDesc, 'pending')];
+    const plan = [createPlanItem(0, longDesc, 'pending')];
     const result = renderTaskTable(plan);
 
     // 长描述应被截断为 35 字符 + "..."
@@ -234,7 +234,7 @@ describe('taskTableRenderer — 边界场景', () => {
 
   it('恰好 38 字符的描述不截断', () => {
     const exact38 = 'a'.repeat(38);
-    const plan = [createStep(0, exact38, 'pending')];
+    const plan = [createPlanItem(0, exact38, 'pending')];
     const result = renderTaskTable(plan);
 
     expect(result).toContain(exact38);
@@ -242,7 +242,7 @@ describe('taskTableRenderer — 边界场景', () => {
 
   it('39 字符的描述被截断', () => {
     const exact39 = 'a'.repeat(39);
-    const plan = [createStep(0, exact39, 'pending')];
+    const plan = [createPlanItem(0, exact39, 'pending')];
     const result = renderTaskTable(plan);
 
     const truncated = exact39.slice(0, 35) + '...';
@@ -250,14 +250,14 @@ describe('taskTableRenderer — 边界场景', () => {
   });
 
   it('特殊字符正常渲染', () => {
-    const plan = [createStep(0, '测试 emoji 🌍 和中文标点：《》！', 'pending')];
+    const plan = [createPlanItem(0, '测试 emoji 🌍 和中文标点：《》！', 'pending')];
     const result = renderTaskTable(plan);
 
     expect(result).toContain('测试 emoji 🌍 和中文标点：《》！');
   });
 
   it('空字符串描述正常渲染', () => {
-    const plan = [createStep(0, '', 'pending')];
+    const plan = [createPlanItem(0, '', 'pending')];
     const result = renderTaskTable(plan);
 
     // 空描述应正常显示
@@ -266,13 +266,13 @@ describe('taskTableRenderer — 边界场景', () => {
 
   it('顺序号正确格式化（1-based，2026-09-06 与 task_table_update 序号寻址对齐）', () => {
     const plan = [
-      createStep(0, '第一', 'pending'),
-      createStep(10, '第十一', 'pending'),
-      createStep(100, '第一百零一', 'pending'),
+      createPlanItem(0, '第一', 'pending'),
+      createPlanItem(10, '第十一', 'pending'),
+      createPlanItem(100, '第一百零一', 'pending'),
     ];
     const result = renderTaskTable(plan);
 
-    // 行首序号为 order+1：LLM 据序号即可定位步骤（task_table_update step_id="1" = 第一个步骤）
+    // 行首序号为 order+1：LLM 据序号即可定位任务项（task_table_update step_id="1" = 第一个任务项）
     // 断言「行首序号」这一业务不变量，不锁定空格填充等排版细节（padEnd 宽度是排版细节，非契约）
     const seqs = result
       .split('\n')
@@ -285,26 +285,26 @@ describe('taskTableRenderer — 边界场景', () => {
 
   it('任务表行首序号与 task_table_update 寻址对齐（1-based 可见即传）', () => {
     const plan: PlanItem[] = [
-      createStep(0, '文档设计师发言', 'done', 's1'),
-      createStep(1, '小说助手发言', 'active', 's2'),
-      createStep(2, '方案设计师汇总', 'pending', 's3'),
+      createPlanItem(0, '文档设计师发言', 'done', 's1'),
+      createPlanItem(1, '小说助手发言', 'active', 's2'),
+      createPlanItem(2, '方案设计师汇总', 'pending', 's3'),
     ];
     const result = renderTaskTable(plan);
     // 行首序号为 1/2/3，与「step_id 传行首序号」契约一致（LLM 无需感知 uuid s1/s2/s3）
     const lines = result.split('\n');
-    const stepLine1 = lines.find((l) => l.includes('文档设计师发言'))!;
-    const stepLine3 = lines.find((l) => l.includes('方案设计师汇总'))!;
-    expect(stepLine1.startsWith('1. ')).toBe(true);
-    expect(stepLine3.startsWith('3. ')).toBe(true);
+    const planItemLine1 = lines.find((l) => l.includes('文档设计师发言'))!;
+    const planItemLine3 = lines.find((l) => l.includes('方案设计师汇总'))!;
+    expect(planItemLine1.startsWith('1. ')).toBe(true);
+    expect(planItemLine3.startsWith('3. ')).toBe(true);
   });
 
-  it('STEP_DESC_MAX_CHARS 常量存在且合理（截断阈值，防超长描述撑爆上下文）', () => {
-    expect(STEP_DESC_MAX_CHARS).toBe(38);
-    expect(STEP_DESC_MAX_CHARS).toBeGreaterThan(0);
+  it('PLAN_ITEM_DESC_MAX_CHARS 常量存在且合理（截断阈值，防超长描述撑爆上下文）', () => {
+    expect(PLAN_ITEM_DESC_MAX_CHARS).toBe(38);
+    expect(PLAN_ITEM_DESC_MAX_CHARS).toBeGreaterThan(0);
   });
 
   it('输出以「非当前指令」标记开头区域', () => {
-    const plan = [createStep(0, '测试', 'pending')];
+    const plan = [createPlanItem(0, '测试', 'pending')];
     const result = renderTaskTable(plan);
 
     // 验证防误执行标记存在
@@ -320,7 +320,7 @@ describe('taskTableRenderer — 排版契约', () => {
   it('首行恒为 [任务进度: 前缀（loop 替换式注入的识别契约）', () => {
     // 契约来源：loop.ts 按 startsWith('[任务进度:') 移除上一份任务表；
     // 前缀一旦变更/被前导内容挤掉 → 一个 turn 内每迭代各堆一份任务表
-    const plan = [createStep(0, '步骤一', 'active')];
+    const plan = [createPlanItem(0, '步骤一', 'active')];
     expect(renderTaskTable(plan).startsWith('[任务进度:')).toBe(true);
   });
 
@@ -333,7 +333,7 @@ describe('taskTableRenderer — 排版契约', () => {
     expect(renderTaskTable(plan)).not.toMatch(/[┌┬┐├┼┤└┴┘│─]/);
   });
 
-  it('步骤行结构 = 「序号. 【角色】描述 [状态]」', () => {
+  it('任务项行结构 = 「序号. 【角色】描述 [状态]」', () => {
     const plan: PlanItem[] = [
       { id: 's1', order: 0, description: '组长开场', status: 'active' },
       { id: 's2', order: 1, description: '组员发言', status: 'pending', rolePack: '组员A' },
@@ -346,10 +346,10 @@ describe('taskTableRenderer — 排版契约', () => {
 
   it('四态标签齐备且可区分（[已完成]/[执行中]/[待执行]/[已阻塞]）', () => {
     const mixed: PlanItem[] = [
-      createStep(0, 'A', 'done'),
-      createStep(1, 'B', 'active'),
-      createStep(2, 'C', 'pending'),
-      createStep(3, 'D', 'blocked'),
+      createPlanItem(0, 'A', 'done'),
+      createPlanItem(1, 'B', 'active'),
+      createPlanItem(2, 'C', 'pending'),
+      createPlanItem(3, 'D', 'blocked'),
     ];
     const result = renderTaskTable(mixed);
     for (const label of ['已完成', '执行中', '待执行', '已阻塞']) {
@@ -362,11 +362,11 @@ describe('taskTableRenderer — 排版契约', () => {
 // 收尾验证 nudge（ME-10，2026-09-07）
 // ══════════════════════════════════════════════════════════════
 describe('buildCompletionVerifyNudge — 收尾验证提示', () => {
-  it('全 done 且 ≥3 步、无验证步骤 → 命中返回提示', () => {
+  it('全 done 且 ≥3 步、无验证任务项 → 命中返回提示', () => {
     const plan = [
-      createStep(0, '实现 A', 'done'),
-      createStep(1, '实现 B', 'done'),
-      createStep(2, '接入 C', 'done'),
+      createPlanItem(0, '实现 A', 'done'),
+      createPlanItem(1, '实现 B', 'done'),
+      createPlanItem(2, '接入 C', 'done'),
     ];
     const nudge = buildCompletionVerifyNudge(plan);
     expect(nudge).not.toBeNull();
@@ -374,43 +374,43 @@ describe('buildCompletionVerifyNudge — 收尾验证提示', () => {
     expect(nudge).toContain('task_table_write');
   });
 
-  it('步骤不足 3 个 → 不打扰（返回 null）', () => {
-    const plan = [createStep(0, '干一件小事', 'done'), createStep(1, '再来一件', 'done')];
+  it('任务项不足 3 个 → 不打扰（返回 null）', () => {
+    const plan = [createPlanItem(0, '干一件小事', 'done'), createPlanItem(1, '再来一件', 'done')];
     expect(buildCompletionVerifyNudge(plan)).toBeNull();
   });
 
   it('未全部 done → 不触发（还在推进中）', () => {
     const plan = [
-      createStep(0, '实现 A', 'done'),
-      createStep(1, '实现 B', 'done'),
-      createStep(2, '接入 C', 'pending'),
+      createPlanItem(0, '实现 A', 'done'),
+      createPlanItem(1, '实现 B', 'done'),
+      createPlanItem(2, '接入 C', 'pending'),
     ];
     expect(buildCompletionVerifyNudge(plan)).toBeNull();
   });
 
-  it('已有执行性验证步骤（中文"验证"）→ 不再提示', () => {
+  it('已有执行性验证任务项（中文"验证"）→ 不再提示', () => {
     const plan = [
-      createStep(0, '实现 A', 'done'),
-      createStep(1, '实现 B', 'done'),
-      createStep(2, '验证整体流程', 'done'),
+      createPlanItem(0, '实现 A', 'done'),
+      createPlanItem(1, '实现 B', 'done'),
+      createPlanItem(2, '验证整体流程', 'done'),
     ];
     expect(buildCompletionVerifyNudge(plan)).toBeNull();
   });
 
-  it('已有执行性验证步骤（英文 test / check / lint）→ 不再提示', () => {
+  it('已有执行性验证任务项（英文 test / check / lint）→ 不再提示', () => {
     const plan = [
-      createStep(0, '实现 A', 'done'),
-      createStep(1, '实现 B', 'done'),
-      createStep(2, 'run tests', 'done'),
+      createPlanItem(0, '实现 A', 'done'),
+      createPlanItem(1, '实现 B', 'done'),
+      createPlanItem(2, 'run tests', 'done'),
     ];
     expect(buildCompletionVerifyNudge(plan)).toBeNull();
   });
 
-  it('含 blocked 步骤不算全 done → 不触发', () => {
+  it('含 blocked 任务项不算全 done → 不触发', () => {
     const plan = [
-      createStep(0, '实现 A', 'done'),
-      createStep(1, '方案 B', 'blocked'),
-      createStep(2, '接入 C', 'done'),
+      createPlanItem(0, '实现 A', 'done'),
+      createPlanItem(1, '方案 B', 'blocked'),
+      createPlanItem(2, '接入 C', 'done'),
     ];
     expect(buildCompletionVerifyNudge(plan)).toBeNull();
   });

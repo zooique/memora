@@ -115,11 +115,11 @@ export class SeedOrchestrator {
     // 会议装配视角（T3，2026-09-06）：续跑路径与 prepare 开头对称——按 checkpoint active step 刷新表层装配视角。
     // 背景：prepare.run 每轮开头做同样刷新（prepare.ts），但 runResume 不走 prepare（续跑不重装配上下文）；
     // 跨重启续跑时 roundAssemblyRole 是进程内字段已复位为 null → 不刷新会以组长前缀回答组员步骤
-    // （loop 迭代内经 getTaskTable→applyActiveStepAssembly 的刷新晚于 buildChatOptions，首迭代仍有一轮窗口）。
+    // （loop 迭代内经 getTaskTable→applyActivePlanItemAssembly 的刷新晚于 buildChatOptions，首迭代仍有一轮窗口）。
     // 复用 refreshAssemblyForRolePack 单一函数（非复制）：与 prepare 共用同一「装配逻辑唯一实现」。
     const resumeCheckpoint = parts.sessionManager?.getCheckpoint();
-    const resumeActiveStep = resumeCheckpoint?.plan.find((s) => s.status === 'active');
-    refreshAssemblyForRolePack(this.deps, resumeActiveStep?.rolePack);
+    const resumeActivePlanItem = resumeCheckpoint?.plan.find((s) => s.status === 'active');
+    refreshAssemblyForRolePack(this.deps, resumeActivePlanItem?.rolePack);
 
     // 交互输入归属当前 turn 节点（SSOT：roundId 唯一锚点=prepare appendUser 的 head roundId，
     // 不重新 alloc——turn 分裂点已由 TS-9 收敛）。空 roundId 时 fallback alloc。

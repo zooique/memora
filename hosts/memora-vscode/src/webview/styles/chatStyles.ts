@@ -1225,7 +1225,7 @@ export const chatStyles = `
 
   /* ============ Components：任务进度常驻条（H4 任务驱动多步闭环，2026-08-23 → 2026-09-17 单轨） ============ */
   /* LLM 调用 task_table_write/update 建表时显示的顶部常驻进度条（#planBar）：默认一行
-   * N/M + 进度条 + 当前 active step 摘要，点击展开锚定浮层看全量步骤 + planItemLog。
+   * N/M + 进度条 + 当前 active 任务项摘要，点击展开锚定浮层看全量任务项 + planItemLog。
    * 单轨设计：与 #messages **同级**的固定插槽（非其子节点——滚动容器内一滚即消失）；
    * 运行时不再渲染 inline 轨。只读展示内核 checkpoint.plan，状态色约定
    * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。
@@ -1292,36 +1292,36 @@ export const chatStyles = `
     padding: 0;
   }
   /* 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标，
-     展开后展示该步骤关联的 step 推进记录（planItemLog） */
-  .plan-step {
+     展开后展示该任务项关联的任务项推进记录（planItemLog） */
+  .plan-item {
     margin: var(--sp-1, 2px) 0;
     padding-left: var(--sp-2, 6px);
   }
-  .plan-step summary {
+  .plan-item summary {
     display: flex; align-items: baseline; gap: var(--sp-2, 6px);
     cursor: pointer; user-select: none; outline: none;
   }
-  .plan-step summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  .plan-step-title { flex: 1; word-break: break-all; }
-  .plan-step-badge {
+  .plan-item summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .plan-item-title { flex: 1; word-break: break-all; }
+  .plan-item-badge {
     flex-shrink: 0; font-size: var(--font-xs, 10px);
     opacity: 0.85;
   }
-  .plan-step-rounds {
+  .plan-item-rounds {
     margin: var(--sp-1, 2px) 0 var(--sp-1, 2px) var(--sp-4, 10px);
     padding-left: var(--sp-2, 6px);
     border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
   }
-  .plan-step-round { font-size: var(--font-xs, 10px); padding: var(--sp-1, 2px) 0; }
-  .plan-step-done { color: var(--status-pass, #4ec9b0); }
-  .plan-step-done .plan-step-title { text-decoration: line-through; }
-  .plan-step-active { color: var(--accent, #0e639c); font-weight: 500; }
-  .plan-step-active .plan-step-title { font-weight: 600; }
-  .plan-step-blocked { color: var(--status-fail, #b3261e); }
+  .plan-item-round { font-size: var(--font-xs, 10px); padding: var(--sp-1, 2px) 0; }
+  .plan-item-done { color: var(--status-pass, #4ec9b0); }
+  .plan-item-done .plan-item-title { text-decoration: line-through; }
+  .plan-item-active { color: var(--accent, #0e639c); font-weight: 500; }
+  .plan-item-active .plan-item-title { font-weight: 600; }
+  .plan-item-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-bar__panel 的 text-secondary，无需额外规则） */
 
   /* P-2：plan-board planItemLog 行内相对时间标签 */
-  .plan-step-round-time {
+  .plan-item-round-time {
     display: inline-block;
     font-size: 10px;
     color: var(--text-muted, #6e7681);
@@ -1351,7 +1351,7 @@ export const chatStyles = `
     font-size: var(--font-xs, 10px);
   }
   .round-block summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
-  /* round-block step 标签：active step 提示。prepend 到 details 最前（summary 上方） */
+  /* round-block 任务项标签：active 任务项提示。prepend 到 details 最前（summary 上方） */
   .round-block__plan-tag {
     display: flex; align-items: center; gap: var(--sp-1, 4px);
     font-size: var(--font-xs, 10px);
@@ -1394,9 +1394,9 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
   }
   /* v1.8 运行时过程平铺容器（2026-09-09 剪枝）：运行时无 round-block 大折叠壳——
-     过程（narrate 冒号行 / 工具折叠行 / 思考状态）按 step 时序平铺于此，透明无壳；
+     过程（narrate 冒号行 / 工具折叠行 / 思考状态）按任务项时序平铺于此，透明无壳；
      done/interrupted finalize 时移除、内容收进 round-block 折叠块。任务表例外：
-     plan_item_boundary 时平铺内容归入 .round-block__step 折叠块（复用折叠视觉）。 */
+     plan_item_boundary 时平铺内容归入 .round-block__plan-item 折叠块（复用折叠视觉）。 */
   .process-flow {
     display: flex; flex-direction: column; gap: var(--sp-1, 2px);
     padding: var(--sp-1, 2px) 0;
@@ -1440,20 +1440,20 @@ export const chatStyles = `
     word-break: break-all;
   }
   /* 步级折叠容器（阶段二，2026-09-08 路 B′）：active 任务项推进时，后续 narrate/tool
-   * 归入对应 step 折叠块（summary 显示「step-N · 标题」），实现「边界切组、步内平铺」。
+   * 归入对应任务项折叠块（summary 显示「任务项 N · 标题」），实现「边界切组、步内平铺」。
    * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——步骤过程属过程明细，报告保持简洁。 */
-  .round-block__step {
+  .round-block__plan-item {
     margin: var(--sp-1, 4px) 0; padding-left: var(--sp-3, 8px);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
   }
-  .round-block__step-summary {
+  .round-block__plan-item-summary {
     cursor: pointer; user-select: none; outline: none; list-style: none;
     font-size: var(--font-xs, 11px); color: var(--text-secondary, #9aa0a6);
     font-weight: 600;
   }
-  .round-block__step-summary::-webkit-details-marker { display: none; }
-  .round-block__step-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block__plan-item-summary::-webkit-details-marker { display: none; }
+  .round-block__plan-item-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   /* 过程叙述行：LLM 一段行动叙述 = 一个可折叠行（summary 摘要 + 全文展开），与工具行平级平铺 details 顶层 */
   .round-block__narrate { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
   .round-block__narrate summary {

@@ -893,9 +893,9 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     await (provider as unknown as { handleSend(p: string): Promise<void> }).handleSend('小组会议');
 
     // 首个 plan_update 即携带骨架（3 步）——顶部条开局可见，不再等首次 task_table_update
-    const planMsgs = posted.filter((m) => (m as { type: string }).type === 'plan_update') as { steps: unknown[] }[];
+    const planMsgs = posted.filter((m) => (m as { type: string }).type === 'plan_update') as { items: unknown[] }[];
     expect(planMsgs.length).toBeGreaterThanOrEqual(1);
-    expect(planMsgs[0]!.steps).toHaveLength(3);
+    expect(planMsgs[0]!.items).toHaveLength(3);
   });
 
   it('thought 思考流落盘为 processEvents（超长截断），重启重放可重建（2026-09-13）', async () => {

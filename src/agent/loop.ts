@@ -1080,16 +1080,16 @@ export class AgentLoop {
    *  LLM 调用后——两处都保证「读到的 active step = 本迭代结束后当前所在的那一步」。
    *  roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带。 */
   private *_maybeEmitStepBoundary(): Generator<AgentChunk, void, unknown> {
-    const activeStepMeta = this.getActivePlanItemMeta?.();
-    const activePlanItemId = activeStepMeta?.planItemId;
-    if (activeStepMeta && activePlanItemId && activePlanItemId !== this.lastBoundaryPlanItemId) {
+    const activePlanItemMeta = this.getActivePlanItemMeta?.();
+    const activePlanItemId = activePlanItemMeta?.planItemId;
+    if (activePlanItemMeta && activePlanItemId && activePlanItemId !== this.lastBoundaryPlanItemId) {
       this.lastBoundaryPlanItemId = activePlanItemId;
       // 层0 观测：plan_item_boundary 产出累计（实证布局骨血是否空转）
       this.metrics.planItemBoundaryCount++;
       yield {
         type: 'plan_item_boundary',
         planItemId: activePlanItemId,
-        title: activeStepMeta.title,
+        title: activePlanItemMeta.title,
       };
     }
   }

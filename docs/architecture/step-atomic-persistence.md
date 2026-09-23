@@ -47,7 +47,8 @@
 ## 二、探明的关键事实（决定改动面）
 
 - **过程事件是宿主派生的，非内核写**（[roundStore.ts#L165](../../src/memory/roundStore.ts)）：宿主从原始 AgentChunk 翻译成带 seq 的 ProcessEvent。恢复"过程渲染"正依赖这批派生后数据 → **落盘动作必须在宿主**（SSOT，避免内核重复派生）。
-- **step 边界信号内核已具备**：`plan_item_boundary` chunk（[loop.ts#L978-986](../../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
+- **任务项边界信号内核已具备**：`plan_item_boundary` chunk（[loop.ts](../../src/agent/loop.ts)）+ `chunk.roundId` 轮归属。
+  > **⚠ 订正（2026-09-23，§九 档3）**：此处的「step 边界」实为**任务项边界**——`plan_item_boundary` 由 active 任务项推进驱动，**无任务表不产**。档2 借它当落盘时机，正是 §九 查出的覆盖缺口根因。**迭代边界**信号由档3 新增的 `step_boundary` chunk 承担（`iteration_boundary` 归位更名）。
 - **pending Round 可覆盖写**：roundStore.save 覆盖 pending（[roundStore.test.ts 增量覆盖用例](../../src/memory/roundStore.ts) 已验证）。
 - **崩溃轮是孤儿**：`refCount=0`、`status=pending`、`appendRoundId` 只在 complete 时登记 → **不在正式会话 roundIds 里**，会话重放遍历不到。**修订（§一·五）**：这不是目标态——中断轮应**升级为正常 stop turn 并登记进 roundIds**，「孤儿」只是升级前的中间态。
 - **GC 回收崩溃残留轮**（[gcService.ts#L6](../../src/memory/gcService.ts)：refCount=0 且超龄，pending/error 不分状态）。**修订（§一·五）**：中断轮升级为正常 turn 后不再是无引用孤儿，GC 按普通 turn 生命周期处理（随会话删除）；`listInterruptedRecent` 打捞口只服务「崩溃后尚未升级」的短暂窗口。
@@ -188,7 +189,7 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 | 层 | 判据 | 用例位置 | 实测 |
 | --- | --- | --- | --- |
-| 内核 | 无任务表 + 2 次工具迭代 → 边界数 = 2；且边界在 `tool_result` 之后、末条仍为终态 | `src/agent/__tests__/iterationBoundary.test.ts` | ✅ 7 例通过 |
+| 内核 | 无任务表 + 2 次工具迭代 → 边界数 = 2；且边界在 `tool_result` 之后、末条仍为终态 | `src/agent/__tests__/stepBoundary.test.ts` | ✅ 7 例通过 |
 | 内核 | **档2 缺口锁**：全程无 `plan_item_boundary`（无任务表）仍产边界 | 同上 | ✅ |
 | 内核 | 终态不产：策略屏蔽（`done`）/ ask 挂起（`paused`）/ 纯文本收尾 → 0 条，末条不变 | 同上 | ✅ |
 | 内核 | **顺序契约**：`plan_item_boundary` 索引 < `step_boundary` 索引 | 同上 | ✅ |
@@ -201,4 +202,4 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 ### 9.6 关联
 
-- 术语正名（任务项 `planItem`：`PlanItem` → `PlanItem`、`planItemId` → `planItemId`、`plan_item_boundary` → `plan_item_boundary`）**独立后做**，见 [方案-turn运行时与会话渲染SSOT收口-20260923.md](../方案-turn运行时与会话渲染SSOT收口-20260923.md) §六 执行层缺口登记。**档3 不依赖正名，可独立提交早见效。**
+- 术语正名（任务项 `PlanStep` → `PlanItem`、`planStepId` → `planItemId`、`step_boundary` 归位为迭代边界 + 原任务项边界改名 `plan_item_boundary`）**已落地（2026-09-23）**：内核 / 宿主 / scripts / role-packs / 现行文档全覆盖，内核与宿主双侧门禁（tsc + eslint --max-warnings 0 + vitest）+ 宿主 esbuild 构建 + `verify:dist-contract` 同代 + `docs:links` 死链 0 通过；历史档号（step-atomic-persistence.md / 档2 / 档3）与 CHANGELOG 旧版本条目按「历史保留原貌」不动。**档3 不依赖正名，可独立提交早见效**——本次提交即正名收尾。

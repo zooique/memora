@@ -130,7 +130,7 @@ activePack 解析（单一函数，所有场景共用）：
 
 ### 4.5 小组会议（任务表应用，用户发起 · LLM 组织 · loop 执行）
 
-**定位**：会议**不是内核概念**。内核只提供"任务级表层覆盖"能力（`PlanStep.rolePack`）；会议是宿主/LLM 用既有任务表对该能力的一次应用。无会议引擎、无会议状态、无会议工具。
+**定位**：会议**不是内核概念**。内核只提供"任务级表层覆盖"能力（`PlanItem.rolePack`）；会议是宿主/LLM 用既有任务表对该能力的一次应用。无会议引擎、无会议状态、无会议工具。
 
 ```
 触发：用户自然语言（"小组会议，讨论 XX"）→ LLM 识别 → 调用既有 task_table_write 生成任务表
@@ -146,7 +146,7 @@ activePack 解析（单一函数，所有场景共用）：
 **为什么落点在任务表层而不是 loop 层**：
 
 * **改 loop = 给 turn 开洞**——违反"turn 是 Agent 最小完整单元"（single-truth-source-mindset §11.3）。
-* **挂 `PlanStep` = 往既有挂载点生长**——任务表本就由 LLM 经 `task_table_write` 维护、每次迭代 LLM 调用前注入上下文、状态写入收口在 `SessionManager.updatePlanStepStatus`。"LLM 组织任务清单"是既有能力，零新增。
+* **挂 `PlanItem` = 往既有挂载点生长**——任务表本就由 LLM 经 `task_table_write` 维护、每次迭代 LLM 调用前注入上下文、状态写入收口在 `SessionManager.updatePlanItemStatus`。"LLM 组织任务清单"是既有能力，零新增。
 
 **实施前提**：
 
@@ -190,10 +190,10 @@ builtinFallbackRole?: string;
 
 **内核常量**：`BUILTIN_FALLBACK_PACK`（兜底契约包名，名字即契约，改名须走 ADR）。
 
-**任务项扩展（`PlanStep`，进 checkpoint → schemaVersion 须升版）**：
+**任务项扩展（`PlanItem`，进 checkpoint → schemaVersion 须升版）**：
 
 ```ts
-interface PlanStep {
+interface PlanItem {
   id: string;
   description: string;
   status: 'pending' | 'active' | 'done' | 'blocked';
@@ -226,7 +226,7 @@ interface PlanStep {
 | --- | --- |
 | `AgentOptions.rolePackTeams` / `builtinFallbackRole`；**`activeRolePack` 既有键，语义扩展为解析链第一层**（§4.1） | `src/agent/types.ts` |
 | 选择解析单链（§4.1）+ `activePack` 唯一状态（§4.0） | `src/role-pack/rolePackManager.ts` / `seed/prepare.ts` |
-| **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + 表层装配分支（§4.3：**prepare 期 + 续跑路径**，skills 加载跟随装配视角）+ 范围校验 | `src/agent/types.ts` / `builtinTools.ts` / `seed/prepare.ts` / `seed/orchestrator.ts` / `assembler.ts` |
+| **会议机制**：`PlanItem.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + 表层装配分支（§4.3：**prepare 期 + 续跑路径**，skills 加载跟随装配视角）+ 范围校验 | `src/agent/types.ts` / `builtinTools.ts` / `seed/prepare.ts` / `seed/orchestrator.ts` / `assembler.ts` |
 | 内核兜底契约包 `<BUILTIN_FALLBACK_PACK>/` + 常量 | `role-packs/` / `src/role-pack/constants` |
 | 组数据校验（组长唯一 / 名单非空 / 引用悬空 warning） | `src/role-pack/rolePackManager.ts`（装配时校验） |
 
@@ -239,7 +239,7 @@ interface PlanStep {
 | S2 | **删除自动匹配全链**（autoSwitch / autoMatch / LLM 匹配 / 粘性 / 阈值常量）；接管 `load()/reload()` 默认激活路径为 §4.1 单链 | 默认路径不接管则单链被绕过 |
 | S3 | 新增 `rolePackTeams` / `builtinFallbackRole` 装配参数；**`activeRolePack` 语义扩展为解析链第一层**（§4.0-4.4：activePack 唯一状态 + 单链解析 + 组数据校验） | |
 | S4 | 装载后校验：组悬空 / 组长唯一 / 引用悬空 → warning（不阻塞装载）；兜底包存在性校验 | |
-| S5 | **会议机制**：`PlanStep.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + prepare 期**表层装配**分支（skills 加载跟随装配视角）+ 范围校验 + **checkpoint schemaVersion 升版** | 内核到此无"会议"概念。**步粒度补强（2026-08-29）**：装配源从「active 步」扩为「prepare 期 + 续跑路径」（`refreshAssemblyForRolePack` 两驱动点，见 §4.3）——一次会议各步按本步角色真灌成员文档；工具面恒锁组长（`setChatOptions` 恒读 activePack），loop 零改动。决策追溯方案 `tasks/方案-会议步粒度硬切换-20260829.md` 已随 2026-09-04 tasks 整理删除，本节为现行权威表述 |
+| S5 | **会议机制**：`PlanItem.rolePack` + `task_table_write` 参数扩展 + 组/成员清单注入 + prepare 期**表层装配**分支（skills 加载跟随装配视角）+ 范围校验 + **checkpoint schemaVersion 升版** | 内核到此无"会议"概念。**步粒度补强（2026-08-29）**：装配源从「active 步」扩为「prepare 期 + 续跑路径」（`refreshAssemblyForRolePack` 两驱动点，见 §4.3）——一次会议各步按本步角色真灌成员文档；工具面恒锁组长（`setChatOptions` 恒读 activePack），loop 零改动。决策追溯方案 `tasks/方案-会议步粒度硬切换-20260829.md` 已随 2026-09-04 tasks 整理删除，本节为现行权威表述 |
 | S6 | 示例角色包清理（移除 `exclusiveWith`） | |
 | S7 | 宿主接入：组管理 UI（建组/拉组员/成员排序）+ 组员名单展示（"小组会议用"标注）+ 选择持久化（沿用 globalState）+ 会议入口（提示 LLM 可用任务表组织会议） | **门面 `switchRolePack` 与 IPC 协议不变**（选择对象只有角色包） |
 | S8 | 测试与文档 + 规则对齐：删自动匹配/exclusiveWith 用例，增单链兜底/表层装配/skills 跟随/范围校验用例；`role-pack-spec.md` 字段清理；§11.2 删除 + ADR；README 同步 | |
@@ -258,7 +258,7 @@ interface PlanStep {
 ## 七、对齐与不变量
 
 * ✅ 专注模式 §9：手动切换是常态（默认沉浸），小组会议由用户显式发起（切换是例外）。**无任何隐式切换。**
-* ✅ 自然生长：组 = 组长角色包的会议名单（数据，非独立实体）；会议 = 任务表对"任务级表层覆盖"的应用（挂 `PlanStep`，不改 loop）。**无模式开关、无独立子域、无会议引擎、无自动流转。**
+* ✅ 自然生长：组 = 组长角色包的会议名单（数据，非独立实体）；会议 = 任务表对"任务级表层覆盖"的应用（挂 `PlanItem`，不改 loop）。**无模式开关、无独立子域、无会议引擎、无自动流转。**
 * ✅ SSOT：键恒来自 `activePack`、表层来自装配视角——**一个装配函数、两个输入**，不是两个真理源；选择解析单一函数（§4.1）；`activePack` 唯一状态（§4.0）；组数据归宿主（角色包零环境知识）。
 * ✅ 内核领域无关不破坏：组/兜底包/表层覆盖都是装配参数与内核能力，不依赖任何领域。
 

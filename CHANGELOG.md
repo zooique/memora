@@ -8,6 +8,17 @@
 
 ## [Unreleased]（= v3.0.0 · 尚未发布，发版日补日期）
 
+### Changed（术语正名：任务项 `PlanStep` → `PlanItem` + `step_boundary` 归位为迭代边界）
+
+根治项目内两个「step」的术语撞车——① **loop 迭代 step**（一次 LLM 交互 + 其工具执行，`stepBudget` 属此阵营）；② **任务表 plan step**（一行任务）。阵营②此前占用 `step_boundary` 事件名，导致阵营①没有自己的边界信号——这同时是「无任务表长工具循环零增量落盘」缺口的根因。
+
+- **事件对调**：迭代边界 `iteration_boundary` **归位**为 `step_boundary`；任务表边界 `step_boundary` 改名 **`plan_item_boundary`**
+- **内核标识符**：`PlanStep` → `PlanItem`（连同 `planStepId` → `planItemId` / `getActiveStepMeta` → `getActivePlanItemMeta` / `updatePlanStepStatus` → `updatePlanItemStatus` / `appendPlanStep` → `appendPlanItem` / `completeStep` → `completePlanItem` / `STEP_DESC_MAX_CHARS` → `PLAN_ITEM_DESC_MAX_CHARS`）
+- **宿主标识符 / 协议 / 样式**：`PlanStepDto` → `PlanItemDto`、`currentPlanSteps` → `currentPlanItems`、`insertStepInOrder` → `insertPlanItemInOrder` 等；`plan_update` 消息字段 `steps` → `items`；CSS 类 `.plan-step*` → `.plan-item*`、`.round-block__step*` → `.round-block__plan-item*`；DOM 属性 `data-step[-bucket]` → `data-plan-item[-bucket]`；折叠块标题 `step-N` → **「任务项 N」**
+- **不动（硬边界）**：`stepBudget` / `multiStepReasoning` / `toolStepLimit`（角色包策略键 = 对外契约）、`step_id` / `task_table_*`（LLM 可见工具契约）、CSS 关键字 `step-end`、历史档号与本文件旧版本条目
+
+> **对内核公共 API 非破坏**：改动集中在内部标识符与宿主协议；`Round.processEvents` / `SessionCheckpoint` 等持久化 schema 未动。**唯一语义变更是事件名 `step_boundary`**（原任务表边界 → 现迭代边界），宿主与内核须同批升级。**不提供兼容层**（测试阶段无外部用户；`.memora/` 为本地桌面数据，重新生成即可）。
+
 ### Changed（内核零运行时模块解析：移除 pino 可选 peer 与内核侧文件日志）
 
 内核定位「零第三方运行时依赖」的收口——移除内核**唯一**的运行时第三方模块解析点，让声明与实现一致。
@@ -176,7 +187,7 @@ SSOT 第三轮排雷：15 项契约/一致性缺陷清零，无公共 API 变更
 - **状态恢复强制归零**：`restoreFromCheckpoint` 统一 `resetToRunning()`，检查点与状态机不再分叉（T0-3）
 - **checkpoint schema 版本化**：`CURRENT_SCHEMA_VERSION` 写入/比对（T1-4）
 - **暂停超时信息事件化**：`sessionPauseTimedOut` 载荷携带 sessionId/date/session（T1-2）
-- **计划步骤状态唯一写点**：`completeRound` 改走 `updatePlanStepStatus`，消灭旁路直改（T2-1）
+- **任务项状态唯一写点**：`completeRound` 改走 `updatePlanItemStatus`，消灭旁路直改（T2-1）
 - **暂停元数据时序修正**：`setPauseMeta` 首轮 checkpoint 兜底，注释纠正 onPaused 先于 pause()（T2-6）
 - **配置建议重建复活**：`confirmConfigSuggestion` upsert 前 restore 同名软删记忆 + name 白名单堵路径穿越（T2-4）
 - **暂停起点与心跳解耦**：新增 `checkpoint.pausedAt`，暂停后 touchCheckpoint 刷新不再推迟超时判定（T2-2）

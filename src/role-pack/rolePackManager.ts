@@ -545,7 +545,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * + 汇总步尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
    * LLM 可经 task_table_write 追加额外步骤（骨架以 append 扩步，不锁死多轮交互）。
    * 不引入会议引擎：步骤执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按步标记 done/blocked，
-   * 装配视角逐步切换由 T1 收口（getTaskTable → applyActiveStepAssembly → applyActiveStepAssemblyIfChanged）。
+   * 装配视角逐步切换由 T1 收口（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
    *
    * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则步骤仅标「发言/汇总」由 LLM 见用户消息展开。
    * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。

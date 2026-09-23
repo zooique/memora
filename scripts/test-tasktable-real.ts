@@ -32,14 +32,14 @@ import type { AgentMetrics } from '../src/agent/tracer.js';
 // ═══════════════════════════════════════════════════════════════
 
 /** 一条模拟计划步骤 */
-interface MockStep {
+interface MockPlanItem {
   id: string; // 8 位短 id（模拟 task_table_write 返回格式）
   description: string;
   status: 'pending' | 'active' | 'done' | 'blocked';
 }
 
 /** 内存计划容器（本脚本进程内自维护，供 toolExecutor 读写返回） */
-const mockPlan: MockStep[] = [];
+const mockPlan: MockPlanItem[] = [];
 
 /** 生成 8 位十六进制短 id（对齐 task_table_write「uuid 前 8 位」寻址约定） */
 function shortId(): string {

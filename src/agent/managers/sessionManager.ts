@@ -376,7 +376,7 @@ export class SessionManager {
   /**
    * 检查点必需字段默认值工厂（默认值单一真理源）。
    * 仅 createCheckpoint 新建/合并时使用——反序列化采用严格模式，不做静默补齐。
-   * 必须返回新实例：数组/对象默认值共享引用会让不同检查点互相污染（一个 push 计划步骤另一凭空多出）。
+   * 必须返回新实例：数组/对象默认值共享引用会让不同检查点互相污染（一个 push 计划任务项另一凭空多出）。
    */
   private static checkpointDefaults(): Pick<
     SessionCheckpoint,
@@ -694,7 +694,7 @@ export class SessionManager {
     return consistencyResult;
   }
 
-  /** 全量替换计划步骤（与 appendPlanStep 仅追加正交；保留已有步骤 id/status）。唯一生产点：task_table_update mode='update' */
+  /** 全量替换计划任务项（与 appendPlanItem 仅追加正交；保留已有任务项 id/status）。唯一生产点：task_table_update mode='update' */
   updatePlan(plan: PlanItem[]): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = plan;
@@ -703,8 +703,8 @@ export class SessionManager {
 
   // ── 执行计划管理：SSOT 写点 ──────────────────────────────
 
-  /** 追加计划步骤：在 plan 末尾追加新步骤，不重排已有 order。rolePack 为会议表层装配角色（可选） */
-  appendPlanStep(description: string, rolePack?: string): number {
+  /** 追加计划任务项：在 plan 末尾追加新任务项，不重排已有 order。rolePack 为会议表层装配角色（可选） */
+  appendPlanItem(description: string, rolePack?: string): number {
     if (!this.checkpoint) return 0;
     const newOrder = this.checkpoint.plan.length;
     const step: PlanItem = {
@@ -738,12 +738,12 @@ export class SessionManager {
     const cp = this.checkpoint ?? this.createCheckpoint();
     const existingPlan = cp.plan;
     if (mode === 'overwrite' || mode === 'append') {
-      // overwrite 真清空：order 由 appendPlanStep 按清空后 plan.length 从 0 重建，自洽无需额外维护
+      // overwrite 真清空：order 由 appendPlanItem 按清空后 plan.length 从 0 重建，自洽无需额外维护
       if (mode === 'overwrite') {
         cp.plan = [];
       }
       for (const step of steps) {
-        this.appendPlanStep(step.description, step.rolePack);
+        this.appendPlanItem(step.description, step.rolePack);
       }
     } else if (mode === 'update') {
       const updatedPlan = steps.map((s, i) => {
@@ -766,7 +766,7 @@ export class SessionManager {
   }
 
   /**
-   * 更新计划步骤状态（plan 步骤状态的唯一写点）。必须经此写点置 checkpointDirty，
+   * 更新计划任务项状态（plan 任务项状态的唯一写点）。必须经此写点置 checkpointDirty，
    * 否则状态变更可能丢失标脏，计划变更与标脏在此原子完成。
    *
    * 写完后自动 ensureActivePlanItem：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
@@ -938,14 +938,14 @@ export class SessionManager {
     return plan.length > 0 && plan.every((s) => s.status === 'blocked');
   }
 
-  /** 获取下一个 pending 步骤（只读不推进，供上下文注入） */
-  getNextPendingStep(): PlanItem | null {
+  /** 获取下一个 pending 任务项（只读不推进，供上下文注入） */
+  getNextPendingPlanItem(): PlanItem | null {
     if (!this.checkpoint) return null;
     return this.checkpoint.plan.find((s) => s.status === 'pending') ?? null;
   }
 
   /** 获取当前 active 步骤 */
-  getActiveStep(): PlanItem | null {
+  getActivePlanItem(): PlanItem | null {
     if (!this.checkpoint) return null;
     return this.checkpoint.plan.find((s) => s.status === 'active') ?? null;
   }

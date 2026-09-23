@@ -318,14 +318,14 @@ describe('AgentLoop · 任务表观测量', () => {
     expect(metrics.plan.taskTableWriteCount).toBe(1);
   });
 
-  it('产生 active step 边界后 plan.planItemBoundaryCount 累加', async () => {
+  it('产生 active 任务项边界后 plan.planItemBoundaryCount 累加', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '完成' }]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
     // 模拟已有任务表 active step（真实场景由 assembler 装配 getActivePlanItemMeta）
-    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '步骤1' });
+    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '任务项1' });
 
     await consumeGenerator(loop.processUserInput('任务'));
 
@@ -343,7 +343,7 @@ describe('AgentLoop · 任务表观测量', () => {
       toolExecutor: vi.fn(),
     });
     // 模拟 plan 残留：同一 active step 跨两个 turn 延续（多轮任务，LLM 未推进）
-    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '步骤1' });
+    loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '任务项1' });
 
     await consumeGenerator(loop.processUserInput('任务一'));
     expect(loop.getMetrics().plan.planItemBoundaryCount).toBe(1);

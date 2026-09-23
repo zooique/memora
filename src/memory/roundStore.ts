@@ -254,7 +254,7 @@ export type ProcessEvent =
   | { type: 'thought'; seq: number; ts: string; payload: { content: string } }
   /**
    * 步级折叠边界（阶段二，2026-09-08 路 B′）：active 任务项推进时由 loop 产，
-   * 宿主落盘此事件把后续 narrate/tool/问答归到对应 step 分组。无任务表不产。
+   * 宿主落盘此事件把后续 narrate/tool/问答归到对应任务项分组。无任务表不产。
    */
   | { type: 'plan_item_boundary'; seq: number; ts: string; payload: { planItemId?: string; title?: string } }
   | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }

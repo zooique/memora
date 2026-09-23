@@ -54,8 +54,8 @@ export class SeedPrepare {
 
     // 会议机制（S5）：读取当前 active 步骤声明的 rolePack，按本轮表层装配刷新前缀（范围校验 + 回落）
     const checkpoint = sessionManager?.getCheckpoint();
-    const activeStep = checkpoint?.plan.find((s) => s.status === 'active');
-    refreshAssemblyForRolePack(this.deps, activeStep?.rolePack);
+    const activePlanItem = checkpoint?.plan.find((s) => s.status === 'active');
+    refreshAssemblyForRolePack(this.deps, activePlanItem?.rolePack);
 
     // 会议机制实施前提②：组/成员清单暴露给 LLM（防编造角色名）——仅当 activePack 是某组组长时注入
     const teamContext = rolePackManager?.buildTeamContextBlock() ?? '';
@@ -72,12 +72,12 @@ export class SeedPrepare {
     // 在途判定经 SessionManager.hasInflightPlan 单点（SSOT）：与 loop 侧「已有在途任务表则跳过
     // nudge」共用同一命题口径，禁此处再内联谓词（曾为 `plan.some(pending||active)` 独立实现）。
     const hasInflightPlan = sessionManager?.hasInflightPlan() ?? false;
-    const meetingSteps = hasInflightPlan
+    const meetingPlanItems = hasInflightPlan
       ? null
       : (rolePackManager?.tryBuildMeetingPlan?.(input) ?? null);
-    if (meetingSteps && sessionManager) {
+    if (meetingPlanItems && sessionManager) {
       // 骨架预置：overwrite 真清空（writePlan 语义修复后为真重写——新会议替换一切旧计划）
-      sessionManager.writePlan('overwrite', meetingSteps);
+      sessionManager.writePlan('overwrite', meetingPlanItems);
     }
 
     const strategy = resolveActiveStrategy(rolePackManager, this.deps.strategyOverride);
@@ -123,7 +123,7 @@ export class SeedPrepare {
  *
  * 装配逻辑单一真理源。两个调用入口共用本函数，避免双写：
  *   - prepare.run（turn 开头：按首个 active step 的 rolePack 设一次）
- *   - 任务表每轮注入（assembler.getTaskTable → hooks.applyActiveStepAssembly → agent.applyActiveStepAssemblyIfChanged，
+ *   - 任务表每轮注入（assembler.getTaskTable → hooks.applyActivePlanItemAssembly → agent.applyActivePlanItemAssemblyIfChanged，
  *     T1 收口，2026-09-06：随 active step 推进逐步换角色，防重见 agent 实现）
  * 内部动作：
  *   - resolveRoundAssemblyRole：范围校验（∈ 组长∪组员，越界/缺员→null+warning，防 LLM 幻觉角色名）

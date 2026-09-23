@@ -493,24 +493,24 @@ describe('SessionManager · 检查点管理', () => {
       expect(manager.isPlanAllBlocked()).toBe(false);
     });
 
-    it('getNextPendingStep 应返回下一个 pending 步骤', () => {
+    it('getNextPendingPlanItem 应返回下一个 pending 任务项', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'done', order: 0 },
         { id: 's2', description: '步骤2', status: 'pending', order: 1 },
         { id: 's3', description: '步骤3', status: 'pending', order: 2 },
       ]);
-      const next = manager.getNextPendingStep();
+      const next = manager.getNextPendingPlanItem();
       expect(next).not.toBeNull();
       expect(next!.id).toBe('s2');
     });
 
-    it('getActiveStep 应返回当前活跃步骤', () => {
+    it('getActivePlanItem 应返回当前活跃任务项', () => {
       manager.createCheckpoint('测试');
       manager.updatePlan([
         { id: 's1', description: '步骤1', status: 'active', order: 0 },
       ]);
-      const active = manager.getActiveStep();
+      const active = manager.getActivePlanItem();
       expect(active).not.toBeNull();
       expect(active!.id).toBe('s1');
     });

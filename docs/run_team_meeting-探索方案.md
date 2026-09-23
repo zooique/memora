@@ -14,8 +14,8 @@
 ```
 关键词"小组会议"命中
    → tryBuildMeetingPlan 预置骨架任务表（组长开场→组员各发言→汇总）       rolePackManager.ts:533-551
-       → 依赖 task_table 架构（写入/更新/每步 done-blocked/step_boundary）
-           → 依赖装配视角切换 T1 链路（getTaskTable → applyActiveStepAssembly → applyActiveStepAssemblyIfChanged）
+       → 依赖 task_table 架构（写入/更新/每步 done-blocked/plan_item_boundary）
+           → 依赖装配视角切换 T1 链路（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）
                → 支撑 RolePackTeam 结构 + validateTeams 5条校验 + MAX_TEAM_MEMBERS 截断
                → 支撑 activeTeamMembers 消费入口 + resolveRoundAssemblyRole 视角切换
                → 支撑 buildTeamContextBlock 文案（指挥 LLM 声明 rolePack）
@@ -52,7 +52,7 @@ run_team_meeting(group, topic)
 |---|---|---|
 | LLM 调用次数 | 每视角一次，靠任务表驱动步进 | 一次调用含 N 视角 |
 | 角色注入 | 每次只换一个（system 前缀整体替换） | 一次注入全部 N 个 persona 全文 |
-| 编排依赖 | task_table / step_boundary / 装配切换 / validateTeams / MAX 截断 | 无（纯工具内串联） |
+| 编排依赖 | task_table / plan_item_boundary / 装配切换 / validateTeams / MAX 截断 | 无（纯工具内串联） |
 | 组名单 | 内核+宿主两套校验 | 工具参数直接传组名，复用 rolePack 读取 |
 
 ---

@@ -168,12 +168,12 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
     loop.getActivePlanItemMeta = () => ({ planItemId: 'plan-item-1', title: '第一步' });
 
     const chunks = await collect(loop, '带任务表');
-    const stepIdx = chunks.findIndex((c) => c.type === 'plan_item_boundary');
+    const planItemIdx = chunks.findIndex((c) => c.type === 'plan_item_boundary');
     const iterIdx = chunks.findIndex((c) => c.type === 'step_boundary');
-    expect(stepIdx).toBeGreaterThanOrEqual(0);
+    expect(planItemIdx).toBeGreaterThanOrEqual(0);
     expect(iterIdx).toBeGreaterThanOrEqual(0);
     // 反序 → 宿主本次落盘快照缺该步折叠边界 → 崩溃重放分组错位
-    expect(stepIdx).toBeLessThan(iterIdx);
+    expect(planItemIdx).toBeLessThan(iterIdx);
   });
 
   it('瞬态契约：边界不进 messages（不是正文、不是工具结果）', async () => {

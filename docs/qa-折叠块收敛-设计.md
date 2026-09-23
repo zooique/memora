@@ -25,9 +25,9 @@
 ## 二、目标与约束
 
 ### 目标
-1. **SSOT**：QA 作为折叠块过程条目，与 thought/tool/step 分组**同一渲染数据源、同一排序、同一容器**；删除 msg-qa 独立折叠块 / 搬运 / 计数双体系。
-2. **位置确定**：QA 按时间序（ts）落在**对应 step 分组内**，无论运行时/重放/完成态，位置唯一确定。
-3. **运行时即时可见（硬约束）**：用户提交回答，**实时**显示在过程容器中对应 step 位置（不等完成）。
+1. **SSOT**：QA 作为折叠块过程条目，与 thought/tool/任务项分组**同一渲染数据源、同一排序、同一容器**；删除 msg-qa 独立折叠块 / 搬运 / 计数双体系。
+2. **位置确定**：QA 按时间序（ts）落在**对应任务项分组内**，无论运行时/重放/完成态，位置唯一确定。
+3. **运行时即时可见（硬约束）**：用户提交回答，**实时**显示在过程容器中对应任务项位置（不等完成）。
 
 ### 约束
 - **不改变落盘**：`round.interactiveInputs`（带 ts/kind/question/options）已落盘，数据无需新增字段；QA 不进 processEvents（保持两类数据分源）。
@@ -38,10 +38,10 @@
 
 ## 三、方案设计
 
-### 3.0 统一模型（用户定案）：step = LLM + 用户 的混合产物流
+### 3.0 统一模型（用户定案）：任务项 = LLM + 用户 的混合产物流
 
-- **step 是时间窗口**：一次 `plan_item_boundary` 到下一次之间，step 内发生的一切（LLM 产出的 thought/tool/narrate + 用户注入的运行时输入）都是该 step 的过程记录。补充（supplement）就是 step 结束间隙插入的内容。
-- **产物条目统一，来源区分**：条目 = 产物类型（thought / tool / narrate / input），携带来源元数据（`llm` / `user`）。**LLM 发送的是 step 内容，用户输入是同一流中的另一来源——本质同构，仅生产者不同。**
+- **任务项是时间窗口**：一次 `plan_item_boundary` 到下一次之间，任务项内发生的一切（LLM 产出的 thought/tool/narrate + 用户注入的运行时输入）都是该任务项的过程记录。补充（supplement）就是任务项结束间隙插入的内容。
+- **产物条目统一，来源区分**：条目 = 产物类型（thought / tool / narrate / input），携带来源元数据（`llm` / `user`）。**LLM 发送的是任务项内容，用户输入是同一流中的另一来源——本质同构，仅生产者不同。**
 - **渲染统一**：过程条目行（同形态），来源以标签区分（LLM 产物按类型；用户输入带「你答 / 你补充 / 未回答」tag）。
 - **落盘分源，渲染合并投影**：`processEvents`（内核事件流）与 `interactiveInputs`（用户交互记录）**各自保持真源**；合并只发生在渲染层（SSOT：每类数据单真源，渲染为统一投影）。
 
@@ -59,11 +59,11 @@ processItems = sortByTs([
 - **运行时输入三类（统一形态，仅 kind 语义标签区分）**：`question-answer`（ask_user 提问→用户回答）、`supplement`（用户主动补全：暂停后补充/插话）、`timeout`（提问超时未答）。均带 ts；question-answer/timeout 可带 `question`/`options`。
 
 - **排序键 = ts**（统一时间戳；同 ts 以稳定序——processEvents 用 seq、interactiveInputs 按写入序）。
-- **step 归属**：条目 ts 与 `plan_item_boundary` 的 ts 比较 → 归入对应 step 分组（`plan_item_boundary` 之后的条目属该 step；首个 boundary 之前属「准备段」）。
+- **任务项归属**：条目 ts 与 `plan_item_boundary` 的 ts 比较 → 归入对应任务项分组（`plan_item_boundary` 之后的条目属该 step；首个 boundary 之前属「准备段」）。
 - 数据来源：
   - **运行时**：`currentEvents`（eventsByRound 累积）+ 流式交互输入（提交回答时入列）。
   - **重放**：round.processEvents + round.interactiveInputs。
-- **合并入口唯一**：`renderRoundBlock`（finalize 全量重建）与「运行时增量插入」共用同一 `insertProcessItem(item, stepGroup)` 定位函数。
+- **合并入口唯一**：`renderRoundBlock`（finalize 全量重建）与「运行时增量插入」共用同一 `insertProcessItem(item, planItemGroup)` 定位函数。
 
 ### 3.2 渲染模型
 
@@ -83,13 +83,13 @@ processItems = sortByTs([
 
 **运行时无 round-block 的事实**决定了两种落地形态：
 
-- **形态甲（主推）**：运行时 QA **实时插入 `process-flow` 过程容器内**（若 process-flow 有 step 分组结构则插对应分组；无分组则插容器尾、finalize 后由 ts 排序归位）。
+- **形态甲（主推）**：运行时 QA **实时插入 `process-flow` 过程容器内**（若 process-flow 有任务项分组结构则插对应分组；无分组则插容器尾、finalize 后由 ts 排序归位）。
   - 用户提交回答 → 宿主 post `user(kind)` → webview **立即** `insertProcessItem` 到当前过程容器 → 即时可见。
-  - finalize 时 `renderRoundBlock` 由**同一合并流**全量重建 → QA 按 ts 自然落在正确 step 分组 → **无搬家、无飘忽**。
-  - **前置确认**：`process-flow` 当前是否含 step 分组结构（决定插入粒度）；若无，形态甲需在运行时容器引入 step 分组（或插容器尾）。
-- **形态乙（备选/降级）**：运行时 QA 仍消息流内联（保留现有即时可见），finalize 时按 ts **插入**（非 appendChild 末尾）对应 step 分组——只修位置、双体系仍存（非 B 的完整收敛）。
+  - finalize 时 `renderRoundBlock` 由**同一合并流**全量重建 → QA 按 ts 自然落在正确任务项分组 → **无搬家、无飘忽**。
+  - **前置确认**：`process-flow` 当前是否含任务项分组结构（决定插入粒度）；若无，形态甲需在运行时容器引入任务项分组（或插容器尾）。
+- **形态乙（备选/降级）**：运行时 QA 仍消息流内联（保留现有即时可见），finalize 时按 ts **插入**（非 appendChild 末尾）对应任务项分组——只修位置、双体系仍存（非 B 的完整收敛）。
 
-> 用户已确认「运行时即时可见是必须的」→ 形态甲优先；形态乙作为「若运行时容器无法承载 step 分组」时的降级。
+> 用户已确认「运行时即时可见是必须的」→ 形态甲优先；形态乙作为「若运行时容器无法承载任务项分组」时的降级。
 
 ### 3.4 重放与历史
 
@@ -109,15 +109,15 @@ processItems = sortByTs([
 
 ## 五、风险与待确认
 
-1. **运行时容器结构**：`process-flow` 是否有 step 分组（决定形态甲插入粒度）——**待代码确认**。
+1. **运行时容器结构**：`process-flow` 是否有任务项分组（决定形态甲插入粒度）——**待代码确认**。
 2. **运行时 round-block 不存在**：形态甲把 QA 插 process-flow，finalize 重建归位——需验证 finalize 重建对「已插入 QA」的衔接（无竞态）。
 3. **排序键统一**：ts 精度（毫秒）下同 ts 排序稳定性（processEvents seq vs interactiveInputs 写入序）——需定义稳定序。
 4. **UX**：运行时 QA 是否带「问」回顾行（保留在条目内）+ 候选选项静态展示（保留，形态从折叠块→条目行）。
 
 ## 六、验收
 
-- [ ] 运行时输入提交（ask 回答 / 主动补全 supplement）→ 即时显示在过程容器对应 step 位置（同形态）
-- [ ] 完成后 round-block 内运行时输入位于正确 step 分组（顶部/底部不飘忽）
+- [ ] 运行时输入提交（ask 回答 / 主动补全 supplement）→ 即时显示在过程容器对应任务项位置（同形态）
+- [ ] 完成后 round-block 内运行时输入位于正确任务项分组（顶部/底部不飘忽）
 - [ ] 重放与运行时最终态一致（question-answer / supplement / timeout 三类同形态归位）
 - [ ] 删除 msg-qa 双体系后全量测试绿
 
