@@ -7,11 +7,9 @@
  * **收敛为一次纯函数派生**——本文件不读 DOM、不发消息、不碰内核，便于单测与变异验证。
  *
  * 真源演化（本文件的定位随期推进，但不改动其判据）：
- * - **本期（2b-2a）**：`SkeletonState` 容器由 legacy 信号（`status` / `pause_pending` /
- *   `need_clarify`）经 `skeletonFromStatus` / `skeletonFromPausePending` **过渡适配**写入
- *   （两个适配函数随 M5 删旧一并退役）。
- * - **2b-2b**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——`TurnState` 可
- *   赋值给 `SkeletonState`（投影子集，`Pick` 同族手法），故换源不动派生链。
+ * - **2b-2b / M5a**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——`TurnState` 可
+ *   赋值给 `SkeletonState`（投影子集，`Pick` 同族手法），故换源不动派生链；legacy 过渡适配器
+ *   （`skeletonFromStatus` / `skeletonFromPausePending`）已随 M5a 删除（无生产消费，死代码）。
  */
 
 // TurnState 纯类型导入（仅编译期用，esbuild 剥离，不影响 browser bundle）
@@ -39,9 +37,7 @@ export type SkeletonState =
  *
  * 剥掉骨架用不到的 `roundId` / `RoundStatus` / `questions`——`TurnState.running.roundId`
  * 可选（宿主流起始投影时未知）也不影响投影：骨架输出根本不消费它。
- * 原过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）由此函数取代，
- * 随 M5 删旧退役；本函数是**转移函数**而非纯映射的意义已消失（`turn_update.state`
- * 本身就是完整状态快照，无需结合前值推演）。
+ * 本函数是**转移函数**而非纯映射（`turn_update.state` 本身就是完整状态快照，无需结合前值推演）。
  */
 export function skeletonFromTurnState(state: TurnState): SkeletonState {
   switch (state.phase) {
@@ -99,41 +95,6 @@ export function deriveSessionUiState(state: SkeletonState): SessionUiState {
  */
 export function derivePausePending(state: SkeletonState): boolean {
   return state.phase === 'waiting' && state.pausePending === true;
-}
-
-/**
- * 过渡适配器（legacy `status` → 容器）——**随 M5 删旧退役**
- *
- * 为什么是「转移函数」而非纯映射：legacy 信号是**增量**的（`status` 只带三态、不带
- * 「等的是 pause 还是 ask」），故必须结合前值推演：
- * - `thinking` → 保留申请在途（legacy `setStatus('thinking')` 不清 `_pausePending`），否则 `running`
- * - `paused` → 若前值是 `waiting(ask)` 则**保持 ask**（`need_clarify` 先到、`status:'paused'` 后到，
- *   降级成 pause 会丢掉「这是提问挂起」这一事实）；否则 `waiting(pause)`
- * - `done` → `settled`
- */
-export function skeletonFromStatus(status: SessionUiState, prev: SkeletonState): SkeletonState {
-  if (status === 'thinking') {
-    return prev.phase === 'waiting' && prev.pausePending ? prev : { phase: 'running' };
-  }
-  if (status === 'paused') {
-    return prev.phase === 'waiting' && prev.reason === 'ask'
-      ? { phase: 'waiting', reason: 'ask' }
-      : { phase: 'waiting', reason: 'pause' };
-  }
-  return { phase: 'settled' };
-}
-
-/**
- * 过渡适配器（legacy `pause_pending` → 容器）——**随 M5 删旧退役**
- *
- * `pending:true` → 申请在途；`pending:false` → 申请已撤销/作废，回到运行中
- * （若前值是提问挂起则保留——legacy 只清标志位，不动会话三态）。
- */
-export function skeletonFromPausePending(pending: boolean, prev: SkeletonState): SkeletonState {
-  if (pending) return { phase: 'waiting', reason: 'pause', pausePending: true };
-  return prev.phase === 'waiting' && prev.reason === 'ask'
-    ? { phase: 'waiting', reason: 'ask' }
-    : { phase: 'running' };
 }
 
 /** 按钮语义派生入参（webview 侧骨架自变量的只读快照） */

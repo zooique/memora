@@ -25,7 +25,7 @@ import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 // 骨架（会话控件）语义派生纯函数层（M3b-2b-1 / 2b-2a / 2b-2b）：矩阵与状态容器抽出，
 // 本文件只做「取数 → 派生 → 施加」；**2b-2b 换真源**：容器写入只走 skeletonFromTurnState
-//（legacy 过渡适配器 skeletonFromStatus / skeletonFromPausePending 已退役，随 M5 删旧）
+//（legacy 过渡适配器 skeletonFromStatus / skeletonFromPausePending 已随 M5a 删除——死代码）
 import {
   deriveButtonSemantics,
   derivePausePending,
@@ -1763,7 +1763,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * **2b-2b 起（换真源）**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——
    * `skeletonFromTurnState` 投影剥离 roundId/RoundStatus 后写入，派生链不动。
-   * legacy 过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）已退役（随 M5 删旧）。
+   * legacy 过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）已随 M5a 删除（死代码）。
    * 会话三态与「申请在途」**不再是两个独立变量**，一律派生——写入点 2 处 → 1 处。
    */
   let skeletonState: SkeletonState = { phase: 'idle' };
@@ -3510,8 +3510,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 2b-2b 换真源：骨架容器改由**完整 TurnState 快照**直接赋值（skeletonFromTurnState 投影剥离
       // roundId/RoundStatus/questions——容器不消费）。`turn_update.state` 即全量状态，无增量结合
       // 前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting pausePending）、
-      // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 分支同源退役（宿主仍发
-      // 旧类型，webview 不再消费，M5 删旧）。
+      // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已随 M5a 删除
+      //（宿主/ webview 双端同步删，申请在途统一由 turn_update.state 承载）。
       applySkeletonState(skeletonFromTurnState(msg.state));
     } else if (msg.type === 'pending_queue_update') {
       // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）

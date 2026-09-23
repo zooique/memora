@@ -699,15 +699,6 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'pending_queue_update'; items: readonly string[] }
   /**
-   * 暂停申请在途状态（2026-09-07 新增，Gap 修复 1）
-   *
-   * 内核 requestPause 成功入队（step 边界未到）→ host 推 pending:true；
-   * 取消申请（cancelPauseRequest）/ 申请作废（空闲守卫）→ 推 pending:false。
-   * webview 借此把暂停键在「申请窗口期」即时切为「继续（可反悔）」形态——
-   * 用户心智只有 暂停/继续 两态：申请在了就是"在暂停"（站台等车，车没到也是暂停）。
-   */
-  | { type: 'pause_pending'; pending: boolean }
-  /**
    * Chat Panel 当前激活角色包（消息区顶部角色徽章数据）
    *
    * 面板为通用对话宿主，定位由内置角色包承载。host 在就绪回放时推送，

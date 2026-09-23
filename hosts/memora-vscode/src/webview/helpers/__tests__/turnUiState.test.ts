@@ -8,10 +8,6 @@
  *      → 「申请在途 → true」「已挂起（无 pausePending）→ false」之一转红
  *   M3 `deriveButtonSemantics` 的 `done` 分支 `disabled: !hasInput` 改成 `false`
  *      → 「done + 空输入 → 禁用」转红
- *   M4 `skeletonFromStatus` 删掉「保持 ask」分支
- *      → 「已提问挂起时 status:paused 不降级为 pause」转红
- *   M5 `skeletonFromStatus` 的 thinking 分支不再保留申请在途
- *      → 「thinking 保留申请在途」转红
  */
 
 import { describe, expect, it } from 'vitest';
@@ -20,8 +16,6 @@ import {
   deriveButtonSemantics,
   derivePausePending,
   deriveSessionUiState,
-  skeletonFromPausePending,
-  skeletonFromStatus,
   skeletonFromTurnState,
   type SessionUiState,
   type SkeletonState,
@@ -164,58 +158,6 @@ describe('换真源：skeletonFromTurnState（TurnState 快照 → 容器，M3b-
     const expected: SessionUiState[] = ['done', 'thinking', 'paused', 'paused', 'thinking', 'done'];
     inputs.forEach((full, i) => {
       expect(deriveSessionUiState(skeletonFromTurnState(full))).toBe(expected[i]);
-    });
-  });
-});
-
-describe('过渡适配器：legacy status → 容器（随 M5 退役）', () => {
-  it('thinking → running', () => {
-    expect(skeletonFromStatus('thinking', { phase: 'settled' })).toEqual({ phase: 'running' });
-  });
-
-  it('thinking 保留申请在途（legacy setStatus 不清 pausePending）', () => {
-    // M5 锚点
-    const parked: SkeletonState = { phase: 'waiting', reason: 'pause', pausePending: true };
-    expect(skeletonFromStatus('thinking', parked)).toEqual(parked);
-  });
-
-  it('paused → waiting(pause)', () => {
-    expect(skeletonFromStatus('paused', { phase: 'running' })).toEqual({
-      phase: 'waiting',
-      reason: 'pause',
-    });
-  });
-
-  it('已提问挂起时 status:paused 不降级为 pause（need_clarify 先到）', () => {
-    // M4 锚点
-    const asking: SkeletonState = { phase: 'waiting', reason: 'ask' };
-    expect(skeletonFromStatus('paused', asking)).toEqual({ phase: 'waiting', reason: 'ask' });
-  });
-
-  it('done → settled', () => {
-    expect(skeletonFromStatus('done', { phase: 'running' })).toEqual({ phase: 'settled' });
-  });
-});
-
-describe('过渡适配器：legacy pause_pending → 容器（随 M5 退役）', () => {
-  it('pending:true → waiting(pause, pausePending)', () => {
-    expect(skeletonFromPausePending(true, { phase: 'running' })).toEqual({
-      phase: 'waiting',
-      reason: 'pause',
-      pausePending: true,
-    });
-  });
-
-  it('pending:false → 回到 running（申请撤销/作废）', () => {
-    expect(
-      skeletonFromPausePending(false, { phase: 'waiting', reason: 'pause', pausePending: true }),
-    ).toEqual({ phase: 'running' });
-  });
-
-  it('pending:false 不踩提问挂起（legacy 只清标志位）', () => {
-    expect(skeletonFromPausePending(false, { phase: 'waiting', reason: 'ask' })).toEqual({
-      phase: 'waiting',
-      reason: 'ask',
     });
   });
 });
