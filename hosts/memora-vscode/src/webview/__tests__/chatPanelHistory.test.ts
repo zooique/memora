@@ -158,6 +158,24 @@ function ofType<T extends { type: string }>(posted: unknown[], type: string): T[
 }
 
 /**
+ * 从 posted 提取最后一条 turn_update（M5b-3 重放单通道：rounds 承载全量轮）。
+ *
+ * 仅作 host 转发层断言锚点——重放后 webview 不再收 user/replay_events/assistant 消息风暴，
+ * 而收单条 turn_update(replay:true)，rounds[0] 即整批重建所需的目标轮快照。
+ */
+function lastTurnUpdate(posted: unknown[]): {
+  replay?: boolean;
+  rounds: RoundView[];
+  state: TurnState;
+} {
+  const all = ofType<{ type: string } & { replay?: boolean; rounds: RoundView[]; state: TurnState }>(
+    posted,
+    'turn_update',
+  );
+  return all[all.length - 1]!;
+}
+
+/**
  * 构造带 chat()/getMetrics/sessionManager 的 mock agent（consumeFlow 链路用）
  *
  * 文件级提取（M3b-2a）：落盘时机用例与 turn 投影用例都要驱动 `consumeFlow`，
@@ -315,8 +333,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(title[0]?.title).toBe('我的新标题');
   });
 
-  // ─── v1.5 交织重放（processEvents 与正文同源同轮） ───
-  it('round-based 交织重放：user → replay_events（含 meta，整批）→ assistant（v1.6 时序）', () => {
+  // ─── M5b-3 重放转正（user/replay_events/assistant 消息风暴 → 单条 turn_update.rounds） ───
+  it('round-based 重放：单条 turn_update(replay=true) 承载全量 rounds（v1.6 · M5b-3）', () => {
     const { store, roundStore, provider, posted } = setup();
     // 生产装配路径：extension 注入同一 viewLoader + roundStore 单例
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
@@ -338,28 +356,35 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    // 关键时序（v1.6）：session_title 收尾；user → replay_events（meta 并入整批，不单独发 process_event，
-    // 避免 webview 端把 meta 当「运行时新轮」建骨架块导致同一轮出现两条独立消息）→ assistant 正文
+    // 重放 = clear_ok → 单条 turn_update（replay:true）→ session_title；不再有 process_event /
+    // replay_events / assistant 重放消息风暴（M5b-3 双端收敛，协议类型已删）
     const ordered = posted.map((m) => (m as { type: string }).type);
-    const idxReplay = ordered.indexOf('replay_events');
-    const idxAssistant = ordered.indexOf('assistant');
-    // meta 不再单独走 process_event 通道（进程事件整批归一，SSOT）
+    const idxTurn = ordered.indexOf('turn_update');
     expect(ordered).not.toContain('process_event');
-    expect(ordered.indexOf('user')).toBeGreaterThanOrEqual(0);
-    expect(idxReplay).toBeGreaterThan(ordered.indexOf('user')); // 整批事件在 user 之后
-    expect(idxAssistant).toBeGreaterThan(idxReplay); // 正文在事件之后（块可挂载）
-    expect(idxAssistant).toBeLessThan(ordered.indexOf('session_title'));
-    // replay_events：roundId 关联正确，且 meta 为整批首条（webview 端自行提取身份，不再单独发）
-    const replay = posted[idxReplay] as { roundId: string; events: { type: string }[] };
-    expect(replay.roundId).toBe('round-1');
-    expect(replay.events.map((e) => e.type)).toEqual(['meta', 'memory_added', 'metrics']);
-    expect((replay.events[0] as unknown as { payload: { role: string; llm: string } }).payload).toEqual({
+    expect(ordered).not.toContain('replay_events');
+    expect(ordered).not.toContain('assistant');
+    expect(ordered.indexOf('clear_ok')).toBeLessThan(idxTurn); // 先清空再整批重建
+    expect(idxTurn).toBeGreaterThanOrEqual(0);
+    expect(ordered.indexOf('session_title')).toBeGreaterThan(idxTurn);
+
+    const tu = lastTurnUpdate(posted);
+    expect(tu.replay).toBe(true);
+    const rounds = tu.rounds;
+    expect(rounds).toHaveLength(1);
+    const r = rounds[0];
+    // rounds 承载真实轮：用户输入 / 过程事件（meta 为整批首条）/ 最终回答
+    expect(r.id).toBe('round-1');
+    expect(r.userMessage?.content).toBe('问题A');
+    expect(r.processEvents?.map((e: { type: string }) => e.type)).toEqual(['meta', 'memory_added', 'metrics']);
+    expect((r.processEvents?.[0] as { payload: { role: string; llm: string } }).payload).toEqual({
       role: '文档设计师',
       llm: 'deepseek-chat',
     });
+    expect(r.assistantMessage?.content).toBe('回答A');
+    expect(r.status).toBe('complete');
   });
 
-  it('interactiveInputs 重放按时间序归位（UX-9）：qa/supplement 按 ts 交织于前序段后、final 前，且均携带 roundId', () => {
+  it('interactiveInputs 重放由 rounds 完整承载：qa/supplement 按 ts 升序、与提问段/final 时序数据齐备（UX-9 · M5b-3）', () => {
     const { store, roundStore, provider, posted } = setup();
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
     provider.setRoundStore(roundStore);
@@ -381,26 +406,24 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string; roundId?: string });
-    const idxUser = ordered.findIndex((m) => m.type === 'user' && !m.kind);
-    const idxAsk = ordered.findIndex((m) => m.type === 'assistant' && m.text === '需要先确认哪个方案？');
-    const idxQa = ordered.findIndex((m) => m.type === 'user' && m.kind === 'question-answer');
-    const idxSupp = ordered.findIndex((m) => m.type === 'user' && m.kind === 'supplement');
-    const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '最终回答');
-    // UX-9 时序还原：主输入 → 提问段 → 用户回答 → 打断补充（打断点）→ 最终回答（续接）
-    expect(idxAsk).toBeGreaterThan(idxUser);
-    expect(idxQa).toBeGreaterThan(idxAsk);
-    expect(idxSupp).toBeGreaterThan(idxQa);
-    expect(idxMain).toBeGreaterThan(idxSupp);
-    // 共同底座：所有 user/assistant 消息均携带 roundId（webview 依此判同环续接/挂靠）
-    const roundTagged = ordered.filter((m) => ['user', 'assistant'].includes(m.type));
-    expect(roundTagged.length).toBeGreaterThan(0);
-    for (const m of roundTagged) {
-      expect(m.roundId).toBe('round-1');
-    }
+    // M5b-3：host 只投递单条 turn_update，interactiveInputs 随 rounds[0] 完整透传（时序归位在 webview renderReplayRound 端）
+    const tu = lastTurnUpdate(posted);
+    expect(tu.replay).toBe(true);
+    const r = tu.rounds[0]!;
+    expect(r.id).toBe('round-1');
+    // 三块数据完整承载：前序提问段 / 交互输入（qa+supplement）/ 最终回答
+    expect(r.userMessage?.content).toBe('任务A');
+    expect(r.assistantMessage?.content).toBe('最终回答');
+    expect(r.assistantLog?.[0]?.content).toBe('需要先确认哪个方案？');
+    const inputs = r.interactiveInputs ?? [];
+    expect(inputs).toHaveLength(2);
+    // UX-9 时序数据齐备（webview 端据此按 ts 交织渲染）：提问段(t2) < qa(t3) < supplement(t4) < final(t5)
+    expect(r.assistantLog?.[0]?.timestamp).toBe('t2');
+    expect(inputs.map((i) => i.timestamp)).toEqual(['t3', 't4']);
+    expect(inputs.map((i) => (i as { kind?: string }).kind)).toEqual(['question-answer', 'supplement']);
   });
 
-  it('timeout 交互记录重放按 ts 透传：kind=timeout 携带 question/options、按序于提问段后 final 前（2026-09-08 超时保底）', () => {
+  it('timeout 交互记录重放随 rounds 透传：kind=timeout 携带 question/options（2026-09-08 超时保底 · M5b-3）', () => {
     const { store, roundStore, provider, posted } = setup();
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
     provider.setRoundStore(roundStore);
@@ -429,22 +452,26 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    const ordered = posted.map((m) => m as { type: string; kind?: string; text?: string; question?: string; roundId?: string });
-    const idxUser = ordered.findIndex((m) => m.type === 'user' && !m.kind);
-    const idxAskSeg = ordered.findIndex((m) => m.type === 'assistant' && m.text === '在读取前需要确认：');
-    const idxTimeout = ordered.findIndex((m) => m.type === 'user' && m.kind === 'timeout');
-    const idxMain = ordered.findIndex((m) => m.type === 'assistant' && m.text === '好的，按默认继续。');
-    // 时序：主输入 → 提问段 → timeout 行（携带原文与选项）→ 最终回答
-    expect(idxTimeout).toBeGreaterThan(idxUser);
-    expect(idxTimeout).toBeGreaterThan(idxAskSeg);
-    expect(idxMain).toBeGreaterThan(idxTimeout);
-    const timeoutMsg = ordered[idxTimeout]!;
-    expect(timeoutMsg.text).toContain('已自动继续');
-    expect(timeoutMsg.question).toBe('你想读哪个文件？');
-    expect(timeoutMsg.roundId).toBe('round-1');
+    // M5b-3：timeout 行随 rounds[0].interactiveInputs 完整透传（含超时保底 question/options）
+    const r = lastTurnUpdate(posted).rounds[0]!;
+    expect(r.id).toBe('round-1');
+    expect(r.userMessage?.content).toBe('帮我读文件');
+    expect(r.assistantMessage?.content).toBe('好的，按默认继续。');
+    expect(r.assistantLog?.[0]?.content).toBe('在读取前需要确认：');
+    const inputs = r.interactiveInputs ?? [];
+    expect(inputs).toHaveLength(1);
+    // 时序数据齐备（webview 端据此归位）：提问段(t2) < timeout(t3) < final(t5)
+    expect(r.assistantLog?.[0]?.timestamp).toBe('t2');
+    expect(inputs[0]).toMatchObject({
+      kind: 'timeout',
+      content: '用户未在时限内回答，已自动继续',
+      timestamp: 't3',
+      question: '你想读哪个文件？',
+      options: ['probe.txt', 'config.json'],
+    });
   });
 
-  it('round-based 纯问答轮（无 processEvents）退化为仅正文，不发 process_event/replay_events', () => {
+  it('round-based 纯问答轮（无 processEvents）由 rounds 承载仅正文（M5b-3）', () => {
     const { store, roundStore, provider, posted } = setup();
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
     provider.setRoundStore(roundStore);
@@ -456,11 +483,16 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
+    // M5b-3：不发 process_event/replay_events 重放消息风暴；纯问答轮 processEvents 为空数组，
+    // 但 user 输入 + 最终回答仍由 round 承载（webview 端 renderReplayRound 退化为仅正文渲染）
     const types = posted.map((m) => (m as { type: string }).type);
     expect(types).not.toContain('process_event');
     expect(types).not.toContain('replay_events');
-    expect(types).toContain('user');
-    expect(types).toContain('assistant');
+    expect(types).not.toContain('assistant');
+    const r = lastTurnUpdate(posted).rounds[0]!;
+    expect(r.processEvents).toEqual([]);
+    expect(r.userMessage?.content).toBe('问题A');
+    expect(r.assistantMessage?.content).toBe('回答A');
   });
 
   it('跟随活动编辑器：编辑器变化实时更新文档上下文（A 层，2026-08-17）', () => {

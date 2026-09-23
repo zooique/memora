@@ -1,18 +1,18 @@
 /**
- * 运行时 × 重放对拍测试（M3b-2b-3：消费 rounds + 对拍入库）
+ * 运行时 × 重放对拍测试（M3b-2b-3：消费 rounds + 对拍入库；M5b-3 重放真源切 turn_update.rounds）
  *
  * 同一真实 fixture（round-1789565571934）走两条渲染路，断言 DOM 轮级语义等价：
  *   - 运行时流式路：`{type:'user'} + buildRealRoundTimeline({withStreaming, withDone})`
  *     （process_event / chunk / plan_update / done 消息流，模拟实时生成）
- *   - 重放消息路：`buildReplayTimeline(buildRoundView())`
- *     （由 rounds 形状 RoundView 派生的 user / replay_events / assistant 序列，模拟会话回放）
+ *   - 重放回合快照路：`buildReplayTurnUpdate(buildRoundView())`
+ *     （单条 turn_update，replay:true + rounds 承载——M5b-3 后重放真源，替代旧 user / replay_events /
+ *       assistant 消息风暴；webview 端 renderReplayFromRounds 整批重建）
  *
- * §1 数据层证据：rounds（RoundView）形状能完整还原重放路渲染输入——
- *     buildReplayTimeline 是宿主 sendRoundView 语义的纯函数抽象（方案 2b-3 定义）。
+ * §1 数据层证据：rounds（RoundView）形状即重放渲染输入，replayTurnUpdate 只加协议壳（replay 标记）——
+ *     宿主 postTurnUpdate(undefined, true) 投递的就是这份 rounds（方案 M5b-3 定义）。
  * §2 DOM 对拍：两路渲染后提取「轮级语义描述」（用户气泡 / AI 正文 / 工具行数 / 折叠块），
- *    断言等价——这是 M5 删旧前「重放由 rounds 驱动」可安全替换流式重建的地基。
- * §3 红线守护：非 complete 轮（isRoundSettled 分界）不派生 assistant 正文，
- *    对拍映射不进 `status` 语义漂移。
+ *     断言等价——这是 M5b-3 删旧后「重放由 rounds 驱动」可安全替换流式重建的地基。
+ * §3 红线守护：非 complete 轮（status=pending）不派生 assistant 正文。
  *
  * plan 常驻条为**合理差异**（重放路不还原任务表看板，既有宿主行为），排除在对拍断言外。
  */
@@ -25,7 +25,7 @@ import {
   ASSISTANT_REPLY_TEXT,
   expandEvents,
   buildRoundView,
-  buildReplayTimeline,
+  buildReplayTurnUpdate,
   buildRealRoundTimeline,
   type TimelineMsg,
 } from './fixtures/realRound-1789565571934.js';
@@ -74,35 +74,28 @@ function dispatchAll(msgs: TimelineMsg[]): void {
 }
 
 describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路渲染）', () => {
-  it('§1 数据层证据：rounds 形状可完整还原重放路渲染输入（RoundView → user/replay_events/assistant）', () => {
-    // buildReplayTimeline 是宿主 sendRoundView 语义的纯函数抽象：能由 RoundView 重建
-    // 重放消息序列，即证明「消费 rounds」是自足的（宿主寄出 rounds 即可还原全部渲染输入）。
+  it('§1 数据层证据：rounds 形状即重放渲染输入（turn_update.replay + rounds 承载，M5b-3 无消息风暴）', () => {
+    // buildReplayTurnUpdate 是宿主 replayHistory→postTurnUpdate(undefined,true) 的纯函数抽象：
+    // 重放 = 单条 turn_update（replay:true）承载全量 rounds——webview 端 renderReplayFromRounds
+    // 据此整批重建，证明「消费 rounds」是自足的（无 user/replay_events/assistant 消息风暴依赖）。
     const roundView = buildRoundView();
-    const timeline = buildReplayTimeline(roundView);
+    const tu = buildReplayTurnUpdate(roundView);
 
-    // 用户消息：携带 roundId（重放需要锚定轮归属）
-    expect(timeline[0]).toMatchObject({
-      type: 'user',
-      text: REAL_ROUND.userText,
+    // 协议壳：type + replay 标记 + rounds 与 state
+    expect(tu.type).toBe('turn_update');
+    expect((tu as unknown as { replay: unknown }).replay).toBe(true);
+    expect((tu as unknown as { rounds: RoundView[] }).rounds).toEqual([roundView]);
+    expect((tu as unknown as { state: unknown }).state).toMatchObject({
+      phase: 'settled',
       roundId: REAL_ROUND.id,
-      ts: REAL_ROUND.createdAt,
+      status: 'complete',
     });
 
-    // 过程事件：processEvents 即展开后的真实事件序（seq 3..1358 严格连续，1356 条）
-    const replayEv = timeline[1] as { type: 'replay_events'; roundId: string; events: unknown[] };
-    expect(replayEv.type).toBe('replay_events');
-    expect(replayEv.roundId).toBe(REAL_ROUND.id);
-    expect(replayEv.events).toEqual(expandEvents());
-    expect(replayEv.events).toHaveLength(REAL_ROUND.lastSeq - REAL_ROUND.firstSeq + 1);
-
-    // assistant 最终回答：仅 complete 轮挂正文（与 isRoundSettled 分界同语义）
-    expect(timeline[2]).toMatchObject({
-      type: 'assistant',
-      text: ASSISTANT_REPLY_TEXT,
-      roundId: REAL_ROUND.id,
-      ts: REAL_ROUND.completedAt,
-    });
-    expect(timeline).toHaveLength(3);
+    // rounds 形状反映真实轮：用户输入 + 过程事件（与流式路同源 expandEvents）+ 最终回答
+    expect(roundView.id).toBe(REAL_ROUND.id);
+    expect(roundView.userMessage?.content).toBe(REAL_ROUND.userText);
+    expect(roundView.processEvents).toEqual(expandEvents());
+    expect(roundView.assistantMessage?.content).toBe(ASSISTANT_REPLY_TEXT);
   });
 
   it('§2 对拍：运行时流式路与重放路渲染出等价轮级语义（DOM 两路 deepEqual）', { timeout: PARITY_TIMEOUT_MS }, () => {
@@ -119,9 +112,9 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
     // 收口后光标消失（done 已收尾，非在途）
     expect(streamBody?.classList.contains('is-streaming')).toBe(false);
 
-    // ── 路 B：重放（由 rounds 形状派生）──
+    // ── 路 B：重放（单条 turn_update.rounds 整批重建）──
     mountChatView();
-    dispatchAll(buildReplayTimeline());
+    dispatch(buildReplayTurnUpdate());
     const replaySemantics = extractRoundSemantics();
 
     // 轮级语义等价：用户气泡、AI 正文、工具行数、折叠块结构两路一致
@@ -134,11 +127,22 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
   });
 
   it('§3 红线守护：非 complete 轮不派生 assistant 正文（重放映射不破坏 isRoundSettled 分界）', () => {
-    // 中断/在途轮（status ≠ complete）：rounds 形状里无末段回答可派生，
-    // buildReplayTimeline 必须不发 assistant 消息——重放路保持「无正文」而非伪造答复。
+    // 中断/在途轮（status ≠ complete）：rounds 形状里无末段回答可派生，renderReplayFromRounds 必须
+    // 不渲染 assistant 正文块——重放路保持「无正文」而非伪造答复。
+    // ⚠️ 过程折叠区依赖 assistant 正文锚点（ensureRoundBlock 的 host=activeAssistantEl 为空即不建），
+    //    故悬置轮同时无折叠区/工具行——与旧 replay_events 分支同语义（replay 折叠区附在助手块后，
+    //    无正文块则不建），非 M5b-3 回归。
     const pendingView: RoundView = { ...buildRoundView(), status: 'pending' as const, assistantMessage: undefined };
-    const timeline = buildReplayTimeline(pendingView);
-    expect(timeline.every((m) => m.type !== 'assistant')).toBe(true);
-    expect(timeline.map((m) => m.type)).toEqual(['user', 'replay_events']);
+    mountChatView();
+    dispatch(buildReplayTurnUpdate(pendingView));
+
+    const semantics = extractRoundSemantics();
+    expect(document.querySelector('.msg.assistant')).toBeNull();
+    expect(semantics.assistantText).toBe('');
+    // 用户气泡仍渲染，仅剥夺正文
+    expect(semantics.userText).toBe(REAL_ROUND.userText);
+    // 无正文锚点 → round-block 与工具行一并缺席（既定形态，见上注释）
+    expect(semantics.hasRoundBlock).toBe(false);
+    expect(semantics.toolRowCount).toBe(0);
   });
 });

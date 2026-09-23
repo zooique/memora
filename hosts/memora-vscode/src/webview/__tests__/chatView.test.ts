@@ -19,6 +19,9 @@ import {
   dispatchTurn,
   mountChatView,
 } from './helpers/chatViewTestEnv.js';
+import type { RoundView } from '../../shared/protocol.js';
+import type { InteractiveInputKind } from '@zooique/memora';
+import type { ProcessEvent } from '@zooique/memora';
 
 /**
  * 2b-2b 换真源：发送 `turn_update` 状态快照（按钮语义唯一真源）
@@ -27,6 +30,104 @@ import {
  * legacy `status` / `pause_pending` 不再参与骨架容器。本辅助统一收口各用例的
  * 驱动消息构造，rounds 取空数组（按钮语义不消费 rounds）。
  */
+
+// ─── M5b-3 重放驱动辅助：单条 turn_update(replay:true) 承载 rounds ─────────
+//
+// 协议收口后 webview 不再消费旧 wire 消息（replay_events / 重放 assistant），
+// 会话重放真源改为「单条 turn_update，replay:true 且 rounds[] 承载整批轮」。
+// 下列辅助把旧的「user/replay_events/assistant 消息风暴」等价转换为
+// 构造 RoundView → 单条 turn_update 分发，使重放断言不改语义地恢复通过。
+// 渲染语义对齐 chatView.ts renderReplayRound（见 protocol.ts turn_update 注释）。
+
+/**
+ * 构造单轮 RoundView 工厂（M5b-3 重放断言驱动）
+ *
+ * 各段未显式声明时走空态（无用户输入 / 无正文 / 无过程事件），渲染侧按内容缺省跳过。
+ */
+function makeRound(over: {
+  id?: string;
+  user?: { content: string; ts?: string };
+  assistantLog?: { content: string; ts?: string }[];
+  interactiveInputs?: {
+    content: string;
+    ts?: string;
+    kind: InteractiveInputKind;
+    question?: string;
+    options?: string[];
+  }[];
+  assistantMessage?: { content: string; ts?: string };
+  processEvents?: unknown[];
+  status?: 'pending' | 'complete' | 'error' | 'interrupted';
+}): RoundView {
+  const roundId = over.id ?? 'round-x';
+  return {
+    id: roundId,
+    // userMessage 内核必填：无用户输入用例以空 content 占位（renderReplayRound 按 content 跳过渲染）
+    userMessage: over.user
+      ? { id: `${roundId}-user`, role: 'user', content: over.user.content, timestamp: over.user.ts ?? '' }
+      : { id: `${roundId}-placeholder-user`, role: 'user', content: '', timestamp: '' },
+    ...(over.assistantLog
+      ? {
+          // 前序 assistant 段数组（UI 上与 final 区分，同 roundId 同容器）
+          assistantLog: over.assistantLog.map((a, i) => ({
+            id: `${roundId}-seg-${i}`,
+            role: 'assistant' as const,
+            content: a.content,
+            timestamp: a.ts ?? '',
+          })),
+        }
+      : {}),
+    ...(over.interactiveInputs
+      ? {
+          // 交互输入行（qa/supplement/timeout），渲染端按 ts 与前序段交织排序
+          interactiveInputs: over.interactiveInputs.map((it, i) => ({
+            id: `${roundId}-ii-${i}`,
+            role: 'user' as const,
+            content: it.content,
+            timestamp: it.ts ?? '',
+            kind: it.kind,
+            ...(it.question ? { question: it.question } : {}),
+            ...(it.options ? { options: it.options } : {}),
+          })),
+        }
+      : {}),
+    ...(over.assistantMessage
+      ? {
+          // 末段回答（仅 complete 轮挂正文）
+          assistantMessage: {
+            id: `${roundId}-reply`,
+            role: 'assistant' as const,
+            content: over.assistantMessage.content,
+            timestamp: over.assistantMessage.ts ?? '',
+          },
+        }
+      : {}),
+    ...(over.processEvents ? { processEvents: over.processEvents as ProcessEvent[] } : {}),
+    status: over.status ?? 'complete',
+    createdAt: over.user?.ts ?? '',
+    ...(over.assistantMessage ? { completedAt: over.assistantMessage.ts ?? '' } : {}),
+  };
+}
+
+/** 分发一条重放快照：单条 turn_update（replay:true，rounds 单轮承载） */
+function dispatchReplay(view: RoundView): void {
+  dispatch({
+    type: 'turn_update',
+    rounds: [view],
+    state: { phase: 'settled', roundId: view.id, status: view.status },
+    replay: true,
+  });
+}
+
+/** 分发一条重放快照：单条 turn_update（replay:true，rounds 整批承载） */
+function dispatchReplayMany(views: RoundView[]): void {
+  dispatch({
+    type: 'turn_update',
+    rounds: views,
+    state: { phase: 'settled', roundId: views[0]?.id ?? '', status: views[0]?.status ?? 'complete' },
+    replay: true,
+  });
+}
 
 describe('chatView clear_ok 消息区清理', () => {
   beforeEach(() => {
@@ -462,10 +563,15 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
     const emptyState = document.getElementById('emptyState') as HTMLElement;
 
-    // 模拟 handleSwitchDate 的完整重放序列：先 clear_ok，再逐条 post user/assistant
-    dispatch({ type: 'clear_ok' });
-    dispatch({ type: 'user', text: '昨天的问题', ts: '2026-08-14T09:00:00.000Z' });
-    dispatch({ type: 'assistant', text: '昨天的回答', ts: '2026-08-14T09:00:30.000Z' });
+    // M5b-3：会话重放由单条 turn_update(replay:true) 承载——rounds 内同时含用户输入 + 最终回答
+    dispatchReplay(
+      makeRound({
+        id: 'round-yesterday',
+        user: { content: '昨天的问题', ts: '2026-08-14T09:00:00.000Z' },
+        assistantMessage: { content: '昨天的回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
+    );
 
     // 重放的两条消息都应渲染，且空状态隐藏
     const msgs = messages.querySelectorAll('.msg');
@@ -640,8 +746,10 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     dispatch({ type: 'status', state: 'thinking' });
     expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(true);
     expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(true);
-    // 已渲染的 AI 消息删除按钮同样被锁
-    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    // 已渲染的 AI 消息删除按钮同样被锁（重放单条 turn_update 渲染消息，锁态因 thinking 生效）
+    dispatchReplay(
+      makeRound({ id: 'round-x', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+    );
     const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     expect(del.disabled).toBe(true);
   });
@@ -649,7 +757,9 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
   it('非运行时（done）恢复会话导航类控件：新建/历史/删除按钮全 enabled', () => {
     mountChatView();
     dispatch({ type: 'status', state: 'thinking' });
-    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    dispatchReplay(
+      makeRound({ id: 'round-x', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+    );
     dispatch({ type: 'status', state: 'done' });
     expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(false);
     expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(false);
@@ -1217,16 +1327,20 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('replay_events 整批渲染与 process_event 同路径（重放 = 运行时同一渲染函数）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '历史回答' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r1',
-      events: [
-        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '旧记忆', source: 'round-summary' } },
-        { type: 'aborted', seq: 3, ts: '', payload: { reason: 'User cancelled the conversation' } },
-      ],
-    });
+    // M5b-3：重放整批 processEvents 由单条 turn_update(replay:true) 承载（与运行时 process_event 同渲染函数）
+    // 附 assistantMessage（复刻原 chunk『历史回答』语义）：round-block 需挂接 assistant 正文块才可见
+    dispatchReplay(
+      makeRound({
+        id: 'r1',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '旧记忆', source: 'round-summary' } },
+          { type: 'aborted', seq: 3, ts: '', payload: { reason: 'User cancelled the conversation' } },
+        ],
+        assistantMessage: { content: '历史回答', ts: '' },
+        status: 'complete',
+      }),
+    );
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb?.textContent).toContain('旧记忆');
     expect(rb?.textContent).toContain('已停止');
@@ -1245,8 +1359,8 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         payload: { durationMs: 5000, tokenIn: 100, tokenOut: 0, toolFailureCount: 1, unparsedToolIntentCount: 0, success: false },
       },
     ];
-    // 中断轮：独立 replay_events（interrupted 标志，无 assistant 正文块）
-    dispatch({ type: 'replay_events', roundId: 'r2', events, interrupted: true });
+    // 中断轮：独立 round（status=interrupted，无 assistant 正文块），单条 turn_update 承载
+    dispatchReplay(makeRound({ id: 'r2', status: 'interrupted', processEvents: events }));
 
     // 孤儿折叠宿主（2026-09-19 形态定案：与 done 轮同构——过程折叠 + 停止行平铺，非孤儿平铺）
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
@@ -1281,7 +1395,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         payload: { message: 'LLM request timed out (no response)', category: 'timeout' },
       },
     ];
-    dispatch({ type: 'replay_events', roundId: 'r3', events, interrupted: true });
+    dispatchReplay(makeRound({ id: 'r3', status: 'interrupted', processEvents: events }));
 
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host).not.toBeNull();
@@ -1296,7 +1410,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const events = [
       { type: 'error', seq: 1, ts: '', payload: { message: 'HTTP 400: invalid request' } },
     ];
-    dispatch({ type: 'replay_events', roundId: 'r4', events, interrupted: true });
+    dispatchReplay(makeRound({ id: 'r4', status: 'interrupted', processEvents: events }));
 
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
@@ -1310,7 +1424,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       { type: 'aborted', seq: 1, ts: '', payload: { reason: 'User cancelled', stopReason: 'user' } },
       { type: 'error', seq: 2, ts: '', payload: { message: 'socket hang up', category: 'connection' } },
     ];
-    dispatch({ type: 'replay_events', roundId: 'r5', events, interrupted: true });
+    dispatchReplay(makeRound({ id: 'r5', status: 'interrupted', processEvents: events }));
 
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
@@ -1322,15 +1436,20 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 修复背景：重启回放时中断轮走 renderInterruptedRound（孤儿宿主），此前不建 round-group 容器
     // → 底部缺「复制/删除/时间」footer、用户无法删除被停止的会话；修复后与 done 轮同构容器化。
     const { postMessage } = mountChatView();
-    // 真实重放时序：user（带 ts + roundId）→ replay_events（interrupted，events 首条 meta 带真实起始 ts）
-    dispatch({ type: 'user', text: '帮我读文件', ts: '2026-09-22T03:00:00.000Z', roundId: 'r6' });
-    const events = [
-      { type: 'meta', seq: 1, ts: '2026-09-22T03:00:05.000Z', payload: { role: 'AI', llm: 'm' } },
-      { type: 'narrate', seq: 2, ts: '2026-09-22T03:00:06.000Z', payload: { content: '开始读取文件' } },
-      { type: 'tool_start', seq: 3, ts: '2026-09-22T03:00:07.000Z', payload: { toolCallId: 't1', name: 'read_file' } },
-      { type: 'aborted', seq: 4, ts: '2026-09-22T03:00:08.000Z', payload: { reason: 'User cancelled', stopReason: 'user' } },
-    ];
-    dispatch({ type: 'replay_events', roundId: 'r6', events, interrupted: true });
+    // 真实重放时序：user（带 ts + roundId）→ 中断轮（status=interrupted，processEvents 首条 meta 带真实起始 ts）
+    dispatchReplay(
+      makeRound({
+        id: 'r6',
+        user: { content: '帮我读文件', ts: '2026-09-22T03:00:00.000Z' },
+        status: 'interrupted',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '2026-09-22T03:00:05.000Z', payload: { role: 'AI', llm: 'm' } },
+          { type: 'narrate', seq: 2, ts: '2026-09-22T03:00:06.000Z', payload: { content: '开始读取文件' } },
+          { type: 'tool_start', seq: 3, ts: '2026-09-22T03:00:07.000Z', payload: { toolCallId: 't1', name: 'read_file' } },
+          { type: 'aborted', seq: 4, ts: '2026-09-22T03:00:08.000Z', payload: { reason: 'User cancelled', stopReason: 'user' } },
+        ],
+      }),
+    );
 
     // 孤儿宿主收进 round-group 容器（与 done 轮同构），记录正确 roundId
     const g = document.querySelector('.round-group') as HTMLElement;
@@ -1393,22 +1512,26 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('阶段二步级折叠：replay_events 含 plan_item_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '任务开始' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r1',
-      events: [
-        { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } },
-        { type: 'narrate', seq: 3, ts: '', payload: { content: '正在分析需求文档' } },
-        { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file' } },
-        { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
-        { type: 'plan_item_boundary', seq: 6, ts: '', payload: { planItemId: 's2', title: '编写代码' } },
-        { type: 'narrate', seq: 7, ts: '', payload: { content: '开始编写实现代码' } },
-        { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'write_file' } },
-        { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true } },
-      ],
-    });
+    // M5b-3：整批 processEvents（含 plan_item_boundary）由单条 turn_update 承载
+    // 附 assistantMessage（复刻原 chunk『任务开始』语义）：round-block 需挂接 assistant 正文块才可见
+    dispatchReplay(
+      makeRound({
+        id: 'r1',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } },
+          { type: 'narrate', seq: 3, ts: '', payload: { content: '正在分析需求文档' } },
+          { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file' } },
+          { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
+          { type: 'plan_item_boundary', seq: 6, ts: '', payload: { planItemId: 's2', title: '编写代码' } },
+          { type: 'narrate', seq: 7, ts: '', payload: { content: '开始编写实现代码' } },
+          { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'write_file' } },
+          { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true } },
+        ],
+        assistantMessage: { content: '任务开始', ts: '' },
+        status: 'complete',
+      }),
+    );
     // 两个步级折叠块：summary 显示步骤名并可展开
     const steps = document.querySelectorAll('.round-block__plan-item');
     expect(steps.length).toBe(2);
@@ -1505,18 +1628,20 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('重放路径：replay_events（含 meta）+ assistant 只产生 1 个 assistant 块（重启不重复块）', () => {
     mountChatView();
-    // 模拟重启后 sendRoundView 的新时序：先 user，再 replay_events（整批含 meta），再 assistant
-    dispatch({ type: 'user', text: '介绍下自己', ts: '2026-08-28T20:15:00Z' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r:100',
-      events: [
-        { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo-v2.5-pro' } },
-        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
-        { type: 'metrics', seq: 3, ts: '', payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 } },
-      ],
-    });
-    dispatch({ type: 'assistant', text: '我是Memora Agent，专注于将模糊想法设计为可落地的项目方案。', ts: '2026-08-28T20:16:00Z', roundId: 'r:100' });
+    // M5b-3：重放整批 processEvents + 最终回答由单条 turn_update 承载（不再有独立 assistant 消息风暴）
+    dispatchReplay(
+      makeRound({
+        id: 'r:100',
+        user: { content: '介绍下自己', ts: '2026-08-28T20:15:00Z' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo-v2.5-pro' } },
+          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
+          { type: 'metrics', seq: 3, ts: '', payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 } },
+        ],
+        assistantMessage: { content: '我是Memora Agent，专注于将模糊想法设计为可落地的项目方案。', ts: '2026-08-28T20:16:00Z' },
+        status: 'complete',
+      }),
+    );
     // 核心断言：只有一条 assistant 消息块（不能出现"运行状态一条 + 正文一条"的双线 bug）
     const assistants = document.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
@@ -1533,15 +1658,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('重放路径不会创建流式骨架引用（flowShellEl 保持 null，无残留副作用）', () => {
     mountChatView();
-    // 模拟重启：直接走 replay_events（含 meta），不经过 process_event(meta)
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r:200',
-      events: [
-        { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-      ],
-    });
-    dispatch({ type: 'assistant', text: '回答', ts: 't', roundId: 'r:200' });
+    // M5b-3：重放态 processEvents（含 meta）+ 正文由单条 turn_update 承载（不建流式骨架）
+    dispatchReplay(
+      makeRound({
+        id: 'r:200',
+        processEvents: [{ type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } }],
+        assistantMessage: { content: '回答', ts: 't' },
+        status: 'complete',
+      }),
+    );
     // 现在模拟用户发送下一轮新消息（先 user）——user 消息处理会尝试清 flowShellEl，
     // 如果重放时错误地留下了 flowShellEl 残留，这里会把正文块当作骨架删掉，
     // 从而产生 bug。验证：发送 user 后上一条 assistant 正文块仍健在。
@@ -1555,29 +1680,30 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('两轮带过程事件的重放：折叠区各归其轮（第二轮折叠不串到第一轮顶部，2026-09-07 回归）', () => {
     mountChatView();
     // 场景：用户只测 2 个问答后重启，历史重放两轮都带过程事件
-    // 第 1 轮：沉淀 1 条记忆
-    dispatch({ type: 'user', text: '问题一', ts: 't1' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r:1',
-      events: [
-        { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
-      ],
-    });
-    dispatch({ type: 'assistant', text: '回答一', ts: 't2', roundId: 'r:1' });
-    // 第 2 轮：沉淀 2 条记忆
-    dispatch({ type: 'user', text: '问题二', ts: 't3' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r:2',
-      events: [
-        { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-        { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:2', name: '角色包', source: 'round-summary' } },
-        { type: 'memory_added', seq: 3, ts: '', payload: { id: 'm:3', name: '任务表', source: 'round-summary' } },
-      ],
-    });
-    dispatch({ type: 'assistant', text: '回答二', ts: 't4', roundId: 'r:2' });
+    // M5b-3：两轮整体由单条 turn_update(replay:true) 的 rounds 数组整批承载，各轮折叠各归其块
+    dispatchReplayMany([
+      makeRound({
+        id: 'r:1',
+        user: { content: '问题一', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
+        ],
+        assistantMessage: { content: '回答一', ts: 't2' },
+        status: 'complete',
+      }),
+      makeRound({
+        id: 'r:2',
+        user: { content: '问题二', ts: 't3' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:2', name: '角色包', source: 'round-summary' } },
+          { type: 'memory_added', seq: 3, ts: '', payload: { id: 'm:3', name: '任务表', source: 'round-summary' } },
+        ],
+        assistantMessage: { content: '回答二', ts: 't4' },
+        status: 'complete',
+      }),
+    ]);
     // 两个 assistant 块，折叠区总数 = 2（不得在旧块上堆叠）
     const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(blocks).toHaveLength(2);
@@ -2032,7 +2158,9 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
 
   it('历史回放的一次性 assistant 消息直接渲染 Markdown（无 is-streaming）', () => {
     mountChatView();
-    dispatch({ type: 'assistant', text: '## 标题\n\n正文', ts: '2026-08-14T09:00:30.000Z' });
+    dispatchReplay(
+      makeRound({ id: 'round-md', assistantMessage: { content: '## 标题\n\n正文', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+    );
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），且无光标类
     expect(body.classList.contains('is-streaming')).toBe(false);
@@ -2058,7 +2186,9 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
 
   it('AI 消息底部有复制 + 删除按钮（删除问答闭环入口）', () => {
     mountChatView();
-    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    dispatchReplay(
+      makeRound({ id: 'round-del', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+    );
     const msg = document.querySelector('.msg.assistant') as HTMLElement;
     expect(msg.querySelector('.msg-copy-icon')).not.toBeNull();
     const del = msg.querySelector('.msg-delete-icon') as HTMLButtonElement;
@@ -2102,7 +2232,9 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
 
   it('AI 消息删除按钮：携带该消息 ts 发送 delete_turn（host 确认后截断）', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    dispatchReplay(
+      makeRound({ id: 'round-del-ts', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+    );
     const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     del.click();
     // 点删除 → 发 delete_turn（携带渲染时存的 dataset.ts 锚点）
@@ -2150,7 +2282,9 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
 
   it('历史回放的一次性 assistant 消息 footer 直接展示（已完成消息）', () => {
     mountChatView();
-    dispatch({ type: 'assistant', text: '回答', ts: '2026-08-14T09:00:30.000Z' });
+    dispatchReplay(
+      makeRound({ id: 'round-footer', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+    );
     const footer = document.querySelector('.msg.assistant .msg-footer') as HTMLElement;
     expect(footer).not.toBeNull();
     expect(footer.classList.contains('is-pending')).toBe(false);
@@ -3152,21 +3286,32 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 B：重放同 roundId 两段 AI（assistantLog + final）同容器连续，无续接视觉（2026-09-21 剪枝）', () => {
     mountChatView();
     // 普通新闭环用户输入（重置上轮同环判定）
-    dispatch({ type: 'user', text: '任务A', ts: 't1', roundId: 'round-1' });
-    // 前序 assistant 段（提问）
-    dispatch({ type: 'assistant', text: '需要先确认哪个方案？', ts: 't2', roundId: 'round-1' });
-    // 用户回答（question-answer）
-    dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
-    // 最终回答（同 roundId）→ 第 2 段（同容器连续，无续接视觉标记）
-    dispatch({ type: 'assistant', text: '好，开始执行方案A', ts: 't4', roundId: 'round-1' });
+    // M5b-3：两轮整批由单条 turn_update(replay:true) 承载——前序段 + 交互行 + final 均收进各自的 RoundView
+    dispatchReplayMany([
+      makeRound({
+        id: 'round-1',
+        user: { content: '任务A', ts: 't1' },
+        assistantLog: [{ content: '需要先确认哪个方案？', ts: 't2' }],
+        interactiveInputs: [{ content: '选方案A', ts: 't3', kind: 'question-answer' }],
+        // 最终回答（同 roundId）→ 第 2 段（同容器连续，无续接视觉标记）
+        assistantMessage: { content: '好，开始执行方案A', ts: 't4' },
+        status: 'complete',
+      }),
+      makeRound({
+        // 下一轮（新 roundId）→ 同样无续接视觉
+        id: 'round-2',
+        user: { content: '任务B', ts: 't5' },
+        assistantMessage: { content: '回答B', ts: 't6' },
+        status: 'complete',
+      }),
+    ]);
     const blocks = document.querySelectorAll('.msg.assistant');
-    expect(blocks).toHaveLength(2);
+    // M5b-3：两轮整批渲染——round-1 前序段 + final、round-2 final 共 3 块（旧断言 2 块是分开 dispatch 中间态）
+    expect(blocks).toHaveLength(3);
     expect((blocks[0] as HTMLElement).classList.contains('is-continued')).toBe(false);
     expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
     expect((blocks[1] as HTMLElement).querySelector('.msg-ai-label__cont')).toBeNull();
-    // 下一轮（新 roundId）→ 同样无续接视觉
-    dispatch({ type: 'user', text: '任务B', ts: 't5', roundId: 'round-2' });
-    dispatch({ type: 'assistant', text: '回答B', ts: 't6', roundId: 'round-2' });
+    // 下一轮（新 roundId）→ 同样无续接视觉（已在同一条 turn_update 的 rounds[1] 渲染）
     const blocks2 = document.querySelectorAll('.msg.assistant');
     expect((blocks2[2] as HTMLElement).classList.contains('is-continued')).toBe(false);
   });
@@ -3239,16 +3384,23 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 重放路径：replay_events + 前序段 + qa 内联子行、final 为同容器第 2 段（2026-09-21 剪枝，无续接视觉）', () => {
     mountChatView();
     // 主输入 → 整批过程事件（含 meta）→ 提问前序段
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'replay_events', roundId: 'round-1', events: [
-      { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
-    ] as never });
-    dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
-    // 用户回答 → 内联子行（插在前序段之后、final 之前）
-    dispatch({ type: 'user', text: '选方案A', ts: 't3', roundId: 'round-1', kind: 'question-answer' });
-    // 最终回答 → 同环续接
-    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    // M5b-3：整批 processEvents + 前序段 + 交互行 + final 由单条 turn_update 承载
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+          { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+        ],
+        assistantLog: [{ content: '你倾向哪个方案？', ts: 't2' }],
+        // 用户回答 → 内联子行（插在前序段之后、final 之前）
+        interactiveInputs: [{ content: '选方案A', ts: 't3', kind: 'question-answer' }],
+        // 最终回答 → 同环续接
+        assistantMessage: { content: '好的，按方案A继续', ts: 't4' },
+        status: 'complete',
+      }),
+    );
     const qa = document.querySelector('.round-block__input') as HTMLElement;
     expect(qa).not.toBeNull();
     expect(qa.textContent).toContain('选方案A');
@@ -3277,32 +3429,26 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('形态甲回归：纯 QA 轮重放（有过程事件 + 无前序段）问答条目收进折叠块、不散落消息流（round-1789642310661 复现）', () => {
     mountChatView();
-    // 重放时序（sendRoundView）：主输入 → 整批过程事件（含 meta）→ 提问回答×3（无 assistantLog）→ 最终回答
-    dispatch({ type: 'user', text: '把上述问题使用ask工具提问我', ts: 't1', roundId: 'round-1' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'round-1',
-      events: [
-        { type: 'meta', seq: 1, ts: 't1', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
-        { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } },
-        { type: 'narrate', seq: 3, ts: 't1.2', payload: { content: '提问中…' } },
-        {
-          type: 'metrics', seq: 4, ts: 't2', payload: {
-            durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true,
-          },
-        },
-      ] as never,
-    });
-    dispatch({
-      type: 'user', text: '互动性——用户能参与影响故事走向', ts: 't2.1', roundId: 'round-1',
-      kind: 'question-answer', question: 'Q1：核心价值是什么？',
-    });
-    dispatch({
-      type: 'user', text: '内容平台——让读者来读', ts: 't2.2', roundId: 'round-1',
-      kind: 'question-answer', question: 'Q2：创作工具还是内容平台？',
-    });
-    dispatch({ type: 'user', text: '专业作者/签约作者', ts: 't2.3', roundId: 'round-1', kind: 'question-answer' });
-    dispatch({ type: 'assistant', text: '基于已回答的三个问题，最终回答…', ts: 't3', roundId: 'round-1' });
+    // M5b-3：主输入 → 整批过程事件 → 提问回答×3（无 assistantLog）→ 最终回答，全部收进单条 turn_update
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '把上述问题使用ask工具提问我', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+          { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } },
+          { type: 'narrate', seq: 3, ts: 't1.2', payload: { content: '提问中…' } },
+          { type: 'metrics', seq: 4, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+        ],
+        interactiveInputs: [
+          { content: '互动性——用户能参与影响故事走向', ts: 't2.1', kind: 'question-answer', question: 'Q1：核心价值是什么？' },
+          { content: '内容平台——让读者来读', ts: 't2.2', kind: 'question-answer', question: 'Q2：创作工具还是内容平台？' },
+          { content: '专业作者/签约作者', ts: 't2.3', kind: 'question-answer' },
+        ],
+        assistantMessage: { content: '基于已回答的三个问题，最终回答…', ts: 't3' },
+        status: 'complete',
+      }),
+    );
     // 问答条目全部收进折叠块 details 内（与运行时 finalize 合并流重建一致）
     const roundBlock = document.querySelector('.round-block') as HTMLElement;
     expect(roundBlock).not.toBeNull();
@@ -3344,9 +3490,16 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（平铺归组 + 容器级 footer）', () => {
     mountChatView();
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    // M5b-3：同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]（同容器归组由同一 id 保证）
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        assistantLog: [{ content: '你倾向哪个方案？', ts: 't2' }],
+        assistantMessage: { content: '好的，按方案A继续', ts: 't4' },
+        status: 'complete',
+      }),
+    );
     // 同 roundId → 单个 .round-group 容器，两段平铺归组 + 容器级 footer
     const groups = document.querySelectorAll('.round-group');
     expect(groups).toHaveLength(1);
@@ -3370,9 +3523,16 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // jsdom 无 navigator.clipboard，注入 writeText mock 捕获复制内容
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '你倾向哪个方案？', ts: 't2', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    // M5b-3：同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        assistantLog: [{ content: '你倾向哪个方案？', ts: 't2' }],
+        assistantMessage: { content: '好的，按方案A继续', ts: 't4' },
+        status: 'complete',
+      }),
+    );
     const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
@@ -3388,9 +3548,16 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     mountChatView();
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '先确认倾向。\n采用方案A', ts: 't2', roundId: 'round-1' });
-    dispatch({ type: 'assistant', text: '好的，按方案A继续', ts: 't4', roundId: 'round-1' });
+    // M5b-3：同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        assistantLog: [{ content: '先确认倾向。\n采用方案A', ts: 't2' }],
+        assistantMessage: { content: '好的，按方案A继续', ts: 't4' },
+        status: 'complete',
+      }),
+    );
     const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
@@ -3746,23 +3913,24 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('G31 方案1 修复（2026-09-08）：重放带 question 的 qa 成对完整折入——折叠内含「问回顾行 + 你答块」、assistant 相邻、摘要你答×1', () => {
     mountChatView();
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'replay_events', roundId: 'round-1', events: [
-      { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
-    ] as never });
-    dispatch({ type: 'assistant', text: '你想读哪个文件？', ts: 't2', roundId: 'round-1' });
-    // 带 question 的 qa（G26 形态：提问回顾行 + 回答折叠块）——修复前只折入问行、答块残留消息流
-    dispatch({
-      type: 'user',
-      text: '读 probe.txt',
-      ts: 't3',
-      roundId: 'round-1',
-      kind: 'question-answer',
-      question: '你想读哪个文件？',
-      options: ['probe.txt', 'config.json'],
-    });
-    dispatch({ type: 'assistant', text: '好的', ts: 't4', roundId: 'round-1' });
+    // M5b-3：重放由单条 turn_update(replay:true) 承载——前序段 + 带 question 的 qa + 末段全量折入同一轮
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+          { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+        ],
+        assistantLog: [{ content: '你想读哪个文件？', ts: 't2' }],
+        // 带 question 的 qa（G26 形态：提问回顾行 + 回答折叠块）——修复前只折入问行、答块残留消息流
+        interactiveInputs: [
+          { content: '读 probe.txt', ts: 't3', kind: 'question-answer', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
+        ],
+        assistantMessage: { content: '好的', ts: 't4' },
+        status: 'complete',
+      }),
+    );
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
     // 形态甲（2026-09-17）：折叠块内单条目 = 问回顾行 + 你答行（合并形态，非两元素成对）
@@ -3806,15 +3974,24 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('ask 超时重放：timeout 交互记录经 middle 透传渲染「问 + 未回答」并折入收起态折叠块（运行时 = 重放同构）', () => {
     mountChatView();
-    dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'replay_events', roundId: 'round-1', events: [
-      { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
-    ] as never });
-    dispatch({ type: 'assistant', text: '在读取前需要确认：', ts: 't2', roundId: 'round-1' });
-    // 重放 middle 段 timeout 行（宿主 sendRoundView 按 kind 透传；带 question/options）
-    dispatch({ type: 'user', text: '用户未在时限内回答，已自动继续', ts: 't3', roundId: 'round-1', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] });
-    dispatch({ type: 'assistant', text: '好的，按默认继续。', ts: 't4', roundId: 'round-1' });
+    // M5b-3：重放由单条 turn_update(replay:true) 承载——前序段 + timeout 交互行 + 末段折入同一轮
+    dispatchReplay(
+      makeRound({
+        id: 'round-1',
+        user: { content: '帮我做方案', ts: 't1' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
+          { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+        ],
+        assistantLog: [{ content: '在读取前需要确认：', ts: 't2' }],
+        // 重放 middle 段 timeout 行（宿主 sendRoundView 按 kind 透传；带 question/options）
+        interactiveInputs: [
+          { content: '用户未在时限内回答，已自动继续', ts: 't3', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
+        ],
+        assistantMessage: { content: '好的，按默认继续。', ts: 't4' },
+        status: 'complete',
+      }),
+    );
     const rb = document.querySelector('.round-block') as HTMLElement;
     const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
     // 形态甲（2026-09-17）：单条目 = 问回顾行 + 未回答行（合并形态）
@@ -3830,24 +4007,26 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('形态甲：QA 条目按 ts 归位对应 step 分组（补充挂刚结束的 step 间隙，2026-09-17 位置确定性防回归）', () => {
     mountChatView();
-    dispatch({ type: 'user', text: '任务', ts: 't0', roundId: 'r1' });
-    dispatch({
-      type: 'replay_events',
-      roundId: 'r1',
-      events: [
-        { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
-        { type: 'plan_item_boundary', seq: 2, ts: 't2', payload: { planItemId: 's1', title: '第一步' } },
-        { type: 'narrate', seq: 3, ts: 't3', payload: { content: '步骤一执行' } },
-        { type: 'plan_item_boundary', seq: 4, ts: 't4', payload: { planItemId: 's2', title: '第二步' } },
-        { type: 'narrate', seq: 5, ts: 't5', payload: { content: '步骤二执行' } },
-        { type: 'metrics', seq: 6, ts: 't6', payload: { durationMs: 100, tokenIn: 1, tokenOut: 1, toolFailureCount: 0, success: true } },
-      ] as never,
-    });
-    // 前序 assistant 段（sendRoundView 真实顺序：user → replay_events → 前序 seg）→ 建块并挂载 round-block
-    dispatch({ type: 'assistant', text: '前序段', ts: 't2.5', roundId: 'r1' });
-    // 用户补充：ts 在 step1 边界之后、step2 边界之前 → 归 step1 分组（刚结束的 step 间隙）
-    dispatch({ type: 'user', text: '补充：改一下', ts: 't3.5', roundId: 'r1', kind: 'supplement' });
-    dispatch({ type: 'assistant', text: '已按补充调整', ts: 't7', roundId: 'r1' });
+    // M5b-3：重放由单条 turn_update(replay:true) 承载——两步边界过程事件 + 前序段 + supplement 折入同一轮
+    dispatchReplay(
+      makeRound({
+        id: 'r1',
+        user: { content: '任务', ts: 't0' },
+        processEvents: [
+          { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+          { type: 'plan_item_boundary', seq: 2, ts: 't2', payload: { planItemId: 's1', title: '第一步' } },
+          { type: 'narrate', seq: 3, ts: 't3', payload: { content: '步骤一执行' } },
+          { type: 'plan_item_boundary', seq: 4, ts: 't4', payload: { planItemId: 's2', title: '第二步' } },
+          { type: 'narrate', seq: 5, ts: 't5', payload: { content: '步骤二执行' } },
+          { type: 'metrics', seq: 6, ts: 't6', payload: { durationMs: 100, tokenIn: 1, tokenOut: 1, toolFailureCount: 0, success: true } },
+        ],
+        assistantLog: [{ content: '前序段', ts: 't2.5' }],
+        // 用户补充：ts 在 step1 边界之后、step2 边界之前 → 归 step1 分组（刚结束的 step 间隙）
+        interactiveInputs: [{ content: '补充：改一下', ts: 't3.5', kind: 'supplement' }],
+        assistantMessage: { content: '已按补充调整', ts: 't7' },
+        status: 'complete',
+      }),
+    );
     const steps = document.querySelectorAll('.round-block__plan-item');
     expect(steps.length).toBe(2);
     // 条目归 step1（ts 定位），不飘忽：不在 details 顶层、不在 step2

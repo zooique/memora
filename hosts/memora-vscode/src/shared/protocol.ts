@@ -401,8 +401,6 @@ export type ExtensionToWebviewMessage =
       question?: string;
       options?: string[];
     }
-  /** 历史/流式 assistant 消息（历史回放用 text 完整段） */
-  | { type: 'assistant'; text: string; ts?: string; roundId?: string }
   /**
    * 流式 assistant 消息（流式输出经 chunk 拼接，仅承载主回答正文）
    *
@@ -465,19 +463,10 @@ export type ExtensionToWebviewMessage =
    * 过程事件（运行时单形态渲染投影，v1.5 协议纯化）
    *
    * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；
-   * webview 一律 append 到当前轮 events[] 由 renderRoundBlock 统一渲染（与 replay_events 同路径）。
+   * webview 一律 append 到当前轮 events[] 由 renderRoundBlock 统一渲染。
    * 取代原 thinking / tool_start / tool_result / self_review / memory 渲染类消息。
    */
   | { type: 'process_event'; event: ProcessEvent }
-  /**
-   * 重放批次（对 loadRoundBasedHistory 的 processEvents 整批投递，v1.5）
-   *
-   * 与 process_event 同路径：webview 把 events 一次性塞入当前轮 events[] 渲染。
-   * 按 round 交织发送（meta 先于该轮 assistant 正文写入 currentRoundMeta）。
-   * `interrupted`（2026-09-15）：中断轮（Round.status==='interrupted'）标志——webview 据此把
-   * 过程独立平铺可见、不挂 assistant 折叠块。
-   */
-  | { type: 'replay_events'; roundId: string; events: ProcessEvent[]; interrupted?: boolean }
   /**
    * 任务看板更新（H4 任务驱动多步闭环 · 最小可视化，2026-08-23）
    *
@@ -905,21 +894,28 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'allowed_paths_status'; projectPath: string; paths: string[] }
   /**
-   * turn 投影更新（SSOT 收口 M1，2026-09-23，无消费方）
+   * turn 投影更新（SSOT 收口 M1，2026-09-23）
    *
    * 取代 chunk / user / assistant / process_event / replay_events / status / paused /
-   * pause_pending / pending_queue_update 的**状态职责**：
+   * pause_pending / pending_queue_update 的**状态职责 + 重放职责**：
    * webview 侧只维护 `rounds` + `state` 两个容器，UI 一律由 render(rounds, state) 派生。
    * 正文流式仍走 chunk 增量通道（唯一允许的局部优化，性能）。
-   * M1–M4 双轨期：旧消息保留但禁止新增旧消息类型；M5 统一删除。
+   * M1–M5 双轨期：旧消息保留但禁止新增旧消息类型；M5 统一删除。
    * M5b-1（2026-09-23）：`pendingQueue` 承接 `pending_queue_update` 载荷（待发送区渲染真源）。
-   * 可选字段——宿主投影 turn 时顺带携带当前内核 interject 队列快照；缺省 = 不刷新待发送区。
+   *   可选字段——宿主投影 turn 时顺带携带当前内核 interject 队列快照；缺省 = 不刷新待发送区。
+   * M5b-3（2026-09-23）：`replay` 承接 `replay_events` + 重放 `assistant` 的消息风暴职责——
+   *   rounds-based 会话回放改由单条 `turn_update` 承载全量 rounds，webview 收到 `replay:true` 才
+   *   整批重建；缺省 = 运行时投影（rounds 仅作骨架/后续重建备用，不触发整批渲染，杜绝 settle 重绘重复）。
+   *   之所以必须显式 discriminator：运行时投影 phase 也会过 settled 且 rounds 常在，
+   *   单靠 phase/reason 无法区分「重放快照」与「每次运行态投影」。
    */
   | {
       type: 'turn_update';
       rounds: RoundView[];
       state: TurnState;
       pendingQueue?: readonly string[];
+      /** M5b-3：true = 会话重放快照，webview 整批重建 rounds；缺省 = 运行时每步投影 */
+      replay?: boolean;
     }
   /**
    * 网页搜索引擎状态推送（设置面板加载时推送当前选择）

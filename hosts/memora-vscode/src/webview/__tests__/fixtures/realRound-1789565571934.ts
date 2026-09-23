@@ -23,8 +23,9 @@
  *   - `expandEvents()`：脚本 → ProcessEvent[]（单一展开源，buildRealRoundTimeline 与
  *     `buildRoundView().processEvents` 共用，保证两路渲染输入同源）；
  *   - `buildRoundView()`：投影为 RoundView（rounds 形状）——「消费 rounds」的数据层证据；
- *   - `buildReplayTimeline()`：由 RoundView 派生重放路消息序列（user → replay_events → assistant，
- *     host `sendRoundView` 语义的纯函数抽象），与运行时流式路构成对拍双路。
+ *   - `buildReplayTurnUpdate()`：由 RoundView 派生重放路单条 turn_update（replay:true，rounds 承载）
+ *     ——M5b-3 后重放真源切到 turn_update.rounds，替代旧 user/replay_events/assistant 消息风暴，
+ *     与运行时流式路构成对拍双路。
  */
 
 // 类型源：protocol.ts 不重导出内核类型（RoundView.processEvents 等仅引用），
@@ -395,7 +396,7 @@ export function expandEvents(): ProcessEvent[] {
  *
  * 与宿主 `loadRoundBasedHistory` 产出的形状一致（userMessage / assistantMessage /
  * processEvents / status / createdAt / completedAt），对拍测试据此证明：
- * **rounds 形状能完整还原重放路渲染输入**（buildReplayTimeline 由此派生）。
+ * **rounds 形状可直接喂给 webview 整批渲染**（replay 单通道，M5b-3）。
  */
 export function buildRoundView(): RoundView {
   return {
@@ -422,35 +423,20 @@ export function buildRoundView(): RoundView {
 }
 
 /**
- * 重放路消息序列：由 `RoundView`（rounds 形状）派生（M3b-2b-3）
+ * 重放路单条 turn_update（replay:true，rounds 承载）——由 `RoundView`（rounds 形状）派生（M5b-3）
  *
- * 语义对齐宿主 `sendRoundView`：user（带 roundId）→ replay_events（整批含 meta）→
- * assistant 最终回答（仅 complete 轮挂正文）。fixture 轮无交互输入/前序段，
- * middle 交织段为空——形状上留全，供引入带交互输入的 fixture 时自然扩展。
+ * 语义对齐宿主 `replayHistory` → `postTurnUpdate(undefined, true)`：重放不再拆分为消息风暴，
+ * 而由单条 turn_update.rounds 整批承载，webview 端 `renderReplayFromRounds` 重建。
+ * fixture 轮无交互输入/前序段，middle 交织段为空——形状上留全，供引入带交互输入的
+ * fixture 时自然扩展。
  */
-export function buildReplayTimeline(roundView: RoundView = buildRoundView()): TimelineMsg[] {
-  const msgs: TimelineMsg[] = [];
-  if (roundView.userMessage?.content) {
-    msgs.push({
-      type: 'user',
-      text: roundView.userMessage.content,
-      ts: roundView.userMessage.timestamp,
-      roundId: roundView.id,
-    });
-  }
-  const events = roundView.processEvents ?? [];
-  if (events.length > 0) {
-    msgs.push({ type: 'replay_events', roundId: roundView.id, events });
-  }
-  if (roundView.status === 'complete' && roundView.assistantMessage?.content) {
-    msgs.push({
-      type: 'assistant',
-      text: roundView.assistantMessage.content,
-      ts: roundView.assistantMessage.timestamp,
-      roundId: roundView.id,
-    });
-  }
-  return msgs;
+export function buildReplayTurnUpdate(roundView: RoundView = buildRoundView()): TimelineMsg {
+  return {
+    type: 'turn_update',
+    rounds: [roundView],
+    state: { phase: 'settled', roundId: roundView.id, status: roundView.status },
+    replay: true,
+  } as TimelineMsg;
 }
 
 /**
