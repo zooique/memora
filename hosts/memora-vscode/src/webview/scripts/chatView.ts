@@ -23,13 +23,14 @@ import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
-// 骨架（会话控件）语义派生纯函数层（M3b-2b-1 / 2b-2a）：矩阵与状态容器抽出，本文件只做「取数 → 派生 → 施加」
+// 骨架（会话控件）语义派生纯函数层（M3b-2b-1 / 2b-2a / 2b-2b）：矩阵与状态容器抽出，
+// 本文件只做「取数 → 派生 → 施加」；**2b-2b 换真源**：容器写入只走 skeletonFromTurnState
+//（legacy 过渡适配器 skeletonFromStatus / skeletonFromPausePending 已退役，随 M5 删旧）
 import {
   deriveButtonSemantics,
   derivePausePending,
   deriveSessionUiState,
-  skeletonFromPausePending,
-  skeletonFromStatus,
+  skeletonFromTurnState,
   type ButtonSemantics,
   type SkeletonState,
 } from '../helpers/turnUiState.js';
@@ -1760,20 +1761,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 骨架状态容器（M3b-2b-2a）：会话控件（暂停/继续 + 发送按钮）的**唯一真源**。
    *
-   * 本期由 legacy 信号（`status` / `pause_pending`）经过渡适配器写入；2b-2b 起改由
-   * `turn_update.state` 直接赋值（`TurnState` 可投影给 `SkeletonState`，派生链不动）。
+   * **2b-2b 起（换真源）**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——
+   * `skeletonFromTurnState` 投影剥离 roundId/RoundStatus 后写入，派生链不动。
+   * legacy 过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）已退役（随 M5 删旧）。
    * 会话三态与「申请在途」**不再是两个独立变量**，一律派生——写入点 2 处 → 1 处。
    */
   let skeletonState: SkeletonState = { phase: 'idle' };
 
   /**
    * 骨架状态单写点：更新容器 → 重算按钮语义。
-   * 只做语义重算（与 legacy 调用集逐一对应）；`syncSendEnabled` / 会话控件锁由调用方按各自
-   * 原有节奏调用，避免夹带行为变更。
+   * 只做语义重算（与 legacy 调用集逐一对应）；`send.disabled`（syncSendEnabled）与
+   * 会话控件锁由调用方按各自原有节奏调用，避免夹带行为变更。
    */
   function applySkeletonState(next: SkeletonState): void {
     skeletonState = next;
     syncButtonSemantics();
+    // 2b-2b 换真源：容器写入点从 setStatus（内部曾调 syncSendEnabled）迁到 turn_update 分支，
+    // disabled 属按钮语义一部分，须在单写点同步——否则 running/paused/settled 切换后
+    // disabled 停留旧值（如 running 空输入仍禁用 → 停止按钮点不出）。
+    syncSendEnabled();
   }
 
   /**
@@ -1914,14 +1920,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roundBlockEl.classList.remove('is-running');
       }
     }
-    // 骨架真源：legacy 三态 → 容器（「申请在途」由 pause_pending 分支单独升级；legacy
-    // setStatus 非 thinking 时清标志位的语义已内化进 skeletonFromStatus），随即重算按钮语义
-    applySkeletonState(skeletonFromStatus(state, skeletonState));
-    // 状态切换影响发送按钮可用性（Phase 4 扩展见 syncSendEnabled）
-    syncSendEnabled();
+    // 2b-2b 换真源：骨架容器由 setStatus 的 legacy 三态写入改为 turn_update.state 直接赋值——
+    // status 消息的职责收窄为「呼吸点 / 会话控件锁 / 焦点恢复」，不再参与按钮语义
+    // （发送按钮恢复时机 = turn_update(settled) 流尾即时，R-2b-1 裁决；控件锁仍跟随
+    // status:'done' 延后解锁，护 round-summary 写入窗口——两个概念各回各的真源）
     // 会话导航类控件运行时锁：**语义 = 「宿主有在途后台写」窗口，不是 turn 状态**
     // （宿主延迟发 status:'done' 是为了护住摘要写入期，避免用户在该窗口删除轮次产生孤儿摘要）
-    // → 本期仍由 legacy 信号驱动，不塞进骨架容器（详见方案文档 M3b-2b-2b）
     updateSessionControlsLock(state !== 'done');
     // done 态才需要恢复输入焦点（对抗评估 P1-4：避免强制 focus 打断用户其他操作）
     if (state === 'done' && document.activeElement === document.body) input.focus();
@@ -3501,10 +3505,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const msg = event.data;
     if (msg.type === 'status') {
       setStatus(msg.state);
-    } else if (msg.type === 'pause_pending') {
-      // 暂停申请在途切换（host 推送）：申请态 = 按钮切「继续」可反悔；取消/作废 = 回归「暂停」。
-      // 只走容器单写点（applySkeletonState 内即重算按钮语义），不再直接改本地布尔量
-      applySkeletonState(skeletonFromPausePending(msg.pending, skeletonState));
+    } else if (msg.type === 'turn_update') {
+      // 2b-2b 换真源：骨架容器改由**完整 TurnState 快照**直接赋值（skeletonFromTurnState 投影剥离
+      // roundId/RoundStatus/questions——容器不消费）。`turn_update.state` 即全量状态，无增量结合
+      // 前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting pausePending）、
+      // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 分支同源退役（宿主仍发
+      // 旧类型，webview 不再消费，M5 删旧）。
+      applySkeletonState(skeletonFromTurnState(msg.state));
     } else if (msg.type === 'pending_queue_update') {
       // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
       updatePendingQueueBar(msg.items);

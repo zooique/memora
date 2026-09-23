@@ -1002,8 +1002,13 @@ export type RoundView = Pick<
 export type TurnState =
   /** 无进行中 turn（可发送新提问） */
   | { phase: 'idle' }
-  /** 正在生成；roundId 与 chunk.roundId 同源，供同环续接判定 */
-  | { phase: 'running'; roundId: string }
+  /**
+   * 正在生成；roundId 与 chunk.roundId 同源，供同环续接判定。
+   * 可选：宿主在流起始投影时（首个 chunk 前）roundId 尚不可知，此刻如实缺省
+   * 而非造假占位（webview 骨架不消费 roundId，见 `SkeletonState` 投影）；
+   * 流内已知后（`postTurnUpdate(live)`）补填。
+   */
+  | { phase: 'running'; roundId?: string }
   /**
    * 等待外部输入：pause（用户申请/已生效）与 ask（LLM 提问）UI 形态同构，
    * 差别只在 reason 与是否带 questions。

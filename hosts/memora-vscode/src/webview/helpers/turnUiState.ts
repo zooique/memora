@@ -14,6 +14,9 @@
  *   赋值给 `SkeletonState`（投影子集，`Pick` 同族手法），故换源不动派生链。
  */
 
+// TurnState 纯类型导入（仅编译期用，esbuild 剥离，不影响 browser bundle）
+import type { TurnState } from '../../shared/protocol.js';
+
 /**
  * 骨架可见的 turn 状态（`TurnState` 的**投影子集**）
  *
@@ -22,7 +25,7 @@
  * 造假的 `roundId` 去满足类型——那是往容器里塞假事实（比缺字段更危险）。
  *
  * 与 `TurnState` 的关系 = 结构兼容投影（同 `RoundView` 对 `Round` 的 `Pick<>` 手法）：
- * `TurnState` 的每个分支都能赋值给这里的对应分支，故 2b-2b 换源时**直接赋值即可**；
+ * `TurnState` 的每个分支都能赋值给这里的对应分支，故换源时**直接赋值即可**；
  * 该投影兼容性由 `turnUiState.test.ts` 的「契约守卫」用例逐分支赋值锁定（编译期 + 运行期双查）。
  */
 export type SkeletonState =
@@ -30,6 +33,28 @@ export type SkeletonState =
   | { phase: 'running' }
   | { phase: 'waiting'; reason: 'pause' | 'ask'; pausePending?: boolean }
   | { phase: 'settled' };
+
+/**
+ * `TurnState` → `SkeletonState` 投影（**M3b-2b-2b 换真源**：容器改由此直接赋值）
+ *
+ * 剥掉骨架用不到的 `roundId` / `RoundStatus` / `questions`——`TurnState.running.roundId`
+ * 可选（宿主流起始投影时未知）也不影响投影：骨架输出根本不消费它。
+ * 原过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）由此函数取代，
+ * 随 M5 删旧退役；本函数是**转移函数**而非纯映射的意义已消失（`turn_update.state`
+ * 本身就是完整状态快照，无需结合前值推演）。
+ */
+export function skeletonFromTurnState(state: TurnState): SkeletonState {
+  switch (state.phase) {
+    case 'idle':
+      return { phase: 'idle' };
+    case 'running':
+      return { phase: 'running' };
+    case 'waiting':
+      return { phase: 'waiting', reason: state.reason, pausePending: state.pausePending };
+    case 'settled':
+      return { phase: 'settled' };
+  }
+}
 
 /**
  * 会话 UI 三态（与 legacy `_sessionUiState` 同域，保证 DOM 行为不变）

@@ -62,6 +62,13 @@ describe('deriveTurnState', () => {
     });
   });
 
+  it('流运行中 + roundId 未知（流起始投影，首个 chunk 未到）→ running（roundId 缺省如实）', () => {
+    // 2b-2b 换源：宿主在 consumeFlow 起始（无 live）即要立起 running 骨架，
+    // 此刻 chunk 未到无 roundId——判据从「streaming && liveRoundId」放宽为「streaming」，
+    // 不造假占位（roundId 可选字段），防换源后起始 turn_update 误投 settled/idle 把按钮打成「发送」。
+    expect(deriveTurnState({ streaming: true, paused: false })).toEqual({ phase: 'running' });
+  });
+
   it('ask 挂起优先于 pause（同为 paused，有提问即 ask）', () => {
     expect(
       deriveTurnState({ streaming: false, paused: true, pendingQuestions: [{ slot: 's', question: '选哪个？' }] }),

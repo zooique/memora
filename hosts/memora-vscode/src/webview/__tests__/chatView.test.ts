@@ -8,6 +8,7 @@
  */
 // @vitest-environment jsdom
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
+import type { TurnState } from '../../shared/protocol.js';
 import { createChatView } from '../scripts/chatView.js';
 import {
   REAL_ROUND,
@@ -146,6 +147,17 @@ afterEach(() => {
 /** 向 webview 分发一条 extension → webview 消息 */
 function dispatch(msg: unknown): void {
   window.dispatchEvent(new MessageEvent('message', { data: msg }));
+}
+
+/**
+ * 2b-2b 换真源：发送 `turn_update` 状态快照（按钮语义唯一真源）
+ *
+ * 换源后按钮语义（loading/icon/title/disabled）只由 `turn_update.state` 驱动，
+ * legacy `status` / `pause_pending` 不再参与骨架容器。本辅助统一收口各用例的
+ * 驱动消息构造，rounds 取空数组（按钮语义不消费 rounds）。
+ */
+function dispatchTurn(state: TurnState): void {
+  dispatch({ type: 'turn_update', rounds: [], state });
 }
 
 describe('chatView clear_ok 消息区清理', () => {
@@ -787,7 +799,8 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
   it('生成中发送按钮切换为停止态，点击发送 stop 消息', () => {
     const { postMessage } = mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    // 2b-2b 换真源：按钮语义由 turn_update.state 快照驱动（status 只负责控件锁/焦点）
+    dispatchTurn({ phase: 'running' });
     expect(send.classList.contains('loading')).toBe(true);
     expect(send.title).toBe('停止生成');
     send.click();
@@ -801,7 +814,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const send = document.getElementById('send') as HTMLButtonElement;
     // 初始（空闲）暂停按钮收回
     expect(pauseBtn.hidden).toBe(true);
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     // 生成中：暂停按钮暴露（软暂停入口），发送按钮仍为「停止」
     expect(pauseBtn.hidden).toBe(false);
     expect(send.title).toBe('停止生成');
@@ -814,19 +827,19 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const { postMessage } = mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     const icon = pauseBtn.querySelector('.btn-icon') as HTMLElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     // 初始：暂停（‖）形态
     expect(icon.dataset.icon).toBe('pause');
-    // host 推 pause_pending:true（申请已入队，step 未到）→ 按钮即时切「继续 ▶」可反悔
-    dispatch({ type: 'pause_pending', pending: true });
+    // host 推 turn_update(waiting pausePending)（申请已入队，step 未到）→ 按钮即时切「继续 ▶」可反悔
+    dispatchTurn({ phase: 'waiting', reason: 'pause', pausePending: true });
     expect(icon.dataset.icon).toBe('play');
     expect(pauseBtn.title).toContain('取消暂停申请');
     // 申请态再点 → 仍发 pause 消息（host 侧 isPausePending → cancelPauseRequest 反悔）
     postMessage.mockClear();
     pauseBtn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'pause' });
-    // host 推 pause_pending:false（取消成功）→ 恢复「暂停」形态
-    dispatch({ type: 'pause_pending', pending: false });
+    // host 推 turn_update(running)（取消成功）→ 恢复「暂停」形态
+    dispatchTurn({ phase: 'running' });
     expect(icon.dataset.icon).toBe('pause');
     expect(pauseBtn.title).toBe('暂停生成');
   });
@@ -835,9 +848,9 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const { postMessage } = mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     const send = document.getElementById('send') as HTMLButtonElement;
-    dispatch({ type: 'status', state: 'thinking' });
-    // 生成中暂停 → host 回 status paused
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'running' });
+    // 生成中 pause 申请获批（step 边界）→ host 推 turn_update(waiting pause)
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     // 已暂停：pauseBtn 换 play ▶（继续），sendBtn 保持 stop ■（硬停止）——双按钮并存
     expect(pauseBtn.hidden).toBe(false);
     expect(pauseBtn.querySelector('.btn-icon')?.getAttribute('data-icon')).toBe('play');
@@ -858,12 +871,12 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const icon = document.querySelector('#pauseBtn .btn-icon') as HTMLElement;
     // 初始化由 populateIcons 注入 pause 双竖线 SVG
     expect(icon.innerHTML).toContain('x="5" y="3.5" width="2"');
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     // thinking：applyIcon('pause') 显式注入（图标保持暂停语义）
     expect(icon.dataset.icon).toBe('pause');
     expect(icon.innerHTML).toContain('x="5" y="3.5" width="2"');
     // paused：applyIcon('play') 运行时切换 → innerHTML 实时更新为三角（原 bug：仅改 data-icon 不重注入 SVG）
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     expect(icon.dataset.icon).toBe('play');
     expect(icon.innerHTML).toContain('M5 3.5l7 4.5-7 4.5z');
   });
@@ -871,8 +884,9 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
   it('done 恢复发送态（loading 移除 + 发送提示）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
-    dispatch({ type: 'status', state: 'thinking' });
-    dispatch({ type: 'status', state: 'done' });
+    dispatchTurn({ phase: 'running' });
+    // 流尾 → turn_update(settled)：发送按钮即时恢复（R-2b-1 行为变更：不再等 status done）
+    dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     expect(send.classList.contains('loading')).toBe(false);
     expect(send.title).toBe('发送 (Enter)');
   });
@@ -947,13 +961,13 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     // 生成中（loading）：即使输入为空，停止按钮仍可点击
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     expect(send.disabled).toBe(false);
     // 暂停态（paused）：继续按钮仍可点击（空输入继续恢复执行）
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     expect(send.disabled).toBe(false);
-    // 回到空闲：输入为空 → 恢复禁用
-    dispatch({ type: 'status', state: 'done' });
+    // 回到空闲（settled 且输入为空）：恢复禁用
+    dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     expect(send.disabled).toBe(true);
   });
 });
@@ -972,7 +986,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     input.value = '';
     input.dispatchEvent(new Event('input'));
     expect(send.classList.contains('loading')).toBe(true);
@@ -984,7 +998,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     input.value = '我插一句话';
     input.dispatchEvent(new Event('input'));
     expect(send.classList.contains('loading')).toBe(false);
@@ -999,7 +1013,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     const send = document.getElementById('send') as HTMLButtonElement;
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     input.value = '';
     input.dispatchEvent(new Event('input'));
     // sendBtn 在 paused 态始终是硬停止
@@ -1016,7 +1030,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     const send = document.getElementById('send') as HTMLButtonElement;
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     input.value = '补充一下';
     input.dispatchEvent(new Event('input'));
     // sendBtn 在 paused 态始终是硬停止
@@ -1035,7 +1049,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'done' });
+    dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     input.value = '';
     input.dispatchEvent(new Event('input'));
     expect(send.classList.contains('loading')).toBe(false);
@@ -1047,7 +1061,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'done' });
+    dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     input.value = '开始吧';
     input.dispatchEvent(new Event('input'));
     expect(send.disabled).toBe(false);
@@ -1062,7 +1076,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     // done 初始：隐藏
     expect(pauseBtn.hidden).toBe(true);
     // thinking 态：显示 pause 图标（永远不变）
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
     expect(icon?.dataset.icon).toBe('pause');
     expect(pauseBtn.title).toBe('暂停生成');
@@ -1076,13 +1090,13 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
   it('paused / done 态 pauseBtn 隐藏（状态机驱动）', () => {
     mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     expect(pauseBtn.hidden).toBe(false);
     // paused 态：显示（换 play ▶ 继续图标，与 sendBtn stop ■ 并列）
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     expect(pauseBtn.hidden).toBe(false);
     // done 态：隐藏
-    dispatch({ type: 'status', state: 'done' });
+    dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     expect(pauseBtn.hidden).toBe(true);
   });
 
@@ -1136,7 +1150,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
   it('thinking + 空输入点击 send → post stop（停止）', () => {
     const { postMessage } = mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     send.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
   });
@@ -1144,7 +1158,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
   it('paused + 空输入点击 send → post stop（丢弃检查点，硬停止）', () => {
     const { postMessage } = mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
-    dispatch({ type: 'status', state: 'paused' });
+    dispatchTurn({ phase: 'waiting', reason: 'pause' });
     send.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'stop' });
   });
@@ -1153,7 +1167,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     const { postMessage } = mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     const input = document.getElementById('input') as HTMLTextAreaElement;
-    dispatch({ type: 'status', state: 'thinking' });
+    dispatchTurn({ phase: 'running' });
     input.value = '插队';
     input.dispatchEvent(new Event('input'));
     send.click();

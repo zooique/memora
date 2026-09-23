@@ -92,7 +92,11 @@ export function deriveTurnState(input: TurnStateInput): TurnState {
   if (input.pausePending) {
     return { phase: 'waiting', reason: 'pause', pausePending: true };
   }
-  if (input.streaming && input.liveRoundId) {
+  if (input.streaming) {
+    // 有流在跑即 running（不要求 liveRoundId 证据——流起始投影时首个 chunk 未到、
+    // roundId 尚不可知，如实缺省而非造假占位；`TurnState.running.roundId` 因此可选）。
+    // ⚠ 顺序依赖：paused / pausePending 判定在前，此处只兜「既非挂起也非申请在途」
+    // 的纯运行态；三角色（ask / pause / 申请在途）不在此分支。
     return { phase: 'running', roundId: input.liveRoundId };
   }
   if (input.lastRound && isRoundSettled(input.lastRound.status)) {

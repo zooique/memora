@@ -22,6 +22,7 @@ import {
   deriveSessionUiState,
   skeletonFromPausePending,
   skeletonFromStatus,
+  skeletonFromTurnState,
   type SessionUiState,
   type SkeletonState,
 } from '../turnUiState.js';
@@ -102,6 +103,68 @@ describe('契约守卫：TurnState → SkeletonState 投影兼容（2b-2b 换源
       const projected: SkeletonState = full; // 投影赋值（结构化类型，无断言）
       expect(deriveSessionUiState(projected)).toBe(expected);
     }
+  });
+});
+
+describe('换真源：skeletonFromTurnState（TurnState 快照 → 容器，M3b-2b-2b）', () => {
+  // 变异锚点（改坏 → 转红）：
+  //   M6 把 idle 误判为 settled / running → 「idle → idle」转红
+  //   M7 剥字段失败（如 running 残留 roundId、waiting 残 questions）→ toEqual 严格转红
+  //   M8 丢 pausePending → 「申请在途」转红
+  it('idle → idle', () => {
+    expect(skeletonFromTurnState({ phase: 'idle' })).toEqual({ phase: 'idle' });
+  });
+
+  it('running（roundId 缺省——流起始投影）→ running', () => {
+    // 2b-2b：宿主流起始投影 roundId 尚不可知，缺省如实（不造假占位）
+    expect(skeletonFromTurnState({ phase: 'running' })).toEqual({ phase: 'running' });
+  });
+
+  it('running（带 roundId）→ running，剥掉骨架不消费的 roundId（M7 锚点）', () => {
+    expect(skeletonFromTurnState({ phase: 'running', roundId: 'round-9' })).toEqual({
+      phase: 'running',
+    });
+  });
+
+  it('waiting(ask) → waiting(ask)，剥 questions（骨架不消费提问明细）', () => {
+    expect(skeletonFromTurnState({ phase: 'waiting', reason: 'ask', questions: [QUESTION] })).toEqual(
+      { phase: 'waiting', reason: 'ask' },
+    );
+  });
+
+  it('waiting(pause) 无 pausePending → 原样（已挂起非申请在途）', () => {
+    expect(skeletonFromTurnState({ phase: 'waiting', reason: 'pause' })).toEqual({
+      phase: 'waiting',
+      reason: 'pause',
+    });
+  });
+
+  it('waiting(pause, pausePending) → 申请在途保留（M8 锚点）', () => {
+    expect(
+      skeletonFromTurnState({ phase: 'waiting', reason: 'pause', pausePending: true }),
+    ).toEqual({ phase: 'waiting', reason: 'pause', pausePending: true });
+  });
+
+  it('settled（带 roundId/status）→ settled，剥投影外字段（M7 锚点）', () => {
+    expect(
+      skeletonFromTurnState({ phase: 'settled', roundId: 'round-1', status: 'complete' }),
+    ).toEqual({ phase: 'settled' });
+  });
+
+  it('投影输出落入派生链不变量：deriveSessionUiState 全分支收敛（三态闭合）', () => {
+    // skeletonFromTurnState 的输出**必须**能被既有派生链消费——换源不改派生判据
+    const inputs: TurnState[] = [
+      { phase: 'idle' },
+      { phase: 'running' },
+      { phase: 'waiting', reason: 'ask', questions: [QUESTION] },
+      { phase: 'waiting', reason: 'pause' },
+      { phase: 'waiting', reason: 'pause', pausePending: true },
+      { phase: 'settled', roundId: 'round-1', status: 'complete' },
+    ];
+    const expected: SessionUiState[] = ['done', 'thinking', 'paused', 'paused', 'thinking', 'done'];
+    inputs.forEach((full, i) => {
+      expect(deriveSessionUiState(skeletonFromTurnState(full))).toBe(expected[i]);
+    });
   });
 });
 

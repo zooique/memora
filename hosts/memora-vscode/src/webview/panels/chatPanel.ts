@@ -1615,6 +1615,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 照常流式追加；本流落盘后的全量回放由 consumeFlow 流尾 _viewEpoch 比对触发。
     if (this._streaming) {
       this.post({ type: 'status', state: 'thinking' });
+      // M3b-2b-2b：折叠重建后补推 turn_update（旧 status 只兜呼吸点/控件锁）——
+      // 否则换源后 webview 骨架在重建后拿不到运行中态，按钮不显示「停止生成」。
+      // postTurnUpdate 读 this._streaming=true → deriveTurnState ④ 兜底 running（roundId 缺省）。
+      this.postTurnUpdate();
     }
     // 推送历史加载完成信号 → webview 收到后强制滚到底部（不走吸底逻辑）
     // 解决多条历史消息 rAF 节流导致滚动位置不正确的问题
@@ -2103,6 +2107,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         this._agent.cancelPauseRequest();
         // 取消暂停（因补充输入覆盖）→ 同步恢复「暂停」形态
         this.post({ type: 'pause_pending', pending: false });
+        // M3b-2b-2b：暂停覆盖取消同步补推 turn_update（骨架回 running）
+        this.postTurnUpdate();
       }
       // 竞态兜底（2026-09-22，配合 consumeFlow paused 分支 break）：pause 申请已被 step
       // 边界消费（内核已挂起 status='paused'、consumeFlow 的 _streaming 未复位的毫秒窗口）
@@ -2361,6 +2367,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       this._agent.cancelPauseRequest();
       // 申请已取消 → 通知 webview 恢复「暂停」形态（用户可再点申请）
       this.post({ type: 'pause_pending', pending: false });
+      // M3b-2b-2b：骨架真源 = turn_update.state——申请在途变化处同步补推
+      //（deriveTurnState：pausePending=false → ④ running），否则换源后申请/取消无按钮反馈
+      this.postTurnUpdate();
       // 点击即反馈：取消申请也要明确告知（2026-09-07 用户要求「有按钮就有反馈」）
       this.post({ type: 'notice', level: 'info', message: '已取消暂停申请（将继续运行）' });
       return;
@@ -2369,6 +2378,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (ok) {
       // 申请已入队（step 边界未到）→ 提前把按钮切为「继续」形态：申请即暂停，不需等 step 结束
       this.post({ type: 'pause_pending', pending: true });
+      // M3b-2b-2b：申请在途同步补推 turn_update（deriveTurnState ③ → waiting{pausePending}，
+      // 发送按钮随之切「停止生成」保持、暂停按钮切可反悔「继续 ▶」）
+      this.postTurnUpdate();
       // 点击即反馈：申请已入队，step 边界生效（用户知情，不再"点了没反应"）
       this.post({ type: 'notice', level: 'info', message: '暂停申请已发送，将在当前步骤完成后暂停' });
     } else {
@@ -2376,6 +2388,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // （2026-09-07 收紧后空闲不再翻状态机，任务结束的暂停申请直接作废）
       // 申请未生效 → 恢复「暂停」形态
       this.post({ type: 'pause_pending', pending: false });
+      // M3b-2b-2b：作废同样补推 turn_update（骨架保持运行中，按钮不动）
+      this.postTurnUpdate();
       this.post({ type: 'notice', level: 'info', message: '当前任务已结束，暂停申请未生效' });
     }
   }
