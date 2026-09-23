@@ -68,6 +68,27 @@ function extractRoundSemantics(): RoundSemantics {
   };
 }
 
+/**
+ * 交互输入行提取（§4 live×replay 同形对拍）：从 DOM 抽「你补充 / 你答 / 未回答」行描述。
+ *
+ * 两路（运行时 appendInteractiveInput / 重放 renderReplayRound）共用 renderQaItem，行结构：
+ * `.round-block__input` > `.round-block__input-row`(.round-block__input-tag + .round-block__input-text)。
+ * 只抽主行（tag + content），忽略 question-answer/timeout 的嵌套「问」回顾行（其 tag 为「问」，
+ * 与主行 tag「你答」不同类，避免误抽）。
+ */
+interface InteractiveRow {
+  tag: string;
+  content: string;
+}
+function extractInteractiveRows(root: ParentNode = document): InteractiveRow[] {
+  return Array.from(root.querySelectorAll('.round-block__input')).map((row) => {
+    const main = row.querySelector('.round-block__input-row');
+    const tag = main?.querySelector('.round-block__input-tag')?.textContent ?? '';
+    const content = main?.querySelector('.round-block__input-text')?.textContent ?? '';
+    return { tag, content };
+  });
+}
+
 /** 按序分发一条时间线（多条消息逐一 dispatch，保持流式顺序） */
 function dispatchAll(msgs: TimelineMsg[]): void {
   for (const msg of msgs) dispatch(msg);
@@ -144,5 +165,55 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
     // 无正文锚点 → round-block 与工具行一并缺席（既定形态，见上注释）
     expect(semantics.hasRoundBlock).toBe(false);
     expect(semantics.toolRowCount).toBe(0);
+  });
+
+  it('§4 交互输入行 live×replay 同形对拍：supplement/question-answer 两路渲染「你补充/你答」一致', { timeout: PARITY_TIMEOUT_MS }, () => {
+    // 守「live 交互行 == replay 交互行」同形（§2 只守轮级 4 字段，本例守交互行）。
+    // 两路共用 renderQaItem（运行时 appendInteractiveInput / 重放 renderReplayRound 均调它），
+    // 本例锁定同一内容在两路产出同形行——若任一路改渲染函数即破。
+    const SUPPLEMENT = '补充：成本标准改 <¥0.5';
+    const ANSWER = '选方案 A';
+    const QUESTION = '选哪个方案？';
+    const TS_S = '2026-09-07T11:00:00.000Z';
+    const TS_A = '2026-09-07T12:00:00.000Z';
+    const expected = [
+      { tag: '你补充', content: SUPPLEMENT },
+      { tag: '你答', content: ANSWER },
+    ];
+    const sortRows = (rows: InteractiveRow[]) =>
+      [...rows].sort((a, b) => a.tag.localeCompare(b.tag) || a.content.localeCompare(b.content));
+
+    // ── 路 A：运行时流式（暂停态补充 + 提问回答，真实生成路）──
+    mountChatView();
+    const liveMessages = document.getElementById('messages') as HTMLElement;
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
+    dispatch({ type: 'paused' });
+    dispatch({ type: 'user', text: SUPPLEMENT, ts: TS_S, kind: 'supplement' });
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'paused' });
+    dispatch({ type: 'user', text: ANSWER, ts: TS_A, kind: 'question-answer', roundId: 'r1', question: QUESTION, options: ['方案 A', '方案 B'] });
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'chunk', content: '收尾', roundId: 'r1' });
+    dispatch({ type: 'done', roundId: 'r1' });
+    const liveRows = extractInteractiveRows(liveMessages);
+
+    // ── 路 B：重放（单条 turn_update.rounds 承载 interactiveInputs）──
+    mountChatView();
+    const replayMessages = document.getElementById('messages') as HTMLElement;
+    const roundView: RoundView = {
+      ...buildRoundView(),
+      interactiveInputs: [
+        { id: 'i-s', role: 'user', content: SUPPLEMENT, timestamp: TS_S, kind: 'supplement' },
+        { id: 'i-a', role: 'user', content: ANSWER, timestamp: TS_A, kind: 'question-answer', question: QUESTION, options: ['方案 A', '方案 B'] },
+      ],
+    };
+    dispatch(buildReplayTurnUpdate(roundView));
+    const replayRows = extractInteractiveRows(replayMessages);
+
+    // 两路各自渲染正确（防空转）+ 两路同形（live==replay 对称守卫）
+    expect(sortRows(liveRows)).toEqual(sortRows(expected));
+    expect(sortRows(replayRows)).toEqual(sortRows(expected));
+    expect(sortRows(liveRows)).toEqual(sortRows(replayRows));
   });
 });

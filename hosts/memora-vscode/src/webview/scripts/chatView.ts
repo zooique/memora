@@ -1822,9 +1822,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     }
     send.classList.toggle('loading', spec.send.loading);
-    // `paused` 类当前全仓无写入点（矩阵遗留：注释里的「paused 形态」从未实现，见台账 UI-DEAD-1）；
-    // 保留清除以维持既有 DOM 结果，不在此顺手改语义（单一改动原则）
-    send.classList.remove('paused');
+    // 按钮形态只由 `loading` 类驱动（点击路由同判据）：loading=true →「停止生成」，否则「发送 / 发送补充」。
+    // 暂停态续跑由 pauseBtn（play 图标）承载，发送键恒为「停止生成」（deriveButtonSemantics paused 分支锁定 loading=true）。
     send.setAttribute('title', spec.send.title);
     send.setAttribute('aria-label', spec.send.ariaLabel);
   }
@@ -4000,7 +3999,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       input.style.height = 'auto';
       input.focus();
       autoResize();
-      syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步
+      syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步可用性
+      syncButtonSemantics(); // 程序化预填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算），避免窗口期文案过期
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.items);
@@ -4009,7 +4009,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (msg.ok && msg.text) {
         input.value = msg.text;
         autoResize();
-        syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步
+        syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步可用性
+        syncButtonSemantics(); // 程序化回填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算）
       }
       // 恢复润色按钮状态（图标按钮，无需恢复文本）
       if (polishBtn) {
@@ -4203,14 +4204,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   function sendMessage(): void {
     const text = input.value.trim();
-    // 暂停态且输入为空 → 视为「继续」动作，恢复暂停点之后的执行（用户未输入新请求）
-    // Phase 4：用 classList 判断（syncButtonSemantics 在 paused+空输入时加 paused 类）
-    const isPausedContinue = send.classList.contains('paused');
-    if (isPausedContinue && !text) {
-      // M4：resume 意图单消息（宿主按 waiting/pause 相位路由，错位静默丢弃）
-      vscode.postMessage({ type: 'input', kind: 'resume' });
-      return;
-    }
     if (!text) return;
     input.value = '';
     input.style.height = 'auto';
@@ -4233,14 +4226,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 生成中插话走 Enter（见下方 keydown，不经此分支）。
   send.addEventListener('click', () => {
     if (send.classList.contains('loading')) {
-      // thinking+空输入：按钮承担「停止」职责
+      // thinking / paused 态：发送键恒为「停止生成（丢弃检查点）」——暂停态续跑走 pauseBtn（play 图标）。
       vscode.postMessage({ type: 'stop' });
-    } else if (send.classList.contains('paused')) {
-      // paused+空输入：按钮承担「继续」职责，恢复暂停点之后的执行
-      vscode.postMessage({ type: 'input', kind: 'resume' });
     } else {
-      // 其他所有情况（done+有输入 / thinking+有输入 / paused+有输入）：统一走 sendMessage 发 type='send'
-      // 宿主层 handleSend 会根据 session 状态路由到 chat() / interject() / resumeExecution()
+      // done+有输入 / thinking+有输入：统一走 sendMessage 发 type='send'，
+      // 宿主层 handleInput 按 turn 相位路由到 chat() / interject() / resumeExecution()
       sendMessage();
     }
   });
@@ -4359,7 +4349,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.style.height = 'auto';
     input.focus();
     autoResize();
-    syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步
+    syncSendEnabled(); // 程序化回填不触发 input 事件，须手动同步可用性
+    syncButtonSemantics(); // 程序化回填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算）
   }
   document.addEventListener('click', onDocumentClick);
 

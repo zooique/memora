@@ -2353,6 +2353,19 @@ describe('chatView Follow-up 建议（T2，2026-08-17 回复后关联推荐）',
     expect(input.value).toBe('继续以「技术文档工程师」的视角处理以上任务');
     expect(document.activeElement).toBe(input);
   });
+
+  it('prefill_input 在生成中（thinking+有输入）同步按钮语义 → 标题=发送补充（方案 §3.2b-1）', () => {
+    mountChatView();
+    dispatchTurn({ phase: 'running' });
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    // running+空输入：发送键默认「停止生成」
+    expect(send.title).toBe('停止生成');
+    // 生成中预填文本 → 必须同步语义（标题随相位+输入重算），否则窗口期文案过期（SKILL-S2 血训同型）
+    dispatch({ type: 'prefill_input', text: '补充：先核对术语表' });
+    expect(input.value).toBe('补充：先核对术语表');
+    expect(send.title).toBe('发送补充（排队等 step 边界注入）');
+  });
 });
 
 describe('chatView 安全审计指标（G6，2026-08-23）', () => {
