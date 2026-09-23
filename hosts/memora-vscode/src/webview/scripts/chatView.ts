@@ -11,6 +11,7 @@
  */
 import type {
   ExtensionToWebviewMessage,
+  PendingQuestionDto,
   PlanItemDto,
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
@@ -2846,7 +2847,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     host.closest<HTMLElement>('.round-group')
       ?.querySelector<HTMLElement>('.round-group__footer')
       ?.classList.add('is-pending');
-    // 幂等：重复 need_clarify（如连续多问）先移除旧内联块，再挂新
+    // 幂等：重复提问（如连续多问/多次 turn_update 推送）先移除旧内联块，再挂新
     document.querySelector('.ask-inline')?.remove();
     const box = document.createElement('div');
     box.className = 'ask-inline';
@@ -3518,6 +3519,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (msg.pendingQueue) {
         updatePendingQueueBar(msg.pendingQueue);
       }
+      // M5b-2：提问卡渲染真源从 need_clarify 消息切到 turn_update.state（waiting/ask + questions）。
+      // 宿主在提问即 postTurnUpdate（onPendingQuestion 立即补推 / 流尾兜底），skeletonFromTurnState
+      // 会剥离 questions（容器不消费），故此处直接从 msg.state 读 questions 渲染内联提问卡；
+      // 独立 need_clarify 消息已删（协议 + 宿主 + 本消费分支三端同步收敛）。
+      if (msg.state.phase === 'waiting' && msg.state.reason === 'ask' && (msg.state.questions?.length ?? 0) > 0) {
+        renderAskPhase(msg.state.questions!);
+      }
     } else if (msg.type === 'tool_pending') {
       // 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 成形即上报），
       // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与
@@ -3877,38 +3885,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       input.focus();
       autoResize();
       syncSendEnabled(); // 程序化预填不触发 input 事件，须手动同步
-    } else if (msg.type === 'need_clarify') {
-      // 提问形态内联化（2026-09-03）：选择题 + 补充输入渲染到消息流提问块下方
-      //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
-      // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
-      const askBlock = renderAskInline(msg.questions);
-      if (!askBlock) {
-        clarifyText.textContent =
-          'Agent 需要你确认：' + msg.questions.map((q) => q.question).join('；');
-        clarifyInput.value = '';
-        clarifyOptions.textContent = '';
-        // 强制单选（同 renderAskInline 语义）：任一提问带 options 且 allowCustom=false → 隐藏自由输入框
-        const forceChoose = msg.questions.some(
-          (q) => q.options && q.options.length > 0 && q.allowCustom === false,
-        );
-        clarifyInput.hidden = forceChoose;
-        msg.questions.forEach((q) => {
-          (q.options || []).forEach((opt) => {
-            const b = document.createElement('button');
-            b.className = 'opt-btn';
-            b.textContent = opt;
-            b.addEventListener('click', () => {
-              // 点击即答：选项直接作为澄清答案提交续跑（无需二次回车）
-              clarifyInput.value = opt;
-              sendClarifyAnswer();
-            });
-            clarifyOptions.appendChild(b);
-          });
-        });
-        clarifyBar.classList.add('visible');
-        inputBar.hidden = true;
-        clarifyInput.focus();
-      }
     } else if (msg.type === 'plan_update') {
       // H4 任务驱动多步闭环：LLM 更新任务表 → 刷新任务看板（renderPlanBoard 自建/更新容器）
       renderPlanBoard(msg.items);
@@ -4421,6 +4397,44 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     divider.className = 'treedd__divider';
     skillPickerMenu.appendChild(divider);
     updateSkillPickerLabel();
+  }
+
+  // 提问卡渲染（M5b-2：真源从 need_clarify 消息切到 turn_update.state 的 waiting/ask）
+  // 职责与原 need_clarify 分支等价：优先内联块（renderAskInline 挂问答交互行下），
+  // 无锚点时降级底部 clarifyBar 异常兜底。questions 来自 turn_update.state.questions
+  //（宿主 postTurnUpdate 投影派生，非独立消息载荷）。
+  function renderAskPhase(questions: PendingQuestionDto[]): void {
+    // 提问形态内联化（2026-09-03）：选择题 + 补充输入渲染到消息流提问块下方
+    //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
+    // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
+    const askBlock = renderAskInline(questions);
+    if (!askBlock) {
+      clarifyText.textContent =
+        'Agent 需要你确认：' + questions.map((q) => q.question).join('；');
+      clarifyInput.value = '';
+      clarifyOptions.textContent = '';
+      // 强制单选（同 renderAskInline 语义）：任一提问带 options 且 allowCustom=false → 隐藏自由输入框
+      const forceChoose = questions.some(
+        (q) => q.options && q.options.length > 0 && q.allowCustom === false,
+      );
+      clarifyInput.hidden = forceChoose;
+      questions.forEach((q) => {
+        (q.options || []).forEach((opt) => {
+          const b = document.createElement('button');
+          b.className = 'opt-btn';
+          b.textContent = opt;
+          b.addEventListener('click', () => {
+            // 点击即答：选项直接作为澄清答案提交续跑（无需二次回车）
+            clarifyInput.value = opt;
+            sendClarifyAnswer();
+          });
+          clarifyOptions.appendChild(b);
+        });
+      });
+      clarifyBar.classList.add('visible');
+      inputBar.hidden = true;
+      clarifyInput.focus();
+    }
   }
 
   // 主动提问回答（clarifyBar 异常兜底路径）：提交并续跑

@@ -71,9 +71,9 @@ export type SessionUiState = 'thinking' | 'done' | 'paused';
  * 发送按钮文案会在申请在途窗口被改成挂起态文案 —— 那是行为变更，而非等价迁移。
  *
  * ask 也映射 `paused` 的依据是 legacy 实际行为：宿主对 ask 与 pause **同走** `pausedOnPurpose`
- * 分支并同样发 `status:'paused'`（ask 仅额外发 `need_clarify` 渲染内联提问）；二者在
- * `SkeletonState.waiting.reason` 上可区分，但**骨架输出不区分**（内联提问块由 `need_clarify`
- * 自身渲染，不属骨架矩阵）。
+ * 分支并同样发 `status:'paused'`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问，M5b-2）；
+ * 二者在 `SkeletonState.waiting.reason` 上可区分，但**骨架输出不区分**（内联提问块由
+ * turn_update 分支的 renderAskPhase 自身渲染，不属骨架矩阵）。
  */
 export function deriveSessionUiState(state: SkeletonState): SessionUiState {
   switch (state.phase) {

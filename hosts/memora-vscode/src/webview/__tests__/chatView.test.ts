@@ -2669,12 +2669,13 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     vi.restoreAllMocks();
   });
 
-  it('need_clarify 携带 options → 消息流内联选择题渲染可点选项按钮（提问下方，非底部弹层）', () => {
+  it('turn_update(waiting/ask) 携带 options → 消息流内联选择题渲染可点选项按钮（提问下方，非底部弹层）', () => {
     const { postMessage } = mountChatView();
     // 先建提问骨架作为内联锚点（提问块；纯视觉锚点，不含完整内核流）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [
         { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
       ],
@@ -2698,8 +2699,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('点击内联选项 → 标记该题已答 is-selected，再点「提交回答」提交 input(kind=answer) 单元素', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [
         { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
       ],
@@ -2723,8 +2725,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('多 ask 聚合（P2）：逐题点选高亮 is-selected，全部答完才可提交 input(kind=answer) 数组', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [
         { slot: 'q1', question: '写作风格？', options: ['中文', '英文'] },
         { slot: 'q2', question: '篇幅长度？', options: ['短篇', '长篇'] },
@@ -2764,8 +2767,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '提问前的正文', roundId: 'r1' });
     // ② ask 弹窗（内联选择题）
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
     });
     // ③ 点选项标记 + 提交（2026-09-16 修复：应把块 A 记为 pausedAssistantEl 续写锚；
@@ -2791,8 +2795,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     // ① meta 建骨架（此后无任何正文 chunk —— 骨架未转正，LLM 首动作即 ask_user 的真实链路）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
     // ② ask 弹窗（内联选择题）
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [{ slot: 'task', question: '选哪个？', options: ['方案 A', '方案 B'] }],
     });
     // ③ 点选项标记（pausedAssistantEl = 骨架），统一形态再点「提交回答」→ commitAskAnswers
@@ -2839,11 +2844,12 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(flow.contains(qaRow)).toBe(true);
   });
 
-  it('无 options 的 need_clarify 不渲染选项按钮（仅补充输入通道）', () => {
+  it('无 options 的 waiting(ask) 不渲染选项按钮（仅补充输入通道）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [{ slot: 'task', question: '请描述当前任务目标' }],
     });
     const box = document.querySelector('.ask-inline') as HTMLElement;
@@ -2856,8 +2862,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('内联补充输入：键入后回车 → 提交 input(kind=answer) 并移除内联块', () => {
     const { postMessage } = mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [{ slot: 'task', question: '请描述当前任务目标', options: ['方案A', '方案B'] }],
     });
     const input = document.querySelector('.ask-inline__input') as HTMLInputElement;
@@ -2868,10 +2875,11 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
-  it('无 assistant 锚点时 need_clarify 降级底部 clarifyBar（异常兜底）', () => {
+  it('无 assistant 锚点时 waiting(ask) 降级底部 clarifyBar（异常兜底）', () => {
     mountChatView();
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [{ slot: 'task', question: '请描述当前任务目标', options: ['A', 'B'] }],
     });
     // 无可用提问块 → 无内联块，底部 clarifyBar 兜底显示（含选项按钮）
@@ -2884,8 +2892,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('allowCustom=false 且带 options → 强制单选：隐藏自由输入框（仅点选）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [
         { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: false },
       ],
@@ -2904,8 +2913,9 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // allowCustom=true 显式允许自由输入
-    dispatch({
-      type: 'need_clarify',
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
       questions: [
         { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: true },
       ],
@@ -3769,11 +3779,11 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('ask 超时未答（2026-09-08 保底）：运行时提问框销毁、渲染「问 + 未回答」行、done 后折入折叠块 + 摘要未回答×1', () => {
     mountChatView();
-    // 运行时轮：assistant 块（ask 暂停点）→ need_clarify 渲染提问框
+    // 运行时轮：assistant 块（ask 暂停点）→ turn_update(waiting/ask) 渲染提问框
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '在读取前需要确认：', roundId: 'round-1' });
-    dispatch({ type: 'need_clarify', questions: [{ question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] }] });
+    dispatchTurn({ phase: 'waiting', reason: 'ask', questions: [{ slot: 'task', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] }] });
     const askInline = document.querySelector('.ask-inline') as HTMLElement;
     expect(askInline).not.toBeNull();
     // 宿主超时自动续跑：先投递「未回答」交互行（timeout 消息到达即销毁提问框）

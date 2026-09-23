@@ -577,7 +577,7 @@ export const chatStyles = `
     font-size: var(--font-sm, 11px);
   }
   /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义（SSOT 复用）。
-   * 提问（need_clarify）等待回答期间容器 footer 不显示——底部只留 ask-inline 交互块；
+   * 提问（turn_update 的 waiting/ask）等待回答期间容器 footer 不显示——底部只留 ask-inline 交互块；
    * 回答 resume 完成（done）后由 finalizeStreaming 移除该状态，与不提问场景底部栏统一。 */
   .round-group__footer.is-pending { display: none; }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }

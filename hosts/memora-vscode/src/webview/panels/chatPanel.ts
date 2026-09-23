@@ -2564,11 +2564,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this._pendingQuestions = questions; // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput R1）
-      // M5b-2：提问这一刻立即补推 turn_update——切走 need_clarify 后问答卡渲染靠 turn_update.state
+      // M5b-2：提问这一刻立即补推 turn_update——need_clarify 已删，问答卡渲染真源 = turn_update.state
       //（waiting/ask）。此刻内核尚未 yield paused chunk（sessionStatus≈running），但 deriveTurnState 判据
       // 已是「questions 非空即 ask」（M5b-2 缺口修复），故本投影即派生 waiting(ask)，即时渲染，不延迟。
       this.postTurnUpdate();
-      this.post({ type: 'need_clarify', questions });
       this.armAskTimeout(); // 超时保底（2026-09-08）：未答 → 自动续跑
     };
     this._agent.on('questionPending', onPendingQuestion);
@@ -2809,10 +2808,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           });
         }
       }
-      // 流尾兜底：本流产生提问 chunk 但事件未驱动（监听未就绪/异常）→ 用 chunk 缓存渲染提问 UI，问题不丢失
+      // 流尾兜底：本流产生提问 chunk 但事件未驱动（监听未就绪/异常）→ 用 chunk 缓存装载提问，问题不丢失。
+      // M5b-2：need_clarify 已删，兜底渲染同样靠 turn_update.state——先写 _pendingQuestions（postTurnUpdate
+      // 投影真源）再补推 turn_update（等待 ask 渲染），不再单独发 need_clarify。
       if (!clarifyEventDriven && clarifyChunkQueue.length > 0) {
-        this.post({ type: 'need_clarify', questions: clarifyChunkQueue });
         this._pendingQuestions = clarifyChunkQueue;
+        this.postTurnUpdate();
         this.armAskTimeout(); // 兜底渲染同享超时保底（2026-09-08）
       }
       // assistant 消息持久化由内核 appendAssistant 完成（写入当前会话 _currentSessionId），

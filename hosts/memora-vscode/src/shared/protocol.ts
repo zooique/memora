@@ -651,21 +651,6 @@ export type ExtensionToWebviewMessage =
       activeName?: string;
     }
   /**
-   * Agent 主动提问（mvp-scope §三：ambiguity/decision/missing_info）
-   *
-   * 实际来源：extension host 监听内核 questionPending 事件（LLM 调 ask_user 工具路径）
-   * 后转发，触发 Agent 暂停（pause），等待用户在提问
-   * 输入框回答；收到 clarify_answer 后 host 调 agent.answerQuestion() 回填 + resumeExecution 续跑。
-   *
-   * 注：内核 needClarify 事件（P4 任务槽位补全/composer 路径）已于 2026-09-03 整链剪枝，
-   * ask_user 为唯一提问通道——本消息类型由 questionPending 事件（主）+ question_pending
-   * chunk（幂等兜底，TS-O3/TS-O5）归一驱动渲染。
-   */
-  | {
-      type: 'need_clarify';
-      questions: PendingQuestionDto[];
-    }
-  /**
    * 目标漂移检测提示（H2 事件：goalDriftDetected）
    *
    * 由 extension host 监听内核 goalDriftDetected 事件后转发，
@@ -923,7 +908,7 @@ export type ExtensionToWebviewMessage =
    * turn 投影更新（SSOT 收口 M1，2026-09-23，无消费方）
    *
    * 取代 chunk / user / assistant / process_event / replay_events / status / paused /
-   * pause_pending / need_clarify / pending_queue_update 的**状态职责**：
+   * pause_pending / pending_queue_update 的**状态职责**：
    * webview 侧只维护 `rounds` + `state` 两个容器，UI 一律由 render(rounds, state) 派生。
    * 正文流式仍走 chunk 增量通道（唯一允许的局部优化，性能）。
    * M1–M4 双轨期：旧消息保留但禁止新增旧消息类型；M5 统一删除。
@@ -948,7 +933,7 @@ export type ExtensionToWebviewMessage =
 // 铁律：RoundView 只能是内核 `Round` 的**投影**（Pick 类型约束）——改 Round 字段名即编译报错，
 // 禁止在协议侧另立第二套 Round 字段（并列即腐化）。运行时与重放共用本结构，不走第二套形状。
 
-/** 待回答提问（UI 投影；形状对齐 need_clarify 载荷，供 TurnState.waiting(ask) 携带） */
+/** 待回答提问（UI 投影；供 TurnState.waiting(ask) 携带，问答卡渲染真源） */
 export interface PendingQuestionDto {
   /** 提问槽位标识（内核 AskQuestion.slot 同源） */
   slot: string;
@@ -981,7 +966,7 @@ export type RoundView = Pick<
 };
 
 /**
- * turn 运行时状态（UI 唯一状态源；替代 status / paused / pause_pending / need_clarify 四信号）
+ * turn 运行时状态（UI 唯一状态源；替代 status / paused / pause_pending 三信号）
  *
  * ⚠️ 内核侧 ask_user 与 pause **刻意不同源**（`InterruptRequest` 队列注释 + 工具分支独立 yield，
  * 见 docs/architecture/pause-ask-resume-design.md §一 定案），二者不在内核合一套队；

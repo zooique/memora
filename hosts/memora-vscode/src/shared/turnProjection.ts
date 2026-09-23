@@ -72,7 +72,7 @@ export interface TurnStateInput {
 }
 
 /**
- * 折叠为单一 `TurnState`（替代 status / paused / pause_pending / need_clarify 五条信号）
+ * 折叠为单一 `TurnState`（替代 status / paused / pause_pending 信号）
  *
  * 判定顺序（**刻意的**，改动前先看单测）：
  *  ① ask 挂起 → ② 已挂起 pause → ③ 暂停申请在途（「站台等车」= 用户心智上的已暂停）
