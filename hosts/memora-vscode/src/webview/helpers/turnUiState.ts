@@ -1,48 +1,65 @@
 /**
- * 骨架（会话控件）状态派生层 —— `TurnState` → UI 三态 → 按钮语义
+ * 骨架（会话控件）状态派生层 —— `SkeletonState` → UI 三态 → 按钮语义
  *
- * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md（M3b-2b-1）
+ * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md（M3b-2b-1 / 2b-2a）
  *
- * 职责边界：把 webview 侧散落的骨架自变量（`_sessionUiState` / `_pausePending` / 输入内容）
+ * 职责边界：把 webview 侧散落的骨架自变量（会话三态 / 申请在途 / 输入内容）
  * **收敛为一次纯函数派生**——本文件不读 DOM、不发消息、不碰内核，便于单测与变异验证。
  *
- * 为什么需要它：骨架状态的写入点此前散落在 4 处（`setStatus` 写 `_sessionUiState`、
- * `pause_pending` 分支写 `_pausePending`、输入事件与程序化回填各写一次按钮类），
- * 而 `TurnState` 已经同时携带「是否运行 / 是否挂起 / 申请是否在途」三件事 ⇒ 两个布尔碎片
- * 都只是 `TurnState` 的函数。派生层建立后，M3b-2b-2 才能把真源从「四条消息各写一角」
- * 换成「单一 `turnState` → 派生 → 施加」。
- *
- * ⚠ 时序差异（M3b-2b-2 换真源前须拍板，勿当零变更）：legacy `status:'done'` 由宿主
- * **延后**发送（等 round-summary 完成或 5s 兜底），而 `TurnState.phase==='settled'` 是流尾
- * **即时**的 ⇒ `settled` 直接映射 `'done'` 会让发送按钮恢复时机提前到流尾。
- * 本文件只表达语义映射，不决定接线时机。
+ * 真源演化（本文件的定位随期推进，但不改动其判据）：
+ * - **本期（2b-2a）**：`SkeletonState` 容器由 legacy 信号（`status` / `pause_pending` /
+ *   `need_clarify`）经 `skeletonFromStatus` / `skeletonFromPausePending` **过渡适配**写入
+ *   （两个适配函数随 M5 删旧一并退役）。
+ * - **2b-2b**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——`TurnState` 可
+ *   赋值给 `SkeletonState`（投影子集，`Pick` 同族手法），故换源不动派生链。
  */
 
-import type { TurnState } from '../../shared/protocol.js';
+/**
+ * 骨架可见的 turn 状态（`TurnState` 的**投影子集**）
+ *
+ * 为什么不用完整 `TurnState`：骨架只需要「在跑 / 在等 / 已收场」+「等的是什么」
+ * +「申请是否在途」，**不需要 `roundId` / `RoundStatus`**。要求完整 `TurnState` 会逼调用方
+ * 造假的 `roundId` 去满足类型——那是往容器里塞假事实（比缺字段更危险）。
+ *
+ * 与 `TurnState` 的关系 = 结构兼容投影（同 `RoundView` 对 `Round` 的 `Pick<>` 手法）：
+ * `TurnState` 的每个分支都能赋值给这里的对应分支，故 2b-2b 换源时**直接赋值即可**；
+ * 该投影兼容性由 `turnUiState.test.ts` 的「契约守卫」用例逐分支赋值锁定（编译期 + 运行期双查）。
+ */
+export type SkeletonState =
+  | { phase: 'idle' }
+  | { phase: 'running' }
+  | { phase: 'waiting'; reason: 'pause' | 'ask'; pausePending?: boolean }
+  | { phase: 'settled' };
 
 /**
- * 会话 UI 三态（与既有 `_sessionUiState` 同域，保持 DOM 行为不变）
+ * 会话 UI 三态（与 legacy `_sessionUiState` 同域，保证 DOM 行为不变）
  *
- * - `thinking` —— 运行中：暂停按钮可用，发送按钮承担「停止」
+ * - `thinking` —— 运行中：暂停按钮可用（申请在途时呈可反悔形态），发送按钮承担「停止」
  * - `paused`   —— 挂起（pause 与 ask **同形**）：暂停按钮换「继续」，发送按钮仍是硬停止
  * - `done`     —— 无进行中 turn：发送按钮恢复发送语义
  */
 export type SessionUiState = 'thinking' | 'done' | 'paused';
 
 /**
- * `TurnState` → 会话 UI 三态
+ * `SkeletonState` → 会话 UI 三态
  *
- * 映射依据 = legacy 通道的实际行为（不是凭设计意图）：
- * - `waiting{reason:'ask'}` 也映射 `'paused'` —— 宿主对 ask 与 pause **同走** `pausedOnPurpose`
- *   分支并同样 `post({type:'status', state:'paused'})`（ask 另额外发 `need_clarify` 渲染内联提问）。
- * - `settled` / `idle` 均映射 `'done'` —— 二者都表示「无进行中 turn，可发送新提问」。
+ * 🔴 **判据订正（2026-09-23，2b-2a 换源前实测发现）**：`waiting{pausePending:true}`
+ * （暂停申请在途）映射 **`thinking`** 而非 `paused`——用户申请了暂停但 step 边界未到，
+ * turn **仍在运行**：按钮只把「暂停」切成可反悔的「继续 ▶」，**发送按钮职责不变**
+ * （空输入仍是「停止生成」，不是「停止生成（丢弃检查点）」）。若映射 `paused`，
+ * 发送按钮文案会在申请在途窗口被改成挂起态文案 —— 那是行为变更，而非等价迁移。
+ *
+ * ask 也映射 `paused` 的依据是 legacy 实际行为：宿主对 ask 与 pause **同走** `pausedOnPurpose`
+ * 分支并同样发 `status:'paused'`（ask 仅额外发 `need_clarify` 渲染内联提问）；二者在
+ * `SkeletonState.waiting.reason` 上可区分，但**骨架输出不区分**（内联提问块由 `need_clarify`
+ * 自身渲染，不属骨架矩阵）。
  */
-export function deriveSessionUiState(state: TurnState): SessionUiState {
+export function deriveSessionUiState(state: SkeletonState): SessionUiState {
   switch (state.phase) {
     case 'running':
       return 'thinking';
     case 'waiting':
-      return 'paused';
+      return state.pausePending ? 'thinking' : 'paused';
     case 'settled':
     case 'idle':
       return 'done';
@@ -50,18 +67,53 @@ export function deriveSessionUiState(state: TurnState): SessionUiState {
 }
 
 /**
- * `TurnState` → 「暂停申请在途」布尔量
+ * `SkeletonState` → 「暂停申请在途」布尔量
  *
  * 只有 `waiting{reason:'pause', pausePending:true}`（申请已入队、step 边界未到）为真：
  * 内核已挂起（`waiting` 无 `pausePending`）或运行中都不算申请在途。
  */
-export function derivePausePending(state: TurnState): boolean {
+export function derivePausePending(state: SkeletonState): boolean {
   return state.phase === 'waiting' && state.pausePending === true;
 }
 
-/** 按钮语义派生入参（webview 侧现有自变量的只读快照） */
+/**
+ * 过渡适配器（legacy `status` → 容器）——**随 M5 删旧退役**
+ *
+ * 为什么是「转移函数」而非纯映射：legacy 信号是**增量**的（`status` 只带三态、不带
+ * 「等的是 pause 还是 ask」），故必须结合前值推演：
+ * - `thinking` → 保留申请在途（legacy `setStatus('thinking')` 不清 `_pausePending`），否则 `running`
+ * - `paused` → 若前值是 `waiting(ask)` 则**保持 ask**（`need_clarify` 先到、`status:'paused'` 后到，
+ *   降级成 pause 会丢掉「这是提问挂起」这一事实）；否则 `waiting(pause)`
+ * - `done` → `settled`
+ */
+export function skeletonFromStatus(status: SessionUiState, prev: SkeletonState): SkeletonState {
+  if (status === 'thinking') {
+    return prev.phase === 'waiting' && prev.pausePending ? prev : { phase: 'running' };
+  }
+  if (status === 'paused') {
+    return prev.phase === 'waiting' && prev.reason === 'ask'
+      ? { phase: 'waiting', reason: 'ask' }
+      : { phase: 'waiting', reason: 'pause' };
+  }
+  return { phase: 'settled' };
+}
+
+/**
+ * 过渡适配器（legacy `pause_pending` → 容器）——**随 M5 删旧退役**
+ *
+ * `pending:true` → 申请在途；`pending:false` → 申请已撤销/作废，回到运行中
+ * （若前值是提问挂起则保留——legacy 只清标志位，不动会话三态）。
+ */
+export function skeletonFromPausePending(pending: boolean, prev: SkeletonState): SkeletonState {
+  if (pending) return { phase: 'waiting', reason: 'pause', pausePending: true };
+  return prev.phase === 'waiting' && prev.reason === 'ask'
+    ? { phase: 'waiting', reason: 'ask' }
+    : { phase: 'running' };
+}
+
+/** 按钮语义派生入参（webview 侧骨架自变量的只读快照） */
 export interface ButtonSemanticsInput {
-  /** 会话 UI 三态（`deriveSessionUiState` 的输出，或 legacy 通道写入的同域值） */
+  /** 会话 UI 三态（`deriveSessionUiState` 的输出） */
   sessionUiState: SessionUiState;
   /** 暂停申请在途（`derivePausePending` 的输出） */
   pausePending: boolean;

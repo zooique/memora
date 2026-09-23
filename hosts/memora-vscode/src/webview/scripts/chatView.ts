@@ -23,8 +23,16 @@ import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
-// 骨架（会话控件）语义派生纯函数层（M3b-2b-1）：矩阵本体抽出，本文件只做「取数 → 派生 → 施加」
-import { deriveButtonSemantics, type ButtonSemantics } from '../helpers/turnUiState.js';
+// 骨架（会话控件）语义派生纯函数层（M3b-2b-1 / 2b-2a）：矩阵与状态容器抽出，本文件只做「取数 → 派生 → 施加」
+import {
+  deriveButtonSemantics,
+  derivePausePending,
+  deriveSessionUiState,
+  skeletonFromPausePending,
+  skeletonFromStatus,
+  type ButtonSemantics,
+  type SkeletonState,
+} from '../helpers/turnUiState.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
@@ -1750,13 +1758,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 会话 UI 状态（Phase 4 收敛后）：setStatus 驱动的单一真理源，
-   * syncButtonSemantics / syncSendEnabled 都读它做矩阵决策。
+   * 骨架状态容器（M3b-2b-2a）：会话控件（暂停/继续 + 发送按钮）的**唯一真源**。
+   *
+   * 本期由 legacy 信号（`status` / `pause_pending`）经过渡适配器写入；2b-2b 起改由
+   * `turn_update.state` 直接赋值（`TurnState` 可投影给 `SkeletonState`，派生链不动）。
+   * 会话三态与「申请在途」**不再是两个独立变量**，一律派生——写入点 2 处 → 1 处。
    */
-  let _sessionUiState: 'thinking' | 'done' | 'paused' = 'done';
-  /** 暂停申请在途态（host 经 pause_pending 消息推送）：申请已入队但 step 未结束的窗口期。
-   *  用户心智只有 暂停/继续 两态——申请在了就是"在暂停"，按钮立即切为「继续」形态可反悔。 */
-  let _pausePending = false;
+  let skeletonState: SkeletonState = { phase: 'idle' };
+
+  /**
+   * 骨架状态单写点：更新容器 → 重算按钮语义。
+   * 只做语义重算（与 legacy 调用集逐一对应）；`syncSendEnabled` / 会话控件锁由调用方按各自
+   * 原有节奏调用，避免夹带行为变更。
+   */
+  function applySkeletonState(next: SkeletonState): void {
+    skeletonState = next;
+    syncButtonSemantics();
+  }
 
   /**
    * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → 语义数据（矩阵本体 = `helpers/turnUiState.ts` 纯函数）。
@@ -1775,8 +1793,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 当前自变量快照 → 按钮语义（**单一取数点**：两个 sync 函数共用，防两处各取一次而漂移） */
   function currentButtonSemantics(): ButtonSemantics {
     return deriveButtonSemantics({
-      sessionUiState: _sessionUiState,
-      pausePending: _pausePending,
+      sessionUiState: deriveSessionUiState(skeletonState),
+      pausePending: derivePausePending(skeletonState),
       hasInput: input.value.trim().length > 0,
     });
   }
@@ -1880,9 +1898,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * Phase 4 收敛后：按钮语义 = 会话状态 × 输入框内容 矩阵驱动（syncButtonSemantics 承载）。
    */
   function setStatus(state: 'thinking' | 'done' | 'paused'): void {
-    _sessionUiState = state;
-    // 暂停申请态只存在于 thinking 窗口：状态机翻到非 thinking 时申请必然已结束/作废
-    if (state !== 'thinking') _pausePending = false;
     // pauseBtn 图标永远是 pause（‖），UI 不维护 toggle 状态——直接进入状态分发
     if (state === 'thinking') {
       // 生成中：round-block summary 呼吸点 + 计数实时刷新（renderRoundBlock 驱动，无需额外文案）
@@ -1899,11 +1914,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         roundBlockEl.classList.remove('is-running');
       }
     }
-    // Phase 4：按钮语义矩阵（session × hasInput）
-    syncButtonSemantics();
+    // 骨架真源：legacy 三态 → 容器（「申请在途」由 pause_pending 分支单独升级；legacy
+    // setStatus 非 thinking 时清标志位的语义已内化进 skeletonFromStatus），随即重算按钮语义
+    applySkeletonState(skeletonFromStatus(state, skeletonState));
     // 状态切换影响发送按钮可用性（Phase 4 扩展见 syncSendEnabled）
     syncSendEnabled();
-    // 会话导航类控件运行时锁：thinking/paused（运行时）禁用，done（非运行时）恢复
+    // 会话导航类控件运行时锁：**语义 = 「宿主有在途后台写」窗口，不是 turn 状态**
+    // （宿主延迟发 status:'done' 是为了护住摘要写入期，避免用户在该窗口删除轮次产生孤儿摘要）
+    // → 本期仍由 legacy 信号驱动，不塞进骨架容器（详见方案文档 M3b-2b-2b）
     updateSessionControlsLock(state !== 'done');
     // done 态才需要恢复输入焦点（对抗评估 P1-4：避免强制 focus 打断用户其他操作）
     if (state === 'done' && document.activeElement === document.body) input.focus();
@@ -3485,8 +3503,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       setStatus(msg.state);
     } else if (msg.type === 'pause_pending') {
       // 暂停申请在途切换（host 推送）：申请态 = 按钮切「继续」可反悔；取消/作废 = 回归「暂停」。
-      _pausePending = msg.pending;
-      syncButtonSemantics();
+      // 只走容器单写点（applySkeletonState 内即重算按钮语义），不再直接改本地布尔量
+      applySkeletonState(skeletonFromPausePending(msg.pending, skeletonState));
     } else if (msg.type === 'pending_queue_update') {
       // Phase 4：宿主 interject 队列变化 → webview 渲染待发送区（灰色预览条 + 清空按钮）
       updatePendingQueueBar(msg.items);
@@ -4150,9 +4168,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
   });
   // pauseBtn 双态语义：thinking 态发 pause（暂停生成 / 或取消暂停）；
-  // paused 态发 resume（继续生成 / 或发送补充并继续）——click 行为由 _sessionUiState 路由。
+  // paused 态发 resume（继续生成 / 或发送补充并继续）——click 行为由骨架状态派生路由。
   pauseBtn?.addEventListener('click', () => {
-    if (_sessionUiState === 'paused') {
+    if (deriveSessionUiState(skeletonState) === 'paused') {
       // paused 态：根据输入框内容决定是纯续跑还是带补充续跑
       if (input.value.trim()) {
         // 有输入：走 sendMessage（宿主层根据状态路由到 resumeExecution 带补充）
