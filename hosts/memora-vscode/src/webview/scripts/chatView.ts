@@ -23,6 +23,8 @@ import { fmtTokens, fmtCompactTokens } from '../helpers/fmtTokens.js';
 import { forceScrollToBottom, scrollToBottom, trackScroll } from '../helpers/scrollToBottom.js';
 import { renderMarkdown } from '../helpers/renderMarkdown.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
+// 骨架（会话控件）语义派生纯函数层（M3b-2b-1）：矩阵本体抽出，本文件只做「取数 → 派生 → 施加」
+import { deriveButtonSemantics, type ButtonSemantics } from '../helpers/turnUiState.js';
 import { initDropdowns } from '../components/dropdown.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
@@ -1757,68 +1759,47 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let _pausePending = false;
 
   /**
-   * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → send 的 classList/title/aria-label + pauseBtn 的 hidden。
+   * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → 语义数据（矩阵本体 = `helpers/turnUiState.ts` 纯函数）。
+   *
+   * 本函数只做三步：取自变量快照 → 派生语义 → 施加到 DOM。
+   * 矩阵抽出的理由 = 可单测 + 为 M3b-2b-2「真源换成 TurnState」备好唯一派生入口（此刻仍读本地态）。
    * pauseBtn 图标永远是 pause（‖），不做本地 toggle——request/cancel 的行为 toggle 完全由 host 层
    * handlePause 通过 agent.isPausePending() 判断，UI 不感知 pending 状态。
-   * 调用点 = setStatus（状态变了）+ input 事件（输入内容变了）。
+   * 调用点 = setStatus（状态变了）+ input 事件（输入内容变了）+ pause_pending（申请在途变了）。
    * 不改变 disabled 态（那是 syncSendEnabled 的职责），不负责 round-block 呼吸点/导航锁（setStatus 的职责）。
    */
   function syncButtonSemantics(): void {
-    const hasInput = input.value.trim().length > 0;
-    switch (_sessionUiState) {
-      case 'thinking':
-        // 生成中暴露暂停按钮（图标换回 pause ‖）。暂停申请在途（_pausePending=true）时
-        // 按钮即时切为「继续 ▶」形态——用户心智：申请暂停 = 已在暂停，可再点反悔（取消申请）。
-        if (pauseBtn) {
-          pauseBtn.hidden = false;
-          const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
-          if (_pausePending) {
-            if (icon) applyIcon(icon, 'play');
-            pauseBtn.setAttribute('title', '继续（点击取消暂停申请）');
-            pauseBtn.setAttribute('aria-label', '继续（取消暂停申请）');
-          } else {
-            if (icon) applyIcon(icon, 'pause');
-            pauseBtn.setAttribute('title', '暂停生成');
-            pauseBtn.setAttribute('aria-label', '暂停生成');
-          }
-        }
-        if (hasInput) {
-          // thinking + 有输入：发送按钮 = interject 排队（去掉 loading/paused 类，切默认发送图标）
-          send.classList.remove('loading', 'paused');
-          send.setAttribute('title', '发送补充（排队等 step 边界注入）');
-          send.setAttribute('aria-label', '发送补充');
-        } else {
-          // thinking + 空输入：发送按钮 = 停止
-          send.classList.add('loading');
-          send.classList.remove('paused');
-          send.setAttribute('title', '停止生成');
-          send.setAttribute('aria-label', '停止生成');
-        }
-        break;
-      case 'paused':
-        // 已暂停：pauseBtn 换为 play ▶（继续），sendBtn 保持 stop ■（硬停止）——双按钮并存。
-        // 与 thinking 态视觉同级，语义区分：继续 = 从 checkpoint 恢复；停止 = 丢弃本次暂停。
-        if (pauseBtn) {
-          pauseBtn.hidden = false;
-          const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
-          if (icon) applyIcon(icon, 'play');
-          // paused + 有输入 → resume 时带补充；paused + 空输入 → 纯续跑
-          pauseBtn.setAttribute('title', hasInput ? '发送补充并继续' : '继续生成');
-          pauseBtn.setAttribute('aria-label', hasInput ? '发送补充并继续' : '继续生成');
-        }
-        // sendBtn 在 paused 态始终承担「硬停止」职责——暂停后不想继续了就丢弃检查点
-        send.classList.add('loading');
-        send.classList.remove('paused');
-        send.setAttribute('title', '停止生成（丢弃检查点）');
-        send.setAttribute('aria-label', '停止生成');
-        break;
-      default: // done
-        send.classList.remove('loading', 'paused');
-        send.setAttribute('title', '发送 (Enter)');
-        send.setAttribute('aria-label', '发送');
-        if (pauseBtn) pauseBtn.hidden = true;
-        break;
+    applyButtonSemantics(currentButtonSemantics());
+  }
+
+  /** 当前自变量快照 → 按钮语义（**单一取数点**：两个 sync 函数共用，防两处各取一次而漂移） */
+  function currentButtonSemantics(): ButtonSemantics {
+    return deriveButtonSemantics({
+      sessionUiState: _sessionUiState,
+      pausePending: _pausePending,
+      hasInput: input.value.trim().length > 0,
+    });
+  }
+
+  /** 语义数据 → DOM（**唯一施加点**） */
+  function applyButtonSemantics(spec: ButtonSemantics): void {
+    if (pauseBtn) {
+      // done 态该按钮无职责（spec.pause === null）：只隐藏，不改 icon/title/aria ——
+      // 否则会把隐藏按钮的属性改成与可见态不一致的值（无意义的状态污染）
+      pauseBtn.hidden = spec.pause === null;
+      if (spec.pause) {
+        const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
+        if (icon) applyIcon(icon, spec.pause.icon);
+        pauseBtn.setAttribute('title', spec.pause.title);
+        pauseBtn.setAttribute('aria-label', spec.pause.ariaLabel);
+      }
     }
+    send.classList.toggle('loading', spec.send.loading);
+    // `paused` 类当前全仓无写入点（矩阵遗留：注释里的「paused 形态」从未实现，见台账 UI-DEAD-1）；
+    // 保留清除以维持既有 DOM 结果，不在此顺手改语义（单一改动原则）
+    send.classList.remove('paused');
+    send.setAttribute('title', spec.send.title);
+    send.setAttribute('aria-label', spec.send.ariaLabel);
   }
 
   /**
@@ -1929,29 +1910,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 同步发送按钮可用态：按钮语义 = 会话状态 × 输入框内容 矩阵驱动（Phase 4 收敛）——
-   *   thinking + 空 → loading（停止方块）→ 恒可用
-   *   thinking + 有输入 → 发送（interject 排队）→ 恒可用
-   *   paused + 空 → paused 类（继续 ▶）→ 恒可用
-   *   paused + 有输入 → 发送（resumeExecution 带补充）→ 恒可用
-   *   done + 空 → 发送图标 → 空输入禁用
-   *   done + 有输入 → 发送图标 → 有输入启用
+   * 同步发送按钮**可用态**：判据 = 语义派生的 `send.disabled`（唯一真源 = `helpers/turnUiState.ts`）。
+   *
+   * `disabled` 只出现在 **done + 空输入**（空输入无法发送）；运行中（thinking/paused）无论有无输入
+   * 都可用——有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续。该不变量由派生层单测穷举锁定。
    * 调用点 = 一切输入内容/按钮状态变化处：input 事件、程序化预填/清空、setStatus。
    */
   function syncSendEnabled(): void {
-    const hasInput = input.value.trim().length > 0;
-    // Phase 4 扩展：除 classList 的 loading/paused（停止/继续），thinking+有输入 / paused+有输入也恒可用
-    const alwaysEnabled =
-      send.classList.contains('loading') ||
-      send.classList.contains('paused') ||
-      (_sessionUiState === 'thinking' && hasInput) ||
-      (_sessionUiState === 'paused' && hasInput);
-    if (alwaysEnabled) {
-      send.disabled = false;
-      return;
-    }
-    // done 态：空输入禁用，有输入启用
-    send.disabled = !hasInput;
+    send.disabled = currentButtonSemantics().send.disabled;
   }
 
   /**
