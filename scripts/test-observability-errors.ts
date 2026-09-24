@@ -1,5 +1,5 @@
 /**
- * D3 · 真实 Provider 错误场景端到端验证
+ * 真实 Provider 错误场景端到端验证
  *
  * 目的：补 test-observability-real.ts（仅正常路径）与 test-observability.ts（模拟）未覆盖的
  * 真实错误路径——API 限流(429) / 网络超时 / 认证失败(401)，确认错误分类与异常语义符合契约。
@@ -14,7 +14,7 @@
  *   - 网络不可达：不可达地址 → 期望 networkError
  *   - 正常对照：真 key 单轮 → usage 真填充（证明错误分类不误伤正常路径）
  *
- * 验收标准（全部通过即 D3 落地）：
+ * 验收标准：
  *   - 认证失败抛 configError 且消息含「LLM API Key 无效」
  *   - 限流抛 llmError 且消息含「LLM 服务限流」
  *   - 网络不可达抛 networkError

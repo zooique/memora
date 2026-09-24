@@ -1,5 +1,5 @@
 /**
- * G8 allowedPaths 动态管理 — 运行时热更新校验（宿主真实持久层 + 内核 SecurityGuard）
+ * allowedPaths 动态管理 — 运行时热更新校验（宿主真实持久层 + 内核 SecurityGuard）
  *
  * 验证链路（不重启 Agent 的前提下动态管理白名单）：
  *   装配 Agent 时 allowedPaths = [projectPath, extra]

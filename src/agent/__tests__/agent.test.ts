@@ -581,7 +581,7 @@ describe('Agent · Manager 委托模式', () => {
     expect(results.length).toBeLessThanOrEqual(2);
   });
 
-  // ─── L1~L3 LLM 记忆治理委托（G1） ─────────────────────────
+  // ─── L1~L3 LLM 记忆治理委托 ─────────────────────────
   // makeAgent 未注入 backgroundProvider，验证委托转发 + 降级路径 + 报告结构完整性。
   // 降级语义：manager 内部检测到 backgroundProvider 缺失时返回 skippedReason 报告。
 
@@ -2182,14 +2182,14 @@ class AbortThrowingProvider extends LlmProvider {
 }
 
 /**
- * 连接中断 Mock Provider（2026-09-02 假中断排雷测试专用）
+ * 连接中断 Mock Provider（假中断场景测试专用）
  *
  * 无任何 abort 触发（宿主 signal 未 abort），却在流式过程中主动抛 AbortError——
  * 模拟真实网络/代理内部中断（连接被抽断）。
  * 内核应判为「连接中断」而非「用户取消」：agent 层输出 error chunk + failed，
  * 不会产出 aborted chunk，**不谎报用户取消**。
- * 注：history 会写中断标记（勿再描述为「不写」）。
- * failed 与 aborted 现同属「本轮未正常完成」，在 `seed/orchestrator.act()` 共用
+ * 注：history 会写中断标记（勿描述为「不写」）。
+ * failed 与 aborted 同属「本轮未正常完成」，在 `seed/orchestrator.act()` 共用
  * `appendInterrupted` 收口（SSOT），已产出文本 + 中断标记**照常写史**；
  * 不变的只有「不产出 aborted chunk / 不谎报用户取消」这一点。
  */
@@ -2216,7 +2216,7 @@ class ConnectionInterruptedProvider extends LlmProvider {
 }
 
 /**
- * HTTP 失败 Mock Provider（2026-09-15 真机故障回归专用）
+ * HTTP 失败 Mock Provider（真机故障回归专用）
  *
  * 首次调用即抛**非 AbortError** 的普通 Error，模拟 `openaiCompatible` 在服务端返回
  * 任意 4xx（含 413）时抛出的 `llmError('LLM 请求格式错误', 'HTTP <码>：<body>')`。
@@ -2239,7 +2239,7 @@ class HttpFailProvider extends LlmProvider {
  * 「首 token 已到、转正文前停摆」一致），再抛 `DOMException('…','TimeoutError')`。
  *
  * 与 `ConnectionInterruptedProvider` 的关键差异：那个抛 **AbortError**（→ category 'connection'），
- * 本类抛 **TimeoutError**（非 AbortError）→ 在修复前落到通用 catch 的**无分类**分支。
+ * 本类抛 **TimeoutError**（非 AbortError）→ 若通用 catch 不判超时，即落**无分类**分支。
  */
 class TimeoutAfterChunkProvider extends LlmProvider {
   readonly name = 'timeout-after-chunk';
@@ -2311,7 +2311,7 @@ describe('Agent · chat() 中断保留文本', () => {
   it('真实流式 abort 抛 AbortError（fetch stream 中断）→ 已产出文本仍保留 + [已中断] 标记', async () => {
     // 与 AbortableMockProvider 的差异：本 provider 在 chunk 间检测 signal.aborted 后主动抛 AbortError，
     // 模拟真实 LLM 流式中断（fetch stream 被 abort）——走 consumeExecutionStream 的 catch 分支。
-    // 回归：此前 catch 分支返回 aborted:false + failed:true，act() 的 failed 短路跳过中断保存，
+    // 回归：若 catch 分支返回 aborted:false + failed:true → act() 的 failed 短路跳过中断保存，
     // 半截回答不落盘（用户实测「停止回答后闭环未保存」根因）。
     const provider = new AbortThrowingProvider(['第一段', '第二段'], 30);
     agent = new Agent({
@@ -2401,7 +2401,7 @@ describe('Agent · chat() 中断保留文本', () => {
       }
     }
 
-    // TS-12a：真用户取消（signal.aborted）→ aborted chunk 带 stopReason:'user'
+    // 真用户取消（signal.aborted）→ aborted chunk 带 stopReason:'user'
     const aborted = chunks.filter((c) => c.type === 'aborted');
     expect(aborted.length).toBeGreaterThan(0);
     expect((aborted[0] as { stopReason?: string }).stopReason).toBe('user');
@@ -2416,7 +2416,7 @@ describe('Agent · chat() 中断保留文本', () => {
   }, 15000);
 
   it('连接中断（signal 未 abort 却抛 AbortError）→ 判为错误而非用户取消', async () => {
-    // 2026-09-02 假中断排雷：宿主 signal 未 abort（用户没点停止），provider/网络层抛 AbortError
+    // 假中断场景：宿主 signal 未 abort（用户没点停止），provider/网络层抛 AbortError
     // 模拟真实连接被抽断。agent 层应输出 error chunk + failed，而非 aborted（不谎报用户取消）。
     const provider = new ConnectionInterruptedProvider(['第一段']);
     agent = new Agent({
@@ -2453,11 +2453,11 @@ describe('Agent · chat() 中断保留文本', () => {
   }, 15000);
 
   it('LLM 错误（非 abort）零产出 → 轮即收场 interrupted 且可被会话加载（真机故障回归）', async () => {
-    // 真机故障（2026-09-15 07:47 互动叙事平台方案）：12 次 LLM 调用 / 26 次 read_file 后
+    // 真机故障（互动叙事平台实测）：12 次 LLM 调用 / 26 次 read_file 后
     // 第 12 次调用被服务端 4xx 拒绝 → consumeExecutionStream 返回 failed:true。
-    // 修复前：act() 的 `if (streamResult.failed) return` 直接返回 → 轮停在 pending + refCount=0，
+    // 若 act() 的 `if (streamResult.failed) return` 直接返回 → 轮停在 pending + refCount=0，
     // 运行期无人收尾 → 宿主表现为「中止后重启，这一轮没有被重新渲染」（用户实测）。
-    // 现收口到 appendInterrupted（与用户手动中止**同一原语**）→ 运行期即落 interrupted + 登记会话。
+    // 契约：收口到 appendInterrupted（与用户手动中止**同一原语**）→ 运行期即落 interrupted + 登记会话。
     const roundStore = new InMemoryRoundStore();
     const sessionStore = new InMemorySessionStore(roundStore);
     agent = new Agent({
@@ -2469,7 +2469,7 @@ describe('Agent · chat() 中断保留文本', () => {
       allowedPaths: [tmpData],
       sessionStore,
       roundStore,
-      // 关闭自动归档：避免后台摘要 LLM 调用干扰（与 A1 回抽用例同策略）
+      // 关闭自动归档：避免后台摘要 LLM 调用干扰（与回抽用例同策略）
       archiveMode: 'manual',
     });
     await agent.init();
@@ -2484,8 +2484,8 @@ describe('Agent · chat() 中断保留文本', () => {
     const rounds = roundStore.listAll();
     expect(rounds).toHaveLength(1);
 
-    // 核心回归：轮已收场（修复前此处为 'pending'）→ 可被正常加载/渲染；
-    // 2026-09-15 起中断/失败轮落盘为 'interrupted'（不再伪 complete）
+    // 核心回归：轮已收场（若此处为 'pending' 即回归）→ 可被正常加载/渲染；
+    // 中断/失败轮落盘为 'interrupted'，不伪 complete
     expect(rounds[0]!.status).toBe('interrupted');
     // 零产出 → 不写空 assistantMessage（沿用 appendInterrupted 既有语义：无产出也按 stop 收场）
     expect(rounds[0]!.assistantMessage).toBeUndefined();
@@ -2500,10 +2500,10 @@ describe('Agent · chat() 中断保留文本', () => {
   }, 15000);
 
   it('LLM 超时（非 abort · 首分片后停摆）→ error chunk 带 category=timeout（宿主友好文案可达）', async () => {
-    // 场景 = 问题2 真机形态：首 token 已到达、转正文前停摆 → 看门狗以 DOMException TimeoutError
+    // 场景 = 真机形态：首 token 已到达、转正文前停摆 → 看门狗以 DOMException TimeoutError
     // reject（经 Promise.race 竞速闸）。该错误**不经过 abort signal**，故归「失败」路径、
     // 由 consumeExecutionStream 的通用 catch 收口。
-    // 修复前：通用 catch 不判超时 → 无 category → 宿主 `friendlyByCategory` 无键可映射 → 用户只
+    // 若通用 catch 不判超时 → 无 category → 宿主 `friendlyByCategory` 无键可映射 → 用户只
     // 能读到原始 DOMException 技术文案（「对话处理超时，请稍后重试」永不生效 = 僵尸文案）。
     agent = new Agent({
       projectPath: tmpProject,
@@ -2659,7 +2659,7 @@ describe('Agent · chat() 锁超时机制', () => {
     } catch {
       // 超时后 generator 可能抛 AbortError，忽略
     }
-    // 锁超时（2026-09-03 语义收敛）仅释放锁、不中断生成流——LLM 无进展由 provider 层超时兜底，
+    // 锁超时仅释放锁、不中断生成流——LLM 无进展由 provider 层超时兜底，
     // 故锁超时不应产出 aborted chunk（旧流由 outerResolve 正常放行收尾）。
     expect(abortedChunks.length).toBe(0);
   }, 30000);
@@ -2686,9 +2686,9 @@ describe('Agent · chat() 锁超时机制', () => {
     expect(agent.isBusy).toBe(false);
 
     // 关键断言：流仍在产出（未被中断），requestPause 不得因锁超时被误作废。
-    // 回归来源：2026-09-03 cc6cae13 锁超时仅释放锁不再中断流，requestPause 空闲守卫
+    // 缺陷形态：锁超时仅释放锁、不中断流——若 requestPause 空闲守卫
     // 用 isBusy（锁语义）判「任务已结束」→ 长任务运行超锁期后暂停申请被误拒。
-    // 修复：空闲守卫改用 _flowActive（流生命周期，chat()/resumeExecution 显式维护）。
+    // 契约：空闲守卫用 _flowActive（流生命周期，chat()/resumeExecution 显式维护）。
     expect(agent.requestPause('锁超时后暂停', 'user')).toBe(true);
     // 申请已注册（pending），可取消
     agent.cancelPauseRequest();
@@ -3027,7 +3027,7 @@ describe('Agent · L2 行为策略消费', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
     const rpm = agent.rolePackManager!;
-    // §4.1 单链：无 activePack 注入 → 落兜底包（不再回退 items[0]）
+    // §4.1 单链：无 activePack 注入 → 落兜底包（非 items[0]）
     expect(rpm.activeName).toBe('memora助手');
 
     // 手动切换是唯一入口：切换后立即生效（无需重启，完整切换含键）
@@ -3193,7 +3193,7 @@ describe('Agent · 作品投影实时刷新（workProjectionGenerated → loop �
 });
 
 // ═══════════════════════════════════════════════════════════════
-// A1 回抽 · 首轮工具步叙述不落持久化正文（2026-09-12）
+// 回抽 · 首轮工具步叙述不落持久化正文
 // ═══════════════════════════════════════════════════════════════
 
 /**

@@ -256,7 +256,7 @@ export class ProviderStore {
    *
    * 用于 handleSetProvider 热切换失败时，若原本无激活 Provider（靠 env 装配），
    * 需把持久化激活态一并清空，否则 UI 显示新 provider 已激活但 agent 仍用 env，
-   * 造成功能↔UI 不一致（对抗评估 P1-3）。
+   * 造成功能↔UI 不一致。
    */
   async clearActive(): Promise<void> {
     await vscode.workspace
@@ -395,7 +395,7 @@ export class ProviderStore {
         await this.writeConfig(providers);
       }
     }
-    // 清除旧全局设置（不再作为真理源，避免与 per-LLM contextWindow 双源）
+    // 清除旧全局设置（不作真理源，避免与 per-LLM contextWindow 双源）
     await cfg.update('maxContextTokens', undefined, vscode.ConfigurationTarget.Global);
   }
 }

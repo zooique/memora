@@ -95,7 +95,7 @@ function createInput(overrides: Partial<AssembleInput> = {}): AssembleInput {
     tracer: undefined,
     messages: undefined,
     enableContextSummary: false,
-    rolePackTeams: [], // P-6（2026-09-06）：AgentConfig 收敛后必传；直构测试显式空数组
+    rolePackTeams: [], // AgentConfig 收敛后必传；直构测试显式空数组
     existingSkillManager: null,
     ...overrides,
   };
@@ -210,16 +210,16 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── 技能可见集两通道同源（2026-09-22 G4 回归护栏）─────────────
+  // ─── 技能可见集两通道同源（回归护栏）─────────────
   //
   // 背景（复核实锤）：同一份「模型可看到的技能集」有两个交付通道 ——
   //   ① L1 枚举 `SkillManager.buildSkillList()`（写进 system prompt）
   //   ② `list_skills` 工具（assembler 注入 toolExec.listSkills 回调，>50 技能时的动态查询）
-  // 禁用过滤当初只落到 ①，② 仍只过滤 description（自写 filter），
+  // 若禁用过滤只落到 ①、② 仍只过滤 description（自写 filter）——
   // 而该处注释早已自称「两通道过滤标准必须一致」——注释声明与实现不同源，即本仓定义的「伤」。
   // 后果：模型改用 list_skills 时仍能看到并激活已禁用技能，禁用形同虚设且静默。
   //
-  // 修复 = 两侧共用唯一真理源 `SkillManager.listAvailable()`；本组直接打真实工具链
+  // 契约 = 两侧共用唯一真理源 `SkillManager.listAvailable()`；本组直接打真实工具链
   // （assembleComponents → toolExec.execute('list_skills')），确保任一侧回退自写 filter 即变红。
 
   describe('技能可见集两通道同源（L1 枚举 ≡ list_skills 工具）', () => {
@@ -233,7 +233,7 @@ describe('assembleComponents', () => {
       mkdirSync(dir, { recursive: true });
       writeFileSync(join(dir, 'a.md'), '---\nname: a\ndescription: 技能A\n---\n正文A', 'utf-8');
       writeFileSync(join(dir, 'b.md'), '---\nname: b\ndescription: 技能B\n---\n正文B', 'utf-8');
-      // 缺 description：渐进披露层面不可用（G22），两通道都不该出现
+      // 缺 description：渐进披露层面不可用，两通道都不该出现
       writeFileSync(join(dir, 'nodesc.md'), '---\nname: nodesc\n---\n正文', 'utf-8');
       return home;
     }
@@ -249,7 +249,7 @@ describe('assembleComponents', () => {
         // 通道 ②：真实工具链（execute 分派 → toolExec.listSkills 回调）
         const listed = await output.toolExec.execute('list_skills', '{}');
 
-        // 修复前：此处仍列出 a（工具侧只过滤 description）→ 断言变红
+        // 若此处仍列出 a（工具侧只过滤 description）→ 断言变红
         expect(listed).not.toContain('- a：');
         expect(listed).toContain('- b：');
 
@@ -341,14 +341,14 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── 会议逐步切换（T1，2026-09-06）────────────────────────
+  // ─── 会议逐步切换 ────────────────────────
 
   describe('会议逐步切换：getTaskTable 驱动装配视角钩子', () => {
     it('taskTable 每次注入都触发 applyActivePlanItemAssembly，active 任务项推进后仍触发', async () => {
-      // 缺口 A 收口：此前装配视角只在 prepare.run 设一次、后继 step 换角色不生效。
+      // 缺陷形态：若装配视角只在 prepare.run 设一次 → 后继 step 换角色不生效。
       // 此测试验证「任务表每轮注入 → applyActivePlanItemAssembly 钩子」的装配导线已接上
       //（真实 Agent 中该钩子由 applyActivePlanItemAssemblyIfChanged 实现换角色；
-      //  resolveRoundAssemblyRole / setRoundAssemblyRole 的判定由 rolePackManager.test S5 覆盖）。
+      //  resolveRoundAssemblyRole / setRoundAssemblyRole 的判定由 rolePackManager.test 会议机制用例覆盖）。
       const applyActivePlanItemAssembly = vi.fn();
       const output = await assembleComponents(
         createPctx(),
@@ -400,7 +400,7 @@ describe('assembleComponents', () => {
     });
   });
 
-  // ─── 任务表未完成硬约束（P3，2026-09-22）─────────────────────
+  // ─── 任务表未完成硬约束 ─────────────────────
 
 describe('任务表未完成硬约束（P3，2026-09-22）', () => {
   it('存在未完成任务项时 getTaskTable 追加「不得收尾」执行约束（首行进度契约不变）', async () => {
@@ -416,7 +416,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
     const table = output.loop.getTaskTable!();
     // 首行 [任务进度: 契约不可变（loop 替换式注入靠此前缀清理旧表）
     expect(table).toContain('[任务进度: 0/2');
-    // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，实证 round-1790068191972）
+    // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，真实故障轮实证）
     expect(table).toContain('（执行约束，非历史信息）仍有步骤未标记「已完成」');
     expect(table).toContain('task_table_update');
   });
@@ -436,7 +436,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
   });
 });
 
-// ─── task_table_update 全链寻址（2026-09-06 P0 断链修复，防 mock 盲区）────────────────
+// ─── task_table_update 全链寻址（防 mock 盲区）────────────────
 
   describe('task_table_update 全链寻址：短 id → 真实 sessionManager 命中', () => {
     async function assembleReal(): Promise<Awaited<ReturnType<typeof assembleComponents>>> {
@@ -468,7 +468,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
         JSON.stringify({ step_id: shortId, status: 'blocked' }),
       );
 
-      // 修复前：短 id 透传到 updatePlanItemStatus 全等匹配 → STEP_NOT_FOUND（断链）
+      // 若短 id 透传到 updatePlanItemStatus 全等匹配 → STEP_NOT_FOUND（断链）
       expect(result).toContain('已标记为 blocked');
       const cp = output.sessionManager.getCheckpoint()!;
       expect(cp.plan.find((s) => s.id === fullId)!.status).toBe('blocked');
@@ -690,7 +690,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
   });
 });
 
-// ─── buildSystemPromptPrefix · Turn 起始策略注入（2026-09-13，Part 2）──
+// ─── buildSystemPromptPrefix · Turn 起始策略注入 ──
 
 describe('buildSystemPromptPrefix · Turn 起始策略', () => {
   it('systemPromptPrefix 含三行边界指令（约束式，非步骤脚本）', () => {

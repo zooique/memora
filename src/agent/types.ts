@@ -473,7 +473,7 @@ export interface AgentOptions {
   /**
    * 启动时激活的角色包名（宿主装配级，既有键，语义扩展）：宿主持久化的用户选择。
    * §4.1 解析链第一层——有效则生效；失效（包不存在）落兜底包（builtinFallbackRole ?? BUILTIN_FALLBACK_PACK），
-   * 不再回退 items[0]。
+   * 不回退 items[0]。
    */
   activeRolePack?: string;
   /**

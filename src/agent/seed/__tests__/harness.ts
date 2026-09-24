@@ -54,9 +54,9 @@ export interface SeedMocks {
   };
   sessionManager: {
     getCheckpoint: ReturnType<typeof vi.fn>;
-    // 会议机制（S5 确定性触发）：prepare 预置任务表写点（默认为空，测试可注入）
+    // 会议机制（确定性触发）：prepare 预置任务表写点（默认为空，测试可注入）
     writePlan: ReturnType<typeof vi.fn>;
-    // 任务链收尾/硬中止清场（⑦ 排雷 2026-08-29）：防残留 plan 影响下一次输入
+    // 任务链收尾/硬中止清场：防残留 plan 影响下一次输入
     clearPlan: ReturnType<typeof vi.fn>;
     // 在途计划谓词（SSOT = SessionManager.hasInflightPlan）：会议骨架预置守卫消费
     hasInflightPlan: ReturnType<typeof vi.fn>;
@@ -65,7 +65,7 @@ export interface SeedMocks {
   };
   rolePackManager: {
     getActive: ReturnType<typeof vi.fn>;
-    // 会议机制（S5）：范围校验 / 本轮装配视角 / 组上下文块
+    // 会议机制：范围校验 / 本轮装配视角 / 组上下文块
     resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
     setRoundAssemblyRole: ReturnType<typeof vi.fn>;
     buildTeamContextBlock: ReturnType<typeof vi.fn>;
@@ -80,7 +80,7 @@ export interface SeedMocks {
   tracer: { startSpan: ReturnType<typeof vi.fn> };
   span: { end: ReturnType<typeof vi.fn> };
   applyRolePackToolExposure: ReturnType<typeof vi.fn>;
-  /** 会议机制（S5）：按本轮装配视角刷新 loop 前缀（prepare 每轮调用；缺省 no-op 测试不断言） */
+  /** 会议机制：按本轮装配视角刷新 loop 前缀（prepare 每轮调用；缺省 no-op 测试不断言） */
   refreshRolePackPrefixForRound: ReturnType<typeof vi.fn>;
   /** 流收口桩（AsyncGenerator，forward 后返回注入的 consumeResult） */
   consumeExecutionStream: ReturnType<typeof vi.fn>;
@@ -222,7 +222,7 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     archiveMode: 'full',
     messages: undefined,
     applyRolePackToolExposure: mocks.applyRolePackToolExposure as unknown as SeedDeps['applyRolePackToolExposure'],
-    // 会议机制（S5）：按本轮装配视角刷新 loop 前缀（prepare 每轮调用）
+    // 会议机制：按本轮装配视角刷新 loop 前缀（prepare 每轮调用）
     refreshRolePackPrefixForRound: mocks.refreshRolePackPrefixForRound as unknown as SeedDeps['refreshRolePackPrefixForRound'],
     consumeExecutionStream: mocks.consumeExecutionStream as unknown as SeedDeps['consumeExecutionStream'],
     // 难度分级后台 Provider（默认 NULL → 判定 unknown，不影响既有测试主回答摘要）

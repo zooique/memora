@@ -175,7 +175,7 @@ describe('AgentLoop · LLM 调用指标', () => {
 // ═══════════════════════════════════════════════════════════════
 // 工具调用指标测试
 //
-// 记忆召回指标维度（recall.totalCount/hitCount/hitRate）已于 2026-09-11 随
+// 记忆召回指标维度（recall.totalCount/hitCount/hitRate）已随
 // LoopMetrics/AgentMetrics 中的字段一并物理删除：自动召回退役后三者零写点、
 // hitRate 恒 0（假指标）。记忆检索唯一入口 = search_memories 工具（TOOL_EXEC span）。
 // ═══════════════════════════════════════════════════════════════

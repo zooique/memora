@@ -446,7 +446,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 渲染真理源 = 当前轮 events[]（currentEvents）：运行时 process_event 增量与重放
   // turn_update（replay:true）RoundView.processEvents 整批都汇入同一数组，由 renderRoundBlock
   // 统一渲染（SSOT：无第二套卡片 DOM）。
-  // round-block 挂在本轮首个 assistant 块上（插话产生的后续同 roundId 块不再挂）。
+  // round-block 挂在本轮首个 assistant 块上（插话产生的后续同 roundId 块不挂）。
 
   /** 本轮过程事件缓冲（渲染唯一真相源，运行时与重放同源） */
   let currentEvents: ProcessEvent[] = [];
@@ -832,7 +832,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 过程叙述父块（扁平化，2026-09-04）：LLM 一段行动叙述 = 一个可折叠父块——
+   * 过程叙述父块（扁平化）：LLM 一段行动叙述 = 一个可折叠父块——
    * summary 显示首行摘要（截断），展开看全文。工具调用不再嵌套进叙述块——narrate 与 tool
    * 平级、各自独立折叠，按 seq 顺序平铺在 details 顶层（Trae Work 式扁平 step 流）。返回父块 el。
    */
@@ -842,10 +842,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   ): HTMLDetailsElement {
     const row = document.createElement('details');
     row.className = 'round-block__narrate';
-    // 展开态（2026-09-02 拍板）：运行中（增量投影）默认展开——过程叙述直显，
+    // 展开态：运行中（增量投影）默认展开——过程叙述直显，
     // 保持「任务过程可见」体验；收尾/回放（finalize 重建）默认收起，与 round-block 一致
     row.open = openByDefault;
-    // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertPlanItemInOrder）；ts 时间键：统一排序（2026-09-17）
+    // seq 锚点：进行中增量追加去重 + 顶层按序插入（insertPlanItemInOrder）；ts 时间键：统一排序
     row.dataset.seq = String(ev.seq);
     row.dataset.ts = ev.ts;
     const summary = document.createElement('summary');
@@ -859,7 +859,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 思考折叠块（聚合版，2026-09-14）：把同一轮 assistant 应答的**全部** thought 碎片聚合成
+   * 思考折叠块（聚合版）：把同一轮 assistant 应答的**全部** thought 碎片聚合成
    * **一个**折叠块，正文为各碎片累积拼接 —— 修复「thinking>LLM 流式把 reasoning 切成几十个片段 →
    * 满屏"思考"小折叠」（P3）。summary 固定「思考」+ 首行预览；textContent 构建防注入。
    * streaming 时默认展开（openByDefault=true 由调用方按运行期传），finalize 默认收起。
@@ -879,7 +879,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const row = document.createElement('details');
     row.className = 'round-block__thought';
     row.open = openByDefault;
-    // ts 时间键（2026-09-17 统一排序）：锚点事件 ts，供 insertPlanItemInOrder 时间序归位；
+    // ts 时间键（统一排序）：锚点事件 ts，供 insertPlanItemInOrder 时间序归位；
     // seq 兜底比较（同 ts/空串时回落 seq 序，与 narrate/tool 平铺同构）
     if (ts) row.dataset.ts = ts;
     if (seq !== undefined) row.dataset.seq = String(seq);
@@ -894,7 +894,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 工具意图预告行（2026-09-17）：LLM 流式生成 tool_call 参数期间提前渲染的「准备中」行。
+   * 工具意图预告行：LLM 流式生成 tool_call 参数期间提前渲染的「准备中」行。
    *
    * 与 renderToolRow 同构（summary = 工具名 + 状态），但参数未成形——无叙述生成、无 seq：
    * append 到 process-flow 流尾（流式期间"新的在最下"语义正确，finalize/重放全量重建时
@@ -930,7 +930,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 工具行升级（2026-09-17）：pending「准备中」行在 tool_start 到达时转执行态，不重建 DOM——
+   * 工具行升级：pending「准备中」行在 tool_start 到达时转执行态，不重建 DOM——
    * 与 renderToolRow 新建的执行态行同构（叙述/状态/进行中高亮），后续 tool_result 更新
    * （updateToolRowState 按 data-tool-call-id）天然复用，无需特判。
    */
@@ -960,7 +960,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
    */
   /**
-   * 步级折叠容器（阶段二，2026-09-08 路 B′）：把 narrate/tool 按 plan_item_boundary 归组。
+   * 步级折叠容器：把 narrate/tool 按 plan_item_boundary 归组。
    * 先在清除式重建时清理旧任务项容器，再按事件 seq 定位应归入的任务项组：
    *   - 无任何 plan_item_boundary → 返回 details 本身（整轮一组，退回扁平现状）；
    *   - 有 plan_item_boundary → 返回最近一条任务项级边界（seq ≤ 目标 seq）所属的任务项折叠块容器，
@@ -973,7 +973,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /**
    * 定位条目应插入的任务项容器（ts 为该条目的时间键；processEvents 行与 interactiveInputs
-   * 条目共用，2026-09-17 形态甲统一时间序）。无边界回退 details（整轮一组）。
+   * 条目共用，形态甲统一时间序）。无边界回退 details（整轮一组）。
    *
    * 同 ts（含全空串的历史/测试数据）回落 seq 兜底：boundary 在条目之前（boundary.seq <= 条目 seq）
    * 才归该步；QA 条目无 seq（undefined）时同 ts 归最近 boundary，靠写入序稳定。
@@ -1021,10 +1021,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 步级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
   function insertPlanItemGroupInOrder(root: HTMLElement, grp: HTMLElement, boundSeq: number): void {
-    // 候选限定为 root 的**直接子节点**（2026-09-16 V4-1）：与 insertPlanItemInOrder 同构隐患，
+    // 候选限定为 root 的**直接子节点**：与 insertPlanItemInOrder 同构隐患，
     // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，
-    // 按 DOM 规范抛 NotFoundError（F2 同类失败模式的另一半）。当前任务项分组恒为容器直接子节点
-    // （静态上 root 只会是 flow / details，绝不会是任务项分组自身），故本次为防御性、零行为变更。
+    // 按 DOM 规范抛 NotFoundError（同类失败模式的另一半）。当前任务项分组恒为容器直接子节点
+    // （静态上 root 只会是 flow / details，绝不会是任务项分组自身），故属防御性、零行为变更。
     const existingGrps = Array.from(root.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'));
     const next = existingGrps.find((g) => {
       const gBoundSeq = Number(g.dataset.seq ?? Infinity);
@@ -1041,7 +1041,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 思考碎片按「所属 step」分桶（SSOT；finalize 与流式两类上下文共用）。
    *
-   * 语义（2026-09-14 修正）：**一个任务项一个思考折叠块**，而非整轮合成一个。分桶键 = 该碎片
+   * 语义：**一个任务项一个思考折叠块**，而非整轮合成一个。分桶键 = 该碎片
    * 生效的任务项边界 planItemId（无边界 → 'root'）。同一桶内碎片保序**原样连续**拼接（连贯）；
    * 不同任务项各自独立折叠（不跨步混批）。含 anchorSeq（桶内最早碎片的 seq，做插入锚点）。
    */
@@ -1070,15 +1070,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 过程条目按统一时间键（data-ts）插入容器顶层。
    *
-   * 2026-09-17 形态甲：排序键统一为 **ts（时间键）**——processEvents 行（narrate/tool/thought）
+   * 形态甲：排序键统一为 **ts（时间键）**——processEvents 行（narrate/tool/thought）
    * 与 interactiveInputs 条目（QA，无 seq）共用同一时间序，用户输入自然归位到对应任务项间隙。
    * 行创建点统一挂 `data-ts`（ISO 字符串，localeCompare 同值比较即时间序）；无 data-ts 的
    * 异常节点（如 pending 工具行）视为最大键（恒末尾，与 appendChild 流尾语义一致）。
    *
-   * 候选限定为 details 的**直接子节点**（2026-09-16 F2 修复）：存在 plan_item_boundary 时同款元素
+   * 候选限定为 details 的**直接子节点**：存在 plan_item_boundary 时同款元素
    * 嵌套在 .round-block__plan-item 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
    * details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
-   * 候选类型 = narrate/tool/thought + 运行时输入条目（input，形态甲新增）。
+   * 候选类型 = narrate/tool/thought + 运行时输入条目（input，形态甲）。
    */
   function insertPlanItemInOrder(details: HTMLElement, el: HTMLElement, ts: string): void {
     const existing = Array.from(
@@ -1099,7 +1099,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       details.insertBefore(el, next);
     } else {
       // 无更高 ts → append 到末尾。注意：不用 phase.after(el)（phase 在 prepend 后居首，
-      // phase.after 会把元素插到第二位置，破坏与低 ts 平铺元素——如 narrate——的时间序，v1.8 排雷）
+      // phase.after 会把元素插到第二位置，破坏与低 ts 平铺元素——如 narrate——的时间序）
       details.appendChild(el);
     }
   }
@@ -1107,7 +1107,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 工具调用行（tool_start 配对 tool_result）——折叠行：summary = 名称(状态) 常显，
    * args + result 摘要折叠进 body，避免工具详情抢占报告主体。失败/进行中默认展开（错误直显）。
-   * 宿主容器（扁平化，2026-09-04）：直接平铺在 round-block__details 顶层（insertPlanItemInOrder 按 seq 插入）。
+   * 宿主容器（扁平化）：直接平铺在 round-block__details 顶层（insertPlanItemInOrder 按 seq 插入）。
    */
   /**
    * TS-12b：aborted 中断语义 → 展示文案（单一映射，与 error category 词典同构）。
@@ -1165,7 +1165,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const { label: status, open, running } = toolRowStatus(result);
     const row = document.createElement('details');
     row.className = 'round-block__tool';
-    // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertPlanItemInOrder）；ts 时间键（2026-09-17）
+    // 增量追加去重锚点：toolCallId（唯一标识）+ seq（顶层按序平铺，insertPlanItemInOrder）；ts 时间键
     row.dataset.toolCallId = start.payload.toolCallId;
     row.dataset.seq = String(start.seq);
     row.dataset.ts = start.ts;
@@ -1211,13 +1211,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function updateToolRowState(container: HTMLElement, result: Extract<ProcessEvent, { type: 'tool_result' }>): void {
     container.querySelectorAll<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`).forEach((row) => {
       const { label: status, open, running } = toolRowStatus(result);
-      // TS-11 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）
+      // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）
       const statusEl = row.querySelector('.round-block__tool-status');
       if (statusEl) statusEl.textContent = ` (${status})`;
       row.open = open;
-      // TS-11b：result 已到达 → 移除进行中态（恢复普通行样式）
+      // result 已到达 → 移除进行中态（恢复普通行样式）
       row.classList.toggle('is-tool-running', running);
-      // TS-11c：工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
+      // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
       row.querySelector(':scope .round-block__elapsed')?.remove();
       // 结果摘要：首次到达补 DOM（后续到达不重复）
       if (result.payload.summary && !row.querySelector('.round-block__tool-summary')) {
@@ -1237,7 +1237,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * - 进行中（finalize=false）：折叠区自动展开，实时相位行 + 工具行增量追加（任务过程实时可见）
    * - 完成（finalize=true）：折叠区自动收起，只留摘要（工具×N · 耗时），全量小节供展开查阅
    *
-   * 形态甲（2026-09-17）：finalize 全量重建从**合并流**渲染——processEvents 行 + 运行时输入
+   * 形态甲：finalize 全量重建从**合并流**渲染——processEvents 行 + 运行时输入
    * 条目（interactiveInputs）按统一时间键（ts）归位到对应任务项分组；运行时输入不搬家、
    * 不追加末尾，位置唯一确定（修复「QA 位置飘忽」根因）。
    *
@@ -1252,7 +1252,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // summary：统计摘要（计数 + 耗时）
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     if (summary) {
-      // G31 方案1：重置前先清掉旧 stats span 的 baseStats 缓存（textContent 清空会移除子节点，
+      // 重置前先清掉旧 stats span 的 baseStats 缓存（textContent 清空会移除子节点，
       // 残留 dataset 会让 refresh 拼接旧基准——每次重建重设一半，幂等）
       const oldStats = summary.querySelector<HTMLElement>('.round-block__stats');
       if (oldStats) delete oldStats.dataset.baseStats;
@@ -1284,7 +1284,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       summary.appendChild(label);
       rb.classList.toggle('is-running', !finalize);
     }
-    // T4：round-block 任务项标签——如果有 active step，在 summary 上方显示"📍 执行任务项 N: xxx"
+    // round-block 任务项标签——如果有 active step，在 summary 上方显示"📍 执行任务项 N: xxx"
     // 从 currentPlanItems 缓存读（plan_update 消息存，零新增协议）；每次重建保证始终正确
     const existingTag = rb.querySelector(':scope .round-block__plan-tag') as HTMLElement | null;
     if (currentPlanItems.length > 0) {
@@ -1322,19 +1322,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     rb.open = !finalize;
     const details = rb.querySelector('.round-block__details') as HTMLElement;
     if (!details) return;
-    // v1.8 剪枝（2026-09-09）：renderRoundBlock 仅 finalize（done/interrupted/重放）调用，
-    // 运行时交由 renderProcessFlow（process-flow 平铺）承载——原「进行中增量投影」分支已成死代码，已删。
+    // renderRoundBlock 仅 finalize（done/interrupted/重放）调用，
+    // 运行时交由 renderProcessFlow（process-flow 平铺）承载。
     // ── 完成（finalize=true）：全量渲染所有小节（展开供查阅） ──
     // 实时相位行是进行中专属（details 直接子元素，非小节），收尾先移除
     details.querySelector('.round-block__phase')?.remove();
     // 全量重建前清理增量产物：section（轨迹/召回等）、narrate、tool、thought、任务项容器等增量元素，避免重复渲染。
-    // 形态甲（2026-09-17）：运行时输入条目**快照保留**（重放 seg 消息触发的重建跨轮保留已插入 QA，
+    // 形态甲：运行时输入条目**快照保留**（重放 seg 消息触发的重建跨轮保留已插入 QA，
     // 重建后按 ts 重插归位——否则任务项分组清理会连根拔起 QA 致重放丢失）。
     const existingInputs = Array.from(details.querySelectorAll<HTMLElement>('.round-block__input'));
     details.querySelectorAll(
       '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__thought, .round-block__plan-item',
     ).forEach((el) => el.remove());
-    // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；阶段二有 plan_item_boundary 时归入任务项折叠块）
+    // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；有 plan_item_boundary 时归入任务项折叠块）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
@@ -1352,9 +1352,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertPlanItemInOrder(host, row, t.ts);
       }
     }
-    // § 思考（per-plan-item 聚合折叠块，2026-09-14）：**一个任务项一个折叠块**（同任务项碎片原样
+    // § 思考（per-plan-item 聚合折叠块）：**一个任务项一个折叠块**（同任务项碎片原样
     // 连续拼接，不同任务项各自独立），按各自最早 seq 与 narrate/tool 平铺（finalize 默认收起）。
-    // 修复「整轮合成一个」「满屏 thinking 小折叠」两个极端（P3 + 本轮任务项分桶修正）。
+    // 修复「整轮合成一个」「满屏 thinking 小折叠」两个极端（P3，按任务项分桶）。
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
       const { host } = planItemContainerFor(details, events, b.anchorTs, b.anchorSeq);
@@ -1364,7 +1364,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         b.anchorTs,
       );
     }
-    // § 运行时输入（形态甲，2026-09-17）：跨重建快照条目 + finalize 合并流条目统一按统一时间键（ts）
+    // § 运行时输入（形态甲）：跨重建快照条目 + finalize 合并流条目统一按统一时间键（ts）
     //   归位到对应任务项分组（补充挂刚结束的任务项间隙），不搬家、不追加末尾。data-ts 去重防双轨重复。
     const renderedInputTs = new Set<string>();
     for (const el of existingInputs) {
@@ -1383,7 +1383,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = planItemContainerFor(details, events, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
     }
-    // § 过程轨迹（thinking 阶段：聚合计数，2026-09-09 去噪——同一相位 N 条 thinking 事件
+    // § 过程轨迹（thinking 阶段：聚合计数，去噪——同一相位 N 条 thinking 事件
     //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
     const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');
     if (thinking.length > 0) {
@@ -1450,7 +1450,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
     if (metrics) {
       const { listEl } = sectionOf(details, '执行指标');
-      // 未解析文本工具意图（2026-09-14 静默失败修复）：>0 表示「想调用工具却未走原生协议」，
+      // 未解析文本工具意图：>0 表示「想调用工具却未走原生协议」，
       // 不得显示为成功收尾——与 success 判据（流程跑完）正交，这是新增的诚实信号。
       const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
       const finalSuccess = metrics.payload.success && unparsed === 0;
@@ -1468,7 +1468,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         listEl.appendChild(row);
       });
     }
-    // § 收起态摘要补 QA 计数（形态甲，2026-09-17）：从合并流（快照 + interactiveInputs）统计——
+    // § 收起态摘要补 QA 计数（形态甲）：从合并流（快照 + interactiveInputs）统计——
     // 替代旧 refreshRoundBlockQaStats 的 DOM 扫描；stats span 已在函数开头重建，此处追加幂等。
     // 独立去重集合（不读 renderedInputTs——渲染循环已消费该集合，读它会误跳过本次计数）
     if (finalize) {
@@ -1505,7 +1505,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 运行时过程平铺渲染（v1.8 剪枝，2026-09-09）：**无 round-block 大折叠壳**——
+   * 运行时过程平铺渲染：**无 round-block 大折叠壳**——
    * 过程事件按任务项时序平铺在 process-flow 容器里：
    *   narrate → 平铺文本行（结束补「：」——「AI 说什么：」后接工具块的叙述冒号形态）；
    *   tool  → 独立折叠行（复用 .round-block__tool 视觉，data-tool-call-id 去重）；
@@ -1557,15 +1557,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const row = document.createElement('div');
       row.className = 'process-flow__narrate';
       row.dataset.seq = String(n.seq);
-      row.dataset.ts = n.ts; // 时间键（2026-09-17 统一排序）
+      row.dataset.ts = n.ts; // 时间键（统一排序）
       // 叙述冒号：结尾无标点时补「：」（用户定案「AI 说什么：」后接工具块）——文本防注入
       const text = n.payload.content.trim();
       row.textContent = /[:：。!！?？；;]$/.test(text) ? text : `${text}：`;
-      // 任务表例外：有 plan_item_boundary 归入任务项折叠块（复用阶段二 getOrCreatePlanItemGroup 容器）
+      // 任务表例外：有 plan_item_boundary 归入任务项折叠块（复用 getOrCreatePlanItemGroup 容器）
       const { host } = planItemContainerFor(flow, events, n.ts, n.seq);
       insertPlanItemInOrder(host, row, n.ts);
     }
-    // 2.5) thought 思考折叠（per-plan-item 聚合，2026-09-14）：**一个任务项一个折叠块**（同任务项碎片
+    // 2.5) thought 思考折叠（per-plan-item 聚合）：**一个任务项一个折叠块**（同任务项碎片
     //   原样连续拼接，不同任务项各自独立）；每个块维护自己 data-merged-seq 防重复拼接，修复
     //   「整轮合成一个」和「满屏小折叠」两个极端。
     const thoughtBuckets = groupThoughtBuckets(events);
@@ -1580,7 +1580,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         row.className = 'process-flow__thought';
         row.dataset.planItemBucket = b.key;
         row.dataset.mergedSeq = '0';
-        row.dataset.ts = b.anchorTs; // 时间键（2026-09-17 统一排序）
+        row.dataset.ts = b.anchorTs; // 时间键（统一排序）
         row.dataset.seq = String(b.anchorSeq); // seq 兜底比较（同 ts/空串回落）
         const summaryEl = document.createElement('summary');
         summaryEl.textContent = '思考';
@@ -1625,7 +1625,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 中断轮平铺收尾行（2026-09-19 形态定案：RT/RP 同构——过程收进折叠块、「用户停止了对话」平铺折叠块外）
+   * 中断轮平铺收尾行（形态定案：RT/RP 同构——过程收进折叠块、「用户停止了对话」平铺折叠块外）
    *
    * 语义映射同旧的 §已停止：error（失败：超时/连接中断）优先，其次 aborted（中断：用户停止/锁超时），
    * 皆无则 generic 停文案（旧数据）。error 优先是保守排序——二者本应互斥（failed 路径 signal 未 abort），
@@ -1658,15 +1658,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 重放中断轮孤儿宿主渲染（2026-09-19 形态定案：与 done 轮同构——过程折叠 + 停止行平铺）
+   * 重放中断轮孤儿宿主渲染（形态定案：与 done 轮同构——过程折叠 + 停止行平铺）
    *
    * 中断轮无 assistant 正文块（host 只对 complete 轮挂正文，避免半截文本与过程事件同源双份），
    * 但折叠收尾仍需要宿主——孤儿宿主 = 复用 buildAssistantShell 的 label/footer（单一实现）+ 移除
    * body（中断轮不显示半截正文），挂 messages 尾并记 data-round-id；随后临时锚定 activeAssistantEl
    * 让 renderRoundBlock 挂折叠块，再平铺停止行。旧「孤儿 process-flow 平铺 + flagInterruptedMarker」
-   * （2026-09-15 方案）随之退役，闪烁相位行（process-flow__phase 呼吸点）连根消失。
+   * 随之退役，闪烁相位行（process-flow__phase 呼吸点）连根消失。
    *
-   * 容器化（2026-09-22 修复）：「被停止的会话也是正常对话记录」——中断轮与 done 轮同构也收进
+   * 容器化：「被停止的会话也是正常对话记录」——中断轮与 done 轮同构也收进
    * .round-group 容器建 footer（复制整链/分叉/删除 + 时间戳），支持用户手动删除。ts 用本轮首个
    * 过程事件时间（meta 恒为首条，真实闭环起点，对齐运行时中断块首 chunk ts），替代 new Date()
    * 伪值——伪值会使容器 footer 的 delete_turn 锚点错位。复制整链的原始文本 = 过程叙述
@@ -1754,12 +1754,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 骨架状态容器（M3b-2b-2a）：会话控件（暂停/继续 + 发送按钮）的**唯一真源**。
+   * 骨架状态容器：会话控件（暂停/继续 + 发送按钮）的**唯一真源**。
    *
-   * **2b-2b 起（换真源）**：容器改由 `turn_update.state`（完整 `TurnState`）直接赋值——
+   * 容器由 `turn_update.state`（完整 `TurnState`）直接赋值——
    * `skeletonFromTurnState` 投影剥离 roundId/RoundStatus 后写入，派生链不动。
-   * legacy 过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）已随 M5a 删除（死代码）。
-   * 会话三态与「申请在途」**不再是两个独立变量**，一律派生——写入点 2 处 → 1 处。
+   * legacy 过渡适配器（`skeletonFromStatus` / `skeletonFromPausePending`）已删除（死代码）。
+   * 会话三态与「申请在途」**不是两个独立变量**，一律派生——写入点唯一。
    */
   let skeletonState: SkeletonState = { phase: 'idle' };
 
@@ -1778,10 +1778,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * Phase 4 按钮语义矩阵：会话状态 × 输入框内容 → 语义数据（矩阵本体 = `helpers/turnUiState.ts` 纯函数）。
+   * 按钮语义矩阵：会话状态 × 输入框内容 → 语义数据（矩阵本体 = `helpers/turnUiState.ts` 纯函数）。
    *
    * 本函数只做三步：取自变量快照 → 派生语义 → 施加到 DOM。
-   * 矩阵抽出的理由 = 可单测 + 为 M3b-2b-2「真源换成 TurnState」备好唯一派生入口（此刻仍读本地态）。
+   * 矩阵抽出的理由 = 可单测 + 为「真源换成 TurnState」备好唯一派生入口（此刻仍读本地态）。
    * pauseBtn 图标永远是 pause（‖），不做本地 toggle——request/cancel 的行为 toggle 完全由 host 层
    * handlePause 通过 agent.isPausePending() 判断，UI 不感知 pending 状态。
    * 调用点 = applySkeletonState（骨架状态变了）+ input 事件（输入内容变了）+ sendMessage（发送/停止后复位）。
@@ -1820,7 +1820,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * Phase 4 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
+   * 待发送区（interject 队列可视化）：由 turn_update.pendingQueue 更新。
    * 懒创建 DOM 元素（挂在 inputBar 前面）——列出全部待发补充，每条带序号 + 文本 + 独立 × 按钮。
    * 仅 thinking 态有排队时显示；paused 宿主已清队列；done 不可能有队列。
    *
@@ -1831,7 +1831,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function updatePendingQueueBar(items: readonly string[]): void {
     if (!_pendingQueueBar) {
       // 懒创建：顶行（徽章 + 标题 + 清空按钮）+ 列表（每条可独立删除）
-      // 2026-09-07 UI 打磨：计数改圆形徽章（视觉聚焦），结构保持轻量无重造
+      // 计数为圆形徽章（视觉聚焦），结构保持轻量无重造
       _pendingQueueBar = document.createElement('div');
       _pendingQueueBar.className = 'pending-queue-bar';
       _pendingQueueBar.innerHTML = `
@@ -1848,7 +1848,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       populateIcons(_pendingQueueBar);
       const clearBtn = _pendingQueueBar.querySelector('.pending-queue-bar__clear');
       clearBtn?.addEventListener('click', () => {
-        // Phase 4：清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
+        // 清空全部 interject（宿主层 chatPanel 清 _pendingQueue 并 post 空队列通知）
         vscode.postMessage({ type: 'clear_pending_queue' });
       });
     }
@@ -1879,7 +1879,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       delBtn.className = 'pending-queue-bar__item-del';
       delBtn.type = 'button';
       delBtn.title = '删除这条';
-      // 图标语言唯一 = icons.ts 柔和线条 SVG（原 × 字符剪除，2026-09-19；注意 × 兼作语义乘号，
+      // 图标语言唯一 = icons.ts 柔和线条 SVG（注意 × 兼作语义乘号，
       // 如「工具×3」——“乘号”与“关闭图标”须靠位置区分，不可机械替换）
       delBtn.innerHTML = getIconSvg('close', 10, 10);
       delBtn.addEventListener('click', () => {
@@ -1894,7 +1894,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
    * 输入框保持可用（支持插话）；done 恢复发送按钮；paused 切换为「继续」按钮。
-   * Phase 4 收敛后：按钮语义 = 会话状态 × 输入框内容 矩阵驱动（syncButtonSemantics 承载）。
+   * 按钮语义 = 会话状态 × 输入框内容 矩阵驱动（syncButtonSemantics 承载）。
    */
   function setStatus(state: 'thinking' | 'done' | 'paused'): void {
     // pauseBtn 图标永远是 pause（‖），UI 不维护 toggle 状态——直接进入状态分发
@@ -1920,7 +1920,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 会话导航类控件运行时锁：**语义 = 「宿主有在途后台写」窗口，不是 turn 状态**
     // （宿主延迟发 status:'done' 是为了护住摘要写入期，避免用户在该窗口删除轮次产生孤儿摘要）
     updateSessionControlsLock(state !== 'done');
-    // done 态才需要恢复输入焦点（对抗评估 P1-4：避免强制 focus 打断用户其他操作）
+    // done 态才需要恢复输入焦点（避免强制 focus 打断用户其他操作）
     if (state === 'done' && document.activeElement === document.body) input.focus();
   }
 
@@ -1954,8 +1954,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     newSessionBtn.disabled = locked;
     historyBtn.disabled = locked;
     // 删除按钮：锚点归一化——段级（.msg 内 button）取自身 dataset.ts；容器级（round-group footer）
-    // button 无自身 dataset，取容器内首段 .msg.assistant 的 dataset.ts（与构建时 firstSeg 语义一致，
-    // 2026-09-08：修复运行时流式轮首段 ts 空导致删除恒禁用——commitTurnTs 回填后此处即生效）
+    // button 无自身 dataset，取容器内首段 .msg.assistant 的 dataset.ts（与构建时 firstSeg 语义一致；
+    // 首段 ts 空会致删除恒禁用——commitTurnTs 回填后此处即生效）
     document
       .querySelectorAll<HTMLButtonElement>('.msg-delete-icon')
       .forEach((b) => {
@@ -1975,7 +1975,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       });
   }
 
-  // ─── 回答等待指示器（③ 等待反馈，2026-08-29）─────────────────
+  // ─── 回答等待指示器（③ 等待反馈）─────────────────
   // 缺口：prepare 阶段（meta 到达前的召回/装配/首 token 等待）仅有 thinking 事件、
   // 无骨架（骨架由 meta 建立）承接 → UI 静默「发送后无反应」。此指示器在该窗口内提
   // 供「相位文案 + 等待秒数」可见反馈；meta 到达（骨架接管）/ 正文开启 / 收尾即移除。
@@ -2203,7 +2203,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * Phase 4 E2：更新工具权限徽章（角色能力面可见性）
+   * 更新工具权限徽章（角色能力面可见性）
    *
    * 根据 capability_badge 消息更新：
    * - block 模式 → 显示「纯 LLM」标签
@@ -2235,11 +2235,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * P3（2026-08-15 空状态角色化）：空状态标题/提示随激活角色包动态生成
+   * P3（空状态角色化）：空状态标题/提示随激活角色包动态生成
    *
    * 原空状态文案硬编码「开始打磨你的设计文档」（doc-review 定位），切换角色包后错位。
    * 改为标题用角色显示名、提示用角色定位描述（manifest.description，可选），随角色生长。
-   * 示例提问 chips 由 renderEmptySuggestions 随 showcase 角色动态渲染（MVP 2026-08-16）。
+   * 示例提问 chips 由 renderEmptySuggestions 随 showcase 角色动态渲染。
    */
   function updateEmptyStateRole(): void {
     const name = currentRoleName || 'AI';
@@ -2253,7 +2253,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * LLM 未配置时的空态 onboarding（UX-1，2026-09-01）
+   * LLM 未配置时的空态 onboarding
    *
    * 无 Provider 时切换空状态为「去配置模型」引导：提示用户先配置大模型（首次使用关键路径），
    * 并提供一键跳转按钮（点击 post open_config → host 执行 memora.configureModel）。
@@ -2298,7 +2298,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 渲染 Follow-up 建议（2026-08-17，T2：回复后关联推荐）
+   * 渲染 Follow-up 建议（回复后关联推荐）
    *
    * 在最新一条 AI 消息下方追加「接下来可以探索」chips 块；点击 chip 填入输入框并聚焦
    * （与空状态示例 chips 共用 .suggestion-chip 点击委托，SSOT 复用同一交互）。
@@ -2333,7 +2333,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // 滚动到底部（rAF 节流，helpers/scrollToBottom 单一实现）：流式渲染时每 chunk
   // 都可能触发滚动，用 requestAnimationFrame 合并为每帧一次，避免强制 reflow。
-  // 此处统一以 messages 为滚动容器（SSOT 剪枝去重）；scrollToBottom + scrollRafPending
+  // 此处统一以 messages 为滚动容器；scrollToBottom + scrollRafPending
   // 只存在于 helpers，本地不持副本。
 
   // ─── 下拉选择器渲染工厂（SSOT） ───
@@ -2357,7 +2357,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     opts: { emptyText?: string; labelFallback: string; ariaLabel: string },
   ): void {
     if (!menu) return;
-    // P0-1 防注入：名称来自用户配置/角色包，禁止 innerHTML 拼接，一律 createElement + textContent
+    // 防注入：名称来自用户配置/角色包，禁止 innerHTML 拼接，一律 createElement + textContent
     menu.textContent = '';
     if (items.length > 0) {
       items.forEach((p) => {
@@ -2411,8 +2411,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // 追加一条消息：role 决定样式，ts 显示时间戳；AI 消息底部加「复制」（主动可见）。
-  // 返回创建的 .msg 元素，供调用方作为流式锚点（排雷 P0-1）。
-  // 跨天合并时先插入日期分隔线（ui-redesign.md §4.1 ②）；AI 消息带头像身份。
+  // 返回创建的 .msg 元素，供调用方作为流式锚点。
+  // 跨天合并时先插入日期分隔线；AI 消息带头像身份。
 
   function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string, roundId?: string): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
@@ -2420,14 +2420,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (role === 'assistant') {
       const div = document.createElement('div');
       div.className = 'msg ' + role;
-      // （2026-09-21 剪枝）同轮第 2+ 段不再标记 is-continued / 「↻ 续接」chip：运行时补充与问答
+      // 同轮第 2+ 段不标记 is-continued / 「↻ 续接」chip：运行时补充与问答
       // 已由独立交互条目行（.round-block__input）上屏分隔，流式断流续跑场景不存在（中断=独立新轮），
       // 且系统从未发布过同轮多段历史数据——续接视觉为零真实场景消费，整体退役（含 CSS 与测试断言）。
       // 同轮归位语义（同 roundId 段进同一 .round-group 容器）仍由 isSameRoundContinue 判——保留
       // roundId 记录为本轮标识（无 roundId 的块不覆盖，重放每轮都有）
       if (roundId) lastAssistantRoundId = roundId;
       // AI 消息：复用骨架构建（label + content + body + footer），
-      // 一次性消息（历史回放）直接渲染 Markdown（吸收养分，代码块/列表/表格可读）
+      // 一次性消息（历史回放）直接渲染 Markdown（代码块/列表/表格可读）
       const { body } = buildAssistantShell(div, ts, roundId);
       // 原始文本存于 .msg 的 dataset（流式/历史共用，复制按钮据此复制完整原始 Markdown 源）
       div.dataset.rawText = text;
@@ -2437,7 +2437,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 流式锚点跟随最新 assistant 消息（SSOT：单一锚点，append/chunk 共用）
       activeAssistantEl = div;
       messages.appendChild(div);
-      // A 容器化：归位到所属 .round-group（同 roundId 段收进容器；无 roundId 留消息流）
+      // 容器化：归位到所属 .round-group（同 roundId 段收进容器；无 roundId 留消息流）
       ensureRoundGroup(roundId, div);
       scrollToBottom(messages);
       updateEmptyState();
@@ -2475,7 +2475,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 用户输入恒可见兜底（SSOT 单实现，2026-09-08 审查收敛）：
+   * 用户输入恒可见兜底（SSOT 单实现）：
    * 普通 user 气泡与 qa/supp 交互行渲染失败时共用——异常不静默（console.warn 取证，复现时
    * 浏览器 Console 即定位堆栈），且以最小文本块降级渲染保证用户输入不丢。
    *
@@ -2526,7 +2526,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return anchor;
   }
 
-  /** 运行时输入条目缓存（形态甲，2026-09-17）：finalize 合并流重建 QA 的数据源（落盘分源、渲染合并投影） */
+  /** 运行时输入条目缓存（形态甲）：finalize 合并流重建 QA 的数据源（落盘分源、渲染合并投影） */
   interface RuntimeInteractiveInput {
     text: string;
     ts?: string;
@@ -2537,14 +2537,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
   /** 本轮运行时输入累积（新闭环重置）；finalize 由 renderRoundBlock 从合并流重建归位 */
   let runtimeInteractiveInputs: RuntimeInteractiveInput[] = [];
-  /** 骨架期交互行暂存（P1，2026-09-22）：过程容器（flowEl/round-block）尚未建立时
+  /** 骨架期交互行暂存：过程容器（flowEl/round-block）尚未建立时
    *  fallback 渲染的补充/回答行 —— 先落消息流尾保「用户输入恒可见」，待骨架建立后
    *  由 flushSkeletonPendingItems 迁移进过程容器，修复「补充选项卡贴输入框下方」
    *  的视觉错位（重启重放正常 = 重放路径容器已建，根因是运行时骨架期挂载点缺失）。 */
   let skeletonPendingItems: HTMLElement[] = [];
 
   /**
-   * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口（形态甲，2026-09-17）：
+   * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口（形态甲）：
    * - 渲染为**过程条目行**（renderQaItem），按 ts 插入 process-flow / round-block 对应任务项分组
    *   （与 thought/tool 同源同序，统一时间键）；无过程容器（纯问答轮）降级消息流。
    * - 同步缓存 runtimeInteractiveInputs（finalize 合并流重建 QA 的数据源）。
@@ -2554,8 +2554,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param ts 时间戳（排序键；缺失时兜底当前时刻）
    * @param kind 交互类型（question-answer=提问回答 / supplement=补充 / timeout=提问超时未答）
    * @param roundId 所属轮（随 user(kind) 消息透传）
-   * @param question G26 提问原文（qa/timeout 携带时，条目上方渲染只读「问」回顾行）
-   * @param options G26 候选选项（静态文本随回顾行展示）
+   * @param question 提问原文（qa/timeout 携带时，条目上方渲染只读「问」回顾行）
+   * @param options 候选选项（静态文本随回顾行展示）
    */
   function appendInteractiveInput(
     text: string,
@@ -2565,7 +2565,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     question?: string,
     options?: string[],
   ): void {
-    // 显示逻辑统一（2026-09-07 排雷收敛）：supplement / question-answer / timeout 同为
+    // 显示逻辑统一：supplement / question-answer / timeout 同为
     // 「闭环内用户交互」（数据同构 interactiveInputs.kind），共用过程条目行形态，
     // 仅 tag 文案区分语义：补充 →「你补充」；回答 →「你答」；超时未答 →「未回答」。
     // timeout 到达即提问等待结束（宿主已自动续跑）——先销毁提问交互 UI（ask-inline /
@@ -2588,18 +2588,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (root) {
         const { host } = planItemContainerFor(root, currentEvents, tsKey);
         insertPlanItemInOrder(host, item, tsKey);
-        // 归位宿主为任务项分组（details）时展开该分组（回归修复 2026-09-21）：任务项分组默认收起，
+        // 归位宿主为任务项分组（details）时展开该分组：任务项分组默认收起，
         // 交互条目（补充/回答）被归位进收起分组内用户看不到——「任务表运行中输入补充内容不可见、
         // 结束后才见」即此因。插入即展开，保证用户输入恒可见（与 ensureUserInputVisible 纪律一致）。
         const planItemHost = host as HTMLDetailsElement;
         if (planItemHost.tagName === 'DETAILS' && planItemHost.classList.contains('round-block__plan-item')) planItemHost.open = true;
       } else {
         // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程 / 骨架期 meta 未到）落消息流。
-        // 有 roundId 时打归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（2026-09-19
-        // 形态甲回归修复，否则条目散落「用户提问 ↔ 最终回答」之间且无搬运时机）
+        // 有 roundId 时打归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（标记
+        // 不跨重建存活，避免孤儿标记挂消息流）；否则条目散落「用户提问 ↔ 最终回答」之间且无搬运时机
         if (roundId) item.dataset.roundId = roundId;
         messages.appendChild(item);
-        // 骨架期暂存（P1，2026-09-22）：此刻 round-block/flowEl 尚未建立（meta 首 token 未到），
+        // 骨架期暂存：此刻 round-block/flowEl 尚未建立（meta 首 token 未到），
         // 条目只会落消息流尾——「补充选项卡贴输入框下方」的视觉错位即由此来。暂存引用，
         // 待 meta 骨架建立时由 flushSkeletonPendingItems 迁移进过程容器（重放路径容器已建，
         // 序号入 flow 不暂存，故重启重放正常）。DOM 已落消息流保「用户输入恒可见」，
@@ -2609,7 +2609,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
       }
     } catch (err) {
-      // 交互行渲染兜底（2026-09-08 审查扩展）：异常不静默 + 文本降级，"用户输入恒可见"纪律统一
+      // 交互行渲染兜底：异常不静默 + 文本降级，"用户输入恒可见"纪律统一
       ensureUserInputVisible(text, err);
     }
     scrollToBottom(messages);
@@ -2617,7 +2617,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 骨架期暂存条目迁移（P1，2026-09-22）
+   * 骨架期暂存条目迁移
    *
    * meta 骨架建立（prepareFlowShell 内 renderProcessFlow 后）调用：把 meta 到达前 fallback
    * 落消息流尾的交互行（skeletonPendingItems）按 ts 归位进过程容器——修正「补充选项卡直接
@@ -2652,7 +2652,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 运行时输入条目行（形态甲，2026-09-17）：question-answer / supplement / timeout 统一形态，
+   * 运行时输入条目行（形态甲）：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行样式（非独立折叠块）。条目 = 提问回顾行（可选）+ 内容行，
    * 来源以 tag 区分（「你答 / 你补充 / 未回答」）。textContent 构建防注入。
    *
@@ -2705,7 +2705,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 同轮判定：是否有 roundId 且与上一 assistant 段同轮（同一问答闭环归位判定）
    *
-   * （2026-09-21 更新）续接**视觉**已整体退役（is-continued / 「↻ 续接」chip 全剪，见 append 注释）；
+   * 续接**视觉**已整体退役（is-continued / 「↻ 续接」chip 全剪，见 append 注释）；
    * 本判定仅剩**结构归位**用途——chunk 到达时判骨架所属容器：
    * 同轮 → 骨架留在原 .round-group；新轮 → 建新容器（L3666 骨架归位分支）
    *
@@ -2716,7 +2716,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 问答闭环容器（A 容器化，2026-09-03）：把 AI 段归位到所属 .round-group
+   * 问答闭环容器：把 AI 段归位到所属 .round-group
    *
    * 同 roundId 的所有 assistant 段收进同一容器（视觉一体 + 操作整体），
    * 四路归位共用：append（重放/一次性）、beginStreaming（运行时首块）、
@@ -2752,7 +2752,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 容器级 footer（A 容器化）：复制整链 / 分叉 / 删除 + 时间戳
+   * 容器级 footer（容器化）：复制整链 / 分叉 / 删除 + 时间戳
    *
    * 整链复制 = 该 round 的「用户提问（容器前一兄弟）+ 全部 assistant 段」，单一入口
    * 覆盖闭环全量（R1 修复）。段级 footer 由 CSS 隐藏，操作整体上移到容器读取。
@@ -2814,7 +2814,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 渲染内联选择题（提问形态内联化，2026-09-03）
+   * 渲染内联选择题（提问形态内联化）
    *
    * 对齐主流对话流（Claude / TraeWork）：提问正文下直接出「选项按钮 + 补充输入」，
    * 点击选项即答（无需二次回车），也可直接打字补充后发送。渲染在提问块下方，
@@ -2940,12 +2940,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    */
   function commitAskAnswers(answers: string[]): void {
     armAskResumeAnchor();
-    // M4：answer 意图恒带 answers 数组（单问=单元素），宿主 waiting(ask) 相位 answerInput 消费
+    // answer 意图恒带 answers 数组（单问=单元素），宿主 waiting(ask) 相位 answerInput 消费
     vscode.postMessage({ type: 'input', kind: 'answer', answers });
   }
 
   /**
-   * ask 回答提交共用置位（SSOT，2026-09-22 从两提交函数抽取）：resumePending + 原位续写锚
+   * ask 回答提交共用置位（SSOT）：resumePending + 原位续写锚
    *
    * 置 resumePending：提问后的 resume 新 runFlow meta 将识别为「同闭环续跑」，保留
    * currentEvents 与 round-block 锚点（折叠留在闭环首块，不在续接块复制）。
@@ -2981,7 +2981,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 顶部身份标签（极简风格）：[小圆点]角色名[·]模型名
     const label = document.createElement('div');
     label.className = 'msg-ai-label';
-    // （2026-09-21 剪枝）「↻ 续接」chip 随 is-continued 视觉整体退役（见 append 注释），身份标签直连
+    // 「↻ 续接」chip 随 is-continued 视觉整体退役（见 append 注释），身份标签直连
     // 角色名：优先级 = 本轮身份（meta）→ 会话级角色（chat_role_pack），品牌色 + 小圆点
     const roleName = currentRoundMeta?.role || currentRoleName || 'AI';
     const roleEl = document.createElement('span');
@@ -3018,7 +3018,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       vscode.postMessage({ type: 'fork_session', roundId: div.dataset.roundId || undefined });
     });
     footer.appendChild(forkBtn);
-    // 删除按钮（2026-08-16 对话闭环管理）：AI 消息承载「删除问答闭环」入口——删了答也删问。
+    // 删除按钮：AI 消息承载「删除问答闭环」入口——删了答也删问。
     // 携带该条 AI 消息的 timestamp 作锚点，host 端确认后 truncate-from-turn（删该问答及之后所有）。
     // 无 ts（如流式未完成即被清空）时禁用，避免删除锚点失效。
     const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
@@ -3059,7 +3059,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     renderDateDivider(ts);
     const div = document.createElement('div');
     div.className = 'msg assistant';
-    // （2026-09-21 剪枝）同轮续接视觉已整体退役（见 append 注释），此处不再标记 is-continued
+    // 同轮续接视觉已整体退役（见 append 注释），此处不标记 is-continued
     if (roundId) lastAssistantRoundId = roundId;
     const { body } = buildAssistantShell(div, ts, roundId, { pending: true });
     // 流式期间：is-streaming 类驱动 CSS ::after 闪烁光标（markdown 由增量渲染填充）
@@ -3067,7 +3067,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     activeAssistantEl = div;
     streamBodyRendered = false;
     messages.appendChild(div);
-    // A 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
+    // 容器化：运行时首块归位到所属 .round-group（chunk 携带 turn roundId）
     // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
     ensureRoundGroup(roundId, div, true);
     // 挂载运行时过程平铺容器（meta 已先到）：过程按任务项时序平铺（无大折叠壳）
@@ -3196,7 +3196,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function commitRoundId(roundId?: string): void {
     if (!roundId || !activeAssistantEl) return;
     activeAssistantEl.dataset.roundId = roundId;
-    // 形态甲（2026-09-17）：QA 条目在过程容器（process-flow / round-block）内，天然归属本轮
+    // 形态甲：QA 条目在过程容器（process-flow / round-block）内，天然归属本轮
     // assistant 块，无需消息流扫描回填（旧 .msg-qa 消息流体系已删）。
     // 回填后立即让全局锁重新评估 disabled 状态（commitRoundId 不直接设 disabled，
     // 统一走 updateSessionControlsLock 的「locked || !dataset.roundId」判定）
@@ -3204,10 +3204,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 链路上 done/interrupted 共用收尾：收起任务过程折叠区（已完成态）+ 关流式光标。
-   *  形态甲（2026-09-17）：finalize 全量重建（合并流含运行时输入）+ 移除运行时平铺容器——
+   *  形态甲：finalize 全量重建（合并流含运行时输入）+ 移除运行时平铺容器——
    *  QA 已由 renderRoundBlock 从合并流归位到对应任务项分组，无需再搬运（foldPending 已删）。 */
   function finalizeRound(): void {
-    // 2026-09-16 F2：renderRoundBlock 曾在 plan_item_boundary 嵌套场景抛 NotFoundError，导致后续
+    // renderRoundBlock 曾在 plan_item_boundary 嵌套场景抛 NotFoundError，导致后续
     // 「移除 flowEl / 收敛 QA / 关流式光标」全部不执行（过程不折叠 + 光标不消失，且异常在事件
     // 监听器内被静默吞掉）。收口三步放 finally：即便渲染失败，流式态也必收敛（不再带伤共存）。
     // 异常本身继续向上抛（由 onMessage 兜底 console.error 观测）——兜底观测，不掩盖根因。
@@ -3336,7 +3336,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * 指纹（系统提示 hash 前 12 位）+ 累计指标（LLM / 工具失败 / 截断）。
    * textContent 赋值防注入；指标只进详情折叠区，不占用主状态条。
-   * 注：原「附着记忆条数 / 召回命中率」已于 2026-09-11 退役——自动记忆注入与
+   * 注：「附着记忆条数 / 召回命中率」已退役——自动记忆注入与
    * recall 指标随自动召回退役恒零（假指标），显示即误导。
    */
   function renderMetrics(msg: Extract<ExtensionToWebviewMessage, { type: 'metrics' }>): void {
@@ -3345,7 +3345,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 指纹行：只显示 hash，不显示内容（可追溯性边界）
       '本轮指纹：' +
         (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
-      // 累计指标行（2026-09-14：补未解析工具意图累计，诊断面板可见文本 tool_call 静默失败）
+      // 累计指标行（未解析工具意图累计，诊断面板可见文本 tool_call 静默失败）
       '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 工具失败 ' +
         msg.metrics.toolFailureCount +
         (msg.metrics.unparsedToolIntentCount && msg.metrics.unparsedToolIntentCount > 0
@@ -3357,7 +3357,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
         ' / ' +
         (typeof msg.metrics.llmTokenOut === 'number' ? '出 ' + msg.metrics.llmTokenOut : '出 -'),
-      // ④（2026-08-29）：预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
+      // ④ 预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
       ...(msg.metrics.budget
         ? [
             '预算：可用 ' + fmtCompactTokens(msg.metrics.budget.availableTokens) +
@@ -3370,7 +3370,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       ...(msg.trace && msg.trace.length > 0
         ? ['操作流：', ...msg.trace.map((t) => '  › ' + t.label)]
         : []),
-      // G6 安全/装配透明：路径守卫审计概要（有审计事件才显示；basename 路径）
+      // 安全/装配透明：路径守卫审计概要（有审计事件才显示；basename 路径）
       ...(msg.securityAudit && msg.securityAudit.total > 0
         ? [
             '安全审计 ' + msg.securityAudit.total + ' 次 · 拒绝 ' + msg.securityAudit.denied +
@@ -3501,15 +3501,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     lastAssistantRoundId = undefined;
     resumePending = false;
     runtimeInteractiveInputs = []; // 新闭环：运行时输入累积重置（形态甲）
-    skeletonPendingItems = []; // 新闭环：骨架期暂存重置（P1，2026-09-22）
+    skeletonPendingItems = []; // 新闭环：骨架期暂存重置
     roundBlockEl = null;
     roundBlockHostEl = null;
     flowEl = null; // 新闭环：运行时平铺容器引用失效
-    roundGroupEl = null; // A 容器化：新闭环容器另行创建
-    // 解除旧轮 assistant 块锚定（2026-09-07 修复跨轮挂载串位）：新闭环后 activeAssistantEl
+    roundGroupEl = null; // 容器化：新闭环容器另行创建
+    // 解除旧轮 assistant 块锚定（防跨轮挂载串位）：新闭环后 activeAssistantEl
     // 仍指向上一轮首块，重放首块正文创建前会以它为挂载目标导致折叠区错位；置 null 待建立时重锚。
     activeAssistantEl = null;
-    // 清暂停续写锚（2026-09-07 对称雷修复）：残留会让下一轮 meta 误判 pausedResume 原位续写
+    // 清暂停续写锚：残留会让下一轮 meta 误判 pausedResume 原位续写
     pausedAssistantEl = null;
   }
 
@@ -3547,7 +3547,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     flowEl = null;
     flowShellEl = null;
     currentEvents = [];
-    // UX-9 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
+    // 续接状态复位：清空/切换会话后上一轮的 roundId/续跑期待/容器不再生效（防跨会话误判）
     lastAssistantRoundId = undefined;
     resumePending = false;
     roundGroupEl = null;
@@ -3646,7 +3646,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 整批重放渲染（M5b-3）：`turn_update.replay:true` 驱动
+   * 整批重放渲染：`turn_update.replay:true` 驱动
    *
    * 先复位（清旧渲染，防跨会话/重建残留，与 clear_ok 同源），再逐轮重建，收尾更新空态。
    */
@@ -3668,15 +3668,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 2b-2b 换真源：骨架容器改由**完整 TurnState 快照**直接赋值（skeletonFromTurnState 投影剥离
       // roundId/RoundStatus/questions——容器不消费）。`turn_update.state` 即全量状态，无增量结合
       // 前值推演；宿主在流起始（running 投影）、流尾（settled/waiting）、申请在途（waiting pausePending）、
-      // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已随 M5a 删除
+      // 重放（idle/settled）等一切 turn 状态变化点推送。legacy pause_pending 消息已删除
       //（宿主/ webview 双端同步删，申请在途统一由 turn_update.state 承载）。
       applySkeletonState(skeletonFromTurnState(msg.state));
-      // M5b-1：待发送区渲染真源并入 turn_update 单通道（pending_queue_update 已删）。
+      // 待发送区渲染真源并入 turn_update 单通道（pending_queue_update 已删）。
       // pendingQueue 可选字段，缺省（旧宿主/测试构造）则不刷新待发送区（保持现状）。
       if (msg.pendingQueue) {
         updatePendingQueueBar(msg.pendingQueue);
       }
-      // M5b-3：会话重放快照（replay:true）→ 整批渲染 rounds。
+      // 会话重放快照（replay:true）→ 整批渲染 rounds。
       // ⚠ 顺序契约（必须排在提问渲染之前）：renderReplayFromRounds 首行 resetChatView
       // 会清掉 .ask-inline；而宿主 postTurnUpdate(undefined, true) 这一条消息同时携带
       // replay:true 与 state（waiting/ask + questions）——视图重建后的 ready 握手重放、
@@ -3686,13 +3686,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (msg.replay === true) {
         renderReplayFromRounds(msg.rounds);
       }
-      // M5b-2：提问卡渲染真源从 need_clarify 消息切到 turn_update.state（waiting/ask + questions）。
+      // 提问卡渲染真源 = turn_update.state（waiting/ask + questions）。
       // 位置在重放之后是顺序契约的一部分，勿上移。
       if (msg.state.phase === 'waiting' && msg.state.reason === 'ask' && (msg.state.questions?.length ?? 0) > 0) {
         renderAskPhase(msg.state.questions!);
       }
     } else if (msg.type === 'tool_pending') {
-      // 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 成形即上报），
+      // 工具意图预告：LLM 流式生成 tool_call 参数期间（name 成形即上报），
       // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与
       // currentEvents（finalize 全量重建时天然消失），后续 tool_start 按 toolCallId 升级。
       renderPendingToolRow(msg);
@@ -3701,7 +3701,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
       const ev = msg.event;
       if (ev.type === 'meta') {
-        // 新轮/续跑判定（三态收敛，2026-09-07 排雷修复）：暂停续跑（pausedAssistantEl 有效）
+        // 新轮/续跑判定（三态收敛）：暂停续跑（pausedAssistantEl 有效）
         // > 交互续跑（resumePending）> 真新轮。
         //   pausedResume：pause→resume 的新 runFlow meta——原位续写暂停块（不建新骨架、
         //     不重置 round-block 锚点），后续 text chunk 走 pausedAssistantEl 分支续写同一
@@ -3710,19 +3710,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         //   resumePending：插话/提问续跑（无 paused 锚点）→ 保留锚点但建续接骨架（新段）。
         //   真新轮：清空当前轮缓冲与 round-block 引用，随即建流式骨架（TTFT 前即时反馈）。
         clearPendingWait(); // 骨架接管：移除等待指示器
-        clearToolElapsed(); // TS-11c：切轮清工具等待计时（瞬态，防跨轮残留）
+        clearToolElapsed(); // 切轮清工具等待计时（瞬态，防跨轮残留）
         currentRoundMeta = { role: ev.payload.role, llm: ev.payload.llm };
-        // 方案 C（2026-09-15 收敛，问题2 根因）：交互输入（qa/supp/timeout）不再制造 turn 分段——
+        // 交互输入（qa/supp/timeout）不制造 turn 分段——
         // ask/补充的 resume 一律原位续写同一回合，最终「单一折叠块 + 单一报告」，与重放整 round 折叠同构。
-        // 原 `!interactiveRowInserted` 门控已移除：那门控让交互 resume 改走 resumePending 建续接骨架 B，
-        // 把同 turn 在 DOM 上分裂成 [块A][问/答][块B]，折叠块被夹在报告中间（问题3，重排后才归位）。
+        // `!interactiveRowInserted` 门控会把交互 resume 改走 resumePending 建续接骨架 B，
+        // 把同 turn 在 DOM 上分裂成 [块A][问/答][块B]，折叠块被夹在报告中间（污染两段式），故不设门控。
         const pausedResume = pausedAssistantEl !== null && pausedAssistantEl.isConnected;
         // 有暂停锚 → 原位续写同回合（不建新段，QA/补充行作为 turn 内过程，finalize 随折叠块折入）；
         // 无锚但有续跑期待（生成中 interject 打断补充）→ 续接骨架（打断分段，非 turn 内补问）
         if (pausedResume) {
           // 暂停原位续写：锚点（pausedAssistantEl）与 currentEvents/round-block 全保留，
           // 不建骨架——由 chunk 分支的 pausedAssistantEl 原位续写路径消费。
-          // 必须同时消费 resumePending（2026-09-07 P-1 排雷修复）：暂停态补充输入时前三态
+          // 必须同时消费 resumePending：暂停态补充输入时前三态
           // 判定 pausedResume 优先、不会走到 else-if resumePending 分支 → resumePending 残留
           // true。诚实定性：当前路径 pausedResume 恒优先，残留是惰性状态（突变验证不红），
           // 但属状态不变量维护——清理纪律与 done/interrupted 对称，防未来新路径引入误判
@@ -3730,16 +3730,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           resumePending = false;
         } else if (resumePending) {
           resumePending = false;
-          // 交互续跑（提问/补充答后 resume）：建**续接骨架**（无任何续接视觉标识，2026-09-21 剪枝——
+          // 交互续跑（提问/补充答后 resume）：建**续接骨架**（无任何续接视觉标识——
           // 「↻ 续接」chip 已整体退役；补充/问答由独立交互条目行分隔，见 append 注释），挂载到交互链末位
-          // 之后——保持 [块A] → [问/你答行] → [块B] 的顺序（2026-09-08 运行时同构；2026-09-09 连环
+          // 之后——保持 [块A] → [问/你答行] → [块B] 的顺序（运行时同构；连环
           // ask：统一 resolveInteractionAnchor，取代全范围「最后 .msg-qa」扫描——
           // 后者在 QA 已折入 rb / 前轮残留时会跨轮误取）
           prepareFlowShell({ mountAfter: resolveInteractionAnchor() ?? undefined });
         } else {
           currentEvents = [];
           runtimeInteractiveInputs = []; // 新轮：运行时输入累积重置（形态甲）
-          skeletonPendingItems = []; // 新轮：骨架期暂存重置（P1，2026-09-22）——残留条目已 DOM 落地，清引用即可
+          skeletonPendingItems = []; // 新轮：骨架期暂存重置——残留条目已 DOM 落地，清引用即可
           roundBlockEl = null;
           roundBlockHostEl = null;
           flowEl = null; // 新轮：运行时平铺容器引用失效（随 skeleton 重建）
@@ -3747,7 +3747,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           currentEvents.push(ev);
           prepareFlowShell();
         }
-        // 方案 C（2026-09-15）：交互（qa/supp/timeout）不再制造 turn 分段，resume 一律原位续写同回合
+        // 交互（qa/supp/timeout）不制造 turn 分段，resume 一律原位续写同回合
       } else {
         if (ev.type === 'memory_added') {
           showActivity('info', `已沉淀：${ev.payload.name || ev.payload.id}`);
@@ -3758,7 +3758,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           }
           // 回答等待指示器（③ 等待反馈）：meta 前（无骨架无 flow）补可见反馈——文案随
           // 相位更新（召回/处理/规划…）+ 等待秒数，避免「发送后无反应」。
-          // v1.8 剪枝：运行时 thinking 相位已由 process-flow 内 .process-flow__phase 行承载，
+          // 运行时 thinking 相位已由 process-flow 内 .process-flow__phase 行承载，
           // 故仅 flow 未创建（骨架尚未挂载）时才落 pending-wait 兜底，防双显示。
           if (!roundBlockEl && !flowEl && ev.payload.phase !== 'archiving') {
             pendingWaitPhase = phaseLabel(ev.payload.phase);
@@ -3777,7 +3777,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         renderProcessFlow(currentEvents);
       }
     } else if (msg.type === 'user') {
-      // 无缝插话（缺口 B）+ UX-9 A：生成中收到用户补充 → 打断当前流式正文：结清旧块的
+      // 无缝插话：生成中收到用户补充 → 打断当前流式正文：结清旧块的
       // 流式态（光标/定时器），但保留块引用 —— 打断分条将插在该块之后，后续 chunk 以「续接」
       // 段出现在分条之后（还原内核 interject() 的 abort→续跑语义）
       if (streamingActive) {
@@ -3794,7 +3794,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 注意：不置 activeAssistantEl = null —— 打断点引用保留给打断分条定位（见下）
       }
       // 交互输入/问答：清残留骨架 + 等待指示器（后续段形态由 chunk/meta 决定）。
-      // 2026-09-21 骨架期 ask 回归修复：ask 挂起（question-answer/timeout）时骨架是原位续写锚
+      // 骨架期 ask 防回归护栏：ask 挂起（question-answer/timeout）时骨架是原位续写锚
       // （flowShellEl + pausedAssistantEl 双引用）——删除会使 resume meta 的 pausedResume 判定失效
       // （isConnected=false）→ 误走 resumePending → prepareFlowShell 挂 resolveInteractionAnchor 兜底位
       // （消息流最后 assistant 块 = 上一轮）致回答错位，且 flowEl 随骨架消散使「你答」条目兜底挂
@@ -3809,8 +3809,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
       }
       clearPendingWait();
-      // UX-9：带 kind 的交互输入 → 行内打断分条（supplement）/ 消息流内联子行（qa）。
-      // D3 单轨：后续 assistant 段是否续接由 chunk 携带的 roundId 与 lastAssistantRoundId
+      // 带 kind 的交互输入 → 行内打断分条（supplement）/ 消息流内联子行（qa）。
+      // 单轨：后续 assistant 段是否续接由 chunk 携带的 roundId 与 lastAssistantRoundId
       // 相等判定（运行时与重放同一判定源）；resumePending 供下一次 process_event meta
       // 识别「同闭环续跑」（保留 currentEvents 与 round-block 锚点，不重置）。
       // 普通新闭环输入重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）
@@ -3818,7 +3818,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         resumePending = true;
         appendInteractiveInput(msg.text, msg.ts, msg.kind, msg.roundId, msg.question, msg.options);
       } else {
-        // 用户消息渲染兜底（2026-09-08 对治「重启后首输气泡偶发缺失」排查取证 + 审查收敛）：
+        // 用户消息渲染兜底（防「重启后首输气泡偶发缺失」）：
         // 异常不再静默——console.warn 暴露堆栈（复制发现场 Console 即可定位），且以最小文本块
         // 降级渲染保证用户输入恒可见（与带 kind 交互行共用 ensureUserInputVisible 单实现）。
         try {
@@ -3829,22 +3829,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           ensureUserInputVisible(msg.text, err);
         }
         // 新问答闭环开始：重置同环判定 + 清续跑期待 + round-block 锚点（供新轮首块挂载）。
-        // M5b-3：复用抽出的 resetForNewClosedLoop —— 重放渲染（renderReplayRound）同用这套重置语义，
+        // 复用抽出的 resetForNewClosedLoop —— 重放渲染（renderReplayRound）同用这套重置语义，
         // 保证「新轮锚点复位」在运行时与重放路径保持一致（防跨轮挂载串位）。
         resetForNewClosedLoop();
       }
     } else if (msg.type === 'chunk') {
-      // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT，排雷 P0-1），而非 messages 最后一个元素。
+      // 主回答流：流式追加：目标 = 活动 assistant 锚点（SSOT），而非 messages 最后一个元素。
       // 自审查输出不再走 chunk（host 已按 text_self_review 过程事件转发，渲染进折叠区）。
       // guardrailBlocked 标记：护栏阻断文案已由内核 content 承载（[输入/输出被护栏阻断：rule]），
-      // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位（排雷 2026-08-17）。
+      // 此处不再弹硬编码 banner——避免双份提示 + 输入/输出语义错位。
       // 首个 chunk：若骨架已由 meta 建立（TTFT 前即时反馈）→ 复用该块开启正文流，否则新建
       if (!streamingActive) {
         clearPendingWait(); // 正文开启：等待指示器退场（骨架已接管）
         if (flowShellEl) {
           // 复用骨架：正文流入同一块（不新建第二条 assistant 消息）
           // 同轮归位判定（chunk 到达才有 roundId）：同轮骨架继续留在原 round-group、新轮走新容器；
-          // is-continued / 「↻ 续接」chip 已随续接视觉整体退役（2026-09-21 剪枝，见 append 注释）
+          // is-continued / 「↻ 续接」chip 已随续接视觉整体退役（见 append 注释）
           if (msg.roundId) {
             lastAssistantRoundId = msg.roundId;
             flowShellEl.dataset.roundId = msg.roundId;
@@ -3853,7 +3853,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           streamingRaw = '';
           const body = flowShellEl.querySelector(':scope .msg-body');
           body?.classList.add('is-streaming');
-          // A 容器化：骨架①随 chunk 归位到所属容器（骨架建时无 roundId）
+          // 容器化：骨架随 chunk 归位到所属容器（骨架建时无 roundId）
           // 流式未定稿 → 容器 footer 初始隐藏（pending=true），done/interrupted 后 finalizeStreaming 展示
           ensureRoundGroup(msg.roundId, flowShellEl, true);
           flowShellEl = null; // 已转化为正文块，后续插话/新轮不再特殊处理
@@ -3862,7 +3862,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           pausedAssistantEl.isConnected &&
           isSameRoundContinue(msg.roundId)
         ) {
-          // pause→resume 原位续写（2026-09-07）：无输入 continue 后首个 text chunk，
+          // pause→resume 原位续写：无输入 continue 后首个 text chunk，
           // 同闭环（roundId 相等）且存在暂停块 → 复用暂停块续写（还原该块流式状态），
           // 而非 beginStreaming 新建第 2 个 assistant 块——修复「一次输入、视觉两个独立 LLM 回答」。
           // 注意：streamingRaw 不重置——暂停前已累积文本保留，续写增量拼接（renderStreamBody 全量重建）。
@@ -3882,14 +3882,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (target) {
         streamingRaw += msg.content;
         // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
-        // 相比旧的「纯文本节点追加 + 结束一次性渲染」，用户实时看到 markdown 成形
-        // （列表/代码块不再显示 **、``` 原始记号），对齐 TraeWork 对话流。
+        // 用户实时看到 markdown 成形（列表/代码块不显示 **、``` 原始记号），对齐 TraeWork 对话流。
         if (!streamBodyRendered) renderStreamBody();
         else scheduleStreamRender();
       }
       scrollToBottom(messages);
     } else if (msg.type === 'narrate_withdraw') {
-      // 回抽（A1，2026-09-12）：首轮工具步的叙述文本曾被逐字流式进正文区（消息级分类前无法
+      // 回抽：首轮工具步的叙述文本会被逐字流式进正文区（消息级分类前无法
       // 预判工具轮）——内核确认工具轮后下发该段原文，此处把它从正文撤出。正文是全量重渲染自
       // streamingRaw，故去掉该后缀 + 重渲染即可（无需移 DOM 节点）；该段随即由 narrate 过程
       // 事件渲染进过程叙述行（撤正文 → 补过程，两次 post 保证顺序）。
@@ -3908,7 +3907,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     } else if (msg.type === 'paused') {
       // Agent 暂停（输入待定/step 边界软暂停）→ 提示条
       showActivity('info', 'Agent 已暂停');
-      // 记录暂停块（resume 原位续接锚，2026-09-07）：无输入 continue 的首 text chunk 复用此块
+      // 记录暂停块（resume 原位续接锚）：无输入 continue 的首 text chunk 复用此块
       // 续写，避免 beginStreaming 新建第 2 个 assistant 块（视觉双回答分裂）；块 A 保留静态展示。
       if (activeAssistantEl && activeAssistantEl.isConnected) {
         pausedAssistantEl = activeAssistantEl;
@@ -3924,21 +3923,21 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         streamingActive = false;
       }
     } else if (msg.type === 'capability_badge') {
-      // Phase 4 E2：角色能力徽章 → 更新工具权限展示
+      // 角色能力徽章 → 更新工具权限展示
       updateCapabilityBadge(msg.toolMode, msg.capabilities);
     } else if (msg.type === 'metrics') {
-      // 活动指标（P2：§13.x 透明面板 + §5.2.1 指纹可见）：每轮结束后刷新详情折叠区
+      // 活动指标（透明面板 + 指纹可见）：每轮结束后刷新详情折叠区
       renderMetrics(msg);
     } else if (msg.type === 'context_occupancy') {
       // ④ 预算可视化：更新输入区常驻上下文占用条
       updateContextOccupancy(msg.occupancy);
     } else if (msg.type === 'error') {
       clearPendingWait(); // 失败即收尾，等待指示器退场
-      // 错误收尾清理语义（2026-09-08 二查定论，回退 182e5b8c 的补清理）：
-      // error 属「可恢复流中断」，不清交互行标志——与 28d50f19 收窄语义一致：
+      // 错误收尾清理语义：
+      // error 属「可恢复流中断」，不清交互行标志——与既有收窄语义一致：
       // 交互行（qa/supp）一旦上屏，后续正文恒分块续接（interactiveRowInserted 门控
       // pausedResume），error 后继续/重试也不例外；清标志会让「交互行已插 → error →
-      // resume」退回原位续写、QA 行被顶到续写正文之后（原 bug 形态复活）。
+      // resume」退回原位续写、QA 行被顶到续写正文之后（bug 复发）。
       // 标志清理归口：done / interrupted / 新闭环 user / meta 消费（均已就位）——
       // 主路径 error 后宿主流收尾必发 done 紧随清理；error 为末条（宿主异常未发 done）
       // 时残留被下一 send 的 user 分支兜底，且 UI 无 paused 态则无 resume 入口，无触发面。
@@ -3949,26 +3948,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       clearArchivingFallback();
       flowShellEl = null;
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
-      resumePending = false; // 同节奏清续跑期待（P-1 对称：防中断/补充后残留污染下轮判定）
+      resumePending = false; // 同节奏清续跑期待（防中断/补充后残留污染下轮判定）
     // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
       // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式光标
-      // （G31 方案1：QA 不再留在折叠块与报告之间）
+      // （QA 不留在折叠块与报告之间）
       commitRoundId(msg.roundId);
       finalizeRound();
       // 回填删除按钮 ts 锚（运行时流式块 dataset.ts 恒空 → 删除按钮恒禁用修复）
       commitTurnTs();
     } else if (msg.type === 'interrupted') {
       // 用户主动停止（mvp-scope 打断能力）：清除归档兜底定时器 + 等待指示器同步收尾
-      // （③ 排雷补漏 2026-08-30）：done/error 均清，唯独中断漏清——残留的 pending-wait 会悬挂
+      // ③：done/error 均清，唯独中断漏清——残留的 pending-wait 会悬挂
       // 「已等待 Ns」且 1s 定时器空转，直到下次用户输入才被清掉。
       clearPendingWait();
       clearToolElapsed(); // TS-11c：中断同样清工具等待计时（防定时器残留空转）
       clearArchivingFallback();
       flowShellEl = null;
-      pausedAssistantEl = null; // 中断即放弃暂停后续写（2026-09-07 对称雷修复）：不残留锚点给下轮
+      pausedAssistantEl = null; // 中断即放弃暂停后续写：不残留锚点给下轮
       resumePending = false; // 同节奏清续跑期待（P-1 对称：与 pausedAssistantEl 同一清理纪律）
       // 同 done 顺序纪律：先回填 roundId（供 fold 归属过滤）→ 收起任务过程折叠区 → 收敛 QA → 关流式。
-      // 形态定案（2026-09-19，与重放同构）：中断 = 掐断运行中的 step 内容（半截正文丢弃）→
+      // 形态定案（与重放同构）：中断 = 掐断运行中的 step 内容（半截正文丢弃）→
       // 过程收进折叠块（保留已完成 step）→ 「用户停止了对话」平铺折叠块外（收起态常驻可见）。
       commitRoundId(msg.roundId);
       finalizeRound();
@@ -3982,7 +3981,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       commitTurnTs();
       showActivity('info', '已停止生成');
     } else if (msg.type === 'suggestions') {
-      // T2 Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
+      // Follow-up 建议：回复结束后「下一步可探索」chips（点击填入输入框并聚焦）
       renderFollowUpSuggestions(msg.items);
     } else if (msg.type === 'prefill_input') {
       // 角色 handoff 上下文传递：填入输入框并聚焦，不自动发送（用户可编辑后回车）
@@ -4011,7 +4010,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         showActivity('info', `润色失败：${msg.message}`);
       }
     } else if (msg.type === 'clear_ok') {
-      // 清空消息区与全部渲染状态（M5b-3 抽出为 resetChatView，重放渲染 renderReplayFromRounds 复用
+      // 清空消息区与全部渲染状态（resetChatView，重放渲染 renderReplayFromRounds 复用
       // ——跨会话/重建前同样需要复位，避免旧渲染残留污染新会话）。
       resetChatView();
       updateEmptyState();
@@ -4024,7 +4023,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 切换/改名/清空后由 chatPanel 推送最新标题，标题条始终指向当前会话。
       sessionTitleText.textContent = msg.title;
     } else if (msg.type === 'session_list_data') {
-      // 历史会话列表（2026-08-17 会话管理重构 v2）：渲染到 treedd 历史下拉菜单
+      // 历史会话列表：渲染到 treedd 历史下拉菜单
       renderHistoryMenu(msg.sessions);
     } else if (msg.type === 'chat_providers') {
       currentProviders = msg.providers || [];
@@ -4037,7 +4036,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       renderModelPicker();
       // ④ 预算可视化：按当前选中 LLM 的上下文上限实时渲染占用条容量（首轮对话前即有真实上限）
       renderOccupancyLimit(currentProviders, currentActive);
-      // UX-1（2026-09-01）：无 Provider 时空态切换为「去配置模型」引导（首次使用关键路径，
+      // 无 Provider 时空态切换为「去配置模型」引导（首次使用关键路径，
       // 避免用户不知道去哪配置而卡在空态）；配置就绪后恢复角色化空态（幂等）
       if (currentProviders.length === 0) {
         updateEmptyStateOnboarding();
@@ -4048,7 +4047,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // SSOT 收敛：身份条已删，模型名由输入区 model-picker 触发器单一展示（renderModelPicker 内更新）
     } else if (msg.type === 'chat_role_pack') {
       // textContent 赋值防注入。角色名供 AI 消息头部标签 + 空状态标题 + 输入区角色徽章共用
-      // （角色切换已独立到「角色」视图，2026-08-17）
+      // （角色切换已独立到「角色」视图）
       currentRoleName = msg.rolePack;
       currentRoleTraits = msg.traits;
       // 队伍快照：小组会议启动图标数据源（SSOT，内核 rolePackManager.getActiveTeam 截断过滤后下发）
@@ -4057,10 +4056,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       updateRoleBadge();
       // 小组会议启动图标：activeTeam 存在 → 显示，否则隐藏
       updateTeamMeetingIcon();
-      // P3（2026-08-15 空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
+      // P3（空状态角色化）：角色切换 → 空状态标题/提示随角色生长（避免定位错位）
       updateEmptyStateRole();
     } else if (msg.type === 'chat_role_packs') {
-      // 角色包列表（description 供空状态提示副文案）；切换入口已独立到「角色」视图（2026-08-17）
+      // 角色包列表（description 供空状态提示副文案）；切换入口已独立到「角色」视图
       currentRolePacks = msg.packs || [];
       // 若当前角色名未同步到列表（如 displayName 未收录），回退为激活角色的显示名
       if (!currentRoleName && msg.activeName) {
@@ -4081,7 +4080,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         clearItem.className = 'treedd__item';
         // 顶部项语义 = 「普通对话、不挂载技能」——用中性「未选择技能」替代原「不使用 Skill」：
         // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
-        // 命中」（当前机制是显式选择，见 title 提示）。2026-09-22 UI 细节校正。
+        // 命中」（当前机制是显式选择，见 title 提示）。
         clearItem.textContent = '未选择技能';
         clearItem.title = '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
         clearItem.dataset.treeddId = '__clear_skill';
@@ -4122,7 +4121,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * H0 写入审批卡渲染（2026-09-19 补全，webview 侧唯一实现点）
+   * 写入审批卡渲染（webview 侧唯一实现点）
    *
    * 填充卡片字段（工具名 / 目标文件 / 描述 / 写入内容 diff 预览）并显示；
    * 记录当前 requestId，供确认/拒绝按钮回传 write_confirm_answer。
@@ -4132,7 +4131,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function renderWriteConfirmCard(msg: Extract<ExtensionToWebviewMessage, { type: 'write_confirm_request' }>): void {
     if (!writeConfirmCard || !writeConfirmTool || !writeConfirmPath || !writeConfirmDesc || !writeConfirmDiff) return;
     // 全部字段用 textContent 填充（SSOT：不信任 host 输入，防注入——与消息区渲染同纪律）
-    // 工具名走中文显示名单一真源（与工具行 toolActionLabel 同源）：接入前直显 msg.tool 英文名
+    // 工具名走中文显示名单一真源（与工具行 toolActionLabel 同源）
     writeConfirmTool.textContent = getToolDisplayName(msg.tool);
     writeConfirmPath.textContent = msg.targetPath;
     writeConfirmDesc.textContent = msg.description ?? '';
@@ -4162,7 +4161,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * message 事件监听入口（2026-09-16 F2 取证补漏）：唯一职责 = 异常兜底 + 可观测输出。
+   * message 事件监听入口：唯一职责 = 异常兜底 + 可观测输出。
    *
    * 背景：webview 事件监听器内的异常会被宿主**静默吞掉**（既不向 dispatchEvent 传播，也不进
    * 宿主日志），用户只见现象（任务过程不折叠 / 流式光标不消失）不见任何报错——F2 的 NotFoundError
@@ -4199,11 +4198,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     input.value = '';
     input.style.height = 'auto';
     input.style.overflowY = 'hidden';
-    // Phase 4：清输入框后按钮语义也要重算（hasInput 变了）
+    // 清输入框后按钮语义也要重算（hasInput 变了）
     syncButtonSemantics();
     syncSendEnabled();
     // 构建消息：选中技能传技能名（SSOT 收紧，host 按名走内核 buildSystemPrompt，取消前端硬编码提示）
-    // M4：send 意图单消息（宿主按相位路由到 chat / interject / 带文本续跑；skillName 为 input 原生成员）
+    // send 意图单消息（宿主按相位路由到 chat / interject / 带文本续跑；skillName 为 input 原生成员）
     const payload: WebviewToExtensionMessage = {
       type: 'input' as const,
       kind: 'send' as const,
@@ -4213,7 +4212,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     vscode.postMessage(payload);
   }
   // 发送按钮：空闲点击 = 发送；生成中点击 = 停止（按钮已切换为停止方块，
-  // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行，Phase 4 暂停/恢复）。
+  // mvp-scope 打断能力）；暂停中点击 = 继续（恢复 Agent 执行）。
   // 生成中插话走 Enter（见下方 keydown，不经此分支）。
   send.addEventListener('click', () => {
     if (send.classList.contains('loading')) {
@@ -4252,12 +4251,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   });
   input.addEventListener('input', () => {
     autoResize();
-    // Phase 4：输入内容变化时，按钮语义（classList 图标）和 disabled 态都要重算
+    // 输入内容变化时，按钮语义（classList 图标）和 disabled 态都要重算
     syncButtonSemantics();
     syncSendEnabled();
   });
 
-  // ─── 会话管理（2026-08-17 会话管理重构 v2，标题条收敛全部入口）───
+  // ─── 会话管理（标题条收敛全部入口）───
   // 相对时间（历史列表副标题，本地辅助；重复 3 次再提取 helper）
   function fmtRelativeTime(iso: string): string {
     const diff = Date.now() - new Date(iso).getTime();
@@ -4317,7 +4316,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 二者协作不耦合（SSOT 单一职责：treedd 管交互状态、本层管数据）
   historyBtn.addEventListener('click', () => vscode.postMessage({ type: 'session_list' }));
 
-  // 任务常驻条（PLAN-UI-1 合并单轨，2026-09-17）：点击头部展开/收起锚定浮层；浮层轻交互——
+  // 任务常驻条（合并单轨）：点击头部展开/收起锚定浮层；浮层轻交互——
   // 点击浮层外区域收起（非 modal：看进度时需同时看正文，故不遮罩全屏）
   const planBarHead = document.getElementById('planBarHead');
   planBarHead?.addEventListener('click', () => {
@@ -4347,7 +4346,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
-  // toolbar 剪枝后为模型选择器（角色切换独立到「角色」视图，2026-08-17）
+  // toolbar 为模型选择器（角色切换独立到「角色」视图）
   initDropdowns(document, {
     __modelPickerOnSelect: (id) => vscode.postMessage({ type: 'chat_set_provider', name: id }),
     // 历史下拉：条目（.treedd__item）点击 → 加载该会话（host 切入并回放，SSOT 剪枝 v2）
@@ -4356,7 +4355,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     __skillPickerOnSelect: (id) => {
       const found = skillOptions.find((s) => s.name === id);
       if (found) {
-        // SKILL-S2：随行带出 disabled（选择时刻的快照）——仅供 chip 显示提示，
+        // 随行带出 disabled（选择时刻的快照）——仅供 chip 显示提示，
         // 发送时的**判定**仍由 host 真源（`isSkillDisabled`）负责，webview 不拦截。
         currentSkill = { name: id, disabled: !!found.disabled };
         updateSkillPickerLabel();
@@ -4404,7 +4403,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     skillChipRow.hidden = false;
     const chip = document.createElement('span');
     chip.className = 'skill-chip';
-    // SKILL-S2：选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
+    // 选中的技能已禁用 → 标记 chip。否则用户以为「已挂载」，实际发送时不注入。
     // 术语沿用设置页同一词汇「已禁用」，不新增概念。
     if (currentSkill.disabled) {
       chip.classList.add('is-disabled');
@@ -4412,7 +4411,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     const icon = document.createElement('span');
     icon.className = 'skill-chip__icon';
-    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 emoji ⚡ 剪除，2026-09-19 图标语言收口）
+    // 图标语言唯一 = icons.ts 柔和线条 SVG
     icon.innerHTML = getIconSvg('bolt', 11, 11);
     icon.setAttribute('aria-hidden', 'true');
     chip.appendChild(icon);
@@ -4450,8 +4449,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
   }
 
-  /** 动态技能清单（SSOT 收紧，2026-08-25）：不再硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源。
-   * `disabled` 随行带出（SKILL-S2）：下拉项据此弱化 + 标注「已禁用」，chip 据此提示 —— 纯显示，不拦截。 */
+  /** 动态技能清单（SSOT 收紧）：不硬编码预设，由 host 推 skills_loaded 填充，与设置面板同一来源。
+   * `disabled` 随行带出：下拉项据此弱化 + 标注「已禁用」，chip 据此提示 —— 纯显示，不拦截。 */
   let skillOptions: { name: string; disabled?: boolean }[] = [];
   // 初始化 Skill 选择器选项：先放「不使用 Skill + 分隔线」，具体清单由 skills_loaded 动态填充
   if (skillPickerMenu) {
@@ -4468,12 +4467,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     updateSkillPickerLabel();
   }
 
-  // 提问卡渲染（M5b-2：真源从 need_clarify 消息切到 turn_update.state 的 waiting/ask）
+  // 提问卡渲染（真源 = turn_update.state 的 waiting/ask）
   // 职责与原 need_clarify 分支等价：优先内联块（renderAskInline 挂问答交互行下），
   // 无锚点时降级底部 clarifyBar 异常兜底。questions 来自 turn_update.state.questions
   //（宿主 postTurnUpdate 投影派生，非独立消息载荷）。
   function renderAskPhase(questions: PendingQuestionDto[]): void {
-    // 提问形态内联化（2026-09-03）：选择题 + 补充输入渲染到消息流提问块下方
+    // 提问形态内联化：选择题 + 补充输入渲染到消息流提问块下方
     //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
     // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
     const askBlock = renderAskInline(questions);
@@ -4507,8 +4506,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   // 主动提问回答（clarifyBar 异常兜底路径）：提交并续跑
-  // 与内联选择题主路径（commitAskAnswers）共用同一置位语义 armAskResumeAnchor（SSOT 收敛，
-  // 2026-09-22：原手写 resumePending 置位与主路径重复，统一走单点置位；载荷为单条 answer 意图）
+  // 与内联选择题主路径（commitAskAnswers）共用同一置位语义 armAskResumeAnchor（SSOT 收敛：
+  // resumePending 置位单点，勿再手写；载荷为单条 answer 意图）
   function sendClarifyAnswer(): void {
     const text = clarifyInput.value.trim();
     if (!text) return;
@@ -4516,7 +4515,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     clarifyBar.classList.remove('visible');
     inputBar.hidden = false;
     armAskResumeAnchor();
-    // M4：单问=单元素数组（answer 意图恒 answers，无 answer_multi 变体）
+    // 单问=单元素数组（answer 意图恒 answers，无 answer_multi 变体）
     vscode.postMessage({ type: 'input', kind: 'answer', answers: [text] });
   }
   clarifySend.addEventListener('click', sendClarifyAnswer);

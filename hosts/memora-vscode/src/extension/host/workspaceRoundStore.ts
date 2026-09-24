@@ -393,7 +393,7 @@ export class WorkspaceRoundStore implements IRoundStore {
    * 崩溃发生在 appendAssistant 完成前：该轮 refCount=0、未登记会话 roundIds，宿主从会话列表
    * 无法发现；但其过程可能已由 step 原子检查点落盘到 pending Round——重启后经此只读口
    * 「找到」，再由宿主收场方法（chatPanel.upgradeInterruptedRounds → 内核
-   * MessageHistory.appendInterrupted）**升级为正常 stop turn**（§一·五：非半成品草稿，T1）。
+   * MessageHistory.appendInterrupted）**升级为正常 stop turn**（非半成品草稿）。
    * 只读、不登记会话、不改写；升级完成（complete + refCount>0）前为打捞窗口内中间态，
    * 超龄未升级的中断轮仍由 sweepOrphans 回收（默认 24h 存活保护覆盖打捞窗口，不误回收）。
    *

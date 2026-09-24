@@ -30,7 +30,7 @@ export async function createProvider(
         model: active.model,
         apiKey: active.apiKey,
         provider: active.provider,
-        // 能力位透传（互斥双能力位，2026-09-14 阶段0）：未声明（undefined）交内核回落，**两键方向不同**——
+        // 能力位透传（互斥双能力位）：未声明（undefined）交内核回落，**两键方向不同**——
         // supportsToolCalling → true（缺省保留工具调用能力）；supportsStructuredOutput → false（缺省不发 response_format）。
         // 勿读成「默认都开」；内核 SSOT = openaiCompatible 构造器的 `?? true` / `?? false`。
         supportsToolCalling: active.supportsToolCalling,
@@ -62,7 +62,7 @@ export async function createProvider(
 }
 
 /**
- * 创建后台模型 Provider（G5 多 Provider 路由，2026-08-23）
+ * 创建后台模型 Provider（多 Provider 路由）
  *
  * 后台任务（轮次摘要 / 会话归档 / 文本润色 / 去重判定）走独立 Provider，可选用轻量快模型
  * 节省成本。store 未配置后台通道（getBackgroundName 为空 / name 不存在）返回 undefined——

@@ -1,8 +1,8 @@
 /**
- * LoopMetrics 单测（ARCH-3 P3-6 下沉后补）
+ * LoopMetrics 单测
  *
  * 纯值对象：9 个计数字段 + 3 个派生 getter 的**除法保护**（分母为 0 时不得返回 NaN）。
- * 注：原 recallTotalCount/recallHitCount/hitRate 已于 2026-09-11 随假指标链物理删除
+ * 注：原 recallTotalCount/recallHitCount/hitRate 已随假指标链物理删除
  * （自动召回退役后零写点、恒 0）。
  */
 

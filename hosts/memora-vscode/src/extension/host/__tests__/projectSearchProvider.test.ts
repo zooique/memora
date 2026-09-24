@@ -68,7 +68,7 @@ describe('VscodeProjectSearchProvider', () => {
       ] as never);
       const provider = createVscodeProjectSearchProvider(root);
       const result = await provider.searchFiles({ query: '**/*.ts' });
-      // 默认排除 IGNORED_DIR_NAMES（含 .memora，2026-09-07 伪建表根治：防 LLM 搜到数据目录内任务表文件自我强化）
+      // 默认排除 IGNORED_DIR_NAMES（含 .memora，防 LLM 搜到数据目录内任务表文件自我强化）
       expect(vscode.workspace.findFiles).toHaveBeenCalledWith(
         '**/*.ts',
         '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
@@ -335,7 +335,7 @@ describe('VscodeProjectSearchProvider', () => {
     it('大文件（>64KB）不再整文件跳过：前段 token 可命中 + 上报 partialReadFiles（F4-full）', async () => {
       const tmp = makeTmp();
       try {
-        // token 在**前 64KB 内**（文件总长 70KB）→ S2 后可搜到；S1 时该文件被整文件跳过、必然搜不到
+        // token 在**前 64KB 内**（文件总长 70KB）→ S2 可搜到；S1 时该文件被整文件跳过、必然搜不到
         writeFileSync(join(tmp, 'big.md'), `needle_front\n${'x'.repeat(70 * 1024)}\n`, 'utf-8');
         const provider = createVscodeProjectSearchProvider(tmp);
         const result = await provider.searchText({ pattern: 'needle_front' });

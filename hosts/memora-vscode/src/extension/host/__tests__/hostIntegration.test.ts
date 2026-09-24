@@ -88,7 +88,7 @@ describe('宿主集成端到端测试', () => {
     if (tmpHome) rmSync(tmpHome, { recursive: true, force: true });
   });
 
-  // ─── T1：宿主 LLM Provider 创建 ────────────────────────────────
+  // ─── 宿主 LLM Provider 创建 ────────────────────────────────
   describe('LLM Provider 创建', () => {
     it('createProvider 从环境变量创建 Provider', async () => {
       const apiKey = process.env.MEMORA_API_KEY;
@@ -114,7 +114,7 @@ describe('宿主集成端到端测试', () => {
     });
   });
 
-  // ─── T2：VscodeTracer 集成 ────────────────────────────────
+  // ─── VscodeTracer 集成 ────────────────────────────────
   describe('VscodeTracer 可观测性集成', () => {
     it('VscodeTracer 实现 ITracer 接口', () => {
       const tracer = new VscodeTracer();
@@ -175,7 +175,7 @@ describe('宿主集成端到端测试', () => {
     });
   });
 
-  // ─── T3：宿主存储组件 ────────────────────────────────────────
+  // ─── 宿主存储组件 ────────────────────────────────────────
   describe('宿主存储组件', () => {
     it('WorkspaceStorage 创建与加载', () => {
       const storage = new WorkspaceStorage(tmpDir);
@@ -212,7 +212,7 @@ describe('宿主集成端到端测试', () => {
     });
   });
 
-  // ─── T4：安全写入确认流程 ────────────────────────────────
+  // ─── 安全写入确认流程 ────────────────────────────────
   describe('安全写入确认集成', () => {
     it('SecurityGuard 支持 confirmWrites 开关', async () => {
       const tracer = new VscodeTracer();
@@ -325,13 +325,13 @@ describe('宿主集成端到端测试', () => {
     });
   });
 
-  // ─── T5：协议消息类型完整性 ────────────────────────────────
+  // ─── 协议消息类型完整性 ────────────────────────────────
   describe('协议消息类型完整性', () => {
     it('关键协议消息类型在 protocol.ts 联合类型中定义', async () => {
       // SSOT：协议联合类型（WebviewToExtensionMessage / ExtensionToWebviewMessage）
       // 是消息类型的唯一权威源。此处读取协议源码断言关键 type 字面量存在——
       // 与 shared/__tests__/protocolGuard.test.ts 同构（源码级对账，不维护运行时镜像表；
-      // 原 MESSAGE_TYPES 常量表已删除，2026-09-19——其与联合类型长期不同步属僵尸镜像）。
+      // MESSAGE_TYPES 常量表与联合类型长期不同步，属僵尸镜像，勿重建）。
       const fs = await import('node:fs');
       const protocolSource = fs.readFileSync(
         join(__dirname, '../../../shared/protocol.ts'),
@@ -355,8 +355,8 @@ describe('宿主集成端到端测试', () => {
     });
   });
 
-  // ─── T6：宿主 Agent 真实对话集成 ────────────────────────────────
-  // 真实 LLM 测试：默认跳过（runE2E 显式开关），LLM 慢/波动不再随机红进 push 门禁
+  // ─── 宿主 Agent 真实对话集成 ────────────────────────────────
+  // 真实 LLM 测试：默认跳过（runE2E 显式开关），LLM 慢/波动不随机红进 push 门禁
   describe.skipIf(!runE2E)('宿主 Agent 真实对话', () => {
     it('完整对话流程（初始化 → chat → close）', async () => {
       const apiKey = process.env.MEMORA_API_KEY;

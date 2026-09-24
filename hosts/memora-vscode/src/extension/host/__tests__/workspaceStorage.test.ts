@@ -128,7 +128,7 @@ describe('WorkspaceStorage.load 数据层清洗（阶段3 score 退役后）', (
             name: 'legacy',
             createdAt: '2026-06-02T00:00:00.000Z',
             accessedAt: '2026-06-02T00:00:00.000Z',
-            score: 0.85, // 阶段3 已物理退役
+            score: 0.85, // 已物理退役
           },
         ],
         null,

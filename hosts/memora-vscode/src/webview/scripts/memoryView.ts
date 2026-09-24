@@ -1,5 +1,5 @@
 /**
- * memoryView — 记忆子视图 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
+ * memoryView — 记忆子视图 webview 运行时脚本
  *
  * 由 settingsView.ts 挂载（设置视图选项卡合并后记忆子视图）：以工厂函数 createMemoryView
  * 接收依赖（vscode / window / root）并初始化全部交互，替代「字符串注入脚本」。
@@ -27,7 +27,7 @@ import { getIconSvg } from './icons.js';
 /** memoryView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface MemoryViewDeps {
   /** webview 通信 API（SSOT：由 settingsView 统一 acquireVsCodeApi() 一次后注入，
-   *  子视图不再各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
+   *  子视图不各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
   vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
@@ -51,7 +51,7 @@ interface SearchResultPayload {
  * source → 徽章样式类映射。
  *
  * 对齐约束：键集合须 ⊆ 内核 SOURCE_LABELS 值集合（漂移哨兵见 __tests__/memoryView.test.ts），
- * 禁止新增内核零存在的幽灵 source（如 2026-09-18 删除的 'profile'）。
+ * 禁止新增内核零存在的幽灵 source（如已删除的 'profile'）。
  * 未知 source 回退中性样式（开放字符串不应穷举）。
  */
 export const SOURCE_BADGE_CLASS: Record<string, string> = {
@@ -73,7 +73,7 @@ export const TYPE_BADGE_LABEL: Record<string, string> = {
   general: '通用',
 };
 
-/** 记忆列表每页条数（2026-09-08 分页组件；与宿主 MEMORY_LIST_LIMIT 对齐，首屏同 20 条） */
+/** 记忆列表每页条数（分页组件；与宿主 MEMORY_LIST_LIMIT 对齐，首屏同 20 条） */
 const MEMORY_PAGE_SIZE = 20;
 
 /**
@@ -89,14 +89,14 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   const statBar = root.querySelector('#statBar') as HTMLElement;
   const searchInput = root.querySelector('#searchInput') as HTMLInputElement;
 
-  // 治理区元素（G4，2026-08-23：统计卡 + 清理按钮 + 结果提示）
+  // 治理区元素（统计卡 + 清理按钮 + 结果提示）
   const govActive = root.querySelector('#govActive') as HTMLElement | null;
   const govDeleted = root.querySelector('#govDeleted') as HTMLElement | null;
   const govSuperseded = root.querySelector('#govSuperseded') as HTMLElement | null;
   const govDetail = root.querySelector('#govDetail') as HTMLElement | null;
   const btnCleanup = root.querySelector('#btnCleanup') as HTMLButtonElement | null;
 
-  // 回收站 + 提示（G19，2026-08-25：软删除记忆的可恢复暂存区 + 操作反馈）
+  // 回收站 + 提示（软删除记忆的可恢复暂存区 + 操作反馈）
   const recycle = root.querySelector('#recycle') as HTMLDetailsElement | null;
   const recycleList = root.querySelector('#recycleList') as HTMLElement | null;
   const recycleSummary = root.querySelector('#recycle > summary') as HTMLElement | null;
@@ -145,7 +145,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     hits.forEach((m) => list.appendChild(buildCard(m)));
   }
 
-  // 分页组件（2026-09-08）：首屏由 memory_loaded 直接填充第 1 页，翻页走 memory_page 增量拉取。
+  // 分页组件：首屏由 memory_loaded 直接填充第 1 页，翻页走 memory_page 增量拉取。
   // anchor=回收站 → 分页条插在列表正下方（list 与 recycle 之间）；单页自动隐藏。
   const pager = createPager<MemoryItemDto>({
     root,
@@ -193,10 +193,10 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       head.appendChild(typeBadge);
     }
 
-    // 删除按钮（G19）：stopPropagation 避免触发卡片展开，独立走 memory_delete
+    // 删除按钮：stopPropagation 避免触发卡片展开，独立走 memory_delete
     const delBtn = document.createElement('button');
     delBtn.className = 'mem-del-btn';
-    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ✕ 字符剪除，2026-09-19 图标语言收口）
+    // 图标语言唯一 = icons.ts 柔和线条 SVG
     delBtn.innerHTML = getIconSvg('close', 12, 12);
     delBtn.title = '删除这条记忆（进入回收站，可恢复）';
     delBtn.setAttribute('aria-label', '删除记忆');
@@ -204,10 +204,10 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       e.stopPropagation();
       vscode.postMessage({ type: 'memory_delete', id: m.id });
     });
-    // 编辑按钮（G19 内联 edit，2026-08-25）：stopPropagation 避免触发卡片展开，独立走 memory_edit
+    // 编辑按钮（内联 edit）：stopPropagation 避免触发卡片展开，独立走 memory_edit
     const editBtn = document.createElement('button');
     editBtn.className = 'mem-edit-btn';
-    // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ✎ 字符剪除，2026-09-19）
+    // 图标语言唯一 = icons.ts 柔和线条 SVG
     editBtn.innerHTML = getIconSvg('edit', 12, 12);
     editBtn.title = '编辑这条记忆的内容';
     editBtn.setAttribute('aria-label', '编辑记忆');
@@ -244,7 +244,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
       card.appendChild(tags);
     }
 
-    // 内联编辑（G19 内联 edit 收尾，2026-08-25）：进入编辑态——隐藏预览、注入 textarea
+    // 内联编辑收尾：进入编辑态——隐藏预览、注入 textarea
     // + 保存/取消按钮；编辑区 stopPropagation 防卡片展开误触。保存 postMessage memory_edit，
     // 取消退出编辑态；成功时 host 推 memory_loaded 重建卡片使编辑态自然消失。
     function enterEditMode(): void {
@@ -359,7 +359,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     if (govDetail) govDetail.hidden = true;
   }
 
-  /** 渲染回收站列表（G19，2026-08-25：软删除记忆的可恢复暂存区；2026-08-26 加清空操作） */
+  /** 渲染回收站列表（软删除记忆的可恢复暂存区 + 清空操作） */
   function renderRecycle(items: MemoryItemDto[]): void {
     updateRecycleCount(items?.length ?? 0);
     if (!recycleList) return;
@@ -437,7 +437,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     });
     card.appendChild(restoreBtn);
 
-    // 永久删除按钮（2026-08-26）：独立走 memory_purge，物理删除不可恢复
+    // 永久删除按钮：独立走 memory_purge，物理删除不可恢复
     const purgeBtn = document.createElement('button');
     purgeBtn.className = 'mem-purge-btn btn btn-danger';
     purgeBtn.textContent = '永久删除';
@@ -454,7 +454,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     return card;
   }
 
-  /** 操作反馈提示（G19：删除/恢复失败等错误，成功不显示） */
+  /** 操作反馈提示（删除/恢复失败等错误，成功不显示） */
   function showMemHint(message: string, isError: boolean): void {
     if (!memHint) return;
     memHint.textContent = message;
@@ -507,7 +507,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     } else if (msg.type === 'governance_result') {
       showGovernanceResult(msg);
     } else if (msg.type === 'memory_recycle_loaded') {
-      // 渲染回收站列表（G19）
+      // 渲染回收站列表
       renderRecycle(msg.items);
     } else if (msg.type === 'memory_deleted') {
       // 成功：host 已推 memory_loaded 刷新活跃列表；此处自动展开回收站并拉取，
@@ -529,7 +529,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
         showMemHint(msg.message, true);
       }
     } else if (msg.type === 'memory_purged') {
-      // 永久删除单条（2026-08-26）：成功重拉回收站 + 活跃列表；失败显示错误
+      // 永久删除单条：成功重拉回收站 + 活跃列表；失败显示错误
       if (msg.ok) {
         if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
         showMemHint('已永久删除', false);
@@ -537,7 +537,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
         showMemHint(msg.message, true);
       }
     } else if (msg.type === 'memory_recycle_cleared') {
-      // 清空回收站（2026-08-26）：成功重拉回收站；失败显示错误
+      // 清空回收站：成功重拉回收站；失败显示错误
       if (msg.ok) {
         if (recycle?.open) vscode.postMessage({ type: 'memory_recycle_load' });
         showMemHint(msg.count > 0 ? `已清空回收站（${msg.count} 条）` : '回收站已是空的', false);
@@ -556,7 +556,7 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
     vscode.postMessage({ type: 'governance_cleanup' });
   });
 
-  // 回收站：展开时拉取列表（G19，2026-08-25）
+  // 回收站：展开时拉取列表
   recycle?.addEventListener('toggle', () => {
     if (recycle.open) vscode.postMessage({ type: 'memory_recycle_load' });
   });

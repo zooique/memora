@@ -5,7 +5,7 @@
  *  - scripts/test-memory-tool-recall-benchmark.ts：装载 + 可达性自检
  *  - scripts/test-memory-tool-recall-real.ts：真实 LLM 会话驱动 A/B 实测
  *
- * 对齐基准：docs/architecture/memory-tool-recall-ab-benchmark.md §2。
+ * 对齐基准：docs/architecture/memory-tool-recall-ab-benchmark.md。
  * C 组为「反例」（判断不值得回忆是合理产物），不装载种子，仅存在于基准文档。
  */
 import type { Memory } from '../src/memory/types.js';
@@ -36,7 +36,7 @@ export const BENCH_SESSION = '2026-09-01-benchmark';
 /** round-summary 类用例统一用旧轮（远于当前会话已载入轮次，规避装配正文互斥） */
 export const OLD_ROUND = 'r9-bench-seed';
 
-/** 基准内存目标（与基准文档 §2 对应；C 组反例不装载种子） */
+/** 基准内存目标（与基准文档对应；C 组反例不装载种子） */
 export const BENCH_SEEDS: BenchmarkSeed[] = [
   // ── A 隐含相关 ──
   { id: 'A1', kind: 'A', expectId: 'content:lru-decision', input: '这个缓存要不要换方案，我之前权衡过的', selfQuery: '缓存进程内LRU决定', entity: 'ZizzleLru', source: 'content', content: 'ZizzleLru：缓存方案定为进程内 LRU（命中率优先，附带限层），理由见评审。' },
@@ -55,7 +55,7 @@ export const BENCH_SEEDS: BenchmarkSeed[] = [
 /**
  * 装载基准种子到隔离会话（只写 InMemoryStorage，不造独立存储实现）。
  * - content/preference：天然不受互斥影响（互斥只滤 round-summary 的 roundId）；
- * - round-summary：用旧轮并放隔离会话，双保险避开 §5.1 组装互斥。
+ * - round-summary：用旧轮并放隔离会话，双保险避开组装互斥。
  */
 export function loadBenchmarkSeed(storage: InMemoryStorage): void {
   for (const s of BENCH_SEEDS) {

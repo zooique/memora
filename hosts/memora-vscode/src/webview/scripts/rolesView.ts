@@ -1,5 +1,5 @@
 /**
- * rolesView — 角色子视图 webview 运行时脚本（阶段 B P2-1 模式，2026-08-17）
+ * rolesView — 角色子视图 webview 运行时脚本
  *
  * 由 settingsView.ts 挂载（设置视图选项卡合并后角色子视图）：以工厂函数 createRolesView
  * 接收依赖（vscode / window / root）并初始化全部交互，替代「字符串注入脚本」。
@@ -20,7 +20,7 @@ import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { createPager, PagerController } from './pager.js';
 import { getIconSvg } from './icons.js';
 
-/** 「其他角色」每页条数（2026-09-08 分页组件；激活角色恒显不参与分页） */
+/** 「其他角色」每页条数（分页组件；激活角色恒显不参与分页） */
 const ROLE_PAGE_SIZE = 8;
 
 /** 角色包卡片条目类型（roles_loaded packs 元素，分页组件泛型用） */
@@ -29,7 +29,7 @@ type RolePackItem = RolesPayload['packs'][number];
 /** rolesView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface RolesViewDeps {
   /** webview 通信 API（SSOT：由 settingsView 统一 acquireVsCodeApi() 一次后注入，
-   *  子视图不再各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
+   *  子视图不各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
   vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
@@ -43,7 +43,7 @@ interface RolesPayload {
     name: string;
     displayName: string;
     description?: string;
-    /** 来源层（2026-08-30）：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
+    /** 来源层：builtin=内置（configDir/role-packs），user=用户（globalStorageUri/role-packs） */
     source?: 'builtin' | 'user';
     capabilities: { capability: string; label: string }[];
     traits?: Record<string, number>;
@@ -61,7 +61,7 @@ interface RolesPayload {
     teamMembers?: readonly string[];
     /** 兜底契约包标记（BUILTIN_FALLBACK_PACK，宿主 UI 禁删） */
     isFallback?: boolean;
-    /** manifest 校验问题（G29 健康徽章，level+message 结构对齐 skills_loaded） */
+    /** manifest 校验问题（健康徽章，level+message 结构对齐 skills_loaded） */
     issues?: readonly { level: 'error' | 'warning'; message: string }[];
   }[];
   /** 组（会议名单）：组长 + 组员（v0.13 S7） */
@@ -83,7 +83,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;
 
-  // 「打开用户角色包目录」入口（对齐技能目录入口，2026-08-30）
+  // 「打开用户角色包目录」入口（对齐技能目录入口）
   const openDirBtn = root.querySelector<HTMLButtonElement>('#btnOpenRolePacksDir');
   if (openDirBtn) {
     openDirBtn.addEventListener('click', () => {
@@ -110,7 +110,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     items.forEach((p) => othersHost.appendChild(buildCard(p, lastData!)));
   }
 
-  // 分页组件（2026-09-08）：「其他角色」全量前端分页；激活角色恒显不参与。单页自动隐藏。
+  // 分页组件：「其他角色」全量前端分页；激活角色恒显不参与。单页自动隐藏。
   let pagerCtrl: PagerController<RolePackItem> | null = null;
   const pager = createPager<RolePackItem>({
     root,
@@ -340,7 +340,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     nameEl.textContent = p.displayName;
     header.appendChild(nameEl);
 
-    // 来源徽章（2026-08-30 对齐技能层徽章）：用户角色包标「用户」，内置角色包不标（内置为默认）
+    // 来源徽章（对齐技能层徽章）：用户角色包标「用户」，内置角色包不标（内置为默认）
     if (p.source === 'user') {
       const srcBadge = document.createElement('span');
       srcBadge.className = 'badge badge-source-user';
@@ -355,7 +355,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
       badge.textContent = '当前';
       header.appendChild(badge);
     }
-    // 兜底标记已合并至下方策略区的「系统兜底」chip（避免重复，2026-08-29 实测反馈）
+    // 兜底标记已合并至下方策略区的「系统兜底」chip（避免重复）
 
     // 操作按钮（右侧，margin-left: auto）
     const actions = document.createElement('div');
@@ -448,7 +448,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
         chip.textContent = `输出上限: ${hint.outputLimit}k`;
         strategy.appendChild(chip);
       }
-      // 兜底契约包定位（能力标签区，2026-08-29 实测反馈）：以 chip 呈现系统兜底，
+      // 兜底契约包定位（能力标签区）：以 chip 呈现系统兜底，
       // 替代描述区的长开发说明（manifest.description 已精简，机制说明移入 title）
       if (p.isFallback) {
         const chip = document.createElement('span');
@@ -478,7 +478,7 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     // ② 卡片级小组条（队伍状态 + 组队入口；复用小组成员标注的信息层级）
     card.appendChild(buildTeamRibbon(p, data));
 
-    // ===== G29 健康区（manifest 校验问题，镜像技能 G22 徽章模式）=====
+    // ===== 健康区（manifest 校验问题，镜像技能徽章模式）=====
     // error=不可装载/特性缺失（红徽章）；warning=可装载但提示（黄徽章）；问题列表默认折叠展开
     if (p.issues && p.issues.length > 0) {
       const hasError = p.issues.some((i) => i.level === 'error');

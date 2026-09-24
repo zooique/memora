@@ -1,5 +1,5 @@
 /**
- * fmtTime 纯函数单测（阶段 A/B P2-1：纯逻辑抽为可测模块后的覆盖）
+ * fmtTime 纯函数单测（纯逻辑抽为可测模块后的覆盖）
  */
 import { describe, it, expect } from 'vitest';
 import { fmtTime } from '../fmtTime.js';

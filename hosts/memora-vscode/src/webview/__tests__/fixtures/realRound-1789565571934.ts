@@ -19,12 +19,12 @@
  *    但 is-streaming 光标只在 chunk / beginStreaming 时出现，故「无 chunk」变体**无法**复现
  *    「光标残留」现象。因此本夹具提供 withStreaming 开关，测试需同时覆盖两种变体。
  *
- * M3b-2b-3：新增对拍支撑——
+ * 对拍支撑——
  *   - `expandEvents()`：脚本 → ProcessEvent[]（单一展开源，buildRealRoundTimeline 与
  *     `buildRoundView().processEvents` 共用，保证两路渲染输入同源）；
  *   - `buildRoundView()`：投影为 RoundView（rounds 形状）——「消费 rounds」的数据层证据；
  *   - `buildReplayTurnUpdate()`：由 RoundView 派生重放路单条 turn_update（replay:true，rounds 承载）
- *     ——M5b-3 后重放真源切到 turn_update.rounds，替代旧 user/replay_events/assistant 消息风暴，
+ *     ——重放真源 = turn_update.rounds（而非 user/replay_events/assistant 消息风暴），
  *     与运行时流式路构成对拍双路。
  */
 
@@ -392,11 +392,11 @@ export function expandEvents(): ProcessEvent[] {
 }
 
 /**
- * 把真实轮投影为 `RoundView`（rounds 形状）——「消费 rounds」的数据层证据（M3b-2b-3）
+ * 把真实轮投影为 `RoundView`（rounds 形状）——「消费 rounds」的数据层证据
  *
  * 与宿主 `loadRoundBasedHistory` 产出的形状一致（userMessage / assistantMessage /
  * processEvents / status / createdAt / completedAt），对拍测试据此证明：
- * **rounds 形状可直接喂给 webview 整批渲染**（replay 单通道，M5b-3）。
+ * **rounds 形状可直接喂给 webview 整批渲染**（replay 单通道）。
  */
 export function buildRoundView(): RoundView {
   return {
@@ -423,7 +423,7 @@ export function buildRoundView(): RoundView {
 }
 
 /**
- * 重放路单条 turn_update（replay:true，rounds 承载）——由 `RoundView`（rounds 形状）派生（M5b-3）
+ * 重放路单条 turn_update（replay:true，rounds 承载）——由 `RoundView`（rounds 形状）派生
  *
  * 语义对齐宿主 `replayHistory` → `postTurnUpdate(undefined, true)`：重放不再拆分为消息风暴，
  * 而由单条 turn_update.rounds 整批承载，webview 端 `renderReplayFromRounds` 重建。

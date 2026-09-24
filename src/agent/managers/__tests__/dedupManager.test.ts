@@ -1,9 +1,9 @@
 /**
  * 语义去重管理器测试
  *
- * 覆盖 M6 修复的核心语义：「判定为重复且 LLM 提供 mergedContent 时，
+ * 覆盖核心语义：「判定为重复且 LLM 提供 mergedContent 时，
  * 保留方（高分记忆 a）的内容必须真正落库更新为合并内容」——
- * 旧实现生成 mergedContent 却从不写回，合并实为死代码。
+ * 若生成 mergedContent 却从不写回 → 合并实为死代码。
  *
  * 通过 mock IMemoryStorage + mock LlmProvider 驱动 deduplicateMemories，
  * 断言保留方内容被覆盖、降级方被软删（score 已物理退役，降级改由 delete 承担）。
@@ -94,12 +94,12 @@ describe('DedupManager · M6 合并内容落库', () => {
     expect(report.demotedIds).toContain('content:b');
     expect(report.verdicts?.[0]?.mergedContent).toBe('合并后的完整偏好：简洁 UI');
 
-    // M6 核心：保留方 a 内容被合并内容覆盖（旧实现生成 mergedContent 却从不落库）
+    // 核心：保留方 a 内容被合并内容覆盖（若生成 mergedContent 却从不落库 → 合并失效）
     const kept = storage.getById('content:a');
     expect(kept).not.toBeNull();
     expect(kept!.content).toBe('合并后的完整偏好：简洁 UI');
 
-    // 降级方 b 被软删（score 退役后不再降分，改由 delete 保留可恢复性）
+    // 降级方 b 被软删（score 已物理退役：不降分，由 delete 保留可恢复性）
     const demoted = storage.getById('content:b');
     expect(demoted).toBeNull();
   });

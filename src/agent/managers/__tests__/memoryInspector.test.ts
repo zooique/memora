@@ -7,7 +7,7 @@
  *   - 只读查询：getById / getDeletedById / listDeleted / getBySource / list
  *   - snapshot：3 层快照（工作记忆 + Bootstrap + 归档）
  *   - search：关键词搜索（空 query 抛错 + limit 校验 + 内容截断）
- *   - searchByKeyword：纯关键词搜索（语义通道已随 B0 收编移除，2026-09-18）
+ *   - searchByKeyword：纯关键词搜索（语义通道已收编移除）
  *   - stats：记忆库统计
  *   - 写操作：writeUpsert / writeDelete / writeRestore / writePurge / writePurgeExpired
  *

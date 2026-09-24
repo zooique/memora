@@ -1,5 +1,5 @@
 /**
- * settingsView — 设置面板 webview 运行时脚本（2026-08-17 选项卡合并）
+ * settingsView — 设置面板 webview 运行时脚本（选项卡合并）
  *
  * 由 settingsPanel.ts 的 buildHtml 引用：以工厂函数 createSettingsView 接收依赖
  * （acquireVsCodeApi / window）并初始化全部交互。
@@ -27,7 +27,7 @@ import { createMemoryView } from './memoryView.js';
 import { createRolesView } from './rolesView.js';
 import { populateIcons } from './icons.js';
 import { createPager, PagerController } from './pager.js';
-// escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛 2026-09-21，见 helpers/escapeHtml.ts）
+// escapeHtml：HTML 转义纯函数单一真理源（SSOT 收敛，见 helpers/escapeHtml.ts）
 import { escapeHtml } from '../helpers/escapeHtml.js';
 
 /** settingsView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
@@ -125,7 +125,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   }
 
   // 挂载三个子视图（config/memory 先，roles 后；全部用共享 vscode 实例）。
-  // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求 2026-08-17）。
+  // 初始选项卡为「记忆」，与 HTML 默认态一致（用户请求）。
   // 每个挂载独立 try/catch：任一子视图挂载异常不阻断其余子视图，错误输出到 webview console。
   try {
     createConfigView({ vscode, window, root: roots.config });
@@ -143,7 +143,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     console.error('[memora-settings] rolesView 挂载失败:', err);
   }
 
-  // 技能子视图初始化（2026-08-22 新增）：独立 try/catch（对齐上方三挂载），
+  // 技能子视图初始化：独立 try/catch（对齐上方三挂载），
   // 防单视图挂载异常截断后续 security 挂载与 ready 握手（ready 未发 → host 不推数据，全面板空白）
   try {
     createSkillsView({ vscode, window, root: roots.skills });
@@ -151,7 +151,7 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
     console.error('[memora-settings] skillsView 挂载失败:', err);
   }
 
-  // 安全子视图初始化（H0 写入审批）
+  // 安全子视图初始化（写入审批）
   try {
     createSecurityView({ vscode, window, root: roots.security });
   } catch (err) {
@@ -209,7 +209,7 @@ function createSkillsView({
         ${s.health && s.health !== 'ok' ? `<span class="health-badge health-${s.health}">${s.health === 'error' ? '未生效' : '可优化'}</span>` : ''}
         ${s.disabled ? '<span class="disabled-badge" title="已在 memora.disabledSkills 中禁用：对模型不存在（不进清单 / 不可读取 / L3 不可达）">已禁用</span>' : ''}
         ${
-          // S4 延长线开关（2026-09-22）：全局池（builtin/user）渲染真实禁用开关；角色包技能
+          // 延长线开关：全局池（builtin/user）渲染真实禁用开关；角色包技能
           // 对禁用清单免疫（定案，随角色启停），渲染弱化说明文字替代开关——避免用户在卡片上
           // 找开关而不得。checked = 已禁用态；点击只发消息不本地翻转，以 skills_loaded 回推为准。
           s.layer === 'rolepack'
@@ -234,7 +234,7 @@ function createSkillsView({
       .join('');
   }
 
-  // 分页组件（2026-09-08）：技能全量前端分页。分页条插在列表之后；单页自动隐藏。
+  // 分页组件：技能全量前端分页。分页条插在列表之后；单页自动隐藏。
   let pagerCtrl: PagerController<SkillDto> | null = null;
   const pager = createPager<SkillDto>({
     root,
@@ -302,7 +302,7 @@ function createSkillsView({
     if (msg.type === 'skills_loaded') {
       // renderSkills 更新计数 + 处理空态，返回按三源排序的全量数组 → 分页组件回第 1 页
       allSkills = renderSkills(listEl, countEl, msg.skills);
-      // D（2026-09-22）：禁用集「未找到需要禁用的技能」提示（非阻断，只进 UI）。
+      // 禁用集「未找到需要禁用的技能」提示（非阻断，只进 UI）。
       // 语义 = 如实报告匹配结果，不归咎用户写错；允许提前禁用尚未安装的技能。
       renderUnmatchedDisabledTip(countEl, msg.unmatchedDisabled);
       contentMap.clear();
@@ -334,10 +334,10 @@ function createSkillsView({
   });
 }
 
-/** 技能列表每页条数（2026-09-08 分页组件；全量前端切片分页） */
+/** 技能列表每页条数（分页组件；全量前端切片分页） */
 const SKILL_PAGE_SIZE = 10;
 
-/** 三源分类元数据（SSOT 收紧，2026-08-25）：图层 item/badge class + 中文标签；模块级供分页渲染复用 */
+/** 三源分类元数据（SSOT 收紧）：图层 item/badge class + 中文标签；模块级供分页渲染复用 */
 const LAYER_META: Record<'builtin' | 'rolepack' | 'user', { item: string; badge: string; label: string }> = {
   builtin: { item: 'skill-agent', badge: 'badge-agent', label: '内置' },
   rolepack: { item: 'skill-rolepack', badge: 'badge-rolepack', label: '角色包' },
@@ -375,7 +375,7 @@ function renderSkills(
     listEl.innerHTML =
       '<p class="hint">暂无技能。<br><span class="btn-icon hint-icon" data-icon="folder"></span> 用户技能目录：<code>VS Code 全局存储 / skills /</code><br>在该目录下创建 <code>.md</code> 文件即可添加自定义技能。</p>';
     // 运行期设置 innerHTML → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充
-    // （图标语言唯一 = icons.ts 柔和线条 SVG，原 📁 emoji 剪除，2026-09-19）
+    // （图标语言唯一 = icons.ts 柔和线条 SVG）
     populateIcons(listEl);
     return [];
   }
@@ -391,7 +391,7 @@ function renderSkills(
 }
 
 /**
- * 渲染「禁用集未匹配任何技能」的非阻断提示（D，2026-09-22）。
+ * 渲染「禁用集未匹配任何技能」的非阻断提示。
  *
  * 语义 = **「未找到需要禁用的技能」**：如实报告匹配结果，不归咎用户写错，
  * 兼容「提前禁用尚未安装的技能」。插在计数行之后、列表之前；每次 skills_loaded
@@ -408,7 +408,7 @@ function renderUnmatchedDisabledTip(countEl: HTMLElement, unmatched: string[] | 
 }
 
 /**
- * 安全子视图初始化与渲染（H0 写入审批）
+ * 安全子视图初始化与渲染（写入审批）
  *
  * 职责：
  *   - 渲染「写入二次确认」toggle 开关
@@ -428,7 +428,7 @@ function createSecurityView({
   const scriptsToggle = root.querySelector<HTMLInputElement>('#confirmScriptsToggle');
   const statusEl = root.querySelector<HTMLElement>('#securityStatus');
 
-  // ─── G8 白名单额外路径 ───
+  // ─── 白名单额外路径 ───
   let currentProjectPath = '';
   let currentPaths: string[] = [];
 
@@ -459,7 +459,7 @@ function createSecurityView({
     });
     listEl.innerHTML = rows.join('');
     // 运行期设置 innerHTML → 初始化时的 populateIcons（document.body）未覆盖 → 此处补填充
-    // （图标语言唯一 = icons.ts 柔和线条 SVG，原 ✕ 字符剪除，2026-09-19）
+    // （图标语言唯一 = icons.ts 柔和线条 SVG）
     populateIcons(listEl);
     listEl.querySelectorAll<HTMLButtonElement>('.allowed-path-remove').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -491,7 +491,7 @@ function createSecurityView({
     });
   }
 
-  // 脚本执行二次确认开关：通知 host（security_scripts_toggle，2026-09-08）
+  // 脚本执行二次确认开关：通知 host（security_scripts_toggle）
   if (scriptsToggle) {
     scriptsToggle.addEventListener('change', () => {
       vscode.postMessage({ type: 'security_scripts_toggle', enabled: scriptsToggle.checked });
@@ -502,7 +502,7 @@ function createSecurityView({
     });
   }
 
-  // ─── 网页搜索引擎下拉（方案 A 2026-09-02）───
+  // ─── 网页搜索引擎下拉 ───
   const engineSelect = root.querySelector<HTMLSelectElement>('#searchEngineSelect');
   engineSelect?.addEventListener('change', () => {
     const engine = engineSelect.value;

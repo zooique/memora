@@ -3,7 +3,7 @@
  *
  * 设计（对齐 ITCSS + tokens.ts 单一真理源）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，本文件内嵌一次，四个子视图样式不再各自内嵌；
- *   - 共享的 body 基础规则在本文件定义（四个子视图原有的 body 规则收敛于此，消除重复）；
+ *   - 共享的 body 基础规则在本文件定义（四个子视图共用，勿在各子视图重复定义）；
  *   - 子视图样式（rolesStyles / configStyles / memoryStyles / skillsStyles）各自以 #roles-root / #config-root /
  *     #memory-root / #skills-root 前缀限定，与选项卡栏共享类名（.header 等）靠根容器前缀隔离，避免串扰；
  *   - 选项卡栏：等宽按钮 + 激活态 accent 高亮，低扰不抢内容层级。
@@ -17,7 +17,7 @@ import { skillsStyles } from './skillsStyles.js';
 export const settingsStyles = `
   ${tokens}
 
-  /* ============ Base：元素级基础（四个子视图原 body 规则收敛于此） ============ */
+  /* ============ Base：元素级基础（四个子视图共享 body 规则） ============ */
   body {
     font-family: system-ui, -apple-system, sans-serif;
     margin: 0; box-sizing: border-box;
@@ -67,9 +67,8 @@ export const settingsStyles = `
   }
   .tab-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 
-  /* ============ Components：通用按钮变体（SSOT 收敛） ============
-   * 设置面板按钮形态单一真理源：primary / secondary / danger / ghost 四种变体。
-     * 消除 roles/config/memory 三处重复的 .btn 基类（不一致即 SSOT 违规），并补齐 skills/security 缺失。
+  /* ============ Components：通用按钮变体 ============
+   * 设置面板按钮形态单一真理源：primary / secondary / danger / ghost 四种变体，不一致即 SSOT 违规。
    * ITCSS 分层：变体=class 层；布局性差异（如 memory 政区按钮 flex:1）由具体子视图覆盖，不混入基类。 */
   #roles-root .btn, #config-root .btn, #memory-root .btn, #skills-root .btn, #security-root .btn {
     padding: var(--sp-2, 6px) var(--sp-5, 12px);
@@ -108,8 +107,8 @@ export const settingsStyles = `
     color: var(--text-primary, #cccccc);
   }
 
-  /* ============ Components：通用卡片/徽章/空态/chip（SSOT 收敛） ============
-   * 收敛 roles/config/memory/skills 重复定义（与按钮同理上提为单一真理源）。
+  /* ============ Components：通用卡片/徽章/空态/chip ============
+   * roles/config/memory/skills 共用的单一真理源（与按钮同理）。
    * 布局/对齐差异由各子视图 context 覆盖，不混入基类。 */
   #roles-root .card, #config-root .card, #memory-root .card, #skills-root .card, #security-root .card {
     display: flex;
@@ -167,7 +166,7 @@ export const settingsStyles = `
   #roles-root .empty-hint, #memory-root .empty-hint, #config-root .empty-hint {
     font-size: var(--font-md, 12px);
   }
-  /* Chip：小胶囊标签（cap-chip 形态；技能 keyword-chip 已随关键词命中系统移除） */
+  /* Chip：小胶囊标签（cap-chip 形态） */
   #roles-root .cap-chip {
     display: inline-block;
     padding: 1px var(--sp-2, 6px);
@@ -178,14 +177,14 @@ export const settingsStyles = `
     white-space: nowrap;
     user-select: none;
   }
-  /* Hint：居中占位提示（roles/memory/config 收敛；skills 为带 code 的说明文字、语义不同故保留） */
+  /* Hint：居中占位提示（roles/memory/config 共用；skills 为带 code 的说明文字、语义不同不并入） */
   #roles-root .hint, #memory-root .hint, #config-root .hint {
     text-align: center;
     color: var(--text-secondary, #9aa0a6);
     padding: var(--sp-6, 16px);
     font-size: var(--font-md, 12px);
   }
-  /* FooterHint：列表底部说明脚注（roles/memory 收敛） */
+  /* FooterHint：列表底部说明脚注（roles/memory 共用） */
   #roles-root .footer-hint, #memory-root .footer-hint {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     font-size: var(--font-xs, 10px);
@@ -228,12 +227,12 @@ export const settingsStyles = `
   ${memoryStyles}
   ${skillsStyles}
 
-  /* ============ Security：安全子视图（H0 写入审批） ============ */
+  /* ============ Security：安全子视图（写入审批） ============ */
   #security-root { padding: var(--sp-3, 8px); }
   .security-section { margin-top: var(--sp-3, 8px); }
   .security-item {
-    /* A 类卡片外壳语言对齐（SSOT）：与记忆/技能/角色卡一致——surface-sidebar + border .4 +
-       margin-bottom 间距（skillsStyles:66 统一此壳；沿用 surface-hover 会漏同步） */
+    /* 卡片外壳语言对齐记忆/技能/角色卡（单一真理源）：surface-sidebar + border .4 + margin-bottom 间距；
+       不用 surface-hover（会漏同步） */
     padding: var(--sp-3, 8px) var(--sp-4, 12px);
     margin-bottom: var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -250,7 +249,7 @@ export const settingsStyles = `
   .security-desc { font-size: var(--font-sm, 11px); color: var(--text-secondary); margin: 0; line-height: 1.5; }
   .security-status { margin-top: var(--sp-2, 6px); font-size: var(--font-sm, 11px); color: var(--text-secondary); }
 
-  /* 白名单额外路径（G8） */
+  /* 白名单额外路径 */
   .allowed-paths-list { list-style: none; margin: var(--sp-2, 6px) 0 0; padding: 0; }
   .allowed-path-row {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
@@ -263,10 +262,10 @@ export const settingsStyles = `
   .allowed-path-base { color: var(--text-secondary); font-style: italic; }
   .allowed-path-text { font-size: var(--font-sm, 11px); color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .allowed-path-tag { font-size: var(--font-xs, 10px); color: var(--text-secondary); flex-shrink: 0; margin-left: var(--sp-2, 6px); }
-  /* 移除按钮：行内图标操作复用 .btn-ghost 基类；hover 保留危险红（语义差异 context 覆盖，SSOT 收敛 2026-08-25） */
+  /* 移除按钮：行内图标操作复用 .btn-ghost 基类；hover 保留危险红（语义差异 context 覆盖） */
   .allowed-path-remove { flex-shrink: 0; }
-  /* 安全面板内联图标容器（与 #roles-root / #skills-root 同模式：各 root 自带 .btn-icon 收敛；
-   * 图标语言唯一 = icons.ts 柔和线条 SVG，原 ✕ 字符剪除，2026-09-19） */
+  /* 安全面板内联图标容器（与 #roles-root / #skills-root 同模式：各 root 自带 .btn-icon；
+   * 图标语言唯一 = icons.ts 柔和线条 SVG） */
   #security-root .btn-icon { display: inline-flex; align-items: center; justify-content: center; color: currentColor; }
   #security-root .btn-icon svg { display: block; }
   .allowed-path-remove:hover { color: var(--text-error, #f14c4c); border-color: var(--text-error, #f14c4c); }
@@ -276,7 +275,7 @@ export const settingsStyles = `
     border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
     background: var(--surface-input, rgba(255,255,255,.04)); color: var(--text-primary); font-size: var(--font-sm, 11px);
   }
-  /* 网页搜索引擎下拉（方案 A 2026-09-02）：与路径输入同视觉语言 */
+  /* 网页搜索引擎下拉：与路径输入同视觉语言 */
   .security-select {
     margin-top: var(--sp-2, 6px); padding: var(--sp-1, 4px) var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4)); border-radius: var(--radius-sm, 4px);
@@ -301,7 +300,7 @@ export const settingsStyles = `
   .toggle-switch input:checked + .toggle-slider:before { transform: translateX(18px); }
   .toggle-switch input:focus-visible + .toggle-slider { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 
-  /* ============ Pager：通用分页条（2026-09-08，记忆/技能/角色包三子视图共用） ============
+  /* ============ Pager：通用分页条（记忆/技能/角色包三子视图共用） ============
      组件自含 DOM + 单页自动隐藏（小数据量不暴露无意义分页 UI）；按钮禁用态灰化。 */
   .pager-bar {
     display: flex;

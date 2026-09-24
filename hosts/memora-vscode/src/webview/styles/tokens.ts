@@ -66,7 +66,7 @@ export const tokens = `
 
     /* === L2 语义令牌：反馈状态色（校验/信息/错误/警告） ===
      * 供提示条 / 记忆条 / 主动提问条 / 测试结果 / 错误消息使用。
-     * 语义令牌集中映射 --vscode-*，样式文件只引用语义令牌（对抗评估 P2-3 层边界恢复） */
+     * 语义令牌集中映射 --vscode-*，样式文件只引用语义令牌 */
     --feedback-info-bg: var(--vscode-inputValidation-infoBackground, rgba(21, 126, 251, 0.15));
     --feedback-info-fg: var(--vscode-inputValidation-infoForeground, #75beff);
     --feedback-error-bg: var(--vscode-inputValidation-errorBackground, #442726);
@@ -120,15 +120,15 @@ export const tokens = `
      * 复用已有语义令牌，不造裸色：内置技能 = accent（品牌/当前），用户技能 = status-pass（个人/通过）。 */
     --skill-agent-accent: var(--accent, #0e639c);
     --skill-user-accent: var(--status-pass, #4ec9b0);
-    /* 角色包技能来源：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)
-     * 改用 VSCode charts.purple，跟随主题 */
+    /* 角色包技能来源：紫色语义区分内置(蓝)/用户(绿)/角色包(紫)，
+     * 用 VSCode charts.purple，跟随主题 */
     --skill-rolepack-accent: var(--vscode-charts-purple, #a78bfa);
     /* 技能健康色：error 未生效 / warn 可优化
-     * 改用 VSCode charts.yellow，跟随主题 */
+     * 用 VSCode charts.yellow，跟随主题 */
     --skill-health-error: var(--text-error, #f14c4c);
     --skill-health-warn: var(--vscode-charts-yellow, #d9a22b);
     /* Accent 背景分级（badge/hover/active 三档，chatStyles/dropdown 统一引用）
-     * 改用 VSCode 语义变量，跟随主题自动适配亮/暗模式：
+     * 用 VSCode 语义变量，跟随主题自动适配亮/暗模式：
      *   hover = listHoverBackground（列表悬停态）
      *   subtle = inactiveSelectionBackground（非活跃选区背景）
      *   active = button-secondaryHoverBackground（按钮激活态） */
@@ -142,7 +142,7 @@ export const tokens = `
      * --occ-rolepack / --occ-memory / --occ-input / --occ-output 命名重建。 */
     --occ-dialogue: var(--vscode-charts-blue, #3794ff);
 
-    /* === L2 语义令牌：长尾引用补齐 ===
+    /* === L2 语义令牌：长尾引用 ===
      * 样式文件以 var(--xxx, 裸值) 引用的令牌须在此统一定义——若本文件未定义、仅靠
      * fallback 兜底，tokens 变更不跟随（坑）。本块定义值与各引用处 fallback 保持一致；
      * 样式文件引用即契约，tokens 修改全局跟随。 */ 
@@ -167,12 +167,12 @@ export const tokens = `
     --warn: var(--vscode-charts-yellow, #cca700);
     --text-error: var(--vscode-errorForeground, #f14c4c);
 
-    /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用，SSOT 收口） === */
+    /* === L3 组件令牌：下拉胶囊尺寸（dropdown.ts 引用） === */
     --dd-trigger-max-w: 200px;   /* 胶囊触发器最大宽（超长省略兜底） */
     --dd-menu-min-w: 160px;      /* 胶囊菜单最小宽 */
     --dd-menu-max-w: 240px;      /* 胶囊菜单最大宽 */
 
-    /* === L1 基础令牌：动画时长（chatStyles 引用，SSOT 收口） === */
+    /* === L1 基础令牌：动画时长（chatStyles 引用） === */
     --trae-duration-fast: 120ms; /* 快速过渡（hover 等），全库唯一动画时长源 */
 
     /* === L3 组件令牌：底部输入区内部尺寸契约 === */

@@ -1,5 +1,5 @@
 /**
- * H0 · 写入审批流程集成测试
+ * 写入审批流程集成测试
  *
  * 验证内容：
  * 1. bindWriteConfirmation 正确注册回调到 SecurityGuard
@@ -140,14 +140,14 @@ describe('H0 写入审批流程', () => {
     vi.useRealTimers();
   });
 
-  // ─── T1：回调注册验证 ───────────────────────────────
+  // ─── 回调注册验证 ───────────────────────────────
   it('bindWriteConfirmation 正确注册回调到 SecurityGuard', () => {
     provider.provider.bindWriteConfirmation();
     expect(guard.guard.onWriteConfirmation).toHaveBeenCalledTimes(1);
     expect(guard.registeredHandler).not.toBeNull();
   });
 
-  // ─── T2：写入请求发送验证 ───────────────────────────────
+  // ─── 写入请求发送验证 ───────────────────────────────
   it('写入请求正确发送 write_confirm_request 到 webview', async () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
@@ -179,7 +179,7 @@ describe('H0 写入审批流程', () => {
     });
   });
 
-  // ─── T3：用户确认流程 ───────────────────────────────
+  // ─── 用户确认流程 ───────────────────────────────
   it('用户确认后回调返回 true', async () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
@@ -211,7 +211,7 @@ describe('H0 写入审批流程', () => {
     expect(result).toBe(true);
   });
 
-  // ─── T4：用户拒绝流程 ───────────────────────────────
+  // ─── 用户拒绝流程 ───────────────────────────────
   it('用户拒绝后回调返回 false', async () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
@@ -241,7 +241,7 @@ describe('H0 写入审批流程', () => {
     expect(result).toBe(false);
   });
 
-  // ─── T5：超时自动拒绝 ───────────────────────────────
+  // ─── 超时自动拒绝 ───────────────────────────────
   it('超时后自动拒绝（fail-closed）', async () => {
     vi.useFakeTimers();
     provider.provider.bindWriteConfirmation();
@@ -271,7 +271,7 @@ describe('H0 写入审批流程', () => {
     expect(errorNotice!.message).toContain('超时');
   });
 
-  // ─── T6：审批卡展示字段完整性 ───────────────────────────────
+  // ─── 审批卡展示字段完整性 ───────────────────────────────
   it('审批卡正确展示目标路径、工具名、内容', async () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
@@ -299,7 +299,7 @@ describe('H0 写入审批流程', () => {
     });
   });
 
-  // ─── T7：多请求隔离性 ───────────────────────────────
+  // ─── 多请求隔离性 ───────────────────────────────
   it('多个并发请求的审批互不影响', async () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;

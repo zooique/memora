@@ -3,7 +3,7 @@
  *
  * 覆盖 SeedPrepare.run：
  *   - 策略装配（上下文装配、L2 策略注入、工具暴露）
- *   - 会议机制（S5）：active 步骤声明 rolePack → 范围校验 → 本轮装配视角 + 前缀刷新 + 组清单注入
+ *   - 会议机制：active 步骤声明 rolePack → 范围校验 → 本轮装配视角 + 前缀刷新 + 组清单注入
  *   - 回答前中断（signal.aborted）→ 返回 aborted，跳过用户消息入史
  *   - roundId 生成 + appendUser 溯源 + 会话命名 fire-and-forget
  */

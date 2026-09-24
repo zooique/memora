@@ -1,5 +1,5 @@
 /**
- * chatPanel 会话管理集成测试（ADR-024 会话标题层 + 2026-08-17 会话管理重构）
+ * chatPanel 会话管理集成测试（会话标题层）
  *
  * 用真实 WorkspaceSessionStore（临时目录落盘）+ mock vscode 驱动
  * MemoraChatViewProvider 的会话管理入口（pushSessionList / handleDeleteSession /
@@ -32,11 +32,11 @@ vi.mock('vscode', async () => {
   return {
     Uri: uri,
     window: {
-      // 会话管理的 InputBox / 危险操作确认 modal（QuickPick 已移除，2026-08-17）
+      // 会话管理的 InputBox / 危险操作确认 modal（QuickPick 已移除）
       showInputBox: vi.fn(),
       showWarningMessage: vi.fn(),
       showErrorMessage: vi.fn(),
-      // 文档上下文跟随（2026-08-17 A 层）：provider 构造时注册监听 + 读初始 activeTextEditor
+      // 文档上下文跟随（A 层）：provider 构造时注册监听 + 读初始 activeTextEditor
       onDidChangeActiveTextEditor: vi.fn(() => ({ dispose: vi.fn() })),
       activeTextEditor: undefined,
     },
@@ -160,7 +160,7 @@ function ofType<T extends { type: string }>(posted: unknown[], type: string): T[
 }
 
 /**
- * 从 posted 提取最后一条 turn_update（M5b-3 重放单通道：rounds 承载全量轮）。
+ * 从 posted 提取最后一条 turn_update（重放单通道：rounds 承载全量轮）。
  *
  * 仅作 host 转发层断言锚点——重放后 webview 不再收 user/replay_events/assistant 消息风暴，
  * 而收单条 turn_update(replay:true)，rounds[0] 即整批重建所需的目标轮快照。
@@ -180,8 +180,8 @@ function lastTurnUpdate(posted: unknown[]): {
 /**
  * 构造带 chat()/getMetrics/sessionManager 的 mock agent（consumeFlow 链路用）
  *
- * 文件级提取（M3b-2a）：落盘时机用例与 turn 投影用例都要驱动 `consumeFlow`，
- * 各持一份 stub 就是两套替身契约——漏补一个方法即「假故障」（M3b-1 已踩过：替身缺
+ * 文件级提取：落盘时机用例与 turn 投影用例都要驱动 `consumeFlow`，
+ * 各持一份 stub 就是两套替身契约——漏补一个方法即「假故障」（已有前例：替身缺
  * `isPausePending` → postTurnUpdate 抛错中断整个 consumeFlow，表现为 processEvents 未落盘）。
  */
 function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>): Agent {
@@ -189,7 +189,7 @@ function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>):
     chat: chatFn,
     getMetrics: () => ({
       llm: { totalInputTokens: 0, totalOutputTokens: 0 },
-      // 对齐 AgentMetrics 契约：流尾 emitEvent 读取 tools.unparsedToolIntentCount（2026-09-14）
+      // 对齐 AgentMetrics 契约：流尾 emitEvent 读取 tools.unparsedToolIntentCount
       tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0 },
     }),
     sessionManager: {
@@ -200,7 +200,7 @@ function chatAgentStub(chatFn: () => AsyncGenerator<AgentChunk, void, unknown>):
     off: vi.fn(),
     memory: { softDeleteRoundSummaries: vi.fn() },
     getCheckpoint: () => null,
-    // 暂停在途判据（M3b-1：postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
+    // 暂停在途判据（postTurnUpdate 折叠 TurnState 时读取，真实 handlePause 同 API）
     isPausePending: () => false,
   } as unknown as Agent;
 }
@@ -335,7 +335,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(title[0]?.title).toBe('我的新标题');
   });
 
-  // ─── M5b-3 重放转正（user/replay_events/assistant 消息风暴 → 单条 turn_update.rounds） ───
+  // ─── 重放转正（user/replay_events/assistant 消息风暴 → 单条 turn_update.rounds） ───
   it('round-based 重放：单条 turn_update(replay=true) 承载全量 rounds（v1.6 · M5b-3）', () => {
     const { store, roundStore, provider, posted } = setup();
     // 生产装配路径：extension 注入同一 viewLoader + roundStore 单例
@@ -359,7 +359,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
     // 重放 = clear_ok → 单条 turn_update（replay:true）→ session_title；不再有 process_event /
-    // replay_events / assistant 重放消息风暴（M5b-3 双端收敛，协议类型已删）
+    // replay_events / assistant 重放消息风暴（协议类型已删）
     const ordered = posted.map((m) => (m as { type: string }).type);
     const idxTurn = ordered.indexOf('turn_update');
     expect(ordered).not.toContain('process_event');
@@ -395,7 +395,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       { role: 'user', content: '任务A', ts: 't1' },
       { role: 'assistant', content: '最终回答', ts: 't5' },
     ]);
-    // TS-9 闭环节点数据：前序 assistant 段（含提问）+ 交互输入（qa 与 supplement 混合）
+    // 闭环节点数据：前序 assistant 段（含提问）+ 交互输入（qa 与 supplement 混合）
     const round = roundStore.getById('round-1')!;
     round.assistantLog = [
       { id: 'a0', role: 'assistant', content: '需要先确认哪个方案？', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
@@ -408,7 +408,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    // M5b-3：host 只投递单条 turn_update，interactiveInputs 随 rounds[0] 完整透传（时序归位在 webview renderReplayRound 端）
+    // host 只投递单条 turn_update，interactiveInputs 随 rounds[0] 完整透传（时序归位在 webview renderReplayRound 端）
     const tu = lastTurnUpdate(posted);
     expect(tu.replay).toBe(true);
     const r = tu.rounds[0]!;
@@ -438,7 +438,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     round.assistantLog = [
       { id: 'a0', role: 'assistant', content: '在读取前需要确认：', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
     ];
-    // 内核超时保底落盘形态：kind='timeout' + 超时通知正文 + G26 question/options
+    // 内核超时保底落盘形态：kind='timeout' + 超时通知正文 + question/options
     round.interactiveInputs = [
       {
         id: 'i1',
@@ -454,7 +454,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    // M5b-3：timeout 行随 rounds[0].interactiveInputs 完整透传（含超时保底 question/options）
+    // timeout 行随 rounds[0].interactiveInputs 完整透传（含超时保底 question/options）
     const r = lastTurnUpdate(posted).rounds[0]!;
     expect(r.id).toBe('round-1');
     expect(r.userMessage?.content).toBe('帮我读文件');
@@ -485,7 +485,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
 
-    // M5b-3：不发 process_event/replay_events 重放消息风暴；纯问答轮 processEvents 为空数组，
+    // 不发 process_event/replay_events 重放消息风暴；纯问答轮 processEvents 为空数组，
     // 但 user 输入 + 最终回答仍由 round 承载（webview 端 renderReplayRound 退化为仅正文渲染）
     const types = posted.map((m) => (m as { type: string }).type);
     expect(types).not.toContain('process_event');
@@ -515,7 +515,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect((provider as unknown as { _docContext: string | undefined })._docContext).toBeUndefined();
   });
 
-  // ─── 历史会话占用重算（轻量版方案，2026-08-31）：切会话后圆环展示真实占用而非空态 0% ───
+  // ─── 历史会话占用重算（轻量版）：切会话后圆环展示真实占用而非空态 0% ───
   it('replayCurrentSession 推送历史会话占用：对话层重算 + 角色包当前值', async () => {
     const { store, roundStore, provider, posted } = setup();
     // viewLoader + roundStore：round-based 消息路径
@@ -548,7 +548,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
       // setAgent 装配兜底推 1 次 + replayCurrentSession 推 1 次（幂等，取最后一次验证）
       expect(occs.length).toBeGreaterThanOrEqual(1);
       const occ = occs[occs.length - 1]!.occupancy;
-      // 对话层 = 1 个问答闭环（1 条 user，assistant 不计入条数，2026-09-01 定案）
+      // 对话层 = 1 个问答闭环（1 条 user，assistant 不计入条数）
       // 角色包 = 当前装配值
       expect(occ.dialogueCount).toBe(1);
       expect(occ.rolePackBaseTokens).toBe(15000);
@@ -588,12 +588,12 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
         'context_occupancy',
       );
       expect(occs.length).toBeGreaterThanOrEqual(1);
-      expect(occs[occs.length - 1]!.occupancy.dialogueCount).toBe(1); // 1 个问答闭环（user 计数，2026-09-01 定案）
+      expect(occs[occs.length - 1]!.occupancy.dialogueCount).toBe(1); // 1 个问答闭环（user 计数）
       expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(15000);
     });
   });
 
-  // ─── 角色包切换实时刷新占用（2026-09-01）：onRolePackSwitched 末尾补推 context_occupancy ───
+  // ─── 角色包切换实时刷新占用：onRolePackSwitched 末尾补推 context_occupancy ───
   it('切换角色包（rolePackSwitched）→ 实时补推 context_occupancy（含最新 rolePackBaseTokens）', async () => {
     const { provider, posted } = setup();
     // agent stub：on 捕获 rolePackSwitched 处理器，getMetrics 返回当前角色包底盘占用
@@ -647,8 +647,8 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(7000);
   });
 
-  // ─── Phase 4 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致）
-  // Phase 4 升级：handlePause 从"只调 requestPause"变成"先读 isPausePending toggle 再调 requestPause/cancelPauseRequest"
+  // ─── 软暂停入口：生成中暂停走 step 边界挂起 requestPause（与内核 step 边界软暂停语义一致）
+  // handlePause = 先读 isPausePending toggle 再调 requestPause/cancelPauseRequest
   // （chatPanel.ts L2026），mock 必须同步新增 isPausePending + cancelPauseRequest，否则 TypeError。 ───
   function pauseAgentStub(): {
     agent: Agent;
@@ -659,7 +659,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
   } {
     const requestPause = vi.fn(() => true);
     const pause = vi.fn(() => true);
-    // Phase 4 toggle 依赖：默认无在途暂停申请（走 requestPause 路径，非 cancel）
+    // toggle 依赖：默认无在途暂停申请（走 requestPause 路径，非 cancel）
     const isPausePending = vi.fn(() => false);
     const cancelPauseRequest = vi.fn();
     const agent = { requestPause, pause, isPausePending, cancelPauseRequest, on: vi.fn(), off: vi.fn() } as unknown as Agent;
@@ -676,7 +676,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 应调 step 边界软暂停入口 requestPause，而非立即翻态的 pause
     expect(requestPause).toHaveBeenCalledWith('user-pause', 'user');
     expect(pause).not.toHaveBeenCalled();
-    // 点击即反馈（2026-09-07）：申请已发送要明确告知
+    // 点击即反馈：申请已发送要明确告知
     const notices = ofType(posted, 'notice');
     expect(notices).toHaveLength(1);
     expect((notices[0] as { message?: string }).message).toContain('暂停申请已发送');
@@ -709,7 +709,7 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(ofType(posted, 'notice')).toHaveLength(1);
   });
 
-  // ─── 首次启动自动创建首会话（2026-08-31 体验改进：无记录时免手动点「＋」） ───
+  // ─── 首次启动自动创建首会话（无记录时免手动点「＋」） ───
   it('无历史会话：ensureInitialSession 自动创建首个会话（用户可直接输入）', async () => {
     const { provider, posted } = setup();
     const { agent, switchToSession } = agentStub();
@@ -754,14 +754,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const newId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
     expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
     // clear_ok 之后的 post 中不应有消息类事件（B 是空会话，replay 不重放 A 的历史）；
-    // 旧 wire 消息清单保留作防回归守卫（M5b-3 后消息风暴已删，出现即协议回退）
+    // 旧 wire 消息清单保留作防回归守卫（消息风暴已删，出现即协议回退）
     const clearIdx = posted.findIndex((m) => (m as { type: string }).type === 'clear_ok');
     expect(clearIdx).toBeGreaterThanOrEqual(0);
     const afterClear = posted.slice(clearIdx);
     const msgTypes = ['user', 'assistant', 'process_event', 'replay_events', 'chunk', 'tool_start', 'tool_result'];
     const leaked = afterClear.filter((m) => msgTypes.includes((m as { type: string }).type));
     expect(leaked).toHaveLength(0);
-    // 重放泄漏真断言（M5b-3 载体）：历史泄漏面在 turn_update.rounds——B 为空会话，
+    // 重放泄漏真断言：历史泄漏面在 turn_update.rounds——B 为空会话，
     // 整批 rounds 必须为空；且重放链路必须走完（turn_update ≥1 条，杜绝「链路挂掉 → 断言空转」假绿）
     const turnUpdates = ofType<{ type: string; rounds: RoundView[] }>(afterClear, 'turn_update');
     expect(turnUpdates.length).toBeGreaterThanOrEqual(1);
@@ -772,10 +772,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
 });
 
 // ═══════════════════════════════════════════════════════════
-// consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）
+// consumeFlow 过程事件按 turn roundId 分组落盘
 // ═══════════════════════════════════════════════════════════
-// 修复：宿主原「流末一次落盘到 roundIds 末尾一个 round」在多 turn 任务编排下归属错误——
-// 全部工具堆一个 round（拥挤）+ 部分 round 无 processEvents（丢失）。现按内核 chunk.roundId
+// 若「流末一次落盘到 roundIds 末尾一个 round」，多 turn 任务编排下归属错误——
+// 全部工具堆一个 round（拥挤）+ 部分 round 无 processEvents（丢失）。故按内核 chunk.roundId
 // 分组，每个 turn 独立落盘到各自 Round（SSOT：归属由内核唯一提供，非 roundIds 末尾推断）。
 describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）', () => {
   beforeEach(() => {
@@ -798,9 +798,9 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     return calls;
   }
 
-  // ── 档3 落盘时机（2026-09-23）：step_boundary = 唯一点 ──────────────────────
+  // ── 档3 落盘时机：step_boundary = 唯一点 ──────────────────────
   // 档2 把增量落盘挂在 plan_item_boundary（任务项推进）上 → 无任务表的长工具循环零增量落盘，
-  // 崩溃即全丢。现改挂 step_boundary（迭代完成），与有无任务表无关。
+  // 崩溃即全丢。故改挂 step_boundary（迭代完成），与有无任务表无关。
 
   it('step_boundary = 增量落盘点：每次迭代落一次（无任务表也落）', async () => {
     const { store, roundStore, provider } = setup();
@@ -937,7 +937,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
           { id: 's3', description: '汇总观点', status: 'pending', order: 2 },
         ],
       }),
-      // M3b-1：postTurnUpdate 折叠 TurnState 时读取（真实 handlePause 同 API）
+      // postTurnUpdate 折叠 TurnState 时读取（真实 handlePause 同 API）
       isPausePending: () => false,
     } as unknown as Agent);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
@@ -1175,13 +1175,13 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
 });
 
 // ═══════════════════════════════════════════════════════════
-// 技能启停 · 用户通道「响亮失败」（SKILL-S2，2026-09-22）
+// 技能启停 · 用户通道「响亮失败」
 // ═══════════════════════════════════════════════════════════
 // 缺陷：composer 选中已禁用技能后发送 → `skillPromptFor` 按既有契约返回空串
 // （= 技能不存在，**不影响正常发送**），于是消息照常发出、技能未注入、界面零提示。
 // 契约不改（返回空串是对的），补的是调用方的**响亮失败**。三种落空必须分流：
 //   ① 已禁用  → 报（用户配置所致，可自行修复）
-//   ② 不存在  → 不报（属另一类缺陷，未在本次范围，勿混报）
+//   ② 不存在  → 不报（属另一类缺陷，不属本组范围，勿混报）
 //   ③ 未带名  → 不报（普通发送）
 describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2）', () => {
   beforeEach(() => {
@@ -1277,10 +1277,10 @@ describe('技能启停：按名指定已禁用技能 → 响亮失败（SKILL-S2
 });
 
 // ───────────────────────────────────────────────────────────────────────────
-// SKILL-S3b（2026-09-22）：配置变更 / 手动重载后重推技能清单
+// 配置变更 / 手动重载后重推技能清单
 //
-// 背景：`memora.disabledSkills` 变更此前**不刷新**对话区下拉 ⇒ 改完设置界面零变化
-//（「配置形态启停」承诺改完即生效，实际停在旧快照）。修复 = extension 侧监听配置变更
+// 背景：`memora.disabledSkills` 变更若**不刷新**对话区下拉 ⇒ 改完设置界面零变化
+//（「配置形态启停」承诺改完即生效，会停在旧快照）。修复 = extension 侧监听配置变更
 //（及手动重载命令）后调本入口重推。
 //
 // 本组锁住的是**入口语义**：重推必须读内核**实时**快照（非装配期缓存），且未就绪时不抛。
@@ -1368,10 +1368,10 @@ describe('技能启停：重推清单入口（SKILL-S3b）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// turn 投影含运行时 live 轮（M3b-2a，2026-09-23）
+// turn 投影含运行时 live 轮
 // ═══════════════════════════════════════════════════════════
-// M3b-1 只并行发送 turn_update，且 rounds 恒取落盘历史 —— 运行时当前轮**不入列**（当时刻意为之：
-// 宿主尚无「当前轮运行时对象」）。本期补上：live 轮由 consumeFlow 流内局部数据投影
+// 早先只并行发送 turn_update，且 rounds 恒取落盘历史 —— 运行时当前轮**不入列**（刻意为之：
+// 宿主尚无「当前轮运行时对象」）。补法：live 轮由 consumeFlow 流内局部数据投影
 // （正文按 roundId 分桶累积 + 过程事件分桶 + seed 的开轮输入），经 mergeLiveRound 并入。
 //
 // **变异验证锚点**：

@@ -1,5 +1,5 @@
 /**
- * 宿主技能三源聚合（SSOT 收紧，2026-08-25）
+ * 宿主技能三源聚合（SSOT 收紧）
  *
  * 技能清单唯一来源 = 内核自身持有的三源，宿主只做「展示聚合」与「按名取提示」：
  *   1. 系统内置 —— <configDir>/skills/（SkillManager.load 磁盘真理源）
@@ -93,7 +93,7 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
     }
   }
 
-  // 禁用标记（S4 启停，2026-09-22）：真源 = 内核 `disabledSkillNames`（即 `get()` 判据的同一集合）。
+  // 禁用标记：真源 = 内核 `disabledSkillNames`（即 `get()` 判据的同一集合）。
   // 宿主**不自读**一份 workspace 配置——两源会在 reloadConfig 重设禁用集后分叉，
   // 出现「UI 说已禁用、实际仍生效」（或反之）。此处只做**标注**，不隐藏条目（见 SkillDto.disabled）。
   //
@@ -196,7 +196,7 @@ export function isSkillDisabled(agent: Agent, skillName: string): boolean {
 }
 
 /**
- * 找出禁用集里**未匹配任何技能**的名字（D，2026-09-22）。
+ * 找出禁用集里**未匹配任何技能**的名字。
  *
  * 语义（用户定案）：**「未找到需要禁用的技能」**——如实报告匹配结果，不归咎用户写错，
  * 从而兼容「提前禁用尚未安装的技能」（配置随仓库/机器分发时合法）。提示是非阻断的

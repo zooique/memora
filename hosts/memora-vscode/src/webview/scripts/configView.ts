@@ -1,5 +1,5 @@
 /**
- * configView — 大模型配置子视图 webview 运行时脚本（阶段 B P2-1）
+ * configView — 大模型配置子视图 webview 运行时脚本
  *
  * 由 settingsView.ts 挂载（设置视图选项卡合并后大模型子视图）：以工厂函数
  * createConfigView 接收依赖（vscode / window / root）并初始化全部交互，
@@ -20,7 +20,7 @@ import { getIconSvg } from './icons.js';
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
 export interface ConfigViewDeps {
   /** webview 通信 API（SSOT：由 settingsView 统一 acquireVsCodeApi() 一次后注入，
-   *  子视图不再各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
+   *  子视图不各自调用——acquireVsCodeApi 每个 webview 只能调用一次） */
   vscode: { postMessage(msg: WebviewToExtensionMessage): void };
   /** webview window 对象 */
   window: Window;
@@ -32,7 +32,7 @@ export interface ConfigViewDeps {
 interface ProvidersPayload {
   providers: LlmProviderConfig[];
   activeName: string | undefined;
-  /** 后台模型 Provider name（G5：空 = 与实时对话相同） */
+  /** 后台模型 Provider name（空 = 与实时对话相同） */
   backgroundName?: string;
 }
 
@@ -48,7 +48,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const list = root.querySelector('#list') as HTMLElement;
   const statBar = root.querySelector('#statBar') as HTMLElement;
   const btnAdd = root.querySelector('#btnAdd') as HTMLButtonElement;
-  // 后台模型下拉（G5，2026-08-23）：选择后台任务的独立 Provider（空 = 同实时对话）
+  // 后台模型下拉：选择后台任务的独立 Provider（空 = 同实时对话）
   const bgModel = root.querySelector('#bgModel') as HTMLSelectElement;
   btnAdd.title = '新增一个大模型 API 配置';
   const modal = root.querySelector('#modal') as HTMLElement;
@@ -63,7 +63,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   // 上下文上限输入的即时报错/换算提示（输入非法时展示就地错误，不依赖 host 往返）
   const cwFeedback = root.querySelector('#f-contextwindow-feedback') as HTMLElement;
   // Provider 类型（'cloud' | 'local'）：cloud=云端 API（默认，工具通道走原生 FC）；
-  // local=本地运行时（Ollama/LM Studio）——是否支持原生工具调用须用户显式声明（阶段0 能力位语义）
+  // local=本地运行时（Ollama/LM Studio）——是否支持原生工具调用须用户显式声明（能力位语义）
   const fProviderType = root.querySelector('#f-providertype') as HTMLSelectElement;
   // 本地运行时「是否支持原生工具调用」复选框（仅 provider=local 时显示；勾选 → supportsToolCalling=true）
   const fToolCalling = root.querySelector('#f-toolcalling') as HTMLInputElement;
@@ -99,7 +99,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   function parseTokenInput(raw: string): number | undefined {
     const cleaned = raw.trim().toLowerCase();
     if (!cleaned) return undefined;
-    // 数字（含小数）+ 可选 k 后缀；M/千分位/裸 token 不再识别（K 语义下是混淆源）
+    // 数字（含小数）+ 可选 k 后缀；M/千分位/裸 token 不识别（K 语义下是混淆源）
     const m = /^(\d+(?:\.\d+)?)k?$/i.exec(cleaned);
     if (!m) return NaN;
     return Math.round(Number(m[1]) * TOKENS_PER_K);
@@ -118,7 +118,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   }
 
   /**
-   * 工具能力位字段显隐（阶段1·本地 LLM 能力声明）：
+   * 工具能力位字段显隐（本地 LLM 能力声明）：
    * 仅「本地运行时」类型展示该复选框——云 LLM 的 supportsToolCalling 恒回落 undefined（内核默认 true），
    * 无需也不应由用户在表单声明。字段父节点由 id=toolcalling-field 承载，hidden 切换。
    */
@@ -138,7 +138,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     supportsToolCalling: boolean | undefined;
   } {
     const parsed = parseTokenInput(fContextWindow.value);
-    // Provider 类型 + 工具能力位（阶段1·本地 LLM 能力声明）：
+    // Provider 类型 + 工具能力位（本地 LLM 能力声明）：
     // - cloud（默认）→ 不落 supportsToolCalling（undefined → 内核回落 true，存量云行为不变，零回归）；
     // - local → 显式声明工具能力：勾选=support，取消=不支撑（可观测回落，不静默承诺）。
     //   provider 字段随类型落（卡片已有「（本地）」展示逻辑）。
@@ -170,8 +170,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     setCwFeedback('', false);
     if (editName) {
       // 编辑：从内存中的 providers 列表回填（单一真理源：cfg_loaded 数据，
-      // 而非从渲染结果 DOM dataset 读取，避免 DOM 作为数据源的数据流反向，
-      // 对抗评估 P1-5）
+      // 而非从渲染结果 DOM dataset 读取，避免 DOM 作为数据源的数据流反向）
       const target = currentProviders.find((p) => p.name === editName);
       fName.value = editName;
       fName.disabled = true;
@@ -229,7 +228,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       return;
     }
     activeName = data.activeName;
-    // 保存为内存数据源（openModal 编辑回填用；DOM dataset 不再作为数据源，P1-5）
+    // 保存为内存数据源（openModal 编辑回填用；DOM dataset 不作数据源）
     currentProviders = data.providers;
     list.innerHTML = '';
     // ② 激活 Provider 分区（置顶高亮）
@@ -244,12 +243,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       list.appendChild(createGroupTitle(document, '其他 Provider'));
       others.forEach((p) => list.appendChild(buildCard(p)));
     }
-    // ④ 后台模型下拉选项（G5）：排除激活 Provider（后台可配置任意已保存的 Provider）
+    // ④ 后台模型下拉选项：排除激活 Provider（后台可配置任意已保存的 Provider）
     renderBackground(data.providers, data.backgroundName);
   }
 
   /**
-   * 渲染后台模型下拉选项（G5 多 Provider 路由）
+   * 渲染后台模型下拉选项（多 Provider 路由）
    *
    * 选项 = 全部已配置 Provider（含激活），另加「同实时对话」默认空项。
    * backgroundName 为空（同实时对话）时选中默认项。
@@ -266,12 +265,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     bgModel.value = backgroundName ?? '';
   }
 
-  /** 构建单个 Provider 卡片（含图标，ui-redesign.md §6.2） */
+  /** 构建单个 Provider 卡片（含图标） */
   function buildCard(p: LlmProviderConfig): HTMLElement {
     const card = document.createElement('div');
     card.className = 'card' + (p.name === activeName ? ' active' : '');
 
-    // 卡片图标：Provider 显示名首字（大写），提升扫读（ui-redesign.md §6.2）
+    // 卡片图标：Provider 显示名首字（大写），提升扫读
     const icon = document.createElement('div');
     icon.className = 'cfg-icon';
     icon.setAttribute('aria-hidden', 'true');
@@ -321,7 +320,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       delBtn.title = '删除该 API 配置（不可恢复）';
       delBtn.addEventListener('click', () => {
         // 危险操作确认在 extension host 侧完成（VSCode webview 禁用原生 confirm()，
-        // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应，对抗评估 P0-2）
+        // 由 host 弹原生 modal，避免确认框静默失效 → 按钮无反应）
         vscode.postMessage({ type: 'cfg_delete', name: p.name });
       });
       actions.appendChild(delBtn);
@@ -344,7 +343,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
         btnTest.disabled = false;
         testResult.hidden = false;
         testResult.className = 'test-result ' + (msg.ok ? 'ok' : 'err');
-        // 图标语言唯一 = icons.ts 柔和线条 SVG（原 ✅/❌ emoji 剪除，2026-09-19 图标语言收口）；
+        // 图标语言唯一 = icons.ts 柔和线条 SVG；
         // msg.message 来自宿主 → 文本走 createTextNode（防注入）
         testResult.textContent = '';
         const resultIcon = document.createElement('span');
@@ -367,12 +366,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   });
 
   btnAdd.addEventListener('click', () => openModal());
-  // G5：设置后台模型 Provider → post cfg_set_background
+  // 设置后台模型 Provider → post cfg_set_background
   bgModel.addEventListener('change', () => {
     vscode.postMessage({ type: 'cfg_set_background', name: bgModel.value });
   });
   btnCancel.addEventListener('click', closeModal);
-  // Provider 类型切换时联动工具能力位字段显隐（阶段1·本地 LLM 能力声明）
+  // Provider 类型切换时联动工具能力位字段显隐（本地 LLM 能力声明）
   fProviderType.addEventListener('change', setToolCallingFieldVisible);
   // 上下文上限输入改键时实时反馈：换算提示（如 200K → = 200000 tokens）或非法就地报错
   fContextWindow.addEventListener('input', () => {

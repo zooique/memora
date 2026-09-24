@@ -79,7 +79,7 @@ describe('backgroundTask 后台任务收口', () => {
     expect(getBackgroundTaskStats().pending).toBe(before.pending + 1);
   });
 
-  // ── D1 并发槽位控制 ──────────────────────────────────────
+  // ── 并发槽位控制 ──────────────────────────────────────
 
   it('并发上限：超过 5 个任务时多余的进入排队', async () => {
     const before = snapshot();

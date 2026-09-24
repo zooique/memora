@@ -65,7 +65,7 @@ export function buildDropdownHtml(
 }
 
 /**
- * 统一开合下拉：同步 .is-open 类与触发器 aria-expanded 状态（对抗评估 P1-2）
+ * 统一开合下拉：同步 .is-open 类与触发器 aria-expanded 状态
  *
  * aria-expanded 必须与可视开合状态成对更新：aria-haspopup 是「承诺有菜单」，
  * aria-expanded 是「履约当前展开态」，只声明前者而不维护后者是对读屏的失约。
@@ -80,7 +80,7 @@ function setDropdownOpen(el: HTMLElement, open: boolean): void {
 }
 
 /**
- * 自动翻转弹出方向（SSOT 排雷 P1-2）：胶囊变体默认向上弹出，但当触发器贴近容器
+ * 自动翻转弹出方向：胶囊变体默认向上弹出，但当触发器贴近容器
  * 顶缘（如 toolbar 里的历史选择器）时向上会溢出被裁。以「菜单不溢出视口」为通用
  * 规则，打开时测量可用空间决定方向——而非按容器位置场景化配置方向。
  *
@@ -106,8 +106,8 @@ function menuItems(el: HTMLElement): HTMLElement[] {
   return menu ? Array.from(menu.querySelectorAll<HTMLElement>('.treedd__item')) : [];
 }
 
-/** 下拉初始化：绑定展开/收起 + 事件委托转发选择项 + 键盘可访问性（对抗评估 P1-2）。
- *  阶段 B（对抗评估 P2-1）：显式函数替代原「window.__xxx 全局回调名」模式——
+/** 下拉初始化：绑定展开/收起 + 事件委托转发选择项 + 键盘可访问性。
+ *  显式函数（不用「window.__xxx 全局回调名」模式）——
  *  chatView 直接调用并传入回调映射，消除全局污染。data-on-select 属性值作为回调
  *  键名（缺省 __treeddOnSelect），与 buildDropdownHtml 生成的 HTML 契约一致。
  *  DOM 副作用仅在调用时执行（extension 端 import 安全）。

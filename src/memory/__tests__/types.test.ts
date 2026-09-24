@@ -127,7 +127,7 @@ describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清�
       name: 'legacy',
       createdAt: '2026-06-02T00:00:00.000Z',
       accessedAt: '2026-06-02T00:00:00.000Z',
-      score: 0.85, // 阶段3 已物理退役的字段
+      score: 0.85, // 已物理退役的字段
     };
   }
 

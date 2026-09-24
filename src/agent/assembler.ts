@@ -720,7 +720,7 @@ export async function assembleComponents(
   }
 
   // 角色包清单：创建角色包管理器，角色相关功能的唯一真理源
-  // activeRolePack：宿主注入持久化的用户角色包选择，§4.1 单链优先激活；未配置/包不存在落兜底包（不再回退 items[0]）
+  // activeRolePack：宿主注入持久化的用户角色包选择，§4.1 单链优先激活；未配置/包不存在落兜底包（非 items[0]）
   const rolePackManager = new RolePackManager(configDir);
   // 宿主装配级参数注入：兜底角色覆盖（须存在，否则回退内核常量）+ 组数据（会议名单容器）
   rolePackManager.setBuiltinFallbackRole(builtinFallbackRole ?? null);

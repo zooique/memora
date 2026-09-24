@@ -749,7 +749,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(block).toContain('组员1');
       expect(block).toContain('task_table_write');
       expect(block).toContain('task_table_update');
-      // 2026-09-07 文案强化：显式禁止 write_file 模拟任务表（触发样本实证 LLM 曾绕过 PlanItem 通道）
+      // 显式禁止 write_file 模拟任务表（触发样本实证 LLM 曾绕过 PlanItem 通道）
       expect(block).toContain('禁止用 write_file');
       // 切到非组长 → 空串（不注入）
       manager.activate('组员1');
@@ -923,7 +923,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       manager.activate('全能写手');
       calls.length = 0; // 清掉前置回调，聚焦 reload 回退
 
-      // 删除当前激活的角色包后 reload → §4.1 单链落兜底包（不再回退 items[0]）
+      // 删除当前激活的角色包后 reload → §4.1 单链落兜底包（非 items[0]）
       await rm(join(packsDir, '全能写手'), { recursive: true, force: true });
       await manager.reload();
       expect(manager.activeName).toBe('memora助手');
@@ -1131,7 +1131,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     it('readSkillResource：references/ 目录资源可读（B1 兼容主流辅助文档目录）', async () => {
       const packsDir = join(dir, 'role-packs');
       const skillPack = join(packsDir, '文档专家2', 'skills', 'doc-gen');
-      // 构造文件夹式技能：SKILL.md + references/modes.md（B1 后 references/ 纳入 layer3）
+      // 构造文件夹式技能：SKILL.md + references/modes.md（references/ 纳入 layer3）
       await mkdir(join(skillPack, 'references'), { recursive: true });
       await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 文档生成2\n---\n# 文档生成2\n', 'utf-8');
       await writeFile(join(skillPack, 'references', 'modes.md'), 'Modes 参考文档内容', 'utf-8');

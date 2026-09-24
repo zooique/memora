@@ -28,7 +28,7 @@ export type IconName =
   | 'check'         // 勾选/确认
   | 'close'         // 关闭/叉号
   | 'edit'          // 编辑/重命名/润色
-  | 'bolt'          // 闪电/Skill 触发（原 play 重命名）
+  | 'bolt'          // 闪电/Skill 触发
   | 'trash'         // 永久删除
   | 'cancel'        // 取消
   | 'chevron-down'  // 向下尖角（plan-bar 展开态；消费者是折叠开关，非下拉组件）
@@ -42,7 +42,7 @@ export type IconName =
   | 'stop'          // 停止（方块）
   | 'play'          // 继续/播放（三角）
   | 'team'          // 小组会议（双人轮廓，柔和线条）
-  | 'ellipsis'      // 更多操作（三点；原 ⋯ 字符，2026-09-19 HOST-S8 收口）
+  | 'ellipsis'      // 更多操作（三点）
   | 'target';       // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
@@ -89,10 +89,10 @@ const ICON_PATHS: Record<IconName, string> = {
   'scroll-bottom': '<path d="M8 3v7"/><path d="M5 7l3 3 3-3"/><path d="M3 12h10"/>',
   // 小组会议：双人轮廓（小在前大在后，柔和线条）
   team: '<circle cx="5.5" cy="6" r="1.5"/><circle cx="10.5" cy="6.5" r="2"/><path d="M3 13c0-1.5 1.1-2.5 2.5-2.5S8 11.5 8 13"/><path d="M8.5 13c0-1.7 1.5-3 3-3s3 1.3 3 3"/>',
-  // 更多操作：三点（替换原『⋯』字符，2026-09-19 HOST-S8 图标语言收口；
-  // 实心点局部覆盖 SVG_BASE_ATTRS 的 fill=none——16px 下描边小圆会糊成环）
+  // 更多操作：三点（实心点局部覆盖 SVG_BASE_ATTRS 的 fill=none——
+  // 16px 下描边小圆会糊成环）
   ellipsis: '<circle cx="4" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none"/>',
-  // 当前执行位置：同心圆靶心（替换原 emoji 📍 的 plan-tag 锚点，2026-09-19 图标语言收口）
+  // 当前执行位置：同心圆靶心（plan-tag 锚点）
   target: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
 };
 
@@ -151,7 +151,7 @@ export function getIconSvg(name: IconName, width = 16, height = 16): string {
 }
 
 /**
- * 运行时切换单个元素图标（2026-09-07 补：populateIcons 只在初始化跑一次，
+ * 运行时切换单个元素图标（populateIcons 只在初始化跑一次，
  * 运行中改 data-icon 不会重注入 SVG——pauseBtn 暂停→继续图标不更新即此因）。
  * 与 populateIcons 共用 getIconSvg，单一图标注入实现（SSOT）。
  *

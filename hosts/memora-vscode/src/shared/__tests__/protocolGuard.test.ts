@@ -1,5 +1,5 @@
 /**
- * 协议消息类型计数守卫（V-1，2026-08-31）
+ * 协议消息类型计数守卫
  *
  * 治理背景：VSCode 宿主没有 memora-sprite 那样的运行时 IPC 通道注册表（ipcMain 通道），
  * 其「IPC 通道」实际 = shared/protocol.ts 中 WebviewToExtensionMessage + ExtensionToWebviewMessage
@@ -53,7 +53,7 @@ describe('协议消息类型计数守卫（V-1）', () => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// V-2：Agent 事件宿主消费对账守卫
+// Agent 事件宿主消费对账守卫
 //
 // 治理背景：eventEmitter.ts 的 AGENT_EVENTS 是内核→宿主广播事件的真理源。
 // 宿主 chatPanel.ts + settingsPanel.ts 必须为每个事件提供消费入口（handler 可以
@@ -152,18 +152,18 @@ describe('Agent 事件宿主消费对账守卫（V-2）', () => {
 });
 
 // ──────────────────────────────────────────────────────────────
-// V-3：ProcessEvent 宿主桥接对账守卫
+// ProcessEvent 宿主桥接对账守卫
 //
 // 治理背景：`ProcessEvent` 是「UI 状态重建真相源」（重放轨）。宿主 `chatPanel.consumeFlow`
 // 是内核 AgentChunk → ProcessEvent 的**唯一桥接入库点**（`emitEvent`），新增 union 成员时若
 // 忘记在此桥接，该类事件**永不落盘** → 重放静默缺失。
 //
-// 为何必须有守卫（本次修复的现场教训）：消费侧一律 `e.type === 'x'` **正匹配**、无穷尽 switch，
+// 为何必须有守卫（现场教训）：消费侧一律 `e.type === 'x'` **正匹配**、无穷尽 switch，
 // 且 `emitEvent` 签名是弱类型（`payload: ProcessEvent['payload']` + `as ProcessEvent`）——
 // 因此「新增成员却无人落盘」**不会产生任何编译错误或类型检查拦截**，只能靠守卫兜住。
 //
 // 实例：`error` chunk 长期只 `post`（实时提示条）不 `emitEvent`（重放轨）→ 实时可见、回看不可见，
-// 失败原因永久丢失（缺口②）。
+// 失败原因永久丢失（缺口）。
 //
 // 守卫语义：内核联合成员集（真理源）与宿主桥接集求差集，差集非空即失败 —— 强制新增事件时
 // 同步桥接点，而非靠记忆自觉。

@@ -126,8 +126,8 @@ describe('全局技能池合规守卫（Agent Skills 规范）', () => {
   });
 
   it('全局技能名不得与角色包技能名重名（跨源唯一性，防 UI 侧同名被去重吃掉）', () => {
-    // 为何必须守：全局池 `name` 原为中文、角色包全为 kebab ⇒ 重名
-    // **结构上不可能**。name 对齐 kebab 后两侧同字母表 ⇒ 重名变可能，且后果不是报错而是
+    // 为何必须守：全局池 `name` 若为中文、角色包全为 kebab ⇒ 重名
+    // **结构上不可能**。两侧同为 kebab 字母表 ⇒ 重名变可能，且后果不是报错而是
     // **静默吞并**：`listVisibleSkills` 按名去重且角色包优先（`DEDUP_PRIORITY`）⇒ 全局那份
     // 在 UI 里不可见/不可选；而 L1 清单仍会把两行同名技能都列给模型 ⇒ 「看得见、点不到」。
     const globals = scanGlobalSkills().map((s) => s.diskName);

@@ -1,5 +1,5 @@
 /**
- * rolesView 测试 — 角色管理面板渲染分支（2026-08-17 独立视图）
+ * rolesView 测试 — 角色管理面板渲染分支（独立视图）
  *
  * 覆盖新增的角色管理视图渲染路径：
  *   - 顶栏统计（statBar：「已加载 N 个角色」）
@@ -224,7 +224,7 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(card?.querySelector('.team-ribbon-label')?.textContent).toBe('暂无队伍');
     (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
 
-    // 兜底契约包定位 chip（能力标签区，2026-08-29 实测反馈）：顶部 badge 已移除，仅保留策略区 chip
+    // 兜底契约包定位 chip（能力标签区）：顶部无 badge，仅保留策略区 chip
     const fallbackCard = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
     );

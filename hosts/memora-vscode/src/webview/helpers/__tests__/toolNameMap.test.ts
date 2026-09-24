@@ -1,9 +1,9 @@
 /**
- * getToolDisplayName 纯函数单测（阶段 A/B P2-1：纯逻辑抽为可测模块后的覆盖）
+ * getToolDisplayName 纯函数单测（纯逻辑抽为可测模块后的覆盖）
  *
  * 键集合对齐约束见 toolNameMap.ts 文件头：本测试顺带守卫「未知工具回退」语义，
  * 已知键逐一断言中文标签，防幽灵键死灰复燃。另含键集合与内核清单双向闭合守卫。
- * 图标不在本模块职责内（2026-09-19 图标立场）——原 5 条 emoji 断言已随 getToolIcon 剪除。
+ * 图标不在本模块职责内——emoji 断言已随 getToolIcon 剪除。
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -38,11 +38,10 @@ describe('getToolDisplayName', () => {
 });
 
 /**
- * 键集合对齐守卫（2026-09-19 机械化，替代原「人眼排雷」）
+ * 键集合对齐守卫
  *
  * 两个失败模式都是**静默**的：①内核新增工具而映射表未补键 → 该工具在 UI 回退英文名（无报错）；
- * ②内核删工具而映射表留键 → 幽灵键（表腐化）。此类此前靠人工排雷，
- * 本条将判据机械化。读内核源码 + 文本提取沿用 shared/__tests__/protocolGuard.test.ts 先例
+ * ②内核删工具而映射表留键 → 幽灵键（表腐化）。本条将判据机械化。读内核源码 + 文本提取沿用 shared/__tests__/protocolGuard.test.ts 先例
  * （webview 沙箱不可 import 内核，且内核 index.ts 未导出完整工具清单，故只能文本级取源）。
  */
 describe('键集合与内核内置工具清单对齐', () => {

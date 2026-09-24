@@ -178,11 +178,11 @@ type InterruptRequest =
  *     并回调 refreshOccupancyDialogue（**写消息→触发观测，跨域**），不满足 progressive-refactor-rules
  *     §2.2 模式 B「职责正交（不共享状态 / 不互相调用）」前提；模式 A（领域容器提取）只搬字段不搬逻辑，
  *     收益不足以覆盖改点面。保留监控，待自然生长触发。
- *   - V5（搜索生命周期）：软上限/硬上限混沌形同构但为**同一意图的三级级联**——
+ *   - 搜索生命周期：软上限/硬上限混沌形同构但为**同一意图的三级级联**——
  *     软提示 threshold=2「劝」（successfulWebSearchCount + searchConvergenceHintInjected）→
  *     硬拦截 MAX=6「挡」（searchCallCount + searchDisabledHintInjected）→ 工具集剔除「断」searchDisabled。
  *     阈值单源（constants.ts LOOP_CONSTANTS.SEARCH_*）。5 个运行时状态字段散在 loop（私有、
- *     经 counters 一致注入、随 resetTurnState 邻接重置，无 V1 平行数组错位风险）。
+ *     经 counters 一致注入、随 resetTurnState 邻接重置，无平行数组错位风险）。
  *     声明：这是 loop 私有生命周期状态，非 guardRail 护栏注册表项，不做对象化提取（避免提前抽象、
  *     兜旁白），维持现状即为已声明设计。
  * 结论：loop 为「功能内聚门面」（职责虽多但共享同一可变 messages 工作记忆），按 progressive-refactor-rules
@@ -245,7 +245,7 @@ export class AgentLoop {
   /** 软上限收尾信号注入标记（幂等，防迭代累积刷屏）：摘要层饱和是跨迭代持续态，
    *  同一 turn 内经本 flag 最多注入一次收尾信号；随 resetTurnState 重置——
    *  每个新 turn（新用户输入）重新注入一次（每轮回答都需要收敛提醒），
-   *  防的是「同 turn 多步迭代各注一条」的刷屏（V1 修复，口径与搜索收敛 flag 同构）。 */
+   *  防的是「同 turn 多步迭代各注一条」的刷屏（口径与搜索收敛 flag 同构）。 */
   private softLimitWrapupInjected = false;
   /** 规划层：本 turn 是否判定为需任务表规划（processUserInput 入口由检测结果设值，
    *  continueAfterPause 续跑不重判——plan 已建则无需 nudge） */
@@ -732,7 +732,7 @@ export class AgentLoop {
   /** 读取当前待注入插话队列快照（宿主渲染层只读镜像）。
    *  从 interruptQueue 中筛选 kind='interject' 并提取 content。
    *  返回副本而非原数组——宿主拿不到内核内部引用，防暗改。
-   *  宿主 Phase 5 收敛：不再自己维护 _pendingQueue 镜像，每次渲染从内核读。 */
+   *  宿主侧收敛：不再自己维护 _pendingQueue 镜像，每次渲染从内核读。 */
   getPendingInterjections(): readonly string[] {
     return this.interruptQueue
       .filter((r): r is Extract<InterruptRequest, { kind: 'interject' }> => r.kind === 'interject')
@@ -772,7 +772,7 @@ export class AgentLoop {
     this.searchDisabled = false;
     this.searchDisabledHintInjected = false;
     // 软上限收尾信号注入标记随轮重置：跨 turn 重新注入（每轮回答都需收敛提醒），
-    // 同 turn 内迭代仍由该 flag 防重（V1 语义：防迭代累积刷屏，不跨轮堆积）
+    // 同 turn 内迭代仍由该 flag 防重（防迭代累积刷屏，不跨轮堆积）
     this.softLimitWrapupInjected = false;
     // 工具结果防重缓存：闭环内有效，新闭环开始即清空（跨闭环不复用，避免上一轮已读文件"误伤"本轮合法重读）
     this.toolResultCache.clear();
@@ -1044,7 +1044,7 @@ export class AgentLoop {
 
     // 结果路由：工具分支 / 纯文本结束分支
     // 主动提问走 ask_user 内置工具（唯一通道）：提问 = 一次普通工具调用，在 handleToolCalls 检出
-    // 挂起；用户答案以 tool result 回填，工具调用结构完整落地（不再「撕掉」工具），
+    // 挂起；用户答案以 tool result 回填，工具调用结构完整落地（不「撕掉」工具），
     // OpenAI 兼容端 assistant.tool_calls 恒有配对 tool 消息。
     if (llmResult.toolCalls && llmResult.toolCalls.length > 0) {
       // 过程叙述：工具轮文本（如「让我先读取所有文档」）作为 narrate 事件发射，
@@ -1182,8 +1182,8 @@ export class AgentLoop {
     // 软上限（内核确定性检测）：上下文逼近容量上限且正文大量摘要化（摘要层达容量上限）
     // → 注入收尾信号，LLM 收敛产出最终交付（executionTemp，下一轮闭环入口即弃）。
     // 幂等防重：摘要层饱和是跨迭代持续态、判定不随注入自变（注入文本不含摘要 marker，
-    // 不增摘要层 token）——无防重则同 turn 每步迭代各注入一条收尾信号刷屏（V1 修复：
-    // 与搜索收敛 flag / 压力提示 includes 断言的幂等口径对齐）。
+    // 不增摘要层 token）——无防重则同 turn 每步迭代各注入一条收尾信号刷屏
+    // （与搜索收敛 flag / 压力提示 includes 断言的幂等口径对齐）。
     if (this.contextManager.shouldInjectSoftLimitWrapup(this.messages) && !this.softLimitWrapupInjected) {
       this.softLimitWrapupInjected = true;
       this.appendSystemMessage(this.ui.softLimitWrapup, { executionTemp: true });
@@ -1383,7 +1383,7 @@ export class AgentLoop {
    * ask_user 提问挂起（step 边界气口）：把提问作为普通工具轮落地，挂起等用户作答。
    *
    * 与插话/暂停统一的「申请 → 气口生效」语义：
-   * - assistant(toolCalls) 结构完整入史（含 ask_user），不再「撕掉」工具——OpenAI 兼容端要求
+   * - assistant(toolCalls) 结构完整入史（含 ask_user），不「撕掉」工具——OpenAI 兼容端要求
    *   assistant.tool_calls **逐条**有配对 tool 消息：ask 的结果由用户答案回填，同批的**非 ask**
    *   调用补「未执行」占位（见方法内注释），整批闭合；
    * - 解析各 ask_user 参数为结构化 AskQuestion，yield question_pending 供宿主渲染提问 UI；

@@ -140,7 +140,7 @@ describe('ChatLockManager', () => {
       vi.advanceTimersByTime(180_000);
 
       // 超时后锁释放；内部 abort 不被触发——锁超时仅释放锁，不中断生成流
-      // （LLM 无进展由 provider 层超时兜底，2026-09-03 语义收敛）
+      // （LLM 无进展由 provider 层超时兜底）
       expect(manager.isBusy).toBe(false);
       expect(internalAbort.signal.aborted).toBe(false);
     });
@@ -189,7 +189,7 @@ describe('ChatLockManager', () => {
       // 关键断言：新调用的锁应仍然存在
       expect(manager.isBusy).toBe(true);
 
-      // 超时回调不 abort 旧流的 abortController（2026-09-03：仅释放锁，不中断生成流）
+      // 超时回调不 abort 旧流的 abortController（仅释放锁，不中断生成流）
       expect(abort1.signal.aborted).toBe(false);
 
       // 清理

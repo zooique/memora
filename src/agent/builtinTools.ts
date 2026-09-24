@@ -218,7 +218,7 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
  *
  * 对齐 Claude Code AskUserQuestion 机制：提问 = 一次普通工具调用（Tool Calling）。
  * loop 检出 ask_user → 整轮挂起（step 边界气口）→ 用户答案以 tool result 回填 →
- * LLM 基于答案续跑。工具调用结构完整落地（不再「撕掉」），OpenAI 兼容端结构恒合法。
+ * LLM 基于答案续跑。工具调用结构完整落地（不「撕掉」），OpenAI 兼容端结构恒合法。
  *
  * 独立导出常量（同 COMPRESS_CONTEXT_TOOL 的「loop 拦截执行」模式）：供 loop/toolExecutor
  * 引用常量名，避免散落字符串工具名导致契约漂移；BUILTIN_TOOLS 数组同样引用本常量。

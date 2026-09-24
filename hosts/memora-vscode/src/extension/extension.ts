@@ -131,7 +131,7 @@ function getOrCreateAgent(
     const allowedPaths = vscode.workspace
       .getConfiguration('memora')
       .get<string[]>('allowedPaths', []);
-    // 内置网页搜索引擎（方案 A：memora.searchEngine 设置，'auto' = Bing→DuckDuckGo 默认链）
+    // 内置网页搜索引擎（memora.searchEngine 设置，'auto' = Bing→DuckDuckGo 默认链）
     const searchEngine = vscode.workspace
       .getConfiguration('memora')
       .get<'auto' | 'bing' | 'baidu' | 'sogou'>('searchEngine', 'auto');

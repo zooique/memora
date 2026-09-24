@@ -1,14 +1,14 @@
 /**
- * 骨架派生层单测（M3b-2b-1 / 2b-2a）
+ * 骨架派生层单测
  *
  * 变异锚点（改坏 → 应转红的用例，逐条标注在对应断言旁）：
- *   M1 `deriveSessionUiState` 的 `waiting` 分支去掉 `pausePending` 判断（恒 'paused'）
+ *   `deriveSessionUiState` 的 `waiting` 分支去掉 `pausePending` 判断（恒 'paused'）
  *      → 「申请在途 → thinking」转红（并连坐 chatView 的「申请在途」按钮用例）
- *   M2 `derivePausePending` 去掉 `pausePending === true` 判据
+ *   `derivePausePending` 去掉 `pausePending === true` 判据
  *      → 「申请在途 → true」「已挂起（无 pausePending）→ false」之一转红
- *   M3 `deriveButtonSemantics` 的 `done` 分支 `disabled: !hasInput` 改成 `false`
+ *   `deriveButtonSemantics` 的 `done` 分支 `disabled: !hasInput` 改成 `false`
  *      → 「done + 空输入 → 禁用」转红
- *   M9 `deriveButtonSemantics` 的 paused 分支去掉 `plainResume` 判据（ask 空输入也渲染续跑键）
+ *   `deriveButtonSemantics` 的 paused 分支去掉 `plainResume` 判据（ask 空输入也渲染续跑键）
  *      → 「waiting(ask) + 空输入 → pause null」转红
  */
 
@@ -39,7 +39,7 @@ describe('deriveSessionUiState（骨架状态 → 会话 UI 三态）', () => {
   });
 
   it('waiting(pause, pausePending) → thinking（申请在途 = 仍在运行）', () => {
-    // M1 锚点：申请在途不是挂起——按钮只把「暂停」切成可反悔的「继续 ▶」，
+    // 锚点：申请在途不是挂起——按钮只把「暂停」切成可反悔的「继续 ▶」，
     // 发送按钮职责不变（若映射 paused，发送文案会变成「停止生成（丢弃检查点）」= 行为变更）
     expect(deriveSessionUiState({ phase: 'waiting', reason: 'pause', pausePending: true })).toBe(
       'thinking',
@@ -57,14 +57,14 @@ describe('deriveSessionUiState（骨架状态 → 会话 UI 三态）', () => {
 
 describe('derivePausePending（骨架状态 → 申请在途布尔量）', () => {
   it('waiting{pausePending:true} → true', () => {
-    // M2 锚点
+    // 锚点
     expect(derivePausePending({ phase: 'waiting', reason: 'pause', pausePending: true })).toBe(
       true,
     );
   });
 
   it('waiting(已挂起，无 pausePending) → false', () => {
-    // M2 锚点
+    // 锚点
     expect(derivePausePending({ phase: 'waiting', reason: 'pause' })).toBe(false);
   });
 
@@ -104,15 +104,15 @@ describe('契约守卫：TurnState → SkeletonState 投影兼容（2b-2b 换源
 
 describe('换真源：skeletonFromTurnState（TurnState 快照 → 容器，M3b-2b-2b）', () => {
   // 变异锚点（改坏 → 转红）：
-  //   M6 把 idle 误判为 settled / running → 「idle → idle」转红
-  //   M7 剥字段失败（如 running 残留 roundId、waiting 残 questions）→ toEqual 严格转红
-  //   M8 丢 pausePending → 「申请在途」转红
+  //   把 idle 误判为 settled / running → 「idle → idle」转红
+  //   剥字段失败（如 running 残留 roundId、waiting 残 questions）→ toEqual 严格转红
+  //   丢 pausePending → 「申请在途」转红
   it('idle → idle', () => {
     expect(skeletonFromTurnState({ phase: 'idle' })).toEqual({ phase: 'idle' });
   });
 
   it('running（roundId 缺省——流起始投影）→ running', () => {
-    // 2b-2b：宿主流起始投影 roundId 尚不可知，缺省如实（不造假占位）
+    // 宿主流起始投影 roundId 尚不可知，缺省如实（不造假占位）
     expect(skeletonFromTurnState({ phase: 'running' })).toEqual({ phase: 'running' });
   });
 
@@ -232,7 +232,7 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     });
   });
 
-  // M9 锚点：续跑键只宣告路由真实收下的意图——ask 相位的纯续跑是死键（resume 路由只收 pause）
+  // 锚点：续跑键只宣告路由真实收下的意图——ask 相位的纯续跑是死键（resume 路由只收 pause）
   it('waiting(ask) + 空输入：续跑键隐藏（null）——纯续跑死键不宣告', () => {
     const spec = deriveButtonSemantics({
       state: { phase: 'waiting', reason: 'ask' },
@@ -256,7 +256,7 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
   });
 
   it('done + 空输入：暂停按钮隐藏（null）、发送按钮禁用', () => {
-    // M3 锚点
+    // 锚点
     const spec = deriveButtonSemantics({ state: { phase: 'idle' }, hasInput: false });
     expect(spec.pause).toBeNull();
     expect(spec.send).toEqual({

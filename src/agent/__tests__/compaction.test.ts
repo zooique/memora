@@ -5,7 +5,7 @@
  * - ResultReplacementStrategy: 结果替换（同步）
  * - ReplaceRoundsStrategy: 轮次替换（第一级 LRU）
  *
- * 注：`OffloadCompactionStrategy` 已于 2026-09-13 **整级删除** —— 超大工具结果改为在
+ * 注：`OffloadCompactionStrategy` 已**整级删除** —— 超大工具结果改为在
  * **入口关**（`AgentLoop.appendToolMessage`）落盘，不再作为压缩链一级。原语与不变量见
  * `src/agent/toolResultOffload.ts` 及其单测；读码论证见 `docs/大文本统一通道-探索方案.md` §6.2。
  */
@@ -134,7 +134,7 @@ describe('ResultReplacementStrategy', () => {
       strategy.compact(messages);
       const c1 = messages.find((m) => m.toolCallId === 'c1')!;
       const c2 = messages.find((m) => m.toolCallId === 'c2')!;
-      // read_file 被替换为台账摘要（P1），非空占位
+      // read_file 被替换为台账摘要，非空占位
       expect(c1.content).toBe('[ALREADY_READ] 摘要…');
       expect(readFileReplacement).toHaveBeenCalledWith('docs/a.md');
       // 最近 1 个（write_file）保留；若日志里它也被替换成 [Previous: used write_file] 说明 keepRecent 语义未破
@@ -161,11 +161,7 @@ describe('ResultReplacementStrategy', () => {
   });
 });
 
-// 注：此处原有 `describe('estimateTokens')` 三个用例，已于 2026-09-13 删除。
-// 它们断言的是本模块自带的孤儿估算器 `ceil(len / 4)`，而用例自身就写着
-// 「中文字符约 1.5-2 token」「4 个汉字 ≈ 6-8 tokens」却断言 `toBe(1)`——
-// 用例名、注释、断言三者互相矛盾，等于把错误固化成预期。估算器现已统一到
-// `contextManager.estimateTokensText`（CJK 感知），其正确性由 contextManager.test.ts 守。
+// 注：token 估算统一走 `contextManager.estimateTokensText`（CJK 感知），其正确性由 contextManager.test.ts 守。
 
 describe('ReplaceRoundsStrategy（第一级 · 内核自动 LRU）', () => {
   /** 构造 N 轮问答消息（system + 每轮 user/assistant），每轮 user/assistant 自带 roundId */

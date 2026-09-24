@@ -504,7 +504,7 @@ describe('SessionStateMachine — resetToRunning', () => {
     const sm = new SessionStateMachine();
     sm.requestPause('第一次申请', 'user');
     sm.resetToRunning();
-    // 修复前：pendingPauseReason 残留 → 此行返回 false（测试红）
+    // 若 pendingPauseReason 残留 → 此行返回 false（测试红）
     expect(sm.requestPause('第二次申请', 'user')).toBe(true);
     expect(sm.isPausePending()).toBe(true);
     // 不影响后续正常消费

@@ -1,7 +1,7 @@
 /**
  * commitlint 配置
  * 提交信息规范：<type>(<scope>): <subject>
- * 详见 .trae/rules/project-rules.md §5
+ * 详见 .trae/rules/project-rules.md
  */
 export default {
   extends: ['@commitlint/config-conventional'],

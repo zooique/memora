@@ -144,7 +144,7 @@ async function main() {
   console.log('✅ esbuild 打包完成：dist/extension/extension.js');
 
   // 3. esbuild 打包 webview 运行时脚本（browser/iife，供 webview.asWebviewUri 引用）
-  //    阶段 B（P2-1）：以 *Main 入口打包「定义 + 自执行」IIFE（CSP 'self' 下无法用
+  //    以 *Main 入口打包「定义 + 自执行」IIFE（CSP 'self' 下无法用
   //    内联脚本调用工厂）；outfile 与面板引用的 chatView.js/settingsView.js 对齐，
   //    覆盖 tsc 的同名 ESM 编译产物（tsc 负责类型检查，esbuild 负责产出）。
   //    注：纯 tsc watch 开发模式下 webview 脚本不 bundle（生产 compile 才正确），

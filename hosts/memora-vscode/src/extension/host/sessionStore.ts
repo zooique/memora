@@ -272,7 +272,7 @@ export class WorkspaceSessionStore implements ISessionStore {
    * `messageHistory.forkSession` 是「先 `setRoundIds(newSessionId, ...)` 再
    * `updateSessionMeta(newSessionId, {createdAt})`」——调用时刻 roundIds 已就位而 meta
    * 尚不存在（`setRoundIds` 内的计数回写因 `if (!meta) return` 提前退出）。写 0 会让
-   * 分叉会话在 meta 上留下假值 0，而 `getSessionMeta` 见 meta 即直接返回（不再走
+   * 分叉会话在 meta 上留下假值 0，而 `getSessionMeta` 见 meta 即直接返回（不走
    * roundIds 占位兜底），于是 `getMessageCount()` 对它返回 0（真值 N*2）。
    *
    * @param sessionId 会话标识（YYYY-MM-DD-sessionName）
@@ -400,7 +400,7 @@ export class WorkspaceSessionStore implements ISessionStore {
    *
    * SSOT 边界（与 inMemorySessionStore 同口径）：*2 是「每个已收场轮 = User+AI」的固有语义缓存，
    * 在 append 时点轮已收场，与精确 countMessagesInRounds 等价（两者判据同为 isRoundSettled）；
-   * 免加载物理 Round（O(1)）。真源取自 roundIdsStore（方案 A：meta 不再持有 roundIds）。
+   * 免加载物理 Round（O(1)）。真源取自 roundIdsStore（meta 不持有 roundIds）。
    */
   private updateRoundBasedMessageCount(sessionId: string): void {
     const meta = this.metas.get(sessionId);

@@ -139,7 +139,7 @@ export const memoryStyles = `
     color: var(--text-secondary, #9aa0a6);
   }
 
-  /* ============ Components：记忆治理区（G4，2026-08-23） ============ */
+  /* ============ Components：记忆治理区 ============ */
   #memory-root .governance {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-top: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -163,9 +163,9 @@ export const memoryStyles = `
   }
   #memory-root .gov-num { font-size: var(--font-lg, 14px); font-weight: 600; color: var(--text-primary, #cccccc); }
   #memory-root .gov-label { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  /* 操作按钮：清理过期（不可逆性强调；取代/加权已随旧治理语义移除） */
+  /* 操作按钮：清理过期（不可逆性强调） */
   #memory-root .governance-actions { display: flex; gap: var(--sp-2, 6px); }
-  /* 政区按钮撑满等宽（布局性差异不混入通用 .btn 基类，SSOT 收敛 2026-08-25） */
+  /* 政区按钮撑满等宽（布局性差异不混入通用 .btn 基类） */
   #memory-root .governance-actions .btn { flex: 1; }
   /* 结果提示：默认次要色，失败时错误色 */
   #memory-root .governance-detail {
@@ -175,7 +175,7 @@ export const memoryStyles = `
   }
   #memory-root .governance-detail.gov-error { color: var(--vscode-errorForeground, #f48771); }
 
-  /* ============ Components：单条删除 / 回收站（G19，2026-08-25） ============ */
+  /* ============ Components：单条删除 / 回收站 ============ */
   /* 卡片头部删除按钮：低扰，hover 才显形，避免与展开区抢视觉、不与「清理过期」红色危险按钮撞色 */
   #memory-root .mem-del-btn {
     flex-shrink: 0;
@@ -219,12 +219,12 @@ export const memoryStyles = `
   #memory-root .mem-edit-btn:focus-visible { opacity: 1; }
   #memory-root .mem-edit-btn:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
   #memory-root .mem-edit-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 1px; }
-  /* 卡片头按钮图标（原 ✕/✎ 字符的 SVG 替代，2026-09-19 图标语言收口）：
+  /* 卡片头按钮图标（SVG）：
    * 按钮本身已是 inline-flex + center，此处只需消除 svg 的 inline 基线间隙 */
   #memory-root .mem-del-btn svg,
   #memory-root .mem-edit-btn svg { display: block; }
 
-  /* 内联编辑区（G19 内联 edit，2026-08-25）：textarea + 操作按钮 */
+  /* 内联编辑区：textarea + 操作按钮 */
   #memory-root .mem-edit-wrap {
     margin-top: var(--sp-2, 6px);
     padding-top: var(--sp-2, 6px);
@@ -297,7 +297,7 @@ export const memoryStyles = `
     font-size: var(--font-sm, 11px);
   }
   #memory-root .mem-restore-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
-  /* 回收站条目「永久删除」按钮（2026-08-26）：危险色，与「恢复」并排、间距对齐 */
+  /* 回收站条目「永久删除」按钮：危险色，与「恢复」并排、间距对齐 */
   #memory-root .mem-purge-btn {
     flex-shrink: 0;
     margin-left: var(--sp-2, 6px);
@@ -308,7 +308,7 @@ export const memoryStyles = `
     font-size: var(--font-sm, 11px);
   }
   #memory-root .mem-purge-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
-  /* 回收站操作行（2026-08-26）：清空回收站按钮右对齐，置于条目之上 */
+  /* 回收站操作行：清空回收站按钮右对齐，置于条目之上 */
   #memory-root .mem-recycle-tools {
     display: flex;
     justify-content: flex-end;
@@ -335,6 +335,5 @@ export const memoryStyles = `
   }
   #memory-root .mem-hint.mem-hint-error { color: var(--vscode-errorForeground, #f48771); }
 
-  /* 记忆诊断区样式已移除（2026-08-24 第一性原理复盘：诊断粒度无终端用户场景，
-     内核治理机制强制自动跑，相关 #diagnostic 容器/DTO 一并删除） */
+  /* 记忆诊断区样式已退役，勿再加：诊断粒度无终端用户场景，内核治理机制自动跑 */
 `;

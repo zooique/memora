@@ -398,7 +398,7 @@ describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () =
     // Round 指针 + 写 createdAt，**不预建 meta**。此刻 setRoundIds 内的计数回写因
     // `if (!meta) return` 提前退出，故 updateSessionMeta 走的是「无既有 meta」分支——
     // 该分支若写 0，分叉会话的 meta 就留下假值 0（getSessionMeta 见 meta 即返回，
-    // 不再走占位兜底）。
+    // 不走占位兜底）。
     store.setRoundIds('2026-09-21-forked', ['round-f1', 'round-f2', 'round-f3']);
     // meta 尚未落库 → getSessionMeta 走 roundIds 占位兜底（真值 3 轮 = 6 条）
     expect(store.getSessionMeta('2026-09-21-forked')?.messageCount).toBe(6);

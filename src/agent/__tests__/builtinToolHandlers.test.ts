@@ -726,7 +726,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
   });
 });
 
-// ─── listSessions 测试（会话路标，2026-08-30） ─────────────
+// ─── listSessions 测试（会话路标） ─────────────
 
 describe('BuiltinToolHandlers.listSessions', () => {
   /** 构造会话存储桩：listSessions 只依赖 listSessions / getSessionMeta */

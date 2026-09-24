@@ -178,7 +178,7 @@ describe('builtinTools · BUILTIN_TOOLS', () => {
 
   it('search_memories 描述含关键词检索与按需召回 + 换词重试引导（§3.3 工具升级定案 / B0 收编）', () => {
     const searchMemories = BUILTIN_TOOLS.find((t) => t.name === 'search_memories');
-    // 引导：纯关键词检索（语义向量通道已随 B0 收编移除），涉及过往决定/偏好/项目背景时主动按需召回；
+    // 引导：纯关键词检索（语义向量通道已收编移除），涉及过往决定/偏好/项目背景时主动按需召回；
     // 揭示 accessedAt 辅助排序；未命中提示换词重试（LLM 承担词汇桥梁）
     expect(searchMemories!.description).toContain('关键词检索记忆库');
     expect(searchMemories!.description).toContain('按需召回');
@@ -449,10 +449,10 @@ describe('builtinTools · 任务表 how 单源守卫', () => {
   });
 
   /**
-   * 寻址说明 ↔ 渲染形态 一致性守卫（2026-09-15 补）
+   * 寻址说明 ↔ 渲染形态 一致性守卫
    *
-   * 起因：task_table_update 描述称「# **列**序号」——旧版方框表头确有「#」列，措辞成立；
-   * 2026-09-15 渲染去方框改列表（`N. 描述 [状态]`）后**列概念消失**，描述却未同批更新
+   * 缺陷形态：task_table_update 描述称「# **列**序号」——方框表头下措辞成立；
+   * 渲染改列表（`N. 描述 [状态]`）后**列概念消失**，描述却未同批更新
    * → LLM 被要求去任务表里找一个不存在的「列」（描述失真，且跨文件无任何守卫）。
    *
    * 判据：任务表现在是**列表**，寻址说明里不得出现表格术语「列」。取「列」而非「# 列」

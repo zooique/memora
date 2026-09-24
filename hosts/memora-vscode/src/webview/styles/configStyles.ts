@@ -18,7 +18,7 @@ export const configStyles = `
   /* 分区标题：「激活 Provider」/「其他 Provider」（ui-redesign.md §4.2 ②③） */
   #config-root .group-title { font-size: var(--font-xs, 10px); letter-spacing: 0.5px; text-transform: uppercase; color: var(--text-secondary, #9aa0a6); margin: var(--sp-3, 8px) 0 var(--sp-1, 4px); }
 
-  /* ============ Components：后台模型通道（G5，2026-08-23） ============ */
+  /* ============ Components：后台模型通道 ============ */
   #config-root .cfg-bg {
     padding: var(--sp-3, 8px) var(--sp-5, 12px);
     border-bottom: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -68,7 +68,7 @@ export const configStyles = `
   #config-root .field input { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
   #config-root .field select { width: 100%; box-sizing: border-box; padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); border: 1px solid var(--border-input, rgba(128,128,128,.5)); background: var(--surface-input, #3c3c3c); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); }
   #config-root .field input:disabled { opacity: 0.6; }
-  /* 本地工具能力位复选框：标签与复选框同行走排（阶段1·本地 LLM 能力声明） */
+  /* 本地工具能力位复选框：标签与复选框同行走排（本地 LLM 能力声明） */
   #config-root .field .checkbox-label { display: flex; align-items: center; gap: var(--sp-2, 6px); color: var(--text-input, #cccccc); font-size: var(--font-base, 13px); cursor: pointer; }
   #config-root .field .checkbox-label input[type="checkbox"] { width: auto; flex-shrink: 0; accent-color: var(--accent, #0e639c); }
   #config-root .key-hint { font-size: var(--font-md, 12px); color: var(--text-secondary, #9aa0a6); margin-top: var(--sp-1, 4px); }
@@ -76,7 +76,7 @@ export const configStyles = `
   #config-root .test-result { font-size: var(--font-md, 12px); padding: var(--sp-2, 6px) var(--sp-3, 8px); border-radius: var(--radius, 6px); margin-bottom: var(--sp-4, 10px); word-break: break-all; }
   #config-root .test-result.ok { background: var(--feedback-info-bg); color: var(--feedback-info-fg); }
   #config-root .test-result.err { background: var(--feedback-error-bg); color: var(--feedback-error-fg); }
-  /* 测试连接结果图标（原 ✅/❌ emoji 的 SVG 替代，2026-09-19 图标语言收口）：
+  /* 测试连接结果图标（SVG）：
    * 结果块是纯文本容器，图标以 inline-flex 内联，vertical-align 微调与文字基线对齐 */
   #config-root .test-result__icon { display: inline-flex; align-items: center; vertical-align: -2px; margin-right: var(--sp-1, 4px); }
   #config-root .test-result__icon svg { display: block; }

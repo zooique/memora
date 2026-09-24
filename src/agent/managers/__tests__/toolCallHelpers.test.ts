@@ -7,7 +7,7 @@
  *   isCallableToolName / filterCallableToolCalls — 函数名合法性（服务端字符集）+ 入历史前过滤
  *   isRetryableToolError               — 错误码识别（含「被 <tool_result> 包裹后仍能识别」的关键性质）
  *
- * 设计意图：这些函数从 AgentLoop 提取（ARCH-2/ARCH-3 F2 族拆分），本测试是它们的
+ * 设计意图：这些函数从 AgentLoop 提取，本测试是它们的
  * **直接单测**——loop.test.ts 的间接覆盖之外，补齐边界用例（后者只覆盖集成路径）。
  */
 import { describe, it, expect } from 'vitest';
@@ -305,7 +305,7 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
   });
 
   it('★ 跨消息同名 id（如 mock 续跑重放同一批次）→ 不判重复、不误报', () => {
-    // G1 场景：continueAfterPause 后 mock 重放同一批次 → c1/c2 各出现在两条 assistant 消息
+    // 场景：continueAfterPause 后 mock 重放同一批次 → c1/c2 各出现在两条 assistant 消息
     const msgs = [
       assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
       tool('c1'),

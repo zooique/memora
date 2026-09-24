@@ -1,7 +1,7 @@
 /**
- * 文件覆盖度台账（工具读取防重 & 压缩协同 P0 侧）单元测试
+ * 文件覆盖度台账（工具读取防重 & 压缩协同）单元测试
  *
- * 覆盖：parseReadFileCoverage（脚注解析，R1"按需"信号）+ FileExposureLedger（记录/读回/失效/清空）
+ * 覆盖：parseReadFileCoverage（脚注解析，"按需"信号）+ FileExposureLedger（记录/读回/失效/清空）
  *      + formatLedgerStub（分支②回显文案，非空拦）+ shouldEchoLedgerStub（分支②判定单一真理源）。
  */
 import { describe, it, expect } from 'vitest';

@@ -48,7 +48,7 @@ describe('LlmProvider · supportsStructuredOutput 默认值', () => {
   });
 });
 
-// ─── supportsToolCalling 能力位（F0，2026-09-14 阶段0） ──
+// ─── supportsToolCalling 能力位 ──
 
 describe('LlmProvider · supportsToolCalling 能力位', () => {
   it('未覆盖时默认为 true（保留存量云 LLM 工具行为）', () => {

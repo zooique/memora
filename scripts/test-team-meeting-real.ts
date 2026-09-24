@@ -1,14 +1,14 @@
 /**
- * run_team_meeting 真机验证（探索方案 A · 工具内调 LLM，正式实现链路）
+ * run_team_meeting 真机验证（工具内调 LLM，正式实现链路）
  *
  * 验证对象：内置工具 run_team_meeting 的实际实现 runTeamMeetingAssessment ——
  * 经 RolePackManager.getTeam 解析组名 → buildSystemPrompt 取各角色 persona 全文 →
  * 拼多角色 system prompt → **一次** provider.chat() 完成各视角评估 + 组长汇总。
  *
- * 真机实证结论（2026-09-16）：三视角（白话方案设计师 / 共鸣小说家 / memora 助手）
+ * 真机实证结论：三视角（白话方案设计师 / 共鸣小说家 / memora 助手）
  * 各自观点真实体现角色设定差异（小说家用"人物/内核/风格记忆·设定圣经"、设计师用
  * "种子/最小单元/白话总览/可开发性"、助手讲"跨会话连续性/偏好/隐私噪音成本"）。
- * 详细结论见 docs/run_team_meeting-探索方案.md §5。
+ * 详细结论见 docs/run_team_meeting-探索方案.md。
  *
  * 用例：
  *   npx tsx scripts/test-team-meeting-real.ts

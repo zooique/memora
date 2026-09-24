@@ -18,7 +18,7 @@ export default defineConfig({
     // webview 的 jsdom 环境由**需要 DOM 的测试文件**在自身头部声明 `@vitest-environment jsdom`
     // （移除 environmentMatchGlobs 后，per-file 声明是唯一来源）。
     // ⚠️ **实测并非「全部已声明」**：webview/** 下仍有一批纯逻辑测试文件不带该声明 → 按宿主
-    // 配置默认跑 node。已逐个核验它们**零 DOM 引用**，故与先前 jsdom 相比**无功能差异**。
+    // 配置默认跑 node。已逐个核验它们**零 DOM 引用**，故与 jsdom 相比**无功能差异**。
     // **缺声明不存在静默风险**：届时访问 DOM 会直接 ReferenceError 报红（失败响亮而非静默），
     // 因此**不额外加守卫生效**（重复保护）。**新增依赖 DOM 的用例必须自带该声明**，
     // 否则将以「document is not defined」失败。
@@ -43,16 +43,16 @@ export default defineConfig({
       include: ['src/**/*.ts'],
       exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/index.ts', 'hosts/**', 'hosts/memora-vscode/src/**'],
       thresholds: {
-        // 实测基线（2026-09-16，`vitest run --coverage`，列序 = Stmts / Branch / Funcs / Lines）：
+        // 实测基线（`vitest run --coverage`，列序 = Stmts / Branch / Funcs / Lines）：
         //   90.30 / 84.78 / 92.27 / 91.52 —— 四项阈值均低于实际值，留缓冲防日常波动。
         // 0% 文件（agent/types.ts, llm/types.ts, memory/*Interface.ts 等）为纯类型/接口文件，无运行时代码
         lines: 80,
-        // 覆盖率阈值的**判据 SSOT = 本文件**（机器只执行此处的量）。`.trae/rules/testing_rules.md` §3
+        // 覆盖率阈值的**判据 SSOT = 本文件**（机器只执行此处的量）。`.trae/rules/testing_rules.md`
         // 与本处同源对齐；冲突时**以本文件为准并回填文档**，不得反向。
         // 反向（以文档为准）不成立：「文档是配置的描述，而非独立目标」——
         // 引文说文档是描述，若结论说文档是权威，**引文与结论反向**，属自相矛盾。
-        // functions 取 88：88 是 testing_rules.md §3 标注的「1.0 发布阈值」（**意图来源**，
-        // 非本处推导），83 系 99edf24c 的漂移；实测 92.27%，置 88 后仍有约 4.3 点缓冲。
+        // functions 取 88：88 是 testing_rules.md 标注的「1.0 发布阈值」（**意图来源**，
+        // 非本处推导）；实测 92.27%，置 88 后仍有约 4.3 点缓冲。
         // 已知不齐：functions 缓冲（≈4.3）明显小于另三项（≈10）——成因是它按「恢复原始意图」而非
         // 「按实测留量」定值。若要统一口径，须作为「改判据」动作带观测 + 退出条件后再动，不顺手改。
         functions: 88,

@@ -7,7 +7,7 @@
  * 职责（对照 docs/architecture/memory-tool-recall-ab-benchmark.md，种子 SSOT 见
  * scripts/benchmark-seeds.ts）：
  *  1. 把问题集（A 隐含相关 / B 显式提点）的目标记忆 seed 写入**隔离会话**，
- *     规避装配期正文与 search_memories 工具互斥（§5.1）对「当前会话热窗口」的排除。
+ *     规避装配期正文与 search_memories 工具互斥对「当前会话热窗口」的排除。
  *  2. **可达性自检**：对每个 case 用理想查询调用 search_memories，断言能检索返回
  *     目标记忆的独特实体词——证明「果实可被搜索到」。若某 seed 连理想查询都命不中，
  *     则该 case 设计失效，需先修种子措辞而非直接上真实 LLM。
@@ -15,7 +15,7 @@
  *     （scripts/test-memory-tool-recall-real.ts）对照判定记录表填写。
  *
  * 边界（诚实声明）：本脚本只做「种子可装载 + 可被工具检索」两个前提自检，
- * **不替代**设计 §阶段1 出口条件的 A/B 模型行为验收——想起率/命中率需真实 LLM +
+ * **不替代**设计所定出口条件的 A/B 模型行为验收——想起率/命中率需真实 LLM +
  * 人工判答案优劣。
  *
  * 验收：脚本输出全部 ✅，process.exitCode = 0。

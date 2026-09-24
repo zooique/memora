@@ -17,7 +17,7 @@ export default [
       memora: {
         rules: {
           // 封死「编辑纪律债」根因：插入新符号却没搬迁旧 JSDoc，
-          // 导致 TS/IDE 只取紧邻的最后一个块，前者文档永失效（历史审查 #4-#7）。
+          // 导致 TS/IDE 只取紧邻的最后一个块，前者文档永失效。
           'no-consecutive-jsdoc': {
             meta: {
               type: 'problem',
@@ -71,13 +71,13 @@ export default [
       'prefer-const': 'error',
       'no-var': 'error',
       eqeqeq: ['error', 'always'],
-      // B2 防腐（2026-08-19）：内核生产文件行数红线，防再膨胀到 3000 行级。
-      // 仅卡增量：存量超标文件（agent.ts/loop.ts，B1 瘦身目标）与测试目录豁免，
+      // 防腐：内核生产文件行数红线，防再膨胀到 3000 行级。
+      // 仅卡增量：存量超标文件（agent.ts/loop.ts，瘦身目标）与测试目录豁免，
       // 不制造 disable 负债区。瘦身达标后可收紧此线。
       'max-lines': ['error', { max: 2000, skipBlankLines: true, skipComments: true }],
     },
   },
-  // HC-12：内核纯逻辑库 src/ 禁止直接使用 console（应走 logger）
+  // 内核纯逻辑库 src/ 禁止直接使用 console（应走 logger）
   // 覆盖上面的 'off'，强制 src/ 生产代码通过 logging/logger.ts 统一日志
   {
     files: ['src/**/*.ts'],
@@ -92,7 +92,7 @@ export default [
       'no-console': 'off',
     },
   },
-  // B2 防腐：max-lines 豁免（测试文件允许较长；agent.ts/loop.ts 为 B1 瘦身目标，达标前豁免）
+  // 防腐：max-lines 豁免（测试文件允许较长；agent.ts/loop.ts 为瘦身目标，达标前豁免）
   {
     files: ['src/**/__tests__/**/*.ts'],
     rules: {
@@ -105,7 +105,7 @@ export default [
       'max-lines': 'off',
     },
   },
-  // D4 修复（2026-09-16）：根目录 .mjs 配置与 scripts/*.mjs 此前**不在任何门内**——
+  // 根目录 .mjs 配置与 scripts/*.mjs 须接进门禁（漏接则**不在任何门内**）——
   // 上面 `files: ['**/*.ts']` 不匹配 .mjs，而 package.json 的 `--ext .ts` 在 flat config 下
   // **不生效**（覆盖范围实际由 files 决定）→ 双不匹配，脚本可随意写而无人察。
   // 独立成块并用默认解析器（espree）：**勿**把 .mjs 塞进含 tsparser 的对象，parser 会解析失败。

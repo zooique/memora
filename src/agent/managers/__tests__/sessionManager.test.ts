@@ -9,7 +9,7 @@
  *   - loadSessionMessages：加载消息（会切换会话）
  *   - applySessionToLoop：private，通过 restore* 间接测试
  *   - 检查点生命周期：createCheckpoint / getCheckpoint / settleCheckpoint（内存态）
- *     （来自 sessionCheckpointLifecycle.test.ts 合并；跨重启恢复链已随「减法」退役，2026-09-10）
+ *     （跨重启恢复链已退役）
  *
  * Mock 策略：5 个回调注入用 vi.fn()，history/loop 用 Partial<T> as T 单层断言
  */
@@ -54,7 +54,7 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
     restoreHistory: vi.fn(),
     resetContextSummary: vi.fn(),
     getMessages: vi.fn().mockReturnValue([]),
-    // 闭环节点锚点（TS-9）：检查点快照/恢复读写，mock 默认空轮
+    // 闭环节点锚点：检查点快照/恢复读写，mock 默认空轮
     getCurrentRoundId: vi.fn().mockReturnValue(''),
     setCurrentRoundId: vi.fn(),
     ...overrides,
@@ -652,7 +652,7 @@ describe('SessionManager', () => {
       // 首次 updateGoal 创建检查点，goalChangeSeq = 0
       expect(manager.getCheckpoint()!.goalChangeSeq).toBe(0);
 
-      // 值未变的 updateGoal（P2 记忆延续每轮重复喂入）→ 幂等短路
+      // 值未变的 updateGoal（记忆延续每轮重复喂入）→ 幂等短路
       const result = manager.updateGoal(mainGoal);
       expect(result).not.toBeNull();
       expect(result!.level).toBe('same');
@@ -762,7 +762,7 @@ describe('SessionManager', () => {
         restoreHistory: vi.fn(),
         getMessages: vi.fn().mockReturnValue(msgs.map((m) => ({ ...m, name: undefined }))),
         injectSystemMessage: vi.fn(),
-        // 闭环节点锚点（TS-9）：检查点快照/恢复读写（默认空轮，测试覆盖时覆写）
+        // 闭环节点锚点：检查点快照/恢复读写（默认空轮，测试覆盖时覆写）
         getCurrentRoundId: vi.fn().mockReturnValue(''),
         setCurrentRoundId: vi.fn(),
       } as unknown as AgentLoop;
@@ -1006,9 +1006,9 @@ describe('SessionManager', () => {
     });
 
     it('writePlan：未创建 checkpoint 时写点自愈（先建 checkpoint 再写，不再静默返回空）', () => {
-      // 复现实测病根（round-1789539624589）：生产流程无一处先建 checkpoint，task_table_write / 约会骨架
-      // 直接调 writePlan → 此前 `if(!this.checkpoint) return []` 静默空 → LLM 收到 ok:true + 0 步 → 反复重写。
-      // 修复后写点自愈建 checkpoint 并返回真实步骤。
+      // 实测病根：生产流程无一处先建 checkpoint，task_table_write / 约会骨架
+      // 直接调 writePlan → 若 `if(!this.checkpoint) return []` 静默空 → LLM 收到 ok:true + 0 步 → 反复重写。
+      // 契约：写点自愈建 checkpoint 并返回真实步骤。
       expect(manager.getCheckpoint()).toBeNull();
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },

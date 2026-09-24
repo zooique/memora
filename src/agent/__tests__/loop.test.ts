@@ -333,7 +333,7 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
     expect(tempSummary!.content).toContain('临时摘要：首轮干的事');
     // 顶级锚点（当前任务输入）仍在场（永不压缩）
     expect(messages.some((m) => m.content.includes('当前任务'))).toBe(true);
-    // 首轮正文已被压缩替换（不再含原首轮 user 内容）
+    // 首轮正文已被压缩替换（不含原首轮 user 内容）
     expect(messages.some((m) => m.content.includes('第一个任务'))).toBe(false);
 
     // 三轮：新一轮 turn 入口清理执行期临时残留 → 压缩摘要收尾即弃
@@ -767,7 +767,7 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
 
     // 过滤 text 事件，验证内容（不包含 tool_start/tool_result/tool_done）
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
-    // P2 文本通道净化：工具轮叙述「我来查一下」被剥离进 narrate 事件，正文仅最终回答
+    // 文本通道净化：工具轮叙述「我来查一下」被剥离进 narrate 事件，正文仅最终回答
     expect(texts).toEqual(['找到了文件内容']);
     // 工具轮叙述 → narrate 事件（过程叙述区折叠展示，不进正文）
     const narrates = chunks.filter((c) => c.type === 'narrate');
@@ -1138,7 +1138,7 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
   it('★ 工具执行前 abort（executeToolCalls 早退）→ 不得遗留未配对的 assistant.toolCalls（FAIL-1）', async () => {
     // 场景：signal 在「assistant(toolCalls) 已入史」之后、「工具执行与结果回填」之前被 abort
     // → executeToolCalls 在入口处的 abort 前置检查早退，_processToolResults 不再执行。
-    // 不变量（FAIL-1）：发往 OpenAI 兼容端的 assistant.toolCalls 必须逐条配对 tool 消息；
+    // 不变量：发往 OpenAI 兼容端的 assistant.toolCalls 必须逐条配对 tool 消息；
     // 否则下一次请求要么被服务端 400 拒绝，要么被 llmCaller 发送边界守卫 auditToolCallPairing
     // 拒发并抛非临时错误（llmPairingGuardFires++）——用户在该会话的下一次发言即硬失败。
     // 断言复用生产谓词（expectWellFormedToolPairing 复测 auditToolCallPairing），口径与实现同源。
@@ -1222,7 +1222,7 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
     // 每轮都返回 toolCalls，迫使循环直到上限。
     // 注：用单条 tool call（而非 Array(5).fill 的同响应 5 重复）——后者是「同批次重复 id」的
     // 畸形批次，会被发送边界守卫正确拦截而不会走迭代上限；跨迭代复用同 id 属
-    // 跨消息场景（守卫不判、G3 已保证真实内核唯一），故单条即纯逼迭代上限。
+    // 跨消息场景（守卫不判、真实内核 id 唯一另有保证），故单条即纯逼迭代上限。
     const toolCall = {
       toolCalls: [
         { id: 'c1', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
@@ -1453,7 +1453,7 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     expect(aborted.length).toBeGreaterThan(0);
   }, 15000);
 
-  // 假中断语义校准（2026-09-02 排雷）：无 abort 信号（signal 未 abort）却收到 AbortError →
+  // 假中断语义校准：无 abort 信号（signal 未 abort）却收到 AbortError →
   // provider/网络层内部中断（连接被抽断），非用户取消 → 向上抛错，不输出 aborted chunk。
   it('AbortError 但 signal 未 abort → 连接中断，抛错而非用户取消', async () => {
     const provider = mockRetryProvider([
@@ -1504,9 +1504,8 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     expect(provider.callCount).toBe(3);
   }, 15000);
 
-  // ─── degrade 降级分支（ARCH-3 P3-2 搬迁时经变异验证发现的覆盖缺口）───
-  // 该两条路径原在 loop.ts 的 callLlmWithRetry 内，搬至 LlmCaller 后补测：
-  // 用变异（改降级文案）验证过——无测试时会静默通过，说明此处确为覆盖缺口。
+  // ─── degrade 降级分支（变异验证发现的覆盖缺口）───
+  // 该两条路径在 LlmCaller 内：用变异（改降级文案）验证过——无测试时会静默通过，说明此处确为覆盖缺口。
 
   it("errorHandling='degrade' 且重试耗尽 → 降级为固定文案，不抛错", async () => {
     const provider = mockRetryProvider([
@@ -1658,9 +1657,9 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
   it('toolStepLimit 截断时 slice 只看实际执行条数，不把上轮残留错误吸进来（T10）', async () => {
     // 复现场景：迭代1 工具返回 retryable 错误（合法触发反思 1 次）；
     // 迭代2 LLM 请求 5 个工具、toolStepLimit=1 截断为执行 1 个且成功。
-    // 旧实现按 llmResult.toolCalls.length=5 做 slice(-5)，会把迭代1 的错误 tool 结果吸进
+    // 若按 llmResult.toolCalls.length=5 做 slice(-5) → 会把迭代1 的错误 tool 结果吸进
     // 本轮判定窗口 → 误判 hasRetryableError → 误注入第 2 条 REFLECTION_HINT。
-    // 修复后按实际执行的 effectiveToolCalls.length=1 做 slice(-1)，只看本轮 1 条成功结果 → 仅 1 条 hint。
+    // 按实际执行的 effectiveToolCalls.length=1 做 slice(-1)，只看本轮 1 条成功结果 → 仅 1 条 hint。
     const toolExecutor = vi
       .fn()
       .mockResolvedValueOnce('[ERR:TOOL:FILE_NOT_FOUND] 文件不存在') // 迭代1：retryable 错误
@@ -1690,7 +1689,7 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
       // drain
     }
 
-    // 修复前误注入 → 2 条 hint；修复后只应有迭代1 的 1 条
+    // 若误注入 → 2 条 hint；只应有迭代1 的 1 条
     const hints = countReflectionHints(loop.getMessages());
     expect(hints).toBe(1);
   }, 15000);
@@ -1699,8 +1698,8 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
 describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
   it('多迭代后上下文任务表恒 1 份（替换式注入，防迭代累积刷屏）', async () => {
     // 复现场景：任务表在每次迭代 LLM 调用前注入（loop.ts _prepareContext 末端）。
-    // 旧实现注入前不清旧条 → 一个 turn 内经 N 次迭代会累积 N 份同一任务表 →
-    // 上下文躺着重复指令还浪费 token。修复后注入前先移除旧任务表消息（特征前缀 [任务进度:）。
+    // 若注入前不清旧条 → 一个 turn 内经 N 次迭代会累积 N 份同一任务表 →
+    // 上下文躺着重复指令还浪费 token。契约：注入前先移除旧任务表消息（特征前缀 [任务进度:）。
     const provider = mockMultiTurnProvider([
       // 迭代1：触发一次工具调用（进入第二轮迭代）
       [{ toolCalls: [{ id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
@@ -1712,8 +1711,8 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
       bootstrapMemories: [],
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
-    // 固定任务表内容（与 renderTaskTable 输出一致：首行 [任务进度: 特征 + 无装饰步骤行，
-    // 2026-09-15 去方框收敛后同步——旧模拟用 ┌───┐ 已非真实形态，会误导读者）
+    // 固定任务表内容（与 renderTaskTable 输出一致：首行 [任务进度: 特征 + 无装饰步骤行；
+    // ┌───┐ 旧装饰非真实形态，会误导读者）
     loop.getTaskTable = () =>
       '[任务进度: 1/2 已完成，当前: 步骤A]\n以下为状态/历史信息，非当前指令\n\n1. 步骤A [执行中]\n2. 步骤B [待执行]';
 
@@ -1730,7 +1729,7 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：P1-01 超时-abort 与暂停竞态路由（SSOT 收口 _routePausedIfTimeoutAndPause）
+// 测试：超时-abort 与暂停竞态路由（SSOT 收口 _routePausedIfTimeoutAndPause）
 // 覆盖：超时 abort + 用户已申请暂停 → 路由 paused（续跑）而非 aborted（硬中止）；
 //       超时 abort 但用户未申请暂停 → 仍路由 aborted（不误判为 paused）。
 // 反例即 _routePausedIfTimeoutAndPause 谓词的突变靶标：删 `&& this.pauseRequested`
@@ -1739,10 +1738,10 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
 
 describe('AgentLoop · P1-01 超时-abort 与暂停竞态路由', () => {
   /**
-   * 关键时序约束（对抗式排雷）：
+   * 关键时序约束：
    * _handleInterrupt 在 step 边界会先判 `signal?.aborted`——
    * 若信号在 processUserInput 启动前就 abort，会直接短路返回 aborted，
-   * 永远到不了 _callAndRoute 内的 P1-01 路由。因此信号必须在首步 _handleInterrupt 放行后、
+   * 永远到不了 _callAndRoute 内的竞态路由。因此信号必须在首步 _handleInterrupt 放行后、
    * LLM 调用前（借 thinking chunk）才 abort。thinking 在 _callAndRoute 产出，
    * 早于 callLlmWithRetry → 恰好落在放行之后、LLM 调用之前。
    */
@@ -2004,7 +2003,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
       }
     }
 
-    // 第二轮：新问题，不应被上一轮残留的 interject 污染（修复前首 step 边界会误消费注入）
+    // 第二轮：新问题，不应被上一轮残留的 interject 污染（首 step 边界不得误消费注入）
     for await (const chunk of loop.processUserInput('新问题')) {
       void chunk;
     }
@@ -2354,7 +2353,7 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：预算与软上限防护（2026-09-11 种子审查批次：V1 软上限幂等 / V3 预算触顶终止）
+// 测试：预算与软上限防护（软上限幂等 / 预算触顶终止）
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · 预算与软上限防护（2026-09-11 批次）', () => {
@@ -2441,7 +2440,7 @@ describe('AgentLoop · 预算与软上限防护（2026-09-11 批次）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：执行中插话（单一模式：排队 → step 边界注入，2026-09-04）
+// 测试：执行中插话（单一模式：排队 → step 边界注入）
 // 覆盖：排队不中断 / 连续插话队列 / done 收尾轮插话不丢 / 暂停后插话
 // ═══════════════════════════════════════════════════════════════
 
@@ -3086,7 +3085,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
       expect(qp[0].questions[0]!.question).toBe('结尾想要什么基调？');
       expect(qp[0].questions[0]!.options).toEqual(['欢快', '深沉']);
     }
-    // 工具调用结构完整入史（assistant.tool_calls 含 ask_user，不再「撕掉」）
+    // 工具调用结构完整入史（assistant.tool_calls 含 ask_user，不「撕掉」）
     const messages = loop.getMessages();
     const assistantToolCalls = messages.find((m) => m.role === 'assistant' && m.toolCalls);
     expect(assistantToolCalls?.toolCalls?.[0]?.function.name).toBe('ask_user');
@@ -3167,7 +3166,7 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     expect(toolExecutor).toHaveBeenCalledWith('read_file', '{"path":"a.ts"}');
   });
 
-  // 观察项 1 回归测试：工具轮提问不再「撕工具」
+  // 回归测试：工具轮提问不「撕工具」
   it('ask_user 与普通工具并存 → 整轮挂起：工具调用结构保留入史且不执行（不再撕掉）', async () => {
     const onPendingQuestion = vi.fn();
     const toolExecutor = vi.fn().mockResolvedValue('文件内容');
@@ -3200,13 +3199,13 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     expect(onPendingQuestion).toHaveBeenCalledTimes(1);
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
     expect(toolExecutor).not.toHaveBeenCalled();
-    // 工具调用结构完整入史（含 read_file 与 ask_user 两个调用——修复前这里被「撕掉」只剩问题文本）
+    // 工具调用结构完整入史（含 read_file 与 ask_user 两个调用——若被「撕掉」只剩问题文本）
     const messages = loop.getMessages();
     const assistant = messages.find((m) => m.role === 'assistant' && m.toolCalls);
     const names = assistant?.toolCalls?.map((tc) => tc.function.name);
     expect(names).toContain('read_file');
     expect(names).toContain('ask_user');
-    // 配对不变量（**本条此前只断言 assistant 侧**，真机上 read_file 无配对 tool 消息 → 400）：
+    // 配对不变量（**若只断言 assistant 侧**，真机上 read_file 无配对 tool 消息 → 400）：
     // 挂起态 `read_file` 已拿到「未执行」占位；恢复后整批逐条闭合。
     const suspendedToolMsgs = messages.filter((m) => m.role === 'tool');
     expect(suspendedToolMsgs.map((m) => m.toolCallId)).toEqual(['c1']);
@@ -3731,16 +3730,16 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     expect(toolExecutor).toHaveBeenCalledTimes(6);
     expect(loop.getMessages().some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]'))).toBe(true);
 
-    // 双闸新增断言①：命中后注入「视为未找到更多相关 → 继续下一步」系统提示
+    // 双闸断言①：命中后注入「视为未找到更多相关 → 继续下一步」系统提示
     expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('[SEARCH_LIMIT]'))).toBe(true);
 
-    // 双闸新增断言②：命中前最后一轮（发起第 7 次搜索那轮）工具集仍含 web_search
+    // 双闸断言②：命中前最后一轮（发起第 7 次搜索那轮）工具集仍含 web_search
     expect(toolsPerCall[6]).toContain('web_search');
-    // 双闸新增断言③：命中后下一轮（收尾轮）工具集不再含 web_search —— LLM 物理上无法再发起搜索
+    // 双闸断言③：命中后下一轮（收尾轮）工具集不再含 web_search —— LLM 物理上无法再发起搜索
     const lastTools = toolsPerCall[toolsPerCall.length - 1] ?? [];
     expect(lastTools).not.toContain('web_search');
 
-    // 第三态（2026-09-02）：被拒搜索 tool_result 为 blocked=true + ok=false——非成功非失败，
+    // 第三态：被拒搜索 tool_result 为 blocked=true + ok=false——非成功非失败，
     // UI 显示「已拦截」，成功搜索计数与失败计数均不含该次（不诱导模型重试、不算执行失败）
     const blockedResults = chunks.filter(
       (c): c is Extract<AgentChunk, { type: 'tool_result' }> =>
@@ -3753,8 +3752,8 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     // 第 7 次搜索未计入成功数（成功计数应恰为 6 次执行成功的；被拒那次的 blocked=true 不会误增）
     expect(loop.getMetrics().tools.failureCount).toBe(0);
 
-    // V2 增强断言（2026-09-11）：命中硬上限后 messages[0] 已重建同步剔除 web_search 描述
-    // （此前描述残留到闭环结束，「描述存在但工具不可用」不一致——置位点已补 rebuildSystemMessage）
+    // 增强断言：命中硬上限后 messages[0] 已重建同步剔除 web_search 描述
+    // （若描述残留到闭环结束，「描述存在但工具不可用」不一致——置位点须 rebuildSystemMessage）
     expect(loop.getMessages()[0]!.content).not.toContain('web_search');
   });
 
@@ -4035,11 +4034,10 @@ describe('web_fetch / trace_summary 复用统一防重通道', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：建议B埋点（"模型看到了什么"可追溯）
+// 测试：指纹埋点（"模型看到了什么"可追溯）
 // 覆盖：LLM_CALL span 记录 systemPromptHash /
 //       NOOP tracer 下跳过指纹计算（零开销边界）
-// 注：原「RECALL span 记录 attachedMemory 指纹」覆盖项已随记忆附着可观测性
-//     全链退役删除（2026-09-11，RECALL span 在内核已无 emit 点）。
+// 注：RECALL span 在内核已无 emit 点，故无 attachedMemory 指纹覆盖项。
 // 设计边界：
 //   - 只记录指纹 hash，不记录全量内容——可观测性职责（ITracer），不入 sessionStore
 //   - 宿主未注入 Tracer（NOOP）时不做额外工作
@@ -4696,22 +4694,19 @@ describe('AgentLoop · 首轮全工具 + 记忆回想软引导（T12 砍硬收�
       void _;
     }
 
-    // 有查询意图的首轮也暴露全工具（硬收窄已砍，T12 2026-09-11）
+    // 有查询意图的首轮也暴露全工具（不做硬收窄）
     expect(toolsPerCall[0]).toEqual(['search_memories', 'read_file', 'write_file']);
-    // 记忆回想软引导无条件注入（不再依赖查询意图/首轮状态）
+    // 记忆回想软引导无条件注入（不依赖查询意图/首轮状态）
     expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('记忆回想'))).toBe(true);
   });
 });
 
 // ═══════════════════════════════════════════════════════════════
-// T2 实证：召回记忆端到端注入（已退役）
-// 原「装配注入 → injectRecallAsSystem → 运行帧 LLM 收到记忆块」链路已随自动注入
-// 退役删除（memory-tool-recall-design §4）：记忆检索移交 search_memories 工具，
-// 以下转为退役锚点——LLM 调用帧不再收到「召回的相关记忆」系统消息。
+// 退役锚点：LLM 调用帧不收「召回的相关记忆」系统消息（记忆检索唯一入口 = search_memories 工具）。
 // ═══════════════════════════════════════════════════════════════
 
 // ═══════════════════════════════════════════════════════════════
-// T3 预算预警档：容量到线但摘要层未饱和 → 注入压缩/收敛提示（软上限前一级）
+// 预算预警档：容量到线但摘要层未饱和 → 注入压缩/收敛提示（软上限前一级）
 // ═══════════════════════════════════════════════════════════════
 
 describe('AgentLoop · T3 预算预警档（上下文空间提示）', () => {
@@ -5012,7 +5007,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   });
 
   it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
-    // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点，R1）→ 写侧记录覆盖度摘要。
+    // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点）→ 写侧记录覆盖度摘要。
     // 注：脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**，coverEnd(200)>0——满足
     //   shouldEchoLedgerStub 的「无 limit 整读有覆盖即拦」，故重读被分支②回显摘要而非放行。
     const toolExecutor = vi.fn().mockImplementation(
@@ -5055,9 +5050,9 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   });
 
   it('E’ · 未分段整读（小文件无脚注）也记全覆盖 → 压缩后重读被分支②回显（补 ADR-031 缝）', async () => {
-    // read_file 返回的是**整文件、无分段脚注**（小文件未超单段预算，CTX-1 Step1a「读到末尾零噪音」）。
-    // 修复前 parseReadFileCoverage 返回 undefined → 不记台账 → 分支②永不触发 → 压缩后重读放行（永动机，
-    // 真机 182 次 read_file 复发根因）。修复后：整读也记「全文件覆盖」，压缩后重读仍被分支②回显。
+    // read_file 返回的是**整文件、无分段脚注**（小文件未超单段预算，「读到末尾零噪音」）。
+    // 若 parseReadFileCoverage 返回 undefined → 不记台账 → 分支②永不触发 → 压缩后重读放行（永动机，
+    // 真机 182 次 read_file 复发根因）。契约：整读也记「全文件覆盖」，压缩后重读仍被分支②回显。
     const toolExecutor = vi.fn().mockImplementation(
       (name: string) => Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
     );
@@ -5091,8 +5086,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
   it('F · limit 变体整读（真机逃逸）→ 已覆盖到末尾后，同文件换大 limit 重读被归一拦截', async () => {
     // 真机：宪法等短文件被 LLM 用 limit 500→250→400 反复 offset=1 整读，共 151 次 read_file。
-    // 此前 limit 纳入 DEDUP key → 每次变 limit 判为「不同主体」全放行（漏网）。
-    // 修复：台账判定里「请求覆盖到文件末尾(offset+limit-1>=totalLines) 且 已覆盖到末尾(coverEnd>=totalLines)」
+    // 若 limit 纳入 DEDUP key → 每次变 limit 判为「不同主体」全放行（漏网）。
+    // 契约：台账判定里「请求覆盖到文件末尾(offset+limit-1>=totalLines) 且 已覆盖到末尾(coverEnd>=totalLines)」
     //   → 归一为同参整读 → 分支②拦 + 回显摘要，封死 limit 变体逃逸。
     const toolExecutor = vi.fn().mockImplementation(
       (name: string) => Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
@@ -5224,13 +5219,13 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(
       loop.getMessages().some((m) => m.role === 'tool' && m.content.startsWith('[ALREADY_READ]')),
     ).toBe(false);
-    // 放行同 G2：ledgerStubEchoCount 保持 0（越界续读不触发替身回显）
+    // 同为放行：ledgerStubEchoCount 保持 0（越界续读不触发替身回显）
     expect(loop.getMetrics().tools.ledgerStubEchoCount).toBe(0);
   });
 
   it('H · T1：无区间整读被截断后再次整读 → 分支②回显摘要引导续读（收敛整读重试）', async () => {
     // c1 整读 a.md 被截断（覆盖 1–20 / 共 200，coverEnd<totalLines）；c2 读 b.md 把 a.md 挤出
-    // keepRecent → c3 依旧无 offset/limit 整读 a.md：按 T1 判定，无 limit + 已有覆盖度 → 应回显
+    // keepRecent → c3 依旧无 offset/limit 整读 a.md：按「无 limit + 已有覆盖度」判定 → 应回显
     // 摘要（引导 offset=21 续读），而非放行重试（真机 217 次无区间整读的根因场景）。
     const toolExecutor = vi.fn().mockImplementation(
       (name: string) =>
@@ -5285,7 +5280,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     }
 
     // 前 3 次真失败执行；第 4 次被失败硬闸拦在前置（执行前）→ 仍为 3 次。
-    // 读取失败阈值独立自 GUARD_THRESHOLDS.readFailed（不再借 duplicateCallInterceptor 阈值），故注入拿掉。
+    // 读取失败阈值独立自 GUARD_THRESHOLDS.readFailed（不借 duplicateCallInterceptor 阈值），故注入拿掉。
     expect(toolExecutor).toHaveBeenCalledTimes(3);
     const limited = loop.getMessages().find((m) => m.content.includes('[READ_FAILED_LIMIT]'));
     expect(limited).toBeDefined();
@@ -5434,11 +5429,11 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 测试：互斥双能力位（F0-F4，2026-09-14 阶段0·本地 LLM 前置）
+// 测试：互斥双能力位（本地 LLM 前置）
 // 工具通道确定性选择 + 无工具能力显式回落（可观测、不静默）
 // ═══════════════════════════════════════════════════════════════
 describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStructuredOutput）', () => {
-  // 捕获每次 LLM 调用的 opts（tools / response_format），供 F1/F3 断言
+  // 捕获每次 LLM 调用的 opts（tools / response_format），供断言
   type CapturedChatOptions = Record<string, unknown> & {
     tools?: Array<{ function: { name: string } }>;
     response_format?: unknown;
@@ -5563,7 +5558,7 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
     const systemPrompt = loop.getMessages()[0]!.content;
     expect(systemPrompt).toContain('工具不可用');
     expect(systemPrompt).not.toContain('## 可用工具');
-    // 留下可观测 warn 信号（防止「静默跳过」——F4 防静默语义）
+    // 留下可观测 warn 信号（防静默跳过语义）
     expect(loggerSpy).toHaveBeenCalledWith(
       expect.anything(),
       expect.stringContaining('无工具通道'),

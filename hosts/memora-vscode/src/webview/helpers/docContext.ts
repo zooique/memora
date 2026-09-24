@@ -4,8 +4,7 @@
  * 说明：宿主在 handleSend 将「选中技能正文」与「当前打磨文档」作为上下文注入 chat
  * 输入，内核 appendUser 持久化的 user 消息因此带信封前缀。回放历史时应剥离全部注入
  * 块、只显示用户请求原文，与实时回显（`post({ type: 'user', text: input })` 发裸输入）
- * 保持对称。纯字符串操作、无依赖，可独立测试（阶段 A 对抗评估 P2-1：从 chatPanel.ts
- * 抽出为可测模块，固化 P1-6 修复）。
+ * 保持对称。纯字符串操作、无依赖，可独立测试（从 chatPanel.ts 抽出为可测模块）。
  *
  * 信封结构（写入 buildInjectedContextEnvelope ↔ 剥离 stripInjectedContextPrefix）：
  *   `{块1}\n\n{块2}\n\n用户请求：{input}`；无任何块时**不加信封**，原样为 `{input}`。

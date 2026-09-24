@@ -117,8 +117,8 @@ describe('SeedOrchestrator 最小 turn', () => {
     await new Promise((r) => setTimeout(r, 0));
 
     expect(mocks.roundSummaryGenerator.generate).not.toHaveBeenCalled();
-    // 非正常收场统一收口（SSOT，2026-09-15）：failed 与 aborted 共用 appendInterrupted。
-    // 修复前此处直接 `return streamResult`，轮停在 pending + refCount=0，运行期无人收尾
+    // 非正常收场统一收口（SSOT）：failed 与 aborted 共用 appendInterrupted。
+    // 若此处直接 `return streamResult` → 轮停在 pending + refCount=0，运行期无人收尾
     // → 孤儿轮（宿主须等下次重启才由 upgradeInterruptedRounds 打捞）。
     expect(mocks.history.appendInterrupted).toHaveBeenCalledWith(
       expect.any(String),
@@ -151,7 +151,7 @@ describe('SeedOrchestrator 最小 turn', () => {
     await collectGen(new SeedOrchestrator(deps).runChat('输入', new AbortController().signal));
     await new Promise((r) => setTimeout(r, 0));
 
-    // 非正常收场统一收口（SSOT，2026-09-15）：中断也改走 appendInterrupted（原为 appendAssistant）
+    // 非正常收场统一收口（SSOT）：中断也走 appendInterrupted。
     expect(mocks.history.appendInterrupted).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ content: '部分' }),

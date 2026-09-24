@@ -3,7 +3,7 @@
  * 本地 CI 模拟 — 在不开 GitHub Actions 的前提下等价复现 kernel-ci.yml 的门禁
  *
  * 为什么存在：
- *   `.github/workflows/kernel-ci.yml` 的 push / pull_request 触发自 2026-08-27 起
+ *   `.github/workflows/kernel-ci.yml` 的 push / pull_request 触发
  *   被注释（仅剩 workflow_dispatch），且 `lefthook.yml` 的 pre-push vitest 亦被注释 →
  *   提交时**没有机器强制验证**，「全绿」全靠自报。本脚本把门禁搬回本地，
  *   使「跑没跑、过没过」可复现、可留痕，不依赖 GitHub 是否报错。
@@ -11,12 +11,12 @@
  * 与 CI 的差异（刻意）：
  *   1. CI 只跑内核；本脚本**补跑宿主**（hosts/memora-vscode）——真机行为在宿主侧，
  *      内核全绿而宿主红的情况历史上出现过（宿主软链内核 dist，改内核会影响宿主）。
- *   2. 补跑**覆盖率闸门**（`npm run test:cov`）——`testing_rules.md §3` 要求，但此前
- *      `npm test` 不带 `--coverage`、CI 也不跑，等于闸门从未接上任何会跑的链路。
+ *   2. 补跑**覆盖率闸门**（`npm run test:cov`）——`testing_rules.md` 要求，但
+ *      `npm test` 不带 `--coverage`、CI 也不跑时，闸门等于从未接上任何会跑的链路。
  *      代价约 +40s（覆盖率会重跑一遍测试），可用 `--skip-cov` 跳过。
  *   3. `npm audit` 默认不跑（需网络、且 CI 本身 continue-on-error），用 `--audit` 开启。
  *   4. 默认**不 fail-fast**：全部步骤跑完再汇总，一次拿到完整体检结果。
- *   5. 补跑**宿主构建**（`host:build`）—— CI 与旧版本脚本都不构建宿主，而宿主
+ *   5. 补跑**宿主构建**（`host:build`）—— CI 不构建宿主，而宿主
  *      `dist/extension/extension.js`（内联内核的单文件 bundle）才是用户实际运行的东西。
  *      缺此步 → 「门禁全绿」与「宿主 bundle 陈旧」可以并存。
  *   6. 补跑 **dist 契约**（`verify:dist-contract`）—— 断言宿主 bundle 与内核 dist **同代**。
@@ -33,7 +33,7 @@
  *   node scripts/local-ci.mjs --from=host:test# 从指定步骤开始
  *   node scripts/local-ci.mjs --audit         # 额外跑依赖安全审计（允许失败）
  *
- * 分层（2026-09-16，ADR-032）：
+ * 分层（ADR-032）：
  *   步骤定义**只在本文件**，钩子只是触发器（`lefthook.yml` 传 --preset）。分层判据：
  *   ① 输入可被 staged 集合限定 ② 单步 ≤30s ③ 失败可归因本次改动。
  *   测试（内核 98s / 宿主 119s）与覆盖率（40s+）**不进 fast** —— 根 `vitest.config.ts`

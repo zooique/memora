@@ -256,7 +256,7 @@ function shouldStop(matchCount: number, state: TextScanState, maxResults: number
 /**
  * 递归遍历项目目录，对文本文件做内容匹配（受限：忽略目录 + 扫描文件数上限 + 单文件读取上限）
  *
- * 忽略语义（G5 合并规则）：默认忽略（IGNORED_DIR_NAMES，如 node_modules）与调用方 exclude
+ * 忽略语义（合并规则）：默认忽略（IGNORED_DIR_NAMES，如 node_modules）与调用方 exclude
  * 是独立叠加关系（AND）——默认忽略目录无条件跳过，调用方无法通过 exclude 取消忽略；
  * exclude 只额外过滤（匹配相对路径，支持 ** / * / ?，目录命中即跳整棵子树）。
  *
@@ -308,13 +308,13 @@ async function walkText(
         await walkText(root, abs, re, excludeRe, matches, maxResults, state, cache);
       } else {
         // 读取文本（部分读 + mtime 缓存；stat 已在上方取得 → 大小预检前移，不重复 stat）
-        // 判别联合取代二义的 null：读取失败 ≠ 文件过大，两者分别计数上报（P5：不得静默）
+        // 判别联合取代二义的 null：读取失败 ≠ 文件过大，两者分别计数上报（不得静默）
         const loaded = await readTextCached(abs, s, cache);
         if (loaded.kind === 'unreadable') {
           state.unreadableSkipped++;
           continue;
         }
-        // 超大文件**不再整文件跳过**（F4-full）：搜前 N 字节，但如实标记覆盖不完整
+        // 超大文件**不再整文件跳过**：搜前 N 字节，但如实标记覆盖不完整
         if (loaded.partial) state.partialReadFiles++;
         state.scannedFiles++;
         await matchFileText(rel, re, loaded.content, matches, maxResults, state);
@@ -372,8 +372,8 @@ async function matchFileText(
  * `readTextCached` 的返回：**判别联合**取代二义的 `null`
  *
  * 为什么不是 `{ size, content } | null`：null 同时代表「文件过大」「读取失败」「stat 失败」，
- * 三者的补救动作完全不同（换关键词 / 可重试 / 忽略），压成一个值就只能静默跳过——正是 F4 / P5
- * 的病根（调用方把"这部分没搜"读成"项目里没有"）。
+ * 三者的补救动作完全不同（换关键词 / 可重试 / 忽略），压成一个值就只能静默跳过——这正是
+ * 「不得静默」要防的病根（调用方把"这部分没搜"读成"项目里没有"）。
  */
 type LoadedText =
   | { kind: 'text'; size: number; content: string; partial: boolean }
@@ -382,9 +382,9 @@ type LoadedText =
 /**
  * 读取文件文本（**部分读** + mtime 快照缓存）
  *
- * 大小预检在 `read` **之前**完成（`size` 由调用方已取得的 stat 提供，不再重复 stat）：
- * 超大文件**只读前 MAX_FILE_BYTES 字节**——既真正达成内存保护（不再整文件 `readFile`），
- * 也不再"整文件不可搜"（原病），改为「搜得到前半段 + 如实上报覆盖不完整」。
+ * 大小预检在 `read` **之前**完成（`size` 由调用方已取得的 stat 提供）：
+ * 超大文件**只读前 MAX_FILE_BYTES 字节**——既真正达成内存保护，
+ * 也不再"整文件不可搜"，改为「搜得到前半段 + 如实上报覆盖不完整」。
  *
  * @param abs 文件绝对路径
  * @param s 调用方已取得的 stat 快照（size / mtimeMs；预检前移的前提）

@@ -152,7 +152,7 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
     // 不渲染 assistant 正文块——重放路保持「无正文」而非伪造答复。
     // ⚠️ 过程折叠区依赖 assistant 正文锚点（ensureRoundBlock 的 host=activeAssistantEl 为空即不建），
     //    故悬置轮同时无折叠区/工具行——与旧 replay_events 分支同语义（replay 折叠区附在助手块后，
-    //    无正文块则不建），非 M5b-3 回归。
+    //    无正文块则不建），非重放通道回归。
     const pendingView: RoundView = { ...buildRoundView(), status: 'pending' as const, assistantMessage: undefined };
     mountChatView();
     dispatch(buildReplayTurnUpdate(pendingView));

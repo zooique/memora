@@ -107,7 +107,7 @@ export function shouldEchoLedgerStub(
   const start = subj.offset ?? 1;
   const reqEnd = start + (subj.limit - 1);
   // limit 变体整读：请求覆盖到文件末尾（物理读完整段）→ 此前已覆盖到末尾即视为同参整读 → 拦。
-  // （真机逃逸修复：LLM 改 limit 变体、offset 恒=1，对不同短文件导致重复整读被放行。）
+  // （真机逃逸实证：LLM 改 limit 变体、offset 恒=1，对不同短文件导致重复整读被放行。）
   if (reqEnd >= cov.totalLines) return cov.coverEnd >= cov.totalLines;
   // 区间续读：完全落在已覆盖区间内才算冗余；触及覆盖之外（尚未读到末尾）放行
   if (start < cov.coverStart) return false;

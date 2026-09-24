@@ -1,7 +1,7 @@
 /**
- * configView 测试 — 大模型配置面板渲染分支（ui-redesign.md §6.2 新增）
+ * configView 测试 — 大模型配置面板渲染分支
  *
- * 覆盖本次 UI 重构新增的渲染路径：
+ * 覆盖 UI 重构新增的渲染路径：
  *   - 顶栏统计（statBar：「已配置 N 个 API」）
  *   - 分区标题（group-title：「激活 Provider」/「其他 Provider」）
  *   - 卡片图标（cfg-icon：Provider 首字）
@@ -70,7 +70,7 @@ function mountConfigView(): { postMessage: ReturnType<typeof vi.fn> } {
   return { postMessage };
 }
 
-/** 向 webview 分发一条 cfg_loaded 消息，驱动 render（G5：可选 backgroundName） */
+/** 向 webview 分发一条 cfg_loaded 消息，驱动 render（可选 backgroundName） */
 function dispatchLoaded(providers: unknown[], activeName?: string, backgroundName?: string): void {
   window.dispatchEvent(
     new MessageEvent('message', {
@@ -165,7 +165,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(detail.textContent).toBe('deepseek-model · https://api.example.com/v1');
   });
 
-  // ─── 2026-08-29 per-LLM 上下文上限（contextWindow） ───
+  // ─── per-LLM 上下文上限（contextWindow） ───
 
   it('详情报文：带 contextWindow 时附加「 · N tokens」标注（单位显式，缩写 K）', () => {
     mountConfigView();
@@ -403,7 +403,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
   });
 });
 
-// ─── 本地 LLM 能力声明（阶段1·2026-09-14） ───
+// ─── 本地 LLM 能力声明 ───
 
 describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位）', () => {
   beforeEach(() => {

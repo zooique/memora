@@ -48,7 +48,7 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
   it('strategyKeys 的 MAX_CONTEXT_LIMIT 应与 loader 告警参考上界一致（跨模块护栏 · 2M 镜像对）', () => {
     // 2M 值在 loader.MAX_CONTEXT_WINDOW（provider 窗口告警参考上界）与
     // strategyKeys.MAX_CONTEXT_LIMIT（角色包 contextLimit 声明上界）两处独立声明、注释对冲，
-    // 此前无自动回归——任一被改而另一未同步即静默失配（改一处须同步另一处）。
+    // 若缺自动回归——任一被改而另一未同步即静默失配（改一处须同步另一处）。
     expect(MAX_CONTEXT_LIMIT).toBe(MAX_CONTEXT_WINDOW);
   });
 
@@ -134,22 +134,22 @@ describe('LOOP_CONSTANTS · AgentLoop 引擎层常量', () => {
     // as const 编译期检查，运行时仅验证字段存在
     // 24 个字段：CHARS_PER_TOKEN / CJK_CHARS_PER_TOKEN / MAX_LLM_RETRIES / RETRY_BASE_DELAY_MS /
     // LLM_TIMEOUT_MS / CONTEXT_TOKENS_BUFFER_RATIO / SUMMARY_LAYER_TOKEN_RATIO /
-    // SINGLE_TOOL_RESULT_MAX_TOKENS（单条工具结果上限，2026-09-13 新增——
+    // SINGLE_TOOL_RESULT_MAX_TOKENS（单条工具结果上限——
     // read_file 分段预算与入口关落盘阈值同源）/
-    // TOOL_RESULT_WRAP_OVERHEAD_TOKENS（包裹模板开销预留，2026-09-13 新增——
+    // TOOL_RESULT_WRAP_OVERHEAD_TOKENS（包裹模板开销预留——
     // read_file 分段预算扣除本键，否则自身产出超限反被入口关落盘）/
     // SUMMARY_CACHE_TTL_MSGS /
-    // DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，2026-08-21 新增，
+    // DEFAULT_INTERRUPTED_MARK（流式中断 SSOT 默认文案，
     // loop 与 orchestrator 共用）/
-    // DEFAULT_MAX_ITERATIONS_REACHED_MARK（撞线收尾默认文案，2026-09-19 新增，
+    // DEFAULT_MAX_ITERATIONS_REACHED_MARK（撞线收尾默认文案，
     // 与 DEFAULT_INTERRUPTED_MARK 同族对称，loop 引用）/
-    // CONTEXT_PRESSURE_HINT（T3 预算预警提示，2026-09-01 新增）/
-    // SEARCH_CONVERGENCE_THRESHOLD / SEARCH_CONVERGENCE_HINT / MAX_WEB_SEARCH_CALLS（TS-7 搜索收敛，2026-09-02）/
-    // TOOL_NARRATION_DISCIPLINE（工具导语纪律，2026-09-02 分区式 UI 配套）/
+    // CONTEXT_PRESSURE_HINT（预算预警提示）/
+    // SEARCH_CONVERGENCE_THRESHOLD / SEARCH_CONVERGENCE_HINT / MAX_WEB_SEARCH_CALLS（搜索收敛）/
+    // TOOL_NARRATION_DISCIPLINE（工具导语纪律，分区式 UI 配套）/
     // SUMMARY_MSG_COUNT / SUMMARY_CONTENT_SLICE / SUMMARY_MAX_TOKENS /
     // REASONING_INPUT_CHARS / TASK_TYPE_WINDOW /
-    // MAX_INTEL_PREFIX_LEN（情报区数据上限，2026-09-13 新增——LLM 私有笔记长度栓）/
-    // MEMORY_SEARCH_TIMEOUT_MS（search_memories 响应性护栏，2026-09-13 新增——embed 挂起降级）
+    // MAX_INTEL_PREFIX_LEN（情报区数据上限——LLM 私有笔记长度栓）/
+    // MEMORY_SEARCH_TIMEOUT_MS（search_memories 响应性护栏——embed 挂起降级）
     expect(Object.keys(LOOP_CONSTANTS)).toHaveLength(24);
   });
 

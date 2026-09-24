@@ -31,9 +31,9 @@ export interface ICompactionStrategy {
  */
 export class ResultReplacementStrategy implements ICompactionStrategy {
   private readonly keepRecent: number;
-  /** P1 摘要替代回调：给定 read_file 的 path，返回应写入占位的台账摘要；无摘要返回 undefined → 回退空占位。
+  /** 摘要替代回调：给定 read_file 的 path，返回应写入占位的台账摘要；无摘要返回 undefined → 回退空占位。
    *  由 loop 装配注入（取 `FileExposureLedger` 的覆盖度摘要），压缩时把 read_file 结果换成它**自己的**摘要，
-   *  而非空 `[Previous: used read_file]`（§方案 P1：摘要替代，非空占位；摘要只产一次、三处同源）。 */
+   *  而非空 `[Previous: used read_file]`（摘要替代，非空占位；摘要只产一次、三处同源）。 */
   private readonly readFileReplacement?: (path: string) => string | undefined;
 
   /**
@@ -74,7 +74,7 @@ export class ResultReplacementStrategy implements ICompactionStrategy {
     }
 
     // 2. 构建工具调用 ID -> 工具名称 / 参数的映射
-    //    从 assistant 消息中的 toolCalls 提取（参数用于 P1：定位 read_file 的 path 以取台账摘要）
+    //    从 assistant 消息中的 toolCalls 提取（参数用于定位 read_file 的 path 以取台账摘要）
     const toolNameMap = new Map<string, string>();
     const toolArgsMap = new Map<string, string>();
     for (const msg of messages) {
@@ -92,7 +92,7 @@ export class ResultReplacementStrategy implements ICompactionStrategy {
     // 4. 执行替换
     for (const resultMsg of toReplace) {
       const toolName = toolNameMap.get(resultMsg.toolCallId!) ?? 'unknown';
-      // P1 摘要替代：read_file 且能定位 path 且台账有摘要 → 用摘要（非空占位）；否则回退 [Previous: used x]
+      // 摘要替代：read_file 且能定位 path 且台账有摘要 → 用摘要（非空占位）；否则回退 [Previous: used x]
       let replacement: string | undefined;
       if (toolName === 'read_file' && this.readFileReplacement) {
         const path = readFilePathFromArgs(toolArgsMap.get(resultMsg.toolCallId!));
@@ -104,7 +104,7 @@ export class ResultReplacementStrategy implements ICompactionStrategy {
   }
 }
 
-/** 从 read_file 工具调用参数里提取 path（供 P1 摘要替代定位台账摘要）；非 JSON / 无 path → undefined */
+/** 从 read_file 工具调用参数里提取 path（供摘要替代定位台账摘要）；非 JSON / 无 path → undefined */
 function readFilePathFromArgs(argsJson: string | undefined): string | undefined {
   if (argsJson === undefined) return undefined;
   try {

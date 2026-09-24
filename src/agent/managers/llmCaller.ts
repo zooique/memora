@@ -77,7 +77,7 @@ export interface LlmCallResult {
   toolCalls: Message['toolCalls'];
   aborted: boolean;
   /**
-   * P2 文本通道剥离缓冲：工具轮叙述文本（本闭环已执行过工具后的整条消息文本，
+   * 文本通道剥离缓冲：工具轮叙述文本（本闭环已执行过工具后的整条消息文本，
    * 或收到 toolCalls 信号后后续/同条的 content）累积于此。结果路由据此发射
    * narrate 事件，不进回答正文；纯文本闭环（无工具史）正文保持按流式实时 yield。
    */
@@ -273,7 +273,7 @@ export class LlmCaller {
           }
           if (chunk.content) {
             fullContent += chunk.content;
-            // P2 文本通道剥离：① 工具闭环内消息整段缓冲（deferTextToMessageEnd）；
+            // 文本通道剥离：① 工具闭环内消息整段缓冲（deferTextToMessageEnd）；
             // ② 工具轮（已见 toolCalls 信号或同条携带）的文本归叙述缓冲，不进回答正文。
             // ③ 纯文本闭环保持流式实时 yield（stage 供宿主自审查分段）。
             if (deferTextToMessageEnd || isToolCallTurn || chunk.toolCalls?.length) {

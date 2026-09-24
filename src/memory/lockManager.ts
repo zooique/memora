@@ -5,7 +5,7 @@
  *   - 获取锁（写入 PID + 时间戳 + 主机名）
  *   - 释放锁（删除锁文件）
  *   - 残留锁检测（进程存活判断 + 自动清理）
- *   - 锁文件结构校验（QC-24 类型守卫，替代 `as` 类型断言）
+ *   - 锁文件结构校验（类型守卫，替代 `as` 类型断言）
  *
  * 设计原则：
  *   - 跨平台兼容（process.kill(pid, 0) 在 POSIX + Windows 均有效）
@@ -17,7 +17,7 @@
  *   - 关闭/切换项目时删除 .lock 文件
  *   - 检测到残留锁时：判断进程是否存活 → 存活则警告 / 已死则清理
  *
- * 与 ProjectManager 的分工（1.0 接口稳定化）：
+ * 与 ProjectManager 的分工：
  *   - LockManager：锁文件获取/释放 + 残留锁检测/清理
  *   - ProjectManager：项目生命周期编排（注册 + 资源加载 + 上下文构建）
  */
@@ -43,7 +43,7 @@ interface LockInfo {
   hostname: string;
 }
 
-// ─── 类型守卫（QC-24，对不可信磁盘 JSON 运行时校验） ─────
+// ─── 类型守卫（对不可信磁盘 JSON 运行时校验） ─────
 
 /**
  * 判断值是否为 LockInfo（锁文件结构）
@@ -94,7 +94,7 @@ export class LockManager {
     try {
       // 尝试读取锁文件（存在时）
       const raw = await readFile(lockPath, 'utf-8');
-      // QC-24 使用类型守卫校验 JSON.parse 结果，替代 `as LockInfo` 类型断言
+      // 使用类型守卫校验 JSON.parse 结果，替代 `as LockInfo` 类型断言
       const parsed: unknown = JSON.parse(raw);
       if (isLockInfo(parsed)) {
         // 合法锁文件：检查进程是否存活

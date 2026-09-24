@@ -5,7 +5,7 @@
  *   「宿主 bundle 是否与内核 dist 同代」这一判据需要**两处**计算同一个量——
  *   ① 宿主构建期写入构建戳（`hosts/memora-vscode/esbuild.config.mjs`）
  *   ② 门禁校验期比对当前值（`scripts/verify-dist-contract.mjs`）
- *   若两处各自实现，即构成「同语义多实现」（legacy-contract-audit-rules §3「重复实现」），
+ *   若两处各自实现，即构成「同语义多实现」（legacy-contract-audit-rules「重复实现」），
  *   一处改口径就会静默产生永久假绿/假红。故收敛到本文件，两处只 import。
  *
  * 口径（改口径＝改判据，须带观测与退出条件）：

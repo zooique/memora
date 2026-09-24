@@ -3,7 +3,7 @@ import { toRoundView, deriveTurnState, mergeLiveRound, type LiveRoundState } fro
 import type { RoundView } from '../protocol.js';
 
 /**
- * turn 投影层单测（M3a，2026-09-23）
+ * turn 投影层单测
  *
  * **变异验证锚点**：本测试存在的意义是让「状态折叠判据」不可被悄悄改坏——
  *  - 删掉 `deriveTurnState` 的 ask 分支 → 「ask 挂起」用例转红（退化成 pause）
@@ -121,7 +121,7 @@ describe('deriveTurnState', () => {
 });
 
 /**
- * mergeLiveRound（M3b-2a，2026-09-23）：运行时当前轮并入落盘历史
+ * mergeLiveRound：运行时当前轮并入落盘历史
  *
  * **变异验证锚点**（每条用例都对应一条可被改坏的判据）：
  *  - 删 `if (!userMessage) return history` → 「两边都拿不到」转红（会投出缺开轮输入的轮）

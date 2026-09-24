@@ -332,8 +332,8 @@ export class BuiltinToolHandlers {
   }
 
   /**
-   * P2 失败即给证据：read_file 目标不存在（ENOENT）时，返回其**同级目录实际条目**的紧凑清单，
-   * 让模型自查真实文件名（优于单纯拒绝；配合 P0-2 失败硬闸在首次失败就给路，比硬拦更止妖）。
+   * 失败即给证据：read_file 目标不存在（ENOENT）时，返回其**同级目录实际条目**的紧凑清单，
+   * 让模型自查真实文件名（优于单纯拒绝；配合失败硬闸在首次失败就给路，比硬拦更止妖）。
    * 父目录不可读 / 无可见条目 → 返回空串（不掩盖原始错误）。条目经 shouldIgnore 过滤，join 拼接。
    */
   private async siblingDirHint(filePath: string): Promise<string> {
@@ -985,7 +985,7 @@ export class BuiltinToolHandlers {
     // memory-tool-recall-design §3.3：注入 MemoryInspector 后走纯关键词搜索（searchByKeyword
     // = 纯关键词 + superseded 过滤 + accessedAt/溯源揭示），否则回退旧关键词 memoryIndex.search。
     // 包进带超时的函数：底部 search_memories 是有用户感知的读工具，语义 embed 是远程调用，
-    // 响应性护栏 MEMORY_SEARCH_TIMEOUT_MS（5s）超时降级为提示，不挂死工具调用（排雷见 constants.ts）。
+    // 响应性护栏 MEMORY_SEARCH_TIMEOUT_MS（5s）超时降级为提示，不挂死工具调用（见 constants.ts）。
     const hits: AgentSearchHit[] = await this.withMemorySearchTimeout(async () =>
       this.memoryInspector
         ? await this.memoryInspector.searchByKeyword(query, limit, excludedRoundIds)
@@ -1133,7 +1133,7 @@ export class BuiltinToolHandlers {
       // 否则回退为摘要文本（保证工具始终可用、不因缺注入而报错）。
       const raw = this.loadRawRoundMessages(sessionId, roundId);
       if (raw) {
-        // 关键修复：原始对话文本注入前必须过 sanitizeExternalText，去控制字符 + 长度上限。
+        // 关键约束：原始对话文本注入前必须过 sanitizeExternalText，去控制字符 + 长度上限。
         // 与 toolExecutor 主路径净化一致，防止用户历史中的控制字符/隐藏指令直通 LLM 上下文。
         const lines = raw.messages
           .map((m) => `[${m.role}] ${sanitizeExternalText(m.content, TRACE_MESSAGE_CHAR_LIMIT)}`)
@@ -1204,7 +1204,7 @@ export class BuiltinToolHandlers {
    * list_sessions：列出历史会话**路标**（会话级摘要），供 LLM 粗定位后再用 trace_summary 下钻。
    *
    * 会话级摘要是「路标」而非记忆——存于 SessionMeta（summary/keyTopics），不进记忆召回池
-   * （见 R5：会话级路标不进记忆库）。本工具是「粗定位 → 细取证」闭环的第一环：
+   * （会话级路标不进记忆库）。本工具是「粗定位 → 细取证」闭环的第一环：
    * 返回最近 N 个会话的路标，LLM 据此挑目标，再用 trace_summary(sessionId) 取该会话轮次摘要。
    *
    * 路标滞后说明：SessionArchiver 在**会话切换前**触发，故当前会话的摘要可能落后于最新对话。

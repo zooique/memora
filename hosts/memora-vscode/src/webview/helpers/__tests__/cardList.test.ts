@@ -1,5 +1,5 @@
 /**
- * cardList 纯函数单测（SSOT 收敛 2026-08-17：configView / rolesView 共享的列表级 DOM 构建）
+ * cardList 纯函数单测（SSOT 收敛：configView / rolesView 共享的列表级 DOM 构建）
  *
  * createGroupTitle / createEmptyState 均以 jsdom document 注入调用，
  * 断言 DOM 结构与 textContent 文案（textContent 赋值防注入，不拼 innerHTML）。

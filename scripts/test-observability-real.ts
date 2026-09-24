@@ -1,5 +1,5 @@
 /**
- * P1 · 生产级可观测性体系 —— 真实 LLM 端到端验证
+ * 生产级可观测性体系 —— 真实 LLM 端到端验证
  *
  * 用法：
  *   npx tsx scripts/test-observability-real.ts

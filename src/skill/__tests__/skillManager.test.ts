@@ -513,7 +513,7 @@ description: 联网搜索资料
       await skillManager.load();
 
       // getter 返回浅拷贝，篡改快照不得改变内部真理源。
-      // （此前 getter 返回 this.items 本体，本测试被弱化为「长度稳定」的同义反复）
+      // （若 getter 返回 this.items 本体 → 本测试弱化为「长度稳定」的同义反复）
       const snapshot = skillManager.list;
       snapshot.push({
         name: '越权注入',
@@ -574,7 +574,7 @@ description: 联网搜索资料
     });
 
     it('文件夹形态（SKILL.md）扫描 references/ 且 read_resource 可读（B1 兼容主流）', async () => {
-      // B1：references/ 是 TRAE / Agent Skills 主流辅助文档目录，纳入 L3 资源索引
+      // references/ 是 TRAE / Agent Skills 主流辅助文档目录，纳入 L3 资源索引
       const skillDir = join(skillsDir, 'tree');
       mkdirSync(join(skillDir, 'references'), { recursive: true });
       writeFileSync(join(skillDir, 'SKILL.md'), '---\nname: tree\n---\n# Tree 技能', 'utf-8');
@@ -884,7 +884,7 @@ describe('SkillManager · 补充分支路径', () => {
       expect(manager.listAvailable().map((s) => s.name)).toEqual(['a']);
       // 同源断言：L1 枚举与 listAvailable 看到同一集合。
       // `list_skills` 工具侧（assembler 注入回调）亦调用本方法 ⇒ 两通道判据不分叉
-      //（此前工具侧只过滤 description、漏掉禁用过滤，注释却自称「必须一致」）
+      //（若工具侧只过滤 description、漏掉禁用过滤——注释却自称「必须一致」）
       const l1 = manager.buildSkillList();
       expect(l1).toContain('- a：');
       expect(l1).not.toMatch(/\bb\b/);

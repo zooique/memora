@@ -225,7 +225,7 @@ export const skillsStyles = `
     outline-offset: 2px;
   }
 
-  /* 角色包技能的「随角色启停」说明：角色包技能对禁用清单免疫（定案），
+  /* 角色包技能的「随角色启停」说明：角色包技能对禁用清单免疫，
      卡片不渲染开关、以弱化说明文字代替——语义 = 与角色融为一体、随角色启停 */
   #skills-root .skill-rolepack-hint {
     font-size: var(--font-xs, 10px);

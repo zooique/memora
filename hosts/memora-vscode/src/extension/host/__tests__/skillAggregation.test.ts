@@ -1,5 +1,5 @@
 /**
- * 宿主技能三源聚合单元测试（SSOT 收紧，2026-08-25）
+ * 宿主技能三源聚合单元测试（SSOT 收紧）
  *
  * 锁住三类不变量，防「内置显示为用户」类来源错标复发：
  *   1. 来源判定：filePath 前缀 → builtin/user；rolePackManager → rolepack
@@ -24,7 +24,7 @@ function makeAgent(opts: {
   roleContent?: { [name: string]: string };
   /** 全局技能正文（真实 SkillEntry 恒有 content；缺省给非空值，防「假空」掩盖解析分支） */
   globalContent?: { [name: string]: string };
-  /** 内核**实际生效**的禁用集（S4）：listVisibleSkills 据此标注 disabled，不自读配置副本 */
+  /** 内核**实际生效**的禁用集：listVisibleSkills 据此标注 disabled，不自读配置副本 */
   disabledSkills?: string[];
 }): Agent {
   return {

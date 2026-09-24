@@ -38,7 +38,7 @@ import type { ProcessEvent } from '@zooique/memora';
 // 渲染语义对齐 chatView.ts renderReplayRound（见 protocol.ts turn_update 注释）。
 
 /**
- * 构造单轮 RoundView 工厂（M5b-3 重放断言驱动）
+ * 构造单轮 RoundView 工厂（重放断言驱动）
  *
  * 各段未显式声明时走空态（无用户输入 / 无正文 / 无过程事件），渲染侧按内容缺省跳过。
  */
@@ -323,14 +323,14 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'paused' });
     // ③ 暂停态补充输入（宿主 handleSend paused 分支：post user(kind=supplement) + resumeExecution(input)）
     dispatch({ type: 'user', text: '补充：成本标准改 <¥0.5', ts: '2026-09-07T11:00:00.000Z', kind: 'supplement' });
-    // ④ resume 重发 meta——方案 C（2026-09-15）交互 resume 一律原位续写同回合：pausedResume 判定优先
-    //   （移除旧 `!interactiveRowInserted` 门控），补充行作 turn 内过程、不进续接骨架分块
+    // ④ resume 重发 meta——交互 resume 一律原位续写同回合：pausedResume 判定优先
+    //   （无 `!interactiveRowInserted` 门控），补充行作 turn 内过程、不进续接骨架分块
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ⑤ resume 后正文 chunk（同 roundId）：原位续写原暂停块（单一折叠块语义，与重放整 round 折叠同构）
     dispatch({ type: 'chunk', content: '已按补充调整成本标准', roundId: 'r1' });
     // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
     dispatch({ type: 'done', roundId: 'r1' });
-    // 方案 C（2026-09-15）：补充行作 turn 内过程随折叠块折入，正文原位续写合并为单块
+    // 补充行作 turn 内过程随折叠块折入，正文原位续写合并为单块
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('暂停前正文已按补充调整成本标准');
@@ -352,12 +352,12 @@ describe('chatView clear_ok 消息区清理', () => {
     // ④ resume 流启动即失败（宿主 runFlow 同步抛错路径：error 在 meta 前到达）——
     //    error 属可恢复中断
     dispatch({ type: 'error', message: 'boom' });
-    // ⑤ 用户再次继续 → resume meta：方案 C 无分块门控 → pausedResume 原位续写原暂停块
+    // ⑤ 用户再次继续 → resume meta：无分块门控 → pausedResume 原位续写原暂停块
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '错误后续写', roundId: 'r1' });
     // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
     dispatch({ type: 'done', roundId: 'r1' });
-    // 方案 C（2026-09-15）：块1 被原位续写合并（不再分第 2 块）
+    // 块1 被原位续写合并
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants.length).toBe(1);
     expect(collectAllBodyText(assistants[0])).toBe('前序正文错误后续写');
@@ -375,7 +375,7 @@ describe('chatView clear_ok 消息区清理', () => {
     // ② 暂停 → 补充输入（置 resumePending）
     dispatch({ type: 'paused' });
     dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:01:00.000Z', kind: 'supplement' });
-    // ③ resume meta：方案 C pausedResume 优先原位续写（消费 resumePending，不建续接骨架）
+    // ③ resume meta：pausedResume 优先原位续写（消费 resumePending，不建续接骨架）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'chunk', content: '续写', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
@@ -401,15 +401,15 @@ describe('chatView clear_ok 消息区清理', () => {
     dispatch({ type: 'chunk', content: '提问前正文', roundId: 'r1' });
     // ② LLM 调用 ask_user 暂停 → 提问块（ask-inline）挂出（消息流渲染，此处省略交互 DOM）
     dispatch({ type: 'paused' });
-    // ③ 用户回答：宿主 post user(kind=question-answer)（G26 运行时无 question 回顾行，仅回答行）
+    // ③ 用户回答：宿主 post user(kind=question-answer)（运行时无 question 回顾行，仅回答行）
     dispatch({ type: 'user', text: '选方案 A', ts: '2026-09-07T12:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
-    // ④ resume 重发 meta——方案 C：pausedResume 优先原位续写（不移除 QA 锚、不开续接骨架分块）
+    // ④ resume 重发 meta——pausedResume 优先原位续写（不移除 QA 锚、不开续接骨架分块）
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     // ⑤ resume 后正文 chunk（同 roundId）：原位续写原暂停块（单一折叠块语义，与重放整 round 折叠同构）
     dispatch({ type: 'chunk', content: '已按方案 A 执行完毕', roundId: 'r1' });
     // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
     dispatch({ type: 'done', roundId: 'r1' });
-    // 方案 C（2026-09-15）：单一连续正文块 + QA 行作 turn 内过程随折叠块折入（不分段）
+    // 单一连续正文块 + QA 行作 turn 内过程随折叠块折入（不分段）
     const assistants = messages.querySelectorAll('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('提问前正文已按方案 A 执行完毕');
@@ -561,7 +561,7 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
     const emptyState = document.getElementById('emptyState') as HTMLElement;
 
-    // M5b-3：会话重放由单条 turn_update(replay:true) 承载——rounds 内同时含用户输入 + 最终回答
+    // 会话重放由单条 turn_update(replay:true) 承载——rounds 内同时含用户输入 + 最终回答
     dispatchReplay(
       makeRound({
         id: 'round-yesterday',
@@ -851,7 +851,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     // thinking：applyIcon('pause') 显式注入（图标保持暂停语义）
     expect(icon.dataset.icon).toBe('pause');
     expect(icon.innerHTML).toContain('x="5" y="3.5" width="2"');
-    // paused：applyIcon('play') 运行时切换 → innerHTML 实时更新为三角（原 bug：仅改 data-icon 不重注入 SVG）
+    // paused：applyIcon('play') 运行时切换 → innerHTML 实时更新为三角（bug 根因：仅改 data-icon 不重注入 SVG）
     dispatchTurn({ phase: 'waiting', reason: 'pause' });
     expect(icon.dataset.icon).toBe('play');
     expect(icon.innerHTML).toContain('M5 3.5l7 4.5-7 4.5z');
@@ -861,7 +861,7 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     mountChatView();
     const send = document.getElementById('send') as HTMLButtonElement;
     dispatchTurn({ phase: 'running' });
-    // 流尾 → turn_update(settled)：发送按钮即时恢复（R-2b-1 行为变更：不再等 status done）
+    // 流尾 → turn_update(settled)：发送按钮即时恢复（不等 status done）
     dispatchTurn({ phase: 'settled', roundId: 'round-1', status: 'complete' });
     expect(send.classList.contains('loading')).toBe(false);
     expect(send.title).toBe('发送 (Enter)');
@@ -1027,7 +1027,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     dispatchTurn({ phase: 'waiting', reason: 'ask' });
     input.value = '';
     input.dispatchEvent(new Event('input'));
-    // ask 相位 resume 路由只收 pause → 空输入纯续跑是死键，按钮不渲染（M9 锚点）
+    // ask 相位 resume 路由只收 pause → 空输入纯续跑是死键，按钮不渲染（锚点）
     expect(pauseBtn.hidden).toBe(true);
     expect(send.classList.contains('loading')).toBe(true);
   });
@@ -1101,23 +1101,23 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(pauseBtn.hidden).toBe(true);
   });
 
-  // ─── pending-queue-bar DOM 渲染（M5b-1：pendingQueue 并入 turn_update 单通道） ───
+  // ─── pending-queue-bar DOM 渲染（pendingQueue 并入 turn_update 单通道） ───
 
   it('turn_update.pendingQueue → 懒创建 .pending-queue-bar 并渲染全部条目', () => {
     mountChatView();
-    // M5b-1：待发送区渲染真源由 turn_update.pendingQueue 承载（pending_queue_update 已删）
+    // 待发送区渲染真源由 turn_update.pendingQueue 承载（pending_queue_update 已删）
     dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['我插一句话', '再来一句'] });
     const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
     expect(bar).not.toBeNull();
     expect(bar.hidden).toBe(false);
-    // Phase 4 收敛：列表模式渲染全部条目 + 序号 + 计数
+    // 列表模式渲染全部条目 + 序号 + 计数
     const items = bar.querySelectorAll('.pending-queue-bar__item');
     expect(items.length).toBe(2);
     expect(items[0]!.querySelector('.pending-queue-bar__num')!.textContent).toBe('1.');
     expect(items[0]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('我插一句话');
     expect(items[1]!.querySelector('.pending-queue-bar__num')!.textContent).toBe('2.');
     expect(items[1]!.querySelector('.pending-queue-bar__text')!.textContent).toBe('再来一句');
-    // 2026-09-07 UI 打磨：计数改圆形徽章（badge）
+    // 计数为圆形徽章（badge）
     expect(bar.querySelector('.pending-queue-bar__badge')!.textContent).toBe('2');
     expect(bar.querySelector('.pending-queue-bar__label')!.textContent).toBe('待发送');
     // 清空 → 隐藏
@@ -1182,8 +1182,7 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     vi.restoreAllMocks();
   });
 
-  // handoff chunk 机制已在 commit 180b5fdc 删除（handoff → 消息已并入 done chunk），
-  // chatView.ts 无 type: 'handoff' handler，以下 2 个死测试删除（2026-09-05，Phase 4 测试债清理 T3a）
+  // chatView.ts 无 type: 'handoff' handler（handoff → 消息已并入 done chunk）
 
   it('retry 渲染「LLM 重试 n/m」低扰提示条', () => {
     mountChatView();
@@ -1350,7 +1349,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('重放整批渲染与 process_event 同路径（重放 = 运行时同一渲染函数）', () => {
     mountChatView();
-    // M5b-3：重放整批 processEvents 由单条 turn_update(replay:true) 承载（与运行时 process_event 同渲染函数）
+    // 重放整批 processEvents 由单条 turn_update(replay:true) 承载（与运行时 process_event 同渲染函数）
     // 附 assistantMessage（复刻原 chunk『历史回答』语义）：round-block 需挂接 assistant 正文块才可见
     dispatchReplay(
       makeRound({
@@ -1385,7 +1384,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 中断轮：独立 round（status=interrupted，无 assistant 正文块），单条 turn_update 承载
     dispatchReplay(makeRound({ id: 'r2', status: 'interrupted', processEvents: events }));
 
-    // 孤儿折叠宿主（2026-09-19 形态定案：与 done 轮同构——过程折叠 + 停止行平铺，非孤儿平铺）
+    // 孤儿折叠宿主（形态定案：与 done 轮同构——过程折叠 + 停止行平铺，非孤儿平铺）
     const host = document.querySelector('.msg.is-interrupted-host') as HTMLElement;
     expect(host).not.toBeNull();
     expect(host.dataset.roundId).toBe('r2');
@@ -1409,7 +1408,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('中断轮重放：error 事件 → §已停止行显示失败原因（LEG-1 缺口②：失败原因重放可见）', () => {
     mountChatView();
     // 真机形态：SSE 停摆看门狗抛 TimeoutError → agent.ts catch → yield error(category:'timeout')
-    // → orchestrator.act 收为 interrupted 轮；此前该 chunk 不落 processEvents → 重放只剩 generic
+    // → orchestrator.act 收为 interrupted 轮；若该 chunk 不落 processEvents → 重放只剩 generic
     const events = [
       { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
       { type: 'thought', seq: 2, ts: '', payload: { content: '正在读取文件' } },
@@ -1536,7 +1535,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('阶段二步级折叠：重放 processEvents 含 plan_item_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
     mountChatView();
-    // M5b-3：整批 processEvents（含 plan_item_boundary）由单条 turn_update 承载
+    // 整批 processEvents（含 plan_item_boundary）由单条 turn_update 承载
     // 附 assistantMessage（复刻原 chunk『任务开始』语义）：round-block 需挂接 assistant 正文块才可见
     dispatchReplay(
       makeRound({
@@ -1652,7 +1651,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('重放路径：processEvents（含 meta）+ 最终回答只产生 1 个 assistant 块（重启不重复块）', () => {
     mountChatView();
-    // M5b-3：重放整批 processEvents + 最终回答由单条 turn_update 承载（不再有独立 assistant 消息风暴）
+    // 重放整批 processEvents + 最终回答由单条 turn_update 承载
     dispatchReplay(
       makeRound({
         id: 'r:100',
@@ -1682,7 +1681,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('重放路径不会创建流式骨架引用（flowShellEl 保持 null，无残留副作用）', () => {
     mountChatView();
-    // M5b-3：重放态 processEvents（含 meta）+ 正文由单条 turn_update 承载（不建流式骨架）
+    // 重放态 processEvents（含 meta）+ 正文由单条 turn_update 承载（不建流式骨架）
     dispatchReplay(
       makeRound({
         id: 'r:200',
@@ -1704,7 +1703,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('两轮带过程事件的重放：折叠区各归其轮（第二轮折叠不串到第一轮顶部，2026-09-07 回归）', () => {
     mountChatView();
     // 场景：用户只测 2 个问答后重启，历史重放两轮都带过程事件
-    // M5b-3：两轮整体由单条 turn_update(replay:true) 的 rounds 数组整批承载，各轮折叠各归其块
+    // 两轮整体由单条 turn_update(replay:true) 的 rounds 数组整批承载，各轮折叠各归其块
     dispatchReplayMany([
       makeRound({
         id: 'r:1',
@@ -1811,7 +1810,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
     // 折叠块存在（任务过程收起）
     expect(document.querySelector('.round-block')).not.toBeNull();
-    // 常驻条已隐藏（不再滞留底部/顶部）；内容区零卡片（完成快照已删，过程全在折叠块）
+    // 常驻条已隐藏；内容区零卡片（过程全在折叠块）
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
     // 光标消失
@@ -1823,7 +1822,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 真实 round 回放回归护栏（2026-09-16 用户实测三个 UI 现象）
+// 真实 round 回放回归护栏（用户实测三个 UI 现象）
 //
 // 数据来源：round-1789565571934 的真实 processEvents（1356 条 / seq 3..1358），
 // 经 scripts 层压缩为 fixtures/realRound-1789565571934.ts，事件**类型相对顺序**、
@@ -1871,17 +1870,17 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     expect(document.querySelector('.plan-inline.plan-inline-done')).toBeNull();
   });
 
-  // 超时放宽至 30s（2026-09-19）：R1-R4 是全量真实轮重放（fixture 数千事件），
-  // 单跑 ~5.5s；pre-push full 档并发（fileParallelism=true）下被挤爆 15s → 历史 flake
+  // 超时放宽至 30s：R1-R4 是全量真实轮重放（fixture 数千事件），
+  // 单跑 ~5.5s；pre-push full 档并发（fileParallelism=true）下被挤爆 15s → flake
   // （kernel:test/kernel:coverage 命中 R2/R3/R4 超时）。放宽不改断言，只消除并发挤占假红。
   it('R2 现象2：真实事件序走到 metrics（未发 done = 合法在途/暂停态）后光标保留 —— 语义快照（非缺陷）', () => {
     replayRealRound(false);
-    // 语义快照（2026-09-17 QA 复验定论：**非缺陷**）：done 是宿主 post-message、不落盘为 ProcessEvent，
+    // 语义快照（**非缺陷**）：done 是宿主 post-message、不落盘为 ProcessEvent，
     // 故 fixtures 末尾无 done 纯属持久化产物。真实 round 的 status=complete 证明宿主正常完成路径**必发 done**
     // （宿主发 done 的路径，见 chatPanel 的 finalizeStreaming）。因此「metrics 之后无 done」只会来自暂停
 // （pausedOnPurpose，见 chatPanel 的 pause 分支）
     // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body.is-streaming 保留，是正确语义（轮次未收口，可 resume）。
-    // 用户实测的「光标不消失」根因是 F2（finalizeRound 抛 NotFoundError 打断收口），与 done 是否发送无关。
+    // 用户实测的「光标不消失」根因是 finalizeRound 抛 NotFoundError 打断收口，与 done 是否发送无关。
     expect(document.querySelector('.msg-body.is-streaming')).not.toBeNull();
   }, 30000);
 
@@ -1893,7 +1892,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
   }, 30000);
 
   it('R4 对照：补发 done 后三现象全部收口（round-block 建立 / 过程折叠 / 光标消失）—— F2 修复态', () => {
-    // 根因护栏（2026-09-17 QA 补强，变异验证加固）：onMessage 的兜底 console.error 是本轮
+    // 根因护栏（变异验证加固）：onMessage 的兜底 console.error 是本轮
     // 唯一异常出口。若 insertPlanItemInOrder 的「直接子节点」限定被回退，异常会在此被观测到。
     // ⚠️ 必要性：下面三条「收口」断言可被 finalizeRound 的 finally **单独**满足——
     // 实测回退 :scope > 限定后，flowEl/光标仍被 finally 收掉，三条断言全绿（假绿）。
@@ -1902,16 +1901,16 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 与 R2/R3 事件序列完全一致（同一 fixture、同一 withStreaming），唯一变量是末尾补发 done
     replayRealRound(true);
     // 兜底路径未被触发 ⇒ 异常已根治，而非被 onMessage 的 try/catch 吞掉。
-    // 判据**不依赖 catch 文案**（2026-09-17 收口 2）：旧写法按 `[chatView]` 前缀 filter 后再断言
+    // 判据**不依赖 catch 文案**：旧写法按 `[chatView]` 前缀 filter 后再断言
     // 长度 —— 一旦前缀被改或换到 logger 模块，filter 恒返回空数组 → 断言依然绿 → 又变回假绿，
-    // 且这次无人察觉。故直接对全部 console.error 调用断言（方案 A）。
+    // 且无人察觉。故直接对全部 console.error 调用断言。
     // 实测该用例路径内 console.error 唯一来源 = chatView 的 onMessage 兜底分支；webview 侧
     // 其余异常出口是 chatView 的 console.warn 分支，不在本判据范围内。
     expect(errorSpy).not.toHaveBeenCalled();
     // done → finalizeRound 全量重建 round-block 折叠块（任务过程收进折叠区）
     expect(document.querySelector('.round-block')).not.toBeNull();
-    // F2 修复态：finalizeRound 不再被 insertPlanItemInOrder 的 NotFoundError 打断 →
-    // 运行时平铺容器 .process-flow 被移除（原来因异常跳过 flowEl.remove() 而残留）
+    // 修复态：finalizeRound 不被 insertPlanItemInOrder 的 NotFoundError 打断 →
+    // 运行时平铺容器 .process-flow 被移除（若异常跳过 flowEl.remove() 会残留）
     expect(document.querySelector('.process-flow')).toBeNull();
     // 且 finalizeStreaming 被执行到 → 流式光标收
     expect(document.querySelector('.msg-body.is-streaming')).toBeNull();
@@ -1920,7 +1919,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // ——实测回退后 thought/section 双双归零、折叠文本从 37282 字符塌成 1366 字符。
     expect(document.querySelectorAll('.round-block__thought').length).toBeGreaterThan(0);
     expect(document.querySelectorAll('.round-block__section').length).toBeGreaterThan(0);
-    // ⇒ 归因闭环：F2 根治（insertPlanItemInOrder 候选限定直接子节点）+ 兜底（收口进 finally）
+    // ⇒ 归因闭环：根治（insertPlanItemInOrder 候选限定直接子节点）+ 兜底（收口进 finally）
     //   让「补发 done」这一唯一变量真正完成收口，现象2/3 消失。
   }, 30000);
 });
@@ -1935,10 +1934,10 @@ describe('chatView toolbar 剪枝（会话管理收敛到标题条，2026-08-17 
 
   it('toolbar 剪枝后 webview 无溢出菜单元素（历史/清空已由标题条按钮 + 历史浮层取代）', () => {
     mountChatView();
-    // toolbar 已剪：不再渲染 overflow-menu / role-pack-badge 等顶部栏元素
+    // toolbar 不渲染 overflow-menu / role-pack-badge 等顶部栏元素
     expect(document.querySelector('.overflow-menu')).toBeNull();
     expect(document.querySelector('#toolbar')).toBeNull();
-    // chat_history_dates / chat_history_view 消息不再触发任何渲染（被静默忽略）
+    // chat_history_dates / chat_history_view 消息不触发任何渲染（被静默忽略）
     expect(() => {
       dispatch({ type: 'chat_history_dates', dates: ['2026-08-15'] });
       dispatch({ type: 'chat_history_view', date: '2026-08-15' });
@@ -2099,7 +2098,7 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
     dispatch({ type: 'chunk', content: '**加粗** 与 `code`' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     // 流式进行中：is-streaming 类（CSS ::after 显示闪烁光标）+ 首个 chunk 立即渲染 markdown
-    // （吸收养分：对齐 TraeWork 实时格式化，不再显示 ** ` 原始记号）
+    // （对齐 TraeWork 实时格式化，不显示 ** ` 原始记号）
     expect(body.classList.contains('is-streaming')).toBe(true);
     expect(body.textContent?.trim()).toBe('加粗 与 code');
     expect(body.querySelector('strong')).not.toBeNull();
@@ -2230,7 +2229,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     expect(forkBtn.disabled).toBe(true);
     // 本轮闭环结束：host done 携带 roundId → 回填 dataset 并启用按钮
     dispatch({ type: 'done', roundId: 'round-42' });
-    // T3b 排雷：done 消息后宿主紧跟 status:done 释放 sessionControlsLocked，
+    // done 消息后宿主紧跟 status:done 释放 sessionControlsLocked，
     // forkBtn.disabled 判定 = locked || !roundId，锁未释放时恒为 true
     dispatch({ type: 'status', state: 'done' });
     expect(msg.dataset.roundId).toBe('round-42');
@@ -2247,7 +2246,7 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
     const forkBtn = msg.querySelector('.msg-fork-icon') as HTMLButtonElement;
     expect(forkBtn.disabled).toBe(true);
     dispatch({ type: 'interrupted', roundId: 'round-7' });
-    // T3b 排雷：interrupted 后宿主同样发 status:done 释放锁
+    // interrupted 后宿主同样发 status:done 释放锁
     dispatch({ type: 'status', state: 'done' });
     expect(msg.dataset.roundId).toBe('round-7');
     expect(forkBtn.disabled).toBe(false);
@@ -2386,7 +2385,7 @@ describe('chatView Follow-up 建议（T2，2026-08-17 回复后关联推荐）',
     const input = document.getElementById('input') as HTMLTextAreaElement;
     // running+空输入：发送键默认「停止生成」
     expect(send.title).toBe('停止生成');
-    // 生成中预填文本 → 必须同步语义（标题随相位+输入重算），否则窗口期文案过期（SKILL-S2 血训同型）
+    // 生成中预填文本 → 必须同步语义（标题随相位+输入重算），否则窗口期文案过期（血训同型）
     dispatch({ type: 'prefill_input', text: '补充：先核对术语表' });
     expect(input.value).toBe('补充：先核对术语表');
     expect(send.title).toBe('发送补充（排队等 step 边界注入）');
@@ -2419,7 +2418,7 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
     const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
     expect(metricsEl.textContent).toContain('安全审计 4 次 · 拒绝 1');
     expect(metricsEl.textContent).toContain('path-allow foo.ts');
-    // 拒绝原因须透出（此前仅显示 type+path，丢弃 reason）
+    // 拒绝原因须透出（仅显示 type+path 会丢弃 reason）
     expect(metricsEl.textContent).toContain('path-deny out.js (路径越界，不在白名单内)');
   });
 
@@ -2850,7 +2849,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
         { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
       ],
     });
-    // 内联选择题在消息流内（提问块下方），不再是底部 clarifyBar 替换输入栏
+    // 内联选择题在消息流内（提问块下方），而非底部 clarifyBar 替换输入栏
     const box = document.querySelector('.ask-inline') as HTMLElement;
     expect(box).not.toBeNull();
     expect(box.querySelector('.ask-inline__q')?.textContent).toBe('请描述当前任务目标');
@@ -2915,7 +2914,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     submit.click();
     // 一次性提交单元素数组（与提问按序一对一）
     expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['开启新任务'] });
-    // 内联块已移除（答案就位，不再等待）
+    // 内联块已移除（答案就位）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
@@ -2954,7 +2953,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(submit.disabled).toBe(false);
     submit.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['中文', '长篇'] });
-    // 提交后内联块移除（聚合卡片任务完成，不再等待）
+    // 提交后内联块移除（聚合卡片任务完成）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
@@ -3156,7 +3155,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     // 无 result → 进行中；TOOL_META 亦未收录（角色包自定义工具）→ 原生英文名
-    // （2026-09-19 接入 toolNameMap 后，这是**唯一**仍落到英文名的路径——内置 24 工具均已中文）
+    // （这是**唯一**落到英文名的路径——内置 24 工具均已中文）
     expect(tool.querySelector('summary')?.textContent).toBe('my_custom_tool (进行中)');
   });
 
@@ -3167,7 +3166,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
-    // 解析失败 → 参数为空 → 叙述生成器返回 undefined → 兜底 toolNameMap 中文名（2026-09-19 接入前为英文原名）
+    // 解析失败 → 参数为空 → 叙述生成器返回 undefined → 兜底 toolNameMap 中文名
     expect(tool.querySelector('summary')?.textContent).toBe('读取文件 (成功)');
   });
 
@@ -3204,7 +3203,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('中断补充渲染为内联子行「你补充」，插在被打破块之后；后续 chunk 为「续接」块（2026-09-07 显示逻辑统一）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    // D3 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
+    // 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
     dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
     // 被打断补充（streaming 中 supplement）→ 过程条目「你补充」：与 question-answer 共用 round-block__input 形态
     dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });
@@ -3212,11 +3211,11 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(supRow).not.toBeNull();
     expect(supRow.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
     expect(supRow.textContent).toContain('不要联网搜索');
-    // 形态甲（2026-09-17）：补充条目进过程容器（process-flow），按 ts 归位——不再与 assistant 块消息流平级
+    // 形态甲：补充条目进过程容器（process-flow），按 ts 归位——不再与 assistant 块消息流平级
     const flow = document.querySelector('.process-flow') as HTMLElement | null;
     expect(flow).not.toBeNull();
     expect(flow?.contains(supRow)).toBe(true);
-    // 后续 chunk（同 roundId）→ 第 2 段正文块（2026-09-21 剪枝后无 is-continued / 续接 chip，
+    // 后续 chunk（同 roundId）→ 第 2 段正文块（无 is-continued / 续接 chip，
     // 补充内容已由独立条目行分隔）
     dispatch({ type: 'chunk', content: '好的，按你的要求继续', roundId: 'round-1' });
     const blocks = document.querySelectorAll('.msg.assistant');
@@ -3257,7 +3256,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const bodyTexts = Array.from(
       document.querySelectorAll<HTMLElement>('.msg.assistant .msg-body'),
     ).map((b) => b.textContent ?? '');
-    // 补充后的正文必须渲染（此前退化表现：无任何 assistant 正文块，UI 视觉卡在「吸收补充」）
+    // 补充后的正文必须渲染（退化时无任何 assistant 正文块，UI 视觉卡在「吸收补充」）
     expect(bodyTexts.join('')).toContain('第一步完成');
   });
 
@@ -3299,7 +3298,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(askRow.textContent).toContain('需要先确认哪个方案？');
     expect(askRow.textContent).toContain('问');
     // resumeExecution → 新 runFlow 的 meta → resumePending 分支建续接骨架：
-    // 2026-09-21 剪枝：续接视觉整体退役——骨架是普通第 2 段块（无 is-continued / 无 chip），
+    // 续接视觉整体退役——骨架是普通第 2 段块（无 is-continued / 无 chip），
     // 补充/问答内容已由独立交互条目行（.round-block__input）上屏分隔
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
     const blocks = document.querySelectorAll('.msg.assistant');
@@ -3349,7 +3348,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 B：重放同 roundId 两段 AI（assistantLog + final）同容器连续，无续接视觉（2026-09-21 剪枝）', () => {
     mountChatView();
     // 普通新闭环用户输入（重置上轮同环判定）
-    // M5b-3：两轮整批由单条 turn_update(replay:true) 承载——前序段 + 交互行 + final 均收进各自的 RoundView
+    // 两轮整批由单条 turn_update(replay:true) 承载——前序段 + 交互行 + final 均收进各自的 RoundView
     dispatchReplayMany([
       makeRound({
         id: 'round-1',
@@ -3369,7 +3368,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       }),
     ]);
     const blocks = document.querySelectorAll('.msg.assistant');
-    // M5b-3：两轮整批渲染——round-1 前序段 + final、round-2 final 共 3 块（旧断言 2 块是分开 dispatch 中间态）
+    // 两轮整批渲染——round-1 前序段 + final、round-2 final 共 3 块（分开 dispatch 中间态才是 2 块）
     expect(blocks).toHaveLength(3);
     expect((blocks[0] as HTMLElement).classList.contains('is-continued')).toBe(false);
     expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
@@ -3388,7 +3387,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(qa).not.toBeNull();
     expect(qa.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
     expect(qa.querySelector('.round-block__input-row .round-block__input-text')?.textContent).toContain('选方案A');
-    // 形态甲（2026-09-17）：QA 条目进过程容器（process-flow），按 ts 归位——运行时即时可见（硬约束）
+    // 形态甲：QA 条目进过程容器（process-flow），按 ts 归位——运行时即时可见（硬约束）
     const flow = document.querySelector('.process-flow') as HTMLElement | null;
     expect(flow).not.toBeNull();
     expect(flow?.contains(qa)).toBe(true);
@@ -3409,7 +3408,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       question: '你想读哪个文件？',
       options: ['probe.txt', 'config.json'],
     });
-    // 形态甲（2026-09-17）：问行+答行合并为单条目（.round-block__input），重放进 round-block details
+    // 形态甲：问行+答行合并为单条目（.round-block__input），重放进 round-block details
     const qRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
     expect(qRows).toHaveLength(1); // 单条目 = 问回顾行 + 你答行
     const entry = qRows[0]!;
@@ -3447,7 +3446,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('UX-9 重放路径：重放轮 + 前序段 + qa 内联子行、final 为同容器第 2 段（2026-09-21 剪枝，无续接视觉）', () => {
     mountChatView();
     // 主输入 → 整批过程事件（含 meta）→ 提问前序段
-    // M5b-3：整批 processEvents + 前序段 + 交互行 + final 由单条 turn_update 承载
+    // 整批 processEvents + 前序段 + 交互行 + final 由单条 turn_update 承载
     dispatchReplay(
       makeRound({
         id: 'round-1',
@@ -3477,8 +3476,8 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
       (el) => el.querySelector('.round-block__input-tag')?.textContent === '你补充',
     );
     expect(supplementRows).toHaveLength(0);
-    // G31 方案1（2026-09-08 收敛落地）：有 round-block 时 QA 最终折入任务折叠块
-    // （不再平铺于折叠块与最终回答之间污染两段式）——qa 行收进 .round-block__details 内
+    // 有 round-block 时 QA 最终折入任务折叠块
+    // （平铺会污染两段式）——qa 行收进 .round-block__details 内
     const roundBlock = document.querySelector('.round-block') as HTMLElement;
     expect(roundBlock).not.toBeNull();
     const qaInsideBlock = roundBlock.querySelector('.round-block__input');
@@ -3492,7 +3491,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('形态甲回归：纯 QA 轮重放（有过程事件 + 无前序段）问答条目收进折叠块、不散落消息流（round-1789642310661 复现）', () => {
     mountChatView();
-    // M5b-3：主输入 → 整批过程事件 → 提问回答×3（无 assistantLog）→ 最终回答，全部收进单条 turn_update
+    // 主输入 → 整批过程事件 → 提问回答×3（无 assistantLog）→ 最终回答，全部收进单条 turn_update
     dispatchReplay(
       makeRound({
         id: 'round-1',
@@ -3553,7 +3552,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('A 容器化：同 roundId 的 assistant 段收进同一 .round-group（平铺归组 + 容器级 footer）', () => {
     mountChatView();
-    // M5b-3：同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]（同容器归组由同一 id 保证）
+    // 同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]（同容器归组由同一 id 保证）
     dispatchReplay(
       makeRound({
         id: 'round-1',
@@ -3586,7 +3585,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // jsdom 无 navigator.clipboard，注入 writeText mock 捕获复制内容
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true });
-    // M5b-3：同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]
+    // 同 roundId 的前序段 + final 收进单条 turn_update.rounds[0]
     dispatchReplay(
       makeRound({
         id: 'round-1',
@@ -3637,7 +3636,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    // 每段叙述 = 一个独立 .round-block__narrate 父块（建议 A 后不再有「过程叙述」独立小节标题）
+    // 每段叙述 = 一个独立 .round-block__narrate 父块（建议 A：无「过程叙述」独立小节标题）
     const rows = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
     expect(rows).toHaveLength(2);
     expect(rows[0].textContent).toContain('让我先查看项目结构和所有文档');
@@ -3791,7 +3790,7 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
   });
 
   it('TS-11d 工具意图预告：tool_pending「准备中」→ tool_start 升级执行态 → tool_result 收敛（不重建）', () => {
-    // 2026-09-17：写文件等大参数工具的参数生成段可能数十秒——name 成形即提前渲染
+    // 写文件等大参数工具的参数生成段可能数十秒——name 成形即提前渲染
     // 「准备中」行（is-tool-pending、静态浅环、不转 spinner），消除生成段 UI 真空。
     mountChatView();
     beginRound();
@@ -3819,10 +3818,10 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
   });
 
   it('工具中文名接入（2026-09-19）：无参数可叙述的未收录工具与参数缺失场景均显中文名，不裸露英文名', () => {
-    // 背景：toolActionLabel 兜底原为 `?? name`（英文原名）——使两类场景在 UI 裸露英文工具名：
+    // 背景：toolActionLabel 兜底若为 `?? name`（英文原名）——两类场景在 UI 裸露英文工具名：
     // ①未收录工具（ask_user / remember_intel / run_project_script / run_team_meeting，均无可叙述
     //   参数，故不入 TOOL_ACTION_LABELS）；②已收录但本次 args 缺参（如 read_file 无 path）。
-    // 接入 toolNameMap.getToolDisplayName 后统一回退中文名，本条锁死该回退契约。
+    // toolNameMap.getToolDisplayName 统一回退中文名，本条锁死该回退契约。
     mountChatView();
     beginRound();
     // ① 准备中态（renderPendingToolRow）：直显中文名
@@ -3976,7 +3975,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('G31 方案1 修复（2026-09-08）：重放带 question 的 qa 成对完整折入——折叠内含「问回顾行 + 你答块」、assistant 相邻、摘要你答×1', () => {
     mountChatView();
-    // M5b-3：重放由单条 turn_update(replay:true) 承载——前序段 + 带 question 的 qa + 末段全量折入同一轮
+    // 重放由单条 turn_update(replay:true) 承载——前序段 + 带 question 的 qa + 末段全量折入同一轮
     dispatchReplay(
       makeRound({
         id: 'round-1',
@@ -3986,7 +3985,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
           { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
         ],
         assistantLog: [{ content: '你想读哪个文件？', ts: 't2' }],
-        // 带 question 的 qa（G26 形态：提问回顾行 + 回答折叠块）——问行与答块须成对折入，否则答块残留消息流（坑）
+        // 带 question 的 qa（提问回顾行 + 回答折叠块）——问行与答块须成对折入，否则答块残留消息流（坑）
         interactiveInputs: [
           { content: '读 probe.txt', ts: 't3', kind: 'question-answer', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
         ],
@@ -3996,7 +3995,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     );
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    // 形态甲（2026-09-17）：折叠块内单条目 = 问回顾行 + 你答行（合并形态，非两元素成对）
+    // 形态甲：折叠块内单条目 = 问回顾行 + 你答行（合并形态，非两元素成对）
     const inBlock = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
     expect(inBlock.length).toBe(1);
     expect(inBlock[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
@@ -4019,9 +4018,9 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(askInline).not.toBeNull();
     // 宿主超时自动续跑：先投递「未回答」交互行（timeout 消息到达即销毁提问框）
     dispatch({ type: 'user', text: '用户未在时限内回答，已自动继续', ts: 't2', roundId: 'round-1', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] });
-    expect(document.querySelector('.ask-inline')).toBeNull(); // 提问框已销毁（不再等用户）
+    expect(document.querySelector('.ask-inline')).toBeNull(); // 提问框已销毁
     const rows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
-    // 形态甲（2026-09-17）：单条目 = 问回顾行 + 未回答行（合并形态，非两元素）
+    // 形态甲：单条目 = 问回顾行 + 未回答行（合并形态，非两元素）
     expect(rows.length).toBe(1);
     expect(rows[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
     expect(rows[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('未回答');
@@ -4037,7 +4036,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('ask 超时重放：timeout 交互记录经 middle 透传渲染「问 + 未回答」并折入收起态折叠块（运行时 = 重放同构）', () => {
     mountChatView();
-    // M5b-3：重放由单条 turn_update(replay:true) 承载——前序段 + timeout 交互行 + 末段折入同一轮
+    // 重放由单条 turn_update(replay:true) 承载——前序段 + timeout 交互行 + 末段折入同一轮
     dispatchReplay(
       makeRound({
         id: 'round-1',
@@ -4057,7 +4056,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     );
     const rb = document.querySelector('.round-block') as HTMLElement;
     const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
-    // 形态甲（2026-09-17）：单条目 = 问回顾行 + 未回答行（合并形态）
+    // 形态甲：单条目 = 问回顾行 + 未回答行（合并形态）
     expect(rbQa.length).toBe(1);
     expect(rbQa[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
     expect(rbQa[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('未回答');
@@ -4070,7 +4069,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('形态甲：QA 条目按 ts 归位对应 step 分组（补充挂刚结束的 step 间隙，2026-09-17 位置确定性防回归）', () => {
     mountChatView();
-    // M5b-3：重放由单条 turn_update(replay:true) 承载——两步边界过程事件 + 前序段 + supplement 折入同一轮
+    // 重放由单条 turn_update(replay:true) 承载——两步边界过程事件 + 前序段 + supplement 折入同一轮
     dispatchReplay(
       makeRound({
         id: 'r1',
@@ -4101,7 +4100,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 });
 
 // ═══════════════════════════════════════════════════════════════
-// A1 回抽 · 首轮工具步叙述从正文撤回，改由过程叙述承载（2026-09-12）
+// 回抽 · 首轮工具步叙述从正文撤回，改由过程叙述承载
 // ═══════════════════════════════════════════════════════════════
 
 describe('chatView narrate_withdraw 回抽', () => {
@@ -4258,8 +4257,8 @@ describe('chatView narrate_withdraw 回抽', () => {
   });
 });
 
-// ─── H0 写入审批卡（2026-09-19 补全 webview 侧）────────────────────
-// 背景：write_confirm_request 此前仅 host 发送、webview 无任何消费 → 开启「写入二次确认」后
+// ─── 写入审批卡（webview 侧）────────────────────
+// 背景：write_confirm_request 若仅 host 发送、webview 无消费 → 开启「写入二次确认」后
 // 审批卡永不弹出、30s 超时自动拒绝（fail-closed）导致写入功能不可用。本组护栏验证：
 // 1) 收到 request 渲染审批卡（工具/路径/描述/diff 全部字段 textContent 填充，防注入）；
 // 2) 确认按钮回传 write_confirm_answer(approved=true) 并隐藏卡片；
@@ -4371,9 +4370,9 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════
-// 技能启停 · 对话区（用户通道）显式标注（SKILL-S2，2026-09-22）
+// 技能启停 · 对话区（用户通道）显式标注
 // ═══════════════════════════════════════════════════════════
-// 缺陷：`skills_loaded` 的 `disabled` 字段此前被 `map` 丢弃 ⇒ 用户通道看不出技能已禁用，
+// 缺陷：`skills_loaded` 的 `disabled` 字段被 `map` 丢弃 ⇒ 用户通道看不出技能已禁用，
 // 选中即**静默落空**（技能不注入、界面零提示，对照主流 `off` 态按名调用明确报错）。
 // 本区块锁住两处**显示**标记（下拉项 + chip）；**拦截**刻意不落在 webview ——
 // 一次配置重载不同步（`pushSkillList` 不随配置变更重推）即会造成「配置已允许、UI 却拒绝」

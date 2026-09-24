@@ -1,10 +1,10 @@
 /**
- * M4 输入收口验收测试（2026-09-23，方案 TURN-SSOT-1 §M4）
+ * 输入收口验收测试
  *
- * 验证 `handleInput` 单一入口按 turn 相位路由（R2 单一判据）：
+ * 验证 `handleInput` 单一入口按 turn 相位路由（单一判据）：
  *   - running 态 send → agent.interject 排队（无缝插话，不发起新 chat）
  *   - waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution('question-answer') 续跑
- *     （R1：提问原文从 `_turnState.waiting.questions` 读，`_pendingQuestions` 整体清空）
+ *     （提问原文从 `_turnState.waiting.questions` 读，`_pendingQuestions` 整体清空）
  *   - 错位输入（相位不符）→ 静默丢弃（迟到回答不污染进行中的轮，与原各 handler 守卫等义）
  *
  * 替身策略：agent 桩 + cast 注入私有状态（`_streaming` / `_abortController` / `_turnState` /
@@ -37,7 +37,7 @@ vi.mock('vscode', async () => ({
   },
 }));
 
-/** agent 桩：覆盖 M4 输入路由 + consumeFlow 尾部依赖的最小面 */
+/** agent 桩：覆盖输入路由 + consumeFlow 尾部依赖的最小面 */
 function inputAgentStub() {
   const interject = vi.fn();
   const answerQuestion = vi.fn();

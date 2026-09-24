@@ -1,7 +1,7 @@
 /**
- * 迭代边界信号 `step_boundary`（档3 · 迭代原子落盘，2026-09-23）
+ * 迭代边界信号 `step_boundary`（迭代原子落盘）
  *
- * 背景（见 docs/architecture/step-atomic-persistence.md §九）：档2 把宿主增量落盘挂在
+ * 背景（见 docs/architecture/step-atomic-persistence.md §九）：若把宿主增量落盘挂在
  * `plan_item_boundary` 上，而该 chunk 只在「有任务表且任务项推进」时产出 → 无任务表的长工具循环
  * **零增量落盘**，崩溃即全丢。本 chunk 补该覆盖缺口：只要迭代完成且将继续下一轮，就产一条，
  * 与有无任务表无关。

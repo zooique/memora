@@ -2,7 +2,7 @@
  * skillScriptRunner-exec.test.ts — L1/L2 spawn 行为锁定（独立文件）
  *
  * 与 skillScriptRunner.test.ts（真实子进程执行）隔离：本文件对
- * `node:child_process.spawn` 做文件级 mock，锁定修复（含审查批更新）：
+ * `node:child_process.spawn` 做文件级 mock，锁定以下行为：
  *   1. L1 spawn 选项三合一 —— windowsHide:true（不弹 conhost 黑框）
  *      + env 继承宿主（全量 process.env 超集）+ 源头禁色（FORCE_COLOR:0/NO_COLOR:1，
  *      对齐宿主 codeExecutor；回流净化由 toolExecutor sanitize 兜底剥残留）
@@ -55,7 +55,7 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
       await runSkillScript('x.js', 'node');
 
       expect(calls).toHaveLength(1);
-      // 黑框根因修复：Windows 隐藏子进程窗口
+      // 黑框防护：Windows 隐藏子进程窗口
       expect(calls[0]!.opts.windowsHide).toBe(true);
       const env = calls[0]!.opts.env as NodeJS.ProcessEnv;
       expect(env.FORCE_COLOR).toBe('0');
@@ -69,7 +69,7 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
     }
   });
 
-  // ── L1 补充：resolveCommand 的 node 映射（文件头声称覆盖，此前从未断言命令名）──
+  // ── L1 resolveCommand 的 node 映射（文件头声称覆盖，须断言命令名）──
   it('resolveCommand：node runtime → 命令 node，脚本路径 + args 依次追加', async () => {
     const calls: { cmd: string; args: string[] }[] = [];
     mockedSpawn.mockImplementation(((cmd: string, args: string[]) => {

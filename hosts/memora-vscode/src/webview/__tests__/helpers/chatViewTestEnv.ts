@@ -135,10 +135,10 @@ export function dispatch(msg: unknown): void {
 }
 
 /**
- * 2b-2b 换真源：发送 `turn_update` 状态快照（按钮语义唯一真源）
+ * 发送 `turn_update` 状态快照（按钮语义唯一真源）
  *
- * 换源后按钮语义（loading/icon/title/disabled）只由 `turn_update.state` 驱动，
- * legacy `status` / `pause_pending` 不再参与骨架容器。本辅助统一收口各用例的
+ * 按钮语义（loading/icon/title/disabled）只由 `turn_update.state` 驱动，
+ * legacy `status` / `pause_pending` 不参与骨架容器。本辅助统一收口各用例的
  * 驱动消息构造，rounds 取空数组（按钮语义不消费 rounds）。
  */
 export function dispatchTurn(state: TurnState): void {

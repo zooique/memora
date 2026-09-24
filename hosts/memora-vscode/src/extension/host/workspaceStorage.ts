@@ -7,10 +7,10 @@
  *   - 软删除语义与内核一致：delete 写 deletedAt，查询自动过滤
  *   - source 校验：upsert 时调 validateSource 拦截无效 source（路径遍历/空字节/首尾空格）
  *   - 读档校验：load 逐条经内核 parseMemory 白名单构造，未知字段（旧档 score）剥离即清洗
- *   - 设定记忆存量清理：migrateRetiredSettingSources 软删 persona/rule/skill 存量行（R4 迁移出口）
+ *   - 设定记忆存量清理：migrateRetiredSettingSources 软删 persona/rule/skill 存量行（迁移出口）
  *
- * 阶段 0：最小可用实现（内存 Map + 每次变更落盘）。
- * 后续阶段：如需高性能检索，可换 SQLite 等更强实现。
+ * 最小可用实现（内存 Map + 每次变更落盘）。
+ * 如需高性能检索，可换 SQLite 等更强实现。
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

@@ -1,19 +1,19 @@
 /**
- * D2 · 大记忆库（宿主 WorkspaceStorage）性能基准验证
+ * 大记忆库（宿主 WorkspaceStorage）性能基准验证
  *
  * 目的：验证宿主 WorkspaceStorage 在千/万级记忆下的两个高频写入路径是否在可接受阈值内：
  *   1. 单次增量 save —— 每次 upsert 触发一次全量 JSON.stringify + atomicWrite（无 SQLite）
  *   2. load（冷启动全量读取）
  *
- * 注（2026-09-13 整理）：原「第 1 部分」测的是 `InMemoryStorage.decayScores()`——该方法随
- * score 机制于 2026-09-09 整体物理退役而删除，故脚本此前一跑即崩（「演进后脚本露馅」的实证）。
- * 已将该段移除，仅保留仍有效的宿主 WorkspaceStorage 基准；下一个 >500KB 触发线仍是 C3 SQLite 升级信号。
+ * 注：`InMemoryStorage.decayScores()` 已随 score 机制整体物理退役而删除——仍调它的脚本一跑
+ * 即崩（「演进后脚本露馅」的实证）。故本脚本只保留仍有效的宿主 WorkspaceStorage 基准；
+ * >500KB 触发线是 SQLite 升级信号。
  *
  * 用法：
  *   npx tsx scripts/bench-large-memory.ts
  *
  * 可接受阈值（对抗式定标）：
- *   - save/load 每次写入触发 → 单次 < 50ms 可接受（1 万级）；> 500KB 触发 C3 SQLite 升级
+ *   - save/load 每次写入触发 → 单次 < 50ms 可接受（1 万级）；> 500KB 触发 SQLite 升级
  */
 import { mkdtempSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';

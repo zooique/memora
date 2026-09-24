@@ -1,7 +1,7 @@
 /**
  * A/B 模型行为验收 · 完整 Agent 装配复测（真实 LLM 会话驱动）
  *
- * 用途（对接 docs/architecture/memory-tool-recall-ab-benchmark.md §5 待办「真实实现复测」）：
+ * 用途（对接 docs/architecture/memory-tool-recall-ab-benchmark.md 待办「真实实现复测」）：
  * 在「最小 tool-calling 环」（test-memory-tool-recall-real.ts）之外，用**完整 Agent 装配**
  * （角色包 + 全工具面 + 记忆互斥 + 轮次摘要/归档后台链路）重跑 A/B 问题集，
  * 确认「主动想起 + 命中」语义在真实装配下依然成立，而非最小环特例。
@@ -10,7 +10,7 @@
  *   npx tsx scripts/test-memory-tool-recall-full.ts            # 全量 10 case（每 case 独立装配）
  *   $env:BENCH_CASE="A4,B2"; npx tsx scripts/...full.ts        # 指定 case
  *
- * 判定口径（与基准文档 §0/§3 一致，机制旁证法）：
+ * 判定口径（与基准文档一致，机制旁证法）：
  *  - queried? = 本轮收到 agent memoryRecalled 事件（search_memories 命中过 → LLM 主动检索）
  *  - hit?     = 目标 seed 的 accessedAt 被 touch 刷新（search_memories 命中目标记忆即 touch，
  *               与「工具返回文本含实体词」等价——touch 对象 = 返回结果里的命中记忆集合）
@@ -106,7 +106,7 @@ async function runCase(seed: BenchmarkSeed): Promise<CaseVerdict> {
   // 4. 判定旁证采集
   let queried = false;
   agent.on(AGENT_EVENTS.memoryRecalled, () => {
-    queried = true; // LLM 主动调 search_memories 且命中（§2.4 保留改语义：命中即发射）
+    queried = true; // LLM 主动调 search_memories 且命中（命中即发射语义）
   });
   const before = storage.getById(seed.expectId)?.accessedAt; // 跑前 accessedAt（touch 旁证基线）
 
@@ -172,7 +172,7 @@ async function main(): Promise<void> {
     }
   }
 
-  // 4. 判定记录表 + A/B 指标汇总（与基准文档 §0 口径一致）
+  // 4. 判定记录表 + A/B 指标汇总（与基准文档口径一致）
   console.log('\n' + '━'.repeat(70));
   console.log('📋 判定记录表（queried=主动检索，hit=目标被 touch 命中）');
   console.log('| case | queried? | hit? | 耗时(ms) |');

@@ -1,5 +1,5 @@
 /**
- * dropdown 组件测试 — 键盘可访问性（对抗评估 P1-2 锁定）
+ * dropdown 组件测试 — 键盘可访问性
  *
  * 用 @vitest-environment jsdom 提供 DOM 环境（per-file，不污染仓库其余 node 测试）。
  * 覆盖 initDropdowns 的：

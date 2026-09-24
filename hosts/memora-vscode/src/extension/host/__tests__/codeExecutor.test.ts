@@ -1,5 +1,5 @@
 /**
- * codeExecutor 测试 — 本地子进程代码执行器（G2，2026-08-23）
+ * codeExecutor 测试 — 本地子进程代码执行器
  *
  * 覆盖执行器行为：
  *   - 支持语言白名单（javascript/js/nodejs），其他语言返回不支持提示

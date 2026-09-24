@@ -17,7 +17,7 @@ import { createMemoryView, SOURCE_BADGE_CLASS, TYPE_BADGE_LABEL } from '../scrip
 import type { GovernanceStatsDto, MemoryItemDto, MemoryStatsDto } from '../../shared/protocol.js';
 
 /** 覆盖 createMemoryView 全部查询引用的最小 HTML 骨架（子视图挂载在 #memory-root 根容器内，
- *  与设置视图选项卡合并后的 id 空间隔离约定一致；含 G4 记忆治理区骨架） */
+ *  与设置视图选项卡合并后的 id 空间隔离约定一致；含记忆治理区骨架） */
 const HTML = `
   <div id="memory-root">
     <div class="header">
@@ -214,7 +214,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     }
   });
 
-  // ─── G4 记忆治理区（2026-08-23） ───
+  // ─── 记忆治理区 ───
 
   it('首屏加载 → 额外发送 governance_load', () => {
     const { postMessage } = mountMemoryView();
@@ -273,7 +273,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(detail.classList.contains('gov-error')).toBe(true);
   });
 
-  // ─── G19 单条删除 / 回收站（2026-08-25） ───
+  // ─── 单条删除 / 回收站 ───
 
   it('memory_loaded 渲染的卡片含删除按钮（✕），点击 → postMessage memory_delete 且阻止卡片展开', () => {
     const { postMessage } = mountMemoryView();
@@ -288,7 +288,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(card.classList.contains('expanded')).toBe(false);
   });
 
-  // ─── G19 内联 edit（2026-08-25） ───
+  // ─── 内联 edit ───
 
   it('memory_loaded 卡片含编辑按钮（✎），点击 → 进入编辑态（textarea 预填 content + 卡片不展开）', () => {
     const { postMessage } = mountMemoryView();
@@ -572,7 +572,7 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
   });
 });
 
-// ─── 展示层映射 vs 内核契约 漂移哨兵（2026-09-18） ───
+// ─── 展示层映射 vs 内核契约 漂移哨兵 ───
 // webview 沙箱无法 import 内核（硬约束），映射键集合须显式对齐内核契约；
 // 本哨兵在 node 测试环境 import 内核 SOURCE_LABELS/SUMMARY_TYPES，
 // 断言「映射键 ⊆ 内核契约值」，防止新增幽灵 source/type 键（如已删除的 'profile'）。

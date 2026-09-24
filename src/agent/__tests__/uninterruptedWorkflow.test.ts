@@ -892,7 +892,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
     it('空闲态（任务已结束）requestPause 守卫：申请作废，不翻 PAUSED 不落检查点', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
-      // 空闲态：无活跃执行流，isBusy=false → 守卫作废（此前直接翻 PAUSED + 落盘，
+      // 空闲态：无活跃执行流，isBusy=false → 守卫作废（若直接翻 PAUSED + 落盘，
       // 会把已完成 turn 钉在 paused，后续新输入被宿主路由成 supplement。任务已结束=申请作废）
 
       const ok = agent.requestPause('空闲暂停', 'user');
@@ -1303,7 +1303,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     });
 
   /**
-   * 场景 G：turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）
+   * turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）
    *
    * 契约：chat() 流退出（turn 真正结束）时，无论步骤是否全部标记完成，
    * 都清空 checkpoint.plan 与 planItemLog —— 宏任务一个 turn 完不成则兜底丢弃，下个 turn 重新规划。
@@ -1342,23 +1342,23 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 触发一轮对话 → turn 结束时兜底清理任务表
     await agent.chatSync('推进任务');
 
-    // 新契约：turn 结束后任务表已清空（plan 与 planItemLog 均不残留）
+    // 契约：turn 结束后任务表已清空（plan 与 planItemLog 均不残留）
     const cp = agent.getCheckpoint()!;
     expect(cp.plan).toHaveLength(0);
     expect(cp.planItemLog ?? []).toHaveLength(0);
   });
 
   /**
-   * 场景 G2（真实带伤回归锁）：resume 收尾路径漏清 plan。
+   * 真实带伤回归锁：resume 收尾路径漏清 plan。
    *
    * 复现：chat() 第一半以 pause 收场（pauseMeta 挂起、plan 保留）→ 用户点「继续」续跑，
    * 续跑以「含非 done 步、且未再次暂停」结束（如某步 task_table_update 标 blocked/active 后收尾，
-   * 属 P3 硬约束允许的正当路径）。旧实现 resumeExecution.finally 走 autoClearPlanIfAllDone
+   * 属任务表未完成硬约束允许的正当路径）。若 resumeExecution.finally 走 autoClearPlanIfAllDone
    * （仅全 done 才清）→ plan 残留在 checkpoint → 下一个 chat() 开头无清理 → 真·跨 turn 残留。
-   * 修复：resume.finally 改用 clearPlanOnTurnEnd（与 chat() 同构，暂停态 guard 保留、否则无条件清），
+   * 契约：resume.finally 走 clearPlanOnTurnEnd（与 chat() 同构，暂停态 guard 保留、否则无条件清），
    * 两处 turn-end 清理收敛为单一收口点，plan 严格 turn 内、不跨 turn 残留。
    *
-   * 突变验证：本用例在修复前的旧代码下 MUST FAIL（plan 残留 length=2），修复后才 PASS——
+   * 突变验证：回退「resume 收尾无条件清任务表」→ 本用例 MUST FAIL（plan 残留 length=2）——
    * 证明它抓的是真实带伤，而非因错误原因通过。守卫确保走「未重暂停」收尾分支（否则 pauseMeta
    * guard 会保留，断言不成立）。
    */
@@ -1418,7 +1418,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     // 1. 暂停会话
     agent.pause('测试暂停', 'user');
 
-    // 2. 暂停状态下 chat 自动恢复 + 继续（不再拒绝，输入通道永不冻结）
+    // 2. 暂停状态下 chat 自动恢复 + 继续（不拒绝，输入通道永不冻结）
     const reply = await agent.chatSync('你好');
     expect(reply).toContain('Mock 响应');
 
@@ -1427,7 +1427,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 G：异常状态下 chat 被拒绝
+   * 异常状态下 chat 被拒绝
    *
    * 验证完整闭环：
    *   1. Agent init 后触发异常
@@ -1701,12 +1701,12 @@ class AskThenResumeProvider extends LlmProvider {
 }
 
 /**
- * plan + ask_user 组合（缝隙 A 防回归）Provider：
+ * plan + ask_user 组合（缝隙防回归）Provider：
  * - 首轮调 ask_user 工具挂起（在既有 plan 之上提问，不预写任务表——plan 由测试直接
  *   push 进 checkpoint，聚焦「提问迭代与 step 日志归属」的交互语义）；
  * - 续跑轮（上下文含 [ASK_ANSWER] 回答 tool 结果）纯文本收尾（不调工具）——
  *   形态②下边界只写 planItemLog、不推进：提问步 S1 保持 active 不被自动 done
- *   （若旧码在提问轮已提前 done 步，则续跑轮会错完成下一步 → 转红）。
+ *   （若提问轮提前把当前步 done → 续跑轮会错完成下一步 → 转红）。
  * 复用 AskThenResumeProvider 的 summarizer / sessionNamer 分岔守卫（不消耗主对话分岔状态）。
  */
 class AskInPlanProvider extends LlmProvider {
@@ -1811,7 +1811,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
 
     // 在流进行中（isBusy=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
     // 直到 loop 在 step 边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
-    // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转（D1）。
+    // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转。
     let statusRightAfterRequestPause = '';
     for await (const chunk of agent.chat('读取探针文件')) {
       if (chunk.type === 'tool_result') {
@@ -1970,7 +1970,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
     // 会话进入 PAUSED（主动提问走软暂停，等待用户回答续跑）
     expect(agent.sessionManager!.status).toBe('paused');
-    // (a) 工具调用结构完整入史：assistant.tool_calls 含 ask_user（修复前被「撕掉」只剩文本）
+    // (a) 工具调用结构完整入史：assistant.tool_calls 含 ask_user（若结构被「撕掉」→ 只剩文本）
     const historyToolCalls = agent
       .getMessages()
       .flatMap((m) => m.toolCalls ?? [])
@@ -2007,12 +2007,12 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
   });
 
-  // ─── 缝隙 A：plan + ask_user 组合（提问轮不消耗 step）──────────────────
-  // 旧缺陷：onPlanItemBoundary 先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
+  // ─── 缝隙：plan + ask_user 组合（提问轮不消耗 step）──────────────────
+  // 缺陷形态：若 onPlanItemBoundary 先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
   // 先把当前 active step 自动 done、推进到下一步，再挂起等答案——回答续跑后问答产出被
   // 归到「下一步」，提问步无继续表达通道（与用户暂停在迭代边界挂起、不推进 step 不对称）。
-  // 修复：含 ask_user 将挂起的迭代不触发 step 边界日志（willSuspendForAsk 排除）；
-  // 形态②后 onPlanItemBoundary 本就不推进（唯一写者 = task_table_update），
+  // 契约：含 ask_user 将挂起的迭代不触发 step 边界日志（willSuspendForAsk 排除）；
+  // 形态②下 onPlanItemBoundary 本就不推进（唯一写者 = task_table_update），
   // 故问答对恒归当前步；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
 
   it('缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）', { timeout: 30000 }, async () => {
@@ -2025,7 +2025,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       allowedPaths: [tmpData],
     });
     await agent.init();
-    // 预置任务表（仿场景 G 直接 push plan：S1 active + S2 pending）
+    // 预置任务表（直接 push plan：S1 active + S2 pending）
     agent.createCheckpoint('任务目标');
     agent.getCheckpoint()!.plan.push(
       { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
@@ -2039,7 +2039,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
     expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
     const after = agent.getCheckpoint()!.plan;
-    // 修复语义：提问步仍 active，下一步未被提前激活（旧码 S1=done/S2=active → 转红）
+    // 提问步仍 active，下一步未被提前激活（若 S1=done/S2=active → 转红）
     expect(after.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
     expect(after.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
   });
@@ -2078,8 +2078,8 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     }
     const cp = agent.getCheckpoint()!;
     // 闭环语义：resume 收尾 = turn 结束 → 任务表无条件清空（plan 严格 turn 内，
-    // 下个 turn 由 LLM 重新规划）。旧实现 autoClearPlanIfAllDone 仅全 done 才清，
-    // 导致此处非全 done 残留 → 跨 turn 污染；修正后统一走 clearPlanOnTurnEnd。
+    // 下个 turn 由 LLM 重新规划）。若 autoClearPlanIfAllDone 仅全 done 才清 →
+    // 此处非全 done 残留 → 跨 turn 污染；统一走 clearPlanOnTurnEnd。
     expect(cp.plan).toHaveLength(0);
     expect(cp.planItemLog ?? []).toHaveLength(0);
   });
@@ -2632,7 +2632,7 @@ describe('问答闭环内交互输入归属（同一闭环节点不分裂）', (
     // → 重启后 **不加载**任何持久化检查点（上下文连续性一律靠 Round 物理记录，不靠检查点）。
     expect(agent.sessionManager!.getCheckpoint()).toBeNull();
 
-    // 重启后输入 → **新开 turn**（不再续写原闭环节点：上下文已不连续，续写会毒化闭环节点语义）
+    // 重启后输入 → **新开 turn**（不续写原闭环节点：上下文已不连续，续写会毒化闭环节点语义）
     for await (const _chunk of agent.chat('重启后补充：换个方案')) {
       void _chunk; // 仅消费流
     }

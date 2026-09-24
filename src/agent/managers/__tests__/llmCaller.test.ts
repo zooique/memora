@@ -1,7 +1,7 @@
 /**
- * LlmCaller 单测（ARCH-3 P3-2）
+ * LlmCaller 单测
  *
- * 重点覆盖搬迁后**无法从 loop 端方便触达**的两处：
+ * 重点覆盖**无法从 loop 端方便触达**的两处：
  *   1. `determineTaskType` 纯函数（三分类 + 检测窗口）
  *   2. `resolveProvider` 三分支（fixed / router+缓存 / fallback）
  * 端到端行为（重试、降级、abort）已在 `loop.test.ts` 覆盖，此处不重复。
@@ -142,7 +142,7 @@ describe('LlmCaller.resolveProvider', () => {
   });
 });
 
-// ─── thought 透传（2026-09-13，Turn 意图理解与模型思考展示设计，CoT 防护核心断言）──
+// ─── thought 透传（Turn 意图理解与模型思考展示设计，CoT 防护核心断言）──
 
 describe('LlmCaller.callWithRetry · thought 透传', () => {
   /** 构造带 thought 流的 mock Provider（deepseek 时序：思考增量 → 正文 → tool_calls） */
@@ -184,13 +184,13 @@ describe('LlmCaller.callWithRetry · thought 透传', () => {
     }
     const result = step.value as LlmCallResult;
 
-    // 增量透传：每条 chunk 只带新增片段（R3）
+    // 增量透传：每条 chunk 只带新增片段
     const thoughts = chunks
       .filter((c): c is { type: 'thought'; content: string } => c.type === 'thought')
       .map((c) => c.content);
     expect(thoughts).toEqual(['用户问 A/B 方案对比', '，先查资料']);
 
-    // CoT 防护（R11）：正文轨 fullContent 只拼 content，不含任何 thought 文本
+    // CoT 防护：正文轨 fullContent 只拼 content，不含任何 thought 文本
     expect(result?.fullContent).toBe('我先搜索相关资料');
     expect(result?.fullContent).not.toContain('用户问 A/B');
     // 工具调用正常累积（thought 与 tool_calls 并存不互相干扰）
@@ -198,7 +198,7 @@ describe('LlmCaller.callWithRetry · thought 透传', () => {
   });
 });
 
-// ─── 空响应重试（2026-09-15 边界补缝）───
+// ─── 空响应重试 ───
 
 describe('LlmCaller.callWithRetry · 空响应重试', () => {
   function makeDeps(provider: LlmProvider): LlmCallerDeps {

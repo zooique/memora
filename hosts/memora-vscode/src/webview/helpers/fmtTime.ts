@@ -1,8 +1,7 @@
 /**
  * 时间格式化 — 纯函数（webview 运行时脚本直接 import 使用）
  *
- * 阶段 B（对抗评估 P2-1）：原「字符串注入脚本 + 序列化」模式已由外部脚本
- * chatView.js 取代，fmtTime 作为纯函数被 chatView import，可直接 vitest 测试。
+ * fmtTime 作为纯函数被 chatView import，可直接 vitest 测试。
  */
 
 /**

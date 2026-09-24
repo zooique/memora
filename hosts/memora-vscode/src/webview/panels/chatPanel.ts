@@ -2146,7 +2146,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 响亮失败：技能被禁用时注入**静默落空**（`skillPromptFor` 按既有
       // 契约返回空串 = 技能不存在，消息照常发出），用户零反馈。此处补上提示 —— 对照主流
       // （Claude Code / WorkBuddy 的 `off` 态）按名调用明确报错。
-      // 三个边界不变：① 仍**照常发送**（拒绝发送 = 改发送语义，不在本次范围）；
+      // 三个边界不变：① 仍**照常发送**（拒绝发送 = 改发送语义，不属本护栏范围）；
       // ② 判定走 `isSkillDisabled`（收口到与 `resolveSkill` 同序的真源，非自读配置副本）；
       // ③ `notice` 只进 UI 不喂模型 ⇒ 不侵犯「禁用对 LLM 静默」语义。
       // 前置 `!skillBlock`：仅在**确实发生落空**时报，避免「判定说禁用、实际却注入成功」的假报。

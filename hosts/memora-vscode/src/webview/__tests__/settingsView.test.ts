@@ -1,5 +1,5 @@
 /**
- * settingsView 测试 — 设置视图选项卡切换 + 子视图挂载（2026-08-17 选项卡合并）
+ * settingsView 测试 — 设置视图选项卡切换 + 子视图挂载（选项卡合并）
  *
  * 覆盖设置视图（合并 角色 / 大模型 / 记忆 三个子视图）的新增行为：
  *   - 挂载即发送三个子视图的初始消息（cfg_load / memory_load / ready）
@@ -306,7 +306,7 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
       { name: 'skill-on', description: '启用中的技能', layer: 'builtin' },
       { name: 'skill-off', description: '已禁用的技能', layer: 'builtin', disabled: true },
     ]);
-    // 2026-09-22 复核实锤 G2：5 处注释声称「宿主 UI 标注已禁用徽章」而实现为零 →
+    // 5 处注释声称「宿主 UI 标注已禁用徽章」而实现为零 →
     // 用户无法确认启停是否生效。本用例锁住徽章存在 + 条目不被隐藏（两条都要）。
     const off = document.querySelector('.skill-item[data-skill-name="skill-off"]');
     const on = document.querySelector('.skill-item[data-skill-name="skill-on"]');
@@ -435,7 +435,7 @@ describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全�
 });
 
 /**
- * 技能正文翻页重渲染防注入（HOST-S16，2026-09-20）
+ * 技能正文翻页重渲染防注入
  *
  * 背景：renderSkillItems 走 innerHTML 拼接，其中「已缓存正文」分支（contentMap 命中）
  * 是唯一把外部可控文本（用户技能目录下的 .md 正文）原样注入 innerHTML 的路径；

@@ -1,12 +1,12 @@
 /**
- * 任务表确定性触发（层1）· 真实 LLM 真机实证脚本
+ * 任务表确定性触发 · 真实 LLM 真机实证脚本
  *
  * 用法：
  *   npx tsx scripts/test-tasktable-real.ts
  *
- * 背景（探索方案 docs/任务表确定性触发-探索方案.md 层0/层1）：
+ * 背景（docs/任务表确定性触发-探索方案.md）：
  *   任务表工具（task_table_write/update）长期"建造成型、从未被 LLM 触发"（metrics.plan.taskTableWriteCount = 0）。
- *   层1 确定性化：检测用户输入命中 needsPlanning → 首迭代注入命令式强引导 nudge，推高 LLM 建表决策概率。
+ *   确定性化：检测用户输入命中 needsPlanning → 首迭代注入命令式强引导 nudge，推高 LLM 建表决策概率。
  *
  * 本脚本实证目标（非完整宿主装配，聚焦观测，直接复用 loop 的可写装配回调）：
  *   给真实 LLM 一个"强命令多步任务"，观察它是否决策调用 task_table_write 并分步推进 active 步骤。
@@ -133,7 +133,7 @@ function assert(condition: boolean, message: string): void {
   }
 }
 
-/** 打印任务表维度指标（层0 新字段：taskTableWriteCount / planItemBoundaryCount） */
+/** 打印任务表维度指标（taskTableWriteCount / planItemBoundaryCount） */
 function printPlanMetrics(metrics: AgentMetrics): void {
   console.log('  ┌─ 任务表维度（层0 观测）');
   console.log(`  │  task_table_write 调用（建表/重建次数）: ${metrics.plan.taskTableWriteCount}`);
@@ -220,7 +220,7 @@ async function main(): Promise<void> {
   console.log(`  🚧 产出的 plan_item_boundary 事件: ${stepBoundariesSeen.length} 个 ${stepBoundariesSeen.length ? `（${stepBoundariesSeen.join(' → ')}）` : ''}`);
   assert(response.length > 0, `有文本回复（${response.length} 字符）`);
 
-  // 结论 1：taskTableWriteCount > 0 即证明层1 让任务表从未触发变为被真实 LLM 决策触发
+  // 结论 1：taskTableWriteCount > 0 即证明确定性触发让任务表从未触发变为被真实 LLM 决策触发
   if (metrics.plan.taskTableWriteCount > 0) {
     console.log('🎉 实证1 通过：真实 LLM 已决策调用 task_table_write，任务表触发链路打通。');
   } else {

@@ -6,7 +6,7 @@
  *   2. STRATEGY_KEY_RULES 完整性（prepare / act / reflect / global 四组键覆盖 + 规则类型）
  *   3. docs/role-pack/role-pack.schema.json 与策略键常量的一致性（防腐守——防 schema 手写副本与代码常量漂移）
  *
- * 注：isPercent / isRecallConfidence / MAX_MIN_FALLBACK 已随 memory-tool-recall-design 阶段2
+ * 注：isPercent / isRecallConfidence / MAX_MIN_FALLBACK 已随 memory-tool-recall-design
  * 召回策略键族（memoryRecallPercent/recallConfidence/minFallback）退役删除，无对应测试。
  *
  * 设计纪律：角色包对策略维度只"选择"不"定义"，因此枚举外取值是 error（机器可判读）
@@ -194,7 +194,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   });
 
   it('已撤键（防回归）：streaming 不在任何阶段键集', () => {
-    // 2026-09-11 撤键：streaming 仅被 agent.ts 写入 ChatOptions.stream，而 openaiCompatible
+    // streaming 仅被 agent.ts 写入 ChatOptions.stream，而 openaiCompatible
     // 硬编码 stream:true 从不读取 —— 暴露给作者却是空转的假键（同 toolApproval 型）。
     // 若未来误加回键集，此守卫红。
     for (const phase of PHASES) {
@@ -205,7 +205,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   });
 
   it('已撤键（防回归）：loopContinue 别名不在任何阶段键集', () => {
-    // 2026-09-11 撤键：v0.13- 命名残留的兼容别名（selfReview 的旧名）。
+    // loopContinue 是 v0.13- 命名残留的兼容别名（对应 selfReview）。
     // 安装基数 0（无已落盘角色包引用）→ 兼容防的是从未发生的场景；
     // 按版本契约分面「作者输入面可不兼容」整键删除，不留过渡兼容。若未来误加回键集，此守卫红。
     for (const phase of PHASES) {

@@ -1,5 +1,5 @@
 /**
- * P1 · 生产级可观测性体系 —— 演示脚本
+ * 生产级可观测性体系 —— 演示脚本
  *
  * 用法：
  *   npx tsx scripts/test-observability.ts
@@ -186,7 +186,7 @@ async function main(): Promise<void> {
   assert(initialMetrics.llm.actualOutputTokens === 0, '初始 actualOutputTokens 为 0');
   assert(initialMetrics.tasks.totalCount === 0, '初始 tasks.totalCount 为 0');
   assert(initialMetrics.tasks.successRate === 0, '初始 tasks.successRate 为 0');
-  // 层0：任务表观测量初始全零（实证"是否从没被触发"）
+  // 任务表观测量初始全零（实证"是否从没被触发"）
   assert(initialMetrics.plan.taskTableWriteCount === 0, '初始 plan.taskTableWriteCount 为 0');
   assert(initialMetrics.plan.planItemBoundaryCount === 0, '初始 plan.planItemBoundaryCount 为 0');
 
@@ -235,9 +235,9 @@ async function main(): Promise<void> {
   console.log(`  📊 任务 SLO：成功率 ${(afterFirstChat.tasks.successRate * 100).toFixed(1)}%`);
   console.log(`  📊 任务 SLO：平均耗时 ${afterFirstChat.tasks.avgDurationMs}ms`);
 
-  // ─── 测试 4.5：任务表观测量（层0：实证任务表是否被触发 / plan_item_boundary 是否产出）──
+  // ─── 测试 4.5：任务表观测量（实证任务表是否被触发 / plan_item_boundary 是否产出）──
   // 本次为简单问答（非多步工程任务）→ 预期 taskTableWriteCount/planItemBoundaryCount 为 0；
-  // 断言的是字段存在与如实反映，而非强行 >0（needsPlanning 假则不应建表，见层1）
+  // 断言的是字段存在与如实反映，而非强行 >0（needsPlanning 假则不应建表）
   console.log('\n📋 测试 4.5：任务表观测量');
   assert(
     typeof afterFirstChat.plan.taskTableWriteCount === 'number',
@@ -319,7 +319,7 @@ async function main(): Promise<void> {
   printMetrics(loop.getMetrics(), 'AgentMetrics 完整快照（5 个维度）');
 
   // ─── 测试 8：验证所有 5 个维度存在 ──────────────────────────
-  // recall/decay 组已随召回编排/自动衰减退役删除，新增 plan（任务表）组，现存 5 组
+  // recall/decay 组已随召回编排/自动衰减退役，现存 5 组（含 plan 任务表组）
   console.log('\n📋 测试 8：5 维度完整性验证');
   const finalMetrics = loop.getMetrics();
   const dimensions = ['llm', 'tools', 'context', 'tasks', 'plan'] as const;

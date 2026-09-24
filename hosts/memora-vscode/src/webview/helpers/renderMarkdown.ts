@@ -1,5 +1,5 @@
 /**
- * renderMarkdown — AI 回复的 Markdown 渲染（吸收养分：大厂对话流 Markdown 展示）
+ * renderMarkdown — AI 回复的 Markdown 渲染（大厂对话流 Markdown 展示）
  *
  * 养分来源（网络为土壤）：
  *   - 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读；

@@ -58,7 +58,7 @@ export const dropdownStyles = `
   }
   .treedd__item.is-danger { color: var(--status-fail); }
   .treedd__item.is-danger:hover { color: var(--status-fail); }
-  /* 后缀徽记（SKILL-S2：技能「已禁用」等）：说明「条目存在但状态受限」，
+  /* 后缀徽记（技能「已禁用」等）：说明「条目存在但状态受限」，
    * 弱化呈现、不遮挡主标题。与 is-disabled 配套使用（前者表状态、后者改主色）。 */
   .treedd__item-note {
     margin-left: var(--sp-2, 6px);
@@ -69,8 +69,7 @@ export const dropdownStyles = `
   /* ===== 胶囊变体（.treedd--capsule）=====
    * 模型选择 / 历史切换等「紧凑胶囊触发器」的通用外观，集中定义一次，面板复用。
    * 相比各面板以 !important 覆写组件默认样式（层叠污染的架构反模式），此变体以
-   * 更高特异性选择器在组件内自然覆盖默认 ellipsis 图标按钮，无需 !important
-   * （对抗评估 P2-2/P2-4）。
+   * 更高特异性选择器在组件内自然覆盖默认 ellipsis 图标按钮，无需 !important。
    * 差异通过 CSS 变量定制：--dd-trigger-max-w（触发器最大宽，超长省略兜底）、
    * --dd-menu-min-w / --dd-menu-max-w（菜单尺寸）。 */
   .treedd--capsule .treedd__trigger {
@@ -92,7 +91,7 @@ export const dropdownStyles = `
     font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-left: 2px;
   }
   /* 名称文本容器：负责截断（配合触发器 max-width 兜底）。
-   * 通用语义类 dd-trigger-name（SSOT 剪枝：模型/角色共用），替代原模型专属 dd-model-name */
+   * 通用语义类 dd-trigger-name（模型/角色共用） */
   .treedd--capsule .treedd__trigger .dd-trigger-name {
     min-width: 0; flex: 1 1 auto; overflow: hidden;
     white-space: nowrap; text-overflow: ellipsis; line-height: 1;
@@ -104,7 +103,7 @@ export const dropdownStyles = `
   /* 菜单：当前为「向上弹出 + 向右对齐」（right:0）——
    * 模型选择器位于输入区右侧操作组，贴近面板右缘，若 left:0 向左对齐会往右弹出
    * 超出面板右缘被裁剪挤压宽度；right:0 使菜单右缘对齐触发器右缘、往左展开，
-   * 菜单整体留在面板内，宽度不被挤压（替代面板级 !important 覆写）。 */
+   * 菜单整体留在面板内，宽度不被挤压（不用面板级 !important 覆写）。 */
   .treedd--capsule .treedd__menu {
     right: 0; left: auto; top: auto;
     bottom: calc(100% + var(--sp-2, 6px));
@@ -114,7 +113,7 @@ export const dropdownStyles = `
     z-index: 200; /* 模型选择器菜单最高层级，浮于所有内容之上（含消息区+输入卡片） */
     transform: translateZ(0); /* 独立合成层：避免 webview 渲染引擎重排导致「挤压对话区」 */
   }
-  /* 自动翻转（SSOT 排雷 P1-2）：触发器贴近容器顶缘时向上放不下，由 applyDropDirection
+  /* 自动翻转：触发器贴近容器顶缘时向上放不下，由 applyDropDirection
    * 加 .treedd--drop-down 切换为向下弹出，避免菜单溢出面板顶部被裁切。 */
   .treedd--capsule.treedd--drop-down .treedd__menu {
     top: calc(100% + var(--sp-2, 6px));

@@ -6,7 +6,7 @@
  *     本文件只引用令牌，禁止裸值；
  *   - 分区遵循 ITCSS：Base（body）→ Layout（状态区/消息区/输入区）
  *     → Components（消息 / 输入卡片 / 模型选择器 / 发送按钮 / 状态条）；
- *     顶部标题栏已剪枝（视图标题栏 native 承载「对话」标题 + 清空/历史按钮）；
+ *     顶部标题栏不在此设（视图标题栏 native 承载「对话」标题 + 清空/历史按钮）；
  *   - 操作按钮（复制等）「主动可见」，避免 hover-only；
  *   - 下拉菜单样式见 dropdown.ts（scoped 到 .treedd），过程事件块见本文件 round-block 段。
  */
@@ -27,8 +27,8 @@ export const chatStyles = `
   }
 
   /* ============ Layout：面板骨架 ============ */
-  /* 顶部工具栏已剪枝（视图标题栏 native 承载「对话」标题 + 清空/历史按钮），
-   * 面板内不再有重复标题栏；body 直接进入状态区 → 消息区 → 输入区。
+  /* 面板内不设重复标题栏（视图标题栏 native 承载「对话」标题 + 清空/历史按钮）；
+   * body 直接进入状态区 → 消息区 → 输入区。
    * 消息区：全量铺开；z-index 设为 1（底层），输入区 z-index:20（上层承载浮层）——
    * 消除模型下拉菜单展开时「挤压对话区」的错觉：菜单是覆盖而非挤入布局。 */
   #messages {
@@ -39,7 +39,7 @@ export const chatStyles = `
     display: flex; flex-direction: column; gap: var(--sp-4, 10px);
     position: relative; z-index: 1;
   }
-  /* 一键到底按钮（吸收养分：对齐 TRAE App「上滚后回到底部」）：
+  /* 一键到底按钮（对齐 TRAE App「上滚后回到底部」）：
    * 用户上滚离开底部时浮现于消息区右下角，点击回到底部后隐藏。
    * 圆形次级按钮：半透明表面 + 边框，不抢消息主体；z-index 高于消息、低于输入区。 */
   .scroll-to-bottom {
@@ -76,8 +76,8 @@ export const chatStyles = `
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
     user-select: none;
   }
-  /* 会话标题条按钮组（2026-08-17 会话管理重构）：改名笔 + 新建「＋」+ 历史，
-   * 会话导航全量收敛到标题条；spacer 把按钮组推向右端（对齐 Trae 右上角历史入口） */
+  /* 会话标题条按钮组：改名笔 + 新建「＋」+ 历史，会话导航入口集中在标题条；
+   * spacer 把按钮组推向右端（对齐 Trae 右上角历史入口） */
   .session-title-bar__btn {
     display: inline-flex; align-items: center; justify-content: center;
     width: 22px; height: 22px; margin-left: var(--sp-1, 4px);
@@ -96,9 +96,9 @@ export const chatStyles = `
   .session-title-bar__btn .btn-icon svg { display: block; }
   .session-title-bar__spacer { flex: 1 1 auto; }
 
-  /* ============ Components：历史记录下拉（2026-08-17 会话管理重构 v2） ============ */
-  /* 复用 treedd 下拉组件（SSOT 剪枝：替代自造的居中 overlay/modal——原 modal 的
-   * display:flex 覆盖 hidden 属性导致「关不掉 + 遮罩常驻」bug，见 v1 教训）。
+  /* ============ Components：历史记录下拉 ============ */
+  /* 复用 treedd 下拉组件，不自造居中 overlay/modal（其 display:flex 覆盖 hidden 属性，
+   * 会「关不掉 + 遮罩常驻」）。
    * 紧挨标题条历史按钮下方弹出（treedd 绝对定位浮层），无遮罩、轻量；
    * 条目富内容：标题 + 相对时间 + 悬浮垃圾桶（删除 hover 复用 --status-fail 令牌）。 */
   .session-history .treedd__trigger {
@@ -159,7 +159,7 @@ export const chatStyles = `
     background: transparent; color: var(--text-secondary, #9aa0a6); cursor: pointer;
   }
   .suggestion-chip:hover { background: var(--surface-hover, rgba(128,128,128,.2)); color: var(--text-primary, #cccccc); }
-  /* UX-1 onboarding 引导按钮（2026-09-01）：LLM 未配置时空态「去配置模型」，主按钮强调 */
+  /* onboarding 引导按钮：LLM 未配置时空态「去配置模型」，主按钮强调 */
   .empty-onboard-btn {
     padding: var(--sp-2, 6px) var(--sp-5, 12px); font-size: var(--font-md, 12px);
     border-radius: var(--radius-pill, 999px); cursor: pointer;
@@ -167,7 +167,7 @@ export const chatStyles = `
     background: transparent; margin-top: var(--sp-3, 8px);
   }
   .empty-onboard-btn:hover { background: var(--accent-soft, rgba(79,193,255,.12)); }
-  /* Follow-up 建议块（T2，2026-08-17 回复后关联推荐）：AI 回复下方「接下来可以探索」，
+  /* Follow-up 建议块（回复后关联推荐）：AI 回复下方「接下来可以探索」，
      chips 与空状态示例共用 .suggestion-chip（左对齐，区别于空状态居中） */
   .followup { padding: var(--sp-1, 4px) var(--sp-2, 6px) var(--sp-5, 12px); }
   .followup__caption { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); margin-bottom: var(--sp-2, 6px); letter-spacing: 0.3px; }
@@ -209,7 +209,7 @@ export const chatStyles = `
     opacity: 1; transform: translateY(0);
   }
   .msg-user-actions .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
-  /* UX-9 提问内联选择题（2026-09-03，提问形态内联化）：
+  /* 提问内联选择题：
    * 提问块下方直接出「选项按钮 + 补充输入」，对齐 Claude/TraeWork 消息流内联交互。
    * 浅底容器 + 品牌色选项按钮，不抢正文；补充输入与主输入区同语言（输入框 + 发送按钮）。 */
   .ask-inline {
@@ -246,10 +246,10 @@ export const chatStyles = `
   }
   .ask-inline__input::placeholder { color: var(--text-tertiary, #6e7681); }
   .ask-inline__input:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 0; }
-  /* P2 多 ask 聚合（2026-09-22）+ 收敛（2026-09-22 统一单一形态）：ask 交互统一「逐题点选/输入 →
+  /* 多 ask 聚合：ask 交互统一「逐题点选/输入 →
    * 全部答完才提交」；is-selected = 该题已作答（实心品牌色，可再点改选）；submit 为底部一次性
    * 提交按钮（single 时「提交回答」/ multi 时「提交全部回答」），全部题目有答案才 enabled。
-   * 纯开关无动画。注：input-row / send 样式已随单问分支收敛删除（单问=一个问题的多问，统一走 submit）。 */
+   * 纯开关无动画。单问=一个问题的多问、同样走 submit，勿再加 input-row / send 分支。 */
   .ask-inline__opt.is-selected {
     color: var(--accent-foreground, #ffffff);
     background: var(--accent, #0e639c);
@@ -270,7 +270,7 @@ export const chatStyles = `
     cursor: not-allowed;
   }
   .ask-inline__submit:focus-visible { outline: 2px solid var(--focus, #007fd4); outline-offset: 1px; }
-  /* 写入审批卡（H0，2026-09-19 补全）：confirmWrites=true 写文件时浮现于消息区底部。
+  /* 写入审批卡：confirmWrites=true 写文件时浮现于消息区底部。
    * 浅底卡片 + 头部（工具/路径）+ 描述 + 可折叠 diff + 确认/拒绝按钮；
    * 确认用语义令牌 --status-pass、拒绝用 --status-fail —— 与工具执行状态色同源，不造新色。 */
   .write-confirm-card {
@@ -320,9 +320,9 @@ export const chatStyles = `
   .write-confirm-card__btn--reject:focus-visible {
     outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px;
   }
-  /* 运行时输入条目行（形态甲，2026-09-17）：question-answer / supplement / timeout 统一形态，
+  /* 运行时输入条目行：question-answer / supplement / timeout 统一形态，
    * 对齐 thought/tool 过程行视觉（左缘 + 圆角 + 弱化字色）；非折叠块——内容恒可见，来源以 tag
-   * 区分（「你答 / 你补充 / 未回答」）。样式同源 .msg-qa 收敛而来（折叠 → 条目行）。 */
+   * 区分（「你答 / 你补充 / 未回答」）。 */
   .round-block__input {
     display: block;
     border-left: 1px solid var(--border-panel, rgba(128,128,128,.4));
@@ -398,14 +398,14 @@ export const chatStyles = `
   }
   .msg-icon-btn:disabled { color: var(--text-secondary, #9aa0a6); cursor: default; opacity: .5; }
   /* AI 回答：顶部身份标签 + 任务过程折叠区 + 报告正文 + footer（对齐主流大厂 AI 对话设计）。
-   * 结构（2026-09-02 收紧：任务过程在上 · 报告在下，SSOT 单一折叠区）：
+   * 结构（任务过程在上 · 报告在下，SSOT 单一折叠区）：
    *   .msg.assistant → 纵向
    *     [.msg-ai-label            角色/模型名]
    *     [.round-block             任务过程折叠区（进行中展开·实时相位+工具追加；完成收起只留摘要）]
    *     [.msg-body                报告正文（单一连续 markdown，不被工具切碎）]
    *     [.msg-footer              复制/分叉/删除 + 时间戳]
    * 顶部弱标签标「谁在说」而非侧边头像（后者每条回复都挤占一行），
-   * 正文直接铺满宽度，信息密度更高（ui-redesign 迭代）。 */
+   * 正文直接铺满宽度，信息密度更高。 */
   .msg.assistant {
     align-self: stretch;
     flex-direction: column; align-items: stretch; gap: var(--sp-1, 4px);
@@ -444,10 +444,10 @@ export const chatStyles = `
     margin-right: var(--sp-1, 4px);
     color: var(--border-panel, rgba(128,128,128,.4));
   }
-  /* （2026-09-21 剪枝）「↻ 续接」chip 与 is-continued 块样式随续接视觉整体退役：
-  * 运行时补充/问答由独立交互条目行分隔、断流续跑不存在、无同轮多段历史数据（见 chatView append 注释） */
+  /* 续接视觉已整体退役，勿再加 is-continued / 「↻ 续接」chip 样式
+  * （断流续跑不存在、无同轮多段历史数据，见 chatView append 注释） */
 
-  /* ============ Components：AI 回复 Markdown 渲染（吸收养分，2026-08-16） ============
+  /* ============ Components：AI 回复 Markdown 渲染 ============
    * 大厂对话流（ChatGPT / Claude / Trae）均以 Markdown 渲染 AI 回复，代码块/列表/表格可读。
    * 流式期间纯文本 + 光标 ▋（is-streaming：pre-wrap 保真换行 + 末尾闪烁光标），
    * 流结束后渲染 markdown 用 normal（markdown 自身处理换行）。表格 display:block + 横向
@@ -495,7 +495,7 @@ export const chatStyles = `
     white-space: pre;
   }
   .msg.assistant .msg-body pre code { background: transparent; padding: 0; font-size: var(--font-md, 12px); }
-  /* 代码块增强（吸收养分：对齐 TraeWork 代码块「语言标签 + 一键复制」）：
+  /* 代码块增强（对齐 TraeWork 代码块「语言标签 + 一键复制」）：
    * renderMarkdown 后由 enhanceCodeBlocks 把每个 <pre> 包装为 .code-block，
    * header（语言名 + 复制按钮）置顶，与下方 pre 连成一体圆角容器。 */
   .code-block { margin: 0 0 var(--sp-3, 8px); }
@@ -549,7 +549,7 @@ export const chatStyles = `
   /* 流式回答未完成时隐藏底部操作行（复制/分叉/删除 + 时间戳），回答完毕后才展示。
    * 状态类 is-pending 由 buildAssistantShell（pending 选项）加类、finalizeStreaming 移除。 */
   .msg-footer.is-pending { display: none; }
-  /* UX-9 A 容器化·平铺版（2026-09-03）：同 roundId 的 AI 段归组进同一 DOM 容器（问答闭环）。
+  /* 同 roundId 的 AI 段归组进同一 DOM 容器（问答闭环）。
    * 容器只做「同环归组 + 容器级操作」的结构职责，不做「卡片」视觉：
    * 无边框/无圆角/无背景/无 overflow:hidden，AI 正文全宽平铺铺满消息区
    * （对齐 Trae Work 对话流：回答直接铺满版面，不套框）。
@@ -558,16 +558,16 @@ export const chatStyles = `
   .round-group {
     margin: var(--sp-2, 6px) 0;
     /* min-width:0 → flex 子项允许收缩到面板宽，防代码块/长文本把容器撑宽后被
-     * 自身宽度裁掉右缘；max-width:100% 保证容器不超出消息区（2026-09-03 防「锁在框里」） */
+     * 自身宽度裁掉右缘；max-width:100% 保证容器不超出消息区（防「锁在框里」） */
     min-width: 0; max-width: 100%;
     display: flex; flex-direction: column;
   }
-  /* 容器直系子块（AI 段/交互子行）全宽平铺，不再内缩——
+  /* 容器直系子块（AI 段/交互子行）全宽平铺——
    * 正文直接贴着消息区左右边距，铺满整个版面 */
   .round-group > .msg.assistant { padding-right: 0; padding-left: 0; }
-  /* 容器级 footer：操作上移后的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点）。
-   * 平铺版轻量化：去背景色，顶部细虚线分隔（与 .interrupt-divider 语言一致），
-   * 不突出操作行、不抢正文；操作入口保留今天「整链复制/分叉/删除」的闭环能力 */
+  /* 容器级 footer：容器级操作的唯一入口——左侧复制整链/分叉/删除，右侧时间戳（闭环起点）。
+   * 无背景色，顶部细虚线分隔（与 .interrupt-divider 语言一致），
+   * 不突出操作行、不抢正文；承载「整链复制/分叉/删除」闭环能力 */
   .round-group__footer {
     display: flex; align-items: center; justify-content: space-between;
     gap: var(--sp-2, 6px);
@@ -576,12 +576,12 @@ export const chatStyles = `
     border-top: 1px dashed var(--border-panel, rgba(128,128,128,.24));
     font-size: var(--font-sm, 11px);
   }
-  /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义（SSOT 复用）。
+  /* 容器级 footer 的「内容未定稿」隐藏：与段级 .msg-footer.is-pending 同一语义。
    * 提问（turn_update 的 waiting/ask）等待回答期间容器 footer 不显示——底部只留 ask-inline 交互块；
    * 回答 resume 完成（done）后由 finalizeStreaming 移除该状态，与不提问场景底部栏统一。 */
   .round-group__footer.is-pending { display: none; }
   .round-group__actions { display: inline-flex; align-items: center; gap: var(--sp-1, 4px); }
-  /* 段级 footer 隐藏：容器化后复制/分叉/删除/时间戳统一上移容器级，段级不再出现
+  /* 段级 footer 隐藏：复制/分叉/删除/时间戳统一由容器级承载，段级不设
    * （避免「续接正文底部又有操作按钮」的重复入口） */
   .msg.assistant .msg-footer { display: none; }
   .msg-time { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); }
@@ -601,7 +601,7 @@ export const chatStyles = `
     background: transparent;
     position: relative; z-index: 20; /* 输入区层级高于消息区：下拉浮层正确覆盖而非挤压 */
   }
-  /* Phase 4：thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色条
+  /* thinking 态 interject 队列可视化 —— 挂在 inputBar 前面的灰色条
    * 懒创建（chatView.updatePendingQueueBar），仅 items.length>0 时显示；
    * hidden 属性天然生效（display:block 被显式 [hidden] 覆盖为 none）。
    * 视觉定位：弱化灰色条（--surface-track），比输入卡片更轻，不抢注意力。
@@ -618,7 +618,7 @@ export const chatStyles = `
     font-size: 12px;
     line-height: 1.4;
     color: var(--text-muted, #9a9a9a);
-    /* 2026-09-07 UI 打磨：去整块灰底虚线卡，改左侧色条 + 透明底，轻盈贴近打断语义 */
+    /* 左侧色条 + 透明底：轻盈贴近打断语义 */
   }
   /* 顶部行：徽章 + 标题 + 提示 + 清空按钮（flex 一行） */
   .pending-queue-bar__head {
@@ -689,7 +689,7 @@ export const chatStyles = `
     opacity: 0.9;
   }
   /* 单条删除按钮：平时透明，hover 行时显现 */
-  /* 单条删除按钮内的 close 图标（原 × 字符的 SVG 替代，2026-09-19） */
+  /* 单条删除按钮内的 close 图标（SVG） */
   .pending-queue-bar__item-del svg { display: block; }
   .pending-queue-bar__item-del {
     flex-shrink: 0;
@@ -739,7 +739,7 @@ export const chatStyles = `
     color: var(--status-fail, #b3261e);
   }
   .pending-queue-bar[hidden] { display: none; }
-  /* ④ 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
+  /* 预算可视化：发送按钮旁的上下文占用圆环充能图标（常驻不占行；hover/聚焦**向上**弹窗出分层明细文字，
    * 避免向下展开挤压面板底部出现外部滚动条） */
   .context-ring {
     position: relative; /* 弹窗以本元素为基准向上定位 */
@@ -825,7 +825,7 @@ export const chatStyles = `
   /* textarea：占主空间，无独立边框，与卡片融合
    * ⚠ 高度纪律：必须 flex: 0 0 auto —— flex:1（flex-basis:0%）会忽略主轴 style.height，
    * 使 autoResize() 的高度上限（--input-max-h）形同虚设，长文本时被压缩成底部一小截且无法滚动。
-   * 高度唯一控制权归 JS autoResize()（2026-09-22 实证修复，源自 headless Chromium 复现验证） */
+   * 高度唯一控制权归 JS autoResize()。 */
   #input {
     flex: 0 0 auto;
     padding: var(--sp-6, 16px) var(--sp-6, 16px) var(--sp-3, 8px);
@@ -888,7 +888,7 @@ export const chatStyles = `
     min-width: 0;
   }
   /* 右侧发送按钮容器：唯一主操作，绝不收缩（视觉焦点恒定）。
-   * Gap A：生成中并列「暂停」按钮（.pause-btn），故容器改 flex 横向排列两钮 */
+   * 生成中并列「暂停」按钮（.pause-btn），容器为 flex 横向排列两钮 */
   .composer-right {
     flex-shrink: 0;
     display: flex;
@@ -945,7 +945,7 @@ export const chatStyles = `
     background: var(--accent-hover, rgba(14, 99, 156, 0.15));
   }
   .team-meeting-icon[hidden] { display: none; }
-  /* Phase 4 E2：工具权限徽章（与角色徽章并列，展示工具模式与能力列表） */
+  /* 工具权限徽章（与角色徽章并列，展示工具模式与能力列表） */
   .capability-badge {
     display: inline-flex;
     align-items: center;
@@ -1004,7 +1004,7 @@ export const chatStyles = `
     color: var(--accent, #0e639c);
     font-weight: 600;
   }
-  /* 已禁用技能（SKILL-S2）：弱化主色 + 后缀「已禁用」徽记（.treedd__item-note 定义在 dropdown.ts）。
+  /* 已禁用技能：弱化主色 + 后缀「已禁用」徽记（.treedd__item-note 定义在 dropdown.ts）。
    * 刻意**不隐藏**条目——与设置页同款语义（禁用的是可见性，不是存在性）；也刻意**不拦截**选择：
    * 真源判定在 host（isSkillDisabled），webview 拒绝会在配置重载后假拒绝。
    * 定义顺序在 .is-active 之后 ⇒ 禁用项即使被选中也保持弱化（选中态靠 font-weight 600 体现）。 */
@@ -1035,7 +1035,7 @@ export const chatStyles = `
     border-radius: var(--radius-pill, 999px);
     white-space: nowrap;
   }
-  /* 已禁用技能 chip（SKILL-S2）：虚线边框 + 次要色，与「已挂载且生效」的实线 accent 形态区分。
+  /* 已禁用技能 chip：虚线边框 + 次要色，与「已挂载且生效」的实线 accent 形态区分。
    * 语义 = 挂在输入框上但发送时不会注入；用户可据此自行移除或去设置里启用。 */
   .skill-chip.is-disabled {
     color: var(--text-secondary, #9aa0a6);
@@ -1045,13 +1045,13 @@ export const chatStyles = `
   .skill-chip__icon { font-size: 11px; line-height: 1; flex-shrink: 0; display: inline-flex; align-items: center; }
   .skill-chip__icon svg { display: block; }
   .skill-chip__name { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-  /* chip 后缀徽记（SKILL-S2）：与下拉项 .treedd__item-note 同语义、同观感（各自 BEM 归属） */
+  /* chip 后缀徽记：与下拉项 .treedd__item-note 同语义、同观感（各自 BEM 归属） */
   .skill-chip__note {
     flex-shrink: 0;
     font-size: var(--font-xs, 10px);
     opacity: 0.9;
   }
-  /* 移除按钮内的 close 图标（原 × 字符的 SVG 替代，2026-09-19） */
+  /* 移除按钮内的 close 图标（SVG） */
   .skill-chip__remove svg { display: block; }
   .skill-chip__remove {
     flex-shrink: 0;
@@ -1082,7 +1082,7 @@ export const chatStyles = `
 
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
    * 通用胶囊外观统一在 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
-   * 消除面板各自覆写组件默认样式带来的重复 + !important（对抗评估结论）。
+   * 消除面板各自覆写组件默认样式带来的重复 + !important。
    * 本区块只做差异定制：宽度自适应模型名（对齐 Trae）+ 菜单尺寸 + 激活项高亮。
    * 面板通过 extraClass="model-picker treedd--capsule" 启用变体。 */
   .model-picker {
@@ -1149,13 +1149,13 @@ export const chatStyles = `
   }
   .send-btn-primary.loading .send-icon { display: none; }
   .send-btn-primary.loading .stop-icon { display: block; }
-  /* 暂停中：按钮切为「继续」语义（▶ 播放图标）——用户点击恢复执行（Gap A 暂停/恢复） */
+  /* 暂停中：按钮切为「继续」语义（▶ 播放图标）——用户点击恢复执行 */
   .send-btn-primary.paused .send-icon { display: none; }
   .send-btn-primary.paused .stop-icon { display: none; }
   .send-btn-primary.paused .play-icon { display: block; }
   .send-btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
 
-  /* 暂停按钮（Gap A）：生成中与「停止」并列的软暂停入口。
+  /* 暂停按钮：生成中与「停止」并列的软暂停入口。
    * 次级控制，视觉弱化（同加载态灰调），与主发送按钮共列于右缘；
    * hidden 由 chatView.setStatus 控制——仅生成中暴露，暂停/空闲态收回。 */
   .pause-btn {
@@ -1181,9 +1181,9 @@ export const chatStyles = `
   /* display:inline-flex 会覆盖 HTML hidden 属性，需显式恢复隐藏 */
   .pause-btn[hidden] { display: none; }
 
-  /* ============ Components：活动状态区 · 主状态条（P0 错误 / P1 低扰） ============ */
+  /* ============ Components：活动状态区 · 主状态条 ============ */
   /* 会话异常等错误级反馈 + 低扰 info 统一走单一主状态条（#activityBar），不插入消息区，
-   * 不污染对话历史（排雷雷-4 修正）。错误显示期间低扰不打断（优先级保护）；被覆盖的
+   * 不污染对话历史。错误显示期间低扰不打断（优先级保护）；被覆盖的
    * 提示进「活动详情」历史回溯（见下方 .activity-detail）。
    * 分级：error 醒目（inputValidation error 色）、info 低扰（同记忆语义）。
    * [hidden] 覆盖：display:flex 会覆盖 HTML hidden 属性，需显式恢复。 */
@@ -1206,7 +1206,7 @@ export const chatStyles = `
     color: var(--feedback-error-fg);
     background: var(--feedback-error-bg);
   }
-  /* A2（2026-08-24）：activityBar 操作按钮（框架就绪，宿主暂未接入可重试错误） */
+  /* activityBar 操作按钮（框架就绪，宿主暂未接入可重试错误） */
   .activity-bar__text { flex: 1 1 auto; }
   .activity-bar__action {
     flex-shrink: 0;
@@ -1223,13 +1223,13 @@ export const chatStyles = `
   }
 
 
-  /* ============ Components：任务进度常驻条（H4 任务驱动多步闭环，2026-08-23 → 2026-09-17 单轨） ============ */
+  /* ============ Components：任务进度常驻条（任务驱动多步闭环，单轨） ============ */
   /* LLM 调用 task_table_write/update 建表时显示的顶部常驻进度条（#planBar）：默认一行
    * N/M + 进度条 + 当前 active 任务项摘要，点击展开锚定浮层看全量任务项 + planItemLog。
-   * 单轨设计：与 #messages **同级**的固定插槽（非其子节点——滚动容器内一滚即消失）；
-   * 运行时不再渲染 inline 轨。只读展示内核 checkpoint.plan，状态色约定
+   * 单轨设计：与 #messages **同级**的固定插槽（非其子节点——滚动容器内一滚即消失），
+   * 运行时不渲染 inline 轨。只读展示内核 checkpoint.plan，状态色约定
    * （done=--status-pass 完成 / active=--accent 进行中 / blocked=--status-fail / pending=次级灰）。
-   * 属于 checkpoint 执行态展示，不参与 round-block 过程事件复原（v1.5）。 */
+   * 属于 checkpoint 执行态展示，不参与 round-block 过程事件复原。 */
   .plan-bar {
     position: relative; /* 锚定浮层以本插槽为定位基准（top:100% 紧贴其下） */
     flex: 0 0 auto; /* 与 session-title-bar 同级非缩放，不随 #messages 滚动 */
@@ -1271,7 +1271,7 @@ export const chatStyles = `
     flex-shrink: 0; display: inline-flex; align-items: center;
     color: var(--text-muted, #6e7681);
   }
-  /* SVG 指示器尺寸适配（2026-09-19 HOST-S8：原 ▸/▾ 字符 → icons.ts 的 SVG） */
+  /* SVG 指示器尺寸适配 */
   .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
   /* 锚定浮层：紧贴常驻条下方（top:100%），全量步骤列表 + planItemLog；卡片 + 阴影浮于对话上方。
    * 非 modal（无遮罩）：看进度时需同时看正文。max-height 超限滚动 */
@@ -1320,7 +1320,7 @@ export const chatStyles = `
   .plan-item-blocked { color: var(--status-fail, #b3261e); }
   /* pending：默认次级灰（继承 .plan-bar__panel 的 text-secondary，无需额外规则） */
 
-  /* P-2：plan-board planItemLog 行内相对时间标签 */
+  /* plan-board planItemLog 行内相对时间标签 */
   .plan-item-round-time {
     display: inline-block;
     font-size: 10px;
@@ -1331,7 +1331,7 @@ export const chatStyles = `
     border-radius: 3px;
   }
 
-  /* ============ Components：round-block 任务过程折叠区（2026-09-02 收紧：SSOT 单一容器） ============ */
+  /* ============ Components：round-block 任务过程折叠区（SSOT 单一容器） ============ */
   /* 每轮回答的单一「任务过程」折叠区：summary 默认可见（进行中呼吸点 + 计数/耗时，完成收起），
    * details 展开后按小节呈现实时相位/工具调用/过程轨迹/召回/已沉淀/自审查/执行指标。
    * 运行时的全部过程事件统一折叠于此，报告正文（.msg-body）保持干净不被切碎——
@@ -1360,7 +1360,7 @@ export const chatStyles = `
     border-bottom: 1px dashed var(--border-panel, rgba(128,128,128,.3));
     margin-bottom: var(--sp-1, 2px);
   }
-  /* target 图标（原 📍 emoji 的 SVG 替代，2026-09-19 图标语言收口）：跟随 accent 色，不收缩 */
+  /* target 图标（SVG）：跟随 accent 色，不收缩 */
   .round-block__plan-tag__icon { display: inline-flex; align-items: center; flex-shrink: 0; }
   .round-block__plan-tag__icon svg { display: block; }
   .round-block__dot {
@@ -1370,7 +1370,7 @@ export const chatStyles = `
   /* 流式中：圆点品牌色呼吸（复用 selfReviewPulse，遵守 prefers-reduced-motion） */
   .round-block.is-running .round-block__dot { background: var(--accent, #0e639c); animation: selfReviewPulse 1.2s ease-in-out infinite; }
   .round-block__stats { word-break: break-all; }
-  /* 回答等待指示器（③ 等待反馈，2026-08-29）：meta 前 prepare 阶段的可见反馈——
+  /* 回答等待指示器：meta 前 prepare 阶段的可见反馈——
      呼吸圆点 + 相位文案 + 等待秒数；胶囊形态弱化打扰，role=status 尊重 reduced-motion */
   .pending-wait {
     display: flex; align-items: center; gap: var(--sp-2, 6px);
@@ -1393,7 +1393,7 @@ export const chatStyles = `
     margin-top: var(--sp-1, 4px);
     display: flex; flex-direction: column; gap: var(--sp-2, 6px);
   }
-  /* v1.8 运行时过程平铺容器（2026-09-09 剪枝）：运行时无 round-block 大折叠壳——
+  /* 运行时过程平铺容器：运行时无 round-block 大折叠壳——
      过程（narrate 冒号行 / 工具折叠行 / 思考状态）按任务项时序平铺于此，透明无壳；
      done/interrupted finalize 时移除、内容收进 round-block 折叠块。任务表例外：
      plan_item_boundary 时平铺内容归入 .round-block__plan-item 折叠块（复用折叠视觉）。 */
@@ -1421,7 +1421,7 @@ export const chatStyles = `
     color: var(--text-primary, #e0e0e0);
     white-space: pre-wrap; word-break: break-all;
   }
-  /* 中断轮平铺收尾行（2026-09-19 形态定案：过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
+  /* 中断轮平铺收尾行（过程折叠、停止行折叠块外平铺常驻——RT/RP 同构） */
   .round-block__interrupted {
     margin: var(--sp-2, 6px) 0 2px; padding: var(--sp-1, 2px) 0;
     border-top: 1px dashed var(--border-panel, rgba(128,128,128,.4));
@@ -1439,7 +1439,7 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) 0; line-height: 1.6;
     word-break: break-all;
   }
-  /* 步级折叠容器（阶段二，2026-09-08 路 B′）：active 任务项推进时，后续 narrate/tool
+  /* 步级折叠容器：active 任务项推进时，后续 narrate/tool
    * 归入对应任务项折叠块（summary 显示「任务项 N · 标题」），实现「边界切组、步内平铺」。
    * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——步骤过程属过程明细，报告保持简洁。 */
   .round-block__plan-item {
@@ -1469,7 +1469,7 @@ export const chatStyles = `
     color: var(--text-secondary, #9aa0a6);
     white-space: pre-wrap; word-break: break-all;
   }
-  /* 思考折叠行/块（2026-09-13，Turn 意图理解与模型思考展示设计）：模型 thought 流，
+  /* 思考折叠行/块：模型 thought 流，
    * <details> 折叠；process-flow 运行时与 round-block finalize/重放共用同构形态（按 seq 平铺）。
    * summary = 「思考」标签 + 首行预览，展开看全文；颜色沿用 narrate token，无新色。 */
   .process-flow__thought, .round-block__thought { padding: var(--sp-1, 2px) 0; line-height: 1.6; }
@@ -1507,7 +1507,7 @@ export const chatStyles = `
     background: var(--accent, #0e639c);
     animation: selfReviewPulse 1.2s ease-in-out infinite;
   }
-  /* TS-11a：相位行切「工具执行」态——进行中工具优先显示执行叙述，主色强调 + 呼吸点延续 */
+  /* 相位行切「工具执行」态——进行中工具优先显示执行叙述，主色强调 + 呼吸点延续 */
   .round-block__phase.is-tool { color: var(--text-primary, #e6e6e6); font-weight: 600; }
   @media (prefers-reduced-motion: reduce) {
     .round-block__phase::before { animation: none; }
@@ -1526,7 +1526,7 @@ export const chatStyles = `
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
-  /* TS-11b：进行中工具行——高亮左缘 + 主色名称 + summary 前置旋转圆环，让「正在执行的工具」一眼可见；
+  /* 进行中工具行——高亮左缘 + 主色名称 + summary 前置旋转圆环，让「正在执行的工具」一眼可见；
      result 到达即移除（updateToolRowState 切 class），收尾全量渲染天然不带该态。
      环与正文 ▋ 光标互斥（同块在途工具时熄灭正文光标），见下方 :has 抑制规则 */
   .round-block__tool.is-tool-running {
@@ -1542,7 +1542,7 @@ export const chatStyles = `
     animation: toolSpinner .7s linear infinite;
   }
   @keyframes toolSpinner { to { transform: rotate(360deg); } }
-  /* 工具准备中态（2026-09-17）：LLM 流式生成 tool_call 参数期间的「准备中」行——静态浅环
+  /* 工具准备中态：LLM 流式生成 tool_call 参数期间的「准备中」行——静态浅环
      （与执行中 is-tool-running 的旋转环相区分，语义分层「准备中 / 执行中」）。 */
   .round-block__tool.is-tool-pending {
     border-left-color: var(--border-panel, rgba(128,128,128,.4));
@@ -1553,7 +1553,7 @@ export const chatStyles = `
     border: 1.5px solid var(--border-panel, rgba(128,128,128,.4));
     border-radius: 50%; box-sizing: border-box;
   }
-  /* 工具运行期间抑制正文流式光标（2026-09-17）：「工具在途」= 动态指示统一由工具旋转图标承担，
+  /* 工具运行期间抑制正文流式光标：「工具在途」= 动态指示统一由工具旋转图标承担，
      同 assistant 块正文的 ▋ 光标熄灭，只留"正在生成正文"时亮。单条 :has 规则、零 JS——class 切换
      （updateToolRowState/renderProcessFlow）即驱动，无第二套状态轨道。仅作用于含在途工具行的块，
      早前已定稿的块不受影响。 */
@@ -1561,7 +1561,7 @@ export const chatStyles = `
   @media (prefers-reduced-motion: reduce) {
     .round-block__tool.is-tool-running > summary::before { animation: none; }
   }
-  /* TS-11c：工具等待时长标签（瞬态，仅进行中工具行显示「Ns」） */
+  /* 工具等待时长标签（瞬态，仅进行中工具行显示「Ns」） */
   .round-block__elapsed {
     margin-left: var(--sp-2, 6px);
     color: var(--text-secondary, #9aa0a6);

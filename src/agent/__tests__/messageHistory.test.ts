@@ -181,8 +181,8 @@ describe('MessageHistory · forkSession', () => {
     const history = new MessageHistory(store, '2000-01-01', 'main');
     const result = history.forkSession('r2');
 
-    // 分叉键与当前身份同锚今天：写入不会漂到源会话旧日期（输入不再自动刷新日期后，
-    // fork 显式锚定即唯一新建路径，2026-08-29 剪枝）
+    // 分叉键与当前身份同锚今天：写入不会漂到源会话旧日期（输入不自动刷新日期；
+    // fork 显式锚定即唯一新建路径）
     expect(result.date).toBe(todayDate());
     expect(history.currentDateValue).toBe(todayDate());
     expect(history.currentSessionName).toBe(`${todayDate()}-${result.newSession}`);

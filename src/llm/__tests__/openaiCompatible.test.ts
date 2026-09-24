@@ -599,7 +599,7 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
   });
 
   it('工具意图预告：name 成形即产出 partialToolCall，且每 idx 只发一次', async () => {
-    // 2026-09-17：参数生成段可能数十秒（大参数工具），name 一成形就应上报让 UI 提前渲染
+    // 参数生成段可能数十秒（大参数工具），name 一成形就应上报让 UI 提前渲染
     server.use(
       http.post('*/chat/completions', () => {
         return createToolCallsSseResponse(
@@ -629,7 +629,7 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
   });
 
   it('工具意图预告：id 缺失时合成的 call_${seq} 与最终 toolCalls 同源', async () => {
-    // 2026-09-17：provider 不发 id（或 id 与 name 不同片）时，pending 合成的 id 必须
+    // provider 不发 id（或 id 与 name 不同片）时，pending 合成的 id 必须
     // 写回累积器，保证 finish_reason 时 buildToolCallsFromAccumulators 复用同一 id，
     // 宿主侧才可按 id 把「准备中」行升级为「执行中」行。
     server.use(
@@ -852,7 +852,7 @@ describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
 
     const chunks = await collectChunks(makeProvider());
 
-    // 增量语义（R3）：每条 chunk 只带新增片段，消费侧自行累积
+    // 增量语义：每条 chunk 只带新增片段，消费侧自行累积
     const thoughts = chunks.map((c) => c.thought).filter((r): r is string => r !== undefined);
     expect(thoughts).toEqual(['用户问 A/B 方案对比', '，先查资料']);
     // 与 tool_calls 并存：同一流内两者均被正确解析

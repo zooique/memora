@@ -1,5 +1,5 @@
 /**
- * capabilities → 特权工具映射测试（M2.1 → tool-exposure-model 特权声明模型）
+ * capabilities → 特权工具映射测试（tool-exposure-model 特权声明模型）
  *
  * capabilities = 角色包声明的超越默认边界的特权（web / code / task），
  * 不映射本地能力——file:* / memory:recall / project:search 等为

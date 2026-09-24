@@ -135,7 +135,7 @@ export const rolesStyles = `
   /* 兜底契约包定位 chip（能力标签区，灰色系） */
   #roles-root .strategy-chip.fallback { background: rgba(96, 125, 139, 0.2); color: #607d8b; }
 
-  /* ============ Components：G29 健康区（manifest 校验问题，镜像技能 G22 徽章模式） ============ */
+  /* ============ Components：健康区（manifest 校验问题，镜像技能 health-badge 模式） ============ */
   /* 徽章样式：复制技能侧 #skills-root .health-badge 形态，但用 #roles-root 作用域——避免把技能
      样式类改造成跨场景共享（SSOT：各视图自持作用域类，视觉 token 复用 tokens.ts 的 --skill-health-*） */
   #roles-root .role-health {
@@ -235,7 +235,7 @@ export const rolesStyles = `
     transition: width 0.3s ease;
   }
 
-  /* ============ Components：卡片级组队（② 2026-08-29） ============ */
+  /* ============ Components：卡片级组队 ============ */
   /* 小组条：卡片底部队伍阵容 + 创建/编辑队伍入口 */
   #roles-root .team-ribbon {
     display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2, 6px);
@@ -249,7 +249,7 @@ export const rolesStyles = `
     overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0;
   }
   #roles-root .team-ribbon-btn { padding: 1px var(--sp-2, 6px); font-size: var(--font-xs, 10px); flex-shrink: 0; }
-  /* 组员标注（卡片信息区，保留） */
+  /* 组员标注（卡片信息区） */
   #roles-root .team-member-role { font-size: var(--font-xs, 10px); color: var(--text-tertiary, #666); }
   /* 组队弹窗：遮罩 + 电话本式多选 + 反馈区 */
   #roles-root .team-modal-overlay {

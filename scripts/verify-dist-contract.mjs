@@ -2,7 +2,7 @@
 /**
  * dist 契约校验 — 「用户实际运行的东西」是否与内核源码同代
  *
- * 为什么存在（缺口，2026-09-16 审查确认为实锤）：
+ * 为什么存在（缺口）：
  *   门禁的 8 步里没有 `host:build` —— 宿主 `dist/extension/extension.js`（内联内核
  *   `dist/` 的单文件 bundle）**从不被构建**，而它才是用户在 VS Code 里真正运行的产物。
  *   于是 `npm run ci:local` 全绿可以与「宿主 bundle 陈旧」并存：内核改了 API，
@@ -19,7 +19,7 @@
  *      另一份旧拷贝——此时戳与当前 dist 一致、bundle 里却仍是旧内核）。
  *      故再断言：宿主源码里 import 自内核**且被用到**的导出，其实现必须出现在 bundle 中。
  *
- *   ②的三处必要修正（均由 2026-09-16 的变异验证实测暴露，不是预防性放宽）：
+ *   ②的三处必要修正（均由变异验证实测暴露，不是预防性放宽）：
  *     - **别名解析**：内核 barrel 做别名导出时（实测 `src/index.ts:247` 唯一的
  *       `export { defaultTitle as defaultSessionTitle }`），esbuild 内联后用的是**模块内本地名**
  *       `defaultTitle`，别名只活在 barrel 边界 → 直接搜导入名会**假红**。
@@ -28,7 +28,7 @@
  *       里 → 用**运行时 `import()` 内核 barrel** 取真实导出键做白名单，而非解析 `.d.ts`。
  *     - **只查「被用到」的**：esbuild 会 tree-shake 未使用的 import，查未使用的会假红。
  *
- * ⚠️ 转义感知（Tessa 正本清源，2026-09-16 实测复现）：
+ * ⚠️ 转义感知（实测复现）：
  *   esbuild `charset: 'ascii'` **只转义字符串字面量，注释保留 UTF-8**。故裸
  *   `includes(中文)` **双向失真**——注释命中=假绿，仅存于字面量=假红。
  *   本脚本对所有 token 一律走 `containsToken()`（原样 + `\uXXXX` 转义两种形态）。

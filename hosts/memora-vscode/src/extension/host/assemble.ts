@@ -60,7 +60,7 @@ const CHINESE_MESSAGES: UIMessages = {
     `\n输出格式（必须遵守）：` +
     `\n- 满意：只输出一句简短确认（如"无需修改"），严禁重复输出完整回答。` +
     `\n- 存在必须改进的判据：才输出改进后的完整回复，不要附加说明。`,
-  // 空响应兜底（边界 3，2026-09-15）：LLM 200 但 0 token（瞬态抽风 / 模型拒绝）时，
+  // 空响应兜底：LLM 200 但 0 token（瞬态抽风 / 模型拒绝）时，
   // 覆盖内核默认英文为中文提示；配合内核空响应重试，多数瞬态会在重试中救回、落不到这里。
   emptyResponseFallback: '模型未返回有效内容，请重试或换个说法。',
 };
@@ -115,14 +115,14 @@ export interface AssembleOptions {
    */
   sessionStore?: ISessionStore;
   /**
-   * 问答闭环存储（Phase 4：round-based 模式注入）
+   * 问答闭环存储（round-based 模式注入）
    *
    * 传入后内核启用 round-based 写入模式：每个问答闭环独立存储，
    * 会话通过 Round ID 列表组装。不传则仅 legacy 模式（向后兼容）。
    */
   roundStore?: IRoundStore;
   /**
-   * 插件内置配置目录（configDir，SSOT 修复 2026-08-15）
+   * 插件内置配置目录（configDir）
    *
    * 由 extension.ts 从 context.extensionUri 显式定位（join(extensionUri, 'dist', 'extension')），
    * 而非 assemble 内用 import.meta.url 相对推断——后者在 esbuild bundle 后
@@ -131,10 +131,10 @@ export interface AssembleOptions {
    */
   configDir: string;
   /**
-   * 启动时激活的角色包名（可选，2026-08-15 角色包状态持久化，2026-08-17 升为用户级）
+   * 启动时激活的角色包名（可选，用户级持久化）
    *
    * 宿主从 vscode globalState 读取用户上次选择的角色包注入，
-   * Agent init 时优先激活（§4.1 解析链第一层）；未配置/包不存在落兜底包。
+   * Agent init 时优先激活（解析链第一层）；未配置/包不存在落兜底包。
    */
   activeRolePack?: string;
   /**
@@ -174,7 +174,7 @@ export interface AssembleOptions {
    */
   confirmScripts?: boolean;
   /**
-   * 白名单额外允许路径（G8）
+   * 白名单额外允许路径
    *
    * 用户级项目白名单（不含 projectPath 基准根），由 extension 从 workspace 设置
    * memora.allowedPaths 读取注入。Agent 装配时合并为 [projectPath, ...extras]。
@@ -182,7 +182,7 @@ export interface AssembleOptions {
    */
   allowedPaths?: string[];
   /**
-   * 内置网页搜索引擎（方案 A，2026-09-02）
+   * 内置网页搜索引擎
    *
    * 由 extension 从 workspace 设置 memora.searchEngine 读取注入（'auto' | 'bing' | 'baidu' | 'sogou'）。
    * auto = 默认降级链（Bing→DuckDuckGo）；选 baidu/sogou 时用户首选引擎在前、Bing 兜底。
@@ -190,7 +190,7 @@ export interface AssembleOptions {
    */
   searchEngine?: 'auto' | SearchEngineName;
   /**
-   * 禁用的技能名清单（S4，2026-09-22）
+   * 禁用的技能名清单
    *
    * 由 extension 从 workspace 设置 memora.disabledSkills 读取注入，配置形态启停：
    * 命中技能对 LLM 全链不可用（L1 清单剔除 / L2 read_skill / L3 资源脚本），
@@ -199,7 +199,7 @@ export interface AssembleOptions {
    */
   disabledSkills?: string[];
   /**
-   * VSCode 输出通道（G7：日志对接）
+   * VSCode 输出通道（日志对接）
    *
    * 宿主创建 vscode.OutputChannel 注入，内核通过 setLogger() 将日志导向该通道。
    * 未传入时内核日志默认输出到 stdout（生产环境建议始终注入）。
@@ -233,7 +233,7 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, confirmScripts, allowedPaths, outputChannel, disabledSkills } = options;
 
-  // G7：日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
+  // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {
     const logger = createVscodeLogger(outputChannel);
     setLogger(logger);
@@ -241,7 +241,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
 
   // 1. 创建 LLM Provider（宿主注入；优先配置面板的激活 Provider，回退环境变量）
   const provider = await createProvider(providerStore, env ?? process.env);
-  // 1.0 创建后台模型 Provider（G5：后台任务走独立轻量模型；未配置回退与实时对话相同）
+  // 1.0 创建后台模型 Provider（后台任务走独立轻量模型；未配置回退与实时对话相同）
   const backgroundProvider = await createBackgroundProvider(providerStore);
   // 1.1 创建 Provider 路由策略（激活 AgentLoop 路由缓存优化；单 Provider 时直接返回同一实例）
   const providerRouter = createProviderRouter(provider);
@@ -285,11 +285,11 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     provider,
     // Provider 路由策略（激活 AgentLoop 路由缓存优化；按任务类型返回对应 Provider）
     providerRouter,
-    // 后台模型 Provider（G5：摘要/归档/润色/去重等后台任务走独立轻量模型；undefined 回退前台）
+    // 后台模型 Provider（摘要/归档/润色/去重等后台任务走独立轻量模型；undefined 回退前台）
     backgroundProvider,
     storage,
     sessionStore: store,
-    // 问答闭环存储（Phase 4：round-based 模式，传入后内核启用独立 Round 存储）
+    // 问答闭环存储（round-based 模式，传入后内核启用独立 Round 存储）
     roundStore,
     // 网络搜索（memora.searchEngine 可切换内置引擎；auto = Bing→DuckDuckGo 默认链，
     // 选 baidu/sogou 时用户首选引擎在前、Bing 兜底——国内可达且解析稳定）
@@ -298,9 +298,9 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
         ? buildSearchEndpoints([options.searchEngine, 'bing'])
         : undefined,
     ),
-    // 网页抓取（B8 首发生长：补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）
+    // 网页抓取（补「搜索→抓取」闭环第二段；Node 内置 fetch 开箱即用，零依赖）
     fetchProvider: new FetchWebFetchProvider(),
-    // 代码执行（G2：local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
+    // 代码执行（local vm 沙箱，受限计算能力）——注入后内核暴露 run_code 工具给 LLM
     codeExecutionProvider: createLocalCodeExecutor(),
     // 项目搜索（等价 IDE 全局搜索）——注入后内核暴露 search_project 工具给 LLM；
     // 仅真实工作区注入（无 folder 时 projectSearchRoot 为 undefined → 不注入、工具隐藏，
@@ -337,8 +337,8 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 4. 初始化（加载记忆/角色包/会话，注册内置工具）
   await agent.init();
 
-  // 4.1 无缝插话策略（缺口 B）：宿主「生成中 Enter 输入补充」走 agent.interject()。
-  // 2026-09-04 内核收紧为单一模式：interject 一律排队、在下一 step 边界并入，
+  // 4.1 无缝插话策略（缺口）：宿主「生成中 Enter 输入补充」走 agent.interject()。
+  // 单一模式：interject 一律排队、在下一 step 边界并入，
   // 不中断当前 loop 执行——无需再 setInputInterrupt('block')（API 已删除），
   // 默认行为即「申请 → 气口生效」。
 
@@ -348,7 +348,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     await agent.skills?.loadExtraDir(userSkillsDir);
   }
 
-  // 6. 加载用户角色包（已开放，2026-08-30 对齐技能系统）
+  // 6. 加载用户角色包（对齐技能系统）
   //
   // extension.ts 经 globalStorageUri/role-packs 传入有效目录，本分支实际执行：
   // 用户可在该目录放置自己的角色包（manifest.json + persona.md/rules.md/skills/），

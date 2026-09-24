@@ -6,7 +6,7 @@
  *   npx tsx scripts/test-memory-tool-recall-real.ts            # 全量 10 case
  *   $env:BENCH_CASE="A1,A5,B2"; npx tsx scripts/...real.ts    # 指定 case
  *
- * 职责（对接 docs/architecture/memory-tool-recall-ab-benchmark.md §0/§3）：
+ * 职责（对接 docs/architecture/memory-tool-recall-ab-benchmark.md）：
  *  用一个最小 tool-calling 环驱动真实 LLM：每 case 注入问题集 input，只暴露
  *  search_memories 一个工具；记录该轮是否**主动**调用（queried?）以及返回是否命中
  *  目标实体词（hit?），并打印最终文本供人工评答案质量。据此算 A 想起率 / B 命中率。
@@ -16,7 +16,7 @@
  *  - hit?      = 工具返回文本含目标记忆的独特实体词（是否检索到正确果实）
  *  - 答案质量  = 打印最终文本，人工评（本脚本不自动判优劣）
  *
- * 阈值（§阶段1 出口条件）：B 必须 ≈100%；本地/云端 A 对照阈值实测前冻结。
+ * 阈值（设计所定出口条件）：B 必须 ≈100%；本地/云端 A 对照阈值实测前冻结。
  */
 import { mkdtemp } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
