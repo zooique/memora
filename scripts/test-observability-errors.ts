@@ -69,7 +69,10 @@ async function main(): Promise<void> {
   const providers = config.llm?.providers ?? {};
   const active = config.llm?.active ?? Object.keys(providers)[0] ?? '';
   const real = providers[active];
-  check(real !== null && typeof real.baseUrl === 'string' && real.baseUrl.length > 0, `真实 Provider 配置存在（${active}）`);
+  check(
+    real !== undefined && real !== null && typeof real.baseUrl === 'string' && real.baseUrl.length > 0,
+    `真实 Provider 配置存在（${active}）`,
+  );
 
   const baseUrl = (real?.baseUrl ?? '').replace(/\/chat\/completions\/?$/, '');
   const model = real?.model ?? '';

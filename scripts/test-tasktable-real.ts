@@ -94,7 +94,10 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
           status: 'pending',
         });
       }
-      if (mockPlan.length > 0) mockPlan[0].status = 'active'; // 模拟 ensureActivePlanItem：首个步骤 active
+      if (mockPlan.length > 0) {
+        const first = mockPlan[0];
+        if (first) first.status = 'active'; // 模拟 ensureActivePlanItem：首个步骤 active
+      }
       return `任务表已更新（${mode}），当前共 ${mockPlan.length} 个步骤：\n${renderPlan()}`;
     }
     case 'task_table_update': {
@@ -102,14 +105,14 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
       const planItemId = String(args.step_id ?? '');
       // 简化寻址：支持行首序号（1-based）或短 id 前缀匹配
       const idx = /^\d+$/.test(planItemId) ? Number(planItemId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(planItemId));
-      if (idx < 0 || idx >= mockPlan.length) {
+      const item = mockPlan[idx];
+      if (!item) {
         return `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"`;
       }
-      mockPlan[idx].status =
-        status === 'blocked' ? 'blocked' : status === 'done' ? 'done' : mockPlan[idx].status;
+      item.status = status === 'blocked' ? 'blocked' : status === 'done' ? 'done' : item.status;
       // 模拟结束步骤后自动推进下一个 active（ensureActivePlanItem）——驱动 plan_item_boundary 产出
-      if (mockPlan[idx].status === 'done') advanceActive();
-      return `步骤 [${mockPlan[idx].id}] "${mockPlan[idx].description}" 已标记为 ${status}`;
+      if (item.status === 'done') advanceActive();
+      return `步骤 [${item.id}] "${item.description}" 已标记为 ${status}`;
     }
     default:
       return `（演示环境已忽略工具 ${name}，参数 ${argsStr || '(空)'}）`;
@@ -160,7 +163,7 @@ async function main(): Promise<void> {
     process.exit(1);
   }
   const provider = createLlmProvider(config);
-  console.log(`  ✅ Provider 创建成功: ${provider.name}（model=${config.llm.model}）`);
+  console.log(`  ✅ Provider 创建成功: ${provider.name}`);
 
   // 2. 构造 AgentLoop：真实 provider + BUILTIN_TOOLS 全量（含 task_table_write/update）
   //    maxIterations 设小（~8），防止真实 LLM 多步任务无限轮询烧 token。
@@ -203,7 +206,7 @@ async function main(): Promise<void> {
     } else if (chunk.type === 'tool_start') {
       toolCallsSeen.push(chunk.name);
     } else if (chunk.type === 'plan_item_boundary') {
-      stepBoundariesSeen.push(chunk.planItemId);
+      stepBoundariesSeen.push(chunk.planItemId ?? '');
     }
   }
   const duration = Date.now() - start;

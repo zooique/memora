@@ -30,10 +30,14 @@ import type { ProviderStore } from '../src/extension/providers/providerStore.js'
 
 /**
  * 桩 LLM Provider：chat() 仅产出空文本（Agent 装配用，不发起真实调用语义测试）
+ *
+ * 双能力位均声明 false（implements 非 extends，不继承基类默认值、字段须逐一自声明）：
+ * 桩零工具能力，不宣称原生 FC——宣称能力零消费即幻觉。
  */
 class StubLlmProvider implements LlmProvider {
   readonly name = 'stub';
   readonly supportsStructuredOutput = false;
+  readonly supportsToolCalling = false;
   async *chat(_messages: unknown[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
     yield { content: '', finishReason: 'stop' };
   }
@@ -45,10 +49,16 @@ const MEMORY: Memory = {
   name: '决策',
   source: 'content',
   content: '我们决定记忆存储用 JSON 文件，保持零依赖',
+  createdAt: '2026-09-24T00:00:00.000Z', // Memory 必填字段（写入时刻）
+  accessedAt: '2026-09-24T00:00:00.000Z', // Memory 必填字段（最近访问时刻）
 };
 
-/** 输出一项检查结果 */
+/** 累计检查失败数（❌ 须翻转退出码，否则验证脚本永远绿 = 静默失效） */
+let failedCount = 0;
+
+/** 输出一项检查结果（失败计入 failedCount） */
 function report(name: string, ok: boolean, detail: string): void {
+  if (!ok) failedCount++;
   console.log(`${ok ? '✅' : '❌'} ${name}：${detail}`);
 }
 
@@ -93,15 +103,20 @@ async function main(): Promise<void> {
   // 无向量通道，searchByKeyword 纯关键词；命中=字面匹配。
   console.log('\n=== search_memories 纯关键词链路 ===');
   const agent = await makeAgent(workspace);
-  const hits = await agent.memory.searchByKeyword('JSON 零依赖');
+  // agent.memory 是 getter（每次访问新表达式，空断言不跨访问保持）→ 捕获到本地变量再判空
+  const memory = agent.memory;
+  if (!memory) throw new Error('agent.memory 未初始化（init 后应可用）——链路装配失败');
+  const hits = await memory.searchByKeyword('JSON 零依赖');
   report(
     '预置记忆 → searchByKeyword 关键词命中（字面匹配 JSON）',
     hits.length > 0,
     `hits=${hits.length}，top=${hits[0]?.contentPreview?.slice(0, 30) ?? '（空）'}`,
   );
-  const nearMiss = await agent.memory.searchByKeyword('存储方案对比'); // 语义近义≠字面
+  // 语义近义用例须与内容**零字面重叠**：查询词若在内容里字面存在（如「存储」↔「记忆存储用」），
+  // 命中是关键词匹配的正确行为，测的就不是「近义不命中」了
+  const nearMiss = await memory.searchByKeyword('持久层选型利弊'); // 近义说法、零字面重叠
   report(
-    '语义近义（换说法）→ 不命中（纯关键词预期，LLM 须换词重试）',
+    '语义近义（换说法、零字面重叠）→ 不命中（纯关键词预期，LLM 须换词重试）',
     nearMiss.length === 0,
     `hits=${nearMiss.length}`,
   );
@@ -110,6 +125,13 @@ async function main(): Promise<void> {
   // ─── 清理 ─────────────────────────────────────────────────
   rmSync(workspace, { recursive: true, force: true });
   console.log('\n🧹 已清理临时工作区');
+
+  // 任一检查 ❌ 即整体失败（退出码翻红，供门禁/CI 消费）
+  if (failedCount > 0) {
+    console.error(`\n❌ 验证未通过：${failedCount} 项检查失败`);
+    process.exit(1);
+  }
+  console.log('\n✅ 全部检查通过');
 }
 
 main().catch((err) => {

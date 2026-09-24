@@ -50,7 +50,7 @@
     "verify:dist-contract": "node scripts/verify-dist-contract.mjs",
     "format": "prettier --write \"**/*.{ts,md,json}\"",
     "format:check": "prettier --check \"**/*.{ts,md,json}\"",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
     "eval:budget": "tsx scripts/eval-context-budget-snapshot.ts",
     "eval:budget:check": "tsx scripts/eval-context-budget-snapshot.ts --check",
     "docs:links": "tsx scripts/check-publish-links.ts",

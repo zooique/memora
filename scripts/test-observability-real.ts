@@ -20,6 +20,7 @@
  */
 
 import { AgentLoop } from '../src/agent/loop.js';
+import type { ToolDefinition } from '../src/agent/builtinTools.js';
 import { loadConfig } from '../src/config/loader.js';
 import { createLlmProvider } from '../src/llm/factory.js';
 import type { AgentMetrics, ISpan, ITracer } from '../src/agent/tracer.js';
@@ -121,8 +122,8 @@ class ProductionTracer implements ITracer {
 
 // ─── 工具定义与执行器 ──────────────────
 
-/** 简化的工具定义（仅用于演示） */
-const TOOL_DEFS = [
+/** 简化的工具定义（仅用于演示；显式标注 ToolDefinition[] 防联合类型推断不匹配） */
+const TOOL_DEFS: ToolDefinition[] = [
   {
     name: 'search_memories',
     description: '搜索记忆库',
@@ -207,7 +208,8 @@ function printSpanTrace(tracer: ProductionTracer): void {
   if (toolSpans.length > 0) {
     console.log('\n┌─ Tool Execute Span 详情（最近 5 条）');
     for (const span of toolSpans.slice(-5)) {
-      const toolName = span.attributes.toolName ?? 'unknown';
+      // span 属性值类型是 string | number | boolean，padEnd 需先归一为字符串
+      const toolName = String(span.attributes.toolName ?? 'unknown');
       const ok = span.attributes.ok;
       console.log(`│  ${toolName.padEnd(25)} | ${String(span.durationMs).padStart(4)}ms | ${ok === true ? '✅' : ok === false ? '❌' : '⏭️'} | 参数: ${String(span.attributes.args ?? '').slice(0, 60)}`);
     }
@@ -353,8 +355,8 @@ async function main(): Promise<void> {
   assert((spanCounts[TRACE_SPANS.LLM_CALL] ?? 0) >= 3, `LLM_CALL Span >= 3 (实际: ${spanCounts[TRACE_SPANS.LLM_CALL] ?? 0})`);
 
   const llmSpans = tracer.findAllByName(TRACE_SPANS.LLM_CALL);
-  if (llmSpans.length > 0) {
-    const lastLlmSpan = llmSpans[llmSpans.length - 1];
+  const lastLlmSpan = llmSpans[llmSpans.length - 1];
+  if (lastLlmSpan) {
     assert(lastLlmSpan.attributes.model !== undefined, 'LLM Span 包含 model 属性');
     assert(lastLlmSpan.attributes.messageCount !== undefined, 'LLM Span 包含 messageCount 属性');
     assert(lastLlmSpan.attributes.inputTokens !== undefined, 'LLM Span 包含 inputTokens 属性');

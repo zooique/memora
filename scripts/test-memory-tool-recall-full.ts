@@ -138,8 +138,8 @@ async function main(): Promise<void> {
     console.error('❌ active provider 未配置 apiKey（PowerShell: $env:MEMORA_API_KEY = "sk-xxx"）');
     process.exit(1);
   }
-  console.log(`Provider: ${config.llm.provider}`);
-  console.log(`Model:    ${realActive.model ?? config.llm.model}`);
+  console.log(`Provider: ${active}`);
+  console.log(`Model:    ${realActive.model ?? '(未配置)'}`);
   console.log(`角色包:   ${ACTIVE_ROLE_PACK}`);
 
   // 2. 筛选 case（BENCH_CASE 环境变量可限定，默认全量）

@@ -162,7 +162,8 @@ async function probeRealLoopRead(): Promise<void> {
         case 'read_file':
           return handlers.readFile(String(args.path ?? ''));
         case 'list_dir':
-          return handlers.listDir(String(args.path ?? '.'));
+          // listDir 签名（relativePath, recursiveStr, maxDepthStr）：探针环境取非递归、深度 2 的保守默认
+          return handlers.listDir(String(args.path ?? '.'), 'false', '2');
         default:
           return `[${name}] ${argsStr || '(空参数)'}（探针环境：返回占位）`;
       }

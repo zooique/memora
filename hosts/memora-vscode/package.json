@@ -150,7 +150,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p ./ && node esbuild.config.mjs",
     "watch": "tsc -watch -p ./",
-    "typecheck": "tsc --noEmit -p ./",
+    "typecheck": "tsc --noEmit -p ./ && tsc --noEmit -p ./tsconfig.scripts.json",
     "package": "npm run compile && vsce package --out memora-vscode.vsix",
     "test": "node ../../node_modules/vitest/vitest.mjs run --config vitest.config.ts --no-file-parallelism",
     "lint": "eslint . --max-warnings 0"

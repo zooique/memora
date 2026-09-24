@@ -1,0 +1,13 @@
+{
+  // scripts/ 类型检查专用配置（noEmit）——根 tsconfig 只 include src/，
+  // scripts/*.ts 长期在任何 typecheck 门外（坏了仅 IDE 可见、tsx 照跑），
+  // 本配置把验证/基准脚本纳入 typecheck 门，经 package.json#typecheck 消费。
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["scripts/**/*.ts"]
+}

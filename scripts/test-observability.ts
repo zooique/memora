@@ -276,8 +276,8 @@ async function main(): Promise<void> {
   const toolSpans = tracer.findAllSpans('tool.execute');
   console.log(`  🔧 工具执行 Span 数量: ${toolSpans.length}`);
 
-  if (toolSpans.length > 0) {
-    const firstToolSpan = toolSpans[0];
+  const firstToolSpan = toolSpans[0];
+  if (firstToolSpan) {
     assert(
       firstToolSpan.attributes['toolName'] !== undefined,
       `Span 包含 toolName 属性 (实际: ${firstToolSpan.attributes['toolName']})`,
@@ -316,17 +316,18 @@ async function main(): Promise<void> {
 
   // ─── 测试 7：完整 Metrics 快照 ──────────────────────────
   console.log('\n📋 测试 7：完整 Metrics 快照展示');
-  printMetrics(loop.getMetrics(), 'AgentMetrics 完整快照（6 个维度）');
+  printMetrics(loop.getMetrics(), 'AgentMetrics 完整快照（5 个维度）');
 
-  // ─── 测试 8：验证所有 6 个维度存在 ──────────────────────────
-  console.log('\n📋 测试 8：6 维度完整性验证');
+  // ─── 测试 8：验证所有 5 个维度存在 ──────────────────────────
+  // recall/decay 组已随召回编排/自动衰减退役删除，新增 plan（任务表）组，现存 5 组
+  console.log('\n📋 测试 8：5 维度完整性验证');
   const finalMetrics = loop.getMetrics();
-  const dimensions = ['llm', 'recall', 'tools', 'context', 'decay', 'tasks'] as const;
+  const dimensions = ['llm', 'tools', 'context', 'tasks', 'plan'] as const;
   for (const dim of dimensions) {
     assert(finalMetrics[dim] !== undefined, `维度 "${dim}" 存在`);
   }
 
-  console.log('\n🎉 所有测试完成！可观测性体系 6 个维度全部验证通过。');
+  console.log('\n🎉 所有测试完成！可观测性体系 5 个维度全部验证通过。');
   console.log('\n📖 新增指标说明：');
   console.log('   - llm.actualInputTokens / llm.actualOutputTokens：Provider 实际返回的 token 用量');
   console.log('   - tasks.totalCount / successCount / failureCount：任务级 SLO 统计');

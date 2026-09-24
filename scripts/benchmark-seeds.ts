@@ -64,6 +64,8 @@ export function loadBenchmarkSeed(storage: InMemoryStorage): void {
       name: `${s.id} 种子`,
       content: s.content,
       source: s.source,
+      createdAt: '2026-01-01T00:00:00.000Z', // Memory 必填（种子固定时间戳，保证基线可复现）
+      accessedAt: '2026-01-01T00:00:00.000Z', // Memory 必填（种子固定时间戳，保证基线可复现）
     };
     if (s.source === 'round-summary') {
       storage.upsert({ ...base, sessionName: BENCH_SESSION, roundId: OLD_ROUND });

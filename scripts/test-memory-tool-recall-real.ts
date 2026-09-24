@@ -155,7 +155,7 @@ async function main(): Promise<void> {
   }
   const provider = createLlmProvider(config);
   console.log(`Provider: ${provider.name}`);
-  console.log(`Model:    ${realActive.model ?? config.llm.model}`);
+  console.log(`Model:    ${realActive.model ?? '(未配置)'}`);
   console.log(`BaseUrl:  ${realActive.baseUrl}`);
 
   // 2. 筛选 case（BENCH_CASE 环境变量可限定，默认全量）

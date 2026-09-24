@@ -146,9 +146,11 @@ function scanLine(line: string, fromRel: string): Array<Omit<Finding, 'line'>> {
   LINK_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = LINK_RE.exec(cleaned)) !== null) {
-    const { verdict, resolved } = classifyTarget(m[1], fromRel);
+    // noUncheckedIndexedAccess：捕获组索引访问为 string | undefined，判据容错为空串
+    const raw = m[1] ?? '';
+    const { verdict, resolved } = classifyTarget(raw, fromRel);
     if (verdict === 'missing' || verdict === 'unshipped') {
-      out.push({ file: fromRel, raw: m[1].trim(), resolved, verdict });
+      out.push({ file: fromRel, raw: raw.trim(), resolved, verdict });
     }
   }
   return out;
