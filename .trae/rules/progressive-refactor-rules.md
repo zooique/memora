@@ -1,22 +1,22 @@
----
-alwaysApply: false
-description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆分"两类模式，指导上帝类/上帝对象的安全拆分
----
+\---  
+alwaysApply: false  
+description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆分"两类模式，指导上帝类/上帝对象的安全拆分  
+\---
 
 # 渐进式重构规范
 
-> 来源：HEAL-10（appState 领域拆分三步）+ HEAL-11（UIManager 上帝类重构第一步）方法论提炼。
+> 来源：HEAL-10（appState 领域拆分三步）+ HEAL-11（UIManager 上帝类重构第一步）方法论提炼。  
 > 目标：为"字段数超阈值"或"职责数超阈值"的上帝类/上帝对象提供安全、可验证、可回溯的拆分规范。
 
 ## 1. 触发判定（何时启动）
 
 **硬阈值触发**（任一满足即应启动评估）：
 
-| 维度 | 阈值 | 典型信号 |
-|------|------|---------|
-| 字段数 | 单类/单对象 ≥ 15 字段 | 修改时需翻大量无关字段；构造函数 ≥ 100 行 |
-| 职责数 | 单类 ≥ 5 职责 | 类名与实际承担职责不符；测试需 mock 大量不相关依赖 |
-| 修改成本 | 单次改动需触碰 ≥ 10 处无关代码 | 每次新功能都要绕过一堆无关字段 |
+| 维度   | 阈值                 | 典型信号                         |
+| ---- | ------------------ | ---------------------------- |
+| 字段数  | 单类/单对象 ≥ 15 字段     | 修改时需翻大量无关字段；构造函数 ≥ 100 行     |
+| 职责数  | 单类 ≥ 5 职责          | 类名与实际承担职责不符；测试需 mock 大量不相关依赖 |
+| 修改成本 | 单次改动需触碰 ≥ 10 处无关代码 | 每次新功能都要绕过一堆无关字段              |
 
 **软阈值观察**（不强制启动，标记监控）：
 
@@ -35,6 +35,7 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 **适用场景**：字段数超阈值，但字段可按功能域分组，组内字段内聚。
 
 **特征**：
+
 - 字段保留在原对象（容器化，不迁移业务逻辑）
 - 提取的是"状态容器"类，仅持有字段 + cleanup/nullify
 - 业务逻辑仍保留在原文件（main.ts / UIManager + mixin）
@@ -46,6 +47,7 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 **适用场景**：职责数超阈值，职责之间正交（不共享状态/不互相调用）。
 
 **特征**：
+
 - 将单个大类拆为多个独立 Controller
 - 每个Controller 持有自己的状态和逻辑
 - 原 Host 接口契约可能需调整（需评估调用方影响面）
@@ -66,37 +68,15 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 
 ### 3.1 方案文档必备章节
 
-```markdown
-# {任务ID} {简述} 方案
+七章必备（缺章即方案不完整）：
 
-## 一、现状分析
-- 演进路径（从当前状态到目标状态）
-- 调研结论（是否真的需要拆分）
-- 本轮提取范围（表格列出字段/职责 + 类型 + 职责）
-- 不提取的归档（表格列出 + 理由）
-
-## 二、目标类设计
-- 类定义代码块（含字段注释 + cleanup/nullify 方法）
-- 与现有模式的对比表（如适用）
-
-## 三、改动文件清单
-- 表格：文件 | 变更类型 | 改动点
-
-## 四、不提取的归档
-- 每项附归档理由（未达阈值/跨域/契约稳定性等）
-
-## 五、后续演进路径
-- 阶段拆分图（本轮 → 阶段 2 → ... → 终态）
-
-## 六、验证计划
-- 类型检查 / 全量测试 / 集成模式验证点
-
-## 七、实施完成（提交后补写）
-- 验证结果（实际数据）
-- 实际修改文件清单
-- 额外修复（如发现遗留问题）
-- 后续演进
-```
+1. **现状分析**：演进路径 / 调研结论（是否真需拆分）/ 本轮提取范围表（字段 + 类型 + 职责）/ 不提取的归档表（含理由）
+2. **目标类设计**：类定义代码块（含字段注释 + `cleanup`/`nullify`）；与现有模式对比表（如适用）
+3. **改动文件清单**：表 → 文件 | 变更类型 | 改动点
+4. **不提取的归档**：每项附理由（未达阈值 / 跨域 / 契约稳定性）
+5. **后续演进路径**：阶段拆分图（本轮 → 阶段 2 → … → 终态）
+6. **验证计划**：类型检查 / 全量测试 / 集成模式验证点
+7. **实施完成**（提交后补写）：验证结果（实际数据）/ 实际修改文件清单 / 额外修复 / 后续演进
 
 ### 3.2 方案设计原则
 
@@ -108,13 +88,13 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 
 **核心约束**：提取的类只持有字段，不持有业务逻辑。
 
-| 维度 | 容器类（提取后） | 原对象（main.ts / UIManager） |
-|------|----------------|------------------------------|
-| 字段 | 容器内字段 | 替换为 `container.field` 路径访问 |
-| 业务逻辑 | ❌ 不持有 | ✅ 保留 |
-| 初始化 | `!:` definite assignment，原构造函数赋值 | 原构造函数调整路径 |
-| 清理 | `cleanup()`（UI 组件）/ `nullify()`（主进程状态） | 原对象集中调用 |
-| 依赖注入 | 无（纯字段容器） | 反向注入（如 `this as Host`）仍可行 |
+| 维度   | 容器类（提取后）                               | 原对象（main.ts / UIManager）   |
+| ---- | -------------------------------------- | -------------------------- |
+| 字段   | 容器内字段                                  | 替换为 `container.field` 路径访问 |
+| 业务逻辑 | ❌ 不持有                                  | ✅ 保留                       |
+| 初始化  | `!:` definite assignment，原构造函数赋值       | 原构造函数调整路径                  |
+| 清理   | `cleanup()`（UI 组件）/ `nullify()`（主进程状态） | 原对象集中调用                    |
+| 依赖注入 | 无（纯字段容器）                               | 反向注入（如 `this as Host`）仍可行  |
 
 **字段语法**：统一使用 `!:` definite assignment（`null! as Type` 不被 vite:oxc 支持）。
 
@@ -134,7 +114,7 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 
 ### 5.2 回溯提取阈值（ADR-017 Scenario B）
 
-> 本节属"从既有上帝对象/重复代码中回溯提取"（Scenario B），与 coding-convention-rules.md §3 / ui-engineering-mindset-rules.md §四.2 的"新代码设计期抽取"（Scenario A）是**不同场景，非矛盾**——后者针对首次实现即抽，本节约束既有真实重复。
+> 本节是"从既有上帝对象 / 重复代码回溯提取"（Scenario B），与 coding-convention-rules.md §3 / ui-engineering-mindset-rules.md §四.2 的"新代码设计期抽取"（Scenario A）**不同场景，非矛盾**——Scenario A 针对首次实现即抽，本节约束既有真实重复。
 
 **判定流程**：
 
@@ -176,23 +156,20 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 ### 7.2 mock 机制升级
 
 - 若引入容器层级（`mock.container.field`），原 Proxy 需支持深度嵌套
-- 推荐：递归 Proxy 实现，每层既是 `vi.fn()`（可调用）又是 Proxy（属性访问返回同类 Proxy）
+- 推荐：**递归 Proxy**——每层既是 `vi.fn()`（可调用）又是 Proxy（属性访问返回同类 Proxy）
 
 ```typescript
-// 深度嵌套 mock 实现示例
-function createDeepMock(): ReturnType<typeof vi.fn> & Record<string, any> {
-  const fn = vi.fn();
-  const cache = new Map<string, any>();
-  return new Proxy(fn, {
-    get(target, prop, receiver) {
-      if (typeof prop === 'symbol' || ['then', 'catch', 'finally'].includes(prop as string)) {
-        return Reflect.get(target, prop, receiver);
-      }
-      if (MOCK_API_PROPS.has(prop)) return Reflect.get(target, prop, receiver);
-      if (!cache.has(prop)) cache.set(prop, createDeepMock());
-      return cache.get(prop);
-    },
-  }) as any;
+// 深度嵌套 mock：两个非显然点已内联注释
+function createDeepMock() {
+  const fn = vi.fn(); const cache = new Map();
+  return new Proxy(fn, { get(t, p, r) {
+    // ① symbol + then/catch/finally 必须直传，否则 await 该 mock 会挂
+    if (typeof p === 'symbol' || ['then', 'catch', 'finally'].includes(p)) return Reflect.get(t, p, r);
+    if (MOCK_API_PROPS.has(p)) return Reflect.get(t, p, r);
+    // ② cache 保证同一 prop 恒返同一 mock，否则断言取不到同一个 fn
+    if (!cache.has(p)) cache.set(p, createDeepMock());
+    return cache.get(p);
+  }});
 }
 ```
 
@@ -208,10 +185,10 @@ function createDeepMock(): ReturnType<typeof vi.fn> & Record<string, any> {
 
 ### 8.1 文档同步
 
-| 文档 | 操作 |
-|------|------|
-| 方案文档 | 补写"七、实施完成"章节（验证结果 + 实际修改文件清单 + 额外修复 + 后续演进） |
-| `tasks/待完成任务.md` | 移除本轮任务条目；更新"最后评估"行 |
+| 文档               | 操作                                             |
+| ---------------- | ---------------------------------------------- |
+| 方案文档             | 补写"七、实施完成"章节（验证结果 + 实际修改文件清单 + 额外修复 + 后续演进）    |
+| `tasks/待完成任务.md` | 移除本轮任务条目；更新"最后评估"行                             |
 | `tasks/已完成任务.md` | 添加本轮任务完整记录（修复内容 + 设计原则 + 修改文件清单 + 验证结果 + 后续演进） |
 
 ### 8.2 剪枝去痕
@@ -222,22 +199,9 @@ function createDeepMock(): ReturnType<typeof vi.fn> & Record<string, any> {
 
 ### 8.3 git 提交
 
-**提交信息格式**（遵循 commitlint）：
+**格式**（commitlint）：`{type}({scope}): {任务ID} — {简述}` + 空行 + `- {改动点}` 若干 + 空行 + `验证：{typecheck 结果}，{测试结果}` + 空行 + `Refs: {任务来源说明}`
 
-```
-{type}({scope}): {任务ID} — {简述}
-
-- {改动点 1}
-- {改动点 2}
-...
-
-验证：{typecheck 结果}，{测试结果}
-
-Refs: {任务来源说明}
-```
-
-- `type`：refactor（重构）/ fix（修复）/ feat（新增功能）
-- `scope`：kernel / docs 等
+- `type`：`refactor` / `fix` / `feat`；`scope`：kernel / docs 等
 - 单行 ≤ 100 字符，body 每行 ≤ 100 字符
 - 多行 body 用多个 `-m` 参数传递（PowerShell here-string 在长参数下易失效）
 
