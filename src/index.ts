@@ -205,6 +205,8 @@ export { getSessionDisplayName } from '@/memory/sessionStore.js';
 export type { Round, RoundMessage, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
 // 问答闭环内交互输入：主动提问回答/补充输入的类型与归属语义
 export type { InteractiveInputKind } from '@/memory/roundStore.js';
+// 裁决证据事件（悬案取证轨：空响应 / 台账替身回显个案证据，随 Round 持久化）
+export type { RoundEvidenceEvent } from '@/memory/roundStore.js';
 // 过程事件（每轮 UI 状态重建真相源，v1.5 单文件内聚，见 process-event-log-replay-design）
 export type {
   ProcessEvent,

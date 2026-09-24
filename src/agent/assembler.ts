@@ -322,12 +322,14 @@ export interface AssembleOutput {
  * @param toolExec 工具执行器（装配其 planManager）
  * @param sessionManager 会话管理器（全部闭包的操作落点）
  * @param hooks Agent 门面注入的稳定能力（emit/requestPause；可选，缺省 no-op）
+ * @param history 消息历史（裁决证据 appendEvidence 的落点）
  */
 function wireRuntimeCallbacks(
   loop: AgentLoop,
   toolExec: ToolExecutor,
   sessionManager: SessionManager,
   hooks: AgentHooks | undefined,
+  history: MessageHistory,
 ): void {
   // 主动提问（ask_user 工具检出）：发射 questionPending 事件（宿主渲染提问 UI）+
   // 触发暂停（pauseMeta 记 reason/source，供重启恢复展示"问了什么"）。
@@ -363,8 +365,14 @@ function wireRuntimeCallbacks(
     const cp = sessionManager.getCheckpoint();
     const active = cp?.plan.find((s) => s.status === 'active');
     return active
-      ? { planItemId: active.id, title: active.description ?? active.id }
+      ? { planItemId: active.id, title: active.description ?? active.id, rolePack: active.rolePack }
       : null;
+  };
+
+  // 裁决证据落盘钩子（悬案取证）：loop 写点（空响应兜底 / 台账替身回显）产个案证据，
+  // 归属当前闭环轮随 Round 落盘（消费方 = 人工/抽样裁决，非 UI 重放）
+  loop.appendRoundEvidence = (ev) => {
+    void history.appendEvidence(loop.getCurrentRoundId(), ev);
   };
 
   // 在途任务表判定回调（单一真理源 = SessionManager.hasInflightPlan）：loop 注入 needsPlanning
@@ -883,7 +891,7 @@ export async function assembleComponents(
   loopRef = loop;
 
   // 装配 loop 运行时回调 + 任务表管理（onPendingQuestion/onPlanItemBoundary/getTaskTable/planManager）
-  wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks);
+  wireRuntimeCallbacks(loop, toolExec, sessionManager, hooks, history);
 
   // ── 依赖 Loop 的组件 ──
 

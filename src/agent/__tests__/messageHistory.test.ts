@@ -102,6 +102,60 @@ describe('MessageHistory · loadSessionMessages', () => {
   });
 });
 
+describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
+  /** 构造带 InMemory 双存储的 history（镜像 roundRefLifecycle 先例） */
+  function createRoundBackedHistory(): { history: MessageHistory; roundStore: InMemoryRoundStore } {
+    const roundStore = new InMemoryRoundStore();
+    const sessionStore = new InMemorySessionStore();
+    const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
+    sessionStore.createSession({
+      sessionId: history.currentSessionName,
+      messageCount: 0,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+    return { history, roundStore };
+  }
+
+  it('证据挂在在途轮且随收场保留（pendingRounds 同步——漏同步则收场以旧对象覆盖即丢证据）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    const roundId = generateRoundId();
+    await history.appendUser('问题', roundId);
+    await history.appendEvidence(roundId, {
+      type: 'empty_response',
+      ts: new Date().toISOString(),
+      meetingRound: true,
+      payload: { iteration: 1 },
+    });
+    await history.appendEvidence(roundId, {
+      type: 'ledger_stub_echo',
+      ts: new Date().toISOString(),
+      meetingRound: false,
+      payload: {
+        path: 'docs/a.md',
+        coverage: { coverStart: 1, coverEnd: 3, totalLines: 10 },
+        request: {},
+      },
+    });
+    await history.appendAssistant('回答', roundId);
+
+    // 收场（appendAssistant 以 pendingRounds 对象落盘）后证据仍在 = 挂载与收场同一对象链
+    const round = roundStore.getById(roundId);
+    expect(round?.evidence?.map((e) => e.type)).toEqual(['empty_response', 'ledger_stub_echo']);
+  });
+
+  it('轮缺失时 warn 丢弃、不新建轮（证据缺失不伪造第二轨道补写）', async () => {
+    const { history, roundStore } = createRoundBackedHistory();
+    await history.appendEvidence('round-not-exist', {
+      type: 'empty_response',
+      ts: new Date().toISOString(),
+      meetingRound: false,
+      payload: { iteration: 0 },
+    });
+    expect(roundStore.size()).toBe(0);
+  });
+});
+
 describe('MessageHistory · forkSession', () => {
   it('分叉后切换身份不能卡在旧日期：currentDate 锚定今天（与建键一致）', () => {
     // forkSession 走 getSessionMeta / getRoundIds / setRoundIds / updateSessionMeta

@@ -299,6 +299,46 @@ describe('问答闭环存储', () => {
     });
   });
 
+  describe('evidence 裁决证据透传', () => {
+    it('应该完整透传保存的 evidence（按序、含 coverage/request payload）', () => {
+      // 悬案取证轨：证据消费方是人工/抽样裁决，随 Round 整对象持久化
+      const round = createPendingRound('你好');
+      const completed = completeRound(round, '你好！');
+      completed.evidence = [
+        {
+          type: 'empty_response',
+          ts: '2026-08-28T00:00:01.000Z',
+          meetingRound: true,
+          payload: { iteration: 1 },
+        },
+        {
+          type: 'ledger_stub_echo',
+          ts: '2026-08-28T00:00:02.000Z',
+          meetingRound: false,
+          payload: {
+            path: 'docs/a.md',
+            coverage: { coverStart: 1, coverEnd: 3, totalLines: 10 },
+            request: { limit: 5 },
+          },
+        },
+      ];
+      store.save(completed);
+
+      const retrieved = store.getById(completed.id);
+      expect(retrieved?.evidence).toHaveLength(2);
+      expect(retrieved?.evidence?.map((e) => e.type)).toEqual(['empty_response', 'ledger_stub_echo']);
+      expect(retrieved?.evidence?.[1]).toEqual(completed.evidence[1]);
+    });
+
+    it('缺省 evidence（无证据轮零冗余）', () => {
+      const round = createPendingRound('用户问题');
+      store.save(round);
+
+      const retrieved = store.getById(round.id);
+      expect(retrieved?.evidence).toBeUndefined();
+    });
+  });
+
   describe('辅助函数', () => {
     it('应该生成唯一的 Round ID', () => {
       const id1 = generateRoundId();

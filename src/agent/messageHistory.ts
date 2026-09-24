@@ -11,6 +11,7 @@ import type {
   InteractiveInputKind,
   IRoundStore,
   Round,
+  RoundEvidenceEvent,
   RoundInteractiveInput,
   RoundMessage,
 } from '@/memory/roundStore.js';
@@ -289,6 +290,34 @@ export class MessageHistory {
     }
 
     logger.debug({ role: message.role, session: this.currentSessionName }, 'appendUser');
+  }
+
+  /**
+   * 追加裁决证据到在途 Round（悬案取证轨；持久化失败不抛出，不阻塞对话）。
+   *
+   * 挂载模式与 interactiveInputs 逐字同构：不新建/不覆盖轮，按序追加到该轮 `evidence`。
+   * **必须同步 pendingRounds**——否则收场 appendAssistant/appendInterrupted 以旧缓存对象
+   * 覆盖落盘，证据被静默丢弃（突变点：漏 set 即丢证据）。
+   * 轮缺失（异常兜底）：warn 后丢弃——证据缺失不伪造第二轨道补写。
+   *
+   * @param roundId 闭环节点轮次 ID
+   * @param ev 裁决证据事件（空响应 / 台账替身回显个案证据）
+   */
+  async appendEvidence(roundId: string, ev: RoundEvidenceEvent): Promise<void> {
+    if (!this.roundStore) return;
+    try {
+      const existing = this.roundStore.getById(roundId) ?? this.pendingRounds.get(roundId);
+      if (!existing) {
+        logger.warn({ roundId, type: ev.type }, 'appendEvidence: 对应轮缺失，证据丢弃');
+        return;
+      }
+      const updated: Round = { ...existing, evidence: [...(existing.evidence ?? []), ev] };
+      this.roundStore.save(updated);
+      this.pendingRounds.set(roundId, updated);
+      logger.debug({ roundId, type: ev.type }, 'appendEvidence: 裁决证据归属问答闭环');
+    } catch (err) {
+      logger.warn({ err, roundId }, 'appendEvidence: 写入失败');
+    }
   }
 
   /**

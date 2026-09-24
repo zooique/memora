@@ -67,6 +67,8 @@ import {
   shouldEchoLedgerStub,
   READ_DIGEST_CHARS,
 } from '@/agent/toolLedger.js';
+import type { RoundEvidenceEvent } from '@/memory/roundStore.js';
+import { nowIso } from '@/utils/time.js';
 import type { L2RuntimeStrategy } from '@/role-pack/types.js';
 import { DEFAULT_L2_STRATEGY } from '@/role-pack/strategyResolver.js';
 import { DEFAULT_MAX_ITERATIONS } from '@/role-pack/strategyKeys.js';
@@ -317,12 +319,16 @@ export class AgentLoop {
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
   /** active step 元信息回调（步级折叠）：供 _maybeEmitStepBoundary
-   *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title }；无任务表/无 active step
+   *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title, rolePack }；无任务表/无 active step
    *  返回 null。与 onPlanItemBoundary **时序分叉**：前者读工具前的 active
    *  （本迭代完成的那一步），本回调经 _maybeEmitStepBoundary 读工具后的 active（工具落定后
    *  当前所在的那一步）——plan_item_boundary 事件据此判定「active step 是否已推进」并分组渲染。
-   *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。 */
-  getActivePlanItemMeta?: () => { planItemId?: string; title?: string } | null;
+   *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。
+   *  rolePack 供裁决证据的会议轮判据（isMeetingRound）消费。 */
+  getActivePlanItemMeta?: () => { planItemId?: string; title?: string; rolePack?: string } | null;
+  /** 裁决证据落盘钩子（悬案取证轨）：空响应兜底 / 台账替身回显写点产个案证据时回调，
+   *  由装配层接 history.appendEvidence 归属当前闭环轮随 Round 持久化。未注入静默忽略。 */
+  appendRoundEvidence?: (ev: RoundEvidenceEvent) => void;
   /** 在途任务表判定回调：本 turn 是否已有未完成的计划步骤（会议骨架预置 / 续会）。
    *  装配来源 = SessionManager.hasInflightPlan（单一真理源）；用途 = needsPlanning nudge 注入前
    *  判断「是否已有在途表」，有则不重复灌「先拆解建表」。
@@ -1069,7 +1075,7 @@ export class AgentLoop {
     if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
       yield { type: 'text', content: llmResult.fullContent, stage: textStage };
     }
-    return yield* this.handleTextResponse(llmResult);
+    return yield* this.handleTextResponse(llmResult, iteration);
   }
 
   /** 步级折叠边界事件产出：比较 active step 是否已推进，推进才产
@@ -1487,6 +1493,8 @@ export class AgentLoop {
    *  本方法只处理纯文本交付；提问暂停走 ask_user 工具通道。 */
   private async *handleTextResponse(
     llmResult: LlmCallResult,
+    /** 轮内迭代序号（空响应裁决证据定位用） */
+    iteration: number,
   ): AsyncGenerator<AgentChunk, 'done' | 'paused', unknown> {
     // 文本工具意图守卫：纯文本结束路径意味着本轮未产出原生 toolCalls，若 fullContent 仍带
     // <tool_call>/<function=> 骨架，说明「想调用工具却未走原生协议」——当普通文本交付会在
@@ -1512,6 +1520,13 @@ export class AgentLoop {
       logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
       // 观测：空响应兜底命中累计——为真即用户看到兜底文案、任务零产出（success 掩盖），可量化
       this.metrics.emptyResponseCount++;
+      // 裁决证据落盘（悬案取证）：个案证据供跨会话裁决「会议空响应」——计数不落盘等于重启失忆
+      this.appendRoundEvidence?.({
+        type: 'empty_response',
+        ts: nowIso(),
+        meetingRound: this.isMeetingRound(),
+        payload: { iteration },
+      });
       // 文案走 ui 通道（默认英文，宿主可经 messages.emptyResponseFallback 覆盖，与其它 UI 文案一致）
       this.appendAssistantText(this.ui.emptyResponseFallback);
       yield { type: 'text', content: this.ui.emptyResponseFallback };
@@ -1655,6 +1670,18 @@ export class AgentLoop {
         if (cov && shouldEchoLedgerStub(ledgerSubject, cov)) {
           // 观测「补缝过度拦截」候选：台账替身回显命中累加。
           this.metrics.ledgerStubEchoCount++;
+          // 裁决证据落盘（悬案取证）：计数判不了意图，「模型规避完整读取」vs「防重误拦合法
+          // 重读」只能按 path/覆盖区间/请求参数逐案人工裁决——证据不落盘到期即无米下锅
+          this.appendRoundEvidence?.({
+            type: 'ledger_stub_echo',
+            ts: nowIso(),
+            meetingRound: this.isMeetingRound(),
+            payload: {
+              path: ledgerSubject.path,
+              coverage: { coverStart: cov.coverStart, coverEnd: cov.coverEnd, totalLines: cov.totalLines },
+              request: { offset: ledgerSubject.offset, limit: ledgerSubject.limit },
+            },
+          });
           logger.debug(
             { path: ledgerSubject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
             'read_file 台账替身回显：已用摘要顶替整读',
@@ -2570,6 +2597,11 @@ export class AgentLoop {
     if (opts.executionTemp) {
       this.executionTempSystem.add(msg);
     }
+  }
+
+  /** 会议轮判据（裁决证据用，操作化单点）：任务表 active 步骤声明 rolePack = 会议逐步切换生效中 */
+  private isMeetingRound(): boolean {
+    return Boolean(this.getActivePlanItemMeta?.()?.rolePack);
   }
 
   /** 追加一条 assistant 纯文本消息（正常 LLM 回复或兜底文本）；附当前轮次 roundId */

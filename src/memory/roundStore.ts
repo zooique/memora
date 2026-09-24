@@ -277,6 +277,51 @@ export type ProcessEvent =
 
 // ─── 问答闭环 ───────────────────────────────────────────
 
+// ─── 裁决证据（⚠️ 落位约束：勿移入上方 ProcessEvent 切片区——V-3 守卫按
+// 「export type ProcessEvent =」→「─── 问答闭环」切片枚举 UI 过程轨成员，
+// 本轨刻意不进 processEvents（内核直写 Round.evidence 持久化），混入切片即误报）───
+
+/**
+ * 裁决证据事件（悬案取证轨，Round.evidence 元素）
+ *
+ * 定位：给「带伤悬案」提供跨会话可回溯的个案证据（回显命中 = 模型规避还是防重误拦、
+ * 空响应是否偏爱会议轮），消费方是人工/抽样裁决，不是 UI 重放——
+ * 故不进 processEvents（宿主 UI 过程轨），由内核单点追加到在途 Round，
+ * 宿主整对象 JSON 持久化天然携带。
+ *
+ * 「会议轮」操作化判据（唯一实现在 loop 写点 isMeetingRound）：
+ * 任务表 active 步骤声明 rolePack（= 会议逐步切换生效中）。
+ */
+export type RoundEvidenceEvent =
+  | {
+      /** LLM 空响应兜底命中（200 但无文本无工具调用） */
+      type: 'empty_response';
+      /** 事件时刻（ISO 8601） */
+      ts: string;
+      /** 事件时刻是否会议轮（判据见类型注释） */
+      meetingRound: boolean;
+      payload: {
+        /** 轮内第几次 LLM 迭代（定位空响应发生在闭环什么位置） */
+        iteration: number;
+      };
+    }
+  | {
+      /** read_file 台账替身回显命中（摘要顶替整读，防重拦截） */
+      type: 'ledger_stub_echo';
+      /** 事件时刻（ISO 8601） */
+      ts: string;
+      /** 事件时刻是否会议轮（判据见类型注释） */
+      meetingRound: boolean;
+      payload: {
+        /** 被读文件路径（去重主体规范化前的原样路径） */
+        path: string;
+        /** 该文件已覆盖区间（裁决「误拦合法重读」vs「拦下规避性重读」的关键证据） */
+        coverage: { coverStart: number; coverEnd: number; totalLines: number };
+        /** 本次请求区间（offset/limit 缺省语义与 read_file handler 一致） */
+        request: { offset?: number; limit?: number };
+      };
+    };
+ 
 /**
  * 问答闭环（Round）
  *
@@ -311,6 +356,15 @@ export interface Round {
    * 此数组仅承载用户侧交互输入，供重放渲染折叠的「用户提问 / 用户补充」块。
    */
   interactiveInputs?: RoundInteractiveInput[];
+
+  /**
+   * 裁决证据（悬案取证轨）
+   *
+   * 空响应兜底 / 台账替身回显等「需事后裁决」的个案证据按时间序追加于此，
+   * 供跨会话人工/抽样裁决（消费方非 UI 重放，不进 processEvents）。
+   * 随 Round 整对象持久化；无证据的轮无此字段（零冗余）。
+   */
+  evidence?: RoundEvidenceEvent[];
 
   /**
    * 问答闭环内多段 assistant
