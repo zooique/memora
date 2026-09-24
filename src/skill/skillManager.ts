@@ -118,7 +118,7 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * 注册运行时注入的技能（如 confirmConfigSuggestion 持久化技能）；同名重复注册被拒绝。
    *
    * 必须走基类 registerRuntimeItem 登记——直接 push 进 items 会被 reload() 的磁盘扫描结果覆盖
-   * （运行时注入项无磁盘真理源，reload 保留依赖 runtimeNames 记账；设定记忆不写记忆库/SQLite 索引）。
+   * （运行时注入项无磁盘真理源，reload 保留依赖 runtimeNames 记账；设定记忆不写记忆库）。
    */
   register(skill: SkillEntry): void {
     if (this.items.some((s) => s.name === skill.name)) {

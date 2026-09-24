@@ -35,7 +35,7 @@ import { awaitBackgroundTasks } from '../src/utils/backgroundTask.js';
 import { BENCH_SEEDS, loadBenchmarkSeed, type BenchmarkSeed } from './benchmark-seeds.js';
 
 // Node 24 + undici 已知 bug：fetch 401/403 后 keep-alive stream 残留，process.exit 时触发
-// libuv "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)"。与 smokeLlm.ts 同构兜底。
+// libuv "Assertion failed: !(handle->flags & UV_HANDLE_CLOSING)"。同款兜底。
 process.on('uncaughtException', (err) => {
   const isLibuvAssertion =
     err.name === 'AssertionError' || (err as NodeJS.ErrnoException).code === 'ERR_ASSERTION';

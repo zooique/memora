@@ -439,7 +439,7 @@ export interface DuplicateCallInterceptor {
 
   /**
    * 当前阈值（可选）。宿主注入自定义拦截器时，loop 的失败硬闸 / 警告文案 / `context.threshold`
-   * 都应取**本拦截器**的阈值，而非 loop 自身硬编码（N3 排雷修正）。未实现则回落默认 3。
+   * 都应取**本拦截器**的阈值，而非 loop 自身硬编码。未实现则回落默认 3。
    */
   getThreshold?(): number;
 }
@@ -490,9 +490,16 @@ export interface AgentOptions {
    *（v0.13 后无内置示例键；角色包自动匹配全链已移除，本机制保留供宿主能力边界使用）
    */
   strategyOverride?: Partial<BehaviorStrategy>;
-  /** 记忆数据目录（由宿主显式注入） */
-  dataDir?: string;
-  /** 项目注册表目录（默认与 dataDir 相同；设为用户级路径可避免每项目重复存储） */
+  /**
+   * 记忆数据目录（宿主必填）。内核不提供默认值——目录位置与其层级语义（项目级 / 用户级）
+   * 是宿主的产品决策，内核不置喙，也不假设其下的文件形态。
+   */
+  dataDir: string;
+  /**
+   * 项目注册表目录（可选，缺省随 dataDir）。注册表存在的意义是**跨项目按名解析**，
+   * 故只有多项目共用同一 dataDir（或显式指定共同的 registryDir）时才真正兑现；
+   * 若 dataDir 是项目级目录，注册表随之落进各项目内、只含项目自身条目，按名切换不成立。
+   */
   registryDir?: string;
   /** 最大上下文 token 数（默认 120000） */
   maxContextTokens?: number;

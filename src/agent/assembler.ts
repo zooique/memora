@@ -833,7 +833,7 @@ export async function assembleComponents(
     if (perspectiveName) {
       lines.push('');
       lines.push(`【装配角色技能（${perspectiveName}）】`);
-      // Bug 6 修复：直接用结构化数据（RolePackAssembly.skills），不再正则解析 prompt 文本
+      // 直接用结构化数据（RolePackAssembly.skills），不再正则解析 prompt 文本
       const assembly = rolePackManager.get(perspectiveName);
       const skills = assembly?.skills ?? [];
       for (const skill of skills) {

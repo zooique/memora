@@ -40,7 +40,7 @@ export interface ProjectManagerOptions {
   dataDir: string;
   /** 外部注入存储实例（可选，不传则内部 InMemoryStorage 兜底） */
   storage?: IMemoryStorage;
-  /** 注册表目录（可选，默认同 dataDir） */
+  /** 注册表目录（可选，缺省同 dataDir；跨项目按名解析需要多项目共用一份注册表） */
   registryDir?: string;
   /**
    * SecurityGuard 工厂函数（Agent 层注入，解除 memory→security 反向依赖）。
@@ -85,7 +85,9 @@ export class ProjectManager {
     const { dataDir, storage, registryDir, createSecurityGuard } = options;
     const memoraHome = resolve(expandHome(dataDir));
     this.agentDataDir = memoraHome;
-    // 注册表目录：优先宿主指定用户级路径，避免每项目重复存储
+    // 注册表目录：显式指定时用之（典型为用户级路径，使注册表跨项目共享）；
+    // 缺省随 dataDir——此时注册表能否跨项目取决于调用方传的 dataDir 是共享还是项目级，
+    // 内核不做假设：项目级 dataDir 下每个项目只注册自身，按名切换不成立（switchProject 已加守卫）。
     const registryHome = registryDir ? resolve(expandHome(registryDir)) : memoraHome;
     this.externalStorage = storage ?? null;
     this.createSecurityGuard = createSecurityGuard;

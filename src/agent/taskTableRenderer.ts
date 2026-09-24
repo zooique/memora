@@ -18,7 +18,7 @@ import type { PlanItem, PlanItemOutcome } from './types.js';
 
 /**
  * 任务项描述最大字符数（超出截断为「前 PLAN_ITEM_DESC_MAX_CHARS-3 字符 + '...'」）。
- * 作用 = 防超长描述撑爆上下文（原为方框列宽服务，列宽消失后该理由仍成立）。
+ * 作用 = 防超长描述撑爆上下文；与渲染列宽无关，勿据列宽回改。
  */
 export const PLAN_ITEM_DESC_MAX_CHARS = 38;
 

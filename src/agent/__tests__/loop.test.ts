@@ -5292,7 +5292,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     expect(limited!.content).toContain('可能不存在');
   });
 
-  it('G · 整批重复判定前移：block 拦截器 → 工具不执行（N1 真 block，非事后撒谎）', async () => {
+  it('G · 整批重复判定前移：block 拦截器 → 工具不执行（真 block，非事后再声称已阻止）', async () => {
     // 注入一个恒返回 block 的拦截器：判定在**执行前**，工具绝不运行
     const blockInterceptor: DuplicateCallInterceptor = {
       name: 'always-block',
@@ -5314,7 +5314,7 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
       void chunk;
     }
 
-    // N1：工具实际未执行（0 次），而非"已自动阻止"却已跑完
+    // 工具实际未执行（0 次），而非"已自动阻止"却已跑完
     expect(toolExecutor).not.toHaveBeenCalled();
     const blocked = loop.getMessages().find((m) => m.content.includes('DUPLICATE_TOOL_CALL_BLOCKED'));
     expect(blocked).toBeDefined();

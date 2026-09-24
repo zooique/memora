@@ -5,6 +5,7 @@
  * 负责组件组装和核心对话编排，领域专属操作委托给专职 Manager
  * （RolePackManager / ToolExecutor / SkillManager / MemoryInspector）。
  */
+import { isAbsolute } from 'node:path';
 import { getBaseName } from '@/utils/path.js';
 import { AGENT_CONSTANTS } from '@/agent/constants.js';
 import type { AgentLoop } from '@/agent/loop.js';
@@ -188,7 +189,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     super();
     this.#config = {
       projectPath: opts.projectPath,
-      dataDir: opts.dataDir!,
+      dataDir: opts.dataDir,
       registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
       permission: opts.permission ?? 'owner',
@@ -1141,6 +1142,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
   /**
    * 切换到指定项目：切换后自动 rebuildComponents()；Agent 级记忆存储（宿主注入，实例不随项目切换重建）保留，项目级配置（.memora/）重新加载
+   *
+   * `nameOrPath` 只接受两种输入：① 项目注册表中的项目名（依赖注册表跨项目共享，见 dataDir/registryDir）；
+   * ② 项目根目录的**绝对路径**。二者都不满足时抛 configError——否则相对串会以 process.cwd()
+   * 为基准解析，静默造出非预期的项目目录并占用其锁。
    */
   async switchProject(nameOrPath: string): Promise<AgentContext> {
     this.assertInitialized('switchProject', ['projectManager', 'provider']);
@@ -1155,6 +1160,18 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       const nameOrPathLower = nameOrPath.toLowerCase();
       target = projects.find(
         (p) => p.name.toLowerCase() === nameOrPathLower || p.path.toLowerCase() === nameOrPathLower,
+      );
+    }
+    // 注册表未命中时按路径处理。相对路径会以 process.cwd() 为基准解析——宿主进程的 cwd
+    // 不具项目语义，会静默创建出非预期的项目目录并占用其锁，故只接受绝对路径。
+    if (!target && !isAbsolute(nameOrPath)) {
+      throw configError(
+        '项目切换失败',
+        `「${nameOrPath}」既不是已注册的项目名，也不是绝对路径`,
+        [
+          '按名切换：先经 agent.projects.registerProject(项目路径, 项目名) 注册，并保证注册表跨项目共享（多项目共用同一 dataDir 或 registryDir）',
+          '按路径切换：传入项目根目录的绝对路径',
+        ],
       );
     }
     const projectPath = target ? target.path : nameOrPath;
@@ -1499,7 +1516,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 配置重载（事件驱动） ───────────────────────
 
   /**
-   * 重载配置类记忆：从 configDir 重新扫描指定 source 并更新内存缓存（设定记忆纯文件装载，不写记忆库/SQLite 索引），使当前会话立即生效（无需重启）。
+   * 重载配置类记忆：从 configDir 重新扫描指定 source 并更新内存缓存（设定记忆纯文件装载，不写记忆库），使当前会话立即生效（无需重启）。
    * - 'skill' → SkillManager.reload() 重扫 skills/
    * - 'rolePack' → RolePackManager.reload() 重扫 role-packs/（保持激活角色，刷新 AgentLoop 前缀）
    * - 'rule' → 经角色包管理机制热更新（即 rolePack）
@@ -1691,7 +1708,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   // ─── 关闭 ─────────────────────────────────────────────
 
   /**
-   * 关闭 Agent，释放 SQLite 连接等资源
+   * 关闭 Agent，释放存储连接等资源
    */
   async close(): Promise<void> {
     // 清理 chat 锁管理器（递增 token 使进行中 chat() 的 finally 跳过清理，close 已接管）

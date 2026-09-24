@@ -146,7 +146,7 @@ export class RoundSummaryGenerator {
 
       // 构建带溯源标记的记忆条目（round-summary + sessionName + roundId）
       // 溯源/分类字段走顶层持久化字段（summaryType/sessionName/roundId），不塞 metadata：
-      // 宿主 SQLite 不持久化 metadata，而分轨召回/会话优先须跨会话可靠读取（A1 边界定案，见 types.ts）
+      // metadata 不在存储契约的保证范围内，而分轨召回/会话优先须跨会话可靠读取（A1 边界定案，见 types.ts）
       const memoryId = roundSummaryMemoryId(sessionName, roundId);
       const now = nowIso();
       const memory: Memory = {

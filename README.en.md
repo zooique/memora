@@ -32,6 +32,7 @@ import { Agent, createProviderFromConfig } from '@zooique/memora';
 
 const agent = new Agent({
   projectPath: '/your/project',
+  dataDir: '/your/project/.memora-data', // memory data directory (required)
   provider: createProviderFromConfig('primary', {
     provider: 'openaiCompatible',
     apiKey: process.env.LLM_API_KEY!,
@@ -130,7 +131,7 @@ const agent = new Agent({
   projectPath: '/path/to/project',
   provider,
   configDir: '/path/to/agent-config', // role-packs / skills
-  dataDir: '.memora',                 // memory data directory
+  dataDir: '/path/to/project/.memora-data', // memory data directory (required; prefer absolute)
 });
 
 await agent.init();

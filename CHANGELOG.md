@@ -16,6 +16,18 @@
 - **文档同步**：`docs/memora-api-reference.md` 的 `ProjectContext` 字段表移除该行；`storage` × `dataDir` 对照表去掉 `join(dataDir, 'memora.db')` 与「内核推导 dbPath」两处表述
 - **破坏性但零成本**：`ProjectContext` 经 `src/index.ts` 导出的 `AgentContext` 别名对外可见，故此行属公共 API 变更；**不提供兼容层**——3.0.0 尚未发布（npm 最新为 2.0.3），无外部用户依赖该字段，且它本身零消费者、无行为可兼容
 
+### Changed（`AgentOptions.dataDir` 收紧为必填 + `switchProject` 拒绝未解析的非绝对路径）
+
+同一根因的两处收口：**「Agent 级数据目录」在内核与宿主之间没有定死**。`dataDir` 类型标可选、文档称「缺省 `~/.memora`」，代码却写着 `opts.dataDir!` 非空断言——而 `src/` 里从来没有 `~/.memora` 这个默认值（`homedir` 仅出现在 `expandHome` 内部；唯一的 `~/.memora` 在 `config.example.json`，且 `config.memory.dataDir` 内核**不消费**，全仓只有测试读它）。照文档省略 `dataDir` 的后果是 `expandHome(undefined)` 抛 `Cannot read properties of undefined`。
+
+- **`dataDir` 改为必填**：`AgentOptions.dataDir?: string` → `dataDir: string`，并删掉 `agent.ts` 的 `!` 断言——把运行期爆炸换成编译期保证。目录位置与其层级语义（项目级 / 用户级）是宿主的产品决策，内核不提供默认值、也不做假设
+- **`registryDir` 注释诚实化**：缺省随 `dataDir`（原注释自称「优先宿主指定用户级路径，避免每项目重复存储」，而缺省分支恰恰就是每项目一份）。注册表的用途是**跨项目按名解析**，只有多项目共用一份目录时才兑现；`dataDir` 为项目级时，注册表随项目落盘、只含项目自身条目
+- **`switchProject` 加守卫**：`nameOrPath` 只接受「注册表中的项目名」或「项目根目录的绝对路径」，二者都不满足时抛 `configError`。此前未命中会原样当路径 → `resolve('...', '.memora')` 以 `process.cwd()` 为基准，**静默建出伪项目目录、占用其锁、写入注册表**
+- **文档同步**：api-reference §〇.3 去掉 `dataDir` 的假默认、补「`config.json` 的 `memory.dataDir` 内核不读」、订正「锁文件由 `dataDir` 推导」（锁固定落 `<projectPath>/.memora/.lock`，与 `dataDir` 无关）；README 中英双版与接入指南的构造示例原先**漏传 `dataDir` 或传相对路径**，补绝对路径；接入指南 §8 拆「按路径（推荐）/ 按名（需先注册 + 注册表共享）」两式
+- **随包文档两处冲突表述订正**：api-reference「内部数据写入（不越界）」段与接入指南 §十 关键约束 3 原先分别称两个状态文件在 `~/.memora/`、`.memora/` 只放 `rules/`+`skills/`——均与本次收敛后的路径契约矛盾，同步改正
+
+> **破坏性但零成本**（对齐本文件既有口径）：`AgentOptions.dataDir` 由可选改必填是对外可见的类型变更；但仓内**无一处**省略它——内核 `tsc --noEmit`（`include` 覆盖 `src/**/*`，含全部测试文件）与宿主 10 处构造点全数通过，改动实质是把 `!` 断言换成编译期保证。`registryDir` 保留（它是宿主把注册表提到用户级的唯一通道），仅订正注释；宿主零消费 `switchProject`，故守卫不构成在网行为变更。
+
 ### Changed（术语正名：任务项 `PlanStep` → `PlanItem` + `step_boundary` 归位为迭代边界）
 
 根治项目内两个「step」的术语撞车——① **loop 迭代 step**（一次 LLM 交互 + 其工具执行，`stepBudget` 属此阵营）；② **任务表 plan step**（一行任务）。阵营②此前占用 `step_boundary` 事件名，导致阵营①没有自己的边界信号——这同时是「无任务表长工具循环零增量落盘」缺口的根因。

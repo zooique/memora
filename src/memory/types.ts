@@ -38,12 +38,12 @@ export interface Memory {
   /**
    * 配置文件 frontmatter 额外元数据。仅用于 FileStore 写回 frontmatter（persona/rule/skill 等配置记忆）。
    * ⚠️ 不再承载 round-summary 的溯源/分类字段——summaryType/sessionName/roundId 已提升为顶层
-   * 持久化字段（宿主 SQLite 不存储 metadata，而分层分轨/会话优先须跨会话生效，见 supersededBy 同款先例）。
+   * 持久化字段（metadata 不在存储契约的保证范围内，而分层分轨/会话优先须跨会话生效，见 supersededBy 同款先例）。
    */
   metadata?: Record<string, string>;
   /**
    * round-summary 摘要类型（preference/fact/decision/intent/general）。
-   * 顶层持久化字段：宿主 SQLite 不持久化 metadata，
+   * 顶层持久化字段：metadata 不在存储契约的保证范围内，
    * 而分轨召回须跨会话可靠读取，故提升为顶层列。仅 round-summary 有意义。
    */
   summaryType?: SummaryType;

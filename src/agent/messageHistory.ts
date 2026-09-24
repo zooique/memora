@@ -558,7 +558,7 @@ export class MessageHistory {
   }
 
   /**
-   * 等待所有挂起归档完成（Agent.close() 时调用），防止归档写 SQLite 时 db 已被关闭。
+   * 等待所有挂起归档完成（Agent.close() 时调用），防止归档写入时存储已被关闭。
    * 会捕获等待期间新加入的归档（解决 init() → archiveMissingSessions() 的 race）；
    * 50ms 轮询直到全部完成或超时。
    * @returns 是否全部完成（false = 超时）

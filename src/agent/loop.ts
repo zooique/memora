@@ -437,7 +437,7 @@ export class AgentLoop {
     ];
     this.duplicateCallInterceptor =
       opts.duplicateCallInterceptor ?? new DefaultDuplicateCallInterceptor(3);
-    // N3 排雷修正：阈值取拦截器自身（宿主注入自定义阈值时文案/硬闸/context.threshold 同步），未实现回落默认 3
+    // 阈值取拦截器自身（宿主注入自定义阈值时文案/硬闸/context.threshold 同步），未实现回落默认 3
     this.duplicateToolCallThreshold = this.duplicateCallInterceptor.getThreshold?.() ?? 3;
     this.onPendingQuestion = opts.onPendingQuestion;
     this.ui = {
@@ -1286,10 +1286,10 @@ export class AgentLoop {
       return yield* this.handleAskUser(llmResult, effectiveToolCalls);
     }
 
-    // ─── 重复工具调用检测（拦截器模式 · **前移到执行前** = N1 真 block）───
+    // ─── 重复工具调用检测（拦截器模式 · **前移到执行前** = 真 block）───
     // 重复检测委托给 DuplicateCallInterceptor（默认哈希机械检测，宿主可注入差异化策略）。
     // 判定在工具执行**前**：warn → 注入负反馈后继续执行；block → 注入阻断并跳过执行（真阻止，
-    // 不再"事后宣告已自动阻止"的假 block，N1 排雷修正）。
+    // 不再"事后宣告已自动阻止"的假 block）。
     const currentHash = DefaultDuplicateCallInterceptor.hash(effectiveToolCalls);
     if (currentHash !== '' && currentHash === this.lastToolCallsHash) {
       this.duplicateToolCallCount++;

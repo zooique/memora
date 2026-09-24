@@ -274,7 +274,7 @@ export class MemoryInspector {
       // 结构化溯源（§3.3「返回」行）：round-summary 命中项显式附 sessionId/roundId，
       // 与 trace_summary 参数直通——LLM 零解析直用，不得隐式编码进 name 字段。
       // 字段值源：round-summary 顶层持久化 sessionName（= YYYY-MM-DD-sessionName，即 trace_summary 的 sessionId）
-      // + roundId；宿主 SQLite 不持久化 metadata，故不从 metadata 读。
+      // + roundId；metadata 不在存储契约的保证范围内，故不从 metadata 读。
       sessionId: memory.sessionName,
       roundId: memory.roundId,
     }));
@@ -312,7 +312,7 @@ export class MemoryInspector {
    *
    * 软删即脱钩：命中 roundId 的 round-summary 清空溯源（sessionName/roundId）后再软删——
    * 原会话/轮已不存在（物理回收），溯源悬空无意义；恢复后即为「无需溯源的独立记忆」。
-   * 宿主 SQLite 不持久化 metadata，故不用标记位，直接清顶层溯源字段最简。
+   * metadata 不在存储契约的保证范围内，故不用标记位，直接清顶层溯源字段最简。
    * 治理页单条软删（writeDelete）不清溯源：误删恢复仍保留关联。
    *
    * @param roundIds 被物理删除（引用归 0）的 Round ID 集合

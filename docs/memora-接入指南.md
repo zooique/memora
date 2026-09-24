@@ -30,11 +30,11 @@
 
 **Memora 是一个无法独立运行的智能大脑内核。** 它只有接口，没有"形态"——宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
-**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（角色包 persona/rules/skills —— Agent 的骨骼，.md 文件 + 内存缓存，唯一归角色包、确定性注入不经过召回）和**对话记忆**（摘要记忆 round-summary —— Agent 的血肉，SQLite + **纯关键词召回**，带 `summaryType` 语义标签）。二者边界一刀切：记忆系统不再承载设定、角色包不承载对话（ADR-025）；偏好类信息沉淀为摘要记忆，不设独立"用户画像"记忆层。
+**万物皆记忆 v2。** Memora 有两类记忆：**设定记忆**（角色包 persona/rules/skills —— Agent 的骨骼，.md 文件 + 内存缓存，唯一归角色包、确定性注入不经过召回）和**对话记忆**（摘要记忆 round-summary —— Agent 的血肉，宿主持久化 + **纯关键词召回**，带 `summaryType` 语义标签）。二者边界一刀切：记忆系统不再承载设定、角色包不承载对话（ADR-025）；偏好类信息沉淀为摘要记忆，不设独立"用户画像"记忆层。
 
-**单 Agent 模型。** 所有对话、所有记忆存在同一个数据库中，**切换子项目不会丢失记忆**。
+**单 Agent 模型。** 一个 Agent 实例的对话与记忆由**同一组存储实例**承载（`storage` / `sessionStore` 均在构造时注入、实例级），**`switchProject()` 切换项目时复用同一实例，不重建、不丢记忆**。要按工作区彼此隔离，就各自 `new Agent`——隔离粒度由宿主决定，内核不规定。
 
-**配置文件是真理源，对话记忆走 SQLite 索引。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary 摘要记忆，带 `summaryType` 标签）走 SQLite + **纯关键词召回**（向量语义通道已随 2026-09-18 B0 收编移除，见 §十.1）。
+**配置文件是真理源，对话记忆由宿主持久化。** 角色包（persona/rules/skills）为纯文件 + 内存缓存，设定记忆唯一归角色包、不进记忆库（ADR-025）；对话记忆（round-summary 摘要记忆，带 `summaryType` 标签）经宿主注入的 `IMemoryStorage` 持久化——**后端由宿主自选**（SQLite / JSON 文件 / 内存皆可），检索为 **纯关键词召回**（向量语义通道已随 2026-09-18 B0 收编移除，见 [API 参考手册](./memora-api-reference.md) §〇.5 构造参数表）。
 
 **内核零越界。** 核心库模块不直接调用 `console.*`（唯一日志出口为 `logging/` 单例，默认实现写 stderr）、不读 `process.stdin`、不管理 API Key、不写用户配置文件。
 
@@ -63,17 +63,17 @@
 
 | 路径 | 用途 | 示例 |
 |------|------|------|
-| `AgentOptions.configDir` | Agent 级配置（personas/rules/skills） | 嵌入宿主程序 |
-| `AgentOptions.dataDir` | 记忆数据（memora.db + sessions/） | 跟作品走 |
-| `projectPath/.memora/` | 项目级配置（rules/skills） | 跟作品走 |
+| `AgentOptions.configDir` | 配置根目录（role-packs / skills） | 嵌入宿主程序 |
+| `AgentOptions.dataDir` | 记忆数据目录（**必填**；记忆库形态由宿主的 `storage` 实现决定） | 宿主自定 |
+| `projectPath/.memora/` | 项目级配置（rules/skills）+ 项目锁文件 `.lock` | 跟作品走 |
 
 **小说生成器推荐布局：**
 ```
 小说项目/
-├── .memora/           ← 项目级配置（rules + skills）
-└── .memora-data/      ← 项目级记忆（dataDir 指向此处）
-    ├── memora.db
-    └── sessions/
+├── .memora/           ← 项目级配置（rules + skills）+ 内核写入的 .lock
+└── .memora-data/      ← dataDir 指向此处（记住：内核只往这里写 projects.json 注册表）
+    ├── projects.json  ← 内核写入：项目注册表
+    └── <记忆库>        ← 由宿主的 storage 决定形态与文件名
 ```
 
 ---
@@ -109,8 +109,9 @@ const backgroundProvider = createProviderFromConfig('background', {
   model: 'deepseek-chat', // 可用更便宜的模型
 });
 
-// 可选：注入存储层（不传则使用 InMemoryStorage）
-const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db');
+// 可选：注入存储层（不传则使用 InMemoryStorage）。后端由宿主自选，二选一即可：
+const storage: IMemoryStorage = new MySqliteStorage('/path/to/memora.db'); // SQLite（同步实现天然对齐）
+// const storage: IMemoryStorage = new MyJsonStorage('/path/to/memories.json'); // JSON 文件（第一宿主 memora-vscode 的选法）
 
 // 可选：全局替换日志实现（不调用则使用内核内置 console fallback，写 stderr；宿主可注入任意 ILogger 实现）
 setLogger(myCustomLogger);
@@ -121,7 +122,7 @@ const agent = new Agent({
   provider,              // 前台 Provider（必须）
   backgroundProvider,    // 后台 Provider（可选）
   configDir: '/path/to/agent-config',
-  dataDir: '.memora',
+  dataDir: '/path/to/novel-project/.memora-data',  // 必填；相对路径会以进程 cwd 为基准，建议传绝对路径
   maxContextTokens: 120000,
   activeRolePack: '作家',
   permission: 'owner',
@@ -210,6 +211,7 @@ const codeExecutionProvider: ICodeExecutionProvider = {
 
 const agent = new Agent({
   projectPath: '/path/to/novel-project',
+  dataDir: '/path/to/novel-project/.memora-data',  // 必填
   provider,
   // webSearchProvider: new FetchWebSearchProvider(),  // 搜索（web_search，参见参考手册 §8.3）
   fetchProvider,            // 可选：暴露 web_fetch
@@ -264,15 +266,24 @@ if (rp) {
 ### 8. 切换项目
 
 ```typescript
-// switchProject() 自动 rebuild，无需手动调用 rebuildComponents()
-const ctx = await agent.switchProject('another-novel');
+// 按路径切换（最稳）：传项目根目录的绝对路径，无需预先注册
+const ctx = await agent.switchProject('/path/to/another-novel');
 console.log(`已切换到：${ctx.projectName}`);
+
+// 按名切换：依赖项目注册表命中，须先注册
+// 注册表缺省落在 dataDir 内 —— 只有多项目共用同一 dataDir（或显式指定共同的 registryDir）时，
+// 按名切换才成立；若 dataDir 是项目级目录，注册表会随之落进各项目、只含自身条目，按名切换不成立。
+agent.projects.registerProject('/path/to/another-novel', 'another-novel');
+const ctx2 = await agent.switchProject('another-novel');
 ```
+
+> 未命中注册表且传入的又不是绝对路径时，`switchProject` 直接抛错（相对路径会以进程 cwd 为基准，
+> 可能静默创建出非预期的项目目录并占用其锁）。
 
 ### 9. 关闭
 
 ```typescript
-await agent.close(); // 释放项目锁 + 关闭数据库
+await agent.close(); // 释放项目锁 + 关闭注入的存储实例
 ```
 
 ---
@@ -468,7 +479,7 @@ app.put('/api/sessions/:id/archive', (req, res) => {
 | `extractKeywords(text)` | 提取关键词 |
 | `SOURCE_LABELS` | source 标签常量（PERSONA / RULE / SKILL / WORK_PROJECTION / ROUND_SUMMARY / UNKNOWN） |
 | `escapeLike(query)` | 转义 SQLite LIKE 通配符（`%` / `_` → `\%` / `\_`）。**SQL 必须写成 `LIKE ? ESCAPE '\'`**——不写 ESCAPE 子句则反斜杠被视为普通字符，转义后的模式匹配不到任何字面值，查询**静默返回空** |
-| `escapeLikeSnippet(text, maxLen?)` | 截断至 maxLen（默认 50）后转义 LIKE 通配符——搜索输入防超长解析 + 防通配符被当模式符（SQLite 后端检索的配套动作，同样须配 `ESCAPE '\'`） |
+| `escapeLikeSnippet(text, maxLen?)` | 截断至 maxLen（默认 50）后转义 LIKE 通配符——搜索输入防超长解析 + 防通配符被当模式符（SQL 后端检索的配套动作，同样须配 `ESCAPE '\'`） |
 | `validateSource(source)` | 校验 source 标签是否为已知标签（返回 warning，不阻止写入） |
 | `MemoraError` | 统一错误类型（结构化错误码 + 上下文） |
 | `toError(err)` | 将任意值转为 Error（浏览器端安全，不引入 `logging/` 模块） |
@@ -588,17 +599,19 @@ for (const chapter of chapters) {
 
 ## 十、关键约束
 
+**前提：存储方案由宿主自选，内核只定契约。** 内核只定义 `IMemoryStorage` / `ISessionStore` 接口，**不规定后端**——SQLite（better-sqlite3）、JSON 文件、内存实现一视同仁，任何后端都不得被写进内核逻辑。接口方法为**同步语义**（对齐 better-sqlite3），异步后端需另行扩展接口；JSON 落地实现在同步路径上做全量重写，记忆量增长时由宿主自行评估更优后端（阈值与权衡见 `storageInterface.ts` 头注释）。第一宿主 memora-vscode 当前用 JSON 文件，换成 SQLite **不需要改内核**。
+
 1. **`provider` 是必填项** — Agent 无法独立运行
-2. **configDir** 指向 Agent 级配置目录，所有子项目共享
-3. **项目级 `.memora/`** 只放 `rules/`、`skills/`
-4. **角色由关键词自动触发**
-5. **对话历史跨子项目持久化**
+2. **configDir** 指向 Agent 级配置目录，所有项目共享
+3. **项目级 `.memora/`** 放项目级配置（`rules/`、`skills/`）与内核写入的项目锁 `.lock`；`dataDir` 若指向此处（第一宿主 memora-vscode 即如此），记忆库与会话也落在这里
+4. **角色包只能手动切换**（`agent.switchRolePack(name)` / `agent.rolePack.activate(name)`）——无输入自动匹配、无粘性锁存、无互斥触发；已激活的角色包在当前会话内保持固定（v0.13 已移除自动匹配全链）
+5. **对话历史随 Agent 持久化** — `sessionStore` 是实例级注入的，`switchProject()` 不换存储；未注入则仅内存保存
 6. **Manager 访问器在 `init()` 前返回 `null`** — 所有 `agent.rolePack.xxx()` / `agent.memory.xxx()` 等调用必须在 `init()` 之后
-7. **作品原始内容不进 SQLite**，Agent 通过工具按需读取
+7. **作品原始内容不进记忆库**，Agent 通过工具按需读取（大文本走 `read_file` 分段，提炼后只留情报，不全量入库 / 入上下文）
 8. **配置文件是真理源**，`<configDir>/role-packs/` 下的角色包由 RolePackManager 启动时扫描加载
-9. **禁止**为每个子项目创建独立的 memora.db
-10. **禁止**项目切换时关闭/重建数据库
-11. **禁止**将配置直接写入 SQLite 作为持久化存储
+9. **一个 Agent = 一份记忆库** — `storage` 与 `dataDir` 都是 **Agent 实例级**的：`switchProject()` 复用同一实例，不按项目 / 子项目分裂。**要按工作区彼此隔离，就各自 `new Agent`**——隔离粒度归宿主决定，内核不规定
+10. **项目切换不重建、不关闭存储** — `switchProject()` 复用已注入的实例，只在 `close()` 时关闭（`ProjectManager` 在 Agent 生命周期内缓存）
+11. **禁止把配置放进记忆库** — 配置（角色包 / persona / rules / skills）的真理源是文件（`configDir` / 角色包），设定记忆归角色包内容层、不进记忆库（ADR-025 / `memory-role-pack-boundary`）
 12. **项目切换** `switchProject()` 已自动 rebuild，通常无需手动调用 `rebuildComponents()`
 13. **Tracer 未注入时**自动降级为 NoopTracer，零运行时开销
 

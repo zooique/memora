@@ -1,7 +1,7 @@
 /**
  * A/B 模型行为验收 · 真实 LLM 会话驱动
  *
- * 用法（复用 smokeLlm 的真实配置：MEMORA_API_KEY 环境变量 + loadConfig）：
+ * 用法（真实配置：MEMORA_API_KEY 环境变量 + loadConfig）：
  *   $env:MEMORA_API_KEY = "sk-xxx"
  *   npx tsx scripts/test-memory-tool-recall-real.ts            # 全量 10 case
  *   $env:BENCH_CASE="A1,A5,B2"; npx tsx scripts/...real.ts    # 指定 case

@@ -19,7 +19,7 @@
 | 接口 | 必选 | 声明位置 | 用途 |
 |------|------|---------|------|
 | `LlmProvider` | ✅ 必选 | `src/llm/provider.ts` | 前台 LLM 流式对话（`stream()`），宿主创建 |
-| `IMemoryStorage` | ✅ 必选* | `src/memory/storageInterface.ts` | 记忆持久化，15 方法，推荐 SQLite |
+| `IMemoryStorage` | ✅ 必选* | `src/memory/storageInterface.ts` | 记忆持久化，15 方法，同步语义（对齐 better-sqlite3）；**后端由宿主自选** |
 | `ISessionStore` | ✅ 必选* | `src/memory/sessionStore.ts` | 会话消息持久化，3 必需 + 6 可选方法 |
 | `ITracer` | 可选 | `src/agent/tracer.ts` | 可观测性，不传用 `NoopTracer` |
 | `IWebSearchProvider` | 可选 | `src/web-search/types.ts` | 网络搜索，不注入则不启用 |
@@ -82,13 +82,17 @@ configDir/
 | | `storage`（IMemoryStorage） | `dataDir` |
 |---|---|---|
 | 本质 | 接口实例（宿主写的类） | 文件系统目录路径（字符串） |
-| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 用它定位注册表（`projects.json`）与锁文件；记忆库落哪、叫什么名，由宿主自定，内核不参与 |
-| 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆 / 项目 / 锁文件放哪个目录"（物理位置） |
+| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 用它定位项目注册表（`projects.json`）；记忆库落哪、叫什么名，由宿主自定，内核不参与 |
+| 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆库与项目注册表放哪个目录"（物理位置） |
 | 谁实现 | 宿主实现（如 SqliteMemoryStorage） | 宿主传路径 |
-| 关系 | `dataDir` 指向目录；宿主按自己的持久化形态构造 storage（JSON 文件 / SQLite 皆可） | 内核用 `dataDir` 推导注册表与锁文件路径 |
-| 缺省 | 不传 → `InMemoryStorage`（仅内存） | 不传 → 路径为空，相关功能依赖 storage 自带实现 |
+| 关系 | `dataDir` 指向目录；宿主按自己的持久化形态构造 storage（JSON 文件 / SQLite 皆可） | 内核用 `dataDir` 推导注册表路径；**项目锁文件不由 `dataDir` 推导**，它固定落 `<projectPath>/.memora/.lock` |
+| 缺省 | 不传 → `InMemoryStorage`（仅内存） | **必填，无默认值**（目录位置与层级语义是宿主的产品决策，内核不假设） |
 
 一句话：`storage` 是宿主**怎么**存取的实现，`dataDir` 是存取内容**落在哪个目录**的配置——一个管"如何"，一个管"何处"。
+
+> **`config.json` 里的 `memory.dataDir` 内核不读**：它只是「宿主约定的载体」——宿主可自行从配置取出后传给
+> `new Agent({ dataDir })`。内核不消费它，也没有任何默认值；`config.example.json` 里写 `~/.memora` 只是一个示例值，
+> 不等于内核的缺省行为。
 
 ### 〇.4 多来源双路径编排（内置 + 用户）
 
@@ -109,7 +113,7 @@ new Agent({
   provider,               // ✅ 必选：前台 LLM
   // 常用可选项
   configDir,              // 配置根目录（role-packs / skills；缺省用内置默认）
-  dataDir,                // 记忆数据落地目录（缺省 ~/.memora）
+  dataDir,                // ✅ 必选：记忆数据落地目录（内核不提供默认值）
   backgroundProvider,     // 后台 LLM
   storage,                // IMemoryStorage 实现（缺省 InMemoryStorage）
   sessionStore,           // ISessionStore 实现（缺省仅内存保存）
@@ -172,8 +176,8 @@ new Agent({
 | `backgroundProvider` | `LlmProvider` | ❌ | 后台 Provider（投影等后台操作） |
 | `providerRouter` | `ProviderRouter` | ❌ | 按任务类型返回 Provider 的路由器（不配时全部使用同一 Provider，向后兼容） |
 | `configDir` | `string` | ❌ | 配置目录（role-packs / skills，设定记忆唯一归角色包） |
-| `dataDir` | `string` | ❌ | 记忆数据目录（默认 ~/.memora） |
-| `registryDir` | `string` | ❌ | 项目注册表目录（默认与 dataDir 相同） |
+| `dataDir` | `string` | ✅ | 记忆数据目录（必填，内核不提供默认值；传项目级还是用户级目录由宿主决定） |
+| `registryDir` | `string` | ❌ | 项目注册表目录（缺省与 dataDir 相同）。注册表用于**跨项目按名解析**，仅当多项目共用一份时才成立 |
 | `maxContextTokens` | `number` | ❌ | 上下文窗口上限（默认 120000） |
 | `activeRolePack` | `string` | ❌ | 启动激活的角色包名（缺失/不存在回退默认激活首个） |
 | `permission` | `'owner' \| 'guest'` | ❌ | 安全权限（默认 'owner'） |
@@ -418,7 +422,7 @@ interface Memory {
   createdAt: string;  // 创建时间（ISO 8601）
   accessedAt: string; // 最后访问时间（每次召回时刷新）
   deletedAt?: string; // 软删除时间（ISO 8601，可选；非 undefined 表示已软删除。回收站**无自动清理**：保留期清理由宿主入口显式触发，见 writePurgeExpired）
-  metadata?: Record<string, string>; // 配置文件 frontmatter 额外元数据（仅配置文件写入时使用，SQLite 不存储此字段）
+  metadata?: Record<string, string>; // 配置文件 frontmatter 额外元数据（仅配置文件写入路径使用，不进记忆库）
   summaryType?: SummaryType; // round-summary 摘要类型（preference/fact/decision/intent/general；顶层持久化字段）
   sessionName?: string;  // round-summary 归属会话标识（顶层持久化字段，仅 round-summary 有意义）
   roundId?: string;      // round-summary 归属轮次标识（顶层持久化字段，仅 round-summary 有意义）
@@ -427,7 +431,7 @@ interface Memory {
 }
 ```
 
-> **字段基线**（score 已退役）：`score` 字段已随 2026-09-09 阶段3 物理删除（无持久化排序分字段，使用轨迹唯一事实源为 `accessedAt`）；向量语义通道已随 2026-09-18 B0 收编（检索为纯关键词单通道）。round-summary 溯源/分类字段（summaryType/sessionName/roundId）已提升为顶层持久化字段（宿主 SQLite 不存储 metadata）。所有查询方法（getById/getBySource/search/count/countBySource/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
+> **字段基线**（score 已退役）：`score` 字段已随 2026-09-09 阶段3 物理删除（无持久化排序分字段，使用轨迹唯一事实源为 `accessedAt`）；向量语义通道已随 2026-09-18 B0 收编（检索为纯关键词单通道）。round-summary 溯源/分类字段（summaryType/sessionName/roundId）已提升为顶层持久化字段（metadata 不进记忆库）。所有查询方法（getById/getBySource/search/count/countBySource/getAllSources）自动过滤 `deletedAt != undefined` 的记忆。详见 ADR-004 GAP-6 + ADR-002 §IMemoryStorage。
 
 **常用 source 标签（`SOURCE_LABELS` 常量）：**
 
@@ -799,7 +803,7 @@ interface IProjectSearchProvider {
 
 ## 九、作品投影（`agent.works` · WorkProjectionManager）
 
-作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在**项目级目录** `<memoraDir>/projections/<slug>.json`（不进入记忆库/SQLite）。原始文件内容不进投影，Agent 通过工具按需读取。
+作品投影是文件内容的轻量级摘要（50-100 字概要 + 结构 + 关键决策），存储在**项目级目录** `<memoraDir>/projections/<slug>.json`（不进入记忆库）。原始文件内容不进投影，Agent 通过工具按需读取。
 
 > **与记忆系统的边界**：作品投影是"作品感知"而非"对话记忆"（对话记忆唯一为 round-summary，沉淀在记忆库）。它**不参与记忆召回、不参与记忆治理**（去重/冲突检测不覆盖），随项目隔离——换项目即消失。宿主如需让模型感知投影，可显式经 `agent.works.loadAll()` 注入。
 
@@ -1142,7 +1146,10 @@ export type {
 
 ### 内部数据写入（不越界）
 
-Agent 内部维护 `projects.json`（项目注册表）和 `.lock`（项目锁），路径在 `~/.memora/`，属于 Agent 自己的状态管理。
+Agent 内部只维护两个状态文件，路径全部由宿主传入的路径推导，内核不假设 `~/.memora/` 一类的用户级默认位置：
+
+- `projects.json`（项目注册表）——落 `dataDir` 内；若显式传了 `registryDir` 则落那里
+- `.lock`（项目锁）——固定落 `<projectPath>/.memora/.lock`，**不由 `dataDir` 推导**
 
 ---
 

@@ -842,6 +842,29 @@ describe('Agent · switchProject() · 切换到已注册项目', () => {
 
     await expect(agent.switchProject(tmpProjectB)).rejects.toThrow(/未初始化/);
   });
+
+  it('未注册且非绝对路径的项目名应抛错，且不改变当前项目', async () => {
+    agent = makeAgent(tmpProjectA, tmpConfig, tmpData);
+    await agent.init();
+
+    // 相对串会以 process.cwd() 为基准被解析成路径，静默造出伪项目目录并占锁——必须拒绝
+    // （断言 detail 而非 message：MemoraError.message 只装 title）
+    await expect(agent.switchProject('another-novel')).rejects.toMatchObject({
+      title: '项目切换失败',
+      detail: expect.stringContaining('既不是已注册的项目名'),
+    });
+    expect(agent.context?.projectPath).toBe(tmpProjectA);
+  });
+
+  it('注册过的项目名仍可按名切换（守卫未过度收紧）', async () => {
+    agent = makeAgent(tmpProjectA, tmpConfig, tmpData);
+    await agent.init();
+
+    agent.projects?.registerProject(tmpProjectB, 'proj-b');
+    const ctx = await agent.switchProject('proj-b');
+
+    expect(ctx.projectPath).toBe(tmpProjectB);
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
