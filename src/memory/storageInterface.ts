@@ -70,7 +70,9 @@ export interface IMemoryStorage {
   /**
    * 关键词搜索活跃记忆。宿主实现：Intl.Segmenter 分词 + 停用词过滤，
    * LIKE 匹配 content/name，按 accessedAt 降序（最近使用优先）返回 top N。
-   * InMemoryStorage 用 segmentText() 分词 + includes 匹配（与 SqliteStorage 一致）
+   * SQL 后端配合 `escapeLike()` 转义后，必须写成 `LIKE ? ESCAPE '\'`——
+   * 缺 ESCAPE 子句则转义后的模式匹配不到含 `%`/`_` 的字面值，查询静默返回空。
+   * InMemoryStorage 用 segmentText() 分词 + includes 匹配（无 SQL 转义语义）
    * @param limit - 返回上限（默认 10）
    */
   search(query: string, limit?: number): Memory[];

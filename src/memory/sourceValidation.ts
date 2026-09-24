@@ -2,7 +2,7 @@
  * Source 校验工具 — 从 memory/types.ts 提取的运行时函数
  *
  * 职责：
- * - escapeLike：转义 SQL LIKE 通配符
+ * - escapeLike：转义 SQL LIKE 通配符（须配套 SQL 的 `ESCAPE '\'` 子句，否则转义失效）
  * - validateSource：校验 source 字段安全性和拼写
  * - levenshtein：简单编辑距离计算（输入限短字符串；本文件 :121 用于标签 typo 检测，另导出供 DedupManager 名称相似度复用）
  *
@@ -31,7 +31,12 @@ export type SourceValidationSeverity = 'block' | 'warn';
 const KNOWN_SOURCES: Set<string> = new Set(Object.values(SOURCE_LABELS));
 
 /**
- * 转义 LIKE 通配符，防止注入
+ * 转义 LIKE 通配符（`%` → `\%`、`_` → `\_`）
+ *
+ * ⚠️ 必须与 SQL 的 `ESCAPE '\'` 配套使用，即 `LIKE ? ESCAPE '\'`：
+ * 未写 ESCAPE 子句时反斜杠被当作普通字符，转义后的模式匹配不到任何含 `%`/`_` 的字面值，
+ * 查询静默返回空——比不转义更隐蔽（不转义是过度召回，漏转义是零召回）。
+ * 参数本身仍须用 `?` 占位绑定，转义只解决语义、不解决注入。
  *
  * @param str - 原始字符串
  * @returns 转义后的字符串
@@ -44,7 +49,8 @@ export function escapeLike(str: string): string {
  * 截取字符串前 maxLen 字符后转义 LIKE 通配符
  *
  * 用于将用户输入 / round-summary 记忆文本作为关键词搜索 SQLite LIKE 查询的输入。
- * 截断避免超长输入导致 LIKE 解析性能问题，转义防止通配符注入。
+ * 截断避免超长输入导致 LIKE 解析性能问题，转义防止通配符被当作模式符。
+ * 同 `escapeLike`：SQL 侧必须写 `LIKE ? ESCAPE '\'`，否则转义后的模式查不到字面值。
  *
  * @param text - 原始文本（用户输入 / round-summary 内容）
  * @param maxLen - 最大截取长度，默认 50

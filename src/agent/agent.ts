@@ -1140,7 +1140,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   }
 
   /**
-   * 切换到指定项目：切换后自动 rebuildComponents()；Agent 级记忆（memora.db）保留，项目级配置（.memora/）重新加载
+   * 切换到指定项目：切换后自动 rebuildComponents()；Agent 级记忆存储（宿主注入，实例不随项目切换重建）保留，项目级配置（.memora/）重新加载
    */
   async switchProject(nameOrPath: string): Promise<AgentContext> {
     this.assertInitialized('switchProject', ['projectManager', 'provider']);

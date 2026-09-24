@@ -26,7 +26,10 @@ export interface ProjectContext {
   projectName: string;
   /** .memora/ 目录的绝对路径 */
   memoraDir: string;
-  /** Agent 级 memora.db 路径（全局共享） */
+  /**
+   * 库文件路径：取值 `join(agentDataDir, 'memora.db')`，而 agentDataDir 由宿主传入的 dataDir 决定。
+   * 内核不消费此字段，也不承诺它是 Agent 级全局共享——持久化形态与库文件位置均归宿主决定。
+   */
   dbPath: string;
   /** SQLite 索引（经 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
@@ -38,7 +41,7 @@ export interface ProjectContext {
 
 /** ProjectManager 构造选项 */
 export interface ProjectManagerOptions {
-  /** Agent 级数据目录（memora.db 所在目录） */
+  /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
   dataDir: string;
   /** 外部注入存储实例（可选，不传则内部 InMemoryStorage 兜底） */
   storage?: IMemoryStorage;
@@ -63,7 +66,7 @@ export interface ProjectManagerOptions {
  * 切换到新项目（解锁旧+锁新）、退出清理锁文件。注册表/锁文件委托专职模块，本类聚焦编排。
  */
 export class ProjectManager {
-  /** Agent 级数据目录（memora.db 所在目录） */
+  /** Agent 级数据目录（宿主传入；内核不假设其下的文件形态） */
   private readonly agentDataDir: string;
   /** Agent 级存储实例（全局共享，不随项目切换重建） */
   private agentIndex: IMemoryStorage | null = null;
