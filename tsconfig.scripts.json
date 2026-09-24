@@ -7,7 +7,14 @@
     "noEmit": true,
     "declaration": false,
     "declarationMap": false,
-    "sourceMap": false
+    "sourceMap": false,
+    // 包自引用（hosts 源码经 @zooique/memora 消费内核）重定向到 src 单一真源，
+    // 禁止 dist/*.d.ts 声明树混入本编译单元——src 与 dist 双份类型并行会互相遮蔽（幻影报错源）。
+    // 注意：paths 整体覆盖不合并，须连同 @/* 一并重申。
+    "paths": {
+      "@/*": ["./*"],
+      "@zooique/memora": ["./index.ts"]
+    }
   },
   "include": ["scripts/**/*.ts"]
 }
