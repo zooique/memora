@@ -82,10 +82,10 @@ configDir/
 | | `storage`（IMemoryStorage） | `dataDir` |
 |---|---|---|
 | 本质 | 接口实例（宿主写的类） | 文件系统目录路径（字符串） |
-| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 用它拼接落盘路径：`join(dataDir, 'memora.db')`、注册表、锁文件 |
+| 内核怎么用它 | 调方法：`upsert` / `getById` / `search` / `getAllSources`… | 用它定位注册表（`projects.json`）与锁文件；记忆库落哪、叫什么名，由宿主自定，内核不参与 |
 | 管什么 | "怎么存取记忆"（逻辑），内核不关心内部是 SQLite 还是内存 | "记忆 / 项目 / 锁文件放哪个目录"（物理位置） |
 | 谁实现 | 宿主实现（如 SqliteMemoryStorage） | 宿主传路径 |
-| 关系 | `dataDir` 指向目录；宿主通常拿它构造 storage：`new SqliteMemoryStorage(join(dataDir,'memora.db'))` | 内核仍用 `dataDir` 推导 dbPath / registry / lock |
+| 关系 | `dataDir` 指向目录；宿主按自己的持久化形态构造 storage（JSON 文件 / SQLite 皆可） | 内核用 `dataDir` 推导注册表与锁文件路径 |
 | 缺省 | 不传 → `InMemoryStorage`（仅内存） | 不传 → 路径为空，相关功能依赖 storage 自带实现 |
 
 一句话：`storage` 是宿主**怎么**存取的实现，`dataDir` 是存取内容**落在哪个目录**的配置——一个管"如何"，一个管"何处"。
@@ -243,7 +243,6 @@ Agent 通过一组 getter 暴露专职 Manager 与组件。详见后续章节。
 | `projectPath` | `string` | 项目根目录的绝对路径 |
 | `projectName` | `string` | 项目名称（从注册表读取，或取目录名） |
 | `memoraDir` | `string` | `.memora/` 目录的绝对路径 |
-| `dbPath` | `string` | memora.db 路径 |
 | `index` | `IMemoryStorage` | 记忆存储接口 |
 | `security` | `SecurityGuard` | 安全守卫 |
 | `bootstrapMemories` | `Memory[]` | 启动时加载的必召记忆 |

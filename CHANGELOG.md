@@ -8,6 +8,14 @@
 
 ## [Unreleased]（= v3.0.0 · 尚未发布，发版日补日期）
 
+### Removed（`ProjectContext.dbPath` 退役：内核不再持宿主持久化形态）
+
+`ProjectContext.dbPath` 是「内核自带 SqliteStorage」时代的遗留字段。ADR-002 把 SqliteStorage 移出内核、持久化改由宿主经 `IMemoryStorage` 注入之后，它的消费者已清零：内核既不创建也不打开它，第一宿主 memora-vscode 的 `WorkspaceStorage` 走自己的 `.memora/memories.json`，从未读它。字段注释自称「Agent 级 `memora.db` 路径（全局共享）」，实值却是 `join(agentDataDir, 'memora.db')`，而 `agentDataDir` 由宿主传入的 `dataDir` 决定（vscode 宿主传的是项目级 `.memora`）——照它开库会得到「每个子项目一个 `memora.db`」，正撞架构规则明令禁止的形态。
+
+- **删除 `ProjectContext.dbPath`** 字段声明与赋值；`ProjectContext.index` 注释去掉「SQLite 索引」具象化（内核不假设宿主持久化形态）
+- **文档同步**：`docs/memora-api-reference.md` 的 `ProjectContext` 字段表移除该行；`storage` × `dataDir` 对照表去掉 `join(dataDir, 'memora.db')` 与「内核推导 dbPath」两处表述
+- **破坏性但零成本**：`ProjectContext` 经 `src/index.ts` 导出的 `AgentContext` 别名对外可见，故此行属公共 API 变更；**不提供兼容层**——3.0.0 尚未发布（npm 最新为 2.0.3），无外部用户依赖该字段，且它本身零消费者、无行为可兼容
+
 ### Changed（术语正名：任务项 `PlanStep` → `PlanItem` + `step_boundary` 归位为迭代边界）
 
 根治项目内两个「step」的术语撞车——① **loop 迭代 step**（一次 LLM 交互 + 其工具执行，`stepBudget` 属此阵营）；② **任务表 plan step**（一行任务）。阵营②此前占用 `step_boundary` 事件名，导致阵营①没有自己的边界信号——这同时是「无任务表长工具循环零增量落盘」缺口的根因。

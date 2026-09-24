@@ -26,12 +26,7 @@ export interface ProjectContext {
   projectName: string;
   /** .memora/ 目录的绝对路径 */
   memoraDir: string;
-  /**
-   * 库文件路径：取值 `join(agentDataDir, 'memora.db')`，而 agentDataDir 由宿主传入的 dataDir 决定。
-   * 内核不消费此字段，也不承诺它是 Agent 级全局共享——持久化形态与库文件位置均归宿主决定。
-   */
-  dbPath: string;
-  /** SQLite 索引（经 IMemoryStorage 接口访问） */
+  /** 记忆存储（经 IMemoryStorage 接口访问） */
   index: IMemoryStorage;
   /** 安全守卫（可空，由 Agent 层注入工厂创建） */
   security: SecurityGuard | null;
@@ -193,7 +188,6 @@ export class ProjectManager {
       projectPath,
       projectName: name,
       memoraDir,
-      dbPath: join(this.agentDataDir, 'memora.db'),
       index,
       security,
       bootstrapMemories,

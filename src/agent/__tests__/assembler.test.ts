@@ -111,7 +111,6 @@ function createPctx(overrides: Partial<ProjectContext> = {}): ProjectContext {
     projectPath,
     projectName: 'test-project',
     memoraDir: projectPath,
-    dbPath: join(projectPath, 'memora.db'),
     index: storage,
     security,
     bootstrapMemories: [],
