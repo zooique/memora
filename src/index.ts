@@ -103,12 +103,16 @@ export type { PolishResult } from '@/agent/managers/textPolishManager.js';
 // 记忆即摘要架构：轮次摘要生成器
 export { RoundSummaryGenerator } from '@/agent/managers/roundSummaryGenerator.js';
 export { loadConfig } from '@/config/loader.js';
+// LLM Provider 构造（边界：provider 选择/默认值归宿主，内核只做实例构造与校验）：
+//   createProviderFromConfig —— 【规范入口】宿主传入 baseUrl+model+apiKey，校验后创建；
+//   createLlmProvider —— 【配置驱动便利】从完整 Config 读 llm.active 解析激活 provider
+//     （选择策略在内核侧），仅当你把整份 Config 托管给内核时使用，边界守法的宿主应自建 provider 后调前者。
 export { createLlmProvider, createProviderFromConfig } from '@/llm/factory.js';
 export type { ProviderConfig } from '@/llm/factory.js';
 export type { LlmProvider, ChatOptions } from '@/llm/provider.js';
 export type { LlmChunk, TaskType, ProviderRouter } from '@/llm/types.js';
-export { OpenAICompatibleProvider } from '@/llm/openaiCompatible.js';
-export type { OpenAICompatibleConfig } from '@/llm/openaiCompatible.js';
+// OpenAICompatibleProvider 为内部实现类：构造函数不做 baseUrl/model 校验，须经 createProviderFromConfig
+// 工厂校验后创建。不对外暴露，外部宿主一律走 createProviderFromConfig。
 export type { Config } from '@/config/loader.js';
 // 事件系统
 export { TypedEventEmitter, AGENT_EVENTS } from '@/utils/eventEmitter.js';
@@ -137,10 +141,11 @@ export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎
-export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-search/types.js';
+export type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@/web-search/types.js';
 // FetchWebSearchProvider：默认搜索实现（零依赖开箱即用）；safeSearch：带超时保护的搜索包装（宿主可复用）
 export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
-// buildSearchEndpoints：按名字构建搜索端点降级链（宿主设置 memora.searchEngine 切换引擎用）
+// buildSearchEndpoints：构建搜索端点降级链。入参为「内核预设名 | 宿主自定义 SearchEndpoint」混排；
+//   主推宿主接入——生产环境宿主自建 SearchEndpoint[]（自带 URL+解析）注入，内核预设仅作零配置保底。
 export {
   buildSearchEndpoints,
   type SearchEngineName,

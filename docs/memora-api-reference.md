@@ -653,7 +653,8 @@ agent.tools.registerTool(
 
 > 宿主实现此接口并注入 `AgentOptions.webSearchProvider`，即可让 Agent 拥有网络搜索能力。
 > 未注入时，Agent 不会暴露 `web_search` 工具给 LLM，LLM 被告知搜索不可用。
-> 内核提供 `FetchWebSearchProvider` 作为基于 DuckDuckGo HTML 的零依赖默认实现。
+> 内核提供 `FetchWebSearchProvider` 作为零依赖默认实现（`buildSearchEndpoints` 构建内置 Bing/DuckDuckGo 等预设降级链）。
+> **主推宿主自建 `SearchEndpoint` 注入**（自带 URL+解析），内核预设仅作零配置保底。
 
 ```typescript
 // 搜索结果
@@ -661,11 +662,19 @@ interface SearchResult {
   title: string;
   url: string;
   snippet: string;
+  endpoint?: string;  // 实际后端名（降级打标用，自定义实现可省略）
 }
 
 // 搜索选项
 interface WebSearchOptions {
   limit?: number;  // 返回结果数量上限（默认 5）
+}
+
+// 搜索端点契约：宿主可自建（自带 URL+解析）覆盖内核预设
+interface SearchEndpoint {
+  name: string;                       // 端点名（降级打标 / 结果透出）
+  buildUrl(query: string): string;    // 由查询构造请求 URL
+  parse(html: string, limit: number): SearchResult[];  // 解析结果页
 }
 
 // 网络搜索提供者接口
@@ -676,8 +685,16 @@ interface IWebSearchProvider {
 // 注入方式
 const agent = new Agent({
   // ... 其他选项
-  webSearchProvider: new FetchWebSearchProvider(), // 使用内置默认实现
+  // 方案 1（保底）：内置默认实现（Bing→DuckDuckGo 零配置开箱即用）
+  webSearchProvider: new FetchWebSearchProvider(),
+  // 方案 2（主推）：宿主自建端点注入，URL/解析完全由宿主掌控
+  // webSearchProvider: new FetchWebSearchProvider([
+  //   { name: 'MyEngine', buildUrl: (q) => `https://my.engine/s?q=${q}`, parse: myParse },
+  // ]),
 });
+
+// buildSearchEndpoints：预设名与自定义端点混排，内核预设仅作保底
+// buildSearchEndpoints(['bing', myEndpoint])  // 自定义端点优先，未知名忽略
 ```
 
 ### 8.4 `IFetchProvider` — 网页抓取注入接口（搜索→抓取闭环第二段）
@@ -1091,7 +1108,7 @@ export { setLogger, logger } from '@zooique/memora';
 export { extractKeywords } from '@zooique/memora';
 
 // 网络搜索
-export type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@zooique/memora';
+export type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@zooique/memora';
 export { FetchWebSearchProvider } from '@zooique/memora';
 
 // 角色包
@@ -1105,8 +1122,6 @@ export { createLlmProvider, createProviderFromConfig } from '@zooique/memora';
 export type { ProviderConfig } from '@zooique/memora';
 export type { LlmProvider, ChatOptions } from '@zooique/memora';
 export type { LlmChunk } from '@zooique/memora';
-export { OpenAICompatibleProvider } from '@zooique/memora';
-export type { OpenAICompatibleConfig } from '@zooique/memora';
 
 // 配置
 export { loadConfig } from '@zooique/memora';

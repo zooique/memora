@@ -25,6 +25,20 @@ export interface WebSearchOptions {
 }
 
 /**
+ * 搜索端点契约：名称 + URL 构造 + HTML 解析。
+ * 宿主可构造自己的 SearchEndpoint 注入 FetchWebSearchProvider / buildSearchEndpoints，
+ * 内核内置 SEARCH_ENDPOINT_REGISTRY 仅作零配置保底基线（非真理源）。
+ */
+export interface SearchEndpoint {
+  /** 端点名称（降级打标 / 结果透出用） */
+  name: string;
+  /** 由查询构造请求 URL */
+  buildUrl(query: string): string;
+  /** 从结果页 HTML 解析出结构化结果 */
+  parse(html: string, limit: number): SearchResult[];
+}
+
+/**
  * 网络搜索提供者接口：宿主实现并注入 AgentOptions.webSearchProvider 提供搜索能力；
  * 未注入时 Agent 不会暴露 web_search 工具给 LLM。
  */

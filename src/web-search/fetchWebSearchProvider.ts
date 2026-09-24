@@ -3,18 +3,11 @@
  * 多后端降级链：Bing（国内可达，首选）→ DuckDuckGo（备用），各端点独立超时，失败/空结果时降级到下一端点。
  * 使用 Node.js 18+ 内置 fetch，零依赖。仅用于"开箱即用"场景，生产环境建议宿主实现 IWebSearchProvider 用专用搜索 API。
  */
-import type { IWebSearchProvider, SearchResult, WebSearchOptions } from '@/web-search/types.js';
+import type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@/web-search/types.js';
 import { BROWSER_UA, fetchWithTimeout } from '@/utils/http.js';
 
 /** 单端点请求超时（ms）：Bing 通常 1-2s 返回，10s 覆盖慢网络且不至于拖死主循环 */
 const ENDPOINT_TIMEOUT_MS = 10_000;
-
-/** 搜索端点抽象：名称 + URL 构造 + HTML 解析 */
-interface SearchEndpoint {
-  name: string;
-  buildUrl(query: string): string;
-  parse(html: string, limit: number): SearchResult[];
-}
 
 /**
  * 从 Bing 结果页 HTML 提取结果：标题+链接在 <h2><a>，摘要在 <p class="b_lineclamp*">。
@@ -135,9 +128,9 @@ function parseSogouHtml(html: string, limit: number): SearchResult[] {
 export type SearchEngineName = 'bing' | 'duckduckgo' | 'baidu' | 'sogou';
 
 /**
- * 内置端点注册表（SSOT：端点名 → 定义）。
- * FetchWebSearchProvider 默认链与 buildSearchEndpoints 均取自此处，
- * 新增端点只改这里 + SearchEngineName（避免两处维护腐坏）。
+ * 内置端点注册表（零配置保底基线，非真理源）：端点名 → 定义。
+ * FetchWebSearchProvider 默认链与 buildSearchEndpoints 的预设名均取自此处；
+ * 宿主可传入自定义 SearchEndpoint 覆盖/扩展，无需改这里。
  */
 const SEARCH_ENDPOINT_REGISTRY: Readonly<Record<SearchEngineName, SearchEndpoint>> = {
   bing: {
@@ -169,13 +162,19 @@ const DEFAULT_ENDPOINTS: readonly SearchEndpoint[] = [
 ];
 
 /**
- * 按名字构建端点降级链（宿主设置 memora.searchEngine 用）：按给定顺序组装，
- * 未知名字忽略；全部无效 / 空列表回退默认链（Bing→DuckDuckGo），保证零配置也开箱可用。
+ * 构建搜索端点降级链：入参为「内核预设名（SearchEngineName）| 宿主自定义 SearchEndpoint」混排，
+ * 按给定顺序组装；宿主传入的自定义端点优先生效，未知预设名忽略。
+ * 全部无效 / 空列表回退默认链（Bing→DuckDuckGo），保证零配置也开箱可用。
+ * 主推宿主接入：生产环境建议宿主自建 SearchEndpoint[]（自带 URL+解析）注入，内核预设仅作保底。
  */
-export function buildSearchEndpoints(names: readonly SearchEngineName[]): readonly SearchEndpoint[] {
-  const picked = names
-    .map((n) => SEARCH_ENDPOINT_REGISTRY[n])
-    .filter((e): e is SearchEndpoint => !!e);
+export function buildSearchEndpoints(
+  items: readonly (SearchEngineName | SearchEndpoint)[],
+): readonly SearchEndpoint[] {
+  const picked = items
+    .map((item): SearchEndpoint | undefined =>
+      typeof item === 'string' ? SEARCH_ENDPOINT_REGISTRY[item] : item,
+    )
+    .filter((e): e is SearchEndpoint => e !== undefined && e !== null);
   return picked.length > 0 ? picked : DEFAULT_ENDPOINTS;
 }
 

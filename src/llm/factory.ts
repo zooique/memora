@@ -2,6 +2,13 @@
  * LLM Provider 工厂：根据配置创建 Provider 实例
  * 内核只接收 baseUrl+model+apiKey 三板斧创建实例；不做 provider 名 → URL/模型 映射（宿主层职责）；
  * 不验证 apiKey（是否必需是下游 LLM 服务的决策，内核只是透传管道）
+ *
+ * 边界澄清：
+ *   - createProviderFromConfig —— 【规范入口】宿主传入单个 provider 的 baseUrl+model+apiKey，内核校验后
+ *     创建 OpenAICompatibleProvider。provider 选择/默认值策略全在宿主侧，内核不代劳。
+ *   - createLlmProvider —— 【配置驱动便利】从完整 Config 读 llm.active 解析激活 provider（选择在内核侧）。
+ *     仅适用于把整份 Config 托管给内核的场景；边界守法的宿主应自建 provider 后调 createProviderFromConfig，
+ *     避免把"哪个 provider 激活"这一宿主策略委托给内核。
  */
 import type { Config } from '@/config/loader.js';
 import { LlmProvider } from '@/llm/provider.js';

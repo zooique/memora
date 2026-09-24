@@ -118,7 +118,9 @@ import { Agent, createProviderFromConfig } from '@zooique/memora';
 
 // Host responsibility: create an LLM Provider
 // Works with any OpenAI Chat Completions-compatible service
-// createProviderFromConfig is the single-provider entry; for multi-provider + active see createLlmProvider(loadConfig())
+// createProviderFromConfig is the canonical entry (baseUrl+model+apiKey → validated creation; provider
+// selection is the host's responsibility). createLlmProvider(loadConfig()) is only a config-file convenience
+// (active selection resolved inside the kernel) when you delegate the whole Config to it.
 const provider = createProviderFromConfig('primary', {
   provider: 'openaiCompatible',
   apiKey: process.env.LLM_API_KEY!,

@@ -12,6 +12,7 @@
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
 import { FetchWebSearchProvider, buildSearchEndpoints } from '@/web-search/fetchWebSearchProvider.js';
+import type { SearchEndpoint } from '@/web-search/types.js';
 
 /** 模拟 DuckDuckGo HTML 响应（含两个搜索结果） */
 const MOCK_DDG_HTML = `<!DOCTYPE html>
@@ -434,6 +435,46 @@ describe('FetchWebSearchProvider', () => {
 
       expect(results[0]!.endpoint).toBe('Bing');
       expect(results[0]!.title).toBe('Bing 标题一');
+    });
+
+    // ─── 宿主接入路径（2026-09-24）：宿主可注入自定义 SearchEndpoint，内核预设仅作保底 ───
+    it('宿主自定义 SearchEndpoint 注入 → 走宿主 URL，不经内核预设清单', async () => {
+      const CUSTOM_HTML = `<!DOCTYPE html><html><body>
+        <h3><a href="https://host-custom.com/x">宿主标题</a></h3>
+      </body></html>`;
+      const customEndpoint: SearchEndpoint = {
+        name: 'HostCustom',
+        buildUrl: (q) => `https://host-custom.com/search?q=${encodeURIComponent(q)}`,
+        parse: (html) => {
+          const m = /<h3><a href="([^"]+)">([\s\S]*?)<\/a>/.exec(html);
+          return m ? [{ title: m[2]!.trim(), url: m[1]!.trim(), snippet: '', endpoint: 'HostCustom' }] : [];
+        },
+      };
+      const engineProvider = new FetchWebSearchProvider(buildSearchEndpoints([customEndpoint]));
+      const fetchMock = vi.fn().mockImplementation((url: string) =>
+        url.includes('host-custom.com') ? htmlResponse(CUSTOM_HTML) : htmlResponse(MOCK_EMPTY_HTML),
+      );
+      globalThis.fetch = asFetch(fetchMock);
+
+      const results = await engineProvider.search('宿主查询');
+
+      expect(results).toHaveLength(1);
+      expect(results[0]!.url).toBe('https://host-custom.com/x');
+      expect(results[0]!.endpoint).toBe('HostCustom');
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]![0]).toContain('host-custom.com/search?q=');
+    });
+
+    it('buildSearchEndpoints 混排（自定义端点 + 内核预设名）→ 自定义优先且不被覆盖', () => {
+      const customEndpoint: SearchEndpoint = {
+        name: 'HostCustom',
+        buildUrl: (q) => `https://host-custom.com/search?q=${encodeURIComponent(q)}`,
+        parse: () => [{ title: '宿主标题', url: 'https://host-custom.com/x', snippet: '' }],
+      };
+      const chain = buildSearchEndpoints([customEndpoint, 'bing']);
+      expect(chain).toHaveLength(2);
+      expect(chain[0]!.name).toBe('HostCustom');
+      expect(chain[1]!.name).toBe('Bing');
     });
   });
 });
