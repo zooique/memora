@@ -2667,6 +2667,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
               chunk.content.length > MAX_THOUGHT_PAYLOAD_LENGTH
                 ? `${chunk.content.slice(0, MAX_THOUGHT_PAYLOAD_LENGTH - 1)}…`
                 : chunk.content,
+            // step 归属随内容透传落盘（webview「一个 step 一个思考折叠块」的归桶键）
+            stepIndex: chunk.stepIndex,
           });
         } else if (chunk.type === 'plan_item_boundary') {
           // 步级折叠边界：active 任务项推进 → 落盘 plan_item_boundary 事件。

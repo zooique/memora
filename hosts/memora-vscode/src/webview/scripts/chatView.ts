@@ -859,9 +859,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 思考折叠块（聚合版）：把同一轮 assistant 应答的**全部** thought 碎片聚合成
-   * **一个**折叠块，正文为各碎片累积拼接 —— 修复「thinking>LLM 流式把 reasoning 切成几十个片段 →
-   * 满屏"思考"小折叠」（P3）。summary 固定「思考」+ 首行预览；textContent 构建防注入。
+   * 思考折叠块（聚合版）：把同一 step 的 thought 碎片聚合成**一个**折叠块，
+   * 正文为各碎片累积拼接（碎片不逐条成块，防 LLM 流式 reasoning 切成几十个片段满屏小折叠）。
+   * summary = 标题（label，缺省「思考」）+ 首行预览；textContent 构建防注入。
    * streaming 时默认展开（openByDefault=true 由调用方按运行期传），finalize 默认收起。
    */
   function createAggregatedThought(
@@ -869,6 +869,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     openByDefault = false,
     ts?: string,
     seq?: number,
+    label = '思考',
   ): HTMLDetailsElement {
     // 思考事件存的是**增量 delta 片段**（如 "Now let me also read" / "the" / "gap analysis."），
     // 按序**原样连续拼接**（无分隔符、不逐条 trim，保留片段的天然间隔）→ 还原真正的连续思考流，
@@ -885,7 +886,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (seq !== undefined) row.dataset.seq = String(seq);
     const summary = document.createElement('summary');
     summary.textContent =
-      cnt > 1 ? `思考 · ${preview}${text.length > preview.length ? '…' : ''}` : preview ? `思考 · ${preview}` : '思考';
+      cnt > 1 ? `${label} · ${preview}${text.length > preview.length ? '…' : ''}` : preview ? `${label} · ${preview}` : label;
     const body = document.createElement('div');
     body.className = 'round-block__thought-body';
     body.textContent = text;
@@ -1038,15 +1039,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     grp.dataset.seq = String(boundSeq);
   }
 
+  /** 思考折叠块标题：stepIndex 已知 = 标注第几步（一个 step 一个折叠块）；无归属 = 裸「思考」 */
+  function thoughtLabel(stepIndex?: number): string {
+    return stepIndex !== undefined ? `思考 · 第 ${stepIndex} 步` : '思考';
+  }
+
   /**
    * 思考碎片按「所属 step」分桶（SSOT；finalize 与流式两类上下文共用）。
    *
-   * 语义：**一个任务项一个思考折叠块**，而非整轮合成一个。分桶键 = 该碎片
-   * 生效的任务项边界 planItemId（无边界 → 'root'）。同一桶内碎片保序**原样连续**拼接（连贯）；
-   * 不同任务项各自独立折叠（不跨步混批）。含 anchorSeq（桶内最早碎片的 seq，做插入锚点）。
+   * 语义：**一个 step 一个思考折叠块**（step = 一次 LLM 调用 + 可选工具执行）。分桶键 =
+   * 该碎片自带的 stepIndex（内核 loop 打标、随事件落盘，运行时与重放同源）。同一桶内碎片
+   * 保序**原样连续**拼接（连贯）；不同 step 各自独立折叠（不跨步混批）。含 anchorSeq
+   * （桶内最早碎片的 seq，做插入锚点）。stepIndex 缺省（旧数据 / 非迭代路径产出）回落
+   * 'root' 整轮单桶——不猜测推断归属。有任务表时桶仍按 anchor 归入任务项分组（planItemContainerFor）。
    */
   function groupThoughtBuckets(events: ProcessEvent[]): {
     key: string;
+    stepIndex?: number;
     anchorSeq: number;
     anchorTs: string;
     items: { seq: number; ts: string; content: string }[];
@@ -1054,13 +1063,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const thoughts = events
       .filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought')
       .sort((a, b) => a.seq - b.seq);
-    const bounds = events.filter(isPlanItemBoundaryEvent).sort((a, b) => a.seq - b.seq);
-    const buckets = new Map<string, { key: string; anchorSeq: number; anchorTs: string; items: { seq: number; ts: string; content: string }[] }>();
+    const buckets = new Map<
+      string,
+      { key: string; stepIndex?: number; anchorSeq: number; anchorTs: string; items: { seq: number; ts: string; content: string }[] }
+    >();
     for (const t of thoughts) {
-      // 归属最近生效的任务项边界（slice 顺序同 planItemContainerFor，保证「哪步思考进哪桶」一致）
-      const active = [...bounds].reverse().find((b) => b.seq <= t.seq);
-      const key = active?.payload.planItemId ?? 'root';
-      const bucket = buckets.get(key) ?? { key, anchorSeq: t.seq, anchorTs: t.ts, items: [] };
+      const stepIndex = t.payload.stepIndex;
+      const key = stepIndex !== undefined ? String(stepIndex) : 'root';
+      const bucket = buckets.get(key) ?? { key, stepIndex, anchorSeq: t.seq, anchorTs: t.ts, items: [] };
       bucket.items.push({ seq: t.seq, ts: t.ts, content: t.payload.content });
       buckets.set(key, bucket);
     }
@@ -1352,15 +1362,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertPlanItemInOrder(host, row, t.ts);
       }
     }
-    // § 思考（per-plan-item 聚合折叠块）：**一个任务项一个折叠块**（同任务项碎片原样
-    // 连续拼接，不同任务项各自独立），按各自最早 seq 与 narrate/tool 平铺（finalize 默认收起）。
-    // 修复「整轮合成一个」「满屏 thinking 小折叠」两个极端（P3，按任务项分桶）。
+    // § 思考（per-step 聚合折叠块）：**一个 step 一个折叠块**（同 step 碎片原样连续拼接，
+    // 不同 step 各自独立），按各自最早 seq 与 narrate/tool 平铺（finalize 默认收起）；
+    // 有任务表时随 anchor 归入任务项分组（边界切组语义不变）。
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
       const { host } = planItemContainerFor(details, events, b.anchorTs, b.anchorSeq);
       insertPlanItemInOrder(
         host,
-        createAggregatedThought(b.items.map((i) => i.content), false, b.anchorTs, b.anchorSeq),
+        createAggregatedThought(b.items.map((i) => i.content), false, b.anchorTs, b.anchorSeq, thoughtLabel(b.stepIndex)),
         b.anchorTs,
       );
     }
@@ -1565,25 +1575,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = planItemContainerFor(flow, events, n.ts, n.seq);
       insertPlanItemInOrder(host, row, n.ts);
     }
-    // 2.5) thought 思考折叠（per-plan-item 聚合）：**一个任务项一个折叠块**（同任务项碎片
-    //   原样连续拼接，不同任务项各自独立）；每个块维护自己 data-merged-seq 防重复拼接，修复
-    //   「整轮合成一个」和「满屏小折叠」两个极端。
+    // 2.5) thought 思考折叠（per-step 聚合）：**一个 step 一个折叠块**（同步内碎片原样连续
+    //   拼接，不同 step 各自独立）；每个块维护自己 data-merged-seq 防重复拼接。
     const thoughtBuckets = groupThoughtBuckets(events);
     for (const b of thoughtBuckets) {
       // 复用任务项容器定位 → 与最终分桶位置一致，流式与 finalize 不偏移
       const { host } = planItemContainerFor(flow, events, b.anchorTs, b.anchorSeq);
-      // 查找或创建本任务项的折叠块（key = planItemId，无边界为'root'）
-      const selector = `.process-flow__thought[data-plan-item-bucket="${b.key}"]`;
+      // 查找或创建本 step 的折叠块（key = stepIndex 字符串，无归属为 'root'）
+      const selector = `.process-flow__thought[data-step-bucket="${b.key}"]`;
       let row = host.querySelector<HTMLDetailsElement>(selector);
       if (!row) {
         row = document.createElement('details');
         row.className = 'process-flow__thought';
-        row.dataset.planItemBucket = b.key;
+        row.dataset.stepBucket = b.key;
         row.dataset.mergedSeq = '0';
         row.dataset.ts = b.anchorTs; // 时间键（统一排序）
         row.dataset.seq = String(b.anchorSeq); // seq 兜底比较（同 ts/空串回落）
         const summaryEl = document.createElement('summary');
-        summaryEl.textContent = '思考';
+        summaryEl.textContent = thoughtLabel(b.stepIndex);
         row.appendChild(summaryEl);
         const bodyEl = document.createElement('div');
         bodyEl.className = 'process-flow__thought-body';

@@ -226,7 +226,9 @@ export class AgentLoop {
   private lastToolCallsHash: string = '';
   /** 连续重复次数（运行时状态，拦截器判定时使用） */
   private duplicateToolCallCount: number = 0;
-  /** 当前迭代序号（processUserInput 循环内维护，供拦截器 context 使用） */
+  /** 当前迭代序号（processUserInput 循环内维护，供拦截器 context 与 toolResultCache 老化使用）。
+   *  语义边界：本计数 = **循环内**迭代号（runIterationLoop 重启即从头）；轮粒度 step 序号
+   *  （thought 归属打标）另见 roundStepIndex——两者重置域不同（循环 vs 轮），勿互替。 */
   private currentIteration: number = 0;
   /** 当前轮次已推送的 REFLECTION_HINT 次数。用显式计数器而非 filter 推断，
    *  避免上下文中段消息被裁剪后计数失真 */
@@ -338,6 +340,10 @@ export class AgentLoop {
   /** 上一步级边界 ID（去噪）：记录最近一次已 emit plan_item_boundary 的 planItemId，
    *  仅当 getActivePlanItemMeta 返回的 planItemId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
   private lastBoundaryPlanItemId?: string;
+  /** 轮内 step 序号（轮粒度单调）：「这条思考是第几步产生的」唯一真源计数，thought 归属由它打标。
+   *  每次 LLM 调用（= 一个 step）前递增；随 currentRoundId 分配重置（processUserInput），
+   *  continueAfterPause 续同一轮**不重置**——序号跨续跑段继续单调，同轮各 step 永不撞号。 */
+  private roundStepIndex = 0;
   /** 主动提问计数（本 turn 粒度，resetTurnState 清零）：ask_user 工具触发次数（askLimit 硬护栏） */
   private askCountThisTurn = 0;
   /**
@@ -556,6 +562,8 @@ export class AgentLoop {
   ): AsyncGenerator<AgentChunk, void, unknown> {
     // 分配当前轮次 ID（优先采用调用方传入的 roundId，保证 appendUser/appendAssistant/摘要同源同值；未传自生成）
     this.currentRoundId = roundId ?? this.allocRoundId();
+    // 新轮 = step 序号重新起数（轮归属随 roundId 分配重置；续跑入口 continueAfterPause 不动它）
+    this.roundStepIndex = 0;
 
     // 清空 Provider 路由缓存（单轮内复用，跨轮重置）
     this.providerRouteCache.clear();
@@ -669,6 +677,26 @@ export class AgentLoop {
   ): AsyncGenerator<T, void, unknown> {
     for await (const chunk of gen) {
       yield { ...chunk, roundId: this.currentRoundId } as T;
+    }
+  }
+
+  /**
+   * step 归属打标：给子生成器的 thought chunk 附加所属 step 序号（SSOT：「这条思考是第几步产生的」
+   * 由 loop 唯一提供，随 thought 本体落盘，消费方无需从工具序列推断迭代边界）。
+   * 仅 thought 需要归属（按 step 分桶渲染），其余 chunk 原样透传。
+   * 与 withRound 同构的边界打标模式；被包子生成器带返回值（LlmCallResult），
+   * 故用手动迭代转发返回值（for-await 会丢弃 generator 返回值）。
+   */
+  private async *withStepIndex<R>(
+    stepIndex: number,
+    gen: AsyncGenerator<AgentChunk, R, unknown>,
+  ): AsyncGenerator<AgentChunk, R, unknown> {
+    const iter = gen[Symbol.asyncIterator]();
+    while (true) {
+      const r = await iter.next();
+      if (r.done) return r.value;
+      const chunk: AgentChunk = r.value;
+      yield chunk.type === 'thought' ? { ...chunk, stepIndex } : chunk;
     }
   }
 
@@ -993,12 +1021,17 @@ export class AgentLoop {
     // 正常回答/工具步文本为 'answer'。全流 text chunk 统一携带，保证审查输出与最终回答可区分。
     const textStage: TextChunkStage = this.selfReviewDone ? 'self_review' : 'answer';
 
-    const llmResult: LlmCallResult = yield* this.callLlmWithRetry(
-      prep.safeMessages,
-      prep.chatOpts,
-      effectiveSignal,
-      iteration,
-      textStage,
+    // step 序号：每次 LLM 调用 = 一个 step（重试仍属同一步），thought 随流经 withStepIndex 打标
+    const stepIndex = ++this.roundStepIndex;
+    const llmResult: LlmCallResult = yield* this.withStepIndex(
+      stepIndex,
+      this.callLlmWithRetry(
+        prep.safeMessages,
+        prep.chatOpts,
+        effectiveSignal,
+        iteration,
+        textStage,
+      ),
     );
 
     if (llmResult.aborted) {

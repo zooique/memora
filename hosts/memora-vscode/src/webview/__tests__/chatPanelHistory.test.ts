@@ -961,10 +961,10 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     provider.setAgent(
       chatAgentStub(() =>
         (async function* () {
-          yield { type: 'thought', content: '思考：先查 A/B 资料', roundId: 'round-1' };
+          yield { type: 'thought', content: '思考：先查 A/B 资料', stepIndex: 1, roundId: 'round-1' };
           yield { type: 'tool_start', toolCallId: 't1', name: 'web_search', args: '{}', roundId: 'round-1' };
           yield { type: 'tool_result', toolCallId: 't1', name: 'web_search', ok: true, summary: 's', roundId: 'round-1' };
-          yield { type: 'thought', content: longReasoning, roundId: 'round-1' };
+          yield { type: 'thought', content: longReasoning, stepIndex: 2, roundId: 'round-1' };
           yield { type: 'text', content: '结论', roundId: 'round-1' };
           yield { type: 'done' };
         })(),
@@ -979,6 +979,9 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     expect(thoughts).toHaveLength(2);
     // 短思考原文落盘
     expect(thoughts[0].payload.content).toBe('思考：先查 A/B 资料');
+    // step 归属随内容落盘（按 step 分桶的归桶键；emitEvent 联合类型不做成员级校验，此处显式锁）
+    expect(thoughts[0].payload.stepIndex).toBe(1);
+    expect(thoughts[1].payload.stepIndex).toBe(2);
     // 超长思考落盘截断（SSOT 常量，不超上限；省略标记 …）
     expect(thoughts[1].payload.content.length).toBeLessThanOrEqual(MAX_THOUGHT_PAYLOAD_LENGTH);
     // 与 tool 并存且按 seq 顺序（思考先于工具）

@@ -4226,16 +4226,40 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(done.textContent).toContain('Now let me also read the project report');
   });
 
-  it('P3：per-plan-item 分桶——不同 step 的思考各自独立折叠，同 step 内碎片连续', () => {
+  it('per-step 分桶——不同 step 的思考各自独立折叠（标注第几步），同 step 内碎片连续', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '第一', stepIndex: 1 } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '步', stepIndex: 1 } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '第二', stepIndex: 2 } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 5, ts: '', payload: { content: '步', stepIndex: 2 } } });
+    // 流式：step1、step2 各 1 个折叠块（同 step 内连续），标题标注第几步
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    const runningRows = flow.querySelectorAll('.process-flow__thought');
+    expect(runningRows.length).toBe(2);
+    expect(runningRows[0]!.textContent).toContain('第 1 步');
+    expect(runningRows[0]!.textContent).toContain('第一步');
+    expect(runningRows[1]!.textContent).toContain('第 2 步');
+    expect(runningRows[1]!.textContent).toContain('第二步');
+    // finalize：round-block 内同样每 step 一个折叠块
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const doneRows = rb.querySelectorAll('.round-block__thought');
+    expect(doneRows.length).toBe(2);
+    expect(doneRows[0]!.textContent).toContain('第一步');
+    expect(doneRows[1]!.textContent).toContain('第二步');
+  });
+
+  it('per-step 分桶 × 任务项收纳：step 折叠块仍归入所属任务项分组（边界切组语义不变）', () => {
     mountChatView();
     dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
     dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '第一' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '步' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '第一', stepIndex: 1 } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '步', stepIndex: 1 } } });
     dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 5, ts: '', payload: { planItemId: 's2', title: '编写代码' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 6, ts: '', payload: { content: '第二' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 7, ts: '', payload: { content: '步' } } });
-    // 流式：s1、s2 各 1 个折叠块（同 step 内连续），各自独立
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 6, ts: '', payload: { content: '第二', stepIndex: 2 } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 7, ts: '', payload: { content: '步', stepIndex: 2 } } });
+    // 流式：s1、s2 各收纳 1 个 step 折叠块（同 step 内连续），各自独立
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const flowPlanItems = flow.querySelectorAll('.round-block__plan-item');
     expect(flowPlanItems.length).toBe(2);
@@ -4245,7 +4269,7 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(s1f[0]!.textContent).toContain('第一步');
     expect(s2f.length).toBe(1);
     expect(s2f[0]!.textContent).toContain('第二步');
-    // finalize：round-block 内同样每 step 一个折叠块
+    // finalize：round-block 内任务项分组同样各收纳对应 step 折叠块
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const rbPlanItems = rb.querySelectorAll('.round-block__plan-item');
@@ -4254,6 +4278,29 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(rbPlanItems[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第一步');
     expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought').length).toBe(1);
     expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
+  });
+
+  it('旧数据回落：无 stepIndex 的 thought 归整轮单桶（不猜测推断归属）', () => {
+    mountChatView();
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '旧数据甲' } } });
+    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 4, ts: '', payload: { planItemId: 's2', title: '编写代码' } } });
+    dispatch({ type: 'process_event', event: { type: 'thought', seq: 5, ts: '', payload: { content: '旧数据乙' } } });
+    // 流式：跨任务项边界仍为单桶（无 stepIndex 不拆分）
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    const runningRows = flow.querySelectorAll('.process-flow__thought');
+    expect(runningRows.length).toBe(1);
+    expect(runningRows[0]!.textContent).toContain('旧数据甲');
+    expect(runningRows[0]!.textContent).toContain('旧数据乙');
+    expect(runningRows[0]!.textContent).not.toContain('第');
+    // finalize：同样单桶
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const doneRows = rb.querySelectorAll('.round-block__thought');
+    expect(doneRows.length).toBe(1);
+    expect(doneRows[0]!.textContent).toContain('旧数据甲');
+    expect(doneRows[0]!.textContent).toContain('旧数据乙');
   });
 });
 

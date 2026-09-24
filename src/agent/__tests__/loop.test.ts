@@ -35,7 +35,13 @@ function makeMemory(overrides: Partial<Memory> = {}): Memory {
   };
 }
 
-type ChunkItem = { content?: string; toolCalls?: Message['toolCalls']; finishReason?: string };
+type ChunkItem = {
+  content?: string;
+  toolCalls?: Message['toolCalls'];
+  finishReason?: string;
+  /** 模型思考增量片段（reasoning_content），映射 llmCaller 的 thought chunk 产出 */
+  thought?: string;
+};
 
 /**
  * 创建单轮模拟 LLM Provider，每次 chat() 返回同样的一组 chunks
@@ -5564,5 +5570,81 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
       expect.stringContaining('无工具通道'),
     );
     loggerSpy.mockRestore();
+  });
+});
+
+// ─── thought 的 step 归属（stepIndex）────────────────────────
+// 语义：step = 一次 LLM 调用 + 可选工具执行（runIterationLoop 内每次迭代）；stepIndex 为
+// 轮内序号（轮粒度单调：暂停续跑续同一轮继续编号，新轮重新起数），供宿主「一个 step 一个
+// 思考折叠块」分桶（归桶真源 = thought 事件自带 stepIndex）。
+describe('AgentLoop · thought 的 step 归属（stepIndex）', () => {
+  /** 带思考的工具轮 chunk（step 内顺序：思考 → 工具调用；args 做参数区分防重复拦截器误伤） */
+  const thoughtToolTurn = (thought: string, args: string): ChunkItem => ({
+    thought,
+    toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: args } }],
+  });
+
+  it('同一轮多 step 递增打标：每次 LLM 调用一个序号', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [thoughtToolTurn('先想第一步', '{"path":"a"}')],
+        [thoughtToolTurn('再想第二步', '{"path":"b"}')],
+        [{ thought: '收尾思考', content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const thoughts: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('开始')) {
+      if (chunk.type === 'thought') thoughts.push(chunk.stepIndex);
+    }
+    expect(thoughts).toEqual([1, 2, 3]);
+  });
+
+  it('暂停续跑续同一轮：stepIndex 跨续跑段继续单调（不重新起数）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [thoughtToolTurn('首步思考', '{"path":"a"}')],
+        [{ thought: '续跑步思考', content: '后续完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const first: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'thought') first.push(chunk.stepIndex);
+      // 工具步完成后申请软暂停，loop 在下一 step 边界挂起
+      if (chunk.type === 'tool_result') loop.requestPause();
+    }
+    expect(first).toEqual([1]);
+    const resumed: (number | undefined)[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      if (chunk.type === 'thought') resumed.push(chunk.stepIndex);
+    }
+    // 续跑段首个 step = 本轮第 2 步（若随循环重启会回到 1 与首段撞号并桶）
+    expect(resumed).toEqual([2]);
+  });
+
+  it('新轮（processUserInput）step 序号重新起数', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ thought: '第一轮思考', content: '答一' }],
+        [{ thought: '第二轮思考', content: '答二' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    const first: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('问题一')) {
+      if (chunk.type === 'thought') first.push(chunk.stepIndex);
+    }
+    const second: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('问题二')) {
+      if (chunk.type === 'thought') second.push(chunk.stepIndex);
+    }
+    expect(first).toEqual([1]);
+    expect(second).toEqual([1]);
   });
 });

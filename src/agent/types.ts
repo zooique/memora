@@ -49,8 +49,10 @@ export type AgentChunk = (
    * 仅供宿主折叠展示，**不进正文/记忆**（CoT 防护）；落盘走 ProcessEvent（roundStore.ts
    * `type: 'thought'` 成员），重启重放可见。瞬态流：中断不补发。命名用 thought，与多模型
    * 路由任务类型 `TaskType='reasoning'`、ProcessEvent 既有相位 `type:'thinking'` 语义分离。
+   * stepIndex = 本条思考所属 step（一次 LLM 调用 + 可选工具执行）的轮内序号，由 loop 打标
+   * （withStepIndex 单点），随内容落盘供「一个 step 一个思考折叠块」分桶；缺省 = 无归属。
    */
-  | { type: 'thought'; content: string }
+  | { type: 'thought'; content: string; stepIndex?: number }
   /**
    * 工具意图预告：LLM 流式生成 tool_call 参数期间（name 一成形即触发），
    * 工具**尚未执行**。与 tool_start 的区别：start 表示 Runtime 确定要执行（参数已完成）；

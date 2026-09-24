@@ -248,8 +248,11 @@ export type ProcessEvent =
    * 区别于上方既有 `type:'thinking'`（phase 相位事件）与多模型路由任务 `TaskType='reasoning'`，
    * 三者语义分离，避免同 union 判别式重复与跨层双义。
    * payload.content 超长由宿主落盘前截断（MAX_THOUGHT_PAYLOAD_LENGTH，SSOT 常量单点定义于 chatPanel）。
+   * payload.stepIndex = 本条思考所属 step（一次 LLM 调用 + 可选工具执行）的轮内序号
+   * （内核 loop 打标、随内容同源落盘），「一个 step 一个思考折叠块」的归桶键；
+   * 缺省（旧数据）由展示层回落整轮单桶。
    */
-  | { type: 'thought'; seq: number; ts: string; payload: { content: string } }
+  | { type: 'thought'; seq: number; ts: string; payload: { content: string; stepIndex?: number } }
   /**
    * 步级折叠边界：active 任务项推进时由 loop 产，
    * 宿主落盘此事件把后续 narrate/tool/问答归到对应任务项分组。无任务表不产。
