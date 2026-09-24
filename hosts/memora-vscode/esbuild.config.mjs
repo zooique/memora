@@ -22,12 +22,12 @@
  *   ├── extension/skills          ← 全局技能池（.md，所有角色共享，SkillManager 扫描）
  *   └── .build-stamp.json         ← 构建戳（记录构建时的内核 dist 哈希）
  *
- * 构建戳（2026-09-16）：
+ * 构建戳：
  *   内联意味着「内核改了、宿主 bundle 仍是旧的」是一种**静默**失败——门禁看不见。
  *   故构建期把内核 dist 内容哈希写进 dist/.build-stamp.json，由
  *   `scripts/verify-dist-contract.mjs` 在门禁里比对，判「用户实际运行的 bundle 是否与内核同代」。
  *
- * 角色包单一真理源（2026-08-24 机制化同步）：
+ * 角色包单一真理源（机制化同步）：
  *   宿主不再自持角色包源，dist/extension/role-packs 从内核 role-packs/（仓库根）
  *   构建期复制生成——内核改一处即全量同步，消除复制分叉漂移。
  */
@@ -72,7 +72,7 @@ const SRC = join(__dirname, 'src');
 function copyAssetsRecursive(srcDir, outDir, cleanTop = false) {
   if (!existsSync(srcDir)) return;
   // 先清后拷保证构造 parity：目标目录为全派生资产（role-packs / skills），
-  // 源码中删除/改名的文件不会残留旧副本（追溯：共鸣小说家 self-review 曾滞留 dist 根级）。
+  // 源码中删除/改名的文件不会残留旧副本。
   if (cleanTop) rmSync(outDir, { recursive: true, force: true });
   mkdirSync(outDir, { recursive: true });
   for (const entry of readdirSync(srcDir)) {
@@ -89,11 +89,11 @@ function copyAssetsRecursive(srcDir, outDir, cleanTop = false) {
 /**
  * 复制内置角色包目录（manifest.json + persona.md + rules.md + skills/）
  *
- * 单一真理源（机制化同步，2026-08-24）：宿主不持有角色包源，改从内核
- * role-packs/（仓库根）复制到 dist。宿主自持副本已删除，避免与内核分叉漂移——
+ * 单一真理源（机制化同步）：宿主不持有角色包源，从内核
+ * role-packs/（仓库根）复制到 dist，避免与内核分叉漂移——
  * 内核改一处，宿主构建期全量跟上。
  *
- * 兜底契约包构建期校验（S0，2026-08-29）：`BUILTIN_FALLBACK_PACK` 锁定的兜底包
+ * 兜底契约包构建期校验：`BUILTIN_FALLBACK_PACK` 锁定的兜底包
  * 是机制底线（随内核分发、宿主 UI 禁删），缺失即构建失败——校验前移，失败尽早
  * （运行时缺失则退化为「无 persona 运行 + warning」，不装配失败）。
  */

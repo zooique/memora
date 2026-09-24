@@ -333,7 +333,7 @@ describe('AgentLoop · 任务表观测量', () => {
     expect(metrics.plan.planItemBoundaryCount).toBe(1);
   });
 
-  // ── B6 守卫（2026-09-17，PLAN-SYNC-1 ① 后续）：lastBoundaryPlanItemId 跨 turn 不重置的无害性实证——
+  // ── 守卫：lastBoundaryPlanItemId 跨 turn 不重置的无害性实证——
   //    active 单向链式推进 + overwrite 产生全新 UUID，去噪缓存不可能误吞跨轮首边界；
   //    且「重置」方案有害（跨 turn 延续时会重复 emit 边界 → 两用例同时锁死该回归）。
   it('B6：跨 turn 延续同一 active step 不重复 emit 边界（去噪正确，非丢边界）', async () => {
@@ -458,7 +458,7 @@ describe('AgentMetrics · 类型结构', () => {
     expect(metrics.tasks).toHaveProperty('successRate');
     expect(metrics.tasks).toHaveProperty('avgDurationMs');
 
-    // 验证 plan 维度字段（2026-09-14 层0：任务表触发观测量）
+    // 验证 plan 维度字段（任务表触发观测量）
     expect(metrics.plan).toHaveProperty('taskTableWriteCount');
     expect(metrics.plan).toHaveProperty('planItemBoundaryCount');
   });
@@ -594,7 +594,7 @@ describe('AgentMetrics · 类型结构', () => {
   });
 });
 
-describe('AgentLoop · 空响应兜底计数（2026-09-15 边界补缝）', () => {
+describe('AgentLoop · 空响应兜底计数', () => {
   it('provider 恒空 → 重试耗尽后兜底文案可见 + metrics.llm.emptyResponseCount 递增', async () => {
     const loop = new AgentLoop({
       provider: mockProvider([]), // 空 chunks = 200 但 0 token 的空响应
@@ -612,7 +612,7 @@ describe('AgentLoop · 空响应兜底计数（2026-09-15 边界补缝）', () =
   });
 });
 
-describe('AgentLoop · 配对守卫计数出闸（2026-09-16 僵尸声明消缺）', () => {
+describe('AgentLoop · 配对守卫计数出闸（僵尸声明消缺）', () => {
   it('getMetrics().llm 必须带 pairingGuardFires —— 只自增不外露的计数等于没记', () => {
     const loop = new AgentLoop({
       provider: mockProvider([]),

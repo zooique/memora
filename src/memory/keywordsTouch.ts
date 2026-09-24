@@ -3,7 +3,7 @@
  *
  * 本模块两函数均为 search_memories / 项目搜索复用：
  * - `extractKeywords`：内核分词 SSOT（`project-search/terms.ts` 用同源断言钉死，不另造分词器）；
- * - `touchScores`：命中后只刷 `accessedAt`（`storage.touch` 唯一写位，score 已物理退役）。
+ * - `touchScores`：命中后只刷 `accessedAt`（`storage.touch` 唯一写位）。
  */
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { segmentLower, STOPWORDS } from '@/utils/segmenter.js';

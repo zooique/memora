@@ -173,11 +173,11 @@ export function resolveSubdir(configDir: string | undefined, sub: string): strin
 
 // ── L3 目录名约定（单一真理源）──
 // 扫描侧（本模块）与路径解析侧（`skill/skillLayer3`）需要同一份目录名。
-// 此前两侧各写一遍字面量 → 目录名一旦调整，解析侧不会同步，且失配是静默的。
+// 两侧各写一遍字面量 → 目录名一旦调整，解析侧不会同步，且失配是静默的。
 
 /** 资源主目录（memora 自有约定；条目未标 subdir 时路径解析的回退基目录） */
 export const DEFAULT_RESOURCE_SUBDIR = 'resources';
-/** 资源兼容目录（TRAE / Agent Skills 主流辅助文档目录，B1 兼容） */
+/** 资源兼容目录（TRAE / Agent Skills 主流辅助文档目录，兼容主流） */
 export const REFERENCES_SUBDIR = 'references';
 /** 脚本目录 */
 export const SCRIPTS_SUBDIR = 'scripts';
@@ -245,7 +245,7 @@ const RESOURCE_EXTENSIONS = new Set([
  *
  * 三级渐进披露 L3 层扫描：
  *   - resources/ 目录下的文件 → 资源列表（memora 自有约定）
- *   - references/ 目录下的文件 → 资源列表（TRAE / Agent Skills 主流辅助文档目录，B1 兼容）
+ *   - references/ 目录下的文件 → 资源列表（TRAE / Agent Skills 主流辅助文档目录，兼容主流）
  *   - scripts/ 目录下的可执行文件 → 脚本列表（按扩展名推断 runtime）
  * 资源条目统一带 subdir 来源，read_resource 据此选择读取基目录。
  *

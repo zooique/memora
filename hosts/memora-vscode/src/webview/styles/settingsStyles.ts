@@ -1,5 +1,5 @@
 /**
- * 设置视图样式 — 聚合 角色 / 大模型 / 记忆 / 技能 四个子视图 + 选项卡栏（2026-08-22 新增技能选项卡）
+ * 设置视图样式 — 聚合 角色 / 大模型 / 记忆 / 技能 四个子视图 + 选项卡栏
  *
  * 设计（对齐 ITCSS + tokens.ts 单一真理源）：
  *   - 设计令牌由 tokens.ts 单一真理源提供，本文件内嵌一次，四个子视图样式不再各自内嵌；
@@ -26,7 +26,7 @@ export const settingsStyles = `
     background: var(--surface-page, #1e1e1e);
   }
 
-  /* ============ Components：全局通知 toast（settingsPanel→notice，2026-09-19 补全断链） ============ */
+  /* ============ Components：全局通知 toast（settingsPanel→notice） ============ */
   .settings-toast {
     position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
     max-width: 88%; padding: var(--sp-2, 6px) var(--sp-4, 10px);
@@ -67,9 +67,9 @@ export const settingsStyles = `
   }
   .tab-btn:focus-visible { outline: 2px solid var(--border-focus, #0e639c); outline-offset: 2px; }
 
-  /* ============ Components：通用按钮变体（SSOT 收敛，2026-08-25） ============
+  /* ============ Components：通用按钮变体（SSOT 收敛） ============
    * 设置面板按钮形态单一真理源：primary / secondary / danger / ghost 四种变体。
-   * 取代原 roles/config/memory 三处重复的 .btn 基类（不一致即 SSOT 违规），并补齐 skills/security 缺失。
+     * 消除 roles/config/memory 三处重复的 .btn 基类（不一致即 SSOT 违规），并补齐 skills/security 缺失。
    * ITCSS 分层：变体=class 层；布局性差异（如 memory 政区按钮 flex:1）由具体子视图覆盖，不混入基类。 */
   #roles-root .btn, #config-root .btn, #memory-root .btn, #skills-root .btn, #security-root .btn {
     padding: var(--sp-2, 6px) var(--sp-5, 12px);
@@ -108,7 +108,7 @@ export const settingsStyles = `
     color: var(--text-primary, #cccccc);
   }
 
-  /* ============ Components：通用卡片/徽章/空态/chip（SSOT 收敛，2026-08-25） ============
+  /* ============ Components：通用卡片/徽章/空态/chip（SSOT 收敛） ============
    * 收敛 roles/config/memory/skills 重复定义（与按钮同理上提为单一真理源）。
    * 布局/对齐差异由各子视图 context 覆盖，不混入基类。 */
   #roles-root .card, #config-root .card, #memory-root .card, #skills-root .card, #security-root .card {
@@ -131,12 +131,12 @@ export const settingsStyles = `
     color: var(--accent-foreground, #ffffff);
     margin-left: var(--sp-1, 4px);
   }
-  /* 用户角色包来源徽章（2026-08-30）：区别于激活「当前」徽章（accent 蓝），用户来源用中性格调 */
+  /* 用户角色包来源徽章：区别于激活「当前」徽章（accent 蓝），用户来源用中性格调 */
   #roles-root .badge.badge-source-user {
     background: var(--vscode-tag-background, rgba(90, 93, 94, 0.31));
     color: var(--vscode-tag-foreground, #cccccc);
   }
-  /* 角色区头部操作组（「打开目录」按钮，2026-08-30 对齐技能区 header-actions） */
+  /* 角色区头部操作组（「打开目录」按钮，对齐技能区 header-actions） */
   #roles-root .header-actions {
     display: flex;
     gap: var(--sp-2, 6px);
@@ -194,7 +194,7 @@ export const settingsStyles = `
     text-align: center;
   }
 
-  /* ============ Utilities：加载态指示器（P1，2026-08-24 状态四态补齐） ============ */
+  /* ============ Utilities：加载态指示器（状态四态） ============ */
   /* 与空态 .hint 区分：带旋转 spinner 图标 + 左侧细边框，让用户一眼识别「在加载」而非「无数据」 */
   .loading-hint {
     display: flex;
@@ -233,7 +233,7 @@ export const settingsStyles = `
   .security-section { margin-top: var(--sp-3, 8px); }
   .security-item {
     /* A 类卡片外壳语言对齐（SSOT）：与记忆/技能/角色卡一致——surface-sidebar + border .4 +
-       margin-bottom 间距（skillsStyles:66 曾统一此壳，security 沿用半旧 surface-hover 漏同步，2026-09-08 收敛） */
+       margin-bottom 间距（skillsStyles:66 统一此壳；沿用 surface-hover 会漏同步） */
     padding: var(--sp-3, 8px) var(--sp-4, 12px);
     margin-bottom: var(--sp-2, 6px);
     border: 1px solid var(--border-panel, rgba(128,128,128,.4));

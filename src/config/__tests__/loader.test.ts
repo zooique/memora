@@ -180,9 +180,9 @@ describe('config/loader · 项目级/用户级配置回退', () => {
   });
 });
 
-// ─── K3：多 Provider + schema 校验 + 回退降级 ──
+// ─── 多 Provider + schema 校验 + 回退降级 ──
 
-describe('config/loader · K3 多 Provider 与高级配置', () => {
+describe('config/loader · 多 Provider 与高级配置', () => {
   let tmpHome: string;
 
   beforeEach(() => {
@@ -534,8 +534,8 @@ describe('config/loader · 错误路径覆盖', () => {
     await expect(loadConfig(configPath)).rejects.toThrow('providers.bad.model');
   });
 
-  // ── #6（B0 收编后空位保留）─────────────────────────────
-  // 原 #6 为 embedding 缺 model 校验，已随 embedding 段整体移除（2026-09-18 B0 收编），编号不再回填。
+  // ── 空缺编号位（保留空缺、不回填）─────────────────────────────
+  // 原位为 embedding 缺 model 校验，已随 embedding 段整体移除；编号保留空缺、不回填。
 
   // ── #7: allowedPaths 含非字符串元素 ─────────────────────────
 

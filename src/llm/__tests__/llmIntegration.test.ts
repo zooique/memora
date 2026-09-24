@@ -6,7 +6,7 @@
  * 自动从项目级 .memora/config.json 读取 LLM 配置（loadConfig() 无参数时的查找路径）
  * apiKey 支持 ${ENV_VAR} 格式从环境变量展开（如 ${MEMORA_API_KEY}），避免明文落盘
  *
- * 运行方式（2026-09-19 对齐宿主 E2E 纪律，见 hostIntegration.test.ts 先例）：
+ * 运行方式（对齐宿主 E2E 纪律，见 hostIntegration.test.ts 先例）：
  *   真实 LLM 依赖外部 API（慢/波动），**不进常规门禁**（pre-push full 档会因外部
  *   响应超时随机红）。默认跳过；显式触发：`MEMORA_E2E=1 npx vitest run src/llm/__tests__/llmIntegration.test.ts`
  */

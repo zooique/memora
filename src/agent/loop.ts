@@ -1551,7 +1551,7 @@ export class AgentLoop {
     // 但 tool_start/tool_result 与 messages 均按原始顺序 yield/push，保证 Reflection slice 正确
     if (signal?.aborted) {
       // 中止早退：assistant(toolCalls) 已在上一步入史，而工具一条都未执行 →
-      // 必须为**每条**调用补「未执行」占位结果，否则即留下孤立 tool 消息（FAIL-1 破口）：
+      // 必须为**每条**调用补「未执行」占位结果，否则即留下孤立 tool 消息（配对不变量破口）：
       // 下一次请求要么被 OpenAI 兼容端以 400 拒绝，要么被 llmCaller 发送边界守卫
       // `auditToolCallPairing` 拒发并抛**非临时**错误（llmPairingGuardFires++）
       // → 表现为「用户中止一次后，该会话后续每次发言都硬失败」。

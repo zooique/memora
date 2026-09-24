@@ -54,7 +54,7 @@ describe('MessageHistory · 基本操作', () => {
 
   it('跨天追加不漂移：currentDateValue 保持会话锚定日期（延续会话，不自动新建）', async () => {
     // round-based 单一模型下，append 不写 legacy 扁平列表；会话日期锚点由
-    // 构造/loadSessionMessages/forkSession 决定，绝不随输入漂移到"今天"（2026-08-29
+    // 构造/loadSessionMessages/forkSession 决定，绝不随输入漂移到"今天"（
     // 剪枝「跨天自动新建」残留：跨天继续对话 = 延续当前会话，用户显式新建才切会话）
     const mockStore = {
       loadMessages: () => [],

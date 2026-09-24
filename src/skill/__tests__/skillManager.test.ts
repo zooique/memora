@@ -43,7 +43,7 @@ describe('SkillManager', () => {
     rmSync(testDir, { recursive: true, force: true });
   });
 
-  describe('validateFile（G22 写→验→用闭环）', () => {
+  describe('validateFile（写→验→用闭环）', () => {
     const m = new SkillManager();
 
     it('正常技能（有 name/description）→ ok=true，无 error', async () => {
@@ -529,7 +529,7 @@ description: 联网搜索资料
     });
   });
 
-  // ─── L3 隔离纪律（2026-08-30 对齐 Agent Skills 主流） ────────
+  // ─── L3 隔离纪律（对齐 Agent Skills 主流） ────────
   // 主流标准：技能=文件夹+强制 SKILL.md，辅助目录 scripts/ references/ assets/ 归 SKILL.md 所有。
   // 顶层裸 .md 是旧版自定义命令的扁平兼容形态，若同级扫描其 resources/scripts 会把别的技能的资源误归自己。
 
@@ -874,7 +874,7 @@ describe('SkillManager · 补充分支路径', () => {
     it('listAvailable：可用性 + 禁用两判据单点（LLM 可见集唯一真理源）', async () => {
       createSkillFile(skillsDir, 'a.md', '---\nname: a\ndescription: 技能A\n---\n正文A');
       createSkillFile(skillsDir, 'b.md', '---\nname: b\ndescription: 技能B\n---\n正文B');
-      // 缺 description：渐进披露层面不可用（G22），不入 LLM 可见集
+      // 缺 description：渐进披露层面不可用，不入 LLM 可见集
       createSkillFile(skillsDir, 'nodesc.md', '---\nname: nodesc\n---\n正文');
       const manager = new SkillManager(testDir);
       await manager.load();
@@ -884,7 +884,7 @@ describe('SkillManager · 补充分支路径', () => {
       expect(manager.listAvailable().map((s) => s.name)).toEqual(['a']);
       // 同源断言：L1 枚举与 listAvailable 看到同一集合。
       // `list_skills` 工具侧（assembler 注入回调）亦调用本方法 ⇒ 两通道判据不分叉
-      //（2026-09-22 G4：此前工具侧只过滤 description、漏掉禁用过滤，注释却自称「必须一致」）
+      //（此前工具侧只过滤 description、漏掉禁用过滤，注释却自称「必须一致」）
       const l1 = manager.buildSkillList();
       expect(l1).toContain('- a：');
       expect(l1).not.toMatch(/\bb\b/);

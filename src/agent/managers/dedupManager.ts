@@ -190,7 +190,7 @@ export class DedupManager {
     const allPairs: Array<{ a: Memory; b: Memory; nameSimilarity: number }> = [];
     for (let i = 0; i < candidates.length; i++) {
       for (let j = i + 1; j < candidates.length; j++) {
-        const a = candidates[i]!; // i 前 j 后：candidates 已按 accessedAt 降序（score 已退役，2026-09-09），a 为更近使用方（保留候选）
+        const a = candidates[i]!; // i 前 j 后：candidates 已按 accessedAt 降序，a 为更近使用方（保留候选）
         const b = candidates[j]!; // b 为较远使用方（重复候选）
         const similarity = DedupManager.computeNameSimilarity(a.name, b.name);
         if (similarity <= DEDUP_NAME_SIMILARITY_THRESHOLD) {
@@ -257,7 +257,7 @@ export class DedupManager {
     };
   }
 
-  /** 软删重复记忆（不物理删除保留可恢复；合并内容由 keepMerged 单独写回 a）。score 退役后弃用降级，代之以 delete 进入回收站。 */
+  /** 软删重复记忆（不物理删除保留可恢复；合并内容由 keepMerged 单独写回 a）。重复方以 delete 进入回收站。 */
   private demoteMemory(memory: Memory): void {
     this.index.delete(memory.id);
   }

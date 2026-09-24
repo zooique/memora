@@ -2188,7 +2188,7 @@ class AbortThrowingProvider extends LlmProvider {
  * 模拟真实网络/代理内部中断（连接被抽断）。
  * 内核应判为「连接中断」而非「用户取消」：agent 层输出 error chunk + failed，
  * 不会产出 aborted chunk，**不谎报用户取消**。
- * 注（2026-09-15 修正）：本注释曾写「history 不写中断标记」——那是修复前的行为。
+ * 注：history 会写中断标记（勿再描述为「不写」）。
  * failed 与 aborted 现同属「本轮未正常完成」，在 `seed/orchestrator.act()` 共用
  * `appendInterrupted` 收口（SSOT），已产出文本 + 中断标记**照常写史**；
  * 不变的只有「不产出 aborted chunk / 不谎报用户取消」这一点。
@@ -2501,7 +2501,7 @@ describe('Agent · chat() 中断保留文本', () => {
 
   it('LLM 超时（非 abort · 首分片后停摆）→ error chunk 带 category=timeout（宿主友好文案可达）', async () => {
     // 场景 = 问题2 真机形态：首 token 已到达、转正文前停摆 → 看门狗以 DOMException TimeoutError
-    // reject（本批已改为 Promise.race 竞速闸）。该错误**不经过 abort signal**，故归「失败」路径、
+    // reject（经 Promise.race 竞速闸）。该错误**不经过 abort signal**，故归「失败」路径、
     // 由 consumeExecutionStream 的通用 catch 收口。
     // 修复前：通用 catch 不判超时 → 无 category → 宿主 `friendlyByCategory` 无键可映射 → 用户只
     // 能读到原始 DOMException 技术文案（「对话处理超时，请稍后重试」永不生效 = 僵尸文案）。

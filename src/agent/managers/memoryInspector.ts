@@ -148,8 +148,7 @@ export class MemoryInspector {
     const working = workingFull.slice(-WORKING_PREVIEW);
 
     // 第 2 层 Bootstrap 恒空：设定记忆唯一归角色包，索引不再新增，rolePackPrompt 承载规则注入。
-    // 保留空壳形状兼容。实证 2026-09-20：宿主治理面走 stats/list/searchByKeyword，不消费本层；
-    // 原「供 UI 层调用，避免宿主代码变更」表述=谎报，已订正。
+    // 保留空壳形状。宿主治理面走 stats/list/searchByKeyword，不消费本层。
 
     // 第 3 层：归档记忆计数（round-summary，记忆库唯一对话记忆）
     const roundSummaryCount = this.index.countBySource(SOURCE_LABELS.ROUND_SUMMARY);
@@ -215,15 +214,14 @@ export class MemoryInspector {
   }
 
   /**
-   * 搜索记忆（纯关键词单通道，B0 收编后无向量通道、无融合排序）。
+   * 搜索记忆（纯关键词单通道，无向量通道、无融合排序）。
    *
-   * 边界声明（v3 分层分轨，2026-08-27）：searchByKeyword 是「记忆搜索工具」，不是召回管线——不应用 L1/L2 分层、
+   * 边界声明（分层分轨）：searchByKeyword 是「记忆搜索工具」，不是召回管线——不应用 L1/L2 分层、
    * 不进池策略（preference 无条件进池 / intent 排除）、不做 cap 内分配（capTokens / minSemanticShare）。
-   * 分层分轨原属「召回编排」`recall()`——该方法已连同其唯一消费者
-   * （跨重启恢复链的 `checkpointRestoreCoordinator.warmRecall`）于 2026-09-10 整体退役，故**现行实现中
-   * 已无任何召回编排**；搜索工具只暴露过滤后的结果，供宿主/上层按需自取（D2，见 memory-as-summary §4.5 边界标注）。
+   * 分层分轨原属「召回编排」`recall()`；**现行实现中已无任何召回编排**，
+   * 搜索工具只暴露过滤后的结果，供宿主/上层按需自取（见 memory-as-summary §4.5 边界标注）。
    *
-   * 语义（向量）通道已于 2026-09-18 收编（B0 裁决）：embedding 写端缺失导致语义通道在生产从未生效，
+   * 无语义（向量）通道：embedding 写端缺失导致语义通道在生产从未生效，
    * 属于「宣称能力零消费」的僵尸；且主流 agent（Anthropic Memory tool / Claude Code / Librarian Pattern）
    * 已实证「LLM 消费者 + 小语料」下纯关键词足用——LLM 会自主改述重试（工具描述已提示）。向量语义检索
    * 的 cache 形态方案记入探索期文档候选，等真实「关键词搜不到」复现再按缓存重算形态补回。
@@ -247,7 +245,7 @@ export class MemoryInspector {
       ]);
     }
 
-    // 单个通道：纯关键词搜索（B0 收编后无向量通道、无融合排序，FTS 索引已按相关性返回）
+    // 单个通道：纯关键词搜索（无向量通道、无融合排序，FTS 索引已按相关性返回）
     const keywordResults = this.index.search(query, limit);
     // 前置 superseded 过滤：被 supersededBy 取代的摘要不作为当前事实
     // 返回（仍保留可回溯，trace_summary 可精确取原文）。在截断前过滤，避免占据 top-N 槽位挤掉有效命中。
@@ -308,7 +306,7 @@ export class MemoryInspector {
   }
 
   /**
-   * 随问答闭环删除的摘要记忆软删（⑥，2026-08-29）：Round 引用归 0 被物理删除后联动。
+   * 随问答闭环删除的摘要记忆软删：Round 引用归 0 被物理删除后联动。
    *
    * 软删即脱钩：命中 roundId 的 round-summary 清空溯源（sessionName/roundId）后再软删——
    * 原会话/轮已不存在（物理回收），溯源悬空无意义；恢复后即为「无需溯源的独立记忆」。

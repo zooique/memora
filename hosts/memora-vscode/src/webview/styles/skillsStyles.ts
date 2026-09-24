@@ -100,7 +100,7 @@ export const skillsStyles = `
     border-left: 3px solid var(--skill-agent-accent);
   }
 
-  /* 角色包技能：左侧紫色边框标识（语义令牌 --skill-rolepack-accent，2026-08-25 三分类新增） */
+  /* 角色包技能：左侧紫色边框标识（语义令牌 --skill-rolepack-accent，技能三分类） */
   #skills-root .skill-item.skill-rolepack {
     border-left: 3px solid var(--skill-rolepack-accent);
   }
@@ -139,7 +139,7 @@ export const skillsStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
 
-  /* 角色包徽章：skill-rolepack-accent 字 + 灰底（2026-08-25 三分类新增） */
+  /* 角色包徽章：skill-rolepack-accent 字 + 灰底（技能三分类） */
   #skills-root .skill-badge.badge-rolepack {
     color: var(--skill-rolepack-accent);
     background: var(--surface-hover, rgba(128,128,128,.2));
@@ -152,7 +152,7 @@ export const skillsStyles = `
     line-height: 1.4;
   }
 
-  /* G22 写→验→用（2026-08-25）：健康徽章 + 问题列表（error=未生效 / warn=可优化） */
+  /* 写→验→用：健康徽章 + 问题列表（error=未生效 / warn=可优化） */
   #skills-root .health-badge {
     font-size: var(--font-xs, 10px);
     font-weight: 600;
@@ -168,7 +168,7 @@ export const skillsStyles = `
     color: var(--skill-health-warn);
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
-  /* S4 配置形态启停（2026-09-22）：已禁用徽章。语义 = 对模型不存在，仅 UI 对照显示
+  /* 配置形态启停：已禁用徽章。语义 = 对模型不存在，仅 UI 对照显示
      （不隐藏条目，否则用户无法确认启停是否生效）。复用 health-warn 色 token：
      不取红（避免与「未生效」错误态混淆），不取纯灰（灰易被当成装饰忽略） */
   #skills-root .disabled-badge {
@@ -181,7 +181,7 @@ export const skillsStyles = `
     background: var(--surface-hover, rgba(128,128,128,.2));
   }
 
-  /* S4 延长线开关（2026-09-22）：全局池技能卡片上的真实禁用开关。复用 settingsStyles
+  /* 启停延长线开关：全局池技能卡片上的真实禁用开关。复用 settingsStyles
      .toggle-switch/-slider 的既有形态语言（40×22 轨道 + 16px 圆点 + focus-visible 描边），
      仅按 #skills-root 作用域重命名防串扰；配色全走既有 tokens（--border-panel 轨道 /
      --accent 开启 / --accent-foreground 圆点 / --border-focus 键盘焦点），**不开新令牌**
@@ -225,7 +225,7 @@ export const skillsStyles = `
     outline-offset: 2px;
   }
 
-  /* 角色包技能的「随角色启停」说明（2026-09-22）：角色包技能对禁用清单免疫（定案），
+  /* 角色包技能的「随角色启停」说明：角色包技能对禁用清单免疫（定案），
      卡片不渲染开关、以弱化说明文字代替——语义 = 与角色融为一体、随角色启停 */
   #skills-root .skill-rolepack-hint {
     font-size: var(--font-xs, 10px);

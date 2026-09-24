@@ -314,7 +314,7 @@ description: 变体技能
     });
 
     it('Windows 批处理 .bat/.cmd → shell（缺映射会被兜底成 node 而必炸）', () => {
-      // 背景（2026-09-22 实测）：run_project_script 按扩展名推断 runtime，未知扩展名由
+      // 背景（实测）：run_project_script 按扩展名推断 runtime，未知扩展名由
       // toolExecutor.normalizeScriptRuntime 兜底 'node'。此前 .bat/.cmd 不在映射表 → 实际
       // 执行 `node foo.bat`（拿批处理语法喂 node）必炸；本机实测 `cmd /c foo.bat` status=0
       // 且 stdout 正确（.cmd 同），故二者必须显式归入 shell 档。本条锁死该映射防回归。

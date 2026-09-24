@@ -1,5 +1,5 @@
 /**
- * needsPlanning 判定单元测试（2026-09-14 层1：任务表触发确定性化）。
+ * needsPlanning 判定单元测试（任务表触发确定性化）。
  *
  * 验证 detectNeedsPlanning 的确定性命中/不命中边界：多步/工程命令 → true；
  * 简单问答/闲聊 → false（宁漏判不打扰，对齐 Codex「简单任务不灌 padding」）。

@@ -126,7 +126,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('task_table_write');
     });
 
-    it('空白名单（[]）时：常驻工具仍暴露（含任务表——2026-09-16 起为内核必要基建，非特权）', () => {
+    it('空白名单（[]）时：常驻工具仍暴露（含任务表——内核必要基建，非特权）', () => {
       executor.setToolWhitelist([]);
       const names = executor.list.map((t) => t.name);
       // 常驻豁免集（判据 A：项目内/内核自有）不受白名单影响
@@ -134,7 +134,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(names).toContain('write_file');
       expect(names).toContain('run_project_script');
       expect(names).toContain('read_skill');
-      // 任务表是内核多步任务必要基建（用户 2026-09-16 拍板直接暴露）→ 空白名单仍可见
+      // 任务表是内核多步任务必要基建（直接暴露）→ 空白名单仍可见
       expect(names).toContain('task_table_write');
       expect(names).toContain('task_table_update');
       // 外部网络 / 任意代码类特权仍被过滤
@@ -216,7 +216,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('SCRIPT_DECLINE');
     });
 
-    it('timeout_ms 透传内核执行器：短超时脚本即 [SCRIPT_TIMEOUT]（2026-09-08 超时弹性）', async () => {
+    it('timeout_ms 透传内核执行器：短超时脚本即 [SCRIPT_TIMEOUT]（超时弹性）', async () => {
       // 死循环脚本 + 显式 1s（最小 clamp）超时：验证 timeout_ms 参数真实生效（不卡默认 60s）
       writeFileSync(join(tmpProject, 'scripts/hang.js'), 'while (true) {}', 'utf-8');
       const result = await executor.execute(
@@ -327,7 +327,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toBe('ok');
     });
 
-    it('guest 模式（无确认回调）时 fail-closed 拒绝（2026-09-11 定案：受限权限下技能脚本不再豁免确认）', async () => {
+    it('guest 模式（无确认回调）时 fail-closed 拒绝（定案：受限权限下技能脚本不豁免确认）', async () => {
       // guest 恒确认；未注入 confirmationHandler → confirmScriptRun fail-closed → 拒绝
       const guestSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'guest');
       const guestExecutor = new ToolExecutor(tmpProject, guestSecurity, index);
@@ -350,7 +350,7 @@ describe('工具执行器（6 个工具）', () => {
       expect(result).toContain('SCRIPT_DECLINE');
     });
 
-    it('owner + confirmScripts=true + 确认回调：同意放行 / 拒绝拦截（2026-09-11 定案）', async () => {
+    it('owner + confirmScripts=true + 确认回调：同意放行 / 拒绝拦截', async () => {
       const strictSecurity = new SecurityGuard(tmpProject, tmpData, [], false, 'owner', true);
       const strictExecutor = new ToolExecutor(tmpProject, strictSecurity, index);
 
@@ -386,7 +386,7 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
-  describe('web_search（G5 降级端点透出）', () => {
+  describe('web_search（降级端点透出）', () => {
     it('降级结果应透出「搜索来源：<endpoint>」头部', async () => {
       const mockProvider = {
         search: async () => [
@@ -615,7 +615,7 @@ describe('工具执行器（6 个工具）', () => {
         truncated: false,
         scannedFiles: 3,
       },
-      // 零命中 + 扫描达文件上限（F2/F5：说"未找到"必须同时说"没搜完"）
+      // 零命中 + 扫描达文件上限（说"未找到"必须同时说"没搜完"）
       扫描截断: { matches: [], truncated: true, truncatedBy: 'files', scannedFiles: 500 },
       // 有命中但结果达上限（与上者文案必须可区分）
       结果截断: {
@@ -624,7 +624,7 @@ describe('工具执行器（6 个工具）', () => {
         truncatedBy: 'results',
         scannedFiles: 12,
       },
-      // 放宽命中（F1）：termsUsed 与内核下发的词表**故意不同**，用于证明内核只认宿主回报值
+      // 放宽命中：termsUsed 与内核下发的词表**故意不同**，用于证明内核只认宿主回报值
       '核心 愿景': {
         matches: [{ path: 'docs/a.md', line: 3, preview: 'relaxed hit' }],
         truncated: false,
@@ -632,7 +632,7 @@ describe('工具执行器（6 个工具）', () => {
         relaxed: true,
         termsUsed: ['zebra'],
       },
-      // 单文件上限（F6）+ 部分检索（F4-full）+ 读取失败（P5）
+      // 单文件上限 + 部分检索 + 读取失败
       单文件上限: {
         matches: [{ path: 'src/many.ts', line: 1, preview: 'a' }],
         truncated: false,
@@ -643,7 +643,7 @@ describe('工具执行器（6 个工具）', () => {
       },
       // 真零命中（无截断、无跳过）
       零命中: { matches: [], truncated: false, scannedFiles: 5 },
-      // 零命中 + 覆盖缺口（部分检索 / 读取失败）：F4-full / P5 的诚实化主路径
+      // 零命中 + 覆盖缺口（部分检索 / 读取失败）的诚实化主路径
       零命中带缺口: {
         matches: [],
         truncated: false,
@@ -795,18 +795,18 @@ describe('工具执行器（6 个工具）', () => {
         expect(result).not.toContain('读取失败');
       });
 
-      it('零命中 + 扫描达上限：文案必须同时给"未找到"与"没搜完"（修 F2/F5，缺一即红）', async () => {
+      it('零命中 + 扫描达上限：文案必须同时给"未找到"与"没搜完"（缺一即红）', async () => {
         const result = await execWithProject.execute(
           'search_project',
           JSON.stringify({ query: '扫描截断', mode: 'content' }),
         );
         expect(result).toContain('未找到'); // 零命中事实
         expect(result).toContain('扫描上限'); // 截断事实
-        expect(result).toContain('500'); // 用宿主**上报的数字**，不是内核持有常量（D4）
+        expect(result).toContain('500'); // 用宿主**上报的数字**，不是内核持有常量
         expect(result).toContain('不等于'); // 不得把"没搜到"说成"不存在"
       });
 
-      it('检索失败时不得表述为"未找到"（修 F3：搜索坏了 ≠ 项目里没有）', async () => {
+      it('检索失败时不得表述为"未找到"（搜索坏了 ≠ 项目里没有）', async () => {
         const result = await execWithProject.execute(
           'search_project',
           JSON.stringify({ query: '触发失败', mode: 'content' }),
@@ -827,7 +827,7 @@ describe('工具执行器（6 个工具）', () => {
         expect(result).not.toContain('核心');
       });
 
-      it('截断主因 results 与 files 的文案可区分（修 F5：两个原因不再压成一个布尔）', async () => {
+      it('截断主因 results 与 files 的文案可区分（两个原因不压成一个布尔）', async () => {
         const byResults = await execWithProject.execute(
           'search_project',
           JSON.stringify({ query: '结果截断', mode: 'content' }),
@@ -836,7 +836,7 @@ describe('工具执行器（6 个工具）', () => {
         expect(byResults).not.toContain('扫描上限');
       });
 
-      it('单文件上限 / 部分检索 / 读取失败均如实上报（修 F6/F4-full/P5），且不重复宿主魔法数', async () => {
+      it('单文件上限 / 部分检索 / 读取失败均如实上报，且不重复宿主魔法数', async () => {
         const result = await execWithProject.execute(
           'search_project',
           JSON.stringify({ query: '单文件上限', mode: 'content' }),
@@ -844,11 +844,11 @@ describe('工具执行器（6 个工具）', () => {
         expect(result).toContain('单文件上限');
         expect(result).toContain('2 个文件只检索了前一部分'); // 宿主上报数字
         expect(result).toContain('1 个文件读取失败');
-        // 内核文案不得复述宿主的单文件上限值（跨越层常量镜像，D4 判定律）
+        // 内核文案不得复述宿主的单文件上限值（跨越层常量镜像）
         expect(result).not.toContain('前 3 条');
       });
 
-      it('零命中 + 覆盖缺口：缺口必须写进文案（F4-full/P5：不得让 LLM 把"没搜到"读成"不存在"）', async () => {
+      it('零命中 + 覆盖缺口：缺口必须写进文案（不得让 LLM 把"没搜到"读成"不存在"）', async () => {
         const result = await execWithProject.execute(
           'search_project',
           JSON.stringify({ query: '零命中带缺口', mode: 'content' }),
@@ -918,7 +918,7 @@ describe('工具执行器（6 个工具）', () => {
       });
     });
 
-    describe('预算下探联动（G4）', () => {
+    describe('预算下探联动', () => {
       // 模拟宿主返回大量结果（超预算档位 cap），用于验证下探截断
       const manyFilesProvider = {
         async searchFiles(options: { query?: string; maxResults?: number }) {
@@ -998,7 +998,7 @@ describe('工具执行器（6 个工具）', () => {
         expect(lines.length).toBe(50);
       });
 
-      // K-1 档位跳变边界回归（2026-08-31）：逐个锁定 SEARCH_BUDGET_TIERS 的 minRemaining 边界及其下沿。
+      // 档位跳变边界回归：逐个锁定 SEARCH_BUDGET_TIERS 的 minRemaining 边界及其下沿。
       // 用例取相对值而非 100：manyFilesProvider 仅生成 50 个文件，故「充裕档 cap100」不额外下探时有效结果恒为 min(50, cap)=50，
       // 用 50 与下探档（30/10/3）在结果行数上区分开，验证档位切换真实触发且阈值精确。
       it.each([
@@ -1188,7 +1188,7 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('sanitizeExternalText（纯函数）', () => {
-    it('ANSI SGR 色码整体剥净（2026-09-08：env 继承后 FORCE_COLOR 使子进程输出色码）', () => {
+    it('ANSI SGR 色码整体剥净（env 继承后 FORCE_COLOR 使子进程输出色码）', () => {
       // 子进程继承 FORCE_COLOR 后的真实输出形态：ESC [33m 包裹文本
       // 单剥 ESC 会留 `[33m` 残渣——净化层须剥整个 CSI 序列
       const colored = 'line1\u001b[33mtrue\u001b[39m line2';
@@ -1449,7 +1449,7 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
-  describe('task_table_update（2026-09-06 寻址契约收口：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
+  describe('task_table_update（寻址契约：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
     /** 默认三步骤桩（id 前缀各异，8 位短 id 可唯一命中） */
     const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> = [
       { id: 'a1b2c3d4-step-1', description: '文档设计师发言', status: 'pending', order: 0 },

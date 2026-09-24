@@ -95,7 +95,7 @@ describe('SeedOrchestrator 最小 turn', () => {
 
     const { chunks } = await collectGen(new SeedOrchestrator(deps).runChat('输入', ac.signal));
 
-    // TS-12a：aborted chunk 带 stopReason:'user'（stopReason 为可选字段，用 toMatchObject 兼容）
+    // aborted chunk 带 stopReason:'user'（stopReason 为可选字段，用 toMatchObject 兼容）
     expect(chunks).toContainEqual(
       expect.objectContaining({
         type: 'aborted',
@@ -200,7 +200,7 @@ describe('SeedOrchestrator 最小 turn', () => {
     expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
   });
 
-  // ── 形态② 兜底收尾（PLAN-SYNC-1 ①，2026-09-17）────────────────────────
+  // ── 形态② 兜底收尾 ─────────────────────────
   it('runChat 正常完成：act 触发「LLM 未显式 update 即收尾」兜底（摘要前 200 字作 planItemLog 摘要）', async () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '完成回复');

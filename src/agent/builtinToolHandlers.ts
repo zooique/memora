@@ -305,7 +305,7 @@ export class BuiltinToolHandlers {
       // 区分 ENOENT（文件不存在）和其他 IO 错误
       if (e instanceof MemoraError) throw e;
       if (isNodeErrorCode(err, 'ENOENT')) {
-        // 前置兄弟目录提示：siblingDirHint 是"失败即给证据"（CTX-1b·P2）——但内核事件
+        // 前置兄弟目录提示：siblingDirHint 是"失败即给证据"——但内核事件
         // 落盘 summary 只取前 100 字符（loop.ts tool_result）。若把它拼接在长路径**之后**，
         // 危害：路径串本身（盘根+文件名）往往已占满 100 字 → 兄弟目录清单被整个截掉，
         // LLM 重放/治理只见「文件不存在」却看不到同级真实文件名（HALL-1 实测 seq261/262

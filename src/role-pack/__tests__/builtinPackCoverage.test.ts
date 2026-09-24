@@ -1,5 +1,5 @@
 /**
- * 内置角色包「技能可发现性」守卫（2026-09-14）
+ * 内置角色包「技能可发现性」守卫
  *
  * 背景（双锚点结论，见 docs/architecture/role-pack-authoring-guide.md §2.5）：
  * 技能可发现性有两个来源——**L1 清单**（内核扫描 skills/ 目录自动注入 system prompt，
@@ -11,12 +11,12 @@
  * 首条用例断言扫描到的包数 / 技能数达标 + 无空包 + 已知锚点技能存在，
  * 防「路径解析失败 → 空集合 → 循环不执行 → 假绿」。
  *
- * 枚举口径（2026-09-14 收口）：技能清单**不由本文件手写目录遍历**，而走内核
+ * 枚举口径：技能清单**不由本文件手写目录遍历**，而走内核
  * `scanner.scanMarkdownDir`——与内核真实装载共用同一份枚举规则（覆盖文件夹形态
  * `skills/x/SKILL.md` 与 README/`.`/`_` 排除规则），避免「守卫看到的技能」与
  * 「内核实际装载的技能」分叉。技能名仍取磁盘命名（见 skillNameOf）。
  *
- * 引用口径（2026-09-14 收口，SSOT：docs/architecture/role-pack-authoring-guide.md §2.6）：
+ * 引用口径（SSOT：docs/architecture/role-pack-authoring-guide.md §2.6）：
  * 设定文本引用技能的唯一合法形式 = **反引号包裹 kebab-case 技能名**。正向（每个技能至少
  * 被引用一次）与反向（每条引用都指向真实存在的技能）**共用同一份提取器**
  * `extractSkillReferences`——禁用两侧各写一份正则，否则「守卫看到的引用」与「真实引用」
@@ -167,7 +167,7 @@ describe('内置角色包技能可发现性守卫', () => {
   });
 
   it('技能名须符合 kebab 字符集（Agent Skills 规范，防引用提取器失焦）', async () => {
-    // 场景溯源（2026-09-22）：技能名若含中文 / 大写 / 下划线，`SKILL_REFERENCE_RE` 便无法
+    // 场景溯源：技能名若含中文 / 大写 / 下划线，`SKILL_REFERENCE_RE` 便无法
     // 把它当引用提取——「存在却不可被引用」。故 name 与磁盘命名**双双**限定为 kebab：
     // 磁盘命名是引用提取的实际比对对象，frontmatter name 是 L1 清单与 read_skill 的寻址键。
     const invalid: string[] = [];

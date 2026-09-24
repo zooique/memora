@@ -137,7 +137,7 @@ describe('ToolRunner 单工具执行', () => {
     const result = await runner.runOne(tc());
 
     expect(result.startsWith('[ERR:TOOL:')).toBe(true);
-    // B3/建议送达：suggestions 从「人读」下沉进「LLM 上下文」，可执行确切的下一步指令
+    // 建议送达：suggestions 从「人读」下沉进「LLM 上下文」，可执行确切的下一步指令
     expect(result).toContain('建议：检查权限');
     expect(result).toContain('磁盘只读'); // detail 仍保留
     expect(onToolExecuted).toHaveBeenCalledWith('echo', expect.any(String), result, false);

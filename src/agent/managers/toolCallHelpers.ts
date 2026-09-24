@@ -1,12 +1,12 @@
 /**
- * 工具调用辅助纯函数 — 从 AgentLoop 提取的确定性计算面（F2 族纯函数子集）。
+ * 工具调用辅助纯函数 — 工具调用的确定性计算面（编排本体之外的纯函数子集）。
  *
  * 设计依据（.trae/rules/architecture_philosophy_rules.md §4「代码与模型分工」）：
  *   本文件承载「能写成纯函数」的工具处理辅助——参数解析 / 结果包装 / 错误码判定。
  *   它们**零 IO、零 LLM、零 loop 状态**，仅输入 → 输出；
  *   loop 内的编排（执行、并发、挂起、计数）**不在此处**，仍属 AgentLoop 编排本体。
  *
- * 归属段（ARCH-3 三段式）：①确定性面 —— 故本文件 grep `llm.chat(` / `providerRouter` 应为 0。
+ * 归属段（三段式）：①确定性面 —— 故本文件 grep `llm.chat(` / `providerRouter` 应为 0。
  *
  * 与相邻模块的边界：
  *   - `toolRunner.ts`：执行「一个」工具（有副作用）。
@@ -72,9 +72,9 @@ export function wrapToolResult(toolName: string, result: string): string {
  * 服务端对 tool_call 函数名的约束 —— **字符集逐字取自 OpenAI 兼容端 400 错文**
  * （`function.name does not match pattern '^[a-zA-Z0-9_-]+$'`）。
  *
- * 判据关系（2026-09-15 G2 并入）：**定义期判据 ≠ 服务端判据**。
+ * 判据关系：**定义期判据 ≠ 服务端判据**。
  *   - 定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）**不容连字符**——拿它作判据，
- *     会把服务端**接受**的 `read-file` 误判为非法（FAIL-1 血训，勿收严至此）。
+   *     会把服务端**接受**的 `read-file` 误判为非法（血的教训，勿收严至此）。
  *   - 本判据 = 服务端判据的**完整面**：字符集（正则）+ 长度上界（OpenAI 规范 `function.name` 上限
  *     64 字符）。长度上界是**服务端约束**，补它只会让判据更贴近服务端，不会像定义期规则那样误伤。
  *   - 内置 23 个工具名最长 16 字符，全部满足；无守卫锁死该事实——若未来新增超长名应在此回归。
@@ -135,11 +135,11 @@ export type PairingViolation =
   | { kind: 'duplicateId'; toolCallId: string }; // 同批次内 id 重复
 
 /**
- * 批次成形审计（发送边界守卫的纯谓词，TOOLPAIR-2）：
+ * 批次成形审计（发送边界守卫的纯谓词）：
  * 「发往 OpenAI 兼容端的 assistant.toolCalls 必须成形」这一不变量的**单一真源**——
  * 逐条配对、名字合法、id 唯一。纯函数、无状态、只读。
  *
- * SSOT 关系：构造期散点（FAIL-1/G1/G2/G3）已按此保证成形，故健康态应零违规；
+ * SSOT 关系：构造期散点已按此保证成形，故健康态应零违规；
  * 一旦命中 = 某散点回归（内核 bug），由调用方 fail-fast（记录并停止发送）。
  * 测试断言助手 `expectWellFormedToolPairing` 是它的**薄壳**，实现判据与断言同源。
  *
@@ -147,7 +147,7 @@ export type PairingViolation =
  * （ask 尚未回答那半批）刻意暂缺 ask 调用配对，不在本守卫覆盖范围。
  *
  * 作用域语义：`duplicateId` 按**单条 assistant 消息内**判重（同批次内重复才是恶性）；
- * 跨消息的 id 重复（如 mock 重放同一批次）不算违规——G3 已在构造期用实例自增保证
+ * 跨消息的 id 重复（如 mock 重放同一批次）不算违规——构造期用实例自增保证
  * 跨批唯一。配对（unpaired/orphan）则按整条历史全局判。
  */
 export function auditToolCallPairing(

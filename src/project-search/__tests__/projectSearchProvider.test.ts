@@ -3,7 +3,7 @@
  *
  * 覆盖 safeSearchProjectFiles / safeSearchProjectText：
  *   - 成功透传结果
- *   - 失败**不再降级为空数组**：上报 `failed` 位（SEARCH-1 · F3 —— 失败与"真零命中"必须可区分）
+ *   - 失败**不再降级为空数组**：上报 `failed` 位（失败与"真零命中"必须可区分）
  *   - 超时同样上报 `failed`（防宿主实现卡死 Agent 主循环）
  */
 import { describe, it, expect, vi } from 'vitest';
@@ -99,7 +99,7 @@ describe('safeSearchProjectText', () => {
     });
   });
 
-  it('提供者抛错时上报 failed 位，且**不**伪装成可信的零命中（修 F3）', async () => {
+  it('提供者抛错时上报 failed 位，且**不**伪装成可信的零命中', async () => {
     const provider = providerWithText(async () => {
       throw new Error('内容搜索异常');
     });

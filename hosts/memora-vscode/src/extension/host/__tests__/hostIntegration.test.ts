@@ -22,7 +22,7 @@ import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-// 真实 LLM 集成测试显式触发开关（2026-09-17）：默认关闭——外部 LLM 依赖不进 push 门禁
+// 真实 LLM 集成测试显式触发开关：默认关闭——外部 LLM 依赖不进 push 门禁
 const runE2E = process.env.MEMORA_E2E === '1';
 
 // ─── mock vscode（宿主测试不需要真实 VS Code API）────────────────
@@ -356,7 +356,7 @@ describe('宿主集成端到端测试', () => {
   });
 
   // ─── T6：宿主 Agent 真实对话集成 ────────────────────────────────
-  // 真实 LLM 测试（2026-09-17）：默认跳过（runE2E 显式开关），LLM 慢/波动不再随机红进 push 门禁
+  // 真实 LLM 测试：默认跳过（runE2E 显式开关），LLM 慢/波动不再随机红进 push 门禁
   describe.skipIf(!runE2E)('宿主 Agent 真实对话', () => {
     it('完整对话流程（初始化 → chat → close）', async () => {
       const apiKey = process.env.MEMORA_API_KEY;

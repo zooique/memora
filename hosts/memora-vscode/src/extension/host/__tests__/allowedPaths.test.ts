@@ -12,7 +12,7 @@
  *
  * 设计纪律：
  *   - StubProvider 免 API Key，CI 离线可跑。
- *   - 直接构造 Agent（SessionManager 仅 type 导出），复用 G21 双实例脚手架。
+ *   - 直接构造 Agent（SessionManager 仅 type 导出），复用双实例脚手架。
  *   - 宿主测试跑 **built kernel**（@zooique/memora → dist），落地前须先 `npm run build`。
  */
 // @vitest-environment node

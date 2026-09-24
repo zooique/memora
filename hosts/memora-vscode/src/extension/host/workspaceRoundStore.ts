@@ -388,7 +388,7 @@ export class WorkspaceRoundStore implements IRoundStore {
   }
 
   /**
-   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（2026-09-09 step 原子落盘·档2）。
+   * 列出指定日期最近未完成（pending/error）的崩溃残留轮（step 原子落盘）。
    *
    * 崩溃发生在 appendAssistant 完成前：该轮 refCount=0、未登记会话 roundIds，宿主从会话列表
    * 无法发现；但其过程可能已由 step 原子检查点落盘到 pending Round——重启后经此只读口
@@ -404,9 +404,9 @@ export class WorkspaceRoundStore implements IRoundStore {
   listInterruptedRecent(date: string, limit?: number): Round[] {
     // 崩溃残留轮 = refCount 0 + 未完成（pending/error），按创建日期精确过滤；先索引判型避免全量读盘
     //
-    // ⚠️ `'error'` 是**预留态**（2026-09-10 G36 裁决②「明示收起」，与内核
+    // ⚠️ `'error'` 是**预留态**（明示收起，与内核
     // `inMemoryRoundStore.listInterruptedRecent` 同款语义）——全仓零写点，仅与 'pending'
-    // 共用本打捞条件。⚠️ `interrupted` **不入本打捞口**（2026-09-15 新增状态）：运行期收场已
+    // 共用本打捞条件。⚠️ `interrupted` **不入本打捞口**：运行期收场已
     // 即时标 interrupted 且 refCount 0→1，不再符合 `refCount===0` 的崩溃孤儿条件，属"已收场的
     // 停 turn"。**勿因 grep 到零写点而删**（它是打捞条件的组成部分，非死代码）。
     const candidates = Array.from(this.index.values())
@@ -449,7 +449,7 @@ export class WorkspaceRoundStore implements IRoundStore {
     return this.index.size;
   }
 
-  // ⚠️ 曾有 `clearCache()`（清空 cache、保留 index）于 2026-09-21 站 62 删除：
+  // ⚠️ 曾有 `clearCache()`（清空 cache、保留 index）已删除：
   // 全仓零调用、零测试，且它会破坏 `cache.refCount ≡ index.refCount ≡ 文件 refCount`
   // 不变量——incrementRef/decrementRef 只在 cached 命中时回写 Round 文件，清缓存会让
   // 文件里的 refCount 停在旧值（索引与文件分叉，重载后 round.refCount 读到脏值）。

@@ -4070,9 +4070,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 回退补齐后同步徽章（chat_role_packs 可能先于 chat_role_pack 到达）
       updateRoleBadge();
     } else if (msg.type === 'skills_loaded') {
-      // 动态技能清单（SSOT 收紧，2026-08-25）：与设置面板同一来源，重建下拉列表
-      // SKILL-S2（2026-09-22）：`disabled` 必须随行带出——此前 `map` 丢弃该字段，
-      // 用户通道看不出技能已禁用（选它就等于静默落空）。标记仅供显示，**不做拦截**：
+      // 动态技能清单（SSOT 收紧）：与设置面板同一来源，重建下拉列表
+      // `disabled` 必须随行带出——丢弃该字段会让用户通道看不出技能已禁用
+      // （选它就等于静默落空）。标记仅供显示，**不做拦截**：
       // 真源判定在 host（`isSkillDisabled`），webview 若自行拒绝会在 reload 后假拒绝。
       skillOptions = msg.skills.map((s) => ({ name: s.name, disabled: s.disabled }));
       if (skillPickerMenu) {

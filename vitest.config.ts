@@ -13,8 +13,8 @@ export default defineConfig({
     // 覆盖边界 = 内核 src/ + protocolGuard 守卫。protocolGuard 是纯源码解析（无宿主运行时
     // 依赖），保留在根路径供内核门禁独立守协议 SSOT（shared/protocol.ts）。
     // 宿主测试（含 webview jsdom）一律归宿主 vitest 独立跑（host:test），
-    // 不在此 include —— 曾因双 include 导致 webview 全套被跑两遍且根门禁被它的
-    // 30s 重放用例拖慢/超时（2026-09-19 chatView R3/R4 flake），已收敛。
+    // 不在此 include —— 双 include 会让 webview 全套被跑两遍、根门禁被其
+    // 30s 重放用例拖慢/超时（chatView R3/R4 flake）。
     // webview 的 jsdom 环境由**需要 DOM 的测试文件**在自身头部声明 `@vitest-environment jsdom`
     // （移除 environmentMatchGlobs 后，per-file 声明是唯一来源）。
     // ⚠️ **实测并非「全部已声明」**：webview/** 下仍有一批纯逻辑测试文件不带该声明 → 按宿主
@@ -49,9 +49,9 @@ export default defineConfig({
         lines: 80,
         // 覆盖率阈值的**判据 SSOT = 本文件**（机器只执行此处的量）。`.trae/rules/testing_rules.md` §3
         // 与本处同源对齐；冲突时**以本文件为准并回填文档**，不得反向。
-        // 原注释的错法（已于 2026-09-16 订正）：引「文档是配置的描述，而非独立目标」推出「故以文档为准」——
-        // 引文说文档是描述，结论却说文档是权威，**引文与结论反向**，属自相矛盾。
-        // functions 由 83 恢复到 88：88 是 testing_rules.md §3 标注的「1.0 发布阈值」（**意图来源**，
+        // 反向（以文档为准）不成立：「文档是配置的描述，而非独立目标」——
+        // 引文说文档是描述，若结论说文档是权威，**引文与结论反向**，属自相矛盾。
+        // functions 取 88：88 是 testing_rules.md §3 标注的「1.0 发布阈值」（**意图来源**，
         // 非本处推导），83 系 99edf24c 的漂移；实测 92.27%，置 88 后仍有约 4.3 点缓冲。
         // 已知不齐：functions 缓冲（≈4.3）明显小于另三项（≈10）——成因是它按「恢复原始意图」而非
         // 「按实测留量」定值。若要统一口径，须作为「改判据」动作带观测 + 退出条件后再动，不顺手改。

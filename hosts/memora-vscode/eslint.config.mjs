@@ -24,7 +24,7 @@ export default [
       'eqeqeq': ['warn', 'always'],
     },
   },
-  // D4 姊妹缺口（2026-09-16）：宿主根的构建脚本与配置此前不在**任何**门内——
+  // 宿主根的构建脚本与配置也在门内——
   // 上一块只匹配 `src/**/*.ts`，而 `esbuild.config.mjs` 恰恰是产出「用户实际运行的
   // dist/extension/extension.js」的那支脚本。门禁边界画在「源码可测性」而非「运行物」，
   // 与内核的 scripts/*.mjs 缺口同根，故同批补齐。
@@ -49,7 +49,7 @@ export default [
       eqeqeq: ['warn', 'always'],
     },
   },
-  // 宿主根的 TS 配置（vitest.config.ts）——同理，此前不在任何门内
+  // 宿主根的 TS 配置（vitest.config.ts）——同理，同样在门内
   {
     files: ['*.ts'],
     languageOptions: {

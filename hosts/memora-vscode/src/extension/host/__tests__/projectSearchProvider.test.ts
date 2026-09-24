@@ -7,8 +7,8 @@
  *   - searchFiles：Windows 反斜杠统一为正斜杠
  *   - searchText：真实临时目录 fs 扫描（content 模式 = 宿主 Node fs 受限实现）
  *     · 按关键词命中 路径:行号:预览 / 大小写不敏感 / exclude 过滤 / 忽略标准目录 / mtime 缓存
- *     · 诚实化上报（SEARCH-1）：截断与主因 / 已扫文件数 / 部分检索 / 读取失败 / 单文件上限精确判定
- *     · 精确优先 + 零命中回退（F1）：整串命中不放宽，整串零命中才用内核下发的 terms 放宽
+ *     · 诚实化上报：截断与主因 / 已扫文件数 / 部分检索数 / 读取失败数 / 单文件上限精确判定
+ *     · 精确优先 + 零命中回退：整串命中不放宽，整串零命中才用内核下发的 terms 放宽
  *     · 🔴 Canary：自埋唯一 token 必被搜到（仪器自检——"你从没见它非零过的零不是证据"）
  */
 import { describe, it, expect, vi, beforeEach, afterAll } from 'vitest';
@@ -24,7 +24,7 @@ vi.mock('vscode', () => ({
   },
 }));
 
-// 模拟 OS 级「不可读」：本环境**造不出**真不可读文件（2026-09-16 实测三条路全断——
+// 模拟 OS 级「不可读」：本环境**造不出**真不可读文件（实测三条路全断——
 // ① chmod 0o000 后 readFileSync 仍成功；② symlinkSync 在临时目录静默失败（existsSync=false、
 // readdir 不列该项）；③ 在仓库目录则退化为空文件（stat 成功）。故对 stat/open 打桩抛 EACCES。
 const { failStat, failOpen } = vi.hoisted(() => ({
@@ -124,7 +124,7 @@ describe('VscodeProjectSearchProvider', () => {
       );
     });
 
-    it('裸词零命中且下发 terms：按名称子串 OR 放宽并回报 relaxed/termsUsed（SEARCH-1）', async () => {
+    it('裸词零命中且下发 terms：按名称子串 OR 放宽并回报 relaxed/termsUsed', async () => {
       const provider = createVscodeProjectSearchProvider(root);
       // 第一轮 query 原样 glob 零命中；第二轮才按词包 `**/*{term}*/` 子串命中
       vi.mocked(vscode.workspace.findFiles)
@@ -317,7 +317,7 @@ describe('VscodeProjectSearchProvider', () => {
     });
   });
 
-  describe('searchText · 诚实化上报与放宽（SEARCH-1）', () => {
+  describe('searchText · 诚实化上报与放宽', () => {
     it('🔴 Canary：自埋唯一 token 必被搜到（仪器自检）', async () => {
       // 依据："你从没见它非零过的零，不是证据"——先证仪器可用，再谈"没搜到"是否可信
       const tmp = makeTmp();

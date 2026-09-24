@@ -9,7 +9,7 @@
 export const BUILTIN_FALLBACK_PACK = 'memora助手';
 
 /**
- * 小组会议组员数量上限（② 组队规格，2026-08-30）：组员 ≤ 4（5 人组 = 队长 1 + 组员 4）。
+ * 小组会议组员数量上限（组队规格）：组员 ≤ 4（5 人组 = 队长 1 + 组员 4）。
  *
  * SSOT 单一来源：内核校验 warning + 会议消费端截断共用；宿主（UI 勾选层 / 保存校验）经
  * `@zooique/memora` import 本常量，webview 侧由宿主随 roles_loaded 下发（浏览器沙箱不可直连内核）。

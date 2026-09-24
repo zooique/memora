@@ -301,7 +301,7 @@ describe('SecurityGuard · 路径白名单', () => {
   });
 });
 
-describe('SecurityGuard · 动态 allowedPaths（G8）', () => {
+describe('SecurityGuard · 动态 allowedPaths', () => {
   let projectPath: string;
   let dataDir: string;
   let guard: SecurityGuard;

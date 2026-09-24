@@ -99,8 +99,8 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   /**
    * 展示设置面板全局通知 toast（settingsPanel 通过 notice 推送操作反馈）。
    *
-   * 2026-09-19 补全：此前 settings 视图无 notice 消费，角色/模型/引擎/审批等操作反馈
-   * 被静默丢弃（SSOT 跨侧断链）。实现为最小侵入——不复用 chatView 的 activity-history
+   * settings 视图消费 notice（角色/模型/引擎/审批等操作反馈）的唯一入口——
+   * 不消费则操作反馈被静默丢弃（SSOT 跨侧断链）。实现为最小侵入——不复用 chatView 的 activity-history
    * 复杂度，仅单条临时胶囊条，textContent 渲染防注入。
    *
    * @param level 级别（error 标红醒目，info 常规）

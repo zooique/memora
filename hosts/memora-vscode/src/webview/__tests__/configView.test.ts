@@ -347,7 +347,7 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     expect(document.getElementById('btnAdd')?.getAttribute('title')).toContain('新增一个大模型 API 配置');
   });
 
-  // ─── G5 后台模型通道（2026-08-23） ───
+  // ─── 后台模型通道 ───
 
   it('cfg_loaded 渲染后台模型下拉选项（全部 Provider + 默认同实时对话）', () => {
     mountConfigView();

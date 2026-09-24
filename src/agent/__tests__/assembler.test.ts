@@ -215,7 +215,7 @@ describe('assembleComponents', () => {
   // 背景（复核实锤）：同一份「模型可看到的技能集」有两个交付通道 ——
   //   ① L1 枚举 `SkillManager.buildSkillList()`（写进 system prompt）
   //   ② `list_skills` 工具（assembler 注入 toolExec.listSkills 回调，>50 技能时的动态查询）
-  // S4 禁用过滤当初只落到 ①，② 仍只过滤 description（assembler.ts 旧实现自写 filter），
+  // 禁用过滤当初只落到 ①，② 仍只过滤 description（自写 filter），
   // 而该处注释早已自称「两通道过滤标准必须一致」——注释声明与实现不同源，即本仓定义的「伤」。
   // 后果：模型改用 list_skills 时仍能看到并激活已禁用技能，禁用形同虚设且静默。
   //

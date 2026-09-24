@@ -1,9 +1,9 @@
 /**
- * 装配链路验证脚本 — 短板 1 的补测试（G5 配置→注入→生效链路）
+ * 装配链路验证脚本 — 配置→注入→生效链路的行为锁
  *
- * 目的：把"配置→装配→Agent 生效"这条此前无行为测试覆盖的链路，用可复现脚本锁住：
+ * 目的：把"配置→装配→Agent 生效"这条链路用可复现脚本锁住：
  *   1. createBackgroundProvider 工厂：未配置 → undefined；配置 → 返回 Provider 实例
- *   2. search_memories 纯关键词链路：预置记忆 → searchByKeyword 命中（B0 收编后无向量通道，
+ *   2. search_memories 纯关键词链路：预置记忆 → searchByKeyword 命中（无向量通道，
  *      similarity 恒 0；关键词=字面匹配，未命中属预期，LLM 换词重试）
  *
  * 运行方式（在 hosts/memora-vscode 下）：
@@ -90,7 +90,7 @@ async function main(): Promise<void> {
   report('已配置后台通道 → 返回 LlmProvider 实例', bg !== undefined, `createBackgroundProvider=${bg ? bg.name : 'undefined'}`);
 
   // ─── 2. search_memories 纯关键词链路 ──────────────────────────
-  // B0 收编（2026-09-18）：无向量通道，searchByKeyword 纯关键词；命中=字面匹配。
+  // 无向量通道，searchByKeyword 纯关键词；命中=字面匹配。
   console.log('\n=== search_memories 纯关键词链路 ===');
   const agent = await makeAgent(workspace);
   const hits = await agent.memory.searchByKeyword('JSON 零依赖');

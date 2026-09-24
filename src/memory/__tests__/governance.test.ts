@@ -16,7 +16,7 @@ import { GOVERNANCE_SOURCES } from '@/memory/governance.js';
 describe('memory/governance · 常量契约', () => {
   describe('GOVERNANCE_SOURCES 治理源列表', () => {
     it('应为空（记忆库无独立治理源）', () => {
-      // 各 source 的归属（对齐 ADR-025）：
+      // 各 source 的归属：
       //   - persona / rule / skill 归角色包管理，不写入记忆库
       //   - work-projection 不入记忆库
       //   - profile 由 round-summary 的 type=preference 召回承载

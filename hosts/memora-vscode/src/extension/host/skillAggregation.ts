@@ -47,10 +47,10 @@ function sourceOf(
 }
 
 /**
- * 同名去重优先级（数值小 = 胜出）。**角色包 > 用户 > 内置**（2026-09-22 反转 builtin/user 位，
- * 对齐主流「用户可覆盖内置」）——与（a）内核装载层 loadExtraDir 用户同名覆盖内置（S5）同向；
+ * 同名去重优先级（数值小 = 胜出）。**角色包 > 用户 > 内置**（对齐主流「用户可覆盖内置」）——
+ * 与（a）内核装载层 loadExtraDir 用户同名覆盖内置同向；
  * （b）注入面（`skillPromptFor` / 内核 `read_skill`）同向：角色包优先、全局池次之。
- * 反转前为「内置 > 用户」——与内核装载层方向相反，UI 呈现与实际生效者错位。
+ * 若为「内置 > 用户」则与内核装载层方向相反，UI 呈现与实际生效者错位。
  *
  * ⚠️ 与 `SOURCE_ORDER` 是两件事，不可合并：本表管**同名时留谁**，`SOURCE_ORDER` 管**列表怎么排**。
  */
@@ -99,12 +99,11 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   //
   // ⚠️ **作用域限全局技能池（builtin/user）**：`disabledNames` 是 `SkillManager` 的判据集，
   // 而角色包技能走 `rolePackManager`、**不经** `SkillManager.get()` ⇒ 对角色包技能禁用本就无效。
-  // 故此处不得给 `rolepack` 层打标——那是 UI 谎报（本次复核刚清理过同类「声明与实现不同源」）。
+  // 故此处不得给 `rolepack` 层打标——那是 UI 谎报（「声明与实现不同源」）。
   //
-  // **定案（2026-09-22）**：角色包技能**与禁用清单免疫**——它属于当前角色、与角色融为一体，
+  // **定案**：角色包技能**与禁用清单免疫**——它属于当前角色、与角色融为一体，
   // 启停语义 = **随角色启停**（不激活该角色即不可用，切换角色即技能集切换）。不存在「按名禁用
-  // 角色包技能」的合法请求：想停 = 换角色 / 改角色包内容，而非禁用清单加名。原「独立设计问题
-  // （登记 3.1.0）」正式销项，本作用域是**定案约束**而非待定占位。测试锚点：
+  // 角色包技能」的合法请求：想停 = 换角色 / 改角色包内容，而非禁用清单加名。本作用域是**定案约束**。测试锚点：
   // `listVisibleSkills` 禁标守卫（rolepack 层禁打标）+ `isSkillDisabled` 判据同源守卫。
   const disabledNames = new Set(sm?.disabledSkillNames ?? []);
   return [...byName.values()]
@@ -131,11 +130,10 @@ export interface ResolvedSkill {
 /**
  * 技能正文解析**唯一收口**（SSOT）：角色包 → 全局（与内核 `read_skill` 同序）。
  *
- * ⚠️ 顺序是契约（2026-09-22 收口）：此前宿主有**两份**各自实现且**方向相反**——
- * composer 注入（本模块，2026-09-21 订正为角色包优先）与设置面板 L2 预览
- * （settingsPanel 原「全局优先」未同步），同名技能双存时「面板里点开看到的正文」
+ * ⚠️ 顺序是契约：composer 注入（本模块，角色包优先）与设置面板 L2 预览
+ * 必须同序（「全局优先」与之方向相反），否则同名技能双存时「面板里点开看到的正文」
  * 与「composer 注入 / LLM `read_skill` 拿到的正文」分叉。
- * 现统一收口到本函数：**新增消费点一律调它，勿再自写两级回退**。
+ * 本函数是唯一收口：**新增消费点一律调它，勿再自写两级回退**。
  *
  * @returns 命中则返回 `{ content, source }`；两源都没有返回 null（空态由调用方决定）
  */
@@ -170,7 +168,7 @@ export async function skillPromptFor(agent: Agent, skillName: string): Promise<s
 }
 
 /**
- * 技能是否因「已禁用」而不可用（SKILL-S2，2026-09-22）。
+ * 技能是否因「已禁用」而不可用。
  *
  * 为何需要：用户通道（composer 下拉按名指定）在技能被禁用时**静默落空** ——
  * `skillPromptFor` 按既有契约返回空串「技能不存在，不影响正常发送」（该契约本身是对的，
@@ -180,7 +178,7 @@ export async function skillPromptFor(agent: Agent, skillName: string): Promise<s
  * 判据与 `resolveSkill` **同序**（角色包 → 全局池），不可自行反序：
  *   ① 角色包内嵌同名技能命中 → **未禁用**（`disabledNames` 是 `SkillManager` 的判据集，
  *      对 `rolePackManager` 无管辖权——角色包技能随角色启停、对禁用集免疫，见
- *      `listVisibleSkills` 内的定案声明 2026-09-22）；
+ *      `listVisibleSkills` 内的定案声明）；
  *   ② 全局池快照（`list`，**含**禁用项）内确实存在该名且命中 `disabledSkillNames` → 已禁用。
  *
  * ⚠️ 判据源必须是内核 `disabledSkillNames`（**实际生效集**），**不得**改读宿主 workspace 配置：
@@ -206,7 +204,7 @@ export function isSkillDisabled(agent: Agent, skillName: string): boolean {
  *
  * 判据：`disabledNames`（内核真源）∖ 三源清单名集（`listVisibleSkills` 聚合结果）。
  * ⚠️ 名单只用 `listVisibleSkills` **同一次聚合**，不得自造第二份技能名集 —— 否则与
- * UI 展示的清单分叉（SKILL-S2 血训：同一清单多通道仅改一处）。因此入参直接收
+ * UI 展示的清单分叉（血的教训：同一清单多通道仅改一处）。因此入参直接收
  * 已聚合的 `SkillDto[]` 而非重新聚合，调用方（settingsPanel.loadSkills）复用既有结果。
  *
  * @param disabledNames 禁用名（内核 `agent.skills.disabledSkillNames`，真源）

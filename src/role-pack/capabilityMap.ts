@@ -25,12 +25,12 @@ const CAPABILITY_TO_TOOLS: Readonly<Record<string, readonly string[]>> = {
   'web:fetch': ['web_fetch'],
   // 通用计算域：LLM 现写任意代码（判据 A+B：无轨迹）。宿主注入 ICodeExecutionProvider 才真正暴露
   'code:execute': ['run_code'],
-  // 任务域：task_table_* 已移出能力门控（2026-09-16 用户拍板：任务表是内核多步任务必要基建，
-  // 与 compress_context 同属默认常驻，见 toolExecutor.DEFAULT_EXPOSED_TOOLS）→ 不再由 rolePack
+  // 任务域：task_table_* 不在能力门控内（任务表是内核多步任务必要基建，
+  // 与 compress_context 同属默认常驻，见 toolExecutor.DEFAULT_EXPOSED_TOOLS）→ 不由 rolePack
   // 声明解锁，故**不映射**到白名单（映射=假特权：声明与否行为全同，徒增困惑）。
   // ⚠️ 本表**不保留** `task:plan` 条目（连空数组都不写）：在本函数内「键不存在」与「空数组」
   // 行为完全等价（均不产出工具），故不为它占位。能力名合法性由 validator 的 CAPABILITY_PATTERN
-  // （开放正则 `域:动作`）单点校验——内核**没有**集中式「中立能力字典」表，勿按旧注释去找。
+  // （开放正则 `域:动作`）单点校验——内核**没有**集中式「中立能力字典」表。
   // 内核内部能力（无工具映射，仅声明存在；实现按自身能力实现）
   'llm:summarize': [],
 };

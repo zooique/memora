@@ -47,7 +47,7 @@ export interface SourceHealthEntry {
   daysSinceLastAccess: number;
 }
 
-/** 记忆源诊断报告（纯事实观测，2026-09-09 弃用 status：score 退役后 avgScore 无数据源，记忆健康由 supersede/命中体现） */
+/** 记忆源诊断报告（纯事实观测，不设健康等级——记忆健康由 supersede/命中体现） */
 export interface SourceHealthReport {
   /** 各 source 事实观测 */
   sources: SourceHealthEntry[];
@@ -130,8 +130,8 @@ export class MemoryAdvisor {
 
   /**
    * 记忆源健康诊断：逐 source 计算记忆数量 / 最近访问天数（纯事实观测）。
-   * 2026-09-09 弃用 status 健康等级：score 退役后 avgScore 无数据源，且 G34 定性记忆无沉底语义，
-   * 记忆健康由 supersede（写时取代）/ 命中体现，无需榜单级 status 判定（daysSinceLastAccess 作冷记忆观测）。
+   * 不设健康等级：记忆健康由 supersede（写时取代）/ 命中体现，
+   * 无需榜单级 status 判定（daysSinceLastAccess 作冷记忆观测）。
    * 纯只读同步不调 LLM，用 getAllSources() 发现所有 source 标签（替代全量 search）。
    */
   sourceHealth(): SourceHealthReport {
@@ -175,7 +175,7 @@ export class MemoryAdvisor {
   /**
    * 关联推荐：不调 LLM 纯计算，综合 accessedAt（时效）+ source 多样性，
    * 返回"相关但尚未直接搜索到"的记忆。query 提供时结合搜索命中推荐，省略时基于最近使用。
-   * score 已退役（2026-09-09 阶段3），relevance 退化为纯时效（recency）
+   * relevance 为纯时效（recency）
    */
   suggest(query?: string, options: SuggestOptions = {}): SuggestHit[] {
     const {

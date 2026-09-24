@@ -1,5 +1,5 @@
 /**
- * 本地代码执行器 — ICodeExecutionProvider 的 Node.js 子进程实现（G2，2026-08-23）
+ * 本地代码执行器 — ICodeExecutionProvider 的 Node.js 子进程实现
  *
  * 用独立子进程执行 JavaScript，供 LLM 的 run_code 工具使用。
  *
@@ -38,7 +38,7 @@ const MAX_TIMEOUT_MS = 120_000;
 const SUPPORTED_LANGUAGES = new Set(['javascript', 'js', 'nodejs', 'node']);
 
 /**
- * 创建本地代码执行器（子进程隔离 + 超时强杀；G2 注入 Agent 启用 run_code 工具）
+ * 创建本地代码执行器（子进程隔离 + 超时强杀；注入 Agent 启用 run_code 工具）
  *
  * @returns 实现 ICodeExecutionProvider 的执行器
  */

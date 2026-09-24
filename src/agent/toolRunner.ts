@@ -96,9 +96,9 @@ export class ToolRunner {
       if (err instanceof MemoraError) {
         const code = err.errorCode ?? 'UNKNOWN';
         // 失败串末尾附带 suggestions（人读的「下一步」也要进 LLM 上下文）：
-        // 此前建议只在 `error.format()` 给宿主 UI，LLM 只收 title+detail——首击失败后
+        // 若建议只在 `error.format()` 给宿主 UI、LLM 只收 title+detail——首击失败后
         // LLM 收不到「使用 list_dir 查看目录结构」这类确切指令，只能凭证据自己悟（多绕一次）。
-        // B3 证据（siblingDirHint 清单）在 detail 内，本拼接补上命令式建议，双管齐下。
+        // 证据（siblingDirHint 清单）在 detail 内，本拼接补上命令式建议，双管齐下。
         const result =
           `[ERR:TOOL:${code}] 错误：${err.title}${err.detail ? ` — ${err.detail}` : ''}` +
           (err.suggestions.length > 0 ? ` 建议：${err.suggestions.join('；')}` : '');
@@ -121,7 +121,7 @@ export class ToolRunner {
 
   /**
    * 执行前检查：按顺序叠加两层闸门——只读 → 宿主 preExecutionCheck，任一命中提前返回。
-   * （3.0.0 起内核不再提供"审批"闸门："需审批"标签与回调已删除，审批决策统一移入宿主 preExecutionCheck。）
+   * （内核不提供"审批"闸门：无"需审批"标签与回调，审批决策统一归宿主 preExecutionCheck。）
    */
   private applyPrechecks(tc: ToolCall): PreCheckDecision {
     const name = tc.function.name;

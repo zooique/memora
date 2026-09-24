@@ -1,27 +1,17 @@
 /**
- * LLM 调用族（ARCH-3 P3-2 提取自 AgentLoop）
+ * LLM 调用族 — 模型触碰面（重试 / 任务类型路由 / 流式分类）
  *
- * 从 `loop.ts` 搬出的「③ 副作用与模型触碰面」：
- *
- *   - `LlmCaller.callWithRetry`  ← 原 `AgentLoop.callLlmWithRetry`（196 行）
- *   - `LlmCaller.resolveProvider` ← 原 `AgentLoop.resolveProvider`（19 行）
- *   - `LlmCaller.waitForRetryWithAbort` ← 原 `AgentLoop._waitForRetryWithAbort`（32 行）
- *   - `determineTaskType`         ← 原 `AgentLoop.determineTaskType`（自由函数，30 行）
- *
- * ## 为什么它们可搬（与 F2 编排族的分水岭）
- *
- * 原族的 loop 私有 state 触点**全是「可注入的协作者」**（metrics / strategy / contextManager /
- * tracer / opts），没有一个是「loop 自己的可变状态」。故可经构造注入取值器（getter）后整体搬走，
- * 属「换位置仍自治」；而 F2（`executeToolCalls` 16 触点含 7 处写）是编排本体，不可搬。
+ * 本族的 loop 私有 state 触点**全是「可注入的协作者」**（metrics / strategy / contextManager /
+ * tracer / opts），没有一个是「loop 自己的可变状态」，故经构造注入取值器（getter）取用即可，
+ * 属「换位置仍自治」；而工具编排本体（`executeToolCalls`，多处写 loop 状态）不在此族。
  *
  * ## 两条不可回退的纪律
  *
  * 1. **必须传 getter 而非快照**：`strategy` / `provider` 均为运行时可热切换
  *    （`setStrategy` 浅合并新对象、`setProvider` 改 `opts.provider`），且
- *    `strategy.errorHandling` 在**重试循环体内**被读 3 次——传快照会在重试中途读到旧值，
- *    与搬前行为不一致。
- * 2. **`routeCache` 仍是 loop 持有并跨族共享**：它在**每轮 turn 入口**（`processUserInput`）
- *    被 `clear()`，而 turn 内单轮问答查表即中——若把 Map 搬进本类，若调用方逐次新建实例则
+ *    `strategy.errorHandling` 在**重试循环体内**被读 3 次——传快照会在重试中途读到旧值。
+ * 2. **`routeCache` 由 loop 持有并跨族共享**：它在**每轮 turn 入口**（`processUserInput`）
+ *    被 `clear()`，而 turn 内单轮问答查表即中——若改为本类实例字段且调用方逐次新建实例，
  *    **每轮都重算路由**（跨轮缓存失效），而缓存的语义是「单轮内复用，跨轮重置」。故 Map 归
  *    loop，本类只经读写回调操作它。
  */
@@ -98,7 +88,7 @@ export interface LlmCallResult {
    */
   textStreamed: boolean;
   /**
-   * P2 回抽（A1，2026-09-12）：本闭环曾逐字流式 yield 进正文区的**原文**（stage='answer'）。
+   * 回抽：本闭环内逐字流式 yield 进正文区的**原文**（stage='answer'）。
    *
    * 首轮（无工具史）消息级分类前无法预判工具轮 → 文本已实时流式进正文；一旦收到 toolCalls，
    * 结果路由据此发 `narrate.withdrawn` 告知消费者「该段其实属过程叙述，先撤回再渲染」。
@@ -179,15 +169,15 @@ export class LlmCaller {
     let streamStarted = false;
     let lastError: Error | null = null;
     let aborted = false;
-    // P2 文本通道剥离：是否已进入「工具调用轮」（收到 toolCalls 信号后后续 text 均属叙述）
+    // 文本通道剥离：是否已进入「工具调用轮」（收到 toolCalls 信号后后续 text 均属叙述）
     let isToolCallTurn = false;
-    // P2 叙述累积：工具轮 text（同条 content + 信号后的后续 content），route 时作为 narrate 发射
+    // 叙述累积：工具轮 text（同条 content + 信号后的后续 content），route 时作为 narrate 发射
     let pendingNarrate = '';
     /** 本轮是否曾逐字流式 yield 过正文（纯文本闭环逐字；工具闭环延迟分类则全程 false） */
     let textStreamed = false;
-    /** P2 回抽：已流式 yield 进正文的原文（A1，供工具轮撤回；见 LlmCallResult.streamedText） */
+    /** 回抽：已流式 yield 进正文的原文（供工具轮撤回；见 LlmCallResult.streamedText） */
     let streamedText = '';
-    // 消息级延迟分类（K1 窄化，2026-09-02）：本闭环已执行过工具（toolExecutedThisTurn）后，
+    // 消息级延迟分类：本闭环已执行过工具（toolExecutedThisTurn）后，
     // 后续 LLM 消息的文本整段缓冲到消息结束再分类——工具轮 → narrate（含信号前全文），
     // 纯文本 → 由路由补发 text。单轮问答/首轮（无工具史）保持逐字流式，不受影响。
     const deferTextToMessageEnd = this.deps.hasToolExecutedThisTurn();
@@ -224,9 +214,9 @@ export class LlmCaller {
       llmSpan.setAttribute('systemPromptHash', sha256Fingerprint(systemPrompt));
     }
 
-    // ─── 发送边界守卫（TOOLPAIR-2 Step 2）───
+    // ─── 发送边界守卫 ───
     // 坏批次（assistant.tool_calls 未成形）绝不上线路：在发往前拦截、fail-fast。
-    // 健康态散点（FAIL-1/G1/G2/G3）已按构造保证成形，故此处**健康态恒零命中**；
+    // 健康态散点已按构造保证成形，故此处**健康态恒零命中**；
     // 命中 = 某散点回归（内核 bug 信号），须响亮暴露而非静默吞/重试（坏批次重试无益且掩盖根因），
     // 故抛**非临时错误**，经 loop（processUserInput rethrow）外显到宿主出错面，止损本轮 token。
     const pairingViolations = auditToolCallPairing(safeMessages);
@@ -294,13 +284,13 @@ export class LlmCaller {
               yield { type: 'text', content: chunk.content, stage };
             }
           }
-          // 模型思考内容（thought）：实时透传展示，**永不拼入 fullContent**（CoT 防护，R11 双轨隔离——
+          // 模型思考内容（thought）：实时透传展示，**永不拼入 fullContent**（CoT 防护，双轨隔离——
           // 正文轨与记忆轨不碰 thought，仅展示轨消费）。增量片段，宿主自行累积。命名用 thought
           // 避开多模型路由任务 TaskType='reasoning' 与 ProcessEvent 既有相位 'thinking'。
           if (chunk.thought) {
             yield { type: 'thought', content: chunk.thought };
           }
-          // 工具意图预告（2026-09-17）：tool_call name 成形即透传，宿主提前渲染「准备中」工具行。
+          // 工具意图预告：tool_call name 成形即透传，宿主提前渲染「准备中」工具行。
           // 瞬态展示轨：不落 ProcessEvent（宿主侧据此不 emitEvent）；id 可能为空串（provider 未发）
           if (chunk.partialToolCall) {
             yield {
@@ -326,8 +316,8 @@ export class LlmCaller {
         metrics.totalOutputTokens += contextManager.estimateTokens([
           { role: 'assistant', content: fullContent },
         ]);
-        // 空响应重试（2026-09-15 边界补缝，审计：真机空响应一次定生死不入重试）：
-        // 此前 for await 正常结束后无论内容是否空都 `break` 跳出，空响应（200 但 0 token 的
+        // 空响应重试（真机空响应一次定生死，不入重试）：
+        // 若 for await 正常结束后无论内容是否空都 `break` 跳出，空响应（200 但 0 token 的
         // provider 瞬态抽风）直接落到 loop 的英文兜底文案，用户被迫重发——与「网络错误会重试」
         // 不对称。此处在未耗尽重试次数时把「全空结果」视为一次失败，`continue` 走既有 retry
         // 退避（attempt++ → waitForRetryWithAbort + 重置流式状态），给瞬态一次纠偏机会。
@@ -347,7 +337,7 @@ export class LlmCaller {
         const e = toError(err);
         lastError = e;
 
-        // AbortError 语义分裂（2026-09-02 假中断排雷）：
+        // AbortError 语义分裂（假中断守卫）：
         //  - signal（宿主 / 插话控制器合并信号）已被 abort → 真实用户取消/插话，不重试直接退出
         //  - signal 未被 abort 却捕获 AbortError → provider/网络层内部中断（连接被抽断/代理异常），
         //    并非用户取消；抛出以示「连接中断」，避免内核谎报为「用户取消了对话」。

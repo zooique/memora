@@ -22,10 +22,10 @@ import type { RolePackValidationIssue } from './validator.js';
 
 // ── 回答前（Prepare）：认知策略 ──
 
-// 自动注入召回 6 键（ContextAssembly/MemoryRecallMode/SummaryRecall 等）随 memory-tool-recall-design
-// 阶段2 删除——记忆纯工具化召回后 prepare 无自动注入消费端，键族整体退役（strategyResolver/strategyKeys 同步）。
-// understandingConfirm 已回收（2026-09-13，turn-intent-reasoning-design Part 3）：confirm 并入
-// askOn['confirm']/ask_user 通道，echo 由 Turn 起始策略指令覆盖——不再作为开放键保留。
+// 无自动注入召回键（ContextAssembly/MemoryRecallMode/SummaryRecall 等）——记忆纯工具化召回，
+// prepare 无自动注入消费端（见 memory-tool-recall-design）。
+// 无 understandingConfirm 开放键——confirm 并入 askOn['confirm']/ask_user 通道，
+// echo 由 Turn 起始策略指令覆盖。
 
 // ── 回答中（Act）：行动策略 ──
 
@@ -120,7 +120,7 @@ export interface GlobalStrategy {
  * prepare 的 summaryFocus（round-summary 提炼视角）；
  * act 的 toolMode/temperature/outputLimit/toolStepLimit/providerRouting/multiStepReasoning/toolReadonly；
  * reflect 的 summary/selfReview/userFollowup；global 的 askOn/askLimit/errorHandling/contextLimit/stepBudget。
- * 边界纪律：understandingConfirm 已回收（2026-09-13，见文件头注）；costBudget 键已撤下（2026-08-28：内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
+ * 边界纪律：无 understandingConfirm 开放键（并入 askOn['confirm']/ask_user，见文件头注）；无 costBudget 键（内核无定价能力、宿主无执行者，无消费者的策略键不保留，遵循"预留键非承诺"纪律）。
  */
 export interface BehaviorStrategy {
   /** 回答前认知策略 */
@@ -255,7 +255,7 @@ export interface RolePack {
 export interface RolePackAssembly {
   /** 角色包元数据 */
   readonly meta: RolePackMeta;
-  /** 来源文件路径（manifest.json 绝对路径，2026-08-30 透传，供宿主区分内置/用户来源） */
+  /** 来源文件路径（manifest.json 绝对路径，供宿主区分内置/用户来源） */
   readonly filePath: string;
   /** 合并后的 persona prompt（含规则注入与主动提问指令） */
   readonly personaPrompt: string;
@@ -267,8 +267,8 @@ export interface RolePackAssembly {
   readonly strategy: BehaviorStrategy;
   /** 角色性格特征（traits），从 persona.md frontmatter 解析（traits.xxx = 0-1 数值），供宿主情感计算 */
   readonly traits?: Record<string, number>;
-  /** manifest 校验问题（G29 健康徽章数据源）：装载时 validateManifest 全量 issues（含 warning）。
-   *  可选向后兼容（旧装配无此字段）；宿主 UI 据此叠加健康徽章 + 问题列表，镜像技能 G22 徽章模式。 */
+  /** manifest 校验问题（健康徽章数据源）：装载时 validateManifest 全量 issues（含 warning）。
+   *  可选；宿主 UI 据此叠加健康徽章 + 问题列表，镜像技能徽章模式。 */
   readonly validationIssues?: readonly RolePackValidationIssue[];
 }
 
@@ -288,7 +288,7 @@ export interface RolePackManifestSkill {
     readonly resources: ReadonlyArray<{
       readonly path: string;
       readonly size: number;
-      /** 资源来源子目录（resources/references，B1 兼容主流 references/ 辅助文档目录），read_resource 据此选择读取基目录；取值 SSOT 在 `utils/scanner` */
+      /** 资源来源子目录（resources/references，兼容主流 references/ 辅助文档目录），read_resource 据此选择读取基目录；取值 SSOT 在 `utils/scanner` */
       readonly subdir?: ResourceSubdir;
     }>;
     readonly scripts: ReadonlyArray<{

@@ -48,7 +48,7 @@ export interface SeedMocks {
   history: {
     appendUser: ReturnType<typeof vi.fn>;
     appendAssistant: ReturnType<typeof vi.fn>;
-    // 非正常收场统一收口（2026-09-15）：orchestrator.act 对 aborted/failed 共用本原语
+    // 非正常收场统一收口：orchestrator.act 对 aborted/failed 共用本原语
     appendInterrupted: ReturnType<typeof vi.fn>;
     registerPendingArchive: ReturnType<typeof vi.fn>;
   };
@@ -60,7 +60,7 @@ export interface SeedMocks {
     clearPlan: ReturnType<typeof vi.fn>;
     // 在途计划谓词（SSOT = SessionManager.hasInflightPlan）：会议骨架预置守卫消费
     hasInflightPlan: ReturnType<typeof vi.fn>;
-    // 形态② 兜底收尾（PLAN-SYNC-1 ①）：act 正常收尾分支触发，测试可断言调用/不调用
+    // 形态② 兜底收尾：act 正常收尾分支触发，测试可断言调用/不调用
     concludeActivePlanItemIfPlanFullyReached: ReturnType<typeof vi.fn>;
   };
   rolePackManager: {
@@ -69,7 +69,7 @@ export interface SeedMocks {
     resolveRoundAssemblyRole: ReturnType<typeof vi.fn>;
     setRoundAssemblyRole: ReturnType<typeof vi.fn>;
     buildTeamContextBlock: ReturnType<typeof vi.fn>;
-    // 会议机制骨架预置（2026-09-07 回归）：确定性骨架单入口（默认 null 不触发）
+    // 会议机制骨架预置：确定性骨架单入口（默认 null 不触发）
     tryBuildMeetingPlan: ReturnType<typeof vi.fn>;
   };
   contextPreparer: {

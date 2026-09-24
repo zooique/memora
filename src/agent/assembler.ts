@@ -122,9 +122,9 @@ export function buildSystemPromptPrefix(
 /**
  * Agent 门面注入的稳定能力（接线下沉载体）
  *
- * 此前 8 个接线回调平铺在 Agent.assembleComponents 内联闭包 + AssembleCallbacks
- * 逐字段重复声明；收进单一 `hooks` 后，Agent 只传稳定能力（emit/守卫/暂停），
- * 接线闭包语义在组装器内唯一实现（装配逻辑单一真理源）。
+ * 接线回调收进单一 `hooks`：Agent 只传稳定能力（emit/守卫/暂停），
+ * 接线闭包语义在组装器内唯一实现（装配逻辑单一真理源）——回调平铺散落多处
+ * 会逐字段重复声明、各自漂移。
  *
  * 边界：只传 Agent 的稳定能力（非私有状态），避免反向依赖泄漏；
  * hooks 可选——缺省时按 no-op 接线，供纯工厂单测使用。
@@ -217,8 +217,8 @@ export interface AssembleInput extends AssembleRuntimeParams {
 /**
  * 子工厂参数：AssembleInput 共享字段 Pick 派生 + 阶段产物
  *
- * 只收敛了顶层 AssembleInput；子工厂此前内联手写 14 字段（其中 10 个与
- * AssembleInput 重复声明，locale 等后加字段曾同时改 3 处）。Pick 派生后
+ * 共享字段经 Pick 派生自 AssembleInput，不在子工厂另写重复声明——
+ * 并列声明会让新后加字段（如 locale）须同时改多处。派生后
  * 共享字段的类型由 AssembleInput 单一继承——新增字段只改 AssembleInput 一处，
  * 且同一字段两处类型不可能漂移（tsc 锁死）。
  */

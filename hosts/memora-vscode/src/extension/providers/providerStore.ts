@@ -265,7 +265,7 @@ export class ProviderStore {
   }
 
   /**
-   * 读取后台模型 Provider 的 name（G5 多 Provider 路由）
+   * 读取后台模型 Provider 的 name（多 Provider 路由）
    *
    * 空（undefined）= 后台任务与实时对话使用同一 Provider（未独立配置后台通道）。
    *
@@ -276,7 +276,7 @@ export class ProviderStore {
   }
 
   /**
-   * 设置后台模型 Provider 的 name（G5 多 Provider 路由）
+   * 设置后台模型 Provider 的 name（多 Provider 路由）
    *
    * name 为空字符串表示「清除后台独立配置」，后台任务回退到与实时对话相同 Provider。
    *
@@ -289,7 +289,7 @@ export class ProviderStore {
   }
 
   /**
-   * 获取后台 Provider 的完整配置（含真实 apiKey；G5）
+   * 获取后台 Provider 的完整配置（含真实 apiKey）
    *
    * 未配置后台通道（getBackgroundName 为空）或该 name 不存在时返回 undefined。
    *

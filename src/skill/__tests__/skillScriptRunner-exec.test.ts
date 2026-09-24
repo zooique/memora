@@ -2,7 +2,7 @@
  * skillScriptRunner-exec.test.ts — L1/L2 spawn 行为锁定（独立文件）
  *
  * 与 skillScriptRunner.test.ts（真实子进程执行）隔离：本文件对
- * `node:child_process.spawn` 做文件级 mock，锁定修复（2026-09-08，含审查批更新）：
+ * `node:child_process.spawn` 做文件级 mock，锁定修复（含审查批更新）：
  *   1. L1 spawn 选项三合一 —— windowsHide:true（不弹 conhost 黑框）
  *      + env 继承宿主（全量 process.env 超集）+ 源头禁色（FORCE_COLOR:0/NO_COLOR:1，
  *      对齐宿主 codeExecutor；回流净化由 toolExecutor sanitize 兜底剥残留）
@@ -36,7 +36,7 @@ function fakeChild(emit: (e: EventEmitter) => void) {
   return fake;
 }
 
-describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）', () => {
+describe('skillScriptRunner — L1/L2 执行修复 spawn 行为', () => {
   const mockedSpawn = vi.mocked(childProcess.spawn);
   afterEach(() => mockedSpawn.mockReset());
 
@@ -62,7 +62,7 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）'
       expect(env.NO_COLOR).toBe('1');
       expect(env.PATH).toBe(process.env.PATH);
       expect(env.MEMORA_TEST_VAR).toBe('test-var-456');
-      // 超时默认 60s（2026-09-08 由 30s 调大；上限 600s 见 MAX_TIMEOUT_MS）
+      // 超时默认 60s（上限 600s 见 MAX_TIMEOUT_MS）
       expect(calls[0]!.opts.timeout).toBe(60_000);
     } finally {
       delete process.env.MEMORA_TEST_VAR;
@@ -84,7 +84,7 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）'
     expect(calls[0]!.args).toEqual(['scripts/a.js', '--flag', 'v']);
   });
 
-  // ── S3（2026-09-22）：node 路径可注入 ──
+  // ── node 路径可注入 ──
   it('nodePath 注入 → spawn 命令用注入值而非 node（命令换、args 不变）', async () => {
     const calls: { cmd: string; args: string[] }[] = [];
     mockedSpawn.mockImplementation(((cmd: string, args: string[]) => {
@@ -227,7 +227,7 @@ describe('skillScriptRunner — L1/L2 执行修复 spawn 行为（2026-09-08）'
     expect(result.stderr).toContain('ENOENT');
   });
 
-  // ── L3：9009 空壳启动器 → cmd /c python 兜底（2026-09-17） ──
+  // ── L3：9009 空壳启动器 → cmd /c python 兜底 ──
   it.runIf(IS_WINDOWS)('Windows python 退出码 9009（Store 空壳启动器）→ py 亦 9009 → cmd /c python 成功', async () => {
     const calls: { cmd: string }[] = [];
     mockedSpawn.mockImplementation(((cmd: string) => {

@@ -142,11 +142,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.capabilities).toEqual([
       { capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' },
     ]);
-    // G29：合法包 validationIssues 为空数组（健康，宿主不渲染徽章）
+    // 合法包 validationIssues 为空数组（健康，宿主不渲染徽章）
     expect(active!.validationIssues).toEqual([]);
   });
 
-  it('G29 校验透出：带未知键 manifest 的 warning issues 经装配对外可见（不阻塞装载）', async () => {
+  it('校验透出：带未知键 manifest 的 warning issues 经装配对外可见（不阻塞装载）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
     // 未知键 keywords 走「unknown 键 warning + 忽略」宽容通道（键级渐进设计）
@@ -250,7 +250,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     expect(active!.traits).toBeUndefined();
   });
 
-  it('规则解析支持多格式（ADR-025 档 3：列表/段落/引用/标题/代码块/注释）', async () => {
+  it('规则解析支持多格式（列表/段落/引用/标题/代码块/注释）', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
     // 混合 markdown 写法：列表（历史格式）+ 段落合并 + 引用块去 > + 标题/代码块/注释/表格排除
@@ -480,7 +480,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
 
     const manager = new RolePackManager(dir);
     await manager.load('技术文档工程师');
-    // 设定记忆归角色包后，规则以角色包为准（ADR-025 收敛语义）
+    // 设定记忆归角色包后，规则以角色包为准
     expect(manager.getActiveRules()).toEqual(['术语保持一致', '不编造 API']);
 
     // 无激活时返回空数组（§7 降级优先：不装配失败）
@@ -762,7 +762,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
       await manager.load('组长A');
       const block = manager.buildTeamContextBlock();
-      // 确定性骨架已由 tryBuildMeetingPlan 预置（2026-09-07「最小受控起点」半反转），文案告知 LLM 骨架存在
+      // 确定性骨架已由 tryBuildMeetingPlan 预置（「最小受控起点」半反转），文案告知 LLM 骨架存在
       expect(block).toContain('小组会议');
       expect(block).toContain('骨架');
       expect(block).toContain('rolePack=对应组员');
@@ -771,7 +771,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(block).toContain('禁止用 write_file');
     });
 
-    describe('tryBuildMeetingPlan：骨架预置（2026-09-07 最小受控起点半反转）', () => {
+    describe('tryBuildMeetingPlan：骨架预置（最小受控起点半反转）', () => {
       it('组长 + 「小组会议」→ 组长开场步 + 组员各一步(带 rolePack) + 汇总步(无 rolePack)', async () => {
         await writeTeamPacks();
         const manager = new RolePackManager(dir);

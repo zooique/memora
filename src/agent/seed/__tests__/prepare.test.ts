@@ -95,7 +95,7 @@ describe('SeedPrepare 回答前', () => {
 
     await collectGen(new SeedPrepare(deps).run('小组会议：讨论X', new AbortController().signal));
 
-    // overwrite 预置（writePlan 语义修复后为真清空——新会议替换一切旧计划）
+    // overwrite 预置（overwrite = 真清空——新会议替换一切旧计划）
     expect(mocks.sessionManager.writePlan).toHaveBeenCalledWith('overwrite', steps);
   });
 

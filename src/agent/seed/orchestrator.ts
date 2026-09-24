@@ -1,10 +1,10 @@
 /**
- * 种子 turn 编排器 — 单 turn 动态 step 循环承载所有复杂度（2026-09-04 收敛）。
+ * 种子 turn 编排器 — 单 turn 动态 step 循环承载所有复杂度。
  *
  * 「如何串联一个 turn」全部收在此处，门面只做一行委托 + 生命周期守卫。
  * 宿主是插座——只调 runChat / runResume，内核自主决定 step 循环长度与任务表策略。
  * 复杂任务（task_table_write + 动态规划）在一个 turn 的 step 循环里自然生长，
- * 不再强制拆成多 turn 编排（档2 已砍；收敛依据见 docs/architecture/agent-design-philosophy.md 第一章 闭环）。
+ * 不拆成多 turn 编排（依据见 docs/architecture/agent-design-philosophy.md 第一章 闭环）。
  *
  * 两个显式命名入口（turn 只认 Trigger、不认来源）：
  *   - runChat   （对话 Trigger）   完整 turn：prepare → act(processUserInput) → reflect
@@ -28,7 +28,7 @@ import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
 
 /**
- * ask_user 提问超时未答的交互记录正文（2026-09-08）：
+ * ask_user 提问超时未答的交互记录正文：
  * 宿主计时超时 → cancelAsk（tool result 注入 [ASK_ABORTED]）+ resumeExecution('timeout')
  * → 本常量作为该交互输入的 content 落盘（重放渲染「问 + 未回答」行的正文）。
  * 宿主侧镜像同文案 post 给 webview 即时渲染（运行时 = 重放同构），改此须同步 chatPanel.ts。
@@ -40,7 +40,7 @@ export const ASK_TIMEOUT_NOTICE = '用户未在时限内回答，已自动继续
  *
  * 聚合回答前/中/后三阶段，提供 turn 编排的全部入口（runChat/runResume）。
  * prepare / act / reflect 各自可测；编排语义只在 orchestrator 唯一实现。
- * turn 结束即流结束 + done 消息——不再对外产出 handoff chunk（2026-09-05 收敛）。
+ * turn 结束即流结束 + done 消息——不对外产出 handoff chunk。
  */
 export class SeedOrchestrator {
   /** 依赖注入（门面稳定能力窄面） */
@@ -97,7 +97,7 @@ export class SeedOrchestrator {
    *
    * 续跑是已在暂停点保留上下文的继续执行，故不重新装配上下文——差异源于 Trigger 的续跑语义，收在编排器内。
    *
-   * TS-9 问答闭环归属：交互输入不分配新 roundId——续跑延续 prepare 分配的 turn 节点
+   * 问答闭环归属：交互输入不分配新 roundId——续跑延续 prepare 分配的 turn 节点
    * roundId（loop.currentRoundId），appendUser 以交互归属（interactive）追加到该轮
    * interactiveInputs，round 记录不因交互输入分裂。
    *
@@ -112,7 +112,7 @@ export class SeedOrchestrator {
     kind: InteractiveInputKind = 'supplement',
   ): AsyncGenerator<AgentChunk, void, unknown> {
     const parts = this.deps.getParts();
-    // 会议装配视角（T3，2026-09-06）：续跑路径与 prepare 开头对称——按 checkpoint active step 刷新表层装配视角。
+    // 会议装配视角：续跑路径与 prepare 开头对称——按 checkpoint active step 刷新表层装配视角。
     // 背景：prepare.run 每轮开头做同样刷新（prepare.ts），但 runResume 不走 prepare（续跑不重装配上下文）；
     // 跨重启续跑时 roundAssemblyRole 是进程内字段已复位为 null → 不刷新会以组长前缀回答组员步骤
     // （loop 迭代内经 getTaskTable→applyActivePlanItemAssembly 的刷新晚于 buildChatOptions，首迭代仍有一轮窗口）。
@@ -122,15 +122,15 @@ export class SeedOrchestrator {
     refreshAssemblyForRolePack(this.deps, resumeActivePlanItem?.rolePack);
 
     // 交互输入归属当前 turn 节点（SSOT：roundId 唯一锚点=prepare appendUser 的 head roundId，
-    // 不重新 alloc——turn 分裂点已由 TS-9 收敛）。空 roundId 时 fallback alloc。
-    // timeout（2026-09-08）：ask 超时未答无用户文本——仍落「未回答」交互记录（content =
+    // 不重新 alloc——turn 不在交互输入处分裂）。空 roundId 时 fallback alloc。
+    // timeout：ask 超时未答无用户文本——仍落「未回答」交互记录（content =
     // ASK_TIMEOUT_NOTICE），宿主在 resume 前已 cancelAsk 转存提问快照，此处取走落盘 question。
     const isTimedOutAsk = kind === 'timeout';
     const content = isTimedOutAsk ? ASK_TIMEOUT_NOTICE : input?.trim();
     if (content) {
       const closureRoundId = parts.loop.getCurrentRoundId() || parts.loop.allocRoundId();
       parts.loop.setCurrentRoundId(closureRoundId);
-      // G26：取走已作答提问快照（answerQuestion/cancelAsk 转存），随回答/超时记录一并落盘——
+      // 取走已作答提问快照（answerQuestion/cancelAsk 转存），随回答/超时记录一并落盘——
       // 回放还原「问了什么+选项」。多 ask_user 轮整组快照取首问（UI 单文本提交，与 questions[0]
       // 配对最稳；次态边界已标注）。supplement（无快照来源）不取。
       const answeredAsk =
@@ -232,7 +232,7 @@ export class SeedOrchestrator {
       return streamResult satisfies StreamConsumeResult;
     }
 
-    // 形态② 兜底收尾（PLAN-SYNC-1 ①，2026-09-17）：「LLM 未显式 update 即收尾」——turn 正常
+    // 形态② 兜底收尾：「LLM 未显式 update 即收尾」——turn 正常
     // 完成（非暂停/中断/失败）且计划已「全部到达」（无 pending 步）时，闭合当前 active 步，
     // 使计划达到全 done（仍可能残留改为 blocked 的步，交由 turn 结束兜底清理）；真实多轮任务
     // （仍有 pending）不受影响。

@@ -380,7 +380,7 @@ export function createDefaultGuards(): GuardRail {
     .register({
       id: 'read_dedup',
       matches: (c) => DEDUP_SUBJECT_EXTRACTORS[c.toolName] !== undefined,
-      // 仅在「结果确实仍在上下文」时才拦（CTX-1 防死锁：否则内容已压缩/裁剪，告知"基于已有"=指令撒谎）
+      // 仅在「结果确实仍在上下文」时才拦（防死锁：否则内容已压缩/裁剪，告知"基于已有"=指令撒谎）
       shouldBlock: (c) => {
         const subject = extractSubject(c.toolName, c.argsJson);
         if (!subject) return false;

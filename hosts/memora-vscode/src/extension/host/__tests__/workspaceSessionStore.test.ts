@@ -2,9 +2,9 @@
  * WorkspaceSessionStore 单元测试（ISessionStore 契约 + truncateFrom）
  *
  * 覆盖两类：
- *   - ISessionStore 契约（2026-08-17 排雷 P4 补充）：round 写入/loadMessages 往返、
+ *   - ISessionStore 契约：round 写入/loadMessages 往返、
  *     metas 三件套、落盘持久化往返、损坏降级
- *   - truncate-from-turn 语义（2026-08-16 对话闭环管理）：
+ *   - truncate-from-turn 语义（对话闭环管理）：
  *     - 删除目标问答闭环（anchor assistant 向前最近的 user 消息起）到会话末尾
  *     - 目标为最后一条时只删该问答
  *     - 锚点 ts 不存在 → no-op 返回 false
@@ -131,14 +131,14 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     expect(store.truncateFrom('2026-08-16', 'main', 'x').ok).toBe(false);
   });
 
-  it('截断后同步会话标题 messageCount（ADR-024 元数据一致）', () => {
+  it('截断后同步会话标题 messageCount（元数据一致）', () => {
     seedThreeTurns(store, roundStore);
     store.truncateFrom('2026-08-16', 'main', 'a2');
     const meta = store.getSessionMeta('2026-08-16-main');
     expect(meta?.messageCount).toBe(2);
   });
 
-  it('删除末尾中断轮（无 assistant 收场）→ 锚定末轮删除（2026-09-22 修复：无产出中断轮跳锚 no-op）', () => {
+  it('删除末尾中断轮（无 assistant 收场）→ 锚定末轮删除（无产出中断轮跳锚 no-op）', () => {
     seedRound(store, roundStore, '2026-08-16', 'main',
       { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
       { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
@@ -152,7 +152,7 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
   });
 
-  it('删除中间中断轮（无 assistant 收场）→ 上折回该轮截断，防误删下一轮（2026-09-22 修复）', () => {
+  it('删除中间中断轮（无 assistant 收场）→ 上折回该轮截断，防误删下一轮', () => {
     seedRound(store, roundStore, '2026-08-16', 'main',
       { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
       { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
@@ -170,7 +170,7 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
     expect(left.map((m) => m.content)).toEqual(['问题一', '回答一']);
   });
 
-  it('done 轮删除不误折：前一轮即使无 assistant（中断轮）也以自身 assistant ts 为锚（2026-09-22 防伪折叠）', () => {
+  it('done 轮删除不误折：前一轮即使无 assistant（中断轮）也以自身 assistant ts 为锚（防伪折叠）', () => {
     seedRound(store, roundStore, '2026-08-16', 'main',
       { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
       { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
@@ -204,7 +204,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     store.load();
   });
 
-  it('round 写入 / loadMessages 往返 + meta 同步（messageCount/updatedAt，ADR-024）', () => {
+  it('round 写入 / loadMessages 往返 + meta 同步（messageCount/updatedAt）', () => {
     seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: '2026-08-17T00:00:00.000Z' });
     const list = store.loadMessages('2026-08-17', 'main');
     expect(list).toHaveLength(1);
@@ -253,7 +253,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     expect(reopened.getSessionMeta('2026-08-17-main')?.displayName).toBe('会话一');
   });
 
-  it('setSessionTitle 不改 updatedAt（改名非活跃事件，ADR-024）', () => {
+  it('setSessionTitle 不改 updatedAt（改名非活跃事件）', () => {
     seedRound(store, roundStore, '2026-08-17', 'main', { content: 'x', ts: '2026-08-17T00:00:00.000Z' });
     const before = store.getSessionMeta('2026-08-17-main')?.updatedAt;
     store.setSessionTitle?.('2026-08-17-main', '改名');
@@ -284,9 +284,9 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     const removedIds = store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-17-main');
-    // refCount 归零 → Round 物理文件同步回收（2026-08-29：deleteSession 减引用后立即物理删除）
+    // refCount 归零 → Round 物理文件同步回收（deleteSession 减引用后立即物理删除）
     expect(roundStore.getById(roundId)).toBeNull();
-    // 返回值 = 被物理回收的 Round 列表（供调用方联动软删记忆摘要，⑥）
+    // 返回值 = 被物理回收的 Round 列表（供调用方联动软删记忆摘要）
     expect(removedIds).toEqual([roundId]);
   });
 
@@ -313,7 +313,7 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   });
 });
 
-describe('WorkspaceSessionStore.updateSessionMeta（ADR-024 双层命名写点，2026-08-26 排雷）', () => {
+describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () => {
   /** 临时工作区路径（每用例独立） */
   let dir: string;
   let store: WorkspaceSessionStore;

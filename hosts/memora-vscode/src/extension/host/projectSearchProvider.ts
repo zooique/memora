@@ -8,7 +8,7 @@
  *
  * 四项可靠性设计：
  *   - exclude 语义统一：content 模式按 glob 通配匹配相对路径（支持 ** / * / ?），与 name 模式一致；
- *   - 诚实化上报（SEARCH-1）：截断及其主因 / 已扫文件数 / 部分检索数 / 读取失败数 / 单文件上限 / 是否放宽 —— 一律回报
+ *   - 诚实化上报：截断及其主因 / 已扫文件数 / 部分检索数 / 读取失败数 / 单文件上限 / 是否放宽 —— 一律回报
  *     内核，零命中不再与"没搜完""搜坏了"逐字同形（截断挂在逐条命中上时，空数组没有载体）；
  *   - 精确优先 + 零命中回退：content 模式先按整串字面量匹配，整串零命中**且**内核下发了 `terms` 才做一次
  *     分词 OR 放宽（放宽的判定留在这里：只有宿主知道扫了多少、扫完没有）；
@@ -69,7 +69,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
     /**
      * 按文件名 glob 搜索（workspace.findFiles，stable API）
      *
-     * 两轮语义（SEARCH-1 · 与 content 对齐）：先按 query 原样作 glob 精确匹配（保会写 glob 的用法）；
+     * 两轮语义（与 content 对齐）：先按 query 原样作 glob 精确匹配（保会写 glob 的用法）；
      * 零命中**且** 内核下发了 `terms`、且 query 不含 glob 元字符时，才逐词按名称子串做一次
      * OR 放宽，并以 `relaxed` + `termsUsed` 如实回报。放宽的**判定**留在这里（宿主是唯一知道
      * findFiles 扫到几成的主体），`termsUsed` 唯一真值 = 本返回值。
@@ -82,7 +82,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
       const include = options?.query || '**/*';
       // name 模式与 content 模式忽略语义对齐：findFiles 显式排除 IGNORED_DIR_NAMES（含 .memora），
       // 否则 LLM 会搜到数据目录内的 task-table.md 等内核管理文件，形成「伪建表」自我强化
-      // （2026-09-07 触发样本实证：LLM search_project "task-table" 命中 .memora/task-table.md 后继续沿用 write_file）。
+      // （实证：LLM search_project "task-table" 命中 .memora/task-table.md 后继续沿用 write_file）。
       const ignoreGlob = IGNORED_DIR_NAMES.map((d) => `**/${d}/**`).join(',');
       const exclude = options?.exclude ? `${ignoreGlob},${options.exclude}` : ignoreGlob;
       const maxResults = Math.min(options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN, PROJECT_SEARCH_RESULT_MAX_LEN);
@@ -130,8 +130,7 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
      * 对齐全局搜索缺省）；整串零命中**且**内核下发了 `terms` 时，才用 `terms` 做一次 OR 放宽，
      * 并以 `relaxed` + `termsUsed` 如实回报。
      *
-     * 注：`pattern` 是**字面量**而非正则（原注释误称"正则语义"，下一行就被 `escapeRegExp` 撤销——
-     * 属断言与实现相悖的僵尸声明，2026-09-15 随 SEARCH-1 一并纠正）。
+     * 注：`pattern` 是**字面量**而非正则（下一行 `escapeRegExp` 即证；勿称"正则语义"）。
      *
      * @param options pattern 为内容关键词（字面量，大小写不敏感）；terms 为内核下发的放宽词表；
      *                exclude 排除路径 glob

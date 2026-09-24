@@ -63,7 +63,7 @@ async function createAgent(
   const agent = new Agent({
     projectPath: workspace,
     dataDir: join(workspace, '.memora'),
-    // 单一真理源（2026-08-24）：宿主不再自持角色包，configDir 指向内核 role-packs
+    // 单一真理源：宿主不自持角色包，configDir 指向内核 role-packs
     configDir: join(process.cwd(), '..', '..', 'role-packs'),
     provider: await createProvider(undefined, { MEMORA_BASE_URL: baseUrl, MEMORA_MODEL: model, MEMORA_API_KEY: apiKey }),
     storage,

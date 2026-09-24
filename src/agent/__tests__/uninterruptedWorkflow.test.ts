@@ -4,7 +4,7 @@
  * 覆盖全部核心功能：
  *   - 三态状态机流转（SessionStateMachine）
  *   - 检查点内存态生命周期（SessionManager.createCheckpoint/getCheckpoint/settleCheckpoint；
- *     跨重启恢复链已随 2026-09-10 减法退役）
+ *     无跨重启恢复链）
  *   - 工具幂等性与 outbox 模式（preExecutionCheck / logToolExecution 持久化）
  *   - 补偿机制（compensateTool/compensateAllNonIdempotent 降级后仅日志）
  *   - 执行计划管理（advancePlan/completePlanItem/isPlanAllBlocked）
@@ -133,7 +133,7 @@ function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
       { role: 'system', content: 'system prompt' },
     ]),
     injectSystemMessage: vi.fn(),
-    // 闭环节点锚点（TS-9）：检查点快照/恢复读写，mock 默认空轮
+    // 闭环节点锚点：检查点快照/恢复读写，mock 默认空轮
     getCurrentRoundId: vi.fn().mockReturnValue(''),
     setCurrentRoundId: vi.fn(),
     ...overrides,
@@ -889,7 +889,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       expect(() => agent!.pause('test')).toThrow(/未初始化/);
     });
 
-    it('空闲态（任务已结束）requestPause 守卫：申请作废，不翻 PAUSED 不落检查点（2026-09-07 收紧）', async () => {
+    it('空闲态（任务已结束）requestPause 守卫：申请作废，不翻 PAUSED 不落检查点', async () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       // 空闲态：无活跃执行流，isBusy=false → 守卫作废（此前直接翻 PAUSED + 落盘，
@@ -1066,7 +1066,7 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
 /**
  * 端到端场景用 Mock ISessionStore
  *
- * 注：原 `createPersistentSessionStore`（检查点持久化）已随跨重启恢复链退役（2026-09-10 减法）
+ * 注：原 `createPersistentSessionStore`（检查点持久化）随跨重启恢复链不存在
  * 并入通用 `createMockSessionStore`。
  */
 function createPersistentSessionStore(): ISessionStore {
@@ -1305,7 +1305,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   /**
    * 场景 G：turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）
    *
-   * 新契约（2026-09-22）：chat() 流退出（turn 真正结束）时，无论步骤是否全部标记完成，
+   * 契约：chat() 流退出（turn 真正结束）时，无论步骤是否全部标记完成，
    * 都清空 checkpoint.plan 与 planItemLog —— 宏任务一个 turn 完不成则兜底丢弃，下个 turn 重新规划。
    * 本用例为端到端回归锁：即使存在 pending 步骤（未全 done），turn 结束后任务表也必须被清理。
    * planItemLog 关联 active 步骤的细节由 assembler.test「onPlanItemBoundary：写入当前 active 步骤的 planItemLog」
@@ -1349,7 +1349,7 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
   });
 
   /**
-   * 场景 G2（2026-09-22 真实带伤回归锁）：resume 收尾路径漏清 plan。
+   * 场景 G2（真实带伤回归锁）：resume 收尾路径漏清 plan。
    *
    * 复现：chat() 第一半以 pause 收场（pauseMeta 挂起、plan 保留）→ 用户点「继续」续跑，
    * 续跑以「含非 done 步、且未再次暂停」结束（如某步 task_table_update 标 blocked/active 后收尾，
@@ -1664,7 +1664,7 @@ class AskThenResumeProvider extends LlmProvider {
     }
     // 会话命名助手调用（SessionNamer fire-and-forget，无 system 消息）：返回标题 JSON，
     // 不消耗主对话「是否已 ask_user」分岔状态——否则注入 sessionStore 的测试里
-    // 首条消息异步命名会抢先吞掉首次提问（TS-9 集成测试实测差异点）
+    // 首条消息异步命名会抢先吞掉首次提问（集成测试实测差异点）
     const firstUser = messages.find((m) => m.role === 'user')?.content;
     if (typeof firstUser === 'string' && firstUser.startsWith('你是会话命名助手。')) {
       yield { content: JSON.stringify({ title: '测试会话' }) };
@@ -1701,11 +1701,11 @@ class AskThenResumeProvider extends LlmProvider {
 }
 
 /**
- * plan + ask_user 组合（缝隙 A 防回归，2026-09-07）Provider：
+ * plan + ask_user 组合（缝隙 A 防回归）Provider：
  * - 首轮调 ask_user 工具挂起（在既有 plan 之上提问，不预写任务表——plan 由测试直接
  *   push 进 checkpoint，聚焦「提问迭代与 step 日志归属」的交互语义）；
  * - 续跑轮（上下文含 [ASK_ANSWER] 回答 tool 结果）纯文本收尾（不调工具）——
- *   形态②（PLAN-SYNC-1 ①）下边界只写 planItemLog、不推进：提问步 S1 保持 active 不被自动 done
+ *   形态②下边界只写 planItemLog、不推进：提问步 S1 保持 active 不被自动 done
  *   （若旧码在提问轮已提前 done 步，则续跑轮会错完成下一步 → 转红）。
  * 复用 AskThenResumeProvider 的 summarizer / sessionNamer 分岔守卫（不消耗主对话分岔状态）。
  */
@@ -1902,7 +1902,7 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
 
     // 幂等锁若未在 finally 释放，此处将永久返回 false（暂停按钮全失效）——
     // 守卫区分：流结束空闲态 requestPause 作废（false）但 isPausePending 无残留、可 resume，
-    // 证明非锁残留（2026-09-07 空闲守卫收紧后不再翻 PAUSED）
+    // 证明非锁残留（空闲 requestPause 守卫不翻 PAUSED）
     agent.resume();
     expect(agent.sessionManager!.isPausePending()).toBe(false);
     expect(agent.sessionManager!.status).toBe('running');
@@ -2007,12 +2007,12 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
   });
 
-  // ─── 缝隙 A（2026-09-07）：plan + ask_user 组合（提问轮不消耗 step）──────────────────
-  // 旧缺陷：onPlanItemBoundary（:955）先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
+  // ─── 缝隙 A：plan + ask_user 组合（提问轮不消耗 step）──────────────────
+  // 旧缺陷：onPlanItemBoundary 先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
   // 先把当前 active step 自动 done、推进到下一步，再挂起等答案——回答续跑后问答产出被
   // 归到「下一步」，提问步无继续表达通道（与用户暂停在迭代边界挂起、不推进 step 不对称）。
   // 修复：含 ask_user 将挂起的迭代不触发 step 边界日志（willSuspendForAsk 排除）；
-  // 形态②（PLAN-SYNC-1 ①）后 onPlanItemBoundary 本就不推进（唯一写者 = task_table_update），
+  // 形态②后 onPlanItemBoundary 本就不推进（唯一写者 = task_table_update），
   // 故问答对恒归当前步；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
 
   it('缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）', { timeout: 30000 }, async () => {
@@ -2071,13 +2071,13 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(atPause.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
     expect(atPause.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
 
-    // 双轨道（对齐 TS-9）：answerQuestion 回填 + resumeExecution('question-answer') 续跑
+    // 双轨道：answerQuestion 回填 + resumeExecution('question-answer') 续跑
     expect(agent.answerQuestion(['确认'])).toBe(true);
     for await (const _chunk of agent.resumeExecution('确认', undefined, 'question-answer')) {
       void _chunk; // 仅消费流：续跑轮纯文本收尾（无工具）
     }
     const cp = agent.getCheckpoint()!;
-    // 2026-09-22 闭环修正：resume 收尾 = turn 结束 → 任务表无条件清空（plan 严格 turn 内，
+    // 闭环语义：resume 收尾 = turn 结束 → 任务表无条件清空（plan 严格 turn 内，
     // 下个 turn 由 LLM 重新规划）。旧实现 autoClearPlanIfAllDone 仅全 done 才清，
     // 导致此处非全 done 残留 → 跨 turn 污染；修正后统一走 clearPlanOnTurnEnd。
     expect(cp.plan).toHaveLength(0);
@@ -2475,10 +2475,10 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// TS-9 · 问答闭环内交互输入归属（提问→补充→续跑 不分裂，含断电优先重启裁决）
+// 问答闭环内交互输入归属（提问→补充→续跑 不分裂，含断电优先重启裁决）
 // ═══════════════════════════════════════════════════════════════
 
-describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分裂）', () => {
+describe('问答闭环内交互输入归属（同一闭环节点不分裂）', () => {
   let tmpProject: string;
   let tmpConfig: string;
   let tmpData: string;
@@ -2564,7 +2564,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(closure.interactiveInputs).toHaveLength(1);
     expect(closure.interactiveInputs![0]!.kind).toBe('question-answer');
     expect(closure.interactiveInputs![0]!.content).toBe('我想读 probe.txt');
-    // G26：提问原文与候选选项随回答落盘（answerQuestion 快照 → runResume → appendUser），回放可还原问答对
+    // 提问原文与候选选项随回答落盘（answerQuestion 快照 → runResume → appendUser），回放可还原问答对
     expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
     expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
     // 回答完整落盘：assistantMessage 为续跑最终回答
@@ -2573,7 +2573,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
 
     // ── (3) 用户补充（supplement）→ 归属同一闭环节点 ──
     // 暂停后补充路由前置：模拟「已暂停 → 发补充」——空闲 requestPause 已收敛为作废守卫
-    // （2026-09-07，任务结束的暂停申请即作废），此处用显式 pause 构造暂停态
+    // （任务结束的暂停申请即作废），此处用显式 pause 构造暂停态
     expect(agent.pause('暂停后补充', 'user', true)).toBe(true);
     expect(agent.sessionManager!.status).toBe('paused');
     for await (const _chunk of agent.resumeExecution('补充：请同时读取测试配置', undefined, 'supplement')) {
@@ -2611,7 +2611,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
       void _chunk; // 仅消费流
     }
     // 暂停态关闭：闭环节点仍锚定同一 Round（roundStore 唯一节点）
-    // 显式 pause（空闲 requestPause 已收敛为作废守卫，2026-09-07）
+    // 显式 pause（空闲 requestPause 是作废守卫）
     expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
     expect(currentClosure().id).toBe(anchorRoundId);
     // 原闭环节点此刻：1 条交互输入（question-answer）
@@ -2625,10 +2625,10 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     agent = makeTs9Agent();
     await agent.init();
 
-    // 断电优先裁决（2026-09-10）：进程死亡即非自愿中断——重启**不回填 paused**，也不再加载
+    // 断电优先裁决：进程死亡即非自愿中断——重启**不回填 paused**，也不再加载
     // 持久化检查点（自愿介入要求内存态连续，故一律降级为「收场重开」）。
     expect(agent.sessionManager!.status).toBe('running');
-    // 减法定案（2026-09-10）：跨重启恢复链整体退役，SessionCheckpoint 降级为同进程内存态
+    // 定案：跨重启恢复链整体不存在，SessionCheckpoint 为同进程内存态
     // → 重启后 **不加载**任何持久化检查点（上下文连续性一律靠 Round 物理记录，不靠检查点）。
     expect(agent.sessionManager!.getCheckpoint()).toBeNull();
 
@@ -2639,7 +2639,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     const rounds = roundStore.listAll();
     expect(rounds).toHaveLength(2); // 原闭环节点 + 新 turn，各自独立
     const original = rounds.find((r) => r.id === anchorRoundId)!;
-    // 原闭环节点原样保留：1 条交互输入、question/options 随轮持久化（G26）
+    // 原闭环节点原样保留：1 条交互输入、question/options 随轮持久化
     expect(original.interactiveInputs).toHaveLength(1);
     expect(original.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
     expect(original.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
@@ -2662,7 +2662,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     expect(agent.sessionManager!.status).toBe('paused');
     const anchorRoundId = currentClosure().id;
 
-    // ── (2) 宿主超时保底（2026-09-08）：cancelAsk（[ASK_ABORTED] 占位 + 快照转存）→ 无输入续跑 ──
+    // ── (2) 宿主超时保底：cancelAsk（[ASK_ABORTED] 占位 + 快照转存）→ 无输入续跑 ──
     agent.cancelAsk(); // 消费在途提问（注入 [ASK_ABORTED] 占位 + 转存提问快照供落盘）
     agent.cancelAsk(); // 幂等：pendingAsk 已清 → no-op 不抛（重复触发无害）
     for await (const _chunk of agent.resumeExecution(undefined, undefined, 'timeout')) {
@@ -2670,7 +2670,7 @@ describe('TS-9 · 问答闭环内交互输入归属（同一闭环节点不分�
     }
     expect(agent.sessionManager!.status).toBe('running');
 
-    // ── (3) 落盘断言：kind=timeout + 超时通知正文 + G26 question/options 随记录 ──
+    // ── (3) 落盘断言：kind=timeout + 超时通知正文 + question/options 随记录 ──
     const closure = currentClosure();
     expect(closure.id).toBe(anchorRoundId); // round 不分裂
     expect(closure.interactiveInputs).toHaveLength(1);

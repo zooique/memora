@@ -1,9 +1,9 @@
-﻿/**
+/**
  * 宿主技能三源聚合单元测试（SSOT 收紧，2026-08-25）
  *
  * 锁住三类不变量，防「内置显示为用户」类来源错标复发：
  *   1. 来源判定：filePath 前缀 → builtin/user；rolePackManager → rolepack
- *   2. 同名去重：**角色包 > 用户 > 内置**（2026-09-22 反转——此前「内置优先」与注入面相反）
+ *   2. 同名去重：**角色包 > 用户 > 内置**（与注入面同序；勿回「内置优先」）
  *   3. 排序：内置 → 角色包 → 用户
  * 以及 `resolveSkill`（正文解析唯一收口：角色包 → 全局，与内核 read_skill 同序）与
  * `skillPromptFor`（composer 注入，格式沿用内核 buildSystemPrompt）。
@@ -36,9 +36,9 @@ function makeAgent(opts: {
         layer: (g.layer ?? 'project') as 'agent' | 'project',
       })),
       get: (n: string) => {
-        // 与真实 SkillManager.get 同构（S4）：禁用名**短路返回 null**。
+        // 与真实 SkillManager.get 同构：禁用名**短路返回 null**。
         // 桩若漏此判据，「禁用 ⇒ 注入落空」这一前提就测不出来（假绿）——
-        // SKILL-S2 的 isSkillDisabled 测试依赖本短路成立。
+        // isSkillDisabled 测试依赖本短路成立。
         if (opts.disabledSkills?.includes(n)) return null;
         const g = opts.global.find((x) => x.name === n);
         if (!g) return null;
@@ -118,7 +118,7 @@ describe('listVisibleSkills · 三源技能聚合', () => {
       disabledSkills: ['已禁用'],
     });
     const out = listVisibleSkills({ agent, configDir, userSkillsDir });
-    // 条目保留：静默消失会让用户误判「启停根本没做」（2026-09-22 复核的 G2 正是此伤）
+    // 条目保留：静默消失会让用户误判「启停根本没做」
     expect(out).toHaveLength(2);
     expect(out.filter((s) => s.disabled).map((s) => s.name)).toEqual(['已禁用']);
     expect(out.find((s) => s.name === '启用中')?.disabled).toBeUndefined();
@@ -235,7 +235,7 @@ describe('三面同源：列表保留 / 预览正文 / composer 注入 必须指
 });
 
 // ═══════════════════════════════════════════════════════════
-// isSkillDisabled · 用户通道「响亮失败」的判据（SKILL-S2，2026-09-22）
+// isSkillDisabled · 用户通道「响亮失败」的判据
 // ═══════════════════════════════════════════════════════════
 // 用途：composer 按名指定技能时，注入落空需给用户可见反馈（此前静默）。判据必须与
 // `resolveSkill` **同序**，否则「角色包有同名技能」的场景会**假报错**（实际注入成功却报已禁用）。

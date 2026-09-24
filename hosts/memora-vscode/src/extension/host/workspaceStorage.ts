@@ -19,7 +19,7 @@ import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /**
  * 退役 source 集合：设定记忆标签（persona/rule/skill）。
- * 设定归角色包承载（ADR-025），记忆库单轨只留摘要记忆；
+ * 设定归角色包承载，记忆库单轨只留摘要记忆；
  * 标签本身仍被内核 SOURCE_LABELS 识别（typo 检测/存量行识别），但不是可写入来源。
  */
 const RETIRED_SETTING_SOURCES = new Set<string>([
@@ -152,9 +152,9 @@ export class WorkspaceStorage implements IMemoryStorage {
   }
 
   /**
-   * 一次性迁移（R4 出口）：把设定记忆存量行（source ∈ persona/rule/skill）软删出记忆库
+   * 一次性迁移（设定记忆出口）：把设定记忆存量行（source ∈ persona/rule/skill）软删出记忆库
    *
-   * 设定归角色包承载（ADR-025），记忆库单轨只留摘要记忆。存量行按删除语义打
+   * 设定归角色包承载，记忆库单轨只留摘要记忆。存量行按删除语义打
    * deletedAt——回收站可 restore 兜底，purgeExpired 定期彻底回收（迁移不直删）。
    * 幂等：已软删行与非退役 source 行不重复标记，二次执行零动作、不重复落盘。
    *

@@ -1081,8 +1081,8 @@ export const chatStyles = `
   }
 
   /* ============ Components：模型选择器（capsule 变体差异定制） ============
-   * 通用胶囊外观已收敛到 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
-   * 消除面板各自覆写组件默认样式带来的重复 + !important（对抗评估 P2-2/P2-4）。
+   * 通用胶囊外观统一在 dropdown.ts 的 .treedd--capsule 变体（一次定义，面板复用），
+   * 消除面板各自覆写组件默认样式带来的重复 + !important（对抗评估结论）。
    * 本区块只做差异定制：宽度自适应模型名（对齐 Trae）+ 菜单尺寸 + 激活项高亮。
    * 面板通过 extraClass="model-picker treedd--capsule" 启用变体。 */
   .model-picker {

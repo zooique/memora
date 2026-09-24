@@ -34,7 +34,7 @@ export async function safeExecuteCode(
 ): Promise<CodeExecutionResult> {
   const timeoutMs = options?.timeoutMs ?? EXECUTION_TIMEOUT_MS;
   // 外部持有定时器 + finally 清理：执行器正常返回时兜底定时器仍挂起会延迟进程退出
-  // （对齐 safeSearch/safeFetch/safeSearchProjectFiles 已收敛的同款定时器模式）
+  // （对齐 safeSearch/safeFetch/safeSearchProjectFiles 同款定时器模式）
   let timer: NodeJS.Timeout | undefined;
   const timeoutPromise = new Promise<CodeExecutionResult>((_, reject) => {
     timer = setTimeout(() => {

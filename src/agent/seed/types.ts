@@ -113,9 +113,8 @@ export interface SeedDeps {
  * input = 原始输入；aborted = 回答前阶段已中断（调用方应 yield aborted chunk 并返回，不进回答中）；
  * roundId 不在此结果中——round 归属以 loop 的 currentRoundId 为单一真理源。
  *
- * 注：原 recalledMemories 字段已于 2026-09-11 物理删除（自动记忆召回退役，见
- * memory-tool-recall-design §3/§4）——恒空占位符的存在本身即在宣称一件已取消的事。
- * 记忆检索唯一入口 = LLM 经 `search_memories` 工具主动触发。
+ * 注：不设 recalledMemories 之类恒空占位字段（占位符的存在本身即在宣称一件不存在的事）。
+ * 记忆检索唯一入口 = LLM 经 `search_memories` 工具主动触发（见 memory-tool-recall-design §3/§4）。
  */
 export interface SeedPrepareResult {
   input: string;

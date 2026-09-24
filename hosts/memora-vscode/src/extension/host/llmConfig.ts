@@ -83,7 +83,7 @@ export async function createBackgroundProvider(
     model: background.model,
     apiKey: background.apiKey,
     provider: background.provider,
-    // 能力位透传：后台通道与前台同构（2026-09-14 阶段0）
+    // 能力位透传：后台通道与前台同构
     supportsToolCalling: background.supportsToolCalling,
     supportsStructuredOutput: background.supportsStructuredOutput,
   });

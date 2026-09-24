@@ -243,7 +243,7 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
 // ══════════════════════════════════════════════════════════════
 // 2. runSkillScript 子进程执行测试
 // ══════════════════════════════════════════════════════════════
-// 容器超时放宽至 30s（2026-09-19）：这些用例真实 spawn 子进程，全量并发
+// 容器超时放宽至 30s：这些用例真实 spawn 子进程，全量并发
 // （fileParallelism=true）时 5s 默认超时被挤爆（历史 pre-push full 档 flake：
 // kernel:test/kernel:coverage 命中 5 例超时）。子进程执行本身受机器负载影响，
 // 非逻辑缺陷——放宽容器超时不改断言、只消除并发挤占假红。
@@ -309,7 +309,7 @@ describe('skillScriptRunner — runSkillScript', () => {
     });
   });
 
-  // ── 环境继承（2026-09-08 决策：原 PATH/HOME 白名单过度裁剪）──
+  // ── 环境继承（不走 PATH/HOME 最小白名单）──
   describe('环境继承', () => {
     it('脚本能读取宿主环境变量（项目脚本读用户环境是合理需求；owner 信任模型下视同用户本地 shell）', async () => {
       // 设置一个环境变量
@@ -352,7 +352,7 @@ describe('skillScriptRunner — runSkillScript', () => {
 // 3. L2 兜底判定纯函数（spawn 行为锁定见 skillScriptRunner-exec.test.ts）
 // ══════════════════════════════════════════════════════════════
 
-describe('skillScriptRunner — guardWindowsShellScript（SKILL-S1 止血，2026-09-22）', () => {
+describe('skillScriptRunner — guardWindowsShellScript', () => {
   // win32 + shell 档：非 .bat/.cmd 扩展名一律拦截（.sh 静默空跑 / .ps1 不起 PowerShell）
   describe('win32 + shell → 拦截非批处理扩展名', () => {
     it('.sh → 显式错误', () => {
@@ -402,7 +402,7 @@ describe('skillScriptRunner — guardWindowsShellScript（SKILL-S1 止血，2026
   });
 });
 
-describe('skillScriptRunner — shouldFallbackPythonToPy 判定（2026-09-08）', () => {
+describe('skillScriptRunner — shouldFallbackPythonToPy 判定', () => {
   // Windows python 9009 兜底判定：win32 + python runtime 才换 py -3 重试一次
   it('win32 + python → 兜底', () => {
     expect(shouldFallbackPythonToPy('python', 'win32')).toBe(true);
@@ -417,7 +417,7 @@ describe('skillScriptRunner — shouldFallbackPythonToPy 判定（2026-09-08）'
   });
 });
 
-describe('skillScriptRunner — isPythonUnavailable 判定（2026-09-17）', () => {
+describe('skillScriptRunner — isPythonUnavailable 判定', () => {
   // Windows python 空壳启动器 9009：spawn 成功但进程以 9009（命令未找到）退出，
   // 非 ENOENT——必须靠退出码识别「不可用」，否则误判「执行失败」永不兜底。
   it('win32 + 退出码 9009 → 不可用（Store 空壳启动器场景）', () => {

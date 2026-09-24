@@ -75,9 +75,9 @@ export class VscodeTracer implements ITracer {
   }
 
   /**
-   * 提取最近最近几轮的 span 作为「透明面板」的操作流（B9 可观测补齐）
+   * 提取最近最近几轮的 span 作为「透明面板」的操作流（可观测补齐）
    *
-   * 把本类已采集但此前仅用于指纹提取的 span 缓冲暴露出来，供透明面板渲染操作序列
+   * 把本类已采集的 span 缓冲暴露出来（不止于指纹提取），供透明面板渲染操作序列
    * （LLM → 工具 → 响应…）。只回传 span 名 + 关键属性加工成的展现标签，
    * 不传原始内容（延续「指纹可观测、不入存储」的可追溯性边界）。
    *
@@ -130,7 +130,7 @@ export class VscodeTracer implements ITracer {
    * 从最近已结束的 llm.call span 取 systemPromptHash。
    * 只返回 hash，不返回内容——与内核边界声明一致（指纹属可观测性，不入存储）。
    * 注：原 attachedMemoryCount / attachedMemoryFingerprint 读取分支已随记忆附着
-   * 可观测性全链退役删除（2026-09-11）。
+   * 可观测性全链退役删除。
    *
    * @returns 指纹摘要（未采集到对应 span 时字段缺省）
    */

@@ -68,19 +68,19 @@ node scripts/skaffold.mjs <角色名> [--display 展示名] [--desc 一句话定
 
 #### capabilities（特权能力候选）
 
-> **模型（tool-exposure-model 2026-09-08）**：`capabilities` = 角色声明的**超越默认边界的特权**。本地读写/记忆/技能等 16 个工具**默认常驻**（`DEFAULT_EXPOSED_TOOLS`），**无需声明即可用**（省略 capabilities 同理）。只有下面 4 类特权键声明后才进入工具白名单：
+> **模型（tool-exposure-model）**：`capabilities` = 角色声明的**超越默认边界的特权**。本地读写/记忆/技能等 16 个工具**默认常驻**（`DEFAULT_EXPOSED_TOOLS`），**无需声明即可用**（省略 capabilities 同理）。只有下面 4 类特权键声明后才进入工具白名单：
 
 | capability | 对应工具 |
 |-----------|---------|
 | `web:search` / `web:fetch` | `web_search` / `web_fetch`（外部网络特权） |
 | `code:execute` | `run_code`（LLM 现写代码执行特权；需宿主注入执行器） |
-> 注：`task:plan` 不再映射——任务表（`task_table_write` / `task_table_update`）是内核**常驻必要基建**（2026-09-16 用户拍板直接暴露），任何角色无论是否声明 `task:plan` 都可使用；声明与否行为一致，故不再作为特权能力映射（见 tool-exposure-model.md）。
+> 注：`task:plan` 不映射——任务表（`task_table_write` / `task_table_update`）是内核**常驻必要基建**，任何角色无论是否声明 `task:plan` 都可使用；声明与否行为一致，故不作为特权能力映射（见 tool-exposure-model.md）。
 
 > ⚠️ **语义红线（已对齐特权模型）**：`capabilities: []`（空数组）= **仅默认常驻工具**（本地读写/记忆/技能/项目脚本全可用，不开放任何特权）——纯本地型角色应写 `[]` 而非省略；**省略** capabilities = 全部暴露（含特权工具）；声明特权键 = 常驻 + 白名单内的特权工具。「换角色 = 特权工具集切换」。详见 [tool-exposure-model.md](../../../../../../docs/architecture/tool-exposure-model.md)。
 
 #### strategy 键速查（16 键；未改动的键可删除 = 内核默认）
 
-`prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 已回收（2026-09-13）——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；2026-09-09（memory-tool-recall-design 阶段2）起 `memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键已退役——记忆检索改由 `memory_search` 工具触发，勿再填写。
+`prepare`（1）默认值：`summaryFocus`(≤500字符，默认省略)。注：`understandingConfirm` 不作为开放键——confirm 并入 `askOn` 含 `'confirm'` 触发，echo 由内核 Turn 起始策略覆盖，勿再填写；`memoryRecall`/`memoryRecallPercent`/`minFallback`/`contextAssembly`/`recallConfidence`/`summaryRecall` 6 个召回键不存在——记忆检索改由 `memory_search` 工具触发，勿再填写。
 `act`（7）默认值：`toolMode`=allow｜`temperature`=0.7(0~2)｜`outputLimit`=4096(1~65536)｜`toolStepLimit`=20(0~100)｜`providerRouting`=auto｜`multiStepReasoning`=auto｜`toolReadonly`=full
 `reflect`（3）默认值：`summary`=on｜`selfReview`=0(0~10，布尔数字：0=关闭，>0 一律收敛为 1=终审一次，写 2 与写 1 效果相同)｜`userFollowup`=silent
 `global`（5）默认值：`askOn`=['ambiguity','decision','missing_info']｜`askLimit`=10(1~10)｜`errorHandling`=retry｜`contextLimit`=0(0~2000000，0=不设额外上限、跟随 provider 窗口)｜`stepBudget`=0(0~500，0=走内核兜底)

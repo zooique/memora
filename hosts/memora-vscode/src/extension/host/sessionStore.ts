@@ -39,7 +39,7 @@ export interface RoundTruncateResult {
  * 工作区会话存储
  */
 export class WorkspaceSessionStore implements ISessionStore {
-  /** 会话标题元数据（ADR-024）：sessionId → SessionMeta */
+  /** 会话标题元数据：sessionId → SessionMeta */
   private metas = new Map<string, SessionMeta>();
   /** Round ID 列表存储：sessionId → roundId[]（round-based 唯一真相源） */
   private roundIdsStore = new Map<string, string[]>();
@@ -66,8 +66,8 @@ export class WorkspaceSessionStore implements ISessionStore {
   /**
    * 从文件加载会话（文件不存在则空）
    *
-   * 存储模型（2026-09-10 减法后）：仅 metas（标题元数据）+ roundIdsStore（Round 指针）。
-   * 检查点持久化已随「跨重启恢复链」整体退役，本文件不再涉及 checkpoint。
+   * 存储模型：仅 metas（标题元数据）+ roundIdsStore（Round 指针）。
+   * 无检查点持久化，本文件不涉及 checkpoint。
    */
   load(): void {
     if (!existsSync(this.filePath)) return;
@@ -158,8 +158,8 @@ export class WorkspaceSessionStore implements ISessionStore {
    *
    * 锚点（下界匹配）：定位第一条 `assistant timestamp >= fromTs` 的 Round。
    * Round 边界即问答的 user 起点，删除该 Round 及之后。中断收场轮（appendInterrupted
-   * 零产出时不写 assistantMessage，2026-09-15 起 status 即 'interrupted'）不满足
-   * assistant 下界匹配，2026-09-22 补两条折回（见实现注释）：
+   * 零产出时不写 assistantMessage，status 即 'interrupted'）不满足
+   * assistant 下界匹配，故有两条折回（见实现注释）：
    * ① 锚点落在末轮 user 之后 → 锚定末轮（中断轮收尾可删）；② 命中轮的前一轮为无
    * assistant 的中断轮且锚点落其时间窗 → 上折回该中断轮（防误删下一轮）。
    *
@@ -226,7 +226,7 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 读取会话标题元数据（ADR-024）
+   * 读取会话标题元数据
    *
    * round-based 单一模式：会话仅持 roundIds，无 legacy 扁平消息；占位元数据按 roundIds 推导。
    * 仅当会话存在 roundIds 或 meta 时才返回，否则视为会话不存在（如已删除）返回 undefined，
@@ -250,10 +250,10 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 更新 LLM 生成只读元数据（ADR-024 双层命名单一写点，2026-08-26 排雷复盘）：
+   * 更新 LLM 生成只读元数据（双层命名单一写点）：
    * autoName/keyTopics/summary 由内核 SessionNamer/SessionArchiver 写入；displayName
    * 由用户手动改名（renameSession）写入。setSessionTitle 亦收口于此，避免双路径分叉
-   * （此前漏实现导致内核 updateSessionMeta 调用静默 no-op，自动命名/改名失效）。
+   * （缺此实现时内核 updateSessionMeta 调用静默 no-op，自动命名/改名失效）。
    *
    * 合并语义 = **既有 meta 基底 + 传入 Partial 覆盖**（与内核
    * `inMemorySessionStore.updateSessionMeta` 同构），使非本次入参字段（`createdAt` 等）
@@ -264,11 +264,11 @@ export class WorkspaceSessionStore implements ISessionStore {
    * 末位显式覆盖三项（不用纯 spread 的理由与语义）：
    *   - autoName/displayName/keyTopics/summary：调用方可传显式 `undefined`（`Partial` 允许）
    *     → 语义是「缺省 = 保留既有」，`?? existing` 才是该语义；纯 spread 会把既有值抹掉
-   *   - updatedAt：改名/命名都不是活跃事件（ADR-024）→ 保留既有，不刷新
+   *   - updatedAt：改名/命名都不是活跃事件 → 保留既有，不刷新
    *   - messageCount：命名不重置计数 → 保留既有；**无既有 meta 时由
    *     `deriveMessageCount` 派生，禁写 0**
    *
-   * ⚠️ 无既有 meta 分支为何必须派生（2026-09-21 站 62 实锤）：内核
+   * ⚠️ 无既有 meta 分支为何必须派生：内核
    * `messageHistory.forkSession` 是「先 `setRoundIds(newSessionId, ...)` 再
    * `updateSessionMeta(newSessionId, {createdAt})`」——调用时刻 roundIds 已就位而 meta
    * 尚不存在（`setRoundIds` 内的计数回写因 `if (!meta) return` 提前退出）。写 0 会让
@@ -290,7 +290,7 @@ export class WorkspaceSessionStore implements ISessionStore {
       displayName: meta.displayName ?? existing?.displayName ?? defaultSessionTitle(),
       keyTopics: meta.keyTopics ?? existing?.keyTopics,
       summary: meta.summary ?? existing?.summary,
-      // 改名/命名非活跃事件：不重置 updatedAt（ADR-024）与计数
+      // 改名/命名非活跃事件：不重置 updatedAt 与计数
       updatedAt: existing?.updatedAt ?? new Date().toISOString(),
       messageCount: existing?.messageCount ?? this.deriveMessageCount(sessionId),
     };
@@ -299,14 +299,14 @@ export class WorkspaceSessionStore implements ISessionStore {
   }
 
   /**
-   * 修改会话标题（ADR-024）：手动改名不改 updatedAt，收口到 updateSessionMeta 单一写点
+   * 修改会话标题：手动改名不改 updatedAt，收口到 updateSessionMeta 单一写点
    */
   setSessionTitle(sessionId: string, title: string): void {
     this.updateSessionMeta(sessionId, { displayName: title });
   }
 
   /**
-   * 列出全部会话标题元数据（ADR-024）：按 updatedAt 降序（最新在前）
+   * 列出全部会话标题元数据：按 updatedAt 降序（最新在前）
    *
    * 覆盖所有已持久化会话：先取 metas，再补全有 roundIds 但无 meta 的会话。
    */

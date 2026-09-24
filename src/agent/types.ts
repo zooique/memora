@@ -487,7 +487,7 @@ export interface AgentOptions {
   /**
    * 宿主装配级**策略覆盖**（可选）：经 resolveActiveStrategy 压过角色包声明，表达宿主产品能力边界。
    * 只影响 override 声明过的键；是「宿主策略层」通用覆盖，不新增任何独立开关。
-   *（v0.13 后无内置示例键；角色包自动匹配全链已移除，本机制保留供宿主能力边界使用）
+   *（无内置示例键；角色包无自动匹配链，本机制保留供宿主能力边界使用）
    */
   strategyOverride?: Partial<BehaviorStrategy>;
   /**

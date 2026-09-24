@@ -103,7 +103,7 @@ export abstract class ConfigResourceManager<
    * 将磁盘扫描结果与运行时注入项合并（子类自定义扫描的 reload 也应复用本方法）：
    * 重新扫描磁盘后，保留无磁盘真理源的运行时注入项（如 loadExtraDir 注入的用户资源），
    * 同名冲突以磁盘（更强真理源）为准并注销运行时记账——除非子类将同名声明为
-   * isUserOverride（用户覆盖内置，S5）：此时用户版保留、记账保留、磁盘版被剔除。
+   * isUserOverride（用户覆盖内置）：此时用户版保留、记账保留、磁盘版被剔除。
    *
    * @param scanned 本次磁盘扫描得到的资源列表
    * @returns 合并后的完整资源列表（磁盘在前、运行时注入在后）

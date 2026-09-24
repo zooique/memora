@@ -266,7 +266,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(collectAllBodyText(assistants[0])).toBe('思考第一段思考第二段思考第三段');
   });
 
-  it('暂停→继续全时序：resume 的 meta 不建新骨架，chunk 原位续写暂停块（2026-09-07 双块分裂排雷修复）', () => {
+  it('暂停→继续全时序：resume 的 meta 不建新骨架，chunk 原位续写暂停块（双块分裂防回归）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
@@ -289,7 +289,7 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(collectAllBodyText(assistants[0])).toBe('暂停前正文暂停后正文');
   });
 
-  it('暂停后中断（interrupted）：清暂停锚点，下轮新闭环 meta 正常建骨架（2026-09-07 对称雷修复）', () => {
+  it('暂停后中断（interrupted）：清暂停锚点，下轮新闭环 meta 正常建骨架（对称雷防回归）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
 
@@ -2419,7 +2419,7 @@ describe('chatView 安全审计指标（G6，2026-08-23）', () => {
     const metricsEl = document.getElementById('activityMetrics') as HTMLElement;
     expect(metricsEl.textContent).toContain('安全审计 4 次 · 拒绝 1');
     expect(metricsEl.textContent).toContain('path-allow foo.ts');
-    // G11：拒绝原因须透出（此前仅显示 type+path，丢弃 reason）
+    // 拒绝原因须透出（此前仅显示 type+path，丢弃 reason）
     expect(metricsEl.textContent).toContain('path-deny out.js (路径越界，不在白名单内)');
   });
 
@@ -3017,7 +3017,7 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const assistants = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(assistants).toHaveLength(1);
     expect(collectAllBodyText(assistants[0])).toBe('已按方案 A 继续');
-    // done 后：运行时平铺容器已收敛（过程收进折叠块，G31 设计行为），QA 折入折叠块、无孤儿残留
+    // done 后：运行时平铺容器已收敛（过程收进折叠块，设计行为），QA 折入折叠块、无孤儿残留
     expect(document.querySelector('.process-flow')).toBeNull();
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();

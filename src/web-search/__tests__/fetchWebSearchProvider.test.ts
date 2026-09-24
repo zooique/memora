@@ -314,8 +314,8 @@ describe('FetchWebSearchProvider', () => {
     });
   });
 
-  // ─── G5 降级端点透出（endpoint 打标，2026-08-25） ───
-  describe('G5 降级端点透出（endpoint 打标）', () => {
+  // ─── 降级端点透出（endpoint 打标） ───
+  describe('降级端点透出（endpoint 打标）', () => {
     it('Bing 首选命中 → 结果打标 endpoint: "Bing"', async () => {
       const fetchMock = createUrlDispatchFetch(
         () => htmlResponse(MOCK_BING_HTML),
@@ -352,7 +352,7 @@ describe('FetchWebSearchProvider', () => {
     });
   });
 
-  // ─── 方案 A 多端点（2026-09-02）：百度/搜狗 + buildSearchEndpoints 工厂 ───
+  // ─── 多端点：百度/搜狗 + buildSearchEndpoints 工厂 ───
   describe('方案 A · 内置多搜索引擎端点（百度/搜狗）', () => {
     /** 模拟百度结果页（h3.c-title > a[href] + span[class*=content-right] 摘要） */
     const BAIDU_HTML = `<!DOCTYPE html>
@@ -437,7 +437,7 @@ describe('FetchWebSearchProvider', () => {
       expect(results[0]!.title).toBe('Bing 标题一');
     });
 
-    // ─── 宿主接入路径（2026-09-24）：宿主可注入自定义 SearchEndpoint，内核预设仅作保底 ───
+    // ─── 宿主接入路径：宿主可注入自定义 SearchEndpoint，内核预设仅作保底 ───
     it('宿主自定义 SearchEndpoint 注入 → 走宿主 URL，不经内核预设清单', async () => {
       const CUSTOM_HTML = `<!DOCTYPE html><html><body>
         <h3><a href="https://host-custom.com/x">宿主标题</a></h3>

@@ -55,7 +55,7 @@ function resolveProjectSearchRoot(): string | undefined {
 let agentPromise: Promise<Agent> | null = null;
 
 /**
- * 读取「禁用的技能名」配置（S4 技能启停，**唯一读取点**）
+ * 读取「禁用的技能名」配置（技能启停，**唯一读取点**）
  *
  * 三处消费共用本函数：① 装配期注入；② 配置变更监听；③ 手动重载命令。
  * 各自内联 `getConfiguration` 会让**键名与默认值**在三个地方各存一份，改一处漏两处。
@@ -68,11 +68,11 @@ function readDisabledSkills(): string[] {
 }
 
 /**
- * 技能启停（S4）同步：把宿主配置的禁用集喂给内核 + 刷新**两条** UI 消费通道。
+ * 技能启停同步：把宿主配置的禁用集喂给内核 + 刷新**两条** UI 消费通道。
  *
  * 单一实现 —— 配置变更监听与「Memora: 重载技能与角色包」命令共用，防两处各写一份。
  *
- * 消费通道必须枚举完整（缺一即「只刷一半」，SKILL-S2 血训）：
+ * 消费通道必须枚举完整（缺一即「只刷一半」，血的教训）：
  *   ① 对话区技能下拉 + chip 标注 → `chatProvider.refreshSkillList()`
  *   ② 设置页技能卡片（「已禁用」徽章 + health） → `settingsProvider.refreshSkillList()`
  *
@@ -104,7 +104,7 @@ function syncDisabledSkills(
  *   若在 assemble 内用 import.meta.url 相对推断，esbuild bundle 后路径漂移会导致角色包加载失败（坑））
  * @param userSkillsDir 用户技能目录（可选）
  * @param userRolePacksDir 用户角色包目录（可选，与内置包同池注入）
- * @param outputChannel VSCode 输出通道（G7：日志对接）
+ * @param outputChannel VSCode 输出通道（日志对接）
  */
 function getOrCreateAgent(
   projectPath: string,
@@ -126,7 +126,7 @@ function getOrCreateAgent(
     const confirmWrites = globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
     // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
     const confirmScripts = globalState.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-    // 读取工作区白名单额外路径（G8：项目级设置，落 .vscode/settings.json）；
+    // 读取工作区白名单额外路径（项目级设置，落 .vscode/settings.json）；
     // 项目目录基准根恒在，此处仅含用户额外路径
     const allowedPaths = vscode.workspace
       .getConfiguration('memora')
@@ -170,7 +170,7 @@ function getOrCreateAgent(
 
 /** 插件激活入口 */
 export function activate(context: vscode.ExtensionContext): void {
-  // G7：创建日志输出通道 —— 内核日志将导向此通道，用户可在 VS Code 输出面板查看
+  // 创建日志输出通道 —— 内核日志将导向此通道，用户可在 VS Code 输出面板查看
   const memoraOutput = vscode.window.createOutputChannel('Memora');
   context.subscriptions.push(memoraOutput);
 
@@ -180,7 +180,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // （避免 Workspace 优先级覆盖 Global 新配置导致不生效）
   void providerStore.migrateFromWorkspace();
   // 一次性迁移：旧全局 memora.maxContextTokens → 首个 Provider 的 contextWindow
-  // （窗口上限为 per-LLM 配置，全局键仅作迁移来源；详见 ADR-029）
+  // （窗口上限为 per-LLM 配置，全局键仅作迁移来源；见架构决策）
   void providerStore.migrateMaxContextTokens();
 
   // 插件内置配置目录（SSOT）：从 extensionUri 显式定位，
@@ -365,7 +365,7 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.window.showWarningMessage('Memora Agent 未就绪，无法重载技能');
         return;
       }
-      // 禁用集 + UI 同步（S4 启停闭环）：配置变更本身已由 onDidChangeConfiguration 监听
+      // 禁用集 + UI 同步（启停闭环）：配置变更本身已由 onDidChangeConfiguration 监听
       // 自动完成；此处保留为**幂等兜底**——reloadConfig 会重扫技能池（增删技能后清单变化），
       // 重设一次保证「手动重载后 UI 与内核一致」，且万一监听未触发仍有手动救济路径。
       syncDisabledSkills(agent, chatProvider, settingsProvider);

@@ -111,8 +111,8 @@ export interface ProjectedLayer3 {
 /**
  * 把 L3 发现结果投影为 layer3 落地结构（resources 与 scripts 皆空时返回 undefined）
  *
- * 两种技能载体（全局 SkillManager / 角色包 RolePackManager）此前**各写一遍**该投影，
- * 注释却互相宣称已收口——实则只有「发现」收口了，「投影」改一处即静默漂移。
+ * 两种技能载体（全局 SkillManager / 角色包 RolePackManager）共用该投影，
+ * 两载体各写一遍会改一处即静默漂移。
  * 本函数是 discovered → layer3 投影的唯一收口（SSOT）。
  */
 export function projectDiscoveredLayer3(discovered: DiscoveredLayer3): ProjectedLayer3 | undefined {

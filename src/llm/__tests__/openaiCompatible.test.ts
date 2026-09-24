@@ -827,7 +827,7 @@ describe('OpenAICompatibleProvider · 请求参数边界（maxTokens/timeoutMs �
   });
 });
 
-// ─── reasoning_content 解析（2026-09-13，Turn 意图理解与模型思考展示设计）──
+// ─── reasoning_content 解析（Turn 意图理解与模型思考展示设计）──
 
 describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
   it('delta.reasoning_content 增量透传到 chunk.thought（与 tool_calls 并存时序）', async () => {
@@ -869,7 +869,7 @@ describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
   });
 });
 
-// ─── usage token 统计解析（2026-09-18 双出口收敛后补测）──
+// ─── usage token 统计解析（双出口）──
 
 describe('OpenAICompatibleProvider · usage token 统计', () => {
   /** 构造 SSE 事件序列响应（每条事件为完整 payload，供 usage/choices 组合场景） */

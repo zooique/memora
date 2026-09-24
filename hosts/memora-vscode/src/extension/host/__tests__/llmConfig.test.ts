@@ -1,5 +1,5 @@
 /**
- * llmConfig — Provider 构建的宿主契约（2026-09-21 · 站 63 补测）
+ * llmConfig — Provider 构建的宿主契约
  *
  * 覆盖缺口：`createProvider` 的 **store 分支**（配置面板激活的 Provider）此前零覆盖——
  * 既有 hostIntegration 只测环境变量回退分支（store 恒传 undefined）。

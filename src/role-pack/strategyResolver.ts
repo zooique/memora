@@ -2,8 +2,7 @@
  * 角色包行为策略解析器：集中管理行为策略的默认值、解析（resolve*）、合并与装配逻辑。
  */
 
-//  召回保底下限默认值（原 DEFAULT_MIN_FALLBACK）随阶段2 策略键族退役，且该常量本身已随
-//  `recall()` 召回编排于 2026-09-10 剪枝中删除——role-pack 与 memory 层现均不持有召回保底；
+//  role-pack 与 memory 层均不持有召回保底（记忆纯工具化召回，无自动注入通道）。
 
 // 数值键上下限常量（SSOT）：validator 与 resolver 共用同一区间来源，越界值回退内核默认
 import {
@@ -48,8 +47,8 @@ import type { RolePackManager } from './rolePackManager.js';
 // loop 构造时 opts.maxIterations 也用同一个 DEFAULT_MAX_ITERATIONS 源头对齐）
 // ════════════════════════════════════════════════════════════
 
-// 记忆召回相关默认常量（DEFAULT_MEMORY_RECALL_PERCENT 等）随阶段2 召回策略键族退役：
-// 记忆纯工具化召回后 prepare 无自动注入消费端，memoryRecallPercent/recallConfidence 等不再由策略层解析。
+// 无记忆召回相关默认常量（memoryRecallPercent/recallConfidence 等）——记忆纯工具化召回，
+// prepare 无自动注入消费端，策略层不解析召回参数。
 
 /**
  * 行为策略全局默认值——未配置的维度使用全局默认值，角色包只声明它想改变的部分。
@@ -95,7 +94,7 @@ export const DEFAULT_BEHAVIOR_STRATEGY: BehaviorStrategy = {
  *
  * @param rolePackManager 角色包管理器（可为 null）
  * @param override 宿主装配级策略覆盖（可选）：**压过角色包声明**，表达宿主产品能力边界。
- *  只影响 override 声明过的键（v0.13 后无内置示例键；自动匹配全链已移除，机制保留）。
+ *  只影响 override 声明过的键（无内置示例键；无自动匹配链，机制保留）。
  * @returns 当前激活行为策略（含装配级覆盖）
  */
 export function resolveActiveStrategy(
@@ -122,9 +121,7 @@ function normalizeEnum<T extends string>(value: unknown, allowed: readonly T[], 
 // 策略解析函数 (resolve*)
 // ════════════════════════════════════════════════════════════
 
-// 自动注入召回 6 键解析函数（resolveMemoryRecallMode/resolveMinFallback/resolveMemoryRecallPercent/
-// resolveContextAssembly/resolveRecallConfidence/resolveSummaryRecall）随阶段2 键族退役——记忆纯工具化
-// 召回后 prepare 无自动注入消费端，解析全链（types/strategyKeys/resolver/validator）同步移除。
+// 无自动注入召回解析函数（键族不存在，见 types.ts 文件头注）。
 
 /**
  * 解析角色包提炼视角（SSOT）：非空字符串且 ≤ MAX_SUMMARY_FOCUS_LENGTH 字符才采用，

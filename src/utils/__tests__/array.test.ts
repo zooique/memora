@@ -1,7 +1,7 @@
 /**
  * 单元测试：数组工具函数
  *
- * 覆盖 byAccessedDesc 降序比较函数（原 byScoreDesc，2026-09-09 stage3 score 退役后
+ * 覆盖 byAccessedDesc 降序比较函数（score 退役后
  * 以 accessedAt 作为使用轨迹唯一事实源），重点验证：
  *   - 更新的 accessedAt 排前（返回正数）
  *   - 更旧的 accessedAt 排后（返回负数）

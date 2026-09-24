@@ -143,7 +143,7 @@ export interface AssembleOptions {
    */
   rolePackTeams?: { leader: string; members: string[] }[];
   /**
-   * 用户技能目录（可选，2026-08-22 新增）
+   * 用户技能目录（可选）
    *
    * 用户自定义技能存储路径（如 globalStorage/skills/），由宿主确定并注入。
    * Agent init 完成后，SkillManager 会扫描该目录并注册技能（运行时注入）。
@@ -151,7 +151,7 @@ export interface AssembleOptions {
    */
   userSkillsDir?: string;
   /**
-   * 用户角色包目录（2026-08-22 新增，2026-08-30 已开放）
+   * 用户角色包目录（可选，与内置包同池注入）
    *
    * extension.ts 从 globalStorageUri/role-packs 传入有效路径，本装配处实际加载：
    * 用户角色包经内核 RolePackManager.loadExtraDir() 运行态注入，与内置包同池可切换。
@@ -166,7 +166,7 @@ export interface AssembleOptions {
    */
   confirmWrites?: boolean;
   /**
-   * 脚本/代码执行确认开关（2026-09-08，P3-⑥）
+   * 脚本/代码执行确认开关
    *
    * 与 confirmWrites 同模式：开启后 owner 模式 run_code/run_project_script 执行前
    * 触发审批确认；关闭后自动批准。由 extension 从 globalState 读取注入，
@@ -263,7 +263,7 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
 
   // 上下文窗口解析（SSOT 单源公式）：vscode 窗口上限唯一真理源 = 用户 per-LLM 的 contextWindow
   // （LlmProviderConfig.contextWindow，由配置面板开放编辑）；未配置回落内核默认 120K（默认非真理源）。
-  // 无全局封顶——用户对自己填写的参数负责（见 ADR-029）。resolveContextWindow 单参：传 per-LLM 值，undefined 即兜底。
+  // 无全局封顶——用户对自己填写的参数负责（见架构决策）。resolveContextWindow 单参：传 per-LLM 值，undefined 即兜底。
   const activeProviderCfg = providerStore ? await providerStore.getActive() : undefined;
   const maxContextTokens = resolveContextWindow(activeProviderCfg?.contextWindow);
 
@@ -323,13 +323,13 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
     // 可观测性 Tracer（P2：§5.2.1 指纹由 ITracer 承载，宿主采集不落盘）
     tracer: vscodeTracer,
     permission: 'owner',
-    // 白名单 = 基准根 projectPath + 用户额外允许目录（G8：运行时可热更新，基准根不可移除）
+    // 白名单 = 基准根 projectPath + 用户额外允许目录（运行时可热更新，基准根不可移除）
     allowedPaths: [projectPath, ...(allowedPaths ?? [])],
-    // 写入二次确认（H0：用户级安全偏好；开启后 owner 写文件前触发审批确认）
+    // 写入二次确认（用户级安全偏好；开启后 owner 写文件前触发审批确认）
     confirmWrites: confirmWrites ?? false,
-    // 脚本/代码执行确认（2026-09-08：与写入确认同模式，开则 run_code/run_project_script 执行前询问）
+    // 脚本/代码执行确认（与写入确认同模式，开则 run_code/run_project_script 执行前询问）
     confirmScripts: confirmScripts ?? false,
-    // 禁用技能清单（S4，配置形态启停）：命中技能对 LLM 全链不可用（L1/L2/L3），
+    // 禁用技能清单（配置形态启停）：命中技能对 LLM 全链不可用（L1/L2/L3），
     // 宿主 settingsView 依据同名设置标注「已禁用」徽章
     disabledSkills: disabledSkills ?? [],
   });

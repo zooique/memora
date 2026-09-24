@@ -1124,7 +1124,7 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
       chunks.push(chunk);
     }
 
-    // 应有 aborted chunk。触发点订正（2026-09-20 站 20 实测）：预先 abort 的 signal
+    // 应有 aborted chunk。触发点（实测）：预先 abort 的 signal
     // 使 **LLM 调用本身**即返回 aborted（runIteration 中 llmResult.aborted 分支），
     // 根本不会进入 executeToolCalls —— 故不是「工具循环结束后那次 abort 检查」所触发。
     // （后者 = executeToolCalls 循环尾部的 abort 复查；真正走 executeToolCalls **入口处**
@@ -1221,7 +1221,7 @@ describe('AgentLoop · processUserInput 最大迭代限制', () => {
   it('达到 maxIterations 后应该停止', async () => {
     // 每轮都返回 toolCalls，迫使循环直到上限。
     // 注：用单条 tool call（而非 Array(5).fill 的同响应 5 重复）——后者是「同批次重复 id」的
-    // 畸形批次，会被 TOOLPAIR-2 发送边界守卫正确拦截而不会走迭代上限；跨迭代复用同 id 属
+    // 畸形批次，会被发送边界守卫正确拦截而不会走迭代上限；跨迭代复用同 id 属
     // 跨消息场景（守卫不判、G3 已保证真实内核唯一），故单条即纯逼迭代上限。
     const toolCall = {
       toolCalls: [
@@ -1419,7 +1419,7 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
     expect(retries).toHaveLength(0);
   }, 15000);
 
-  // 真用户取消语义（2026-09-02 假中断排雷校准）：信号已被 abort → 判为用户取消 → aborted chunk。
+  // 真用户取消语义（假中断守卫）：信号已被 abort → 判为用户取消 → aborted chunk。
   // processUserInput 显式传入已 abort 的 AbortSignal，验证 abort 语义只在 signal.aborted 时生效。
   it('AbortError 且 signal 已 abort → 用户取消，输出 aborted chunk', async () => {
     const provider = mockRetryProvider([
@@ -2208,10 +2208,10 @@ describe('AgentLoop · 自审查轮（Self-Review）', () => {
     expect(selfReviewMsgs).toHaveLength(1);
   });
 
-  it('终审即停：审查后 done 立即真实生效，不再续跑（SELF-1）', async () => {
-    // 2026-09-13 单轮化：开关已收敛为布尔 selfReviewEnabled，「上限 >1」在类型层不可构造，
+  it('终审即停：审查后 done 立即真实生效，不再续跑', async () => {
+    // 单轮化：开关是布尔 selfReviewEnabled，「上限 >1」在类型层不可构造，
     // 故改用 5 轮 provider 直接验证「审查一轮后 done 立即生效、后续轮次全部不触发」，
-    // 守的仍是 SELF-1（防 done 后反复审查拖长 turn）。
+    // 守的是「防 done 后反复审查拖长 turn」。
     // 5 轮 provider：工具步 + 初始回复 + 审查1 + （第4/5 轮不应触发）
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([

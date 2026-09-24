@@ -129,11 +129,11 @@ async function scanPackSkills(
     if (relPath.startsWith('/') || relPath.startsWith('\\')) relPath = relPath.slice(1);
     relPath = relPath.replace(/\\/g, '/');
 
-    // L3 隔离纪律（2026-08-30 对齐 Claude Code 主流）：
+    // L3 隔离纪律（对齐 Claude Code 主流）：
     // 仅「文件夹形态」（入口为 SKILL.md）发现 resources/ scripts/；顶层裸 .md 的目录 = 技能池共享根，
     // 同级扫描会误并入其他技能的资源/脚本 → 污染。故裸 .md 为纯 L1/L2，带 L3 必须用文件夹+SKILL.md。
     // 该规则与 skillManager.createEntry **逐字同构**；发现与投影均已收口于 skillLayer3
-    // （discoverSkillLayer3 + projectDiscoveredLayer3，SSOT）——此前两侧各写一遍投影，
+    // （discoverSkillLayer3 + projectDiscoveredLayer3，SSOT）——两侧各写一遍投影，
     // 改一处即静默漂移。
     const l3 = await discoverSkillLayer3(absPath);
 
@@ -206,7 +206,7 @@ function parseManifestCapabilities(capabilitiesNode: unknown): RolePackCapabilit
 }
 
 /**
- * 解析 rules 内容为规则字符串列表（ADR-025 档 3：rule 语义对齐，支持常见 markdown 写法）。
+ * 解析 rules 内容为规则字符串列表（rule 语义对齐，支持常见 markdown 写法）。
  *
  * 拆规则标准（保守、可预测、向前兼容）：
  *   - 列表行（- / * / 数字. ）→ 逐条规则（保留历史行为）；
@@ -407,7 +407,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 组数据校验（S4，装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 / 组长组员互斥 → warning（不阻塞装载）。
+   * 组数据校验（装载后执行）：组长身份唯一 / 成员名单非空 / 引用悬空 / 组长组员互斥 → warning（不阻塞装载）。
    * 组员失效 → 会议时缺员跳过（resolveRoundAssemblyRole 内判定）；组长失效 → 该组失效（仅影响会议）。
    */
   private validateTeams(): void {
@@ -537,15 +537,15 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /**
-   * 会议机制：确定性骨架预置（SSOT 单一入口，ADR-028 收敛补记的「最小受控起点」半反转，
-   * 2026-09-07 触发样本实证后回归，与 buildTeamContextBlock 文案互补）。
+   * 会议机制：确定性骨架预置（SSOT 单一入口，「最小受控起点」半反转——
+   * 骨架确定性预置、内容与推进交 LLM，与 buildTeamContextBlock 文案互补）。
    *
    * 用户消息含「小组会议」**且** activePack 是某组组长 → 程序化预置占位骨架：
    * 组长开场步（无 rolePack = 默认组长视角）+ 组员各一步（`rolePack=成员`，触发表层装配硬切换）
    * + 汇总步尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
    * LLM 可经 task_table_write 追加额外步骤（骨架以 append 扩步，不锁死多轮交互）。
    * 不引入会议引擎：步骤执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按步标记 done/blocked，
-   * 装配视角逐步切换由 T1 收口（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
+   * 装配视角逐步切换（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
    *
    * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则步骤仅标「发言/汇总」由 LLM 见用户消息展开。
    * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。
@@ -723,7 +723,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
     // 接入格式校验器——error 级拒绝装载，与 manifest 解析失败同一失败语义（跳过 + warn），
     // 杜绝「校验了却不拦」的折衷：带 error 的角色包不该进系统。
-    // warning 级仍装载，issues 全量透进装配（见文末 G29 健康徽章）。
+    // warning 级仍装载，issues 全量透进装配（见文末健康徽章）。
     const validation = validateManifest(manifest);
     if (!validation.valid) {
       const errors = validation.issues.filter((i) => i.severity === 'error');
@@ -818,8 +818,8 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     };
     // 预计算装配结果（mergeStrategy + personaPrompt 构建）
     const cachedAssembly = assembleRolePack(pack);
-    // G29 健康徽章数据源：把 validateManifest 全量 issues（含 warning）透进装配，
-    // 宿主据此叠加徽章/问题列表；原「只记 error 日志」行为保留在上方校验块。
+    // 健康徽章数据源：把 validateManifest 全量 issues（含 warning）透进装配，
+    // 宿主据此叠加徽章/问题列表；上方校验块只记 error 日志。
     const assemblyWithIssues: RolePackAssembly = { ...cachedAssembly, validationIssues: validation.issues };
     return { ...pack, _cachedAssembly: assemblyWithIssues };
   }
@@ -1107,7 +1107,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (!skillDir) return null;
 
     // 路径穿越防护：双层——layer3 白名单 + resolveSafePath 边界前缀（收口于 skillLayer3，SSOT）。
-    // 读取基目录按条目来源 subdir 选择（resources/ 或 references/，B1 兼容主流 references/ 目录）
+    // 读取基目录按条目来源 subdir 选择（resources/ 或 references/，兼容主流 references/ 目录）
     const resourceFullPath = resolveLayer3ResourcePath(skillDir, layer3, resourcePath);
     if (!resourceFullPath) {
       getLogger().warn(

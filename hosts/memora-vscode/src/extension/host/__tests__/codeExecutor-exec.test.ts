@@ -2,7 +2,7 @@
  * codeExecutor-exec.test.ts — spawn 行为锁定（独立文件）
  *
  * 与 codeExecutor.test.ts（真实子进程执行）隔离：本文件对 `node:child_process`
- * 做文件级 mock，锁定 spawn 选项（2026-09-08 新枝破土扫描②·与内核
+ * 做文件级 mock，锁定 spawn 选项（与内核
  * skillScriptRunner-exec.test.ts 同构）：
  *   1. 执行形态 — node -e 直传代码（不经 shell，无命令注入）+ windowsHide:true
  *      （不弹多余终端窗口）
@@ -50,7 +50,7 @@ function fakeSpawnErrorChild(err = new Error('spawn ENOENT')) {
   return fake;
 }
 
-describe('codeExecutor — spawn 行为锁定（2026-09-08 新枝破土扫描②·内核 exec 同构）', () => {
+describe('codeExecutor — spawn 行为锁定（内核 exec 同构）', () => {
   const mockedSpawn = vi.mocked(childProcess.spawn);
   afterEach(() => {
     mockedSpawn.mockReset();

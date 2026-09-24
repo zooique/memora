@@ -7,7 +7,7 @@
 /** 漂移等级：same(>0.7 自动应用)/confirm(0.4-0.7 建议确认)/drift(<0.4 需确认) */
 export type DriftLevel = 'same' | 'confirm' | 'drift';
 
-/** 约束关键词单一真源：提取 pattern（全文匹配）与剥离前缀（checkConstraintsConsistent 用）共用，防双列表漂移（2026-09-20 站 47 收口） */
+/** 约束关键词单一真源：提取 pattern（全文匹配）与剥离前缀（checkConstraintsConsistent 用）共用，防双列表漂移 */
 const CONSTRAINT_KEYWORDS = [
   '必须',
   '不能',

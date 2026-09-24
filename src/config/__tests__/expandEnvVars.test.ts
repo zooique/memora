@@ -73,7 +73,7 @@ describe('expandEnvVars — Providers 映射表', () => {
     expect(result.llm.providers!['provider2']!.baseUrl!).toBe('https://p2.example.com');
   });
 
-  it('展开 Provider 的 model（D-2026-08-26：model 也支持环境变量）', () => {
+  it('展开 Provider 的 model（model 也支持环境变量）', () => {
     process.env.TEST_PROVIDER1_MODEL = 'mimo-v2.5';
     const config: Config = {
       ...createConfigWithPlaceholders(),

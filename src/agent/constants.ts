@@ -184,7 +184,7 @@ export const LOOP_CONSTANTS = {
 
   /** 流式中断的默认追加标记（SSOT）：含断点摘要，让 LLM 明确"以上已输出，请继续不重复"。
    * loop（流式响应中断）与 orchestrator（历史写入中断标记）必须用同一份默认文案，
-   * 避免宿主未注入 messages 时两条路径降级出不同文案（此前 orchestrator 回退为短" [已中断]"）。
+   * 避免宿主未注入 messages 时两条路径降级出不同文案（另一路径为短 "[已中断]"）。
    */
   DEFAULT_INTERRUPTED_MARK:
     '\n\n[已中断]\n\n[断点摘要：以上内容已输出到 LLM，请在此基础上继续回答，不要重复已输出的内容]',
