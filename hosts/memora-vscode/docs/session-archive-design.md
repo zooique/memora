@@ -97,6 +97,6 @@
 
 ## 七、关联
 
-- [memory-role-pack-boundary-rules.md](../../.trae/rules/memory-role-pack-boundary-rules.md)（会话记录归宿主会话存储、记忆单轨 round-summary）
+- [memory-role-pack-boundary-rules.md](../../../.trae/rules/memory-role-pack-boundary-rules.md)（会话记录归宿主会话存储、记忆单轨 round-summary）
 - `src/memory/sessionStore.ts`（内核 `ISessionStore` 契约，本次不动）
 - [directory-structure.md](./directory-structure.md)、[host-overview.md](./host-overview.md)

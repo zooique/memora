@@ -23,9 +23,9 @@
  *      没有它，宿主 dist 陈旧这一失效模式在门禁里零覆盖（历史教训：未改宿主 TS ≠ 未影响宿主 dist）。
  *
  * 用法：
- *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量 10 步）
+ *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量 11 步）
  *   node scripts/local-ci.mjs --preset=fast   # 快档：只跑两侧 tsc（≤60s，挂 pre-commit）
- *   node scripts/local-ci.mjs --preset=full   # 全档：10 步（挂 pre-push）
+ *   node scripts/local-ci.mjs --preset=full   # 全档：11 步（挂 pre-push）
  *   node scripts/local-ci.mjs --kernel-only   # 只跑内核（≈ CI 原范围 + 覆盖率）
  *   node scripts/local-ci.mjs --skip-cov      # 跳过覆盖率闸门（省 ~40s）
  *   node scripts/local-ci.mjs --skip-build    # 跳过生产构建
@@ -101,6 +101,15 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
     optionalFlag: 'skip-build',
+  },
+  // 全仓文档死链：链接腐烂是静默失效，全仓 0 死链基线锁定后硬闸（确定性 FS 扫描，秒级）。
+  {
+    id: 'docs:links',
+    name: '全仓文档死链检查',
+    cmd: 'npm run docs:links:repo',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
   },
   { id: 'audit', name: '依赖安全审计（允许失败）', cmd: 'npm audit --audit-level=high', cwd: ROOT, required: false, presets: ['full'], optionalFlag: 'audit-invert' },
 ];
