@@ -11,7 +11,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 
 记忆两类轨道：**设定记忆**（骨骼：persona/rule/skill）+ **对话记忆**（血肉：round-summary 问答闭环摘要记忆，会话级摘要归会话记录存储 SessionMeta）。
 
-- 设定记忆**唯一归角色包**（`role-packs/<名>/` manifest 控制 + persona.md/rules.md/skills/*），纯文件 + 内存缓存装载，**不写 SQLite / 记忆库**（ADR-025）。旧 `configDir/personas|rules|skills + SQLite` 模型及 `PersonaManager/ConfigManager/matchAndInjectSkill/bootstrapMemories getBySource('rule')` 已全部移除。
+- 设定记忆**唯一归角色包**（`role-packs/<名>/` manifest 控制 + persona.md/rules.md/skills/*），纯文件 + 内存缓存装载，**不写 SQLite / 记忆库**（ADR-025）。旧 `configDir/personas|rules|skills + SQLite` 模型及其 Manager / 引导链路**已全部移除**。
 - Persona：`persona.md` 约定名；确定性注入 systemPromptPrefix；**手动切换唯一入口**（无 autoSwitch/自动匹配/exclusiveWith，切换只经宿主 `switchRolePack`）；角色包可建组（组长 + 组员名单，组员仅小组会议内表层装配发言）。能力声明在 manifest 顶层 `capabilities`。
 - Skill：全局池 `configDir/skills/`（全局激活）+ 角色包 `skills/`（角色激活才激活），两级渐进披露（L1 元数据常驻 / L2 `read_skill` 读正文 / L3 `read_resource`·`run_skill_script`），目录动态扫描。
 - Rule：`rules.md` 约定名；确定性注入、始终在线。
@@ -59,7 +59,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 
 ## 6. 记忆按需召回（工具化，不预加载）
 
-- 设定记忆唯一归角色包（persona/rules/skills），对话记忆**不进启动加载**——检索唯一入口 = `search_memories` 工具（**纯关键词单通道**，语义向量通道已随 2026-09-18 B0 收编移除），由 LLM/宿主主动取用、按需拉取（非常驻预算）
+- 对话记忆**不进启动加载**——检索唯一入口 = `search_memories` 工具（**纯关键词单通道**，语义向量通道已移除），由 LLM / 宿主主动取用、按需拉取（非常驻预算）
 - 命中即刷新 `accessedAt`（最近使用事实字段）；冲突经 `supersededBy`（ADR-021）；`DEFAULT_RECALL_EXCLUDE_SOURCES = []`
 - 归档经记忆归档三原则过滤，拒绝低价值重复信息
 
@@ -81,7 +81,7 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 
 ## 8. 自然遗忘优于完美记忆
 
-**无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ 命中刷新 accessedAt（只 touch、不做重要度加权；score 已于 2026-09-09 物理退役）**；物理清理靠回收站（默认保留 30 天）。
+**无主动衰减**（`MemoryDecayScheduler` 已移除）。治理 = **supersede（写时取代）+ 命中刷新 accessedAt（只 touch、不做重要度加权；score 已物理退役）**；物理清理靠回收站（默认 30 天）。
 
 - round-summary 记忆有效性由 superseded 写时取代 + 召回相关性承担；**type 不设时效**（有效否由 superseded + 召回相关性判定，不由时间）。
 - `writePurgeExpired(before)`（memoryInspector）清理过期软删除记忆；内核不做主动衰减/沉底清理（记忆无时间归档语义）。
@@ -101,18 +101,20 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 Memora 被宿主接入后即该程序唯一 Agent，`memora.db` 是 Agent 级共享资源，不随子项目切换重建。**配置文件是真理源，SQLite 是运行时索引**。
 
 - 项目级 `projectPath/.memora/` 只放 rules/skills，不放 memora.db；用户记忆（dataDir）存 memora.db + sessions/，纯数据。
-- 设定记忆经角色包/技能池纯文件装载（内核只读，不写 SQLite / 记忆库）；配置持久化由宿主直接落文件（历史 `ConfigManager` 两段式契约已随角色包边界收敛移除）。
+- 配置持久化由宿主直接落文件（历史 `ConfigManager` 两段式契约已移除；设定记忆纯文件装载见 §1）。
 
 **禁止**：❌ 每个子项目独立 memora.db；❌ 项目切换时关闭/重建数据库；❌ 将配置直接写入 SQLite 作为持久化存储。
 
 ## 11. 角色包是参数集，插卡解耦（通用引擎 ↔ 专业卡）
+
+> **术语分工**：领域术语（含角色包类词）的**唯一定义**见 [terminology-anchor-rules.md](./terminology-anchor-rules.md)（常驻加载）§5。**本 §11 不重复定义**，只保留角色包「插卡解耦」的论证——定义两处即漂移。
 
 内核是 turn（问答闭环）的通用引擎，角色包是参数集（persona/rules/capabilities/strategy 四件套），正交解耦。**memora 不需要知道自己是谁——只需知道当前插的是什么卡。**
 
 - 卡：**可插拔**（role-pack-spec 标准格式，实现无关）、**可共享**（纯文本可分发/版本管理，manifest 唯一核心控制）、**不自洽**（不含执行引擎，是纯声明）。
 - **任何时候只有一个角色包生效**（v0.13 定案：手动切换单一角色包 + 组长角色包会议名单，组员仅会议内发言，ADR-028）。
 - 校验/管理/能力映射都非独立系统，是闭环各阶段行为（Prepare/Act/后台 Reflect）。
-  > **废弃说明（2026-09-05）**：旧设计含 `Handoff` 阶段（与 Prepare/Act 并列）。seed 收敛后 turn 结束即 done，`seed/orchestrator.ts` 只聚合 prepare/act/reflect，**Handoff 阶段已删除**——气口（step 边界暂停）是 loop 内 step 编排的自然属性，不属独立的闭环阶段。
+  > **Handoff 阶段已删除**：turn 结束即 done，`seed/orchestrator.ts` 只聚合 prepare/act/reflect——气口（step 边界暂停）是 loop 内 step 编排的天然属性，不属独立闭环阶段。
 - 技能两级（见 §1 Skill）：通用技能全局一份，角色包不重复（避免复制）；`manifest.capabilities`（能做什么）与 `manifest.skills`（技能正文）分离。
 
 **禁止**：❌ 角色包包含执行引擎逻辑；❌ 内核 hardcode 任何领域知识；❌ 角色包与内核版本强耦合（用 formatVersion 兼容）。

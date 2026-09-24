@@ -941,17 +941,8 @@ this.internals.gcService?.stopPeriodic();
 
 ### A. 术语表
 
-| 术语 | 说明 |
-|------|------|
-| Round | 问答闭环，包含一轮完整的 User + AI 对话 |
-| Round ID | 问答闭环的全局唯一标识 |
-| Session | 会话，问答闭环 ID 的有序列表 |
-| Session ID | 会话的唯一标识 |
-| Memory | 记忆，以 Round ID 为核心标识的摘要 |
-| Memory ID | 记忆的唯一标识，格式为 `round-summary:{roundId}` |
-| SessionView | 会话的逻辑视图，展开后的完整对话 |
-| 引用计数 | 记录问答闭环被多少个会话引用 |
-| GC | 垃圾回收，清理孤立的问答闭环 |
+> **术语定义已收敛至唯一定义处**：`.trae/rules/terminology-anchor-rules.md`（常驻加载）§5.1「存储层术语」。
+> **本节不再重复定义**（Round / Round ID / Session / Memory / SessionView / 引用计数 / GC 均在彼处）——定义两处即漂移。本附录仅保留与存储设计绑定的核心原则（§B）。
 
 ### B. 核心原则
 

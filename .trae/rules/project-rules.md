@@ -1,68 +1,60 @@
 ---
 alwaysApply: false
-description: Memora 项目总则、技术栈清单、目录结构
+description: Memora 项目总则、技术栈清单、目录结构、硬约束与 AI 行为速查
 ---
 
 # Memora · 项目总则
 
-> **设计哲学**：万物皆是记忆 **核心矛盾**：无状态推理 ←→ 连续演化任务
-> **架构定位**：memora = 通用闭环引擎（插卡机），角色包 = 参数集（卡）。**通用性由内核保证，专业性由角色包驱动**。详见 [architecture_philosophy_rules.md §11](./architecture_philosophy_rules.md)
-> **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注详见
-> [architecture_philosophy_rules.md §9](./architecture_philosophy_rules.md)
-> **决策追溯**：决策年轮 `.trae/decisions/`（内核 + 插件；编号规则、跳号与废弃状态以 [decisions/README](../decisions/README.md) 为单一真源）
+> **设计哲学**：万物皆是记忆｜**核心矛盾**：无状态推理 ←→ 连续演化任务
+> **架构定位**：memora = 通用闭环引擎（插卡机），角色包 = 参数集（卡）。通用性由内核保证，专业性由角色包驱动（[architecture_philosophy_rules.md §11](./architecture_philosophy_rules.md)）
+> **基调**：专注模式（应无所住，而生其心）——支持切换，默认专注（[§9](./architecture_philosophy_rules.md)）
+> **决策追溯**：决策年轮 `.trae/decisions/`（编号规则、跳号与废弃状态以 [decisions/README](../decisions/README.md) 为单一真源）
 
 ## 1. 不可违反的硬约束
 
 1. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/decisions/`）
-2. **跨文档引用规范**：详见
-   [cross-document-reference.md](./cross-document-reference.md)——使用"文档.§章节号"格式
-3. **记忆统一模型**：不引入"规则/技能/历史"等独立子系统；统一用
-   `source` 开放字符串区分（详见 [ADR-004](../decisions/ADR-004-memory-unification.md)）
-4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
-5. **配置文件是真理源**：配置文件是持久化真理源，SQLite 仅作运行时索引（详见 [architecture_philosophy_rules.md §10](./architecture_philosophy_rules.md)）
-6. **内核 Node.js 专属 + 零第三方依赖**：memora 是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto` 等），但 `dependencies` 字段为空（零第三方运行时依赖）。不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（Electron/browser API 等）。内核**不做任何运行时第三方模块解析**（不静态 `import` 三方包 / 不动态 `import()` / 不 `require()`），`peerDependencies` 亦不声明；日志经 `setLogger()` 注入自定义 `ILogger`，未注入时用内核内置 console fallback（写 stderr）（详见 [ADR-002 · 内核零运行时模块解析（2026-09-19 补充节）](../decisions/ADR-002-storage-layer.md)）
-7. **设定记忆 = 文件即资源（纯文件装载）**：persona / rules / skills 设定记忆唯一归角色包 / 技能池，以**纯文件 + 内存缓存**装载（见 [memory-role-pack-boundary-rules.md](./memory-role-pack-boundary-rules.md) R1/R3/R9），**不写入 SQLite / 记忆库**。配置文件是真理源，内核只读；新增 / 修改设定记忆由宿主直接落文件、由扫描装载（Skills 目录动态扫描、RolePackManager 扫描）。已无「写 API 同步 SQLite 索引」这一中间层——历史 `ConfigManager` 的两段式契约（`addRule`/`deleteRule`/`updateRule`/`deleteSkill` + `fileConsistencyCheck`）已随角色包边界收敛移除，不再引用。
-8. **检查点纯内存态（2026-09-10 减法）**：`SessionCheckpoint` 为同进程内存态快照，不落盘、无序列化/恢复路径——中止/断电走「中断轮补全为完整 turn」，运行时暂停同 turn 内存续跑。`schemaVersion` 结构版本标识已随恢复链退役并**彻底删除**（`SessionCheckpoint.schemaVersion` 字段 + `AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION` 常量均已移除，勿再引用）；**不存在版本迁移分发表与加载时版本路由**（原 `normalizeCheckpoint` / `checkpointMigrations` / `CURRENT_SCHEMA_VERSION` 已随恢复链退役）。新增检查点字段仅需保持内存态自洽，无需注册任何迁移（详见 [sessionManager.ts](../../src/agent/managers/sessionManager.ts)）
+2. **跨文档引用规范**：用「文档.§章节号」格式，详见 [cross-document-reference.md](./cross-document-reference.md)
+3. **记忆统一模型**：不引入「规则/技能/历史」等独立子系统；统一用 `source` 开放字符串区分（[ADR-004](../decisions/ADR-004-memory-unification.md)）
+4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（[§10](./architecture_philosophy_rules.md)）
+5. **配置文件是真理源**：配置文件持久化，SQLite 仅作运行时索引（[§10](./architecture_philosophy_rules.md)）
+6. **内核 Node.js 专属 + 零第三方依赖**：纯逻辑库，只用内置模块（`node:fs`/`node:path`/`node:os`/`node:crypto`），`dependencies` 为空。不引入 native 模块（better-sqlite3/electron）与宿主专属 API（Electron/browser）；**不做任何运行时三方模块解析**（不静态 import / 不动态 `import()` / 不 `require()`），`peerDependencies` 亦不声明。日志经 `setLogger()` 注入 `ILogger`，未注入用内置 console fallback（写 stderr）（[ADR-002](../decisions/ADR-002-storage-layer.md)）
+7. **设定记忆 = 纯文件装载**：persona/rules/skills 唯一归角色包 / 技能池，纯文件 + 内存缓存装载（[memory-role-pack-boundary-rules.md](./memory-role-pack-boundary-rules.md) R1/R3/R9），**不写 SQLite / 记忆库**。配置文件是真理源，内核只读；新增 / 修改由宿主落文件 + 扫描装载（skills 目录动态扫描）。历史 `ConfigManager` 两段式契约（`addRule`/`deleteRule`/`updateRule`/`deleteSkill` + `fileConsistencyCheck`）已移除，不再引用
+8. **检查点纯内存态**：`SessionCheckpoint` 是同进程内存态快照，**不落盘、无序列化 / 恢复路径**；中止 / 断电走「中断轮补全为完整 turn」，暂停为同 turn 内存续跑。`schemaVersion` 字段 + `AGENT_CONSTANTS.CHECKPOINT_SCHEMA_VERSION` **已彻底删除**（勿再引用）；**无版本迁移分发表**（`normalizeCheckpoint` / `checkpointMigrations` / `CURRENT_SCHEMA_VERSION` 已随恢复链退役）。新增字段只需内存态自洽，无需注册迁移
 
 ## 2. 技术栈清单
 
-| 类别   | 选型                                         | 决策                                                  |
-| ------ | -------------------------------------------- | ----------------------------------------------------- |
-| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](../decisions/ADR-001-runtime-stack.md)       |
-| 数据层 | IMemoryStorage 接口（宿主注入持久化实现）    | [ADR-002](../decisions/ADR-002-storage-layer.md)       |
+| 类别 | 选型 | 决策 |
+| ---- | ---- | ---- |
+| 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | [ADR-001](../decisions/ADR-001-runtime-stack.md) |
+| 数据层 | IMemoryStorage 接口（宿主注入持久化实现） | [ADR-002](../decisions/ADR-002-storage-layer.md) |
 | 冲突消解 | supersededBy 布尔标记（写路径取代检测，读时过滤） | [ADR-021](../decisions/ADR-021-memory-conflict-supersede-write-path.md) |
-| 归档模式 | archiveMode 二态控制（full / manual，insights-only 已随洞察层移除） | [ADR-015](../decisions/ADR-015-archive-mode.md) |
-| LLM    | OpenAI Chat Completions 兼容协议             | [ADR-003](../decisions/ADR-003-llm-adapter.md)         |
-| 形态   | 纯逻辑库（CLI 由宿主提供）                   | [ADR-002 v0.8](../decisions/ADR-002-storage-layer.md)  |
-| 安全   | 两级权限 + 路径白名单                        | [ADR-006](../decisions/ADR-006-security-model.md)      |
-| 测试   | Vitest + MSW Mock LLM + InMemoryStorage      | [ADR-007](../decisions/ADR-007-testing-strategy.md)    |
-| 目录   | 按职责分层                                   | [ADR-008](../decisions/ADR-008-directory-structure.md) |
+| 归档模式 | archiveMode 二态（full / manual；insights-only 随洞察层移除） | [ADR-015](../decisions/ADR-015-archive-mode.md) |
+| LLM | OpenAI Chat Completions 兼容协议 | [ADR-003](../decisions/ADR-003-llm-adapter.md) |
+| 形态 | 纯逻辑库（CLI 由宿主提供） | [ADR-002 v0.8](../decisions/ADR-002-storage-layer.md) |
+| 安全 | 两级权限 + 路径白名单 | [ADR-006](../decisions/ADR-006-security-model.md) |
+| 测试 | Vitest + MSW Mock LLM + InMemoryStorage | [ADR-007](../decisions/ADR-007-testing-strategy.md) |
+| 目录 | 按职责分层 | [ADR-008](../decisions/ADR-008-directory-structure.md) |
 
 ## 2.5 同仓库多 Package 结构（Monorepo）
 
-本仓库包含 memora **内核**（纯逻辑库）与第一宿主 **VS Code 插件**（`hosts/memora-vscode/`），各自有独立的 `package.json`、`tsconfig`、测试与构建流程，共享同一 Git 仓库。桌面精灵宿主（memora-sprite）已独立仓库、独立开发，不再受本仓库规则约束。
+本仓库含 memora **内核**（纯逻辑库）与第一宿主 **VS Code 插件**（`hosts/memora-vscode/`），各有独立 `package.json` / `tsconfig` / 测试 / 构建，共享同一 Git 仓库。桌面精灵宿主（memora-sprite）已独立仓库，不受本仓库规则约束。
 
 ```
-memora/                          # Git 仓库根目录
-├── .gitignore                   # 统一管理所有 package 的忽略规则（单一真理源）
-├── .trae/rules/                 # 仓库级规则（本文件所在目录）
-├── package.json                 # memora 内核（纯逻辑库）
-├── tsconfig.json
-├── src/                         # memora 内核源码（§3 目录结构）
-├── tasks/                       # 统一任务追踪（内核 + 插件共享，唯一真理源）
-│
-└── hosts/
-    └── memora-vscode/            # 第一宿主：VS Code 插件（当前主战场，演示 memora 内核能力）
+memora/
+├── .gitignore          # 统一管理所有 package（单一真理源）
+├── .trae/rules/        # 仓库级规则（本文件所在目录）
+├── package.json        # memora 内核（纯逻辑库）
+├── src/                # 内核源码（§3 目录结构）
+├── tasks/              # 统一任务追踪（内核 + 插件共享，唯一真理源）
+└── hosts/memora-vscode/  # 第一宿主：VS Code 插件（当前主战场）
 ```
-
-**关键约束**：
 
 | 规则 | 说明 |
 |------|------|
-| 独立 package | 内核与宿主各自 `npm install` / `npm test` / `npm run build`，互不依赖对方的 devDependencies |
-| 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，不允许子目录存在独立 `.gitignore` |
-| 内核 Node.js 专属 | memora 内核是 Node.js 专属纯逻辑库，依赖 Node.js 内置模块（fs/path/os/crypto），但不引入 native 编译模块（better-sqlite3/electron 等）和宿主专属 API（详见 [ADR-002 v0.9](../decisions/ADR-002-storage-layer.md)） |
-| 宿主依赖内核 | 宿主以独立 package 方式依赖内核（安装版本化的 `@zooique/memora`，见 [ADR-002](../decisions/ADR-002-storage-layer.md) / [ADR-VC-001](../decisions/ADR-VC-001-vscode-plugin-host.md)） |
+| 独立 package | 内核与宿主各自 `npm install` / `npm test` / `npm run build`，互不依赖对方 devDependencies |
+| 统一 .gitignore | 根目录 `.gitignore` 是唯一真理源，子目录不得存在独立 `.gitignore` |
+| 内核 Node.js 专属 | 只用内置模块，不引入 native 模块与宿主专属 API（[ADR-002 v0.9](../decisions/ADR-002-storage-layer.md)） |
+| 宿主依赖内核 | 宿主以独立 package 依赖版本化的 `@zooique/memora`（[ADR-002](../decisions/ADR-002-storage-layer.md) / [ADR-VC-001](../decisions/ADR-VC-001-vscode-plugin-host.md)） |
 
 ## 3. 目录结构（不允许修改）
 
@@ -83,41 +75,30 @@ src/
 └── web-search/     # 网络搜索抽象（IWebSearchProvider + FetchWebSearchProvider，条件暴露）
 ```
 
-> **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./new-module-guide.md)，并经 ADR 记录）。模块**内部**的命名与拆分约定（index.ts / types.ts / core.ts / helpers.ts 等标准文件）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——若两处描述冲突，以本节为准。
-
-> **已移出**：`SqliteStorage`（→ 宿主项目）、`cli/`（→ 宿主项目）、`commander`（→ 宿主项目）、`better-sqlite3`（→ 宿主项目）
+> **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./new-module-guide.md) 并经 ADR 记录）。模块**内部**文件命名（index.ts / types.ts / core.ts / helpers.ts）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——两处冲突以本节为准。
+> **已移出**：`SqliteStorage` / `cli/` / `commander` / `better-sqlite3`（→ 宿主项目）
 
 ## 4. 命名规范（与 .trae/rules/ 一致）
 
-| 类型      | 规则                                 |
-| --------- | ------------------------------------ |
-| 文件夹    | 连字符（`cli-commands/`）            |
-| TS 文件   | 小驼峰（`openaiCompatible.ts`）     |
-| 类        | 大驼峰（`OpenAICompatibleProvider`） |
-| 变量/函数 | 小驼峰（`loadConfig`）               |
-| 常量      | 全大写下划线（`BLOCKED_PATTERNS`）   |
-| 类型/接口 | 大驼峰（`Memory`、`ChatOptions`）    |
+| 类型 | 规则 |
+| ---- | ---- |
+| 文件夹 | 连字符（`cli-commands/`） |
+| TS 文件 | 小驼峰（`openaiCompatible.ts`） |
+| 类 | 大驼峰（`OpenAICompatibleProvider`） |
+| 变量/函数 | 小驼峰（`loadConfig`） |
+| 常量 | 全大写下划线（`BLOCKED_PATTERNS`） |
+| 类型/接口 | 大驼峰（`Memory`、`ChatOptions`） |
 
-> **I-prefix 例外**：由宿主项目注入的接口（依赖倒置契约面，如 `ILogger`/`IMemoryStorage`/`ITracer`）允许使用 `I` 前缀——注入契约在架构语义上不同于普通数据类型/接口，`I` 前缀在此处承载了「由外部实现」的架构意图，不作为 Hungarian notation 违规。非注入接口仍须遵循纯 PascalCase。
+> **I-prefix 例外**：宿主注入的接口（依赖倒置契约面，如 `ILogger`/`IMemoryStorage`/`ITracer`）允许 `I` 前缀——它承载「由外部实现」的架构意图，不算 Hungarian 违规。非注入接口仍须纯 PascalCase。
+> **语义归属**（step / planItem 等指什么）见 [terminology-anchor-rules.md](./terminology-anchor-rules.md)。
 
 ## 5. Git 提交规范
 
-```
-feat: 新增记忆召回管线
-fix: 修复路径白名单越界
-docs: 更新架构设计文档
-test: 补充 Agent Loop E2E
-refactor: 重构 LLM Provider 抽象
-chore: 升级 dependencies
-```
-
-格式：`<type>(<scope>): <subject>`
+类型：`feat` / `fix` / `docs` / `test` / `refactor` / `chore`；格式 `<type>(<scope>): <subject>`
 
 ## 6. 规则文件索引
 
-> 本节列出 `.trae/rules/` 下所有规则文件，方便按需加载。`alwaysApply: true` 的文件随会话自动加载，其余文件需 AI 主动读取。
-
-### 6.1 规则文件索引（按需加载）
+> 列出 `.trae/rules/` 全部规则文件，方便按需加载。**`alwaysApply: true` 随会话自动加载，其余需 AI 主动读取。**
 
 | 类别 | 文件 |
 |------|------|
@@ -127,23 +108,21 @@ chore: 升级 dependencies
 | 通用编码约束 | [coding-convention-rules.md](./coding-convention-rules.md) |
 | 心智模型（Bug/逻辑） | [programmer-mindset-rules.md](./programmer-mindset-rules.md) |
 | 单一真理源思维模型 | [single-truth-source-mindset.md](./single-truth-source-mindset.md) |
+| **领域术语锚点（常驻）** | [terminology-anchor-rules.md](./terminology-anchor-rules.md)（`alwaysApply: true`；术语唯一定义，命名前必读） |
 | 网络为土壤思维模型 | [network-soil-mindset.md](./network-soil-mindset.md) |
 | UI 工程化心智 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) |
 | 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
 | 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
 | 跨文档引用 / 新增模块 | [cross-document-reference.md](./cross-document-reference.md) / [new-module-guide.md](./new-module-guide.md) |
-| 决策记录（26 ADR） | `decisions/`（详见 [README](../decisions/README.md)；技术栈变更先更新 ADR，§1 硬约束①） |
+| 决策记录（26 ADR） | `decisions/`（[README](../decisions/README.md)；技术栈变更先更新 ADR，§1①） |
 
 > 任务追踪统一在根 `tasks/`（唯一真理源）。
->
-> **架构说明书**：集成设计哲学、闭环设计、数据模型、角色包体系、思维模式速查的完整参考文档，位于 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)。
->
-> **架构定论**：不中断工作模型最终答案 = 「申请暂停模型」（不中断原则作用于 **turn 内的 step 循环**；memora 在大厂已有 loop 能力之上增加显式「申请暂停 / 继续」按钮——暂停 = 申请暂停，等进行中的 turn 结束于 step 边界挂起，可继续或注入；硬停止 signal.abort 仍是唯一霸道中止）。完整设计推导见 [docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md) §2.3（输入待定与气口接受）。
+> **架构说明书**：[docs/architecture/agent-design-philosophy.md](../../docs/architecture/agent-design-philosophy.md)（设计哲学 + 闭环设计 + 数据模型 + 角色包体系 + 思维模式速查）。
+> **架构定论**：不中断工作模型 = 「申请暂停模型」——不中断原则作用于 **turn 内的 step 循环**；暂停 = 等进行中的 turn 结束于 step 边界挂起（可继续 / 注入）；硬停止 `signal.abort` 是唯一霸道中止（推导见架构说明书 §2.3）。
 
 ## 7. AI 行为 DO/DON'T 速查表
 
-> 本节集中列出 AI 在编写/修改 memora 内核代码时的实施级 DO/DON'T 规则。
-> §1 硬约束是原则级，本节是实施级补充。
+> §1 是原则级硬约束，本节是实施级补充。
 
 ### 7.1 代码质量
 
@@ -162,11 +141,11 @@ chore: 升级 dependencies
 | DON'T | 在 `src/` 下 import 任何 web 框架（Express / HTML / CSS） |
 | DON'T | 工具函数绑定特定第三方依赖（如 pino） |
 
-### 7.3 记忆与存储（补充 §1.3/§1.4）
+### 7.3 记忆与存储（补充 §1.3 / §1.4）
 
 | 类型 | 规则 |
 | ---- | ---- |
-| DON'T | 在 SQLite 中存储原始工作内容（仅存投影/摘要） |
+| DON'T | 在 SQLite 中存储原始工作内容（仅存投影 / 摘要） |
 | DON'T | 混合技能定义与内存存储（技能通过 `skills/` 文件夹管理） |
 | DON'T | 直接修改 config schema（配置文件是真理源，§1） |
 | DO | 工作内容通过宿主工具访问，内核仅保留投影 |
@@ -187,7 +166,7 @@ chore: 升级 dependencies
 
 | 类型 | 规则 |
 | ---- | ---- |
-| DO | 底层问题优先修复（架构/基础设施层面，避免积重难返） |
+| DO | 底层问题优先修复（架构 / 基础设施层面，避免积重难返） |
 | DO | 代码修复独立可回滚（每次修复独立提交） |
 | DO | 自动归档根据 `archiveMode` 执行（full / manual 二态） |
 | DO | LLM 工具调用传递 `tools` 参数，SSE 流正确解析 `tool_calls` delta |
@@ -196,6 +175,6 @@ chore: 升级 dependencies
 
 | 类型 | 规则 |
 | ---- | ---- |
-| DO | 新增 IPC 通道前确认是否可通过现有通道组合达成，避免重复注册 |
+| DO | 新增 IPC 通道前确认能否由现有通道组合达成，避免重复注册 |
 | DO | IPC 通道总数接近 130 条时启动治理评估（当前 **101** 条，2026-09-20 实测；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`；⚠️ **该计数每次增删通道即过期，引用前须按守卫同源判据重算**——此前 2026-09-19 记「103」已实测漂为 101） |
 | DO | 新增模块前先走 [new-module-guide.md](./new-module-guide.md) 评估流程 |
