@@ -87,7 +87,7 @@
     "@typescript-eslint/eslint-plugin": "^8.65.0",
     "@typescript-eslint/parser": "^8.65.0",
     "@vitest/coverage-v8": "^4.1.11",
-    "eslint": "^9.39.5",
+    "eslint": "^10.11.0",
     "jsdom": "^30.0.1",
     "lefthook": "^2.1.10",
     "msw": "^2.15.0",
