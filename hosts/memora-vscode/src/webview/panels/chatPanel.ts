@@ -807,22 +807,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   // ─── 低价值事件（状态冗余确认） ───
 
-  /** sessionPaused：对话被暂停（状态可视化补充） */
+  /** sessionPaused：对话被暂停（状态可视化补充 + 骨架投影刷新）
+   *
+   * ⚠ 投影刷新点（SSOT）：sessionPaused 是状态机真正翻 PAUSED 的事件信号，
+   * 骨架必须在此刻重投影——否则 `_turnState` 停留在翻转前的值，暂停按钮不切「继续」。
+   * 只读真源（status / isPausePending / _streaming / _pendingQuestions）+ 幂等；
+   * chat 路径不 emit 本事件，故零影响。 */
   private readonly onSessionPaused = (info: {
     reason: string;
     source: string;
     sessionId?: string;
   }): void => {
     this.post({ type: 'notice', level: 'info', message: `对话已暂停（${info.reason}）` });
+    this.postTurnUpdate();
   };
 
-  /** sessionResumed：对话恢复执行（状态反馈 + 清空待发送区） */
+  /** sessionResumed：对话恢复执行（状态反馈 + 骨架投影刷新 + 待发送区同步）
+   *
+   * ⚠ 投影刷新点（SSOT）：sessionResumed 是状态机真正翻 RUNNING 的事件信号。
+   * 必须用 postTurnUpdate 而非 syncPendingQueue——后者带长度守卫（纯续跑无 interject 时
+   * 队列长度恒 0 → 不推），会让 `_turnState` 钉死在 `waiting(pause)`，续跑全程按钮停在
+   * 「继续」（用户实测 Bug 根因）。postTurnUpdate 自带 pendingQueue 载荷（双职责一次推完），
+   * 故不再叠加 syncPendingQueue。 */
   private readonly onSessionResumed = (_info: { sessionId?: string }): void => {
     this.post({ type: 'notice', level: 'info', message: '对话已恢复执行' });
-    // resume 成功 → loop 消费完 pendingInterjections → 从内核读当前值通知 webview
-    // （SSOT 源头 = loop.pendingInterjections，宿主不维护镜像）；
-    // 走 syncPendingQueue 统一长度变化检测（普通插话不触发本事件，由 step 边界后 chunk 补同步）
-    this.syncPendingQueue();
+    this.postTurnUpdate();
   };
 
   /** sessionRecovered：对话异常恢复完成（自动恢复反馈） */
@@ -2031,7 +2040,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         return;
       }
       case 'resume':
-        // 错位（非暂停态收到继续）→ 静默丢弃（webview 按钮由 turn_update.state 驱动，实际不可达）
+        // 错位（非暂停态收到继续）→ 静默丢弃。按钮语义已在 waiting(ask) 空输入时不宣告
+        // 纯续跑（deriveButtonSemantics 死键不渲染），正常操作流不可达此守卫——只兜
+        // 跨消息竞态残留（如提问超时续跑后迟到的 resume），保留「不污染进行中的轮」语义
         if (!this.isPauseWaiting()) return;
         await this.resumeInput();
         return;
@@ -2336,6 +2347,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 申请在途同步补推 turn_update（deriveTurnState → waiting{pausePending}，
       // 发送按钮随之切「停止生成」保持、暂停按钮切可反悔「继续 ▶」）
       // 点击即反馈：申请已入队，step 边界生效（用户知情，不"点了没反应"）
+      this.postTurnUpdate();
       this.post({ type: 'notice', level: 'info', message: '暂停申请已发送，将在当前步骤完成后暂停' });
     } else {
       // 作废路径：空闲守卫（任务已结束）/ 幂等 / paused、error 态——统一明确告知

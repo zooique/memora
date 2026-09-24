@@ -8,6 +8,8 @@
  *      → 「申请在途 → true」「已挂起（无 pausePending）→ false」之一转红
  *   M3 `deriveButtonSemantics` 的 `done` 分支 `disabled: !hasInput` 改成 `false`
  *      → 「done + 空输入 → 禁用」转红
+ *   M9 `deriveButtonSemantics` 的 paused 分支去掉 `plainResume` 判据（ask 空输入也渲染续跑键）
+ *      → 「waiting(ask) + 空输入 → pause null」转红
  */
 
 import { describe, expect, it } from 'vitest';
@@ -164,11 +166,7 @@ describe('换真源：skeletonFromTurnState（TurnState 快照 → 容器，M3b-
 
 describe('deriveButtonSemantics（按钮语义矩阵）', () => {
   it('thinking + 空输入：暂停可用、发送按钮 = 停止', () => {
-    const spec = deriveButtonSemantics({
-      sessionUiState: 'thinking',
-      pausePending: false,
-      hasInput: false,
-    });
+    const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput: false });
     expect(spec.pause).toEqual({
       icon: 'pause',
       title: '暂停生成',
@@ -183,11 +181,7 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
   });
 
   it('thinking + 有输入：发送按钮 = 补充排队，暂停按钮仍为 pause', () => {
-    const spec = deriveButtonSemantics({
-      sessionUiState: 'thinking',
-      pausePending: false,
-      hasInput: true,
-    });
+    const spec = deriveButtonSemantics({ state: { phase: 'running' }, hasInput: true });
     expect(spec.send).toEqual({
       loading: false,
       title: '发送补充（排队等 step 边界注入）',
@@ -198,16 +192,9 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
   });
 
   it('thinking + 申请在途：暂停按钮即时切「继续 ▶」可反悔（与输入内容无关）', () => {
-    const empty = deriveButtonSemantics({
-      sessionUiState: 'thinking',
-      pausePending: true,
-      hasInput: false,
-    });
-    const filled = deriveButtonSemantics({
-      sessionUiState: 'thinking',
-      pausePending: true,
-      hasInput: true,
-    });
+    const pending: SkeletonState = { phase: 'waiting', reason: 'pause', pausePending: true };
+    const empty = deriveButtonSemantics({ state: pending, hasInput: false });
+    const filled = deriveButtonSemantics({ state: pending, hasInput: true });
     expect(empty.pause).toEqual({
       icon: 'play',
       title: '继续（点击取消暂停申请）',
@@ -219,10 +206,9 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     expect(filled.send.title).toBe('发送补充（排队等 step 边界注入）');
   });
 
-  it('paused + 空输入：暂停按钮 = 继续生成，发送按钮 = 硬停止', () => {
+  it('waiting(pause) + 空输入：续跑键 = 继续生成（纯续跑是真能力），发送按钮 = 硬停止', () => {
     const spec = deriveButtonSemantics({
-      sessionUiState: 'paused',
-      pausePending: false,
+      state: { phase: 'waiting', reason: 'pause' },
       hasInput: false,
     });
     expect(spec.pause).toEqual({ icon: 'play', title: '继续生成', ariaLabel: '继续生成' });
@@ -234,10 +220,32 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
     });
   });
 
-  it('paused + 有输入：暂停按钮 = 发送补充并继续（一按钮承载续跑+补充）', () => {
+  it('waiting(pause) + 有输入：续跑键 = 发送补充并继续（一按钮承载续跑+补充）', () => {
     const spec = deriveButtonSemantics({
-      sessionUiState: 'paused',
-      pausePending: false,
+      state: { phase: 'waiting', reason: 'pause' },
+      hasInput: true,
+    });
+    expect(spec.pause).toEqual({
+      icon: 'play',
+      title: '发送补充并继续',
+      ariaLabel: '发送补充并继续',
+    });
+  });
+
+  // M9 锚点：续跑键只宣告路由真实收下的意图——ask 相位的纯续跑是死键（resume 路由只收 pause）
+  it('waiting(ask) + 空输入：续跑键隐藏（null）——纯续跑死键不宣告', () => {
+    const spec = deriveButtonSemantics({
+      state: { phase: 'waiting', reason: 'ask' },
+      hasInput: false,
+    });
+    expect(spec.pause).toBeNull();
+    // 发送按钮职责不受影响（挂起态恒硬停止）
+    expect(spec.send.title).toBe('停止生成（丢弃检查点）');
+  });
+
+  it('waiting(ask) + 有输入：续跑键保留 play「发送补充并继续」（走 send 路由，真能力）', () => {
+    const spec = deriveButtonSemantics({
+      state: { phase: 'waiting', reason: 'ask' },
       hasInput: true,
     });
     expect(spec.pause).toEqual({
@@ -249,11 +257,7 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
 
   it('done + 空输入：暂停按钮隐藏（null）、发送按钮禁用', () => {
     // M3 锚点
-    const spec = deriveButtonSemantics({
-      sessionUiState: 'done',
-      pausePending: false,
-      hasInput: false,
-    });
+    const spec = deriveButtonSemantics({ state: { phase: 'idle' }, hasInput: false });
     expect(spec.pause).toBeNull();
     expect(spec.send).toEqual({
       loading: false,
@@ -265,22 +269,26 @@ describe('deriveButtonSemantics（按钮语义矩阵）', () => {
 
   it('done + 有输入：发送按钮启用', () => {
     const spec = deriveButtonSemantics({
-      sessionUiState: 'done',
-      pausePending: false,
+      state: { phase: 'settled' },
       hasInput: true,
     });
     expect(spec.pause).toBeNull();
     expect(spec.send.disabled).toBe(false);
   });
 
-  it('不变量：disabled 只可能出现在 done + 空输入（其余 11 格恒可用）', () => {
-    const states: SessionUiState[] = ['thinking', 'paused', 'done'];
-    for (const sessionUiState of states) {
-      for (const pausePending of [false, true]) {
-        for (const hasInput of [false, true]) {
-          const spec = deriveButtonSemantics({ sessionUiState, pausePending, hasInput });
-          expect(spec.send.disabled).toBe(sessionUiState === 'done' && !hasInput);
-        }
+  it('不变量：disabled 只可能出现在 done + 空输入（其余格恒可用）', () => {
+    const states: SkeletonState[] = [
+      { phase: 'idle' },
+      { phase: 'running' },
+      { phase: 'waiting', reason: 'pause' },
+      { phase: 'waiting', reason: 'pause', pausePending: true },
+      { phase: 'waiting', reason: 'ask' },
+      { phase: 'settled' },
+    ];
+    for (const state of states) {
+      for (const hasInput of [false, true]) {
+        const spec = deriveButtonSemantics({ state, hasInput });
+        expect(spec.send.disabled).toBe(deriveSessionUiState(state) === 'done' && !hasInput);
       }
     }
   });

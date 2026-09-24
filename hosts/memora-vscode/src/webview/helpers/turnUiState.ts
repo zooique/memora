@@ -54,7 +54,8 @@ export function skeletonFromTurnState(state: TurnState): SkeletonState {
  * 会话 UI 三态（骨架据此施加 DOM 按钮行为）
  *
  * - `thinking` —— 运行中：暂停按钮可用（申请在途时呈可反悔形态），发送按钮承担「停止」
- * - `paused`   —— 挂起（pause 与 ask **同形**）：暂停按钮换「继续」，发送按钮仍是硬停止
+ * - `paused`   —— 挂起（pause 与 ask 在三值态层同形）：发送按钮仍是硬停止；续跑键按
+ *   `waiting.reason` 分叉（见 `deriveButtonSemantics`），并非一律「继续」
  * - `done`     —— 无进行中 turn：发送按钮恢复发送语义
  */
 export type SessionUiState = 'thinking' | 'done' | 'paused';
@@ -68,9 +69,9 @@ export type SessionUiState = 'thinking' | 'done' | 'paused';
  * 发送按钮文案会在申请在途窗口被改成挂起态文案（坑）。
  *
  * ask 也映射 `paused`：宿主对 ask 与 pause **同走** `pausedOnPurpose` 分支并同样发
- * `status:'paused'`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问）；二者在
- * `SkeletonState.waiting.reason` 上可区分，但**骨架输出不区分**（内联提问块由
- * turn_update 分支的 renderAskPhase 自身渲染，不属骨架矩阵）。
+ * `status:'paused'`（ask 走 `turn_update.state.waiting.ask` 渲染内联提问）。三值态只收
+ * 「运行/挂起/收场」共性；ask 与 pause 的差异（续跑键职责）由 `deriveButtonSemantics`
+ * 按 `waiting.reason` 分叉消费——内联提问块由 renderAskPhase 渲染，不属骨架矩阵。
  */
 export function deriveSessionUiState(state: SkeletonState): SessionUiState {
   switch (state.phase) {
@@ -96,10 +97,9 @@ export function derivePausePending(state: SkeletonState): boolean {
 
 /** 按钮语义派生入参（webview 侧骨架自变量的只读快照） */
 export interface ButtonSemanticsInput {
-  /** 会话 UI 三态（`deriveSessionUiState` 的输出） */
-  sessionUiState: SessionUiState;
-  /** 暂停申请在途（`derivePausePending` 的输出） */
-  pausePending: boolean;
+  /** 骨架状态真源——须给完整 `SkeletonState`（含 `waiting.reason`）：续跑键职责随 reason
+   *  分叉，先折成三值态再传入会把该区分抹掉（ask 死键曾因此被宣告） */
+  state: SkeletonState;
   /** 输入框是否有非空内容（决定发送按钮是「停止」还是「补充/发送」） */
   hasInput: boolean;
 }
@@ -111,24 +111,30 @@ export interface ButtonSemanticsInput {
  * 否则会把隐藏按钮的属性改成与可见态不一致的值（无意义的状态污染）。
  */
 export interface ButtonSemantics {
-  /** 暂停 / 继续按钮语义；null = 隐藏（`done` 态该按钮无职责） */
+  /** 暂停 / 继续按钮语义；null = 隐藏（`done` 态无职责；`waiting(ask)` 空输入无纯续跑能力，不宣告） */
   pause: { icon: 'pause' | 'play'; title: string; ariaLabel: string } | null;
   /** 发送按钮语义（`loading` = 呈现为停止方块） */
   send: { loading: boolean; title: string; ariaLabel: string; disabled: boolean };
 }
 
 /**
- * 按钮语义矩阵：`sessionUiState × pausePending × hasInput` → 语义数据
+ * 按钮语义矩阵：`SkeletonState × hasInput` → 语义数据
  *
  * 与 `syncButtonSemantics` 的 DOM 施加行为逐分支等价（该函数委托本矩阵输出；文案、
  * `loading`、`disabled` 三者均对齐），等价性由 `webview/__tests__/chatView.test.ts` 的
  * 按钮矩阵用例锁定。
  *
+ * 续跑键宣告纪律：**按钮只宣告路由真实收下的意图**——`resume` 路由只收 pause，故
+ * `waiting(ask)` 空输入的「纯续跑」不渲染（不回答的兜底 = ask 超时自动续跑，产品定案
+ * 无「跳过提问」按钮）；ask + 有输入的「发送补充并继续」是真能力（走 send 路由）。
+ *
  * `disabled` 判据：**只有 `done` + 空输入**才禁用——运行中（thinking/paused）无论有无输入
  * 都可用（有输入 = interject 排队 / 带补充续跑，空输入 = 停止 / 继续）。
  */
 export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemantics {
-  const { sessionUiState, pausePending, hasInput } = input;
+  const { state, hasInput } = input;
+  const sessionUiState = deriveSessionUiState(state);
+  const pausePending = derivePausePending(state);
 
   if (sessionUiState === 'thinking') {
     return {
@@ -148,13 +154,19 @@ export function deriveButtonSemantics(input: ButtonSemanticsInput): ButtonSemant
   }
 
   if (sessionUiState === 'paused') {
+    // 纯续跑（空输入点续跑）仅 waiting(pause) 为真能力——waiting(ask) 的 resume 会被
+    // handleInput 静默丢弃 → ask + 空输入时续跑键整体隐藏（null，applyButtonSemantics 不写 title/aria）
+    const plainResume = state.phase === 'waiting' && state.reason === 'pause';
     return {
-      // 已挂起：pause 按钮承担「继续」（有输入 = 带补充续跑，空输入 = 纯续跑）
-      pause: {
-        icon: 'play',
-        title: hasInput ? '发送补充并继续' : '继续生成',
-        ariaLabel: hasInput ? '发送补充并继续' : '继续生成',
-      },
+      // 已挂起：pause 按钮承担「继续」（有输入 = 带补充续跑；空输入 = 纯续跑，仅 pause 相位）
+      pause:
+        hasInput || plainResume
+          ? {
+              icon: 'play',
+              title: hasInput ? '发送补充并继续' : '继续生成',
+              ariaLabel: hasInput ? '发送补充并继续' : '继续生成',
+            }
+          : null,
       // 发送按钮在挂起态始终承担「硬停止」（丢弃检查点）
       send: {
         loading: true,

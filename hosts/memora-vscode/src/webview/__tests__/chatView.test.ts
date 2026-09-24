@@ -1019,6 +1019,31 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(pauseBtn.title).toContain('补充');
   });
 
+  it('ask + 空输入 → pauseBtn 隐藏（纯续跑死键不宣告），send 保持 stop ■', () => {
+    mountChatView();
+    const send = document.getElementById('send') as HTMLButtonElement;
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatchTurn({ phase: 'waiting', reason: 'ask' });
+    input.value = '';
+    input.dispatchEvent(new Event('input'));
+    // ask 相位 resume 路由只收 pause → 空输入纯续跑是死键，按钮不渲染（M9 锚点）
+    expect(pauseBtn.hidden).toBe(true);
+    expect(send.classList.contains('loading')).toBe(true);
+  });
+
+  it('ask + 有输入 → pauseBtn 显示 play ▶「发送补充并继续」（带补充续跑走 send 路由，真能力）', () => {
+    mountChatView();
+    const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
+    const input = document.getElementById('input') as HTMLTextAreaElement;
+    dispatchTurn({ phase: 'waiting', reason: 'ask' });
+    input.value = '不回答，先补充背景';
+    input.dispatchEvent(new Event('input'));
+    expect(pauseBtn.hidden).toBe(false);
+    expect(pauseBtn.querySelector('.btn-icon')?.getAttribute('data-icon')).toBe('play');
+    expect(pauseBtn.title).toContain('补充');
+  });
+
   // ─── done × 输入内容 ───
 
   it('done + 空输入 → 发送禁用', () => {
@@ -1063,7 +1088,7 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(icon?.dataset.icon).toBe('pause'); // 图标不变
   });
 
-  it('paused / done 态 pauseBtn 隐藏（状态机驱动）', () => {
+  it('running / paused 态 pauseBtn 显示，done 态隐藏（状态机驱动）', () => {
     mountChatView();
     const pauseBtn = document.getElementById('pauseBtn') as HTMLButtonElement;
     dispatchTurn({ phase: 'running' });
@@ -2839,6 +2864,33 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     // 底部 clarifyBar 不激活（主路径已内联）
     expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(false);
     expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'answer' });
+  });
+
+  it('replay 与 waiting(ask) 同一条消息 → 提问 UI 不得被重放重建抹掉（渲染须后于重放）', () => {
+    mountChatView();
+    // 提问骨架作为内联锚点（提问挂起时消息流里已有 assistant 段，正常形态）
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    // 宿主在有未答提问时重放：视图重建后的 ready 握手重放（切走再切回）、流尾「流期间视图
+    // 重建过」补重放，都走 `postTurnUpdate(undefined, true)`——**同一条消息**既带 replay:true
+    // 又带 state(waiting/ask + questions)。
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      replay: true,
+      state: {
+        phase: 'waiting',
+        reason: 'ask',
+        questions: [{ slot: 'task', question: '确认执行？', options: ['是', '否'] }],
+      },
+    });
+    // 不变量：提问未答 ⇒ 必然存在**可见**的提问 UI（内联卡 或 底部兜底条），不得两者皆无
+    // ——顺序契约（重放先、提问渲染后）的事故背景见 chatView.ts turn_update 分支注释。
+    const inline = document.querySelector('.ask-inline');
+    const bar = document.getElementById('clarifyBar') as HTMLElement;
+    expect(inline !== null || bar.classList.contains('visible')).toBe(true);
+    // 提问原文必须在场（两种形态任一承载）
+    const shown = inline?.querySelector('.ask-inline__q')?.textContent ?? bar.textContent ?? '';
+    expect(shown).toContain('确认执行？');
   });
 
   it('点击内联选项 → 标记该题已答 is-selected，再点「提交回答」提交 input(kind=answer) 单元素', () => {

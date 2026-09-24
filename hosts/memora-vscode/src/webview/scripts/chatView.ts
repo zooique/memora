@@ -28,7 +28,6 @@ import { getToolDisplayName } from '../helpers/toolNameMap.js';
 // 本文件只做「取数 → 派生 → 施加」；容器写入只走 skeletonFromTurnState（真源 = turn_update.state）
 import {
   deriveButtonSemantics,
-  derivePausePending,
   deriveSessionUiState,
   skeletonFromTurnState,
   type ButtonSemantics,
@@ -1795,8 +1794,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 当前自变量快照 → 按钮语义（**单一取数点**：两个 sync 函数共用，防两处各取一次而漂移） */
   function currentButtonSemantics(): ButtonSemantics {
     return deriveButtonSemantics({
-      sessionUiState: deriveSessionUiState(skeletonState),
-      pausePending: derivePausePending(skeletonState),
+      state: skeletonState,
       hasInput: input.value.trim().length > 0,
     });
   }
@@ -1804,8 +1802,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 语义数据 → DOM（**唯一施加点**） */
   function applyButtonSemantics(spec: ButtonSemantics): void {
     if (pauseBtn) {
-      // done 态该按钮无职责（spec.pause === null）：只隐藏，不改 icon/title/aria ——
-      // 否则会把隐藏按钮的属性改成与可见态不一致的值（无意义的状态污染）
+      // 无职责（spec.pause === null：done 态，或 waiting(ask) 空输入无纯续跑）：只隐藏，
+      // 不改 icon/title/aria —— 否则会把隐藏按钮的属性改成与可见态不一致的值（无意义的状态污染）
       pauseBtn.hidden = spec.pause === null;
       if (spec.pause) {
         const icon = pauseBtn.querySelector<HTMLElement>('.btn-icon');
@@ -3678,18 +3676,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (msg.pendingQueue) {
         updatePendingQueueBar(msg.pendingQueue);
       }
-      // M5b-2：提问卡渲染真源从 need_clarify 消息切到 turn_update.state（waiting/ask + questions）。
-      // 宿主在提问即 postTurnUpdate（onPendingQuestion 立即补推 / 流尾兜底），skeletonFromTurnState
-      // 会剥离 questions（容器不消费），故此处直接从 msg.state 读 questions 渲染内联提问卡；
-      // 独立 need_clarify 消息已删（协议 + 宿主 + 本消费分支三端同步收敛）。
-      if (msg.state.phase === 'waiting' && msg.state.reason === 'ask' && (msg.state.questions?.length ?? 0) > 0) {
-        renderAskPhase(msg.state.questions!);
-      }
-      // M5b-3：会话重放快照（replay:true）→ 整批渲染 rounds，替代旧 replay_events/assistant 消息风暴。
-      // 仅显式 replay 标记才整批重建（先清已渲染历史，防跨会话/重建残留）；运行时每步投影
-      // （replay 缺省）即使 rounds 常在也不重渲染——杜绝 settle 时对已运行时渲染的轮重绘重复。
+      // M5b-3：会话重放快照（replay:true）→ 整批渲染 rounds。
+      // ⚠ 顺序契约（必须排在提问渲染之前）：renderReplayFromRounds 首行 resetChatView
+      // 会清掉 .ask-inline；而宿主 postTurnUpdate(undefined, true) 这一条消息同时携带
+      // replay:true 与 state（waiting/ask + questions）——视图重建后的 ready 握手重放、
+      // 以及流尾「流期间视图重建过」补重放，都发生在提问仍挂起时。若先渲染提问卡，会被紧随的
+      // 重放抹掉 → 用户看不见提问，只面对一个无反应的「继续」按钮（ask 相位点 resume 被静默丢弃），
+      // 提问超时后自动续跑、记录里留下「未回答」——即实测现象。故重放先、提问卡后。
       if (msg.replay === true) {
         renderReplayFromRounds(msg.rounds);
+      }
+      // M5b-2：提问卡渲染真源从 need_clarify 消息切到 turn_update.state（waiting/ask + questions）。
+      // 位置在重放之后是顺序契约的一部分，勿上移。
+      if (msg.state.phase === 'waiting' && msg.state.reason === 'ask' && (msg.state.questions?.length ?? 0) > 0) {
+        renderAskPhase(msg.state.questions!);
       }
     } else if (msg.type === 'tool_pending') {
       // 工具意图预告（2026-09-17）：LLM 流式生成 tool_call 参数期间（name 成形即上报），
