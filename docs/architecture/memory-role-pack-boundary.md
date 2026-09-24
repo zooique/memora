@@ -78,7 +78,7 @@ memora 曾存在**双轨并存**：设定记忆既走 `agent-config` 目录 → 
 
 ## 五、隐式依赖（收敛时易漏）
 
-1. **宿主 SQLite schema 不可见**：`storageInterface.ts` 注释说明实现侧在宿主；宿主持有 `WHERE source='rule'` 等查询会静默失效，需宿主配合核对。
+1. **宿主持久化形态归宿主，内核不假设 schema**：`storageInterface.ts` 注释说明实现侧在宿主——内核只认 `IMemoryStorage` 接口，库表结构由宿主自定。当前第一宿主 memora-vscode 为 JSON 文件落地（`.memora/memories.json`），无 SQL 层；宿主若自建 SQL 后端，须自行保证 `source` 过滤、软删除过滤等语义与接口契约一致。
 2. **`evictOrphanRules` 对账**（`projectManager.ts`）：基准变化后，删规则要改以角色包文件集为基准，否则规则删除后重启「复活」。
 3. **`closeProject` 跨项目隔离**（`projectManager.ts`）：项目级记忆撤销语义改为角色包激活/失活。
 4. **`reloadConfig('persona'/'skill')`**（`agent.ts`）：目录迁走后热重载「假成功」，宿主 UI 需适配。

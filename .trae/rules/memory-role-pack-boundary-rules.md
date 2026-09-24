@@ -38,7 +38,7 @@ description: 记忆系统 × 角色包边界纪律——设定记忆（persona/r
 - **rule 语义不对等**：角色包 `parseRules` 只认 `- ` 无序列表行（`rolePackManager.ts`）；记忆库 rule 是任意 markdown，搬迁需转换器。
 - **skills 正文不预装载**：角色包 skill 是"生态指针"，正文靠 `readSkillContent` 按需读；依赖索引正文的宿主 UI 搬迁后断供。
 - **guardrail 已摘除**：无空转链，不新增 guardrail 代码。
-- **宿主 SQLite schema 不可见**：宿主持有 `WHERE source='rule'` 等查询会静默失效，需宿主核对。
+- **宿主持久化形态归宿主，内核不假设 schema**：持久化由宿主注入 `IMemoryStorage` 实现，库表结构宿主自定。当前第一宿主 memora-vscode 为 JSON 文件（`.memora/memories.json`），无 SQL 层；宿主自建 SQL 后端时须自行核对 `source` 过滤、软删除过滤等语义与接口契约一致。
 - **skills 目录扫描（C3）**：角色包 `skills/` 目录动态扫描注册（frontmatter 声明 name/description），新增技能只写文件免 manifest 注册；技能文件必须带 frontmatter 才有 description 暴露。
 
 ## 四、审查点

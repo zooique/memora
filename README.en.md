@@ -276,7 +276,7 @@ npm run build        # Compile to dist/
 
 ## Host Project
 
-[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — The VS Code extension host (primary host), demonstrating a complete Memora integration: SQLite persistence, keyword-only search, role pack management, and memory views.
+[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — The VS Code extension host (primary host), demonstrating a complete Memora integration: JSON file persistence (`.memora/memories.json`), keyword-only search, role pack management, and memory views.
 
 ## Why Memora?
 

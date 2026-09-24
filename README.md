@@ -286,7 +286,7 @@ npm 包内置 `role-packs/` 示例角色库（`共鸣小说家` / `白话方案�
 
 ## 宿主项目
 
-[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：SQLite 持久化、纯关键词召回、角色包管理与记忆视图。
+[memora-vscode](https://gitee.com/zooique/memora/tree/main/hosts/memora-vscode) — VS Code 插件宿主（第一宿主），展示 Memora 内核的完整接入方式：JSON 文件持久化（`.memora/memories.json`）、纯关键词召回、角色包管理与记忆视图。
 
 ## 反馈
 
