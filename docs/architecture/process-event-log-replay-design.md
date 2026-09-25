@@ -138,7 +138,7 @@ ProcessEvent = {
 | `meta`（每轮首条）       | `role`（角色显示名）+ `llm`（模型显示名）                                        | 顶部角色徽章 + LLM 名称（该轮应答） |
 | `thinking`         | `phase`（recalling/llm\_calling/processing/archiving）               | 思考折叠块                 |
 | `memory_added`     | `id/name/source`（对应内核 `memoryAdded` 事件）                            | 「已沉淀：xx」提示条           |
-| `tool_start`       | `toolCallId/name/args`（args 超长截断）/`stepIndex?`（所属 step 轮内序号，与 thought 同构；tool_result 经 toolCallId 归属不重复携带） | 工具执行记录（可按 step 归属重建）  |
+| `tool_start`       | `toolCallId/name/args`（args 超长截断）/`stepIndex?`（所属 step 轮内序号，与 thought 同构；tool_result 经 toolCallId 归属不重复携带） | 工具执行记录（可按 step 归属重建）<br />⚠️ **`stepIndex` 当前零消费方**：事实层已就位（2026-09-25 落地），但宿主 UI 未读它——工具批按事件相邻性切段（`groupToolBatches`），不按 step 归组。「能读到」≠「有价值」，消费方（思考/工具同号对齐、按 step 统计工具用量）落地前它属**预留键**，不是已兑现能力。 |
 | `tool_result`      | `toolCallId/ok/summary`                                            | 工具完成态                 |
 | `self_review`      | `round` + 自审查文本                                                    | 自审查过程块                |
 | `text_self_review` | 自审查段内容（`text` chunk `stage='self_review'` 分段）                      | 自审查输出分段               |
