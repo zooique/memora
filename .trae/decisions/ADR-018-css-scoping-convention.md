@@ -1,8 +1,7 @@
-***
-
+---
 alwaysApply: false
 description: "CSS 作用域规范：面板前缀 + BEM 风格 + 单一真理源，消除 BARE 类跨面板污染"
--------------------------------------------------------------
+---
 
 # ADR-018 · CSS 作用域规范：消除 BARE 类跨面板污染
 
@@ -12,6 +11,8 @@ description: "CSS 作用域规范：面板前缀 + BEM 风格 + 单一真理源�
 > **依赖**：[ADR-017](./ADR-017-natural-growth-redefinition.md)（枝叶层 2 次提取原则）、[ADR-008](./ADR-008-directory-structure.md)（目录结构）
 >
 > **宿主迁移注记（2026-09-04）**：精灵宿主（memora-sprite）已独立移出仓库。本决策的**三层作用域 + 面板前缀 BEM + 单一真理源**约定由 VS Code 宿主 styles 体系继承（`hosts/memora-vscode/src/webview/styles/`：`tokens.ts` 为令牌真理源，`chatStyles/configStyles/memoryStyles/rolesStyles/settingsStyles/skillsStyles/dropdown.ts` 按面板分组）。文中精灵宿主 CSS 文件示例均为当时实现快照（2026-07-13），现已不指向现存代码，仅作约定语境。
+>
+> **引用退役注记（2026-09-25）**：正文「对其他规则的影响」与「引用更新」两节中指向 `coding-convention-rules.md` 的两条引用（「§命名规范补充 CSS BEM 风格」/「§6 函数与变量规范 · CSS 命名规范」）**已失效**——CSS 作用域与命名规范已收敛为**本文为唯一权威定义**，`coding-convention-rules.md §6` 现仅保留一句指针（「CSS 作用域与命名**权威定义**在 ADR-018，本文件不重复」）。**不得**按那两条引用去规则文件寻找 CSS 命名内容；本文自身即真源，无需外部规则补充。正文按 ADR 纪律不重写，故以本注记覆盖。
 
 ## 背景
 
