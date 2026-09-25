@@ -12,13 +12,16 @@
  * 2. **顺序契约** = 同迭代内 `plan_item_boundary` 先于 `step_boundary`——保证宿主落盘快照
  *    已含该步折叠边界，崩溃重放不错位。
  * 3. **瞬态** = 不进正文/不进 messages（只是落盘触发信号）。
+ * 4. **边界不劈思考（STEP-BUCKET-1 前提）** = `plan_item_boundary` 只落 step 之间，不得插入
+ *    同一 step 的 thought 流中间——webview 桶查找按任务项容器作用域（`data-step-bucket` 查询
+ *    限容器内），thought 流若被边界劈成两段，两个容器会各建一个同 key 桶 →「思考 · 第 N 步」重影。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
 import type { AgentChunk } from '@/agent/types.js';
 import type { LlmProvider, Message } from '@/llm/provider.js';
 
-type ChunkItem = { content?: string; toolCalls?: Message['toolCalls'] };
+type ChunkItem = { content?: string; thought?: string; toolCalls?: Message['toolCalls'] };
 
 /** 多轮模拟 Provider：每轮 chat() 顺序消费 turns 中的一组 chunk */
 function mockMultiTurnProvider(turns: ChunkItem[][]): LlmProvider {
@@ -174,6 +177,53 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
     expect(iterIdx).toBeGreaterThanOrEqual(0);
     // 反序 → 宿主本次落盘快照缺该步折叠边界 → 崩溃重放分组错位
     expect(planItemIdx).toBeLessThan(iterIdx);
+  });
+
+  it('★ STEP-BUCKET-1 前提固化：plan_item_boundary 不劈同一 step 的 thought 流（桶 key 不重影）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // step 1：两段思考碎片 + 工具调用（碎片相邻成组是前提的直接观测对象）
+        [{ thought: 's1-想A' }, { thought: 's1-想B' }, { toolCalls: [toolCall('c1', 'tool_a')] }],
+        // step 2：两段思考碎片 + 工具调用（active 任务项推进 → 本迭代末应产 plan_item_boundary）
+        [{ thought: 's2-想A' }, { thought: 's2-想B' }, { toolCalls: [toolCall('c2', 'tool_b')] }],
+        // step 3：纯文本收尾（终态迭代不产边界）
+        [{ thought: 's3-想', content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    // 任务项逐步推进：两次工具迭代各取一次 meta，planItemId 变化 → 各产一条 plan_item_boundary
+    const metaSeq = [
+      { planItemId: 'plan-item-1', title: '任务项一' },
+      { planItemId: 'plan-item-2', title: '任务项二' },
+    ];
+    let metaCall = 0; // meta 取用计数（多取不越界，停在末项）
+    loop.getActivePlanItemMeta = () => metaSeq[Math.min(metaCall++, metaSeq.length - 1)]!;
+
+    const chunks = await collect(loop, '带任务表多步思考');
+
+    // 场景自证（防假绿）：边界真产出了、thought 真带归属了——否则下方断言空过不算守卫
+    expect(chunks.filter((c) => c.type === 'plan_item_boundary').length).toBeGreaterThan(0);
+    const thoughts = chunks.filter((c) => c.type === 'thought');
+    expect(thoughts.length).toBeGreaterThanOrEqual(2);
+    expect(thoughts.every((c) => c.type === 'thought' && c.stepIndex !== undefined)).toBe(true);
+
+    // ★ 前提断言：每个 stepIndex 的 thought 位置区间内不得夹 plan_item_boundary。
+    // 若被劈开 → webview 容器作用域查找会在两个任务项容器各建同 key 桶（「思考 · 第 N 步」重影）。
+    const posByStep = new Map<number, number[]>(); // stepIndex → 该 step 各 thought 的 chunk 下标
+    chunks.forEach((c, idx) => {
+      if (c.type !== 'thought' || c.stepIndex === undefined) return;
+      const positions = posByStep.get(c.stepIndex) ?? [];
+      positions.push(idx);
+      posByStep.set(c.stepIndex, positions);
+    });
+    for (const [stepIndex, positions] of posByStep) {
+      const lo = Math.min(...positions); // 该 step 首个 thought 位置
+      const hi = Math.max(...positions); // 该 step 末个 thought 位置
+      const split = chunks.slice(lo, hi + 1).some((c) => c.type === 'plan_item_boundary');
+      expect(split, `step ${stepIndex} 的 thought 流被 plan_item_boundary 打断（桶将重影）`).toBe(false);
+    }
   });
 
   it('瞬态契约：边界不进 messages（不是正文、不是工具结果）', async () => {
