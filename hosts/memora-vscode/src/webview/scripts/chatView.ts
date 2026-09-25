@@ -668,29 +668,46 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return `${m}m ${s}s`;
   }
 
-  /** 事件统计：工具（含分型）/ 审查（运行时与重放同一函数，SSOT 杜绝两处算法）。
-   * 分型计数供收尾叙述句「工具×N（读取 x · 搜索 y）」使用 */
-  function countEvents(events: ProcessEvent[]): {
-    tools: number;
-    reads: number;
-    searches: number;
-    writes: number;
-    runs: number;
-    others: number;
-    reviews: number;
-  } {
-    const toolTypes = events
-      .filter((e) => e.type === 'tool_start')
-      .map((e) => toolActionType((e as Extract<ProcessEvent, { type: 'tool_start' }>).payload.name));
-    return {
-      tools: toolTypes.length,
-      reads: toolTypes.filter((t) => t === 'read').length,
-      searches: toolTypes.filter((t) => t === 'search').length,
-      writes: toolTypes.filter((t) => t === 'write').length,
-      runs: toolTypes.filter((t) => t === 'run').length,
-      others: toolTypes.filter((t) => t === 'other').length,
-      reviews: events.filter((e) => e.type === 'self_review').length,
-    };
+  /** 轮事件流里全部工具名（按 tool_start 序）——工具叙述的唯一取材点 */
+  function toolStartNames(events: ProcessEvent[]): string[] {
+    return events.flatMap((e) => (e.type === 'tool_start' ? [e.payload.name] : []));
+  }
+
+  /**
+   * 工具叙述句（**唯一形成点**）：「工具×N（读取文件 2 · 网络搜索 1）」
+   *
+   * **词表单一**：句内一律用工具显示名（`getToolDisplayName` = 中文名唯一真源），与工具行叙述
+   * （`toolActionLabel`）同词表。此前轮摘要另按类别粗分（「读取 2 · 搜索 1」）形成第二套词汇
+   * ——同一次调用在屏上被叫成两种名字，且两套映射表可按不同节奏更新。
+   * **不参与成句的工具**：`toolActionType === 'other'`（未知 / 自定义 / 空间整理类）只计入 N、
+   * 不占一段，避免用无法辨识的名撑长句子误导读者。
+   * **段序**：按工具首次出场序（Map 插入序），与过程流的发生顺序一致，便于回看。
+   *
+   * 消费方二：轮收尾摘要（整轮）与工具批标题（单批）——同一函数、同一词表，只有取材范围不同。
+   *
+   * @param names 工具英文名序列（按出场序）
+   * @returns 叙述句；无工具返回空串（调用方据此省略整段）
+   */
+  function toolSummaryText(names: readonly string[]): string {
+    if (names.length === 0) return '';
+    const counts = new Map<string, number>();
+    for (const name of names) {
+      if (toolActionType(name) === 'other') continue;
+      const label = getToolDisplayName(name);
+      counts.set(label, (counts.get(label) ?? 0) + 1);
+    }
+    const parts = [...counts.entries()].map(([label, n]) => `${label} ${n}`);
+    return parts.length > 0 ? `工具×${names.length}（${parts.join(' · ')}）` : `工具×${names.length}`;
+  }
+
+  /**
+   * 审查次数（运行时与重放同一函数）
+   *
+   * 原 `countEvents` 还兼算工具分型（reads/searches/writes/runs），随着工具叙述改由
+   * `toolSummaryText` 承担，那些字段全部清零消费者 → 一并按「不用就删」清掉，避免僵尸结构。
+   */
+  function countReviews(events: ProcessEvent[]): number {
+    return events.filter((e) => e.type === 'self_review').length;
   }
 
   /**
@@ -1148,46 +1165,26 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return batches;
   }
 
-  /** 批块序号文案（「第 N 批」——工具类折叠块禁用「第 N 步」，STEP-ID-1 防复发约定） */
-  function toolBatchTitleText(order: number): string {
-    return `第 ${order} 批`;
-  }
-
   /**
-   * 批内按工具名小计文案（「查看×2 · 搜索×1」形态，name 计数、中文显示名单源 toolNameMap）
+   * 刷新批块标题（工具叙述句 + 失败/被拒块级标红提示）
    *
-   * @param batch 工具批
-   * @returns 小计串（按工具首次出现序拼接；空段返回空串）
-   */
-  function toolBatchTotalsText(batch: ToolBatch): string {
-    const counts = new Map<string, number>();
-    for (const e of batch.entries) {
-      counts.set(e.start.payload.name, (counts.get(e.start.payload.name) ?? 0) + 1);
-    }
-    return [...counts.entries()].map(([name, n]) => `${getToolDisplayName(name)}×${n}`).join(' · ');
-  }
-
-  /**
-   * 刷新批块标题（块标题「第 N 批」+ 块内摘要按工具名小计 + 失败/被拒块级标红提示）
+   * 标题 = `toolSummaryText` 的输出（轮收尾摘要同款，同一处形成）——批不再按工具名另起一份计数，
+   * 也不挂序号：批号与「思考 · 第 N 步」互不对齐，属屏上第二套编号（STEP-ID-1 防复发精神）。
    *
    * 口径②：失败/被拒工具留段内不拆块，仅在块级打红色提示——拆块会让视觉随错误率抖动。
    * 流式每次增量渲染与 finalize 全量重建都全量重算（结果后到时提示随之更新，幂等）。
    *
-   * @param block  批块元素（.round-block__tool-batch）
-   * @param batch  工具批（小计/失败统计的唯一数据源）
-   * @param order  批块序号（第 N 批）
+   * @param block 批块元素（.round-block__tool-batch）
+   * @param batch 工具批（小计/失败统计的唯一数据源）
    */
-  function refreshToolBatchSummary(block: HTMLDetailsElement, batch: ToolBatch, order: number): void {
+  function refreshToolBatchSummary(block: HTMLDetailsElement, batch: ToolBatch): void {
     const summary = block.querySelector(':scope > .round-block__tool-batch-summary');
     if (!summary) return;
     summary.textContent = '';
     const title = document.createElement('span');
     title.className = 'round-block__tool-batch-title';
-    title.textContent = toolBatchTitleText(order);
-    const total = document.createElement('span');
-    total.className = 'round-block__tool-batch-total';
-    total.textContent = toolBatchTotalsText(batch);
-    summary.append(title, total);
+    title.textContent = toolSummaryText(batch.entries.map((e) => e.start.payload.name));
+    summary.append(title);
     // 失败/被拒统计（留段内，块级标红）：ok=false 且非 blocked = 失败；blocked = 被拒/拦截
     let failed = 0;
     let blocked = 0;
@@ -1216,10 +1213,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 行自身的 `data-tool-call-id` 只作 tool_result 配对键（updateToolRowState 消费），二者不混用。
    *
    * @param batch 工具批
-   * @param order 批块序号（第 N 批）
    * @param open  是否默认展开（流式过程实时可见 = true；finalize 收起 = false）
    */
-  function createToolBatchBlock(batch: ToolBatch, order: number, open: boolean): HTMLDetailsElement {
+  function createToolBatchBlock(batch: ToolBatch, open: boolean): HTMLDetailsElement {
     const block = document.createElement('details');
     block.className = 'round-block__tool-batch';
     // 段 id = 段内首个 tool_start 的 seq：批容器唯一 DOM key（data-tool-batch）+ seq 兜底排序键
@@ -1232,7 +1228,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const body = document.createElement('div');
     body.className = 'round-block__tool-batch-body';
     block.append(summary, body);
-    refreshToolBatchSummary(block, batch, order);
+    refreshToolBatchSummary(block, batch);
     return block;
   }
 
@@ -1430,21 +1426,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       dot.className = 'round-block__dot';
       dot.setAttribute('aria-hidden', 'true');
       summary.appendChild(dot);
-      const stats = countEvents(events);
+      const reviews = countReviews(events);
       const parts: string[] = [];
-      // 工具叙述句：分型计数（读取 x · 搜索 y …）→ 收起态也能看懂"它做了什么"；
-      // other 类（未知自定义工具/空间整理）不进叙述句，避免标签误导，仅计入总数
-      if (stats.tools > 0) {
-        const subtypeParts: string[] = [];
-        if (stats.reads > 0) subtypeParts.push(`读取 ${stats.reads}`);
-        if (stats.searches > 0) subtypeParts.push(`搜索 ${stats.searches}`);
-        if (stats.writes > 0) subtypeParts.push(`写入 ${stats.writes}`);
-        if (stats.runs > 0) subtypeParts.push(`运行 ${stats.runs}`);
-        parts.push(
-          subtypeParts.length > 0 ? `工具×${stats.tools}（${subtypeParts.join(' · ')}）` : `工具×${stats.tools}`,
-        );
-      }
-      if (stats.reviews > 0) parts.push(`审查 ${stats.reviews} 次`);
+      // 工具叙述句（唯一形成点 toolSummaryText，与工具批标题同源）：按工具显示名小计，
+      // 收起态也能看懂"它做了什么"；不可辨识的工具不进句，仅计入总数
+      const toolSentence = toolSummaryText(toolStartNames(events));
+      if (toolSentence) parts.push(toolSentence);
+      if (reviews > 0) parts.push(`审查 ${reviews} 次`);
       const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
       if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
       const label = document.createElement('span');
@@ -1514,13 +1502,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // § 工具批（toolBatch）：相邻连续工具合并为批块——分组判据单一真源 groupToolBatches
     // （三渲染上下文共用：此处 finalize 重建 / renderProcessFlow 流式 / pending 行升级，禁内联三份）。
     // 单工具批 = 行即批（data-tool-batch 挂行、不包裹）——视觉等价现状、零回归；
-    // 多工具批 = 批块（块标题「第 N 批」+ 块内按工具名小计），失败/被拒留段内、块级标红（口径②）。
+    // 多工具批 = 批块（块标题 = 轮收尾摘要同款工具叙述句），失败/被拒留段内、块级标红（口径②）。
     const batches = groupToolBatches(events);
-    // 批块序号（第 N 批）：只给成块者（多工具批）连号，单工具批保持现状形态不占号
-    let batchOrder = 0;
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
-      if (multi) batchOrder += 1;
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
       const { host } = planItemContainerFor(details, events, batch.anchorTs, batch.segId);
       if (!multi) {
@@ -1530,7 +1515,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertPlanItemInOrder(host, row, batch.anchorTs);
         continue;
       }
-      const block = createToolBatchBlock(batch, batchOrder, false);
+      const block = createToolBatchBlock(batch, false);
       const body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       for (const entry of batch.entries) body.appendChild(renderToolRow(entry.start, events));
       insertPlanItemInOrder(host, block, batch.anchorTs);
@@ -1784,11 +1769,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   配对键去重/升级，批块按段 id（data-tool-batch）寻址复用；批从单变多时旧平铺行
     //   并入批块（批 key 随迁，行不再持有）。流式按事件到达序推进，段只增不减。
     const batches = groupToolBatches(events);
-    // 批块序号（第 N 批）：只给成块者（多工具批）连号，与 finalize 重建同规则 → 两上下文标题一致
-    let batchOrder = 0;
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
-      if (multi) batchOrder += 1;
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
       const { host } = planItemContainerFor(flow, events, batch.anchorTs, batch.segId);
       // 行的目标容器：多工具批 = 批块 body；单工具批 = 任务项容器（行即批，视觉等价现状）
@@ -1798,11 +1780,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           `:scope > .round-block__tool-batch[data-tool-batch="${batch.segId}"]`,
         );
         if (!block) {
-          block = createToolBatchBlock(batch, batchOrder, true);
+          block = createToolBatchBlock(batch, true);
           insertPlanItemInOrder(host, block, batch.anchorTs);
         } else {
-          // 已有批块（增量期间结果/新工具到达）→ 小计与失败提示随批内容重算
-          refreshToolBatchSummary(block, batch, batchOrder);
+          // 已有批块（增量期间结果/新工具到达）→ 叙述句与失败提示随批内容重算
+          refreshToolBatchSummary(block, batch);
         }
         body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       }

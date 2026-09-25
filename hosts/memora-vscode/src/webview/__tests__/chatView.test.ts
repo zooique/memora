@@ -1288,10 +1288,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // round-block 挂在本轮 assistant 块内（正文之后、操作行之前）
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.contains(rb)).toBe(true);
-    // summary：耗时（metrics）+ 叙述句（工具×1（读取 1））
+    // summary：耗时（metrics）+ 叙述句（工具×1（读取文件 1））
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     expect(summary.textContent).toContain('耗时 1m 2s');
-    expect(summary.textContent).toContain('工具×1（读取 1）');
+    expect(summary.textContent).toContain('工具×1（读取文件 1）');
     // 工具行移入 round-block（任务过程折叠区）工具调用小节，不重复出现在其他档案小节
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     expect(tool).not.toBeNull();
@@ -3170,10 +3170,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(tool.querySelector('summary')?.textContent).toBe('读取文件 (成功)');
   });
 
-  it('多分型工具 → 收尾叙述句「工具×N（读取 x · 搜索 y · 写入 z）」，描述收口清晰', () => {
+  it('多工具 → 收尾叙述句「工具×N（读取文件 x · 项目搜索 y …）」：按工具名计数，与工具行同词表', () => {
     mountChatView();
     beginRound();
-    // 2 读取 + 1 搜索 + 1 写入（分型计数进入叙述句）
+    // read_file + read_skill + search_project + write_file（四个**不同工具名**各一段）
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'read_skill', args: '{"name":"doc-writer"}' } } });
@@ -3184,7 +3184,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't4', name: 'write_file', ok: true } } });
     dispatch({ type: 'done' });
     const summary = document.querySelector('.round-block__summary') as HTMLElement;
-    expect(summary.textContent).toContain('工具×4（读取 2 · 搜索 1 · 写入 1）');
+    expect(summary.textContent).toContain('工具×4（读取文件 1 · 读取技能 1 · 项目搜索 1 · 写入文件 1）');
   });
 
   it('插话打断旧流时移除旧块流式光标（is-streaming ▋ 不残留闪烁）', () => {
@@ -4678,7 +4678,7 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     expect(batchStructure(rb)).toEqual(streamed);
   });
 
-  it('块内小计按 name 计数（「读取文件×2 · 网络搜索×1」）+ 块标题「第 N 批」（禁「第 N 步」）', () => {
+  it('批标题 = 工具叙述句（toolActionType 单点口径）+ 不带序号（第二类编号，STEP-ID-1）', () => {
     mountChatView();
     beginRound();
     dispatchEvents([
@@ -4692,11 +4692,33 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     dispatch({ type: 'done' });
     const block = document.querySelector('.round-block__tool-batch') as HTMLElement;
     const summary = block.querySelector('.round-block__tool-batch-summary') as HTMLElement;
-    // 块标题「第 N 批」（工具类折叠块禁「第 N 步」——屏上唯一「步」= 思考折叠，STEP-ID-1）
-    expect(summary.textContent).toContain('第 1 批');
-    expect(summary.textContent).not.toMatch(/第\s*\d+\s*步/);
-    // 块内摘要按工具名小计（name 计数，中文显示名单源 toolNameMap）
-    expect(block.querySelector('.round-block__tool-batch-total')?.textContent).toBe('读取文件×2 · 网络搜索×1');
+    // 分型计数走 toolActionType（与轮收尾摘要同源），不再按工具名另起一份计数口径
+    expect(block.querySelector('.round-block__tool-batch-title')?.textContent).toBe('工具×3（读取文件 2 · 网络搜索 1）');
+    // 工具类折叠块不带序号：批号与 step 号互不对齐，属另一套编号（STEP-ID-1 防复发精神）
+    expect(summary.textContent).not.toMatch(/第\s*\d+\s*[批步]/);
+  });
+
+  it('同源守卫：批标题与轮收尾摘要的工具叙述句逐字一致（防两套口径漂移）', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'read_file'),
+      toolResult(5, 't2', 'read_file', true),
+      toolStart(6, 't3', 'web_search'),
+      toolResult(7, 't3', 'web_search', true),
+      toolStart(8, 't4', 'write_file'),
+      toolResult(9, 't4', 'write_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    const blockTitle = (
+      document.querySelector('.round-block__tool-batch-title') as HTMLElement
+    ).textContent;
+    const roundSummary = (document.querySelector('.round-block__stats') as HTMLElement).textContent;
+    // 唯一的形成点：两份工具叙述同一口径；一旦批改用工具名计数，此断言立即红
+    expect(blockTitle).toBe('工具×4（读取文件 2 · 网络搜索 1 · 写入文件 1）');
+    expect(roundSummary).toBe(blockTitle);
   });
 
   it('失败/被拒工具留段内：块级标红提示（含失败/拦截），不单独成块（口径②）', () => {

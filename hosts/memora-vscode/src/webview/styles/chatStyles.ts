@@ -1527,8 +1527,8 @@ export const chatStyles = `
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
   /* 工具批块（toolBatch）：前后相邻、中间无打断物的连续工具合并为一块（分组判据见 chatView
-     groupToolBatches，方案-工具批折叠合并 §3.1）。块标题「第 N 批」+ 块内按工具名小计；
-     单工具批不包裹（行即批，视觉等价现状零回归）。 */
+     groupToolBatches，方案-工具批折叠合并 §3.1）。块标题 = 工具叙述句（toolSummaryText，与
+     轮收尾摘要同源）、不带序号；单工具批不包裹（行即批，视觉等价现状零回归）。 */
   .round-block__tool-batch {
     margin: var(--sp-1, 2px) 0;
     padding-left: var(--sp-3, 8px);
