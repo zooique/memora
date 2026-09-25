@@ -1288,10 +1288,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // round-block 挂在本轮 assistant 块内（正文之后、操作行之前）
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.contains(rb)).toBe(true);
-    // summary：耗时（metrics）+ 叙述句（执行 1 步工具（读取 1））
+    // summary：耗时（metrics）+ 叙述句（工具×1（读取 1））
     const summary = rb.querySelector('.round-block__summary') as HTMLElement;
     expect(summary.textContent).toContain('耗时 1m 2s');
-    expect(summary.textContent).toContain('执行 1 步工具（读取 1）');
+    expect(summary.textContent).toContain('工具×1（读取 1）');
     // 工具行移入 round-block（任务过程折叠区）工具调用小节，不重复出现在其他档案小节
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     expect(tool).not.toBeNull();
@@ -1533,7 +1533,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(document.querySelector('.process-flow')).toBeNull();
   });
 
-  it('阶段二步级折叠：重放 processEvents 含 plan_item_boundary 时 narrate/tool 按步归组（有任务表边切组、无边界退回扁平）', () => {
+  it('阶段二任务项级折叠：重放 processEvents 含 plan_item_boundary 时 narrate/tool 按任务项归组（有任务表边切组、无边界退回扁平）', () => {
     mountChatView();
     // 整批 processEvents（含 plan_item_boundary）由单条 turn_update 承载
     // 附 assistantMessage（复刻原 chunk『任务开始』语义）：round-block 需挂接 assistant 正文块才可见
@@ -1781,8 +1781,8 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // ② 任务表现在：plan_item_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
     dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"plan_item_id":"0","status":"done"}' } } });
-    // ≥3 步计划才常驻（**webview 展示层自身门槛**，非内核 needsPlanning——后者是关键词/
-    // 结构式布尔判定、无步数阈值）——3 步触发常驻条
+    // ≥3 个任务项的计划才常驻（**webview 展示层自身门槛**，非内核 needsPlanning——后者是关键词/
+    // 结构式布尔判定、无项数阈值）——3 个任务项触发常驻条
     dispatch({
       type: 'plan_update',
       items: [
@@ -1792,7 +1792,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       ],
     });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
-    // 流中常驻条应出现（任务表模式 ≥3 步 → 单轨 planBar；合并单轨 PLAN-UI-1）
+    // 流中常驻条应出现（任务表模式 ≥3 个任务项 → 单轨 planBar；合并单轨 PLAN-UI-1）
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     // ③ 大事件量 thought 洪流 + 自审二次输出 + archiving + metrics
     let seq = 5;
@@ -1860,7 +1860,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
       event: { type: 'meta', seq: 1, ts: '', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
     });
     dispatch({ type: 'chunk', content: '【组长开场】介绍会议主题和讨论框架', roundId: REAL_ROUND.id });
-    // ≥3 步计划 → 常驻条出现（运行时无 inline 轨）
+    // ≥3 个任务项的计划 → 常驻条出现（运行时无 inline 轨）
     dispatch({ type: 'plan_update', items: PLAN_SNAPSHOTS[0]! });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     expect(document.querySelector('.plan-inline')).toBeNull();
@@ -2442,7 +2442,7 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     vi.restoreAllMocks();
   });
 
-  it('plan_update ≥3 步 → 常驻条渲染（N/M + 当前步骤 + 浮层全量步骤列表）', () => {
+  it('plan_update ≥3 个任务项 → 常驻条渲染（N/M + 当前任务项 + 浮层全量任务项列表）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
@@ -2523,13 +2523,13 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(bar).not.toBeNull();
     // 仅一个常驻条容器
     expect(document.querySelectorAll('#planBar')).toHaveLength(1);
-    // 展开浮层 → 步骤被新快照覆盖，N/M 同步
+    // 展开浮层 → 任务项被新快照覆盖，N/M 同步
     (bar.querySelector('#planBarHead') as HTMLElement).click();
     expect(bar.querySelectorAll('.plan-item')).toHaveLength(3);
     expect(bar.querySelector('#planBarCount')?.textContent).toBe('1/3');
   });
 
-  it('plan_update <3 步 → 常驻条不出现（webview 展示层 ≥3 步门槛；与内核 needsPlanning 无关）', () => {
+  it('plan_update <3 个任务项 → 常驻条不出现（webview 展示层 ≥3 个任务项门槛；与内核 needsPlanning 无关）', () => {
     mountChatView();
     dispatch({
       type: 'plan_update',
@@ -3170,7 +3170,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(tool.querySelector('summary')?.textContent).toBe('读取文件 (成功)');
   });
 
-  it('多分型工具 → 收尾叙述句「执行 N 步工具（读取 x · 搜索 y · 写入 z）」，描述收口清晰', () => {
+  it('多分型工具 → 收尾叙述句「工具×N（读取 x · 搜索 y · 写入 z）」，描述收口清晰', () => {
     mountChatView();
     beginRound();
     // 2 读取 + 1 搜索 + 1 写入（分型计数进入叙述句）
@@ -3184,7 +3184,7 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't4', name: 'write_file', ok: true } } });
     dispatch({ type: 'done' });
     const summary = document.querySelector('.round-block__summary') as HTMLElement;
-    expect(summary.textContent).toContain('执行 4 步工具（读取 2 · 搜索 1 · 写入 1）');
+    expect(summary.textContent).toContain('工具×4（读取 2 · 搜索 1 · 写入 1）');
   });
 
   it('插话打断旧流时移除旧块流式光标（is-streaming ▋ 不残留闪烁）', () => {
@@ -4069,7 +4069,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 
   it('形态甲：QA 条目按 ts 归位对应 step 分组（补充挂刚结束的 step 间隙，2026-09-17 位置确定性防回归）', () => {
     mountChatView();
-    // 重放由单条 turn_update(replay:true) 承载——两步边界过程事件 + 前序段 + supplement 折入同一轮
+    // 重放由单条 turn_update(replay:true) 承载——两条任务项边界过程事件 + 前序段 + supplement 折入同一轮
     dispatchReplay(
       makeRound({
         id: 'r1',
@@ -4100,7 +4100,7 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
 });
 
 // ═══════════════════════════════════════════════════════════════
-// 回抽 · 首轮工具步叙述从正文撤回，改由过程叙述承载
+// 回抽 · 首轮工具叙述从正文撤回，改由过程叙述承载
 // ═══════════════════════════════════════════════════════════════
 
 describe('chatView narrate_withdraw 回抽', () => {

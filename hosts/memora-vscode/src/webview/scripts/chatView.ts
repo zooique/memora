@@ -669,7 +669,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 事件统计：工具（含分型）/ 审查（运行时与重放同一函数，SSOT 杜绝两处算法）。
-   * 分型计数供收尾叙述句「执行 N 步工具（读取 x · 搜索 y）」使用 */
+   * 分型计数供收尾叙述句「工具×N（读取 x · 搜索 y）」使用 */
   function countEvents(events: ProcessEvent[]): {
     tools: number;
     reads: number;
@@ -1282,7 +1282,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (stats.writes > 0) subtypeParts.push(`写入 ${stats.writes}`);
         if (stats.runs > 0) subtypeParts.push(`运行 ${stats.runs}`);
         parts.push(
-          subtypeParts.length > 0 ? `执行 ${stats.tools} 步工具（${subtypeParts.join(' · ')}）` : `工具×${stats.tools}`,
+          subtypeParts.length > 0 ? `工具×${stats.tools}（${subtypeParts.join(' · ')}）` : `工具×${stats.tools}`,
         );
       }
       if (stats.reviews > 0) parts.push(`审查 ${stats.reviews} 次`);
@@ -1294,7 +1294,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       summary.appendChild(label);
       rb.classList.toggle('is-running', !finalize);
     }
-    // round-block 任务项标签——如果有 active step，在 summary 上方显示"📍 执行任务项 N: xxx"
+    // round-block 任务项标签——如果有 active 任务项，在 summary 上方显示"📍 执行任务项 N: xxx"
     // 从 currentPlanItems 缓存读（plan_update 消息存，零新增协议）；每次重建保证始终正确
     const existingTag = rb.querySelector(':scope .round-block__plan-tag') as HTMLElement | null;
     if (currentPlanItems.length > 0) {

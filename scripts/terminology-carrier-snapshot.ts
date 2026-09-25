@@ -384,7 +384,6 @@ const BASELINE_CODE: readonly string[] = [
   'steps',
   'toolStepLimit',
   'withStepIndex',
-  '步级',
   '步骤',
   '第N步',
   '迭代',
