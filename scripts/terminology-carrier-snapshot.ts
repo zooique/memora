@@ -9,7 +9,7 @@
  *     ① `.prettierignore` 只挡一半；② 函数名改了、它产出的事件名没改；③ CHANGELOG 过度声明。
  *   本脚本把载体清单机械化：扫全仓 → 抽词根载体 → 锁集合。清单不再靠记性。
  *
- * 关键设计（三项，皆为「为什么这么做」）：
+ * 关键设计（四项，皆为「为什么这么做」）：
  *   1. **脚本是锚点的执行器，不是第二份例外清单**：`frozen` 集由
  *      `.trae/rules/terminology-anchor-rules.md` §3 表格**解析**得到，不硬编码在本文件。
  *      锚点改了扫描跟着改；解析失败**报错退出**（防「静默返回空集 → 门禁永远绿」）。
@@ -17,6 +17,12 @@
  *      锁次数 = 门禁天天红 = 必然被绕过。锁集合只对「新词出现」「旧词消失」报警。
  *   3. **不判断语义对错**：机械判定「这个词用的是不是任务表语义」做不到。本脚本的产出是
  *      **漂移可见性**——新增 / 消失必须被显式确认（更新 BASELINE，git diff 即审计痕迹）。
+ *   4. **分层基线（code / text 各锁一份集合，不共用）**：文档 / 台账 / CHANGELOG / ADR 按
+ *      「历史不改写」纪律**永久保留旧词**（`step_id` / `PlanStep` / `perStep`…）。若与代码共锁
+ *      一份集合，旧词被历史层「续命」，于是 ①「旧词消失」对已正名词永不报警 ②旧词**复活进代码**
+ *      也不报警（集合没变）——与「脚本扫自身」是**同一失效模式的另一个载体**（`SELF_REL` 的教训，
+ *      历史层是第二个续命源）。故 code 层（`src` / `hosts` / `scripts` = 现行契约）单独锁集合：
+ *      旧词从 code 消失 = 正名完成信号；旧词出现在 code = 回归报警（门禁的牙在此）。
  *
  * 扫描的词根族：
  *   - `step`（正名族，术语锚点 §1）
@@ -27,18 +33,23 @@
  *   kebab 名（CSS 类、`data-*` 属性、文件名、目录名）
  *   中文词（`步骤` / `步级`；`第 N 步` 归一化为 `第N步`——N 是数字，不构成新载体）
  *
- * 明确不扫（范围边界，**不是**例外清单——不含逐词豁免）：
+ * 范围边界与已知盲区（**不是**例外清单——不含逐词豁免）：
  *   - 录制 fixture 目录（`__tests__/fixtures/`）：内含当时的**真实输出**，改了即伪造证据。
  *   - 本脚本自身（`scripts/terminology-carrier-snapshot.ts`）：`BASELINE` 字面量会给自己续命，
  *     导致「旧词消失」检测结构性失效（只报新增不报消失）。
  *   - 依赖 / 版本库 / 构建产物 / 覆盖率 / 工具内部状态：node_modules · .git · dist · coverage · .workbuddy · .memora
+ *   - 🔴 **bare「步」词根不收**（2026-09-25 拍板接受的取舍，勿当漏洞重复报告）：「某步 / 该步 /
+ *     逐步 / 多步」这类裸「步」**不在词根表内**——纳入会把「同步 / 进步 / 地步」等通用词全部卷进来，
+ *     噪声即刻淹没门禁。代价：此类误用只能靠人眼（每轮审查顺手勘），门禁天然不管。
+ *   - 🔴 **text 层是弱判据**：text（文档 / 台账 / CHANGELOG / ADR）按纪律保留旧词 → 旧词**复活进
+ *     文档**不会报警（历史层续命仍在 text 层内）。强判据只在 code 层，文档层回归靠审查。
  *
  * 用法：
  *   npx tsx scripts/terminology-carrier-snapshot.ts           # 打印分类报表
  *   npx tsx scripts/terminology-carrier-snapshot.ts --json    # 输出 JSON（供工具消费）
- *   npx tsx scripts/terminology-carrier-snapshot.ts --check   # 与 BASELINE 比集合，漂移则 exit 1
+ *   npx tsx scripts/terminology-carrier-snapshot.ts --check   # 与分层 BASELINE 比集合，漂移则 exit 1
  *
- * 验收：--check 下集合一致 → exit 0；有新增 / 消失 → 打印两边清单 + 可直接粘贴的 BASELINE，exit 1。
+ * 验收：--check 下两层集合各自一致 → exit 0；有新增 / 消失 → 按层打印两边清单 + 可直接粘贴的 BASELINE，exit 1。
  */
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, extname, join, relative } from 'node:path';
@@ -62,6 +73,26 @@ const SELF_REL = relative(ROOT, fileURLToPath(import.meta.url)).split('\\').join
 
 /** 不进入扫描的目录名（依赖 / 版本库 / 构建产物 / 覆盖率 / 工具内部状态 / 宿主持久化） */
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', '.workbuddy', '.memora']);
+
+// ─── 扫描分层（code = 现行契约强判据 / text = 文档台账弱判据） ──────────────
+
+/** 载体所属层：code = 现行代码契约；text = 文档 / 台账 / 历史档（含保留旧词） */
+type Layer = 'code' | 'text';
+
+/**
+ * code 层路径前缀（正斜杠相对路径）：`src` / `hosts` / `scripts` 是**现行代码契约**——
+ * 正名后的旧词不允许回到这里，故对其单独锁集合（回归即报警，见「关键设计 4」）。
+ * 其余一切（docs / .trae / tasks / CHANGELOG / role-packs / prompts / 根配置 / .github）归 text 层。
+ */
+const CODE_PREFIXES: readonly string[] = ['src/', 'hosts/', 'scripts/'];
+
+/** 全部层（遍历顺序固定，保证输出跨机可复现） */
+const LAYERS: readonly Layer[] = ['code', 'text'];
+
+/** 相对路径归层（前缀匹配；调用方须已把路径归一为正斜杠） */
+function layerOf(relPath: string): Layer {
+  return CODE_PREFIXES.some((p) => relPath.startsWith(p)) ? 'code' : 'text';
+}
 
 /** 参与扫描的文本后缀：术语载体可能出现在代码、文档、样式、配置四类文件中 */
 const SCAN_EXTS = new Set([
@@ -102,8 +133,8 @@ const CJK_ORDINAL_RE = /第\s*\d+\s*步/g;
 /** 「第 N 步」的归一化 token */
 const CJK_ORDINAL_TOKEN = '第N步';
 
-/** 冻结例外解析阈值：§3 现有 3 个 step 词根例外，解析数骤降 = 小节格式被改坏，宁可报错也不放行 */
-const MIN_FROZEN = 3;
+/** 冻结例外解析阈值：§3 现有 6 个 step 词根例外，解析数骤降 = 小节格式被改坏，宁可报错也不放行 */
+const MIN_FROZEN = 6;
 
 /** 每个载体最多留几个命中文件样本（够定位即可，避免报表被单文件刷屏） */
 const SAMPLE_FILE_LIMIT = 5;
@@ -121,6 +152,8 @@ interface Carrier {
   kind: CarrierKind;
   /** 出现总次数（仅报表展示，不参与 --check 比对） */
   count: number;
+  /** 各层命中次数（分层基线的事实来源：某层 > 0 即该层集合成员） */
+  layerCount: Record<Layer, number>;
   /** 命中文件样本（相对仓库根，正斜杠），最多 SAMPLE_FILE_LIMIT 个 */
   sampleFiles: string[];
 }
@@ -166,33 +199,34 @@ function byCodeUnit(a: string, b: string): number {
 
 // ─── 扫描实现 ──────────────────────────────────
 
-/** 登记一次命中 */
-function hit(token: string, kind: CarrierKind, relPath: string, times = 1): void {
+/** 登记一次命中（layer 决定它计入哪层基线，见「关键设计 4」） */
+function hit(token: string, kind: CarrierKind, layer: Layer, relPath: string, times = 1): void {
   let rec = sink.get(token);
   if (!rec) {
-    rec = { token, kind, count: 0, sampleFiles: [] };
+    rec = { token, kind, count: 0, layerCount: { code: 0, text: 0 }, sampleFiles: [] };
     sink.set(token, rec);
   }
   rec.count += times;
+  rec.layerCount[layer] += times;
   if (rec.sampleFiles.length < SAMPLE_FILE_LIMIT && !rec.sampleFiles.includes(relPath)) {
     rec.sampleFiles.push(relPath);
   }
 }
 
 /** 从一段文本中抽取全部词根载体（文件名 / 目录名 / 文件正文都走这里） */
-function collect(text: string, relPath: string): void {
+function collect(text: string, relPath: string, layer: Layer): void {
   for (const m of text.matchAll(ASCII_TOKEN_RE)) {
-    if (matchesRoot(m[0])) hit(m[0], 'ascii', relPath);
+    if (matchesRoot(m[0])) hit(m[0], 'ascii', layer, relPath);
   }
   for (const m of text.matchAll(KEBAB_TOKEN_RE)) {
-    if (matchesRoot(m[0])) hit(m[0], 'kebab', relPath);
+    if (matchesRoot(m[0])) hit(m[0], 'kebab', layer, relPath);
   }
   for (const lit of CJK_LITERALS) {
     const n = countOccurrences(text, lit);
-    if (n > 0) hit(lit, 'cjk', relPath, n);
+    if (n > 0) hit(lit, 'cjk', layer, relPath, n);
   }
   const ordinals = text.match(CJK_ORDINAL_RE);
-  if (ordinals && ordinals.length > 0) hit(CJK_ORDINAL_TOKEN, 'cjk', relPath, ordinals.length);
+  if (ordinals && ordinals.length > 0) hit(CJK_ORDINAL_TOKEN, 'cjk', layer, relPath, ordinals.length);
 }
 
 /** 递归遍历仓库，抽取载体 */
@@ -210,15 +244,16 @@ function walk(dir: string): void {
     // 相对路径统一为正斜杠（Windows 下 path.relative 给反斜杠，会污染样本展示）
     const rel = relative(ROOT, abs).split('\\').join('/');
     if (rel === SELF_REL) continue; // 不扫自己（否则 BASELINE 字面量自续命 → 消失检测失效）
+    const layer = layerOf(rel); // 归层：决定命中计入 code 还是 text 基线
     // 文件名与目录名本身也是载体（如 `step-atomic-persistence.md`），故对路径再跑一遍抽取
-    collect(rel, rel);
+    collect(rel, rel, layer);
     let text: string;
     try {
       text = readFileSync(abs, 'utf8');
     } catch {
       continue; // 读不动（二进制 / 权限）就跳过，不因单个文件中断整轮扫描
     }
-    collect(text, rel);
+    collect(text, rel, layer);
   }
 }
 
@@ -278,16 +313,18 @@ function buildSnapshot(): Snapshot {
   return { frozen: parseFrozenFromAnchor(), carriers };
 }
 
-/** 取集合形态（--check 的比对载体：只集合，不含次数与文件） */
-function tokenSet(s: Snapshot): string[] {
-  return s.carriers.map((c) => c.token);
+/** 取某层的集合形态（--check 的比对载体：只集合，不含次数与文件；分层比对见「关键设计 4」） */
+function layerTokenSet(s: Snapshot, layer: Layer): string[] {
+  return s.carriers.filter((c) => c.layerCount[layer] > 0).map((c) => c.token);
 }
 
-// ─── 基准集合（--check 用它比对）──────────────────
+// ─── 分层基准集合（--check 按层比对）──────────────────
 // 说明：本常量是「载体集合基线」，不是「目标值 / 白名单」——它不判定语义对错，
 //       只记录「当下存在的全部词根载体」。任何新增 / 消失都会让 --check 变红，
 //       改动者需显式确认语义（是新机制？还是新代码误用了旧词？）并在此更新，git diff 即审计痕迹。
-const BASELINE: readonly string[] = [
+// 分层理由见「关键设计 4」：code 层是现行契约（强判据），text 层含按纪律保留旧词的历史档（弱判据）。
+// 两份数组的并集 = 全部载体（每词可同时属多层）；漂移时 --check 会打印可直接粘贴的分层清单。
+const BASELINE_CODE: readonly string[] = [
   'ALL_STEPS',
   'DEFAULT_MAX_ITERATIONS',
   'DEFAULT_MAX_ITERATIONS_REACHED_MARK',
@@ -297,6 +334,66 @@ const BASELINE: readonly string[] = [
   'MULTI_STEP_PATTERNS',
   'MULTI_STEP_REASONINGS',
   'MultiStepReasoning',
+  'STEP_TIMEOUT_MS',
+  'Step',
+  '_emitStepBoundary',
+  'a1b2c3d4-step-1',
+  'alignment-iteration',
+  'animation-iteration-count',
+  'c9d0e1f2-step-3',
+  'cachedAtIteration',
+  'currentIteration',
+  'data-step-bucket',
+  'e5f6a7b8-step-2',
+  'emitMaxIterationsReached',
+  'handleIteration',
+  'handleIterationResult',
+  'inAutonomousStep',
+  'isInAutonomousStep',
+  'iteration',
+  'iterations',
+  'maxIterations',
+  'maxIterationsReached',
+  'multiStepReasoning',
+  'new-step',
+  'old-step',
+  'per-step',
+  'resolveMultiStepReasoning',
+  'resolveStepBudget',
+  'resolveToolStepLimit',
+  'roundStepIndex',
+  'runIteration',
+  'runIterationLoop',
+  'runStep',
+  'selectSteps',
+  'step',
+  'step-0',
+  'step-1',
+  'step-active-1',
+  'step-atomic-persistence',
+  'step-end',
+  'step-pending-2',
+  'step1',
+  'step2',
+  'stepBoundary',
+  'stepBucket',
+  'stepBudget',
+  'stepCount',
+  'stepIndex',
+  'step_boundary',
+  'steps',
+  'toolStepLimit',
+  'withStepIndex',
+  '步级',
+  '步骤',
+  '第N步',
+  '迭代',
+];
+const BASELINE_TEXT: readonly string[] = [
+  'ALL_STEPS',
+  'DEFAULT_MAX_ITERATIONS',
+  'MAX_STEP_BUDGET',
+  'MIN_STEP_BUDGET',
   'PlanStep',
   'PlanStepDto',
   'STEP',
@@ -305,43 +402,31 @@ const BASELINE: readonly string[] = [
   'STEP_LOG_PER_STEP_LIMIT',
   'STEP_NOT_FOUND',
   'STEP_STATUS_LABEL',
-  'STEP_TIMEOUT_MS',
   'Step',
   '_emitIterationBoundary',
   '_emitStepBoundary',
   '_maybeEmitStepBoundary',
   'a1b2c3d4-step-1',
-  'alignment-iteration',
   'animation-iteration-count',
   'appendPlanStep',
   'block__step',
-  'c9d0e1f2-step-3',
-  'cachedAtIteration',
   'completeStep',
   'currentIteration',
   'currentPlanSteps',
   'data-step',
   'data-step-bucket',
-  'e5f6a7b8-step-2',
-  'emitMaxIterationsReached',
   'ensureActiveStep',
   'getActiveStepMeta',
   'handleIteration',
   'handleIterationResult',
-  'inAutonomousStep',
   'insertStepInOrder',
-  'isInAutonomousStep',
   'iteration',
   'iterationBoundary',
   'iteration_boundary',
-  'iterations',
   'maxIterations',
-  'maxIterationsReached',
   'meetingSteps',
   'multiStepReasoning',
-  'new-step',
   'nextStep',
-  'old-step',
   'per-step',
   'perStep',
   'plan-step',
@@ -350,19 +435,12 @@ const BASELINE: readonly string[] = [
   'resolveStepBudget',
   'resolveToolStepLimit',
   'roundStepIndex',
-  'runIteration',
   'runIterationLoop',
-  'runStep',
   'runStepSequence',
-  'selectSteps',
   'step',
-  'step-0',
-  'step-1',
-  'step-active-1',
   'step-atomic-persistence',
   'step-boundary',
   'step-end',
-  'step-pending-2',
   'step1',
   'step2',
   'step4',
@@ -371,7 +449,6 @@ const BASELINE: readonly string[] = [
   'stepBucket',
   'stepBudget',
   'stepContainerFor',
-  'stepCount',
   'stepGroup',
   'stepIndex',
   'stepLogLenBefore',
@@ -401,15 +478,17 @@ function printReport(s: Snapshot): void {
 
   console.log('\n📐 术语载体 · 同族扫描\n');
   console.log(`扫描根：${ROOT}`);
+  // 分层汇总：code / text 各自的集合规模（分层基线的事实来源，见「关键设计 4」）
+  const layerSizes = LAYERS.map((l) => `${l} 层 ${layerTokenSet(s, l).length}`).join(' · ');
   console.log(
-    `载体总数：${s.carriers.length}（正名族 ${main.length} · 别名族 ${alias.length} · 冻结例外 ${frozen.length}）`,
+    `载体总数：${s.carriers.length}（正名族 ${main.length} · 别名族 ${alias.length} · 冻结例外 ${frozen.length}）｜分层：${layerSizes}`,
   );
 
   const dump = (title: string, list: Carrier[]): void => {
     console.log(`\n── ${title}（${list.length}）──`);
     for (const c of list) {
       console.log(
-        `  ${c.token.padEnd(34)} ${c.kind.padEnd(6)} ${String(c.count).padStart(5)} 处  ${c.sampleFiles.join(', ')}`,
+        `  ${c.token.padEnd(34)} ${c.kind.padEnd(6)} ${String(c.count).padStart(5)} 处  (code ${c.layerCount.code} / text ${c.layerCount.text})  ${c.sampleFiles.join(', ')}`,
       );
     }
   };
@@ -419,7 +498,7 @@ function printReport(s: Snapshot): void {
   dump('冻结例外（锚点 §3 派生）', frozen);
 
   // 僵尸例外：登记在锚点却已在本仓消失 —— 属「过度放行」，故仅告警不失败
-  const present = new Set(tokenSet(s));
+  const present = new Set(s.carriers.map((c) => c.token));
   const stale = s.frozen.filter((t) => !present.has(t));
   if (stale.length > 0) {
     console.log(`\n⚠️  锚点 §3 登记但全仓未命中（例外已僵尸，可考虑清理）：${stale.join(', ')}`);
@@ -427,11 +506,17 @@ function printReport(s: Snapshot): void {
   console.log('');
 }
 
-/** 生成可直接粘贴进本文件的 BASELINE 字面量（省去手抄，杜绝抄错） */
-function baselineLiteral(tokens: readonly string[]): string {
+/** 生成可直接粘贴进本文件的分层 BASELINE 字面量（省去手抄，杜绝抄错） */
+function baselineLiteral(name: string, tokens: readonly string[]): string {
   const body = tokens.map((t) => `  '${t}',`).join('\n');
-  return `const BASELINE: readonly string[] = [\n${body}\n];`;
+  return `const ${name}: readonly string[] = [\n${body}\n];`;
 }
+
+/** 各层基线的取数口（layer → 基线集合；与 layerTokenSet 合成逐层比对的两端） */
+const BASELINE_BY_LAYER: Record<Layer, readonly string[]> = {
+  code: BASELINE_CODE,
+  text: BASELINE_TEXT,
+};
 
 function main(): void {
   const argv = process.argv.slice(2);
@@ -442,38 +527,55 @@ function main(): void {
     return;
   }
 
-  // --check 是门禁模式：只输出裁决与漂移清单（全量报表走 `terminology:report`），保持门禁输出简短
+  // --check 是门禁模式：逐层比集合（分层基线见「关键设计 4」），只输出裁决与漂移清单
   if (!argv.includes('--check')) {
     printReport(snapshot);
     return;
   }
 
-  const current = tokenSet(snapshot);
-  const currentSet = new Set(current);
-  const baselineSet = new Set(BASELINE);
-  const added = current.filter((t) => !baselineSet.has(t));
-  const removed = BASELINE.filter((t) => !currentSet.has(t));
+  let drifted = false; // 任一层漂移即整体失败
+  const literals: string[] = []; // 漂移时收集各层可粘贴基线
+  for (const layer of LAYERS) {
+    const current = layerTokenSet(snapshot, layer);
+    const currentSet = new Set(current);
+    const baseline = BASELINE_BY_LAYER[layer];
+    const baselineSet = new Set(baseline);
+    const added = current.filter((t) => !baselineSet.has(t));
+    const removed = baseline.filter((t) => !currentSet.has(t));
 
-  if (added.length === 0 && removed.length === 0) {
-    console.log(
-      `✅ 术语载体集合无漂移（${current.length} 个载体，其中冻结例外 ${snapshot.frozen.length} 个）\n`,
-    );
+    if (added.length === 0 && removed.length === 0) {
+      console.log(`✅ ${layer} 层集合无漂移（${current.length} 个载体）`);
+      continue;
+    }
+
+    drifted = true;
+    console.log(`\n❌ ${layer} 层漂移：新增 ${added.length} / 消失 ${removed.length}`);
+    if (added.length > 0) {
+      console.log(
+        layer === 'code'
+          ? '【新增·code】先判断：新机制引入的新词，还是**旧词复活**/新代码误用 step 表示任务表语义（§4.1）？'
+          : '【新增·text】多为文档新提及旧词；确认是「引用历史」还是「误用」再更新基线',
+      );
+      for (const t of added) console.log(`  + ${t}`);
+    }
+    if (removed.length > 0) {
+      console.log(
+        layer === 'code'
+          ? '【消失·code】确认正名是否彻底：旧载体没清干净，还是本次确实移除？'
+          : '【消失·text】历史档按纪律不改写，消失通常意味着文档被重写——确认非误删历史记录',
+      );
+      for (const t of removed) console.log(`  - ${t}`);
+    }
+    literals.push(baselineLiteral(layer === 'code' ? 'BASELINE_CODE' : 'BASELINE_TEXT', current));
+  }
+
+  if (!drifted) {
+    console.log(`\n✅ 术语载体集合无漂移（冻结例外 ${snapshot.frozen.length} 个）\n`);
     return;
   }
 
-  console.log(`❌ 术语载体漂移：新增 ${added.length} / 消失 ${removed.length}\n`);
-  if (added.length > 0) {
-    console.log(
-      '【新增】先判断：是新机制引入的新词，还是新代码误用了旧词（§4.1 禁止用 step 表示任务表语义）？',
-    );
-    for (const t of added) console.log(`  + ${t}`);
-  }
-  if (removed.length > 0) {
-    console.log('\n【消失】确认换名是否彻底：旧载体没清干净，还是本次确实移除？');
-    for (const t of removed) console.log(`  - ${t}`);
-  }
-  console.log('\n确认语义无误后，把本文件的 BASELINE 更新为：\n');
-  console.log(baselineLiteral(current));
+  console.log('\n确认语义无误后，把本文件的分层 BASELINE 更新为：\n');
+  console.log(literals.join('\n\n'));
   console.log('');
   process.exit(1);
 }
