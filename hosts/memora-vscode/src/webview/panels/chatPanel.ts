@@ -2598,7 +2598,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs, roundId: chunk.roundId });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → 过程事件（webview 渲染工具调用折叠区）
-          emitEvent('tool_start', { toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
+          emitEvent('tool_start', { toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args, stepIndex: chunk.stepIndex });
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
           // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行。
           //  任务看板归 checkpoint 执行态，不进过程事件）

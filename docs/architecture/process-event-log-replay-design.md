@@ -138,14 +138,14 @@ ProcessEvent = {
 | `meta`（每轮首条）       | `role`（角色显示名）+ `llm`（模型显示名）                                        | 顶部角色徽章 + LLM 名称（该轮应答） |
 | `thinking`         | `phase`（recalling/llm\_calling/processing/archiving）               | 思考折叠块                 |
 | `memory_added`     | `id/name/source`（对应内核 `memoryAdded` 事件）                            | 「已沉淀：xx」提示条           |
-| `tool_start`       | `toolCallId/name/args`（args 超长截断）                                  | 工具执行记录                |
+| `tool_start`       | `toolCallId/name/args`（args 超长截断）/`stepIndex?`（所属 step 轮内序号，与 thought 同构；tool_result 经 toolCallId 归属不重复携带） | 工具执行记录（可按 step 归属重建）  |
 | `tool_result`      | `toolCallId/ok/summary`                                            | 工具完成态                 |
 | `self_review`      | `round` + 自审查文本                                                    | 自审查过程块                |
 | `text_self_review` | 自审查段内容（`text` chunk `stage='self_review'` 分段）                      | 自审查输出分段               |
 | `aborted`          | `reason`                                                           | 「已停止」标记               |
 | `metrics`（每轮末条）    | `durationMs/tokenIn/tokenOut/toolFailureCount/success`             | 顶栏耗时 + § 执行指标         |
 
-> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）与 `plan_item_boundary`（`{planItemId?, title?}`，步级折叠边界）两个事件类型在上表定稿后新增，未补入表格；两者均已落盘（[roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
+> **上表非全集（2026-09-12 对齐）**：`narrate`（`{content}`，AI 过程叙述折叠行）、`plan_item_boundary`（`{planItemId?, title?}`，任务项级折叠边界）与 `thought`（`{content, stepIndex?}`，思考流）等事件类型在上表定稿后新增，未补入表格；均已落盘（[roundStore.ts](../../src/memory/roundStore.ts) `ProcessEvent` 联合类型为唯一真理源）。
 >
 > **运行时专有字段约定（2026-09-12，A1 回抽）**：`narrate` 的 **`withdrawn?`** 是**运行时专有**字段——它承载「该段叙述曾被逐字流式进正文区、须先撤回」的信息（首轮消息级分类前无法预判工具轮）。它**刻意不落 ProcessEvent、不持久化**：重放的一致由**持久化侧扣除**保证（`Agent.consumeExecutionStream` 按此后缀扣除 `assistantMessage`）。**勿把它补进 ProcessEvent schema**——那会让「重放依赖运行时字段」的假依赖成立，而重放实际只需读 `Round.assistantMessage`（已扣除）。同理，宿主侧的 `narrate_withdraw` 协议消息亦为瞬态。
 >

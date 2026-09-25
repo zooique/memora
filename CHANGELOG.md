@@ -286,6 +286,13 @@ SSOT 第三轮排雷：15 项契约/一致性缺陷清零，无公共 API 变更
 - **顺带**：webview 注释「active step」→「active 任务项」（同句 UI 文案本就是「执行任务项 N」）。
 - **门禁首次实战（消失信号）**：「步级」随正名从 code 层消失 → 分层基线报警「消失·code 1」→ 回填后 code 62 / text 75 双绿——「正名完成信号」按设计工作，非误报。
 
+### Added（tool 的 step 归属补齐：`tool_start.stepIndex` 与 thought 同构）
+
+- **内核事实层**：`AgentChunk.tool_start` 与 `ProcessEvent.tool_start.payload` 增可选 `stepIndex`（与 `thought.stepIndex` 逐字同构，缺省 = 无归属）；`loop.executeToolCalls` 发射点单点打标（`handleToolCalls` → `executeToolCalls` 调用链逐级传号）。**单点纪律**：`tool_result` 刻意不盖章——经 `toolCallId` 归属 `tool_start`（防双写守卫测试在案）。
+- **宿主**：`chatPanel` `tool_start` 透传落盘——重放可读「工具是第几步执行的」，tool×step 交叉事实（同号对齐 / 按 step 统计工具用量）自此有据可查。
+- **测试**：内核 4 例（多 step 递增 / 同 step 并发同号 / 续跑续号 / 新轮起数）+ 防双写守卫 1 例 + 落盘断言 1 例；**变异捕红 2 场精确命中**（删打标 → 3 红零误伤；双写 tool_result → 恰 1 红 = 守卫）。
+- **设计裁决留档**：`step_boundary` **维持不落盘的既定契约**（`types.ts`「触发点非历史内容」）——`stepIndex` 落地后 step 边界在重放中可由序号跳变直接读出，再落盘 = 同一事实两处记载（双轨镜像），「同族半补丁」判断作废。
+
 ## 历史试验版本（已在 npm 作废，请勿使用）
 
 ## [2.1.0] - 2026-08-08

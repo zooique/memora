@@ -302,13 +302,16 @@ async *chat(input: string, signal?: AbortSignal): AsyncGenerator<AgentChunk, voi
 type AgentChunk =
   | { type: 'thinking'; phase: ThinkingPhase }             // 推理阶段
   | { type: 'text'; content: string }  // LLM 文本片段（流式输出内容）
-  | { type: 'tool_start'; toolCallId: string; name: string; args?: string }   // 工具调用开始
+  | { type: 'thought'; content: string; stepIndex?: number }  // 模型思考增量（不进正文/记忆）；stepIndex = 所属 step 轮内序号（loop 打标）
+  | { type: 'tool_start'; toolCallId: string; name: string; args?: string; stepIndex?: number }   // 工具调用开始（stepIndex 同 thought；tool_result 经 toolCallId 归属，不重复携带）
   | { type: 'tool_result'; toolCallId: string; name: string; ok: boolean; summary?: string }  // 工具调用结果
   | { type: 'aborted'; reason: string }                    // 对话被取消
   | { type: 'error'; message: string }                     // 流式过程中发生错误（LLM 超时/连接断开）
   | { type: 'retry'; attempt: number; maxRetries: number; delayMs: number; error: string }  // 指数退避重试
   | { type: 'done' };                                      // 结束标记
 ```
+
+> 上表为核心事件子集（含边界/提问等更多成员的 `AgentChunk` 全集以 [types.ts](../src/agent/types.ts) 为唯一真理源）。
 
 > **记忆召回展示链已退役（2026-09-10）**：`recall` chunk 分支与 `RecalledMemorySummary` 类型已随自动注入退役**物理删除**。记忆纯工具化后，「召回了什么」由 `search_memories` 工具的 `tool_start` / `tool_result` 过程事件天然展示；检索命中含 `accessedAt` / 溯源字段（`sessionId`/`roundId`）。
 

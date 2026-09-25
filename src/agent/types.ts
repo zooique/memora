@@ -30,7 +30,11 @@ export type AgentChunk = (
        */
       stage?: TextChunkStage;
     }
-  | { type: 'tool_start'; toolCallId: string; name: string; args?: string }
+  /**
+   * 工具调用开始（Runtime 确定执行、参数已完成）。stepIndex = 所属 step 的轮内序号（与 thought
+   * 同构，loop 单点打标）；tool_result **不重复盖章**——经 toolCallId 归属本条（事实单点，防双写）。
+   */
+  | { type: 'tool_start'; toolCallId: string; name: string; args?: string; stepIndex?: number }
   | {
       type: 'tool_result';
       toolCallId: string;

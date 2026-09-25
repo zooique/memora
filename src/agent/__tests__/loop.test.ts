@@ -5648,3 +5648,110 @@ describe('AgentLoop · thought 的 step 归属（stepIndex）', () => {
     expect(second).toEqual([1]);
   });
 });
+
+// ─── 工具的 step 归属（tool_start.stepIndex）────────────────────
+// 语义：「这个工具是第几个 step 执行的」与 thought.stepIndex 同构（loop 单点打标、轮粒度单调：
+// 续跑续号、新轮起数）。tool_result 刻意**不盖章**——经 toolCallId 归属 tool_start（事实单点，防双写）。
+describe('AgentLoop · 工具的 step 归属（tool_start.stepIndex）', () => {
+  /** 带工具调用的轮 chunk（args 做参数区分防重复拦截器误伤） */
+  const toolTurn = (...calls: { id: string; args: string }[]): ChunkItem => ({
+    toolCalls: calls.map(
+      (c): NonNullable<Message['toolCalls']>[number] => ({
+        id: c.id,
+        type: 'function',
+        function: { name: 'read_file', arguments: c.args },
+      }),
+    ),
+  });
+
+  it('同一轮多 step 各自递增；同 step 并发多工具同号', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [toolTurn({ id: 'c1', args: '{"path":"a"}' }, { id: 'c2', args: '{"path":"b"}' })],
+        [toolTurn({ id: 'c3', args: '{"path":"c"}' })],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const stamps: (number | undefined)[] = []; // 各 tool_start 的归属序号
+    for await (const chunk of loop.processUserInput('开始')) {
+      if (chunk.type === 'tool_start') stamps.push(chunk.stepIndex);
+    }
+    // step 1 的两个并发工具同号（一次 LLM 调用 = 一个 step）；step 2 递增
+    expect(stamps).toEqual([1, 1, 2]);
+  });
+
+  it('暂停续跑续号：跨续跑段继续单调（不重新起数）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [toolTurn({ id: 'c1', args: '{"path":"a"}' })],
+        [toolTurn({ id: 'c2', args: '{"path":"b"}' })],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const first: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_start') first.push(chunk.stepIndex);
+      // 工具步完成后申请软暂停，loop 在下一 step 边界挂起
+      if (chunk.type === 'tool_result') loop.requestPause();
+    }
+    expect(first).toEqual([1]);
+    const resumed: (number | undefined)[] = [];
+    for await (const chunk of loop.continueAfterPause()) {
+      if (chunk.type === 'tool_start') resumed.push(chunk.stepIndex);
+    }
+    // 续跑段首个工具 = 本轮第 2 步（与 thought 归属同判据：随循环重启会回到 1 并撞号）
+    expect(resumed).toEqual([2]);
+  });
+
+  it('新轮（processUserInput）重新起数', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // 每个 processUserInput 是完整闭环：工具轮后须补收尾轮（否则吞掉下个问题的脚本）
+        [toolTurn({ id: 'c1', args: '{"path":"a"}' })],
+        [{ content: '答一' }],
+        [toolTurn({ id: 'c2', args: '{"path":"b"}' })],
+        [{ content: '答二' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    const first: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('问题一')) {
+      if (chunk.type === 'tool_start') first.push(chunk.stepIndex);
+    }
+    const second: (number | undefined)[] = [];
+    for await (const chunk of loop.processUserInput('问题二')) {
+      if (chunk.type === 'tool_start') second.push(chunk.stepIndex);
+    }
+    expect(first).toEqual([1]);
+    expect(second).toEqual([1]);
+  });
+
+  it('tool_result 不带 stepIndex（经 toolCallId 归属，防双写守卫）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('文件内容');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [toolTurn({ id: 'c1', args: '{"path":"a"}' })],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    let results = 0; // tool_result 观测计数（防断言空过假绿）
+    for await (const chunk of loop.processUserInput('读取文件')) {
+      if (chunk.type === 'tool_result') {
+        results++;
+        // 同一事实只在 tool_start 出生：tool_result 若也盖章 = 双轨镜像（两处各改各的就漂）
+        expect('stepIndex' in chunk).toBe(false);
+      }
+    }
+    expect(results).toBeGreaterThan(0);
+  });
+});

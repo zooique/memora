@@ -215,11 +215,15 @@ export type ProcessEvent =
       ts: string;
       payload: { id: string; name: string; source: string };
     }
+  /**
+   * 工具调用开始。payload.stepIndex = 所属 step 的轮内序号（内核 loop 单点打标、与 thought.stepIndex
+   * 同构，缺省 = 无归属）；tool_result 不重复携带——经 payload.toolCallId 归属本条（事实单点）。
+   */
   | {
       type: 'tool_start';
       seq: number;
       ts: string;
-      payload: { toolCallId: string; name: string; args?: string };
+      payload: { toolCallId: string; name: string; args?: string; stepIndex?: number };
     }
   | {
       type: 'tool_result';

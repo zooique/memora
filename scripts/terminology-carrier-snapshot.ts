@@ -457,6 +457,7 @@ const BASELINE_TEXT: readonly string[] = [
   'step_id',
   'steps',
   'term-unify-turn-step-loop',
+  'toolStep',
   'toolStepLimit',
   'updatePlanStepStatus',
   'updateStep',

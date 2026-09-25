@@ -1094,7 +1094,7 @@ export class AgentLoop {
           ...(llmResult.streamedText ? { withdrawn: llmResult.streamedText } : {}),
         };
       }
-      const toolResult = yield* this.handleToolCalls(llmResult, effectiveSignal);
+      const toolResult = yield* this.handleToolCalls(llmResult, effectiveSignal, stepIndex);
       // 任务项级折叠边界事件（检出时机在工具落定后）：
       // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active 任务项
       // 保证第一个任务项拿到自己的边界（工具落定前检出会被「离开第一个任务项」吃掉）。判据不变（推进才产 +
@@ -1289,10 +1289,12 @@ export class AgentLoop {
     );
   }
 
-  /** 工具调用分支 + Reflection（子方法 2/3）；ask_user 提问检出挂起（返回 'paused'） */
+  /** 工具调用分支 + Reflection（子方法 2/3）；ask_user 提问检出挂起（返回 'paused'）。
+   *  stepIndex = 本迭代序号（调用方算号传入），tool_start 发射时盖章（与 thought 同构，事实单点）。 */
   private async *handleToolCalls(
     llmResult: LlmCallResult,
     signal: AbortSignal | undefined,
+    stepIndex: number,
   ): AsyncGenerator<AgentChunk, 'aborted' | 'continue' | 'done' | 'paused', unknown> {
     // L2 策略阻止工具调用：跳过执行，仅保留文本内容
     if (this.strategy.toolCallsBlocked) {
@@ -1375,6 +1377,7 @@ export class AgentLoop {
       effectiveToolCalls,
       llmResult.fullContent,
       signal,
+      stepIndex,
     );
     if (execResult.aborted) {
       // 与 LLM 调用点同构：工具执行中途 timeout abort 且用户已申请暂停 → 路由 paused（续跑）。
@@ -1588,12 +1591,14 @@ export class AgentLoop {
   }
 
   /**
-   * 执行工具调用列表（并发执行，异常捕获后转为结构化错误串回传给 LLM，而非中断对话）
+   * 执行工具调用列表（并发执行，异常捕获后转为结构化错误串回传给 LLM，而非中断对话）。
+   * stepIndex = 本迭代序号（调用链逐级传入），tool_start 发射时盖章（与 thought 同构，事实单点）。
    */
   private async *executeToolCalls(
     toolCalls: NonNullable<Message['toolCalls']>,
     fullContent: string,
     signal: AbortSignal | undefined,
+    stepIndex: number,
   ): AsyncGenerator<AgentChunk, { aborted: boolean }, unknown> {
     this.appendAssistantToolCall(fullContent, toolCalls);
 
@@ -1651,6 +1656,7 @@ export class AgentLoop {
         toolCallId: tc.id,
         name: tc.function.name,
         args: tc.function.arguments,
+        stepIndex, // 所属 step 归属（单点打标，与 thought 同构）
       };
 
       // ===== 统一护栏判定（GuardRail SSOT）=====

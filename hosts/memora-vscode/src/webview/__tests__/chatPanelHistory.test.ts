@@ -816,7 +816,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
         (async function* () {
           yield { type: 'thinking', phase: 'processing', roundId: 'round-1' };
           yield { type: 'step_boundary', roundId: 'round-1' };
-          yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-1' };
+          yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', stepIndex: 2, roundId: 'round-1' };
           yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
           yield { type: 'step_boundary', roundId: 'round-1' };
           yield { type: 'done' };
@@ -832,6 +832,12 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     expect(saves[0]).not.toContain('tool_start');
     // 第二次落盘把第二迭代的工具增量补上
     expect(saves[1]).toContain('tool_start');
+    // 工具的 step 归属随事件落盘（与 thought.stepIndex 同构）：重放可读「工具是第几步执行的」
+    const toolStarts =
+      roundStore.getById('round-1')?.processEvents?.filter(
+        (e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start',
+      ) ?? [];
+    expect(toolStarts[0]?.payload.stepIndex).toBe(2);
     // 末次是流尾终局（metrics 为流尾专有事件）
     expect(saves[2]).toContain('metrics');
   });
