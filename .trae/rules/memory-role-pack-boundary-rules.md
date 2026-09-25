@@ -1,19 +1,19 @@
-\---  
-alwaysApply: true  
-description: 记忆系统 × 角色包边界——设定记忆（persona/rules/skills）唯一归角色包；记忆系统单轨 = round-summary 摘要记忆；会话摘要归 SessionMeta；技能两级渐进披露  
-\---
+---
+alwaysApply: true
+description: 记忆系统 × 角色包边界——设定记忆（persona/rules/skills）唯一归角色包；记忆系统单轨 = round-summary 摘要记忆；会话摘要归 SessionMeta；技能两级渐进披露
+---
 
 # 记忆系统 × 角色包边界纪律
 
-> **「你是谁、怎么做事」归角色包；「聊了什么」归记忆系统。** 两刀切、不互存、不双写。  
+> **「你是谁、怎么做事」归角色包；「聊了什么」归记忆系统。** 两刀切、不互存、不双写。
 > 设计真理源：`docs/architecture/memory-role-pack-boundary.md` · ADR-025。
 
 ## 一、分界线
 
-| 维度                               | 归属           | 承载形态                                                                                                      |
+| 维度 | 归属 | 承载形态 |
 | -------------------------------- | ------------ | --------------------------------------------------------------------------------------------------------- |
-| 你是谁 / 怎么做事（persona/rules/skills） | **角色包**      | `role-packs/<名>/` 下 persona.md / rules.md / skills/*；能力声明在顶层 `capabilities`                               |
-| 聊了什么 / 发生过什么                     | **记忆系统（单轨）** | **round-summary**（每轮生成，带 summaryType/sessionName/roundId）；会话级摘要归 **SessionMeta**（summary/keyTopics），不进记忆库 |
+| 你是谁 / 怎么做事（persona/rules/skills） | **角色包** | `role-packs/<名>/` 下 persona.md / rules.md / skills/*；能力声明在顶层 `capabilities` |
+| 聊了什么 / 发生过什么 | **记忆系统（单轨）** | **round-summary**（每轮生成，带 summaryType/sessionName/roundId）；会话级摘要归 **SessionMeta**（summary/keyTopics），不进记忆库 |
 
 **两个禁止**：① 记忆库禁写设定记忆（不新增 `source:'persona'/'rule'/'skill'`）；② 角色包禁写对话记忆。
 
