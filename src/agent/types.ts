@@ -214,13 +214,13 @@ export type ArchiveMode = 'full' | 'manual';
 /** 会话状态（三态状态机） */
 export type SessionStatus = 'running' | 'paused' | 'error';
 
-/** 计划中单个步骤，用于目标漂移检测（文本相似度）和进度追踪 */
+/** 计划中单个任务项，用于目标漂移检测（文本相似度）和进度追踪 */
 export interface PlanItem {
-  /** 步骤唯一标识 */
+  /** 任务项唯一标识 */
   id: string;
-  /** 步骤描述 */
+  /** 任务项描述 */
   description: string;
-  /** 步骤状态 */
+  /** 任务项状态 */
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;

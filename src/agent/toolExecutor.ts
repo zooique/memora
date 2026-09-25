@@ -381,24 +381,24 @@ function resolvePlanItemId(planItemId: string, plan: PlanItemIdPlanRef[]): PlanI
     const matches = plan.filter((s) => s.id.startsWith(planItemId));
     if (matches.length === 1) return { ok: true, id: matches[0]!.id };
     if (matches.length > 1) {
-      return { ok: false, error: `[ERR:INVALID_ARG] 步骤短 id "${planItemId}" 不唯一（对应 ${matches.length} 个步骤），请改用任务表行首序号定位` };
+      return { ok: false, error: `[ERR:INVALID_ARG] 任务项短 id "${planItemId}" 不唯一（对应 ${matches.length} 个任务项），请改用任务表行首序号定位` };
     }
     return {
       ok: false,
-      error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"：短 id 需为 task_table_write 返回的 8 位标识，或改用任务表行首序号`,
+      error: `[ERR:PLAN_ITEM_NOT_FOUND] 未找到任务项 "${planItemId}"：短 id 需为 task_table_write 返回的 8 位标识，或改用任务表行首序号`,
     };
   }
   // 3. 纯数字 → 行首序号（1-based，按 order 匹配）
   if (/^\d+$/.test(planItemId)) {
     const idx = Number(planItemId) - 1;
-    const step = plan.find((s) => s.order === idx);
-    if (step) return { ok: true, id: step.id };
-    return { ok: false, error: `[ERR:INVALID_ARG] 步骤序号 ${planItemId} 超出任务表范围（当前共 ${plan.length} 步，行首序号从 1 开始）` };
+    const planItem = plan.find((s) => s.order === idx);
+    if (planItem) return { ok: true, id: planItem.id };
+    return { ok: false, error: `[ERR:INVALID_ARG] 任务项序号 ${planItemId} 超出任务表范围（当前共 ${plan.length} 个任务项，行首序号从 1 开始）` };
   }
   // 4. 未知标识
   return {
     ok: false,
-    error: `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"（可用任务表行首序号或 task_table_write 返回的短 id 定位）`,
+    error: `[ERR:PLAN_ITEM_NOT_FOUND] 未找到任务项 "${planItemId}"（可用任务表行首序号或 task_table_write 返回的短 id 定位）`,
   };
 }
 

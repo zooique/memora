@@ -33,8 +33,10 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | ---- | -------- | -------- |
 | `step_id`（`task_table_update` 参数） | **任务表行号 / 短 id**（= PlanItem，非 step） | LLM 可见契约面 |
 | `stepBudget` / `multiStepReasoning` / `toolStepLimit` | loop 迭代相关（**属 step 阵营，语义合法**） | v3.0.0 冻结策略键 |
+| `handoffPrompt`（角色包 manifest 字段） | **角色接手话术**（装载角色时预填的开场提示），与已废弃的「Handoff 衔接决策」（turn 出口 wait/loop/end）**同名异义** | 角色包对外契约键（宿主与 schema 消费），改名破坏兼容 |
 
 > `step_id` 是**例外中的例外**：名字带 step 却指任务表，新代码**不得模仿**。
+> `handoffPrompt` 是**同名异义**：其 `handoff` = 英文「交接/接手」，与 §5 废弃的「Handoff 衔接决策」无关；见到它**不得**推论 Handoff 机制复活。
 
 ## 4. 增量纪律（违反即伤）
 

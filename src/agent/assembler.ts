@@ -355,11 +355,11 @@ function wireRuntimeCallbacks(
     });
   };
 
-  // active step 元信息回调（步级折叠）：loop 经 _maybeEmitStepBoundary
-  // 在本迭代工具落定后取当前 active 步骤 { planItemId, title }，供 loop 对比推进产 plan_item_boundary
+  // active 任务项元信息回调（任务项级折叠）：loop 经 _maybeEmitPlanItemBoundary
+  // 在本迭代工具落定后取当前 active 任务项 { planItemId, title }，供 loop 对比推进产 plan_item_boundary
   // 事件。无任务表返回 null，宿主端据此不产边界（静默）。与 onPlanItemBoundary 读同一 checkpoint.plan
-  // 真源，但读取时刻不同：前者读工具前的 active（本迭代服务的步骤，只写
-  // planItemLog 不推进），本回调读工具后的 active（工具改写 plan 生效后当前所在的那一步）——
+  // 真源，但读取时刻不同：前者读工具前的 active（本迭代服务的任务项，只写
+  // planItemLog 不推进），本回调读工具后的 active（工具改写 plan 生效后当前所在的那个任务项）——
   // 时序分叉是设计语义。
   loop.getActivePlanItemMeta = () => {
     const cp = sessionManager.getCheckpoint();
@@ -388,21 +388,21 @@ function wireRuntimeCallbacks(
     hooks?.applyActivePlanItemAssembly?.();
     const table = renderTaskTable(cp.plan, cp.planItemLog);
     if (!table) return '';
-    // 未完成硬约束：仍有步骤未标记 done 时追加「不得提前收尾」执行要求。
-    // 实证（round-1790068191972）：ask 回答后续跑轮，LLM 已提出「重新标记步骤4」却未调
+    // 未完成硬约束：仍有任务项未标记 done 时追加「不得提前收尾」执行要求。
+    // 实证（round-1790068191972）：ask 回答后续跑轮，LLM 已提出「重新标记任务项4」却未调
     // task_table_update 就纯文本收尾——任务表在 turn 内进行中持续存在（checkpoint.plan 内存态，
     // 由 clearPlanOnTurnEnd 在 turn 结束才清空），收尾兜底不会自动补状态，故在每次注入时把
     // 「未完成 ⇏ 收尾」作为明示纪律。
-    // 语义边界：约束 = 「先更新任务表、交代未完成步骤再收尾」，不强制完成任务本身——
+    // 语义边界：约束 = 「先更新任务表、交代未完成任务项再收尾」，不强制完成任务本身——
     // 放弃/降级任务仍是合法用户决策（可 task_table_write 标记 已阻塞 后收尾），防锁死。
     // 与 buildCompletionVerifyNudge（全 done 防假完成）互补：一个卡「没做完」、一个卡「做完没验证」。
     const unfinished = cp.plan.filter((s) => s.status !== 'done');
     if (unfinished.length > 0) {
       return (
         table +
-        '\n\n（执行约束，非历史信息）仍有步骤未标记「已完成」，不得就此结束回合：' +
+        '\n\n（执行约束，非历史信息）仍有任务项未标记「已完成」，不得就此结束回合：' +
         '请继续用 task_table_update 推进并标记结果；确需中止该任务时，请先用 task_table_write ' +
-        '(update) 将未完成步骤标记为「已阻塞」并说明原因，再收尾汇报。'
+        '(update) 将未完成任务项标记为「已阻塞」并说明原因，再收尾汇报。'
       );
     }
     return table;
@@ -413,7 +413,7 @@ function wireRuntimeCallbacks(
     writePlan: (mode, steps) => {
       // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
       const newPlan = sessionManager.writePlan(mode, steps);
-      return `任务表已更新（${mode}），当前共 ${newPlan.length} 个步骤：\n${newPlan
+      return `任务表已更新（${mode}），当前共 ${newPlan.length} 个任务项：\n${newPlan
         .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}${s.rolePack ? `（角色：${s.rolePack}）` : ''}`)
         .join('\n')}`;
     },
@@ -421,15 +421,15 @@ function wireRuntimeCallbacks(
       // 状态变更收口 SessionManager.updatePlanItemStatus（内部标脏 + 心跳，唯一写点）。
       // 必须经此写点置 checkpointDirty，否则计划变更可能丢失标脏（纯内存态）
       if (!sessionManager.updatePlanItemStatus(planItemId, status)) {
-        return `[ERR:STEP_NOT_FOUND] 未找到步骤 ${planItemId}`;
+        return `[ERR:PLAN_ITEM_NOT_FOUND] 未找到任务项 ${planItemId}`;
       }
       // updatePlanItemStatus 返回 true ⇒ checkpoint/plan 必存在（SessionManager.updatePlanItemStatus 早退契约），用非空断言保证
       const plan = sessionManager.getCheckpoint()!.plan;
-      const step = plan.find((s) => s.id === planItemId);
-      // 收尾验证 nudge：把最后一步标 done = LLM 宣称任务完成——
-      // 若全 done 且无执行性验证步骤，追加提示引导补真验证（触发条件确定性，内容交 LLM）。
+      const planItem = plan.find((s) => s.id === planItemId);
+      // 收尾验证 nudge：把最后一个任务项标 done = LLM 宣称任务完成——
+      // 若全 done 且无执行性验证任务项，追加提示引导补真验证（触发条件确定性，内容交 LLM）。
       // 仅 done 路径触发（blocked 是中止宣告，无需 nudge）；判定函数返回 null = 零打扰。
-      const result = `步骤 [${planItemId.slice(0, 8)}] "${step!.description}" 已标记为 ${status}`;
+      const result = `任务项 [${planItemId.slice(0, 8)}] "${planItem!.description}" 已标记为 ${status}`;
       if (status === 'done') {
         return result + (buildCompletionVerifyNudge(plan) ?? '');
       }

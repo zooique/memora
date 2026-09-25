@@ -141,10 +141,10 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 | 事实 | 证据 | 推论 |
 | --- | --- | --- |
-| `plan_item_boundary` 产出条件 = 有任务表 **且** active 任务项推进 | `loop.ts` `_maybeEmitStepBoundary`：`getActivePlanItemMeta?.()` 返回 null 或 `planItemId === lastBoundaryPlanItemId` → 不 yield | 无任务表 → 恒不产 |
+| `plan_item_boundary` 产出条件 = 有任务表 **且** active 任务项推进 | `loop.ts` `_maybeEmitPlanItemBoundary`：`getActivePlanItemMeta?.()` 返回 null 或 `planItemId === lastBoundaryPlanItemId` → 不 yield | 无任务表 → 恒不产 |
 | 该 chunk 的官方语义就是「任务项推进」，不是「迭代完成」 | `types.ts` `plan_item_boundary` 注释：*「迭代完成且 active 任务项**推进**时 emit……无任务表不产」* | 它从未被设计成迭代边界，是**借用** |
 | 宿主只在两处落盘：`plan_item_boundary` 分支 + 流尾 | `chatPanel.ts` `plan_item_boundary` 分支内 `checkpointRound`；流尾 `for (const [roundId, roundEvents] of eventsByRound)` | 无任务表 turn = 只有流尾一次 |
-| 内核**每次迭代都有天然单点** | `loop.ts` 工具分支（工具执行完后）与无工具分支（LLM 调用后）**均调用** `_maybeEmitStepBoundary()` | 「迭代完成」这个事实内核本来就知道，只是被 AND 掉了 |
+| 内核**每次迭代都有天然单点** | `loop.ts` 工具分支（工具执行完后）与无工具分支（LLM 调用后）**均调用** `_maybeEmitPlanItemBoundary()` | 「迭代完成」这个事实内核本来就知道，只是被 AND 掉了 |
 
 **根因 = 术语撞车**：`plan_item_boundary` 这个名字被「任务项」阵营占用，导致「迭代」阵营没有自己的边界信号（详见本文头术语警告）。
 
@@ -152,12 +152,12 @@ listInterruptedRecent(date: string, limit?: number): Round[];
 
 **内核**：新增 `step_boundary` chunk（语义单一：一次 LLM 迭代——含其工具执行——结束）。
 
-- **命名依据**：`iteration` 是项目**既有词汇**（`runIterationLoop` / `handleIteration` / `resetTurnState`），复用而非新造；且与 `plan_item_boundary` 不再撞名。
-- **产出点**：复用 `_maybeEmitStepBoundary()` 的**两个既有调用点**（工具分支 = 工具落定后；无工具分支 = LLM 调用后），在工具分支**之后条件 yield**。不新增第三个调用点（复杂度守恒）。
+- **命名依据**：`step` = loop 内一次迭代，是术语锚点 §1 的**正名**（`plan_item_boundary` 由此不再撞名）；**不**沿用历史别名 `iteration` 命名新函数——别名只用于阅读理解、不用于命名（术语锚点 §6）。既有 `runIterationLoop` / `currentIteration` / `handleIteration` 保持原名。
+- **产出点**：复用 `_maybeEmitPlanItemBoundary()` 的**两个既有调用点**（工具分支 = 工具落定后；无工具分支 = LLM 调用后），在工具分支**之后条件 yield**。不新增第三个调用点（复杂度守恒）。
 - **产出条件 = `handleToolCalls` 返回 `'continue'`（硬，实测校准）**：只有「本迭代完成**且将继续下一轮**」才产。终态迭代（`'done'` 收尾 / `'paused'` 挂起 / `'aborted'` 中断）之后流即结束或宿主 `break` → **流尾落盘**已兜底，此处不产。
   - **为什么不无条件产（实测教训，2026-09-23）**：初版按「无条件 yield」实现 → 内核 6 个既有用例转红（`chunks.at(-1).type` 期望 `done`/`paused`，实得 `step_boundary`）。这些断言背后是**宿主 `paused` 分支依赖「终态 chunk 是末条」才会 `break`**（chatPanel 该分支的注释有 2026-09-22 实证记录）——无条件产 = 在终态之后再塞一条 chunk，破坏了宿主收场判定所依赖的流契约。条件化同时带来第二个好处：与流尾落盘不重复写。
   - 无工具分支（`handleTextResponse`）恒为终态 → 只产折叠边界、**不产本 chunk**。
-- **顺序约束（硬）**：`plan_item_boundary`（折叠分组）**先**、`step_boundary`（落盘触发）**后**——保证本次落盘快照**包含**本步的折叠边界事件；反序会导致崩溃时丢边界、重放分组错位。实现上由 `_emitIterationBoundary(result)` 单函数内串联两者，调用方无法只取一半。
+- **顺序约束（硬）**：`plan_item_boundary`（折叠分组）**先**、`step_boundary`（落盘触发）**后**——保证本次落盘快照**包含**本步的折叠边界事件；反序会导致崩溃时丢边界、重放分组错位。实现上由 `_emitStepBoundary(result)` 单函数内串联两者，调用方无法只取一半。
 - **不落 ProcessEvent**：它是**落盘触发信号**，不是历史内容；`Round.processEvents` / schema 零改动。重放分组仍由 `plan_item_boundary` 事件承担。
 
 **宿主**：

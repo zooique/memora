@@ -121,8 +121,8 @@ export interface GuardRailDef {
   promptId: GuardRailPromptId;
   /** 模板插值参数（路径 / 次数 / 阈值等） */
   promptArgs?: (c: GuardContext) => Record<string, unknown>;
-  /** 生命周期：perInput=按一次用户输入累计 / perStep=按闭环累计 */
-  life: 'perInput' | 'perStep';
+  /** 生命周期：perInput=按一次用户输入累计（含暂停-续跑链，跨 turn 保留）/ perTurn=按 turn（问答闭环）累计 */
+  life: 'perInput' | 'perTurn';
   /** 副钩（仅 search）：命中后置 searchDisabled + rebuild system message；须幂等 */
   afterBlock?: (c: GuardContext) => void;
   /** 写侧钩子：结果处理阶段由 loop 对每个 toolCall 调 notifyExec 分发本钩子喂计数
@@ -265,7 +265,7 @@ export class GuardRail {
   }
 
   /** 归零指定生命周期 guard 的内部计数状态（life 轮边界由 loop 调 resetTurnState 统一触发） */
-  reset(life: 'perInput' | 'perStep'): void {
+  reset(life: 'perInput' | 'perTurn'): void {
     for (const g of this.registry) {
       if (g.life === life) g.reset?.();
     }
@@ -308,7 +308,7 @@ export function createDefaultGuards(): GuardRail {
       blocked: true,
       promptId: 'search_limit',
       promptArgs: (c) => ({ limit: c.thresholds.maxWebSearch }),
-      life: 'perStep',
+      life: 'perTurn',
     })
     .register({
       id: 'ask_limit',
@@ -349,7 +349,7 @@ export function createDefaultGuards(): GuardRail {
       reset: () => {
         write = { lastWritePath: null, samePathWriteStreak: 0 };
       },
-      life: 'perStep',
+      life: 'perTurn',
     })
     .register({
       id: 'read_failed',
@@ -375,7 +375,7 @@ export function createDefaultGuards(): GuardRail {
         // blocked 不计失败（未真正执行）
       },
       reset: () => readFailBySubject.clear(),
-      life: 'perStep',
+      life: 'perTurn',
     })
     .register({
       id: 'read_dedup',
@@ -404,6 +404,6 @@ export function createDefaultGuards(): GuardRail {
               : `直接基于已有内容继续即可。`,
         };
       },
-      life: 'perStep',
+      life: 'perTurn',
     });
 }

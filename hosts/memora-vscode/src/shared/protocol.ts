@@ -1099,13 +1099,13 @@ export interface SkillDto {
   issues?: SkillIssueDto[];
 }
 
-/** 任务看板步骤条目（对齐内核 PlanItem 扁平化） */
+/** 任务看板任务项条目（对齐内核 PlanItem 扁平化） */
 export interface PlanItemDto {
-  /** 步骤唯一标识 */
+  /** 任务项唯一标识 */
   id: string;
-  /** 步骤描述 */
+  /** 任务项描述 */
   description: string;
-  /** 步骤状态（pending/active/done/blocked，由 webview 映射为中文标签） */
+  /** 任务项状态（pending/active/done/blocked，由 webview 映射为中文标签） */
   status: 'pending' | 'active' | 'done' | 'blocked';
   /** 执行顺序（从 0 开始） */
   order: number;

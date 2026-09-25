@@ -53,6 +53,8 @@
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.scripts.json",
     "eval:budget": "tsx scripts/eval-context-budget-snapshot.ts",
     "eval:budget:check": "tsx scripts/eval-context-budget-snapshot.ts --check",
+    "terminology:report": "tsx scripts/terminology-carrier-snapshot.ts",
+    "terminology:check": "tsx scripts/terminology-carrier-snapshot.ts --check",
     "docs:links": "tsx scripts/check-publish-links.ts",
     "docs:links:repo": "tsx scripts/check-publish-links.ts --repo",
     "prepare": "lefthook install || true",

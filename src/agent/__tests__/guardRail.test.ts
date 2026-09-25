@@ -222,13 +222,13 @@ describe('GuardRail onExec 写侧喂数状态机（计数自持闭包）', () =>
     expect(g.evaluateBlocked(makeCtx({ toolName: 'read_file', argsJson: args }))).toBeUndefined();
   });
 
-  it('reset(perStep) 归零闭包计数：喂数后 reset → 同路径判定放行', () => {
+  it('reset(perTurn) 归零闭包计数：喂数后 reset → 同路径判定放行', () => {
     const g = freshGuards();
     for (let i = 0; i < 4; i++) feed(g, 'write_file', '{"path":"a.md"}', 'ok');
     expect(
       g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' }))?.guardId,
     ).toBe('write_loop');
-    g.reset('perStep');
+    g.reset('perTurn');
     expect(
       g.evaluateBlocked(makeCtx({ toolName: 'write_file', argsJson: '{"path":"a.md"}' })),
     ).toBeUndefined();

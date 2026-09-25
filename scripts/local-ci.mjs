@@ -111,6 +111,16 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // 术语载体集合漂移：同族半补丁（改了函数名漏改事件名 / 只挡一半）的机械化防线。
+  // 集合基线锁在 scripts/terminology-carrier-snapshot.ts，冻结例外由术语锚点 §3 派生（确定性 FS 扫描，秒级）。
+  {
+    id: 'terminology:check',
+    name: '术语载体集合漂移检查',
+    cmd: 'npm run terminology:check',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
   { id: 'audit', name: '依赖安全审计（允许失败）', cmd: 'npm audit --audit-level=high', cwd: ROOT, required: false, presets: ['full'], optionalFlag: 'audit-invert' },
 ];
 

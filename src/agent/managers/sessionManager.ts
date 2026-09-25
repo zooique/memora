@@ -707,14 +707,14 @@ export class SessionManager {
   appendPlanItem(description: string, rolePack?: string): number {
     if (!this.checkpoint) return 0;
     const newOrder = this.checkpoint.plan.length;
-    const step: PlanItem = {
+    const planItem: PlanItem = {
       id: crypto.randomUUID(),
       order: newOrder,
       description,
       status: 'pending',
       ...(rolePack ? { rolePack } : {}),
     };
-    this.checkpoint.plan.push(step);
+    this.checkpoint.plan.push(planItem);
     this.touchCheckpoint();
     return this.checkpoint.plan.length;
   }
@@ -770,13 +770,13 @@ export class SessionManager {
    * 否则状态变更可能丢失标脏，计划变更与标脏在此原子完成。
    *
    * 写完后自动 ensureActivePlanItem：如果变更导致 active 空缺（如把 active 标记为 done/blocked），
-   * 则推进下一个 pending → active。这保证任何时刻 plan 中恰好有一个 active step。
+   * 则推进下一个 pending → active。这保证任何时刻 plan 中恰好有一个 active 任务项。
    */
   updatePlanItemStatus(planItemId: string, status: PlanItem['status']): boolean {
-    const step = this.checkpoint?.plan.find((s) => s.id === planItemId);
-    if (!step) return false;
-    step.status = status;
-    // 确保 active 步骤存在且正确推进（把 active 标记为 done/blocked 后自动激活下一个 pending）
+    const planItem = this.checkpoint?.plan.find((s) => s.id === planItemId);
+    if (!planItem) return false;
+    planItem.status = status;
+    // 确保 active 任务项存在且正确推进（把 active 标记为 done/blocked 后自动激活下一个 pending）
     this.ensureActivePlanItem();
     this.touchCheckpoint();
     return true;
@@ -876,9 +876,9 @@ export class SessionManager {
   }
 
   /**
-   * 追加 step 日志（completePlanItem / logPlanItemBoundary 共用）。按 planItemId
-   * 分组截断，每 step 最多 3 条——若用全局 FIFO 12 条，5+ step 任务中旧 step 的运行记录会被
-   * 整段截没，用户翻旧 done step 摘要看到「空」。
+   * 追加任务项日志（completePlanItem / logPlanItemBoundary 共用）。按 planItemId
+   * 分组截断，每任务项最多 3 条——若用全局 FIFO 12 条，5+ 任务项的任务中旧任务项的运行记录会被
+   * 整段截没，用户翻旧已完成任务项的摘要看到「空」。
    */
   private appendPlanItemLog(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
@@ -892,11 +892,11 @@ export class SessionManager {
       this.checkpoint.planItemLog = [];
     }
     this.checkpoint.planItemLog.push(outcome);
-    // 每 step 截断上限：同 planItemId（含 undefined 兜底组）超过 3 条时移除最早进入的超出记录
-    const STEP_LOG_PER_STEP_LIMIT = 3;
+    // 每任务项截断上限：同 planItemId（含 undefined 兜底组）超过 3 条时移除最早进入的超出记录
+    const PLAN_ITEM_LOG_PER_ITEM_LIMIT = 3;
     const groupCount = this.checkpoint.planItemLog.filter((s) => s.planItemId === planItemId).length;
-    if (groupCount > STEP_LOG_PER_STEP_LIMIT) {
-      let excess = groupCount - STEP_LOG_PER_STEP_LIMIT;
+    if (groupCount > PLAN_ITEM_LOG_PER_ITEM_LIMIT) {
+      let excess = groupCount - PLAN_ITEM_LOG_PER_ITEM_LIMIT;
       this.checkpoint.planItemLog = this.checkpoint.planItemLog.filter((s) => {
         if (excess > 0 && s.planItemId === planItemId) {
           excess -= 1;

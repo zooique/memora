@@ -50,19 +50,19 @@ export function renderTaskTable(
     '',
   ];
 
-  for (const step of plan) {
+  for (const planItem of plan) {
     // 行首序号 1-based（order 0 起 → 显示 1）——与 task_table_update 的「行首序号寻址」对齐：
     // LLM 据 renderer 序号即可定位任务项，无需感知 uuid。任务表是列表形态，寻址说法统一为
     // 「行首序号」，无「列」概念（说「列」即描述失真）
-    const seq = step.order + 1;
+    const seq = planItem.order + 1;
     // 会议任务项标注装配角色（rolePack），供 LLM 识别「该任务项由谁发言」
-    const roleTag = step.rolePack ? `【${step.rolePack}】` : '';
-    const raw = `${roleTag}${step.description}`;
+    const roleTag = planItem.rolePack ? `【${planItem.rolePack}】` : '';
+    const raw = `${roleTag}${planItem.description}`;
     const desc =
       raw.length > PLAN_ITEM_DESC_MAX_CHARS
         ? raw.slice(0, PLAN_ITEM_DESC_MAX_CHARS - 3) + '...'
         : raw;
-    lines.push(`${seq}. ${desc} [${statusToLabel(step.status)}]`);
+    lines.push(`${seq}. ${desc} [${statusToLabel(planItem.status)}]`);
   }
 
   // 追加任务项推进日志（仅非空时）

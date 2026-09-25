@@ -547,30 +547,30 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_write',
     description:
-      '写入或更新任务表（命令式：多步任务必须先用本工具把任务拆解为子步骤写入任务表，随后按任务表逐步执行，禁止跳过拆解一次性盲目执行）。' +
-        'overwrite 清空现有任务表后写入新步骤（重写/重开计划）；' +
-        'append 在现有任务表后追加新步骤；' +
-        'update 模式替换现有步骤（保留步骤 ID 与状态）。' +
-        '写入后按任务表逐步推进：每步先完成该步的实际产出（正文回答/写入文件/工具结果），再用 task_table_update 标记 done（先产出、后标记）。' +
-        '每个步骤可声明可选 rolePack 字段（小组会议用：该步骤的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
+      '写入或更新任务表（命令式：多步任务必须先用本工具把任务拆解为子任务项写入任务表，随后按任务表逐步执行，禁止跳过拆解一次性盲目执行）。' +
+        'overwrite 清空现有任务表后写入新任务项（重写/重开计划）；' +
+        'append 在现有任务表后追加新任务项；' +
+        'update 模式替换现有任务项（保留任务项 ID 与状态）。' +
+        '写入后按任务表逐步推进：每完成一个任务项的实际产出（正文回答/写入文件/工具结果），再用 task_table_update 标记 done（先产出、后标记）。' +
+        '每个任务项可声明可选 rolePack 字段（小组会议用：该任务项的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
         '输出格式为 Markdown 表格，包含进度行和状态标记。',
     parameters: {
       type: 'object',
       properties: {
         mode: {
           type: 'string',
-          description: '写入模式："overwrite"（清空后重写全部步骤）、"append"（追加新步骤）、"update"（替换，保留步骤 ID 与状态）',
+          description: '写入模式："overwrite"（清空后重写全部任务项）、"append"（追加新任务项）、"update"（替换，保留任务项 ID 与状态）',
         },
         steps: {
           type: 'array',
-          description: '步骤列表，每个步骤包含 description 字段，可选项 rolePack（会议表层装配角色，须 ∈ {组长} ∪ {组员}）',
+          description: '任务项列表，每个任务项包含 description 字段，可选项 rolePack（会议表层装配角色，须 ∈ {组长} ∪ {组员}）',
           items: {
             type: 'object',
             properties: {
-              description: { type: 'string', description: '步骤描述' },
+              description: { type: 'string', description: '任务项描述' },
               rolePack: {
                 type: 'string',
-                description: '可选：该步骤的表层装配角色（小组会议用，组长或组员；越界会被忽略，省略按当前生效角色）',
+                description: '可选：该任务项的表层装配角色（小组会议用，组长或组员；越界会被忽略，省略按当前生效角色）',
               },
             },
             required: ['description'],
@@ -583,15 +583,15 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   {
     name: 'task_table_update',
     description:
-      '更新任务表中指定步骤的状态（命令式：一次只更新一个步骤）。将 step_id 对应的步骤标记为 done（已完成）或 blocked（已阻塞）。' +
-        '每完成一步调用一次本工具标记，只有最后一步完成后才宣告任务完成，禁止一次性批量标记所有步骤。' +
-        '顺序纪律：调用本工具标记 done 前，必须已完成该步的实际产出（正文回答/写入文件/工具结果）——先产出、后标记；' +
-        '禁止先标记 done 再补产出（标记后该步即视为完成，之后的内容会错归下一步）。' +
-        'step_id 传任务表行首序号（1 开始，如 "1" = 第一个步骤）即可定位；或传 task_table_write 返回的步骤短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
+      '更新任务表中指定任务项的状态（命令式：一次只更新一个任务项）。将 step_id 对应的任务项标记为 done（已完成）或 blocked（已阻塞）。' +
+        '每完成一个任务项调用一次本工具标记，只有最后一个任务项完成后才宣告任务完成，禁止一次性批量标记所有任务项。' +
+        '顺序纪律：调用本工具标记 done 前，必须已完成该任务项的实际产出（正文回答/写入文件/工具结果）——先产出、后标记；' +
+        '禁止先标记 done 再补产出（标记后该任务项即视为完成，之后的内容会错归下一个任务项）。' +
+        'step_id 传任务表行首序号（1 开始，如 "1" = 第一个任务项）即可定位；或传 task_table_write 返回的任务项短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
       properties: {
-        step_id: { type: 'string', description: '步骤定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
+        step_id: { type: 'string', description: '任务项定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
         status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
       },
       required: ['step_id', 'status'],

@@ -37,7 +37,7 @@ import { initDropdowns } from '../components/dropdown.js';
 import { applyIcon, createIcon, getIconSvg, populateIcons } from './icons.js';
 import { createSanitizer } from '../helpers/sanitizer.js';
 
-/** 任务步骤状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
+/** 任务项状态 → 中文标签（状态枚举固定，缺一即编译报错，无需运行时兜底） */
 const PLAN_ITEM_STATUS_LABEL: Record<PlanItemDto['status'], string> = {
   pending: '待执行',
   active: '进行中',
@@ -223,9 +223,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *   ① planBar：顶部固定插槽（#planBar，与 #messages **同级**、非其子节点——#messages 是
    *      overflow-y:auto 滚动容器，插进它内部一滚即滚出视野）。默认一行
    *      N/M + 进度条 + 当前 active 任务项摘要，点击展开**锚定浮层**看全量任务项 + planItemLog。
-   *      常驻门槛 ≥3 步 —— **webview 展示层自身的门槛**（2 步小任务常驻成噪音）。
+   *      常驻门槛 ≥3 个任务项 —— **webview 展示层自身的门槛**（2 个任务项的小任务常驻成噪音）。
    *      ⚠️ 与内核 `detectNeedsPlanning` **无对应关系**：后者是关键词/结构命中式**布尔判定**
-   *      （src/agent/needsPlanning.ts），**不含任何步数阈值**。二者职责正交：本门槛只管**是否常驻展示**，
+   *      （src/agent/needsPlanning.ts），**不含任何任务项数阈值**。二者职责正交：本门槛只管**是否常驻展示**，
    *      内核判定只管**是否注入规划引导**，不存在互相「同步」关系。（内核另有 `taskTableRenderer`
    *      的 `plan.length < 3` 收尾验证门槛，同数字但别义，亦非同源——见 renderPlanBoard 内注释。）
    *   ② 运行时**不渲染 inline 轨**，内容区零卡片：任务过程全部由 round-block 折叠块承载，
@@ -239,7 +239,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /** 锚定浮层展开态（点击 head 切换；浮层非 modal——看进度时需同时看正文） */
   let planBarExpanded = false;
   /** 当前计划快照缓存（供 round-block 任务项标签 + 浮层复用，零新增协议）。
-   *  保持「最近一次非空 plan」：plan 清空时不覆写（round-block 重建时步骤标签仍可读） */
+   *  保持「最近一次非空 plan」：plan 清空时不覆写（round-block 重建时任务项标签仍可读） */
   let currentPlanItems: PlanItemDto[] = [];
 
   /** 惰性获取常驻条插槽（单例：同一 DOM 节点，避免每次渲染重新 getElementById） */
@@ -356,7 +356,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     setPlanBarExpanded(planBarExpanded); // 保持展开态（aria/chevron 同步；收起态不建面板）
   }
 
-  /** 渲染锚定浮层内容（全量步骤列表 + 折叠 planItemLog） */
+  /** 渲染锚定浮层内容（全量任务项列表 + 折叠 planItemLog） */
   function renderPlanBarPanel(items: PlanItemDto[]): void {
     const bar = getPlanBarEl();
     const panel = bar?.querySelector<HTMLElement>('#planBarPanel');
@@ -365,12 +365,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     panel.appendChild(buildPlanItemList(items));
   }
 
-  /** 构建全量任务项列表（ul.plan-board-list；浮层与 round-block 任务项标签共用——步骤结构单一实现） */
+  /** 构建全量任务项列表（ul.plan-board-list；浮层与 round-block 任务项标签共用——任务项结构单一实现） */
   function buildPlanItemList(items: PlanItemDto[]): HTMLUListElement {
     const ul = document.createElement('ul');
     ul.className = 'plan-board-list';
     for (const planItem of items) {
-      // 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标
+      // 任务节点折叠：每个任务项一个 details，summary = 序号+描述+状态徽标
       const item = document.createElement('details');
       item.className = `plan-item plan-item-${planItem.status}`;
       item.open = false;
@@ -415,7 +415,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 渲染/刷新单轨任务看板（收到 plan_update 消息时调用）。
-   *  非空 plan → 缓存 + 常驻条（≥3 步才显示；该门槛属**展示层自身决策**，与内核
+   *  非空 plan → 缓存 + 常驻条（≥3 个任务项才显示；该门槛属**展示层自身决策**，与内核
    *  needsPlanning 的布尔判定无对应关系——详见上方任务看板设计注释）；
    *  空 plan → 收起常驻条（内容区零投影——任务过程由 round-block 折叠块承载，不留完成卡片） */
   function renderPlanBoard(items: PlanItemDto[]): void {
@@ -426,11 +426,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // 非空计划：缓存（供 round-block 任务项标签 + 浮层复用）；plan 清空时不清此缓存
     currentPlanItems = items;
-    // 常驻门槛 ≥3 步：webview 展示层自身决策（2 步小任务常驻成噪音）。
+    // 常驻门槛 ≥3 个任务项：webview 展示层自身决策（2 个任务项的小任务常驻成噪音）。
     // ⚠️ 勿称「对齐内核 needsPlanning 阈值」——内核 detectNeedsPlanning 是关键词/结构式
-    // 布尔判定，**无步数阈值**；二者无对应关系，也**不构成需互相同步的一致约束**。
+    // 布尔判定，**无任务项数阈值**；二者无对应关系，也**不构成需互相同步的一致约束**。
     // ⚠️ 另注意别把内核里那个同数字的 `plan.length < 3` 当成本门槛的真源：它属
-    // `agent/taskTableRenderer.buildCompletionVerifyNudge`（≥3 步才注入「补验证步」nudge，
+    // `agent/taskTableRenderer.buildCompletionVerifyNudge`（≥3 个任务项才注入「补验证任务项」nudge，
     // 理由是「太短不值得打断」）——**收尾验证门槛，与 UI 是否常驻无关**。两处同为 3 属巧合，
     // 改任一处**不需要**同步另一处。
     setPlanBarVisible(items.length >= 3);
@@ -956,17 +956,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 步骤行按 seq 顺序插入 details 顶层（narrate 与 tool 共用，扁平化平铺）。
+   * 任务项内过程行按 seq 顺序插入 details 顶层（narrate 与 tool 共用，扁平化平铺）。
    * 进行中增量调用（每次事件到达），避免整体重排导致闪烁/展开态丢失；finalize 全量重建亦
    * 走此通道保持同一排序逻辑。相位行固定在最前，其余按 seq 升序。
    */
   /**
-   * 步级折叠容器：把 narrate/tool 按 plan_item_boundary 归组。
+   * 任务项级折叠容器：把 narrate/tool 按 plan_item_boundary 归组。
    * 先在清除式重建时清理旧任务项容器，再按事件 seq 定位应归入的任务项组：
    *   - 无任何 plan_item_boundary → 返回 details 本身（整轮一组，退回扁平现状）；
    *   - 有 plan_item_boundary → 返回最近一条任务项级边界（seq ≤ 目标 seq）所属的任务项折叠块容器，
    *     懒创建（summary 显示「任务项 N · 标题」），保证边界后的过程事件归入对应任务项分组。
-   * 调用方用返回值替换 details 作为节点插入目标，实现「边界切组、步内平铺」。
+   * 调用方用返回值替换 details 作为节点插入目标，实现「边界切组、任务项内平铺」。
    */
   function isPlanItemBoundaryEvent(e: ProcessEvent): e is Extract<ProcessEvent, { type: 'plan_item_boundary' }> {
     return e.type === 'plan_item_boundary';
@@ -977,7 +977,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 条目共用，形态甲统一时间序）。无边界回退 details（整轮一组）。
    *
    * 同 ts（含全空串的历史/测试数据）回落 seq 兜底：boundary 在条目之前（boundary.seq <= 条目 seq）
-   * 才归该步；QA 条目无 seq（undefined）时同 ts 归最近 boundary，靠写入序稳定。
+   * 才归该任务项；QA 条目无 seq（undefined）时同 ts 归最近 boundary，靠写入序稳定。
    */
   function planItemContainerFor(
     root: HTMLElement,
@@ -997,7 +997,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return { host: getOrCreatePlanItemGroup(root, active, bounds), bounds };
   }
 
-  /** 获取或创建任务项折叠块（summary 显示任务项名；存在则复用，不解体既有已插入的步内元素） */
+  /** 获取或创建任务项折叠块（summary 显示任务项名；存在则复用，不解体既有已插入的任务项内元素） */
   function getOrCreatePlanItemGroup(
     root: HTMLElement,
     bound: Extract<ProcessEvent, { type: 'plan_item_boundary' }>,
@@ -1008,19 +1008,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const grp = document.createElement('details');
     grp.className = 'round-block__plan-item';
     if (bound.payload.planItemId) grp.dataset.planItem = bound.payload.planItemId;
-    // 步骤序号 = 该边界在所有边界中的排名 + 1（从 1 起）
+    // 任务项序号 = 该边界在所有边界中的排名 + 1（从 1 起）
     const order = bounds.indexOf(bound) + 1;
     const title = bound.payload.title?.trim() ?? '';
     const summary = document.createElement('summary');
     summary.className = 'round-block__plan-item-summary';
     summary.textContent = `任务项 ${order} · ${title.length > 36 ? `${title.slice(0, 36)}…` : title}`;
     grp.appendChild(summary);
-    // 步内叙述/工具父容器：按序插入 details 顶层，容器内平铺该步过程事件
+    // 任务项内叙述/工具父容器：按序插入 details 顶层，容器内平铺该任务项过程事件
     insertPlanItemGroupInOrder(root, grp, bound.seq);
     return grp;
   }
 
-  /** 步级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
+  /** 任务项级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
   function insertPlanItemGroupInOrder(root: HTMLElement, grp: HTMLElement, boundSeq: number): void {
     // 候选限定为 root 的**直接子节点**：与 insertPlanItemInOrder 同构隐患，
     // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，

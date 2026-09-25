@@ -34,10 +34,38 @@
 
 - **事件对调**：迭代边界 `iteration_boundary` **归位**为 `step_boundary`；任务表边界 `step_boundary` 改名 **`plan_item_boundary`**
 - **内核标识符**：`PlanStep` → `PlanItem`（连同 `planStepId` → `planItemId` / `getActiveStepMeta` → `getActivePlanItemMeta` / `updatePlanStepStatus` → `updatePlanItemStatus` / `appendPlanStep` → `appendPlanItem` / `completeStep` → `completePlanItem` / `STEP_DESC_MAX_CHARS` → `PLAN_ITEM_DESC_MAX_CHARS`）
-- **宿主标识符 / 协议 / 样式**：`PlanStepDto` → `PlanItemDto`、`currentPlanSteps` → `currentPlanItems`、`insertStepInOrder` → `insertPlanItemInOrder` 等；`plan_update` 消息字段 `steps` → `items`；CSS 类 `.plan-step*` → `.plan-item*`、`.round-block__step*` → `.round-block__plan-item*`；DOM 属性 `data-step[-bucket]` → `data-plan-item[-bucket]`；折叠块标题 `step-N` → **「任务项 N」**
+- **宿主标识符 / 协议 / 样式**：`PlanStepDto` → `PlanItemDto`、`currentPlanSteps` → `currentPlanItems`、`insertStepInOrder` → `insertPlanItemInOrder` 等；`plan_update` 消息字段 `steps` → `items`；CSS 类 `.plan-step*` → `.plan-item*`、`.round-block__step*` → `.round-block__plan-item*`；DOM 属性 `data-step` → `data-plan-item`（**仅任务项段**；`data-step-bucket` = thought 按 stepIndex 分桶，属 step 阵营，**不改、也不得改**）；折叠块标题 `step-N` → **「任务项 N」**
 - **不动（硬边界）**：`stepBudget` / `multiStepReasoning` / `toolStepLimit`（角色包策略键 = 对外契约）、`step_id` / `task_table_*`（LLM 可见工具契约）、CSS 关键字 `step-end`、历史档号与本文件旧版本条目
 
 > **对内核公共 API 非破坏**：改动集中在内部标识符与宿主协议；`Round.processEvents` / `SessionCheckpoint` 等持久化 schema 未动。**唯一语义变更是事件名 `step_boundary`**（原任务表边界 → 现迭代边界），宿主与内核须同批升级。**不提供兼容层**（测试阶段无外部用户；`.memora/` 为本地桌面数据，重新生成即可）。
+
+### Changed（术语收口补完：函数名归位 + LLM 可见文案与错误码正名）
+
+承接上条 `PlanStep → PlanItem` 正名——上条落到**事件名与标识符**为止，遗留两处半补丁：① `_maybeEmitStepBoundary` 名为 step 却产 `plan_item_boundary`、`_emitIterationBoundary` 用历史别名命名却产 `step_boundary`（**函数名与产出事件互换**——只修事件名不修函数名，正是术语锚点 §7 后果链第一环的复刻）；② LLM 可见文案与错误码仍以「步骤」指任务项。3.0.0 未发布，此处无兼容代价，一次收口。
+
+- **函数名归位**：`_maybeEmitStepBoundary` → `_maybeEmitPlanItemBoundary`、`_emitIterationBoundary` → `_emitStepBoundary`（均 `private`，零外部契约；`docs/architecture/step-atomic-persistence.md` 与 `loop-design.md` 同步）
+- **错误码正名**：`[ERR:STEP_NOT_FOUND]` → `[ERR:PLAN_ITEM_NOT_FOUND]`（LLM 可见，无外部消费者）
+- **LLM 可见文案与注释**：「步骤」→「任务项」——`builtinTools`（两个任务表工具描述）、`assembler`（任务表回执 / 未完成硬约束 / `updatePlanItem` 回执）、`toolExecutor`（寻址三类错误提示）、`taskTableRenderer`、`sessionManager`、`types.ts`、`scripts/test-tasktable-real.ts`
+- **宿主注释**：`protocol.ts` / `chatView.ts` / `chatStyles.ts` / `chatPanel.ts` 共 33 处「步骤」「步级」→「任务项」「任务项级」（**纯注释，零字符串与标识符变更**）
+- **仍不动（冻结例外）**：`step_id` / `steps` / `task_table_*`（LLM 可见工具契约）、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end`、`data-step-bucket`（thought 按 stepIndex 分桶，属 step 阵营）；`handoffPrompt` 属**同名异义**（角色接手话术，非已废的 Handoff 衔接决策）——已补入术语锚点 §3 冻结例外
+- **fixture 边界**：录制轮次 fixture `realRound-*.ts` 内的「步骤 [xxx]」为**当时真实输出**，不改（改了即伪造证据）
+
+### Added（术语载体扫描门禁：把「载体清单」机械化）
+
+前两条落到「已发现的载体」为止，而三次半补丁（`.prettierignore` 只挡一半 / 函数名改了事件名没改 / 本文件过度声明）的共同根因是**载体清单不完整**。本轮把这个清单本身机械化。
+
+- **新增 `scripts/terminology-carrier-snapshot.ts`**（`npm run terminology:report` 看报表 / `terminology:check` 做门禁，已接入 `ci:local` full 档）：扫全仓抽取 `step` 正名族与 `iteration` / `迭代` / `内循环` 历史别名族的**全部载体**（标识符 / 事件名 / CSS 类 / DOM 属性 / 中文词 / 文件名与目录名），与基线集合比对，有新增或消失即 `exit 1` 并打印可直接粘贴的基线。
+- **不建第二份例外清单**：冻结例外由 `.trae/rules/terminology-anchor-rules.md` §3 表格**解析**得到（解析数不足即报错退出，防「静默返回空集 → 门禁永远绿」）。
+- **只锁集合、不锁次数**：次数会因任意一次注释改动而漂移，门禁天天红必然被绕过；锁集合只对「新词出现 / 旧词消失」报警，语义对错仍由人显式确认（git diff 即审计痕迹）。
+- **扫描范围边界（非逐词豁免）**：排除录制 fixture（`__tests__/fixtures/`，改了即伪造证据）与依赖 / 构建产物 / 工具内部状态。基线 102 个载体。
+
+### Changed（术语载体扫描查出的 src 层三处漏网正名）
+
+上一轮审计按「事件名 / 函数名 / 文案 / 错误码」分类去查，未扫全词根，漏了三处在 `src/` 生产代码里的 `step` 撞车——本轮由扫描清单反查出来。
+
+- **`perStep` → `perTurn`**（`guardRail.ts` 的 `GuardRailDef.life` / `GuardRail.reset` + 4 处护栏定义、`loop.ts` 调用点、`guardRail.test.ts`）：该 `life` 的归零点在 `resetTurnState`，其原注释亦自称「按闭环累计」——**名字说 step、语义是 turn**，与「step 指任务项」方向相反的同族撞车。`GuardRailDef` 未经 `src/index.ts` 导出、宿主零消费，改动无外部契约影响。
+- **`STEP_LOG_PER_STEP_LIMIT` → `PLAN_ITEM_LOG_PER_ITEM_LIMIT`**（`sessionManager.appendPlanItemLog`，连同其 JSDoc 4 处「step」）：该段全程按 `planItemId` 分组，`step` 在此即任务项（术语锚点 §4.1 红线）。同步测试内局部量 `stepLogLenBefore` → `planItemLogLenBefore`。
+- **仍不动（冻结例外）**：`step_id` / `steps` / `task_table_*`、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end` / `animation-iteration-count`、GitHub Actions 的 `steps`（外部生态词，非本仓术语）、过程文档与台账内的历史记录（`PlanStep` / `getActiveStepMeta` 等旧名属「怎么变过来的」，改写即伪造记录）。
 
 ### Changed（内核零运行时模块解析：移除 pino 可选 peer 与内核侧文件日志）
 

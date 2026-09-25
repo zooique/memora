@@ -90,15 +90,15 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
       for (const s of steps) {
         mockPlan.push({
           id: shortId(),
-          description: String(s.description ?? '(未命名步骤)'),
+          description: String(s.description ?? '(未命名任务项)'),
           status: 'pending',
         });
       }
       if (mockPlan.length > 0) {
         const first = mockPlan[0];
-        if (first) first.status = 'active'; // 模拟 ensureActivePlanItem：首个步骤 active
+        if (first) first.status = 'active'; // 模拟 ensureActivePlanItem：首个任务项 active
       }
-      return `任务表已更新（${mode}），当前共 ${mockPlan.length} 个步骤：\n${renderPlan()}`;
+      return `任务表已更新（${mode}），当前共 ${mockPlan.length} 个任务项：\n${renderPlan()}`;
     }
     case 'task_table_update': {
       const status = String(args.status ?? 'done');
@@ -107,12 +107,12 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
       const idx = /^\d+$/.test(planItemId) ? Number(planItemId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(planItemId));
       const item = mockPlan[idx];
       if (!item) {
-        return `[ERR:STEP_NOT_FOUND] 未找到步骤 "${planItemId}"`;
+        return `[ERR:PLAN_ITEM_NOT_FOUND] 未找到任务项 "${planItemId}"`;
       }
       item.status = status === 'blocked' ? 'blocked' : status === 'done' ? 'done' : item.status;
-      // 模拟结束步骤后自动推进下一个 active（ensureActivePlanItem）——驱动 plan_item_boundary 产出
+      // 模拟结束任务项后自动推进下一个 active（ensureActivePlanItem）——驱动 plan_item_boundary 产出
       if (item.status === 'done') advanceActive();
-      return `步骤 [${item.id}] "${item.description}" 已标记为 ${status}`;
+      return `任务项 [${item.id}] "${item.description}" 已标记为 ${status}`;
     }
     default:
       return `（演示环境已忽略工具 ${name}，参数 ${argsStr || '(空)'}）`;

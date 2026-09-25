@@ -417,11 +417,11 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
     // 首行 [任务进度: 契约不可变（loop 替换式注入靠此前缀清理旧表）
     expect(table).toContain('[任务进度: 0/2');
     // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，真实故障轮实证）
-    expect(table).toContain('（执行约束，非历史信息）仍有步骤未标记「已完成」');
+    expect(table).toContain('（执行约束，非历史信息）仍有任务项未标记「已完成」');
     expect(table).toContain('task_table_update');
   });
 
-  it('全部步骤 done 时不追加约束（正常收尾不干扰）', async () => {
+  it('全部任务项 done 时不追加约束（正常收尾不干扰）', async () => {
     const output = await assembleComponents(
       createPctx(),
       createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
@@ -468,7 +468,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
         JSON.stringify({ step_id: shortId, status: 'blocked' }),
       );
 
-      // 若短 id 透传到 updatePlanItemStatus 全等匹配 → STEP_NOT_FOUND（断链）
+      // 若短 id 透传到 updatePlanItemStatus 全等匹配 → PLAN_ITEM_NOT_FOUND（断链）
       expect(result).toContain('已标记为 blocked');
       const cp = output.sessionManager.getCheckpoint()!;
       expect(cp.plan.find((s) => s.id === fullId)!.status).toBe('blocked');
@@ -493,7 +493,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
       expect(cp.plan.find((s) => s.id === fullId)!.status).toBe('done');
     });
 
-    it('未知 8 位短 id → STEP_NOT_FOUND 且不触碰任何步骤', async () => {
+    it('未知 8 位短 id → PLAN_ITEM_NOT_FOUND 且不触碰任何任务项', async () => {
       const output = await assembleReal();
       output.sessionManager.createCheckpoint('测试计划');
       output.sessionManager.writePlan('overwrite', [{ description: '唯一步骤' }]);
@@ -503,7 +503,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
         JSON.stringify({ step_id: 'ffffffff', status: 'done' }),
       );
 
-      expect(result).toContain('[ERR:STEP_NOT_FOUND]');
+      expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       const cp = output.sessionManager.getCheckpoint()!;
       expect(cp.plan.every((s) => s.status !== 'done')).toBe(true);
     });
@@ -664,10 +664,10 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(rendered).toContain('任务表已更新');
   });
 
-  it('planManager.updatePlanItem：不存在的步骤返回 STEP_NOT_FOUND', async () => {
+  it('planManager.updatePlanItem：不存在的任务项返回 PLAN_ITEM_NOT_FOUND', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
-    expect(out.toolExec.planManager!.updatePlanItem('nope', 'done')).toContain('[ERR:STEP_NOT_FOUND]');
+    expect(out.toolExec.planManager!.updatePlanItem('nope', 'done')).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
   });
 
   it('planManager.getPlan：无 checkpoint 时返回空计划', async () => {

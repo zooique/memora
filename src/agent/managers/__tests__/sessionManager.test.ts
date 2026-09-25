@@ -1072,11 +1072,11 @@ describe('SessionManager', () => {
       // 空计划：早退不抛错
       expect(() => manager.concludeActivePlanItemIfPlanFullyReached('摘要')).not.toThrow();
       // 全 done 无 active：早退（不重复写日志）
-      const plan = manager.writePlan('overwrite', [{ description: '唯一步骤' }]);
+      const plan = manager.writePlan('overwrite', [{ description: '唯一任务项' }]);
       manager.updatePlanItemStatus(plan[0]!.id, 'done');
-      const stepLogLenBefore = manager.getCheckpoint()!.planItemLog?.length ?? 0;
+      const planItemLogLenBefore = manager.getCheckpoint()!.planItemLog?.length ?? 0;
       manager.concludeActivePlanItemIfPlanFullyReached('重复摘要');
-      expect(manager.getCheckpoint()!.planItemLog?.length ?? 0).toBe(stepLogLenBefore);
+      expect(manager.getCheckpoint()!.planItemLog?.length ?? 0).toBe(planItemLogLenBefore);
     });
   });
 

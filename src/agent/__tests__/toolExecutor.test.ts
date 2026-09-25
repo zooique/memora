@@ -1466,7 +1466,7 @@ describe('工具执行器（6 个工具）', () => {
         writePlan: () => '',
         updatePlanItem: (planItemId: string) => {
           updateCalls.push(planItemId);
-          return `步骤 [${planItemId.slice(0, 8)}] 已更新`;
+          return `任务项 [${planItemId.slice(0, 8)}] 已更新`;
         },
         getPlan: () => plan,
       };
@@ -1530,17 +1530,17 @@ describe('工具执行器（6 个工具）', () => {
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 8 位短 id 无命中 → STEP_NOT_FOUND（提示改用行首序号）', async () => {
+    it('step_id 8 位短 id 无命中 → PLAN_ITEM_NOT_FOUND（提示改用行首序号）', async () => {
       const { updateCalls } = injectPlanManager();
       const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'zzzzzzzz', status: 'done' }));
-      expect(result).toContain('[ERR:STEP_NOT_FOUND]');
+      expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 非数字非 8 位乱 id → STEP_NOT_FOUND（提示可用格式）', async () => {
+    it('step_id 非数字非 8 位乱 id → PLAN_ITEM_NOT_FOUND（提示可用格式）', async () => {
       const { updateCalls } = injectPlanManager();
       const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'hackme', status: 'done' }));
-      expect(result).toContain('[ERR:STEP_NOT_FOUND]');
+      expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       expect(updateCalls).toEqual([]);
     });
 
@@ -1549,7 +1549,7 @@ describe('工具执行器（6 个工具）', () => {
       const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '99', status: 'done' }));
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(result).toContain('超出任务表范围');
-      expect(result).toContain('共 3 步');
+      expect(result).toContain('共 3 个任务项');
       expect(updateCalls).toEqual([]);
     });
 

@@ -2616,7 +2616,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ...(chunk.blocked ? { blocked: true } : {}),
           });
           // N/M 闪骨架：tool_start 时读到的 plan 是工具执行前的旧状态
-          // （如会议骨架 2 步），工具落定后才是新 plan（如 4 步）——tool_result 补推一次快照，
+          // （如会议骨架 2 个任务项），工具落定后才是新 plan（如 4 个任务项）——tool_result 补推一次快照，
           // 消除「1/2 → 1/4」的一次性闪烁
           if (chunk.name === 'task_table_write' || chunk.name === 'task_table_update') {
             this.postPlanUpdate();
@@ -2671,7 +2671,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             stepIndex: chunk.stepIndex,
           });
         } else if (chunk.type === 'plan_item_boundary') {
-          // 步级折叠边界：active 任务项推进 → 落盘 plan_item_boundary 事件。
+          // 任务项级折叠边界：active 任务项推进 → 落盘 plan_item_boundary 事件。
           // webview 据此把后续过程事件归入对应任务项分组；重放与运行时同一边界（同构）。
           // ⚠ 仅渲染分组依据（无任务表不产）；**不是落盘时机**——落盘时机唯一 = step_boundary
           // （本处不落盘，否则无任务表的长工具循环零增量落盘）。
@@ -2683,7 +2683,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 迭代边界：一次 LLM 迭代（含其工具执行）结束 → 增量落盘当前 pending Round。
           // 落盘时机 SSOT：全场景唯一时机（有/无任务表、有/无工具全覆盖），与流尾共用 mergeProcessEvents
           // 同一合并语义（seq 幂等）。顺序契约：内核保证 plan_item_boundary 先于本 chunk → 本轮落盘快照已含
-          // 该步折叠边界，崩溃重放不错位。瞬态信号：不 emitEvent（不进 processEvents、不吃 seq）。
+          // 该任务项折叠边界，崩溃重放不错位。瞬态信号：不 emitEvent（不进 processEvents、不吃 seq）。
           if (currentRoundKey) {
             this.checkpointRound(currentRoundKey, eventsByRound.get(currentRoundKey) ?? []);
           }
@@ -2838,7 +2838,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 任务表的创建/推进由内核 task_table_write/update 工具完成，宿主仅做可视化消费。
    *
    * 任务节点聚合：额外从 checkpoint.planItemLog 提取 planItemId 关联，按任务项分组携带各任务项
-   * 推进记录（planItemLog），webview 展开任务节点时展示该步骤下的推进摘要。
+   * 推进记录（planItemLog），webview 展开任务节点时展示该任务项下的推进摘要。
    */
   private postPlanUpdate(): void {
     if (!this._agent) return;
@@ -3031,7 +3031,7 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
   </div>
   <!-- 任务进度常驻条（单轨）：与 #messages **同级**的固定插槽——
        #messages 是 overflow-y:auto 滚动容器，插进它内部一滚即消失；默认一行
-       N/M + 进度条 + 当前步骤，点击展开锚定浮层看全量。隐藏态由 chatView 控制。 -->
+       N/M + 进度条 + 当前任务项，点击展开锚定浮层看全量。隐藏态由 chatView 控制。 -->
   <div id="planBar" class="plan-bar" hidden>
     <button id="planBarHead" class="plan-bar__head" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="planBarPanel">
       <span id="planBarCount" class="plan-bar__count"></span>

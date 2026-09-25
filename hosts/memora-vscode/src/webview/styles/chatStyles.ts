@@ -1273,7 +1273,7 @@ export const chatStyles = `
   }
   /* SVG 指示器尺寸适配 */
   .plan-bar__chevron svg { display: block; width: 11px; height: 11px; }
-  /* 锚定浮层：紧贴常驻条下方（top:100%），全量步骤列表 + planItemLog；卡片 + 阴影浮于对话上方。
+  /* 锚定浮层：紧贴常驻条下方（top:100%），全量任务项列表 + planItemLog；卡片 + 阴影浮于对话上方。
    * 非 modal（无遮罩）：看进度时需同时看正文。max-height 超限滚动 */
   .plan-bar__panel {
     position: absolute; left: 0; right: 0; top: 100%;
@@ -1291,7 +1291,7 @@ export const chatStyles = `
     margin: 0;
     padding: 0;
   }
-  /* 任务节点折叠：每步一个 details，summary = 序号+描述+状态徽标，
+  /* 任务节点折叠：每个任务项一个 details，summary = 序号+描述+状态徽标，
      展开后展示该任务项关联的任务项推进记录（planItemLog） */
   .plan-item {
     margin: var(--sp-1, 2px) 0;
@@ -1439,9 +1439,9 @@ export const chatStyles = `
     padding: var(--sp-1, 2px) 0; line-height: 1.6;
     word-break: break-all;
   }
-  /* 步级折叠容器：active 任务项推进时，后续 narrate/tool
-   * 归入对应任务项折叠块（summary 显示「任务项 N · 标题」），实现「边界切组、步内平铺」。
-   * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——步骤过程属过程明细，报告保持简洁。 */
+  /* 任务项级折叠容器：active 任务项推进时，后续 narrate/tool
+   * 归入对应任务项折叠块（summary 显示「任务项 N · 标题」），实现「边界切组、任务项内平铺」。
+   * 无 plan_item_boundary 时不出现（退回整轮扁平）。默认收起——任务项过程属过程明细，报告保持简洁。 */
   .round-block__plan-item {
     margin: var(--sp-1, 4px) 0; padding-left: var(--sp-3, 8px);
     border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));

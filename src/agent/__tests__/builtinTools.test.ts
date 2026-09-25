@@ -409,8 +409,8 @@ describe('builtinTools · 任务表描述命令式强化', () => {
 
   it('task_table_update 描述应明确「一次只更新一步」并禁止批量宣告完成', () => {
     const def = BUILTIN_TOOLS.find((t) => t.name === 'task_table_update')!;
-    expect(def.description).toContain('一次只更新一个步骤');
-    expect(def.description).toContain('禁止一次性批量标记所有步骤');
+    expect(def.description).toContain('一次只更新一个任务项');
+    expect(def.description).toContain('禁止一次性批量标记所有任务项');
   });
 
   it('任务表描述应包含「先产出、后标记」顺序纪律（L1，2026-09-17：形态② 单写者语义）', () => {

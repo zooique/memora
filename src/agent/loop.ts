@@ -312,19 +312,19 @@ export class AgentLoop {
   /* 策略类字段（toolCallsBlocked/toolStepLimit/errorHandling/providerRouting 等）定义在
    * 单一 L2RuntimeStrategy 对象（见上方 strategy），读取统一走 this.strategy.<field> */
   /** step 边界回调——每次迭代（=step）完成时调用（传 assistant 摘要）。消费方（assembler 实现）
-   *  经 logPlanItemBoundary 写 planItemLog 关联当前 active 步骤（时间轴投影）——
-   *  不推进 plan：状态推进唯一写者 = LLM 的 task_table_update；LLM 未显式 update 的最后一步
+   *  经 logPlanItemBoundary 写 planItemLog 关联当前 active 任务项（时间轴投影）——
+   *  不推进 plan：状态推进唯一写者 = LLM 的 task_table_update；LLM 未显式 update 的最后一个任务项
    *  由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
    *  planItemId 由消费方自查，loop 不传——签名不留空头支票。
-   *  检出时机 = 本迭代 LLM 调用后、工具前（读「本迭代服务的那一步」）。 */
+   *  检出时机 = 本迭代 LLM 调用后、工具前（读「本迭代服务的那个任务项」）。 */
   onPlanItemBoundary?: (planItemInfo: { summary: string }) => void;
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
-  /** active step 元信息回调（步级折叠）：供 _maybeEmitStepBoundary
-   *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title, rolePack }；无任务表/无 active step
+  /** active 任务项元信息回调（任务项级折叠）：供 _maybeEmitPlanItemBoundary
+   *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title, rolePack }；无任务表/无 active 任务项
    *  返回 null。与 onPlanItemBoundary **时序分叉**：前者读工具前的 active
-   *  （本迭代完成的那一步），本回调经 _maybeEmitStepBoundary 读工具后的 active（工具落定后
-   *  当前所在的那一步）——plan_item_boundary 事件据此判定「active step 是否已推进」并分组渲染。
+   *  （本迭代完成的那个任务项），本回调经 _maybeEmitPlanItemBoundary 读工具后的 active（工具落定后
+   *  当前所在的那个任务项）——plan_item_boundary 事件据此判定「active 任务项是否已推进」并分组渲染。
    *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。
    *  rolePack 供裁决证据的会议轮判据（isMeetingRound）消费。 */
   getActivePlanItemMeta?: () => { planItemId?: string; title?: string; rolePack?: string } | null;
@@ -337,7 +337,7 @@ export class AgentLoop {
    *  刻意**不复用** getActivePlanItemMeta 的存在性——后者原生职责是 plan_item_boundary 事件信号，
    *  借它回答本命题属语义借用（二者在 ensureActivePlanItem 不变量下当前等价，但职责须分离）。 */
   hasInflightPlan?: () => boolean;
-  /** 上一步级边界 ID（去噪）：记录最近一次已 emit plan_item_boundary 的 planItemId，
+  /** 上一任务项边界 ID（去噪）：记录最近一次已 emit plan_item_boundary 的 planItemId，
    *  仅当 getActivePlanItemMeta 返回的 planItemId 变化时才产新事件；null/undefined 不产（无任务表静默）。 */
   private lastBoundaryPlanItemId?: string;
   /** 轮内 step 序号（轮粒度单调）：「这条思考是第几步产生的」唯一真源计数，thought 归属由它打标。
@@ -806,9 +806,9 @@ export class AgentLoop {
     this.toolResultCache.clear();
     // 文件覆盖度台账同步清空（与防重缓存同生命周期）
     this.fileExposure.clear();
-    // 失败硬闸 + 写侧连写止损计数随轮清空（guard 内部闭包状态由 reset('perStep') 归零；
+    // 失败硬闸 + 写侧连写止损计数随轮清空（guard 内部闭包状态由 reset('perTurn') 归零；
     // 跨闭环复用时若残留，会误拒本轮合法的新失败重试 / 误判新写入路径）
-    this.guardier.reset('perStep');
+    this.guardier.reset('perTurn');
     // 注：askCountThisTurn（askLimit 护栏）不在此重置——它按「一次用户输入（turn 粒度，
     // 含暂停-续跑链）」累计，跨续跑保留；清零只在 processUserInput 入口（见 resetAskBudget）。
     // 规划层：任务表 nudge 注入标记随轮重置（下一 turn 重新判定注入）；planNeedsNudge 也随轮清，
@@ -1094,16 +1094,16 @@ export class AgentLoop {
         };
       }
       const toolResult = yield* this.handleToolCalls(llmResult, effectiveSignal);
-      // 步级折叠边界事件（检出时机在工具落定后）：
-      // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active step
-      // 保证第一步拿到自己的边界（工具落定前检出会被「离开第一步」吃掉）。判据不变（推进才产 +
+      // 任务项级折叠边界事件（检出时机在工具落定后）：
+      // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active 任务项
+      // 保证第一个任务项拿到自己的边界（工具落定前检出会被「离开第一个任务项」吃掉）。判据不变（推进才产 +
       // lastBoundaryPlanItemId 去噪），只换检出时刻。时序分叉是设计语义：onPlanItemBoundary（上述）读
-      // 工具前的 active（本迭代服务的那一步，只写 planItemLog），本处读工具后的 active（当前所在的那一步）。
-      yield* this._emitIterationBoundary(toolResult);
+      // 工具前的 active（本迭代服务的那个任务项，只写 planItemLog），本处读工具后的 active（当前所在的那个任务项）。
+      yield* this._emitStepBoundary(toolResult);
       return toolResult;
     }
     // 无工具路径：plan 本迭代不被改写，检出时机（LLM 调用后）与工具落定后等价，保持原位。
-    yield* this._maybeEmitStepBoundary();
+    yield* this._maybeEmitPlanItemBoundary();
     // 补发：工具闭环内延迟分类的纯文本消息（收尾交付）从未流式 yield → 先补发整段正文再收尾
     if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
       yield { type: 'text', content: llmResult.fullContent, stage: textStage };
@@ -1111,13 +1111,14 @@ export class AgentLoop {
     return yield* this.handleTextResponse(llmResult, iteration);
   }
 
-  /** 步级折叠边界事件产出：比较 active step 是否已推进，推进才产
-   *  plan_item_boundary（宿主按步分组后续事件）。无任务表（null）或 planItemId 未变则不产
-   *  （lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
+  /** 任务项级折叠边界事件产出（产出的是 plan_item_boundary，**不是** step_boundary——
+   *  方法名与产出事件名必须同阵营，勿据「step」误读为迭代边界）：
+   *  比较 active 任务项是否已推进，推进才产 plan_item_boundary（宿主按任务项分组后续事件）。
+   *  无任务表（null）或 planItemId 未变则不产（lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
    *  检出时机由调用方决定：工具分支在 handleToolCalls 之后（工具可能改写 plan）、无工具分支在
-   *  LLM 调用后——两处都保证「读到的 active step = 本迭代结束后当前所在的那一步」。
+   *  LLM 调用后——两处都保证「读到的 active 任务项 = 本迭代结束后当前所在的那个任务项」。
    *  roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带。 */
-  private *_maybeEmitStepBoundary(): Generator<AgentChunk, void, unknown> {
+  private *_maybeEmitPlanItemBoundary(): Generator<AgentChunk, void, unknown> {
     const activePlanItemMeta = this.getActivePlanItemMeta?.();
     const activePlanItemId = activePlanItemMeta?.planItemId;
     if (activePlanItemMeta && activePlanItemId && activePlanItemId !== this.lastBoundaryPlanItemId) {
@@ -1145,14 +1146,14 @@ export class AgentLoop {
    *  无工具分支（handleTextResponse）恒终态，故只产折叠边界、不产本 chunk。
    *
    *  **顺序契约（硬）**：先 yield plan_item_boundary（折叠分组），再 yield step_boundary
-   *  （落盘触发）——保证宿主本次落盘快照已含该步折叠边界，崩溃重放不错位。
+   *  （落盘触发）——保证宿主本次落盘快照已含该任务项折叠边界，崩溃重放不错位。
    *
    *  @param result 本次迭代的路由结果（handleToolCalls 返回值）
    */
-  private *_emitIterationBoundary(
+  private *_emitStepBoundary(
     result: 'aborted' | 'done' | 'continue' | 'paused',
   ): Generator<AgentChunk, void, unknown> {
-    yield* this._maybeEmitStepBoundary();
+    yield* this._maybeEmitPlanItemBoundary();
     if (result === 'continue') yield { type: 'step_boundary' };
   }
 

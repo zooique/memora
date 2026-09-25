@@ -30,7 +30,7 @@
 |---------|--------------------|--------|
 | turn = Prepare/Act/Reflect 三阶段 | **Prepare**：`_injectRecall`（召回注入）+ 用户消息 push + 状态重置<br>**Act**：`handleIteration`（step：一次 LLM 生成 + 可选工具执行，多 step 由 `runIterationLoop` 驱动即 loop）<br>**Reflect（气口判定点）**：`handleIterationResult` 在 `runIterationLoop` 末端决定 continue/done/paused/aborted（内部控制信号，非对外 Handoff 决策，2026-09-05 收敛）；摘要/归档在 `agent.ts` 后处理 | ✅ 高 |
 | loop = 对 step 的编排（Act 内部） | `runIterationLoop` 反复拉起 step：LLM 推理 → 工具执行 → 回填 → 再推理；深度由 `toolStepLimit` 控制 | ✅ 高 |
-| loop（step 深度） × turn 预算 | loop 深度：`toolStepLimit`（单 turn 工具步数）；turn 总预算：`stepBudget` / `maxIterations` / `taskLoopLimit` | ✅ 高 |
+| loop（step 深度） × turn 预算 | loop 深度：`toolStepLimit`（单 turn 工具步数）；turn 总预算：`stepBudget` / `maxIterations` | ✅ 高 |
 | ~~Handoff = turn 出口衔接决策~~ | ~~内部控制信号，非对外衔接~~ | **已废弃（2026-09-05）** |
 | 触发源决定召回 | `_shouldSkipRecallInjection`（Token 紧时跳过召回）；`_injectRecall` 仅外部输入触发（loop 内部 step 不触发） | ✅ 高 |
 | 策略层 = 参数化配置 | `setStrategy(L2RuntimeStrategy)`：工具权限/步数/预算/自审查/插话 全量参数化 | ✅ 高 |
@@ -63,7 +63,7 @@
 - `handleToolCalls` 内：L2 策略检查（`toolCallsBlocked`）→ 步数限制（`toolStepLimit`）→ 并发执行（`executeToolCalls`）→ 重复检测（`duplicateCallInterceptor`）→ Reflection（`reflectionHint`）→ 回填 `return 'continue'`。
 - step 边界（每次 LLM 调用 + 工具之间）= 天然的暂停点 / abort 检查点（`raceToolWithSignal`）。**气口在此发生**（LLM 主动提问、用户插话、暂停续跑）。
 
-**设计结论**：loop 深度由 `toolStepLimit` / `toolCallsBlocked` 控制；多 turn 任务编排长度由 `stepBudget` / `maxIterations` / `taskLoopLimit` 控制。角色通过策略选择配比，不改 turn 结构——与哲学完全一致。
+**设计结论**：loop 深度由 `toolStepLimit` / `toolCallsBlocked` 控制；turn 总预算由 `stepBudget` / `maxIterations` 控制。角色通过策略选择配比，不改 turn 结构——与哲学完全一致。
 
 ### 3.3 Reflect 阶段在 loop 之外承接
 
@@ -84,7 +84,7 @@
 | # | 对齐点 | 收敛状态 | 现状（实证） |
 |---|--------|---------|------------|
 | 1 | 概念命名"step" vs "turn" | **已收敛**（术语表 2026-09-03） | 三者定义见 `.trae/rules/terminology-anchor-rules.md` §5（**唯一定义处**；本表不重复定义，避免两处漂移） |
-| 2 | 终止条件分散 | **已语义化**（多 turn 任务编排） | 任务编排终止由任务链收敛承担（orchestrator 按 pending 步驱动、耗尽即收尾汇报）；loop 以 `toolStepLimit` 约束深度；turn 整体以 `stepBudget`/`maxIterations` 兜底。统一表述为「**Handoff 决策的输入集合**」：目标达成 / 资源上限 / 用户中断（对齐哲学"终止条件三分类"） |
+| 2 | 终止条件分散 | **已语义化**（多 turn 任务编排） | 任务编排终止由任务链收敛承担（orchestrator 按 pending 步驱动、耗尽即收尾汇报）；loop 以 `toolStepLimit` 约束深度；turn 整体以 `stepBudget`/`maxIterations` 兜底。统一表述为「**turn 终止决策的输入集合**」：目标达成 / 资源上限 / 用户中断（对齐哲学"终止条件三分类"） |
 | 3 | 目标模式接口形状未预留 | 待实现（远期锚点） | 仍不实现；明确定位：未来目标模式 = 回答后插入对齐环节（差距分析 → 新 Trigger），插入点收敛在 orchestrator（闭环编排容器），仍复用 `processUserInput` 的 turn |
 
 **反模式自查**（对照哲学「递归边界确定性」「模式统一论」）：
