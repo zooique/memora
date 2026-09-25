@@ -299,17 +299,17 @@ async function readContentSafe(filePath: string, maxLen = DEFAULT_MAX_CONTENT_LE
  *
  * **how 单源纪律**：状态取值（done/blocked）与标注方法属「工具用法」，唯一真源 =
  * `task_table_update` 工具描述（builtinTools.ts）；本函数只承载**会议场景编排**
- * （何时增步 / 何时声明 rolePack / 何时回到组长视角），不复述工具用法——
+ * （何时增项 / 何时声明 rolePack / 何时回到组长视角），不复述工具用法——
  * 与 PLAN_NUDGE_PROMPT 同构（when/what 在此，how 指向描述）。守卫见 builtinTools.test。
  */
 export function buildTeamContextBlockText(leader: string, members: readonly string[]): string {
   return (
     `【小组会议角色（组长：${leader}；组员：${members.join(' / ')}）】` +
     `用户以「小组会议：主题」发起时，系统不自动预置完整流程，但已确定性预置骨架任务表` +
-    `（组长开场 → 每位组员各一步发言 → 汇总），你只需按骨架逐项执行；` +
-    `如需追加讨论轮次可自行用 task_table_write 增步，并在此步声明 rolePack=对应组员` +
-    `（执行到该步时切换为该组员视角作答）；汇总步到达后不声明 rolePack（回到组长视角收尾）。` +
-    `每完成一步即标记该步状态（状态取值与操作方法见 task_table_update 工具描述）。` +
+    `（组长开场 → 每位组员各一项发言 → 汇总），你只需按骨架逐项执行；` +
+    `如需追加讨论轮次可自行用 task_table_write 增项，并在此项声明 rolePack=对应组员` +
+    `（执行到该项时切换为该组员视角作答）；汇总项到达后不声明 rolePack（回到组长视角收尾）。` +
+    `每完成一个任务项即标记该任务项状态（状态取值与操作方法见 task_table_update 工具描述）。` +
     `禁止用 write_file 创建或修改任务表文件（如 .memora/task-table.md）——任务表只能经 task_table_write 建表。`
   );
 }
@@ -456,7 +456,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
 
   /**
    * 设置本轮表层装配视角（会议机制）：任务项级临时覆盖。
-   * 由 prepare 期按 active 步骤 rolePack 解析结果设置；非会议/越界 → null（回落 activePack）。
+   * 由 prepare 期按 active 任务项 rolePack 解析结果设置；非会议/越界 → null（回落 activePack）。
    */
   setRoundAssemblyRole(role: string | null): void {
     this.roundAssemblyRole = role;
@@ -473,7 +473,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    *
    * 截断只发生在消费端——`rolePackTeams` 存储保持原样（超限数据不裁切，用户可自行修正），
    * 因此「超限仅影响会议、不影响日常」的语义成立。所有会议消费点（装配角色解析 / 上下文块 /
-   * 会议步骤）必须走本 getter，禁止直连 `team.members`，否则「超出部分不参与会议」即成假契约。
+   * 会议任务项）必须走本 getter，禁止直连 `team.members`，否则「超出部分不参与会议」即成假契约。
    */
   private get activeTeamMembers(): readonly string[] {
     if (!this.activePackName) return [];
@@ -525,7 +525,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 文案正文在模块级 buildTeamContextBlockText（纯函数，供 how 单源守卫直测；本方法只做前置守卫）。
    * 文案指挥 LLM 用 `task_table_write` 自主建表（确定性骨架预置见 tryBuildMeetingPlan，
    * 二者互补：骨架补首轮确定性，文案约束 LLM 后续走 task_table 单通道）：
-   * 明确组员发言步需声明 `rolePack` 以触发表层装配切换，汇总步不声明回到组长视角；
+   * 明确组员发言任务项需声明 `rolePack` 以触发表层装配切换，汇总任务项不声明回到组长视角；
    * 并显式禁止用 write_file 模拟任务表（write_file 写 `.memora/task-table.md`
    * 伪建表会绕过 PlanItem 通道，导致顶部任务板不渲染）。
    */
@@ -541,17 +541,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
    * 骨架确定性预置、内容与推进交 LLM，与 buildTeamContextBlock 文案互补）。
    *
    * 用户消息含「小组会议」**且** activePack 是某组组长 → 程序化预置占位骨架：
-   * 组长开场步（无 rolePack = 默认组长视角）+ 组员各一步（`rolePack=成员`，触发表层装配硬切换）
-   * + 汇总步尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
-   * LLM 可经 task_table_write 追加额外步骤（骨架以 append 扩步，不锁死多轮交互）。
-   * 不引入会议引擎：步骤执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按步标记 done/blocked，
-   * 装配视角逐步切换（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
+   * 组长开场项（无 rolePack = 默认组长视角）+ 组员各一项（`rolePack=成员`，触发表层装配硬切换）
+   * + 汇总项尾（无 rolePack = 组长视角）。不固化发言内容与推进顺序，推进交 LLM；
+   * LLM 可经 task_table_write 追加额外任务项（骨架以 append 扩项，不锁死多轮交互）。
+   * 不引入会议引擎：任务项执行靠任务表每轮注入（assembler.getTaskTable）驱动 LLM 按项标记 done/blocked，
+   * 装配视角逐项切换（getTaskTable → applyActivePlanItemAssembly → applyActivePlanItemAssemblyIfChanged）。
    *
-   * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则步骤仅标「发言/汇总」由 LLM 见用户消息展开。
+   * 主题取自「小组会议」后文（冒号/逗号/空格分隔均可），为空则任务项仅标「发言/汇总」由 LLM 见用户消息展开。
    * 无 keyword / activePack 非组长 / 组名单空 → 返回 null（不触发，回落普通闭环）。
    *
    * @param input 用户输入
-   * @returns 预置骨架步骤（description + 可选 rolePack）；不触发返回 null
+   * @returns 预置骨架任务项（description + 可选 rolePack）；不触发返回 null
    */
   tryBuildMeetingPlan(input: string): Array<{ description: string; rolePack?: string }> | null {
     if (!this.activePackName) return null;
@@ -560,17 +560,17 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     if (members.length === 0) return null;
     const topic = input.replace(/^\s*小组会议\s*[:：,，]?\s*/, '').trim();
     const suffix = topic ? `：${topic}` : '';
-    // 组长开场步：无 rolePack（默认组长视角），语义上"主持引入议题"
-    const steps: Array<{ description: string; rolePack?: string }> = [
+    // 组长开场项：无 rolePack（默认组长视角），语义上"主持引入议题"
+    const items: Array<{ description: string; rolePack?: string }> = [
       { description: `${this.activePackName} 主持开场${suffix}` },
     ];
-    // 组员各一步发言，rolePack=组员（触发表层装配切换为该组员视角）
+    // 组员各一项发言，rolePack=组员（触发表层装配切换为该组员视角）
     for (const m of members) {
-      steps.push({ description: `${m} 发言${suffix}`, rolePack: m });
+      items.push({ description: `${m} 发言${suffix}`, rolePack: m });
     }
-    // 汇总步尾：无 rolePack（回到组长视角收尾）
-    steps.push({ description: `汇总各方观点${suffix}` });
-    return steps;
+    // 汇总项尾：无 rolePack（回到组长视角收尾）
+    items.push({ description: `汇总各方观点${suffix}` });
+    return items;
   }
 
   // ── 生命周期 ──────────────────────────────────────

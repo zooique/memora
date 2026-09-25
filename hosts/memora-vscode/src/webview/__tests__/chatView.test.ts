@@ -1555,22 +1555,22 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         status: 'complete',
       }),
     );
-    // 两个步级折叠块：summary 显示步骤名并可展开
-    const steps = document.querySelectorAll('.round-block__plan-item');
-    expect(steps.length).toBe(2);
-    expect(steps[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 1');
-    expect(steps[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('分析需求');
-    expect(steps[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('编写代码');
-    // 步1内：narrate 与 tool 归入第 1 个 step 容器（边界切组、步内平铺）
-    const step1Host = steps[0]!.querySelector('.round-block__narrate') as HTMLElement;
-    expect(step1Host?.textContent).toContain('正在分析需求文档');
-    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).toContain('读取文件');
-    // 步2内：narrate 与 tool 归入第 2 个 step 容器，不越界混入步1
-    const step2Host = steps[1]!.querySelector('.round-block__narrate') as HTMLElement;
-    expect(step2Host?.textContent).toContain('开始编写实现代码');
-    expect(steps[1]!.querySelector('.round-block__tool')?.textContent).toContain('写入文件');
-    // 负向断言：步 1 不含步 2 的工具——标记物须同步为中文名，否则接入后恒真（因错误的原因通过）
-    expect(steps[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('写入文件');
+    // 两个任务项级折叠块：summary 显示任务项名并可展开
+    const planItems = document.querySelectorAll('.round-block__plan-item');
+    expect(planItems.length).toBe(2);
+    expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 1');
+    expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('分析需求');
+    expect(planItems[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('编写代码');
+    // 任务项1内：narrate 与 tool 归入第 1 个任务项容器（边界切组、项内平铺）
+    const planItem1Host = planItems[0]!.querySelector('.round-block__narrate') as HTMLElement;
+    expect(planItem1Host?.textContent).toContain('正在分析需求文档');
+    expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).toContain('读取文件');
+    // 任务项2内：narrate 与 tool 归入第 2 个任务项容器，不越界混入任务项1
+    const planItem2Host = planItems[1]!.querySelector('.round-block__narrate') as HTMLElement;
+    expect(planItem2Host?.textContent).toContain('开始编写实现代码');
+    expect(planItems[1]!.querySelector('.round-block__tool')?.textContent).toContain('写入文件');
+    // 负向断言：任务项 1 不含任务项 2 的工具——标记物须同步为中文名，否则接入后恒真（因错误的原因通过）
+    expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('写入文件');
   });
 
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
@@ -1749,7 +1749,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'chunk', content: '【组长开场】\n\n## 第一步', roundId: 'r1' });
     dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } } });
     dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 3, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"plan_item_id":"0","status":"done"}' } } });
     dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
     // 大事件量（逼近真实 round：1358 个事件中绝大多数是 thought 碎片）
     let seq = 6;
@@ -1780,7 +1780,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'chunk', content: '【组长开场】', roundId: 'r1' });
     // ② 任务表现在：plan_item_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
     dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"step_id":"0","status":"done"}' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"plan_item_id":"0","status":"done"}' } } });
     // ≥3 步计划才常驻（**webview 展示层自身门槛**，非内核 needsPlanning——后者是关键词/
     // 结构式布尔判定、无步数阈值）——3 步触发常驻条
     dispatch({
@@ -2462,20 +2462,20 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     const panel = bar.querySelector('#planBarPanel') as HTMLElement;
     expect(panel.hidden).toBe(true);
     expect(panel.childElementCount).toBe(0);
-    // 点击展开 → 从当前快照补建全量步骤列表（按 order 序号 + 描述；状态 class 按 status 映射）
+    // 点击展开 → 从当前快照补建全量任务项列表（按 order 序号 + 描述；状态 class 按 status 映射）
     (bar.querySelector('#planBarHead') as HTMLElement).click();
     expect(panel.hidden).toBe(false);
-    const steps = panel.querySelectorAll('.plan-item');
-    expect(steps).toHaveLength(3);
-    expect(steps[0].querySelector('.plan-item-title')?.textContent).toBe('1. 收集需求');
-    expect(steps[0].classList.contains('plan-item-done')).toBe(true);
-    expect(steps[0].querySelector('.plan-item-badge')?.textContent).toBe('已完成');
-    expect(steps[1].querySelector('.plan-item-title')?.textContent).toBe('2. 设计方案');
-    expect(steps[1].classList.contains('plan-item-active')).toBe(true);
-    expect(steps[1].querySelector('.plan-item-badge')?.textContent).toBe('进行中');
-    expect(steps[2].querySelector('.plan-item-title')?.textContent).toBe('3. 编写文档');
-    expect(steps[2].classList.contains('plan-item-pending')).toBe(true);
-    expect(steps[2].querySelector('.plan-item-badge')?.textContent).toBe('待执行');
+    const planItems = panel.querySelectorAll('.plan-item');
+    expect(planItems).toHaveLength(3);
+    expect(planItems[0].querySelector('.plan-item-title')?.textContent).toBe('1. 收集需求');
+    expect(planItems[0].classList.contains('plan-item-done')).toBe(true);
+    expect(planItems[0].querySelector('.plan-item-badge')?.textContent).toBe('已完成');
+    expect(planItems[1].querySelector('.plan-item-title')?.textContent).toBe('2. 设计方案');
+    expect(planItems[1].classList.contains('plan-item-active')).toBe(true);
+    expect(planItems[1].querySelector('.plan-item-badge')?.textContent).toBe('进行中');
+    expect(planItems[2].querySelector('.plan-item-title')?.textContent).toBe('3. 编写文档');
+    expect(planItems[2].classList.contains('plan-item-pending')).toBe(true);
+    expect(planItems[2].querySelector('.plan-item-badge')?.textContent).toBe('待执行');
   });
 
   it('plan_update 携带 planItemLog → 浮层任务项节点展开显示该任务项的推进记录', () => {
@@ -2489,15 +2489,15 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
       ],
     });
     const panel = document.querySelector('#planBarPanel') as HTMLElement;
-    // 展开浮层（懒构建）后检查步骤节点
+    // 展开浮层（懒构建）后检查任务项节点
     (document.querySelector('#planBarHead') as HTMLElement).click();
-    const steps = panel.querySelectorAll('.plan-item');
-    // 有关联推进记录的步骤：details 携带摘要 body（折叠态，仅标题常显）
-    const withRounds = steps[0] as HTMLDetailsElement;
+    const planItems = panel.querySelectorAll('.plan-item');
+    // 有关联推进记录的任务项：details 携带摘要 body（折叠态，仅标题常显）
+    const withRounds = planItems[0] as HTMLDetailsElement;
     expect(withRounds.open).toBe(false);
     expect(withRounds.querySelector('.plan-item-round')?.textContent).toBe('梳理用户痛点并产出需求清单');
-    // 无关联推进记录的步骤：不渲染空摘要体
-    const noRounds = steps[1] as HTMLDetailsElement;
+    // 无关联推进记录的任务项：不渲染空摘要体
+    const noRounds = planItems[1] as HTMLDetailsElement;
     expect(noRounds.querySelector('.plan-item-round')).toBeNull();
   });
 
@@ -4089,13 +4089,13 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
         status: 'complete',
       }),
     );
-    const steps = document.querySelectorAll('.round-block__plan-item');
-    expect(steps.length).toBe(2);
+    const planItems = document.querySelectorAll('.round-block__plan-item');
+    expect(planItems.length).toBe(2);
     // 条目归 step1（ts 定位），不飘忽：不在 details 顶层、不在 step2
-    expect(steps[0]!.querySelector('.round-block__input')?.textContent).toContain('补充：改一下');
+    expect(planItems[0]!.querySelector('.round-block__input')?.textContent).toContain('补充：改一下');
     const detailsInputs = Array.from(document.querySelectorAll<HTMLElement>('.round-block__details > .round-block__input'));
     expect(detailsInputs).toHaveLength(0);
-    expect(steps[1]!.querySelector('.round-block__input')).toBeNull();
+    expect(planItems[1]!.querySelector('.round-block__input')).toBeNull();
   });
 });
 

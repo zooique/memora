@@ -254,7 +254,7 @@ export type ProcessEvent =
    */
   | { type: 'thought'; seq: number; ts: string; payload: { content: string; stepIndex?: number } }
   /**
-   * 步级折叠边界：active 任务项推进时由 loop 产，
+   * 任务项级折叠边界：active 任务项推进时由 loop 产，
    * 宿主落盘此事件把后续 narrate/tool/问答归到对应任务项分组。无任务表不产。
    */
   | { type: 'plan_item_boundary'; seq: number; ts: string; payload: { planItemId?: string; title?: string } }
@@ -293,7 +293,7 @@ export type ProcessEvent =
  * 宿主整对象 JSON 持久化天然携带。
  *
  * 「会议轮」操作化判据（唯一实现在 loop 写点 isMeetingRound）：
- * 任务表 active 步骤声明 rolePack（= 会议逐步切换生效中）。
+ * 任务表 active 任务项声明 rolePack（= 会议逐项切换生效中）。
  */
 export type RoundEvidenceEvent =
   | {

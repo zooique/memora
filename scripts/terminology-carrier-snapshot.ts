@@ -29,6 +29,8 @@
  *
  * 明确不扫（范围边界，**不是**例外清单——不含逐词豁免）：
  *   - 录制 fixture 目录（`__tests__/fixtures/`）：内含当时的**真实输出**，改了即伪造证据。
+ *   - 本脚本自身（`scripts/terminology-carrier-snapshot.ts`）：`BASELINE` 字面量会给自己续命，
+ *     导致「旧词消失」检测结构性失效（只报新增不报消失）。
  *   - 依赖 / 版本库 / 构建产物 / 覆盖率 / 工具内部状态：node_modules · .git · dist · coverage · .workbuddy · .memora
  *
  * 用法：
@@ -49,6 +51,14 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 
 /** 术语锚点：冻结例外（§3）的唯一真理源，本脚本只解析、不复制 */
 const ANCHOR_PATH = join(ROOT, '.trae', 'rules', 'terminology-anchor-rules.md');
+
+/**
+ * 本脚本自身的相对路径（正斜杠）。
+ * 为什么必须排除自己：`BASELINE` 里的字面量本身就是「step 族 token」，
+ * 若扫描自己 → 基线里的旧词永远被自己续命 → **「旧词消失」这条检测结构性失效**（只报新增不报消失）。
+ * 本文件是门禁工具（元数据），不属于被纪律的载体对象。
+ */
+const SELF_REL = relative(ROOT, fileURLToPath(import.meta.url)).split('\\').join('/');
 
 /** 不进入扫描的目录名（依赖 / 版本库 / 构建产物 / 覆盖率 / 工具内部状态 / 宿主持久化） */
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', '.workbuddy', '.memora']);
@@ -92,7 +102,7 @@ const CJK_ORDINAL_RE = /第\s*\d+\s*步/g;
 /** 「第 N 步」的归一化 token */
 const CJK_ORDINAL_TOKEN = '第N步';
 
-/** 冻结例外解析阈值：§3 现有 4 个 step 词根例外，解析数骤降 = 小节格式被改坏，宁可报错也不放行 */
+/** 冻结例外解析阈值：§3 现有 3 个 step 词根例外，解析数骤降 = 小节格式被改坏，宁可报错也不放行 */
 const MIN_FROZEN = 3;
 
 /** 每个载体最多留几个命中文件样本（够定位即可，避免报表被单文件刷屏） */
@@ -199,6 +209,7 @@ function walk(dir: string): void {
     if (!SCAN_EXTS.has(extname(ent.name))) continue;
     // 相对路径统一为正斜杠（Windows 下 path.relative 给反斜杠，会污染样本展示）
     const rel = relative(ROOT, abs).split('\\').join('/');
+    if (rel === SELF_REL) continue; // 不扫自己（否则 BASELINE 字面量自续命 → 消失检测失效）
     // 文件名与目录名本身也是载体（如 `step-atomic-persistence.md`），故对路径再跑一遍抽取
     collect(rel, rel);
     let text: string;
@@ -353,12 +364,9 @@ const BASELINE: readonly string[] = [
   'step-end',
   'step-pending-2',
   'step1',
-  'step1Host',
   'step2',
-  'step2Host',
   'step4',
   'step5',
-  'stepBoundariesSeen',
   'stepBoundary',
   'stepBucket',
   'stepBudget',
@@ -370,7 +378,6 @@ const BASELINE: readonly string[] = [
   'step_boundary',
   'step_id',
   'steps',
-  'stepsRaw',
   'term-unify-turn-step-loop',
   'toolStepLimit',
   'updatePlanStepStatus',

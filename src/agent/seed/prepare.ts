@@ -52,7 +52,7 @@ export class SeedPrepare {
     // 每次回答前先清临时 system 消息（技能/最近对话 prompt 是当轮注入，不跨轮累积）
     loop.cleanTemporarySystemMessages();
 
-    // 会议机制：读取当前 active 步骤声明的 rolePack，按本轮表层装配刷新前缀（范围校验 + 回落）
+    // 会议机制：读取当前 active 任务项声明的 rolePack，按本轮表层装配刷新前缀（范围校验 + 回落）
     const checkpoint = sessionManager?.getCheckpoint();
     const activePlanItem = checkpoint?.plan.find((s) => s.status === 'active');
     refreshAssemblyForRolePack(this.deps, activePlanItem?.rolePack);
@@ -67,7 +67,7 @@ export class SeedPrepare {
     // 与 buildTeamContextBlock 文案互补：骨架补首轮确定性（顶部任务板可见 + PlanItem.rolePack 装配钩子），
     // 文案约束 LLM 后续推进走 task_table 单通道。守卫语义：
     //   已有未完成计划（pending/active 存在）→ 跳过骨架预置 = 续会语义：第二轮「继续小组会议」等输入
-    //   交给 LLM 按既有任务表推进，不再重开/叠加会议步骤；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
+    //   交给 LLM 按既有任务表推进，不再重开/叠加会议任务项；无在途计划时的「小组会议」输入 = 新会议 → overwrite 预置。
     //   重开已推进会议需显式手段（宿主清空任务表 / LLM task_table_write），非自然语言自动触发。
     // 在途判定经 SessionManager.hasInflightPlan 单点（SSOT）：与 loop 侧「已有在途任务表则跳过
     // nudge」共用同一命题口径，禁此处再内联谓词另起一份判定。
@@ -122,9 +122,9 @@ export class SeedPrepare {
  * 会议机制：按给定任务项 rolePack 刷新本轮表层装配视角。
  *
  * 装配逻辑单一真理源。两个调用入口共用本函数，避免双写：
- *   - prepare.run（turn 开头：按首个 active step 的 rolePack 设一次）
+ *   - prepare.run（turn 开头：按首个 active 任务项的 rolePack 设一次）
  *   - 任务表每轮注入（assembler.getTaskTable → hooks.applyActivePlanItemAssembly → agent.applyActivePlanItemAssemblyIfChanged，
- *     随 active step 推进逐步换角色，防重见 agent 实现）
+ *     随 active 任务项推进逐项换角色，防重见 agent 实现）
  * 内部动作：
  *   - resolveRoundAssemblyRole：范围校验（∈ 组长∪组员，越界/缺员→null+warning，防 LLM 幻觉角色名）
  *   - setRoundAssemblyRole：skills 加载跟随装配视角

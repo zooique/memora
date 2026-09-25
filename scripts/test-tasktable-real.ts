@@ -9,11 +9,11 @@
  *   确定性化：检测用户输入命中 needsPlanning → 首迭代注入命令式强引导 nudge，推高 LLM 建表决策概率。
  *
  * 本脚本实证目标（非完整宿主装配，聚焦观测，直接复用 loop 的可写装配回调）：
- *   给真实 LLM 一个"强命令多步任务"，观察它是否决策调用 task_table_write 并分步推进 active 步骤。
+ *   给真实 LLM 一个"强命令多步任务"，观察它是否决策调用 task_table_write 并逐项推进 active 任务项。
  *   loop 在 toolCalls 遍历时（loop.ts L1482-1483）仅凭调用名即累计 taskTableWriteCount，
- *   且 getActivePlanItemMeta 返回 active 步骤变化即产 plan_item_boundary（loop.ts L1005-1017），
+ *   且 getActivePlanItemMeta 返回 active 任务项变化即产 plan_item_boundary（loop.ts L1005-1017），
  *   因此注入最小 getActivePlanItemMeta/getTaskTable、无需 sessionManager 完整集成，
- *   即可既实证"LLM 是否愿意建表"，又实证"plan_item_boundary 是否随步骤推进产出"。
+ *   即可既实证"LLM 是否愿意建表"，又实证"plan_item_boundary 是否随任务项推进产出"。
  *
  * 注意：
  *   - getActivePlanItemMeta/getTaskTable 为 loop 实例可写字段，构造后直赋（对齐 assembler.ts 装配模式）。
@@ -31,7 +31,7 @@ import type { AgentMetrics } from '../src/agent/tracer.js';
 // 简易任务表内存态（仅支撑工具返回可读结果，非会话集成）
 // ═══════════════════════════════════════════════════════════════
 
-/** 一条模拟计划步骤 */
+/** 一条模拟计划任务项 */
 interface MockPlanItem {
   id: string; // 8 位短 id（模拟 task_table_write 返回格式）
   description: string;
@@ -47,9 +47,9 @@ function shortId(): string {
 }
 
 /**
- * 推进 active 步骤（模拟 sessionManager.ensureActivePlanItem 的"恰好一个 active"自维护）。
- * 找到第一个非 done/blocked 的步骤置 active；每步推进会让 getActivePlanItemMeta 的 planItemId 变化，
- * 供 loop 识别"active 步骤已推进"并产出 plan_item_boundary 事件（实证 plan_item_boundary 计数）。
+ * 推进 active 任务项（模拟 sessionManager.ensureActivePlanItem 的"恰好一个 active"自维护）。
+ * 找到第一个非 done/blocked 的任务项置 active；每次推进会让 getActivePlanItemMeta 的 planItemId 变化，
+ * 供 loop 识别"active 任务项已推进"并产出 plan_item_boundary 事件（实证 plan_item_boundary 计数）。
  */
 function advanceActive(): void {
   const firstOpen = mockPlan.find((s) => s.status === 'pending');
@@ -64,7 +64,7 @@ function renderPlan(): string {
   const rows = mockPlan
     .map((s, i) => `| ${i + 1} | [${s.id}] | ${s.description} | ${s.status} |`)
     .join('\n');
-  return `| # | 步骤ID | 描述 | 状态 |\n|---|--------|------|------|\n${rows}`;
+  return `| # | 任务项ID | 描述 | 状态 |\n|---|--------|------|------|\n${rows}`;
 }
 
 /**
@@ -85,9 +85,9 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
   switch (name) {
     case 'task_table_write': {
       const mode = String(args.mode ?? 'overwrite');
-      const steps = (args.steps as Array<{ description?: string; rolePack?: string }> | undefined) ?? [];
+      const items = (args.items as Array<{ description?: string; rolePack?: string }> | undefined) ?? [];
       if (mode === 'overwrite') mockPlan.length = 0; // 清空后重建
-      for (const s of steps) {
+      for (const s of items) {
         mockPlan.push({
           id: shortId(),
           description: String(s.description ?? '(未命名任务项)'),
@@ -102,7 +102,7 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
     }
     case 'task_table_update': {
       const status = String(args.status ?? 'done');
-      const planItemId = String(args.step_id ?? '');
+      const planItemId = String(args.plan_item_id ?? '');
       // 简化寻址：支持行首序号（1-based）或短 id 前缀匹配
       const idx = /^\d+$/.test(planItemId) ? Number(planItemId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(planItemId));
       const item = mockPlan[idx];
@@ -176,7 +176,7 @@ async function main(): Promise<void> {
     maxIterations: 8,
   });
   // 装配 plan_item_boundary 实证所需的两个可写回调（对齐 assembler.ts 装配模式）：
-  // getActivePlanItemMeta 返回当前 active 步骤元信息，loop 据此对比演进并产 plan_item_boundary 事件。
+  // getActivePlanItemMeta 返回当前 active 任务项元信息，loop 据此对比演进并产 plan_item_boundary 事件。
   loop.getActivePlanItemMeta = () => {
     const active = mockPlan.find((s) => s.status === 'active');
     return active ? { planItemId: active.id, title: active.description } : null;
@@ -198,7 +198,7 @@ async function main(): Promise<void> {
   console.log('  🤖 助手流式回复：\n');
   const start = Date.now();
   const toolCallsSeen: string[] = [];
-  const stepBoundariesSeen: string[] = [];
+  const planItemBoundariesSeen: string[] = [];
   for await (const chunk of loop.processUserInput(input)) {
     if (chunk.type === 'text') {
       response += chunk.content;
@@ -206,7 +206,7 @@ async function main(): Promise<void> {
     } else if (chunk.type === 'tool_start') {
       toolCallsSeen.push(chunk.name);
     } else if (chunk.type === 'plan_item_boundary') {
-      stepBoundariesSeen.push(chunk.planItemId ?? '');
+      planItemBoundariesSeen.push(chunk.planItemId ?? '');
     }
   }
   const duration = Date.now() - start;
@@ -217,7 +217,7 @@ async function main(): Promise<void> {
   const metrics = loop.getMetrics();
   printPlanMetrics(metrics);
   console.log(`  🤖 LLM 实际发起的工具调用序列: ${toolCallsSeen.join(' → ') || '(无工具调用)'}`);
-  console.log(`  🚧 产出的 plan_item_boundary 事件: ${stepBoundariesSeen.length} 个 ${stepBoundariesSeen.length ? `（${stepBoundariesSeen.join(' → ')}）` : ''}`);
+  console.log(`  🚧 产出的 plan_item_boundary 事件: ${planItemBoundariesSeen.length} 个 ${planItemBoundariesSeen.length ? `（${planItemBoundariesSeen.join(' → ')}）` : ''}`);
   assert(response.length > 0, `有文本回复（${response.length} 字符）`);
 
   // 结论 1：taskTableWriteCount > 0 即证明确定性触发让任务表从未触发变为被真实 LLM 决策触发
@@ -226,7 +226,7 @@ async function main(): Promise<void> {
   } else {
     console.log('⚠️  实证1 未触发：taskTableWriteCount = 0。建议检查 needsPlanning 判定是否命中，或 nudge 文案强度。');
   }
-  // 结论 2：注入 getActivePlanItemMeta 后，active 步骤随 update 推进应产出 plan_item_boundary（plan_item_boundary_count 与思考折叠联动）
+  // 结论 2：注入 getActivePlanItemMeta 后，active 任务项随 update 推进应产出 plan_item_boundary（plan_item_boundary_count 与思考折叠联动）
   if (metrics.plan.planItemBoundaryCount > 0) {
     console.log(`🎉 实证2 通过：plan_item_boundary 产出 ${metrics.plan.planItemBoundaryCount} 次，任务表驱动布局骨血（思考折叠/进度看板）已苏醒。`);
   } else {

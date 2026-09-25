@@ -272,7 +272,7 @@ describe('taskTableRenderer — 边界场景', () => {
     ];
     const result = renderTaskTable(plan);
 
-    // 行首序号为 order+1：LLM 据序号即可定位任务项（task_table_update step_id="1" = 第一个任务项）
+    // 行首序号为 order+1：LLM 据序号即可定位任务项（task_table_update plan_item_id="1" = 第一个任务项）
     // 断言「行首序号」这一业务不变量，不锁定空格填充等排版细节（padEnd 宽度是排版细节，非契约）
     const seqs = result
       .split('\n')
@@ -290,7 +290,7 @@ describe('taskTableRenderer — 边界场景', () => {
       createPlanItem(2, '方案设计师汇总', 'pending', 's3'),
     ];
     const result = renderTaskTable(plan);
-    // 行首序号为 1/2/3，与「step_id 传行首序号」契约一致（LLM 无需感知 uuid s1/s2/s3）
+    // 行首序号为 1/2/3，与「plan_item_id 传行首序号」契约一致（LLM 无需感知 uuid s1/s2/s3）
     const lines = result.split('\n');
     const planItemLine1 = lines.find((l) => l.includes('文档设计师发言'))!;
     const planItemLine3 = lines.find((l) => l.includes('方案设计师汇总'))!;

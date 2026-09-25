@@ -561,7 +561,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           type: 'string',
           description: '写入模式："overwrite"（清空后重写全部任务项）、"append"（追加新任务项）、"update"（替换，保留任务项 ID 与状态）',
         },
-        steps: {
+        items: {
           type: 'array',
           description: '任务项列表，每个任务项包含 description 字段，可选项 rolePack（会议表层装配角色，须 ∈ {组长} ∪ {组员}）',
           items: {
@@ -577,24 +577,24 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
           },
         },
       },
-      required: ['mode', 'steps'],
+      required: ['mode', 'items'],
     },
   },
   {
     name: 'task_table_update',
     description:
-      '更新任务表中指定任务项的状态（命令式：一次只更新一个任务项）。将 step_id 对应的任务项标记为 done（已完成）或 blocked（已阻塞）。' +
+      '更新任务表中指定任务项的状态（命令式：一次只更新一个任务项）。将 plan_item_id 对应的任务项标记为 done（已完成）或 blocked（已阻塞）。' +
         '每完成一个任务项调用一次本工具标记，只有最后一个任务项完成后才宣告任务完成，禁止一次性批量标记所有任务项。' +
         '顺序纪律：调用本工具标记 done 前，必须已完成该任务项的实际产出（正文回答/写入文件/工具结果）——先产出、后标记；' +
         '禁止先标记 done 再补产出（标记后该任务项即视为完成，之后的内容会错归下一个任务项）。' +
-        'step_id 传任务表行首序号（1 开始，如 "1" = 第一个任务项）即可定位；或传 task_table_write 返回的任务项短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
+        'plan_item_id 传任务表行首序号（1 开始，如 "1" = 第一个任务项）即可定位；或传 task_table_write 返回的任务项短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
       properties: {
-        step_id: { type: 'string', description: '任务项定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
+        plan_item_id: { type: 'string', description: '任务项定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
         status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
       },
-      required: ['step_id', 'status'],
+      required: ['plan_item_id', 'status'],
     },
   },
   // ── 渐进披露：角色包内嵌技能按需装载 ──────────────

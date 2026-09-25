@@ -65,5 +65,5 @@ export function detectNeedsPlanning(text: string): boolean {
  * 语气是命令式而非建议式（对齐 Claude Code「必须维护任务表」引导强度）；且仅首迭代一次、不污染后续轮。
  */
 export const PLAN_NUDGE_PROMPT = `## 任务表强制提示（本任务需多步推进）
-这是一个多步任务：必须先用 task_table_write 将任务拆解为子步骤写入任务表，再按任务表逐步推进并逐项标记状态，禁止跳过拆解一次性盲目执行。
+这是一个多步任务：必须先用 task_table_write 将任务拆解为任务项写入任务表，再按任务表逐项推进并逐项标记状态，禁止跳过拆解一次性盲目执行。
 （任务表的具体操作与状态标记方法见 task_table_write / task_table_update 的工具描述。）`;

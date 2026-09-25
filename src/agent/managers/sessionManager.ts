@@ -730,10 +730,10 @@ export class SessionManager {
    */
   writePlan(
     mode: 'overwrite' | 'append' | 'update',
-    steps: Array<{ description: string; rolePack?: string }>,
+    items: Array<{ description: string; rolePack?: string }>,
   ): PlanItem[] {
     // 写点自愈：checkpoint 未就绪时先创建（任务表写点 = 任务上下文就绪点）。
-    // 若静默 return [] 会让 LLM 收到 ok:true + 0 步 → 伪成功 → 反复重写（实测 6 次）。
+    // 若静默 return [] 会让 LLM 收到 ok:true + 0 个任务项 → 伪成功 → 反复重写（实测 6 次）。
     // 不改变已有 checkpoint 时的行为（仅补前置就绪）；约会骨架（SeedPrepare 内 writePlan('overwrite')）与普通 task_table_write 同路径生效。
     const cp = this.checkpoint ?? this.createCheckpoint();
     const existingPlan = cp.plan;
@@ -742,11 +742,11 @@ export class SessionManager {
       if (mode === 'overwrite') {
         cp.plan = [];
       }
-      for (const step of steps) {
-        this.appendPlanItem(step.description, step.rolePack);
+      for (const item of items) {
+        this.appendPlanItem(item.description, item.rolePack);
       }
     } else if (mode === 'update') {
-      const updatedPlan = steps.map((s, i) => {
+      const updatedPlan = items.map((s, i) => {
         const existing = existingPlan[i];
         return existing
           ? { ...existing, description: s.description }
@@ -760,7 +760,7 @@ export class SessionManager {
       });
       this.updatePlan(updatedPlan);
     }
-    // 确保新写入/追加/更新后的 plan 有 active step（overwrite 清空后全 pending → 激活第一个）
+    // 确保新写入/追加/更新后的 plan 有 active 任务项（overwrite 清空后全 pending → 激活第一个）
     this.ensureActivePlanItem();
     return cp.plan;
   }
@@ -783,7 +783,7 @@ export class SessionManager {
   }
 
   /**
-   * 确保 plan 中存在且仅存在一个 active step（SSOT 自维护）。
+   * 确保 plan 中存在且仅存在一个 active 任务项（SSOT 自维护）。
    *
    * 三种场景会触发补偿：
    * 1. 全 pending，无 active → 激活第一个 pending（plan 刚写入时）
@@ -797,7 +797,7 @@ export class SessionManager {
     const plan = this.checkpoint.plan;
     if (plan.length === 0) return;
 
-    // 已有 active step → 什么都不做。
+    // 已有 active 任务项 → 什么都不做。
     // 注：如果多 active 同时存在 → 脏数据（历史 checkpoint 迁移/外部旁路写可能产生）；
     // 此处不修、只保单调一，上层单一写点（writePlan + updatePlanItemStatus）契约保证不会产生多 active。
     const hasActive = plan.some((s) => s.status === 'active');
@@ -812,7 +812,7 @@ export class SessionManager {
   }
 
   /**
-   * 是否存在「在途计划」= 有未完成步骤（pending 或 active）。
+   * 是否存在「在途计划」= 有未完成任务项（pending 或 active）。
    *
    * SSOT：全库该命题唯一实现。消费方三处——会议骨架预置守卫（prepare，判断续会不重开）、
    * 任务表 nudge 跳过（loop，已有在途表则不再诱导建表）、canContinueWithoutInput（agent，
@@ -820,7 +820,7 @@ export class SessionManager {
    *
    * 口径取 pending||active（非仅 active）：与 ensureActivePlanItem 的补偿语义对齐——
    * plan 非空时恒有一个 active（见 :826 场景 1/2），全 done/blocked 时无 active（场景 3），
-   * 两种判法在「有未完成步」上等价，但本口径直接表达「未完成」而非「借 active 存在性」。
+   * 两种判法在「有未完成任务项」上等价，但本口径直接表达「未完成」而非「借 active 存在性」。
    */
   hasInflightPlan(): boolean {
     return (this.checkpoint?.plan ?? []).some(
@@ -828,14 +828,14 @@ export class SessionManager {
     );
   }
 
-  /** 完成一个 step（显式完成原语）：单函数内顺序写步骤状态 + planItemLog + heartbeat 保证原子性。
+  /** 完成一个任务项（显式完成原语）：单函数内顺序写任务项状态 + planItemLog + heartbeat 保证原子性。
    *  消费方 = turn 收尾兜底 concludeActivePlanItemIfPlanFullyReached（LLM 未显式 task_table_update
-   *  的最后一步补标）；迭代边界 onPlanItemBoundary 只走 logPlanItemBoundary 写日志，
+   *  的最后一个任务项补标）；迭代边界 onPlanItemBoundary 只走 logPlanItemBoundary 写日志，
    *  不经本方法推进。 */
   completePlanItem(options: { planItemId?: string; summary: string }): void {
     if (!this.checkpoint) return;
 
-    // 标记步骤状态（经 updatePlanItemStatus 单一写点，避免旁路契约）
+    // 标记任务项状态（经 updatePlanItemStatus 单一写点，避免旁路契约）
     const { planItemId, summary } = options;
     if (planItemId) {
       this.updatePlanItemStatus(planItemId, 'done');
@@ -859,8 +859,8 @@ export class SessionManager {
 
   /**
    * 兜底收尾（「LLM 未显式 update 即收尾」）：turn 正常完成且计划已「全部到达」——
-   * 存在 active step 且无 pending step（LLM 已显式完成所有更早步骤、当前步为最后到达的一步）——
-   * 时闭合该 active 步（completePlanItem：标 done + planItemLog）。LLM 忘标最后一步时由本兜底补上，
+   * 存在 active 任务项且无 pending 任务项（LLM 已显式完成所有更早任务项、当前项为最后到达的一项）——
+   * 时闭合该 active 任务项（completePlanItem：标 done + planItemLog）。LLM 忘标最后一个任务项时由本兜底补上，
    * 使计划达到全 done（任务表 turn 内收敛，turn 结束兜底清理）；真实多轮任务（有 pending）不受影响。
    * 触发点 = seed/orchestrator.act 正常收尾分支（非暂停/中断/失败）。
    */
@@ -868,7 +868,7 @@ export class SessionManager {
     if (!this.checkpoint) return;
     const plan = this.checkpoint.plan;
     if (plan.length === 0) return;
-    // 仍有 pending = 后续步未到达 → 真实多轮可续跑语义，不闭合
+    // 仍有 pending = 后续任务项未到达 → 真实多轮可续跑语义，不闭合
     if (plan.some((s) => s.status === 'pending')) return;
     const active = plan.find((s) => s.status === 'active');
     if (!active) return;
@@ -944,7 +944,7 @@ export class SessionManager {
     return this.checkpoint.plan.find((s) => s.status === 'pending') ?? null;
   }
 
-  /** 获取当前 active 步骤 */
+  /** 获取当前 active 任务项 */
   getActivePlanItem(): PlanItem | null {
     if (!this.checkpoint) return null;
     return this.checkpoint.plan.find((s) => s.status === 'active') ?? null;

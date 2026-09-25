@@ -345,7 +345,7 @@ interface CustomToolEntry {
   handler: ToolHandler;
 }
 
-/** step_id 寻址解析结果（ok = 已解析为真实步骤 uuid；fail = 错误文案直接回 LLM） */
+/** plan_item_id 寻址解析结果（ok = 已解析为真实任务项 uuid；fail = 错误文案直接回 LLM） */
 type PlanItemIdResolve = { ok: true; id: string } | { ok: false; error: string };
 
 /** resolvePlanItemId 所需的 plan 投影（只读形状，不依赖完整 PlanItem） */
@@ -355,9 +355,9 @@ interface PlanItemIdPlanRef {
 }
 
 /**
- * 解析 task_table_update 的 step_id 为真实步骤 uuid（唯一解析点）。
+ * 解析 task_table_update 的 plan_item_id 为真实任务项 uuid（唯一解析点）。
  *
- * LLM 可见的步骤标识有三种来源，缺一不可达即断链：
+ * LLM 可见的任务项标识有三种来源，缺一不可达即断链：
  *   1. task_table_write 返回的短 id（uuid 前 8 位，恒 8 hex；见 assembler writePlan 渲染）；
  *   2. 任务表 renderer 的行首序号（1-based，渲染形如「3. 描述 [状态]」）；
  *   3. 完整 uuid（planItemLog 等展示）。
@@ -516,7 +516,7 @@ export class ToolExecutor {
   planManager?: {
     writePlan: (
       mode: 'overwrite' | 'append' | 'update',
-      steps: Array<{ description: string; rolePack?: string }>,
+      items: Array<{ description: string; rolePack?: string }>,
     ) => string;
     updatePlanItem: (planItemId: string, status: 'done' | 'blocked') => string;
     getPlan: () => Array<{ id: string; description: string; status: string; order: number; rolePack?: string }>;
@@ -1165,7 +1165,7 @@ export class ToolExecutor {
         return formatProjectFileSearch(fileSearch, nameQuery);
       }
       case 'task_table_write': {
-        // 写入任务表（overwrite / append / update）；steps 每项可选 rolePack（会议表层装配角色）
+        // 写入任务表（overwrite / append / update）；items 每项可选 rolePack（会议表层装配角色）
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
@@ -1173,27 +1173,27 @@ export class ToolExecutor {
         if (writeMode !== 'overwrite' && writeMode !== 'append' && writeMode !== 'update') {
           return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/update`;
         }
-        const stepsRaw = args.steps;
-        const steps = Array.isArray(stepsRaw)
-          ? (stepsRaw as Array<{ description: string; rolePack?: string }>).map((s) => ({
+        const itemsRaw = args.items;
+        const items = Array.isArray(itemsRaw)
+          ? (itemsRaw as Array<{ description: string; rolePack?: string }>).map((s) => ({
               description: String(s?.description ?? ''),
               // rolePack 可选：仅接受非空字符串；范围校验在 prepare 期（越界忽略 + warning）
               ...(s?.rolePack && typeof s.rolePack === 'string' ? { rolePack: s.rolePack } : {}),
             }))
           : [];
-        if (steps.length === 0 || steps.some((s) => s.description.trim() === '')) {
-          return '[ERR:INVALID_ARG] steps 参数不能为空，且每项须含非空 description';
+        if (items.length === 0 || items.some((s) => s.description.trim() === '')) {
+          return '[ERR:INVALID_ARG] items 参数不能为空，且每项须含非空 description';
         }
-        return this.planManager.writePlan(writeMode, steps);
+        return this.planManager.writePlan(writeMode, items);
       }
       case 'task_table_update': {
         // 更新任务状态
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
-        const planItemId = strArg('step_id');
+        const planItemId = strArg('plan_item_id');
         if (!planItemId) {
-          return '[ERR:INVALID_ARG] step_id 不能为空';
+          return '[ERR:INVALID_ARG] plan_item_id 不能为空';
         }
         // 寻址统一解析（见 resolvePlanItemId）：renderer 只向 LLM 展示行首序号（1-based），
         // task_table_write 返回 uuid 前 8 位短 id，planItemLog 展示完整 uuid——三种来源全部归一为真实 uuid 后

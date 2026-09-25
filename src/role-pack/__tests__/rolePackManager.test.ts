@@ -772,21 +772,21 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     });
 
     describe('tryBuildMeetingPlan：骨架预置（最小受控起点半反转）', () => {
-      it('组长 + 「小组会议」→ 组长开场步 + 组员各一步(带 rolePack) + 汇总步(无 rolePack)', async () => {
+      it('组长 + 「小组会议」→ 组长开场项 + 组员各一项(带 rolePack) + 汇总项(无 rolePack)', async () => {
         await writeTeamPacks();
         const manager = new RolePackManager(dir);
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1', '组员2'] }]);
         await manager.load('组长A');
-        const steps = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
-        expect(steps).not.toBeNull();
-        // 组长开场步：无 rolePack = 默认组长视角（主持引入议题）
-        expect(steps![0]).toEqual({ description: '组长A 主持开场：讨论叙事平台' });
-        // 组员各一步，rolePack = 成员（触发表层装配硬切换）
-        expect(steps![1]).toEqual({ description: '组员1 发言：讨论叙事平台', rolePack: '组员1' });
-        expect(steps![2]).toEqual({ description: '组员2 发言：讨论叙事平台', rolePack: '组员2' });
-        // 末步汇总，无 rolePack（组长视角收尾）
-        expect(steps![3]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
-        expect(steps).toHaveLength(4);
+        const items = manager.tryBuildMeetingPlan('小组会议：讨论叙事平台');
+        expect(items).not.toBeNull();
+        // 组长开场项：无 rolePack = 默认组长视角（主持引入议题）
+        expect(items![0]).toEqual({ description: '组长A 主持开场：讨论叙事平台' });
+        // 组员各一项，rolePack = 成员（触发表层装配硬切换）
+        expect(items![1]).toEqual({ description: '组员1 发言：讨论叙事平台', rolePack: '组员1' });
+        expect(items![2]).toEqual({ description: '组员2 发言：讨论叙事平台', rolePack: '组员2' });
+        // 末项汇总，无 rolePack（组长视角收尾）
+        expect(items![3]).toEqual({ description: '汇总各方观点：讨论叙事平台' });
+        expect(items).toHaveLength(4);
       });
 
       it('无「小组会议」keyword → null（回落普通闭环）', async () => {
@@ -805,15 +805,15 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
         expect(manager.tryBuildMeetingPlan('小组会议：讨论xxx')).toBeNull();
       });
 
-      it('主题可缺省（仅「小组会议」）→ 步骤不带主题后缀', async () => {
+      it('主题可缺省（仅「小组会议」）→ 任务项不带主题后缀', async () => {
         await writeTeamPacks();
         const manager = new RolePackManager(dir);
         manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
         await manager.load('组长A');
-        const steps = manager.tryBuildMeetingPlan('小组会议');
-        expect(steps![0]).toEqual({ description: '组长A 主持开场' });
-        expect(steps![1]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
-        expect(steps![2]).toEqual({ description: '汇总各方观点' });
+        const items = manager.tryBuildMeetingPlan('小组会议');
+        expect(items![0]).toEqual({ description: '组长A 主持开场' });
+        expect(items![1]).toEqual({ description: '组员1 发言', rolePack: '组员1' });
+        expect(items![2]).toEqual({ description: '汇总各方观点' });
       });
     });
 

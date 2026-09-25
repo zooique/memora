@@ -1450,7 +1450,7 @@ describe('工具执行器（6 个工具）', () => {
   });
 
   describe('task_table_update（寻址契约：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
-    /** 默认三步骤桩（id 前缀各异，8 位短 id 可唯一命中） */
+    /** 默认三任务项桩（id 前缀各异，8 位短 id 可唯一命中） */
     const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> = [
       { id: 'a1b2c3d4-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
       { id: 'e5f6a7b8-step-2', description: '小说助手发言', status: 'pending', order: 1 },
@@ -1473,16 +1473,16 @@ describe('工具执行器（6 个工具）', () => {
       return { updateCalls };
     }
 
-    it('step_id 传行首序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
+    it('plan_item_id 传行首序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '1', status: 'done' }));
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '1', status: 'done' }));
       expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
       expect(result).toContain('已更新');
     });
 
-    it('step_id 传第 3 步序号 → 解析到 order=2 的 id（1-based 寻址）', async () => {
+    it('plan_item_id 传第 3 个行首序号 → 解析到 order=2 的 id（1-based 寻址）', async () => {
       const { updateCalls } = injectPlanManager();
-      await executor.execute('task_table_update', JSON.stringify({ step_id: '3', status: 'blocked' }));
+      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '3', status: 'blocked' }));
       expect(updateCalls).toEqual(['c9d0e1f2-step-3']);
     });
 
@@ -1492,80 +1492,80 @@ describe('工具执行器（6 个工具）', () => {
         { id: 'e5f6a7b8-step-2', description: 'B', status: 'pending', order: 0 },
         { id: 'c9d0e1f2-step-3', description: 'C', status: 'pending', order: 1 },
       ]);
-      await executor.execute('task_table_update', JSON.stringify({ step_id: '1', status: 'done' }));
+      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '1', status: 'done' }));
       // #1 = order 0 = e5f6a7b8-step-2（若按数组位解析会错误命中 a1b2c3d4-step-1）
       expect(updateCalls).toEqual(['e5f6a7b8-step-2']);
     });
 
-    it('step_id 传完整 uuid → 全等命中原样使用', async () => {
+    it('plan_item_id 传完整 uuid → 全等命中原样使用', async () => {
       const { updateCalls } = injectPlanManager();
-      await executor.execute('task_table_update', JSON.stringify({ step_id: 'e5f6a7b8-step-2', status: 'done' }));
+      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'e5f6a7b8-step-2', status: 'done' }));
       expect(updateCalls).toEqual(['e5f6a7b8-step-2']);
     });
 
-    it('step_id 传 8 位短 id（task_table_write 返回格式）→ 前缀命中完整 uuid（P0 断链修复）', async () => {
+    it('plan_item_id 传 8 位短 id（task_table_write 返回格式）→ 前缀命中完整 uuid（P0 断链修复）', async () => {
       const { updateCalls } = injectPlanManager();
       // 'a1b2c3d4-step-1' 前 8 位 = 'a1b2c3d4'
-      await executor.execute('task_table_update', JSON.stringify({ step_id: 'a1b2c3d4', status: 'done' }));
+      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'a1b2c3d4', status: 'done' }));
       expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
     });
 
-    it('step_id 8 位纯数字短 id → 按短 id 语义前缀命中，不误判为序号（防 2.3% 全数字错配）', async () => {
+    it('plan_item_id 8 位纯数字短 id → 按短 id 语义前缀命中，不误判为序号（防 2.3% 全数字错配）', async () => {
       const { updateCalls } = injectPlanManager([
         { id: '12345678-abcd-4efg', description: '纯数字前缀步骤', status: 'pending', order: 0 },
         { id: 'e5f6a7b8-step-2', description: 'B', status: 'pending', order: 1 },
       ]);
-      await executor.execute('task_table_update', JSON.stringify({ step_id: '12345678', status: 'done' }));
+      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '12345678', status: 'done' }));
       expect(updateCalls).toEqual(['12345678-abcd-4efg']);
     });
 
-    it('step_id 短 id 前缀多命中 → INVALID_ARG 歧义提示（改用行首序号）', async () => {
+    it('plan_item_id 短 id 前缀多命中 → INVALID_ARG 歧义提示（改用行首序号）', async () => {
       const { updateCalls } = injectPlanManager([
         { id: 'dup-prefix-aaaa', description: 'A', status: 'pending', order: 0 },
         { id: 'dup-prefix-bbbb', description: 'B', status: 'pending', order: 1 },
       ]);
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'dup-pref', status: 'done' }));
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'dup-pref', status: 'done' }));
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(result).toContain('不唯一');
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 8 位短 id 无命中 → PLAN_ITEM_NOT_FOUND（提示改用行首序号）', async () => {
+    it('plan_item_id 8 位短 id 无命中 → PLAN_ITEM_NOT_FOUND（提示改用行首序号）', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'zzzzzzzz', status: 'done' }));
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'zzzzzzzz', status: 'done' }));
       expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 非数字非 8 位乱 id → PLAN_ITEM_NOT_FOUND（提示可用格式）', async () => {
+    it('plan_item_id 非数字非 8 位乱 id → PLAN_ITEM_NOT_FOUND（提示可用格式）', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: 'hackme', status: 'done' }));
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'hackme', status: 'done' }));
       expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 数字越界（超出 plan 长度）→ INVALID_ARG 带范围提示（原静默透传升级）', async () => {
+    it('plan_item_id 数字越界（超出 plan 长度）→ INVALID_ARG 带范围提示（原静默透传升级）', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '99', status: 'done' }));
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '99', status: 'done' }));
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(result).toContain('超出任务表范围');
       expect(result).toContain('共 3 个任务项');
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 传 "0"（0-based 误用）→ INVALID_ARG 带范围提示', async () => {
+    it('plan_item_id 传 "0"（0-based 误用）→ INVALID_ARG 带范围提示', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '0', status: 'done' }));
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '0', status: 'done' }));
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(updateCalls).toEqual([]);
     });
 
-    it('step_id 为空字符串 → [ERR:INVALID_ARG]（实测路径：LLM 传空值的兜底）', async () => {
-      const result = await executor.execute('task_table_update', JSON.stringify({ step_id: '', status: 'done' }));
-      expect(result).toContain('[ERR:INVALID_ARG] step_id 不能为空');
+    it('plan_item_id 为空字符串 → [ERR:INVALID_ARG]（实测路径：LLM 传空值的兜底）', async () => {
+      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '', status: 'done' }));
+      expect(result).toContain('[ERR:INVALID_ARG] plan_item_id 不能为空');
     });
 
-    it('step_id 缺失 → schema 必填校验拦截（工具参数缺失 MemoraError）', async () => {
+    it('plan_item_id 缺失 → schema 必填校验拦截（工具参数缺失 MemoraError）', async () => {
       await expect(executor.execute('task_table_update', JSON.stringify({ status: 'done' }))).rejects.toThrow(
         '工具参数缺失',
       );

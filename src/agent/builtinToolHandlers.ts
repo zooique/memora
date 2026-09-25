@@ -656,7 +656,7 @@ export class BuiltinToolHandlers {
       throw toolError(
         '保留文件名：任务表必须用 task_table_write/task_table_update 管理',
         `write_file 不允许写入 ${basename(absolutePath)}（任务表是内核工具数据，不落盘为文件）`,
-        ['使用 task_table_write 创建/更新任务表', '使用 task_table_update 标记步骤状态'],
+        ['使用 task_table_write 创建/更新任务表', '使用 task_table_update 标记任务项状态'],
         undefined,
         ToolErrorCode.ARGUMENT_ERROR,
       );

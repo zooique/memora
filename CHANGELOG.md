@@ -35,7 +35,7 @@
 - **事件对调**：迭代边界 `iteration_boundary` **归位**为 `step_boundary`；任务表边界 `step_boundary` 改名 **`plan_item_boundary`**
 - **内核标识符**：`PlanStep` → `PlanItem`（连同 `planStepId` → `planItemId` / `getActiveStepMeta` → `getActivePlanItemMeta` / `updatePlanStepStatus` → `updatePlanItemStatus` / `appendPlanStep` → `appendPlanItem` / `completeStep` → `completePlanItem` / `STEP_DESC_MAX_CHARS` → `PLAN_ITEM_DESC_MAX_CHARS`）
 - **宿主标识符 / 协议 / 样式**：`PlanStepDto` → `PlanItemDto`、`currentPlanSteps` → `currentPlanItems`、`insertStepInOrder` → `insertPlanItemInOrder` 等；`plan_update` 消息字段 `steps` → `items`；CSS 类 `.plan-step*` → `.plan-item*`、`.round-block__step*` → `.round-block__plan-item*`；DOM 属性 `data-step` → `data-plan-item`（**仅任务项段**；`data-step-bucket` = thought 按 stepIndex 分桶，属 step 阵营，**不改、也不得改**）；折叠块标题 `step-N` → **「任务项 N」**
-- **不动（硬边界）**：`stepBudget` / `multiStepReasoning` / `toolStepLimit`（角色包策略键 = 对外契约）、`step_id` / `task_table_*`（LLM 可见工具契约）、CSS 关键字 `step-end`、历史档号与本文件旧版本条目
+- **不动（硬边界）**：`stepBudget` / `multiStepReasoning` / `toolStepLimit`（角色包策略键 = 对外契约）、`task_table_*`（工具名，见下条）、CSS 关键字 `step-end`、历史档号与本文件旧版本条目（`step_id` / `steps` 两个**参数名**当时一并保留，已于 Unreleased 内后续条目正名）
 
 > **对内核公共 API 非破坏**：改动集中在内部标识符与宿主协议；`Round.processEvents` / `SessionCheckpoint` 等持久化 schema 未动。**唯一语义变更是事件名 `step_boundary`**（原任务表边界 → 现迭代边界），宿主与内核须同批升级。**不提供兼容层**（测试阶段无外部用户；`.memora/` 为本地桌面数据，重新生成即可）。
 
@@ -47,7 +47,7 @@
 - **错误码正名**：`[ERR:STEP_NOT_FOUND]` → `[ERR:PLAN_ITEM_NOT_FOUND]`（LLM 可见，无外部消费者）
 - **LLM 可见文案与注释**：「步骤」→「任务项」——`builtinTools`（两个任务表工具描述）、`assembler`（任务表回执 / 未完成硬约束 / `updatePlanItem` 回执）、`toolExecutor`（寻址三类错误提示）、`taskTableRenderer`、`sessionManager`、`types.ts`、`scripts/test-tasktable-real.ts`
 - **宿主注释**：`protocol.ts` / `chatView.ts` / `chatStyles.ts` / `chatPanel.ts` 共 33 处「步骤」「步级」→「任务项」「任务项级」（**纯注释，零字符串与标识符变更**）
-- **仍不动（冻结例外）**：`step_id` / `steps` / `task_table_*`（LLM 可见工具契约）、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end`、`data-step-bucket`（thought 按 stepIndex 分桶，属 step 阵营）；`handoffPrompt` 属**同名异义**（角色接手话术，非已废的 Handoff 衔接决策）——已补入术语锚点 §3 冻结例外
+- **仍不动（冻结例外）**：`task_table_*`（工具名）、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end`、`data-step-bucket`（thought 按 stepIndex 分桶，属 step 阵营）；`handoffPrompt` 属**同名异义**（角色接手话术，非已废的 Handoff 衔接决策）——已补入术语锚点 §3 冻结例外（`step_id` / `steps` 两个参数名当时暂留，见下条正名）
 - **fixture 边界**：录制轮次 fixture `realRound-*.ts` 内的「步骤 [xxx]」为**当时真实输出**，不改（改了即伪造证据）
 
 ### Added（术语载体扫描门禁：把「载体清单」机械化）
@@ -57,7 +57,7 @@
 - **新增 `scripts/terminology-carrier-snapshot.ts`**（`npm run terminology:report` 看报表 / `terminology:check` 做门禁，已接入 `ci:local` full 档）：扫全仓抽取 `step` 正名族与 `iteration` / `迭代` / `内循环` 历史别名族的**全部载体**（标识符 / 事件名 / CSS 类 / DOM 属性 / 中文词 / 文件名与目录名），与基线集合比对，有新增或消失即 `exit 1` 并打印可直接粘贴的基线。
 - **不建第二份例外清单**：冻结例外由 `.trae/rules/terminology-anchor-rules.md` §3 表格**解析**得到（解析数不足即报错退出，防「静默返回空集 → 门禁永远绿」）。
 - **只锁集合、不锁次数**：次数会因任意一次注释改动而漂移，门禁天天红必然被绕过；锁集合只对「新词出现 / 旧词消失」报警，语义对错仍由人显式确认（git diff 即审计痕迹）。
-- **扫描范围边界（非逐词豁免）**：排除录制 fixture（`__tests__/fixtures/`，改了即伪造证据）与依赖 / 构建产物 / 工具内部状态。基线 102 个载体。
+- **扫描范围边界（非逐词豁免）**：排除录制 fixture（`__tests__/fixtures/`，改了即伪造证据）与依赖 / 构建产物 / 工具内部状态。基线首版 102 个载体（随后续正名条目更新：见下两条）。
 
 ### Changed（术语载体扫描查出的 src 层三处漏网正名）
 
@@ -65,7 +65,24 @@
 
 - **`perStep` → `perTurn`**（`guardRail.ts` 的 `GuardRailDef.life` / `GuardRail.reset` + 4 处护栏定义、`loop.ts` 调用点、`guardRail.test.ts`）：该 `life` 的归零点在 `resetTurnState`，其原注释亦自称「按闭环累计」——**名字说 step、语义是 turn**，与「step 指任务项」方向相反的同族撞车。`GuardRailDef` 未经 `src/index.ts` 导出、宿主零消费，改动无外部契约影响。
 - **`STEP_LOG_PER_STEP_LIMIT` → `PLAN_ITEM_LOG_PER_ITEM_LIMIT`**（`sessionManager.appendPlanItemLog`，连同其 JSDoc 4 处「step」）：该段全程按 `planItemId` 分组，`step` 在此即任务项（术语锚点 §4.1 红线）。同步测试内局部量 `stepLogLenBefore` → `planItemLogLenBefore`。
-- **仍不动（冻结例外）**：`step_id` / `steps` / `task_table_*`、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end` / `animation-iteration-count`、GitHub Actions 的 `steps`（外部生态词，非本仓术语）、过程文档与台账内的历史记录（`PlanStep` / `getActiveStepMeta` 等旧名属「怎么变过来的」，改写即伪造记录）。
+- **仍不动（冻结例外）**：`task_table_*`（工具名）、`stepBudget` / `multiStepReasoning` / `toolStepLimit`、CSS 关键字 `step-end` / `animation-iteration-count`、GitHub Actions 的 `steps`（外部生态词，非本仓术语）、过程文档与台账内的历史记录（`PlanStep` / `getActiveStepMeta` 等旧名属「怎么变过来的」，改写即伪造记录）（`step_id` / `steps` 两个参数名当时暂留，见下条正名）
+
+### Changed（任务表工具参数正名：`step_id` → `plan_item_id` / `steps` → `items` + 同族 bare「步」收尾）
+
+上三条把正名推到「事件名 / 函数名 / 文案 / 错误码」，仍把两个**工具参数名**留在冻结例外里。3.0.0 未发布 ⇒ 改名零成本；而工具参数名是**每轮都进 LLM 上下文的契约面**，长期占用 `step` 就是持续教坏模型与后来者（术语锚点 §4.1 明文禁止用 `step` 表任务表语义）。本轮把它降级为**历史别名**，并顺手扫掉同族漏网的第三种形态——bare「步」（前几轮只认「步骤 / 步级」两词，`某步` / `逐步` / `该步` / `active 步` 全在网外）。
+
+- **工具参数正名**：`task_table_update` 寻址参数 `step_id` → **`plan_item_id`**；`task_table_write` 列表参数 `steps` → **`items`**。全链同步：内核 `builtinTools`（工具描述 + JSON schema）、`toolExecutor`（寻址解析 + 三类错误文案）、`assembler` / `sessionManager` 的 `writePlan` 形参、`scripts/test-tasktable-real.ts`、宿主 `chatView.test.ts`
+- **术语锚点同步**：§2 任务表阵营新增「任务表工具参数」行（`plan_item_id` / `items`）；§3 **删除 `step_id` 条目**（冻结例外收敛为 3 个 `stepBudget` 词根键 + `handoffPrompt` 同名异义）；§4.1 明列「含**工具参数名**」；§6 新增历史别名行——旧名只可用于读懂历史记录
+- **内核注释同族收尾（bare「步」形态）**：`assembler`（会议逐项切换 / 任务项边界回调 / 末项兜底）、`agent`（turn 收尾清空 / 可续跑判据 / 装配视角日志）、`loop`（任务项日志回调 / 在途判定注释 / 会议轮判据）、`sessionManager`（`ensureActivePlanItem` / `hasInflightPlan` / `completePlanItem` / `concludeActivePlanItemIfPlanFullyReached` / `getActivePlanItem` 的 JSDoc 与内联注释）、`orchestrator`（续跑对称刷新 / 兜底收尾）、`prepare`（会议骨架守卫 + 装配入口说明）、`rolePackManager`（会议组上下文文案注释）、`types`（`plan_item_boundary` / `plan` / `planItemLog` 字段注释）、`taskTableRenderer`（收尾验证 nudge 注释与**文案正文**）、`builtinToolHandlers`（保留文件名错误的建议条）、`needsPlanning`（`PLAN_NUDGE_PROMPT` 正文）
+- **活跃架构文档**：`docs/architecture/role-pack-exclusivity-relocation.md` 全篇把任务项称「步」的表述正名（含 §4.3 装配驱动点、§4.5 会议执行流、S5 行的 2026-08-29 补强注记、`task_table_write` 参数示例 `steps` → `items`）；§6.3 的「实施步骤 S0→S8 / | 步 |」属**通用程序步骤**（第三种语义），不动
+- **边界（不改）**：测试样本数据字面量（`description: '步骤一'` / `id: 'a1b2c3d4-step-1'`）与录制 fixture 内「步骤 [xxx] 已标记为 done」是**内容而非术语载体**，改即纯 churn 或伪造证据；`step` 本义用法（`stepBudget` / 多步推理 / 工具步 / `data-step-bucket`）与通用程序用词（`needsPlanning` 的用户输入检测词 `多步` / `分步骤`）一并不动
+- **本条作废前三条的「仍不动」表述**：`step_id` / `steps` 曾被列为硬边界或冻结例外，正名后该表述作废；`task_table_*`（工具名）与 `stepBudget` / `multiStepReasoning` / `toolStepLimit` 仍在硬边界内不动
+
+### Fixed（术语载体门禁结构性失效：脚本扫自身致「旧词消失」永不报警）
+
+- **根因**：`scripts/terminology-carrier-snapshot.ts` 的 `walk()` 扫全仓时**包含自身**，而 `BASELINE` 常量里的字面量本身就是 step 族 token ⇒ 基线里的旧词永远被自己续命 ⇒「旧词消失」这条检测**结构性失效**（只报新增、不报消失）。实证：本轮正名后 `terminology:check` 仍报「无漂移（104 个载体）」。
+- **修复**：新增 `SELF_REL` 自排除（本文件是门禁工具＝元数据，不属被纪律的载体对象），并在文件头「明确不扫」清单写明理由；复跑立刻得到真实的 `新增 0 / 消失 4`，删掉那 4 条基线条目后 104 → 100 复绿（`MIN_FROZEN` 仍为 3，与锚点 §3 解析数一致）。⚠️ 本条**刻意不列出那 4 个 token 的字面量**——本文件也在扫描范围内，写出旧名等于把它们重新挂回载体集合，门禁会立刻报「新增 4」。
+- **已知边界（设计使然，非缺陷）**：历史记录（本文件旧条目、`tasks/` 台账、`.trae/documents/` 过程方案）会被扫描且**理应**保留旧名 ⇒ 旧名只要还在记录里被引用，就不会被判为「消失」。集合纪律的重心在**新增报警**（新代码误用旧词根），消失报警只是次级信号。
 
 ### Changed（内核零运行时模块解析：移除 pino 可选 peer 与内核侧文件日志）
 

@@ -102,13 +102,13 @@ const VERIFY_ITEM_PATTERN =
  * 收尾验证提示（Claude Code TodoWrite nudge 同款）
  *
  * LLM 把任务表全部任务项标记 done（宣称任务完成）但列表里没有任何执行性验证任务项时，
- * 返回一段提示文案引导它补一步真实验证（task_table_write append），再收尾。
+ * 返回一段提示文案引导它补一个验证任务项（task_table_write append），再收尾。
  *
- * 触发条件全部确定性：① 计划 ≥3 步（太短不值得打断）；② 全部 done（刚被宣称完成）；
+ * 触发条件全部确定性：① 计划 ≥3 个任务项（太短不值得打断）；② 全部 done（刚被宣称完成）；
  * ③ 无执行性验证任务项。命中返回提示文本，否则返回 null（零打扰）。
  *
- * 挂载点：task_table_update 把最后一步标 done 的成功路径（assembler.updatePlanItem 回调），
- * 作为工具结果附文返回——LLM 必读工具结果，nudge 有生效窗口（它可 append 验证步再执行）。
+ * 挂载点：task_table_update 把最后一个任务项标 done 的成功路径（assembler.updatePlanItem 回调），
+ * 作为工具结果附文返回——LLM 必读工具结果，nudge 有生效窗口（它可 append 验证任务项再执行）。
  *
  * @param plan 更新后的计划任务项列表
  * @returns 命中返回提示文案（含换行前导，便于追加到工具结果）；未命中返回 null
@@ -122,6 +122,6 @@ export function buildCompletionVerifyNudge(
   return (
     '\n（收尾提示：全部任务项已标记完成，但列表中没有执行性验证任务项。' +
     '若尚未实际验证结果——如运行测试、检查产出、复核实现——建议用 task_table_write（append）' +
-    '追加一步验证并执行后再收尾，确认"真的完成"而非"宣称完成"。）'
+    '追加一个验证任务项并执行后再收尾，确认"真的完成"而非"宣称完成"。）'
   );
 }

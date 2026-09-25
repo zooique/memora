@@ -465,7 +465,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
 
       const result = await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: shortId, status: 'blocked' }),
+        JSON.stringify({ plan_item_id: shortId, status: 'blocked' }),
       );
 
       // 若短 id 透传到 updatePlanItemStatus 全等匹配 → PLAN_ITEM_NOT_FOUND（断链）
@@ -485,7 +485,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
 
       const result = await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '1', status: 'done' }),
+        JSON.stringify({ plan_item_id: '1', status: 'done' }),
       );
 
       expect(result).toContain('已标记为 done');
@@ -500,7 +500,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
 
       const result = await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: 'ffffffff', status: 'done' }),
+        JSON.stringify({ plan_item_id: 'ffffffff', status: 'done' }),
       );
 
       expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
@@ -520,16 +520,16 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
       // 前两步标 done（每步 done 后 ensureActivePlanItem 自动补位下一个）
       await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '1', status: 'done' }),
+        JSON.stringify({ plan_item_id: '1', status: 'done' }),
       );
       await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '2', status: 'done' }),
+        JSON.stringify({ plan_item_id: '2', status: 'done' }),
       );
       // 最后一步 done = 宣称完成；无验证步骤 → 命中 nudge
       const finalResult = await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '3', status: 'done' }),
+        JSON.stringify({ plan_item_id: '3', status: 'done' }),
       );
 
       expect(finalResult).toContain('已标记为 done');
@@ -551,15 +551,15 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
 
       await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '1', status: 'done' }),
+        JSON.stringify({ plan_item_id: '1', status: 'done' }),
       );
       await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '2', status: 'done' }),
+        JSON.stringify({ plan_item_id: '2', status: 'done' }),
       );
       const finalResult = await output.toolExec.execute(
         'task_table_update',
-        JSON.stringify({ step_id: '3', status: 'done' }),
+        JSON.stringify({ plan_item_id: '3', status: 'done' }),
       );
 
       expect(finalResult).toContain('已标记为 done');

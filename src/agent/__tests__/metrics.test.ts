@@ -301,7 +301,7 @@ describe('AgentLoop · 任务表观测量', () => {
               type: 'function',
               function: {
                 name: 'task_table_write',
-                arguments: '{"mode":"overwrite","steps":[{"description":"步骤1"},{"description":"步骤2"}]}',
+                arguments: '{"mode":"overwrite","items":[{"description":"任务项1"},{"description":"任务项2"}]}',
               },
             },
           ],

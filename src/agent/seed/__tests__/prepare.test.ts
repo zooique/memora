@@ -85,18 +85,18 @@ describe('SeedPrepare 回答前', () => {
     const { mocks, deps } = createHarness();
     // 无检查点（无在途计划）
     mocks.sessionManager.getCheckpoint.mockReturnValue(null);
-    // 骨架预置：组长开场 + 组员各一步（rolePack）+ 汇总（与 tryBuildMeetingPlan 单入口一致）
-    const steps = [
+    // 骨架预置：组长开场 + 组员各一项（rolePack）+ 汇总（与 tryBuildMeetingPlan 单入口一致）
+    const items = [
       { description: '组长 主持开场：讨论X' },
       { description: '组员1 发言：讨论X', rolePack: '组员1' },
       { description: '汇总各方观点：讨论X' },
     ];
-    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
+    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(items);
 
     await collectGen(new SeedPrepare(deps).run('小组会议：讨论X', new AbortController().signal));
 
     // overwrite 预置（overwrite = 真清空——新会议替换一切旧计划）
-    expect(mocks.sessionManager.writePlan).toHaveBeenCalledWith('overwrite', steps);
+    expect(mocks.sessionManager.writePlan).toHaveBeenCalledWith('overwrite', items);
   });
 
   it('会议机制（骨架预置守卫）：在途计划存在时「小组会议」输入不预置（续会交由 LLM 按任务表推进）', async () => {
@@ -112,16 +112,16 @@ describe('SeedPrepare 回答前', () => {
       ],
     });
     // 即便 tryBuildMeetingPlan 判定可触发（输入含「小组会议」），守卫也必须拦截
-    const steps = [{ description: '组员1 发言', rolePack: '组员1' }];
-    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(steps);
-    // active 步骤（组员1）在名单内 → 范围校验通过
+    const items = [{ description: '组员1 发言', rolePack: '组员1' }];
+    mocks.rolePackManager.tryBuildMeetingPlan.mockReturnValue(items);
+    // active 任务项（组员1）在名单内 → 范围校验通过
     mocks.rolePackManager.resolveRoundAssemblyRole.mockReturnValue('组员1');
 
     await collectGen(new SeedPrepare(deps).run('继续小组会议讨论', new AbortController().signal));
 
     // 不 overwrite（不重开/不叠加）——已有进度不被清空
     expect(mocks.sessionManager.writePlan).not.toHaveBeenCalled();
-    // 视角仍按当前 active 步骤（组员1）装配
+    // 视角仍按当前 active 任务项（组员1）装配
     expect(mocks.rolePackManager.setRoundAssemblyRole).toHaveBeenCalledWith('组员1');
   });
 

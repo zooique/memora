@@ -626,7 +626,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       cleanupExternalSignal();
       // 续跑轮（resumeExecution）是同一 turn 的收尾半程：turn 真正结束 → 与 chat() 同构，
       // 无条件清空任务表（除非再次暂停——pauseMeta 由 loop 在边界重新挂起，guard 保留）。
-      // 必须无条件清：若仅全 done 才清，resume 以非 done 且未重暂停结束（如某步标 blocked
+      // 必须无条件清：若仅全 done 才清，resume 以非 done 且未重暂停结束（如某任务项标 blocked
       // 后收尾）时 plan 残留 → 跨 turn 污染下一个 chat()。
       // 两处 turn-end 清理统一为 clearPlanOnTurnEnd（单一收口点），plan 严格 turn 内、不跨 turn 残留。
       this.clearPlanOnTurnEnd();
@@ -978,7 +978,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
    * turn 结束自动收尾：非暂停态 → 无条件 clearPlan（任务表收紧为 turn 内能力，不跨 turn 残留）。
    *
    * 任务表生命周期 = 单个 turn：LLM 在 turn 内编排并完成任务表；chat() 流退出（turn 真正结束）
-   * 时，无论步骤是否全部标记完成，都清空运行时挂载物（checkpoint.plan 与 planItemLog）。这样：
+   * 时，无论任务项是否全部标记完成，都清空运行时挂载物（checkpoint.plan 与 planItemLog）。这样：
    * ① 宏任务一个 turn 完不成 → 本 turn 结束兜底丢弃，下个 turn 由 LLM 重新规划全新任务表；
    * ② 续跑轮（resumeExecution = ask_user 问答/暂停补充）是同一 turn 的闭环收尾，与 chat() 同构
    * 走本方法——turn 真正结束即无条件清空，chat() 与续跑轮共用本收口点。
@@ -1009,7 +1009,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (this._sessionManager?.status === 'paused') return true;
     // 错误态不展示"继续"：error 态由检查点恢复回填进入，须显式处理（重新开始或 recover），避免点了静默无反应
     if (this._sessionManager?.status === 'error') return false;
-    // 仅 pending/active（可推进）步骤计入"可续跑"——blocked 不续（全 blocked 由 isPlanAllBlocked 拦，
+    // 仅 pending/active（可推进）任务项计入"可续跑"——blocked 不续（全 blocked 由 isPlanAllBlocked 拦，
     // 避免全 blocked 计划按钮可点但 resumeExecution 早退）。判定走 SessionManager.hasInflightPlan
     // 单一真理源（禁内联谓词，SSOT 见 sessionManager.ts hasInflightPlan 注释），与 prepare/loop 同源。
     const hasPendingPlan = this._sessionManager?.hasInflightPlan() ?? false;
@@ -1257,7 +1257,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         // 检查点恢复协议角色契约重注入 → Agent 生命周期（工具暴露面 / loop 前缀刷新）
         applyRolePackToolExposure: () => this.applyRolePackToolExposure(),
         refreshRolePackPrefixOnLoop: () => this.refreshRolePackPrefixOnLoop(),
-        // 会议逐步切换：随 active 任务项刷新本轮装配视角
+        // 会议逐项切换：随 active 任务项刷新本轮装配视角
         applyActivePlanItemAssembly: () => this.applyActivePlanItemAssemblyIfChanged(),
       },
     });
@@ -1405,7 +1405,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     if (candidate === this._rolePackManager?.roundAssemblyPerspective) return;
     this._rolePackManager?.setRoundAssemblyRole(candidate);
     this.refreshRolePackPrefixForRound(candidate);
-    logger.debug({ roundAssemblyRole: candidate }, '会议装配视角随 active step 切换');
+    logger.debug({ roundAssemblyRole: candidate }, '会议装配视角随 active 任务项切换');
   }
 
   /**

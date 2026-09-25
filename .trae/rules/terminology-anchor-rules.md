@@ -23,6 +23,7 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | ---- | ------ | ---- |
 | 任务表一行 | `PlanItem` / `planItem` | 任务条目；UI 显示「**任务项 N**」 |
 | 任务项推进信号 | `plan_item_boundary` | 任务项级边界（**不**叫 step 边界） |
+| 任务表工具参数 | `plan_item_id` / `items` | LLM 可见契约面：`task_table_update` 寻址用 `plan_item_id`、`task_table_write` 列表用 `items`（旧名 `step_id` / `steps`，2026-09-25 改名） |
 | 迭代边界信号 | `step_boundary` | step 级边界（落盘点） |
 
 **判定口诀**：「第几步」= step 阵营；「第几项 / 任务项 N」= planItem 阵营。不可互换，不可同屏用同一个词。
@@ -31,16 +32,14 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 
 | 名字 | 实际含义 | 为何不动 |
 | ---- | -------- | -------- |
-| `step_id`（`task_table_update` 参数） | **任务表行号 / 短 id**（= PlanItem，非 step） | LLM 可见契约面 |
 | `stepBudget` / `multiStepReasoning` / `toolStepLimit` | loop 迭代相关（**属 step 阵营，语义合法**） | v3.0.0 冻结策略键 |
 | `handoffPrompt`（角色包 manifest 字段） | **角色接手话术**（装载角色时预填的开场提示），与已废弃的「Handoff 衔接决策」（turn 出口 wait/loop/end）**同名异义** | 角色包对外契约键（宿主与 schema 消费），改名破坏兼容 |
 
-> `step_id` 是**例外中的例外**：名字带 step 却指任务表，新代码**不得模仿**。
 > `handoffPrompt` 是**同名异义**：其 `handoff` = 英文「交接/接手」，与 §5 废弃的「Handoff 衔接决策」无关；见到它**不得**推论 Handoff 机制复活。
 
 ## 4. 增量纪律（违反即伤）
 
-1. 新增标识符 / 事件名 / CSS 类 / DOM 属性：**不得**用 `step` 表示任务表语义（一律 `planItem`）。
+1. 新增标识符（含**工具参数名**）/ 事件名 / CSS 类 / DOM 属性：**不得**用 `step` 表示任务表语义（一律 `planItem`）。
 2. 新增 UI 文案：**不得再造「第 N 步」**——屏上已有一个「步」属 step 阵营；工具类用「第 N 批」或纯计数（如「读取 3 个文件 · 搜索 2 次」）。
 3. 方案 / 注释 / 台账里的「步骤」，凡指任务表一律写「**任务项**」。
 4. 新术语先自查是否与已有词撞车；无撞车则登记进 §5。
@@ -100,6 +99,7 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | loop（step 编排） | 内循环、迭代循环 |
 | ~~多 turn 任务编排~~ | Loop 编排、外循环（已废） |
 | 气口 | 闭环边界暂停点（旧称 Handoff 出口，已废） |
+| 任务表工具参数 `plan_item_id` / `items` | `step_id` / `steps`（任务表语义的旧参数名，2026-09-25 正名；旧名只可用于读懂历史记录） |
 
 > 代码标识符不改：`runIterationLoop` / `currentIteration` / `AgentLoop` / `Round` 保持原名。别名只用于**阅读理解**，不用于改名。
 

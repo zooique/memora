@@ -331,7 +331,7 @@ export class AgentLoop {
   /** 裁决证据落盘钩子（悬案取证轨）：空响应兜底 / 台账替身回显写点产个案证据时回调，
    *  由装配层接 history.appendEvidence 归属当前闭环轮随 Round 持久化。未注入静默忽略。 */
   appendRoundEvidence?: (ev: RoundEvidenceEvent) => void;
-  /** 在途任务表判定回调：本 turn 是否已有未完成的计划步骤（会议骨架预置 / 续会）。
+  /** 在途任务表判定回调：本 turn 是否已有未完成的计划任务项（会议骨架预置 / 续会）。
    *  装配来源 = SessionManager.hasInflightPlan（单一真理源）；用途 = needsPlanning nudge 注入前
    *  判断「是否已有在途表」，有则不重复灌「先拆解建表」。
    *  刻意**不复用** getActivePlanItemMeta 的存在性——后者原生职责是 plan_item_boundary 事件信号，
@@ -1063,11 +1063,12 @@ export class AgentLoop {
       return 'aborted';
     }
 
-    // step 边界回调（每次迭代完成后触发，用于 planItemLog 时间轴投影；step 级边界事件，非 turn 边界）。
+    // 任务项日志回调（每次迭代完成后触发，用于 planItemLog 时间轴投影；触发点在 step 边界上，
+    // 但落盘分组归属是任务项级，非 turn 边界）。
     // 挂起型迭代不写日志（与用户暂停对称）：含 ask_user 将挂起的迭代不记 planItemLog——
-    // 问答对归当前步，回答续跑后由后续完整迭代在边界记录该步；判定经 willSuspendForAsk 单收口，
+    // 问答对归当前任务项，回答续跑后由后续完整迭代在边界记录该任务项；判定经 willSuspendForAsk 单收口，
     // 与 handleToolCalls 挂起检出共用（防双判漂移）。
-    // 检出时机 = 迭代的 LLM 调用后、工具前：此刻的 active step 是本迭代 LLM 实际服务的那一步，
+    // 检出时机 = 迭代的 LLM 调用后、工具前：此刻的 active 任务项是本迭代 LLM 实际服务的那个任务项，
     // 由 onPlanItemBoundary 写 planItemLog 关联（只写日志、不推进——推进唯一写者 = task_table_update）。
     if (this.onPlanItemBoundary && !this.willSuspendForAsk(llmResult.toolCalls)) {
       this.onPlanItemBoundary({
@@ -2633,7 +2634,7 @@ export class AgentLoop {
     }
   }
 
-  /** 会议轮判据（裁决证据用，操作化单点）：任务表 active 步骤声明 rolePack = 会议逐步切换生效中 */
+  /** 会议轮判据（裁决证据用，操作化单点）：任务表 active 任务项声明 rolePack = 会议逐项切换生效中 */
   private isMeetingRound(): boolean {
     return Boolean(this.getActivePlanItemMeta?.()?.rolePack);
   }

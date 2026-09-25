@@ -161,10 +161,10 @@ export interface AgentHooks {
    */
   refreshRolePackPrefixOnLoop?: () => void;
   /**
-   * 会议逐步切换：按当前 active 任务项的 rolePack 刷新本轮装配视角。
+   * 会议逐项切换：按当前 active 任务项的 rolePack 刷新本轮装配视角。
    *
-   * 由 taskTable 每轮注入时驱动——与任务表渲染同源（同读「当前 active step」），
-   * 保证后继 step 换角色即时生效（装配视角不能只在 prepare.run 设一次，否则展示层正确/装配层冻结）。
+   * 由 taskTable 每轮注入时驱动——与任务表渲染同源（同读「当前 active 任务项」），
+   * 保证后继任务项换角色即时生效（装配视角不能只在 prepare.run 设一次，否则展示层正确/装配层冻结）。
    * 内部防重：视角未变化则跳过，避免每轮迭代重复重建前缀。缺省 no-op（纯工厂单测不触发）。
    */
   applyActivePlanItemAssembly?: () => void;
@@ -341,10 +341,10 @@ function wireRuntimeCallbacks(
     hooks?.requestPause(reason, 'agent');
   };
 
-  // step 边界回调（每次 LLM 迭代完成后、工具执行前触发）：只写 planItemLog 关联任务表当前 active
-  // 步骤（时间轴投影）。plan 状态推进唯一写者 =
+  // 任务项边界回调（每次 LLM 迭代完成后、工具执行前触发）：只写 planItemLog 关联任务表当前 active
+  // 任务项（时间轴投影）。plan 状态推进唯一写者 =
   // LLM 的 task_table_update（updatePlanItem → updatePlanItemStatus 单一写点）；LLM 未显式 update
-  // 的最后一步由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
+  // 的最后一个任务项由 turn 收尾兜底（orchestrator → concludeActivePlanItemIfPlanFullyReached）补上。
   loop.onPlanItemBoundary = (planItemInfo) => {
     const activePlanItemId = sessionManager
       .getCheckpoint()
@@ -384,7 +384,7 @@ function wireRuntimeCallbacks(
   loop.getTaskTable = () => {
     const cp = sessionManager.getCheckpoint();
     if (!cp) return '';
-    // 会议逐步切换：每轮按当前 active 任务项派生装配视角（与任务表渲染同源；防重见 agent.applyActivePlanItemAssemblyIfChanged）
+    // 会议逐项切换：每轮按当前 active 任务项派生装配视角（与任务表渲染同源；防重见 agent.applyActivePlanItemAssemblyIfChanged）
     hooks?.applyActivePlanItemAssembly?.();
     const table = renderTaskTable(cp.plan, cp.planItemLog);
     if (!table) return '';
@@ -410,9 +410,9 @@ function wireRuntimeCallbacks(
 
   // 装配任务表工具回调（planManager）
   toolExec.planManager = {
-    writePlan: (mode, steps) => {
+    writePlan: (mode, items) => {
       // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
-      const newPlan = sessionManager.writePlan(mode, steps);
+      const newPlan = sessionManager.writePlan(mode, items);
       return `任务表已更新（${mode}），当前共 ${newPlan.length} 个任务项：\n${newPlan
         .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}${s.rolePack ? `（角色：${s.rolePack}）` : ''}`)
         .join('\n')}`;

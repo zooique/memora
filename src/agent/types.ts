@@ -114,9 +114,9 @@ export type AgentChunk = (
    */
   | { type: 'selfReview' }
   /**
-   * 步级折叠边界：迭代完成且 active 任务项**推进**时 emit。
-   * 宿主据此把后续过程事件（narrate/tool/问答）归到对应 step 分组下渲染；无任务表不产。
-   * planItemId 为推进到的新 active step ID，title 为步骤标题（供分组 summary 展示）。
+   * 任务项级折叠边界：迭代完成且 active 任务项**推进**时 emit。
+   * 宿主据此把后续过程事件（narrate/tool/问答）归到对应任务项分组下渲染；无任务表不产。
+   * planItemId 为推进到的新 active 任务项 ID，title 为该任务项标题（供分组 summary 展示）。
    */
   | { type: 'plan_item_boundary'; planItemId?: string; title?: string }
   /**
@@ -124,12 +124,12 @@ export type AgentChunk = (
    *
    * 与 `plan_item_boundary` 的关系（术语撞车的解法，见 docs/architecture/step-atomic-persistence.md §九）：
    * - `plan_item_boundary` = **任务项推进**（有任务表且 active 任务项变化才产，无任务表静默），职责是
-   *   webview 步级折叠的**分组依据**；
+   *   webview 任务项级折叠的**分组依据**；
    * - `step_boundary` = **迭代完成**（与有无任务表、有无工具无关），职责是宿主**增量落盘的时机信号**
    *   （落盘不能只挂在 plan_item_boundary 上——无任务表的长工具循环会零增量落盘，该场景由本信号覆盖）。
    *
    * 顺序契约（硬）：同一次迭代内 `plan_item_boundary` **先**于本 chunk 产出——保证宿主本轮落盘快照
-   * 已含该步折叠边界，崩溃重放不错位。
+   * 已含该任务项折叠边界，崩溃重放不错位。
    *
    * 瞬态信号：**不落 ProcessEvent**（不是历史内容，只是「此刻该落盘」的触发点），
    * `Round.processEvents` / schema 零改动。
@@ -325,14 +325,14 @@ export interface SessionCheckpoint {
    * 仅作事件序号，不承担版本一致性校验——漂移碰撞由文本相似度完成，勿误用为版本校验。
    */
   goalChangeSeq: number;
-  /** 执行计划步骤列表 */
+  /** 执行计划任务项列表 */
   plan: PlanItem[];
   /**
    * 工具执行日志（outbox 模式）：FIFO，超上限时优先丢弃「幂等或已补偿」的最早记录，
    * 非幂等未补偿记录永不丢弃。
    */
   completedToolCalls?: ToolExecutionRecord[];
-  /** step 推进日志（LLM 迭代级时间轴，FIFO cap 10-12 条；task 步骤状态见 plan） */
+  /** step 推进日志（LLM 迭代级时间轴，FIFO cap 10-12 条；任务项状态见 plan） */
   planItemLog?: PlanItemOutcome[];
   /** 暂停元数据 */
   pauseMeta?: PauseMeta;
