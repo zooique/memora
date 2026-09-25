@@ -986,7 +986,7 @@ describe('SessionManager', () => {
       // writePlan 后 ensureActivePlanItem 激活第一个任务项
       const active = manager.getActivePlanItem();
       expect(active?.id).toBe(plan[0]!.id);
-      // 第一个已 active（非 pending），下一个 pending 是步骤二
+      // 第一个已 active（非 pending），下一个 pending 是任务项二
       const next = manager.getNextPendingPlanItem();
       expect(next?.id).toBe(plan[1]!.id);
     });
@@ -999,7 +999,7 @@ describe('SessionManager', () => {
       ]);
       // 未全 blocked → false
       expect(manager.isPlanAllBlocked()).toBe(false);
-      // 两步都标 blocked → true（active 推进被 blocked 占位）
+      // 两项都标 blocked → true（active 推进被 blocked 占位）
       manager.updatePlanItemStatus(plan[0]!.id, 'blocked');
       manager.updatePlanItemStatus(plan[1]!.id, 'blocked');
       expect(manager.isPlanAllBlocked()).toBe(true);
@@ -1007,8 +1007,8 @@ describe('SessionManager', () => {
 
     it('writePlan：未创建 checkpoint 时写点自愈（先建 checkpoint 再写，不再静默返回空）', () => {
       // 实测病根：生产流程无一处先建 checkpoint，task_table_write / 约会骨架
-      // 直接调 writePlan → 若 `if(!this.checkpoint) return []` 静默空 → LLM 收到 ok:true + 0 步 → 反复重写。
-      // 契约：写点自愈建 checkpoint 并返回真实步骤。
+      // 直接调 writePlan → 若 `if(!this.checkpoint) return []` 静默空 → LLM 收到 ok:true + 0 个任务项 → 反复重写。
+      // 契约：写点自愈建 checkpoint 并返回真实任务项。
       expect(manager.getCheckpoint()).toBeNull();
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },
@@ -1029,23 +1029,23 @@ describe('SessionManager', () => {
       manager.logPlanItemBoundary({ planItemId: planItemId, summary: '本迭代进展' });
 
       const cp = manager.getCheckpoint()!;
-      // 日志已写且关联 active 步骤
+      // 日志已写且关联 active 任务项
       expect(cp.planItemLog?.[0]).toMatchObject({ planItemId: planItemId, summary: '本迭代进展' });
       // 状态不被改变（active 仍是 active——推进唯一写者 = task_table_update）
       expect(cp.plan[0]!.status).toBe('active');
     });
 
-    it('concludeActivePlanItemIfPlanFullyReached：无 pending 且有 active → 闭合最后到达步（LLM 未显式 update 即收尾）', () => {
+    it('concludeActivePlanItemIfPlanFullyReached：无 pending 且有 active → 闭合最后到达的任务项（LLM 未显式 update 即收尾）', () => {
       manager.createCheckpoint('测试');
       const plan = manager.writePlan('overwrite', [
         { description: '步骤一' },
         { description: '步骤二' },
       ]);
-      // 显式完成步骤一（LLM task_table_update）→ active 推进到步骤二
+      // 显式完成任务项一（LLM task_table_update）→ active 推进到任务项二
       manager.updatePlanItemStatus(plan[0]!.id, 'done');
       expect(manager.getActivePlanItem()?.id).toBe(plan[1]!.id);
 
-      // 无 pending（步骤二为最后到达步）→ 兜底闭合
+      // 无 pending（任务项二为最后到达项）→ 兜底闭合
       manager.concludeActivePlanItemIfPlanFullyReached('最终交付摘要');
       const cp = manager.getCheckpoint()!;
       expect(cp.plan.every((s) => s.status === 'done')).toBe(true);
@@ -1060,7 +1060,7 @@ describe('SessionManager', () => {
         { description: '步骤一' },
         { description: '步骤二' },
       ]);
-      // 步骤二仍是 pending → 计划未「全部到达」，active 步骤一保持 active
+      // 任务项二仍是 pending → 计划未「全部到达」，active 任务项一保持 active
       manager.concludeActivePlanItemIfPlanFullyReached('半程交付');
       const cp = manager.getCheckpoint()!;
       expect(cp.plan[0]!.status).toBe('active');

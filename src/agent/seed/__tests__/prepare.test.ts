@@ -3,7 +3,7 @@
  *
  * 覆盖 SeedPrepare.run：
  *   - 策略装配（上下文装配、L2 策略注入、工具暴露）
- *   - 会议机制：active 步骤声明 rolePack → 范围校验 → 本轮装配视角 + 前缀刷新 + 组清单注入
+ *   - 会议机制：active 任务项声明 rolePack → 范围校验 → 本轮装配视角 + 前缀刷新 + 组清单注入
  *   - 回答前中断（signal.aborted）→ 返回 aborted，跳过用户消息入史
  *   - roundId 生成 + appendUser 溯源 + 会话命名 fire-and-forget
  */
@@ -45,9 +45,9 @@ describe('SeedPrepare 回答前', () => {
     expect(result).toEqual({ input: '用户输入', aborted: false });
   });
 
-  it('会议机制：active 步骤声明有效组员 rolePack → 表层装配视角 + 前缀刷新 + 组清单注入', async () => {
+  it('会议机制：active 任务项声明有效组员 rolePack → 表层装配视角 + 前缀刷新 + 组清单注入', async () => {
     const { mocks, deps } = createHarness();
-    // 当前 active 步骤声明 rolePack='成员A'（组长为激活包），范围校验通过
+    // 当前 active 任务项声明 rolePack='成员A'（组长为激活包），范围校验通过
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       plan: [{ id: 's1', description: '步骤1', status: 'active', order: 0, rolePack: '成员A' }],
     });
@@ -66,7 +66,7 @@ describe('SeedPrepare 回答前', () => {
     expect(mocks.loop.injectSystemMessage).toHaveBeenCalledWith('【小组会议角色（组长：组长；组员：成员A / 成员B）】...');
   });
 
-  it('会议机制：active 步骤越界 rolePack → 覆盖被忽略（回落 activePack）+ 前缀按 activePack 刷新', async () => {
+  it('会议机制：active 任务项越界 rolePack → 覆盖被忽略（回落 activePack）+ 前缀按 activePack 刷新', async () => {
     const { mocks, deps } = createHarness();
     // 越界角色（非组长/组员）→ 范围校验返回 null
     mocks.sessionManager.getCheckpoint.mockReturnValue({
@@ -103,7 +103,7 @@ describe('SeedPrepare 回答前', () => {
     const { mocks, deps } = createHarness();
     // 在途谓词（SSOT = SessionManager.hasInflightPlan）须显式声明：默认 false 会落到「新会议」分支
     mocks.sessionManager.hasInflightPlan.mockReturnValue(true);
-    // 在途会议：plan 已有未完成步骤（骨架预置后、未完成）
+    // 在途会议：plan 已有未完成任务项（骨架预置后、未完成）
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       plan: [
         { id: 's1', description: '组长 主持开场：讨论X', status: 'done', order: 0 },

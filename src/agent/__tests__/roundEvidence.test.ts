@@ -5,7 +5,7 @@
  * 计数器判不了意图、不落盘重启即失忆。本文件锁 loop 两个写点 + 会议轮操作化判据：
  * 1. **空响应写点**：LLM 200 但无文本无工具调用 → 产 empty_response 证据（含轮内迭代位）。
  * 2. **回显写点**：read_file 台账替身回显命中 → 产 ledger_stub_echo 证据（含 path/覆盖区间/请求区间）。
- * 3. **会议轮判据**（操作化单点 isMeetingRound）：任务表 active 步骤声明 rolePack 才算会议轮。
+ * 3. **会议轮判据**（操作化单点 isMeetingRound）：任务表 active 任务项声明 rolePack 才算会议轮。
  *
  * 突变验证：写点处的 appendRoundEvidence 回调被摘除 → 本文件三条全部变红（证据归零）。
  */
@@ -68,7 +68,7 @@ describe('AgentLoop · 裁决证据写点', () => {
     });
   });
 
-  it('会议轮判据：active 步骤声明 rolePack → meetingRound=true（操作化单点）', async () => {
+  it('会议轮判据：active 任务项声明 rolePack → meetingRound=true（操作化单点）', async () => {
     const collected: RoundEvidenceEvent[] = [];
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([[]]),
@@ -76,7 +76,7 @@ describe('AgentLoop · 裁决证据写点', () => {
       toolExecutor: vi.fn().mockResolvedValue('ok'),
     });
     loop.appendRoundEvidence = (ev) => collected.push(ev);
-    // 会议轮数据源：任务表 active 步骤带 rolePack（= 会议逐步切换生效中）
+    // 会议轮数据源：任务表 active 任务项带 rolePack（= 会议逐步切换生效中）
     loop.getActivePlanItemMeta = () => ({ planItemId: 's1', title: '调研', rolePack: 'pack-a' });
 
     await collect(loop, '会议问题');

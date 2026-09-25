@@ -363,7 +363,7 @@ describe('assembleComponents', () => {
       );
       // 建立会话检查点（writePlan 依赖 checkpoint 已建）
       output.sessionManager.createCheckpoint('小组会议：讨论');
-      // 预置多步会议计划：组员1 与组员2 各一步（均带 rolePack）
+      // 预置多步会议计划：组员1 与组员2 各一项（均带 rolePack）
       output.sessionManager.writePlan('overwrite', [
         { description: '组员1发言', rolePack: '组员1' },
         { description: '组员2发言', rolePack: '组员2' },
@@ -452,7 +452,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
       );
     }
 
-    it('writePlan 返回的 8 位短 id 经 task_table_update 可命中真实步骤（toolExecutor 解析 + 装配 updatePlanItem + sessionManager 全等）', async () => {
+    it('writePlan 返回的 8 位短 id 经 task_table_update 可命中真实任务项（toolExecutor 解析 + 装配 updatePlanItem + sessionManager 全等）', async () => {
       const output = await assembleReal();
       output.sessionManager.createCheckpoint('测试计划');
       const newPlan = output.sessionManager.writePlan('overwrite', [
@@ -508,7 +508,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
       expect(cp.plan.every((s) => s.status !== 'done')).toBe(true);
     });
 
-    it('最后一步标 done（≥3 步无验证步骤）→ 工具结果附收尾验证 nudge（ME-10）', async () => {
+    it('最后一项标 done（≥3 项无验证任务项）→ 工具结果附收尾验证 nudge（ME-10）', async () => {
       const output = await assembleReal();
       output.sessionManager.createCheckpoint('测试计划');
       output.sessionManager.writePlan('overwrite', [
@@ -517,7 +517,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
         { description: '接入调用方' },
       ]);
 
-      // 前两步标 done（每步 done 后 ensureActivePlanItem 自动补位下一个）
+      // 前两项标 done（每项 done 后 ensureActivePlanItem 自动补位下一个）
       await output.toolExec.execute(
         'task_table_update',
         JSON.stringify({ plan_item_id: '1', status: 'done' }),
@@ -526,7 +526,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
         'task_table_update',
         JSON.stringify({ plan_item_id: '2', status: 'done' }),
       );
-      // 最后一步 done = 宣称完成；无验证步骤 → 命中 nudge
+      // 最后一项 done = 宣称完成；无验证任务项 → 命中 nudge
       const finalResult = await output.toolExec.execute(
         'task_table_update',
         JSON.stringify({ plan_item_id: '3', status: 'done' }),
@@ -540,7 +540,7 @@ describe('任务表未完成硬约束（P3，2026-09-22）', () => {
       expect(cp.plan.every((s) => s.status === 'done')).toBe(true);
     });
 
-    it('全 done 但已有验证步骤 → 不附 nudge（零打扰）', async () => {
+    it('全 done 但已有验证任务项 → 不附 nudge（零打扰）', async () => {
       const output = await assembleReal();
       output.sessionManager.createCheckpoint('测试计划');
       output.sessionManager.writePlan('overwrite', [
@@ -604,7 +604,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(requestPause).toHaveBeenCalled();
   });
 
-  it('onPlanItemBoundary：写入当前 active 步骤的 planItemLog（形态②：不改 plan 状态）', async () => {
+  it('onPlanItemBoundary：写入当前 active 任务项的 planItemLog（形态②：不改 plan 状态）', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
     const plan = out.sessionManager.writePlan('overwrite', [{ description: '步骤一' }]);
@@ -613,11 +613,11 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(out.sessionManager.getCheckpoint()!.plan[0]!.status).toBe('active');
     out.loop.onPlanItemBoundary!({ summary: '进展摘要' });
     const cp = out.sessionManager.getCheckpoint()!;
-    // active 步骤的 planItemLog 追加了该次推进记录
+    // active 任务项的 planItemLog 追加了该次推进记录
     expect(cp.planItemLog?.length).toBeGreaterThan(0);
     expect(cp.planItemLog?.[0]?.summary).toBe('进展摘要');
     expect(cp.planItemLog?.[0]?.planItemId).toBe(planItemId);
-    // 形态② 契约：边界只写日志不推进——步骤状态保持 active，不被自动 done（推进唯一写者 = task_table_update）
+    // 形态② 契约：边界只写日志不推进——任务项状态保持 active，不被自动 done（推进唯一写者 = task_table_update）
     expect(cp.plan[0]!.status).toBe('active');
   });
 
@@ -653,7 +653,7 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     expect(out.loop.hasInflightPlan!()).toBe(false);
   });
 
-  it('planManager.writePlan：返回含步骤摘要与角色标注的渲染结果', async () => {
+  it('planManager.writePlan：返回含任务项摘要与角色标注的渲染结果', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
     // 直接触发装配的 planManager（writePlan 分发归 SessionManager）
