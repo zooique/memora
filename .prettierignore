@@ -7,3 +7,14 @@ hosts/memora-vscode/src/extension/skills/**/*.md
 
 # 示例角色包的技能文件（同样带 frontmatter）
 role-packs/**/skills/**/*.md
+
+# `.trae/` 全域 md（rules / decisions / skills / documents）——两类同源损害：
+# ① frontmatter 被改写 ⇒ 解析失败：rules 的 `alwaysApply: true` 会静默失效（规则不再随会话注入）；
+#    skills 下 30 个带 frontmatter 的 md 破坏即技能不可加载。ADR-018 曾被改成 `***` + 98 个短横线。
+# ② CJK 表格被按显示宽度对齐填充（显示宽度 2 / 字符数 1）⇒ 字符数膨胀近 1 倍，与「控体积」目标冲突。
+#    实测 legacy-contract 15740→11032、ui-engineering 14049→10130、programmer-mindset 9346→5831。
+# 实证（2026-09-25，已推送后修复）：8 个规则文件的 frontmatter 分隔符被改写成 `\---`（每文件 2 处），
+# 常驻文件 memory-role-pack 因此从未随会话加载。⚠️ 归因未复现（prettier 对干净版本不产生该转义），
+# 但闸门里**没有** format:check，能命中 md 的只有「IDE 保存格式化」与「手工 npm run format」两条路径
+# ⇒ 全域挡住，不再依赖归因结论。
+.trae/**/*.md
