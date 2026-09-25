@@ -6,7 +6,7 @@
  * **零增量落盘**，崩溃即全丢。本 chunk 补该覆盖缺口：只要迭代完成且将继续下一轮，就产一条，
  * 与有无任务表无关。
  *
- * 本文件锁三条不变量：
+ * 本文件锁五条不变量：
  * 1. **产出条件** = `handleToolCalls` 返回 'continue'（还有下一轮）——终态迭代不产（流尾兜底），
  *    这同时保住「终态 chunk 是末条」的既有流契约（宿主 paused 分支据 break）。
  * 2. **顺序契约** = 同迭代内 `plan_item_boundary` 先于 `step_boundary`——保证宿主落盘快照
@@ -15,6 +15,10 @@
  * 4. **边界不劈思考（STEP-BUCKET-1 前提）** = `plan_item_boundary` 只落 step 之间，不得插入
  *    同一 step 的 thought 流中间——webview 桶查找按任务项容器作用域（`data-step-bucket` 查询
  *    限容器内），thought 流若被边界劈成两段，两个容器会各建一个同 key 桶 →「思考 · 第 N 步」重影。
+ * 5. **打断物不劈工具段（TOOL-RUN-1 前提）** = 同一 step 的工具事件段（tool_start → 末个
+ *    tool_result）内不得夹打断物（`narrate` / `plan_item_boundary` / 正文）——webview 批分组
+ *    按「相邻 + 无打断物」切段（docs/方案-工具批折叠合并-20260925.md §3.1），工具段若被劈开，
+ *    一个 step 的工具会碎成多批。
  */
 import { describe, it, expect, vi } from 'vitest';
 import { AgentLoop } from '@/agent/loop.js';
@@ -223,6 +227,75 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
       const hi = Math.max(...positions); // 该 step 末个 thought 位置
       const split = chunks.slice(lo, hi + 1).some((c) => c.type === 'plan_item_boundary');
       expect(split, `step ${stepIndex} 的 thought 流被 plan_item_boundary 打断（桶将重影）`).toBe(false);
+    }
+  });
+
+  it('★ TOOL-RUN-1 前提固化：打断物不劈同一 step 的工具段（批不碎）', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('ok');
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        // step 1：思考 + 并发双工具（工具段 = 同 step 的 tool_start/tool_result 连续区）
+        [
+          { thought: 's1-想' },
+          {
+            toolCalls: [
+              toolCall('c1', 'tool_a', '{"path":"a"}'),
+              toolCall('c2', 'tool_b', '{"path":"b"}'),
+            ],
+          },
+        ],
+        // step 2：思考 + 单工具（active 任务项推进 → 本迭代末应产 plan_item_boundary 打断物）
+        [{ thought: 's2-想' }, { toolCalls: [toolCall('c3', 'tool_a', '{"path":"c"}')] }],
+        // step 3：纯文本收尾
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+    // 任务项逐步推进 → 各产一条 plan_item_boundary（打断物真产出，防假绿）
+    const metaSeq = [
+      { planItemId: 'plan-item-1', title: '任务项一' },
+      { planItemId: 'plan-item-2', title: '任务项二' },
+    ];
+    let metaCall = 0; // meta 取用计数（多取不越界，停在末项）
+    loop.getActivePlanItemMeta = () => metaSeq[Math.min(metaCall++, metaSeq.length - 1)]!;
+
+    const chunks = await collect(loop, '带任务表多步工具');
+
+    // 场景自证（防假绿）：工具真产出且真打了归属标、打断物真在流里
+    const toolEvents = chunks.filter((c) => c.type === 'tool_start' || c.type === 'tool_result');
+    expect(toolEvents.length).toBeGreaterThanOrEqual(4);
+    expect(chunks.filter((c) => c.type === 'plan_item_boundary').length).toBeGreaterThan(0);
+    expect(
+      chunks.filter((c) => c.type === 'tool_start').every((c) => c.type === 'tool_start' && c.stepIndex !== undefined),
+    ).toBe(true);
+
+    // tool_result 经 toolCallId 归属（事实单点、不重复盖章）→ 先建 id→step 映射再按 step 分段
+    const callIndex = new Map<string, number>(); // toolCallId → 所属 step 轮内序号
+    for (const c of chunks) {
+      if (c.type === 'tool_start' && c.stepIndex !== undefined) callIndex.set(c.toolCallId, c.stepIndex);
+    }
+    const posByStep = new Map<number, number[]>(); // stepIndex → 该 step 各工具事件的 chunk 下标
+    chunks.forEach((c, idx) => {
+      if (c.type !== 'tool_start' && c.type !== 'tool_result') return;
+      const owner = c.type === 'tool_start' ? c.stepIndex : callIndex.get(c.toolCallId);
+      if (owner === undefined) return;
+      const positions = posByStep.get(owner) ?? [];
+      positions.push(idx);
+      posByStep.set(owner, positions);
+    });
+
+    // ★ 前提断言：每个 step 的工具事件连续区（首尾之间）不得夹打断物。
+    // 打断物（chunk 层）= narrate / plan_item_boundary / text（流式正文）——批分组的切段判据
+    // （方案 §3.1；落盘层正文语义为 text_self_review，两层词面不同、判定同构）；
+    // 若被劈开 →「相邻 + 无打断物」把同一 step 的工具碎成多批。
+    const isSplitter = (c: AgentChunk): boolean =>
+      c.type === 'narrate' || c.type === 'plan_item_boundary' || c.type === 'text';
+    for (const [stepIndex, positions] of posByStep) {
+      const lo = Math.min(...positions); // 该 step 首个工具事件位置
+      const hi = Math.max(...positions); // 该 step 末个工具事件位置
+      const split = chunks.slice(lo, hi + 1).some(isSplitter);
+      expect(split, `step ${stepIndex} 的工具段被劈开（批分组将碎成多批）`).toBe(false);
     }
   });
 

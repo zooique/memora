@@ -934,6 +934,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 工具行升级：pending「准备中」行在 tool_start 到达时转执行态，不重建 DOM——
    * 与 renderToolRow 新建的执行态行同构（叙述/状态/进行中高亮），后续 tool_result 更新
    * （updateToolRowState 按 data-tool-call-id）天然复用，无需特判。
+   * 排序键补挂（data-seq / data-ts）：升级后并入所在批（口径③）需要与正式行同构的
+   * 时间序锚（insertPlanItemInOrder 归位 / 批内平铺排序）。
    */
   function upgradePendingToolRow(
     row: HTMLDetailsElement,
@@ -941,6 +943,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   ): void {
     row.classList.remove('is-tool-pending');
     row.classList.add('is-tool-running');
+    // 排序键补挂（与 renderToolRow 同构）：seq = tool_start seq（段 id 取材同源）、ts = 时间键
+    row.dataset.seq = String(start.seq);
+    row.dataset.ts = start.ts;
     const labelEl = row.querySelector<HTMLElement>('.round-block__tool-label');
     // 参数此刻已完整，按既有多参数叙述生成器复原（renderToolRow 同路）
     if (labelEl) labelEl.textContent = toolActionLabel(start.payload.name, start.payload.args);
@@ -1078,6 +1083,160 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * 工具批（toolBatch）批内条目：一次工具调用 = tool_start + 按 toolCallId 配对的 tool_result
+   * （结果未回 = 进行中条目，批内占位不拆段）。
+   */
+  interface ToolBatchEntry {
+    /** 工具开始事件（段内容主体；行渲染的锚） */
+    start: Extract<ProcessEvent, { type: 'tool_start' }>;
+    /** 已回的结果（缺省 = 进行中；失败/被拒同样留段内，口径②） */
+    result?: Extract<ProcessEvent, { type: 'tool_result' }>;
+  }
+
+  /**
+   * 工具批（toolBatch）：过程条目流中前后相邻、中间无打断物的最大工具序列。
+   *
+   * segId = 段内首个 tool_start 的 seq——批容器唯一 DOM key（`data-tool-batch`），
+   * 稳定可复现、不新造标识（口径③：批 key 用段 id，不用 toolCallId）。
+   */
+  interface ToolBatch {
+    /** 段 id（= 段内首个 tool_start 的 seq） */
+    segId: number;
+    /** 段内首个 tool_start 的 ts（批块插入定位时间键，与逐条工具行同锚） */
+    anchorTs: string;
+    /** 段内工具按 tool_start seq 序 */
+    entries: ToolBatchEntry[];
+  }
+
+  /**
+   * 工具批切段（SSOT；三渲染上下文共用：运行时流式 / finalize 全量重建 / pending 行升级）
+   *
+   * 判据（方案-工具批折叠合并 §3.1，精确照抄不改判）：
+   *   · 打断物（一切断段）：`narrate` / 正文（text）/ `plan_item_boundary`。
+   *     其中「正文（text）」在过程条目流中的承载 = `text_self_review`（唯一 text 型正文语义事件；
+   *     流式 chunk 正文不进过程条目流、落盘无痕，不参与切段——纯渲染投影不造数据）。
+   *   · `thought` 穿插**不断段**（思考是 step 内伴随物，不打断工具连续性）。
+   *   · `tool_start` / `tool_result` 为段内容（结果按 toolCallId 配对归属其 tool_start）。
+   * 其余条目（thinking / memory_added 等）不在打断物清单内 → 不断段（判据精确照 §3.1）。
+   *
+   * @param events 当前轮全部过程事件（流式与重放同源输入）
+   * @returns 批数组（按段内首个 tool_start 的 seq 升序；空流返回空数组）
+   */
+  function groupToolBatches(events: ProcessEvent[]): ToolBatch[] {
+    // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据只读 seq/类型/toolCallId）
+    const ordered = [...events].sort((a, b) => a.seq - b.seq);
+    // toolCallId → 结果（段内容配对表；先建表后分组，结果可晚于打断物到达仍归属其 start）
+    const results = new Map<string, Extract<ProcessEvent, { type: 'tool_result' }>>();
+    for (const e of ordered) {
+      if (e.type === 'tool_result') results.set(e.payload.toolCallId, e);
+    }
+    const batches: ToolBatch[] = [];
+    // 当前开放中的段（null = 下一个 tool_start 开新段）
+    let current: ToolBatch | null = null;
+    for (const e of ordered) {
+      if (e.type === 'tool_start') {
+        if (!current) {
+          current = { segId: e.seq, anchorTs: e.ts, entries: [] };
+          batches.push(current);
+        }
+        current.entries.push({ start: e, result: results.get(e.payload.toolCallId) });
+      } else if (e.type === 'narrate' || e.type === 'text_self_review' || e.type === 'plan_item_boundary') {
+        // 打断物：断段（thought 等其余条目穿插不断段，见函数注释判据表）
+        current = null;
+      }
+    }
+    return batches;
+  }
+
+  /** 批块序号文案（「第 N 批」——工具类折叠块禁用「第 N 步」，STEP-ID-1 防复发约定） */
+  function toolBatchTitleText(order: number): string {
+    return `第 ${order} 批`;
+  }
+
+  /**
+   * 批内按工具名小计文案（「查看×2 · 搜索×1」形态，name 计数、中文显示名单源 toolNameMap）
+   *
+   * @param batch 工具批
+   * @returns 小计串（按工具首次出现序拼接；空段返回空串）
+   */
+  function toolBatchTotalsText(batch: ToolBatch): string {
+    const counts = new Map<string, number>();
+    for (const e of batch.entries) {
+      counts.set(e.start.payload.name, (counts.get(e.start.payload.name) ?? 0) + 1);
+    }
+    return [...counts.entries()].map(([name, n]) => `${getToolDisplayName(name)}×${n}`).join(' · ');
+  }
+
+  /**
+   * 刷新批块标题（块标题「第 N 批」+ 块内摘要按工具名小计 + 失败/被拒块级标红提示）
+   *
+   * 口径②：失败/被拒工具留段内不拆块，仅在块级打红色提示——拆块会让视觉随错误率抖动。
+   * 流式每次增量渲染与 finalize 全量重建都全量重算（结果后到时提示随之更新，幂等）。
+   *
+   * @param block  批块元素（.round-block__tool-batch）
+   * @param batch  工具批（小计/失败统计的唯一数据源）
+   * @param order  批块序号（第 N 批）
+   */
+  function refreshToolBatchSummary(block: HTMLDetailsElement, batch: ToolBatch, order: number): void {
+    const summary = block.querySelector(':scope > .round-block__tool-batch-summary');
+    if (!summary) return;
+    summary.textContent = '';
+    const title = document.createElement('span');
+    title.className = 'round-block__tool-batch-title';
+    title.textContent = toolBatchTitleText(order);
+    const total = document.createElement('span');
+    total.className = 'round-block__tool-batch-total';
+    total.textContent = toolBatchTotalsText(batch);
+    summary.append(title, total);
+    // 失败/被拒统计（留段内，块级标红）：ok=false 且非 blocked = 失败；blocked = 被拒/拦截
+    let failed = 0;
+    let blocked = 0;
+    for (const e of batch.entries) {
+      const r = e.result;
+      if (!r) continue;
+      if (r.payload.blocked === true) blocked += 1;
+      else if (!r.payload.ok) failed += 1;
+    }
+    block.classList.toggle('is-tool-batch-failed', failed + blocked > 0);
+    if (failed + blocked > 0) {
+      const warn = document.createElement('span');
+      warn.className = 'round-block__tool-batch-warn';
+      const parts: string[] = [];
+      if (failed > 0) parts.push(`含失败 ${failed}`);
+      if (blocked > 0) parts.push(`含拦截 ${blocked}`);
+      warn.textContent = `（${parts.join(' · ')}）`;
+      summary.appendChild(warn);
+    }
+  }
+
+  /**
+   * 创建批块容器（多工具批专用；单工具批不包裹 = 行即批，视觉等价现状零回归）
+   *
+   * DOM key 契约（口径③）：批容器键 = 段 id（`data-tool-batch`），不用 toolCallId；
+   * 行自身的 `data-tool-call-id` 只作 tool_result 配对键（updateToolRowState 消费），二者不混用。
+   *
+   * @param batch 工具批
+   * @param order 批块序号（第 N 批）
+   * @param open  是否默认展开（流式过程实时可见 = true；finalize 收起 = false）
+   */
+  function createToolBatchBlock(batch: ToolBatch, order: number, open: boolean): HTMLDetailsElement {
+    const block = document.createElement('details');
+    block.className = 'round-block__tool-batch';
+    // 段 id = 段内首个 tool_start 的 seq：批容器唯一 DOM key（data-tool-batch）+ seq 兜底排序键
+    block.dataset.toolBatch = String(batch.segId);
+    block.dataset.seq = String(batch.segId);
+    block.dataset.ts = batch.anchorTs;
+    block.open = open;
+    const summary = document.createElement('summary');
+    summary.className = 'round-block__tool-batch-summary';
+    const body = document.createElement('div');
+    body.className = 'round-block__tool-batch-body';
+    block.append(summary, body);
+    refreshToolBatchSummary(block, batch, order);
+    return block;
+  }
+
+  /**
    * 过程条目按统一时间键（data-ts）插入容器顶层。
    *
    * 形态甲：排序键统一为 **ts（时间键）**——processEvents 行（narrate/tool/thought）
@@ -1088,12 +1247,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 候选限定为 details 的**直接子节点**：存在 plan_item_boundary 时同款元素
    * 嵌套在 .round-block__plan-item 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
    * details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
-   * 候选类型 = narrate/tool/thought + 运行时输入条目（input，形态甲）。
+   * 候选类型 = narrate/tool/thought/工具批块 + 运行时输入条目（input，形态甲）。
    */
   function insertPlanItemInOrder(details: HTMLElement, el: HTMLElement, ts: string): void {
     const existing = Array.from(
       details.querySelectorAll<HTMLElement>(
-        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool, :scope > .round-block__thought, :scope > .process-flow__thought, :scope > .round-block__input, :scope > .process-flow__input',
+        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool, :scope > .round-block__tool-batch, :scope > .round-block__thought, :scope > .process-flow__thought, :scope > .round-block__input, :scope > .process-flow__input',
       ),
     ).filter((e) => e !== el);
     const next = existing.find((e) => {
@@ -1342,25 +1501,39 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 重建后按 ts 重插归位——否则任务项分组清理会连根拔起 QA 致重放丢失）。
     const existingInputs = Array.from(details.querySelectorAll<HTMLElement>('.round-block__input'));
     details.querySelectorAll(
-      '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__thought, .round-block__plan-item',
+      '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__tool-batch, .round-block__thought, .round-block__plan-item',
     ).forEach((el) => el.remove());
     // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；有 plan_item_boundary 时归入任务项折叠块）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
-    const toolStarts = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
-      .sort((a, b) => a.seq - b.seq);
     for (const n of narrates) {
       const { host } = planItemContainerFor(details, events, n.ts, n.seq);
       insertPlanItemInOrder(host, createNarrateGroup(n), n.ts);
     }
-    for (const t of toolStarts) {
-      const row = renderToolRow(t, events);
-      if (row) {
-        const { host } = planItemContainerFor(details, events, t.ts, t.seq);
-        insertPlanItemInOrder(host, row, t.ts);
+    // § 工具批（toolBatch）：相邻连续工具合并为批块——分组判据单一真源 groupToolBatches
+    // （三渲染上下文共用：此处 finalize 重建 / renderProcessFlow 流式 / pending 行升级，禁内联三份）。
+    // 单工具批 = 行即批（data-tool-batch 挂行、不包裹）——视觉等价现状、零回归；
+    // 多工具批 = 批块（块标题「第 N 批」+ 块内按工具名小计），失败/被拒留段内、块级标红（口径②）。
+    const batches = groupToolBatches(events);
+    // 批块序号（第 N 批）：只给成块者（多工具批）连号，单工具批保持现状形态不占号
+    let batchOrder = 0;
+    for (const batch of batches) {
+      const multi = batch.entries.length > 1;
+      if (multi) batchOrder += 1;
+      // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
+      const { host } = planItemContainerFor(details, events, batch.anchorTs, batch.segId);
+      if (!multi) {
+        const row = renderToolRow(batch.entries[0]!.start, events);
+        // 行即批：批容器 key（段 id）挂行自身（口径③：批 key = 段 id，非 toolCallId）
+        row.dataset.toolBatch = String(batch.segId);
+        insertPlanItemInOrder(host, row, batch.anchorTs);
+        continue;
       }
+      const block = createToolBatchBlock(batch, batchOrder, false);
+      const body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
+      for (const entry of batch.entries) body.appendChild(renderToolRow(entry.start, events));
+      insertPlanItemInOrder(host, block, batch.anchorTs);
     }
     // § 思考（per-step 聚合折叠块）：**一个 step 一个折叠块**（同 step 碎片原样连续拼接，
     // 不同 step 各自独立），按各自最早 seq 与 narrate/tool 平铺（finalize 默认收起）；
@@ -1559,9 +1732,6 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
       .sort((a, b) => a.seq - b.seq);
-    const toolStarts = events
-      .filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start')
-      .sort((a, b) => a.seq - b.seq);
     for (const n of narrates) {
       if (flow.querySelector(`.process-flow__narrate[data-seq="${n.seq}"]`)) continue;
       const row = document.createElement('div');
@@ -1609,20 +1779,58 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         row.dataset.mergedSeq = String(item.seq);
       }
     }
-    for (const t of toolStarts) {
-      const existing = flow.querySelector<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${t.payload.toolCallId}"]`);
-      if (existing) {
-        // pending 行（renderPendingToolRow 已建）→ 转执行态，不重建 DOM（参数此刻完整，
-        // 叙述/状态/高亮同步复位）；正式行（非 pending）保持跳过
-        if (existing.classList.contains('is-tool-pending')) {
-          upgradePendingToolRow(existing, t);
+    // 2.6) 工具批（toolBatch）：相邻连续工具并块——分组判据单一真源 groupToolBatches
+    //   （与 finalize 重建 / pending 行升级共用，禁内联三份）。幂等增量：行按 toolCallId
+    //   配对键去重/升级，批块按段 id（data-tool-batch）寻址复用；批从单变多时旧平铺行
+    //   并入批块（批 key 随迁，行不再持有）。流式按事件到达序推进，段只增不减。
+    const batches = groupToolBatches(events);
+    // 批块序号（第 N 批）：只给成块者（多工具批）连号，与 finalize 重建同规则 → 两上下文标题一致
+    let batchOrder = 0;
+    for (const batch of batches) {
+      const multi = batch.entries.length > 1;
+      if (multi) batchOrder += 1;
+      // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
+      const { host } = planItemContainerFor(flow, events, batch.anchorTs, batch.segId);
+      // 行的目标容器：多工具批 = 批块 body；单工具批 = 任务项容器（行即批，视觉等价现状）
+      let body: HTMLElement = host;
+      if (multi) {
+        let block = host.querySelector<HTMLDetailsElement>(
+          `:scope > .round-block__tool-batch[data-tool-batch="${batch.segId}"]`,
+        );
+        if (!block) {
+          block = createToolBatchBlock(batch, batchOrder, true);
+          insertPlanItemInOrder(host, block, batch.anchorTs);
+        } else {
+          // 已有批块（增量期间结果/新工具到达）→ 小计与失败提示随批内容重算
+          refreshToolBatchSummary(block, batch, batchOrder);
         }
-        continue;
+        body = block.querySelector('.round-block__tool-batch-body') as HTMLElement;
       }
-      const row = renderToolRow(t, events);
-      if (row) {
-        const { host } = planItemContainerFor(flow, events, t.ts, t.seq);
-        insertPlanItemInOrder(host, row, t.ts);
+      for (const entry of batch.entries) {
+        const callId = entry.start.payload.toolCallId;
+        // 既有行定位（toolCallId = 行配对键，updateToolRowState 同键消费；批容器寻址只用段 id）：
+        // pending「准备中」行升级后并入所在批（口径③）/ 已渲染行幂等迁移
+        const existing = flow.querySelector<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${callId}"]`);
+        let row: HTMLDetailsElement;
+        if (existing) {
+          // pending 行（renderPendingToolRow 已建）→ 转执行态，不重建 DOM（参数此刻完整，
+          // 叙述/状态/高亮同步复位）；正式行（非 pending）保持跳过
+          if (existing.classList.contains('is-tool-pending')) {
+            upgradePendingToolRow(existing, entry.start);
+          }
+          row = existing;
+        } else {
+          row = renderToolRow(entry.start, events);
+        }
+        if (multi) {
+          // 并入所在批：批 key（段 id）唯一归属批块，行不再持有（防一键双主的死 key）
+          delete row.dataset.toolBatch;
+          if (row.parentElement !== body) body.appendChild(row);
+        } else {
+          // 行即批（单工具批）：平铺行保持现状形态，批 key（段 id）挂行自身
+          if (row.parentElement !== host) insertPlanItemInOrder(host, row, batch.anchorTs);
+          row.dataset.toolBatch = String(batch.segId);
+        }
       }
     }
     // 3) tool_result 到达更新工具行状态（详情/展开态/等待时长）

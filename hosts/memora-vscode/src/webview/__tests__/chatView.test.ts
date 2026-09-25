@@ -4478,3 +4478,297 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
   });
 });
 
+// ═══════════════════════════════════════════════════════════
+// 工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）
+// ═══════════════════════════════════════════════════════════
+// 判据（方案-工具批折叠合并-20260925.md §3.1，精确照抄）：打断物 = narrate / 正文（text）/
+// plan_item_boundary；thought 穿插不断段；段 id = 段内首个 tool_start 的 seq。
+// 「正文（text）」在过程条目流中的承载 = `text_self_review`（唯一 text 型正文语义事件；
+// 流式 chunk 正文不进过程条目流、落盘无痕，不参与切段）。
+// 批结构对拍从 DOM 提取（[data-tool-batch] 容器 = 一批；单工具批行即批，容器即行自身）。
+describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）', () => {
+  /** 开一轮（meta 建骨架 + 首 chunk 开正文）：与既有 describe 的 beginRound 同构（各 describe 自持） */
+  function beginRound(): void {
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({ type: 'chunk', content: '正文' });
+  }
+
+  /** 构造 tool_start 过程事件（段内容主体） */
+  function toolStart(seq: number, id: string, name: string, args = '{}'): ProcessEvent {
+    return { type: 'tool_start', seq, ts: '', payload: { toolCallId: id, name, args } };
+  }
+
+  /**
+   * 逐条分发过程事件（流式追加语义：与运行时 process_event 单条推送同序）
+   *
+   * 参数上下文类型化为 ProcessEvent[]：事件字面量在编译期即校验形状（不用 as 断言）。
+   */
+  function dispatchEvents(events: ProcessEvent[]): void {
+    for (const ev of events) dispatch({ type: 'process_event', event: ev });
+  }
+
+  /** 构造 tool_result 过程事件（ok=false 可配 blocked=true 模拟被拒，口径②同样留段内） */
+  function toolResult(seq: number, id: string, name: string, ok: boolean, blocked = false): ProcessEvent {
+    return {
+      type: 'tool_result',
+      seq,
+      ts: '',
+      payload: { toolCallId: id, name, ok, blocked, summary: ok ? '成功' : '失败' },
+    };
+  }
+
+  /**
+   * 从 DOM 提取批结构（三上下文一致性对拍的单一提取器）
+   *
+   * `[data-tool-batch]` 容器 = 一批（多工具批 = 批块，单工具批 = 行即批、容器即行自身）；
+   * 返回值按文档序 = 批序，segId 为段 id、toolCallIds 为段内工具行（按序）。
+   */
+  function batchStructure(root: HTMLElement): { segId: string; toolCallIds: string[] }[] {
+    return Array.from(root.querySelectorAll<HTMLElement>('[data-tool-batch]')).map((el) => ({
+      segId: el.dataset.toolBatch ?? '',
+      toolCallIds: (el.classList.contains('round-block__tool')
+        ? [el]
+        : Array.from(el.querySelectorAll<HTMLElement>('.round-block__tool'))
+      ).map((row) => row.dataset.toolCallId ?? ''),
+    }));
+  }
+
+  it('切段矩阵 · narrate 打断：叙述两侧的相邻工具序列各成一批', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'read_file'),
+      toolResult(5, 't2', 'read_file', true),
+      { type: 'narrate', seq: 6, ts: '', payload: { content: '现在搜索一下' } },
+      toolStart(7, 't3', 'web_search'),
+      toolResult(8, 't3', 'web_search', true),
+      toolStart(9, 't4', 'web_search'),
+      toolResult(10, 't4', 'web_search', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    // 叙述（打断物）切段：两批各 2 个工具，段 id = 各段首个 tool_start 的 seq
+    expect(batchStructure(rb)).toEqual([
+      { segId: '2', toolCallIds: ['t1', 't2'] },
+      { segId: '7', toolCallIds: ['t3', 't4'] },
+    ]);
+  });
+
+  it('切段矩阵 · 正文（text）打断：正文条目（text_self_review）两侧的工具序列切段', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'read_file'),
+      toolResult(5, 't2', 'read_file', true),
+      { type: 'text_self_review', seq: 6, ts: '', payload: { content: '审查分段正文' } },
+      toolStart(7, 't3', 'write_file'),
+      toolResult(8, 't3', 'write_file', true),
+      toolStart(9, 't4', 'write_file'),
+      toolResult(10, 't4', 'write_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(batchStructure(rb)).toEqual([
+      { segId: '2', toolCallIds: ['t1', 't2'] },
+      { segId: '7', toolCallIds: ['t3', 't4'] },
+    ]);
+  });
+
+  it('切段矩阵 · plan_item_boundary 打断：任务项边界两侧的工具序列切段', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'read_file'),
+      toolResult(5, 't2', 'read_file', true),
+      { type: 'plan_item_boundary', seq: 6, ts: '', payload: { planItemId: 'p1', title: '分析' } },
+      toolStart(7, 't3', 'write_file'),
+      toolResult(8, 't3', 'write_file', true),
+      toolStart(9, 't4', 'write_file'),
+      toolResult(10, 't4', 'write_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(batchStructure(rb)).toEqual([
+      { segId: '2', toolCallIds: ['t1', 't2'] },
+      { segId: '7', toolCallIds: ['t3', 't4'] },
+    ]);
+  });
+
+  it('切段矩阵 · thought 穿插不断段：思考夹在工具之间仍并为一批（口径①定案）', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      { type: 'thought', seq: 4, ts: '', payload: { content: '再看第二个文件' } },
+      toolStart(5, 't2', 'read_file'),
+      toolResult(6, 't2', 'read_file', true),
+      { type: 'thought', seq: 7, ts: '', payload: { content: '再搜索一下' } },
+      toolStart(8, 't3', 'web_search'),
+      toolResult(9, 't3', 'web_search', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    // thought 是 step 内伴随物、不打断工具连续性 → 三工具并为同一批（段 id 仍是首个 seq）
+    expect(batchStructure(rb)).toEqual([{ segId: '2', toolCallIds: ['t1', 't2', 't3'] }]);
+  });
+
+  it('跨任务项边界切段：两批各归自己的任务项分组容器（不越界混批）', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 'p1', title: '分析需求' } },
+      toolStart(3, 't1', 'read_file'),
+      toolResult(4, 't1', 'read_file', true),
+      toolStart(5, 't2', 'read_file'),
+      toolResult(6, 't2', 'read_file', true),
+      { type: 'plan_item_boundary', seq: 7, ts: '', payload: { planItemId: 'p2', title: '编写代码' } },
+      toolStart(8, 't3', 'write_file'),
+      toolResult(9, 't3', 'write_file', true),
+      toolStart(10, 't4', 'write_file'),
+      toolResult(11, 't4', 'write_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    // 跨任务项边界 = 跨段（plan_item_boundary 是打断物）：两批段 id 各自为界
+    expect(batchStructure(rb)).toEqual([
+      { segId: '3', toolCallIds: ['t1', 't2'] },
+      { segId: '8', toolCallIds: ['t3', 't4'] },
+    ]);
+    // 归组落位：批块分别位于自己的任务项分组容器内，不越界混入对方
+    const groups = rb.querySelectorAll('.round-block__plan-item');
+    expect(groups).toHaveLength(2);
+    expect(groups[0]!.querySelector('.round-block__tool-batch')?.getAttribute('data-tool-batch')).toBe('3');
+    expect(groups[1]!.querySelector('.round-block__tool-batch')?.getAttribute('data-tool-batch')).toBe('8');
+  });
+
+  it('三上下文一致：同一事件流在流式追加与 finalize 全量重建下产出相同批结构（防内联分组三份的守卫）', () => {
+    mountChatView();
+    beginRound();
+    // 同一事件流（含 thought 穿插 + narrate 打断 + 单/多工具批混排）
+    const events: ProcessEvent[] = [
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      { type: 'thought', seq: 4, ts: '', payload: { content: '继续' } },
+      toolStart(5, 't2', 'read_file'),
+      toolResult(6, 't2', 'read_file', true),
+      { type: 'narrate', seq: 7, ts: '', payload: { content: '换个方向' } },
+      toolStart(8, 't3', 'web_search'),
+      toolResult(9, 't3', 'web_search', true),
+      toolStart(10, 't4', 'write_file'),
+      toolResult(11, 't4', 'write_file', true),
+    ];
+    dispatchEvents(events);
+    // ① 运行时流式追加：process-flow 平铺容器内观测批结构
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    const streamed = batchStructure(flow);
+    expect(streamed).toEqual([
+      { segId: '2', toolCallIds: ['t1', 't2'] },
+      { segId: '8', toolCallIds: ['t3', 't4'] },
+    ]);
+    // ② finalize 全量重建：round-block 内观测批结构——与流式一致（同一 groupToolBatches 投影）
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    expect(batchStructure(rb)).toEqual(streamed);
+  });
+
+  it('块内小计按 name 计数（「读取文件×2 · 网络搜索×1」）+ 块标题「第 N 批」（禁「第 N 步」）', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'read_file'),
+      toolResult(5, 't2', 'read_file', true),
+      toolStart(6, 't3', 'web_search'),
+      toolResult(7, 't3', 'web_search', true),
+    ]);
+    dispatch({ type: 'done' });
+    const block = document.querySelector('.round-block__tool-batch') as HTMLElement;
+    const summary = block.querySelector('.round-block__tool-batch-summary') as HTMLElement;
+    // 块标题「第 N 批」（工具类折叠块禁「第 N 步」——屏上唯一「步」= 思考折叠，STEP-ID-1）
+    expect(summary.textContent).toContain('第 1 批');
+    expect(summary.textContent).not.toMatch(/第\s*\d+\s*步/);
+    // 块内摘要按工具名小计（name 计数，中文显示名单源 toolNameMap）
+    expect(block.querySelector('.round-block__tool-batch-total')?.textContent).toBe('读取文件×2 · 网络搜索×1');
+  });
+
+  it('失败/被拒工具留段内：块级标红提示（含失败/拦截），不单独成块（口径②）', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'write_file'),
+      toolResult(5, 't2', 'write_file', false),
+      toolStart(6, 't3', 'web_search'),
+      toolResult(7, 't3', 'web_search', false, true),
+    ]);
+    dispatch({ type: 'done' });
+    // 三工具仍为一批（失败/被拒不拆块），块级标红提示错误密度
+    const blocks = document.querySelectorAll('.round-block__tool-batch');
+    expect(blocks).toHaveLength(1);
+    const block = blocks[0] as HTMLElement;
+    expect(block.dataset.toolBatch).toBe('2');
+    expect(block.classList.contains('is-tool-batch-failed')).toBe(true);
+    const warn = block.querySelector('.round-block__tool-batch-warn') as HTMLElement;
+    expect(warn.textContent).toContain('含失败 1');
+    expect(warn.textContent).toContain('含拦截 1');
+    // 失败/被拒行留段内（各自原位可见），无游离行逃出批块
+    const rows = block.querySelectorAll('.round-block__tool');
+    expect(rows).toHaveLength(3);
+    expect((document.querySelector('.round-block__details') as HTMLElement).querySelectorAll(':scope > .round-block__tool')).toHaveLength(0);
+  });
+
+  it('pending 行升级后并入所在批（批容器 key = 段 id），旧 toolCallId 批 key 零残留消费（口径③）', () => {
+    mountChatView();
+    beginRound();
+    // 参数生成段：两条工具意图预告（瞬态行，暂居流尾、无批归属）
+    dispatch({ type: 'tool_pending', toolCallId: 'call_a', name: 'read_file' });
+    dispatch({ type: 'tool_pending', toolCallId: 'call_b', name: 'read_file' });
+    // tool_start 到达 → 预告行升级执行态并并入所在批（两工具相邻 = 同批）
+    dispatch({ type: 'process_event', event: toolStart(2, 'call_a', 'read_file', '{"path":"a.md"}') });
+    dispatch({ type: 'process_event', event: toolStart(3, 'call_b', 'read_file', '{"path":"b.md"}') });
+    const block = document.querySelector('.round-block__tool-batch') as HTMLElement;
+    expect(block).not.toBeNull();
+    // 批容器 DOM key = 段 id（段内首个 tool_start 的 seq），非 toolCallId
+    expect(block.dataset.toolBatch).toBe('2');
+    expect(document.querySelector('[data-tool-batch="call_a"]')).toBeNull();
+    // 升级后的两行并入所在批（批块内、无游离），且均已脱离「准备中」态
+    const rows = Array.from(block.querySelectorAll<HTMLElement>('.round-block__tool'));
+    expect(rows.map((r) => r.dataset.toolCallId)).toEqual(['call_a', 'call_b']);
+    rows.forEach((r) => expect(r.classList.contains('is-tool-pending')).toBe(false));
+    expect(document.querySelectorAll('.round-block__tool')).toHaveLength(2);
+    // 旧 key 无残留消费：全部批 key 均为段 id（数字），无 toolCallId 值、无一键双主
+    const keys = Array.from(document.querySelectorAll<HTMLElement>('[data-tool-batch]')).map((el) => el.dataset.toolBatch);
+    expect(keys).toEqual(['2']);
+  });
+
+  it('单工具批视觉等价现状（零回归）：无批块包裹、行即批（data-tool-batch = 段 id 挂行）', () => {
+    mountChatView();
+    beginRound();
+    // 两条单工具批（叙述打断）——旧数据（无批概念）即此形态：回落逐条渲染
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file'),
+      toolResult(3, 't1', 'read_file', true),
+      { type: 'narrate', seq: 4, ts: '', payload: { content: '再写一个文件' } },
+      toolStart(5, 't2', 'write_file'),
+      toolResult(6, 't2', 'write_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    // 无批块包裹（现状形态：平铺工具行直接子级，逐条渲染）
+    expect(document.querySelectorAll('.round-block__tool-batch')).toHaveLength(0);
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    const rows = Array.from(details.querySelectorAll<HTMLElement>(':scope > .round-block__tool'));
+    expect(rows.map((r) => r.dataset.toolCallId)).toEqual(['t1', 't2']);
+    // 行即批：批 key（段 id）挂行自身——单批也可按段 id 寻址（口径③键位统一）
+    expect(rows.map((r) => r.dataset.toolBatch)).toEqual(['2', '5']);
+  });
+});
+

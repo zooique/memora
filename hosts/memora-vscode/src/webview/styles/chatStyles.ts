@@ -1526,6 +1526,27 @@ export const chatStyles = `
   }
   .round-block__tool summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
   .round-block__tool-summary { font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6); padding: 0 0 var(--sp-1, 2px); }
+  /* 工具批块（toolBatch）：前后相邻、中间无打断物的连续工具合并为一块（分组判据见 chatView
+     groupToolBatches，方案-工具批折叠合并 §3.1）。块标题「第 N 批」+ 块内按工具名小计；
+     单工具批不包裹（行即批，视觉等价现状零回归）。 */
+  .round-block__tool-batch {
+    margin: var(--sp-1, 2px) 0;
+    padding-left: var(--sp-3, 8px);
+    border-left: 2px solid var(--border-panel, rgba(128,128,128,.4));
+    border-radius: 0 var(--radius, 6px) var(--radius, 6px) 0;
+  }
+  .round-block__tool-batch-summary {
+    cursor: pointer; user-select: none; outline: none; list-style: none;
+    display: flex; align-items: baseline; gap: var(--sp-2, 6px); flex-wrap: wrap;
+    font-size: var(--font-xs, 10px); color: var(--text-secondary, #9aa0a6);
+  }
+  .round-block__tool-batch-summary::-webkit-details-marker { display: none; }
+  .round-block__tool-batch-summary:focus-visible { box-shadow: 0 0 0 1px var(--vscode-focusBorder); }
+  .round-block__tool-batch-title { font-weight: 600; color: var(--text-primary, #e0e0e0); }
+  .round-block__tool-batch-body { display: flex; flex-direction: column; }
+  /* 失败/被拒块级标红（口径②：留段内不拆块，块级提示错误密度） */
+  .round-block__tool-batch.is-tool-batch-failed { border-left-color: var(--danger, #f14c4c); }
+  .round-block__tool-batch-warn { color: var(--danger, #f14c4c); font-weight: 600; }
   /* 进行中工具行——高亮左缘 + 主色名称 + summary 前置旋转圆环，让「正在执行的工具」一眼可见；
      result 到达即移除（updateToolRowState 切 class），收尾全量渲染天然不带该态。
      环与正文 ▋ 光标互斥（同块在途工具时熄灭正文光标），见下方 :has 抑制规则 */
