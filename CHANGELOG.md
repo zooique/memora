@@ -21,6 +21,15 @@
 - **守卫**：`__tests__/fileChangeCommands.test.ts` 命令 id **双向**对拍（3 个对外命令必须在 `contributes.commands` / 2 个 CodeLens 内部命令必须不在），断言**不复制 id 字面量**（从模块 import）；`__tests__/fileChangeView.test.ts` 装饰存活 4 例。变异验证：删监听 → 3 红 1 绿；`slice(0,1)` 退化 → **恰 1 红**
 - **同批修掉的 SSOT 违例**：`isRemovedOnly` 在 `fileChangeView` 的内联副本 → 改 import（该函数生产侧零消费，副本是真违例而非「同模式重复」）
 
+### Fixed（宿主 · 文件改动回退的未保存编辑守卫 W2：fail-closed 闸 + 模态确认）
+
+**问题（数据丢失类）**：`applyRestore` 不看 `doc.isDirty`——文件有未保存编辑时点「回退本文件改动 / 全部回退」，写回 `beforeContent` 会把用户缓冲区里的编辑**静默覆盖**（无 git 时无法找回）。上条的 `!doc.isDirty` 守卫只管渲染重载、不管回退。
+
+- **修法（用户拍板「弹模态确认」）**：`applyRestore` 加 fail-closed 闸（返回改 `RestoreOutcome` 三态，`dirty` 单列、不混进失败原因），单文件回退遇 dirty **弹模态确认**（取消 = 不动文件、记录保留）；批量回退**一个模态一次列出全部 dirty 文件**（明细含「（含未保存编辑）」+ 计数），`overwriteDirty` 只放行清单内文件——确认之后才变 dirty 的仍被拦、如实报失败
+- **守卫**：`fileChangeView.test.ts` +4 例（全走真实命令路径，不私调内部方法）。变异验证：删 fail-closed 闸 → 恰 2 红；删 `isDirty` 判据 → 恰 1 红；零误伤
+- **内核导出面同批收编（DIFF-2 闭合）**：内核 `pathGuard` 导出 `MAX_DIFF_CONTENT_LENGTH`、`WRITE_PATH_EXTRACTORS` 过 `src/index.ts`（见 [3.0.0] Added）；宿主并列副本删除、`DISK_WRITE_TOOLS` 派生自内核键（跨包双枚举收编单源，字面量断言升为跨包契约钉）。⚠️ 只统一数值、不统一行为（两侧超限行为仍不同）
+- **新缺口登记**：DIFF-4（无 `path` 改盘工具双盲）/ DIFF-5（内核写工具两处枚举无对拍守卫）
+
 ### Changed（工具批按 step 断段：思考换步即断段，工具块与思考块对齐）
 
 **问题证据（真机）**：一轮连做 9 步，每步思考后调工具；因步骤之间无 `narrate`（也无其它可见分隔物），前后相邻工具之间**无任何打断物** → 宿主 `groupToolBatches` 判为一大段连续工具，合并成**一个「工具×23」大块**（锚在第 1 步首个工具），用户看不到「哪几个工具属于哪一步」。根因 = 切段判据的打断物只有 `{narrate, text_self_review, plan_item_boundary}`，而 `thought` 明确「穿插不断段」→ 模型不吐叙述时跨 step 工具之间无判据可断。
@@ -55,6 +64,12 @@
 - **验证**：变异验证闭合——改断言时 227 中恰 4 红 / 223 绿（零误伤）→ 改实现后 227 全绿；`tsc -p ./` 0 / eslint 0（改动文件）；dist 产物含 `toolSummaryText`、`countToolTypes` / `toolBatchTotalsText` / `toolBatchTitleText` 零残留；`terminology:check` code 64 / text 76 无漂移。宿主全量另有 3 个 `rmSync` 钩子超时红，经隔离复跑与 IO 基准定性为**环境假红**（本机递归删 501 文件 99.6s ≫ 10s hook 上限；三套件与本次改动零引用链）。
 
 ## [3.0.0] - 待发布（发版日补日期）
+
+### Added（内核 · 公开导出面补齐：`MAX_DIFF_CONTENT_LENGTH` / `WRITE_PATH_EXTRACTORS`）
+
+- `src/security/pathGuard.ts` 导出 `MAX_DIFF_CONTENT_LENGTH`（diff 内容上限 10240），`src/index.ts` 安全层导出面收录——宿主 UI 展示阈值 `import` 对齐，消除跨包同值并列（DIFF-2）。⚠️ 两侧超限行为不同（内核 = 截断后加「已截断」标记照常展示 / 宿主 = 跳过对比只提示），导出只统一**数值**、不统一行为
+- `src/agent/toolResultCache.ts` 的 `WRITE_PATH_EXTRACTORS`（按 `args.path` 改盘工具清单，loop 同路径写串行闸判据）经 `src/index.ts` 导出——宿主改动追踪据其键派生触发集合，跨包双枚举收编为单源（内核新增按 path 写工具时宿主自动跟随）
+- **覆盖边界（如实记）**：清单只认 `args.path` 定位的写工具，`run_code` / `run_*_script` 类不在内（台账 DIFF-4 / DIFF-5 登记）
 
 ### Fixed（内核 · 同一 step 并行写同一文件会丢内容 DIFF-3：按目标路径批内串行）
 
