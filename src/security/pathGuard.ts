@@ -125,8 +125,8 @@ export interface WriteConfirmationInfo {
   afterContent?: string;
 }
 
-/** diff 内容最大长度（10KB），防大文件撑爆 IPC 传输和 UI 渲染 */
-const MAX_DIFF_CONTENT_LENGTH = 10240;
+/** diff 内容最大长度（10KB），防大文件撑爆 IPC 传输和 UI 渲染。宿主 UI 展示上限从本常量 import 对齐（唯一真源） */
+export const MAX_DIFF_CONTENT_LENGTH = 10240;
 
 /** 截断 diff 内容到长度上限并追加标记；重载签名保持 beforeContent(null)/afterContent(undefined) 语义一致 */
 function truncateForDiff(content: string | null): string | null;

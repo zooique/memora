@@ -46,6 +46,10 @@ export type {
   WriteExtensions,
 } from '@/agent/toolExecutor.js';
 export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
+// WRITE_PATH_EXTRACTORS：「按 args.path 改盘的工具」清单的**单一真理源**（loop 同路径写串行闸的判据）。
+// 宿主改动追踪（fileChangeTracker）据其 keys 派生触发集合，禁并列维护第二份清单——
+// 内核新增按 path 的写工具时宿主自动跟随，防「内核进串行闸、宿主不知情」的静默少报。
+export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
 // 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
   RolePack,
@@ -279,6 +283,9 @@ export type {
   WriteConfirmationInfo,
   WriteConfirmationRequest,
 } from '@/security/pathGuard.js';
+// MAX_DIFF_CONTENT_LENGTH：diff 内容上限的**单一真理源**，宿主 UI 展示阈值 import 对齐（防数值漂移）。
+// ⚠️ 两侧超限行为不同：内核 = 截断后追加「已截断」标记照常展示；宿主 = 跳过对比只提示——只统一数值，不统一行为
+export { MAX_DIFF_CONTENT_LENGTH } from '@/security/pathGuard.js';
 
 // ─── 错误类型导出 ────────────────────────────────────────
 export { MemoraError, ToolErrorCode, isRetryableErrorCode } from '@/utils/errors.js';
