@@ -239,7 +239,7 @@ webview 收到 `replay: true` 时走重放分支（`renderReplayFromRounds` → 
 │       ├── § 召回记忆 (3)                 // 每条：名称 + source/score 标签 + 单行预览
 │       ├── § 已沉淀 (1)                   // 每条：name（memory_added）
 │       ├── § 工具调用 (2)                 // 每个：名称(状态) + args 代码块 + result 摘要
-│       ├── § 自审查输出                   // 审查分段正文（text_self_review）
+│       ├── § 自审查输出                   // 自审查**输出**（text_self_review；非主回答正文——正文走 .msg__body）
 │       ├── § 已停止                       // aborted 标记（reason）
 │       └── § 执行指标                     // durationMs / token 用量 / 召回数 / 成功率（均从 metrics 事件渲染）
 └── .msg__body                             // AI 正文（不变，markdown 渲染）

@@ -1126,15 +1126,34 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
+   * 批间打断物白名单（**唯一声明处**；他处引用本名，不重述集合）。
+   *
+   * 资格 = 「自身在过程条目流中渲染成一条可见内容」——只有这样才能充当两个相邻工具之间的视觉断面。
+   * - `narrate`：工具轮叙述行（宿主渲染「AI 说什么：」后接工具块）；
+   * - `text_self_review`：自审查**输出**（**非**正文——主回答正文走内容轨 `chunk`，落盘没有对应过程事件，
+   *   结构上不可能出现在工具之间）。自审查只在工具循环后做一次终审，故它**常态**居工具之后；
+   *   仅「审查轮交付后排队插话续跑、续跑再调工具」这一路径可让它落在两条工具之间 → **可达，保留**。
+   * - `plan_item_boundary`：任务项折叠分组边界（分组容器本身即断面）。
+   * 其余类型（thinking / memory_added / self_review / tool_start / tool_result / metrics / aborted / meta）
+   * 都不渲染成可断面 → 不断段。
+   */
+  const BATCH_SPLITTER_TYPES: ReadonlySet<ProcessEvent['type']> = new Set([
+    'narrate',
+    'text_self_review',
+    'plan_item_boundary',
+  ]);
+
+  /**
    * 工具批切段（SSOT；三渲染上下文共用：运行时流式 / finalize 全量重建 / pending 行升级）
    *
-   * 判据（方案-工具批折叠合并 §3.1，精确照抄不改判）：
-   *   · 打断物（一切断段）：`narrate` / 正文（text）/ `plan_item_boundary`。
-   *     其中「正文（text）」在过程条目流中的承载 = `text_self_review`（唯一 text 型正文语义事件；
-   *     流式 chunk 正文不进过程条目流、落盘无痕，不参与切段——纯渲染投影不造数据）。
-   *   · `thought` 穿插**不断段**（思考是 step 内伴随物，不打断工具连续性）。
+   * 判据（方案-工具批按step断段-20260926.md §4.1；扩展 方案-工具批折叠合并-20260925.md §3.1）：
+   *   · 打断物（一切断段）：`BATCH_SPLITTER_TYPES` 三成员（narrate / text_self_review / plan_item_boundary）。
+   *   · **步切换（新增）**：`thought` 归属新 step（其 `stepIndex` ≠ 当前批所属 step）→ 断段。
+   *     语义 = 「可见分隔物」——思考块换步即视觉断面，工具随之按步分块。**同 step 的思考碎片**
+   *     （同 `stepIndex`）**不断段**（step 内伴随物）；两侧任一 `stepIndex` 缺省（旧数据）→ 回落相邻性。
+   *     无思考分隔的跨 step 工具序列（模型不产 reasoning）→ 维持相邻合并（无可见断面即不切）。
    *   · `tool_start` / `tool_result` 为段内容（结果按 toolCallId 配对归属其 tool_start）。
-   * 其余条目（thinking / memory_added 等）不在打断物清单内 → 不断段（判据精确照 §3.1）。
+   * 其余条目（thinking / memory_added 等）不在打断物清单内 → 不断段。
    *
    * @param events 当前轮全部过程事件（流式与重放同源输入）
    * @returns 批数组（按段内首个 tool_start 的 seq 升序；空流返回空数组）
@@ -1150,16 +1169,25 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const batches: ToolBatch[] = [];
     // 当前开放中的段（null = 下一个 tool_start 开新段）
     let current: ToolBatch | null = null;
+    // 当前批所属 step（= 开批那条 tool_start 的 stepIndex；undefined = 旧数据无归属 → 不参与步切换判据）
+    let currentStep: number | undefined;
     for (const e of ordered) {
       if (e.type === 'tool_start') {
         if (!current) {
           current = { segId: e.seq, anchorTs: e.ts, entries: [] };
+          currentStep = e.payload.stepIndex;
           batches.push(current);
         }
         current.entries.push({ start: e, result: results.get(e.payload.toolCallId) });
-      } else if (e.type === 'narrate' || e.type === 'text_self_review' || e.type === 'plan_item_boundary') {
-        // 打断物：断段（thought 等其余条目穿插不断段，见函数注释判据表）
+      } else if (BATCH_SPLITTER_TYPES.has(e.type)) {
+        // 打断物（白名单 = BATCH_SPLITTER_TYPES 唯一声明）：断段；其余条目穿插不断段
         current = null;
+      } else if (e.type === 'thought') {
+        // 步切换断段：思考归属新 step（两侧 stepIndex 均已知且不同）→ 可见分隔物出现，断段
+        const s = e.payload.stepIndex;
+        if (current && currentStep !== undefined && s !== undefined && s !== currentStep) {
+          current = null;
+        }
       }
     }
     return batches;

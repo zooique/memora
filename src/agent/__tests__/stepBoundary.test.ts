@@ -319,9 +319,12 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
     });
 
     // ★ 前提断言：每个 step 的工具事件连续区（首尾之间）不得夹打断物。
-    // 打断物（chunk 层）= narrate / plan_item_boundary / text（流式正文）——批分组的切段判据
-    // （方案 §3.1；落盘层正文语义为 text_self_review，两层词面不同、判定同构）；
-    // 若被劈开 →「相邻 + 无打断物」把同一 step 的工具碎成多批。
+    // 打断物（chunk 层，**保守取并集**）= narrate / plan_item_boundary / text——守护宿主切段判据
+    // （chatView.ts `BATCH_SPLITTER_TYPES`）所依赖的前提「同 step 的工具事件本就连成一片」；
+    // 若被劈开 → 同一 step 的工具会被碎成多批。
+    // ⚠ 两层**非严格同构**：chunk 层 `text` 分 stage='answer'（主回答正文，走内容轨、宿主落盘
+    // **不产**过程事件）与 stage='self_review'（→ 落盘 `text_self_review`）两档，此处保守全收；
+    // 不得据此推论「宿主有正文打断物」——正文根本不在过程条目流里。
     const isSplitter = (c: AgentChunk): boolean =>
       c.type === 'narrate' || c.type === 'plan_item_boundary' || c.type === 'text';
     for (const [stepIndex, positions] of posByStep) {

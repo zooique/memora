@@ -20,7 +20,7 @@
 | 层 | 对齐项 | 状态 |
 |---|---|---|
 | 内核 → 插件 | `AgentOptions` 全注入（provider / storage / sessionStore / webSearch / messages / preExecutionCheck / tracer / permission / allowedPaths） | ✅ |
-| 内核 → 插件 | `AgentChunk` 全量镜像进协议（text / tool / selfReview / handoff / retry / paused / error），`recall` / `question_pending` / `thinking` / `done` / `aborted` **不收入协议**（已被事件通道覆盖，避免双通道） | ✅ |
+| 内核 → 插件 | `AgentChunk` 全量镜像进协议（thinking / text / tool_start / tool_result / thought / tool_pending / narrate / aborted / error / retry / paused / question_pending / selfReview / plan_item_boundary / step_boundary / done）；`recall` 等**非 chunk** 内容走事件通道（避免双通道） | ✅ |
 | 内核 → 插件 | 会话级事件全绑定（sessionError / sessionResumeFailed / … / memoryAdded / personaSwitched / rolePackSwitchLocked） | ✅ |
 | 内核 → 插件 | `preExecutionCheck` 注入（放行语义，收敛版不做参数审计——工具信息已由工具卡片 + tracer span 覆盖，避免三重冗余） | ✅ |
 | 内核 → 插件 | `VscodeTracer`（实现 `ITracer`）注入，每轮 `postMetrics()` 推送；指纹/指标只读不写 sessionStore，默认不落盘 | ✅ |

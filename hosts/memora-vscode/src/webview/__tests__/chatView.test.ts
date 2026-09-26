@@ -4481,10 +4481,9 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
 // ═══════════════════════════════════════════════════════════
 // 工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）
 // ═══════════════════════════════════════════════════════════
-// 判据（方案-工具批折叠合并-20260925.md §3.1，精确照抄）：打断物 = narrate / 正文（text）/
-// plan_item_boundary；thought 穿插不断段；段 id = 段内首个 tool_start 的 seq。
-// 「正文（text）」在过程条目流中的承载 = `text_self_review`（唯一 text 型正文语义事件；
-// 流式 chunk 正文不进过程条目流、落盘无痕，不参与切段）。
+// 判据（唯一声明 = chatView.ts `BATCH_SPLITTER_TYPES` + thought 步切换；此处只指路、不重述集合）：
+// 打断物 = narrate / text_self_review（自审查**输出**，非正文）/ plan_item_boundary；
+// thought 同 step 不断段（换 step 才断）；段 id = 段内首个 tool_start 的 seq。
 // 批结构对拍从 DOM 提取（[data-tool-batch] 容器 = 一批；单工具批行即批，容器即行自身）。
 describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）', () => {
   /** 开一轮（meta 建骨架 + 首 chunk 开正文）：与既有 describe 的 beginRound 同构（各 describe 自持） */
@@ -4493,9 +4492,9 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     dispatch({ type: 'chunk', content: '正文' });
   }
 
-  /** 构造 tool_start 过程事件（段内容主体） */
-  function toolStart(seq: number, id: string, name: string, args = '{}'): ProcessEvent {
-    return { type: 'tool_start', seq, ts: '', payload: { toolCallId: id, name, args } };
+  /** 构造 tool_start 过程事件（段内容主体；stepIndex = 所属 step，供步切换断段判据） */
+  function toolStart(seq: number, id: string, name: string, args = '{}', stepIndex?: number): ProcessEvent {
+    return { type: 'tool_start', seq, ts: '', payload: { toolCallId: id, name, args, stepIndex } };
   }
 
   /**
@@ -4556,7 +4555,7 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     ]);
   });
 
-  it('切段矩阵 · 正文（text）打断：正文条目（text_self_review）两侧的工具序列切段', () => {
+  it('切段矩阵 · 自审查输出打断：text_self_review 条目两侧的工具序列切段', () => {
     mountChatView();
     beginRound();
     dispatchEvents([
@@ -4600,7 +4599,7 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     ]);
   });
 
-  it('切段矩阵 · thought 穿插不断段：思考夹在工具之间仍并为一批（口径①定案）', () => {
+  it('切段矩阵 · 无 step 归属的 thought 不断段：旧数据（无 stepIndex）回落相邻性', () => {
     mountChatView();
     beginRound();
     dispatchEvents([
@@ -4615,8 +4614,61 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     ]);
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    // thought 是 step 内伴随物、不打断工具连续性 → 三工具并为同一批（段 id 仍是首个 seq）
+    // 两侧 stepIndex 缺省（旧数据）→ 步切换判据不成立、回落相邻性 → 三工具并为一批（段 id 仍是首个 seq）
     expect(batchStructure(rb)).toEqual([{ segId: '2', toolCallIds: ['t1', 't2', 't3'] }]);
+  });
+
+  it('切段矩阵 · 步切换断段：不同 step 的思考两侧工具序列各成一批（真机修复项）', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      { type: 'thought', seq: 2, ts: '', payload: { content: '第1步：先看目录', stepIndex: 1 } },
+      toolStart(3, 't1', 'read_file', '{}', 1),
+      toolResult(4, 't1', 'read_file', true),
+      toolStart(5, 't2', 'read_file', '{}', 1),
+      toolResult(6, 't2', 'read_file', true),
+      { type: 'thought', seq: 7, ts: '', payload: { content: '第2步：换个方向', stepIndex: 2 } },
+      toolStart(8, 't3', 'web_search', '{}', 2),
+      toolResult(9, 't3', 'web_search', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    // 新 step 的思考 = 可见分隔物 → 两批各归其 step（修复「不同步工具糊成一块」）
+    expect(batchStructure(rb)).toEqual([
+      { segId: '3', toolCallIds: ['t1', 't2'] },
+      { segId: '8', toolCallIds: ['t3'] },
+    ]);
+  });
+
+  it('切段矩阵 · 同 step 思考不断段：stepIndex 相同的思考碎片夹在工具之间仍并为一批', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file', '{}', 1),
+      toolResult(3, 't1', 'read_file', true),
+      { type: 'thought', seq: 4, ts: '', payload: { content: '同一步内的思考碎片', stepIndex: 1 } },
+      toolStart(5, 't2', 'read_file', '{}', 1),
+      toolResult(6, 't2', 'read_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    // 同 step 思考（stepIndex 相同）= step 内伴随物 → 不断段，仍并为一批
+    expect(batchStructure(rb)).toEqual([{ segId: '2', toolCallIds: ['t1', 't2'] }]);
+  });
+
+  it('切段矩阵 · 无思考分隔的跨 step 工具合并：模型不产 reasoning 时维持相邻合并', () => {
+    mountChatView();
+    beginRound();
+    dispatchEvents([
+      toolStart(2, 't1', 'read_file', '{}', 1),
+      toolResult(3, 't1', 'read_file', true),
+      toolStart(4, 't2', 'read_file', '{}', 2),
+      toolResult(5, 't2', 'read_file', true),
+    ]);
+    dispatch({ type: 'done' });
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    // 无可见分隔物（无思考/narrate）→ 不切段，跨 step 工具仍并为一批（用户裁定：无分隔可合并）
+    expect(batchStructure(rb)).toEqual([{ segId: '2', toolCallIds: ['t1', 't2'] }]);
   });
 
   it('跨任务项边界切段：两批各归自己的任务项分组容器（不越界混批）', () => {
