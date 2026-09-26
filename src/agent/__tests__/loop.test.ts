@@ -953,6 +953,103 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     expect(maxActive).toBeGreaterThanOrEqual(2);
   });
 
+  it('同一 step 内写同一文件必须串行（防读旧快照互相覆盖）', async () => {
+    // 真机实证的缺陷形态：insert + append 同 step 并行发起 → 两次都基于同一份旧快照（各自读到
+    // 「旧文件: 28 行」），后落地者覆盖先落地者 ⇒ 插入的行被 append 静默吃掉。
+    // 判据仍用峰值活跃数（时序断言在高负载下 flaky）：串行时 maxActive 恒为 1。
+    // 两条路径刻意写成 `a.md` 与 `./a.md`——验证串行键走的是**同一套路径归一**（等价写法视为同一文件）。
+    let activeCount = 0;
+    let maxActive = 0;
+    const execOrder: string[] = [];
+    const toolExecutor = vi.fn().mockImplementation(async (_name: string, args: string) => {
+      activeCount++;
+      maxActive = Math.max(maxActive, activeCount);
+      execOrder.push(args);
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+      activeCount--;
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              {
+                id: 'c1',
+                type: 'function',
+                function: {
+                  name: 'write_file',
+                  arguments: '{"path":"a.md","content":"插入行","mode":"insert"}',
+                },
+              },
+              {
+                id: 'c2',
+                type: 'function',
+                function: {
+                  name: 'write_file',
+                  arguments: '{"path":"./a.md","content":"追加行","mode":"append"}',
+                },
+              },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('写两次')) {
+      void chunk;
+    }
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 串行判定：峰值活跃数恒 1 → 两次写没有并行窗口
+    expect(maxActive).toBe(1);
+    // 顺序保持发起序（结果回填与 toolCalls 逐条配对的前提）
+    expect(execOrder).toEqual([
+      '{"path":"a.md","content":"插入行","mode":"insert"}',
+      '{"path":"./a.md","content":"追加行","mode":"append"}',
+    ]);
+  });
+
+  it('同一 step 内写不同文件仍并发（串行只限同路径）', async () => {
+    // 反向守卫：若把串行写成「凡写工具一律排队」，本用例会退化成 maxActive=1 而失败。
+    let activeCount = 0;
+    let maxActive = 0;
+    const toolExecutor = vi.fn().mockImplementation(async () => {
+      activeCount++;
+      maxActive = Math.max(maxActive, activeCount);
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+      activeCount--;
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' } },
+              { id: 'c2', type: 'function', function: { name: 'write_file', arguments: '{"path":"b.md","content":"B"}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('写两个文件')) {
+      void chunk;
+    }
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(maxActive).toBeGreaterThanOrEqual(2);
+  });
+
   it('tool_start 应批量 yield（全部在 tool_result 之前）', async () => {
     // tool_b 快速完成，tool_a 慢速完成，验证 tool_start 仍批量在前
     const toolExecutor = vi.fn().mockImplementation(async (name: string) => {

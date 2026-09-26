@@ -15,6 +15,9 @@
  *
  * 防重维度：闭环内 + 同 toolName + 同主体语义（路径 + 读取区间 / query）。
  * 不防重：write_file / run_code / run_skill_script 等副作用型工具。
+ *
+ * 补充导出 `WRITE_PATH_EXTRACTORS`（非防重）：写工具**不防重**，但同一 step 内打在同一路径上的
+ * 两次写**必须串行**（并行会因读旧快照而互相覆盖）。二者是同一批「副作用型工具」的两面。
  */
 import path from 'node:path';
 // 正整数解析单一真源（read_file 去重主体 offset/limit 与 builtinToolHandlers 分段预算同规）
@@ -140,6 +143,37 @@ export const DEDUP_SUBJECT_EXTRACTORS: Readonly<Record<string, DedupSubjectExtra
     const a = parseArgs(argsJson);
     const query = a ? nonEmptyString(a.query) : undefined;
     return query ? { query } : undefined;
+  },
+};
+
+/** 取「写路径」原始值（写工具的定位参数固定叫 `path`，与 read_file / list_dir 同名字段） */
+function rawPathOf(argsJson: string): string | undefined {
+  const a = parseArgs(argsJson);
+  return a ? nonEmptyString(a.path) : undefined;
+}
+
+/**
+ * 写路径提取器：**仅**覆盖「按 `args.path` 定位、会改盘」的工具。
+ *
+ * 用途单一：loop 判定「同一 step 内两次写是否打在同一文件上」，从而只对**同路径**串行。
+ * 为何必须串行——`write_file` 是「读盘 → 改 → 写盘」，同 step 内并行发起时两次都基于同一份
+ * 旧快照，后落地者覆盖先落地者 ⇒ **静默丢内容**（真机实证：`insert` + `append` 同 step 并行，
+ * 插入的行被 append 覆盖）。
+ *
+ * 为何**单独**一份、不并入 `DEDUP_SUBJECT_EXTRACTORS`：那份是**防重**判据（命中即拦截），
+ * 而写工具正是被防重**刻意排除**的对象（见文件头「不防重：write_file …」）——并入会让
+ * 「同一文件分次追加」被误判为重复调用而拦掉，属语义反转。
+ *
+ * 键 = 与去重同源的规范化路径（`normalizePathKey`）：路径等价语义只有这一套，不另造。
+ */
+export const WRITE_PATH_EXTRACTORS: Readonly<Record<string, (argsJson: string) => string | undefined>> = {
+  write_file: (argsJson) => {
+    const raw = rawPathOf(argsJson);
+    return raw ? normalizePathKey(raw) : undefined;
+  },
+  delete_file: (argsJson) => {
+    const raw = rawPathOf(argsJson);
+    return raw ? normalizePathKey(raw) : undefined;
   },
 };
 

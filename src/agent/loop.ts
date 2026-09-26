@@ -52,6 +52,7 @@ import { DefaultDuplicateCallInterceptor } from '@/agent/duplicateInterceptor.js
 import {
   ToolResultCache,
   DEDUP_SUBJECT_EXTRACTORS,
+  WRITE_PATH_EXTRACTORS,
   normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
@@ -1650,6 +1651,11 @@ export class AgentLoop {
     // 每个工具一次 push 一个 { blocked, promise }，结果按工具顺序对齐取出，
     // 保证护栏拦截标记永不与执行结果错位（避免平行数组各自 push 导致索引漂移）。
     const toolExecs: Array<{ blocked: boolean; promise: Promise<string> }> = [];
+    // 同路径写串行闸：键 = 写工具的规范化目标路径（`WRITE_PATH_EXTRACTORS`），值 = 该路径的写链尾。
+    // 为何需要——`write_file` 是「读盘 → 改 → 写盘」，同 step 内并行发起时两次都基于同一份旧快照，
+    // 后落地者覆盖先落地者 ⇒ **静默丢内容**（真机实证：insert + append 同 step 并行，插入行被覆盖）。
+    // 只对**同路径**串行：不同文件之间维持完全并发（总耗时仍≈最慢的那条路径）。
+    const writeChains = new Map<string, Promise<string>>();
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
     //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
@@ -1746,16 +1752,26 @@ export class AgentLoop {
           continue;
         }
       }
+      // 本工具的「写路径」：命中即需与同路径的上一次写串行（其余工具不含此键，直接并发发起）
+      const writeKey = WRITE_PATH_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
-      toolExecs.push({
-        blocked: false,
-        promise:
-          tc.function.name === COMPRESS_CONTEXT_TOOL.name
-            ? this.compressContext(tc.function.arguments, signal)
-            : tc.function.name === REMEMBER_INTEL_TOOL.name
-              ? Promise.resolve(this.handleRememberIntel(tc.function.arguments))
-              : this.toolRunner.runOne(tc, signal),
-      });
+      let promise: Promise<string>;
+      if (tc.function.name === COMPRESS_CONTEXT_TOOL.name) {
+        promise = this.compressContext(tc.function.arguments, signal);
+      } else if (tc.function.name === REMEMBER_INTEL_TOOL.name) {
+        promise = Promise.resolve(this.handleRememberIntel(tc.function.arguments));
+      } else if (writeKey) {
+        // 等同路径上一次写落地后再执行——这样本次「读盘」拿到的是上一次写后的最新内容，
+        // 不再基于旧快照、也就不会把上一次的改动覆盖掉。
+        promise = (writeChains.get(writeKey) ?? Promise.resolve('')).then(() =>
+          this.toolRunner.runOne(tc, signal),
+        );
+        // 链尾吞掉失败：一次写失败不得毒化同路径的后续写（本次真实结果仍由 promise 原样上抛）
+        writeChains.set(writeKey, promise.catch(() => ''));
+      } else {
+        promise = this.toolRunner.runOne(tc, signal);
+      }
+      toolExecs.push({ blocked: false, promise });
     }
 
     const results = await Promise.all(toolExecs.map((e) => e.promise));
