@@ -15,6 +15,7 @@ import { truncate } from '@/utils/strings.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import type { ISessionStore } from '@/memory/sessionStore.js';
 import {
+  ALL_BUILTIN_TOOL_DEFS,
   BUILTIN_TOOLS,
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
@@ -805,10 +806,11 @@ export class ToolExecutor {
    * 含全部始终内置工具 + 条件工具（web_search / web_fetch / run_code，仅定义层面，
    * 不论 provider 是否注入）。不过白名单过滤、不含自定义工具——只读闸（ToolRunner）需要
    * 「全部内置定义」以查 readonly 标记，而非「当前暴露面」（被白名单过滤的工具 LLM 调不到，
-   * 但 readonly 语义应覆盖全部内置写操作）。工具定义知识归本类，装配层经此取值而非重复 import。
+   * 但 readonly 语义应覆盖全部内置写操作）。定义合集真源 = `builtinTools.ALL_BUILTIN_TOOL_DEFS`
+   * （写盘派生索引同源消费），此处只转手、不另存清单。
    */
   get builtinDefinitions(): ToolDefinition[] {
-    return [...BUILTIN_TOOLS, WEB_SEARCH_TOOL, WEB_FETCH_TOOL, RUN_CODE_TOOL, SEARCH_PROJECT_TOOL];
+    return [...ALL_BUILTIN_TOOL_DEFS];
   }
 
   /**

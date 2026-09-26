@@ -1050,6 +1050,116 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
     expect(maxActive).toBeGreaterThanOrEqual(2);
   });
 
+  it('不透明写（脚本类）是屏障：与任何写互斥（目标未知，保守串行）', async () => {
+    // run_code 可能写任何文件 ⇒ 与 write_file(a.md) 之间不许有并行窗口（DIFF-3 同型丢内容的脚本版）。
+    // 判据 = 峰值活跃数恒 1。
+    let activeCount = 0;
+    let maxActive = 0;
+    const toolExecutor = vi.fn().mockImplementation(async () => {
+      activeCount++;
+      maxActive = Math.max(maxActive, activeCount);
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+      activeCount--;
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'run_code', arguments: '{"code":"fs.writeFileSync(\"a.md\",\"x\")"}' } },
+              { id: 'c2', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('脚本与写文件')) {
+      void chunk;
+    }
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 屏障判定：峰值活跃数恒 1 → 脚本与写文件没有并行窗口
+    expect(maxActive).toBe(1);
+  });
+
+  it('两个不透明写互斥（脚本 × 脚本同为屏障链）', async () => {
+    let activeCount = 0;
+    let maxActive = 0;
+    const toolExecutor = vi.fn().mockImplementation(async () => {
+      activeCount++;
+      maxActive = Math.max(maxActive, activeCount);
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+      activeCount--;
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'run_project_script', arguments: '{"script_path":"a.py"}' } },
+              { id: 'c2', type: 'function', function: { name: 'run_skill_script', arguments: '{"skill_name":"s","script_path":"lint.ts"}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('两个脚本')) {
+      void chunk;
+    }
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    expect(maxActive).toBe(1);
+  });
+
+  it("声明 'path' 但目标提取失败 → 降级屏障（不确定即保守串行，不静默跳过）", async () => {
+    // write_file 缺 path 参数：提取不出目标 ⇒ 按屏障排队（与后续任何写互斥），而非当作「非写工具」放行
+    let activeCount = 0;
+    let maxActive = 0;
+    const toolExecutor = vi.fn().mockImplementation(async () => {
+      activeCount++;
+      maxActive = Math.max(maxActive, activeCount);
+      await new Promise<void>((resolve) => setTimeout(() => resolve(), 0));
+      activeCount--;
+      return 'done';
+    });
+
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{"content":"x"}' } },
+              { id: 'c2', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' } },
+            ],
+          },
+        ],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
+
+    for await (const chunk of loop.processUserInput('参数缺 path')) {
+      void chunk;
+    }
+
+    expect(toolExecutor).toHaveBeenCalledTimes(2);
+    // 降级判定：提取失败的写与正常写也互斥（峰值恒 1）
+    expect(maxActive).toBe(1);
+  });
+
   it('tool_start 应批量 yield（全部在 tool_result 之前）', async () => {
     // tool_b 快速完成，tool_a 慢速完成，验证 tool_start 仍批量在前
     const toolExecutor = vi.fn().mockImplementation(async (name: string) => {

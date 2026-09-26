@@ -30,6 +30,17 @@ export interface ToolDefinition {
    * 未声明时默认为 false（写入操作），需显式标记只读工具
    */
   readonly?: boolean;
+  /**
+   * 改盘写声明（写串行闸 / 宿主改动追踪的判据真源）：
+   * - `'path'`：按 `args.path` 定位目标的落盘写（write_file / delete_file）→ 同目标写串行；
+   * - `'opaque'`：会改盘但目标不可静态定位（脚本执行类、内部索引落盘类）→ 与一切写互斥（屏障）；
+   * - 缺省：不改盘（读工具、内核数据工具如 task_table_*）。
+   *
+   * 与 `readonly` 正交：`readonly` 管「只读模式放不放行」，本声明管「写与写怎么排序」。
+   * 覆盖边界：写串行闸与宿主改动追踪仅消费**内置工具**声明（派生索引见本文件尾）；
+   * 自定义工具的声明暂不生效。
+   */
+  diskWrite?: 'path' | 'opaque';
 }
 
 // ─── 工具幂等性映射（补偿机制） ────────────────────────
@@ -325,6 +336,7 @@ export const RUN_CODE_TOOL: ToolDefinition = {
     '执行代码并返回运行结果（通用计算/数据处理/验证能力）。源码不进入上下文，仅执行结果返回。执行能力与隔离等级由宿主注入的执行器决定。' +
     '两种模式（二选一）：① 传 code 直接执行代码字符串；② 传 script_path 执行项目根下的脚本文件（相对项目根路径，cwd=项目根，脚本可 require 项目本地依赖、读取项目数据）。' +
     '一次性数据处理推荐「临时脚本」闭环：先 write_file 写入脚本 → run_code(script_path) 执行拿数据 → delete_file 清理脚本，不留痕。',
+  diskWrite: 'opaque',
   parameters: {
     type: 'object',
     properties: {
@@ -454,6 +466,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'write_file',
     description:
       '写入或创建文件。owner 模式默认自动批准；guest 模式会要求用户确认。受路径白名单保护。支持三种写入模式：overwrite（默认，全量覆盖）、append（追加到末尾）、insert（在指定行号前插入）。若改动只是「文末追加一段 / 单点插入新内容」，优先用 mode=append 或 mode=insert，不要 overwrite 全量重写整份文件（省 token）；只有结构性多处分改才用 overwrite。',
+    diskWrite: 'path',
     parameters: {
       type: 'object',
       properties: {
@@ -476,6 +489,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'delete_file',
     description:
       '删除项目内文件。用于清理 LLM 创建的临时脚本等一次性文件（配合 run_code 的 script_path 模式：写脚本 → 执行 → 删除，不留痕）。受路径白名单保护；owner 模式默认自动批准，guest 模式会要求用户确认。仅支持删除文件，不支持删除目录。',
+    diskWrite: 'path',
     parameters: {
       type: 'object',
       properties: {
@@ -632,6 +646,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '⚠️ 跨平台提示（与 run_project_script 同源，勿省）：.sh 需要系统有 sh/bash 解释器——Windows 无 Git Bash 时' +
       '会**静默空跑**（退出码 0 但 stdout/stderr 全空，不是执行成功）；给技能写脚本时请优先选**跨平台**的 .mjs/.js/.py，' +
       'Windows 专属需求用 .bat/.cmd（cmd 原生可执行）；不要写 .sh（Windows 静默空跑）、不要写 .ps1（shell 档不起 PowerShell，同样静默空跑）。',
+    diskWrite: 'opaque',
     parameters: {
       type: 'object',
       properties: {
@@ -658,6 +673,7 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '与 run_code(script_path) 的区别：本工具运行**仓库既有**脚本（默认开放、内核执行）；' +
       'run_code 面向 LLM 现写的一次性临时脚本（特权 code:execute + 宿主沙箱，写→执行→删闭环）。' +
       '文件组织类操作（批量移动/重命名/归档/复制）优先用脚本一次完成（fs 重命名或一行 mv），避免逐文件 read→write→delete 的多轮低效操作。',
+    diskWrite: 'opaque',
     parameters: {
       type: 'object',
       properties: {
@@ -702,6 +718,8 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'register_work',
     description:
       '登记作品索引：把用户的一件作品（文档/代码/笔记）登记为项目级文件索引，追加到 <memoraDir>/work-projections.json 清单中。当用户说「记住这个文件」「把这份文档登记为作品」时使用。path 为相对项目根的源文件路径，description 为作品的一句话说明。登记后 AI 在后续对话中会看到此索引，根据描述自主决定是否读取原文。',
+    // 目标 = <memoraDir>/work-projections.json（非 args.path），且登记是「读盘 refresh → 追加 → 写盘」⇒ opaque 屏障
+    diskWrite: 'opaque',
     parameters: {
       type: 'object',
       properties: {
@@ -714,3 +732,22 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
   // ── 评估/评审型小组会议（单次 LLM 调用注入多角色 persona）──
   RUN_TEAM_MEETING_TOOL,
 ];
+
+// ─── 写盘语义派生索引（构造级单源） ──────────────────────
+// 真源 = 各定义行的 `diskWrite` 声明；以下三份全部**派生**，禁再独立枚举工具名
+// （两处手工清单必漂移 = 串行不防 / 追踪不报 / 契约钉不红的三重静默）。
+
+/** 全部内置工具定义合集（只读闸 / 写盘派生索引共用；条件工具含定义、不论 provider 是否注入） */
+export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
+  ...BUILTIN_TOOLS,
+  WEB_SEARCH_TOOL,
+  WEB_FETCH_TOOL,
+  RUN_CODE_TOOL,
+  SEARCH_PROJECT_TOOL,
+];
+
+/** 按 `args.path` 定位目标的写工具名集（派生；同路径串行闸与宿主改动追踪的判据真源） */
+export const PATH_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'path').map((t) => t.name);
+
+/** 目标不可静态定位的写工具名集（派生；执行 = 屏障，与一切写互斥） */
+export const OPAQUE_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'opaque').map((t) => t.name);

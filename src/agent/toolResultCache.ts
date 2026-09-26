@@ -20,6 +20,9 @@
  * 两次写**必须串行**（并行会因读旧快照而互相覆盖）。二者是同一批「副作用型工具」的两面。
  */
 import path from 'node:path';
+// PATH_WRITE_TOOL_NAMES：写工具名集真源（builtinTools 各定义行 `diskWrite:'path'` 声明派生）——
+// 本模块只借其键集组装提取器表，不自存工具名清单。
+import { PATH_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 // 正整数解析单一真源（read_file 去重主体 offset/limit 与 builtinToolHandlers 分段预算同规）
 import { positiveInt } from '@/utils/math.js';
 
@@ -164,18 +167,18 @@ function rawPathOf(argsJson: string): string | undefined {
  * 而写工具正是被防重**刻意排除**的对象（见文件头「不防重：write_file …」）——并入会让
  * 「同一文件分次追加」被误判为重复调用而拦掉，属语义反转。
  *
- * 键 = 与去重同源的规范化路径（`normalizePathKey`）：路径等价语义只有这一套，不另造。
+ * 键集 = **派生自** `builtinTools` 各定义行的 `diskWrite: 'path'` 声明（构造级单源，禁再
+ * 独立枚举工具名）；值 = 共用的 `args.path` 提取语义（'path' 模式的定义即「目标 = args.path」）。
+ * 路径规范化与去重同源（`normalizePathKey`）：路径等价语义只有这一套，不另造。
  */
-export const WRITE_PATH_EXTRACTORS: Readonly<Record<string, (argsJson: string) => string | undefined>> = {
-  write_file: (argsJson) => {
-    const raw = rawPathOf(argsJson);
-    return raw ? normalizePathKey(raw) : undefined;
-  },
-  delete_file: (argsJson) => {
-    const raw = rawPathOf(argsJson);
-    return raw ? normalizePathKey(raw) : undefined;
-  },
-};
+export const WRITE_PATH_EXTRACTORS: Readonly<Record<string, (argsJson: string) => string | undefined>> =
+  Object.fromEntries(PATH_WRITE_TOOL_NAMES.map((name) => [name, extractArgsPathTarget]));
+
+/** `'path'` 模式写工具的目标提取：`args.path` → 规范化路径（提取失败返回 undefined，调用方降级屏障） */
+function extractArgsPathTarget(argsJson: string): string | undefined {
+  const raw = rawPathOf(argsJson);
+  return raw ? normalizePathKey(raw) : undefined;
+}
 
 /** 主体 → 缓存 key（本模块唯一的 key 构造点；用不可打印分隔符，避免与路径 / query / item 内容冲突） */
 function keyOf(toolName: string, subject: DedupSubject): string {

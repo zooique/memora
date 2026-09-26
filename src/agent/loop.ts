@@ -13,7 +13,7 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
-import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL, REMEMBER_INTEL_TOOL } from '@/agent/builtinTools.js';
+import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL, REMEMBER_INTEL_TOOL, OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
   UIMessages,
@@ -1656,6 +1656,10 @@ export class AgentLoop {
     // 后落地者覆盖先落地者 ⇒ **静默丢内容**（真机实证：insert + append 同 step 并行，插入行被覆盖）。
     // 只对**同路径**串行：不同文件之间维持完全并发（总耗时仍≈最慢的那条路径）。
     const writeChains = new Map<string, Promise<string>>();
+    // 不透明写链尾（目标不可静态定位：脚本执行类 / 内部索引落盘类 / 'path' 提取失败降级）——
+    // 屏障语义：与**一切**写互斥（它可能写任何文件），后续任何写也须排在它之后。
+    // 批内共享即完备（step 串行推进，无跨批并发）。判据真源 = 工具定义行 `diskWrite` 声明。
+    let opaqueWriteTail: Promise<string> | undefined;
     // 运行时护栏阈值组装（真源分配见 guardRail.GuardThresholds）：
     //  写环=GUARD_THRESHOLDS.writeLoop，读闸=GUARD_THRESHOLDS.readFailed（独立静态真源，
     //  不再与 duplicateCallInterceptor 阈值复用——语义同宽，解开隐藏耦合）；
@@ -1752,20 +1756,30 @@ export class AgentLoop {
           continue;
         }
       }
-      // 本工具的「写路径」：命中即需与同路径的上一次写串行（其余工具不含此键，直接并发发起）
-      const writeKey = WRITE_PATH_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
+      // 写排序三分（判据真源 = 工具定义行 `diskWrite` 声明，派生索引见 builtinTools）：
+      //  'path' → 按目标路径串行（同路径链）；'opaque' → 屏障，与一切写互斥；
+      //  声明 'path' 但目标提取失败（参数缺 path 等）→「不确定即保守」降级为屏障，不静默跳过。
+      const pathExtractor = WRITE_PATH_EXTRACTORS[tc.function.name];
+      const writeKey = pathExtractor?.(tc.function.arguments);
+      const useWriteBarrier =
+        OPAQUE_WRITE_TOOL_NAMES.includes(tc.function.name) || (pathExtractor !== undefined && writeKey === undefined);
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
       let promise: Promise<string>;
       if (tc.function.name === COMPRESS_CONTEXT_TOOL.name) {
         promise = this.compressContext(tc.function.arguments, signal);
       } else if (tc.function.name === REMEMBER_INTEL_TOOL.name) {
         promise = Promise.resolve(this.handleRememberIntel(tc.function.arguments));
+      } else if (useWriteBarrier) {
+        // 屏障：排在全部在途写链尾之后（同/异路径写与既有屏障都要等），执行后成为新屏障尾
+        const prior = [...writeChains.values(), ...(opaqueWriteTail ? [opaqueWriteTail] : [])];
+        promise = Promise.all(prior).then(() => this.toolRunner.runOne(tc, signal));
+        // 链尾吞掉失败：一次写失败不得毒化后续写（本次真实结果仍由 promise 原样上抛）
+        opaqueWriteTail = promise.catch(() => '');
       } else if (writeKey) {
         // 等同路径上一次写落地后再执行——这样本次「读盘」拿到的是上一次写后的最新内容，
-        // 不再基于旧快照、也就不会把上一次的改动覆盖掉。
-        promise = (writeChains.get(writeKey) ?? Promise.resolve('')).then(() =>
-          this.toolRunner.runOne(tc, signal),
-        );
+        // 不再基于旧快照、也就不会把上一次的改动覆盖掉；屏障在途时同样等它（目标可能就是本文件）。
+        const prior = [writeChains.get(writeKey) ?? Promise.resolve(''), ...(opaqueWriteTail ? [opaqueWriteTail] : [])];
+        promise = Promise.all(prior).then(() => this.toolRunner.runOne(tc, signal));
         // 链尾吞掉失败：一次写失败不得毒化同路径的后续写（本次真实结果仍由 promise 原样上抛）
         writeChains.set(writeKey, promise.catch(() => ''));
       } else {
@@ -1848,18 +1862,14 @@ export class AgentLoop {
         outcome: blocked ? 'blocked' : ok ? 'ok' : 'failed',
       });
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
-      // 覆盖 write_file/delete_file 两类会修改文件系统状态的工具
-      if (ok && (tc.function.name === 'write_file' || tc.function.name === 'delete_file')) {
-        try {
-          const a = JSON.parse(tc.function.arguments) as { path?: string };
-          if (a.path) {
-            this.toolResultCache.invalidateFile(a.path);
-            // 台账同步失效：文件内容变了，旧覆盖度替身作废（防替身回显陈旧摘要 → 放行合法重读）
-            this.fileExposure.invalidate(a.path);
-          }
-        } catch {
-          /* 参数非 JSON → 忽略 */
-        }
+      // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸同一真源），目标提取复用同一提取器——
+      // 必须用**归一后**路径才对得上缓存/台账的键（raw 写法如 './a.md' 会失效不中）。
+      // opaque 写（脚本类）目标不可知、无法按 path 失效：与改动可视化同盲（台账 DIFF-4 可视化半）。
+      const invalidatedPath = WRITE_PATH_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
+      if (ok && invalidatedPath) {
+        this.toolResultCache.invalidateFile(invalidatedPath);
+        // 台账同步失效：文件内容变了，旧覆盖度替身作废（防替身回显陈旧摘要 → 放行合法重读）
+        this.fileExposure.invalidate(invalidatedPath);
       }
       yield {
         type: 'tool_result',

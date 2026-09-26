@@ -9,8 +9,11 @@
  */
 import { describe, it, expect } from 'vitest';
 import {
+  ALL_BUILTIN_TOOL_DEFS,
   BUILTIN_TOOLS,
   BUILTIN_TOOL_IDEMPOTENCY,
+  OPAQUE_WRITE_TOOL_NAMES,
+  PATH_WRITE_TOOL_NAMES,
   shouldSkipForIdempotency,
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
@@ -18,6 +21,7 @@ import {
   SEARCH_PROJECT_TOOL,
   type ToolDefinition,
 } from '@/agent/builtinTools.js';
+import { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
 import { isReservedTaskTableFile } from '@/agent/builtinToolHandlers.js';
 import { PLAN_NUDGE_PROMPT } from '@/agent/needsPlanning.js';
 import { buildTeamContextBlockText } from '@/role-pack/rolePackManager.js';
@@ -553,5 +557,30 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
     const args = '{"path":"a.ts"}';
     const records = [rec('read_file', args, true, level, '旧内容（已过时）')];
     expect(shouldSkipForIdempotency(records, 'read_file', args, level)).toEqual({ skip: false });
+  });
+});
+
+describe('builtinTools · 写盘声明位（diskWrite）与派生索引', () => {
+  it('声明契约钉：path 集 / opaque 集的工具名（行内声明变动必须复审本例）', () => {
+    // 跨模块契约钉：串行闸与宿主改动追踪都由这两个集合派生，名单变动 = 排序语义变动。
+    // 序无关比较（派生序 = 定义排布序，不承载语义）
+    expect([...PATH_WRITE_TOOL_NAMES].sort()).toEqual(['delete_file', 'write_file']);
+    expect([...OPAQUE_WRITE_TOOL_NAMES].sort()).toEqual(
+      ['register_work', 'run_code', 'run_project_script', 'run_skill_script'].sort(),
+    );
+  });
+
+  it("'path' 声明行必须以 args.path 定位目标（required 含 path），模式语义自洽", () => {
+    for (const def of ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'path')) {
+      expect(def.parameters.required, `${def.name} 声明 'path' 却不带 path 参数`).toContain('path');
+    }
+  });
+
+  it('派生不变量：WRITE_PATH_EXTRACTORS 键集 ≡ PATH_WRITE_TOOL_NAMES（构造级单源）', () => {
+    expect(Object.keys(WRITE_PATH_EXTRACTORS).sort()).toEqual([...PATH_WRITE_TOOL_NAMES].sort());
+    // opaque 工具不得进提取器表——目标不可定位，进表 = 假定位（串行键会静默失真）
+    for (const name of OPAQUE_WRITE_TOOL_NAMES) {
+      expect(WRITE_PATH_EXTRACTORS[name], `${name} 是 opaque 写，不应有路径提取器`).toBeUndefined();
+    }
   });
 });
