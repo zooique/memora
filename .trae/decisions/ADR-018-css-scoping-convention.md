@@ -145,7 +145,7 @@ L3 内容（content）：markdown
 
 ### 长期影响
 
-- **新增面板**：必须遵循 `perception-xxx.css` 命名 + 面板前缀类名，[new-module-guide.md](../rules/new-module-guide.md) 补充 CSS 检查项
+- **新增面板**：必须遵循 `perception-xxx.css` 命名 + 面板前缀类名，[new-module-guide.md](../rules/generic/new-module-guide.md) 补充 CSS 检查项
 
 - **新增组件**：可复用组件迁到独立 `xxx.css`（L3 层），类名用组件名前缀
 
@@ -157,7 +157,7 @@ L3 内容（content）：markdown
 
 - [backend\_layers\_rules.md](../rules/backend_layers_rules.md)：§前端分层补充 CSS 三层作用域模型引用
 
-- [coding-convention-rules.md](../rules/coding-convention-rules.md)：§命名规范补充 CSS BEM 风格
+- [coding-convention-rules.md](../rules/generic/coding-convention-rules.md)：§命名规范补充 CSS BEM 风格
 
 - [ADR-017](./ADR-017-natural-growth-redefinition.md)：枝叶层 2 次提取原则在 CSS 领域的具体化——同类样式重复 2 次必须提升为 L3 组件类或加面板前缀
 
@@ -177,7 +177,7 @@ L3 内容（content）：markdown
 
 - [backend\_layers\_rules.md](../rules/backend_layers_rules.md) §前端 CSS 三层作用域模型——补充 L1/L2/L3 三层 + 核心约束
 
-- [coding-convention-rules.md](../rules/coding-convention-rules.md) §6 函数与变量规范 · CSS 命名规范——补充 BEM 风格 + 面板前缀约定
+- [coding-convention-rules.md](../rules/generic/coding-convention-rules.md) §6 函数与变量规范 · CSS 命名规范——补充 BEM 风格 + 面板前缀约定
 
-- [new-module-guide.md](../rules/new-module-guide.md) §6 新增面板的 CSS 检查项——补充 CSS 文件命名 + 类名前缀检查
+- [new-module-guide.md](../rules/generic/new-module-guide.md) §6 新增面板的 CSS 检查项——补充 CSS 文件命名 + 类名前缀检查
 

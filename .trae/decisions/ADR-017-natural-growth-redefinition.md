@@ -29,7 +29,7 @@ description: 自然生长原则重新定义：分层适用
 
 1. 该功能归属哪个模块？（参照 [backend_layers_rules.md](../rules/backend_layers_rules.md) §分层职责）
 2. 是否引入新的依赖方向？（如违反 [ADR-008](./ADR-008-directory-structure.md) 需先更新 ADR）
-3. 是否需要新增模块？（参照 [new-module-guide.md](../rules/new-module-guide.md)）
+3. 是否需要新增模块？（参照 [new-module-guide.md](../rules/generic/new-module-guide.md)）
 4. 是否影响现有架构边界？（如是 → 走"规则对齐"或"年轮审判"先调整架构）
 
 **枝叶层的 2 次提取原则**：
@@ -58,7 +58,7 @@ description: 自然生长原则重新定义：分层适用
 
 ## 影响
 
-- **新功能开发流程**：加入"架构归属评估"步骤（4 个判断问题），参照 [new-module-guide.md](../rules/new-module-guide.md)
+- **新功能开发流程**：加入"架构归属评估"步骤（4 个判断问题），参照 [new-module-guide.md](../rules/generic/new-module-guide.md)
 - **"规则对齐"/"年轮审判"模式**：架构层变更的触发条件从"3 次重复"放宽为"1 次架构不合理"
 - **"健康度诊断"模式**：架构层检查不再受"3 次原则"约束，可对单次架构违规提出修复建议
 - **枝叶层抽象决策**：阈值从 3 次降为 2 次，相同模式重复 2 次即应提取

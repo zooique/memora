@@ -160,7 +160,7 @@ systemPrompt 固定段注入（内核定义，不开放键；D2 边界论证见 
 
 ## 九、关联
 
-- [legacy-contract-audit-rules.md](../../.trae/rules/legacy-contract-audit-rules.md)（不带伤自检 §四）
+- [legacy-contract-audit-rules.md](../../.trae/rules/generic/legacy-contract-audit-rules.md)（不带伤自检 §四）
 - [memory-role-pack-boundary.md](./memory-role-pack-boundary.md)（边界论证 R7）
 - [memory-tool-recall-design.md](./memory-tool-recall-design.md)（记忆软引导现状 + 硬收窄砍除历史，Part 2 记忆引导不重复的实证依据）
 - [process-event-log-replay-design.md](./process-event-log-replay-design.md)（reasoning/narrate 落盘与平铺展示依据）

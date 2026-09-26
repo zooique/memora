@@ -133,7 +133,7 @@ Step 3 恢复协议 → CheckpointRestoreCoordinator
 >
 > * [agent-design-philosophy.md](./agent-design-philosophy.md) —— turn 设计推导
 >
-> * [.trae/rules/single-truth-source-mindset.md](../../.trae/rules/single-truth-source-mindset.md) —— 最小单元与逻辑下沉
+> * [.trae/rules/generic/single-truth-source-mindset.md](../../.trae/rules/generic/single-truth-source-mindset.md) —— 最小单元与逻辑下沉
 >
-> * [.trae/rules/exploration-decision-sedimentation-rules.md](../../.trae/rules/exploration-decision-sedimentation-rules.md) —— 探索期决策沉淀机制（S1/S2）
+> * [.trae/rules/generic/exploration-decision-sedimentation-rules.md](../../.trae/rules/generic/exploration-decision-sedimentation-rules.md) —— 探索期决策沉淀机制（S1/S2）
 

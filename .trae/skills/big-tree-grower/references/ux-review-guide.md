@@ -36,7 +36,7 @@ description: 体验评审执行指南（匠码 — 代码领域）
 8. **Agent 信任设计** — Agent 界面的信任机制是否健全（仅适用于 Agent 产品）
 
 > 维度 7（视觉审美）的检查清单详见 [frontend-aesthetics-guide.md](frontend-aesthetics-guide.md) 中的"千树一面检测"章节。
-> 维度 8（Agent 信任设计）的规则依据详见 [ui-design-philosophy-rules.md §七](../../../rules/ui-design-philosophy-rules.md) 与 [visual-design-philosopher/SKILL.md §四](../../visual-design-philosopher/SKILL.md)。仅在 Agent 产品评审时启用。
+> 维度 8（Agent 信任设计）的规则依据详见 [ui-design-philosophy-rules.md §七](../../../rules/generic/ui-design-philosophy-rules.md) 与 [visual-design-philosopher/SKILL.md §四](../../visual-design-philosopher/SKILL.md)。仅在 Agent 产品评审时启用。
 
 ---
 
