@@ -65,6 +65,14 @@
 
 ## [3.0.0] - 待发布（发版日补日期）
 
+### Fixed（内核 · 写串行闸收口：`diskWrite` 声明位 + 不透明写屏障，DIFF-4/5）
+
+- **问题**：「谁会改盘」散在两处枚举（builtinTools 工具表语义 ↔ `WRITE_PATH_EXTRACTORS` 键），新增写工具忘加提取器 = 串行不防 + 追踪不报 + 契约钉不红的三重静默（DIFF-5）；且 `run_code` / `run_*_script` 等**无 `args.path` 的写工具**不进串行闸——同 step 并行脚本写/脚本×write_file 同目标 = DIFF-3 同型丢内容（DIFF-4）
+- **修复（SSOT：构造级单源）**：`ToolDefinition` 增 `diskWrite?: 'path' | 'opaque'` **行内声明**（真源 = 定义行，与 `readonly` 正交）；`PATH_WRITE_TOOL_NAMES` / `OPAQUE_WRITE_TOOL_NAMES` / `WRITE_PATH_EXTRACTORS` 全部**派生**（漂移不可构造），`toolExecutor.builtinDefinitions` 与 loop 的「写后失效 read_file 缓存」分支**同批收编**各自的内联枚举（后者顺带修掉潜伏 miss：原用 raw 路径失效台账，`./a.md` 式入参会失效不中，改走同一提取器的归一路径）。契约钉 3 例（含 `'path'` 行必带 `path` 参数的语义自洽断言）
+- **串行闸补齐（不带伤三条件齐）**：不透明写（`run_code` / `run_skill_script` / `run_project_script` / `register_work`，后者经核查证实为异步读-改-写）升为**屏障**——与一切写互斥；声明 `'path'` 但目标提取失败 → **降级屏障**（不确定即保守串行）；同路径串行维持现状、不同路径仍并发（反向守卫保绿）
+- **验证（变异闭合）**：loop 峰值活跃数断言 ×3 新例；变异 3 场精确命中（删声明→恰 1 红 / 短路屏障→恰 3 红 / 拆降级半→恰 1 红），既有 DIFF-3 两例与反向守卫全程零误伤
+- **边界（如实记）**：自定义工具的 `diskWrite` 声明暂不生效；「新工具整行忘声明」靠行内同处 + 契约钉复审兜住；脚本改盘的**可视化盲区**保留（宿主 FS watcher 触发驱动，见台账 DIFF-4）
+
 ### Added（内核 · 公开导出面补齐：`MAX_DIFF_CONTENT_LENGTH` / `WRITE_PATH_EXTRACTORS`）
 
 - `src/security/pathGuard.ts` 导出 `MAX_DIFF_CONTENT_LENGTH`（diff 内容上限 10240），`src/index.ts` 安全层导出面收录——宿主 UI 展示阈值 `import` 对齐，消除跨包同值并列（DIFF-2）。⚠️ 两侧超限行为不同（内核 = 截断后加「已截断」标记照常展示 / 宿主 = 跳过对比只提示），导出只统一**数值**、不统一行为
