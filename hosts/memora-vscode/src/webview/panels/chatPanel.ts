@@ -16,6 +16,13 @@
  */
 import * as vscode from 'vscode';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
+// 命令 id 唯一真源 = fileChangeView（与 package.json#contributes.commands 的值同源维护）。
+// 对话区常驻条的两个按钮**不自己实现动作**，只 executeCommand 复用已注册命令——
+// 与文件内 CodeLens、状态栏 QuickPick、命令面板走同一实现（SSOT，无第二份清理逻辑）。
+import {
+  CONFIRM_ALL_FILE_CHANGES_COMMAND,
+  REVERT_ALL_FILE_CHANGES_COMMAND,
+} from '../../extension/host/fileChangeView.js';
 import {
   defaultSessionTitle,
   formatDateKey,
@@ -57,6 +64,8 @@ import {
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
 import { isSkillDisabled, listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
+// 文件改动追踪接入面（唯一接入点；仅依赖窄接口，不直接依赖渲染实现）
+import type { FileChangeSink } from '../../extension/host/fileChangeTracker.js';
 
 /** 历史回放单次最大条数：跨天合并视图聚焦近期对话，
  *  防止长期使用后消息累积导致每次打开/切换都全量回放 + 逐条建 DOM。 */
@@ -267,6 +276,15 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （删 round 即删事件、分叉即共享、截断即覆盖）。
    */
   private _eventLogRoundStore: IRoundStore | undefined;
+  /**
+   * 文件改动追踪接入面（extension 注入；可选）
+   *
+   * consumeFlow 的 tool_start / tool_result 两分支喂给它——这是**唯一**接入点
+   * （见 docs/方案-文件改动diff可视化-20260926.md §3.2）。未注入时功能静默关闭。
+   */
+  private _fileChangeSink: FileChangeSink | undefined;
+  /** 未确认改动路径清单的取值函数（由 extension 注入；真源 = 宿主 FileChangeView） */
+  private _fileChangesProvider: (() => string[]) | undefined;
   /** 当前激活 Provider 的显示名（meta 事件 llm 字段来源，随 pushProviders 刷新，SSOT 与模型下拉同源） */
   private _activeProviderDisplayName = '';
   /**
@@ -325,6 +343,27 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   public setRoundStore(roundStore: IRoundStore): void {
     this._eventLogRoundStore = roundStore;
+  }
+
+  /** 注入文件改动接入面（由 extension 装配；tool_start/tool_result 唯一入口） */
+  public setFileChangeSink(sink: FileChangeSink): void {
+    this._fileChangeSink = sink;
+  }
+
+  /**
+   * 注入「未确认改动清单」取值函数（由 extension 装配，真源 = FileChangeView）
+   *
+   * 对话区常驻条**不自维护计数副本**——渲染只认宿主推来的 `file_changes` 快照；
+   * 本取值函数用于 webview ready 回放时的**补推**（防「只推变化 ⇒ 面板重开条消失」的时间面漏面）。
+   */
+  public setFileChangesProvider(provider: () => string[]): void {
+    this._fileChangesProvider = provider;
+  }
+
+  /** 推送未确认改动快照给对话区常驻条（count = 0 时 webview 自行隐藏该条） */
+  public pushFileChanges(): void {
+    const files = this._fileChangesProvider?.() ?? [];
+    this.post({ type: 'file_changes', count: files.length, files });
   }
 
   /** 注入 Agent 懒装配工厂（由 extension.ts 提供 getOrCreateAgent） */
@@ -609,6 +648,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           this._pendingWriteConfirmations.delete(msg.requestId);
           pending.resolve(msg.approved);
         }
+      } else if (msg.type === 'confirm_all_file_changes') {
+        // 对话区常驻条「全部确认」：复用已注册命令（纯内存清理，零风险，无需二次确认）
+        void vscode.commands.executeCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND);
+      } else if (msg.type === 'revert_all_file_changes') {
+        // 对话区常驻条「全部回退」：命令内部含模态二次确认（破坏性操作，勿绕过）
+        void vscode.commands.executeCommand(REVERT_ALL_FILE_CHANGES_COMMAND);
       }
     });
   }
@@ -1543,6 +1588,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     }
     // ③ 回放会话历史（历史 + Provider 列表；升级轮已入 roundIds，随本次回放按普通 turn 投递）
     this.replaySession();
+    // ④ 文件改动常驻条补推：该条只在「改动集变化」时推送，面板重开/回放时必须补一次——
+    //    否则关掉面板再打开，常驻条凭空消失（项目里踩过四次的「时间面」漏面）。
+    this.pushFileChanges();
     // 角色 handoff 预填补发：视图解析后 webview 监听器已就绪，安全投递
     if (this._pendingPrefill !== undefined) {
       this.post({ type: 'prefill_input', text: this._pendingPrefill });
@@ -2599,6 +2647,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → 过程事件（webview 渲染工具调用折叠区）
           emitEvent('tool_start', { toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args, stepIndex: chunk.stepIndex });
+          // 文件改动追踪：写前快照（此刻磁盘仍是旧内容）
+          this._fileChangeSink?.noteToolStart({ toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
           // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行。
           //  任务看板归 checkpoint 执行态，不进过程事件）
@@ -2615,6 +2665,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             summary: chunk.summary,
             ...(chunk.blocked ? { blocked: true } : {}),
           });
+          // 文件改动追踪：写后合并（按文件路径；blocked/失败自动丢弃）
+          this._fileChangeSink?.noteToolResult({ toolCallId: chunk.toolCallId, name: chunk.name, ok: chunk.ok, blocked: chunk.blocked });
           // N/M 闪骨架：tool_start 时读到的 plan 是工具执行前的旧状态
           // （如会议骨架 2 个任务项），工具落定后才是新 plan（如 4 个任务项）——tool_result 补推一次快照，
           // 消除「1/2 → 1/4」的一次性闪烁

@@ -1,20 +1,25 @@
-# 带 YAML frontmatter 的技能/模板 md：prettier 解析失败会把它当普通 markdown 重排，
-# 导致 frontmatter 分隔符（--- → ***）被破坏、技能加载失效。严禁 prettier 触碰——
-# format / format:check 脚本（package.json）与 IDE 保存格式化同步跳过。
-
-# 宿主技能（SKILL.md frontmatter）+ 角色包创建模板
-hosts/memora-vscode/src/extension/skills/**/*.md
-
-# 示例角色包的技能文件（同样带 frontmatter）
-role-packs/**/skills/**/*.md
-
-# `.trae/` 全域 md（rules / decisions / skills / documents）——两类同源损害：
-# ① frontmatter 被改写 ⇒ 解析失败：rules 的 `alwaysApply: true` 会静默失效（规则不再随会话注入）；
-#    skills 下 30 个带 frontmatter 的 md 破坏即技能不可加载。ADR-018 曾被改成 `***` + 98 个短横线。
+# ── 全域 md 一律不许 prettier 碰 ──
+# 2026-09-26 由「按目录列黑名单」收敛为「按文件类型全域挡」；format / format:check 脚本
+# （package.json）与 IDE 保存格式化同步跳过。
+#
+# 两类同源损害（都不可逆改写正文）：
+# ① frontmatter 被改写 ⇒ 解析失败：prettier 把它当普通 markdown 重排，分隔符 `---` 变 `***`
+#    （ADR-018 曾被改成 `***` + 98 个短横线），rules 的 `alwaysApply: true` 会静默失效
+#    （规则不再随会话注入），skills 下带 frontmatter 的 md 破坏即技能不可加载。
+#    实证（2026-09-25，已推送后修复）：8 个规则文件的 `---` 被改写成 `\---`（每文件 2 处），
+#    常驻文件 memory-role-pack 因此从未随会话加载。
+#    ⚠️ 归因未复现（prettier 对干净版本不产生该转义），但全域挡住后不再依赖归因结论。
 # ② CJK 表格被按显示宽度对齐填充（显示宽度 2 / 字符数 1）⇒ 字符数膨胀近 1 倍，与「控体积」目标冲突。
 #    实测 legacy-contract 15740→11032、ui-engineering 14049→10130、programmer-mindset 9346→5831。
-# 实证（2026-09-25，已推送后修复）：8 个规则文件的 frontmatter 分隔符被改写成 `\---`（每文件 2 处），
-# 常驻文件 memory-role-pack 因此从未随会话加载。⚠️ 归因未复现（prettier 对干净版本不产生该转义），
-# 但闸门里**没有** format:check，能命中 md 的只有「IDE 保存格式化」与「手工 npm run format」两条路径
-# ⇒ 全域挡住，不再依赖归因结论。
-.trae/**/*.md
+#    2026-09-26 复测 CHANGELOG：现行配置差异 1062 处；剥掉 `proseWrap: always` 后残余 108 处，
+#    **逐条采样 100% 为中文表格重排** ⇒ 损害来自表格对齐，调 `proseWrap` 参数解决不了。
+#
+# 为什么是「全域」而不是继续列目录：md 散落在 8 个顶层位置（`.trae/` 85 · `docs/` 51 ·
+# `role-packs/` 37 · `hosts/` 16 · `deliverables/` 7 · `prompts/` 6 · `tasks/` 3 · 根目录 3，共 208 个），
+# 黑名单永远补不全；且损害挂在**内容**（中文表格 / frontmatter）上，不挂在**路径**上。
+# 本条只**缩小 prettier 的作用范围、不改任何文件内容**，是存量清零前的即时止损
+# （存量 341 文件不合格式，见 `tasks/待完成任务.md` 的 FMT-PRETTIER-1）。
+#
+# ⚠️ 仍未挡住的 ts/json（约 256 文件）仍会漂移 —— 属 FMT-PRETTIER-1 第②步（纯机械、零内容损失），未做。
+#    若将来把 format 的 glob 放宽到全后缀，yaml / lock / CI 配置须先另行加 ignore。
+**/*.md

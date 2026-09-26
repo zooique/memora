@@ -606,6 +606,55 @@ export const chatStyles = `
    * hidden 属性天然生效（display:block 被显式 [hidden] 覆盖为 none）。
    * 视觉定位：弱化灰色条（--surface-track），比输入卡片更轻，不抢注意力。
    * 布局：flex column（label+count+clear 在顶部一行 + list 在下方多行） */
+  /* 文件改动常驻条（DIFF-1）：与 pending-queue-bar 同位置范式（插在输入栏之前）；
+     用注意色左条区分「有未确认改动待处理」语义，区别于打断语义的蓝色条。
+     数字用 warn 色 + 粗体（不设底色，避免浅/深主题下底字对比度失控）。 */
+  .file-changes-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--sp-1, 4px);
+    margin: 0 var(--sp-4, 8px) var(--sp-2, 4px);
+    padding: var(--sp-2, 4px) var(--sp-3, 8px);
+    border-left: 3px solid var(--warn, #cca700);
+    border-radius: var(--radius-sm, 2px);
+    font-size: 12px;
+    line-height: 1.4;
+    color: var(--text-muted, #9a9a9a);
+  }
+  .file-changes-bar[hidden] {
+    display: none;
+  }
+  .file-changes-bar__badge {
+    font-weight: 700;
+    color: var(--warn, #cca700);
+  }
+  .file-changes-bar__label {
+    color: var(--text-muted, #9a9a9a);
+  }
+  /* 占位撑开：把两个按钮推到行尾 */
+  .file-changes-bar__spacer {
+    flex: 1 1 auto;
+  }
+  .file-changes-bar__confirm,
+  .file-changes-bar__revert {
+    flex-shrink: 0;
+    padding: 2px 8px;
+    border: 1px solid var(--border, rgba(128, 128, 128, 0.25));
+    border-radius: var(--radius-sm, 2px);
+    background: transparent;
+    color: inherit;
+    font-family: inherit;
+    font-size: 11px;
+    cursor: pointer;
+  }
+  .file-changes-bar__confirm:hover {
+    border-color: var(--accent, #0e639c);
+    color: var(--accent, #0e639c);
+  }
+  .file-changes-bar__revert:hover {
+    border-color: var(--danger, #f14c4c);
+    color: var(--danger, #f14c4c);
+  }
   .pending-queue-bar {
     display: flex;
     flex-direction: column;

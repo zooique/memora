@@ -58,6 +58,21 @@
         "command": "memora.registerWork",
         "title": "Memora: 登记作品投影",
         "icon": "$(file-text)"
+      },
+      {
+        "command": "memora.reviewFileChanges",
+        "title": "Memora: 查看文件改动",
+        "icon": "$(diff)"
+      },
+      {
+        "command": "memora.confirmAllFileChanges",
+        "title": "Memora: 全部确认文件改动",
+        "icon": "$(check-all)"
+      },
+      {
+        "command": "memora.revertAllFileChanges",
+        "title": "Memora: 全部回退文件改动",
+        "icon": "$(discard)"
       }
     ],
     "configuration": {

@@ -1144,6 +1144,47 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     expect(clearBtn.textContent, '清空按钮不应再有字符图标').toBe('');
   });
 
+  // ─── file-changes-bar DOM 渲染（file_changes 单通道 · DIFF-1 对话区常驻条） ───
+
+  it('file_changes → 懒创建 .file-changes-bar 并渲染计数与文件清单', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', count: 2, files: ['src/a.md', 'src/b.ts'] });
+    const bar = document.querySelector('.file-changes-bar') as HTMLElement;
+    expect(bar).not.toBeNull();
+    expect(bar.hidden).toBe(false);
+    // 计数徽章 + 固定标签（数字由宿主快照驱动，webview 不自维护副本）
+    expect(bar.querySelector('.file-changes-bar__badge')!.textContent).toBe('2');
+    expect(bar.querySelector('.file-changes-bar__label')!.textContent).toBe('个文件有未确认改动');
+    // 悬停清单 = 宿主下发的相对路径（webview 只展示不解析）
+    expect(bar.title).toBe('src/a.md\nsrc/b.ts');
+    // count 归零 → 隐藏（宿主「全部确认」后推 0）
+    dispatch({ type: 'file_changes', count: 0, files: [] });
+    expect(bar.hidden).toBe(true);
+  });
+
+  it('常驻条插在输入栏之前（与 pending-queue-bar 同位置范式）', () => {
+    mountChatView();
+    dispatch({ type: 'file_changes', count: 1, files: ['a.md'] });
+    const bar = document.querySelector('.file-changes-bar') as HTMLElement;
+    const inputBar = document.getElementById('inputBar') as HTMLElement;
+    // 位置断言：插到 inputBar 的**前一个兄弟**（若实现改成 append 会立即变红）
+    expect(bar.nextElementSibling).toBe(inputBar);
+  });
+
+  it('「全部确认」按钮 → post confirm_all_file_changes', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'file_changes', count: 1, files: ['a.md'] });
+    (document.querySelector('.file-changes-bar__confirm') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'confirm_all_file_changes' });
+  });
+
+  it('「全部回退」按钮 → post revert_all_file_changes（二次确认在 host 侧，webview 不做前置拦截）', () => {
+    const { postMessage } = mountChatView();
+    dispatch({ type: 'file_changes', count: 1, files: ['a.md'] });
+    (document.querySelector('.file-changes-bar__revert') as HTMLButtonElement).click();
+    expect(postMessage).toHaveBeenCalledWith({ type: 'revert_all_file_changes' });
+  });
+
   // ─── send click 路由统一（验证宿主路由契约） ───
 
   it('thinking + 空输入点击 send → post stop（停止）', () => {

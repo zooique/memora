@@ -382,7 +382,28 @@ export type WebviewToExtensionMessage =
    * （memora.searchEngine，ConfigurationTarget.Global——用户偏好不进项目 settings）。
    * 装配期一次性注入，修改需重载窗口（或重建会话）后生效。
    */
-  | { type: 'search_engine_set'; engine: SearchEngineSetting };
+  | { type: 'search_engine_set'; engine: SearchEngineSetting }
+  // ─── 文件改动（DIFF-1 · 对话区常驻条）───
+  /**
+   * 全部确认文件改动（对话区常驻条「全部确认」按钮触发）
+   *
+   * 语义 = 一次性确认**所有文件**的未确认改动。宿主侧是**纯内存清理**（清装饰 / 释放虚拟文档 /
+   * 清缓存 / 注销记录），**不写盘、不改文件内容**（改动早已落盘生效）⇒ 幂等、零风险，
+   * **无需二次确认**。
+   * host 侧复用已注册命令 `memora.confirmAllFileChanges`（与文件内 CodeLens、状态栏 QuickPick、
+   * 命令面板**同一实现**——SSOT）。
+   */
+  | { type: 'confirm_all_file_changes' }
+  /**
+   * 全部回退文件改动（对话区常驻条「全部回退」按钮触发）
+   *
+   * 语义 = 把每个文件写回 agent 介入**之前**的旧内容（原本为新建的文件则**删除该文件**）。
+   * 与「确认」相反，它**会写盘且不可撤销**（无 git 时无法恢复，且会覆盖用户在 agent 改动之后
+   * 的手动编辑）⇒ host 侧必须先弹**模态二次确认**（列出文件清单 + 其中新建文件数），
+   * 用户确认后才逐个执行，并逐个统计成败（单个失败不中断整批）。
+   * host 侧复用已注册命令 `memora.revertAllFileChanges`。
+   */
+  | { type: 'revert_all_file_changes' };
 
 /** extension → Webview 消息 */
 export type ExtensionToWebviewMessage =
@@ -917,7 +938,18 @@ export type ExtensionToWebviewMessage =
    *
    * 由 host 在 settings 视图 ready / 用户修改后推送，webview 据此渲染下拉选中项。
    */
-  | { type: 'search_engine_status'; engine: SearchEngineSetting };
+  | { type: 'search_engine_status'; engine: SearchEngineSetting }
+  /**
+   * 未确认文件改动快照（对话区常驻条数据源 · DIFF-1）
+   *
+   * 推送**两个时机缺一即漏面**（项目里踩过四次的「时间面」漏面）：
+   *   ① 改动集变化时（新增/更新/确认/回退/淘汰）；
+   *   ② webview ready 回放时**补推一次**——否则关掉面板再打开，常驻条凭空消失。
+   * `count === 0` 时 webview 隐藏常驻条。
+   * `files` 为**相对项目根**的路径清单（供 title 悬停展示；不下发绝对路径，避免在 UI 暴露无关信息）。
+   * 真源 = 宿主 `FileChangeTracker`（webview **不自维护计数副本**，只按收到的快照渲染）。
+   */
+  | { type: 'file_changes'; count: number; files: string[] };
 
 // ─── turn 投影层类型（SSOT）────────────────────────
 // 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md

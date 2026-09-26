@@ -27,6 +27,8 @@ import { MemoraChatViewProvider } from '../webview/panels/chatPanel.js';
 import { MemoraSettingsViewProvider } from '../webview/panels/settingsPanel.js';
 import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
+import { FileChangeTracker } from './host/fileChangeTracker.js';
+import { FileChangeView } from './host/fileChangeView.js';
 import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../shared/constants.js';
 
 /**
@@ -53,6 +55,15 @@ function resolveProjectSearchRoot(): string | undefined {
 
 /** 懒加载的 Agent 单例（跨命令复用） */
 let agentPromise: Promise<Agent> | null = null;
+
+/**
+ * 最近装配成功的 Agent 实例（同步引用）
+ *
+ * `agentPromise` 是异步的，无法同步取用；文件改动「恢复旧版」需要**同步**拿到
+ * `agent.security`（路径守卫）做写前校验，故在装配成功时缓存一份同步引用。
+ * 未装配时为 null（此时恢复会被安全拒绝——降级优先，绝不无校验直写）。
+ */
+let currentAgent: Agent | null = null;
 
 /**
  * 读取「禁用的技能名」配置（技能启停，**唯一读取点**）
@@ -165,6 +176,16 @@ function getOrCreateAgent(
       },
     );
   }
+  // 缓存同步引用（供文件改动「恢复旧版」同步取 agent.security 做写前校验）；
+  // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
+  void agentPromise.then(
+    (agent) => {
+      currentAgent = agent;
+    },
+    () => {
+      // 装配失败：调用方各自处理；此处仅维护同步引用，不重复处理
+    },
+  );
   return agentPromise;
 }
 
@@ -246,6 +267,24 @@ export function activate(context: vscode.ExtensionContext): void {
   chatProvider.setViewLoader(viewLoader);
   // 注入过程事件落盘目标（v1.5）：与 viewLoader 同一 WorkspaceRoundStore 单例，生命周期原子一致
   chatProvider.setRoundStore(roundStore);
+
+  // ─── 文件改动可视化（host-only，零内核改动；见 docs/方案-文件改动diff可视化-20260926.md）───
+  // 记录归属 extension 激活期单例（工作区级），独立于聊天会话存在；旧内容走内存虚拟文档（零落盘）。
+  // 「恢复旧版」经 agent.security.assertPathAllowed 校验 + 宿主原子写（判据与内核守门同源）。
+  const fileChangeTracker = new FileChangeTracker(workspacePath);
+  const fileChangeView = new FileChangeView(fileChangeTracker, {
+    getSecurityGuard: () => currentAgent?.security ?? undefined,
+    // 判据同源：与内核装配读的是同一配置键（extension.ts 装配处同读 CONFIRM_WRITES_KEY）
+    isConfirmWrites: () => context.globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false,
+    // 诊断日志：装饰/打开/恢复的失败必须留痕（真机曾因静默吞异常导致「打开了但看不出改了哪里」无从定位）
+    log: (message) => memoraOutput.appendLine(message),
+  });
+  fileChangeView.register(context);
+  chatProvider.setFileChangeSink(fileChangeView);
+  // 未确认改动集变化 → 推给对话区常驻条；webview ready 时 chatPanel 会主动补推一次
+  // （两个时机缺一即漏面：只推变化 ⇒ 面板重开常驻条消失）
+  chatProvider.setFileChangesProvider(() => fileChangeView.snapshotFiles());
+  context.subscriptions.push(fileChangeView.onDidChange(() => chatProvider.pushFileChanges()));
   // 注入技能聚合目录：composer 动态技能下拉与设置面板同一清单来源（SSOT）
   chatProvider.setSkillDirs(configDir, userSkillsDir);
   // 打开面板即懒装配 Agent（不依赖先执行 open 命令），保证发送始终可用；

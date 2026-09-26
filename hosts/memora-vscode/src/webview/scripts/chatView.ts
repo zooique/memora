@@ -2118,6 +2118,46 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     _pendingQueueBar.hidden = false;
   }
 
+  // ─── 文件改动常驻条（DIFF-1）───
+  let _fileChangesBar: HTMLElement | null = null;
+  /**
+   * 未确认文件改动常驻条（懒创建，与 pending-queue-bar 同范式：插在输入栏之前）
+   *
+   * 两个动作按钮**不自己实现逻辑**，只 postMessage 给宿主 → 宿主 executeCommand 复用已注册命令
+   * （与文件内 CodeLens / 状态栏 QuickPick / 命令面板同一实现，SSOT，无第二份清理逻辑）。
+   * 「全部回退」是破坏性操作，宿主侧必弹模态二次确认——webview 不做前置拦截（拦截逻辑只能落 host）。
+   * 计数只在宿主推来 file_changes 时更新：**webview 不自维护副本**（真源 = 宿主 tracker）。
+   */
+  function updateFileChangesBar(files: readonly string[]): void {
+    if (files.length === 0) {
+      if (_fileChangesBar) _fileChangesBar.hidden = true;
+      return;
+    }
+    if (!_fileChangesBar) {
+      _fileChangesBar = document.createElement('div');
+      _fileChangesBar.className = 'file-changes-bar';
+      _fileChangesBar.innerHTML = `
+        <span class="file-changes-bar__badge"></span>
+        <span class="file-changes-bar__label">个文件有未确认改动</span>
+        <span class="file-changes-bar__spacer"></span>
+        <button class="file-changes-bar__confirm" type="button" title="确认全部改动（仅清除本提示，不改文件内容）">全部确认</button>
+        <button class="file-changes-bar__revert" type="button" title="回退全部改动到 agent 之前（不可撤销，需二次确认）">全部回退</button>
+      `;
+      inputBar.parentNode?.insertBefore(_fileChangesBar, inputBar);
+      _fileChangesBar.querySelector('.file-changes-bar__confirm')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'confirm_all_file_changes' });
+      });
+      _fileChangesBar.querySelector('.file-changes-bar__revert')?.addEventListener('click', () => {
+        vscode.postMessage({ type: 'revert_all_file_changes' });
+      });
+    }
+    const badge = _fileChangesBar.querySelector('.file-changes-bar__badge');
+    if (badge) badge.textContent = String(files.length);
+    // 悬停看完整文件清单（相对路径由宿主下发，webview 只展示不解析）
+    _fileChangesBar.title = files.join('\n');
+    _fileChangesBar.hidden = false;
+  }
+
   /**
    * 切换 LLM 运行状态：thinking → 发送按钮切换为「停止」方块（loading 类驱动图标切换），
    * 输入框保持可用（支持插话）；done 恢复发送按钮；paused 切换为「继续」按钮。
@@ -4332,6 +4372,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
       }
       updateSkillPickerLabel();
+    } else if (msg.type === 'file_changes') {
+      // 未确认文件改动快照：宿主在**改动集变化**时推 + **webview ready 时补推一次**
+      // （两个时机缺一即漏面——只推变化的话，面板重开后常驻条会消失）
+      updateFileChangesBar(msg.files);
     } else if (msg.type === 'notice') {
       showActivity(msg.level, msg.message);
     } else if (msg.type === 'goal_drift_detected') {
