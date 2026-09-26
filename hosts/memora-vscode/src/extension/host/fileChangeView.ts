@@ -768,8 +768,8 @@ export class FileChangeView implements FileChangeSink {
       outcome = await this.applyRestore(rec, { overwriteDirty: true });
     }
     if (outcome.status !== 'ok') {
-      // `dirty` 重试后仍出现属防御性兜底（确认与执行之间又产生了新编辑），如实报「有未保存编辑」
-      const reason = outcome.status === 'failed' ? outcome.reason : '文件又有未保存的编辑，请保存后再试';
+      // 类型穷尽兜底：重试恒带 overwriteDirty ⇒ 'dirty' 实际不可达，如实走通用失败文案、不虚述场景
+      const reason = outcome.status === 'failed' ? outcome.reason : '回退未能完成，请重试';
       void vscode.window.showErrorMessage(`Memora：恢复 ${rec.relPath} 失败（${reason}）`);
       return;
     }
