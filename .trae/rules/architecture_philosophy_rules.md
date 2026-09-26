@@ -1,21 +1,21 @@
 ---
 alwaysApply: false
-description: 架构哲学原则（12 条：万物皆记忆、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型、角色包插卡、可观测性边界）
+description: 架构哲学原则（12 条：摘要即记忆（memory-as-summary）、永久性分级、冷热分离、模型分工、领域无关、增量召回、降级优先、自然遗忘、专注模式、单 Agent 模型、角色包插卡、可观测性边界；附 UI/UX 维度 Annex：Agent 信任设计 §13）
 ---
 
 # 架构哲学原则（精简版）
 
 > 本文件只留**现生效的可执行铁律**；演进历史、示意图、哲学铺陈已删。设计推导见 `docs/architecture/` 与 ADR。
 
-## 1. 万物皆记忆
+## 1. 摘要即记忆（memory-as-summary）
 
-记忆两类轨道：**设定记忆**（骨骼：persona/rule/skill）+ **对话记忆**（血肉：round-summary 问答闭环摘要记忆，会话级摘要归会话记录存储 SessionMeta）。
+记忆只有单一轨道——**对话记忆 = round-summary**（每轮问答闭环一条摘要；会话级摘要归会话记录存储 SessionMeta，不进记忆库）。**设定**（persona/rule/skill）是角色包内容，归角色包管理，不属记忆库（ADR-025）。
 
 - 设定记忆**唯一归角色包**（`role-packs/<名>/` manifest 控制 + persona.md/rules.md/skills/*），纯文件 + 内存缓存装载，**不写 SQLite / 记忆库**（ADR-025）。旧 `configDir/personas|rules|skills + SQLite` 模型及其 Manager / 引导链路**已全部移除**。
 - Persona：`persona.md` 约定名；确定性注入 systemPromptPrefix；**手动切换唯一入口**（无 autoSwitch/自动匹配/exclusiveWith，切换只经宿主 `switchRolePack`）；角色包可建组（组长 + 组员名单，组员仅小组会议内表层装配发言）。能力声明在 manifest 顶层 `capabilities`。
 - Skill：全局池 `configDir/skills/`（全局激活）+ 角色包 `skills/`（角色激活才激活），两级渐进披露（L1 元数据常驻 / L2 `read_skill` 读正文 / L3 `read_resource`·`run_skill_script`），目录动态扫描。
 - Rule：`rules.md` 约定名；确定性注入、始终在线。
-- 桥梁：`summaryFocus` 提炼视角衔接骨骼与血肉，**单一记忆单轨**（摘要即记忆），无 `autoConfigRefiner` 独立链路。
+- 桥梁：`summaryFocus` 提炼视角指导摘要生成；记忆为**单一摘要单轨**（摘要即记忆），无 `autoConfigRefiner` 独立链路。
 - 冲突消解用 `supersededBy` 布尔标记（写路径取代检测，读时过滤），无关系图谱侧车（ADR-021）。
 
 **禁止**：
@@ -38,6 +38,8 @@ description: 架构哲学原则（12 条：万物皆记忆、永久性分级、�
 | `work-projection` | 不参与 recall（落项目 `<memoraDir>/projections/`） |
 | `round-summary` | 按相关度增量召回（唯一自动轨） |
 | `profile` | 按相关度增量召回（存量兼容，不再新写入） |
+
+> **存量兼容注**：`persona` / `rule` / `skill` 三个 source 已随「设定记忆归角色包」（ADR-025）退役——不再有新写入，保留仅作存量行解析兼容（宿主经一次性迁移软删出记忆库）。设定内容的**唯一载体是角色包**，不属记忆库（§1）。
 
 ## 3. 冷热分离（File vs DB）
 
@@ -127,3 +129,17 @@ Memora 被宿主接入后即该程序唯一 Agent，`memora.db` 是 Agent 级共
 - 仅宿主注入真实 Tracer 时计算指纹（NOOP 零开销）；指纹用 `sha256Fingerprint` 纯函数。
 
 **禁止**：❌ 在 sessionStore 存储完整上下文快照；❌ 未注入 Tracer 时执行指纹计算；❌ 指纹 hash 与记忆内容存储耦合。
+
+## 13. Agent 信任设计（UI/UX 维度 · Annex）
+
+> **维度归属**：本原则偏 Agent 产品 UX 且项目专属，原属通用 UI 设计哲学文件（`generic/ui-design-philosophy-rules.md`），现并入本架构文件（项目根）统管，避免项目专属内容散落通用文件夹。
+
+**原则**：Agent 产品的核心 UX 不是"好不好看"，而是"用户敢不敢让它做"。信任不是预设的，靠一次次小成功积累——每次正确执行 = 信任 +1，每次出错 = 信任 -N。UI 必须让用户**看得见信任的建立过程，随时有撤销的权力**。
+
+| 原则 | 心智规则 |
+| ---- | -------- |
+| **信任即货币，增量建立** | 信任不是"你必须信任我"的宣言，而是"我通过 5 次正确操作赢得了你的信任"。UI 体现：首次建议模式 → 3 次成功后升级执行模式 → 用户可随时回退。信任等级与自主权限绑定 |
+| **置信度可视化** | Agent 输出须显示置信度（绿 / 琥珀 / 红三级）。高置信可直接执行，中置信需确认，低置信建议但标注"不确定"。让用户知道"何时该介入、何时可放手" |
+| **逃逸舱原则** | 每个 Agent 操作须有「撤销 / 中断 / 覆盖」三条通道。撤销：30s 内可回滚破坏性操作（软确认）。中断：执行中随时可停。覆盖：用户可在 Agent 输出基础上修改再执行——AI 是协作者，不是决策者 |
+| **上下文感知三要素** | agentic 界面 = **context-aware**（在正确的上下文出现）+ **transparent**（让用户知道发生了什么）+ **controllable**（让用户掌控节奏）。Agent 建议应在用户正在操作的文件 / 面板旁 inline 出现，而非凭空出现在对话框 |
+| **自主等级显式化** | 自主模式不是系统内部决策，而是用户可见的状态标记。当前模式（建议 / 执行 / 审批）须以视觉徽章常驻任务旁，"扫一眼就知道 Agent 现在能做什么、不能做什么" |

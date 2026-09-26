@@ -1,5 +1,5 @@
 /**
- * 记忆类型定义 — 基元驱动模型：万物皆是记忆，用 source 开放字符串替代封闭枚举
+ * 记忆类型定义 — 基元驱动模型：记忆即轮次摘要（memory-as-summary），source 以开放字符串承载溯源标签（替代封闭枚举）
  */
 
 import { configError } from '@/utils/errors.js';
@@ -36,8 +36,8 @@ export interface Memory {
   /** 软删除时间；非 undefined 表示已删除，回收站保留 30 天后物理清理 */
   deletedAt?: string;
   /**
-   * 配置文件 frontmatter 额外元数据。仅用于 FileStore 写回 frontmatter（persona/rule/skill 等配置记忆）。
-   * ⚠️ 不再承载 round-summary 的溯源/分类字段——summaryType/sessionName/roundId 已提升为顶层
+   * 额外的键值对元数据（可选透传字段，内核侧无生产写入方）。
+   * ⚠️ 不承载 round-summary 的溯源/分类字段——summaryType/sessionName/roundId 已提升为顶层
    * 持久化字段（metadata 不在存储契约的保证范围内，而分层分轨/会话优先须跨会话生效，见 supersededBy 同款先例）。
    */
   metadata?: Record<string, string>;

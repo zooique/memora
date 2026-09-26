@@ -79,9 +79,9 @@ await agent.close();
 
 ## Design Philosophy
 
-> **Everything is Memory.**
+> **Memory-as-Summary.**
 >
-> Persona is "I remember who I am." Rules are "I remember how to behave." Skills are "I remember how to do certain things." Conversation history is "I remember what we talked about."
+> Conversation is the raw material: after each turn, an asynchronous round-summary is generated as the sole memory unit; the original conversation records are stored separately and traceable via source links. Persona, rules, and skills live in the role-pack, not the memory store.
 
 Memora is a **brain kernel that cannot run standalone** — it has interfaces but no "form." A CLI, WebUI, desktop sprite, or novel generator can be its "host." The host gives it a body (UI), blood vessels (Provider), and neural circuits (event loops).
 
@@ -241,7 +241,7 @@ src/
 | Runtime | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | ADR-001 |
 | Data Layer | IMemoryStorage interface (host injects persistence) | ADR-002 |
 | LLM Protocol | OpenAI Chat Completions compatible (streaming SSE + Tool Calling) | ADR-003 |
-| Memory Model | Open-string source primitive ("Everything is Memory" v2) | ADR-004 |
+| Memory Model | Memory-as-summary: round-summary single track, traceable to source; source open-string primitive | ADR-004 · memory-as-summary.md |
 | Conflict Resolution | Memory conflicts resolved via supersededBy boolean flag | ADR-021 |
 | Form Factor | Pure logic library (zero native deps, CLI/UI provided by host) | ADR-002 |
 | Security | Two-level permissions + path whitelist + audit log | ADR-006 |

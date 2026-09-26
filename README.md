@@ -85,9 +85,9 @@ await agent.close();
 
 ## 设计哲学
 
-> **万物皆是记忆。**
+> **摘要即记忆（memory-as-summary）。**
 >
-> 人格是"我记得我是谁"，规则是"我记得该怎么做事"，技能是"我记得怎么做某类事"，对话历史是"我记得之前聊过什么"。
+> 对话即原料：每轮 turn 结束后异步生成一条轮次摘要（round-summary），它是唯一记忆单元；原始对话记录独立存储，经 `sessionName + roundId` 溯源可回溯。人格 / 规则 / 技能归角色包，不进记忆库（见 memory-role-pack-boundary-rules.md）。
 
 Memora 是一个**无法独立运行**的智能大脑内核——它只有接口，没有"形态"。CLI、WebUI、桌面精灵、小说生成器都是它的"宿主"，宿主负责给它身体（UI）、血管（Provider）、神经网络（事件回路）。
 
@@ -245,7 +245,7 @@ src/
 | 运行时 | Node.js ≥ 22 LTS + TypeScript 5 strict + ESM | ADR-001 |
 | 数据层 | IMemoryStorage 接口（宿主注入持久化实现） | ADR-002 |
 | LLM 协议 | OpenAI Chat Completions 兼容（流式 SSE + Tool Calling） | ADR-003 |
-| 记忆模型 | source 开放字符串基元驱动（万物皆记忆 v2） | ADR-004 |
+| 记忆模型 | 摘要即记忆（round-summary 单轨，可溯源回原始对话）；source 开放字符串基元 | ADR-004 · memory-as-summary.md |
 | 冲突消解 | Memory 冲突改用 supersededBy 布尔标记 | ADR-021 |
 | 形态 | 纯逻辑库（零 native 依赖，CLI/UI 由宿主提供） | ADR-002 |
 | 安全 | 两级权限 + 路径白名单 + 审计日志 | ADR-006 |

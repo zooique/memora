@@ -1,7 +1,7 @@
 {
   "name": "@zooique/memora",
   "version": "3.0.0",
-  "description": "Node.js 专用 Agent 架构 — 本地、私有、领域无关，万物皆记忆（零第三方运行时依赖，依赖 Node.js 内置模块）",
+  "description": "Node.js 专用 Agent 架构 — 本地、私有、领域无关，摘要即记忆（memory-as-summary；零第三方运行时依赖，依赖 Node.js 内置模块）",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

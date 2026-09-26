@@ -13,7 +13,7 @@ description: Memora 项目总则、技术栈清单、目录结构、硬约束与
 ## 1. 不可违反的硬约束
 
 1. **ADR 优先于个人偏好**：技术栈变更必须先更新 ADR（`.trae/decisions/`）
-2. **跨文档引用规范**：用「文档.§章节号」格式，详见 [cross-document-reference.md](./cross-document-reference.md)
+2. **跨文档引用规范**：用「文档.§章节号」格式，详见 [cross-document-reference.md](./generic/cross-document-reference.md)
 3. **记忆统一模型**：不引入「规则/技能/历史」等独立子系统；统一用 `source` 开放字符串区分（[ADR-004](../decisions/ADR-004-memory-unification.md)）
 4. **单 Agent 模型 + 三层架构**：memora.db 是 Agent 级共享资源，不随子项目切换重建（[§10](./architecture_philosophy_rules.md)）
 5. **配置文件是真理源**：配置文件持久化，SQLite 仅作运行时索引（[§10](./architecture_philosophy_rules.md)）
@@ -75,7 +75,7 @@ src/
 └── web-search/     # 网络搜索抽象（IWebSearchProvider + FetchWebSearchProvider，条件暴露）
 ```
 
-> **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./new-module-guide.md) 并经 ADR 记录）。模块**内部**文件命名（index.ts / types.ts / core.ts / helpers.ts）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——两处冲突以本节为准。
+> **唯一真理源声明**：本节是**顶层目录结构的唯一冻结契约**（增删顶层模块必须先走 [new-module-guide.md](./generic/new-module-guide.md) 并经 ADR 记录）。模块**内部**文件命名（index.ts / types.ts / core.ts / helpers.ts）以 [backend_layers_rules.md §模块内文件命名](./backend_layers_rules.md) 为**快照性质**参考，随重构可能漂移、**不构成冻结契约**——两处冲突以本节为准。
 > **已移出**：`SqliteStorage` / `cli/` / `commander` / `better-sqlite3`（→ 宿主项目）
 
 ## 4. 命名规范（与 .trae/rules/ 一致）
@@ -105,15 +105,15 @@ src/
 | 总则 / 硬约束 | [project-rules.md](./project-rules.md)（本文件） |
 | 架构哲学（12 原则） | [architecture_philosophy_rules.md](./architecture_philosophy_rules.md) |
 | 后端分层 / 目录 | [backend_layers_rules.md](./backend_layers_rules.md) |
-| 通用编码约束 | [coding-convention-rules.md](./coding-convention-rules.md) |
-| 心智模型（Bug/逻辑） | [programmer-mindset-rules.md](./programmer-mindset-rules.md) |
-| 单一真理源思维模型 | [single-truth-source-mindset.md](./single-truth-source-mindset.md) |
+| 通用编码约束 | [coding-convention-rules.md](./generic/coding-convention-rules.md) |
+| 心智模型（Bug/逻辑） | [programmer-mindset-rules.md](./generic/programmer-mindset-rules.md) |
+| 单一真理源思维模型 | [single-truth-source-mindset.md](./generic/single-truth-source-mindset.md) |
 | **领域术语锚点（常驻）** | [terminology-anchor-rules.md](./terminology-anchor-rules.md)（`alwaysApply: true`；术语唯一定义，命名前必读） |
-| 网络为土壤思维模型 | [network-soil-mindset.md](./network-soil-mindset.md) |
-| UI 工程化心智 | [ui-engineering-mindset-rules.md](./ui-engineering-mindset-rules.md) |
-| 渐进式重构 | [progressive-refactor-rules.md](./progressive-refactor-rules.md) |
-| 安全 / 测试 | [security_rules.md](./security_rules.md) / [testing_rules.md](./testing_rules.md) |
-| 跨文档引用 / 新增模块 | [cross-document-reference.md](./cross-document-reference.md) / [new-module-guide.md](./new-module-guide.md) |
+| 网络为土壤思维模型 | [network-soil-mindset.md](./generic/network-soil-mindset.md) |
+| UI 工程化心智 | [ui-engineering-mindset-rules.md](./generic/ui-engineering-mindset-rules.md) |
+| 渐进式重构 | [progressive-refactor-rules.md](./generic/progressive-refactor-rules.md) |
+| 安全 / 测试 | [security_rules.md](./generic/security_rules.md) / [testing_rules.md](./generic/testing_rules.md) |
+| 跨文档引用 / 新增模块 | [cross-document-reference.md](./generic/cross-document-reference.md) / [new-module-guide.md](./generic/new-module-guide.md) |
 | 决策记录（26 ADR） | `decisions/`（[README](../decisions/README.md)；技术栈变更先更新 ADR，§1①） |
 
 > 任务追踪统一在根 `tasks/`（唯一真理源）。
@@ -131,7 +131,7 @@ src/
 | DON'T | 使用 `@ts-ignore` 或 `as any`（零容忍） |
 | DON'T | 在生产文件中保留死代码 |
 | DO | 提交前通过 pre-commit lint + typecheck + commitlint |
-| DO | 参考 [testing_rules.md §3 覆盖率目标](./testing_rules.md) 与 [coding-convention-rules.md §2 异常处理](./coding-convention-rules.md) |
+| DO | 参考 [testing_rules.md §3 覆盖率目标](./generic/testing_rules.md) 与 [coding-convention-rules.md §2 异常处理](./generic/coding-convention-rules.md) |
 
 ### 7.2 内核独立性（补充 §1.6）
 
@@ -177,4 +177,4 @@ src/
 | ---- | ---- |
 | DO | 新增 IPC 通道前确认能否由现有通道组合达成，避免重复注册 |
 | DO | IPC 通道总数接近 130 条时启动治理评估（当前 **101** 条，2026-09-20 实测；阈值单一真源见 `hosts/memora-vscode/src/shared/__tests__/protocolGuard.test.ts`；⚠️ **该计数每次增删通道即过期，引用前须按守卫同源判据重算**——此前 2026-09-19 记「103」已实测漂为 101） |
-| DO | 新增模块前先走 [new-module-guide.md](./new-module-guide.md) 评估流程 |
+| DO | 新增模块前先走 [new-module-guide.md](./generic/new-module-guide.md) 评估流程 |

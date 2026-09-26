@@ -69,4 +69,4 @@ config/ · logging/ · utils/ → 被所有层依赖
 - 各模块 = `index.ts` + `types.ts` + `core.ts`/`helpers.ts`；`agent/` 含 `agent.ts`/`assembler.ts`/`loop.ts`/`contextPreparer.ts` + `managers/`（专职 Manager，清单以源码为准）+ `seed/`（最小闭环唯一编排真理源，`seed/orchestrator.ts` 聚合 prepare/act/reflect；handoff 已于 2026-09-05 废弃，见 `orchestrator.ts` SeedOrchestrator 类注释「不再对外产出 handoff chunk」）。（原 `checkpointRestoreCoordinator.ts` 已随跨重启恢复链于 2026-09-10 剪枝删除。）
 - **具体文件清单以 `src/` 源码为真理源，不在此冻结**。
 
-新增模块流程见 [new-module-guide.md](./new-module-guide.md)。
+新增模块流程见 [new-module-guide.md](./generic/new-module-guide.md)。

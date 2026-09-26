@@ -29,7 +29,7 @@ description: 新增模块的标准流程（防止随意加模块破坏架构）
 - [ ] 它与哪些现有模块交互？
 - [ ] 它是否需要新的外部依赖？
 - [ ] 它是否需要新的 ADR？
-- [ ] 是否已回答 [ADR-017](../decisions/ADR-017-natural-growth-redefinition.md) 架构层 4 问（详见 [backend_layers_rules.md §判断标准](./backend_layers_rules.md)）？
+- [ ] 是否已回答 [ADR-017](../../decisions/ADR-017-natural-growth-redefinition.md) 架构层 4 问（详见 [backend_layers_rules.md §判断标准](../backend_layers_rules.md)）？
 
 如果以上任何一项不明确——**暂停，回去问用户**。
 
@@ -48,8 +48,8 @@ src/<new-module>/
 - [ ] 模块入口 `index.ts`（导出公共 API，不导出内部）
 - [ ] 单元测试覆盖率达标（目标见 [testing_rules.md §3](./testing_rules.md)：行 ≥80% / 函数 ≥88% / 分支 ≥75%）
 - [ ] 至少 1 个集成测试
-- [ ] 在 [project-rules.md §3 目录结构](./project-rules.md) 中添加
-- [ ] 在 [backend_layers_rules.md](./backend_layers_rules.md) 的职责表中添加
+- [ ] 在 [project-rules.md §3 目录结构](../project-rules.md) 中添加
+- [ ] 在 [backend_layers_rules.md](../backend_layers_rules.md) 的职责表中添加
 - [ ] 如引入新数据结构，评估是否需要 ADR（如 ADR-021 记忆冲突取代检测）
 
 ### 4. ADR 触发条件
@@ -74,9 +74,9 @@ src/<new-module>/
 
 ### 6. 新增 Agent Manager 检查清单
 
-> **来源**：不引入 ComponentRegistry，改为固化检查清单防止遗漏（详见 [ADR-010](../decisions/ADR-010-agent-facade.md)）。
+> **来源**：不引入 ComponentRegistry，改为固化检查清单防止遗漏（详见 [ADR-010](../../decisions/ADR-010-agent-facade.md)）。
 
-新增 `src/agent/managers/` 下专职 Manager 时，按以下 9 处修改点检查（跨 [agent.ts](../../src/agent/agent.ts) 和 [assembler.ts](../../src/agent/assembler.ts) 2 文件）：
+新增 `src/agent/managers/` 下专职 Manager 时，按以下 9 处修改点检查（跨 [agent.ts](../../../src/agent/agent.ts) 和 [assembler.ts](../../../src/agent/assembler.ts) 2 文件）：
 
 | # | 文件 | 修改点 | 示例 |
 |---|------|--------|------|

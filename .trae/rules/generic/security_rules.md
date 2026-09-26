@@ -5,7 +5,7 @@ description: 安全规范（最小权限、显式允许、审计可追溯）
 
 # 安全规范
 
-> 详见 [ADR-006 · 安全模型](../decisions/ADR-006-security-model.md)
+> 详见 [ADR-006 · 安全模型](../../decisions/ADR-006-security-model.md)
 
 ## 1. 三条底层原则
 
@@ -34,7 +34,7 @@ description: 安全规范（最小权限、显式允许、审计可追溯）
 - ❌ `*/Windows/System*` — Windows 系统目录（比 System32 更宽泛）
 - ❌ `/etc/passwd` — Unix 密码文件
 
-详见 [src/security/pathGuard.ts](../../src/security/pathGuard.ts)
+详见 [src/security/pathGuard.ts](../../../src/security/pathGuard.ts)
 
 ## 3. API Key 存储
 
@@ -74,39 +74,10 @@ description: 安全规范（最小权限、显式允许、审计可追溯）
 
 > **适用范围（2026-09-19 标注）**：原约束对象 `renderer/index.html` 与 `float.html` 属 memora-sprite 宿主（已独立仓库，不在本仓库）。memora-vscode 为 webview 架构、无本地渲染进程 html。本节作为**通用 Electron 渲染进程 CSP 安全纪律**保留，遇新宿主含渲染进程 html 时适用；审查清单仅对存在 `index.html` 渲染进程的宿主执行。
 
-> 详见 [ADR-006 · 安全模型补充说明（2026-07-02）](../decisions/ADR-006-security-model.md)
+> 详见 [ADR-006 · 安全模型补充说明（2026-07-02）](../../decisions/ADR-006-security-model.md)
 
-### 7.1 三条硬约束
+**通用原则（任何含本地渲染进程 html 的宿主）**：
 
-| # | 约束 | 违反后果 |
-| --- | ------ | --------- |
-| 1 | 渲染进程 `index.html` 必须声明 CSP `<meta>`，`style-src` 限定为 `'self'`（不含 `'unsafe-inline'`） | 内联 `style=""` 属性全部失效，元素样式回退到默认值 |
-| 2 | 渲染进程 HTML 严禁出现任何内联 `style=""` 属性（含静态 HTML 与动态 `innerHTML` 拼接产物） | Web 模式下样式失效、布局错位、进度条满格闪烁 |
-| 3 | 主题初始化等运行时动态样式必须由主进程 `webContents.executeJavaScript()` 注入，或通过 `data-*` 属性 + CSS 选择器表达 | 渲染进程直接内联颜色/尺寸会被 CSP 静默丢弃 |
-
-### 7.2 适用范围
-
-| 文件 | CSP 严格度 | 说明 |
-| ------ | ----------- | ------ |
-| `renderer/index.html` | **严格**（`style-src 'self'`） | Web/Electron 共用入口，必须 CSP 兼容 |
-| `float.html` | 严格（`style-src 'self'`，与 `index.html` 一致） | 悬浮窗内联样式已全部外置为外部 stylesheet，不再保留 `'unsafe-inline'`（见 ADR-006 §7 修正记录） |
-| 主进程注入的脚本 | 不受 CSP meta 限制 | 通过 `executeJavaScript` 注入视为可信源 |
-
-### 7.3 替代模式
-
-| 场景 | ❌ 禁止 | ✅ 正确 |
-| ------ | --------- | --------- |
-| 隐藏 SVG 精灵 | `style="display:none"` | `class="svg-sprite"` + CSS `.svg-sprite { display: none; }` |
-| 初始宽度进度条 | `style="width:0%"` | CSS `.affect-fill { width: 0; }` + JS 设置 `.style.width` |
-| 行内提示布局 | `style="display:inline;margin-left:4px;"` | `.settings-hint-inline` class |
-| 动态颜色状态 | `style="color:var(--accent)"` | `data-visible="true"` + CSS `[data-visible="true"] .icon { color: var(--accent); }` |
-| 图标尺寸修饰 | `style="width:12px;height:12px"` | `.icon-xs` / `.icon-sm` class |
-
-### 7.4 审查清单
-
-提交前审查（翠幕天罗）必须执行：
-
-- [ ] `renderer/index.html` 全文搜索 `style="`，应为 0 处
-- [ ] TS 文件 `innerHTML =` 拼接产物不含 `style="` 字面量
-- [ ] `.affect-fill` / `.health-metric-fill` 等动态进度条在 CSS 中声明默认 width
-- [ ] 动态颜色状态通过 `data-*` 属性 + CSS 选择器表达
+- **CSP 声明**：渲染进程 `index.html` 须声明 CSP `<meta>`，`style-src` 限定 `'self'`（不含 `'unsafe-inline'`）。
+- **内联 style 外置**：任何内联 `style=""`（静态 HTML 或动态 `innerHTML` 拼接）一律外置为 CSS 类——进度条宽度、提示布局、图标尺寸、动态颜色等均用 `class` 或 `data-*` + CSS 选择器表达。
+- **动态样式注入**：运行时动态样式须经 `data-*` 属性 + CSS 选择器表达，或主进程 `executeJavaScript()` 注入；渲染进程直写内联颜色/尺寸会被 CSP 静默丢弃。

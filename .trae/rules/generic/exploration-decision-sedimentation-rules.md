@@ -2,7 +2,7 @@
 
 > **探索期的可逆决策，先写 `docs/` 或代码注释里验证；验证稳定、被真实场景复现消费后，才固化为 ADR。** ADR 只收"定案的不可逆约束"，不是决策流水账。这是年轮剪枝（2026-08-19）的收口措施，防剪完继续堆积。
 
-**ADR 本质 =「不可逆约束」（见 [决策 README](../decisions/README.md) 追溯链）。可逆探索不属于此列。**
+**ADR 本质 =「不可逆约束」（见 [决策 README](../../decisions/README.md) 追溯链）。可逆探索不属于此列。**
 
 ## 分档标准（可逆 vs 不可逆）
 
@@ -23,7 +23,7 @@
   2. 被 rules 规范引用（≥3 处）；
   3. 经真实场景复现消费、确认不再反复横跳。
 - **S3** 固化时只写定案：保留「决策 + 理由 + 引用方」，不搬版本历史/被否方案明细（留在 docs/）；确需交代演变则压缩为"结论 + 一句原因"。
-- **S4** 编号纪律：ADR 序号是稳定标识——**废弃即让位、序号不重用、不因跳号回填**；删真僵尸后序号保持空缺。已裁决冻结的例外：ADR-017-web-search 系 2026-07-30 回溯补录误用子号，保持现状不重编（见[决策 README](../decisions/README.md)跳号说明），引用盘点时须一并核对该裁决。
+- **S4** 编号纪律：ADR 序号是稳定标识——**废弃即让位、序号不重用、不因跳号回填**；删真僵尸后序号保持空缺。已裁决冻结的例外：ADR-017-web-search 系 2026-07-30 回溯补录误用子号，保持现状不重编（见[决策 README](../../decisions/README.md)跳号说明），引用盘点时须一并核对该裁决。
 
 ## 剪枝自查（配合年轮审判）
 
@@ -33,4 +33,4 @@
 | 已有 ADR 出现"补充/澄清/vX"大量堆叠 | 决策在变，先收敛定案，把过程移出 |
 | 全库引用盘点发现零消费 ADR | 进僵尸档：删除或降级回 docs/ |
 
-> 关联：[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)（"怎么变过来的"归文档）、[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[决策 README](../decisions/README.md)
+> 关联：[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)（"怎么变过来的"归文档）、[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[决策 README](../../decisions/README.md)

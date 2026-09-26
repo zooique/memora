@@ -6,7 +6,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 # 通用编码约束规则
 
 > **适用**：Memora 内核（`src/`）+ 插件宿主全部 TS/JS 代码。
-> **与现有规则关系**：与 [backend_layers_rules.md §分层职责](./backend_layers_rules.md) 互补（前者定边界，本文件定写法）；与 [security_rules.md](./security_rules.md) 正交（前者管权限，本文件管健壮性）。
+> **与现有规则关系**：与 [backend_layers_rules.md §分层职责](../backend_layers_rules.md) 互补（前者定边界，本文件定写法）；与 [security_rules.md](./security_rules.md) 正交（前者管权限，本文件管健壮性）。
 
 ## 1. 契约与入参校验
 
@@ -22,7 +22,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DON'T | 用 `??` 篡改核心业务标识类字段（主键、状态码、来源标记） |
 | DON'T | 复制粘贴 `if` 判断——相同校验出现 2 次即抽工具函数 |
 
-**Memora 适配**：`src/utils/` 集中存放纯函数工具；记忆模型 `source` 属核心标识，禁止兜底覆盖（[ADR-004](../decisions/ADR-004-memory-unification.md)）。
+**Memora 适配**：`src/utils/` 集中存放纯函数工具；记忆模型 `source` 属核心标识，禁止兜底覆盖（[ADR-004](../../decisions/ADR-004-memory-unification.md)）。
 
 **DOM 元素校验决策标准**：
 - `instanceof` + `console.error`：`getElementById()` 取的静态元素（缺失即 bug，需留日志）
@@ -42,7 +42,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DON'T | 吞异常返回空对象 / 空数组——问题必须显性抛出 |
 | DON'T | 嵌套多层 `try/catch`——单一异常来源只配一层捕获 |
 
-**Memora 适配**：内核 `MemoraError` 统一错误体系（零裸 `Error`，见 [project-rules.md §7.1](./project-rules.md)）；AgentLoop 的 LLM 指数退避重试是此规则的典型应用。
+**Memora 适配**：内核 `MemoraError` 统一错误体系（零裸 `Error`，见 [project-rules.md §7.1](../project-rules.md)）；AgentLoop 的 LLM 指数退避重试是此规则的典型应用。
 
 ## 3. 代码简洁与复用
 
@@ -53,7 +53,6 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 > - **独立语义测试**：是否有独立领域语义，而非"凑巧相同的几行代码"？
 >
 > 范例：✅ `deduplicateMemories()`、`assembleContext()`（三项全√）；❌ 两模块偶遇相同的 `if (a > b)` 交换（凑巧相似，等 2+ 处）；❌ 输入输出每周变的处理流程（接口不稳，过早抽象增加修改成本）。
-> 此补充不改"纯臆测复用不抽"的底线，仅把「领域原语」从"等 2+ 处回溯抽取"前置为"设计期抽取"。
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -67,7 +66,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DON'T | 用 `export { x } from '...'` 透传导出后又在模块内使用 `x`——透传不创建模块作用域绑定，会抛 `ReferenceError`。正解：先 `import { x } from '...'` 再 `export { x }` |
 | DON'T | 复制粘贴 `if` 判断——相同校验出现 2 次即抽工具函数（对齐 ADR-017 Scenario A） |
 
-**Memora 适配**：禁止 `@ts-ignore` / `as any`（[project-rules.md §7.1](./project-rules.md)）；常量全大写下划线（`BLOCKED_PATTERNS`、`CHAT_LOCK_TIMEOUT_MS`）。
+**Memora 适配**：禁止 `@ts-ignore` / `as any`（[project-rules.md §7.1](../project-rules.md)）；常量全大写下划线（`BLOCKED_PATTERNS`、`CHAT_LOCK_TIMEOUT_MS`）。
 
 ## 4. 日志与可观测
 
@@ -86,7 +85,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 
 ## 5. 数据与存储
 
-> **核心原则**：DAO 层隔离 SQL，业务层不裸写数据库操作。`better-sqlite3` 由宿主注入，内核零 native 依赖（[ADR-002](../decisions/ADR-002-storage-layer.md)）。
+> **核心原则**：DAO 层隔离 SQL，业务层不裸写数据库操作。`better-sqlite3` 由宿主注入，内核零 native 依赖（[ADR-002](../../decisions/ADR-002-storage-layer.md)）。
 
 | 类型 | 规则 |
 | ---- | ---- |
@@ -96,10 +95,10 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DO | 大批量数据分页 / 流式读取 |
 | DO | 数据库模型单独定义 TS 类型，隔离存储结构与业务返回结构 |
 | DON'T | 业务层裸写 SQL 或直接操作数据库实例 |
-| DON'T | 在 SQLite 中存原始工作内容（仅存投影 / 摘要，[project-rules.md §7.3](./project-rules.md)） |
+| DON'T | 在 SQLite 中存原始工作内容（仅存投影 / 摘要，[project-rules.md §7.3](../project-rules.md)） |
 | DON'T | 一次性全量加载大数据集 |
 
-**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建；配置文件是真理源，SQLite 是运行时索引（[project-rules.md §1](./project-rules.md)）。
+**Memora 适配**：`memora.db` 是 Agent 级共享资源，不随子项目切换重建；配置文件是真理源，SQLite 是运行时索引（[project-rules.md §1](../project-rules.md)）。
 
 ## 6. 函数与变量规范
 
@@ -115,7 +114,7 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DON'T | 提前声明大量无用兜底变量——临时中间变量按需定义 |
 | DON'T | 堆砌多层 `if` 替代可选链 |
 
-**Memora 适配**：命名规范见 [project-rules.md §4](./project-rules.md)。CSS 作用域与命名**权威定义**在 [ADR-018](../decisions/ADR-018-css-scoping-convention.md)，本文件不重复。
+**Memora 适配**：命名规范见 [project-rules.md §4](../project-rules.md)。CSS 作用域与命名**权威定义**在 [ADR-018](../../decisions/ADR-018-css-scoping-convention.md)，本文件不重复。
 
 ## 7. 分支与兜底取舍
 
@@ -129,11 +128,11 @@ description: 通用编码约束规则（TS/JS，兼顾 Electron / Node 本地项
 | DON'T | 核心业务主键、状态用兜底默认值覆盖——问题显性抛出 |
 | DON'T | 滥用兜底默认值掩盖参数错误、数据缺失 |
 
-**Memora 适配**：`archiveMode` 二态（full / manual）属核心状态，禁止兜底为 `full`（[ADR-015](../decisions/ADR-015-archive-mode.md)）。
+**Memora 适配**：`archiveMode` 二态（full / manual）属核心状态，禁止兜底为 `full`（[ADR-015](../../decisions/ADR-015-archive-mode.md)）。
 
 ## 8. 工程分层
 
-> **核心原则**：下层不可感知上层，禁止跨层调用。**详细分层职责**见 [backend_layers_rules.md §分层职责](./backend_layers_rules.md)。
+> **核心原则**：下层不可感知上层，禁止跨层调用。**详细分层职责**见 [backend_layers_rules.md §分层职责](../backend_layers_rules.md)。
 
 | 类型 | 规则 |
 | ---- | ---- |

@@ -24,4 +24,4 @@ description: 网络为土壤思维模型——搜索即吸收养分，turn（问
 - ❌ **照搬外部方案**：不经过种子合理性过滤 → 长出的不是自己的形态（土壤淹没种子）。
 - ❌ **搜索与设计脱节**：搜了很多但结论没进设计 → 土壤白吸收（吸收但不生长）。
 
-> 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)（种子定义，本文件是其"养分来源"维度）、[architecture_philosophy_rules.md](./architecture_philosophy_rules.md)（自然生长）、[programmer-mindset-rules.md](./programmer-mindset-rules.md)（心智总纲）
+> 关联：[single-truth-source-mindset.md](./single-truth-source-mindset.md)（种子定义，本文件是其"养分来源"维度）、[architecture_philosophy_rules.md](../architecture_philosophy_rules.md)（自然生长）、[programmer-mindset-rules.md](./programmer-mindset-rules.md)（心智总纲）

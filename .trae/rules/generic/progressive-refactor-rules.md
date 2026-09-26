@@ -114,7 +114,7 @@ description: 渐进式重构规范——覆盖"领域容器提取"与"职责拆�
 
 ### 5.2 回溯提取阈值（ADR-017 Scenario B）
 
-> 本节是"从既有上帝对象 / 重复代码回溯提取"（Scenario B），与 coding-convention-rules.md §3 / ui-engineering-mindset-rules.md §四.2 的"新代码设计期抽取"（Scenario A）**不同场景，非矛盾**——Scenario A 针对首次实现即抽，本节约束既有真实重复。
+> 本节是"从既有上帝对象 / 重复代码回溯提取"（Scenario B），与 [coding-convention-rules.md §3](./coding-convention-rules.md) / [ui-engineering-mindset-rules.md §四.2](./ui-engineering-mindset-rules.md) 的"新代码设计期抽取"（Scenario A）**不同场景，非矛盾**——Scenario A 针对首次实现即抽，本节约束既有真实重复。
 
 **判定流程**：
 

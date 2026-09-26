@@ -12,7 +12,7 @@ description: 跨文档交叉引用规范
 
 1. **所有跨文档引用必须使用`[文档名 §章节号 标题](相对路径)`格式**
    - 错误：`详见 4.3 节`（无文档名，冲突概率极高）
-   - 正确：`详见 [memora-接入指南.md §4.3 三种接入模式](../../docs/memora-接入指南.md)`
+   - 正确：`详见 [memora-接入指南.md §4.3 三种接入模式](../../../docs/memora-接入指南.md)`
 2. **必须使用 markdown 链接，不能只用纯文本**——确保可点击跳转
 3. **章节号必须真实存在**——引用前确认目标章节号和标题匹配
 4. **同文档内引用可简化**：`详见 §4.3 三种接入模式`（无需文档名前缀）
@@ -21,10 +21,10 @@ description: 跨文档交叉引用规范
    若目标是 `## N.` 章节下的**编号列表项**（如 project-rules §1 硬约束列表），引用应写
    `§1 硬约束 第 4 条`（章节号 + 列表序号），**不得写成 §1.4**——避免与标题层级语义混淆。
 7. **文档→源码引用**：跨文档规范同时适用于"文档引用 `src/`、`.trae/rules/` 等仓库内文件"。
-   - 必须使用**仓库相对路径**（如 `[sessionManager.ts](../../src/agent/managers/sessionManager.ts)`），
+   - 必须使用**仓库相对路径**（如 `[sessionManager.ts](../../../src/agent/managers/sessionManager.ts)`），
      禁止 `file:///` 绝对路径（跨机器必断，且随源码演化失真）；
    - **定位一律用符号名，禁止行号**：写 `sessionManager.ts:createCheckpoint`（冒号后
-     **必须是符号名，不得是数字**），或 `sessionManager.ts` 的 `createCheckpoint`。
+     **必须是符号名，不得是数字`），或 `sessionManager.ts` 的 `createCheckpoint`。
      行号**没有 SSOT**——增删代码是日常动作，失效是**必然而非偶然**。实测（2026-09-20 四层全库清算）：
      去重后 **224 处**行号坐标，抽查即证多例失效——如 `compaction.ts`「第 78 行」被 **3 份文档**共同
      引用作「第二级策略落点」，该行实为无关的 Map 声明；`assembler.ts` 上的 `refreshAssemblyForRolePack`
@@ -46,7 +46,7 @@ description: 跨文档交叉引用规范
 
 ## 推荐规范
 
-- 引用时附带章节标题：`[project-rules.md §1 硬约束](./project-rules.md)` → 读者不用打开链接就能判断方向
+- 引用时附带章节标题：`[project-rules.md §1 硬约束](../project-rules.md)` → 读者不用打开链接就能判断方向
 - 关系标注：显式标注关系类型（依赖/扩展/补充/正交/冲突）
 
 ## 规范违反修复
@@ -68,7 +68,7 @@ description: 跨文档交叉引用规范
 
 | 引用场景 | 正确格式 |
 | ------------ | -------------------------------------------------------------- |
-| 引用 ADR | `[ADR-007 §3 测试金字塔](../decisions/ADR-007-testing-strategy.md)` |
+| 引用 ADR | `[ADR-007 §3 测试金字塔](../../decisions/ADR-007-testing-strategy.md)` |
 | 引用源码（定位现行实现） | 只写符号名：`` `sessionManager.ts` 的 `createCheckpoint` ``（**禁行号**） |
 | 封存记录内的行号 | 允许保留，但头部须有 `> **坐标**：…` 声明（豁免凭据） |
 
