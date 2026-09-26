@@ -33,6 +33,10 @@ import { createHash } from 'node:crypto';
 import { existsSync, rmSync } from 'node:fs';
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
+// MAX_DIFF_CONTENT_LENGTH：对比预览上限的**单一真源**（内核 pathGuard 导出）。
+// ⚠️ 两侧**超限行为不同**：内核 = 截断后追加「已截断」标记照常展示；宿主 = 跳过对比只提示——
+// 只统一**数值**，不统一行为；不得据「同一常量」推论行为等价。
+import { MAX_DIFF_CONTENT_LENGTH } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import {
   computeFileDiff,
@@ -47,16 +51,6 @@ import {
   type ToolResultLike,
   type ToolStartLike,
 } from './fileChangeTracker.js';
-
-/**
- * 对比预览的字符上限（超过则只做整文档高亮、跳过虚拟文档 diff）。
- *
- * 值取自内核 `src/security/pathGuard.ts` 的 `MAX_DIFF_CONTENT_LENGTH = 10240`
- * （注释「防大文件撑爆 IPC 传输和 UI 渲染」——与宿主 UI 场景同因）。该内核常量为
- * **模块私有、未导出**，宿主无法 `import`；为守住「零内核改动」，此处**并列定义同值常量**，
- * 属项目认可的「同模式重复」（非 SSOT 违例）。若内核后续导出该常量，改为 import 引用。
- */
-const DIFF_PREVIEW_MAX_CHARS = 10240;
 
 /** 行尾内联旧内容的最大展示字符数（超出省略号截断，完整内容走 hoverMessage） */
 const INLINE_PREVIEW_MAX_CHARS = 72;
@@ -148,6 +142,17 @@ type ChangeAction = 'compare' | 'restore' | 'confirm';
 interface ActionPickItem extends vscode.QuickPickItem {
   action: ChangeAction;
 }
+
+/**
+ * 单条回退的执行结果
+ *
+ * `dirty`（文件有未保存编辑、需用户确认）**单列一态**，不并入失败原因：它是「等用户拍板」
+ * 而不是「出错了」——混进错误通道会被调用方当失败吞掉，或弹出误导性错误框。
+ */
+type RestoreOutcome =
+  | { status: 'ok' }
+  | { status: 'dirty' }
+  | { status: 'failed'; reason: string };
 
 /**
  * 取一行可安全用于装饰/CodeLens 的 range
@@ -600,7 +605,8 @@ export class FileChangeView implements FileChangeSink {
 
   /** 打开对比：左 = 旧内容虚拟文档，右 = 真实文件（旧内容仅展示、不落盘） */
   private async openCompare(rec: FileChangeRecord): Promise<void> {
-    if (rec.afterContent !== null && Math.max((rec.beforeContent ?? '').length, rec.afterContent.length) > DIFF_PREVIEW_MAX_CHARS) {
+    // 超限行为（与内核不同）：跳过对比、只提示可回退——阈值 = 内核 MAX_DIFF_CONTENT_LENGTH
+    if (rec.afterContent !== null && Math.max((rec.beforeContent ?? '').length, rec.afterContent.length) > MAX_DIFF_CONTENT_LENGTH) {
       void vscode.window.showInformationMessage(`Memora：${rec.relPath} 改动过大，已跳过对比预览（可「回退」）`);
       return;
     }
@@ -684,6 +690,11 @@ export class FileChangeView implements FileChangeSink {
    * 被**删除**，其余文件会被**覆盖**（连带用户在改动之后的手动编辑一并丢失，无 git 时无法找回）。
    * 故必须：① 模态确认 + 明细（文件清单、其中多少个会被删除）；② 逐个执行、**单个失败不中断**整批；
    * ③ 结束时汇总成败（而不是弹 N 个错误框）。
+   *
+   * 🔴 **未保存编辑**：先扫出全部「已打开且 dirty」的文件、在**同一个模态**里一次列出
+   * （只弹一次，不逐个追问）；用户确认即视为对列出的 dirty 文件一并授权。`overwriteDirty`
+   * **只放行清单内的文件**——确认之后才变 dirty 的文件仍被 `applyRestore` 的 fail-closed
+   * 闸拦下并如实报「失败（有未保存编辑）」，不静默吞。
    */
   private async revertAll(): Promise<void> {
     const records = this.tracker.list();
@@ -692,16 +703,19 @@ export class FileChangeView implements FileChangeSink {
       return;
     }
     const willDelete = records.filter((rec) => rec.beforeContent === null);
+    // 有未保存编辑的文件集（模态明细 + 执行时的 overwriteDirty 白名单同源，防两处各扫一遍漂移）
+    const dirtyPaths = new Set(records.filter((rec) => this.dirtyDocumentOf(rec.path) !== undefined).map((rec) => rec.path));
     const preview = records
       .slice(0, 20)
-      .map((rec) => `  ${rec.relPath}${rec.beforeContent === null ? '（删除文件）' : ''}`);
+      .map((rec) => `  ${rec.relPath}${rec.beforeContent === null ? '（删除文件）' : ''}${dirtyPaths.has(rec.path) ? '（含未保存编辑）' : ''}`);
     preview.push(...(records.length > 20 ? [`  …另有 ${records.length - 20} 个文件`] : []));
     const detail = [
       `将把 ${records.length} 个文件恢复到「agent 改动之前」的内容：`,
       `· 覆盖写回：${records.length - willDelete.length} 个`,
       `· 删除文件：${willDelete.length} 个（这些文件原本为新建）`,
+      `· 含未保存的编辑（会一并丢弃）：${dirtyPaths.size} 个`,
       '',
-      '⚠️ 此操作不可撤销（无 git 时无法找回），且会覆盖你在 agent 改动之后对这些文件的手动编辑。',
+      '⚠️ 此操作不可撤销（无 git 时无法找回），且会覆盖你在 agent 改动之后对这些文件的手动编辑（含未保存的编辑）。',
       '',
       ...preview,
     ].join('\n');
@@ -714,9 +728,10 @@ export class FileChangeView implements FileChangeSink {
     let okCount = 0;
     const failures: string[] = [];
     for (const rec of records) {
-      const reason = await this.applyRestore(rec);
-      if (reason === null) okCount += 1;
-      else failures.push(`${rec.relPath}（${reason}）`);
+      // 只对模态里列出的 dirty 文件放行覆盖，其余走 fail-closed 闸（防确认后新产生的编辑被吞）
+      const outcome = await this.applyRestore(rec, { overwriteDirty: dirtyPaths.has(rec.path) });
+      if (outcome.status === 'ok') okCount += 1;
+      else failures.push(`${rec.relPath}（${outcome.status === 'failed' ? outcome.reason : '有未保存的编辑，未确认'}）`);
     }
     this.notifyChanged();
     this.lensProvider.refresh();
@@ -729,10 +744,32 @@ export class FileChangeView implements FileChangeSink {
     );
   }
 
-  /** 「恢复旧版」（单文件入口）：执行回退并给出结果提示 */
+  /**
+   * 「恢复旧版」（单文件入口）：执行回退并给出结果提示
+   *
+   * 文件有未保存编辑时（`applyRestore` 返回 `dirty`）先弹**模态确认**——回退会丢弃用户
+   * 缓冲区里的编辑，静默覆盖 = 吃掉用户劳动。用户取消则不动文件、保留记录。
+   */
   private async restoreChange(rec: FileChangeRecord): Promise<void> {
-    const reason = await this.applyRestore(rec);
-    if (reason !== null) {
+    let outcome = await this.applyRestore(rec);
+    if (outcome.status === 'dirty') {
+      const choice = await vscode.window.showWarningMessage(
+        `Memora：${rec.relPath} 有未保存的编辑`,
+        {
+          modal: true,
+          detail: '回退会把文件恢复到「agent 改动之前」的内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再回退。',
+        },
+        '仍然回退',
+      );
+      if (choice !== '仍然回退') {
+        void vscode.window.showInformationMessage(`Memora：已取消 ${rec.relPath} 的回退，未保存的编辑未动`);
+        return;
+      }
+      outcome = await this.applyRestore(rec, { overwriteDirty: true });
+    }
+    if (outcome.status !== 'ok') {
+      // `dirty` 重试后仍出现属防御性兜底（确认与执行之间又产生了新编辑），如实报「有未保存编辑」
+      const reason = outcome.status === 'failed' ? outcome.reason : '文件又有未保存的编辑，请保存后再试';
       void vscode.window.showErrorMessage(`Memora：恢复 ${rec.relPath} 失败（${reason}）`);
       return;
     }
@@ -742,18 +779,36 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
-   * 执行单条回退，**不弹任何 UI**（返回 `null` = 成功，否则为失败原因）
+   * 查找该文件「已打开且有未保存编辑」的文档
+   *
+   * 只查 `workspace.textDocuments`（已打开的文档），**不主动 open**——主动打开会把无关文件
+   * 拉进工作区，动作面不该有副作用。未打开的文件不存在「未保存编辑」，无需防护。
+   */
+  private dirtyDocumentOf(absPath: string): vscode.TextDocument | undefined {
+    return vscode.workspace.textDocuments.find(
+      (doc) => doc.uri.scheme === 'file' && doc.uri.fsPath === absPath && doc.isDirty,
+    );
+  }
+
+  /**
+   * 执行单条回退，**不弹任何 UI**（返回 `{status:'ok'}` = 成功；`'dirty'` = 有未保存编辑、
+   * 需用户确认后带 `overwriteDirty` 重试；`'failed'` = 失败原因）
    *
    * 拆出无 UI 版本的原因：批量回退时不能逐个弹窗（N 个弹窗既吵又拖慢），
    * 由调用方汇总成一条结果。单个文件入口（`restoreChange`）在此之上加提示。
+   *
+   * 🔴 **fail-closed 守卫**：文件有未保存编辑且未经用户明确确认 → 拒绝执行。
+   * 回退是「写回改动前正文 / 删掉原为新建的文件」，会**连带丢弃用户缓冲区里未保存的编辑**
+   * （数据丢失类）。确认权在调用方的模态提示，这里是最后闸门——任何调用方漏问就吞用户劳动。
    */
-  private async applyRestore(rec: FileChangeRecord): Promise<string | null> {
+  private async applyRestore(rec: FileChangeRecord, opts: { overwriteDirty?: boolean } = {}): Promise<RestoreOutcome> {
+    if (!opts.overwriteDirty && this.dirtyDocumentOf(rec.path)) return { status: 'dirty' };
     const guard = this.deps.getSecurityGuard();
-    if (!guard) return '安全守卫未就绪';
+    if (!guard) return { status: 'failed', reason: '安全守卫未就绪' };
     try {
       guard.assertPathAllowed(rec.path, 'write_file');
     } catch (err) {
-      return `路径不允许恢复（${err instanceof Error ? err.message : String(err)}）`;
+      return { status: 'failed', reason: `路径不允许恢复（${err instanceof Error ? err.message : String(err)}）` };
     }
     try {
       if (rec.beforeContent === null) {
@@ -764,11 +819,11 @@ export class FileChangeView implements FileChangeSink {
         atomicWriteFileSync(rec.path, rec.beforeContent);
       }
     } catch (err) {
-      return err instanceof Error ? err.message : String(err);
+      return { status: 'failed', reason: err instanceof Error ? err.message : String(err) };
     }
     this.discardRecord(rec);
     this.refreshStatusBar();
-    return null;
+    return { status: 'ok' };
   }
 
   /** 改动通知（带按钮）：确认改动 / 恢复旧版 / 查看对比 / 全部确认 */

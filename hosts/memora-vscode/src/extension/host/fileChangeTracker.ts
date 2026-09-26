@@ -19,16 +19,25 @@
 
 import { readFileSync } from 'node:fs';
 import { isAbsolute, relative, resolve, sep } from 'node:path';
+// WRITE_PATH_EXTRACTORS：内核「按 args.path 改盘的工具」清单（loop 同路径写串行闸的判据）——
+// 本模块的触发集合**派生自它的键**，禁并列维护第二份清单（两份必漂移 = 跨包静默少报）。
+import { WRITE_PATH_EXTRACTORS } from '@zooique/memora';
 
 /**
- * 触发追踪的内核落盘文件工具（唯一集合）
+ * 触发追踪的内核落盘文件工具（派生集合，唯一真源 = 内核 `WRITE_PATH_EXTRACTORS` 的键）
  *
  * 实证：内核落盘工具仅 `write_file` / `delete_file`（内核 `src/agent/builtinTools.ts` 内置工具表中
  * `name: 'write_file'` 与 `name: 'delete_file'` 两项）；
  * 新建文件走 write_file 的 overwrite，无独立 create_file/edit_file。
  * `task_table_*` 是内核数据不落盘，排除。
+ *
+ * 派生而非并列的意义：内核新增「按 path 改盘」的工具时，宿主**自动跟随**进追踪，
+ * 不会再出现「内核进了串行闸、宿主不知情」的改动可视化静默少报。
+ *
+ * ⚠️ 覆盖边界（两侧同源同盲）：清单只认 `args.path` 定位的写工具 ⇒ `run_code` / `run_skill_script`
+ * / `run_project_script`（能改盘但无 `path`）既不进内核串行闸、也不进本追踪（见台账观察条目）。
  */
-export const DISK_WRITE_TOOLS: readonly string[] = ['write_file', 'delete_file'];
+export const DISK_WRITE_TOOLS: readonly string[] = Object.keys(WRITE_PATH_EXTRACTORS);
 
 /** 单条未确认改动（按文件归属：一个文件一条） */
 export interface FileChangeRecord {

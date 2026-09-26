@@ -45,7 +45,9 @@ function makeTracker(io: FileChangeIO, opts: Partial<FileChangeTrackerOptions> =
 }
 
 describe('FileChangeTracker', () => {
-  it('触发集合仅 write_file / delete_file', () => {
+  // 跨包契约钉：集合已派生自内核 `WRITE_PATH_EXTRACTORS` 的键，这里的字面量 =「宿主愿意追踪的工具面」。
+  // 内核新增/改名「按 path 改盘」的工具（如 move_file）时本例必红 ⇒ 强制宿主评审追踪语义，防静默少报。
+  it('触发集合仅 write_file / delete_file（内核写工具清单变动时必须复审本例）', () => {
     expect([...DISK_WRITE_TOOLS]).toEqual(['write_file', 'delete_file']);
   });
 
