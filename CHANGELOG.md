@@ -8,6 +8,20 @@
 
 ## [Unreleased]（= v3.0.0 · 尚未发布，发版日补日期）
 
+### Changed（任务项折叠边界 `plan_item_boundary` 产出时机前移：边界产在它所罩住的内容之前）
+
+**问题证据**：真机观察「触发任务表后 step 没收进任务项折叠块」。先打掉误判——宿主两条渲染路径（运行时 `renderProcessFlow` / 收尾 `renderRoundBlock`）共用同一归组判据 `planItemContainerFor`，实测（3 迭代 / 2 任务项 / 真实递增 `ts`）两路径结果**逐字相同**（组内 `t2,t3`、游离 `t1`），**不存在「运行时不收、收尾收」的机制差异**。真身是：**每个任务项的首个迭代（思考 + 首批工具）恒在折叠块外**——因为边界产在本迭代工具落定**之后**，而宿主判据 `b.ts < ts` 只能**向前**找边界，对首个迭代必然落空；且批块首次插入即定位容器、之后不搬家。
+
+- **产出点前移**：`_maybeEmitPlanItemBoundary()` 从「工具落定后 / 无工具分支」**两处**调用点，收敛为**唯一一处**——`handleIteration` 内 `_handleInterrupt` 之后、`_prepareContext` 之前（迭代开始、LLM 调用前）。边界语义由「我现在在这项」回到「**以下内容**属于该项」
+- **落点必须早于 LLM 调用**（而非 `onPlanItemBoundary` 所在的「LLM 后 / 工具前」）：后者会把边界插在本 step 思考流之后，把思考与它驱动的工具劈进两个任务项容器
+- **调用次数不变**：原实现每迭代调一次（工具分支经 `_emitStepBoundary` / 无工具分支单独调），前移后仍是每迭代一次（迭代开头），挂起/中止迭代因 `_handleInterrupt` 提前返回而不调——与原来一致。**不是新增开销**
+- **不带伤判定（五类逐条）**：双轨镜像——2 处产出点收敛为 1 处 🟢 净减伤；降级兜底残留——旧实现里边界产在内容**之后**，末尾那条边界之后已无内容 → 只剩标题的**空折叠块**；前移后边界必然罩住本迭代内容，空折叠块消失 🟢 净减伤（注意：**终态迭代仍会产边界**，旧实现同样会——工具分支的 `_maybeEmitPlanItemBoundary()` 原本就是无条件调用，只有 `step_boundary` 条件化。差别只在边界的**位置**，不在有无）；类型 hack / 重复实现 🟢 无伤；僵尸声明 🟡 需注释回扫（已做）
+- **被否决的备选**：宿主侧放宽判据允许「归入紧随其后的边界」——判据与内核语义对不上，形成双判据，属拿实现迁就显示
+- **语义后果（可接受，非缺陷）**：任务表若由本轮某迭代的工具**新建**，该迭代仍留在组外（那个时刻任务表还不存在）。本次修的是「任务表在本轮开始前已存在」（续会 / prepare 预置 / 上一 turn 遗留 / checkpoint 恢复）的场景
+- **`lastBoundaryPlanItemId` 跨 turn 不重置**：刻意设计（`metrics.test.ts` 两个用例锁死），本次不动
+- **文档同步**：`docs/方案-任务项边界产出时机前移-20260926.md`（闭合闭环，先文档后代码）；`docs/architecture/step-atomic-persistence.md` 档 3 两处订正（原述「复用两个既有调用点」「由 `_emitStepBoundary` 单函数内串联两者」已废止，先后序改由「分居迭代首尾」保证）；`types.ts` 顺序契约注释、`assembler.ts` 装配注释、`loop.ts` 时序分叉注释同步
+- **验证（变异闭合）**：新增用例先红（`expected 4 to be less than 1`——边界下标 4 晚于思考下标 1，实锤旧行为）→ 改实现转绿；`stepBoundary.test.ts` 10/10，顺序契约 / STEP-BUCKET-1 / TOOL-RUN-1 三条老守卫全绿零误伤；内核 `tsc --noEmit` EXIT=0
+
 ### Removed（`ProjectContext.dbPath` 退役：内核不再持宿主持久化形态）
 
 `ProjectContext.dbPath` 是「内核自带 SqliteStorage」时代的遗留字段。ADR-002 把 SqliteStorage 移出内核、持久化改由宿主经 `IMemoryStorage` 注入之后，它的消费者已清零：内核既不创建也不打开它，第一宿主 memora-vscode 的 `WorkspaceStorage` 走自己的 `.memora/memories.json`，从未读它。字段注释自称「Agent 级 `memora.db` 路径（全局共享）」，实值却是 `join(agentDataDir, 'memora.db')`，而 `agentDataDir` 由宿主传入的 `dataDir` 决定（vscode 宿主传的是项目级 `.memora`）——照它开库会得到「每个子项目一个 `memora.db`」，正撞架构规则明令禁止的形态。

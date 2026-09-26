@@ -321,11 +321,11 @@ export class AgentLoop {
   /** 任务表获取回调——每次迭代 LLM 调用前调用，返回任务表文本（空字符串=无任务表） */
   getTaskTable?: () => string;
   /** active 任务项元信息回调（任务项级折叠）：供 _maybeEmitPlanItemBoundary
-   *  在迭代收口时调用，返回当前 active 任务项 { planItemId, title, rolePack }；无任务表/无 active 任务项
-   *  返回 null。与 onPlanItemBoundary **时序分叉**：前者读工具前的 active
-   *  （本迭代完成的那个任务项），本回调经 _maybeEmitPlanItemBoundary 读工具后的 active（工具落定后
-   *  当前所在的那个任务项）——plan_item_boundary 事件据此判定「active 任务项是否已推进」并分组渲染。
-   *  两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。
+   *  在**迭代开始**（LLM 调用前）调用，返回当前 active 任务项 { planItemId, title, rolePack }；
+   *  无任务表/无 active 任务项返回 null。与 onPlanItemBoundary **时序分叉**：后者读 LLM 调用后、
+   *  工具前的 active（本迭代 LLM 实际服务的任务项），本回调经 _maybeEmitPlanItemBoundary 读迭代
+   *  开始时的 active（以下内容将归属的那个任务项）——plan_item_boundary 事件据此判定
+   *  「active 任务项是否已推进」并分组渲染。两者读的都是同一 checkpoint.plan 真源，仅读取时刻不同。
    *  rolePack 供裁决证据的会议轮判据（isMeetingRound）消费。 */
   getActivePlanItemMeta?: () => { planItemId?: string; title?: string; rolePack?: string } | null;
   /** 裁决证据落盘钩子（悬案取证轨）：空响应兜底 / 台账替身回显写点产个案证据时回调，
@@ -929,6 +929,12 @@ export class AgentLoop {
     const gate = yield* this._handleInterrupt(signal);
     if (gate === 'paused' || gate === 'aborted') return gate;
 
+    // 任务项级折叠边界（唯一产出点）：产在本迭代的思考与工具**之前**——语义是
+    // 「以下内容属于该任务项」，晚于内容则宿主「向前找边界」的判据对该迭代必然落空。
+    // 必须在 _handleInterrupt 之后（挂起/中止的迭代不产），且在 _prepareContext 之前
+    // （任务表注入不影响本判定：读的是会话级 checkpoint.plan，非注入消息）。
+    yield* this._maybeEmitPlanItemBoundary();
+
     // LLM 调用 + 结果路由
     return yield* this._callAndRoute(iteration, gate);
   }
@@ -1095,16 +1101,12 @@ export class AgentLoop {
         };
       }
       const toolResult = yield* this.handleToolCalls(llmResult, effectiveSignal, stepIndex);
-      // 任务项级折叠边界事件（检出时机在工具落定后）：
-      // handleToolCalls 内部经 task_table_write/update 可能改写 plan——工具后读 active 任务项
-      // 保证第一个任务项拿到自己的边界（工具落定前检出会被「离开第一个任务项」吃掉）。判据不变（推进才产 +
-      // lastBoundaryPlanItemId 去噪），只换检出时刻。时序分叉是设计语义：onPlanItemBoundary（上述）读
-      // 工具前的 active（本迭代服务的那个任务项，只写 planItemLog），本处读工具后的 active（当前所在的那个任务项）。
+      // 任务项级折叠边界已前移到迭代开始（见 _maybeEmitPlanItemBoundary 的时机说明）——
+      // 本处只剩落盘触发信号，两者不再挤在同一个产出点。
       yield* this._emitStepBoundary(toolResult);
       return toolResult;
     }
-    // 无工具路径：plan 本迭代不被改写，检出时机（LLM 调用后）与工具落定后等价，保持原位。
-    yield* this._maybeEmitPlanItemBoundary();
+    // 无工具路径：边界同样已在迭代开始产出，此处不再重复检出。
     // 补发：工具闭环内延迟分类的纯文本消息（收尾交付）从未流式 yield → 先补发整段正文再收尾
     if (!llmResult.textStreamed && llmResult.fullContent.trim()) {
       yield { type: 'text', content: llmResult.fullContent, stage: textStage };
@@ -1116,8 +1118,21 @@ export class AgentLoop {
    *  方法名与产出事件名必须同阵营，勿据「step」误读为迭代边界）：
    *  比较 active 任务项是否已推进，推进才产 plan_item_boundary（宿主按任务项分组后续事件）。
    *  无任务表（null）或 planItemId 未变则不产（lastBoundaryPlanItemId 去噪，避免每迭代发一条空边界）。
-   *  检出时机由调用方决定：工具分支在 handleToolCalls 之后（工具可能改写 plan）、无工具分支在
-   *  LLM 调用后——两处都保证「读到的 active 任务项 = 本迭代结束后当前所在的那个任务项」。
+   *
+   *  **检出时机 = 迭代开始、LLM 调用之前（硬，2026-09-26 定案）**：边界的语义是「**以下内容**
+   *  属于该任务项」，故必须产在它所罩住的思考与工具之前。曾放在本迭代工具落定之后，导致宿主
+   *  「向前找最近边界」的判据对该迭代必然落空 → 每个任务项的首个迭代（思考 + 首批工具）恒掉出
+   *  折叠块，且流式插入后不搬家（详见 docs/方案-任务项边界产出时机前移-20260926.md）。
+   *
+   *  语义后果（可接受，非缺陷）：任务表若由本轮某迭代的工具**新建**，该迭代仍留在组外——
+   *  那个时刻任务表还不存在。本产出点修的是「任务表在本轮开始前已存在」（续会/预置/上一 turn
+   *  遗留）的场景。
+   *
+   *  与 `onPlanItemBoundary`（写 planItemLog）的**时序分叉仍是设计语义**：后者在 LLM 调用后、
+   *  工具前读 active（= 本迭代 LLM 实际服务的任务项），本处在迭代开始读（= 以下内容将归属的
+   *  任务项）。两者读同一真相源 `sessionManager.getCheckpoint().plan`，只是读取时刻不同。
+   *
+   *  落点还必须在 `_handleInterrupt` 之后：挂起/中止的迭代不应先产一条边界再退出。
    *  roundId 由 withRound 统一附加（chunk 归属 SSOT），此处不再自带。 */
   private *_maybeEmitPlanItemBoundary(): Generator<AgentChunk, void, unknown> {
     const activePlanItemMeta = this.getActivePlanItemMeta?.();
@@ -1144,17 +1159,17 @@ export class AgentLoop {
    *  **条件 = result === 'continue'（硬）**：终态迭代（'done' 收尾 / 'paused' 挂起 / 'aborted'
    *  中断）之后流即结束或宿主 break → **流尾落盘**已兜底，此处不产——既避免与流尾重复写，
    *  也保住「终态 chunk 是末条」这一既有流契约（宿主 paused 分支据 break，其后不得再有 chunk）。
-   *  无工具分支（handleTextResponse）恒终态，故只产折叠边界、不产本 chunk。
+   *  无工具分支（handleTextResponse）恒终态，故本方法在该分支不产（恒非 'continue'）。
    *
-   *  **顺序契约（硬）**：先 yield plan_item_boundary（折叠分组），再 yield step_boundary
-   *  （落盘触发）——保证宿主本次落盘快照已含该任务项折叠边界，崩溃重放不错位。
+   *  **顺序契约（硬，2026-09-26 更新）**：`plan_item_boundary` 已于**迭代开始**产出
+   *  （见 _maybeEmitPlanItemBoundary），本 chunk 产在迭代尾 → 二者天然保持「折叠边界先于落盘
+   *  触发」的先后序，宿主本次落盘快照必含该任务项折叠边界，崩溃重放不错位。
    *
    *  @param result 本次迭代的路由结果（handleToolCalls 返回值）
    */
   private *_emitStepBoundary(
     result: 'aborted' | 'done' | 'continue' | 'paused',
   ): Generator<AgentChunk, void, unknown> {
-    yield* this._maybeEmitPlanItemBoundary();
     if (result === 'continue') yield { type: 'step_boundary' };
   }
 

@@ -183,15 +183,48 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
     expect(planItemIdx).toBeLessThan(iterIdx);
   });
 
+  it('★ 任务项边界产出时机（方案-任务项边界产出时机前移-20260926）：边界早于本迭代的思考与工具', async () => {
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ thought: 's1-想', toolCalls: [toolCall('c1', 'tool_a')] } as ChunkItem],
+        [{ content: '完成' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+    // 有任务表场景（active 任务项恒定）：首个迭代即应拿到边界
+    loop.getActivePlanItemMeta = () => ({ planItemId: 'plan-item-1', title: '任务项一' });
+
+    const chunks = await collect(loop, '带任务表');
+
+    const boundaryIdx = chunks.findIndex((c) => c.type === 'plan_item_boundary');
+    const firstThought = chunks.findIndex((c) => c.type === 'thought');
+    const firstToolStart = chunks.findIndex((c) => c.type === 'tool_start');
+    // 场景自证（防假绿）：三类 chunk 都真产出了
+    expect(boundaryIdx).toBeGreaterThanOrEqual(0);
+    expect(firstThought).toBeGreaterThanOrEqual(0);
+    expect(firstToolStart).toBeGreaterThanOrEqual(0);
+    // 边界语义 = 「以下内容属于该任务项」→ 必须早于它所罩住的思考与工具。
+    // 晚于则宿主「向前找边界」的判据必然落空 → 首个迭代的思考/工具掉出任务项折叠块。
+    expect(
+      boundaryIdx,
+      'plan_item_boundary 晚于本迭代思考：宿主向前找边界落空，内容掉出折叠块',
+    ).toBeLessThan(firstThought);
+    expect(
+      boundaryIdx,
+      'plan_item_boundary 晚于本迭代工具：宿主向前找边界落空，内容掉出折叠块',
+    ).toBeLessThan(firstToolStart);
+  });
+
   it('★ STEP-BUCKET-1 前提固化：plan_item_boundary 不劈同一 step 的 thought 流（桶 key 不重影）', async () => {
     const toolExecutor = vi.fn().mockResolvedValue('ok');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // step 1：两段思考碎片 + 工具调用（碎片相邻成组是前提的直接观测对象）
         [{ thought: 's1-想A' }, { thought: 's1-想B' }, { toolCalls: [toolCall('c1', 'tool_a')] }],
-        // step 2：两段思考碎片 + 工具调用（active 任务项推进 → 本迭代末应产 plan_item_boundary）
+        // step 2：两段思考碎片 + 工具调用（active 任务项推进 → 本迭代开始应产 plan_item_boundary）
         [{ thought: 's2-想A' }, { thought: 's2-想B' }, { toolCalls: [toolCall('c2', 'tool_b')] }],
-        // step 3：纯文本收尾（终态迭代不产边界）
+        // step 3：纯文本收尾（active 任务项未再推进，不产新边界）
         [{ thought: 's3-想', content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -244,7 +277,7 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
             ],
           },
         ],
-        // step 2：思考 + 单工具（active 任务项推进 → 本迭代末应产 plan_item_boundary 打断物）
+        // step 2：思考 + 单工具（active 任务项推进 → 本迭代开始应产 plan_item_boundary 打断物）
         [{ thought: 's2-想' }, { toolCalls: [toolCall('c3', 'tool_a', '{"path":"c"}')] }],
         // step 3：纯文本收尾
         [{ content: '完成' }],
