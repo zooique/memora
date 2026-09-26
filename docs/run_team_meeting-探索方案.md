@@ -1,6 +1,6 @@
 # run_team_meeting — 探索方案（角色包小组会议简化）
 
-> 状态：**已落地（2026-09-16 路线拍板 · 方案 A 已实现）**——`run_team_meeting` 已作为内置工具实现在 `src/agent/builtinTools.ts` / `builtinToolHandlers.ts`（handler 内拼接多角色 persona 后直接调 provider.chat()）。探索期可逆决策已验证被真实消费，本文保留作方案记录（不占 ADR 编号，见 `.trae/rules/exploration-decision-sedimentation-rules.md` S1）。
+> 状态：**已落地（2026-09-16 路线拍板 · 方案 A 已实现）**——`run_team_meeting` 已作为内置工具实现在 `src/agent/builtinTools.ts` / `builtinToolHandlers.ts`（handler 内拼接多角色 persona 后直接调 provider.chat()）。探索期可逆决策已验证被真实消费，本文保留作方案记录（不占 ADR 编号，见 `.trae/rules/generic/exploration-decision-sedimentation-rules.md` S1）。
 > **坐标**：正文行号为**历史记录的时点快照**（§1 实证盘点的行号描述的是改造前「三个机制叠加」的旧形态），代码演进后不再核对——定位请按符号名检索，勿依赖行号。
 > 定位：方案 A —— 用一个独立内置工具 run_team_meeting 取代「小组会议」在 task_table + 装配视角切换（T1）之上的三层叠加实现，实现**真实注入多角色 persona 设计文本、以各角色视角评估同一问题**，且收敛为单次 LLM 调用。
 > 路线（用户拍板 2026-09-16）：**工具内调 LLM 实现**——run_team_meeting 在 handler 内拼接多角色 persona 后直接调 provider.chat()。
@@ -124,4 +124,4 @@ run_team_meeting(group, topic)
   - **可淘汰层收窄为会议专用层**：`tryBuildMeetingPlan` / `buildTeamContextBlock`（指挥建表部分）/ T1 会议视角切换。`task_table` 主干与 `rolePackTeams` 数据源（run_team_meeting 与宿主 UI 继续消费）须保留。
   - **去留由实证定**：保留期采集双通道真实使用频次，触发 = 真实会议长时间（约一个发布周期）无可交互/续会消费 → 届时评估整体移除会议专用层。
 
-> 关联：`.trae/rules/exploration-decision-sedimentation-rules.md`（S1 探索期落地）、`single-truth-source-mindset.md`（最小单元）、`progressive-refactor-rules.md`（渐进，先并行走证再拆）、`legacy-contract-audit-rules.md`（不带伤：不砍还在用的能力）。
+> 关联：`.trae/rules/generic/exploration-decision-sedimentation-rules.md`（S1 探索期落地）、`single-truth-source-mindset.md`（最小单元，`.trae/rules/generic/`）、`progressive-refactor-rules.md`（渐进，先并行走证再拆，`.trae/rules/generic/`）、`legacy-contract-audit-rules.md`（不带伤：不砍还在用的能力，`.trae/rules/generic/`）。

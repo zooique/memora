@@ -57,6 +57,7 @@
     "terminology:check": "tsx scripts/terminology-carrier-snapshot.ts --check",
     "docs:links": "tsx scripts/check-publish-links.ts",
     "docs:links:repo": "tsx scripts/check-publish-links.ts --repo",
+    "rules:refs": "tsx scripts/check-rule-refs.ts",
     "prepare": "lefthook install || true",
     "prepublishOnly": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && npm run build"
   },

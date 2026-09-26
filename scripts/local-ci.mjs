@@ -121,6 +121,16 @@ const ALL_STEPS = [
     required: true,
     presets: ['full'],
   },
+  // 规则裸路径引用有效性：规则文件移动/重命名后，反引号/纯文本形态的 `.trae/rules/*.md` 引用
+  // 不在 docs:links 扫描面内（其判据只认 `](...)` 且剥离行内代码）→ 补这条同族盲区（确定性 FS 扫描，秒级）。
+  {
+    id: 'rules:refs',
+    name: '规则裸路径引用有效性检查',
+    cmd: 'npm run rules:refs',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
   { id: 'audit', name: '依赖安全审计（允许失败）', cmd: 'npm audit --audit-level=high', cwd: ROOT, required: false, presets: ['full'], optionalFlag: 'audit-invert' },
 ];
 

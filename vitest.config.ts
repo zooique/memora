@@ -47,7 +47,7 @@ export default defineConfig({
         //   90.30 / 84.78 / 92.27 / 91.52 —— 四项阈值均低于实际值，留缓冲防日常波动。
         // 0% 文件（agent/types.ts, llm/types.ts, memory/*Interface.ts 等）为纯类型/接口文件，无运行时代码
         lines: 80,
-        // 覆盖率阈值的**判据 SSOT = 本文件**（机器只执行此处的量）。`.trae/rules/testing_rules.md`
+        // 覆盖率阈值的**判据 SSOT = 本文件**（机器只执行此处的量）。`.trae/rules/generic/testing_rules.md`
         // 与本处同源对齐；冲突时**以本文件为准并回填文档**，不得反向。
         // 反向（以文档为准）不成立：「文档是配置的描述，而非独立目标」——
         // 引文说文档是描述，若结论说文档是权威，**引文与结论反向**，属自相矛盾。

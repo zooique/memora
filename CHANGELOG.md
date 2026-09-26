@@ -8,6 +8,17 @@
 
 ## [Unreleased]（= v3.0.0 · 尚未发布，发版日补日期）
 
+### Added（新增门禁 `rules:refs`：规则裸路径引用有效性 · 补 `docs:links` 同族盲区）
+
+**问题证据（血训）**：`413e1046` 把 14 个规则文件从 `.trae/rules/` 移入 `.trae/rules/generic/`，引用漏改分**两类书写形态**——① markdown 链接形态（`](...)`，`docs:links` 能抓，已修 15 处）；② **反引号 / 纯文本形态的裸路径**（本次修 12 处）。后者是**判据失明的盲区**：`docs:links` 只认 `](...)` 语法，且**主动剥离行内代码跨度**（见 `check-publish-links.ts` 的 `LINK_RE` / `INLINE_CODE_RE`）→ 裸路径根本不在其扫描面内。两类是同一族「参考腐烂」，只是书写形态不同。
+
+- **新增 `scripts/check-rule-refs.ts`**：扫全仓文本文件（`.md` / `.ts` / `.mjs` / `.yml`）里的 `.trae/rules/` 裸路径引用，解析不到目标文件即 exit 1。与 `check-publish-links.ts` 同型（纯 FS / 零三方依赖 / 零网络 / 确定性 / 只读 + 退出码），可进 CI
+- **判据边界（刻意排除，非豁免清单）**：① 源文件位于 `.trae/skills/**` —— 技能手册是**可移植模板**，其中引用的规则文件由 big-tree-seeder 在**目标项目**生成，本仓内本就不该存在；② **脚本自身** —— 否则脚本内作为样例的旧路径文本会给「旧路径基线」续命（同术语门禁教训：扫自身 → 消失检测失效）
+- **闸门自检（每次运行都跑，不可关闭）**：先对 3 条内置样例跑**同一套判据**（`scanLine`，与主扫描同源，非另写一套），未全过即 exit 2 —— 「0 命中即成功」这类断言若判据本身失明（正则改坏 / 排除逻辑写反）会**静默假绿**
+- **修复 12 处陈旧裸路径引用（9 文件）**：`docs/` × 4、`prompts/` × 1、`tasks/` × 2、`vitest.config.ts` × 1 —— 全部补 `generic/`。其中 `vitest.config.ts` 一处是首轮 grep 正则漏掉下划线文件名所致（`[a-z0-9-]` → `[A-Za-z0-9_./-]` 才现形），属「排雷发现取证不完整」的实例
+- **接线**：`package.json` 新增 `rules:refs` 脚本；`scripts/local-ci.mjs` 步骤清单 full 档新增同名步骤（位于术语门禁之后、audit 之前）
+- **验证（变异闭合）**：自检 **3/3**、扫 **556** 文本文件、**0 命中** EXIT=0；临时把 `vitest.config.ts` 引用改回旧路径 → **恰 1 红**（正确定位到该行）→ 恢复全绿；`docs:links:repo` 自检 4/4 / 208 链接 / 0 死链；`terminology:check` 零漂移；`tsc -p tsconfig.scripts.json` / `eslint --max-warnings 0` EXIT=0
+
 ### Changed（工具批按 step 断段：思考换步即断段，工具块与思考块对齐）
 
 **问题证据（真机）**：一轮连做 9 步，每步思考后调工具；因步骤之间无 `narrate`（也无其它可见分隔物），前后相邻工具之间**无任何打断物** → 宿主 `groupToolBatches` 判为一大段连续工具，合并成**一个「工具×23」大块**（锚在第 1 步首个工具），用户看不到「哪几个工具属于哪一步」。根因 = 切段判据的打断物只有 `{narrate, text_self_review, plan_item_boundary}`，而 `thought` 明确「穿插不断段」→ 模型不吐叙述时跨 step 工具之间无判据可断。
