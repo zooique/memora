@@ -18,7 +18,7 @@
 - **组内零误伤**：候选限定 `:scope >`（直接子节点），而组不嵌套组（`getOrCreatePlanItemGroup` 的 root 恒为 flow / details）⇒ 往组**内**插行时该选择器恒 0 命中
 - **守卫**：`chatView.test.ts` +2 例（真机两形态——边界前置于首个工具 / 建表工具在边界之前）；变异退回候选那半 → 恰 1 红、零误伤。宿主全量 **781 passed / 2 skipped**、`tsc` 0、`eslint` 0
 - **存量旁路（如实记，未擅动）**：`insertPlanItemGroupInOrder` 按**纯 seq** 定位组，而 `insertPlanItemInOrder` 的组间判据是 **(ts, seq)** ⇒「同一不变量两处实现」，当前等价。已登记 `PLAN-GROUP-ORDER-1` 观察，收口属另一件事
-- **真机待复验**：源码已改，`dist/webview/scripts/chatView.js` 仍是旧 bundle ⇒ 需 `npm run compile` 后复看任务表建表工具的落点
+- **真机待复验**：`dist` 已随本批 `pre-push` full 档的宿主构建重建（实测 `dist/webview/scripts/chatView.js` 已含 `grp.dataset.ts`）⇒ 只剩「重载扩展宿主 + 开一轮带任务表的对话」复看建表工具落点
 
 ### Added（宿主 · 文件改动 diff 可视化 DIFF-1：打开真实文件 + 改动行内联高亮 + 顶/底各一组确认·回退）
 
