@@ -20,6 +20,17 @@
  * ⚠️ 行数语义：空串按 **0 行** 处理（`''` → `[]`），与「空文件没有行」的直觉一致；
  * 否则 `''.split('\n')` 会得到 `['']`（1 个空行），使「清空文件」被误算成「保留 1 空行」。
  *
+ * 块级动作（2026-09-27 加）：本模块除了「算差异」，还导出**块级回退原语**
+ * —— 因为「把某一块还原成旧内容」本质是**行数组的区间替换**，与差异计算同源、同坐标系，
+ * 放在这里才能被纯 node 单测；放到渲染层（fileChangeView）就既不可测又会与装饰各算一遍。
+ *
+ * ⚠️ **不维护「块存活集」**：接受/拒绝一块后**重算 diff** 即可，其余块坐标自动更新。
+ * 关键推导（与 git 的 index 模型同构）：
+ *   - 「拒绝一块」= 把 `after` 中该块换回旧行 ⇒ 写盘；
+ *   - 「接受一块」= 把**基线**改成「当前内容剔除未接受的块」（= `applyHunkReverts(after, 其余块)`）
+ *     ⇒ 该块在新 diff 中**自然消失**，不动盘、不记索引、不做坐标迁移。
+ * 于是「接受完所有块 / 拒绝完所有块」都等价于 diff 为空 ⇒ 与文件级确认同一收口，无特判。
+ *
  * @module fileChangeDiff
  */
 
@@ -130,6 +141,111 @@ function lcsHunks(midBefore: string[], midAfter: string[]): DiffHunk[] {
   }
   if (cur) hunks.push(cur);
   return hunks;
+}
+
+/**
+ * FNV-1a 32 位指纹（非加密用途：只做「内容是否变了」的比对）
+ *
+ * 不用 `node:crypto` 的理由：本模块要保持**零依赖、跨平台纯逻辑**，而内容指纹只需抗碰撞
+ * 到「改一个字符就变」的程度，sha1 是杀鸡用牛刀且要引入 node 内建模块。
+ */
+function fnv1a(text: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(36);
+}
+
+/**
+ * 块的**寻址指纹** = 位置 + 内容，二者都对上才动手
+ *
+ * 用途：CodeLens 的按钮在**渲染时**生成、在**点击时**消费，两次之间文件内容可能已变
+ * （并行写同一文件、用户手改）。只传下标会在内容变动后**静默打错块**——回退是写盘动作，
+ * 打错块 = 吃掉用户内容。故按钮携带本指纹，点击时按指纹重新定位：
+ *   - 命中 ⇒ 执行；
+ *   - 不命中 ⇒ **fail-closed**（不动盘、留痕、刷新按钮），绝不退化为「按下标猜一个」。
+ *
+ * ⚠️ 指纹**含行号**是刻意的：两处内容完全相同的插入（同一行插在两个位置）只靠内容无法区分，
+ * 而它们的回退结果不同（删掉的上下文不同）。含行号后即无歧义。
+ *
+ * ⚠️ 分隔符写作 `\u0000` **转义**（保持源码纯 ASCII）：切行结果里不可能出现该字符，
+ * 故 `removed` 与 `added` 的拼接无歧义。**勿写成裸 NUL 字节**——文件里出现裸 0x00 会让
+ * git（首 8000 字节内即判二进制）与 ripgrep 把整个文件当二进制，diff 不可读、grep 静默失效。
+ *
+ * @param afterText 该块所属的「写后全文」（取块的新行内容用）
+ */
+export function hunkKey(hunk: DiffHunk, afterText: string): string {
+  const lines = splitLines(afterText);
+  const added = isRemovedOnly(hunk) ? [] : lines.slice(hunk.startLine, hunk.endLine + 1);
+  return `${hunk.startLine}:${hunk.endLine}:${fnv1a(`${hunk.removed.join('\n')}\u0000${added.join('\n')}`)}`;
+}
+
+/**
+ * 把指定块还原为旧内容，返回还原后的全文
+ *
+ * 每块 = 行数组上的一次**区间替换**：`[startLine..endLine]` 换成 `hunk.removed`。
+ * 纯删除块（`endLine < startLine`）的区间长度为 0 ⇒ 退化为「在该位置插入旧行」，语义自洽。
+ *
+ * ⚠️ **多块必须按 `startLine` 降序处理**：先改后面的块，前面块的坐标才不受影响。
+ * 升序处理会让第 2 块的行号因第 1 块的长度变化而错位 ⇒ 打错位置（且无报错，静默错）。
+ *
+ * @param afterText 写后全文
+ * @param hunks 要还原的块（须出自 `computeFileDiff(afterText 的同一次计算)`）
+ */
+export function applyHunkReverts(afterText: string, hunks: readonly DiffHunk[]): string {
+  if (hunks.length === 0) return afterText;
+  const lines = splitLines(afterText);
+  const ordered = [...hunks].sort((a, b) => b.startLine - a.startLine);
+  for (const hunk of ordered) {
+    const count = hunk.endLine - hunk.startLine + 1; // 纯删除块 = 0 ⇒ splice 退化为插入
+    lines.splice(hunk.startLine, count, ...hunk.removed);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * 生成**统一视图（上下排列）**的改动对照文本
+ *
+ * 用途：给「查看对比」渲染一份只读文本——单列、全宽，改动前 / 改动后**上下排列**。
+ * 起因（2026-09-27 真机反馈）：`vscode.diff` 的左右并排把长行挤成两个窄栏，**看不清原文**。
+ *
+ * 为何自渲染而不继续用 `vscode.diff`（**已实证**，勿回退猜测）：
+ *   - VS Code 扩展 API **没有**「以 inline 布局打开 diff」的入口——`vscode.diff` 的第 4 个参数
+ *     是 `TextDocumentShowOptions`（`override` 是编辑器解析用，取值是编辑器 id，不是布局）；
+ *   - 布局只受两处影响：全局设置 `diffEditor.renderSideBySide`（改它 = 改用户配置，侵入），
+ *     或命令面板的 **Toggle** Inline View（切换型，盲调会把用户的偏好翻反）；
+ *   - ⇒ 想要「确定性地以上下排列呈现」，只能自己渲染文本。
+ *
+ * 复用 `computeFileDiff` 的同一份块数据（SSOT）：高亮、块按钮、本对照文本三者永不漂移。
+ *
+ * @param before 改动前全文
+ * @param after  改动后全文
+ * @param title  首行标题（调用方给文件名，便于在多标签间辨认）
+ */
+export function formatUnifiedDiff(before: string, after: string, title: string): string {
+  const diff = computeFileDiff(before, after);
+  const afterLines = splitLines(after);
+  const out: string[] = [
+    title,
+    `共 ${diff.hunks.length} 处改动${diff.degraded ? '（改动过大，已按整体一块对照）' : ''}`,
+  ];
+  diff.hunks.forEach((hunk, index) => {
+    const removedOnly = isRemovedOnly(hunk);
+    const added = removedOnly ? [] : afterLines.slice(hunk.startLine, hunk.endLine + 1);
+    // 纯删除块在新文件里不占行 ⇒ 只报「删除位置」；其余报实际行范围（1-based，给人看）
+    const where = removedOnly
+      ? `第 ${hunk.startLine + 1} 行之前（纯删除）`
+      : hunk.startLine === hunk.endLine
+        ? `第 ${hunk.startLine + 1} 行`
+        : `第 ${hunk.startLine + 1}–${hunk.endLine + 1} 行`;
+    out.push('', `──────── 改动 ${index + 1}/${diff.hunks.length} · 新文件${where} ────────`);
+    // 旧行在前、新行在后：上下排列即「先看改前、再看改后」
+    for (const line of hunk.removed) out.push(`- ${line}`);
+    for (const line of added) out.push(`+ ${line}`);
+  });
+  return out.join('\n');
 }
 
 /**

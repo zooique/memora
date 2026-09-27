@@ -254,6 +254,22 @@ export class FileChangeTracker {
     this.records.delete(absPath);
   }
 
+  /**
+   * 块级动作后更新记录内容（记录状态的**唯一写入口**）
+   *
+   * - 接受一块 ⇒ 改 `beforeContent`（基线并入该块；磁盘不动）；
+   * - 拒绝一块 ⇒ 改 `afterContent`（磁盘已写成回退后的内容）。
+   *
+   * 走本方法而非外部直接改字段，是为了让「记录状态归 tracker 所有」这条不被绕过：
+   * 直接改字段会让 `updatedAt` / 淘汰序 / 缓存失效时机各自漂移。
+   * 记录不存在（已确认 / 已淘汰）⇒ 静默无事，不抛错。
+   */
+  updateContents(absPath: string, patch: { beforeContent?: string; afterContent?: string | null }): void {
+    const existing = this.records.get(absPath);
+    if (!existing) return;
+    this.records.set(absPath, { ...existing, ...patch });
+  }
+
   /** 全清（扩展重启的自然边界之外，测试 / 显式重置用） */
   clear(): void {
     this.records.clear();

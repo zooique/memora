@@ -136,6 +136,15 @@ if (!skillBlock && isSkillDisabled(this._agent, skillName)) {
 **反向守卫是必须的**：只测「禁用时报错」不够，还要测「启用时不报错」「不存在时不报错」
 「未带参数时不报错」——否则实现退化成「无条件报错」也能全绿。
 
+**变异必须红在「断言」上，不能红在「等待 / 前置条件」上**（守卫可达性）：若断言藏在
+`vi.waitFor(某形态出现)` 之后、而等待条件只认**一种**形态，把代码变异成**另一种**形态时，
+测试会红在 `waitFor` **超时**上——**断言根本没跑到**。红/绿分布看着正常（一条红、其余绿），
+实则是**假验证**：那条断言到底有没有效，完全未知（等价于被等待条件挡住了）。
+修法：等待条件只等「**任一**形态出现过」、不绑定具体形态，让并排的**形态断言**自己去区分；
+这样一个变异才打得到正确的那一条断言。
+实证（DIFF-1 第十二轮，2026-09-27）：对照视图守卫最初写「等虚拟文档已打开」⇒ 变异回
+`vscode.diff` 时红在 `waitFor`、不在守卫；改成「等对照以**任一形态**出现」+ 形态断言并列后精确命中。
+
 ## 规则 5 —— 零测试覆盖区（`extension.ts`）用**编译产物实读**兜底，并如实标注
 
 `hosts/memora-vscode/src/extension/extension.ts` 是**零测试覆盖区**：宿主没有 vscode mock
@@ -195,6 +204,15 @@ grep -c "onDidChangeConfiguration\|affectsConfiguration\|syncDisabledSkills" dis
   `ThemableDecorationAttachmentRenderOptions` 提供 `contentText` / `textDecoration`（删除线）/
   `color` / `fontStyle` / `margin`。**实例级附件**是「同一装饰类型下、每处改动显示不同旧内容」的
   唯一做法（类型级的 `contentText` 是固定字符串，无法逐处不同）。
+- **附件只能「行内附着」，不能另起一行**：`before` / `after` 的 `contentText` 附在该行文本的
+  **同一行**上（`after` = 行右端、`before` = 行左端）⇒「旧内容显示在行右侧」是 **API 的必然结果**，
+  不是样式没调好。**扩展 API 没有「在某行上方 / 下方插入一行」的能力**：
+  想在「行上方」呈现，唯一载体是 **CodeLens**（VS Code 渲染在所挂行**上方**）——但它同时是
+  **命令载体**（未绑命令 = unresolved、不渲染 title）、**无删除线样式**、且可被用户
+  `editor.codeLens` 关掉（fail-silent）；**「行下方」则无任何扩展 API**（同类限制在案：
+  CodeLens 无「渲染在行下方」、编辑区内悬浮操作条属 fork 内核级 UI）。
+  ⇒ 文件内呈现旧内容 / 对照只有三条路：**行尾内联附件**、**悬停**、**另开单页（虚拟文档上下对照）**；
+  「文件内改成上下排版」不是可选项——**别据此再提**。
 - **多按钮 = 同 range 多 CodeLens**：`CodeLens.command` 只接受**单个** `Command`
   ⇒ Trae 那种「✓ 确认 | ↩ 回退」并排按钮，靠**在同一 range 上 push 多个 CodeLens** 实现
   （VS Code 自动并排渲染）。别去找「一个 lens 挂多命令」的写法——不存在。

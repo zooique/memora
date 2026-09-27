@@ -28,7 +28,39 @@
 - **修法（用户拍板「弹模态确认」）**：`applyRestore` 加 fail-closed 闸（返回改 `RestoreOutcome` 三态，`dirty` 单列、不混进失败原因），单文件回退遇 dirty **弹模态确认**（取消 = 不动文件、记录保留）；批量回退**一个模态一次列出全部 dirty 文件**（明细含「（含未保存编辑）」+ 计数），`overwriteDirty` 只放行清单内文件——确认之后才变 dirty 的仍被拦、如实报失败
 - **守卫**：`fileChangeView.test.ts` +4 例（全走真实命令路径，不私调内部方法）。变异验证：删 fail-closed 闸 → 恰 2 红；删 `isDirty` 判据 → 恰 1 红；零误伤
 - **内核导出面同批收编（DIFF-2 闭合）**：内核 `pathGuard` 导出 `MAX_DIFF_CONTENT_LENGTH`、`WRITE_PATH_EXTRACTORS` 过 `src/index.ts`（见 [3.0.0] Added）；宿主并列副本删除、`DISK_WRITE_TOOLS` 派生自内核键（跨包双枚举收编单源，字面量断言升为跨包契约钉）。⚠️ 只统一数值、不统一行为（两侧超限行为仍不同）
-- **新缺口登记**：DIFF-4（无 `path` 改盘工具双盲）/ DIFF-5（内核写工具两处枚举无对拍守卫）
+- **新缺口登记**：DIFF-4（无 `path` 改盘工具双盲）/ DIFF-5（写工具「谁会改盘」判据：新工具**整行漏写** `diskWrite` 声明位 = 串行不防 + 追踪不报 + 契约钉不红的三重静默。⚠️ 2026-09-27 订正：原登记写「两处枚举无对拍守卫」**机理已过时**——收编后是「一处声明 + 两级派生 + 契约钉」，无两处枚举，故不存在「补对拍守卫」这种修法）
+
+### Fixed（宿主 · 对比预览体积闸在删除场景失效 + 回退审计 tool 名失真）
+
+- **体积闸漏判（删除场景）**：`openCompare` 判据原为 `rec.afterContent !== null && max(before,after) > MAX_DIFF_CONTENT_LENGTH`——`delete_file` 时 `afterContent === null` **短路为假** ⇒ 删几 MB 的文件时整份旧内容照样进虚拟文档 + `vscode.diff` 渲染，正是这道闸要防的事（该 `!== null` 本意是防 null 解引用，非有意放行）。**修法**：两侧长度各自 `?? ''` 后取 max，null 与非 null 一视同仁
+- **回退审计 tool 名失真**：`applyRestore` 恒传 `assertPathAllowed(path,'write_file')`，而「原为新建」的回退实际动作是**删除**。该参数**只进审计事件的 `tool` 字段、不参与放行判定**（判定只用黑名单 + 白名单前缀）⇒ 非安全洞，但审计里「删了什么」全记成写。**修法**：按实际动作传（`beforeContent === null ? 'delete_file' : 'write_file'`）
+- **守卫**：`fileChangeView.test.ts` +3 例（8→11），全走真实路径（事件 / `registerCommand` 捕获的处理器）：删除大文件→提示且**不开** `vscode.diff`；**反向守卫** 小文件删除→正常开对比；回退新建→走删除分支且审计记为 `delete_file`。**变异验证**：退回 `afterContent !== null &&` → 恰 1 红；退回恒传 `'write_file'` → 恰 1 红；零误伤
+
+### Added（宿主 · 文件改动三层粒度归位：文件级上标题栏 + 新增块级「接受此处 / 拒绝此处」）
+
+> **订正上节（形态已变，勿按旧文验收）**：上面 `Added（DIFF-1）` 里「顶部与底部各一组四按钮」与「为何不挂 per-hunk 按钮」两条 **已被 2026-09-27 真机反馈推翻**——按钮嵌在文件正文里用户明确不接受；且那里否决的是「**文件级**按钮挂在每个 hunk 上」（粒度 + 位置双重错位），不是「块级按钮」本身。现形态见本节。
+
+- **文件级按钮迁出正文 → 编辑器标题栏**：`menus.editor/title` 的 `navigation` 组（标签栏右侧图标按钮），配 `when: memora.fileChangePending`（`setContext` 维护，取「活动文件是否有未确认改动」，不在每个文件上都挂按钮）。VS Code 扩展 API **没有**编辑器内悬浮操作条（Trae / Qoder 那条提示条是 fork 内核级 UI，扩展层拿不到），标题栏是扩展能拿到的最接近形态。命令 id 随之改名 `memora.fileChange.confirmFile` / `.restoreFile`（原 `…confirmInline` / `…restoreInline` 命名在迁走后失真），并从「内部命令」翻转为**必须贡献**（菜单依赖声明才渲染）⇒ 参数归一化 `string | Uri | undefined`、无参回落活动编辑器
+- **块级按钮（命题 B）**：每个改动块末尾一组「接受此处 / 拒绝此处」，落点 `hunk.endLine + 1` —— CodeLens 渲染在所在行**上方** ⇒ 视觉上紧跟该块**之后**；挂首行会贴在上一个 hunk 末尾之下被误读（§11.8 旧伤）。纯删除块 `endLine = startLine - 1` ⇒ 落点正好是删除位置，无需分支
+- **块级动作是纯逻辑派生，无新状态**（与 git `add -p` 的 index 模型同构）：接受 = 基线改为「当前内容剔除未接受的块」（**不动盘**）；拒绝 = `applyHunkReverts` 区间替换后写盘。块全部处理完 ⇒ diff 为空 ⇒ 与文件级确认**同一收口**，无特判、无「已接受块集」、无坐标迁移
+- **纯逻辑层新增两个导出**（`fileChangeDiff.ts`，可 node 单测）：`applyHunkReverts`（多块按 `startLine` **降序**——插入块还原会改行数，升序会让后一块 `splice` 打空）/ `hunkKey`（位置 + 内容指纹；渲染 → 点击若对不上即 **fail-closed**，绝不按下标猜块——回退是写盘动作，猜错即吃掉用户内容）
+- **守卫**：`fileChangeCommands.test.ts` 分类断言翻转（5 个对外命令必须贡献 / 2 个块级命令必须不贡献）+ 新增「标题栏菜单必须带 `when`」守卫；`fileChangeView.test.ts` 改块级粒度与落点用例 + 新增块级动作 8 例。fileChange 四单测合计 **79 passed**。**变异验证**：落点改回块首行 → 恰 1 红；接受后不失效 `hunkCache` → 2 红；指纹失效按下标兜底 → 1 红（硬证据是**真的写了盘**）
+- **⚠️ 变异验证的自我排雷**：最初「多块一次性还原 = 写前内容」用的是等长替换（行数不变 ⇒ 升序降序同结果），变异**不变红** ⇒ 先怀疑断言没咬住判据（补真机那组两块插入后才红），而不是怀疑代码
+
+### Fixed（宿主 · 块级按钮「跑到改动上方」+ Changed：改动对照改上下排列）
+
+> **本节的形态变化覆盖上节部分描述**：上节「块级按钮落点 `endLine + 1` ⇒ 视觉紧跟该块之后」在**末块贴文件最后一行**时不成立（见下第 1 条）；对照视图由 `vscode.diff`（左右并排）**改为自渲染单列上下排列**。
+
+- **BUG「点了一个按钮后，底部修改的按钮跑到上面去了」= 结构性边界，非行号算错**（2026-09-27 真机反馈，硬证据）：真机文件 `创意杠杆候选.md` 为 `endsWithNewline = false` / `lineCount = 28`，被改行 = 第 28 行 = **文件最后一行** ⇒ 末块 `endLine + 1 = 28` 越界、`safeLineRange` clamp 回 27，而 **CodeLens 恒渲染在所挂行上方** ⇒ 末块按钮必然落在该块**上面**。VS Code 扩展 API **给不出「渲染在行下方」的 CodeLens** ⇒ 位置不可解。用户观感「点一下才跑上去」的真因：点掉前一块后只剩末块，场上唯一的按钮就是那颗被 clamp 的。
+  - **修法（位置解不了 ⇒ 让归属不依赖位置）**：块按钮标题**恒带序号** `（N/M）`（`$(check) 接受此处（1/2）`），单块也显 `（1/1）`，不搞「时有时无」；顺带补上旧根因「看不出共几处」。
+  - **守卫 2 例**（末行 clamp 形态 + 序号恒显）；变异 `const suffix = ''` → **恰 2 红**。
+- **对照视图由左右并排改为上下排列**（用户「现在的左右排列看不清楚原文」）：`vscode.diff` 是左右分栏，窄编辑器里长行被挤成两个半栏。**为什么不能「把 diff 设成 inline 再打开」**——扩展 API 拿不到该入口：`vscode.diff` 第 4 参数（`TextDocumentShowOptions`）**不含布局**，布局只受用户全局 `diffEditor.renderSideBySide` 或**切换型**命令影响（盲调 = 改用户设置）⇒ 自渲染统一视图是唯一确定性路线。
+  - **纯逻辑新增 `formatUnifiedDiff(before, after, title)`**（`fileChangeDiff.ts`）：单列 `- `/`+ ` 文本 + 每块分隔头 `──────── 改动 N/M · 新文件第 X 行 ────────` + `共 N 处改动`。⚠️ 与 `MAX_DIFF_CONTENT_LENGTH` 的关系：**只统一取值、不统一行为**（宿主仍「跳过对照只提示」）。
+  - **呈现层改用只读虚拟文档 + `showTextDocument`**：零落盘、天然只读；删除 `executeCommand('vscode.diff')` 路径、`existsSync` 导入与 `rightSeed`（「删除场景右侧给空虚拟文档」分支随左右并排一起消失）。
+  - **守卫**：正文为单列、同一处**先旧后新**、`executed` 中**不得出现 `vscode.diff`**。变异：把 `openCompare` 改回 `vscode.diff` → **3 红**。
+- **⚠️ 方法论教训（变异验证的「守卫可达性」）**：等待条件最初写成「等虚拟文档已打开」⇒ 变异回 `vscode.diff` 时 `waitFor` **先超时变红**，形态守卫**根本没跑到**（红在等待、不在守卫）。改为「等对照视图以**任一形态**出现」+ 形态断言并列后才精确命中。**守则：变异必须红在断言上，不能红在等待/前置条件上。** 已固化到常驻载体（不留在本节）：`memora-host-ui-consistency` 技能**规则 4**。
+- **验证终值**：fileChange 四单测 **89 passed**；`tsc --noEmit -p ./` = 0；`eslint --max-warnings 0` = 0。宿主全量 `Tests 5 failed | 774 passed | 2 skipped`，**AssertionError = 0**；按「先数 AssertionError、再隔离复跑」定性：只跑那两个文件 → `1 failed | 32 passed`（**只剩 `projectSearchProvider` 501 文件 30s 超时**），另 4 条为并发 I/O 争用假红。**未改任何 timeout 迁就。**
+- **同批修正（源文件裸 NUL 字节污染 git / ripgrep）**：`fileChangeDiff.ts` 的 `hunkKey` 里 `removed` / `added` 的拼接分隔符原为**裸 `0x00` 字节**，落在 **offset 7751**——恰好在 git 二进制判窗（头 8000 字节）之内 ⇒ `git diff --stat` 显示 **`Bin …`**、`Grep` 返回 **`binary file matches` 而非命中行**，该文件改动**在提交里完全不可读**（tsc / 单测全绿、门禁查不出）。改为 **`\u0000` 转义**（运行期仍是同一字符 ⇒ hash 与 89 项单测不变），并在 `hunkKey` 的 JSDoc 写明「勿写裸 NUL 及原因」。复验：`tsc --noEmit -p ./` = 0；fileChange 四单测 **89 passed**。⚠️ **提交前必须重新 `git add` 该文件**（`git diff` 比两侧，索引里仍是带 NUL 的旧 blob 则依旧判二进制）。**已归位真源载体**：`.trae/rules/generic/coding-convention-rules.md` **§10「源码文本卫生」**（源码禁裸控制字节——工具链整体失明属通用编码约束，不落在 host-UI 技能）。
 
 ### Changed（工具批按 step 断段：思考换步即断段，工具块与思考块对齐）
 

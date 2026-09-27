@@ -8,12 +8,21 @@
  *   ② 改动行**块级高亮**（绿底 + 左侧竖条）；
  *   ③ hunk 首行**行尾内联旧内容**（删除线灰字）+ **悬停看完整旧内容**（Markdown）——
  *      旧内容仅内存展示，文件中已不存在，全程不落盘；
- *   ④ 每个 hunk 上方 **CodeLens 按钮**「确认 / 回退」（VS Code 会把同一行的多个 CodeLens 并排渲染，
- *      这就是 Trae「Y Accept / N Reject」的纯扩展等价形态；`CodeLens.command` 只支持单命令，
- *      故多按钮 = 同 range 多个 CodeLens）。
+ *   ④ **块级按钮**：每个改动块**末尾**一组「接受此处 / 拒绝此处」CodeLens，跟着改动走
+ *      —— 改在哪一行，按钮就在哪一行旁边。⚠️ 旧稿写「每个 hunk 上方」：挂在 hunk **首行**
+ *      时按钮会贴在**上一个 hunk 末尾**之下，被误读成「回退上一段」（2026-09-26 真机修正）。
+ *      现挂在 `endLine + 1`：CodeLens 渲染在所在行**上方** ⇒ 视觉上紧跟该块**之后**，归属明确。
+ *   ⑤ **文件级按钮**（确认本文件 / 回退本文件）放**编辑器标题栏**（`editor/title` 的
+ *      `navigation` 组 = 标签栏右侧图标按钮），**不在文件正文里**——真机反馈「按钮嵌在文件里的
+ *      感觉」。VS Code 扩展 API **没有**「编辑器内悬浮操作条」（Trae / Qoder 那条提示条是
+ *      fork 内核级 UI，扩展层拿不到），标题栏是扩展能拿到的最接近形态。
  *
- * `vscode.diff` 侧对比**降级为按需**（CodeLens「全部确认」入口之外的「对比」按钮 / 状态栏 QuickPick
- * / 改动通知），不再是自动路径——用户诉求是「不用专门打开 diff 对比」。
+ * 三层粒度（对位 Qoder / Trae）：跨文件（对话区常驻条 / 状态栏 / 命令面板）→ 单文件（标题栏）
+ * → 单处（块级 CodeLens）。**不要在文件里摆跨文件按钮**：粒度混淆（§11.3 已判过一次真伤）。
+ *
+ * `vscode.diff` 自 2026-09-27 起**不再使用**：「改动对照」改为自渲染的**统一视图（上下排列）**
+ * 只读虚拟文档——左右并排在窄编辑器里把长行挤成两栏、看不清原文，而扩展 API 给不出
+ * 「以 inline 布局打开 diff」的入口（理由与实证见 `formatUnifiedDiff`）。
  *
  * 关键边界：
  *   - 旧内容经 `TextDocumentContentProvider` 以**虚拟文档**交给 `vscode.diff`，**全程零落盘**
@@ -30,7 +39,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { existsSync, rmSync } from 'node:fs';
+import { rmSync } from 'node:fs';
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
 // MAX_DIFF_CONTENT_LENGTH：对比预览上限的**单一真源**（内核 pathGuard 导出）。
@@ -39,8 +48,11 @@ import * as vscode from 'vscode';
 import { MAX_DIFF_CONTENT_LENGTH } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 import {
+  applyHunkReverts,
   computeFileDiff,
+  formatUnifiedDiff,
   hunkAnchorLine,
+  hunkKey,
   isRemovedOnly,
   type DiffHunk,
 } from './fileChangeDiff.js';
@@ -75,13 +87,32 @@ export const CONFIRM_ALL_FILE_CHANGES_COMMAND = 'memora.confirmAllFileChanges';
 export const REVERT_ALL_FILE_CHANGES_COMMAND = 'memora.revertAllFileChanges';
 
 /**
- * CodeLens 内部命令 id（**不进 package.json#contributes.commands**）
+ * 文件级命令 id（宿主入口 = **编辑器标题栏**，故**必须**进 package.json#contributes.commands）
  *
- * 它们需要「文件绝对路径」参数，只应由 CodeLens 携带调用；暴露到命令面板会得到
- * 无参调用而静默失败。故只 `registerCommand`，不贡献声明。
+ * 2026-09-27 真机反馈：这两颗按钮原先是文件正文里的 CodeLens，用户反馈「嵌在文件里的感觉」，
+ * 遂迁到标题栏（`editor/title`）。代价是必须贡献声明（菜单依赖声明才渲染），从而**必须能承受
+ * 无参调用**（命令面板 / 键绑定触发时没有 Uri）⇒ 无参时回落到**当前活动编辑器**的文件，
+ * 取不到就留痕返回，不静默吞。
  */
-export const CONFIRM_INLINE_COMMAND = 'memora.fileChange.confirmInline';
-export const RESTORE_INLINE_COMMAND = 'memora.fileChange.restoreInline';
+export const CONFIRM_FILE_COMMAND = 'memora.fileChange.confirmFile';
+export const RESTORE_FILE_COMMAND = 'memora.fileChange.restoreFile';
+
+/**
+ * 标题栏按钮的显隐上下文键（由 `setContext` 维护，`when` 子句消费）
+ *
+ * 为何需要它：标题栏菜单是**全局**的，不加 `when` 会在**每个**文件上都挂两颗按钮。
+ * 键的语义 = 「当前活动编辑器这个文件有未确认改动」。
+ */
+export const PENDING_CONTEXT_KEY = 'memora.fileChangePending';
+
+/**
+ * 块级命令 id（**不进** package.json#contributes.commands）
+ *
+ * 参数是「文件绝对路径 + 块指纹」，只由块级 CodeLens 携带；暴露到命令面板会得到无参调用，
+ * 而块指纹无从猜测 ⇒ 必然静默失败。故只 `registerCommand`，不贡献声明。
+ */
+export const CONFIRM_HUNK_COMMAND = 'memora.fileChange.confirmHunk';
+export const REJECT_HUNK_COMMAND = 'memora.fileChange.rejectHunk';
 
 /**
  * 改动行高亮装饰（字面高对比色，不依赖主题色）
@@ -186,24 +217,36 @@ function inlinePreview(removed: string[]): string | undefined {
 }
 
 /**
- * CodeLens provider：在文件**顶部与底部**各放一组按钮（Trae 式行内操作）
+ * 一次块计算的产物：**块列表 + 算它们时用的写后全文**
  *
- * 为何不再挂在每个 hunk 上（2026-09-26 真机修正）：CodeLens 渲染在**所在行的上方**，
- * 挂在 hunk 首行时按钮会紧贴在**上一个 hunk 末尾**之下，视觉上像属于上一段——真机上用户
- * 因此把「回退本文件」误读成「回退上一段」，并怀疑「新增的内容没有回退」。而动作粒度本就是
- * **整个文件**（不是单处），逐 hunk 摆按钮只会放大「一处一个按钮」的错觉。
- * ⇒ 收敛为两个位置：顶部（就近可见）与底部（长文件不必翻回顶部）。
+ * 为什么要带上 `afterText`：`DiffHunk` 只有坐标与被删的旧行，**没有**块的新行内容，
+ * 而块寻址指纹 `hunkKey` 需要它。指纹必须由**同一次计算**产出并在渲染/点击间传递——
+ * 渲染时算一份、点击时再算一份 = 两份并列，必漂移（SSOT 违例）。
+ */
+interface HunkSnapshot {
+  hunks: DiffHunk[];
+  /** 算这些块时用的写后全文（`''` = 文件已删除 / 为空） */
+  afterText: string;
+}
+
+/**
+ * CodeLens provider：**每个改动块末尾一组按钮**（块级粒度，跟着改动走）
  *
- * hunk 数据从注入的取值函数拿（复用 `FileChangeView` 的缓存），保证与装饰同源——
- * 两处各算一遍 diff 会漂移，属 SSOT 违例。
+ * 形态依据（2026-09-27 真机反馈）：用户要的是「按块独立显示按钮」。文件级的两颗按钮
+ * 已迁到**编辑器标题栏**，故正文里只剩块级按钮——文件里摆文件级按钮会被读成「属于某一段」。
+ *
+ * 按钮带**块指纹**而非下标：渲染与点击之间内容可能已变（并行写同一文件、用户手改），
+ * 按下标取块会**打错块且无报错**，而回退是写盘动作 ⇒ 打错块 = 吃掉用户内容。
+ * 指纹对不上时命令实现走 fail-closed（不动盘、留痕、刷新按钮）。
+ *
+ * 块数据从注入的取值函数拿（复用 `FileChangeView` 的缓存），与装饰同源——两处各算一遍
+ * diff 会漂移。
  */
 class FileChangeCodeLensProvider implements vscode.CodeLensProvider {
   private readonly emitter = new vscode.EventEmitter<void>();
 
   constructor(
-    private readonly hunksOf: (absPath: string) => DiffHunk[] | undefined,
-    /** 未确认改动的文件总数（「全部」按钮据此显示影响范围） */
-    private readonly totalFilesOf: () => number,
+    private readonly snapshotOf: (absPath: string) => HunkSnapshot | undefined,
   ) {}
 
   get onDidChangeCodeLenses(): vscode.Event<void> {
@@ -216,43 +259,49 @@ class FileChangeCodeLensProvider implements vscode.CodeLensProvider {
 
   provideCodeLenses(document: vscode.TextDocument): vscode.CodeLens[] {
     const absPath = document.uri.fsPath;
-    const hunks = this.hunksOf(absPath);
-    if (!hunks || hunks.length === 0) return [];
-    const total = this.totalFilesOf();
-    // 顶部 = 第 0 行；底部 = 末行（CodeLens 渲染在所在行**上方**，故末行即「文件末尾」）
-    const lastLine = Math.max(document.lineCount - 1, 0);
-    return [
-      ...this.buttonGroup(safeLineRange(document, 0), absPath, total),
-      ...this.buttonGroup(safeLineRange(document, lastLine), absPath, total),
-    ];
+    const snapshot = this.snapshotOf(absPath);
+    if (!snapshot || snapshot.hunks.length === 0) return [];
+    const total = snapshot.hunks.length;
+    return snapshot.hunks.flatMap((hunk, index) =>
+      this.blockButtons(document, hunk, snapshot.afterText, absPath, index + 1, total),
+    );
   }
 
   /**
-   * 一组四按钮：本文件（两颗） + 全部（两颗）
+   * 一组块级按钮：**接受此处 / 拒绝此处**（带「第 N/M 处」序号）
    *
-   * 「全部回退」是**破坏性**动作（写盘、不可撤销），但其实现自带模态二次确认
-   * （`FileChangeView.revertAll`），故命令面板 / 文件内入口都安全；
-   * 「全部确认」是纯内存清理，幂等零风险。
+   * 落点 = `endLine + 1`：CodeLens 渲染在所在行**上方** ⇒ 视觉上紧跟该块**之后**，归属唯一。
+   * 挂在 hunk **首行**会被读成「属于上一段」（§11.8 已推翻的形态，勿回退）。
+   * 纯删除块的 `endLine = startLine - 1` ⇒ 落点正好是删除位置，语义自洽，无需分支。
+   *
+   * ⚠️ **序号不是装饰，是位置无解时的补偿**（2026-09-27 真机反馈，硬证据）：
+   * 文件**最后一行**没有「下一行」⇒ 末块的 `endLine + 1` 越界、只能 clamp 回块自己的末行，
+   * 而 CodeLens 渲染在行的上方 ⇒ 末块按钮**必然落在该块上方**，这是 CodeLens 的固有约束
+   * （VS Code 扩展 API 给不出「渲染在行下方」的 CodeLens）。用户原话「底部修改的按钮跑到上面
+   * 去了」即此。位置解不了 ⇒ 让**归属不依赖位置**：序号直接说明「这个按钮管的是第几处」。
+   * 序号顺带补上「看不出共几处」这个旧根因，故**恒显**（单块时 `1/1`），不搞时有时无。
    */
-  private buttonGroup(range: vscode.Range, absPath: string, total: number): vscode.CodeLens[] {
+  private blockButtons(
+    document: vscode.TextDocument,
+    hunk: DiffHunk,
+    afterText: string,
+    absPath: string,
+    ordinal: number,
+    total: number,
+  ): vscode.CodeLens[] {
+    const range = safeLineRange(document, hunk.endLine + 1);
+    const key = hunkKey(hunk, afterText);
+    const suffix = `（${ordinal}/${total}）`;
     return [
       new vscode.CodeLens(range, {
-        title: '$(check) 确认本文件改动',
-        command: CONFIRM_INLINE_COMMAND,
-        arguments: [absPath],
+        title: `$(check) 接受此处${suffix}`,
+        command: CONFIRM_HUNK_COMMAND,
+        arguments: [absPath, key],
       }),
       new vscode.CodeLens(range, {
-        title: '$(discard) 回退本文件改动',
-        command: RESTORE_INLINE_COMMAND,
-        arguments: [absPath],
-      }),
-      new vscode.CodeLens(range, {
-        title: `$(check-all) 全部确认（${total} 个文件）`,
-        command: CONFIRM_ALL_FILE_CHANGES_COMMAND,
-      }),
-      new vscode.CodeLens(range, {
-        title: `$(discard) 全部回退（${total} 个文件）`,
-        command: REVERT_ALL_FILE_CHANGES_COMMAND,
+        title: `$(discard) 拒绝此处${suffix}`,
+        command: REJECT_HUNK_COMMAND,
+        arguments: [absPath, key],
       }),
     ];
   }
@@ -274,8 +323,11 @@ export class FileChangeView implements FileChangeSink {
    *
    * 值里带上「算这份 hunk 时用的写后内容」——并发写同一文件时缓存与 tracker 记录可能
    * 不同代，只按 path 命中会拿旧 hunk 去渲染（真机「部分改动没高亮」的成因之一）。
+   *
+   * ⚠️ **改基线（`beforeContent`）也必须 `delete` 本缓存**：缓存的命中键是 `afterText`，
+   * 只改基线不改正文 ⇒ 键不变、却拿到旧块（被接受的块仍高亮）。改正文则键自然失效，无需额外处理。
    */
-  private readonly hunkCache = new Map<string, { after: string; hunks: DiffHunk[] }>();
+  private readonly hunkCache = new Map<string, HunkSnapshot>();
   /**
    * 每个文件的渲染序号
    *
@@ -300,10 +352,7 @@ export class FileChangeView implements FileChangeSink {
   constructor(tracker: FileChangeTracker, deps: FileChangeViewDeps) {
     this.tracker = tracker;
     this.deps = deps;
-    this.lensProvider = new FileChangeCodeLensProvider(
-      (absPath) => this.hunksOfPath(absPath),
-      () => this.tracker.size(),
-    );
+    this.lensProvider = new FileChangeCodeLensProvider((absPath) => this.snapshotOfPath(absPath));
   }
 
   /** 注册虚拟文档 provider / CodeLens / 状态栏 / 命令（幂等；返回值随扩展上下文释放） */
@@ -321,33 +370,51 @@ export class FileChangeView implements FileChangeSink {
     const revertAllCommand = vscode.commands.registerCommand(REVERT_ALL_FILE_CHANGES_COMMAND, () => {
       void this.revertAll();
     });
-    const confirmInline = vscode.commands.registerCommand(CONFIRM_INLINE_COMMAND, (arg: unknown) => {
+    const confirmFile = vscode.commands.registerCommand(CONFIRM_FILE_COMMAND, (arg: unknown) => {
       this.withRecord(arg, (rec) => this.confirmChange(rec));
     });
-    const restoreInline = vscode.commands.registerCommand(RESTORE_INLINE_COMMAND, (arg: unknown) => {
+    const restoreFile = vscode.commands.registerCommand(RESTORE_FILE_COMMAND, (arg: unknown) => {
       this.withRecord(arg, (rec) => void this.restoreChange(rec));
     });
+    const confirmHunk = vscode.commands.registerCommand(
+      CONFIRM_HUNK_COMMAND,
+      (arg: unknown, key: unknown) => {
+        this.withHunk(arg, key, (rec, hunk) => this.acceptHunk(rec, hunk));
+      },
+    );
+    const rejectHunk = vscode.commands.registerCommand(
+      REJECT_HUNK_COMMAND,
+      (arg: unknown, key: unknown) => {
+        this.withHunk(arg, key, (rec, hunk) => void this.rejectHunk(rec, hunk));
+      },
+    );
     this.statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     this.statusBar.command = REVIEW_FILE_CHANGES_COMMAND;
     this.statusBar.name = 'Memora 文件改动';
     // 装饰绑定在**编辑器实例**上，切走再切回不会自动恢复（CodeLens 走 provider 模式则不受影响）
     // ⇒ 可见编辑器集合变化时必须主动补齐，否则「切个文件回来，高亮全没、只剩按钮」
     const editorWatcher = vscode.window.onDidChangeVisibleTextEditors(() => this.reapplyDecorations());
+    // 标题栏按钮的显隐跟「当前活动文件有没有未确认改动」走 ⇒ 活动编辑器一变就得重算上下文键
+    const activeWatcher = vscode.window.onDidChangeActiveTextEditor(() => this.syncPendingContext());
     context.subscriptions.push(
       provider,
       lensRegistration,
       reviewCommand,
       confirmAllCommand,
       revertAllCommand,
-      confirmInline,
-      restoreInline,
+      confirmFile,
+      restoreFile,
+      confirmHunk,
+      rejectHunk,
       editorWatcher,
+      activeWatcher,
       this.statusBar,
       {
         dispose: (): void => this.dispose(),
       },
     );
     this.refreshStatusBar();
+    this.syncPendingContext();
   }
 
   /** 当前未确认改动的相对路径清单（快照；供 webview ready 时补推，防「时间面」漏面） */
@@ -360,20 +427,73 @@ export class FileChangeView implements FileChangeSink {
    *
    * 所有会改变记录集的路径都必须调；**批量操作由调用方统一收口成一次**
    * （如 `confirmAll` 循环内传 `notify=false`），避免 N 次 postMessage 触发 webview N 次重渲染。
+   *
+   * 上下文键（标题栏按钮显隐）也在这里同步：它的取值 = 「活动文件是否有未确认改动」，
+   * 记录集一变就可能变 ⇒ 挂在同一个广播点上，不另设一处维护（两处必漂移）。
    */
   private notifyChanged(): void {
     this.changeEmitter.fire(this.snapshotFiles());
+    this.syncPendingContext();
   }
 
-  /** 命令参数守卫：CodeLens 携带的是文件绝对路径字符串，非法参数静默忽略并留痕 */
+  /**
+   * 同步标题栏按钮的显隐上下文键
+   *
+   * `editor/title` 菜单是**全局**的，不加 `when` 会在每个文件上都挂两颗按钮 ⇒ 用 `setContext`
+   * 把「当前活动文件有未确认改动」写进 when 上下文。
+   */
+  private syncPendingContext(): void {
+    const active = vscode.window.activeTextEditor?.document.uri.fsPath;
+    const pending = active !== undefined && this.tracker.get(active) !== undefined;
+    void vscode.commands.executeCommand('setContext', PENDING_CONTEXT_KEY, pending);
+  }
+
+  /**
+   * 命令参数 → 文件绝对路径（三种入口同一命令，故必须归一化）
+   *
+   *   - CodeLens / webview：绝对路径**字符串**；
+   *   - `editor/title` 菜单：VS Code 传 **Uri**（`fsPath` 可用）；
+   *   - 命令面板 / 键绑定：**无参** ⇒ 回落到当前活动编辑器的文件。
+   *
+   * 取不到就返回 undefined 由调用方留痕；**不猜**、不拿第一个记录顶替（那会动到别的文件）。
+   */
+  private pathOf(arg: unknown): string | undefined {
+    if (typeof arg === 'string') return arg;
+    if (arg !== null && typeof arg === 'object') {
+      const fsPath = (arg as { fsPath?: unknown }).fsPath;
+      if (typeof fsPath === 'string') return fsPath;
+    }
+    return vscode.window.activeTextEditor?.document.uri.fsPath;
+  }
+
+  /** 命令参数守卫：归一化出路径后交给 tracker 判空；非法参数留痕忽略 */
   private withRecord(arg: unknown, run: (rec: FileChangeRecord) => void): void {
-    if (typeof arg !== 'string') {
-      this.deps.log('[fileChange] 命令参数非法（期望文件绝对路径字符串），已忽略');
+    const absPath = this.pathOf(arg);
+    if (absPath === undefined) {
+      this.deps.log('[fileChange] 命令无法定位文件（无参数且无活动编辑器），已忽略');
       return;
     }
-    const rec = this.tracker.get(arg);
+    const rec = this.tracker.get(absPath);
     if (!rec) return;
     run(rec);
+  }
+
+  /**
+   * 块级命令参数守卫：路径之外还必须有**块指纹**
+   *
+   * 指纹缺失（无参调用 / 版本不匹配）一律 fail-closed——没有指纹就只能按下标猜块，
+   * 而块级回退是**写盘**动作，猜错 = 吃掉用户内容且无任何报错。
+   */
+  private withHunk(
+    pathArg: unknown,
+    keyArg: unknown,
+    run: (rec: FileChangeRecord, key: string) => void,
+  ): void {
+    if (typeof keyArg !== 'string') {
+      this.deps.log('[fileChange] 块级命令缺少块指纹，已忽略（不按猜测定块）');
+      return;
+    }
+    this.withRecord(pathArg, (rec) => run(rec, keyArg));
   }
 
   // ─── FileChangeSink：chatPanel 唯一接入点 ───
@@ -465,7 +585,7 @@ export class FileChangeView implements FileChangeSink {
       if (rec.afterContent !== null && doc.getText() !== rec.afterContent) {
         this.deps.log(`[fileChange] 文档已被改动或重载失败（高亮范围可能错位）${rec.relPath}`);
       }
-      const hunks = this.hunksFor(rec);
+      const hunks = this.snapshotFor(rec).hunks;
       if (hunks.length === 0) return;
       const decorationType = vscode.window.createTextEditorDecorationType(highlightOptions());
       this.decorations.set(rec.path, decorationType);
@@ -557,24 +677,40 @@ export class FileChangeView implements FileChangeSink {
     return md;
   }
 
-  /** 取（并缓存）某条记录的改动块；超限降级时留痕。写后内容一变即重算（见 `hunkCache` 注释） */
-  private hunksFor(rec: FileChangeRecord): DiffHunk[] {
-    const after = rec.afterContent ?? '';
+  /** 取（并缓存）某条记录的块快照；超限降级时留痕。写后内容一变即重算（见 `hunkCache` 注释） */
+  private snapshotFor(rec: FileChangeRecord): HunkSnapshot {
+    const afterText = rec.afterContent ?? '';
     const cached = this.hunkCache.get(rec.path);
-    if (cached && cached.after === after) return cached.hunks;
-    const diff = computeFileDiff(rec.beforeContent ?? '', after);
+    if (cached && cached.afterText === afterText) return cached;
+    const diff = computeFileDiff(rec.beforeContent ?? '', afterText);
     if (diff.degraded) {
       this.deps.log(`[fileChange] ${rec.relPath} 改动过大，已降级为整体高亮（逐行对照跳过）`);
     }
-    this.hunkCache.set(rec.path, { after, hunks: diff.hunks });
-    return diff.hunks;
+    const snapshot: HunkSnapshot = { hunks: diff.hunks, afterText };
+    this.hunkCache.set(rec.path, snapshot);
+    return snapshot;
   }
 
-  /** CodeLens 的数据源：按路径取当前记录的改动块（文档打开顺序无关，可独立计算） */
-  private hunksOfPath(absPath: string): DiffHunk[] | undefined {
+  /** CodeLens 的数据源：按路径取当前记录的块快照（文档打开顺序无关，可独立计算） */
+  private snapshotOfPath(absPath: string): HunkSnapshot | undefined {
     const rec = this.tracker.get(absPath);
     if (!rec) return undefined;
-    return this.hunksFor(rec);
+    return this.snapshotFor(rec);
+  }
+
+  /**
+   * 按**块指纹**定位一块（渲染 → 点击的寻址唯一收口）
+   *
+   * 找不到就返回 undefined，调用方一律 **fail-closed**（不动盘、留痕、刷新按钮）。
+   * 绝不退化成「按下标猜一个」——回退是写盘动作，猜错即吃掉用户内容且无报错。
+   */
+  private resolveHunk(
+    rec: FileChangeRecord,
+    key: string,
+  ): { snapshot: HunkSnapshot; hunk: DiffHunk } | undefined {
+    const snapshot = this.snapshotFor(rec);
+    const hunk = snapshot.hunks.find((candidate) => hunkKey(candidate, snapshot.afterText) === key);
+    return hunk ? { snapshot, hunk } : undefined;
   }
 
   /**
@@ -603,25 +739,31 @@ export class FileChangeView implements FileChangeSink {
     }
   }
 
-  /** 打开对比：左 = 旧内容虚拟文档，右 = 真实文件（旧内容仅展示、不落盘） */
+  /**
+   * 打开**改动对照**：自渲染的**统一视图（上下排列）**，只读虚拟文档，零落盘
+   *
+   * 形态依据（2026-09-27 真机反馈「左右排列看不清原文」）：`vscode.diff` 是左右并排，
+   * 长行被挤成两个窄栏。扩展 API 拿不到「以 inline 布局打开」的入口（见 `formatUnifiedDiff`
+   * 的注释：第 4 参数不含布局，改布局只能动用户全局设置或盲调切换型命令）⇒ 自己渲染。
+   *
+   * 内容仍经 `TextDocumentContentProvider` 走**虚拟文档**：旧内容不进磁盘、不进 git，
+   * 且虚拟文档天然只读（不会让用户在对照页上误编辑）。
+   *
+   * 超限行为（与内核不同）：跳过对照、只提示可回退——阈值 = 内核 `MAX_DIFF_CONTENT_LENGTH`。
+   * ⚠️ 两侧长度**都要判**：删除场景 `afterContent === null`，但旧内容本身可能是大文件，
+   * 同样要进虚拟文档渲染。
+   */
   private async openCompare(rec: FileChangeRecord): Promise<void> {
-    // 超限行为（与内核不同）：跳过对比、只提示可回退——阈值 = 内核 MAX_DIFF_CONTENT_LENGTH
-    if (rec.afterContent !== null && Math.max((rec.beforeContent ?? '').length, rec.afterContent.length) > MAX_DIFF_CONTENT_LENGTH) {
+    const beforeText = rec.beforeContent ?? '';
+    const afterText = rec.afterContent ?? '';
+    if (Math.max(beforeText.length, afterText.length) > MAX_DIFF_CONTENT_LENGTH) {
       void vscode.window.showInformationMessage(`Memora：${rec.relPath} 改动过大，已跳过对比预览（可「回退」）`);
       return;
     }
     const fileName = basename(rec.path);
-    const leftUri = this.virtualUriFor(rec.path, fileName);
-    this.virtualContents.set(leftUri.toString(), rec.beforeContent ?? '');
-    let rightUri: vscode.Uri;
-    if (rec.afterContent === null || !existsSync(rec.path)) {
-      // 已删除：右侧给空虚拟文档，语义 = 「旧内容 vs 空」
-      rightUri = this.virtualUriFor(this.rightSeed(rec.path), fileName);
-      this.virtualContents.set(rightUri.toString(), '');
-    } else {
-      rightUri = vscode.Uri.file(rec.path);
-    }
-    await vscode.commands.executeCommand('vscode.diff', leftUri, rightUri, `${fileName} — 本次改动对比`);
+    const uri = this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`);
+    this.virtualContents.set(uri.toString(), formatUnifiedDiff(beforeText, afterText, `${rec.relPath} — 本次改动（上下对照）`));
+    await vscode.window.showTextDocument(uri, { preview: false });
   }
 
   /** 虚拟 URI（键 = seed 的 hash；尾部保留文件名与扩展名供语言推断） */
@@ -630,16 +772,15 @@ export class FileChangeView implements FileChangeSink {
     return vscode.Uri.from({ scheme: VIRTUAL_SCHEME, path: `/${hash}/${fileName}` });
   }
 
-  /** 右侧空虚拟文档的 seed（与左侧区分，避免同 URI 覆盖） */
-  private rightSeed(absPath: string): string {
-    return `${absPath}#right`;
+  /** 对照文档的 seed（与「其余虚拟文档」区分，避免同 URI 互相覆盖） */
+  private compareSeed(absPath: string): string {
+    return `${absPath}#compare`;
   }
 
-  /** 精确释放某条记录占用的虚拟文档内容（**不误伤其它记录**的对比视图） */
+  /** 精确释放某条记录占用的虚拟文档内容（**不误伤其它记录**的对照视图） */
   private releaseVirtual(rec: FileChangeRecord): void {
     const fileName = basename(rec.path);
-    this.virtualContents.delete(this.virtualUriFor(rec.path, fileName).toString());
-    this.virtualContents.delete(this.virtualUriFor(this.rightSeed(rec.path), fileName).toString());
+    this.virtualContents.delete(this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`).toString());
   }
 
   // ─── 动作 ───
@@ -745,6 +886,26 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
+   * 「有未保存编辑」的模态确认（**回退 / 拒绝此处共用**）
+   *
+   * 共用的理由：「if dirty → 弹模态 → 确认则带 `overwriteDirty` 重试」这段若各写一份必漂移
+   * ——一处加了提示、另一处没有 ⇒ 用户在一个入口被明确告知、在另一个入口被静默覆盖。
+   * 差异只在文案（动作不同），机制同一处。
+   */
+  private async confirmOverwriteDirty(
+    rec: FileChangeRecord,
+    detail: string,
+    confirmLabel: string,
+  ): Promise<boolean> {
+    const choice = await vscode.window.showWarningMessage(
+      `Memora：${rec.relPath} 有未保存的编辑`,
+      { modal: true, detail },
+      confirmLabel,
+    );
+    return choice === confirmLabel;
+  }
+
+  /**
    * 「恢复旧版」（单文件入口）：执行回退并给出结果提示
    *
    * 文件有未保存编辑时（`applyRestore` 返回 `dirty`）先弹**模态确认**——回退会丢弃用户
@@ -753,15 +914,12 @@ export class FileChangeView implements FileChangeSink {
   private async restoreChange(rec: FileChangeRecord): Promise<void> {
     let outcome = await this.applyRestore(rec);
     if (outcome.status === 'dirty') {
-      const choice = await vscode.window.showWarningMessage(
-        `Memora：${rec.relPath} 有未保存的编辑`,
-        {
-          modal: true,
-          detail: '回退会把文件恢复到「agent 改动之前」的内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再回退。',
-        },
+      const ok = await this.confirmOverwriteDirty(
+        rec,
+        '回退会把文件恢复到「agent 改动之前」的内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再回退。',
         '仍然回退',
       );
-      if (choice !== '仍然回退') {
+      if (!ok) {
         void vscode.window.showInformationMessage(`Memora：已取消 ${rec.relPath} 的回退，未保存的编辑未动`);
         return;
       }
@@ -791,39 +949,167 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
-   * 执行单条回退，**不弹任何 UI**（返回 `{status:'ok'}` = 成功；`'dirty'` = 有未保存编辑、
-   * 需用户确认后带 `overwriteDirty` 重试；`'failed'` = 失败原因）
-   *
-   * 拆出无 UI 版本的原因：批量回退时不能逐个弹窗（N 个弹窗既吵又拖慢），
-   * 由调用方汇总成一条结果。单个文件入口（`restoreChange`）在此之上加提示。
+   * 把指定内容写回文件：**不弹 UI、不碰记录生命周期**（生命周期归调用方）
    *
    * 🔴 **fail-closed 守卫**：文件有未保存编辑且未经用户明确确认 → 拒绝执行。
-   * 回退是「写回改动前正文 / 删掉原为新建的文件」，会**连带丢弃用户缓冲区里未保存的编辑**
-   * （数据丢失类）。确认权在调用方的模态提示，这里是最后闸门——任何调用方漏问就吞用户劳动。
+   * 写回会**连带丢弃用户缓冲区里未保存的编辑**（数据丢失类）。确认权在调用方的模态提示，
+   * 这里是最后闸门——任何调用方漏问就吞用户劳动。
+   *
+   * @param content 写回的全文；`null` = 删除该文件
    */
-  private async applyRestore(rec: FileChangeRecord, opts: { overwriteDirty?: boolean } = {}): Promise<RestoreOutcome> {
+  private async writeBack(
+    rec: FileChangeRecord,
+    content: string | null,
+    opts: { overwriteDirty?: boolean } = {},
+  ): Promise<RestoreOutcome> {
     if (!opts.overwriteDirty && this.dirtyDocumentOf(rec.path)) return { status: 'dirty' };
     const guard = this.deps.getSecurityGuard();
     if (!guard) return { status: 'failed', reason: '安全守卫未就绪' };
     try {
-      guard.assertPathAllowed(rec.path, 'write_file');
+      // 工具名按**本次实际动作**传：动作为删除 → `delete_file`（否则是覆盖写回）。
+      // 该参数只进审计事件的 `tool` 字段、不参与放行判定（判定只用黑白名单前缀），
+      // 但审计留痕必须说实话——否则「删了什么」在审计里全记成 write_file。
+      guard.assertPathAllowed(rec.path, content === null ? 'delete_file' : 'write_file');
     } catch (err) {
       return { status: 'failed', reason: `路径不允许恢复（${err instanceof Error ? err.message : String(err)}）` };
     }
     try {
-      if (rec.beforeContent === null) {
-        // 原为新建 → 恢复 = 删除该文件
+      if (content === null) {
         rmSync(rec.path, { force: true });
       } else {
         // 覆盖写入；若文件已被删除，此写即「重建」
-        atomicWriteFileSync(rec.path, rec.beforeContent);
+        atomicWriteFileSync(rec.path, content);
       }
     } catch (err) {
       return { status: 'failed', reason: err instanceof Error ? err.message : String(err) };
     }
+    return { status: 'ok' };
+  }
+
+  /**
+   * 执行单条回退（写回改动前内容 + 注销记录），**不弹任何 UI**
+   *
+   * 拆出无 UI 版本的原因：批量回退时不能逐个弹窗（N 个弹窗既吵又拖慢），
+   * 由调用方汇总成一条结果。单个文件入口（`restoreChange`）在此之上加提示。
+   */
+  private async applyRestore(rec: FileChangeRecord, opts: { overwriteDirty?: boolean } = {}): Promise<RestoreOutcome> {
+    const outcome = await this.writeBack(rec, rec.beforeContent, opts);
+    if (outcome.status !== 'ok') return outcome;
     this.discardRecord(rec);
     this.refreshStatusBar();
-    return { status: 'ok' };
+    return outcome;
+  }
+
+  // ─── 块级动作（命题 B） ───
+
+  /**
+   * 「接受此处」：把该块**并入基线**（纯内存，**不写盘**）
+   *
+   * 推导（与 git `add -p` 同构）：基线 = 当前内容剔除**未接受**的块。
+   * ⇒ 被接受的块在新 diff 里**自然消失**（高亮与按钮一并消失），其余块的行坐标不变
+   *   （已在 `fileChangeDiff` 单测中钉死）⇒ 无需维护「已接受块集」、无需坐标迁移。
+   * 块全部被接受 ⇒ diff 为空 ⇒ 走与文件级确认**同一收口**（注销记录），无特判。
+   */
+  private acceptHunk(rec: FileChangeRecord, key: string): void {
+    const resolved = this.resolveHunk(rec, key);
+    if (!resolved) {
+      this.staleHunk(rec);
+      return;
+    }
+    const { snapshot } = resolved;
+    const pending = snapshot.hunks.filter((hunk) => hunkKey(hunk, snapshot.afterText) !== key);
+    const baseline = applyHunkReverts(snapshot.afterText, pending);
+    this.tracker.updateContents(rec.path, { beforeContent: baseline });
+    // 只改基线、正文未变 ⇒ 缓存键（`afterText`）不变，必须手动失效，否则被接受的块仍高亮
+    this.hunkCache.delete(rec.path);
+    this.afterBlockAction(rec, false);
+  }
+
+  /**
+   * 「拒绝此处」：把该块还原成旧内容（**写盘**），其余块保留
+   *
+   * 与文件级回退的唯一差别是「写回的内容」= 当前内容剔除这一块，而不是整个改动前快照。
+   * 守卫链条与文件级回退**完全一致**（未保存编辑闸 / 路径守卫 / 原子写）——
+   * 块级动作也是写盘动作，没有任何理由降低安全等级。
+   */
+  private async rejectHunk(rec: FileChangeRecord, key: string): Promise<void> {
+    const resolved = this.resolveHunk(rec, key);
+    if (!resolved) {
+      this.staleHunk(rec);
+      return;
+    }
+    const nextAfter = applyHunkReverts(resolved.snapshot.afterText, [resolved.hunk]);
+    // 原为新建的文件、块又被全部拒绝 ⇒ 内容为空 ⇒ 语义就是「这个文件不该存在」
+    const content: string | null = rec.beforeContent === null && nextAfter === '' ? null : nextAfter;
+    let outcome = await this.writeBack(rec, content);
+    if (outcome.status === 'dirty') {
+      const ok = await this.confirmOverwriteDirty(
+        rec,
+        '拒绝此处改动会覆盖该文件当前内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再操作。',
+        '仍然拒绝',
+      );
+      if (!ok) {
+        void vscode.window.showInformationMessage(`Memora：已取消 ${rec.relPath} 的块级拒绝，未保存的编辑未动`);
+        return;
+      }
+      outcome = await this.writeBack(rec, content, { overwriteDirty: true });
+    }
+    if (outcome.status !== 'ok') {
+      // 类型穷尽兜底：重试恒带 overwriteDirty ⇒ 'dirty' 实际不可达，如实走通用文案、不虚述场景
+      const reason = outcome.status === 'failed' ? outcome.reason : '拒绝未能完成，请重试';
+      void vscode.window.showErrorMessage(`Memora：拒绝 ${rec.relPath} 的该处改动失败（${reason}）`);
+      return;
+    }
+    this.tracker.updateContents(rec.path, { afterContent: content });
+    this.afterBlockAction(rec, true);
+  }
+
+  /**
+   * 块指纹失效的统一处置：**fail-closed**
+   *
+   * 渲染 → 点击之间内容变了（并行写同一文件 / 用户手改）时指纹对不上。此时唯一正确的动作是
+   * 「不动盘 + 留痕 + 刷新按钮」，绝不按下标猜——猜错会回退掉用户没要求回退的内容。
+   */
+  private staleHunk(rec: FileChangeRecord): void {
+    this.deps.log(`[fileChange] 块指纹已失效（内容已变），已跳过并刷新按钮：${rec.relPath}`);
+    this.lensProvider.refresh();
+  }
+
+  /**
+   * 块级动作之后的统一收口
+   *
+   * ① 重算块；② 块已处理完 ⇒ 与文件级确认**同一收口**（注销记录）；
+   * ③ 还剩块 ⇒ 重画——「拒绝」改了盘要重载文档再画，「接受」只改基线故只重画装饰。
+   *
+   * ⚠️ **「拒绝」必须等文档重载落地后再刷按钮**（2026-09-27 真机纠因）：CodeLens 的落点要用
+   * **文档行数**参与 clamp，而「拒绝」是宿主直写盘、文档缓存滞后 ⇒ 若立刻 `refresh()`，
+   * VS Code 会拿着旧文档去问新块，按钮落到错的行上。故把刷新挂到 `revealChange` 之后。
+   *
+   * @param reloadDoc 本次动作是否改了磁盘内容（拒绝 = true；接受 = false）
+   */
+  private afterBlockAction(rec: FileChangeRecord, reloadDoc: boolean): void {
+    const latest = this.tracker.get(rec.path);
+    const settled = (): void => {
+      this.refreshStatusBar();
+      this.lensProvider.refresh();
+      this.notifyChanged();
+    };
+    if (!latest) {
+      settled();
+      return;
+    }
+    if (this.snapshotFor(latest).hunks.length === 0) {
+      // 全部块都处理完了 ⇒ 与文件级确认同一个收口，不另设「块级确认」通道
+      this.discardRecord(latest);
+      settled();
+      return;
+    }
+    if (reloadDoc) {
+      void this.revealChange(latest).finally(settled);
+      return;
+    }
+    this.reapplyDecorations();
+    settled();
   }
 
   /** 改动通知（带按钮）：确认改动 / 恢复旧版 / 查看对比 / 全部确认 */

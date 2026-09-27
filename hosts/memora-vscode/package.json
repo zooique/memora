@@ -73,6 +73,16 @@
         "command": "memora.revertAllFileChanges",
         "title": "Memora: 全部回退文件改动",
         "icon": "$(discard)"
+      },
+      {
+        "command": "memora.fileChange.confirmFile",
+        "title": "Memora: 确认本文件改动",
+        "icon": "$(check)"
+      },
+      {
+        "command": "memora.fileChange.restoreFile",
+        "title": "Memora: 回退本文件改动",
+        "icon": "$(discard)"
       }
     ],
     "configuration": {
@@ -157,6 +167,18 @@
         {
           "command": "memora.registerWork",
           "group": "navigation@9"
+        }
+      ],
+      "editor/title": [
+        {
+          "command": "memora.fileChange.confirmFile",
+          "when": "memora.fileChangePending",
+          "group": "navigation@1"
+        },
+        {
+          "command": "memora.fileChange.restoreFile",
+          "when": "memora.fileChangePending",
+          "group": "navigation@2"
         }
       ]
     }
