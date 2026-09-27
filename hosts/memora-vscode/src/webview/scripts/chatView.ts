@@ -1046,7 +1046,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     return grp;
   }
 
-  /** 任务项级容器按边界的 (ts, seq) 插入 details 顶层（与全仓统一排序键同源，防乱序） */
+  /** 任务项级容器按边界的 (ts, seq) 插入 details 顶层（与任务项/时间轴插入域的排序键同源，防乱序） */
   function insertPlanItemGroupInOrder(root: HTMLElement, grp: HTMLElement, boundTs: string, boundSeq: number): void {
     // 候选限定为 root 的**直接子节点**：与 insertPlanItemInOrder 同构隐患，
     // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，
@@ -1192,10 +1192,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 其余条目（thinking / memory_added 等）不在打断物清单内 → 不断段。
    *
    * @param events     当前轮全部过程事件（流式与重放同源输入）
-   * @param boundaryTs 外部可见条目（问答卡）的 ts 集；缺省空数组 = 维持原判据（无外部条目即无断面）
+   * @param boundaryTs 外部可见条目（问答卡）的 ts 集。**必传、不设默认值**：空数组的语义 = 「无外部
+   *   条目即无断面」，而那正是缺陷 BATCH-SPLIT-1 的形态——设默认值等于让漏传者静默回落缺陷行为
    * @returns 批数组（按段内首个 tool_start 的 seq 升序；空流返回空数组）
    */
-  function groupToolBatches(events: ProcessEvent[], boundaryTs: readonly string[] = []): ToolBatch[] {
+  function groupToolBatches(events: ProcessEvent[], boundaryTs: readonly string[]): ToolBatch[] {
     // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据只读 seq/类型/toolCallId）
     const ordered = [...events].sort((a, b) => a.seq - b.seq);
     // 桶号 = 小于该 ts 的边界条目数：相邻工具桶号不同 ⇒ 二者之间夹着问答卡 ⇒ 断段
