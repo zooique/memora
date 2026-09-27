@@ -1,0 +1,13 @@
+# git blame 忽略清单 —— 纯机械提交（格式化 / EOL 归一）从 blame 归属里摘出去
+#
+# 用途：格式化类巨型提交会淹没真实作者归属（245 文件的重排 diff 会盖掉原作者血统），
+# 本清单登记这类提交，让 git blame 直接跳过。
+#
+# 生效需一次性配置（本文件不改 git config，配置归使用者自己）：
+#     git config blame.ignoreRevsFile .git-blame-ignore-revs
+#
+# 登记纪律：只登记「零语义变更」的机械提交（格式化 / EOL 归一 / 自动重命名），
+# 每条注明日期与事由；功能 / 修复提交严禁登记。
+
+# 2026-09-27 · FMT-PRETTIER-1 第②步：全仓 ts/json 格式化清零（245 文件纯 prettier 重排 + .gitattributes 固定 LF）
+61bfd1fdb625bbb9a96adcb89a4812af0bb484dd
