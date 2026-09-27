@@ -23,9 +23,9 @@
  *      没有它，宿主 dist 陈旧这一失效模式在门禁里零覆盖（历史教训：未改宿主 TS ≠ 未影响宿主 dist）。
  *
  * 用法：
- *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量 11 步）
+ *   node scripts/local-ci.mjs                 # ≡ --preset=full（全量；步数由运行时打印，注释不写死）
  *   node scripts/local-ci.mjs --preset=fast   # 快档：只跑两侧 tsc（≤60s，挂 pre-commit）
- *   node scripts/local-ci.mjs --preset=full   # 全档：11 步（挂 pre-push）
+ *   node scripts/local-ci.mjs --preset=full   # 全档（挂 pre-push）
  *   node scripts/local-ci.mjs --kernel-only   # 只跑内核（≈ CI 原范围 + 覆盖率）
  *   node scripts/local-ci.mjs --skip-cov      # 跳过覆盖率闸门（省 ~40s）
  *   node scripts/local-ci.mjs --skip-build    # 跳过生产构建
@@ -127,6 +127,16 @@ const ALL_STEPS = [
     id: 'rules:refs',
     name: '规则裸路径引用有效性检查',
     cmd: 'npm run rules:refs',
+    cwd: ROOT,
+    required: true,
+    presets: ['full'],
+  },
+  // 排版格式检查（prettier）：FMT-PRETTIER-1 第③步——存量清零后才建闸（「存量不清零前不建闸」
+  // 同族教训）。只进 full 不进 fast：全仓扫描 ~30s 且失败归因常是历史改动，不满足 fast 分层判据。
+  {
+    id: 'format:check',
+    name: '排版格式检查（prettier）',
+    cmd: 'npm run format:check',
     cwd: ROOT,
     required: true,
     presets: ['full'],
