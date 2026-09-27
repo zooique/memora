@@ -510,14 +510,20 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
 
   it('non-idempotent 工具永不跳过（失败可原样重试）', () => {
     const records = [rec('task_table_write', '{"x":1}', false, 'non-idempotent')];
-    expect(shouldSkipForIdempotency(records, 'task_table_write', '{"x":1}', 'non-idempotent')).toEqual({
+    expect(
+      shouldSkipForIdempotency(records, 'task_table_write', '{"x":1}', 'non-idempotent'),
+    ).toEqual({
       skip: false,
     });
   });
 
   it('幂等工具无历史记录时不跳过', () => {
-    expect(shouldSkipForIdempotency([], 'read_file', '{"path":"a.ts"}', 'idempotent')).toEqual({ skip: false });
-    expect(shouldSkipForIdempotency(undefined, 'read_file', '{"path":"a.ts"}', 'idempotent')).toEqual({
+    expect(shouldSkipForIdempotency([], 'read_file', '{"path":"a.ts"}', 'idempotent')).toEqual({
+      skip: false,
+    });
+    expect(
+      shouldSkipForIdempotency(undefined, 'read_file', '{"path":"a.ts"}', 'idempotent'),
+    ).toEqual({
       skip: false,
     });
   });
@@ -531,7 +537,9 @@ describe('builtinTools · shouldSkipForIdempotency（仅一次语义）', () => 
 
   it('幂等工具上次执行失败（ok=false）时不跳过——失败可重试', () => {
     const records = [rec('write_file', '{"path":"a.ts"}', false, 'idempotent-key')];
-    expect(shouldSkipForIdempotency(records, 'write_file', '{"path":"a.ts"}', 'idempotent-key')).toEqual({
+    expect(
+      shouldSkipForIdempotency(records, 'write_file', '{"path":"a.ts"}', 'idempotent-key'),
+    ).toEqual({
       skip: false,
     });
   });

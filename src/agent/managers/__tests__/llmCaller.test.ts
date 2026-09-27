@@ -8,7 +8,12 @@
  */
 
 import { describe, it, expect, vi } from 'vitest';
-import { determineTaskType, LlmCaller, type LlmCallerDeps, type LlmCallResult } from '@/agent/managers/llmCaller.js';
+import {
+  determineTaskType,
+  LlmCaller,
+  type LlmCallerDeps,
+  type LlmCallResult,
+} from '@/agent/managers/llmCaller.js';
 import { LoopMetrics } from '@/agent/managers/loopMetrics.js';
 import { NOOP_TRACER } from '@/agent/tracer.js';
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
@@ -154,13 +159,19 @@ describe('LlmCaller.callWithRetry · thought 透传', () => {
         yield { thought: '，先查资料' };
         yield { content: '我先搜索相关资料' };
         yield {
-          toolCalls: [{ id: 'c1', type: 'function', function: { name: 'web_search', arguments: '{}' } }],
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'web_search', arguments: '{}' } },
+          ],
         };
       },
     } as unknown as LlmProvider;
     return {
       metrics: new LoopMetrics(),
-      getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
+      getStrategy: () => ({
+        errorHandling: 'retry',
+        multiStepReasoning: 'auto',
+        providerRouting: 'fixed',
+      }),
       getProvider: () => thoughtProvider,
       getProviderRouter: () => undefined,
       getCachedProvider: () => undefined,
@@ -204,7 +215,11 @@ describe('LlmCaller.callWithRetry · 空响应重试', () => {
   function makeDeps(provider: LlmProvider): LlmCallerDeps {
     return {
       metrics: new LoopMetrics(),
-      getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
+      getStrategy: () => ({
+        errorHandling: 'retry',
+        multiStepReasoning: 'auto',
+        providerRouting: 'fixed',
+      }),
       getProvider: () => provider,
       getProviderRouter: () => undefined,
       getCachedProvider: () => undefined,
@@ -274,7 +289,11 @@ describe('LlmCaller.callWithRetry · 发送边界守卫', () => {
   function makeDeps(provider: LlmProvider, metrics: LoopMetrics): LlmCallerDeps {
     return {
       metrics,
-      getStrategy: () => ({ errorHandling: 'retry', multiStepReasoning: 'auto', providerRouting: 'fixed' }),
+      getStrategy: () => ({
+        errorHandling: 'retry',
+        multiStepReasoning: 'auto',
+        providerRouting: 'fixed',
+      }),
       getProvider: () => provider,
       getProviderRouter: () => undefined,
       getCachedProvider: () => undefined,

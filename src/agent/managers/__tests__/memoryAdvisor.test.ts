@@ -23,7 +23,10 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
  * @param json - 判词 JSON 字符串
  * @param onMessages - 可选：捕获送入 LLM 的消息（用于断言 prompt 是否含截断标记）
  */
-function createJudgeProvider(json: string, onMessages?: (messages: Message[]) => void): LlmProvider {
+function createJudgeProvider(
+  json: string,
+  onMessages?: (messages: Message[]) => void,
+): LlmProvider {
   return {
     name: 'mock-judge',
     supportsStructuredOutput: true,
@@ -175,7 +178,9 @@ describe('MemoryAdvisor.suggest()', () => {
 
     it('所有 source 被 excludeSources 排除：返回 []', () => {
       storage.upsert(createMemoryDaysAgo(1, { id: 'content:1' }));
-      const result = advisor.suggest(undefined, { excludeSources: [SOURCE_LABELS.WORK_PROJECTION] });
+      const result = advisor.suggest(undefined, {
+        excludeSources: [SOURCE_LABELS.WORK_PROJECTION],
+      });
       expect(result).toEqual([]);
     });
   });
@@ -226,9 +231,13 @@ describe('MemoryAdvisor.suggest()', () => {
   describe('有 query 搜索命中优先', () => {
     it('搜索命中的记忆优先于全局推荐', () => {
       // 一条会被搜索命中（content 含"算法"）
-      storage.upsert(createMemoryDaysAgo(10, { id: 'content:hit', name: 'algo', content: '算法优化' }));
+      storage.upsert(
+        createMemoryDaysAgo(10, { id: 'content:hit', name: 'algo', content: '算法优化' }),
+      );
       // 一条不会被命中但最近使用
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:high', name: 'high', content: '无关内容' }));
+      storage.upsert(
+        createMemoryDaysAgo(1, { id: 'content:high', name: 'high', content: '无关内容' }),
+      );
       const result = advisor.suggest('算法');
       expect(result.length).toBeGreaterThan(0);
       // 搜索命中应排第一（即便年久的命中项也先于最近的非命中项）
@@ -237,7 +246,13 @@ describe('MemoryAdvisor.suggest()', () => {
 
     it('搜索命中 + 全局补充混合', () => {
       storage.upsert(createMemoryDaysAgo(10, { id: 'content:hit', name: 'hit', content: '算法' }));
-      storage.upsert(createMemoryDaysAgo(1, { id: 'work-projection:1', source: SOURCE_LABELS.WORK_PROJECTION, name: 'work-projection-1' }));
+      storage.upsert(
+        createMemoryDaysAgo(1, {
+          id: 'work-projection:1',
+          source: SOURCE_LABELS.WORK_PROJECTION,
+          name: 'work-projection-1',
+        }),
+      );
       const result = advisor.suggest('算法', { limit: 5 });
       // 应包含搜索命中 + 全局推荐
       const names = result.map((r) => r.name);
@@ -327,7 +342,14 @@ describe('MemoryAdvisor.suggest()', () => {
 
   describe('SuggestHit 字段完整性', () => {
     it('返回对象包含 name/source/relevance/contentPreview/reason 5 字段', () => {
-      storage.upsert(createMemoryDaysAgo(1, { id: 'content:1', name: 'test', source: SOURCE_LABELS.WORK_PROJECTION, content: '内容' }));
+      storage.upsert(
+        createMemoryDaysAgo(1, {
+          id: 'content:1',
+          name: 'test',
+          source: SOURCE_LABELS.WORK_PROJECTION,
+          content: '内容',
+        }),
+      );
       const result = advisor.suggest();
       expect(result).toHaveLength(1);
       const hit = result[0]!;
@@ -361,7 +383,9 @@ describe('MemoryAdvisor.detectConflicts()', () => {
 
     it('候选记忆不足（少于 2 条）：返回 skippedReason', async () => {
       storage.upsert(createMemory({ id: 'wp:solo', name: 'solo' }));
-      const advisorWithProvider = makeAdvisorWithProvider(createJudgeProvider('{"hasConflict":false}'));
+      const advisorWithProvider = makeAdvisorWithProvider(
+        createJudgeProvider('{"hasConflict":false}'),
+      );
       const result = await advisorWithProvider.detectConflicts();
       expect(result.scannedCount).toBe(1);
       expect(result.pairCount).toBe(0);
@@ -388,12 +412,14 @@ describe('MemoryAdvisor.detectConflicts()', () => {
     it('LLM 判定冲突（hasConflict=true）：入 conflict 列表并计数', async () => {
       const { a, b } = seedConflictPair(storage);
       const advisorWithProvider = makeAdvisorWithProvider(
-        createJudgeProvider(JSON.stringify({
-          hasConflict: true,
-          conflictDescription: '对 JavaScript 的态度矛盾',
-          recommendation: 'both',
-          reason: '两条记忆表达相反态度',
-        })),
+        createJudgeProvider(
+          JSON.stringify({
+            hasConflict: true,
+            conflictDescription: '对 JavaScript 的态度矛盾',
+            recommendation: 'both',
+            reason: '两条记忆表达相反态度',
+          }),
+        ),
       );
       const result = await advisorWithProvider.detectConflicts();
       expect(result.pairCount).toBe(1);
@@ -426,7 +452,9 @@ describe('MemoryAdvisor.detectConflicts()', () => {
       seedConflictPair(storage);
       // recommendation 为非法枚举 'c' → 应回退 undefined
       const advisorWithProvider = makeAdvisorWithProvider(
-        createJudgeProvider(JSON.stringify({ hasConflict: true, recommendation: 'c', reason: '无理由' })),
+        createJudgeProvider(
+          JSON.stringify({ hasConflict: true, recommendation: 'c', reason: '无理由' }),
+        ),
       );
       const result = await advisorWithProvider.detectConflicts();
       const verdict = result.conflicts[0]!;
@@ -460,9 +488,7 @@ describe('MemoryAdvisor.detectConflicts()', () => {
 
     it('LLM 返回无效 JSON：抛 configError 被吞，返回空冲突', async () => {
       seedConflictPair(storage);
-      const advisorWithProvider = makeAdvisorWithProvider(
-        createJudgeProvider('这不是 JSON'),
-      );
+      const advisorWithProvider = makeAdvisorWithProvider(createJudgeProvider('这不是 JSON'));
       const result = await advisorWithProvider.detectConflicts();
       expect(result.conflictCount).toBe(0);
       expect(result.conflicts).toEqual([]);
@@ -477,13 +503,10 @@ describe('MemoryAdvisor.detectConflicts()', () => {
       const longB = createMemory({ id: 'wp:long-B', name: 'B', content: 'Y'.repeat(300) });
       storage.upsert(longA);
       storage.upsert(longB);
-      const provider = createJudgeProvider(
-        JSON.stringify({ hasConflict: false }),
-        (messages) => {
-          const userMsg = messages.find((m) => m.role === 'user');
-          if (userMsg) captured += userMsg.content;
-        },
-      );
+      const provider = createJudgeProvider(JSON.stringify({ hasConflict: false }), (messages) => {
+        const userMsg = messages.find((m) => m.role === 'user');
+        if (userMsg) captured += userMsg.content;
+      });
       const advisorWithProvider = makeAdvisorWithProvider(provider);
       await advisorWithProvider.detectConflicts();
       // buildConflictMessages 走 >200 截断分支：出现截断标记

@@ -6,7 +6,13 @@
 import { LlmProvider } from '@/llm/provider.js';
 import type { Message, ChatOptions } from '@/llm/provider.js';
 import type { LlmChunk, ToolCall } from '@/llm/types.js';
-import { llmError, networkError, configError, isAbortError, isTimeoutError } from '@/utils/errors.js';
+import {
+  llmError,
+  networkError,
+  configError,
+  isAbortError,
+  isTimeoutError,
+} from '@/utils/errors.js';
 import { toError } from '@/utils/toError.js';
 import { logger } from '@/logging/logger.js';
 import { mergeAbortSignals } from '@/llm/abortSignal.js';
@@ -82,7 +88,8 @@ export class OpenAICompatibleProvider extends LlmProvider {
    * @param config 构造时的能力位声明（undefined → 回落默认）
    */
   private _setCapabilities(config: OpenAICompatibleConfig): void {
-    (this as { supportsToolCalling: boolean }).supportsToolCalling = config.supportsToolCalling ?? true;
+    (this as { supportsToolCalling: boolean }).supportsToolCalling =
+      config.supportsToolCalling ?? true;
     (this as { supportsStructuredOutput: boolean }).supportsStructuredOutput =
       config.supportsStructuredOutput ?? false;
   }
@@ -99,7 +106,10 @@ export class OpenAICompatibleProvider extends LlmProvider {
     const url = `${this.config.baseUrl}/chat/completions`;
     const model = opts.model ?? this.config.defaultModel;
     // 请求超时控制：默认 120s，可通过 opts.timeoutMs 覆盖（越界回退默认，防超大值等待失控）
-    const timeoutMs = normalizeTimeoutMs(opts.timeoutMs, OpenAICompatibleProvider.DEFAULT_TIMEOUT_MS);
+    const timeoutMs = normalizeTimeoutMs(
+      opts.timeoutMs,
+      OpenAICompatibleProvider.DEFAULT_TIMEOUT_MS,
+    );
     // maxTokens 边界归一：合法 1~MAX_MAX_TOKENS 才透传，越界/非法忽略（让服务端默认）
     const maxTokens = normalizeMaxTokens(opts.maxTokens);
 

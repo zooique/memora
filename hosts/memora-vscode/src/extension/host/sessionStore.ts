@@ -177,22 +177,35 @@ export class WorkspaceSessionStore implements ISessionStore {
     // 下界匹配：第一条 assistant 时间戳 >= fromTs 的 Round 作为截断起点（兼容流式锚点
     // 早于落盘 assistant 时间戳的既有语义）。中断轮无 assistantMessage 会被跳锚，折回见下。
     let idx = rounds.findIndex(
-      (r: Round) => r.assistantMessage?.timestamp !== undefined && r.assistantMessage.timestamp >= fromTs,
+      (r: Round) =>
+        r.assistantMessage?.timestamp !== undefined && r.assistantMessage.timestamp >= fromTs,
     );
     if (idx === -1) {
       // ① 中断轮收尾：锚点 >= 末轮 user 起点（删除按钮带 meta ts / 回填 user ts）→ 锚定末轮
       const last = rounds[rounds.length - 1];
-      if (last && last.userMessage?.timestamp !== undefined && last.userMessage.timestamp <= fromTs) {
+      if (
+        last &&
+        last.userMessage?.timestamp !== undefined &&
+        last.userMessage.timestamp <= fromTs
+      ) {
         idx = rounds.length - 1;
       }
-    } else if (idx > 0 && rounds[idx].userMessage?.timestamp !== undefined && fromTs < rounds[idx].userMessage.timestamp) {
+    } else if (
+      idx > 0 &&
+      rounds[idx].userMessage?.timestamp !== undefined &&
+      fromTs < rounds[idx].userMessage.timestamp
+    ) {
       // ② 中断轮居中：assistant 下界命中「下一轮」，但锚点早于命中轮 user 起点（meta 属前一轮
       // 时间窗）且前一轮恰为无 assistant 的中断轮 → 上折回该中断轮。判别条件兼防伪折叠：
       // done 轮删除锚点 = 其自身 assistant ts（恒 >= 自己 user ts）→ 不满足 fromTs < user Ts，
       // 即使前一轮也是中断轮也不误折。
       const prev = rounds[idx - 1];
-      if (prev && prev.assistantMessage === undefined && prev.userMessage?.timestamp !== undefined &&
-          prev.userMessage.timestamp <= fromTs) {
+      if (
+        prev &&
+        prev.assistantMessage === undefined &&
+        prev.userMessage?.timestamp !== undefined &&
+        prev.userMessage.timestamp <= fromTs
+      ) {
         idx -= 1;
       }
     }

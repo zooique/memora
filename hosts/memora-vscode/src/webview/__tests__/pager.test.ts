@@ -39,7 +39,11 @@ describe('pager 通用分页组件', () => {
 
   it('总数据 25 条 / 每页 10 → 分页条可见 + 计数「第 1 / 3 页」+ 首页上一页禁用', () => {
     const { controller } = mount();
-    controller.show(1, Array.from({ length: 10 }, (_, i) => `a${i}`), 25);
+    controller.show(
+      1,
+      Array.from({ length: 10 }, (_, i) => `a${i}`),
+      25,
+    );
     const bar = document.querySelector('.pager-bar') as HTMLElement;
     expect(bar.hidden).toBe(false);
     expect(bar.querySelector('.pager-info')?.textContent).toBe('第 1 / 3 页（共 25 条）');
@@ -49,19 +53,31 @@ describe('pager 通用分页组件', () => {
 
   it('next() 触发 fetchPage(2) 且未回填前不动 render；show 回填后渲染新页', () => {
     const { controller, fetchLog, getLast } = mount();
-    controller.show(1, Array.from({ length: 10 }, (_, i) => `a${i}`), 25);
+    controller.show(
+      1,
+      Array.from({ length: 10 }, (_, i) => `a${i}`),
+      25,
+    );
     controller.next();
     expect(fetchLog).toContainEqual({ page: 2, size: 10 });
     // 未回填前保持上一页数据（组件不自造数据）
     expect(getLast()[0]).toBe('a0');
-    controller.show(2, Array.from({ length: 10 }, (_, i) => `b${i}`), 25);
+    controller.show(
+      2,
+      Array.from({ length: 10 }, (_, i) => `b${i}`),
+      25,
+    );
     expect(getLast()[0]).toBe('b0');
     expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 25 条）');
   });
 
   it('末页 next() 拒绝（越界钳制）；prev() 正常回退', () => {
     const { controller, fetchLog } = mount();
-    controller.show(3, Array.from({ length: 5 }, (_, i) => `c${i}`), 25);
+    controller.show(
+      3,
+      Array.from({ length: 5 }, (_, i) => `c${i}`),
+      25,
+    );
     expect((document.querySelectorAll('.pager-btn')[1] as HTMLButtonElement).disabled).toBe(true);
     controller.next();
     expect(fetchLog).toHaveLength(0); // 末页 next no-op，不触发取数
@@ -71,7 +87,10 @@ describe('pager 通用分页组件', () => {
 
   it('total 未知（undefined）→ 满页（items.length === pageSize）判定还有下一页', () => {
     const { controller, fetchLog } = mount();
-    controller.show(1, Array.from({ length: 10 }, (_, i) => `a${i}`)); // 无 total
+    controller.show(
+      1,
+      Array.from({ length: 10 }, (_, i) => `a${i}`),
+    ); // 无 total
     expect((document.querySelectorAll('.pager-btn')[1] as HTMLButtonElement).disabled).toBe(false);
     controller.next();
     expect(fetchLog).toContainEqual({ page: 2, size: 10 });

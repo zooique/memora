@@ -51,7 +51,14 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
 
   it('save：含合法 contextWindow → ok 且持久化保留该字段', async () => {
     const res = await store.save(
-      { name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x', contextWindow: 128000 },
+      {
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-x',
+        contextWindow: 128000,
+      },
       false,
     );
     expect(res.ok).toBe(true);
@@ -63,7 +70,13 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
 
   it('save：contextWindow 缺省（undefined）→ 仍允许保存（回落内核默认 120K）', async () => {
     const res = await store.save(
-      { name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x' },
+      {
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-x',
+      },
       false,
     );
     expect(res.ok).toBe(true);
@@ -71,18 +84,33 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
     expect(saved.contextWindow).toBeUndefined();
   });
 
-  it.each([0, 999, 1.5, 10_000_001, -1])('save：非法 contextWindow=%p → 拒绝并给 message', async (bad) => {
-    const res = await store.save(
-      { name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1', apiKey: 'sk-x', contextWindow: bad as number },
-      false,
-    );
-    expect(res.ok).toBe(false);
-    expect(res.message).toBeTruthy();
-  });
+  it.each([0, 999, 1.5, 10_000_001, -1])(
+    'save：非法 contextWindow=%p → 拒绝并给 message',
+    async (bad) => {
+      const res = await store.save(
+        {
+          name: 'deepseek',
+          displayName: 'DeepSeek',
+          model: 'deepseek-chat',
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'sk-x',
+          contextWindow: bad as number,
+        },
+        false,
+      );
+      expect(res.ok).toBe(false);
+      expect(res.message).toBeTruthy();
+    },
+  );
 
   it('migrateMaxContextTokens：旧全局值并入首个 provider 的 contextWindow 并清除旧键', async () => {
     h.store['providers'] = [
-      { name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1' },
+      {
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com/v1',
+      },
       { name: 'local', displayName: '本地', model: 'local', baseUrl: 'http://localhost:11434/v1' },
     ];
     h.store['maxContextTokens'] = 64000;
@@ -98,9 +126,18 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
   });
 
   it('migrateMaxContextTokens：无旧全局值 → 无动作', async () => {
-    h.store['providers'] = [{ name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1' }];
+    h.store['providers'] = [
+      {
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com/v1',
+      },
+    ];
     await store.migrateMaxContextTokens();
-    expect((h.store['providers'] as Array<Record<string, unknown>>)[0].contextWindow).toBeUndefined();
+    expect(
+      (h.store['providers'] as Array<Record<string, unknown>>)[0].contextWindow,
+    ).toBeUndefined();
   });
 });
 
@@ -119,7 +156,13 @@ describe('ProviderStore · save/remove 语义', () => {
     // 编辑模式 apiKey 留空 = 保留原值契约（providerStore.save 注释）
     secretsStore['memora.provider.deepseek.apiKey'] = 'orig-key';
     const res = await store.save(
-      { name: 'deepseek', displayName: 'DeepSeek', model: 'deepseek-chat', baseUrl: 'https://api.example.com/v1', apiKey: '' },
+      {
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: '',
+      },
       true,
     );
     expect(res.ok).toBe(true);
@@ -138,7 +181,9 @@ describe('ProviderStore · save/remove 语义', () => {
   });
 
   it('remove 删除的是激活 Provider → 拒绝并提示先切换', async () => {
-    h.store['providers'] = [{ name: 'act', displayName: 'Act', model: 'm', baseUrl: 'http://x/v1' }];
+    h.store['providers'] = [
+      { name: 'act', displayName: 'Act', model: 'm', baseUrl: 'http://x/v1' },
+    ];
     h.store['activeProvider'] = 'act';
     const res = await store.remove('act');
     expect(res.ok).toBe(false);

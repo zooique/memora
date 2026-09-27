@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { toRoundView, deriveTurnState, mergeLiveRound, type LiveRoundState } from '../turnProjection.js';
+import {
+  toRoundView,
+  deriveTurnState,
+  mergeLiveRound,
+  type LiveRoundState,
+} from '../turnProjection.js';
 import type { RoundView } from '../protocol.js';
 
 /**
@@ -11,7 +16,12 @@ import type { RoundView } from '../protocol.js';
  *  - 把 settled 判据改成 `status === 'complete'` → 「中断轮收场」用例转红（违反 SSOT）
  */
 
-const userMsg = { id: 'msg-1', role: 'user' as const, content: '你好', timestamp: '2026-09-23T00:00:00.000Z' };
+const userMsg = {
+  id: 'msg-1',
+  role: 'user' as const,
+  content: '你好',
+  timestamp: '2026-09-23T00:00:00.000Z',
+};
 
 const live: LiveRoundState = {
   roundId: 'round-1',
@@ -42,8 +52,12 @@ describe('toRoundView', () => {
   it('交互输入与过程事件原样透传（不做第二套形状）', () => {
     const view = toRoundView({
       ...live,
-      interactiveInputs: [{ id: 'i-1', role: 'user', content: '补充一点', timestamp: 'ts', kind: 'supplement' }],
-      processEvents: [{ type: 'tool_start', seq: 1, ts: 'ts', payload: { toolCallId: 't-1', name: 'read_file' } }],
+      interactiveInputs: [
+        { id: 'i-1', role: 'user', content: '补充一点', timestamp: 'ts', kind: 'supplement' },
+      ],
+      processEvents: [
+        { type: 'tool_start', seq: 1, ts: 'ts', payload: { toolCallId: 't-1', name: 'read_file' } },
+      ],
     });
     expect(view.interactiveInputs).toHaveLength(1);
     expect(view.processEvents).toHaveLength(1);
@@ -71,8 +85,16 @@ describe('deriveTurnState', () => {
 
   it('ask 挂起优先于 pause（同为 paused，有提问即 ask）', () => {
     expect(
-      deriveTurnState({ streaming: false, paused: true, pendingQuestions: [{ slot: 's', question: '选哪个？' }] }),
-    ).toEqual({ phase: 'waiting', reason: 'ask', questions: [{ slot: 's', question: '选哪个？' }] });
+      deriveTurnState({
+        streaming: false,
+        paused: true,
+        pendingQuestions: [{ slot: 's', question: '选哪个？' }],
+      }),
+    ).toEqual({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [{ slot: 's', question: '选哪个？' }],
+    });
   });
 
   it('ask 提问在途但尚未 paused → 仍是 waiting(ask)（M5b-2 缺口修复：不依赖 paused）', () => {
@@ -86,15 +108,29 @@ describe('deriveTurnState', () => {
         liveRoundId: 'round-9',
         pendingQuestions: [{ slot: 's', question: '仍在流中就提问？' }],
       }),
-    ).toEqual({ phase: 'waiting', reason: 'ask', questions: [{ slot: 's', question: '仍在流中就提问？' }] });
+    ).toEqual({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [{ slot: 's', question: '仍在流中就提问？' }],
+    });
   });
 
   it('已挂起且无提问 → waiting(pause)', () => {
-    expect(deriveTurnState({ streaming: false, paused: true })).toEqual({ phase: 'waiting', reason: 'pause' });
+    expect(deriveTurnState({ streaming: false, paused: true })).toEqual({
+      phase: 'waiting',
+      reason: 'pause',
+    });
   });
 
   it('暂停申请在途（未到 step 边界）→ waiting(pause) + pausePending（站台等车）', () => {
-    expect(deriveTurnState({ streaming: true, paused: false, pausePending: true, liveRoundId: 'round-9' })).toEqual({
+    expect(
+      deriveTurnState({
+        streaming: true,
+        paused: false,
+        pausePending: true,
+        liveRoundId: 'round-9',
+      }),
+    ).toEqual({
       phase: 'waiting',
       reason: 'pause',
       pausePending: true,
@@ -102,21 +138,33 @@ describe('deriveTurnState', () => {
   });
 
   it('已完成轮 → settled（round 级 status 原样透出）', () => {
-    expect(deriveTurnState({ streaming: false, paused: false, lastRound: { id: 'round-1', status: 'complete' } })).toEqual(
-      { phase: 'settled', roundId: 'round-1', status: 'complete' },
-    );
+    expect(
+      deriveTurnState({
+        streaming: false,
+        paused: false,
+        lastRound: { id: 'round-1', status: 'complete' },
+      }),
+    ).toEqual({ phase: 'settled', roundId: 'round-1', status: 'complete' });
   });
 
   it('中断轮也算 settled（禁自写 status === complete，判据同 isRoundSettled）', () => {
     expect(
-      deriveTurnState({ streaming: false, paused: false, lastRound: { id: 'round-2', status: 'interrupted' } }),
+      deriveTurnState({
+        streaming: false,
+        paused: false,
+        lastRound: { id: 'round-2', status: 'interrupted' },
+      }),
     ).toEqual({ phase: 'settled', roundId: 'round-2', status: 'interrupted' });
   });
 
   it('未收场轮（pending）不算 settled → idle（无流无挂起）', () => {
-    expect(deriveTurnState({ streaming: false, paused: false, lastRound: { id: 'round-3', status: 'pending' } })).toEqual(
-      { phase: 'idle' },
-    );
+    expect(
+      deriveTurnState({
+        streaming: false,
+        paused: false,
+        lastRound: { id: 'round-3', status: 'pending' },
+      }),
+    ).toEqual({ phase: 'idle' });
   });
 });
 
@@ -202,7 +250,9 @@ describe('mergeLiveRound', () => {
     const merged = mergeLiveRound([], {
       roundId: 'round-9',
       userMessage: userMsg,
-      processEvents: [{ type: 'tool_start', seq: 1, ts: 'ts', payload: { toolCallId: 't-1', name: 'read_file' } }],
+      processEvents: [
+        { type: 'tool_start', seq: 1, ts: 'ts', payload: { toolCallId: 't-1', name: 'read_file' } },
+      ],
     });
     expect(merged).toHaveLength(1);
     expect(merged[0]!.processEvents).toHaveLength(1);

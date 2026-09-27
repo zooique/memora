@@ -13,8 +13,22 @@
  *   - 功能定位：内置角色包（dist/extension/role-packs/ 构建期同步）+ 用户角色包（globalStorageUri/role-packs 运行态注入）
  *   - 日志对接：setLogger(vscodeOutputChannel) 将内核日志导向 VSCode 输出通道
  */
-import { Agent, FetchWebSearchProvider, FetchWebFetchProvider, setLogger, resolveContextWindow, buildSearchEndpoints } from '@zooique/memora';
-import type { ISessionStore, IRoundStore, UIMessages, ProviderRouter, LlmProvider, SearchEngineName } from '@zooique/memora';
+import {
+  Agent,
+  FetchWebSearchProvider,
+  FetchWebFetchProvider,
+  setLogger,
+  resolveContextWindow,
+  buildSearchEndpoints,
+} from '@zooique/memora';
+import type {
+  ISessionStore,
+  IRoundStore,
+  UIMessages,
+  ProviderRouter,
+  LlmProvider,
+  SearchEngineName,
+} from '@zooique/memora';
 import type { ILogger } from '@zooique/memora';
 // vscode 命名空间类型引用（OutputChannel）：仅类型导入，无运行时依赖（宿主运行时由 VS Code 注入真实模块）
 import type { OutputChannel } from 'vscode';
@@ -231,7 +245,24 @@ function createProviderRouter(provider: LlmProvider): ProviderRouter {
  * @returns 已 init 的 Agent 实例
  */
 export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
-  const { projectPath, projectSearchRoot, providerStore, sessionStore, roundStore, env, activeRolePack, rolePackTeams, configDir, userSkillsDir, userRolePacksDir, confirmWrites, confirmScripts, allowedPaths, outputChannel, disabledSkills } = options;
+  const {
+    projectPath,
+    projectSearchRoot,
+    providerStore,
+    sessionStore,
+    roundStore,
+    env,
+    activeRolePack,
+    rolePackTeams,
+    configDir,
+    userSkillsDir,
+    userRolePacksDir,
+    confirmWrites,
+    confirmScripts,
+    allowedPaths,
+    outputChannel,
+    disabledSkills,
+  } = options;
 
   // 日志对接 — 宿主注入 OutputChannel 时，创建 ILogger 适配器并注入内核
   if (outputChannel) {

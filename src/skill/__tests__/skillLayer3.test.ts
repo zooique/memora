@@ -30,10 +30,7 @@ import {
 let skillDir: string;
 
 const layer3: SkillLayer3Like = {
-  resources: [
-    { path: 'api.md' },
-    { path: 'modes.md', subdir: 'references' },
-  ],
+  resources: [{ path: 'api.md' }, { path: 'modes.md', subdir: 'references' }],
   scripts: [{ path: 'build.mjs' }],
 };
 

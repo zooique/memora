@@ -67,11 +67,7 @@ function seedProject(_projectPath: string, configDir: string, _dataDir: string):
     }),
     'utf-8',
   );
-  writeFileSync(
-    join(rolePackDir, 'persona.md'),
-    '你是一个通用助手。',
-    'utf-8',
-  );
+  writeFileSync(join(rolePackDir, 'persona.md'), '你是一个通用助手。', 'utf-8');
   // 兜底契约包（§4.1 单链：无 activePack 注入时落兜底包，非 items[0]）
   const fallbackDir = join(configDir, 'role-packs', 'memora助手');
   mkdirSync(fallbackDir, { recursive: true });
@@ -376,45 +372,49 @@ describe('Agent · 生命周期 E2E', () => {
     agent = null;
   });
 
-  it('close 后所有组件字段应被 null 化（nullifyAllComponents 完整性验证）', { timeout: 30000 }, async () => {
-    // 构造并初始化 Agent，使所有组件字段被填充
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
+  it(
+    'close 后所有组件字段应被 null 化（nullifyAllComponents 完整性验证）',
+    { timeout: 30000 },
+    async () => {
+      // 构造并初始化 Agent，使所有组件字段被填充
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
 
-    // 初始化后所有组件字段应非 null（前置验证）
-    expect(agent.rolePack).not.toBeNull();
-    expect(agent.tools).not.toBeNull();
-    expect(agent.memory).not.toBeNull();
-    expect(agent.agentLoop).not.toBeNull();
-    expect(agent.agentHistory).not.toBeNull();
-    expect(agent.context).not.toBeNull();
-    expect(agent.projects).not.toBeNull();
-    expect(agent.works).not.toBeNull();
-    expect(agent.sessionManager).not.toBeNull();
-    expect(agent.polish).not.toBeNull();
-    expect(agent.skills).not.toBeNull();
-    expect(agent.rolePacks).not.toBeNull();
-    expect(agent.security).not.toBeNull();
+      // 初始化后所有组件字段应非 null（前置验证）
+      expect(agent.rolePack).not.toBeNull();
+      expect(agent.tools).not.toBeNull();
+      expect(agent.memory).not.toBeNull();
+      expect(agent.agentLoop).not.toBeNull();
+      expect(agent.agentHistory).not.toBeNull();
+      expect(agent.context).not.toBeNull();
+      expect(agent.projects).not.toBeNull();
+      expect(agent.works).not.toBeNull();
+      expect(agent.sessionManager).not.toBeNull();
+      expect(agent.polish).not.toBeNull();
+      expect(agent.skills).not.toBeNull();
+      expect(agent.rolePacks).not.toBeNull();
+      expect(agent.security).not.toBeNull();
 
-    // close 调用 nullifyAllComponents，应 null 化全部 13 个组件字段
-    await agent.close();
+      // close 调用 nullifyAllComponents，应 null 化全部 13 个组件字段
+      await agent.close();
 
-    // Provider 相关
-    expect(agent.agentLoop).toBeNull();
-    expect(agent.agentHistory).toBeNull();
-    // 核心组件
-    expect(agent.context).toBeNull();
-    // 专职 Manager
-    expect(agent.rolePack).toBeNull();
-    expect(agent.tools).toBeNull();
-    expect(agent.memory).toBeNull();
-    expect(agent.projects).toBeNull();
-    expect(agent.works).toBeNull();
-    expect(agent.sessionManager).toBeNull();
-    expect(agent.polish).toBeNull();
+      // Provider 相关
+      expect(agent.agentLoop).toBeNull();
+      expect(agent.agentHistory).toBeNull();
+      // 核心组件
+      expect(agent.context).toBeNull();
+      // 专职 Manager
+      expect(agent.rolePack).toBeNull();
+      expect(agent.tools).toBeNull();
+      expect(agent.memory).toBeNull();
+      expect(agent.projects).toBeNull();
+      expect(agent.works).toBeNull();
+      expect(agent.sessionManager).toBeNull();
+      expect(agent.polish).toBeNull();
 
-    agent = null;
-  });
+      agent = null;
+    },
+  );
 
   it('close 后再次 init 应正常工作', { timeout: 30000 }, async () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
@@ -645,11 +645,7 @@ function seedProjectWithPersonasAndSkills(
     }),
     'utf-8',
   );
-  writeFileSync(
-    join(coderDir, 'persona.md'),
-    '你是一个编程专家，擅长代码分析和调试。',
-    'utf-8',
-  );
+  writeFileSync(join(coderDir, 'persona.md'), '你是一个编程专家，擅长代码分析和调试。', 'utf-8');
 
   // 角色包 2：写作助手
   const writerDir = join(configDir, 'role-packs', '写作助手');
@@ -663,11 +659,7 @@ function seedProjectWithPersonasAndSkills(
     }),
     'utf-8',
   );
-  writeFileSync(
-    join(writerDir, 'persona.md'),
-    '你是一个写作助手，擅长创意写作。',
-    'utf-8',
-  );
+  writeFileSync(join(writerDir, 'persona.md'), '你是一个写作助手，擅长创意写作。', 'utf-8');
 
   // 角色包 3：代码审查助手（带 skills）
   const reviewerDir = join(configDir, 'role-packs', '代码审查助手');
@@ -682,11 +674,7 @@ function seedProjectWithPersonasAndSkills(
     }),
     'utf-8',
   );
-  writeFileSync(
-    join(reviewerDir, 'persona.md'),
-    '你是一个代码审查专家。',
-    'utf-8',
-  );
+  writeFileSync(join(reviewerDir, 'persona.md'), '你是一个代码审查专家。', 'utf-8');
   const skillsDir = join(reviewerDir, 'skills');
   mkdirSync(skillsDir, { recursive: true });
   writeFileSync(
@@ -880,11 +868,17 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
   /** Mock ISessionStore */
   function createMockSessionStore(): ISessionStore {
     // 消息存储（ISessionStore.loadMessages 契约：roundIds → RoundStore 展开）
-    const store = new Map<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>();
+    const store = new Map<
+      string,
+      Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>
+    >();
     // Round-based 存储：sessionId → roundId[]
     const roundIdsMap = new Map<string, string[]>();
     // 元数据存储
-    const metas = new Map<string, { sessionId: string; createdAt?: string; updatedAt: string; messageCount: number }>();
+    const metas = new Map<
+      string,
+      { sessionId: string; createdAt?: string; updatedAt: string; messageCount: number }
+    >();
 
     return {
       loadMessages(date: string, session: string) {
@@ -921,7 +915,11 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
         metas.delete(sessionId);
       },
       updateSessionMeta(sessionId: string, meta: Record<string, unknown>) {
-        const existing = metas.get(sessionId) ?? { sessionId, updatedAt: new Date().toISOString(), messageCount: 0 };
+        const existing = metas.get(sessionId) ?? {
+          sessionId,
+          updatedAt: new Date().toISOString(),
+          messageCount: 0,
+        };
         metas.set(sessionId, { ...existing, ...meta, updatedAt: new Date().toISOString() });
       },
       getSessionMeta(sessionId: string) {
@@ -944,7 +942,7 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
         return rounds.get(roundId) ?? null;
       },
       getByIds(roundIds: string[]): Round[] {
-        return roundIds.map(id => rounds.get(id)).filter((r): r is Round => r !== undefined);
+        return roundIds.map((id) => rounds.get(id)).filter((r): r is Round => r !== undefined);
       },
       listAll(): Round[] {
         return Array.from(rounds.values());
@@ -1115,11 +1113,15 @@ describe('Agent · forkSession() · 分叉当前会话', () => {
     await agent.chatSync('你好');
 
     // 模拟 chat 忙碌（直接设置内部状态以测试并发锁行为）
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = true;
 
     expect(() => agent!.forkSession()).toThrow(/对话繁忙/);
 
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = false;
   });
 });
 
@@ -1134,7 +1136,13 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   let agent: Agent | null = null;
 
   /** Mock ISessionStore，用于测试 restoreMostRecentSession */
-  function createMockSessionStore(sessions: string[], messagesBySession: Record<string, Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>>): ISessionStore {
+  function createMockSessionStore(
+    sessions: string[],
+    messagesBySession: Record<
+      string,
+      Array<{ role: 'user' | 'assistant' | 'system'; content: string; timestamp: string }>
+    >,
+  ): ISessionStore {
     return {
       loadMessages(date: string, session: string) {
         return messagesBySession[`${date}-${session}`] ?? [];
@@ -1226,10 +1234,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
       { role: 'user' as const, content: '你好', timestamp: new Date().toISOString() },
       { role: 'assistant' as const, content: '你好！', timestamp: new Date().toISOString() },
     ];
-    const sessionStore = createMockSessionStore(
-      [sessionKey],
-      { [sessionKey]: messages },
-    );
+    const sessionStore = createMockSessionStore([sessionKey], { [sessionKey]: messages });
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1251,10 +1256,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
     const messages = [
       { role: 'user' as const, content: '旧消息', timestamp: new Date().toISOString() },
     ];
-    const sessionStore = createMockSessionStore(
-      [sessionKey],
-      { [sessionKey]: messages },
-    );
+    const sessionStore = createMockSessionStore([sessionKey], { [sessionKey]: messages });
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1272,10 +1274,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   });
 
   it('会话标识格式不匹配时应返回 0', async () => {
-    const sessionStore = createMockSessionStore(
-      ['invalid-format'],
-      {},
-    );
+    const sessionStore = createMockSessionStore(['invalid-format'], {});
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1294,10 +1293,7 @@ describe('Agent · restoreMostRecentSession() · 恢复最近会话', () => {
   it('会话消息为空时应返回 0', async () => {
     const today = todayDate();
     const sessionKey = `${today}-main`;
-    const sessionStore = createMockSessionStore(
-      [sessionKey],
-      { [sessionKey]: [] },
-    );
+    const sessionStore = createMockSessionStore([sessionKey], { [sessionKey]: [] });
     agent = new Agent({
       projectPath: tmpProject,
       provider: new MockProvider(),
@@ -1524,11 +1520,15 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     await agent.init();
 
     // 模拟对话进行中
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = true;
     expect(() => agent!.setArchiveMode('manual')).toThrow(/对话繁忙/);
 
     // 恢复空闲状态
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = false;
   });
 
   // ─── switchRolePack 手动切换（与自动匹配共享事件链路） ─────
@@ -1601,13 +1601,17 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
     await agent.init();
 
     // 模拟对话进行中
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = true;
     // switchRolePack 是内部统一入口，对话中也允许切换（自动匹配需要）
     const ok = agent!.switchRolePack('编程专家');
     expect(ok).toBe(true);
 
     // 恢复空闲状态
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = false;
   });
 
   // ─── switchRolePack 手动切换（角色包系统，与自动匹配共享事件链路） ─────
@@ -1622,7 +1626,11 @@ describe('Agent · archiveMode · 二态归档模式（full|manual）', () => {
       writeFileSync(join(packDir, 'persona.md'), persona, 'utf-8');
     };
     writePack('写作助手', { name: '写作助手', formatVersion: '1.0.0' }, '你是写作助手。');
-    writePack('技术文档工程师', { name: '技术文档工程师', formatVersion: '1.0.0' }, '你是技术文档工程师。');
+    writePack(
+      '技术文档工程师',
+      { name: '技术文档工程师', formatVersion: '1.0.0' },
+      '你是技术文档工程师。',
+    );
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
@@ -1812,11 +1820,7 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
       }),
       'utf-8',
     );
-    writeFileSync(
-      join(reviewerDir, 'persona.md'),
-      '你是审查专家',
-      'utf-8',
-    );
+    writeFileSync(join(reviewerDir, 'persona.md'), '你是审查专家', 'utf-8');
 
     const result = await agent.reloadConfig('rolePack');
     expect(result.rolePack).toBeGreaterThanOrEqual(0);
@@ -1848,9 +1852,13 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 模拟对话繁忙
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = true;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = true;
     await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
-    (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager._chatBusy = false;
+    (
+      agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }
+    ).internals.chatLockManager._chatBusy = false;
   });
 
   it('对话繁忙时 reloadConfig(persona/skill) 应暂存到 pendingConfigReload', async () => {
@@ -1858,7 +1866,8 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 模拟对话繁忙
-    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } })
+      .internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig('persona')).rejects.toThrow(/对话繁忙/);
     await expect(agent.reloadConfig('skill')).rejects.toThrow(/对话繁忙/);
@@ -1872,7 +1881,8 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } })
+      .internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig()).rejects.toThrow(/对话繁忙/);
     expect(agent['pendingConfigReload'].size).toBe(0);
@@ -1883,7 +1893,8 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();
 
-    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } })
+      .internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig('rule')).rejects.toThrow(/对话繁忙/);
     // rule 在 chatLock busy 阶段被暂存（补执行时 reloadConfig('rule') 会 no-op 返回）
@@ -1896,7 +1907,8 @@ describe('Agent · reloadConfig()（配置热重载）', () => {
     await agent.init();
 
     // 暂存一个请求
-    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } }).internals.chatLockManager;
+    const lock = (agent as unknown as { internals: { chatLockManager: { _chatBusy: boolean } } })
+      .internals.chatLockManager;
     lock._chatBusy = true;
     await expect(agent.reloadConfig('persona')).rejects.toThrow(/对话繁忙/);
     expect(agent['pendingConfigReload'].size).toBe(1);
@@ -2165,10 +2177,7 @@ class AbortThrowingProvider extends LlmProvider {
     this.delayMs = delayMs;
   }
 
-  async *chat(
-    _messages: Message[],
-    opts?: ChatOptions,
-  ): AsyncIterable<LlmChunk> {
+  async *chat(_messages: Message[], opts?: ChatOptions): AsyncIterable<LlmChunk> {
     for (const chunk of this.chunks) {
       if (opts?.signal?.aborted) {
         // 模拟 fetch stream 被 abort：抛 AbortError（isAbortError 判定 name==='AbortError'）
@@ -2203,10 +2212,7 @@ class ConnectionInterruptedProvider extends LlmProvider {
     this.chunks = chunks;
   }
 
-  async *chat(
-    _messages: Message[],
-    _opts?: ChatOptions,
-  ): AsyncIterable<LlmChunk> {
+  async *chat(_messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
     for (const chunk of this.chunks) {
       yield { content: chunk };
     }
@@ -2524,7 +2530,9 @@ describe('Agent · chat() 中断保留文本', () => {
     // 前置事实②：首分片确已产出（即 llmCaller 的 streamStarted=true 形态，故不进入重试循环）
     expect(chunks.some((c) => c.type === 'text')).toBe(true);
 
-    const errors = chunks.filter((c): c is Extract<AgentChunk, { type: 'error' }> => c.type === 'error');
+    const errors = chunks.filter(
+      (c): c is Extract<AgentChunk, { type: 'error' }> => c.type === 'error',
+    );
     expect(errors).toHaveLength(1);
     // 核心断言：超时被结构化分类——宿主 friendlyByCategory.timeout 由此可达
     expect(errors[0]!.category).toBe('timeout');
@@ -2737,13 +2745,11 @@ describe('Agent · chat() 锁超时机制', () => {
     try {
       for await (const {} of gen1) {
       }
-    } catch {
-    }
+    } catch {}
     try {
       for await (const {} of gen2) {
       }
-    } catch {
-    }
+    } catch {}
   }, 30000);
 
   it('race condition：超时后新调用获取锁，旧 generator 完成时不应误清新调用者的锁', async () => {
@@ -2791,8 +2797,7 @@ describe('Agent · chat() 锁超时机制', () => {
     try {
       for await (const {} of genB) {
       }
-    } catch {
-    }
+    } catch {}
   }, 30000);
 
   it('close() 递增 token，旧 chat generator 完成时不应清理已关闭的状态', async () => {
@@ -2934,7 +2939,6 @@ describe('Agent · canContinueWithoutInput() · 软暂停可续跑信号', () =>
   });
 });
 
-
 // ═══════════════════════════════════════════════════════════════
 // 测试：L2 行为策略消费（getActiveStrategy + executeChatLoop）
 // ═══════════════════════════════════════════════════════════════
@@ -3018,11 +3022,7 @@ describe('Agent · L2 行为策略消费', () => {
       '你是程序员。',
     );
     // 兜底契约包（§4.1 单链兜底需要：无 activePack 注入时落兜底包而非 items[0]）
-    writePack(
-      'memora助手',
-      { name: 'memora助手', formatVersion: '1.0.0' },
-      '你是通用助手。',
-    );
+    writePack('memora助手', { name: 'memora助手', formatVersion: '1.0.0' }, '你是通用助手。');
 
     agent = makeAgent(tmpProject, tmpConfig, tmpData);
     await agent.init();

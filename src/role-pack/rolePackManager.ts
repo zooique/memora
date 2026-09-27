@@ -26,11 +26,7 @@ import {
   resolveLayer3ResourcePath,
   resolveLayer3ScriptPath,
 } from '@/skill/skillLayer3.js';
-import {
-  DEFAULT_MAX_CONTENT_LEN,
-  readFileCapped,
-  existsSyncSafe,
-} from '@/utils/fileSafe.js';
+import { DEFAULT_MAX_CONTENT_LEN, readFileCapped, existsSyncSafe } from '@/utils/fileSafe.js';
 import { parseFrontmatter } from '@/utils/frontmatter.js';
 import {
   validateManifest,
@@ -38,7 +34,11 @@ import {
   MAX_HANDOFF_PROMPT_LEN,
 } from '@/role-pack/validator.js';
 import { BUILTIN_FALLBACK_PACK, MAX_TEAM_MEMBERS } from '@/role-pack/constants.js';
-import { SkillManager, L1_COMPRESSED_THRESHOLD, L1_LIST_TOOL_THRESHOLD } from '@/skill/skillManager.js';
+import {
+  SkillManager,
+  L1_COMPRESSED_THRESHOLD,
+  L1_LIST_TOOL_THRESHOLD,
+} from '@/skill/skillManager.js';
 import type {
   RolePack,
   RolePackMeta,
@@ -177,12 +177,14 @@ async function scanPackSkills(
       // manifest 声明的 name/description 覆盖 frontmatter 值；未声明则保留原值
       return {
         ...entry,
-        name: (typeof config['name'] === 'string' && config['name']!.trim() !== '')
-          ? config['name']!
-          : entry.name,
-        description: (typeof config['description'] === 'string' && config['description']!.trim() !== '')
-          ? config['description']!
-          : entry.description,
+        name:
+          typeof config['name'] === 'string' && config['name']!.trim() !== ''
+            ? config['name']!
+            : entry.name,
+        description:
+          typeof config['description'] === 'string' && config['description']!.trim() !== ''
+            ? config['description']!
+            : entry.description,
       };
     });
 }
@@ -247,7 +249,12 @@ function parseRules(content: string): string[] {
     if (inCodeBlock) continue;
 
     // 非规则内容：空行 / HTML 注释 / 分隔线 / 表格行 → 段落边界
-    if (trimmed === '' || /^<!--/.test(trimmed) || /^---+$/.test(trimmed) || trimmed.startsWith('|')) {
+    if (
+      trimmed === '' ||
+      /^<!--/.test(trimmed) ||
+      /^---+$/.test(trimmed) ||
+      trimmed.startsWith('|')
+    ) {
       flushPara();
       continue;
     }
@@ -283,7 +290,10 @@ function parseRules(content: string): string[] {
  * @param filePath 文件绝对路径
  * @param maxLen 最大长度（字符），超限截断
  */
-async function readContentSafe(filePath: string, maxLen = DEFAULT_MAX_CONTENT_LEN): Promise<string> {
+async function readContentSafe(
+  filePath: string,
+  maxLen = DEFAULT_MAX_CONTENT_LEN,
+): Promise<string> {
   // 读取与截断收口于 fileSafe.readFileCapped（SSOT，与全局技能共用）；
   // 本包装只负责角色包语义：失败降级为空串 + 告警（内容文件可选）
   const content = await readFileCapped(filePath, maxLen);
@@ -672,9 +682,9 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     try {
       await access(dir);
       // 按字典序排序，保证扫描顺序确定性（避免文件系统依赖）
-      entries = (await readdir(dir)).filter(
-        (f) => !f.startsWith('.') && !f.startsWith('_') && !EXCLUDED_FILES.has(f),
-      ).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+      entries = (await readdir(dir))
+        .filter((f) => !f.startsWith('.') && !f.startsWith('_') && !EXCLUDED_FILES.has(f))
+        .sort((a, b) => a.localeCompare(b, 'zh-CN'));
     } catch {
       getLogger().debug({ dir }, '角色包目录不存在，跳过');
       return [];
@@ -696,10 +706,7 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /** 解析单个角色包（manifest.json + 独立内容文件），失败返回 null */
-  private async parseManifestPack(
-    packDir: string,
-    fallbackName: string,
-  ): Promise<RolePack | null> {
+  private async parseManifestPack(packDir: string, fallbackName: string): Promise<RolePack | null> {
     const manifestPath = join(packDir, 'manifest.json');
 
     // 读取并解析 manifest.json
@@ -820,7 +827,10 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     const cachedAssembly = assembleRolePack(pack);
     // 健康徽章数据源：把 validateManifest 全量 issues（含 warning）透进装配，
     // 宿主据此叠加徽章/问题列表；上方校验块只记 error 日志。
-    const assemblyWithIssues: RolePackAssembly = { ...cachedAssembly, validationIssues: validation.issues };
+    const assemblyWithIssues: RolePackAssembly = {
+      ...cachedAssembly,
+      validationIssues: validation.issues,
+    };
     return { ...pack, _cachedAssembly: assemblyWithIssues };
   }
 
@@ -986,17 +996,24 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     //   31-50 技能：压缩 L1（name + 20 字摘要）
     //   > 50 技能：切换 list_skills 工具动态查询，不在 system prompt 枚举
     if (skillCount > L1_LIST_TOOL_THRESHOLD) {
-      return assembly.personaPrompt + `\n\n【可用技能（${skillCount} 个，数量较多，使用 list_skills 工具查询具体清单）】`;
+      return (
+        assembly.personaPrompt +
+        `\n\n【可用技能（${skillCount} 个，数量较多，使用 list_skills 工具查询具体清单）】`
+      );
     }
 
     const compressed = skillCount > L1_COMPRESSED_THRESHOLD;
-    const listed = skills.map((s) => {
-      const fallbackName = s.file ? this.deriveSkillNameFromFile(s.file) : undefined;
-      // SSOT: 使用 SkillManager.formatSkillForPrompt 统一格式化，压缩逻辑由 compress 参数控制
-      return SkillManager.formatSkillForPrompt(s, fallbackName, compressed);
-    }).filter(Boolean);
+    const listed = skills
+      .map((s) => {
+        const fallbackName = s.file ? this.deriveSkillNameFromFile(s.file) : undefined;
+        // SSOT: 使用 SkillManager.formatSkillForPrompt 统一格式化，压缩逻辑由 compress 参数控制
+        return SkillManager.formatSkillForPrompt(s, fallbackName, compressed);
+      })
+      .filter(Boolean);
 
-    const modeNote = compressed ? '（技能较多，描述已压缩至 20 字，可用 read_skill 读取完整正文）' : '（按需调用 read_skill 读取正文）';
+    const modeNote = compressed
+      ? '（技能较多，描述已压缩至 20 字，可用 read_skill 读取完整正文）'
+      : '（按需调用 read_skill 读取正文）';
     const skillListBlock =
       listed.length > 0 ? `\n\n【可用技能（渐进披露 L1）${modeNote}】\n${listed.join('\n')}` : '';
 
@@ -1096,7 +1113,11 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
   }
 
   /** 读取技能 L3 资源文件内容（渐进披露 L3），不存在或读取失败返回 null */
-  async readSkillResource(skillName: string, resourcePath: string, packName?: string): Promise<string | null> {
+  async readSkillResource(
+    skillName: string,
+    resourcePath: string,
+    packName?: string,
+  ): Promise<string | null> {
     // layer3 白名单前置检查：资源必须已由 scanPackSkills 发现并登记（与全局 SkillManager 同标准），
     // 防止未在清单内的路径（含兄弟目录前缀、escape 符）被 resolveSafePath 误放行
     const found = this.findSkillByName(skillName, packName);
@@ -1110,25 +1131,22 @@ export class RolePackManager extends ConfigResourceManager<RolePack> {
     // 读取基目录按条目来源 subdir 选择（resources/ 或 references/，兼容主流 references/ 目录）
     const resourceFullPath = resolveLayer3ResourcePath(skillDir, layer3, resourcePath);
     if (!resourceFullPath) {
-      getLogger().warn(
-        { skill: skillName, resourcePath },
-        'read_resource 路径穿越被阻止',
-      );
+      getLogger().warn({ skill: skillName, resourcePath }, 'read_resource 路径穿越被阻止');
       return null;
     }
     try {
       return await readContentSafe(resourceFullPath);
     } catch (err) {
-      getLogger().warn(
-        { skill: skillName, resourcePath, err },
-        'read_resource 读取技能资源失败',
-      );
+      getLogger().warn({ skill: skillName, resourcePath, err }, 'read_resource 读取技能资源失败');
       return null;
     }
   }
 
   /** 列出技能 L3 资源清单，无资源返回空数组 */
-  listSkillResources(skillName: string, packName?: string): ReadonlyArray<{ readonly path: string; readonly size: number }> {
+  listSkillResources(
+    skillName: string,
+    packName?: string,
+  ): ReadonlyArray<{ readonly path: string; readonly size: number }> {
     const found = this.findSkillByName(skillName, packName);
     return found?.skill.layer3?.resources ?? [];
   }

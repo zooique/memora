@@ -272,10 +272,9 @@ describe('OpenAICompatibleProvider · response_format 透传', () => {
       },
     };
 
-    for await (const chunk of provider.chat(
-      [{ role: 'user', content: 'summarize' }],
-      { response_format: responseFormat },
-    )) {
+    for await (const chunk of provider.chat([{ role: 'user', content: 'summarize' }], {
+      response_format: responseFormat,
+    })) {
       void chunk;
     }
 
@@ -319,10 +318,9 @@ describe('OpenAICompatibleProvider · reasoning_effort 透传', () => {
 
     const provider = makeProvider();
     // 模拟 loop 在 multiStepReasoning='manual' 时强制低推理深度的调用
-    for await (const chunk of provider.chat(
-      [{ role: 'user', content: 'quick' }],
-      { reasoning_effort: 'low' },
-    )) {
+    for await (const chunk of provider.chat([{ role: 'user', content: 'quick' }], {
+      reasoning_effort: 'low',
+    })) {
       void chunk;
     }
 
@@ -377,11 +375,13 @@ function createToolCallsSseResponse(
           object: 'chat.completion.chunk',
           created: Date.now(),
           model: 'mock-model',
-          choices: [{
-            index: 0,
-            delta: deltas[i],
-            finish_reason: isLast ? finalFinishReason ?? null : null,
-          }],
+          choices: [
+            {
+              index: 0,
+              delta: deltas[i],
+              finish_reason: isLast ? (finalFinishReason ?? null) : null,
+            },
+          ],
         };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
       }
@@ -411,7 +411,16 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
         return createToolCallsSseResponse(
           [
             // 第 1 片：tool_call id + name 开头
-            { tool_calls: [{ index: 0, id: 'call_abc', type: 'function', function: { name: 'read_', arguments: '' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_abc',
+                  type: 'function',
+                  function: { name: 'read_', arguments: '' },
+                },
+              ],
+            },
             // 第 2 片：name 续片 + arguments 开头
             { tool_calls: [{ index: 0, function: { name: 'file', arguments: '{"pa' } }] },
             // 第 3 片：arguments 续片
@@ -445,11 +454,36 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
         return createToolCallsSseResponse(
           [
             // tool_call 0 开始
-            { tool_calls: [{ index: 0, id: 'call_1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+                },
+              ],
+            },
             // tool_call 1 开始（不同 index）
-            { tool_calls: [{ index: 1, id: 'call_2', type: 'function', function: { name: 'write_', arguments: '' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 1,
+                  id: 'call_2',
+                  type: 'function',
+                  function: { name: 'write_', arguments: '' },
+                },
+              ],
+            },
             // tool_call 1 续片
-            { tool_calls: [{ index: 1, function: { name: 'file', arguments: '{"path":"b.ts","content":"x"}' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 1,
+                  function: { name: 'file', arguments: '{"path":"b.ts","content":"x"}' },
+                },
+              ],
+            },
           ],
           'tool_calls',
         );
@@ -483,7 +517,16 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
       http.post('*/chat/completions', () => {
         return createToolCallsSseResponse(
           [
-            { tool_calls: [{ index: 0, id: 'call_x', type: 'function', function: { name: 'search', arguments: '{"q":"test"}' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_x',
+                  type: 'function',
+                  function: { name: 'search', arguments: '{"q":"test"}' },
+                },
+              ],
+            },
           ],
           // finalFinishReason 不传（undefined），模拟模型不标 tool_calls 直接结束
           undefined,
@@ -507,7 +550,11 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
         return createToolCallsSseResponse(
           [
             // 残留的不完整 tool_call 碎片（无 arguments）
-            { tool_calls: [{ index: 0, id: 'call_frag', type: 'function', function: { name: 'incomplete' } }] },
+            {
+              tool_calls: [
+                { index: 0, id: 'call_frag', type: 'function', function: { name: 'incomplete' } },
+              ],
+            },
             // 文本内容
             { content: '正常文本响应' },
           ],
@@ -523,7 +570,10 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
     expect(toolCallChunks).toHaveLength(0);
 
     // 文本内容应正常输出
-    const textContent = chunks.filter((c) => c.content).map((c) => c.content).join('');
+    const textContent = chunks
+      .filter((c) => c.content)
+      .map((c) => c.content)
+      .join('');
     expect(textContent).toContain('正常文本响应');
   });
 
@@ -534,7 +584,11 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
         return createToolCallsSseResponse(
           [
             // 无 id 字段
-            { tool_calls: [{ index: 0, type: 'function', function: { name: 'no_id_func', arguments: '{}' } }] },
+            {
+              tool_calls: [
+                { index: 0, type: 'function', function: { name: 'no_id_func', arguments: '{}' } },
+              ],
+            },
           ],
           'tool_calls',
         );
@@ -553,7 +607,13 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
     const provider = makeProvider();
     const idLessBatch = (idx: number) =>
       createToolCallsSseResponse(
-        [{ tool_calls: [{ index: idx, type: 'function', function: { name: 'no_id_func', arguments: '{}' } }] }],
+        [
+          {
+            tool_calls: [
+              { index: idx, type: 'function', function: { name: 'no_id_func', arguments: '{}' } },
+            ],
+          },
+        ],
         'tool_calls',
       );
 
@@ -578,7 +638,16 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
             // 先输出文本
             { content: '让我读取文件' },
             // 然后发起 tool_call
-            { tool_calls: [{ index: 0, id: 'call_mixed', type: 'function', function: { name: 'read_file', arguments: '{"path":"c.ts"}' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_mixed',
+                  type: 'function',
+                  function: { name: 'read_file', arguments: '{"path":"c.ts"}' },
+                },
+              ],
+            },
           ],
           'tool_calls',
         );
@@ -605,7 +674,16 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
         return createToolCallsSseResponse(
           [
             // 第 1 片：tool_call id + name 开头 → 本片即应产出 partialToolCall
-            { tool_calls: [{ index: 0, id: 'call_abc', type: 'function', function: { name: 'write_', arguments: '' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: 'call_abc',
+                  type: 'function',
+                  function: { name: 'write_', arguments: '' },
+                },
+              ],
+            },
             // 第 2 片：续 name → 不应再产出 partialToolCall（防 delta 风暴），只累積入 acc
             { tool_calls: [{ index: 0, function: { name: 'file', arguments: '{"path":"a.ts"' } }] },
             // 第 3 片：arguments 续片完整
@@ -636,7 +714,15 @@ describe('OpenAICompatibleProvider · tool_calls delta 累积', () => {
       http.post('*/chat/completions', () => {
         return createToolCallsSseResponse(
           [
-            { tool_calls: [{ index: 0, type: 'function', function: { name: 'no_id_pending', arguments: '{}' } }] },
+            {
+              tool_calls: [
+                {
+                  index: 0,
+                  type: 'function',
+                  function: { name: 'no_id_pending', arguments: '{}' },
+                },
+              ],
+            },
           ],
           'tool_calls',
         );
@@ -674,11 +760,13 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
                 object: 'chat.completion.chunk',
                 created: Date.now(),
                 model: 'mock-model',
-                choices: [{
-                  index: 0,
-                  delta: { content: `chunk${i}` },
-                  finish_reason: i === 2 ? 'stop' : null,
-                }],
+                choices: [
+                  {
+                    index: 0,
+                    delta: { content: `chunk${i}` },
+                    finish_reason: i === 2 ? 'stop' : null,
+                  },
+                ],
               };
               controller.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`));
               // chunk 间 30ms << INTER_CHUNK_TIMEOUT_MS(60s)，不触发 chunk 级超时
@@ -697,10 +785,9 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
     const provider = makeProvider();
     const chunks: string[] = [];
     // timeoutMs=50ms < SSE 总时长 90ms，但 fetch 成功后总超时被清除
-    for await (const chunk of provider.chat(
-      [{ role: 'user', content: 'long-gen' }],
-      { timeoutMs: 50 },
-    )) {
+    for await (const chunk of provider.chat([{ role: 'user', content: 'long-gen' }], {
+      timeoutMs: 50,
+    })) {
       if (chunk.content) chunks.push(chunk.content);
     }
     // 应收到全部 3 个 chunk，未被总超时中断
@@ -719,10 +806,9 @@ describe('OpenAICompatibleProvider · 超时机制', () => {
 
     const provider = makeProvider();
     await expect(async () => {
-      for await (const chunk of provider.chat(
-        [{ role: 'user', content: 'hi' }],
-        { timeoutMs: 50 },
-      )) {
+      for await (const chunk of provider.chat([{ role: 'user', content: 'hi' }], {
+        timeoutMs: 50,
+      })) {
         void chunk;
       }
     }).rejects.toThrow('LLM 请求超时');
@@ -841,7 +927,12 @@ describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
             { content: '我先搜索相关资料' },
             {
               tool_calls: [
-                { index: 0, id: 'call_1', type: 'function', function: { name: 'web_search', arguments: '{}' } },
+                {
+                  index: 0,
+                  id: 'call_1',
+                  type: 'function',
+                  function: { name: 'web_search', arguments: '{}' },
+                },
               ],
             },
           ],
@@ -873,7 +964,9 @@ describe('OpenAICompatibleProvider · reasoning_content 解析', () => {
 
 describe('OpenAICompatibleProvider · usage token 统计', () => {
   /** 构造 SSE 事件序列响应（每条事件为完整 payload，供 usage/choices 组合场景） */
-  function createUsageSseResponse(events: Array<Record<string, unknown>>): HttpResponse<ReadableStream> {
+  function createUsageSseResponse(
+    events: Array<Record<string, unknown>>,
+  ): HttpResponse<ReadableStream> {
     const stream = new ReadableStream({
       start(controller) {
         const encoder = new TextEncoder();

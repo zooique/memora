@@ -149,7 +149,11 @@ const INLINE_OLD_TEXT_STYLE: vscode.ThemableDecorationAttachmentRenderOptions = 
 
 /** 恢复写回的路径守卫（结构对位内核 SecurityGuard.assertPathAllowed；避免直接依赖内核类型） */
 export interface FileChangeSecurityGuard {
-  assertPathAllowed(absolutePath: string, tool?: string, source?: 'builtin' | 'custom' | 'system'): void;
+  assertPathAllowed(
+    absolutePath: string,
+    tool?: string,
+    source?: 'builtin' | 'custom' | 'system',
+  ): void;
 }
 
 export interface FileChangeViewDeps {
@@ -180,10 +184,7 @@ interface ActionPickItem extends vscode.QuickPickItem {
  * `dirty`（文件有未保存编辑、需用户确认）**单列一态**，不并入失败原因：它是「等用户拍板」
  * 而不是「出错了」——混进错误通道会被调用方当失败吞掉，或弹出误导性错误框。
  */
-type RestoreOutcome =
-  | { status: 'ok' }
-  | { status: 'dirty' }
-  | { status: 'failed'; reason: string };
+type RestoreOutcome = { status: 'ok' } | { status: 'dirty' } | { status: 'failed'; reason: string };
 
 /**
  * 取一行可安全用于装饰/CodeLens 的 range
@@ -211,7 +212,10 @@ function inlinePreview(removed: string[]): string | undefined {
   const head = removed[0];
   if (head === undefined) return undefined;
   const trimmed = head.trim();
-  const clipped = trimmed.length > INLINE_PREVIEW_MAX_CHARS ? `${trimmed.slice(0, INLINE_PREVIEW_MAX_CHARS)}…` : trimmed;
+  const clipped =
+    trimmed.length > INLINE_PREVIEW_MAX_CHARS
+      ? `${trimmed.slice(0, INLINE_PREVIEW_MAX_CHARS)}…`
+      : trimmed;
   const rest = removed.length > 1 ? ` (+${removed.length - 1} 行)` : '';
   return `⟵ 原: ${clipped}${rest}`;
 }
@@ -245,9 +249,7 @@ interface HunkSnapshot {
 class FileChangeCodeLensProvider implements vscode.CodeLensProvider {
   private readonly emitter = new vscode.EventEmitter<void>();
 
-  constructor(
-    private readonly snapshotOf: (absPath: string) => HunkSnapshot | undefined,
-  ) {}
+  constructor(private readonly snapshotOf: (absPath: string) => HunkSnapshot | undefined) {}
 
   get onDidChangeCodeLenses(): vscode.Event<void> {
     return this.emitter.event;
@@ -358,18 +360,28 @@ export class FileChangeView implements FileChangeSink {
   /** 注册虚拟文档 provider / CodeLens / 状态栏 / 命令（幂等；返回值随扩展上下文释放） */
   register(context: vscode.ExtensionContext): void {
     const provider = vscode.workspace.registerTextDocumentContentProvider(VIRTUAL_SCHEME, {
-      provideTextDocumentContent: (uri: vscode.Uri): string => this.virtualContents.get(uri.toString()) ?? '',
+      provideTextDocumentContent: (uri: vscode.Uri): string =>
+        this.virtualContents.get(uri.toString()) ?? '',
     });
-    const lensRegistration = vscode.languages.registerCodeLensProvider({ scheme: 'file' }, this.lensProvider);
+    const lensRegistration = vscode.languages.registerCodeLensProvider(
+      { scheme: 'file' },
+      this.lensProvider,
+    );
     const reviewCommand = vscode.commands.registerCommand(REVIEW_FILE_CHANGES_COMMAND, () => {
       void this.showChangeList();
     });
-    const confirmAllCommand = vscode.commands.registerCommand(CONFIRM_ALL_FILE_CHANGES_COMMAND, () => {
-      this.confirmAll();
-    });
-    const revertAllCommand = vscode.commands.registerCommand(REVERT_ALL_FILE_CHANGES_COMMAND, () => {
-      void this.revertAll();
-    });
+    const confirmAllCommand = vscode.commands.registerCommand(
+      CONFIRM_ALL_FILE_CHANGES_COMMAND,
+      () => {
+        this.confirmAll();
+      },
+    );
+    const revertAllCommand = vscode.commands.registerCommand(
+      REVERT_ALL_FILE_CHANGES_COMMAND,
+      () => {
+        void this.revertAll();
+      },
+    );
     const confirmFile = vscode.commands.registerCommand(CONFIRM_FILE_COMMAND, (arg: unknown) => {
       this.withRecord(arg, (rec) => this.confirmChange(rec));
     });
@@ -393,9 +405,13 @@ export class FileChangeView implements FileChangeSink {
     this.statusBar.name = 'Memora 文件改动';
     // 装饰绑定在**编辑器实例**上，切走再切回不会自动恢复（CodeLens 走 provider 模式则不受影响）
     // ⇒ 可见编辑器集合变化时必须主动补齐，否则「切个文件回来，高亮全没、只剩按钮」
-    const editorWatcher = vscode.window.onDidChangeVisibleTextEditors(() => this.reapplyDecorations());
+    const editorWatcher = vscode.window.onDidChangeVisibleTextEditors(() =>
+      this.reapplyDecorations(),
+    );
     // 标题栏按钮的显隐跟「当前活动文件有没有未确认改动」走 ⇒ 活动编辑器一变就得重算上下文键
-    const activeWatcher = vscode.window.onDidChangeActiveTextEditor(() => this.syncPendingContext());
+    const activeWatcher = vscode.window.onDidChangeActiveTextEditor(() =>
+      this.syncPendingContext(),
+    );
     context.subscriptions.push(
       provider,
       lensRegistration,
@@ -555,7 +571,9 @@ export class FileChangeView implements FileChangeSink {
       this.renderInline(this.tracker.get(rec.path) ?? latest, doc, true);
     } catch (err) {
       // 不再静默：打开/装饰失败必须留痕（真机「打开了但无高亮」曾因此无诊断线索）
-      this.deps.log(`[fileChange] 打开/渲染失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`);
+      this.deps.log(
+        `[fileChange] 打开/渲染失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -599,15 +617,21 @@ export class FileChangeView implements FileChangeSink {
       if (!reveal || targets.length === 0) return;
       const anchor = this.anchorRange(doc, hunks);
       if (!anchor) return;
-      const target = targets.find((editor) => editor === vscode.window.activeTextEditor) ?? targets[0];
+      const target =
+        targets.find((editor) => editor === vscode.window.activeTextEditor) ?? targets[0];
       target.revealRange(anchor, vscode.TextEditorRevealType.InCenter);
     } catch (err) {
-      this.deps.log(`[fileChange] 装饰应用失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`);
+      this.deps.log(
+        `[fileChange] 装饰应用失败 ${rec.relPath}：${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   /** 逐行装饰项（块内每行铺底；首行额外带行尾旧内容 + 悬停全文） */
-  private buildDecorationItems(doc: vscode.TextDocument, hunks: DiffHunk[]): vscode.DecorationOptions[] {
+  private buildDecorationItems(
+    doc: vscode.TextDocument,
+    hunks: DiffHunk[],
+  ): vscode.DecorationOptions[] {
     const items: vscode.DecorationOptions[] = [];
     for (const hunk of hunks) {
       const first = hunkAnchorLine(hunk, doc.lineCount);
@@ -617,7 +641,11 @@ export class FileChangeView implements FileChangeSink {
         continue;
       }
       for (let line = hunk.startLine; line <= hunk.endLine; line += 1) {
-        items.push(line === hunk.startLine ? this.decorationFor(doc, line, hunk) : { range: safeLineRange(doc, line) });
+        items.push(
+          line === hunk.startLine
+            ? this.decorationFor(doc, line, hunk)
+            : { range: safeLineRange(doc, line) },
+        );
       }
     }
     return items;
@@ -649,7 +677,11 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /** 带旧内容附件与悬停说明的单行装饰 */
-  private decorationFor(doc: vscode.TextDocument, line: number, hunk: DiffHunk): vscode.DecorationOptions {
+  private decorationFor(
+    doc: vscode.TextDocument,
+    line: number,
+    hunk: DiffHunk,
+  ): vscode.DecorationOptions {
     const options: vscode.DecorationOptions = {
       range: safeLineRange(doc, line),
       hoverMessage: this.oldContentHover(hunk),
@@ -757,12 +789,17 @@ export class FileChangeView implements FileChangeSink {
     const beforeText = rec.beforeContent ?? '';
     const afterText = rec.afterContent ?? '';
     if (Math.max(beforeText.length, afterText.length) > MAX_DIFF_CONTENT_LENGTH) {
-      void vscode.window.showInformationMessage(`Memora：${rec.relPath} 改动过大，已跳过对比预览（可「回退」）`);
+      void vscode.window.showInformationMessage(
+        `Memora：${rec.relPath} 改动过大，已跳过对比预览（可「回退」）`,
+      );
       return;
     }
     const fileName = basename(rec.path);
     const uri = this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`);
-    this.virtualContents.set(uri.toString(), formatUnifiedDiff(beforeText, afterText, `${rec.relPath} — 本次改动（上下对照）`));
+    this.virtualContents.set(
+      uri.toString(),
+      formatUnifiedDiff(beforeText, afterText, `${rec.relPath} — 本次改动（上下对照）`),
+    );
     await vscode.window.showTextDocument(uri, { preview: false });
   }
 
@@ -780,7 +817,9 @@ export class FileChangeView implements FileChangeSink {
   /** 精确释放某条记录占用的虚拟文档内容（**不误伤其它记录**的对照视图） */
   private releaseVirtual(rec: FileChangeRecord): void {
     const fileName = basename(rec.path);
-    this.virtualContents.delete(this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`).toString());
+    this.virtualContents.delete(
+      this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`).toString(),
+    );
   }
 
   // ─── 动作 ───
@@ -845,10 +884,15 @@ export class FileChangeView implements FileChangeSink {
     }
     const willDelete = records.filter((rec) => rec.beforeContent === null);
     // 有未保存编辑的文件集（模态明细 + 执行时的 overwriteDirty 白名单同源，防两处各扫一遍漂移）
-    const dirtyPaths = new Set(records.filter((rec) => this.dirtyDocumentOf(rec.path) !== undefined).map((rec) => rec.path));
+    const dirtyPaths = new Set(
+      records.filter((rec) => this.dirtyDocumentOf(rec.path) !== undefined).map((rec) => rec.path),
+    );
     const preview = records
       .slice(0, 20)
-      .map((rec) => `  ${rec.relPath}${rec.beforeContent === null ? '（删除文件）' : ''}${dirtyPaths.has(rec.path) ? '（含未保存编辑）' : ''}`);
+      .map(
+        (rec) =>
+          `  ${rec.relPath}${rec.beforeContent === null ? '（删除文件）' : ''}${dirtyPaths.has(rec.path) ? '（含未保存编辑）' : ''}`,
+      );
     preview.push(...(records.length > 20 ? [`  …另有 ${records.length - 20} 个文件`] : []));
     const detail = [
       `将把 ${records.length} 个文件恢复到「agent 改动之前」的内容：`,
@@ -872,7 +916,10 @@ export class FileChangeView implements FileChangeSink {
       // 只对模态里列出的 dirty 文件放行覆盖，其余走 fail-closed 闸（防确认后新产生的编辑被吞）
       const outcome = await this.applyRestore(rec, { overwriteDirty: dirtyPaths.has(rec.path) });
       if (outcome.status === 'ok') okCount += 1;
-      else failures.push(`${rec.relPath}（${outcome.status === 'failed' ? outcome.reason : '有未保存的编辑，未确认'}）`);
+      else
+        failures.push(
+          `${rec.relPath}（${outcome.status === 'failed' ? outcome.reason : '有未保存的编辑，未确认'}）`,
+        );
     }
     this.notifyChanged();
     this.lensProvider.refresh();
@@ -920,7 +967,9 @@ export class FileChangeView implements FileChangeSink {
         '仍然回退',
       );
       if (!ok) {
-        void vscode.window.showInformationMessage(`Memora：已取消 ${rec.relPath} 的回退，未保存的编辑未动`);
+        void vscode.window.showInformationMessage(
+          `Memora：已取消 ${rec.relPath} 的回退，未保存的编辑未动`,
+        );
         return;
       }
       outcome = await this.applyRestore(rec, { overwriteDirty: true });
@@ -971,7 +1020,10 @@ export class FileChangeView implements FileChangeSink {
       // 但审计留痕必须说实话——否则「删了什么」在审计里全记成 write_file。
       guard.assertPathAllowed(rec.path, content === null ? 'delete_file' : 'write_file');
     } catch (err) {
-      return { status: 'failed', reason: `路径不允许恢复（${err instanceof Error ? err.message : String(err)}）` };
+      return {
+        status: 'failed',
+        reason: `路径不允许恢复（${err instanceof Error ? err.message : String(err)}）`,
+      };
     }
     try {
       if (content === null) {
@@ -992,7 +1044,10 @@ export class FileChangeView implements FileChangeSink {
    * 拆出无 UI 版本的原因：批量回退时不能逐个弹窗（N 个弹窗既吵又拖慢），
    * 由调用方汇总成一条结果。单个文件入口（`restoreChange`）在此之上加提示。
    */
-  private async applyRestore(rec: FileChangeRecord, opts: { overwriteDirty?: boolean } = {}): Promise<RestoreOutcome> {
+  private async applyRestore(
+    rec: FileChangeRecord,
+    opts: { overwriteDirty?: boolean } = {},
+  ): Promise<RestoreOutcome> {
     const outcome = await this.writeBack(rec, rec.beforeContent, opts);
     if (outcome.status !== 'ok') return outcome;
     this.discardRecord(rec);
@@ -1040,7 +1095,8 @@ export class FileChangeView implements FileChangeSink {
     }
     const nextAfter = applyHunkReverts(resolved.snapshot.afterText, [resolved.hunk]);
     // 原为新建的文件、块又被全部拒绝 ⇒ 内容为空 ⇒ 语义就是「这个文件不该存在」
-    const content: string | null = rec.beforeContent === null && nextAfter === '' ? null : nextAfter;
+    const content: string | null =
+      rec.beforeContent === null && nextAfter === '' ? null : nextAfter;
     let outcome = await this.writeBack(rec, content);
     if (outcome.status === 'dirty') {
       const ok = await this.confirmOverwriteDirty(
@@ -1049,7 +1105,9 @@ export class FileChangeView implements FileChangeSink {
         '仍然拒绝',
       );
       if (!ok) {
-        void vscode.window.showInformationMessage(`Memora：已取消 ${rec.relPath} 的块级拒绝，未保存的编辑未动`);
+        void vscode.window.showInformationMessage(
+          `Memora：已取消 ${rec.relPath} 的块级拒绝，未保存的编辑未动`,
+        );
         return;
       }
       outcome = await this.writeBack(rec, content, { overwriteDirty: true });
@@ -1057,7 +1115,9 @@ export class FileChangeView implements FileChangeSink {
     if (outcome.status !== 'ok') {
       // 类型穷尽兜底：重试恒带 overwriteDirty ⇒ 'dirty' 实际不可达，如实走通用文案、不虚述场景
       const reason = outcome.status === 'failed' ? outcome.reason : '拒绝未能完成，请重试';
-      void vscode.window.showErrorMessage(`Memora：拒绝 ${rec.relPath} 的该处改动失败（${reason}）`);
+      void vscode.window.showErrorMessage(
+        `Memora：拒绝 ${rec.relPath} 的该处改动失败（${reason}）`,
+      );
       return;
     }
     this.tracker.updateContents(rec.path, { afterContent: content });
@@ -1115,9 +1175,10 @@ export class FileChangeView implements FileChangeSink {
   /** 改动通知（带按钮）：确认改动 / 恢复旧版 / 查看对比 / 全部确认 */
   private notifyChange(rec: FileChangeRecord): void {
     const count = this.tracker.size();
-    const message = count > 1
-      ? `Memora：本次已改动 ${count} 个文件（最新：${rec.relPath}）`
-      : `Memora：已修改 ${rec.relPath}（改动处已在文件中高亮）`;
+    const message =
+      count > 1
+        ? `Memora：本次已改动 ${count} 个文件（最新：${rec.relPath}）`
+        : `Memora：已修改 ${rec.relPath}（改动处已在文件中高亮）`;
     void vscode.window
       .showInformationMessage(message, '确认改动', '恢复旧版', '查看对比', '全部确认')
       .then((choice) => {
@@ -1139,7 +1200,11 @@ export class FileChangeView implements FileChangeSink {
     }
     const items: ChangePickItem[] = [
       { label: `$(check-all) 全部确认（${records.length} 个文件）`, all: true },
-      ...records.map((record) => ({ label: `$(file) ${record.relPath}`, description: describeChange(record), record })),
+      ...records.map((record) => ({
+        label: `$(file) ${record.relPath}`,
+        description: describeChange(record),
+        record,
+      })),
     ];
     const picked = await vscode.window.showQuickPick<ChangePickItem>(items, {
       title: '本次文件改动',

@@ -12,7 +12,13 @@ import { describe, it, expect } from 'vitest';
 import type { Agent } from '@zooique/memora';
 import type { SkillDto } from '../../../shared/protocol.js';
 import { join } from 'node:path';
-import { findUnmatchedDisabled, isSkillDisabled, listVisibleSkills, resolveSkill, skillPromptFor } from '../skillAggregation.js';
+import {
+  findUnmatchedDisabled,
+  isSkillDisabled,
+  listVisibleSkills,
+  resolveSkill,
+  skillPromptFor,
+} from '../skillAggregation.js';
 
 const configDir = 'C:/app/dist/extension';
 const userSkillsDir = 'C:/Users/t/.vscode/globalStorage/skills';
@@ -189,7 +195,10 @@ describe('resolveSkill · 正文解析唯一收口（角色包 → 全局）', (
       globalContent: { 同名: '全局正文' },
       roleContent: { 同名: '角色包正文' },
     });
-    expect(await resolveSkill(agent, '同名')).toEqual({ content: '角色包正文', source: 'rolepack' });
+    expect(await resolveSkill(agent, '同名')).toEqual({
+      content: '角色包正文',
+      source: 'rolepack',
+    });
   });
 
   it('角色包未命中 → 回退全局池，source 标注 global', async () => {
@@ -215,7 +224,9 @@ describe('三面同源：列表保留 / 预览正文 / composer 注入 必须指
       roleContent: { 同名: '角色包正文' },
     });
     // ① 列表（settingsPanel 数据源）：同名只留一条，且是角色包来源
-    const listed = listVisibleSkills({ agent, configDir, userSkillsDir }).filter((s) => s.name === '同名');
+    const listed = listVisibleSkills({ agent, configDir, userSkillsDir }).filter(
+      (s) => s.name === '同名',
+    );
     expect(listed).toHaveLength(1);
     expect(listed[0].layer).toBe('rolepack');
     // ② 预览（settingsPanel L2 展开）+ ③ 注入（composer）——同一解析单点，同取角色包正文
@@ -302,7 +313,8 @@ describe('findUnmatchedDisabled · 禁用集「未找到需要禁用的技能」
    * 差集 = 禁用名 ∖ 三源清单名集（内置/角色包/用户）。角色包同名命中 → 不算未匹配
    * （与 `isSkillDisabled` 作用域语义一致：禁用集对角色包无管辖权）。
    */
-  const skill = (name: string): SkillDto => ({ name, description: '', layer: 'builtin' } as SkillDto);
+  const skill = (name: string): SkillDto =>
+    ({ name, description: '', layer: 'builtin' }) as SkillDto;
 
   it('禁用名在三源清单中不存在才判为未匹配', () => {
     const disabled = ['typo-skill', 'code-review', 'ghost'];

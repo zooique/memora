@@ -87,11 +87,7 @@ export async function scanMarkdownDir(dir: string): Promise<ScannedMarkdownEntry
 
   // 直接子项下的 .md 文件（兼容单文件形式）
   const mdFiles = items.filter(
-    (f) =>
-      f.endsWith('.md') &&
-      !f.startsWith('.') &&
-      !f.startsWith('_') &&
-      !EXCLUDED_FILES.has(f),
+    (f) => f.endsWith('.md') && !f.startsWith('.') && !f.startsWith('_') && !EXCLUDED_FILES.has(f),
   );
 
   for (const file of mdFiles) {
@@ -236,8 +232,19 @@ export function inferRuntimeFromExt(ext: string): ScriptRuntime | undefined {
 
 /** 资源文件扩展名（纳入 resources 索引） */
 const RESOURCE_EXTENSIONS = new Set([
-  '.md', '.markdown', '.json', '.yaml', '.yml', '.txt', '.csv',
-  '.xml', '.html', '.sql', '.toml', '.ini', '.env',
+  '.md',
+  '.markdown',
+  '.json',
+  '.yaml',
+  '.yml',
+  '.txt',
+  '.csv',
+  '.xml',
+  '.html',
+  '.sql',
+  '.toml',
+  '.ini',
+  '.env',
 ]);
 
 /**

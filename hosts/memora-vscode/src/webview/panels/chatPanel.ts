@@ -49,7 +49,11 @@ import type {
   PendingQuestionDto,
 } from '../../shared/protocol.js';
 // 错误文案映射单一真理源（与 webview 重放渲染共用，防文案双源漂移）
-import { deriveTurnState, mergeLiveRound, type PendingLiveRound } from '../../shared/turnProjection.js';
+import {
+  deriveTurnState,
+  mergeLiveRound,
+  type PendingLiveRound,
+} from '../../shared/turnProjection.js';
 import { friendlyErrorMessage } from '../../shared/errorText.js';
 import { ProviderStore } from '../../extension/providers/providerStore.js';
 import { createProvider } from '../../extension/host/llmConfig.js';
@@ -62,7 +66,11 @@ import {
   stripInjectedContextPrefix,
 } from '../helpers/docContext.js';
 import { getToolDisplayName } from '../helpers/toolNameMap.js';
-import { isSkillDisabled, listVisibleSkills, skillPromptFor } from '../../extension/host/skillAggregation.js';
+import {
+  isSkillDisabled,
+  listVisibleSkills,
+  skillPromptFor,
+} from '../../extension/host/skillAggregation.js';
 import type { WorkspaceSessionViewLoader } from '../../extension/host/sessionViewLoader.js';
 // 文件改动追踪接入面（唯一接入点；仅依赖窄接口，不直接依赖渲染实现）
 import type { FileChangeSink } from '../../extension/host/fileChangeTracker.js';
@@ -210,7 +218,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   private _securityAuditTotal = 0;
   private _securityAuditDenied = 0;
-  private _recentSecurityAudits: { type: string; path: string; tool?: string; reason?: string }[] = [];
+  private _recentSecurityAudits: { type: string; path: string; tool?: string; reason?: string }[] =
+    [];
   /** 安全审计订阅取消函数（幂等管理，防重复绑定） */
   private _securityAuditUnsub: (() => void) | undefined;
   /**
@@ -260,7 +269,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * host resolve 对应 pending Promise，回调内核 confirmationHandler。
    * 超时或 webview 不可达时自动拒绝（fail-closed）。
    */
-  private _pendingWriteConfirmations = new Map<string, { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
+  private _pendingWriteConfirmations = new Map<
+    string,
+    { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }
+  >();
   /**
    * 会话视图加载器（round-based 模式专用，可选）
    *
@@ -512,7 +524,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 视图已就绪时立即推送（而非等待下次 replaySession），保证角色选择器即时刷新；
     // 视图未就绪时由 replaySession 兜底（就绪回放时读取 _activeRolePack 推送）。
     if (this._view) {
-      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(rolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
+      this.post({
+        type: 'chat_role_pack',
+        rolePack: this.roleDisplayName(rolePack),
+        traits: this.getActiveTraits(),
+        team: this.getActiveTeamForProtocol(),
+      });
     }
   }
 
@@ -524,7 +541,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    */
   public refreshActiveRolePackForTeam(): void {
     if (!this._view || !this._activeRolePack) return;
-    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
+    this.post({
+      type: 'chat_role_pack',
+      rolePack: this.roleDisplayName(this._activeRolePack),
+      traits: this.getActiveTraits(),
+      team: this.getActiveTeamForProtocol(),
+    });
   }
 
   /**
@@ -743,7 +765,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   // 提示条为独立元素，不随流式 chunk 重建，天然规避「截断提示被后续 chunk 覆盖」。
 
   /** contextTruncated：上下文窗口截断（消息超出 token 上限被裁剪） */
-  private readonly onContextTruncated = (info: { skippedCount: number; keptCount: number }): void => {
+  private readonly onContextTruncated = (info: {
+    skippedCount: number;
+    keptCount: number;
+  }): void => {
     this.post({
       type: 'notice',
       level: 'info',
@@ -752,7 +777,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   };
 
   /** contextCompressed：LLM 主动压缩上下文（第二级压缩，与内核自动截断区分） */
-  private readonly onContextCompressed = (info: { target: string; replacedCount: number; summaryLength: number }): void => {
+  private readonly onContextCompressed = (info: {
+    target: string;
+    replacedCount: number;
+    summaryLength: number;
+  }): void => {
     const targetText = info.target === 'earliest_round' ? '最早轮次摘要' : '最大工具结果摘要';
     this.post({
       type: 'notice',
@@ -763,9 +792,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** archiveFailed：记忆归档失败（内核 stage 为 'session' 会话归档阶段，无 'insight' 阶段） */
   private readonly onArchiveFailed = (info: { stage: string; message: string }): void => {
-    this.post({ type: 'notice', level: 'info', message: `记忆归档失败（${info.stage}）：${info.message}` });
+    this.post({
+      type: 'notice',
+      level: 'info',
+      message: `记忆归档失败（${info.stage}）：${info.message}`,
+    });
   };
-
 
   // ─── 高价值事件 ───
 
@@ -895,10 +927,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 宿主检查是否为当前会话，若是则推送 session_title 到 webview 刷新顶部标题。
    * 这确保了"对话记录已更新，但顶部未同步"的问题得到解决。
    */
-  private readonly onSessionTitleUpdated = (info: {
-    sessionId: string;
-    title: string;
-  }): void => {
+  private readonly onSessionTitleUpdated = (info: { sessionId: string; title: string }): void => {
     // 仅当更新的是当前会话时才推送（其他会话的标题更新不影响当前 UI）
     if (info.sessionId === this._currentSessionId) {
       this.post({ type: 'session_title', title: info.title });
@@ -923,7 +952,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 两视图真相源分叉即 SSOT 违反）。由同一事件驱动状态，重解析即推正确角色。
     this._activeRolePack = info.to;
     // 仅转发切换后的角色显示名（to），触发角色选择器 + AI 消息标签同步（视图存活时）
-    this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(info.to), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
+    this.post({
+      type: 'chat_role_pack',
+      rolePack: this.roleDisplayName(info.to),
+      traits: this.getActiveTraits(),
+      team: this.getActiveTeamForProtocol(),
+    });
     // 同步推送工具权限徽章（角色切换后能力面随之变化）
     this.postCapabilityBadge();
     // 角色切换后「启用角色包」技能源变化 → 刷新技能清单（composer 动态下拉与设置面板同步，SSOT）
@@ -939,7 +973,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 转发为 notice info 级提示条，让用户感知当前工作目录已变更。
    * 内核事件形状：{ from: string | null; to: string; projectName: string }
    */
-  private readonly onProjectSwitched = (info: { from: string | null; to: string; projectName: string }): void => {
+  private readonly onProjectSwitched = (info: {
+    from: string | null;
+    to: string;
+    projectName: string;
+  }): void => {
     this.post({
       type: 'notice',
       level: 'info',
@@ -953,7 +991,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 转发为 notice info 级提示条，告知用户当前工作投影已更新。
    * 内核事件形状：{ sourcePath: string; summary: string }
    */
-  private readonly onWorkProjectionGenerated = (info: { sourcePath: string; summary: string }): void => {
+  private readonly onWorkProjectionGenerated = (info: {
+    sourcePath: string;
+    summary: string;
+  }): void => {
     this.post({
       type: 'notice',
       level: 'info',
@@ -989,7 +1030,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * 被锁期间的后续切换直接返回 false 且不发射，其提示由 settingsPanel.activateRole 经
    * getRolePackSwitchLockStatus() 分支补发。
    */
-  private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
+  private readonly onRolePackSwitchLocked = (info: {
+    reason: string;
+    lockedSeconds: number;
+  }): void => {
     this.post({
       type: 'notice',
       level: 'info',
@@ -1140,7 +1184,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         const timer = setTimeout(() => {
           this._pendingWriteConfirmations.delete(requestId);
           resolve(false); // 超时视为拒绝
-          this.post({ type: 'notice', level: 'error', message: `写入确认超时（${toolLabel} ${fileName}），已自动拒绝` });
+          this.post({
+            type: 'notice',
+            level: 'error',
+            message: `写入确认超时（${toolLabel} ${fileName}），已自动拒绝`,
+          });
         }, timeoutMs);
 
         // 存储 pending 回调
@@ -1415,7 +1463,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!agent) return;
     try {
       if (!agent.sessionManager) {
-        this.post({ type: 'notice', level: 'error', message: 'Memora：会话管理未就绪，请稍候再试' });
+        this.post({
+          type: 'notice',
+          level: 'error',
+          message: 'Memora：会话管理未就绪，请稍候再试',
+        });
         return;
       }
       await agent.sessionManager.switchToSession(sessionId);
@@ -1477,8 +1529,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 角色包固定开销：优先取内核当前激活角色包底盘占用（装配/切换即确定，冷启动也有真实值）；
       // 该指标暂无时回退 occupancy 旧值（兼容极端时序），再回退 0。
       const ctx = agent.getMetrics().context;
-      const rolePackBaseTokens =
-        ctx.rolePackBaseTokens ?? ctx.occupancy?.rolePackBaseTokens ?? 0;
+      const rolePackBaseTokens = ctx.rolePackBaseTokens ?? ctx.occupancy?.rolePackBaseTokens ?? 0;
       const occ = estimateOccupancy({
         totalTokens,
         rolePackBaseTokens,
@@ -1672,7 +1723,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 推送当前激活角色包 → 输入区角色选择器 + AI 消息标签（主动可见）。
     // 即使没有激活的角色包也推送，让 webview 正确处理状态
     if (this._activeRolePack) {
-      this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
+      this.post({
+        type: 'chat_role_pack',
+        rolePack: this.roleDisplayName(this._activeRolePack),
+        traits: this.getActiveTraits(),
+        team: this.getActiveTeamForProtocol(),
+      });
     } else {
       // 无激活角色包：推送空信息，让 webview 清除角色标签
       this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
@@ -1752,7 +1808,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         limitTokens: resolveContextWindow(p.contextWindow),
       }));
       // meta 事件 llm 字段同源：活跃 Provider 显示名（SSOT 与模型下拉同一来源）
-      this._activeProviderDisplayName = list.find((p) => p.name === activeName)?.displayName ?? activeName ?? '';
+      this._activeProviderDisplayName =
+        list.find((p) => p.name === activeName)?.displayName ?? activeName ?? '';
       this.post({ type: 'chat_providers', providers: list, activeName });
     } catch {
       // 推送失败不阻塞主流程
@@ -1790,7 +1847,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 角色数据：无论是否有激活角色都推送，让 webview 正确更新 UI 状态
     if (this._view) {
       if (this._activeRolePack) {
-        this.post({ type: 'chat_role_pack', rolePack: this.roleDisplayName(this._activeRolePack), traits: this.getActiveTraits(), team: this.getActiveTeamForProtocol() });
+        this.post({
+          type: 'chat_role_pack',
+          rolePack: this.roleDisplayName(this._activeRolePack),
+          traits: this.getActiveTraits(),
+          team: this.getActiveTeamForProtocol(),
+        });
       } else {
         // 无激活角色包时推送空信息，让 webview 清除角色标签
         this.post({ type: 'chat_role_pack', rolePack: '', traits: undefined });
@@ -1800,8 +1862,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     this.pushRolePacks();
     // 装配完成即补推工具权限徽章
     this.postCapabilityBadge();
-      // 装配完成统一补推三源技能清单（SSOT 收紧：setAgent 与 ensureAgent 懒装配共用本入口，
-      // 角色信息与技能清单同一"装配后刷新"逻辑，杜绝某条路径漏推 → composer 下拉为空）
+    // 装配完成统一补推三源技能清单（SSOT 收紧：setAgent 与 ensureAgent 懒装配共用本入口，
+    // 角色信息与技能清单同一"装配后刷新"逻辑，杜绝某条路径漏推 → composer 下拉为空）
     this.pushSkillList();
     // 历史会话占用（轻量版）：装配完成即补推——replaySession 时 agent 未装配会静默跳过，
     // 装配后 agent.getMetrics 的 rolePackBaseTokens 方为真实值。
@@ -1963,10 +2025,16 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    *
    * 与 loadRoundBasedHistory 语义一致，仅在 viewLoader 未注入时启用。
    */
-  private loadMessagesHistory(): { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] {
+  private loadMessagesHistory(): {
+    role: 'user' | 'assistant';
+    content: string;
+    ts?: string;
+    roundId?: string;
+  }[] {
     // sessionId 格式契约 SSOT：内核 splitSessionId 拆解
     const { date, session } = splitSessionId(this._currentSessionId);
-    const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] = [];
+    const result: { role: 'user' | 'assistant'; content: string; ts?: string; roundId?: string }[] =
+      [];
     const msgs = this.sessionStore.loadMessages(date, session) as {
       role?: string;
       content?: string;
@@ -1977,8 +2045,7 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       if (!m.content || m.content.startsWith('<user_input>')) continue;
       result.push({
         role: (m.role === 'user' || m.role === 'assistant' ? m.role : 'user') as
-          | 'user'
-          | 'assistant',
+          'user' | 'assistant',
         content: m.role === 'user' ? stripInjectedContextPrefix(m.content) : m.content,
         ts: m.timestamp,
         roundId: m.roundId,
@@ -1992,7 +2059,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
 
   /** 当前会话标题（无元数据时回退占位标题，不暴露 sessionId，供 UI 展示） */
   private currentSessionTitle(): string {
-    return getSessionDisplayName(this.sessionStore.getSessionMeta(this._currentSessionId)) || defaultSessionTitle();
+    return (
+      getSessionDisplayName(this.sessionStore.getSessionMeta(this._currentSessionId)) ||
+      defaultSessionTitle()
+    );
   }
 
   /** 向 webview 发送消息 */
@@ -2252,7 +2322,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     if (!this.isAskWaiting()) return; // 已离开 waiting(ask)（异常/新流）；守卫用相位判据（不查 sessionManager.status）
     // 提问原文从 _turnState.waiting.questions 读（统一读取源，不维护镜像）
     const state = this._turnState;
-    const pendingQ = state.phase === 'waiting' && state.reason === 'ask' ? state.questions?.[0] : undefined;
+    const pendingQ =
+      state.phase === 'waiting' && state.reason === 'ask' ? state.questions?.[0] : undefined;
     this._pendingQuestions = []; // 提问已超时消费（整体清空，非 splice 逐条弹出）
     const now = new Date().toISOString();
     this.post({
@@ -2396,7 +2467,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       // 发送按钮随之切「停止生成」保持、暂停按钮切可反悔「继续 ▶」）
       // 点击即反馈：申请已入队，step 边界生效（用户知情，不"点了没反应"）
       this.postTurnUpdate();
-      this.post({ type: 'notice', level: 'info', message: '暂停申请已发送，将在当前步骤完成后暂停' });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: '暂停申请已发送，将在当前步骤完成后暂停',
+      });
     } else {
       // 作废路径：空闲守卫（任务已结束）/ 幂等 / paused、error 态——统一明确告知
       // （空闲不翻状态机，任务结束的暂停申请直接作废）
@@ -2502,9 +2577,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       allowCustom?: boolean;
     }[] = [];
     // 监听主动提问事件 → 渲染提问框（含 LLM 声明的候选选项，webview 渲染为可点击按钮）
-    const onPendingQuestion = (questions: (
-      { slot: string; question: string; options?: string[]; allowCustom?: boolean }[]
-    )) => {
+    const onPendingQuestion = (
+      questions: { slot: string; question: string; options?: string[]; allowCustom?: boolean }[],
+    ) => {
       clarifyEventDriven = true;
       clarifyChunkQueue.length = 0; // 事件为准，丢弃可能残留的 chunk 缓存
       this._pendingQuestions = questions; // 事件写入源头（overwrite 全量写；派生见 postTurnUpdate，消费见 answerInput）
@@ -2626,7 +2701,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 导致内核 act() 的中断保存（appendAssistant 半截内容 + roundId 登记）永不执行，
           // 表现为「中断后的问答闭环不落盘」。必须让流自然走完（aborted 是末块，后续无 text）。
           // 中断通知统一由本方法末尾按 controller.signal.aborted 发出。
-          emitEvent('aborted', { reason: chunk.reason, ...(chunk.stopReason ? { stopReason: chunk.stopReason } : {}) });
+          emitEvent('aborted', {
+            reason: chunk.reason,
+            ...(chunk.stopReason ? { stopReason: chunk.stopReason } : {}),
+          });
           continue;
         }
         if (chunk.type === 'text' && chunk.content) {
@@ -2641,14 +2719,31 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           // 同一份正文按 turn 分桶累积（live 轮投影用）。归属判据与 emitEvent 完全同源
           // （同一 currentRoundKey），不另立判据；自审查输出已在上方 continue 分流，不会误入正文。
           if (currentRoundKey) {
-            textByRound.set(currentRoundKey, (textByRound.get(currentRoundKey) ?? '') + chunk.content);
+            textByRound.set(
+              currentRoundKey,
+              (textByRound.get(currentRoundKey) ?? '') + chunk.content,
+            );
           }
-          this.post({ type: 'chunk', content: chunk.content, ts: firstChunkTs, roundId: chunk.roundId });
+          this.post({
+            type: 'chunk',
+            content: chunk.content,
+            ts: firstChunkTs,
+            roundId: chunk.roundId,
+          });
         } else if (chunk.type === 'tool_start') {
           // 工具调用开始 → 过程事件（webview 渲染工具调用折叠区）
-          emitEvent('tool_start', { toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args, stepIndex: chunk.stepIndex });
+          emitEvent('tool_start', {
+            toolCallId: chunk.toolCallId,
+            name: chunk.name,
+            args: chunk.args,
+            stepIndex: chunk.stepIndex,
+          });
           // 文件改动追踪：写前快照（此刻磁盘仍是旧内容）
-          this._fileChangeSink?.noteToolStart({ toolCallId: chunk.toolCallId, name: chunk.name, args: chunk.args });
+          this._fileChangeSink?.noteToolStart({
+            toolCallId: chunk.toolCallId,
+            name: chunk.name,
+            args: chunk.args,
+          });
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
           // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行。
           //  任务看板归 checkpoint 执行态，不进过程事件）
@@ -2666,7 +2761,12 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ...(chunk.blocked ? { blocked: true } : {}),
           });
           // 文件改动追踪：写后合并（按文件路径；blocked/失败自动丢弃）
-          this._fileChangeSink?.noteToolResult({ toolCallId: chunk.toolCallId, name: chunk.name, ok: chunk.ok, blocked: chunk.blocked });
+          this._fileChangeSink?.noteToolResult({
+            toolCallId: chunk.toolCallId,
+            name: chunk.name,
+            ok: chunk.ok,
+            blocked: chunk.blocked,
+          });
           // N/M 闪骨架：tool_start 时读到的 plan 是工具执行前的旧状态
           // （如会议骨架 2 个任务项），工具落定后才是新 plan（如 4 个任务项）——tool_result 补推一次快照，
           // 消除「1/2 → 1/4」的一次性闪烁
@@ -2906,7 +3006,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       return;
     }
     // 任务项 → 关联任务项推进记录（planItemLog 的 planItemId 关联，内核已写入，宿主只读消费）
-    const planItemLogById = new Map<string, { planItemId: string; summary: string; completedAt?: number }[]>();
+    const planItemLogById = new Map<
+      string,
+      { planItemId: string; summary: string; completedAt?: number }[]
+    >();
     for (const r of checkpoint.planItemLog ?? []) {
       if (!r.planItemId) continue;
       const list = planItemLogById.get(r.planItemId) ?? [];
@@ -2916,7 +3019,13 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 按 order 排序列化（内核 PlanItem 已含 order，防冗余中断序漂移）
     const items = [...checkpoint.plan]
       .sort((a, b) => a.order - b.order)
-      .map((s) => ({ id: s.id, description: s.description, status: s.status, order: s.order, planItemLog: planItemLogById.get(s.id) ?? [] }));
+      .map((s) => ({
+        id: s.id,
+        description: s.description,
+        status: s.status,
+        order: s.order,
+        planItemLog: planItemLogById.get(s.id) ?? [],
+      }));
     this.post({ type: 'plan_update', items });
   }
 
@@ -2963,7 +3072,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
     // 安全/装配透明：推送路径守卫审计概要（有审计事件才携带）
     const securityAudit =
       this._securityAuditTotal > 0
-        ? { total: this._securityAuditTotal, denied: this._securityAuditDenied, recent: [...this._recentSecurityAudits] }
+        ? {
+            total: this._securityAuditTotal,
+            denied: this._securityAuditDenied,
+            recent: [...this._recentSecurityAudits],
+          }
         : undefined;
     this.post({
       type: 'metrics',

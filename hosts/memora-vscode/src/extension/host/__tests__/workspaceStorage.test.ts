@@ -56,9 +56,7 @@ describe('WorkspaceStorage.search', () => {
   });
 
   it('关键词命中 name 也应返回', () => {
-    storage.upsert(
-      makeMemory({ id: 'm1', content: '无关内容', name: '存储方案决策记录' }),
-    );
+    storage.upsert(makeMemory({ id: 'm1', content: '无关内容', name: '存储方案决策记录' }));
 
     const hits = storage.search('存储方案', 10);
     expect(hits.map((m) => m.id)).toContain('m1');
@@ -73,8 +71,12 @@ describe('WorkspaceStorage.search', () => {
   });
 
   it('空查询按 accessedAt 降序返回全部活跃记忆', () => {
-    storage.upsert(makeMemory({ id: 'old', content: '旧记忆', accessedAt: '2026-01-01T00:00:00.000Z' }));
-    storage.upsert(makeMemory({ id: 'new', content: '新记忆', accessedAt: '2026-09-01T00:00:00.000Z' }));
+    storage.upsert(
+      makeMemory({ id: 'old', content: '旧记忆', accessedAt: '2026-01-01T00:00:00.000Z' }),
+    );
+    storage.upsert(
+      makeMemory({ id: 'new', content: '新记忆', accessedAt: '2026-09-01T00:00:00.000Z' }),
+    );
 
     const hits = storage.search('', 10);
     expect(hits.map((m) => m.id)).toEqual(['new', 'old']);
@@ -282,4 +284,3 @@ describe('WorkspaceStorage.migrateRetiredSettingSources（设定记忆存量清�
     expect(onDisk[0]!.deletedAt).toBeTypeOf('string');
   });
 });
-

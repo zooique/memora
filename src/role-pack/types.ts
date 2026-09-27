@@ -272,7 +272,6 @@ export interface RolePackAssembly {
   readonly validationIssues?: readonly RolePackValidationIssue[];
 }
 
-
 // manifest.json 内容注册（文件夹形态核心控制文件）
 
 /** manifest.json 中注册的技能对象：以对象数组引用包内技能文件（相对包根路径），可选 name/description */
@@ -301,4 +300,3 @@ export interface RolePackManifestSkill {
   /** 技能正文缓存（load 时预装载，readSkillContent 直取；null=未缓存，undefined=未装载懒加载） */
   readonly content?: string | null;
 }
-

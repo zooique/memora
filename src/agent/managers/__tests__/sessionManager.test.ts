@@ -154,7 +154,13 @@ describe('SessionManager', () => {
     });
 
     it('getSessionMeta 未注入（sessionStore undefined）应返回 undefined', () => {
-      const mgr = new SessionManager(() => history, () => loop, undefined, isChatBusy, emitEvent);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        undefined,
+        isChatBusy,
+        emitEvent,
+      );
       expect(mgr.getSessionMeta('2026-06-27-main')).toBeUndefined();
     });
 
@@ -167,7 +173,13 @@ describe('SessionManager', () => {
     });
 
     it('renameSession 未注入（sessionStore undefined）应静默 no-op', () => {
-      const mgr = new SessionManager(() => history, () => loop, undefined, isChatBusy, emitEvent);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        undefined,
+        isChatBusy,
+        emitEvent,
+      );
       expect(() => mgr.renameSession('2026-06-27-main', '新标题')).not.toThrow();
     });
   });
@@ -235,7 +247,13 @@ describe('SessionManager', () => {
 
     it('未注入 sessionStore 应返回 0', async () => {
       // 重建 manager 不带 sessionStore
-      const mgr = new SessionManager(() => history, () => loop, undefined, isChatBusy, emitEvent);
+      const mgr = new SessionManager(
+        () => history,
+        () => loop,
+        undefined,
+        isChatBusy,
+        emitEvent,
+      );
       const count = await mgr.restoreMostRecentSession();
       expect(count).toBe(0);
     });
@@ -252,35 +270,41 @@ describe('SessionManager', () => {
         { sessionId: '2026-06-27-fork-a', updatedAt: '2026-06-27T10:00:00Z', messageCount: 4 },
         { sessionId: '2026-06-26-main', updatedAt: '2026-06-26T10:00:00Z', messageCount: 2 },
       ]);
-      (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([
-        { role: 'user', content: 'recent', timestamp: '2026-06-27T10:00:00Z' },
-      ]);
+      (sessionStore as ISessionStore).loadMessages = vi
+        .fn()
+        .mockReturnValue([{ role: 'user', content: 'recent', timestamp: '2026-06-27T10:00:00Z' }]);
       const count = await manager.restoreMostRecentSession();
       expect(count).toBe(1);
       expect(sessionStore!.loadMessages).toHaveBeenCalledWith('2026-06-27', 'fork-a');
     });
 
     it('会话标识格式不匹配（无日期前缀）应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
-        { sessionId: 'invalid-name', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
-      ]);
+      (sessionStore as ISessionStore).listSessionMetas = vi
+        .fn()
+        .mockReturnValue([
+          { sessionId: 'invalid-name', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
+        ]);
       const count = await manager.restoreMostRecentSession();
       expect(count).toBe(0);
     });
 
     it('最近活跃会话的消息为空应返回 0', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
-        { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
-      ]);
+      (sessionStore as ISessionStore).listSessionMetas = vi
+        .fn()
+        .mockReturnValue([
+          { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 0 },
+        ]);
       (sessionStore as ISessionStore).loadMessages = vi.fn().mockReturnValue([]);
       const count = await manager.restoreMostRecentSession();
       expect(count).toBe(0);
     });
 
     it('正常恢复应将消息恢复到 AgentLoop', async () => {
-      (sessionStore as ISessionStore).listSessionMetas = vi.fn().mockReturnValue([
-        { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 6 },
-      ]);
+      (sessionStore as ISessionStore).listSessionMetas = vi
+        .fn()
+        .mockReturnValue([
+          { sessionId: '2026-06-27-main', updatedAt: '2026-06-27T10:00:00Z', messageCount: 6 },
+        ]);
       const messages: SessionMessage[] = [
         { role: 'user', content: 'u1', timestamp: '2026-06-27T10:00:00Z' },
         { role: 'assistant', content: 'a1', timestamp: '2026-06-27T10:00:01Z' },
@@ -357,9 +381,7 @@ describe('SessionManager', () => {
     });
 
     it('应返回空数组（history 返回空）', async () => {
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
-        .fn()
-        .mockResolvedValue([]);
+      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue([]);
       const result = await manager.loadSessionMessages('2026-06-27', 'main');
       expect(result).toEqual([]);
     });
@@ -429,9 +451,9 @@ describe('SessionManager', () => {
       );
       const newLoop = createMockLoop({ restoreHistory: vi.fn() });
       currentLoop = newLoop;
-      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi.fn().mockResolvedValue([
-        { role: 'user', content: 'x', timestamp: '2026-06-27T10:00:00Z' },
-      ]);
+      (history.loadSessionMessages as ReturnType<typeof vi.fn>) = vi
+        .fn()
+        .mockResolvedValue([{ role: 'user', content: 'x', timestamp: '2026-06-27T10:00:00Z' }]);
       await mgr.restoreSession('2026-06-27', 'main');
       expect(newLoop.restoreHistory).toHaveBeenCalledTimes(1);
     });
@@ -466,10 +488,13 @@ describe('SessionManager', () => {
       vi.advanceTimersByTime(120_000);
       expect(manager.getCheckpoint()).toBeNull();
       expect(manager.status).toBe('running');
-      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
-        sessionId: expect.any(String),
-        pauseDuration: expect.any(Number),
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'sessionPauseTimedOut',
+        expect.objectContaining({
+          sessionId: expect.any(String),
+          pauseDuration: expect.any(Number),
+        }),
+      );
     });
 
     it('暂停后在超时前恢复，应不触发超时清理', () => {
@@ -536,11 +561,14 @@ describe('SessionManager', () => {
       manager.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
-        sessionId: '2026-06-27-main',
-        date: '2026-06-27',
-        session: 'main',
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'sessionPauseTimedOut',
+        expect.objectContaining({
+          sessionId: '2026-06-27-main',
+          date: '2026-06-27',
+          session: 'main',
+        }),
+      );
     });
 
     it('会话名含连字符时应按日期锚定切分，不误切', () => {
@@ -558,11 +586,14 @@ describe('SessionManager', () => {
       mgr.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
-        sessionId: '2026-06-27-main-fork-1',
-        date: '2026-06-27',
-        session: 'main-fork-1',
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'sessionPauseTimedOut',
+        expect.objectContaining({
+          sessionId: '2026-06-27-main-fork-1',
+          date: '2026-06-27',
+          session: 'main-fork-1',
+        }),
+      );
     });
 
     it('会话标识非日期开头时应跳过填充但仍发射事件', () => {
@@ -582,9 +613,12 @@ describe('SessionManager', () => {
       mgr.pause('测试暂停', 'user');
       vi.advanceTimersByTime(AGENT_CONSTANTS.PAUSE_TIMEOUT_MS + 60_000);
 
-      expect(emitEvent).toHaveBeenCalledWith('sessionPauseTimedOut', expect.objectContaining({
-        sessionId: 'proj-alpha-beta-gamma',
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'sessionPauseTimedOut',
+        expect.objectContaining({
+          sessionId: 'proj-alpha-beta-gamma',
+        }),
+      );
     });
   });
 
@@ -706,11 +740,14 @@ describe('SessionManager', () => {
       setupCheckpointWithGoal(mainGoal);
 
       manager.updateGoal(driftedGoal);
-      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
-        mainGoal,
-        newGoal: driftedGoal,
-        level: 'drift',
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'goalDriftDetected',
+        expect.objectContaining({
+          mainGoal,
+          newGoal: driftedGoal,
+          level: 'drift',
+        }),
+      );
     });
 
     it('confirm 级别目标变更应发射 goalDriftDetected（含完整载荷）', () => {
@@ -723,12 +760,15 @@ describe('SessionManager', () => {
       manager.updateGoal(newGoal);
 
       // goalUpdated 已并入 goalDriftDetected（SSOT 收敛：后者 payload 全包含前者）
-      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
-        level: 'confirm',
-        newGoal,
-        goalChangeSeq: 1,
-        sessionId: expect.any(String),
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'goalDriftDetected',
+        expect.objectContaining({
+          level: 'confirm',
+          newGoal,
+          goalChangeSeq: 1,
+          sessionId: expect.any(String),
+        }),
+      );
     });
 
     it('drift 级别目标变更应发射 goalDriftDetected 并自动暂停', () => {
@@ -741,11 +781,14 @@ describe('SessionManager', () => {
       manager.updateGoal(driftedGoal);
 
       // goalUpdated 已并入 goalDriftDetected（SSOT 收敛：后者 payload 全包含前者）
-      expect(emitEvent).toHaveBeenCalledWith('goalDriftDetected', expect.objectContaining({
-        level: 'drift',
-        newGoal: driftedGoal,
-        goalChangeSeq: 1,
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'goalDriftDetected',
+        expect.objectContaining({
+          level: 'drift',
+          newGoal: driftedGoal,
+          goalChangeSeq: 1,
+        }),
+      );
       // drift 级内核自动低风险暂停
       expect(manager.status).toBe('paused');
     });
@@ -793,9 +836,7 @@ describe('SessionManager', () => {
     });
 
     it('createCheckpoint 后续调用应保留已有 currentGoal', () => {
-      const loop = createMockLoopWithMessages([
-        { role: 'user', content: '继续' },
-      ]);
+      const loop = createMockLoopWithMessages([{ role: 'user', content: '继续' }]);
       const mgr = new SessionManager(
         () => history,
         () => loop,
@@ -922,7 +963,10 @@ describe('SessionManager', () => {
 
   describe('工具执行日志与补偿降级（补充分支）', () => {
     /** 构造一条工具执行记录 */
-    function makeRecord(name: string, idempotent: 'non-idempotent' | 'idempotent' = 'non-idempotent') {
+    function makeRecord(
+      name: string,
+      idempotent: 'non-idempotent' | 'idempotent' = 'non-idempotent',
+    ) {
       return {
         name,
         argsSignature: '{"path":"x"}',
@@ -1056,10 +1100,7 @@ describe('SessionManager', () => {
 
     it('concludeActivePlanItemIfPlanFullyReached：有 pending 不闭合（真实多轮任务的可续跑语义）', () => {
       manager.createCheckpoint('测试');
-      manager.writePlan('overwrite', [
-        { description: '步骤一' },
-        { description: '步骤二' },
-      ]);
+      manager.writePlan('overwrite', [{ description: '步骤一' }, { description: '步骤二' }]);
       // 任务项二仍是 pending → 计划未「全部到达」，active 任务项一保持 active
       manager.concludeActivePlanItemIfPlanFullyReached('半程交付');
       const cp = manager.getCheckpoint()!;
@@ -1079,5 +1120,4 @@ describe('SessionManager', () => {
       expect(manager.getCheckpoint()!.planItemLog?.length ?? 0).toBe(planItemLogLenBefore);
     });
   });
-
 });

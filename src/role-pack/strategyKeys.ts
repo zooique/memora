@@ -151,7 +151,11 @@ export const ERROR_HANDLINGS = ['retry', 'degrade', 'stop'] as const;
 export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string, KeyRule>>>> = {
   prepare: {
     // 领域无关机制，内容由角色包提供（≤ MAX_SUMMARY_FOCUS_LENGTH 字符）
-    summaryFocus: { kind: 'check', check: isSummaryFocus, range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH } },
+    summaryFocus: {
+      kind: 'check',
+      check: isSummaryFocus,
+      range: { min: 1, max: MAX_SUMMARY_FOCUS_LENGTH },
+    },
   },
   act: {
     toolMode: { kind: 'enum', values: TOOL_MODES },
@@ -191,7 +195,8 @@ export const STRATEGY_KEY_RULES: Readonly<Record<string, Readonly<Record<string,
     stepBudget: {
       kind: 'check',
       check: (value) =>
-        typeof value === 'number' && Number.isInteger(value) &&
+        typeof value === 'number' &&
+        Number.isInteger(value) &&
         (value === 0 || (value >= MIN_STEP_BUDGET && value <= MAX_STEP_BUDGET)),
       range: { min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET },
     },

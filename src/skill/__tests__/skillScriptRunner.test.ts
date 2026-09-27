@@ -65,7 +65,6 @@ afterAll(() => {
 // ══════════════════════════════════════════════════════════════
 
 describe('skillScriptRunner — formatScriptResult', () => {
-
   /** 超时态样本：stdout/stderr 可由用例覆盖（超时分支不看 exitCode） */
   const timedOut = (stdout = 'partial output', stderr = ''): ScriptExecutionResult => ({
     stdout,
@@ -190,7 +189,11 @@ describe('skillScriptRunner — formatScriptResult', () => {
 // ── formatExecutionResult 共享格式化（SSOT：run_skill_script 与 run_code 同一真理源）──
 describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
   // CODE 标签：run_code 工具链路使用（前缀/文案由调用方定制）
-  const codeLabels = { kind: 'CODE', timeoutDetail: '代码执行超时', errorDetail: '代码执行失败' } as const;
+  const codeLabels = {
+    kind: 'CODE',
+    timeoutDetail: '代码执行超时',
+    errorDetail: '代码执行失败',
+  } as const;
 
   it('timedOut 时输出 [CODE_TIMEOUT] + 自定义超时文案', () => {
     const formatted = formatExecutionResult(
@@ -228,7 +231,12 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
   it('formatScriptResult 薄封装等价（SCRIPT 变体回归锁定）', () => {
     // 必须喂超时态：labels（kind/timeoutDetail）只在超时分支参与拼接，
     // 成功态下把 labels 改坏它仍绿——锁不住薄封装的标签配置。
-    const timeoutResult: ScriptExecutionResult = { stdout: 'x', stderr: '', exitCode: 0, timedOut: true };
+    const timeoutResult: ScriptExecutionResult = {
+      stdout: 'x',
+      stderr: '',
+      exitCode: 0,
+      timedOut: true,
+    };
     const viaShared = formatExecutionResult(timeoutResult, {
       kind: 'SCRIPT',
       timeoutDetail: '脚本执行超时（超过 60s）',
@@ -248,7 +256,6 @@ describe('skillScriptRunner — formatExecutionResult（CODE 变体）', () => {
 // kernel:test/kernel:coverage 命中 5 例超时）。子进程执行本身受机器负载影响，
 // 非逻辑缺陷——放宽容器超时不改断言、只消除并发挤占假红。
 describe('skillScriptRunner — runSkillScript', () => {
-
   // ── Node runtime 测试 ──
   describe('Node runtime', () => {
     it('成功执行脚本', async () => {

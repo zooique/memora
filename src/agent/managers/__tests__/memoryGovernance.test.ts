@@ -20,7 +20,13 @@
 import { describe, expect, it, vi } from 'vitest';
 import { MemoryGovernance } from '@/agent/managers/memoryGovernance.js';
 import type { DedupManager, DedupReport } from '@/agent/managers/dedupManager.js';
-import type { MemoryAdvisor, ConflictReport, SourceHealthReport, SuggestHit, SuggestOptions } from '@/agent/managers/memoryAdvisor.js';
+import type {
+  MemoryAdvisor,
+  ConflictReport,
+  SourceHealthReport,
+  SuggestHit,
+  SuggestOptions,
+} from '@/agent/managers/memoryAdvisor.js';
 
 // ─── Mock 工厂 ─────────────────────────────────────────────
 
@@ -135,7 +141,14 @@ describe('MemoryGovernance', () => {
 
     it('suggest() 委托 memoryAdvisor.suggest() 并透传参数', () => {
       const expectedHits: SuggestHit[] = [
-        { id: 'mem:1', name: 'test', source: 'content', relevance: 0.8, contentPreview: '预览', reason: '相关' },
+        {
+          id: 'mem:1',
+          name: 'test',
+          source: 'content',
+          relevance: 0.8,
+          contentPreview: '预览',
+          reason: '相关',
+        },
       ];
       const mockAdvisor = createMockMemoryAdvisor(null, expectedHits);
       const governance = new MemoryGovernance(null, mockAdvisor);

@@ -54,7 +54,13 @@ describe('backgroundTask 后台任务收口', () => {
     const before = snapshot();
     // 启动一个受控任务（不自动完成）
     let resolveTask!: () => void;
-    backgroundTask('await-controlled', () => new Promise<void>((res) => { resolveTask = res; }));
+    backgroundTask(
+      'await-controlled',
+      () =>
+        new Promise<void>((res) => {
+          resolveTask = res;
+        }),
+    );
     expect(getBackgroundTaskStats().pending).toBe(before.pending + 1);
 
     // 等待器应在任务完成时返回（返回等待开始时的在途任务数）
@@ -86,7 +92,13 @@ describe('backgroundTask 后台任务收口', () => {
     // 启动 6 个永不完成的任务：前 5 个立即执行，第 6 个排队
     const resolvers: Array<() => void> = [];
     for (let i = 0; i < 6; i++) {
-      backgroundTask('concurrent', () => new Promise<void>((res) => { resolvers.push(res); }));
+      backgroundTask(
+        'concurrent',
+        () =>
+          new Promise<void>((res) => {
+            resolvers.push(res);
+          }),
+      );
     }
     // 全部 6 个都计入 pending（含排队中的）
     expect(getBackgroundTaskStats().pending).toBe(before.pending + 6);
@@ -118,7 +130,13 @@ describe('backgroundTask 后台任务收口', () => {
     // 5 个占位任务填满槽位
     const hold: Array<() => void> = [];
     for (let i = 0; i < 5; i++) {
-      backgroundTask('fill-slot', () => new Promise<void>((res) => { hold.push(res); }));
+      backgroundTask(
+        'fill-slot',
+        () =>
+          new Promise<void>((res) => {
+            hold.push(res);
+          }),
+      );
     }
 
     // 第 6 个任务排队，它会立即失败
@@ -153,11 +171,23 @@ describe('backgroundTask 后台任务收口', () => {
     // 5 个占位任务填满槽位
     const hold: Array<() => void> = [];
     for (let i = 0; i < 5; i++) {
-      backgroundTask('fill', () => new Promise<void>((res) => { hold.push(res); }));
+      backgroundTask(
+        'fill',
+        () =>
+          new Promise<void>((res) => {
+            hold.push(res);
+          }),
+      );
     }
     // 第 6 个排队
     let resolveQueued!: () => void;
-    backgroundTask('queued', () => new Promise<void>((res) => { resolveQueued = res; }));
+    backgroundTask(
+      'queued',
+      () =>
+        new Promise<void>((res) => {
+          resolveQueued = res;
+        }),
+    );
 
     // 全部 6 个在途
     expect(getBackgroundTaskStats().pending).toBe(before.pending + 6);
@@ -167,7 +197,9 @@ describe('backgroundTask 后台任务收口', () => {
 
     // 释放槽位让排队任务启动并完成
     hold[0]!(); // 释放一个槽位 → 排队的开始执行
-    await vi.waitFor(() => { expect(resolveQueued).toBeDefined(); });
+    await vi.waitFor(() => {
+      expect(resolveQueued).toBeDefined();
+    });
     resolveQueued(); // 排队的完成
     // 释放剩余
     for (let i = 1; i < hold.length; i++) {

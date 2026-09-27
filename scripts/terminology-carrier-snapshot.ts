@@ -69,7 +69,9 @@ const ANCHOR_PATH = join(ROOT, '.trae', 'rules', 'terminology-anchor-rules.md');
  * 若扫描自己 → 基线里的旧词永远被自己续命 → **「旧词消失」这条检测结构性失效**（只报新增不报消失）。
  * 本文件是门禁工具（元数据），不属于被纪律的载体对象。
  */
-const SELF_REL = relative(ROOT, fileURLToPath(import.meta.url)).split('\\').join('/');
+const SELF_REL = relative(ROOT, fileURLToPath(import.meta.url))
+  .split('\\')
+  .join('/');
 
 /** 不进入扫描的目录名（依赖 / 版本库 / 构建产物 / 覆盖率 / 工具内部状态 / 宿主持久化） */
 const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'coverage', '.workbuddy', '.memora']);
@@ -226,7 +228,8 @@ function collect(text: string, relPath: string, layer: Layer): void {
     if (n > 0) hit(lit, 'cjk', layer, relPath, n);
   }
   const ordinals = text.match(CJK_ORDINAL_RE);
-  if (ordinals && ordinals.length > 0) hit(CJK_ORDINAL_TOKEN, 'cjk', layer, relPath, ordinals.length);
+  if (ordinals && ordinals.length > 0)
+    hit(CJK_ORDINAL_TOKEN, 'cjk', layer, relPath, ordinals.length);
 }
 
 /** 递归遍历仓库，抽取载体 */

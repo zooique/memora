@@ -655,7 +655,12 @@ export type ExtensionToWebviewMessage =
    */
   | {
       type: 'chat_providers';
-      providers: { name: string; displayName: string; contextWindow?: number; limitTokens: number }[];
+      providers: {
+        name: string;
+        displayName: string;
+        contextWindow?: number;
+        limitTokens: number;
+      }[];
       activeName?: string;
     }
   /**
@@ -761,7 +766,12 @@ export type ExtensionToWebviewMessage =
       backgroundName?: string;
     }
   /** 配置操作结果（保存/删除/设当前/测试） */
-  | { type: 'cfg_result'; ok: boolean; message?: string; action: 'save' | 'delete' | 'set_active' | 'test' }
+  | {
+      type: 'cfg_result';
+      ok: boolean;
+      message?: string;
+      action: 'save' | 'delete' | 'set_active' | 'test';
+    }
   // ─── 记忆管理面板消息 ───
   /**
    * 记忆列表加载完成（对 memory_load 的应答）
@@ -975,7 +985,13 @@ export interface PendingQuestionDto {
  */
 export type RoundView = Pick<
   Round,
-  'id' | 'userMessage' | 'interactiveInputs' | 'assistantLog' | 'status' | 'createdAt' | 'completedAt'
+  | 'id'
+  | 'userMessage'
+  | 'interactiveInputs'
+  | 'assistantLog'
+  | 'status'
+  | 'createdAt'
+  | 'completedAt'
 > & {
   /** 末段回答（pending 轮无值）；跨暂停-续跑的前序段在 assistantLog */
   assistantMessage?: RoundMessage;

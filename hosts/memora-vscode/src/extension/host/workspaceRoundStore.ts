@@ -19,11 +19,7 @@
 
 import { existsSync, readFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import type {
-  Round,
-  RoundStatus,
-  IRoundStore,
-} from '@zooique/memora';
+import type { Round, RoundStatus, IRoundStore } from '@zooique/memora';
 import { logger } from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 
@@ -305,10 +301,7 @@ export class WorkspaceRoundStore implements IRoundStore {
 
     // 检查引用计数
     if (entry.refCount > 0) {
-      logger.warn(
-        { roundId, refCount: entry.refCount },
-        'delete: Round 仍被引用，无法删除',
-      );
+      logger.warn({ roundId, refCount: entry.refCount }, 'delete: Round 仍被引用，无法删除');
       return false;
     }
 

@@ -27,7 +27,11 @@ const SRC_ROOT = join(__dirname, '..', '..');
 const LINE_REF = /[\w./-]+\.ts:\d+/;
 
 /** 相对 SRC_ROOT 的路径，正斜杠归一（Windows 下 join 产反斜杠） */
-const relPath = (f: string): string => f.slice(SRC_ROOT.length + 1).split('\\').join('/');
+const relPath = (f: string): string =>
+  f
+    .slice(SRC_ROOT.length + 1)
+    .split('\\')
+    .join('/');
 
 /** 递归收集源码（跳过依赖目录） */
 function collectSources(dir: string, out: string[] = []): string[] {

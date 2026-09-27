@@ -53,7 +53,11 @@ const FOOTNOTE_RE = /\[read_file 分段\] 已显示第 (\d+)–(\d+) 行（共 (
  * @param totalLines 文件总行数
  * @returns 脚注文案（置于已读正文之后）
  */
-export function formatSegmentationFooter(startLine: number, endLine: number, totalLines: number): string {
+export function formatSegmentationFooter(
+  startLine: number,
+  endLine: number,
+  totalLines: number,
+): string {
   return (
     `[read_file 分段] 已显示第 ${startLine}–${endLine} 行（共 ${totalLines} 行）。` +
     `继续读用 offset=${endLine + 1}。`
@@ -163,7 +167,9 @@ export class FileExposureLedger {
  */
 export function formatLedgerStub(cov: FileCoverage): string {
   const range =
-    cov.coverStart === cov.coverEnd ? `${cov.coverStart} 行` : `第 ${cov.coverStart}–${cov.coverEnd} 行`;
+    cov.coverStart === cov.coverEnd
+      ? `${cov.coverStart} 行`
+      : `第 ${cov.coverStart}–${cov.coverEnd} 行`;
   return (
     `[ALREADY_READ] 该文件已读过（第 ${cov.cachedAtIteration} 步，覆盖 ${range} / 共 ${cov.totalLines} 行，` +
     `原文已在流程中被压缩）。要点：${cov.digest}\n` +

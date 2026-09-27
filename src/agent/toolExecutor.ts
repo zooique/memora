@@ -33,14 +33,21 @@ import type { IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 import type { ICodeExecutionProvider } from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
-import { formatExecutionResult, formatScriptResult, runSkillScript } from '@/skill/skillScriptRunner.js';
+import {
+  formatExecutionResult,
+  formatScriptResult,
+  runSkillScript,
+} from '@/skill/skillScriptRunner.js';
 import { resolveSafePath, inferRuntimeFromExt, type ScriptRuntime } from '@/utils/scanner.js';
 import type {
   IProjectSearchProvider,
   ProjectFileSearchResult,
   ProjectTextSearchResult,
 } from '@/project-search/types.js';
-import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
+import {
+  safeSearchProjectFiles,
+  safeSearchProjectText,
+} from '@/project-search/projectSearchProvider.js';
 import { buildSearchTerms } from '@/project-search/terms.js';
 export { BUILTIN_TOOLS, BUILTIN_TOOL_IDEMPOTENCY } from '@/agent/builtinTools.js';
 export type { ToolDefinition } from '@/agent/builtinTools.js';
@@ -170,7 +177,10 @@ function formatProjectTextSearch(result: ProjectTextSearchResult, query: string)
   }
 
   const lines = result.matches
-    .map((m, i) => `${i + 1}. ${m.path}${m.line ? `:${m.line}` : ''}${m.preview ? ` — ${m.preview}` : ''}`)
+    .map(
+      (m, i) =>
+        `${i + 1}. ${m.path}${m.line ? `:${m.line}` : ''}${m.preview ? ` — ${m.preview}` : ''}`,
+    )
     .join('\n');
   const notes: string[] = [];
   if (result.relaxed) {
@@ -382,7 +392,10 @@ function resolvePlanItemId(planItemId: string, plan: PlanItemIdPlanRef[]): PlanI
     const matches = plan.filter((s) => s.id.startsWith(planItemId));
     if (matches.length === 1) return { ok: true, id: matches[0]!.id };
     if (matches.length > 1) {
-      return { ok: false, error: `[ERR:INVALID_ARG] 任务项短 id "${planItemId}" 不唯一（对应 ${matches.length} 个任务项），请改用任务表行首序号定位` };
+      return {
+        ok: false,
+        error: `[ERR:INVALID_ARG] 任务项短 id "${planItemId}" 不唯一（对应 ${matches.length} 个任务项），请改用任务表行首序号定位`,
+      };
     }
     return {
       ok: false,
@@ -394,7 +407,10 @@ function resolvePlanItemId(planItemId: string, plan: PlanItemIdPlanRef[]): PlanI
     const idx = Number(planItemId) - 1;
     const planItem = plan.find((s) => s.order === idx);
     if (planItem) return { ok: true, id: planItem.id };
-    return { ok: false, error: `[ERR:INVALID_ARG] 任务项序号 ${planItemId} 超出任务表范围（当前共 ${plan.length} 个任务项，行首序号从 1 开始）` };
+    return {
+      ok: false,
+      error: `[ERR:INVALID_ARG] 任务项序号 ${planItemId} 超出任务表范围（当前共 ${plan.length} 个任务项，行首序号从 1 开始）`,
+    };
   }
   // 4. 未知标识
   return {
@@ -520,7 +536,13 @@ export class ToolExecutor {
       items: Array<{ description: string; rolePack?: string }>,
     ) => string;
     updatePlanItem: (planItemId: string, status: 'done' | 'blocked') => string;
-    getPlan: () => Array<{ id: string; description: string; status: string; order: number; rolePack?: string }>;
+    getPlan: () => Array<{
+      id: string;
+      description: string;
+      status: string;
+      order: number;
+      rolePack?: string;
+    }>;
   };
 
   /**
@@ -797,7 +819,12 @@ export class ToolExecutor {
     // search_project 作为宿主注入工具（方案乙）：注入即暴露，追加在自定义工具之后，不受白名单过滤
     const projectSearchTool = this.projectSearchProvider ? [SEARCH_PROJECT_TOOL] : [];
 
-    return [...exposed, ...whitelisted, ...[...this.customTools.values()].map((e) => e.definition), ...projectSearchTool];
+    return [
+      ...exposed,
+      ...whitelisted,
+      ...[...this.customTools.values()].map((e) => e.definition),
+      ...projectSearchTool,
+    ];
   }
 
   /**
@@ -1081,12 +1108,19 @@ export class ToolExecutor {
         const execConfirmed = await this.security.confirmScriptRun(
           scriptPath ? `run_code:script:${scriptPath}` : 'run_code:inline',
           'run_code',
-          scriptPath ? `运行脚本 ${scriptPath}（宿主沙箱）` : `执行内联代码（${execLanguage}，${execCode.length} 字符，宿主沙箱）`,
+          scriptPath
+            ? `运行脚本 ${scriptPath}（宿主沙箱）`
+            : `执行内联代码（${execLanguage}，${execCode.length} 字符，宿主沙箱）`,
         );
         if (!execConfirmed) {
           return '[ERR:SCRIPT_DECLINE] 代码执行未获确认（用户拒绝或未注入确认回调，fail-closed）';
         }
-        const result = await safeExecuteCode(this.codeExecutionProvider, execCode, execLanguage, execOptions);
+        const result = await safeExecuteCode(
+          this.codeExecutionProvider,
+          execCode,
+          execLanguage,
+          execOptions,
+        );
         // 结果净化：stdout/stderr 当外部内容去控制字符 + 长度上限，防长上下文注入
         const stdout = sanitizeExternalText(result.stdout, RUN_CODE_RESULT_MAX_LEN);
         const stderr = sanitizeExternalText(result.stderr, RUN_CODE_RESULT_MAX_LEN);
@@ -1139,7 +1173,9 @@ export class ToolExecutor {
           }
           // 放宽词表（精确优先 + 零命中回退）：剔除与整串等价的词——否则宿主会做一轮与
           // 精确轮逐字相同的徒劳扫描，并回报一个名不副实的 relaxed
-          const terms = buildSearchTerms(query).filter((t) => t.toLowerCase() !== query.trim().toLowerCase());
+          const terms = buildSearchTerms(query).filter(
+            (t) => t.toLowerCase() !== query.trim().toLowerCase(),
+          );
           const search = await safeSearchProjectText(this.projectSearchProvider, {
             pattern: query,
             ...(terms.length > 0 ? { terms } : {}),
@@ -1300,7 +1336,9 @@ export class ToolExecutor {
         const runtime = normalizeScriptRuntime(inferRuntimeFromExt(ext) ?? 'node');
         // timeout_ms（秒，可选）→ 毫秒透传内核执行器（默认 60s，上限 600s，见 skillScriptRunner 常量）；
         // 脚本内 API 调用/批处理等长耗时任务由 LLM 按需传参，避免误超时
-        const timeoutMs = Number.isFinite(args['timeout_ms']) ? Number(args['timeout_ms']) * 1000 : undefined;
+        const timeoutMs = Number.isFinite(args['timeout_ms'])
+          ? Number(args['timeout_ms']) * 1000
+          : undefined;
         const result = await runSkillScript(
           fullPath,
           runtime,
@@ -1313,7 +1351,10 @@ export class ToolExecutor {
         );
         // 返回净化：脚本输出当外部内容去控制字符 + 长度上限（防刷屏撑爆上下文，对齐 run_skill_script）
         // 超时文案按本次实际超时生成（未传 timeout_ms → 内核默认 60s，见上），不恒报上限 600s
-        return sanitizeExternalText(formatScriptResult(result, timeoutMs), RUN_SCRIPT_RESULT_MAX_LEN);
+        return sanitizeExternalText(
+          formatScriptResult(result, timeoutMs),
+          RUN_SCRIPT_RESULT_MAX_LEN,
+        );
       }
       case 'list_resources': {
         // 渐进披露 L3：列出技能的资源清单

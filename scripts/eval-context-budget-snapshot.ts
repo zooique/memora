@@ -41,10 +41,30 @@ interface BudgetScenario {
 
 const BUDGET_SCENARIOS: readonly BudgetScenario[] = [
   { name: 'win-120K/短输入', windowTokens: 120_000, inputTokens: 200, fixedOverheadTokens: 3_000 },
-  { name: 'win-120K/中输入', windowTokens: 120_000, inputTokens: 2_000, fixedOverheadTokens: 3_000 },
-  { name: 'win-120K/长输入', windowTokens: 120_000, inputTokens: 20_000, fixedOverheadTokens: 3_000 },
-  { name: 'win-200K/中输入', windowTokens: 200_000, inputTokens: 2_000, fixedOverheadTokens: 5_000 },
-  { name: 'win-1M/中输入', windowTokens: 1_000_000, inputTokens: 2_000, fixedOverheadTokens: 5_000 },
+  {
+    name: 'win-120K/中输入',
+    windowTokens: 120_000,
+    inputTokens: 2_000,
+    fixedOverheadTokens: 3_000,
+  },
+  {
+    name: 'win-120K/长输入',
+    windowTokens: 120_000,
+    inputTokens: 20_000,
+    fixedOverheadTokens: 3_000,
+  },
+  {
+    name: 'win-200K/中输入',
+    windowTokens: 200_000,
+    inputTokens: 2_000,
+    fixedOverheadTokens: 5_000,
+  },
+  {
+    name: 'win-1M/中输入',
+    windowTokens: 1_000_000,
+    inputTokens: 2_000,
+    fixedOverheadTokens: 5_000,
+  },
 ];
 
 /** 构造一条消息 */
@@ -172,21 +192,87 @@ function buildSnapshot(): Snapshot {
 //       改动者需显式确认语义并在提交里更新它（git diff 即审计痕迹）。
 const BASELINE: Snapshot = {
   budget: [
-    { scenario: 'win-120K/短输入', availableTokens: 99000, anchorTokens: 200, remainingTokens: 98800, dialogueBudgetTokens: 88920 },
-    { scenario: 'win-120K/中输入', availableTokens: 99000, anchorTokens: 2000, remainingTokens: 97000, dialogueBudgetTokens: 87300 },
-    { scenario: 'win-120K/长输入', availableTokens: 99000, anchorTokens: 20000, remainingTokens: 79000, dialogueBudgetTokens: 71100 },
-    { scenario: 'win-200K/中输入', availableTokens: 165000, anchorTokens: 2000, remainingTokens: 163000, dialogueBudgetTokens: 146700 },
-    { scenario: 'win-1M/中输入', availableTokens: 845000, anchorTokens: 2000, remainingTokens: 843000, dialogueBudgetTokens: 758700 },
+    {
+      scenario: 'win-120K/短输入',
+      availableTokens: 99000,
+      anchorTokens: 200,
+      remainingTokens: 98800,
+      dialogueBudgetTokens: 88920,
+    },
+    {
+      scenario: 'win-120K/中输入',
+      availableTokens: 99000,
+      anchorTokens: 2000,
+      remainingTokens: 97000,
+      dialogueBudgetTokens: 87300,
+    },
+    {
+      scenario: 'win-120K/长输入',
+      availableTokens: 99000,
+      anchorTokens: 20000,
+      remainingTokens: 79000,
+      dialogueBudgetTokens: 71100,
+    },
+    {
+      scenario: 'win-200K/中输入',
+      availableTokens: 165000,
+      anchorTokens: 2000,
+      remainingTokens: 163000,
+      dialogueBudgetTokens: 146700,
+    },
+    {
+      scenario: 'win-1M/中输入',
+      availableTokens: 845000,
+      anchorTokens: 2000,
+      remainingTokens: 843000,
+      dialogueBudgetTokens: 758700,
+    },
   ],
   dialogueRounds: [
-    { scenario: '预算8000/每轮1000/30轮', roundCosts: 30, recentRoundCount: 8, firstRoundIncluded: true, usedTokens: 8000 },
-    { scenario: '预算8000/每轮1000/5轮', roundCosts: 5, recentRoundCount: 5, firstRoundIncluded: false, usedTokens: 5000 },
-    { scenario: '预算8000/每轮300/30轮', roundCosts: 30, recentRoundCount: 26, firstRoundIncluded: true, usedTokens: 7800 },
+    {
+      scenario: '预算8000/每轮1000/30轮',
+      roundCosts: 30,
+      recentRoundCount: 8,
+      firstRoundIncluded: true,
+      usedTokens: 8000,
+    },
+    {
+      scenario: '预算8000/每轮1000/5轮',
+      roundCosts: 5,
+      recentRoundCount: 5,
+      firstRoundIncluded: false,
+      usedTokens: 5000,
+    },
+    {
+      scenario: '预算8000/每轮300/30轮',
+      roundCosts: 30,
+      recentRoundCount: 26,
+      firstRoundIncluded: true,
+      usedTokens: 7800,
+    },
   ],
   truncation: [
-    { scenario: 'win-8000/50轮(超压)', beforeTokens: 26633, afterTokens: 6931, compressionRatio: '0.260', keptMessages: 28 },
-    { scenario: 'win-8000/10轮(轻压)', beforeTokens: 5326, afterTokens: 5326, compressionRatio: '1.000', keptMessages: 21 },
-    { scenario: 'win-120000/50轮(不压)', beforeTokens: 26633, afterTokens: 26633, compressionRatio: '1.000', keptMessages: 101 },
+    {
+      scenario: 'win-8000/50轮(超压)',
+      beforeTokens: 26633,
+      afterTokens: 6931,
+      compressionRatio: '0.260',
+      keptMessages: 28,
+    },
+    {
+      scenario: 'win-8000/10轮(轻压)',
+      beforeTokens: 5326,
+      afterTokens: 5326,
+      compressionRatio: '1.000',
+      keptMessages: 21,
+    },
+    {
+      scenario: 'win-120000/50轮(不压)',
+      beforeTokens: 26633,
+      afterTokens: 26633,
+      compressionRatio: '1.000',
+      keptMessages: 101,
+    },
   ],
 };
 
@@ -194,7 +280,9 @@ const BASELINE: Snapshot = {
 
 function printHuman(s: Snapshot): void {
   console.log('\n📊 上下文预算 · 确定性快照\n');
-  console.log('── 1. 预算切分（可用 = 窗口×0.85 − 固定开销；锚点 = 本轮输入×1；对话层 = 剩余×0.9）──');
+  console.log(
+    '── 1. 预算切分（可用 = 窗口×0.85 − 固定开销；锚点 = 本轮输入×1；对话层 = 剩余×0.9）──',
+  );
   for (const b of s.budget) {
     console.log(
       `  ${b.scenario.padEnd(20)} 可用=${String(b.availableTokens).padStart(7)}  锚点=${String(b.anchorTokens).padStart(6)}  剩余=${String(b.remainingTokens).padStart(7)}  对话层=${String(b.dialogueBudgetTokens).padStart(7)}`,
@@ -256,7 +344,9 @@ function main(): void {
       console.log('✅ 快照与基准一致（行为不变，exit 0）');
       process.exitCode = 0;
     } else {
-      console.error(`\n❌ 快照漂移 ${diffs.length} 处（若为有意的语义变更，请更新本文件 BASELINE）：`);
+      console.error(
+        `\n❌ 快照漂移 ${diffs.length} 处（若为有意的语义变更，请更新本文件 BASELINE）：`,
+      );
       for (const d of diffs) console.error(`   - ${d}`);
       process.exitCode = 1;
     }

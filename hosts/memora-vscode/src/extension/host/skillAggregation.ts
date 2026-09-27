@@ -81,7 +81,12 @@ export function listVisibleSkills(ctx: SkillAggregateContext): SkillDto[] {
   const sm = agent.skills;
   if (sm) {
     for (const s of sm.list) {
-      push(sourceOf(s.filePath, s.layer, configDir, userSkillsDir), s.name, s.description, s.filePath);
+      push(
+        sourceOf(s.filePath, s.layer, configDir, userSkillsDir),
+        s.name,
+        s.description,
+        s.filePath,
+      );
     }
   }
 
@@ -191,7 +196,8 @@ export function isSkillDisabled(agent: Agent, skillName: string): boolean {
   const sm = agent.skills;
   if (!sm || !sm.disabledSkillNames.includes(skillName)) return false;
   const rpm = agent.rolePackManager;
-  if (rpm && rpm.listSkills ? rpm.listSkills().some((s) => s.name === skillName) : false) return false;
+  if (rpm && rpm.listSkills ? rpm.listSkills().some((s) => s.name === skillName) : false)
+    return false;
   return sm.list.some((s) => s.name === skillName);
 }
 
@@ -211,7 +217,10 @@ export function isSkillDisabled(agent: Agent, skillName: string): boolean {
  * @param visibleSkills 三源聚合清单（`listVisibleSkills` 的结果，与 UI 展示同名集）
  * @returns 未匹配的禁用名（保持配置填写顺序）
  */
-export function findUnmatchedDisabled(disabledNames: string[], visibleSkills: SkillDto[]): string[] {
+export function findUnmatchedDisabled(
+  disabledNames: string[],
+  visibleSkills: SkillDto[],
+): string[] {
   if (disabledNames.length === 0) return [];
   const visible = new Set(visibleSkills.map((s) => s.name));
   return disabledNames.filter((n) => !visible.has(n));

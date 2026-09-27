@@ -142,7 +142,14 @@ function seedSession(
       id: roundId,
       userMessage: { id: `${roundId}-user`, role: 'user', content: u.content, timestamp: u.ts },
       ...(a
-        ? { assistantMessage: { id: `${roundId}-assistant`, role: 'assistant', content: a.content, timestamp: a.ts } }
+        ? {
+            assistantMessage: {
+              id: `${roundId}-assistant`,
+              role: 'assistant',
+              content: a.content,
+              timestamp: a.ts,
+            },
+          }
         : {}),
       status: a ? 'complete' : 'pending',
       createdAt: u.ts,
@@ -170,10 +177,9 @@ function lastTurnUpdate(posted: unknown[]): {
   rounds: RoundView[];
   state: TurnState;
 } {
-  const all = ofType<{ type: string } & { replay?: boolean; rounds: RoundView[]; state: TurnState }>(
-    posted,
-    'turn_update',
-  );
+  const all = ofType<
+    { type: string } & { replay?: boolean; rounds: RoundView[]; state: TurnState }
+  >(posted, 'turn_update');
   return all[all.length - 1]!;
 }
 
@@ -242,9 +248,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
     store.setSessionTitle('2026-08-14-s2', '昨天会话');
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
-    await (provider as unknown as { handleDeleteSession(s: string): Promise<void> }).handleDeleteSession(
-      '2026-08-14-s2',
-    );
+    await (
+      provider as unknown as { handleDeleteSession(s: string): Promise<void> }
+    ).handleDeleteSession('2026-08-14-s2');
     // 会话记录已删除：meta + 消息均消失（会话级路标存于 meta，随之一并删除，无需额外联动）
     expect(store.getSessionMeta('2026-08-14-s2')).toBeUndefined();
     expect(store.listSessions()).not.toContain('2026-08-14-s2');
@@ -259,9 +265,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { store, roundStore, provider } = setup();
     seedSession(store, roundStore, '2026-08-14-s2', [{ role: 'user', content: 'y', ts: 't2' }]);
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue(undefined as never);
-    await (provider as unknown as { handleDeleteSession(s: string): Promise<void> }).handleDeleteSession(
-      '2026-08-14-s2',
-    );
+    await (
+      provider as unknown as { handleDeleteSession(s: string): Promise<void> }
+    ).handleDeleteSession('2026-08-14-s2');
     expect(store.getSessionMeta('2026-08-14-s2')).toBeDefined();
   });
 
@@ -270,9 +276,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     seedSession(store, roundStore, '2026-08-15-s1', [{ role: 'user', content: 'x', ts: 't1' }]);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     vi.mocked(vscode.window.showWarningMessage).mockResolvedValue('删除' as never);
-    await (provider as unknown as { handleDeleteSession(s: string): Promise<void> }).handleDeleteSession(
-      '2026-08-15-s1',
-    );
+    await (
+      provider as unknown as { handleDeleteSession(s: string): Promise<void> }
+    ).handleDeleteSession('2026-08-15-s1');
     expect(store.getSessionMeta('2026-08-15-s1')).toBeDefined(); // 未删
     const notice = ofType<{ type: string; message: string }>(posted, 'notice');
     expect(notice[0]?.message).toContain('当前会话不在历史记录');
@@ -324,7 +330,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const { store, roundStore, provider, posted } = setup();
     const { agent, renameSession } = agentStub();
     provider.setAgent(agent);
-    seedSession(store, roundStore, '2026-08-14-other', [{ role: 'user', content: 'x', ts: '2026-08-14T09:00:00.000Z' }]);
+    seedSession(store, roundStore, '2026-08-14-other', [
+      { role: 'user', content: 'x', ts: '2026-08-14T09:00:00.000Z' },
+    ]);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-14-other';
 
     vi.mocked(vscode.window.showInputBox).mockResolvedValue('我的新标题');
@@ -351,8 +359,24 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const round = roundStore.getById('round-1')!;
     round.processEvents = [
       { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-      { type: 'memory_added', seq: 2, ts: 't1', payload: { id: 'r:1', name: '记忆', source: 'round-summary' } },
-      { type: 'metrics', seq: 3, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+      {
+        type: 'memory_added',
+        seq: 2,
+        ts: 't1',
+        payload: { id: 'r:1', name: '记忆', source: 'round-summary' },
+      },
+      {
+        type: 'metrics',
+        seq: 3,
+        ts: 't2',
+        payload: {
+          durationMs: 3000,
+          tokenIn: 10,
+          tokenOut: 20,
+          toolFailureCount: 0,
+          success: true,
+        },
+      },
     ];
     roundStore.save(round);
 
@@ -377,7 +401,11 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // rounds 承载真实轮：用户输入 / 过程事件（meta 为整批首条）/ 最终回答
     expect(r.id).toBe('round-1');
     expect(r.userMessage?.content).toBe('问题A');
-    expect(r.processEvents?.map((e: { type: string }) => e.type)).toEqual(['meta', 'memory_added', 'metrics']);
+    expect(r.processEvents?.map((e: { type: string }) => e.type)).toEqual([
+      'meta',
+      'memory_added',
+      'metrics',
+    ]);
     expect((r.processEvents?.[0] as { payload: { role: string; llm: string } }).payload).toEqual({
       role: '文档设计师',
       llm: 'deepseek-chat',
@@ -398,11 +426,28 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 闭环节点数据：前序 assistant 段（含提问）+ 交互输入（qa 与 supplement 混合）
     const round = roundStore.getById('round-1')!;
     round.assistantLog = [
-      { id: 'a0', role: 'assistant', content: '需要先确认哪个方案？', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
+      {
+        id: 'a0',
+        role: 'assistant',
+        content: '需要先确认哪个方案？',
+        timestamp: 't2',
+      } as NonNullable<Round['assistantMessage']>,
     ];
     round.interactiveInputs = [
-      { id: 'i1', role: 'user', content: '选方案A', timestamp: 't3', kind: 'question-answer' } as never,
-      { id: 'i2', role: 'user', content: '补充：不要联网搜索', timestamp: 't4', kind: 'supplement' } as never,
+      {
+        id: 'i1',
+        role: 'user',
+        content: '选方案A',
+        timestamp: 't3',
+        kind: 'question-answer',
+      } as never,
+      {
+        id: 'i2',
+        role: 'user',
+        content: '补充：不要联网搜索',
+        timestamp: 't4',
+        kind: 'supplement',
+      } as never,
     ];
     roundStore.save(round);
 
@@ -422,7 +467,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // UX-9 时序数据齐备（webview 端据此按 ts 交织渲染）：提问段(t2) < qa(t3) < supplement(t4) < final(t5)
     expect(r.assistantLog?.[0]?.timestamp).toBe('t2');
     expect(inputs.map((i) => i.timestamp)).toEqual(['t3', 't4']);
-    expect(inputs.map((i) => (i as { kind?: string }).kind)).toEqual(['question-answer', 'supplement']);
+    expect(inputs.map((i) => (i as { kind?: string }).kind)).toEqual([
+      'question-answer',
+      'supplement',
+    ]);
   });
 
   it('timeout 交互记录重放随 rounds 透传：kind=timeout 携带 question/options（2026-09-08 超时保底 · M5b-3）', () => {
@@ -436,7 +484,12 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     ]);
     const round = roundStore.getById('round-1')!;
     round.assistantLog = [
-      { id: 'a0', role: 'assistant', content: '在读取前需要确认：', timestamp: 't2' } as NonNullable<Round['assistantMessage']>,
+      {
+        id: 'a0',
+        role: 'assistant',
+        content: '在读取前需要确认：',
+        timestamp: 't2',
+      } as NonNullable<Round['assistantMessage']>,
     ];
     // 内核超时保底落盘形态：kind='timeout' + 超时通知正文 + question/options
     round.interactiveInputs = [
@@ -512,7 +565,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     expect(docContext).toContain('文档内容A');
     // 无活动编辑器 → 清空（退化为普通对话）
     cb?.(undefined);
-    expect((provider as unknown as { _docContext: string | undefined })._docContext).toBeUndefined();
+    expect(
+      (provider as unknown as { _docContext: string | undefined })._docContext,
+    ).toBeUndefined();
   });
 
   // ─── 历史会话占用重算（轻量版）：切会话后圆环展示真实占用而非空态 0% ───
@@ -541,10 +596,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     (provider as unknown as { replayCurrentSession(): void }).replayCurrentSession();
     // 等待 fire-and-forget 的 postHistoryOccupancy（async）落定
     await vi.waitFor(() => {
-      const occs = ofType<{ type: string; occupancy: { dialogueCount: number; rolePackBaseTokens: number } }>(
-        posted,
-        'context_occupancy',
-      );
+      const occs = ofType<{
+        type: string;
+        occupancy: { dialogueCount: number; rolePackBaseTokens: number };
+      }>(posted, 'context_occupancy');
       // setAgent 装配兜底推 1 次 + replayCurrentSession 推 1 次（幂等，取最后一次验证）
       expect(occs.length).toBeGreaterThanOrEqual(1);
       const occ = occs[occs.length - 1]!.occupancy;
@@ -583,10 +638,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     provider.setAgentFactory(async () => agent);
     await (provider as unknown as { ensureAgent(): Promise<void> }).ensureAgent();
     await vi.waitFor(() => {
-      const occs = ofType<{ type: string; occupancy: { dialogueCount: number; rolePackBaseTokens: number } }>(
-        posted,
-        'context_occupancy',
-      );
+      const occs = ofType<{
+        type: string;
+        occupancy: { dialogueCount: number; rolePackBaseTokens: number };
+      }>(posted, 'context_occupancy');
       expect(occs.length).toBeGreaterThanOrEqual(1);
       expect(occs[occs.length - 1]!.occupancy.dialogueCount).toBe(1); // 1 个问答闭环（user 计数）
       expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(15000);
@@ -616,7 +671,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // 内核 emit 角色包切换（手动 activate / 检查点恢复激活）
     rolePackHandler!({ from: 'packA', to: 'packB' });
     // postContextOccupancy 同步推送；断言圆环即时反映最新角色包占用（无需等下一轮 prepare）
-    const occs = ofType<{ type: string; occupancy: { rolePackBaseTokens: number } }>(posted, 'context_occupancy');
+    const occs = ofType<{ type: string; occupancy: { rolePackBaseTokens: number } }>(
+      posted,
+      'context_occupancy',
+    );
     expect(occs.length).toBeGreaterThanOrEqual(1);
     // 取最后一次推送：角色包切换补推的那一条必须带最新 rolePackBaseTokens
     expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(9000);
@@ -641,7 +699,10 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     provider.setAgent(agent);
     expect(rolePackHandler).toBeDefined();
     rolePackHandler!({ from: null, to: 'packB' });
-    const occs = ofType<{ type: string; occupancy: { rolePackBaseTokens: number } }>(posted, 'context_occupancy');
+    const occs = ofType<{ type: string; occupancy: { rolePackBaseTokens: number } }>(
+      posted,
+      'context_occupancy',
+    );
     expect(occs.length).toBeGreaterThanOrEqual(1);
     // postContextOccupancy 用 ctx.rolePackBaseTokens 覆盖快照的 0，圆环展示真实 7000
     expect(occs[occs.length - 1]!.occupancy.rolePackBaseTokens).toBe(7000);
@@ -662,7 +723,14 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     // toggle 依赖：默认无在途暂停申请（走 requestPause 路径，非 cancel）
     const isPausePending = vi.fn(() => false);
     const cancelPauseRequest = vi.fn();
-    const agent = { requestPause, pause, isPausePending, cancelPauseRequest, on: vi.fn(), off: vi.fn() } as unknown as Agent;
+    const agent = {
+      requestPause,
+      pause,
+      isPausePending,
+      cancelPauseRequest,
+      on: vi.fn(),
+      off: vi.fn(),
+    } as unknown as Agent;
     return { agent, requestPause, pause, isPausePending, cancelPauseRequest };
   }
 
@@ -749,7 +817,9 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     provider.setAgent(agent);
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-31-a';
     // 新建会话 B（空）→ 触发 clear_ok + replay(B 空) + session_title
-    await (provider as unknown as { newSessionFromCommand(): Promise<void> }).newSessionFromCommand();
+    await (
+      provider as unknown as { newSessionFromCommand(): Promise<void> }
+    ).newSessionFromCommand();
     // B 切入后 _currentSessionId 应更新为新的 date-sxxx
     const newId = (provider as unknown as { _currentSessionId: string })._currentSessionId;
     expect(newId).toMatch(/^\d{4}-\d{2}-\d{2}-s[0-9a-z]+$/);
@@ -758,7 +828,15 @@ describe('chatPanel 会话管理（2026-08-17 重构：标题条按钮 + 历史�
     const clearIdx = posted.findIndex((m) => (m as { type: string }).type === 'clear_ok');
     expect(clearIdx).toBeGreaterThanOrEqual(0);
     const afterClear = posted.slice(clearIdx);
-    const msgTypes = ['user', 'assistant', 'process_event', 'replay_events', 'chunk', 'tool_start', 'tool_result'];
+    const msgTypes = [
+      'user',
+      'assistant',
+      'process_event',
+      'replay_events',
+      'chunk',
+      'tool_start',
+      'tool_result',
+    ];
     const leaked = afterClear.filter((m) => msgTypes.includes((m as { type: string }).type));
     expect(leaked).toHaveLength(0);
     // 重放泄漏真断言：历史泄漏面在 turn_update.rounds——B 为空会话，
@@ -816,8 +894,22 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
         (async function* () {
           yield { type: 'thinking', phase: 'processing', roundId: 'round-1' };
           yield { type: 'step_boundary', roundId: 'round-1' };
-          yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', stepIndex: 2, roundId: 'round-1' };
-          yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
+          yield {
+            type: 'tool_start',
+            toolCallId: 't1',
+            name: 'read_file',
+            args: '{}',
+            stepIndex: 2,
+            roundId: 'round-1',
+          };
+          yield {
+            type: 'tool_result',
+            toolCallId: 't1',
+            name: 'read_file',
+            ok: true,
+            summary: 'ok',
+            roundId: 'round-1',
+          };
           yield { type: 'step_boundary', roundId: 'round-1' };
           yield { type: 'done' };
         })(),
@@ -834,9 +926,11 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     expect(saves[1]).toContain('tool_start');
     // 工具的 step 归属随事件落盘（与 thought.stepIndex 同构）：重放可读「工具是第几步执行的」
     const toolStarts =
-      roundStore.getById('round-1')?.processEvents?.filter(
-        (e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start',
-      ) ?? [];
+      roundStore
+        .getById('round-1')
+        ?.processEvents?.filter(
+          (e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start',
+        ) ?? [];
     expect(toolStarts[0]?.payload.stepIndex).toBe(2);
     // 末次是流尾终局（metrics 为流尾专有事件）
     expect(saves[2]).toContain('metrics');
@@ -854,7 +948,12 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       chatAgentStub(() =>
         (async function* () {
           yield { type: 'thinking', phase: 'processing', roundId: 'round-1' };
-          yield { type: 'plan_item_boundary', planItemId: 'plan-item-1', title: '第一步', roundId: 'round-1' };
+          yield {
+            type: 'plan_item_boundary',
+            planItemId: 'plan-item-1',
+            title: '第一步',
+            roundId: 'round-1',
+          };
           yield { type: 'done' };
         })(),
       ),
@@ -885,12 +984,38 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     provider.setAgent(
       chatAgentStub(() =>
         (async function* () {
-          yield { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-1' };
-          yield { type: 'tool_result', toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok', roundId: 'round-1' };
+          yield {
+            type: 'tool_start',
+            toolCallId: 't1',
+            name: 'read_file',
+            args: '{}',
+            roundId: 'round-1',
+          };
+          yield {
+            type: 'tool_result',
+            toolCallId: 't1',
+            name: 'read_file',
+            ok: true,
+            summary: 'ok',
+            roundId: 'round-1',
+          };
           yield { type: 'text', content: 'turn1回答', roundId: 'round-1' };
           yield { type: 'thinking', phase: 'processing', roundId: 'round-2' };
-          yield { type: 'tool_start', toolCallId: 't2', name: 'search', args: '{}', roundId: 'round-2' };
-          yield { type: 'tool_result', toolCallId: 't2', name: 'search', ok: true, summary: 's', roundId: 'round-2' };
+          yield {
+            type: 'tool_start',
+            toolCallId: 't2',
+            name: 'search',
+            args: '{}',
+            roundId: 'round-2',
+          };
+          yield {
+            type: 'tool_result',
+            toolCallId: 't2',
+            name: 'search',
+            ok: true,
+            summary: 's',
+            roundId: 'round-2',
+          };
           yield { type: 'text', content: 'turn2回答', roundId: 'round-2' };
           yield { type: 'done' };
         })(),
@@ -903,11 +1028,23 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     const r1 = roundStore.getById('round-1')!;
     const r2 = roundStore.getById('round-2')!;
     expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result']);
-    expect(r2.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
+    expect(r2.processEvents?.map((e) => e.type)).toEqual([
+      'meta',
+      'thinking',
+      'tool_start',
+      'tool_result',
+      'metrics',
+    ]);
     // 工具归属精确：t1 只在 round-1，t2 只在 round-2（不堆叠、不串位）
-    expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1')).toBe(true);
-    expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(false);
-    expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
+    expect(
+      r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1'),
+    ).toBe(true);
+    expect(
+      r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2'),
+    ).toBe(false);
+    expect(
+      r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2'),
+    ).toBe(true);
   });
 
   it('流首 chunk 补推 plan_update：prepare 预置骨架（不经 task_table 工具事件）顶部条开局即可见', async () => {
@@ -950,7 +1087,9 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('小组会议');
 
     // 首个 plan_update 即携带骨架（3 步）——顶部条开局可见，不再等首次 task_table_update
-    const planMsgs = posted.filter((m) => (m as { type: string }).type === 'plan_update') as { items: unknown[] }[];
+    const planMsgs = posted.filter((m) => (m as { type: string }).type === 'plan_update') as {
+      items: unknown[];
+    }[];
     expect(planMsgs.length).toBeGreaterThanOrEqual(1);
     expect(planMsgs[0]!.items).toHaveLength(3);
   });
@@ -967,9 +1106,27 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     provider.setAgent(
       chatAgentStub(() =>
         (async function* () {
-          yield { type: 'thought', content: '思考：先查 A/B 资料', stepIndex: 1, roundId: 'round-1' };
-          yield { type: 'tool_start', toolCallId: 't1', name: 'web_search', args: '{}', roundId: 'round-1' };
-          yield { type: 'tool_result', toolCallId: 't1', name: 'web_search', ok: true, summary: 's', roundId: 'round-1' };
+          yield {
+            type: 'thought',
+            content: '思考：先查 A/B 资料',
+            stepIndex: 1,
+            roundId: 'round-1',
+          };
+          yield {
+            type: 'tool_start',
+            toolCallId: 't1',
+            name: 'web_search',
+            args: '{}',
+            roundId: 'round-1',
+          };
+          yield {
+            type: 'tool_result',
+            toolCallId: 't1',
+            name: 'web_search',
+            ok: true,
+            summary: 's',
+            roundId: 'round-1',
+          };
           yield { type: 'thought', content: longReasoning, stepIndex: 2, roundId: 'round-1' };
           yield { type: 'text', content: '结论', roundId: 'round-1' };
           yield { type: 'done' };
@@ -981,7 +1138,9 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
 
     const r1 = roundStore.getById('round-1')!;
     const thoughts =
-      r1.processEvents?.filter((e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought') ?? [];
+      r1.processEvents?.filter(
+        (e): e is Extract<ProcessEvent, { type: 'thought' }> => e.type === 'thought',
+      ) ?? [];
     expect(thoughts).toHaveLength(2);
     // 短思考原文落盘
     expect(thoughts[0].payload.content).toBe('思考：先查 A/B 资料');
@@ -1007,8 +1166,21 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     provider.setAgent(
       chatAgentStub(() =>
         (async function* () {
-          yield { type: 'tool_start', toolCallId: 't1', name: 'search', args: '{}', roundId: 'round-1' };
-          yield { type: 'tool_result', toolCallId: 't1', name: 'search', ok: true, summary: 'a', roundId: 'round-1' };
+          yield {
+            type: 'tool_start',
+            toolCallId: 't1',
+            name: 'search',
+            args: '{}',
+            roundId: 'round-1',
+          };
+          yield {
+            type: 'tool_result',
+            toolCallId: 't1',
+            name: 'search',
+            ok: true,
+            summary: 'a',
+            roundId: 'round-1',
+          };
           yield { type: 'text', content: '第一次回答', roundId: 'round-1' };
           yield { type: 'done' };
         })(),
@@ -1026,8 +1198,21 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
       chatAgentStub(() =>
         (async function* () {
           yield { type: 'thinking', phase: 'processing', roundId: 'round-2' };
-          yield { type: 'tool_start', toolCallId: 't2', name: 'read_file', args: '{}', roundId: 'round-2' };
-          yield { type: 'tool_result', toolCallId: 't2', name: 'read_file', ok: true, summary: 'b', roundId: 'round-2' };
+          yield {
+            type: 'tool_start',
+            toolCallId: 't2',
+            name: 'read_file',
+            args: '{}',
+            roundId: 'round-2',
+          };
+          yield {
+            type: 'tool_result',
+            toolCallId: 't2',
+            name: 'read_file',
+            ok: true,
+            summary: 'b',
+            roundId: 'round-2',
+          };
           yield { type: 'text', content: '第二次回答', roundId: 'round-2' };
           yield { type: 'done' };
         })(),
@@ -1038,11 +1223,26 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
     // 第一次的 round-1 保留自己的工具记录（不被第二次覆盖）；metrics 归入自己的turn（单turn收尾）
     const r1 = roundStore.getById('round-1')!;
     const r2 = roundStore.getById('round-2')!;
-    expect(r1.processEvents?.map((e) => e.type)).toEqual(['meta', 'tool_start', 'tool_result', 'metrics']);
-    expect(r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1')).toBe(true);
+    expect(r1.processEvents?.map((e) => e.type)).toEqual([
+      'meta',
+      'tool_start',
+      'tool_result',
+      'metrics',
+    ]);
+    expect(
+      r1.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't1'),
+    ).toBe(true);
     // 第二次独立落盘到 round-2（含 thinking/tool/metrics），不覆盖 round-1 的工具记录
-    expect(r2.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
-    expect(r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2')).toBe(true);
+    expect(r2.processEvents?.map((e) => e.type)).toEqual([
+      'meta',
+      'thinking',
+      'tool_start',
+      'tool_result',
+      'metrics',
+    ]);
+    expect(
+      r2.processEvents?.some((e) => e.type === 'tool_start' && e.payload.toolCallId === 't2'),
+    ).toBe(true);
   });
 });
 
@@ -1056,7 +1256,12 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
   ): void {
     roundStore.save({
       id,
-      userMessage: { id: `msg-${id}-user`, role: 'user', content: '帮我梳理架构', timestamp: createdAt },
+      userMessage: {
+        id: `msg-${id}-user`,
+        role: 'user',
+        content: '帮我梳理架构',
+        timestamp: createdAt,
+      },
       status: 'pending',
       createdAt,
       refCount: 0,
@@ -1080,11 +1285,18 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
     const sessionId = `${todayDate()}-restored`;
     // 制造「最近活跃会话」（崩溃前正使用的会话）：meta 的 updatedAt 为最新 → listSessionMetas[0]
     if (options?.seedSession !== false) {
-      store.updateSessionMeta(sessionId, { autoName: '崩溃恢复测试会话', displayName: '崩溃恢复测试会话' });
+      store.updateSessionMeta(sessionId, {
+        autoName: '崩溃恢复测试会话',
+        displayName: '崩溃恢复测试会话',
+      });
     }
 
     const providerStore = { listMasked: async () => [], getActiveName: () => undefined } as never;
-    const provider = new MemoraChatViewProvider({ fsPath: '/mock/uri' } as never, store, providerStore);
+    const provider = new MemoraChatViewProvider(
+      { fsPath: '/mock/uri' } as never,
+      store,
+      providerStore,
+    );
     provider.setViewLoader(new WorkspaceSessionViewLoader(roundStore, store));
     provider.setRoundStore(roundStore);
     const webviewView = {
@@ -1113,7 +1325,9 @@ describe('chatPanel · 崩溃残留轮打捞升级为正常 stop turn（T1，202
 
   /** 反射调私有打捞方法 */
   function upgrade(provider: MemoraChatViewProvider): Promise<void> {
-    return (provider as unknown as { upgradeInterruptedRounds(): Promise<void> }).upgradeInterruptedRounds();
+    return (
+      provider as unknown as { upgradeInterruptedRounds(): Promise<void> }
+    ).upgradeInterruptedRounds();
   }
 
   it('打捞当前会话日期内中断轮 → 按 createdAt 升序升级：narrate 文本拼接传给内核收场', async () => {
@@ -1412,7 +1626,10 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
     );
     (provider as unknown as { _currentSessionId: string })._currentSessionId = '2026-08-15-s1';
     await (provider as unknown as { sendInput(p: string): Promise<void> }).sendInput('新问题');
-    const updates = ofType<{ type: string; rounds: RoundView[]; state: TurnState }>(posted, 'turn_update');
+    const updates = ofType<{ type: string; rounds: RoundView[]; state: TurnState }>(
+      posted,
+      'turn_update',
+    );
     // 起始（无 live）+ 流尾（带 live）各一次
     expect(updates.length).toBeGreaterThanOrEqual(2);
     return updates[updates.length - 1]!;
@@ -1455,10 +1672,7 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
 
   it('同一 id 在 rounds 中只出现一次（live 原位替换历史，不产生重复条目）', async () => {
     const last = await driveAndGetLastUpdate(
-      [
-        { type: 'text', content: '回答', roundId: 'round-9' },
-        { type: 'done' },
-      ],
+      [{ type: 'text', content: '回答', roundId: 'round-9' }, { type: 'done' }],
       historyPair,
     );
     const ids = last.rounds.map((r) => r.id);
@@ -1467,7 +1681,10 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
 
   it('过程事件随 live 轮入列（与 eventsByRound 同源，供 UI 重建过程轨）', async () => {
     const last = await driveAndGetLastUpdate(
-      [{ type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-9' }, { type: 'done' }],
+      [
+        { type: 'tool_start', toolCallId: 't1', name: 'read_file', args: '{}', roundId: 'round-9' },
+        { type: 'done' },
+      ],
       historyPair,
     );
     const live = last.rounds[last.rounds.length - 1]!;
@@ -1476,10 +1693,7 @@ describe('turn_update 含运行时 live 轮（M3b-2a）', () => {
 
   it('软暂停：live 轮仍入列（该轮正在生长、未收场）', async () => {
     const last = await driveAndGetLastUpdate(
-      [
-        { type: 'text', content: '半截', roundId: 'round-9' },
-        { type: 'paused' },
-      ],
+      [{ type: 'text', content: '半截', roundId: 'round-9' }, { type: 'paused' }],
       historyPair,
     );
     const live = last.rounds[last.rounds.length - 1]!;

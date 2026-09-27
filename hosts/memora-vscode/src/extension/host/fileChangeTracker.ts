@@ -264,7 +264,10 @@ export class FileChangeTracker {
    * 直接改字段会让 `updatedAt` / 淘汰序 / 缓存失效时机各自漂移。
    * 记录不存在（已确认 / 已淘汰）⇒ 静默无事，不抛错。
    */
-  updateContents(absPath: string, patch: { beforeContent?: string; afterContent?: string | null }): void {
+  updateContents(
+    absPath: string,
+    patch: { beforeContent?: string; afterContent?: string | null },
+  ): void {
     const existing = this.records.get(absPath);
     if (!existing) return;
     this.records.set(absPath, { ...existing, ...patch });

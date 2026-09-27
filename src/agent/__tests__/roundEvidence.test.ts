@@ -33,7 +33,11 @@ function mockMultiTurnProvider(turns: ChunkItem[][]): LlmProvider {
 }
 
 /** 构造工具调用（镜像 stepBoundary 先例） */
-function toolCall(id: string, name: string, args = '{}'): NonNullable<Message['toolCalls']>[number] {
+function toolCall(
+  id: string,
+  name: string,
+  args = '{}',
+): NonNullable<Message['toolCalls']>[number] {
   return { id, type: 'function', function: { name, arguments: args } };
 }
 

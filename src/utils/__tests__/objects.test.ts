@@ -17,7 +17,7 @@ import { isPlainObject } from '@/utils/objects.js';
 
 describe('utils/objects · isPlainObject', () => {
   it('空对象应返回 true', () => {
-    expect(isPlainObject({ })).toBe(true);
+    expect(isPlainObject({})).toBe(true);
   });
 
   it('带属性的对象应返回 true', () => {
@@ -74,7 +74,7 @@ describe('utils/objects · isPlainObject', () => {
   });
 
   it('函数应返回 false', () => {
-    expect(isPlainObject(() => { })).toBe(false);
+    expect(isPlainObject(() => {})).toBe(false);
   });
 
   it('Object.create(null) 应返回 true', () => {

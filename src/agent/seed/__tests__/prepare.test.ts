@@ -10,10 +10,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { SeedPrepare } from '@/agent/seed/prepare.js';
-import {
-  createHarness,
-  collectGen,
-} from './harness.js';
+import { createHarness, collectGen } from './harness.js';
 
 describe('SeedPrepare 回答前', () => {
   it('策略装配：装配上下文 → L2 策略注入 → 工具暴露', async () => {
@@ -39,7 +36,11 @@ describe('SeedPrepare 回答前', () => {
     const roundId = mocks.loop.setCurrentRoundId.mock.calls[0]?.[0];
     expect(mocks.history.appendUser).toHaveBeenCalledWith('用户输入', roundId);
     // 会话命名 fire-and-forget
-    expect(mocks.sessionNamer.ensureSessionTitle).toHaveBeenCalledWith('2026-08-20', 'main', '用户输入');
+    expect(mocks.sessionNamer.ensureSessionTitle).toHaveBeenCalledWith(
+      '2026-08-20',
+      'main',
+      '用户输入',
+    );
 
     // 返回结果：仅 input + aborted（round 归属见 loop.currentRoundId）
     expect(result).toEqual({ input: '用户输入', aborted: false });
@@ -52,7 +53,9 @@ describe('SeedPrepare 回答前', () => {
       plan: [{ id: 's1', description: '步骤1', status: 'active', order: 0, rolePack: '成员A' }],
     });
     mocks.rolePackManager.resolveRoundAssemblyRole.mockReturnValue('成员A');
-    mocks.rolePackManager.buildTeamContextBlock.mockReturnValue('【小组会议角色（组长：组长；组员：成员A / 成员B）】...');
+    mocks.rolePackManager.buildTeamContextBlock.mockReturnValue(
+      '【小组会议角色（组长：组长；组员：成员A / 成员B）】...',
+    );
 
     await collectGen(new SeedPrepare(deps).run('输入', new AbortController().signal));
 
@@ -63,7 +66,9 @@ describe('SeedPrepare 回答前', () => {
     // 前缀刷新按本轮装配角色（键恒为 activePack 由门面实现保证）
     expect(mocks.refreshRolePackPrefixForRound).toHaveBeenCalledWith('成员A');
     // 组/成员清单注入 system prompt（防 LLM 编造角色名）
-    expect(mocks.loop.injectSystemMessage).toHaveBeenCalledWith('【小组会议角色（组长：组长；组员：成员A / 成员B）】...');
+    expect(mocks.loop.injectSystemMessage).toHaveBeenCalledWith(
+      '【小组会议角色（组长：组长；组员：成员A / 成员B）】...',
+    );
   });
 
   it('会议机制：active 任务项越界 rolePack → 覆盖被忽略（回落 activePack）+ 前缀按 activePack 刷新', async () => {
@@ -107,7 +112,13 @@ describe('SeedPrepare 回答前', () => {
     mocks.sessionManager.getCheckpoint.mockReturnValue({
       plan: [
         { id: 's1', description: '组长 主持开场：讨论X', status: 'done', order: 0 },
-        { id: 's2', description: '组员1 发言：讨论X', status: 'active', order: 1, rolePack: '组员1' },
+        {
+          id: 's2',
+          description: '组员1 发言：讨论X',
+          status: 'active',
+          order: 1,
+          rolePack: '组员1',
+        },
         { id: 's3', description: '汇总各方观点：讨论X', status: 'pending', order: 2 },
       ],
     });
@@ -150,7 +161,9 @@ describe('SeedPrepare 回答前', () => {
   it('无激活角色包时回退全局默认策略仍可正常完成', async () => {
     const { mocks, deps } = createHarness();
     // getActive 默认 null → 回退 DEFAULT_BEHAVIOR_STRATEGY
-    const { result } = await collectGen(new SeedPrepare(deps).run('输入', new AbortController().signal));
+    const { result } = await collectGen(
+      new SeedPrepare(deps).run('输入', new AbortController().signal),
+    );
     expect(result?.aborted).toBe(false);
     expect(mocks.loop.setStrategy).toHaveBeenCalledTimes(1);
   });

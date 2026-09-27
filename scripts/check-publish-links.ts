@@ -132,7 +132,10 @@ function classifyTarget(raw: string, fromRel: string): Classified {
   if (!t || t.startsWith('#') || isExternal(t)) return none;
   const target = normalizeTarget(t);
   if (!target) return none;
-  const resolved = relative(ROOT, resolve(dirname(join(ROOT, fromRel)), target)).replace(/\\/g, '/');
+  const resolved = relative(ROOT, resolve(dirname(join(ROOT, fromRel)), target)).replace(
+    /\\/g,
+    '/',
+  );
   if (!existsSync(join(ROOT, resolved))) return { verdict: 'missing', resolved };
   if (!REPO_MODE && !isShipped(resolved)) return { verdict: 'unshipped', resolved };
   return { verdict: 'ok', resolved };
@@ -197,7 +200,10 @@ function runSelfTest(): boolean {
     const got = hit[0]?.verdict ?? 'none';
     const pass = hit.length === exp.hits && (exp.verdict === undefined || got === exp.verdict);
     if (pass) ok += 1;
-    else console.error(`  自检失败: 「${c.line}」期望命中 ${exp.hits}/${exp.verdict ?? '-'}，实得 ${hit.length}/${got}`);
+    else
+      console.error(
+        `  自检失败: 「${c.line}」期望命中 ${exp.hits}/${exp.verdict ?? '-'}，实得 ${hit.length}/${got}`,
+      );
   }
   console.log(`闸门自检: ${ok}/${SELF_TEST.length} 样例符合预期`);
   return ok === SELF_TEST.length;
@@ -240,7 +246,8 @@ console.log(
 
 if (missing.length) {
   console.log(`\n[A] 目标在磁盘上不存在（连仓库内都是断的）: ${missing.length}`);
-  for (const f of missing) console.log(`  ${f.file}:${f.line}  ->  ${f.raw}   (解析为 ${f.resolved})`);
+  for (const f of missing)
+    console.log(`  ${f.file}:${f.line}  ->  ${f.raw}   (解析为 ${f.resolved})`);
 } else {
   console.log('\n[A] 目标在磁盘上不存在: 0');
 }
@@ -248,7 +255,8 @@ if (missing.length) {
 if (!REPO_MODE) {
   if (unshipped.length) {
     console.log(`\n[B] 目标存在但不在发布包（仅 npm 消费者断）: ${unshipped.length}`);
-    for (const f of unshipped) console.log(`  ${f.file}:${f.line}  ->  ${f.raw}   (解析为 ${f.resolved})`);
+    for (const f of unshipped)
+      console.log(`  ${f.file}:${f.line}  ->  ${f.raw}   (解析为 ${f.resolved})`);
   } else {
     console.log('\n[B] 目标存在但不在发布包: 0');
   }

@@ -218,8 +218,6 @@ describe('SessionNamer · 降级策略', () => {
     const provider = new MockProvider();
     const namer = new SessionNamer({ getProvider: () => provider });
 
-    await expect(
-      namer.ensureSessionTitle('2026-07-03', 'main', '内容'),
-    ).resolves.toBeUndefined();
+    await expect(namer.ensureSessionTitle('2026-07-03', 'main', '内容')).resolves.toBeUndefined();
   });
 });

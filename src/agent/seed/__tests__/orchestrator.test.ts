@@ -37,9 +37,7 @@ describe('SeedOrchestrator 最小 turn', () => {
     stubProcessUserInput(mocks, '完成回复');
     consumeControl.result = { content: '完成回复', aborted: false, paused: false, failed: false };
 
-    await collectGen(
-      new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal),
-    );
+    await collectGen(new SeedOrchestrator(deps).runChat('用户输入', new AbortController().signal));
     await vi.waitFor(() => {
       expect(mocks.roundSummaryGenerator.generate).toHaveBeenCalledTimes(1);
     });
@@ -164,7 +162,12 @@ describe('SeedOrchestrator 最小 turn', () => {
     const { mocks, deps, consumeControl } = createHarness();
     stubProcessUserInput(mocks, '');
     // 主动提问挂起：streamResult.paused=true，本轮回合未完成
-    consumeControl.result = { content: '这个颜色你喜欢吗？', aborted: false, paused: true, failed: false };
+    consumeControl.result = {
+      content: '这个颜色你喜欢吗？',
+      aborted: false,
+      paused: true,
+      failed: false,
+    };
 
     const { chunks } = await collectGen(
       new SeedOrchestrator(deps).runChat('输入', new AbortController().signal),

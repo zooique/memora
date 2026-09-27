@@ -43,7 +43,9 @@ process.on('uncaughtException', (err) => {
     String(err.message).includes('UV_HANDLE_CLOSING') ||
     String(err.stack ?? '').includes('async.c');
   if (isLibuvAssertion && isAsyncClosing) {
-    process.stderr.write('\n⚠️  Node fetch 内部 stream 清理异常（已知 undici bug，业务错误已处理）\n');
+    process.stderr.write(
+      '\n⚠️  Node fetch 内部 stream 清理异常（已知 undici bug，业务错误已处理）\n',
+    );
     process.exit(1);
   }
   process.stderr.write(`💥 未捕获异常：${err.stack ?? err.message}\n`);
@@ -154,7 +156,9 @@ async function main(): Promise<void> {
   }
 
   // 3. 逐 case 完整装配复测
-  console.log(`\n运行 ${cases.length} 个 case（BENCH_CASE=${filter.length ? filter.join(',') : 'all'}，每 case 独立装配）\n`);
+  console.log(
+    `\n运行 ${cases.length} 个 case（BENCH_CASE=${filter.length ? filter.join(',') : 'all'}，每 case 独立装配）\n`,
+  );
   const results: Array<{ seed: BenchmarkSeed; v: CaseVerdict }> = [];
   for (const seed of cases) {
     try {
@@ -178,7 +182,9 @@ async function main(): Promise<void> {
   console.log('| case | queried? | hit? | 耗时(ms) |');
   console.log('|---|---|---|---|');
   for (const { seed, v } of results) {
-    console.log(`| ${seed.id} | ${v.queried ? '✓' : '✗'} | ${v.hit ? '✓' : '✗'} | ${v.elapsedMs} |`);
+    console.log(
+      `| ${seed.id} | ${v.queried ? '✓' : '✗'} | ${v.hit ? '✓' : '✗'} | ${v.elapsedMs} |`,
+    );
   }
   const aCases = results.filter((r) => r.seed.id.startsWith('A'));
   const bCases = results.filter((r) => r.seed.id.startsWith('B'));
@@ -186,9 +192,15 @@ async function main(): Promise<void> {
   const bHit = bCases.filter((r) => r.v.queried && r.v.hit).length;
   console.log('\n' + '━'.repeat(70));
   console.log('📊 指标（完整装配下；对照最小环见 test-memory-tool-recall-real.ts）');
-  console.log(`   A 想起率 = ${aCases.length ? Math.round((aHit / aCases.length) * 100) : '-'}%（${aHit}/${aCases.length} 主动检索且命中）`);
-  console.log(`   B 命中率 = ${bCases.length ? Math.round((bHit / bCases.length) * 100) : '-'}%（${bHit}/${bCases.length}，须 ≈100% 硬门槛）`);
-  console.log('\n注：hit 旁证 = 目标记忆 accessedAt 被 touch 刷新（search_memories 命中即 touch）。');
+  console.log(
+    `   A 想起率 = ${aCases.length ? Math.round((aHit / aCases.length) * 100) : '-'}%（${aHit}/${aCases.length} 主动检索且命中）`,
+  );
+  console.log(
+    `   B 命中率 = ${bCases.length ? Math.round((bHit / bCases.length) * 100) : '-'}%（${bHit}/${bCases.length}，须 ≈100% 硬门槛）`,
+  );
+  console.log(
+    '\n注：hit 旁证 = 目标记忆 accessedAt 被 touch 刷新（search_memories 命中即 touch）。',
+  );
   console.log('    答案质量需人工对照打印回答评断（本脚本不自动判优劣）。');
 }
 
@@ -198,7 +210,8 @@ main()
     process.exit(0);
   })
   .catch((err: unknown) => {
-    const msg = err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err);
+    const msg =
+      err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err);
     process.stderr.write(`💥 致命错误：\n${msg}\n`);
     process.exit(1);
   });

@@ -111,11 +111,9 @@ export function configError(
 
 /** 工厂：对话繁忙错误——chat() 进行中拒绝其他需独占 Agent 的操作，统一模板用此工厂 */
 export function chatBusyError(action: string): MemoraError {
-  return configError(
-    '对话繁忙',
-    `上一轮对话尚未完成，请等待其结束后再${action}`,
-    ['等待当前对话完成后重试'],
-  );
+  return configError('对话繁忙', `上一轮对话尚未完成，请等待其结束后再${action}`, [
+    '等待当前对话完成后重试',
+  ]);
 }
 
 /** 工厂：网络错误 */

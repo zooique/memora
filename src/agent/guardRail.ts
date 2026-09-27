@@ -45,11 +45,7 @@ export type GuardRailId =
 
 /** 命中提示词 id（与 GuardRailPromptId 一一对应，文案收敛到 GUARD_RAIL_PROMPTS） */
 export type GuardRailPromptId =
-  | 'search_limit'
-  | 'ask_limit'
-  | 'write_loop_stop'
-  | 'read_failed_limit'
-  | 'already_read';
+  'search_limit' | 'ask_limit' | 'write_loop_stop' | 'read_failed_limit' | 'already_read';
 
 /** 护栏运行态计数（loop 注入，仅承载 search_limit / ask_limit 两枚；write_loop 连写 / read_failed 失败
  *  计数内聚进各自 guard 实例闭包，经 onExec 自持更新） */
@@ -202,8 +198,7 @@ export function renderPrompt(
 const GUIDELINES: Readonly<Record<GuardRailId, string | undefined>> = {
   read_dedup:
     '重复读取同一文件/搜索同一主体将被拦截并提示；如需文件其它部分请用 offset/limit 指定行区间。',
-  read_failed:
-    '同一目标连续读取失败达阈值会被硬拦；请先 list_dir 确认路径或改用其它目标。',
+  read_failed: '同一目标连续读取失败达阈值会被硬拦；请先 list_dir 确认路径或改用其它目标。',
   write_loop:
     '同一文件被反复重写会触发写作死循环保护；请先 read_file/list_dir 确认真实状态再落笔。',
   ask_limit: '每个问答闭环仅允许有限次提问；基于现有信息继续，不要反复追问。',
@@ -273,9 +268,7 @@ export class GuardRail {
 
   /** 生成「## 行为护栏」通用声明节（注入 buildSystemPrompt；只放通用约束，不暴露逐轮计数） */
   buildPromptSection(): string {
-    const lines = this.registry
-      .map((g) => GUIDELINES[g.id])
-      .filter((s): s is string => Boolean(s));
+    const lines = this.registry.map((g) => GUIDELINES[g.id]).filter((s): s is string => Boolean(s));
     if (lines.length === 0) return '';
     return `\n\n## 行为护栏\n${lines.map((s) => `- ${s}`).join('\n')}`;
   }
@@ -371,7 +364,8 @@ export function createDefaultGuards(): GuardRail {
         const key = readFailKey(c.toolName, c.argsJson);
         if (key === null) return;
         if (c.outcome === 'ok') readFailBySubject.delete(key);
-        else if (c.outcome === 'failed') readFailBySubject.set(key, (readFailBySubject.get(key) ?? 0) + 1);
+        else if (c.outcome === 'failed')
+          readFailBySubject.set(key, (readFailBySubject.get(key) ?? 0) + 1);
         // blocked 不计失败（未真正执行）
       },
       reset: () => readFailBySubject.clear(),
@@ -391,9 +385,7 @@ export function createDefaultGuards(): GuardRail {
       promptId: 'already_read',
       promptArgs: (c) => {
         const subject = extractSubject(c.toolName, c.argsJson);
-        const hit = subject
-          ? c.toolResultCache.check(c.toolName, subject)
-          : undefined;
+        const hit = subject ? c.toolResultCache.check(c.toolName, subject) : undefined;
         return {
           n: hit?.cachedAtIteration ?? 0,
           format: subject ? formatDedupSubject(c.toolName, subject) : '',

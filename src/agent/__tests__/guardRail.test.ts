@@ -73,18 +73,30 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
 
   it('search_limit：达搜上限拦，未达放行', () => {
     const blocked = guards.evaluateBlocked(
-      makeCtx({ toolName: 'web_search', argsJson: '{"query":"x"}', counters: { ...emptyCounters(), searchCallCount: 9 } }),
+      makeCtx({
+        toolName: 'web_search',
+        argsJson: '{"query":"x"}',
+        counters: { ...emptyCounters(), searchCallCount: 9 },
+      }),
     );
     expect(blocked?.guardId).toBe('search_limit');
     const pass = guards.evaluateBlocked(
-      makeCtx({ toolName: 'web_search', argsJson: '{"query":"x"}', counters: { ...emptyCounters(), searchCallCount: 5 } }),
+      makeCtx({
+        toolName: 'web_search',
+        argsJson: '{"query":"x"}',
+        counters: { ...emptyCounters(), searchCallCount: 5 },
+      }),
     );
     expect(pass).toBeUndefined();
   });
 
   it('ask_limit：达提问上限拦', () => {
     const blocked = guards.evaluateBlocked(
-      makeCtx({ toolName: 'ask_user', argsJson: '{}', counters: { ...emptyCounters(), askCountThisTurn: 20 } }),
+      makeCtx({
+        toolName: 'ask_user',
+        argsJson: '{}',
+        counters: { ...emptyCounters(), askCountThisTurn: 20 },
+      }),
     );
     expect(blocked?.guardId).toBe('ask_limit');
   });
@@ -150,7 +162,11 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
 
   it('非 info 工具不触发 read 系判定', () => {
     const r = guards.evaluateBlocked(
-      makeCtx({ toolName: 'run_code', argsJson: '{}', counters: { ...emptyCounters(), searchCallCount: 99 } }),
+      makeCtx({
+        toolName: 'run_code',
+        argsJson: '{}',
+        counters: { ...emptyCounters(), searchCallCount: 99 },
+      }),
     );
     expect(r).toBeUndefined();
   });

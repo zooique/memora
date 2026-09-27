@@ -68,16 +68,13 @@ describe('宿主集成端到端测试', () => {
       join(defaultPackDir, 'manifest.json'),
       JSON.stringify({ name: '默认助手', displayName: '默认助手' }),
     );
-    writeFileSync(
-      join(defaultPackDir, 'persona.md'),
-      '你是 Memora Agent，一个智能助手。',
-    );
+    writeFileSync(join(defaultPackDir, 'persona.md'), '你是 Memora Agent，一个智能助手。');
 
     const skillsDir = join(configDir, 'skills');
     mkdirSync(skillsDir, { recursive: true });
 
     // 验证环境变量
-    const hasKey = !!(process.env.MEMORA_API_KEY);
+    const hasKey = !!process.env.MEMORA_API_KEY;
     if (!hasKey) {
       console.warn('跳过：未配置 MEMORA_API_KEY 环境变量');
     }
@@ -497,7 +494,9 @@ describe('宿主集成端到端测试', () => {
             interacted = true;
           }
         }
-        console.warn(`第${roundIndex}轮 - 文本长度:${response.length}, 错误:${hasError}, 已交互:${interacted}`);
+        console.warn(
+          `第${roundIndex}轮 - 文本长度:${response.length}, 错误:${hasError}, 已交互:${interacted}`,
+        );
         // 允许 error / ask_user 暂停出口 / 纯工具轮，但必须至少有一次有意义的交互，否则视为彻底无输出
         expect(interacted).toBe(true);
       }

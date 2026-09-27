@@ -8,10 +8,15 @@
  */
 import { describe, it, expect, vi } from 'vitest';
 import type { IProjectSearchProvider } from '@/project-search/types.js';
-import { safeSearchProjectFiles, safeSearchProjectText } from '@/project-search/projectSearchProvider.js';
+import {
+  safeSearchProjectFiles,
+  safeSearchProjectText,
+} from '@/project-search/projectSearchProvider.js';
 
 /** 只关心 searchText 行为的提供者（searchFiles 恒空结果对象） */
-function providerWithText(searchText: IProjectSearchProvider['searchText']): IProjectSearchProvider {
+function providerWithText(
+  searchText: IProjectSearchProvider['searchText'],
+): IProjectSearchProvider {
   return {
     async searchFiles() {
       return { matches: [] };

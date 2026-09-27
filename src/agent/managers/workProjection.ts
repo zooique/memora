@@ -19,7 +19,8 @@ const PROJECTIONS_FILE = 'work-projections.json';
 const CONTEXT_BLOCK_HEADER = '【项目索引】';
 
 /** 装配注入块的提示文本（常量，便于统一修改与国际化扩展） */
-const CONTEXT_BLOCK_FOOTER = '（项目关键文件指针。如需详细内容，请使用 read_file 读取对应 source 路径。）';
+const CONTEXT_BLOCK_FOOTER =
+  '（项目关键文件指针。如需详细内容，请使用 read_file 读取对应 source 路径。）';
 
 /**
  * 作品投影的极简结构（纯元数据指针）
@@ -56,7 +57,11 @@ export class WorkProjectionManager {
    * @param onGenerated 投影登记回调（宿主通知用，可选）
    * @param projectDir 项目根目录（用于路径穿越防御，可选）
    */
-  constructor(memoraDir: string, onGenerated?: (sourcePath: string, description: string) => void, projectDir?: string) {
+  constructor(
+    memoraDir: string,
+    onGenerated?: (sourcePath: string, description: string) => void,
+    projectDir?: string,
+  ) {
     this.filePath = join(memoraDir, PROJECTIONS_FILE);
     this.onGenerated = onGenerated;
     this.projectDir = projectDir;
@@ -113,7 +118,7 @@ export class WorkProjectionManager {
       }
 
       // 检查是否已存在相同 source，存在则更新，不存在则追加
-      const existingIndex = this.entries.findIndex(e => e.source === newEntry.source);
+      const existingIndex = this.entries.findIndex((e) => e.source === newEntry.source);
       if (existingIndex >= 0) {
         this.entries[existingIndex] = newEntry;
       } else {
@@ -122,10 +127,10 @@ export class WorkProjectionManager {
 
       await mkdir(dirname(this.filePath), { recursive: true });
       await atomicWriteFile(this.filePath, JSON.stringify(this.entries, null, 2));
-      
+
       logger.info({ file: sourcePath, name: newEntry.name }, '作品投影已登记');
       this.onGenerated?.(sourcePath, newEntry.description);
-      
+
       return newEntry;
     } catch (err) {
       logger.warn({ err, file: sourcePath }, '作品投影登记失败');
@@ -145,7 +150,7 @@ export class WorkProjectionManager {
       // 验证数据格式（必须是顶层数组，与设计文档 docs/architecture/work-projection.md 一致）
       if (Array.isArray(parsed)) {
         this.fileWasMalformed = false;
-        this.entries = parsed.filter(e => e && e.source && e.name);
+        this.entries = parsed.filter((e) => e && e.source && e.name);
       } else {
         // 非数组根（如 {"entries":[...]} 错形态）→ 读路径不静默清空、显式告警；
         // 写路径由 registerWork 经 fileWasMalformed 标志 fail-safe 中止，不覆盖用户原索引

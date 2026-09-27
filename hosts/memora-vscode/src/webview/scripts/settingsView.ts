@@ -82,7 +82,14 @@ export function createSettingsView({ acquireVsCodeApi, window }: SettingsViewDep
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       const tab = btn.dataset.tab;
-      if (tab === 'roles' || tab === 'config' || tab === 'memory' || tab === 'skills' || tab === 'security') switchTab(tab);
+      if (
+        tab === 'roles' ||
+        tab === 'config' ||
+        tab === 'memory' ||
+        tab === 'skills' ||
+        tab === 'security'
+      )
+        switchTab(tab);
     });
   });
 
@@ -266,11 +273,15 @@ function createSkillsView({
 
   // L2：事件委托——点击「查看正文」按钮时请求内容或展开/折叠缓存内容
   listEl.addEventListener('click', (ev) => {
-    const btn = (ev.target as HTMLElement).closest('.skill-content-toggle') as HTMLButtonElement | null;
+    const btn = (ev.target as HTMLElement).closest(
+      '.skill-content-toggle',
+    ) as HTMLButtonElement | null;
     if (!btn) return;
     const skillName = btn.dataset.skillName;
     if (!skillName) return;
-    const contentEl = btn.closest('.skill-item')?.querySelector('.skill-content') as HTMLElement | null;
+    const contentEl = btn
+      .closest('.skill-item')
+      ?.querySelector('.skill-content') as HTMLElement | null;
     if (!contentEl) return;
     // 已加载 → 用缓存内容切换展开/折叠（切页重建 DOM 后缓存仍在，正文不丢）
     if (contentMap.has(skillName)) {
@@ -289,7 +300,9 @@ function createSkillsView({
   // 只发送消息、**不本地乐观翻转**（以 host skills_loaded 回推为准，避免「点击显示已禁
   // 但实际未生效」的假象；host 侧写配置由既有 onDidChangeConfiguration 监听接管）
   listEl.addEventListener('change', (ev) => {
-    const input = (ev.target as HTMLElement).closest('.skill-disable-check') as HTMLInputElement | null;
+    const input = (ev.target as HTMLElement).closest(
+      '.skill-disable-check',
+    ) as HTMLInputElement | null;
     if (!input) return;
     const skillName = input.dataset.skillName;
     if (!skillName) return;
@@ -338,7 +351,10 @@ function createSkillsView({
 const SKILL_PAGE_SIZE = 10;
 
 /** 三源分类元数据（SSOT 收紧）：图层 item/badge class + 中文标签；模块级供分页渲染复用 */
-const LAYER_META: Record<'builtin' | 'rolepack' | 'user', { item: string; badge: string; label: string }> = {
+const LAYER_META: Record<
+  'builtin' | 'rolepack' | 'user',
+  { item: string; badge: string; label: string }
+> = {
   builtin: { item: 'skill-agent', badge: 'badge-agent', label: '内置' },
   rolepack: { item: 'skill-rolepack', badge: 'badge-rolepack', label: '角色包' },
   user: { item: 'skill-user', badge: 'badge-user', label: '用户' },
@@ -348,11 +364,7 @@ const LAYER_META: Record<'builtin' | 'rolepack' | 'user', { item: string; badge:
  * 技能列表数据入口（skills_loaded 应答）：
  * 更新计数 + 处理空态，返回按三源排序的全量数组（分页组件据此切片渲染）。
  */
-function renderSkills(
-  listEl: HTMLElement,
-  countEl: HTMLElement,
-  skills: SkillDto[],
-): SkillDto[] {
+function renderSkills(listEl: HTMLElement, countEl: HTMLElement, skills: SkillDto[]): SkillDto[] {
   // 分别统计内置 / 启用角色包 / 用户三源技能
   const builtinCount = skills.filter((s) => s.layer === 'builtin').length;
   const rolePackCount = skills.filter((s) => s.layer === 'rolepack').length;
@@ -364,7 +376,10 @@ function renderSkills(
     if (builtinCount > 0) parts.push(`${builtinCount} 内置`);
     if (rolePackCount > 0) parts.push(`${rolePackCount} 角色包`);
     if (userCount > 0) parts.push(`${userCount} 用户`);
-    countEl.textContent = parts.length > 0 ? parts.join(' · ') + ` · 共 ${skills.length} 个` : `${skills.length} 个技能`;
+    countEl.textContent =
+      parts.length > 0
+        ? parts.join(' · ') + ` · 共 ${skills.length} 个`
+        : `${skills.length} 个技能`;
     countEl.hidden = false;
   } else {
     countEl.hidden = true;
@@ -381,7 +396,11 @@ function renderSkills(
   }
 
   // 按类型分组排序：内置 → 角色包 → 用户，同类型按名称排序
-  const LAYER_ORDER: Record<'builtin' | 'rolepack' | 'user', number> = { builtin: 0, rolepack: 1, user: 2 };
+  const LAYER_ORDER: Record<'builtin' | 'rolepack' | 'user', number> = {
+    builtin: 0,
+    rolepack: 1,
+    user: 2,
+  };
   return [...skills].sort((a, b) => {
     const oa = LAYER_ORDER[a.layer ?? 'builtin'];
     const ob = LAYER_ORDER[b.layer ?? 'builtin'];
@@ -445,7 +464,7 @@ function createSecurityView({
         `<li class="allowed-path-row allowed-path-base">` +
           `<span class="allowed-path-text" title="${escapeHtml(currentProjectPath)}">${escapeHtml(currentProjectPath)}</span>` +
           `<span class="allowed-path-tag">基准（始终允许）</span>` +
-        `</li>`,
+          `</li>`,
       );
     }
     // 用户额外目录（可删除，按索引定位避免路径含引号破坏属性）
@@ -454,7 +473,7 @@ function createSecurityView({
         `<li class="allowed-path-row">` +
           `<span class="allowed-path-text" title="${escapeHtml(p)}">${escapeHtml(p)}</span>` +
           `<button class="allowed-path-remove btn btn-ghost" type="button" data-index="${i}" aria-label="删除 ${escapeHtml(p)}"><span class="btn-icon" data-icon="close"></span></button>` +
-        `</li>`,
+          `</li>`,
       );
     });
     listEl.innerHTML = rows.join('');
@@ -485,7 +504,9 @@ function createSecurityView({
     toggle.addEventListener('change', () => {
       vscode.postMessage({ type: 'security_toggle', enabled: toggle.checked });
       if (statusEl) {
-        statusEl.textContent = toggle.checked ? '已开启：写文件前将弹出审批卡' : '已关闭：写文件自动批准';
+        statusEl.textContent = toggle.checked
+          ? '已开启：写文件前将弹出审批卡'
+          : '已关闭：写文件自动批准';
         statusEl.hidden = false;
       }
     });
@@ -496,7 +517,9 @@ function createSecurityView({
     scriptsToggle.addEventListener('change', () => {
       vscode.postMessage({ type: 'security_scripts_toggle', enabled: scriptsToggle.checked });
       if (statusEl) {
-        statusEl.textContent = scriptsToggle.checked ? '已开启：运行脚本/代码前将弹出审批卡' : '已关闭：脚本自动运行';
+        statusEl.textContent = scriptsToggle.checked
+          ? '已开启：运行脚本/代码前将弹出审批卡'
+          : '已关闭：脚本自动运行';
         statusEl.hidden = false;
       }
     });
@@ -535,5 +558,3 @@ function createSecurityView({
     }
   });
 }
-
-

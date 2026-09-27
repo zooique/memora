@@ -30,9 +30,7 @@ async function probeTeamMeeting(): Promise<void> {
   const manager = new RolePackManager(process.cwd());
   await manager.load('memora助手');
   // 组：组长=设计师，组员=小说家、助手（视角差异鲜明，便于判定「各视角体现角色设定」）
-  manager.setRolePackTeams([
-    { leader: '白话方案设计师', members: ['共鸣小说家', 'memora助手'] },
-  ]);
+  manager.setRolePackTeams([{ leader: '白话方案设计师', members: ['共鸣小说家', 'memora助手'] }]);
 
   const team = manager.getTeam('白话方案设计师');
   console.log(`  组解析：组长=${team?.leader ?? '?'}，组员=${team?.members.join(' / ') ?? '?'}\n`);
@@ -44,7 +42,9 @@ async function probeTeamMeeting(): Promise<void> {
     apiKey: process.env['MEMORA_API_KEY'] ?? '',
   });
   const topic = '「该不该给一个创意写作工具加记忆功能？」';
-  console.log('  📤 调用 run_team_meeting，一次 LLM 调用注入 3 个角色 persona，请 LLM 各视角评估 + 组长汇总\n');
+  console.log(
+    '  📤 调用 run_team_meeting，一次 LLM 调用注入 3 个角色 persona，请 LLM 各视角评估 + 组长汇总\n',
+  );
   const start = Date.now();
   const response = await runTeamMeetingAssessment({
     resolveTeam: (g) => manager.getTeam(g),
@@ -66,8 +66,12 @@ async function probeTeamMeeting(): Promise<void> {
   const hasSummary = /汇总|结论/.test(response);
   const ok = hasDesigner && hasNovelist && response.length > 200;
   console.log('\n' + '━'.repeat(70));
-  console.log(`  判定：设计师视角=${hasDesigner ? '✓' : '✗'} · 小说家视角=${hasNovelist ? '✓' : '✗'} · 助手视角=${hasAssistant ? '✓' : '✗'} · 组长汇总=${hasSummary ? '✓' : '✗'}`);
-  console.log(`  产出长度=${response.length} ${ok ? '→ ✅ 多角色视角真实注入，各视角差异可辨' : '→ ❌ 未达预期判断'}`);
+  console.log(
+    `  判定：设计师视角=${hasDesigner ? '✓' : '✗'} · 小说家视角=${hasNovelist ? '✓' : '✗'} · 助手视角=${hasAssistant ? '✓' : '✗'} · 组长汇总=${hasSummary ? '✓' : '✗'}`,
+  );
+  console.log(
+    `  产出长度=${response.length} ${ok ? '→ ✅ 多角色视角真实注入，各视角差异可辨' : '→ ❌ 未达预期判断'}`,
+  );
   console.log('━'.repeat(70));
 }
 

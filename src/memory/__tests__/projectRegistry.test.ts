@@ -11,17 +11,14 @@
  * 测试风格对齐 projectManager.test.ts：mkdtempSync 临时目录 + afterEach 清理。
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import {
-  mkdtempSync,
-  rmSync,
-  writeFileSync,
-  readFileSync,
-  existsSync,
-  statSync,
-} from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { ProjectRegistry, ProjectRegistryCorruptError, type ProjectEntry } from '@/memory/projectRegistry.js';
+import {
+  ProjectRegistry,
+  ProjectRegistryCorruptError,
+  type ProjectEntry,
+} from '@/memory/projectRegistry.js';
 
 // ─── 测试夹具 ────────────────────────────────────────────
 
@@ -64,9 +61,7 @@ describe('ProjectRegistry · register', () => {
     expect(entries[0]!.path).toBe('/path/to/project-a');
     expect(entries[0]!.name).toBe('project-a');
     // lastOpened 应为合法 ISO 时间戳
-    expect(entries[0]!.lastOpened).toMatch(
-      /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/,
-    );
+    expect(entries[0]!.lastOpened).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}/);
   });
 
   it('注册多个项目应按顺序追加', () => {
@@ -428,9 +423,7 @@ describe('ProjectRegistry · 损坏语义区分', () => {
 
     const registry = new ProjectRegistry(path);
 
-    expect(() => registry.unregister('/path/to/project-a')).toThrow(
-      ProjectRegistryCorruptError,
-    );
+    expect(() => registry.unregister('/path/to/project-a')).toThrow(ProjectRegistryCorruptError);
   });
 
   it('ProjectRegistryCorruptError 应携带 registryPath 和 cause 字段', () => {
@@ -543,30 +536,20 @@ describe('ProjectRegistry · 损坏语义区分', () => {
 
 describe('ProjectRegistry · inferProjectName（静态方法）', () => {
   it('应从 Unix 风格路径推断最后一段目录名', () => {
-    expect(ProjectRegistry.inferProjectName('/home/user/my-project')).toBe(
-      'my-project',
-    );
+    expect(ProjectRegistry.inferProjectName('/home/user/my-project')).toBe('my-project');
   });
 
   it('应从 Windows 风格路径推断最后一段目录名', () => {
-    expect(ProjectRegistry.inferProjectName('C:\\Users\\dev\\my-project')).toBe(
-      'my-project',
-    );
+    expect(ProjectRegistry.inferProjectName('C:\\Users\\dev\\my-project')).toBe('my-project');
   });
 
   it('应去除尾部斜杠后再推断', () => {
     // Unix 尾部斜杠
-    expect(ProjectRegistry.inferProjectName('/home/user/my-project/')).toBe(
-      'my-project',
-    );
+    expect(ProjectRegistry.inferProjectName('/home/user/my-project/')).toBe('my-project');
     // Windows 尾部反斜杠
-    expect(ProjectRegistry.inferProjectName('C:\\Users\\dev\\my-project\\')).toBe(
-      'my-project',
-    );
+    expect(ProjectRegistry.inferProjectName('C:\\Users\\dev\\my-project\\')).toBe('my-project');
     // 多个尾部斜杠
-    expect(ProjectRegistry.inferProjectName('/home/user/my-project//')).toBe(
-      'my-project',
-    );
+    expect(ProjectRegistry.inferProjectName('/home/user/my-project//')).toBe('my-project');
   });
 
   it('空路径或仅分隔符时应返回 "unnamed"', () => {
@@ -578,9 +561,7 @@ describe('ProjectRegistry · inferProjectName（静态方法）', () => {
   });
 
   it('相对路径应取最后一段目录名', () => {
-    expect(ProjectRegistry.inferProjectName('relative/path/to/project')).toBe(
-      'project',
-    );
+    expect(ProjectRegistry.inferProjectName('relative/path/to/project')).toBe('project');
   });
 
   it('单段路径（无分隔符）应原样返回', () => {

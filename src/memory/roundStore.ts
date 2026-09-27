@@ -156,11 +156,7 @@ export function isRoundSettled(status: RoundStatus): boolean {
  * 阶段与 Agent turn 对应：assembling=上下文装配（对齐 assembleContext 命名）/
  * llm_calling=调用模型 / processing=处理 / archiving=归档。枚举只保留有生产发射点的活值。
  */
-export type ProcessThinkingPhase =
-  | 'assembling'
-  | 'processing'
-  | 'archiving'
-  | 'llm_calling';
+export type ProcessThinkingPhase = 'assembling' | 'processing' | 'archiving' | 'llm_calling';
 
 /** meta 事件载荷：该轮回答身份（角色/模型均为显示名，重放不依赖 ProviderStore/RolePackManager） */
 export interface ProcessMetaPayload {
@@ -261,8 +257,18 @@ export type ProcessEvent =
    * 任务项级折叠边界：active 任务项推进时由 loop 产，
    * 宿主落盘此事件把后续 narrate/tool/问答归到对应任务项分组。无任务表不产。
    */
-  | { type: 'plan_item_boundary'; seq: number; ts: string; payload: { planItemId?: string; title?: string } }
-  | { type: 'aborted'; seq: number; ts: string; payload: { reason: string; stopReason?: AbortStopReason } }
+  | {
+      type: 'plan_item_boundary';
+      seq: number;
+      ts: string;
+      payload: { planItemId?: string; title?: string };
+    }
+  | {
+      type: 'aborted';
+      seq: number;
+      ts: string;
+      payload: { reason: string; stopReason?: AbortStopReason };
+    }
   /**
    * 流式错误（重放可见性）：失败轮在**实时流**里已有 `AgentChunk.error`（宿主据此即时弹
    * 提示条），但该 chunk **不落 processEvents** → 回看历史时原因丢失、只剩 generic「对话已中断」，
@@ -328,7 +334,7 @@ export type RoundEvidenceEvent =
         request: { offset?: number; limit?: number };
       };
     };
- 
+
 /**
  * 问答闭环（Round）
  *

@@ -135,9 +135,9 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     );
     expect((document.getElementById('roles-root') as HTMLElement).hidden).toBe(false);
     expect((document.getElementById('memory-root') as HTMLElement).hidden).toBe(true);
-    expect(
-      document.querySelector('.tab-btn[data-tab="roles"]')?.classList.contains('active'),
-    ).toBe(true);
+    expect(document.querySelector('.tab-btn[data-tab="roles"]')?.classList.contains('active')).toBe(
+      true,
+    );
   });
 
   it('id 空间隔离：各子视图数据只渲染进各自根容器（不跨根串扰）', () => {
@@ -188,11 +188,17 @@ describe('settingsView 选项卡切换（2026-08-17 合并角色/大模型/记�
     };
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'memory_loaded', stats: { total: 1, bySource: { 'round-summary': 1 } }, memories: [mem] },
+        data: {
+          type: 'memory_loaded',
+          stats: { total: 1, bySource: { 'round-summary': 1 } },
+          memories: [mem],
+        },
       }),
     );
     expect(document.querySelector('#memory-root .mem-card')).not.toBeNull();
-    expect(document.querySelector('#memory-root .mem-card-name')?.textContent).toContain('设计决策');
+    expect(document.querySelector('#memory-root .mem-card-name')?.textContent).toContain(
+      '设计决策',
+    );
   });
 
   it('网页搜索引擎下拉（方案 A）：变更发 search_engine_set，host 回推 search_engine_status 回显', () => {
@@ -227,7 +233,9 @@ describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08�
       }),
     );
     expect((document.getElementById('confirmWritesToggle') as HTMLInputElement).checked).toBe(true);
-    expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(true);
+    expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(
+      true,
+    );
     const statusEl = document.getElementById('securityStatus') as HTMLElement;
     expect(statusEl.textContent).toContain('写文件前审批');
     expect(statusEl.textContent).toContain('脚本执行前审批');
@@ -239,7 +247,9 @@ describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08�
     scriptsToggle.checked = true;
     scriptsToggle.dispatchEvent(new Event('change'));
     expect(postMessage).toHaveBeenCalledWith({ type: 'security_scripts_toggle', enabled: true });
-    expect((document.getElementById('securityStatus') as HTMLElement).textContent).toContain('运行脚本/代码前将弹出审批卡');
+    expect((document.getElementById('securityStatus') as HTMLElement).textContent).toContain(
+      '运行脚本/代码前将弹出审批卡',
+    );
   });
 
   it('host 单独回推 confirmScripts=false 只改脚本开关、不影响写开关', () => {
@@ -257,7 +267,9 @@ describe('脚本执行二次确认开关（security_scripts_toggle，2026-09-08�
       }),
     );
     expect((document.getElementById('confirmWritesToggle') as HTMLInputElement).checked).toBe(true);
-    expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(false);
+    expect((document.getElementById('confirmScriptsToggle') as HTMLInputElement).checked).toBe(
+      false,
+    );
   });
 });
 
@@ -268,14 +280,16 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
 
   /** 构造技能 DTO（定宽名保证 localeCompare 排序符合数值序，避免 skill-10 < skill-2 错位） */
   function makeSkill(i: number): { name: string; description: string; layer: 'builtin' } {
-    return { name: `skill-${String(i).padStart(2, '0')}`, description: `技能 ${i} 描述`, layer: 'builtin' };
+    return {
+      name: `skill-${String(i).padStart(2, '0')}`,
+      description: `技能 ${i} 描述`,
+      layer: 'builtin',
+    };
   }
 
   /** 分发 skills_loaded */
   function dispatchSkills(skills: unknown[]): void {
-    window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'skills_loaded', skills } }),
-    );
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'skills_loaded', skills } }));
   }
 
   it('skills_loaded 15 个 → 第 1 页渲染 10 张卡片 + 分页条「第 1 / 2 页（共 15 条）」', () => {
@@ -297,7 +311,9 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     const items = document.querySelectorAll('.skill-item');
     expect(items).toHaveLength(5);
     expect(items[0]?.querySelector('.skill-name')?.textContent).toBe('skill-10');
-    expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe('第 2 / 2 页（共 15 条）');
+    expect(document.querySelector('#skills-root .pager-info')?.textContent).toBe(
+      '第 2 / 2 页（共 15 条）',
+    );
   });
 
   it('已禁用徽章（S4 启停）：disabled=true 渲染「已禁用」且**条目保留**，未禁用不渲染', () => {
@@ -326,7 +342,11 @@ describe('技能分页（2026-09-08 通用分页组件，全量前端切片）',
     mountSettingsView();
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'skills_loaded', skills: [makeSkill(0)], unmatchedDisabled: ['typo-skill', 'ghost-skill'] },
+        data: {
+          type: 'skills_loaded',
+          skills: [makeSkill(0)],
+          unmatchedDisabled: ['typo-skill', 'ghost-skill'],
+        },
       }),
     );
     const tip = document.querySelector('#skills-root .skill-unmatched-tip');
@@ -349,9 +369,7 @@ describe('技能禁用延长线开关（S4 E，2026-09-22）', () => {
 
   /** 分发 skills_loaded（三源任意层） */
   function dispatchSkills(skills: unknown[]): void {
-    window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'skills_loaded', skills } }),
-    );
+    window.dispatchEvent(new MessageEvent('message', { data: { type: 'skills_loaded', skills } }));
   }
 
   it('builtin/user 技能卡片渲染真实开关；disabled=true → checked（与「已禁用」徽章同态对照）', () => {
@@ -360,8 +378,12 @@ describe('技能禁用延长线开关（S4 E，2026-09-22）', () => {
       { name: 's1', description: '启用中的内置技能', layer: 'builtin' },
       { name: 's2', description: '已禁用的用户技能', layer: 'user', disabled: true },
     ]);
-    const s1Toggle = document.querySelector('.skill-item[data-skill-name="s1"] .skill-disable-check') as HTMLInputElement | null;
-    const s2Toggle = document.querySelector('.skill-item[data-skill-name="s2"] .skill-disable-check') as HTMLInputElement | null;
+    const s1Toggle = document.querySelector(
+      '.skill-item[data-skill-name="s1"] .skill-disable-check',
+    ) as HTMLInputElement | null;
+    const s2Toggle = document.querySelector(
+      '.skill-item[data-skill-name="s2"] .skill-disable-check',
+    ) as HTMLInputElement | null;
     expect(s1Toggle).not.toBeNull();
     expect(s1Toggle?.checked).toBe(false);
     expect(s2Toggle).not.toBeNull();
@@ -379,10 +401,16 @@ describe('技能禁用延长线开关（S4 E，2026-09-22）', () => {
   it('点击开关 → 发送 toggle_skill_disabled；不做本地乐观翻转（「已禁用」徽章不上屏，等回推）', () => {
     const { postMessage } = mountSettingsView();
     dispatchSkills([{ name: 's1', description: '技能', layer: 'builtin' }]);
-    const toggle = document.querySelector('.skill-item[data-skill-name="s1"] .skill-disable-check') as HTMLInputElement;
+    const toggle = document.querySelector(
+      '.skill-item[data-skill-name="s1"] .skill-disable-check',
+    ) as HTMLInputElement;
     expect(toggle.checked).toBe(false);
     toggle.click(); // 原生 click 翻转 checked 并触发 change（change 冒泡被 listEl 委托捕获）
-    expect(postMessage).toHaveBeenCalledWith({ type: 'toggle_skill_disabled', name: 's1', disabled: true });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'toggle_skill_disabled',
+      name: 's1',
+      disabled: true,
+    });
     // 未本地乐观更新：点击后「已禁用」徽章不得立即出现（以 host skills_loaded 回推渲染为准）
     expect(toggle.closest('.skill-item')?.querySelector('.disabled-badge')).toBeNull();
   });
@@ -401,7 +429,9 @@ describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全�
   it('notice(info) → 渲染 #settings-toast 并显示文案与 .show', () => {
     mountSettingsView();
     window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'notice', level: 'info', message: '已切换网页搜索引擎' } }),
+      new MessageEvent('message', {
+        data: { type: 'notice', level: 'info', message: '已切换网页搜索引擎' },
+      }),
     );
     const toast = document.getElementById('settings-toast') as HTMLElement;
     expect(toast).not.toBeNull();
@@ -413,7 +443,9 @@ describe('settingsView 全局通知 toast（settingsPanel→notice 断链补全�
   it('notice(error) 标红 + 2500ms 后自动隐藏（重触发需 clearTimeout 重置）', () => {
     mountSettingsView();
     window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'notice', level: 'error', message: '角色包不存在：x' } }),
+      new MessageEvent('message', {
+        data: { type: 'notice', level: 'error', message: '角色包不存在：x' },
+      }),
     );
     const toast = document.getElementById('settings-toast') as HTMLElement;
     expect(toast.classList.contains('error')).toBe(true);
@@ -469,7 +501,9 @@ describe('技能正文翻页重渲染防注入（HOST-S16）', () => {
     // 首次加载正文（走 textContent 安全路径）→ 写入 contentMap 缓存
     const payload = '<b>粗体</b><img src=x onerror=alert(1)>';
     window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'skill_content', skillName: 'skill-00', content: payload } }),
+      new MessageEvent('message', {
+        data: { type: 'skill_content', skillName: 'skill-00', content: payload },
+      }),
     );
     // 翻到第 2 页再回第 1 页 → 触发 renderSkillItems 重渲染（命中缓存 → innerHTML 分支）
     const btns = document.querySelectorAll<HTMLButtonElement>('#skills-root .pager-btn');

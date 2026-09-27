@@ -1,0 +1,12 @@
+# 换行符统一为 LF —— prettier endOfLine:"lf"（见 .prettierrc）的配套固化
+#
+# 背景（FMT-PRETTIER-1 第②步）：本机 core.autocrlf=true 且此前无本文件 ⇒ checkout 时
+# 工作区被 git 转成 CRLF，而 prettier 按字节判定换行符 ⇒ 同一份内容「本机绿、新 clone 红」。
+# 光跑 prettier --write 只能让红消失一次（下次 checkout CRLF 复发），必须由本文件把
+# checkout 形态固定为 LF，格式化结果才可持久。
+#
+# 范围纪律：只圈 format:check 的作用面（ts/json）。md 已被 .prettierignore 全域挡住、
+# 不进格式化面，故不在本文件圈定；yaml/lock 等同理（若将来放宽 format 的 glob，
+# 须先另行加 .prettierignore，见 tasks/待完成任务.md FMT-PRETTIER-1）。
+*.ts text eol=lf
+*.json text eol=lf

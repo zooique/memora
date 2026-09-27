@@ -86,11 +86,9 @@ export type SummaryType = (typeof SUMMARY_TYPES)[number];
  */
 export function parseMemory(raw: unknown): Memory {
   if (raw === null || typeof raw !== 'object') {
-    throw configError(
-      'Memory 解析失败',
-      '输入必须是非空对象',
-      ['检查数据源（JSON 文件 / 数据库查询）是否返回了有效对象'],
-    );
+    throw configError('Memory 解析失败', '输入必须是非空对象', [
+      '检查数据源（JSON 文件 / 数据库查询）是否返回了有效对象',
+    ]);
   }
 
   const obj = raw as Record<string, unknown>;
@@ -99,11 +97,9 @@ export function parseMemory(raw: unknown): Memory {
   const stringFields = ['id', 'content', 'source', 'name'] as const;
   for (const field of stringFields) {
     if (typeof obj[field] !== 'string') {
-      throw configError(
-        'Memory 解析失败',
-        `${field} 必须是字符串`,
-        [`检查数据源中 ${field} 字段的类型（当前为 ${typeof obj[field]}）`],
-      );
+      throw configError('Memory 解析失败', `${field} 必须是字符串`, [
+        `检查数据源中 ${field} 字段的类型（当前为 ${typeof obj[field]}）`,
+      ]);
     }
   }
 
@@ -111,11 +107,9 @@ export function parseMemory(raw: unknown): Memory {
   const dateFields = ['createdAt', 'accessedAt'] as const;
   for (const field of dateFields) {
     if (typeof obj[field] !== 'string' || isNaN(Date.parse(obj[field] as string))) {
-      throw configError(
-        'Memory 解析失败',
-        `${field} 必须是有效的 ISO 8601 日期字符串`,
-        [`检查数据源中 ${field} 字段的格式（当前值: ${JSON.stringify(obj[field])}）`],
-      );
+      throw configError('Memory 解析失败', `${field} 必须是有效的 ISO 8601 日期字符串`, [
+        `检查数据源中 ${field} 字段的格式（当前值: ${JSON.stringify(obj[field])}）`,
+      ]);
     }
   }
 
@@ -136,11 +130,9 @@ export function parseMemory(raw: unknown): Memory {
   // （如 summaryType: 'bogus' / isModified: 'yes'）靠 as 断言透传会致
   // round-summary 分轨召回与编辑标记消费行为漂移（无编译报错）。
   if (obj.metadata !== undefined && !isPlainObject(obj.metadata)) {
-    throw configError(
-      'Memory 解析失败',
-      `metadata 必须是对象（当前为 ${typeof obj.metadata}）`,
-      ['检查数据源中 metadata 字段的类型'],
-    );
+    throw configError('Memory 解析失败', `metadata 必须是对象（当前为 ${typeof obj.metadata}）`, [
+      '检查数据源中 metadata 字段的类型',
+    ]);
   }
   if (obj.summaryType !== undefined && !SUMMARY_TYPES.includes(obj.summaryType as SummaryType)) {
     throw configError(
@@ -157,11 +149,9 @@ export function parseMemory(raw: unknown): Memory {
     );
   }
   if (obj.roundId !== undefined && typeof obj.roundId !== 'string') {
-    throw configError(
-      'Memory 解析失败',
-      `roundId 必须是字符串（当前为 ${typeof obj.roundId}）`,
-      ['检查数据源中 roundId 字段的类型'],
-    );
+    throw configError('Memory 解析失败', `roundId 必须是字符串（当前为 ${typeof obj.roundId}）`, [
+      '检查数据源中 roundId 字段的类型',
+    ]);
   }
   if (obj.isModified !== undefined && typeof obj.isModified !== 'boolean') {
     throw configError(

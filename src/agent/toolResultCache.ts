@@ -171,8 +171,9 @@ function rawPathOf(argsJson: string): string | undefined {
  * 独立枚举工具名）；值 = 共用的 `args.path` 提取语义（'path' 模式的定义即「目标 = args.path」）。
  * 路径规范化与去重同源（`normalizePathKey`）：路径等价语义只有这一套，不另造。
  */
-export const WRITE_PATH_EXTRACTORS: Readonly<Record<string, (argsJson: string) => string | undefined>> =
-  Object.fromEntries(PATH_WRITE_TOOL_NAMES.map((name) => [name, extractArgsPathTarget]));
+export const WRITE_PATH_EXTRACTORS: Readonly<
+  Record<string, (argsJson: string) => string | undefined>
+> = Object.fromEntries(PATH_WRITE_TOOL_NAMES.map((name) => [name, extractArgsPathTarget]));
 
 /** `'path'` 模式写工具的目标提取：`args.path` → 规范化路径（提取失败返回 undefined，调用方降级屏障） */
 function extractArgsPathTarget(argsJson: string): string | undefined {

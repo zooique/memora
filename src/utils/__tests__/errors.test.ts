@@ -171,7 +171,13 @@ describe('securityError · 安全错误工厂', () => {
 
 describe('MemoraError.errorCode · 工具错误码字段', () => {
   it('toolError 透传 errorCode 到 MemoraError', () => {
-    const err = toolError('文件不存在', '/tmp/foo', ['检查路径'], undefined, ToolErrorCode.FILE_NOT_FOUND);
+    const err = toolError(
+      '文件不存在',
+      '/tmp/foo',
+      ['检查路径'],
+      undefined,
+      ToolErrorCode.FILE_NOT_FOUND,
+    );
     expect(err.errorCode).toBe(ToolErrorCode.FILE_NOT_FOUND);
     expect(err.category).toBe('tool');
   });

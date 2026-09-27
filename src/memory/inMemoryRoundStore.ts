@@ -7,11 +7,7 @@
  * - 生产由宿主注入持久化实现（FileRoundStore 或宿主自选后端）
  */
 
-import type {
-  Round,
-  RoundStatus,
-  IRoundStore,
-} from '@/memory/roundStore.js';
+import type { Round, RoundStatus, IRoundStore } from '@/memory/roundStore.js';
 import { logger } from '@/logging/logger.js';
 
 /**
@@ -131,10 +127,7 @@ export class InMemoryRoundStore implements IRoundStore {
 
     // 检查引用计数
     if (round.refCount > 0) {
-      logger.warn(
-        { roundId, refCount: round.refCount },
-        'delete: Round 仍被引用，无法删除',
-      );
+      logger.warn({ roundId, refCount: round.refCount }, 'delete: Round 仍被引用，无法删除');
       return false;
     }
 

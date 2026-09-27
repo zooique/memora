@@ -35,7 +35,14 @@ function asFetch(mock: unknown): typeof globalThis.fetch {
 function htmlResponse(
   html: string,
   overrides: Partial<{ url: string; headers: Record<string, string> }> = {},
-): { ok: boolean; status: number; statusText: string; url: string; headers: { get: (k: string) => string | null }; text: () => Promise<string> } {
+): {
+  ok: boolean;
+  status: number;
+  statusText: string;
+  url: string;
+  headers: { get: (k: string) => string | null };
+  text: () => Promise<string>;
+} {
   return {
     ok: true,
     status: 200,
@@ -113,7 +120,9 @@ describe('FetchWebFetchProvider', () => {
   });
 
   it('空正文页面应返回空 content', async () => {
-    globalThis.fetch = asFetch(vi.fn().mockResolvedValue(htmlResponse('<html><body></body></html>')));
+    globalThis.fetch = asFetch(
+      vi.fn().mockResolvedValue(htmlResponse('<html><body></body></html>')),
+    );
     const page = await provider.fetch('https://example.com/empty');
     expect(page.content).toBe('');
   });

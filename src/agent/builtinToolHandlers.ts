@@ -294,7 +294,12 @@ export class BuiltinToolHandlers {
 
     // 读前预检：目标是目录时给出可执行指引（read_file 语义是读文件；
     // EISDIR 原生错误对 LLM 无意义，直接提示改用 list_dir）
-    await this.assertFileNotDir(absolutePath, relativePath, 'read_file', '改用 list_dir 列出该目录下的内容');
+    await this.assertFileNotDir(
+      absolutePath,
+      relativePath,
+      'read_file',
+      '改用 list_dir 列出该目录下的内容',
+    );
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
@@ -312,7 +317,9 @@ export class BuiltinToolHandlers {
         // 的 summary 停在 `[同` 即此）。故**前置**清单：保证 summary 前 100 字先到达证据，
         // 而非路径。路径本身对"自查文件名"零贡献，放后面不损失。
         const hint = await this.siblingDirHint(absolutePath);
-        const evidenceFirst = hint ? `${hint}\n${absolutePath}：文件不存在` : `${absolutePath}：文件不存在`;
+        const evidenceFirst = hint
+          ? `${hint}\n${absolutePath}：文件不存在`
+          : `${absolutePath}：文件不存在`;
         throw toolError(
           'read_file 文件不存在',
           evidenceFirst,
@@ -381,7 +388,8 @@ export class BuiltinToolHandlers {
   ): string {
     // 预算扣除包裹开销：使 wrapped 后仍 ≤ 单条上限（见 TOOL_RESULT_WRAP_OVERHEAD_TOKENS 注释）
     const budget =
-      LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS - LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS;
+      LOOP_CONSTANTS.SINGLE_TOOL_RESULT_MAX_TOKENS -
+      LOOP_CONSTANTS.TOOL_RESULT_WRAP_OVERHEAD_TOKENS;
     const lines = content.split('\n');
     const total = lines.length;
 
@@ -427,9 +435,7 @@ export class BuiltinToolHandlers {
     }
 
     // 二分下界保证 body 不超 bodyBudget；脚注按 ceil 可加性不超 reserve
-    return (
-      `${lines.slice(start - 1, endLine).join('\n')}\n${formatSegmentationFooter(start, endLine, total)}`
-    );
+    return `${lines.slice(start - 1, endLine).join('\n')}\n${formatSegmentationFooter(start, endLine, total)}`;
   }
 
   /**
@@ -456,7 +462,12 @@ export class BuiltinToolHandlers {
     this.guardPathOrThrow(absolutePath, 'run_code');
 
     // 读前预检：目标是目录时给出可执行指引（脚本语义是文件）
-    await this.assertFileNotDir(absolutePath, relativePath, 'run_code script_path', '传入脚本文件路径');
+    await this.assertFileNotDir(
+      absolutePath,
+      relativePath,
+      'run_code script_path',
+      '传入脚本文件路径',
+    );
 
     try {
       const content = await readFile(absolutePath, 'utf-8');
@@ -1070,7 +1081,9 @@ export class BuiltinToolHandlers {
    * @param run 返回记忆搜索结果的函数（同步或异步）
    * @returns 搜索完成后返回全量命中；超时则返回空数组（降级提示由调用方近零命中分支承担）
    */
-  private async withMemorySearchTimeout(run: () => Promise<AgentSearchHit[]>): Promise<AgentSearchHit[]> {
+  private async withMemorySearchTimeout(
+    run: () => Promise<AgentSearchHit[]>,
+  ): Promise<AgentSearchHit[]> {
     const timeout = new Promise<AgentSearchHit[]>((_, reject) => {
       const id = setTimeout(() => {
         clearTimeout(id);

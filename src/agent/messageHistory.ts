@@ -47,8 +47,8 @@ export class MessageHistory {
     private readonly sessionStore?: ISessionStore,
     initialDate?: string,
     initialSession = 'main',
-  /** 问答闭环存储（可选）；注入则启用 round-based 模式（消息内容唯一真相源） */
-  private readonly roundStore?: IRoundStore,
+    /** 问答闭环存储（可选）；注入则启用 round-based 模式（消息内容唯一真相源） */
+    private readonly roundStore?: IRoundStore,
   ) {
     this.currentDate = initialDate ?? todayDate();
     this.currentSession = initialSession;
@@ -141,7 +141,9 @@ export class MessageHistory {
    */
   forkSession(roundId?: string, targetSession?: string): ForkResult {
     if (!this.sessionStore) {
-      throw configError('无法分叉会话', 'ISessionStore 未注入', ['在创建 Agent 时注入 sessionStore 参数']);
+      throw configError('无法分叉会话', 'ISessionStore 未注入', [
+        '在创建 Agent 时注入 sessionStore 参数',
+      ]);
     }
     const store = this.sessionStore;
 
@@ -161,7 +163,9 @@ export class MessageHistory {
     const effectiveRoundId = roundId ?? currentRoundIds[currentRoundIds.length - 1]!;
     const forkIdx = currentRoundIds.indexOf(effectiveRoundId);
     if (forkIdx === -1) {
-      throw configError('无法分叉会话', `Round 不存在于当前会话: ${effectiveRoundId}`, ['确认分叉点是当前会话中的问答闭环']);
+      throw configError('无法分叉会话', `Round 不存在于当前会话: ${effectiveRoundId}`, [
+        '确认分叉点是当前会话中的问答闭环',
+      ]);
     }
 
     // 4. 截取到分叉点的 ID 列表（包含分叉点）
@@ -174,7 +178,9 @@ export class MessageHistory {
       const targetFullName = `${todayDate()}-${targetSession}`;
       const existingSessions = store.listSessions();
       if (existingSessions.includes(targetFullName)) {
-        throw configError('无法分叉会话', `当天会话 "${targetSession}" 已存在`, ['使用不同的名称，或不传参数自动生成']);
+        throw configError('无法分叉会话', `当天会话 "${targetSession}" 已存在`, [
+          '使用不同的名称，或不传参数自动生成',
+        ]);
       }
       newSession = targetSession;
     } else {
@@ -202,7 +208,10 @@ export class MessageHistory {
     this.currentDate = todayDate();
     this.switchSession(newSession);
 
-    logger.info({ from: currentSession.sessionId, to: newSession, roundCount: newRoundIds.length }, '会话分叉完成');
+    logger.info(
+      { from: currentSession.sessionId, to: newSession, roundCount: newRoundIds.length },
+      '会话分叉完成',
+    );
 
     return { newSession, date: todayDate(), roundIds: newRoundIds };
   }
@@ -347,8 +356,7 @@ export class MessageHistory {
     if (roundId && this.roundStore) {
       let completed: Round | null = null;
       // 统一取现有轮：优先 pending 缓存（prepare 新建后未完成），否则 RoundStore（跨重启 / 暂停已完成轮）
-      const existing =
-        this.pendingRounds.get(roundId) ?? this.roundStore.getById(roundId) ?? null;
+      const existing = this.pendingRounds.get(roundId) ?? this.roundStore.getById(roundId) ?? null;
       if (existing) {
         // 旧 assistant 段入 assistantLog（仅当已存在 assistantMessage 时产生，普通单段轮零冗余）
         const assistantLog = existing.assistantLog
@@ -380,7 +388,8 @@ export class MessageHistory {
         // 续写同一闭环节点（assistantLog：跨暂停-续跑多次 appendAssistant 到同一 roundId）不重复登记——
         // 否则 roundIds 同 id 重复堆叠、refCount 虚增，会话视图出现「一个问答闭环多次登记」
         // 判据 = isRoundSettled（非自写 'complete'）：已是终态（含 interrupted）就不得再登记一次
-        const isReappend = existing !== null && existing !== undefined && isRoundSettled(existing.status);
+        const isReappend =
+          existing !== null && existing !== undefined && isRoundSettled(existing.status);
         if (!isReappend) {
           this.roundStore.incrementRef(roundId);
           const sessionId = this.currentSessionName;
@@ -476,7 +485,10 @@ export class MessageHistory {
       // 已收场（幂等重跑 / 防御）：complete / interrupted 均为终态（正常完成 或 中断收场），
       // 不再二次登记会话引用，防止 roundIds 重复堆叠、refCount 虚增（判据 SSOT = isRoundSettled）
       if (isRoundSettled(existing.status)) {
-        logger.debug({ roundId, status: existing.status }, 'appendInterrupted: 轮已收场，跳过重复升级');
+        logger.debug(
+          { roundId, status: existing.status },
+          'appendInterrupted: 轮已收场，跳过重复升级',
+        );
         return;
       }
       // 有恢复文本才写 assistantMessage（§一·五：无 assistantMessage 总结也按 stop 语义收场）

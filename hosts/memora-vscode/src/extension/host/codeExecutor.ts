@@ -68,7 +68,10 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
         };
       }
       // 超时：居中限制到 [100, 120_000] 毫秒（子进程最小给 100ms 容错）
-      const timeoutMs = Math.min(Math.max(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS, 100), MAX_TIMEOUT_MS);
+      const timeoutMs = Math.min(
+        Math.max(options?.timeoutMs ?? DEFAULT_TIMEOUT_MS, 100),
+        MAX_TIMEOUT_MS,
+      );
 
       // 外部兜底超时（safeExecuteCode 已包一层，此处再保底以防 not-race 场景）
       return new Promise<CodeExecutionResult>((resolve) => {
@@ -93,11 +96,20 @@ export function createLocalCodeExecutor(): ICodeExecutionProvider {
         let stdout = '';
         let stderr = '';
         // 输出流收集（容量由内核 RUN_CODE_RESULT_MAX_LEN 截断，本地仅累积）
-        child.stdout.on('data', (d) => { stdout += String(d); });
-        child.stderr.on('data', (d) => { stderr += String(d); });
+        child.stdout.on('data', (d) => {
+          stdout += String(d);
+        });
+        child.stderr.on('data', (d) => {
+          stderr += String(d);
+        });
         // 子进程启动失败（如 execPath 不可用）
         child.on('error', (err) => {
-          finish({ stdout, stderr: stderr || `执行失败：${err.message}`, exitCode: -1, timedOut: false });
+          finish({
+            stdout,
+            stderr: stderr || `执行失败：${err.message}`,
+            exitCode: -1,
+            timedOut: false,
+          });
         });
         // 子进程正常退出：exitCode = code
         child.on('close', (code) => {

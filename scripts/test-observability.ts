@@ -134,10 +134,7 @@ function createMockProviderWithUsage(): LlmProvider {
 // ─── Mock Tool Executor ──────────────────────────
 
 /** 模拟工具执行器：返回简单结果 */
-async function mockToolExecutor(
-  toolName: string,
-  _args: string,
-): Promise<string> {
+async function mockToolExecutor(toolName: string, _args: string): Promise<string> {
   return `工具 ${toolName} 执行成功，结果：OK`;
 }
 
@@ -205,7 +202,10 @@ async function main(): Promise<void> {
 
   // ─── 测试 3：验证 Token 成本追踪 ──────────────────────────
   console.log('\n📋 测试 3：Token 成本追踪验证');
-  assert(afterFirstChat.llm.callCount > 0, `LLM 调用次数 > 0 (实际: ${afterFirstChat.llm.callCount})`);
+  assert(
+    afterFirstChat.llm.callCount > 0,
+    `LLM 调用次数 > 0 (实际: ${afterFirstChat.llm.callCount})`,
+  );
   assert(
     afterFirstChat.llm.actualInputTokens >= 150,
     `actualInputTokens 被捕获 (实际: ${afterFirstChat.llm.actualInputTokens})`,
@@ -227,11 +227,26 @@ async function main(): Promise<void> {
 
   // ─── 测试 4：验证 SLO 度量 ──────────────────────────
   console.log('\n📋 测试 4：SLO 度量验证');
-  assert(afterFirstChat.tasks.totalCount === 1, `tasks.totalCount = 1 (实际: ${afterFirstChat.tasks.totalCount})`);
-  assert(afterFirstChat.tasks.successCount === 1, `tasks.successCount = 1 (实际: ${afterFirstChat.tasks.successCount})`);
-  assert(afterFirstChat.tasks.failureCount === 0, `tasks.failureCount = 0 (实际: ${afterFirstChat.tasks.failureCount})`);
-  assert(afterFirstChat.tasks.successRate === 1, `tasks.successRate = 1.0 (实际: ${afterFirstChat.tasks.successRate})`);
-  assert(afterFirstChat.tasks.avgDurationMs > 0, `tasks.avgDurationMs > 0 (实际: ${afterFirstChat.tasks.avgDurationMs}ms)`);
+  assert(
+    afterFirstChat.tasks.totalCount === 1,
+    `tasks.totalCount = 1 (实际: ${afterFirstChat.tasks.totalCount})`,
+  );
+  assert(
+    afterFirstChat.tasks.successCount === 1,
+    `tasks.successCount = 1 (实际: ${afterFirstChat.tasks.successCount})`,
+  );
+  assert(
+    afterFirstChat.tasks.failureCount === 0,
+    `tasks.failureCount = 0 (实际: ${afterFirstChat.tasks.failureCount})`,
+  );
+  assert(
+    afterFirstChat.tasks.successRate === 1,
+    `tasks.successRate = 1.0 (实际: ${afterFirstChat.tasks.successRate})`,
+  );
+  assert(
+    afterFirstChat.tasks.avgDurationMs > 0,
+    `tasks.avgDurationMs > 0 (实际: ${afterFirstChat.tasks.avgDurationMs}ms)`,
+  );
   console.log(`  📊 任务 SLO：成功率 ${(afterFirstChat.tasks.successRate * 100).toFixed(1)}%`);
   console.log(`  📊 任务 SLO：平均耗时 ${afterFirstChat.tasks.avgDurationMs}ms`);
 
@@ -262,8 +277,14 @@ async function main(): Promise<void> {
   }
 
   const afterSecondChat = loop.getMetrics();
-  assert(afterSecondChat.tasks.totalCount === 2, `两次对话后 tasks.totalCount = 2 (实际: ${afterSecondChat.tasks.totalCount})`);
-  assert(afterSecondChat.tasks.successCount === 2, `两次对话后 tasks.successCount = 2 (实际: ${afterSecondChat.tasks.successCount})`);
+  assert(
+    afterSecondChat.tasks.totalCount === 2,
+    `两次对话后 tasks.totalCount = 2 (实际: ${afterSecondChat.tasks.totalCount})`,
+  );
+  assert(
+    afterSecondChat.tasks.successCount === 2,
+    `两次对话后 tasks.successCount = 2 (实际: ${afterSecondChat.tasks.successCount})`,
+  );
   // 注：第二次调用返回不带 usage 的响应（callCount % 4 === 2），actualInputTokens 不增加是正确行为
   // 第三次调用才会返回带 usage 的响应
   console.log(
@@ -292,10 +313,7 @@ async function main(): Promise<void> {
         firstToolSpan.attributes['result'] !== undefined,
         `Span 包含 result 属性 (实际: ${String(firstToolSpan.attributes['result'] ?? '').slice(0, 50)}...)`,
       );
-      assert(
-        firstToolSpan.attributes['ok'] === true,
-        `Span 包含 ok=true 属性`,
-      );
+      assert(firstToolSpan.attributes['ok'] === true, `Span 包含 ok=true 属性`);
     }
   } else {
     console.log('  ⚠️  本次对话无工具调用，跳过 Span 明细验证');
@@ -329,7 +347,9 @@ async function main(): Promise<void> {
 
   console.log('\n🎉 所有测试完成！可观测性体系 5 个维度全部验证通过。');
   console.log('\n📖 新增指标说明：');
-  console.log('   - llm.actualInputTokens / llm.actualOutputTokens：Provider 实际返回的 token 用量');
+  console.log(
+    '   - llm.actualInputTokens / llm.actualOutputTokens：Provider 实际返回的 token 用量',
+  );
   console.log('   - tasks.totalCount / successCount / failureCount：任务级 SLO 统计');
   console.log('   - tasks.successRate / tasks.avgDurationMs：任务成功率与平均耗时');
   console.log('   - Span.attributes.args / Span.attributes.result：工具调用的参数与结果摘要');

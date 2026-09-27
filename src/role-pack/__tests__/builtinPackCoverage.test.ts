@@ -31,7 +31,13 @@ import { validateManifestText } from '@/role-pack/validator.js';
 import { RolePackManager } from '@/role-pack/rolePackManager.js';
 
 /** 仓库根 role-packs/（内置角色包唯一内容源，随内核发布并供宿主构建期同步） */
-const ROLE_PACKS_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'role-packs');
+const ROLE_PACKS_DIR = join(
+  dirname(fileURLToPath(import.meta.url)),
+  '..',
+  '..',
+  '..',
+  'role-packs',
+);
 
 /** 内置包目录名列表（含无 skills/ 的兜底契约包） */
 function listPackDirs(): string[] {
@@ -233,7 +239,9 @@ describe('技能引用提取器（正则自锚，SSOT §2.6）', () => {
       'foreshadow',
     ]);
     // 非 kebab 的反引号内容不是技能引用（工具名 / 带点文件名）——否则反向守卫必然误报
-    expect(extractSkillReferences('非技能标识 `manifest.json` / `file:write` 不参与判定')).toEqual([]);
+    expect(extractSkillReferences('非技能标识 `manifest.json` / `file:write` 不参与判定')).toEqual(
+      [],
+    );
     // 裸词（无反引号）不是引用——这正是「引用必须有确定性形式」的理由
     expect(extractSkillReferences('用 dialogue-craft 裸写')).toEqual([]);
   });

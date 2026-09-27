@@ -181,9 +181,9 @@ describe('BuiltinToolHandlers.writeFile', () => {
     });
 
     it('非 string content 抛 ARGUMENT_ERROR', async () => {
-      await expect(
-        handlers.writeFile('test.txt', 123 as unknown as string),
-      ).rejects.toMatchObject({ errorCode: ToolErrorCode.ARGUMENT_ERROR });
+      await expect(handlers.writeFile('test.txt', 123 as unknown as string)).rejects.toMatchObject({
+        errorCode: ToolErrorCode.ARGUMENT_ERROR,
+      });
     });
 
     it('无效 mode 抛 ARGUMENT_ERROR', async () => {
@@ -240,13 +240,7 @@ describe('BuiltinToolHandlers.writeFile', () => {
 
   describe('insert 模式', () => {
     it('新文件等同 overwrite', async () => {
-      const result = await handlers.writeFile(
-        'new.txt',
-        '内容',
-        undefined,
-        'insert',
-        '1',
-      );
+      const result = await handlers.writeFile('new.txt', '内容', undefined, 'insert', '1');
       expect(result).toContain('新文件');
       const { readFile } = await import('node:fs/promises');
       const content = await readFile(join(projectPath, 'new.txt'), 'utf-8');
@@ -314,11 +308,7 @@ describe('BuiltinToolHandlers.writeFile', () => {
         received.push(info);
         return true;
       });
-      const confirmHandlers = new BuiltinToolHandlers(
-        projectPath,
-        confirmGuard,
-        storage,
-      );
+      const confirmHandlers = new BuiltinToolHandlers(projectPath, confirmGuard, storage);
 
       // 先创建已有文件（beforeContent 非 null）
       await createFileInProject('exist.txt', '旧内容');
@@ -339,11 +329,7 @@ describe('BuiltinToolHandlers.writeFile', () => {
         received.push(info);
         return true;
       });
-      const confirmHandlers = new BuiltinToolHandlers(
-        projectPath,
-        confirmGuard,
-        storage,
-      );
+      const confirmHandlers = new BuiltinToolHandlers(projectPath, confirmGuard, storage);
 
       // 写入新文件（不存在 → beforeContent = null）
       await confirmHandlers.writeFile('new.txt', '新文件内容');
@@ -672,7 +658,12 @@ describe('BuiltinToolHandlers.searchMemories', () => {
   it('注入 setOnMemoryRecalled 后命中触发事件（§2.4 保留改语义定案，LLM 查询命中数）', async () => {
     // 用独特词避免与库内其它记忆（重复 TypeScript 语义命中）干扰 count 断言
     storage.upsert(
-      createMemory({ id: 'content:pref', source: 'preference', name: '偏好', content: '偏好 XylophoneFoo 独特配置' }),
+      createMemory({
+        id: 'content:pref',
+        source: 'preference',
+        name: '偏好',
+        content: '偏好 XylophoneFoo 独特配置',
+      }),
     );
     const cb = vi.fn();
     handlers.setOnMemoryRecalled(cb);
@@ -730,10 +721,7 @@ describe('BuiltinToolHandlers.searchMemories', () => {
 
 describe('BuiltinToolHandlers.listSessions', () => {
   /** 构造会话存储桩：listSessions 只依赖 listSessions / getSessionMeta */
-  function storeStub(
-    metas: SessionMeta[],
-    opts: { brokenId?: string } = {},
-  ): ISessionStore {
+  function storeStub(metas: SessionMeta[], opts: { brokenId?: string } = {}): ISessionStore {
     return {
       loadMessages: () => [],
       listSessions: () => metas.map((m) => m.sessionId),
@@ -843,7 +831,9 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         content: '用户询问 TypeScript 的用法，助手解释了接口和类型',
         source: SOURCE_LABELS.ROUND_SUMMARY,
         name: `轮次摘要 ${SESSION} ${ROUND_A}`,
-        summaryType: 'fact', sessionName: SESSION, roundId: ROUND_A,
+        summaryType: 'fact',
+        sessionName: SESSION,
+        roundId: ROUND_A,
       }),
     );
     storage.upsert(
@@ -853,7 +843,9 @@ describe('BuiltinToolHandlers.traceSummary', () => {
         source: SOURCE_LABELS.ROUND_SUMMARY,
         name: `轮次摘要 ${SESSION} ${ROUND_B}`,
         isModified: true,
-        summaryType: 'preference', sessionName: SESSION, roundId: ROUND_B,
+        summaryType: 'preference',
+        sessionName: SESSION,
+        roundId: ROUND_B,
       }),
     );
   });
@@ -916,8 +908,18 @@ describe('BuiltinToolHandlers.traceSummary', () => {
   it('sessionStore 可用时返回该轮次的原始对话', async () => {
     const store: ISessionStore = {
       loadMessages: () => [
-        { role: 'user', content: '帮我解释 TypeScript 接口', timestamp: '2026-08-13T01:00:00Z', roundId: ROUND_A },
-        { role: 'assistant', content: '接口用于定义对象的形状', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
+        {
+          role: 'user',
+          content: '帮我解释 TypeScript 接口',
+          timestamp: '2026-08-13T01:00:00Z',
+          roundId: ROUND_A,
+        },
+        {
+          role: 'assistant',
+          content: '接口用于定义对象的形状',
+          timestamp: '2026-08-13T01:00:01Z',
+          roundId: ROUND_A,
+        },
       ],
       listSessions: () => [SESSION],
       getRoundIds: () => [],
@@ -944,7 +946,12 @@ describe('BuiltinToolHandlers.traceSummary', () => {
     const store: ISessionStore = {
       loadMessages: () => [
         { role: 'user', content: '正常问题', timestamp: '2026-08-13T01:00:00Z', roundId: ROUND_A },
-        { role: 'assistant', content: '回答\x1b[2J带转义控制字符', timestamp: '2026-08-13T01:00:01Z', roundId: ROUND_A },
+        {
+          role: 'assistant',
+          content: '回答\x1b[2J带转义控制字符',
+          timestamp: '2026-08-13T01:00:01Z',
+          roundId: ROUND_A,
+        },
       ],
       listSessions: () => [SESSION],
       getRoundIds: () => [],

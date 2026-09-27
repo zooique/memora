@@ -23,7 +23,10 @@ export const MAX_CONFIG_NAME_LENGTH = 100;
  * （全 Unicode 字母数字，拒绝路径分隔符、点号、空格），长度默认 100。
  * 供宿主复用：宿主如需同规则校验，直接 import 本入口，避免另写一份漂移。
  */
-export function isValidConfigName(name: string, maxLength: number = MAX_CONFIG_NAME_LENGTH): boolean {
+export function isValidConfigName(
+  name: string,
+  maxLength: number = MAX_CONFIG_NAME_LENGTH,
+): boolean {
   if (typeof name !== 'string' || name.length === 0 || name.length > maxLength) return false;
   return /^[\p{L}\p{N}_-]+$/u.test(name);
 }

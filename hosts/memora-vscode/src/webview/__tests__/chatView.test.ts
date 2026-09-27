@@ -62,7 +62,12 @@ function makeRound(over: {
     id: roundId,
     // userMessage 内核必填：无用户输入用例以空 content 占位（renderReplayRound 按 content 跳过渲染）
     userMessage: over.user
-      ? { id: `${roundId}-user`, role: 'user', content: over.user.content, timestamp: over.user.ts ?? '' }
+      ? {
+          id: `${roundId}-user`,
+          role: 'user',
+          content: over.user.content,
+          timestamp: over.user.ts ?? '',
+        }
       : { id: `${roundId}-placeholder-user`, role: 'user', content: '', timestamp: '' },
     ...(over.assistantLog
       ? {
@@ -122,7 +127,11 @@ function dispatchReplayMany(views: RoundView[]): void {
   dispatch({
     type: 'turn_update',
     rounds: views,
-    state: { phase: 'settled', roundId: views[0]?.id ?? '', status: views[0]?.status ?? 'complete' },
+    state: {
+      phase: 'settled',
+      roundId: views[0]?.id ?? '',
+      status: views[0]?.status ?? 'complete',
+    },
     replay: true,
   });
 }
@@ -189,7 +198,11 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(icon.isConnected).toBe(true);
 
     // 队员名单变化 → 复用同一元素，仅刷新 tooltip
-    dispatch({ type: 'chat_role_pack', rolePack: '共鸣小说家', team: { leader: '共鸣小说家', members: ['校对'] } });
+    dispatch({
+      type: 'chat_role_pack',
+      rolePack: '共鸣小说家',
+      team: { leader: '共鸣小说家', members: ['校对'] },
+    });
     expect(icons()).toHaveLength(1);
     expect(icons()[0]).toBe(icon);
     expect(icon.title).toContain('组员：校对');
@@ -235,9 +248,15 @@ describe('chatView clear_ok 消息区清理', () => {
   it('self_review 过程事件进入 round-block § 自审查输出（v1.5 单形态）', () => {
     mountChatView();
     // meta 开新轮 → 正文块（挂载 round-block）→ 自审查过程事件 → 收尾渲染
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '回答' });
-    dispatch({ type: 'process_event', event: { type: 'self_review', seq: 2, ts: '', payload: {} } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'self_review', seq: 2, ts: '', payload: {} },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
@@ -252,8 +271,24 @@ describe('chatView clear_ok 消息区清理', () => {
 
     // 模拟「文本 → 工具过程事件 → 文本」循环：过程事件到达不应拆散同一条回复
     dispatch({ type: 'chunk', content: '思考第一段' });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 1, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 1,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' },
+      },
+    });
     dispatch({ type: 'chunk', content: '思考第二段' });
     dispatch({ type: 'chunk', content: '思考第三段' });
     // 流式结束（触发最终收敛渲染，节流渲染未到时也由 done 兜底）
@@ -271,14 +306,20 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮生成：meta 建骨架 + 首段正文（roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '暂停前正文', roundId: 'r1' });
     // ② 暂停：记录暂停块锚点（activeAssistantEl 存为 pausedAssistantEl）
     dispatch({ type: 'paused' });
     // ③ resume 后 host 重新 emit meta（真实链路 consumeFlow 每次 runFlow 重发 meta，
     //    pausedResume 分支须不建骨架、保留锚点——若无条件 prepareFlowShell 建块 B，会劫持
     //    后续 chunk → 视觉上两个独立 LLM 回答（坑））
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // ④ resume 后首 text chunk（同 roundId）：应原位续写暂停块，不新建第 2 块
     dispatch({ type: 'chunk', content: '暂停后正文', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
@@ -294,14 +335,20 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮：meta + 正文（roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '暂停前半', roundId: 'r1' });
     // ② 暂停 → 中断（用户放弃暂停态，直接停止）
     dispatch({ type: 'paused' });
     dispatch({ type: 'interrupted', roundId: 'r1' });
     // ③ 新闭环：user（无 kind，新问题）+ meta + chunk —— 应新建骨架块（锚点已清，不残留续写）
     dispatch({ type: 'user', text: '新问题', ts: '2026-09-07T10:00:00.000Z' });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '新回答', roundId: 'r2' });
     dispatch({ type: 'done', roundId: 'r2' });
 
@@ -317,15 +364,26 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮生成：meta 建骨架 + 首段正文（roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '暂停前正文', roundId: 'r1' });
     // ② 暂停
     dispatch({ type: 'paused' });
     // ③ 暂停态补充输入（宿主 handleSend paused 分支：post user(kind=supplement) + resumeExecution(input)）
-    dispatch({ type: 'user', text: '补充：成本标准改 <¥0.5', ts: '2026-09-07T11:00:00.000Z', kind: 'supplement' });
+    dispatch({
+      type: 'user',
+      text: '补充：成本标准改 <¥0.5',
+      ts: '2026-09-07T11:00:00.000Z',
+      kind: 'supplement',
+    });
     // ④ resume 重发 meta——交互 resume 一律原位续写同回合：pausedResume 判定优先
     //   （无 `!interactiveRowInserted` 门控），补充行作 turn 内过程、不进续接骨架分块
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // ⑤ resume 后正文 chunk（同 roundId）：原位续写原暂停块（单一折叠块语义，与重放整 round 折叠同构）
     dispatch({ type: 'chunk', content: '已按补充调整成本标准', roundId: 'r1' });
     // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
@@ -343,7 +401,10 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮正文（roundId r1）→ 块1（activeAssistantEl=块1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '前序正文', roundId: 'r1' });
     // ② 暂停（置 pausedAssistantEl=块1）
     dispatch({ type: 'paused' });
@@ -353,7 +414,10 @@ describe('chatView clear_ok 消息区清理', () => {
     //    error 属可恢复中断
     dispatch({ type: 'error', message: 'boom' });
     // ⑤ 用户再次继续 → resume meta：无分块门控 → pausedResume 原位续写原暂停块
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '错误后续写', roundId: 'r1' });
     // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
     dispatch({ type: 'done', roundId: 'r1' });
@@ -370,18 +434,27 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首轮：meta + 正文（roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
     // ② 暂停 → 补充输入（置 resumePending）
     dispatch({ type: 'paused' });
     dispatch({ type: 'user', text: '补充', ts: '2026-09-07T11:01:00.000Z', kind: 'supplement' });
     // ③ resume meta：pausedResume 优先原位续写（消费 resumePending，不建续接骨架）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '续写', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
     // ④ 新闭环（无 kind）：真新轮应清空锚点建新骨架（不受残留 resumePending 影响）
     dispatch({ type: 'user', text: '新问题', ts: '2026-09-07T11:02:00.000Z' });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '新回答', roundId: 'r2' });
     dispatch({ type: 'done', roundId: 'r2' });
 
@@ -397,14 +470,26 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 提问前正文：meta 建骨架 + 首段正文（roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '提问前正文', roundId: 'r1' });
     // ② LLM 调用 ask_user 暂停 → 提问块（ask-inline）挂出（消息流渲染，此处省略交互 DOM）
     dispatch({ type: 'paused' });
     // ③ 用户回答：宿主 post user(kind=question-answer)（运行时无 question 回顾行，仅回答行）
-    dispatch({ type: 'user', text: '选方案 A', ts: '2026-09-07T12:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
+    dispatch({
+      type: 'user',
+      text: '选方案 A',
+      ts: '2026-09-07T12:00:00.000Z',
+      kind: 'question-answer',
+      roundId: 'r1',
+    });
     // ④ resume 重发 meta——pausedResume 优先原位续写（不移除 QA 锚、不开续接骨架分块）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // ⑤ resume 后正文 chunk（同 roundId）：原位续写原暂停块（单一折叠块语义，与重放整 round 折叠同构）
     dispatch({ type: 'chunk', content: '已按方案 A 执行完毕', roundId: 'r1' });
     // done 收敛：单一折叠块重渲染（流式渲染 150ms 节流，断言放 done 后读全量聚合）
@@ -424,28 +509,46 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
 
     // ① 首段正文 + 首次 ask 挂起（块A 暂停锚，roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '第一问前正文', roundId: 'r1' });
     dispatch({ type: 'paused' });
     // ② 第一答（带 question → 「问」行 + 「你答」折叠块）
     dispatch({
-      type: 'user', text: '选方案 A', ts: '2026-09-08T10:00:00.000Z', kind: 'question-answer', roundId: 'r1',
-      question: '选哪个方案？', options: ['方案 A', '方案 B'],
+      type: 'user',
+      text: '选方案 A',
+      ts: '2026-09-08T10:00:00.000Z',
+      kind: 'question-answer',
+      roundId: 'r1',
+      question: '选哪个方案？',
+      options: ['方案 A', '方案 B'],
     });
     // ③ resume：meta → 续接骨架挂第一问答对之后；LLM 无正文、直接二次 ask_user 再挂起
     //    （骨架空正文，二次回答提交时被 user 分支移除 → activeAssistantEl 回退块A = 倒挂根源）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'paused' });
     // ④ 第二答（同样带 question）——第二轮 QA 对不得被顶到第一轮之前（锁顺序）
     dispatch({
-      type: 'user', text: '选方案 B', ts: '2026-09-08T10:01:00.000Z', kind: 'question-answer', roundId: 'r1',
-      question: '确认改为 B？', options: ['方案 B', '方案 A'],
+      type: 'user',
+      text: '选方案 B',
+      ts: '2026-09-08T10:01:00.000Z',
+      kind: 'question-answer',
+      roundId: 'r1',
+      question: '确认改为 B？',
+      options: ['方案 B', '方案 A'],
     });
     // 运行时形态（done 前）：第二轮 QA 条目必须归属本轮 process-flow 过程容器、紧跟第一轮之后——
     // 不得因 assistant 锚回退/失效散落消息流层（形态甲：QA 按 ts 归位过程容器，SSOT 无第二渲染体系）
     const flowRun = document.querySelector<HTMLElement>('.process-flow');
     expect(flowRun).not.toBeNull();
-    const flowInputsRun = flowRun ? Array.from(flowRun.querySelectorAll<HTMLElement>('.round-block__input')) : [];
+    const flowInputsRun = flowRun
+      ? Array.from(flowRun.querySelectorAll<HTMLElement>('.round-block__input'))
+      : [];
     expect(flowInputsRun).toHaveLength(2);
     const strayRun = Array.from(messages.children).filter(
       (el) => el instanceof HTMLElement && el.classList.contains('round-block__input'),
@@ -453,7 +556,10 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(strayRun).toHaveLength(0);
 
     // ⑤ resume → 续跑正文 → done
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '已按方案 B 继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
 
@@ -461,12 +567,20 @@ describe('chatView clear_ok 消息区清理', () => {
     // 形态甲：问行+答行合并为单条目（.round-block__input 内含 .input-q 回顾行），按 ts 归位
     const inputs = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
     expect(inputs).toHaveLength(2);
-    expect(inputs[0]!.querySelector('.round-block__input-q')?.textContent).toContain('选哪个方案？');
-    expect(inputs[1]!.querySelector('.round-block__input-q')?.textContent).toContain('确认改为 B？');
-    expect(inputs[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
+    expect(inputs[0]!.querySelector('.round-block__input-q')?.textContent).toContain(
+      '选哪个方案？',
+    );
+    expect(inputs[1]!.querySelector('.round-block__input-q')?.textContent).toContain(
+      '确认改为 B？',
+    );
+    expect(
+      inputs[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent,
+    ).toBe('你答');
     // 时序断言（文档树序，ts 归位）：条目1 在 条目2 前（运行时=重放 ts 序不倒挂）
     const seq = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
-    expect(seq.indexOf(inputs[0] as HTMLElement)).toBeLessThan(seq.indexOf(inputs[1] as HTMLElement));
+    expect(seq.indexOf(inputs[0] as HTMLElement)).toBeLessThan(
+      seq.indexOf(inputs[1] as HTMLElement),
+    );
   });
 
   it('交互行渲染异常 → 兜底降级可见：用户输入不丢，resume 后原位续写（ensureUserInputVisible，2026-09-15 方案 C）', () => {
@@ -475,7 +589,10 @@ describe('chatView clear_ok 消息区清理', () => {
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
     // ① 首轮：meta + 正文（roundId r1）—— 建立 activeAssistantEl 锚点（块A）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '前序正文', roundId: 'r1' });
     // ② ask_user 暂停（pausedAssistantEl = 块A）
     dispatch({ type: 'paused' });
@@ -484,17 +601,29 @@ describe('chatView clear_ok 消息区清理', () => {
     const spy = vi.spyOn(Element.prototype, 'appendChild').mockImplementationOnce(() => {
       throw new Error('injected-dom-failure');
     });
-    dispatch({ type: 'user', text: '我的回答', ts: '2026-09-08T15:00:00.000Z', kind: 'question-answer', roundId: 'r1' });
+    dispatch({
+      type: 'user',
+      text: '我的回答',
+      ts: '2026-09-08T15:00:00.000Z',
+      kind: 'question-answer',
+      roundId: 'r1',
+    });
     spy.mockRestore();
 
     // ④ 兜底降级块可见（输入恒不丢）+ 取证 console.warn 已调用
     const fb = messages.querySelector('.msg-user-fallback') as HTMLElement;
     expect(fb).not.toBeNull();
     expect(fb.textContent).toBe('我的回答');
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('[memora] 用户输入渲染失败'), expect.anything());
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('[memora] 用户输入渲染失败'),
+      expect.anything(),
+    );
 
     // ⑤ resume 后原位续写原暂停块（渲染异常不破坏单一折叠块语义）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '最终正文', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
     const assistants = messages.querySelectorAll('.msg.assistant');
@@ -523,11 +652,17 @@ describe('chatView clear_ok 消息区清理', () => {
     const messages = document.getElementById('messages') as HTMLElement;
     // 会话 A 对话：用户消息（包 .msg-wrapper）+ AI 回答 + 空骨架轮
     dispatch({ type: 'user', text: '问题A', ts: '2026-08-14T10:00:00.000Z' });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '回答A' });
     dispatch({ type: 'done', roundId: 'r1' });
     dispatch({ type: 'user', text: '问题B', ts: '2026-08-14T10:01:00.000Z' });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'done', roundId: 'r2' });
     // 断言：清空前用户消息外层 .msg-wrapper 存在
     expect(messages.querySelectorAll('.msg-wrapper').length).toBe(2);
@@ -585,9 +720,15 @@ describe('chatView clear_ok 消息区清理', () => {
   it('thinking 过程事件：流式中进入 round-block 实时相位行（进行中展开），收尾后归档 § 过程轨迹', () => {
     mountChatView();
     // 生成中先有 meta → 正文块挂载 round-block；thinking 事件流式中实时投影相位行
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '回答' });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'assembling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'assembling' } },
+    });
     // 流式中（v1.8 剪枝）：无 round-block 壳，过程平铺在 .process-flow——thinking 相位轻量行实时显示
     const rbRunning = document.querySelector('.process-flow') as HTMLElement;
     expect(rbRunning).not.toBeNull();
@@ -596,8 +737,14 @@ describe('chatView clear_ok 消息区清理', () => {
     expect(phaseRow).not.toBeNull();
     expect(phaseRow.textContent).toContain('装配上下文中');
     // 收尾后：折叠区收起（open=false）、相位行移除；§ 过程轨迹保留相位时间线
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'archiving' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'archiving' } },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLDetailsElement;
     expect(rb.classList.contains('is-running')).toBe(false);
@@ -610,16 +757,27 @@ describe('chatView clear_ok 消息区清理', () => {
 
   it('过程轨迹聚合：同一 thinking 相位 N 次压缩为「相位 ×N」一行，去视觉噪点（2026-09-09）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正文' });
     // 同一相位「调用模型中」连续 5 次（LLM 多轮调用）+ 单次「装配上下文中」——模拟真实冗长轨迹
     for (let i = 0; i < 5; i++) {
-      dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2 + i, ts: '', payload: { phase: 'llm_calling' } } });
+      dispatch({
+        type: 'process_event',
+        event: { type: 'thinking', seq: 2 + i, ts: '', payload: { phase: 'llm_calling' } },
+      });
     }
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 8, ts: '', payload: { phase: 'assembling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 8, ts: '', payload: { phase: 'assembling' } },
+    });
     dispatch({ type: 'done' });
     const details = document.querySelector('.round-block__details') as HTMLElement;
-    const rows = Array.from(details.querySelectorAll('.round-block__row')).map((r) => r.textContent);
+    const rows = Array.from(details.querySelectorAll('.round-block__row')).map(
+      (r) => r.textContent,
+    );
     // 聚合：同相位合并计次（×5；phaseLabel 输出含「…」省略号），单次相位直显不赘 ×1；
     // 行数 = 相位种类（2），不随事件数（6）膨胀
     expect(rows.some((r) => r.includes('×5'))).toBe(true);
@@ -746,7 +904,11 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     expect((document.getElementById('historyBtn') as HTMLButtonElement).disabled).toBe(true);
     // 已渲染的 AI 消息删除按钮同样被锁（重放单条 turn_update 渲染消息，锁态因 thinking 生效）
     dispatchReplay(
-      makeRound({ id: 'round-x', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+      makeRound({
+        id: 'round-x',
+        assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
     );
     const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     expect(del.disabled).toBe(true);
@@ -756,7 +918,11 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     mountChatView();
     dispatch({ type: 'status', state: 'thinking' });
     dispatchReplay(
-      makeRound({ id: 'round-x', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+      makeRound({
+        id: 'round-x',
+        assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
     );
     dispatch({ type: 'status', state: 'done' });
     expect((document.getElementById('newSessionBtn') as HTMLButtonElement).disabled).toBe(false);
@@ -891,9 +1057,13 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     const { postMessage } = mountChatView();
     const input = document.getElementById('input') as HTMLTextAreaElement;
     input.value = '选字中';
-    input.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', isComposing: true, bubbles: true,
-    }));
+    input.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+      }),
+    );
     expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'send', text: '选字中' });
   });
 
@@ -903,10 +1073,18 @@ describe('chatView 打断能力（mvp-scope stop / 插话）', () => {
     dispatch({ type: 'clarify', question: '需要补充什么？' });
     const clarifyInput = document.getElementById('clarifyInput') as HTMLTextAreaElement;
     clarifyInput.value = '补一段';
-    clarifyInput.dispatchEvent(new KeyboardEvent('keydown', {
-      key: 'Enter', isComposing: true, bubbles: true,
-    }));
-    expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['补一段'] });
+    clarifyInput.dispatchEvent(
+      new KeyboardEvent('keydown', {
+        key: 'Enter',
+        isComposing: true,
+        bubbles: true,
+      }),
+    );
+    expect(postMessage).not.toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['补一段'],
+    });
   });
 
   it('interrupted 渲染「已停止生成」提示条', () => {
@@ -1106,7 +1284,12 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
   it('turn_update.pendingQueue → 懒创建 .pending-queue-bar 并渲染全部条目', () => {
     mountChatView();
     // 待发送区渲染真源由 turn_update.pendingQueue 承载（pending_queue_update 已删）
-    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['我插一句话', '再来一句'] });
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: ['我插一句话', '再来一句'],
+    });
     const bar = document.querySelector('.pending-queue-bar') as HTMLElement;
     expect(bar).not.toBeNull();
     expect(bar.hidden).toBe(false);
@@ -1127,7 +1310,12 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
 
   it('pending-queue-bar 清空按钮 → post clear_pending_queue', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插队内容'] });
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: ['插队内容'],
+    });
     const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLButtonElement;
     clearBtn.click();
     expect(postMessage).toHaveBeenCalledWith({ type: 'clear_pending_queue' });
@@ -1138,9 +1326,17 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     // 覆盖不到，故在插入 DOM 后显式 populateIcons(_pendingQueueBar) 补填充。
     // 本断言锁死这条链路：若补填充丢失，按钮会静默变成空白（坑）。
     mountChatView();
-    dispatch({ type: 'turn_update', rounds: [], state: { phase: 'running' }, pendingQueue: ['插队内容'] });
+    dispatch({
+      type: 'turn_update',
+      rounds: [],
+      state: { phase: 'running' },
+      pendingQueue: ['插队内容'],
+    });
     const clearBtn = document.querySelector('.pending-queue-bar__clear') as HTMLElement;
-    expect(clearBtn.querySelector('svg'), '清空按钮缺 SVG 图标 → populateIcons 补填充链路已断').not.toBeNull();
+    expect(
+      clearBtn.querySelector('svg'),
+      '清空按钮缺 SVG 图标 → populateIcons 补填充链路已断',
+    ).not.toBeNull();
     expect(clearBtn.textContent, '清空按钮不应再有字符图标').toBe('');
   });
 
@@ -1211,7 +1407,9 @@ describe('chatView Phase 4 按钮矩阵（会话态 × 输入内容）', () => {
     input.value = '插队';
     input.dispatchEvent(new Event('input'));
     send.click();
-    expect(postMessage).toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'send', text: '插队' }));
+    expect(postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'send', text: '插队' }),
+    );
   });
 });
 
@@ -1283,7 +1481,15 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     expect(activityBar.textContent).toContain('会话异常');
     expect(activityBar.className).toContain('error');
     // 错误显示期间来低扰 info → 不覆盖主条，仅进历史
-    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 1, ts: '', payload: { id: 'm1', name: '决策：数据库用 PG', source: 'round-summary' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'memory_added',
+        seq: 1,
+        ts: '',
+        payload: { id: 'm1', name: '决策：数据库用 PG', source: 'round-summary' },
+      },
+    });
     expect(activityBar.textContent).toContain('会话异常'); // 主条仍保持错误
     expect(activityBar.className).toContain('error');
     // 低扰信息进入详情历史（不丢失）
@@ -1297,7 +1503,15 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
     mountChatView();
     const list = document.getElementById('activityList') as HTMLElement;
     dispatch({ type: 'retry', attempt: 1, maxRetries: 3, delayMs: 200, error: 'ECONNRESET' });
-    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 1, ts: '', payload: { id: 'm1', source: 'round-summary', name: '决策：数据库用 PG' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'memory_added',
+        seq: 1,
+        ts: '',
+        payload: { id: 'm1', source: 'round-summary', name: '决策：数据库用 PG' },
+      },
+    });
     dispatch({ type: 'paused' });
     // 历史累积三条，全部可见（不互相覆盖丢失）
     expect(list.textContent).toContain('重试 1/3');
@@ -1311,17 +1525,63 @@ describe('chatView 事件流对齐（P1 事件流 / P2 活动指标）', () => {
 describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛）', () => {
   /** 构造一个 meta（开新轮，随后 round-block 挂载） */
   function beginRound(): void {
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '文档设计师', llm: 'deepseek-chat' },
+      },
+    });
     dispatch({ type: 'chunk', content: '正文' });
   }
 
   it('process_event 增量渲染 round-block：summary 计数 + details 各小节（工具/已沉淀/执行指标）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
-    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 4, ts: '', payload: { id: 'm1', source: 'round-summary', name: '设计约束' } } });
-    dispatch({ type: 'process_event', event: { type: 'metrics', seq: 5, ts: '', payload: { durationMs: 62000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'memory_added',
+        seq: 4,
+        ts: '',
+        payload: { id: 'm1', source: 'round-summary', name: '设计约束' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq: 5,
+        ts: '',
+        payload: {
+          durationMs: 62000,
+          tokenIn: 100,
+          tokenOut: 200,
+          toolFailureCount: 0,
+          success: true,
+        },
+      },
+    });
     dispatch({ type: 'done' });
 
     const rb = document.querySelector('.round-block') as HTMLElement;
@@ -1349,13 +1609,53 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     mountChatView();
     beginRound();
     // 成功工具：默认折叠（summary 常显名称(状态)，args/result 折叠在 body）
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '读取成功' },
+      },
+    });
     // 失败工具：默认展开（错误可见优先）
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: false, summary: '权限不足' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 5,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'write_file', ok: false, summary: '权限不足' },
+      },
+    });
     // 进行中工具（无 result）：默认折叠
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't3', name: 'search', args: '{}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 6,
+        ts: '',
+        payload: { toolCallId: 't3', name: 'search', args: '{}' },
+      },
+    });
     dispatch({ type: 'done' });
 
     const tools = document.querySelectorAll('.round-block__tool') as NodeListOf<HTMLDetailsElement>;
@@ -1397,8 +1697,18 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         id: 'r1',
         processEvents: [
           { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '旧记忆', source: 'round-summary' } },
-          { type: 'aborted', seq: 3, ts: '', payload: { reason: 'User cancelled the conversation' } },
+          {
+            type: 'memory_added',
+            seq: 2,
+            ts: '',
+            payload: { id: 'm:1', name: '旧记忆', source: 'round-summary' },
+          },
+          {
+            type: 'aborted',
+            seq: 3,
+            ts: '',
+            payload: { reason: 'User cancelled the conversation' },
+          },
         ],
         assistantMessage: { content: '历史回答', ts: '' },
         status: 'complete',
@@ -1414,12 +1724,36 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const events = [
       { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
       { type: 'thought', seq: 2, ts: '', payload: { content: '先梳理上下文' } },
-      { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{}' } },
-      { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: false } },
-      { type: 'aborted', seq: 5, ts: '', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } },
       {
-        type: 'metrics', seq: 6, ts: '',
-        payload: { durationMs: 5000, tokenIn: 100, tokenOut: 0, toolFailureCount: 1, unparsedToolIntentCount: 0, success: false },
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{}' },
+      },
+      {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: false },
+      },
+      {
+        type: 'aborted',
+        seq: 5,
+        ts: '',
+        payload: { reason: 'User cancelled the conversation', stopReason: 'user' },
+      },
+      {
+        type: 'metrics',
+        seq: 6,
+        ts: '',
+        payload: {
+          durationMs: 5000,
+          tokenIn: 100,
+          tokenOut: 0,
+          toolFailureCount: 1,
+          unparsedToolIntentCount: 0,
+          success: false,
+        },
       },
     ];
     // 中断轮：独立 round（status=interrupted，无 assistant 正文块），单条 turn_update 承载
@@ -1441,7 +1775,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(toolRow?.textContent).toContain('读取文件');
     expect(toolRow?.textContent).toContain('失败');
     // 「用户停止了对话」平铺折叠块外（收起态常驻可见）
-    expect(host.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
+    expect(host.querySelector('.round-block__interrupted')?.textContent).toContain(
+      '用户停止了对话',
+    );
     // 收起态摘要含耗时（指标留折叠块，不重复平铺）
     expect(rb.querySelector('.round-block__stats')?.textContent).toContain('耗时');
   });
@@ -1454,7 +1790,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
       { type: 'thought', seq: 2, ts: '', payload: { content: '正在读取文件' } },
       {
-        type: 'error', seq: 3, ts: '',
+        type: 'error',
+        seq: 3,
+        ts: '',
         payload: { message: 'LLM request timed out (no response)', category: 'timeout' },
       },
     ];
@@ -1484,8 +1822,18 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('中断轮重放：error 与 aborted 并存时 error 优先（保守排序，正常路径二者互斥）', () => {
     mountChatView();
     const events = [
-      { type: 'aborted', seq: 1, ts: '', payload: { reason: 'User cancelled', stopReason: 'user' } },
-      { type: 'error', seq: 2, ts: '', payload: { message: 'socket hang up', category: 'connection' } },
+      {
+        type: 'aborted',
+        seq: 1,
+        ts: '',
+        payload: { reason: 'User cancelled', stopReason: 'user' },
+      },
+      {
+        type: 'error',
+        seq: 2,
+        ts: '',
+        payload: { message: 'socket hang up', category: 'connection' },
+      },
     ];
     dispatchReplay(makeRound({ id: 'r5', status: 'interrupted', processEvents: events }));
 
@@ -1507,10 +1855,30 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         user: { content: '帮我读文件', ts: '2026-09-22T03:00:00.000Z' },
         status: 'interrupted',
         processEvents: [
-          { type: 'meta', seq: 1, ts: '2026-09-22T03:00:05.000Z', payload: { role: 'AI', llm: 'm' } },
-          { type: 'narrate', seq: 2, ts: '2026-09-22T03:00:06.000Z', payload: { content: '开始读取文件' } },
-          { type: 'tool_start', seq: 3, ts: '2026-09-22T03:00:07.000Z', payload: { toolCallId: 't1', name: 'read_file' } },
-          { type: 'aborted', seq: 4, ts: '2026-09-22T03:00:08.000Z', payload: { reason: 'User cancelled', stopReason: 'user' } },
+          {
+            type: 'meta',
+            seq: 1,
+            ts: '2026-09-22T03:00:05.000Z',
+            payload: { role: 'AI', llm: 'm' },
+          },
+          {
+            type: 'narrate',
+            seq: 2,
+            ts: '2026-09-22T03:00:06.000Z',
+            payload: { content: '开始读取文件' },
+          },
+          {
+            type: 'tool_start',
+            seq: 3,
+            ts: '2026-09-22T03:00:07.000Z',
+            payload: { toolCallId: 't1', name: 'read_file' },
+          },
+          {
+            type: 'aborted',
+            seq: 4,
+            ts: '2026-09-22T03:00:08.000Z',
+            payload: { reason: 'User cancelled', stopReason: 'user' },
+          },
         ],
       }),
     );
@@ -1536,7 +1904,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(footer.querySelector('.msg-time')?.textContent?.trim().length).toBeGreaterThan(0);
     // 删除点击 → delete_turn 携带真实 meta ts（truncateFrom 可锚定该轮，非 new Date 伪值）
     deleteBtn.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_turn', ts: '2026-09-22T03:00:05.000Z' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'delete_turn',
+      ts: '2026-09-22T03:00:05.000Z',
+    });
   });
 
   it('运行时中断（RT 形态定案 2026-09-19）：掐半截正文 + 过程折叠 + 「用户停止了对话」平铺折叠块外', () => {
@@ -1544,31 +1915,61 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     dispatch({ type: 'user', text: '读文件', ts: 't0', roundId: 'r1' });
     dispatch({
       type: 'process_event',
-      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: 't1',
+        payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' },
+      },
     });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } } });
     dispatch({
       type: 'process_event',
-      event: { type: 'tool_start', seq: 3, ts: 't1.2', payload: { toolCallId: 't1', name: 'read_file', args: '{}' } },
+      event: { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } },
     });
     dispatch({
       type: 'process_event',
-      event: { type: 'tool_result', seq: 4, ts: 't1.3', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: 't1.2',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: 't1.3',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true },
+      },
     });
     // 半截正文已流式上屏
     dispatch({ type: 'chunk', content: '正在读取…', roundId: 'r1' });
     // 中断：正文随之作废（丢弃运行中 step 的内容）
-    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 5, ts: 't1.4', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 5,
+        ts: 't1.4',
+        payload: { reason: 'User cancelled the conversation', stopReason: 'user' },
+      },
+    });
     dispatch({ type: 'interrupted', roundId: 'r1' });
     // 过程收进折叠块（保留已完成 tool step）
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
-    expect(rb.querySelector('.round-block__details .round-block__tool')?.textContent).toContain('读取文件');
+    expect(rb.querySelector('.round-block__details .round-block__tool')?.textContent).toContain(
+      '读取文件',
+    );
     // 半截正文被掐断：assistant 块不再有正文容器
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant.querySelector('.msg-body')).toBeNull();
     // 「用户停止了对话」平铺折叠块外（收起态常驻可见）+ 身份标签保留
-    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
+    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain(
+      '用户停止了对话',
+    );
     expect(assistant.querySelector('.msg-ai-label__role')?.textContent).toBe('白话方案设计师');
     // 运行时平铺容器已收走（不残留 process-flow 呼吸相位行）
     expect(document.querySelector('.process-flow')).toBeNull();
@@ -1583,14 +1984,34 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         id: 'r1',
         processEvents: [
           { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-          { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 2,
+            ts: '',
+            payload: { planItemId: 's1', title: '分析需求' },
+          },
           { type: 'narrate', seq: 3, ts: '', payload: { content: '正在分析需求文档' } },
           { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file' } },
-          { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } },
-          { type: 'plan_item_boundary', seq: 6, ts: '', payload: { planItemId: 's2', title: '编写代码' } },
+          {
+            type: 'tool_result',
+            seq: 5,
+            ts: '',
+            payload: { toolCallId: 't1', name: 'read_file', ok: true },
+          },
+          {
+            type: 'plan_item_boundary',
+            seq: 6,
+            ts: '',
+            payload: { planItemId: 's2', title: '编写代码' },
+          },
           { type: 'narrate', seq: 7, ts: '', payload: { content: '开始编写实现代码' } },
           { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'write_file' } },
-          { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true } },
+          {
+            type: 'tool_result',
+            seq: 9,
+            ts: '',
+            payload: { toolCallId: 't2', name: 'write_file', ok: true },
+          },
         ],
         assistantMessage: { content: '任务开始', ts: '' },
         status: 'complete',
@@ -1599,9 +2020,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     // 两个任务项级折叠块：summary 显示任务项名并可展开
     const planItems = document.querySelectorAll('.round-block__plan-item');
     expect(planItems.length).toBe(2);
-    expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 1');
-    expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('分析需求');
-    expect(planItems[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('编写代码');
+    expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '任务项 1',
+    );
+    expect(planItems[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '分析需求',
+    );
+    expect(planItems[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '编写代码',
+    );
     // 任务项1内：narrate 与 tool 归入第 1 个任务项容器（边界切组、项内平铺）
     const planItem1Host = planItems[0]!.querySelector('.round-block__narrate') as HTMLElement;
     expect(planItem1Host?.textContent).toContain('正在分析需求文档');
@@ -1611,7 +2038,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(planItem2Host?.textContent).toContain('开始编写实现代码');
     expect(planItems[1]!.querySelector('.round-block__tool')?.textContent).toContain('写入文件');
     // 负向断言：任务项 1 不含任务项 2 的工具——标记物须同步为中文名，否则接入后恒真（因错误的原因通过）
-    expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('写入文件');
+    expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).not.toContain(
+      '写入文件',
+    );
   });
 
   it('任务项组外条目不沉底：boundary 前置于本轮首个工具时（预置/续会/上一 turn 遗留计划），组外 thought 仍居首个任务项组之前', () => {
@@ -1626,13 +2055,38 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         processEvents: [
           { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
           { type: 'thought', seq: 2, ts: '', payload: { content: '步骤1思考', stepIndex: 1 } },
-          { type: 'plan_item_boundary', seq: 3, ts: '', payload: { planItemId: 's1', title: '任务甲' } },
-          { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_write' } },
-          { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'task_table_write', ok: true } },
+          {
+            type: 'plan_item_boundary',
+            seq: 3,
+            ts: '',
+            payload: { planItemId: 's1', title: '任务甲' },
+          },
+          {
+            type: 'tool_start',
+            seq: 4,
+            ts: '',
+            payload: { toolCallId: 't1', name: 'task_table_write' },
+          },
+          {
+            type: 'tool_result',
+            seq: 5,
+            ts: '',
+            payload: { toolCallId: 't1', name: 'task_table_write', ok: true },
+          },
           { type: 'thought', seq: 6, ts: '', payload: { content: '步骤2思考', stepIndex: 2 } },
-          { type: 'plan_item_boundary', seq: 7, ts: '', payload: { planItemId: 's2', title: '任务乙' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 7,
+            ts: '',
+            payload: { planItemId: 's2', title: '任务乙' },
+          },
           { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'read_file' } },
-          { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'read_file', ok: true } },
+          {
+            type: 'tool_result',
+            seq: 9,
+            ts: '',
+            payload: { toolCallId: 't2', name: 'read_file', ok: true },
+          },
         ],
         assistantMessage: { content: '答复', ts: '' },
         status: 'complete',
@@ -1665,15 +2119,50 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         processEvents: [
           { type: 'meta', seq: 1, ts: T(0), payload: { role: 'AI', llm: 'm' } },
           { type: 'thought', seq: 2, ts: T(1), payload: { content: '先建任务表', stepIndex: 1 } },
-          { type: 'tool_start', seq: 3, ts: T(2), payload: { toolCallId: 'ttw', name: 'task_table_write' } },
-          { type: 'tool_result', seq: 4, ts: T(2), payload: { toolCallId: 'ttw', name: 'task_table_write', ok: true } },
-          { type: 'plan_item_boundary', seq: 5, ts: T(3), payload: { planItemId: 'p1', title: '任务甲' } },
+          {
+            type: 'tool_start',
+            seq: 3,
+            ts: T(2),
+            payload: { toolCallId: 'ttw', name: 'task_table_write' },
+          },
+          {
+            type: 'tool_result',
+            seq: 4,
+            ts: T(2),
+            payload: { toolCallId: 'ttw', name: 'task_table_write', ok: true },
+          },
+          {
+            type: 'plan_item_boundary',
+            seq: 5,
+            ts: T(3),
+            payload: { planItemId: 'p1', title: '任务甲' },
+          },
           { type: 'narrate', seq: 6, ts: T(4), payload: { content: '甲执行' } },
-          { type: 'plan_item_boundary', seq: 7, ts: T(5), payload: { planItemId: 'p2', title: '任务乙' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 7,
+            ts: T(5),
+            payload: { planItemId: 'p2', title: '任务乙' },
+          },
           { type: 'narrate', seq: 8, ts: T(6), payload: { content: '乙执行' } },
-          { type: 'plan_item_boundary', seq: 9, ts: T(7), payload: { planItemId: 'p3', title: '任务丙' } },
-          { type: 'tool_start', seq: 10, ts: T(8), payload: { toolCallId: 'rf', name: 'read_file' } },
-          { type: 'tool_result', seq: 11, ts: T(8), payload: { toolCallId: 'rf', name: 'read_file', ok: true } },
+          {
+            type: 'plan_item_boundary',
+            seq: 9,
+            ts: T(7),
+            payload: { planItemId: 'p3', title: '任务丙' },
+          },
+          {
+            type: 'tool_start',
+            seq: 10,
+            ts: T(8),
+            payload: { toolCallId: 'rf', name: 'read_file' },
+          },
+          {
+            type: 'tool_result',
+            seq: 11,
+            ts: T(8),
+            payload: { toolCallId: 'rf', name: 'read_file', ok: true },
+          },
         ],
         assistantMessage: { content: '答复', ts: T(9) },
         status: 'complete',
@@ -1682,7 +2171,9 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     const details = document.querySelector('.round-block__details') as HTMLElement;
     const kids = Array.from(details.children);
     const firstGroupIdx = kids.findIndex((el) => el.classList.contains('round-block__plan-item'));
-    const ttwRow = details.querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="ttw"]')!;
+    const ttwRow = details.querySelector<HTMLElement>(
+      '.round-block__tool[data-tool-call-id="ttw"]',
+    )!;
     // 单工具批 = 行即批（无批块包裹）→ 落点根元素就是该行
     const ttwEl = (ttwRow.closest('.round-block__tool-batch') ?? ttwRow) as HTMLElement;
     const ttwIdx = kids.indexOf(ttwEl);
@@ -1706,10 +2197,20 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
           { type: 'meta', seq: 1, ts: T(0), payload: { role: 'AI', llm: 'm' } },
           { type: 'narrate', seq: 2, ts: T(1), payload: { content: '组外叙述' } },
           // 边界甲：seq 小、ts 大（逆序的一半）
-          { type: 'plan_item_boundary', seq: 3, ts: T(5), payload: { planItemId: 'a1', title: '任务甲' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 3,
+            ts: T(5),
+            payload: { planItemId: 'a1', title: '任务甲' },
+          },
           { type: 'narrate', seq: 4, ts: T(3), payload: { content: '乙执行' } },
           // 边界乙：seq 大、ts 小（逆序的另一半）
-          { type: 'plan_item_boundary', seq: 5, ts: T(2), payload: { planItemId: 'a2', title: '任务乙' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 5,
+            ts: T(2),
+            payload: { planItemId: 'a2', title: '任务乙' },
+          },
           { type: 'narrate', seq: 6, ts: T(7), payload: { content: '甲执行' } },
         ],
         assistantMessage: { content: '答复', ts: T(8) },
@@ -1717,15 +2218,25 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       }),
     );
     const details = document.querySelector('.round-block__details') as HTMLElement;
-    const groups = Array.from(details.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'));
+    const groups = Array.from(
+      details.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'),
+    );
     // 前置条件：两个任务项组都建成
     expect(groups.length).toBe(2);
     // 编号真源 = bounds 按 (ts, seq) 排出的名次：乙（ts 小）是「任务项 1」，甲（ts 大）是「任务项 2」；
     // 视觉序必须与编号序一致（若组按纯 seq 摆位 → 甲在前、编号却更大 → 红）
-    expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 1');
-    expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务乙');
-    expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 2');
-    expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务甲');
+    expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '任务项 1',
+    );
+    expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '任务乙',
+    );
+    expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '任务项 2',
+    );
+    expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain(
+      '任务甲',
+    );
   });
 
   /**
@@ -1746,14 +2257,49 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         id: 'r1',
         processEvents: [
           { type: 'meta', seq: 1, ts: T(9), payload: { role: 'AI', llm: 'm' } },
-          { type: 'tool_start', seq: 2, ts: T(10), payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 } },
-          { type: 'tool_result', seq: 3, ts: T(11), payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' } },
+          {
+            type: 'tool_start',
+            seq: 2,
+            ts: T(10),
+            payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 },
+          },
+          {
+            type: 'tool_result',
+            seq: 3,
+            ts: T(11),
+            payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' },
+          },
           // 提问 = 一次普通工具调用（ask_user 唯一通道）
-          { type: 'tool_start', seq: 4, ts: T(12), payload: { toolCallId: 'ask', name: 'ask_user', args: '{"question":"选方案A还是B?"}', stepIndex: 2 } },
+          {
+            type: 'tool_start',
+            seq: 4,
+            ts: T(12),
+            payload: {
+              toolCallId: 'ask',
+              name: 'ask_user',
+              args: '{"question":"选方案A还是B?"}',
+              stepIndex: 2,
+            },
+          },
           // 用户答案以该工具的 tool result 回填
-          { type: 'tool_result', seq: 5, ts: T(13), payload: { toolCallId: 'ask', name: 'ask_user', ok: true, summary: '选方案A' } },
-          { type: 'tool_start', seq: 6, ts: T(15), payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 3 } },
-          { type: 'tool_result', seq: 7, ts: T(16), payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' } },
+          {
+            type: 'tool_result',
+            seq: 5,
+            ts: T(13),
+            payload: { toolCallId: 'ask', name: 'ask_user', ok: true, summary: '选方案A' },
+          },
+          {
+            type: 'tool_start',
+            seq: 6,
+            ts: T(15),
+            payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 3 },
+          },
+          {
+            type: 'tool_result',
+            seq: 7,
+            ts: T(16),
+            payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' },
+          },
         ],
         // 问答卡：可见记录，真实 ts 落在 ask_user(T12) 与 B(T15) 之间
         interactiveInputs: [{ content: '选方案A', ts: T(14), kind: 'question-answer' }],
@@ -1802,16 +2348,67 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('BATCH-SPLIT-1 流式：问答卡同样切开前后两段工具（对拍重放路径）', () => {
     mountChatView();
     const T = (n: number): string => `2026-09-27T00:00:${String(n).padStart(2, '0')}.000Z`;
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: T(9), payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: T(10), payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: T(11), payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: T(12), payload: { toolCallId: 'ask', name: 'ask_user', args: '{}', stepIndex: 2 } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: T(13), payload: { toolCallId: 'ask', name: 'ask_user', ok: true, summary: '选方案A' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: T(9), payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: T(10),
+        payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: T(11),
+        payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 4,
+        ts: T(12),
+        payload: { toolCallId: 'ask', name: 'ask_user', args: '{}', stepIndex: 2 },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 5,
+        ts: T(13),
+        payload: { toolCallId: 'ask', name: 'ask_user', ok: true, summary: '选方案A' },
+      },
+    });
     // 用户回答上屏（流式 QA 行，无 seq）
     dispatch({ type: 'user', text: '选方案A', ts: T(14), kind: 'question-answer' });
     // 答完之后才跑的工具 B
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: T(15), payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 3 } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 7, ts: T(16), payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 6,
+        ts: T(15),
+        payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 3 },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 7,
+        ts: T(16),
+        payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' },
+      },
+    });
 
     const flow = document.querySelector('.process-flow') as HTMLElement;
     expect(flow).not.toBeNull();
@@ -1826,7 +2423,15 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '旧', source: 'a' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'memory_added',
+        seq: 2,
+        ts: '',
+        payload: { id: 'm:1', name: '旧', source: 'a' },
+      },
+    });
     expect(document.querySelector('.process-flow')).not.toBeNull(); // v1.8：运行时平铺容器
     expect(document.querySelector('.round-block')).toBeNull(); // 运行时无大折叠壳
     dispatch({ type: 'clear_ok' });
@@ -1838,7 +2443,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('meta 到达即建流式骨架：角色·模型标签 + 运行时过程容器立即可见（TTFT 前即时反馈）', () => {
     mountChatView();
     // 仅 meta（LLM 首 token 未到时）：应已有「谁在回答 + 正在做什么」
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '代码专家', llm: 'deepseek-chat' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: '代码专家', llm: 'deepseek-chat' } },
+    });
     const assistant = document.querySelector('.msg.assistant') as HTMLElement;
     expect(assistant).not.toBeNull();
     // 消息标签显示本轮身份
@@ -1855,19 +2463,31 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
 
   it('thinking 到达后运行时平铺相位行实时显示运行阶段（装配上下文中 → 调用模型中…）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'assembling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'assembling' } },
+    });
     let row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row).not.toBeNull();
     expect(row.textContent).toContain('装配上下文中');
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 3, ts: '', payload: { phase: 'llm_calling' } },
+    });
     row = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(row.textContent).toContain('调用模型中');
   });
 
   it('首个 chunk 复用餐架块：正文流入同一块，不新建第二条 assistant 消息', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 骨架已存在（meta 建立）
     expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
     dispatch({ type: 'chunk', content: '正文内容' });
@@ -1882,7 +2502,10 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('pause→resume 无输入续跑：原位续写暂停块，不新建第 2 个 assistant 块（2026-09-07 回归）', async () => {
     mountChatView();
     // meta 建骨架 → 首个 chunk 流入块 A（beginStreaming 记录同闭环 roundId）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '前半', roundId: 'r:1' });
     expect(document.querySelectorAll('.msg.assistant')).toHaveLength(1);
     // 暂停：记录暂停块（resume 原位续接锚）+ 清流式态
@@ -1908,10 +2531,23 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         user: { content: '介绍下自己', ts: '2026-08-28T20:15:00Z' },
         processEvents: [
           { type: 'meta', seq: 1, ts: '', payload: { role: '方案设计师', llm: 'mimo-v2.5-pro' } },
-          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
-          { type: 'metrics', seq: 3, ts: '', payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 } },
+          {
+            type: 'memory_added',
+            seq: 2,
+            ts: '',
+            payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' },
+          },
+          {
+            type: 'metrics',
+            seq: 3,
+            ts: '',
+            payload: { durationMs: 9600, inputTokens: 500, outputTokens: 120 },
+          },
         ],
-        assistantMessage: { content: '我是Memora Agent，专注于将模糊想法设计为可落地的项目方案。', ts: '2026-08-28T20:16:00Z' },
+        assistantMessage: {
+          content: '我是Memora Agent，专注于将模糊想法设计为可落地的项目方案。',
+          ts: '2026-08-28T20:16:00Z',
+        },
         status: 'complete',
       }),
     );
@@ -1960,7 +2596,12 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         user: { content: '问题一', ts: 't1' },
         processEvents: [
           { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' } },
+          {
+            type: 'memory_added',
+            seq: 2,
+            ts: '',
+            payload: { id: 'm:1', name: '设计哲学', source: 'round-summary' },
+          },
         ],
         assistantMessage: { content: '回答一', ts: 't2' },
         status: 'complete',
@@ -1970,8 +2611,18 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         user: { content: '问题二', ts: 't3' },
         processEvents: [
           { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
-          { type: 'memory_added', seq: 2, ts: '', payload: { id: 'm:2', name: '角色包', source: 'round-summary' } },
-          { type: 'memory_added', seq: 3, ts: '', payload: { id: 'm:3', name: '任务表', source: 'round-summary' } },
+          {
+            type: 'memory_added',
+            seq: 2,
+            ts: '',
+            payload: { id: 'm:2', name: '角色包', source: 'round-summary' },
+          },
+          {
+            type: 'memory_added',
+            seq: 3,
+            ts: '',
+            payload: { id: 'm:3', name: '任务表', source: 'round-summary' },
+          },
         ],
         assistantMessage: { content: '回答二', ts: 't4' },
         status: 'complete',
@@ -1995,22 +2646,92 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('定向复现：任务表现在（task_table 工具）无 narrate + 自审二次输出，done 后折叠块/光标/进度条收口（2026-09-16 round-1789565571934）', () => {
     mountChatView();
     // 真实 round 事件序：meta → chunk(正文全文) → plan_item_boundary → task_table_update 工具 → self_review → text_self_review → thinking(archiving) → metrics → done
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '【组长开场】\n\n## 第一步', roundId: 'r1' });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } } });
-    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 3, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"plan_item_id":"0","status":"done"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 3,
+        ts: '',
+        payload: { planItemId: 's1', title: '文档收束' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 4,
+        ts: '',
+        payload: {
+          toolCallId: 't1',
+          name: 'task_table_update',
+          args: '{"plan_item_id":"0","status":"done"}',
+        },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 5,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' },
+      },
+    });
     // 大事件量（逼近真实 round：1358 个事件中绝大多数是 thought 碎片）
     let seq = 6;
     for (let i = 0; i < 400; i++) {
-      dispatch({ type: 'process_event', event: { type: 'thought', seq, ts: '', payload: { content: `思考碎片含会议记录质量评估第${i}段` } } });
+      dispatch({
+        type: 'process_event',
+        event: {
+          type: 'thought',
+          seq,
+          ts: '',
+          payload: { content: `思考碎片含会议记录质量评估第${i}段` },
+        },
+      });
       seq += 1;
     }
-    dispatch({ type: 'process_event', event: { type: 'self_review', seq, ts: '', payload: {} } }); seq += 1;
-    dispatch({ type: 'process_event', event: { type: 'text_self_review', seq, ts: '', payload: { content: '本次会议结论：文档收束 → 项目骨架 → 第一个 API。' } } }); seq += 1;
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } } }); seq += 1;
-    dispatch({ type: 'process_event', event: { type: 'metrics', seq, ts: '', payload: { durationMs: 120000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
+    dispatch({ type: 'process_event', event: { type: 'self_review', seq, ts: '', payload: {} } });
+    seq += 1;
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'text_self_review',
+        seq,
+        ts: '',
+        payload: { content: '本次会议结论：文档收束 → 项目骨架 → 第一个 API。' },
+      },
+    });
+    seq += 1;
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } },
+    });
+    seq += 1;
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq,
+        ts: '',
+        payload: {
+          durationMs: 120000,
+          tokenIn: 100,
+          tokenOut: 200,
+          toolFailureCount: 0,
+          success: true,
+        },
+      },
+    });
     dispatch({ type: 'done', roundId: 'r1' });
 
     // 现象1/3：任务过程应收进折叠块（round-block 存在且含工具行）
@@ -2026,11 +2747,34 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   it('定向复现：任务表看板在流中刷新（plan_update 非空）→ 收尾 plan_update(空) + done，全局看板清 + 无残留进度条/光标', () => {
     mountChatView();
     // ① meta → 正文流开启（cursor 亮）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '【组长开场】', roundId: 'r1' });
     // ② 任务表现在：plan_item_boundary + task_table_update 工具 → 宿主 postPlanUpdate() 推非空计划
-    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '文档收束' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', args: '{"plan_item_id":"0","status":"done"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 2,
+        ts: '',
+        payload: { planItemId: 's1', title: '文档收束' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: {
+          toolCallId: 't1',
+          name: 'task_table_update',
+          args: '{"plan_item_id":"0","status":"done"}',
+        },
+      },
+    });
     // ≥3 个任务项的计划才常驻（**webview 展示层自身门槛**，非内核 needsPlanning——后者是关键词/
     // 结构式布尔判定、无项数阈值）——3 个任务项触发常驻条
     dispatch({
@@ -2041,19 +2785,58 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
         { order: 2, id: '2', description: '整理结论', status: 'pending', planItemLog: [] },
       ],
     });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'task_table_update', ok: true, summary: '更新成功' },
+      },
+    });
     // 流中常驻条应出现（任务表模式 ≥3 个任务项 → 单轨 planBar；合并单轨 PLAN-UI-1）
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
     // ③ 大事件量 thought 洪流 + 自审二次输出 + archiving + metrics
     let seq = 5;
     for (let i = 0; i < 400; i++) {
-      dispatch({ type: 'process_event', event: { type: 'thought', seq, ts: '', payload: { content: `思考碎片含会议记录质量评估第${i}段` } } });
+      dispatch({
+        type: 'process_event',
+        event: {
+          type: 'thought',
+          seq,
+          ts: '',
+          payload: { content: `思考碎片含会议记录质量评估第${i}段` },
+        },
+      });
       seq += 1;
     }
-    dispatch({ type: 'process_event', event: { type: 'self_review', seq, ts: '', payload: {} } }); seq += 1;
-    dispatch({ type: 'process_event', event: { type: 'text_self_review', seq, ts: '', payload: { content: '本次会议结论。' } } }); seq += 1;
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } } }); seq += 1;
-    dispatch({ type: 'process_event', event: { type: 'metrics', seq, ts: '', payload: { durationMs: 120000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } } });
+    dispatch({ type: 'process_event', event: { type: 'self_review', seq, ts: '', payload: {} } });
+    seq += 1;
+    dispatch({
+      type: 'process_event',
+      event: { type: 'text_self_review', seq, ts: '', payload: { content: '本次会议结论。' } },
+    });
+    seq += 1;
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq, ts: '', payload: { phase: 'archiving' } },
+    });
+    seq += 1;
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq,
+        ts: '',
+        payload: {
+          durationMs: 120000,
+          tokenIn: 100,
+          tokenOut: 200,
+          toolFailureCount: 0,
+          success: true,
+        },
+      },
+    });
     // ④ 宿主流尾：postPlanUpdate() 空计划（清理看板）→ done
     dispatch({ type: 'plan_update', items: [] });
     dispatch({ type: 'done', roundId: 'r1' });
@@ -2107,9 +2890,18 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     mountChatView();
     dispatch({
       type: 'process_event',
-      event: { type: 'meta', seq: 1, ts: '', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' },
+      },
     });
-    dispatch({ type: 'chunk', content: '【组长开场】介绍会议主题和讨论框架', roundId: REAL_ROUND.id });
+    dispatch({
+      type: 'chunk',
+      content: '【组长开场】介绍会议主题和讨论框架',
+      roundId: REAL_ROUND.id,
+    });
     // ≥3 个任务项的计划 → 常驻条出现（运行时无 inline 轨）
     dispatch({ type: 'plan_update', items: PLAN_SNAPSHOTS[0]! });
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(false);
@@ -2128,7 +2920,7 @@ describe('chatView 真实 round-1789565571934 三现象回归护栏（2026-09-16
     // 语义快照（**非缺陷**）：done 是宿主 post-message、不落盘为 ProcessEvent，
     // 故 fixtures 末尾无 done 纯属持久化产物。真实 round 的 status=complete 证明宿主正常完成路径**必发 done**
     // （宿主发 done 的路径，见 chatPanel 的 finalizeStreaming）。因此「metrics 之后无 done」只会来自暂停
-// （pausedOnPurpose，见 chatPanel 的 pause 分支）
+    // （pausedOnPurpose，见 chatPanel 的 pause 分支）
     // 或其他在途态 —— 此时 finalizeStreaming 不调用、.msg-body.is-streaming 保留，是正确语义（轮次未收口，可 resume）。
     // 用户实测的「光标不消失」根因是 finalizeRound 抛 NotFoundError 打断收口，与 done 是否发送无关。
     expect(document.querySelector('.msg-body.is-streaming')).not.toBeNull();
@@ -2228,33 +3020,47 @@ describe('chatView 会话管理（2026-08-17 重构 v2：标题条按钮 + treed
     const { postMessage } = mountChatView();
     dispatch({
       type: 'session_list_data',
-      sessions: [{ sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() }],
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
     });
     const items = document.querySelectorAll('#historyMenu .treedd__item');
     expect(items.length).toBe(1);
     expect(items[0]?.querySelector('.session-history__item-title')?.textContent).toBe('会话A');
     // 点击条目 → treedd 选择委托 → __historyOnSelect → switch_session
     (items[0] as HTMLElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'switch_session', sessionId: '2026-08-15-s1' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'switch_session',
+      sessionId: '2026-08-15-s1',
+    });
   });
 
   it('历史条目垃圾桶：点击发送 delete_session 且不触发条目加载', () => {
     const { postMessage } = mountChatView();
     dispatch({
       type: 'session_list_data',
-      sessions: [{ sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() }],
+      sessions: [
+        { sessionId: '2026-08-15-s1', title: '会话A', updatedAt: new Date().toISOString() },
+      ],
     });
     const delBtn = document.querySelector('.session-history__item-del') as HTMLElement;
     delBtn.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_session', sessionId: '2026-08-15-s1' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'delete_session',
+      sessionId: '2026-08-15-s1',
+    });
     // stopPropagation：不触发条目加载（选择委托）
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'switch_session' }));
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'switch_session' }),
+    );
   });
 
   it('session_list_data 空数组 → 显示空态（非 item 文本）', () => {
     mountChatView();
     dispatch({ type: 'session_list_data', sessions: [] });
-    expect(document.querySelector('.session-history__empty')?.textContent).toContain('暂无历史会话');
+    expect(document.querySelector('.session-history__empty')?.textContent).toContain(
+      '暂无历史会话',
+    );
     expect(document.querySelectorAll('#historyMenu .treedd__item').length).toBe(0);
   });
 
@@ -2279,9 +3085,20 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
 
   it('interrupted（aborted 事件）→ round-block §已停止 + 「用户停止了对话」平铺折叠块外，半截正文掐断（2026-09-19 形态定案）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '半截回答' });
-    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 2,
+        ts: '',
+        payload: { reason: 'User cancelled the conversation', stopReason: 'user' },
+      },
+    });
     dispatch({ type: 'interrupted', roundId: 'r1' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
@@ -2291,7 +3108,9 @@ describe('chatView UI 自然生长三优化点（2026-08-15）', () => {
     // 收尾即停止呼吸（is-running 收敛）
     expect(rb.classList.contains('is-running')).toBe(false);
     // 停止行平铺折叠块外（收起态常驻可见，语义映射为「用户停止了对话」）
-    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain('用户停止了对话');
+    expect(document.querySelector('.round-block__interrupted')?.textContent).toContain(
+      '用户停止了对话',
+    );
     // 半截正文掐断（丢弃运行中 step 的内容，与重放中断轮不显示正文同构）
     expect(document.querySelector('.msg.assistant .msg-body')).toBeNull();
   });
@@ -2431,7 +3250,11 @@ describe('chatView 流式光标 + Markdown 渲染（吸收养分，2026-08-16）
   it('历史回放的一次性 assistant 消息直接渲染 Markdown（无 is-streaming）', () => {
     mountChatView();
     dispatchReplay(
-      makeRound({ id: 'round-md', assistantMessage: { content: '## 标题\n\n正文', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+      makeRound({
+        id: 'round-md',
+        assistantMessage: { content: '## 标题\n\n正文', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
     );
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     // 历史重放非流式：直接渲染 Markdown（标题成 <h2>），且无光标类
@@ -2459,7 +3282,11 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('AI 消息底部有复制 + 删除按钮（删除问答闭环入口）', () => {
     mountChatView();
     dispatchReplay(
-      makeRound({ id: 'round-del', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+      makeRound({
+        id: 'round-del',
+        assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
     );
     const msg = document.querySelector('.msg.assistant') as HTMLElement;
     expect(msg.querySelector('.msg-copy-icon')).not.toBeNull();
@@ -2505,12 +3332,19 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('AI 消息删除按钮：携带该消息 ts 发送 delete_turn（host 确认后截断）', () => {
     const { postMessage } = mountChatView();
     dispatchReplay(
-      makeRound({ id: 'round-del-ts', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+      makeRound({
+        id: 'round-del-ts',
+        assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
     );
     const del = document.querySelector('.msg.assistant .msg-delete-icon') as HTMLButtonElement;
     del.click();
     // 点删除 → 发 delete_turn（携带渲染时存的 dataset.ts 锚点）
-    expect(postMessage).toHaveBeenCalledWith({ type: 'delete_turn', ts: '2026-08-14T09:00:30.000Z' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'delete_turn',
+      ts: '2026-08-14T09:00:30.000Z',
+    });
   });
 
   it('AI 消息无 timestamp 时删除按钮禁用（避免锚点失效）', () => {
@@ -2540,7 +3374,10 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('meta 骨架（prepareFlowShell）期间 footer 隐藏，interrupted 打断后展示', () => {
     mountChatView();
     // meta 到达 → 骨架建立（footer pending）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     const msg = document.querySelector('.msg.assistant') as HTMLElement;
     const footer = msg.querySelector('.msg-footer') as HTMLElement;
     expect(footer.classList.contains('is-pending')).toBe(true);
@@ -2555,7 +3392,11 @@ describe('chatView 对话闭环操作（复制/删除，2026-08-16）', () => {
   it('历史回放的一次性 assistant 消息 footer 直接展示（已完成消息）', () => {
     mountChatView();
     dispatchReplay(
-      makeRound({ id: 'round-footer', assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' }, status: 'complete' }),
+      makeRound({
+        id: 'round-footer',
+        assistantMessage: { content: '回答', ts: '2026-08-14T09:00:30.000Z' },
+        status: 'complete',
+      }),
     );
     const footer = document.querySelector('.msg.assistant .msg-footer') as HTMLElement;
     expect(footer).not.toBeNull();
@@ -2733,7 +3574,13 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     dispatch({
       type: 'plan_update',
       items: [
-        { id: 's1', description: '收集需求', status: 'done', order: 0, planItemLog: [{ planItemId: 's1', summary: '梳理用户痛点并产出需求清单' }] },
+        {
+          id: 's1',
+          description: '收集需求',
+          status: 'done',
+          order: 0,
+          planItemLog: [{ planItemId: 's1', summary: '梳理用户痛点并产出需求清单' }],
+        },
         { id: 's2', description: '设计方案', status: 'active', order: 1, planItemLog: [] },
         { id: 's3', description: '编写文档', status: 'pending', order: 2, planItemLog: [] },
       ],
@@ -2745,7 +3592,9 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     // 有关联推进记录的任务项：details 携带摘要 body（折叠态，仅标题常显）
     const withRounds = planItems[0] as HTMLDetailsElement;
     expect(withRounds.open).toBe(false);
-    expect(withRounds.querySelector('.plan-item-round')?.textContent).toBe('梳理用户痛点并产出需求清单');
+    expect(withRounds.querySelector('.plan-item-round')?.textContent).toBe(
+      '梳理用户痛点并产出需求清单',
+    );
     // 无关联推进记录的任务项：不渲染空摘要体
     const noRounds = planItems[1] as HTMLDetailsElement;
     expect(noRounds.querySelector('.plan-item-round')).toBeNull();
@@ -2796,7 +3645,10 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
   it('plan_update 空 items → 常驻条隐藏、内容区不留完成卡片', () => {
     mountChatView();
     // 建块（正文块存在）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
     dispatch({
       type: 'plan_update',
@@ -2843,7 +3695,10 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
 
   it('clear_ok → 移除常驻条（切换会话不残留）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
     dispatch({
       type: 'plan_update',
@@ -2860,7 +3715,6 @@ describe('chatView 任务看板（H4 任务驱动多步闭环，2026-08-23 → 2
     expect(document.querySelector('#planBar')?.hasAttribute('hidden')).toBe(true);
     expect(document.querySelector('.plan-inline-done')).toBeNull();
   });
-
 });
 
 describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', () => {
@@ -2878,18 +3732,27 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     const messages = document.getElementById('messages') as HTMLElement;
 
     // prepare 阶段：assembling（meta 未到、无骨架）
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'assembling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'assembling' } },
+    });
     let wait = messages.querySelector('.pending-wait') as HTMLElement | null;
     expect(wait).not.toBeNull();
     expect(wait!.textContent).toContain('装配上下文中');
     expect(wait!.textContent).toMatch(/已等待 \d+s/);
 
     // 相位推进 → 文案随 thinking 更新
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } },
+    });
     expect(messages.querySelector('.pending-wait')!.textContent).toContain('调用模型中');
 
     // meta 到达（建流式骨架 + 平铺容器）→ 等待条移除，过程平铺容器接管
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     expect(messages.querySelector('.pending-wait')).toBeNull();
     expect(messages.querySelector('.process-flow')).not.toBeNull(); // v1.8：平铺容器接管，无大折叠壳
     expect(messages.querySelector('.round-block')).toBeNull();
@@ -2898,7 +3761,10 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
   it('正文开启（chunk 首段）后等待指示器退场', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'processing' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'processing' } },
+    });
     expect(messages.querySelector('.pending-wait')).not.toBeNull();
     // chunk 首段（无骨架路径 beginStreaming）→ 等待条移除
     dispatch({ type: 'chunk', content: '回答' });
@@ -2908,13 +3774,19 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
   it('done / error 收尾后等待指示器移除（不留残留定时器渲染）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'assembling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'assembling' } },
+    });
     expect(messages.querySelector('.pending-wait')).not.toBeNull();
     dispatch({ type: 'done' });
     expect(messages.querySelector('.pending-wait')).toBeNull();
 
     // error 分支同样清理
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'processing' } },
+    });
     expect(messages.querySelector('.pending-wait')).not.toBeNull();
     dispatch({ type: 'error', message: 'boom' });
     expect(messages.querySelector('.pending-wait')).toBeNull();
@@ -2924,7 +3796,11 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
     // TS-10b：内核 error chunk 携带 category（connection/timeout/unknown），
     // webview 只消费 message（已是宿主映射后的友好文案），category 是透传诊断字段不影响渲染
     mountChatView();
-    dispatch({ type: 'error', message: '对话连接中断，已保留部分回答，请检查网络后重试', category: 'connection' });
+    dispatch({
+      type: 'error',
+      message: '对话连接中断，已保留部分回答，请检查网络后重试',
+      category: 'connection',
+    });
     const body = document.querySelector('.msg.error .msg-body') as HTMLElement;
     expect(body).not.toBeNull();
     expect(body.textContent).toBe('对话连接中断，已保留部分回答，请检查网络后重试');
@@ -2940,7 +3816,10 @@ describe('chatView 回答等待指示器（③ 等待反馈，2026-08-29）', ()
   it('interrupted 后等待指示器退场（③ 排雷补漏：done/error 均清，中断也不能漏）', () => {
     mountChatView();
     const messages = document.getElementById('messages') as HTMLElement;
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 1, ts: '', payload: { phase: 'llm_calling' } },
+    });
     expect(messages.querySelector('.pending-wait')).not.toBeNull();
     // 用户点停止 → interrupted（无 meta/chunk/done/error 的收尾通道）→ 等待条必须移除
     dispatch({ type: 'interrupted' });
@@ -2983,7 +3862,11 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
 
   it('无选中 Provider 时圆环保持隐藏（无「当前模型」可依赖，不展示缺省值）', () => {
     mountChatView();
-    dispatch({ type: 'chat_providers', providers: [{ name: 'a', displayName: 'A', limitTokens: 64000 }], activeName: undefined });
+    dispatch({
+      type: 'chat_providers',
+      providers: [{ name: 'a', displayName: 'A', limitTokens: 64000 }],
+      activeName: undefined,
+    });
     const bar = document.getElementById('contextOccupancy') as HTMLElement;
     expect(bar.hidden).toBe(true);
   });
@@ -2992,7 +3875,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     mountChatView();
     dispatch({
       type: 'chat_providers',
-      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 }],
+      providers: [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 },
+      ],
       activeName: 'deepseek',
     });
     // 首轮流式结束 → 真实占用到达（占用 24,000）
@@ -3008,14 +3893,20 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
         freeTokens: 86800,
       },
     });
-    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('完整对话：3 条');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
+      '完整对话：3 条',
+    );
     // 同款 chat_providers 再推送（如面板刷新）→ 上限未变 → 不把已用清回 0
     dispatch({
       type: 'chat_providers',
-      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 }],
+      providers: [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 128000, limitTokens: 128000 },
+      ],
       activeName: 'deepseek',
     });
-    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('完整对话：3 条');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
+      '完整对话：3 条',
+    );
   });
 
   it('切换到其他模型（上限不同）→ 容量与已用同步更新为新模型（实时跟随选中 LLM）', () => {
@@ -3040,7 +3931,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
       activeName: 'local',
     });
     // 容量切换为本地模型 8K，占用清零（旧模型占用数据对新模型无意义）
-    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 8,192');
+    expect((document.getElementById('occTip') as HTMLElement).textContent).toContain(
+      '总容量 8,192',
+    );
     expect((document.getElementById('occPercent') as HTMLElement).textContent).toBe('0%');
   });
 
@@ -3048,7 +3941,9 @@ describe('chatView 上下文占用条：按选中 LLM 实时显示上限（④ �
     mountChatView();
     dispatch({
       type: 'chat_providers',
-      providers: [{ name: 'deepseek', displayName: 'DeepSeek', contextWindow: 64000, limitTokens: 64000 }],
+      providers: [
+        { name: 'deepseek', displayName: 'DeepSeek', contextWindow: 64000, limitTokens: 64000 },
+      ],
       activeName: 'deepseek',
     });
     expect((document.getElementById('occTip') as HTMLElement).textContent).toContain('总容量 64K');
@@ -3091,12 +3986,19 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('turn_update(waiting/ask) 携带 options → 消息流内联选择题渲染可点选项按钮（提问下方，非底部弹层）', () => {
     const { postMessage } = mountChatView();
     // 先建提问骨架作为内联锚点（提问块；纯视觉锚点，不含完整内核流）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
       questions: [
-        { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
+        {
+          slot: 'task',
+          question: '请描述当前任务目标',
+          options: ['延续当前会话目标', '开启新任务'],
+        },
       ],
     });
     // 内联选择题在消息流内（提问块下方），而非底部 clarifyBar 替换输入栏
@@ -3111,14 +4013,19 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(box.querySelector('.ask-inline__input')).not.toBeNull();
     expect(box.querySelector('.ask-inline__submit')).not.toBeNull();
     // 底部 clarifyBar 不激活（主路径已内联）
-    expect((document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible')).toBe(false);
+    expect(
+      (document.getElementById('clarifyBar') as HTMLElement).classList.contains('visible'),
+    ).toBe(false);
     expect(postMessage).not.toHaveBeenCalledWith({ type: 'input', kind: 'answer' });
   });
 
   it('replay 与 waiting(ask) 同一条消息 → 提问 UI 不得被重放重建抹掉（渲染须后于重放）', () => {
     mountChatView();
     // 提问骨架作为内联锚点（提问挂起时消息流里已有 assistant 段，正常形态）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 宿主在有未答提问时重放：视图重建后的 ready 握手重放（切走再切回）、流尾「流期间视图
     // 重建过」补重放，都走 `postTurnUpdate(undefined, true)`——**同一条消息**既带 replay:true
     // 又带 state(waiting/ask + questions)。
@@ -3144,12 +4051,19 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
 
   it('点击内联选项 → 标记该题已答 is-selected，再点「提交回答」提交 input(kind=answer) 单元素', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
       questions: [
-        { slot: 'task', question: '请描述当前任务目标', options: ['延续当前会话目标', '开启新任务'] },
+        {
+          slot: 'task',
+          question: '请描述当前任务目标',
+          options: ['延续当前会话目标', '开启新任务'],
+        },
       ],
     });
     const btns = document.querySelectorAll<HTMLButtonElement>('.ask-inline__opt');
@@ -3158,19 +4072,28 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(submit.disabled).toBe(true);
     (btns[1] as HTMLButtonElement).click();
     // 点选项不立即提交（无二次回车/即答自提交；按钮此时已答→可提交）
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'answer' }));
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'answer' }),
+    );
     expect((btns[1] as HTMLElement).classList.contains('is-selected')).toBe(true);
     expect(submit.disabled).toBe(false);
     submit.click();
     // 一次性提交单元素数组（与提问按序一对一）
-    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['开启新任务'] });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['开启新任务'],
+    });
     // 内联块已移除（答案就位）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
   it('多 ask 聚合（P2）：逐题点选高亮 is-selected，全部答完才可提交 input(kind=answer) 数组', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
@@ -3192,8 +4115,12 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     expect(btns).toHaveLength(4);
     (btns[0] as HTMLButtonElement).click(); // 第一题「中文」
     // 未全部答完：不提交任何回答（postMessage 在此仅 mount ready 调用）
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'answer' }));
-    expect(postMessage).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'input', kind: 'answer' }));
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'answer' }),
+    );
+    expect(postMessage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: 'input', kind: 'answer' }),
+    );
     expect(submit.disabled).toBe(true);
     // 已答题按钮高亮 is-selected（可再点改选）
     expect((btns[0] as HTMLElement).classList.contains('is-selected')).toBe(true);
@@ -3202,7 +4129,11 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     (btns[3] as HTMLButtonElement).click(); // 第二题「长篇」
     expect(submit.disabled).toBe(false);
     submit.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['中文', '长篇'] });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['中文', '长篇'],
+    });
     // 提交后内联块移除（聚合卡片任务完成）
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
@@ -3210,7 +4141,10 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('ask 点选项自动 continue → resume 原位续写单块（问题回归：防建块 B 致双复制条/错位）', () => {
     const { postMessage } = mountChatView();
     // ① 建块 A：meta + 正文（同 roundId r1）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '提问前的正文', roundId: 'r1' });
     // ② ask 弹窗（内联选择题）
     dispatchTurn({
@@ -3223,9 +4157,16 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     (btns[0] as HTMLButtonElement).click();
     const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
     submit.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['方案 A'] });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['方案 A'],
+    });
     // ④ resume 重发 meta（宿主收到 input(kind=answer) 后自动继续 runFlow）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // ⑤ 续写正文（同 roundId）→ done 收敛
     dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
@@ -3238,7 +4179,10 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
   it('骨架期 ask：LLM 未输出正文即提问——点选项后回发 user(kind) 不删骨架，resume 原位续写单块（2026-09-21 回归）', () => {
     const { postMessage } = mountChatView();
     // ① meta 建骨架（此后无任何正文 chunk —— 骨架未转正，LLM 首动作即 ask_user 的真实链路）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+    });
     // ② ask 弹窗（内联选择题）
     dispatchTurn({
       phase: 'waiting',
@@ -3251,11 +4195,18 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const submit = document.querySelector('.ask-inline__submit') as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     submit.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['方案 A'] });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['方案 A'],
+    });
     // ④ 宿主 handleResume 回发 user(kind='question-answer') —— 真实链路关键：骨架在此不得被删
     dispatch({ type: 'user', text: '方案 A', ts: 't2', kind: 'question-answer' });
     // ⑤ resume 重发 meta → pausedResume 原位续写判定（骨架必须仍在 DOM，isConnected 恒真）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: 't2', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 3, ts: 't2', payload: { role: 'AI', llm: 'm' } },
+    });
     // ⑥ 续写正文（同轮）→ done 收敛
     dispatch({ type: 'chunk', content: '已按方案 A 继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
@@ -3271,13 +4222,18 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
     expect(assistants[0].contains(rb)).toBe(true);
-    expect(rb.querySelector('.round-block__details .round-block__input')?.textContent).toContain('方案 A');
+    expect(rb.querySelector('.round-block__details .round-block__input')?.textContent).toContain(
+      '方案 A',
+    );
   });
 
   it('骨架期 ask 修复核心：普通（非 ask）交互回发 user(kind) 时骨架仍保留——过程流与骨架同源不孤儿', () => {
     mountChatView();
     // 骨架期（无正文 chunk）+ 交互回答提交（点选项后宿主回发 user(kind)）——骨架不得被删
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'user', text: '方案 A', ts: 't2', kind: 'question-answer' });
     // 骨架仍在 DOM（含过程流），「你答」条目进骨架过程流、不孤儿挂消息流尾
     const assistants = document.querySelectorAll<HTMLElement>('.msg.assistant');
@@ -3292,7 +4248,10 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
 
   it('无 options 的 waiting(ask) 不渲染选项按钮（仅补充输入通道）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
@@ -3307,7 +4266,10 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
 
   it('内联补充输入：键入后回车 → 提交 input(kind=answer) 并移除内联块', () => {
     const { postMessage } = mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
@@ -3317,7 +4279,11 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
     input.value = '我补充一点要求';
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     // 回车等价点「提交回答」（统一形态下 Enter 触发 submitBtn.click；已答才 enabled）
-    expect(postMessage).toHaveBeenCalledWith({ type: 'input', kind: 'answer', answers: ['我补充一点要求'] });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'input',
+      kind: 'answer',
+      answers: ['我补充一点要求'],
+    });
     expect(document.querySelector('.ask-inline')).toBeNull();
   });
 
@@ -3337,12 +4303,20 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
 
   it('allowCustom=false 且带 options → 强制单选：隐藏自由输入框（仅点选）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
       questions: [
-        { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: false },
+        {
+          slot: 'task',
+          question: '采用哪种方案？',
+          options: ['方案A', '方案B'],
+          allowCustom: false,
+        },
       ],
     });
     const box = document.querySelector('.ask-inline') as HTMLElement;
@@ -3357,13 +4331,21 @@ describe('chatView 澄清候选选项（ask_user options，2026-09-02）', () =>
 
   it('allowCustom 缺省/true 且带 options → 保持每题自由输入（可见）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // allowCustom=true 显式允许自由输入
     dispatchTurn({
       phase: 'waiting',
       reason: 'ask',
       questions: [
-        { slot: 'task', question: '采用哪种方案？', options: ['方案A', '方案B'], allowCustom: true },
+        {
+          slot: 'task',
+          question: '采用哪种方案？',
+          options: ['方案A', '方案B'],
+          allowCustom: true,
+        },
       ],
     });
     const input = document.querySelector('.ask-inline__input') as HTMLInputElement;
@@ -3382,15 +4364,39 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   /** 开一轮（meta + 首 chunk），等价于 beginRound（本 describe 外的局部 helper 不共享） */
   function beginRound(): void {
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '文档设计师', llm: 'deepseek-chat' },
+      },
+    });
     dispatch({ type: 'chunk', content: '正文' });
   }
 
   it('read_file 工具行显示行动叙述「读取文件：path (状态)」，原始 args 保留在折叠 body', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"docs/a.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '内容概要' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"docs/a.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: '内容概要' },
+      },
+    });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     expect(tool.querySelector('summary')?.textContent).toBe('读取文件：docs/a.md (成功)');
@@ -3401,7 +4407,15 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('未收录工具（自定义/未知）回退原生工具名，不编造叙述', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't99', name: 'my_custom_tool', args: '{"foo":"bar"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't99', name: 'my_custom_tool', args: '{"foo":"bar"}' },
+      },
+    });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     // 无 result → 进行中；TOOL_META 亦未收录（角色包自定义工具）→ 原生英文名
@@ -3412,8 +4426,24 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('args 非合法 JSON 时走兜底中文显示名（解析兜底，不抛错）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: 'not-json{{{[' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: 'not-json{{{[' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true },
+      },
+    });
     dispatch({ type: 'done' });
     const tool = document.querySelector('.round-block__tool') as HTMLElement;
     // 解析失败 → 参数为空 → 叙述生成器返回 undefined → 兜底 toolNameMap 中文名
@@ -3424,39 +4454,121 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     mountChatView();
     beginRound();
     // read_file + read_skill + search_project + write_file（四个**不同工具名**各一段）
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'read_skill', args: '{"name":"doc-writer"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't2', name: 'read_skill', ok: true } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't3', name: 'search_project', args: '{"query":"createSession"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 7, ts: '', payload: { toolCallId: 't3', name: 'search_project', ok: true } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't4', name: 'write_file', args: '{"path":"out.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't4', name: 'write_file', ok: true } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'read_skill', args: '{"name":"doc-writer"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 5,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'read_skill', ok: true },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 6,
+        ts: '',
+        payload: { toolCallId: 't3', name: 'search_project', args: '{"query":"createSession"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 7,
+        ts: '',
+        payload: { toolCallId: 't3', name: 'search_project', ok: true },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 8,
+        ts: '',
+        payload: { toolCallId: 't4', name: 'write_file', args: '{"path":"out.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 9,
+        ts: '',
+        payload: { toolCallId: 't4', name: 'write_file', ok: true },
+      },
+    });
     dispatch({ type: 'done' });
     const summary = document.querySelector('.round-block__summary') as HTMLElement;
-    expect(summary.textContent).toContain('工具×4（读取文件 1 · 读取技能 1 · 项目搜索 1 · 写入文件 1）');
+    expect(summary.textContent).toContain(
+      '工具×4（读取文件 1 · 读取技能 1 · 项目搜索 1 · 写入文件 1）',
+    );
   });
 
   it('插话打断旧流时移除旧块流式光标（is-streaming ▋ 不残留闪烁）', () => {
     mountChatView();
     // 流式正文进行中（is-streaming 光标亮）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正在回答第一段' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     expect(body.classList.contains('is-streaming')).toBe(true);
     // 插话（supplement）到达 → 旧流被打断：新块由后续 chunk 开启，旧块必须是静态正文（无光标）
-    dispatch({ type: 'user', text: '补充：换个方向', ts: '2026-09-02T04:15:05Z', kind: 'supplement' });
+    dispatch({
+      type: 'user',
+      text: '补充：换个方向',
+      ts: '2026-09-02T04:15:05Z',
+      kind: 'supplement',
+    });
     const oldBody = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     expect(oldBody.classList.contains('is-streaming')).toBe(false);
   });
 
   it('中断补充渲染为内联子行「你补充」，插在被打破块之后；后续 chunk 为「续接」块（2026-09-07 显示逻辑统一）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 单轨：运行时 chunk 携带 turn roundId（宿主透传），续接判定与重放共用「roundId 相等」
     dispatch({ type: 'chunk', content: '正在回答第一段', roundId: 'round-1' });
     // 被打断补充（streaming 中 supplement）→ 过程条目「你补充」：与 question-answer 共用 round-block__input 形态
-    dispatch({ type: 'user', text: '补充：不要联网搜索', ts: '2026-09-03T04:15:05Z', kind: 'supplement' });
+    dispatch({
+      type: 'user',
+      text: '补充：不要联网搜索',
+      ts: '2026-09-03T04:15:05Z',
+      kind: 'supplement',
+    });
     const supRow = document.querySelector('.round-block__input') as HTMLElement;
     expect(supRow).not.toBeNull();
     expect(supRow.querySelector('.round-block__input-tag')?.textContent).toBe('你补充');
@@ -3478,13 +4590,18 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('连续补充各自独立成块：每颗钉子独立折叠块、无「补充 N 条」合并（2026-09-09 剪枝定案）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正在回答', roundId: 'round-1' });
     // 同轮连续两条补充（运行时：roundId 均未回填，历史上会误合并成「你补充 N 条」）
     dispatch({ type: 'user', text: '补充：先看配置', ts: 't1', kind: 'supplement', roundId: '' });
     dispatch({ type: 'user', text: '补充：再看日志', ts: 't2', kind: 'supplement', roundId: '' });
-    const supRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
-      (el) => el.querySelector('.round-block__input-tag')?.textContent?.startsWith('你补充'),
+    const supRows = Array.from(
+      document.querySelectorAll<HTMLElement>('.round-block__input'),
+    ).filter((el) =>
+      el.querySelector('.round-block__input-tag')?.textContent?.startsWith('你补充'),
     );
     // 两颗钉子独立成块：不合并、无「你补充了 N 条」标签、各自含完整内容
     expect(supRows).toHaveLength(2);
@@ -3497,9 +4614,17 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('骨架期补充（正文未开即 supplement）→ 后续同轮 chunk 必须开启正文块渲染（2026-09-22 实证回归）', () => {
     mountChatView();
     // 发送第一问：骨架期（meta 先到建骨架，正文流未开始，streamingActive=false）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 马上补充输入（host handleSend interject 分支：post user(supplement) 先行上屏）
-    dispatch({ type: 'user', text: '补充：先做第一步', ts: '2026-09-03T04:16:00Z', kind: 'supplement' });
+    dispatch({
+      type: 'user',
+      text: '补充：先做第一步',
+      ts: '2026-09-03T04:16:00Z',
+      kind: 'supplement',
+    });
     // 内核同轮续接（_handleInterrupt 注入同 roundId），正文 chunk 续至
     dispatch({ type: 'chunk', content: '好的，已按补充继续：第一步完成', roundId: 'round-1' });
     dispatch({ type: 'done' });
@@ -3513,18 +4638,64 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('真实 IO 时序：骨架期补充后过程事件交错再正文续接（round-1790065416420 实证，2026-09-22）', () => {
     mountChatView();
     // ① 发送第一问：meta（骨架建立）
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro' } } });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 3,
+        ts: '',
+        payload: { role: '共鸣小说家', llm: 'mimo-v2.6-pro' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 4, ts: '', payload: { phase: 'llm_calling' } },
+    });
     // ② 马上补充（supplement 上屏，删除骨架）
-    dispatch({ type: 'user', text: '其实就是上一轮的结论', ts: '2026-09-22T08:23:48.977Z', kind: 'supplement' });
+    dispatch({
+      type: 'user',
+      text: '其实就是上一轮的结论',
+      ts: '2026-09-22T08:23:48.977Z',
+      kind: 'supplement',
+    });
     // ③ 补充后过程事件交错（narrate/tool/thought 先到，同轮）
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 65, ts: '', payload: { content: '我先查一下，请稍候' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 66, ts: '', payload: { toolCallId: 'c1', name: 'search_project', args: '{}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 69, ts: '', payload: { toolCallId: 'c1', name: 'search_project', ok: true, summary: '未命中' } } });
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 70, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 65, ts: '', payload: { content: '我先查一下，请稍候' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 66,
+        ts: '',
+        payload: { toolCallId: 'c1', name: 'search_project', args: '{}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 69,
+        ts: '',
+        payload: { toolCallId: 'c1', name: 'search_project', ok: true, summary: '未命中' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 70, ts: '', payload: { phase: 'llm_calling' } },
+    });
     // ④ 正文 chunk 同轮续接（长回答，多段）
-    dispatch({ type: 'chunk', content: '好，那就直说——**有道理，但只对了一半**。', roundId: 'round-1790065416420' });
-    dispatch({ type: 'chunk', content: '先定内核，种子才找得对。', roundId: 'round-1790065416420' });
+    dispatch({
+      type: 'chunk',
+      content: '好，那就直说——**有道理，但只对了一半**。',
+      roundId: 'round-1790065416420',
+    });
+    dispatch({
+      type: 'chunk',
+      content: '先定内核，种子才找得对。',
+      roundId: 'round-1790065416420',
+    });
     dispatch({ type: 'done' });
     // 补充后的正文必须实时渲染（30 秒空洞期间用户看到的是"卡住"的根因即此处断链）
     const bodyTexts = Array.from(
@@ -3536,10 +4707,20 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('D3 单轨：运行时 qa 回答后 resume，骨架为普通第 2 段块（无续接视觉，2026-09-21 剪枝：补充卡片已分隔）', () => {
     mountChatView();
     // 第一段回答（提问，roundId=round-1）：骨架复用分支记 lastAssistantRoundId
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     // 用户回答（question-answer，带提问原文——运行时同构：host 透出 question，渲染「问」回顾行）
-    dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1', question: '需要先确认哪个方案？' });
+    dispatch({
+      type: 'user',
+      text: '选A',
+      ts: 't2',
+      kind: 'question-answer',
+      roundId: 'round-1',
+      question: '需要先确认哪个方案？',
+    });
     const qaRows = document.querySelectorAll('.round-block__input');
     expect(qaRows.length).toBeGreaterThanOrEqual(1);
     // 提问明文在条目内（.round-block__input-q 回顾行 + 内容行）：trae work 形态，问答对可回看
@@ -3550,7 +4731,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // resumeExecution → 新 runFlow 的 meta → resumePending 分支建续接骨架：
     // 续接视觉整体退役——骨架是普通第 2 段块（无 is-continued / 无 chip），
     // 补充/问答内容已由独立交互条目行（.round-block__input）上屏分隔
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
     const skeleton = blocks[1] as HTMLElement;
@@ -3567,7 +4751,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('运行时暂停（paused）清流式光标：提问后暂停块不再闪烁「调用大模型」', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     const body = document.querySelector('.msg.assistant .msg-body') as HTMLElement;
     expect(body.classList.contains('is-streaming')).toBe(true); // 暂停前光标亮
@@ -3577,7 +4764,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
   it('运行时 resume meta：续跑保留平铺容器锚点，不复制第二个运行时容器', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '需要先确认哪个方案？', roundId: 'round-1' });
     const flow0 = document.querySelector('.process-flow') as HTMLElement;
     expect(flow0).not.toBeNull();
@@ -3585,10 +4775,15 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     // 用户回答 → resumePending 置位
     dispatch({ type: 'user', text: '选A', ts: 't2', kind: 'question-answer', roundId: 'round-1' });
     // resume 新 runFlow 的 meta（同闭环续跑）→ 不重置锚点：平铺容器仍只有一个、留在首块
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     const flow1s = document.querySelectorAll('.process-flow');
     expect(flow1s).toHaveLength(1);
-    expect(flow1s[0].closest('.msg.assistant')).toBe(document.querySelectorAll('.msg.assistant')[0]);
+    expect(flow1s[0].closest('.msg.assistant')).toBe(
+      document.querySelectorAll('.msg.assistant')[0],
+    );
     // 续接骨架不挂第二个容器
     const blocks = document.querySelectorAll('.msg.assistant');
     expect(blocks).toHaveLength(2);
@@ -3632,11 +4827,21 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     mountChatView();
     beginRound(); // meta + chunk：骨架建块并挂载过程平铺容器（process-flow）
     // 用户对提问的回答 → 过程条目「你答：xxx」按 ts 插入 process-flow（对应 step 分组）
-    dispatch({ type: 'user', text: '选方案A', ts: '2026-09-03T03:15:05Z', kind: 'question-answer', roundId: 'round-1' });
+    dispatch({
+      type: 'user',
+      text: '选方案A',
+      ts: '2026-09-03T03:15:05Z',
+      kind: 'question-answer',
+      roundId: 'round-1',
+    });
     const qa = document.querySelector('.round-block__input') as HTMLElement;
     expect(qa).not.toBeNull();
-    expect(qa.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
-    expect(qa.querySelector('.round-block__input-row .round-block__input-text')?.textContent).toContain('选方案A');
+    expect(qa.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe(
+      '你答',
+    );
+    expect(
+      qa.querySelector('.round-block__input-row .round-block__input-text')?.textContent,
+    ).toContain('选方案A');
     // 形态甲：QA 条目进过程容器（process-flow），按 ts 归位——运行时即时可见（硬约束）
     const flow = document.querySelector('.process-flow') as HTMLElement | null;
     expect(flow).not.toBeNull();
@@ -3665,11 +4870,17 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     const askRow = entry.querySelector('.round-block__input-q') as HTMLElement;
     expect(askRow).not.toBeNull();
     expect(askRow.querySelector('.round-block__input-tag')?.textContent).toBe('问');
-    expect(askRow.querySelector('.round-block__input-text')?.textContent).toContain('你想读哪个文件？');
+    expect(askRow.querySelector('.round-block__input-text')?.textContent).toContain(
+      '你想读哪个文件？',
+    );
     expect(askRow.querySelector('.round-block__input-opts')?.textContent).toContain('probe.txt');
     // 阅读序：条目内问回顾行在前、内容行紧随其后
-    expect(entry.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
-    expect(entry.querySelector('.round-block__input-row .round-block__input-text')?.textContent).toContain('读 probe.txt');
+    expect(
+      entry.querySelector('.round-block__input-row .round-block__input-tag')?.textContent,
+    ).toBe('你答');
+    expect(
+      entry.querySelector('.round-block__input-row .round-block__input-text')?.textContent,
+    ).toContain('读 probe.txt');
   });
 
   it('G26：无 question 的 question-answer（运行时/旧数据）不渲染回顾行，退化为现状', () => {
@@ -3703,7 +4914,18 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
         user: { content: '帮我做方案', ts: 't1' },
         processEvents: [
           { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-          { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+          {
+            type: 'metrics',
+            seq: 2,
+            ts: 't2',
+            payload: {
+              durationMs: 3000,
+              tokenIn: 10,
+              tokenOut: 20,
+              toolFailureCount: 0,
+              success: true,
+            },
+          },
         ],
         assistantLog: [{ content: '你倾向哪个方案？', ts: 't2' }],
         // 用户回答 → 内联子行（插在前序段之后、final 之前）
@@ -3722,9 +4944,9 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect((blocks[1] as HTMLElement).classList.contains('is-continued')).toBe(false);
     expect((blocks[1] as HTMLElement).querySelector('.msg-ai-label__cont')).toBeNull();
     // 仅「补充」tag 不存在（本轮是 qa 回答，不渲染 supplement 子行）；「你答」子行仍应在
-    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
-      (el) => el.querySelector('.round-block__input-tag')?.textContent === '你补充',
-    );
+    const supplementRows = Array.from(
+      document.querySelectorAll<HTMLElement>('.round-block__input'),
+    ).filter((el) => el.querySelector('.round-block__input-tag')?.textContent === '你补充');
     expect(supplementRows).toHaveLength(0);
     // 有 round-block 时 QA 最终折入任务折叠块
     // （平铺会污染两段式）——qa 行收进 .round-block__details 内
@@ -3747,14 +4969,40 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
         id: 'round-1',
         user: { content: '把上述问题使用ask工具提问我', ts: 't1' },
         processEvents: [
-          { type: 'meta', seq: 1, ts: 't1', payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' } },
+          {
+            type: 'meta',
+            seq: 1,
+            ts: 't1',
+            payload: { role: '白话方案设计师', llm: 'mimo-v2.5-pro' },
+          },
           { type: 'thinking', seq: 2, ts: 't1.1', payload: { phase: 'llm_calling' } },
           { type: 'narrate', seq: 3, ts: 't1.2', payload: { content: '提问中…' } },
-          { type: 'metrics', seq: 4, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+          {
+            type: 'metrics',
+            seq: 4,
+            ts: 't2',
+            payload: {
+              durationMs: 3000,
+              tokenIn: 10,
+              tokenOut: 20,
+              toolFailureCount: 0,
+              success: true,
+            },
+          },
         ],
         interactiveInputs: [
-          { content: '互动性——用户能参与影响故事走向', ts: 't2.1', kind: 'question-answer', question: 'Q1：核心价值是什么？' },
-          { content: '内容平台——让读者来读', ts: 't2.2', kind: 'question-answer', question: 'Q2：创作工具还是内容平台？' },
+          {
+            content: '互动性——用户能参与影响故事走向',
+            ts: 't2.1',
+            kind: 'question-answer',
+            question: 'Q1：核心价值是什么？',
+          },
+          {
+            content: '内容平台——让读者来读',
+            ts: 't2.2',
+            kind: 'question-answer',
+            question: 'Q2：创作工具还是内容平台？',
+          },
           { content: '专业作者/签约作者', ts: 't2.3', kind: 'question-answer' },
         ],
         assistantMessage: { content: '基于已回答的三个问题，最终回答…', ts: 't3' },
@@ -3790,8 +5038,10 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     dispatch({ type: 'assistant', text: '第二轮回答', ts: 't6', roundId: 'r2' });
 
     // 两轮补充各自独立成行（tag=你补充），不跨轮合并成「你补充了 2 条」
-    const supplementRows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input')).filter(
-      (el) => el.querySelector('.round-block__input-tag')?.textContent?.startsWith('你补充'),
+    const supplementRows = Array.from(
+      document.querySelectorAll<HTMLElement>('.round-block__input'),
+    ).filter((el) =>
+      el.querySelector('.round-block__input-tag')?.textContent?.startsWith('你补充'),
     );
     expect(supplementRows).toHaveLength(2);
     // 各含自己的补充内容（第二轮没并进第一轮）
@@ -3845,7 +5095,9 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
         status: 'complete',
       }),
     );
-    const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
+    const copyBtn = document.querySelector(
+      '.round-group__footer .msg-copy-icon',
+    ) as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
     // 整链 = 用户提问 + 各段原文（提问在先、段按序拼接，rawText 直取不剥离）
@@ -3870,7 +5122,9 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
         status: 'complete',
       }),
     );
-    const copyBtn = document.querySelector('.round-group__footer .msg-copy-icon') as HTMLButtonElement;
+    const copyBtn = document.querySelector(
+      '.round-group__footer .msg-copy-icon',
+    ) as HTMLButtonElement;
     copyBtn.click();
     const copied = writeText.mock.calls[0]?.[0] ?? '';
     expect(copied).toContain('先确认倾向。');
@@ -3881,8 +5135,19 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('narrate 过程事件渲染为独立父块（建议 A），每段叙述一个可折叠父块', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '让我先查看项目结构和所有文档' } } });
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 3, ts: '', payload: { content: '现在逐一读取它们的内容' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'narrate',
+        seq: 2,
+        ts: '',
+        payload: { content: '让我先查看项目结构和所有文档' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 3, ts: '', payload: { content: '现在逐一读取它们的内容' } },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb).not.toBeNull();
@@ -3897,13 +5162,51 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     mountChatView();
     beginRound();
     // 第一段叙述 → 一个搜索工具
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' },
+      },
+    });
     // 第二段叙述 → 一个读取工具
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 5, ts: '', payload: { content: '再读取文档' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: '', payload: { toolCallId: 't2', name: 'read_file', args: '{"path":"x.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 7, ts: '', payload: { toolCallId: 't2', name: 'read_file', ok: true, summary: '内容' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 5, ts: '', payload: { content: '再读取文档' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 6,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'read_file', args: '{"path":"x.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 7,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'read_file', ok: true, summary: '内容' },
+      },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const narrates = rb.querySelectorAll('.round-block__narrate') as NodeListOf<HTMLDetailsElement>;
@@ -3915,7 +5218,11 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     expect(nested).toHaveLength(0);
     // 严格时序：details 顶层子元素按 seq 交错平铺 narrate(2) → tool t1(3) → narrate(5) → tool t2(6)
     const childSeq = Array.from(rb.querySelector('.round-block__details')!.children)
-      .filter((el) => el.classList.contains('round-block__narrate') || el.classList.contains('round-block__tool'))
+      .filter(
+        (el) =>
+          el.classList.contains('round-block__narrate') ||
+          el.classList.contains('round-block__tool'),
+      )
       .map((el) => (el as HTMLElement).dataset.seq);
     expect(childSeq).toEqual(['2', '3', '5', '6']);
     // narrate 与 tool 各自保留原展现（叙述文本 / 工具名与状态）
@@ -3930,8 +5237,19 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('运行中 narrate 平铺冒号行、done 收尾重建后进折叠块收起（v1.8 剪枝拍板）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先搜索相关资料' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' },
+      },
+    });
     // 运行中（v1.8 平铺）：narrate = 平铺文本行（非折叠），以「：」结尾，后接工具折叠行
     const flow = document.querySelector('.process-flow') as HTMLElement;
     expect(flow).not.toBeNull();
@@ -3947,7 +5265,12 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
     if (phaseFirst) expect(flow.children[1]).toBe(narrate);
     else expect(flow.children[0]).toBe(narrate);
     expect(narrate.nextElementSibling).toBe(toolRow);
-    dispatch({ type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } });
+    dispatch({
+      type: 'tool_result',
+      seq: 4,
+      ts: '',
+      payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' },
+    });
     dispatch({ type: 'done' });
     // 收尾（finalize 全量重建 + flow 移除）：narrate 进 round-block 折叠块（收起态）
     const rb = document.querySelector('.round-block') as HTMLDetailsElement;
@@ -3961,8 +5284,30 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('策略拦截（blocked）工具行显示「已拦截」并默认展开，不冒充成功/失败（2026-09-02 第三态）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: false, blocked: true, summary: '[SEARCH_LIMIT_REACHED] 已达上限' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: {
+          toolCallId: 't1',
+          name: 'web_search',
+          ok: false,
+          blocked: true,
+          summary: '[SEARCH_LIMIT_REACHED] 已达上限',
+        },
+      },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const row = rb.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="t1"]');
@@ -3975,8 +5320,24 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
   it('TS-11 已拦截工具行不带 is-tool-running（拦截即终态，非进行中）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: false, blocked: true, summary: 'x' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', ok: false, blocked: true, summary: 'x' },
+      },
+    });
     dispatch({ type: 'done' });
     const row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
     expect(row.classList.contains('is-tool-running')).toBe(false);
@@ -3985,7 +5346,15 @@ describe('chatView 任务过程文字化（TS-8，2026-09-02 以 Trae 执行过�
 
 describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）', () => {
   function beginRound(): void {
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '文档设计师', llm: 'deepseek-chat' },
+      },
+    });
     dispatch({ type: 'chunk', content: '正文' });
   }
 
@@ -3993,15 +5362,34 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     mountChatView();
     beginRound();
     // 先有 thinking（LLM 调用相位）
-    dispatch({ type: 'process_event', event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thinking', seq: 2, ts: '', payload: { phase: 'llm_calling' } },
+    });
     // 工具开始执行：相位行切「正在执行」行动叙述（toolActionLabel 复用），is-tool 态
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' },
+      },
+    });
     let phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow).not.toBeNull();
     expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
     expect(phaseRow.classList.contains('is-tool')).toBe(true);
     // 工具完成：相位行回落最新 thinking（调用模型中…），移除 is-tool 态
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' },
+      },
+    });
     phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow.textContent).toContain('调用模型中');
     expect(phaseRow.classList.contains('is-tool')).toBe(false);
@@ -4010,30 +5398,78 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
   it('TS-11a 多工具并行：最新未完成工具为相位主体，逐完成回落（无 thinking 时安全移除）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', args: '{"path":"a.md"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'write_file', args: '{"path":"b.md"}' },
+      },
+    });
     // 最新未完成者（t2）为相位主体
     let phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow.textContent).toBe('正在执行：写入文件：b.md');
     // t2 完成 → t1 成为剩余未完成者 → 相位切回 t1
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't2', name: 'write_file', ok: true, summary: 'ok' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't2', name: 'write_file', ok: true, summary: 'ok' },
+      },
+    });
     phaseRow = document.querySelector('.process-flow__phase') as HTMLElement;
     expect(phaseRow.textContent).toBe('正在执行：读取文件：a.md');
     // t1 完成 → 无进行中工具且无 thinking → 相位行移除（不残留过期「正在执行」）
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 5,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true, summary: 'ok' },
+      },
+    });
     expect(document.querySelector('.process-flow__phase')).toBeNull();
   });
 
   it('TS-11b 进行中工具行实时可见：默认展开 + is-tool-running，result 到达移除', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' },
+      },
+    });
     const row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
     expect(row).not.toBeNull();
     expect(row.open).toBe(true);
     expect(row.classList.contains('is-tool-running')).toBe(true);
     // result 到达 → 成功折叠 + 移除进行中态
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: '已写入' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: '已写入' },
+      },
+    });
     expect(row.classList.contains('is-tool-running')).toBe(false);
     expect(row.open).toBe(false);
     expect(row.textContent).toContain('(成功)');
@@ -4053,7 +5489,19 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(row.textContent).toContain('准备中');
     expect(row.open).toBe(true);
     // ② 参数成形 tool_start 到达 → 同一行升级执行态（不重建：DOM 引用不换）
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 'call_w', name: 'write_file', args: '{"path":"b.md","content":"x"}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: {
+          toolCallId: 'call_w',
+          name: 'write_file',
+          args: '{"path":"b.md","content":"x"}',
+        },
+      },
+    });
     row = document.querySelector('.round-block__tool') as HTMLDetailsElement;
     expect(row.classList.contains('is-tool-pending')).toBe(false);
     expect(row.classList.contains('is-tool-running')).toBe(true);
@@ -4061,7 +5509,15 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     // 叙述复原（参数完整，写环工具行动叙述生成器同路）
     expect(row.textContent).toContain('写入文件：b.md');
     // ③ tool_result 收敛终态（成功收起，非运行态）
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 'call_w', name: 'write_file', ok: true, summary: '已写入' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 'call_w', name: 'write_file', ok: true, summary: '已写入' },
+      },
+    });
     expect(row.classList.contains('is-tool-running')).toBe(false);
     expect(row.open).toBe(false);
     expect(row.textContent).toContain('(成功)');
@@ -4080,7 +5536,15 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     expect(pendingRow.textContent).toContain('团队会议');
     expect(pendingRow.textContent).not.toContain('run_team_meeting');
     // ② 升级为执行态（upgradePendingToolRow → toolActionLabel 兜底）：仍为中文名
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 'call_m', name: 'run_team_meeting', args: '{}' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 'call_m', name: 'run_team_meeting', args: '{}' },
+      },
+    });
     expect(pendingRow.textContent).toContain('团队会议');
     expect(pendingRow.textContent).not.toContain('run_team_meeting');
   });
@@ -4096,9 +5560,21 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
       expect((r as HTMLElement).classList.contains('is-tool-pending')).toBe(true);
     });
     // 只升级 a（按 toolCallId 精确配对），b 保持准备中
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 'call_a', name: 'read_file', args: '{"path":"a.ts"}' } } });
-    const rowA = document.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="call_a"]');
-    const rowB = document.querySelector<HTMLDetailsElement>('.round-block__tool[data-tool-call-id="call_b"]');
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 2,
+        ts: '',
+        payload: { toolCallId: 'call_a', name: 'read_file', args: '{"path":"a.ts"}' },
+      },
+    });
+    const rowA = document.querySelector<HTMLDetailsElement>(
+      '.round-block__tool[data-tool-call-id="call_a"]',
+    );
+    const rowB = document.querySelector<HTMLDetailsElement>(
+      '.round-block__tool[data-tool-call-id="call_b"]',
+    );
     expect(rowA!.classList.contains('is-tool-running')).toBe(true);
     expect(rowA!.classList.contains('is-tool-pending')).toBe(false);
     expect(rowB!.classList.contains('is-tool-running')).toBe(false);
@@ -4116,14 +5592,30 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
     it('tool_start → 秒数实时刷新；结果完成 + 流结束 → elapsed 移除', () => {
       mountChatView();
       beginRound();
-      dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: '', payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' } } });
+      dispatch({
+        type: 'process_event',
+        event: {
+          type: 'tool_start',
+          seq: 2,
+          ts: '',
+          payload: { toolCallId: 't1', name: 'write_file', args: '{"path":"b.md"}' },
+        },
+      });
       // tick 前无 elapsed span；advance 2s 后出现「Ns」标签（Date 被 fake timers 一并 mock）
       expect(document.querySelector('.round-block__elapsed')).toBeNull();
       vi.advanceTimersByTime(2000);
       const row = document.querySelector('.round-block__tool') as HTMLElement;
       expect(row.textContent).toContain('2s');
       // 结果完成 + 流结束 → elapsed 清空（瞬态退场）
-      dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' } } });
+      dispatch({
+        type: 'process_event',
+        event: {
+          type: 'tool_result',
+          seq: 3,
+          ts: '',
+          payload: { toolCallId: 't1', name: 'write_file', ok: true, summary: 'ok' },
+        },
+      });
       dispatch({ type: 'done' });
       expect(document.querySelector('.round-block__elapsed')).toBeNull();
     });
@@ -4132,14 +5624,25 @@ describe('TS-11 工具执行实时态（2026-09-02 用户实测消缺落地）',
 
 describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () => {
   function beginRound(): void {
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正文' });
   }
 
   it('stopReason=user → § 已停止 显示「用户停止了对话」（不写死「用户取消了对话」）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'User cancelled the conversation', stopReason: 'user' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 2,
+        ts: '',
+        payload: { reason: 'User cancelled the conversation', stopReason: 'user' },
+      },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const detail = rb.querySelector('.round-block__details') as HTMLElement;
@@ -4151,7 +5654,10 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
   it('无 stopReason（旧数据）→ 回退 reason 原文（兼容不丢细节）', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'legacy 原因' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'legacy 原因' } },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb.textContent).toContain('legacy 原因');
@@ -4160,7 +5666,15 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
   it('stopReason=timeout（chat 锁超时/LLM 无响应）→ 显示「对话处理超时」，不显示「用户停止」', () => {
     mountChatView();
     beginRound();
-    dispatch({ type: 'process_event', event: { type: 'aborted', seq: 2, ts: '', payload: { reason: 'LLM request timed out (no response)', stopReason: 'timeout' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'aborted',
+        seq: 2,
+        ts: '',
+        payload: { reason: 'LLM request timed out (no response)', stopReason: 'timeout' },
+      },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     expect(rb.textContent).toContain('对话处理超时，请稍后重试');
@@ -4174,24 +5688,52 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     dispatch({ type: 'chunk', content: '第一段', roundId: 'r1' });
     dispatch({ type: 'chunk', content: '第二段' });
     // done 前：容器 footer 的删除按钮 anchor ts 未回填 → 禁用
-    const delBefore = document.querySelector('.round-group__footer .msg-delete-icon') as HTMLButtonElement | null;
+    const delBefore = document.querySelector(
+      '.round-group__footer .msg-delete-icon',
+    ) as HTMLButtonElement | null;
     expect(delBefore?.disabled).toBe(true);
     dispatch({ type: 'done', roundId: 'r1' });
     // done 后：commitTurnTs 用本轮用户输入 ts 回填 → 删除按钮可用（锁定已解除）
-    const delAfter = document.querySelector('.round-group__footer .msg-delete-icon') as HTMLButtonElement;
+    const delAfter = document.querySelector(
+      '.round-group__footer .msg-delete-icon',
+    ) as HTMLButtonElement;
     expect(delAfter.disabled).toBe(false);
     // 分叉按钮：roundId 回填 → 同样可用
-    const forkAfter = document.querySelector('.round-group__footer .msg-fork-icon') as HTMLButtonElement;
+    const forkAfter = document.querySelector(
+      '.round-group__footer .msg-fork-icon',
+    ) as HTMLButtonElement;
     expect(forkAfter.disabled).toBe(false);
   });
 
   it('G31 方案1：运行时 done 收敛 QA 进折叠块——消息流干净、摘要含你答×N（2026-09-08 落地）', () => {
     mountChatView();
     // 有过程事件（narrate/tool）→ round-block 存在；过程中用户问答平铺消息流
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '开始分析' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'read_file' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'read_file', ok: true } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 2, ts: '', payload: { content: '开始分析' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'read_file', ok: true },
+      },
+    });
     dispatch({ type: 'chunk', content: '正在执行，需要确认方案', roundId: 'r1' });
     // 用户回答（运行时 qa，roundId 未知）
     dispatch({ type: 'user', text: '选方案A', ts: 't', kind: 'question-answer' });
@@ -4202,7 +5744,10 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     expect(document.querySelector('.process-flow')).not.toBeNull(); // 过程平铺容器在
     expect(qaRow.parentElement?.classList.contains('round-block__details')).toBe(false);
     // 续跑 + done → 收敛：QA 折入折叠块、平铺内容收进折叠、摘要更新、消息流干净
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 5, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 5, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '好，按方案A继续', roundId: 'r1' });
     dispatch({ type: 'done', roundId: 'r1' });
     // QA 已折入 .round-block__details
@@ -4232,12 +5777,29 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
         user: { content: '帮我做方案', ts: 't1' },
         processEvents: [
           { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-          { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+          {
+            type: 'metrics',
+            seq: 2,
+            ts: 't2',
+            payload: {
+              durationMs: 3000,
+              tokenIn: 10,
+              tokenOut: 20,
+              toolFailureCount: 0,
+              success: true,
+            },
+          },
         ],
         assistantLog: [{ content: '你想读哪个文件？', ts: 't2' }],
         // 带 question 的 qa（提问回顾行 + 回答折叠块）——问行与答块须成对折入，否则答块残留消息流（坑）
         interactiveInputs: [
-          { content: '读 probe.txt', ts: 't3', kind: 'question-answer', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
+          {
+            content: '读 probe.txt',
+            ts: 't3',
+            kind: 'question-answer',
+            question: '你想读哪个文件？',
+            options: ['probe.txt', 'config.json'],
+          },
         ],
         assistantMessage: { content: '好的', ts: 't4' },
         status: 'complete',
@@ -4248,8 +5810,12 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     // 形态甲：折叠块内单条目 = 问回顾行 + 你答行（合并形态，非两元素成对）
     const inBlock = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
     expect(inBlock.length).toBe(1);
-    expect(inBlock[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
-    expect(inBlock[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('你答');
+    expect(inBlock[0]!.querySelector('.round-block__input-q')?.textContent).toContain(
+      '你想读哪个文件？',
+    );
+    expect(
+      inBlock[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent,
+    ).toBe('你答');
     // 消息流层面干净：assistant 前序段与 final 直接相邻（无残留 QA 块污染两段式）
     const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
     expect(blocks[0]!.nextElementSibling).toBe(blocks[1]);
@@ -4261,19 +5827,40 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     mountChatView();
     // 运行时轮：assistant 块（ask 暂停点）→ turn_update(waiting/ask) 渲染提问框
     dispatch({ type: 'user', text: '帮我做方案', ts: 't1', roundId: 'round-1' });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '在读取前需要确认：', roundId: 'round-1' });
-    dispatchTurn({ phase: 'waiting', reason: 'ask', questions: [{ slot: 'task', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] }] });
+    dispatchTurn({
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [
+        { slot: 'task', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
+      ],
+    });
     const askInline = document.querySelector('.ask-inline') as HTMLElement;
     expect(askInline).not.toBeNull();
     // 宿主超时自动续跑：先投递「未回答」交互行（timeout 消息到达即销毁提问框）
-    dispatch({ type: 'user', text: '用户未在时限内回答，已自动继续', ts: 't2', roundId: 'round-1', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] });
+    dispatch({
+      type: 'user',
+      text: '用户未在时限内回答，已自动继续',
+      ts: 't2',
+      roundId: 'round-1',
+      kind: 'timeout',
+      question: '你想读哪个文件？',
+      options: ['probe.txt', 'config.json'],
+    });
     expect(document.querySelector('.ask-inline')).toBeNull(); // 提问框已销毁
     const rows = Array.from(document.querySelectorAll<HTMLElement>('.round-block__input'));
     // 形态甲：单条目 = 问回顾行 + 未回答行（合并形态，非两元素）
     expect(rows.length).toBe(1);
-    expect(rows[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
-    expect(rows[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('未回答');
+    expect(rows[0]!.querySelector('.round-block__input-q')?.textContent).toContain(
+      '你想读哪个文件？',
+    );
+    expect(
+      rows[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent,
+    ).toBe('未回答');
     expect(rows[0]!.textContent).toContain('已自动继续');
     // done → 收敛折入折叠块 + 摘要未回答×1
     dispatch({ type: 'chunk', content: '好的，按默认继续。', roundId: 'round-1' });
@@ -4293,12 +5880,29 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
         user: { content: '帮我做方案', ts: 't1' },
         processEvents: [
           { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-          { type: 'metrics', seq: 2, ts: 't2', payload: { durationMs: 3000, tokenIn: 10, tokenOut: 20, toolFailureCount: 0, success: true } },
+          {
+            type: 'metrics',
+            seq: 2,
+            ts: 't2',
+            payload: {
+              durationMs: 3000,
+              tokenIn: 10,
+              tokenOut: 20,
+              toolFailureCount: 0,
+              success: true,
+            },
+          },
         ],
         assistantLog: [{ content: '在读取前需要确认：', ts: 't2' }],
         // 重放 middle 段 timeout 行（宿主 replayHistory → postTurnUpdate 按 kind 透传；带 question/options）
         interactiveInputs: [
-          { content: '用户未在时限内回答，已自动继续', ts: 't3', kind: 'timeout', question: '你想读哪个文件？', options: ['probe.txt', 'config.json'] },
+          {
+            content: '用户未在时限内回答，已自动继续',
+            ts: 't3',
+            kind: 'timeout',
+            question: '你想读哪个文件？',
+            options: ['probe.txt', 'config.json'],
+          },
         ],
         assistantMessage: { content: '好的，按默认继续。', ts: 't4' },
         status: 'complete',
@@ -4308,8 +5912,12 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     const rbQa = rb.querySelectorAll<HTMLElement>('.round-block__details .round-block__input');
     // 形态甲：单条目 = 问回顾行 + 未回答行（合并形态）
     expect(rbQa.length).toBe(1);
-    expect(rbQa[0]!.querySelector('.round-block__input-q')?.textContent).toContain('你想读哪个文件？');
-    expect(rbQa[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent).toBe('未回答');
+    expect(rbQa[0]!.querySelector('.round-block__input-q')?.textContent).toContain(
+      '你想读哪个文件？',
+    );
+    expect(
+      rbQa[0]!.querySelector('.round-block__input-row .round-block__input-tag')?.textContent,
+    ).toBe('未回答');
     expect(rbQa[0]!.textContent).toContain('已自动继续');
     // 消息流干净 + 摘要
     const blocks = document.querySelectorAll<HTMLElement>('.msg.assistant');
@@ -4326,11 +5934,32 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
         user: { content: '任务', ts: 't0' },
         processEvents: [
           { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
-          { type: 'plan_item_boundary', seq: 2, ts: 't2', payload: { planItemId: 's1', title: '第一步' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 2,
+            ts: 't2',
+            payload: { planItemId: 's1', title: '第一步' },
+          },
           { type: 'narrate', seq: 3, ts: 't3', payload: { content: '步骤一执行' } },
-          { type: 'plan_item_boundary', seq: 4, ts: 't4', payload: { planItemId: 's2', title: '第二步' } },
+          {
+            type: 'plan_item_boundary',
+            seq: 4,
+            ts: 't4',
+            payload: { planItemId: 's2', title: '第二步' },
+          },
           { type: 'narrate', seq: 5, ts: 't5', payload: { content: '步骤二执行' } },
-          { type: 'metrics', seq: 6, ts: 't6', payload: { durationMs: 100, tokenIn: 1, tokenOut: 1, toolFailureCount: 0, success: true } },
+          {
+            type: 'metrics',
+            seq: 6,
+            ts: 't6',
+            payload: {
+              durationMs: 100,
+              tokenIn: 1,
+              tokenOut: 1,
+              toolFailureCount: 0,
+              success: true,
+            },
+          },
         ],
         assistantLog: [{ content: '前序段', ts: 't2.5' }],
         // 用户补充：ts 在 step1 边界之后、step2 边界之前 → 归 step1 分组（刚结束的 step 间隙）
@@ -4342,8 +5971,12 @@ describe('TS-12b aborted 语义渲染（2026-09-02 结束语义收敛）', () =>
     const planItems = document.querySelectorAll('.round-block__plan-item');
     expect(planItems.length).toBe(2);
     // 条目归 step1（ts 定位），不飘忽：不在 details 顶层、不在 step2
-    expect(planItems[0]!.querySelector('.round-block__input')?.textContent).toContain('补充：改一下');
-    const detailsInputs = Array.from(document.querySelectorAll<HTMLElement>('.round-block__details > .round-block__input'));
+    expect(planItems[0]!.querySelector('.round-block__input')?.textContent).toContain(
+      '补充：改一下',
+    );
+    const detailsInputs = Array.from(
+      document.querySelectorAll<HTMLElement>('.round-block__details > .round-block__input'),
+    );
     expect(detailsInputs).toHaveLength(0);
     expect(planItems[1]!.querySelector('.round-block__input')).toBeNull();
   });
@@ -4360,7 +5993,10 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('撤回已流式进正文的叙述段：正文去该段、叙述进过程区，收尾后仅余结论', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 首轮无工具史：叙述已逐字流式进正文（消息级分类前无法预判工具轮）
     dispatch({ type: 'chunk', content: '我先全面探索项目结构' });
     expect(assistantBody().textContent).toContain('我先全面探索项目结构');
@@ -4370,10 +6006,15 @@ describe('chatView narrate_withdraw 回抽', () => {
     expect(assistantBody().textContent).not.toContain('我先全面探索项目结构');
 
     // 该段改由 narrate 过程事件承载（运行时过程平铺容器）
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先全面探索项目结构' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 2, ts: '', payload: { content: '我先全面探索项目结构' } },
+    });
     const flow = document.querySelector('.process-flow') as HTMLElement;
     expect(flow).not.toBeNull();
-    expect(flow.querySelector('.process-flow__narrate')?.textContent).toContain('我先全面探索项目结构');
+    expect(flow.querySelector('.process-flow__narrate')?.textContent).toContain(
+      '我先全面探索项目结构',
+    );
     expect(assistantBody().textContent).not.toContain('我先全面探索项目结构');
 
     // 后续最终结论照常进正文（流式节流 150ms，终态在 done 收敛渲染后断言）
@@ -4390,7 +6031,10 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('防御分支：撤回段非正文后缀（正文另含其它文本）时按最后出现位置删除，不误伤其余正文', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '叙述段' });
     dispatch({ type: 'chunk', content: '结论段' });
     dispatch({ type: 'narrate_withdraw', text: '叙述段' });
@@ -4400,7 +6044,10 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('撤回文本不在正文中：无副作用（幂等守卫，不误删正文）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     dispatch({ type: 'chunk', content: '正文' });
     dispatch({ type: 'narrate_withdraw', text: '不相干的文本' });
     expect(assistantBody().textContent).toContain('正文');
@@ -4408,9 +6055,15 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('thought 思考折叠块：运行时平铺 + finalize 后 round-block 折叠组（2026-09-13）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 运行时：思考增量汇入 process-flow 平铺
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '用户问 A/B，先查资料' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 2, ts: '', payload: { content: '用户问 A/B，先查资料' } },
+    });
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRow = flow.querySelector('.process-flow__thought') as HTMLDetailsElement;
     expect(runningRow).not.toBeNull();
@@ -4429,14 +6082,41 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('thought 与 narrate/tool 按 seq 平铺（时序忠实，思考是过程轨迹一部分）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '思考：先搜索' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 3, ts: '', payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' } } });
-    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' } } });
-    dispatch({ type: 'process_event', event: { type: 'narrate', seq: 5, ts: '', payload: { content: '再看文档' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 2, ts: '', payload: { content: '思考：先搜索' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_start',
+        seq: 3,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', args: '{"query":"A"}' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'tool_result',
+        seq: 4,
+        ts: '',
+        payload: { toolCallId: 't1', name: 'web_search', ok: true, summary: '结果A' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'narrate', seq: 5, ts: '', payload: { content: '再看文档' } },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
-    const nodes = Array.from(rb.querySelectorAll('.round-block__thought, .round-block__tool, .round-block__narrate'));
+    const nodes = Array.from(
+      rb.querySelectorAll('.round-block__thought, .round-block__tool, .round-block__narrate'),
+    );
     // 按 seq 平铺：thought(2) → tool(3) → narrate(5)
     expect(nodes[0].className).toContain('round-block__thought');
     expect(nodes[1].className).toContain('round-block__tool');
@@ -4445,10 +6125,22 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('P3：同一轮多个 thought 碎片聚合成一个折叠块且连续（修复满屏小折叠与断断续续）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '用户想要理解' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '项目并生成' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '白' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 2, ts: '', payload: { content: '用户想要理解' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 3, ts: '', payload: { content: '项目并生成' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 4, ts: '', payload: { content: '白' } },
+    });
     // 运行时：仍是**单个** process-flow__thought，增量**原样连续**累积（data-merged-seq 防重复拼接）
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRows = flow.querySelectorAll('.process-flow__thought');
@@ -4465,10 +6157,19 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('P3：连续性——英文增量粒度的天然空格保留（逐 delta 不回退、不 trim 空格）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
     // 模拟增量片段：真实流式里每个 delta 可能是词/短语，天然携带间隔
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: 'Now let me also read ' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: 'the project report' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 2, ts: '', payload: { content: 'Now let me also read ' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 3, ts: '', payload: { content: 'the project report' } },
+    });
     dispatch({ type: 'done' });
     const rb = document.querySelector('.round-block') as HTMLElement;
     const done = rb.querySelector('.round-block__thought') as HTMLDetailsElement;
@@ -4478,11 +6179,26 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('per-step 分桶——不同 step 的思考各自独立折叠（标注第几步），同 step 内碎片连续', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 2, ts: '', payload: { content: '第一', stepIndex: 1 } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '步', stepIndex: 1 } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '第二', stepIndex: 2 } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 5, ts: '', payload: { content: '步', stepIndex: 2 } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 2, ts: '', payload: { content: '第一', stepIndex: 1 } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 3, ts: '', payload: { content: '步', stepIndex: 1 } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 4, ts: '', payload: { content: '第二', stepIndex: 2 } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 5, ts: '', payload: { content: '步', stepIndex: 2 } },
+    });
     // 流式：step1、step2 各 1 个折叠块（同 step 内连续），标题标注第几步
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRows = flow.querySelectorAll('.process-flow__thought');
@@ -4502,13 +6218,44 @@ describe('chatView narrate_withdraw 回抽', () => {
 
   it('per-step 分桶 × 任务项收纳：step 折叠块仍归入所属任务项分组（边界切组语义不变）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '第一', stepIndex: 1 } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 4, ts: '', payload: { content: '步', stepIndex: 1 } } });
-    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 5, ts: '', payload: { planItemId: 's2', title: '编写代码' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 6, ts: '', payload: { content: '第二', stepIndex: 2 } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 7, ts: '', payload: { content: '步', stepIndex: 2 } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 2,
+        ts: '',
+        payload: { planItemId: 's1', title: '分析需求' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 3, ts: '', payload: { content: '第一', stepIndex: 1 } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 4, ts: '', payload: { content: '步', stepIndex: 1 } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 5,
+        ts: '',
+        payload: { planItemId: 's2', title: '编写代码' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 6, ts: '', payload: { content: '第二', stepIndex: 2 } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 7, ts: '', payload: { content: '步', stepIndex: 2 } },
+    });
     // 流式：s1、s2 各收纳 1 个 step 折叠块（同 step 内连续），各自独立
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const flowPlanItems = flow.querySelectorAll('.round-block__plan-item');
@@ -4525,18 +6272,47 @@ describe('chatView narrate_withdraw 回抽', () => {
     const rbPlanItems = rb.querySelectorAll('.round-block__plan-item');
     expect(rbPlanItems.length).toBe(2);
     expect(rbPlanItems[0]!.querySelectorAll('.round-block__thought').length).toBe(1);
-    expect(rbPlanItems[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第一步');
+    expect(rbPlanItems[0]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain(
+      '第一步',
+    );
     expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought').length).toBe(1);
-    expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain('第二步');
+    expect(rbPlanItems[1]!.querySelectorAll('.round-block__thought')[0]!.textContent).toContain(
+      '第二步',
+    );
   });
 
   it('旧数据回落：无 stepIndex 的 thought 归整轮单桶（不猜测推断归属）', () => {
     mountChatView();
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 's1', title: '分析需求' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 3, ts: '', payload: { content: '旧数据甲' } } });
-    dispatch({ type: 'process_event', event: { type: 'plan_item_boundary', seq: 4, ts: '', payload: { planItemId: 's2', title: '编写代码' } } });
-    dispatch({ type: 'process_event', event: { type: 'thought', seq: 5, ts: '', payload: { content: '旧数据乙' } } });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 2,
+        ts: '',
+        payload: { planItemId: 's1', title: '分析需求' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 3, ts: '', payload: { content: '旧数据甲' } },
+    });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'plan_item_boundary',
+        seq: 4,
+        ts: '',
+        payload: { planItemId: 's2', title: '编写代码' },
+      },
+    });
+    dispatch({
+      type: 'process_event',
+      event: { type: 'thought', seq: 5, ts: '', payload: { content: '旧数据乙' } },
+    });
     // 流式：跨任务项边界仍为单桶（无 stepIndex 不拆分）
     const flow = document.querySelector('.process-flow') as HTMLElement;
     const runningRows = flow.querySelectorAll('.process-flow__thought');
@@ -4606,7 +6382,9 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       requestId: 'wc_ok',
       approved: true,
     });
-    expect((document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden')).toBe(true);
+    expect(
+      (document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden'),
+    ).toBe(true);
   });
 
   it('confirmWrites 审批卡：拒绝按钮回传 write_confirm_answer(approved=false) 并隐藏', () => {
@@ -4627,7 +6405,9 @@ describe('chatView 写入审批卡（H0，2026-09-19 补全）', () => {
       requestId: 'wc_no',
       approved: false,
     });
-    expect((document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden')).toBe(true);
+    expect(
+      (document.getElementById('writeConfirmCard') as HTMLElement).hasAttribute('hidden'),
+    ).toBe(true);
   });
 
   it('审批卡覆盖渲染：新请求只展示最新（旧 requestId 由 host 超时独立兜底，卡片无状态泄漏）', () => {
@@ -4738,12 +6518,26 @@ describe('技能启停：对话区（用户通道）显式标注（SKILL-S2）',
 describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下文同源）', () => {
   /** 开一轮（meta 建骨架 + 首 chunk 开正文）：与既有 describe 的 beginRound 同构（各 describe 自持） */
   function beginRound(): void {
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: '文档设计师', llm: 'deepseek-chat' } } });
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'meta',
+        seq: 1,
+        ts: '',
+        payload: { role: '文档设计师', llm: 'deepseek-chat' },
+      },
+    });
     dispatch({ type: 'chunk', content: '正文' });
   }
 
   /** 构造 tool_start 过程事件（段内容主体；stepIndex = 所属 step，供步切换断段判据） */
-  function toolStart(seq: number, id: string, name: string, args = '{}', stepIndex?: number): ProcessEvent {
+  function toolStart(
+    seq: number,
+    id: string,
+    name: string,
+    args = '{}',
+    stepIndex?: number,
+  ): ProcessEvent {
     return { type: 'tool_start', seq, ts: '', payload: { toolCallId: id, name, args, stepIndex } };
   }
 
@@ -4757,7 +6551,13 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
   }
 
   /** 构造 tool_result 过程事件（ok=false 可配 blocked=true 模拟被拒，口径②同样留段内） */
-  function toolResult(seq: number, id: string, name: string, ok: boolean, blocked = false): ProcessEvent {
+  function toolResult(
+    seq: number,
+    id: string,
+    name: string,
+    ok: boolean,
+    blocked = false,
+  ): ProcessEvent {
     return {
       type: 'tool_result',
       seq,
@@ -4925,12 +6725,22 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     mountChatView();
     beginRound();
     dispatchEvents([
-      { type: 'plan_item_boundary', seq: 2, ts: '', payload: { planItemId: 'p1', title: '分析需求' } },
+      {
+        type: 'plan_item_boundary',
+        seq: 2,
+        ts: '',
+        payload: { planItemId: 'p1', title: '分析需求' },
+      },
       toolStart(3, 't1', 'read_file'),
       toolResult(4, 't1', 'read_file', true),
       toolStart(5, 't2', 'read_file'),
       toolResult(6, 't2', 'read_file', true),
-      { type: 'plan_item_boundary', seq: 7, ts: '', payload: { planItemId: 'p2', title: '编写代码' } },
+      {
+        type: 'plan_item_boundary',
+        seq: 7,
+        ts: '',
+        payload: { planItemId: 'p2', title: '编写代码' },
+      },
       toolStart(8, 't3', 'write_file'),
       toolResult(9, 't3', 'write_file', true),
       toolStart(10, 't4', 'write_file'),
@@ -4946,8 +6756,12 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     // 归组落位：批块分别位于自己的任务项分组容器内，不越界混入对方
     const groups = rb.querySelectorAll('.round-block__plan-item');
     expect(groups).toHaveLength(2);
-    expect(groups[0]!.querySelector('.round-block__tool-batch')?.getAttribute('data-tool-batch')).toBe('3');
-    expect(groups[1]!.querySelector('.round-block__tool-batch')?.getAttribute('data-tool-batch')).toBe('8');
+    expect(
+      groups[0]!.querySelector('.round-block__tool-batch')?.getAttribute('data-tool-batch'),
+    ).toBe('3');
+    expect(
+      groups[1]!.querySelector('.round-block__tool-batch')?.getAttribute('data-tool-batch'),
+    ).toBe('8');
   });
 
   it('三上下文一致：同一事件流在流式追加与 finalize 全量重建下产出相同批结构（防内联分组三份的守卫）', () => {
@@ -4995,7 +6809,9 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     const block = document.querySelector('.round-block__tool-batch') as HTMLElement;
     const summary = block.querySelector('.round-block__tool-batch-summary') as HTMLElement;
     // 分型计数走 toolActionType（与轮收尾摘要同源），不再按工具名另起一份计数口径
-    expect(block.querySelector('.round-block__tool-batch-title')?.textContent).toBe('工具×3（读取文件 2 · 网络搜索 1）');
+    expect(block.querySelector('.round-block__tool-batch-title')?.textContent).toBe(
+      '工具×3（读取文件 2 · 网络搜索 1）',
+    );
     // 工具类折叠块不带序号：批号与 step 号互不对齐，属另一套编号（STEP-ID-1 防复发精神）
     expect(summary.textContent).not.toMatch(/第\s*\d+\s*[批步]/);
   });
@@ -5014,9 +6830,8 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
       toolResult(9, 't4', 'write_file', true),
     ]);
     dispatch({ type: 'done' });
-    const blockTitle = (
-      document.querySelector('.round-block__tool-batch-title') as HTMLElement
-    ).textContent;
+    const blockTitle = (document.querySelector('.round-block__tool-batch-title') as HTMLElement)
+      .textContent;
     const roundSummary = (document.querySelector('.round-block__stats') as HTMLElement).textContent;
     // 唯一的形成点：两份工具叙述同一口径；一旦批改用工具名计数，此断言立即红
     expect(blockTitle).toBe('工具×4（读取文件 2 · 网络搜索 1 · 写入文件 1）');
@@ -5047,7 +6862,11 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     // 失败/被拒行留段内（各自原位可见），无游离行逃出批块
     const rows = block.querySelectorAll('.round-block__tool');
     expect(rows).toHaveLength(3);
-    expect((document.querySelector('.round-block__details') as HTMLElement).querySelectorAll(':scope > .round-block__tool')).toHaveLength(0);
+    expect(
+      (document.querySelector('.round-block__details') as HTMLElement).querySelectorAll(
+        ':scope > .round-block__tool',
+      ),
+    ).toHaveLength(0);
   });
 
   it('pending 行升级后并入所在批（批容器 key = 段 id），旧 toolCallId 批 key 零残留消费（口径③）', () => {
@@ -5057,8 +6876,14 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     dispatch({ type: 'tool_pending', toolCallId: 'call_a', name: 'read_file' });
     dispatch({ type: 'tool_pending', toolCallId: 'call_b', name: 'read_file' });
     // tool_start 到达 → 预告行升级执行态并并入所在批（两工具相邻 = 同批）
-    dispatch({ type: 'process_event', event: toolStart(2, 'call_a', 'read_file', '{"path":"a.md"}') });
-    dispatch({ type: 'process_event', event: toolStart(3, 'call_b', 'read_file', '{"path":"b.md"}') });
+    dispatch({
+      type: 'process_event',
+      event: toolStart(2, 'call_a', 'read_file', '{"path":"a.md"}'),
+    });
+    dispatch({
+      type: 'process_event',
+      event: toolStart(3, 'call_b', 'read_file', '{"path":"b.md"}'),
+    });
     const block = document.querySelector('.round-block__tool-batch') as HTMLElement;
     expect(block).not.toBeNull();
     // 批容器 DOM key = 段 id（段内首个 tool_start 的 seq），非 toolCallId
@@ -5070,7 +6895,9 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     rows.forEach((r) => expect(r.classList.contains('is-tool-pending')).toBe(false));
     expect(document.querySelectorAll('.round-block__tool')).toHaveLength(2);
     // 旧 key 无残留消费：全部批 key 均为段 id（数字），无 toolCallId 值、无一键双主
-    const keys = Array.from(document.querySelectorAll<HTMLElement>('[data-tool-batch]')).map((el) => el.dataset.toolBatch);
+    const keys = Array.from(document.querySelectorAll<HTMLElement>('[data-tool-batch]')).map(
+      (el) => el.dataset.toolBatch,
+    );
     expect(keys).toEqual(['2']);
   });
 
@@ -5095,4 +6922,3 @@ describe('工具批折叠合并（toolBatch · groupToolBatches 三渲染上下�
     expect(rows.map((r) => r.dataset.toolBatch)).toEqual(['2', '5']);
   });
 });
-

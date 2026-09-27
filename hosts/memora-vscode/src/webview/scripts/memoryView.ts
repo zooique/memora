@@ -340,7 +340,8 @@ export function createMemoryView({ vscode, window, root }: MemoryViewDeps): void
   function renderStats(stats: MemoryStatsDto): void {
     statBar.hidden = false;
     const parts = Object.entries(stats.bySource).map(([s, n]) => `${s} ${n}`);
-    statBar.textContent = `共 ${stats.total} 条` + (parts.length > 0 ? ` · ${parts.join(' · ')}` : '');
+    statBar.textContent =
+      `共 ${stats.total} 条` + (parts.length > 0 ? ` · ${parts.join(' · ')}` : '');
   }
 
   /** 回收站标题条数徽标：有回收站条目时在「回收站」后显示 (N)，提高可发现性 */

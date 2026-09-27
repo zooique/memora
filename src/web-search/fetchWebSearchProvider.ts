@@ -3,7 +3,12 @@
  * 多后端降级链：Bing（国内可达，首选）→ DuckDuckGo（备用），各端点独立超时，失败/空结果时降级到下一端点。
  * 使用 Node.js 18+ 内置 fetch，零依赖。仅用于"开箱即用"场景，生产环境建议宿主实现 IWebSearchProvider 用专用搜索 API。
  */
-import type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@/web-search/types.js';
+import type {
+  IWebSearchProvider,
+  SearchResult,
+  WebSearchOptions,
+  SearchEndpoint,
+} from '@/web-search/types.js';
 import { BROWSER_UA, fetchWithTimeout } from '@/utils/http.js';
 
 /** 单端点请求超时（ms）：Bing 通常 1-2s 返回，10s 覆盖慢网络且不至于拖死主循环 */

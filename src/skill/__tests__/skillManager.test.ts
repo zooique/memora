@@ -59,7 +59,9 @@ describe('SkillManager', () => {
       createSkillFile(skillsDir, 'node.md', '---\nname: node\n---\n正文');
       const v = await m.validateFile(p);
       expect(v.ok).toBe(false);
-      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'description' }));
+      expect(v.issues).toContainEqual(
+        expect.objectContaining({ level: 'error', field: 'description' }),
+      );
     });
 
     it('无 frontmatter 结构（纯正文）→ error frontmatter', async () => {
@@ -67,7 +69,9 @@ describe('SkillManager', () => {
       createSkillFile(skillsDir, 'raw.md', '# 纯正文，无 frontmatter');
       const v = await m.validateFile(p);
       expect(v.ok).toBe(false);
-      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'error', field: 'frontmatter' }));
+      expect(v.issues).toContainEqual(
+        expect.objectContaining({ level: 'error', field: 'frontmatter' }),
+      );
     });
 
     it('无法读取文件 → error file', async () => {
@@ -236,7 +240,11 @@ description: 联网搜索资料
 
     it('可用性过滤：description 为空串/纯空白的技能不进 L1 清单', async () => {
       // 有描述 → 进清单
-      createSkillFile(skillsDir, 'has-desc.md', '---\nname: 有描述\ndescription: 有描述内容\n---\n正文');
+      createSkillFile(
+        skillsDir,
+        'has-desc.md',
+        '---\nname: 有描述\ndescription: 有描述内容\n---\n正文',
+      );
       // 无 description 字段（undefined）→ 不进清单
       createSkillFile(skillsDir, 'no-desc.md', '---\nname: 无描述\n---\n正文');
 
@@ -454,11 +462,7 @@ description: 联网搜索资料
     });
 
     it('重复注册同名技能应抛错', async () => {
-      createSkillFile(
-        skillsDir,
-        'existing.md',
-        '---\nname: existing\n---\n# 已存在',
-      );
+      createSkillFile(skillsDir, 'existing.md', '---\nname: existing\n---\n# 已存在');
       const skillManager = new SkillManager(testDir);
       await skillManager.load();
 
@@ -785,10 +789,16 @@ describe('SkillManager · 补充分支路径', () => {
 
     it('layer 非法值 → warning（回退 project）', async () => {
       const p = join(skillsDir, 'bad-layer.md');
-      createSkillFile(skillsDir, 'bad-layer.md', '---\nname: x\ndescription: d\nlayer: invalid\n---\n正文');
+      createSkillFile(
+        skillsDir,
+        'bad-layer.md',
+        '---\nname: x\ndescription: d\nlayer: invalid\n---\n正文',
+      );
       const v = await m.validateFile(p);
       expect(v.ok).toBe(true); // warning 不引发 error
-      expect(v.issues).toContainEqual(expect.objectContaining({ level: 'warning', field: 'layer' }));
+      expect(v.issues).toContainEqual(
+        expect.objectContaining({ level: 'warning', field: 'layer' }),
+      );
     });
   });
 
@@ -845,16 +855,8 @@ describe('SkillManager · 补充分支路径', () => {
 
   describe('禁用技能（S4 配置形态启停）', () => {
     it('禁用技能：get=null（L2 read_skill 短路）+ L1 清单剔除 + L3 不可用', async () => {
-      createSkillFile(
-        skillsDir,
-        'a.md',
-        '---\nname: a\ndescription: 技能A\n---\n正文A',
-      );
-      createSkillFile(
-        skillsDir,
-        'b.md',
-        '---\nname: b\ndescription: 技能B\n---\n正文B',
-      );
+      createSkillFile(skillsDir, 'a.md', '---\nname: a\ndescription: 技能A\n---\n正文A');
+      createSkillFile(skillsDir, 'b.md', '---\nname: b\ndescription: 技能B\n---\n正文B');
       const manager = new SkillManager(testDir);
       await manager.load();
       manager.setDisabledSkills(['a']);

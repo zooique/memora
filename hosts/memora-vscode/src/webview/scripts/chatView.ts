@@ -125,8 +125,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const polishBtn = document.getElementById('polishBtn') as HTMLButtonElement | null;
   // Skill 选择器（输入框旁，选择后作为提示词传给 LLM）
   const skillPicker = document.querySelector<HTMLElement>('.skill-picker');
-  const skillPickerMenu = skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__menu') : null;
-  const skillPickerTrigger = skillPicker ? skillPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
+  const skillPickerMenu = skillPicker
+    ? skillPicker.querySelector<HTMLElement>('.treedd__menu')
+    : null;
+  const skillPickerTrigger = skillPicker
+    ? skillPicker.querySelector<HTMLElement>('.treedd__trigger')
+    : null;
   // Grok 式技能 chip 行：输入框上方展示当前已选 Skill（名称 + × 可移除）
   const skillChipRow = document.getElementById('skillChips') as HTMLElement | null;
   let currentSkill: { name: string; disabled?: boolean } | null = null;
@@ -148,7 +152,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   const writeConfirmDesc = document.getElementById('writeConfirmDesc') as HTMLElement | null;
   const writeConfirmDiff = document.getElementById('writeConfirmDiff') as HTMLElement | null;
   const writeConfirmOk = document.getElementById('writeConfirmOk') as HTMLButtonElement | null;
-  const writeConfirmReject = document.getElementById('writeConfirmReject') as HTMLButtonElement | null;
+  const writeConfirmReject = document.getElementById(
+    'writeConfirmReject',
+  ) as HTMLButtonElement | null;
   let pendingWriteConfirmRequestId: string | null = null;
   const clarifySend = document.getElementById('clarifySend') as HTMLButtonElement;
   // 当前角色显示名（AI 消息头部标签 + 空状态标题共用；由 chat_role_pack 填充）
@@ -159,8 +165,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let currentRoleTraits: Record<string, number> | undefined;
   // 底部模型下拉框（用 extraClass=model-picker 修饰）
   const modelPicker = document.querySelector<HTMLElement>('.model-picker');
-  const modelPickerMenu = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__menu') : null;
-  const modelPickerTrigger = modelPicker ? modelPicker.querySelector<HTMLElement>('.treedd__trigger') : null;
+  const modelPickerMenu = modelPicker
+    ? modelPicker.querySelector<HTMLElement>('.treedd__menu')
+    : null;
+  const modelPickerTrigger = modelPicker
+    ? modelPicker.querySelector<HTMLElement>('.treedd__trigger')
+    : null;
 
   // 当前角色只读徽章（输入区左侧，展示角色名让用户感知当前定位；切换入口在独立「角色」视图）
   const roleBadge = document.getElementById('currentRoleBadge') as HTMLElement | null;
@@ -649,11 +659,31 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
 
   /** 工具名 → 动作分型（未收录归 other） */
   function toolActionType(name: string): ToolActionType {
-    if (name === 'read_file' || name === 'read_skill' || name === 'read_resource' || name === 'trace_summary' || name === 'web_fetch')
+    if (
+      name === 'read_file' ||
+      name === 'read_skill' ||
+      name === 'read_resource' ||
+      name === 'trace_summary' ||
+      name === 'web_fetch'
+    )
       return 'read';
-    if (name === 'web_search' || name === 'search_project' || name === 'search_memories' || name === 'list_dir' || name === 'list_sessions' || name === 'list_resources' || name === 'list_skills')
+    if (
+      name === 'web_search' ||
+      name === 'search_project' ||
+      name === 'search_memories' ||
+      name === 'list_dir' ||
+      name === 'list_sessions' ||
+      name === 'list_resources' ||
+      name === 'list_skills'
+    )
       return 'search';
-    if (name === 'write_file' || name === 'delete_file' || name === 'register_work' || name === 'task_table_write' || name === 'task_table_update')
+    if (
+      name === 'write_file' ||
+      name === 'delete_file' ||
+      name === 'register_work' ||
+      name === 'task_table_write' ||
+      name === 'task_table_update'
+    )
       return 'write';
     if (name === 'run_code' || name === 'run_skill_script') return 'run';
     return 'other';
@@ -697,7 +727,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       counts.set(label, (counts.get(label) ?? 0) + 1);
     }
     const parts = [...counts.entries()].map(([label, n]) => `${label} ${n}`);
-    return parts.length > 0 ? `工具×${names.length}（${parts.join(' · ')}）` : `工具×${names.length}`;
+    return parts.length > 0
+      ? `工具×${names.length}（${parts.join(' · ')}）`
+      : `工具×${names.length}`;
   }
 
   /**
@@ -841,7 +873,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 全量重建：清空已有列表重排（简单确定性——事件量小），再更新标题计数
     const section = getOrCreateSection(details, title);
     const listEl = section.querySelector('.round-block__section-list') as HTMLElement;
-    listEl.querySelectorAll('.round-block__row, .round-block__tool, .round-block__pre').forEach((el) => el.remove());
+    listEl
+      .querySelectorAll('.round-block__row, .round-block__tool, .round-block__pre')
+      .forEach((el) => el.remove());
     const titleEl = section.querySelector('.round-block__section-title') as HTMLElement;
     const count = listEl.children.length;
     titleEl.textContent = `${title}${count > 0 ? ` (${count})` : ''}`;
@@ -903,7 +937,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (seq !== undefined) row.dataset.seq = String(seq);
     const summary = document.createElement('summary');
     summary.textContent =
-      cnt > 1 ? `${label} · ${preview}${text.length > preview.length ? '…' : ''}` : preview ? `${label} · ${preview}` : label;
+      cnt > 1
+        ? `${label} · ${preview}${text.length > preview.length ? '…' : ''}`
+        : preview
+          ? `${label} · ${preview}`
+          : label;
     const body = document.createElement('div');
     body.className = 'round-block__thought-body';
     body.textContent = text;
@@ -920,7 +958,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * @param pending 工具意图预告消息（toolCallId 可能为空串——provider 未发 id 的降级）
    */
-  function renderPendingToolRow(pending: Extract<ExtensionToWebviewMessage, { type: 'tool_pending' }>): void {
+  function renderPendingToolRow(
+    pending: Extract<ExtensionToWebviewMessage, { type: 'tool_pending' }>,
+  ): void {
     const flow = ensureProcessFlow({ orphan: true, roundId: pending.roundId ?? undefined });
     if (!flow) return;
     // 幂等：同工具已渲染（含升级后的正式行）不重复创建；无 id（降级）时按 name 去重
@@ -990,7 +1030,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *     懒创建（summary 显示「任务项 N · 标题」），保证边界后的过程事件归入对应任务项分组。
    * 调用方用返回值替换 details 作为节点插入目标，实现「边界切组、任务项内平铺」。
    */
-  function isPlanItemBoundaryEvent(e: ProcessEvent): e is Extract<ProcessEvent, { type: 'plan_item_boundary' }> {
+  function isPlanItemBoundaryEvent(
+    e: ProcessEvent,
+  ): e is Extract<ProcessEvent, { type: 'plan_item_boundary' }> {
     return e.type === 'plan_item_boundary';
   }
 
@@ -1010,11 +1052,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     host: HTMLElement;
     bounds: Extract<ProcessEvent, { type: 'plan_item_boundary' }>[];
   } {
-    const bounds = events.filter(isPlanItemBoundaryEvent).sort((a, b) => a.ts.localeCompare(b.ts) || a.seq - b.seq);
+    const bounds = events
+      .filter(isPlanItemBoundaryEvent)
+      .sort((a, b) => a.ts.localeCompare(b.ts) || a.seq - b.seq);
     if (bounds.length === 0) return { host: root, bounds };
     // 找到 ts 前最近的边界（含本条边界自身）——本条边界之前（ts < 首边界）条目归 details 顶层；
     // 同 ts 时边界须已发生（boundary.seq <= 条目 seq），否则跨到后续 step
-    const active = [...bounds].reverse().find((b) => b.ts < ts || (b.ts === ts && (seq === undefined || b.seq <= seq)));
+    const active = [...bounds]
+      .reverse()
+      .find((b) => b.ts < ts || (b.ts === ts && (seq === undefined || b.seq <= seq)));
     if (!active) return { host: root, bounds };
     return { host: getOrCreatePlanItemGroup(root, active, bounds), bounds };
   }
@@ -1025,7 +1071,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     bound: Extract<ProcessEvent, { type: 'plan_item_boundary' }>,
     bounds: Extract<ProcessEvent, { type: 'plan_item_boundary' }>[],
   ): HTMLElement {
-    const existing = root.querySelector<HTMLElement>(`.round-block__plan-item[data-plan-item="${bound.payload.planItemId ?? ''}"]`);
+    const existing = root.querySelector<HTMLElement>(
+      `.round-block__plan-item[data-plan-item="${bound.payload.planItemId ?? ''}"]`,
+    );
     if (existing && existing.isConnected) return existing;
     const grp = document.createElement('details');
     grp.className = 'round-block__plan-item';
@@ -1047,12 +1095,19 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /** 任务项级容器按边界的 (ts, seq) 插入 details 顶层（与任务项/时间轴插入域的排序键同源，防乱序） */
-  function insertPlanItemGroupInOrder(root: HTMLElement, grp: HTMLElement, boundTs: string, boundSeq: number): void {
+  function insertPlanItemGroupInOrder(
+    root: HTMLElement,
+    grp: HTMLElement,
+    boundTs: string,
+    boundSeq: number,
+  ): void {
     // 候选限定为 root 的**直接子节点**：与 insertPlanItemInOrder 同构隐患，
     // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，
     // 按 DOM 规范抛 NotFoundError（同类失败模式的另一半）。当前任务项分组恒为容器直接子节点
     // （静态上 root 只会是 flow / details，绝不会是任务项分组自身），故属防御性、零行为变更。
-    const existingGrps = Array.from(root.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'));
+    const existingGrps = Array.from(
+      root.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'),
+    );
     const next = existingGrps.find((g) => {
       // 排序键与 bounds 排序 / 任务项编号 / insertPlanItemInOrder 同源：ts 优先、同 ts 回落 seq。
       // 组的视觉位置与「任务项 N」编号出自同一把键，否则 ts 与 seq 逆序的样本（时钟回拨 /
@@ -1095,12 +1150,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       .sort((a, b) => a.seq - b.seq);
     const buckets = new Map<
       string,
-      { key: string; stepIndex?: number; anchorSeq: number; anchorTs: string; items: { seq: number; ts: string; content: string }[] }
+      {
+        key: string;
+        stepIndex?: number;
+        anchorSeq: number;
+        anchorTs: string;
+        items: { seq: number; ts: string; content: string }[];
+      }
     >();
     for (const t of thoughts) {
       const stepIndex = t.payload.stepIndex;
       const key = stepIndex !== undefined ? String(stepIndex) : 'root';
-      const bucket = buckets.get(key) ?? { key, stepIndex, anchorSeq: t.seq, anchorTs: t.ts, items: [] };
+      const bucket = buckets.get(key) ?? {
+        key,
+        stepIndex,
+        anchorSeq: t.seq,
+        anchorTs: t.ts,
+        items: [],
+      };
       bucket.items.push({ seq: t.seq, ts: t.ts, content: t.payload.content });
       buckets.set(key, bucket);
     }
@@ -1166,7 +1233,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param extra 尚未落 DOM 的条目（finalize 的 `interactiveInputs` 入参）
    * @returns    去重后的 ts 列表（空串剔除——历史/测试数据无时间键，不构成断面；无需排序，仅用于计数）
    */
-  function visibleInputTs(root: HTMLElement, extra: readonly (string | undefined)[] = []): string[] {
+  function visibleInputTs(
+    root: HTMLElement,
+    extra: readonly (string | undefined)[] = [],
+  ): string[] {
     const ts = new Set<string>();
     root.querySelectorAll<HTMLElement>('.round-block__input').forEach((el) => {
       const t = el.dataset.ts;
@@ -1377,8 +1447,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * TS-11a：定位「进行中工具」——tool_start 已到、tool_result 未达的最新一个（工具并行执行时以
    * 最新未完成者作为「当前正在做什么」的展示主体）。无进行中工具返回 null（相位行回退 thinking）。
    */
-  function findRunningTool(events: ProcessEvent[]): Extract<ProcessEvent, { type: 'tool_start' }> | null {
-    const starts = events.filter((e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start');
+  function findRunningTool(
+    events: ProcessEvent[],
+  ): Extract<ProcessEvent, { type: 'tool_start' }> | null {
+    const starts = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'tool_start' }> => e.type === 'tool_start',
+    );
     // 从最新往前找第一个没有配对的 tool_result 的 tool_start
     for (let i = starts.length - 1; i >= 0; i--) {
       const start = starts[i]!;
@@ -1396,9 +1470,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 策略拦截（blocked）=已拦截且默认展开（拒绝文案应直接可见）；
    * 其余按 ok 成功/失败，失败默认展开（错误可见优先于整洁）。
    */
-  function toolRowStatus(
-    result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined,
-  ): { label: string; open: boolean; running: boolean } {
+  function toolRowStatus(result: Extract<ProcessEvent, { type: 'tool_result' }> | undefined): {
+    label: string;
+    open: boolean;
+    running: boolean;
+  } {
     if (!result) return { label: '进行中', open: true, running: true };
     if (result.payload.blocked === true) return { label: '已拦截', open: true, running: false };
     return result.payload.ok
@@ -1406,9 +1482,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       : { label: '失败', open: true, running: false };
   }
 
-  function renderToolRow(start: Extract<ProcessEvent, { type: 'tool_start' }>, events: ProcessEvent[]): HTMLDetailsElement {
+  function renderToolRow(
+    start: Extract<ProcessEvent, { type: 'tool_start' }>,
+    events: ProcessEvent[],
+  ): HTMLDetailsElement {
     const result = events.find(
-      (e): e is Extract<ProcessEvent, { type: 'tool_result' }> => e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
+      (e): e is Extract<ProcessEvent, { type: 'tool_result' }> =>
+        e.type === 'tool_result' && e.payload.toolCallId === start.payload.toolCallId,
     );
     const { label: status, open, running } = toolRowStatus(result);
     const row = document.createElement('details');
@@ -1456,25 +1536,32 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param container 工具行所在的小节容器（.round-block__section-list）
    * @param result    tool_result 事件
    */
-  function updateToolRowState(container: HTMLElement, result: Extract<ProcessEvent, { type: 'tool_result' }>): void {
-    container.querySelectorAll<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`).forEach((row) => {
-      const { label: status, open, running } = toolRowStatus(result);
-      // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）
-      const statusEl = row.querySelector('.round-block__tool-status');
-      if (statusEl) statusEl.textContent = ` (${status})`;
-      row.open = open;
-      // result 已到达 → 移除进行中态（恢复普通行样式）
-      row.classList.toggle('is-tool-running', running);
-      // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
-      row.querySelector(':scope .round-block__elapsed')?.remove();
-      // 结果摘要：首次到达补 DOM（后续到达不重复）
-      if (result.payload.summary && !row.querySelector('.round-block__tool-summary')) {
-        const s = document.createElement('div');
-        s.className = 'round-block__tool-summary';
-        s.textContent = result.payload.summary;
-        row.appendChild(s);
-      }
-    });
+  function updateToolRowState(
+    container: HTMLElement,
+    result: Extract<ProcessEvent, { type: 'tool_result' }>,
+  ): void {
+    container
+      .querySelectorAll<HTMLDetailsElement>(
+        `.round-block__tool[data-tool-call-id="${result.payload.toolCallId}"]`,
+      )
+      .forEach((row) => {
+        const { label: status, open, running } = toolRowStatus(result);
+        // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）
+        const statusEl = row.querySelector('.round-block__tool-status');
+        if (statusEl) statusEl.textContent = ` (${status})`;
+        row.open = open;
+        // result 已到达 → 移除进行中态（恢复普通行样式）
+        row.classList.toggle('is-tool-running', running);
+        // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
+        row.querySelector(':scope .round-block__elapsed')?.remove();
+        // 结果摘要：首次到达补 DOM（后续到达不重复）
+        if (result.payload.summary && !row.querySelector('.round-block__tool-summary')) {
+          const s = document.createElement('div');
+          s.className = 'round-block__tool-summary';
+          s.textContent = result.payload.summary;
+          row.appendChild(s);
+        }
+      });
   }
 
   /**
@@ -1494,7 +1581,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param interactiveInputs 运行时输入缓存（finalize 传；重放路径 QA 经 appendInteractiveInput
    *                          增量插入 round-block，不重复渲染）
    */
-  function renderRoundBlock(events: ProcessEvent[], finalize: boolean, interactiveInputs?: RuntimeInteractiveInput[]): void {
+  function renderRoundBlock(
+    events: ProcessEvent[],
+    finalize: boolean,
+    interactiveInputs?: RuntimeInteractiveInput[],
+  ): void {
     const rb = ensureRoundBlock();
     if (!rb) return; // 正文块未创建（meta 先到）：挂载推迟到正文块出现时再补一次（beginStreaming）
     // summary：统计摘要（计数 + 耗时）
@@ -1516,7 +1607,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const toolSentence = toolSummaryText(toolStartNames(events));
       if (toolSentence) parts.push(toolSentence);
       if (reviews > 0) parts.push(`审查 ${reviews} 次`);
-      const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
+      const metrics = events.find(
+        (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
+      );
       if (metrics) parts.unshift(`耗时 ${fmtDuration(metrics.payload.durationMs)}`);
       const label = document.createElement('span');
       label.className = 'round-block__stats';
@@ -1530,7 +1623,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (currentPlanItems.length > 0) {
       const activePlanItem = currentPlanItems.find((s) => s.status === 'active');
       if (activePlanItem) {
-        const brief = activePlanItem.description.length > 36 ? `${activePlanItem.description.slice(0, 36)}…` : activePlanItem.description;
+        const brief =
+          activePlanItem.description.length > 36
+            ? `${activePlanItem.description.slice(0, 36)}…`
+            : activePlanItem.description;
         const tagText = `执行任务项 ${activePlanItem.order + 1}: ${brief}`;
         if (existingTag) {
           // 只改文本节点：图标节点保持稳定，且 brief 源自 LLM → 必须走 textContent（防注入）
@@ -1571,9 +1667,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 形态甲：运行时输入条目**快照保留**（重放 seg 消息触发的重建跨轮保留已插入 QA，
     // 重建后按 ts 重插归位——否则任务项分组清理会连根拔起 QA 致重放丢失）。
     const existingInputs = Array.from(details.querySelectorAll<HTMLElement>('.round-block__input'));
-    details.querySelectorAll(
-      '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__tool-batch, .round-block__thought, .round-block__plan-item',
-    ).forEach((el) => el.remove());
+    details
+      .querySelectorAll(
+        '.round-block__section, .round-block__narrate, .round-block__tool, .round-block__tool-batch, .round-block__thought, .round-block__plan-item',
+      )
+      .forEach((el) => el.remove());
     // § 过程叙述 + 工具调用（扁平化：narrate 与 tool 按 seq 平铺；有 plan_item_boundary 时归入任务项折叠块）
     const narrates = events
       .filter((e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate')
@@ -1589,7 +1687,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 断面 ts 取「已在 DOM 的快照条目 + 本次待插的 interactiveInputs」（BATCH-SPLIT-1：卡片须切开前后两段工具）
     const batches = groupToolBatches(
       events,
-      visibleInputTs(details, (interactiveInputs ?? []).map((q) => q.ts)),
+      visibleInputTs(
+        details,
+        (interactiveInputs ?? []).map((q) => q.ts),
+      ),
     );
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
@@ -1615,7 +1716,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const { host } = planItemContainerFor(details, events, b.anchorTs, b.anchorSeq);
       insertPlanItemInOrder(
         host,
-        createAggregatedThought(b.items.map((i) => i.content), false, b.anchorTs, b.anchorSeq, thoughtLabel(b.stepIndex)),
+        createAggregatedThought(
+          b.items.map((i) => i.content),
+          false,
+          b.anchorTs,
+          b.anchorSeq,
+          thoughtLabel(b.stepIndex),
+        ),
         b.anchorTs,
       );
     }
@@ -1640,7 +1747,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     // § 过程轨迹（thinking 阶段：聚合计数，去噪——同一相位 N 条 thinking 事件
     //  压缩为一行「相位 ×N」，避免「调用模型中…」重复 12 次平铺成视觉噪点；保序：按首次出现序）
-    const thinking = events.filter((e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking');
+    const thinking = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'thinking' }> => e.type === 'thinking',
+    );
     if (thinking.length > 0) {
       const { listEl } = sectionOf(details, '过程轨迹');
       const labelCount = new Map<string, number>();
@@ -1662,7 +1771,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
     }
     // § 已沉淀 (N)
-    const added = events.filter((e): e is Extract<ProcessEvent, { type: 'memory_added' }> => e.type === 'memory_added');
+    const added = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'memory_added' }> => e.type === 'memory_added',
+    );
     if (added.length > 0) {
       const { listEl } = sectionOf(details, '已沉淀');
       added.forEach((e) => {
@@ -1673,8 +1784,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       });
     }
     // § 自审查输出
-    const reviews = events.filter((e): e is Extract<ProcessEvent, { type: 'self_review' }> => e.type === 'self_review');
-    const reviewTexts = events.filter((e): e is Extract<ProcessEvent, { type: 'text_self_review' }> => e.type === 'text_self_review');
+    const reviews = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'self_review' }> => e.type === 'self_review',
+    );
+    const reviewTexts = events.filter(
+      (e): e is Extract<ProcessEvent, { type: 'text_self_review' }> =>
+        e.type === 'text_self_review',
+    );
     if (reviews.length > 0 || reviewTexts.length > 0) {
       const { listEl } = sectionOf(details, '自审查输出');
       reviews.forEach((_e) => {
@@ -1691,7 +1807,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       });
     }
     // § 已停止（aborted 标记）
-    const aborted = events.find((e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted');
+    const aborted = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'aborted' }> => e.type === 'aborted',
+    );
     if (aborted) {
       const { listEl } = sectionOf(details, '已停止');
       const row = document.createElement('div');
@@ -1702,7 +1820,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       listEl.appendChild(row);
     }
     // § 执行指标（metrics 事件）
-    const metrics = events.find((e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics');
+    const metrics = events.find(
+      (e): e is Extract<ProcessEvent, { type: 'metrics' }> => e.type === 'metrics',
+    );
     if (metrics) {
       const { listEl } = sectionOf(details, '执行指标');
       // 未解析文本工具意图：>0 表示「想调用工具却未走原生协议」，
@@ -1735,7 +1855,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const countedTs = new Set<string>();
         // 快照条目：tag 取内容行（.input-row .input-tag），避免误取「问」回顾行 tag
         for (const el of existingInputs) {
-          const tag = el.querySelector<HTMLElement>('.round-block__input-row .round-block__input-tag')?.textContent ?? '';
+          const tag =
+            el.querySelector<HTMLElement>('.round-block__input-row .round-block__input-tag')
+              ?.textContent ?? '';
           if (!tag) continue;
           const elTs = el.dataset.ts ?? '';
           if (elTs && countedTs.has(elTs)) continue;
@@ -1778,8 +1900,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   （无则移除；TS-11 同构：工具执行中相位提供实时行动反馈，用户定案「显示」）
     const runningTool = findRunningTool(events);
     const thinking = [...events].reverse().find((e) => e.type === 'thinking') as
-      | Extract<ProcessEvent, { type: 'thinking' }>
-      | undefined;
+      Extract<ProcessEvent, { type: 'thinking' }> | undefined;
     let phaseRow = flow.querySelector<HTMLElement>('.process-flow__phase');
     if (runningTool) {
       if (!phaseRow) {
@@ -1880,7 +2001,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const callId = entry.start.payload.toolCallId;
         // 既有行定位（toolCallId = 行配对键，updateToolRowState 同键消费；批容器寻址只用段 id）：
         // pending「准备中」行升级后并入所在批（口径③）/ 已渲染行幂等迁移
-        const existing = flow.querySelector<HTMLDetailsElement>(`.round-block__tool[data-tool-call-id="${callId}"]`);
+        const existing = flow.querySelector<HTMLDetailsElement>(
+          `.round-block__tool[data-tool-call-id="${callId}"]`,
+        );
         let row: HTMLDetailsElement;
         if (existing) {
           // pending 行（renderPendingToolRow 已建）→ 转执行态，不重建 DOM（参数此刻完整，
@@ -1970,9 +2093,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     host.querySelector('.msg-body')?.remove();
     if (roundId) host.dataset.roundId = roundId;
     // 复制整链语义与运行时中断轮对齐：正文已丢弃，原始文本由过程叙述（narrate）拼接供复制
-    const narrateText = (currentEvents.filter(
-      (e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate',
-    ) as Extract<ProcessEvent, { type: 'narrate' }>[])
+    const narrateText = (
+      currentEvents.filter(
+        (e): e is Extract<ProcessEvent, { type: 'narrate' }> => e.type === 'narrate',
+      ) as Extract<ProcessEvent, { type: 'narrate' }>[]
+    )
       .map((e) => e.payload.content)
       .join('\n');
     if (narrateText) host.dataset.rawText = narrateText;
@@ -2003,8 +2128,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const today = toDateKey(new Date());
     const yesterday = toDateKey(new Date(Date.now() - 86400000));
     const md = `${d.getMonth() + 1}月${d.getDate()}日`;
-    const label =
-      key === today ? `${md} · 今天` : key === yesterday ? `${md} · 昨天` : md;
+    const label = key === today ? `${md} · 今天` : key === yesterday ? `${md} · 昨天` : md;
     const divider = document.createElement('div');
     divider.className = 'date-divider';
     divider.setAttribute('aria-hidden', 'true');
@@ -2283,23 +2407,20 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 删除按钮：锚点归一化——段级（.msg 内 button）取自身 dataset.ts；容器级（round-group footer）
     // button 无自身 dataset，取容器内首段 .msg.assistant 的 dataset.ts（与构建时 firstSeg 语义一致；
     // 首段 ts 空会致删除恒禁用——commitTurnTs 回填后此处即生效）
-    document
-      .querySelectorAll<HTMLButtonElement>('.msg-delete-icon')
-      .forEach((b) => {
-        const ts =
-          b.dataset.ts ||
-          b.closest<HTMLElement>('.round-group')?.querySelector<HTMLElement>('.msg.assistant')?.dataset.ts ||
-          '';
-        b.disabled = locked || !ts;
-      });
+    document.querySelectorAll<HTMLButtonElement>('.msg-delete-icon').forEach((b) => {
+      const ts =
+        b.dataset.ts ||
+        b.closest<HTMLElement>('.round-group')?.querySelector<HTMLElement>('.msg.assistant')
+          ?.dataset.ts ||
+        '';
+      b.disabled = locked || !ts;
+    });
     // 分叉按钮：锚点从父块继承（.msg.assistant 段级 / .round-group 容器级），
     // 与点击 handler 读父块 dataset.roundId 保持 SSOT 一致；forkBtn 自身不存 roundId
-    document
-      .querySelectorAll<HTMLButtonElement>('.msg-fork-icon')
-      .forEach((b) => {
-        const anchor = b.closest<HTMLElement>('.msg.assistant, .round-group');
-        b.disabled = locked || !anchor?.dataset.roundId;
-      });
+    document.querySelectorAll<HTMLButtonElement>('.msg-fork-icon').forEach((b) => {
+      const anchor = b.closest<HTMLElement>('.msg.assistant, .round-group');
+      b.disabled = locked || !anchor?.dataset.roundId;
+    });
   }
 
   // ─── 回答等待指示器（③ 等待反馈）─────────────────
@@ -2524,7 +2645,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     });
     // 键盘可达（Enter / Space 触发）
     btn.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); btn.click(); }
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        btn.click();
+      }
     });
     return btn;
   }
@@ -2573,8 +2697,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     emptyTitle.textContent = '开始与 ' + name + ' 对话';
     // 角色定位描述优先；无描述时回退默认引导文案（textContent 赋值防注入）
     const activePack = currentRolePacks.find((p) => p.displayName === currentRoleName);
-    emptyHint.textContent =
-      activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
+    emptyHint.textContent = activePack?.description || '在下方输入你的想法，或点击示例提问快速开始';
     // 示例提问随 showcase 角色特化（白话方案设计师展示"种子收敛"引导，其余回退通用）
     renderEmptySuggestions(name);
   }
@@ -2741,7 +2864,12 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 返回创建的 .msg 元素，供调用方作为流式锚点。
   // 跨天合并时先插入日期分隔线；AI 消息带头像身份。
 
-  function append(role: 'user' | 'assistant' | 'error', text: string, ts?: string, roundId?: string): HTMLElement {
+  function append(
+    role: 'user' | 'assistant' | 'error',
+    text: string,
+    ts?: string,
+    roundId?: string,
+  ): HTMLElement {
     // 日期分隔线：仅日期交界插入，先于本条消息（textContent 构建防注入）
     renderDateDivider(ts);
     if (role === 'assistant') {
@@ -2910,7 +3038,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       item.dataset.ts = tsKey;
       // 目标容器：运行时 process-flow > 完成态/重放 round-block > 降级消息流（纯问答轮无过程容器）
       const flow = flowEl?.isConnected ? flowEl : null;
-      const rbDetails = roundBlockEl?.isConnected ? roundBlockEl.querySelector('.round-block__details') : null;
+      const rbDetails = roundBlockEl?.isConnected
+        ? roundBlockEl.querySelector('.round-block__details')
+        : null;
       const root = (flow ?? rbDetails) as HTMLElement | null;
       if (root) {
         const { host } = planItemContainerFor(root, currentEvents, tsKey);
@@ -2919,7 +3049,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 交互条目（补充/回答）被归位进收起分组内用户看不到——「任务表运行中输入补充内容不可见、
         // 结束后才见」即此因。插入即展开，保证用户输入恒可见（与 ensureUserInputVisible 纪律一致）。
         const planItemHost = host as HTMLDetailsElement;
-        if (planItemHost.tagName === 'DETAILS' && planItemHost.classList.contains('round-block__plan-item')) planItemHost.open = true;
+        if (
+          planItemHost.tagName === 'DETAILS' &&
+          planItemHost.classList.contains('round-block__plan-item')
+        )
+          planItemHost.open = true;
       } else {
         // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程 / 骨架期 meta 未到）落消息流。
         // 有 roundId 时打归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（标记
@@ -2971,7 +3105,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       insertPlanItemInOrder(host, item, tsKey);
       // 归位进任务项分组（details）时展开该分组，保证用户输入恒可见（与 append 侧纪律一致）
       const planItemHost = host as HTMLDetailsElement;
-      if (planItemHost.tagName === 'DETAILS' && planItemHost.classList.contains('round-block__plan-item')) {
+      if (
+        planItemHost.tagName === 'DETAILS' &&
+        planItemHost.classList.contains('round-block__plan-item')
+      ) {
         planItemHost.open = true;
       }
     }
@@ -3056,7 +3193,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *                仅新容器首次创建时生效——已有容器的 footer 幂等跳过）
    * @returns 容器元素或 null
    */
-  function ensureRoundGroup(roundId: string | undefined, el: HTMLElement, pending = false): HTMLElement | null {
+  function ensureRoundGroup(
+    roundId: string | undefined,
+    el: HTMLElement,
+    pending = false,
+  ): HTMLElement | null {
     if (!roundId) return null;
     if (roundGroupEl?.isConnected && roundGroupEl.dataset.roundId === roundId) {
       // 段必须插在容器 footer 之前（footer 恒居容器底部；直接 appendChild 会把段放进 footer 之后）
@@ -3098,12 +3239,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     copyBtn.addEventListener('click', () => copyText(roundChainText(g)));
     const forkBtn = createIcon('fork', '从此问答闭环分叉新会话', 'msg-fork-icon');
     forkBtn.disabled = !g.dataset.roundId;
-    forkBtn.addEventListener('click', () => vscode.postMessage({ type: 'fork_session', roundId: g.dataset.roundId }));
+    forkBtn.addEventListener('click', () =>
+      vscode.postMessage({ type: 'fork_session', roundId: g.dataset.roundId }),
+    );
     const deleteBtn = createIcon('delete', '删除该问答及之后所有对话', 'msg-delete-icon');
     const firstSeg = g.querySelector<HTMLElement>('.msg.assistant');
     deleteBtn.disabled = !firstSeg?.dataset.ts;
     deleteBtn.addEventListener('click', () => {
-      if (firstSeg?.dataset.ts) vscode.postMessage({ type: 'delete_turn', ts: firstSeg.dataset.ts });
+      if (firstSeg?.dataset.ts)
+        vscode.postMessage({ type: 'delete_turn', ts: firstSeg.dataset.ts });
     });
     // 按钮组靠左、时间戳靠右（flex space-between 分散）
     const actions = document.createElement('div');
@@ -3154,7 +3298,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * @param questions 提问列表（question + 候选 options，可选）
    * @returns 内联块元素；无可用 assistant 锚点时返回 null（调用方走 clarifyBar 兜底）
    */
-  function renderAskInline(questions: { question: string; options?: string[]; allowCustom?: boolean }[]): HTMLElement | null {
+  function renderAskInline(
+    questions: { question: string; options?: string[]; allowCustom?: boolean }[],
+  ): HTMLElement | null {
     // 锚点 = 同轮交互链末位（提问块/骨架/前一问答对之后；连环 ask 与回答行
     // 共用 resolveInteractionAnchor——第二次提问框须出现在第一问答对之后而非之前）；
     // 无链接（异常）返回 null 降级 clarifyBar
@@ -3163,7 +3309,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 提问等待态：容器操作栏保持隐藏（底部只留 ask-inline 交互块，不出现「复制+时间」）。
     // 防御 interrupted 已提前移除 is-pending 的路径——提问未回答前操作栏不显示，
     // 回答 resume 完成（done）后 finalizeStreaming 再统一显示（SSOT 同态收敛）
-    host.closest<HTMLElement>('.round-group')
+    host
+      .closest<HTMLElement>('.round-group')
       ?.querySelector<HTMLElement>('.round-group__footer')
       ?.classList.add('is-pending');
     // 幂等：重复提问（如连续多问/多次 turn_update 推送）先移除旧内联块，再挂新
@@ -3201,9 +3348,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           b.addEventListener('click', () => {
             // 点选标记该题已答（is-selected 高亮，可再点改选），不立即提交——全部答完走底部提交按钮
             answers[i] = opt;
-            opts.querySelectorAll<HTMLElement>('.ask-inline__opt').forEach((o) =>
-              o.classList.toggle('is-selected', o === b),
-            );
+            opts
+              .querySelectorAll<HTMLElement>('.ask-inline__opt')
+              .forEach((o) => o.classList.toggle('is-selected', o === b));
             syncSubmit();
           });
           opts.appendChild(b);
@@ -3563,7 +3710,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (!lastUserTs) return;
     const container = activeAssistantEl?.closest<HTMLElement>('.round-group');
     const firstSeg =
-      (container ? container.querySelector<HTMLElement>('.msg.assistant') : null) ?? activeAssistantEl;
+      (container ? container.querySelector<HTMLElement>('.msg.assistant') : null) ??
+      activeAssistantEl;
     if (firstSeg && !firstSeg.dataset.ts) firstSeg.dataset.ts = lastUserTs;
     updateSessionControlsLock(sessionControlsLocked);
   }
@@ -3652,10 +3800,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     }
     activityBar.hidden = false;
     if (activityTimer) window.clearTimeout(activityTimer);
-    activityTimer = window.setTimeout(() => {
-      activityBar.hidden = true;
-      delete activityBar.dataset.level;
-    }, level === 'error' ? 8000 : 2500);
+    activityTimer = window.setTimeout(
+      () => {
+        activityBar.hidden = true;
+        delete activityBar.dataset.level;
+      },
+      level === 'error' ? 8000 : 2500,
+    );
   }
 
   /**
@@ -3670,15 +3821,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const fp = msg.fingerprints;
     const lines = [
       // 指纹行：只显示 hash，不显示内容（可追溯性边界）
-      '本轮指纹：' +
-        (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
+      '本轮指纹：' + (fp.systemPromptHash ? '系统提示 ' + fp.systemPromptHash : '系统提示 -'),
       // 累计指标行（未解析工具意图累计，诊断面板可见文本 tool_call 静默失败）
-      '累计：LLM ' + msg.metrics.llmCallCount + ' 次 · 工具失败 ' +
+      '累计：LLM ' +
+        msg.metrics.llmCallCount +
+        ' 次 · 工具失败 ' +
         msg.metrics.toolFailureCount +
         (msg.metrics.unparsedToolIntentCount && msg.metrics.unparsedToolIntentCount > 0
           ? ' · 未解析工具意图 ' + msg.metrics.unparsedToolIntentCount
           : '') +
-        ' · 截断 ' + msg.metrics.truncationCount,
+        ' · 截断 ' +
+        msg.metrics.truncationCount,
       // D（alignment-iteration.md）：token 用量（可选字段，缺省不显示）
       'Tokens：' +
         (typeof msg.metrics.llmTokenIn === 'number' ? '入 ' + msg.metrics.llmTokenIn : '入 -') +
@@ -3687,10 +3840,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // ④ 预算分配构成（可选字段，缺省不显示）——窗口内空间如何被 锚点/对话层 瓜分
       ...(msg.metrics.budget
         ? [
-            '预算：可用 ' + fmtCompactTokens(msg.metrics.budget.availableTokens) +
-              ' · 锚点 ' + fmtCompactTokens(msg.metrics.budget.anchorTokens) +
-              ' · 对话层 ' + fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens) +
-              ' · 剩余 ' + fmtCompactTokens(msg.metrics.budget.remainingTokens),
+            '预算：可用 ' +
+              fmtCompactTokens(msg.metrics.budget.availableTokens) +
+              ' · 锚点 ' +
+              fmtCompactTokens(msg.metrics.budget.anchorTokens) +
+              ' · 对话层 ' +
+              fmtCompactTokens(msg.metrics.budget.dialogueBudgetTokens) +
+              ' · 剩余 ' +
+              fmtCompactTokens(msg.metrics.budget.remainingTokens),
           ]
         : []),
       // B9 可观测补齐：最近操作流（span 标签新→旧，指标区末尾渲染，缺省不显示）
@@ -3700,9 +3857,13 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 安全/装配透明：路径守卫审计概要（有审计事件才显示；basename 路径）
       ...(msg.securityAudit && msg.securityAudit.total > 0
         ? [
-            '安全审计 ' + msg.securityAudit.total + ' 次 · 拒绝 ' + msg.securityAudit.denied +
+            '安全审计 ' +
+              msg.securityAudit.total +
+              ' 次 · 拒绝 ' +
+              msg.securityAudit.denied +
               (msg.securityAudit.recent.length > 0
-                ? ' · 最近：' + msg.securityAudit.recent
+                ? ' · 最近：' +
+                  msg.securityAudit.recent
                     .map((r) => r.type + ' ' + r.path + (r.reason ? ' (' + r.reason + ')' : ''))
                     .join(', ')
                 : ''),
@@ -3748,10 +3909,18 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const total = Math.max(1, occ.totalTokens);
     const pctOf = (val: number): string => ((val / total) * 100).toFixed(1) + '%';
     const lines: string[] = [`上下文占用（总容量 ${fmtTokens(occ.totalTokens)}）`];
-    lines.push(`角色包/系统设定：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`);
-    lines.push(`完整对话：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`);
-    lines.push(`当前输入锚点：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`);
-    lines.push(`输出预留：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`);
+    lines.push(
+      `角色包/系统设定：${fmtTokens(occ.rolePackBaseTokens)}（占窗口 ${pctOf(occ.rolePackBaseTokens)}）`,
+    );
+    lines.push(
+      `完整对话：${occ.dialogueCount} 条 · ${fmtTokens(occ.dialogueTokens)}（${pctOf(occ.dialogueTokens)}）`,
+    );
+    lines.push(
+      `当前输入锚点：${fmtTokens(occ.inputAnchorTokens)}（${pctOf(occ.inputAnchorTokens)}）`,
+    );
+    lines.push(
+      `输出预留：${fmtTokens(occ.outputReserveTokens)}（${pctOf(occ.outputReserveTokens)}）`,
+    );
     lines.push(`剩余可用：${fmtTokens(occ.freeTokens)}（${pctOf(occ.freeTokens)}）`);
     return lines.join('\n');
   }
@@ -3764,7 +3933,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 无选中 Provider 时不展示（无「当前模型」可依赖，避免展示误导性的缺省值）。
    * 上限与已展示值相同 → 跳过（保留真实占用，不重复清零）。
    */
-  function renderOccupancyLimit(providers: ChatProviderItem[], activeName: string | undefined): void {
+  function renderOccupancyLimit(
+    providers: ChatProviderItem[],
+    activeName: string | undefined,
+  ): void {
     const el = document.getElementById('contextOccupancy');
     if (!el) return;
     if (!activeName) return;
@@ -3903,7 +4075,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (events.length > 0) {
       clearPendingWait(); // 重放为历史渲染，等待指示器不适用
       currentEvents = [...events];
-      const metaEv = events.find((e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta');
+      const metaEv = events.find(
+        (e): e is Extract<ProcessEvent, { type: 'meta' }> => e.type === 'meta',
+      );
       if (metaEv) {
         currentRoundMeta = { role: metaEv.payload.role, llm: metaEv.payload.llm };
       }
@@ -3927,7 +4101,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       question?: string;
       options?: string[];
     }[] = [
-      ...(r.assistantLog ?? []).map((m) => ({ kind: 'seg' as const, content: m.content, ts: m.timestamp })),
+      ...(r.assistantLog ?? []).map((m) => ({
+        kind: 'seg' as const,
+        content: m.content,
+        ts: m.timestamp,
+      })),
       ...(r.interactiveInputs ?? []).map((i) => ({
         kind: i.kind,
         content: i.content,
@@ -4015,7 +4193,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       }
       // 提问卡渲染真源 = turn_update.state（waiting/ask + questions）。
       // 位置在重放之后是顺序契约的一部分，勿上移。
-      if (msg.state.phase === 'waiting' && msg.state.reason === 'ask' && (msg.state.questions?.length ?? 0) > 0) {
+      if (
+        msg.state.phase === 'waiting' &&
+        msg.state.reason === 'ask' &&
+        (msg.state.questions?.length ?? 0) > 0
+      ) {
         renderAskPhase(msg.state.questions!);
       }
     } else if (msg.type === 'tool_pending') {
@@ -4110,7 +4292,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       if (streamingActive) {
         // 打断旧流必须同时移除旧块流式光标（is-streaming ▋）——否则旧块光标残留闪烁：
         // 该块只是"被打断的半截回答"，不再有新 chunk，finalizeStreaming 也不会再被调用
-        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body')?.classList.remove('is-streaming');
+        activeAssistantEl
+          ?.querySelector<HTMLElement>(':scope .msg-body')
+          ?.classList.remove('is-streaming');
         if (streamRenderTimer) {
           clearTimeout(streamRenderTimer);
           streamRenderTimer = undefined;
@@ -4205,7 +4389,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         }
       }
       // 报告正文持续流式写入：正文 = 该轮唯一 .msg-body（单容器结构，不被工具事件切碎）
-      const target = activeAssistantEl ? activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null : null;
+      const target = activeAssistantEl
+        ? (activeAssistantEl.querySelector(':scope .msg-body') as HTMLElement | null)
+        : null;
       if (target) {
         streamingRaw += msg.content;
         // 流式增量渲染：首个 chunk 立即渲染（TTFT 即时反馈），后续 150ms 节流重渲染。
@@ -4246,7 +4432,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
           clearTimeout(streamRenderTimer);
           streamRenderTimer = undefined;
         }
-        activeAssistantEl?.querySelector<HTMLElement>(':scope .msg-body')?.classList.remove('is-streaming');
+        activeAssistantEl
+          ?.querySelector<HTMLElement>(':scope .msg-body')
+          ?.classList.remove('is-streaming');
         streamingActive = false;
       }
     } else if (msg.type === 'capability_badge') {
@@ -4276,7 +4464,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       flowShellEl = null;
       pausedAssistantEl = null; // 结束即收尾：暂停续接锚失效
       resumePending = false; // 同节奏清续跑期待（防中断/补充后残留污染下轮判定）
-    // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
+      // 顺序关键：先回填本轮 roundId（commitRoundId 同步给 QA 行补 roundId，fold 按归属过滤）→
       // 收起任务过程折叠区（finalize 全量渲染）→ 收敛 QA 行进折叠块 → 关流式光标
       // （QA 不留在折叠块与报告之间）
       commitRoundId(msg.roundId);
@@ -4357,7 +4545,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       currentActive = msg.activeName;
       // 更新当前模型名（用于 AI 消息头部标签展示）
       if (currentActive) {
-        const activeProvider = currentProviders.find(p => p.name === currentActive);
+        const activeProvider = currentProviders.find((p) => p.name === currentActive);
         currentModelName = activeProvider?.displayName || currentActive;
       }
       renderModelPicker();
@@ -4409,7 +4597,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         // 原文字易被误读为「禁用技能」（禁用另属设置页禁用清单），且暗示「提及技能名即自动
         // 命中」（当前机制是显式选择，见 title 提示）。
         clearItem.textContent = '未选择技能';
-        clearItem.title = '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
+        clearItem.title =
+          '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
         clearItem.dataset.treeddId = '__clear_skill';
         skillPickerMenu.appendChild(clearItem);
         const divider = document.createElement('div');
@@ -4459,8 +4648,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *
    * @param msg write_confirm_request 载荷（host 推送）
    */
-  function renderWriteConfirmCard(msg: Extract<ExtensionToWebviewMessage, { type: 'write_confirm_request' }>): void {
-    if (!writeConfirmCard || !writeConfirmTool || !writeConfirmPath || !writeConfirmDesc || !writeConfirmDiff) return;
+  function renderWriteConfirmCard(
+    msg: Extract<ExtensionToWebviewMessage, { type: 'write_confirm_request' }>,
+  ): void {
+    if (
+      !writeConfirmCard ||
+      !writeConfirmTool ||
+      !writeConfirmPath ||
+      !writeConfirmDesc ||
+      !writeConfirmDiff
+    )
+      return;
     // 全部字段用 textContent 填充（SSOT：不信任 host 输入，防注入——与消息区渲染同纪律）
     // 工具名走中文显示名单一真源（与工具行 toolActionLabel 同源）
     writeConfirmTool.textContent = getToolDisplayName(msg.tool);
@@ -4468,7 +4666,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     writeConfirmDesc.textContent = msg.description ?? '';
     // diff 预览：afterContent 为写入后的完整内容（beforeContent 为 null 时即新建文件）
     const before = msg.beforeContent ?? '(新建文件)';
-    writeConfirmDiff.textContent = before === msg.afterContent ? before : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
+    writeConfirmDiff.textContent =
+      before === msg.afterContent
+        ? before
+        : `--- 写入前 ---\n${before}\n\n+++ 写入后 +++\n${msg.afterContent ?? ''}`;
     pendingWriteConfirmRequestId = msg.requestId;
     writeConfirmCard.hidden = false;
   }
@@ -4477,14 +4678,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   if (writeConfirmOk && writeConfirmReject && writeConfirmCard) {
     writeConfirmOk.addEventListener('click', () => {
       if (pendingWriteConfirmRequestId !== null) {
-        vscode.postMessage({ type: 'write_confirm_answer', requestId: pendingWriteConfirmRequestId, approved: true });
+        vscode.postMessage({
+          type: 'write_confirm_answer',
+          requestId: pendingWriteConfirmRequestId,
+          approved: true,
+        });
       }
       writeConfirmCard.hidden = true;
       pendingWriteConfirmRequestId = null;
     });
     writeConfirmReject.addEventListener('click', () => {
       if (pendingWriteConfirmRequestId !== null) {
-        vscode.postMessage({ type: 'write_confirm_answer', requestId: pendingWriteConfirmRequestId, approved: false });
+        vscode.postMessage({
+          type: 'write_confirm_answer',
+          requestId: pendingWriteConfirmRequestId,
+          approved: false,
+        });
       }
       writeConfirmCard.hidden = true;
       pendingWriteConfirmRequestId = null;
@@ -4605,7 +4814,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   // 条目为 .treedd__item（id=sessionId，点击走 initDropdowns 选择委托加载会话并收起）；
   // 内嵌垃圾桶（span，点击 stopPropagation 阻断选择委托，仅发 delete_session，菜单保持展开）；
   // 空态为非 item 文本（委托不命中，纯展示）。
-  function renderHistoryMenu(sessions: { sessionId: string; title: string; updatedAt: string }[]): void {
+  function renderHistoryMenu(
+    sessions: { sessionId: string; title: string; updatedAt: string }[],
+  ): void {
     historyMenu.textContent = '';
     if (sessions.length === 0) {
       const empty = document.createElement('div');
@@ -4714,7 +4925,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     if (skillPickerMenu) {
       skillPickerMenu.querySelectorAll<HTMLElement>('.treedd__item').forEach((it) => {
         // 未选择技能时高亮「未选择技能」（__clear_skill），选中时高亮对应项
-        const on = currentSkill ? it.dataset.treeddId === currentSkill.name : it.dataset.treeddId === '__clear_skill';
+        const on = currentSkill
+          ? it.dataset.treeddId === currentSkill.name
+          : it.dataset.treeddId === '__clear_skill';
         it.classList.toggle('is-active', on);
       });
     }
@@ -4789,7 +5002,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const clearItem = document.createElement('div');
     clearItem.className = 'treedd__item';
     clearItem.textContent = '未选择技能';
-    clearItem.title = '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
+    clearItem.title =
+      '未挂载任何技能，进行普通对话（技能需从下方显式选择；提示词提及技能名不会自动加载）';
     clearItem.dataset.treeddId = '__clear_skill';
     skillPickerMenu.appendChild(clearItem);
     const divider = document.createElement('div');
@@ -4808,8 +5022,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
     const askBlock = renderAskInline(questions);
     if (!askBlock) {
-      clarifyText.textContent =
-        'Agent 需要你确认：' + questions.map((q) => q.question).join('；');
+      clarifyText.textContent = 'Agent 需要你确认：' + questions.map((q) => q.question).join('；');
       clarifyInput.value = '';
       clarifyOptions.textContent = '';
       // 强制单选（同 renderAskInline 语义）：任一提问带 options 且 allowCustom=false → 隐藏自由输入框

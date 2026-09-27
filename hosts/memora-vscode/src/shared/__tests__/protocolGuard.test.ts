@@ -212,8 +212,7 @@ function extractHostBridgedEventTypes(source: string): Set<string> {
 
 describe('ProcessEvent 宿主桥接对账守卫（V-3）', () => {
   it('测量工具自证：剥注释有效（注释/块注释内的 emitEvent 示例不得计入）', () => {
-    const fake =
-      "// emitEvent('ghost', {})\nconst x = 1;\n/* emitEvent('phantom', {}) */\n";
+    const fake = "// emitEvent('ghost', {})\nconst x = 1;\n/* emitEvent('phantom', {}) */\n";
     expect(extractHostBridgedEventTypes(fake).size).toBe(0);
   });
 

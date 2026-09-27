@@ -171,11 +171,19 @@ function printBanner(text: string): void {
 
 function printMetrics(metrics: AgentMetrics, title: string): void {
   console.log(`\n┌─ ${title}`);
-  console.log(`│  LLM: 调用 ${metrics.llm.callCount} 次 | 估算输入 ${metrics.llm.totalInputTokens} / 实际 ${metrics.llm.actualInputTokens} tokens`);
-  console.log(`│  LLM: 估算输出 ${metrics.llm.totalOutputTokens} / 实际 ${metrics.llm.actualOutputTokens} tokens`);
+  console.log(
+    `│  LLM: 调用 ${metrics.llm.callCount} 次 | 估算输入 ${metrics.llm.totalInputTokens} / 实际 ${metrics.llm.actualInputTokens} tokens`,
+  );
+  console.log(
+    `│  LLM: 估算输出 ${metrics.llm.totalOutputTokens} / 实际 ${metrics.llm.actualOutputTokens} tokens`,
+  );
   console.log(`│  工具: ${metrics.tools.callCount} 次调用 | ${metrics.tools.failureCount} 次失败`);
-  console.log(`│  上下文: ${metrics.context.messageCount} 条消息 | 估算 ${metrics.context.estimatedTokens} tokens | 截断 ${metrics.context.truncationCount} 次`);
-  console.log(`│  任务: ${metrics.tasks.totalCount} 次 | 成功 ${metrics.tasks.successCount} | 失败 ${metrics.tasks.failureCount} | 成功率 ${(metrics.tasks.successRate * 100).toFixed(1)}%`);
+  console.log(
+    `│  上下文: ${metrics.context.messageCount} 条消息 | 估算 ${metrics.context.estimatedTokens} tokens | 截断 ${metrics.context.truncationCount} 次`,
+  );
+  console.log(
+    `│  任务: ${metrics.tasks.totalCount} 次 | 成功 ${metrics.tasks.successCount} | 失败 ${metrics.tasks.failureCount} | 成功率 ${(metrics.tasks.successRate * 100).toFixed(1)}%`,
+  );
   console.log(`│  任务耗时: 平均 ${metrics.tasks.avgDurationMs}ms`);
   console.log(`└${'─'.repeat(60)}`);
 }
@@ -187,7 +195,9 @@ function printSpanTrace(tracer: ProductionTracer): void {
   console.log('\n┌─ Span 追踪汇总');
   for (const [name, count] of Object.entries(spanCounts).sort((a, b) => a[0].localeCompare(b[0]))) {
     const avgMs = avgDurations[name] ?? 0;
-    console.log(`│  ${name.padEnd(25)} × ${String(count).padStart(3)} 次 | 平均 ${String(avgMs).padStart(5)} ms`);
+    console.log(
+      `│  ${name.padEnd(25)} × ${String(count).padStart(3)} 次 | 平均 ${String(avgMs).padStart(5)} ms`,
+    );
   }
   console.log(`└${'─'.repeat(60)}`);
 
@@ -196,8 +206,12 @@ function printSpanTrace(tracer: ProductionTracer): void {
   if (llmSpans.length > 0) {
     console.log('\n┌─ LLM Call Span 详情');
     for (const span of llmSpans.slice(-3)) {
-      console.log(`│  模型: ${span.attributes.model ?? 'N/A'} | 耗时: ${span.durationMs}ms | 消息数: ${span.attributes.messageCount ?? 'N/A'}`);
-      console.log(`│  估算输入: ${span.attributes.inputTokens ?? 'N/A'} tokens | 实际输入: ${span.attributes.actualInputTokens ?? 'N/A'} tokens`);
+      console.log(
+        `│  模型: ${span.attributes.model ?? 'N/A'} | 耗时: ${span.durationMs}ms | 消息数: ${span.attributes.messageCount ?? 'N/A'}`,
+      );
+      console.log(
+        `│  估算输入: ${span.attributes.inputTokens ?? 'N/A'} tokens | 实际输入: ${span.attributes.actualInputTokens ?? 'N/A'} tokens`,
+      );
       console.log(`│  System Prompt Hash: ${span.attributes.systemPromptHash ?? 'N/A'}`);
       if (span.hasException) console.log('│  ⚠️  此 Span 有异常');
     }
@@ -211,7 +225,9 @@ function printSpanTrace(tracer: ProductionTracer): void {
       // span 属性值类型是 string | number | boolean，padEnd 需先归一为字符串
       const toolName = String(span.attributes.toolName ?? 'unknown');
       const ok = span.attributes.ok;
-      console.log(`│  ${toolName.padEnd(25)} | ${String(span.durationMs).padStart(4)}ms | ${ok === true ? '✅' : ok === false ? '❌' : '⏭️'} | 参数: ${String(span.attributes.args ?? '').slice(0, 60)}`);
+      console.log(
+        `│  ${toolName.padEnd(25)} | ${String(span.durationMs).padStart(4)}ms | ${ok === true ? '✅' : ok === false ? '❌' : '⏭️'} | 参数: ${String(span.attributes.args ?? '').slice(0, 60)}`,
+      );
     }
     console.log(`└${'─'.repeat(60)}`);
   }
@@ -338,21 +354,39 @@ async function main(): Promise<void> {
   // 6a. Token 追踪
   console.log('\n  🔍 Token 成本追踪验证:');
   assert(metrics3.llm.callCount >= 3, `LLM 调用次数 >= 3 (实际: ${metrics3.llm.callCount})`);
-  assert(metrics3.llm.actualInputTokens > 0, `实际输入 token > 0 (实际: ${metrics3.llm.actualInputTokens})`);
-  assert(metrics3.llm.actualOutputTokens > 0, `实际输出 token > 0 (实际: ${metrics3.llm.actualOutputTokens})`);
-  assert(metrics3.llm.totalInputTokens > 0, `估算输入 token > 0 (实际: ${metrics3.llm.totalInputTokens})`);
+  assert(
+    metrics3.llm.actualInputTokens > 0,
+    `实际输入 token > 0 (实际: ${metrics3.llm.actualInputTokens})`,
+  );
+  assert(
+    metrics3.llm.actualOutputTokens > 0,
+    `实际输出 token > 0 (实际: ${metrics3.llm.actualOutputTokens})`,
+  );
+  assert(
+    metrics3.llm.totalInputTokens > 0,
+    `估算输入 token > 0 (实际: ${metrics3.llm.totalInputTokens})`,
+  );
 
   // 6b. 任务级 SLO
   console.log('\n  🔍 任务级 SLO 验证:');
   assert(metrics3.tasks.totalCount === 3, `任务总数 = 3 (实际: ${metrics3.tasks.totalCount})`);
   assert(metrics3.tasks.successCount === 3, `成功数 = 3 (实际: ${metrics3.tasks.successCount})`);
-  assert(metrics3.tasks.successRate === 1, `成功率 = 100% (实际: ${(metrics3.tasks.successRate * 100).toFixed(1)}%)`);
-  assert(metrics3.tasks.avgDurationMs > 0, `平均耗时 > 0ms (实际: ${metrics3.tasks.avgDurationMs}ms)`);
+  assert(
+    metrics3.tasks.successRate === 1,
+    `成功率 = 100% (实际: ${(metrics3.tasks.successRate * 100).toFixed(1)}%)`,
+  );
+  assert(
+    metrics3.tasks.avgDurationMs > 0,
+    `平均耗时 > 0ms (实际: ${metrics3.tasks.avgDurationMs}ms)`,
+  );
 
   // 6c. Span 追踪验证
   console.log('\n  🔍 Span 链路验证:');
   const spanCounts = tracer.getSpanCounts();
-  assert((spanCounts[TRACE_SPANS.LLM_CALL] ?? 0) >= 3, `LLM_CALL Span >= 3 (实际: ${spanCounts[TRACE_SPANS.LLM_CALL] ?? 0})`);
+  assert(
+    (spanCounts[TRACE_SPANS.LLM_CALL] ?? 0) >= 3,
+    `LLM_CALL Span >= 3 (实际: ${spanCounts[TRACE_SPANS.LLM_CALL] ?? 0})`,
+  );
 
   const llmSpans = tracer.findAllByName(TRACE_SPANS.LLM_CALL);
   const lastLlmSpan = llmSpans[llmSpans.length - 1];
@@ -360,14 +394,23 @@ async function main(): Promise<void> {
     assert(lastLlmSpan.attributes.model !== undefined, 'LLM Span 包含 model 属性');
     assert(lastLlmSpan.attributes.messageCount !== undefined, 'LLM Span 包含 messageCount 属性');
     assert(lastLlmSpan.attributes.inputTokens !== undefined, 'LLM Span 包含 inputTokens 属性');
-    assert(lastLlmSpan.attributes.systemPromptHash !== undefined, 'LLM Span 包含 systemPromptHash 指纹');
+    assert(
+      lastLlmSpan.attributes.systemPromptHash !== undefined,
+      'LLM Span 包含 systemPromptHash 指纹',
+    );
     assert(lastLlmSpan.durationMs > 0, `LLM Span 耗时 > 0ms (实际: ${lastLlmSpan.durationMs}ms)`);
   }
 
   // 6d. 上下文管理
   console.log('\n  🔍 上下文管理验证:');
-  assert(metrics3.context.messageCount > 0, `上下文消息数 > 0 (实际: ${metrics3.context.messageCount})`);
-  assert(metrics3.context.estimatedTokens > 0, `上下文估算 token > 0 (实际: ${metrics3.context.estimatedTokens})`);
+  assert(
+    metrics3.context.messageCount > 0,
+    `上下文消息数 > 0 (实际: ${metrics3.context.messageCount})`,
+  );
+  assert(
+    metrics3.context.estimatedTokens > 0,
+    `上下文估算 token > 0 (实际: ${metrics3.context.estimatedTokens})`,
+  );
 
   // 7. 完整 Span 追踪报告
   printBanner('完整 Span 追踪报告');
@@ -386,11 +429,21 @@ async function main(): Promise<void> {
 
   console.log('\n🎉 所有验证完成！生产级可观测性体系验证通过。');
   console.log('\n📖 关键发现：');
-  console.log(`   - 真实 API 调用 ${metrics3.llm.callCount} 次，总耗时 ${duration1 + duration2 + duration3}ms`);
-  console.log(`   - 实际 Token 用量：输入 ${metrics3.llm.actualInputTokens} / 输出 ${metrics3.llm.actualOutputTokens}`);
-  console.log(`   - 估算 vs 实际偏差：输入 ${((1 - metrics3.llm.totalInputTokens / Math.max(metrics3.llm.actualInputTokens, 1)) * 100).toFixed(1)}%`);
-  console.log(`   - LLM 平均响应时间：${(llmSpans.reduce((s, sp) => s + sp.durationMs, 0) / Math.max(llmSpans.length, 1)).toFixed(0)}ms`);
-  console.log(`   - Span 总数：${tracer.spans.length} 个，覆盖 ${Object.keys(spanCounts).length} 种类型`);
+  console.log(
+    `   - 真实 API 调用 ${metrics3.llm.callCount} 次，总耗时 ${duration1 + duration2 + duration3}ms`,
+  );
+  console.log(
+    `   - 实际 Token 用量：输入 ${metrics3.llm.actualInputTokens} / 输出 ${metrics3.llm.actualOutputTokens}`,
+  );
+  console.log(
+    `   - 估算 vs 实际偏差：输入 ${((1 - metrics3.llm.totalInputTokens / Math.max(metrics3.llm.actualInputTokens, 1)) * 100).toFixed(1)}%`,
+  );
+  console.log(
+    `   - LLM 平均响应时间：${(llmSpans.reduce((s, sp) => s + sp.durationMs, 0) / Math.max(llmSpans.length, 1)).toFixed(0)}ms`,
+  );
+  console.log(
+    `   - Span 总数：${tracer.spans.length} 个，覆盖 ${Object.keys(spanCounts).length} 种类型`,
+  );
 }
 
 // 执行主函数

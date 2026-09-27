@@ -39,14 +39,20 @@ function assert(cond: boolean, msg: string): void {
 
 function printMetrics(m: AgentMetrics): void {
   console.log(`\n┌─ 真实运行 metrics`);
-  console.log(`│  LLM 调用 ${m.llm.callCount} 次 | 实际输入 ${m.llm.actualInputTokens} / 输出 ${m.llm.actualOutputTokens} tokens`);
+  console.log(
+    `│  LLM 调用 ${m.llm.callCount} 次 | 实际输入 ${m.llm.actualInputTokens} / 输出 ${m.llm.actualOutputTokens} tokens`,
+  );
   console.log(`│  工具 ${m.tools.callCount} 次调用 | ${m.tools.failureCount} 次失败`);
-  console.log(`│  任务 ${m.tasks.totalCount} 次 | 成功 ${m.tasks.successCount} | 失败 ${m.tasks.failureCount}`);
+  console.log(
+    `│  任务 ${m.tasks.totalCount} 次 | 成功 ${m.tasks.successCount} | 失败 ${m.tasks.failureCount}`,
+  );
   console.log(`└${'─'.repeat(50)}`);
 }
 
 async function main(): Promise<void> {
-  console.log(`${'━'.repeat(64)}\n  TOOLPAIR-2 Step 3 · 发送边界成形守卫 —— 真实 LLM 复验\n${'━'.repeat(64)}`);
+  console.log(
+    `${'━'.repeat(64)}\n  TOOLPAIR-2 Step 3 · 发送边界成形守卫 —— 真实 LLM 复验\n${'━'.repeat(64)}`,
+  );
 
   const config = await loadConfig();
   const hasKey = Object.values(config?.llm?.providers ?? {}).some((p) => p?.apiKey);
@@ -80,7 +86,9 @@ async function main(): Promise<void> {
     toolDefinitions: TOOL_DEFS,
   });
 
-  console.log(`📤 输入: "请务必调用 read_file 工具读取 ${TARGET}，然后用一句话告诉我文件里有没有 'version' 字段。不要直接回答。"\n`);
+  console.log(
+    `📤 输入: "请务必调用 read_file 工具读取 ${TARGET}，然后用一句话告诉我文件里有没有 'version' 字段。不要直接回答。"\n`,
+  );
   const input = `请务必调用 read_file 工具读取 ${TARGET}，然后用一句话告诉我文件里有没有 'version' 字段。不要直接回答。`;
 
   let response = '';

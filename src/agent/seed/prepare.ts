@@ -11,15 +11,8 @@
 
 import type { AgentChunk } from '@/agent/types.js';
 import { backgroundTask } from '@/utils/backgroundTask.js';
-import {
-  resolveL2Strategy,
-  resolveActiveStrategy,
-} from '@/role-pack/strategyResolver.js';
-import {
-  type SeedDeps,
-  type SeedParts,
-  type SeedPrepareResult,
-} from './types.js';
+import { resolveL2Strategy, resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
+import { type SeedDeps, type SeedParts, type SeedPrepareResult } from './types.js';
 
 /**
  * 回答前阶段执行器

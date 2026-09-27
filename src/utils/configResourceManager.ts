@@ -19,10 +19,7 @@ export interface ConfigResource {
  * @typeParam T 子类资源类型
  * @typeParam TOptions load() 的可选参数类型
  */
-export abstract class ConfigResourceManager<
-  T extends ConfigResource,
-  TOptions = undefined,
-> {
+export abstract class ConfigResourceManager<T extends ConfigResource, TOptions = undefined> {
   /** 资源列表缓存 */
   protected items: T[] = [];
 
@@ -112,8 +109,7 @@ export abstract class ConfigResourceManager<
     const scannedNames = new Set(scanned.map((i) => i.name));
     const runtimeInjected = this.items.filter(
       (i) =>
-        this.runtimeNames.has(i.name) &&
-        (!scannedNames.has(i.name) || this.isUserOverride(i.name)),
+        this.runtimeNames.has(i.name) && (!scannedNames.has(i.name) || this.isUserOverride(i.name)),
     );
     for (const name of this.runtimeNames) {
       // 磁盘同名赢（覆盖项已被保留，见上过滤）→ 注销记账；覆盖项保留记账（下次 reload 仍保留）
@@ -133,7 +129,10 @@ export abstract class ConfigResourceManager<
     }
     this.items.splice(idx, 1);
     this.runtimeNames.delete(name);
-    logger.info({ name, remaining: this.items.length, subdir: this.subdir }, '资源已从内存缓存删除');
+    logger.info(
+      { name, remaining: this.items.length, subdir: this.subdir },
+      '资源已从内存缓存删除',
+    );
     return true;
   }
 

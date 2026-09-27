@@ -7,10 +7,7 @@ import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 import { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 import { GCService, createDefaultGCService } from '@/memory/gcService.js';
 import { logger } from '@/logging/logger.js';
-import {
-  createPendingRound,
-  completeRound,
-} from '@/memory/roundStore.js';
+import { createPendingRound, completeRound } from '@/memory/roundStore.js';
 import type { IRoundStore } from '@/memory/roundStore.js';
 import type { Memory } from '@/memory/types.js';
 
@@ -355,10 +352,7 @@ describe('GC 补充分支路径', () => {
     // verbose 分支仅影响日志输出，结果统计与常规一致
     expect(result.deleted).toBe(1);
     expect(result.orphaned).toBe(1);
-    expect(infoSpy).toHaveBeenCalledWith(
-      { total: 1, orphaned: 1 },
-      'GC: 发现孤立问答闭环',
-    );
+    expect(infoSpy).toHaveBeenCalledWith({ total: 1, orphaned: 1 }, 'GC: 发现孤立问答闭环');
     infoSpy.mockRestore();
   });
 
@@ -433,7 +427,12 @@ describe('GC 补充分支路径', () => {
       accessedAt: new Date().toISOString(),
     } as Memory);
 
-    const gc = new GCService(roundStore, memoryStorage, { minAgeMs: 0, batchSize: 10, cleanUpMemory: true, verbose: false });
+    const gc = new GCService(roundStore, memoryStorage, {
+      minAgeMs: 0,
+      batchSize: 10,
+      cleanUpMemory: true,
+      verbose: false,
+    });
     const result = gc.run();
     expect(result.deleted).toBe(1);
     expect(result.memoryCleaned).toBe(1);

@@ -168,7 +168,12 @@ export class DedupManager {
       }
     }
 
-    this.onCompleted?.({ scannedCount: limited.length, pairCount: pairs.length, deduplicatedCount, demotedIds });
+    this.onCompleted?.({
+      scannedCount: limited.length,
+      pairCount: pairs.length,
+      deduplicatedCount,
+      demotedIds,
+    });
     return {
       scannedCount: limited.length,
       pairCount: pairs.length,
@@ -278,12 +283,14 @@ export class DedupManager {
 
 /** 构建语义去重判断的 LLM 消息：system 定义语义等价规则 + user 携带候选对内容预览，few-shot 降误判率 */
 function buildDedupMessages(pair: DedupPair): Message[] {
-  const contentA = pair.a.content.length > DEDUP_CONTENT_PREVIEW_LEN
-    ? truncate(pair.a.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')
-    : pair.a.content;
-  const contentB = pair.b.content.length > DEDUP_CONTENT_PREVIEW_LEN
-    ? truncate(pair.b.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')
-    : pair.b.content;
+  const contentA =
+    pair.a.content.length > DEDUP_CONTENT_PREVIEW_LEN
+      ? truncate(pair.a.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')
+      : pair.a.content;
+  const contentB =
+    pair.b.content.length > DEDUP_CONTENT_PREVIEW_LEN
+      ? truncate(pair.b.content, DEDUP_CONTENT_PREVIEW_LEN, '…[截断]')
+      : pair.b.content;
 
   return [
     {

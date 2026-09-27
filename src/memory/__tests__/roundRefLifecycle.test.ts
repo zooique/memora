@@ -75,7 +75,10 @@ async function appendRound(history: MessageHistory, content: string): Promise<st
  * （分叉键 = todayDate()-newSession，防跨天后写入错位），硬编码日期会让「分叉后切回源会话」
  * 落到「今天-同名」的新会话上，使本测试成为日期敏感用例（仅写入当天能过）。
  */
-function createHistory(roundStore: InMemoryRoundStore, sessionStore: InMemorySessionStore): MessageHistory {
+function createHistory(
+  roundStore: InMemoryRoundStore,
+  sessionStore: InMemorySessionStore,
+): MessageHistory {
   const history = new MessageHistory(sessionStore, todayDate(), 'main', roundStore);
   sessionStore.createSession({
     sessionId: history.currentSessionName,

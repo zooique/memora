@@ -74,7 +74,7 @@ export function wrapToolResult(toolName: string, result: string): string {
  *
  * 判据关系：**定义期判据 ≠ 服务端判据**。
  *   - 定义期规则（`toolExecutor` 的 `^[a-zA-Z_][a-zA-Z0-9_]*$`）**不容连字符**——拿它作判据，
-   *     会把服务端**接受**的 `read-file` 误判为非法（血的教训，勿收严至此）。
+ *     会把服务端**接受**的 `read-file` 误判为非法（血的教训，勿收严至此）。
  *   - 本判据 = 服务端判据的**完整面**：字符集（正则）+ 长度上界（OpenAI 规范 `function.name` 上限
  *     64 字符）。长度上界是**服务端约束**，补它只会让判据更贴近服务端，不会像定义期规则那样误伤。
  *   - 内置 23 个工具名最长 16 字符，全部满足；无守卫锁死该事实——若未来新增超长名应在此回归。
@@ -175,9 +175,14 @@ export function auditToolCallPairing(
     for (const tc of m.toolCalls ?? []) {
       if (tc.function.name.length === 0) violations.push({ kind: 'emptyName', toolCallId: tc.id });
       if (tc.function.name.length > TOOL_NAME_MAX_LENGTH) {
-        violations.push({ kind: 'nameTooLong', toolCallId: tc.id, length: tc.function.name.length });
+        violations.push({
+          kind: 'nameTooLong',
+          toolCallId: tc.id,
+          length: tc.function.name.length,
+        });
       }
-      if (!toolIdSet.has(tc.id)) violations.push({ kind: 'unpairedAssistantCall', toolCallId: tc.id });
+      if (!toolIdSet.has(tc.id))
+        violations.push({ kind: 'unpairedAssistantCall', toolCallId: tc.id });
       if (seenInMessage.has(tc.id)) violations.push({ kind: 'duplicateId', toolCallId: tc.id });
       seenInMessage.add(tc.id);
     }

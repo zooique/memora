@@ -9,7 +9,11 @@
  * 注：纯函数测试，无副作用。
  */
 import { describe, it, expect } from 'vitest';
-import { renderTaskTable, PLAN_ITEM_DESC_MAX_CHARS, buildCompletionVerifyNudge } from '../taskTableRenderer.js';
+import {
+  renderTaskTable,
+  PLAN_ITEM_DESC_MAX_CHARS,
+  buildCompletionVerifyNudge,
+} from '../taskTableRenderer.js';
 import type { PlanItem, PlanItemOutcome } from '../types.js';
 
 /** 创建测试用 PlanItem */
@@ -32,7 +36,6 @@ function createPlanItemLog(summary: string, planItemId?: string): PlanItemOutcom
 // ══════════════════════════════════════════════════════════════
 
 describe('taskTableRenderer — 基本渲染', () => {
-
   it('空计划返回空字符串', () => {
     const result = renderTaskTable([]);
     expect(result).toBe('');
@@ -74,7 +77,13 @@ describe('taskTableRenderer — 基本渲染', () => {
   it('会议任务项（rolePack）标注装配角色（v0.13 S5）', () => {
     const plan: PlanItem[] = [
       { id: 's1', order: 0, description: '从编辑视角审稿', status: 'active', rolePack: '编辑' },
-      { id: 's2', order: 1, description: '从评论家视角点评', status: 'pending', rolePack: '评论家' },
+      {
+        id: 's2',
+        order: 1,
+        description: '从评论家视角点评',
+        status: 'pending',
+        rolePack: '评论家',
+      },
       { id: 's3', order: 2, description: '汇总会议结论', status: 'pending' },
     ];
     const result = renderTaskTable(plan);
@@ -93,7 +102,6 @@ describe('taskTableRenderer — 基本渲染', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('taskTableRenderer — 多任务项渲染', () => {
-
   it('多任务项混合状态', () => {
     const plan: PlanItem[] = [
       createPlanItem(0, '需求分析', 'done'),
@@ -157,7 +165,6 @@ describe('taskTableRenderer — 多任务项渲染', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('taskTableRenderer — 任务项推进日志渲染', () => {
-
   it('有任务项推进日志时追加任务项推进记录', () => {
     const plan = [createPlanItem(0, '步骤一', 'active')];
     const planItemLog: PlanItemOutcome[] = [
@@ -173,9 +180,7 @@ describe('taskTableRenderer — 任务项推进日志渲染', () => {
 
   it('任务项推进日志无 planItemId 时不显示任务项编号', () => {
     const plan = [createPlanItem(0, '步骤一', 'active')];
-    const planItemLog: PlanItemOutcome[] = [
-      createPlanItemLog('自由对话迭代'),
-    ];
+    const planItemLog: PlanItemOutcome[] = [createPlanItemLog('自由对话迭代')];
     const result = renderTaskTable(plan, planItemLog);
 
     expect(result).toContain('自由对话迭代');
@@ -217,7 +222,6 @@ describe('taskTableRenderer — 任务项推进日志渲染', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('taskTableRenderer — 边界场景', () => {
-
   it('长描述截断（超过 38 字符）', () => {
     // 使用 ASCII 字符确保长度可控（> 38 触发截断）
     const longDesc = 'A'.repeat(45);
@@ -316,7 +320,6 @@ describe('taskTableRenderer — 边界场景', () => {
 // 5. 排版契约（去方框后的守卫）
 // ══════════════════════════════════════════════════════════════
 describe('taskTableRenderer — 排版契约', () => {
-
   it('首行恒为 [任务进度: 前缀（loop 替换式注入的识别契约）', () => {
     // 契约来源：loop.ts 按 startsWith('[任务进度:') 移除上一份任务表；
     // 前缀一旦变更/被前导内容挤掉 → 一个 turn 内每迭代各堆一份任务表

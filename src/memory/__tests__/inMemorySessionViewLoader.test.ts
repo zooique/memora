@@ -96,8 +96,16 @@ describe('InMemorySessionViewLoader', () => {
 
   describe('loadBatchSummaries', () => {
     it('按 updatedAt 降序排列', () => {
-      sessionStore.createSession({ sessionId: '2026-09-10-a', updatedAt: '2026-09-10T00:00:00Z', messageCount: 0 });
-      sessionStore.createSession({ sessionId: '2026-09-12-b', updatedAt: '2026-09-12T00:00:00Z', messageCount: 0 });
+      sessionStore.createSession({
+        sessionId: '2026-09-10-a',
+        updatedAt: '2026-09-10T00:00:00Z',
+        messageCount: 0,
+      });
+      sessionStore.createSession({
+        sessionId: '2026-09-12-b',
+        updatedAt: '2026-09-12T00:00:00Z',
+        messageCount: 0,
+      });
       const summaries = loader.loadBatchSummaries(['2026-09-12-b', '2026-09-10-a']);
       expect(summaries.map((s) => s.sessionId)).toEqual(['2026-09-12-b', '2026-09-10-a']);
     });

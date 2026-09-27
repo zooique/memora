@@ -31,7 +31,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
     it('成功登记作品索引', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const result = await manager.registerWork('docs/architecture.md', '系统分层设计');
-      
+
       expect(result).not.toBeNull();
       expect(result!.name).toBe('architecture');
       expect(result!.description).toBe('系统分层设计');
@@ -42,15 +42,19 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       let callbackCalled = false;
       let callbackSource = '';
       let callbackDesc = '';
-      
-      manager = new WorkProjectionManager(memoraDir, (src, desc) => {
-        callbackCalled = true;
-        callbackSource = src;
-        callbackDesc = desc;
-      }, projectDir);
-      
+
+      manager = new WorkProjectionManager(
+        memoraDir,
+        (src, desc) => {
+          callbackCalled = true;
+          callbackSource = src;
+          callbackDesc = desc;
+        },
+        projectDir,
+      );
+
       await manager.registerWork('src/index.ts', '入口文件');
-      
+
       expect(callbackCalled).toBe(true);
       expect(callbackSource).toBe('src/index.ts');
       expect(callbackDesc).toBe('入口文件');
@@ -60,7 +64,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       await manager.registerWork('docs/api.md', '旧描述');
       await manager.registerWork('docs/api.md', '新描述');
-      
+
       const list = await manager.listWorks();
       expect(list).toHaveLength(1);
       expect(list[0]!.description).toBe('新描述');
@@ -69,7 +73,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
     it('描述中的换行被清理', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const result = await manager.registerWork('test.md', '第一行\n第二行');
-      
+
       expect(result!.description).toBe('第一行 第二行');
     });
 
@@ -89,9 +93,9 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
     it('source 指向项目外时返回 null', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const result = await manager.registerWork('../../../etc/passwd', '恶意路径');
-      
+
       expect(result).toBeNull();
-      
+
       // 验证没有被保存
       const list = await manager.listWorks();
       expect(list).toHaveLength(0);
@@ -109,19 +113,19 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       await manager.registerWork('doc1.md', '文档一');
       await manager.registerWork('doc2.md', '文档二');
-      
+
       // 重新创建 manager 模拟重启
       const newManager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       const list = await newManager.listWorks();
-      
+
       expect(list).toHaveLength(2);
-      expect(list.map(e => e.source).sort()).toEqual(['doc1.md', 'doc2.md']);
+      expect(list.map((e) => e.source).sort()).toEqual(['doc1.md', 'doc2.md']);
     });
 
     it('过滤无效条目（缺少必要字段）', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       await manager.registerWork('valid.md', '有效');
-      
+
       // 手动写入一个无效条目
       const fs = await import('node:fs/promises');
       const filePath = join(memoraDir, 'work-projections.json');
@@ -130,7 +134,7 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
         { name: '无效文档' }, // 缺少 source
       ];
       await fs.writeFile(filePath, JSON.stringify(invalidData));
-      
+
       const list = await manager.listWorks();
       expect(list).toHaveLength(1);
       expect(list[0]!.source).toBe('valid.md');
@@ -141,7 +145,10 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       const fs = await import('node:fs/promises');
       const filePath = join(memoraDir, 'work-projections.json');
       // 模拟错形态：{entries:[...]} 而非顶层数组
-      await fs.writeFile(filePath, JSON.stringify({ entries: [{ name: 'x', description: 'y', source: 'z.md' }] }));
+      await fs.writeFile(
+        filePath,
+        JSON.stringify({ entries: [{ name: 'x', description: 'y', source: 'z.md' }] }),
+      );
 
       const warnSpy = vi.spyOn(logger, 'warn');
       const list = await manager.listWorks();
@@ -161,9 +168,9 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
     it('返回格式化的索引清单', async () => {
       manager = new WorkProjectionManager(memoraDir, undefined, projectDir);
       await manager.registerWork('docs/arch.md', '架构说明');
-      
+
       const block = manager.contextBlock();
-      
+
       expect(block).toContain('【项目索引】');
       expect(block).toContain('架构说明');
       expect(block).toContain('docs/arch.md');
@@ -221,7 +228,10 @@ describe('WorkProjectionManager (JSON 单文件)', () => {
       expect(manager.isFileMalformed).toBe(true);
 
       // 修正为合法数组
-      await fs.writeFile(filePath, JSON.stringify([{ name: 'a', description: 'b', source: 'c.md' }]));
+      await fs.writeFile(
+        filePath,
+        JSON.stringify([{ name: 'a', description: 'b', source: 'c.md' }]),
+      );
       await manager.refresh();
       expect(manager.isFileMalformed).toBe(false);
     });

@@ -105,7 +105,9 @@
         },
         "memora.allowedPaths": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "scope": "application",
           "default": [],
           "description": "白名单额外允许目录（项目目录之外的可信目录，Agent 可读取/写入）。项目目录始终允许，无需添加。用户级：机器级目录信任，个人绝对路径不进项目 settings。修改即时生效，重启后仍保留。"
@@ -113,7 +115,12 @@
         "memora.searchEngine": {
           "type": "string",
           "scope": "application",
-          "enum": ["auto", "bing", "baidu", "sogou"],
+          "enum": [
+            "auto",
+            "bing",
+            "baidu",
+            "sogou"
+          ],
           "enumDescriptions": [
             "自动：Bing 优先，降级 DuckDuckGo（默认）",
             "必应（Bing）",
@@ -125,7 +132,9 @@
         },
         "memora.disabledSkills": {
           "type": "array",
-          "items": { "type": "string" },
+          "items": {
+            "type": "string"
+          },
           "scope": "application",
           "default": [],
           "description": "禁用的技能名列表（配置形态启停）。作用域 = 全局技能池（内置技能 + 用户技能）；激活角色包的内嵌技能是「随角色激活」的另一套语义，不受本设置影响。命中者对模型语义 = 不存在：不进技能清单、read_skill 读不到、L3 资源与脚本不可达；技能页仍保留条目并加「已禁用」徽章（便于对照确认是否生效，不静默消失）。技能名 = 技能清单中列出的名称（Agent Skills 规范：kebab，如 code-review）。用户级偏好，随用户而非随项目。修改后即时生效——自动同步到内核并刷新技能页与对话区技能下拉，无需重载窗口或手动重载。"
@@ -205,5 +214,3 @@
     "marked": "^18.0.9"
   }
 }
-
-

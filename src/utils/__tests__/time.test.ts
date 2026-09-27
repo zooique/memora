@@ -8,7 +8,14 @@
  *   - 多次调用返回值单调非递减
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { nowIso, formatDateKey, todayDate, buildSessionId, splitSessionId, isValidSessionId } from '@/utils/time.js';
+import {
+  nowIso,
+  formatDateKey,
+  todayDate,
+  buildSessionId,
+  splitSessionId,
+  isValidSessionId,
+} from '@/utils/time.js';
 
 describe('utils/time', () => {
   afterEach(() => {

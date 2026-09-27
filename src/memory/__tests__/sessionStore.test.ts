@@ -11,11 +11,7 @@
  *     本文件聚焦接口本身的契约和内存实现。
  */
 import { describe, it, expect, beforeEach } from 'vitest';
-import type {
-  ISessionStore,
-  SessionMessage,
-  SessionMeta,
-} from '../sessionStore.js';
+import type { ISessionStore, SessionMessage, SessionMeta } from '../sessionStore.js';
 // 内核真实实现（测试替身改名 TestInMemorySessionStore 后，本名恢复独占，无需再取别名区分）
 import { InMemorySessionStore } from '../inMemorySessionStore.js';
 import { InMemoryRoundStore } from '../inMemoryRoundStore.js';
@@ -128,9 +124,7 @@ class TestInMemorySessionStore implements ISessionStore {
    * 与宿主 WorkspaceSessionStore / 内核 InMemorySessionStore 同向。
    */
   listSessionMetas(): SessionMeta[] {
-    return Array.from(this.metas.values()).sort((a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt),
-    );
+    return Array.from(this.metas.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   /** 辅助：统计会话消息数 */
@@ -188,7 +182,6 @@ class TestInMemorySessionStore implements ISessionStore {
 // ══════════════════════════════════════════════════════════════
 
 describe('ISessionStore — 必需方法契约', () => {
-
   let store: TestInMemorySessionStore;
 
   beforeEach(() => {
@@ -233,10 +226,14 @@ describe('ISessionStore — 必需方法契约', () => {
 
     it('不同会话隔离', () => {
       store.seedMessages('2026-08-18', 'session-A', {
-        role: 'user', content: 'A的消息', timestamp: 't1',
+        role: 'user',
+        content: 'A的消息',
+        timestamp: 't1',
       });
       store.seedMessages('2026-08-18', 'session-B', {
-        role: 'user', content: 'B的消息', timestamp: 't2',
+        role: 'user',
+        content: 'B的消息',
+        timestamp: 't2',
       });
 
       const loadedA = store.loadMessages('2026-08-18', 'session-A');
@@ -249,10 +246,14 @@ describe('ISessionStore — 必需方法契约', () => {
 
     it('不同日期隔离', () => {
       store.seedMessages('2026-08-18', 'test', {
-        role: 'user', content: '今天', timestamp: 't1',
+        role: 'user',
+        content: '今天',
+        timestamp: 't1',
       });
       store.seedMessages('2026-08-17', 'test', {
-        role: 'user', content: '昨天', timestamp: 't2',
+        role: 'user',
+        content: '昨天',
+        timestamp: 't2',
       });
 
       const loadedToday = store.loadMessages('2026-08-18', 'test');
@@ -265,13 +266,19 @@ describe('ISessionStore — 必需方法契约', () => {
   describe('listSessions', () => {
     it('列出所有会话', () => {
       store.seedMessages('2026-08-18', 'session-1', {
-        role: 'user', content: 'test1', timestamp: 't1',
+        role: 'user',
+        content: 'test1',
+        timestamp: 't1',
       });
       store.seedMessages('2026-08-18', 'session-2', {
-        role: 'user', content: 'test2', timestamp: 't2',
+        role: 'user',
+        content: 'test2',
+        timestamp: 't2',
       });
       store.seedMessages('2026-08-17', 'session-3', {
-        role: 'user', content: 'test3', timestamp: 't3',
+        role: 'user',
+        content: 'test3',
+        timestamp: 't3',
       });
 
       const sessions = store.listSessions();
@@ -293,18 +300,18 @@ describe('ISessionStore — 必需方法契约', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('ISessionStore — 可选方法契约', () => {
-
   let store: TestInMemorySessionStore;
 
   beforeEach(() => {
     store = new TestInMemorySessionStore();
   });
 
-
   describe('getSessionMeta + setSessionTitle + listSessionMetas', () => {
     it('设置标题后可获取', () => {
       store.seedMessages('2026-08-18', 'test', {
-        role: 'user', content: 'test', timestamp: 't1',
+        role: 'user',
+        content: 'test',
+        timestamp: 't1',
       });
       store.setSessionTitle('2026-08-18-test', '我的会话');
 
@@ -334,9 +341,21 @@ describe('ISessionStore — 可选方法契约', () => {
 
     it('listSessionMetas 按 updatedAt 降序（最近活跃在前）——ISessionStore 排序契约', () => {
       // 故意乱序插入，确保验证的是「实现真的排序」而非「碰巧等于插入顺序」
-      store.createSession({ sessionId: '2026-08-01-a', updatedAt: '2026-08-01T00:00:00.000Z', messageCount: 0 });
-      store.createSession({ sessionId: '2026-08-03-b', updatedAt: '2026-08-03T00:00:00.000Z', messageCount: 0 });
-      store.createSession({ sessionId: '2026-08-02-c', updatedAt: '2026-08-02T00:00:00.000Z', messageCount: 0 });
+      store.createSession({
+        sessionId: '2026-08-01-a',
+        updatedAt: '2026-08-01T00:00:00.000Z',
+        messageCount: 0,
+      });
+      store.createSession({
+        sessionId: '2026-08-03-b',
+        updatedAt: '2026-08-03T00:00:00.000Z',
+        messageCount: 0,
+      });
+      store.createSession({
+        sessionId: '2026-08-02-c',
+        updatedAt: '2026-08-02T00:00:00.000Z',
+        messageCount: 0,
+      });
 
       // 契约：降序，[0] = 最近活跃。
       // SessionManager.restoreMostRecentSession 视 listSessionMetas[0] 为「最近活跃唯一真理源」，
@@ -370,7 +389,6 @@ describe('ISessionStore — 可选方法契约', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('ISessionStore — SessionMessage 类型', () => {
-
   it('消息结构正确', () => {
     const msg: SessionMessage = {
       role: 'user',
@@ -407,7 +425,6 @@ describe('ISessionStore — SessionMessage 类型', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('ISessionStore — SessionMeta 类型', () => {
-
   it('元数据结构正确', () => {
     const meta: SessionMeta = {
       sessionId: '2026-08-18-test',
@@ -451,9 +468,21 @@ describe('内核 InMemorySessionStore（真实实现）· listSessionMetas 排�
   it('按 updatedAt 降序（最近活跃在前）——与宿主实现同向', () => {
     const store = new InMemorySessionStore(new InMemoryRoundStore());
     // 乱序插入：确保验证的是「实现真的排序」而非插入顺序
-    store.createSession({ sessionId: '2026-08-01-a', updatedAt: '2026-08-01T00:00:00.000Z', messageCount: 0 });
-    store.createSession({ sessionId: '2026-08-03-b', updatedAt: '2026-08-03T00:00:00.000Z', messageCount: 0 });
-    store.createSession({ sessionId: '2026-08-02-c', updatedAt: '2026-08-02T00:00:00.000Z', messageCount: 0 });
+    store.createSession({
+      sessionId: '2026-08-01-a',
+      updatedAt: '2026-08-01T00:00:00.000Z',
+      messageCount: 0,
+    });
+    store.createSession({
+      sessionId: '2026-08-03-b',
+      updatedAt: '2026-08-03T00:00:00.000Z',
+      messageCount: 0,
+    });
+    store.createSession({
+      sessionId: '2026-08-02-c',
+      updatedAt: '2026-08-02T00:00:00.000Z',
+      messageCount: 0,
+    });
 
     expect(store.listSessionMetas().map((m) => m.sessionId)).toEqual([
       '2026-08-03-b',
@@ -494,7 +523,10 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
   /** 创建一个 interrupted Round（中断/失败收场，含半截正文 + 中断标记）并保存 */
   function saveInterruptedRound(seed: string): string {
     const round = createPendingRound(`被取消 ${seed}`);
-    const interrupted: Round = { ...completeRound(round, `半截回答 ${seed}`), status: 'interrupted' };
+    const interrupted: Round = {
+      ...completeRound(round, `半截回答 ${seed}`),
+      status: 'interrupted',
+    };
     roundStore.save(interrupted);
     return interrupted.id;
   }
@@ -564,7 +596,12 @@ describe('内核 InMemorySessionStore（真实实现）· round-based 行为', (
   });
 
   it('updateSessionMeta：已存在 meta 时合并字段', () => {
-    store.createSession({ sessionId: '2026-09-13-main', autoName: '旧', updatedAt: 't', messageCount: 0 });
+    store.createSession({
+      sessionId: '2026-09-13-main',
+      autoName: '旧',
+      updatedAt: 't',
+      messageCount: 0,
+    });
     store.updateSessionMeta('2026-09-13-main', { keyTopics: ['ts'], summary: '摘要' });
     const meta = store.getSessionMeta('2026-09-13-main')!;
     expect(meta.autoName).toBe('旧');
@@ -631,11 +668,15 @@ describe('getSessionDisplayName / getSessionAutoName', () => {
   };
 
   it('getSessionDisplayName：displayName 优先（含去空白）', () => {
-    expect(getSessionDisplayName({ ...base, displayName: ' 我的会话 ', autoName: '自动名' })).toBe('我的会话');
+    expect(getSessionDisplayName({ ...base, displayName: ' 我的会话 ', autoName: '自动名' })).toBe(
+      '我的会话',
+    );
   });
 
   it('getSessionDisplayName：displayName 空白时回退 autoName', () => {
-    expect(getSessionDisplayName({ ...base, displayName: '   ', autoName: '自动名' })).toBe('自动名');
+    expect(getSessionDisplayName({ ...base, displayName: '   ', autoName: '自动名' })).toBe(
+      '自动名',
+    );
   });
 
   it('getSessionDisplayName：仅 autoName 时用 autoName', () => {

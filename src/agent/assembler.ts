@@ -97,7 +97,9 @@ export function buildSystemPromptPrefix(
   locale?: string,
   workProjectionContext?: string,
 ): string {
-  const systemPrefixParts = [rolePackPrompt, globalSkillList, workProjectionContext].filter(Boolean);
+  const systemPrefixParts = [rolePackPrompt, globalSkillList, workProjectionContext].filter(
+    Boolean,
+  );
   const now = new Date();
   const timeStr = now.toLocaleString(locale ?? AGENT_CONSTANTS.DEFAULT_LOCALE, {
     year: 'numeric',
@@ -415,7 +417,10 @@ function wireRuntimeCallbacks(
       // 分发归位 SessionManager.writePlan（计划写入口 SSOT，可被单测直接覆盖）
       const newPlan = sessionManager.writePlan(mode, items);
       return `任务表已更新（${mode}），当前共 ${newPlan.length} 个任务项：\n${newPlan
-        .map((s) => `  - [${s.id.slice(0, 8)}] ${s.description}${s.rolePack ? `（角色：${s.rolePack}）` : ''}`)
+        .map(
+          (s) =>
+            `  - [${s.id.slice(0, 8)}] ${s.description}${s.rolePack ? `（角色：${s.rolePack}）` : ''}`,
+        )
         .join('\n')}`;
     },
     updatePlanItem: (planItemId, status) => {
@@ -677,9 +682,13 @@ export async function assembleComponents(
   // 作品投影登记/更新 → 广播 workProjectionGenerated 事件（宿主可展示通知）
   // 投影落项目级目录（pctx.memoraDir/work-projections.json）而非记忆库：随项目隔离，换项目即消失（记忆系统纯化）
   // 作品投影 = 用户主动触发的极简索引（JSON 单文件），AI 按需 read_file 读取原文
-  const workProjection = new WorkProjectionManager(pctx.memoraDir, (sourcePath, description) => {
-    hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary: description });
-  }, projectPath);
+  const workProjection = new WorkProjectionManager(
+    pctx.memoraDir,
+    (sourcePath, description) => {
+      hooks?.emit(AGENT_EVENTS.workProjectionGenerated, { sourcePath, summary: description });
+    },
+    projectPath,
+  );
 
   const toolExec = new ToolExecutor(
     projectPath,

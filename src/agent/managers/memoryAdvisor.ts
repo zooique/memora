@@ -148,13 +148,13 @@ export class MemoryAdvisor {
       const count = memories.length;
 
       // 最近访问时间（取该 source 中最新 accessedAt）
-      const latestAccess = memories
-        .map((m) => new Date(m.accessedAt).getTime())
-        .filter((t) => !isNaN(t))
-        .sort((a, b) => b - a)[0] ?? 0;
-      const daysSinceLastAccess = latestAccess > 0
-        ? (Date.now() - latestAccess) / ONE_DAY_MS
-        : Infinity;
+      const latestAccess =
+        memories
+          .map((m) => new Date(m.accessedAt).getTime())
+          .filter((t) => !isNaN(t))
+          .sort((a, b) => b - a)[0] ?? 0;
+      const daysSinceLastAccess =
+        latestAccess > 0 ? (Date.now() - latestAccess) / ONE_DAY_MS : Infinity;
 
       entries.push({
         source,
@@ -178,10 +178,7 @@ export class MemoryAdvisor {
    * relevance 为纯时效（recency）
    */
   suggest(query?: string, options: SuggestOptions = {}): SuggestHit[] {
-    const {
-      limit = 5,
-      excludeSources = [...DEFAULT_RECALL_EXCLUDE_SOURCES],
-    } = options;
+    const { limit = 5, excludeSources = [...DEFAULT_RECALL_EXCLUDE_SOURCES] } = options;
 
     const now = Date.now();
 
@@ -215,7 +212,8 @@ export class MemoryAdvisor {
 
     if (candidates.size === 0) return [];
 
-    const scored: Array<{ memory: Memory; searchHit: boolean; relevance: number; reason: string }> = [];
+    const scored: Array<{ memory: Memory; searchHit: boolean; relevance: number; reason: string }> =
+      [];
 
     for (const { memory, searchHit } of candidates.values()) {
       // 时效性分：窗口内线性衰减，超过窗口归零；score 退役后 relevance 即纯时效
@@ -368,7 +366,11 @@ export class MemoryAdvisor {
    * 调用 LLM 判断两条记忆是否冲突：结构化 JSON 输出（hasConflict+conflictDescription+recommendation+reason）。
    * 流式累积/解析/异常封装委托 llmJudgeHelper.judgeWithLlm；失败抛 MemoraError 由调用方捕获跳过。
    */
-  private async judgeConflict(memoryA: Memory, memoryB: Memory, signal?: AbortSignal): Promise<ConflictVerdict> {
+  private async judgeConflict(
+    memoryA: Memory,
+    memoryB: Memory,
+    signal?: AbortSignal,
+  ): Promise<ConflictVerdict> {
     const messages = buildConflictMessages(memoryA, memoryB);
     const parsed = await judgeWithLlm<{
       hasConflict?: boolean;
@@ -391,7 +393,8 @@ export class MemoryAdvisor {
       memoryA,
       memoryB,
       hasConflict: parsed.hasConflict === true,
-      conflictDescription: typeof parsed.conflictDescription === 'string' ? parsed.conflictDescription : undefined,
+      conflictDescription:
+        typeof parsed.conflictDescription === 'string' ? parsed.conflictDescription : undefined,
       recommendation,
       reason: typeof parsed.reason === 'string' ? parsed.reason : '(LLM 未提供理由)',
     };
@@ -402,12 +405,14 @@ export class MemoryAdvisor {
 
 /** 构建冲突判断的 LLM 消息：system 定义冲突规则 + user 携带两条记忆内容预览，few-shot 降误判率 */
 function buildConflictMessages(memoryA: Memory, memoryB: Memory): Message[] {
-  const contentA = memoryA.content.length > CONFLICT_CONTENT_PREVIEW_LEN
-    ? truncate(memoryA.content, CONFLICT_CONTENT_PREVIEW_LEN, '…[截断]')
-    : memoryA.content;
-  const contentB = memoryB.content.length > CONFLICT_CONTENT_PREVIEW_LEN
-    ? truncate(memoryB.content, CONFLICT_CONTENT_PREVIEW_LEN, '…[截断]')
-    : memoryB.content;
+  const contentA =
+    memoryA.content.length > CONFLICT_CONTENT_PREVIEW_LEN
+      ? truncate(memoryA.content, CONFLICT_CONTENT_PREVIEW_LEN, '…[截断]')
+      : memoryA.content;
+  const contentB =
+    memoryB.content.length > CONFLICT_CONTENT_PREVIEW_LEN
+      ? truncate(memoryB.content, CONFLICT_CONTENT_PREVIEW_LEN, '…[截断]')
+      : memoryB.content;
 
   return [
     {

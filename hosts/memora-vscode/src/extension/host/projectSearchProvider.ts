@@ -85,13 +85,22 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
       // （实证：LLM search_project "task-table" 命中 .memora/task-table.md 后继续沿用 write_file）。
       const ignoreGlob = IGNORED_DIR_NAMES.map((d) => `**/${d}/**`).join(',');
       const exclude = options?.exclude ? `${ignoreGlob},${options.exclude}` : ignoreGlob;
-      const maxResults = Math.min(options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN, PROJECT_SEARCH_RESULT_MAX_LEN);
+      const maxResults = Math.min(
+        options?.maxResults ?? PROJECT_SEARCH_RESULT_MAX_LEN,
+        PROJECT_SEARCH_RESULT_MAX_LEN,
+      );
       // 相对路径化 + 截断判定（name 模式截断仅 results 主因：findFiles 达 maxResults 上限）
-      const toResult = (matches: ProjectFileMatch[], relaxed: boolean, termsUsed?: string[]): ProjectFileSearchResult => ({
+      const toResult = (
+        matches: ProjectFileMatch[],
+        relaxed: boolean,
+        termsUsed?: string[],
+      ): ProjectFileSearchResult => ({
         matches,
         ...(relaxed ? { relaxed: true } : {}),
         ...(termsUsed && termsUsed.length > 0 ? { termsUsed: [...termsUsed] } : {}),
-        ...(matches.length >= maxResults ? { truncated: true, truncatedBy: 'results' as const } : {}),
+        ...(matches.length >= maxResults
+          ? { truncated: true, truncatedBy: 'results' as const }
+          : {}),
       });
 
       // 第一轮：query 原样作 glob 精确匹配（保会写 glob 的用法）
@@ -111,7 +120,11 @@ export function createVscodeProjectSearchProvider(root: string): IProjectSearchP
         // 词含 glob 元字符会破坏 `**/*{term}*/` 的 glob 语义，跳过该词（可信：不强行放宽）
         if (/[*?{}[\]]/.test(term)) continue;
         // 名称子串 OR：任一词在路径中出现即命中（相对项目根、正斜杠）
-        const uris = await vscode.workspace.findFiles(`**/*${term}*/`, exclude, maxResults - seen.size);
+        const uris = await vscode.workspace.findFiles(
+          `**/*${term}*/`,
+          exclude,
+          maxResults - seen.size,
+        );
         for (const u of uris) {
           const rel = toProjectRelative(root, u.fsPath);
           if (!seen.has(rel)) {
@@ -361,7 +374,9 @@ async function matchFileText(
       return;
     }
     // 预览片段：去控制字符 + 限长（防不可见字符/超长行注入上下文）
-    const preview = line.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '').slice(0, 200);
+    const preview = line
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+      .slice(0, 200);
     matches.push({ path: rel, line: i + 1, preview });
     hits++;
     if (matches.length >= maxResults) return;
@@ -376,8 +391,7 @@ async function matchFileText(
  * 「不得静默」要防的病根（调用方把"这部分没搜"读成"项目里没有"）。
  */
 type LoadedText =
-  | { kind: 'text'; size: number; content: string; partial: boolean }
-  | { kind: 'unreadable' };
+  { kind: 'text'; size: number; content: string; partial: boolean } | { kind: 'unreadable' };
 
 /**
  * 读取文件文本（**部分读** + mtime 快照缓存）

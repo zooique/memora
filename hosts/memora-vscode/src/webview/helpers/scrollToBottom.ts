@@ -37,7 +37,8 @@ function isSticky(container: HTMLElement): boolean {
  * @returns 是否吸底（便于调用方据此显隐「一键到底」按钮）
  */
 export function trackScroll(container: HTMLElement): boolean {
-  const pinned = container.scrollHeight - container.scrollTop - container.clientHeight <= STICKY_THRESHOLD;
+  const pinned =
+    container.scrollHeight - container.scrollTop - container.clientHeight <= STICKY_THRESHOLD;
   stickyMap.set(container, pinned);
   return pinned;
 }

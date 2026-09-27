@@ -4,7 +4,11 @@
  * 覆盖：符号链接逃逸 + 包管理器凭证 + 系统目录覆盖
  */
 import { describe, expect, it, beforeEach } from 'vitest';
-import { SecurityGuard, type WriteConfirmationInfo, type AuditEvent } from '@/security/pathGuard.js';
+import {
+  SecurityGuard,
+  type WriteConfirmationInfo,
+  type AuditEvent,
+} from '@/security/pathGuard.js';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { mkdtempSync, symlinkSync, writeFileSync } from 'node:fs';
@@ -469,12 +473,10 @@ describe('SecurityGuard · 写入二次确认', () => {
       received.push(info);
       return true;
     });
-    await guard.requestWriteConfirmation(
-      join(projectPath, 'out.txt'),
-      'write_file',
-      '测试描述',
-      { beforeContent: '旧内容', afterContent: '新内容' },
-    );
+    await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file', '测试描述', {
+      beforeContent: '旧内容',
+      afterContent: '新内容',
+    });
     expect(received).toHaveLength(1);
     expect(received[0]!.beforeContent).toBe('旧内容');
     expect(received[0]!.afterContent).toBe('新内容');
@@ -487,12 +489,10 @@ describe('SecurityGuard · 写入二次确认', () => {
       received.push(info);
       return true;
     });
-    await guard.requestWriteConfirmation(
-      join(projectPath, 'new.txt'),
-      'write_file',
-      undefined,
-      { beforeContent: null, afterContent: '新文件内容' },
-    );
+    await guard.requestWriteConfirmation(join(projectPath, 'new.txt'), 'write_file', undefined, {
+      beforeContent: null,
+      afterContent: '新文件内容',
+    });
     expect(received[0]!.beforeContent).toBeNull();
     expect(received[0]!.afterContent).toBe('新文件内容');
   });
@@ -506,12 +506,10 @@ describe('SecurityGuard · 写入二次确认', () => {
     });
     // 构造 20KB 内容（超过 10KB 上限）
     const bigContent = 'A'.repeat(20_000);
-    await guard.requestWriteConfirmation(
-      join(projectPath, 'big.txt'),
-      'write_file',
-      undefined,
-      { beforeContent: bigContent, afterContent: bigContent },
-    );
+    await guard.requestWriteConfirmation(join(projectPath, 'big.txt'), 'write_file', undefined, {
+      beforeContent: bigContent,
+      afterContent: bigContent,
+    });
     const before = received[0]!.beforeContent!;
     const after = received[0]!.afterContent!;
     // 截断后应小于原始 20KB
@@ -530,11 +528,7 @@ describe('SecurityGuard · 写入二次确认', () => {
       received.push(info);
       return true;
     });
-    await guard.requestWriteConfirmation(
-      join(projectPath, 'out.txt'),
-      'write_file',
-      '描述',
-    );
+    await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file', '描述');
     expect(received[0]!.beforeContent).toBeUndefined();
     expect(received[0]!.afterContent).toBeUndefined();
   });
@@ -553,7 +547,10 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
     // 默认不弹窗：脚本执行自动放行，审计仍记录
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner');
     const audits = collectAudits(guard);
-    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
+    const ok = await guard.confirmScriptRun(
+      join(projectPath, 'scripts', 'test.py'),
+      'run_project_script',
+    );
     expect(ok).toBe(true);
 
     const last = audits[audits.length - 1]!;
@@ -565,7 +562,10 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
     // confirmScripts 打开但宿主没接确认 UI → 拒绝（安全优先，审计标注 fail-closed）
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
     const audits = collectAudits(guard);
-    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
+    const ok = await guard.confirmScriptRun(
+      join(projectPath, 'scripts', 'test.py'),
+      'run_project_script',
+    );
     expect(ok).toBe(false);
 
     const last = audits[audits.length - 1]!;
@@ -577,7 +577,10 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
   it('guest 模式（confirmScripts 默认 false 也强制确认）应 fail-closed 拒绝', async () => {
     // guest 对脚本执行同样强制确认，且独立于 confirmScripts 开关
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'guest');
-    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script');
+    const ok = await guard.confirmScriptRun(
+      join(projectPath, 'scripts', 'test.py'),
+      'run_project_script',
+    );
     expect(ok).toBe(false);
   });
 
@@ -590,7 +593,11 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
       expect(info.targetPath).toContain('test.py');
       return true;
     });
-    const ok = await guard.confirmScriptRun(join(projectPath, 'scripts', 'test.py'), 'run_project_script', '运行项目脚本 scripts/test.py');
+    const ok = await guard.confirmScriptRun(
+      join(projectPath, 'scripts', 'test.py'),
+      'run_project_script',
+      '运行项目脚本 scripts/test.py',
+    );
     expect(ok).toBe(true);
 
     const last = audits[audits.length - 1]!;
@@ -601,10 +608,16 @@ describe('SecurityGuard · 脚本执行确认（confirmScriptRun，P1① 补锁�
   it('判据独立：confirmScripts 不影响写入确认（confirmWrites 仍为 false 时写自动批准）', async () => {
     // SSOT 收口验证：confirmGate 两入口判据互不串扰——开脚本确认不拖累写确认
     const guard = new SecurityGuard(projectPath, dataDir, [], false, 'owner', true);
-    const scriptConfirmed = await guard.confirmScriptRun(join(projectPath, 'scripts', 'run.sh'), 'run_project_script');
+    const scriptConfirmed = await guard.confirmScriptRun(
+      join(projectPath, 'scripts', 'run.sh'),
+      'run_project_script',
+    );
     expect(scriptConfirmed).toBe(false); // 脚本需确认但无 handler → 拒绝
 
-    const writeOk = await guard.requestWriteConfirmation(join(projectPath, 'out.txt'), 'write_file');
+    const writeOk = await guard.requestWriteConfirmation(
+      join(projectPath, 'out.txt'),
+      'write_file',
+    );
     expect(writeOk).toBe(true); // 写入判据独立：confirmWrites=false → 仍自动批准
   });
 });

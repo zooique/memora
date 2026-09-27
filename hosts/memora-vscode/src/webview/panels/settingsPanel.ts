@@ -25,9 +25,19 @@ import type {
   WebviewToExtensionMessage,
 } from '../../shared/protocol.js';
 import { capabilityLabel } from '../helpers/capabilityLabels.js';
-import { findUnmatchedDisabled, listVisibleSkills, resolveSkill } from '../../extension/host/skillAggregation.js';
+import {
+  findUnmatchedDisabled,
+  listVisibleSkills,
+  resolveSkill,
+} from '../../extension/host/skillAggregation.js';
 import { settingsStyles } from '../styles/settingsStyles.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../../shared/constants.js';
+import {
+  ACTIVE_ROLE_PACK_KEY,
+  CONFIRM_WRITES_KEY,
+  CONFIRM_SCRIPTS_KEY,
+  ROLE_PACK_TEAMS_KEY,
+  MEMORY_RECYCLE_RETENTION_DAYS,
+} from '../../shared/constants.js';
 // 内核常量（宿主不复制字面量，SSOT 单一来源）：
 //   BUILTIN_FALLBACK_PACK — 兜底契约包名，随内核包分发，宿主 UI 禁删标记；
 //   MAX_TEAM_MEMBERS      — 小组会议组员上限，本处用于保存校验，并随 roles_loaded 下发给 webview。
@@ -168,7 +178,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         // 缺省回退通用话术。SSOT：提示词真理源在角色包 meta（内核透传），宿主仅兜底，
         // 不引入跨包引用（角色包独立自洽，插卡解耦）。
         const fallback = `继续以「${displayName}」的视角处理以上任务`;
-        this._chatProvider?.prefillInput(meta?.handoffPrompt?.trim() ? meta.handoffPrompt : fallback);
+        this._chatProvider?.prefillInput(
+          meta?.handoffPrompt?.trim() ? meta.handoffPrompt : fallback,
+        );
       }
       return;
     }
@@ -405,7 +417,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
    * rolePackSwitchLocked：**触发**锁定的那一次切换弹 info 提示。
    * 注意该次切换本身是成功的（内核 activate 返回 true），被锁期间的后续切换不发射本事件。
    */
-  private readonly onRolePackSwitchLocked = (info: { reason: string; lockedSeconds: number }): void => {
+  private readonly onRolePackSwitchLocked = (info: {
+    reason: string;
+    lockedSeconds: number;
+  }): void => {
     this.post({
       type: 'notice',
       level: 'info',
@@ -429,7 +444,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       // 直接 return false 且不发射任何事件——故「未收到事件」不能推断为"角色包不存在"。
       const lock = agent.getRolePackSwitchLockStatus();
       if (lock.locked) {
-        const remain = lock.unlockAt === null ? null : Math.max(0, Math.ceil((lock.unlockAt - Date.now()) / 1000));
+        const remain =
+          lock.unlockAt === null
+            ? null
+            : Math.max(0, Math.ceil((lock.unlockAt - Date.now()) / 1000));
         this.post({
           type: 'notice',
           level: 'info',
@@ -461,12 +479,14 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const deduped = [...new Set(members)];
     // 校验（全部分支在此收口，失败均带可直接展示的原因，调用方不再猜测）：
     // 组长存在、组员存在、组员非空且不重复、组长与组员身份互斥、组员数量不超上限
-    if (!validPacks.has(leader)) return { ok: false, reason: `小组保存失败：组长「${leader}」不存在` };
+    if (!validPacks.has(leader))
+      return { ok: false, reason: `小组保存失败：组长「${leader}」不存在` };
     if (deduped.length === 0) return { ok: false, reason: '小组保存失败：至少选择 1 名组员' };
     if (deduped.some((m) => !validPacks.has(m))) {
       return { ok: false, reason: '小组保存失败：存在不存在的组员角色包' };
     }
-    if (deduped.includes(leader)) return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
+    if (deduped.includes(leader))
+      return { ok: false, reason: '小组保存失败：组长不能同时是自己的组员' };
     // 5 人组上限（队长 1 + 组员 ≤ MAX_TEAM_MEMBERS，组队功能用户约定）：超限拒绝保存
     if (deduped.length > MAX_TEAM_MEMBERS) {
       return {
@@ -475,7 +495,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       };
     }
     // 组长身份唯一：同一组长不允许两处建组
-    const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const teams =
+      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     const others = teams.filter((t) => t.leader !== leader);
     const next = [...others, { leader, members: deduped }];
     await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
@@ -487,7 +508,8 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   /** 删除角色包组（会议名单）：持久化移除 + 热更新内核组数据。 */
   private async deleteRolePackTeam(leader: string): Promise<void> {
     const agent = await this.ensureAgent();
-    const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const teams =
+      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     const next = teams.filter((t) => t.leader !== leader);
     await this._globalState?.update(ROLE_PACK_TEAMS_KEY, next);
     agent?.rolePackManager?.setRolePackTeams(next);
@@ -497,11 +519,18 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
     const agent = await this.ensureAgent();
     const rpm = agent?.rolePackManager;
     if (!rpm) {
-      this.post({ type: 'roles_loaded', packs: [], teams: [], activeName: '', maxTeamMembers: MAX_TEAM_MEMBERS });
+      this.post({
+        type: 'roles_loaded',
+        packs: [],
+        teams: [],
+        activeName: '',
+        maxTeamMembers: MAX_TEAM_MEMBERS,
+      });
       return;
     }
     // 组（会议名单）用户级数据：组员仅作小组会议参与者
-    const teams = this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const teams =
+      this._globalState?.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     // 组员名单索引：角色包 → 引用它的组长集合（供「小组会议用」标注）
     const memberOf = new Map<string, string[]>();
     for (const team of teams) {
@@ -519,7 +548,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         // 来源层判定：用户目录命中 → user，否则内置（内置优先语义；
         // 与技能 sourceOf 同思路，用 filePath 前缀，configDir 与用户目录天然不重叠）
         const source: 'builtin' | 'user' =
-          this._userRolePacksDir && pack?.filePath?.startsWith(this._userRolePacksDir) ? 'user' : 'builtin';
+          this._userRolePacksDir && pack?.filePath?.startsWith(this._userRolePacksDir)
+            ? 'user'
+            : 'builtin';
         // 提取策略指示器：从内核完整策略中提炼 UI 友好的摘要
         const strategy = pack?.strategy;
         // 温度分组：基于 temperature 值动态计算
@@ -557,7 +588,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
           teamMembers: memberOf.get(m.name),
           isFallback: m.name === BUILTIN_FALLBACK_PACK,
           // 健康徽章：内核 validateManifest 全量 issues 透传给 webview（error/warning 均渲染）
-          issues: (pack?.validationIssues ?? []).map((i) => ({ level: i.severity, message: i.message })),
+          issues: (pack?.validationIssues ?? []).map((i) => ({
+            level: i.severity,
+            message: i.message,
+          })),
         };
       });
     const activeName = rpm.activeName ?? (packs.length > 0 ? packs[0]!.name : '');
@@ -594,7 +628,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         agent.setBackgroundProvider(background ?? null);
       }
       await this.loadConfig();
-      this.post({ type: 'notice', level: 'info', message: name ? `后台模型已切换为「${name}」` : '后台模型已回退（与实时对话相同）' });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: name ? `后台模型已切换为「${name}」` : '后台模型已回退（与实时对话相同）',
+      });
     } catch (err) {
       this.post({
         type: 'notice',
@@ -725,7 +763,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private async purgeMemory(id: string): Promise<void> {
     const memory = await this.ensureMemory();
     if (!memory) {
-      this.post({ type: 'memory_purged', ok: false, id, message: 'Agent 未就绪，无法永久删除记忆' });
+      this.post({
+        type: 'memory_purged',
+        ok: false,
+        id,
+        message: 'Agent 未就绪，无法永久删除记忆',
+      });
       return;
     }
     const choice = await vscode.window.showWarningMessage(
@@ -759,7 +802,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private async clearRecycle(): Promise<void> {
     const memory = await this.ensureMemory();
     if (!memory) {
-      this.post({ type: 'memory_recycle_cleared', ok: false, count: 0, message: 'Agent 未就绪，无法清空回收站' });
+      this.post({
+        type: 'memory_recycle_cleared',
+        ok: false,
+        count: 0,
+        message: 'Agent 未就绪，无法清空回收站',
+      });
       return;
     }
     // 空回收站：无需确认，直接回报 0
@@ -888,7 +936,12 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
   private async runCleanup(): Promise<void> {
     const agent = await this.ensureAgent();
     if (!agent?.memory) {
-      this.post({ type: 'governance_result', ok: false, message: 'Agent 未就绪，无法清理记忆', action: 'cleanup' });
+      this.post({
+        type: 'governance_result',
+        ok: false,
+        message: 'Agent 未就绪，无法清理记忆',
+        action: 'cleanup',
+      });
       return;
     }
     const confirmed = await vscode.window.showWarningMessage(
@@ -1009,7 +1062,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       await vscode.workspace
         .getConfiguration('memora')
         .update('disabledSkills', next, vscode.ConfigurationTarget.Global);
-      this.post({ type: 'notice', level: 'info', message: `已${disabled ? '禁用' : '启用'}技能「${name}」` });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: `已${disabled ? '禁用' : '启用'}技能「${name}」`,
+      });
     } catch (err) {
       this.post({
         type: 'notice',
@@ -1081,11 +1138,17 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       }
       // 3. 推送最新状态给 webview（脚本确认沿用持久值，保持双开关状态一致）
       const scriptsEnabled = this._globalState?.get<boolean>(CONFIRM_SCRIPTS_KEY) ?? false;
-      this.post({ type: 'security_status', confirmWrites: enabled, confirmScripts: scriptsEnabled });
+      this.post({
+        type: 'security_status',
+        confirmWrites: enabled,
+        confirmScripts: scriptsEnabled,
+      });
       this.post({
         type: 'notice',
         level: 'info',
-        message: enabled ? '已开启写入二次确认（写文件前将弹出审批卡）' : '已关闭写入二次确认（写文件自动批准）',
+        message: enabled
+          ? '已开启写入二次确认（写文件前将弹出审批卡）'
+          : '已关闭写入二次确认（写文件自动批准）',
       });
     } catch (err) {
       this.post({
@@ -1117,7 +1180,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'info',
-        message: enabled ? '已开启脚本执行二次确认（运行脚本/代码前将弹出审批卡）' : '已关闭脚本执行二次确认（脚本自动运行）',
+        message: enabled
+          ? '已开启脚本执行二次确认（运行脚本/代码前将弹出审批卡）'
+          : '已关闭脚本执行二次确认（脚本自动运行）',
       });
     } catch (err) {
       this.post({
@@ -1165,7 +1230,10 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
       this.post({
         type: 'notice',
         level: 'info',
-        message: paths.length > 0 ? `已更新允许路径白名单（${paths.length} 项）` : '已清空额外允许路径（仅保留项目目录）',
+        message:
+          paths.length > 0
+            ? `已更新允许路径白名单（${paths.length} 项）`
+            : '已清空额外允许路径（仅保留项目目录）',
       });
     } catch (err) {
       this.post({
@@ -1201,7 +1269,11 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
         .getConfiguration('memora')
         .update('searchEngine', engine, vscode.ConfigurationTarget.Global);
       this.post({ type: 'search_engine_status', engine });
-      this.post({ type: 'notice', level: 'info', message: `已切换网页搜索引擎：${engine}（重载窗口后生效）` });
+      this.post({
+        type: 'notice',
+        level: 'info',
+        message: `已切换网页搜索引擎：${engine}（重载窗口后生效）`,
+      });
     } catch (err) {
       this.post({
         type: 'notice',
@@ -1213,7 +1285,9 @@ export class MemoraSettingsViewProvider implements vscode.WebviewViewProvider {
 
   /** 加载并推送当前搜索引擎选择（settings 视图 ready 时调用） */
   private loadSearchEngineStatus(): void {
-    const engine = vscode.workspace.getConfiguration('memora').get<SearchEngineSetting>('searchEngine', 'auto');
+    const engine = vscode.workspace
+      .getConfiguration('memora')
+      .get<SearchEngineSetting>('searchEngine', 'auto');
     this.post({ type: 'search_engine_status', engine });
   }
 

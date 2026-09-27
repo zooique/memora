@@ -104,11 +104,7 @@ export class GCService {
   private readonly config: GCConfig;
   private timer: ReturnType<typeof setInterval> | null = null;
 
-  constructor(
-    roundStore: IRoundStore,
-    memoryStorage: IMemoryStorage,
-    config?: Partial<GCConfig>,
-  ) {
+  constructor(roundStore: IRoundStore, memoryStorage: IMemoryStorage, config?: Partial<GCConfig>) {
     this.roundStore = roundStore;
     this.memoryStorage = memoryStorage;
     this.config = {
@@ -161,10 +157,7 @@ export class GCService {
       result.orphaned = orphanedRounds.length;
 
       if (this.config.verbose) {
-        logger.info(
-          { total: result.scanned, orphaned: result.orphaned },
-          'GC: 发现孤立问答闭环',
-        );
+        logger.info({ total: result.scanned, orphaned: result.orphaned }, 'GC: 发现孤立问答闭环');
       }
 
       if (orphanedRounds.length === 0) {
@@ -304,15 +297,11 @@ export function createDefaultGCService(
   memoryStorage: IMemoryStorage,
   shouldSkip?: () => boolean,
 ): GCService {
-  return new GCService(
-    roundStore,
-    memoryStorage,
-    {
-      minAgeMs: 5 * 60 * 1000, // 5 分钟最小存活时间
-      batchSize: 100,
-      cleanUpMemory: true,
-      verbose: false,
-      shouldSkip,
-    },
-  );
+  return new GCService(roundStore, memoryStorage, {
+    minAgeMs: 5 * 60 * 1000, // 5 分钟最小存活时间
+    batchSize: 100,
+    cleanUpMemory: true,
+    verbose: false,
+    shouldSkip,
+  });
 }

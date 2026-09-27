@@ -47,7 +47,6 @@ function createConfigWithPlaceholders(): Config {
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — Providers 映射表', () => {
-
   beforeEach(() => {
     delete process.env.TEST_PROVIDER1_KEY;
     delete process.env.TEST_PROVIDER1_URL;
@@ -101,7 +100,7 @@ describe('expandEnvVars — Providers 映射表', () => {
         ...createConfigWithPlaceholders().llm,
         providers: undefined,
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers).toBeUndefined();
   });
@@ -121,7 +120,7 @@ describe('expandEnvVars — Providers 映射表', () => {
           },
         },
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.onlyKey!.apiKey).toBe('sk-key');
     expect(result.llm.providers!.onlyKey!.baseUrl).toBeUndefined();
@@ -133,7 +132,6 @@ describe('expandEnvVars — Providers 映射表', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('expandEnvVars — 边界场景', () => {
-
   it('providers 中环境变量不存在时替换为空字符串', () => {
     delete process.env.NONEXISTENT_VAR_XYZ;
     const config: Config = {
@@ -149,7 +147,7 @@ describe('expandEnvVars — 边界场景', () => {
           },
         },
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('');
   });
@@ -168,7 +166,7 @@ describe('expandEnvVars — 边界场景', () => {
           },
         },
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBeUndefined();
   });
@@ -189,7 +187,7 @@ describe('expandEnvVars — 边界场景', () => {
           },
         },
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('aaa:bbb');
     delete process.env.VAR_A;
@@ -210,7 +208,7 @@ describe('expandEnvVars — 边界场景', () => {
           },
         },
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('hardcoded-key-123');
     expect(result.llm.providers!.only!.baseUrl).toBe('https://fixed.url.com');
@@ -230,7 +228,7 @@ describe('expandEnvVars — 边界场景', () => {
           },
         },
       },
-      };
+    };
     const result = expandEnvVars(config);
     expect(result.llm.providers!.only!.apiKey).toBe('');
     expect(result.llm.providers!.only!.baseUrl).toBe('');
@@ -242,7 +240,7 @@ describe('expandEnvVars — 边界场景', () => {
       llm: {
         ...createConfigWithPlaceholders().llm,
       },
-      };
+    };
     const originalApiKey = config.llm.providers!['provider1']!.apiKey;
     expandEnvVars(config);
     // 原对象不应被修改

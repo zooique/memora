@@ -162,7 +162,10 @@ describe('validateManifest：键名合法性', () => {
 describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义"）', () => {
   it('summaryFocus 合法非空字符串 → 通过（结构化保真提炼键）', () => {
     const result = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: '高价值代码片段' } },
+      strategy: {
+        ...validStrategy,
+        prepare: { ...validStrategy.prepare, summaryFocus: '高价值代码片段' },
+      },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(0);
     expect(findByCode(result.issues, 'UNKNOWN_STRATEGY_KEY')).toHaveLength(0);
@@ -199,7 +202,10 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
 
   it('askOn 含非法枚举元素 → error', () => {
     const result = validate({
-      strategy: { ...validStrategy, global: { ...validStrategy.global, askOn: ['ambiguity', 'chat'] } },
+      strategy: {
+        ...validStrategy,
+        global: { ...validStrategy.global, askOn: ['ambiguity', 'chat'] },
+      },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
@@ -258,7 +264,10 @@ describe('validateManifest：L2 策略取值越界（角色只"选择"不"定义
 
   it('summaryFocus 超长（> MAX_SUMMARY_FOCUS_LENGTH）→ error（防巨型注入）', () => {
     const result = validate({
-      strategy: { ...validStrategy, prepare: { ...validStrategy.prepare, summaryFocus: 'a'.repeat(501) } },
+      strategy: {
+        ...validStrategy,
+        prepare: { ...validStrategy.prepare, summaryFocus: 'a'.repeat(501) },
+      },
     });
     expect(findByCode(result.issues, 'INVALID_STRATEGY_VALUE')).toHaveLength(1);
   });
@@ -322,15 +331,8 @@ describe('validateManifest：skills 注册（对象数组）', () => {
 
   it('多个技能项（对象数组）均可注册', () => {
     const result = validate({
-      skills: [
-        { file: 'skills/a.md' },
-        { file: 'skills/b.md' },
-        { file: 'skills/c.md' },
-      ],
-      capabilities: [
-        { capability: 'file:write' },
-        { capability: 'web:search' },
-      ],
+      skills: [{ file: 'skills/a.md' }, { file: 'skills/b.md' }, { file: 'skills/c.md' }],
+      capabilities: [{ capability: 'file:write' }, { capability: 'web:search' }],
     });
     expect(result.valid).toBe(true);
   });

@@ -54,18 +54,14 @@ export function createProviderFromConfig(
   // baseUrl 和 model 是内核的直接需求，不做过多的回退逻辑
   const resolvedBaseUrl = (baseUrl || '').replace(/\/chat\/completions\/?$/, '');
   if (!resolvedBaseUrl) {
-    throw configError(
-      'LLM baseUrl 未配置',
-      `provider "${name}" 缺少 baseUrl`,
-      ['在宿主层填充 baseUrl（如 "https://api.xiaomimimo.com/v1"）'],
-    );
+    throw configError('LLM baseUrl 未配置', `provider "${name}" 缺少 baseUrl`, [
+      '在宿主层填充 baseUrl（如 "https://api.xiaomimimo.com/v1"）',
+    ]);
   }
   if (!model) {
-    throw configError(
-      'LLM model 未配置',
-      `provider "${name}" 缺少 model`,
-      ['在宿主层填充 model（如 "deepseek-chat"）'],
-    );
+    throw configError('LLM model 未配置', `provider "${name}" 缺少 model`, [
+      '在宿主层填充 model（如 "deepseek-chat"）',
+    ]);
   }
 
   logger.info(
@@ -92,11 +88,9 @@ export function createLlmProvider(config: Config): LlmProvider {
   const { llm } = config;
 
   if (!llm.providers || Object.keys(llm.providers).length === 0) {
-    throw configError(
-      'LLM providers 未配置',
-      'llm.providers 映射表为空或未定义',
-      ['在配置文件中配置 llm.providers（如 deepseek/openai 等）'],
-    );
+    throw configError('LLM providers 未配置', 'llm.providers 映射表为空或未定义', [
+      '在配置文件中配置 llm.providers（如 deepseek/openai 等）',
+    ]);
   }
 
   const active = llm.active ?? Object.keys(llm.providers)[0] ?? '';

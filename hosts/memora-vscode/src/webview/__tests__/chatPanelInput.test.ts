@@ -42,7 +42,11 @@ function inputAgentStub() {
   const interject = vi.fn();
   const answerQuestion = vi.fn();
   // 显式参数类型：mock.calls 元组元素可索引（TS2493：无参推导为空 tuple）
-  const resumeExecution = vi.fn(async function* (_text?: string, _signal?: AbortSignal, _kind?: string) {
+  const resumeExecution = vi.fn(async function* (
+    _text?: string,
+    _signal?: AbortSignal,
+    _kind?: string,
+  ) {
     // 空流：立即结束，测试只验证路由入参，不关心流内容
   });
   const chat = vi.fn(async function* (_input?: string, _signal?: AbortSignal) {});
@@ -107,7 +111,12 @@ interface InputCast {
   _pendingQuestions: PendingQuestionDto[];
   _currentSessionId: string;
   _agent: Agent;
-  handleInput(msg: { kind: 'send' | 'answer' | 'resume'; text?: string; answers?: string[]; skillName?: string }): Promise<void>;
+  handleInput(msg: {
+    kind: 'send' | 'answer' | 'resume';
+    text?: string;
+    answers?: string[];
+    skillName?: string;
+  }): Promise<void>;
 }
 
 /** 标准装配：真实 agent 桩 + 有效会话 id（handleInput 的两个前置守卫通过） */
@@ -148,7 +157,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     h.cast._streaming = false;
     h.cast._abortController = undefined;
     h.cast._pendingQuestions = [{ slot: 'q1', question: '继续吗？' }];
-    h.cast._turnState = { phase: 'waiting', reason: 'ask', questions: [{ slot: 'q1', question: '继续吗？' }] };
+    h.cast._turnState = {
+      phase: 'waiting',
+      reason: 'ask',
+      questions: [{ slot: 'q1', question: '继续吗？' }],
+    };
 
     await h.cast.handleInput({ kind: 'send', text: '补充一点' });
 
@@ -162,7 +175,11 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
   it('waiting(ask) 态 answer → answerQuestion 回填 + resumeExecution("question-answer")', async () => {
     const h = setupInput();
     const { answerQuestion, resumeExecution } = mount(h);
-    const question: PendingQuestionDto = { slot: 'q1', question: '继续吗？', options: ['继续', '停止'] };
+    const question: PendingQuestionDto = {
+      slot: 'q1',
+      question: '继续吗？',
+      options: ['继续', '停止'],
+    };
     // 相位：waiting/ask（内核 yield paused → 流已收场，_streaming=false）
     h.cast._streaming = false;
     h.cast._abortController = undefined;
@@ -206,9 +223,10 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     await h.cast.handleInput({ kind: 'answer', answers: ['中文', '长篇'] });
 
     // 透出两行，question 各配其位
-    const qaRows = h.posted.filter(
-      (m) => (m as { kind?: string }).kind === 'question-answer',
-    ) as { text: string; question?: string }[];
+    const qaRows = h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer') as {
+      text: string;
+      question?: string;
+    }[];
     expect(qaRows).toHaveLength(2);
     expect(qaRows[0]).toMatchObject({ text: '中文', question: '语言？' });
     expect(qaRows[1]).toMatchObject({ text: '长篇', question: '篇幅？' });
@@ -230,7 +248,9 @@ describe('M4 输入收口：handleInput 相位路由（R2 单一判据）', () =
     // 内核零入口（不 answerQuestion / 不续跑）、无“你答”上屏
     expect(answerQuestion).not.toHaveBeenCalled();
     expect(resumeExecution).not.toHaveBeenCalled();
-    expect(h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer')).toHaveLength(0);
+    expect(
+      h.posted.filter((m) => (m as { kind?: string }).kind === 'question-answer'),
+    ).toHaveLength(0);
   });
 
   it('错位 resume（idle 相位收继续）→ 静默丢弃', async () => {

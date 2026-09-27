@@ -8,7 +8,12 @@
  * 安全边界（路径遍历、null 字节）必须拒绝。
  */
 import { describe, expect, it } from 'vitest';
-import { escapeLike, escapeLikeSnippet, validateSource, levenshtein } from '@/memory/sourceValidation.js';
+import {
+  escapeLike,
+  escapeLikeSnippet,
+  validateSource,
+  levenshtein,
+} from '@/memory/sourceValidation.js';
 
 describe('escapeLike 工具函数', () => {
   it('应该转义 % 和 _ 通配符', () => {

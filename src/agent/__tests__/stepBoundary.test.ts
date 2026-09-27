@@ -42,7 +42,11 @@ function mockMultiTurnProvider(turns: ChunkItem[][]): LlmProvider {
   } as unknown as LlmProvider;
 }
 
-function toolCall(id: string, name: string, args = '{}'): NonNullable<Message['toolCalls']>[number] {
+function toolCall(
+  id: string,
+  name: string,
+  args = '{}',
+): NonNullable<Message['toolCalls']>[number] {
   return { id, type: 'function', function: { name, arguments: args } };
 }
 
@@ -259,7 +263,9 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
       const lo = Math.min(...positions); // 该 step 首个 thought 位置
       const hi = Math.max(...positions); // 该 step 末个 thought 位置
       const split = chunks.slice(lo, hi + 1).some((c) => c.type === 'plan_item_boundary');
-      expect(split, `step ${stepIndex} 的 thought 流被 plan_item_boundary 打断（桶将重影）`).toBe(false);
+      expect(split, `step ${stepIndex} 的 thought 流被 plan_item_boundary 打断（桶将重影）`).toBe(
+        false,
+      );
     }
   });
 
@@ -300,13 +306,16 @@ describe('AgentLoop · 迭代边界信号（档3 落盘触发）', () => {
     expect(toolEvents.length).toBeGreaterThanOrEqual(4);
     expect(chunks.filter((c) => c.type === 'plan_item_boundary').length).toBeGreaterThan(0);
     expect(
-      chunks.filter((c) => c.type === 'tool_start').every((c) => c.type === 'tool_start' && c.stepIndex !== undefined),
+      chunks
+        .filter((c) => c.type === 'tool_start')
+        .every((c) => c.type === 'tool_start' && c.stepIndex !== undefined),
     ).toBe(true);
 
     // tool_result 经 toolCallId 归属（事实单点、不重复盖章）→ 先建 id→step 映射再按 step 分段
     const callIndex = new Map<string, number>(); // toolCallId → 所属 step 轮内序号
     for (const c of chunks) {
-      if (c.type === 'tool_start' && c.stepIndex !== undefined) callIndex.set(c.toolCallId, c.stepIndex);
+      if (c.type === 'tool_start' && c.stepIndex !== undefined)
+        callIndex.set(c.toolCallId, c.stepIndex);
     }
     const posByStep = new Map<number, number[]>(); // stepIndex → 该 step 各工具事件的 chunk 下标
     chunks.forEach((c, idx) => {

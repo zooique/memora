@@ -11,7 +11,12 @@
  * 生产运行时异常走 `yield { type:'error' }` 事件流（agent.ts），不翻状态机。若要让运行时异常自动翻状态机，需在 yield error 处接线 triggerError（行为变更，需产品决策）。
  * 单实例事件队列串行处理，无并发写路径。
  */
-import type { SessionCheckpoint, StatusTransition, SessionStatus, PauseSource } from '@/agent/types.js';
+import type {
+  SessionCheckpoint,
+  StatusTransition,
+  SessionStatus,
+  PauseSource,
+} from '@/agent/types.js';
 
 /**
  * 会话状态机：管理三态流转确保转换合法且可追溯，实例绑定单会话由 SessionManager 持有。
@@ -56,7 +61,12 @@ export class SessionStateMachine {
   pause(reason: string, source: PauseSource = 'user'): StatusTransition {
     const from = this.currentStatus;
     if (from !== 'running') {
-      return { from, to: 'paused', reason: `无法暂停：当前状态为 ${from}，仅 RUNNING 状态可暂停`, allowed: false };
+      return {
+        from,
+        to: 'paused',
+        reason: `无法暂停：当前状态为 ${from}，仅 RUNNING 状态可暂停`,
+        allowed: false,
+      };
     }
     this.currentStatus = 'paused';
     this.pauseReason = reason;
@@ -68,7 +78,12 @@ export class SessionStateMachine {
   resume(): StatusTransition {
     const from = this.currentStatus;
     if (from !== 'paused') {
-      return { from, to: 'running', reason: `无法恢复：当前状态为 ${from}，仅 PAUSED 状态可恢复`, allowed: false };
+      return {
+        from,
+        to: 'running',
+        reason: `无法恢复：当前状态为 ${from}，仅 PAUSED 状态可恢复`,
+        allowed: false,
+      };
     }
     this.currentStatus = 'running';
     this.pauseReason = null;
@@ -80,7 +95,12 @@ export class SessionStateMachine {
   triggerError(cause: string): StatusTransition {
     const from = this.currentStatus;
     if (from !== 'running') {
-      return { from, to: 'error', reason: `无法触发异常：当前状态为 ${from}，仅 RUNNING 状态可触发异常`, allowed: false };
+      return {
+        from,
+        to: 'error',
+        reason: `无法触发异常：当前状态为 ${from}，仅 RUNNING 状态可触发异常`,
+        allowed: false,
+      };
     }
     this.currentStatus = 'error';
     this.errorCause = cause;
@@ -91,17 +111,37 @@ export class SessionStateMachine {
   recover(checkpoint: SessionCheckpoint): StatusTransition {
     const from = this.currentStatus;
     if (from !== 'error') {
-      return { from, to: 'running', reason: `无法恢复：当前状态为 ${from}，仅 ERROR 状态可恢复`, allowed: false };
+      return {
+        from,
+        to: 'running',
+        reason: `无法恢复：当前状态为 ${from}，仅 ERROR 状态可恢复`,
+        allowed: false,
+      };
     }
     if (!checkpoint.error?.recovered) {
-      return { from: 'error', to: 'running', reason: `无法恢复：异常尚未标记为已恢复（error.recovered !== true），异常原因：${checkpoint.error?.cause ?? '未知'}`, allowed: false };
+      return {
+        from: 'error',
+        to: 'running',
+        reason: `无法恢复：异常尚未标记为已恢复（error.recovered !== true），异常原因：${checkpoint.error?.cause ?? '未知'}`,
+        allowed: false,
+      };
     }
     if (!checkpoint.error.cause) {
-      return { from: 'error', to: 'running', reason: '无法恢复：异常原因缺失，无法确认 cause 已解除', allowed: false };
+      return {
+        from: 'error',
+        to: 'running',
+        reason: '无法恢复：异常原因缺失，无法确认 cause 已解除',
+        allowed: false,
+      };
     }
     this.currentStatus = 'running';
     this.errorCause = null;
-    return { from: 'error', to: 'running', reason: `恢复完成：异常原因 "${checkpoint.error.cause}" 已解除`, allowed: true };
+    return {
+      from: 'error',
+      to: 'running',
+      reason: `恢复完成：异常原因 "${checkpoint.error.cause}" 已解除`,
+      allowed: true,
+    };
   }
 
   /** 当前是否可暂停（仅 RUNNING） */

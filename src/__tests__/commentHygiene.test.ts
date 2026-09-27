@@ -96,7 +96,11 @@ function collectSources(dir: string, out: string[] = []): string[] {
 }
 
 /** 相对 SRC_ROOT 的路径，正斜杠归一（Windows 下 join 产反斜杠） */
-const relPath = (f: string): string => f.slice(SRC_ROOT.length + 1).split('\\').join('/');
+const relPath = (f: string): string =>
+  f
+    .slice(SRC_ROOT.length + 1)
+    .split('\\')
+    .join('/');
 
 describe('注释定位守卫：禁止行号引用（行号无 SSOT）', () => {
   it('src/ 注释位无行号引用——定位一律用符号引用', () => {

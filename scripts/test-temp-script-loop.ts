@@ -94,11 +94,20 @@ function createLocalNodeExecutor(): ICodeExecutionProvider {
         let stdout = '';
         let stderr = '';
         // 输出流收集
-        child.stdout.on('data', (d) => { stdout += String(d); });
-        child.stderr.on('data', (d) => { stderr += String(d); });
+        child.stdout.on('data', (d) => {
+          stdout += String(d);
+        });
+        child.stderr.on('data', (d) => {
+          stderr += String(d);
+        });
         // 子进程启动失败
         child.on('error', (err) => {
-          finish({ stdout, stderr: stderr || `执行失败：${err.message}`, exitCode: -1, timedOut: false });
+          finish({
+            stdout,
+            stderr: stderr || `执行失败：${err.message}`,
+            exitCode: -1,
+            timedOut: false,
+          });
         });
         // 子进程正常退出
         child.on('close', (code) => {
@@ -147,7 +156,15 @@ async function main(): Promise<void> {
   // 安全守卫：owner 权限 + confirmWrites=false（自动批准，让闭环无打断跑通）
   const security = new SecurityGuard(projectPath, projectPath, [], false, 'owner');
   // 工具执行器：注入本地 Node 执行器以启用 run_code 工具
-  const executor = new ToolExecutor(projectPath, security, memoryIndex, undefined, undefined, undefined, createLocalNodeExecutor());
+  const executor = new ToolExecutor(
+    projectPath,
+    security,
+    memoryIndex,
+    undefined,
+    undefined,
+    undefined,
+    createLocalNodeExecutor(),
+  );
 
   try {
     // ─── 场景 0：工具定义就绪 ──────────────────────────
@@ -178,18 +195,27 @@ async function main(): Promise<void> {
       'write_file',
       JSON.stringify({ path: scriptPath, content: scriptCode }),
     );
-    assert(writeResult.includes('写入') || writeResult.includes('成功'), 'write_file 写入临时脚本成功');
+    assert(
+      writeResult.includes('写入') || writeResult.includes('成功'),
+      'write_file 写入临时脚本成功',
+    );
     assert(existsSync(join(projectPath, scriptPath)), '临时脚本已落盘到项目根');
 
     // ② 执行脚本（不传 language，按扩展名 .cjs 推断为 node；cwd=项目根）
-    const runResult = await executor.execute('run_code', JSON.stringify({ script_path: scriptPath }));
+    const runResult = await executor.execute(
+      'run_code',
+      JSON.stringify({ script_path: scriptPath }),
+    );
     console.log(`  📤 run_code 输出: ${runResult.replace(/\n/g, ' | ')}`);
     assert(runResult.includes('sum=15'), '脚本执行结果正确（sum=15，证明读到了项目数据）');
     assert(runResult.includes('count=5'), '脚本执行结果正确（count=5）');
     assert(runResult.includes('avg=3.0'), '脚本执行结果正确（avg=3.0）');
 
     // ③ 清理脚本（闭环收尾）
-    const deleteResult = await executor.execute('delete_file', JSON.stringify({ path: scriptPath }));
+    const deleteResult = await executor.execute(
+      'delete_file',
+      JSON.stringify({ path: scriptPath }),
+    );
     assert(deleteResult.includes('已删除'), `delete_file 清理脚本成功: ${deleteResult}`);
     assert(!existsSync(join(projectPath, scriptPath)), '临时脚本已从磁盘删除（不留痕）');
     assert(existsSync(join(projectPath, 'data/numbers.txt')), '项目原始数据文件不受影响');

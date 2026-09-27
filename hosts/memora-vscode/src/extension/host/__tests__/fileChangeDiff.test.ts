@@ -291,7 +291,6 @@ describe('hunkKey：块寻址指纹', () => {
     // 同位置、内容相同 ⇒ 同一指纹（不会因为「文件别处还有内容」而无谓变化）
     expect(hunkKey(delB, after)).toBe(hunkKey(delB, 'a\nc\nD'));
   });
-
 });
 
 describe('formatUnifiedDiff：上下排列的对照文本', () => {

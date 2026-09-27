@@ -161,7 +161,14 @@ describe('dropdown 键盘可访问性', () => {
 
     // 场景1：触发器贴近容器顶缘（top=10）→ 向上放不下 → 翻转向下弹
     vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
-      top: 10, bottom: 36, left: 0, right: 50, width: 50, height: 26, x: 0, y: 0,
+      top: 10,
+      bottom: 36,
+      left: 0,
+      right: 50,
+      width: 50,
+      height: 26,
+      x: 0,
+      y: 0,
       toJSON: () => ({}),
     } as DOMRect);
     trigger.click();
@@ -172,7 +179,14 @@ describe('dropdown 键盘可访问性', () => {
 
     // 场景2：触发器远离顶缘（top=500）→ 向上空间足 → 保持向上弹（不翻转）
     vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({
-      top: 500, bottom: 526, left: 0, right: 50, width: 50, height: 26, x: 0, y: 0,
+      top: 500,
+      bottom: 526,
+      left: 0,
+      right: 50,
+      width: 50,
+      height: 26,
+      x: 0,
+      y: 0,
       toJSON: () => ({}),
     } as DOMRect);
     trigger.click();

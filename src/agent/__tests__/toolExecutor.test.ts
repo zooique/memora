@@ -234,7 +234,8 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('注入 readSkill 回调后返回技能正文', async () => {
-      executor.readSkill = async (name) => (name === 'write' ? '## 写作技能\n1. 起草\n2. 润色' : null);
+      executor.readSkill = async (name) =>
+        name === 'write' ? '## 写作技能\n1. 起草\n2. 润色' : null;
       const result = await executor.execute('read_skill', JSON.stringify({ name: 'write' }));
       expect(result).toContain('起草');
       expect(result).toContain('润色');
@@ -390,7 +391,12 @@ describe('工具执行器（6 个工具）', () => {
     it('降级结果应透出「搜索来源：<endpoint>」头部', async () => {
       const mockProvider = {
         search: async () => [
-          { title: '标题一', url: 'https://example.com/1', snippet: '摘要一', endpoint: 'DuckDuckGo' },
+          {
+            title: '标题一',
+            url: 'https://example.com/1',
+            snippet: '摘要一',
+            endpoint: 'DuckDuckGo',
+          },
         ],
       };
       const exec = new ToolExecutor(tmpProject, security, index, mockProvider);
@@ -407,12 +413,18 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('执行 web_fetch 应返回不可用提示', async () => {
-      const result = await executor.execute('web_fetch', JSON.stringify({ url: 'https://example.com' }));
+      const result = await executor.execute(
+        'web_fetch',
+        JSON.stringify({ url: 'https://example.com' }),
+      );
       expect(result).toContain('网页抓取功能未配置');
     });
 
     it('执行 run_code 应返回不可用提示', async () => {
-      const result = await executor.execute('run_code', JSON.stringify({ language: 'node', code: 'console.log(1)' }));
+      const result = await executor.execute(
+        'run_code',
+        JSON.stringify({ language: 'node', code: 'console.log(1)' }),
+      );
       expect(result).toContain('代码执行功能未配置');
     });
   });
@@ -520,9 +532,9 @@ describe('工具执行器（6 个工具）', () => {
     });
 
     it('code 模式缺 code 参数应抛 MemoraError', async () => {
-      await expect(execWithCode.execute('run_code', JSON.stringify({ language: 'node' }))).rejects.toThrow(
-        'run_code 工具调用缺少 code 参数',
-      );
+      await expect(
+        execWithCode.execute('run_code', JSON.stringify({ language: 'node' })),
+      ).rejects.toThrow('run_code 工具调用缺少 code 参数');
     });
 
     it('code 模式缺 language 参数应抛 MemoraError', async () => {
@@ -575,21 +587,27 @@ describe('工具执行器（6 个工具）', () => {
   describe('delete_file（临时脚本清理）', () => {
     it('删除存在的文件成功', async () => {
       writeFileSync(join(tmpProject, 'tmp_cleanup.txt'), 'x', 'utf-8');
-      const result = await executor.execute('delete_file', JSON.stringify({ path: 'tmp_cleanup.txt' }));
+      const result = await executor.execute(
+        'delete_file',
+        JSON.stringify({ path: 'tmp_cleanup.txt' }),
+      );
       expect(result).toContain('已删除');
       // 文件确已删除
       expect(() => readFileSync(join(tmpProject, 'tmp_cleanup.txt'))).toThrow();
     });
 
     it('删除不存在的文件返回已删除（目标态幂等）', async () => {
-      const result = await executor.execute('delete_file', JSON.stringify({ path: 'never-exists.txt' }));
+      const result = await executor.execute(
+        'delete_file',
+        JSON.stringify({ path: 'never-exists.txt' }),
+      );
       expect(result).toContain('文件不存在（已删除）');
     });
 
     it('删除目录应被拒绝（仅支持文件）', async () => {
-      await expect(executor.execute('delete_file', JSON.stringify({ path: 'src' }))).rejects.toThrow(
-        'delete_file 目标是目录',
-      );
+      await expect(
+        executor.execute('delete_file', JSON.stringify({ path: 'src' })),
+      ).rejects.toThrow('delete_file 目标是目录');
     });
 
     it('缺少 path 参数应抛 MemoraError（schema 必填校验拦截）', async () => {
@@ -657,11 +675,7 @@ describe('工具执行器（6 个工具）', () => {
       async searchFiles(options: { query?: string; maxResults?: number; terms?: string[] }) {
         // name 模式：先按 query 原样 glob 精确匹配；零命中且内核下发 terms 才按名称子串放宽。
         // 返回结果对象（与 content 同构：放宽/截断各有载体）。
-        const all = [
-          { path: 'src/index.ts' },
-          { path: 'src/utils.ts' },
-          { path: 'README.md' },
-        ];
+        const all = [{ path: 'src/index.ts' }, { path: 'src/utils.ts' }, { path: 'README.md' }];
         const include = options.query || '**/*';
         if (include === '**/*') {
           const m = all.slice(0, options.maxResults);
@@ -677,7 +691,9 @@ describe('工具执行器（6 个工具）', () => {
         // 进入放宽轮即标 relaxed（零命中也记"曾放宽"，与真实宿主 toResult 一致）
         const terms = options.terms ?? [];
         if (terms.length === 0) return { matches: [] };
-        const relaxed = all.filter((f) => terms.some((t) => f.path.toLowerCase().includes(t.toLowerCase())));
+        const relaxed = all.filter((f) =>
+          terms.some((t) => f.path.toLowerCase().includes(t.toLowerCase())),
+        );
         return { matches: relaxed, relaxed: true, termsUsed: terms };
       },
       async searchText(options: { pattern: string; maxResults?: number; terms?: string[] }) {
@@ -881,7 +897,10 @@ describe('工具执行器（6 个工具）', () => {
           spyProvider,
         );
         await exec.execute('search_project', JSON.stringify({ query: 'Next.js', mode: 'content' }));
-        await exec.execute('search_project', JSON.stringify({ query: '核心 愿景', mode: 'content' }));
+        await exec.execute(
+          'search_project',
+          JSON.stringify({ query: '核心 愿景', mode: 'content' }),
+        );
         expect(seen[0]).toBeUndefined(); // 词表被剔空 → 不下发
         expect(seen[1]).toEqual(['核心', '愿景']); // 与整串不等价 → 下发
       });
@@ -1102,7 +1121,10 @@ describe('工具执行器（6 个工具）', () => {
         'utf-8',
       );
 
-      const first = await executor.execute('read_file', JSON.stringify({ path: file, limit: '10' }));
+      const first = await executor.execute(
+        'read_file',
+        JSON.stringify({ path: file, limit: '10' }),
+      );
       expect(first.split('\n').slice(0, 10)).toEqual(
         Array.from({ length: 10 }, (_, i) => `L${i + 1}`),
       );
@@ -1134,7 +1156,10 @@ describe('工具执行器（6 个工具）', () => {
       const file = 'src/short.txt';
       writeFileSync(join(tmpProject, file), 'x\ny', 'utf-8');
 
-      const result = await executor.execute('read_file', JSON.stringify({ path: file, offset: '99' }));
+      const result = await executor.execute(
+        'read_file',
+        JSON.stringify({ path: file, offset: '99' }),
+      );
 
       expect(result).toContain('共 2 行');
       expect(result).toContain('超出文件末尾');
@@ -1160,7 +1185,9 @@ describe('工具执行器（6 个工具）', () => {
       const file = 'src/cn-big.txt';
       writeFileSync(
         join(tmpProject, file),
-        Array.from({ length: 3000 }, (_, i) => `第${i + 1}行` + '中文内容片段'.repeat(14)).join('\n'),
+        Array.from({ length: 3000 }, (_, i) => `第${i + 1}行` + '中文内容片段'.repeat(14)).join(
+          '\n',
+        ),
         'utf-8',
       );
 
@@ -1177,7 +1204,10 @@ describe('工具执行器（6 个工具）', () => {
     it('含控制字符的文件内容应被净化（去控制字符）', async () => {
       const messyContent = 'line1\u0000control\u001bEscape\nline2';
       const messyFile = 'src/messy-file.txt';
-      await executor.execute('write_file', JSON.stringify({ path: messyFile, content: messyContent }));
+      await executor.execute(
+        'write_file',
+        JSON.stringify({ path: messyFile, content: messyContent }),
+      );
       const result = await executor.execute('read_file', JSON.stringify({ path: messyFile }));
       // 控制字符（\u0000、\u001b）被移除
       expect(result).not.toContain('\u0000');
@@ -1451,15 +1481,21 @@ describe('工具执行器（6 个工具）', () => {
 
   describe('task_table_update（寻址契约：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
     /** 默认三任务项桩（id 前缀各异，8 位短 id 可唯一命中） */
-    const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> = [
-      { id: 'a1b2c3d4-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
-      { id: 'e5f6a7b8-step-2', description: '小说助手发言', status: 'pending', order: 1 },
-      { id: 'c9d0e1f2-step-3', description: '方案设计师汇总', status: 'pending', order: 2 },
-    ];
+    const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> =
+      [
+        { id: 'a1b2c3d4-step-1', description: '文档设计师发言', status: 'pending', order: 0 },
+        { id: 'e5f6a7b8-step-2', description: '小说助手发言', status: 'pending', order: 1 },
+        { id: 'c9d0e1f2-step-3', description: '方案设计师汇总', status: 'pending', order: 2 },
+      ];
 
     /** 注入 planManager 桩：记录 updatePlanItem 最终收到的 planItemId（解析后应为完整 uuid） */
     function injectPlanManager(
-      plan: Array<{ id: string; description: string; status: string; order: number }> = DEFAULT_PLAN,
+      plan: Array<{
+        id: string;
+        description: string;
+        status: string;
+        order: number;
+      }> = DEFAULT_PLAN,
     ): { updateCalls: string[] } {
       const updateCalls: string[] = [];
       executor.planManager = {
@@ -1475,14 +1511,20 @@ describe('工具执行器（6 个工具）', () => {
 
     it('plan_item_id 传行首序号 "1"（1 开始）→ 解析到 order=0 的真实 id', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '1', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '1', status: 'done' }),
+      );
       expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
       expect(result).toContain('已更新');
     });
 
     it('plan_item_id 传第 3 个行首序号 → 解析到 order=2 的 id（1-based 寻址）', async () => {
       const { updateCalls } = injectPlanManager();
-      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '3', status: 'blocked' }));
+      await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '3', status: 'blocked' }),
+      );
       expect(updateCalls).toEqual(['c9d0e1f2-step-3']);
     });
 
@@ -1492,21 +1534,30 @@ describe('工具执行器（6 个工具）', () => {
         { id: 'e5f6a7b8-step-2', description: 'B', status: 'pending', order: 0 },
         { id: 'c9d0e1f2-step-3', description: 'C', status: 'pending', order: 1 },
       ]);
-      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '1', status: 'done' }));
+      await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '1', status: 'done' }),
+      );
       // #1 = order 0 = e5f6a7b8-step-2（若按数组位解析会错误命中 a1b2c3d4-step-1）
       expect(updateCalls).toEqual(['e5f6a7b8-step-2']);
     });
 
     it('plan_item_id 传完整 uuid → 全等命中原样使用', async () => {
       const { updateCalls } = injectPlanManager();
-      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'e5f6a7b8-step-2', status: 'done' }));
+      await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: 'e5f6a7b8-step-2', status: 'done' }),
+      );
       expect(updateCalls).toEqual(['e5f6a7b8-step-2']);
     });
 
     it('plan_item_id 传 8 位短 id（task_table_write 返回格式）→ 前缀命中完整 uuid（P0 断链修复）', async () => {
       const { updateCalls } = injectPlanManager();
       // 'a1b2c3d4-step-1' 前 8 位 = 'a1b2c3d4'
-      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'a1b2c3d4', status: 'done' }));
+      await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: 'a1b2c3d4', status: 'done' }),
+      );
       expect(updateCalls).toEqual(['a1b2c3d4-step-1']);
     });
 
@@ -1515,7 +1566,10 @@ describe('工具执行器（6 个工具）', () => {
         { id: '12345678-abcd-4efg', description: '纯数字前缀步骤', status: 'pending', order: 0 },
         { id: 'e5f6a7b8-step-2', description: 'B', status: 'pending', order: 1 },
       ]);
-      await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '12345678', status: 'done' }));
+      await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '12345678', status: 'done' }),
+      );
       expect(updateCalls).toEqual(['12345678-abcd-4efg']);
     });
 
@@ -1524,7 +1578,10 @@ describe('工具执行器（6 个工具）', () => {
         { id: 'dup-prefix-aaaa', description: 'A', status: 'pending', order: 0 },
         { id: 'dup-prefix-bbbb', description: 'B', status: 'pending', order: 1 },
       ]);
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'dup-pref', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: 'dup-pref', status: 'done' }),
+      );
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(result).toContain('不唯一');
       expect(updateCalls).toEqual([]);
@@ -1532,21 +1589,30 @@ describe('工具执行器（6 个工具）', () => {
 
     it('plan_item_id 8 位短 id 无命中 → PLAN_ITEM_NOT_FOUND（提示改用行首序号）', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'zzzzzzzz', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: 'zzzzzzzz', status: 'done' }),
+      );
       expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       expect(updateCalls).toEqual([]);
     });
 
     it('plan_item_id 非数字非 8 位乱 id → PLAN_ITEM_NOT_FOUND（提示可用格式）', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: 'hackme', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: 'hackme', status: 'done' }),
+      );
       expect(result).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
       expect(updateCalls).toEqual([]);
     });
 
     it('plan_item_id 数字越界（超出 plan 长度）→ INVALID_ARG 带范围提示（原静默透传升级）', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '99', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '99', status: 'done' }),
+      );
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(result).toContain('超出任务表范围');
       expect(result).toContain('共 3 个任务项');
@@ -1555,20 +1621,26 @@ describe('工具执行器（6 个工具）', () => {
 
     it('plan_item_id 传 "0"（0-based 误用）→ INVALID_ARG 带范围提示', async () => {
       const { updateCalls } = injectPlanManager();
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '0', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '0', status: 'done' }),
+      );
       expect(result).toContain('[ERR:INVALID_ARG]');
       expect(updateCalls).toEqual([]);
     });
 
     it('plan_item_id 为空字符串 → [ERR:INVALID_ARG]（实测路径：LLM 传空值的兜底）', async () => {
-      const result = await executor.execute('task_table_update', JSON.stringify({ plan_item_id: '', status: 'done' }));
+      const result = await executor.execute(
+        'task_table_update',
+        JSON.stringify({ plan_item_id: '', status: 'done' }),
+      );
       expect(result).toContain('[ERR:INVALID_ARG] plan_item_id 不能为空');
     });
 
     it('plan_item_id 缺失 → schema 必填校验拦截（工具参数缺失 MemoraError）', async () => {
-      await expect(executor.execute('task_table_update', JSON.stringify({ status: 'done' }))).rejects.toThrow(
-        '工具参数缺失',
-      );
+      await expect(
+        executor.execute('task_table_update', JSON.stringify({ status: 'done' })),
+      ).rejects.toThrow('工具参数缺失');
     });
   });
 
@@ -1624,7 +1696,9 @@ describe('工具执行器（6 个工具）', () => {
 
     it('registerTool 应触发 onToolsChanged 回调', () => {
       let callCount = 0;
-      executor.setOnToolsChanged(() => { callCount++; });
+      executor.setOnToolsChanged(() => {
+        callCount++;
+      });
       const newDef = {
         name: 'callback_test_tool',
         description: '测试回调触发',
@@ -1640,7 +1714,9 @@ describe('工具执行器（6 个工具）', () => {
 
     it('setOnToolsChanged(undefined) 后 registerTool 不触发回调', () => {
       let callCount = 0;
-      executor.setOnToolsChanged(() => { callCount++; });
+      executor.setOnToolsChanged(() => {
+        callCount++;
+      });
       executor.setOnToolsChanged(undefined);
       const newDef = {
         name: 'no_callback_tool',
@@ -1743,13 +1819,20 @@ describe('工具执行器（6 个工具）', () => {
           required: [],
         },
       };
-      expect(() => executorWithProvider.registerTool(webSearchDef, async () => '')).toThrow(/不能覆盖内置工具/);
+      expect(() => executorWithProvider.registerTool(webSearchDef, async () => '')).toThrow(
+        /不能覆盖内置工具/,
+      );
     });
 
     it('注入 fetchProvider 后，注册 web_fetch 应抛错', () => {
       const mockFetch = { fetch: async () => ({ url: '', title: '', content: '' }) };
       const executorWithFetch = new ToolExecutor(
-        tmpProject, security, index, undefined, undefined, mockFetch,
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        mockFetch,
       );
       const fetchDef = {
         name: 'web_fetch',
@@ -1760,7 +1843,9 @@ describe('工具执行器（6 个工具）', () => {
           required: [],
         },
       };
-      expect(() => executorWithFetch.registerTool(fetchDef, async () => '')).toThrow(/不能覆盖内置工具/);
+      expect(() => executorWithFetch.registerTool(fetchDef, async () => '')).toThrow(
+        /不能覆盖内置工具/,
+      );
     });
 
     it('注入 codeExecutionProvider 后，注册 run_code 应抛错', () => {
@@ -1770,7 +1855,13 @@ describe('工具执行器（6 个工具）', () => {
         },
       };
       const executorWithCode = new ToolExecutor(
-        tmpProject, security, index, undefined, undefined, undefined, mockCode,
+        tmpProject,
+        security,
+        index,
+        undefined,
+        undefined,
+        undefined,
+        mockCode,
       );
       const codeDef = {
         name: 'run_code',
@@ -1781,7 +1872,9 @@ describe('工具执行器（6 个工具）', () => {
           required: [],
         },
       };
-      expect(() => executorWithCode.registerTool(codeDef, async () => '')).toThrow(/不能覆盖内置工具/);
+      expect(() => executorWithCode.registerTool(codeDef, async () => '')).toThrow(
+        /不能覆盖内置工具/,
+      );
     });
   });
 });

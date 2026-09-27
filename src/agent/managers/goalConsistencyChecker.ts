@@ -51,7 +51,7 @@ export class GoalConsistencyChecker {
     for (const pattern of constraintPatterns) {
       const matches = goal.match(pattern);
       if (matches) {
-        constraints.push(...matches.map(m => m.trim()));
+        constraints.push(...matches.map((m) => m.trim()));
       }
     }
 
@@ -94,7 +94,10 @@ export class GoalConsistencyChecker {
     }
 
     // 检查约束一致性
-    const { constraintsConsistent, conflictExplanation } = this.checkConstraintsConsistent(constraints, newGoal);
+    const { constraintsConsistent, conflictExplanation } = this.checkConstraintsConsistent(
+      constraints,
+      newGoal,
+    );
 
     return {
       level,
@@ -119,7 +122,7 @@ export class GoalConsistencyChecker {
     for (const constraint of constraints) {
       // 提取约束核心词并检查新目标是否包含
       const keywords = this.extractKeywords(constraint);
-      const satisfied = keywords.some(k => newGoal.includes(k));
+      const satisfied = keywords.some((k) => newGoal.includes(k));
       if (!satisfied) {
         conflictConstraints.push(constraint);
       }

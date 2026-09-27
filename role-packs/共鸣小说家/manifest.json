@@ -34,11 +34,7 @@
       "userFollowup": "ask"
     },
     "global": {
-      "askOn": [
-        "ambiguity",
-        "decision",
-        "confirm"
-      ],
+      "askOn": ["ambiguity", "decision", "confirm"],
       "askLimit": 10,
       "errorHandling": "degrade",
       "contextLimit": 0,

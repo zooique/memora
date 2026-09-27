@@ -50,7 +50,9 @@ async function main(): Promise<void> {
     const handlers = new BuiltinToolHandlers(projectPath, security, storage);
     // 不自注 setRecentRoundIdsProvider → 缺省不过滤（种子自检不看互斥，纯可达性）
 
-    console.log(`已装载 ${BENCH_SEEDS.length} 个 seed（隔离会话=${BENCH_SESSION}，round 旧轮=${OLD_ROUND}）\n`);
+    console.log(
+      `已装载 ${BENCH_SEEDS.length} 个 seed（隔离会话=${BENCH_SESSION}，round 旧轮=${OLD_ROUND}）\n`,
+    );
 
     // 可达性自检：对每个 case 用理想查询 search_memories，断言目标实体词被检索返回
     console.log('📋 可达性自检（理想查询 → 目标记忆实体词被检索返回）');
@@ -59,10 +61,7 @@ async function main(): Promise<void> {
       // search_memories 返回格式 = `[source:name] (…)` + 预览正文，不含记忆 id；
       // 以独特实体词（必出现在正文字段里）判断该种子被检索返回 = 可达性成立
       const hit = result.includes(s.entity);
-      assert(
-        hit,
-        `${s.id}（${s.input}）→ 目标 ${s.expectId} 可被 「${s.selfQuery}」 检索返回`,
-      );
+      assert(hit, `${s.id}（${s.input}）→ 目标 ${s.expectId} 可被 「${s.selfQuery}」 检索返回`);
     }
 
     console.log('\n📋 记录表（供真实 LLM 实跑时人工填写，对接基准文档 §3）');

@@ -48,7 +48,8 @@ const UI_ROOT = join(__dirname, '..');
  * 不含 U+2190–21FF 语义箭头；`·`(U+00B7) / `▋`(U+258B) 属排版分隔与流式光标且代码侧
  * 30+ 处在用，**不纳入**（见文件头「判据边界」）。
  */
-const FORBIDDEN = /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{21BA}\u{21BB}\u{FE0F}\u25B8\u25BE\u22EF]/u;
+const FORBIDDEN =
+  /[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{21BA}\u{21BB}\u{FE0F}\u25B8\u25BE\u22EF]/u;
 
 /**
  * CSS `content` 值豁免（现存 2 处）：伪元素**无法持有 DOM 节点**，
@@ -61,7 +62,11 @@ const CSS_CONTENT_ROW = /content:\s*['"][^'"]*['"]/;
 const STYLE_LAYER = 'styles/';
 
 /** 相对 UI_ROOT 的路径，统一正斜杠——Windows 下 join 产出反斜杠，直接 startsWith 会恒 false */
-const relPath = (f: string): string => f.slice(UI_ROOT.length + 1).split('\\').join('/');
+const relPath = (f: string): string =>
+  f
+    .slice(UI_ROOT.length + 1)
+    .split('\\')
+    .join('/');
 
 /** 递归收集 UI 层源码（排除测试目录与测试文件本身） */
 function collectUiSources(dir: string, out: string[] = []): string[] {
@@ -148,7 +153,10 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
   it('代码中无字符图标（emoji / 装饰符号）——一律走 getIconSvg / data-icon', () => {
     const offenders = findCharIcons();
     const detail = offenders.map((o) => `${o.file}:${o.line} → "${o.char}"`).join('\n');
-    expect(offenders, `以下位置在代码中使用了字符图标，应改用 icons.ts 的 SVG：\n${detail}`).toEqual([]);
+    expect(
+      offenders,
+      `以下位置在代码中使用了字符图标，应改用 icons.ts 的 SVG：\n${detail}`,
+    ).toEqual([]);
   });
 
   it('图标单一真源在位：icons.ts 导出 getIconSvg 且被 UI 层消费', () => {
@@ -159,7 +167,10 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
       const s = readFileSync(f, 'utf8');
       return /from '[^']*icons\.js'/.test(s) && !f.endsWith('icons.ts');
     });
-    expect(consumers.length, `引用 icons.js 的 UI 模块过少：${consumers.join(', ')}`).toBeGreaterThanOrEqual(3);
+    expect(
+      consumers.length,
+      `引用 icons.js 的 UI 模块过少：${consumers.join(', ')}`,
+    ).toBeGreaterThanOrEqual(3);
   });
 
   it('CSS content 豁免面结构受控（防漏检面膨胀 / 防豁免逻辑失效）', () => {
@@ -168,12 +179,15 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
       const rel = relPath(file);
       // 豁免面只在样式层统计：JS 对象属性也叫 content（`post({ content: '' })`），不是 CSS
       if (!rel.startsWith(STYLE_LAYER)) continue;
-      readFileSync(file, 'utf8').split('\n').forEach((raw) => {
-        const trimmed = raw.trim();
-        if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return;
-        const m = stripTrailingComment(raw).match(CSS_CONTENT_ROW);
-        if (m) exemptRows.push({ path: rel, value: m[0] });
-      });
+      readFileSync(file, 'utf8')
+        .split('\n')
+        .forEach((raw) => {
+          const trimmed = raw.trim();
+          if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*'))
+            return;
+          const m = stripTrailingComment(raw).match(CSS_CONTENT_ROW);
+          if (m) exemptRows.push({ path: rel, value: m[0] });
+        });
     }
     // 非空反向守卫：豁免正则失效时立即红——否则被豁免的字形会被静默放行
     expect(exemptRows.length, 'CSS content 豁免行为 0——正则或提取逻辑已失效').toBeGreaterThan(0);
@@ -192,9 +206,14 @@ describe('UI 图标语言 = icons.ts 的 SVG（字符图标守卫）', () => {
     const host = document.createElement('span');
     host.innerHTML = getIconSvg('bolt', 11, 11);
     const svg = host.querySelector('svg');
-    expect(svg, 'getIconSvg 产物无法解析为 <svg> —— 所有 innerHTML 接入点将静默变空').not.toBeNull();
+    expect(
+      svg,
+      'getIconSvg 产物无法解析为 <svg> —— 所有 innerHTML 接入点将静默变空',
+    ).not.toBeNull();
     expect(svg!.getAttribute('viewBox')).toBe('0 0 16 16');
-    expect(svg!.getAttribute('stroke'), 'stroke 必须为 currentColor（跟随主题色的唯一途径）').toBe('currentColor');
+    expect(svg!.getAttribute('stroke'), 'stroke 必须为 currentColor（跟随主题色的唯一途径）').toBe(
+      'currentColor',
+    );
     expect(svg!.getAttribute('width')).toBe('11');
   });
 });

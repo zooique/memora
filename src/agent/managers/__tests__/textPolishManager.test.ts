@@ -115,12 +115,12 @@ describe('TextPolishManager', () => {
   describe('polish · 异常处理', () => {
     it('LLM 调用失败时应抛出异常', async () => {
       // Given：LLM 抛出异常
-      const provider = ({
+      const provider = {
         name: 'mock',
         chat: vi.fn(async function* () {
           throw new Error('LLM 服务不可用');
         }),
-      }) as unknown as LlmProvider;
+      } as unknown as LlmProvider;
       const manager = new TextPolishManager(provider);
 
       // When / Then：异常应向上传播（TextPolishManager.polish 的 catch 仅 log 不吞异常）
@@ -132,7 +132,7 @@ describe('TextPolishManager', () => {
     it('应将 AbortSignal 透传到 provider.chat 调用', async () => {
       // Given：捕获 provider.chat 的调用参数
       const capturedOpts: { signal?: AbortSignal } = {};
-      const provider = ({
+      const provider = {
         name: 'mock',
         chat: vi.fn(async function* (_messages: Message[], opts?: { signal?: AbortSignal }) {
           if (opts) {
@@ -141,7 +141,7 @@ describe('TextPolishManager', () => {
           yield { content: '润色结果', done: false };
           yield { content: '', done: true };
         }),
-      }) as unknown as LlmProvider;
+      } as unknown as LlmProvider;
       const manager = new TextPolishManager(provider);
       const controller = new AbortController();
 

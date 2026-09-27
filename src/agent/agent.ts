@@ -37,11 +37,7 @@ import type { WorkProjectionManager } from '@/agent/managers/workProjection.js';
 import type { MemoryInspector } from '@/agent/managers/memoryInspector.js';
 import type { DedupManager } from '@/agent/managers/dedupManager.js';
 import type { MemoryAdvisor } from '@/agent/managers/memoryAdvisor.js';
-import {
-  createDefaultGCService,
-  type GCService,
-  type GCResult,
-} from '@/memory/gcService.js';
+import { createDefaultGCService, type GCService, type GCResult } from '@/memory/gcService.js';
 import { assembleComponents, buildSystemPromptPrefix } from '@/agent/assembler.js';
 import { estimateTokensMessages } from '@/agent/contextManager.js';
 import { SeedOrchestrator } from '@/agent/seed/index.js';
@@ -465,7 +461,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this._flowActive = true;
       // 状态机翻转是副作用，必须在并发闸门内执行——PAUSED 态收到 chat = 自动恢复 + 继续（作为补充注入）；ERROR 态仍拒绝
       if (!this.autoResumeIfPaused()) {
-        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话', category: 'timeout' };
+        yield {
+          type: 'error',
+          message: '会话已超时，无法自动恢复，请重新开始新对话',
+          category: 'timeout',
+        };
         return;
       }
       this._lastInteractionAt = new Date();
@@ -583,7 +583,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
         sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
         reason: '会话处于错误态，无法续跑',
       });
-      yield { type: 'error', message: '当前会话处于错误态，无法续跑，请重新开始', category: 'unknown' };
+      yield {
+        type: 'error',
+        message: '当前会话处于错误态，无法续跑，请重新开始',
+        category: 'unknown',
+      };
       return;
     }
     if (resumeStatus !== 'paused') return;
@@ -601,7 +605,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           sessionId: this._sessionManager?.getCheckpoint()?.sessionId,
           reason: 'resume() 返回 false，可能因暂停超时或状态机拒绝',
         });
-        yield { type: 'error', message: '会话已超时，无法自动恢复，请重新开始新对话', category: 'timeout' };
+        yield {
+          type: 'error',
+          message: '会话已超时，无法自动恢复，请重新开始新对话',
+          category: 'timeout',
+        };
         return;
       }
 
@@ -609,8 +617,15 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 只会复读卡住状态、白烧 token。全 done / 无计划不再拦：用户主动点「继续」就是要 AI 产出
       // （可能收尾总结、补建计划、继续语境），且短问答暂停续跑本就无计划，拦了就没法继续聊。
       // 判定下沉 sessionManager.isPlanAllBlocked()（仅全 blocked 拦；全 done/空计划放行）。
-      if (!input && this._sessionManager?.isPlanAllBlocked() && !this.requireLoop.isInAutonomousStep) {
-        yield { type: 'text', content: '计划任务项当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划' };
+      if (
+        !input &&
+        this._sessionManager?.isPlanAllBlocked() &&
+        !this.requireLoop.isInAutonomousStep
+      ) {
+        yield {
+          type: 'text',
+          content: '计划任务项当前全部处于阻塞状态，无法自动推进。请提供新指令或修改计划',
+        };
         yield { type: 'done' };
         return;
       }
@@ -645,7 +660,11 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
   private async *consumeExecutionStream(
     source: AsyncGenerator<AgentChunk, void, unknown>,
     signal?: AbortSignal,
-  ): AsyncGenerator<AgentChunk, { content: string; aborted: boolean; paused: boolean; failed: boolean }, unknown> {
+  ): AsyncGenerator<
+    AgentChunk,
+    { content: string; aborted: boolean; paused: boolean; failed: boolean },
+    unknown
+  > {
     let content = '';
     let aborted = false;
     // 软暂停标记：loop 在 step 边界挂起（用户 requestPause / ask_user 主动提问）时置真，
@@ -1127,7 +1146,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     const roundStore = this.#config.roundStore;
     const firstRoundId = result.roundIds[0];
     if (!roundStore || !firstRoundId) {
-      logger.debug({ hasRoundStore: !!roundStore }, 'ensureForkSessionTitle: 无 RoundStore/新会话为空，跳过');
+      logger.debug(
+        { hasRoundStore: !!roundStore },
+        'ensureForkSessionTitle: 无 RoundStore/新会话为空，跳过',
+      );
       return;
     }
     // 分叉点首轮用户消息 = 新会话的"首条消息"，作为标题生成输入
@@ -1165,14 +1187,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 注册表未命中时按路径处理。相对路径会以 process.cwd() 为基准解析——宿主进程的 cwd
     // 不具项目语义，会静默创建出非预期的项目目录并占用其锁，故只接受绝对路径。
     if (!target && !isAbsolute(nameOrPath)) {
-      throw configError(
-        '项目切换失败',
-        `「${nameOrPath}」既不是已注册的项目名，也不是绝对路径`,
-        [
-          '按名切换：先经 agent.projects.registerProject(项目路径, 项目名) 注册，并保证注册表跨项目共享（多项目共用同一 dataDir 或 registryDir）',
-          '按路径切换：传入项目根目录的绝对路径',
-        ],
-      );
+      throw configError('项目切换失败', `「${nameOrPath}」既不是已注册的项目名，也不是绝对路径`, [
+        '按名切换：先经 agent.projects.registerProject(项目路径, 项目名) 注册，并保证注册表跨项目共享（多项目共用同一 dataDir 或 registryDir）',
+        '按路径切换：传入项目根目录的绝对路径',
+      ]);
     }
     const projectPath = target ? target.path : nameOrPath;
     const projectName = target ? target.name : getBaseName(nameOrPath);
@@ -1431,9 +1449,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     );
     this.loop.refreshRolePackPrefix(newPrefix);
     // 角色包底盘占用随切换实时更新（不依赖跑 prepare）：装配此刻即确定的真值
-    this.loop.setRolePackBaseTokens(
-      estimateTokensMessages([{ content: newPrefix }]),
-    );
+    this.loop.setRolePackBaseTokens(estimateTokensMessages([{ content: newPrefix }]));
     // 同步注入角色包策略的 ChatOptions 覆盖项（temperature / outputLimit）
     // 键恒为 activePack：buildChatOptionsFromStrategy 读激活包策略，不随本轮装配视角变
     this.loop.setChatOptions(this.buildChatOptionsFromStrategy());
@@ -1458,11 +1474,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
 
     // act.outputLimit → ChatOptions.maxTokens（需 ∈ [1, MAX_OUTPUT_LIMIT]，越界忽略防资源失控）
     const outputLimit = act?.outputLimit;
-    if (
-      typeof outputLimit === 'number' &&
-      outputLimit > 0 &&
-      outputLimit <= MAX_OUTPUT_LIMIT
-    ) {
+    if (typeof outputLimit === 'number' && outputLimit > 0 && outputLimit <= MAX_OUTPUT_LIMIT) {
       chatOptions.maxTokens = outputLimit;
     }
 
@@ -1724,7 +1736,10 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     try {
       const awaited = await awaitBackgroundTasks(AGENT_CONSTANTS.SHUTDOWN_ARCHIVE_TIMEOUT_MS);
       if (awaited > 0) {
-        logger.debug({ awaited }, 'close: 背景任务等待结束（awaited = 初始在途数，超时放弃时非完成数）');
+        logger.debug(
+          { awaited },
+          'close: 背景任务等待结束（awaited = 初始在途数，超时放弃时非完成数）',
+        );
       }
     } catch (err) {
       logger.warn({ err: toError(err) }, 'close: awaitBackgroundTasks 失败');
@@ -1895,11 +1910,30 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
     // 未初始化时返回全零指标，避免调用方判空
     if (!this.loop) {
       return {
-        llm: { callCount: 0, totalInputTokens: 0, totalOutputTokens: 0, actualInputTokens: 0, actualOutputTokens: 0, emptyResponseCount: 0, pairingGuardFires: 0 },
-        tools: { callCount: 0, failureCount: 0, unparsedToolIntentCount: 0, ledgerStubEchoCount: 0 },
+        llm: {
+          callCount: 0,
+          totalInputTokens: 0,
+          totalOutputTokens: 0,
+          actualInputTokens: 0,
+          actualOutputTokens: 0,
+          emptyResponseCount: 0,
+          pairingGuardFires: 0,
+        },
+        tools: {
+          callCount: 0,
+          failureCount: 0,
+          unparsedToolIntentCount: 0,
+          ledgerStubEchoCount: 0,
+        },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
         plan: { taskTableWriteCount: 0, planItemBoundaryCount: 0 },
-        tasks: { totalCount: 0, successCount: 0, failureCount: 0, successRate: 0, avgDurationMs: 0 },
+        tasks: {
+          totalCount: 0,
+          successCount: 0,
+          failureCount: 0,
+          successRate: 0,
+          avgDurationMs: 0,
+        },
       };
     }
 

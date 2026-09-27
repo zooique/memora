@@ -12,10 +12,7 @@ import type { IWebSearchProvider, SearchResult } from '@/web-search/types.js';
 import { safeSearch } from '@/web-search/webSearchProvider.js';
 
 /** 创建一个模拟的搜索提供者 */
-function createMockProvider(
-  results: SearchResult[] = [],
-  delayMs = 0,
-): IWebSearchProvider {
+function createMockProvider(results: SearchResult[] = [], delayMs = 0): IWebSearchProvider {
   return {
     async search(_query, _options) {
       if (delayMs > 0) {

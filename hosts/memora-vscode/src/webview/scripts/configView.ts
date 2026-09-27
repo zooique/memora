@@ -224,7 +224,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       currentProviders = [];
       // 空态引导（SSOT：createEmptyState 纯函数，对齐 rolesView 列表级同构）
       list.textContent = '';
-      list.appendChild(createEmptyState(document, { title: '配置你的大模型', hint: '添加一个 API 后即可开始对话' }));
+      list.appendChild(
+        createEmptyState(document, {
+          title: '配置你的大模型',
+          hint: '添加一个 API 后即可开始对话',
+        }),
+      );
       return;
     }
     activeName = data.activeName;
@@ -291,7 +296,10 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     detail.className = 'card-detail';
     // 上下文上限单位显式标注（token 缩写 K 由 fmtTokens 输出，如 128K），呼应表单同单位提示
     detail.textContent =
-      p.model + ' · ' + p.baseUrl + (p.contextWindow ? ` · ${fmtTokens(p.contextWindow)} tokens` : '');
+      p.model +
+      ' · ' +
+      p.baseUrl +
+      (p.contextWindow ? ` · ${fmtTokens(p.contextWindow)} tokens` : '');
     info.appendChild(nameRow);
     info.appendChild(detail);
 
@@ -352,7 +360,9 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
         resultIcon.innerHTML = getIconSvg(msg.ok ? 'check' : 'cancel', 12, 12);
         testResult.appendChild(resultIcon);
         testResult.appendChild(
-          document.createTextNode((msg.ok ? '连接成功' : '连接失败') + (msg.message ? '：' + msg.message : '')),
+          document.createTextNode(
+            (msg.ok ? '连接成功' : '连接失败') + (msg.message ? '：' + msg.message : ''),
+          ),
         );
       } else {
         if (msg.ok) {

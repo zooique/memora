@@ -130,10 +130,7 @@ export function estimateOccupancy(input: EstimateOccupancyInput): ContextOccupan
   const outputReserveRatio = input.outputReserveRatio ?? DEFAULT_OUTPUT_RESERVE_RATIO;
   const outputReserveTokens = Math.floor(input.totalTokens * outputReserveRatio);
   const usedBeforeFree =
-    input.rolePackBaseTokens +
-    input.dialogueTokens +
-    input.inputAnchorTokens +
-    outputReserveTokens;
+    input.rolePackBaseTokens + input.dialogueTokens + input.inputAnchorTokens + outputReserveTokens;
   const freeTokens = Math.max(0, input.totalTokens - usedBeforeFree);
   return {
     totalTokens: input.totalTokens,

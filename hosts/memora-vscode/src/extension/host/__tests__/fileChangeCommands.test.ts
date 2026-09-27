@@ -42,7 +42,10 @@ import {
 } from '../fileChangeView.js';
 
 /** 本文件位于 `<pkg>/src/extension/host/__tests__/` ⇒ 上溯四层即包根 */
-const PACKAGE_JSON = resolve(fileURLToPath(new URL('.', import.meta.url)), '../../../../package.json');
+const PACKAGE_JSON = resolve(
+  fileURLToPath(new URL('.', import.meta.url)),
+  '../../../../package.json',
+);
 
 interface MenuEntry {
   command: string;

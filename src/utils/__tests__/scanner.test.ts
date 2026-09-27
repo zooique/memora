@@ -160,7 +160,10 @@ description: 测试技能
 
     it('文件夹形式无 frontmatter name 时回退到目录名', async () => {
       await mkdir(join(tempDir, 'fallback-dir'));
-      await writeFile(join(tempDir, 'fallback-dir', 'SKILL.md'), '---\ndescription: 无 name\n---\nbody');
+      await writeFile(
+        join(tempDir, 'fallback-dir', 'SKILL.md'),
+        '---\ndescription: 无 name\n---\nbody',
+      );
       const result = await scanMarkdownDir(tempDir);
       expect(result).toHaveLength(1);
       expect(result[0]?.name).toBe('fallback-dir');
@@ -202,7 +205,10 @@ description: 变体技能
       await writeFile(join(tempDir, 'standalone.md'), '---\nname: 独立技能\n---\n独立正文');
       // 文件夹形式
       await mkdir(join(tempDir, 'folder-skill'));
-      await writeFile(join(tempDir, 'folder-skill', 'SKILL.md'), '---\nname: 文件夹技能\n---\n文件夹正文');
+      await writeFile(
+        join(tempDir, 'folder-skill', 'SKILL.md'),
+        '---\nname: 文件夹技能\n---\n文件夹正文',
+      );
       const result = await scanMarkdownDir(tempDir);
       expect(result).toHaveLength(2);
       // 按字典序排序，中文排序：文件夹技能 < 独立技能

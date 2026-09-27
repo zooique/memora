@@ -85,7 +85,8 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
   switch (name) {
     case 'task_table_write': {
       const mode = String(args.mode ?? 'overwrite');
-      const items = (args.items as Array<{ description?: string; rolePack?: string }> | undefined) ?? [];
+      const items =
+        (args.items as Array<{ description?: string; rolePack?: string }> | undefined) ?? [];
       if (mode === 'overwrite') mockPlan.length = 0; // 清空后重建
       for (const s of items) {
         mockPlan.push({
@@ -104,7 +105,9 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
       const status = String(args.status ?? 'done');
       const planItemId = String(args.plan_item_id ?? '');
       // 简化寻址：支持行首序号（1-based）或短 id 前缀匹配
-      const idx = /^\d+$/.test(planItemId) ? Number(planItemId) - 1 : mockPlan.findIndex((s) => s.id.startsWith(planItemId));
+      const idx = /^\d+$/.test(planItemId)
+        ? Number(planItemId) - 1
+        : mockPlan.findIndex((s) => s.id.startsWith(planItemId));
       const item = mockPlan[idx];
       if (!item) {
         return `[ERR:PLAN_ITEM_NOT_FOUND] 未找到任务项 "${planItemId}"`;
@@ -137,7 +140,9 @@ function assert(condition: boolean, message: string): void {
 function printPlanMetrics(metrics: AgentMetrics): void {
   console.log('  ┌─ 任务表维度（层0 观测）');
   console.log(`  │  task_table_write 调用（建表/重建次数）: ${metrics.plan.taskTableWriteCount}`);
-  console.log(`  │  plan_item_boundary 产出 → plan_item_boundary 事件数 : ${metrics.plan.planItemBoundaryCount}`);
+  console.log(
+    `  │  plan_item_boundary 产出 → plan_item_boundary 事件数 : ${metrics.plan.planItemBoundaryCount}`,
+  );
   console.log('  └──────────────');
 }
 
@@ -191,7 +196,9 @@ async function main(): Promise<void> {
   // 3. 跑一个强命令多步任务（命中 needsPlanning → 首迭代注入 nudge）
   //    正文含"重构/拆解/补充单测"等多步结构信号，确定性判定应为 true。
   console.log('\n📋 步骤 3：跑多步任务（预期触发任务表）');
-  console.log('  📤 输入: "重构 src/core/format.ts：把日期格式化逻辑抽成独立函数 formatDate，并补充单元测试。"');
+  console.log(
+    '  📤 输入: "重构 src/core/format.ts：把日期格式化逻辑抽成独立函数 formatDate，并补充单元测试。"',
+  );
   const input =
     '重构 src/core/format.ts：把日期格式化逻辑抽成独立函数 formatDate，并补充单元测试。';
   let response = '';
@@ -217,20 +224,28 @@ async function main(): Promise<void> {
   const metrics = loop.getMetrics();
   printPlanMetrics(metrics);
   console.log(`  🤖 LLM 实际发起的工具调用序列: ${toolCallsSeen.join(' → ') || '(无工具调用)'}`);
-  console.log(`  🚧 产出的 plan_item_boundary 事件: ${planItemBoundariesSeen.length} 个 ${planItemBoundariesSeen.length ? `（${planItemBoundariesSeen.join(' → ')}）` : ''}`);
+  console.log(
+    `  🚧 产出的 plan_item_boundary 事件: ${planItemBoundariesSeen.length} 个 ${planItemBoundariesSeen.length ? `（${planItemBoundariesSeen.join(' → ')}）` : ''}`,
+  );
   assert(response.length > 0, `有文本回复（${response.length} 字符）`);
 
   // 结论 1：taskTableWriteCount > 0 即证明确定性触发让任务表从未触发变为被真实 LLM 决策触发
   if (metrics.plan.taskTableWriteCount > 0) {
     console.log('🎉 实证1 通过：真实 LLM 已决策调用 task_table_write，任务表触发链路打通。');
   } else {
-    console.log('⚠️  实证1 未触发：taskTableWriteCount = 0。建议检查 needsPlanning 判定是否命中，或 nudge 文案强度。');
+    console.log(
+      '⚠️  实证1 未触发：taskTableWriteCount = 0。建议检查 needsPlanning 判定是否命中，或 nudge 文案强度。',
+    );
   }
   // 结论 2：注入 getActivePlanItemMeta 后，active 任务项随 update 推进应产出 plan_item_boundary（plan_item_boundary_count 与思考折叠联动）
   if (metrics.plan.planItemBoundaryCount > 0) {
-    console.log(`🎉 实证2 通过：plan_item_boundary 产出 ${metrics.plan.planItemBoundaryCount} 次，任务表驱动布局骨血（思考折叠/进度看板）已苏醒。`);
+    console.log(
+      `🎉 实证2 通过：plan_item_boundary 产出 ${metrics.plan.planItemBoundaryCount} 次，任务表驱动布局骨血（思考折叠/进度看板）已苏醒。`,
+    );
   } else {
-    console.log('⚠️  实证2 未产出：planItemBoundaryCount = 0。可能 LLM 未分步推进 active，或一次性宣告完成。');
+    console.log(
+      '⚠️  实证2 未产出：planItemBoundaryCount = 0。可能 LLM 未分步推进 active，或一次性宣告完成。',
+    );
   }
 }
 

@@ -46,7 +46,7 @@ describe('记忆类型定义', () => {
     const customSource = {
       id: 'custom:test',
       content: '测试内容',
-      source: 'custom-source',  // 自定义 source
+      source: 'custom-source', // 自定义 source
       name: 'test',
       createdAt: '2026-06-02T00:00:00.000Z',
       accessedAt: '2026-06-02T00:00:00.000Z',
@@ -194,13 +194,9 @@ describe('parseMemory 白名单构造（阶段3 score 退役后的数据层清�
   });
 
   it('可选语义字段非法类型应抛错（isModified/metadata/sessionName/roundId/supersededBy）', () => {
-    expect(() => parseMemory({ ...legacyMemory(), isModified: 'yes' })).toThrow(
-      /Memory 解析失败/,
-    );
+    expect(() => parseMemory({ ...legacyMemory(), isModified: 'yes' })).toThrow(/Memory 解析失败/);
     expect(() => parseMemory({ ...legacyMemory(), metadata: 42 })).toThrow(/Memory 解析失败/);
-    expect(() => parseMemory({ ...legacyMemory(), sessionName: 123 })).toThrow(
-      /Memory 解析失败/,
-    );
+    expect(() => parseMemory({ ...legacyMemory(), sessionName: 123 })).toThrow(/Memory 解析失败/);
     expect(() => parseMemory({ ...legacyMemory(), roundId: true })).toThrow(/Memory 解析失败/);
     expect(() => parseMemory({ ...legacyMemory(), supersededBy: ['x'] })).toThrow(
       /Memory 解析失败/,

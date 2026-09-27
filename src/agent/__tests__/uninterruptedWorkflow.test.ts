@@ -79,11 +79,7 @@ function seedProject(_projectPath: string, configDir: string, _dataDir: string):
 /**
  * 创建 Agent 实例（使用 MockProvider）
  */
-function makeAgent(
-  projectPath: string,
-  configDir: string,
-  dataDir: string,
-): Agent {
+function makeAgent(projectPath: string, configDir: string, dataDir: string): Agent {
   return new Agent({
     projectPath,
     provider: new MockProvider(),
@@ -129,9 +125,7 @@ function createMockHistory(overrides: Partial<MessageHistory> = {}): MessageHist
 function createMockLoop(overrides: Partial<AgentLoop> = {}): AgentLoop {
   return {
     restoreHistory: vi.fn(),
-    getMessages: vi.fn().mockReturnValue([
-      { role: 'system', content: 'system prompt' },
-    ]),
+    getMessages: vi.fn().mockReturnValue([{ role: 'system', content: 'system prompt' }]),
     injectSystemMessage: vi.fn(),
     // 闭环节点锚点：检查点快照/恢复读写，mock 默认空轮
     getCurrentRoundId: vi.fn().mockReturnValue(''),
@@ -434,9 +428,7 @@ describe('SessionManager · 检查点管理', () => {
 
     it('completePlanItem 应标记任务项为完成并记录任务项推进日志', () => {
       manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'active', order: 0 },
-      ]);
+      manager.updatePlan([{ id: 's1', description: '步骤1', status: 'active', order: 0 }]);
       manager.completePlanItem({ planItemId: 's1', summary: '测试 step' });
       const firstItem = manager.getCheckpoint()!.plan[0]!;
       expect(firstItem.status).toBe('done');
@@ -446,9 +438,7 @@ describe('SessionManager · 检查点管理', () => {
 
     it('completePlanItem 必须走 updatePlanItemStatus 唯一写点（不得直改 status）', () => {
       manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'active', order: 0 },
-      ]);
+      manager.updatePlan([{ id: 's1', description: '步骤1', status: 'active', order: 0 }]);
       // 契约级断言：直接锁住「写点收口」——未来若有人改回 step.status='done' 直改，此测试必红
       const spy = vi.spyOn(
         manager as unknown as { updatePlanItemStatus(id: string, s: string): boolean },
@@ -482,9 +472,7 @@ describe('SessionManager · 检查点管理', () => {
 
     it('isPlanAllBlocked 全 done 应返回 false（收窄后放行，继续=AI 产出）', () => {
       manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'done', order: 0 },
-      ]);
+      manager.updatePlan([{ id: 's1', description: '步骤1', status: 'done', order: 0 }]);
       expect(manager.isPlanAllBlocked()).toBe(false);
     });
 
@@ -507,16 +495,12 @@ describe('SessionManager · 检查点管理', () => {
 
     it('getActivePlanItem 应返回当前活跃任务项', () => {
       manager.createCheckpoint('测试');
-      manager.updatePlan([
-        { id: 's1', description: '步骤1', status: 'active', order: 0 },
-      ]);
+      manager.updatePlan([{ id: 's1', description: '步骤1', status: 'active', order: 0 }]);
       const active = manager.getActivePlanItem();
       expect(active).not.toBeNull();
       expect(active!.id).toBe('s1');
     });
-
-    });
-
+  });
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -559,9 +543,11 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         idempotent: 'read-only',
       };
       manager.logToolExecution(record);
-      const found = manager.getCheckpoint()?.completedToolCalls?.find(
-        (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
-      );
+      const found = manager
+        .getCheckpoint()
+        ?.completedToolCalls?.find(
+          (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
+        );
       expect(found).toBeDefined();
       expect(found!.resultSummary).toBe('文件内容');
     });
@@ -575,9 +561,11 @@ describe('SessionManager · 工具幂等性与补偿机制', () => {
         ok: true,
         idempotent: 'read-only',
       });
-      const found = manager.getCheckpoint()?.completedToolCalls?.find(
-        (r) => r.name === 'read_file' && r.argsSignature === '{"path":"b.ts"}',
-      );
+      const found = manager
+        .getCheckpoint()
+        ?.completedToolCalls?.find(
+          (r) => r.name === 'read_file' && r.argsSignature === '{"path":"b.ts"}',
+        );
       expect(found).toBeUndefined();
     });
   });
@@ -674,10 +662,13 @@ describe('SessionManager · 暂停/恢复/异常', () => {
       const result = manager.pause('用户手动暂停', 'user');
       expect(result).toBe(true);
       expect(manager.status).toBe('paused');
-      expect(emitEvent).toHaveBeenCalledWith('sessionPaused', expect.objectContaining({
-        reason: '用户手动暂停',
-        source: 'user',
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'sessionPaused',
+        expect.objectContaining({
+          reason: '用户手动暂停',
+          source: 'user',
+        }),
+      );
     });
 
     it('pause 应自动创建检查点', () => {
@@ -719,9 +710,12 @@ describe('SessionManager · 暂停/恢复/异常', () => {
       const result = manager.triggerError('LLM 超时');
       expect(result).toBe(true);
       expect(manager.status).toBe('error');
-      expect(emitEvent).toHaveBeenCalledWith('sessionError', expect.objectContaining({
-        cause: 'LLM 超时',
-      }));
+      expect(emitEvent).toHaveBeenCalledWith(
+        'sessionError',
+        expect.objectContaining({
+          cause: 'LLM 超时',
+        }),
+      );
     });
 
     it('recover 应恢复成功并发射事件', () => {
@@ -794,7 +788,10 @@ describe('GoalConsistencyChecker · 目标一致性校验', () => {
     });
 
     it('目标漂移应返回 drift', () => {
-      const result = checker.checkConsistency('写一个排序函数，使用快速排序算法', '改为写一个网页爬虫，抓取新闻标题');
+      const result = checker.checkConsistency(
+        '写一个排序函数，使用快速排序算法',
+        '改为写一个网页爬虫，抓取新闻标题',
+      );
       expect(result.level).toBe('drift');
       expect(result.similarity).toBeLessThan(0.4);
     });
@@ -927,10 +924,12 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
-      agent.getCheckpoint()!.plan.push(
-        { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
-        { id: 's2', description: '步骤2', status: 'blocked', order: 2 },
-      );
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
+          { id: 's2', description: '步骤2', status: 'blocked', order: 2 },
+        );
       // blocked 任务项不视为可续（仅 pending/active 可续）
       expect(agent.canContinueWithoutInput()).toBe(false);
     });
@@ -939,10 +938,12 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
-      agent.getCheckpoint()!.plan.push(
-        { id: 's1', description: '步骤1', status: 'done', order: 1 },
-        { id: 's2', description: '步骤2', status: 'pending', order: 2 },
-      );
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 's1', description: '步骤1', status: 'done', order: 1 },
+          { id: 's2', description: '步骤2', status: 'pending', order: 2 },
+        );
       expect(agent.canContinueWithoutInput()).toBe(true);
     });
 
@@ -950,9 +951,9 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
-      agent.getCheckpoint()!.plan.push(
-        { id: 's1', description: '步骤1', status: 'done', order: 1 },
-      );
+      agent
+        .getCheckpoint()!
+        .plan.push({ id: 's1', description: '步骤1', status: 'done', order: 1 });
       expect(agent.canContinueWithoutInput()).toBe(false);
     });
 
@@ -960,9 +961,9 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
-      agent.getCheckpoint()!.plan.push(
-        { id: 's1', description: '步骤1', status: 'blocked', order: 1 },
-      );
+      agent
+        .getCheckpoint()!
+        .plan.push({ id: 's1', description: '步骤1', status: 'blocked', order: 1 });
       // 暂停使 resumeExecution 可进入（状态机需 paused 才继续）
       agent.pause('测试暂停', 'user');
 
@@ -970,7 +971,10 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       for await (const chunk of agent.resumeExecution()) {
         chunks.push(chunk as { type: string; content?: string });
       }
-      const text = chunks.filter((c) => c.type === 'text').map((c) => c.content).join('');
+      const text = chunks
+        .filter((c) => c.type === 'text')
+        .map((c) => c.content)
+        .join('');
       // 全 blocked 计划应提示阻塞而非误报"已完成"
       expect(text).toContain('阻塞');
       expect(text).not.toContain('已完成');
@@ -980,9 +984,9 @@ describe('Agent 门面 · 不中断工作模型 API', () => {
       agent = makeAgent(tmpProject, tmpConfig, tmpData);
       await agent.init();
       agent.createCheckpoint('测试目标');
-      agent.getCheckpoint()!.plan.push(
-        { id: 's1', description: '步骤1', status: 'pending', order: 1 },
-      );
+      agent
+        .getCheckpoint()!
+        .plan.push({ id: 's1', description: '步骤1', status: 'pending', order: 1 });
       // 即便存在可推进的 pending 任务项，error 态也不应诱导用户点"继续"后静默无反应
       agent.triggerError('LLM 超时');
       expect(agent.sessionManager!.status).toBe('error');
@@ -1215,45 +1219,49 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    *   2. 记录可被 getCheckpoint 读取（completedToolCalls 持久化）
    *   3. 相同 name+argsSignature 的记录可被定位（恢复时 outbox 排重的数据基础）
    */
-  it('场景 D：工具执行记录持久化——logToolExecution 写入 completedToolCalls 供恢复排重', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      sessionStore,
-    });
-    await agent.init();
+  it(
+    '场景 D：工具执行记录持久化——logToolExecution 写入 completedToolCalls 供恢复排重',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new MockProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+        sessionStore,
+      });
+      await agent.init();
 
-    // 创建检查点
-    agent.createCheckpoint('测试幂等性');
+      // 创建检查点
+      agent.createCheckpoint('测试幂等性');
 
-    // 模拟工具执行记录
-    // 通过 sessionManager 的 logToolExecution 记录写工具（幂等键级别，恢复时排重用）
-    agent.sessionManager!.logToolExecution({
-      name: 'read_file',
-      argsSignature: '{"path":"test.ts"}',
-      executedAt: Date.now(),
-      resultSummary: '文件内容：hello',
-      ok: true,
-      idempotent: 'read-only',
-    });
+      // 模拟工具执行记录
+      // 通过 sessionManager 的 logToolExecution 记录写工具（幂等键级别，恢复时排重用）
+      agent.sessionManager!.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{"path":"test.ts"}',
+        executedAt: Date.now(),
+        resultSummary: '文件内容：hello',
+        ok: true,
+        idempotent: 'read-only',
+      });
 
-    // 记录可被 getCheckpoint 读取（outbox 排重的数据基础，替代已删除的 hasToolExecuted）
-    const cp = agent.getCheckpoint()!;
-    const prevRecord = cp.completedToolCalls?.find(
-      (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
-    );
-    expect(prevRecord).toBeDefined();
-    expect(prevRecord!.resultSummary).toContain('hello');
-    // 不同参数签名视为不同记录（排重粒度）
-    const otherRecord = cp.completedToolCalls?.find(
-      (r) => r.name === 'read_file' && r.argsSignature === '{"path":"other.ts"}',
-    );
-    expect(otherRecord).toBeUndefined();
-  });
+      // 记录可被 getCheckpoint 读取（outbox 排重的数据基础，替代已删除的 hasToolExecuted）
+      const cp = agent.getCheckpoint()!;
+      const prevRecord = cp.completedToolCalls?.find(
+        (r) => r.name === 'read_file' && r.argsSignature === '{"path":"test.ts"}',
+      );
+      expect(prevRecord).toBeDefined();
+      expect(prevRecord!.resultSummary).toContain('hello');
+      // 不同参数签名视为不同记录（排重粒度）
+      const otherRecord = cp.completedToolCalls?.find(
+        (r) => r.name === 'read_file' && r.argsSignature === '{"path":"other.ts"}',
+      );
+      expect(otherRecord).toBeUndefined();
+    },
+  );
 
   /**
    * 场景 E：task_table_update 更新任务项必须标脏
@@ -1298,9 +1306,9 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
     expect(result).toContain('已标记为 done');
     expect(agent.getCheckpoint()!.plan[0]!.status).toBe('done');
 
-      // updatePlanItem 必须经标脏路径，touchCheckpoint 应被调用
-      expect(touchSpy).toHaveBeenCalledTimes(1);
-    });
+    // updatePlanItem 必须经标脏路径，touchCheckpoint 应被调用
+    expect(touchSpy).toHaveBeenCalledTimes(1);
+  });
 
   /**
    * turn 结束无条件清理任务表（任务表收紧为 turn 内能力，不跨 turn 残留）
@@ -1311,42 +1319,46 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    * planItemLog 关联 active 任务项的细节由 assembler.test「onPlanItemBoundary：写入当前 active 任务项的 planItemLog」
    * 直接覆盖（turn 中途观察；本测试跑完整轮后 plan 已被清，无法在 turn 后断言 planItemLog）。
    */
-  it('场景 G：turn 结束无条件清理任务表（即使存在 pending 任务项）', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new MockProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-      sessionStore,
-    });
-    await agent.init();
+  it(
+    '场景 G：turn 结束无条件清理任务表（即使存在 pending 任务项）',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new MockProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+        sessionStore,
+      });
+      await agent.init();
 
-    agent.createCheckpoint('测试目标');
-    const planItemId = 'step-active-1';
-    agent.getCheckpoint()!.plan.push({
-      id: planItemId,
-      description: '当前执行步骤',
-      status: 'active',
-      order: 1,
-    });
-    // 加一个 pending step：即使 turn 结束未全 done，也必须兜底清空（不跨 turn 残留）
-    agent.getCheckpoint()!.plan.push({
-      id: 'step-pending-2',
-      description: '后续步骤',
-      status: 'pending',
-      order: 2,
-    });
+      agent.createCheckpoint('测试目标');
+      const planItemId = 'step-active-1';
+      agent.getCheckpoint()!.plan.push({
+        id: planItemId,
+        description: '当前执行步骤',
+        status: 'active',
+        order: 1,
+      });
+      // 加一个 pending step：即使 turn 结束未全 done，也必须兜底清空（不跨 turn 残留）
+      agent.getCheckpoint()!.plan.push({
+        id: 'step-pending-2',
+        description: '后续步骤',
+        status: 'pending',
+        order: 2,
+      });
 
-    // 触发一轮对话 → turn 结束时兜底清理任务表
-    await agent.chatSync('推进任务');
+      // 触发一轮对话 → turn 结束时兜底清理任务表
+      await agent.chatSync('推进任务');
 
-    // 契约：turn 结束后任务表已清空（plan 与 planItemLog 均不残留）
-    const cp = agent.getCheckpoint()!;
-    expect(cp.plan).toHaveLength(0);
-    expect(cp.planItemLog ?? []).toHaveLength(0);
-  });
+      // 契约：turn 结束后任务表已清空（plan 与 planItemLog 均不残留）
+      const cp = agent.getCheckpoint()!;
+      expect(cp.plan).toHaveLength(0);
+      expect(cp.planItemLog ?? []).toHaveLength(0);
+    },
+  );
 
   /**
    * 真实带伤回归锁：resume 收尾路径漏清 plan。
@@ -1362,37 +1374,43 @@ describe('端到端场景 · 不中断工作模型完整流程', () => {
    * 证明它抓的是真实带伤，而非因错误原因通过。守卫确保走「未重暂停」收尾分支（否则 pauseMeta
    * guard 会保留，断言不成立）。
    */
-  it('场景 G2：resume 收尾（非全 done 且未重暂停）无条件清理任务表，不跨 turn 残留', { timeout: 30000 }, async () => {
-    agent = makeAgent(tmpProject, tmpConfig, tmpData);
-    await agent.init();
+  it(
+    '场景 G2：resume 收尾（非全 done 且未重暂停）无条件清理任务表，不跨 turn 残留',
+    { timeout: 30000 },
+    async () => {
+      agent = makeAgent(tmpProject, tmpConfig, tmpData);
+      await agent.init();
 
-    agent.createCheckpoint('测试目标');
-    // 翻状态机为 paused（与 chat() 第一半 pause 收场等价），使 resumeExecution 可进入
-    agent.pause('测试暂停', 'user');
-    // 模拟 loop 在暂停时挂起的 pauseMeta（生产由 loop.requestPause 写入；resume() 开头会卸载）
-    agent.sessionManager!.setPauseMeta({ reason: '测试暂停', source: 'user' });
-    expect(agent.sessionManager!.status).toBe('paused');
+      agent.createCheckpoint('测试目标');
+      // 翻状态机为 paused（与 chat() 第一半 pause 收场等价），使 resumeExecution 可进入
+      agent.pause('测试暂停', 'user');
+      // 模拟 loop 在暂停时挂起的 pauseMeta（生产由 loop.requestPause 写入；resume() 开头会卸载）
+      agent.sessionManager!.setPauseMeta({ reason: '测试暂停', source: 'user' });
+      expect(agent.sessionManager!.status).toBe('paused');
 
-    // 模拟 chat() 第一半 pause 收场后残留的 plan（含未完成的 active/pending 任务项，非全 done）
-    agent.getCheckpoint()!.plan.push(
-      { id: 'step-active-1', description: '当前执行步骤', status: 'active', order: 1 },
-      { id: 'step-pending-2', description: '后续步骤', status: 'pending', order: 2 },
-    );
+      // 模拟 chat() 第一半 pause 收场后残留的 plan（含未完成的 active/pending 任务项，非全 done）
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 'step-active-1', description: '当前执行步骤', status: 'active', order: 1 },
+          { id: 'step-pending-2', description: '后续步骤', status: 'pending', order: 2 },
+        );
 
-    // 续跑：MockProvider 返回普通文本，不触发再次暂停 → resume 以「非全 done 且未重暂停」结束
-    const chunks: Array<{ type: string }> = [];
-    for await (const chunk of agent.resumeExecution()) {
-      chunks.push(chunk as { type: string });
-    }
-    // 守卫：确认走的是「未重暂停」收尾分支（若被误判为暂停收场，则本用例未覆盖目标分支，断言无效）
-    expect(chunks.some((c) => c.type === 'paused')).toBe(false);
-    expect(agent.sessionManager!.status).toBe('running');
+      // 续跑：MockProvider 返回普通文本，不触发再次暂停 → resume 以「非全 done 且未重暂停」结束
+      const chunks: Array<{ type: string }> = [];
+      for await (const chunk of agent.resumeExecution()) {
+        chunks.push(chunk as { type: string });
+      }
+      // 守卫：确认走的是「未重暂停」收尾分支（若被误判为暂停收场，则本用例未覆盖目标分支，断言无效）
+      expect(chunks.some((c) => c.type === 'paused')).toBe(false);
+      expect(agent.sessionManager!.status).toBe('running');
 
-    // 核心断言：resume 收尾后任务表已清空（与 chat() 终态同构，不跨 turn 残留）
-    const cp = agent.getCheckpoint()!;
-    expect(cp.plan).toHaveLength(0);
-    expect(cp.planItemLog ?? []).toHaveLength(0);
-  });
+      // 核心断言：resume 收尾后任务表已清空（与 chat() 终态同构，不跨 turn 残留）
+      const cp = agent.getCheckpoint()!;
+      expect(cp.plan).toHaveLength(0);
+      expect(cp.planItemLog ?? []).toHaveLength(0);
+    },
+  );
 
   /**
    * 场景 F：暂停状态下 chat 自动恢复并继续（双通道模型 v2.0）
@@ -1805,43 +1823,54 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     return sawPaused;
   }
 
-  it('D1 回归：流中 requestPause 不立即翻状态机（延迟到 loop 边界挂起才翻）', { timeout: 30000 }, async () => {
-    agent = makeMultiTurnAgent();
-    await agent.init();
+  it(
+    'D1 回归：流中 requestPause 不立即翻状态机（延迟到 loop 边界挂起才翻）',
+    { timeout: 30000 },
+    async () => {
+      agent = makeMultiTurnAgent();
+      await agent.init();
 
-    // 在流进行中（isBusy=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
-    // 直到 loop 在 step 边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
-    // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转。
-    let statusRightAfterRequestPause = '';
-    for await (const chunk of agent.chat('读取探针文件')) {
-      if (chunk.type === 'tool_result') {
-        agent.requestPause('流中暂停', 'user');
-        statusRightAfterRequestPause = agent.sessionManager!.status;
+      // 在流进行中（isBusy=true）申请暂停，应走延迟路径：状态机保持 RUNNING，
+      // 直到 loop 在 step 边界真正挂起并产出 {type:'paused'} chunk 才翻 PAUSED。
+      // 若回归为"申请即暂停"，此处会立即翻 PAUSED，破坏内核事实驱动延迟翻转。
+      let statusRightAfterRequestPause = '';
+      for await (const chunk of agent.chat('读取探针文件')) {
+        if (chunk.type === 'tool_result') {
+          agent.requestPause('流中暂停', 'user');
+          statusRightAfterRequestPause = agent.sessionManager!.status;
+        }
+        if (chunk.type === 'paused') break;
       }
-      if (chunk.type === 'paused') break;
-    }
 
-    expect(statusRightAfterRequestPause).toBe('running');
-    // 最终由 loop 边界挂起翻转
-    expect(agent.sessionManager!.status).toBe('paused');
-  });
+      expect(statusRightAfterRequestPause).toBe('running');
+      // 最终由 loop 边界挂起翻转
+      expect(agent.sessionManager!.status).toBe('paused');
+    },
+  );
 
-  it('流中用户暂停（延迟翻转挂起）应透传 lowRisk=true，不计入连续暂停配额', { timeout: 30000 }, async () => {
-    agent = makeMultiTurnAgent();
-    await agent.init();
-    expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-
-    // 流中（带工具调用的 step 后）用户请求暂停 → 走延迟翻转路径，consumeExecutionStream :1117 真正挂起
-    for await (const chunk of agent.chat('读取探针文件')) {
-      if (chunk.type === 'tool_result') agent.requestPause('流中暂停', 'user');
-      if (chunk.type === 'paused') break;
-    }
-    expect(agent.sessionManager!.status).toBe('paused');
-    // 契约：流中用户暂停与空闲暂停同一 lowRisk 契约（:1117 透传 true），计数保持 0
+  it(
+    '流中用户暂停（延迟翻转挂起）应透传 lowRisk=true，不计入连续暂停配额',
+    { timeout: 30000 },
+    async () => {
+      agent = makeMultiTurnAgent();
+      await agent.init();
       expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
-    });
 
-    it('首轮无预建 checkpoint 的流中暂停，pauseMeta 必须落到检查点（防静默丢失）', { timeout: 30000 }, async () => {
+      // 流中（带工具调用的 step 后）用户请求暂停 → 走延迟翻转路径，consumeExecutionStream :1117 真正挂起
+      for await (const chunk of agent.chat('读取探针文件')) {
+        if (chunk.type === 'tool_result') agent.requestPause('流中暂停', 'user');
+        if (chunk.type === 'paused') break;
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      // 契约：流中用户暂停与空闲暂停同一 lowRisk 契约（:1117 透传 true），计数保持 0
+      expect(agent.sessionManager!.getConsecutivePauseCount()).toBe(0);
+    },
+  );
+
+  it(
+    '首轮无预建 checkpoint 的流中暂停，pauseMeta 必须落到检查点（防静默丢失）',
+    { timeout: 30000 },
+    async () => {
       agent = makeMultiTurnAgent();
       await agent.init();
       // 关键：不预建 checkpoint，直接走流中暂停路径（真实内核路径，宿主未兜底）。
@@ -1858,7 +1887,8 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
       // 契约：首轮暂停时 pauseMeta 必须已写入，而非静默丢失
       expect(cp!.pauseMeta).toBeDefined();
       expect(cp!.pauseMeta!.reason).toBeDefined();
-    });
+    },
+  );
 
   it('续跑过程中请求暂停，状态机应翻 paused', { timeout: 30000 }, async () => {
     agent = makeMultiTurnAgent();
@@ -1944,68 +1974,76 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
     expect(agent.sessionManager!.status).toBe('running');
   });
 
-  it('Agent 级集成：ask_user 主动提问 → 暂停不产摘要 → 回答续跑 → 恒 1:1 摘要', { timeout: 30000 }, async () => {
-    const askProvider = new AskThenResumeProvider();
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: askProvider,
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-    });
-    await agent.init();
+  it(
+    'Agent 级集成：ask_user 主动提问 → 暂停不产摘要 → 回答续跑 → 恒 1:1 摘要',
+    { timeout: 30000 },
+    async () => {
+      const askProvider = new AskThenResumeProvider();
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: askProvider,
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+      });
+      await agent.init();
 
-    // ── (a)(b)：首轮 ask_user 主动提问 ─────────────────────────
-    const pendingEvents: unknown[] = [];
-    agent.on('questionPending', (data: unknown) => pendingEvents.push(data));
+      // ── (a)(b)：首轮 ask_user 主动提问 ─────────────────────────
+      const pendingEvents: unknown[] = [];
+      agent.on('questionPending', (data: unknown) => pendingEvents.push(data));
 
-    const chunks: Array<{ type: string; content?: string; questions?: unknown }> = [];
-    for await (const chunk of agent.chat('帮我读取一个文件')) {
-      chunks.push(chunk as { type: string; content?: string; questions?: unknown });
-    }
+      const chunks: Array<{ type: string; content?: string; questions?: unknown }> = [];
+      for await (const chunk of agent.chat('帮我读取一个文件')) {
+        chunks.push(chunk as { type: string; content?: string; questions?: unknown });
+      }
 
-    // 结构化 question_pending 事件发射（宿主可渲染提问 UI）+ 流中 question_pending chunk
-    expect(pendingEvents.length).toBe(1);
-    expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
-    // 会话进入 PAUSED（主动提问走软暂停，等待用户回答续跑）
-    expect(agent.sessionManager!.status).toBe('paused');
-    // (a) 工具调用结构完整入史：assistant.tool_calls 含 ask_user（若结构被「撕掉」→ 只剩文本）
-    const historyToolCalls = agent
-      .getMessages()
-      .flatMap((m) => m.toolCalls ?? [])
-      .map((tc) => tc.function.name);
-    expect(historyToolCalls).toContain('ask_user');
-    // 暂停原因/来源落检查点（收口统一写：source='agent'，重启后宿主可展示"为什么暂停 + 问了什么"）
-    const pauseMeta = agent.sessionManager!.getCheckpoint()!.pauseMeta;
-    expect(pauseMeta).toBeDefined();
-    expect(pauseMeta!.source).toBe('agent');
-    // (b) 暂停轮不产摘要：回合未完成，摘要推迟到续跑最终轮
-    expect(askProvider.summaryRequestCount).toBe(0);
+      // 结构化 question_pending 事件发射（宿主可渲染提问 UI）+ 流中 question_pending chunk
+      expect(pendingEvents.length).toBe(1);
+      expect(chunks.some((c) => c.type === 'question_pending')).toBe(true);
+      // 会话进入 PAUSED（主动提问走软暂停，等待用户回答续跑）
+      expect(agent.sessionManager!.status).toBe('paused');
+      // (a) 工具调用结构完整入史：assistant.tool_calls 含 ask_user（若结构被「撕掉」→ 只剩文本）
+      const historyToolCalls = agent
+        .getMessages()
+        .flatMap((m) => m.toolCalls ?? [])
+        .map((tc) => tc.function.name);
+      expect(historyToolCalls).toContain('ask_user');
+      // 暂停原因/来源落检查点（收口统一写：source='agent'，重启后宿主可展示"为什么暂停 + 问了什么"）
+      const pauseMeta = agent.sessionManager!.getCheckpoint()!.pauseMeta;
+      expect(pauseMeta).toBeDefined();
+      expect(pauseMeta!.source).toBe('agent');
+      // (b) 暂停轮不产摘要：回合未完成，摘要推迟到续跑最终轮
+      expect(askProvider.summaryRequestCount).toBe(0);
 
-    // ── (c)(d)：回答续跑 → 恒 1:1 摘要 ──────────────────────────
-    // 双轨道：answerQuestion 结构化回填 tool 结果 + resumeExecution(回答, 'question-answer')
-    // 记录回答为闭环节点交互输入并走完整续跑主流程
-    expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
-    for await (const chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
-      chunks.push(chunk as { type: string; content?: string; questions?: unknown });
-    }
-    expect(agent.sessionManager!.status).toBe('running');
+      // ── (c)(d)：回答续跑 → 恒 1:1 摘要 ──────────────────────────
+      // 双轨道：answerQuestion 结构化回填 tool 结果 + resumeExecution(回答, 'question-answer')
+      // 记录回答为闭环节点交互输入并走完整续跑主流程
+      expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
+      for await (const chunk of agent.resumeExecution(
+        '我想读 probe.txt',
+        undefined,
+        'question-answer',
+      )) {
+        chunks.push(chunk as { type: string; content?: string; questions?: unknown });
+      }
+      expect(agent.sessionManager!.status).toBe('running');
 
-    // (c) 续跑上下文含「问题 + 回答」：LLM 下一轮可见自己问过的工具调用 + 用户回答（tool 结果）
-    const resumeToolCalls = (askProvider.resumeMessages ?? [])
-      .flatMap((m) => m.toolCalls ?? [])
-      .map((tc) => tc.function.name);
-    expect(resumeToolCalls).toContain('ask_user');
-    const resumeToolResults = (askProvider.resumeMessages ?? [])
-      .filter((m) => m.role === 'tool')
-      .map((m) => String(m.content))
-      .join('\n');
-    expect(resumeToolResults).toContain('[ASK_ANSWER] 用户回答：我想读 probe.txt');
+      // (c) 续跑上下文含「问题 + 回答」：LLM 下一轮可见自己问过的工具调用 + 用户回答（tool 结果）
+      const resumeToolCalls = (askProvider.resumeMessages ?? [])
+        .flatMap((m) => m.toolCalls ?? [])
+        .map((tc) => tc.function.name);
+      expect(resumeToolCalls).toContain('ask_user');
+      const resumeToolResults = (askProvider.resumeMessages ?? [])
+        .filter((m) => m.role === 'tool')
+        .map((m) => String(m.content))
+        .join('\n');
+      expect(resumeToolResults).toContain('[ASK_ANSWER] 用户回答：我想读 probe.txt');
 
-    // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
-    await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
-  });
+      // (d) 续跑最终轮恰好产 1 条 round-summary（恒 1:1：暂停轮 0 + 续跑轮 1）
+      await vi.waitFor(() => expect(askProvider.summaryRequestCount).toBe(1), { timeout: 2000 });
+    },
+  );
 
   // ─── 缝隙：plan + ask_user 组合（提问轮不消耗 step）──────────────────
   // 缺陷形态：若 onPlanItemBoundary 先于 handleToolCalls 的 ask_user 挂起检出触发 → 提问迭代
@@ -2015,74 +2053,86 @@ describe('SSOT 排雷防回归 · 暂停链路', () => {
   // 形态②下 onPlanItemBoundary 本就不推进（唯一写者 = task_table_update），
   // 故问答对恒归当前任务项；以下两用例为回归锁（突变靶：删除边界排除条件 → 双双转红）。
 
-  it('缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new AskInPlanProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-    });
-    await agent.init();
-    // 预置任务表（直接 push plan：S1 active + S2 pending）
-    agent.createCheckpoint('任务目标');
-    agent.getCheckpoint()!.plan.push(
-      { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
-      { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
-    );
+  it(
+    '缝隙 A：提问挂起不消耗当前 step（S1 保持 active、S2 不被提前激活）',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new AskInPlanProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+      });
+      await agent.init();
+      // 预置任务表（直接 push plan：S1 active + S2 pending）
+      agent.createCheckpoint('任务目标');
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
+          { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
+        );
 
-    for await (const _chunk of agent.chat('执行任务')) {
-      void _chunk; // 仅消费流：首轮 ask_user 提问挂起
-    }
-    expect(agent.sessionManager!.status).toBe('paused');
-    // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
-    expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
-    const after = agent.getCheckpoint()!.plan;
-    // 提问任务项仍 active，下一任务项未被提前激活（若 S1=done/S2=active → 转红）
-    expect(after.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
-    expect(after.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
-  });
+      for await (const _chunk of agent.chat('执行任务')) {
+        void _chunk; // 仅消费流：首轮 ask_user 提问挂起
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
+      expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
+      const after = agent.getCheckpoint()!.plan;
+      // 提问任务项仍 active，下一任务项未被提前激活（若 S1=done/S2=active → 转红）
+      expect(after.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
+      expect(after.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
+    },
+  );
 
-  it('缝隙 A：回答续跑后 turn 收尾即清空任务表（提问任务项 pause 时未被自动完成）', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new AskInPlanProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpData],
-    });
-    await agent.init();
-    agent.createCheckpoint('任务目标');
-    agent.getCheckpoint()!.plan.push(
-      { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
-      { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
-    );
+  it(
+    '缝隙 A：回答续跑后 turn 收尾即清空任务表（提问任务项 pause 时未被自动完成）',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new AskInPlanProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpData],
+      });
+      await agent.init();
+      agent.createCheckpoint('任务目标');
+      agent
+        .getCheckpoint()!
+        .plan.push(
+          { id: 'ask-plan-s1', description: '步骤一：读取', status: 'active', order: 1 },
+          { id: 'ask-plan-s2', description: '步骤二：汇报', status: 'pending', order: 2 },
+        );
 
-    for await (const _chunk of agent.chat('执行任务')) {
-      void _chunk; // 仅消费流：首轮提问挂起
-    }
-    expect(agent.sessionManager!.status).toBe('paused');
-    // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
-    expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
-    // pause 时不变量：提问任务项仍 active、下一任务项未被提前激活（修复语义，与续跑后清空不冲突）
-    const atPause = agent.getCheckpoint()!.plan;
-    expect(atPause.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
-    expect(atPause.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
+      for await (const _chunk of agent.chat('执行任务')) {
+        void _chunk; // 仅消费流：首轮提问挂起
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      // 提问挂起是 agent 主动软暂停：pauseMeta 落检查点（source='agent'）
+      expect(agent.getCheckpoint()!.pauseMeta?.source).toBe('agent');
+      // pause 时不变量：提问任务项仍 active、下一任务项未被提前激活（修复语义，与续跑后清空不冲突）
+      const atPause = agent.getCheckpoint()!.plan;
+      expect(atPause.find((s) => s.id === 'ask-plan-s1')!.status).toBe('active');
+      expect(atPause.find((s) => s.id === 'ask-plan-s2')!.status).toBe('pending');
 
-    // 双轨道：answerQuestion 回填 + resumeExecution('question-answer') 续跑
-    expect(agent.answerQuestion(['确认'])).toBe(true);
-    for await (const _chunk of agent.resumeExecution('确认', undefined, 'question-answer')) {
-      void _chunk; // 仅消费流：续跑轮纯文本收尾（无工具）
-    }
-    const cp = agent.getCheckpoint()!;
-    // 闭环语义：resume 收尾 = turn 结束 → 任务表无条件清空（plan 严格 turn 内，
-    // 下个 turn 由 LLM 重新规划）。若 autoClearPlanIfAllDone 仅全 done 才清 →
-    // 此处非全 done 残留 → 跨 turn 污染；统一走 clearPlanOnTurnEnd。
-    expect(cp.plan).toHaveLength(0);
-    expect(cp.planItemLog ?? []).toHaveLength(0);
-  });
+      // 双轨道：answerQuestion 回填 + resumeExecution('question-answer') 续跑
+      expect(agent.answerQuestion(['确认'])).toBe(true);
+      for await (const _chunk of agent.resumeExecution('确认', undefined, 'question-answer')) {
+        void _chunk; // 仅消费流：续跑轮纯文本收尾（无工具）
+      }
+      const cp = agent.getCheckpoint()!;
+      // 闭环语义：resume 收尾 = turn 结束 → 任务表无条件清空（plan 严格 turn 内，
+      // 下个 turn 由 LLM 重新规划）。若 autoClearPlanIfAllDone 仅全 done 才清 →
+      // 此处非全 done 残留 → 跨 turn 污染；统一走 clearPlanOnTurnEnd。
+      expect(cp.plan).toHaveLength(0);
+      expect(cp.planItemLog ?? []).toHaveLength(0);
+    },
+  );
 });
 
 describe('SSOT 排雷防回归 · lowRisk 契约与状态恢复', () => {
@@ -2239,96 +2289,108 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     expect(results[0]!.summary).toContain('宿主缓存的已有结果');
   });
 
-  it('放行+改写参数：skip=false 且 overrideArgs 以改写后的参数执行', { timeout: 30000 }, async () => {
-    const results = await runSingleToolChat({
-      // 宿主放行，并把路径从 probe.txt 改写为 rewritten.txt
-      preExecutionCheck: () => ({ skip: false, overrideArgs: '{"path":"rewritten.txt"}' }),
-    });
+  it(
+    '放行+改写参数：skip=false 且 overrideArgs 以改写后的参数执行',
+    { timeout: 30000 },
+    async () => {
+      const results = await runSingleToolChat({
+        // 宿主放行，并把路径从 probe.txt 改写为 rewritten.txt
+        preExecutionCheck: () => ({ skip: false, overrideArgs: '{"path":"rewritten.txt"}' }),
+      });
 
-    // 工具以改写参数实际执行：读到 rewritten.txt 的内容，而非 probe.txt 的内容
-    expect(results).toHaveLength(1);
-    expect(results[0]!.ok).toBe(true);
-    expect(results[0]!.summary).toContain('改写后的文件内容');
-    expect(results[0]!.summary).not.toContain('原始文件内容');
-  });
+      // 工具以改写参数实际执行：读到 rewritten.txt 的内容，而非 probe.txt 的内容
+      expect(results).toHaveLength(1);
+      expect(results[0]!.ok).toBe(true);
+      expect(results[0]!.summary).toContain('改写后的文件内容');
+      expect(results[0]!.summary).not.toContain('原始文件内容');
+    },
+  );
 
-  it('组合-拒绝短路：即使工具已执行过（幂等可跳），宿主 denied 仍优先', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpProject, tmpData],
-      archiveMode: 'manual',
-      preExecutionCheck: () => ({ skip: true, denied: true, reason: '宿主临时禁令' }),
-    });
-    await agent.init();
+  it(
+    '组合-拒绝短路：即使工具已执行过（幂等可跳），宿主 denied 仍优先',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new SingleToolThenTextProvider('read_file', '{"path":"probe.txt"}'),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpProject, tmpData],
+        archiveMode: 'manual',
+        preExecutionCheck: () => ({ skip: true, denied: true, reason: '宿主临时禁令' }),
+      });
+      await agent.init();
 
-    // 预置检查点 + 已完成的幂等工具记录：内部幂等本应跳过，但宿主 denied 必须优先短路
-    // （logToolExecution 在 checkpoint 为 null 时静默返回，必须先建检查点）
-    agent.createCheckpoint('测试拒绝短路');
-    agent.sessionManager!.logToolExecution({
-      name: 'read_file',
-      argsSignature: '{"path":"probe.txt"}',
-      executedAt: Date.now(),
-      resultSummary: '已有记录',
-      ok: true,
-      idempotent: 'idempotent',
-    });
+      // 预置检查点 + 已完成的幂等工具记录：内部幂等本应跳过，但宿主 denied 必须优先短路
+      // （logToolExecution 在 checkpoint 为 null 时静默返回，必须先建检查点）
+      agent.createCheckpoint('测试拒绝短路');
+      agent.sessionManager!.logToolExecution({
+        name: 'read_file',
+        argsSignature: '{"path":"probe.txt"}',
+        executedAt: Date.now(),
+        resultSummary: '已有记录',
+        ok: true,
+        idempotent: 'idempotent',
+      });
 
-    const results: Array<{ ok: boolean; summary?: string }> = [];
-    for await (const chunk of agent.chat('读取探针文件')) {
-      if (chunk.type === 'tool_result') {
-        results.push({ ok: chunk.ok, summary: chunk.summary });
+      const results: Array<{ ok: boolean; summary?: string }> = [];
+      for await (const chunk of agent.chat('读取探针文件')) {
+        if (chunk.type === 'tool_result') {
+          results.push({ ok: chunk.ok, summary: chunk.summary });
+        }
       }
-    }
 
-    // 拒绝短路幂等：返回 PERMISSION_DENIED 而非 outbox 跳过标记
-    expect(results).toHaveLength(1);
-    expect(results[0]!.ok).toBe(false);
-    expect(results[0]!.summary).toContain('[ERR:TOOL:PERMISSION_DENIED]');
-    expect(results[0]!.summary).toContain('宿主临时禁令');
-  });
+      // 拒绝短路幂等：返回 PERMISSION_DENIED 而非 outbox 跳过标记
+      expect(results).toHaveLength(1);
+      expect(results[0]!.ok).toBe(false);
+      expect(results[0]!.summary).toContain('[ERR:TOOL:PERMISSION_DENIED]');
+      expect(results[0]!.summary).toContain('宿主临时禁令');
+    },
+  );
 
-  it('组合-放行后幂等生效：宿主 skip=false 放行，内部幂等仍按 outbox 语义跳过', { timeout: 30000 }, async () => {
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new SingleToolThenTextProvider('write_file', '{"path":"probe.txt"}'),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpProject, tmpData],
-      archiveMode: 'manual',
-      // 宿主纯放行（无改写），是否跳过完全交给内部幂等检查
-      preExecutionCheck: () => ({ skip: false }),
-    });
-    await agent.init();
+  it(
+    '组合-放行后幂等生效：宿主 skip=false 放行，内部幂等仍按 outbox 语义跳过',
+    { timeout: 30000 },
+    async () => {
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new SingleToolThenTextProvider('write_file', '{"path":"probe.txt"}'),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpProject, tmpData],
+        archiveMode: 'manual',
+        // 宿主纯放行（无改写），是否跳过完全交给内部幂等检查
+        preExecutionCheck: () => ({ skip: false }),
+      });
+      await agent.init();
 
-    // 预置检查点 + 已完成的幂等工具记录（write_file 为 'idempotent-key' 级别，可跳过）
-    agent.createCheckpoint('测试放行后幂等');
-    agent.sessionManager!.logToolExecution({
-      name: 'write_file',
-      argsSignature: '{"path":"probe.txt"}',
-      executedAt: Date.now(),
-      resultSummary: '幂等上次结果',
-      ok: true,
-      idempotent: BUILTIN_TOOL_IDEMPOTENCY.write_file,
-    });
+      // 预置检查点 + 已完成的幂等工具记录（write_file 为 'idempotent-key' 级别，可跳过）
+      agent.createCheckpoint('测试放行后幂等');
+      agent.sessionManager!.logToolExecution({
+        name: 'write_file',
+        argsSignature: '{"path":"probe.txt"}',
+        executedAt: Date.now(),
+        resultSummary: '幂等上次结果',
+        ok: true,
+        idempotent: BUILTIN_TOOL_IDEMPOTENCY.write_file,
+      });
 
-    const results: Array<{ ok: boolean; summary?: string }> = [];
-    for await (const chunk of agent.chat('写入探针文件')) {
-      if (chunk.type === 'tool_result') {
-        results.push({ ok: chunk.ok, summary: chunk.summary });
+      const results: Array<{ ok: boolean; summary?: string }> = [];
+      for await (const chunk of agent.chat('写入探针文件')) {
+        if (chunk.type === 'tool_result') {
+          results.push({ ok: chunk.ok, summary: chunk.summary });
+        }
       }
-    }
 
-    // 宿主放行 → 内部幂等键跳过：outbox 标记 + 上次结果
-    expect(results).toHaveLength(1);
-    expect(results[0]!.ok).toBe(true);
-    expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
-    expect(results[0]!.summary).toContain('幂等上次结果');
-  });
+      // 宿主放行 → 内部幂等键跳过：outbox 标记 + 上次结果
+      expect(results).toHaveLength(1);
+      expect(results[0]!.ok).toBe(true);
+      expect(results[0]!.summary).toContain('[SKIP:TOOL:IDEMPOTENT]');
+      expect(results[0]!.summary).toContain('幂等上次结果');
+    },
+  );
 
   it('向后兼容：未注入宿主回调时，内部幂等检查照常工作', { timeout: 30000 }, async () => {
     agent = new Agent({
@@ -2367,111 +2429,131 @@ describe('工具执行前检查三态（宿主审批通道）', () => {
     expect(results[0]!.summary).toContain('现状幂等结果');
   });
 
-  it('delete_file 二次闭环不被幂等跳过（目标态可被 write_file 重建 → 跳过会残留临时脚本）', { timeout: 30000 }, async () => {
-    // 磁盘预置待清理文件：模拟同会话内第二次「写 → 执行 → 删」闭环时重建的同名临时脚本
-    writeFileSync(join(tmpProject, 'probe.txt'), '临时脚本内容', 'utf-8');
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new SingleToolThenTextProvider('delete_file', '{"path":"probe.txt"}'),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpProject, tmpData],
-      archiveMode: 'manual',
-    });
-    await agent.init();
+  it(
+    'delete_file 二次闭环不被幂等跳过（目标态可被 write_file 重建 → 跳过会残留临时脚本）',
+    { timeout: 30000 },
+    async () => {
+      // 磁盘预置待清理文件：模拟同会话内第二次「写 → 执行 → 删」闭环时重建的同名临时脚本
+      writeFileSync(join(tmpProject, 'probe.txt'), '临时脚本内容', 'utf-8');
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new SingleToolThenTextProvider('delete_file', '{"path":"probe.txt"}'),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpProject, tmpData],
+        archiveMode: 'manual',
+      });
+      await agent.init();
 
-    // 预置：上一轮已成功删除过同路径（第一次闭环的执行记录）
-    agent.createCheckpoint('测试 delete_file 不跳过');
-    agent.sessionManager!.logToolExecution({
-      name: 'delete_file',
-      argsSignature: '{"path":"probe.txt"}',
-      executedAt: Date.now(),
-      resultSummary: '✅ 已删除：probe.txt',
-      ok: true,
-      idempotent: BUILTIN_TOOL_IDEMPOTENCY.delete_file,
-    });
+      // 预置：上一轮已成功删除过同路径（第一次闭环的执行记录）
+      agent.createCheckpoint('测试 delete_file 不跳过');
+      agent.sessionManager!.logToolExecution({
+        name: 'delete_file',
+        argsSignature: '{"path":"probe.txt"}',
+        executedAt: Date.now(),
+        resultSummary: '✅ 已删除：probe.txt',
+        ok: true,
+        idempotent: BUILTIN_TOOL_IDEMPOTENCY.delete_file,
+      });
 
-    const results: Array<{ ok: boolean; summary?: string }> = [];
-    for await (const chunk of agent.chat('清理临时脚本')) {
-      if (chunk.type === 'tool_result') {
-        results.push({ ok: chunk.ok, summary: chunk.summary });
+      const results: Array<{ ok: boolean; summary?: string }> = [];
+      for await (const chunk of agent.chat('清理临时脚本')) {
+        if (chunk.type === 'tool_result') {
+          results.push({ ok: chunk.ok, summary: chunk.summary });
+        }
       }
-    }
 
-    // 核心：必须真实执行，而非命中 outbox 跳过（跳过会让 LLM 收到假的「已删除」而文件仍在）
-    expect(results).toHaveLength(1);
-    expect(results[0]!.ok).toBe(true);
-    expect(results[0]!.summary).not.toContain('[SKIP:TOOL:IDEMPOTENT]');
-    // 目标态达成：文件确实被删除（闭环不留痕）
-    expect(existsSync(join(tmpProject, 'probe.txt'))).toBe(false);
-  });
+      // 核心：必须真实执行，而非命中 outbox 跳过（跳过会让 LLM 收到假的「已删除」而文件仍在）
+      expect(results).toHaveLength(1);
+      expect(results[0]!.ok).toBe(true);
+      expect(results[0]!.summary).not.toContain('[SKIP:TOOL:IDEMPOTENT]');
+      // 目标态达成：文件确实被删除（闭环不留痕）
+      expect(existsSync(join(tmpProject, 'probe.txt'))).toBe(false);
+    },
+  );
 
-  it('IDM-1 端到端：write→read→write→read 中第二次 read 返回当前内容而非陈旧跳过结果', { timeout: 30000 }, async () => {
-    // 序列 Provider：依次发出 write(v1) → read → write(v2) → read，最后文本。
-    // 不读消息、仅按步推进——用于构造「同会话内读同一文件且中间被写覆盖」的闭环。
-    class SequenceToolProvider extends LlmProvider {
-      readonly name = 'mock-seq';
-      private steps = [
-        { name: 'write_file', args: JSON.stringify({ path: 'data.txt', content: 'v1-初始内容' }) },
-        { name: 'read_file', args: JSON.stringify({ path: 'data.txt' }) },
-        { name: 'write_file', args: JSON.stringify({ path: 'data.txt', content: 'v2-被覆盖后的最新内容' }) },
-        { name: 'read_file', args: JSON.stringify({ path: 'data.txt' }) },
-      ];
-      private i = 0;
+  it(
+    'IDM-1 端到端：write→read→write→read 中第二次 read 返回当前内容而非陈旧跳过结果',
+    { timeout: 30000 },
+    async () => {
+      // 序列 Provider：依次发出 write(v1) → read → write(v2) → read，最后文本。
+      // 不读消息、仅按步推进——用于构造「同会话内读同一文件且中间被写覆盖」的闭环。
+      class SequenceToolProvider extends LlmProvider {
+        readonly name = 'mock-seq';
+        private steps = [
+          {
+            name: 'write_file',
+            args: JSON.stringify({ path: 'data.txt', content: 'v1-初始内容' }),
+          },
+          { name: 'read_file', args: JSON.stringify({ path: 'data.txt' }) },
+          {
+            name: 'write_file',
+            args: JSON.stringify({ path: 'data.txt', content: 'v2-被覆盖后的最新内容' }),
+          },
+          { name: 'read_file', args: JSON.stringify({ path: 'data.txt' }) },
+        ];
+        private i = 0;
 
-      async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
-        const sys = messages.find((m) => m.role === 'system')?.content;
-        if (typeof sys === 'string' && sys.includes('对话摘要生成器')) {
-          yield { content: JSON.stringify({ summary: 'x', type: 'general' }) };
+        async *chat(messages: Message[], _opts?: ChatOptions): AsyncIterable<LlmChunk> {
+          const sys = messages.find((m) => m.role === 'system')?.content;
+          if (typeof sys === 'string' && sys.includes('对话摘要生成器')) {
+            yield { content: JSON.stringify({ summary: 'x', type: 'general' }) };
+            yield { finishReason: 'stop' };
+            return;
+          }
+          if (this.i < this.steps.length) {
+            const s = this.steps[this.i]!;
+            this.i += 1;
+            yield {
+              toolCalls: [
+                {
+                  id: 'c' + this.i,
+                  type: 'function',
+                  function: { name: s.name, arguments: s.args },
+                },
+              ],
+            };
+            yield { finishReason: 'tool_calls' };
+            return;
+          }
+          yield { content: '完成' };
           yield { finishReason: 'stop' };
-          return;
         }
-        if (this.i < this.steps.length) {
-          const s = this.steps[this.i]!;
-          this.i += 1;
-          yield {
-            toolCalls: [{ id: 'c' + this.i, type: 'function', function: { name: s.name, arguments: s.args } }],
-          };
-          yield { finishReason: 'tool_calls' };
-          return;
+      }
+
+      // 预置 v1 在盘（模拟会话开始前文件已存在）
+      writeFileSync(join(tmpProject, 'data.txt'), 'v1-初始内容', 'utf-8');
+      agent = new Agent({
+        projectPath: tmpProject,
+        provider: new SequenceToolProvider(),
+        configDir: tmpConfig,
+        dataDir: tmpData,
+        permission: 'owner',
+        allowedPaths: [tmpProject, tmpData],
+        archiveMode: 'manual',
+      });
+      await agent.init();
+      agent.createCheckpoint('测试 IDM-1 陈旧读');
+
+      const reads: string[] = [];
+      for await (const chunk of agent.chat('开始')) {
+        if (chunk.type === 'tool_result' && chunk.name === 'read_file') {
+          reads.push(chunk.summary ?? '');
         }
-        yield { content: '完成' };
-        yield { finishReason: 'stop' };
       }
-    }
 
-    // 预置 v1 在盘（模拟会话开始前文件已存在）
-    writeFileSync(join(tmpProject, 'data.txt'), 'v1-初始内容', 'utf-8');
-    agent = new Agent({
-      projectPath: tmpProject,
-      provider: new SequenceToolProvider(),
-      configDir: tmpConfig,
-      dataDir: tmpData,
-      permission: 'owner',
-      allowedPaths: [tmpProject, tmpData],
-      archiveMode: 'manual',
-    });
-    await agent.init();
-    agent.createCheckpoint('测试 IDM-1 陈旧读');
-
-    const reads: string[] = [];
-    for await (const chunk of agent.chat('开始')) {
-      if (chunk.type === 'tool_result' && chunk.name === 'read_file') {
-        reads.push(chunk.summary ?? '');
-      }
-    }
-
-    // 两次 read_file 都必须真实执行（read-only 永不跳过），而非命中首次的陈旧 outbox 缓存：
-    //   - 第一次读到 v1（盘上预置内容）
-    //   - 第二次读到 v2（中间 write_file 已覆盖）
-    // 若 read_file 仍被标为可跳过（IDM-1 未修复），第二次 read 会回喂首次的 v1 摘要 → 本例红。
-    expect(reads).toHaveLength(2);
-    expect(reads[0]).toContain('v1-初始内容');
-    expect(reads[1]).toContain('v2-被覆盖后的最新内容');
-    // 磁盘最终态为 v2（write 真实生效、read 未被假跳过）
-    expect(existsSync(join(tmpProject, 'data.txt'))).toBe(true);
-  });
+      // 两次 read_file 都必须真实执行（read-only 永不跳过），而非命中首次的陈旧 outbox 缓存：
+      //   - 第一次读到 v1（盘上预置内容）
+      //   - 第二次读到 v2（中间 write_file 已覆盖）
+      // 若 read_file 仍被标为可跳过（IDM-1 未修复），第二次 read 会回喂首次的 v1 摘要 → 本例红。
+      expect(reads).toHaveLength(2);
+      expect(reads[0]).toContain('v1-初始内容');
+      expect(reads[1]).toContain('v2-被覆盖后的最新内容');
+      // 磁盘最终态为 v2（write 真实生效、read 未被假跳过）
+      expect(existsSync(join(tmpProject, 'data.txt'))).toBe(true);
+    },
+  );
 });
 
 // ═══════════════════════════════════════════════════════════════
@@ -2537,156 +2619,180 @@ describe('问答闭环内交互输入归属（同一闭环节点不分裂）', (
     return rounds[0]!;
   }
 
-  it('主动提问回答 → 流中暂停补充 → 续跑：三类交互输入归属同一闭环节点（round 不分裂）', { timeout: 30000 }, async () => {
-    agent = makeTs9Agent();
-    await agent.init();
+  it(
+    '主动提问回答 → 流中暂停补充 → 续跑：三类交互输入归属同一闭环节点（round 不分裂）',
+    { timeout: 30000 },
+    async () => {
+      agent = makeTs9Agent();
+      await agent.init();
 
-    // ── (1) 首轮：LLM 主动提问（ask_user 工具）→ 暂停，prepare 已分配闭环节点 roundId ──
-    for await (const _chunk of agent.chat('帮我读取一个文件')) {
-      void _chunk; // 仅消费流，断言看状态机与 RoundStore
-    }
-    expect(agent.sessionManager!.status).toBe('paused');
-    // 闭环节点锚点 = roundStore 唯一 Round 的 id（锚点真理源 = loop.currentRoundId，checkpoint 不存副本）
-    const anchorRoundId = currentClosure().id;
-    expect(anchorRoundId).toBeTruthy();
-    // round 尚未完成（暂停轮不落 ask_user 的 tool 结果段），但闭环节点已建立
-    let closure = currentClosure();
-    expect(closure.id).toBe(anchorRoundId);
+      // ── (1) 首轮：LLM 主动提问（ask_user 工具）→ 暂停，prepare 已分配闭环节点 roundId ──
+      for await (const _chunk of agent.chat('帮我读取一个文件')) {
+        void _chunk; // 仅消费流，断言看状态机与 RoundStore
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      // 闭环节点锚点 = roundStore 唯一 Round 的 id（锚点真理源 = loop.currentRoundId，checkpoint 不存副本）
+      const anchorRoundId = currentClosure().id;
+      expect(anchorRoundId).toBeTruthy();
+      // round 尚未完成（暂停轮不落 ask_user 的 tool 结果段），但闭环节点已建立
+      let closure = currentClosure();
+      expect(closure.id).toBe(anchorRoundId);
 
-    // ── (2) 用户回答主动提问（answerQuestion 回填 + 带回答续跑）→ 归属同一闭环节点 ──
-    expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
-    for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
-      void _chunk; // 仅消费流
-    }
-    expect(agent.sessionManager!.status).toBe('running');
-    closure = currentClosure();
-    expect(closure.id).toBe(anchorRoundId);
-    expect(closure.interactiveInputs).toHaveLength(1);
-    expect(closure.interactiveInputs![0]!.kind).toBe('question-answer');
-    expect(closure.interactiveInputs![0]!.content).toBe('我想读 probe.txt');
-    // 提问原文与候选选项随回答落盘（answerQuestion 快照 → runResume → appendUser），回放可还原问答对
-    expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
-    expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
-    // 回答完整落盘：assistantMessage 为续跑最终回答
-    expect(closure.status).toBe('complete');
-    expect(closure.assistantMessage?.content).toContain('继续执行');
+      // ── (2) 用户回答主动提问（answerQuestion 回填 + 带回答续跑）→ 归属同一闭环节点 ──
+      expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
+      for await (const _chunk of agent.resumeExecution(
+        '我想读 probe.txt',
+        undefined,
+        'question-answer',
+      )) {
+        void _chunk; // 仅消费流
+      }
+      expect(agent.sessionManager!.status).toBe('running');
+      closure = currentClosure();
+      expect(closure.id).toBe(anchorRoundId);
+      expect(closure.interactiveInputs).toHaveLength(1);
+      expect(closure.interactiveInputs![0]!.kind).toBe('question-answer');
+      expect(closure.interactiveInputs![0]!.content).toBe('我想读 probe.txt');
+      // 提问原文与候选选项随回答落盘（answerQuestion 快照 → runResume → appendUser），回放可还原问答对
+      expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+      expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+      // 回答完整落盘：assistantMessage 为续跑最终回答
+      expect(closure.status).toBe('complete');
+      expect(closure.assistantMessage?.content).toContain('继续执行');
 
-    // ── (3) 用户补充（supplement）→ 归属同一闭环节点 ──
-    // 暂停后补充路由前置：模拟「已暂停 → 发补充」——空闲 requestPause 已收敛为作废守卫
-    // （任务结束的暂停申请即作废），此处用显式 pause 构造暂停态
-    expect(agent.pause('暂停后补充', 'user', true)).toBe(true);
-    expect(agent.sessionManager!.status).toBe('paused');
-    for await (const _chunk of agent.resumeExecution('补充：请同时读取测试配置', undefined, 'supplement')) {
-      void _chunk; // 仅消费流
-    }
-    expect(agent.sessionManager!.status).toBe('running');
-    closure = currentClosure();
-    expect(closure.id).toBe(anchorRoundId);
-    expect(closure.interactiveInputs).toHaveLength(2);
-    expect(closure.interactiveInputs![1]!.kind).toBe('supplement');
-    expect(closure.interactiveInputs![1]!.content).toBe('补充：请同时读取测试配置');
+      // ── (3) 用户补充（supplement）→ 归属同一闭环节点 ──
+      // 暂停后补充路由前置：模拟「已暂停 → 发补充」——空闲 requestPause 已收敛为作废守卫
+      // （任务结束的暂停申请即作废），此处用显式 pause 构造暂停态
+      expect(agent.pause('暂停后补充', 'user', true)).toBe(true);
+      expect(agent.sessionManager!.status).toBe('paused');
+      for await (const _chunk of agent.resumeExecution(
+        '补充：请同时读取测试配置',
+        undefined,
+        'supplement',
+      )) {
+        void _chunk; // 仅消费流
+      }
+      expect(agent.sessionManager!.status).toBe('running');
+      closure = currentClosure();
+      expect(closure.id).toBe(anchorRoundId);
+      expect(closure.interactiveInputs).toHaveLength(2);
+      expect(closure.interactiveInputs![1]!.kind).toBe('supplement');
+      expect(closure.interactiveInputs![1]!.content).toBe('补充：请同时读取测试配置');
 
-    // (4) 会话登记也只有一个闭环节点（roundIds 不因交互输入新增）
-    const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
-    expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);
-    // (5) checkpoint 暂停态收口：回答/pause 硬恢复后 pausedAt 已清除，status 同步 running
-    const cp = agent.sessionManager!.getCheckpoint()!;
-    expect(cp.status).toBe('running');
-    expect(cp).not.toHaveProperty('pausedAt');
-  });
+      // (4) 会话登记也只有一个闭环节点（roundIds 不因交互输入新增）
+      const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
+      expect(sessionStore.getRoundIds(sessionId)).toEqual([anchorRoundId]);
+      // (5) checkpoint 暂停态收口：回答/pause 硬恢复后 pausedAt 已清除，status 同步 running
+      const cp = agent.sessionManager!.getCheckpoint()!;
+      expect(cp.status).toBe('running');
+      expect(cp).not.toHaveProperty('pausedAt');
+    },
+  );
 
-  it('断电优先：重启不恢复暂停态，重启后输入新开 turn（原闭环节点不被续写）', { timeout: 30000 }, async () => {
-    // ── 第一段：提问 → 回答 → 暂停（闭环节点锚点 = roundStore 唯一 Round）──
-    agent = makeTs9Agent();
-    await agent.init();
-    for await (const _chunk of agent.chat('帮我读取一个文件')) {
-      void _chunk; // 仅消费流
-    }
-    expect(agent.sessionManager!.status).toBe('paused');
-    const anchorRoundId = currentClosure().id;
-    expect(anchorRoundId).toBeTruthy();
-    // 回答主动提问（结构化回填 + 带回答续跑）
-    expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
-    for await (const _chunk of agent.resumeExecution('我想读 probe.txt', undefined, 'question-answer')) {
-      void _chunk; // 仅消费流
-    }
-    // 暂停态关闭：闭环节点仍锚定同一 Round（roundStore 唯一节点）
-    // 显式 pause（空闲 requestPause 是作废守卫）
-    expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
-    expect(currentClosure().id).toBe(anchorRoundId);
-    // 原闭环节点此刻：1 条交互输入（question-answer）
-    expect(currentClosure().interactiveInputs).toHaveLength(1);
-    // 会话标识在重启前取证：减法后重启不再加载持久化检查点，届时无从取 sessionId
-    const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
-    await agent.close();
-    agent = null;
+  it(
+    '断电优先：重启不恢复暂停态，重启后输入新开 turn（原闭环节点不被续写）',
+    { timeout: 30000 },
+    async () => {
+      // ── 第一段：提问 → 回答 → 暂停（闭环节点锚点 = roundStore 唯一 Round）──
+      agent = makeTs9Agent();
+      await agent.init();
+      for await (const _chunk of agent.chat('帮我读取一个文件')) {
+        void _chunk; // 仅消费流
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      const anchorRoundId = currentClosure().id;
+      expect(anchorRoundId).toBeTruthy();
+      // 回答主动提问（结构化回填 + 带回答续跑）
+      expect(agent.answerQuestion(['我想读 probe.txt'])).toBe(true);
+      for await (const _chunk of agent.resumeExecution(
+        '我想读 probe.txt',
+        undefined,
+        'question-answer',
+      )) {
+        void _chunk; // 仅消费流
+      }
+      // 暂停态关闭：闭环节点仍锚定同一 Round（roundStore 唯一节点）
+      // 显式 pause（空闲 requestPause 是作废守卫）
+      expect(agent.pause('重启前暂停', 'user', true)).toBe(true);
+      expect(currentClosure().id).toBe(anchorRoundId);
+      // 原闭环节点此刻：1 条交互输入（question-answer）
+      expect(currentClosure().interactiveInputs).toHaveLength(1);
+      // 会话标识在重启前取证：减法后重启不再加载持久化检查点，届时无从取 sessionId
+      const sessionId = agent.sessionManager!.getCheckpoint()!.sessionId;
+      await agent.close();
+      agent = null;
 
-    // ── 第二段：重启（新 Agent 实例，同 sessionStore/roundStore）──
-    agent = makeTs9Agent();
-    await agent.init();
+      // ── 第二段：重启（新 Agent 实例，同 sessionStore/roundStore）──
+      agent = makeTs9Agent();
+      await agent.init();
 
-    // 断电优先裁决：进程死亡即非自愿中断——重启**不回填 paused**，也不再加载
-    // 持久化检查点（自愿介入要求内存态连续，故一律降级为「收场重开」）。
-    expect(agent.sessionManager!.status).toBe('running');
-    // 定案：跨重启恢复链整体不存在，SessionCheckpoint 为同进程内存态
-    // → 重启后 **不加载**任何持久化检查点（上下文连续性一律靠 Round 物理记录，不靠检查点）。
-    expect(agent.sessionManager!.getCheckpoint()).toBeNull();
+      // 断电优先裁决：进程死亡即非自愿中断——重启**不回填 paused**，也不再加载
+      // 持久化检查点（自愿介入要求内存态连续，故一律降级为「收场重开」）。
+      expect(agent.sessionManager!.status).toBe('running');
+      // 定案：跨重启恢复链整体不存在，SessionCheckpoint 为同进程内存态
+      // → 重启后 **不加载**任何持久化检查点（上下文连续性一律靠 Round 物理记录，不靠检查点）。
+      expect(agent.sessionManager!.getCheckpoint()).toBeNull();
 
-    // 重启后输入 → **新开 turn**（不续写原闭环节点：上下文已不连续，续写会毒化闭环节点语义）
-    for await (const _chunk of agent.chat('重启后补充：换个方案')) {
-      void _chunk; // 仅消费流
-    }
-    const rounds = roundStore.listAll();
-    expect(rounds).toHaveLength(2); // 原闭环节点 + 新 turn，各自独立
-    const original = rounds.find((r) => r.id === anchorRoundId)!;
-    // 原闭环节点原样保留：1 条交互输入、question/options 随轮持久化
-    expect(original.interactiveInputs).toHaveLength(1);
-    expect(original.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
-    expect(original.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
-    // 新 turn 不携原闭环节点的交互输入（未续写）
-    const fresh = rounds.find((r) => r.id !== anchorRoundId)!;
-    expect(fresh.interactiveInputs ?? []).toHaveLength(0);
-    // 会话登记含原节点 + 新节点（原节点未被替换）
-    expect(sessionStore.getRoundIds(sessionId)).toContain(anchorRoundId);
-    expect(sessionStore.getRoundIds(sessionId)).toContain(fresh.id);
-  });
+      // 重启后输入 → **新开 turn**（不续写原闭环节点：上下文已不连续，续写会毒化闭环节点语义）
+      for await (const _chunk of agent.chat('重启后补充：换个方案')) {
+        void _chunk; // 仅消费流
+      }
+      const rounds = roundStore.listAll();
+      expect(rounds).toHaveLength(2); // 原闭环节点 + 新 turn，各自独立
+      const original = rounds.find((r) => r.id === anchorRoundId)!;
+      // 原闭环节点原样保留：1 条交互输入、question/options 随轮持久化
+      expect(original.interactiveInputs).toHaveLength(1);
+      expect(original.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+      expect(original.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+      // 新 turn 不携原闭环节点的交互输入（未续写）
+      const fresh = rounds.find((r) => r.id !== anchorRoundId)!;
+      expect(fresh.interactiveInputs ?? []).toHaveLength(0);
+      // 会话登记含原节点 + 新节点（原节点未被替换）
+      expect(sessionStore.getRoundIds(sessionId)).toContain(anchorRoundId);
+      expect(sessionStore.getRoundIds(sessionId)).toContain(fresh.id);
+    },
+  );
 
-  it('ask 提问超时未答 → cancelAsk + resumeExecution(timeout)：落「未回答」交互记录（带 question）、LLM 收到 [ASK_ABORTED] 自决、round 不分裂', { timeout: 30000 }, async () => {
-    agent = makeTs9Agent();
-    await agent.init();
+  it(
+    'ask 提问超时未答 → cancelAsk + resumeExecution(timeout)：落「未回答」交互记录（带 question）、LLM 收到 [ASK_ABORTED] 自决、round 不分裂',
+    { timeout: 30000 },
+    async () => {
+      agent = makeTs9Agent();
+      await agent.init();
 
-    // ── (1) 首轮：LLM 主动提问（ask_user 工具）→ 暂停 ──
-    for await (const _chunk of agent.chat('帮我读取一个文件')) {
-      void _chunk;
-    }
-    expect(agent.sessionManager!.status).toBe('paused');
-    const anchorRoundId = currentClosure().id;
+      // ── (1) 首轮：LLM 主动提问（ask_user 工具）→ 暂停 ──
+      for await (const _chunk of agent.chat('帮我读取一个文件')) {
+        void _chunk;
+      }
+      expect(agent.sessionManager!.status).toBe('paused');
+      const anchorRoundId = currentClosure().id;
 
-    // ── (2) 宿主超时保底：cancelAsk（[ASK_ABORTED] 占位 + 快照转存）→ 无输入续跑 ──
-    agent.cancelAsk(); // 消费在途提问（注入 [ASK_ABORTED] 占位 + 转存提问快照供落盘）
-    agent.cancelAsk(); // 幂等：pendingAsk 已清 → no-op 不抛（重复触发无害）
-    for await (const _chunk of agent.resumeExecution(undefined, undefined, 'timeout')) {
-      void _chunk;
-    }
-    expect(agent.sessionManager!.status).toBe('running');
+      // ── (2) 宿主超时保底：cancelAsk（[ASK_ABORTED] 占位 + 快照转存）→ 无输入续跑 ──
+      agent.cancelAsk(); // 消费在途提问（注入 [ASK_ABORTED] 占位 + 转存提问快照供落盘）
+      agent.cancelAsk(); // 幂等：pendingAsk 已清 → no-op 不抛（重复触发无害）
+      for await (const _chunk of agent.resumeExecution(undefined, undefined, 'timeout')) {
+        void _chunk;
+      }
+      expect(agent.sessionManager!.status).toBe('running');
 
-    // ── (3) 落盘断言：kind=timeout + 超时通知正文 + question/options 随记录 ──
-    const closure = currentClosure();
-    expect(closure.id).toBe(anchorRoundId); // round 不分裂
-    expect(closure.interactiveInputs).toHaveLength(1);
-    expect(closure.interactiveInputs![0]!.kind).toBe('timeout');
-    expect(closure.interactiveInputs![0]!.content).toBe(ASK_TIMEOUT_NOTICE);
-    expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
-    expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
+      // ── (3) 落盘断言：kind=timeout + 超时通知正文 + question/options 随记录 ──
+      const closure = currentClosure();
+      expect(closure.id).toBe(anchorRoundId); // round 不分裂
+      expect(closure.interactiveInputs).toHaveLength(1);
+      expect(closure.interactiveInputs![0]!.kind).toBe('timeout');
+      expect(closure.interactiveInputs![0]!.content).toBe(ASK_TIMEOUT_NOTICE);
+      expect(closure.interactiveInputs![0]!.question).toBe('你想读哪个文件？');
+      expect(closure.interactiveInputs![0]!.options).toEqual(['probe.txt', 'config.json']);
 
-    // ── (4) LLM 自决依据：续跑轮上下文含 [ASK_ABORTED] 占位 tool result（用户未回答真相，不伪装选择）──
-    const resumeMsgs = askProvider.resumeMessages;
-    expect(resumeMsgs).not.toBeNull();
-    const toolResults = resumeMsgs!.filter((m) => m.role === 'tool');
-    const askResult = toolResults.find((m) => String(m.content).includes('[ASK_ABORTED]'));
-    expect(askResult).toBeTruthy();
-    expect(String(askResult!.content)).toContain('用户未回答该提问');
-    // 绝无「用户选择了某选项」的伪造注入
-    expect(String(askResult!.content)).not.toContain('[ASK_ANSWER]');
-  });
+      // ── (4) LLM 自决依据：续跑轮上下文含 [ASK_ABORTED] 占位 tool result（用户未回答真相，不伪装选择）──
+      const resumeMsgs = askProvider.resumeMessages;
+      expect(resumeMsgs).not.toBeNull();
+      const toolResults = resumeMsgs!.filter((m) => m.role === 'tool');
+      const askResult = toolResults.find((m) => String(m.content).includes('[ASK_ABORTED]'));
+      expect(askResult).toBeTruthy();
+      expect(String(askResult!.content)).toContain('用户未回答该提问');
+      // 绝无「用户选择了某选项」的伪造注入
+      expect(String(askResult!.content)).not.toContain('[ASK_ANSWER]');
+    },
+  );
 });

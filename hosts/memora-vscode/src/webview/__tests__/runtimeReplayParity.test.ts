@@ -29,11 +29,7 @@ import {
   buildRealRoundTimeline,
   type TimelineMsg,
 } from './fixtures/realRound-1789565571934.js';
-import {
-  mountChatView,
-  dispatch,
-  collectAllBodyText,
-} from './helpers/chatViewTestEnv.js';
+import { mountChatView, dispatch, collectAllBodyText } from './helpers/chatViewTestEnv.js';
 
 // 单用例真实事件量 ~1356 条，DOM 拼接耗时（与 chatView.test.ts R2/R3/R4 同量级）
 const PARITY_TIMEOUT_MS = 30_000;
@@ -119,33 +115,37 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
     expect(roundView.assistantMessage?.content).toBe(ASSISTANT_REPLY_TEXT);
   });
 
-  it('§2 对拍：运行时流式路与重放路渲染出等价轮级语义（4 字段轮级语义对拍）', { timeout: PARITY_TIMEOUT_MS }, () => {
-    // ── 路 A：运行时流式（真实生成）──
-    // 用户气泡在真实运行时由 webview 本地渲染（send 提交后 append），故补发 user 消息对齐重放路。
-    mountChatView();
-    dispatchAll([
-      { type: 'user', text: REAL_ROUND.userText, ts: REAL_ROUND.createdAt },
-      ...buildRealRoundTimeline({ withStreaming: true, withDone: true }),
-    ]);
-    const streamSemantics = extractRoundSemantics();
-    const streamAssistant = document.querySelector('.msg.assistant');
-    const streamBody = streamAssistant?.querySelector<HTMLElement>('.msg-body');
-    // 收口后光标消失（done 已收尾，非在途）
-    expect(streamBody?.classList.contains('is-streaming')).toBe(false);
+  it(
+    '§2 对拍：运行时流式路与重放路渲染出等价轮级语义（4 字段轮级语义对拍）',
+    { timeout: PARITY_TIMEOUT_MS },
+    () => {
+      // ── 路 A：运行时流式（真实生成）──
+      // 用户气泡在真实运行时由 webview 本地渲染（send 提交后 append），故补发 user 消息对齐重放路。
+      mountChatView();
+      dispatchAll([
+        { type: 'user', text: REAL_ROUND.userText, ts: REAL_ROUND.createdAt },
+        ...buildRealRoundTimeline({ withStreaming: true, withDone: true }),
+      ]);
+      const streamSemantics = extractRoundSemantics();
+      const streamAssistant = document.querySelector('.msg.assistant');
+      const streamBody = streamAssistant?.querySelector<HTMLElement>('.msg-body');
+      // 收口后光标消失（done 已收尾，非在途）
+      expect(streamBody?.classList.contains('is-streaming')).toBe(false);
 
-    // ── 路 B：重放（单条 turn_update.rounds 整批重建）──
-    mountChatView();
-    dispatch(buildReplayTurnUpdate());
-    const replaySemantics = extractRoundSemantics();
+      // ── 路 B：重放（单条 turn_update.rounds 整批重建）──
+      mountChatView();
+      dispatch(buildReplayTurnUpdate());
+      const replaySemantics = extractRoundSemantics();
 
-    // 轮级语义等价：用户气泡、AI 正文、工具行数、折叠块结构两路一致
-    expect(replaySemantics).toEqual(streamSemantics);
-    // 内容性防空转：正文确实是该轮回答，不是空串/占位
-    expect(replaySemantics.assistantText).toContain(ASSISTANT_REPLY_TEXT);
-    expect(replaySemantics.userText).toBe(REAL_ROUND.userText);
-    // 真实事件量守恒：7 对工具（task_table_write ×1 + task_table_update ×4 + search_memories ×1 + list_dir ×1）
-    expect(replaySemantics.toolRowCount).toBe(7);
-  });
+      // 轮级语义等价：用户气泡、AI 正文、工具行数、折叠块结构两路一致
+      expect(replaySemantics).toEqual(streamSemantics);
+      // 内容性防空转：正文确实是该轮回答，不是空串/占位
+      expect(replaySemantics.assistantText).toContain(ASSISTANT_REPLY_TEXT);
+      expect(replaySemantics.userText).toBe(REAL_ROUND.userText);
+      // 真实事件量守恒：7 对工具（task_table_write ×1 + task_table_update ×4 + search_memories ×1 + list_dir ×1）
+      expect(replaySemantics.toolRowCount).toBe(7);
+    },
+  );
 
   it('§3 红线守护：非 complete 轮不派生 assistant 正文（重放映射不破坏 isRoundSettled 分界）', () => {
     // 中断/在途轮（status ≠ complete）：rounds 形状里无末段回答可派生，renderReplayFromRounds 必须
@@ -153,7 +153,11 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
     // ⚠️ 过程折叠区依赖 assistant 正文锚点（ensureRoundBlock 的 host=activeAssistantEl 为空即不建），
     //    故悬置轮同时无折叠区/工具行——与旧 replay_events 分支同语义（replay 折叠区附在助手块后，
     //    无正文块则不建），非重放通道回归。
-    const pendingView: RoundView = { ...buildRoundView(), status: 'pending' as const, assistantMessage: undefined };
+    const pendingView: RoundView = {
+      ...buildRoundView(),
+      status: 'pending' as const,
+      assistantMessage: undefined,
+    };
     mountChatView();
     dispatch(buildReplayTurnUpdate(pendingView));
 
@@ -167,53 +171,82 @@ describe('运行时 × 重放对拍（round-1789565571934 同一 fixture 两路�
     expect(semantics.toolRowCount).toBe(0);
   });
 
-  it('§4 交互输入行 live×replay 同形对拍：supplement/question-answer 两路渲染「你补充/你答」一致', { timeout: PARITY_TIMEOUT_MS }, () => {
-    // 守「live 交互行 == replay 交互行」同形（§2 只守轮级 4 字段，本例守交互行）。
-    // 两路共用 renderQaItem（运行时 appendInteractiveInput / 重放 renderReplayRound 均调它），
-    // 本例锁定同一内容在两路产出同形行——若任一路改渲染函数即破。
-    const SUPPLEMENT = '补充：成本标准改 <¥0.5';
-    const ANSWER = '选方案 A';
-    const QUESTION = '选哪个方案？';
-    const TS_S = '2026-09-07T11:00:00.000Z';
-    const TS_A = '2026-09-07T12:00:00.000Z';
-    const expected = [
-      { tag: '你补充', content: SUPPLEMENT },
-      { tag: '你答', content: ANSWER },
-    ];
-    const sortRows = (rows: InteractiveRow[]) =>
-      [...rows].sort((a, b) => a.tag.localeCompare(b.tag) || a.content.localeCompare(b.content));
+  it(
+    '§4 交互输入行 live×replay 同形对拍：supplement/question-answer 两路渲染「你补充/你答」一致',
+    { timeout: PARITY_TIMEOUT_MS },
+    () => {
+      // 守「live 交互行 == replay 交互行」同形（§2 只守轮级 4 字段，本例守交互行）。
+      // 两路共用 renderQaItem（运行时 appendInteractiveInput / 重放 renderReplayRound 均调它），
+      // 本例锁定同一内容在两路产出同形行——若任一路改渲染函数即破。
+      const SUPPLEMENT = '补充：成本标准改 <¥0.5';
+      const ANSWER = '选方案 A';
+      const QUESTION = '选哪个方案？';
+      const TS_S = '2026-09-07T11:00:00.000Z';
+      const TS_A = '2026-09-07T12:00:00.000Z';
+      const expected = [
+        { tag: '你补充', content: SUPPLEMENT },
+        { tag: '你答', content: ANSWER },
+      ];
+      const sortRows = (rows: InteractiveRow[]) =>
+        [...rows].sort((a, b) => a.tag.localeCompare(b.tag) || a.content.localeCompare(b.content));
 
-    // ── 路 A：运行时流式（暂停态补充 + 提问回答，真实生成路）──
-    mountChatView();
-    const liveMessages = document.getElementById('messages') as HTMLElement;
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
-    dispatch({ type: 'paused' });
-    dispatch({ type: 'user', text: SUPPLEMENT, ts: TS_S, kind: 'supplement' });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'paused' });
-    dispatch({ type: 'user', text: ANSWER, ts: TS_A, kind: 'question-answer', roundId: 'r1', question: QUESTION, options: ['方案 A', '方案 B'] });
-    dispatch({ type: 'process_event', event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } } });
-    dispatch({ type: 'chunk', content: '收尾', roundId: 'r1' });
-    dispatch({ type: 'done', roundId: 'r1' });
-    const liveRows = extractInteractiveRows(liveMessages);
+      // ── 路 A：运行时流式（暂停态补充 + 提问回答，真实生成路）──
+      mountChatView();
+      const liveMessages = document.getElementById('messages') as HTMLElement;
+      dispatch({
+        type: 'process_event',
+        event: { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+      });
+      dispatch({ type: 'chunk', content: '正文', roundId: 'r1' });
+      dispatch({ type: 'paused' });
+      dispatch({ type: 'user', text: SUPPLEMENT, ts: TS_S, kind: 'supplement' });
+      dispatch({
+        type: 'process_event',
+        event: { type: 'meta', seq: 2, ts: '', payload: { role: 'AI', llm: 'm' } },
+      });
+      dispatch({ type: 'paused' });
+      dispatch({
+        type: 'user',
+        text: ANSWER,
+        ts: TS_A,
+        kind: 'question-answer',
+        roundId: 'r1',
+        question: QUESTION,
+        options: ['方案 A', '方案 B'],
+      });
+      dispatch({
+        type: 'process_event',
+        event: { type: 'meta', seq: 3, ts: '', payload: { role: 'AI', llm: 'm' } },
+      });
+      dispatch({ type: 'chunk', content: '收尾', roundId: 'r1' });
+      dispatch({ type: 'done', roundId: 'r1' });
+      const liveRows = extractInteractiveRows(liveMessages);
 
-    // ── 路 B：重放（单条 turn_update.rounds 承载 interactiveInputs）──
-    mountChatView();
-    const replayMessages = document.getElementById('messages') as HTMLElement;
-    const roundView: RoundView = {
-      ...buildRoundView(),
-      interactiveInputs: [
-        { id: 'i-s', role: 'user', content: SUPPLEMENT, timestamp: TS_S, kind: 'supplement' },
-        { id: 'i-a', role: 'user', content: ANSWER, timestamp: TS_A, kind: 'question-answer', question: QUESTION, options: ['方案 A', '方案 B'] },
-      ],
-    };
-    dispatch(buildReplayTurnUpdate(roundView));
-    const replayRows = extractInteractiveRows(replayMessages);
+      // ── 路 B：重放（单条 turn_update.rounds 承载 interactiveInputs）──
+      mountChatView();
+      const replayMessages = document.getElementById('messages') as HTMLElement;
+      const roundView: RoundView = {
+        ...buildRoundView(),
+        interactiveInputs: [
+          { id: 'i-s', role: 'user', content: SUPPLEMENT, timestamp: TS_S, kind: 'supplement' },
+          {
+            id: 'i-a',
+            role: 'user',
+            content: ANSWER,
+            timestamp: TS_A,
+            kind: 'question-answer',
+            question: QUESTION,
+            options: ['方案 A', '方案 B'],
+          },
+        ],
+      };
+      dispatch(buildReplayTurnUpdate(roundView));
+      const replayRows = extractInteractiveRows(replayMessages);
 
-    // 两路各自渲染正确（防空转）+ 两路同形（live==replay 对称守卫）
-    expect(sortRows(liveRows)).toEqual(sortRows(expected));
-    expect(sortRows(replayRows)).toEqual(sortRows(expected));
-    expect(sortRows(liveRows)).toEqual(sortRows(replayRows));
-  });
+      // 两路各自渲染正确（防空转）+ 两路同形（live==replay 对称守卫）
+      expect(sortRows(liveRows)).toEqual(sortRows(expected));
+      expect(sortRows(replayRows)).toEqual(sortRows(expected));
+      expect(sortRows(liveRows)).toEqual(sortRows(replayRows));
+    },
+  );
 });

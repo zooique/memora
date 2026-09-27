@@ -126,7 +126,11 @@ export class ProviderStore {
     const configs = this.readConfig();
     // 逐个读取真实 key 生成脱敏串（不把真实值带出 store）
     const withMasked = await Promise.all(
-      configs.map(async (p) => ({ ...p, apiKey: '', maskedKey: maskKey(await this.readApiKey(p.name)) })),
+      configs.map(async (p) => ({
+        ...p,
+        apiKey: '',
+        maskedKey: maskKey(await this.readApiKey(p.name)),
+      })),
     );
     return withMasked;
   }
@@ -162,8 +166,16 @@ export class ProviderStore {
    * @param isEditing 是否编辑现有 Provider
    * @returns 成功返回 {ok:true}；校验/重复失败返回 {ok:false, message}
    */
-  async save(config: LlmProviderConfig, isEditing: boolean): Promise<{ ok: boolean; message?: string }> {
-    const trimmed = { ...config, name: config.name.trim(), model: config.model.trim(), baseUrl: config.baseUrl.trim() };
+  async save(
+    config: LlmProviderConfig,
+    isEditing: boolean,
+  ): Promise<{ ok: boolean; message?: string }> {
+    const trimmed = {
+      ...config,
+      name: config.name.trim(),
+      model: config.model.trim(),
+      baseUrl: config.baseUrl.trim(),
+    };
 
     // contextWindow 护栏（**纯防呆 sanity bound**，非模型真上限、也非权威裁决）：正整数 + 宽松范围，
     // 防 0 / 防天文数字撑爆预算。
@@ -326,7 +338,9 @@ export class ProviderStore {
       });
       // 发起一次最小对话，验证连通性
       let reply = '';
-      for await (const chunk of provider.chat([{ role: 'user', content: 'ping' }], { maxTokens: 8 })) {
+      for await (const chunk of provider.chat([{ role: 'user', content: 'ping' }], {
+        maxTokens: 8,
+      })) {
         reply += chunk.content;
         if (reply.length > 0) break;
       }

@@ -88,7 +88,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(cards[0]?.querySelector('.badge')?.textContent).toBe('当前');
     // 激活角色无「设为当前」（仅「带入对话」+ 卡片级组队入口），其他角色两者都有
     expect(
-      Array.from(cards[0]!.querySelectorAll('.btn-secondary')).some((b) => b.textContent === '设为当前'),
+      Array.from(cards[0]!.querySelectorAll('.btn-secondary')).some(
+        (b) => b.textContent === '设为当前',
+      ),
     ).toBe(false);
     expect(cards[1]?.querySelector('.card-name')?.textContent).toBe('翻译助手');
     expect(cards[1]?.querySelector('.btn-secondary')?.textContent).toBe('设为当前');
@@ -97,7 +99,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     expect(cards[1]?.querySelector('.btn-primary')?.textContent).toBe('带入对话');
     // 按钮 title 提示：解释各自行为（对齐 chip.title 可发现性范式）
     expect(cards[0]?.querySelector('.btn-primary')?.getAttribute('title')).toContain('跳到对话');
-    expect(cards[1]?.querySelector('.btn-secondary')?.getAttribute('title')).toContain('仅切换默认角色');
+    expect(cards[1]?.querySelector('.btn-secondary')?.getAttribute('title')).toContain(
+      '仅切换默认角色',
+    );
   });
 
   it('能力标签 chips：展示 host 翻译的中文 label，title 承载原始能力名', () => {
@@ -228,13 +232,17 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     const fallbackCard = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === 'memora 助手',
     );
-    expect(fallbackCard?.querySelector('.strategy-chip.fallback')?.textContent).toContain('系统兜底');
+    expect(fallbackCard?.querySelector('.strategy-chip.fallback')?.textContent).toContain(
+      '系统兜底',
+    );
 
     // 弹窗：显示队长（当前卡片角色）+ 排除自身后的其余角色
     const modal = document.querySelector('.team-modal');
     expect(modal).not.toBeNull();
     expect(modal?.querySelector('.team-modal-title')?.textContent).toContain('共鸣小说家');
-    const items = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
+    const items = Array.from(
+      modal?.querySelectorAll('.team-modal-item input') ?? [],
+    ) as HTMLInputElement[];
     expect(items).toHaveLength(3); // 编辑 / 评论家 / memora 助手（排除队长自身）
     items.find((cb) => cb.value === '编辑')!.checked = true;
     items.find((cb) => cb.value === '评论家')!.checked = true;
@@ -267,7 +275,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
 
     // 编辑态回显：已有组员勾选
     const modal = document.querySelector('.team-modal');
-    const cbs = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
+    const cbs = Array.from(
+      modal?.querySelectorAll('.team-modal-item input') ?? [],
+    ) as HTMLInputElement[];
     expect(cbs.find((cb) => cb.value === '编辑')?.checked).toBe(true);
     // 删除队伍（仅编辑态提供）→ postMessage roles_team_delete
     (modal?.querySelector('.team-modal-del') as HTMLButtonElement).click();
@@ -291,7 +301,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
     (card?.querySelector('.team-ribbon-btn') as HTMLButtonElement).click();
 
     const modal = document.querySelector('.team-modal');
-    const cbs = Array.from(modal?.querySelectorAll('.team-modal-item input') ?? []) as HTMLInputElement[];
+    const cbs = Array.from(
+      modal?.querySelectorAll('.team-modal-item input') ?? [],
+    ) as HTMLInputElement[];
     // 依次勾选全部（5 名可选）→ 第 5 名被上限拒绝（勾满 4 即封顶）
     let checked = 0;
     for (const cb of cbs) {
@@ -314,11 +326,9 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
       { name: '发行', displayName: '发行', capabilities: [] },
     ];
     // 存量数据：5 名组员（超上限 4）
-    dispatchLoaded(
-      packs,
-      '共鸣小说家',
-      [{ leader: '共鸣小说家', members: ['编辑', '评论家', '校对', '排版', '发行'] }],
-    );
+    dispatchLoaded(packs, '共鸣小说家', [
+      { leader: '共鸣小说家', members: ['编辑', '评论家', '校对', '排版', '发行'] },
+    ]);
     const card = Array.from(document.querySelectorAll('.card')).find(
       (c) => c.querySelector('.card-name')?.textContent === '共鸣小说家',
     );
@@ -363,7 +373,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
         displayName: `角色${i}`,
         capabilities: [],
       }));
-      dispatchLoaded([{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others], 'doc-review');
+      dispatchLoaded(
+        [{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others],
+        'doc-review',
+      );
       // 激活角色恒显 + 其他角色第 1 页 8 张（ROLE_PAGE_SIZE=8）
       const cards = document.querySelectorAll('.card');
       expect(cards).toHaveLength(9);
@@ -379,7 +392,10 @@ describe('rolesView 渲染（2026-08-17 独立角色管理视图）', () => {
         displayName: `角色${i}`,
         capabilities: [],
       }));
-      dispatchLoaded([{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others], 'doc-review');
+      dispatchLoaded(
+        [{ name: 'doc-review', displayName: '文档打磨', capabilities: [] }, ...others],
+        'doc-review',
+      );
       document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click();
       // 第 2 页：激活 1 + 其他 3
       const cards = document.querySelectorAll('.card');

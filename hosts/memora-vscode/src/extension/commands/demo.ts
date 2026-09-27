@@ -121,10 +121,7 @@ export async function runDemoCommand(configDir: string): Promise<void> {
  * @param output Output Channel
  * @param chunk 内核流式 chunk
  */
-function appendChunk(
-  output: vscode.OutputChannel,
-  chunk: AgentChunk,
-): void {
+function appendChunk(output: vscode.OutputChannel, chunk: AgentChunk): void {
   switch (chunk.type) {
     case 'thinking':
       output.appendLine(`   [思考] 阶段：${chunk.phase}`);

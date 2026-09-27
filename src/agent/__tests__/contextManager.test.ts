@@ -143,10 +143,10 @@ describe('ContextManager.estimateTokens()', () => {
   });
 
   it('toolCalls 计入：JSON.stringify 长度加入字符总数', () => {
-    const toolCalls = [{ id: 'call_1', type: 'function' as const, function: { name: 'test', arguments: '{}' } }];
-    const messages: Message[] = [
-      { role: 'assistant', content: 'x', toolCalls },
+    const toolCalls = [
+      { id: 'call_1', type: 'function' as const, function: { name: 'test', arguments: '{}' } },
     ];
+    const messages: Message[] = [{ role: 'assistant', content: 'x', toolCalls }];
     const expectedChars = 1 + JSON.stringify(toolCalls).length;
     expect(manager.estimateTokens(messages)).toBe(Math.ceil(expectedChars / CHARS_PER_TOKEN));
   });
@@ -225,10 +225,7 @@ describe('ContextManager.truncateMessages()', () => {
     });
 
     it('无 system prompt（messages[0] 非 system）：返回原数组', () => {
-      const messages = [
-        createMessage('user-first'),
-        ...createLongMessages(5, 100).slice(1),
-      ];
+      const messages = [createMessage('user-first'), ...createLongMessages(5, 100).slice(1)];
       const result = manager.truncateMessages(messages);
       expect(result).toBe(messages);
       expect(manager.truncationCount).toBe(0);
@@ -278,9 +275,7 @@ describe('ContextManager.truncateMessages()', () => {
       const messages = createLongMessages(10, 80);
       const result = smallManager.truncateMessages(messages);
       // 查找 placeholder（content 包含"截断"）
-      const placeholder = result.find(
-        (m) => m.role === 'system' && m.content.includes('截断'),
-      );
+      const placeholder = result.find((m) => m.role === 'system' && m.content.includes('截断'));
       expect(placeholder).toBeDefined();
       // placeholder 文案包含 skipped 和 kept 数量
       expect(placeholder?.content).toMatch(/跳过 \d+ 条/);
@@ -336,10 +331,10 @@ describe('ContextManager.truncateMessages()', () => {
       // tail 占满预算，关键消息预算仅够放短 user（1 token），长 assistant（10 token）放不下
       const managerSmall = createContextManager(15);
       const messages = [
-        createMessage('S', { role: 'system' }),                // 1 token
-        createMessage('U', { role: 'user' }),                  // 1 token（短 user，应被关键消息提取选中）
-        createMessage('A'.repeat(30), { role: 'assistant' }),  // 10 token（长 assistant，放不下）
-        createMessage('T'.repeat(30), { role: 'user' }),       // 10 token（长 tail）
+        createMessage('S', { role: 'system' }), // 1 token
+        createMessage('U', { role: 'user' }), // 1 token（短 user，应被关键消息提取选中）
+        createMessage('A'.repeat(30), { role: 'assistant' }), // 10 token（长 assistant，放不下）
+        createMessage('T'.repeat(30), { role: 'user' }), // 10 token（长 tail）
       ];
       const result = managerSmall.truncateMessages(messages);
       expect(managerSmall.truncationCount).toBe(1);
@@ -347,7 +342,9 @@ describe('ContextManager.truncateMessages()', () => {
       const hasUser = result.some((m) => m.role === 'user' && m.content === 'U');
       expect(hasUser).toBe(true);
       // 长 assistant 不应出现在结果中（被裁剪且未被关键消息提取）
-      const hasLongAssistant = result.some((m) => m.role === 'assistant' && m.content === 'A'.repeat(30));
+      const hasLongAssistant = result.some(
+        (m) => m.role === 'assistant' && m.content === 'A'.repeat(30),
+      );
       expect(hasLongAssistant).toBe(false);
     });
 
@@ -356,11 +353,11 @@ describe('ContextManager.truncateMessages()', () => {
       // 关键消息预算够放短 user + 短 tool，但放不下长 assistant
       const managerTiny = createContextManager(15);
       const messages = [
-        createMessage('S', { role: 'system' }),                // 1 token
-        createMessage('U', { role: 'user' }),                  // 1 token（cut，权重 3）
-        createMessage('t', { role: 'tool' }),                  // 1 token（cut，权重 2）
-        createMessage('A'.repeat(30), { role: 'assistant' }),  // 10 token（cut，权重 1，放不下）
-        createMessage('X'.repeat(30), { role: 'user' }),       // 10 token（tail）
+        createMessage('S', { role: 'system' }), // 1 token
+        createMessage('U', { role: 'user' }), // 1 token（cut，权重 3）
+        createMessage('t', { role: 'tool' }), // 1 token（cut，权重 2）
+        createMessage('A'.repeat(30), { role: 'assistant' }), // 10 token（cut，权重 1，放不下）
+        createMessage('X'.repeat(30), { role: 'user' }), // 10 token（tail）
       ];
       const result = managerTiny.truncateMessages(messages);
       expect(managerTiny.truncationCount).toBe(1);
@@ -370,7 +367,9 @@ describe('ContextManager.truncateMessages()', () => {
       expect(hasUser).toBe(true);
       expect(hasTool).toBe(true);
       // 长 assistant 不应被保留
-      const hasLongAssistant = result.some((m) => m.role === 'assistant' && m.content === 'A'.repeat(30));
+      const hasLongAssistant = result.some(
+        (m) => m.role === 'assistant' && m.content === 'A'.repeat(30),
+      );
       expect(hasLongAssistant).toBe(false);
     });
 
@@ -382,11 +381,11 @@ describe('ContextManager.truncateMessages()', () => {
       // tool + user 各 1 token = 2 token ≤ 预算 3，均被选中；大 filler 20 token 触发 break
       const managerTiny = createContextManager(6);
       const messages = [
-        createMessage('S', { role: 'system' }),                    // 1 token
-        createMessage('t', { role: 'tool' }),                      // 1 token（cut，权重 2，原始第 1）
-        createMessage('U', { role: 'user' }),                      // 1 token（cut，权重 3，原始第 2）
-        createMessage('F'.repeat(60), { role: 'assistant' }),      // 20 token（cut，权重 1，大 filler，放不下 break）
-        createMessage('T', { role: 'user' }),                      // 1 token（tail）
+        createMessage('S', { role: 'system' }), // 1 token
+        createMessage('t', { role: 'tool' }), // 1 token（cut，权重 2，原始第 1）
+        createMessage('U', { role: 'user' }), // 1 token（cut，权重 3，原始第 2）
+        createMessage('F'.repeat(60), { role: 'assistant' }), // 20 token（cut，权重 1，大 filler，放不下 break）
+        createMessage('T', { role: 'user' }), // 1 token（tail）
       ];
       const result = managerTiny.truncateMessages(messages);
       expect(managerTiny.truncationCount).toBe(1);
@@ -414,11 +413,11 @@ describe('ContextManager.truncateMessages()', () => {
       // 长 user 3 token = 预算 3，刚好放下；短 user 1 token，3+1=4 > 3，放不下
       const managerTiny = createContextManager(6);
       const messages = [
-        createMessage('S', { role: 'system' }),                       // 1 token
-        createMessage('ab', { role: 'user' }),                         // 1 token（短 user，cut，权重 3）
-        createMessage('abcdefghi', { role: 'user' }),                  // 3 token（长 user，cut，权重 3）
-        createMessage('F'.repeat(60), { role: 'assistant' }),          // 20 token（大 filler，cut，权重 1）
-        createMessage('T', { role: 'user' }),                           // 1 token（tail）
+        createMessage('S', { role: 'system' }), // 1 token
+        createMessage('ab', { role: 'user' }), // 1 token（短 user，cut，权重 3）
+        createMessage('abcdefghi', { role: 'user' }), // 3 token（长 user，cut，权重 3）
+        createMessage('F'.repeat(60), { role: 'assistant' }), // 20 token（大 filler，cut，权重 1）
+        createMessage('T', { role: 'user' }), // 1 token（tail）
       ];
       const result = managerTiny.truncateMessages(messages);
       expect(managerTiny.truncationCount).toBe(1);
@@ -444,18 +443,18 @@ describe('ContextManager.truncateMessages()', () => {
       // U1(权重3, 2 token) 选中, A1(权重1, 2 token) 选中, big(权重1, 20 token) 跳过
       const managerSmall = createContextManager(10);
       const messages = [
-        createMessage('SYS', { role: 'system' }),                      // 1 token
-        createMessage('U1-c', { role: 'user' }),                       // 2 token（cut，权重 3，关键消息）
-        createMessage('A1-c', { role: 'assistant' }),                  // 2 token（cut，权重 1，关键消息）
-        createMessage('F'.repeat(60), { role: 'assistant' }),          // 20 token（大 filler，cut，放不进 tail/关键消息）
-        createMessage('TU', { role: 'user' }),                         // 2 token（tail）
-        createMessage('TA', { role: 'assistant' }),                    // 2 token（tail）
+        createMessage('SYS', { role: 'system' }), // 1 token
+        createMessage('U1-c', { role: 'user' }), // 2 token（cut，权重 3，关键消息）
+        createMessage('A1-c', { role: 'assistant' }), // 2 token（cut，权重 1，关键消息）
+        createMessage('F'.repeat(60), { role: 'assistant' }), // 20 token（大 filler，cut，放不进 tail/关键消息）
+        createMessage('TU', { role: 'user' }), // 2 token（tail）
+        createMessage('TA', { role: 'assistant' }), // 2 token（tail）
       ];
       const summary = '上下文摘要内容';
       const result = managerSmall.truncateMessages(messages, summary);
 
       // 结构验证：[0]=system, [1]=summary, [2..n]=keyMessages, placeholder, tail
-      expect(result[0]).toBe(messages[0]);                             // system
+      expect(result[0]).toBe(messages[0]); // system
       expect(result[1]).toEqual({ role: 'system', content: summary }); // summary
 
       // 找到 placeholder 位置
@@ -522,10 +521,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
   });
 
   it('缓存命中：不调用 provider.chat', async () => {
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     // 首次调用
     await manager.getOrCreateSummary(messages);
     expect(provider.chat).toHaveBeenCalledTimes(1);
@@ -535,10 +531,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
   });
 
   it('缓存过期（消息数增长超过 SUMMARY_CACHE_TTL_MSGS=10）：重新生成', async () => {
-    const initialMessages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('问题 1'),
-    ];
+    const initialMessages = [createMessage('SYS', { role: 'system' }), createMessage('问题 1')];
     await manager.getOrCreateSummary(initialMessages);
     expect(provider.chat).toHaveBeenCalledTimes(1);
 
@@ -563,10 +556,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
     // reset 后换成更短的消息集合：长度差为负，若无 reset 会误判"未过期"复用陈旧摘要
     // （restoreHistory 整体替换历史即此场景）；reset 显式作废 → 必须重新生成
     manager.resetSummary();
-    const shortMessages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('新会话消息'),
-    ];
+    const shortMessages = [createMessage('SYS', { role: 'system' }), createMessage('新会话消息')];
     await manager.getOrCreateSummary(shortMessages);
     expect(provider.chat).toHaveBeenCalledTimes(2); // 作废后重建，非复用陈旧缓存
   });
@@ -574,10 +564,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
   it('LLM 失败降级：返回空字符串', async () => {
     const failingProvider = createMockProvider([], true);
     const failingManager = createContextManager(1000, failingProvider);
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const summary = await failingManager.getOrCreateSummary(messages);
     expect(summary).toBe('');
   });
@@ -608,10 +595,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
       { content: '第三部分' },
     ]);
     const multiChunkManager = createContextManager(1000, multiChunkProvider);
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const summary = await multiChunkManager.getOrCreateSummary(messages);
     // 应拼接所有 chunk 的 content
     expect(summary).toContain('第一部分');
@@ -620,19 +604,13 @@ describe('ContextManager.getOrCreateSummary()', () => {
   });
 
   it('摘要内容包含 [Context summary of earlier conversation] 前缀', async () => {
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const summary = await manager.getOrCreateSummary(messages);
     expect(summary).toMatch(/^\[Context summary of earlier conversation\]\n/);
   });
 
   it('缓存命中返回相同摘要', async () => {
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const first = await manager.getOrCreateSummary(messages);
     const second = await manager.getOrCreateSummary(messages);
     expect(second).toBe(first);
@@ -641,10 +619,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
   // ─── signal 参数（中断/降级）────────────────────────────
 
   it('signal 已 abort 时直接返回空字符串，不调用 LLM', async () => {
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const ac = new AbortController();
     ac.abort();
 
@@ -665,10 +640,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
     } as unknown as LlmProvider;
     const abortManager = createContextManager(1000, abortProvider);
 
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const summary = await abortManager.getOrCreateSummary(messages);
     expect(summary).toBe('');
   });
@@ -688,10 +660,7 @@ describe('ContextManager.getOrCreateSummary()', () => {
     } as unknown as LlmProvider;
     const slowManager = createContextManager(1000, slowProvider);
 
-    const messages = [
-      createMessage('SYS', { role: 'system' }),
-      createMessage('用户问题'),
-    ];
+    const messages = [createMessage('SYS', { role: 'system' }), createMessage('用户问题')];
     const ac = new AbortController();
     // 5ms 后 abort（在第一个 chunk 之后，第二个 chunk 之前）
     setTimeout(() => ac.abort(), 5);
@@ -774,7 +743,11 @@ describe('ContextManager.estimateTokens() · CJK 中文适配', () => {
 
   it('toolCalls 含 CJK 字符：JSON 序列化后同样区分 CJK/非 CJK', () => {
     const toolCalls = [
-      { id: 'call_1', type: 'function' as const, function: { name: 'test', arguments: '{"path":"文件.txt"}' } },
+      {
+        id: 'call_1',
+        type: 'function' as const,
+        function: { name: 'test', arguments: '{"path":"文件.txt"}' },
+      },
     ];
     const messages: Message[] = [
       { role: 'assistant', content: '你好', toolCalls }, // 2 CJK + toolCalls JSON
@@ -796,7 +769,7 @@ describe('ContextManager.estimateTokens() · CJK 中文适配', () => {
     }
     const expected = Math.ceil(
       (contentCounts.cjk + toolCallsCjk) / CJK_CHARS_PER_TOKEN +
-      (contentCounts.other + toolCallsOther) / CHARS_PER_TOKEN,
+        (contentCounts.other + toolCallsOther) / CHARS_PER_TOKEN,
     );
     expect(manager.estimateTokens(messages)).toBe(expected);
   });
@@ -805,10 +778,20 @@ describe('ContextManager.estimateTokens() · CJK 中文适配', () => {
 
   it('generateContextSummary 应启动 CONTEXT_SUMMARY span 并在成功时 end', async () => {
     /** 记录 span 调用的 mock tracer */
-    const spanCalls: { name: string; ended: boolean; exceptions: Error[]; attributes: Record<string, string | number | boolean> }[] = [];
+    const spanCalls: {
+      name: string;
+      ended: boolean;
+      exceptions: Error[];
+      attributes: Record<string, string | number | boolean>;
+    }[] = [];
     const mockTracer: ITracer = {
       startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
-        const record = { name, ended: false, exceptions: [] as Error[], attributes: { ...attributes } };
+        const record = {
+          name,
+          ended: false,
+          exceptions: [] as Error[],
+          attributes: { ...attributes },
+        };
         spanCalls.push(record);
         return {
           setAttribute(key: string, value: string | number | boolean): void {
@@ -847,10 +830,20 @@ describe('ContextManager.estimateTokens() · CJK 中文适配', () => {
   });
 
   it('generateContextSummary 失败时应 recordException 并 end span', async () => {
-    const spanCalls: { name: string; ended: boolean; exceptions: Error[]; attributes: Record<string, string | number | boolean> }[] = [];
+    const spanCalls: {
+      name: string;
+      ended: boolean;
+      exceptions: Error[];
+      attributes: Record<string, string | number | boolean>;
+    }[] = [];
     const mockTracer: ITracer = {
       startSpan(name: string, attributes?: Record<string, string | number | boolean>): ISpan {
-        const record = { name, ended: false, exceptions: [] as Error[], attributes: { ...attributes } };
+        const record = {
+          name,
+          ended: false,
+          exceptions: [] as Error[],
+          attributes: { ...attributes },
+        };
         spanCalls.push(record);
         return {
           setAttribute(key: string, value: string | number | boolean): void {
@@ -963,10 +956,7 @@ describe('T2 实证 · 记忆 system 消息在截断中的存留（平面化量�
 describe('ContextManager.shouldInjectContextPressureHint（T3 预算预警前一级）', () => {
   it('容量未到警戒线：false', () => {
     const m = createContextManager(1000);
-    const messages = [
-      createMessage('S'.repeat(30), { role: 'system' }),
-      createMessage('短消息'),
-    ];
+    const messages = [createMessage('S'.repeat(30), { role: 'system' }), createMessage('短消息')];
     expect(m.shouldInjectContextPressureHint(messages)).toBe(false);
   });
 

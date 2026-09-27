@@ -39,10 +39,19 @@ export interface RolePackValidationResult {
  *（角色包为手动切换，无自动匹配链），故意不在已知键集——带这些键的
  * manifest 按「未知键 warning + 忽略」宽容处理（键级渐进设计，兼容演进）。 */
 const MANIFEST_KEYS: ReadonlySet<string> = new Set([
-  'name', 'displayName', 'formatVersion', 'version', 'description',
+  'name',
+  'displayName',
+  'formatVersion',
+  'version',
+  'description',
   'author',
-  'interactionType', 'aiIdentityDisclosure', 'minorProtection',
-  'strategy', 'skills', 'capabilities', 'handoffPrompt',
+  'interactionType',
+  'aiIdentityDisclosure',
+  'minorProtection',
+  'strategy',
+  'skills',
+  'capabilities',
+  'handoffPrompt',
 ]);
 
 /** 合规 interactionType 枚举 */
@@ -93,9 +102,7 @@ function validateTopLevelKeys(
 }
 
 /** 元数据字符串字段（进展示/标识，超长无意义，统一校验报错） */
-const META_STRING_FIELDS: ReadonlyArray<string> = [
-  'name', 'displayName', 'description', 'author',
-];
+const META_STRING_FIELDS: ReadonlyArray<string> = ['name', 'displayName', 'description', 'author'];
 
 /** 校验必填字段与版本语义（name 必填；formatVersion 缺省按 1.0.0，声明则须 semver；version 为 warning） */
 function validateMetaFields(
@@ -142,10 +149,7 @@ function validateMetaFields(
 
   // version：语义性字段，格式不规范仅提示不阻塞
   const version = manifest['version'];
-  if (
-    version !== undefined &&
-    (typeof version !== 'string' || !SEMVER_PATTERN.test(version))
-  ) {
+  if (version !== undefined && (typeof version !== 'string' || !SEMVER_PATTERN.test(version))) {
     issues.push({
       severity: 'warning',
       code: 'INVALID_VERSION',
@@ -225,10 +229,7 @@ function validateComplianceFields(
  * 校验 L2 策略键：未知阶段/未知键 warning + 忽略（键级渐进）；已知键取值越界 = error
  * （策略维度是预定义枚举，角色只"选择"不"定义"）。
  */
-function validateStrategy(
-  strategyNode: unknown,
-  issues: RolePackValidationIssue[],
-): void {
+function validateStrategy(strategyNode: unknown, issues: RolePackValidationIssue[]): void {
   if (strategyNode === undefined) return;
   if (typeof strategyNode !== 'object' || strategyNode === null || Array.isArray(strategyNode)) {
     issues.push({
@@ -287,9 +288,7 @@ function validateStrategy(
         }
       } else if (!rule.check(value)) {
         // 数值键（带 range 元数据）报错时展示合法区间，指导填写；无区间键仅提示不符合约束
-        const range = rule.range
-          ? `，合法区间 [${rule.range.min}, ${rule.range.max}]`
-          : '';
+        const range = rule.range ? `，合法区间 [${rule.range.min}, ${rule.range.max}]` : '';
         issues.push({
           severity: 'error',
           code: 'INVALID_STRATEGY_VALUE',
@@ -331,10 +330,7 @@ function validateHandoffPrompt(
 /**
  * 校验 skills 注册：对象数组，每项须含 file（相对 skills/ 文件名）；目录扫描下声明项仅作白名单过滤
  */
-function validateManifestSkills(
-  skillsNode: unknown,
-  issues: RolePackValidationIssue[],
-): void {
+function validateManifestSkills(skillsNode: unknown, issues: RolePackValidationIssue[]): void {
   if (skillsNode === undefined) return;
   if (!Array.isArray(skillsNode)) {
     issues.push({
@@ -440,8 +436,7 @@ function validateManifestCapabilities(
         severity: 'error',
         code: 'INVALID_CAPABILITY',
         path: `${itemPath}.capability`,
-        message:
-          `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}`,
+        message: `capability 必须匹配中立能力名 "域:动作"（如 file:write / web:search），当前：${String(capability)}`,
       });
     }
     const description = record['description'];
@@ -460,9 +455,7 @@ function validateManifestCapabilities(
  * 校验 manifest.json：必填/版本、合规分档、策略键、skills/capabilities。
  * 未知键 warning + 忽略；valid = 无 error（warning 不阻塞装载）。
  */
-export function validateManifest(
-  manifest: Record<string, unknown>,
-): RolePackValidationResult {
+export function validateManifest(manifest: Record<string, unknown>): RolePackValidationResult {
   const issues: RolePackValidationIssue[] = [];
 
   validateTopLevelKeys(manifest, issues);

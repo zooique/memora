@@ -38,7 +38,6 @@ afterAll(() => {
 // ══════════════════════════════════════════════════════════════
 
 describe('atomicWrite — 成功写入', () => {
-
   it('首次写入创建新文件', async () => {
     const filePath = join(TEST_DIR, 'new-file.txt');
     const content = 'Hello, World!';
@@ -80,7 +79,6 @@ describe('atomicWrite — 成功写入', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('atomicWrite — 原子性保证', () => {
-
   it('写入完成后临时文件被清理', async () => {
     const filePath = join(TEST_DIR, 'cleanup-test.txt');
 
@@ -111,7 +109,6 @@ describe('atomicWrite — 原子性保证', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('atomicWrite — 边界场景', () => {
-
   it('空内容写入', async () => {
     const filePath = join(TEST_DIR, 'empty.txt');
 
@@ -155,12 +152,16 @@ describe('atomicWrite — 边界场景', () => {
 
   it('JSON 内容写入', async () => {
     const filePath = join(TEST_DIR, 'json-content.txt');
-    const jsonContent = JSON.stringify({
-      name: 'test',
-      value: 42,
-      nested: { key: 'value' },
-      array: [1, 2, 3],
-    }, null, 2);
+    const jsonContent = JSON.stringify(
+      {
+        name: 'test',
+        value: 42,
+        nested: { key: 'value' },
+        array: [1, 2, 3],
+      },
+      null,
+      2,
+    );
 
     await atomicWriteFile(filePath, jsonContent);
 
@@ -181,7 +182,6 @@ describe('atomicWrite — 边界场景', () => {
 // ══════════════════════════════════════════════════════════════
 
 describe('atomicWrite — 异常处理', () => {
-
   it('目标目录不存在时抛错', async () => {
     const nonExistentDir = join(TEST_DIR, 'nonexistent-subdir');
     const filePath = join(nonExistentDir, 'file.txt');

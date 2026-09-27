@@ -34,11 +34,7 @@ import {
   MAX_SUMMARY_FOCUS_LENGTH,
   MIN_STEP_BUDGET,
 } from '@/role-pack/strategyKeys.js';
-import type {
-  BehaviorStrategy,
-  RolePack,
-  RolePackCapability,
-} from '@/role-pack/types.js';
+import type { BehaviorStrategy, RolePack, RolePackCapability } from '@/role-pack/types.js';
 
 // ─── 辅助：创建最小角色包 ───────────────────────────
 
@@ -190,7 +186,9 @@ describe('resolve* 函数 — 基础策略解析', () => {
     });
 
     it('非法/缺失值回退默认 auto', () => {
-      expect(resolveMultiStepReasoning({ act: { multiStepReasoning: 'bad' as never } })).toBe('auto');
+      expect(resolveMultiStepReasoning({ act: { multiStepReasoning: 'bad' as never } })).toBe(
+        'auto',
+      );
       expect(resolveMultiStepReasoning(undefined)).toBe('auto');
     });
   });
@@ -243,7 +241,9 @@ describe('resolve* 函数 — 数值解析', () => {
 
     it('超长字符串回退 undefined（防巨型注入）', () => {
       expect(
-        resolveSummaryFocus({ prepare: { summaryFocus: 'a'.repeat(MAX_SUMMARY_FOCUS_LENGTH + 1) } }),
+        resolveSummaryFocus({
+          prepare: { summaryFocus: 'a'.repeat(MAX_SUMMARY_FOCUS_LENGTH + 1) },
+        }),
       ).toBeUndefined();
     });
   });
@@ -516,9 +516,7 @@ describe('assembleRolePack — 角色包装配', () => {
   });
 
   it('capabilities 从角色包派生', () => {
-    const caps: RolePackCapability[] = [
-      { capability: 'file:read', description: '读取文件' },
-    ];
+    const caps: RolePackCapability[] = [{ capability: 'file:read', description: '读取文件' }];
     const pack = makeRolePack({ capabilities: caps });
     const result = assembleRolePack(pack);
 

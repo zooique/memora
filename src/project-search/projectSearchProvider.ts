@@ -29,7 +29,10 @@ export async function safeSearchProjectFiles(
 ): Promise<ProjectFileSearchResult> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<ProjectFileSearchResult>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('项目文件搜索超时（30s）')), PROJECT_SEARCH_TIMEOUT_MS);
+    timer = setTimeout(
+      () => reject(new Error('项目文件搜索超时（30s）')),
+      PROJECT_SEARCH_TIMEOUT_MS,
+    );
   });
 
   try {
@@ -60,7 +63,10 @@ export async function safeSearchProjectText(
 ): Promise<ProjectTextSearchResult> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<ProjectTextSearchResult>((_, reject) => {
-    timer = setTimeout(() => reject(new Error('项目内容搜索超时（30s）')), PROJECT_SEARCH_TIMEOUT_MS);
+    timer = setTimeout(
+      () => reject(new Error('项目内容搜索超时（30s）')),
+      PROJECT_SEARCH_TIMEOUT_MS,
+    );
   });
 
   try {

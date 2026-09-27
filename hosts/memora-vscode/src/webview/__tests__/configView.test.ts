@@ -80,7 +80,17 @@ function dispatchLoaded(providers: unknown[], activeName?: string, backgroundNam
 }
 
 /** 构造一个 Provider 对象 */
-function makeProvider(name: string, opts: { displayName?: string; model?: string; baseUrl?: string; contextWindow?: number; provider?: string; supportsToolCalling?: boolean } = {}) {
+function makeProvider(
+  name: string,
+  opts: {
+    displayName?: string;
+    model?: string;
+    baseUrl?: string;
+    contextWindow?: number;
+    provider?: string;
+    supportsToolCalling?: boolean;
+  } = {},
+) {
   return {
     name,
     displayName: opts.displayName || name,
@@ -211,7 +221,9 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     // K 值输入：128（= 128K）→ 上报 128000
     (document.getElementById('f-contextwindow') as HTMLInputElement).value = '128';
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
-    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } };
+    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as {
+      config: { contextWindow?: number };
+    };
     expect(sent.config.contextWindow).toBe(128000);
   });
 
@@ -226,7 +238,9 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
     (document.getElementById('f-contextwindow') as HTMLInputElement).value = '';
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
-    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as { config: { contextWindow?: number } };
+    const sent = (postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[])[0] as {
+      config: { contextWindow?: number };
+    };
     expect(sent.config.contextWindow).toBeUndefined();
   });
 
@@ -244,7 +258,8 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
     (document.getElementById('f-contextwindow') as HTMLInputElement).value = raw;
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
-    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[] | undefined;
+    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as
+      unknown[] | undefined;
     // 非法输入被阻断不发出 cfg_save → call 为 undefined → 返回 undefined
     return (call?.[0] as { config: { contextWindow?: number } } | undefined)?.config.contextWindow;
   }
@@ -336,15 +351,21 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
     const cards = list.querySelectorAll('.card');
     // 激活卡：仅「编辑」按钮带 tooltip
     const activeCard = cards[0] as HTMLElement;
-    expect(activeCard?.querySelector('.btn-secondary')?.getAttribute('title')).toContain('修改该 API 的配置');
+    expect(activeCard?.querySelector('.btn-secondary')?.getAttribute('title')).toContain(
+      '修改该 API 的配置',
+    );
     // 其他卡：设为当前 / 编辑 / 删除 均带 tooltip
     const otherCard = cards[1] as HTMLElement;
-    const titles = Array.from(otherCard.querySelectorAll('.btn')).map((b) => b.getAttribute('title'));
+    const titles = Array.from(otherCard.querySelectorAll('.btn')).map((b) =>
+      b.getAttribute('title'),
+    );
     expect(titles.some((t) => t && t.includes('默认使用的大模型'))).toBe(true);
     expect(titles.some((t) => t && t.includes('不可恢复'))).toBe(true);
     expect(titles.some((t) => t && t.includes('修改该 API 的配置'))).toBe(true);
     // 头部「添加 API」按钮 tooltip
-    expect(document.getElementById('btnAdd')?.getAttribute('title')).toContain('新增一个大模型 API 配置');
+    expect(document.getElementById('btnAdd')?.getAttribute('title')).toContain(
+      '新增一个大模型 API 配置',
+    );
   });
 
   // ─── 后台模型通道 ───
@@ -414,7 +435,10 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
   });
 
   /** 打开「添加 API」弹窗 → 填基础字段 → 提交，返回 cfg_save 的 config */
-  function submitConfig(extra: () => void = () => void 0): { provider?: string; supportsToolCalling?: boolean } {
+  function submitConfig(extra: () => void = () => void 0): {
+    provider?: string;
+    supportsToolCalling?: boolean;
+  } {
     const { postMessage } = mountConfigView();
     dispatchLoaded([]);
     (document.getElementById('btnAdd') as HTMLButtonElement).click();
@@ -425,8 +449,11 @@ describe('configView 本地 LLM 能力声明（provider 类型 + 工具能力位
     (document.getElementById('f-apikey') as HTMLInputElement).value = 'local';
     extra();
     (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
-    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as unknown[] | undefined;
-    return (call?.[0] as { config: { provider?: string; supportsToolCalling?: boolean } })?.config ?? {};
+    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as
+      unknown[] | undefined;
+    return (
+      (call?.[0] as { config: { provider?: string; supportsToolCalling?: boolean } })?.config ?? {}
+    );
   }
 
   it('默认（云类型）：provider=cloud，且不落 supportsToolCalling（undefined → 内核回落 true，云行为不变）', () => {

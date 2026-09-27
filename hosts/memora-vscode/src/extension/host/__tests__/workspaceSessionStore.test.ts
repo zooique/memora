@@ -68,9 +68,30 @@ function seedRound(
 
 /** 铺三问答闭环的会话 [u1,a1,u2,a2,u3,a3] */
 function seedThreeTurns(store: WorkspaceSessionStore, roundStore: WorkspaceRoundStore): void {
-  seedRound(store, roundStore, '2026-08-16', 'main', { content: '问题一', ts: 'u1' }, { content: '回答一', ts: 'a1' });
-  seedRound(store, roundStore, '2026-08-16', 'main', { content: '问题二', ts: 'u2' }, { content: '回答二', ts: 'a2' });
-  seedRound(store, roundStore, '2026-08-16', 'main', { content: '问题三', ts: 'u3' }, { content: '回答三', ts: 'a3' });
+  seedRound(
+    store,
+    roundStore,
+    '2026-08-16',
+    'main',
+    { content: '问题一', ts: 'u1' },
+    { content: '回答一', ts: 'a1' },
+  );
+  seedRound(
+    store,
+    roundStore,
+    '2026-08-16',
+    'main',
+    { content: '问题二', ts: 'u2' },
+    { content: '回答二', ts: 'a2' },
+  );
+  seedRound(
+    store,
+    roundStore,
+    '2026-08-16',
+    'main',
+    { content: '问题三', ts: 'u3' },
+    { content: '回答三', ts: 'a3' },
+  );
 }
 
 describe('WorkspaceSessionStore.truncateFrom', () => {
@@ -115,12 +136,22 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
 
   it('流式锚点（fromTs 早于存储时间戳）也能命中——下界匹配根治源不一致：删除失效', () => {
     // 真实时序：a1 结束于 09:00:00，流式开始 09:00:05（chatPanel firstChunkTs），a2 存于 09:00:10
-    seedRound(store, roundStore, '2026-08-16', 'main',
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问一', ts: '2026-08-16T09:00:00.000Z' },
-      { content: '答一', ts: '2026-08-16T09:00:01.000Z' });
-    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '答一', ts: '2026-08-16T09:00:01.000Z' },
+    );
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问二', ts: '2026-08-16T09:00:04.000Z' },
-      { content: '答二', ts: '2026-08-16T09:00:10.000Z' });
+      { content: '答二', ts: '2026-08-16T09:00:10.000Z' },
+    );
     // 删除按钮携带的锚点是流开始时刻（09:00:05，早于答二存储时间 09:00:10）
     expect(store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z').ok).toBe(true);
     const left = store.loadMessages('2026-08-16', 'main');
@@ -139,11 +170,23 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
   });
 
   it('删除末尾中断轮（无 assistant 收场）→ 锚定末轮删除（无产出中断轮跳锚 no-op）', () => {
-    seedRound(store, roundStore, '2026-08-16', 'main',
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
-      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
-    seedRound(store, roundStore, '2026-08-16', 'main',
-      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' }, undefined, 'interrupted');
+      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' },
+    );
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
+      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' },
+      undefined,
+      'interrupted',
+    );
     // 删除按钮锚点 = 中断轮 meta ts（落在问题二之后、无 assistant 不匹配 assistant 下界）
     const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z');
     expect(res.ok).toBe(true);
@@ -153,14 +196,31 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
   });
 
   it('删除中间中断轮（无 assistant 收场）→ 上折回该轮截断，防误删下一轮', () => {
-    seedRound(store, roundStore, '2026-08-16', 'main',
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
-      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
-    seedRound(store, roundStore, '2026-08-16', 'main',
-      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' }, undefined, 'interrupted');
-    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' },
+    );
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
+      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' },
+      undefined,
+      'interrupted',
+    );
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问题三', ts: '2026-08-16T09:00:10.000Z' },
-      { content: '回答三', ts: '2026-08-16T09:00:11.000Z' });
+      { content: '回答三', ts: '2026-08-16T09:00:11.000Z' },
+    );
     // 锚点 = 问题二轮的 meta ts（早于问题三 user 起点，assistant 下界会命中下一轮）
     // → 应折回删除 [中断轮, 回答三]，而非误删「下一轮之后」
     const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:05.000Z');
@@ -171,14 +231,31 @@ describe('WorkspaceSessionStore.truncateFrom', () => {
   });
 
   it('done 轮删除不误折：前一轮即使无 assistant（中断轮）也以自身 assistant ts 为锚（防伪折叠）', () => {
-    seedRound(store, roundStore, '2026-08-16', 'main',
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问题一', ts: '2026-08-16T09:00:00.000Z' },
-      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' });
-    seedRound(store, roundStore, '2026-08-16', 'main',
-      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' }, undefined, 'interrupted');
-    seedRound(store, roundStore, '2026-08-16', 'main',
+      { content: '回答一', ts: '2026-08-16T09:00:01.000Z' },
+    );
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
+      { content: '问题二', ts: '2026-08-16T09:00:04.000Z' },
+      undefined,
+      'interrupted',
+    );
+    seedRound(
+      store,
+      roundStore,
+      '2026-08-16',
+      'main',
       { content: '问题三', ts: '2026-08-16T09:00:10.000Z' },
-      { content: '回答三', ts: '2026-08-16T09:00:11.000Z' });
+      { content: '回答三', ts: '2026-08-16T09:00:11.000Z' },
+    );
     // done 轮删除锚点 = 自身 assistant ts（恒 >= 自己 user ts）→ 命中第 3 轮自身，不折回中断轮
     const res = store.truncateFrom('2026-08-16', 'main', '2026-08-16T09:00:11.000Z');
     expect(res.ok).toBe(true);
@@ -205,7 +282,10 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   });
 
   it('round 写入 / loadMessages 往返 + meta 同步（messageCount/updatedAt）', () => {
-    seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: '2026-08-17T00:00:00.000Z' });
+    seedRound(store, roundStore, '2026-08-17', 'main', {
+      content: '你好',
+      ts: '2026-08-17T00:00:00.000Z',
+    });
     const list = store.loadMessages('2026-08-17', 'main');
     expect(list).toHaveLength(1);
     expect(list[0]?.role).toBe('user');
@@ -254,7 +334,10 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   });
 
   it('setSessionTitle 不改 updatedAt（改名非活跃事件）', () => {
-    seedRound(store, roundStore, '2026-08-17', 'main', { content: 'x', ts: '2026-08-17T00:00:00.000Z' });
+    seedRound(store, roundStore, '2026-08-17', 'main', {
+      content: 'x',
+      ts: '2026-08-17T00:00:00.000Z',
+    });
     const before = store.getSessionMeta('2026-08-17-main')?.updatedAt;
     store.setSessionTitle?.('2026-08-17-main', '改名');
     expect(store.getSessionMeta('2026-08-17-main')?.updatedAt).toBe(before);
@@ -267,9 +350,15 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
     vi.useFakeTimers();
     try {
       vi.setSystemTime(new Date('2026-08-16T10:00:00.000Z'));
-      seedRound(store, roundStore, '2026-08-16', 'main', { content: 'a', ts: '2026-08-16T00:00:00.000Z' });
+      seedRound(store, roundStore, '2026-08-16', 'main', {
+        content: 'a',
+        ts: '2026-08-16T00:00:00.000Z',
+      });
       vi.setSystemTime(new Date('2026-08-17T10:00:00.000Z'));
-      seedRound(store, roundStore, '2026-08-17', 'main', { content: 'b', ts: '2026-08-17T00:00:00.000Z' });
+      seedRound(store, roundStore, '2026-08-17', 'main', {
+        content: 'b',
+        ts: '2026-08-17T00:00:00.000Z',
+      });
       const metas = store.listSessionMetas();
       expect(metas[0]?.sessionId).toBe('2026-08-17-main');
       expect(metas[1]?.sessionId).toBe('2026-08-16-main');
@@ -279,7 +368,10 @@ describe('WorkspaceSessionStore ISessionStore 契约', () => {
   });
 
   it('deleteSession：删除消息 + meta + 物理回收无引用 Round（0 引用孤儿不留滞）', () => {
-    const roundId = seedRound(store, roundStore, '2026-08-17', 'main', { content: '你好', ts: 't1' });
+    const roundId = seedRound(store, roundStore, '2026-08-17', 'main', {
+      content: '你好',
+      ts: 't1',
+    });
     store.setSessionTitle?.('2026-08-17-main', '会话一');
     const removedIds = store.deleteSession('2026-08-17-main');
     expect(store.getSessionMeta('2026-08-17-main')).toBeUndefined();
@@ -344,7 +436,9 @@ describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () =
     expect(
       store
         .listSessionMetas()
-        .some((m) => m.sessionId === '2026-08-26-main' && getSessionDisplayName(m) === '排序算法实现'),
+        .some(
+          (m) => m.sessionId === '2026-08-26-main' && getSessionDisplayName(m) === '排序算法实现',
+        ),
     ).toBe(true);
   });
 
@@ -387,7 +481,10 @@ describe('WorkspaceSessionStore.updateSessionMeta（双层命名写点）', () =
   });
 
   it('改名不改 updatedAt（与 setSessionTitle 旧契约一致）', () => {
-    seedRound(store, roundStore, '2026-08-26', 'main', { content: 'x', ts: '2026-08-26T00:00:00.000Z' });
+    seedRound(store, roundStore, '2026-08-26', 'main', {
+      content: 'x',
+      ts: '2026-08-26T00:00:00.000Z',
+    });
     const before = store.getSessionMeta('2026-08-26-main')?.updatedAt;
     store.updateSessionMeta('2026-08-26-main', { displayName: '改名' });
     expect(store.getSessionMeta('2026-08-26-main')?.updatedAt).toBe(before);
@@ -443,8 +540,18 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       refCount: 1,
       processEvents: [
         { type: 'meta', seq: 1, ts: 't1', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-        { type: 'memory_added', seq: 2, ts: 't1', payload: { id: 'r:1', name: '设计约束', source: 'round-summary' } },
-        { type: 'aborted', seq: 3, ts: 't2', payload: { reason: 'User cancelled the conversation' } },
+        {
+          type: 'memory_added',
+          seq: 2,
+          ts: 't1',
+          payload: { id: 'r:1', name: '设计约束', source: 'round-summary' },
+        },
+        {
+          type: 'aborted',
+          seq: 3,
+          ts: 't2',
+          payload: { reason: 'User cancelled the conversation' },
+        },
       ],
     };
     roundStore.save(round);
@@ -454,7 +561,11 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
     roundStore.load();
     const retrieved = roundStore.getById('round-e1');
     expect(retrieved?.processEvents).toEqual(round.processEvents);
-    expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'memory_added', 'aborted']);
+    expect(retrieved?.processEvents?.map((e) => e.type)).toEqual([
+      'meta',
+      'memory_added',
+      'aborted',
+    ]);
   });
 
   it('删除 round 即删 processEvents（生命周期原子，无独立文件需联动）', () => {
@@ -464,9 +575,7 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       status: 'pending',
       createdAt: 't1',
       refCount: 0,
-      processEvents: [
-        { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
-      ],
+      processEvents: [{ type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } }],
     };
     roundStore.save(round);
 
@@ -484,9 +593,7 @@ describe('WorkspaceRoundStore processEvents 落盘透传与生命周期随动（
       createdAt: 't1',
       completedAt: 't2',
       refCount: 2, // 两个会话引用（分叉后）
-      processEvents: [
-        { type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } },
-      ],
+      processEvents: [{ type: 'meta', seq: 1, ts: 't1', payload: { role: 'AI', llm: 'm' } }],
     };
     roundStore.save(round);
     // refCount>0 → 不可删除（任一会话仍引用），事件随文件保留

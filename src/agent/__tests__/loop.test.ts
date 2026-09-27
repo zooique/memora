@@ -451,7 +451,11 @@ describe('AgentLoop · compress_context（第二级压缩：LLM 触发 + 临时�
     }
 
     expect(onContextCompressed).toHaveBeenCalledTimes(1);
-    expect(onContextCompressed).toHaveBeenCalledWith('earliest_round', expect.any(Number), expect.any(Number));
+    expect(onContextCompressed).toHaveBeenCalledWith(
+      'earliest_round',
+      expect.any(Number),
+      expect.any(Number),
+    );
     const [target, replacedCount, summaryLength] = onContextCompressed.mock.calls[0]!;
     expect(target).toBe('earliest_round');
     expect(replacedCount).toBeGreaterThan(0);
@@ -576,7 +580,9 @@ describe('AgentLoop · 两级空间管理替换（互斥记账 + 顶级锚点保
     // 即使 round-1 有已存摘要也不替换，避免错位替换正文；空间维护交回截断机制
     expect(loop.getReplacedRoundIds()).toEqual([]);
     const messages = loop.getMessages();
-    expect(messages.some((m) => m.content.includes('Round summary · roundId: round-1'))).toBe(false);
+    expect(messages.some((m) => m.content.includes('Round summary · roundId: round-1'))).toBe(
+      false,
+    );
   });
 });
 
@@ -725,18 +731,14 @@ describe('AgentLoop · 软上限终止（摘要层达容量上限 → 收尾信�
     for await (const {} of loop.processUserInput('测试一')) {
       // drain
     }
-    expect(
-      loop.getMessages().filter((m) => m.content.includes('SOFT_LIMIT')).length,
-    ).toBe(1);
+    expect(loop.getMessages().filter((m) => m.content.includes('SOFT_LIMIT')).length).toBe(1);
 
     // 第二轮：入口 cleanExecutionTemporary 清理旧信号；上下文仍饱和 → 重新注入新信号（不堆积）
     for await (const {} of loop.processUserInput('测试二')) {
       // drain
     }
     // 旧信号已弃、仅剩本轮重新注入的 1 条（若未清理会累积为 2 条）
-    expect(
-      loop.getMessages().filter((m) => m.content.includes('SOFT_LIMIT')).length,
-    ).toBe(1);
+    expect(loop.getMessages().filter((m) => m.content.includes('SOFT_LIMIT')).length).toBe(1);
   });
 });
 
@@ -1031,8 +1033,16 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
         [
           {
             toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' } },
-              { id: 'c2', type: 'function', function: { name: 'write_file', arguments: '{"path":"b.md","content":"B"}' } },
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' },
+              },
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{"path":"b.md","content":"B"}' },
+              },
             ],
           },
         ],
@@ -1068,8 +1078,19 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
         [
           {
             toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'run_code', arguments: '{"code":"fs.writeFileSync(\"a.md\",\"x\")"}' } },
-              { id: 'c2', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' } },
+              {
+                id: 'c1',
+                type: 'function',
+                function: {
+                  name: 'run_code',
+                  arguments: '{"code":"fs.writeFileSync(\"a.md\",\"x\")"}',
+                },
+              },
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' },
+              },
             ],
           },
         ],
@@ -1104,8 +1125,19 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
         [
           {
             toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'run_project_script', arguments: '{"script_path":"a.py"}' } },
-              { id: 'c2', type: 'function', function: { name: 'run_skill_script', arguments: '{"skill_name":"s","script_path":"lint.ts"}' } },
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'run_project_script', arguments: '{"script_path":"a.py"}' },
+              },
+              {
+                id: 'c2',
+                type: 'function',
+                function: {
+                  name: 'run_skill_script',
+                  arguments: '{"skill_name":"s","script_path":"lint.ts"}',
+                },
+              },
             ],
           },
         ],
@@ -1140,8 +1172,16 @@ describe('AgentLoop · processUserInput 工具调用循环', () => {
         [
           {
             toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{"content":"x"}' } },
-              { id: 'c2', type: 'function', function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' } },
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{"content":"x"}' },
+              },
+              {
+                id: 'c2',
+                type: 'function',
+                function: { name: 'write_file', arguments: '{"path":"a.md","content":"A"}' },
+              },
             ],
           },
         ],
@@ -1392,9 +1432,11 @@ describe('AgentLoop · processUserInput 工具调用 signal 中断', () => {
   it('signal 在工具执行中 abort 时应解除 generator 阻塞', async () => {
     // 工具执行耗时 100ms，signal 在 10ms 时 abort
     // raceToolWithSignal 应在 abort 时立即返回 ABORTED，不等工具完成
-    const toolExecutor = vi.fn().mockImplementation(
-      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation(
+        () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+      );
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -1635,9 +1677,7 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
   // 真用户取消语义（假中断守卫）：信号已被 abort → 判为用户取消 → aborted chunk。
   // processUserInput 显式传入已 abort 的 AbortSignal，验证 abort 语义只在 signal.aborted 时生效。
   it('AbortError 且 signal 已 abort → 用户取消，输出 aborted chunk', async () => {
-    const provider = mockRetryProvider([
-      { throw: new DOMException('aborted', 'AbortError') },
-    ]);
+    const provider = mockRetryProvider([{ throw: new DOMException('aborted', 'AbortError') }]);
 
     const loop = new AgentLoop({
       provider,
@@ -1669,9 +1709,7 @@ describe('AgentLoop · callLlmWithRetry · LLM 调用重试机制', () => {
   // 假中断语义校准：无 abort 信号（signal 未 abort）却收到 AbortError →
   // provider/网络层内部中断（连接被抽断），非用户取消 → 向上抛错，不输出 aborted chunk。
   it('AbortError 但 signal 未 abort → 连接中断，抛错而非用户取消', async () => {
-    const provider = mockRetryProvider([
-      { throw: new DOMException('aborted', 'AbortError') },
-    ]);
+    const provider = mockRetryProvider([{ throw: new DOMException('aborted', 'AbortError') }]);
 
     const loop = new AgentLoop({
       provider,
@@ -1781,9 +1819,8 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
    * 辅助：统计 messages 中 [REFLECTION_HINT] 开头的 system 消息数
    */
   function countReflectionHints(messages: readonly Message[]): number {
-    return messages.filter(
-      (m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'),
-    ).length;
+    return messages.filter((m) => m.role === 'system' && m.content.startsWith('[REFLECTION_HINT]'))
+      .length;
   }
 
   it('工具返回可重试错误码时应推送 REFLECTION_HINT', async () => {
@@ -1793,11 +1830,13 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // 第一轮：触发工具调用
-        [{
-          toolCalls: [
-            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
-          ],
-        }],
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
         // 第二轮：工具失败后 LLM 给出文本回复
         [{ content: '文件读取失败，请检查路径' }],
       ]),
@@ -1820,11 +1859,13 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [{
-          toolCalls: [
-            { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{}' } },
-          ],
-        }],
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'write_file', arguments: '{}' } },
+            ],
+          },
+        ],
         [{ content: '权限不足，无法写入' }],
       ]),
       bootstrapMemories: [],
@@ -1847,9 +1888,27 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // 多轮工具调用，每轮都失败
-        [{ toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
-        [{ toolCalls: [{ id: 'c2', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
-        [{ toolCalls: [{ id: 'c3', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              { id: 'c2', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
+        [
+          {
+            toolCalls: [
+              { id: 'c3', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
         [{ content: '多次失败，放弃' }],
       ]),
       bootstrapMemories: [],
@@ -1881,15 +1940,23 @@ describe('AgentLoop · Reflection · 工具错误反思机制', () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // 迭代1：1 个工具调用（返回错误）
-        [{ toolCalls: [{ id: 'e1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'e1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
         // 迭代2：请求 5 个工具，仅首 1 个执行（toolStepLimit=1），结果成功
-        [{
-          toolCalls: Array.from({ length: 5 }, (_, i) => ({
-            id: `c${i}`,
-            type: 'function' as const,
-            function: { name: 'read_file', arguments: '{}' },
-          })),
-        }],
+        [
+          {
+            toolCalls: Array.from({ length: 5 }, (_, i) => ({
+              id: `c${i}`,
+              type: 'function' as const,
+              function: { name: 'read_file', arguments: '{}' },
+            })),
+          },
+        ],
         // 迭代3：纯文本结束
         [{ content: '完成' }],
       ]),
@@ -1915,7 +1982,13 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
     // 上下文躺着重复指令还浪费 token。契约：注入前先移除旧任务表消息（特征前缀 [任务进度:）。
     const provider = mockMultiTurnProvider([
       // 迭代1：触发一次工具调用（进入第二轮迭代）
-      [{ toolCalls: [{ id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+      [
+        {
+          toolCalls: [
+            { id: 't1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+          ],
+        },
+      ],
       // 迭代2：纯文本结束
       [{ content: '完成' }],
     ]);
@@ -1934,9 +2007,9 @@ describe('AgentLoop · 任务表注入（T9 迭代累积回归）', () => {
     }
 
     // 2 次迭代注入 2 次，messages 里任务表消息应恒为 1 份
-    const taskTables = loop.getMessages().filter(
-      (m) => m.role === 'system' && m.content.startsWith('[任务进度:'),
-    );
+    const taskTables = loop
+      .getMessages()
+      .filter((m) => m.role === 'system' && m.content.startsWith('[任务进度:'));
     expect(taskTables).toHaveLength(1);
   }, 15000);
 });
@@ -2021,7 +2094,13 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
    */
   function makeToolThenTextProvider(secondText: string) {
     return mockMultiTurnProvider([
-      [{ toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+      [
+        {
+          toolCalls: [
+            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+          ],
+        },
+      ],
       [{ content: secondText }],
     ]);
   }
@@ -2107,12 +2186,14 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
     for await (const chunk of loop.continueAfterPause('修正：改用 b.ts')) {
       chunks.push(chunk);
     }
-    expect(chunks.filter((c) => c.type === 'text').map((c) => c.content)).toContain('已根据修正继续完成');
+    expect(chunks.filter((c) => c.type === 'text').map((c) => c.content)).toContain(
+      '已根据修正继续完成',
+    );
 
     // 注入的 user 消息应存在（含 <user_input> 包裹）
-    const injected = loop.getMessages().find(
-      (m) => m.role === 'user' && m.content.includes('修正：改用 b.ts'),
-    );
+    const injected = loop
+      .getMessages()
+      .find((m) => m.role === 'user' && m.content.includes('修正：改用 b.ts'));
     expect(injected).toBeDefined();
     // messages: system + user(初始) + assistant(tc) + tool + user(修正) + assistant(续跑) = 6
     expect(loop.getMessages()).toHaveLength(6);
@@ -2300,9 +2381,7 @@ describe('AgentLoop · 软暂停（不中断工作模型 v2.1）', () => {
 describe('AgentLoop · 自审查轮（Self-Review）', () => {
   // 工具步 chunk：模拟一轮 turn（LLM 调用工具）
   const toolCallChunk: ChunkItem = {
-    toolCalls: [
-      { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
-    ],
+    toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }],
   };
 
   it('自审查启用时，多轮 turn（执行过工具步）后应触发自审查轮', async () => {
@@ -2577,7 +2656,11 @@ describe('AgentLoop · 预算与软上限防护（2026-09-11 批次）', () => {
       [
         {
           toolCalls: [
-            { id: 't1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.txt"}' } },
+            {
+              id: 't1',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path":"a.txt"}' },
+            },
           ],
         },
       ],
@@ -2663,10 +2746,12 @@ describe('AgentLoop · 执行中插话', () => {
     let toolCompleted = false;
     const toolExecutor = vi.fn().mockImplementation(
       () =>
-        new Promise<string>((resolve) => setTimeout(() => {
-          toolCompleted = true;
-          resolve('工具结果');
-        }, 100)),
+        new Promise<string>((resolve) =>
+          setTimeout(() => {
+            toolCompleted = true;
+            resolve('工具结果');
+          }, 100),
+        ),
     );
 
     const loop = new AgentLoop({
@@ -2695,7 +2780,9 @@ describe('AgentLoop · 执行中插话', () => {
     expect(toolCompleted).toBe(true);
     // 插话内容应被注入为 user 消息（step 边界消费）
     const messages = loop.getMessages();
-    expect(messages.some((m) => m.role === 'user' && m.content.includes('等等，我改主意了'))).toBe(true);
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('等等，我改主意了'))).toBe(
+      true,
+    );
     // 应继续处理插话后的回复
     const texts = chunks.filter((c) => c.type === 'text').map((c) => c.content);
     expect(texts).toContain('好的，根据你的新要求处理');
@@ -2703,9 +2790,11 @@ describe('AgentLoop · 执行中插话', () => {
   }, 15000);
 
   it('连续插话应全部按序消费', async () => {
-    const toolExecutor = vi.fn().mockImplementation(
-      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation(
+        () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 100)),
+      );
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2748,9 +2837,11 @@ describe('AgentLoop · 执行中插话', () => {
 
   it('排队插话在 step 边界被消费注入，未达上限不影响多工具轮（单轮插话 → 次轮注入）', async () => {
     // 两轮工具执行，插话在第一轮工具执行中入队——不中断第二轮，但要保证插话被注入
-    const toolExecutor = vi.fn().mockImplementation(
-      () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 50)),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation(
+        () => new Promise<string>((resolve) => setTimeout(() => resolve('工具结果'), 50)),
+      );
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -2890,7 +2981,13 @@ describe('AgentLoop · 执行中插话', () => {
     const loop = new AgentLoop({
       // 「工具步 → 纯文本」双轮：工具步气口注入插话 + 软暂停申请，随即清空插话
       provider: mockMultiTurnProvider([
-        [{ toolCalls: [{ id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{}' } },
+            ],
+          },
+        ],
         [{ content: '后续完成' }],
       ]),
       bootstrapMemories: [],
@@ -2998,7 +3095,9 @@ describe('AgentLoop · continueAfterPause 中插话', () => {
     // 插话内容应被注入
     expect(messages.some((m) => m.role === 'user' && m.content.includes('暂停后插话'))).toBe(true);
     // resume 输入也应被注入
-    expect(messages.some((m) => m.role === 'user' && m.content.includes('resume 新输入'))).toBe(true);
+    expect(messages.some((m) => m.role === 'user' && m.content.includes('resume 新输入'))).toBe(
+      true,
+    );
     expect(chunks[chunks.length - 1]!.type).toBe('done');
   });
 });
@@ -3315,14 +3414,20 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
             {
               id: 'q1',
               type: 'function',
-              function: { name: 'ask_user', arguments: JSON.stringify({ question: '主角职业是？' }) },
+              function: {
+                name: 'ask_user',
+                arguments: JSON.stringify({ question: '主角职业是？' }),
+              },
             },
             {
               id: 'q2',
               type: 'function',
               function: {
                 name: 'ask_user',
-                arguments: JSON.stringify({ question: '故事发生在哪个城市？', options: ['上海', '北京'] }),
+                arguments: JSON.stringify({
+                  question: '故事发生在哪个城市？',
+                  options: ['上海', '北京'],
+                }),
               },
             },
           ],
@@ -3360,7 +3465,11 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
       provider: mockProvider([
         {
           toolCalls: [
-            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+            {
+              id: 'c1',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+            },
           ],
         },
       ]),
@@ -3389,11 +3498,18 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
         {
           content: '先确认再读取',
           toolCalls: [
-            { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+            {
+              id: 'c1',
+              type: 'function',
+              function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+            },
             {
               id: 'c2',
               type: 'function',
-              function: { name: 'ask_user', arguments: JSON.stringify({ question: '读取哪个文件？' }) },
+              function: {
+                name: 'ask_user',
+                arguments: JSON.stringify({ question: '读取哪个文件？' }),
+              },
             },
           ],
         },
@@ -3489,7 +3605,10 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
               {
                 id: 'q1',
                 type: 'function',
-                function: { name: 'ask_user', arguments: JSON.stringify({ question: '确认继续？' }) },
+                function: {
+                  name: 'ask_user',
+                  arguments: JSON.stringify({ question: '确认继续？' }),
+                },
               },
             ],
           },
@@ -3578,7 +3697,9 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
     loop.cancelAsk();
     // 跳过/超时路径同样留快照，runResume 可把 question/options 随「未回答」记录落盘
     const snapshot = loop.takeAnsweredAsk();
-    expect(snapshot).toMatchObject([{ slot: 'ask', question: '确认继续？', options: ['是', '否'] }]);
+    expect(snapshot).toMatchObject([
+      { slot: 'ask', question: '确认继续？', options: ['是', '否'] },
+    ]);
     expect(loop.takeAnsweredAsk()).toBeUndefined();
   });
 
@@ -3614,7 +3735,11 @@ describe('AgentLoop · 主动提问（ask_user 工具）', () => {
         [
           {
             toolCalls: [
-              { id: 'c1', type: 'function', function: { name: 'read_file', arguments: '{"path":"a.ts"}' } },
+              {
+                id: 'c1',
+                type: 'function',
+                function: { name: 'read_file', arguments: '{"path":"a.ts"}' },
+              },
             ],
           },
         ],
@@ -3694,9 +3819,11 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
   });
 
   it('混批：护栏命中的工具不得把相邻成功工具误判为 blocked（索引错位杀伤面）', async () => {
-    const toolExecutor = vi.fn().mockImplementation((name: string) =>
-      Promise.resolve(name === 'web_search' ? '结果A\n结果B' : '文件正文'),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
+        Promise.resolve(name === 'web_search' ? '结果A\n结果B' : '文件正文'),
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -3719,7 +3846,9 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
       chunks.push(chunk);
     }
     // 批内只有一次 read_dedup 命中
-    const deduped = toolResults(chunks, 'read_file').filter((r) => (r.summary ?? '').includes('[ALREADY_READ]'));
+    const deduped = toolResults(chunks, 'read_file').filter((r) =>
+      (r.summary ?? '').includes('[ALREADY_READ]'),
+    );
     expect(deduped).toHaveLength(1);
     expect(deduped[0]!.blocked).toBe(true);
     expect(deduped[0]!.ok).toBe(false);
@@ -3734,10 +3863,16 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
     const toolExecutor = vi.fn().mockResolvedValue('已写入');
     const turns: ChunkItem[][] = [];
     for (let i = 0; i < 5; i++) {
-      turns.push([{ toolCalls: [call(`w${i}`, 'write_file', '{"path":"docs/a.md","content":"x"}')] }]);
+      turns.push([
+        { toolCalls: [call(`w${i}`, 'write_file', '{"path":"docs/a.md","content":"x"}')] },
+      ]);
     }
     turns.push([{ content: '完成' }]);
-    const loop = new AgentLoop({ provider: mockMultiTurnProvider(turns), bootstrapMemories: [], toolExecutor });
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider(turns),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('连写')) {
       chunks.push(chunk);
@@ -3758,7 +3893,11 @@ describe('AgentLoop · blockedFlags 平行数组错位回归（护栏命中工�
       turns.push([{ toolCalls: [call(`r${i}`, 'read_file', '{"path":"ghost.md"}')] }]);
     }
     turns.push([{ content: '完成' }]);
-    const loop = new AgentLoop({ provider: mockMultiTurnProvider(turns), bootstrapMemories: [], toolExecutor });
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider(turns),
+      bootstrapMemories: [],
+      toolExecutor,
+    });
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('连续失败')) {
       chunks.push(chunk);
@@ -3813,8 +3952,16 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: '先并行搜一轮',
           toolCalls: [
-            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
-            { id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } },
+            {
+              id: 's1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"A"}' },
+            },
+            {
+              id: 's2',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"B"}' },
+            },
           ],
         },
       ],
@@ -3822,7 +3969,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: '继续搜（应已注入收敛提示）',
           toolCalls: [
-            { id: 's3', type: 'function', function: { name: 'web_search', arguments: '{"query":"C"}' } },
+            {
+              id: 's3',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"C"}' },
+            },
           ],
         },
       ],
@@ -3851,7 +4002,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: '搜一次失败',
           toolCalls: [
-            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+            {
+              id: 's1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"A"}' },
+            },
           ],
         },
       ],
@@ -3859,7 +4014,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: '再搜（累计成功 1，未达阈值）',
           toolCalls: [
-            { id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } },
+            {
+              id: 's2',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"B"}' },
+            },
           ],
         },
       ],
@@ -3886,7 +4045,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: `搜索第 ${i} 轮`,
           toolCalls: [
-            { id: `s${i}`, type: 'function', function: { name: 'web_search', arguments: `{"query":"Q${i}"}` } },
+            {
+              id: `s${i}`,
+              type: 'function',
+              function: { name: 'web_search', arguments: `{"query":"Q${i}"}` },
+            },
           ],
         },
       ]);
@@ -3903,7 +4066,9 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     expect(toolExecutor).toHaveBeenCalledTimes(6);
     // 拒绝文案作为 tool 消息回填（LLM 上下文可见，据此停止搜索）
     const messages = loop.getMessages();
-    expect(messages.some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]'))).toBe(true);
+    expect(
+      messages.some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]')),
+    ).toBe(true);
   });
 
   it('web_search 达硬上限后从下一轮工具集移除并注入「未找到更多相关」提示（双闸终结拒绝风暴）', async () => {
@@ -3912,7 +4077,16 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
     const turns: ChunkItem[][] = [];
     for (let i = 0; i < 7; i++) {
       turns.push([
-        { content: `搜索第 ${i} 轮`, toolCalls: [{ id: `s${i}`, type: 'function', function: { name: 'web_search', arguments: `{"query":"Q${i}"}` } }] },
+        {
+          content: `搜索第 ${i} 轮`,
+          toolCalls: [
+            {
+              id: `s${i}`,
+              type: 'function',
+              function: { name: 'web_search', arguments: `{"query":"Q${i}"}` },
+            },
+          ],
+        },
       ]);
     }
     turns.push([{ content: '停止搜索，直接给出结论。' }]);
@@ -3932,7 +4106,12 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
 
     // 显式注册 web_search 工具定义（用真实内置定义）：让 buildChatOptions 真正对外提供该工具，
     // 方能验证「命中硬上限后从下一轮 tools 移除」（无定义则无工具可过滤，测试无意义）
-    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor, toolDefinitions: [WEB_SEARCH_TOOL] });
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor,
+      toolDefinitions: [WEB_SEARCH_TOOL],
+    });
     expect(loop.getMessages()[0]!.content).toContain('web_search');
     const chunks: AgentChunk[] = [];
     for await (const chunk of loop.processUserInput('做分析')) {
@@ -3941,10 +4120,16 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
 
     // 既有断言不变：仅前 6 次真正执行，拒绝文案回填
     expect(toolExecutor).toHaveBeenCalledTimes(6);
-    expect(loop.getMessages().some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]'))).toBe(true);
+    expect(
+      loop
+        .getMessages()
+        .some((m) => m.role === 'tool' && m.content.includes('[SEARCH_LIMIT_REACHED]')),
+    ).toBe(true);
 
     // 双闸断言①：命中后注入「视为未找到更多相关 → 继续下一步」系统提示
-    expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('[SEARCH_LIMIT]'))).toBe(true);
+    expect(
+      loop.getMessages().some((m) => m.role === 'system' && m.content.includes('[SEARCH_LIMIT]')),
+    ).toBe(true);
 
     // 双闸断言②：命中前最后一轮（发起第 7 次搜索那轮）工具集仍含 web_search
     expect(toolsPerCall[6]).toContain('web_search');
@@ -3977,7 +4162,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: '让我先搜索相关资料',
           toolCalls: [
-            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+            {
+              id: 's1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"A"}' },
+            },
           ],
         },
       ],
@@ -4011,12 +4200,27 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         {
           content: '第一轮：先检索',
           toolCalls: [
-            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+            {
+              id: 's1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"A"}' },
+            },
           ],
         },
       ],
       // 工具已执行（闭环内）→ 本消息整段缓冲：导语「第二轮补充检索」在 toolCalls 信号前到达也必须进 narrate
-      [{ content: '第二轮补充检索' }, { toolCalls: [{ id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } }] }],
+      [
+        { content: '第二轮补充检索' },
+        {
+          toolCalls: [
+            {
+              id: 's2',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"B"}' },
+            },
+          ],
+        },
+      ],
       // 收尾纯文本轮（无工具）：缓冲 → 路由补发一次 text
       [{ content: '结论是：检索结果已足够。' }],
     ]);
@@ -4031,7 +4235,9 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
       chunks.push(chunk);
     }
 
-    const narrates = chunks.filter((c) => c.type === 'narrate').map((c) => (c as { content: string }).content);
+    const narrates = chunks
+      .filter((c) => c.type === 'narrate')
+      .map((c) => (c as { content: string }).content);
     expect(narrates).toHaveLength(2);
     expect(narrates.join('')).toContain('第二轮补充检索'); // 信号前文本也被整段收入 narrate
 
@@ -4056,7 +4262,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         { content: '我先全面探索项目结构' },
         {
           toolCalls: [
-            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+            {
+              id: 's1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"A"}' },
+            },
           ],
         },
       ],
@@ -4097,7 +4307,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         { content: '首轮叙述' },
         {
           toolCalls: [
-            { id: 's1', type: 'function', function: { name: 'web_search', arguments: '{"query":"A"}' } },
+            {
+              id: 's1',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"A"}' },
+            },
           ],
         },
       ],
@@ -4106,7 +4320,11 @@ describe('AgentLoop · 搜索收敛护栏（TS-7，2026-09-02）', () => {
         { content: '二轮叙述' },
         {
           toolCalls: [
-            { id: 's2', type: 'function', function: { name: 'web_search', arguments: '{"query":"B"}' } },
+            {
+              id: 's2',
+              type: 'function',
+              function: { name: 'web_search', arguments: '{"query":"B"}' },
+            },
           ],
         },
       ],
@@ -4148,14 +4366,22 @@ describe('web_fetch / trace_summary 复用统一防重通道', () => {
       [
         {
           toolCalls: [
-            { id: 'f1', type: 'function', function: { name: 'web_fetch', arguments: '{"url":"https://example.com/a"}' } },
+            {
+              id: 'f1',
+              type: 'function',
+              function: { name: 'web_fetch', arguments: '{"url":"https://example.com/a"}' },
+            },
           ],
         },
       ],
       [
         {
           toolCalls: [
-            { id: 'f2', type: 'function', function: { name: 'web_fetch', arguments: '{"url":"https://example.com/a"}' } },
+            {
+              id: 'f2',
+              type: 'function',
+              function: { name: 'web_fetch', arguments: '{"url":"https://example.com/a"}' },
+            },
           ],
         },
       ],
@@ -4181,21 +4407,33 @@ describe('web_fetch / trace_summary 复用统一防重通道', () => {
       [
         {
           toolCalls: [
-            { id: 't1', type: 'function', function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r5"}' } },
+            {
+              id: 't1',
+              type: 'function',
+              function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r5"}' },
+            },
           ],
         },
       ],
       [
         {
           toolCalls: [
-            { id: 't2', type: 'function', function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r5"}' } },
+            {
+              id: 't2',
+              type: 'function',
+              function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r5"}' },
+            },
           ],
         },
       ],
       [
         {
           toolCalls: [
-            { id: 't3', type: 'function', function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r6"}' } },
+            {
+              id: 't3',
+              type: 'function',
+              function: { name: 'trace_summary', arguments: '{"sessionId":"s-1","roundId":"r6"}' },
+            },
           ],
         },
       ],
@@ -4220,14 +4458,22 @@ describe('web_fetch / trace_summary 复用统一防重通道', () => {
       [
         {
           toolCalls: [
-            { id: 'm1', type: 'function', function: { name: 'search_memories', arguments: '{"query":"闭环设计","limit":"5"}' } },
+            {
+              id: 'm1',
+              type: 'function',
+              function: { name: 'search_memories', arguments: '{"query":"闭环设计","limit":"5"}' },
+            },
           ],
         },
       ],
       [
         {
           toolCalls: [
-            { id: 'm2', type: 'function', function: { name: 'search_memories', arguments: '{"query":"闭环设计","limit":"10"}' } },
+            {
+              id: 'm2',
+              type: 'function',
+              function: { name: 'search_memories', arguments: '{"query":"闭环设计","limit":"10"}' },
+            },
           ],
         },
       ],
@@ -4855,10 +5101,7 @@ describe('AgentLoop · thinking 事件 llm_calling 阶段', () => {
 
   it('多轮迭代中每轮 LLM 调用前都应 emit thinking(llm_calling)', async () => {
     const loop = new AgentLoop({
-      provider: mockMultiTurnProvider([
-        [{ content: '第一轮' }],
-        [{ content: '第二轮' }],
-      ]),
+      provider: mockMultiTurnProvider([[{ content: '第一轮' }], [{ content: '第二轮' }]]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
@@ -4884,11 +5127,19 @@ describe('AgentLoop · thinking 事件 llm_calling 阶段', () => {
 describe('AgentLoop · 首轮全工具 + 记忆回想软引导（T12 砍硬收窄后）', () => {
   /** 构造测试用工具定义骨架 */
   function makeToolDef(name: string): ToolDefinition {
-    return { name, description: `${name} 描述`, parameters: { type: 'object', properties: {}, required: [] } };
+    return {
+      name,
+      description: `${name} 描述`,
+      parameters: { type: 'object', properties: {}, required: [] },
+    };
   }
 
   it('首轮 LLM 调用 tools 参数为全量（不再收窄探查面）+ 记忆回想软引导无条件注入', async () => {
-    const toolDefs = [makeToolDef('search_memories'), makeToolDef('read_file'), makeToolDef('write_file')];
+    const toolDefs = [
+      makeToolDef('search_memories'),
+      makeToolDef('read_file'),
+      makeToolDef('write_file'),
+    ];
     const toolsPerCall: string[][] = [];
     let ti = 0;
     // 捕获型 provider：记录每轮 LLM 调用实际收到的 tools 名称
@@ -4902,7 +5153,12 @@ describe('AgentLoop · 首轮全工具 + 记忆回想软引导（T12 砍硬收�
       },
     } as unknown as LlmProvider;
 
-    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn(), toolDefinitions: toolDefs });
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      toolDefinitions: toolDefs,
+    });
     for await (const _ of loop.processUserInput('memory leak issue')) {
       void _;
     }
@@ -4910,7 +5166,9 @@ describe('AgentLoop · 首轮全工具 + 记忆回想软引导（T12 砍硬收�
     // 有查询意图的首轮也暴露全工具（不做硬收窄）
     expect(toolsPerCall[0]).toEqual(['search_memories', 'read_file', 'write_file']);
     // 记忆回想软引导无条件注入（不依赖查询意图/首轮状态）
-    expect(loop.getMessages().some((m) => m.role === 'system' && m.content.includes('记忆回想'))).toBe(true);
+    expect(
+      loop.getMessages().some((m) => m.role === 'system' && m.content.includes('记忆回想')),
+    ).toBe(true);
   });
 });
 
@@ -4942,9 +5200,13 @@ describe('AgentLoop · T3 预算预警档（上下文空间提示）', () => {
 
     const messages = loop.getMessages();
     // 注入上下文空间提示（预警档）
-    expect(messages.some((m) => m.role === 'system' && m.content.includes('上下文空间提示'))).toBe(true);
+    expect(messages.some((m) => m.role === 'system' && m.content.includes('上下文空间提示'))).toBe(
+      true,
+    );
     // 未注入软上限收尾信号（摘要层未饱和，预警是前一级）
-    expect(messages.some((m) => m.role === 'system' && m.content.includes('SOFT_LIMIT'))).toBe(false);
+    expect(messages.some((m) => m.role === 'system' && m.content.includes('SOFT_LIMIT'))).toBe(
+      false,
+    );
   });
 
   it('摘要层饱和时仍走软上限收尾（预警不覆盖收尾路径）', async () => {
@@ -5066,14 +5328,15 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // c2 的续读区间 200–299 落在覆盖之外且未触达文件末尾 → 是合法前向续读，必须放行
     // （若 mock 是短内容整读，limit 变体归一会把 c2 也判为重复——那是真机逃逸修复的正确语义；
     //   故此 mock 必须给出真实 large totalLines，保住「区间续读放行」的原始 R-1 回归意图）。
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) =>
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
         Promise.resolve(
           name === 'read_file'
             ? '第1行内容\n[read_file 分段] 已显示第 1–100 行（共 1000 行）。继续读用 offset=101。'
             : '',
         ),
-    );
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // 第 1 步：整读大文件（无 offset → 缺省从第 1 行起；超预算返回分段脚注）
@@ -5125,9 +5388,11 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   });
 
   it('D-1 · 文件被写入后旧缓存（含带区间条目）一并失效 → 重读放行', async () => {
-    const toolExecutor = vi.fn().mockImplementation((name: string) =>
-      Promise.resolve(name === 'write_file' ? '已写入' : 'v1'),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
+        Promise.resolve(name === 'write_file' ? '已写入' : 'v1'),
+      );
     const ranged = '{"path":"docs/a.md","offset":1,"limit":50}';
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
@@ -5182,9 +5447,11 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   });
 
   it('D-2 · 结果已被压缩链替换为占位符 → 台账有覆盖 → 回显非空摘要而非放行（防死锁靠替身自带信息，非靠放行）', async () => {
-    const toolExecutor = vi.fn().mockImplementation((name: string) =>
-      Promise.resolve(name === 'read_file' ? '正文内容' : ''),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
+        Promise.resolve(name === 'read_file' ? '正文内容' : ''),
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5205,7 +5472,9 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
     // 前置自检：压缩确实发生过，否则本用例没打到守卫分支（会假绿）
     expect(
-      loop.getMessages().some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
+      loop
+        .getMessages()
+        .some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
     ).toBe(true);
     // 整读（无分段脚注）已记「全覆盖」台账 → 压缩后 a.md 属「有覆盖信息」→ 分支②拦 + 回显摘要
     // （非空替身 + offset 续读指引，不构成死锁；老契约「无信息必须放行」已由本场景演进为「有信息拦+回显」）
@@ -5214,7 +5483,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // 新契约的「不死锁」保证不在「放行」，而在**替身必须自带可用信息**，故此处锁死两条：
     // ① 摘要非空（「要点：」之后必须有内容）② 给出续读出路（offset=）
     // 只断言 [ALREADY_READ] 出现是不够的——digest 被吞掉时该断言仍绿，而 LLM 拿不回任何视角。
-    const stub = loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'))?.content ?? '';
+    const stub =
+      loop.getMessages().find((m) => m.content.includes('[ALREADY_READ]'))?.content ?? '';
     expect(stub).toMatch(/要点：\S/);
     expect(stub).toContain('offset=');
   });
@@ -5223,14 +5493,15 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点）→ 写侧记录覆盖度摘要。
     // 注：脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**，coverEnd(200)>0——满足
     //   shouldEchoLedgerStub 的「无 limit 整读有覆盖即拦」，故重读被分支②回显摘要而非放行。
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) =>
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
         Promise.resolve(
           name === 'read_file'
             ? '第1行内容\n[read_file 分段] 已显示第 1–200 行（共 200 行）。继续读用 offset=201。'
             : '',
         ),
-    );
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5251,7 +5522,9 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
     // 前置自检：压缩确实发生过（a.md 结果已换占位符），否则用例没打到分支②
     expect(
-      loop.getMessages().some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
+      loop
+        .getMessages()
+        .some((m) => m.role === 'tool' && m.content === '[Previous: used read_file]'),
     ).toBe(true);
     // c3 同参重读 → 分支②拦（回显台账摘要），不落 ToolExecutor → 仍为 2 次
     expect(toolExecutor).toHaveBeenCalledTimes(2);
@@ -5266,9 +5539,11 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // read_file 返回的是**整文件、无分段脚注**（小文件未超单段预算，「读到末尾零噪音」）。
     // 若 parseReadFileCoverage 返回 undefined → 不记台账 → 分支②永不触发 → 压缩后重读放行（永动机，
     // 真机 182 次 read_file 复发根因）。契约：整读也记「全文件覆盖」，压缩后重读仍被分支②回显。
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) => Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
+        Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5302,9 +5577,11 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // 若 limit 纳入 DEDUP key → 每次变 limit 判为「不同主体」全放行（漏网）。
     // 契约：台账判定里「请求覆盖到文件末尾(offset+limit-1>=totalLines) 且 已覆盖到末尾(coverEnd>=totalLines)」
     //   → 归一为同参整读 → 分支②拦 + 回显摘要，封死 limit 变体逃逸。
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) => Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
-    );
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
+        Promise.resolve(name === 'read_file' ? '第1行\n第2行\n第3行' : ''),
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // c1 整读 a.md（3 行，无脚注 → ADR-031 补缝记全覆盖 coverEnd=3=totalLines）
@@ -5336,14 +5613,15 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
   it('G1 · P0-1b：不同区间但完全落在已覆盖范围内 → 分支②回显摘要（分段狂读的回头小读收敛）', async () => {
     // c1 读到 1–100；c2 以 offset=10 limit=20 重读（key 不同，非 exact hit），但区间整体在覆盖内
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) =>
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
         Promise.resolve(
           name === 'read_file'
             ? '头部内容\n[read_file 分段] 已显示第 1–100 行（共 200 行）。继续读用 offset=101。'
             : '',
         ),
-    );
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5368,12 +5646,15 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
   it('G2 · P0-1b：请求触及覆盖之外 → 分支③放行（前向合法读取不误拦）', async () => {
     // c1 读到 1–20；c2 请求 offset=30（覆盖外前向新区间）→ 必须放行真实执行
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) =>
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
         Promise.resolve(
-          name === 'read_file' ? '前段内容\n[read_file 分段] 已显示第 1–20 行（共 200 行）。继续读用 offset=21。' : '',
+          name === 'read_file'
+            ? '前段内容\n[read_file 分段] 已显示第 1–20 行（共 200 行）。继续读用 offset=21。'
+            : '',
         ),
-    );
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5402,14 +5683,15 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // 边界 A 在 loop 层的真实链路：c1 读到 1–100（共 1000，coverEnd=100<totalLines=1000）。
     // c2 请求 offset=950 limit=100（reqEnd=1049 ≥ 1000 触顶），但 coverEnd(100) 远未达 total(1000)。
     // 新归一判据必须判 **放行**（续读 950–1000 尾部真内容），否则就是把未读段错当已读 = 误拦死锁。
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) =>
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
         Promise.resolve(
           name === 'read_file'
             ? '头段内容\n[read_file 分段] 已显示第 1–100 行（共 1000 行）。继续读用 offset=101。'
             : '',
         ),
-    );
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5440,14 +5722,15 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
     // c1 整读 a.md 被截断（覆盖 1–20 / 共 200，coverEnd<totalLines）；c2 读 b.md 把 a.md 挤出
     // keepRecent → c3 依旧无 offset/limit 整读 a.md：按「无 limit + 已有覆盖度」判定 → 应回显
     // 摘要（引导 offset=21 续读），而非放行重试（真机 217 次无区间整读的根因场景）。
-    const toolExecutor = vi.fn().mockImplementation(
-      (name: string) =>
+    const toolExecutor = vi
+      .fn()
+      .mockImplementation((name: string) =>
         Promise.resolve(
           name === 'read_file'
             ? '头段内容\n[read_file 分段] 已显示第 1–20 行（共 200 行）。继续读用 offset=21。'
             : '',
         ),
-    );
+      );
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         [{ toolCalls: [call('c1', 'read_file', '{"path":"docs/a.md"}')] }],
@@ -5524,7 +5807,9 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
 
     // 工具实际未执行（0 次），而非"已自动阻止"却已跑完
     expect(toolExecutor).not.toHaveBeenCalled();
-    const blocked = loop.getMessages().find((m) => m.content.includes('DUPLICATE_TOOL_CALL_BLOCKED'));
+    const blocked = loop
+      .getMessages()
+      .find((m) => m.content.includes('DUPLICATE_TOOL_CALL_BLOCKED'));
     expect(blocked).toBeDefined();
     expect(blocked!.content).toContain('已阻止本次工具执行');
   });
@@ -5574,12 +5859,15 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
     expect(msgs).toHaveLength(1);
     expect(msgs[0]!.content).toContain(NOTE);
     // ack 工具结果存在（配对 assistant.tool_calls，OpenAI 兼容端 400 防护）
-    expect(loop.getMessages().some((m) => typeof m.content === 'string' && m.content.includes('已记录'))).toBe(
-      true,
-    );
+    expect(
+      loop.getMessages().some((m) => typeof m.content === 'string' && m.content.includes('已记录')),
+    ).toBe(true);
     // 零展示：narrate/text 用户可见流不含笔记原文
     const visible = chunks
-      .filter((c): c is Extract<AgentChunk, { type: 'narrate' | 'text' }> => c.type === 'narrate' || c.type === 'text')
+      .filter(
+        (c): c is Extract<AgentChunk, { type: 'narrate' | 'text' }> =>
+          c.type === 'narrate' || c.type === 'text',
+      )
       .map((c) => c.content)
       .join('\n');
     expect(visible).not.toContain(NOTE);
@@ -5591,8 +5879,16 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
         [
           {
             toolCalls: [
-              { id: 'a', type: 'function', function: { name: 'remember_intel', arguments: JSON.stringify({ note: '要点甲' }) } },
-              { id: 'b', type: 'function', function: { name: 'remember_intel', arguments: JSON.stringify({ note: '要点乙' }) } },
+              {
+                id: 'a',
+                type: 'function',
+                function: { name: 'remember_intel', arguments: JSON.stringify({ note: '要点甲' }) },
+              },
+              {
+                id: 'b',
+                type: 'function',
+                function: { name: 'remember_intel', arguments: JSON.stringify({ note: '要点乙' }) },
+              },
             ],
           },
         ],
@@ -5612,7 +5908,13 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
   it('空/缺失 note → 拒绝写入，且不创建情报区', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [{ toolCalls: [{ id: 'x', type: 'function', function: { name: 'remember_intel', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'x', type: 'function', function: { name: 'remember_intel', arguments: '{}' } },
+            ],
+          },
+        ],
         answerTurn,
       ]),
       bootstrapMemories: [],
@@ -5621,13 +5923,19 @@ describe('AgentLoop · 情报区（LLM 私有工作笔记，Step 2）', () => {
     for await (const c of loop.processUserInput('收集')) void c;
 
     expect(intelMsgs(loop)).toHaveLength(0);
-    expect(loop.getMessages().some((m) => typeof m.content === 'string' && m.content.includes('未写入'))).toBe(true);
+    expect(
+      loop.getMessages().some((m) => typeof m.content === 'string' && m.content.includes('未写入')),
+    ).toBe(true);
   });
 
   it('跨 turn 自持：情报区非 executionTemp，下个 processUserInput 后仍保留', async () => {
     const NOTE = '跨 turn 仍记得';
     const loop = new AgentLoop({
-      provider: mockMultiTurnProvider([rememberTurn(NOTE), answerTurn, [{ content: '第二问回答' }]]),
+      provider: mockMultiTurnProvider([
+        rememberTurn(NOTE),
+        answerTurn,
+        [{ content: '第二问回答' }],
+      ]),
       bootstrapMemories: [],
       toolExecutor: vi.fn(),
     });
@@ -5677,10 +5985,9 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
 
   it('F1: supportsToolCalling=false → buildChatOptions 不产出 tools 参数（收起原生 FC 通道）', async () => {
     // 无原生工具能力：即使配置了工具集，也不应通过 tools 参数对外暴露
-    const { provider, captured } = capabilityProvider(
-      { supportsToolCalling: false },
-      [[{ content: '直接回答' }]],
-    );
+    const { provider, captured } = capabilityProvider({ supportsToolCalling: false }, [
+      [{ content: '直接回答' }],
+    ]);
     const loop = new AgentLoop({
       provider,
       bootstrapMemories: [],
@@ -5698,10 +6005,9 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
   });
 
   it('F1b: supportsToolCalling=true（默认）→ 保留 tools 参数（存量云 LLM 行为不破坏）', async () => {
-    const { provider, captured } = capabilityProvider(
-      { supportsToolCalling: true },
-      [[{ content: '直接回答' }]],
-    );
+    const { provider, captured } = capabilityProvider({ supportsToolCalling: true }, [
+      [{ content: '直接回答' }],
+    ]);
     const loop = new AgentLoop({
       provider,
       bootstrapMemories: [],
@@ -5718,7 +6024,9 @@ describe('AgentLoop · 互斥双能力位（supportsToolCalling / supportsStruct
   });
 
   it('F2: supportsToolCalling=false → buildSystemPrompt 收起工具清单（不列工具描述）', async () => {
-    const { provider } = capabilityProvider({ supportsToolCalling: false }, [[{ content: '回答' }]]);
+    const { provider } = capabilityProvider({ supportsToolCalling: false }, [
+      [{ content: '回答' }],
+    ]);
     const loop = new AgentLoop({
       provider,
       bootstrapMemories: [],
@@ -5862,13 +6170,11 @@ describe('AgentLoop · thought 的 step 归属（stepIndex）', () => {
 describe('AgentLoop · 工具的 step 归属（tool_start.stepIndex）', () => {
   /** 带工具调用的轮 chunk（args 做参数区分防重复拦截器误伤） */
   const toolTurn = (...calls: { id: string; args: string }[]): ChunkItem => ({
-    toolCalls: calls.map(
-      (c): NonNullable<Message['toolCalls']>[number] => ({
-        id: c.id,
-        type: 'function',
-        function: { name: 'read_file', arguments: c.args },
-      }),
-    ),
+    toolCalls: calls.map((c): NonNullable<Message['toolCalls']>[number] => ({
+      id: c.id,
+      type: 'function',
+      function: { name: 'read_file', arguments: c.args },
+    })),
   });
 
   it('同一轮多 step 各自递增；同 step 并发多工具同号', async () => {

@@ -123,7 +123,8 @@ export function parseConfig(raw: unknown): Config {
   const memoryInput = asRecordIfObject(input.memory);
 
   const memory: MemoryConfig = {
-    dataDir: typeof memoryInput.dataDir === 'string' ? memoryInput.dataDir : DEFAULT_CONFIG.memory.dataDir,
+    dataDir:
+      typeof memoryInput.dataDir === 'string' ? memoryInput.dataDir : DEFAULT_CONFIG.memory.dataDir,
     maxContextTokens: validateMaxContextTokens(
       memoryInput.maxContextTokens,
       DEFAULT_CONFIG.memory.maxContextTokens,
@@ -134,7 +135,10 @@ export function parseConfig(raw: unknown): Config {
 
   const security: SecurityConfig = {
     permission: validatePermission(securityInput.permission),
-    confirmWrites: typeof securityInput.confirmWrites === 'boolean' ? securityInput.confirmWrites : DEFAULT_CONFIG.security.confirmWrites,
+    confirmWrites:
+      typeof securityInput.confirmWrites === 'boolean'
+        ? securityInput.confirmWrites
+        : DEFAULT_CONFIG.security.confirmWrites,
   };
 
   const allowedPaths = validateAllowedPaths(input.allowedPaths);
@@ -152,8 +156,8 @@ export function parseConfig(raw: unknown): Config {
  * 守卫与断言合一，避免守卫变更时编译器不报类型安全风险。
  */
 function asRecordIfObject(value: unknown): Record<string, unknown> {
-  return (value && typeof value === 'object' && !Array.isArray(value))
-    ? value as Record<string, unknown>
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
     : {};
 }
 
@@ -183,11 +187,9 @@ function validateTemperature(value: unknown, defaultValue: number): number {
   // Number.isFinite 同时排除 NaN/Infinity（对齐 zod z.number()）
   if (typeof value === 'number' && Number.isFinite(value)) {
     if (value < 0 || value > 2) {
-      throw configError(
-        'temperature 配置项超出范围',
-        `当前值: ${value}（合法范围 0-2）`,
-        ['将 temperature 调整为 0-2 之间的数字'],
-      );
+      throw configError('temperature 配置项超出范围', `当前值: ${value}（合法范围 0-2）`, [
+        '将 temperature 调整为 0-2 之间的数字',
+      ]);
     }
     return value;
   }
@@ -205,7 +207,9 @@ function validateMaxContextTokens(value: unknown, defaultValue: number): number 
       throw configError(
         'maxContextTokens 配置项超出范围',
         `当前值: ${value}（合法范围 ${MIN_MAX_CONTEXT_TOKENS}-${MAX_MAX_CONTEXT_TOKENS}）`,
-        [`将 maxContextTokens 调整为 ${MIN_MAX_CONTEXT_TOKENS}-${MAX_MAX_CONTEXT_TOKENS} 之间的数字`],
+        [
+          `将 maxContextTokens 调整为 ${MIN_MAX_CONTEXT_TOKENS}-${MAX_MAX_CONTEXT_TOKENS} 之间的数字`,
+        ],
       );
     }
     return value;
@@ -264,8 +268,8 @@ function validateAllowedPaths(value: unknown): string[] {
 
   // 数量上限：路径白名单防膨胀（超过则截断保留前 MAX_ALLOWED_PATHS 条）
   return value.length > MAX_ALLOWED_PATHS
-    ? value.slice(0, MAX_ALLOWED_PATHS) as string[]
-    : value as string[];
+    ? (value.slice(0, MAX_ALLOWED_PATHS) as string[])
+    : (value as string[]);
 }
 
 /**
@@ -351,11 +355,8 @@ async function readJsonFile(path: string): Promise<unknown> {
   try {
     return JSON.parse(content);
   } catch (err) {
-    throw configError(
-      `配置文件 JSON 格式错误: ${path}`,
-      toError(err).message,
-      ['检查配置文件语法（逗号、引号配对、尾随逗号）'],
-    );
+    throw configError(`配置文件 JSON 格式错误: ${path}`, toError(err).message, [
+      '检查配置文件语法（逗号、引号配对、尾随逗号）',
+    ]);
   }
 }
-

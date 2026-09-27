@@ -65,7 +65,7 @@ function createConsoleLogFn(targetLevel: 'info' | 'warn' | 'error' | 'debug'): L
   const prefix = `[${targetLevel.toUpperCase()}]`;
   return (objOrMsg, msg) => {
     if (!shouldLog(targetLevel)) return;
-    const text = typeof objOrMsg === 'string' ? objOrMsg : msg ?? '';
+    const text = typeof objOrMsg === 'string' ? objOrMsg : (msg ?? '');
     if (typeof objOrMsg === 'object') {
       // 对象路径：脱敏后 JSON 序列化，防敏感数据泄漏
       console.error(`${prefix} ${text}`, JSON.stringify(redactSensitiveKeys(objOrMsg)));
@@ -108,9 +108,7 @@ export function setLogger(newLogger: ILogger | undefined): void {
   if (newLogger) {
     // 检测覆盖：当前已被宿主注入且新实例不同，说明有多处注入
     if (_loggerInjected && _logger !== newLogger) {
-      _logger.warn(
-        'setLogger 覆盖了已有的自定义 logger（单 Agent 模型下不应出现此情况）',
-      );
+      _logger.warn('setLogger 覆盖了已有的自定义 logger（单 Agent 模型下不应出现此情况）');
     }
     _loggerInjected = true;
     _logger = newLogger;

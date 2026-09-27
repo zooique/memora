@@ -4,7 +4,12 @@
  * 详见 Intl.Segmenter 中文分词
  */
 import { describe, expect, it } from 'vitest';
-import { segmentText, segmentLower, extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
+import {
+  segmentText,
+  segmentLower,
+  extractEnhancedKeywords,
+  calculateWeightedJaccard,
+} from '@/utils/segmenter.js';
 
 describe('中文分词器（Intl.Segmenter）', () => {
   describe('segmentText', () => {
@@ -94,12 +99,17 @@ describe('calculateWeightedJaccard（加权 Jaccard 相似度）', () => {
   });
 
   it('无交集返回 0', () => {
-    expect(calculateWeightedJaccard([{ word: 'a', weight: 1 }], [{ word: 'b', weight: 2 }])).toBe(0);
+    expect(calculateWeightedJaccard([{ word: 'a', weight: 1 }], [{ word: 'b', weight: 2 }])).toBe(
+      0,
+    );
   });
 
   it('有交集按较大权重计算', () => {
     const score = calculateWeightedJaccard(
-      [{ word: 'a', weight: 1 }, { word: 'b', weight: 2 }],
+      [
+        { word: 'a', weight: 1 },
+        { word: 'b', weight: 2 },
+      ],
       [{ word: 'a', weight: 3 }],
     );
     // 交集 weightA=1/weightB=3 → 交集取 3；并集 a(3)+b(2)=5 → 3/5
@@ -108,6 +118,8 @@ describe('calculateWeightedJaccard（加权 Jaccard 相似度）', () => {
 
   it('unionWeight 为 0 时返回 0（防御）', () => {
     // 空词组但长度非空（词为 0 权重）→ union 0
-    expect(calculateWeightedJaccard([{ word: 'a', weight: 0 }], [{ word: 'a', weight: 0 }])).toBe(0);
+    expect(calculateWeightedJaccard([{ word: 'a', weight: 0 }], [{ word: 'a', weight: 0 }])).toBe(
+      0,
+    );
   });
 });

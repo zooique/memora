@@ -37,7 +37,11 @@ class VscodeSpan implements ISpan {
   private ended = false;
 
   constructor(
-    private readonly onEnd: (name: string, attrs: Record<string, SpanAttributeValue>, at: number) => void,
+    private readonly onEnd: (
+      name: string,
+      attrs: Record<string, SpanAttributeValue>,
+      at: number,
+    ) => void,
     private readonly name: string,
     initialAttrs?: Record<string, SpanAttributeValue>,
   ) {

@@ -24,11 +24,7 @@ import type { LlmProvider, Message } from '@/llm/provider.js';
 /**
  * 便捷构造：写一个 folder 形态角色包（manifest.json + persona.md）
  */
-async function writePack(
-  packsDir: string,
-  packName: string,
-  persona: string,
-): Promise<void> {
+async function writePack(packsDir: string, packName: string, persona: string): Promise<void> {
   const packDir = join(packsDir, packName);
   await mkdir(packDir, { recursive: true });
   await writeFile(
@@ -189,9 +185,7 @@ describe('runTeamMeetingAssessment', () => {
     await writePack(packsDir, '组长', '组长设定');
     await writePack(packsDir, '已装载组员', '已装载组员设定');
     // 「未装载组员」不在 role-packs 目录（悬空引用）→ buildSystemPrompt 返回空串 → 跳过
-    manager.setRolePackTeams([
-      { leader: '组长', members: ['已装载组员', '未装载组员'] },
-    ]);
+    manager.setRolePackTeams([{ leader: '组长', members: ['已装载组员', '未装载组员'] }]);
     await manager.load('组长');
 
     const { provider, received } = makeMockProvider();

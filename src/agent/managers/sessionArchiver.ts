@@ -44,10 +44,7 @@ export class SessionArchiver {
   /** 会话存储（加载原始对话消息 + 写入 SessionMeta） */
   private sessionStore: ISessionStore | undefined;
 
-  constructor(
-    provider: LlmProvider,
-    sessionStore: ISessionStore | undefined,
-  ) {
+  constructor(provider: LlmProvider, sessionStore: ISessionStore | undefined) {
     this.provider = provider;
     this.defaultProvider = provider;
     this.sessionStore = sessionStore;
@@ -62,10 +59,7 @@ export class SessionArchiver {
    * 归档指定会话：加载消息 → 消息过少（<2）跳过 → LLM 生成摘要/主题 → 写入 SessionMeta。
    * 错误传播：sessionStore 未注入/消息过少/LLM 判无价值返回空结果（非错误）；LLM 异常/写入失败向上抛给 ArchiveCoordinator 统一 catch。
    */
-  async archiveSession(
-    date: string,
-    session: string,
-  ): Promise<SessionArchiveResult> {
+  async archiveSession(date: string, session: string): Promise<SessionArchiveResult> {
     const sessionLabel = `${date}-${session}`;
     const emptyResult: SessionArchiveResult = {
       updatedFields: [],
@@ -81,7 +75,10 @@ export class SessionArchiver {
     const messages = this.sessionStore.loadMessages(date, session);
     if (messages.length < 2) {
       // 单条消息或空会话无归档价值
-      logger.debug({ sessionLabel, messageCount: messages.length }, 'SessionArchiver: 消息过少，跳过');
+      logger.debug(
+        { sessionLabel, messageCount: messages.length },
+        'SessionArchiver: 消息过少，跳过',
+      );
       return { ...emptyResult, messageCount: messages.length };
     }
 
@@ -130,9 +127,7 @@ export class SessionArchiver {
    * 调用 LLM 生成会话元数据（summary/keyTopics/autoName），从"简单摘要"升级为"综合提炼"（L4 归档压缩增强）。
    * @returns 生成的元数据，无摘要价值返回 null
    */
-  private async generateSessionMeta(
-    messages: SessionMessage[],
-  ): Promise<{
+  private async generateSessionMeta(messages: SessionMessage[]): Promise<{
     summary: string;
     keyTopics: string[];
     autoName: string;
@@ -185,9 +180,10 @@ ${dialogueText}
       autoName?: string;
     }>(trimmed);
 
-    const summary = parsed && typeof parsed.summary === 'string' && parsed.summary.trim()
-      ? parsed.summary.trim()
-      : null;
+    const summary =
+      parsed && typeof parsed.summary === 'string' && parsed.summary.trim()
+        ? parsed.summary.trim()
+        : null;
 
     if (!summary) {
       return null;

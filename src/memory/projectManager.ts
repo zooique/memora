@@ -107,7 +107,10 @@ export class ProjectManager {
       if (this.externalStorage) {
         this.agentIndex = this.externalStorage;
       } else {
-        logger.warn({ hasStorage: false }, '未注入持久化存储实现，Agent 将使用 InMemoryStorage（数据重启后丢失）');
+        logger.warn(
+          { hasStorage: false },
+          '未注入持久化存储实现，Agent 将使用 InMemoryStorage（数据重启后丢失）',
+        );
         this.agentIndex = new InMemoryStorage();
       }
     }
@@ -137,13 +140,7 @@ export class ProjectManager {
       await mkdir(memoraDir, { recursive: true });
       const { index } = await this.ensureAgentResources();
       // 4) 构建并返回项目上下文
-      return this.buildProjectContext(
-        projectPath,
-        projectName,
-        memoraDir,
-        index,
-        configDir,
-      );
+      return this.buildProjectContext(projectPath, projectName, memoraDir, index, configDir);
     } catch (err) {
       // 失败时释放锁并重置状态，防锁文件残留
       await this.lockManager.release().catch((releaseErr: unknown) => {

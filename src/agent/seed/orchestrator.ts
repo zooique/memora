@@ -17,11 +17,7 @@ import { LOOP_CONSTANTS } from '@/agent/constants.js';
 import { logger } from '@/logging/logger.js';
 import { isTimeoutAbortSignal } from '@/utils/errors.js';
 import { resolveActiveStrategy } from '@/role-pack/strategyResolver.js';
-import {
-  type StreamConsumeResult,
-  type SeedDeps,
-  type SeedParts,
-} from './types.js';
+import { type StreamConsumeResult, type SeedDeps, type SeedParts } from './types.js';
 import { SeedPrepare, refreshAssemblyForRolePack } from './prepare.js';
 import { resolveSummary, resolveSummaryFocus } from '@/role-pack/strategyResolver.js';
 import { TRACE_SPANS, NOOP_TRACER } from '@/agent/tracer.js';
@@ -80,11 +76,7 @@ export class SeedOrchestrator {
     const produce = () =>
       this.deps
         .getParts()
-        .loop.processUserInput(
-          input,
-          signal,
-          this.deps.getParts().loop.getCurrentRoundId(),
-        );
+        .loop.processUserInput(input, signal, this.deps.getParts().loop.getCurrentRoundId());
     const acted = yield* this.act(produce, signal);
     if (acted.failed || acted.aborted || acted.paused) return;
 

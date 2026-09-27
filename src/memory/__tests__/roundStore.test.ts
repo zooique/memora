@@ -256,11 +256,42 @@ describe('问答闭环存储', () => {
       const round = createPendingRound('你好');
       const completed = completeRound(round, '你好！');
       const events: ProcessEvent[] = [
-        { type: 'meta', seq: 1, ts: '2026-08-28T00:00:00.000Z', payload: { role: '文档设计师', llm: 'deepseek-chat' } },
-        { type: 'thinking', seq: 2, ts: '2026-08-28T00:00:01.000Z', payload: { phase: 'processing' } },
-        { type: 'tool_start', seq: 3, ts: '2026-08-28T00:00:02.000Z', payload: { toolCallId: 'tc1', name: 'read_file', args: '{"path":"a.md"}' } },
-        { type: 'tool_result', seq: 4, ts: '2026-08-28T00:00:03.000Z', payload: { toolCallId: 'tc1', name: 'read_file', ok: true, summary: '读取成功' } },
-        { type: 'metrics', seq: 5, ts: '2026-08-28T00:00:04.000Z', payload: { durationMs: 4000, tokenIn: 100, tokenOut: 200, toolFailureCount: 0, success: true } },
+        {
+          type: 'meta',
+          seq: 1,
+          ts: '2026-08-28T00:00:00.000Z',
+          payload: { role: '文档设计师', llm: 'deepseek-chat' },
+        },
+        {
+          type: 'thinking',
+          seq: 2,
+          ts: '2026-08-28T00:00:01.000Z',
+          payload: { phase: 'processing' },
+        },
+        {
+          type: 'tool_start',
+          seq: 3,
+          ts: '2026-08-28T00:00:02.000Z',
+          payload: { toolCallId: 'tc1', name: 'read_file', args: '{"path":"a.md"}' },
+        },
+        {
+          type: 'tool_result',
+          seq: 4,
+          ts: '2026-08-28T00:00:03.000Z',
+          payload: { toolCallId: 'tc1', name: 'read_file', ok: true, summary: '读取成功' },
+        },
+        {
+          type: 'metrics',
+          seq: 5,
+          ts: '2026-08-28T00:00:04.000Z',
+          payload: {
+            durationMs: 4000,
+            tokenIn: 100,
+            tokenOut: 200,
+            toolFailureCount: 0,
+            success: true,
+          },
+        },
       ];
       completed.processEvents = events;
       store.save(completed);
@@ -268,7 +299,13 @@ describe('问答闭环存储', () => {
       // 找回后事件完整且顺序一致
       const retrieved = store.getById(completed.id);
       expect(retrieved?.processEvents).toHaveLength(5);
-      expect(retrieved?.processEvents?.map((e) => e.type)).toEqual(['meta', 'thinking', 'tool_start', 'tool_result', 'metrics']);
+      expect(retrieved?.processEvents?.map((e) => e.type)).toEqual([
+        'meta',
+        'thinking',
+        'tool_start',
+        'tool_result',
+        'metrics',
+      ]);
       expect(retrieved?.processEvents?.[0]).toEqual(events[0]);
       expect(retrieved?.processEvents?.[4]).toEqual(events[4]);
     });
@@ -289,8 +326,18 @@ describe('问答闭环存储', () => {
 
       const current = store.getById(completed.id)!;
       current.processEvents = [
-        { type: 'meta', seq: 1, ts: '2026-08-28T00:00:00.000Z', payload: { role: 'AI', llm: 'deepseek-chat' } },
-        { type: 'aborted', seq: 2, ts: '2026-08-28T00:00:01.000Z', payload: { reason: 'User cancelled the conversation' } },
+        {
+          type: 'meta',
+          seq: 1,
+          ts: '2026-08-28T00:00:00.000Z',
+          payload: { role: 'AI', llm: 'deepseek-chat' },
+        },
+        {
+          type: 'aborted',
+          seq: 2,
+          ts: '2026-08-28T00:00:01.000Z',
+          payload: { reason: 'User cancelled the conversation' },
+        },
       ];
       store.save(current);
 
@@ -326,7 +373,10 @@ describe('问答闭环存储', () => {
 
       const retrieved = store.getById(completed.id);
       expect(retrieved?.evidence).toHaveLength(2);
-      expect(retrieved?.evidence?.map((e) => e.type)).toEqual(['empty_response', 'ledger_stub_echo']);
+      expect(retrieved?.evidence?.map((e) => e.type)).toEqual([
+        'empty_response',
+        'ledger_stub_echo',
+      ]);
       expect(retrieved?.evidence?.[1]).toEqual(completed.evidence[1]);
     });
 
@@ -405,7 +455,8 @@ function stripTrailingLineComment(line: string): string {
   for (let i = 0; i < line.length; i++) {
     const ch = line[i];
     if (quote) {
-      if (ch === '\\') i++; // 转义字符跳过（防误判引号闭合）
+      if (ch === '\\')
+        i++; // 转义字符跳过（防误判引号闭合）
       else if (ch === quote) quote = null;
       continue;
     }
@@ -448,14 +499,14 @@ describe('isRoundSettled 判据单源守卫', () => {
 
   // 守卫自身的「测量工具」先自证（纪律：先验证测量工具本身，再信它的结论）
   it('stripTrailingLineComment：剥行尾注释，但保留引号内的 //', () => {
-    expect(stripTrailingLineComment('const x = 1; // status === \'complete\'')).toBe('const x = 1; ');
+    expect(stripTrailingLineComment("const x = 1; // status === 'complete'")).toBe('const x = 1; ');
     expect(stripTrailingLineComment("const u = 'https://a'; y")).toBe("const u = 'https://a'; y");
     expect(stripTrailingLineComment('const u = "a\\"//b"; y')).toBe('const u = "a\\"//b"; y');
     expect(stripTrailingLineComment('const s = `a//b`; y')).toBe('const s = `a//b`; y');
     expect(stripTrailingLineComment('const x = 1;')).toBe('const x = 1;');
   });
 
-  it('生产代码中不得自写 status ==/!= /=== /!== \'complete\' 收场判据（豁免须登记理由）', () => {
+  it("生产代码中不得自写 status ==/!= /=== /!== 'complete' 收场判据（豁免须登记理由）", () => {
     const roots = ['src', 'hosts/memora-vscode/src'];
     // 只认比较运算，不匹配写点（`status: 'complete'` 是 appendAssistant / completeRound 的合法落盘）
     // 单 / 双引号都认：本项目 singleQuote 仅为 prettier 约定，而 prettier **不进门禁**——

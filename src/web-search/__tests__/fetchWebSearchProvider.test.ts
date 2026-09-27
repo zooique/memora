@@ -11,7 +11,10 @@
  *   - URL 构造格式
  */
 import { describe, it, expect, vi, afterEach, beforeEach } from 'vitest';
-import { FetchWebSearchProvider, buildSearchEndpoints } from '@/web-search/fetchWebSearchProvider.js';
+import {
+  FetchWebSearchProvider,
+  buildSearchEndpoints,
+} from '@/web-search/fetchWebSearchProvider.js';
 import type { SearchEndpoint } from '@/web-search/types.js';
 
 /** 模拟 DuckDuckGo HTML 响应（含两个搜索结果） */
@@ -64,8 +67,18 @@ const MOCK_DDG_REDIRECT_HTML = `<!DOCTYPE html>
 
 /** 按 URL 分发的 fetch mock：Bing 返回 bingResponse，DuckDuckGo 返回 ddgResponse */
 function createUrlDispatchFetch(
-  bingResponse: () => Promise<{ ok: boolean; status?: number; statusText?: string; text?: () => Promise<string> }>,
-  ddgResponse: () => Promise<{ ok: boolean; status?: number; statusText?: string; text?: () => Promise<string> }>,
+  bingResponse: () => Promise<{
+    ok: boolean;
+    status?: number;
+    statusText?: string;
+    text?: () => Promise<string>;
+  }>,
+  ddgResponse: () => Promise<{
+    ok: boolean;
+    status?: number;
+    statusText?: string;
+    text?: () => Promise<string>;
+  }>,
 ): ReturnType<typeof vi.fn> {
   return vi.fn().mockImplementation((url: string) => {
     if (url.includes('bing.com/search')) return bingResponse();
@@ -120,10 +133,12 @@ describe('FetchWebSearchProvider', () => {
 
     it('Bing HTML 实体应解码（&amp; → &）', async () => {
       const html = '<h2><a href="https://x.com/a&amp;b=1">标题</a></h2>';
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(html),
-        () => htmlResponse(MOCK_EMPTY_HTML),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(html),
+          () => htmlResponse(MOCK_EMPTY_HTML),
+        ),
+      );
 
       const results = await provider.search('测试');
 
@@ -163,10 +178,12 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('应解码 DuckDuckGo 跳转链接为原始 URL', async () => {
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(MOCK_EMPTY_HTML),
-        () => htmlResponse(MOCK_DDG_REDIRECT_HTML),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(MOCK_EMPTY_HTML),
+          () => htmlResponse(MOCK_DDG_REDIRECT_HTML),
+        ),
+      );
 
       const results = await provider.search('测试');
 
@@ -191,18 +208,23 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('应传递 limit 参数限制结果数量', async () => {
-      const manyDdg = Array.from({ length: 6 }, (_, i) => `
+      const manyDdg = Array.from(
+        { length: 6 },
+        (_, i) => `
         <div class="result">
           <a class="result__a" href="https://example.com/${i}">结果${i}</a>
           <a class="result__snippet">摘要${i}</a>
         </div>
-      `).join('');
+      `,
+      ).join('');
       const html = `<!DOCTYPE html><html><body><div class="results">${manyDdg}</div></body></html>`;
 
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(MOCK_EMPTY_HTML),
-        () => htmlResponse(html),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(MOCK_EMPTY_HTML),
+          () => htmlResponse(html),
+        ),
+      );
 
       const results = await provider.search('测试', { limit: 1 });
 
@@ -211,18 +233,23 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('默认 limit 应为 5', async () => {
-      const manyDdg = Array.from({ length: 6 }, (_, i) => `
+      const manyDdg = Array.from(
+        { length: 6 },
+        (_, i) => `
         <div class="result">
           <a class="result__a" href="https://example.com/${i}">结果${i}</a>
           <a class="result__snippet">摘要${i}</a>
         </div>
-      `).join('');
+      `,
+      ).join('');
       const html = `<!DOCTYPE html><html><body><div class="results">${manyDdg}</div></body></html>`;
 
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(MOCK_EMPTY_HTML),
-        () => htmlResponse(html),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(MOCK_EMPTY_HTML),
+          () => htmlResponse(html),
+        ),
+      );
 
       const results = await provider.search('测试');
 
@@ -230,19 +257,23 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('HTTP 错误时应抛出异常（含端点名与状态码）', async () => {
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => Promise.resolve({ ok: false, status: 403, statusText: 'Forbidden' }),
-        () => Promise.resolve({ ok: false, status: 429, statusText: 'Too Many Requests' }),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => Promise.resolve({ ok: false, status: 403, statusText: 'Forbidden' }),
+          () => Promise.resolve({ ok: false, status: 429, statusText: 'Too Many Requests' }),
+        ),
+      );
 
       await expect(provider.search('测试')).rejects.toThrow('HTTP 403');
     });
 
     it('两端点均返回空结果时应返回空数组', async () => {
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(MOCK_EMPTY_HTML),
-        () => htmlResponse(MOCK_EMPTY_HTML),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(MOCK_EMPTY_HTML),
+          () => htmlResponse(MOCK_EMPTY_HTML),
+        ),
+      );
 
       const results = await provider.search('测试');
 
@@ -250,9 +281,9 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('网络错误时应抛出聚合异常', async () => {
-      globalThis.fetch = vi.fn().mockRejectedValue(
-        new Error('ENOTFOUND'),
-      ) as unknown as typeof globalThis.fetch;
+      globalThis.fetch = vi
+        .fn()
+        .mockRejectedValue(new Error('ENOTFOUND')) as unknown as typeof globalThis.fetch;
 
       await expect(provider.search('测试')).rejects.toThrow('ENOTFOUND');
     });
@@ -272,11 +303,14 @@ describe('FetchWebSearchProvider', () => {
 
     it('Bing 返回无结果 HTML 但 DDG 有结果时应降级', async () => {
       // Bing 返回有标题但无摘要的残缺 HTML
-      const bingPartial = '<html><body><li class="b_algo"><h2><a href="https://x.com/1">标题</a></h2></li></body></html>';
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(bingPartial),
-        () => htmlResponse(MOCK_DDG_HTML),
-      ));
+      const bingPartial =
+        '<html><body><li class="b_algo"><h2><a href="https://x.com/1">标题</a></h2></li></body></html>';
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(bingPartial),
+          () => htmlResponse(MOCK_DDG_HTML),
+        ),
+      );
 
       const results = await provider.search('测试');
 
@@ -304,10 +338,12 @@ describe('FetchWebSearchProvider', () => {
     });
 
     it('query 为空字符串时应正常搜索（不抛错）', async () => {
-      globalThis.fetch = asFetch(createUrlDispatchFetch(
-        () => htmlResponse(MOCK_EMPTY_HTML),
-        () => htmlResponse(MOCK_EMPTY_HTML),
-      ));
+      globalThis.fetch = asFetch(
+        createUrlDispatchFetch(
+          () => htmlResponse(MOCK_EMPTY_HTML),
+          () => htmlResponse(MOCK_EMPTY_HTML),
+        ),
+      );
 
       // 空字符串 query 应被 encodeURIComponent 处理为 ''，不抛错
       await expect(provider.search('')).resolves.toEqual([]);
@@ -447,13 +483,19 @@ describe('FetchWebSearchProvider', () => {
         buildUrl: (q) => `https://host-custom.com/search?q=${encodeURIComponent(q)}`,
         parse: (html) => {
           const m = /<h3><a href="([^"]+)">([\s\S]*?)<\/a>/.exec(html);
-          return m ? [{ title: m[2]!.trim(), url: m[1]!.trim(), snippet: '', endpoint: 'HostCustom' }] : [];
+          return m
+            ? [{ title: m[2]!.trim(), url: m[1]!.trim(), snippet: '', endpoint: 'HostCustom' }]
+            : [];
         },
       };
       const engineProvider = new FetchWebSearchProvider(buildSearchEndpoints([customEndpoint]));
-      const fetchMock = vi.fn().mockImplementation((url: string) =>
-        url.includes('host-custom.com') ? htmlResponse(CUSTOM_HTML) : htmlResponse(MOCK_EMPTY_HTML),
-      );
+      const fetchMock = vi
+        .fn()
+        .mockImplementation((url: string) =>
+          url.includes('host-custom.com')
+            ? htmlResponse(CUSTOM_HTML)
+            : htmlResponse(MOCK_EMPTY_HTML),
+        );
       globalThis.fetch = asFetch(fetchMock);
 
       const results = await engineProvider.search('宿主查询');

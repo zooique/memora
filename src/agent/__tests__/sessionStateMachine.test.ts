@@ -521,9 +521,7 @@ describe('SessionStateMachine — StatusTransition 返回值', () => {
   it('所有合法转换返回 allowed=true', () => {
     const sm = new SessionStateMachine();
 
-    const transitions: StatusTransition[] = [
-      sm.pause('暂停', 'user'),
-    ];
+    const transitions: StatusTransition[] = [sm.pause('暂停', 'user')];
     sm.resume();
     transitions.push(sm.resume() as unknown as StatusTransition);
 

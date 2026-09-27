@@ -106,13 +106,21 @@ async function main(): Promise<void> {
     assert(denied.includes('PATH_DENIED'), `越界路径被拒绝: ${denied.replace(/\n/g, ' | ')}`);
 
     // ─── 场景 3：暴露面（默认常驻 vs 角色启动，tool-exposure-model 实证） ─────────────
-    console.log('\n📋 场景 3：toolWhitelist=[]（仅常驻）时——run_project_script 可见、run_code 被过滤');
+    console.log(
+      '\n📋 场景 3：toolWhitelist=[]（仅常驻）时——run_project_script 可见、run_code 被过滤',
+    );
     executor.setToolWhitelist([]);
     const listNames = executor.list.map((t) => t.name);
-    assert(listNames.includes('run_project_script'), '仅常驻白名单下 run_project_script 仍暴露（默认开放）');
+    assert(
+      listNames.includes('run_project_script'),
+      '仅常驻白名单下 run_project_script 仍暴露（默认开放）',
+    );
     assert(listNames.includes('read_file'), '常驻工具 read_file 仍暴露');
     assert(listNames.includes('task_table_write'), '任务表是内核常驻必要基建，仅常驻白名单仍可见');
-    assert(!listNames.includes('run_code'), '特权工具 run_code 不在工具面（未注入 provider 且需 code:execute）');
+    assert(
+      !listNames.includes('run_code'),
+      '特权工具 run_code 不在工具面（未注入 provider 且需 code:execute）',
+    );
     executor.setToolWhitelist(null);
 
     // ─── 场景 4：传参 + 运行时推断（.sh 走 shell） ─────────────

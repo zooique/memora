@@ -21,40 +21,43 @@
 
 /** 图标名称类型 */
 export type IconName =
-  | 'copy'          // 复制
-  | 'delete'        // 删除/垃圾桶
-  | 'folder'        // 打开目录/文件夹
-  | 'refresh'       // 刷新
-  | 'check'         // 勾选/确认
-  | 'close'         // 关闭/叉号
-  | 'edit'          // 编辑/重命名/润色
-  | 'bolt'          // 闪电/Skill 触发
-  | 'trash'         // 永久删除
-  | 'cancel'        // 取消
-  | 'chevron-down'  // 向下尖角（plan-bar 展开态；消费者是折叠开关，非下拉组件）
+  | 'copy' // 复制
+  | 'delete' // 删除/垃圾桶
+  | 'folder' // 打开目录/文件夹
+  | 'refresh' // 刷新
+  | 'check' // 勾选/确认
+  | 'close' // 关闭/叉号
+  | 'edit' // 编辑/重命名/润色
+  | 'bolt' // 闪电/Skill 触发
+  | 'trash' // 永久删除
+  | 'cancel' // 取消
+  | 'chevron-down' // 向下尖角（plan-bar 展开态；消费者是折叠开关，非下拉组件）
   | 'chevron-right' // 右箭头（折叠态）
-  | 'fork'          // 分叉会话
-  | 'plus'          // 新建会话/加号
-  | 'history'       // 历史记录/时钟
+  | 'fork' // 分叉会话
+  | 'plus' // 新建会话/加号
+  | 'history' // 历史记录/时钟
   | 'scroll-bottom' // 回到底部
-  | 'pause'         // 暂停（双竖线）
-  | 'send'          // 发送（上箭头）
-  | 'stop'          // 停止（方块）
-  | 'play'          // 继续/播放（三角）
-  | 'team'          // 小组会议（双人轮廓，柔和线条）
-  | 'ellipsis'      // 更多操作（三点）
-  | 'target';       // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
+  | 'pause' // 暂停（双竖线）
+  | 'send' // 发送（上箭头）
+  | 'stop' // 停止（方块）
+  | 'play' // 继续/播放（三角）
+  | 'team' // 小组会议（双人轮廓，柔和线条）
+  | 'ellipsis' // 更多操作（三点）
+  | 'target'; // 当前执行位置（同心圆靶心；plan-tag「正在执行任务项 N」锚点）
 
 /** SVG 路径集合（viewBox 0 0 16 16）— Trae 柔和线条风格 */
 const ICON_PATHS: Record<IconName, string> = {
   // 复制：两个重叠矩形轮廓
   copy: '<rect x="4" y="5" width="7" height="7" rx="1.5"/><rect x="7" y="3" width="7" height="7" rx="1.5"/>',
   // 删除：垃圾桶轮廓
-  delete: '<path d="M5.5 3.5h5"/><path d="M4 3.5h8l-.5 9a1 1 0 0 1-1 .95H5.5a1 1 0 0 1-1-.95L4 3.5z"/><path d="M6 6.5v5"/><path d="M8 6.5v5"/><path d="M10 6.5v5"/>',
+  delete:
+    '<path d="M5.5 3.5h5"/><path d="M4 3.5h8l-.5 9a1 1 0 0 1-1 .95H5.5a1 1 0 0 1-1-.95L4 3.5z"/><path d="M6 6.5v5"/><path d="M8 6.5v5"/><path d="M10 6.5v5"/>',
   // 文件夹：打开的目录
-  folder: '<path d="M2.5 4h3.5l1 1h6.5a1 1 0 0 1 1 1v1H3L2 5l.5-1z"/><path d="M2 5.5h12l-1 7a1 1 0 0 1-1 .95H3a1 1 0 0 1-1-.95L2 5.5z"/>',
+  folder:
+    '<path d="M2.5 4h3.5l1 1h6.5a1 1 0 0 1 1 1v1H3L2 5l.5-1z"/><path d="M2 5.5h12l-1 7a1 1 0 0 1-1 .95H3a1 1 0 0 1-1-.95L2 5.5z"/>',
   // 刷新：循环箭头
-  refresh: '<path d="M13 2.5v3h-3"/><path d="M3 13.5v-3h3"/><path d="M12.5 5.5a5 5 0 0 0-9.5-1.5"/><path d="M3.5 10.5a5 5 0 0 0 9.5 1.5"/>',
+  refresh:
+    '<path d="M13 2.5v3h-3"/><path d="M3 13.5v-3h3"/><path d="M12.5 5.5a5 5 0 0 0-9.5-1.5"/><path d="M3.5 10.5a5 5 0 0 0 9.5 1.5"/>',
   // 勾选：对号
   check: '<path d="M3.5 8.5l3 3 6-6"/>',
   // 关闭：叉号
@@ -64,7 +67,8 @@ const ICON_PATHS: Record<IconName, string> = {
   // 闪电：Skill 触发器
   bolt: '<path d="M8 2l-4 7h3l-1 5 5-7H8l2-5z"/>',
   // 暂停：双竖线
-  pause: '<rect x="5" y="3.5" width="2" height="9" rx="0.5"/><rect x="9" y="3.5" width="2" height="9" rx="0.5"/>',
+  pause:
+    '<rect x="5" y="3.5" width="2" height="9" rx="0.5"/><rect x="9" y="3.5" width="2" height="9" rx="0.5"/>',
   // 发送：上箭头
   send: '<path d="M8 12V3.5"/><path d="M4.5 7l3.5-3.5L11.5 7"/>',
   // 停止：方块
@@ -72,7 +76,8 @@ const ICON_PATHS: Record<IconName, string> = {
   // 继续/播放：三角
   play: '<path d="M5 3.5l7 4.5-7 4.5z"/>',
   // 永久删除：带叉垃圾桶
-  trash: '<path d="M5.5 2.5h5"/><path d="M4 2.5h8l-.5 9.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1L4 2.5z"/><path d="M6.5 6.5l3.5 3.5"/><path d="M10 6.5L6.5 10"/>',
+  trash:
+    '<path d="M5.5 2.5h5"/><path d="M4 2.5h8l-.5 9.5a1 1 0 0 1-1 1H5.5a1 1 0 0 1-1-1L4 2.5z"/><path d="M6.5 6.5l3.5 3.5"/><path d="M10 6.5L6.5 10"/>',
   // 取消：圆叉
   cancel: '<circle cx="8" cy="8" r="6"/><path d="M5.5 5.5l5 5"/><path d="M10.5 5.5l-5 5"/>',
   // 下拉箭头
@@ -91,7 +96,8 @@ const ICON_PATHS: Record<IconName, string> = {
   team: '<circle cx="5.5" cy="6" r="1.5"/><circle cx="10.5" cy="6.5" r="2"/><path d="M3 13c0-1.5 1.1-2.5 2.5-2.5S8 11.5 8 13"/><path d="M8.5 13c0-1.7 1.5-3 3-3s3 1.3 3 3"/>',
   // 更多操作：三点（实心点局部覆盖 SVG_BASE_ATTRS 的 fill=none——
   // 16px 下描边小圆会糊成环）
-  ellipsis: '<circle cx="4" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none"/>',
+  ellipsis:
+    '<circle cx="4" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="8" cy="8" r="1.2" fill="currentColor" stroke="none"/><circle cx="12" cy="8" r="1.2" fill="currentColor" stroke="none"/>',
   // 当前执行位置：同心圆靶心（plan-tag 锚点）
   target: '<circle cx="8" cy="8" r="5.5"/><circle cx="8" cy="8" r="1.5"/>',
 };
@@ -146,7 +152,9 @@ export function getIconSvg(name: IconName, width = 16, height = 16): string {
     ...SVG_BASE_ATTRS,
     width: String(width),
     height: String(height),
-  }).map(([k, v]) => `${k}="${v}"`).join(' ');
+  })
+    .map(([k, v]) => `${k}="${v}"`)
+    .join(' ');
   return `<svg ${attrs}>${ICON_PATHS[name]}</svg>`;
 }
 

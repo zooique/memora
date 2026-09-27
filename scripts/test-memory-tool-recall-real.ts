@@ -38,7 +38,9 @@ process.on('uncaughtException', (err) => {
     String(err.message).includes('UV_HANDLE_CLOSING') ||
     String(err.stack ?? '').includes('async.c');
   if (isLibuvAssertion && isAsyncClosing) {
-    process.stderr.write('\n⚠️  Node fetch 内部 stream 清理异常（已知 undici bug，业务错误已处理）\n');
+    process.stderr.write(
+      '\n⚠️  Node fetch 内部 stream 清理异常（已知 undici bug，业务错误已处理）\n',
+    );
     process.exit(1);
   }
   process.stderr.write(`💥 未捕获异常：${err.stack ?? err.message}\n`);
@@ -131,9 +133,18 @@ async function runCase(
         args = {};
       }
       const q = args.q ?? s.input;
-      const result = await handlers.searchMemories(q, String(args.limit ?? 5), args.mode ?? 'hybrid');
+      const result = await handlers.searchMemories(
+        q,
+        String(args.limit ?? 5),
+        args.mode ?? 'hybrid',
+      );
       toolResultText += result + '\n';
-      messages.push({ role: 'tool', name: 'search_memories', toolCallId: call.id, content: result });
+      messages.push({
+        role: 'tool',
+        name: 'search_memories',
+        toolCallId: call.id,
+        content: result,
+      });
     }
     if (s.entity && toolResultText.includes(s.entity)) hit = true; // 命中目标（实体词）
   }
@@ -150,7 +161,9 @@ async function main(): Promise<void> {
   const active = config.llm?.active ?? Object.keys(providers)[0] ?? '';
   const realActive = providers[active];
   if (!realActive?.apiKey) {
-    console.error('❌ active provider 未配置 apiKey（PowerShell: $env:MEMORA_API_KEY = "sk-xxx"，或 config 中填写）');
+    console.error(
+      '❌ active provider 未配置 apiKey（PowerShell: $env:MEMORA_API_KEY = "sk-xxx"，或 config 中填写）',
+    );
     process.exit(1);
   }
   const provider = createLlmProvider(config);
@@ -177,7 +190,9 @@ async function main(): Promise<void> {
   const handlers = new BuiltinToolHandlers(projectPath, security, storage);
 
   // 4. 逐 case 跑
-  console.log(`\n运行 ${cases.length} 个 case（BENCH_CASE=${filter.length ? filter.join(',') : 'all'}）\n`);
+  console.log(
+    `\n运行 ${cases.length} 个 case（BENCH_CASE=${filter.length ? filter.join(',') : 'all'}）\n`,
+  );
   const rows: Array<{ id: string; queried: boolean; hit: boolean; answer: string }> = [];
   for (const s of cases) {
     const start = Date.now();
@@ -195,8 +210,11 @@ async function main(): Promise<void> {
   console.log('|---|---|---|---|---|---|---|');
   for (const r of rows) {
     const s = cases.find((c) => c.id === r.id)!;
-    const judge = r.queried && r.hit ? '成功' : !r.queried ? '失败(A未想起 / B未查)' : '失败(命中但hit?未中)';
-    console.log(`| ${r.id} | ${s.input} | ${s.expectId} | ${r.queried ? '✓' : '✗'} | ${r.hit ? '✓' : '✗'} | ${r.answer} | ${judge} |`);
+    const judge =
+      r.queried && r.hit ? '成功' : !r.queried ? '失败(A未想起 / B未查)' : '失败(命中但hit?未中)';
+    console.log(
+      `| ${r.id} | ${s.input} | ${s.expectId} | ${r.queried ? '✓' : '✗'} | ${r.hit ? '✓' : '✗'} | ${r.answer} | ${judge} |`,
+    );
   }
 
   // 6. 汇总指标
@@ -208,8 +226,12 @@ async function main(): Promise<void> {
   const bRate = bCases.length ? (bOk / bCases.length) * 100 : NaN;
   console.log('\n' + '━'.repeat(70));
   console.log('📊 指标（本机 → 与自动注入基线/云端对照见基准文档 §0）');
-  console.log(`   A 想起率 = ${isNaN(aRate) ? 'N/A(无A用例)' : aRate.toFixed(0) + '%'}  （${aOk}/${aCases.length} 主动检索且命中）`);
-  console.log(`   B 命中率 = ${isNaN(bRate) ? 'N/A(无B用例)' : bRate.toFixed(0) + '%'}  （${bOk}/${bCases.length}，须 ≈100% 硬门槛）`);
+  console.log(
+    `   A 想起率 = ${isNaN(aRate) ? 'N/A(无A用例)' : aRate.toFixed(0) + '%'}  （${aOk}/${aCases.length} 主动检索且命中）`,
+  );
+  console.log(
+    `   B 命中率 = ${isNaN(bRate) ? 'N/A(无B用例)' : bRate.toFixed(0) + '%'}  （${bOk}/${bCases.length}，须 ≈100% 硬门槛）`,
+  );
   if (!isNaN(bRate) && bRate < 100) {
     console.log(`   ⚠️ B 未达 ≈100% 硬门槛 → 判定阶段 1 未落地，可回退或升级（§阶段1 出口条件）`);
   }
@@ -218,7 +240,8 @@ async function main(): Promise<void> {
 main()
   .then(() => process.exit(0))
   .catch((err: unknown) => {
-    const msg = err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err);
+    const msg =
+      err instanceof Error ? `${err.name}: ${err.message}\n${err.stack ?? ''}` : String(err);
     process.stderr.write(`💥 致命错误：\n${msg}\n`);
     process.exit(1);
   });

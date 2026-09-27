@@ -365,7 +365,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
     const handoffBtn = document.createElement('button');
     handoffBtn.className = 'btn btn-primary';
     handoffBtn.textContent = '带入对话';
-    handoffBtn.title = '切换角色并跳到对话视图：已在输入框预填一句过渡语（不自动发送，可编辑后再发）';
+    handoffBtn.title =
+      '切换角色并跳到对话视图：已在输入框预填一句过渡语（不自动发送，可编辑后再发）';
     handoffBtn.addEventListener('click', () =>
       vscode.postMessage({ type: 'roles_handoff', name: p.name }),
     );
@@ -419,7 +420,8 @@ export function createRolesView({ vscode, window, root }: RolesViewDeps): void {
 
       if (hint?.toolReadonly) {
         const chip = document.createElement('span');
-        chip.className = 'strategy-chip ' + (hint.toolReadonly === 'readonly' ? 'readonly' : 'full');
+        chip.className =
+          'strategy-chip ' + (hint.toolReadonly === 'readonly' ? 'readonly' : 'full');
         chip.textContent = hint.toolReadonly === 'readonly' ? '只读模式' : '完整工具';
         strategy.appendChild(chip);
       }

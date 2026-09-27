@@ -70,7 +70,10 @@ async function main(): Promise<void> {
   const active = config.llm?.active ?? Object.keys(providers)[0] ?? '';
   const real = providers[active];
   check(
-    real !== undefined && real !== null && typeof real.baseUrl === 'string' && real.baseUrl.length > 0,
+    real !== undefined &&
+      real !== null &&
+      typeof real.baseUrl === 'string' &&
+      real.baseUrl.length > 0,
     `真实 Provider 配置存在（${active}）`,
   );
 
@@ -86,15 +89,23 @@ async function main(): Promise<void> {
       apiKey: 'sk-invalid-key-0000',
       defaultModel: model,
     });
-    const { error } = await drain(badProvider, [{ role: 'user', content: 'hi' }], { timeoutMs: 15000 });
+    const { error } = await drain(badProvider, [{ role: 'user', content: 'hi' }], {
+      timeoutMs: 15000,
+    });
     check(error !== null, '认证失败：调用抛出错误');
     if (error !== null) {
       const isConfig = error instanceof MemoraError && error.category === 'config';
       check(isConfig, '认证失败：抛 config 类 MemoraError');
       const msg = error instanceof Error ? error.message : String(error);
-      check(msg.includes('API Key 无效'), `认证失败：错误消息含「API Key 无效」（实际: ${msg.slice(0, 60)}）`);
+      check(
+        msg.includes('API Key 无效'),
+        `认证失败：错误消息含「API Key 无效」（实际: ${msg.slice(0, 60)}）`,
+      );
       const hint = error instanceof MemoraError ? error.suggestions : undefined;
-      check(Array.isArray(hint) && hint.some((h) => h.includes('${MEMORA_API_KEY}')), '认证失败：hint 提示环境变量占位符展开');
+      check(
+        Array.isArray(hint) && hint.some((h) => h.includes('${MEMORA_API_KEY}')),
+        '认证失败：hint 提示环境变量占位符展开',
+      );
     }
   }
 
@@ -103,7 +114,9 @@ async function main(): Promise<void> {
   {
     const server = createServer((_req, res) => {
       res.writeHead(429, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ error: { message: 'rate limit exceeded', type: 'rate_limit_error' } }));
+      res.end(
+        JSON.stringify({ error: { message: 'rate limit exceeded', type: 'rate_limit_error' } }),
+      );
     });
     await new Promise<void>((r) => server.listen(0, '127.0.0.1', r));
     const port = (server.address() as { port: number }).port;
@@ -114,7 +127,9 @@ async function main(): Promise<void> {
         apiKey: 'any',
         defaultModel: model,
       });
-      const { error } = await drain(rateLimitedProvider, [{ role: 'user', content: 'hi' }], { timeoutMs: 5000 });
+      const { error } = await drain(rateLimitedProvider, [{ role: 'user', content: 'hi' }], {
+        timeoutMs: 5000,
+      });
       check(error !== null, '限流：调用抛出错误');
       if (error !== null) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -135,11 +150,16 @@ async function main(): Promise<void> {
       apiKey: 'any',
       defaultModel: model,
     });
-    const { error } = await drain(unreachableProvider, [{ role: 'user', content: 'hi' }], { timeoutMs: 5000 });
+    const { error } = await drain(unreachableProvider, [{ role: 'user', content: 'hi' }], {
+      timeoutMs: 5000,
+    });
     check(error !== null, '网络不可达：调用抛出错误');
     if (error !== null) {
       const msg = error instanceof Error ? error.message : String(error);
-      check(msg.includes('连接失败') || msg.includes('超时'), `网络不可达：错误消息含「连接失败/超时」（实际: ${msg.slice(0, 60)}）`);
+      check(
+        msg.includes('连接失败') || msg.includes('超时'),
+        `网络不可达：错误消息含「连接失败/超时」（实际: ${msg.slice(0, 60)}）`,
+      );
     }
   }
 
@@ -153,16 +173,25 @@ async function main(): Promise<void> {
         apiKey: realKey,
         defaultModel: model,
       });
-      const { chunks, error } = await drain(goodProvider, [{ role: 'user', content: '只回复"OK"两个字。' }], {
-        timeoutMs: 30000,
-      });
+      const { chunks, error } = await drain(
+        goodProvider,
+        [{ role: 'user', content: '只回复"OK"两个字。' }],
+        {
+          timeoutMs: 30000,
+        },
+      );
       check(error === null, '正常对照：无错误');
-      const usage = chunks.find((c) => c.usage && (c.usage as { inputTokens?: number }).inputTokens);
+      const usage = chunks.find(
+        (c) => c.usage && (c.usage as { inputTokens?: number }).inputTokens,
+      );
       const inTok = usage ? (usage.usage as { inputTokens: number }).inputTokens : 0;
       const outTok = usage ? (usage.usage as { outputTokens: number }).outputTokens : 0;
       check(inTok > 0, `正常对照：实际输入 token > 0（真实: ${inTok}）`);
       check(outTok > 0, `正常对照：实际输出 token > 0（真实: ${outTok}）`);
-      const content = chunks.filter((c) => c.content).map((c) => c.content).join('');
+      const content = chunks
+        .filter((c) => c.content)
+        .map((c) => c.content)
+        .join('');
       check(content.length > 0, `正常对照：有文本回复（${content.slice(0, 30)}...）`);
     }
   }

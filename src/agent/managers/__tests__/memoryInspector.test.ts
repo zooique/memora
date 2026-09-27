@@ -151,8 +151,22 @@ describe('MemoryInspector', () => {
     });
 
     it('list 应委托 index.search("", limit) 返回按 accessedAt 降序', () => {
-      storage.upsert(createMemory({ id: 'content:low', source: 'content', name: 'low', accessedAt: '2026-01-01T00:00:00.000Z' }));
-      storage.upsert(createMemory({ id: 'content:high', source: 'content', name: 'high', accessedAt: '2026-01-03T00:00:00.000Z' }));
+      storage.upsert(
+        createMemory({
+          id: 'content:low',
+          source: 'content',
+          name: 'low',
+          accessedAt: '2026-01-01T00:00:00.000Z',
+        }),
+      );
+      storage.upsert(
+        createMemory({
+          id: 'content:high',
+          source: 'content',
+          name: 'high',
+          accessedAt: '2026-01-03T00:00:00.000Z',
+        }),
+      );
       const list = inspector.list(10);
       expect(list).toHaveLength(2);
       // 按 accessedAt 降序（InMemoryStorage.search 默认行为，score 已退役）
@@ -201,8 +215,12 @@ describe('MemoryInspector', () => {
     });
 
     it('归档层：round-summary 计数（作品投影已移出记忆库）', () => {
-      storage.upsert(createMemory({ id: 'round-summary:s1:r1', source: 'round-summary', name: 'rs1' }));
-      storage.upsert(createMemory({ id: 'round-summary:s1:r2', source: 'round-summary', name: 'rs2' }));
+      storage.upsert(
+        createMemory({ id: 'round-summary:s1:r1', source: 'round-summary', name: 'rs1' }),
+      );
+      storage.upsert(
+        createMemory({ id: 'round-summary:s1:r2', source: 'round-summary', name: 'rs2' }),
+      );
       const snap = inspector.snapshot();
       expect(snap.archive.archiveCount).toBe(2);
       expect(snap.archive.stats['round-summary']).toBe(2);
@@ -243,8 +261,12 @@ describe('MemoryInspector', () => {
 
     it('正常搜索：长内容截断到 120 字符 + "…"，短内容不截断', () => {
       const longContent = 'B'.repeat(150);
-      storage.upsert(createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }));
-      storage.upsert(createMemory({ id: 'content:short', source: 'content', name: 'short', content: 'short' }));
+      storage.upsert(
+        createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }),
+      );
+      storage.upsert(
+        createMemory({ id: 'content:short', source: 'content', name: 'short', content: 'short' }),
+      );
       const hits = inspector.search('B', 10);
       // InMemoryStorage.search 按关键词匹配
       const longHit = hits.find((h) => h.name === 'long');
@@ -275,14 +297,18 @@ describe('MemoryInspector', () => {
     });
 
     it('纯关键词搜索（B0 收编：无向量通道）', async () => {
-      storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword test' }));
+      storage.upsert(
+        createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: 'keyword test' }),
+      );
       const hits = await inspector.searchByKeyword('keyword');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('k1');
     });
 
     it('语义近义词不命中（字面匹配；LLM 须换词重试）', async () => {
-      storage.upsert(createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: '性能优化方案' }));
+      storage.upsert(
+        createMemory({ id: 'content:k1', source: 'content', name: 'k1', content: '性能优化方案' }),
+      );
       // 「提速」与「性能优化」语义近义但字面不匹配 → 纯关键词 0 命中
       const hits = await inspector.searchByKeyword('提速');
       expect(hits).toHaveLength(0);
@@ -293,7 +319,9 @@ describe('MemoryInspector', () => {
 
     it('长内容截断到预览上限', async () => {
       const longContent = 'C'.repeat(150);
-      storage.upsert(createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }));
+      storage.upsert(
+        createMemory({ id: 'content:long', source: 'content', name: 'long', content: longContent }),
+      );
       const hits = await inspector.searchByKeyword('C');
       expect(hits).toHaveLength(1);
       // 长内容截断到 120 + '…'
@@ -302,15 +330,44 @@ describe('MemoryInspector', () => {
 
     it('superseded 过滤：被 supersededBy 取代的摘要不返回（§3.3 过滤行）', async () => {
       // 旧摘要被新摘要取代 → 不出现；有效摘要正常返回（关键词命中两者，过滤后仅剩新）
-      storage.upsert(createMemory({ id: 'round-summary:s:old', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '旧摘要', supersededBy: 'round-summary:s:new', content: '共享内容' }));
-      storage.upsert(createMemory({ id: 'round-summary:s:new', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '新摘要', content: '共享内容' }));
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:s:old',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r1',
+          name: '旧摘要',
+          supersededBy: 'round-summary:s:new',
+          content: '共享内容',
+        }),
+      );
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:s:new',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r2',
+          name: '新摘要',
+          content: '共享内容',
+        }),
+      );
       const hits = await inspector.searchByKeyword('共享内容');
       expect(hits).toHaveLength(1);
       expect(hits[0]!.name).toBe('新摘要');
     });
 
     it('命中揭示 accessedAt + 溯源 sessionId/roundId（§3.3 返回行，round-summary 直通 trace_summary）', async () => {
-      storage.upsert(createMemory({ id: 'round-summary:2026-08-28-main:r1', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r1', name: '摘要1', content: '决策内容', accessedAt: '2026-09-01T00:00:00Z' }));
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:2026-08-28-main:r1',
+          source: 'round-summary',
+          sessionName: '2026-08-28-main',
+          roundId: 'r1',
+          name: '摘要1',
+          content: '决策内容',
+          accessedAt: '2026-09-01T00:00:00Z',
+        }),
+      );
       const hits = await inspector.searchByKeyword('决策内容');
       expect(hits[0]!.accessedAt).toBe('2026-09-01T00:00:00Z');
       // 溯源字段 = trace_summary 参数直通（sessionName 即 sessionId）
@@ -320,8 +377,26 @@ describe('MemoryInspector', () => {
 
     it('excludeRoundIds：排除已载入正文轮次的 round-summary（§5.1 工具召回与装配期正文互斥）', async () => {
       // 两条 round-summary 均关键词命中；exclude r1 → 仅返回 r2（不补位凑满）
-      storage.upsert(createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1', name: '摘要1', content: '共同内容' }));
-      storage.upsert(createMemory({ id: 'round-summary:s:r2', source: 'round-summary', sessionName: 's', roundId: 'r2', name: '摘要2', content: '共同内容' }));
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:s:r1',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r1',
+          name: '摘要1',
+          content: '共同内容',
+        }),
+      );
+      storage.upsert(
+        createMemory({
+          id: 'round-summary:s:r2',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r2',
+          name: '摘要2',
+          content: '共同内容',
+        }),
+      );
 
       const hits = await inspector.searchByKeyword('共同内容', 10, new Set(['r1']));
 
@@ -463,13 +538,31 @@ describe('MemoryInspector', () => {
     it('softDeleteRoundSummaries：命中轮次摘要软删 + 清空溯源（脱钩）', () => {
       // 两个命中轮（r1/r2）+ 一个无关轮（r3）
       inspector.writeUpsert(
-        createMemory({ id: 'round-summary:2026-08-28-main:r1', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r1', name: '摘要1' }),
+        createMemory({
+          id: 'round-summary:2026-08-28-main:r1',
+          source: 'round-summary',
+          sessionName: '2026-08-28-main',
+          roundId: 'r1',
+          name: '摘要1',
+        }),
       );
       inspector.writeUpsert(
-        createMemory({ id: 'round-summary:2026-08-28-main:r2', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r2', name: '摘要2' }),
+        createMemory({
+          id: 'round-summary:2026-08-28-main:r2',
+          source: 'round-summary',
+          sessionName: '2026-08-28-main',
+          roundId: 'r2',
+          name: '摘要2',
+        }),
       );
       inspector.writeUpsert(
-        createMemory({ id: 'round-summary:2026-08-29-main:r3', source: 'round-summary', sessionName: '2026-08-29-main', roundId: 'r3', name: '摘要3' }),
+        createMemory({
+          id: 'round-summary:2026-08-29-main:r3',
+          source: 'round-summary',
+          sessionName: '2026-08-29-main',
+          roundId: 'r3',
+          name: '摘要3',
+        }),
       );
 
       const count = inspector.softDeleteRoundSummaries(['r1', 'r2']);
@@ -486,7 +579,12 @@ describe('MemoryInspector', () => {
 
     it('softDeleteRoundSummaries：空数组回归 0，不触碰任何记忆', () => {
       inspector.writeUpsert(
-        createMemory({ id: 'round-summary:s:r1', source: 'round-summary', sessionName: 's', roundId: 'r1' }),
+        createMemory({
+          id: 'round-summary:s:r1',
+          source: 'round-summary',
+          sessionName: 's',
+          roundId: 'r1',
+        }),
       );
       expect(inspector.softDeleteRoundSummaries([])).toBe(0);
       expect(inspector.getById('round-summary:s:r1')).not.toBeNull();
@@ -494,7 +592,13 @@ describe('MemoryInspector', () => {
 
     it('随轮软删恢复后即为无溯源独立记忆', () => {
       inspector.writeUpsert(
-        createMemory({ id: 'round-summary:s:r9', source: 'round-summary', sessionName: '2026-08-28-main', roundId: 'r9', name: '轮次九' }),
+        createMemory({
+          id: 'round-summary:s:r9',
+          source: 'round-summary',
+          sessionName: '2026-08-28-main',
+          roundId: 'r9',
+          name: '轮次九',
+        }),
       );
       inspector.softDeleteRoundSummaries(['r9']);
       inspector.writeRestore('round-summary:s:r9');
@@ -504,7 +608,5 @@ describe('MemoryInspector', () => {
       expect(restored.sessionName).toBeUndefined();
       expect(restored.roundId).toBeUndefined();
     });
-
   });
-
 });

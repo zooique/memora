@@ -87,10 +87,7 @@ describe('会话视图加载器', () => {
       const completed3 = completeRound(round3, '回答3');
 
       // 截断到第二个
-      const truncated = truncateRoundsUpTo(
-        [completed1, completed2, completed3],
-        round2.id,
-      );
+      const truncated = truncateRoundsUpTo([completed1, completed2, completed3], round2.id);
 
       // 验证：只包含前两个
       expect(truncated).toHaveLength(2);
@@ -106,10 +103,7 @@ describe('会话视图加载器', () => {
       const completed2 = completeRound(round2, '回答2');
 
       // 截断到第一个（应该包含第一个）
-      const truncated = truncateRoundsUpTo(
-        [completed1, completed2],
-        round1.id,
-      );
+      const truncated = truncateRoundsUpTo([completed1, completed2], round1.id);
 
       expect(truncated).toHaveLength(1);
       expect(truncated[0]!.id).toBe(round1.id);
@@ -123,10 +117,7 @@ describe('会话视图加载器', () => {
       const completed2 = completeRound(round2, '回答2');
 
       // 指定不存在的 ID
-      const truncated = truncateRoundsUpTo(
-        [completed1, completed2],
-        '不存在的-id',
-      );
+      const truncated = truncateRoundsUpTo([completed1, completed2], '不存在的-id');
 
       // 返回全部
       expect(truncated).toHaveLength(2);

@@ -12,7 +12,9 @@ import type { FetchedPage, IFetchProvider } from '@/web-fetch/types.js';
 import { safeFetch } from '@/web-fetch/webFetchProvider.js';
 
 /** 创建一个模拟的抓取提供者（总是成功） */
-function createMockProvider(page: FetchedPage = { url: 'https://example.com', title: '示例', content: '正文' }): IFetchProvider {
+function createMockProvider(
+  page: FetchedPage = { url: 'https://example.com', title: '示例', content: '正文' },
+): IFetchProvider {
   return {
     async fetch(_url, _options) {
       return page;

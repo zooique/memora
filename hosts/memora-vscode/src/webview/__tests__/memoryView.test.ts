@@ -115,32 +115,35 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
 
   it('memory_loaded 渲染顶栏统计 + 记忆卡片（名称/source 徽章/预览）', () => {
     mountMemoryView();
-    dispatchLoaded(
-      { total: 3, bySource: { 'round-summary': 2, profile: 1 } },
-      [
-        makeMemory(),
-        makeMemory({ id: 'profile:偏好', name: '偏好', source: 'profile', content: '偏好简洁界面。' }),
-      ],
-    );
+    dispatchLoaded({ total: 3, bySource: { 'round-summary': 2, profile: 1 } }, [
+      makeMemory(),
+      makeMemory({
+        id: 'profile:偏好',
+        name: '偏好',
+        source: 'profile',
+        content: '偏好简洁界面。',
+      }),
+    ]);
     // 顶栏统计：总数 + source 分布
-    expect(document.getElementById('statBar')?.textContent).toBe('共 3 条 · round-summary 2 · profile 1');
+    expect(document.getElementById('statBar')?.textContent).toBe(
+      '共 3 条 · round-summary 2 · profile 1',
+    );
     const cards = document.querySelectorAll('.mem-card');
     expect(cards).toHaveLength(2);
     // 名称 + source 徽章
     expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('设计决策');
     expect(cards[0]?.querySelector('.source-badge')?.textContent).toBe('round-summary');
     // 单行预览
-    expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe('确认采用独立记忆视图承载资产全貌。');
+    expect(cards[0]?.querySelector('.mem-card-preview')?.textContent).toBe(
+      '确认采用独立记忆视图承载资产全貌。',
+    );
     // 卡片 tooltip：提示可点击展开/收起（可发现性，对齐角色/配置卡）
     expect(cards[0]?.getAttribute('title')).toBe('点击展开 / 收起详情');
   });
 
   it('点击卡片展开详情（全文 content + 创建时间），再点击收起', () => {
     mountMemoryView();
-    dispatchLoaded(
-      { total: 1, bySource: { 'round-summary': 1 } },
-      [makeMemory()],
-    );
+    dispatchLoaded({ total: 1, bySource: { 'round-summary': 1 } }, [makeMemory()]);
     const card = document.querySelector('.mem-card') as HTMLElement;
     // 初始未展开
     expect(card.classList.contains('expanded')).toBe(false);
@@ -253,7 +256,12 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     postMessage.mockClear();
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'governance_result', ok: true, message: '已清理 3 条过期记忆', action: 'cleanup' },
+        data: {
+          type: 'governance_result',
+          ok: true,
+          message: '已清理 3 条过期记忆',
+          action: 'cleanup',
+        },
       }),
     );
     expect(document.getElementById('govDetail')?.textContent).toBe('已清理 3 条过期记忆');
@@ -284,7 +292,10 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     expect(delBtn.getAttribute('aria-label')).toBe('删除记忆');
     // 点击删除：发消息 + stopPropagation（卡片不应展开）
     delBtn.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_delete', id: 'round-summary:设计决策' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'memory_delete',
+      id: 'round-summary:设计决策',
+    });
     expect(card.classList.contains('expanded')).toBe(false);
   });
 
@@ -319,7 +330,11 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const ta = card.querySelector('.mem-edit-area') as HTMLTextAreaElement;
     ta.value = '已修正的内容。';
     (card.querySelector('.mem-edit-actions .btn-primary') as HTMLButtonElement).click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_edit', id: 'round-summary:设计决策', content: '已修正的内容。' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'memory_edit',
+      id: 'round-summary:设计决策',
+      content: '已修正的内容。',
+    });
     // 取消路径：编辑态内点取消 → 退出编辑态、预览恢复
     postMessage.mockClear();
     (card.querySelector('.mem-edit-actions .btn-secondary') as HTMLButtonElement).click();
@@ -335,7 +350,12 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     (card.querySelector('.mem-edit-btn') as HTMLButtonElement).click();
     window.dispatchEvent(
       new MessageEvent('message', {
-        data: { type: 'memory_edited', ok: false, id: 'round-summary:设计决策', message: '内核拒绝写入' },
+        data: {
+          type: 'memory_edited',
+          ok: false,
+          id: 'round-summary:设计决策',
+          message: '内核拒绝写入',
+        },
       }),
     );
     const hint = document.getElementById('memHint') as HTMLElement;
@@ -360,7 +380,9 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       new MessageEvent('message', {
         data: {
           type: 'memory_recycle_loaded',
-          items: [makeMemory({ id: 'round-summary:设计决策', deletedAt: '2026-08-25T08:00:00.000Z' })],
+          items: [
+            makeMemory({ id: 'round-summary:设计决策', deletedAt: '2026-08-25T08:00:00.000Z' }),
+          ],
         },
       }),
     );
@@ -371,7 +393,10 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const restoreBtn = cards[0]?.querySelector('.mem-restore-btn') as HTMLButtonElement;
     expect(restoreBtn).not.toBeNull();
     restoreBtn.click();
-    expect(postMessage).toHaveBeenCalledWith({ type: 'memory_restore', id: 'round-summary:设计决策' });
+    expect(postMessage).toHaveBeenCalledWith({
+      type: 'memory_restore',
+      id: 'round-summary:设计决策',
+    });
   });
 
   it('回收站卡片「永久删除」按钮 → postMessage memory_purge（stopPropagation 防触发展开）', () => {
@@ -417,7 +442,9 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
     const recycle = document.getElementById('recycle') as HTMLDetailsElement;
     recycle.open = true;
     window.dispatchEvent(
-      new MessageEvent('message', { data: { type: 'memory_purged', ok: true, id: 'round-summary:x' } }),
+      new MessageEvent('message', {
+        data: { type: 'memory_purged', ok: true, id: 'round-summary:x' },
+      }),
     );
     expect(postMessage).toHaveBeenCalledWith({ type: 'memory_recycle_load' });
     expect(document.getElementById('memHint')?.textContent).toBe('已永久删除');
@@ -537,7 +564,9 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       expect(postMessage).toHaveBeenCalledWith({ type: 'memory_page', page: 2, pageSize: 20 });
 
       // 宿主返回第 2 页：渲染新卡片 + 计数更新
-      const page2 = Array.from({ length: 20 }, (_, i) => makeMemory({ id: `p2-${i}`, name: `页二${i}` }));
+      const page2 = Array.from({ length: 20 }, (_, i) =>
+        makeMemory({ id: `p2-${i}`, name: `页二${i}` }),
+      );
       dispatchPageResult(2, page2);
       const cards = document.querySelectorAll('.mem-card');
       expect(cards).toHaveLength(20);
@@ -553,9 +582,15 @@ describe('memoryView 渲染（2026-08-17 独立记忆管理视图）', () => {
       );
       // 翻到第 2 页
       document.querySelectorAll<HTMLButtonElement>('.pager-btn')[1]!.click();
-      dispatchPageResult(2, Array.from({ length: 20 }, (_, i) => makeMemory({ id: `b2-${i}`, name: `正确页${i}` })));
+      dispatchPageResult(
+        2,
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `b2-${i}`, name: `正确页${i}` })),
+      );
       // 迟到的第 1 页应答（page=1 ≠ 当前页 2）→ 丢弃
-      dispatchPageResult(1, Array.from({ length: 20 }, (_, i) => makeMemory({ id: `stale-${i}`, name: `迟到${i}` })));
+      dispatchPageResult(
+        1,
+        Array.from({ length: 20 }, (_, i) => makeMemory({ id: `stale-${i}`, name: `迟到${i}` })),
+      );
       const cards = document.querySelectorAll('.mem-card');
       expect(cards[0]?.querySelector('.mem-card-name')?.textContent).toBe('正确页0');
       expect(document.querySelector('.pager-info')?.textContent).toBe('第 2 / 3 页（共 45 条）');

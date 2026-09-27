@@ -112,7 +112,10 @@ vi.mock('vscode', () => ({
   OverviewRulerLane: { Left: 1 },
   TextEditorRevealType: { InCenter: 1 },
   workspace: {
-    registerTextDocumentContentProvider: (_scheme: string, provider: unknown): { dispose(): void } => {
+    registerTextDocumentContentProvider: (
+      _scheme: string,
+      provider: unknown,
+    ): { dispose(): void } => {
       h.state.contentProvider = provider;
       return { dispose: (): void => undefined };
     },
@@ -128,7 +131,10 @@ vi.mock('vscode', () => ({
     },
   },
   commands: {
-    registerCommand: (id: string, handler: (...args: unknown[]) => unknown): { dispose(): void } => {
+    registerCommand: (
+      id: string,
+      handler: (...args: unknown[]) => unknown,
+    ): { dispose(): void } => {
       h.state.commands.set(id, handler);
       return { dispose: (): void => undefined };
     },
@@ -172,13 +178,19 @@ vi.mock('vscode', () => ({
       message: string,
       opts?: { modal?: boolean; detail?: string },
     ): Promise<string | undefined> => {
-      h.state.warningCalls.push({ message, modal: opts?.modal ?? false, detail: opts?.detail ?? '' });
+      h.state.warningCalls.push({
+        message,
+        modal: opts?.modal ?? false,
+        detail: opts?.detail ?? '',
+      });
       return h.state.warningChoice;
     },
     showErrorMessage: async (): Promise<undefined> => undefined,
     showTextDocument: async (target: unknown): Promise<undefined> => {
       const label = target as { toString?: () => string } | undefined;
-      h.state.opened.push(typeof label?.toString === 'function' ? label.toString() : String(target));
+      h.state.opened.push(
+        typeof label?.toString === 'function' ? label.toString() : String(target),
+      );
       return undefined;
     },
   },
@@ -212,10 +224,17 @@ const FILE = resolve(ROOT, REL);
 const FILE_B = resolve(ROOT, 'b.md');
 
 /** 假文档：`safeLineRange` 只用到 `uri` / `lineCount` / `lineAt().range` / `getText`；`isDirty` 供 W2 守卫判定 */
-function makeDoc(text: string, opts: { fsPath?: string; isDirty?: boolean } = {}): Record<string, unknown> {
+function makeDoc(
+  text: string,
+  opts: { fsPath?: string; isDirty?: boolean } = {},
+): Record<string, unknown> {
   const lines = text === '' ? [] : text.split('\n');
   return {
-    uri: { scheme: 'file', fsPath: opts.fsPath ?? FILE, toString: (): string => 'file:///proj/a.md' },
+    uri: {
+      scheme: 'file',
+      fsPath: opts.fsPath ?? FILE,
+      toString: (): string => 'file:///proj/a.md',
+    },
     isDirty: opts.isDirty ?? false,
     lineCount: lines.length,
     getText: (): string => text,
@@ -267,9 +286,18 @@ function makeView(opts: { getSecurityGuard?: () => FileChangeSecurityGuard | und
 }
 
 /** 登记一次「已有文件的写入」：写前 v0 → 写后 v1（`rel` / `callId` 可换，批量用例用第二个文件） */
-function recordOneWrite(tracker: FileChangeTracker, setDisk: (content: string) => void, rel = REL, callId = 't1'): void {
+function recordOneWrite(
+  tracker: FileChangeTracker,
+  setDisk: (content: string) => void,
+  rel = REL,
+  callId = 't1',
+): void {
   setDisk('v0');
-  tracker.noteToolStart({ toolCallId: callId, name: 'write_file', args: JSON.stringify({ path: rel }) });
+  tracker.noteToolStart({
+    toolCallId: callId,
+    name: 'write_file',
+    args: JSON.stringify({ path: rel }),
+  });
   setDisk('v1');
   tracker.noteToolResult({ toolCallId: callId, name: 'write_file', ok: true });
 }
@@ -428,7 +456,11 @@ describe('FileChangeView · 回退的未保存编辑守卫', () => {
     view.register(makeContext());
     // 写前不存在 ⇒ beforeContent = null ⇒ 回退语义 = 删掉这个新建的文件
     setDisk(null);
-    tracker.noteToolStart({ toolCallId: 'n1', name: 'write_file', args: JSON.stringify({ path: REL }) });
+    tracker.noteToolStart({
+      toolCallId: 'n1',
+      name: 'write_file',
+      args: JSON.stringify({ path: REL }),
+    });
     setDisk('new content');
     view.noteToolResult({ toolCallId: 'n1', name: 'write_file', ok: true });
     expect(tracker.get(FILE)?.beforeContent).toBeNull();
@@ -479,7 +511,11 @@ describe('FileChangeView · 回退的未保存编辑守卫', () => {
 /** 登记一次「两处改动」的写入：写前 a/b/c/d/e → 写后 a/X/c/Y/e（第 1、3 行被改，0-based） */
 function recordTwoHunkWrite(tracker: FileChangeTracker, setDisk: (content: string) => void): void {
   setDisk('a\nb\nc\nd\ne');
-  tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: REL }) });
+  tracker.noteToolStart({
+    toolCallId: 't1',
+    name: 'write_file',
+    args: JSON.stringify({ path: REL }),
+  });
   setDisk('a\nX\nc\nY\ne');
   tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 }
@@ -521,8 +557,13 @@ async function waitForCompareOpened(): Promise<void> {
 }
 
 /** 取第 `index` 个指定按钮的调用参数 `[absPath, key]`（模拟用户点击所带的实参） */
-function hunkButtonArgs(doc: Record<string, unknown>, command: string, index = 0): [string, string] {
-  const args = renderLenses(doc).filter((lens) => lens.command.command === command)[index]?.command.arguments;
+function hunkButtonArgs(
+  doc: Record<string, unknown>,
+  command: string,
+  index = 0,
+): [string, string] {
+  const args = renderLenses(doc).filter((lens) => lens.command.command === command)[index]?.command
+    .arguments;
   return [String(args?.[0]), String(args?.[1])];
 }
 
@@ -549,7 +590,9 @@ describe('FileChangeView · 块级按钮粒度与落点', () => {
     view.register(makeContext());
 
     // 块 1 = 第 1 行、块 2 = 第 3 行 ⇒ 落点 = 2 / 4（CodeLens 渲染在所在行上方 ⇒ 紧跟块后）
-    expect(renderLenses(makeDoc('a\nX\nc\nY\ne')).map((lens) => lens.range.line)).toEqual([2, 2, 4, 4]);
+    expect(renderLenses(makeDoc('a\nX\nc\nY\ne')).map((lens) => lens.range.line)).toEqual([
+      2, 2, 4, 4,
+    ]);
   });
 
   it('按钮恒带「第 N/M 处」序号（让归属不依赖位置）', () => {
@@ -576,7 +619,11 @@ describe('FileChangeView · 块级按钮粒度与落点', () => {
   it('末块贴着文件最后一行 ⇒ 按钮只能落在该行上方（且序号仍标明这是第几处）', () => {
     const { view, tracker, setDisk } = makeView();
     setDisk('a\nb\nc');
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: REL }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: REL }),
+    });
     setDisk('a\nb\nZ');
     tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
     view.register(makeContext());
@@ -742,7 +789,11 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     h.state.infoChoice = '查看对比'; // 改动通知上的按钮
 
     setDisk('x'.repeat(MAX_DIFF_CONTENT_LENGTH + 1));
-    view.noteToolStart({ toolCallId: 'd1', name: 'delete_file', args: JSON.stringify({ path: REL }) });
+    view.noteToolStart({
+      toolCallId: 'd1',
+      name: 'delete_file',
+      args: JSON.stringify({ path: REL }),
+    });
     setDisk(null); // 文件已不存在 ⇒ afterContent = null
     view.noteToolResult({ toolCallId: 'd1', name: 'delete_file', ok: true });
 
@@ -759,7 +810,11 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     h.state.infoChoice = '查看对比';
 
     setDisk('bye');
-    view.noteToolStart({ toolCallId: 'd1', name: 'delete_file', args: JSON.stringify({ path: REL }) });
+    view.noteToolStart({
+      toolCallId: 'd1',
+      name: 'delete_file',
+      args: JSON.stringify({ path: REL }),
+    });
     setDisk(null);
     view.noteToolResult({ toolCallId: 'd1', name: 'delete_file', ok: true });
 
@@ -769,7 +824,11 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     expect(h.state.executed).not.toContain('vscode.diff');
     expect(h.state.opened.some((u) => u.startsWith('memora-diff:'))).toBe(true);
     // 删除场景：对照只有「改前」的 - 行，没有 + 行
-    expect(compareText().split('\n').filter((l) => l.startsWith('- '))).toEqual(['- bye']);
+    expect(
+      compareText()
+        .split('\n')
+        .filter((l) => l.startsWith('- ')),
+    ).toEqual(['- bye']);
   });
 });
 
@@ -787,7 +846,11 @@ describe('FileChangeView · 对照视图为上下排列', () => {
     setDisk('a\nb\nc\nd\ne');
     view.register(makeContext());
     h.state.infoChoice = '查看对比';
-    view.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: REL }) });
+    view.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: REL }),
+    });
     setDisk('a\nX\nc\nY\ne');
     view.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
     await waitForCompareOpened();

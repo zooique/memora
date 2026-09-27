@@ -15,12 +15,8 @@ const MANIFEST_TECH = {
   author: 'memora',
   interactionType: 'tool_assistant',
   strategy: {},
-  skills: [
-    { file: 'skills/summarize.md', name: 'summarize' },
-  ],
-  capabilities: [
-    { capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' },
-  ],
+  skills: [{ file: 'skills/summarize.md', name: 'summarize' }],
+  capabilities: [{ capability: 'llm:summarize', description: '提炼要点辅助文档结构规划' }],
 };
 
 /** 多技能 + 无 persona（persona 允许缺省） */
@@ -76,11 +72,7 @@ async function writePack(
 ): Promise<void> {
   const packDir = join(packsDir, dirName);
   await mkdir(packDir, { recursive: true });
-  await writeFile(
-    join(packDir, 'manifest.json'),
-    JSON.stringify(manifest, null, 2),
-    'utf-8',
-  );
+  await writeFile(join(packDir, 'manifest.json'), JSON.stringify(manifest, null, 2), 'utf-8');
   if (content.persona !== undefined) {
     // 内容文件约定俗成：身份文件固定为 persona.md（不随 manifest 声明）
     await writeFile(join(packDir, 'persona.md'), content.persona, 'utf-8');
@@ -365,8 +357,7 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       skills: {
         'skills/summarize.md':
           '---\nname: summarize\ndescription: 提炼要点\n---\n\n# summarize\n内容',
-        'skills/template.md':
-          '---\nname: template\ndescription: 文档模板\n---\n\n# template\n内容',
+        'skills/template.md': '---\nname: template\ndescription: 文档模板\n---\n\n# template\n内容',
       },
     });
 
@@ -496,21 +487,34 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
 
     // 用户角色包目录（独立目录，宿主经 loadExtraDir 运行态注入）
     const userPacksDir = join(dir, 'user-role-packs');
-    await writePack(userPacksDir, '用户打磨', {
-      name: '用户打磨',
-      formatVersion: '1.0.0',
-    }, { persona: '你是用户自建角色。' });
+    await writePack(
+      userPacksDir,
+      '用户打磨',
+      {
+        name: '用户打磨',
+        formatVersion: '1.0.0',
+      },
+      { persona: '你是用户自建角色。' },
+    );
 
     const manager = new RolePackManager(dir);
     await manager.load('翻译助手');
     // 用户包注入（与宿主 assemble.ts loadExtraDir(userRolePacksDir) 同路径）
     const injected = await manager.loadExtraDir(userPacksDir);
     expect(injected).toBe(1);
-    expect(manager.listMeta().map((m) => m.name).sort()).toEqual(['用户打磨', '翻译助手']);
+    expect(
+      manager
+        .listMeta()
+        .map((m) => m.name)
+        .sort(),
+    ).toEqual(['用户打磨', '翻译助手']);
 
     // reload 后用户包必须保留（与 SkillManager 行为一致：注入项不随磁盘重扫抹除）
     await manager.reload();
-    const names = manager.listMeta().map((m) => m.name).sort();
+    const names = manager
+      .listMeta()
+      .map((m) => m.name)
+      .sort();
     expect(names).toEqual(['用户打磨', '翻译助手']);
     // 激活态保持
     expect(manager.activeName).toBe('翻译助手');
@@ -523,9 +527,14 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
 
     const userPacksDir = join(dir, 'user-role-packs');
     // 用户包与内置同名——loadExtraDir 重名跳过（内置优先），确认设备磁盘真理源不被稀释
-    await writePack(userPacksDir, '翻译助手', { name: '翻译助手', formatVersion: '1.0.0' }, {
-      persona: '用户版本翻译。',
-    });
+    await writePack(
+      userPacksDir,
+      '翻译助手',
+      { name: '翻译助手', formatVersion: '1.0.0' },
+      {
+        persona: '用户版本翻译。',
+      },
+    );
 
     const manager = new RolePackManager(dir);
     await manager.load('翻译助手');
@@ -545,13 +554,18 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
   it('companion 角色包触发内容红线 → 拒绝装载', async () => {
     const packsDir = join(dir, 'role-packs');
     await mkdir(packsDir, { recursive: true });
-    await writePack(packsDir, '红伴', {
-      name: '红伴',
-      formatVersion: '1.0.0',
-      interactionType: 'companion',
-      aiIdentityDisclosure: true,
-      minorProtection: 'required',
-    }, { persona: '你是用户的虚拟伴侣。' });
+    await writePack(
+      packsDir,
+      '红伴',
+      {
+        name: '红伴',
+        formatVersion: '1.0.0',
+        interactionType: 'companion',
+        aiIdentityDisclosure: true,
+        minorProtection: 'required',
+      },
+      { persona: '你是用户的虚拟伴侣。' },
+    );
 
     const manager = new RolePackManager(dir);
     expect(await manager.load()).toBe(0);
@@ -564,9 +578,14 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       await mkdir(packsDir, { recursive: true });
       await writePack(packsDir, '翻译助手', MANIFEST_TRANSLATOR, { persona: '你是翻译。' });
       await writePack(packsDir, '代码助手', MANIFEST_CODER, { persona: '你是程序员。' });
-      await writePack(packsDir, 'memora助手', { name: 'memora助手', formatVersion: '1.0.0' }, {
-        persona: '你是通用助手。',
-      });
+      await writePack(
+        packsDir,
+        'memora助手',
+        { name: 'memora助手', formatVersion: '1.0.0' },
+        {
+          persona: '你是通用助手。',
+        },
+      );
       return packsDir;
     }
 
@@ -718,12 +737,22 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
     it('无声明 → 非会议（null）；会议视角设置后 skills 加载跟随装配视角', async () => {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
-      await writePack(packsDir, '组长A', { name: '组长A', formatVersion: '1.0.0' }, {
-        skills: { 'skills/lead.md': '## 组长技能\n' },
-      });
-      await writePack(packsDir, '组员1', { name: '组员1', formatVersion: '1.0.0' }, {
-        skills: { 'skills/member.md': '## 组员技能\n' },
-      });
+      await writePack(
+        packsDir,
+        '组长A',
+        { name: '组长A', formatVersion: '1.0.0' },
+        {
+          skills: { 'skills/lead.md': '## 组长技能\n' },
+        },
+      );
+      await writePack(
+        packsDir,
+        '组员1',
+        { name: '组员1', formatVersion: '1.0.0' },
+        {
+          skills: { 'skills/member.md': '## 组员技能\n' },
+        },
+      );
       const manager = new RolePackManager(dir);
       manager.setRolePackTeams([{ leader: '组长A', members: ['组员1'] }]);
       await manager.load('组长A');
@@ -962,7 +991,9 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       expect(manager.getSwitchLockStatus().locked).toBe(false);
 
       const lockCalls: Array<{ reason: string; lockedSeconds: number }> = [];
-      manager.onRolePackSwitchLocked((reason, lockedSeconds) => lockCalls.push({ reason, lockedSeconds }));
+      manager.onRolePackSwitchLocked((reason, lockedSeconds) =>
+        lockCalls.push({ reason, lockedSeconds }),
+      );
 
       // 连续真切换（窗口内 5 次）→ 触发锁定（846-861：长度达阈值即锁 + 回调）
       expect(manager.activate('全能写手')).toBe(true);
@@ -1049,13 +1080,16 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const packsDir = join(dir, 'role-packs');
       await mkdir(packsDir, { recursive: true });
       // 纯能力声明包 skills 无 name 只有 file
-      await writePack(packsDir, '项目总监', {
-        name: '项目总监',
-        formatVersion: '1.0.0',
-        skills: [
-          { file: 'skills/review.md', capability: 'task:plan', description: '审查计划' },
-        ],
-      }, { persona: '你是项目总监。', skills: { 'skills/review.md': '## 审查流程\n' } });
+      await writePack(
+        packsDir,
+        '项目总监',
+        {
+          name: '项目总监',
+          formatVersion: '1.0.0',
+          skills: [{ file: 'skills/review.md', capability: 'task:plan', description: '审查计划' }],
+        },
+        { persona: '你是项目总监。', skills: { 'skills/review.md': '## 审查流程\n' } },
+      );
 
       const manager = new RolePackManager(dir);
       await manager.load('项目总监');
@@ -1100,7 +1134,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const skillPack = join(packsDir, '文档专家', 'skills', 'doc-gen');
       // 构造文件夹式技能：SKILL.md + resources/api.md（使 scanPackSkills 发现 layer3.resources）
       await mkdir(join(skillPack, 'resources'), { recursive: true });
-      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 文档生成\n---\n# 文档生成\n', 'utf-8');
+      await writeFile(
+        join(skillPack, 'SKILL.md'),
+        '---\nname: 文档生成\n---\n# 文档生成\n',
+        'utf-8',
+      );
       await writeFile(join(skillPack, 'resources', 'api.md'), 'API 参考文档内容', 'utf-8');
       // 兄弟目录：模拟攻击者想越权读取的 resources-evil/
       await mkdir(join(packsDir, '文档专家', 'skills', 'doc-gen-evil'), { recursive: true });
@@ -1133,7 +1171,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const skillPack = join(packsDir, '文档专家2', 'skills', 'doc-gen');
       // 构造文件夹式技能：SKILL.md + references/modes.md（references/ 纳入 layer3）
       await mkdir(join(skillPack, 'references'), { recursive: true });
-      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 文档生成2\n---\n# 文档生成2\n', 'utf-8');
+      await writeFile(
+        join(skillPack, 'SKILL.md'),
+        '---\nname: 文档生成2\n---\n# 文档生成2\n',
+        'utf-8',
+      );
       await writeFile(join(skillPack, 'references', 'modes.md'), 'Modes 参考文档内容', 'utf-8');
       await writeFile(
         join(packsDir, '文档专家2', 'manifest.json'),
@@ -1157,7 +1199,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const skillPack = join(packsDir, '脚本包', 'skills', 'script-tool');
       // 文件夹式技能：SKILL.md + scripts/run.sh（scanPackSkills 发现 layer3.scripts）
       await mkdir(join(skillPack, 'scripts'), { recursive: true });
-      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 脚本工具\n---\n# 脚本工具\n', 'utf-8');
+      await writeFile(
+        join(skillPack, 'SKILL.md'),
+        '---\nname: 脚本工具\n---\n# 脚本工具\n',
+        'utf-8',
+      );
       await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
       await writeFile(
         join(packsDir, '脚本包', 'manifest.json'),
@@ -1184,7 +1230,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       const packsDir = join(dir, 'role-packs');
       const skillPack = join(packsDir, '脚本包', 'skills', 'script-tool');
       await mkdir(join(skillPack, 'scripts'), { recursive: true });
-      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 脚本工具\n---\n# 脚本工具\n', 'utf-8');
+      await writeFile(
+        join(skillPack, 'SKILL.md'),
+        '---\nname: 脚本工具\n---\n# 脚本工具\n',
+        'utf-8',
+      );
       await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
       // 未登记脚本：仅作扩展名推断样例（运行.py 不入 layer3，应走回退分支）
       await writeFile(join(skillPack, 'scripts', '运行.py'), 'print(1)', 'utf-8');
@@ -1211,7 +1261,11 @@ describe('RolePackManager（manifest 文件夹形态）', () => {
       // 文件夹式技能同时带 resources/ 与 scripts/，验证两者各自投影
       await mkdir(join(skillPack, 'resources'), { recursive: true });
       await mkdir(join(skillPack, 'scripts'), { recursive: true });
-      await writeFile(join(skillPack, 'SKILL.md'), '---\nname: 资源工具\n---\n# 资源工具\n', 'utf-8');
+      await writeFile(
+        join(skillPack, 'SKILL.md'),
+        '---\nname: 资源工具\n---\n# 资源工具\n',
+        'utf-8',
+      );
       await writeFile(join(skillPack, 'resources', 'api.md'), 'API', 'utf-8');
       await writeFile(join(skillPack, 'scripts', 'run.sh'), 'echo hi', 'utf-8');
       await writeFile(

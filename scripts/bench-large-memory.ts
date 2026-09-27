@@ -68,11 +68,20 @@ function main(): void {
       const t0 = process.hrtime.bigint();
       for (const m of makeMemories(size)) storage.upsert(m);
       const upsertMs = Number(process.hrtime.bigint() - t0) / 1e6;
-      console.log(`  📊 批量导入 ${size.toLocaleString()} 条（${size} 次全量 save）= ${(upsertMs / 1000).toFixed(1)} s（O(n²) 趋势，非验收项）`);
+      console.log(
+        `  📊 批量导入 ${size.toLocaleString()} 条（${size} 次全量 save）= ${(upsertMs / 1000).toFixed(1)} s（O(n²) 趋势，非验收项）`,
+      );
 
       // 单次 save 代价（新增 1 条）—— 真实高频路径：渐进式写入
       const t1 = process.hrtime.bigint();
-      storage.upsert({ id: 'content:bench:extra', content: 'x', source: 'content', name: 'extra', createdAt: new Date().toISOString(), accessedAt: new Date().toISOString() });
+      storage.upsert({
+        id: 'content:bench:extra',
+        content: 'x',
+        source: 'content',
+        name: 'extra',
+        createdAt: new Date().toISOString(),
+        accessedAt: new Date().toISOString(),
+      });
       const singleSaveMs = Number(process.hrtime.bigint() - t1) / 1e6;
       report(`单次增量 save（${size.toLocaleString()} 条库）`, singleSaveMs, 50);
 
@@ -87,7 +96,9 @@ function main(): void {
       const sizeKb = (fileSize / 1024).toFixed(0);
       const over500 = fileSize > 500 * 1024;
       if (over500) failures++;
-      console.log(`  ${over500 ? '❌' : '✅'} 文件大小 ${sizeKb} KB  ${over500 ? '>500KB → C3 SQLite 触发线已到达' : '≤500KB OK'}`);
+      console.log(
+        `  ${over500 ? '❌' : '✅'} 文件大小 ${sizeKb} KB  ${over500 ? '>500KB → C3 SQLite 触发线已到达' : '≤500KB OK'}`,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -96,7 +107,9 @@ function main(): void {
   printBanner(`D2 基准 ${failures === 0 ? '全部通过 ✅' : `失败 ${failures} 项 ❌`}`);
   if (failures === 0) {
     console.log('结论：宿主 WorkspaceStorage 单次增量 save/load 1 万级 <50ms 安全。');
-    console.log('注意：1 万条记忆文件已达 3MB（>500KB 触发线），C3 SQLite 升级从「暂缓」提前为「应规划」。');
+    console.log(
+      '注意：1 万条记忆文件已达 3MB（>500KB 触发线），C3 SQLite 升级从「暂缓」提前为「应规划」。',
+    );
   }
 }
 

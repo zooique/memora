@@ -51,9 +51,16 @@ export async function safeExecuteCode(
   } catch (err) {
     // 外层兜底超时（执行器无响应）→ 降级为超时结果（timedOut=true，三态判定走 CODE_TIMEOUT）
     const isTimeout =
-      typeof err === 'object' && err !== null && (err as { [TIMEOUT_FLAG]?: boolean })[TIMEOUT_FLAG] === true;
+      typeof err === 'object' &&
+      err !== null &&
+      (err as { [TIMEOUT_FLAG]?: boolean })[TIMEOUT_FLAG] === true;
     if (isTimeout) {
-      return { stdout: '', stderr: '执行超时（外层兜底：执行器无响应）', exitCode: -1, timedOut: true };
+      return {
+        stdout: '',
+        stderr: '执行超时（外层兜底：执行器无响应）',
+        exitCode: -1,
+        timedOut: true,
+      };
     }
     // 执行失败不抛异常，返回降级提示
     const message = err instanceof Error ? err.message : String(err);

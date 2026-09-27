@@ -62,7 +62,12 @@ function createMockGuard(): {
     }),
     requestWriteConfirmation: vi.fn().mockResolvedValue(true),
   };
-  return { guard, get registeredHandler() { return registeredHandler; } };
+  return {
+    guard,
+    get registeredHandler() {
+      return registeredHandler;
+    },
+  };
 }
 
 /** 构造 provider 桩 */
@@ -72,7 +77,10 @@ function createMockProvider(guard: SecurityGuardStub): {
   handleMessage: (msg: { type: string; [k: string]: unknown }) => void;
 } {
   const postedMessages: Array<{ type: string; [k: string]: unknown }> = [];
-  const pendingConfirmations = new Map<string, { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }>();
+  const pendingConfirmations = new Map<
+    string,
+    { resolve: (v: boolean) => void; timer: ReturnType<typeof setTimeout> }
+  >();
 
   const provider = {
     _agent: { security: guard, on: vi.fn(), off: vi.fn() },
@@ -167,7 +175,7 @@ describe('H0 写入审批流程', () => {
 
     // 等待微任务队列清空
     await vi.waitFor(() => {
-      const requestMsg = provider.postedMessages.find(m => m.type === 'write_confirm_request');
+      const requestMsg = provider.postedMessages.find((m) => m.type === 'write_confirm_request');
       expect(requestMsg).toBeDefined();
       expect(requestMsg!.targetPath).toBe('/project/src/main.ts');
       expect(requestMsg!.tool).toBe('write_file');
@@ -197,11 +205,11 @@ describe('H0 写入审批流程', () => {
 
     // 等待请求发送
     await vi.waitFor(() => {
-      const requestMsg = provider.postedMessages.find(m => m.type === 'write_confirm_request');
+      const requestMsg = provider.postedMessages.find((m) => m.type === 'write_confirm_request');
       return requestMsg?.requestId;
     });
 
-    const requestMsg = provider.postedMessages.find(m => m.type === 'write_confirm_request')!;
+    const requestMsg = provider.postedMessages.find((m) => m.type === 'write_confirm_request')!;
     const requestId = requestMsg.requestId as string;
 
     // 模拟用户确认
@@ -227,11 +235,11 @@ describe('H0 写入审批流程', () => {
     const resultPromise = handler(info);
 
     await vi.waitFor(() => {
-      const requestMsg = provider.postedMessages.find(m => m.type === 'write_confirm_request');
+      const requestMsg = provider.postedMessages.find((m) => m.type === 'write_confirm_request');
       return requestMsg?.requestId;
     });
 
-    const requestMsg = provider.postedMessages.find(m => m.type === 'write_confirm_request')!;
+    const requestMsg = provider.postedMessages.find((m) => m.type === 'write_confirm_request')!;
     const requestId = requestMsg.requestId as string;
 
     // 模拟用户拒绝
@@ -265,7 +273,7 @@ describe('H0 写入审批流程', () => {
 
     // 验证超时通知
     const errorNotice = provider.postedMessages.find(
-      m => m.type === 'notice' && m.level === 'error'
+      (m) => m.type === 'notice' && m.level === 'error',
     );
     expect(errorNotice).toBeDefined();
     expect(errorNotice!.message).toContain('超时');
@@ -289,13 +297,15 @@ describe('H0 写入审批流程', () => {
     handler(info);
 
     await vi.waitFor(() => {
-      const requestMsg = provider.postedMessages.find(m => m.type === 'write_confirm_request');
+      const requestMsg = provider.postedMessages.find((m) => m.type === 'write_confirm_request');
       expect(requestMsg).toBeDefined();
       expect(requestMsg!.tool).toBe('edit_file');
       expect(requestMsg!.targetPath).toBe('/project/src/components/Button.tsx');
       expect(requestMsg!.description).toBe('编辑按钮组件');
       expect(requestMsg!.beforeContent).toBe('const btn = <button>Click</button>;');
-      expect(requestMsg!.afterContent).toBe('const btn = <button onClick={handler}>Click</button>;');
+      expect(requestMsg!.afterContent).toBe(
+        'const btn = <button onClick={handler}>Click</button>;',
+      );
     });
   });
 
@@ -304,24 +314,44 @@ describe('H0 写入审批流程', () => {
     provider.provider.bindWriteConfirmation();
     const handler = guard.registeredHandler!;
 
-    const info1 = { targetPath: '/project/a.ts', tool: 'write_file', description: 'A', permission: 'owner' as const, needsConfirm: true };
-    const info2 = { targetPath: '/project/b.ts', tool: 'edit_file', description: 'B', permission: 'owner' as const, needsConfirm: true };
+    const info1 = {
+      targetPath: '/project/a.ts',
+      tool: 'write_file',
+      description: 'A',
+      permission: 'owner' as const,
+      needsConfirm: true,
+    };
+    const info2 = {
+      targetPath: '/project/b.ts',
+      tool: 'edit_file',
+      description: 'B',
+      permission: 'owner' as const,
+      needsConfirm: true,
+    };
 
     const result1Promise = handler(info1);
     const result2Promise = handler(info2);
 
     // 等待两个请求发送
     await vi.waitFor(() => {
-      const requests = provider.postedMessages.filter(m => m.type === 'write_confirm_request');
+      const requests = provider.postedMessages.filter((m) => m.type === 'write_confirm_request');
       return requests.length === 2;
     });
 
-    const requests = provider.postedMessages.filter(m => m.type === 'write_confirm_request');
+    const requests = provider.postedMessages.filter((m) => m.type === 'write_confirm_request');
     const [req1, req2] = requests;
 
     // 确认第一个，拒绝第二个
-    provider.handleMessage({ type: 'write_confirm_answer', requestId: req1.requestId as string, approved: true });
-    provider.handleMessage({ type: 'write_confirm_answer', requestId: req2.requestId as string, approved: false });
+    provider.handleMessage({
+      type: 'write_confirm_answer',
+      requestId: req1.requestId as string,
+      approved: true,
+    });
+    provider.handleMessage({
+      type: 'write_confirm_answer',
+      requestId: req2.requestId as string,
+      approved: false,
+    });
 
     const result1 = await result1Promise;
     const result2 = await result2Promise;

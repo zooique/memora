@@ -142,7 +142,8 @@ export type AgentChunk = (
    */
   | { type: 'step_boundary' }
   | { type: 'done' }
-) & RoundTagged;
+) &
+  RoundTagged;
 
 /**
  * 中断语义分类：'user' = 用户主动停止/插话；'interrupted'/'connection' 为预留语义（当前无产生点）。

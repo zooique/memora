@@ -97,12 +97,7 @@ describe('judgeWithLlm — 成功路径', () => {
 
   it('解析数组 JSON', async () => {
     const provider = createMockProvider('[1,2,3]');
-    const result = await judgeWithLlm<number[]>(
-      provider,
-      testMessages,
-      defaultOptions,
-      '数组解析',
-    );
+    const result = await judgeWithLlm<number[]>(provider, testMessages, defaultOptions, '数组解析');
 
     expect(result).toEqual([1, 2, 3]);
   });
@@ -202,9 +197,9 @@ describe('judgeWithLlm — 异常传播', () => {
   it('Provider 异常向上传播', async () => {
     const provider = createErrorProvider(new Error('Provider 连接失败'));
 
-    await expect(
-      judgeWithLlm(provider, testMessages, defaultOptions, '异常传播'),
-    ).rejects.toThrow('Provider 连接失败');
+    await expect(judgeWithLlm(provider, testMessages, defaultOptions, '异常传播')).rejects.toThrow(
+      'Provider 连接失败',
+    );
   });
 
   it('AbortError 正确传播', async () => {
@@ -218,9 +213,9 @@ describe('judgeWithLlm — 异常传播', () => {
   it('超时异常正确传播', async () => {
     const provider = createErrorProvider(new Error('LLM 请求超时'));
 
-    await expect(
-      judgeWithLlm(provider, testMessages, defaultOptions, '超时测试'),
-    ).rejects.toThrow('LLM 请求超时');
+    await expect(judgeWithLlm(provider, testMessages, defaultOptions, '超时测试')).rejects.toThrow(
+      'LLM 请求超时',
+    );
   });
 });
 
@@ -240,10 +235,15 @@ describe('judgeWithLlm — options 传递', () => {
       },
     } as unknown as LlmProvider;
 
-    await judgeWithLlm(provider, testMessages, {
-      maxTokens: 800,
-      timeoutMs: 60000,
-    }, 'options 测试');
+    await judgeWithLlm(
+      provider,
+      testMessages,
+      {
+        maxTokens: 800,
+        timeoutMs: 60000,
+      },
+      'options 测试',
+    );
 
     expect(receivedOpts).toBeDefined();
     expect(receivedOpts!.maxTokens).toBe(800);
@@ -265,11 +265,16 @@ describe('judgeWithLlm — options 传递', () => {
       },
     } as unknown as LlmProvider;
 
-    await judgeWithLlm(provider, testMessages, {
-      maxTokens: 100,
-      timeoutMs: 5000,
-      signal: controller.signal,
-    }, 'signal 测试');
+    await judgeWithLlm(
+      provider,
+      testMessages,
+      {
+        maxTokens: 100,
+        timeoutMs: 5000,
+        signal: controller.signal,
+      },
+      'signal 测试',
+    );
 
     expect(receivedSignal).toBe(controller.signal);
   });

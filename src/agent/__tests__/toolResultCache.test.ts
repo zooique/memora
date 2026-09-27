@@ -49,7 +49,9 @@ describe('ToolResultCache', () => {
       cache.set('read_file', { path: '/shared/path', offset: 1 }, 1);
       cache.set('list_dir', { path: '/shared/path' }, 2);
 
-      expect(cache.check('read_file', { path: '/shared/path', offset: 1 })?.cachedAtIteration).toBe(1);
+      expect(cache.check('read_file', { path: '/shared/path', offset: 1 })?.cachedAtIteration).toBe(
+        1,
+      );
       expect(cache.check('list_dir', { path: '/shared/path' })?.cachedAtIteration).toBe(2);
       expect(cache.size).toBe(2);
     });
@@ -61,7 +63,9 @@ describe('ToolResultCache', () => {
       // 分段续读：同文件、不同起始行 → 不是同一请求
       expect(cache.check('read_file', { path: 'docs/big.md', offset: 121 })).toBeUndefined();
       // 首段但限行数 → 同样是不同请求（读到的是另一个区间）
-      expect(cache.check('read_file', { path: 'docs/big.md', offset: 1, limit: 200 })).toBeUndefined();
+      expect(
+        cache.check('read_file', { path: 'docs/big.md', offset: 1, limit: 200 }),
+      ).toBeUndefined();
       // 原请求仍然命中
       expect(cache.check('read_file', { path: 'docs/big.md', offset: 1 })).toBeDefined();
     });
@@ -112,7 +116,9 @@ describe('ToolResultCache', () => {
 
       cache.invalidateFile('./docs/a.md');
 
-      expect(cache.check('read_file', { path: normalizePathKey('docs/a.md'), offset: 1 })).toBeUndefined();
+      expect(
+        cache.check('read_file', { path: normalizePathKey('docs/a.md'), offset: 1 }),
+      ).toBeUndefined();
     });
 
     it('invalidateFile 不影响 list_dir 缓存（文件修改不改目录结构）', () => {
@@ -242,9 +248,15 @@ describe('DEDUP_SUBJECT_EXTRACTORS.read_file', () => {
     // 缓存层同判：四者互认（否则真正的重复调用会被放过）
     const cache = new ToolResultCache();
     cache.set('read_file', bare!, 7);
-    expect(cache.check('read_file', extract('{"path":"docs/a.md","offset":"1"}')!)?.cachedAtIteration).toBe(7);
-    expect(cache.check('read_file', extract('{"path":"docs/a.md","offset":1}')!)?.cachedAtIteration).toBe(7);
-    expect(cache.check('read_file', extract('{"path":"docs/a.md","offset":"01"}')!)?.cachedAtIteration).toBe(7);
+    expect(
+      cache.check('read_file', extract('{"path":"docs/a.md","offset":"1"}')!)?.cachedAtIteration,
+    ).toBe(7);
+    expect(
+      cache.check('read_file', extract('{"path":"docs/a.md","offset":1}')!)?.cachedAtIteration,
+    ).toBe(7);
+    expect(
+      cache.check('read_file', extract('{"path":"docs/a.md","offset":"01"}')!)?.cachedAtIteration,
+    ).toBe(7);
   });
 
   it('非法 / 越界区间退回缺省（与 math.positiveInt 单一真源同规则：NaN / <1 → 缺省）', () => {
@@ -395,7 +407,9 @@ describe('formatDedupSubject', () => {
       'docs/a.md · 第 121 行起',
     );
     // 不含内部 key 的分隔符
-    expect(formatDedupSubject('read_file', { path: 'docs/a.md', offset: 1 })).not.toContain('\u0001');
+    expect(formatDedupSubject('read_file', { path: 'docs/a.md', offset: 1 })).not.toContain(
+      '\u0001',
+    );
   });
 
   it('list_dir 只渲染路径；web_search 只渲染 query', () => {

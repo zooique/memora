@@ -18,7 +18,18 @@ export interface ToolDefinition {
   description: string;
   parameters: {
     type: 'object';
-    properties: Record<string, { type: string; description: string; items?: { type: string; properties: Record<string, { type: string; description: string }>; required: string[] } }>;
+    properties: Record<
+      string,
+      {
+        type: string;
+        description: string;
+        items?: {
+          type: string;
+          properties: Record<string, { type: string; description: string }>;
+          required: string[];
+        };
+      }
+    >;
     required: string[];
   };
   /**
@@ -189,8 +200,14 @@ export const TRACE_SUMMARY_TOOL: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
-      sessionId: { type: 'string', description: '会话标识（格式：YYYY-MM-DD-sessionName，如 "2026-08-13-main"）' },
-      roundId: { type: 'string', description: '轮次 ID（可选，不传则返回该会话最近 N 条摘要对应的对话）' },
+      sessionId: {
+        type: 'string',
+        description: '会话标识（格式：YYYY-MM-DD-sessionName，如 "2026-08-13-main"）',
+      },
+      roundId: {
+        type: 'string',
+        description: '轮次 ID（可选，不传则返回该会话最近 N 条摘要对应的对话）',
+      },
       limit: { type: 'string', description: '返回结果数量上限，默认 "5"，最大 "20"' },
     },
     required: ['sessionId'],
@@ -217,7 +234,8 @@ export const COMPRESS_CONTEXT_TOOL: ToolDefinition = {
     properties: {
       target: {
         type: 'string',
-        description: '压缩目标："earliest_round"（最早的 turn，默认）或 "largest_tool_result"（最大的工具结果）',
+        description:
+          '压缩目标："earliest_round"（最早的 turn，默认）或 "largest_tool_result"（最大的工具结果）',
       },
     },
     required: [],
@@ -253,7 +271,8 @@ export const ASK_USER_TOOL: ToolDefinition = {
       },
       allowCustom: {
         type: 'string',
-        description: '是否允许用户在选项外自由输入："true" / "false"，默认 "false"（options 为空时无效）',
+        description:
+          '是否允许用户在选项外自由输入："true" / "false"，默认 "false"（options 为空时无效）',
       },
     },
     required: ['question'],
@@ -350,7 +369,8 @@ export const RUN_CODE_TOOL: ToolDefinition = {
       code: { type: 'string', description: '要执行的代码内容（与 script_path 二选一）' },
       script_path: {
         type: 'string',
-        description: '要执行的项目脚本文件路径（相对项目根，如 "tmp_analyze.mjs"；与 code 二选一，cwd=项目根，脚本可用项目依赖）',
+        description:
+          '要执行的项目脚本文件路径（相对项目根，如 "tmp_analyze.mjs"；与 code 二选一，cwd=项目根，脚本可用项目依赖）',
       },
     },
     required: [],
@@ -386,9 +406,19 @@ export const SEARCH_PROJECT_TOOL: ToolDefinition = {
   parameters: {
     type: 'object',
     properties: {
-      query: { type: 'string', description: '文件名 glob（mode=name，如 "**/*.ts"）或裸文件名/内容关键词（mode=content，如 "TODO"）；name 模式无通配符时自动按名称子串/分词放宽；省略时列出项目文件清单' },
-      mode: { type: 'string', description: '"name"（按文件名搜索，默认）或 "content"（按内容全文搜索）' },
-      exclude: { type: 'string', description: '排除 glob/路径（可选，如 "**/node_modules/**" 或 "docs"）' },
+      query: {
+        type: 'string',
+        description:
+          '文件名 glob（mode=name，如 "**/*.ts"）或裸文件名/内容关键词（mode=content，如 "TODO"）；name 模式无通配符时自动按名称子串/分词放宽；省略时列出项目文件清单',
+      },
+      mode: {
+        type: 'string',
+        description: '"name"（按文件名搜索，默认）或 "content"（按内容全文搜索）',
+      },
+      exclude: {
+        type: 'string',
+        description: '排除 glob/路径（可选，如 "**/node_modules/**" 或 "docs"）',
+      },
       maxResults: { type: 'string', description: '返回结果数量上限，默认 "20"，最大 "100"' },
     },
     required: [],
@@ -562,29 +592,32 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'task_table_write',
     description:
       '写入或更新任务表（命令式：多步任务必须先用本工具把任务拆解为子任务项写入任务表，随后按任务表逐步执行，禁止跳过拆解一次性盲目执行）。' +
-        'overwrite 清空现有任务表后写入新任务项（重写/重开计划）；' +
-        'append 在现有任务表后追加新任务项；' +
-        'update 模式替换现有任务项（保留任务项 ID 与状态）。' +
-        '写入后按任务表逐步推进：每完成一个任务项的实际产出（正文回答/写入文件/工具结果），再用 task_table_update 标记 done（先产出、后标记）。' +
-        '每个任务项可声明可选 rolePack 字段（小组会议用：该任务项的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
-        '输出格式为 Markdown 表格，包含进度行和状态标记。',
+      'overwrite 清空现有任务表后写入新任务项（重写/重开计划）；' +
+      'append 在现有任务表后追加新任务项；' +
+      'update 模式替换现有任务项（保留任务项 ID 与状态）。' +
+      '写入后按任务表逐步推进：每完成一个任务项的实际产出（正文回答/写入文件/工具结果），再用 task_table_update 标记 done（先产出、后标记）。' +
+      '每个任务项可声明可选 rolePack 字段（小组会议用：该任务项的表层装配角色，须 ∈ 系统提示中声明的 {组长} ∪ {组员}，越界会被忽略）。' +
+      '输出格式为 Markdown 表格，包含进度行和状态标记。',
     parameters: {
       type: 'object',
       properties: {
         mode: {
           type: 'string',
-          description: '写入模式："overwrite"（清空后重写全部任务项）、"append"（追加新任务项）、"update"（替换，保留任务项 ID 与状态）',
+          description:
+            '写入模式："overwrite"（清空后重写全部任务项）、"append"（追加新任务项）、"update"（替换，保留任务项 ID 与状态）',
         },
         items: {
           type: 'array',
-          description: '任务项列表，每个任务项包含 description 字段，可选项 rolePack（会议表层装配角色，须 ∈ {组长} ∪ {组员}）',
+          description:
+            '任务项列表，每个任务项包含 description 字段，可选项 rolePack（会议表层装配角色，须 ∈ {组长} ∪ {组员}）',
           items: {
             type: 'object',
             properties: {
               description: { type: 'string', description: '任务项描述' },
               rolePack: {
                 type: 'string',
-                description: '可选：该任务项的表层装配角色（小组会议用，组长或组员；越界会被忽略，省略按当前生效角色）',
+                description:
+                  '可选：该任务项的表层装配角色（小组会议用，组长或组员；越界会被忽略，省略按当前生效角色）',
               },
             },
             required: ['description'],
@@ -598,14 +631,18 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     name: 'task_table_update',
     description:
       '更新任务表中指定任务项的状态（命令式：一次只更新一个任务项）。将 plan_item_id 对应的任务项标记为 done（已完成）或 blocked（已阻塞）。' +
-        '每完成一个任务项调用一次本工具标记，只有最后一个任务项完成后才宣告任务完成，禁止一次性批量标记所有任务项。' +
-        '顺序纪律：调用本工具标记 done 前，必须已完成该任务项的实际产出（正文回答/写入文件/工具结果）——先产出、后标记；' +
-        '禁止先标记 done 再补产出（标记后该任务项即视为完成，之后的内容会错归下一个任务项）。' +
-        'plan_item_id 传任务表行首序号（1 开始，如 "1" = 第一个任务项）即可定位；或传 task_table_write 返回的任务项短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
+      '每完成一个任务项调用一次本工具标记，只有最后一个任务项完成后才宣告任务完成，禁止一次性批量标记所有任务项。' +
+      '顺序纪律：调用本工具标记 done 前，必须已完成该任务项的实际产出（正文回答/写入文件/工具结果）——先产出、后标记；' +
+      '禁止先标记 done 再补产出（标记后该任务项即视为完成，之后的内容会错归下一个任务项）。' +
+      'plan_item_id 传任务表行首序号（1 开始，如 "1" = 第一个任务项）即可定位；或传 task_table_write 返回的任务项短 id（如 "[a1b2c3d4]" 中的 a1b2c3d4）。',
     parameters: {
       type: 'object',
       properties: {
-        plan_item_id: { type: 'string', description: '任务项定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id' },
+        plan_item_id: {
+          type: 'string',
+          description:
+            '任务项定位：任务表行首序号（1 开始，如 "1"/"2"）或 task_table_write 返回的短 id',
+        },
         status: { type: 'string', description: '新状态："done"（已完成）或 "blocked"（已阻塞）' },
       },
       required: ['plan_item_id', 'status'],
@@ -633,7 +670,10 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       type: 'object',
       properties: {
         skill_name: { type: 'string', description: '技能名' },
-        resource_path: { type: 'string', description: '相对 resources/ 或 references/ 的路径（如 "api-spec.md"）' },
+        resource_path: {
+          type: 'string',
+          description: '相对 resources/ 或 references/ 的路径（如 "api-spec.md"）',
+        },
       },
       required: ['skill_name', 'resource_path'],
     },
@@ -677,7 +717,10 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        script_path: { type: 'string', description: '相对项目根目录的脚本路径（如 "scripts/test.py"）' },
+        script_path: {
+          type: 'string',
+          description: '相对项目根目录的脚本路径（如 "scripts/test.py"）',
+        },
         args: {
           type: 'array',
           description: '传递给脚本的参数数组（可选）',
@@ -723,8 +766,14 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
     parameters: {
       type: 'object',
       properties: {
-        path: { type: 'string', description: '相对项目根目录的源文件路径（如 docs/architecture.md）' },
-        description: { type: 'string', description: '作品的一句话说明（LLM 总结，用户可后续手改）' },
+        path: {
+          type: 'string',
+          description: '相对项目根目录的源文件路径（如 docs/architecture.md）',
+        },
+        description: {
+          type: 'string',
+          description: '作品的一句话说明（LLM 总结，用户可后续手改）',
+        },
       },
       required: ['path', 'description'],
     },
@@ -747,7 +796,11 @@ export const ALL_BUILTIN_TOOL_DEFS: readonly ToolDefinition[] = [
 ];
 
 /** 按 `args.path` 定位目标的写工具名集（派生；同路径串行闸与宿主改动追踪的判据真源） */
-export const PATH_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'path').map((t) => t.name);
+export const PATH_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter(
+  (t) => t.diskWrite === 'path',
+).map((t) => t.name);
 
 /** 目标不可静态定位的写工具名集（派生；执行 = 屏障，与一切写互斥） */
-export const OPAQUE_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter((t) => t.diskWrite === 'opaque').map((t) => t.name);
+export const OPAQUE_WRITE_TOOL_NAMES: readonly string[] = ALL_BUILTIN_TOOL_DEFS.filter(
+  (t) => t.diskWrite === 'opaque',
+).map((t) => t.name);

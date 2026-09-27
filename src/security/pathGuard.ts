@@ -229,13 +229,17 @@ export class SecurityGuard {
    */
   setAllowedPaths(extraPaths: string[]): void {
     if (!Array.isArray(extraPaths)) {
-      throw securityError('allowedPaths 必须为数组', 'setAllowedPaths 入参不是数组', ['请传入字符串数组']);
+      throw securityError('allowedPaths 必须为数组', 'setAllowedPaths 入参不是数组', [
+        '请传入字符串数组',
+      ]);
     }
     const normalized: string[] = [];
     for (let i = 0; i < extraPaths.length && normalized.length < MAX_EXTRA_ALLOWED_PATHS; i++) {
       const p = extraPaths[i];
       if (typeof p !== 'string') {
-        throw securityError('allowedPaths 每项必须为字符串', `allowedPaths[${i}] 不是字符串`, ['allowedPaths 每项必须为字符串路径']);
+        throw securityError('allowedPaths 每项必须为字符串', `allowedPaths[${i}] 不是字符串`, [
+          'allowedPaths 每项必须为字符串路径',
+        ]);
       }
       normalized.push(resolveRealpath(expandHome(p)));
     }
@@ -256,7 +260,11 @@ export class SecurityGuard {
    * 断言路径允许访问（命中即拒绝）；黑名单优先，其次白名单前缀匹配（追加 sep 防兄弟目录绕过）。
    * @throws 不在白名单时
    */
-  assertPathAllowed(absolutePath: string, tool?: string, source?: 'builtin' | 'custom' | 'system'): void {
+  assertPathAllowed(
+    absolutePath: string,
+    tool?: string,
+    source?: 'builtin' | 'custom' | 'system',
+  ): void {
     // NFKC 规范化，防全角字符（如 ．．/）绕过黑名单正则
     const normalized = absolutePath.normalize('NFKC');
     // 解析符号链接，防项目内符号链接逃逸到系统目录
@@ -341,11 +349,7 @@ export class SecurityGuard {
    * fail-closed 拒绝。owner + confirmScripts=false 自动批准（默认），审计仍记录。
    * target 为脚本绝对路径（run_project_script）或描述型标识（run_code 内联代码无落盘路径）。
    */
-  async confirmScriptRun(
-    targetPath: string,
-    tool: string,
-    description?: string,
-  ): Promise<boolean> {
+  async confirmScriptRun(targetPath: string, tool: string, description?: string): Promise<boolean> {
     return this.confirmGate(
       targetPath,
       tool,

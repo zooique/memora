@@ -9,10 +9,7 @@ import type { ArchiveMode } from '@/agent/types.js';
 import { logger } from '@/logging/logger.js';
 
 /** 事件发射回调类型（Agent 注入 this.emit） */
-type EmitCallback = <K extends keyof AgentEventMap>(
-  event: K,
-  payload: AgentEventMap[K],
-) => void;
+type EmitCallback = <K extends keyof AgentEventMap>(event: K, payload: AgentEventMap[K]) => void;
 
 /** ArchiveCoordinator 构造选项 */
 export interface ArchiveCoordinatorOptions {

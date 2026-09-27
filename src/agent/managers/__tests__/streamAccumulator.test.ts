@@ -83,10 +83,7 @@ describe('accumulateStream — 基础累积', () => {
   });
 
   it('所有 chunk 均为 undefined content 返回空字符串', async () => {
-    const provider = createMockProvider([
-      { content: undefined },
-      { content: undefined },
-    ]);
+    const provider = createMockProvider([{ content: undefined }, { content: undefined }]);
     const result = await accumulateStream(provider, messages);
 
     expect(result).toBe('');
@@ -112,9 +109,9 @@ describe('accumulateStream — 异常传播', () => {
   it('Provider 异常向上传播', async () => {
     const provider = createErrorProvider(new Error('LLM 连接超时'));
 
-    await expect(
-      accumulateStream(provider, [{ role: 'user', content: 'test' }]),
-    ).rejects.toThrow('LLM 连接超时');
+    await expect(accumulateStream(provider, [{ role: 'user', content: 'test' }])).rejects.toThrow(
+      'LLM 连接超时',
+    );
   });
 
   it('AbortError 正确传播', async () => {
@@ -189,10 +186,7 @@ describe('accumulateStream — 边界场景', () => {
   });
 
   it('处理 emoji 和特殊字符', async () => {
-    const provider = createMockProvider([
-      { content: 'Hello 🌍 ' },
-      { content: 'café résumé' },
-    ]);
+    const provider = createMockProvider([{ content: 'Hello 🌍 ' }, { content: 'café résumé' }]);
     const result = await accumulateStream(provider, [{ role: 'user', content: 'test' }]);
     expect(result).toBe('Hello 🌍 café résumé');
   });

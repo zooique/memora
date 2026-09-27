@@ -186,10 +186,10 @@ describe('MessageHistory · forkSession', () => {
     expect(result.date).toBe(todayDate());
     expect(history.currentDateValue).toBe(todayDate());
     expect(history.currentSessionName).toBe(`${todayDate()}-${result.newSession}`);
-    expect(store.setRoundIds).toHaveBeenCalledWith(
-      `${todayDate()}-${result.newSession}`,
-      ['r1', 'r2'],
-    );
+    expect(store.setRoundIds).toHaveBeenCalledWith(`${todayDate()}-${result.newSession}`, [
+      'r1',
+      'r2',
+    ]);
   });
 });
 

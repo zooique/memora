@@ -63,7 +63,9 @@ describe('键集合与内核内置工具清单对齐', () => {
     const src = readFileSync(KERNEL_TOOLS_PATH, 'utf8');
     const names = new Set<string>();
     // ① 独立的工具常量定义（export const XXX_TOOL: ToolDefinition = { name: '...' }）
-    for (const m of src.matchAll(/export const [A-Z][A-Z0-9_]*_TOOL: ToolDefinition = \{[\s\S]*?\bname: '([a-z_]+)'/g)) {
+    for (const m of src.matchAll(
+      /export const [A-Z][A-Z0-9_]*_TOOL: ToolDefinition = \{[\s\S]*?\bname: '([a-z_]+)'/g,
+    )) {
       names.add(m[1]!);
     }
     // ② BUILTIN_TOOLS 数组内联定义（未抽为常量的那批）

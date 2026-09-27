@@ -236,9 +236,7 @@ describe('ProjectManager · 项目注册表', () => {
     expect(projects).toHaveLength(0);
 
     // register 路径必须抛错，避免用空数据覆盖损坏文件导致数据永久丢失
-    expect(() => pm.registerProject('/path/to/project-a', 'project-a')).toThrow(
-      /项目注册表损坏/,
-    );
+    expect(() => pm.registerProject('/path/to/project-a', 'project-a')).toThrow(/项目注册表损坏/);
     // 损坏文件应仍保留原内容（未被空数据覆盖）
     const rawContent = readFileSync(join(tmpHome, '.memora', 'projects.json'), 'utf-8');
     expect(rawContent).toBe('not valid{{{');

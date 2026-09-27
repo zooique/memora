@@ -129,10 +129,7 @@ export async function awaitBackgroundTasks(timeoutMs = 5000): Promise<number> {
   const startTime = Date.now();
   while (stats.pending > 0) {
     if (Date.now() - startTime > timeoutMs) {
-      logger.warn(
-        { pending: stats.pending, timeoutMs },
-        '等待后台任务超时，放弃剩余任务',
-      );
+      logger.warn({ pending: stats.pending, timeoutMs }, '等待后台任务超时，放弃剩余任务');
       break;
     }
     // 等待下一个微任务周期，让 pending 计数有机会被更新

@@ -30,8 +30,7 @@ const createMockStorage = (): IMemoryStorage => {
       store.delete(id);
     },
     getById: (id: string) => store.get(id) ?? null,
-    getBySource: (source: string) =>
-      Array.from(store.values()).filter((m) => m.source === source),
+    getBySource: (source: string) => Array.from(store.values()).filter((m) => m.source === source),
     search: () => [],
     count: () => store.size,
     countBySource: (source: string) =>
@@ -126,9 +125,7 @@ describe('DedupManager · M6 合并内容落库', () => {
     storage.upsert(memA);
     storage.upsert(memB);
 
-    const provider = createMockProvider(
-      JSON.stringify({ isDuplicate: true, reason: '语义等价' }),
-    );
+    const provider = createMockProvider(JSON.stringify({ isDuplicate: true, reason: '语义等价' }));
     const manager = new DedupManager(storage, provider, undefined, [SOURCE_LABELS.WORK_PROJECTION]);
 
     // When
@@ -267,14 +264,19 @@ describe('DedupManager · 降级与异常路径', () => {
     const onCompleted = vi.fn();
     const manager = new DedupManager(
       storage,
-      providerReturning(JSON.stringify({ isDuplicate: true, mergedContent: '合并', reason: '等价' })),
+      providerReturning(
+        JSON.stringify({ isDuplicate: true, mergedContent: '合并', reason: '等价' }),
+      ),
       onCompleted,
       [SOURCE_LABELS.WORK_PROJECTION],
     );
 
     await manager.deduplicateMemories();
     expect(onCompleted).toHaveBeenCalledTimes(1);
-    const payload = onCompleted.mock.calls[0]![0] as { demotedIds: string[]; deduplicatedCount: number };
+    const payload = onCompleted.mock.calls[0]![0] as {
+      demotedIds: string[];
+      deduplicatedCount: number;
+    };
     expect(payload.demotedIds).toContain('content:b');
     expect(payload.deduplicatedCount).toBe(1);
   });

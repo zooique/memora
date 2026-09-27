@@ -198,7 +198,10 @@ export async function runSkillScript(
   // 非 ENOENT，故不能只看 enoent 标记）。命中即在两个候选解释器间逐级替换重试：
   //   ① `py -3`（py 启动器）② `cmd /c python`（shell 派发——cmd 按 PATHEXT 解析 .bat shim，
   //   pyenv/conda 的 python.bat 由此生效；原生 spawn 不解析 .bat 的跨层缺环在此补上）。
-  if (shouldFallbackPythonToPy(runtime, process.platform) && isPythonUnavailable(result, process.platform)) {
+  if (
+    shouldFallbackPythonToPy(runtime, process.platform) &&
+    isPythonUnavailable(result, process.platform)
+  ) {
     // ① py 启动器重试：任一成功（上已判定不可用、此命令=解释器本体）即返回
     const pyResult = await runOnce('py', ['-3', scriptPath, ...args]);
     if (!isPythonUnavailable(pyResult, process.platform)) {

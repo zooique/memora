@@ -41,7 +41,13 @@ export default defineConfig({
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
-      exclude: ['src/**/__tests__/**', 'src/**/*.d.ts', 'src/index.ts', 'hosts/**', 'hosts/memora-vscode/src/**'],
+      exclude: [
+        'src/**/__tests__/**',
+        'src/**/*.d.ts',
+        'src/index.ts',
+        'hosts/**',
+        'hosts/memora-vscode/src/**',
+      ],
       thresholds: {
         // 实测基线（`vitest run --coverage`，列序 = Stmts / Branch / Funcs / Lines）：
         //   90.30 / 84.78 / 92.27 / 91.52 —— 四项阈值均低于实际值，留缓冲防日常波动。

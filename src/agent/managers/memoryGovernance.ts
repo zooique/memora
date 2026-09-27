@@ -6,11 +6,12 @@
  * 底层 Manager 未注入时返回空报告（非抛错），符合"降级优先"。
  */
 import type { DedupManager, DedupReport } from '@/agent/managers/dedupManager.js';
+import type { MemoryAdvisor, ConflictReport } from '@/agent/managers/memoryAdvisor.js';
 import type {
-  MemoryAdvisor,
-  ConflictReport,
+  SourceHealthReport,
+  SuggestOptions,
+  SuggestHit,
 } from '@/agent/managers/memoryAdvisor.js';
-import type { SourceHealthReport, SuggestOptions, SuggestHit } from '@/agent/managers/memoryAdvisor.js';
 
 export class MemoryGovernance {
   constructor(
@@ -23,7 +24,13 @@ export class MemoryGovernance {
   /** 语义去重：扫描名称相似记忆对，LLM 判断等价性，降级重复记忆 */
   async deduplicate(signal?: AbortSignal): Promise<DedupReport> {
     if (!this.dedupManager) {
-      return { scannedCount: 0, pairCount: 0, deduplicatedCount: 0, demotedIds: [], skippedReason: 'Agent 未初始化' };
+      return {
+        scannedCount: 0,
+        pairCount: 0,
+        deduplicatedCount: 0,
+        demotedIds: [],
+        skippedReason: 'Agent 未初始化',
+      };
     }
     return this.dedupManager.deduplicateMemories(signal);
   }
@@ -33,7 +40,13 @@ export class MemoryGovernance {
   /** 冲突检测：LLM 判断同 source 记忆是否存在语义矛盾 */
   async detectConflicts(signal?: AbortSignal): Promise<ConflictReport> {
     if (!this.memoryAdvisor) {
-      return { scannedCount: 0, pairCount: 0, conflictCount: 0, conflicts: [], skippedReason: 'Agent 未初始化' };
+      return {
+        scannedCount: 0,
+        pairCount: 0,
+        conflictCount: 0,
+        conflicts: [],
+        skippedReason: 'Agent 未初始化',
+      };
     }
     return this.memoryAdvisor.detectConflicts(signal);
   }

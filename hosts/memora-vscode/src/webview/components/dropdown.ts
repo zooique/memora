@@ -37,7 +37,13 @@ export interface DropdownItem {
  *  对选择器场景（Skill/Model picker）语义不当。未指定时保持向后兼容默认值。 */
 export function buildDropdownHtml(
   items: DropdownItem[],
-  opts?: { extraClass?: string; onSelect?: string; triggerLabel?: string; triggerTitle?: string; triggerAriaLabel?: string },
+  opts?: {
+    extraClass?: string;
+    onSelect?: string;
+    triggerLabel?: string;
+    triggerTitle?: string;
+    triggerAriaLabel?: string;
+  },
 ): string {
   const extra = opts?.extraClass ? ` ${opts.extraClass}` : '';
   // 实例级回调：data-on-select 指向全局回调名；缺省回退 __treeddOnSelect
@@ -201,9 +207,9 @@ export function initDropdowns(
   });
   // 点击任意位置关闭所有展开的下拉
   root.addEventListener('click', () => {
-    root.querySelectorAll('.treedd.is-open').forEach((o) =>
-      setDropdownOpen(o as HTMLElement, false),
-    );
+    root
+      .querySelectorAll('.treedd.is-open')
+      .forEach((o) => setDropdownOpen(o as HTMLElement, false));
   });
 }
 

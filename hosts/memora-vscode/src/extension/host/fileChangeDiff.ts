@@ -102,7 +102,11 @@ function lcsHunks(midBefore: string[], midAfter: string[]): DiffHunk[] {
 
   const hunks: DiffHunk[] = [];
   let cur: DiffHunk | null = null;
-  const open = (startLine: number): DiffHunk => ({ startLine, endLine: startLine - 1, removed: [] });
+  const open = (startLine: number): DiffHunk => ({
+    startLine,
+    endLine: startLine - 1,
+    removed: [],
+  });
 
   let i = 0;
   let j = 0;

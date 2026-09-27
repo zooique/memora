@@ -30,69 +30,69 @@ describe('GoalConsistencyChecker — extractConstraints 约束提取', () => {
 
   it('提取"必须"约束', () => {
     const constraints = checker.extractConstraints('你必须使用 TypeScript 编写');
-    expect(constraints.some(c => c.includes('必须'))).toBe(true);
+    expect(constraints.some((c) => c.includes('必须'))).toBe(true);
   });
 
   it('提取"不能"约束', () => {
     const constraints = checker.extractConstraints('你不能修改生产数据库');
-    expect(constraints.some(c => c.includes('不能'))).toBe(true);
+    expect(constraints.some((c) => c.includes('不能'))).toBe(true);
   });
 
   it('提取"需要"约束', () => {
     const constraints = checker.extractConstraints('需要包含单元测试');
-    expect(constraints.some(c => c.includes('需要'))).toBe(true);
+    expect(constraints.some((c) => c.includes('需要'))).toBe(true);
   });
 
   it('提取"确保"约束', () => {
     const constraints = checker.extractConstraints('确保代码质量');
-    expect(constraints.some(c => c.includes('确保'))).toBe(true);
+    expect(constraints.some((c) => c.includes('确保'))).toBe(true);
   });
 
   it('提取"禁止"约束', () => {
     const constraints = checker.extractConstraints('禁止使用 eval');
-    expect(constraints.some(c => c.includes('禁止'))).toBe(true);
+    expect(constraints.some((c) => c.includes('禁止'))).toBe(true);
   });
 
   it('提取"只能"约束', () => {
     const constraints = checker.extractConstraints('只能使用 Python 3.10+');
-    expect(constraints.some(c => c.includes('只能'))).toBe(true);
+    expect(constraints.some((c) => c.includes('只能'))).toBe(true);
   });
 
   it('提取"至少"约束', () => {
     const constraints = checker.extractConstraints('至少覆盖 80% 代码');
-    expect(constraints.some(c => c.includes('至少'))).toBe(true);
+    expect(constraints.some((c) => c.includes('至少'))).toBe(true);
   });
 
   it('提取"不允许"约束', () => {
     const constraints = checker.extractConstraints('不允许跳过测试');
-    expect(constraints.some(c => c.includes('不允许'))).toBe(true);
+    expect(constraints.some((c) => c.includes('不允许'))).toBe(true);
   });
 
   it('提取"应当"约束', () => {
     const constraints = checker.extractConstraints('应当遵循 SOLID 原则');
-    expect(constraints.some(c => c.includes('应当'))).toBe(true);
+    expect(constraints.some((c) => c.includes('应当'))).toBe(true);
   });
 
   it('提取"不得"约束', () => {
     const constraints = checker.extractConstraints('不得泄露用户数据');
-    expect(constraints.some(c => c.includes('不得'))).toBe(true);
+    expect(constraints.some((c) => c.includes('不得'))).toBe(true);
   });
 
   it('提取多种约束类型', () => {
     const constraints = checker.extractConstraints(
-      '你必须使用 TypeScript，不能修改生产数据，确保代码安全，禁止硬编码密钥'
+      '你必须使用 TypeScript，不能修改生产数据，确保代码安全，禁止硬编码密钥',
     );
     expect(constraints.length).toBeGreaterThanOrEqual(3);
-    expect(constraints.some(c => c.includes('必须'))).toBe(true);
-    expect(constraints.some(c => c.includes('不能'))).toBe(true);
-    expect(constraints.some(c => c.includes('确保'))).toBe(true);
-    expect(constraints.some(c => c.includes('禁止'))).toBe(true);
+    expect(constraints.some((c) => c.includes('必须'))).toBe(true);
+    expect(constraints.some((c) => c.includes('不能'))).toBe(true);
+    expect(constraints.some((c) => c.includes('确保'))).toBe(true);
+    expect(constraints.some((c) => c.includes('禁止'))).toBe(true);
   });
 
   it('约束去重', () => {
     const constraints = checker.extractConstraints('必须使用 TypeScript，必须使用 TypeScript');
     // Set 去重，重复约束应只出现一次
-    const mustCount = constraints.filter(c => c.includes('必须')).length;
+    const mustCount = constraints.filter((c) => c.includes('必须')).length;
     expect(mustCount).toBe(1);
   });
 
@@ -104,7 +104,7 @@ describe('GoalConsistencyChecker — extractConstraints 约束提取', () => {
   it('约束提取的边界：关键词跨越标点', () => {
     const constraints = checker.extractConstraints('你必须使用 TypeScript，而不是 JavaScript。');
     // 正则以标点终止，应提取"必须使用 TypeScript"
-    expect(constraints.some(c => c.includes('必须使用 TypeScript'))).toBe(true);
+    expect(constraints.some((c) => c.includes('必须使用 TypeScript'))).toBe(true);
   });
 });
 
@@ -233,10 +233,7 @@ describe('GoalConsistencyChecker — checkConsistency 一致性校验', () => {
   });
 
   it('低相似度 → drift 等级', () => {
-    const result = checker.checkConsistency(
-      '实现用户登录和权限管理',
-      '部署 Kubernetes 集群配置',
-    );
+    const result = checker.checkConsistency('实现用户登录和权限管理', '部署 Kubernetes 集群配置');
     // 应 < 0.4
     expect(result.similarity).toBeLessThan(0.4);
     expect(result.level).toBe('drift');
@@ -274,10 +271,7 @@ describe('GoalConsistencyChecker — checkConsistency 一致性校验', () => {
   });
 
   it('约束一致性：约束关键词完全不匹配', () => {
-    const result = checker.checkConsistency(
-      '系统必须采用微服务架构',
-      '系统使用单体架构设计',
-    );
+    const result = checker.checkConsistency('系统必须采用微服务架构', '系统使用单体架构设计');
     // "采用" 可能在新目标中不存在
     // 核心关键词 "微服务" 在新目标中完全不存在
     expect(result.constraintsConsistent).toBe(false);
@@ -417,7 +411,7 @@ describe('GoalConsistencyChecker — 边界场景', () => {
 
   it('中文约束提取', () => {
     const constraints = checker.extractConstraints(
-      '你必须使用中文注释，不能使用英文变量名，确保代码风格统一'
+      '你必须使用中文注释，不能使用英文变量名，确保代码风格统一',
     );
     expect(constraints.length).toBeGreaterThanOrEqual(3);
   });
@@ -435,7 +429,7 @@ describe('GoalConsistencyChecker — 边界场景', () => {
 
   it('特殊字符处理', () => {
     const constraints = checker.extractConstraints(
-      '必须使用 TypeScript（v5.0+），不能使用 @deprecated 方法'
+      '必须使用 TypeScript（v5.0+），不能使用 @deprecated 方法',
     );
     expect(constraints.length).toBeGreaterThan(0);
   });

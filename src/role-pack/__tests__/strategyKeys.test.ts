@@ -138,9 +138,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
 
   // 收集所有已知键（文档列出的）
   const EXPECTED_KEYS: Record<Phase, string[]> = {
-    prepare: [
-      'summaryFocus',
-    ],
+    prepare: ['summaryFocus'],
     act: [
       'toolMode',
       'temperature',
@@ -150,11 +148,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
       'multiStepReasoning',
       'toolReadonly',
     ],
-    reflect: [
-      'summary',
-      'selfReview',
-      'userFollowup',
-    ],
+    reflect: ['summary', 'selfReview', 'userFollowup'],
     global: ['askOn', 'askLimit', 'errorHandling', 'contextLimit', 'stepBudget'],
   };
 
@@ -263,26 +257,30 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     // 各枚举键的 values 必须与命名常量同一引用——若未来有人重新手写字面量数组
     // 破坏 SSOT，此守卫红（类型推导与 validator 校验将各自漂移）
     it('act 枚举键 values 与 SSOT 常量同源', () => {
-      expect((STRATEGY_KEY_RULES.act!.toolMode! as { values: readonly unknown[] }).values).toBe(TOOL_MODES);
-      expect((STRATEGY_KEY_RULES.act!.providerRouting! as { values: readonly unknown[] }).values).toBe(
-        PROVIDER_ROUTINGS,
+      expect((STRATEGY_KEY_RULES.act!.toolMode! as { values: readonly unknown[] }).values).toBe(
+        TOOL_MODES,
       );
-      expect((STRATEGY_KEY_RULES.act!.multiStepReasoning! as { values: readonly unknown[] }).values).toBe(
-        MULTI_STEP_REASONINGS,
-      );
+      expect(
+        (STRATEGY_KEY_RULES.act!.providerRouting! as { values: readonly unknown[] }).values,
+      ).toBe(PROVIDER_ROUTINGS);
+      expect(
+        (STRATEGY_KEY_RULES.act!.multiStepReasoning! as { values: readonly unknown[] }).values,
+      ).toBe(MULTI_STEP_REASONINGS);
       expect((STRATEGY_KEY_RULES.act!.toolReadonly! as { values: readonly unknown[] }).values).toBe(
         TOOL_READONLY_MODES,
       );
     });
 
     it('reflect/global 枚举键 values 与 SSOT 常量同源', () => {
-      expect((STRATEGY_KEY_RULES.reflect!.summary! as { values: readonly unknown[] }).values).toBe(SUMMARY_MODES);
-      expect((STRATEGY_KEY_RULES.reflect!.userFollowup! as { values: readonly unknown[] }).values).toBe(
-        USER_FOLLOWUPS,
+      expect((STRATEGY_KEY_RULES.reflect!.summary! as { values: readonly unknown[] }).values).toBe(
+        SUMMARY_MODES,
       );
-      expect((STRATEGY_KEY_RULES.global!.errorHandling! as { values: readonly unknown[] }).values).toBe(
-        ERROR_HANDLINGS,
-      );
+      expect(
+        (STRATEGY_KEY_RULES.reflect!.userFollowup! as { values: readonly unknown[] }).values,
+      ).toBe(USER_FOLLOWUPS);
+      expect(
+        (STRATEGY_KEY_RULES.global!.errorHandling! as { values: readonly unknown[] }).values,
+      ).toBe(ERROR_HANDLINGS);
     });
 
     it('ASK_TRIGGERS 为 askOn 白名单真源（types.ts AskOnTrigger 推导 + isAskOn 校验共用）', () => {
@@ -308,7 +306,10 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     it('reflect.selfReview 使用区间断言（0~MAX_SELF_REVIEW_ROUNDS）', () => {
       const rule = STRATEGY_KEY_RULES.reflect!.selfReview!;
       expect(rule.kind).toBe('check');
-      const checkRule = rule as { check: (v: unknown) => boolean; range?: { min: number; max: number } };
+      const checkRule = rule as {
+        check: (v: unknown) => boolean;
+        range?: { min: number; max: number };
+      };
       expect(checkRule.check(0)).toBe(true);
       expect(checkRule.check(3)).toBe(true);
       expect(checkRule.check(-1)).toBe(false);
@@ -318,7 +319,10 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     it('global.askLimit 使用区间断言（1~MAX_ASK_LIMIT）', () => {
       const rule = STRATEGY_KEY_RULES.global!.askLimit!;
       expect(rule.kind).toBe('check');
-      const checkRule = rule as { check: (v: unknown) => boolean; range?: { min: number; max: number } };
+      const checkRule = rule as {
+        check: (v: unknown) => boolean;
+        range?: { min: number; max: number };
+      };
       expect(checkRule.check(3)).toBe(true);
       expect(checkRule.check(0)).toBe(false);
       expect(checkRule.range).toEqual({ min: 1, max: MAX_ASK_LIMIT });
@@ -329,13 +333,55 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
   describe('strategyKeys — 数值键区间上界', () => {
     // 每个数值键：check 断言内置完整区间 + range 元数据与断言同源（防双写漂移）
     const CASES: Array<{ key: string; rule: KeyRule; min: number; max: number; probe: number }> = [
-      { key: 'act.temperature', rule: STRATEGY_KEY_RULES.act!.temperature!, min: 0, max: 2, probe: 2.1 },
-      { key: 'act.outputLimit', rule: STRATEGY_KEY_RULES.act!.outputLimit!, min: 1, max: MAX_OUTPUT_LIMIT, probe: MAX_OUTPUT_LIMIT + 1 },
-      { key: 'act.toolStepLimit', rule: STRATEGY_KEY_RULES.act!.toolStepLimit!, min: 0, max: MAX_TOOL_STEP_LIMIT, probe: MAX_TOOL_STEP_LIMIT + 1 },
-      { key: 'reflect.selfReview', rule: STRATEGY_KEY_RULES.reflect!.selfReview!, min: 0, max: MAX_SELF_REVIEW_ROUNDS, probe: MAX_SELF_REVIEW_ROUNDS + 1 },
-      { key: 'global.askLimit', rule: STRATEGY_KEY_RULES.global!.askLimit!, min: 1, max: MAX_ASK_LIMIT, probe: MAX_ASK_LIMIT + 1 },
-      { key: 'global.contextLimit', rule: STRATEGY_KEY_RULES.global!.contextLimit!, min: MIN_CONTEXT_LIMIT, max: MAX_CONTEXT_LIMIT, probe: MAX_CONTEXT_LIMIT + 1 },
-      { key: 'global.stepBudget', rule: STRATEGY_KEY_RULES.global!.stepBudget!, min: MIN_STEP_BUDGET, max: MAX_STEP_BUDGET, probe: MAX_STEP_BUDGET + 1 },
+      {
+        key: 'act.temperature',
+        rule: STRATEGY_KEY_RULES.act!.temperature!,
+        min: 0,
+        max: 2,
+        probe: 2.1,
+      },
+      {
+        key: 'act.outputLimit',
+        rule: STRATEGY_KEY_RULES.act!.outputLimit!,
+        min: 1,
+        max: MAX_OUTPUT_LIMIT,
+        probe: MAX_OUTPUT_LIMIT + 1,
+      },
+      {
+        key: 'act.toolStepLimit',
+        rule: STRATEGY_KEY_RULES.act!.toolStepLimit!,
+        min: 0,
+        max: MAX_TOOL_STEP_LIMIT,
+        probe: MAX_TOOL_STEP_LIMIT + 1,
+      },
+      {
+        key: 'reflect.selfReview',
+        rule: STRATEGY_KEY_RULES.reflect!.selfReview!,
+        min: 0,
+        max: MAX_SELF_REVIEW_ROUNDS,
+        probe: MAX_SELF_REVIEW_ROUNDS + 1,
+      },
+      {
+        key: 'global.askLimit',
+        rule: STRATEGY_KEY_RULES.global!.askLimit!,
+        min: 1,
+        max: MAX_ASK_LIMIT,
+        probe: MAX_ASK_LIMIT + 1,
+      },
+      {
+        key: 'global.contextLimit',
+        rule: STRATEGY_KEY_RULES.global!.contextLimit!,
+        min: MIN_CONTEXT_LIMIT,
+        max: MAX_CONTEXT_LIMIT,
+        probe: MAX_CONTEXT_LIMIT + 1,
+      },
+      {
+        key: 'global.stepBudget',
+        rule: STRATEGY_KEY_RULES.global!.stepBudget!,
+        min: MIN_STEP_BUDGET,
+        max: MAX_STEP_BUDGET,
+        probe: MAX_STEP_BUDGET + 1,
+      },
     ];
 
     it('所有数值键都带 range 元数据（上下限齐全）', () => {
@@ -366,9 +412,7 @@ describe('strategyKeys — STRATEGY_KEY_RULES 完整性', () => {
     });
 
     // 浮点键：允许小数，仅约束区间；其余数值键为整数键
-    const FLOAT_KEYS: ReadonlySet<string> = new Set([
-      'act.temperature',
-    ]);
+    const FLOAT_KEYS: ReadonlySet<string> = new Set(['act.temperature']);
 
     it('非整数不通过（整数区间键必须为整数）', () => {
       for (const { key, rule } of CASES) {
@@ -495,8 +539,7 @@ describe('strategyKeys — schema.json 与常量一致性', () => {
     // 通过 STRATEGY_KEY_RULES 的 range 元数据取代码真源 min，与 schema 比对
     const ruleMin = (phase: 'act' | 'reflect' | 'global' | 'prepare', key: string): number => {
       const rule = STRATEGY_KEY_RULES[phase]?.[key] as
-        | { kind: 'check'; range?: { min: number; max: number } }
-        | undefined;
+        { kind: 'check'; range?: { min: number; max: number } } | undefined;
       expect(rule?.kind, `${phase}.${key} 应为 check 数值键`).toBe('check');
       expect(rule?.range, `${phase}.${key} 应有 range`).toBeDefined();
       return rule!.range!.min;

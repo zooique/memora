@@ -103,16 +103,18 @@ describe('ResultReplacementStrategy', () => {
     it('当没有需要压缩的结果时不修改', () => {
       const strategy = new ResultReplacementStrategy(5);
       const messages = createMessages(3);
-      const originalContents = messages.filter(m => m.role === 'tool').map(m => m.content);
+      const originalContents = messages.filter((m) => m.role === 'tool').map((m) => m.content);
 
       strategy.compact(messages);
 
-      const newContents = messages.filter(m => m.role === 'tool').map(m => m.content);
+      const newContents = messages.filter((m) => m.role === 'tool').map((m) => m.content);
       expect(newContents).toEqual(originalContents);
     });
 
     it('P1 摘要替代：read_file 有台账摘要 → 替换为摘要（非空占位）', () => {
-      const readFileReplacement = vi.fn((path: string) => (path === 'docs/a.md' ? '[ALREADY_READ] 摘要…' : undefined));
+      const readFileReplacement = vi.fn((path: string) =>
+        path === 'docs/a.md' ? '[ALREADY_READ] 摘要…' : undefined,
+      );
       const strategy = new ResultReplacementStrategy(1, readFileReplacement);
       // read_file(docs/a.md) + 结果，另加一个非 read_file 工具，keepRecent=1 → 最早的 read_file 被替换
       const messages: Message[] = [
@@ -121,13 +123,25 @@ describe('ResultReplacementStrategy', () => {
         {
           role: 'assistant',
           content: 'a',
-          toolCalls: [{ id: 'c1', type: 'function' as const, function: { name: 'read_file', arguments: '{"path":"docs/a.md"}' } }],
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function' as const,
+              function: { name: 'read_file', arguments: '{"path":"docs/a.md"}' },
+            },
+          ],
         },
         { role: 'tool', content: 'A正文', toolCallId: 'c1' },
         {
           role: 'assistant',
           content: 'b',
-          toolCalls: [{ id: 'c2', type: 'function' as const, function: { name: 'write_file', arguments: '{}' } }],
+          toolCalls: [
+            {
+              id: 'c2',
+              type: 'function' as const,
+              function: { name: 'write_file', arguments: '{}' },
+            },
+          ],
         },
         { role: 'tool', content: 'B正文', toolCallId: 'c2' },
       ];
@@ -149,14 +163,32 @@ describe('ResultReplacementStrategy', () => {
         {
           role: 'assistant',
           content: 'a',
-          toolCalls: [{ id: 'c1', type: 'function' as const, function: { name: 'read_file', arguments: '{"path":"docs/x.md"}' } }],
+          toolCalls: [
+            {
+              id: 'c1',
+              type: 'function' as const,
+              function: { name: 'read_file', arguments: '{"path":"docs/x.md"}' },
+            },
+          ],
         },
         { role: 'tool', content: 'X正文', toolCallId: 'c1' },
-        { role: 'assistant', content: 'b', toolCalls: [{ id: 'c2', type: 'function' as const, function: { name: 'read_file', arguments: '{"path":"docs/y.md"}' } }] },
+        {
+          role: 'assistant',
+          content: 'b',
+          toolCalls: [
+            {
+              id: 'c2',
+              type: 'function' as const,
+              function: { name: 'read_file', arguments: '{"path":"docs/y.md"}' },
+            },
+          ],
+        },
         { role: 'tool', content: 'Y正文', toolCallId: 'c2' },
       ];
       strategy.compact(messages);
-      expect(messages.find((m) => m.toolCallId === 'c1')!.content).toBe('[Previous: used read_file]');
+      expect(messages.find((m) => m.toolCallId === 'c1')!.content).toBe(
+        '[Previous: used read_file]',
+      );
     });
   });
 });

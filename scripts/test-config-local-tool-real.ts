@@ -202,18 +202,23 @@ async function probeRealLoopRead(): Promise<void> {
     const metrics = loop.getMetrics();
     console.log(`\n\n  ⏱️  耗时：${duration}ms`);
     console.log(`  工具调用序列：${toolCallsSeen.join(' → ') || '(无工具调用)'}`);
-    console.log(`  指标：工具 ${metrics.tools.callCount} 次调用 / ${metrics.tools.failureCount} 次失败`);
+    console.log(
+      `  指标：工具 ${metrics.tools.callCount} 次调用 / ${metrics.tools.failureCount} 次失败`,
+    );
     console.log(`  回复摘要：${(response || '(空)').slice(0, 120)}...`);
 
     // 判定：真闭环应至少发起 ≥1 次 read_file 并产出文本回复
     const readCall = toolCallsSeen.filter((t) => t === 'read_file');
-    const ok = readCall.length > 0 && response.trim().length > 0 && metrics.tools.failureCount === 0;
+    const ok =
+      readCall.length > 0 && response.trim().length > 0 && metrics.tools.failureCount === 0;
     if (!ok) {
       throw new Error(
         `真实 LLM 闭环未满足：read_file=${readCall.length} 次，回复=${response.length} 字，工具失败=${metrics.tools.failureCount}`,
       );
     }
-    console.log(`\n  真实 LLM × AgentLoop × 多文件读取：✅ 闭环成立（read_file ${readCall.length} 次，0 失败，有总结）`);
+    console.log(
+      `\n  真实 LLM × AgentLoop × 多文件读取：✅ 闭环成立（read_file ${readCall.length} 次，0 失败，有总结）`,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -229,7 +234,9 @@ async function main(): Promise<void> {
   await probeRealLoopRead();
 
   console.log('\n' + '━'.repeat(64));
-  console.log('✅ 探针全部通过：能力位三态链路正确；连续多文件读取不中断、结果可靠；真实 LLM 工具闭环成立');
+  console.log(
+    '✅ 探针全部通过：能力位三态链路正确；连续多文件读取不中断、结果可靠；真实 LLM 工具闭环成立',
+  );
   console.log('━'.repeat(64));
 }
 

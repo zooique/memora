@@ -221,10 +221,13 @@ export function createHarness(overrides: Partial<SeedDeps> = {}) {
     tracer: mocks.tracer as unknown as ITracer,
     archiveMode: 'full',
     messages: undefined,
-    applyRolePackToolExposure: mocks.applyRolePackToolExposure as unknown as SeedDeps['applyRolePackToolExposure'],
+    applyRolePackToolExposure:
+      mocks.applyRolePackToolExposure as unknown as SeedDeps['applyRolePackToolExposure'],
     // 会议机制：按本轮装配视角刷新 loop 前缀（prepare 每轮调用）
-    refreshRolePackPrefixForRound: mocks.refreshRolePackPrefixForRound as unknown as SeedDeps['refreshRolePackPrefixForRound'],
-    consumeExecutionStream: mocks.consumeExecutionStream as unknown as SeedDeps['consumeExecutionStream'],
+    refreshRolePackPrefixForRound:
+      mocks.refreshRolePackPrefixForRound as unknown as SeedDeps['refreshRolePackPrefixForRound'],
+    consumeExecutionStream:
+      mocks.consumeExecutionStream as unknown as SeedDeps['consumeExecutionStream'],
     // 难度分级后台 Provider（默认 NULL → 判定 unknown，不影响既有测试主回答摘要）
     getBackgroundProvider: () => null,
     ...overrides,

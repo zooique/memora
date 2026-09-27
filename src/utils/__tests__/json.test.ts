@@ -69,7 +69,7 @@ describe('parseLlmJson · LLM 输出 JSON 解析', () => {
       expect(parseLlmJson(input)).toEqual({ key: 'value' });
     });
 
-    it('应保留字符串内容中的单引号（如 it\'s）', () => {
+    it("应保留字符串内容中的单引号（如 it's）", () => {
       const input = '{"text": "it\'s working"}';
       // 标准 JSON.parse 应直接通过（单引号在双引号字符串内合法）
       expect(parseLlmJson(input)).toEqual({ text: "it's working" });

@@ -29,10 +29,10 @@ export class ChatLockManager {
   }
 
   /**
- * 获取锁，返回 token（finally 校验）+ internalAbort（传给 loop.processUserInput）。
- * 超时保护：锁超时后自动释放锁（允许新对话进入），但不中断生成流——
- * LLM 无进展由 provider 层请求级/事件停滞超时兜底，锁不对整次对话时长设硬上限。
- */
+   * 获取锁，返回 token（finally 校验）+ internalAbort（传给 loop.processUserInput）。
+   * 超时保护：锁超时后自动释放锁（允许新对话进入），但不中断生成流——
+   * LLM 无进展由 provider 层请求级/事件停滞超时兜底，锁不对整次对话时长设硬上限。
+   */
   acquire(
     timeoutMs: number,
     onTimeout?: () => void,
@@ -49,10 +49,7 @@ export class ChatLockManager {
       if (this._chatLockToken !== token) {
         return;
       }
-      logger.warn(
-        { timeoutMs },
-        'chat() 锁超时，自动释放锁（不中断生成流）',
-      );
+      logger.warn({ timeoutMs }, 'chat() 锁超时，自动释放锁（不中断生成流）');
       // 仅释放锁（自增 token 令旧 generator 的 finally release 跳过清理，避免误清新调用），
       // 不 abort 生成流——LLM 无进展/停滞由 provider 层超时兜底（请求级 120s + SSE 事件停滞 120s），
       // 锁不再对「整次对话时长」设硬上限，慢但正常的长时间对话不被误杀。

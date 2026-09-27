@@ -33,7 +33,8 @@ export class ProjectRegistryCorruptError extends MemoraError {
 
   constructor(registryPath: string, cause?: unknown) {
     // cause 归一化为 Error 类型，符合 MemoraError.cause 契约
-    const causeError = cause instanceof Error ? cause : cause !== undefined ? new Error(String(cause)) : undefined;
+    const causeError =
+      cause instanceof Error ? cause : cause !== undefined ? new Error(String(cause)) : undefined;
     super({
       title: `项目注册表损坏：${registryPath}`,
       detail: causeError?.message,
@@ -106,9 +107,7 @@ export class ProjectRegistry {
   register(projectPath: string, name: string): void {
     const registry = this.read();
     // Windows 不区分大小写，大小写不同视为同一项目
-    const existing = registry.findIndex(
-      (e) => e.path.toLowerCase() === projectPath.toLowerCase(),
-    );
+    const existing = registry.findIndex((e) => e.path.toLowerCase() === projectPath.toLowerCase());
 
     const entry: ProjectEntry = {
       path: projectPath,
@@ -128,9 +127,7 @@ export class ProjectRegistry {
   /** 移除项目（路径大小写不敏感匹配） */
   unregister(projectPath: string): void {
     const registry = this.read();
-    const filtered = registry.filter(
-      (e) => e.path.toLowerCase() !== projectPath.toLowerCase(),
-    );
+    const filtered = registry.filter((e) => e.path.toLowerCase() !== projectPath.toLowerCase());
     this.write(filtered);
   }
 

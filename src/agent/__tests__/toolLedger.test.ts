@@ -29,7 +29,8 @@ describe('formatSegmentationFooter / parseReadFileCoverage（脚注格式单一�
 
 describe('parseReadFileCoverage（read_file 脚注解析）', () => {
   it('解析含分段脚注的结果 → 覆盖区间 + 已读正文（正文不含脚注）', () => {
-    const result = '第1行\n第2行\n[read_file 分段] 已显示第 1–2 行（共 100 行）。继续读用 offset=3。';
+    const result =
+      '第1行\n第2行\n[read_file 分段] 已显示第 1–2 行（共 100 行）。继续读用 offset=3。';
     const cov = parseReadFileCoverage(result);
     expect(cov).toEqual({ content: '第1行\n第2行', totalLines: 100, coverStart: 1, coverEnd: 2 });
   });
@@ -39,11 +40,14 @@ describe('parseReadFileCoverage（read_file 脚注解析）', () => {
   });
 
   it('offset 越界提示（无分段脚注格式）→ undefined', () => {
-    expect(parseReadFileCoverage('[read_file] docs/a.md 共 50 行；offset=99 已超出文件末尾')).toBeUndefined();
+    expect(
+      parseReadFileCoverage('[read_file] docs/a.md 共 50 行；offset=99 已超出文件末尾'),
+    ).toBeUndefined();
   });
 
   it('病态单行截断（退化分支带脚注）同样可解析', () => {
-    const result = '[该行超过单次读取预算，已截断] 超长行…\n[read_file 分段] 已显示第 3–3 行（共 500 行）。继续读用 offset=4。';
+    const result =
+      '[该行超过单次读取预算，已截断] 超长行…\n[read_file 分段] 已显示第 3–3 行（共 500 行）。继续读用 offset=4。';
     const cov = parseReadFileCoverage(result);
     expect(cov).toBeDefined();
     expect(cov!.coverStart).toBe(3);
@@ -70,7 +74,13 @@ describe('FileExposureLedger（文件覆盖度台账）', () => {
 
   it('invalidate 作废旧覆盖度（文件被修改后）', () => {
     const ledger = new FileExposureLedger();
-    ledger.record('docs/a.md', { totalLines: 1, coverStart: 1, coverEnd: 1, digest: 'd', cachedAtIteration: 1 });
+    ledger.record('docs/a.md', {
+      totalLines: 1,
+      coverStart: 1,
+      coverEnd: 1,
+      digest: 'd',
+      cachedAtIteration: 1,
+    });
     ledger.invalidate('docs/a.md');
     expect(ledger.get('docs/a.md')).toBeUndefined();
     expect(ledger.size).toBe(0);
@@ -78,8 +88,20 @@ describe('FileExposureLedger（文件覆盖度台账）', () => {
 
   it('clear 清空全部（闭环结束）', () => {
     const ledger = new FileExposureLedger();
-    ledger.record('a', { totalLines: 1, coverStart: 1, coverEnd: 1, digest: 'd', cachedAtIteration: 1 });
-    ledger.record('b', { totalLines: 2, coverStart: 2, coverEnd: 2, digest: 'e', cachedAtIteration: 2 });
+    ledger.record('a', {
+      totalLines: 1,
+      coverStart: 1,
+      coverEnd: 1,
+      digest: 'd',
+      cachedAtIteration: 1,
+    });
+    ledger.record('b', {
+      totalLines: 2,
+      coverStart: 2,
+      coverEnd: 2,
+      digest: 'e',
+      cachedAtIteration: 2,
+    });
     ledger.clear();
     expect(ledger.size).toBe(0);
   });
@@ -106,14 +128,26 @@ describe('formatLedgerStub（分支②回显文案）', () => {
   });
 
   it('单行覆盖用「X 行」表达', () => {
-    const cov: FileCoverage = { totalLines: 50, coverStart: 3, coverEnd: 3, digest: 'd', cachedAtIteration: 1 };
+    const cov: FileCoverage = {
+      totalLines: 50,
+      coverStart: 3,
+      coverEnd: 3,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
     expect(formatLedgerStub(cov)).toContain('覆盖 3 行');
   });
 });
 
 describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
   // 覆盖区间 1–20，总 100 行
-  const cov: FileCoverage = { totalLines: 100, coverStart: 1, coverEnd: 20, digest: 'd', cachedAtIteration: 1 };
+  const cov: FileCoverage = {
+    totalLines: 100,
+    coverStart: 1,
+    coverEnd: 20,
+    digest: 'd',
+    cachedAtIteration: 1,
+  };
 
   it('区间续读完全落在覆盖内 → true（冗余重读，应回显摘要）', () => {
     expect(shouldEchoLedgerStub({ offset: 1, limit: 20 }, cov)).toBe(true);
@@ -143,7 +177,13 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
   });
 
   it('从未覆盖过正文（coverEnd<=0）→ false（无摘要可回显，放行）', () => {
-    const none: FileCoverage = { totalLines: 100, coverStart: 1, coverEnd: 0, digest: 'd', cachedAtIteration: 1 };
+    const none: FileCoverage = {
+      totalLines: 100,
+      coverStart: 1,
+      coverEnd: 0,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
     expect(shouldEchoLedgerStub({ offset: 1, limit: 20 }, none)).toBe(false);
     expect(shouldEchoLedgerStub({ offset: 1 }, none)).toBe(false);
   });

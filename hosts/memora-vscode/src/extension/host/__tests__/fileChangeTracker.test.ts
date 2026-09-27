@@ -23,7 +23,9 @@ const ROOT = resolve('/proj');
 const abs = (rel: string): string => resolve(ROOT, rel);
 
 /** 内存文件系统假实现：避免真实 IO（本环境 rmSync 慢，纯逻辑更快更稳） */
-function makeIO(initial: Record<string, string> = {}): FileChangeIO & { set(p: string, c: string | null): void } {
+function makeIO(
+  initial: Record<string, string> = {},
+): FileChangeIO & { set(p: string, c: string | null): void } {
   const files = new Map<string, string>(Object.entries(initial));
   return {
     readTextFile: (p: string): string | null => (files.has(p) ? (files.get(p) as string) : null),
@@ -40,7 +42,10 @@ function makeClock(): () => number {
   return () => ++t;
 }
 
-function makeTracker(io: FileChangeIO, opts: Partial<FileChangeTrackerOptions> = {}): FileChangeTracker {
+function makeTracker(
+  io: FileChangeIO,
+  opts: Partial<FileChangeTrackerOptions> = {},
+): FileChangeTracker {
   return new FileChangeTracker(ROOT, { io, now: makeClock(), ...opts });
 }
 
@@ -55,7 +60,11 @@ describe('FileChangeTracker', () => {
     const io = makeIO({ [abs('a.md')]: 'old' });
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
     io.set(abs('a.md'), 'new'); // 模拟内核写盘
     const rec = tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
@@ -72,7 +81,11 @@ describe('FileChangeTracker', () => {
     const io = makeIO();
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'brand.md', content: 'x' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'brand.md', content: 'x' }),
+    });
     io.set(abs('brand.md'), 'x');
     const rec = tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
@@ -84,7 +97,11 @@ describe('FileChangeTracker', () => {
     const io = makeIO({ [abs('gone.md')]: 'bye' });
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'delete_file', args: JSON.stringify({ path: 'gone.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'delete_file',
+      args: JSON.stringify({ path: 'gone.md' }),
+    });
     io.set(abs('gone.md'), null); // 模拟删除
     const rec = tracker.noteToolResult({ toolCallId: 't1', name: 'delete_file', ok: true });
 
@@ -96,9 +113,19 @@ describe('FileChangeTracker', () => {
     const io = makeIO();
     const tracker = makeTracker(io);
 
-    expect(() => tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: undefined })).not.toThrow();
-    expect(() => tracker.noteToolStart({ toolCallId: 't2', name: 'write_file', args: '{not json' })).not.toThrow();
-    expect(() => tracker.noteToolStart({ toolCallId: 't3', name: 'write_file', args: JSON.stringify({ content: 'no path' }) })).not.toThrow();
+    expect(() =>
+      tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: undefined }),
+    ).not.toThrow();
+    expect(() =>
+      tracker.noteToolStart({ toolCallId: 't2', name: 'write_file', args: '{not json' }),
+    ).not.toThrow();
+    expect(() =>
+      tracker.noteToolStart({
+        toolCallId: 't3',
+        name: 'write_file',
+        args: JSON.stringify({ content: 'no path' }),
+      }),
+    ).not.toThrow();
     // 三条均未登记 pending → result 无记录
     expect(tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true })).toBeNull();
     expect(tracker.size()).toBe(0);
@@ -108,11 +135,21 @@ describe('FileChangeTracker', () => {
     const io = makeIO({ [abs('a.md')]: 'old' });
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
     expect(tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: false })).toBeNull();
 
-    tracker.noteToolStart({ toolCallId: 't2', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
-    expect(tracker.noteToolResult({ toolCallId: 't2', name: 'write_file', ok: false, blocked: true })).toBeNull();
+    tracker.noteToolStart({
+      toolCallId: 't2',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
+    expect(
+      tracker.noteToolResult({ toolCallId: 't2', name: 'write_file', ok: false, blocked: true }),
+    ).toBeNull();
 
     expect(tracker.size()).toBe(0);
   });
@@ -120,7 +157,11 @@ describe('FileChangeTracker', () => {
   it('非落盘工具（read_file）不追踪', () => {
     const io = makeIO();
     const tracker = makeTracker(io);
-    tracker.noteToolStart({ toolCallId: 't1', name: 'read_file', args: JSON.stringify({ path: 'a.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'read_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
     expect(tracker.noteToolResult({ toolCallId: 't1', name: 'read_file', ok: true })).toBeNull();
     expect(tracker.size()).toBe(0);
   });
@@ -129,11 +170,19 @@ describe('FileChangeTracker', () => {
     const io = makeIO({ [abs('a.md')]: 'v0' });
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md', mode: 'overwrite' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md', mode: 'overwrite' }),
+    });
     io.set(abs('a.md'), 'v1');
     tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
-    tracker.noteToolStart({ toolCallId: 't2', name: 'write_file', args: JSON.stringify({ path: 'a.md', mode: 'append' }) });
+    tracker.noteToolStart({
+      toolCallId: 't2',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md', mode: 'append' }),
+    });
     io.set(abs('a.md'), 'v2');
     const rec = tracker.noteToolResult({ toolCallId: 't2', name: 'write_file', ok: true });
 
@@ -147,7 +196,11 @@ describe('FileChangeTracker', () => {
   it('确认即注销：drop 后 size 归零、get 为 undefined', () => {
     const io = makeIO({ [abs('a.md')]: 'old' });
     const tracker = makeTracker(io);
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
     io.set(abs('a.md'), 'new');
     tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
@@ -159,7 +212,11 @@ describe('FileChangeTracker', () => {
   it('跨会话存活语义：记录不随「新一轮」清空，仅 clear（= 扩展重启）清空', () => {
     const io = makeIO({ [abs('a.md')]: 'old' });
     const tracker = makeTracker(io);
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
     io.set(abs('a.md'), 'new');
     tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
@@ -176,15 +233,27 @@ describe('FileChangeTracker', () => {
     const io = makeIO({ [abs('a.md')]: 'a0', [abs('b.md')]: 'b0' });
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'a.md' }),
+    });
     io.set(abs('a.md'), 'a1');
     tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
-    tracker.noteToolStart({ toolCallId: 't2', name: 'write_file', args: JSON.stringify({ path: 'b.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't2',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'b.md' }),
+    });
     io.set(abs('b.md'), 'b1');
     tracker.noteToolResult({ toolCallId: 't2', name: 'write_file', ok: true });
 
-    tracker.noteToolStart({ toolCallId: 't3', name: 'write_file', args: JSON.stringify({ path: 'c.md' }) });
+    tracker.noteToolStart({
+      toolCallId: 't3',
+      name: 'write_file',
+      args: JSON.stringify({ path: 'c.md' }),
+    });
     io.set(abs('c.md'), 'c1');
     tracker.noteToolResult({ toolCallId: 't3', name: 'write_file', ok: true });
 
@@ -198,7 +267,11 @@ describe('FileChangeTracker', () => {
 
     for (const name of ['a.md', 'b.md', 'c.md']) {
       const id = `t-${name}`;
-      tracker.noteToolStart({ toolCallId: id, name: 'write_file', args: JSON.stringify({ path: name }) });
+      tracker.noteToolStart({
+        toolCallId: id,
+        name: 'write_file',
+        args: JSON.stringify({ path: name }),
+      });
       io.set(abs(name), 'x');
       tracker.noteToolResult({ toolCallId: id, name: 'write_file', ok: true });
     }
@@ -213,7 +286,11 @@ describe('FileChangeTracker', () => {
     const ABS = resolve('/abs/x.md');
     const io = makeIO({ [ABS]: 'old' });
     const tracker = makeTracker(io);
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: ABS }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: ABS }),
+    });
     io.set(ABS, 'new');
     const rec = tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
     expect(rec?.path).toBe(ABS);
@@ -225,11 +302,19 @@ describe('FileChangeTracker', () => {
     const io = makeIO({ [INSIDE]: 'old', [OUTSIDE]: 'old' });
     const tracker = makeTracker(io);
 
-    tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: INSIDE }) });
+    tracker.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: INSIDE }),
+    });
     io.set(INSIDE, 'new');
     const inside = tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
 
-    tracker.noteToolStart({ toolCallId: 't2', name: 'write_file', args: JSON.stringify({ path: OUTSIDE }) });
+    tracker.noteToolStart({
+      toolCallId: 't2',
+      name: 'write_file',
+      args: JSON.stringify({ path: OUTSIDE }),
+    });
     io.set(OUTSIDE, 'new');
     const outside = tracker.noteToolResult({ toolCallId: 't2', name: 'write_file', ok: true });
 

@@ -133,10 +133,7 @@ export class TypedEventEmitter<EventMap extends object> {
   }
 
   /** 一次性订阅：触发后自动移除，再转发给 handler（防泄漏） */
-  once<K extends keyof EventMap & string>(
-    event: K,
-    handler: (event: EventMap[K]) => void,
-  ): void {
+  once<K extends keyof EventMap & string>(event: K, handler: (event: EventMap[K]) => void): void {
     const wrapper = ((data: EventMap[K]) => {
       this.off(event, wrapper as (event: EventMap[K]) => void);
       handler(data);

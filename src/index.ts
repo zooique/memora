@@ -145,7 +145,12 @@ export { InMemoryStorage } from '@/memory/inMemoryStorage.js';
 
 // ─── 网络搜索导出 ──────────────────────────────────────────
 // IWebSearchProvider 接口：宿主项目可实现此接口注入自定义搜索引擎
-export type { IWebSearchProvider, SearchResult, WebSearchOptions, SearchEndpoint } from '@/web-search/types.js';
+export type {
+  IWebSearchProvider,
+  SearchResult,
+  WebSearchOptions,
+  SearchEndpoint,
+} from '@/web-search/types.js';
 // FetchWebSearchProvider：默认搜索实现（零依赖开箱即用）；safeSearch：带超时保护的搜索包装（宿主可复用）
 export { FetchWebSearchProvider } from '@/web-search/fetchWebSearchProvider.js';
 // buildSearchEndpoints：构建搜索端点降级链。入参为「内核预设名 | 宿主自定义 SearchEndpoint」混排；

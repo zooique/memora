@@ -9,7 +9,11 @@
  *   - options.timeoutMs 传入执行器
  */
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import type { CodeExecutionOptions, CodeExecutionResult, ICodeExecutionProvider } from '@/code-exec/types.js';
+import type {
+  CodeExecutionOptions,
+  CodeExecutionResult,
+  ICodeExecutionProvider,
+} from '@/code-exec/types.js';
 import { safeExecuteCode } from '@/code-exec/codeExecutionProvider.js';
 
 /** 创建一个模拟的执行提供者（总是成功） */

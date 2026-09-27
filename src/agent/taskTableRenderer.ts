@@ -34,10 +34,7 @@ export const PLAN_ITEM_DESC_MAX_CHARS = 38;
  *   截断而非全局 FIFO）
  * @returns 格式化后的任务表文本（空计划返回空字符串）
  */
-export function renderTaskTable(
-  plan: PlanItem[],
-  planItemLog?: PlanItemOutcome[],
-): string {
+export function renderTaskTable(plan: PlanItem[], planItemLog?: PlanItemOutcome[]): string {
   if (plan.length === 0) return '';
 
   const doneCount = plan.filter((s) => s.status === 'done').length;
@@ -81,10 +78,14 @@ export function renderTaskTable(
  */
 function statusToLabel(status: PlanItem['status']): string {
   switch (status) {
-    case 'pending': return '待执行';
-    case 'active': return '执行中';
-    case 'done': return '已完成';
-    case 'blocked': return '已阻塞';
+    case 'pending':
+      return '待执行';
+    case 'active':
+      return '执行中';
+    case 'done':
+      return '已完成';
+    case 'blocked':
+      return '已阻塞';
   }
 }
 
@@ -95,8 +96,7 @@ function statusToLabel(status: PlanItem['status']): string {
  * （跑测试/检查产出），宁可多提示一次补真验证，不漏掉。Claude Code TodoWrite 同款机制
  * （`/verif/i` 词根判定），此处按中文场景扩展。
  */
-const VERIFY_ITEM_PATTERN =
-  /(验证|测试|检查|校验|核实|复验|跑通|test|verify|check|lint)/i;
+const VERIFY_ITEM_PATTERN = /(验证|测试|检查|校验|核实|复验|跑通|test|verify|check|lint)/i;
 
 /**
  * 收尾验证提示（Claude Code TodoWrite nudge 同款）
@@ -113,9 +113,7 @@ const VERIFY_ITEM_PATTERN =
  * @param plan 更新后的计划任务项列表
  * @returns 命中返回提示文案（含换行前导，便于追加到工具结果）；未命中返回 null
  */
-export function buildCompletionVerifyNudge(
-  plan: PlanItem[],
-): string | null {
+export function buildCompletionVerifyNudge(plan: PlanItem[]): string | null {
   if (plan.length < 3) return null;
   if (!plan.every((s) => s.status === 'done')) return null;
   if (plan.some((s) => VERIFY_ITEM_PATTERN.test(s.description))) return null;

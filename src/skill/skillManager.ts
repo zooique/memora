@@ -122,11 +122,9 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    */
   register(skill: SkillEntry): void {
     if (this.items.some((s) => s.name === skill.name)) {
-      throw configError(
-        `技能 "${skill.name}" 已存在，不能重复注册`,
-        undefined,
-        ['请使用不同的技能名称'],
-      );
+      throw configError(`技能 "${skill.name}" 已存在，不能重复注册`, undefined, [
+        '请使用不同的技能名称',
+      ]);
     }
     this.registerRuntimeItem(skill);
     logger.info({ name: skill.name }, '技能已注册（运行时注入）');
@@ -149,7 +147,14 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
    * compress=true 时描述截断至 20 字（技能较多时的 token 节约）。
    */
   static formatSkillForPrompt(
-    skill: { name?: string; description?: string; layer3?: { readonly resources: readonly unknown[]; readonly scripts: readonly unknown[] } } | undefined | null,
+    skill:
+      | {
+          name?: string;
+          description?: string;
+          layer3?: { readonly resources: readonly unknown[]; readonly scripts: readonly unknown[] };
+        }
+      | undefined
+      | null,
     fallbackName?: string,
     compress = false,
   ): string {
@@ -157,12 +162,14 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     if (!label) return '';
     let desc = '';
     if (skill?.description) {
-      const descText = compress && skill.description.length > 20
-        ? skill.description.slice(0, 20) + '…'
-        : skill.description;
+      const descText =
+        compress && skill.description.length > 20
+          ? skill.description.slice(0, 20) + '…'
+          : skill.description;
       desc = `：${descText}`;
     }
-    const hasL3 = skill?.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0);
+    const hasL3 =
+      skill?.layer3 && (skill.layer3.resources.length > 0 || skill.layer3.scripts.length > 0);
     const l3Tag = hasL3 ? '（含资源/脚本）' : '';
     return `- ${label}${desc}${l3Tag}`;
   }
@@ -231,24 +238,39 @@ export class SkillManager extends ConfigResourceManager<SkillEntry> {
     // 读取收口于 fileSafe.readFileCapped（统一长度上限保护，与角色包内容读取同级）
     const raw = await readFileCapped(filePath);
     if (raw === null) {
-      return { ok: false, issues: [{ level: 'error', field: 'file', message: '无法读取技能文件' }] };
+      return {
+        ok: false,
+        issues: [{ level: 'error', field: 'file', message: '无法读取技能文件' }],
+      };
     }
     const { frontmatter, body } = parseFrontmatter(raw);
 
     // 无 frontmatter 结构（fallback：整体落入 body 且无任何键值）→ 不被识别
     if (Object.keys(frontmatter).length === 0 && body === raw) {
-      issues.push({ level: 'error', field: 'frontmatter', message: '缺少 frontmatter（文件需以 --- 开头声明 name/description）' });
+      issues.push({
+        level: 'error',
+        field: 'frontmatter',
+        message: '缺少 frontmatter（文件需以 --- 开头声明 name/description）',
+      });
     }
     const desc = frontmatter['description'];
     if (!desc || !desc.trim()) {
-      issues.push({ level: 'error', field: 'description', message: '缺少 description：渐进披露不暴露，模型不知何时激活此技能' });
+      issues.push({
+        level: 'error',
+        field: 'description',
+        message: '缺少 description：渐进披露不暴露，模型不知何时激活此技能',
+      });
     }
     if (!body.trim()) {
       issues.push({ level: 'error', field: 'body', message: '技能正文为空，无可执行指令' });
     }
     const layer = frontmatter['layer'];
     if (layer && layer !== 'agent' && layer !== 'project') {
-      issues.push({ level: 'warning', field: 'layer', message: `layer 值「${layer}」非法，将回退为 project` });
+      issues.push({
+        level: 'warning',
+        field: 'layer',
+        message: `layer 值「${layer}」非法，将回退为 project`,
+      });
     }
     return { ok: issues.every((i) => i.level !== 'error'), issues };
   }

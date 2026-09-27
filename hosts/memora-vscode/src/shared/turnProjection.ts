@@ -49,7 +49,12 @@ export function toRoundView(live: LiveRoundState, status: RoundStatus = 'pending
     completedAt: undefined,
     processEvents: live.processEvents,
     assistantMessage: hasText
-      ? { id: `live-${live.roundId}`, role: 'assistant', content: live.streamingText!, timestamp: live.userMessage.timestamp }
+      ? {
+          id: `live-${live.roundId}`,
+          role: 'assistant',
+          content: live.streamingText!,
+          timestamp: live.userMessage.timestamp,
+        }
       : undefined,
     live: true,
   };

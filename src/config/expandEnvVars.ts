@@ -31,7 +31,12 @@ export function expandEnvVars(config: Config): Config {
     ? Object.fromEntries(
         Object.entries(config.llm.providers).map(([key, p]) => [
           key,
-          { ...p, apiKey: expand(p.apiKey), baseUrl: expand(p.baseUrl), model: expand(p.model) ?? p.model },
+          {
+            ...p,
+            apiKey: expand(p.apiKey),
+            baseUrl: expand(p.baseUrl),
+            model: expand(p.model) ?? p.model,
+          },
         ]),
       )
     : undefined;

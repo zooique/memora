@@ -194,7 +194,10 @@ describe('assembleComponents', () => {
 
   describe('skillManager 复用', () => {
     it('existingSkillManager=null 时新建 SkillManager 实例', async () => {
-      const output = await assembleComponents(createPctx(), createInput({ existingSkillManager: null }));
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({ existingSkillManager: null }),
+      );
       // 返回值应是新建的 SkillManager 实例
       expect(output.skillManager).toBeInstanceOf(SkillManager);
     });
@@ -204,7 +207,10 @@ describe('assembleComponents', () => {
       const first = await assembleComponents(createPctx(), createInput());
       const existing = first.skillManager;
 
-      const second = await assembleComponents(createPctx(), createInput({ existingSkillManager: existing }));
+      const second = await assembleComponents(
+        createPctx(),
+        createInput({ existingSkillManager: existing }),
+      );
       // 返回值应严格等于传入引用（=== 引用相等）
       expect(second.skillManager).toBe(existing);
     });
@@ -402,41 +408,41 @@ describe('assembleComponents', () => {
 
   // ─── 任务表未完成硬约束 ─────────────────────
 
-describe('任务表未完成硬约束（P3，2026-09-22）', () => {
-  it('存在未完成任务项时 getTaskTable 追加「不得收尾」执行约束（首行进度契约不变）', async () => {
-    const output = await assembleComponents(
-      createPctx(),
-      createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
-    );
-    output.sessionManager.createCheckpoint('回归：任务表未完成约束');
-    output.sessionManager.writePlan('overwrite', [
-      { description: '步骤一' },
-      { description: '步骤二' },
-    ]);
-    const table = output.loop.getTaskTable!();
-    // 首行 [任务进度: 契约不可变（loop 替换式注入靠此前缀清理旧表）
-    expect(table).toContain('[任务进度: 0/2');
-    // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，真实故障轮实证）
-    expect(table).toContain('（执行约束，非历史信息）仍有任务项未标记「已完成」');
-    expect(table).toContain('task_table_update');
+  describe('任务表未完成硬约束（P3，2026-09-22）', () => {
+    it('存在未完成任务项时 getTaskTable 追加「不得收尾」执行约束（首行进度契约不变）', async () => {
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
+      );
+      output.sessionManager.createCheckpoint('回归：任务表未完成约束');
+      output.sessionManager.writePlan('overwrite', [
+        { description: '步骤一' },
+        { description: '步骤二' },
+      ]);
+      const table = output.loop.getTaskTable!();
+      // 首行 [任务进度: 契约不可变（loop 替换式注入靠此前缀清理旧表）
+      expect(table).toContain('[任务进度: 0/2');
+      // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，真实故障轮实证）
+      expect(table).toContain('（执行约束，非历史信息）仍有任务项未标记「已完成」');
+      expect(table).toContain('task_table_update');
+    });
+
+    it('全部任务项 done 时不追加约束（正常收尾不干扰）', async () => {
+      const output = await assembleComponents(
+        createPctx(),
+        createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
+      );
+      output.sessionManager.createCheckpoint('回归：任务表全 done');
+      output.sessionManager.writePlan('overwrite', [{ description: '单步完成' }]);
+      const cp = output.sessionManager.getCheckpoint()!;
+      expect(output.sessionManager.updatePlanItemStatus(cp.plan[0]!.id, 'done')).toBe(true);
+      const table = output.loop.getTaskTable!();
+      expect(table).toContain('已完成');
+      expect(table).not.toContain('（执行约束');
+    });
   });
 
-  it('全部任务项 done 时不追加约束（正常收尾不干扰）', async () => {
-    const output = await assembleComponents(
-      createPctx(),
-      createInput({ hooks: { emit: vi.fn(), isChatBusy: () => false, requestPause: vi.fn() } }),
-    );
-    output.sessionManager.createCheckpoint('回归：任务表全 done');
-    output.sessionManager.writePlan('overwrite', [{ description: '单步完成' }]);
-    const cp = output.sessionManager.getCheckpoint()!;
-    expect(output.sessionManager.updatePlanItemStatus(cp.plan[0]!.id, 'done')).toBe(true);
-    const table = output.loop.getTaskTable!();
-    expect(table).toContain('已完成');
-    expect(table).not.toContain('（执行约束');
-  });
-});
-
-// ─── task_table_update 全链寻址（防 mock 盲区）────────────────
+  // ─── task_table_update 全链寻址（防 mock 盲区）────────────────
 
   describe('task_table_update 全链寻址：短 id → 真实 sessionManager 命中', () => {
     async function assembleReal(): Promise<Awaited<ReturnType<typeof assembleComponents>>> {
@@ -600,7 +606,9 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
     const requestPause = vi.fn();
     const out = await assembleWithHooks({ emit, requestPause });
     out.loop.onPendingQuestion!([{ slot: 'ask', question: '确认执行？' }]);
-    expect(emit).toHaveBeenCalledWith(AGENT_EVENTS.questionPending, [{ slot: 'ask', question: '确认执行？' }]);
+    expect(emit).toHaveBeenCalledWith(AGENT_EVENTS.questionPending, [
+      { slot: 'ask', question: '确认执行？' },
+    ]);
     expect(requestPause).toHaveBeenCalled();
   });
 
@@ -667,7 +675,9 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
   it('planManager.updatePlanItem：不存在的任务项返回 PLAN_ITEM_NOT_FOUND', async () => {
     const out = await assembleWithHooks();
     out.sessionManager.createCheckpoint('测试计划');
-    expect(out.toolExec.planManager!.updatePlanItem('nope', 'done')).toContain('[ERR:PLAN_ITEM_NOT_FOUND]');
+    expect(out.toolExec.planManager!.updatePlanItem('nope', 'done')).toContain(
+      '[ERR:PLAN_ITEM_NOT_FOUND]',
+    );
   });
 
   it('planManager.getPlan：无 checkpoint 时返回空计划', async () => {
@@ -677,7 +687,9 @@ describe('assembler · wireRuntimeCallbacks 运行时回调', () => {
 
   it('tracer 注入时 contextPreparer 走非空容量来源分支', async () => {
     const tracer = {
-      startSpan: vi.fn().mockReturnValue({ setAttribute: vi.fn(), end: vi.fn(), recordException: vi.fn() }),
+      startSpan: vi
+        .fn()
+        .mockReturnValue({ setAttribute: vi.fn(), end: vi.fn(), recordException: vi.fn() }),
     } as never;
     const out = await assembleComponents(
       createPctx(),

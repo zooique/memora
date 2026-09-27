@@ -227,10 +227,7 @@ describe('LockManager · 残留锁处理', () => {
       const lm = new LockManager();
       await lm.acquire(memoraDir);
 
-      expect(infoSpy).toHaveBeenCalledWith(
-        { pid: deadPid },
-        '清理残留锁文件（进程已退出）',
-      );
+      expect(infoSpy).toHaveBeenCalledWith({ pid: deadPid }, '清理残留锁文件（进程已退出）');
       // 清理后以当前进程身份重新获取锁
       expect(lm.currentPath).toBe(lockPath);
       expect(JSON.parse(readFileSync(lockPath, 'utf-8')).pid).toBe(process.pid);

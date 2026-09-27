@@ -36,7 +36,9 @@ describe('AGENT_CONSTANTS · Agent 门面层常量', () => {
   it('loader 默认 maxContextTokens 应与 AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS 一致（跨模块护栏）', () => {
     // parseConfig({}) 走 DEFAULT_CONFIG 默认合并路径；若 loader 与 agent/constants
     // 两处 120_000 任一被改而另一未同步，本用例将捕获漂移。
-    expect(parseConfig({}).memory.maxContextTokens).toBe(AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS);
+    expect(parseConfig({}).memory.maxContextTokens).toBe(
+      AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
+    );
   });
 
   it('strategyKeys 的 MIN_CONTEXT_LIMIT 应与真源一致（跨模块护栏 · 第三处镜像）', () => {

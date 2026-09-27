@@ -156,7 +156,13 @@ describe('AgentLoop · LLM 调用指标', () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // 第一轮：返回 toolCalls
-        [{ toolCalls: [{ id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } },
+            ],
+          },
+        ],
         // 第二轮：返回纯文本
         [{ content: '完成' }],
       ]),
@@ -185,7 +191,13 @@ describe('AgentLoop · 工具调用指标', () => {
     const toolExecutor = vi.fn().mockResolvedValue('工具结果');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [{ toolCalls: [{ id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } },
+            ],
+          },
+        ],
         [{ content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -203,7 +215,13 @@ describe('AgentLoop · 工具调用指标', () => {
     const toolExecutor = vi.fn().mockRejectedValue(new Error('工具执行失败'));
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [{ toolCalls: [{ id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } }] }],
+        [
+          {
+            toolCalls: [
+              { id: 'tc1', type: 'function', function: { name: 'test_tool', arguments: '{}' } },
+            ],
+          },
+        ],
         [{ content: '工具失败了，我换个方式' }],
       ]),
       bootstrapMemories: [],
@@ -221,13 +239,15 @@ describe('AgentLoop · 工具调用指标', () => {
     const toolExecutor = vi.fn().mockResolvedValue('结果');
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [{
-          toolCalls: [
-            { id: 'tc1', type: 'function', function: { name: 'tool1', arguments: '{}' } },
-            { id: 'tc2', type: 'function', function: { name: 'tool2', arguments: '{}' } },
-            { id: 'tc3', type: 'function', function: { name: 'tool3', arguments: '{}' } },
-          ],
-        }],
+        [
+          {
+            toolCalls: [
+              { id: 'tc1', type: 'function', function: { name: 'tool1', arguments: '{}' } },
+              { id: 'tc2', type: 'function', function: { name: 'tool2', arguments: '{}' } },
+              { id: 'tc3', type: 'function', function: { name: 'tool3', arguments: '{}' } },
+            ],
+          },
+        ],
         [{ content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -268,7 +288,8 @@ describe('AgentLoop · 上下文管理指标', () => {
     // 设置极小的 maxContextTokens 强制触发截断
     // 注意：truncateMessages 要求 messages.length > 3 且 estimated > maxContextTokens
     // system prompt 本身约 17 tokens，需要用户输入足够长才能超 50 tokens
-    const longInput = '这是一段非常长的用户输入内容用于确保总 token 数超过 maxContextTokens 阈值从而触发上下文截断逻辑';
+    const longInput =
+      '这是一段非常长的用户输入内容用于确保总 token 数超过 maxContextTokens 阈值从而触发上下文截断逻辑';
     const loop = new AgentLoop({
       provider: mockProvider([{ content: '回复' }]),
       bootstrapMemories: [],
@@ -294,18 +315,21 @@ describe('AgentLoop · 任务表观测量', () => {
   it('调用 task_table_write 后 plan.taskTableWriteCount 累加', async () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [{
-          toolCalls: [
-            {
-              id: 'tc1',
-              type: 'function',
-              function: {
-                name: 'task_table_write',
-                arguments: '{"mode":"overwrite","items":[{"description":"任务项1"},{"description":"任务项2"}]}',
+        [
+          {
+            toolCalls: [
+              {
+                id: 'tc1',
+                type: 'function',
+                function: {
+                  name: 'task_table_write',
+                  arguments:
+                    '{"mode":"overwrite","items":[{"description":"任务项1"},{"description":"任务项2"}]}',
+                },
               },
-            },
-          ],
-        }],
+            ],
+          },
+        ],
         [{ content: '完成' }],
       ]),
       bootstrapMemories: [],
@@ -360,7 +384,10 @@ describe('AgentLoop · 任务表观测量', () => {
       toolExecutor: vi.fn(),
     });
     // 模拟 active step 随计划重建变化（overwrite 后 step1 为全新 UUID）
-    let current: { planItemId: string; title: string } | null = { planItemId: 'old-step', title: '旧计划' };
+    let current: { planItemId: string; title: string } | null = {
+      planItemId: 'old-step',
+      title: '旧计划',
+    };
     loop.getActivePlanItemMeta = () => current;
 
     await consumeGenerator(loop.processUserInput('任务一'));
@@ -542,7 +569,9 @@ describe('AgentMetrics · 类型结构', () => {
     // 计数标准：user 消息数 = 4（占位 99 被真实重算覆盖）
     expect(occ.dialogueCount).toBe(4);
     // 容量诚实统计：dialogueTokens 重算为真实 messages 估算（含新用户输入，>0 且等于直接估算）
-    const conv = (loop as unknown as { getConversationMessages: () => Array<{ role: string }> }).getConversationMessages();
+    const conv = (
+      loop as unknown as { getConversationMessages: () => Array<{ role: string }> }
+    ).getConversationMessages();
     expect(occ.dialogueTokens).toBe(loop.estimateTokens(conv as never));
     expect(occ.dialogueTokens).toBeGreaterThan(0);
     // 其余段不被重算（守 SSOT，沿用快照）
@@ -571,7 +600,9 @@ describe('AgentMetrics · 类型结构', () => {
     expect(loop.getMetrics().context.occupancy!.dialogueCount).toBe(2);
     const beforeTokens = loop.getMetrics().context.occupancy!.dialogueTokens;
     // assistant 落盘（哪怕残缺/被中止也如实 append）→ 容量补含回答全文
-    (loop as unknown as { appendAssistantText: (c: string) => void }).appendAssistantText('这是回复');
+    (loop as unknown as { appendAssistantText: (c: string) => void }).appendAssistantText(
+      '这是回复',
+    );
     const occ = loop.getMetrics().context.occupancy!;
     expect(occ.dialogueCount).toBe(2); // 条数仍以 user 计，assistant 不增条数
     expect(occ.dialogueTokens).toBeGreaterThan(beforeTokens); // 容量含 assistant 全文
@@ -607,7 +638,9 @@ describe('AgentLoop · 空响应兜底计数', () => {
     expect(loop.getMetrics().llm.emptyResponseCount).toBe(1);
     // 兜底文案出现在 assistant 消息（未把模型拒绝/瞬态空误当合法产出）
     expect(
-      loop.getMessages().some((m) => m.role === 'assistant' && String(m.content).includes('empty response')),
+      loop
+        .getMessages()
+        .some((m) => m.role === 'assistant' && String(m.content).includes('empty response')),
     ).toBe(true);
   });
 });

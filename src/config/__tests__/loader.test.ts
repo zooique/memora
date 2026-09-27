@@ -489,48 +489,56 @@ describe('config/loader · 错误路径覆盖', () => {
   // ── #2: providers 为数组 → 静默降级为 undefined ──
 
   it('providers 为数组时应静默降级为 undefined', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      llm: { providers: ['not', 'an', 'object'] },
-    }));
+    const configPath = writeConfigFile(
+      JSON.stringify({
+        llm: { providers: ['not', 'an', 'object'] },
+      }),
+    );
     const config = await loadConfig(configPath);
     // 数组类型触发早返回，providers 被忽略
     expect(config.llm.providers).toBeUndefined();
   });
 
   it('providers.<key> 值为数组时应抛 configError', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      llm: {
-        providers: {
-          bad: ['array', 'value'], // 单个 provider 条目是数组
+    const configPath = writeConfigFile(
+      JSON.stringify({
+        llm: {
+          providers: {
+            bad: ['array', 'value'], // 单个 provider 条目是数组
+          },
         },
-      },
-    }));
+      }),
+    );
     await expect(loadConfig(configPath)).rejects.toThrow('必须是对象');
   });
 
   // ── #3: providers.<key> 缺 provider 字段 ─────────────────────
 
   it('providers.<key> 缺 provider 字段时应抛 configError', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      llm: {
-        providers: {
-          bad: { model: 'some-model' }, // 缺 provider 字段
+    const configPath = writeConfigFile(
+      JSON.stringify({
+        llm: {
+          providers: {
+            bad: { model: 'some-model' }, // 缺 provider 字段
+          },
         },
-      },
-    }));
+      }),
+    );
     await expect(loadConfig(configPath)).rejects.toThrow('providers.bad.provider');
   });
 
   // ── #4: providers.<key> 缺 model 字段 ────────────────────────
 
   it('providers.<key> 缺 model 字段时应抛 configError', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      llm: {
-        providers: {
-          bad: { provider: 'deepseek' }, // 缺 model 字段
+    const configPath = writeConfigFile(
+      JSON.stringify({
+        llm: {
+          providers: {
+            bad: { provider: 'deepseek' }, // 缺 model 字段
+          },
         },
-      },
-    }));
+      }),
+    );
     await expect(loadConfig(configPath)).rejects.toThrow('providers.bad.model');
   });
 
@@ -540,15 +548,17 @@ describe('config/loader · 错误路径覆盖', () => {
   // ── #7: allowedPaths 含非字符串元素 ─────────────────────────
 
   it('allowedPaths 含非字符串元素时应抛 configError', async () => {
-    const configPath = writeConfigFile(JSON.stringify({
-      llm: {
-        providers: {
-          deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+    const configPath = writeConfigFile(
+      JSON.stringify({
+        llm: {
+          providers: {
+            deepseek: { provider: 'deepseek', model: 'deepseek-chat' },
+          },
+          active: 'deepseek',
         },
-        active: 'deepseek',
-      },
-      allowedPaths: ['/valid/path', 123, '/another'], // 第 2 个元素是数字
-    }));
+        allowedPaths: ['/valid/path', 123, '/another'], // 第 2 个元素是数字
+      }),
+    );
     await expect(loadConfig(configPath)).rejects.toThrow('allowedPaths[1]');
   });
 });
@@ -623,7 +633,9 @@ describe('config/loader · 配置边界校验', () => {
     //    （内核不替用户裁决「模型能吃多大」；静默替换会造成「UI 显示值 ≠ 真实生效值」）
     const cfgSmall = writeConfig({
       llm: {
-        providers: { deepseek: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 100 } },
+        providers: {
+          deepseek: { provider: 'deepseek', model: 'deepseek-chat', contextWindow: 100 },
+        },
         active: 'deepseek',
       },
     });

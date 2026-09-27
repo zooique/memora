@@ -13,7 +13,12 @@ import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
 import type { ProviderRouter, TaskType } from '@/llm/types.js';
 import type { Memory } from '@/memory/types.js';
 import type { ToolDefinition } from '@/agent/toolExecutor.js';
-import { ASK_USER_TOOL, COMPRESS_CONTEXT_TOOL, REMEMBER_INTEL_TOOL, OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
+import {
+  ASK_USER_TOOL,
+  COMPRESS_CONTEXT_TOOL,
+  REMEMBER_INTEL_TOOL,
+  OPAQUE_WRITE_TOOL_NAMES,
+} from '@/agent/builtinTools.js';
 import type {
   AgentChunk,
   UIMessages,
@@ -56,11 +61,7 @@ import {
   normalizePathKey,
   type CacheEntry,
 } from '@/agent/toolResultCache.js';
-import {
-  createDefaultGuards,
-  GUARD_THRESHOLDS,
-  type GuardThresholds,
-} from '@/agent/guardRail.js';
+import { createDefaultGuards, GUARD_THRESHOLDS, type GuardThresholds } from '@/agent/guardRail.js';
 import {
   FileExposureLedger,
   parseReadFileCoverage,
@@ -160,8 +161,7 @@ export interface AgentLoopOptions {
  * 先注入型（interject → appendUser）后挂起型（pause → yield paused）。
  */
 type InterruptRequest =
-  | { readonly kind: 'pause' }
-  | { readonly kind: 'interject'; readonly content: string };
+  { readonly kind: 'pause' } | { readonly kind: 'interject'; readonly content: string };
 
 /*
  * 职责边界登记（暂不拆分）
@@ -409,7 +409,8 @@ export class AgentLoop {
     //   strategy.stepBudget > 0 → 角色包声明的步数预算（配多少给多少）
     //   strategy.stepBudget = 0 → 这里的 maxIterations 兜底
     this.maxIterations = opts.maxIterations ?? DEFAULT_MAX_ITERATIONS;
-    this.providerContextWindow = opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
+    this.providerContextWindow =
+      opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS;
     // 有效窗口初值 = provider 窗口（构造期 strategy 为默认策略，contextLimit=0 → 不设额外上限）；
     // 后续 setStrategy / setContextWindow 任一变更都会经 #recomputeEffectiveWindow 重算。
     this.maxContextTokens = this.providerContextWindow;
@@ -836,9 +837,8 @@ export class AgentLoop {
     // stepBudget > 0 → 角色包声明了明确的步数预算，用它；
     // stepBudget = 0 → 不声明，用 loop.maxIterations（内核兜底 DEFAULT_MAX_ITERATIONS）。
     // 这样角色包配 stepBudget=200 → 跑 200 轮，完全不被内核硬墙 clamp。
-    const effectiveMax = this.strategy.stepBudget > 0
-      ? this.strategy.stepBudget
-      : this.maxIterations;
+    const effectiveMax =
+      this.strategy.stepBudget > 0 ? this.strategy.stepBudget : this.maxIterations;
 
     let iteration = 0;
     while (iteration < effectiveMax) {
@@ -1138,7 +1138,11 @@ export class AgentLoop {
   private *_maybeEmitPlanItemBoundary(): Generator<AgentChunk, void, unknown> {
     const activePlanItemMeta = this.getActivePlanItemMeta?.();
     const activePlanItemId = activePlanItemMeta?.planItemId;
-    if (activePlanItemMeta && activePlanItemId && activePlanItemId !== this.lastBoundaryPlanItemId) {
+    if (
+      activePlanItemMeta &&
+      activePlanItemId &&
+      activePlanItemId !== this.lastBoundaryPlanItemId
+    ) {
       this.lastBoundaryPlanItemId = activePlanItemId;
       // 底层观测：plan_item_boundary 产出累计（实证布局骨血是否空转）
       this.metrics.planItemBoundaryCount++;
@@ -1235,7 +1239,10 @@ export class AgentLoop {
     // 幂等防重：摘要层饱和是跨迭代持续态、判定不随注入自变（注入文本不含摘要 marker，
     // 不增摘要层 token）——无防重则同 turn 每步迭代各注入一条收尾信号刷屏
     // （与搜索收敛 flag / 压力提示 includes 断言的幂等口径对齐）。
-    if (this.contextManager.shouldInjectSoftLimitWrapup(this.messages) && !this.softLimitWrapupInjected) {
+    if (
+      this.contextManager.shouldInjectSoftLimitWrapup(this.messages) &&
+      !this.softLimitWrapupInjected
+    ) {
       this.softLimitWrapupInjected = true;
       this.appendSystemMessage(this.ui.softLimitWrapup, { executionTemp: true });
       logger.warn(
@@ -1368,7 +1375,14 @@ export class AgentLoop {
       this.appendSystemMessage(this.ui.duplicateToolCallWarning(this.duplicateToolCallThreshold), {
         executionTemp: true,
       });
-      logger.warn({ hash: currentHash, count: this.duplicateToolCallCount, interceptor: this.duplicateCallInterceptor.name ?? 'anonymous' }, '重复工具调用拦截器触发 warning（执行前）');
+      logger.warn(
+        {
+          hash: currentHash,
+          count: this.duplicateToolCallCount,
+          interceptor: this.duplicateCallInterceptor.name ?? 'anonymous',
+        },
+        '重复工具调用拦截器触发 warning（执行前）',
+      );
       this.duplicateToolCallCount = 0;
       this.lastToolCallsHash = '';
     } else if (dupVerdict === 'block') {
@@ -1380,7 +1394,14 @@ export class AgentLoop {
           `请改变策略：调整参数、换用其他工具，或直接给出文本回复。`,
         { executionTemp: true },
       );
-      logger.warn({ hash: currentHash, count: this.duplicateToolCallCount, interceptor: this.duplicateCallInterceptor.name ?? 'anonymous' }, '重复工具调用拦截器触发 block（执行前阻止）');
+      logger.warn(
+        {
+          hash: currentHash,
+          count: this.duplicateToolCallCount,
+          interceptor: this.duplicateCallInterceptor.name ?? 'anonymous',
+        },
+        '重复工具调用拦截器触发 block（执行前阻止）',
+      );
       this.duplicateToolCallCount = 0;
       this.lastToolCallsHash = '';
       return 'done';
@@ -1744,12 +1765,19 @@ export class AgentLoop {
             meetingRound: this.isMeetingRound(),
             payload: {
               path: ledgerSubject.path,
-              coverage: { coverStart: cov.coverStart, coverEnd: cov.coverEnd, totalLines: cov.totalLines },
+              coverage: {
+                coverStart: cov.coverStart,
+                coverEnd: cov.coverEnd,
+                totalLines: cov.totalLines,
+              },
               request: { offset: ledgerSubject.offset, limit: ledgerSubject.limit },
             },
           });
           logger.debug(
-            { path: ledgerSubject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}` },
+            {
+              path: ledgerSubject.path,
+              cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}`,
+            },
             'read_file 台账替身回显：已用摘要顶替整读',
           );
           toolExecs.push({ blocked: true, promise: Promise.resolve(formatLedgerStub(cov)) });
@@ -1762,7 +1790,8 @@ export class AgentLoop {
       const pathExtractor = WRITE_PATH_EXTRACTORS[tc.function.name];
       const writeKey = pathExtractor?.(tc.function.arguments);
       const useWriteBarrier =
-        OPAQUE_WRITE_TOOL_NAMES.includes(tc.function.name) || (pathExtractor !== undefined && writeKey === undefined);
+        OPAQUE_WRITE_TOOL_NAMES.includes(tc.function.name) ||
+        (pathExtractor !== undefined && writeKey === undefined);
       // 第二级压缩工具由 loop 拦截执行（现场压临时摘要替换，loop 收尾即弃），不落 ToolExecutor
       let promise: Promise<string>;
       if (tc.function.name === COMPRESS_CONTEXT_TOOL.name) {
@@ -1778,10 +1807,16 @@ export class AgentLoop {
       } else if (writeKey) {
         // 等同路径上一次写落地后再执行——这样本次「读盘」拿到的是上一次写后的最新内容，
         // 不再基于旧快照、也就不会把上一次的改动覆盖掉；屏障在途时同样等它（目标可能就是本文件）。
-        const prior = [writeChains.get(writeKey) ?? Promise.resolve(''), ...(opaqueWriteTail ? [opaqueWriteTail] : [])];
+        const prior = [
+          writeChains.get(writeKey) ?? Promise.resolve(''),
+          ...(opaqueWriteTail ? [opaqueWriteTail] : []),
+        ];
         promise = Promise.all(prior).then(() => this.toolRunner.runOne(tc, signal));
         // 链尾吞掉失败：一次写失败不得毒化同路径的后续写（本次真实结果仍由 promise 原样上抛）
-        writeChains.set(writeKey, promise.catch(() => ''));
+        writeChains.set(
+          writeKey,
+          promise.catch(() => ''),
+        );
       } else {
         promise = this.toolRunner.runOne(tc, signal);
       }
@@ -1822,7 +1857,12 @@ export class AgentLoop {
             const cov = parseReadFileCoverage(result);
             if (cov) {
               logger.debug(
-                { path: subject.path, cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}`, src: 'footnote', peek: result.slice(0, 80) },
+                {
+                  path: subject.path,
+                  cov: `${cov.coverStart}-${cov.coverEnd}/${cov.totalLines}`,
+                  src: 'footnote',
+                  peek: result.slice(0, 80),
+                },
                 'read_file 台账写入（分段脚注）',
               );
               this.fileExposure.record(subject.path, {
@@ -2148,7 +2188,10 @@ export class AgentLoop {
     const SKELETON = /<\/?(?:tool_call|function|parameter)[<>=/\s]?/gi;
     if (!SKELETON.test(content)) return null;
     // 逐段剔除：把每个命中的片段替换为空（含标签本身及其紧随的属性片段）
-    return content.replace(SKELETON, '').replace(/\n{3,}/g, '\n\n').trim();
+    return content
+      .replace(SKELETON, '')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
   }
 
   /**
@@ -2739,7 +2782,8 @@ export class AgentLoop {
     let note: string | undefined;
     try {
       const parsed = JSON.parse(args) as { note?: unknown };
-      note = typeof parsed?.note === 'string' && parsed.note.trim() ? parsed.note.trim() : undefined;
+      note =
+        typeof parsed?.note === 'string' && parsed.note.trim() ? parsed.note.trim() : undefined;
     } catch {
       note = undefined;
     }
@@ -2774,7 +2818,8 @@ export class AgentLoop {
     if (!this.intelNote) return;
     const content = `${INTEL_INTRO}\n\n${this.intelNote}`;
     const existing = this.messages.find(
-      (m) => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(INTEL_INTRO),
+      (m) =>
+        m.role === 'system' && typeof m.content === 'string' && m.content.startsWith(INTEL_INTRO),
     );
     if (existing) {
       existing.content = content;

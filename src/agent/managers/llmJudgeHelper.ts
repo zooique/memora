@@ -40,15 +40,11 @@ export async function judgeWithLlm<T extends object>(
   // 解析 JSON，失败抛 configError（统一 MemoraError 体系）
   const parsed = parseLlmJson<T>(llmResponse.trim());
   if (!parsed) {
-    throw configError(
-      errorTitle,
-      'LLM 返回内容不是有效的 JSON（parseLlmJson 解析失败）',
-      [
-        '检查 backgroundProvider 是否注入并可用',
-        '检查 LLM 模型是否输出预期的 JSON 结构',
-        '若问题持续，可降低候选数量或调整 prompt',
-      ],
-    );
+    throw configError(errorTitle, 'LLM 返回内容不是有效的 JSON（parseLlmJson 解析失败）', [
+      '检查 backgroundProvider 是否注入并可用',
+      '检查 LLM 模型是否输出预期的 JSON 结构',
+      '若问题持续，可降低候选数量或调整 prompt',
+    ]);
   }
 
   return parsed;

@@ -74,10 +74,7 @@ describe('VscodeProjectSearchProvider', () => {
         '**/.git/**,**/node_modules/**,**/.memora/**,**/dist/**,**/coverage/**,**/.next/**',
         100,
       );
-      expect(result.matches).toEqual([
-        { path: 'src/index.ts' },
-        { path: 'README.md' },
-      ]);
+      expect(result.matches).toEqual([{ path: 'src/index.ts' }, { path: 'README.md' }]);
     });
 
     it('query 省略时默认列出项目全部文件', async () => {
@@ -181,10 +178,18 @@ describe('VscodeProjectSearchProvider', () => {
       tmp = makeTmp();
       mkdirSync(join(tmp, 'src'), { recursive: true });
       mkdirSync(join(tmp, 'node_modules'), { recursive: true });
-      writeFileSync(join(tmp, 'src/index.ts'), 'export const x = 1;\nconst TODO = "fix me";\n', 'utf-8');
+      writeFileSync(
+        join(tmp, 'src/index.ts'),
+        'export const x = 1;\nconst TODO = "fix me";\n',
+        'utf-8',
+      );
       writeFileSync(join(tmp, 'src/utils.ts'), 'export const y = 2;\n// TODO: optimize\n', 'utf-8');
       writeFileSync(join(tmp, 'README.md'), '# Project\nTODO list here\n', 'utf-8');
-      writeFileSync(join(tmp, 'node_modules/ignored.ts'), 'export const TODO = "should be ignored";\n', 'utf-8');
+      writeFileSync(
+        join(tmp, 'node_modules/ignored.ts'),
+        'export const TODO = "should be ignored";\n',
+        'utf-8',
+      );
     });
 
     afterAll(() => {
@@ -311,9 +316,9 @@ describe('VscodeProjectSearchProvider', () => {
       // 等待 mtime 变化（同毫秒写入可能 mtimeMs 相同导致缓存漏检）
       await new Promise((r) => setTimeout(r, 20));
       const result = await provider.searchText({ pattern: 'NEW_FLAG' });
-      expect(result.matches.some((m) => m.path === 'src/index.ts' && m.preview?.includes('NEW_FLAG'))).toBe(
-        true,
-      );
+      expect(
+        result.matches.some((m) => m.path === 'src/index.ts' && m.preview?.includes('NEW_FLAG')),
+      ).toBe(true);
     });
   });
 
@@ -428,7 +433,10 @@ describe('VscodeProjectSearchProvider', () => {
         expect(strict.relaxed).toBeUndefined();
 
         // ② 给了 terms：放宽为 OR → 两个文件都命中，且如实标注"非精确命中"
-        const relaxed = await provider.searchText({ pattern: '核心 愿景', terms: ['核心', '愿景'] });
+        const relaxed = await provider.searchText({
+          pattern: '核心 愿景',
+          terms: ['核心', '愿景'],
+        });
         expect(relaxed.matches.map((m) => m.path)).toEqual(['a.md', 'b.md']);
         expect(relaxed.relaxed).toBe(true);
         expect(relaxed.termsUsed).toEqual(['核心', '愿景']);
@@ -478,7 +486,11 @@ describe('VscodeProjectSearchProvider', () => {
         const many = join(tmp, 'many');
         mkdirSync(many, { recursive: true });
         for (let i = 0; i < 501; i++) {
-          writeFileSync(join(many, `f${String(i).padStart(4, '0')}.txt`), 'nothing here\n', 'utf-8');
+          writeFileSync(
+            join(many, `f${String(i).padStart(4, '0')}.txt`),
+            'nothing here\n',
+            'utf-8',
+          );
         }
         const provider = createVscodeProjectSearchProvider(tmp);
         const result = await provider.searchText({ pattern: '绝不出现的词', maxResults: 20 });

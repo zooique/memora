@@ -14,7 +14,14 @@
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { segmentLower, validateSource, parseMemory, SOURCE_LABELS, type IMemoryStorage, type Memory } from '@zooique/memora';
+import {
+  segmentLower,
+  validateSource,
+  parseMemory,
+  SOURCE_LABELS,
+  type IMemoryStorage,
+  type Memory,
+} from '@zooique/memora';
 import { atomicWriteFileSync } from './atomicWriteSync.js';
 
 /**

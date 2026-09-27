@@ -28,9 +28,11 @@ function makePreparer(overrides: Partial<ContextPreparerDeps> = {}) {
     getMessages: () => [{ role: 'system', content: 'sys' }],
     estimateTokens: (msgs: Array<{ content: string }>) =>
       msgs.reduce((acc, m) => acc + m.content.length, 0),
-    getRecentHistoryWithinBudget: vi.fn(
-      (): DialogueResult => ({ history: [], recentRoundCount: 0, firstRoundIncluded: false }),
-    ),
+    getRecentHistoryWithinBudget: vi.fn((): DialogueResult => ({
+      history: [],
+      recentRoundCount: 0,
+      firstRoundIncluded: false,
+    })),
     // 完整对话消息（占用计量源；默认空，测试可覆写）
     getConversationMessages: (): Array<{ role: 'user' | 'assistant'; content: string }> => [],
     getReplacedRoundIds: (): readonly string[] => [],
@@ -99,7 +101,10 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
     // 独立降级：发 inputTooLarge 事件（宿主提示放文件用 read_file）
     expect(emit).toHaveBeenCalledWith(
       AGENT_EVENTS.inputTooLarge,
-      expect.objectContaining({ inputLength: hugeInput.length, hint: expect.stringContaining('read_file') }),
+      expect.objectContaining({
+        inputLength: hugeInput.length,
+        hint: expect.stringContaining('read_file'),
+      }),
     );
     // 装配跳过：无召回（不占软上限统计）、未派生/注入完整对话层
     expect(storage.search).not.toHaveBeenCalled();
@@ -109,13 +114,11 @@ describe('ContextPreparer · 装配前判负（洞 3 独立路径）', () => {
 
   it('正常输入不受判负影响：走预算派生 + 完整对话层注入（对照）', async () => {
     const { preparer, loop, storage, injectSystemMessage } = makePreparer();
-    loop.getRecentHistoryWithinBudget = vi.fn(
-      (): DialogueResult => ({
-        history: [{ role: 'user' as const, content: '第一条' }],
-        recentRoundCount: 1,
-        firstRoundIncluded: false,
-      }),
-    );
+    loop.getRecentHistoryWithinBudget = vi.fn((): DialogueResult => ({
+      history: [{ role: 'user' as const, content: '第一条' }],
+      recentRoundCount: 1,
+      firstRoundIncluded: false,
+    }));
 
     await preparer.assembleContext('正常问题');
 
@@ -130,13 +133,11 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     const { preparer, loop } = makePreparer();
     // hybrid 对话与 loop.messages 同源：getConversationMessages 与 dialogue.history 一致
     loop.getConversationMessages = () => [{ role: 'user' as const, content: '第一条' }];
-    loop.getRecentHistoryWithinBudget = vi.fn(
-      (): DialogueResult => ({
-        history: [{ role: 'user' as const, content: '第一条' }],
-        recentRoundCount: 1,
-        firstRoundIncluded: false,
-      }),
-    );
+    loop.getRecentHistoryWithinBudget = vi.fn((): DialogueResult => ({
+      history: [{ role: 'user' as const, content: '第一条' }],
+      recentRoundCount: 1,
+      firstRoundIncluded: false,
+    }));
 
     await preparer.assembleContext('正常问题');
 
@@ -149,10 +150,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.inputAnchorTokens).toBe(4);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
-      occ.rolePackBaseTokens +
-      occ.dialogueTokens +
-      occ.inputAnchorTokens +
-      occ.outputReserveTokens;
+      occ.rolePackBaseTokens + occ.dialogueTokens + occ.inputAnchorTokens + occ.outputReserveTokens;
     expect(occ.freeTokens).toBe(occ.totalTokens - used);
     expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
   });
@@ -175,10 +173,7 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
     expect(occ.inputAnchorTokens).toBe(4);
     expect(occ.outputReserveTokens).toBe(18_000);
     const used =
-      occ.rolePackBaseTokens +
-      occ.dialogueTokens +
-      occ.inputAnchorTokens +
-      occ.outputReserveTokens;
+      occ.rolePackBaseTokens + occ.dialogueTokens + occ.inputAnchorTokens + occ.outputReserveTokens;
     expect(occ.freeTokens).toBe(occ.totalTokens - used);
     expect(occ.freeTokens).toBeGreaterThanOrEqual(0);
   });
@@ -187,19 +182,19 @@ describe('ContextPreparer · 预算可视化占用（各段互斥、free 非负�
 describe('ContextPreparer · 对话层注入', () => {
   it('注入最近对话摘要块（阶段2 contextAssembly 键退役，对话层注入恒 hybrid）', async () => {
     const { preparer, loop, injectSystemMessage } = makePreparer();
-    loop.getRecentHistoryWithinBudget = vi.fn(
-      (): DialogueResult => ({
-        history: [
-          { role: 'user' as const, content: '上一轮问题' },
-          { role: 'assistant' as const, content: '上一轮回答' },
-        ],
-        recentRoundCount: 1,
-        firstRoundIncluded: true,
-      }),
-    );
+    loop.getRecentHistoryWithinBudget = vi.fn((): DialogueResult => ({
+      history: [
+        { role: 'user' as const, content: '上一轮问题' },
+        { role: 'assistant' as const, content: '上一轮回答' },
+      ],
+      recentRoundCount: 1,
+      firstRoundIncluded: true,
+    }));
 
     await preparer.assembleContext('新问题');
 
-    expect(injectSystemMessage).toHaveBeenCalledWith(expect.stringContaining('[Recent conversation]'));
+    expect(injectSystemMessage).toHaveBeenCalledWith(
+      expect.stringContaining('[Recent conversation]'),
+    );
   });
 });

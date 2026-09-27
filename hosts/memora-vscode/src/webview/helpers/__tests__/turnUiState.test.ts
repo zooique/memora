@@ -123,9 +123,9 @@ describe('换真源：skeletonFromTurnState（TurnState 快照 → 容器，M3b-
   });
 
   it('waiting(ask) → waiting(ask)，剥 questions（骨架不消费提问明细）', () => {
-    expect(skeletonFromTurnState({ phase: 'waiting', reason: 'ask', questions: [QUESTION] })).toEqual(
-      { phase: 'waiting', reason: 'ask' },
-    );
+    expect(
+      skeletonFromTurnState({ phase: 'waiting', reason: 'ask', questions: [QUESTION] }),
+    ).toEqual({ phase: 'waiting', reason: 'ask' });
   });
 
   it('waiting(pause) 无 pausePending → 原样（已挂起非申请在途）', () => {

@@ -32,7 +32,9 @@ class MockProvider extends LlmProvider {
   private response: string;
   private shouldThrow: boolean;
 
-  constructor(response: string = '{"summary": "测试摘要内容", "keyTopics": ["测试", "摘要"], "autoName": "测试会话"}') {
+  constructor(
+    response: string = '{"summary": "测试摘要内容", "keyTopics": ["测试", "摘要"], "autoName": "测试会话"}',
+  ) {
     super();
     this.response = response;
     this.shouldThrow = false;
@@ -387,7 +389,9 @@ describe('SessionArchiver · LLM 响应解析', () => {
   });
 
   it('应正确解析 JSON 格式的元数据响应', async () => {
-    provider.setResponse('{"summary": "讨论了项目架构设计", "keyTopics": ["架构", "设计", "讨论"], "autoName": "架构讨论"}');
+    provider.setResponse(
+      '{"summary": "讨论了项目架构设计", "keyTopics": ["架构", "设计", "讨论"], "autoName": "架构讨论"}',
+    );
     const archiver = new SessionArchiver(provider, sessionStore);
     await archiver.archiveSession('2026-07-03', 'main');
 
@@ -407,7 +411,9 @@ describe('SessionArchiver · LLM 响应解析', () => {
   });
 
   it('应处理非标准 JSON（parseLlmJson 容错）', async () => {
-    provider.setResponse('```json\n{"summary": "代码块摘要", "keyTopics": [], "autoName": "代码"}\n```');
+    provider.setResponse(
+      '```json\n{"summary": "代码块摘要", "keyTopics": [], "autoName": "代码"}\n```',
+    );
     const archiver = new SessionArchiver(provider, sessionStore);
     await archiver.archiveSession('2026-07-03', 'main');
 
@@ -416,7 +422,9 @@ describe('SessionArchiver · LLM 响应解析', () => {
   });
 
   it('LLM 未返回 autoName 时，应从 summary 前几个字提取', async () => {
-    provider.setResponse('{"summary": "这是一段很长的摘要内容，用于测试 autoName 回退逻辑", "keyTopics": ["测试"]}');
+    provider.setResponse(
+      '{"summary": "这是一段很长的摘要内容，用于测试 autoName 回退逻辑", "keyTopics": ["测试"]}',
+    );
     const archiver = new SessionArchiver(provider, sessionStore);
     await archiver.archiveSession('2026-07-03', 'main');
 
@@ -427,7 +435,9 @@ describe('SessionArchiver · LLM 响应解析', () => {
   });
 
   it('keyTopics 超过 MAX_KEY_TOPICS(5) 时应截断', async () => {
-    provider.setResponse('{"summary": "测试", "keyTopics": ["1", "2", "3", "4", "5", "6", "7"], "autoName": "测试"}');
+    provider.setResponse(
+      '{"summary": "测试", "keyTopics": ["1", "2", "3", "4", "5", "6", "7"], "autoName": "测试"}',
+    );
     const archiver = new SessionArchiver(provider, sessionStore);
     await archiver.archiveSession('2026-07-03', 'main');
 
@@ -453,13 +463,17 @@ describe('SessionArchiver · SessionMeta 更新语义', () => {
     const archiver = new SessionArchiver(provider, sessionStore);
 
     // 第一次归档
-    provider.setResponse('{"summary": "第一次摘要", "keyTopics": ["第一次"], "autoName": "第一次"}');
+    provider.setResponse(
+      '{"summary": "第一次摘要", "keyTopics": ["第一次"], "autoName": "第一次"}',
+    );
     await archiver.archiveSession('2026-07-03', 'main');
     let lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('第一次摘要');
 
     // 第二次归档（相同 sessionLabel，不同摘要）
-    provider.setResponse('{"summary": "第二次摘要", "keyTopics": ["第二次"], "autoName": "第二次"}');
+    provider.setResponse(
+      '{"summary": "第二次摘要", "keyTopics": ["第二次"], "autoName": "第二次"}',
+    );
     await archiver.archiveSession('2026-07-03', 'main');
     lastMeta = sessionStore.getLastMeta();
     expect(lastMeta?.summary).toBe('第二次摘要');

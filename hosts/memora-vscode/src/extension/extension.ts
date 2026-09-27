@@ -29,7 +29,13 @@ import { openChatCommand } from './commands/openChat.js';
 import { runDemoCommand } from './commands/demo.js';
 import { FileChangeTracker } from './host/fileChangeTracker.js';
 import { FileChangeView } from './host/fileChangeView.js';
-import { ACTIVE_ROLE_PACK_KEY, CONFIRM_WRITES_KEY, CONFIRM_SCRIPTS_KEY, ROLE_PACK_TEAMS_KEY, MEMORY_RECYCLE_RETENTION_DAYS } from '../shared/constants.js';
+import {
+  ACTIVE_ROLE_PACK_KEY,
+  CONFIRM_WRITES_KEY,
+  CONFIRM_SCRIPTS_KEY,
+  ROLE_PACK_TEAMS_KEY,
+  MEMORY_RECYCLE_RETENTION_DAYS,
+} from '../shared/constants.js';
 
 /**
  * 解析工作区持久化根路径（SSOT，extension 与 assemble 共用同一来源）
@@ -132,7 +138,8 @@ function getOrCreateAgent(
     // 读取持久化的激活角色包（用户上次选择；无记录时为 undefined → 内核 §4.1 单链落兜底包）
     const activeRolePack = globalState.get<string>(ACTIVE_ROLE_PACK_KEY);
     // 读取角色包组（会议名单，用户级数据；无记录为空数组）
-    const rolePackTeams = globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
+    const rolePackTeams =
+      globalState.get<{ leader: string; members: string[] }[]>(ROLE_PACK_TEAMS_KEY) ?? [];
     // 读取写入二次确认开关（用户安全偏好；默认 false → owner 写文件自动批准）
     const confirmWrites = globalState.get<boolean>(CONFIRM_WRITES_KEY) ?? false;
     // 读取脚本/代码执行确认开关（用户安全偏好；默认 false → owner 脚本执行自动批准）
@@ -168,13 +175,11 @@ function getOrCreateAgent(
       allowedPaths,
       disabledSkills,
       outputChannel,
-    }).catch(
-      (err) => {
-        // 装配失败则重置，下次命令重试
-        agentPromise = null;
-        throw err;
-      },
-    );
+    }).catch((err) => {
+      // 装配失败则重置，下次命令重试
+      agentPromise = null;
+      throw err;
+    });
   }
   // 缓存同步引用（供文件改动「恢复旧版」同步取 agent.security 做写前校验）；
   // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
@@ -261,7 +266,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // 视图加载器：将 Session（Round ID 列表）+ RoundStore 组合为完整视图
   const viewLoader = new WorkspaceSessionViewLoader(roundStore, sessionStore);
 
-  const chatProvider = new MemoraChatViewProvider(context.extensionUri, sessionStore, providerStore);
+  const chatProvider = new MemoraChatViewProvider(
+    context.extensionUri,
+    sessionStore,
+    providerStore,
+  );
   // 注入 Round-based 视图加载器（用于加载 round-based 会话的历史消息）
   // 未注入时 chatPanel 仅支持 legacy 模式（向后兼容）
   chatProvider.setViewLoader(viewLoader);
@@ -333,7 +342,17 @@ export function activate(context: vscode.ExtensionContext): void {
   // providerStore 注入供大模型子视图读写（与 chat 面板共用一个 store 单例）。
   const settingsProvider = new MemoraSettingsViewProvider(context.extensionUri, providerStore);
   settingsProvider.setAgentFactory((projectPath) =>
-    getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
+    getOrCreateAgent(
+      projectPath,
+      providerStore,
+      sessionStore,
+      roundStore,
+      context.globalState,
+      configDir,
+      userSkillsDir,
+      userRolePacksDir,
+      memoraOutput,
+    ),
   );
   settingsProvider.setGlobalState(context.globalState);
   // 注入技能目录：用户目录（打开目录按钮）+ 内置配置目录（三源技能来源判定，SSOT 收紧）
@@ -344,7 +363,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // 注入对话面板提供者：角色 handoff 预填需从设置视图跨 webview 投递到对话视图
   settingsProvider.setChatProvider(chatProvider);
   context.subscriptions.push(
-    vscode.window.registerWebviewViewProvider(MemoraSettingsViewProvider.viewType, settingsProvider),
+    vscode.window.registerWebviewViewProvider(
+      MemoraSettingsViewProvider.viewType,
+      settingsProvider,
+    ),
   );
 
   // 命令：打开对话面板（聚焦侧边栏视图）
@@ -352,7 +374,17 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('memora.open', () =>
       openChatCommand(
         (projectPath) =>
-          getOrCreateAgent(projectPath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput),
+          getOrCreateAgent(
+            projectPath,
+            providerStore,
+            sessionStore,
+            roundStore,
+            context.globalState,
+            configDir,
+            userSkillsDir,
+            userRolePacksDir,
+            memoraOutput,
+          ),
         chatProvider,
       ),
     ),
@@ -381,7 +413,17 @@ export function activate(context: vscode.ExtensionContext): void {
   /** 获取当前工作区的 Agent 实例（懒装配，已装配则直接返回缓存） */
   const getAgentForCommand = async (): Promise<Agent | null> => {
     try {
-      return await getOrCreateAgent(workspacePath, providerStore, sessionStore, roundStore, context.globalState, configDir, userSkillsDir, userRolePacksDir, memoraOutput);
+      return await getOrCreateAgent(
+        workspacePath,
+        providerStore,
+        sessionStore,
+        roundStore,
+        context.globalState,
+        configDir,
+        userSkillsDir,
+        userRolePacksDir,
+        memoraOutput,
+      );
     } catch {
       return null;
     }
@@ -411,10 +453,7 @@ export function activate(context: vscode.ExtensionContext): void {
       if (agent.isBusy) {
         // allSettled：忙碌态两次调用都会以 chatBusyError 结束（守门发生在任何 IO 之前），
         // 属预期路径，不该冒泡成未处理异常。
-        await Promise.allSettled([
-          agent.reloadConfig('skill'),
-          agent.reloadConfig('rolePack'),
-        ]);
+        await Promise.allSettled([agent.reloadConfig('skill'), agent.reloadConfig('rolePack')]);
         // 措辞须对两种时序都成立：判据为真后锁可能瞬间释放（此时两次调用会真的立即生效）。
         vscode.window.showInformationMessage(
           '技能重载请求已提交；若对话仍在进行，将在对话空闲时自动生效',
@@ -509,12 +548,14 @@ export function activate(context: vscode.ExtensionContext): void {
         const purged = agent.memory.writePurgeExpired(cutoff);
         vscode.window.showInformationMessage(`已清理 ${purged} 条过期记忆`);
       } catch (err) {
-        vscode.window.showErrorMessage(`清理失败：${err instanceof Error ? err.message : String(err)}`);
+        vscode.window.showErrorMessage(
+          `清理失败：${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }),
   );
 
-// 命令：立即执行孤儿 Round 垃圾回收（agent.gcNow() 手动触发入口）
+  // 命令：立即执行孤儿 Round 垃圾回收（agent.gcNow() 手动触发入口）
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.runGc', async () => {
       const agent = await getAgentForCommand();
@@ -528,7 +569,9 @@ export function activate(context: vscode.ExtensionContext): void {
           `孤儿回收完成：扫描 ${stats.scanned} 个问答闭环，清理 ${stats.deleted} 个孤立 Round + ${stats.memoryCleaned} 条摘要`,
         );
       } catch (err) {
-        vscode.window.showErrorMessage(`垃圾回收失败：${err instanceof Error ? err.message : String(err)}`);
+        vscode.window.showErrorMessage(
+          `垃圾回收失败：${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }),
   );
@@ -537,25 +580,25 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand('memora.registerWork', async (uri) => {
       // 仅支持从右键菜单触发（必须带 uri 参数）
-      const uris = Array.isArray(uri) ? uri : (uri ? [uri] : []);
+      const uris = Array.isArray(uri) ? uri : uri ? [uri] : [];
       if (uris.length === 0) {
         vscode.window.showWarningMessage('请在文件上右键，选择「Memora: 登记作品投影」');
         return;
       }
-      
+
       // 提取第一个文件路径
       const targetUri = uris[0];
       const relativePath = vscode.workspace.asRelativePath(targetUri);
-      
+
       // 显示进度
       vscode.window.showInformationMessage('正在登记：' + relativePath + ' ...');
-      
+
       const agent = await getAgentForCommand();
       if (!agent?.works) {
         vscode.window.showWarningMessage('Memora Agent 未就绪，无法登记作品');
         return;
       }
-      
+
       // 文件内容裁切上限：超长文件只取头部
       const DESCRIPTION_MAX_INPUT_CHARS = 8000;
       // 输出 token 上限：推理模型（R1/QwQ）需预留 reasoning_content 预算，过小会导致 content 空
@@ -566,8 +609,11 @@ export function activate(context: vscode.ExtensionContext): void {
         const fileContent = await vscode.workspace.fs.readFile(targetUri);
         const fullText = Buffer.from(fileContent).toString('utf-8');
         const truncated = fullText.length > DESCRIPTION_MAX_INPUT_CHARS;
-        const text = (truncated ? fullText.substring(0, DESCRIPTION_MAX_INPUT_CHARS) : fullText)
-          + (truncated ? `\n\n（以下仅文件开头前 ${DESCRIPTION_MAX_INPUT_CHARS} 字符，内容可能不完整）` : '');
+        const text =
+          (truncated ? fullText.substring(0, DESCRIPTION_MAX_INPUT_CHARS) : fullText) +
+          (truncated
+            ? `\n\n（以下仅文件开头前 ${DESCRIPTION_MAX_INPUT_CHARS} 字符，内容可能不完整）`
+            : '');
 
         // 调用 LLM 生成一句话描述
         // prompt 显式传入文件名 + 禁止复述标题，迫使模型提炼要点而非回声文件名
@@ -579,23 +625,35 @@ export function activate(context: vscode.ExtensionContext): void {
           text;
         let description = '';
         try {
-          const raw = await accumulateStream(agent.provider, [
-            { role: 'system', content: '你是文件描述生成器，只输出一句中文描述，不要解释。' },
-            { role: 'user', content: prompt },
-          ], { maxTokens: DESCRIPTION_MAX_TOKENS });
+          const raw = await accumulateStream(
+            agent.provider,
+            [
+              { role: 'system', content: '你是文件描述生成器，只输出一句中文描述，不要解释。' },
+              { role: 'user', content: prompt },
+            ],
+            { maxTokens: DESCRIPTION_MAX_TOKENS },
+          );
           // 诊断日志：区分"模型返回空"与"返回纯空白被 trim 掉"
-          memoraOutput.appendLine(`[作品投影] LLM 原始返回 len=${raw.length} content=${JSON.stringify(raw)}`);
+          memoraOutput.appendLine(
+            `[作品投影] LLM 原始返回 len=${raw.length} content=${JSON.stringify(raw)}`,
+          );
           description = raw.trim();
         } catch (llmErr) {
           // LLM 调用异常（鉴权/网络/超时）→ 不静默吞：打到输出通道 + 告警，留文件名兜底
           const msg = llmErr instanceof Error ? llmErr.message : String(llmErr);
           memoraOutput.appendLine(`[作品投影] LLM 生成描述失败：${msg}`);
-          vscode.window.showWarningMessage('LLM 生成描述失败（详见 Memora 输出通道），已用文件名兜底：' + msg);
+          vscode.window.showWarningMessage(
+            'LLM 生成描述失败（详见 Memora 输出通道），已用文件名兜底：' + msg,
+          );
         }
 
         // 优雅降级：LLM 未返回有效描述时，用文件名（去扩展名）兜底，避免写空 description
         if (!description) {
-          description = relativePath.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') ?? 'unknown';
+          description =
+            relativePath
+              .split(/[\\/]/)
+              .pop()
+              ?.replace(/\.[^.]+$/, '') ?? 'unknown';
           memoraOutput.appendLine(`[作品投影] LLM 未返回描述，已用文件名兜底：${description}`);
           vscode.window.showWarningMessage('LLM 未返回描述，已用文件名「' + description + '」兜底');
         } else {
@@ -605,12 +663,16 @@ export function activate(context: vscode.ExtensionContext): void {
         // 登记投影
         const result = await agent.works.registerWork(relativePath, description);
         if (result) {
-          vscode.window.showInformationMessage('作品登记成功：' + result.name + ' | ' + description);
+          vscode.window.showInformationMessage(
+            '作品登记成功：' + result.name + ' | ' + description,
+          );
         } else {
           vscode.window.showErrorMessage('作品登记失败，路径可能越界或发生其他错误');
         }
       } catch (err) {
-        vscode.window.showErrorMessage('登记失败：' + (err instanceof Error ? err.message : String(err)));
+        vscode.window.showErrorMessage(
+          '登记失败：' + (err instanceof Error ? err.message : String(err)),
+        );
       }
     }),
   );
@@ -636,9 +698,3 @@ export async function deactivate(): Promise<void> {
     // 关闭失败静默降级：不阻断插件退出（VS Code 不因 deactivate 异常而阻塞）
   }
 }
-
-
-
-
-
-

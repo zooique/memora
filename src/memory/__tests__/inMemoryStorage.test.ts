@@ -130,9 +130,18 @@ describe('InMemoryStorage · 内存存储契约', () => {
     });
 
     it('getBySource 应按 accessedAt 降序排列', () => {
-      storage.upsert({ ...makeMemory('rule:1', SOURCE_LABELS.RULE), accessedAt: '2026-01-01T00:00:00.000Z' });
-      storage.upsert({ ...makeMemory('rule:2', SOURCE_LABELS.RULE), accessedAt: '2026-01-03T00:00:00.000Z' });
-      storage.upsert({ ...makeMemory('rule:3', SOURCE_LABELS.RULE), accessedAt: '2026-01-02T00:00:00.000Z' });
+      storage.upsert({
+        ...makeMemory('rule:1', SOURCE_LABELS.RULE),
+        accessedAt: '2026-01-01T00:00:00.000Z',
+      });
+      storage.upsert({
+        ...makeMemory('rule:2', SOURCE_LABELS.RULE),
+        accessedAt: '2026-01-03T00:00:00.000Z',
+      });
+      storage.upsert({
+        ...makeMemory('rule:3', SOURCE_LABELS.RULE),
+        accessedAt: '2026-01-02T00:00:00.000Z',
+      });
 
       const list = storage.getBySource(SOURCE_LABELS.RULE);
       expect(list[0]!.id).toBe('rule:2');
@@ -313,7 +322,6 @@ describe('InMemoryStorage · 内存存储契约', () => {
       expect(() => storage.delete('nonexistent')).not.toThrow();
       expect(storage.listDeleted()).toHaveLength(0);
     });
-
   });
 
   describe('软删除：restore（恢复）', () => {
@@ -420,9 +428,15 @@ describe('InMemoryStorage · 内存存储契约', () => {
       // 依次软删除并手动设置不同的 deletedAt（避免同毫秒时间戳导致排序不稳定）
       // m1 最早（10 天前），m2 居中（5 天前），m3 最近（刚刚）
       storage.delete('m1');
-      storage.upsert({ ...storage.listDeleted().find((m) => m.id === 'm1')!, deletedAt: new Date(Date.now() - 10 * ONE_DAY_MS).toISOString() });
+      storage.upsert({
+        ...storage.listDeleted().find((m) => m.id === 'm1')!,
+        deletedAt: new Date(Date.now() - 10 * ONE_DAY_MS).toISOString(),
+      });
       storage.delete('m2');
-      storage.upsert({ ...storage.listDeleted().find((m) => m.id === 'm2')!, deletedAt: new Date(Date.now() - 5 * ONE_DAY_MS).toISOString() });
+      storage.upsert({
+        ...storage.listDeleted().find((m) => m.id === 'm2')!,
+        deletedAt: new Date(Date.now() - 5 * ONE_DAY_MS).toISOString(),
+      });
       storage.delete('m3');
       // m3 保持当前时间（最近）
 

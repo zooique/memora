@@ -894,7 +894,9 @@ export class SessionManager {
     this.checkpoint.planItemLog.push(outcome);
     // 每任务项截断上限：同 planItemId（含 undefined 兜底组）超过 3 条时移除最早进入的超出记录
     const PLAN_ITEM_LOG_PER_ITEM_LIMIT = 3;
-    const groupCount = this.checkpoint.planItemLog.filter((s) => s.planItemId === planItemId).length;
+    const groupCount = this.checkpoint.planItemLog.filter(
+      (s) => s.planItemId === planItemId,
+    ).length;
     if (groupCount > PLAN_ITEM_LOG_PER_ITEM_LIMIT) {
       let excess = groupCount - PLAN_ITEM_LOG_PER_ITEM_LIMIT;
       this.checkpoint.planItemLog = this.checkpoint.planItemLog.filter((s) => {

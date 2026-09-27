@@ -11,7 +11,10 @@
  */
 
 import { expect } from 'vitest';
-import { auditToolCallPairing, type ToolPairingCandidate } from '@/agent/managers/toolCallHelpers.js';
+import {
+  auditToolCallPairing,
+  type ToolPairingCandidate,
+} from '@/agent/managers/toolCallHelpers.js';
 
 /**
  * 断言配对不变量：生产谓词 `auditToolCallPairing` 对 untyped 消息零违规。

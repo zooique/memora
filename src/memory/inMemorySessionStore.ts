@@ -13,11 +13,7 @@
 
 import { isRoundSettled } from '@/memory/roundStore.js';
 import type { IRoundStore } from '@/memory/roundStore.js';
-import type {
-  ISessionStore,
-  SessionMessage,
-  SessionMeta,
-} from '@/memory/sessionStore.js';
+import type { ISessionStore, SessionMessage, SessionMeta } from '@/memory/sessionStore.js';
 import { InMemoryRoundStore } from '@/memory/inMemoryRoundStore.js';
 
 /**
@@ -145,9 +141,7 @@ export class InMemorySessionStore implements ISessionStore {
    * 唯一真理源」，升规则会恢复成最旧会话。
    */
   listSessionMetas(): SessionMeta[] {
-    return Array.from(this.metas.values()).sort((a, b) =>
-      b.updatedAt.localeCompare(a.updatedAt),
-    );
+    return Array.from(this.metas.values()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   // ─── Round-based 模式方法 ──────────────────────────────

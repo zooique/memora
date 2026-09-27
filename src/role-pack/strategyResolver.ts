@@ -106,7 +106,6 @@ export function resolveActiveStrategy(
   return mergeStrategy(base, override);
 }
 
-
 /**
  * 枚举值合法性收窄（SSOT 兜底）：角色包 L2 键是枚举开关，非法拼写不应静默透传
  * （非法枚举会污染行为分支或注入 persona prompt），统一归位到内核默认。

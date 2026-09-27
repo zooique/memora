@@ -6,7 +6,12 @@
 
 import type { LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory, SummaryType } from '@/memory/types.js';
-import { SOURCE_LABELS, SUMMARY_TYPES, roundSummaryMemoryId, roundSummarySessionPrefix } from '@/memory/types.js';
+import {
+  SOURCE_LABELS,
+  SUMMARY_TYPES,
+  roundSummaryMemoryId,
+  roundSummarySessionPrefix,
+} from '@/memory/types.js';
 import { extractEnhancedKeywords, calculateWeightedJaccard } from '@/utils/segmenter.js';
 import type { IMemoryStorage } from '@/memory/storageInterface.js';
 import { logger } from '@/logging/logger.js';
@@ -188,7 +193,9 @@ export class RoundSummaryGenerator {
     const all = this.storage.getBySource(SOURCE_LABELS.ROUND_SUMMARY);
     // 同 session + 未取代（排除自身）：按 createdAt 降序，取最近 N 条作候选
     return all
-      .filter((old) => old.id.startsWith(sessionPrefix) && !old.supersededBy && old.id !== newMemory.id)
+      .filter(
+        (old) => old.id.startsWith(sessionPrefix) && !old.supersededBy && old.id !== newMemory.id,
+      )
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .slice(0, SUPERSEDE_CANDIDATE_WINDOW);
   }

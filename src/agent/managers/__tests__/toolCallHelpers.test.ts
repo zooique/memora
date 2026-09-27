@@ -37,7 +37,12 @@ describe('parseAskCalls', () => {
       },
     ]);
     expect(result).toEqual([
-      { slot: 'ask', question: '故事发生在哪个城市？', options: ['上海', '北京'], allowCustom: true },
+      {
+        slot: 'ask',
+        question: '故事发生在哪个城市？',
+        options: ['上海', '北京'],
+        allowCustom: true,
+      },
     ]);
   });
 
@@ -217,7 +222,11 @@ describe('filterCallableToolCalls', () => {
   it('滤掉空函数名条目，保序保留其余调用', () => {
     const calls = [
       { id: 'p', type: 'function' as const, function: { name: '', arguments: '' } },
-      { id: 'a', type: 'function' as const, function: { name: 'read_file', arguments: '{"path":"a.md"}' } },
+      {
+        id: 'a',
+        type: 'function' as const,
+        function: { name: 'read_file', arguments: '{"path":"a.md"}' },
+      },
       { id: 'b', type: 'function' as const, function: { name: 'list_dir', arguments: '{}' } },
     ];
     expect(filterCallableToolCalls(calls).map((c) => c.id)).toEqual(['a', 'b']);
@@ -233,13 +242,19 @@ describe('filterCallableToolCalls', () => {
   });
 
   it('★ 关键性质：不按参数合法与否过滤（name 合法、args 为空者保留 —— 走既有可重试错误路径）', () => {
-    const calls = [{ id: 'a', type: 'function' as const, function: { name: 'read_file', arguments: '' } }];
+    const calls = [
+      { id: 'a', type: 'function' as const, function: { name: 'read_file', arguments: '' } },
+    ];
     expect(filterCallableToolCalls(calls)).toHaveLength(1);
   });
 
   it('★ 超长函数名（>64 字符）→ 滤除（G2 落入 FAIL-1 同一过滤面）', () => {
     const calls = [
-      { id: 'long', type: 'function' as const, function: { name: 'a'.repeat(65), arguments: '{}' } },
+      {
+        id: 'long',
+        type: 'function' as const,
+        function: { name: 'a'.repeat(65), arguments: '{}' },
+      },
       { id: 'ok', type: 'function' as const, function: { name: 'read_file', arguments: '{}' } },
     ];
     expect(filterCallableToolCalls(calls).map((c) => c.id)).toEqual(['ok']);
@@ -252,7 +267,11 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
   // 构造消息的精简助手：把 `{id,name}` 映射为真实 ToolCall 形状 `{id, function:{name}}`
   const assistant = (toolCalls: { id: string; name: string }[]) => ({
     role: 'assistant',
-    toolCalls: toolCalls.map((tc) => ({ id: tc.id, type: 'function' as const, function: { name: tc.name } })),
+    toolCalls: toolCalls.map((tc) => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: { name: tc.name },
+    })),
   });
   const tool = (toolCallId: string) => ({ role: 'tool', toolCallId });
   const text = (role: 'system' | 'user') => ({ role });
@@ -260,7 +279,10 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
   it('健康态（逐条配对 + 名字合法 + id 唯一）→ 零违规', () => {
     const msgs = [
       text('system'),
-      assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
+      assistant([
+        { id: 'c1', name: 'read_file' },
+        { id: 'c2', name: 'ask_user' },
+      ]),
       tool('c1'),
       tool('c2'),
     ];
@@ -275,7 +297,9 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
 
   it('unpairedAssistantCall：有 assistant 调用、无配对 tool 消息', () => {
     const msgs = [assistant([{ id: 'c1', name: 'read_file' }])];
-    expect(auditToolCallPairing(msgs)).toEqual([{ kind: 'unpairedAssistantCall', toolCallId: 'c1' }]);
+    expect(auditToolCallPairing(msgs)).toEqual([
+      { kind: 'unpairedAssistantCall', toolCallId: 'c1' },
+    ]);
   });
 
   it('orphanToolMessage：有 tool 消息、无对应 assistant 调用', () => {
@@ -292,12 +316,17 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
     const ok = [assistant([{ id: 'a', name: 'x'.repeat(64) }]), tool('a')];
     const tooLong = [assistant([{ id: 'b', name: 'x'.repeat(65) }]), tool('b')];
     expect(auditToolCallPairing(ok)).toEqual([]);
-    expect(auditToolCallPairing(tooLong)).toEqual([{ kind: 'nameTooLong', toolCallId: 'b', length: 65 }]);
+    expect(auditToolCallPairing(tooLong)).toEqual([
+      { kind: 'nameTooLong', toolCallId: 'b', length: 65 },
+    ]);
   });
 
   it('duplicateId：同批次内 id 重复 → 报重复（第二次出现时）', () => {
     const msgs = [
-      assistant([{ id: 'dup', name: 'read_file' }, { id: 'dup', name: 'list_dir' }]),
+      assistant([
+        { id: 'dup', name: 'read_file' },
+        { id: 'dup', name: 'list_dir' },
+      ]),
       tool('dup'),
       tool('dup'),
     ];
@@ -307,10 +336,16 @@ describe('auditToolCallPairing（批次成形发送边界守卫纯谓词）', ()
   it('★ 跨消息同名 id（如 mock 续跑重放同一批次）→ 不判重复、不误报', () => {
     // 场景：continueAfterPause 后 mock 重放同一批次 → c1/c2 各出现在两条 assistant 消息
     const msgs = [
-      assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
+      assistant([
+        { id: 'c1', name: 'read_file' },
+        { id: 'c2', name: 'ask_user' },
+      ]),
       tool('c1'),
       tool('c2'),
-      assistant([{ id: 'c1', name: 'read_file' }, { id: 'c2', name: 'ask_user' }]),
+      assistant([
+        { id: 'c1', name: 'read_file' },
+        { id: 'c2', name: 'ask_user' },
+      ]),
       tool('c1'),
       tool('c2'),
     ];

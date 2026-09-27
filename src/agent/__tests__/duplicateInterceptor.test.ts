@@ -20,11 +20,17 @@ import type { Message } from '@/llm/provider.js';
 // ─── 辅助：创建 Message 对象（LLM Provider 需完整 Message 结构） ──
 
 /** 创建带 toolCalls 的 assistant Message */
-function toolMsg(toolCalls: Array<{ id: string; function: { name: string; arguments: string } }>): Message {
+function toolMsg(
+  toolCalls: Array<{ id: string; function: { name: string; arguments: string } }>,
+): Message {
   return {
     role: 'assistant',
     content: '',
-    toolCalls: toolCalls.map((tc) => ({ id: tc.id, type: 'function' as const, function: tc.function })),
+    toolCalls: toolCalls.map((tc) => ({
+      id: tc.id,
+      type: 'function' as const,
+      function: tc.function,
+    })),
   };
 }
 
@@ -103,7 +109,9 @@ describe('DefaultDuplicateCallInterceptor', () => {
         threshold: 5,
       });
       // count=4 < threshold=5 → ok
-      expect(customInterceptor.check(makeToolCalls([{ name: 'read', args: '{}' }]), ctx)).toBe('ok');
+      expect(customInterceptor.check(makeToolCalls([{ name: 'read', args: '{}' }]), ctx)).toBe(
+        'ok',
+      );
 
       const ctx2 = makeContext({
         lastHash: 'hash_A',
@@ -111,7 +119,9 @@ describe('DefaultDuplicateCallInterceptor', () => {
         duplicateCount: 5,
         threshold: 5,
       });
-      expect(customInterceptor.check(makeToolCalls([{ name: 'read', args: '{}' }]), ctx2)).toBe('warn');
+      expect(customInterceptor.check(makeToolCalls([{ name: 'read', args: '{}' }]), ctx2)).toBe(
+        'warn',
+      );
     });
 
     it('拦截器 name 属性可读', () => {
@@ -219,19 +229,13 @@ describe('自定义拦截器：ToolAwareInterceptor', () => {
 
   it('search 工具阈值为 5（count=4 仍 ok）', () => {
     const ctx = makeContext({ duplicateCount: 4 });
-    const result = interceptor.check(
-      makeToolCalls([{ name: 'search', args: '{"q":"x"}' }]),
-      ctx,
-    );
+    const result = interceptor.check(makeToolCalls([{ name: 'search', args: '{"q":"x"}' }]), ctx);
     expect(result).toBe('ok');
   });
 
   it('search 工具 count=5 返回 warn', () => {
     const ctx = makeContext({ duplicateCount: 5 });
-    const result = interceptor.check(
-      makeToolCalls([{ name: 'search', args: '{"q":"x"}' }]),
-      ctx,
-    );
+    const result = interceptor.check(makeToolCalls([{ name: 'search', args: '{"q":"x"}' }]), ctx);
     expect(result).toBe('warn');
   });
 
@@ -248,9 +252,7 @@ describe('自定义拦截器：ToolAwareInterceptor', () => {
 // ─── 拦截器注入 AgentLoop 端到端测试 ─────────────────────
 
 /** 简单 Mock Provider（返回固定序列的 LLM 响应） */
-function mockMultiTurnProvider(
-  responses: Message[][],
-): AgentLoopOptions['provider'] {
+function mockMultiTurnProvider(responses: Message[][]): AgentLoopOptions['provider'] {
   let callIndex = 0;
   return {
     name: 'mock',
@@ -283,13 +285,9 @@ describe('拦截器注入 AgentLoop 端到端', () => {
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
         // 第 1 轮：delete_file（首次，hash=X，count=0 → ok，写入 hash）
-        [
-          toolMsg([{ id: 'c1', function: { name: 'delete_file', arguments: '{"path":"a"}' } }]),
-        ],
+        [toolMsg([{ id: 'c1', function: { name: 'delete_file', arguments: '{"path":"a"}' } }])],
         // 第 2 轮：相同 delete_file（hash 仍为 X → count=1，但 delete 直接 block）
-        [
-          toolMsg([{ id: 'c2', function: { name: 'delete_file', arguments: '{"path":"a"}' } }]),
-        ],
+        [toolMsg([{ id: 'c2', function: { name: 'delete_file', arguments: '{"path":"a"}' } }])],
         // 第 3 轮：LLM 继续
         [textMsg('完成')],
       ]),
@@ -379,7 +377,12 @@ describe('拦截器注入 AgentLoop 端到端', () => {
       // 路径各不相同（x0..x4），避免触发同路径连写止损护栏（write_loop，WRITE_LOOP_THRESHOLD=5）
       provider: mockMultiTurnProvider([
         ...Array.from({ length: 5 }, (_, i) => [
-          toolMsg([{ id: `c${i}`, function: { name: 'write_file', arguments: `{"path":"x${i}","content":"ok"}` } }]),
+          toolMsg([
+            {
+              id: `c${i}`,
+              function: { name: 'write_file', arguments: `{"path":"x${i}","content":"ok"}` },
+            },
+          ]),
         ]),
         [textMsg('完成')],
       ]),
@@ -417,15 +420,9 @@ describe('拦截器注入 AgentLoop 端到端', () => {
 
     const loop = new AgentLoop({
       provider: mockMultiTurnProvider([
-        [
-          toolMsg([{ id: 'c1', function: { name: 'read', arguments: '{"p":"a"}' } }]),
-        ],
-        [
-          toolMsg([{ id: 'c2', function: { name: 'read', arguments: '{"p":"a"}' } }]),
-        ],
-        [
-          toolMsg([{ id: 'c3', function: { name: 'write', arguments: '{"p":"b"}' } }]),
-        ],
+        [toolMsg([{ id: 'c1', function: { name: 'read', arguments: '{"p":"a"}' } }])],
+        [toolMsg([{ id: 'c2', function: { name: 'read', arguments: '{"p":"a"}' } }])],
+        [toolMsg([{ id: 'c3', function: { name: 'write', arguments: '{"p":"b"}' } }])],
         [textMsg('完成')],
       ]),
       bootstrapMemories: [],
