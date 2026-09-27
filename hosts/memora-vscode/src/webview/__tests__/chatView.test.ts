@@ -1614,6 +1614,85 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(planItems[0]!.querySelector('.round-block__tool')?.textContent).not.toContain('写入文件');
   });
 
+  it('任务项组外条目不沉底：boundary 前置于本轮首个工具时（预置/续会/上一 turn 遗留计划），组外 thought 仍居首个任务项组之前', () => {
+    // 场景来自真机 round（会议骨架预置计划）：边界排在**首迭代的建表工具之前**
+    // → 该轮所有工具都被边界收进任务项组内，根层只剩组外 thought/输入。
+    // 若任务项组不参与 insertPlanItemInOrder 的统一 (ts, seq) 排序，行只与行比、
+    // 组只与组比，根层无同层行可锚 → appendChild 把组外 thought 甩到**全部任务项组之下**。
+    mountChatView();
+    dispatchReplay(
+      makeRound({
+        id: 'r1',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: '', payload: { role: 'AI', llm: 'm' } },
+          { type: 'thought', seq: 2, ts: '', payload: { content: '步骤1思考', stepIndex: 1 } },
+          { type: 'plan_item_boundary', seq: 3, ts: '', payload: { planItemId: 's1', title: '任务甲' } },
+          { type: 'tool_start', seq: 4, ts: '', payload: { toolCallId: 't1', name: 'task_table_write' } },
+          { type: 'tool_result', seq: 5, ts: '', payload: { toolCallId: 't1', name: 'task_table_write', ok: true } },
+          { type: 'thought', seq: 6, ts: '', payload: { content: '步骤2思考', stepIndex: 2 } },
+          { type: 'plan_item_boundary', seq: 7, ts: '', payload: { planItemId: 's2', title: '任务乙' } },
+          { type: 'tool_start', seq: 8, ts: '', payload: { toolCallId: 't2', name: 'read_file' } },
+          { type: 'tool_result', seq: 9, ts: '', payload: { toolCallId: 't2', name: 'read_file', ok: true } },
+        ],
+        assistantMessage: { content: '答复', ts: '' },
+        status: 'complete',
+      }),
+    );
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    const kids = Array.from(details.children);
+    const thoughtIdx = kids.findIndex((el) => el.classList.contains('round-block__thought'));
+    const firstGroupIdx = kids.findIndex((el) => el.classList.contains('round-block__plan-item'));
+    // 两个任务项组都建成（前置条件：本用例确实走到了「组外内容 + 组」共存的形态）
+    expect(details.querySelectorAll(':scope > .round-block__plan-item').length).toBe(2);
+    expect(thoughtIdx).toBeGreaterThanOrEqual(0);
+    expect(firstGroupIdx).toBeGreaterThanOrEqual(0);
+    // 组外的 thought 必须排在第一个任务项组**之前**（沉底即 thoughtIdx > firstGroupIdx → 红）
+    expect(thoughtIdx).toBeLessThan(firstGroupIdx);
+  });
+
+  it('建表工具批不沉到任务项组之间（真机 round-1790411133316 形态：建表在前、边界在后）', () => {
+    // 真机事件序（小说项目 round-1790411133316）：建表工具产在**首个边界之前** →
+    // 它不在任何任务项组内（根层），却在收尾重建时被摆到了「任务项 2 与 任务项 3」之间——
+    // 正是用户报的「工具夹在倒数第一和倒数第二个标题中间」。
+    // 成因：narrate 归组循环先跑（建出组 1、组 2），批循环后来给根层批块找锚点时
+    // **只与「行」比、不与「组」比** → 找不到更大的同层行 → appendChild 落尾 → 后续组（组 3）再追加到它之后。
+    // 判据同源见 insertPlanItemInOrder（任务项组入候选）。
+    mountChatView();
+    const T = (n: number): string => `2026-09-27T00:00:${String(n).padStart(2, '0')}.000Z`;
+    dispatchReplay(
+      makeRound({
+        id: 'r1',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: T(0), payload: { role: 'AI', llm: 'm' } },
+          { type: 'thought', seq: 2, ts: T(1), payload: { content: '先建任务表', stepIndex: 1 } },
+          { type: 'tool_start', seq: 3, ts: T(2), payload: { toolCallId: 'ttw', name: 'task_table_write' } },
+          { type: 'tool_result', seq: 4, ts: T(2), payload: { toolCallId: 'ttw', name: 'task_table_write', ok: true } },
+          { type: 'plan_item_boundary', seq: 5, ts: T(3), payload: { planItemId: 'p1', title: '任务甲' } },
+          { type: 'narrate', seq: 6, ts: T(4), payload: { content: '甲执行' } },
+          { type: 'plan_item_boundary', seq: 7, ts: T(5), payload: { planItemId: 'p2', title: '任务乙' } },
+          { type: 'narrate', seq: 8, ts: T(6), payload: { content: '乙执行' } },
+          { type: 'plan_item_boundary', seq: 9, ts: T(7), payload: { planItemId: 'p3', title: '任务丙' } },
+          { type: 'tool_start', seq: 10, ts: T(8), payload: { toolCallId: 'rf', name: 'read_file' } },
+          { type: 'tool_result', seq: 11, ts: T(8), payload: { toolCallId: 'rf', name: 'read_file', ok: true } },
+        ],
+        assistantMessage: { content: '答复', ts: T(9) },
+        status: 'complete',
+      }),
+    );
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    const kids = Array.from(details.children);
+    const firstGroupIdx = kids.findIndex((el) => el.classList.contains('round-block__plan-item'));
+    const ttwRow = details.querySelector<HTMLElement>('.round-block__tool[data-tool-call-id="ttw"]')!;
+    // 单工具批 = 行即批（无批块包裹）→ 落点根元素就是该行
+    const ttwEl = (ttwRow.closest('.round-block__tool-batch') ?? ttwRow) as HTMLElement;
+    const ttwIdx = kids.indexOf(ttwEl);
+    // 三个任务项组都建成（前置条件：确为「组外条目 + 多组」形态）
+    expect(details.querySelectorAll(':scope > .round-block__plan-item').length).toBe(3);
+    expect(ttwIdx).toBeGreaterThanOrEqual(0);
+    // 根层建表工具必须排在**所有**任务项组之前（沉到组间/组下即红）
+    expect(ttwIdx).toBeLessThan(firstGroupIdx);
+  });
+
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
     beginRound();

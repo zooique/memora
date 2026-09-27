@@ -1030,6 +1030,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const grp = document.createElement('details');
     grp.className = 'round-block__plan-item';
     if (bound.payload.planItemId) grp.dataset.planItem = bound.payload.planItemId;
+    // ts/seq = 边界事件自身的排序键：任务项组**参与** insertPlanItemInOrder 的统一 (ts, seq) 序
+    // （组与行是同一坐标系里的两种条目）。不挂 → 行无处可比 → 根层无同层行时 appendChild
+    // 把「组外内容」甩到所有组之下（组内工具已全部进组时必然发生）。
+    grp.dataset.ts = bound.ts;
     // 任务项序号 = 该边界在所有边界中的排名 + 1（从 1 起）
     const order = bounds.indexOf(bound) + 1;
     const title = bound.payload.title?.trim() ?? '';
@@ -1271,12 +1275,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    * 候选限定为 details 的**直接子节点**：存在 plan_item_boundary 时同款元素
    * 嵌套在 .round-block__plan-item 分组内部，任意深度后代会让 insertBefore(el, next) 的 next 不是
    * details 的直接子节点 → 按 DOM 规范抛 NotFoundError（曾静默打断 finalizeRound 收口）。
-   * 候选类型 = narrate/tool/thought/工具批块 + 运行时输入条目（input，形态甲）。
+   * 候选类型 = narrate/tool/thought/工具批块 + 任务项组 + 运行时输入条目（input，形态甲）。
+   *
+   * **任务项组必须入候选（勿删）**：组与行同处一条 (ts, seq) 序——组挂边界事件的 ts/seq，
+   * 行挂自身事件键。若把组排除在外，则「组 vs 行」永不比较，行只与行比、组只与组比；
+   * 一旦根层没有同层行可锚（该轮工具已全被任务项边界收进组内），行会走 appendChild 落到
+   * **所有组之后**，表现为「组外的思考块沉底」。
    */
   function insertPlanItemInOrder(details: HTMLElement, el: HTMLElement, ts: string): void {
     const existing = Array.from(
       details.querySelectorAll<HTMLElement>(
-        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool, :scope > .round-block__tool-batch, :scope > .round-block__thought, :scope > .process-flow__thought, :scope > .round-block__input, :scope > .process-flow__input',
+        ':scope > .process-flow__narrate, :scope > .round-block__narrate, :scope > .round-block__tool, :scope > .process-flow__tool, :scope > .round-block__tool-batch, :scope > .round-block__thought, :scope > .process-flow__thought, :scope > .round-block__input, :scope > .process-flow__input, :scope > .round-block__plan-item',
       ),
     ).filter((e) => e !== el);
     const next = existing.find((e) => {
