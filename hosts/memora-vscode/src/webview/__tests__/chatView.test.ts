@@ -1775,22 +1775,51 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   });
 
   /**
-   * BATCH-SPLIT-1（在案缺陷）：同容器内的**外部可见条目**（问答卡等 `interactiveInputs` 行）未参与
-   * 工具批切段——切段判据 `groupToolBatches` 只吃 events，而问答卡无 seq、对它不可见；批块又锚在
+   * BATCH-SPLIT-1：同容器内的**外部可见条目**（问答卡等 `interactiveInputs` 行）须参与工具批切段
+   * ——断言取**与修法无关的不变量**：问答卡必须排在「答完之后才跑的工具 B」之前
+   * （truth：A → ask_user → 卡片 → B）。不写死 DOM 结构，不预设切段形态。
+   *
+   * 原始病理：切段判据 `groupToolBatches` 只吃 events，而问答卡无 seq、对它不可见；批块又锚在
    * 段内首个 `tool_start` 的 ts ⇒ 问答卡被排到整块之后，观感「问答卡之后的工具跑到卡片前面」。
-   *
-   * 断言取**与修法无关的不变量**：问答卡必须排在「答完之后才跑的工具 B」之前
-   * （truth：A → ask_user → 卡片 → B）。不写死 DOM 结构，避免预设尚未设计的切段形态。
-   *
-   * 当前实现不满足，故以 `it.fails` 表达「期望失败」：现在执行失败 → 用例判为通过（不阻塞门禁）；
-   * 一旦实现满足，本行会转红，提示升格为普通 it —— 该动作即本缺陷的清账触发器。
+   * 已由 `visibleInputTs` 注入断面 ts 修复（本用例曾以 `it.fails` 封存，实现满足即转红 → 本轮升格为 it）。
    */
-  it.fails('BATCH-SPLIT-1：外部可见条目（问答卡）应成为工具批断面', () => {
+  it('BATCH-SPLIT-1：外部可见条目（问答卡）应成为工具批断面', () => {
     batchSplitFixture();
     const details = document.querySelector('.round-block__details') as HTMLElement;
     const qa = details.querySelector('.round-block__input') as HTMLElement;
     const rowB = details.querySelector('.round-block__tool[data-tool-call-id="b"]') as HTMLElement;
     // B 的 DOM 位置须在问答卡之后（FOLLOWING）——否则问答卡被推到了它「答完之后才跑的工具」后面
+    expect(qa.compareDocumentPosition(rowB) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  /**
+   * BATCH-SPLIT-1 流式对照：同一病理在**运行时流式路径**（renderProcessFlow）也须成立。
+   *
+   * 上一条守卫走重放（`renderReplayRound`）；本用例按事件到达序逐条 dispatch，验证流式路径
+   * 同样以问答卡切开前后两段工具——两条路径共用 `groupToolBatches`，此处对拍防「只修一路」。
+   * 时点即真实复现点：问答卡上屏后、工具 B 到达时渲染，若断面未生效则 B 被并进批块排到卡片之前。
+   */
+  it('BATCH-SPLIT-1 流式：问答卡同样切开前后两段工具（对拍重放路径）', () => {
+    mountChatView();
+    const T = (n: number): string => `2026-09-27T00:00:${String(n).padStart(2, '0')}.000Z`;
+    dispatch({ type: 'process_event', event: { type: 'meta', seq: 1, ts: T(9), payload: { role: 'AI', llm: 'm' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 2, ts: T(10), payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 3, ts: T(11), payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 4, ts: T(12), payload: { toolCallId: 'ask', name: 'ask_user', args: '{}', stepIndex: 2 } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 5, ts: T(13), payload: { toolCallId: 'ask', name: 'ask_user', ok: true, summary: '选方案A' } } });
+    // 用户回答上屏（流式 QA 行，无 seq）
+    dispatch({ type: 'user', text: '选方案A', ts: T(14), kind: 'question-answer' });
+    // 答完之后才跑的工具 B
+    dispatch({ type: 'process_event', event: { type: 'tool_start', seq: 6, ts: T(15), payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 3 } } });
+    dispatch({ type: 'process_event', event: { type: 'tool_result', seq: 7, ts: T(16), payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' } } });
+
+    const flow = document.querySelector('.process-flow') as HTMLElement;
+    expect(flow).not.toBeNull();
+    const qa = flow.querySelector('.round-block__input') as HTMLElement;
+    const rowB = flow.querySelector('.round-block__tool[data-tool-call-id="b"]') as HTMLElement;
+    expect(qa).not.toBeNull();
+    expect(rowB).not.toBeNull();
+    // 与重放守卫同一不变量：问答卡须在工具 B 之前
     expect(qa.compareDocumentPosition(rowB) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 

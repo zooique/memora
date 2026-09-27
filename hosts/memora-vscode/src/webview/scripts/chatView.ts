@@ -1152,6 +1152,31 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   ]);
 
   /**
+   * 外部可见条目的边界时间集（工具批断面的**取数处**）。
+   *
+   * 为什么需要：`groupToolBatches` 只吃 `events`，而问答卡（`.round-block__input`）来自
+   * `interactiveInputs` / 运行时缓存——**无 seq、不在 events 里** ⇒ 对切段判据天然不可见，
+   * 于是「工具 → 问答卡 → 工具」被并成一批、卡片被推到批块之后（登记缺陷 BATCH-SPLIT-1）。
+   * 本函数抽出「同容器里实际可见的问答卡 ts」，作**虚拟断面**喂给切段判据（不碰内核）。
+   *
+   * 只取 ts：问答卡无 seq，唯一可用的时空键就是 ts；而落位（`insertPlanItemInOrder`）同样按 ts，
+   * 故断面判据与呈现同键——避免「判据一套键、呈现另一套键」的双键病复发。
+   *
+   * @param root  过程容器（`.round-block__details` 或 `.process-flow`），取其后代问答卡
+   * @param extra 尚未落 DOM 的条目（finalize 的 `interactiveInputs` 入参）
+   * @returns    去重后的 ts 列表（空串剔除——历史/测试数据无时间键，不构成断面；无需排序，仅用于计数）
+   */
+  function visibleInputTs(root: HTMLElement, extra: readonly (string | undefined)[] = []): string[] {
+    const ts = new Set<string>();
+    root.querySelectorAll<HTMLElement>('.round-block__input').forEach((el) => {
+      const t = el.dataset.ts;
+      if (t) ts.add(t);
+    });
+    for (const t of extra) if (t) ts.add(t);
+    return [...ts];
+  }
+
+  /**
    * 工具批切段（SSOT；三渲染上下文共用：运行时流式 / finalize 全量重建 / pending 行升级）
    *
    * 判据（方案-工具批按step断段-20260926.md §4.1；扩展 方案-工具批折叠合并-20260925.md §3.1）：
@@ -1161,14 +1186,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
    *     （同 `stepIndex`）**不断段**（step 内伴随物）；两侧任一 `stepIndex` 缺省（旧数据）→ 回落相邻性。
    *     无思考分隔的跨 step 工具序列（模型不产 reasoning）→ 维持相邻合并（无可见断面即不切）。
    *   · `tool_start` / `tool_result` 为段内容（结果按 toolCallId 配对归属其 tool_start）。
+   *   · **外部可见条目（新增）**：`boundaryTs` 非空时，相邻两条工具的 ts 之间若夹着外部可见条目
+   *     （问答卡，见 `visibleInputTs`）→ 断段。判据 = 「桶号」（小于该工具 ts 的边界数）变化，
+   *     与落位同用 ts 键——呈现在哪、断面就在哪。
    * 其余条目（thinking / memory_added 等）不在打断物清单内 → 不断段。
    *
-   * @param events 当前轮全部过程事件（流式与重放同源输入）
+   * @param events     当前轮全部过程事件（流式与重放同源输入）
+   * @param boundaryTs 外部可见条目（问答卡）的 ts 集；缺省空数组 = 维持原判据（无外部条目即无断面）
    * @returns 批数组（按段内首个 tool_start 的 seq 升序；空流返回空数组）
    */
-  function groupToolBatches(events: ProcessEvent[]): ToolBatch[] {
+  function groupToolBatches(events: ProcessEvent[], boundaryTs: readonly string[] = []): ToolBatch[] {
     // 全序按 seq 稳定排序（宿主可见 ProcessEvent 全序，方案 §二约束：判据只读 seq/类型/toolCallId）
     const ordered = [...events].sort((a, b) => a.seq - b.seq);
+    // 桶号 = 小于该 ts 的边界条目数：相邻工具桶号不同 ⇒ 二者之间夹着问答卡 ⇒ 断段
+    const bucketOf = (ts: string): number => {
+      let n = 0;
+      for (const b of boundaryTs) if (b < ts) n += 1;
+      return n;
+    };
     // toolCallId → 结果（段内容配对表；先建表后分组，结果可晚于打断物到达仍归属其 start）
     const results = new Map<string, Extract<ProcessEvent, { type: 'tool_result' }>>();
     for (const e of ordered) {
@@ -1179,11 +1214,17 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     let current: ToolBatch | null = null;
     // 当前批所属 step（= 开批那条 tool_start 的 stepIndex；undefined = 旧数据无归属 → 不参与步切换判据）
     let currentStep: number | undefined;
+    // 当前批的边界桶号（开批时定；与新工具比对，变化即断段）
+    let currentBucket = 0;
     for (const e of ordered) {
       if (e.type === 'tool_start') {
+        const bucket = bucketOf(e.ts);
+        // 外部可见条目断面：跨过问答卡 → 关批（由下方开新批）
+        if (current && bucket !== currentBucket) current = null;
         if (!current) {
           current = { segId: e.seq, anchorTs: e.ts, entries: [] };
           currentStep = e.payload.stepIndex;
+          currentBucket = bucket;
           batches.push(current);
         }
         current.entries.push({ start: e, result: results.get(e.payload.toolCallId) });
@@ -1544,7 +1585,11 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     // （三渲染上下文共用：此处 finalize 重建 / renderProcessFlow 流式 / pending 行升级，禁内联三份）。
     // 单工具批 = 行即批（data-tool-batch 挂行、不包裹）——视觉等价现状、零回归；
     // 多工具批 = 批块（块标题 = 轮收尾摘要同款工具叙述句），失败/被拒留段内、块级标红（口径②）。
-    const batches = groupToolBatches(events);
+    // 断面 ts 取「已在 DOM 的快照条目 + 本次待插的 interactiveInputs」（BATCH-SPLIT-1：卡片须切开前后两段工具）
+    const batches = groupToolBatches(
+      events,
+      visibleInputTs(details, (interactiveInputs ?? []).map((q) => q.ts)),
+    );
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
@@ -1809,7 +1854,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     //   （与 finalize 重建 / pending 行升级共用，禁内联三份）。幂等增量：行按 toolCallId
     //   配对键去重/升级，批块按段 id（data-tool-batch）寻址复用；批从单变多时旧平铺行
     //   并入批块（批 key 随迁，行不再持有）。流式按事件到达序推进，段只增不减。
-    const batches = groupToolBatches(events);
+    // 断面 ts 取容器内已上屏的问答卡（BATCH-SPLIT-1）
+    const batches = groupToolBatches(events, visibleInputTs(flow));
     for (const batch of batches) {
       const multi = batch.entries.length > 1;
       // 归组定位与逐条插入同锚（段内首个 tool_start 的 ts/seq）——批块不越任务项边界
