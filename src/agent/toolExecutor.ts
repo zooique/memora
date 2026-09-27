@@ -1207,7 +1207,8 @@ export class ToolExecutor {
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
-        const writeMode = strArg('mode', 'overwrite');
+        // mode 为 required（validateAndCoerceArgs 强制校验），不设缺省——设缺省即与 required 契约矛盾
+        const writeMode = strArg('mode');
         if (writeMode !== 'overwrite' && writeMode !== 'append' && writeMode !== 'update') {
           return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/update`;
         }
@@ -1241,7 +1242,8 @@ export class ToolExecutor {
         if (!resolved.ok) {
           return resolved.error;
         }
-        const planItemStatus = strArg('status', 'done');
+        // status 为 required（validateAndCoerceArgs 强制校验），不设缺省
+        const planItemStatus = strArg('status');
         if (planItemStatus !== 'done' && planItemStatus !== 'blocked') {
           return `[ERR:INVALID_ARG] 不支持的状态 "${planItemStatus}"，仅支持 done/blocked`;
         }

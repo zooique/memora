@@ -153,6 +153,14 @@
 - **验证（变异闭合）**：`loop.test.ts` 新增 2 例——同路径写串行（峰值活跃数恒 1，且 `a.md` / `./a.md` 等价写法被归一为同一文件）、不同路径写仍并发（峰值 ≥ 2，**反向守卫**防「凡写工具一律排队」的退化实现）。**变异**：短路串行分支 → 串行例**恰 1 红**（`maxActive` 2→1 失守）、并发例仍绿；恢复后 `grep` 复核零残留。内核全量 **2795 passed**（较改动前 +2，零回归）
 - **归属口径**：原登记在 3.1.0，2026-09-26 决议**改归 3.0.0**——代码已过 13 步门禁落在 main，为保标签去切发布源的成本 > 收益；且它是带守卫的 bug fix，纳入 3.0.0 不破坏任何契约。决策留档见 `tasks/待完成任务.md` DIFF-3 行
 
+### Fixed（内核 · 任务表工具契约收敛：必填参数删除不可达缺省 + `update` 模式全量替换语义钉死）
+
+**问题（五类带伤复审 · 口径伤 + 命名伤）**：① `task_table_write` 的 `mode` 与 `task_table_update` 的 `status` 在 `builtinTools` 工具表标 `required`，却在 `toolExecutor` 派发处各给 `'overwrite'` / `'done'` 缺省——schema 与实现自相矛盾（**口径伤**）；② `task_table_write` 的 `update` 模式按 `items` 索引全量重建（`writePlan` 整体替换 `checkpoint.plan`），对外描述只说「替换」，LLM 极易与单任务项工具 `task_table_update` 混淆、漏列即丢项（**命名伤 + 口径伤**）。
+
+- **修法（止血不造伤 · 零行为变更）**：① 删 `task_table_write`/`task_table_update` 派发处两处**不可达**缺省（`strArg('mode')` / `strArg('status')` 不再给回退值）——`required` 校验层（`validateAndCoerceArgs`）本就在派发前拦截缺失，缺省是永不可达的死代码，删后唯一区别是「校验被绕过时 fail-loud 而非静默覆盖」；② `task_table_write` 的 `update` 模式描述补全「须传完整任务项列表，未列出的会被丢弃——勿与 `task_table_update` 混淆」（工具级描述 + `mode` 参数级描述双处对齐，单一口径）
+- **验证（回归钉锁死契约）**：新增 `sessionManager.test.ts` 守卫「`writePlan` update 模式全量替换：未列出的任务项被丢弃」（3 项基线 → update 传 2 项 → plan 长度=2、保留原 id、第 3 项消失）。**实测**：`builtinTools.test.ts` 70 passed / `toolExecutor.test.ts` task_table 14 passed / `sessionManager.test.ts` 整文件 74 passed，全绿零回归
+- **残留已知伤（如实记，不静默丢）**：`update` 模式 与 `task_table_update` 工具**撞名**是结构性命名带伤，描述缓解仅止血未根除；彻底消除须把 `update` 模式改名（如 `replace`），但属破坏 LLM 公有契约，须走 deprecation 周期。已记 `tasks/待完成任务.md` 观察区 `TASKTABLE-NAME-1`（建议级，触发 = 契约整理批次或真机复现混淆）
+
 ### Added（新增门禁 `rules:refs`：规则裸路径引用有效性 · 补 `docs:links` 同族盲区）
 
 **问题证据（血训）**：`413e1046` 把 14 个规则文件从 `.trae/rules/` 移入 `.trae/rules/generic/`，引用漏改分**两类书写形态**——① markdown 链接形态（`](...)`，`docs:links` 能抓，已修 15 处）；② **反引号 / 纯文本形态的裸路径**（本次修 12 处）。后者是**判据失明的盲区**：`docs:links` 只认 `](...)` 语法，且**主动剥离行内代码跨度**（见 `check-publish-links.ts` 的 `LINK_RE` / `INLINE_CODE_RE`）→ 裸路径根本不在其扫描面内。两类是同一族「参考腐烂」，只是书写形态不同。
