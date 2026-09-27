@@ -10,6 +10,16 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Fixed（宿主 · 任务项组外过程条目沉底：任务项组纳入统一 (ts, seq) 排序候选）
+
+**问题（纯宿主渲染层，内核零改动）**：`plan_item_boundary` 排在**本轮首个工具之前**时（续会 / prepare 预置 / 上一 turn 遗留计划），本轮工具全被边界收进任务项组内、根层只剩组外条目（narrate / thought / 工具批块）。宿主 `insertPlanItemInOrder` 的候选集合原只列「行」、不含任务项组 ⇒「行 vs 组」永不比较，根层无同层行可锚时即走 `appendChild` 落尾 → 组外条目沉到**全部任务项组之下**（真机 `round-1790411133316` 表现为「建表工具夹在倒数第一与倒数第二个标题之间」）。
+
+- **修法（喂料止血，零触碰排序判据）**：`getOrCreatePlanItemGroup` 补挂 `dataset.ts`（边界事件自身的排序键）；`insertPlanItemInOrder` 候选集合加 `:scope > .round-block__plan-item`。比较判据（`ts` 升序、同 `ts` 回落 `seq`）**原样未动**——只是让组**进入**已有的那条排序逻辑，不新增第二条
+- **组内零误伤**：候选限定 `:scope >`（直接子节点），而组不嵌套组（`getOrCreatePlanItemGroup` 的 root 恒为 flow / details）⇒ 往组**内**插行时该选择器恒 0 命中
+- **守卫**：`chatView.test.ts` +2 例（真机两形态——边界前置于首个工具 / 建表工具在边界之前）；变异退回候选那半 → 恰 1 红、零误伤。宿主全量 **781 passed / 2 skipped**、`tsc` 0、`eslint` 0
+- **存量旁路（如实记，未擅动）**：`insertPlanItemGroupInOrder` 按**纯 seq** 定位组，而 `insertPlanItemInOrder` 的组间判据是 **(ts, seq)** ⇒「同一不变量两处实现」，当前等价。已登记 `PLAN-GROUP-ORDER-1` 观察，收口属另一件事
+- **真机待复验**：源码已改，`dist/webview/scripts/chatView.js` 仍是旧 bundle ⇒ 需 `npm run compile` 后复看任务表建表工具的落点
+
 ### Added（宿主 · 文件改动 diff 可视化 DIFF-1：打开真实文件 + 改动行内联高亮 + 顶/底各一组确认·回退）
 
 **性质**：host-only，**内核零改动**（渲染与动作全在 `hosts/memora-vscode/src/extension/host/fileChange*.ts`）。
