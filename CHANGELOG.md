@@ -20,10 +20,12 @@
 - **清账**：封存期 `it.fails` 守卫（「期望失败」）**转红 ⇒ 升格为普通 `it`**，该动作即清账触发器、已触发；另补**流式对拍用例**一条（同一不变量），防「只修一路」
 - **验证（先红后绿 + 变异）**：隔离 `3 passed`；**变异**（`bucketOf` 恒返回 0）→ 两条守卫**恰 2 红**、前置自检仍绿 ⇒ 守卫有牙；宿主全量 `785 passed | 2 skipped`、`tsc` 0
 - **内核侧事实（已核实，非推理）**：提问走 `ask_user` 内置工具（唯一通道）⇒ 真实轮次在 A 与 B 之间必有该工具行（夹具已补，保真度修复）；工具轮 narrate 为**条件产出**（`if (narration)`）⇒「无 narrate」边界真实可达；`willSuspendForAsk` 命中时**不产出** `plan_item_boundary`
+- **入档**：判据并入 `docs/方案-工具批按step断段-20260926.md` §4.1 表 + §4.2 伪码（此前只存在于代码注释 ⇒ 真理源缺层）
+- **真机待复验**：两处接线（重放打开历史会话 / 运行时流式）的真机效果需「重载扩展宿主 + 开一轮含提问的对话」复看——与上方批次真机复看同批待办。故本项定级 **✅ 测试级**（单测 + 重放 + 变异），非真机闭合
 
-### Fixed（宿主 · 任务项组位置判据归位：纯 seq → 全仓统一的 (ts, seq)）
+### Fixed（宿主 · 任务项组位置判据归位：纯 seq → 任务项 / 时间轴插入域的 (ts, seq)）
 
-**问题（SSOT 收敛 · 带伤收口，内核零改动）**：`insertPlanItemGroupInOrder` 摆组时只比 `dataset.seq`，而全仓唯一的排序键是 **(ts, seq)**——`bounds` 排序（`a.ts.localeCompare(b.ts) || a.seq - b.seq`）、「任务项 N」编号（`bounds.indexOf + 1`）、归属判定（`planItemContainerFor`）、行插入（`insertPlanItemInOrder`）四处同源，只有摆组这一处偏出 ⇒ 组的**视觉位置**与它的**编号**可出自两把不同的键。
+**问题（SSOT 收敛 · 带伤收口，内核零改动）**：`insertPlanItemGroupInOrder` 摆组时只比 `dataset.seq`，而**任务项 / 时间轴插入域**唯一的排序键是 **(ts, seq)**——`bounds` 排序（`a.ts.localeCompare(b.ts) || a.seq - b.seq`）、「任务项 N」编号（`bounds.indexOf + 1`）、归属判定（`planItemContainerFor`）、行插入（`insertPlanItemInOrder`）四处同源，只有摆组这一处偏出 ⇒ 组的**视觉位置**与它的**编号**可出自两把不同的键。（注：`renderReplayRound` 的重放中段内容另有一处 ts-only 排序，属内容装配域、不在此键域内。）
 
 - **实锤（先红后绿，非推理）**：补守卫测试喂「边界 ts 与 seq 逆序」的病理样本（时钟回拨 / 历史补写），旧实现下第一个组的标题是 **「任务项 2 · 任务甲」**——编号序与视觉序分家 → 红；判据归位后绿
 - **修法**：比较键改 **(ts, seq)**（ts 优先、同 ts 回落 seq）；签名加 `boundTs`，调用点改传 `bound.ts`
@@ -38,7 +40,7 @@
 - **修法（喂料止血，零触碰排序判据）**：`getOrCreatePlanItemGroup` 补挂 `dataset.ts`（边界事件自身的排序键）；`insertPlanItemInOrder` 候选集合加 `:scope > .round-block__plan-item`。比较判据（`ts` 升序、同 `ts` 回落 `seq`）**原样未动**——只是让组**进入**已有的那条排序逻辑，不新增第二条
 - **组内零误伤**：候选限定 `:scope >`（直接子节点），而组不嵌套组（`getOrCreatePlanItemGroup` 的 root 恒为 flow / details）⇒ 往组**内**插行时该选择器恒 0 命中
 - **守卫**：`chatView.test.ts` +2 例（真机两形态——边界前置于首个工具 / 建表工具在边界之前）；变异退回候选那半 → 恰 1 红、零误伤。宿主全量 **781 passed / 2 skipped**、`tsc` 0、`eslint` 0
-- **存量旁路（同批已收口）**：`insertPlanItemGroupInOrder` 原按**纯 seq** 定位组，与全仓 (ts, seq) 键偏离——见上方 `### Fixed（宿主 · 任务项组位置判据归位…）`
+- **存量旁路（同批已收口）**：`insertPlanItemGroupInOrder` 原按**纯 seq** 定位组，与上行的 (ts, seq) 键偏离——见上方 `### Fixed（宿主 · 任务项组位置判据归位…）`
 - **真机待复验**：`dist` 已随本批 `pre-push` full 档的宿主构建重建（实测 `dist/webview/scripts/chatView.js` 已含 `grp.dataset.ts`）⇒ 只剩「重载扩展宿主 + 开一轮带任务表的对话」复看建表工具落点
 
 ### Added（宿主 · 文件改动 diff 可视化 DIFF-1：打开真实文件 + 改动行内联高亮 + 顶/底各一组确认·回退）
