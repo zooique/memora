@@ -1729,7 +1729,7 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   });
 
   /**
-   * BATCH-SPLIT-1 夹具：真实 ask 结构 —— 工具 A（step1）→ ask_user 工具行（step2）→ 问答卡 → 工具 B（step3）。
+   * BATCH-SPLIT-1 夹具：真实 ask 结构 —— 工具 A（step 1）→ ask_user 工具行（step 2）→ 问答卡 → 工具 B（step 3）。
    *
    * 内核侧事实（`src/agent/loop.ts`）：提问走 `ask_user` 内置工具（唯一通道，见 handleToolCalls 检出挂起），
    * 用户答案以该工具的 tool result 回填 ⇒ 真实轮次在 A 与 B 之间**必有一条 ask_user 工具行**；
