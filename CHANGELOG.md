@@ -10,6 +10,16 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Tests（宿主 · 登记在案缺陷 BATCH-SPLIT-1：问答卡未参与工具批切段）
+
+**复现（重放路径实测，非推理）**：两段工具（step 1 / step 2）之间夹一张问答卡、全程无 narrate 无 thought 时，`details` 顶层顺序实测为 `[tool-batch@A.ts（含 A+B）, input@中间 ts]` ⇒ 问答卡被排到后一段工具**之后**（应有顺序 A → 卡片 → B）。复现路径 `renderReplayRound`（打开历史会话走它，与运行时共用同一 `groupToolBatches`）⇒ **不止流式偶发，重开会话即见**。
+
+- **守卫**：`chatView.test.ts` 新增两条——夹具前置自检（防夹具腐化、独立可红）+ `it.fails` 断「工具 → 卡片 → 工具」。**为何用 `it.fails`**：pre-push full 档会跑宿主全量，硬红测试会阻塞推送；`it.fails` 表达「期望失败」⇒ 现在判通过、实现满足时该行转红，**该动作即清账触发器**
+- **订正原推论**：原「三同时」条件中 ②③ 的效力取决于 `thought.stepIndex`（类型 optional，判据显式兜底「两侧任一缺省 → 回落相邻性」）⇒ **stepIndex 缺省的轮次，thought 不构成断面，可达条件只剩 ①**。真实数据缺省比例未测，不夸大
+- **根因（比原记深一层）**：切段判据按 **seq** 扫描（`[...events].sort((a, b) => a.seq - b.seq)`），条目落位按 **ts**（`insertPlanItemInOrder`）⇒ 无 seq 的外部可见条目对切段**天然不可见**。与 PLAN-GROUP-ORDER-1 属**同族病**（同屏两套键）
+- **未处理**：修法（把「同容器外部可见条目 ts 集」作虚拟断面注入 `groupToolBatches`，不碰内核）留待独立一轮——风险点 = 注入 ts 集而扫描用 seq，两套键缝合须谨慎；另有两项待验：真实 ask 路径是否产 `tool_start`、流式路径升级批块时的重排行为
+- **门禁**：宿主全量 `783 passed | 1 expected fail | 2 skipped`、`tsc` 0
+
 ### Fixed（宿主 · 任务项组位置判据归位：纯 seq → 全仓统一的 (ts, seq)）
 
 **问题（SSOT 收敛 · 带伤收口，内核零改动）**：`insertPlanItemGroupInOrder` 摆组时只比 `dataset.seq`，而全仓唯一的排序键是 **(ts, seq)**——`bounds` 排序（`a.ts.localeCompare(b.ts) || a.seq - b.seq`）、「任务项 N」编号（`bounds.indexOf + 1`）、归属判定（`planItemContainerFor`）、行插入（`insertPlanItemInOrder`）四处同源，只有摆组这一处偏出 ⇒ 组的**视觉位置**与它的**编号**可出自两把不同的键。
