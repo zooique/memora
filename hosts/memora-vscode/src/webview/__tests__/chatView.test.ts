@@ -1693,6 +1693,41 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(ttwIdx).toBeLessThan(firstGroupIdx);
   });
 
+  it('任务项组位置与「任务项 N」编号同源：边界 (ts, seq) 逆序样本下不出现编号序与视觉序分家', () => {
+    // 病理样本（时钟回拨 / 历史补写）：两个边界的 ts 与 seq 逆序——后发生的边界（seq 小）
+    // 时间戳反而更大。全仓排序键是 (ts, seq)：bounds 排序、任务项编号、行插入三处同源；
+    // 组的位置也必须同源，否则「任务项 N」编号与屏幕上组的先后分家。
+    mountChatView();
+    const T = (n: number): string => `2026-09-27T00:00:${String(n).padStart(2, '0')}.000Z`;
+    dispatchReplay(
+      makeRound({
+        id: 'r1',
+        processEvents: [
+          { type: 'meta', seq: 1, ts: T(0), payload: { role: 'AI', llm: 'm' } },
+          { type: 'narrate', seq: 2, ts: T(1), payload: { content: '组外叙述' } },
+          // 边界甲：seq 小、ts 大（逆序的一半）
+          { type: 'plan_item_boundary', seq: 3, ts: T(5), payload: { planItemId: 'a1', title: '任务甲' } },
+          { type: 'narrate', seq: 4, ts: T(3), payload: { content: '乙执行' } },
+          // 边界乙：seq 大、ts 小（逆序的另一半）
+          { type: 'plan_item_boundary', seq: 5, ts: T(2), payload: { planItemId: 'a2', title: '任务乙' } },
+          { type: 'narrate', seq: 6, ts: T(7), payload: { content: '甲执行' } },
+        ],
+        assistantMessage: { content: '答复', ts: T(8) },
+        status: 'complete',
+      }),
+    );
+    const details = document.querySelector('.round-block__details') as HTMLElement;
+    const groups = Array.from(details.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'));
+    // 前置条件：两个任务项组都建成
+    expect(groups.length).toBe(2);
+    // 编号真源 = bounds 按 (ts, seq) 排出的名次：乙（ts 小）是「任务项 1」，甲（ts 大）是「任务项 2」；
+    // 视觉序必须与编号序一致（若组按纯 seq 摆位 → 甲在前、编号却更大 → 红）
+    expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 1');
+    expect(groups[0]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务乙');
+    expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务项 2');
+    expect(groups[1]!.querySelector('.round-block__plan-item-summary')?.textContent).toContain('任务甲');
+  });
+
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {
     mountChatView();
     beginRound();

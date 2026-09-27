@@ -1042,20 +1042,24 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     summary.textContent = `任务项 ${order} · ${title.length > 36 ? `${title.slice(0, 36)}…` : title}`;
     grp.appendChild(summary);
     // 任务项内叙述/工具父容器：按序插入 details 顶层，容器内平铺该任务项过程事件
-    insertPlanItemGroupInOrder(root, grp, bound.seq);
+    insertPlanItemGroupInOrder(root, grp, bound.ts, bound.seq);
     return grp;
   }
 
-  /** 任务项级容器按边界 seq 插入 details 顶层（边界序排序，防乱序） */
-  function insertPlanItemGroupInOrder(root: HTMLElement, grp: HTMLElement, boundSeq: number): void {
+  /** 任务项级容器按边界的 (ts, seq) 插入 details 顶层（与全仓统一排序键同源，防乱序） */
+  function insertPlanItemGroupInOrder(root: HTMLElement, grp: HTMLElement, boundTs: string, boundSeq: number): void {
     // 候选限定为 root 的**直接子节点**：与 insertPlanItemInOrder 同构隐患，
     // 对称补齐——不然任意深度后代会让 insertBefore(grp, next) 的 next 不是 root 的直接子节点，
     // 按 DOM 规范抛 NotFoundError（同类失败模式的另一半）。当前任务项分组恒为容器直接子节点
     // （静态上 root 只会是 flow / details，绝不会是任务项分组自身），故属防御性、零行为变更。
     const existingGrps = Array.from(root.querySelectorAll<HTMLElement>(':scope > .round-block__plan-item'));
     const next = existingGrps.find((g) => {
-      const gBoundSeq = Number(g.dataset.seq ?? Infinity);
-      return gBoundSeq > boundSeq;
+      // 排序键与 bounds 排序 / 任务项编号 / insertPlanItemInOrder 同源：ts 优先、同 ts 回落 seq。
+      // 组的视觉位置与「任务项 N」编号出自同一把键，否则 ts 与 seq 逆序的样本（时钟回拨 /
+      // 历史补写）会让两者分家——屏幕上「任务项 2」排到「任务项 1」之前。
+      const t = g.dataset.ts ?? '';
+      if (t !== boundTs) return t > boundTs;
+      return Number(g.dataset.seq ?? Infinity) > boundSeq;
     });
     if (next) {
       root.insertBefore(grp, next);
