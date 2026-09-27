@@ -50,6 +50,10 @@ export type { IdempotencyLevel, ToolExecutionRecord } from '@/agent/types.js';
 // 宿主改动追踪（fileChangeTracker）据其 keys 派生触发集合，禁并列维护第二份清单——
 // 内核新增按 path 的写工具时宿主自动跟随，防「内核进串行闸、宿主不知情」的静默少报。
 export { WRITE_PATH_EXTRACTORS } from '@/agent/toolResultCache.js';
+// OPAQUE_WRITE_TOOL_NAMES：目标不可静态定位的写工具（脚本/内部索引类，diskWrite:'opaque'）。
+// 宿主改动可视化对其做「执行前后目录快照 diff」收口（见 fileChangeTracker.noteExternalMutations），
+// 禁并列维护第二份清单（两份必漂移 = 脚本类改动静默不追踪）。
+export { OPAQUE_WRITE_TOOL_NAMES } from '@/agent/builtinTools.js';
 // 角色包（Role Pack）类型：文件夹形态（manifest.json 核心控制 + 独立内容文件）
 export type {
   RolePack,

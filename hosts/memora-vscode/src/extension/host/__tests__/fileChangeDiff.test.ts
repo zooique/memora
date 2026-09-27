@@ -14,7 +14,6 @@ import { describe, it, expect } from 'vitest';
 import {
   applyHunkReverts,
   computeFileDiff,
-  formatUnifiedDiff,
   hunkAnchorLine,
   hunkKey,
   isRemovedOnly,
@@ -290,56 +289,5 @@ describe('hunkKey：块寻址指纹', () => {
     expect(hunkKey(delB, after)).not.toBe(hunkKey(delZ, after));
     // 同位置、内容相同 ⇒ 同一指纹（不会因为「文件别处还有内容」而无谓变化）
     expect(hunkKey(delB, after)).toBe(hunkKey(delB, 'a\nc\nD'));
-  });
-});
-
-describe('formatUnifiedDiff：上下排列的对照文本', () => {
-  it('首行标题 + 改动计数，跨行旧/新内容分块排列', () => {
-    const text = formatUnifiedDiff('a\nb\nc', 'a\nX\nc', 'a.md — 本次改动');
-    const lines = text.split('\n');
-    expect(lines[0]).toBe('a.md — 本次改动');
-    expect(lines[1]).toBe('共 1 处改动');
-    expect(lines).toContain('- b');
-    expect(lines).toContain('+ X');
-  });
-
-  it('多块：每块各有自己的分隔头与序号', () => {
-    const text = formatUnifiedDiff('a\nb\nc\nd\ne', 'a\nX\nc\nY\ne', 't');
-    expect(text).toContain('改动 1/2');
-    expect(text).toContain('改动 2/2');
-    expect(text.split('\n').filter((l) => l.startsWith('- '))).toEqual(['- b', '- d']);
-    expect(text.split('\n').filter((l) => l.startsWith('+ '))).toEqual(['+ X', '+ Y']);
-    // 顺序也是契约：同一处改动**先旧后新**（上下排列的语义所在），且块间按文件顺序
-    expect(text.indexOf('- b')).toBeLessThan(text.indexOf('+ X'));
-    expect(text.indexOf('+ X')).toBeLessThan(text.indexOf('- d'));
-  });
-
-  it('纯删除块：只有 - 行，没有 + 行（并标明删除位置）', () => {
-    const text = formatUnifiedDiff('a\nB\nc', 'a\nc', 't');
-    expect(text).toContain('纯删除');
-    expect(text.split('\n').filter((l) => l.startsWith('- '))).toEqual(['- B']);
-    expect(text.split('\n').filter((l) => l.startsWith('+ '))).toEqual([]);
-  });
-
-  it('新建文件：只有 + 行；清空文件：只有 - 行', () => {
-    const created = formatUnifiedDiff('', 'x\ny', 't');
-    expect(created.split('\n').filter((l) => l.startsWith('+ '))).toEqual(['+ x', '+ y']);
-    expect(created.split('\n').filter((l) => l.startsWith('- '))).toEqual([]);
-    const cleared = formatUnifiedDiff('x\ny', '', 't');
-    expect(cleared.split('\n').filter((l) => l.startsWith('- '))).toEqual(['- x', '- y']);
-    expect(cleared.split('\n').filter((l) => l.startsWith('+ '))).toEqual([]);
-  });
-
-  it('无改动：0 处改动、无块内容', () => {
-    const text = formatUnifiedDiff('a\nb', 'a\nb', 't');
-    expect(text).toContain('共 0 处改动');
-    expect(text.split('\n').filter((l) => l.startsWith('- ') || l.startsWith('+ '))).toEqual([]);
-  });
-
-  it('每行改动都带 - / + 前缀（上下排列靠前缀区分，不靠左右分栏）', () => {
-    const text = formatUnifiedDiff('a\nb\nc', 'a\nX\nc', 't');
-    // 未改动的公共行**不出现**：对照只呈现改动本身（免受全文噪音干扰）
-    expect(text).not.toContain('- a');
-    expect(text).not.toContain('+ c');
   });
 });

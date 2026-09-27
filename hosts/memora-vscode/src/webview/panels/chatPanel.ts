@@ -15,6 +15,9 @@
  *     角色名在 AI 消息头部标签 + 空状态标题展示（角色切换入口在独立的「角色」视图）。
  */
 import * as vscode from 'vscode';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join } from 'node:path';
+import { diffWorkspaceSnapshots } from '../../extension/host/fileChangeTracker.js';
 import type { RoundTruncateResult } from '../../extension/host/sessionStore.js';
 // 命令 id 唯一真源 = fileChangeView（与 package.json#contributes.commands 的值同源维护）。
 // 对话区常驻条的两个按钮**不自己实现动作**，只 executeCommand 复用已注册命令——
@@ -39,7 +42,26 @@ import {
   type SessionMeta,
   type WriteConfirmationRequest,
   type SessionView,
+  OPAQUE_WRITE_TOOL_NAMES,
 } from '@zooique/memora';
+
+/** 脚本类写工具（opaque 写，目标运行时才可知）——真源 = 内核 `OPAQUE_WRITE_TOOL_NAMES`（diskWrite:'opaque' 派生）。
+ * 宿主据此在工具执行前后各扫一次 workspace 快照、diff 收口，让脚本类文件改动可见（见 tracker.noteExternalMutations）。 */
+const SCRIPT_WRITE_TOOLS: readonly string[] = OPAQUE_WRITE_TOOL_NAMES;
+
+/** 目录快照遍历时跳过的目录（构建产物 / 内部数据，非用户可见源码）；缩小扫描范围、避开 memora 自身数据噪音 */
+const IGNORED_DIRS = new Set<string>([
+  'node_modules', '.git', 'dist', 'out', 'build', 'coverage',
+  '.memora', '.vscode', '.workbuddy', 'target', '.next', '.nuxt', '.svelte-kit', '.cache',
+]);
+
+/** 单文件扫描上限（2MB）：超大文件跳过，避免快照 IO 失控 */
+const SNAPSHOT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+/** 全量快照总字节上限（64MB）：超过则放弃内容快照、降级为「提示用户 git 核对」，
+ *  避免大仓库同步扫描卡死 extension host（opaque 写工具低频触发，正常仓库远在阈值下） */
+const SNAPSHOT_MAX_TOTAL_BYTES = 64 * 1024 * 1024;
+/** 全量快照文件数上限（8000）：海量小文件场景同样降级 */
+const SNAPSHOT_MAX_FILES = 8000;
 import type {
   ExtensionToWebviewMessage,
   WebviewToExtensionMessage,
@@ -295,6 +317,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
    * （见 docs/方案-文件改动diff可视化-20260926.md §3.2）。未注入时功能静默关闭。
    */
   private _fileChangeSink: FileChangeSink | undefined;
+  /** 脚本类工具（opaque 写）执行前 workspace 文本快照：键 = toolCallId → 路径→内容 */
+  private readonly scriptSnapshots = new Map<string, Map<string, string> | null>();
   /** 未确认改动路径清单的取值函数（由 extension 注入；真源 = 宿主 FileChangeView） */
   private _fileChangesProvider: (() => string[]) | undefined;
   /** 当前激活 Provider 的显示名（meta 事件 llm 字段来源，随 pushProviders 刷新，SSOT 与模型下拉同源） */
@@ -360,6 +384,60 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   /** 注入文件改动接入面（由 extension 装配；tool_start/tool_result 唯一入口） */
   public setFileChangeSink(sink: FileChangeSink): void {
     this._fileChangeSink = sink;
+  }
+
+  /**
+   * 扫描 workspace 下所有用户可见文本文件内容（opaque 写工具执行前后快照用）
+   *
+   * 排除 `IGNORED_DIRS`（构建产物 / memora 内部数据），跳过 >2MB 文件与二进制（含 NUL）文件；
+   * 返回 `路径→内容` 快照。耗时与 workspace 文本文件数成正比——脚本类工具（run_code 等）低频触发，
+   * 且 run_code 跑测试通常不改文件 ⇒ 多数情况快照 diff 为空、零噪音。
+   */
+  private scanWorkspaceTextFiles(): Map<string, string> | null {
+    const ws = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+    if (!ws) return new Map();
+    const result = new Map<string, string>();
+    let totalBytes = 0;
+    let fileCount = 0;
+    let aborted = false;
+    const walk = (dir: string): void => {
+      if (aborted) return;
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch {
+        return;
+      }
+      for (const entry of entries) {
+        if (aborted) return;
+        const abs = join(dir, entry.name);
+        if (entry.isDirectory()) {
+          if (IGNORED_DIRS.has(entry.name)) continue;
+          walk(abs);
+        } else if (entry.isFile()) {
+          try {
+            const size = statSync(abs).size;
+            if (size > SNAPSHOT_MAX_FILE_BYTES) continue;
+            // 上限守卫（止血）：总字节 / 文件数任一超阈值 → 放弃内容快照，
+            // 调用方降级为「提示用户 git 核对」，避免大仓库同步扫描卡死 extension host
+            if (totalBytes + size > SNAPSHOT_MAX_TOTAL_BYTES || fileCount + 1 > SNAPSHOT_MAX_FILES) {
+              aborted = true;
+              result.clear();
+              return;
+            }
+            const content = readFileSync(abs, 'utf-8');
+            if (content.includes('\u0000')) continue; // 二进制
+            totalBytes += size;
+            fileCount += 1;
+            result.set(abs, content);
+          } catch {
+            // 不可读 / 权限失败：跳过（不影响其余文件）
+          }
+        }
+      }
+    };
+    walk(ws);
+    return aborted ? null : result;
   }
 
   /**
@@ -2744,6 +2822,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             name: chunk.name,
             args: chunk.args,
           });
+          // 脚本类（opaque 写）工具：写前扫一次 workspace 快照，供执行后 diff（路径运行时才可知）
+          if (SCRIPT_WRITE_TOOLS.includes(chunk.name)) {
+            this.scriptSnapshots.set(chunk.toolCallId, this.scanWorkspaceTextFiles());
+          }
           // 任务驱动多步闭环：LLM 调用任务表工具时 → 推送当前计划快照给 webview 渲染任务看板
           // （薄壳装配：仅从 agent.getCheckpoint().plan 提取只读快照，不参与 LLM 执行。
           //  任务看板归 checkpoint 执行态，不进过程事件）
@@ -2767,6 +2849,34 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             ok: chunk.ok,
             blocked: chunk.blocked,
           });
+          // 脚本类（opaque 写）工具：写后扫快照 → diff → 喂改动追踪（blocked/失败不追踪）
+          if (SCRIPT_WRITE_TOOLS.includes(chunk.name)) {
+            const before = this.scriptSnapshots.get(chunk.toolCallId);
+            this.scriptSnapshots.delete(chunk.toolCallId);
+            if (before === undefined) {
+              // 异常：无写前快照（不应发生），静默跳过
+            } else if (before === null) {
+              // 写前扫描已超阈值降级：仅提示用户用 git 核对，不做内容 diff
+              if (chunk.ok && !chunk.blocked) {
+                this.post({
+                  type: 'notice',
+                  level: 'info',
+                  message: '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动',
+                });
+              }
+            } else if (chunk.ok && !chunk.blocked) {
+              const after = this.scanWorkspaceTextFiles();
+              if (after === null) {
+                this.post({
+                  type: 'notice',
+                  level: 'info',
+                  message: '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动',
+                });
+              } else {
+                this._fileChangeSink?.noteExternalMutations(diffWorkspaceSnapshots(before, after));
+              }
+            }
+          }
           // N/M 闪骨架：tool_start 时读到的 plan 是工具执行前的旧状态
           // （如会议骨架 2 个任务项），工具落定后才是新 plan（如 4 个任务项）——tool_result 补推一次快照，
           // 消除「1/2 → 1/4」的一次性闪烁

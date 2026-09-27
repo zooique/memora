@@ -13,7 +13,15 @@
  * @module __tests__/fileChangeView.test
  */
 
-import { resolve } from 'node:path';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 const h = vi.hoisted(() => {
@@ -21,6 +29,8 @@ const h = vi.hoisted(() => {
     visible: [] as unknown[],
     listeners: [] as (() => void)[],
     setCalls: [] as number[],
+    /** `setDecorations` 收到的**装饰项本体**（断言「装饰里到底挂了什么」） */
+    decorationItems: [] as unknown[][],
     /** `workspace.textDocuments`（回退前查「未保存编辑」用；元素需含 uri.fsPath / isDirty） */
     documents: [] as unknown[],
     /** 下一次 `showWarningMessage` 的返回值（undefined = 用户取消/关闭） */
@@ -37,6 +47,8 @@ const h = vi.hoisted(() => {
     infoChoice: undefined as string | undefined,
     /** `executeCommand` 留痕（断言「是否真的开了 vscode.diff」） */
     executed: [] as string[],
+    /** `executeCommand` 的**参数**留痕（断言 vscode.diff 的左右两栏分别是什么） */
+    commandArgs: [] as { cmd: string; args: unknown[] }[],
     /** 安全守卫收到的 tool 名（审计口径：删除动作不得记成 write_file） */
     guardCalls: [] as (string | undefined)[],
     /** `registerCodeLensProvider` 捕获的 provider（断言块级按钮的粒度与落点） */
@@ -140,6 +152,7 @@ vi.mock('vscode', () => ({
     },
     executeCommand: async (cmd: string, ...args: unknown[]): Promise<void> => {
       h.state.executed.push(cmd);
+      h.state.commandArgs.push({ cmd, args });
       if (cmd === 'setContext') {
         h.state.contextCalls.push({ key: String(args[0]), value: args[1] === true });
       }
@@ -249,6 +262,7 @@ function makeEditor(doc: Record<string, unknown>): Record<string, unknown> {
     document: doc,
     setDecorations: (_type: unknown, items: unknown[]): void => {
       h.state.setCalls.push(items.length);
+      h.state.decorationItems.push(items);
     },
     revealRange: (): void => undefined,
   };
@@ -308,6 +322,7 @@ beforeEach(() => {
   h.state.visible = [];
   h.state.listeners = [];
   h.state.setCalls = [];
+  h.state.decorationItems = [];
   h.state.documents = [];
   h.state.warningChoice = undefined;
   h.state.warningCalls = [];
@@ -316,6 +331,7 @@ beforeEach(() => {
   h.state.infoCalls = [];
   h.state.infoChoice = undefined;
   h.state.executed = [];
+  h.state.commandArgs = [];
   h.state.guardCalls = [];
   h.state.lensProvider = undefined;
   h.state.activeListeners = [];
@@ -389,6 +405,32 @@ describe('FileChangeView · 编辑器可见性（真机「切走再切回高亮�
     for (const listener of h.state.listeners) listener();
 
     expect(h.state.setCalls.length).toBe(0);
+  });
+});
+
+/**
+ * 内联装饰 = **只高亮 + 悬停**，不挂行尾常驻旧内容
+ *
+ * 2026-09-28 真机反馈：行尾那行红色删除线「⟵ 原: …」与 hover 说的是同一件事，却长期占着版面
+ * ⇒ 视觉噪音，已删。守卫盯 `renderOptions`（行尾附件的**唯一**载体）：谁把它加回来，本用例即红。
+ * 同时钉死 `hoverMessage` **仍在**——它是「改动前原内容」的唯一查看入口，不能跟着一起删。
+ */
+describe('FileChangeView · 内联装饰不挂行尾旧内容', () => {
+  it('装饰项带 hoverMessage，但**不带** renderOptions（行尾预览已删）', () => {
+    const { view, tracker, setDisk } = makeView();
+    recordOneWrite(tracker, setDisk); // v0 → v1，一处改动
+    view.register(makeContext());
+
+    const doc = makeDoc('v1');
+    h.state.visible = [makeEditor(doc)];
+    for (const listener of h.state.listeners) listener();
+
+    expect(h.state.decorationItems.length).toBe(1);
+    const items = h.state.decorationItems[0] as Record<string, unknown>[];
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) expect(item.renderOptions).toBeUndefined();
+    // hover 必须还在：旧内容只在内存里，hover 是用户看它的唯一入口
+    expect(items[0]?.hoverMessage).toBeDefined();
   });
 });
 
@@ -532,21 +574,25 @@ function renderLenses(doc: Record<string, unknown>): LensLike[] {
   return provider.provideCodeLenses(doc);
 }
 
-/** 取「对照」虚拟文档的真实正文（走 provider = 生产读路径，不是读内部字段） */
+/**
+ * 取对比**左栏**（旧内容虚拟文档）的真实正文（走 provider = 生产读路径）
+ *
+ * 从左栏 URI 出发，而**不是**从「打开过的文档」出发：`vscode.diff` 不经 `showTextDocument`，
+ * `opened` 里不会有它——按 `opened` 找会恒为空，断言变成假绿。
+ */
 function compareText(): string {
-  const uri = h.state.opened.find((item) => item.startsWith('memora-diff:'));
-  if (uri === undefined) return '';
+  const diff = h.state.commandArgs.find((c) => c.cmd === 'vscode.diff');
+  if (!diff) return '';
   const provider = h.state.contentProvider as { provideTextDocumentContent(u: unknown): string };
-  return provider.provideTextDocumentContent({ toString: (): string => uri });
+  return provider.provideTextDocumentContent(diff.args[0]);
 }
 
 /**
- * 等「对照视图出现了」——**不预设它以什么形态出现**
+ * 等「对比视图出现了」——**不预设它以什么形态出现**
  *
- * 为何不直接等「虚拟文档已打开」：那样一旦有人把 `openCompare` 改回 `vscode.diff`，
- * 等待条件永不成立 ⇒ `waitFor` 先超时变红，后面的形态断言**根本跑不到**，守卫形同虚设
- * （2026-09-27 变异验证实踩：改回 vscode.diff 时红在 waitFor，不是红在守卫）。
- * 这里只等「出现过」，具体形态交给调用方的显式断言——变异才打得到正确的那一条。
+ * 等待条件一旦绑死某一种形态，形态被改动时 `waitFor` 会先超时，后面的形态断言**根本跑不到**
+ * ，守卫形同虚设（2026-09-27 变异验证实踩：等待条件写「虚拟文档已打开」时，改回 vscode.diff
+ * 红在 waitFor 而不是红在守卫）。这里只等「出现过」，形态交给调用方显式断言。
  */
 async function waitForCompareOpened(): Promise<void> {
   await vi.waitFor(() => {
@@ -554,6 +600,12 @@ async function waitForCompareOpened(): Promise<void> {
     const diffed = h.state.executed.includes('vscode.diff');
     expect(opened || diffed).toBe(true);
   });
+}
+
+/** 取 `vscode.diff` 的调用实参 `[left, right, title]`（左右两栏 + 标题） */
+function diffArgs(): { toString(): string }[] {
+  const call = h.state.commandArgs.find((c) => c.cmd === 'vscode.diff');
+  return (call?.args ?? []) as { toString(): string }[];
 }
 
 /** 取第 `index` 个指定按钮的调用参数 `[absPath, key]`（模拟用户点击所带的实参） */
@@ -800,8 +852,9 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
     await vi.waitFor(() => {
       expect(h.state.infoCalls.some((m) => m.includes('改动过大'))).toBe(true);
     });
-    // 闸生效的直接证据：没有真的去开对照文档（连虚拟文档都没建）
-    expect(h.state.opened.filter((u) => u.startsWith('memora-diff:'))).toEqual([]);
+    // 闸生效的直接证据：没有真的去开 diff（左栏虚拟文档也没建 ⇒ 读出来是空串）
+    expect(h.state.executed).not.toContain('vscode.diff');
+    expect(compareText()).toBe('');
   });
 
   it('反向守卫：小文件删除 → 正常打开对照（闸不误伤）', async () => {
@@ -820,28 +873,28 @@ describe('FileChangeView · 对比预览的体积闸（含删除场景）', () =
 
     await waitForCompareOpened();
     expect(h.state.infoCalls.some((m) => m.includes('改动过大'))).toBe(false);
-    // 形态断言（两条并列，谁被改坏谁红）
-    expect(h.state.executed).not.toContain('vscode.diff');
-    expect(h.state.opened.some((u) => u.startsWith('memora-diff:'))).toBe(true);
-    // 删除场景：对照只有「改前」的 - 行，没有 + 行
-    expect(
-      compareText()
-        .split('\n')
-        .filter((l) => l.startsWith('- ')),
-    ).toEqual(['- bye']);
+    // 形态断言（谁被改坏谁红）
+    expect(h.state.executed).toContain('vscode.diff');
+    // 删除场景：右栏无真实文件可指 ⇒ 两栏都是虚拟文档（右栏语义 = 空）
+    expect(diffArgs()[0]?.toString().startsWith('memora-diff:')).toBe(true);
+    expect(diffArgs()[1]?.toString().startsWith('memora-diff:')).toBe(true);
+    // 左栏 = 改动前原文（不是 - / + 前缀的对照文本）
+    expect(compareText()).toBe('bye');
   });
 });
 
 /**
- * 「查看对比」= **上下排列的统一视图**（2026-09-27 真机反馈「左右排列看不清原文」）
+ * 「查看对比」= `vscode.diff` **左右分栏**（2026-09-28 真机反馈回滚）
  *
- * 钉死两条：① 正文是 - / + 前缀的单列文本（不是左右分栏）；② **不再调用 `vscode.diff`**。
- * 后者是关键——VS Code 扩展 API 没有「以 inline 布局打开 diff」的入口，谁要是把它改回去，
- * 用户就会重新看到左右两栏，本断言即拦。
+ * 2026-09-27 曾改为自渲染的「上下统一视图」（当时反馈「左右排列看不清原文」），2026-09-28
+ * 真机再测结论相反 ⇒ 回滚到 git 同款。钉死两条：
+ *   ① 走 `vscode.diff`；自渲染形态的特征是「用 `showTextDocument` 打开虚拟文档」⇒ 不得出现；
+ *   ② 左栏 = 旧内容虚拟文档（`memora-diff:`，不落盘），正文 = 改动前**原文**（不带 -/+ 前缀，
+ *      那是被否决的上下视图的格式）。
  */
-describe('FileChangeView · 对照视图为上下排列', () => {
+describe('FileChangeView · 对照视图为 vscode.diff 左右分栏', () => {
   /** 造一条两处改动的记录并触发「查看对比」（走真实事件路径 + 通知按钮） */
-  async function openCompareOnTwoHunk(): Promise<string> {
+  async function openCompareOnTwoHunk(): Promise<void> {
     const { view, tracker, setDisk } = makeView();
     setDisk('a\nb\nc\nd\ne');
     view.register(makeContext());
@@ -855,25 +908,102 @@ describe('FileChangeView · 对照视图为上下排列', () => {
     view.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
     await waitForCompareOpened();
     expect(tracker.size()).toBe(1);
-    return compareText();
   }
 
-  it('正文是单列 - / + 文本，旧行在前、新行在后', async () => {
-    const text = await openCompareOnTwoHunk();
-    const lines = text.split('\n');
-    expect(lines[0]).toContain('a.md — 本次改动');
-    expect(lines[1]).toBe('共 2 处改动');
-    expect(lines.filter((l) => l.startsWith('- '))).toEqual(['- b', '- d']);
-    expect(lines.filter((l) => l.startsWith('+ '))).toEqual(['+ X', '+ Y']);
-    // 上下排列：同一处改动的 - 行紧邻其 + 行
-    expect(lines.indexOf('- b')).toBeLessThan(lines.indexOf('+ X'));
-    expect(lines.indexOf('+ X')).toBeLessThan(lines.indexOf('- d'));
+  it('走 vscode.diff（不是自渲染的上下统一视图）', async () => {
+    await openCompareOnTwoHunk();
+    expect(h.state.executed).toContain('vscode.diff');
+    // 自渲染形态的特征 = showTextDocument 打开虚拟文档 ⇒ 回滚后不得出现
+    expect(h.state.opened.filter((u) => u.startsWith('memora-diff:'))).toEqual([]);
   });
 
-  it('不再调用 vscode.diff（改用自渲染的只读虚拟文档）', async () => {
+  it('左栏 = 旧内容虚拟文档，正文是改动前原文（不带 - / + 前缀）', async () => {
     await openCompareOnTwoHunk();
-    expect(h.state.executed).not.toContain('vscode.diff');
-    // 打开的是虚拟文档（`memora-diff:` scheme）⇒ 只读、可释放，不落盘
-    expect(h.state.opened.some((u) => u.startsWith('memora-diff:'))).toBe(true);
+    expect(diffArgs()[0]?.toString().startsWith('memora-diff:')).toBe(true);
+    expect(compareText()).toBe('a\nb\nc\nd\ne');
+  });
+
+  it('标题带相对路径（多个同名文件时能辨认）', async () => {
+    await openCompareOnTwoHunk();
+    expect(String(diffArgs()[2] ?? '')).toContain(REL);
+  });
+});
+
+/**
+ * 右栏 = **真实文件**（可编辑），不是第二份虚拟文档
+ *
+ * 为何另开一个真实临时目录：`openCompare` 用 `existsSync` 判断文件是否还在，而本文件其余用例
+ * 的「磁盘」是内存 mock（`setDisk`）⇒ 那里恒为「不存在」，只能走到「右栏 = 空虚拟文档」分支。
+ * 要验证「文件还在时右栏指向真实文件」，文件必须真的在磁盘上。
+ */
+describe('FileChangeView · 右栏指向真实文件（真实 FS）', () => {
+  it('文件存在 ⇒ 右栏是 file: URI，左栏仍是旧内容虚拟文档', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'memora-fcv-'));
+    try {
+      const file = join(root, REL);
+      writeFileSync(file, 'a\nb\nc', 'utf-8');
+      const io: FileChangeIO = {
+        readTextFile: (p: string): string | null =>
+          existsSync(p) ? readFileSync(p, 'utf-8') : null,
+      };
+      const tracker = new FileChangeTracker(root, { io, now: (): number => 1 });
+      const view = new FileChangeView(tracker, {
+        getSecurityGuard: (): undefined => undefined,
+        isConfirmWrites: (): boolean => false,
+        log: (): void => undefined,
+      });
+      view.register(makeContext());
+      h.state.infoChoice = '查看对比';
+      view.noteToolStart({
+        toolCallId: 'r1',
+        name: 'write_file',
+        args: JSON.stringify({ path: file }),
+      });
+      writeFileSync(file, 'a\nX\nc', 'utf-8');
+      view.noteToolResult({ toolCallId: 'r1', name: 'write_file', ok: true });
+
+      await waitForCompareOpened();
+      const [left, right] = diffArgs();
+      expect(left?.toString().startsWith('memora-diff:')).toBe(true); // 左 = 旧内容虚拟文档
+      expect(right?.toString().startsWith('file:')).toBe(true); //      右 = 真实文件
+      expect(compareText()).toBe('a\nb\nc'); // 左栏 = 改动前原文
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+/**
+ * 虚拟文档释放（隐私承诺）：确认后**左右两栏**都不留旧内容
+ *
+ * 回滚为左右分栏后，一条记录**占用两个虚拟 URI**（左 = 旧内容、右 = 删除场景的空文档），
+ * 而上下统一视图只占一个 ⇒ `releaseVirtual` 漏清任一都会让旧内容常驻内存。本模块对外宣称
+ * 「旧内容零落盘、可释放」（可能含密钥），故这条必须钉死。
+ *
+ * ⚠️ **观测边界（如实记，不写假绿断言）**：右栏在删除场景是**空串**虚拟文档，而 provider 的读
+ * 路径是 `virtualContents.get(...) ?? ''` ⇒ 「已建立但值为空」与「已释放」**返回同形**（都是 `''`）
+ * ⇒ **空串那一栏的释放不可观测**。故本组只钉**非空**的左栏（旧内容侧）；空串侧靠 `releaseVirtual`
+ * 与左栏同一段代码对称保证，**不为它编一个恒真的断言**（那才是假绿）。
+ */
+describe('FileChangeView · 虚拟文档释放（左右两栏都不留旧内容）', () => {
+  it('确认改动后，左栏虚拟文档内容被清空（provider 读不到）', async () => {
+    const { view, tracker, setDisk } = makeView();
+    setDisk('v0');
+    view.register(makeContext());
+    h.state.infoChoice = '查看对比';
+    view.noteToolStart({
+      toolCallId: 't1',
+      name: 'write_file',
+      args: JSON.stringify({ path: REL }),
+    });
+    setDisk('v1');
+    view.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
+
+    await waitForCompareOpened();
+    expect(compareText()).toBe('v0'); // 建起来了：左栏 = 改动前内容
+
+    h.state.commands.get(CONFIRM_FILE_COMMAND)?.(FILE); // 走真实命令路径确认
+    expect(tracker.size()).toBe(0);
+    expect(compareText()).toBe(''); // 释放后读不到 ⇒ 旧内容不在内存里驻留
   });
 });

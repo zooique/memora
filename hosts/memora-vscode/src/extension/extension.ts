@@ -65,7 +65,7 @@ let agentPromise: Promise<Agent> | null = null;
 /**
  * 最近装配成功的 Agent 实例（同步引用）
  *
- * `agentPromise` 是异步的，无法同步取用；文件改动「恢复旧版」需要**同步**拿到
+ * `agentPromise` 是异步的，无法同步取用；文件改动「回退本文件改动」需要**同步**拿到
  * `agent.security`（路径守卫）做写前校验，故在装配成功时缓存一份同步引用。
  * 未装配时为 null（此时恢复会被安全拒绝——降级优先，绝不无校验直写）。
  */
@@ -181,7 +181,7 @@ function getOrCreateAgent(
       throw err;
     });
   }
-  // 缓存同步引用（供文件改动「恢复旧版」同步取 agent.security 做写前校验）；
+  // 缓存同步引用（供文件改动「回退本文件改动」同步取 agent.security 做写前校验）；
   // 两参 then：装配失败分支显式吞掉，避免产生未处理的 rejection。
   void agentPromise.then(
     (agent) => {
@@ -279,7 +279,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   // ─── 文件改动可视化（host-only，零内核改动；见 docs/方案-文件改动diff可视化-20260926.md）───
   // 记录归属 extension 激活期单例（工作区级），独立于聊天会话存在；旧内容走内存虚拟文档（零落盘）。
-  // 「恢复旧版」经 agent.security.assertPathAllowed 校验 + 宿主原子写（判据与内核守门同源）。
+  // 「回退本文件改动」经 agent.security.assertPathAllowed 校验 + 宿主原子写（判据与内核守门同源）。
   const fileChangeTracker = new FileChangeTracker(workspacePath);
   const fileChangeView = new FileChangeView(fileChangeTracker, {
     getSecurityGuard: () => currentAgent?.security ?? undefined,

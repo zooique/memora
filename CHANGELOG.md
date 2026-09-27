@@ -128,6 +128,50 @@
 - **措辞订正（历史条目不改写，在此留注）**：上上条「tool×step 交叉事实（同号对齐 / 按 step 统计工具用量）自此有据可查」把「数据可落盘」说成了「价值已兑现」——宿主 UI 至今**零读取** `tool_start.stepIndex`（工具批按相邻性切段，不按 step 归组）。应按 single-truth-source「预留键 vs 僵尸键」口径理解：真实消费方落地前它是**预留键**，不是已兑现能力。
 - **验证**：变异验证闭合——改断言时 227 中恰 4 红 / 223 绿（零误伤）→ 改实现后 227 全绿；`tsc -p ./` 0 / eslint 0（改动文件）；dist 产物含 `toolSummaryText`、`countToolTypes` / `toolBatchTotalsText` / `toolBatchTitleText` 零残留；`terminology:check` code 64 / text 76 无漂移。宿主全量另有 3 个 `rmSync` 钩子超时红，经隔离复跑与 IO 基准定性为**环境假红**（本机递归删 501 文件 99.6s ≫ 10s hook 上限；三套件与本次改动零引用链）。
 
+### Fixed（宿主 · 脚本类写工具文件改动可视化闭环：执行前后 workspace 快照 diff 收口 + 恢复文案诚实化）
+
+- **问题（DIFF-4 可视化半盲，本轮闭环）**：脚本类写工具（`run_code` / `run_skill_script` / `run_project_script`，内核标 `diskWrite:'opaque'`）目标路径**运行时才可知**，静态无法定位 ⇒ 不进宿主 `DISK_WRITE_TOOLS` 可视化（只含 `diskWrite:'path'` 工具）。用户看不到脚本改了哪些文件，无法确认/回退。内核写串行闸的 opaque 屏障**已防并行丢内容**，盲区只在宿主可见性，非内核写闸。
+- **修法（运行时事实回报，非静态枚举；零新增状态面，不破内核边界）**：ext 进程在脚本类 `tool_start` 扫一遍 workspace 文本文件快照、`tool_result` 再扫一遍，`diffWorkspaceSnapshots(before, after)` 产出外部变更集（新增/修改/删除三类），经 `FileChangeSink.noteExternalMutations` 按路径合并进 `FileChangeTracker`（复用 `upsert` 单源逻辑，保留最早 `beforeContent`、writeCount+1）。脚本目标不可静态知 ⇒ 改以「执行前后目录快照 diff」这一**运行时事实**收口。排除 `node_modules`/`.git`/`dist`/`.memora` 等目录、跳过 >2MB 与含 NUL 的二进制文件。真源 = 内核 `OPAQUE_WRITE_TOOL_NAMES`（新导出 `src/index.ts`），宿主派生 `SCRIPT_WRITE_TOOLS`，**禁并列维护第二份脚本清单**（两份必漂移 = 脚本类改动静默不追踪）。
+- **恢复文案诚实化（DIFF-1 标签语义漂移 #7 闭环）**：部分接受后 `beforeContent` 已被改写为「已接受基线」，文件级「恢复旧版」写的其实是基线而非 agent 介入前原文。标签统一改为「回退本文件改动」，提示文案改为「恢复到『你尚未接受的改动之前』的内容」，与 git `add -p` 模型自洽、消除误导。涉及 `fileChangeView.ts` 通知 / CodeLens / 状态栏 / 确认模态四处文案。
+- **守卫（fileChangeTracker.test.ts +6 例）**：`diffWorkspaceSnapshots` 新增/修改/删除三类 + 空集；`noteExternalMutations` 脚本新建文件 / 与 `write_file` 合并保留最早 `beforeContent` / writeCount 累加 / 空变更集无影响。变异：`!==` 改 `===` → 恰 2 红（修改检测漏报被咬住），还原复绿。
+- **验证（实测）**：宿主 `tsc --noEmit` = 0；`eslint --max-warnings 0` = 0；fileChange 相关定向 **48 passed**（含新增 6）；变异精确红 / 还原绿。内核 `npm run build` 已成功（本轮导出 `OPAQUE_WRITE_TOOL_NAMES` 经 dist 供宿主 tsc 解析）。⚠️ **宿主 dist 未含本轮**（本环境 esbuild 在 `copyRolePacks` 结构性超时）→ 真机验收前必须 `npm run compile`
+- **台账 DIFF-4 状态**：可视化半盲已闭环（2026-09-27）
+
+### Fixed（宿主 · 脚本类快照扫描上限守卫：大仓库防卡死 extension host）
+
+- **问题（本轮新加，吸收最新养分重判）**：上一轮落地「脚本类执行前后 workspace 快照 diff」时，`scanWorkspaceTextFiles` 用同步 `readdirSync`/`statSync`/`readFileSync` 全量扫描 workspace 文本文件存入 `Map<path,content>`。功能正确、盲区已闭环，但**在 extension host 用同步全扫**违反 VS Code 扩展性能准则（扩展 host 同步 IO 反模式）；同步阻塞的是整个扩展进程（所有扩展卡），不止本面板。量级：memora 自身排除忽略目录后约 800–1500 文本文件、同步读 ~100–600ms（亚秒，非秒级）；仅病理级大 monorepo（排除后仍数万源码）才数秒。属「建议级架构瑕疵」，非逻辑带伤。
+- **修法（止血型上限守卫，只加退出条件、不造复杂度）**：`scanWorkspaceTextFiles` 遍历中累计 `totalBytes`/`fileCount`，任一超阈值（`SNAPSHOT_MAX_TOTAL_BYTES=64MB` / `SNAPSHOT_MAX_FILES=8000`）即中止递归、清空已收集内容、返回 `null`。调用方（`chatPanel` tool_start/tool_result 分支）据 `null` 降级：不存快照、不跑 diff，仅经既有低扰 `notice` 通道提示「工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动」。正常仓库仍走完整快照 + 逐文件「回退本文件改动」；仅大仓库放弃自动追踪、交 git 核对。阈值常量与扫描同文件，零新增状态面、不破内核边界。
+- **守卫（chatPanelScriptSnapshot.test.ts +5 例）**：正常目录返回 Map（不降级）/ 总字节超 64MB 返回 null / 判据边界精确（64×1MB 不降级、65×1MB 降级）/ IGNORED_DIRS 不被扫描且不误触发降级 / 含 NUL 二进制跳过不计入（旧逻辑未破坏）。变异：`>` 改 `<` → 恰 4 红（正常/边界/IGNORED/NUL 全转红）、降级用例巧合仍绿，还原复绿——判据可达性钉死。⚠️ **用例规模后续下调（2026-09-28 实测订正）**：原「64×1MB 不降级 + 65×1MB 降级」要写 129MB、删 129 个文件，本容器删 ~200ms/个 ⇒ 光清理就远超默认 10s 钩子（全量并发下必红，但 **AssertionError 计数为 0**）。改为 **32×2MB = 恰好 64MB 不降级**（I/O 减半、语义等价；降级侧由既有「33×2MB → null」覆盖），并给边界用例与两个清理钩子显式超时——放宽的是**等待时间**，判据与断言一律不变。
+- **验证（实测）**：宿主 `tsc --noEmit` = 0；宿主 `eslint --config eslint.config.mjs`（测试文件在 `ignores` 内不查）= 0；定向 **5 passed**；变异红→绿。
+- **残留缺口（如实记，登记技术债）**：① 降级推 `notice` 的**集成守卫未做**（逻辑在私有 `consumeFlow` 内联，全路径集成测试成本高 + 本环境 `rmSync` 删 8001 文件超时假红风险）；逻辑直白、tsc 已保障类型，留待补 `consumeFlow` 集成测试。② 文件数 8000 阈值降级**缺单测**（真实构造 8001 文件删除超时）；与总字节降级共用 `aborted` 机制，边界测试已证明该机制咬住判据。③ 阈值 64MB/8000 为经验值，真机大仓库反馈后再调。
+- **生效前提**：改动在宿主 `chatPanel.ts`，**宿主 dist 未含本轮**（本环境 esbuild 在 `copyRolePacks` 结构性超时）→ 真机验收前必须 `npm run compile`。
+
+### Changed（宿主 · 文件改动对照回滚为 git 同款左右分栏 + 删掉行尾红色预览，2026-09-28 真机反馈）
+
+- **回滚 1：「查看对比」回到 `vscode.diff` 左右分栏**（推翻 2026-09-27 的「上下统一视图」）。真机再测结论相反：**git 同款左右分栏更直观**。`openCompare` 恢复 `executeCommand('vscode.diff', 左, 右, 标题)`：左 = 旧内容虚拟文档（`memora-diff:`，不落盘），右 = **真实文件**（`file:`，可编辑）；删除场景无真实文件可指 ⇒ 右侧给空虚拟文档。`existsSync` 导入与 `rightSeed` 随回滚恢复。⚠️ **布局仍由用户全局设置 `diffEditor.renderSideBySide` 决定**（默认左右），扩展不去改它——扩展 API 给不出「以 inline 布局打开」的入口，改布局 = 动用户设置或盲调切换型命令，皆属侵入。
+- **连带删除**：`formatUnifiedDiff`（`fileChangeDiff.ts`）专为上下统一视图而生，形态回滚后零生产消费 ⇒ 连同 6 个单测删除（净减债，git 历史可溯）。
+- **回滚 ≠ 回退修复**：体积闸「两侧长度都判」**保留**——旧版 `afterContent !== null && …` 的前缀会在删除场景短路放行（该缺口已修，本次不回退）。
+- **回滚 2：删掉行尾常驻的红色旧内容预览**（`INLINE_OLD_TEXT_STYLE` / `inlinePreview`，即 hunk 首行行尾那行红色删除线「⟵ 原: …」）。真机反馈：与 hover 说的是同一件事却长期占版面 = **视觉噪音**。**hover 保留**（旧内容只在内存里，hover 是用户看它的唯一入口）；并排看新旧走「查看对比」。
+- **守卫（fileChangeView.test.ts）**：对照形态 3 条（走 `vscode.diff`／左栏是虚拟文档且正文为改动前原文、**不带** -/+ 前缀／标题带相对路径）＋右栏真实文件 1 条（另开真实临时目录——判据含 `existsSync`，内存 mock 下恒为「文件不存在」，只能走到空虚拟文档分支）＋装饰不挂 `renderOptions` 1 条＋体积闸 2 条（删除大文件跳过／小文件不误伤）。
+- **变异验证 2 组**：① 把行尾预览加回 → **1 红**（装饰守卫）；② 把 `openCompare` 改回上下视图（`showTextDocument`）→ **5 红**（形态守卫）。两组都**红在断言本体**：等待条件刻意不绑死形态（绑死则变异先超时、守卫根本跑不到）。
+- **验证（实测）**：宿主 `tsc --noEmit -p ./` = 0；`eslint --config eslint.config.mjs`（改动源码文件）= 0；fileChange 两套件 **67 passed**（fileChangeView 32 + fileChangeDiff 35）；变异红→绿。
+- **文档同步**：`docs/方案-文件改动diff可视化-20260926.md` 加 §11.13 回滚注记；`docs/方案-文件改动分块呈现与块级动作-20260927.md` §8.7 第 2 条划线订正 + 新增 §8.8（历史正文不重写，只加注记）。
+- **生效前提**：改动在宿主 `fileChangeView.ts` / `fileChangeDiff.ts`，**宿主 dist 未含本轮**（本环境 esbuild 在 `copyRolePacks` 结构性超时）→ 真机验收前必须 `npm run compile`。
+
+### Fixed（宿主 · diff 模块复盘收口：文案口径单源 + 文档/台账失真订正 + 规则补第 8 层）
+
+真机通过后的对抗式复盘（判据 = `.trae/rules/generic/legacy-contract-audit-rules.md` §2/§3/§3.3/§4）：**代码侧不带伤、不违 SSOT**（§2 三条判别与 §3 五类带伤全不命中），问题全在「描述层」——形态回滚后描述没跟上代码。本段是这些问题的收口。
+
+- **文案口径单源（口径带伤 → 已修）**：同一动作两个名字——通知按钮叫「查看对比」、QuickPick 与状态栏悬停叫「打开对比」。已统一并抽为常量 `COMPARE_LABEL`（`fileChangeView.ts`），三处入口（通知按钮 / QuickPick 项 / 状态栏 tooltip）**同一真源**，禁各自写字面量（字面量散落正是本次漂移的成因）。`$(diff)` 图标前缀属装饰、不并入措辞。
+- **台账失真（最致命 · 已修）**：`tasks/待完成任务.md` DIFF-1 的**销项验收标准**写「对照页是否单列上下排列」，而该形态已回滚 ⇒ 照单验收会把刚通过真机的左右分栏**判成不合格**；同批 DIFF-6 行仍描述已删的 `formatUnifiedDiff`。均已订正。
+- **docs 失真（已修）**：`可视化-20260926.md` 的「落地形态」表仍写行尾 `⟵ 原: …`（已删）与「每 hunk 上方 2 个 CodeLens」（09-27 已改），其「人工验收清单」第③⑤条同样失真；`分块呈现-20260927.md` 实证表加「当时现状」注记。
+- **规则补第 8 层（新增判据，带观测 + 退出条件）**：§3.3 退役概念回扫清单原 7 层**漏了 `tasks/` 台账**——台账是验收标准的落点，失真比 docs 更致命。已补为第 8 层，并写明观测依据（本条 DIFF-1 实证）与退出条件（台账不再承载验收标准即可删）。
+- **补守卫（隐私承诺）**：回滚后一条记录占**两个**虚拟 URI（左 = 旧内容、右 = 删除场景空文档），而上下视图只占一个 ⇒ `releaseVirtual` 漏清任一即违反「旧内容零落盘、可释放」。新增 1 例钉**非空**的左栏；变异（删掉左栏那行 `delete`）→ **恰 1 红**，还原复绿。
+- **观测边界（如实记，不写假绿断言）**：右栏在删除场景是**空串**虚拟文档，而 provider 读路径是 `get(...) ?? ''` ⇒「已建立但为空」与「已释放」**返回同形** ⇒ 空串那一栏的释放**不可观测**。故不为它编恒真断言；空串侧靠同一段代码对称保证。
+- **DIFF-7 登记（已知残留，触发驱动，不预支）**：右栏是真实文件（对齐 git 同款 ⇒ 可编辑）。用户在对比页手改并**保存**后文档不再 `isDirty` ⇒ 点「回退本文件改动」**无任何提示、直接整体覆盖**（未保存编辑有模态确认 ✅，已保存的没有 ❌）。与 git `discard` 语义同构 ⇒ **非带伤**，但属静默数据丢失面。触发：真实出现「我自己改过、点回退被吞」的反馈 ⇒ 把「文档内容 ≠ `afterContent`」纳入与 dirty 同级确认通道（约 1 判定 + 1 文案）。
+- **自纠（本轮差点造的假注释）**：初稿把上述风险写成「已明确告知」——**不实**：模态文案只在 dirty 分支出现。已改为如实描述并同步登记台账。
+- **验证（实测）**：宿主 `tsc --noEmit -p ./` = 0；`eslint --config eslint.config.mjs` = 0；fileChange 三套件 **88 passed**。
+
 ## [3.0.0] - 待发布（发版日补日期）
 
 ### Fixed（内核 · 写串行闸收口：`diskWrite` 声明位 + 不透明写屏障，DIFF-4/5）

@@ -6,8 +6,9 @@
  * **呈现形态 = 内联（in-place），不强制弹出 diff 窗口**（对齐 Trae / Qoder 的交互）：
  *   ① 打开真实文件进工作区（改动已生效）；
  *   ② 改动行**块级高亮**（绿底 + 左侧竖条）；
- *   ③ hunk 首行**行尾内联旧内容**（删除线灰字）+ **悬停看完整旧内容**（Markdown）——
- *      旧内容仅内存展示，文件中已不存在，全程不落盘；
+ *   ③ hunk 首行**悬停看完整旧内容**（Markdown）——旧内容仅内存展示，文件中已不存在，
+ *      全程不落盘。⚠️ 行尾**不挂**旧内容的常驻预览：2026-09-28 真机反馈它与 hover 信息重复
+ *      且是视觉噪音，已删；「并排看新旧」的需求由「查看对比」的左右分栏 diff 承担。
  *   ④ **块级按钮**：每个改动块**末尾**一组「接受此处 / 拒绝此处」CodeLens，跟着改动走
  *      —— 改在哪一行，按钮就在哪一行旁边。⚠️ 旧稿写「每个 hunk 上方」：挂在 hunk **首行**
  *      时按钮会贴在**上一个 hunk 末尾**之下，被误读成「回退上一段」（2026-09-26 真机修正）。
@@ -20,14 +21,17 @@
  * 三层粒度（对位 Qoder / Trae）：跨文件（对话区常驻条 / 状态栏 / 命令面板）→ 单文件（标题栏）
  * → 单处（块级 CodeLens）。**不要在文件里摆跨文件按钮**：粒度混淆（§11.3 已判过一次真伤）。
  *
- * `vscode.diff` 自 2026-09-27 起**不再使用**：「改动对照」改为自渲染的**统一视图（上下排列）**
- * 只读虚拟文档——左右并排在窄编辑器里把长行挤成两栏、看不清原文，而扩展 API 给不出
- * 「以 inline 布局打开 diff」的入口（理由与实证见 `formatUnifiedDiff`）。
+ * 「改动对照」= `vscode.diff`（左 = 旧内容虚拟文档，右 = 真实文件），即 git 同款的**左右分栏**。
+ * 2026-09-27 曾改为自渲染的「上下统一视图」（当时真机反馈是「左右排列看不清原文」），
+ * 2026-09-28 真机再测后**回滚**：git 同款左右分栏更直观。
+ * ⚠️ **布局由用户全局设置 `diffEditor.renderSideBySide` 决定**（默认左右），扩展**不去改它**——
+ * 扩展 API 给不出「以 inline 布局打开 diff」的入口，改布局只能动用户设置或盲调切换型命令，
+ * 两者都属侵入用户环境，不做。
  *
  * 关键边界：
  *   - 旧内容经 `TextDocumentContentProvider` 以**虚拟文档**交给 `vscode.diff`，**全程零落盘**
  *     （隐私：旧密钥不进磁盘、不进 git；无清理负担）。
- *   - 「恢复旧版」= 写回 beforeContent：**必须先经 `assertPathAllowed`**（与内核 SecurityGuard 同源），
+ *   - 「回退本文件改动」= 写回 beforeContent：**必须先经 `assertPathAllowed`**（与内核 SecurityGuard 同源），
  *     再走宿主原子写 `atomicWriteFileSync`；**不是**内核 `write_file` 处理器（该入口不存在）。
  *     因恢复是宿主直写、不产生 tool_start/tool_result → **无需 re-entrancy guard**（无自追踪回路）。
  *
@@ -39,7 +43,7 @@
  */
 
 import { createHash } from 'node:crypto';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { basename } from 'node:path';
 import * as vscode from 'vscode';
 // MAX_DIFF_CONTENT_LENGTH：对比预览上限的**单一真源**（内核 pathGuard 导出）。
@@ -50,7 +54,6 @@ import { atomicWriteFileSync } from './atomicWriteSync.js';
 import {
   applyHunkReverts,
   computeFileDiff,
-  formatUnifiedDiff,
   hunkAnchorLine,
   hunkKey,
   isRemovedOnly,
@@ -58,14 +61,12 @@ import {
 } from './fileChangeDiff.js';
 import {
   FileChangeTracker,
+  type ExternalFileChange,
   type FileChangeRecord,
   type FileChangeSink,
   type ToolResultLike,
   type ToolStartLike,
 } from './fileChangeTracker.js';
-
-/** 行尾内联旧内容的最大展示字符数（超出省略号截断，完整内容走 hoverMessage） */
-const INLINE_PREVIEW_MAX_CHARS = 72;
 
 /** hoverMessage 里最多展示的旧行数（超出以「…」收尾，防超长内容撑爆悬停卡片） */
 const HOVER_MAX_LINES = 30;
@@ -106,6 +107,15 @@ export const RESTORE_FILE_COMMAND = 'memora.fileChange.restoreFile';
 export const PENDING_CONTEXT_KEY = 'memora.fileChangePending';
 
 /**
+ * 「打开改动对比」的用户可见措辞（**单一真源**）
+ *
+ * 三处入口（改动通知的按钮 / 状态栏 QuickPick 的动作项 / 状态栏悬停提示）**必须同一措辞**——
+ * 曾出现一处叫「打开对比」、另两处叫「查看对比」，同一动作两个名字 = 口径带伤（后来者会以为
+ * 是两件事）。故抽成常量，禁各自写字面量。QuickPick 项的 `$(diff)` 图标前缀不在此列（装饰，非措辞）。
+ */
+const COMPARE_LABEL = '查看对比';
+
+/**
  * 块级命令 id（**不进** package.json#contributes.commands）
  *
  * 参数是「文件绝对路径 + 块指纹」，只由块级 CodeLens 携带；暴露到命令面板会得到无参调用，
@@ -138,14 +148,6 @@ function highlightOptions(): vscode.DecorationRenderOptions {
   };
   return highlightOptionsCache;
 }
-
-/** 行尾内联旧内容的样式（删除线 + 灰红，明确「已不存在」语义） */
-const INLINE_OLD_TEXT_STYLE: vscode.ThemableDecorationAttachmentRenderOptions = {
-  color: 'rgba(214, 105, 105, 0.95)',
-  textDecoration: 'line-through',
-  fontStyle: 'italic',
-  margin: '0 0 0 1.5em',
-};
 
 /** 恢复写回的路径守卫（结构对位内核 SecurityGuard.assertPathAllowed；避免直接依赖内核类型） */
 export interface FileChangeSecurityGuard {
@@ -205,19 +207,6 @@ function describeChange(rec: FileChangeRecord): string {
   if (rec.beforeContent === null) return '新建文件';
   if (rec.afterContent === null) return '删除文件';
   return rec.writeCount > 1 ? `已写入 · 共 ${rec.writeCount} 次` : '已写入';
-}
-
-/** 行尾内联预览文本（单行摘要；完整内容走 hover） */
-function inlinePreview(removed: string[]): string | undefined {
-  const head = removed[0];
-  if (head === undefined) return undefined;
-  const trimmed = head.trim();
-  const clipped =
-    trimmed.length > INLINE_PREVIEW_MAX_CHARS
-      ? `${trimmed.slice(0, INLINE_PREVIEW_MAX_CHARS)}…`
-      : trimmed;
-  const rest = removed.length > 1 ? ` (+${removed.length - 1} 行)` : '';
-  return `⟵ 原: ${clipped}${rest}`;
 }
 
 /**
@@ -536,6 +525,23 @@ export class FileChangeView implements FileChangeSink {
     if (before === 0) this.notifyChange(record);
   }
 
+  noteExternalMutations(changes: ExternalFileChange[]): void {
+    if (changes.length === 0) return;
+    const wasEmpty = this.tracker.size() === 0;
+    const records = this.tracker.noteExternalMutations(changes);
+    if (records.length === 0) return;
+    // 内容已变 → 缓存的改动块与 CodeLens 全部失效，必须重算（与 noteToolResult 同源）
+    for (const rec of records) this.hunkCache.delete(rec.path);
+    this.reconcile();
+    this.refreshStatusBar();
+    this.lensProvider.refresh();
+    this.notifyChanged();
+    if (this.deps.isConfirmWrites()) return;
+    for (const rec of records) void this.revealChange(rec);
+    // 首个外部改动（0 → >0）：弹带按钮的通知——解决「没有按钮」的可发现性缺口
+    if (wasEmpty) this.notifyChange(records[records.length - 1]);
+  }
+
   // ─── 渲染 ───
 
   /**
@@ -553,7 +559,7 @@ export class FileChangeView implements FileChangeSink {
    * 则不动它，只如实呈现现状（并在 `renderInline` 留痕）。
    */
   private async revealChange(rec: FileChangeRecord): Promise<void> {
-    if (rec.afterContent === null) return; // 已删除：无文件可打开（可在入口中「恢复旧版」）
+    if (rec.afterContent === null) return; // 已删除：无文件可打开（可在入口中「回退本文件改动」）
     const seq = (this.renderSeq.get(rec.path) ?? 0) + 1;
     this.renderSeq.set(rec.path, seq);
     try {
@@ -583,7 +589,7 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
-   * 内联呈现：改动行高亮 + 首行行尾旧内容 + 悬停全文 +（可选）视口定位
+   * 内联呈现：改动行高亮 + 悬停看旧内容 +（可选）视口定位
    *
    * 装饰项与 `hunkCache` 同源（CodeLens 也读同一份），确保「高亮的位置」与「按钮的位置」永不漂移。
    *
@@ -676,21 +682,18 @@ export class FileChangeView implements FileChangeSink {
     }
   }
 
-  /** 带旧内容附件与悬停说明的单行装饰 */
+  /**
+   * 带悬停旧内容的单行装饰
+   *
+   * **只有悬停、不挂行尾常驻预览**（2026-09-28 真机反馈）：行尾那行红色「⟵ 原: …」与 hover
+   * 说的是同一件事，却长期占着版面 = 视觉噪音；对照需求交给「查看对比」的左右分栏 diff。
+   */
   private decorationFor(
     doc: vscode.TextDocument,
     line: number,
     hunk: DiffHunk,
   ): vscode.DecorationOptions {
-    const options: vscode.DecorationOptions = {
-      range: safeLineRange(doc, line),
-      hoverMessage: this.oldContentHover(hunk),
-    };
-    const preview = inlinePreview(hunk.removed);
-    if (preview) {
-      options.renderOptions = { after: { ...INLINE_OLD_TEXT_STYLE, contentText: `  ${preview}` } };
-    }
-    return options;
+    return { range: safeLineRange(doc, line), hoverMessage: this.oldContentHover(hunk) };
   }
 
   /** 悬停展示完整旧内容（旧内容只存在于内存，不落盘） */
@@ -772,18 +775,27 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
-   * 打开**改动对照**：自渲染的**统一视图（上下排列）**，只读虚拟文档，零落盘
+   * 打开**改动对比**：`vscode.diff`（左 = 旧内容虚拟文档，右 = 真实文件），零落盘
    *
-   * 形态依据（2026-09-27 真机反馈「左右排列看不清原文」）：`vscode.diff` 是左右并排，
-   * 长行被挤成两个窄栏。扩展 API 拿不到「以 inline 布局打开」的入口（见 `formatUnifiedDiff`
-   * 的注释：第 4 参数不含布局，改布局只能动用户全局设置或盲调切换型命令）⇒ 自己渲染。
+   * 形态依据（**2026-09-28 真机反馈回滚**）：2026-09-27 曾改为自渲染的「上下统一视图」
+   * （当时反馈是「左右排列看不清原文」），再测后结论相反——**git 同款左右分栏更直观**⇒ 回滚。
+   * ⚠️ 实际布局由用户全局设置 `diffEditor.renderSideBySide` 决定，扩展**不去改它**：扩展 API
+   * 给不出「以 inline 布局打开 diff」的入口，改布局只能动用户设置或盲调切换型命令，属侵入。
    *
-   * 内容仍经 `TextDocumentContentProvider` 走**虚拟文档**：旧内容不进磁盘、不进 git，
-   * 且虚拟文档天然只读（不会让用户在对照页上误编辑）。
+   * 旧内容仍经 `TextDocumentContentProvider` 走**虚拟文档**：不进磁盘、不进 git。
    *
-   * 超限行为（与内核不同）：跳过对照、只提示可回退——阈值 = 内核 `MAX_DIFF_CONTENT_LENGTH`。
+   * 超限行为（与内核不同）：跳过对比、只提示可回退——阈值 = 内核 `MAX_DIFF_CONTENT_LENGTH`。
    * ⚠️ 两侧长度**都要判**：删除场景 `afterContent === null`，但旧内容本身可能是大文件，
-   * 同样要进虚拟文档渲染。
+   * 同样要进虚拟文档渲染（旧版曾漏判此侧，删除大文件会绕过本闸）。
+   *
+   * **右栏为何是真实文件（可编辑）**：git 的 diff 右栏就是工作区文件、同样可编辑 ⇒ 与「git
+   * 同款」的诉求一致，**不是疏漏，勿当缺陷重提**。已知残留（️如实记，触发驱动，不预支复杂度）：
+   *   - **未保存**的编辑 ⇒ 文档 `isDirty`，`writeBack` 的 dirty 闸拦下并弹**模态**确认（不静默覆盖）✅；
+   *   - **已保存**的用户编辑 ⇒ 文档不再 dirty ⇒ **回退无任何提示、直接整体覆盖**（与 git discard
+   *     语义相同：丢弃该文件全部未提交改动）。这是**静默**的数据丢失面，非带伤（无同语义多实现、
+   *     无旧契约包袱、与 git 行为同构），但**不是「已告知」**——模态文案只在 dirty 分支出现。
+   *     触发条件：真实出现「我自己在编辑器里改过、点回退后被吞」的反馈 ⇒ 届时把「磁盘/文档内容
+   *     ≠ `afterContent`」纳入与 dirty 同级的确认通道（约 1 处判定 + 1 条文案，勿提前造）。
    */
   private async openCompare(rec: FileChangeRecord): Promise<void> {
     const beforeText = rec.beforeContent ?? '';
@@ -795,12 +807,22 @@ export class FileChangeView implements FileChangeSink {
       return;
     }
     const fileName = basename(rec.path);
-    const uri = this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`);
-    this.virtualContents.set(
-      uri.toString(),
-      formatUnifiedDiff(beforeText, afterText, `${rec.relPath} — 本次改动（上下对照）`),
+    const leftUri = this.virtualUriFor(rec.path, fileName);
+    this.virtualContents.set(leftUri.toString(), beforeText);
+    let rightUri: vscode.Uri;
+    if (rec.afterContent === null || !existsSync(rec.path)) {
+      // 已删除：右侧给空虚拟文档，语义 = 「旧内容 vs 空」
+      rightUri = this.virtualUriFor(this.rightSeed(rec.path), fileName);
+      this.virtualContents.set(rightUri.toString(), '');
+    } else {
+      rightUri = vscode.Uri.file(rec.path);
+    }
+    await vscode.commands.executeCommand(
+      'vscode.diff',
+      leftUri,
+      rightUri,
+      `${rec.relPath} — 本次改动对比`,
     );
-    await vscode.window.showTextDocument(uri, { preview: false });
   }
 
   /** 虚拟 URI（键 = seed 的 hash；尾部保留文件名与扩展名供语言推断） */
@@ -809,17 +831,16 @@ export class FileChangeView implements FileChangeSink {
     return vscode.Uri.from({ scheme: VIRTUAL_SCHEME, path: `/${hash}/${fileName}` });
   }
 
-  /** 对照文档的 seed（与「其余虚拟文档」区分，避免同 URI 互相覆盖） */
-  private compareSeed(absPath: string): string {
-    return `${absPath}#compare`;
+  /** 右侧空虚拟文档的 seed（与左侧区分，避免同 URI 互相覆盖） */
+  private rightSeed(absPath: string): string {
+    return `${absPath}#right`;
   }
 
-  /** 精确释放某条记录占用的虚拟文档内容（**不误伤其它记录**的对照视图） */
+  /** 精确释放某条记录占用的虚拟文档内容（**不误伤其它记录**的对比视图） */
   private releaseVirtual(rec: FileChangeRecord): void {
     const fileName = basename(rec.path);
-    this.virtualContents.delete(
-      this.virtualUriFor(this.compareSeed(rec.path), `对照-${fileName}`).toString(),
-    );
+    this.virtualContents.delete(this.virtualUriFor(rec.path, fileName).toString());
+    this.virtualContents.delete(this.virtualUriFor(this.rightSeed(rec.path), fileName).toString());
   }
 
   // ─── 动作 ───
@@ -827,7 +848,7 @@ export class FileChangeView implements FileChangeSink {
   /**
    * 注销一条记录并释放它占用的全部渲染资源（**不碰任何 UI 刷新**）
    *
-   * 三个消费者（单文件确认 / 全部确认 / 恢复旧版）共用这一个清理序列——各写一份必漂移
+   * 三个消费者（单文件确认 / 全部确认 / 回退本文件改动）共用这一个清理序列——各写一份必漂移
    * （漏清装饰即残留高亮，漏清虚拟文档即旧内容驻留内存）。**UI 刷新归调用方**：
    * 批量入口在循环内逐条刷新会带来 N 次状态栏重绘 + N 次 CodeLens 事件。
    */
@@ -895,7 +916,7 @@ export class FileChangeView implements FileChangeSink {
       );
     preview.push(...(records.length > 20 ? [`  …另有 ${records.length - 20} 个文件`] : []));
     const detail = [
-      `将把 ${records.length} 个文件恢复到「agent 改动之前」的内容：`,
+      `将把 ${records.length} 个文件恢复到「你尚未接受的改动之前」的内容：`,
       `· 覆盖写回：${records.length - willDelete.length} 个`,
       `· 删除文件：${willDelete.length} 个（这些文件原本为新建）`,
       `· 含未保存的编辑（会一并丢弃）：${dirtyPaths.size} 个`,
@@ -953,7 +974,7 @@ export class FileChangeView implements FileChangeSink {
   }
 
   /**
-   * 「恢复旧版」（单文件入口）：执行回退并给出结果提示
+   * 「回退本文件改动」（单文件入口）：执行回退并给出结果提示
    *
    * 文件有未保存编辑时（`applyRestore` 返回 `dirty`）先弹**模态确认**——回退会丢弃用户
    * 缓冲区里的编辑，静默覆盖 = 吃掉用户劳动。用户取消则不动文件、保留记录。
@@ -963,7 +984,7 @@ export class FileChangeView implements FileChangeSink {
     if (outcome.status === 'dirty') {
       const ok = await this.confirmOverwriteDirty(
         rec,
-        '回退会把文件恢复到「agent 改动之前」的内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再回退。',
+        '回退会把文件恢复到「你尚未接受的改动之前」的内容，未保存的编辑将一并丢弃（无 git 时无法找回）。要保留这些编辑，请先取消、保存文件后再回退。',
         '仍然回退',
       );
       if (!ok) {
@@ -982,7 +1003,7 @@ export class FileChangeView implements FileChangeSink {
     }
     this.notifyChanged();
     this.lensProvider.refresh();
-    void vscode.window.showInformationMessage(`Memora：已恢复 ${rec.relPath} 的旧内容`);
+    void vscode.window.showInformationMessage(`Memora：已回退 ${rec.relPath} 的未接受改动`);
   }
 
   /**
@@ -1172,7 +1193,7 @@ export class FileChangeView implements FileChangeSink {
     settled();
   }
 
-  /** 改动通知（带按钮）：确认改动 / 恢复旧版 / 查看对比 / 全部确认 */
+  /** 改动通知（带按钮）：确认改动 / 回退本文件改动 / `COMPARE_LABEL` / 全部确认 */
   private notifyChange(rec: FileChangeRecord): void {
     const count = this.tracker.size();
     const message =
@@ -1180,13 +1201,13 @@ export class FileChangeView implements FileChangeSink {
         ? `Memora：本次已改动 ${count} 个文件（最新：${rec.relPath}）`
         : `Memora：已修改 ${rec.relPath}（改动处已在文件中高亮）`;
     void vscode.window
-      .showInformationMessage(message, '确认改动', '恢复旧版', '查看对比', '全部确认')
+      .showInformationMessage(message, '确认改动', '回退本文件改动', COMPARE_LABEL, '全部确认')
       .then((choice) => {
         // 用最新记录执行（通知展示期间该文件可能又被改过）
         const latest = this.tracker.get(rec.path) ?? rec;
         if (choice === '确认改动') this.confirmChange(latest);
-        else if (choice === '恢复旧版') void this.restoreChange(latest);
-        else if (choice === '查看对比') void this.openCompare(latest);
+        else if (choice === '回退本文件改动') void this.restoreChange(latest);
+        else if (choice === COMPARE_LABEL) void this.openCompare(latest);
         else if (choice === '全部确认') this.confirmAll();
       });
   }
@@ -1218,8 +1239,8 @@ export class FileChangeView implements FileChangeSink {
     const record = picked.record;
     const action = await vscode.window.showQuickPick<ActionPickItem>(
       [
-        { label: '$(diff) 打开对比', action: 'compare' },
-        { label: '$(discard) 恢复旧版', action: 'restore' },
+        { label: `$(diff) ${COMPARE_LABEL}`, action: 'compare' },
+        { label: '$(discard) 回退本文件改动', action: 'restore' },
         { label: '$(check) 确认改动', action: 'confirm' },
       ],
       { title: record.relPath, placeHolder: '选择操作' },
@@ -1238,7 +1259,7 @@ export class FileChangeView implements FileChangeSink {
       return;
     }
     this.statusBar.text = `$(diff) Memora: ${count} 个未确认改动`;
-    this.statusBar.tooltip = '点击处理：全部确认 / 打开对比 / 恢复旧版';
+    this.statusBar.tooltip = `点击处理：全部确认 / ${COMPARE_LABEL} / 回退本文件改动`;
     // 黄色警示底：把「有未确认改动」做成一眼可见的常驻入口。
     // 真机反馈「没有确认/回退的按钮」的根因之一是入口不够显眼——通知会被用户划走，状态栏不会。
     this.statusBar.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');

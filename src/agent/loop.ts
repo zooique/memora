@@ -1904,7 +1904,8 @@ export class AgentLoop {
       // 副作用型工具成功 → 主动失效关联的 read_file 缓存（放行后续合法重读）
       // 覆盖面派生自 `diskWrite:'path'` 声明（与串行闸同一真源），目标提取复用同一提取器——
       // 必须用**归一后**路径才对得上缓存/台账的键（raw 写法如 './a.md' 会失效不中）。
-      // opaque 写（脚本类）目标不可知、无法按 path 失效：与改动可视化同盲（台账 DIFF-4 可视化半）。
+      // opaque 写（脚本类）目标不可知、无法按 path 失效：但宿主已通过执行前后 workspace 目录快照 diff 收口
+      //（见 fileChangeTracker.noteExternalMutations），改动可视化盲区已闭环（台账 DIFF-4 可视化半已解除，2026-09-27）。
       const invalidatedPath = WRITE_PATH_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
       if (ok && invalidatedPath) {
         this.toolResultCache.invalidateFile(invalidatedPath);

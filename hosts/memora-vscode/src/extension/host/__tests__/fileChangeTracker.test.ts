@@ -15,6 +15,7 @@ import { describe, it, expect } from 'vitest';
 import {
   FileChangeTracker,
   DISK_WRITE_TOOLS,
+  diffWorkspaceSnapshots,
   type FileChangeIO,
   type FileChangeTrackerOptions,
 } from '../fileChangeTracker.js';
@@ -324,5 +325,74 @@ describe('FileChangeTracker', () => {
     // 展示路径折回相对 + 正斜杠——协议声明「不下发绝对路径，避免在 UI 暴露无关信息」
     expect(inside?.relPath).toBe('sub/x.md');
     expect(outside?.relPath).toBe('../elsewhere/secret.md');
+  });
+
+  describe('diffWorkspaceSnapshots（脚本类 opaque 写收口）', () => {
+    it('新增 / 修改 / 删除 三类变更全捕获', () => {
+      const before = new Map<string, string>([
+        [abs('a.md'), 'oldA'],
+        [abs('b.md'), 'oldB'],
+        [abs('c.md'), 'oldC'],
+      ]);
+      const after = new Map<string, string>([
+        [abs('a.md'), 'newA'], // 修改
+        [abs('c.md'), 'oldC'], // 不变
+        [abs('d.md'), 'newD'], // 新增（b.md 消失 = 删除）
+      ]);
+      const changes = diffWorkspaceSnapshots(before, after);
+      expect(changes).toHaveLength(3);
+      const byPath = Object.fromEntries(changes.map((c) => [c.absPath, c]));
+      expect(byPath[abs('a.md')]).toEqual({ absPath: abs('a.md'), beforeContent: 'oldA', afterContent: 'newA' });
+      expect(byPath[abs('b.md')]).toEqual({ absPath: abs('b.md'), beforeContent: 'oldB', afterContent: null });
+      expect(byPath[abs('d.md')]).toEqual({ absPath: abs('d.md'), beforeContent: null, afterContent: 'newD' });
+    });
+
+    it('无变动 → 空数组', () => {
+      const m = new Map<string, string>([[abs('a.md'), 'x']]);
+      expect(diffWorkspaceSnapshots(m, new Map(m))).toEqual([]);
+    });
+  });
+
+  describe('noteExternalMutations（脚本类改动并入记录表）', () => {
+    it('脚本新建文件 → beforeContent=null、可确认注销', () => {
+      const io = makeIO({});
+      const tracker = makeTracker(io);
+      const recs = tracker.noteExternalMutations([
+        { absPath: abs('script-out.json'), beforeContent: null, afterContent: '{"ok":1}' },
+      ]);
+      expect(recs).toHaveLength(1);
+      const rec = recs[0];
+      expect(rec.beforeContent).toBeNull();
+      expect(rec.afterContent).toBe('{"ok":1}');
+      expect(rec.writeCount).toBe(1);
+      expect(tracker.size()).toBe(1);
+      tracker.drop(abs('script-out.json'));
+      expect(tracker.size()).toBe(0);
+    });
+
+    it('与既有 write_file 记录按路径合并：保留最早 beforeContent、writeCount 累加', () => {
+      const io = makeIO({ [abs('a.md')]: 'old' });
+      const tracker = makeTracker(io);
+      tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+      io.set(abs('a.md'), 'written');
+      tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
+      tracker.noteExternalMutations([
+        { absPath: abs('a.md'), beforeContent: 'written', afterContent: 'byScript' },
+      ]);
+      const rec = tracker.get(abs('a.md'))!;
+      expect(rec.beforeContent).toBe('old'); // 保留最早
+      expect(rec.afterContent).toBe('byScript');
+      expect(rec.writeCount).toBe(2); // 累加
+    });
+
+    it('空变更集 → 无记录、不影响既有', () => {
+      const io = makeIO({ [abs('a.md')]: 'old' });
+      const tracker = makeTracker(io);
+      tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+      io.set(abs('a.md'), 'written');
+      tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
+      expect(tracker.noteExternalMutations([])).toEqual([]);
+      expect(tracker.size()).toBe(1);
+    });
   });
 });

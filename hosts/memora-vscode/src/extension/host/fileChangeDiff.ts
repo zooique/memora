@@ -210,49 +210,6 @@ export function applyHunkReverts(afterText: string, hunks: readonly DiffHunk[]):
 }
 
 /**
- * 生成**统一视图（上下排列）**的改动对照文本
- *
- * 用途：给「查看对比」渲染一份只读文本——单列、全宽，改动前 / 改动后**上下排列**。
- * 起因（2026-09-27 真机反馈）：`vscode.diff` 的左右并排把长行挤成两个窄栏，**看不清原文**。
- *
- * 为何自渲染而不继续用 `vscode.diff`（**已实证**，勿回退猜测）：
- *   - VS Code 扩展 API **没有**「以 inline 布局打开 diff」的入口——`vscode.diff` 的第 4 个参数
- *     是 `TextDocumentShowOptions`（`override` 是编辑器解析用，取值是编辑器 id，不是布局）；
- *   - 布局只受两处影响：全局设置 `diffEditor.renderSideBySide`（改它 = 改用户配置，侵入），
- *     或命令面板的 **Toggle** Inline View（切换型，盲调会把用户的偏好翻反）；
- *   - ⇒ 想要「确定性地以上下排列呈现」，只能自己渲染文本。
- *
- * 复用 `computeFileDiff` 的同一份块数据（SSOT）：高亮、块按钮、本对照文本三者永不漂移。
- *
- * @param before 改动前全文
- * @param after  改动后全文
- * @param title  首行标题（调用方给文件名，便于在多标签间辨认）
- */
-export function formatUnifiedDiff(before: string, after: string, title: string): string {
-  const diff = computeFileDiff(before, after);
-  const afterLines = splitLines(after);
-  const out: string[] = [
-    title,
-    `共 ${diff.hunks.length} 处改动${diff.degraded ? '（改动过大，已按整体一块对照）' : ''}`,
-  ];
-  diff.hunks.forEach((hunk, index) => {
-    const removedOnly = isRemovedOnly(hunk);
-    const added = removedOnly ? [] : afterLines.slice(hunk.startLine, hunk.endLine + 1);
-    // 纯删除块在新文件里不占行 ⇒ 只报「删除位置」；其余报实际行范围（1-based，给人看）
-    const where = removedOnly
-      ? `第 ${hunk.startLine + 1} 行之前（纯删除）`
-      : hunk.startLine === hunk.endLine
-        ? `第 ${hunk.startLine + 1} 行`
-        : `第 ${hunk.startLine + 1}–${hunk.endLine + 1} 行`;
-    out.push('', `──────── 改动 ${index + 1}/${diff.hunks.length} · 新文件${where} ────────`);
-    // 旧行在前、新行在后：上下排列即「先看改前、再看改后」
-    for (const line of hunk.removed) out.push(`- ${line}`);
-    for (const line of added) out.push(`+ ${line}`);
-  });
-  return out.join('\n');
-}
-
-/**
  * 计算两个版本之间的改动块
  *
  * @param before 写前全文（`''` 表示文件原本不存在或为空）

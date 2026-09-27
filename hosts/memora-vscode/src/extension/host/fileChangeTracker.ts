@@ -8,7 +8,7 @@
  *   - 只做「记录」——从 tool_start / tool_result 两个宿主事件派生改动事实；不打开编辑器、
  *     不做渲染（渲染归 fileChangeView）。
  *   - 键 = 文件**绝对路径**（一个文件一条记录）；同一文件多次写入**合并**（保留最早 beforeContent），
- *     使「恢复旧版」回到 agent 介入**之前**的状态，而非上一次中间态。
+ *     使「回退本文件改动」回到本文件**尚未被你接受的改动之前**的状态（保留最早 beforeContent，而非上一次中间态）。
  *   - `toolCallId` 仅作写前/写后配对的**临时键**（pending），不作记录主键。
  *   - 记录生命周期：跨会话存活；仅「确认 / 恢复」注销，或扩展重启清空。
  *
@@ -34,8 +34,10 @@ import { WRITE_PATH_EXTRACTORS } from '@zooique/memora';
  * 派生而非并列的意义：内核新增「按 path 改盘」的工具时，宿主**自动跟随**进追踪，
  * 不会再出现「内核进了串行闸、宿主不知情」的改动可视化静默少报。
  *
- * ⚠️ 覆盖边界（两侧同源同盲）：清单只认 `args.path` 定位的写工具 ⇒ `run_code` / `run_skill_script`
- * / `run_project_script`（能改盘但无 `path`）既不进内核串行闸、也不进本追踪（见台账观察条目）。
+ * ⚠️ 覆盖边界（已闭环）：清单只认 `args.path` 定位的写工具 ⇒ `run_code` / `run_skill_script`
+ * / `run_project_script`（能改盘但无 `path`）**不进本清单的按路径追踪**——但它们在内核 `loop.ts`
+ * 走 `diskWrite:'opaque'` 屏障（与一切写互斥，防并行丢内容已覆盖），且宿主对这类工具做「执行前后
+ * 目录快照 diff」收口（见 `noteExternalMutations`），脚本类改动可见性盲区已闭环（台账 DIFF-4 可视化半已解除）。
  */
 export const DISK_WRITE_TOOLS: readonly string[] = Object.keys(WRITE_PATH_EXTRACTORS);
 
@@ -55,6 +57,55 @@ export interface FileChangeRecord {
   writeCount: number;
   /** 最近改动时刻（展示 / 淘汰用） */
   updatedAt: number;
+}
+
+/**
+ * 脚本类工具（opaque 写）执行前后目录快照 diff 得到的单条文件变更
+ *
+ * 与 `FileChangeRecord` 不同：这里只有「绝对路径 + 执行前/后内容」，**不含 relPath / writeCount /
+ * mode**——那些由 `noteExternalMutations` 按文件路径合并时补全（relPath 由 projectRoot 推导、
+ * writeCount 累加、脚本类无 mode）。内容是调用方（chatPanel）在执行前后各扫一次 workspace 得到的
+ * 事实快照，本模块不接触文件系统。
+ */
+export interface ExternalFileChange {
+  /** 文件绝对路径（键） */
+  absPath: string;
+  /** 执行前内容；文件为脚本新建 = null */
+  beforeContent: string | null;
+  /** 执行后内容；文件被脚本删除 = null */
+  afterContent: string | null;
+}
+
+/**
+ * 比对两次 workspace 文本快照，输出变更集（纯函数，无 IO，可单测）
+ *
+ * 输入：before / after = `Map<absPath, 文件内容>`（调用方负责扫描与读取）。
+ * 输出三类变更（均带 before/after 内容，供恢复用）：
+ *   - 在 before 不在 after → 删除（afterContent = null）
+ *   - 在 after 不在 before → 新增（beforeContent = null）
+ *   - 都在但内容不同 → 修改
+ *
+ * 设计边界：只比对「内容」——调用方扫描时已排除构建/内部目录（node_modules/.git/.memora 等），
+ * 故这里的变动集即「用户可见的源码/文档改动」，不含 memora 自身数据噪音。
+ */
+export function diffWorkspaceSnapshots(
+  before: ReadonlyMap<string, string>,
+  after: ReadonlyMap<string, string>,
+): ExternalFileChange[] {
+  const changes: ExternalFileChange[] = [];
+  for (const [absPath, beforeText] of before) {
+    if (!after.has(absPath)) {
+      changes.push({ absPath, beforeContent: beforeText, afterContent: null });
+    } else if (after.get(absPath) !== beforeText) {
+      changes.push({ absPath, beforeContent: beforeText, afterContent: after.get(absPath)! });
+    }
+  }
+  for (const [absPath, afterText] of after) {
+    if (!before.has(absPath)) {
+      changes.push({ absPath, beforeContent: null, afterContent: afterText });
+    }
+  }
+  return changes;
 }
 
 /** 读文件能力（默认走 node:fs；测试注入假实现以保持纯逻辑可测、无真实 IO） */
@@ -97,6 +148,8 @@ export interface ToolResultLike {
 export interface FileChangeSink {
   noteToolStart(chunk: ToolStartLike): void;
   noteToolResult(chunk: ToolResultLike): void;
+  /** 脚本类工具（opaque 写）执行前后快照 diff 得到的变更集收口 */
+  noteExternalMutations(changes: ExternalFileChange[]): void;
 }
 
 /** 写前快照的临时配对项（仅本次调用生命周期） */
@@ -210,27 +263,56 @@ export class FileChangeTracker {
     this.pending.delete(chunk.toolCallId);
     if (!chunk.ok || chunk.blocked) return null;
     const afterContent = this.io.readTextFile(entry.absPath);
-    const existing = this.records.get(entry.absPath);
+    const record = this.upsert(entry.absPath, entry.relPath, entry.beforeContent, afterContent, entry.mode);
+    this.evictOverflow();
+    return record;
+  }
+
+  /**
+   * 外部（脚本类工具）改动收口：把「执行前后目录快照 diff」得到的变更集并入记录表。
+   *
+   * 用途：`run_code` / `run_project_script` / `run_skill_script` 标 `diskWrite:'opaque'`，目标路径
+   * 运行时才可知，无法走 `noteToolStart` 的 `args.path` 提取。宿主在工具执行**前后**各扫一次
+   * workspace 文本快照、diff 出变动文件，把结果（已含 before/after 内容）喂到这里。
+   *
+   * 合并语义与 `noteToolResult` **完全一致**（同走 `upsert`）：按文件路径合并、保留最早
+   * `beforeContent`、writeCount+1——故脚本改的文件若之前已被 `write_file` 建过，两份记录自然合并，
+   * 不另造状态面。脚本类无 `mode`（非 write_file 三模式），故不写 `mode` 字段。
+   *
+   * @returns 本次新增 / 更新的记录（调用方据此触发渲染）
+   */
+  noteExternalMutations(changes: ExternalFileChange[]): FileChangeRecord[] {
+    const out: FileChangeRecord[] = [];
+    for (const ch of changes) {
+      const relPath = relative(this.projectRoot, ch.absPath).split(sep).join('/');
+      out.push(this.upsert(ch.absPath, relPath, ch.beforeContent, ch.afterContent));
+    }
+    this.evictOverflow();
+    return out;
+  }
+
+  /** 按文件路径 upsert 一条记录（noteToolResult / noteExternalMutations 共用，合并逻辑单源） */
+  private upsert(
+    absPath: string,
+    relPath: string,
+    beforeContent: string | null,
+    afterContent: string | null,
+    mode?: string,
+  ): FileChangeRecord {
+    const existing = this.records.get(absPath);
     const updatedAt = this.now();
     const record: FileChangeRecord = existing
-      ? {
-          ...existing,
-          afterContent,
-          mode: entry.mode ?? existing.mode,
-          writeCount: existing.writeCount + 1,
-          updatedAt,
-        }
+      ? { ...existing, afterContent, mode: mode ?? existing.mode, writeCount: existing.writeCount + 1, updatedAt }
       : {
-          path: entry.absPath,
-          relPath: entry.relPath,
-          beforeContent: entry.beforeContent,
+          path: absPath,
+          relPath,
+          beforeContent,
           afterContent,
           writeCount: 1,
           updatedAt,
-          ...(entry.mode === undefined ? {} : { mode: entry.mode }),
+          ...(mode === undefined ? {} : { mode }),
         };
-    this.records.set(entry.absPath, record);
-    this.evictOverflow();
+    this.records.set(absPath, record);
     return record;
   }
 
