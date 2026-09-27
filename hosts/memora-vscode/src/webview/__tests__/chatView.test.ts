@@ -1729,10 +1729,14 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   });
 
   /**
-   * BATCH-SPLIT-1 夹具：两段工具（step 1 / step 2）之间夹一张问答卡。
+   * BATCH-SPLIT-1 夹具：真实 ask 结构 —— 工具 A（step1）→ ask_user 工具行（step2）→ 问答卡 → 工具 B（step3）。
    *
-   * 覆盖「三同时」条件：全程无 narrate、无 thought ⇒ 切段判据 `groupToolBatches` 视 A/B 同批。
-   * 问答卡为外部可见条目（`interactiveInputs`，无 seq），真实 ts 落在 A 与 B 之间。
+   * 内核侧事实（`src/agent/loop.ts`）：提问走 `ask_user` 内置工具（唯一通道，见 handleToolCalls 检出挂起），
+   * 用户答案以该工具的 tool result 回填 ⇒ 真实轮次在 A 与 B 之间**必有一条 ask_user 工具行**；
+   * 工具轮 narrate 为**条件产出**（`if (narration)`，模型未吐文本则无）⇒ 本夹具覆盖「无 narrate、无 thought」
+   * 的边界：切段判据 `groupToolBatches` 视三者同批。
+   *
+   * 时间轴取两位数值（T10–T16），保证 ISO 串的字面序与时间序一致。
    */
   const batchSplitFixture = (): void => {
     mountChatView();
@@ -1741,47 +1745,53 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
       makeRound({
         id: 'r1',
         processEvents: [
-          { type: 'meta', seq: 1, ts: T(0), payload: { role: 'AI', llm: 'm' } },
-          { type: 'tool_start', seq: 2, ts: T(2), payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 } },
-          { type: 'tool_result', seq: 3, ts: T(3), payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' } },
-          { type: 'tool_start', seq: 5, ts: T(5), payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 2 } },
-          { type: 'tool_result', seq: 6, ts: T(6), payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' } },
+          { type: 'meta', seq: 1, ts: T(9), payload: { role: 'AI', llm: 'm' } },
+          { type: 'tool_start', seq: 2, ts: T(10), payload: { toolCallId: 'a', name: 'read_file', args: '{}', stepIndex: 1 } },
+          { type: 'tool_result', seq: 3, ts: T(11), payload: { toolCallId: 'a', name: 'read_file', ok: true, summary: 'A' } },
+          // 提问 = 一次普通工具调用（ask_user 唯一通道）
+          { type: 'tool_start', seq: 4, ts: T(12), payload: { toolCallId: 'ask', name: 'ask_user', args: '{"question":"选方案A还是B?"}', stepIndex: 2 } },
+          // 用户答案以该工具的 tool result 回填
+          { type: 'tool_result', seq: 5, ts: T(13), payload: { toolCallId: 'ask', name: 'ask_user', ok: true, summary: '选方案A' } },
+          { type: 'tool_start', seq: 6, ts: T(15), payload: { toolCallId: 'b', name: 'write_file', args: '{}', stepIndex: 3 } },
+          { type: 'tool_result', seq: 7, ts: T(16), payload: { toolCallId: 'b', name: 'write_file', ok: true, summary: 'B' } },
         ],
-        interactiveInputs: [{ content: '选方案A', ts: T(4), kind: 'question-answer' }],
-        assistantMessage: { content: '答复', ts: T(7) },
+        // 问答卡：可见记录，真实 ts 落在 ask_user(T12) 与 B(T15) 之间
+        interactiveInputs: [{ content: '选方案A', ts: T(14), kind: 'question-answer' }],
+        assistantMessage: { content: '答复', ts: T(17) },
         status: 'complete',
       }),
     );
   };
 
-  it('BATCH-SPLIT-1 前置自检：问答卡与两段工具均已上屏（防夹具腐化）', () => {
+  it('BATCH-SPLIT-1 前置自检：问答卡与三段工具均已上屏（防夹具腐化）', () => {
     batchSplitFixture();
     const details = document.querySelector('.round-block__details') as HTMLElement;
     expect(details).not.toBeNull();
     expect(details.querySelector('.round-block__input')).not.toBeNull();
+    expect(details.querySelector('.round-block__tool[data-tool-call-id="a"]')).not.toBeNull();
+    expect(details.querySelector('.round-block__tool[data-tool-call-id="ask"]')).not.toBeNull();
+    expect(details.querySelector('.round-block__tool[data-tool-call-id="b"]')).not.toBeNull();
     expect(details.textContent).toContain('选方案A');
-    expect(details.textContent).toContain('读取文件');
-    expect(details.textContent).toContain('写入文件');
   });
 
   /**
    * BATCH-SPLIT-1（在案缺陷）：同容器内的**外部可见条目**（问答卡等 `interactiveInputs` 行）未参与
    * 工具批切段——切段判据 `groupToolBatches` 只吃 events，而问答卡无 seq、对它不可见；批块又锚在
-   * 段内首个 `tool_start` 的 ts ⇒ 两段工具之间夹一张问答卡时，整块被排到卡片之后
-   * （观感「问答卡之后的工具跑到卡片前面」）。
+   * 段内首个 `tool_start` 的 ts ⇒ 问答卡被排到整块之后，观感「问答卡之后的工具跑到卡片前面」。
    *
-   * 本用例断言**应有**顺序（工具 → 问答卡 → 工具）。当前实现不满足，故以 `it.fails` 表达「期望失败」：
-   * 现在执行失败 → 用例判为通过（不阻塞门禁）；一旦实现满足，本行会转红，提示升格为普通 it
-   * ——该动作即本缺陷的清账触发器。
+   * 断言取**与修法无关的不变量**：问答卡必须排在「答完之后才跑的工具 B」之前
+   * （truth：A → ask_user → 卡片 → B）。不写死 DOM 结构，避免预设尚未设计的切段形态。
+   *
+   * 当前实现不满足，故以 `it.fails` 表达「期望失败」：现在执行失败 → 用例判为通过（不阻塞门禁）；
+   * 一旦实现满足，本行会转红，提示升格为普通 it —— 该动作即本缺陷的清账触发器。
    */
-  it.fails('BATCH-SPLIT-1：同容器外部可见条目（问答卡）应成为工具批断面', () => {
+  it.fails('BATCH-SPLIT-1：外部可见条目（问答卡）应成为工具批断面', () => {
     batchSplitFixture();
     const details = document.querySelector('.round-block__details') as HTMLElement;
-    // 顶层可见条目按类别串成顺序快照：批块 / 工具行 → tool，问答卡 → input
-    const order = Array.from(details.children).map((el) =>
-      (el as HTMLElement).className.includes('__input') ? 'input' : 'tool',
-    );
-    expect(order).toEqual(['tool', 'input', 'tool']);
+    const qa = details.querySelector('.round-block__input') as HTMLElement;
+    const rowB = details.querySelector('.round-block__tool[data-tool-call-id="b"]') as HTMLElement;
+    // B 的 DOM 位置须在问答卡之后（FOLLOWING）——否则问答卡被推到了它「答完之后才跑的工具」后面
+    expect(qa.compareDocumentPosition(rowB) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it('clear_ok 清空 round-block 状态（切换会话不残留）', () => {

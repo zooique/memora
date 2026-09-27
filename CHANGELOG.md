@@ -12,12 +12,15 @@
 
 ### Tests（宿主 · 登记在案缺陷 BATCH-SPLIT-1：问答卡未参与工具批切段）
 
-**复现（重放路径实测，非推理）**：两段工具（step 1 / step 2）之间夹一张问答卡、全程无 narrate 无 thought 时，`details` 顶层顺序实测为 `[tool-batch@A.ts（含 A+B）, input@中间 ts]` ⇒ 问答卡被排到后一段工具**之后**（应有顺序 A → 卡片 → B）。复现路径 `renderReplayRound`（打开历史会话走它，与运行时共用同一 `groupToolBatches`）⇒ **不止流式偶发，重开会话即见**。
+**复现（重放路径）**：工具 A（step 1）→ ask_user 工具行（step 2）→ 问答卡 → 工具 B（step 3）、全程无 narrate 无 thought 时，`details` 顶层不满足「卡片须排在 B 之前」的不变量（`it.fails` 守卫内的断言实测不成立 ⇒ 用例判通过）。简化夹具（无 ask_user 行）下曾打印实测序 `[tool-batch@A.ts（含 A+B）, input]`；含 ask_user 行的真实结构与之同构——批块吞掉段内全部工具、卡片被推到块后。复现路径 `renderReplayRound`（打开历史会话走它，与运行时共用同一 `groupToolBatches`）⇒ **不止流式偶发，重开会话即见**。
 
 - **守卫**：`chatView.test.ts` 新增两条——夹具前置自检（防夹具腐化、独立可红）+ `it.fails` 断「工具 → 卡片 → 工具」。**为何用 `it.fails`**：pre-push full 档会跑宿主全量，硬红测试会阻塞推送；`it.fails` 表达「期望失败」⇒ 现在判通过、实现满足时该行转红，**该动作即清账触发器**
 - **订正原推论**：原「三同时」条件中 ②③ 的效力取决于 `thought.stepIndex`（类型 optional，判据显式兜底「两侧任一缺省 → 回落相邻性」）⇒ **stepIndex 缺省的轮次，thought 不构成断面，可达条件只剩 ①**。真实数据缺省比例未测，不夸大
 - **根因（比原记深一层）**：切段判据按 **seq** 扫描（`[...events].sort((a, b) => a.seq - b.seq)`），条目落位按 **ts**（`insertPlanItemInOrder`）⇒ 无 seq 的外部可见条目对切段**天然不可见**。与 PLAN-GROUP-ORDER-1 属**同族病**（同屏两套键）
-- **未处理**：修法（把「同容器外部可见条目 ts 集」作虚拟断面注入 `groupToolBatches`，不碰内核）留待独立一轮——风险点 = 注入 ts 集而扫描用 seq，两套键缝合须谨慎；另有两项待验：真实 ask 路径是否产 `tool_start`、流式路径升级批块时的重排行为
+- **内核侧核实（已验）**：提问走 `ask_user` 内置工具（唯一通道，`handleToolCalls` 检出挂起）⇒ 真实轮次在 A 与 B 之间**必有一条 ask_user 工具行**——**夹具已补该行**（保真度修复，同批）。工具轮 narrate 为**条件产出**（`if (narration)`，模型未吐文本则无）⇒ 边界真实可达，结论不翻盘。续跑 = 同一轮内以 ask_user 的 tool result 回填后继续迭代 ⇒ 续跑是新 step。附带核实：`willSuspendForAsk` 命中时**不产出** `plan_item_boundary`
+- **流式路径核实（已验 · 代码读证）**：批块定位同为 `insertPlanItemInOrder(host, block, batch.anchorTs)`（锚 = 段内首工具 ts），旧平铺行随后被搬进批块 body ⇒ 仍为 `[批块(…), 问答卡]`；且真实结构下批块在问答卡上屏**之前**已成块（A + ask_user 两条）⇒ **错序在「答完那一刻」即可见**，不必等 B 到位
+- **守卫形态**：断言取**与修法无关的不变量**——问答卡须排在工具 B 之前（`compareDocumentPosition`），不预设尚未设计的切段形态
+- **未处理**：修法（把「同容器外部可见条目 ts 集」作虚拟断面注入 `groupToolBatches`，不碰内核）留待独立一轮——风险点 = 注入 ts 集而扫描用 seq，两套键缝合须谨慎
 - **门禁**：宿主全量 `783 passed | 1 expected fail | 2 skipped`、`tsc` 0
 
 ### Fixed（宿主 · 任务项组位置判据归位：纯 seq → 全仓统一的 (ts, seq)）
