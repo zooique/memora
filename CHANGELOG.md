@@ -10,18 +10,16 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
-### Tests（宿主 · 登记在案缺陷 BATCH-SPLIT-1：问答卡未参与工具批切段）
+### Fixed（宿主 · 问答卡纳入工具批切段：外部可见条目作断面 BATCH-SPLIT-1）
 
-**复现（重放路径）**：工具 A（step 1）→ ask_user 工具行（step 2）→ 问答卡 → 工具 B（step 3）、全程无 narrate 无 thought 时，`details` 顶层不满足「卡片须排在 B 之前」的不变量（`it.fails` 守卫内的断言实测不成立 ⇒ 用例判通过）。简化夹具（无 ask_user 行）下曾打印实测序 `[tool-batch@A.ts（含 A+B）, input]`；含 ask_user 行的真实结构与之同构——批块吞掉段内全部工具、卡片被推到块后。复现路径 `renderReplayRound`（打开历史会话走它，与运行时共用同一 `groupToolBatches`）⇒ **不止流式偶发，重开会话即见**。
+**问题（登记在案缺陷 BATCH-SPLIT-1 · 纯宿主渲染层，内核零改动）**：`groupToolBatches` 只吃 `events`，而问答卡（`.round-block__input`）来自 `interactiveInputs` / 运行时缓存——**无 seq、不在 events 里** ⇒ 对切段判据天然不可见。两段工具之间夹一张问答卡时（工具 A → ask_user → 卡片 → 工具 B），A 与 B 被并成一批、批块锚在段内首工具 ts，卡片被推到整块**之后**（观感「问答卡之后的工具跑到卡片前面」）。复现路径 `renderReplayRound`（打开历史会话走它）+ 运行时流式（`renderProcessFlow`），两路同病。
 
-- **守卫**：`chatView.test.ts` 新增两条——夹具前置自检（防夹具腐化、独立可红）+ `it.fails` 断「工具 → 卡片 → 工具」。**为何用 `it.fails`**：pre-push full 档会跑宿主全量，硬红测试会阻塞推送；`it.fails` 表达「期望失败」⇒ 现在判通过、实现满足时该行转红，**该动作即清账触发器**
-- **订正原推论**：原「三同时」条件中 ②③ 的效力取决于 `thought.stepIndex`（类型 optional，判据显式兜底「两侧任一缺省 → 回落相邻性」）⇒ **stepIndex 缺省的轮次，thought 不构成断面，可达条件只剩 ①**。真实数据缺省比例未测，不夸大
-- **根因（比原记深一层）**：切段判据按 **seq** 扫描（`[...events].sort((a, b) => a.seq - b.seq)`），条目落位按 **ts**（`insertPlanItemInOrder`）⇒ 无 seq 的外部可见条目对切段**天然不可见**。与 PLAN-GROUP-ORDER-1 属**同族病**（同屏两套键）
-- **内核侧核实（已验）**：提问走 `ask_user` 内置工具（唯一通道，`handleToolCalls` 检出挂起）⇒ 真实轮次在 A 与 B 之间**必有一条 ask_user 工具行**——**夹具已补该行**（保真度修复，同批）。工具轮 narrate 为**条件产出**（`if (narration)`，模型未吐文本则无）⇒ 边界真实可达，结论不翻盘。续跑 = 同一轮内以 ask_user 的 tool result 回填后继续迭代 ⇒ 续跑是新 step。附带核实：`willSuspendForAsk` 命中时**不产出** `plan_item_boundary`
-- **流式路径核实（已验 · 代码读证）**：批块定位同为 `insertPlanItemInOrder(host, block, batch.anchorTs)`（锚 = 段内首工具 ts），旧平铺行随后被搬进批块 body ⇒ 仍为 `[批块(…), 问答卡]`；且真实结构下批块在问答卡上屏**之前**已成块（A + ask_user 两条）⇒ **错序在「答完那一刻」即可见**，不必等 B 到位
-- **守卫形态**：断言取**与修法无关的不变量**——问答卡须排在工具 B 之前（`compareDocumentPosition`），不预设尚未设计的切段形态
-- **未处理**：修法（把「同容器外部可见条目 ts 集」作虚拟断面注入 `groupToolBatches`，不碰内核）留待独立一轮——风险点 = 注入 ts 集而扫描用 seq，两套键缝合须谨慎
-- **门禁**：宿主全量 `783 passed | 1 expected fail | 2 skipped`、`tsc` 0
+- **根因（同屏两套键 · 与 PLAN-GROUP-ORDER-1 同族）**：切段判据按 **seq** 扫描（`[...events].sort((a, b) => a.seq - b.seq)`），条目落位按 **ts**（`insertPlanItemInOrder`）⇒ 无 seq 的外部可见条目对切段天然不可见
+- **修法（最小 · 不碰内核）**：新增 `visibleInputTs(root, extra)` 抽出「同容器里实际可见的问答卡 ts」，作**虚拟断面**注入 `groupToolBatches`。判据 = 「桶号」（小于该工具 ts 的边界数）变化即断段——**与落位同用 ts 键**（呈现在哪、断面就在哪），不引入第三套键（缝合风险按此规避）
+- **接线两处**：finalize 重建（DOM 快照 + `interactiveInputs` 入参）/ 运行时流式（`flow` 内已上屏问答卡）——同一判据、同一入参名，禁内联三份
+- **清账**：封存期 `it.fails` 守卫（「期望失败」）**转红 ⇒ 升格为普通 `it`**，该动作即清账触发器、已触发；另补**流式对拍用例**一条（同一不变量），防「只修一路」
+- **验证（先红后绿 + 变异）**：隔离 `3 passed`；**变异**（`bucketOf` 恒返回 0）→ 两条守卫**恰 2 红**、前置自检仍绿 ⇒ 守卫有牙；宿主全量 `785 passed | 2 skipped`、`tsc` 0
+- **内核侧事实（已核实，非推理）**：提问走 `ask_user` 内置工具（唯一通道）⇒ 真实轮次在 A 与 B 之间必有该工具行（夹具已补，保真度修复）；工具轮 narrate 为**条件产出**（`if (narration)`）⇒「无 narrate」边界真实可达；`willSuspendForAsk` 命中时**不产出** `plan_item_boundary`
 
 ### Fixed（宿主 · 任务项组位置判据归位：纯 seq → 全仓统一的 (ts, seq)）
 
