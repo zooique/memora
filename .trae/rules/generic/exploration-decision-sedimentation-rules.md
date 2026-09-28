@@ -43,7 +43,7 @@
 | **删除** | 零入引用（含历史层）+ 无在途义务 + git 已跟踪 | 直接删，git 历史即档案，不留副本 |
 | **并入归位** | 内容仍活跃、只是放错层 | 内容迁入目标真源层，原位落指针档 |
 
-**处置动作清单（缺一不得提交）**：内容归并/指针化/删除 → 注释引用清算（[comment-doc-citation-rules.md](./comment-doc-citation-rules.md) §3）→ `docs/README.md` 索引同步 → `tasks/` 台账登记。
+**处置动作清单（缺一不得提交）**：内容归并/指针化/删除 → 注释引用清算（[comment-doc-citation-rules.md](./comment-doc-citation-rules.md) §3）→ `docs/导航索引.md` 索引同步 → `tasks/` 台账登记。
 
 **分界可机检**：`npm run rules:refs` 的 docs 族 + 引用盘点即判据执行器——被引用 → 指针档；零引用 → 删除档。历史层（CHANGELOG / 台账）引用旧路径时必须走指针档，**不得改写历史**。
 

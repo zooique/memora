@@ -51,9 +51,9 @@ const ALWAYS_SHIPPED = new Set([
 
 /**
  * npm-packlist 附加规则（2026-09-28 tar 实测定界）：白名单**已触及的目录**里，README-like
- * 文件自动随包（实锤：docs/README.md 不在 files 白名单仍进 tar；反例：.trae/decisions/README.md
- * 因 .trae 零白名单触及而不进包）。未被触及目录的 README 不随包，不得当随包扫（否则 hosts/dist
- * 等构建产物里的 README 会制造噪音）。
+ * 文件自动随包（实锤：`docs/` 根下名为 `README.md` 的文件不在 files 白名单仍进 tar，后已改名为
+ * 导航索引.md 退包；反例：.trae/decisions/README.md 因 .trae 零白名单触及而不进包）。未被触及
+ * 目录的 README 不随包，不得当随包扫（否则 hosts/dist 等构建产物里的 README 会制造噪音）。
  * 若 npm 未来改此规则：闸门会误判 README 随包（fail-closed，人工核实豁免）——好过 fail-open。
  */
 const README_AUTO_RE = /(^|\/)readme(\.|$)/i;
@@ -83,7 +83,10 @@ function isShipped(rel: string): boolean {
   if (README_AUTO_RE.test(r)) {
     // npm 自动包含仅及「白名单已触及的目录」：目录内已有其他随包成员，README-like 才被捞（tar 实测）
     const dir = r.slice(0, r.lastIndexOf('/'));
-    if (dir === '' || ALLOW.some((e) => e.startsWith(`${dir}/`) || dir.startsWith(`${e}/`) || dir === e)) {
+    if (
+      dir === '' ||
+      ALLOW.some((e) => e.startsWith(`${dir}/`) || dir.startsWith(`${e}/`) || dir === e)
+    ) {
       return true;
     }
   }
