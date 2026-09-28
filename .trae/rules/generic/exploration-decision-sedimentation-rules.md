@@ -33,4 +33,18 @@
 | 已有 ADR 出现"补充/澄清/vX"大量堆叠 | 决策在变，先收敛定案，把过程移出 |
 | 全库引用盘点发现零消费 ADR | 进僵尸档：删除或降级回 docs/ |
 
+## 处置形态（S5 · 失效文档的三档出口）
+
+**失效判据**：内容被新真源取代，或其决策已按 S2 固化。处置三档：
+
+| 档 | 判据 | 动作 |
+| --- | --- | --- |
+| **指针文档** | 被取代，但文件名仍被引用（含历史层） | 保留文件名，压成「结论 + 指针 + 历史说明」 |
+| **删除** | 零入引用（含历史层）+ 无在途义务 + git 已跟踪 | 直接删，git 历史即档案，不留副本 |
+| **并入归位** | 内容仍活跃、只是放错层 | 内容迁入目标真源层，原位落指针档 |
+
+**处置动作清单（缺一不得提交）**：内容归并/指针化/删除 → 注释引用清算（[comment-doc-citation-rules.md](./comment-doc-citation-rules.md) §3）→ `docs/README.md` 索引同步 → `tasks/` 台账登记。
+
+**分界可机检**：`npm run rules:refs` 的 docs 族 + 引用盘点即判据执行器——被引用 → 指针档；零引用 → 删除档。历史层（CHANGELOG / 台账）引用旧路径时必须走指针档，**不得改写历史**。
+
 > 关联：[comment-doc-slimming-rules.md](./comment-doc-slimming-rules.md)（"怎么变过来的"归文档）、[single-truth-source-mindset.md](./single-truth-source-mindset.md)、[决策 README](../../decisions/README.md)
