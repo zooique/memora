@@ -389,7 +389,7 @@ export interface IMcpTransport {
 | L2 已知键                                        | 对应行为开关生效                                         |
 | L2 未知键                                        | **警告并忽略（warn + ignore），不阻塞装载**（杜绝拼写错误静默吞掉）       |
 | 未知能力                                          | 跳过（可选提示）                                         |
-| `formatVersion` 不兼容                           | 拒绝加载 + 提示按迁移规则升级（见下）                             |
+| `formatVersion` 不兼容 | **[预留·未实现]** 拒绝加载 + 提示按迁移规则升级——当前实现仅校验 semver 格式（`INVALID_FORMAT_VERSION`），无版本比较逻辑；出现第二 formatVersion 时落地 |
 | `minKernelVersion` 高于实现版本                     | 拒绝加载（或警告降级运行，由实现决定）                              |
 | manifest.json 中内容文件缺失（persona/rules 指向的文件不存在） | 警告降级（内容文件可选，缺失按空处理）                              |
 

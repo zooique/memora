@@ -52,7 +52,7 @@
 | `displayName`          | string                         | 否  | `name`           | UI 展示名，缺省回退 `name`；≤200 字符                              |
 | `description`          | string                         | 否  | 无                | 角色包描述；≤200 字符                                           |
 | `version`              | string                         | 否  | 无                | 建议 semver（`1.0.0`）                                      |
-| `formatVersion`        | string                         | 否  | `1.0.0`          | 声明则须 semver；版本迁移见规范 §五                                  |
+| `formatVersion`        | string                         | 否  | `1.0.0`          | 声明则须 semver；版本兼容拒绝行为 **[预留·未实现]**（见规范 §五 注记）                                  |
 | `author`               | string                         | 否  | 无                | 作者/来源；≤200 字符                                           |
 | `interactionType`      | `tool_assistant` / `companion` | 否  | `tool_assistant` | companion 触发全量强校验                                       |
 | `aiIdentityDisclosure` | boolean                        | 否  | `true`           | companion 必须显式 `true`                                   |
@@ -156,7 +156,7 @@
 | 键               | 类型 / 枚举                      | 合法区间                 | 默认                                    | 含义            | 示例                          |
 | --------------- | ---------------------------- | -------------------- | ------------------------------------- | ------------- | --------------------------- |
 | `askOn`         | 数组（元素见下）                     | 1\~4 个元素             | `[ambiguity, decision, missing_info]` | 主动提问触发场景（可组合） | `["ambiguity", "decision"]` |
-| `askLimit`      | 整数                           | `1 ~ 10`             | `3`                                   | 每轮主动提问次数上限    | `2`                         |
+| `askLimit`      | 整数                           | `1 ~ 10`             | `10`                                   | 每轮主动提问次数上限    | `2`                         |
 | `errorHandling` | `retry` / `degrade` / `stop` | —                    | `retry`                               | 异常处理策略        | `"degrade"`                 |
 | `contextLimit`   | 整数                           | `0` 或 `120000 ~ 2000000` | 未声明→`0`（跟随 provider 窗口）                           | 角色包上下文上限（**推荐 0**）  | `0`                     |
 | `stepBudget`    | 整数                           | `0 ~ 500`（0=兜底，非不限）  | `50`                                  | 每轮工具步数上限（0=走内核 maxIterations 兜底，无「不限」路径） | `60`                        |
@@ -182,9 +182,11 @@
 | `outputLimit`         | 1    | 65536   | error           | 忽略不注入              |
 | `toolStepLimit`       | 0    | 100     | error           | 回退默认 `0`（无限制）      |
 | `selfReview`          | 0    | 10      | error           | 回退 `0`（关闭）       |
-| `askLimit`            | 1    | 10      | error           | 回退默认 `3`           |
-| `contextLimit`         | 0    | 1000000 | error           | 回退内核兜底 `80000`      |
+| `askLimit`            | 1    | 10      | error           | 回退默认 `10`          |
+| `contextLimit`         | 0    | 2000000 | error           | 回退 `0`（跟随 provider 窗口）  |
 | `stepBudget`          | 0    | 500     | error           | 回退默认 `50`          |
+
+> `contextLimit` / `stepBudget` 的 `0` 是**特殊合法值**（=不声明），正数声明须落在各自详表区间（§3.4：`contextLimit` 正数 ∈ [120000, 2000000]、`stepBudget` 正数 ∈ [10, 500]）——两端之间的中间数（如 50000）**非法**。
 
 ***
 
@@ -201,7 +203,7 @@
 | companion 正文含虚拟亲属/伴侣红线词               | error   | 拒绝装载                   |
 
 > 数值键越界报错信息会带合法区间提示，如：
-> `strategy.global.contextLimit 取值 999999 不符合约束，合法区间 [0, 1000000]`
+> `strategy.global.contextLimit 取值 50000 不符合约束，合法区间 0 或 [120000, 2000000]`
 
 ***
 
