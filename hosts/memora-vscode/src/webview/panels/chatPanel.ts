@@ -2965,6 +2965,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
           if (currentRoundKey) {
             this.checkpointRound(currentRoundKey, eventsByRound.get(currentRoundKey) ?? []);
           }
+          // 瞬态透传：webview 据落盘点注销未升级的「（准备中）」预告行（本步工具宿命已定，
+          // 截断批/重试孤儿的 tool_start 永不到达）——生命周期契约见 dropStalePendingToolRows
+          this.post({ type: 'step_boundary' });
         } else if (chunk.type === 'error') {
           // 流内错误 → 复用现有 error 协议消息（webview 已有分支）。
           // 按内核产出的 category 映射友好文案（connection/timeout/unknown），

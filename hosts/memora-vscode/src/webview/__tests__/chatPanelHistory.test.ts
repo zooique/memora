@@ -881,7 +881,7 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
   // 崩溃即全丢。故改挂 step_boundary（迭代完成），与有无任务表无关。
 
   it('step_boundary = 增量落盘点：每次迭代落一次（无任务表也落）', async () => {
-    const { store, roundStore, provider } = setup();
+    const { store, roundStore, provider, posted } = setup();
     provider.setRoundStore(roundStore); // 落盘依赖 _eventLogRoundStore 注入
     seedSession(store, roundStore, '2026-08-15-s1', [
       { role: 'user', content: '任务', ts: 't0' },
@@ -920,6 +920,9 @@ describe('consumeFlow 过程事件按 turn roundId 分组落盘（2026-09-02）'
 
     // 两次迭代边界 → 两次增量落盘；流尾终局再落一次 = 3
     expect(saves).toHaveLength(3);
+    // 送达守卫：step_boundary 须随每次迭代**瞬态透传**给 webview（预告行注销钩子的可达性）——
+    // 缺此断言时 webview 可挂一条生产永不可达的假消息面（单测手动 dispatch 掩盖，仅 tsc 能拦）
+    expect(posted.filter((m) => (m as { type?: string }).type === 'step_boundary')).toHaveLength(2);
     // 第一次落盘时第二迭代的工具还没发生 —— 崩溃只丢未落盘的那一段，这正是落盘的意义
     expect(saves[0]).not.toContain('tool_start');
     // 第二次落盘把第二迭代的工具增量补上

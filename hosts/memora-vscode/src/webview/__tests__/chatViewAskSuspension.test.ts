@@ -155,6 +155,37 @@ describe('chatView ask 挂起批次：预告行收口 + 任务项归位', () => 
     expect(row!.classList.contains('is-tool-pending')).toBe(true);
   });
 
+  it('step_boundary（落盘点）注销截断批/重试孤儿的预告行，之后新预告行照常渲染', () => {
+    mountChatView();
+    startRound();
+    // 截断批/重试孤儿：tool_start 永不到达的预告行
+    dispatch(toolPending('call_dead', 'read_file'));
+    expect(pendingRows()).toHaveLength(1);
+    // continue 型迭代落盘点 = 本步工具宿命已定 → 注销（瞬态消息，与 tool_pending 同族）
+    dispatch({ type: 'step_boundary' });
+    expect(pendingRows()).toHaveLength(0);
+    // 反向：落盘点之后新流式批的预告行不受影响
+    dispatch(toolPending('call_next', 'write_file'));
+    expect(toolRow('call_next')).not.toBeNull();
+  });
+
+  it('用户输入（插话/新轮）注销在途预告行（打断批 = [TOOL_ABORTED] 同源）', () => {
+    mountChatView();
+    startRound();
+    // 先出正文 → 骨架壳转正（纯工具阶段插话走「拆壳」路径，预告行会随容器游离而假消失，
+    // 掩盖注销钩子——必须在壳已转正的形态下验）
+    dispatch({ type: 'chunk', content: '开工' });
+    dispatch(toolPending('call_inflight', 'write_file'));
+    expect(pendingRows()).toHaveLength(1);
+    dispatch({
+      type: 'user',
+      text: '先停一下',
+      ts: '2026-09-28T11:01:00.000Z',
+      kind: 'supplement',
+    });
+    expect(pendingRows()).toHaveLength(0);
+  });
+
   it('提问挂起定型后，挂起批次的「（准备中）」预告行全部收口（运行时不留幽灵折叠块）', () => {
     replayRealSequence();
     // 挂起批次永不发 tool_start ⇒ 预告行不会升级——提问 UI 渲染即为收口信号

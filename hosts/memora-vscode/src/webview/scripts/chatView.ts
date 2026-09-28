@@ -1566,7 +1566,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         const statusText = ` (${status})`;
         if (statusEl && statusEl.textContent !== statusText) statusEl.textContent = statusText;
         // 用户意图闩（data-user-toggled，写入点 = summary 点击委托）：用户动过开合的行，
-        // 默认值（成功收起/失败展开）不再覆盖——每次事件都回写会把用户的展开态打回
+        // 默认值（成功收起/失败展开）不再覆盖——每次事件都回写会把用户的展开态打回。
+        // 唯一例外通道 = openForUserVisibility（用户输入恒可见强制展开，只作用任务项分组）
         if (row.dataset.userToggled !== 'true') row.open = open;
         // result 已到达 → 移除进行中态（恢复普通行样式）
         row.classList.toggle('is-tool-running', running);
@@ -3017,6 +3018,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   let skeletonPendingItems: HTMLElement[] = [];
 
   /**
+   * 折叠态「程序强制展开」的唯一裁决点（优先级：用户输入恒可见 > 用户意图闩）。
+   *
+   * 交互条目（补充/回答）归位进收起的任务项分组时强制展开——用户自己的输入被折叠
+   * 隐藏 = 「发了没反应」类体验事故，可见性在此让意图闩（data-user-toggled）让位；
+   * 除此之外一切程序默认值（工具行成功收起/失败展开等）一律让位意图闩（消费点 =
+   * updateToolRowState）。**程序侧写 open 只允许三类：创建期默认值 / 轮块 running→finalize
+   * 生命周期转换（rb.open = !finalize，一次性）/ 本点强制展开**，其余（尤其反复覆盖型
+   * 状态写）必须让位意图闩。
+   */
+  function openForUserVisibility(el: HTMLElement): void {
+    if (el.tagName === 'DETAILS' && el.classList.contains('round-block__plan-item')) {
+      (el as HTMLDetailsElement).open = true;
+    }
+  }
+
+  /**
    * 交互输入渲染（QA 回答 / 补充 / 超时未答）统一入口（形态甲）：
    * - 渲染为**过程条目行**（renderQaItem），按 ts 插入 process-flow / round-block 对应任务项分组
    *   （与 thought/tool 同源同序，统一时间键）；无过程容器（纯问答轮）降级消息流。
@@ -3065,13 +3082,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         insertPlanItemInOrder(host, item, tsKey);
         // 归位宿主为任务项分组（details）时展开该分组：任务项分组默认收起，
         // 交互条目（补充/回答）被归位进收起分组内用户看不到——「任务表运行中输入补充内容不可见、
-        // 结束后才见」即此因。插入即展开，保证用户输入恒可见（与 ensureUserInputVisible 纪律一致）。
-        const planItemHost = host as HTMLDetailsElement;
-        if (
-          planItemHost.tagName === 'DETAILS' &&
-          planItemHost.classList.contains('round-block__plan-item')
-        )
-          planItemHost.open = true;
+        // 结束后才见」即此因。插入即展开，保证用户输入恒可见（裁决点 = openForUserVisibility）。
+        openForUserVisibility(host);
       } else {
         // 兜底：无过程容器（重放纯 QA 轮正文块未建 / 纯问答轮无过程 / 骨架期 meta 未到）落消息流。
         // 有 roundId 时打归属标记——正文块建立后经 assistant 分支的合并流重建清理回收（标记
@@ -3121,14 +3133,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const tsKey = item.dataset.ts ?? new Date().toISOString();
       const { host } = planItemContainerFor(root, currentEvents, tsKey);
       insertPlanItemInOrder(host, item, tsKey);
-      // 归位进任务项分组（details）时展开该分组，保证用户输入恒可见（与 append 侧纪律一致）
-      const planItemHost = host as HTMLDetailsElement;
-      if (
-        planItemHost.tagName === 'DETAILS' &&
-        planItemHost.classList.contains('round-block__plan-item')
-      ) {
-        planItemHost.open = true;
-      }
+      // 归位进任务项分组（details）时展开该分组，保证用户输入恒可见（裁决点 = openForUserVisibility）
+      openForUserVisibility(host);
     }
     skeletonPendingItems = [];
   }
@@ -4223,6 +4229,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 工具尚未执行——提前渲染「准备中」工具行。瞬态展示轨：不落 events[]、不参与
       // currentEvents（finalize 全量重建时天然消失），后续 tool_start 按 toolCallId 升级。
       renderPendingToolRow(msg);
+    } else if (msg.type === 'step_boundary') {
+      // 迭代落盘点（瞬态信号，与 tool_pending 同族）：本步工具宿命已定（started 已升级；
+      // 截断批/重试孤儿的 tool_start 永不到达）→ 预告行注销（生命周期契约见 dropStalePendingToolRows）
+      dropStalePendingToolRows();
     } else if (msg.type === 'process_event') {
       // 运行时单形态渲染投影（v1.5）：一律汇入当前轮 events[] 由 renderRoundBlock 渲染。
       // meta 为本轮首条 → 开新轮（清缓冲 + 挂载就绪）；瞬时「已召回/已沉淀」提示由事件本地派生
@@ -4338,6 +4348,9 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         if (pausedAssistantEl && !pausedAssistantEl.isConnected) pausedAssistantEl = null;
       }
       clearPendingWait();
+      // 在途批宿命已定（用户输入 = 插话打断/新轮起步，[TOOL_ABORTED] 同源）：
+      // 未升级预告行注销（生命周期契约见 dropStalePendingToolRows）
+      dropStalePendingToolRows();
       // 带 kind 的交互输入 → 行内打断分条（supplement）/ 消息流内联子行（qa）。
       // 单轨：后续 assistant 段是否续接由 chunk 携带的 roundId 与 lastAssistantRoundId
       // 相等判定（运行时与重放同一判定源）；resumePending 供下一次 process_event meta
@@ -5040,10 +5053,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   }
 
   /**
-   * 挂起批次预告行收口：ask_user 挂起 = 本批工具整体不执行（内核 [ASK_SUSPENDED] 语义，
-   * 该批次 tool_start 永不到达），「（准备中）」预告行（瞬态轨）只被 tool_start 升级或
-   * 整树重建消费——不收口就会在运行时残留无内容的幽灵折叠块、且散在任务项折叠块外。
-   * 提问 UI 渲染即挂起定型：此刻清掉所有未升级预告行，运行时与收尾全量重建同一口径。
+   * 「（准备中）」预告行注销（生命周期契约：每条预告行**要么升级、要么注销**，不许常驻）。
+   *
+   * 预告行（tool_pending，瞬态轨）的宿命只有两个出口：① tool_start 到达 → 升级执行态
+   * （upgradePendingToolRow）；② 所属批的 tool_start **永不到达** → 此处注销。触发集 =
+   * 批宿命已定的全部落点：`step_boundary`（截断批/重试孤儿在此注销——continue 型迭代落盘点）；
+   * 提问定型（ask 挂起批不发 step_boundary，其宿命在提问 UI 渲染时已定）；用户输入
+   * （插话/新轮打断在途批，[TOOL_ABORTED] 同源）。轮收尾/中断由整树重建天然注销（finalizeRound
+   * 拆过程容器），不重复挂钩。不注销的后果 = 运行时残留无内容的幽灵折叠块、散在任务项折叠块外。
    */
   function dropStalePendingToolRows(): void {
     messages.querySelectorAll('.round-block__tool.is-tool-pending').forEach((row) => row.remove());

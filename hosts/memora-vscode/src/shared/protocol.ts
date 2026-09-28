@@ -482,6 +482,14 @@ export type ExtensionToWebviewMessage =
    */
   | { type: 'tool_pending'; toolCallId?: string; name: string; roundId?: string }
   /**
+   * 迭代落盘点（瞬态信号）：一次 LLM 迭代（含其工具执行）结束、增量落盘完成的时刻。
+   * 属展示轨：**不入 processEvents、不落盘**（与 tool_pending 同族，宿主 consumeFlow 在
+   * step_boundary chunk 处消费后透传）。webview 据此注销未升级的「（准备中）」预告行——
+   * 本步工具宿命已定（截断批/重试孤儿的 tool_start 永不到达），生命周期契约见
+   * webview `dropStalePendingToolRows`。
+   */
+  | { type: 'step_boundary' }
+  /**
    * 过程事件（运行时单形态渲染投影）
    *
    * 由 extension host 在 consumeFlow 旁路将 AgentChunk / 主机事件归一为 ProcessEvent 后逐条推送；

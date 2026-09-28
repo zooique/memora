@@ -185,6 +185,39 @@ describe('chatView 折叠展开态用户意图保护', () => {
     expect(row.querySelector('.process-flow__thought-body')?.textContent).toContain('再读核心文件');
   });
 
+  it('裁决点优先级：用户折叠的任务项分组在交互输入落地时强制展开（用户输入恒可见 > 意图闩）', () => {
+    mountChatView();
+    startRound();
+    // 任务项边界 + 真工具 → 任务项分组建立
+    dispatchEv({
+      type: 'plan_item_boundary',
+      seq: 2,
+      ts: '2026-09-28T10:00:02.000Z',
+      payload: { planItemId: 'item-1', title: '第一步' },
+    });
+    dispatchEv(toolStart(3, 't1'));
+    dispatchEv(toolResult(4, 't1', true));
+    const group = document.querySelector<HTMLDetailsElement>('.round-block__plan-item');
+    expect(group).not.toBeNull();
+
+    // 用户手动折叠任务项分组（分组默认收起，先置展开态再折叠 = 意图闩生效）
+    group!.open = true;
+    userToggle(group!);
+    expect(group!.open).toBe(false);
+
+    // 用户自己的问答落地归位进该组 → 裁决点（openForUserVisibility）强制展开：
+    // 用户输入被折叠隐藏 = 「发了没反应」事故，可见性在此让意图闩让位（唯一例外通道）
+    dispatch({
+      type: 'user',
+      text: '是',
+      ts: '2026-09-28T10:00:30.000Z',
+      kind: 'question-answer',
+      question: '确认执行？',
+    });
+    expect(document.querySelector('.round-block__plan-item')).toBe(group); // 同一节点
+    expect(group!.open).toBe(true); // 强制展开 = 优先级裁决生效
+  });
+
   it('纯工具轮（骨架未转正）插话补充 + 续跑 meta 后，思考块身份与展开态保持', () => {
     mountChatView();
     startRound();
