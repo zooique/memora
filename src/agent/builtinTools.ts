@@ -477,7 +477,9 @@ export const BUILTIN_TOOLS: ToolDefinition[] = [
       '若不确定目标文件是否存在或路径是否正确，先用 search_project 搜索文件名定位，或 list_dir 查看目录结构，' +
       '确认存在再读——不要凭空猜测路径（读不存在的文件会返回 FILE_NOT_FOUND，是可避免的试探浪费）。' +
       '大文件不会一次全给：返回末尾的「[read_file 分段]」脚注会告知已显示的行号区间与总行数，' +
-      '继续读用 offset 指定起始行。',
+      '继续读用 offset 指定起始行。' +
+      '读到的内容若含需长期引用的要点（结论、设定、数据），随即用 remember_intel 记入工作笔记，' +
+      '之后查证用 search_memories 检索记忆——不要靠重复读文件。',
     readonly: true,
     parameters: {
       type: 'object',

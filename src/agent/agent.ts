@@ -1924,6 +1924,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           failureCount: 0,
           unparsedToolIntentCount: 0,
           ledgerStubEchoCount: 0,
+          readDedupBlockCount: 0,
         },
         context: { truncationCount: 0, messageCount: 0, estimatedTokens: 0 },
         plan: { taskTableWriteCount: 0, planItemBoundaryCount: 0 },

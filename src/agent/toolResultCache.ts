@@ -32,6 +32,10 @@ import { positiveInt } from '@/utils/math.js';
  * `read_file` 的 `offset`/`limit` 与 handler 的区间解析**同语义**（缺省 / 非法 offset ≡ 1；
  * 缺省 / 非法 limit ≡ 读到末尾），故「`{path}`」与「`{path, offset:『1』}`」是**同一份主体** ——
  * 这是刻意的：二者在 handler 里读的确实是同一区间，若当成两个 key，真正的重复调用就会被放过。
+ *
+ * 证据落盘**不镜像**本字段面：`read_dedup_block` 证据由 loop 侧整体 spread 透传本接口实例
+ * （`{ toolName, ...subject }`），roundStore 侧以开放式索引签名承载 —— 本接口增字段随透传自动落盘，
+ * 两侧均零同步（`memory → agent` 类型禁向使 roundStore 无法 import 本类型，故不逐字段声明）。
  */
 export interface DedupSubject {
   /** 文件 / 目录路径（read_file、list_dir）—— 已经过 `normalizePathKey`；**纯文件语义**，供覆盖度台账分支②按文件回显 */

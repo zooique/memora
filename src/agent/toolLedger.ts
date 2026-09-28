@@ -87,8 +87,10 @@ export function parseReadFileCoverage(result: string): ReadFileExposure | undefi
  *
  * 语义（区分「无区间整读」「limit 变体整读」「续读区间」三类冗余）：
  * - 该文件尚未覆盖过正文（coverEnd<=0）→ 不拦（无摘要可回显，放行）。
- * - **无 limit 整读**（LLM 要「全文」的语义重复）：只要覆盖过正文即视为冗余 → 拦，由
- *   formatLedgerStub 回显摘要 + 引导 `offset=coverEnd+1` 续读，避免大文件截断后反复整读重试。
+ * - **无 limit 请求**：语义 =「从 offset 读到文件末尾」。起点落在已覆盖区间内（含省略 offset
+ *   的整读）→ 冗余 → 拦，由 formatLedgerStub 回显摘要 + 引导 `offset=coverEnd+1` 续读，
+ *   避免大文件截断后反复整读重试；**起点超出已覆盖区间 → 放行**（真续读，恰是上述引导的那一步，
+ *   若一并拦死则「照引导走仍被拦」成死循环，大文件永远读不到第二段）。
  * - **limit 变体整读**：请求 `offset+limit-1 >= totalLines` =「物理读到文件末尾」。
  *   此时再大的 limit 对同一文件读到内容一致（handler `Math.min` 截到 total），故一旦此前已
  *   覆盖到末尾（coverEnd >= totalLines）即视为同参整读 → 拦，封死「变 limit 从头重读」的逃逸。
@@ -106,8 +108,11 @@ export function shouldEchoLedgerStub(
 ): boolean {
   // 未覆盖过正文：无摘要可回显，放行
   if (cov.coverEnd <= 0) return false;
-  // 无 limit 整读：只要有覆盖即冗余（回显摘要引导续读）
-  if (subj.limit === undefined) return true;
+  // 无 limit 请求：语义 =「从 offset 读到文件末尾」（handler 缺省 limit 即读到底）。
+  // 起点落在已覆盖区间内（含省略 offset 的整读）→ 截断后返回的仍是同一段已读头部 → 拦；
+  // 起点超出已覆盖区间 → 真续读（`offset=coverEnd+1` 恰是 formatLedgerStub 引导的写法）→ 放行。
+  // 此处若一律拦，拦据与引导互为死结：模型照着文案给出的 offset 续读，仍会被同一条判据再拦一次。
+  if (subj.limit === undefined) return (subj.offset ?? 1) <= cov.coverEnd;
   const start = subj.offset ?? 1;
   const reqEnd = start + (subj.limit - 1);
   // limit 变体整读：请求覆盖到文件末尾（物理读完整段）→ 此前已覆盖到末尾即视为同参整读 → 拦。
@@ -162,6 +167,11 @@ export class FileExposureLedger {
 /**
  * 组装分支②的拦截文案（替身回显，非空拦）。
  *
+ * **两个消费语境共用本函数**（SSOT）：① 压缩链把 read_file 结果原位替换为台账摘要；
+ * ② LLM 变体/同参重读被分支②拦截时的回显。故文案**不得内嵌只对单一语境成立的状态断言**：
+ * 「原文已在流程中被压缩」在压缩语境为真，回显语境原文却可能仍在上下文（变体重读不经 L2 精确
+ * 判重）⇒ 即撒谎。文案只陈述两语境皆真的事实（读过 / 覆盖区间 / 要点 / 出路）。
+ *
  * @param cov 台账覆盖度条目
  * @returns 面向 LLM 的提示串
  */
@@ -171,8 +181,8 @@ export function formatLedgerStub(cov: FileCoverage): string {
       ? `${cov.coverStart} 行`
       : `第 ${cov.coverStart}–${cov.coverEnd} 行`;
   return (
-    `[ALREADY_READ] 该文件已读过（第 ${cov.cachedAtIteration} 步，覆盖 ${range} / 共 ${cov.totalLines} 行，` +
-    `原文已在流程中被压缩）。要点：${cov.digest}\n` +
+    `[ALREADY_READ] 该文件已读过（第 ${cov.cachedAtIteration} 步，覆盖 ${range} / 共 ${cov.totalLines} 行）。` +
+    `要点：${cov.digest}\n` +
     `如需其它区间请用 read_file 的 offset/limit 指定（如 offset=${cov.coverEnd + 1}）；不要无区间重读已覆盖部分。`
   );
 }

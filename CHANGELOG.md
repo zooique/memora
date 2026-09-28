@@ -195,6 +195,37 @@
 
 ## [3.0.0] - 待发布（发版日补日期）
 
+### Fixed（内核 · 读取防重回显文案诚实化：删「原文已在流程中被压缩」状态断言）
+
+**问题**：`formatLedgerStub`（台账替身文案）被两个语境共用——① 压缩链把 read_file 结果**原位替换**为台账摘要（loop 装配 `readFileReplacement`）；② LLM 变体/同参重读被分支②拦截时的**回显**。文案写死「原文已在流程中被压缩」：压缩语境为真，但回显语境原文可能仍在上下文（变体重读不经 L2 精确判重的「仍在上下文」前提）⇒ **文案撒谎**——guardRail 防死锁前提（「告知基于已有 = 指令撒谎」）的同型问题在台账分支复现。
+
+- **修法**：删状态断言，只陈述两语境皆真的事实（读过 / 覆盖区间 / 要点 / 续读出路）；SSOT 不破（两语境仍共用一个 formatter，文档注释钉死「不得内嵌单语境状态断言」）
+- **验证**：守卫 `not.toContain('被压缩')`（二字根，咬住「已被压缩 / 已在流程中被压缩」一切改写回潮）+ **变异实弹**：子句回潮 → 恰 1 红（红在断言本体）→ 还原复绿。（守卫针头首版误写「已被压缩」——非真实字面的子串、恒绿咬不到人，排雷实证后与文案一并修正、变异补做通过）
+
+### Fixed（内核 · 读取防重续读死结：无 limit 续读被台账分支②误拦）
+
+**问题（可用性级 · 大文件必然触发）**：`shouldEchoLedgerStub`（分支②判定的单一真理源）原判据「无 limit 请求一律拦」只看了 limit 有无、未看 offset 落点。而 `offset=N` 不带 limit 的 handler 语义是「从 N 读到文件末尾」——**合法续读**。后果：文件被单次读取预算（`SINGLE_TOOL_RESULT_MAX_TOKENS` 5900，约 300–500 行）截断后，模型照分段脚注与拦截文案给出的写法（二者均为 `offset=coverEnd+1`、均不带 limit）续读，**会被同一条判据再次拦下** ⇒ 拦据与引导互为死结，memora 体量的大文件（如 `loop.ts` 约 4000 行，需约 10 次续读）永远读不到第二段。登记行「ADR-031 补缝过度拦截候选」的原始假设（「全文比对」类任务被迫绕路）由此**代码级实锤**——且成因比设想的更硬，非仅「摘要替身信息不足」。
+
+- **修法（判据面，非场景特判）**：无 limit 分支改按 offset 落点判定——`(offset ?? 1) <= coverEnd` → 拦（起点落在已覆盖区间内，含省略 offset 的整读；截断后返回的仍是同一段已读头部）；起点超出覆盖区间 → 放行（真续读，恰是引导给出的那一步）。`limit` 变体整读与区间续读两条既有判据不动。
+- **先红后绿（实证，非推理）**：探针复现旧行为下 `offset=401`（台账覆盖 1–400）判 `true`；原用例 `expect({ offset: 100 }).toBe(true)` 即**把该 bug 固化成期望**，一并订正为「整读拦 / 续读放行」两条。
+- **验证（变异双端）**：**变异 A**（判据还原旧行为「一律拦」）→ 恰 1 红、**恰红在续读放行断言本体**；**变异 B**（改「全放行」）→ 恰 1 红、红在整读拦断言 ⇒ 两端都真在咬人，均还原复绿。`typecheck` 0 / `eslint` 0 / `format:check` 0 / 全量 **2813 passed | 4 skipped**。
+- **未闭合（如实记）**：本修只解「无 limit 续读」这一成因；`ADR-031 补缝`（整读小文件记全覆盖）本身未动，§7 该登记行维持观察其余面向。
+
+### Fixed（内核 · 读取防重证据字段面镜像收敛：三处手工枚举 → 一处定义 + 一处透传）
+
+**问题**：`DedupSubject`（去重主体，形状真源 = `toolResultCache`）字段面被**三处手工枚举**——类型定义 ↔ loop 侧证据落盘逐字段展开 ↔ roundStore `read_dedup_block` payload。因 `memory → agent` **类型禁向**（真源 `.trae/rules/backend_layers_rules.md`，不随包故不作链接），roundStore 无法 import 该类型，只能人肉抄字段清单 ⇒ `DedupSubject` 增字段时另两处**静默漏采**（探针丢定位字段，逐案裁决无米下锅）。
+
+- **修法（第三路，非登记时列的两路）**：loop 侧 `payload: { toolName, ...dedupSubject }` 整体 spread 透传（不再逐字段 `x !== undefined ? { x } : {}`）；roundStore payload 改**开放式索引签名** `[dedupField: string]: string | number | undefined` **停止枚举**。镜像由此降为「一处定义（`DedupSubject`）+ 一处透传」，两侧零同步。**为何不走原两路**：下沉共享层 = 新增单元（违最小单元）；`Record<keyof DedupSubject, …>` 编译期对拍仍要求 roundStore 侧知道字段清单 = 镜像未除。
+- **契约等价（实证）**：落盘 JSON 形状**不变**（`undefined` 值由 `JSON.stringify` 自然丢弃）；`read_dedup_block` 全库**零代码消费**（grep 仅命中类型定义、落盘点与登记文档）；`memory → agent` 类型禁向未破。
+- **验证**：`typecheck` 0 / `eslint` 0 / `format:check` 0 / `rules:refs` 0（闸门自检 8/8 + 裸路径引用全可解析）/ 全量 **2813 passed | 4 skipped**。`legacy-contract-audit-rules.md` §7「读取防重证据字段镜像」登记行 → **收敛（结案）**。
+
+### Added（内核 · read_dedup 撞墙升级 + 兜底观测 + 读后即记引导）
+
+- **撞墙升级**：同一读取主体被 `read_dedup` 硬拦 2 次后，第 3 次命中起文案升级为强禁令（`[ALREADY_READ] 你已第 {count} 次尝试重复获取…`）。出口引导收敛 `{tail}` 单源按主体分流：read_file 给 offset/limit 续读出口，非文件主体（query/url/会话等）不给——单语境断言不内嵌共用文案；另加 `search_memories` 记忆检索。阈值 `READ_DEDUP_ESCALATE_THRESHOLD = 2`（用户裁决 2026-09-28：第 2 次即升级太激进、第 3 次合适）；计数经 `GuardRail.notifyBlocked` **拦截归属回喂**（新钩子 `onBlocked`）喂数——`onExec` 只知「被某种护栏拦」，台账替身回显等非本护栏拦截不会误计；随 `reset('perTurn')` 轮界归零
+- **兜底观测**：`readDedupBlockCount` 指标（`LoopMetrics` / `AgentMetrics.tools` / tracer 透传）+ `read_dedup_block` 裁决证据（`RoundEvidenceEvent` 新变体，含 toolName + 去重主体字段）——判「模型乒乓」vs「合理重读被误拦」的量化基线，与 `ledgerStubEchoCount`（L3 变体顶替）互补；证据字段面三处镜像已登记 `legacy-contract-audit-rules.md` §7 待验证候选（**该镜像已于同版收敛结案**，见上方 Fixed 条）
+- **读后即记引导（内核侧，非角色包）**：`read_file` 工具描述追加「读到需长期引用的要点随即 `remember_intel` 记入工作笔记，查证用 `search_memories`，不要靠重复读文件」——工具描述是工具行为的 how 单源（用户裁决：该引导属内核职责，不进角色包）
+- **验证（变异闭合）**：`guardRail.test.ts` 升级判定 6 例（前两次温和 / 第 3 次升级保留 read_file 出口 / web_search 主体不带 offset/limit / 主体隔离 / 轮界归零 / 阈值语义钉）+ `loop.test.ts` 集成 1 例（loop→guard 连线 + 指标 + 文案落位，按文案特征分流计数——压缩替身同含 `[ALREADY_READ]` 令牌，按令牌计数会误算）；**变异四组均还原复绿**：阈值 2→1 → 恰 2 红、断开 `notifyBlocked` 连线 → 恰 1 红（集成）、断开 `promptArgs` 裁决连线 → 恰 2 红、出口分流回潮 → 恰 1 红。`typecheck` 0 / `eslint` 0 / `rules:refs` 0 / `format:check` 0 / 全量 **2812 passed | 4 skipped**
+
 ### Fixed（内核 · 写串行闸收口：`diskWrite` 声明位 + 不透明写屏障，DIFF-4/5）
 
 - **问题**：「谁会改盘」散在两处枚举（builtinTools 工具表语义 ↔ `WRITE_PATH_EXTRACTORS` 键），新增写工具忘加提取器 = 串行不防 + 追踪不报 + 契约钉不红的三重静默（DIFF-5）；且 `run_code` / `run_*_script` 等**无 `args.path` 的写工具**不进串行闸——同 step 并行脚本写/脚本×write_file 同目标 = DIFF-3 同型丢内容（DIFF-4）

@@ -63,4 +63,10 @@ export class LoopMetrics {
   /** read_file 覆盖度台账回显（分支② formatLedgerStub 命中）累计次数。
    *  仅作观测基线：与「规避行为红旗」交叉判定防重是否过度顶替合法重读（见 AgentMetrics 该字段 JSDoc）。 */
   ledgerStubEchoCount = 0;
+
+  // ─── 读取防重的 L2 硬拦观测 ──
+  /** read_dedup 护栏硬拦命中（同主体重复获取且结果仍在上下文）累计次数。
+   *  与 ledgerStubEchoCount 互补：本计数 = L2 精确判重（模型乒乓信号，撞墙升级文案的量化基线），
+   *  后者 = L3 变体顶替；健康态应接近 0，持续增长 = 模型在同主体上反复重读。 */
+  readDedupBlockCount = 0;
 }

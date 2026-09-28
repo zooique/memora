@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   GuardRail,
   GUARD_THRESHOLDS,
+  READ_DEDUP_ESCALATE_THRESHOLD,
   renderPrompt,
   createDefaultGuards,
   type GuardContext,
@@ -174,6 +175,87 @@ describe('GuardRail 判定复现现有护栏（S1 shadow 契约）', () => {
   it('注册表顺序：默认注册序 read_failed 先于 read_dedup', () => {
     const ids = guards.guards.map((g) => g.id);
     expect(ids.indexOf('read_failed')).toBeLessThan(ids.indexOf('read_dedup'));
+  });
+});
+
+describe('read_dedup 撞墙升级（同主体被硬拦 2 次后，第 3 次命中起升级文案）', () => {
+  const ARGS = '{"path":"a.md"}';
+
+  /** 带缓存命中的判定上下文（结果仍在上下文 → read_dedup 必拦） */
+  function ctxWithCache(path: string): GuardContext {
+    const ctx = makeCtx({ toolName: 'read_file', argsJson: `{"path":"${path}"}` });
+    ctx.toolResultCache.set('read_file', readSubject(path), 2);
+    return ctx;
+  }
+
+  /** 模拟 loop 拦截归属回喂：判定命中 → notifyBlocked（计数 +1） */
+  function blockOnce(g: GuardRail): string {
+    const hit = g.evaluateBlocked(ctxWithCache('a.md'));
+    expect(hit).toBeDefined();
+    g.notifyBlocked(hit!.guardId, 'read_file', ARGS);
+    return hit!.message;
+  }
+
+  it('前两次命中用普通文案（仍在上下文 + offset/limit tail）', () => {
+    const g = freshGuards();
+    const first = blockOnce(g);
+    expect(first).toContain('仍在你的当前上下文中');
+    const second = blockOnce(g);
+    expect(second).toContain('仍在你的当前上下文中');
+    expect(second).toContain('offset/limit');
+  });
+
+  it('第 3 次命中升级为强禁令（n=3 + search_memories 出口，不再说「仍在上下文」）', () => {
+    const g = freshGuards();
+    blockOnce(g);
+    blockOnce(g);
+    const third = blockOnce(g);
+    expect(third).toContain('第 3 次尝试重复获取');
+    expect(third).toContain('search_memories');
+    // read_file 主体保留续读出口（{tail} 单源供给）
+    expect(third).toContain('offset/limit');
+    expect(third).not.toContain('仍在你的当前上下文中');
+  });
+
+  it('升级计数按主体隔离：a.md 升级不影响 b.md 首次命中的普通文案', () => {
+    const g = freshGuards();
+    blockOnce(g);
+    blockOnce(g);
+    const other = g.evaluateBlocked(ctxWithCache('b.md'));
+    expect(other?.message).toContain('仍在你的当前上下文中');
+  });
+
+  it('升级文案出口按主体分流：web_search 主体升级不带 offset/limit，仍给 search_memories', () => {
+    const g = freshGuards();
+    const argsJson = '{"query":"q1"}';
+    // web_search 主体的拦截归属回喂（与 read_file 同流程，主体走 query 槽）
+    const blockSearch = (): string => {
+      const ctx = makeCtx({ toolName: 'web_search', argsJson });
+      ctx.toolResultCache.set('web_search', { query: 'q1' }, 2);
+      const hit = g.evaluateBlocked(ctx);
+      expect(hit).toBeDefined();
+      g.notifyBlocked(hit!.guardId, 'web_search', argsJson);
+      return hit!.message;
+    };
+    blockSearch();
+    blockSearch();
+    const third = blockSearch();
+    expect(third).toContain('第 3 次尝试重复获取');
+    expect(third).toContain('search_memories');
+    // offset/limit 是 read_file 专属出口——单语境断言不得内嵌共用文案，非文件主体出现即回潮
+    expect(third).not.toContain('offset/limit');
+  });
+
+  it('reset(perTurn) 归零升级计数：新闭环回到普通文案', () => {
+    const g = freshGuards();
+    blockOnce(g);
+    blockOnce(g);
+    g.reset('perTurn');
+    expect(blockOnce(g)).toContain('仍在你的当前上下文中');
+  });
+
+  it('阈值语义钉：阈值常量 = 2（第 3 次升级）——改动即红，防口径静默漂移（用户裁决 2026-09-28）', () => {
+    expect(READ_DEDUP_ESCALATE_THRESHOLD).toBe(2);
   });
 });
 

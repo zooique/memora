@@ -45,7 +45,12 @@ export type GuardRailId =
 
 /** 命中提示词 id（与 GuardRailPromptId 一一对应，文案收敛到 GUARD_RAIL_PROMPTS） */
 export type GuardRailPromptId =
-  'search_limit' | 'ask_limit' | 'write_loop_stop' | 'read_failed_limit' | 'already_read';
+  | 'search_limit'
+  | 'ask_limit'
+  | 'write_loop_stop'
+  | 'read_failed_limit'
+  | 'already_read'
+  | 'already_read_escalated';
 
 /** 护栏运行态计数（loop 注入，仅承载 search_limit / ask_limit 两枚；write_loop 连写 / read_failed 失败
  *  计数内聚进各自 guard 实例闭包，经 onExec 自持更新） */
@@ -87,6 +92,11 @@ export const GUARD_THRESHOLDS = {
   readFailed: 3,
 } as const satisfies Pick<GuardThresholds, 'writeLoop' | 'readFailed'>;
 
+/** read_dedup 撞墙升级阈值：同主体累计被本护栏硬拦达此值后，后续命中升级为强禁令文案
+ *  （值 2 = 第 3 次起升级；用户裁决 2026-09-28：第 2 次即升级太激进、第 3 次合适）。
+ *  不入 GUARD_THRESHOLDS——它不改变「拦不拦」，只切换文案强度。 */
+export const READ_DEDUP_ESCALATE_THRESHOLD = 2;
+
 /** 单工具 + 本 turn 运行态的护栏判定上下文 */
 export interface GuardContext {
   toolName: string;
@@ -113,10 +123,12 @@ export interface GuardRailDef {
   shouldBlock: (c: GuardContext) => boolean;
   /** true = 真拦截（回填拒绝文案）/ false = 软提示 */
   blocked: boolean;
-  /** 命中文案 key（引用 GUARD_RAIL_PROMPTS，勿内联文案） */
-  promptId: GuardRailPromptId;
-  /** 模板插值参数（路径 / 次数 / 阈值等） */
-  promptArgs?: (c: GuardContext) => Record<string, unknown>;
+  /** 命中文案 key（引用 GUARD_RAIL_PROMPTS，勿内联文案）；函数形态 = 按 GuardContext 运行态选择
+   *  （read_dedup 撞墙升级：同主体被硬拦达阈值后切换 already_read_escalated） */
+  promptId: GuardRailPromptId | ((c: GuardContext) => GuardRailPromptId);
+  /** 模板插值参数（路径 / 次数 / 阈值等）；第二参 = evaluateBlocked 已裁决的命中文案 id，
+   *  参数按裁决结果分支（promptId 与 promptArgs 构造性一致，阈值判据不重复计算） */
+  promptArgs?: (c: GuardContext, chosen: GuardRailPromptId) => Record<string, unknown>;
   /** 生命周期：perInput=按一次用户输入累计（含暂停-续跑链，跨 turn 保留）/ perTurn=按 turn（问答闭环）累计 */
   life: 'perInput' | 'perTurn';
   /** 副钩（仅 search）：命中后置 searchDisabled + rebuild system message；须幂等 */
@@ -124,6 +136,11 @@ export interface GuardRailDef {
   /** 写侧钩子：结果处理阶段由 loop 对每个 toolCall 调 notifyExec 分发本钩子喂计数
    *  （失败+1 / 成功清0 / 连写递增 / 拦截不计）。守卫自持闭包状态的统一入口。 */
   onExec?: (c: GuardExecContext) => void;
+  /** 拦截归属钩子：本护栏**作为首个命中护栏**拦下调用时，由 loop 经 `notifyBlocked` 回喂。
+   *  与 onExec 的分工：onExec 只知「被某种护栏拦了」（三态喂入，无法区分拦截归属），
+   *  本钩子明确「被本护栏拦了」——read_dedup 撞墙升级计数以此喂数，
+   *  台账替身回显等非本护栏拦截不会误计。 */
+  onBlocked?: (toolName: string, argsJson: string) => void;
   /** 归零 guard 自身内部计数状态（life 过期 / 轮边界由 GuardRail.reset 统一调用） */
   reset?: () => void;
   /** 注入 systemPrompt「## 行为护栏」节的通用约束声明（不强塞逐轮计数） */
@@ -173,10 +190,18 @@ export const GUARD_RAIL_PROMPTS: Readonly<Record<GuardRailPromptId, string>> = {
   read_failed_limit:
     `[READ_FAILED_LIMIT] 该目标已连续失败 {n} 次（阈值 {limit}），` +
     `可能不存在。请先用 list_dir 确认路径，或改用其它目标。`,
-  // 占位：{n}=首次获取步序；{format}=去重主体可读描述；{tail}=续读引导（read_file 专用）
+  // 占位：{n}=首次获取步序；{format}=去重主体可读描述；{tail}=主体相关确定性出口（由 promptArgs 单源供给）
   already_read:
     `[ALREADY_READ] 该结果仍在你的当前上下文中（第 {n} 步获取：{format}），无需重复获取。` +
-    `{tail}`,
+    `{tail}直接基于已有内容继续即可。`,
+  // 占位：{count}=本主体累计被硬拦次数（含本次）；{format}=去重主体可读描述；{tail}=同 already_read 的单源出口。
+  // 升级文案（read_dedup 同主体第 3 次命中起使用，阈值 READ_DEDUP_ESCALATE_THRESHOLD）：前两次温和提示无效
+  // 后的强禁令；出口与 already_read 共用 {tail}（offset/limit 引导只写 promptArgs 一处，非文件主体为空），
+  // 另加 search_memories 记忆检索。
+  already_read_escalated:
+    `[ALREADY_READ] 你已第 {count} 次尝试重复获取 {format}，停止重读。` +
+    `请基于上下文已有内容作答；{tail}` +
+    `已沉淀的要点可用 search_memories 检索记忆。`,
 };
 
 /** 渲染护栏命中文案（占位符替换；未知键原样保留） */
@@ -235,10 +260,18 @@ export class GuardRail {
       if (!g.blocked) continue;
       if (!g.matches(c)) continue;
       if (!g.shouldBlock(c)) continue;
-      const args = g.promptArgs?.(c) ?? {};
-      return { guardId: g.id, message: renderPrompt(g.promptId, args) };
+      // promptId 函数形态：按运行态选择文案；裁决结果传给 promptArgs 按其分支（选择与参数构造性一致）
+      const promptId = typeof g.promptId === 'function' ? g.promptId(c) : g.promptId;
+      const args = g.promptArgs?.(c, promptId) ?? {};
+      return { guardId: g.id, message: renderPrompt(promptId, args) };
     }
     return undefined;
+  }
+
+  /** 拦截归属喂数：loop 在「某护栏命中并拦截」时调用，路由到该护栏的 onBlocked
+   *  （撞墙升级等「只认自己拦的」闭包计数以此喂数；未注册 onBlocked 的护栏为 no-op）。 */
+  notifyBlocked(guardId: GuardRailId, toolName: string, argsJson: string): void {
+    this.registry.find((d) => d.id === guardId)?.onBlocked?.(toolName, argsJson);
   }
 
   /** 写侧喂数钩子分发：结果处理阶段由 loop 对每个 toolCall 调此方法。
@@ -284,6 +317,15 @@ export function createDefaultGuards(): GuardRail {
   // loop 每个实例都 new 一个守卫容器 → 状态每实例独立，安全），经 onExec 喂数、reset 归零。
   let write = { lastWritePath: null as string | null, samePathWriteStreak: 0 };
   const readFailBySubject = new Map<string, number>();
+  // read_dedup 撞墙升级计数（键 = failureSubjectKey 口径：工具+主体，不含 read_file 区间——
+  // 同文件换区间重试仍是同一条叙事级重读链）。喂数点 = onBlocked（拦截归属回喂），
+  // 非 onExec：onExec 只知「被某种护栏拦」，台账替身回显等同为 blocked 会在 onExec 侧误计。
+  const dedupBlockBySubject = new Map<string, number>();
+  const dedupBlockCountOf = (toolName: string, argsJson: string): number => {
+    const subject = extractSubject(toolName, argsJson);
+    if (!subject) return 0;
+    return dedupBlockBySubject.get(failureSubjectKey(toolName, subject)) ?? 0;
+  };
   // 期望连写递增后值（读闭包 write，不做状态迁移；迁移交给 onExec）
   const nextWriteStreak = (p: string): number =>
     write.lastWritePath === p ? write.samePathWriteStreak + 1 : 1;
@@ -382,20 +424,32 @@ export function createDefaultGuards(): GuardRail {
         return hit !== undefined && c.isCachedResultStillInContext(hit);
       },
       blocked: true,
-      promptId: 'already_read',
-      promptArgs: (c) => {
+      // 文案强度按运行态选择：同主体已被硬拦达阈值（前两次温和提示无效）→ 升级强禁令。
+      // 阈值判据只写本处（promptArgs 按已裁决的 chosen 分支，不重复判阈值）
+      promptId: (c) =>
+        dedupBlockCountOf(c.toolName, c.argsJson) >= READ_DEDUP_ESCALATE_THRESHOLD
+          ? 'already_read_escalated'
+          : 'already_read',
+      promptArgs: (c, chosen) => {
         const subject = extractSubject(c.toolName, c.argsJson);
+        const format = subject ? formatDedupSubject(c.toolName, subject) : '';
+        // 「offset/limit 出口」仅对 read_file 有意义（文件可分区间续读）；URL/会话/query 等主体无此语义、
+        // 出口为空。两个 already_read 变体共用本 {tail}（SSOT）：出口引导只写这一处
+        const tail = c.toolName === 'read_file' ? `确需未读区间用 offset/limit 指定；` : '';
+        if (chosen === 'already_read_escalated') {
+          return { count: dedupBlockCountOf(c.toolName, c.argsJson) + 1, format, tail };
+        }
         const hit = subject ? c.toolResultCache.check(c.toolName, subject) : undefined;
-        return {
-          n: hit?.cachedAtIteration ?? 0,
-          format: subject ? formatDedupSubject(c.toolName, subject) : '',
-          // 「offset/limit 引导」仅对 read_file 有意义（文件可分区间续读）；URL/会话/query 等主体无此语义
-          tail:
-            c.toolName === 'read_file'
-              ? `如需该文件的其它部分，请用 offset/limit 指定行区间。`
-              : `直接基于已有内容继续即可。`,
-        };
+        return { n: hit?.cachedAtIteration ?? 0, format, tail };
       },
+      // 拦截归属回喂：本护栏拦下才计数（loop 命中点调 notifyBlocked）——升级阈值据此累积
+      onBlocked: (toolName, argsJson) => {
+        const subject = extractSubject(toolName, argsJson);
+        if (!subject) return;
+        const key = failureSubjectKey(toolName, subject);
+        dedupBlockBySubject.set(key, (dedupBlockBySubject.get(key) ?? 0) + 1);
+      },
+      reset: () => dedupBlockBySubject.clear(),
       life: 'perTurn',
     });
 }

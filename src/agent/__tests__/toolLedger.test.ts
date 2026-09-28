@@ -137,6 +137,17 @@ describe('formatLedgerStub（分支②回显文案）', () => {
     };
     expect(formatLedgerStub(cov)).toContain('覆盖 3 行');
   });
+
+  it('文案不含「被压缩」状态断言（两语境共用：压缩原位替换 / 重读回显——回显时原文可能仍在上下文，断言压缩即撒谎）', () => {
+    const cov: FileCoverage = {
+      totalLines: 100,
+      coverStart: 1,
+      coverEnd: 100,
+      digest: 'd',
+      cachedAtIteration: 1,
+    };
+    expect(formatLedgerStub(cov)).not.toContain('被压缩');
+  });
 });
 
 describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
@@ -169,11 +180,18 @@ describe('shouldEchoLedgerStub（分支②判定单一真理源）', () => {
     expect(shouldEchoLedgerStub({ offset: 1, limit: 21 }, cov)).toBe(false);
   });
 
-  it('无 limit 整读：只要有覆盖过正文 → true（回显摘要引导续读，避免截断后反复整读）', () => {
-    expect(shouldEchoLedgerStub({ offset: 1 }, cov)).toBe(true); // coverEnd(20)>0，无论是否读尽
-    expect(shouldEchoLedgerStub({ offset: 100 }, cov)).toBe(true);
+  it('无 limit 整读：起点落在已覆盖区间内 → true（回显摘要引导续读，避免截断后反复整读）', () => {
+    expect(shouldEchoLedgerStub({ offset: 1 }, cov)).toBe(true); // 省略 offset ≡ 第 1 行起，落在 1–20 内
+    expect(shouldEchoLedgerStub({ offset: 20 }, cov)).toBe(true); // 起点仍在覆盖末行上（重叠 1 行）
     const fullCov: FileCoverage = { ...cov, coverEnd: 100 };
     expect(shouldEchoLedgerStub({ offset: 1 }, fullCov)).toBe(true);
+  });
+
+  it('无 limit 续读：起点超出已覆盖区间 → false（放行真实执行，破「照引导走仍被拦」死循环）', () => {
+    // cov 覆盖 1–20；offset=21 正是 formatLedgerStub 引导的续读写法（coverEnd+1）。
+    // 旧判据只看 limit 有无，把这两条一并拦死 → 大文件截断后模型按引导续读仍被拦，永远读不到第二段。
+    expect(shouldEchoLedgerStub({ offset: 21 }, cov)).toBe(false);
+    expect(shouldEchoLedgerStub({ offset: 100 }, cov)).toBe(false);
   });
 
   it('从未覆盖过正文（coverEnd<=0）→ false（无摘要可回显，放行）', () => {

@@ -140,6 +140,9 @@ export interface AgentMetrics {
      * 健康判定需连同真机规避信号交叉看，本计数仅提供可观测的量化基线。
      */
     ledgerStubEchoCount: number;
+    /** read_dedup 护栏硬拦命中（同主体重复获取且结果仍在上下文）次数。
+     *  与 ledgerStubEchoCount 互补：本计数 = L2 精确判重（模型乒乓信号，撞墙升级文案的量化基线）。 */
+    readDedupBlockCount: number;
   };
   /** 上下文管理指标 */
   context: {

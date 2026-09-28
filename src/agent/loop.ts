@@ -1745,6 +1745,21 @@ export class AgentLoop {
       }
       // 其余护栏命中 → 硬拦回填拒绝文案（blocked 与拒绝 promise 一体推出）；未命中 → 下方正常执行。
       if (guardHit) {
+        // read_dedup 兜底观测：指标计数 + 悬案取证（判「模型乒乓」vs「合理重读被误拦」）
+        if (guardHit.guardId === 'read_dedup') {
+          this.metrics.readDedupBlockCount++;
+          const dedupSubject = DEDUP_SUBJECT_EXTRACTORS[tc.function.name]?.(tc.function.arguments);
+          this.appendRoundEvidence?.({
+            type: 'read_dedup_block',
+            ts: nowIso(),
+            meetingRound: this.isMeetingRound(),
+            // 主体字段整体透传（不逐字段枚举）：形状真源 = DedupSubject（toolResultCache），
+            // 增字段随透传自动落盘；可选值为 undefined 时由 JSON 序列化自然丢弃（与逐字段过滤等价）
+            payload: { toolName: tc.function.name, ...dedupSubject },
+          });
+        }
+        // 拦截归属回喂：read_dedup 的撞墙升级计数只认自己拦的（onExec 分不清拦截归属）
+        this.guardier.notifyBlocked(guardHit.guardId, tc.function.name, tc.function.arguments);
         toolExecs.push({ blocked: true, promise: Promise.resolve(guardHit.message) });
         continue;
       }
@@ -2465,6 +2480,7 @@ export class AgentLoop {
         failureCount: this.metrics.toolFailureCount,
         unparsedToolIntentCount: this.metrics.unparsedToolIntentCount,
         ledgerStubEchoCount: this.metrics.ledgerStubEchoCount,
+        readDedupBlockCount: this.metrics.readDedupBlockCount,
       },
       context: {
         truncationCount: this.contextManager.truncationCount,

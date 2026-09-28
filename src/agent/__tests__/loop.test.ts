@@ -4493,6 +4493,50 @@ describe('web_fetch / trace_summary 复用统一防重通道', () => {
 });
 
 // ═══════════════════════════════════════════════════════════════
+// 测试：read_dedup 撞墙升级（同主体第 3 次被拦起升级文案）+ 兜底观测指标
+// 覆盖：loop→guard 拦截归属回喂（notifyBlocked）连线 / 指标 readDedupBlockCount /
+//       升级文案在真实 loop 消息流中的落位（guardRail.test.ts 只钉判定，此处钉连线）
+// ═══════════════════════════════════════════════════════════════
+describe('read_dedup 撞墙升级与兜底观测', () => {
+  it('同文件连续重读：前两次拦截温和文案、第 3 次升级；readDedupBlockCount 计 3', async () => {
+    const toolExecutor = vi.fn().mockResolvedValue('第1行\n第2行');
+    const readCall = (id: string) => ({
+      toolCalls: [
+        {
+          id,
+          type: 'function' as const,
+          function: { name: 'read_file', arguments: '{"path":"a.md"}' },
+        },
+      ],
+    });
+    const provider = mockMultiTurnProvider([
+      [readCall('r1')],
+      [readCall('r2')],
+      [readCall('r3')],
+      [readCall('r4')],
+      [{ content: '完成' }],
+    ]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor });
+    for await (const chunk of loop.processUserInput('读文件')) {
+      void chunk;
+    }
+
+    // 仅首次真实执行；随后三次同参重读全被 read_dedup 拦下（兜底，不落 ToolExecutor）
+    expect(toolExecutor).toHaveBeenCalledTimes(1);
+    expect(loop.getMetrics().tools.readDedupBlockCount).toBe(3);
+    // ⚠️ 不能按 [ALREADY_READ] 令牌计数：压缩链把 r1 真实结果原位替换为 formatLedgerStub
+    // （同含该令牌），guard 拦截与压缩替身必须按文案特征分流
+    const gentleBlocks = loop
+      .getMessages()
+      .filter((m) => m.content.includes('仍在你的当前上下文中'));
+    expect(gentleBlocks).toHaveLength(2);
+    const escalated = loop.getMessages().find((m) => m.content.includes('第 3 次尝试重复获取'));
+    expect(escalated).toBeDefined();
+    expect(escalated!.content).toContain('search_memories');
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════
 // 测试：指纹埋点（"模型看到了什么"可追溯）
 // 覆盖：LLM_CALL span 记录 systemPromptHash /
 //       NOOP tracer 下跳过指纹计算（零开销边界）
@@ -5492,7 +5536,8 @@ describe('AgentLoop · 工具结果防重拦截（1c：判定 / 文案 / 出路�
   it('E · 结果被压缩链清出上下文但台账有覆盖度摘要 → 分支②回显摘要非放行（治永动机）', async () => {
     // read_file 返回**分段脚注**（= 文件被截断，按需信号的正确锚点）→ 写侧记录覆盖度摘要。
     // 注：脚注报「已读到文件尾」（1–200 / 共 200），即**整文件已读尽**，coverEnd(200)>0——满足
-    //   shouldEchoLedgerStub 的「无 limit 整读有覆盖即拦」，故重读被分支②回显摘要而非放行。
+    //   shouldEchoLedgerStub 的「无 limit 且起点落在已覆盖区间内即拦」（此处省略 offset ≡ 第 1 行起），
+    //   故重读被分支②回显摘要而非放行。
     const toolExecutor = vi
       .fn()
       .mockImplementation((name: string) =>

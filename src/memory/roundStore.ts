@@ -333,6 +333,26 @@ export type RoundEvidenceEvent =
         /** 本次请求区间（offset/limit 缺省语义与 read_file handler 一致） */
         request: { offset?: number; limit?: number };
       };
+    }
+  | {
+      /** read_dedup 护栏硬拦命中（同主体重复获取且结果仍在上下文；L2 精确判重兜底观测） */
+      type: 'read_dedup_block';
+      /** 事件时刻（ISO 8601） */
+      ts: string;
+      /** 事件时刻是否会议轮（判据见类型注释） */
+      meetingRound: boolean;
+      payload: {
+        /** 被拦的工具名（read_file / list_dir / web_search / web_fetch / trace_summary / search_memories） */
+        toolName: string;
+        /**
+         * 去重主体字段（存在才带）：定位 + read_file 区间，逐案裁决用。
+         *
+         * 字段形状真源 = **生产侧** `DedupSubject`（agent 层 toolResultCache）——本层**不镜像其清单**：
+         * `memory → agent` 类型禁向（见 `backend_layers_rules.md`）使本层无法 import 该类型，故以开放式
+         * 索引签名承载，由 loop 侧整体 spread 透传。`DedupSubject` 增字段随透传自动落盘，本层零同步。
+         */
+        [dedupField: string]: string | number | undefined;
+      };
     };
 
 /**
