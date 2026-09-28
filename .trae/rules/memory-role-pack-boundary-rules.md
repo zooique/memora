@@ -1,8 +1,7 @@
 ---
-alwaysApply: true
+alwaysApply: false
 description: 记忆系统 × 角色包边界——设定记忆（persona/rules/skills）唯一归角色包；记忆系统单轨 = round-summary 摘要记忆；会话摘要归 SessionMeta；技能两级渐进披露
 ---
-
 # 记忆系统 × 角色包边界纪律
 
 > **「你是谁、怎么做事」归角色包；「聊了什么」归记忆系统。** 两刀切、不互存、不双写。
