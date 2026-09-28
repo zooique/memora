@@ -790,8 +790,10 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     const host = activeAssistantEl;
     const orphan = !!opts?.orphan;
     if ((!host && !orphan) || currentEvents.length === 0) return null;
-    flowEl?.remove();
-    const flow = document.createElement('div');
+    // 既有容器（含随骨架壳拆离而游离的）重挂复用：行身份与用户展开态随容器存活；
+    // 整树重建会把已展开的折叠块归零收起。复用恒属同一 turn——新轮/清空路径已显式
+    // `flowEl = null`（resetForNewClosedLoop / resetChatView / finalizeRound）。
+    const flow = flowEl ?? document.createElement('div');
     flow.className = 'process-flow';
     if (!host) {
       // 孤儿模式：本轮无 assistant 块 → 平铺容器挂消息流尾 + 记录所属轮（防跨轮串扰）
@@ -1328,11 +1330,16 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   function refreshToolBatchSummary(block: HTMLDetailsElement, batch: ToolBatch): void {
     const summary = block.querySelector(':scope > .round-block__tool-batch-summary');
     if (!summary) return;
-    summary.textContent = '';
-    const title = document.createElement('span');
-    title.className = 'round-block__tool-batch-title';
-    title.textContent = toolSummaryText(batch.entries.map((e) => e.start.payload.name));
-    summary.append(title);
+    // 标题 span 为稳定节点（get-or-create）+ 变化才写文本：summary 子节点重建会销毁点击目标，
+    // 事件密集期点击被吞
+    let title = summary.querySelector<HTMLElement>(':scope > .round-block__tool-batch-title');
+    if (!title) {
+      title = document.createElement('span');
+      title.className = 'round-block__tool-batch-title';
+      summary.appendChild(title);
+    }
+    const titleText = toolSummaryText(batch.entries.map((e) => e.start.payload.name));
+    if (title.textContent !== titleText) title.textContent = titleText;
     // 失败/被拒统计（留段内，块级标红）：ok=false 且非 blocked = 失败；blocked = 被拒/拦截
     let failed = 0;
     let blocked = 0;
@@ -1343,15 +1350,22 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       else if (!r.payload.ok) failed += 1;
     }
     block.classList.toggle('is-tool-batch-failed', failed + blocked > 0);
-    if (failed + blocked > 0) {
-      const warn = document.createElement('span');
+    const parts: string[] = [];
+    if (failed > 0) parts.push(`含失败 ${failed}`);
+    if (blocked > 0) parts.push(`含拦截 ${blocked}`);
+    // 提示 span 同为稳定节点：无提示即移除（生命周期随统计结果，title 节点不受影响）
+    let warn = summary.querySelector<HTMLElement>(':scope > .round-block__tool-batch-warn');
+    if (parts.length === 0) {
+      warn?.remove();
+      return;
+    }
+    if (!warn) {
+      warn = document.createElement('span');
       warn.className = 'round-block__tool-batch-warn';
-      const parts: string[] = [];
-      if (failed > 0) parts.push(`含失败 ${failed}`);
-      if (blocked > 0) parts.push(`含拦截 ${blocked}`);
-      warn.textContent = `（${parts.join(' · ')}）`;
       summary.appendChild(warn);
     }
+    const warnText = `（${parts.join(' · ')}）`;
+    if (warn.textContent !== warnText) warn.textContent = warnText;
   }
 
   /**
@@ -1546,10 +1560,14 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       )
       .forEach((row) => {
         const { label: status, open, running } = toolRowStatus(result);
-        // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）
+        // 结构化管理：仅更新状态标签 span 文本（不动整体 summary，保留 label / elapsed 子节点）。
+        // 幂等写：文本未变不重写（重写销毁文本节点，点击目标抖动）
         const statusEl = row.querySelector('.round-block__tool-status');
-        if (statusEl) statusEl.textContent = ` (${status})`;
-        row.open = open;
+        const statusText = ` (${status})`;
+        if (statusEl && statusEl.textContent !== statusText) statusEl.textContent = statusText;
+        // 用户意图闩（data-user-toggled，写入点 = summary 点击委托）：用户动过开合的行，
+        // 默认值（成功收起/失败展开）不再覆盖——每次事件都回写会把用户的展开态打回
+        if (row.dataset.userToggled !== 'true') row.open = open;
         // result 已到达 → 移除进行中态（恢复普通行样式）
         row.classList.toggle('is-tool-running', running);
         // 工具已出结果 → 移除该行等待时长标签（瞬态退场，不再刷新）
@@ -4885,6 +4903,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     syncButtonSemantics(); // 程序化回填同理不触发 input 事件，须同步按钮语义（标题随相位+输入重算）
   }
   document.addEventListener('click', onDocumentClick);
+
+  // 用户折叠意图闩（单一写入点）：点击 summary = 用户接管该 details 的开合。
+  // 此后程序默认值（工具行成功收起/失败展开等）不得再覆盖该块的 open——
+  // 覆盖消费点见 updateToolRowState；键盘激活 summary 同样派生 click，一并覆盖。
+  document.addEventListener('click', (e) => {
+    const summary = (e.target as HTMLElement | null)?.closest?.('summary');
+    const details = summary?.closest('details');
+    if (details) details.dataset.userToggled = 'true';
+  });
 
   // 下拉菜单：显式回调映射替代原 window.__xxx 全局函数名（去全局污染）
   // 键名与 buildDropdownHtml 的 data-on-select 属性值一一对应。
