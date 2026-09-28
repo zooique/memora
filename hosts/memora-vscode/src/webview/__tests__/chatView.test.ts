@@ -2240,10 +2240,13 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
   });
 
   /**
-   * BATCH-SPLIT-1 夹具：真实 ask 结构 —— 工具 A（step 1）→ ask_user 工具行（step 2）→ 问答卡 → 工具 B（step 3）。
+   * BATCH-SPLIT-1 夹具：ask 结构 —— 工具 A（step 1）→ ask_user 工具行（step 2）→ 问答卡 → 工具 B（step 3）。
    *
-   * 内核侧事实（`src/agent/loop.ts`）：提问走 `ask_user` 内置工具（唯一通道，见 handleToolCalls 检出挂起），
-   * 用户答案以该工具的 tool result 回填 ⇒ 真实轮次在 A 与 B 之间**必有一条 ask_user 工具行**；
+   * 内核侧事实（`src/agent/loop.ts`）：提问走 `ask_user` 内置工具（唯一通道）。正常路径
+   * handleToolCalls 检出即整批挂起（handleAskUser）——**不发 tool_start/tool_result**，
+   * 问答记录由交互行（QA 行）承载、宿主不为占位渲染工具行；仅 askLimit 超限的 ask_user
+   * 走 executeToolCalls 照常执行（[ASK_LIMIT] 拒绝）⇒ 事件流里**才**可能出现 ask_user
+   * 工具行，本夹具取该形态覆盖切段判据（勿据夹具反推「正常轮必有 ask 工具行」）。
    * 工具轮 narrate 为**条件产出**（`if (narration)`，模型未吐文本则无）⇒ 本夹具覆盖「无 narrate、无 thought」
    * 的边界：切段判据 `groupToolBatches` 视三者同批。
    *

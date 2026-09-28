@@ -5039,11 +5039,23 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
     updateSkillPickerLabel();
   }
 
+  /**
+   * 挂起批次预告行收口：ask_user 挂起 = 本批工具整体不执行（内核 [ASK_SUSPENDED] 语义，
+   * 该批次 tool_start 永不到达），「（准备中）」预告行（瞬态轨）只被 tool_start 升级或
+   * 整树重建消费——不收口就会在运行时残留无内容的幽灵折叠块、且散在任务项折叠块外。
+   * 提问 UI 渲染即挂起定型：此刻清掉所有未升级预告行，运行时与收尾全量重建同一口径。
+   */
+  function dropStalePendingToolRows(): void {
+    messages.querySelectorAll('.round-block__tool.is-tool-pending').forEach((row) => row.remove());
+  }
+
   // 提问卡渲染（真源 = turn_update.state 的 waiting/ask）
   // 职责与原 need_clarify 分支等价：优先内联块（renderAskInline 挂问答交互行下），
   // 无锚点时降级底部 clarifyBar 异常兜底。questions 来自 turn_update.state.questions
   //（宿主 postTurnUpdate 投影派生，非独立消息载荷）。
   function renderAskPhase(questions: PendingQuestionDto[]): void {
+    // 挂起批次收口：提问定型 = 本批工具不再执行，未升级预告行退场（幽灵块防残留）
+    dropStalePendingToolRows();
     // 提问形态内联化：选择题 + 补充输入渲染到消息流提问块下方
     //（对齐 TraeWork/主流对话流交互），不再用底部 clarifyBar 替换输入栏。
     // 底部 clarifyBar 保留为异常兜底（无 assistant 块锚点时退化使用）
