@@ -2,7 +2,7 @@
 
 > **坐标**：正文行号为**历史记录的时点快照**，代码演进后不再核对——定位请按符号名检索，勿依赖行号。
 >
-> **退役注记（2026-09-23）**：本文重放 wire（`replay_events` / `sendRoundView`）已退役——重放现由 `turn_update`（`replay: true` + `rounds`）整轮承载（详见[方案-turn运行时与会话渲染SSOT收口-20260923.md](../../docs/方案-turn运行时与会话渲染SSOT收口-20260923.md)）；中断轮语义（`interrupted` 状态、独立平铺、§已停止）不变。
+> **退役注记（2026-09-23）**：本文重放 wire（`replay_events` / `sendRoundView`）已退役——重放现由 `turn_update`（`replay: true` + `rounds`）整轮承载（详见[turn-runtime-render-ssot.md](../../docs/architecture/turn-runtime-render-ssot.md)）；中断轮语义（`interrupted` 状态、独立平铺、§已停止）不变。
 
 ## Context（为什么做）
 

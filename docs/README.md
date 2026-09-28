@@ -26,33 +26,32 @@
 | 主题 | 文档 |
 | --- | --- |
 | 总纲与门面 | [agent-design-philosophy.md](./architecture/agent-design-philosophy.md) · [agent-facade-convergence.md](./architecture/agent-facade-convergence.md) · [module-inventory.md](./architecture/module-inventory.md) · [module-review-checklist.md](./architecture/module-review-checklist.md) · [mvp-scope.md](./architecture/mvp-scope.md) · [work-projection.md](./architecture/work-projection.md) |
-| loop 与 turn 运行时 | [loop-design.md](./architecture/loop-design.md) · [turn-intent-reasoning-design.md](./architecture/turn-intent-reasoning-design.md) · [step-atomic-persistence.md](./architecture/step-atomic-persistence.md) · [task-driven-closed-loop.md](./architecture/task-driven-closed-loop.md) |
+| loop 与 turn 运行时 | [loop-design.md](./architecture/loop-design.md) · [turn-intent-reasoning-design.md](./architecture/turn-intent-reasoning-design.md) · [step-atomic-persistence.md](./architecture/step-atomic-persistence.md) · [task-driven-closed-loop.md](./architecture/task-driven-closed-loop.md) · [turn-runtime-render-ssot.md](./architecture/turn-runtime-render-ssot.md) |
 | 记忆 | [memory-as-summary.md](./architecture/memory-as-summary.md) · [memory-role-pack-boundary.md](./architecture/memory-role-pack-boundary.md) · [memory-recall-recency-design.md](./architecture/memory-recall-recency-design.md) · [memory-tool-recall-design.md](./architecture/memory-tool-recall-design.md) · [memory-tool-recall-ab-benchmark.md](./architecture/memory-tool-recall-ab-benchmark.md) · [round-independent-storage-design.md](./architecture/round-independent-storage-design.md) |
 | 角色包 | [role-pack-spec.md](./architecture/role-pack-spec.md) · [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) · [role-pack-exclusivity-relocation.md](./architecture/role-pack-exclusivity-relocation.md) · [role-pack-skills-progressive-disclosure.md](./architecture/role-pack-skills-progressive-disclosure.md) · [role-pack-validation-flow.html](./architecture/role-pack-validation-flow.html) |
 | 停续与事件 | [pause-ask-resume-design.md](./architecture/pause-ask-resume-design.md) · [external-task-pause-resume-design.md](./architecture/external-task-pause-resume-design.md) · [process-event-log-replay-design.md](./architecture/process-event-log-replay-design.md) |
-| 其余专题 | [host-plugin-alignment.md](./architecture/host-plugin-alignment.md) · [script-run-security-design.md](./architecture/script-run-security-design.md) · [skills-tool-rag-exploration.md](./architecture/skills-tool-rag-exploration.md) · [tool-exposure-model.md](./architecture/tool-exposure-model.md) · [novel-three-layer-design.md](./architecture/novel-three-layer-design.md) |
+| 其余专题 | [host-plugin-alignment.md](./architecture/host-plugin-alignment.md) · [script-run-security-design.md](./architecture/script-run-security-design.md) · [skills-tool-rag-exploration.md](./architecture/skills-tool-rag-exploration.md) · [tool-exposure-model.md](./architecture/tool-exposure-model.md) · [tool-batch-splitting.md](./architecture/tool-batch-splitting.md) · [novel-three-layer-design.md](./architecture/novel-three-layer-design.md) |
 
 ## 三、方案 / 探索稿（根目录 · 探索期草稿）
 
-**未定案**的过程稿。处置纪律见 [exploration-decision-sedimentation-rules.md](../.trae/rules/generic/exploration-decision-sedimentation-rules.md)：探索期先落 `docs/`，被生产代码/规则引用且经验证稳定后，才固化为 ADR。
+**未定案**的过程稿。处置纪律见 [exploration-decision-sedimentation-rules.md](../.trae/rules/generic/exploration-decision-sedimentation-rules.md)：探索期先落 `docs/`，被生产代码/规则引用且经验证稳定后，才固化为 ADR。标注「指针」者为已定案/已归位文档的旧坐标壳（正文见箭头所指）。
 
 | 文档 |
 | --- |
 | [方案-命令执行能力-run_command-20260922.md](./方案-命令执行能力-run_command-20260922.md) |
-| [方案-turn运行时与会话渲染SSOT收口-20260923.md](./方案-turn运行时与会话渲染SSOT收口-20260923.md) |
+| [方案-turn运行时与会话渲染SSOT收口-20260923.md](./方案-turn运行时与会话渲染SSOT收口-20260923.md)（归位指针 → `architecture/turn-runtime-render-ssot.md`） |
 | [方案-工具批折叠合并-20260925.md](./方案-工具批折叠合并-20260925.md) |
 | [方案-任务项边界产出时机前移-20260926.md](./方案-任务项边界产出时机前移-20260926.md) |
 | [方案-写盘工具声明位与串行闸收口-20260926.md](./方案-写盘工具声明位与串行闸收口-20260926.md) |
-| [方案-工具批按step断段-20260926.md](./方案-工具批按step断段-20260926.md) |
+| [方案-工具批按step断段-20260926.md](./方案-工具批按step断段-20260926.md)（归位指针 → `architecture/tool-batch-splitting.md`） |
 | [方案-文件改动diff可视化-20260926.md](./方案-文件改动diff可视化-20260926.md) |
 | [方案-文件改动分块呈现与块级动作-20260927.md](./方案-文件改动分块呈现与块级动作-20260927.md) |
-| [读取防重与压缩协同-方案.md](./读取防重与压缩协同-方案.md) |
+| [读取防重与压缩协同-方案.md](./读取防重与压缩协同-方案.md)（定案指针 → ADR-031） |
 | [重读永动机-主流收敛与最终落地-方案.md](./重读永动机-主流收敛与最终落地-方案.md) |
 | [run_team_meeting-探索方案.md](./run_team_meeting-探索方案.md) |
 | [任务表确定性触发-探索方案.md](./任务表确定性触发-探索方案.md) |
 | [发送边界-工具调用成形守卫-探索方案.md](./发送边界-工具调用成形守卫-探索方案.md) |
 | [大文本统一通道-探索方案.md](./大文本统一通道-探索方案.md) |
-| [失效文档处置-探索方案.md](./失效文档处置-探索方案.md) |
 | [未来迭代方案-探索.md](./未来迭代方案-探索.md) |
 | [目标模式生长探索-分层阶段化.md](./目标模式生长探索-分层阶段化.md) |
 

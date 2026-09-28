@@ -3,7 +3,7 @@
 > **状态**：✅ 已接受
 > **日期**：2026-08-28 **播种批次**：日常生长 **来源**：[process-event-log-replay-design.md](../../docs/architecture/process-event-log-replay-design.md)（v1.5）
 >
-> **退役注记（2026-09-23）**：决策 3 与「影响」中的重放 wire `replay_events` 整批消息已退役——重放现由 `turn_update`（`replay: true` + `rounds`）整轮承载（提交 `73e82e6b`，详见[方案文档](../../docs/方案-turn运行时与会话渲染SSOT收口-20260923.md)）；「展示层单形态、单一渲染输入」结论不变。
+> **退役注记（2026-09-23）**：决策 3 与「影响」中的重放 wire `replay_events` 整批消息已退役——重放现由 `turn_update`（`replay: true` + `rounds`）整轮承载（提交 `73e82e6b`，详见[方案文档](../../docs/architecture/turn-runtime-render-ssot.md)）；「展示层单形态、单一渲染输入」结论不变。
 
 ## 背景
 

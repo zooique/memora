@@ -1249,7 +1249,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
   /**
    * 工具批切段（SSOT；三渲染上下文共用：运行时流式 / finalize 全量重建 / pending 行升级）
    *
-   * 判据（方案-工具批按step断段-20260926.md §4.1；扩展 方案-工具批折叠合并-20260925.md §3.1）：
+   * 判据（docs/architecture/tool-batch-splitting.md §4.1；扩展 方案-工具批折叠合并-20260925.md §3.1）：
    *   · 打断物（一切断段）：`BATCH_SPLITTER_TYPES` 三成员（narrate / text_self_review / plan_item_boundary）。
    *   · **步切换（新增）**：`thought` 归属新 step（其 `stepIndex` ≠ 当前批所属 step）→ 断段。
    *     语义 = 「可见分隔物」——思考块换步即视觉断面，工具随之按步分块。**同 step 的思考碎片**

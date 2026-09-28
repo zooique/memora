@@ -962,7 +962,7 @@ export type ExtensionToWebviewMessage =
   | { type: 'file_changes'; count: number; files: string[] };
 
 // ─── turn 投影层类型（SSOT）────────────────────────
-// 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
+// 设计源：docs/architecture/turn-runtime-render-ssot.md
 // 铁律：RoundView 只能是内核 `Round` 的**投影**（Pick 类型约束）——改 Round 字段名即编译报错，
 // 禁止在协议侧另立第二套 Round 字段（并列即腐化）。运行时与重放共用本结构，不走第二套形状。
 

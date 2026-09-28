@@ -1,7 +1,7 @@
 /**
  * turn 投影层纯函数 —— 运行时 / 重放共用同一形状
  *
- * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
+ * 设计源：docs/architecture/turn-runtime-render-ssot.md
  *
  * 职责边界（只做投影，不做编排）：
  *   - `toRoundView`：把运行时累积的「当前轮」投影为 `RoundView`（与落盘 Round 同形状）。

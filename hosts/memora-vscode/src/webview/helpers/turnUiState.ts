@@ -1,7 +1,7 @@
 /**
  * 骨架（会话控件）状态派生层 —— `SkeletonState` → UI 三态 → 按钮语义
  *
- * 设计源：docs/方案-turn运行时与会话渲染SSOT收口-20260923.md
+ * 设计源：docs/architecture/turn-runtime-render-ssot.md
  *
  * 职责边界：把 webview 侧散落的骨架自变量（会话三态 / 申请在途 / 输入内容）
  * **集中为一次纯函数派生**——本文件不读 DOM、不发消息、不碰内核，便于单测与变异验证。
