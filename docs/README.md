@@ -1,0 +1,84 @@
+# docs 导航索引
+
+> **本页职责**：`docs/` 层的人工索引 —— 分区职责 + 文件清单 + 随包标注，供「找文档」时**粗定位**。
+> **不是真理源**：哪些文档随 npm 包出货，唯一判据在 [`package.json` 的 `files`](../package.json)（本页只做陈列，不复制判据）；文档间「断链」由 `npm run docs:links`（发布边界）与 `npm run docs:links:repo`（全仓）双闸守护。
+> **术语定义**：全部领域术语的唯一定义处是 [terminology-anchor-rules.md](../.trae/rules/terminology-anchor-rules.md)，本页不另立定义。
+> **维护约定**：在 `docs/` 增删文档后，顺手把本页对应条目同步 —— 本页没有自动门禁，只靠人工记性（这是它的已知弱点）。
+
+## 一、随包（npm 出货）文档 ★
+
+这 5 篇被 `package.json#files` 显式列入发布包；它们的相对链接受**发布边界闸门**约束（指向包外即断链）。
+
+| 文档 | 内容 |
+| --- | --- |
+| [memora-接入指南.md](./memora-接入指南.md) | 宿主项目开发者完整接入手册 |
+| [memora-api-reference.md](./memora-api-reference.md) | 公共 API 速查 |
+| [role-pack-开放键指南.md](./role-pack-开放键指南.md) | `manifest.json` 开放键使用指南（三层消费方 + 速查） |
+| [architecture/role-pack-spec.md](./architecture/role-pack-spec.md) | 角色包中立规范 |
+| [architecture/role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) | 角色包编写指南 |
+
+> 仓库根另有 [README.md](../README.md) / [README.en.md](../README.en.md) / [CHANGELOG.md](../CHANGELOG.md) 与 [role-packs/](../role-packs/) 随包，不属 `docs/`。
+
+## 二、架构设计（`docs/architecture/`）
+
+活跃架构文档层，按主题分组；是内核形态的**设计真理源**。
+
+| 主题 | 文档 |
+| --- | --- |
+| 总纲与门面 | [agent-design-philosophy.md](./architecture/agent-design-philosophy.md) · [agent-facade-convergence.md](./architecture/agent-facade-convergence.md) · [module-inventory.md](./architecture/module-inventory.md) · [module-review-checklist.md](./architecture/module-review-checklist.md) · [mvp-scope.md](./architecture/mvp-scope.md) · [work-projection.md](./architecture/work-projection.md) |
+| loop 与 turn 运行时 | [loop-design.md](./architecture/loop-design.md) · [turn-intent-reasoning-design.md](./architecture/turn-intent-reasoning-design.md) · [step-atomic-persistence.md](./architecture/step-atomic-persistence.md) · [task-driven-closed-loop.md](./architecture/task-driven-closed-loop.md) |
+| 记忆 | [memory-as-summary.md](./architecture/memory-as-summary.md) · [memory-role-pack-boundary.md](./architecture/memory-role-pack-boundary.md) · [memory-recall-recency-design.md](./architecture/memory-recall-recency-design.md) · [memory-tool-recall-design.md](./architecture/memory-tool-recall-design.md) · [memory-tool-recall-ab-benchmark.md](./architecture/memory-tool-recall-ab-benchmark.md) · [round-independent-storage-design.md](./architecture/round-independent-storage-design.md) |
+| 角色包 | [role-pack-spec.md](./architecture/role-pack-spec.md) · [role-pack-authoring-guide.md](./architecture/role-pack-authoring-guide.md) · [role-pack-exclusivity-relocation.md](./architecture/role-pack-exclusivity-relocation.md) · [role-pack-skills-progressive-disclosure.md](./architecture/role-pack-skills-progressive-disclosure.md) · [role-pack-validation-flow.html](./architecture/role-pack-validation-flow.html) |
+| 停续与事件 | [pause-ask-resume-design.md](./architecture/pause-ask-resume-design.md) · [external-task-pause-resume-design.md](./architecture/external-task-pause-resume-design.md) · [process-event-log-replay-design.md](./architecture/process-event-log-replay-design.md) |
+| 其余专题 | [host-plugin-alignment.md](./architecture/host-plugin-alignment.md) · [script-run-security-design.md](./architecture/script-run-security-design.md) · [skills-tool-rag-exploration.md](./architecture/skills-tool-rag-exploration.md) · [tool-exposure-model.md](./architecture/tool-exposure-model.md) · [novel-three-layer-design.md](./architecture/novel-three-layer-design.md) |
+
+## 三、方案 / 探索稿（根目录 · 探索期草稿）
+
+**未定案**的过程稿。处置纪律见 [exploration-decision-sedimentation-rules.md](../.trae/rules/generic/exploration-decision-sedimentation-rules.md)：探索期先落 `docs/`，被生产代码/规则引用且经验证稳定后，才固化为 ADR。
+
+| 文档 |
+| --- |
+| [方案-命令执行能力-run_command-20260922.md](./方案-命令执行能力-run_command-20260922.md) |
+| [方案-turn运行时与会话渲染SSOT收口-20260923.md](./方案-turn运行时与会话渲染SSOT收口-20260923.md) |
+| [方案-工具批折叠合并-20260925.md](./方案-工具批折叠合并-20260925.md) |
+| [方案-任务项边界产出时机前移-20260926.md](./方案-任务项边界产出时机前移-20260926.md) |
+| [方案-写盘工具声明位与串行闸收口-20260926.md](./方案-写盘工具声明位与串行闸收口-20260926.md) |
+| [方案-工具批按step断段-20260926.md](./方案-工具批按step断段-20260926.md) |
+| [方案-文件改动diff可视化-20260926.md](./方案-文件改动diff可视化-20260926.md) |
+| [方案-文件改动分块呈现与块级动作-20260927.md](./方案-文件改动分块呈现与块级动作-20260927.md) |
+| [读取防重与压缩协同-方案.md](./读取防重与压缩协同-方案.md) |
+| [重读永动机-主流收敛与最终落地-方案.md](./重读永动机-主流收敛与最终落地-方案.md) |
+| [run_team_meeting-探索方案.md](./run_team_meeting-探索方案.md) |
+| [任务表确定性触发-探索方案.md](./任务表确定性触发-探索方案.md) |
+| [发送边界-工具调用成形守卫-探索方案.md](./发送边界-工具调用成形守卫-探索方案.md) |
+| [大文本统一通道-探索方案.md](./大文本统一通道-探索方案.md) |
+| [失效文档处置-探索方案.md](./失效文档处置-探索方案.md) |
+| [未来迭代方案-探索.md](./未来迭代方案-探索.md) |
+| [目标模式生长探索-分层阶段化.md](./目标模式生长探索-分层阶段化.md) |
+
+## 四、设计导览与速查
+
+| 文档 | 内容 |
+| --- | --- |
+| [白话设计文档.md](./白话设计文档.md) | 按链路讲的白话设计导览 |
+| [白话设计文档-模块篇.md](./白话设计文档-模块篇.md) | 按模块职责讲的白话设计导览 |
+| [策略键消费矩阵.md](./策略键消费矩阵.md) | 策略键与消费方对照矩阵 |
+
+## 五、质量与 SOP
+
+| 文档 | 内容 |
+| --- | --- |
+| [测试并发确定性与flake判定SOP.md](./测试并发确定性与flake判定SOP.md) | 并发测试确定性与 flake 判定流程 |
+| [评估-memora设计质量-20260910.md](./评估-memora设计质量-20260910.md) | 设计质量评估记录 |
+| [qa-折叠块收敛-设计.md](./qa-折叠块收敛-设计.md) | 问答折叠块收敛设计 |
+
+## 六、相邻追溯落点
+
+| 落点 | 位置 |
+| --- | --- |
+| 规则（每轮注入） | [.trae/rules/](../.trae/rules/) · 术语锚点 [terminology-anchor-rules.md](../.trae/rules/terminology-anchor-rules.md) |
+| 决策（不可逆约束 · ADR） | [.trae/decisions/](../.trae/decisions/README.md) |
+| 过程方案文档 | [.trae/documents/](../.trae/documents/) |
+| 任务台账 | [tasks/已完成任务.md](../tasks/已完成任务.md) · [tasks/待完成任务.md](../tasks/待完成任务.md) |
+| 工程保障评估 | [deliverables/engineering-assurance/](../deliverables/engineering-assurance/) |
+| 角色包示例库 | [role-packs/](../role-packs/) |
