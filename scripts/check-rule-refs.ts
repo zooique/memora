@@ -8,7 +8,10 @@
  *   （见 check-publish-links.ts 的 `LINK_RE` / `INLINE_CODE_RE`）→ 裸路径根本不在其扫描面内。
  *   本脚本补这条盲区：裸路径引用是**同一族「参考腐烂」**的另一种书写形态。
  *
- * 判据（唯一）：文本文件里出现 `.trae/rules/<路径>.md` 裸引用 → 必须能在仓库中解析到该文件。
+ * 判据（唯一）：文本文件里出现 `.trae/rules/<路径>.md` 或 `docs/<路径>.md` 裸引用 → 必须能在仓库中解析到该文件。
+ *   docs 族是同一「参考腐烂」的第二书写面：`src/`、`hosts/` 注释里的设计依据指针多写成
+ *   `docs/方案-xxx.md` 裸路径，`docs:links` 只抓 `](...)` 链接语法 → 这类指针在本族规则
+ *   出现前零门禁覆盖（文档处置后指针留在注释里即静默腐烂，见 comment-doc-citation-rules §3）。
  *
  * 两条**刻意排除**（是判据边界，**不是**豁免清单）：
  *   1. 源文件位于 `.trae/skills/**` —— 技能手册是**可移植模板**，其中
@@ -47,11 +50,34 @@ const TEXT_EXTS = ['.md', '.ts', '.mjs', '.yml'];
 /** 技能手册前缀 —— 其引用指向目标项目文件，属判据边界外（见文件头「刻意排除」第 1 条） */
 const SKILLS_PREFIX = '.trae/skills/';
 
-/** 裸路径引用唯一提取口径：`.trae/rules/<路径>.md`（首字符排除 `/` `.`，防跨段吞并） */
-const REF_RE = /\.trae\/rules\/[A-Za-z0-9_][A-Za-z0-9_./-]*\.md/g;
+/** 裸路径引用提取口径（两族同判据）：首字符排除 `/` `.`，防跨段吞并；docs 族字符类含 CJK（文档名多为中文） */
+const REF_RES: readonly RegExp[] = [
+  /\.trae\/rules\/[A-Za-z0-9_][A-Za-z0-9_./-]*\.md/g,
+  /docs\/[A-Za-z0-9_一-鿿][A-Za-z0-9_一-鿿./-]*\.md/g,
+];
 
 /** 代码围栏行（``` 或 ~~~ 开头）：围栏内是示例代码，md 中跳过 */
 const FENCE_RE = /^\s*(```|~~~)/;
+
+/** 代码文件的注释行形态：`//` 行注释、`/*`/`*` 块注释、`#`（yml） */
+const CODE_COMMENT_PREFIX = /^\s*(\/\/|\/\*|\*|#)/;
+
+/** 行内注释分隔（前后空格的 `//`，避开 URL 的 `://` 与字符串里的 `//`） */
+const INLINE_COMMENT = ' // ';
+
+/**
+ * 引用语义边界：**文档引用在代码里只会写在注释里**。
+ * 字符串 / 参数位置的 `docs/…` 是运行时路径数据（测试 fixture 的 `docs/a.md`）或示例文本
+ * （工具参数 description 的「如 docs/architecture.md」），不是引用——按存在性判它们是判据
+ * 取了与语义无关的表面特征。md 全篇是散文（裸路径即引用形态），不适用本边界。
+ */
+function commentText(line: string, fromRel: string): string {
+  if (fromRel.endsWith('.md')) return line;
+  const trimmed = line.trimStart();
+  if (CODE_COMMENT_PREFIX.test(trimmed)) return line;
+  const idx = line.indexOf(INLINE_COMMENT);
+  return idx >= 0 ? line.slice(idx) : '';
+}
 
 /** 引用判定三种结果：skip = 判据边界外；missing = 目标不存在（真问题）；ok = 解析成功 */
 type Verdict = 'skip' | 'missing' | 'ok';
@@ -73,11 +99,15 @@ function classify(raw: string, fromRel: string): Verdict {
  */
 function scanLine(line: string, fromRel: string): Array<{ raw: string; verdict: Verdict }> {
   const out: Array<{ raw: string; verdict: Verdict }> = [];
-  REF_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = REF_RE.exec(line)) !== null) {
-    const raw = m[0] ?? '';
-    out.push({ raw, verdict: classify(raw, fromRel) });
+  // 代码文件只扫注释片段（引用语义边界，见 commentText）；md 全篇
+  const text = commentText(line, fromRel);
+  for (const refRe of REF_RES) {
+    refRe.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = refRe.exec(text)) !== null) {
+      const raw = m[0] ?? '';
+      out.push({ raw, verdict: classify(raw, fromRel) });
+    }
   }
   return out;
 }
@@ -104,6 +134,24 @@ const SELF_TEST: ReadonlyArray<{
     line: '加载 `.trae/rules/architecture-quickref.md`。',
     missing: 0,
     skip: 1,
+  },
+  // [D] docs 族：注释里目标不存在 → 命中 1（证明第二族提取在工作，未失明）
+  { from: 'src/__x__.ts', line: '// 论证见 docs/__self_test_no_such__.md §6.2。', missing: 1 },
+  // [E] docs 族：注释里真实目标 → 命中 0（反向护栏：正则过宽会连正常引用一起判死）
+  { from: 'src/__x__.ts', line: ' * 设计依据：docs/architecture/role-pack-spec.md。', missing: 0 },
+  // [F] docs 族：占位/通配/拆分写法不得误抓（`<文档名>` 断首字符、`*` 使结尾不成 .md、`docs/` 下的 `x.md` 拆分形态）
+  {
+    from: 'docs/__x__.md',
+    line: '格式：`docs/<文档名>-探索方案.md`、`docs/方案-*.md`，或 `docs/` 下的 `x.md`。',
+    missing: 0,
+  },
+  // [G] 引用语义边界：代码里字符串/参数位置的 docs/… 是数据或示例，不是引用 → 命中 0
+  { from: 'src/__x__.ts', line: "  const p = 'docs/a.md'; // fixture 路径数据", missing: 0 },
+  // [H] 引用语义边界反向：行内注释里的引用仍须抓到 → 命中 1
+  {
+    from: 'src/__x__.ts',
+    line: '  const x = 1; // 见 docs/__self_test_no_such__.md。',
+    missing: 1,
   },
 ];
 
@@ -177,10 +225,12 @@ for (const rel of files) {
   });
 }
 
-console.log(`规则裸路径引用检查 · 文本文件 ${files.length} 个（排除 .trae/skills 与本脚本）`);
+console.log(
+  `裸路径引用检查（.trae/rules + docs 两族） · 文本文件 ${files.length} 个（排除 .trae/skills 与本脚本）`,
+);
 
 if (findings.length) {
-  console.log(`\n[A] 引用的规则文件不存在（参考腐烂）: ${findings.length}`);
+  console.log(`\n[A] 引用目标不存在（参考腐烂）: ${findings.length}`);
   for (const f of findings) console.log(`  ${f.file}:${f.line}  ->  ${f.raw}`);
   console.log(
     '\n修法纪律：默认**不开豁免**。\n' +

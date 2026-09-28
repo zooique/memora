@@ -78,7 +78,7 @@ AI 是指令遵循引擎。当 `description` 中包含 `[必读]` 标签和明�
 
 #### 步骤 1：写好你的 rules 文件
 
-在项目里创建一个普通的 markdown 文件，比如 `docs/my-rules.md`：
+在项目里创建一个普通的 markdown 文件，比如 `docs/` 下的 `my-rules.md`：
 
 ```markdown
 # 我的项目规则
@@ -95,7 +95,7 @@ AI 是指令遵循引擎。当 `description` 中包含 `[必读]` 标签和明�
 
 #### 步骤 2：登记为作品投影
 
-通过对话告诉 AI：「把 docs/my-rules.md 登记为作品」，或直接编辑 JSON：
+通过对话告诉 AI：「把 `docs/` 下的 `my-rules.md` 登记为作品」，或直接编辑 JSON：
 
 ```json
 [
@@ -111,7 +111,7 @@ AI 是指令遵循引擎。当 `description` 中包含 `[必读]` 标签和明�
 
 AI 每次开始对话时都会看到这个索引。当用户让它"写代码"时，它会：
 1. 看到 `[必读]` 标签和明确指令
-2. 自主调用 `read_file` 读取 `docs/my-rules.md`
+2. 自主调用 `read_file` 读取 `docs/` 下的 `my-rules.md`
 3. 按照规则中的规范执行
 
 #### 优势
@@ -199,7 +199,7 @@ AI 每次开始对话时，系统会读取 `work-projections.json`，将所有�
 登记一个作品索引。
 
 - **参数**：
-  - `sourcePath`：源文件路径（相对项目根，如 `docs/architecture.md`）
+  - `sourcePath`：源文件路径（相对项目根，如 `docs/` 下的 `architecture.md`）
   - `description`：一句话说明（告诉 AI 这个文件是干什么的）
 - **返回**：登记成功的条目，失败返回 `null`
 - **行为**：向 JSON 数组追加/更新一条记录。相同 `source` 会被覆盖。

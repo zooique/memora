@@ -51,7 +51,7 @@ LLM 现写、无轨迹的任意代码 → 特权（角色启动 + 需宿主注�
 
 1. **capabilityMap 语义翻转**：从 allow-list（默认全关、声明才开）翻转为 default-on（默认全开、特权才声明）。`file:read` / `file:write` / `file:list` / `memory:recall` / `project:search` 五个能力键**不再控制可见性**，仅保留"声明面广告"或清理（待裁决，倾向清理以免僵尸键）。
 2. **M2.1「换角色→工具集切换」验收语义变更**：白名单从"工具全集的黑名单式过滤"变为"特权工具的加法"。角色包声明 capabilities = 声明**超越默认边界的特权**，而非逐项打开本地能力。
-3. **文档口径同步**：`docs/role-pack-spec.md` 及角色包 authoring guide 需更新"能力声明=特权声明"表述。
+3. **文档口径同步**：`docs/architecture/role-pack-spec.md` 及角色包 authoring guide 需更新"能力声明=特权声明"表述。
 4. **暴露面与工具执行确认解耦**：写删等危险操作收敛到确认层（confirmWrites/guest），关闭"靠工具显隐做安全"的不当耦合。
 
 ## 四、实现落点

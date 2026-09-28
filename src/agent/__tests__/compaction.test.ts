@@ -116,7 +116,7 @@ describe('ResultReplacementStrategy', () => {
         path === 'docs/a.md' ? '[ALREADY_READ] 摘要…' : undefined,
       );
       const strategy = new ResultReplacementStrategy(1, readFileReplacement);
-      // read_file(docs/a.md) + 结果，另加一个非 read_file 工具，keepRecent=1 → 最早的 read_file 被替换
+      // read_file 的 fixture（假路径）+ 结果，另加一个非 read_file 工具，keepRecent=1 → 最早的 read_file 被替换
       const messages: Message[] = [
         { role: 'system', content: 'S' },
         { role: 'user', content: 'U' },
