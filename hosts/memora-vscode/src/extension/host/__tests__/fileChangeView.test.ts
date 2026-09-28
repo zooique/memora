@@ -25,6 +25,10 @@ const h = vi.hoisted(() => {
     setCalls: [] as number[],
     /** `setDecorations` 收到的**装饰项本体**（断言「装饰里到底挂了什么」） */
     decorationItems: [] as unknown[][],
+    /** `createTextEditorDecorationType` 收到的 options（断言红/绿装饰的语义分流） */
+    decorationTypes: [] as { options: unknown; dispose: () => void }[],
+    /** `setDecorations` 的 (type, items) 配对留痕（断言「哪批 items 挂在哪个颜色上」） */
+    decorationCalls: [] as { type: unknown; items: unknown[] }[],
     /** `workspace.textDocuments`（回退前查「未保存编辑」用；元素需含 uri.fsPath / isDirty） */
     documents: [] as unknown[],
     /** 下一次 `showWarningMessage` 的返回值（undefined = 用户取消/关闭） */
@@ -167,7 +171,11 @@ vi.mock('vscode', () => ({
     get activeTextEditor(): unknown {
       return h.state.visible[0];
     },
-    createTextEditorDecorationType: (): { dispose(): void } => ({ dispose: (): void => undefined }),
+    createTextEditorDecorationType: (options: unknown): { options: unknown; dispose(): void } => {
+      const type = { options, dispose: (): void => undefined };
+      h.state.decorationTypes.push(type);
+      return type;
+    },
     createStatusBarItem: (): Record<string, unknown> => ({
       show: (): void => undefined,
       hide: (): void => undefined,
@@ -254,9 +262,10 @@ function makeDoc(
 function makeEditor(doc: Record<string, unknown>): Record<string, unknown> {
   return {
     document: doc,
-    setDecorations: (_type: unknown, items: unknown[]): void => {
+    setDecorations: (type: unknown, items: unknown[]): void => {
       h.state.setCalls.push(items.length);
       h.state.decorationItems.push(items);
+      h.state.decorationCalls.push({ type, items });
     },
     revealRange: (): void => undefined,
   };
@@ -317,6 +326,8 @@ beforeEach(() => {
   h.state.listeners = [];
   h.state.setCalls = [];
   h.state.decorationItems = [];
+  h.state.decorationTypes = [];
+  h.state.decorationCalls = [];
   h.state.documents = [];
   h.state.warningChoice = undefined;
   h.state.warningCalls = [];
@@ -425,6 +436,61 @@ describe('FileChangeView · 内联装饰不挂行尾旧内容', () => {
     for (const item of items) expect(item.renderOptions).toBeUndefined();
     // hover 必须还在：旧内容只在内存里，hover 是用户看它的唯一入口
     expect(items[0]?.hoverMessage).toBeDefined();
+  });
+});
+
+/**
+ * 装饰颜色语义守卫（2026-09-28「选择性吸收 Trae 对照效果」收口）：
+ * 纯删除块此前复用绿色装饰 =「删除点被染成新增色」的语义错位——绿底直觉是「这行是新内容」，
+ * 但删除锚行本身是**未变的其他内容**。收口为两侧分流：新增/修改走绿，纯删除锚行走红
+ * （红竖条主信号 + 极淡红底 + 悬停旧内容）。守卫盯三个不变量：
+ * ① 绿/红两侧各建一个装饰类型（变异：删掉 removedHighlightOptions → 用例一红）；
+ * ② 空侧不调 setDecorations（空批 = 噪音，「有几批装饰」的断言不该去数空批）；
+ * ③ 红侧 hover 仍在（旧内容的唯一查看入口，不能跟着换色一起丢）。
+ */
+describe('FileChangeView · 装饰颜色语义（新增绿 / 删除红）', () => {
+  it('修改/新增块挂在绿色装饰，红色侧为空则不产生调用', () => {
+    const { view, tracker, setDisk } = makeView();
+    recordOneWrite(tracker, setDisk); // v0 → v1，一处改动（无纯删除）
+    view.register(makeContext());
+    h.state.visible = [makeEditor(makeDoc('v1'))];
+    for (const listener of h.state.listeners) listener();
+
+    const bg = (t: { options: unknown }): string =>
+      String((t.options as Record<string, unknown>).backgroundColor);
+    const green = h.state.decorationTypes.filter((t) => bg(t).includes('46, 160, 67'));
+    const red = h.state.decorationTypes.filter((t) => bg(t).includes('248, 81, 73'));
+    expect(green.length).toBe(1);
+    expect(red.length).toBe(1);
+    expect(h.state.decorationCalls.length).toBe(1);
+    expect(h.state.decorationCalls[0].type).toBe(green[0]);
+  });
+
+  it('纯删除块挂在红色装饰，且 hover 旧内容仍在', () => {
+    const { view, tracker, setDisk } = makeView();
+    // v0 三行 → v1 删掉中间一行 = 纯删除块（新文件里不覆盖任何行）
+    setDisk('a\nb\nc');
+    tracker.noteToolStart({
+      toolCallId: 't-del',
+      name: 'write_file',
+      args: JSON.stringify({ path: REL }),
+    });
+    setDisk('a\nc');
+    tracker.noteToolResult({ toolCallId: 't-del', name: 'write_file', ok: true });
+    view.register(makeContext());
+    h.state.visible = [makeEditor(makeDoc('a\nc'))];
+    for (const listener of h.state.listeners) listener();
+
+    const bg = (t: { options: unknown }): string =>
+      String((t.options as Record<string, unknown>).backgroundColor);
+    const red = h.state.decorationTypes.find((t) => bg(t).includes('248, 81, 73'));
+    expect(red).toBeDefined();
+    const redCall = h.state.decorationCalls.find((c) => c.type === red);
+    if (!redCall) throw new Error('红侧 setDecorations 未被调用（纯删除块未标记）');
+    const items = redCall.items as Record<string, unknown>[];
+    expect(items.length).toBe(1); // 恰好一个删除锚行
+    expect(items[0].renderOptions).toBeUndefined(); // 行尾预览已删，hover-only 不回潮
+    expect(items[0].hoverMessage).toBeDefined(); // 旧内容的唯一查看入口
   });
 });
 

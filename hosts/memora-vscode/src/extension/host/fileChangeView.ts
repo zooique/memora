@@ -148,6 +148,35 @@ function highlightOptions(): vscode.DecorationRenderOptions {
   return highlightOptionsCache;
 }
 
+/**
+ * 纯删除块的「删除位置」标记（红色系）
+ *
+ * 纯删除块在新文件中**不覆盖任何行**，装饰只能落在 `hunkAnchorLine` 给出的删除点锚行——
+ * 那一行本身是**未变的其他内容**，铺明显红底会让用户误读成「该行被删」。因此：
+ * 主信号 = 3px 红竖条 + 概览标尺红点；行底只给极淡一层（远淡于绿色 0.18）。
+ * 此前纯删除块复用上面的绿色装饰 =「删除点被染成新增色」的语义错位，本装饰收口之。
+ * 颜色对位 GitHub diff 的删除红（248, 81, 73）。同样**必须惰性构建**（理由同上）。
+ */
+let removedHighlightOptionsCache: vscode.DecorationRenderOptions | undefined;
+function removedHighlightOptions(): vscode.DecorationRenderOptions {
+  removedHighlightOptionsCache ??= {
+    isWholeLine: true,
+    backgroundColor: 'rgba(248, 81, 73, 0.10)',
+    borderColor: 'rgba(248, 81, 73, 0.85)',
+    borderWidth: '0 0 0 3px',
+    borderStyle: 'solid',
+    overviewRulerColor: 'rgba(248, 81, 73, 0.85)',
+    overviewRulerLane: vscode.OverviewRulerLane.Left,
+  };
+  return removedHighlightOptionsCache;
+}
+
+/** 同一文件的成对装饰类型：新增/修改走绿（added），纯删除块的删除位置走红（removed） */
+interface DecorationPair {
+  added: vscode.TextEditorDecorationType;
+  removed: vscode.TextEditorDecorationType;
+}
+
 /** 恢复写回的路径守卫（结构对位内核 SecurityGuard.assertPathAllowed；避免直接依赖内核类型） */
 export interface FileChangeSecurityGuard {
   assertPathAllowed(
@@ -307,7 +336,7 @@ export class FileChangeView implements FileChangeSink {
   /** 虚拟文档内容表：键 = 虚拟 URI.toString()，值 = 旧内容 */
   private readonly virtualContents = new Map<string, string>();
   /** 每条记录的高亮装饰类型（确认/恢复/重渲染时 dispose） */
-  private readonly decorations = new Map<string, vscode.TextEditorDecorationType>();
+  private readonly decorations = new Map<string, DecorationPair>();
   /**
    * 每条记录的逐行改动块缓存（渲染与 CodeLens **同源**消费，避免两处各算一遍）
    *
@@ -610,14 +639,23 @@ export class FileChangeView implements FileChangeSink {
       }
       const hunks = this.snapshotFor(rec).hunks;
       if (hunks.length === 0) return;
-      const decorationType = vscode.window.createTextEditorDecorationType(highlightOptions());
-      this.decorations.set(rec.path, decorationType);
+      const pair: DecorationPair = {
+        added: vscode.window.createTextEditorDecorationType(highlightOptions()),
+        removed: vscode.window.createTextEditorDecorationType(removedHighlightOptions()),
+      };
+      this.decorations.set(rec.path, pair);
 
-      const items = this.buildDecorationItems(doc, hunks);
+      const { added, removed } = this.buildDecorationItems(doc, hunks);
       const targets = vscode.window.visibleTextEditors.filter(
         (editor) => editor.document.uri.toString() === doc.uri.toString(),
       );
-      for (const editor of targets) editor.setDecorations(decorationType, items);
+      // 只对**非空**的一侧调 setDecorations：空数组调用是纯噪音，还会让「有几批装饰」的
+      // 断言被迫去数空批。曾经挂载的装饰随旧 type 的 dispose（上方 clearDecoration）一并清除，
+      // 不会出现「这轮 removed 为空但上一轮的红色残留还挂着」。
+      for (const editor of targets) {
+        if (added.length > 0) editor.setDecorations(pair.added, added);
+        if (removed.length > 0) editor.setDecorations(pair.removed, removed);
+      }
 
       if (!reveal || targets.length === 0) return;
       const anchor = this.anchorRange(doc, hunks);
@@ -632,28 +670,33 @@ export class FileChangeView implements FileChangeSink {
     }
   }
 
-  /** 逐行装饰项（块内每行铺底；首行额外带行尾旧内容 + 悬停全文） */
+  /**
+   * 逐行装饰项，按语义拆两侧：**新增/修改**行走绿色（added），**纯删除块**的删除位置
+   * 行红色（removed）。两侧必须用**不同的 decorationType**——颜色语义不能混：
+   * 绿底行 = 这行是新内容；红竖条行 = 这行没变、它前面删了东西（旧内容在悬停里）。
+   */
   private buildDecorationItems(
     doc: vscode.TextDocument,
     hunks: DiffHunk[],
-  ): vscode.DecorationOptions[] {
-    const items: vscode.DecorationOptions[] = [];
+  ): { added: vscode.DecorationOptions[]; removed: vscode.DecorationOptions[] } {
+    const added: vscode.DecorationOptions[] = [];
+    const removed: vscode.DecorationOptions[] = [];
     for (const hunk of hunks) {
       const first = hunkAnchorLine(hunk, doc.lineCount);
       if (isRemovedOnly(hunk)) {
         // 纯删除：新文件中已无对应行 → 把旧内容挂到删除位置的锚点行
-        items.push(this.decorationFor(doc, first, hunk));
+        removed.push(this.decorationFor(doc, first, hunk));
         continue;
       }
       for (let line = hunk.startLine; line <= hunk.endLine; line += 1) {
-        items.push(
+        added.push(
           line === hunk.startLine
             ? this.decorationFor(doc, line, hunk)
             : { range: safeLineRange(doc, line) },
         );
       }
     }
-    return items;
+    return { added, removed };
   }
 
   /** 首个改动块的定位锚点（视口滚到这里） */
@@ -766,9 +809,10 @@ export class FileChangeView implements FileChangeSink {
   }
 
   private clearDecoration(absPath: string): void {
-    const decorationType = this.decorations.get(absPath);
-    if (decorationType) {
-      decorationType.dispose();
+    const pair = this.decorations.get(absPath);
+    if (pair) {
+      pair.added.dispose();
+      pair.removed.dispose();
       this.decorations.delete(absPath);
     }
   }
@@ -1264,7 +1308,10 @@ export class FileChangeView implements FileChangeSink {
 
   /** 释放装饰类型 / CodeLens / 事件（扩展停用 / 面板销毁） */
   dispose(): void {
-    for (const decorationType of this.decorations.values()) decorationType.dispose();
+    for (const pair of this.decorations.values()) {
+      pair.added.dispose();
+      pair.removed.dispose();
+    }
     this.decorations.clear();
     this.virtualContents.clear();
     this.hunkCache.clear();
