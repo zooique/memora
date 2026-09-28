@@ -10,6 +10,18 @@
 
 > **本区归属**：仅**宿主**（`hosts/memora-vscode`）变更——不占内核版本号（理由见文首说明）。内核 3.0.0 的发版内容在其下方。
 
+### Changed（宿主 · 文件改动可视化的 SSOT 收口 + 描述层回扫）
+
+**问题（SSOT 收敛 · 内核零改动）**：上一批「文案口径单源」提交（`COMPARE_LABEL`）自身仍留 **2 处并列真理源**，且 `docs/` 第 1 层回扫漏网——即「改一处碰一片」的反面：**两处各写一份，改一处只碰一处**。
+
+- **① 忽略目录改派生内核真源**：`chatPanel.ts` 原手写 14 项 `IGNORED_DIRS`。内核 `IGNORED_DIR_NAMES`（`builtinToolHandlers.ts`，注释原文「宿主通过主入口 import 此常量对齐忽略目录，**避免数值/规则漂移**」）早已由 `src/index.ts` 导出、宿主 `projectSearchProvider.ts` 亦已 import 复用 ⇒ 本次新写的第二份是**并列副本**（6 项重合）。改 `new Set([...IGNORED_DIR_NAMES, ...宿主独有产物目录])`；危害面：内核新增忽略目录时快照仍扫它 → 内部数据混进改动可见性（静默）
+- **② 降级提示抽单点常量**：写前降级 / 写后降级两条路径各写一遍同一句文案（相隔 9 行）⇒ 抽 `SNAPSHOT_OVERSIZE_NOTICE`，并把重复的 `post` + 重复的 `ok && !blocked` 判据收敛为两分支各一次调用（行为等价）
+- **③ 描述层回扫（`docs/` 第 1 层）**：`方案-文件改动diff可视化-20260926.md` 尚有 **3 处「打开对比」（本轮改名漏扫）+ 10 处「恢复旧版」（上一轮改名漏扫）**，全落在 §3.4 / §3.5 / §7 等**现状断言**段 ⇒ 统一为实际发货标签（查看对比 / 回退本文件改动 / 确认改动）。`tasks/` 中的同名旧称属**历史过程记录**，按 `legacy-contract-audit-rules` §3.3 第 8 层边界**不动**
+- **④ 同一设计真值去重复陈述**：「左右分栏 vs 自渲染上下视图」的选型理由原在 `fileChangeView.ts` 文件头与 `openCompare` jsdoc **各写一遍**（第二真理源）⇒ jsdoc 删复述改指针，文件头去日期编年、保留「勿改回」防回归信号；并去痕一个残缺变体选择符（U+FE0F）
+- **⑤ 回退安全判据「判据面 / 通道面」分离**：§4.4 原措辞「必须经内核工具路径**或**同源校验」+「宿主 fs 直写属禁止项」读起来否定现状；§7 第 6 条（断言走内核写路径）与第 10 条（断言走宿主直写）**自相矛盾**。据实收敛：**判据面** = 必过 `assertPathAllowed`（与内核 SecurityGuard 同源，守卫缺失 fail-closed）；**通道面** = 宿主直写（无活跃 loop 时内核工具不可达，且经工具会伪造 `tool_start`/`tool_result` 污染时间线），故**宿主直写为定案、非带伤**
+- **验证（实测）**：宿主 `tsc` 0 / `eslint` 0；fileChange 四套件 **93 passed**（与改前同数，零行为变更）；根 `terminology:check` 0；`prettier --check` 全绿
+- **入档**：`CHAT-SNAP-1` 补第 ④ 条残留缺口（`scriptSnapshots` 异常流不回收，严重度按「全量快照 × 可并发驻留」记）
+
 ### Fixed（宿主 · 问答卡纳入工具批切段：外部可见条目作断面 BATCH-SPLIT-1）
 
 **问题（登记在案缺陷 BATCH-SPLIT-1 · 纯宿主渲染层，内核零改动）**：`groupToolBatches` 只吃 `events`，而问答卡（`.round-block__input`）来自 `interactiveInputs` / 运行时缓存——**无 seq、不在 events 里** ⇒ 对切段判据天然不可见。两段工具之间夹一张问答卡时（工具 A → ask_user → 卡片 → 工具 B），A 与 B 被并成一批、批块锚在段内首工具 ts，卡片被推到整块**之后**（观感「问答卡之后的工具跑到卡片前面」）。复现路径 `renderReplayRound`（打开历史会话走它）+ 运行时流式（`renderProcessFlow`），两路同病。
@@ -203,7 +215,17 @@
 
 - **修法（止血不造伤 · 零行为变更）**：① 删 `task_table_write`/`task_table_update` 派发处两处**不可达**缺省（`strArg('mode')` / `strArg('status')` 不再给回退值）——`required` 校验层（`validateAndCoerceArgs`）本就在派发前拦截缺失，缺省是永不可达的死代码，删后唯一区别是「校验被绕过时 fail-loud 而非静默覆盖」；② `task_table_write` 的 `update` 模式描述补全「须传完整任务项列表，未列出的会被丢弃——勿与 `task_table_update` 混淆」（工具级描述 + `mode` 参数级描述双处对齐，单一口径）
 - **验证（回归钉锁死契约）**：新增 `sessionManager.test.ts` 守卫「`writePlan` update 模式全量替换：未列出的任务项被丢弃」（3 项基线 → update 传 2 项 → plan 长度=2、保留原 id、第 3 项消失）。**实测**：`builtinTools.test.ts` 70 passed / `toolExecutor.test.ts` task_table 14 passed / `sessionManager.test.ts` 整文件 74 passed，全绿零回归
-- **残留已知伤（如实记，不静默丢）**：`update` 模式 与 `task_table_update` 工具**撞名**是结构性命名带伤，描述缓解仅止血未根除；彻底消除须把 `update` 模式改名（如 `replace`），但属破坏 LLM 公有契约，须走 deprecation 周期。已记 `tasks/待完成任务.md` 观察区 `TASKTABLE-NAME-1`（建议级，触发 = 契约整理批次或真机复现混淆）
+- **残留已知伤（已收口，见下方 Changed）**：`update` 模式 与 `task_table_update` 工具**撞名**是结构性命名带伤，描述缓解仅止血；改名已于同批落地（见下方 Changed 段），台账 `TASKTABLE-NAME-1` 销项
+
+### Changed（任务表写入模式正名：`task_table_write` 的 `update` → `replace`，TASKTABLE-NAME-1 收口）
+
+**问题**：`task_table_write` 的 `update` 模式（全量替换整张表）与单任务项工具 `task_table_update` 撞名——两种语义共用一个词，内核注释已被污染（`updatePlan` 头注释曾把生产点误写成 `task_table_update mode='update'`）。
+
+- **改名窗口（证伪旧定性）**：`git tag` 最高 `v2.0.3`、`package.json` 虽为 3.0.0 但未发布 npm ⇒ **不存在任何已发布消费者**，改名是纯内部改动，无需 deprecation 周期（原「须走 deprecation」定性已被 tag 实证推翻）
+- **选词**：`replace` 与 `overwrite`（清空重写）/`append`（追加）三词互不重叠，与 `task_table_update`（单项状态）彻底不撞
+- **自愈路径**：mode 校验本就 fail-loud（`[ERR:INVALID_ARG]` 列出全部可用值）——模型输出旧词 `update` 会拿到含 `replace` 的明确错误，可自行重试；守卫钉死「旧词不得静默下发（writePlan else 兜底是 no-op，下发即静默丢写）」
+- **改动面**：`builtinTools.ts` 描述 ×2、`toolExecutor.ts` 校验 + 接口类型 + 注释、`sessionManager.ts` 类型/分支/注释（顺带修正生产点工具名笔误）、测试 ×4；宿主零消费（只按工具名匹配）、docs/角色包零提及 mode
+- **验证（变异闭合）**：变异 A（判据改回 `update`）→ 新钉 2 条**恰 2 红**；变异 B（`replace` 分支短路 no-op）→ 语义钉**恰 1 红**，零误伤。恢复后 `tsc` 0、`eslint` 0、`sessionManager`+`builtinTools` **144 passed**、`toolExecutor` task_table **16 passed**
 
 ### Added（新增门禁 `rules:refs`：规则裸路径引用有效性 · 补 `docs:links` 同族盲区）
 

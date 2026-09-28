@@ -43,17 +43,39 @@ import {
   type WriteConfirmationRequest,
   type SessionView,
   OPAQUE_WRITE_TOOL_NAMES,
+  IGNORED_DIR_NAMES,
 } from '@zooique/memora';
 
 /** 脚本类写工具（opaque 写，目标运行时才可知）——真源 = 内核 `OPAQUE_WRITE_TOOL_NAMES`（diskWrite:'opaque' 派生）。
  * 宿主据此在工具执行前后各扫一次 workspace 快照、diff 收口，让脚本类文件改动可见（见 tracker.noteExternalMutations）。 */
 const SCRIPT_WRITE_TOOLS: readonly string[] = OPAQUE_WRITE_TOOL_NAMES;
 
-/** 目录快照遍历时跳过的目录（构建产物 / 内部数据，非用户可见源码）；缩小扫描范围、避开 memora 自身数据噪音 */
-const IGNORED_DIRS = new Set<string>([
-  'node_modules', '.git', 'dist', 'out', 'build', 'coverage',
-  '.memora', '.vscode', '.workbuddy', 'target', '.next', '.nuxt', '.svelte-kit', '.cache',
+/**
+ * 目录快照遍历时跳过的目录（缩小扫描范围、避开 memora 自身数据噪音）
+ *
+ * 基线**派生自内核 `IGNORED_DIR_NAMES`**（构建产物 / memora 内部数据，非用户可见源码）——
+ * 与 `list_dir` / `search_project` 共用同一套忽略规则，禁并列维护第二份基线（两份必漂移：
+ * 内核新增忽略目录时宿主快照仍扫它 ⇒ 内部数据混进改动可见性）。
+ * 追加项是本快照**独有**的宿主工具链产物目录（内核工具面不需要，故不并入内核基线）。
+ */
+const IGNORED_DIRS: ReadonlySet<string> = new Set<string>([
+  ...IGNORED_DIR_NAMES,
+  'out',
+  'build',
+  '.vscode',
+  '.workbuddy',
+  'target',
+  '.nuxt',
+  '.svelte-kit',
+  '.cache',
 ]);
+
+/**
+ * 快照超阈值（文件过多 / 总量过大）时的降级提示
+ *
+ * 写前快照与写后扫描两条路径都会降级到同一句提示——并列字面量必漂移，故抽为单点常量。
+ */
+const SNAPSHOT_OVERSIZE_NOTICE = '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动';
 
 /** 单文件扫描上限（2MB）：超大文件跳过，避免快照 IO 失控 */
 const SNAPSHOT_MAX_FILE_BYTES = 2 * 1024 * 1024;
@@ -420,7 +442,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             if (size > SNAPSHOT_MAX_FILE_BYTES) continue;
             // 上限守卫（止血）：总字节 / 文件数任一超阈值 → 放弃内容快照，
             // 调用方降级为「提示用户 git 核对」，避免大仓库同步扫描卡死 extension host
-            if (totalBytes + size > SNAPSHOT_MAX_TOTAL_BYTES || fileCount + 1 > SNAPSHOT_MAX_FILES) {
+            if (
+              totalBytes + size > SNAPSHOT_MAX_TOTAL_BYTES ||
+              fileCount + 1 > SNAPSHOT_MAX_FILES
+            ) {
               aborted = true;
               result.clear();
               return;
@@ -2855,26 +2880,17 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
             this.scriptSnapshots.delete(chunk.toolCallId);
             if (before === undefined) {
               // 异常：无写前快照（不应发生），静默跳过
-            } else if (before === null) {
-              // 写前扫描已超阈值降级：仅提示用户用 git 核对，不做内容 diff
-              if (chunk.ok && !chunk.blocked) {
-                this.post({
-                  type: 'notice',
-                  level: 'info',
-                  message: '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动',
-                });
-              }
-            } else if (chunk.ok && !chunk.blocked) {
+            } else if (before !== null && chunk.ok && !chunk.blocked) {
               const after = this.scanWorkspaceTextFiles();
               if (after === null) {
-                this.post({
-                  type: 'notice',
-                  level: 'info',
-                  message: '工作区文本文件过多，脚本改动未自动追踪——请用 git 核对改动',
-                });
+                // 写后扫描超阈值：与写前降级同一条提示，不做内容 diff
+                this.post({ type: 'notice', level: 'info', message: SNAPSHOT_OVERSIZE_NOTICE });
               } else {
                 this._fileChangeSink?.noteExternalMutations(diffWorkspaceSnapshots(before, after));
               }
+            } else if (chunk.ok && !chunk.blocked) {
+              // 写前快照为 null（已超阈值降级）：写后不再扫描，直接提示用户用 git 核对
+              this.post({ type: 'notice', level: 'info', message: SNAPSHOT_OVERSIZE_NOTICE });
             }
           }
           // N/M 闪骨架：tool_start 时读到的 plan 是工具执行前的旧状态
