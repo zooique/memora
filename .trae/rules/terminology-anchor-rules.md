@@ -101,6 +101,7 @@ description: 领域术语唯一定义处（turn / loop / step / planItem / round
 | ~~多 turn 任务编排~~ | Loop 编排、外循环（已废） |
 | 气口 | 闭环边界暂停点（旧称 Handoff 出口，已废） |
 | 任务表工具参数 `plan_item_id` / `items` | `step_id` / `steps`（任务表语义的旧参数名，2026-09-25 正名；旧名只可用于读懂历史记录） |
+| `task_table_write` 的 `mode` 值 `replace` | `update`（2026-09-28 正名：与工具 `task_table_update` 撞名；旧名只可用于读懂历史记录） |
 
 > 代码标识符不改：`runIterationLoop` / `currentIteration` / `AgentLoop` / `Round` 保持原名。别名只用于**阅读理解**，不用于改名。
 
