@@ -18,7 +18,10 @@ import { MemoraChatViewProvider } from '../panels/chatPanel.js';
 const h = vi.hoisted(() => ({ WS: '' }));
 
 vi.mock('vscode', async () => ({
-  Uri: { joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }), fsPath: '/mock/path' },
+  Uri: {
+    joinPath: (base: unknown, ...p: string[]) => ({ base, segments: p }),
+    fsPath: '/mock/path',
+  },
   window: {
     showInputBox: vi.fn(),
     showWarningMessage: vi.fn(),
@@ -100,14 +103,10 @@ describe('scanWorkspaceTextFiles · 上限守卫降级', () => {
    * （失败形态是 timeout，AssertionError 计数为 0）。改为 **32×2MB = 恰好 64MB**：I/O 减半、
    * 语义等价；降级侧由上面「33×2MB → null」用例覆盖，两者合起来仍钉住 `>` 的两侧。
    */
-  it(
-    '判据边界精确：总量恰好等于 64MB 上限 → 不降级（判据是 > 不是 >=）',
-    () => {
-      writeFiles(32, 2 * MB); // 恰好 64MB
-      expect((provider as any).scanWorkspaceTextFiles()).toBeInstanceOf(Map);
-    },
-    30_000,
-  );
+  it('判据边界精确：总量恰好等于 64MB 上限 → 不降级（判据是 > 不是 >=）', () => {
+    writeFiles(32, 2 * MB); // 恰好 64MB
+    expect((provider as any).scanWorkspaceTextFiles()).toBeInstanceOf(Map);
+  }, 30_000);
 
   it('IGNORED_DIRS（node_modules）不被扫描、不误触发降级', () => {
     mkdirSync(join(h.WS, 'node_modules'), { recursive: true });

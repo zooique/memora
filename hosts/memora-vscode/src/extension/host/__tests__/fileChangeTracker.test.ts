@@ -342,9 +342,21 @@ describe('FileChangeTracker', () => {
       const changes = diffWorkspaceSnapshots(before, after);
       expect(changes).toHaveLength(3);
       const byPath = Object.fromEntries(changes.map((c) => [c.absPath, c]));
-      expect(byPath[abs('a.md')]).toEqual({ absPath: abs('a.md'), beforeContent: 'oldA', afterContent: 'newA' });
-      expect(byPath[abs('b.md')]).toEqual({ absPath: abs('b.md'), beforeContent: 'oldB', afterContent: null });
-      expect(byPath[abs('d.md')]).toEqual({ absPath: abs('d.md'), beforeContent: null, afterContent: 'newD' });
+      expect(byPath[abs('a.md')]).toEqual({
+        absPath: abs('a.md'),
+        beforeContent: 'oldA',
+        afterContent: 'newA',
+      });
+      expect(byPath[abs('b.md')]).toEqual({
+        absPath: abs('b.md'),
+        beforeContent: 'oldB',
+        afterContent: null,
+      });
+      expect(byPath[abs('d.md')]).toEqual({
+        absPath: abs('d.md'),
+        beforeContent: null,
+        afterContent: 'newD',
+      });
     });
 
     it('无变动 → 空数组', () => {
@@ -373,7 +385,11 @@ describe('FileChangeTracker', () => {
     it('与既有 write_file 记录按路径合并：保留最早 beforeContent、writeCount 累加', () => {
       const io = makeIO({ [abs('a.md')]: 'old' });
       const tracker = makeTracker(io);
-      tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+      tracker.noteToolStart({
+        toolCallId: 't1',
+        name: 'write_file',
+        args: JSON.stringify({ path: 'a.md' }),
+      });
       io.set(abs('a.md'), 'written');
       tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
       tracker.noteExternalMutations([
@@ -388,7 +404,11 @@ describe('FileChangeTracker', () => {
     it('空变更集 → 无记录、不影响既有', () => {
       const io = makeIO({ [abs('a.md')]: 'old' });
       const tracker = makeTracker(io);
-      tracker.noteToolStart({ toolCallId: 't1', name: 'write_file', args: JSON.stringify({ path: 'a.md' }) });
+      tracker.noteToolStart({
+        toolCallId: 't1',
+        name: 'write_file',
+        args: JSON.stringify({ path: 'a.md' }),
+      });
       io.set(abs('a.md'), 'written');
       tracker.noteToolResult({ toolCallId: 't1', name: 'write_file', ok: true });
       expect(tracker.noteExternalMutations([])).toEqual([]);

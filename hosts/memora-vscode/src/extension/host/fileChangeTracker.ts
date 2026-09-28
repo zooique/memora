@@ -263,7 +263,13 @@ export class FileChangeTracker {
     this.pending.delete(chunk.toolCallId);
     if (!chunk.ok || chunk.blocked) return null;
     const afterContent = this.io.readTextFile(entry.absPath);
-    const record = this.upsert(entry.absPath, entry.relPath, entry.beforeContent, afterContent, entry.mode);
+    const record = this.upsert(
+      entry.absPath,
+      entry.relPath,
+      entry.beforeContent,
+      afterContent,
+      entry.mode,
+    );
     this.evictOverflow();
     return record;
   }
@@ -302,7 +308,13 @@ export class FileChangeTracker {
     const existing = this.records.get(absPath);
     const updatedAt = this.now();
     const record: FileChangeRecord = existing
-      ? { ...existing, afterContent, mode: mode ?? existing.mode, writeCount: existing.writeCount + 1, updatedAt }
+      ? {
+          ...existing,
+          afterContent,
+          mode: mode ?? existing.mode,
+          writeCount: existing.writeCount + 1,
+          updatedAt,
+        }
       : {
           path: absPath,
           relPath,
