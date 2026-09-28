@@ -397,15 +397,15 @@ function wireRuntimeCallbacks(
     // 由 clearPlanOnTurnEnd 在 turn 结束才清空），收尾兜底不会自动补状态，故在每次注入时把
     // 「未完成 ⇏ 收尾」作为明示纪律。
     // 语义边界：约束 = 「先更新任务表、交代未完成任务项再收尾」，不强制完成任务本身——
-    // 放弃/降级任务仍是合法用户决策（可 task_table_write 标记 已阻塞 后收尾），防锁死。
+    // 放弃/降级任务仍是合法用户决策（可 task_table_update 置 blocked 后收尾），防锁死。
     // 与 buildCompletionVerifyNudge（全 done 防假完成）互补：一个卡「没做完」、一个卡「做完没验证」。
     const unfinished = cp.plan.filter((s) => s.status !== 'done');
     if (unfinished.length > 0) {
       return (
         table +
         '\n\n（执行约束，非历史信息）仍有任务项未标记「已完成」，不得就此结束回合：' +
-        '请继续用 task_table_update 推进并标记结果；确需中止该任务时，请先用 task_table_write ' +
-        '(update) 将未完成任务项标记为「已阻塞」并说明原因，再收尾汇报。'
+        '请继续用 task_table_update 推进并标记结果；确需中止该任务时，请先用 task_table_update ' +
+        '将未完成任务项标记为 blocked（已阻塞），并在收尾汇报中说明原因。'
       );
     }
     return table;

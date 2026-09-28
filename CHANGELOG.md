@@ -224,8 +224,9 @@
 - **改名窗口（证伪旧定性）**：`git tag` 最高 `v2.0.3`、`package.json` 虽为 3.0.0 但未发布 npm ⇒ **不存在任何已发布消费者**，改名是纯内部改动，无需 deprecation 周期（原「须走 deprecation」定性已被 tag 实证推翻）
 - **选词**：`replace` 与 `overwrite`（清空重写）/`append`（追加）三词互不重叠，与 `task_table_update`（单项状态）彻底不撞
 - **自愈路径**：mode 校验本就 fail-loud（`[ERR:INVALID_ARG]` 列出全部可用值）——模型输出旧词 `update` 会拿到含 `replace` 的明确错误，可自行重试；守卫钉死「旧词不得静默下发（writePlan else 兜底是 no-op，下发即静默丢写）」
-- **改动面**：`builtinTools.ts` 描述 ×2、`toolExecutor.ts` 校验 + 接口类型 + 注释、`sessionManager.ts` 类型/分支/注释（顺带修正生产点工具名笔误）、测试 ×4；宿主零消费（只按工具名匹配）、docs/角色包零提及 mode
-- **验证（变异闭合）**：变异 A（判据改回 `update`）→ 新钉 2 条**恰 2 红**；变异 B（`replace` 分支短路 no-op）→ 语义钉**恰 1 红**，零误伤。恢复后 `tsc` 0、`eslint` 0、`sessionManager`+`builtinTools` **144 passed**、`toolExecutor` task_table **16 passed**
+- **二次收口（自审揪出漏网）**：`assembler.ts` 任务表「未完成硬约束」nudge（每轮注入 LLM 的生产提示词）仍写 `task_table_write (update)`——首轮 grep 判据只扫 mode 字面量赋值，漏了形态相异的提示词文案；且该句语义本就与工具契约不符（`task_table_write` 任何 mode 都不改 status，「标记已阻塞」只有 `task_table_update` 能置 `blocked`）。一并正名 + 纠语义（改指 `task_table_update` 置 `blocked`），并补 `assembler.test.ts` 词表 + 语义双钉
+- **改动面**：`builtinTools.ts` 描述 ×2、`toolExecutor.ts` 校验 + 接口类型 + 注释、`sessionManager.ts` 类型/分支/注释（顺带修正生产点工具名笔误）、`assembler.ts` 未完成硬约束 nudge 正名 + 纠语义、测试 ×5；宿主零消费（只按工具名匹配）、docs/角色包零提及 mode
+- **验证（变异闭合）**：变异 A（判据改回 `update`）→ 新钉 2 条**恰 2 红**；变异 B（`replace` 分支短路 no-op）→ 语义钉**恰 1 红**；变异 C（nudge 还原旧词 + `task_table_write` 误引）→ `assembler.test.ts` 新钉**恰 1 红**，零误伤。恢复后 `tsc` 0、`eslint` 0、`sessionManager`+`builtinTools` **144 passed**、`toolExecutor` task_table **16 passed**、`assembler` **34 passed**
 
 ### Added（新增门禁 `rules:refs`：规则裸路径引用有效性 · 补 `docs:links` 同族盲区）
 

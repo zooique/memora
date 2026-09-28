@@ -532,7 +532,7 @@ export class ToolExecutor {
   /** 任务表管理回调（由 agent 装配时注入，处理 task_table_write/update） */
   planManager?: {
     writePlan: (
-      mode: 'overwrite' | 'append' | 'update',
+      mode: 'overwrite' | 'append' | 'replace',
       items: Array<{ description: string; rolePack?: string }>,
     ) => string;
     updatePlanItem: (planItemId: string, status: 'done' | 'blocked') => string;
@@ -1203,14 +1203,14 @@ export class ToolExecutor {
         return formatProjectFileSearch(fileSearch, nameQuery);
       }
       case 'task_table_write': {
-        // 写入任务表（overwrite / append / update）；items 每项可选 rolePack（会议表层装配角色）
+        // 写入任务表（overwrite / append / replace）；items 每项可选 rolePack（会议表层装配角色）
         if (!this.planManager) {
           return '[ERR:TOOL:NOT_AVAILABLE] 任务表功能未就绪';
         }
         // mode 为 required（validateAndCoerceArgs 强制校验），不设缺省——设缺省即与 required 契约矛盾
         const writeMode = strArg('mode');
-        if (writeMode !== 'overwrite' && writeMode !== 'append' && writeMode !== 'update') {
-          return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/update`;
+        if (writeMode !== 'overwrite' && writeMode !== 'append' && writeMode !== 'replace') {
+          return `[ERR:INVALID_ARG] 不支持的写入模式 "${writeMode}"，仅支持 overwrite/append/replace`;
         }
         const itemsRaw = args.items;
         const items = Array.isArray(itemsRaw)

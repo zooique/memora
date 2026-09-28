@@ -1120,7 +1120,7 @@ describe('SessionManager', () => {
       expect(manager.getCheckpoint()!.planItemLog?.length ?? 0).toBe(planItemLogLenBefore);
     });
 
-    it('writePlan update 模式全量替换：未列出的任务项被丢弃（防回退为追加/合并语义）', () => {
+    it('writePlan replace 模式全量替换：未列出的任务项被丢弃（防回退为追加/合并语义）', () => {
       manager.createCheckpoint('测试');
       // 先写 3 个任务项作为基线
       const base = manager.writePlan('overwrite', [
@@ -1131,12 +1131,12 @@ describe('SessionManager', () => {
       expect(base).toHaveLength(3);
       const keptIds = [base[0]!.id, base[1]!.id];
       // 仅传前 2 个做 update：updatePlan 整体替换 → 第 3 个必须被丢弃
-      const updated = manager.writePlan('update', [
+      const updated = manager.writePlan('replace', [
         { description: '步骤一（改）' },
         { description: '步骤二（改）' },
       ]);
       expect(updated).toHaveLength(2);
-      // 保留已有 id（与 task_table_write update 模式契约一致）
+      // 保留已有 id（与 task_table_write replace 模式契约一致）
       expect(updated.map((s) => s.id)).toEqual(keptIds);
       expect(updated[0]!.description).toBe('步骤一（改）');
       expect(updated[1]!.description).toBe('步骤二（改）');

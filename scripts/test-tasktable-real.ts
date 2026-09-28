@@ -87,7 +87,9 @@ async function toolExecutor(name: string, argsStr: string): Promise<string> {
       const mode = String(args.mode ?? 'overwrite');
       const items =
         (args.items as Array<{ description?: string; rolePack?: string }> | undefined) ?? [];
-      if (mode === 'overwrite') mockPlan.length = 0; // 清空后重建
+      // 演示级近似：replace（全量替换）与 overwrite 同为「清空重建」——结果集都是 items；
+      // 与真语义的差异仅在 id/status 保留细节，mock 的短随机 id 本就无保留概念（append 才走追加）。
+      if (mode === 'overwrite' || mode === 'replace') mockPlan.length = 0; // 清空后重建
       for (const s of items) {
         mockPlan.push({
           id: shortId(),

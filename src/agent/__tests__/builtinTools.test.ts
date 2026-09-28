@@ -409,6 +409,13 @@ describe('builtinTools · 任务表描述命令式强化', () => {
     expect(def.description).toContain('禁止跳过拆解一次性盲目执行');
     // 行为闭环：写表后明确用 task_table_update 逐步标记
     expect(def.description).toContain('task_table_update');
+    // mode 词表对拍（TASKTABLE-NAME-1 收口）：描述与执行器判据是同一词表的两处表达，
+    // 防描述漂移回旧词 update（模型被告知 update、执行器只认 replace → 永久报错循环）
+    expect(def.description).toContain('replace 模式');
+    expect(def.description).not.toContain('update 模式');
+    const modeDesc = def.parameters.properties['mode']?.description ?? '';
+    expect(modeDesc).toContain('"replace"');
+    expect(modeDesc).not.toContain('"update"');
   });
 
   it('task_table_update 描述应明确「一次只更新一步」并禁止批量宣告完成', () => {
@@ -475,7 +482,7 @@ describe('builtinTools · 任务表 how 单源守卫', () => {
 });
 
 describe('builtinTools · BUILTIN_TOOL_IDEMPOTENCY', () => {
-  it('task_table_write 保守标记 non-idempotent（mode 依赖：overwrite/update 同参幂等，append 非幂等）', () => {
+  it('task_table_write 保守标记 non-idempotent（mode 依赖：overwrite/replace 同参幂等，append 非幂等）', () => {
     expect(BUILTIN_TOOL_IDEMPOTENCY.task_table_write).toBe('non-idempotent');
   });
 

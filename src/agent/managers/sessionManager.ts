@@ -694,7 +694,7 @@ export class SessionManager {
     return consistencyResult;
   }
 
-  /** 全量替换计划任务项（与 appendPlanItem 仅追加正交；保留已有任务项 id/status）。唯一生产点：task_table_update mode='update' */
+  /** 全量替换计划任务项（与 appendPlanItem 仅追加正交；保留已有任务项 id/status）。唯一生产点：task_table_write mode='replace' */
   updatePlan(plan: PlanItem[]): void {
     if (!this.checkpoint) return;
     this.checkpoint.plan = plan;
@@ -724,12 +724,12 @@ export class SessionManager {
    *   'overwrite'：先清空现有 plan 再逐条追加（真重写——LLM task_table_write / 会议预置都依赖此语义，
    *                 若与 'append' 同分支只追加不清空，则 overwrite 名存实亡）；
    *   'append'   ：在现有 plan 后逐条追加；
-   *   'update'   ：全量替换现有 plan（保留已有 id/status/rolePack，仅覆盖 description）。
+   *   'replace'  ：全量替换现有 plan（保留已有 id/status/rolePack，仅覆盖 description）。
    *   其它 mode 兜底 no-op。
    * 分发逻辑归本类承载，由 sessionCheckpointLifecycle.test.ts 覆盖。
    */
   writePlan(
-    mode: 'overwrite' | 'append' | 'update',
+    mode: 'overwrite' | 'append' | 'replace',
     items: Array<{ description: string; rolePack?: string }>,
   ): PlanItem[] {
     // 写点自愈：checkpoint 未就绪时先创建（任务表写点 = 任务上下文就绪点）。
@@ -745,7 +745,7 @@ export class SessionManager {
       for (const item of items) {
         this.appendPlanItem(item.description, item.rolePack);
       }
-    } else if (mode === 'update') {
+    } else if (mode === 'replace') {
       const updatedPlan = items.map((s, i) => {
         const existing = existingPlan[i];
         return existing

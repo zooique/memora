@@ -425,6 +425,11 @@ describe('assembleComponents', () => {
       // 未完成 → 追加硬约束（防止 LLM 提前纯文本收尾，真实故障轮实证）
       expect(table).toContain('（执行约束，非历史信息）仍有任务项未标记「已完成」');
       expect(table).toContain('task_table_update');
+      // 中止路径必须指向 task_table_update（唯一能改状态的工具：task_table_write 任何 mode 都不改 status）；
+      // 且不得残留已废的旧 mode 词与 task_table_write 误引（TASKTABLE-NAME-1 收口：本 nudge 曾写 task_table_write (update)）
+      expect(table).toContain('标记为 blocked');
+      expect(table).not.toContain('(update)');
+      expect(table).not.toContain('task_table_write');
     });
 
     it('全部任务项 done 时不追加约束（正常收尾不干扰）', async () => {

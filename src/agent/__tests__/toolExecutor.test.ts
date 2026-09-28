@@ -1479,6 +1479,44 @@ describe('工具执行器（6 个工具）', () => {
     });
   });
 
+  describe('task_table_write（mode 契约：replace 取代 update，旧词必须 fail-loud 可自愈）', () => {
+    /** 注入 writePlan 桩：记录实际下发到 sessionManager 的 mode */
+    function injectWritePlanSpy(): { modes: string[] } {
+      const modes: string[] = [];
+      executor.planManager = {
+        writePlan: (mode: string) => {
+          modes.push(mode);
+          return 'ok';
+        },
+        updatePlanItem: () => 'ok',
+        getPlan: () => [],
+      };
+      return { modes };
+    }
+
+    it('mode="replace" 合法下发（正名后的写入路径）', async () => {
+      const { modes } = injectWritePlanSpy();
+      await executor.execute(
+        'task_table_write',
+        JSON.stringify({ mode: 'replace', items: [{ description: 'A' }] }),
+      );
+      expect(modes).toEqual(['replace']);
+    });
+
+    it('旧词 mode="update" 必须 fail-loud 且错误文案给出 replace（防改名后静默 no-op 丢写）', async () => {
+      const { modes } = injectWritePlanSpy();
+      const result = await executor.execute(
+        'task_table_write',
+        JSON.stringify({ mode: 'update', items: [{ description: 'A' }] }),
+      );
+      // 旧词不得下发到 sessionManager——writePlan 的 else 兜底是 no-op，下发即静默丢写
+      expect(modes).toEqual([]);
+      expect(result).toContain('[ERR:INVALID_ARG]');
+      // 自愈关键：错误文案必须列出正确词，模型据此重试
+      expect(result).toContain('replace');
+    });
+  });
+
   describe('task_table_update（寻址契约：renderer 行首序号 ↔ task_table_write 短 id ↔ 完整 uuid 三源归一）', () => {
     /** 默认三任务项桩（id 前缀各异，8 位短 id 可唯一命中） */
     const DEFAULT_PLAN: Array<{ id: string; description: string; status: string; order: number }> =
