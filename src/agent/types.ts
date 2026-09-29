@@ -201,6 +201,13 @@ export interface UIMessages {
   duplicateToolCallWarning?: (threshold: number) => string;
   /** LLM 空响应兜底提示（无文本无工具调用时使用，默认英文） */
   emptyResponseFallback?: string;
+  /**
+   * LLM 空响应兜底提示 · 截断型生成函数（默认英文）。
+   * 判据：空响应且末次尝试 finishReason='length'（思考/生成吃满输出预算）——与瞬态型
+   * （无 finishReason 或非 'length'，中转不回传即降级此口径）分型展示，文案可指导动作。
+   * @param attempts 空响应结论前的 chat 尝试总数（含自动重试），供文案告知用户已重试次数
+   */
+  emptyResponseFallbackTruncated?: (attempts: number) => string;
 }
 
 // ─── 归档模式 ───────────────────────────────────────────

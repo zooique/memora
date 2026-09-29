@@ -280,6 +280,10 @@ describe('LlmCaller.callWithRetry · 空响应重试', () => {
     // 最终仍为空（不把「模型拒绝」当产出），loop 可据此走 emptyResponseFallback
     expect(result?.fullContent ?? '').toBe('');
     expect(result?.toolCalls ?? []).toHaveLength(0);
+    // 诊断三字段随结果透出（空响应分型的裁决依据）：恒空 → 无 finishReason、无 thinking、3 次尝试
+    expect(result?.finishReason).toBeUndefined();
+    expect(result?.thinkingChars).toBe(0);
+    expect(result?.attempts).toBe(3);
   });
 });
 

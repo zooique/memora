@@ -2721,6 +2721,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       out: this._agent.getMetrics().llm.totalOutputTokens,
       // 未解析工具意图累计基准：本流增量 = 终结时累计 - 本基准
       unparsed: this._agent.getMetrics().tools.unparsedToolIntentCount,
+      // 空响应兜底累计基准：同 unparsed 口径（内核计数器累计，流尾取 diff 得本轮增量）
+      emptyResp: this._agent.getMetrics().llm.emptyResponseCount,
     };
     // 过程事件缓冲 + 单形态投影：流式期间攒内存、逐条 post process_event，
     // 流结束按 turn roundId 分组附到各 Round.processEvents 落盘。
@@ -3048,6 +3050,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         unparsedToolIntentCount: Math.max(
           0,
           this._agent.getMetrics().tools.unparsedToolIntentCount - metricsBefore.unparsed,
+        ),
+        // 空响应兜底增量：正文是兜底文案而非模型产出——同族诚实信号，展示层合成「不算成功收尾」
+        emptyResponseCount: Math.max(
+          0,
+          this._agent.getMetrics().llm.emptyResponseCount - metricsBefore.emptyResp,
         ),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });

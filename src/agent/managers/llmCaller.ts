@@ -17,7 +17,7 @@
  */
 
 import type { LlmProvider, Message, ChatOptions } from '@/llm/provider.js';
-import type { ProviderRouter, TaskType } from '@/llm/types.js';
+import type { ProviderRouter, TaskType, LlmChunk } from '@/llm/types.js';
 import type { AgentChunk, TextChunkStage } from '@/agent/types.js';
 import type { ITracer } from '@/agent/tracer.js';
 import { NOOP_TRACER, TRACE_SPANS } from '@/agent/tracer.js';
@@ -95,6 +95,16 @@ export interface LlmCallResult {
    * 纯文本闭环（正文即最终交付）与工具闭环内延迟分类路径（未 yield）恒为空串。
    */
   streamedText: string;
+  /**
+   * 末次 chat 尝试回传的 finish_reason（诊断分型证据）。
+   * `'length'` = 输出预算截断（思考/生成吃满上限），loop 据此把空响应判「截断型」；
+   * 中转不回传则 undefined = 按「瞬态型」降级（降级不劣化，维持现状文案）。
+   */
+  finishReason?: LlmChunk['finishReason'];
+  /** 末次 chat 尝试的 thinking 字符数（reasoning_content 增量累计；无思考模型恒 0。重试重置，取末次口径） */
+  thinkingChars: number;
+  /** 收场前的 chat 尝试总数（1 = 首试即收场；空响应重试累加。重试属同一步内的多次尝试，非多个 step） */
+  attempts: number;
 }
 
 /**
@@ -177,6 +187,12 @@ export class LlmCaller {
     let textStreamed = false;
     /** 回抽：已流式 yield 进正文的原文（供工具轮撤回；见 LlmCallResult.streamedText） */
     let streamedText = '';
+    /** 末次 chat 尝试的 finish_reason（诊断分型证据：'length' = 输出预算截断） */
+    let finishReason: LlmChunk['finishReason'] = undefined;
+    /** 末次 chat 尝试的 thinking 字符数（诊断证据：截断型常伴随思考吃满输出预算） */
+    let thinkingChars = 0;
+    /** 实际进行过的 chat 尝试计数（attempt 为 for 作用域变量、出循环不可见；此计数器全程可读） */
+    let attemptsMade = 0;
     // 消息级延迟分类：本闭环已执行过工具（toolExecutedThisTurn）后，
     // 后续 LLM 消息的文本整段缓冲到消息结束再分类——工具轮 → narrate（含信号前全文），
     // 纯文本 → 由路由补发 text。单轮问答/首轮（无工具史）保持逐字流式，不受影响。
@@ -247,6 +263,9 @@ export class LlmCaller {
         pendingNarrate = '';
         streamedText = '';
         isToolCallTurn = false;
+        // 诊断证据同口径重置：finishReason/thinkingChars 取末次尝试值（与结果路由读到的收场同源）
+        finishReason = undefined;
+        thinkingChars = 0;
         if (signal?.aborted) {
           aborted = true;
           break;
@@ -254,6 +273,7 @@ export class LlmCaller {
       }
 
       try {
+        attemptsMade++;
         metrics.llmCallCount++;
         metrics.totalInputTokens += contextManager.estimateTokens(safeMessages);
 
@@ -271,6 +291,10 @@ export class LlmCaller {
             llmSpan.setAttribute('actualInputTokens', chunk.usage.inputTokens);
             llmSpan.setAttribute('actualOutputTokens', chunk.usage.outputTokens);
           }
+          // 诊断证据采集（末次口径）：finish_reason 随尾 chunk 回传（末条覆盖为准），
+          // thinking 字符数按增量累计——空响应分型（截断/瞬态）的裁决依据
+          if (chunk.finishReason) finishReason = chunk.finishReason;
+          if (chunk.thought) thinkingChars += chunk.thought.length;
           if (chunk.content) {
             fullContent += chunk.content;
             // 文本通道剥离：① 工具闭环内消息整段缓冲（deferTextToMessageEnd）；
@@ -374,6 +398,9 @@ export class LlmCaller {
               toolCalls: undefined,
               aborted: false,
               textStreamed,
+              finishReason,
+              thinkingChars,
+              attempts: attemptsMade,
             };
           }
           llmSpan.recordException(e);
@@ -393,6 +420,9 @@ export class LlmCaller {
               toolCalls: undefined,
               aborted: false,
               textStreamed,
+              finishReason,
+              thinkingChars,
+              attempts: attemptsMade,
             };
           }
           llmSpan.recordException(e);
@@ -405,11 +435,31 @@ export class LlmCaller {
 
     if (aborted) {
       llmSpan.end();
-      return { fullContent, pendingNarrate, streamedText, toolCalls, aborted: true, textStreamed };
+      return {
+        fullContent,
+        pendingNarrate,
+        streamedText,
+        toolCalls,
+        aborted: true,
+        textStreamed,
+        finishReason,
+        thinkingChars,
+        attempts: attemptsMade,
+      };
     }
 
     llmSpan.end();
-    return { fullContent, pendingNarrate, streamedText, toolCalls, aborted: false, textStreamed };
+    return {
+      fullContent,
+      pendingNarrate,
+      streamedText,
+      toolCalls,
+      aborted: false,
+      textStreamed,
+      finishReason,
+      thinkingChars,
+      attempts: attemptsMade,
+    };
   }
 
   /**

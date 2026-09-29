@@ -187,6 +187,13 @@ export interface ProcessMetricsPayload {
    * 「想调用工具却未走原生协议」的诚实信号；>0 时宿主不应显示为成功收尾。
    */
   unparsedToolIntentCount?: number;
+  /**
+   * 本轮空响应兜底命中数（选填，旧数据缺省）
+   * >0 = 末段正文是兜底文案而非模型产出。与 unparsedToolIntentCount 同族「诚实信号」：
+   * 不改 success（其语义是「流程跑完没有」，空响应轮流程正常跑完），展示层据此
+   * 合成「不算成功收尾」——避免把「流程未完」与「产出不合格」两种语义压进一个布尔。
+   */
+  emptyResponseCount?: number;
 }
 
 /**
@@ -316,6 +323,16 @@ export type RoundEvidenceEvent =
       payload: {
         /** 轮内第几次 LLM 迭代（定位空响应发生在闭环什么位置） */
         iteration: number;
+        /**
+         * 末次 chat 尝试回传的 finish_reason（诊断分型证据）：'length' = 输出预算截断
+         * （截断型，思考/生成吃满上限）；中转不回传则缺省 = 按瞬态型降级裁决。
+         * 开放 string（LLM 服务端枚举可扩，消费侧只认 'length'，其余按瞬态型）
+         */
+        finishReason?: string;
+        /** 末次 chat 尝试的 thinking 字符数（reasoning_content 累计；无思考模型恒 0） */
+        thinkingChars: number;
+        /** 空响应结论前的 chat 尝试总数（1 = 首试即空；含空响应重试，重试属同一步内多次尝试） */
+        attempts: number;
       };
     }
   | {

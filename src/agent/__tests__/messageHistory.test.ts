@@ -125,7 +125,7 @@ describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
       type: 'empty_response',
       ts: new Date().toISOString(),
       meetingRound: true,
-      payload: { iteration: 1 },
+      payload: { iteration: 1, thinkingChars: 0, attempts: 3 },
     });
     await history.appendEvidence(roundId, {
       type: 'ledger_stub_echo',
@@ -150,7 +150,7 @@ describe('MessageHistory · appendEvidence（裁决证据挂载）', () => {
       type: 'empty_response',
       ts: new Date().toISOString(),
       meetingRound: false,
-      payload: { iteration: 0 },
+      payload: { iteration: 0, thinkingChars: 0, attempts: 1 },
     });
     expect(roundStore.size()).toBe(0);
   });

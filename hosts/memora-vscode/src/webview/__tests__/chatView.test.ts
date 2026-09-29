@@ -1605,6 +1605,37 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(details.textContent).toContain('完成：是');
   });
 
+  it('执行指标 · 空响应兜底诚实信号：emptyResponseCount>0 → 显示计数且不算成功收尾（success 不动）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq: 2,
+        ts: '',
+        payload: {
+          durationMs: 5000,
+          tokenIn: 100,
+          tokenOut: 33,
+          toolFailureCount: 0,
+          // 流程正常跑完（success 语义 =「流程跑完没有」），但末段正文是兜底文案而非模型产出
+          success: true,
+          emptyResponseCount: 1,
+        },
+      },
+    });
+    dispatch({ type: 'done' });
+
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const details = rb.querySelector('.round-block__details') as HTMLElement;
+    // 诚实信号可见：空响应兜底计数入指标行
+    expect(details.textContent).toContain('空响应兜底：1 次');
+    // 产出不合格 ≠ 成功收尾：展示层合成 finalSuccess=false（success 字段本身保持 true 不撒谎）
+    expect(details.textContent).toContain('完成：否（中断/失败）');
+    expect(details.textContent).not.toContain('完成：是');
+  });
+
   it('工具调用二级嵌套折叠：成功/进行中默认折叠，失败默认展开，body 含 args+result', () => {
     mountChatView();
     beginRound();

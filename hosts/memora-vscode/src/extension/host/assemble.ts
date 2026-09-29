@@ -77,6 +77,10 @@ const CHINESE_MESSAGES: UIMessages = {
   // 空响应兜底：LLM 200 但 0 token（瞬态抽风 / 模型拒绝）时，
   // 覆盖内核默认英文为中文提示；配合内核空响应重试，多数瞬态会在重试中救回、落不到这里。
   emptyResponseFallback: '模型未返回有效内容，请重试或换个说法。',
+  // 截断型分型文案（finishReason='length'：思考吃满输出预算）：带动作指引（调大输出上限），
+  // 与瞬态型区分——用户拿到的提示能指导下一步动作。attempts = 内核空响应自动重试的尝试总数。
+  emptyResponseFallbackTruncated: (attempts: number) =>
+    `模型思考过长耗尽输出预算，已自动重试 ${attempts} 次——建议调大模型输出上限`,
 };
 
 /**

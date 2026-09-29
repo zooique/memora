@@ -356,7 +356,7 @@ describe('问答闭环存储', () => {
           type: 'empty_response',
           ts: '2026-08-28T00:00:01.000Z',
           meetingRound: true,
-          payload: { iteration: 1 },
+          payload: { iteration: 1, thinkingChars: 0, attempts: 3 },
         },
         {
           type: 'ledger_stub_echo',

@@ -506,6 +506,12 @@ export class AgentLoop {
       emptyResponseFallback:
         opts.messages?.emptyResponseFallback ??
         'The model returned an empty response. Please try again or ask in a different way.',
+      // 截断型空响应分型文案（finishReason='length'：思考/生成吃满输出预算）：带动作指引，
+      // 与瞬态型文案分开展示——空响应不再一种面孔
+      emptyResponseFallbackTruncated:
+        opts.messages?.emptyResponseFallbackTruncated ??
+        ((attempts: number) =>
+          `The model's reasoning exhausted the output budget (auto-retried ${attempts} times). Consider increasing the model's max output tokens.`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
     this.onContextCompressed = opts.onContextCompressed;
@@ -1602,16 +1608,29 @@ export class AgentLoop {
       logger.warn('LLM 返回空响应（无文本、无工具调用），使用兜底提示');
       // 观测：空响应兜底命中累计——为真即用户看到兜底文案、任务零产出（success 掩盖），可量化
       this.metrics.emptyResponseCount++;
-      // 裁决证据落盘（悬案取证）：个案证据供跨会话裁决「会议空响应」——计数不落盘等于重启失忆
+      // 裁决证据落盘（悬案取证）：个案证据供跨会话裁决「会议空响应」——计数不落盘等于重启失忆。
+      // 诊断分型三字段：finishReason='length' 判截断型（思考吃满输出预算），thinkingChars/attempts
+      // 佐证定性（末次尝试口径，与收场同源）
       this.appendRoundEvidence?.({
         type: 'empty_response',
         ts: nowIso(),
         meetingRound: this.isMeetingRound(),
-        payload: { iteration },
+        payload: {
+          iteration,
+          finishReason: llmResult.finishReason,
+          thinkingChars: llmResult.thinkingChars,
+          attempts: llmResult.attempts,
+        },
       });
-      // 文案走 ui 通道（默认英文，宿主可经 messages.emptyResponseFallback 覆盖，与其它 UI 文案一致）
-      this.appendAssistantText(this.ui.emptyResponseFallback);
-      yield { type: 'text', content: this.ui.emptyResponseFallback };
+      // 文案分型：截断型给动作指引（调大输出上限），瞬态型维持重试文案；
+      // 中转不回传 finishReason → 按瞬态型降级（降级不劣化）。文案走 ui 通道
+      // （默认英文，宿主可经 messages 覆盖，与其它 UI 文案一致）
+      const fallbackText =
+        llmResult.finishReason === 'length'
+          ? this.ui.emptyResponseFallbackTruncated(llmResult.attempts)
+          : this.ui.emptyResponseFallback;
+      this.appendAssistantText(fallbackText);
+      yield { type: 'text', content: fallbackText };
     }
 
     yield { type: 'done' };

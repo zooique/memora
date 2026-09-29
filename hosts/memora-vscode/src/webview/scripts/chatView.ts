@@ -1847,12 +1847,15 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       // 未解析文本工具意图：>0 表示「想调用工具却未走原生协议」，
       // 不得显示为成功收尾——与 success 判据（流程跑完）正交，这是新增的诚实信号。
       const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
-      const finalSuccess = metrics.payload.success && unparsed === 0;
+      // 空响应兜底：>0 表示末段正文是兜底文案而非模型产出——同族诚实信号
+      const emptyResp = metrics.payload.emptyResponseCount ?? 0;
+      const finalSuccess = metrics.payload.success && unparsed === 0 && emptyResp === 0;
       const lines = [
         `耗时：${fmtDuration(metrics.payload.durationMs)}`,
         `Tokens：入 ${metrics.payload.tokenIn} / 出 ${metrics.payload.tokenOut}`,
         `工具失败：${metrics.payload.toolFailureCount} 次`,
         ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
+        ...(emptyResp > 0 ? [`空响应兜底：${emptyResp} 次`] : []),
         `完成：${finalSuccess ? '是' : '否（中断/失败）'}`,
       ];
       lines.forEach((line) => {

@@ -204,6 +204,15 @@
 - **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
 - **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
 
+### Added（内核+宿主 · 空响应诊断分型：证据三字段 + 兜底文案分型 + metrics 诚实信号）
+
+**背景（EMPTY-RESP-1 · T3）**：真机空响应轮（round-1790649685702）暴露「截断型与瞬态型混为一谈」——finishReason 流层已透传但消费端未用、兜底文案单一无诊断、metrics 把兜底轮记成 `success:true`。本条落地诊断分型（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **证据三字段**：`empty_response` 证据 payload 补 `{ finishReason, thinkingChars, attempts }`——llmCaller 逐 chunk 采集（finish_reason 末条覆盖、thinking 增量累计，重试重置取**末次尝试口径**）→ `LlmCallResult` 透传 → loop 落盘；`attempts` = 收场前 chat 尝试总数（空响应重试属**同一步内**多次尝试，step 术语红线不破）
+- **文案分型**：`UIMessages.emptyResponseFallbackTruncated(attempts)` 新键——末次 `finishReason='length'` 判截断型 →「模型思考过长耗尽输出预算，已自动重试 N 次——建议调大模型输出上限」（宿主中文覆盖，内核默认英文）；无 finishReason（中转不回传）按瞬态型降级，维持现状文案不劣化
+- **metrics 诚实信号**：`ProcessMetricsPayload.emptyResponseCount`（可选、旧数据缺省，镜像 `unparsedToolIntentCount` 模式）——**不动 `success`**（其语义是「流程跑完没有」，空响应轮正常收场；置 false 会把「流程未完」与「产出不合格」压进一个布尔）；宿主 chatPanel 流尾 diff 取本轮增量，chatView `finalSuccess` 合成 +「空响应兜底 N 次」指标行
+- **测试**：roundEvidence 2 例（瞬态/截断分型 + 末次口径 7≠15）+ llmCaller 三字段 + chatView 展示合成；变异 4 方向（分型判据 `'length'`→`'stop'` / thinkingChars 重置摘除 / `finalSuccess` 摘 `emptyResp` / 证据 payload 摘 `attempts`）各恰红 → 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2825 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **827 passed | 2 skipped**
+
 ### Added（内核 · `AgentOptions.maxTokens` 输出预算透传链 + 热切换）
 
 **背景（EMPTY-RESP-1 根治）**：推理模型 thinking 与正文共享输出预算，无显式 `max_tokens` 时 thinking 吃满服务端默认 → 正文被挤空（空响应）。本条补齐配置向根治链（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
