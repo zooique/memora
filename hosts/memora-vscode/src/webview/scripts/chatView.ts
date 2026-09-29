@@ -1849,6 +1849,8 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
       const unparsed = metrics.payload.unparsedToolIntentCount ?? 0;
       // 空响应兜底：>0 表示末段正文是兜底文案而非模型产出——同族诚实信号
       const emptyResp = metrics.payload.emptyResponseCount ?? 0;
+      // 截断救回：>0 表示本轮曾截断但被换策略重试救回——观测信号（正文是真实产出，不参与否决）
+      const truncRecover = metrics.payload.truncationRecoveryCount ?? 0;
       const finalSuccess = metrics.payload.success && unparsed === 0 && emptyResp === 0;
       const lines = [
         `耗时：${fmtDuration(metrics.payload.durationMs)}`,
@@ -1856,6 +1858,7 @@ export function createChatView({ acquireVsCodeApi, window }: ChatViewDeps): { di
         `工具失败：${metrics.payload.toolFailureCount} 次`,
         ...(unparsed > 0 ? [`未解析工具意图：${unparsed} 次`] : []),
         ...(emptyResp > 0 ? [`空响应兜底：${emptyResp} 次`] : []),
+        ...(truncRecover > 0 ? [`截断重试救回：${truncRecover} 次`] : []),
         `完成：${finalSuccess ? '是' : '否（中断/失败）'}`,
       ];
       lines.forEach((line) => {

@@ -205,7 +205,8 @@ export interface UIMessages {
    * LLM 空响应兜底提示 · 截断型生成函数（默认英文）。
    * 判据：空响应且末次尝试 finishReason='length'（思考/生成吃满输出预算）——与瞬态型
    * （无 finishReason 或非 'length'，中转不回传即降级此口径）分型展示，文案可指导动作。
-   * @param attempts 空响应结论前的 chat 尝试总数（含自动重试），供文案告知用户已重试次数
+   * @param attempts 空响应结论前的 chat 尝试总数（1 次首试 + N 次自动重试）——文案口径用
+   *   「尝试 N 次」（勿写「重试 N 次」：重试次数 = attempts - 1，写「重试」恒多报 1）
    */
   emptyResponseFallbackTruncated?: (attempts: number) => string;
 }

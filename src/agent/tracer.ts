@@ -115,6 +115,13 @@ export interface AgentMetrics {
      */
     emptyResponseCount: number;
     /**
+     * 截断救回次数：截断型空响应（finishReason='length'）换策略重试后成功产出的次数。
+     * 与 `emptyResponseCount` 互补（最终仍空 = 救回失败归彼计）：救回成功的轮正文是真实
+     * 模型产出（不影响成功收尾），但「曾发生截断」只在本计数留痕——真机验证换策略重试
+     * 效力的唯一观测面。
+     */
+    truncationRecoveryCount: number;
+    /**
      * tool_call 批次成形守卫（`auditToolCallPairing` 发送边界）实际拒发次数。
      * N>0 代表内核真拦下了坏批次（孤立 tool 消息 / 空函数名 / 重复 id / 名称超长）。
      * 与 `unparsedToolIntentCount` 互补：后者是「模型想干却没干成」（模型侧），

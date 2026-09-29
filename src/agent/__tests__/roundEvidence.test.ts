@@ -123,6 +123,29 @@ describe('AgentLoop · 裁决证据写点', () => {
     expect(chunks.some((c) => c.type === 'text' && c.content === '瞬态兜底文案')).toBe(false);
   });
 
+  it('截断型默认文案口径守卫：attempts=尝试总数（1 首试 + N 重试），文案用「尝试」不用「重试」（防 off-by-one 改回）', async () => {
+    // 不覆盖 messages → 走内核默认英文文案，锁默认实现的口径一致性
+    const loop = new AgentLoop({
+      provider: mockMultiTurnProvider([
+        [{ thought: 'abc' }],
+        [{ thought: 'abcde' }],
+        [{ thought: 'abcdefg', finishReason: 'length' }],
+      ]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn().mockResolvedValue('ok'),
+    });
+
+    const chunks = await collect(loop, '问题');
+
+    const fallback = chunks.find(
+      (c): c is Extract<AgentChunk, { type: 'text' }> => c.type === 'text',
+    )?.content;
+    // 「尝试 3 次」口径（attempts=3 = 1 首试 + 2 重试）
+    expect(fallback).toContain('after 3 attempts');
+    // 真实性守卫：禁写「retried 3 times」（重试实为 2 次，写「重试 N 次」恒多报 1）
+    expect(fallback).not.toContain('retried 3');
+  });
+
   it('会议轮判据：active 任务项声明 rolePack → meetingRound=true（操作化单点）', async () => {
     const collected: RoundEvidenceEvent[] = [];
     const loop = new AgentLoop({

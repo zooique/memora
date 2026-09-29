@@ -164,6 +164,12 @@ export const MAX_THOUGHT_PAYLOAD_LENGTH = 4000;
  *   两次折叠对 mergeProcessEvents 的 seq 去重天然幂等；
  * - **UI 流式不变**：仅落盘侧折叠（emitEvent 即时投影仍逐碎片）；重放渲染无差
  *   （webview 本就按 stepIndex 把连续碎片聚成一个折叠块，批次边界恰是其归桶边界）。
+ *
+ * ⚠️ **前提不变量（破坏即静默丢内容，见 tasks/待完成任务.md T4-FOLD-1）**：seq 幂等成立依赖
+ * 「检查点只在 step 边界触发 + 同 step 碎片在其 step_boundary 前已完整」——此时两次折叠的
+ * 批次构成恒相同。若未来检查点提前到 step 中途（心跳检查点 / 中途 flush），同一 run 的碎片
+ * 会跨两次折叠变形（首批 seq 不变但内容更长），mergeProcessEvents 按 seq 去重会**静默丢弃**
+ * 长版 = 内容丢失。届时须先改为流式有状态折叠（emit 时折、检查点只 flush）。
  */
 export function foldThoughtEvents(events: ProcessEvent[]): ProcessEvent[] {
   const out: ProcessEvent[] = [];
@@ -597,8 +603,10 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
   private buildRoundMeta(providerConfig: LlmProviderConfig | undefined): ProcessMetaPayload {
     const role = this._activeRolePack ? this.roleDisplayName(this._activeRolePack) : 'AI';
     const llm = this._activeProviderDisplayName || this._providerStore.getActiveName() || '';
-    // reasoning_effort 转达口径（与内核 llmCaller 同源）：仅策略键 multiStepReasoning='manual' 发 'low'，
-    // 其余不发送（缺省不入包）。providerKind 当前唯一适配器形态（内核工厂只产 OpenAI 兼容）
+    // reasoning_effort 转达口径（流首**配置面**快照）：仅策略键 multiStepReasoning='manual' 发 'low'，
+    // 其余不发送（缺省不入包）。⚠️ 非「实际发送面」——llmCaller 的 truncatedRetry 可在运行时置入
+    // 'low'（截断换策略，T2），流首快照天然不可见；实际发送面以截断救回计数（truncationRecoveryCount）
+    // 佐证。providerKind 当前唯一适配器形态（内核工厂只产 OpenAI 兼容）
     const reasoningMode =
       this._agent?.rolePackManager?.getActive()?.strategy.act?.multiStepReasoning;
     return {
@@ -2789,6 +2797,8 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
       unparsed: this._agent.getMetrics().tools.unparsedToolIntentCount,
       // 空响应兜底累计基准：同 unparsed 口径（内核计数器累计，流尾取 diff 得本轮增量）
       emptyResp: this._agent.getMetrics().llm.emptyResponseCount,
+      // 截断救回累计基准：同上口径（换策略重试救回的观测面，验证 T2 真机效力靠它）
+      truncRecover: this._agent.getMetrics().llm.truncationRecoveryCount,
     };
     // 过程事件缓冲 + 单形态投影：流式期间攒内存、逐条 post process_event，
     // 流结束按 turn roundId 分组附到各 Round.processEvents 落盘。
@@ -3119,6 +3129,11 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         emptyResponseCount: Math.max(
           0,
           this._agent.getMetrics().llm.emptyResponseCount - metricsBefore.emptyResp,
+        ),
+        // 截断救回增量：曾截断但换策略重试救回——正文是真实产出（不影响成功收尾），仅观测留痕
+        truncationRecoveryCount: Math.max(
+          0,
+          this._agent.getMetrics().llm.truncationRecoveryCount - metricsBefore.truncRecover,
         ),
         success: !controller.signal.aborted && !pausedOnPurpose,
       });

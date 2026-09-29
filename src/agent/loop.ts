@@ -511,7 +511,7 @@ export class AgentLoop {
       emptyResponseFallbackTruncated:
         opts.messages?.emptyResponseFallbackTruncated ??
         ((attempts: number) =>
-          `The model's reasoning exhausted the output budget (auto-retried ${attempts} times). Consider increasing the model's max output tokens.`),
+          `The model's reasoning exhausted the output budget (empty after ${attempts} attempts). Consider increasing the model's max output tokens.`),
     };
     this.enableContextSummary = opts.enableContextSummary ?? true;
     this.onContextCompressed = opts.onContextCompressed;
@@ -2514,6 +2514,7 @@ export class AgentLoop {
         actualInputTokens: this.metrics.actualInputTokens,
         actualOutputTokens: this.metrics.actualOutputTokens,
         emptyResponseCount: this.metrics.emptyResponseCount,
+        truncationRecoveryCount: this.metrics.truncationRecoveryCount,
         pairingGuardFires: this.metrics.llmPairingGuardFires,
       },
       tools: {

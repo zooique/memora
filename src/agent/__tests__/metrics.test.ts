@@ -468,6 +468,8 @@ describe('AgentMetrics · 类型结构', () => {
     expect(metrics.llm).toHaveProperty('totalOutputTokens');
     expect(metrics.llm).toHaveProperty('actualInputTokens');
     expect(metrics.llm).toHaveProperty('actualOutputTokens');
+    expect(metrics.llm).toHaveProperty('emptyResponseCount');
+    expect(metrics.llm).toHaveProperty('truncationRecoveryCount');
 
     // 验证 tools 维度字段
     expect(metrics.tools).toHaveProperty('callCount');
@@ -660,5 +662,16 @@ describe('AgentLoop · 配对守卫计数出闸（僵尸声明消缺）', () => 
     // 而「计数会不会递增」另有 llmCaller.test.ts 守住。补源码扫描守卫可覆盖该形态，
     // 但会锚定代码书写格式（格式微调即误红），性价比低，故登记缺口而非加固。
     expect(loop.getMetrics().llm.pairingGuardFires).toBe(0);
+  });
+
+  it('getMetrics().llm 必须带 truncationRecoveryCount —— 截断救回计数不出闸则 T2 真机效力不可验', () => {
+    const loop = new AgentLoop({
+      provider: mockProvider([]),
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+    });
+    // 职责分工同上：递增行为由 llmCaller.test.ts「截断救回计数」用例守住，此处只守出闸。
+    // 变异验证：删掉出闸行 → tsc(TS2741) 与本用例双重变红。
+    expect(loop.getMetrics().llm.truncationRecoveryCount).toBe(0);
   });
 });

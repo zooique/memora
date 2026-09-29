@@ -379,6 +379,13 @@ export class LlmCaller {
           }
           continue;
         }
+        // 截断救回计数（诚实信号族，镜像 emptyResponseCount）：曾判截断换策略、本次收场非空
+        // = 双轨救回成功——救回轮正文是真实产出（不影响成功收尾），但「曾发生截断」只在此留痕
+        // （empty_response 证据只在最终仍空时落）。每 call 恒 ≤1（粘性标记单调，成功即收场）。
+        // 早退路径（degrade 降级文案 / 抛错 / aborted）不经此点，不计入——降级文本非模型产出。
+        if (truncatedRetry && !isEmptyResponse) {
+          metrics.truncationRecoveryCount++;
+        }
         break;
       } catch (err) {
         const e = toError(err);

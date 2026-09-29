@@ -1939,6 +1939,7 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
           actualInputTokens: 0,
           actualOutputTokens: 0,
           emptyResponseCount: 0,
+          truncationRecoveryCount: 0,
           pairingGuardFires: 0,
         },
         tools: {

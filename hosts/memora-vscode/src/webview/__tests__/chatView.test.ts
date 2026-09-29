@@ -1636,6 +1636,61 @@ describe('chatView 过程事件单形态（round-block，v1.5 SSOT 渲染收敛�
     expect(details.textContent).not.toContain('完成：是');
   });
 
+  it('执行指标 · 截断救回观测信号：truncationRecoveryCount>0 → 显示计数且不否决成功收尾（正文是真实产出）', () => {
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq: 2,
+        ts: '',
+        payload: {
+          durationMs: 5000,
+          tokenIn: 100,
+          tokenOut: 200,
+          toolFailureCount: 0,
+          // 曾截断但换策略重试救回：正文是真实模型产出——观测留痕，不参与成功否决
+          success: true,
+          truncationRecoveryCount: 1,
+        },
+      },
+    });
+    dispatch({ type: 'done' });
+
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const details = rb.querySelector('.round-block__details') as HTMLElement;
+    // 观测信号可见：截断救回计数入指标行
+    expect(details.textContent).toContain('截断重试救回：1 次');
+    // 不否决成功收尾（与 emptyResponseCount 语义相反：救回轮正文是真实产出）
+    expect(details.textContent).toContain('完成：是');
+  });
+
+  it('执行指标 · 截断救回计数缺省（旧数据）不显示该行', () => {
+    mountChatView();
+    beginRound();
+    dispatch({
+      type: 'process_event',
+      event: {
+        type: 'metrics',
+        seq: 2,
+        ts: '',
+        payload: {
+          durationMs: 5000,
+          tokenIn: 100,
+          tokenOut: 200,
+          toolFailureCount: 0,
+          success: true,
+        },
+      },
+    });
+    dispatch({ type: 'done' });
+
+    const rb = document.querySelector('.round-block') as HTMLElement;
+    const details = rb.querySelector('.round-block__details') as HTMLElement;
+    expect(details.textContent).not.toContain('截断重试救回');
+  });
+
   it('工具调用二级嵌套折叠：成功/进行中默认折叠，失败默认展开，body 含 args+result', () => {
     mountChatView();
     beginRound();

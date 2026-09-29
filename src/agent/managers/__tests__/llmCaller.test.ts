@@ -299,9 +299,9 @@ describe('LlmCaller.callWithRetry · 截断型换策略重试', () => {
     hintCount: number;
   }
 
-  function makeDeps(provider: LlmProvider): LlmCallerDeps {
+  function makeDeps(provider: LlmProvider, metrics = new LoopMetrics()): LlmCallerDeps {
     return {
-      metrics: new LoopMetrics(),
+      metrics,
       getStrategy: () => ({
         errorHandling: 'retry',
         multiStepReasoning: 'auto',
@@ -349,7 +349,8 @@ describe('LlmCaller.callWithRetry · 截断型换策略重试', () => {
         yield { content: '第二次有正文' };
       },
     } as unknown as LlmProvider;
-    const caller = new LlmCaller(makeDeps(provider));
+    const metrics = new LoopMetrics();
+    const caller = new LlmCaller(makeDeps(provider, metrics));
 
     const { result } = await runCall(caller);
 
@@ -360,6 +361,8 @@ describe('LlmCaller.callWithRetry · 截断型换策略重试', () => {
     expect(seen[0]).toEqual({ effort: undefined, hintCount: 0 });
     // 第 2 次尝试：双轨齐备（reasoning_effort 增强 + 提示保底）
     expect(seen[1]).toEqual({ effort: 'low', hintCount: 1 });
+    // 截断救回计数：曾判截断 + 收场非空 = 救回 +1（真机验证 T2 效力的观测面）
+    expect(metrics.truncationRecoveryCount).toBe(1);
   });
 
   it('截断型连空：策略粘性 + 提示一次性——第 3 次尝试仍降思考且提示不堆叠', async () => {
@@ -390,6 +393,68 @@ describe('LlmCaller.callWithRetry · 截断型换策略重试', () => {
     // 一次性：纠正提示恒 1 条，不随重试堆叠
     expect(seen[2]?.hintCount).toBe(1);
     // 瞬态型不动策略的对照由「空响应重试」describe 既有用例锁定（无 finishReason → 同参重试）
+  });
+
+  it('截断救回计数的反面：救回失败（截断连空耗尽）与瞬态型救回均不计数', async () => {
+    // ① 截断连空耗尽：每次尝试都截断空 → 最终仍空，救回失败（归 emptyResponseCount 语义，loop 侧计）
+    const alwaysTrunc: LlmProvider = {
+      name: 'always-trunc',
+      async *chat() {
+        yield { thought: 'x'.repeat(8), finishReason: 'length' };
+      },
+    } as unknown as LlmProvider;
+    const metricsA = new LoopMetrics();
+    const genA = new LlmCaller(makeDeps(alwaysTrunc, metricsA)).callWithRetry(
+      [userMsg('hi')],
+      {} as ChatOptions,
+      undefined,
+      1,
+    );
+    // 生成器游标命名避开 step 族（术语锚点 §4：新标识符不得蹭 step 载体，历史冻结不新增）
+    let cursorA = await genA.next();
+    while (!cursorA.done) cursorA = await genA.next();
+    expect((cursorA.value as LlmCallResult).fullContent).toBe('');
+    expect(metricsA.truncationRecoveryCount).toBe(0);
+
+    // ② 瞬态型（无 finishReason）空后救回：同参重试救回属瞬态纠偏，非换策略救回，不计本计数
+    let chatCalls = 0;
+    const transient: LlmProvider = {
+      name: 'transient-then-fill',
+      async *chat() {
+        chatCalls++;
+        if (chatCalls === 1) return;
+        yield { content: '瞬态救回' };
+      },
+    } as unknown as LlmProvider;
+    const metricsB = new LoopMetrics();
+    const genB = new LlmCaller(makeDeps(transient, metricsB)).callWithRetry(
+      [userMsg('hi')],
+      {} as ChatOptions,
+      undefined,
+      1,
+    );
+    let cursorB = await genB.next();
+    while (!cursorB.done) cursorB = await genB.next();
+    expect((cursorB.value as LlmCallResult).fullContent).toBe('瞬态救回');
+    expect(metricsB.truncationRecoveryCount).toBe(0);
+
+    // ③ 首试即正常产出：无截断史，不计
+    const healthy: LlmProvider = {
+      name: 'healthy',
+      async *chat() {
+        yield { content: '正常产出' };
+      },
+    } as unknown as LlmProvider;
+    const metricsC = new LoopMetrics();
+    const genC = new LlmCaller(makeDeps(healthy, metricsC)).callWithRetry(
+      [userMsg('hi')],
+      {} as ChatOptions,
+      undefined,
+      1,
+    );
+    let cursorC = await genC.next();
+    while (!cursorC.done) cursorC = await genC.next();
+    expect(metricsC.truncationRecoveryCount).toBe(0);
   });
 });
 

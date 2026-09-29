@@ -169,7 +169,8 @@ export interface ProcessMetaPayload {
   contextWindow?: number;
   /** 输出上限（token，per-LLM `maxTokens` 配置值）；未配置缺省 = 服务端默认 */
   maxTokens?: number;
-  /** 随请求发送的 reasoning_effort（'low'）；未发送缺省——派生自策略键 `multiStepReasoning='manual'`（与内核转达口径同源） */
+  /** 随请求发送的 reasoning_effort（'low'）；未发送缺省——派生自策略键 `multiStepReasoning='manual'`
+   *  （流首**配置面**快照：截断换策略的运行时置入不在本字段，以 `truncationRecoveryCount` 佐证） */
   reasoningEffort?: string;
   /** Provider 适配器形态（当前唯一形态 'openai-compatible'；前向字段——异构适配器落地时区分协议语义） */
   providerKind?: string;
@@ -203,6 +204,13 @@ export interface ProcessMetricsPayload {
    * 合成「不算成功收尾」——避免把「流程未完」与「产出不合格」两种语义压进一个布尔。
    */
   emptyResponseCount?: number;
+  /**
+   * 本轮截断救回次数（选填，旧数据缺省）
+   * >0 = 本轮曾出现截断型空响应（思考吃满输出预算）但被换策略重试救回，正文是真实模型产出。
+   * 与 emptyResponseCount 互补（后者 = 最终仍空的失败收场）：救回轮不算失败，但「曾发生截断」
+   * 只在本字段留痕——真机验证换策略重试效力的观测面（无它则救回成功轮不可辨识）。
+   */
+  truncationRecoveryCount?: number;
 }
 
 /**

@@ -78,9 +78,10 @@ const CHINESE_MESSAGES: UIMessages = {
   // 覆盖内核默认英文为中文提示；配合内核空响应重试，多数瞬态会在重试中救回、落不到这里。
   emptyResponseFallback: '模型未返回有效内容，请重试或换个说法。',
   // 截断型分型文案（finishReason='length'：思考吃满输出预算）：带动作指引（调大输出上限），
-  // 与瞬态型区分——用户拿到的提示能指导下一步动作。attempts = 内核空响应自动重试的尝试总数。
+  // 与瞬态型区分——用户拿到的提示能指导下一步动作。attempts = 内核空响应自动重试的尝试总数
+  // （1 次首试 + N 次重试）——文案用「尝试」口径，勿写「重试 N 次」（恒多报 1）。
   emptyResponseFallbackTruncated: (attempts: number) =>
-    `模型思考过长耗尽输出预算，已自动重试 ${attempts} 次——建议调大模型输出上限`,
+    `模型思考过长耗尽输出预算，已自动尝试 ${attempts} 次仍为空——建议调大模型输出上限`,
 };
 
 /**

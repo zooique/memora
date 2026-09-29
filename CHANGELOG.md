@@ -195,6 +195,15 @@
 
 ## [3.0.0] - 待发布（发版日补日期）
 
+### Added（内核+宿主 · 截断救回计数 truncationRecoveryCount：换策略重试效力的观测面 + 文案口径订正）
+
+**背景（EMPTY-RESP-R1，T1–T5 收官复审缺口）**：T2 换策略重试**成功救回**的轮落盘无任何「曾发生截断」痕迹（`empty_response` 证据只在最终仍空时落）⇒ 台账「T2 reasoning_effort 真机验证」观察项**结构上验不了**（无法从 round 文件确认救回发生过）。本条补观测面，同批捎带复审发现的文案 off-by-one 与两处注释口径漂移。
+
+- **`truncationRecoveryCount` 诚实信号**（与 `emptyResponseCount` 互补镜像）：llmCaller 空响应收场点判「曾截断换策略（`truncatedRetry`）+ 收场非空」→ 计数 +1（每 call 恒 ≤1）；早退路径（degrade 降级文案 / 抛错 / aborted）不计入——降级文本非模型产出。链路同 `emptyResponseCount` 先例：`LoopMetrics` → `AgentMetrics.llm` → `ProcessMetricsPayload`（选填、旧数据缺省）→ 宿主流尾 diff 本轮增量 → chatView「截断重试救回：N 次」指标行（**观测信号不参与成功否决**——救回轮正文是真实模型产出，与 `emptyResponseCount` 语义相反）
+- **文案 off-by-one 订正**：截断兜底文案「已自动**重试** N 次」传入的实为**尝试总数**（1 首试 + N 重试，恒多报 1）→ 中英双文案统一「尝试 N 次」口径（`empty after N attempts` / 「已自动尝试 N 次仍为空」），`UIMessages` jsdoc 钉死口径防改回
+- **注释口径订正（HOST-S11 同族注释漂移）**：meta 取证包 `reasoningEffort` 原注释「与内核 llmCaller 转达口径同源」已被 T2 打破（`'low'` 有策略键 manual / `truncatedRetry` 运行时置入**两条**发送路径，meta 只镜像配置面）→ 改述「流首**配置面**快照，实际发送面以 `truncationRecoveryCount` 佐证」（chatPanel + roundStore 两处）；`foldThoughtEvents` jsdoc 补**前提不变量**（seq 幂等依赖「检查点只在 step 边界触发」，破坏即静默丢内容——T4-FOLD-1 修法 A）
+- **测试**：llmCaller 救回计数正反面（救回 +1 / 截断耗尽·瞬态救回·正常产出均 0）+ metrics 出闸守卫（镜像 `pairingGuardFires` 先例：只自增不外露 = 僵尸计数）+ roundEvidence 默认文案口径守卫（禁写 `retried N`）+ chatView 指标行/缺省面 2 例。**变异 4 方向**（摘计数行 / 去 `truncatedRetry` 条件致瞬态误计 / 摘指标行 / 文案改回 off-by-one）各恰红 → 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2830 passed | 4 skipped**、宿主 `tsc` / `eslint` 0 / 全量 **835 passed | 2 skipped**、format 0、`terminology:check` 零漂移（测试游标命名蹭了 step 族载体被门禁拦下，改 cursor 前缀消漂移）
+
 ### Fixed（内核 · maxTokens 上限不再静默丢弃：上限不裁决，交服务端可见报错）
 
 **问题（哲学不对称 · 跨包镜像同源）**：`normalizeMaxTokens`（请求参数归一）原对 `maxTokens` 做 1–65536 区间裁决、超限**静默丢弃**（不传 `max_tokens`）——与同申请书参数 `contextWindow` 的既有裁决（`resolveContextWindow` 只做 undefined 回落默认、**不裁决区间**）不对称；且逼出宿主护栏**跨包数值复制**（宿主无法 import 内核私有常量，只能注释对齐 65536）——单侧漂移即重现「UI 显示值 ≠ 真实生效值」（护栏本要防的坑）。对第三方 npm 集成方是结构性考题：内核只要保留静默丢弃，集成方护栏无论松紧都难根治。
