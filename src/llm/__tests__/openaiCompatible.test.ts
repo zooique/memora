@@ -894,13 +894,18 @@ describe('OpenAICompatibleProvider · 请求参数边界（maxTokens/timeoutMs �
     return captured!;
   }
 
-  it('maxTokens 合法值（1~65536）应透传 max_tokens', async () => {
-    const body = await captureBody(makeProvider(), { maxTokens: 2000 });
-    expect(body['max_tokens']).toBe(2000);
+  it('maxTokens 正值应透传 max_tokens（含超 65536 大值——上限不裁决，交服务端可见报错）', async () => {
+    for (const good of [2000, 70_000, 1_000_000]) {
+      const body = await captureBody(makeProvider(), { maxTokens: good });
+      expect(body['max_tokens']).toBe(good);
+    }
+    // 小数保留向下取整（floor）语义：2000.7 → 2000
+    const floorBody = await captureBody(makeProvider(), { maxTokens: 2000.7 });
+    expect(floorBody['max_tokens']).toBe(2000);
   });
 
-  it('maxTokens 越界（>65536 / 负数 / 0 / 非数值）应忽略（不传 max_tokens）', async () => {
-    for (const bad of [70000, -5, 0, 'big' as unknown as number]) {
+  it('maxTokens 形态非法（负数 / 0 / 非数值）应忽略（不传 max_tokens，让服务端默认）', async () => {
+    for (const bad of [-5, 0, 'big' as unknown as number]) {
       const body = await captureBody(makeProvider(), { maxTokens: bad });
       expect(body['max_tokens']).toBeUndefined();
     }

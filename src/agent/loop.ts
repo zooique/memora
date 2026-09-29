@@ -136,8 +136,8 @@ export interface AgentLoopOptions {
   /**
    * per-LLM 输出预算默认值（token，宿主 per-LLM 配置透传）：buildChatOptions 填入底座，
    * 策略覆盖项（chatOptions，act.outputLimit）后 Object.assign 压过。
-   * undefined = 不传 max_tokens（回服务端默认）。区间归一在请求层（normalizeMaxTokens），
-   * 本层不裁决区间（V1 同哲学）。
+   * undefined = 不传 max_tokens（回服务端默认）。请求层只做形态归一（非正整数不传），
+   * 上限不裁决——本层与请求层均不设上限（真实上限由服务端裁决，见 normalizeMaxTokens）。
    */
   defaultMaxTokens?: number;
   /** 上下文压缩策略（微压缩层，每轮把旧 tool_result 替换为占位符省空间）；

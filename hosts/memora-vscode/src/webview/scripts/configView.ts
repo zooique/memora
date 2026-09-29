@@ -174,7 +174,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       // 上下文上限输入无法识别（NaN）由 submit 与 test 双重前置校验阻断（见 submit/test 处理器），
       // 此处 NaN 分支为类型收窄防御：正常路径下不可达（避免静默回落默认值）
       contextWindow: Number.isNaN(parsed) ? undefined : parsed,
-      // 输出上限同构（T1）：NaN 防御同 contextWindow；区间护栏在宿主 save（1–65536 对齐内核）
+      // 输出上限同构（T1）：NaN 防御同 contextWindow；区间护栏在宿主 save（1–65536 独立 sanity）
       maxTokens: Number.isNaN(parsedMaxTokens) ? undefined : parsedMaxTokens,
       provider,
       supportsToolCalling,

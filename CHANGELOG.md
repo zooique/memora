@@ -195,6 +195,15 @@
 
 ## [3.0.0] - 待发布（发版日补日期）
 
+### Fixed（内核 · maxTokens 上限不再静默丢弃：上限不裁决，交服务端可见报错）
+
+**问题（哲学不对称 · 跨包镜像同源）**：`normalizeMaxTokens`（请求参数归一）原对 `maxTokens` 做 1–65536 区间裁决、超限**静默丢弃**（不传 `max_tokens`）——与同申请书参数 `contextWindow` 的既有裁决（`resolveContextWindow` 只做 undefined 回落默认、**不裁决区间**）不对称；且逼出宿主护栏**跨包数值复制**（宿主无法 import 内核私有常量，只能注释对齐 65536）——单侧漂移即重现「UI 显示值 ≠ 真实生效值」（护栏本要防的坑）。对第三方 npm 集成方是结构性考题：内核只要保留静默丢弃，集成方护栏无论松紧都难根治。
+
+- **修法**：`normalizeMaxTokens` 只做**形态防御**（非数值 / 非有限 / <1 → undefined 不传，回服务端默认；正整数 floor 透传）；**上限不裁决**（有意为之，注释钉死「勿加回」）。超模型能力的值原样进请求体，由服务端**可见报错**——本地任何一层静默替换都造「显示 ≠ 生效」的坑（与 contextWindow 同哲学）
+- **宿主护栏定位重写（零行为变更）**：`providerStore.MAX_TOKENS_MAX = 65_536` 由「对齐内核」改述为**独立 sanity**（宿主是输入边界的唯一可见裁决点，只防手滑；真实上限由模型/API 决定）。UI 行为不变（仍 1–65536 可见拒绝）。跨包数值镜像由此消除，§7 登记不再必要
+- **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
+- **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
+
 ### Added（内核 · write_file 新增 `replace` 精确串替换 + mode 枚举双源收敛）
 
 **问题（两项）**：① `write_file` 只有 overwrite/append/insert——大文件改一处局部时，模型手上没有整份内容（读不全），只能 overwrite 全量重写硬凑、或退回大量 append/insert 拼接，token 与出错面双高；② `mode` 枚举**双源并列**：schema 描述（`builtinTools.ts`）与 handler 校验清单（`builtinToolHandlers.ts`）各写一份，漏改一处即「描述允许而校验拒绝」的静默漂移（与 TASKTABLE-NAME-1 同族）。

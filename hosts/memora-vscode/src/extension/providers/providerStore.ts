@@ -35,9 +35,10 @@ const MASK = '••••••••';
 const CONTEXT_WINDOW_MIN = 1024;
 /** contextWindow 合法上限（token）：防天文数字撑爆预算分配 */
 const CONTEXT_WINDOW_MAX = 10_000_000;
-/** maxTokens 合法下限（token）：对齐内核 normalizeMaxTokens（openaiCompatible）合法区间 */
+/** maxTokens 合法下限（token）：正整数底线（0 / 负数无 token 语义） */
 const MAX_TOKENS_MIN = 1;
-/** maxTokens 合法上限（token）：65536 对齐内核 MAX_MAX_TOKENS（覆盖现有模型 max_tokens 能力上限） */
+/** maxTokens 合法上限（token）：独立 sanity（覆盖现有模型 max_tokens 能力上限），非与内核对齐的裁决线——
+ *  真实上限由模型/API 决定，超限由服务端可见报错（内核上限不裁决，见 openaiCompatible.normalizeMaxTokens） */
 const MAX_TOKENS_MAX = 65_536;
 
 /**
@@ -199,9 +200,10 @@ export class ProviderStore {
       }
     }
 
-    // maxTokens 护栏（**对齐内核 normalizeMaxTokens 合法区间 1–65536**）：正整数 + 区间校验。
-    // 与 contextWindow 同哲学——宿主先拒收（可见报错），防「UI 显示值 ≠ 真实生效值」（坑）：
-    // 内核请求层对越界值静默丢弃（undefined → 不传，回服务端默认），唯有此护栏给出显式反馈。
+    // maxTokens 护栏（**独立 sanity bound**，与 contextWindow 同哲学）：正整数 + 区间校验。
+    // 宿主先拒收（可见报错），防「UI 显示值 ≠ 真实生效值」（坑）：内核请求层只对非正整数
+    // 静默忽略（形态防御），上限不裁决——超限值原样透传、由服务端可见报错。故本护栏是
+    // 输入边界的唯一可见裁决点，但它只防手滑；真实上限由模型/API 决定。
     if (trimmed.maxTokens !== undefined) {
       if (
         !Number.isInteger(trimmed.maxTokens) ||

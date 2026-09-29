@@ -33,19 +33,19 @@ const MAX_ERROR_BODY_LEN = 200;
 
 // ─── LLM 请求参数边界（外部注入防失控） ─────────────────
 
-/** maxTokens 上限：65536 覆盖当前所有模型 max_tokens 能力上限（独立于策略层
- *  MAX_OUTPUT_LIMIT——同值但约束不同语义，非共享常量，勿当「一致性」联动改） */
-const MAX_MAX_TOKENS = 65536;
 /** timeoutMs 上限：5 分钟，防配置超大值导致请求等待失控（下限不设，测试/调试用小值模拟超时） */
 const MAX_TIMEOUT_MS = 300_000;
 
 /**
- * 归一化 maxTokens：合法 1~MAX_MAX_TOKENS 返回原值，越界/非法返回 undefined（不传，让服务端默认）。
- * 防配置负值/零值（协议错误）或超大值（资源失控）。
+ * 归一化 maxTokens：仅做**形态防御**——正整数才透传（向下取整），零/负/非数值返回 undefined
+ * （不传，让服务端默认）。
+ * **上限不裁决**（有意为之，勿加回）：真实上限由模型/服务端决定，超限值原样透传、由服务端
+ * 可见报错——本地任何一层静默丢弃都会造出「UI 显示值 ≠ 真实生效值」的坑（同一裁决见
+ * contextWindow：宿主护栏是输入边界的唯一可见裁决点，内核只防形态）。
  */
 function normalizeMaxTokens(value: number | undefined): number | undefined {
   if (typeof value !== 'number' || !Number.isFinite(value)) return undefined;
-  if (value < 1 || value > MAX_MAX_TOKENS) return undefined;
+  if (value < 1) return undefined;
   return Math.floor(value);
 }
 
@@ -110,7 +110,7 @@ export class OpenAICompatibleProvider extends LlmProvider {
       opts.timeoutMs,
       OpenAICompatibleProvider.DEFAULT_TIMEOUT_MS,
     );
-    // maxTokens 边界归一：合法 1~MAX_MAX_TOKENS 才透传，越界/非法忽略（让服务端默认）
+    // maxTokens 形态归一：正整数透传（零/负/非数值忽略，让服务端默认）；上限不裁决（超限原样发，服务端可见报错）
     const maxTokens = normalizeMaxTokens(opts.maxTokens);
 
     const body: Record<string, unknown> = {

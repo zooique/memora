@@ -103,7 +103,7 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
     },
   );
 
-  // ─── maxTokens 输出上限护栏（T1 / EMPTY-RESP-1，对齐内核 normalizeMaxTokens 1–65536） ───
+  // ─── maxTokens 输出上限护栏（T1 / EMPTY-RESP-1，宿主独立 sanity 1–65536，非与内核对齐） ───
 
   it('save：合法 maxTokens（65536）→ ok 且持久化保留该字段', async () => {
     const res = await store.save(

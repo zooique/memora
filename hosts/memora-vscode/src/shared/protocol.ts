@@ -68,7 +68,7 @@ export interface LlmProviderConfig {
    * 服务端默认上限不可见、不可控，thinking 吃满默认值 → 正文被挤空（空响应）。
    * 配置面板「输出上限 (K)」填写（K = ×1000 口径，如输入 64 = 64,000 tokens），随请求体透传 max_tokens。
    * 未填（undefined）→ 内核不传（回服务端默认，盲区语义与 contextWindow 同构）。
-   * 护栏 = 宿主 save 校验 1–65536（对齐内核 normalizeMaxTokens 合法区间）；
+   * 护栏 = 宿主 save 校验 1–65536（独立 sanity，非与内核对齐——内核上限不裁决，超限透传由服务端可见报错）；
    * 角色包策略 act.outputLimit 可压过本值（内核 buildChatOptions 优先级）。
    */
   maxTokens?: number;

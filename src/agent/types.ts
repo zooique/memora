@@ -518,8 +518,9 @@ export interface AgentOptions {
    * thinking 吃满服务端默认上限会把正文挤空（空响应）——显式配置消除盲区。
    * undefined = 不传（回服务端默认，盲区语义与 contextWindow 同构）。
    * 优先级：角色包策略 act.outputLimit > 本值 > 服务端默认（buildChatOptions 先填本值、
-   * 策略覆盖项后 Object.assign 压过）。区间归一在请求层（openaiCompatible.normalizeMaxTokens：
-   * 1–65536 之外不传），内核不裁决区间（V1 同哲学）。
+   * 策略覆盖项后 Object.assign 压过）。请求层只做形态归一（openaiCompatible.normalizeMaxTokens：
+   * 非正整数不传）；上限不裁决——超模型能力的值原样透传、由服务端可见报错，不被内核静默替换
+   * （与 contextWindow 同哲学：集成方 UI 护栏是输入边界的唯一可见裁决点）。
    */
   maxTokens?: number;
   /** 安全权限 */
