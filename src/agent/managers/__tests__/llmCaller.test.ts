@@ -287,6 +287,112 @@ describe('LlmCaller.callWithRetry · 空响应重试', () => {
   });
 });
 
+// ─── 截断型换策略重试（T2）───
+
+describe('LlmCaller.callWithRetry · 截断型换策略重试', () => {
+  /** 纠正提示识别片段（TRUNCATION_RECOVERY_HINT 的稳定子串） */
+  const HINT_FRAGMENT = '因思考耗尽输出预算被截断';
+
+  /** 记录每次 chat 尝试收到的策略面（降思考 + 提示） */
+  interface StrategySeen {
+    effort: string | undefined;
+    hintCount: number;
+  }
+
+  function makeDeps(provider: LlmProvider): LlmCallerDeps {
+    return {
+      metrics: new LoopMetrics(),
+      getStrategy: () => ({
+        errorHandling: 'retry',
+        multiStepReasoning: 'auto',
+        providerRouting: 'fixed',
+      }),
+      getProvider: () => provider,
+      getProviderRouter: () => undefined,
+      getCachedProvider: () => undefined,
+      setCachedProvider: () => {},
+      contextManager: { estimateTokens: () => 0 },
+      tracer: NOOP_TRACER,
+      hasToolExecutedThisTurn: () => false,
+    };
+  }
+
+  /** 采集本次调用各次尝试的策略面 + 手动收尾取 LlmCallResult */
+  async function runCall(
+    caller: LlmCaller,
+  ): Promise<{ result: LlmCallResult; chunks: AgentChunk[] }> {
+    const gen = caller.callWithRetry([userMsg('hi')], {} as ChatOptions, undefined, 1);
+    const chunks: AgentChunk[] = [];
+    let step = await gen.next();
+    while (!step.done) {
+      chunks.push(step.value as AgentChunk);
+      step = await gen.next();
+    }
+    return { result: step.value as LlmCallResult, chunks };
+  }
+
+  it('截断型空响应 → 换策略重试：第 2 次尝试带 reasoning_effort=low + 一次性纠正提示，救回正文', async () => {
+    const seen: StrategySeen[] = [];
+    let chatCalls = 0;
+    // 模型行为与策略面耦合：双轨齐备才「直接给结论」救回正文；否则再次截断空——
+    // 变异验证（去策略任一轨）即表现为「重试仍空」，恰红
+    const provider: LlmProvider = {
+      name: 'trunc-then-fill',
+      async *chat(messages: Message[], opts: ChatOptions) {
+        chatCalls++;
+        const hintCount = messages.filter((m) => String(m.content).includes(HINT_FRAGMENT)).length;
+        seen.push({ effort: opts.reasoning_effort, hintCount });
+        if (!(opts.reasoning_effort === 'low' && hintCount === 1)) {
+          yield { thought: 'x'.repeat(8), finishReason: 'length' };
+          return;
+        }
+        yield { content: '第二次有正文' };
+      },
+    } as unknown as LlmProvider;
+    const caller = new LlmCaller(makeDeps(provider));
+
+    const { result } = await runCall(caller);
+
+    expect(result.fullContent).toBe('第二次有正文');
+    expect(chatCalls).toBe(2);
+    expect(result.attempts).toBe(2);
+    // 首试：策略未生效（截断未判，无降思考、无提示）
+    expect(seen[0]).toEqual({ effort: undefined, hintCount: 0 });
+    // 第 2 次尝试：双轨齐备（reasoning_effort 增强 + 提示保底）
+    expect(seen[1]).toEqual({ effort: 'low', hintCount: 1 });
+  });
+
+  it('截断型连空：策略粘性 + 提示一次性——第 3 次尝试仍降思考且提示不堆叠', async () => {
+    const seen: StrategySeen[] = [];
+    let chatCalls = 0;
+    const provider: LlmProvider = {
+      name: 'trunc-twice-then-fill',
+      async *chat(messages: Message[], opts: ChatOptions) {
+        chatCalls++;
+        const hintCount = messages.filter((m) => String(m.content).includes(HINT_FRAGMENT)).length;
+        seen.push({ effort: opts.reasoning_effort, hintCount });
+        if (chatCalls <= 2) {
+          yield { thought: 'x'.repeat(8), finishReason: 'length' };
+          return;
+        }
+        yield { content: '第三次救回' };
+      },
+    } as unknown as LlmProvider;
+    const caller = new LlmCaller(makeDeps(provider));
+
+    const { result } = await runCall(caller);
+
+    expect(result.fullContent).toBe('第三次救回');
+    expect(result.attempts).toBe(3);
+    // 粘性：判截断后后续尝试全程降推理深度
+    expect(seen[1]?.effort).toBe('low');
+    expect(seen[2]?.effort).toBe('low');
+    // 一次性：纠正提示恒 1 条，不随重试堆叠
+    expect(seen[2]?.hintCount).toBe(1);
+    // 瞬态型不动策略的对照由「空响应重试」describe 既有用例锁定（无 finishReason → 同参重试）
+  });
+});
+
 // ─── 发送边界守卫（TOOLPAIR-2 Step 2）───
 
 describe('LlmCaller.callWithRetry · 发送边界守卫', () => {

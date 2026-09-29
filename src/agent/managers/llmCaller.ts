@@ -36,6 +36,12 @@ export interface TokenEstimator {
 }
 
 /**
+ * 截断型空响应的换策略纠正提示（一次性注入消息尾）：模型面向的协议级指令，
+ * 与 degrade 降级文案同为内联中文常量——非 UI 文案，不进 UIMessages（宿主可覆盖面不膨胀）。
+ */
+const TRUNCATION_RECOVERY_HINT = '上一次回复因思考耗尽输出预算被截断，请直接给出结论或工具调用';
+
+/**
  * 多模型路由所需的 loop 侧能力子集。
  * 全部为**取值器 / 回调**而非值快照——保证热切换（`setProvider` / `setStrategy`）即时生效。
  */
@@ -193,6 +199,8 @@ export class LlmCaller {
     let thinkingChars = 0;
     /** 实际进行过的 chat 尝试计数（attempt 为 for 作用域变量、出循环不可见；此计数器全程可读） */
     let attemptsMade = 0;
+    /** 截断型换策略标记（粘性）：空响应且 finish_reason='length' 后置真，后续尝试全程降推理深度 + 携带纠正提示 */
+    let truncatedRetry = false;
     // 消息级延迟分类：本闭环已执行过工具（toolExecutedThisTurn）后，
     // 后续 LLM 消息的文本整段缓冲到消息结束再分类——工具轮 → narrate（含信号前全文），
     // 纯文本 → 由路由补发 text。单轮问答/首轮（无工具史）保持逐字流式，不受影响。
@@ -277,8 +285,16 @@ export class LlmCaller {
         metrics.llmCallCount++;
         metrics.totalInputTokens += contextManager.estimateTokens(safeMessages);
 
-        // [..safeMessages] 浅拷贝为可变数组，避免类型断言（readonly → 可变）
-        for await (const chunk of effectiveProvider.chat([...safeMessages], effectiveOpts)) {
+        // 截断型换策略（双轨，方案 T2）：①降推理深度已在下方 empty 分支随 truncatedRetry 置入
+        // effectiveOpts.reasoning_effort='low'（复用 multiStepReasoning='manual' 既有转达通道，
+        // provider 支持才生效）；②纠正提示注入消息尾（提示保底——reasoning_effort 被中转无视
+        // 也不劣化，模型仍收到「直接给结论或工具调用」的指令）。**每请求恰一条**：requestMessages
+        // 每次从 safeMessages 重建、提示不进历史，多轮重试恒 1 条（一次性 = 不堆叠，非只注首次）。
+        const requestMessages: Message[] = [...safeMessages]; // 浅拷贝为可变数组，避免类型断言（readonly → 可变）
+        if (truncatedRetry) {
+          requestMessages.push({ role: 'system', content: TRUNCATION_RECOVERY_HINT });
+        }
+        for await (const chunk of effectiveProvider.chat(requestMessages, effectiveOpts)) {
           streamStarted = true;
           if (signal?.aborted) {
             aborted = true;
@@ -354,6 +370,13 @@ export class LlmCaller {
           (!toolCalls || toolCalls.length === 0);
         if (isEmptyResponse && attempt < LOOP_CONSTANTS.MAX_LLM_RETRIES) {
           lastError = new Error('LLM 返回空响应');
+          // 截断型判定（末次 finish_reason）：'length' = 思考/生成吃满输出预算——同参重试必再炸
+          // （真机 3 连空实证），换策略重试（双轨见上方 requestMessages 注释），粘性至收场；
+          // 无 finishReason（中转不回传）= 瞬态型 → 维持同参重试（降级不劣化）
+          if (finishReason === 'length') {
+            truncatedRetry = true;
+            effectiveOpts.reasoning_effort = 'low';
+          }
           continue;
         }
         break;

@@ -204,6 +204,14 @@
 - **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
 - **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
 
+### Added（内核 · 截断型空响应换策略重试：降思考 + 纠正提示双轨）
+
+**背景（EMPTY-RESP-1 · T2）**：同参重试对确定性截断无效（真机 3 连空、5 分钟白烧）——thinking 吃满输出预算后原参重发必然再炸。本条让截断型在**迭代内部**被救回（依赖 T3 的 finishReason 消费约定；排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **截断判定**：llmCaller 空响应分支消费末次 `finishReason='length'` = 截断型 → 换策略重试（粘性至收场）；无 finishReason（中转不回传）= 瞬态型 → 维持同参重试（降级不劣化）
+- **双轨策略**：① `effectiveOpts.reasoning_effort='low'`（复用 `multiStepReasoning='manual'` 既有转达通道，provider 支持才生效）；② 纠正提示「上一次回复因思考耗尽输出预算被截断，请直接给出结论或工具调用」注入消息尾（`TRUNCATION_RECOVERY_HINT` 内联常量——协议级模型指令，非 UI 文案不进 UIMessages）——**每请求恰一条**：requestMessages 每次从 safeMessages 重建、提示不进历史，多轮重试恒 1 条（一次性 = 不堆叠，非只注首次）
+- **测试**：2 例（换策略救回 + 双轨断言 / 粘性 + 恒 1 条不堆叠），mock 救回行为与双轨耦合——变异 2 方向（判定 `'length'`→`'stop'` / 摘提示注入）各恰红（「去策略则仍空」实证）→ 恢复复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2827 passed | 4 skipped**（宿主零改动，沿用上批 827）
+
 ### Added（内核+宿主 · 空响应诊断分型：证据三字段 + 兜底文案分型 + metrics 诚实信号）
 
 **背景（EMPTY-RESP-1 · T3）**：真机空响应轮（round-1790649685702）暴露「截断型与瞬态型混为一谈」——finishReason 流层已透传但消费端未用、兜底文案单一无诊断、metrics 把兜底轮记成 `success:true`。本条落地诊断分型（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
