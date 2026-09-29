@@ -210,7 +210,7 @@ export class ProviderStore {
       ) {
         return {
           ok: false,
-          message: `输出上限需为 ${MAX_TOKENS_MIN}–${MAX_TOKENS_MAX} 之间的整数 token（K 单位 ≤64）`,
+          message: `输出上限需为 ${MAX_TOKENS_MIN}–${MAX_TOKENS_MAX} 之间的整数 token`,
         };
       }
     }
