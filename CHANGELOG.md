@@ -204,6 +204,15 @@
 - **验证（变异双端）**：上限裁决加回 → 恰 1 红（70_000 被吞）；形态防御去掉 → 恰 1 红（-5 透传）；均还原复绿。门禁：内核 `typecheck` / `eslint` 0 / 全量 **2824 passed | 4 skipped**；宿主 `typecheck` / `eslint` 0 / 全量 **826 passed | 2 skipped**
 - **文档清算**：`tasks/审查-空响应根因排雷与优化方案-20260929.md` §五 T1 行与「依赖与边界」两处过时表述修订（原文「护栏对齐 normalizeMaxTokens / 越界→undefined」已不成立）
 
+### Added（内核 · `AgentOptions.maxTokens` 输出预算透传链 + 热切换）
+
+**背景（EMPTY-RESP-1 根治）**：推理模型 thinking 与正文共享输出预算，无显式 `max_tokens` 时 thinking 吃满服务端默认 → 正文被挤空（空响应）。本条补齐配置向根治链（排雷与方案见 `tasks/审查-空响应根因排雷与优化方案-20260929.md`）。
+
+- **内核**：`AgentOptions` 新增 `maxTokens` → assembler 解构 → loop 持有 `defaultMaxTokens` → `buildChatOptions` 填底座（角色包 `chatOptions` 可覆盖，优先级：角色包 > per-LLM 默认）；`setMaxTokens` 热切换配套
+- **宿主**：配置面板新增「输出上限 (K)」（K = ×1000 口径，`TOKENS_PER_K` 单一真理源；厂商口径自相矛盾——gpt-4o 同卡混用 128,000/16,384、Claude 3.7 输出上限 64,000 十进制——按误差方向安全性裁决：×1000 低估优雅降级、×1024 高估有 400 硬风险）→ `LlmProviderConfig.maxTokens` → assemble → AgentOptions；providerStore 护栏 + chatPanel 热同步
+- **请求层归一**：`normalizeMaxTokens` 唯一收口；**归一语义后经上方 Fixed 条（2026-09-29）收敛**——只做形态防御、上限不裁决（本条落地时的 1–65536 越界裁决不再保留）
+- **测试**：内核 loop 新增 4 例 + 变异验证（摘注入 → 恰红 → 恢复复绿）；宿主 configView / settingsView / providerStore 全绿；两侧 `tsc` / `eslint` 0 错
+
 ### Added（内核 · write_file 新增 `replace` 精确串替换 + mode 枚举双源收敛）
 
 **问题（两项）**：① `write_file` 只有 overwrite/append/insert——大文件改一处局部时，模型手上没有整份内容（读不全），只能 overwrite 全量重写硬凑、或退回大量 append/insert 拼接，token 与出错面双高；② `mode` 枚举**双源并列**：schema 描述（`builtinTools.ts`）与 handler 校验清单（`builtinToolHandlers.ts`）各写一份，漏改一处即「描述允许而校验拒绝」的静默漂移（与 TASKTABLE-NAME-1 同族）。
