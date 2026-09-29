@@ -9,7 +9,7 @@ import { join } from 'node:path';
 import { AgentLoop } from '@/agent/loop.js';
 import { ResultReplacementStrategy } from '@/agent/compaction.js';
 import type { AgentChunk } from '@/agent/types.js';
-import type { LlmProvider, Message } from '@/llm/provider.js';
+import type { ChatOptions, LlmProvider, Message } from '@/llm/provider.js';
 import type { Memory } from '@/memory/types.js';
 import { TRACE_SPANS, type ISpan, type ITracer } from '@/agent/tracer.js';
 import * as hashModule from '@/utils/hash.js';
@@ -74,6 +74,97 @@ function mockMultiTurnProvider(turns: ChunkItem[][]): LlmProvider {
     },
   } as unknown as LlmProvider;
 }
+
+/**
+ * 捕获 chat() 调用参数的 Provider（T1：断言 maxTokens 注入链）
+ *
+ * 每次 chat() 把 opts 推入 chats 数组（undefined 也推），供断言请求参数。
+ */
+function capturingProvider(chunks: ChunkItem[]): {
+  provider: LlmProvider;
+  chats: Array<ChatOptions | undefined>;
+} {
+  const chats: Array<ChatOptions | undefined> = [];
+  const provider = {
+    name: 'mock',
+    async *chat(_messages: Message[], opts?: ChatOptions) {
+      chats.push(opts);
+      for (const chunk of chunks) {
+        yield chunk;
+      }
+    },
+  } as unknown as LlmProvider;
+  return { provider, chats };
+}
+
+describe('AgentLoop · per-LLM 输出预算（defaultMaxTokens，T1 / EMPTY-RESP-1）', () => {
+  it('defaultMaxTokens 注入 → chat opts 携带 maxTokens（请求体 max_tokens 唯一注入口）', async () => {
+    const { provider, chats } = capturingProvider([{ content: '回复' }]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      defaultMaxTokens: 4096,
+    });
+
+    for await (const {} of loop.processUserInput('你好')) {
+      // drain
+    }
+
+    expect(chats.length).toBeGreaterThan(0);
+    expect(chats[0]?.maxTokens).toBe(4096);
+  });
+
+  it('角色包策略覆盖项（chatOptions.maxTokens）压过 per-LLM 默认（优先级：角色包 > per-LLM）', async () => {
+    const { provider, chats } = capturingProvider([{ content: '回复' }]);
+    const loop = new AgentLoop({
+      provider,
+      bootstrapMemories: [],
+      toolExecutor: vi.fn(),
+      defaultMaxTokens: 4096,
+      chatOptions: { maxTokens: 1024 },
+    });
+
+    for await (const {} of loop.processUserInput('你好')) {
+      // drain
+    }
+
+    expect(chats[0]?.maxTokens).toBe(1024);
+  });
+
+  it('未配置 defaultMaxTokens → opts 无 maxTokens（不传，回服务端默认，盲区语义与 contextWindow 同构）', async () => {
+    const { provider, chats } = capturingProvider([{ content: '回复' }]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn() });
+
+    for await (const {} of loop.processUserInput('你好')) {
+      // drain
+    }
+
+    expect(chats[0]).toBeDefined();
+    expect(chats[0]?.maxTokens).toBeUndefined();
+  });
+
+  it('setDefaultMaxTokens 运行时更新 → 下一轮即用新值；undefined 清除（Provider 热切换配套）', async () => {
+    const { provider, chats } = capturingProvider([{ content: '回复' }]);
+    const loop = new AgentLoop({ provider, bootstrapMemories: [], toolExecutor: vi.fn() });
+
+    for await (const {} of loop.processUserInput('第一轮')) {
+      // drain
+    }
+    loop.setDefaultMaxTokens(2048);
+    for await (const {} of loop.processUserInput('第二轮')) {
+      // drain
+    }
+    loop.setDefaultMaxTokens(undefined);
+    for await (const {} of loop.processUserInput('第三轮')) {
+      // drain
+    }
+
+    expect(chats[0]?.maxTokens).toBeUndefined();
+    expect(chats[1]?.maxTokens).toBe(2048);
+    expect(chats[2]?.maxTokens).toBeUndefined();
+  });
+});
 
 describe('AgentLoop · 构造函数', () => {
   it('应该用 bootstrapMemories 构建 system prompt', () => {

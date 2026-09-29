@@ -45,6 +45,8 @@ const HTML = `
           </div>
           <input id="f-contextwindow" type="text" />
           <div id="f-contextwindow-feedback" hidden></div>
+          <input id="f-maxtokens" type="text" />
+          <div id="f-maxtokens-feedback" hidden></div>
           <div id="apikeyHint" hidden></div>
           <div id="testResult" hidden></div>
           <button id="btnTest" type="button"></button>
@@ -87,6 +89,7 @@ function makeProvider(
     model?: string;
     baseUrl?: string;
     contextWindow?: number;
+    maxTokens?: number;
     provider?: string;
     supportsToolCalling?: boolean;
   } = {},
@@ -98,6 +101,7 @@ function makeProvider(
     baseUrl: opts.baseUrl || 'https://api.example.com/v1',
     provider: opts.provider,
     contextWindow: opts.contextWindow,
+    maxTokens: opts.maxTokens,
     supportsToolCalling: opts.supportsToolCalling,
   };
 }
@@ -294,6 +298,57 @@ describe('configView 渲染分支（ui-redesign §6.2）', () => {
 
   it('保存「65,536」→ 不再识别（K 语义下千分位是混淆源，应填 K 值如 65.5）', () => {
     expect(submitWithContextWindow('65,536')).toBeUndefined();
+  });
+
+  // ─── 输出上限输入（T1：per-LLM 输出预算，与 contextWindow 统一 ×1000 K 单位） ───
+
+  /** 打开「添加 API」弹窗并提交，返回 cfg_save 载荷的 maxTokens（undefined = 未发出或留空） */
+  function submitWithMaxTokens(raw: string) {
+    const { postMessage } = mountConfigView();
+    dispatchLoaded([]);
+    (document.getElementById('btnAdd') as HTMLButtonElement).click();
+    (document.getElementById('f-name') as HTMLInputElement).value = 'deepseek';
+    (document.getElementById('f-display') as HTMLInputElement).value = 'DeepSeek';
+    (document.getElementById('f-model') as HTMLInputElement).value = 'deepseek-chat';
+    (document.getElementById('f-baseurl') as HTMLInputElement).value = 'https://api.example.com/v1';
+    (document.getElementById('f-apikey') as HTMLInputElement).value = 'sk-test';
+    (document.getElementById('f-maxtokens') as HTMLInputElement).value = raw;
+    (document.getElementById('cfgForm') as HTMLFormElement).dispatchEvent(new Event('submit'));
+    const call = postMessage.mock.calls.find((c) => c[0].type === 'cfg_save') as
+      unknown[] | undefined;
+    // 非法输入被阻断不发出 cfg_save → call 为 undefined → 返回 undefined
+    return (call?.[0] as { config: { maxTokens?: number } } | undefined)?.config.maxTokens;
+  }
+
+  it('保存「64」（K 单位）→ 上报 64000（×1000 统一口径，T1 验收锚点）', () => {
+    expect(submitWithMaxTokens('64')).toBe(64000);
+  });
+
+  it('保存「64k」（小写后缀）→ 上报 64000（大小写不敏感，与 contextWindow 同构）', () => {
+    expect(submitWithMaxTokens('64k')).toBe(64000);
+  });
+
+  it('保存留空 → 上报 undefined（不传 max_tokens，回服务端默认）', () => {
+    expect(submitWithMaxTokens('')).toBeUndefined();
+  });
+
+  it('非法输出上限「abc」→ 就地报错并阻断提交（不发出 cfg_save，防静默回落）', () => {
+    expect(submitWithMaxTokens('abc')).toBeUndefined();
+  });
+
+  it('编辑回填：maxTokens 整 K 值精确回显（64000 → 「64」，×1000 口径往返保真）', () => {
+    mountConfigView();
+    dispatchLoaded([makeProvider('mimo', { maxTokens: 64000 })], 'mimo');
+    (document.querySelector('.card .btn-secondary') as HTMLButtonElement).click();
+    const mt = document.getElementById('f-maxtokens') as HTMLInputElement;
+    expect(mt.value).toBe('64');
+  });
+
+  it('详情报文：配置 maxTokens 时附加「输出上限」标注（K 单位显式）', () => {
+    mountConfigView();
+    dispatchLoaded([makeProvider('mimo', { maxTokens: 64000 })], 'mimo');
+    const detail = document.querySelector('.card-detail') as HTMLElement;
+    expect(detail.textContent).toContain('输出上限');
   });
 
   it('非法输入「abc」→ 就地报错并阻断提交（不发出 cfg_save，防静默回落默认值）', () => {

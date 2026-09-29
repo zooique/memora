@@ -188,6 +188,9 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       dataDir: opts.dataDir,
       registryDir: opts.registryDir,
       maxContextTokens: opts.maxContextTokens ?? AGENT_CONSTANTS.DEFAULT_MAX_CONTEXT_TOKENS,
+      // per-LLM 输出预算默认值（token）：宿主 per-LLM 配置透传；undefined = 不传 max_tokens
+      //（回服务端默认）。角色包策略 act.outputLimit 经 setChatOptions 覆盖（优先级更高）。
+      maxTokens: opts.maxTokens,
       permission: opts.permission ?? 'owner',
       allowedPaths: opts.allowedPaths ?? [],
       confirmWrites: opts.confirmWrites ?? false,
@@ -1242,6 +1245,8 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       // 组数据（宿主装配级）：组长角色包 + 组员名单（会议名单容器）
       rolePackTeams: this.#config.rolePackTeams,
       maxContextTokens: this.#config.maxContextTokens,
+      // per-LLM 输出预算默认值：透传组装器 → AgentLoop.defaultMaxTokens（buildChatOptions 填底座）
+      maxTokens: this.#config.maxTokens,
       sessionStore: this.#config.sessionStore,
       roundStore: this.#config.roundStore,
       tracer: this.#config.tracer,
@@ -1341,6 +1346,23 @@ export class Agent extends TypedEventEmitter<AgentEventMap> {
       this.internals.contextPreparer.setMaxContextTokens(tokens);
     }
     logger.info({ providerWindow: tokens }, 'provider 上下文窗口已更新');
+  }
+
+  /**
+   * 运行时更新 per-LLM 输出预算默认值（token）
+   *
+   * Provider 热切换配套（与 setContextWindow 同链路）：同步 #config 拷贝并即时生效于 loop——
+   * 切换 Provider 后新配置的 maxTokens 无需重装 Agent。undefined = 清除（回服务端默认）。
+   * 不设 assertNotBusy：maxTokens 是请求参数（非上下文结构），轮内下一迭代即用新值，无一致性风险。
+   *
+   * @param tokens 新输出预算（token）；undefined 清除
+   */
+  setMaxTokens(tokens: number | undefined): void {
+    this.#config.maxTokens = tokens;
+    if (this.loop) {
+      this.loop.setDefaultMaxTokens(tokens);
+    }
+    logger.info({ maxTokens: tokens }, 'per-LLM 输出预算已更新');
   }
 
   setBackgroundProvider(provider: LlmProvider | null): void {

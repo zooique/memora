@@ -186,6 +186,7 @@ type AssembleRuntimeParams = Pick<
   | 'rolePackTeams'
   | 'builtinFallbackRole'
   | 'maxContextTokens'
+  | 'maxTokens'
   | 'sessionStore'
   | 'roundStore'
   | 'tracer'
@@ -230,6 +231,7 @@ type LoopAndDepsParams = Pick<
   | 'backgroundProvider'
   | 'providerRouter'
   | 'maxContextTokens'
+  | 'maxTokens'
   | 'tracer'
   | 'messages'
   | 'enableContextSummary'
@@ -467,6 +469,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     skillManager,
     toolExec,
     maxContextTokens,
+    // per-LLM 输出预算默认值（T1）：宿主 per-LLM 配置透传 → loop.defaultMaxTokens
+    maxTokens,
     tracer,
     messages,
     enableContextSummary,
@@ -538,6 +542,8 @@ async function createAgentLoopAndDeps(params: LoopAndDepsParams) {
     // 完整内置定义注入只读闸（toolReadonly 查询 readonly 标记；单一真理源取 toolExec.builtinDefinitions）
     builtinTools: toolExec.builtinDefinitions,
     maxContextTokens,
+    // per-LLM 输出预算默认值（token）：buildChatOptions 填底座，策略覆盖项（chatOptions）后压
+    defaultMaxTokens: maxTokens,
     tracer,
     messages,
     enableContextSummary,
@@ -658,6 +664,7 @@ export async function assembleComponents(
     rolePackTeams,
     builtinFallbackRole,
     maxContextTokens,
+    maxTokens,
     sessionStore,
     roundStore,
     tracer,
@@ -889,6 +896,7 @@ export async function assembleComponents(
       skillManager,
       toolExec,
       maxContextTokens,
+      maxTokens,
       tracer,
       messages,
       enableContextSummary,

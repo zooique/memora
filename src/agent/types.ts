@@ -512,6 +512,16 @@ export interface AgentOptions {
   registryDir?: string;
   /** 最大上下文 token 数（默认 120000） */
   maxContextTokens?: number;
+  /**
+   * per-LLM 输出预算默认值（token，可选）：宿主 per-LLM 配置（配置面板「输出上限」）透传，
+   * 请求体携带 max_tokens。背景（EMPTY-RESP-1 根因）：推理模型 thinking 与正文共享输出预算，
+   * thinking 吃满服务端默认上限会把正文挤空（空响应）——显式配置消除盲区。
+   * undefined = 不传（回服务端默认，盲区语义与 contextWindow 同构）。
+   * 优先级：角色包策略 act.outputLimit > 本值 > 服务端默认（buildChatOptions 先填本值、
+   * 策略覆盖项后 Object.assign 压过）。区间归一在请求层（openaiCompatible.normalizeMaxTokens：
+   * 1–65536 之外不传），内核不裁决区间（V1 同哲学）。
+   */
+  maxTokens?: number;
   /** 安全权限 */
   permission?: 'owner' | 'guest';
   /** 允许的路径白名单 */

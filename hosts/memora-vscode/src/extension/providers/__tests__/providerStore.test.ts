@@ -103,6 +103,60 @@ describe('ProviderStore.contextWindow 护栏 + 迁移', () => {
     },
   );
 
+  // ─── maxTokens 输出上限护栏（T1 / EMPTY-RESP-1，对齐内核 normalizeMaxTokens 1–65536） ───
+
+  it('save：合法 maxTokens（65536）→ ok 且持久化保留该字段', async () => {
+    const res = await store.save(
+      {
+        name: 'mimo',
+        displayName: 'MiMo',
+        model: 'mimo-v2.6-pro',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-x',
+        maxTokens: 65536,
+      },
+      false,
+    );
+    expect(res.ok).toBe(true);
+    const saved = (h.store['providers'] as Array<Record<string, unknown>>)[0];
+    expect(saved.maxTokens).toBe(65536);
+  });
+
+  it('save：maxTokens 缺省（undefined）→ 仍允许保存（不传 max_tokens，回服务端默认）', async () => {
+    const res = await store.save(
+      {
+        name: 'deepseek',
+        displayName: 'DeepSeek',
+        model: 'deepseek-chat',
+        baseUrl: 'https://api.example.com/v1',
+        apiKey: 'sk-x',
+      },
+      false,
+    );
+    expect(res.ok).toBe(true);
+    const saved = (h.store['providers'] as Array<Record<string, unknown>>)[0];
+    expect(saved.maxTokens).toBeUndefined();
+  });
+
+  it.each([0, -1, 1.5, 65_537, 100_000])(
+    'save：非法 maxTokens=%p → 拒绝并给 message（宿主显式拒收，防 UI 值 ≠ 生效值）',
+    async (bad) => {
+      const res = await store.save(
+        {
+          name: 'mimo',
+          displayName: 'MiMo',
+          model: 'mimo-v2.6-pro',
+          baseUrl: 'https://api.example.com/v1',
+          apiKey: 'sk-x',
+          maxTokens: bad as number,
+        },
+        false,
+      );
+      expect(res.ok).toBe(false);
+      expect(res.message).toBeTruthy();
+    },
+  );
+
   it('migrateMaxContextTokens：旧全局值并入首个 provider 的 contextWindow 并清除旧键', async () => {
     h.store['providers'] = [
       {

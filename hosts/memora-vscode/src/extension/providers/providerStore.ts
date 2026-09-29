@@ -35,6 +35,10 @@ const MASK = '••••••••';
 const CONTEXT_WINDOW_MIN = 1024;
 /** contextWindow 合法上限（token）：防天文数字撑爆预算分配 */
 const CONTEXT_WINDOW_MAX = 10_000_000;
+/** maxTokens 合法下限（token）：对齐内核 normalizeMaxTokens（openaiCompatible）合法区间 */
+const MAX_TOKENS_MIN = 1;
+/** maxTokens 合法上限（token）：65536 对齐内核 MAX_MAX_TOKENS（覆盖现有模型 max_tokens 能力上限） */
+const MAX_TOKENS_MAX = 65_536;
 
 /**
  * 生成 API Key 的脱敏展示串（仅用于编辑回显，绝不回传真实值）
@@ -191,6 +195,22 @@ export class ProviderStore {
         return {
           ok: false,
           message: `上下文上限需为 ${CONTEXT_WINDOW_MIN}–${CONTEXT_WINDOW_MAX} 之间的整数 token`,
+        };
+      }
+    }
+
+    // maxTokens 护栏（**对齐内核 normalizeMaxTokens 合法区间 1–65536**）：正整数 + 区间校验。
+    // 与 contextWindow 同哲学——宿主先拒收（可见报错），防「UI 显示值 ≠ 真实生效值」（坑）：
+    // 内核请求层对越界值静默丢弃（undefined → 不传，回服务端默认），唯有此护栏给出显式反馈。
+    if (trimmed.maxTokens !== undefined) {
+      if (
+        !Number.isInteger(trimmed.maxTokens) ||
+        trimmed.maxTokens < MAX_TOKENS_MIN ||
+        trimmed.maxTokens > MAX_TOKENS_MAX
+      ) {
+        return {
+          ok: false,
+          message: `输出上限需为 ${MAX_TOKENS_MIN}–${MAX_TOKENS_MAX} 之间的整数 token（K 单位 ≤64）`,
         };
       }
     }

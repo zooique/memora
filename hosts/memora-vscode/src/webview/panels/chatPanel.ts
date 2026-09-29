@@ -2042,6 +2042,9 @@ export class MemoraChatViewProvider implements vscode.WebviewViewProvider {
         // 让内核预算/截断/占用快照与所选模型窗口对齐
         const active = await this._providerStore.getActive();
         this._agent.setContextWindow(resolveContextWindow(active?.contextWindow));
+        // per-LLM 输出预算热同步（与 contextWindow 同链路）：随模型热切换即刻生效，
+        // 新 Provider 的 maxTokens 下一轮请求即透传（T1 / EMPTY-RESP-1 根因修复）
+        this._agent.setMaxTokens(active?.maxTokens);
       }
       await this.pushProviders();
     } catch (err) {

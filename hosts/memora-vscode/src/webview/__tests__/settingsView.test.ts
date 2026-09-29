@@ -47,6 +47,8 @@ const HTML = `
           <div id="toolcalling-field"><label class="checkbox-label" for="f-toolcalling"><input id="f-toolcalling" type="checkbox" /></label></div>
           <input id="f-contextwindow" type="text" />
           <div id="f-contextwindow-feedback" hidden></div>
+          <input id="f-maxtokens" type="text" />
+          <div id="f-maxtokens-feedback" hidden></div>
           <div id="apikeyHint" hidden></div><div id="testResult" hidden></div>
           <button id="btnTest" type="button"></button><button id="btnCancel" type="button"></button><button id="btnSave" type="submit"></button>
         </form>

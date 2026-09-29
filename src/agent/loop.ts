@@ -133,6 +133,13 @@ export interface AgentLoopOptions {
   minRecentRounds?: number;
   /** ChatOptions 覆盖项（角色包策略注入 temperature/outputLimit 等，优先于默认值） */
   chatOptions?: Partial<ChatOptions>;
+  /**
+   * per-LLM 输出预算默认值（token，宿主 per-LLM 配置透传）：buildChatOptions 填入底座，
+   * 策略覆盖项（chatOptions，act.outputLimit）后 Object.assign 压过。
+   * undefined = 不传 max_tokens（回服务端默认）。区间归一在请求层（normalizeMaxTokens），
+   * 本层不裁决区间（V1 同哲学）。
+   */
+  defaultMaxTokens?: number;
   /** 上下文压缩策略（微压缩层，每轮把旧 tool_result 替换为占位符省空间）；
    *  默认 ResultReplacementStrategy（保留最近 3 次完整结果），宿主可注入自定义策略。
    *  作为两级空间管理的**第二级**（tool_result 占位）参与压缩链 */
@@ -2260,6 +2267,13 @@ export class AgentLoop {
     const tools = this.resolveActiveTools();
     const baseOptions: ChatOptions = {};
 
+    // per-LLM 输出预算默认值（T1 / EMPTY-RESP-1 根因修复）：推理模型 thinking 与正文共享
+    // 输出预算，无显式上限时 thinking 吃满服务端默认 → 正文被挤空。先填底座，策略覆盖项
+    // （chatOptions = act.outputLimit）随后 Object.assign 压过——优先级：角色包 > per-LLM 默认。
+    if (this.opts.defaultMaxTokens !== undefined) {
+      baseOptions.maxTokens = this.opts.defaultMaxTokens;
+    }
+
     const supportsToolCalling = this.toolCallingEnabled();
     if (tools.length > 0 && supportsToolCalling) {
       baseOptions.tools = tools.map((t) => ({
@@ -2368,6 +2382,14 @@ export class AgentLoop {
   setChatOptions(chatOptions: Partial<ChatOptions> | undefined): void {
     this.opts.chatOptions =
       chatOptions && Object.keys(chatOptions).length > 0 ? { ...chatOptions } : undefined;
+  }
+
+  /**
+   * 运行时更新 per-LLM 输出预算默认值（Provider 热切换配套，与 setContextWindow 同链路）。
+   * undefined = 清除（回服务端默认）。轮内下一迭代即用新值（请求参数非上下文结构，无一致性风险）。
+   */
+  setDefaultMaxTokens(tokens: number | undefined): void {
+    this.opts.defaultMaxTokens = tokens;
   }
 
   /** 刷新 bootstrap 记忆段（设定面板对 rule/skill 增删改后用最新记忆重建 bootstrap 段）。

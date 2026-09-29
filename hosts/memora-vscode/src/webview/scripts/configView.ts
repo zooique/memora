@@ -15,6 +15,7 @@ import type {
 } from '../../shared/protocol.js';
 import { createEmptyState, createGroupTitle } from '../helpers/cardList.js';
 import { fmtTokens, TOKENS_PER_K } from '../helpers/fmtTokens.js';
+
 import { getIconSvg } from './icons.js';
 
 /** configView 依赖（依赖注入：隔离 webview 环境，单测可注入 mock） */
@@ -60,8 +61,12 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   const fApiKey = root.querySelector('#f-apikey') as HTMLInputElement;
   // 上下文窗口上限（per-LLM，可选；留空回落内核默认 120K；单一 K 单位输入）
   const fContextWindow = root.querySelector('#f-contextwindow') as HTMLInputElement;
+  // 输出上限输入（T1，K 单位同 contextWindow）：per-LLM 输出预算，空 = 回服务端默认
+  const fMaxTokens = root.querySelector('#f-maxtokens') as HTMLInputElement;
   // 上下文上限输入的即时报错/换算提示（输入非法时展示就地错误，不依赖 host 往返）
   const cwFeedback = root.querySelector('#f-contextwindow-feedback') as HTMLElement;
+  // 输出上限输入的即时报错/换算提示（与 contextWindow 同构：就地反馈，不依赖 host 往返）
+  const mtFeedback = root.querySelector('#f-maxtokens-feedback') as HTMLElement;
   // Provider 类型（'cloud' | 'local'）：cloud=云端 API（默认，工具通道走原生 FC）；
   // local=本地运行时（Ollama/LM Studio）——是否支持原生工具调用须用户显式声明（能力位语义）
   const fProviderType = root.querySelector('#f-providertype') as HTMLSelectElement;
@@ -88,10 +93,16 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   }
 
   /**
-   * 解析上下文上限输入串（单一 K 单位：纯数字 = K 值，可选 k 后缀）
+   * 解析 token 数值输入串（contextWindow 与 maxTokens 双字段共用；纯数字 = K 值，可选 k 后缀）
    *
    * K 倍数唯一真理源 = fmtTokens.ts 的 TOKENS_PER_K（×1000，LLM 生态口径）。
    * 收紧自 K/M/纯数字多格式：用户只需填 K 数（如 128 = 128K = 128000），支持小数（如 1.5 = 1500）。
+   *
+   * T1 统一口径决策（2026-09-29）：maxTokens 曾用 ×1024 意图对齐内核护栏 65536，但实测厂商
+   * 口径自相矛盾（gpt-4o 同卡混用 128,000 上下文 / 16,384 输出；Claude 3.7 输出上限 64,000
+   * 十进制）——「对齐主流」不可裁决，改按**误差方向安全性**裁决：×1000 低估无害（输出截断 /
+   * 提前压缩，均优雅降级）；×1024 高估有硬风险（max_tokens 超厂商十进制上限 → 请求 400）。
+   * 两字段统一 ×1000，同表单禁再引入第二 K 基数（双 K 并存已被实证为混淆源）。
    *
    * @param raw 表单原始输入
    * @returns token 数；空串 → undefined（未配置）；无法识别 → NaN
@@ -108,6 +119,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
   /** token → K 值输入串（整千整数、非整千保留小数；与 parseTokenInput 的 K 语义对称） */
   function tokensToKValue(tokens: number): string {
     return String(tokens / TOKENS_PER_K);
+  }
+
+  /** 就地设置输出上限输入提示（text 为空则隐藏；isError 标记错误态样式） */
+  function setMtFeedback(text: string, isError: boolean): void {
+    mtFeedback.textContent = text;
+    mtFeedback.hidden = !text;
+    mtFeedback.classList.toggle('err', isError && !!text);
   }
 
   /** 就地设置上下文上限输入提示（text 为空则隐藏；isError 标记错误态样式） */
@@ -134,10 +152,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     baseUrl: string;
     apiKey: string;
     contextWindow: number | undefined;
+    maxTokens: number | undefined;
     provider: 'cloud' | 'local';
     supportsToolCalling: boolean | undefined;
   } {
     const parsed = parseTokenInput(fContextWindow.value);
+    // 输出上限与 contextWindow 共用 ×1000 口径（T1 统一决策见 parseTokenInput 注释）
+    const parsedMaxTokens = parseTokenInput(fMaxTokens.value);
     // Provider 类型 + 工具能力位（本地 LLM 能力声明）：
     // - cloud（默认）→ 不落 supportsToolCalling（undefined → 内核回落 true，存量云行为不变，零回归）；
     // - local → 显式声明工具能力：勾选=support，取消=不支撑（可观测回落，不静默承诺）。
@@ -153,6 +174,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       // 上下文上限输入无法识别（NaN）由 submit 与 test 双重前置校验阻断（见 submit/test 处理器），
       // 此处 NaN 分支为类型收窄防御：正常路径下不可达（避免静默回落默认值）
       contextWindow: Number.isNaN(parsed) ? undefined : parsed,
+      // 输出上限同构（T1）：NaN 防御同 contextWindow；区间护栏在宿主 save（1–65536 对齐内核）
+      maxTokens: Number.isNaN(parsedMaxTokens) ? undefined : parsedMaxTokens,
       provider,
       supportsToolCalling,
     };
@@ -168,6 +191,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     btnTest.disabled = false;
     // 重置上下文上限输入的就地反馈（开新表单时清空上一条错误）
     setCwFeedback('', false);
+    setMtFeedback('', false);
     if (editName) {
       // 编辑：从内存中的 providers 列表回填（单一真理源：cfg_loaded 数据，
       // 而非从渲染结果 DOM dataset 读取，避免 DOM 作为数据源的数据流反向）
@@ -185,6 +209,8 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       apikeyHint.textContent = masked ? '已配置：' + masked + '（留空保持不变）' : '';
       // 上下文窗口上限回填（per-LLM 真理源；K 值回显，整千整数/非整千小数，label 已标 K 单位）
       fContextWindow.value = target?.contextWindow ? tokensToKValue(target.contextWindow) : '';
+      // 输出上限回填（T1，与 contextWindow 共用 ×1000 反向换算 tokensToKValue；空 = 服务端默认）
+      fMaxTokens.value = target?.maxTokens ? tokensToKValue(target.maxTokens) : '';
       // Provider 类型回填：已存 type=local → local，否则默认 cloud（存量云配置零改动）
       fProviderType.value = target?.provider === 'local' ? 'local' : 'cloud';
       // 工具能力位回填：本地类型时按已存声明勾选（缺省勾选=本地默认支持原生 FC）；
@@ -202,6 +228,7 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       apikeyHint.hidden = true;
       apikeyHint.textContent = '';
       fContextWindow.value = '';
+      fMaxTokens.value = '';
       // 新增默认云类型 + 工具能力默认勾选（local 时为支持原生 FC）
       fProviderType.value = 'cloud';
       fToolCalling.checked = true;
@@ -294,12 +321,13 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     }
     const detail = document.createElement('div');
     detail.className = 'card-detail';
-    // 上下文上限单位显式标注（token 缩写 K 由 fmtTokens 输出，如 128K），呼应表单同单位提示
+    // 上下文上限/输出上限单位显式标注（token 缩写 K 由 fmtTokens 输出，如 128K），呼应表单同单位提示
     detail.textContent =
       p.model +
       ' · ' +
       p.baseUrl +
-      (p.contextWindow ? ` · ${fmtTokens(p.contextWindow)} tokens` : '');
+      (p.contextWindow ? ` · ${fmtTokens(p.contextWindow)} tokens` : '') +
+      (p.maxTokens ? ` · 输出上限 ${fmtTokens(p.maxTokens)}` : '');
     info.appendChild(nameRow);
     info.appendChild(detail);
 
@@ -396,6 +424,19 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
       setCwFeedback('请填 K 单位数字，如 128（= 128,000 tokens）', true);
     }
   });
+  // 输出上限输入改键实时反馈（×1000 口径换算提示 / 非法就地报错，与 contextWindow 同构）
+  fMaxTokens.addEventListener('input', () => {
+    setMtFeedback('', false);
+    const raw = fMaxTokens.value.trim();
+    if (!raw) return;
+    const parsed = parseTokenInput(raw);
+    if (parsed !== undefined && !Number.isNaN(parsed)) {
+      setMtFeedback(`= ${parsed.toLocaleString('en-US')} tokens`, false);
+    } else {
+      setMtFeedback('请填 K 单位数字，如 64（= 64,000 tokens）', true);
+    }
+  });
+
   /** 上下文上限输入前置校验（submit 与 test 双路径共用，防非法值静默回落）：
    *  非法（NaN）→ 就地报错并聚焦，返回 false 阻断发送；空串合法（回落默认 120K）。 */
   function validateContextWindow(): boolean {
@@ -411,17 +452,37 @@ export function createConfigView({ vscode, window, root }: ConfigViewDeps): void
     return true;
   }
 
+  /** 输出上限输入前置校验（与 validateContextWindow 同构，T1；×1000 口径见 parseTokenInput）：
+   *  非法（NaN）→ 就地报错并聚焦，返回 false 阻断发送；空串合法（回服务端默认）。 */
+  function validateMaxTokens(): boolean {
+    const mtRaw = fMaxTokens.value.trim();
+    if (mtRaw) {
+      const parsed = parseTokenInput(mtRaw);
+      if (parsed === undefined || Number.isNaN(parsed)) {
+        setMtFeedback('请填 K 单位数字，如 64（= 64,000 tokens）', true);
+        fMaxTokens.focus();
+        return false;
+      }
+    }
+    return true;
+  }
+
   // 表单提交（Enter 键 / 点击「保存」统一走 submit）：比按钮 click 更符合表单语义
   cfgForm.addEventListener('submit', (e) => {
     e.preventDefault();
-    // 前置校验：上下文上限输入无法识别时就地报错并阻断提交（防静默回落默认值）
+    // 前置校验：上下文上限/输出上限输入无法识别时就地报错并阻断提交（防静默回落默认值）
     if (!validateContextWindow()) return;
+    if (!validateMaxTokens()) return;
     const config = readForm();
     vscode.postMessage({ type: 'cfg_save', config, isEditing: editName !== '' });
   });
   btnTest.addEventListener('click', () => {
     // 测试连接同走前置校验：输入非法 K 数时就地报错并阻断（与保存对称，防测错窗口）
     if (!validateContextWindow()) {
+      btnTest.disabled = false;
+      return;
+    }
+    if (!validateMaxTokens()) {
       btnTest.disabled = false;
       return;
     }

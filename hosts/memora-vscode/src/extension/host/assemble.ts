@@ -297,12 +297,17 @@ export async function assembleAgent(options: AssembleOptions): Promise<Agent> {
   // 无全局封顶——用户对自己填写的参数负责（见架构决策）。resolveContextWindow 单参：传 per-LLM 值，undefined 即兜底。
   const activeProviderCfg = providerStore ? await providerStore.getActive() : undefined;
   const maxContextTokens = resolveContextWindow(activeProviderCfg?.contextWindow);
+  // per-LLM 输出预算（T1）：唯一真理源 = 用户 per-LLM 的 maxTokens（配置面板「输出上限 (K)」）；
+  // 未配置 undefined → 内核不传 max_tokens（回服务端默认，盲区语义与 contextWindow 同构）。
+  const maxTokens = activeProviderCfg?.maxTokens;
 
   // 3. 装配 Agent（薄壳，全部复用内核）
   const agent = new Agent({
     projectPath,
     // 上下文窗口上限（token）：宿主注入，内核预算路径唯一容量输入
     maxContextTokens,
+    // per-LLM 输出预算（token）：请求体 max_tokens 唯一注入口（AgentOptions 透传链）
+    maxTokens,
     // 记忆数据目录 = 工作区 .memora（注册表/锁文件落盘处，与存储同目录）
     dataDir: join(projectPath, '.memora'),
     // 配置目录 = 插件内置配置（dist/extension，含构建期从内核同步的 role-packs；

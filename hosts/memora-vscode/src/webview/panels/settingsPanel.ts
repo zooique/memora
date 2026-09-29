@@ -1515,6 +1515,12 @@ function buildHtml(scriptUri: vscode.Uri, cspSource: string): string {
             <div class="key-hint">填千单位（K），如 128 表示 128K = 128,000 tokens；支持小数（如 1.5）；留空使用默认 120K。</div>
             <div id="f-contextwindow-feedback" class="key-hint" hidden></div>
           </div>
+          <div class="field">
+            <label for="f-maxtokens">输出上限（K）</label>
+            <input id="f-maxtokens" name="maxTokens" type="text" inputmode="decimal" placeholder="如 64（留空用服务端默认）" autocomplete="off" />
+            <div class="key-hint">模型单次回复的最大输出 token 数（含思考占用），如 64 = 64,000 tokens（K = ×1000，与上下文上限同口径）；留空由服务端默认。推理模型思考过长挤掉正文（空响应）时调大此值。</div>
+            <div id="f-maxtokens-feedback" class="key-hint" hidden></div>
+          </div>
           <div id="testResult" class="test-result" hidden></div>
           <div class="modal-actions">
             <button id="btnTest" type="button" class="btn btn-secondary">测试连接</button>
